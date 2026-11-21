@@ -1884,6 +1884,18 @@ function corridasDeRevisoresTocadas(cmd, cwd, stateDir) {
 }
 
 /**
+ * Lo que el comando borra o mueve de las fotos de lo protegido (`write-photos/`, de cualquier estado): sin la foto, lo
+ * que escribió el comando no se compara con nada. Lo que se escribe ahí lo frena el freno del estado. Sin interruptor.
+ */
+function fotosTocadas(cmd, cwd, stateDir) {
+  const { isWritePhotosRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'write-photos', nombres: ['write-photos'], pieza: isWritePhotosRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])write-photos(?![\w.-])/i.test(t) });
+}
+
+/**
  * Lo que el comando borra o mueve de la revisión automática del plan (`plan-review/`, de cualquier estado): el pedido, el
  * resultado del corredor y la constancia con el veredicto. Moverlo o borrarlo deja otra constancia en su lugar. Lo que
  * se escribe ahí lo frena el freno del estado; pasan sólo `marker.js plan-review` y el corredor del pase del arnés
@@ -4764,6 +4776,12 @@ function handleCarrilEHistoria(event, opts = {}) {
   if (corridas.length) {
     const sg = require('./lib/story-gate.js');
     return { block: sg.blockMessage({ kind: 'advisor-runs' }, { filePath: corridas[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
+  // las fotos de lo protegido, también al borrarlas o moverlas
+  const fotos = constancias.length ? [] : fotosTocadas(cmd, cwd, stateDir);
+  if (fotos.length) {
+    const sg = require('./lib/story-gate.js');
+    return { block: sg.blockMessage({ kind: 'write-photos' }, { filePath: fotos[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
   }
   // la revisión automática del plan, también al borrarla o moverla, o con un `--out` que no es el del corredor del pase
   const ajena = constancias.length ? null : salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots);

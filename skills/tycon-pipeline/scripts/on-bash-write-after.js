@@ -17,9 +17,16 @@
  * reconocido con otro se deshace entero: después de correr no se sabe cuál escribió cada cosa, y el aviso dice que
  * marker.js va en un comando aparte.
  *
+ * Lo que no se deshace: lo que trajo un comando que es sólo git y quedó igual a lo commiteado; lo que escribió un Edit o
+ * un Write de la misma sesión sobre ese archivo mientras corría el comando (el gancho anota cuándo empieza y termina
+ * cada uno, en `write-photos/en-curso/`). Lo dudoso no se deshace: se anota `escritura-dudosa` en gates.log y se avisa.
+ * Es dudoso un cambio con otra sesión viva en el mismo repo (las que ve live-sessions.js), o con otro comando de la
+ * misma sesión que corría marker.js a la vez. La hora de un archivo no decide nada: un guion la pone donde quiere.
+ *
  * Límites conocidos: un proceso que el comando deja vivo (`&`, `nohup`) y escribe cuando el comando ya terminó, un
  * comando cortado por tiempo que no llega al evento de después, un guion que escribe en otro repo sin nombrarlo con
- * `cd`, y una historia nueva en una carpeta donde no había ninguna. Para esos queda la red del commit.
+ * `cd`, una historia nueva en una carpeta donde no había ninguna, y un guion hecho para falsificar la foto y su huella
+ * (la carpeta de las fotos la protege el freno de antes, leyendo el comando). Para esos queda la red del commit.
  *
  * Exit 0 siempre. Apagado: TYCON_STORY_GATE=off (el mismo interruptor del freno de antes). Las fallas van a
  * hook-errors.log.
@@ -157,6 +164,79 @@ function archivoDeLaFoto(stateDir, input) {
   return path.join(photo.photosDir(stateDir), `${limpio(input.session_id || '_nosession')}-${limpio(input.tool_use_id || '_sinid')}.json`);
 }
 
+// ── lo que corre a la vez en la misma sesión ─────────────────────────────────────────────────────────────────────────
+const HERRAMIENTAS_QUE_EDITAN = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+const VIDA_DEL_REGISTRO_MS = 10 * 60 * 1000;
+const dirEnCurso = (stateDir) => path.join(photo.photosDir(stateDir), 'en-curso');
+const archivoEnCurso = (stateDir, input) => path.join(dirEnCurso(stateDir), path.basename(archivoDeLaFoto(stateDir, input)));
+/** La ruta con su carpeta real: el mismo archivo escrito como /var/… o /private/var/… da lo mismo. */
+const rutaReal = (p) => path.join(realOrNull(path.dirname(p)) || path.dirname(p), path.basename(p));
+
+/** Anota que una herramienta empezó (`extra`: lo que edita, o si el comando es sólo marker.js). */
+function anotarInicio(stateDir, input, extra) {
+  // stable-data: la hora de inicio, para ver qué corrió a la vez
+  photo.writeWhole(archivoEnCurso(stateDir, input), JSON.stringify({ sesion: input.session_id || null, tool: input.tool_name, inicio: Date.now(), fin: null, ...extra }));
+}
+
+function anotarFin(stateDir, input) {
+  const f = archivoEnCurso(stateDir, input);
+  try {
+    const r = JSON.parse(fs.readFileSync(f, 'utf8'));
+    r.fin = Date.now(); // stable-data: la hora de fin, para ver qué corrió a la vez
+    photo.writeWhole(f, JSON.stringify(r));
+  } catch (_) { /* sin registro de inicio: no hay nada que cerrar */ }
+}
+
+/** Lo que corrió en la misma sesión mientras corría el comando (desde la foto hasta ahora), sin el comando mismo. */
+function aLaVez(stateDir, input, desde) {
+  const propio = path.basename(archivoEnCurso(stateDir, input));
+  const ahora = Date.now(); // stable-data: el fin de la ventana del comando
+  const out = [];
+  let nombres = [];
+  try { nombres = fs.readdirSync(dirEnCurso(stateDir)); } catch (_) { return out; }
+  for (const n of nombres) {
+    const f = path.join(dirEnCurso(stateDir), n);
+    let r;
+    try { r = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { continue; }
+    if (r.fin && ahora - r.fin > VIDA_DEL_REGISTRO_MS) { try { fs.rmSync(f, { force: true }); } catch (_) { /* otra lo borró */ } continue; }
+    if (n === propio || r.sesion !== (input.session_id || null)) continue;
+    if (r.inicio <= ahora && (r.fin == null || r.fin >= desde)) out.push(r);
+  }
+  return out;
+}
+
+/** Las otras sesiones vivas en el repo de `abs` (las de live-sessions.js), o null si no se pudo saber. */
+function otrasSesiones(foto, abs, input) {
+  const raiz = foto.roots.find((r) => abs.startsWith(r + path.sep));
+  if (!raiz) return [];
+  try {
+    const live = require(path.join(RAIZ_DEL_ARNES, 'scripts', 'lib', 'live-sessions.js'));
+    const r = live.others({ root: raiz, selfSessionId: input.session_id || '', selfTranscript: input.transcript_path || '', home: os.homedir(), sources: { subagents: false } });
+    return r.sessions;
+  } catch (_) { return null; }
+}
+
+/**
+ * Separa las diferencias: las que escribió otra herramienta de la misma sesión a la vez (un Edit o un Write sobre ese
+ * archivo) no cuentan; las dudosas (con otra sesión viva en el repo, o con un comando de marker.js corriendo a la vez)
+ * no se deshacen y se avisan; el resto se deshace.
+ */
+function separar(foto, diferencias, input, stateDir) {
+  const juntas = aLaVez(stateDir, input, foto.at);
+  const editados = new Set(juntas.filter((r) => HERRAMIENTAS_QUE_EDITAN.includes(r.tool)).flatMap((r) => r.archivos || []).map(rutaReal));
+  const conMarker = juntas.some((r) => r.reconocido);
+  const deshacer = [];
+  const dudosas = [];
+  for (const d of diferencias) {
+    if (editados.has(rutaReal(d.abs))) continue;
+    if (conMarker) { dudosas.push({ ...d, porque: 'mientras corría, otro comando de esta sesión corría marker.js' }); continue; }
+    const otras = otrasSesiones(foto, d.abs, input);
+    if (otras && otras.length) { dudosas.push({ ...d, porque: `otra sesión trabaja en el mismo repo (${otras.map((s) => s.id.slice(0, 8)).join(', ')})` }); continue; }
+    deshacer.push(d);
+  }
+  return { deshacer, dudosas };
+}
+
 function mensaje(hechas, fallas, mezclado) {
   const rel = (abs) => abs.replace(os.homedir(), '~');
   const lineas = ['⛔ tycon-pipeline — LO QUE EL COMANDO ESCRIBIÓ SE DESHIZO', ''];
@@ -196,15 +276,30 @@ function despues(input, stateDir) {
     diferencias = diferencias.filter((d) => !deGit.has(d));
     if (!diferencias.length) return;
   }
-  const { hechas, fallas } = photo.undo(foto, diferencias, { stateDir });
+  const { deshacer, dudosas } = separar(foto, diferencias, input, stateDir);
+  if (!deshacer.length && !dudosas.length) return;
+  const { hechas, fallas } = photo.undo(foto, deshacer, { stateDir });
   const ts = new Date().toISOString(); // stable-data: la hora del renglón del registro
   const programa = comando.replace(/\s+/g, ' ').slice(0, 160);
+  const renglon = (name, status, d) => `${JSON.stringify({ ts, name, status, sesion: input.session_id || null, archivo: d.abs, que: d.que, programa, ...(d.porque ? { porque: d.porque } : {}) })}\n`;
   try {
     fs.mkdirSync(stateDir, { recursive: true });
-    for (const d of hechas) fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts, name: 'escritura-vista-despues', status: 'undone', sesion: input.session_id || null, archivo: d.abs, que: d.que, programa })}\n`);
+    for (const d of hechas) fs.appendFileSync(path.join(stateDir, 'gates.log'), renglon('escritura-vista-despues', 'undone', d));
+    for (const d of dudosas) fs.appendFileSync(path.join(stateDir, 'gates.log'), renglon('escritura-dudosa', 'kept', d));
   } catch (e) { logHookError(stateDir, e); }
   for (const f of fallas) logHookError(stateDir, new Error(`no se pudo deshacer ${f.abs}: ${f.motivo}`));
-  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: input.hook_event_name, additionalContext: mensaje(hechas, fallas, prog.algunoReconocido) } }) + '\n');
+  const partes = [];
+  if (hechas.length || fallas.length) partes.push(mensaje(hechas, fallas, prog.algunoReconocido));
+  if (dudosas.length) partes.push(mensajeDudosas(dudosas));
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: input.hook_event_name, additionalContext: partes.join('\n\n') } }) + '\n');
+}
+
+function mensajeDudosas(dudosas) {
+  const rel = (abs) => abs.replace(os.homedir(), '~');
+  return ['⚠️ tycon-pipeline — EL COMANDO CAMBIÓ LO PROTEGIDO Y NO LO DESHICE', '',
+    ...dudosas.map((d) => `  · ${rel(d.abs)}: ${d.que}; no lo deshice porque ${d.porque}`),
+    '', 'Puede ser un cambio legítimo de otra sesión o de marker.js. Revisalo y decíselo a la persona: si no correspondía,',
+    'se vuelve atrás con la herramienta de edición o con marker.js.'].join('\n');
 }
 
 function main() {
@@ -212,15 +307,26 @@ function main() {
   try {
     if (String(process.env.TYCON_STORY_GATE || '').toLowerCase() === 'off') return;
     const input = leerEntrada();
-    if (!input || !['Bash', 'PowerShell'].includes(input.tool_name)) return;
+    if (!input) return;
+    const ti = input.tool_input || {};
+    if (HERRAMIENTAS_QUE_EDITAN.includes(input.tool_name)) {
+      // un Edit o un Write a la vez que un comando: lo que escriben no lo deshace la mirada del comando
+      if (input.hook_event_name === 'PreToolUse') anotarInicio(stateDir, input, { archivos: [ti.file_path, ti.notebook_path].filter(Boolean) });
+      else if (EVENTOS_DE_DESPUES.includes(input.hook_event_name)) anotarFin(stateDir, input);
+      return;
+    }
+    if (!['Bash', 'PowerShell'].includes(input.tool_name)) return;
+    const comando = String(ti.command || '');
+    const cwd = input.cwd || process.cwd();
     if (input.hook_event_name === 'PreToolUse') {
-      const comando = String((input.tool_input || {}).command || '');
-      const foto = photo.takePhoto({ roots: reposDelComando(input.cwd || process.cwd(), comando), stateDir });
+      anotarInicio(stateDir, input, { reconocido: programas(comando, cwd, { powershell: input.tool_name === 'PowerShell' }).todosReconocidos });
+      const foto = photo.takePhoto({ roots: reposDelComando(cwd, comando), stateDir });
       photo.writeWhole(archivoDeLaFoto(stateDir, input), JSON.stringify(foto));
       return;
     }
     if (EVENTOS_DE_DESPUES.includes(input.hook_event_name)) {
       try { despues(input, stateDir); } catch (e) { noSePudoMirar(input, stateDir, (e && e.message) || String(e)); }
+      anotarFin(stateDir, input);
     }
   } catch (e) { logHookError(stateDir, e); }
 }

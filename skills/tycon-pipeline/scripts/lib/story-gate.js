@@ -232,6 +232,11 @@ function isReportedCriticalsRecord(p) { return REPORTED_CRITICALS_DIR.test(norm(
 // de críticos: borrarlo apaga ese control y deja saltear revisores. Sólo en el estado de la cuenta (la carpeta también)
 const ADVISOR_RUNS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/advisor-runs(\/|$)/i;
 function isAdvisorRunsRecord(p) { return ADVISOR_RUNS_DIR.test(norm(String(p || ''))); }
+// Las fotos de lo protegido y sus copias (lib/protected-photo.js): las escribe sólo el gancho de después del comando
+// (on-bash-write-after.js). Cambiar una foto es decidir a qué vuelve una historia, o que no se deshaga lo que escribió el
+// comando. Sólo en el estado de la cuenta (la carpeta también)
+const WRITE_PHOTOS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/write-photos(\/|$)/i;
+function isWritePhotosRecord(p) { return WRITE_PHOTOS_DIR.test(norm(String(p || ''))); }
 // La revisión automática del plan (lib/plan-review.js): el pedido, sus args, el resultado del corredor y la constancia
 // con el veredicto. Lo escriben sólo `marker.js plan-review` y el corredor del pase (`workflow-lite.js` con el guion del
 // pase del arnés). Escribir el resultado o la constancia es darse un «aprobado». Sólo en el estado de la cuenta
@@ -253,6 +258,7 @@ function signedRecordKind(p) {
   if (isOfficeMailboxRecord(p)) return 'office-mailbox';
   if (isReportedCriticalsRecord(p)) return 'reported-criticals';
   if (isAdvisorRunsRecord(p)) return 'advisor-runs';
+  if (isWritePhotosRecord(p)) return 'write-photos';
   return isAdversarialSkipRecord(p) ? 'adversarial-skip-record' : null;
 }
 
@@ -305,6 +311,9 @@ function computeStoryGate({
   }
   if (isAdvisorRunsRecord(filePath) || isAdvisorRunsRecord(real)) {
     return { action: 'block', kind: 'advisor-runs', reason: 'escritura a mano del registro de corridas de los revisores' };
+  }
+  if (isWritePhotosRecord(filePath) || isWritePhotosRecord(real)) {
+    return { action: 'block', kind: 'write-photos', reason: 'escritura a mano de las fotos de lo protegido' };
   }
   if (isPlanReviewRecord(filePath) || isPlanReviewRecord(real)) {
     return { action: 'block', kind: 'plan-review', reason: 'escritura a mano de la constancia de la revisión del plan' };
@@ -679,6 +688,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  registro de críticos: borrarlo o escribirlo es saltear esa revisión. Si un revisor falló, se vuelve a correr.',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'write-photos') {
+    return [
+      '⛔ las fotos de lo protegido no se tocan a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Las escribe sólo el arnés antes de cada comando, y después vuelve a ellas lo que el comando cambió sin corresponder:',
+      '  cambiarlas o borrarlas es decidir a qué vuelve una historia. Una historia se edita con la herramienta de edición.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'reported-criticals') {
     return [
       '⛔ el registro de críticos reportados no se toca a mano',
@@ -859,7 +877,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isWritePhotosRecord, isPlanReviewRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };
