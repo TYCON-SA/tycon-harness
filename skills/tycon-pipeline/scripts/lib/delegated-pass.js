@@ -14,7 +14,13 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  *   - la historia no declara código en el repo de la corrida, y sí en algún hermano declarado en lo commiteado (dejarle
  *     el pase a otro afloja un control: el hermano se lee como lo lee la evidencia de cierre);
  *   - por cada hermano con código declarado se ve, en la carpeta del estado de esta máquina, una ejecución abierta de la
- *     misma historia sobre ese repo (o una copia suya, un worktree) y de otra sesión.
+ *     misma historia (la misma ruta, no sólo el número) sobre ese repo (o una copia suya, un worktree), de otra sesión
+ *     que vive (su registro de Claude Code con el proceso vivo) y tocada en las últimas 6 horas, el mismo plazo con que
+ *     se podan los marcadores ajenos. Una sesión sin registro (cerrada, o de Codex) no cuenta: ante la duda, el pase se
+ *     decide acá.
+ *
+ * Los nombres de archivo se leen como los da git con `-z`: sin las comillas y los octales con que cita un nombre no
+ * ASCII, y sin la detección de renombres, que esconde el nombre viejo de un archivo de código renombrado.
  *
  * Lo que no se puede mirar no deja el pase: `{ ok: false, motivo }`. Con todo, `{ ok: true, hermanos: [{ repo, sesion,
  * story }] }`. Esta función lee git y la carpeta del estado; el portón (`pipeline.js criterioDelPase`) recibe lo que
@@ -29,11 +35,15 @@ const stackConfig = require('./stack-config.js');
 const companionLib = require('./companion-repos.js');
 const { parseEvidenceConfig, discoverRepoRoot } = require('./evidence-config.js');
 const { stateDir } = require('./state-dir.js');
+const { liveness } = require('./session-liveness.js');
+
+// el plazo de un marcador ajeno, como en on-prompt.js y story-gate-io.js
+const STALE_HOURS = 6;
 
 const no = (motivo) => ({ ok: false, motivo });
 
 function git(cwd, args) {
-  const r = spawnSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  const r = spawnSync('git', ['-c', 'core.quotePath=off', '-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
   if (r.error || r.status !== 0) return { error: (r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}` };
   return { out: String(r.stdout || '') };
 }
@@ -49,28 +59,40 @@ function comunDe(dir) {
 
 /** Los archivos de código cambiados en `top` desde `base`: commiteados, sin commitear y nuevos. `{ archivos }` o `{ error }`. */
 function codigoCambiado(top, base) {
-  const d = git(top, ['diff', '--name-only', base, '--']);
+  const d = git(top, ['diff', '--name-only', '--no-renames', '-z', base, '--']);
   if (d.error) return { error: `git diff contra la base falló (${d.error})` };
-  const n = git(top, ['ls-files', '--others', '--exclude-standard']);
+  const n = git(top, ['ls-files', '--others', '--exclude-standard', '-z']);
   if (n.error) return { error: `git no pudo listar los archivos nuevos (${n.error})` };
-  const todos = [...d.out.split('\n'), ...n.out.split('\n')].map((l) => l.trim()).filter(Boolean);
+  const todos = [...d.out.split('\0'), ...n.out.split('\0')].filter(Boolean);
   return { archivos: [...new Set(todos.filter(esCodigo))] };
 }
 
-/** Las ejecuciones abiertas de la carpeta del estado: los marcadores de `active/` que se pueden leer. */
-function ejecucionesAbiertas(estado) {
+/**
+ * Las ejecuciones abiertas de la carpeta del estado: los marcadores de `active/` que se pueden leer, sin cierre, tocados
+ * en las últimas `STALE_HOURS` horas. Uno sin hora de último toque que se lea no cuenta.
+ */
+function ejecucionesAbiertas(estado, { ahora = Date.now() } = {}) {
   let nombres = [];
   try { nombres = fs.readdirSync(path.join(estado, 'active')).filter((f) => f.endsWith('.json')); } catch (_) { return []; }
   const out = [];
   for (const f of nombres) {
     let m;
     try { m = JSON.parse(fs.readFileSync(path.join(estado, 'active', f), 'utf8')); } catch (_) { continue; }
-    if (m && typeof m === 'object' && !Array.isArray(m) && !m.cierre) out.push(m);
+    if (!m || typeof m !== 'object' || Array.isArray(m) || m.cierre) continue;
+    const toque = Date.parse(m.lastTouch || '');
+    if (!Number.isFinite(toque) || ahora - toque > STALE_HOURS * 3600 * 1000) continue;
+    out.push(m);
   }
   return out;
 }
 
-function paseDelegado({ repo, story, files, filesDeclarado, marcador, estado, env = process.env } = {}) {
+// la ruta real de la historia de un marcador (relativa a su repo, o absoluta), o null
+function historiaDe(m) {
+  if (!m || typeof m.storyPath !== 'string' || !m.storyPath) return null;
+  return companionLib.real(path.resolve(m.repoPath || '/', m.storyPath));
+}
+
+function paseDelegado({ repo, story, files, filesDeclarado, marcador, estado, home, env = process.env } = {}) {
   if (!marcador || !marcador.storyId) return no('no hay una ejecución de esta historia en esta sesión');
   if (!repo || !story) return no('falta el repo o la historia de la corrida');
   if (!filesDeclarado) return no('sin --files no se sabe qué código trae la corrida');
@@ -109,13 +131,15 @@ function paseDelegado({ repo, story, files, filesDeclarado, marcador, estado, en
   if (!conCodigoDeclarado.length) return no('la historia no declara código en un repo hermano commiteado en .tycon/advisors.yaml');
 
   // por cada hermano con código, su ejecución abierta de la misma historia, de otra sesión
-  const abiertas = ejecucionesAbiertas(estado || stateDir());
+  const abiertas = ejecucionesAbiertas(estado || stateDir(home));
+  const laHistoria = companionLib.real(path.resolve(story));
+  const vive = (sid) => { try { return liveness(sid, home ? { home } : {}).alive === true; } catch (_) { return false; } };
   const hermanos = [];
   for (const c of conCodigoDeclarado) {
     const comun = comunDe(c);
     const nombre = companionLib.label(c);
-    const vista = comun && abiertas.find((m) => String(m.storyId) === String(marcador.storyId)
-      && m.sessionId !== marcador.sessionId && m.repoPath && comunDe(m.repoPath) === comun);
+    const vista = comun && abiertas.find((m) => String(m.storyId) === String(marcador.storyId) && historiaDe(m) === laHistoria
+      && m.sessionId && m.sessionId !== marcador.sessionId && m.repoPath && comunDe(m.repoPath) === comun && vive(m.sessionId));
     if (!vista) return no(`no veo una ejecución abierta de la historia ${marcador.storyId} en ${nombre}: el pase se decide acá`);
     hermanos.push({ repo: vista.repoPath, nombre, sesion: vista.sessionId || null, story: String(vista.storyId) });
   }

@@ -17,7 +17,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const dp = require('../lib/delegated-pass.js');
-const { stateDir } = require('../lib/state-dir.js');
+const { stateDir, claudeDir } = require('../lib/state-dir.js');
 
 const PIPELINE = path.join(__dirname, '..', 'pipeline.js');
 
@@ -35,7 +35,7 @@ const escribir = (f, texto) => { fs.mkdirSync(path.dirname(f), { recursive: true
  * Los dos repos y la carpeta del estado. `propio` suma archivos de código declarados en el repo de la historia;
  * `verCorrida` deja el marcador de la corrida del hermano.
  */
-function armar(t, { propio = [], verCorrida = true, marcadorDelHermano = {} } = {}) {
+function armar(t, { propio = [], verCorrida = true, marcadorDelHermano = {}, sesionViva = true } = {}) {
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pase-delegado-')));
   t.after(() => fs.rmSync(raiz, { recursive: true, force: true }));
   const specs = path.join(raiz, 'acme-specs');
@@ -59,8 +59,12 @@ function armar(t, { propio = [], verCorrida = true, marcadorDelHermano = {} } = 
   const marcador = { storyId: STORY_ID, storyPath: story, repoPath: specs, baseSha, sessionId: 's-specs', startedAt: '2026-11-21T10:00:00.000Z' };
   fs.writeFileSync(path.join(estado, 'active', 's-specs.json'), JSON.stringify(marcador));
   if (verCorrida) {
-    fs.writeFileSync(path.join(estado, 'active', 's-code.json'), JSON.stringify({ storyId: STORY_ID, repoPath: code, sessionId: 's-code',
-      startedAt: '2026-11-21T10:05:00.000Z', ...marcadorDelHermano }));
+    // la corrida del hermano: la misma historia, tocada recién, de una sesión viva (su registro con el pid de esta prueba)
+    // stable-data: el plazo de 6 horas del marcador ajeno se mide contra el reloj real (también en el portón por su línea
+    // de comandos), así que el último toque tiene que quedar cerca de él
+    fs.writeFileSync(path.join(estado, 'active', 's-code.json'), JSON.stringify({ storyId: STORY_ID, storyPath: story, repoPath: code, sessionId: 's-code',
+      startedAt: '2026-11-21T10:05:00.000Z', lastTouch: new Date().toISOString(), ...marcadorDelHermano }));
+    if (sesionViva) escribir(path.join(claudeDir(casa), 'sessions', 's-code.json'), JSON.stringify({ sessionId: 's-code', pid: process.pid }));
   }
   return { raiz, specs, code, story, marcador, estado, casa };
 }
@@ -72,7 +76,7 @@ function porton(c, { files = [], extra = [] } = {}) {
   assert.strictEqual(r.status, 0, `el portón salió ${r.status}: ${r.stderr}`);
   return JSON.parse(r.stdout);
 }
-const consultar = (c, extra = {}) => dp.paseDelegado({ repo: c.specs, story: c.story, files: [], filesDeclarado: true, marcador: c.marcador, estado: c.estado, ...extra });
+const consultar = (c, extra = {}) => dp.paseDelegado({ repo: c.specs, story: c.story, files: [], filesDeclarado: true, marcador: c.marcador, estado: c.estado, home: c.casa, ...extra });
 
 // T6 Delegate_NoOwnCodeAndVisibleCompanionRun_SkipsWithoutAsking @story-8.238 @ac-6
 // 🔴 Falla con: la corrida sin código propio que pregunta por el pase aunque la corrida del hermano lo decide.
@@ -173,4 +177,57 @@ test('T12 Delegate_ExplicitRunRequestsStillRun @story-8.238 @ac-8', (t) => {
   escribir(path.join(c.specs, '.tycon', 'advisors.yaml'), 'deep_review_always_paths:\n  - specs/**\nevidence:\n  companion_repos:\n    - acme-code\n');
   const g = porton(c, { files: [path.join(c.specs, 'specs', 'sprint-status.yaml')] });
   assert.strictEqual(g.run, true, `superficie compartida: ${g.reason}`);
+});
+
+// T13 Delegate_NonAsciiCodeName_DoesNotDelegate @story-8.238 @ac-7
+// 🔴 Falla con: un archivo de código con nombre no ASCII que git cita con octales y no cuenta como código.
+test('T13 Delegate_NonAsciiCodeName_DoesNotDelegate @story-8.238 @ac-7', (t) => {
+  const nuevo = armar(t);
+  escribir(path.join(nuevo.specs, 'scripts', 'café.js'), 'module.exports = 4;\n');
+  const commiteado = armar(t);
+  escribir(path.join(commiteado.specs, 'scripts', 'añadir.js'), 'module.exports = 5;\n');
+  git(commiteado.specs, 'add', '.'); git(commiteado.specs, 'commit', '-q', '-m', 'código');
+  for (const [caso, c] of [['nuevo', nuevo], ['commiteado', commiteado]]) {
+    const d = consultar(c);
+    assert.strictEqual(d.ok, false, caso);
+    assert.match(d.motivo, /el repo de la corrida tiene código cambiado/, caso);
+  }
+});
+
+// T14 Delegate_CodeRenamedToDoc_DoesNotDelegate @story-8.238 @ac-7
+// 🔴 Falla con: un archivo de código renombrado a un nombre que no es código, que git lista sólo con el nombre nuevo.
+test('T14 Delegate_CodeRenamedToDoc_DoesNotDelegate @story-8.238 @ac-7', (t) => {
+  const enElIndice = armar(t);
+  git(enElIndice.specs, 'mv', 'scripts/viejo.js', 'scripts/viejo.md');
+  const commiteado = armar(t);
+  git(commiteado.specs, 'mv', 'scripts/viejo.js', 'scripts/viejo.txt');
+  git(commiteado.specs, 'commit', '-q', '-m', 'renombre');
+  for (const [caso, c] of [['en el índice', enElIndice], ['commiteado', commiteado]]) {
+    const d = consultar(c);
+    assert.strictEqual(d.ok, false, caso);
+    assert.match(d.motivo, /viejo\.js/, caso);
+  }
+});
+
+// T15 Delegate_StaleOrForeignCompanionRun_DoesNotDelegate @story-8.238 @ac-7
+// 🔴 Falla con: dejarle el pase a un marcador viejo, de otra historia con el mismo número, o de una sesión que no vive.
+test('T15 Delegate_StaleOrForeignCompanionRun_DoesNotDelegate @story-8.238 @ac-7', (t) => {
+  // stable-data: 20 días antes del reloj real, contra el que el lector mide el plazo de 6 horas
+  const viejo = new Date(Date.now() - 20 * 24 * 3600 * 1000).toISOString();
+  for (const [caso, opciones] of [
+    ['tocado hace 20 días', { marcadorDelHermano: { lastTouch: viejo } }],
+    ['sin hora de último toque', { marcadorDelHermano: { lastTouch: undefined } }],
+    ['otra historia con el mismo número', { marcadorDelHermano: { storyPath: '/otro/repo/specs/story-9.1-otra.md' } }],
+    ['sin la ruta de la historia', { marcadorDelHermano: { storyPath: undefined } }],
+    ['sesión sin registro', { sesionViva: false }],
+  ]) {
+    const c = armar(t, opciones);
+    const d = consultar(c);
+    assert.strictEqual(d.ok, false, caso);
+    assert.match(d.motivo, /no veo una ejecución abierta de la historia 9\.1 en acme-code/, caso);
+  }
+  // una sesión con registro y el proceso muerto tampoco
+  const muerta = armar(t);
+  escribir(path.join(claudeDir(muerta.casa), 'sessions', 's-code.json'), JSON.stringify({ sessionId: 's-code', pid: 2147483646 }));
+  assert.strictEqual(consultar(muerta).ok, false, 'proceso muerto');
 });
