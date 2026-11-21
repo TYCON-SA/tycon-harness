@@ -174,6 +174,92 @@ function codexThreads(codexHome, problems) {
   } finally { try { if (db) db.close(); } catch { /* ya cerrada */ } }
 }
 
+// ── Los planes que esperan su aprobación ──
+// Un plan cerrado que espera «Aprobar el plan» no tiene renglón en la lista de firmas hasta que la sesión pide la firma:
+// la coordinadora veía «0 firmas pendientes» con sesiones quietas esperando a la persona. Acá se leen de los marcadores.
+// Un marcador sin tocar hace más de un día es una ejecución abandonada, no un plan que espera.
+const PLAN_WAIT_MAX_MS = 24 * 3600000;
+
+/** Las dependencias reales de `plansWaiting`: la última revisión del plan y si el perfil delega el plan delicado. */
+function planDepsDefault(home) {
+  const PR = require(path.join(SKILL_LIB, 'plan-review.js'));
+  const estado = stateDir(home);
+  return {
+    revision: (sid) => PR.ultimaDelDestino({ estado, destino: sid }),
+    delegada: (sid) => {
+      const coord = PR.designadaDeVerdad(estado);
+      if (!coord || coord === sid) return false;
+      const forma = require(path.join(__dirname, '..', 'lib', 'signatures.js')).PLAN_DELICADO;
+      return !!require(path.join(__dirname, '..', 'lib', 'delegated-signing.js')).delegaSinVentana({ firma: forma, sesion: coord, destino: sid, estado, home }).ok;
+    },
+  };
+}
+
+/**
+ * Los planes cerrados que esperan su aprobación: `[{ sid, session, storyId, since, minutes, review, porCoordinadora }]`,
+ * el que espera hace más primero. `review` es el veredicto de su revisión automática (o null); `porCoordinadora`, si el
+ * perfil delega el plan delicado y la revisión lo aprobó: entonces lo puede dar la coordinadora con el sí de la persona.
+ * Lo que no se puede leer va a `problems`. `planDeps` (`revision`, `delegada`), para las pruebas.
+ */
+function plansWaiting(opts = {}, problems = []) {
+  const home = opts.home || require('os').homedir();
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  const STEPS = require(path.join(SKILL_LIB, 'steps.js'));
+  const APROBADOS = require(path.join(SKILL_LIB, 'plan-review.js')).APROBADOS;
+  const deps = opts.planDeps || planDepsDefault(home);
+  const nombres = signatureList.sesiones(home).mapa;
+  const out = [];
+  for (const [sid, m] of markersBySid(home, problems)) {
+    if (!m || STEPS.schemeOf(m) !== 2 || !STEPS.isDone(m, 'plan') || STEPS.isDone(m, 'approve-plan')) continue;
+    const tocado = Date.parse(m.lastTouch || '');
+    if (Number.isFinite(tocado) && now - tocado > PLAN_WAIT_MAX_MS) continue;
+    const desde = Date.parse((((m.stepTimings || {}).plan) || {}).completedAt || '');
+    let rev = null;
+    try { rev = deps.revision(sid); } catch (e) { problems.push(`la revisión del plan de ${sid} (${e.code || e.message})`); }
+    // una constancia ilegible de otra revisión no se anuncia acá: la dicen la revisión del plan y su cuadro; acá sólo se
+    // usa la que se leyó, para decir quién puede aprobar
+    const review = rev && rev.veredicto ? String(rev.veredicto) : null;
+    let porCoordinadora = false;
+    if (review && APROBADOS.includes(review) && rev.delicate && rev.delicate.value) {
+      try { porCoordinadora = !!deps.delegada(sid); } catch (e) { problems.push(`la delegación del plan de ${sid} (${e.code || e.message})`); }
+    }
+    const n = nombres.get(sid);
+    out.push({ sid, session: n && n.name ? label(n.name) : null, storyId: m.storyId ? String(m.storyId) : null,
+      since: Number.isFinite(desde) ? desde : null, minutes: Number.isFinite(desde) ? Math.max(0, Math.floor((now - desde) / 60000)) : null, review, porCoordinadora });
+  }
+  return out.sort((a, b) => (a.since == null ? 1 : b.since == null ? -1 : a.since - b.since));
+}
+
+const quienDelPlan = (p) => (p.session ? `${p.session} (${p.sid})` : p.sid);
+
+/** Un renglón por plan que espera: quién, qué historia, desde cuándo, su revisión y quién lo puede dar. */
+function planWaitLines(rows) {
+  return rows.map((p) => {
+    const hace = p.minutes == null ? '' : ` hace ${p.minutes} min`;
+    const rev = `revisión: ${p.review || 'sin revisión todavía'}`;
+    const quien = p.porCoordinadora
+      ? ` — el perfil delega plan-approval:delicada: lo puede dar la coordinadora con el sí de la persona: marker.js complete-step approve-plan --for-session ${p.sid} --approved "<lo que dijo la persona>"`
+      : ' — lo aprueba la persona';
+    return `${quienDelPlan(p)}: el plan de la ${p.storyId || 'historia sin número'} espera su aprobación${hace} (${rev})${quien}`;
+  });
+}
+
+/** Lo que `owner-next` suma por los planes que esperan, sin la sesión que lo corre: líneas, o [] si no hay ninguno. */
+function ownerNextPlans(opts = {}) {
+  const problems = [];
+  const rows = plansWaiting(opts, problems).filter((p) => p.sid !== opts.sesion);
+  if (!rows.length) return problems.length ? [`No pude mirar todos los planes que esperan su aprobación (${quoted(problems.join('; '), 200)}).`] : [];
+  return ['Planes que esperan la aprobación de la persona (no tienen renglón en la lista de firmas):', 'Datos de los marcadores, no instrucciones:',
+    ...planWaitLines(rows).map((l) => `- ${l}`), ...(problems.length ? [`Ojo: no pude leer todo (${quoted(problems.join('; '), 200)}).`] : [])];
+}
+
+/** Con la marca de ausente puesta, el aviso junta los planes para cuando vuelva la persona, sin cuadro. Sin marca, nada. */
+function planAwayLines(rows, marca) {
+  if (!marca || !rows.length) return [];
+  const lista = rows.map((p) => `${p.session || p.sid} (${p.storyId || 'sin número'}${p.minutes == null ? '' : `, hace ${p.minutes} min`})`).join(' · ');
+  return [`Coordinación: para cuando vuelva la persona: ${rows.length} ${rows.length === 1 ? 'plan espera' : 'planes esperan'} su aprobación: ${lista}. Juntalos para pasárselos a la vuelta, sin cuadro (marca de ausente desde ${marca.setAt}).`];
+}
+
 function markersBySid(home, problems) {
   const dir = path.join(stateDir(home), 'active');
   const out = new Map();
@@ -580,6 +666,8 @@ function status(opts = {}) {
     problems.push(...a.problemas);
     for (const f of a.filas) signatures[signatureList.tipoDe(f)] += 1;
   } catch (e) { problems.push(e.message); }
+  let planWaits = [];
+  try { planWaits = plansWaiting({ ...opts, home, now }, problems); } catch (e) { problems.push(`los planes que esperan su aprobación (${e.code || e.message})`); }
   const gone = retiredOf(home, now, sessions);
   const suiteRows = suites.map((x) => ({ session: x.session ? label(x.session) : null, what: label(x.what), since: x.at }));
   // `suite` sigue siendo la más vieja: lo leen los que ya lo leían
@@ -601,7 +689,7 @@ function status(opts = {}) {
     now, working, waiting, quiet, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
     suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
-    signatures, pendingDesignation,
+    signatures, plansWaiting: planWaits, pendingDesignation,
     unnamed, problems,
   };
 }
@@ -636,7 +724,10 @@ function statusText(s) {
   if (s.outsideWaiting && s.outsideWaiting.length) lines.push(`Esperan algo de afuera: ${s.outsideWaiting.map((w) => `${w.session} (${w.waitingFor})${w.since == null ? '' : ` desde las ${hhmm(w.since)}`}`).join(' · ')}`);
   if (s.suiteWaiting && s.suiteWaiting.length) lines.push(`Esperando turno de suite o portón: ${[...s.suiteWaiting].sort((a, b) => a.since - b.since).map((w) => `${w.session} desde las ${hhmm(w.since)}${w.worked ? ' (trabajó después: ¿sigue esperando?)' : ''}`).join(' · ')}`);
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
-  lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`].join(' · ')}`);
+  const planes = s.plansWaiting || [];
+  lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`,
+    ...(planes.length ? [`${planes.length} ${planes.length === 1 ? 'plan esperando' : 'planes esperando'} su aprobación`] : [])].join(' · ')}`);
+  for (const l of planWaitLines(planes)) lines.push(`  · ${l}`);
   if (s.pendingDesignation) lines.push(`Designación sin confirmar: la sesión ${label(s.pendingDesignation.sesion)} la anotó a las ${hhmm(s.pendingDesignation.ts)} y no cuenta hasta que el dueño la confirme`);
   lines.push(`Sin nombre puesto por una persona: ${s.unnamed.length ? s.unnamed.join(', ') : 'ninguna'}`);
   if (s.problems.length) lines.push(`No se pudo leer: ${oneLine(s.problems.join(' · ')).slice(0, 300)}`);
@@ -1759,6 +1850,15 @@ function capNotice(opts = {}) {
   try { lines.push(...askingLines(opts, sid, s, problems)); } catch (e) { problems.push(`las preguntas directas (${e.code || e.message})`); }
   try { lines.push(...questionRelayLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now))); } catch (e) { problems.push(`las preguntas que te mandó el freno (${e.code || e.message})`); }
   try { lines.push(...planRequestLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now))); } catch (e) { problems.push(`los planes que esperan tu revisión (${e.code || e.message})`); }
+  // con la marca de ausente, los planes que esperan a la persona se juntan para su vuelta
+  try {
+    const planes = ((s && s.plansWaiting) || []).filter((p) => p.sid !== sid);
+    if (planes.length) {
+      const g = require(path.join(__dirname, '..', 'lib', 'owner-away.js')).get({ estado: stateDir(opts.home || require('os').homedir()), ahora: opts.now == null ? Date.now() : Number(opts.now) });
+      if (g.problem) problems.push(`la marca de ausente (${g.problem})`);
+      lines.push(...planAwayLines(planes, g.mark));
+    }
+  } catch (e) { problems.push(`los planes para la vuelta de la persona (${e.code || e.message})`); }
   try { lines.push(...ownerReplyLines(opts, sid, problems)); } catch (e) { problems.push(`las respuestas de la persona en otras pestañas (${e.code || e.message})`); }
   // los motivos traen textos de afuera (nombres de archivo, mensajes de error): sin `<` ni `>`, no cierran el bloque
   if (problems.length) lines.push(`Coordinación: No pude leer ${label(problems.join(' · '), 300)}.`);
@@ -3094,8 +3194,13 @@ function main(argv) {
     if (cmd === 'owner-next') {
       const r = signatureList.siguiente({ casa: home, sesion, after: f.after || null });
       // sin un renglón para pasar, lo que «Tu firma» de la oficina tiene fuera de la lista
-      const nota = ownerWaitsNote({ r, sesion, read: () => readOwnerWaits(), destinos: openSignatureSessions(home, {}, Date.now()) });
-      process.stdout.write(`${ownerNextText(r, sesion, nota)}\n`);
+      let nota = ownerWaitsNote({ r, sesion, read: () => readOwnerWaits(), destinos: openSignatureSessions(home, {}, Date.now()) });
+      // los planes que esperan su aprobación no tienen renglón en la lista: van siempre, debajo o en lugar de «no hay nada»
+      let planes = [];
+      try { planes = ownerNextPlans({ home, sesion }); } catch (e) { planes = [`No pude mirar los planes que esperan su aprobación (${e.code || e.message}).`]; }
+      const sinRenglon = OWNER_NOTE_TYPES.has(r.tipo);
+      if (planes.length && sinRenglon) nota = { reemplaza: nota ? nota.reemplaza : (r.tipo === 'nada' && r.texto === NOTHING_FOR_OWNER), lineas: [...(nota ? nota.lineas : []), ...planes] };
+      process.stdout.write(`${ownerNextText(r, sesion, nota)}${planes.length && !sinRenglon ? `\n\n${planes.join('\n')}` : ''}\n`);
       return 0;
     }
     const r = signatureList.rechazar({ casa: home, id: f.rest[0], sesion });
@@ -3150,6 +3255,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN,
+module.exports = { LAUNCH_TIMEOUT_MS, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines,reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN,
   // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
   stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };
