@@ -23,14 +23,19 @@ const esCriticoEximido = (f) => !!f && String(f.severity || '').trim().toUpperCa
 /** Una constancia completa: regla, quién, tipo y vía. null = válida; si no, el motivo. */
 // Se firma en la terminal, en la ventana de permiso, o con el click o el «aprobado» de la persona, y la ata su renglón del registro del arnés. Una anterior a la
 // ventana, que salió de una cita en la conversación, ya no vale: la conversación no se lee para firmar nada.
-const sinCita = (via) => /terminal|ventana|delegada|click en el cuadro|«aprobado» escrito/.test(String(via || ''));
+// La firma de trámite (el perfil del equipo delega critical-waiver) la ata el renglón que dejó el freno, como la delegada.
+const sinCita = (via) => /terminal|ventana|delegada|firma de trámite|click en el cuadro|«aprobado» escrito/.test(String(via || ''));
+// lo que sigue al nombre en la constancia de una firma de trámite (marker.js waive-critical)
+const POR_EL_PERFIL = ', por el perfil del equipo';
 const CITA_VIEJA = 'esta exención se firmó con una cita en la conversación, que ya no cuenta: firmala en la ventana';
 
 function constanciaInvalida(l) {
   if (!l || typeof l !== 'object') return 'no es un objeto';
   if (!String(l.rule_id || '').trim()) return 'no dice la regla';
   if (!['manual', 'automatica'].includes(l.tipo)) return `tipo ${JSON.stringify(l.tipo)}`;
-  if (!String(l.quien || '').trim() || noEsPersona(l.tipo === 'manual' ? l.quien : (l.delegacion || ''))) return 'no nombra a la persona que dio el ok';
+  // la de trámite lleva el nombre y, después, «, por el perfil del equipo (…)»: se juzga el nombre solo
+  const persona = l.tipo === 'manual' ? l.quien : String(l.delegacion || '').split(POR_EL_PERFIL)[0];
+  if (!String(l.quien || '').trim() || noEsPersona(persona)) return 'no nombra a la persona que dio el ok';
   if (!String(l.via || '').trim()) return 'no dice por qué vía';
   if (!sinCita(l.via)) return CITA_VIEJA;
   if (!String(l.ts || '').trim()) return 'no dice cuándo se anotó';
@@ -143,9 +148,23 @@ function caminos({ marker, ruleId, file }) {
   ];
 }
 
-/** Los renglones de lo que falta, para los mensajes de write-findings y de los cierres. */
+/**
+ * Lo que falta agrupado por regla y archivo, que es lo que cubre una exención: `[{ rule_id, file, motivo?, n }]`, con
+ * `n` los hallazgos de ese par. Tres hallazgos de la misma regla en el mismo archivo piden una sola exención.
+ */
+function agrupar(faltan) {
+  const grupos = new Map();
+  for (const f of faltan || []) {
+    const k = clave(f.rule_id, f.file);
+    const g = grupos.get(k);
+    if (g) g.n += 1; else grupos.set(k, { ...f, n: 1 });
+  }
+  return [...grupos.values()];
+}
+
+/** Los renglones de lo que falta, para los mensajes de write-findings y de los cierres: uno por exención. */
 function renglonesDeFaltantes(r) {
-  const out = r.faltan.map((f) => `   · ${f.rule_id}${f.file ? ` en ${f.file}` : ''}${f.motivo ? ` — ${f.motivo}` : ''}`);
+  const out = agrupar(r.faltan).map((f) => `   · ${f.rule_id}${f.file ? ` en ${f.file}` : ''}${f.n > 1 ? ` (${f.n} hallazgos: una exención los cubre)` : ''}${f.motivo ? ` — ${f.motivo}` : ''}`);
   if (r.ilegibles) out.push(`   (${FILE} tiene ${r.ilegibles} renglón(es) ilegible(s): no cuentan como constancia)`);
   if (r.error) out.push(`   (${r.error})`);
   return out;
@@ -412,4 +431,4 @@ function noEsPersona(quien) {
 }
 
 module.exports = { DESIGNACION, RETIRADA, CONFIRMADA, RE_NIEGA, juezDesignacion, designar, designacionVigente, ultimaDesignacion, designacionConfirmada,
-  estadoInicial, esEstado, plegarRenglones, vigenteDe, confirmationRecord, confirmaLaDesignacion, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
+  estadoInicial, esEstado, plegarRenglones, vigenteDe, confirmationRecord, confirmaLaDesignacion, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, agrupar, POR_EL_PERFIL, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
