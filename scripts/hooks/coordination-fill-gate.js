@@ -22,6 +22,12 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard({ hoo
  * motivo», que vale y se ve como un motivo (/wip y la oficina). Un cierre que no frena borra el contador: cuentan sólo los
  * bloqueos seguidos. `stop_hook_active` no lo salta: el tope es lo que evita el bucle.
  *
+ * NADIE QUIETO. Si la primera condición no frena, mira la segunda (`idleCheck` de coordination.js): una sesión quieta o
+ * esperando algo de afuera hace 10 minutos o más, trabajo liviano en la fila (el tablero y la lista de
+ * `coordination.light_list`) y ningún mensaje de la coordinadora a esa sesión en este turno (lo lee de su conversación).
+ * La salida es darle trabajo o anotar por qué no (`coordination.js keep-idle --reason`, vale 30 min). Con su propio
+ * contador y el mismo tope de bloqueos seguidos; sin poder leer la conversación, no frena y lo dice.
+ *
  * QUÉ NO HACE. No abre ni reabre sesiones. No tiene interruptor: la salida es el motivo, que queda escrito. Un error propio,
  * un evento ilegible, un estado que no se puede leer o un contador que no se puede anotar nunca cortan el cierre: sale 0 con
  * el motivo en la salida de errores; lo que no pudo leer sin frenar también lo dice ahí. En Windows la memoria no se mide,
@@ -66,7 +72,8 @@ function run({ event, home = os.homedir(), env = process.env, arnes, now = Date.
       if (r.why === 'estado-ilegible') say(`no pude leer el estado de la máquina (${cut(r.problems)}): no freno`);
       else if (r.problems.length) say(`no freno (${r.why}); no pude leer: ${cut(r.problems)}`);
       if (r.why !== 'no-coordinadora') clean();
-      return out;
+      if (r.why === 'no-coordinadora') return out;
+      return idleGate({ event, home, env, arnes, now, sid, out, say });
     }
     let blocks = 0;
     try { blocks = Number(fs.readFileSync(file, 'utf8')) || 0; } catch { blocks = 0; }
@@ -91,6 +98,33 @@ function run({ event, home = os.homedir(), env = process.env, arnes, now = Date.
   }
 }
 
+const idleCountFile = (home, sid) => path.join(C.coordinationDir(home), `idle-gate-${safeSid(sid)}.count`);
+/**
+ * La segunda condición del cierre: nadie quieto. Con una sesión quieta o esperando algo de afuera hace 10 min o más,
+ * trabajo liviano en la fila y ningún mensaje de la coordinadora a esa sesión en este turno, frena hasta que le dé
+ * trabajo o anote por qué no (`coordination.js keep-idle`). Con su propio tope de bloqueos seguidos: nunca la traba.
+ */
+function idleGate({ event, home, env, arnes, now, sid, out, say }) {
+  const r = C.idleCheck({ home, env, arnes, now, sessionId: sid, transcriptPath: event.transcript_path || null });
+  const file = idleCountFile(home, sid);
+  const clean = () => { try { fs.unlinkSync(file); } catch { /* no existía */ } };
+  if (!r.block) {
+    if (r.problems.length) say(`nadie quieto: no freno (${r.why}); no pude leer: ${cut(r.problems)}`);
+    clean();
+    return out;
+  }
+  let blocks = 0;
+  try { blocks = Number(fs.readFileSync(file, 'utf8')) || 0; } catch { blocks = 0; }
+  if (blocks >= MAX_BLOCKS) {
+    say(`nadie quieto: ${MAX_BLOCKS} bloqueos seguidos, dejo cerrar; quedaron quietas ${r.idle.map((x) => x.session).join(', ')}`);
+    try { fs.appendFileSync(path.join(C.coordinationDir(home), 'idle-reason.jsonl'), `${JSON.stringify({ at: now, sid, reason: 'cerró sin darles trabajo ni motivo', sids: r.idle.map((x) => String(x.sid)) })}\n`); } catch { /* se dijo arriba */ }
+    clean();
+    return out;
+  }
+  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, String(blocks + 1)); } catch (e) { say(`nadie quieto: no pude anotar el bloqueo (${firstLine(e)}): no freno`); return out; }
+  out.stdout = `${JSON.stringify({ decision: 'block', reason: `${r.reason}\nBloqueo ${blocks + 1}/${MAX_BLOCKS}.` })}\n`;
+  return out;
+}
 function main() {
   // se lee la entrada antes de decidir nada: salir sin drenarla rompe la tubería de quien escribe
   let payload = '';

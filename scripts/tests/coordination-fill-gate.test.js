@@ -557,3 +557,80 @@ test('T17 FillGate_Registrado @story-8.307 @ac-17: el gancho está en cada lista
   assert.strictEqual(measured.ran, 2, benchRun.stdout);
   assert.strictEqual(Object.keys(measured.failed || {}).length, 0, benchRun.stdout);
 });
+
+// ── Nadie quieto: una sesión quieta o esperando no se deja sin trabajo liviano ──
+// La conversación de la coordinadora: un pedido de la persona y, si se pasa, un mensaje a `to` en ese turno.
+function transcript(t, to = null) {
+  const f = path.join(t.root, 'coord.jsonl');
+  const rows = [{ type: 'user', message: { role: 'user', content: 'seguí' } }];
+  if (to) rows.push({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'tu1', name: 'SendMessage', input: { to, message: 'tomá esto' } }] } });
+  fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  return f;
+}
+const listaLiviana = (t) => { const f = path.join(t.root, 'lista.md'); fs.writeFileSync(f, '# Lista\n\n- ~~hecho~~\n- Un defecto chico\n- Otro defecto\n'); return f; };
+const idleRun = (t, extra = {}) => G.run({ event: stopEvent(t, COORD, { transcript_path: extra.transcript }), home: t.home, arnes: t.arnes, env: { TYCON_COORDINATION_LIGHT_LIST: listaLiviana(t) }, now: t.nowMs, readMemory: mem(10), refreshLauncher: () => {}, ...extra.run });
+
+test('NadieQuieto_QuietaConListaSinMensaje_Frena: una quieta hace 20 min, la lista con algo y ningún mensaje en el turno: frena y dice cómo salir', () => {
+  // 🔴 mutación: no mirar a las quietas al cerrar → la coordinadora cierra con Uma quieta y la lista llena
+  const t = toy({ nowMs: Date.now() });
+  session(t, 's-u', 'Uma');
+  const r = idleRun(t, { transcript: transcript(t) });
+  const d = r.stdout ? JSON.parse(r.stdout) : null;
+  assert.strictEqual(d && d.decision, 'block', r.stderr);
+  assert.match(d.reason, /Uma \(quieta hace 20 min\)/);
+  assert.match(d.reason, /«Un defecto chico», «Otro defecto»/);
+  assert.match(d.reason, /keep-idle --reason/);
+  assert.doesNotMatch(d.reason, /hecho/);
+});
+
+test('NadieQuieto_ConMensajeOMotivo_NoFrena: un mensaje a esa sesión en el turno, o el motivo anotado, la liberan; sin lista, no frena', () => {
+  // 🔴 mutación: no leer los mensajes del turno → frena aunque la coordinadora le dio trabajo
+  const t = toy({ nowMs: Date.now() });
+  session(t, 's-u', 'Uma');
+  assert.strictEqual(idleRun(t, { transcript: transcript(t, 'Uma') }).stdout, '', 'con un mensaje a Uma en el turno');
+  // el motivo: corto no vale; con motivo, no frena
+  const C = require('../tools/coordination.js');
+  const base = { home: t.home, arnes: t.arnes, env: { TYCON_COORDINATION_LIGHT_LIST: listaLiviana(t) }, now: t.nowMs, sessionId: COORD };
+  assert.strictEqual(C.keepIdle({ ...base, reason: 'no' }).code, 2);
+  assert.strictEqual(C.keepIdle({ ...base, reason: 'tope de máquina, espero que libere' }).code, 0);
+  assert.strictEqual(idleRun(t, { transcript: transcript(t) }).stdout, '', 'con el motivo vigente');
+  // sin lista ni filas livianas, no hay trabajo que dar
+  const t2 = toy({ nowMs: Date.now() });
+  session(t2, 's-u', 'Uma');
+  assert.strictEqual(G.run({ event: stopEvent(t2, COORD, { transcript_path: transcript(t2) }), home: t2.home, arnes: t2.arnes, env: {}, now: t2.nowMs, readMemory: mem(10), refreshLauncher: () => {} }).stdout, '');
+});
+
+test('NadieQuieto_TurnoNoSeCortaAMitad: el aviso del freno, una tarea de fondo o un recordatorio no empiezan otro turno; otra persona sí', () => {
+  // 🔴 mutación: cortar el turno en cualquier mensaje que no sea un resultado → pierde el mensaje a Ana mandado antes
+  //    del primer bloqueo y vuelve a frenar por ella; contar un subagente → calla a una sesión que nadie avisó
+  const C = require('../tools/coordination.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'turno-'));
+  const send = (to, extra = {}) => ({ type: 'assistant', ...extra, message: { role: 'assistant', content: [{ type: 'tool_use', id: `t-${to}`, name: 'SendMessage', input: { to } }] } });
+  const result = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] } };
+  const write = (rows) => { const f = path.join(root, `${Math.random()}.jsonl`); fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n')); return f; };
+  const prompt = { type: 'user', message: { role: 'user', content: 'seguí' } };
+  const mitad = [
+    { type: 'user', isMeta: true, message: { role: 'user', content: 'Stop hook feedback: no dejes quieta a ninguna sesión' } },
+    { type: 'user', message: { role: 'user', content: '<task-notification><task-id>x</task-id></task-notification>' } },
+    { type: 'user', message: { role: 'user', content: [{ type: 'text', text: '<system-reminder>algo</system-reminder>' }] } },
+  ];
+  for (const m of mitad) assert.deepStrictEqual([...C.messagedThisTurn(write([prompt, send('Ana'), result, m, send('Beto'), result])).to].sort(), ['Ana', 'Beto'], JSON.stringify(m));
+  assert.deepStrictEqual([...C.messagedThisTurn(write([prompt, send('Ana'), result, { type: 'user', message: { role: 'user', content: 'otra cosa' } }, send('Beto')])).to], ['Beto'], 'un mensaje nuevo de la persona empieza otro turno');
+  assert.deepStrictEqual([...C.messagedThisTurn(write([prompt, send('Zoe', { isSidechain: true }), send('Ana')])).to], ['Ana'], 'lo que manda un subagente no cuenta');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('NadieQuieto_NuncaTraba: tres bloqueos seguidos y al cuarto deja cerrar; sin poder leer la conversación, no frena', () => {
+  const t = toy({ nowMs: Date.now() });
+  session(t, 's-u', 'Uma');
+  const tr = transcript(t);
+  for (let i = 1; i <= G.MAX_BLOCKS; i++) assert.match(idleRun(t, { transcript: tr }).stdout, new RegExp(`Bloqueo ${i}/${G.MAX_BLOCKS}`));
+  const cuarto = idleRun(t, { transcript: tr });
+  assert.strictEqual(cuarto.stdout, '', 'al cuarto deja cerrar');
+  assert.match(cuarto.stderr, /dejo cerrar/);
+  const t2 = toy({ nowMs: Date.now() });
+  session(t2, 's-u', 'Uma');
+  const r = idleRun(t2, { transcript: path.join(t2.root, 'no-esta.jsonl') });
+  assert.strictEqual(r.stdout, '');
+  assert.match(r.stderr, /nadie quieto: no freno \(conversacion-ilegible\)/);
+});
