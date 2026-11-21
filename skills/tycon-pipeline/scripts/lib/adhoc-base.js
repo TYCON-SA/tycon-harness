@@ -204,19 +204,26 @@ const relDe = (repo, abs) => {
  * una variable sin expandir (`$L/p.js`) no traen a su repo; una pantalla borrada y commiteada, sí. Si se agota el tiempo,
  * cuenta como conocida (del lado seguro) y lo dice en `avisos`.
  */
+// lo que ya se le preguntó a git en este proceso: la misma ruta del mismo repo no se vuelve a preguntar
+const CONOCE = new Map();
 function repoConoce(repo, rel, avisos = []) {
+  const clave = `${repo}\0${rel}`;
+  if (CONOCE.has(clave)) return CONOCE.get(clave);
   const tope = topeDeConoce();
+  // a destiempo no se recuerda: la próxima vez se pregunta de nuevo
   const agotado = () => { avisos.push(`camino corto: no pude saber a tiempo si ${repo} conoce ${rel}: cuenta como suya`); return true; };
   if (tope <= 0) return agotado();
+  let conoce;
   try {
-    if (git(repo, ['--literal-pathspecs', 'ls-files', '--', rel], tope)) return true;
-    return !!git(repo, ['--literal-pathspecs', 'log', '-1', '--format=%H', '--branches', '--', rel], tope);
+    conoce = Boolean(git(repo, ['--literal-pathspecs', 'ls-files', '--', rel], tope))
+      || !!git(repo, ['--literal-pathspecs', 'log', '-1', '--format=%H', '--branches', '--', rel], tope);
   } catch (e) {
     if (e && (e.code === 'ETIMEDOUT' || e.signal === 'SIGTERM')) return agotado();
     // sin commits, `log` no tiene qué recorrer: no la conoce. Otro error: ante la duda, se mide
-    if (/does not have any commits|bad default revision/i.test(String(e.stderr || e.message))) return false;
-    return true;
+    conoce = !/does not have any commits|bad default revision/i.test(String(e.stderr || e.message));
   }
+  CONOCE.set(clave, conoce);
+  return conoce;
 }
 
 /**
@@ -624,8 +631,8 @@ function medirCadaRepo(adhoc, { repos: extra = [] } = {}) {
   for (const repo of [...new Set([...repos, ...extra.filter(Boolean)])]) {
     try {
       if (!sigueElRepo(repo)) { avisos.push(`camino corto: ${repo} ya no es un repo: no hay nada que medir ahí`); continue; }
-      // la carpeta de la persona como repo de dotfiles no es del arreglo: el portón de edición tampoco la cuenta
-      if (repo === casa) continue;
+      // la carpeta de la persona como repo de dotfiles no es del arreglo: el portón de edición tampoco la cuenta, y se dice
+      if (repo === casa) { avisos.push(`camino corto: ${repo} es tu carpeta personal: no se cuenta en el arreglo`); continue; }
       let nacido = true;
       try { git(repo, ['rev-parse', '--verify', '-q', 'HEAD']); } catch (e) { if (e.status === 1) nacido = false; else throw e; }
       const base = laBase(repo, adhoc, nacido);

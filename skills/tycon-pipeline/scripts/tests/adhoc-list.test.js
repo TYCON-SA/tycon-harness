@@ -229,6 +229,23 @@ test('T32 Lista_FueraFrena_DentroPasa — @story-8.174 @ac-30', () => {
   }
 });
 
+// El arnés se reconoce por su origen (scripts/lib/harness-repo.js): un repo con el origen de este clon es el arnés, y
+// ahí el rechazo fuera de la lista conserva la delegación; en un producto habla de vos (P2v52)
+test('T32b FueraDeLaLista_EnElArnes_ConservaLaDelegacion — @story-8.174 @ac-52', (t) => {
+  let origen = null;
+  try { origen = git(RAIZ, 'remote', 'get-url', 'origin'); } catch (_) { origen = null; }
+  if (!origen) { t.skip('este clon no tiene origen: no hay con qué reconocer el arnés'); return; }
+  const raiz = tmp('t32b-');
+  const dir = repo(raiz, 'copia-del-arnes');
+  git(dir, 'remote', 'set-url', 'origin', origen);
+  const h = tmp('home-');
+  const state = conCarril(h, 's32b', { allowedFiles: [path.join(dir, 'src/a.js')] });
+  const r = ev(state, 's32b', path.join(dir, 'docs/x.md'), dir);
+  assert.strictEqual(r.verdict.kind, 'adhoc-out-of-list');
+  assert.match(r.message, /por delegación, la lista nueva contiene entera la firmada/, r.message);
+  assert.doesNotMatch(r.message, /lo aprobás vos con tu sí/);
+});
+
 test('T33 Lista_PorLaRutaReal — @story-8.174 @ac-31', () => {
   const raiz = tmp('t33-');
   const dir = repo(raiz, 'producto');
