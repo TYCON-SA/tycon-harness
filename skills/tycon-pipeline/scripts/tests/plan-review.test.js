@@ -593,6 +593,32 @@ test('PlanReview_SoloLaCoordinadoraParaOtra_ConSinForSessionLaInformativa (T5, T
   assert.strictEqual(lab.leer(DESTINO), antes, 'el marcador de ses-a quedó igual byte a byte');
 });
 
+// Defecto 9 (20/11): cada revisión pisaba el resultado de la anterior de la misma sesión, y la constancia no decía cuánto
+// costó. Cada una deja su resultado con fecha, sin pisar, y la constancia guarda el consumo por tipo de cada agente.
+test('T2 PlanReview_EachReviewKept_WithUsageByAgent — dos revisiones dejan dos resultados con fecha y su consumo', (t) => {
+  const lab = laboratorio(t);
+  const fijo = PR().rutaResultado(lab.estado, COORD, DESTINO);
+  const uso = (n) => ({ total: n, por_fase: { Hunt: n }, por_agente: { 'plan-hunt:ac': { fase: 'Hunt', corredor: 'claude', modelo: 'opus', intentos: 1, input_tokens: n, output_tokens: 0 } } });
+  const conElArchivo = (resultado, n) => ({ antesDeAnotar: (p) => {
+    fs.mkdirSync(path.dirname(fijo), { recursive: true });
+    fs.writeFileSync(fijo, JSON.stringify({ pedido: p.args.pedido, ...resultado, corredor: { nombre: 'workflow-lite', tokens: uso(n) } }));
+  } });
+  const r1 = { ...RECHAZADO };
+  const c1 = lab.revisar({ ...r1, corredor: { tokens: uso(100) } }, conElArchivo(r1, 100));
+  const c2 = lab.revisar({ ...APROBADO, corredor: { tokens: uso(200) } }, conElArchivo(APROBADO, 200));
+  assert.deepStrictEqual(c1.uso, uso(100), 'la constancia guarda el consumo por agente');
+  assert.deepStrictEqual(c2.uso, uso(200));
+  const guardados = PR().resultadosGuardados(lab.estado, COORD, DESTINO);
+  assert.strictEqual(guardados.length, 2, JSON.stringify(guardados));
+  assert.ok(guardados.every((g) => /\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d/.test(path.basename(g))), 'con fecha en el nombre');
+  const leidos = guardados.map((g) => JSON.parse(fs.readFileSync(g, 'utf8')));
+  assert.deepStrictEqual(leidos.map((j) => j.corredor.tokens.total).sort(), [100, 200], 'la primera no se pisó');
+  assert.strictEqual(c2.resultado_guardado, guardados.find((g) => JSON.parse(fs.readFileSync(g, 'utf8')).corredor.tokens.total === 200));
+  // anotar dos veces el mismo resultado no lo duplica
+  assert.strictEqual(PR().guardarResultado(lab.estado, COORD, DESTINO), c2.resultado_guardado);
+  assert.strictEqual(PR().resultadosGuardados(lab.estado, COORD, DESTINO).length, 2);
+});
+
 test('PlanReview_Constancia_Huella (T6) @story-1.29 @ac-6', (t) => {
   const lab = laboratorio(t);
   const c = lab.revisar(APROBADO);

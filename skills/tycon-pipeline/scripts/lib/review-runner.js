@@ -111,13 +111,20 @@ function tokensOf(usage) {
   return Object.keys(usage).some((k) => /_tokens$/.test(k)) ? n : null;
 }
 
+/** El consumo por tipo (los `*_tokens` numéricos, con su nombre), o null si no trae ninguno. */
+function usageOf(usage) {
+  if (!isObject(usage)) return null;
+  const porTipo = Object.fromEntries(Object.entries(usage).filter(([k, v]) => /_tokens$/.test(k) && Number.isFinite(v)));
+  return Object.keys(porTipo).length ? porTipo : null;
+}
+
 /**
- * Lo que contestó un corredor: `{ raw, structured, tokens, failed, cause, limit }`. `raw` es el texto de la respuesta
+ * Lo que contestó un corredor: `{ raw, structured, tokens, usage, failed, cause, limit }`; `usage`, el consumo por tipo. `raw` es el texto de la respuesta
  * (el que se parsea si no vino estructurada); `structured`, la respuesta ya con forma, si el corredor la da; `tokens`,
  * el uso o null; `failed`, si salió con error; `cause`, el último renglón del error, sin tapar (lo tapa quien la guarda).
  */
 function readAnswer(runner, { stdout = '', stderr = '', code = 0, fileText = null } = {}) {
-  const out = { raw: '', structured: null, tokens: null, failed: code !== 0, cause: null, limit: false };
+  const out = { raw: '', structured: null, tokens: null, usage: null, failed: code !== 0, cause: null, limit: false };
   if (runner.answer === 'stdout-json') {
     let j = null;
     try { j = JSON.parse(String(stdout).trim()); } catch (_) { j = null; }
@@ -126,6 +133,7 @@ function readAnswer(runner, { stdout = '', stderr = '', code = 0, fileText = nul
       out.cause = ultimoRenglon(stderr) || ultimoRenglon(stdout) || `salió ${code} sin escribir nada`;
     } else {
       out.tokens = runner.usage_field ? tokensOf(j[runner.usage_field]) : null;
+      out.usage = runner.usage_field ? usageOf(j[runner.usage_field]) : null;
       out.raw = runner.text_field && typeof j[runner.text_field] === 'string' ? j[runner.text_field] : '';
       out.structured = runner.answer_field && isObject(j[runner.answer_field]) ? j[runner.answer_field] : null;
       if (runner.error_field && j[runner.error_field] === true) {
@@ -143,4 +151,4 @@ function readAnswer(runner, { stdout = '', stderr = '', code = 0, fileText = nul
   return out;
 }
 
-module.exports = { DEFAULT_ORDER, LIMIT_RE, loadIntegration, runnerOrder, pickRunners, commandFor, readAnswer, isLimit, tokensOf };
+module.exports = { DEFAULT_ORDER, LIMIT_RE, loadIntegration, runnerOrder, pickRunners, commandFor, readAnswer, isLimit, tokensOf, usageOf };

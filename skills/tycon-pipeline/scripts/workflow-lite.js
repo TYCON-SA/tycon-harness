@@ -369,6 +369,7 @@ function makeAgent(opts, corredor) {
           corredor.tokensPorFase[phase] = (corredor.tokensPorFase[phase] || 0) + leido.tokens;
           corredor.conTokens = true;
         }
+        anotarUso(corredor, { clave, fase: phase, nombre: name, modelo, usage: leido.usage });
         const raw = String(leido.raw || '');
         const murioPorError = () => {
           causa = leido.cause ? taparSecretos(leido.cause).slice(0, 300) : causaDe(res);
@@ -409,6 +410,19 @@ function makeAgent(opts, corredor) {
   };
 }
 
+/**
+ * Suma el consumo por tipo de un intento al de su agente (`corredor.usoPorAgente[clave]`): cuánto costó cada uno, no sólo
+ * el total. Un intento sin consumo medible no deja renglón.
+ */
+function anotarUso(corredor, { clave, fase, nombre, modelo, usage }) {
+  if (!usage || typeof usage !== 'object') return;
+  corredor.usoPorAgente = corredor.usoPorAgente || {};
+  const a = corredor.usoPorAgente[clave] || { fase, corredor: nombre, modelo: modelo || null, intentos: 0 };
+  a.intentos += 1;
+  for (const [k, v] of Object.entries(usage)) if (/_tokens$/.test(k) && Number.isFinite(v)) a[k] = (a[k] || 0) + v;
+  corredor.usoPorAgente[clave] = a;
+}
+
 async function runWorkflow(scriptPath, argsValue, opts) {
   let source = fs.readFileSync(scriptPath, 'utf8');
   // neutralizar el export (ilegal dentro de una función): mismo objeto, sin exportar
@@ -433,7 +447,7 @@ async function runWorkflow(scriptPath, argsValue, opts) {
   if (result && typeof result === 'object' && !Array.isArray(result)) {
     const total = Object.values(corredor.tokensPorFase).reduce((a, b) => a + b, 0);
     result.corredor = { nombre: corredor.nombre, lista: corredor.lista || [], usado: corredor.usado, muertos: corredor.muertos, tope: corredor.tope,
-      topes: corredor.topes, caidos: corredor.caidos, agentes: corredor.agentes, tokens: corredor.conTokens ? { total, por_fase: corredor.tokensPorFase } : null,
+      topes: corredor.topes, caidos: corredor.caidos, agentes: corredor.agentes, tokens: corredor.conTokens ? { total, por_fase: corredor.tokensPorFase, por_agente: corredor.usoPorAgente || {} } : null,
       ...(corredor.dePrueba ? { de_prueba: true } : {}),
       ...(corredor.pendientes ? { pedidos_pendientes: corredor.pendientes.length, pedidos: path.join(path.resolve(opts.agentsDir), 'PEDIDOS.json') } : {}) };
   }
@@ -525,7 +539,7 @@ async function main() {
   return 0;
 }
 
-module.exports = { slugFor, modelFor };
+module.exports = { slugFor, modelFor, anotarUso };
 
 if (require.main === module) {
   main().then((c) => process.exit(c)).catch((e) => { console.error(`workflow-lite: ${e.message}`); process.exit(1); });
