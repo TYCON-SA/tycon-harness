@@ -8,6 +8,8 @@
  * hace en dos renglones, cuántos archivos toca y de qué zonas y dónde está lo completo (8.275: se lee en un teléfono), trae el «si sale mal» de esa firma y deja la cita de
  * la sesión al final. El click queda atado a lo que se mostró: si la fuente cambia, la huella cambia. Sin red.
  */
+// sin el perfil del equipo: la prueba fija su ambiente (lib/without-team-profile.js)
+require('./lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
