@@ -186,7 +186,11 @@ function leerFoto(stateDir, ahora = Date.now()) {
   try {
     const j = JSON.parse(fs.readFileSync(fotoDe(stateDir), 'utf8'));
     const at = Date.parse(j.at);
-    if (!Number.isFinite(at) || typeof j.total !== 'number' || !j.partes || !j.tope) return null;
+    // una foto con otra forma (escrita a mano) no es una foto: quien la muestra no tiene que caerse con ella
+    const parte = (v) => v === null || (Number.isInteger(v) && v >= 0);
+    const entero = (v) => Number.isInteger(v) && v >= 0;
+    if (!Number.isFinite(at) || !entero(j.total) || !j.partes || !PARTES.every((k) => parte(j.partes[k]))
+      || !j.noMedido || !entero(j.noMedido.terminados) || !entero(j.noMedido.carpetas) || !j.tope || !Number.isInteger(j.tope.value)) return null;
     return { cuenta: j, edadMs: Math.max(0, ahora - at) };
   } catch (_) { return null; }
 }

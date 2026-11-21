@@ -140,3 +140,18 @@ test('T17 CapCheck_SincronaConLaCuentaEnUnHijo @story-8.326 @ac-3', () => {
   assert.ok(Date.now() - desde < 3000, `tardó ${Date.now() - desde} ms`);
   assert.match(l.problems[0], /no terminó/);
 });
+
+// 🔴 Falla con: una foto con otra forma (escrita a mano) que hace caer /wip y el estado de la coordinación.
+test('T13b ReviewLoad_FotoConOtraForma_NoEsFoto @story-8.326 @ac-10', () => {
+  const lab = laboratorio();
+  const at = new Date(NOW).toISOString();
+  for (const malo of [
+    { at, total: 3, partes: {}, tope: { value: 8 } },
+    { at, total: 3, partes: { firmas: 1, terminados: 1, carpetas: 1, pedidos: 0 }, tope: { value: 8 } },
+    { at, total: 3, partes: { firmas: 1, terminados: 1, carpetas: 1, pedidos: 0 }, noMedido: { terminados: 0, carpetas: 0 }, tope: {} },
+    { at, total: 3, partes: { firmas: 'x', terminados: 1, carpetas: 1, pedidos: 0 }, noMedido: { terminados: 0, carpetas: 0 }, tope: { value: 8 } },
+  ]) {
+    fs.writeFileSync(path.join(lab.sdir, 'review-load.json'), JSON.stringify(malo));
+    assert.strictEqual(RL.leerFoto(lab.sdir, NOW), null, JSON.stringify(malo));
+  }
+});

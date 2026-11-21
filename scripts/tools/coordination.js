@@ -1954,6 +1954,7 @@ function keepFree(opts = {}) {
   if (r.why === 'sin-lugar') return no(`No hay lugar (${r.working} otras trabajando de un tope de ${r.cap}): no hay nada que justificar.`);
   if (r.why === 'sin-trabajo') return no(`No hay trabajo listo: no hay nada que justificar.${r.problems.length ? ` No pude leer: ${label(r.problems.join(' · '), 200)}.` : ''}`);
   if (r.why === 'recien-abiertas') return no(`Las ${r.recent} sesión(es) recién abiertas cubren el trabajo listo: no hay nada que justificar.`);
+  if (r.why === 'revision-llena') return no(`Lo que espera la revisión de la persona está en su tope (${r.review.total} de ${r.review.tope.value}): el freno no frenaría, no hay nada que justificar.`);
   if (r.why === 'memoria') return no(`La memoria libre no llega al piso (${r.memoryPct == null ? 'no se pudo medir' : `${r.memoryPct} %`}): el freno no frenaría, no hay nada que justificar.`);
   const home = opts.home || require('os').homedir();
   const now = opts.now == null ? Date.now() : Number(opts.now);

@@ -584,3 +584,14 @@ test('T12 FillCheck_RevisionLlena_NoFrena @story-8.326 @ac-12', () => {
   C.fillCheck(opts(t, { readMemory: mem(10), reviewLoad: () => { pidio += 1; return llena(); } }));
   assert.strictEqual(pidio, 0, 'con la memoria baja no se cuenta');
 });
+
+// 🔴 Falla con: `keep-free` anota un motivo de lugares libres con la revisión llena, cuando el freno no frenaría.
+test('T12b KeepFree_RevisionLlena_NadaQueJustificar @story-8.326 @ac-12', () => {
+  const llena = () => ({ total: 8, partes: { firmas: 8, terminados: 0, carpetas: 0, pedidos: 0 }, noMedido: { terminados: 0, carpetas: 0 }, tope: { value: 8, origin: 'sin-valor' }, problems: [] });
+  const t = toy();
+  snapshot(t, [proyecto([story('8.232')])]);
+  const r = C.keepFree(opts(t, { readMemory: mem(80), reviewLoad: llena, reason: 'espero que la persona revise lo pendiente antes de abrir' }));
+  assert.strictEqual(r.code, 1, JSON.stringify(r));
+  assert.match(r.message, /revisión/);
+  assert.strictEqual(FS.current(require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(t.home), t.nowMs).record, null, 'no anotó nada');
+});
