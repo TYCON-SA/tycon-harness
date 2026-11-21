@@ -592,7 +592,7 @@ function swapFree({ platform = process.platform, run } = {}) {
   if (platform !== 'darwin') return { pct: null, why: `no sé medirla en ${platform}`, none: false };
   try {
     // con el idioma fijo: en castellano, sysctl escribe el decimal con coma («7168,00M»); igual se aceptan las dos formas
-    const text = String((run || (() => require('child_process').execFileSync('sysctl', ['vm.swapusage'], { encoding: 'utf8', timeout: 5000, windowsHide: true, env: { ...process.env, LC_ALL: 'C' } })))());
+    const text = String((run || (() => require('child_process').execFileSync('sysctl', ['vm.swapusage'], { encoding: 'utf8', timeout: 5000, windowsHide: true, env: require('../lib/clean-git-env.js').idiomaFijo(process.env) })))());
     const mb = (k) => { const m = new RegExp(`${k}\\s*=\\s*(\\d+(?:[.,]\\d+)?)([KMGT])`, 'i').exec(text); return m ? Number(m[1].replace(',', '.')) * ({ K: 1 / 1024, M: 1, G: 1024, T: 1048576 }[m[2].toUpperCase()]) : null; };
     const total = mb('total');
     const free = mb('free');
