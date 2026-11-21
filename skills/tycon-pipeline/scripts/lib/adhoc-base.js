@@ -470,9 +470,34 @@ function fotosDe(dir, repo, rama, desde) {
 }
 
 /**
+ * Los sellos que revisó la última vuelta CERRADA de revisores de cada corrida abierta, en el repo `real`: un arreglo rápido
+ * sobre la rama de una historia todavía abierta mide desde ahí, no desde main. Una vuelta sin cerrar no cuenta
+ * (frozen-tree.js `vueltaCerradaDeLosRevisores`). `{ arboles, aviso? }`.
+ */
+function arbolesRevisados(dir, real) {
+  let nombres;
+  try { nombres = fs.readdirSync(path.join(dir, 'active')).filter((n) => n.endsWith('.json')); } catch (e) {
+    if (e.code === 'ENOENT') return { arboles: [] };
+    return { arboles: [], aviso: noPudeLeer('active', e) };
+  }
+  const ft = require('./frozen-tree.js');
+  const { reviewersClose } = require('./steps.js');
+  const arboles = [];
+  let rotos = 0;
+  for (const n of nombres) {
+    let m;
+    try { m = JSON.parse(fs.readFileSync(path.join(dir, 'active', n), 'utf8')); } catch (_) { rotos += 1; continue; }
+    const v = ft.vueltaCerradaDeLosRevisores(m, reviewersClose(m), { stateDir: dir });
+    for (const r of (v && v.repos) || []) if (r && ES_SHA.test(String(r.tree)) && rutaReal(String(r.repo)) === real) arboles.push(r.tree);
+  }
+  return { arboles, ...(rotos ? { aviso: noPudeLeer('active', { code: `${rotos} marcador(es) que no se leen` }) } : {}) };
+}
+
+/**
  * La punta con constancia de la rama: el commit P más nuevo entre M (el punto en común con la rama de integración, sin
- * incluirlo) y HEAD que desciende de M y tiene su constancia —el árbol de la foto de una corrida cerrada completa, o el
- * guardado de OTRO carril: cada archivo con el contenido anotado y todo lo cambiado desde su base dentro de la lista, con la
+ * incluirlo) y HEAD que desciende de M y tiene su constancia —el árbol que vio la última vuelta cerrada de revisores de
+ * una corrida abierta (igual salvo el papeleo), el árbol de la foto de una corrida cerrada completa, o el guardado de
+ * OTRO carril: cada archivo con el contenido anotado y todo lo cambiado desde su base dentro de la lista, con la
  * base en M u otra punta válida—. Un merge de `main` después de P lo deja fuera: P ya no desciende del M de hoy. `adhoc`:
  * el carril que mide, cuyos guardados no cuentan. `{ sha }` (null: no hay) y `aviso` si una constancia no se pudo leer.
  */
@@ -487,9 +512,19 @@ function puntaConConstancia(repo, M, { adhoc = null, dir = estadoDelArnes() } = 
     const g = guardadosDe(dir, real, rama);
     const guardados = g.lista.filter((x) => !propio || x.carril !== propio);
     const f = fotosDe(dir, real, rama, Number(git(repo, ['log', '-1', '--format=%ct', M])) || 0);
-    const aviso = g.aviso || f.aviso;
-    if (!guardados.length && !f.fotos.length) return { sha: null, ...(aviso ? { aviso } : {}) };
+    const rv = arbolesRevisados(dir, real);
+    const aviso = g.aviso || f.aviso || rv.aviso;
+    if (!guardados.length && !f.fotos.length && !rv.arboles.length) return { sha: null, ...(aviso ? { aviso } : {}) };
     const enLaRama = new Set(commits);
+    // lo que revisó la vuelta: un commit de la rama igual a ese sello, sin contar el papeleo (la historia, la evidencia)
+    const deLaVuelta = new Set();
+    if (rv.arboles.length) {
+      const ft = require('./frozen-tree.js');
+      for (const sha of commits) {
+        const arbol = git(repo, ['rev-parse', `${sha}^{tree}`]);
+        if (rv.arboles.some((t) => { const c = ft.changed(repo, t, arbol); return !c.error && c.files.length === 0; })) { deLaVuelta.add(sha); break; }
+      }
+    }
     // la foto se toma antes del commit: su punta es su cabeza o uno de los commits que le siguen, no cualquiera de la rama
     const deLaFoto = new Set();
     for (const foto of f.fotos) {
@@ -513,7 +548,7 @@ function puntaConConstancia(repo, M, { adhoc = null, dir = estadoDelArnes() } = 
     };
     const validas = new Map();
     const valida = (sha, vuelta) => {
-      if (deLaFoto.has(sha)) return true;
+      if (deLaFoto.has(sha) || deLaVuelta.has(sha)) return true;
       if (validas.has(sha)) return validas.get(sha);
       const ok = guardados.some((x) => {
         // lo barato primero: una base que no es M ni de la rama no puede encadenar
