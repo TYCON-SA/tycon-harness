@@ -111,6 +111,11 @@ test('Compare_InputFromFile_BothSidesReadIt — la entrada que recibe el humo de
   const e = informe[informe.length - 1];
   assert.strictEqual(e.resultado, 'distinto', `sin la entrada, los dos lados darían igual: ${JSON.stringify(e)}`);
   assert.deepStrictEqual(e.diff[0], { linea: 1, main: 'evento-de-prueba', cambio: 'EVENTO-DE-PRUEBA' });
+  // pase adversarial: la entrada por una tubería o un socket (`input:` de Node) no se lee, y se avisa
+  const s = spawnSync('bash', [SMOKE, path.join(L.repo, '.advisors', 'dod-runtime'), path.join(L.repo, 'specs', 'story-9.7-cmp.md'), '--compare', '--', process.execPath, 'tool.js'],
+    { cwd: L.repo, encoding: 'utf8', env: L.env(), input: 'evento-de-prueba\n' });
+  assert.strictEqual(s.status, 0, s.stderr);
+  assert.match(s.stderr, /la comparación corre sin ella/, `una entrada que no se copia se dice: ${s.stderr}`);
 });
 
 test('T2 Compare_Igual @story-8.167 @ac-2 — mismo código y misma salida: igual', () => {

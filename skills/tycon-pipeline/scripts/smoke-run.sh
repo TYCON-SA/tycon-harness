@@ -269,8 +269,9 @@ if [ "$COMPARE" = 1 ]; then
     ENTRADA_TMP="$(mktemp "${TMPDIR:-/tmp}/smoke-run-entrada.XXXXXX" 2>/dev/null)" || ENTRADA_TMP=""
     if [ -n "$ENTRADA_TMP" ] && cat > "$ENTRADA_TMP"; then exec 0< "$ENTRADA_TMP"
     else echo "[smoke-run] ⚠️ no pude copiar la entrada: la comparación corre sin ella." >&2; ENTRADA_TMP=""; fi
-  elif [ -p /dev/stdin ]; then
-    echo "[smoke-run] ⚠️ la entrada viene de una tubería: la comparación corre sin ella. Para compararla, pasala desde un archivo (< evento.json)." >&2
+  # una tubería o un socket (Node pasa así `input:` en macOS): no se lee, se avisa
+  elif [ -p /dev/stdin ] || [ -S /dev/stdin ]; then
+    echo "[smoke-run] ⚠️ la entrada viene de una tubería o un socket: la comparación corre sin ella. Para compararla, pasala desde un archivo (< evento.json)." >&2
   fi
 fi
 trap '[ -n "$SALIDA_TMP" ] && rm -f "$SALIDA_TMP" "$SALIDA_TMP.rc"; [ -n "$ENTRADA_TMP" ] && rm -f "$ENTRADA_TMP"' EXIT
