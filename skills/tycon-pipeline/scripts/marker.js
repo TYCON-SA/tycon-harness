@@ -205,8 +205,6 @@ const PARA_OTRA_SESION = {
   'set-check': { firma: 'escape:force-manual', marcador: true, si: (a) => a.includes('--force-manual') },
   'runtime-waiver': { firma: 'runtime-waiver', marcador: true },
   'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') && !a.includes('--partition') },
-  // el ok de guardar: sobre la corrida abierta del destino, la que vio el dueño
-  'approve-save': { firma: 'save', marcador: true },
   'restore': { firma: 'lost-run', nombra: 3 },
   // el arreglo rápido de otra pestaña: se escribe en adhoc/<destino>.json, no en un marcador
   'adhoc': { firma: 'adhoc-lane', si: (a) => a[3] === 'set' },
@@ -2146,10 +2144,18 @@ function cmdCompleteStep(nRaw, flags) {
       r.reason = `${r.reason} (repos hermanos: ${hermanosError}; esos no se miraron)`;
       console.error(`⚠️  freno ATDD: repos hermanos — ${hermanosError}; esos no se miraron.`);
     }
-    // El flag `atddBypass` (el escape que dicta el portón pre-edit) vale también acá: un solo
-    // bypass declarado cubre la corrida entera — obligar a declararlo dos veces con dos nombres
-    // distintos dejaría al dev contra una segunda pared, y contradiría el texto del propio mensaje de bloqueo.
-    const bypass = opts.includes('--no-atdd') || marker.atddBypass === true;
+    // `--no-atdd` y la marca `atddBypass` (la del portón previo) son el mismo pedido, y saltean sólo con la firma del
+    // dueño para esta ejecución (lib/atdd-skip.js): una firma cubre la ejecución entera. Se pide sólo si el freno frena.
+    const pide = opts.includes('--no-atdd') || marker.atddBypass === true;
+    let bypass = false;
+    let pedido = null;
+    if (r.verdict === 'blocked' && pide) {
+      const d = require('./lib/atdd-skip.js').decidir({ marker, pide, camino: opts.includes('--no-atdd') ? 'complete-step implement --no-atdd' : 'la marca atddBypass' });
+      bypass = d.saltea;
+      if (!bypass) pedido = d.texto;
+    } else if (opts.includes('--no-atdd')) {
+      console.error('ℹ️  --no-atdd no hizo falta: el freno de pruebas primero no frena esta ejecución.');
+    }
     appendLog('gates.log', {
       name: 'atdd',
       status: r.verdict,
@@ -2161,13 +2167,14 @@ function cmdCompleteStep(nRaw, flags) {
     });
     if (r.verdict === 'blocked' && !bypass) {
       console.error(atddBlockMessage(r));
+      if (pedido) console.error(pedido);
       process.exit(1);
     }
     if (r.verdict === 'blocked' && bypass) {
       // El bypass NO es silencioso: queda en bypass.log con el detalle, igual que DOD_BYPASS.
       appendLog('bypass.log', { kind: 'ATDD_BYPASS', story: marker.storyId, firstTest: r.firstTest, firstImpl: r.firstImpl,
         reason: marker.atddBypassReason || motivoDe(opts) || null });
-      console.error('⚠️  ATDD saltado con --no-atdd (queda en bypass.log).');
+      console.error('⚠️  ATDD saltado con la firma del dueño (queda en bypass.log).');
       console.error(`   código primero: ${r.firstImpl} · test después: ${r.firstTest}`);
     }
     if (r.verdict === 'warn-no-tests' || r.verdict === 'warn-unknown') {
@@ -4023,7 +4030,8 @@ function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) 
 // `pipeline.js next` los leen para no re-ejecutar (evita doble timer / doble
 // transición de WI al retomar cross-session).
 // `atddBypass`: escape consciente del portón pre-edit de ATDD (on-atdd-preedit.js) —
-// para el refactor legítimo sobre red preexistente. El uso queda en bypass.log, no es silencioso.
+// para el refactor legítimo sobre red preexistente. Pide la firma del dueño para la ejecución (lib/atdd-skip.js); el
+// uso queda en bypass.log, no es silencioso.
 // `waitingForHuman` — EL TERCER ESTADO del portón de autonomía.
 // El Stop-hook distingue dos cosas: "podés cerrar" (todo verde) y "no cierres, arreglá" (algo en
 // rojo). Este flag cubre la tercera, que es la más común: "le pregunté al dev y estoy esperando". Y como
@@ -4084,6 +4092,15 @@ function cmdSetFlag(flag, valRaw, extra = []) {
   if (!marker) {
     console.error('marker.js set-flag: no hay marker activo para esta sesión');
     process.exit(1);
+  }
+  // prender el escape es un pedido: sin la firma del dueño para esta ejecución no se escribe, y el pedido queda anotado
+  // para que la pueda dar (lib/atdd-skip.js)
+  if (flag === 'atddBypass' && valor) {
+    const d = require('./lib/atdd-skip.js').decidir({ marker, pide: true, camino: 'set-flag atddBypass' });
+    if (!d.saltea) {
+      console.error(d.texto);
+      process.exit(2);
+    }
   }
   marker[flag] = valor;
   if (flag === 'atddBypass') {
@@ -7035,6 +7052,43 @@ function cmdCompareWaiver(argv) {
   process.exit(0);
 }
 
+// `sign-atdd-skip --story S --reason R [--terminal]`: la firma del dueño que saltea «pruebas primero» en la ejecución
+// de S (lib/atdd-skip.js). La ejecución sale de la última muestra de S que anotó el pedido (`--no-atdd`, `set-flag
+// atddBypass` o el portón previo), no del marcador: en la terminal del dueño no hay sesión. Sin muestra sale 1 sin
+// escribir nada; la cita, el reenvío y el --ok no firman.
+function cmdSignAtddSkip(argv) {
+  const sk = require('./lib/atdd-skip.js');
+  const { val, tiene } = opcionesDe(argv);
+  if (tiene('--terminal')) {
+    const waiver = require('./lib/runtime-waiver.js');
+    if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+      console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+      const v = waiver.abrirVentana({ script: __filename, args: ['sign-atdd-skip', ...argv] });
+      if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js sign-atdd-skip: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se firmó nada.`); process.exit(1); }
+      process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+    }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
+  }
+  const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const r = sk.firmar({
+    story: (val('--story') || '').trim(), motivo: (val('--reason') || '').trim(), argv: process.argv.slice(1), sesion: SID || null,
+    exigir: (o) => ow.exigir(o),
+    aprobar: (linea, entrada) => {
+      const m = readMarker();
+      if (m && String(m.storyId) === String(linea.story)) anotarAprobacion(m, entrada);
+      else require('./lib/approvals.js').anotar(linea.carpeta, entrada);
+    },
+  });
+  if (r.codigo !== 0) {
+    console.error(`🔒 marker.js sign-atdd-skip: no se firmó el salteo — ${r.motivo}`);
+    process.exit(r.codigo);
+  }
+  if (r.aviso) console.error(`⚠️  ${r.aviso}`);
+  appendLog('gates.log', { name: 'atdd-skip-recorded', status: 'ok', story: r.linea.story, camino: r.linea.camino, via: r.linea.via, huella: r.linea.huella });
+  console.error(`✅ salteo de «pruebas primero» firmado (historia ${r.linea.story}, vía ${r.linea.via}, huella ${r.linea.huella}). Vale para esa ejecución entera.`);
+  process.exit(0);
+}
+
 // `sign-adversarial-skip --story S --reason R [--terminal]`: la firma del dueño que saltea el pase adversarial de la
 // ejecución de S (lib/adversarial-skip.js). La ejecución y el camino salen de la última muestra de S que anotó el
 // pedido; sin muestra sale 1 sin escribir nada. La firma va por la ventana de permiso o por la terminal del dueño; la
@@ -7158,106 +7212,6 @@ function cmdApprovePending(argv) {
     fs.writeFileSync(path.join(repo, archivo), `${JSON.stringify(escrita)}\n`, { flag: 'wx' });
   } catch (e) { console.error(`🔒 marker.js approve-pending: la firma se dio, pero no pude escribir ${archivo} (${e.code || e.message}).`); process.exit(2); }
   console.error(`✅ ${id} aprobado (${r.via}, ${escrita.quien}). Queda en ${archivo}: commitealo junto con la lista.`);
-  process.exit(0);
-}
-
-// Las firmas `-signed` del gates.log de la corrida `m` (save-ok.js exencionesDeLaCorrida: su sesión, la que adoptó o
-// su story): el ok por delegación mira si hubo una exención. El log no se lee a medias: si no se puede leer entero,
-// tira, y el ok por delegación no se da.
-function firmasDeLaCorrida(m) {
-  const p = path.join(STATE_DIR, 'gates.log');
-  // sin el registro no se sabe si hubo exenciones: tira, como un registro grande o un renglón de firma que no se lee
-  // se lee entero: el registro de una máquina ya ronda los 6 MB y nada lo rota; el tope sólo frena uno desmedido
-  const tam = fs.statSync(p).size;
-  if (tam > 128 * 1024 * 1024) throw new Error(`${p} pasa de 128 MB: no lo leo entero, y una exención vieja quedaría afuera`);
-  const texto = fs.readFileSync(p, 'utf8');
-  const firmadas = [];
-  for (const l of texto.split('\n')) {
-    if (!l.includes('-signed')) continue;
-    let j;
-    try { j = JSON.parse(l); } catch (_) { throw new Error(`${p} tiene un renglón de firma que no se lee: podría ser una exención`); }
-    if (j && /-signed$/.test(String(j.name))) firmadas.push(j);
-  }
-  return require('./lib/save-ok.js').exencionesDeLaCorrida(firmadas, m);
-}
-
-// `approve-save [--for-session <D>] [--terminal]`: el ok de guardar la story (commit, push y los pedidos) es la firma
-// `save` (lib/save-ok.js). La da el dueño en la ventana o en su terminal, o la coordinadora por la delegación del
-// perfil: por delegación, antes de gastar el pedido, la corrida tiene que estar limpia, el cambio no tocar nada sensible
-// y el aviso tiene que haberle llegado al dueño. La constancia `saveOk` (las huellas de cada repo) queda en el marcador
-// de la corrida y en el renglón `save-signed`; `save-check` dice si sigue valiendo.
-function cmdApproveSave(argv) {
-  const { tiene } = opcionesDe(argv);
-  if (tiene('--quote') || tiene('--relayed-by') || tiene('--ok')) {
-    console.error('🚫 marker.js approve-save: la cita, el reenvío y --ok no dan el ok de guardar: es una firma (la delegación, la ventana o --terminal).');
-    process.exit(1);
-  }
-  const m = readMarker();
-  if (!m) { console.error(`marker.js approve-save: la sesión ${SID} no tiene una ejecución abierta: el ok de guardar es de una corrida.`); process.exit(2); }
-  const so = require('./lib/save-ok.js');
-  let repos;
-  try { repos = so.reposDeLaCorrida({ marker: m, hermanos: hermanosDeLaCorrida(m) }); } catch (e) {
-    console.error(`🔒 marker.js approve-save: no pude saber qué repos guarda la corrida (${e.message}): sin eso no hay ok de guardar.`);
-    process.exit(2);
-  }
-  // lo que se firma, ¿es lo revisado? (historia 8.161): se dice, y si cambió después de la última vuelta, no se firma
-  comprobarLoRevisado(m, 'approve-save');
-  let previo = null;
-  let ok = null;
-  const antes = (via) => {
-    let datos = {};
-    if (via === 'delegacion') {
-      const rd = carpetaDeLaCorrida(m);
-      let findings;
-      try { findings = rd ? JSON.parse(fs.readFileSync(path.join(rd, 'findings.json'), 'utf8')) : null; } catch (e) { findings = null; }
-      if (!Array.isArray(findings)) return { codigo: 2, motivo: 'la coordinadora no puede dar el ok: no pude leer el findings.json de la corrida. Lo firma una persona: ni el agente ni la coordinadora' };
-      let firmas;
-      try { firmas = firmasDeLaCorrida(m); } catch (e) { return { codigo: 2, motivo: `la coordinadora no puede dar el ok: no pude leer el registro de firmas (${e.code || e.message}). Lo firma una persona: ni el agente ni la coordinadora` }; }
-      const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
-      // lo sensible: sólo si el perfil le delega a la coordinadora la forma `save:sensible`, con las mismas llaves
-      let sensibleDelegado = false;
-      try {
-        const cat = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
-        sensibleDelegado = !!require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js')).delegaSinVentana({ firma: cat.SAVE_SENSIBLE, sesion: PROPIA, destino: SID, estado: STATE_DIR, home: os.homedir() }).ok;
-      } catch (e) { sensibleDelegado = false; }
-      datos = { findings, firmasDeLaCorrida: firmas, canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o), sensibleDelegado };
-    }
-    const r = so.antesDeFirmar({ via, marker: m, repos, ...datos });
-    if (r.codigo) return r;
-    previo = r;
-    return null;
-  };
-  const extra = ({ via, sesion, destino }) => {
-    ok = so.constancia({ marker: m, via, por: sesion && sesion !== destino ? sesion : null, previo, ahora: nowIso() });
-    return { storyId: ok.storyId, startedAt: ok.startedAt, huellas: ok.huellas, ...(ok.canales ? { canales: ok.canales } : {}) };
-  };
-  const firma = firmaDelDueno('save', `guardar la story ${m.storyId} (${repos.map((r) => path.basename(r)).join(', ')})`, { antes, extra });
-  // con la firma, el destino quedó fijo y la corrida comparada: se relee para no pisar lo que cambió en el medio
-  const fresco = readMarker() || m;
-  fresco.saveOk = ok;
-  fresco.lastTouch = nowIso();
-  writeMarker(fresco);
-  const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
-  const q = quienFirmo(firma, persona);
-  anotarAprobacion(fresco, { que: 'el ok de guardar la story (commit, push y los pedidos)', via: q.via, tipo: q.tipo, quien: q.quien, ...porDe(firma), ...(q.delegacion ? { delegacion: q.delegacion } : {}) });
-  console.error(`✅ ok de guardar la story ${fresco.storyId} (${q.via}${ok.canales ? `, avisado por ${ok.canales.join(', ')}` : ''}). Antes de cada commit, push y pedido: marker.js save-check.`);
-  process.exit(0);
-}
-
-// `save-check [--push <remoto> <rama>]` (sólo lee): sale 0 si el ok de guardar de la corrida abierta sigue valiendo para
-// el código de ahora; 1 con qué repo y qué cambió. Con --push, además, la rama de destino es la del ok y no es main.
-function cmdSaveCheck(argv) {
-  const i = argv.indexOf('--push');
-  const push = i >= 0 ? { remoto: argv[i + 1], rama: argv[i + 2] } : null;
-  if (push && (!push.remoto || !push.rama)) { console.error('uso: marker.js save-check [--push <remoto> <rama>]'); process.exit(2); }
-  const m = readMarker();
-  const so = require('./lib/save-ok.js');
-  const no = (motivo) => { console.error(`🔒 save-check: ${motivo}`); process.exit(1); };
-  if (!m) no('no hay una ejecución abierta: el ok de guardar es de una corrida');
-  if (m.saveOk && (m.saveOk.storyId !== m.storyId || m.saveOk.startedAt !== (m.startedAt || null))) no('el ok de guardar es de otra corrida: hay que pedir otro');
-  const r = so.vigente({ saveOk: m.saveOk, push, repoActual: process.cwd() });
-  if (!r.ok) no(r.motivo);
-  console.error(`✅ save-check: el ok de guardar de ${m.storyId} sigue valiendo${push ? ` para empujar ${push.rama}` : ''}.`);
   process.exit(0);
 }
 
@@ -8750,11 +8704,11 @@ switch (cmd) {
   case 'declare-pending':
     cmdDeclarePending(process.argv.slice(3));
     break;
+  case 'sign-atdd-skip':
+    cmdSignAtddSkip(process.argv.slice(3));
+    break;
   case 'approve-pending':
     cmdApprovePending(process.argv.slice(3));
-    break;
-  case 'approve-save':
-    cmdApproveSave(process.argv.slice(3));
     break;
   case 'plan-review':
     cmdPlanReview(process.argv.slice(3));
@@ -8767,9 +8721,6 @@ switch (cmd) {
     break;
   case 'owner-away':
     cmdOwnerAway(process.argv.slice(3));
-    break;
-  case 'save-check':
-    cmdSaveCheck(process.argv.slice(3));
     break;
   case 'designate-relay':
     cmdDesignateRelay(process.argv.slice(3));

@@ -16,7 +16,7 @@ productos, y en cualquier máquina, sin lista de máquinas.
 
 - **Pasa por el mismo control de contenido que antes.** Cada guion comprueba lo suyo antes de firmar sin persona: el plan,
   con la revisión automática aprobada sobre ese mismo plan; la comparación con main, que la historia no sea delicada; el
-  guardado, con la historia limpia; el camino corto, dentro del cupo y sin rutas de riesgo alto; el pendiente, sobre un
+  camino corto, dentro del cupo y sin rutas de riesgo alto; el pendiente, sobre un
   repo donde trabaja la sesión. Si ese control dice que no, la firma va a una persona, como siempre, y la ventana dice por
   qué no salió sola.
 - **La constancia la escribe el arnés, no el agente.** Queda en el registro común de firmas con vía `automatic`,
@@ -59,8 +59,11 @@ Cada firma tiene un nivel, según cuánto pesa lo que aprueba:
 La coordinadora firma sola la rutina y, del nivel 2, sólo las excepciones de trámite («Qué excepciones se delegan», más abajo). Un perfil
 que pone en `approvals.delegated_signing` otra firma de nivel 2 o más, por su id o por un grupo, no pasa la validación
 (`scripts/ci/check-profile-levels.js`), y el lector del perfil la saca y lo avisa. Una firma de hoy que junta dos cosas
-de distinto peso cuenta con la mayor. El ok de guardar delegado (`save`) no firma un cambio que toca algo de lo
-sensible, así que por delegación vale 1; lo sensible se delega aparte, con `save:sensible`.
+de distinto peso cuenta con la mayor.
+
+Una firma que ya no se pide (hoy, `save` y `save:sensible`, la del ok de guardar) se sigue aceptando en el perfil y en
+los registros viejos, sin efecto: no delega ni sube nada, y la validación no la rechaza. Sacarla del perfil es un pedido
+a su repo.
 
 La columna «Quién la ve» dice si la firma le llega al dev de producto o sólo a quien mantiene el arnés. La columna «Se
 pide hoy con» dice con qué firma de la tabla siguiente se pide hoy. Varias de hoy se juntan en una sola, y una se parte
@@ -72,13 +75,11 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y la coordinadora lo aprueba sólo si el perfil delega plan-approval:delicada y su revisión automática dio aprobado; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person) | `plan-approval` |
 | `extra-round` | 1 · rutina | dev y mantenimiento | una vuelta más de revisores | `extra-round` |
 | `pending-approval` | 1 · rutina | dev y mantenimiento | abrir un pendiente nuevo en la lista | `pending-approval` |
-| `save` | 1 · rutina | dev y mantenimiento | guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible | `save` |
 | `browser-test:prepare` | 1 · rutina | dev y mantenimiento | preparar la prueba con navegador | `browser-test` |
 | `adhoc-lane` | 1 · rutina | dev y mantenimiento | abrir un arreglo rápido sin historia, dentro del cupo | `adhoc-lane` |
 | `compare-waiver` | 1 · rutina | dev y mantenimiento | eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing) | `compare-waiver` |
 | `refresh-after-main` | 1 · rutina | sólo mantenimiento | refirmar los controles tras traer main, sin cambio propio | `refresh-after-main` |
 | `lost-run:particion` | 1 · rutina | dev y mantenimiento | cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing) | `lost-run:particion` |
-| `save:sensible` | 2 · excepción | dev y mantenimiento | guardar cuando un commit toca algo de lo sensible | `save` |
 | `adhoc-lane:datos` | 2 · excepción | dev y mantenimiento | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño) | `adhoc-lane:datos` |
 | `adhoc-lane:guardado-ajeno` | 2 · excepción | dev y mantenimiento | dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (el click o la terminal de una persona, o la coordinadora si el perfil se lo delega) | `adhoc-lane:guardado-ajeno` |
 | `autonomy-resume` | 2 · excepción | dev y mantenimiento | volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero (sólo el click o la terminal del dueño) | `autonomy-resume` |
@@ -89,6 +90,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `manual-test` | 2 · excepción | dev y mantenimiento | marcar un criterio como probado a mano | `manual-test`, `escape:ALLOW_DOD_EVIDENCE_WRITE` |
 | `browser-test:no` | 2 · excepción | dev y mantenimiento | decir que no a la prueba con navegador | `browser-test` |
 | `adversarial-skip` | 2 · excepción | dev y mantenimiento | saltear el pase adversarial | `adversarial-skip`, `escape:TYCON_NO_DEEP_REVIEW`, `escape:no-deep-review` |
+| `atdd-skip` | 2 · excepción | dev y mantenimiento | saltear «pruebas primero» en una ejecución | `atdd-skip` |
 | `lost-run` | 2 · excepción | dev y mantenimiento | dar por perdida una ejecución y cerrarla | `lost-run`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz` |
 | `escape:force-manual` | 2 · excepción | dev y mantenimiento | marcar a mano el estado de un control | `escape:force-manual` |
 | `escape:trust-ran` | 2 · excepción | dev y mantenimiento | contar revisores sin constancia de que corrieron | `escape:trust-ran` |
@@ -127,7 +129,6 @@ vuelve al dueño.
 | Se delega, si el perfil la nombra | Cómo la firma la coordinadora |
 |---|---|
 | `plan-approval:delicada`: el plan de una historia delicada | con `plan-approval` y `--for-session`, sólo con el «aprobado» de la revisión automática que lanzó ella sobre ese mismo plan |
-| `save:sensible`: guardar cuando un commit toca algo de lo sensible | con `save` (`approve-save --for-session`), con la historia limpia y el aviso entregado al dueño |
 | `runtime-waiver`, `manual-test`, `critical-waiver`, `lost-run`, `escape:force-manual`, `escape:trust-ran` (y `extra-round`, que ya era rutina) | con el comando de la firma y `--for-session <sesión>`; si la sesión la pide para sí, el freno la desvía a la coordinadora |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:cambiar-el-estado`, `escape:red-control-test-edit` | `marker.js sign-file <firma> <archivo> --for-session <sesión>`: deja la constancia que usa el Edit o Write de esa sesión |
 | `adhoc-lane:guardado-ajeno` | `marker.js adhoc allow-foreign-save --for-session <sesión>` |
@@ -136,7 +137,7 @@ vuelve al dueño.
 Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el nivel 3 (`escape:TYCON_SAFETY_OFF`,
 `escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `emergency`, `escape:merge-bypass`, `escape:external-pr`); `designation-set`,
 `designation-confirm` y `designation-withdraw`; `adhoc-lane:datos` y `adhoc-lane:sobre-cupo`; `escape:DOD_BYPASS`; `adversarial-skip` (con
-`escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
+`escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `atdd-skip`; `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
 `escape:dod_runtime_exempt`; y decir que no a la prueba con navegador (`browser-test`).
 
 ## Quién firma cada nivel
@@ -147,7 +148,6 @@ firmar, y en la columna tu situación:
 
 | Nivel | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás | La revisión automática |
 |---|---|---|---|---|---|---|
-| 1 · rutina | **Abrir el pull request** (`save`): los pull requests y el push a una rama compartida; el commit y el push a tu rama de trabajo no se firman. Es rutina porque se deshace; si un commit toca algo sensible, pasa a `save:sensible`, de nivel 2. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
 | 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
 | 1 · rutina | **Aprobar el plan** (`plan-approval`) de una historia que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, vos | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | su «aprobado» es lo único con que se aprueba sin vos: con coordinadora la lanza ella; sin ella, la propia sesión. Con `plan_review.routine_approval: person`, aprobás vos siempre |
 | 1 · rutina | **Eximir un comando de la comparación con main** (`compare-waiver`): un comando que la historia modifica y que no se puede comparar con su versión de `main` (por ejemplo, porque usa la red). La firma es delegable sólo cuando el perfil del equipo la suma a `approvals.delegated_signing`, con un pedido al perfil que firma el dueño: amplía lo que firma la coordinadora. Hasta entonces, es tuya. | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
@@ -447,13 +447,13 @@ vuelve a pedir la firma del dueño.
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
 | `lost-run:particion` | cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto | `marker.js clear-session <S> --lost --partition` | sí | `marker.js clear-session <S> --lost --partition --terminal` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
+| `atdd-skip` | saltear «pruebas primero» en una ejecución, con constancia | `marker.js sign-atdd-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-atdd-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --file <ruta> --terminal --for-session <id>` |
 | `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'` | sí | `marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --file <ruta> --terminal --for-session <id>` |
 | `adhoc-lane:datos` | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>` | no, en la pestaña de esa sesión | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué> --terminal --for-session <id>` |
 | `adhoc-lane:guardado-ajeno` | dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista | `marker.js adhoc allow-foreign-save` | sí | `marker.js adhoc allow-foreign-save --terminal --for-session <id>` |
 | `autonomy-resume` | volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero | `marker.js resume-autonomy` | no, en la pestaña de esa sesión | `marker.js resume-autonomy --terminal --for-session <id>` |
-| `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `designation-confirm` | confirmar qué sesión es la coordinadora de esta máquina | `delegated-signing.js confirm-designation` | no, en la pestaña de esa sesión | `delegated-signing.js confirm-designation --terminal` |
 | `designation-set` | nombrar a esta sesión coordinadora de la máquina | `marker.js designate-relay` | no, en la pestaña de esa sesión | `marker.js designate-relay --terminal` |
 | `designation-withdraw` | retirar a esta sesión de coordinadora de la máquina | `marker.js withdraw-relay` | no, en la pestaña de esa sesión | `marker.js withdraw-relay --terminal` |
@@ -640,7 +640,7 @@ detalle está en `guides/coordination.md`.
 El arreglo rápido de otra pestaña (`adhoc-lane`) se declara así desde la sesión designada de la misma máquina, con
 `marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo es de 5 archivos como mucho por defecto (pedir más se niega, y
 el freno da el cuadro para que lo apruebe una persona), el arreglo nunca toca lo sensible de `scripts/lib/signatures.js` y, antes de abrirlo, al dueño le llega una línea por los canales
-de los avisos, como el ok de guardar (sin entrega, no hay arreglo). La
+de los avisos (sin entrega, no hay arreglo). La
 coordinadora de otra máquina no lo declara: se lo pide a la designada de la máquina destino (`guides/coordination.md`).
 No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nombra.
 
@@ -711,8 +711,13 @@ clasificador comprueba que es eso; si no, es un cambio de control, que es sólo 
 
 Guardar se autoriza en la ventana de permiso, no con una firma: autorización siempre, firma nunca, y donde tiene
 consecuencias: la persona aprueba el pull request, no cada commit. El commit y el empuje de la rama de trabajo los hace el
-agente sin preguntar; se deshacen, y lo que no se deshace ya tiene su firma de control. La firma `save` y
-`marker.js approve-save` siguen en el catálogo, pero el freno ya no las pide.
+agente sin preguntar; se deshacen, y lo que no se deshace ya tiene su firma de control. La firma `save` ya no
+existe: quedó como firma retirada.
+
+Saltear «pruebas primero» en una ejecución (`atdd-skip`) lo firma el dueño, como saltear el pase adversarial: el agente
+lo pide con `complete-step implement --no-atdd` o `set-flag atddBypass`, el pedido anota la muestra, y el dueño firma
+`marker.js sign-atdd-skip --story <S> --reason <R>` en la ventana o en su terminal. Vale para la ejecución entera y se
+pide sólo cuando el freno frena.
 
 El control del commit corre además el freno de publicación sobre lo que agrega ese commit: lo que el empuje frenaría (un
 secreto, un nombre de la lista) frena el commit, y no queda historia que reescribir. La ventana ya preguntó, así que ese
@@ -734,11 +739,10 @@ controles, producción) lo cubre la firma de control del pedido, que es del due�
 
 ### Lo de rutina en una pestaña sin permisos: hecho y avisado
 
-En una pestaña que no pide permisos la ventana se aprobaría sola. Ahí, las cuatro firmas de nivel 1 se hacen sin firma
-y quedan en el registro de firmas con la vía `notified` («hecho y avisado»): aprobar un pendiente, el ok de guardar, el
-plan y abrir un arreglo rápido. Pasan por los mismos controles que la delegación de la coordinadora:
+En una pestaña que no pide permisos la ventana se aprobaría sola. Ahí, las tres firmas de nivel 1 se hacen sin firma
+y quedan en el registro de firmas con la vía `notified` («hecho y avisado»): aprobar un pendiente, el plan y abrir un
+arreglo rápido. Pasan por los mismos controles que la delegación de la coordinadora:
 
-- el ok de guardar, sólo con la historia limpia y sin nada sensible;
 - el plan, con la revisión automática aprobada; uno delicado, sólo si el perfil delega `plan-approval:delicada`;
 - la maqueta (`approve-mockup`), igual que el plan, y nunca la de la propia sesión: la revisión que lanzó la sesión que
   implementa no cuenta para una pantalla, así que en su pestaña sin permisos la maqueta pide el click;
@@ -764,9 +768,9 @@ Tres arreglos de la misma tanda:
 
 - **Pendientes en un worktree:** un worktree agregado nunca cuenta como repo de la coordinadora, aunque ella pida la
   firma parada en él. Sólo cuentan su checkout y los clones principales donde trabaja.
-- **El ok de guardar y lo preparado:** el chequeo previo del ok mira lo preparado cuando hay algo preparado, así un
-  cambio que entra en dos commits se firma sin sacar del disco el resto. Las salidas y capturas de una prueba en vivo
-  que su registro nombra con la misma huella cuentan como evidencia; una suelta, no.
+- **Los controles del commit y lo preparado:** el chequeo de los controles del commit mira lo preparado cuando hay algo
+  preparado, así un cambio que entra en dos commits no frena por el resto del disco. Las salidas y capturas de una
+  prueba en vivo que su registro nombra con la misma huella cuentan como evidencia; una suelta, no.
 - **`adhoc set`:** un motivo de más de 200 caracteres y un tope menor que los archivos ya tocados se niegan antes de
   abrir la ventana o pedir la firma.
 
