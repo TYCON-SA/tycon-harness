@@ -233,7 +233,55 @@ test('T96 Live_StatusChange_PushesPhoto @story-2.81 @ac-51: una sesión que se p
   p.close();
 });
 
-test('T7 Events_BurstOfChanges_OneSnapshot: cinco cambios juntos dan una foto; uno igual no manda nada', async () => {
+// 🔴 mutación: mandar la foto que sólo cambia la carga en cada lectura, o no mandarla nunca.
+test('T7b PhotoDue_MachineOnly_AtMostEvery30s @story-8.301 @ac-7: lo de la oficina sale ya; la carga sola, cada 30 s', () => {
+  const { photoDue, MACHINE_PHOTO_MS } = require(path.join(ROOT, 'scripts', 'tools', 'office', 'server.js'));
+  assert.strictEqual(MACHINE_PHOTO_MS, 30000);
+  const foto = (memoria) => ({ meta: { maquina: { memoria, procesador: 10 } }, agentes: [] });
+  const base = { json: 'a', lastJson: 'a', last: foto(40), everyMs: MACHINE_PHOTO_MS, lastSentAt: 1000 };
+  assert.strictEqual(photoDue({ ...base, json: 'b', data: foto(40), now: 1001 }), true, 'una novedad de la oficina sale enseguida');
+  // el margen es de un segundo: una lectura que tarda menos que la anterior no pierde su turno
+  assert.strictEqual(photoDue({ ...base, data: foto(41), now: 1000 + 28999 }), false, 'la carga sola, antes de 29 s, no');
+  assert.strictEqual(photoDue({ ...base, data: foto(41), now: 1000 + 29000 }), true, 'la carga sola, a los 29 s, sí');
+  assert.strictEqual(photoDue({ ...base, data: foto(40), now: 1000 + 600000 }), false, 'una foto igual, carga incluida, nunca');
+});
+
+// 🔴 mutación: sin el reloj, o decidiendo la foto como antes, la carga no se pone al día sin novedades; sin anotar la
+// hora del último envío, cada relectura sin novedad manda una foto.
+test('T7c Server_MachineOnly_NeverCloserThanTheInterval @story-8.301 @ac-7: sin novedades, la carga sale sola y nunca más seguido que el intervalo', async () => {
+  const m = toy();
+  // la carga de prueba cambia en cada lectura: cada relectura es una foto que sólo cambia la carga
+  openSync(m, { TYCON_OFFICE_MACHINE_PHOTO_MS: '2000', TYCON_OFFICE_TEST_LOAD: 'changes' });
+  const lock = readLock(m);
+  const p = page(lock);
+  await p.next();
+  const llegadas = [];
+  const desde = p.fotos.length;
+  const coordination = path.join(m.sdir, 'coordination');
+  fs.mkdirSync(coordination, { recursive: true });
+  const board = path.join(coordination, 'tablero.json');
+  fs.writeFileSync(board, JSON.stringify({ pendientes: [] }));
+  await p.next(PLAZO);
+  const mirar = async (ms, reescribir) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      if (reescribir) fs.writeFileSync(board, fs.readFileSync(board));
+      await sleep(300);
+      while (llegadas.length < p.fotos.length - desde - 1) llegadas.push(Date.now());
+    }
+  };
+  // relecturas sin novedad, más seguidas que el intervalo: ninguna puede mandar una foto antes de tiempo
+  await mirar(5000, true);
+  for (let i = 1; i < llegadas.length; i += 1) assert.ok(llegadas[i] - llegadas[i - 1] >= 1500, `dos fotos de la carga a ${llegadas[i] - llegadas[i - 1]} ms`);
+  assert.ok(llegadas.length <= 3, `a lo sumo una por intervalo: ${llegadas.length} en 5 s`);
+  // sin ninguna novedad ni relectura de afuera: sólo el reloj de la carga la pone al día
+  const antes = llegadas.length;
+  await mirar(5500, false);
+  p.close();
+  assert.ok(llegadas.length - antes >= 2, `la carga se pone al día sola: ${llegadas.length - antes} fotos en 5,5 s con el intervalo en 2 s`);
+});
+
+test('T7 Events_BurstOfChanges_OneSnapshot @story-8.301 @ac-7: cinco cambios juntos dan una foto; una igual, o que sólo cambia la carga antes de 30 s, no manda nada', async () => {
   // la foto lleva la hora en minutos: si el minuto cambia en medio, la foto nueva es legítima.
   // La prueba arranca lejos del cambio de minuto (dura unos 4 s, aun con la máquina cargada).
   const enElMinuto = Date.now() % 60000;
@@ -256,6 +304,7 @@ test('T7 Events_BurstOfChanges_OneSnapshot: cinco cambios juntos dan una foto; u
   p.close();
 });
 
+// el reloj de la carga de la máquina relee cada 30 s (T7c): la prueba dura menos, y mide que nada más lea
 test('T8 Server_Idle_ReadsNothing: sin cambios no se lee nada ni se corre nada', async () => {
   const m = toy();
   openSync(m);
