@@ -27,12 +27,61 @@ no(){ casos=$((casos+1)); echo "❌ pr-sin-ac: $1"; fallos=$((fallos+1)); }
 export HOME="$TMP/home"; mkdir -p "$HOME/.claude/.tycon-pipeline"
 corre(){ # <comando>
   node -e 'process.stdout.write(JSON.stringify({tool_input:{command:process.argv[1]}}))' "$1" \
-    | node "$HOOK" >"$TMP/out.txt" 2>"$TMP/err.txt"
+    | PATH="$TMP/bin:$PATH" node "$HOOK" >"$TMP/out.txt" 2>"$TMP/err.txt"
   echo $?
 }
 BASE='az repos pr create --organization https://dev.azure.com/org-del-equipo --project Ceibo --repository CeiboBackend --source-branch fix/health-build-info --target-branch main --title "fix(health): x"'
 # Con la tercera bandera (8.164): sin `--delete-source-branch` explícito el pedido ya no está bien armado.
 BIEN="$BASE --auto-complete true --squash false --delete-source-branch true"
+
+# 8.225: el freno le pide la rama al pedido. Toda la suite corre con este az primero en PATH: ninguna prueba llama al de
+# verdad.
+# Un `az` de mentira, propio de esta suite: contesta la rama por `--id` y anota los argumentos y la carpeta. La rama sale
+# de $TMP/ramas (`<id> <respuesta>`); sin renglón, `refs/heads/dev`. Con `--org https://dev.azure.com/org-del-equipo`
+# y el id 777 contesta `dev`; con cualquier otra organización, `wt/x`.
+mkdir -p "$TMP/bin"
+cat > "$TMP/bin/az" <<'AZ'
+#!/usr/bin/env bash
+echo "args=$* cwd=$(pwd -P)" >> "$AZ_LOG"
+id=""; org=""; prev=""
+for a in "$@"; do
+  case "$prev" in --id) id="$a" ;; --org|--organization) org="$a" ;; esac
+  prev="$a"
+done
+case "$id" in
+  777) if [ "$org" = "https://dev.azure.com/org-del-equipo" ]; then echo "dev"; else echo "wt/x"; fi; exit 0 ;;
+  801) exit 0 ;;
+  802) echo "None"; exit 0 ;;
+  803) echo "null"; exit 0 ;;
+  804) echo "boom" >&2; exit 1 ;;
+  805) sleep 10; echo "refs/heads/wt/x"; exit 0 ;;
+esac
+r=$(awk -v id="$id" '$1==id { $1=""; sub(/^ /, ""); print; exit }' "$AZ_RAMAS" 2>/dev/null)
+printf '%s' "${r:-refs/heads/dev}"
+AZ
+chmod +x "$TMP/bin/az"
+export AZ_LOG="$TMP/az.log" AZ_RAMAS="$TMP/ramas"
+: > "$AZ_RAMAS"
+cat >> "$AZ_RAMAS" <<'RAMAS'
+2859 refs/heads/fix/health-build-info
+11 refs/heads/dev
+12 refs/heads/dev
+13 Refs/Heads/DEV
+14 refs/heads/wt/x
+15 refs/heads/story/dev
+16 refs/heads/dev-fix
+RAMAS
+printf '12 refs/heads/dev\r\n' >> "$AZ_RAMAS"
+correAz(){ # <comando> [carpeta] — con el az de mentira primero en PATH y la carpeta en el evento
+  local cwd="${2:-$TMP}"
+  : > "$AZ_LOG"
+  node -e 'process.stdout.write(JSON.stringify({cwd:process.argv[2],tool_input:{command:process.argv[1]}}))' "$1" "$cwd" \
+    | PATH="$TMP/bin:$PATH" node "$HOOK" >"$TMP/out.txt" 2>"$TMP/err.txt"
+  echo $?
+}
+consultas(){ grep -c 'repos pr show' "$AZ_LOG" 2>/dev/null || true; }
+ORG8="--org https://dev.azure.com/org-del-equipo"
+
 
 # ---------------------------------------------------------------- 1. 🔴 EL COMANDO TAL CUAL SE TIPEÓ
 rc=$(corre "$BASE --description \"a\" \"\" \"b\" -o json")
@@ -341,7 +390,7 @@ for caso in \
   "pasa|$AZM --source-branch story/x --delete-source-branch true" \
   "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false" \
   "pasa|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch false" \
-  "pasa|az repos pr update --id 5 --auto-complete true --squash false" \
+  "pasa|az repos pr update --id 14 --auto-complete true --squash false" \
   "frena|$AZM --source-branch dev --delete-source-branch true" \
   "frena|$AZM -s refs/heads/main --delete-source-branch true" \
   "frena|$AZM -s DEV --delete-source-branch true" \
@@ -452,7 +501,13 @@ for caso in \
   # Un «frena» tiene que frenar por la regla de esta historia (la tercera bandera, lo que no se lee o una expansión
   # partida), no por otra falta cualquiera. `frena-otra` es un caso que frena por las dos banderas de antes.
   texto=$(node -e 'const az=require(process.argv[1]); process.stdout.write(az.faltasDe(az.segmentos(process.argv[2])[0]).faltas.join(" | "))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
-  if [ "$esperado" = frena ]; then
+  # 8.225: un `update` sin falta en el texto que puede completar el pedido o lo borra le pregunta la rama a Azure; el az
+  # de mentira contesta `dev` para el pedido 5, así que frena por la consulta y pide `false`
+  consulta=$(node -e 'const az=require(process.argv[1]); process.stdout.write(String(!!az.faltasDe(az.segmentos(process.argv[2])[0]).consultarOrigen))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  if [ "$esperado" = frena ] && [ "$consulta" = true ]; then
+    [ "$rc" -eq 2 ] && grep -q 'rama de larga vida' "$TMP/err.txt" && grep -q -- '--delete-source-branch false' "$TMP/err.txt" \
+      && ok "8.164-SinBorrarRama_Frena frena por la consulta de la rama (8.225) y pide false: $cmd" || no "8.164-SinBorrarRama_Frena la consulta no frenó ($rc): $cmd"
+  elif [ "$esperado" = frena ]; then
     [ "$rc" -eq 2 ] && [ "$falta" = true ] && echo "$texto" | grep -E -- 'delete-source-branch|no puedo leer|fuera de comillas' >/dev/null \
       && ok "8.164-SinBorrarRama_Frena frena por la regla nueva y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena dejó pasar o frenó por otra cosa ($rc, faltasDe=$falta, «${texto}»): $cmd"
   elif [ "$esperado" = frena-otra ]; then
@@ -466,13 +521,14 @@ done
 corre "$AZM --source-branch story/x" >/dev/null
 grep -q -- "--auto-complete true --squash false --delete-source-branch" "$TMP/err.txt" \
   && ok "8.164-SinBorrarRama_Frena el mensaje trae el comando con las tres banderas" || no "8.164-SinBorrarRama_Frena el mensaje no trae las tres banderas juntas"
-# Un `update` no dice la rama: la falta pide `false` (o el skill, o el escape) y no recomienda `true`, que también frena.
+# Un `update` desde una rama de larga vida (el pedido 5 sale de `dev`): el aviso pide `false` y no recomienda `true`.
 for cmd in "az repos pr update --id 5 --draft false --auto-complete true --squash false" \
            "az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true"; do
-  texto=$(node -e 'const az=require(process.argv[1]); process.stdout.write(az.faltasDe(az.segmentos(process.argv[2])[0]).faltas.join(" | "))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  corre "$cmd" >/dev/null
+  texto=$(cat "$TMP/err.txt")
   echo "$texto" | grep -- '--delete-source-branch false' >/dev/null && ! echo "$texto" | grep 'Va en `true`' >/dev/null \
-    && ok "8.164-SinBorrarRama_Frena la falta de un update pide false y no recomienda true: ${cmd:26:60}" \
-    || no "8.164-SinBorrarRama_Frena la falta de un update no pide false o recomienda true («${texto}»): ${cmd:26:60}"
+    && ok "8.164-SinBorrarRama_Frena el aviso de un update desde dev pide false y no recomienda true: ${cmd:26:60}" \
+    || no "8.164-SinBorrarRama_Frena el aviso de un update desde dev no pide false o recomienda true: ${cmd:26:60}"
 done
 # Lo que no se puede leer se nombra: el aviso dice cuál valor no pudo leer.
 corre "$AZM -s \"\$BRANCH\" --delete-source-branch true" >/dev/null
@@ -488,6 +544,119 @@ del_paso=$(grep -m1 'Declaradas acá' "$PASO" | grep -o '`[a-z]*`' | tr -d '`' |
 del_freno=$(node -e 'process.stdout.write(require(process.argv[1]).RAMAS_DE_LARGA_VIDA.slice().sort().join(" ") + " ")' "$AQUI/scripts/lib/az-pr.js" 2>/dev/null)
 [ -n "$del_freno" ] && [ "$(echo "$del_paso" | tr -s ' ')" = "$(echo "$del_freno" | tr -s ' ')" ] \
   && ok "8.164-SinBorrarRama_Frena la lista de larga vida del freno es la de §9b.4 ($del_freno)" || no "8.164-SinBorrarRama_Frena las listas difieren: paso «${del_paso}» · freno «${del_freno}»"
+
+# ---------------------------------------------------------------- 8.225: el freno le pide la rama al pedido
+# T1 8.225-Consulta_RamaDeLargaVida_Frena
+T1=8.225-Consulta_RamaDeLargaVida_Frena
+for completa in "--auto-complete true" "--draft false --auto-complete true --squash false" "--status completed" "--bypass-policy true" "--delete-source-branch true"; do
+  for par in "11:frena" "13:frena" "14:pasa" "15:pasa" "16:pasa"; do
+    id=${par%%:*}; esperado=${par##*:}
+    rc=$(correAz "az repos pr update $ORG8 --id $id $completa")
+    if [ "$esperado" = frena ]; then
+      [ "$rc" -eq 2 ] && grep -q 'delete-source-branch false' "$TMP/err.txt" && ok "$T1 $completa, rama del $id: frena y pide false" || no "$T1 $completa, rama del $id: no frenó o no pidió false ($rc): $(head -c 200 "$TMP/err.txt")"
+    else
+      [ "$rc" -eq 0 ] && ok "$T1 $completa, rama del $id: pasa" || no "$T1 $completa, rama del $id: frenó una rama efímera ($rc): $(head -c 200 "$TMP/err.txt")"
+    fi
+  done
+done
+rc=$(correAz "az repos pr update $ORG8 --id 12 --auto-complete true")
+[ "$rc" -eq 2 ] && ok "$T1 la rama con \\r\\n al final se lee igual" || no "$T1 la rama con \\r\\n pasó ($rc)"
+rc=$(correAz "az repos pr update $ORG8 --id 11 --auto-complete true --delete-source-branch false")
+[ "$rc" -eq 0 ] && [ "$(consultas)" -eq 0 ] && ok "$T1 con false escrito pasa sin consultar" || no "$T1 con false escrito ($rc, $(consultas) consultas)"
+for comun in "--title t" "--status abandoned"; do
+  rc=$(correAz "az repos pr update $ORG8 --id 11 $comun")
+  [ "$rc" -eq 0 ] && [ "$(consultas)" -eq 0 ] && ok "$T1 un update que no completa ($comun) no consulta" || no "$T1 $comun ($rc, $(consultas) consultas)"
+done
+rc=$(correAz "az repos pr update $ORG8 --id 14 --auto-complete true --squash true")
+[ "$rc" -eq 2 ] && [ "$(consultas)" -eq 0 ] && ok "$T1 con una falta en el texto frena sin consultar" || no "$T1 con falta ($rc, $(consultas) consultas)"
+rc=$(correAz "TYCON_PR_BY_HAND=1 az repos pr update $ORG8 --id 14 --auto-complete true")
+[ "$rc" -eq 0 ] && [ "$(consultas)" -eq 0 ] && ! grep -q 'el prefijo sobra' "$TMP/err.txt" \
+  && ok "$T1 con el escape no consulta ni dice que el prefijo sobra" || no "$T1 escape ($rc, $(consultas) consultas): $(head -c 200 "$TMP/err.txt")"
+rc=$(correAz "az repos pr update $ORG8 --id 14 --auto-complete true && az repos pr update $ORG8 --id 11 --auto-complete true")
+[ "$rc" -eq 2 ] && grep -q -- '--id 11' "$TMP/err.txt" && ok "$T1 con dos update, frena por el segundo" || no "$T1 dos update ($rc): $(head -c 200 "$TMP/err.txt")"
+rc=$(correAz "az repos pr update $ORG8 --id 14 --auto-complete true")
+grep -q -- '--id 14' "$AZ_LOG" && grep -q -- '--org https://dev.azure.com/org-del-equipo' "$AZ_LOG" && ! grep -q -- '--project' "$AZ_LOG" \
+  && ok "$T1 la consulta lleva --id y el --org del comando, nunca --project" || no "$T1 la consulta: $(cat "$AZ_LOG")"
+rc=$(correAz "az repos pr update --id 14 --auto-complete true")
+[ "$rc" -eq 0 ] && ! grep -q -- '--org' "$AZ_LOG" && ok "$T1 sin --org en el comando, la consulta va sin --org" || no "$T1 sin --org ($rc): $(cat "$AZ_LOG")"
+rc=$(correAz "az repos pr update --organization https://dev.azure.com/org-del-equipo --id 777 --auto-complete true")
+[ "$rc" -eq 2 ] && ok "$T1 la consulta va a la organización del comando (--organization)" || no "$T1 preguntó a otra organización ($rc)"
+
+# T2 8.225-Consulta_SinRespuesta_FrenaConAviso
+T2=8.225-Consulta_SinRespuesta_FrenaConAviso
+for id in 801 802 803 804; do
+  rc=$(correAz "az repos pr update $ORG8 --id $id --auto-complete true")
+  [ "$rc" -eq 2 ] && grep -q 'cuando az responda' "$TMP/err.txt" && ok "$T2 respuesta del $id: frena con el aviso" || no "$T2 respuesta del $id ($rc): $(head -c 200 "$TMP/err.txt")"
+done
+# stable-data: mide cuánto tarda la consulta con el tope, no es una fecha que la prueba compare
+inicio=$(date +%s)
+rc=$(TYCON_PR_GUARD_AZ_TIMEOUT_MS=1000 correAz "az repos pr update $ORG8 --id 805 --auto-complete true")
+tardo=$(( $(date +%s) - inicio ))
+[ "$rc" -eq 2 ] && [ "$tardo" -lt 5 ] && ok "$T2 un az que no contesta frena antes de 5 s con el tope en 1 s ($tardo s)" || no "$T2 el tope ($rc, $tardo s)"
+: > "$AZ_LOG"
+rc=$(node -e 'process.stdout.write(JSON.stringify({cwd:process.argv[2],tool_input:{command:process.argv[1]}}))' "az repos pr update $ORG8 --id 14 --auto-complete true" "$TMP" | PATH="/usr/bin:/bin" "$(command -v node)" "$HOOK" >"$TMP/out.txt" 2>"$TMP/err.txt"; echo $?)
+[ "$rc" -eq 2 ] && grep -q 'cuando az responda' "$TMP/err.txt" && ok "$T2 sin az en el PATH frena con el aviso" || no "$T2 sin az ($rc): $(head -c 200 "$TMP/err.txt")"
+for sinId in "az repos pr update $ORG8 --auto-complete true" "az repos pr update $ORG8 --id \"\$N\" --auto-complete true" "az repos pr update $ORG8 --id 5x --auto-complete true"; do
+  rc=$(correAz "$sinId")
+  [ "$rc" -eq 2 ] && [ "$(consultas)" -eq 0 ] && ok "$T2 sin un --id que se lea frena sin consultar: $sinId" || no "$T2 $sinId ($rc, $(consultas) consultas)"
+done
+rc=$(correAz "az repos pr update $ORG8 --id=14 --auto-complete true")
+[ "$rc" -eq 0 ] && grep -q -- '--id 14' "$AZ_LOG" && ok "$T2 --id=14 consulta el 14" || no "$T2 --id=14 ($rc): $(cat "$AZ_LOG")"
+topes=$(node -e '
+const az = require(process.argv[1]);
+process.stdout.write(["0", "-5", "abc", "99999", "1000", undefined].map((v) => az.topeDeLaConsulta(v === undefined ? {} : { TYCON_PR_GUARD_AZ_TIMEOUT_MS: v })).join(" "));' "$AQUI/scripts/lib/az-pr.js" 2>&1)
+[ "$topes" = "15000 15000 15000 15000 1000 15000" ] && ok "$T2 el tope sólo se acorta, de 1 a 15000 ms" || no "$T2 los topes: $topes"
+
+# T3 8.225-Consulta_OrgCarpetaYWindows_SoloLoSeguro
+T3=8.225-Consulta_OrgCarpetaYWindows_SoloLoSeguro
+for ajena in "https://evil.example" "https://dev.azure.com.evil.example/x" "http://dev.azure.com/x"; do
+  rc=$(correAz "az repos pr update --org $ajena --id 14 --auto-complete true")
+  [ "$rc" -eq 2 ] && [ "$(consultas)" -eq 0 ] && ok "$T3 --org $ajena frena sin llamar al az" || no "$T3 --org $ajena ($rc, $(consultas) consultas)"
+done
+for valida in "https://dev.azure.com/x/" "https://x.visualstudio.com"; do
+  rc=$(correAz "az repos pr update --org $valida --id 14 --auto-complete true")
+  [ "$rc" -eq 0 ] && [ "$(consultas)" -eq 1 ] && ok "$T3 --org $valida consulta" || no "$T3 --org $valida ($rc, $(consultas) consultas)"
+done
+mkdir -p "$TMP/sesion"
+rc=$(correAz "az repos pr update $ORG8 --id 14 --auto-complete true" "$TMP/sesion")
+grep -q "cwd=$(cd "$TMP/sesion" && pwd -P)\$" "$AZ_LOG" && ok "$T3 el az corre en la carpeta del evento" || no "$T3 la carpeta: $(cat "$AZ_LOG")"
+for antes in "cd /tmp/otro" "pushd /tmp/otro"; do
+  rc=$(correAz "$antes && az repos pr update --id 14 --auto-complete true")
+  [ "$rc" -eq 2 ] && grep -q -- '--org' "$TMP/err.txt" && [ "$(consultas)" -eq 0 ] && ok "$T3 $antes sin --org frena y pide --org" || no "$T3 $antes sin --org ($rc)"
+  rc=$(correAz "$antes && az repos pr update $ORG8 --id 14 --auto-complete true")
+  [ "$rc" -eq 0 ] && ok "$T3 $antes con --org consulta" || no "$T3 $antes con --org ($rc): $(head -c 200 "$TMP/err.txt")"
+done
+win=$(node -e '
+const az = require(process.argv[1]);
+const vistos = [];
+const exec = (file, args, o) => { vistos.push({ file, args, shell: !!o.shell }); return { status: 0, stdout: "refs/heads/wt/x" }; };
+const a = az.consultaDeOrigen({ id: 5, org: "https://dev.azure.com/org", cwd: "/", plataforma: "win32", exec });
+const b = az.consultaDeOrigen({ id: 5, org: "https://dev.azure.com/o&x", cwd: "/", plataforma: "win32", exec });
+const c = az.consultaDeOrigen({ id: 5, org: null, cwd: "/", plataforma: "darwin", exec });
+process.stdout.write(JSON.stringify({ a, b: !!b.problema, c, vistos }));' "$AQUI/scripts/lib/az-pr.js" 2>&1)
+echo "$win" | node -e '
+const r = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const ok = r.a.rama === "wt/x" && r.b === true && r.c.rama === "wt/x" && r.vistos.length === 2
+  && r.vistos[0].shell === true && r.vistos[0].args.every((x) => /^".*"$/.test(x)) && r.vistos[1].shell === false;
+process.exit(ok ? 0 : 1);' && ok "$T3 en win32 va por consola con comillas, con & frena; en darwin directo" || no "$T3 Windows: $win"
+grep -Eq "(execFileSync|spawnSync|execSync)\(['\"]az" "$HOOK" && no "$T3 el freno llama a az por su cuenta" || ok "$T3 el freno no llama a az por su cuenta: usa consultaDeOrigen"
+grep -q 'consultaDeOrigen' "$HOOK" && ok "$T3 el freno usa consultaDeOrigen" || no "$T3 el freno no usa consultaDeOrigen"
+
+# T5 (la publicación y las descripciones nombran la consulta)
+T5=8.225-SuitesYBanco_Verdes
+rc=$(corre "$BASE --auto-complete false --squash false")
+grep -q 'draft false --auto-complete true --squash false --delete-source-branch true' "$TMP/err.txt" \
+  && ok "$T5 la forma de publicar un borrador vuelve a mostrar --delete-source-branch true" || no "$T5 la publicación no muestra true: $(grep -o 'publicalo con[^.]*' "$TMP/err.txt")"
+node -e '
+const fs = require("fs");
+const h = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const e = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const todos = (o) => (Array.isArray(o) ? o : Object.values(o).flatMap((v) => (Array.isArray(v) ? v : [])));
+const hook = todos(h).find((x) => x && /pr-auto-complete-guard/.test(x.spec || ""));
+const efecto = todos(e).find((x) => x && /pr-auto-complete-guard/.test(x.id || ""));
+const ok = hook && !/Sin red/i.test(hook.label) && /consulta/i.test(hook.label) && efecto && efecto.network && /consulta/i.test(efecto.network);
+process.exit(ok ? 0 : 1);' "$AQUI/scripts/setup/hooks-list.json" "$AQUI/scripts/setup/install-effects.json" \
+  && ok "$T5 hooks-list.json y install-effects.json nombran la consulta" || no "$T5 las descripciones no nombran la consulta"
 
 echo "─────────────"
 [ "$fallos" -eq 0 ] && { echo "✅ pr-sin-auto-complete: todo verde ($casos casos)"; exit 0; } || { echo "❌ pr-sin-auto-complete: $fallos falla(s) de $casos"; exit 1; }

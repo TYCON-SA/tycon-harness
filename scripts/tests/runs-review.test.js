@@ -1888,3 +1888,11 @@ test('8.256-T3 RunsReview_EscapesFromTheList @story-8.256 @ac-4 @ac-6 @ac-27', (
   assert.deepStrictEqual(regla(juntos, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`).sort(),
     ['RUNTIME_MATRIX_LEGACY:1', 'RUNTIME_MATRIX_NO_MUTATION_CHECK:1', 'STORY_REVIEW_OFF:1']);
 });
+
+// 🔴 Falla con: el escape en un `update` que el freno le pregunta a Azure se cuenta como «sobraba», y no se sabe: sin el
+// escape, la consulta podía frenarlo.
+test('8.225-Nocturna_PedidoQueConsulta_NoSobra @story-8.225 @ac-4', () => {
+  const P = 'TYCON_PR_BY_HAND=1 az repos pr update --id 7 --draft false --auto-complete true --squash false';
+  assert.deepStrictEqual(cats(rv({ hilo: cmd(`${P} --delete-source-branch true`) }), 'RR-ESCAPE'), ['TYCON_PR_BY_HAND:1']);
+  assert.deepStrictEqual(cats(rv({ hilo: cmd(`${P} --delete-source-branch false`) }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:1']);
+});

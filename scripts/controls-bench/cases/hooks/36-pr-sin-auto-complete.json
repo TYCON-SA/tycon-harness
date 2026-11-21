@@ -110,7 +110,21 @@
           "expect": {
             "exit": 0
           },
-          "_por_que": "Es el comando del 9b.2 del skill (PR ya existente): prende el auto-complete. Si esto bloqueara, el freno rompería el camino correcto."
+          "_por_que": "Es el comando del 9b.2 del skill (PR ya existente): prende el auto-complete. Si esto bloqueara, el freno rompería el camino correcto. Con la 8.225 el freno le pregunta la rama al pedido: el az de mentira contesta una rama efímera.",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "__so": "Sólo Linux y Mac: el az de mentira es un guion de la terminal.",
+          "files": {
+            "bin/az": "#!/bin/sh\nprintf '%s\\n' 'refs/heads/fix/health-build-info'\n"
+          },
+          "setup": [
+            "chmod +x bin/az"
+          ],
+          "env": {
+            "PATH": "${FIXTURE}/bin:/usr/bin:/bin"
+          }
         },
         {
           "id": "bloquea-el-update-que-apaga-el-auto-complete",
@@ -379,7 +393,9 @@
           },
           "expect": {
             "exit": 2,
-            "stderr_re": ["borraría `dev`"]
+            "stderr_re": [
+              "borraría `dev`"
+            ]
           }
         },
         {
@@ -394,12 +410,14 @@
           },
           "expect": {
             "exit": 2,
-            "stderr_re": ["az toma la rama actual"]
+            "stderr_re": [
+              "az toma la rama actual"
+            ]
           }
         },
         {
           "id": "bloquea-el-update-que-borra-la-rama",
-          "_por_que": "8.164: el update no dice la rama de origen; con --delete-source-branch true el freno no puede ver si borraría dev (consultar a Azure es la 8.225).",
+          "_por_que": "8.225: el update no dice la rama de origen; el freno se la pregunta a Azure y, si es de larga vida (acá el az de mentira contesta dev), frena y pide false.",
           "type": "must-block",
           "stdin": {
             "tool_name": "Bash",
@@ -409,7 +427,24 @@
           },
           "expect": {
             "exit": 2,
-            "stderr_re": ["el `update` no dice la rama de origen"]
+            "stderr_re": [
+              "rama de larga vida",
+              "delete-source-branch false"
+            ]
+          },
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "__so": "Sólo Linux y Mac: el az de mentira es un guion de la terminal.",
+          "files": {
+            "bin/az": "#!/bin/sh\nprintf '%s\\n' 'refs/heads/dev'\n"
+          },
+          "setup": [
+            "chmod +x bin/az"
+          ],
+          "env": {
+            "PATH": "${FIXTURE}/bin:/usr/bin:/bin"
           }
         },
         {

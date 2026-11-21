@@ -102,6 +102,10 @@
     "const bad = list.ok && !Array.isArray(list.json) ? 'az pipelines list no devolvió una lista' : null;",
     "if (!runs.ok || !Array.isArray(runs.json)) { fail(label, `runs list ${p.id}`, runs.error || 'az pipelines runs list no devolvió una lista', extra); continue; }"
   ],
+  "integrations/azure-devops/scripts/pr-source.js": [
+    "* La rama de origen del pedido `id`, preguntada a Azure con `az repos pr show`: `{ rama }` (sin `refs/heads/`) o",
+    "//   az repos pr show --id <n> [--org <org>] --query sourceRefName -o tsv"
+  ],
   "guides/integrations/ado-cola-y-listados.md": [
     "**Qué pasa:** después de cancelar despliegues encolados, `az pipelines runs list` proyecto por",
     "**Qué pasa:** tras un push a `main`, `az pipelines runs list` puede seguir sin mostrar el run del",
@@ -127,7 +131,8 @@
     "az pipelines run --org \"$ORG\" --project \"$PROJ\" --id \"$DEF\" --branch main --query id -o tsv < /dev/null; echo \"rc=$?\"",
     "az pipelines runs list --org \"$ORG\" --project \"$PROJ\" --pipeline-ids \"$DEF\" --top 5 --query \"[?status!='completed'].id\" -o tsv < /dev/null; echo \"rc=$?\"",
     "az pipelines runs list --organization https://dev.azure.com/<org> --project <project> \\",
-    "de esas ramas la borraría. Un `az repos pr update` no dice la rama de origen: para publicar un borrador va",
+    "borra, el freno le pregunta la rama a Azure (`az repos pr show`, con el `--org` del comando y tope) y frena si es de",
+    "de esas ramas la borraría. Un `az repos pr update` no dice la rama de origen: si puede completar el pedido o lo",
     "falta enumerarlos: `az devops invoke --area wit --resource workitemtypes --route-parameters",
     "for id in $(az pipelines list --org \"$ORG\" --project \"$PROJ\" --repository \"$REPO\" --repository-type tfsgit --query \"[].id\" -o tsv < /dev/null); do",
     "process=$(az devops project show \\",

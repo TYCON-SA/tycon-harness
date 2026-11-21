@@ -439,11 +439,13 @@ const normalizado = (t) => String(t || '').replace(/\\\r?\n/g, ' ').replace(/["'
 function pedidosConEscape(command) {
   const segs = command ? AZ.segmentos(command) : [];
   const interprete = segs.some((seg) => AZ.pasaCodigoAUnInterprete(seg));
-  return segs.filter((seg) => AZ.tieneEscape(seg)).map((seg) => {
+  return segs.map((seg, i) => ({ seg, i })).filter(({ seg }) => AZ.tieneEscape(seg)).map(({ seg, i }) => {
     const verbo = AZ.verboDePr(seg);
     const destino = AZ.flagDe(seg, 'target-branch', 't');
+    // un pedido que el freno le pregunta a Azure no se sabe si pasaba: sin el escape, la consulta podía frenarlo
+    const juicio = AZ.faltasDe(seg, { cambiaCarpeta: AZ.cambiaCarpetaAntes(segs, i) });
     const sobra = !interprete && (verbo === 'create' || verbo === 'update') && !(destino !== null && /[$`]/.test(destino))
-      && AZ.faltasDe(seg).faltas.length === 0;
+      && juicio.faltas.length === 0 && !juicio.consultarOrigen;
     return { texto: normalizado(AZ.textoDe(seg)), sobra };
   });
 }

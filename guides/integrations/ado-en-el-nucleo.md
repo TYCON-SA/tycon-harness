@@ -380,6 +380,7 @@ De `guides/git-commit-conventions.md`, para un pedido a `main` armado a mano en 
 - **Azure DevOps**: un pedido a `main` armado a mano con auto-completar dice explícito si borra la rama:
   `--auto-complete true --squash false --delete-source-branch true`. `false` sólo desde una rama de larga vida (`dev`,
   `develop`, `main`, `master`, la lista de §9b.4 del paso de merge), y escrita en `--source-branch`; `true` desde una
-  de esas ramas la borraría. Un `az repos pr update` no dice la rama de origen: para publicar un borrador va
-  `--delete-source-branch false`, y con `true` el freno frena. El freno de pedidos lo exige; el skill de merge ya lo
-  hace solo.
+  de esas ramas la borraría. Un `az repos pr update` no dice la rama de origen: si puede completar el pedido o lo
+  borra, el freno le pregunta la rama a Azure (`az repos pr show`, con el `--org` del comando y tope) y frena si es de
+  larga vida o si la consulta no contesta; para publicar un borrador va `--delete-source-branch true` desde una rama
+  efímera. El freno de pedidos lo exige; el skill de merge ya lo hace solo.

@@ -397,17 +397,38 @@ function faltaDeBorrarRama(borrar, origen) {
 }
 
 /**
- * Lo mismo para un `update`, que no dice la rama de origen (az no acepta `--source-branch` ahí): con `true` el freno no
- * puede ver si borraría `dev`, así que frena. Ver la rama pidiéndosela a Azure es la historia 8.225.
+ * Lo mismo para un `update`, que no dice la rama de origen (az no acepta `--source-branch` ahí): un valor que no se lee
+ * o no se entiende es falta. Si el `update` puede completar el pedido o lo borra, la rama se le pregunta a Azure
+ * (`consultarOrigen` en `faltasDe`).
  */
-function faltaDeBorrarRamaUpdate(borrar, publica) {
-  const regla = 'va `--delete-source-branch false`: el `update` no dice la rama de origen, así que `true` no lo puedo juzgar. Si no, el skill de merge, o el escape';
-  if (borrar === null) return publica ? `publica un borrador sin \`--delete-source-branch\` explícito: ${regla}` : null;
+function faltaDeBorrarRamaUpdate(borrar) {
+  if (borrar === null) return null;
   if (!borrar.literal) return ilegible('--delete-source-branch', borrar);
-  if (esCierto(borrar.texto)) return `con \`--delete-source-branch true\`: ${regla}`;
-  if (!esFalso(borrar.texto)) return `con \`--delete-source-branch ${borrar.texto}\`: no es un valor que entienda; ${regla}`;
+  if (!esCierto(borrar.texto) && !esFalso(borrar.texto)) return `con \`--delete-source-branch ${borrar.texto}\`: no es un valor que entienda. Va \`true\` desde una rama efímera o \`false\` desde dev, develop, main o master`;
   return null;
 }
+
+// La consulta de la rama del pedido, la organización que vale y su tope viven en el conector de Azure DevOps
+// (integrations/azure-devops/scripts/pr-source.js): el núcleo dice qué se pregunta, el conector cómo.
+const RUTA_DEL_CONECTOR = require('path').join(__dirname, '..', '..', 'integrations', 'azure-devops', 'scripts', 'pr-source.js');
+const delConector = () => require(RUTA_DEL_CONECTOR);
+const motivoDe = (e) => String((e && e.message) || e).split('\n')[0];
+/** La rama de origen del pedido `id` (`{ rama }` o `{ problema }`), preguntada por el conector. */
+function consultaDeOrigen(o) {
+  try { return delConector().consultaDeOrigen(o); } catch (e) { return { problema: `no pude cargar el conector de la plataforma (${motivoDe(e)})` }; }
+}
+// sin el conector, la organización no vale: no se consulta y se frena
+const esOrgValida = (texto) => { try { return delConector().esOrgValida(texto); } catch (_) { return false; } };
+const topeDeLaConsulta = (env) => delConector().topeDeLaConsulta(env);
+
+/** ¿Algún segmento anterior al `i` cambia de carpeta (`cd`, `pushd`)? Entonces az corre en otra, con otra organización. */
+function cambiaCarpetaAntes(segs, i) {
+  return segs.slice(0, i).some((seg) => {
+    const primera = seg.find((f) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(f.texto));
+    return !!primera && /^(cd|pushd)$/.test(primera.texto);
+  });
+}
+
 
 /**
  * Una ficha del pedido con una expansión fuera de comillas: la terminal la parte en palabras y puede meter una bandera.
@@ -447,13 +468,16 @@ function fantasmas(seg) {
 }
 
 /**
- * La regla del freno de pedidos sobre UN segmento, sin mirar el escape: `{ verbo, juzgado, borrador, faltas }`.
+ * La regla del freno de pedidos sobre UN segmento, sin mirar el escape: `{ verbo, juzgado, borrador, faltas,
+ * consultarOrigen? }`. `consultarOrigen: { id, org }`: un `update` sin faltas que el freno tiene que preguntarle a Azure
+ * (la consulta no vive acá: la nocturna también usa esta función y no sale a la red). `cambiaCarpeta`: un segmento
+ * anterior cambia de carpeta (`cambiaCarpetaAntes`).
  * `juzgado: false` es un segmento que la regla no mira (otro verbo, un pedido que no va a main, un borrador recién
  * creado: `borrador: true`). Un segmento juzgado sin `faltas` cumple la regla. La usan el freno (que agrega el escape,
  * el pedido de ayuda y el código pasado a un intérprete) y la revisión nocturna de las ejecuciones, que con ella sabe
  * si un pedido armado con el escape lo necesitaba.
  */
-function faltasDe(seg) {
+function faltasDe(seg, { cambiaCarpeta = false } = {}) {
   const verbo = verboDePr(seg);
   const res = { verbo, juzgado: false, borrador: false, faltas: [] };
   if (verbo !== 'create' && verbo !== 'update') return res;
@@ -499,12 +523,31 @@ function faltasDe(seg) {
     if (!esCierto(autoComplete)) res.faltas.push('publica un borrador (`--draft false`) sin `--auto-complete true`: queda un PR normal que nadie completa');
     if (squash === null || !esFalso(squash)) res.faltas.push('publica un borrador sin `--squash false` explícito: la estrategia la decide la política de la rama');
   }
-  // El borrador se creó sin que el freno lo juzgara, y el `update` no dice la rama: publicar pide la bandera, y `true`
-  // frena siempre. Un `update` común sin la bandera no se mira: az conserva la opción que el pedido ya tenía
-  // (`update_pull_request` parte de `existing_pr.completion_options`).
-  const falta = faltaDeBorrarRamaUpdate(v.borrar, publica && esCierto(autoComplete));
+  const falta = faltaDeBorrarRamaUpdate(v.borrar);
   if (falta) res.faltas.push(falta);
+  // El `update` no dice la rama de origen. Si puede completar el pedido (auto-completar, publicar, completarlo,
+  // saltear las políticas) o lo borra al entrar, y no trae `false` escrito, el freno se la pregunta a Azure: az conserva
+  // el «borrar la rama» que el pedido ya tenía, y desde dev la borraría. Con otra falta en el texto no se consulta.
+  const estado = valorDe(seg, 'status');
+  const saltea = valorDe(seg, 'bypass-policy');
+  const leidos = [['--status', estado], ['--bypass-policy', saltea]].filter(([, x]) => x && !x.literal);
+  res.faltas.push(...leidos.map(([b, x]) => ilegible(b, x)));
+  const completa = esCierto(autoComplete) || publica || (estado && estado.literal && /^completed$/i.test(estado.texto.trim()))
+    || (saltea && saltea.literal && esCierto(saltea.texto));
+  const borra = v.borrar && v.borrar.literal && esCierto(v.borrar.texto);
+  const conservaLaRama = v.borrar && v.borrar.literal && esFalso(v.borrar.texto);
+  if ((completa || borra) && !conservaLaRama && !res.faltas.length) {
+    const id = valorDe(seg, 'id');
+    const org = valorDe(seg, 'organization');
+    const aviso = 'para ver la rama del pedido se la pregunto a Azure';
+    if (id === null) res.faltas.push(`sin \`--id\`: ${aviso}, y sin el número no puedo. Escribí el número del pedido`);
+    else if (!id.literal || !/^\d+$/.test(id.texto.trim())) res.faltas.push(`no puedo leer \`--id ${id.texto}\`: ${aviso}, y va un número escrito tal cual`);
+    if (org && (!org.literal || !esOrgValida(org.texto))) res.faltas.push(`\`--org ${org.texto}\` no es la dirección de una organización de la plataforma: ${aviso}, y no le mando la credencial a otro servidor`);
+    if (!org && cambiaCarpeta) res.faltas.push(`el comando cambia de carpeta antes del \`update\` y no trae \`--org\`: ${aviso}, y desde otra carpeta puede ser otra organización. Escribí \`--org\``);
+    if (!res.faltas.length) res.consultarOrigen = { id: Number(id.texto.trim()), org: org ? org.texto.trim() : null };
+  }
   return res;
 }
 
-module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA };
+module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA,
+  esDeLargaVida, cambiaCarpetaAntes, consultaDeOrigen, topeDeLaConsulta };

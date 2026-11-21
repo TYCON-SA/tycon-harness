@@ -24,10 +24,11 @@
  * del merge; con `true` desde `dev`, la plataforma la borraría; la lista es la de §9b.4 del paso de merge). Cierra
  * además las otras dos puertas al mismo resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el
  * squash, y el que PUBLIQUE un borrador (`--draft false`) sin llevar las tres banderas. El `update` no dice la rama de
- * origen: con `--delete-source-branch true` frena siempre, y para publicar va `false`. Un `update` común sin la
- * bandera no se juzga por ella: az conserva la que el pedido ya tenía. Lo que no puede leer (un valor que arma la
- * terminal, un comodín, un `@archivo`) es una falta. Mira sólo el texto del comando —nada de red— con el lector de
- * scripts/lib/az-pr.js (`faltasDe`).
+ * origen: si puede completar el pedido o lo borra, y no trae `--delete-source-branch false`, le pregunta la rama a
+ * Azure (una llamada del conector, con el `--org` del comando, en la carpeta de la sesión y con tope) y frena si es
+ * de larga vida; si la consulta no contesta bien, frena. Un `update` que no completa nada no se juzga por la bandera:
+ * az conserva la que el pedido ya tenía. Lo que no puede leer (un valor que arma la terminal, un comodín, un
+ * `@archivo`) es una falta. Lee el comando con scripts/lib/az-pr.js (`faltasDe`), y la red sólo para esa consulta.
  *
  * QUÉ NO HACE. Un borrador recién creado no se toca (no se completa solo por definición) y lo dice.
  * `--help`, listar, mostrar y abandonar tampoco. Salida para el caso puntual —incluido el legítimo
@@ -58,9 +59,12 @@ try { payload = fs.readFileSync(0, 'utf8'); } catch { process.exit(0); }
 if (require('../lib/legacy-names.js').readEnv('TYCON_PR_AUTO_COMPLETE_GUARD', { where: 'scripts/hooks/pr-auto-complete-guard.js' }) === '0') process.exit(0);
 
 let cmd = '';
+// la carpeta de la sesión: ahí corre la consulta a Azure, como el comando
+let eventoCwd = process.cwd();
 try {
   const evento = JSON.parse(payload || '{}');
   cmd = (evento.tool_input || {}).command || '';
+  if (typeof evento.cwd === 'string' && evento.cwd) eventoCwd = evento.cwd;
 } catch {
   // No pudo leer: no frena —un freno que rompe la sesión por un bug propio se apaga— pero lo dice.
   console.error(`${TAG} no pude leer la entrada del hook: no freno, pero tampoco miré.`);
@@ -161,7 +165,9 @@ let huboEscape = false;   // ¿ya se anotó el escape de este comando?
 let huboJuicio = false;
 const problemas = [];
 const problemasGh = [];
-for (const seg of az.segmentos(cmd)) {
+const segs = az.segmentos(cmd);
+for (let iSeg = 0; iSeg < segs.length; iSeg += 1) {
+  const seg = segs[iSeg];
   if (az.pideAyuda(seg)) continue;
 
   if (esGh) {
@@ -193,10 +199,11 @@ for (const seg of az.segmentos(cmd)) {
   // La regla vive en `faltasDe` (scripts/lib/az-pr.js): la misma que lee la revisión nocturna de las ejecuciones.
   // Se juzga ANTES de mirar el prefijo: un prefijo puesto sobre un tramo que pasaría igual no es un salteo, y anotarlo
   // llenaba el registro de salteos que no eran.
-  const { juzgado, borrador, faltas } = az.faltasDe(seg);
+  const { juzgado, borrador, faltas, consultarOrigen } = az.faltasDe(seg, { cambiaCarpeta: az.cambiaCarpetaAntes(segs, iSeg) });
   let sobra = false;
   if (az.tieneEscape(seg)) {
-    if (faltas.length) {
+    // con el escape no se consulta: si el pedido necesitaba la consulta, el prefijo no sobraba
+    if (faltas.length || consultarOrigen) {
       constancia('PR_A_MANO', `TYCON_PR_BY_HAND=1: dejo armar el PR a mano. Queda dicho.`, az.textoDe(seg));
       huboEscape = true;
       continue;
@@ -212,7 +219,16 @@ for (const seg of az.segmentos(cmd)) {
   if (sobra) console.error(`${TAG} ${SOBRA}`);
   if (!juzgado) continue;
   huboJuicio = true;
-  if (faltas.length) problemas.push({ seg, verbo, faltas });
+  if (faltas.length) { problemas.push({ seg, verbo, faltas }); continue; }
+  // el `update` que puede completar el pedido o lo borra: la rama se le pregunta a Azure, una llamada por pedido
+  if (consultarOrigen) {
+    const r = az.consultaDeOrigen({ ...consultarOrigen, cwd: eventoCwd });
+    if (r.problema) {
+      problemas.push({ seg, verbo, faltas: [`para ver si borraría una rama de larga vida le pregunté a Azure la rama del pedido ${consultarOrigen.id}, y no pude: ${r.problema}. Repetí el comando cuando az responda; si el pedido sale de dev, develop, main o master, va \`--delete-source-branch false\`; si no, el escape`] });
+    } else if (az.esDeLargaVida(r.rama)) {
+      problemas.push({ seg, verbo, faltas: [`el pedido ${consultarOrigen.id} sale de \`${r.rama}\`, una rama de larga vida: al completarse la plataforma la borraría. Va \`--delete-source-branch false\``] });
+    }
+  }
 }
 
 // 🔴 UNA DECISIÓN, UNA LÍNEA — y el veredicto es el que tuvo EL COMANDO, no cada segmento.
@@ -257,7 +273,7 @@ const soloUpdates = problemas.every((p) => p.verbo === 'update');
 const esperaAprobacion = problemas.some((p) => p.verbo === 'create' && !az.esCierto(az.flagDe(p.seg, 'auto-complete')));
 const retiene = problemas.some((p) => p.verbo === 'update' && az.esFalso(az.flagDe(p.seg, 'auto-complete')));
 const formas = [
-  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false --delete-source-branch false` (el `update` no dice la rama, así que con `true` frena; la rama se borra a mano o con el skill de merge).' : null,
+  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false --delete-source-branch true` (el freno le pregunta la rama a Azure: desde dev, develop, main o master va `false`).' : null,
   retiene ? 'Para retener una entrega ya encolada (apagar la entrada automática), el prefijo es la salida: `TYCON_PR_BY_HAND=1` pegado a ese mismo `update`.' : null,
 ].filter(Boolean);
 console.error(`🔴 Este pull request se está armando A MANO y no va a quedar bien${soloUpdates ? '' : ' (va a main)'}:
