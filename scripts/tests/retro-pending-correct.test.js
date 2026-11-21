@@ -89,6 +89,8 @@ function laboratorio() {
   const gancho = path.join(arnes, 'scripts', 'hooks', 'retro-pending.js');
   fs.copyFileSync(path.join(ROOT, 'scripts', 'hooks', 'retro-pending.js'), gancho);
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(arnes, 'scripts', 'lib'), { recursive: true });
+  // quién es la coordinadora lo lee la biblioteca del pipeline, como en el arnés instalado
+  fs.cpSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib'), path.join(arnes, 'skills', 'tycon-pipeline', 'scripts', 'lib'), { recursive: true });
   const ledger = path.join(home, '.claude', '.tycon-pipeline', 'retro-pending.jsonl');
   const correr = (evento, extra = {}) => {
     const r = spawnSync(process.execPath, [gancho], { input: JSON.stringify(evento), env: { ...env(home), ...extra }, encoding: 'utf8' });
@@ -101,8 +103,9 @@ function laboratorio() {
     pedido: (command, cwd) => correr({ session_id: 's1', tool_name: 'Bash', tool_input: { command }, cwd }),
     cierre: (cwd) => correr({ session_id: 's1', hook_event_name: 'Stop', stop_hook_active: false, cwd }),
     arranque: (cwd, extra) => correr({ session_id: 's2', hook_event_name: 'SessionStart', source: 'startup', cwd }, extra),
-    corregir: (args, cwd) => {
-      const r = spawnSync(process.execPath, [gancho, '--correct', ...args], { cwd, env: env(home), encoding: 'utf8' });
+    home,
+    corregir: (args, cwd, extra = {}) => {
+      const r = spawnSync(process.execPath, [gancho, '--correct', ...args], { cwd, env: { ...env(home), ...extra }, encoding: 'utf8' });
       return { status: r.status, stdout: r.stdout, stderr: r.stderr };
     },
     renglones,
@@ -220,6 +223,31 @@ test('el pedido con --head en una variable no inventa la rama de origen', () => 
 });
 
 // ── la corrección ────────────────────────────────────────────────────────────────────────────────
+
+// Renglón 362 de la lista semanal: la coordinadora corrigió una entrada y el registro la anotó con el usuario de git de la
+// máquina, como si la hubiera corregido la persona.
+test('corregir desde la coordinadora dice que fue ella; desde otra sesión, el usuario de git', () => {
+  const { dir, viejo, real } = repoConMain();
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: dir, sha: corto(viejo) });
+  const estado = path.join(lab.home, '.claude', '.tycon-pipeline');
+  fs.appendFileSync(path.join(estado, 'gates.log'), `${JSON.stringify({ ts: '2026-10-05T09:00:00.000Z', name: 'relay-designation', status: 'ok', sesion: 'sesion-coord', rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
+  const r = lab.corregir(['--sha', corto(viejo), '--real', real, '--reason', 'otra punta'], dir, { CLAUDE_CODE_SESSION_ID: 'sesion-coord' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const c = lab.renglones().find((x) => x.tipo === 'correccion');
+  assert.strictEqual(c.por, 'coordinadora');
+  assert.match(c.quien, /^la coordinadora \(sesión sesion-coord/, c.quien);
+  assert.match(r.stdout, /la coordinadora/, r.stdout);
+  // la misma corrección desde otra sesión: el usuario de git, sin `por`
+  const otro = repoConMain();
+  const lab2 = laboratorio();
+  lab2.sembrar({ repoPath: otro.dir, sha: corto(otro.viejo) });
+  fs.appendFileSync(path.join(lab2.home, '.claude', '.tycon-pipeline', 'gates.log'), `${JSON.stringify({ ts: '2026-10-05T09:00:00.000Z', name: 'relay-designation', status: 'ok', sesion: 'sesion-coord', rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
+  const r2 = lab2.corregir(['--sha', corto(otro.viejo), '--real', otro.real, '--reason', 'otra punta'], otro.dir, { CLAUDE_CODE_SESSION_ID: 'sesion-persona' });
+  const c2 = lab2.renglones().find((x) => x.tipo === 'correccion');
+  assert.ok(!('por' in c2), JSON.stringify(c2));
+  assert.doesNotMatch(c2.quien, /coordinadora/, c2.quien);
+});
 
 test('corregir agrega un renglón con quién, cuándo y por qué, y no borra la entrada', () => {
   const { dir, viejo, real } = repoConMain();

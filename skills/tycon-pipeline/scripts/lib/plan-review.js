@@ -482,6 +482,8 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   anotarRenglon(estado, { name: LANZADA, status: 'ok', sesion: lanza, destino: dest, story: String(marker.storyId), historia: historiaDe(marker), corrida: pedido.corrida, pedido: numero });
   const argsFile = path.join(carpetaDe(estado, lanza), `${dest}.args.json`);
   escribirDeUnaVez(argsFile, `${JSON.stringify(args, null, 2)}\n`);
+  // el resultado de la revisión anterior, antes de que el corredor lo pise: si no se puede guardar, se dice y se sigue
+  try { guardarResultado(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el resultado de la revisión anterior (${e.code || e.message}): el corredor lo va a pisar\n`); }
   return { codigo: 0, args, argsFile, pedido: rutaPedido(estado, lanza, dest), delicate, informativa, destino: dest };
 }
 
@@ -582,13 +584,17 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
   const confirmados = (!sinHerramienta && !noVale && resultado && Array.isArray(resultado.confirmed)) ? resultado.confirmed : [];
   const { blocks } = policy();
   const aHallazgo = (h) => ({ lente: h.lens || null, severidad: h.adjusted_severity || h.severity || null, archivo: h.file || null, linea: h.line ?? null, resumen: h.summary || '' });
+  // el resultado de esta revisión, con fecha y sin pisar el de la anterior; y cuánto costó, por agente y por tipo
+  let guardado = null;
+  try { guardado = guardarResultado(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el resultado de la revisión (${e.code || e.message})\n`); }
+  const uso = resultado && resultado.corredor && resultado.corredor.tokens && typeof resultado.corredor.tokens === 'object' ? resultado.corredor.tokens : null;
   const constancia = {
     id: sha(`${lanza}|${dest}|${ahora}`).slice(0, 12),
     veredicto, motivo, informativa: !!pedido.informativa,
     hallazgos: confirmados.filter((h) => blocks(h.adjusted_severity || h.severity, corte)).map(aHallazgo),
     notas: confirmados.filter((h) => !blocks(h.adjusted_severity || h.severity, corte)).map(aHallazgo),
     corte, modelo, proveedor, hora: new Date(ahora).toISOString(), lanzo: lanza, destino: dest,
-    corrida: pedido.corrida, storyId: pedido.storyId, huellas: pedido.huellas, delicate: pedido.delicate,
+    corrida: pedido.corrida, storyId: pedido.storyId, huellas: pedido.huellas, delicate: pedido.delicate, uso, resultado_guardado: guardado,
     // la parte y su lista, congeladas: el portón lee de acá la lista que vale con el plan aprobado por delegación
     ...(pedido.parte ? { parte: pedido.parte } : {}),
   };
@@ -778,7 +784,11 @@ function topeDeRechazos(cfg, repo) {
       const v = RR.delYaml(require('./config-source.js').leerCommiteado(repo));
       const n = Number(v);
       if (v !== undefined && Number.isInteger(n) && n >= RR.MINIMO && n <= RR.MAXIMO) return n;
-    } catch (_) { /* sin el ajuste del repo vale el de la organización, el mismo que usan las vueltas del código */ }
+    } catch (e) {
+      // sin el ajuste del repo vale el de la organización, el mismo que usan las vueltas del código; se dice, porque el
+      // número del repo puede ser otro
+      process.stderr.write(`⚠️  no pude leer review.max_rounds de ${repo} (${String((e && e.message) || e).split('\n')[0]}): vale el de la organización (${cfg.review.max_rounds}).\n`);
+    }
   }
   return cfg.review.max_rounds;
 }
@@ -870,6 +880,52 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   if (eligioSeguir({ estado, destino, huellaPlan: c.huellas.plan })) return no(`para este plan se eligió seguir sin revisión: lo firma una persona`);
   if (!APROBADOS.includes(c.veredicto)) return no(`${ESPERA} (la revisión dijo ${c.veredicto})`);
   return { codigo: 0, via: 'revision', constancia: c };
+}
+
+// En la aprobación por la revisión (la delegación, la firma de trámite), `--approved` sólo dice que es la revisión: el
+// texto de la aprobación lo arma el arnés con quién lanzó la revisión y su veredicto. Un texto propio podría atribuir
+// una firma que nadie dio («firma del dueño con el cuadro»), y la constancia lo guardaría como cierto.
+const PALABRA_DE_LA_REVISION = /^(?:la\s+)?revisi[oó]n$/i;
+
+/** null si el `--approved` de una aprobación por la revisión es la palabra «revisión» (o falta); si no, el motivo. */
+function textoPropioPorLaRevision(dado) {
+  if (dado == null || PALABRA_DE_LA_REVISION.test(String(dado).trim())) return null;
+  return 'en la aprobación por la revisión el texto lo arma el arnés (quién lanzó la revisión y su veredicto): '
+    + `cerrá con --approved revisión, sin «${String(dado).replace(/\s+/g, ' ').slice(0, 80)}»`;
+}
+
+/** El texto de una aprobación por la revisión, armado por el arnés con su constancia. */
+function textoDeLaAprobacion(c) {
+  return `revisión ${c.id} ${c.veredicto} (${c.modelo}), lanzada por la sesión ${c.lanzo}`;
+}
+
+/**
+ * ¿La última revisión CON VEREDICTO de esta corrida, de cualquier sesión, está en rechazo, y la historia es delicada?
+ * `{ codigo: 2, motivo }` para no aprobar, por ninguna vía: un plan delicado no se aprueba con su revisión en contra.
+ * null si no. Se lee de gates.log, que no se pisa: ni cambiar el plan después del rechazo ni anotar encima una revisión
+ * sin veredicto lo destapan; lo destapa una revisión aprobada posterior.
+ */
+function revisionEnContra({ estado, destino, marker }) {
+  const plan = planDe(marker);
+  const problemas = [];
+  const conVeredicto = revisionesDe(estado, destino, corridaDe(marker), problemas)
+    .filter((j) => j.veredicto === 'rechazado' || APROBADOS.includes(j.veredicto));
+  const u = conVeredicto[conVeredicto.length - 1];
+  // con el registro ilegible no se sabe si hay una revisión en contra: cuenta como si la hubiera
+  if (!problemas.length && (!u || u.veredicto !== 'rechazado')) return null;
+  const storyFile = storyDe(marker);
+  let storyTexto = null;
+  try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
+  // sin poder saber si es delicada, cuenta como delicada
+  let delicada = true;
+  try {
+    delicada = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parteDe(marker, storyTexto)) }).value !== false;
+  } catch (_) { delicada = true; }
+  if (!delicada) return null;
+  if (problemas.length) return no(`plan delicado y no pude leer sus revisiones (${problemas[0]}): no sé si alguna está en contra`);
+  return { ...no(`plan delicado con su última revisión (${u.ts || 'sin fecha'}) en rechazo: un plan delicado no se aprueba con la revisión en contra. `
+    + 'Corregí el plan con lo que encontró la revisión y lanzala de nuevo: la aprueba una revisión aprobada posterior'),
+  revision: { ts: u.ts || null, veredicto: u.veredicto, sesion: u.sesion || null } };
 }
 
 /** ¿El perfil lista el plan de una historia delicada como trámite, que firma el arnés solo? (automatic-signing.js) */
@@ -1017,9 +1073,42 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
 /** La ruta donde el corredor deja el resultado de la revisión que preparó `lanza` sobre `destino` (el `--out` del comando). */
 const rutaResultado = (estado, lanza, destino) => path.join(carpetaDe(estado, lanza), `${destino}.resultado.json`);
 
+// Cada revisión deja su resultado con fecha, en `resultados/`: el corredor escribe siempre en la ruta fija, y la siguiente
+// revisión de la misma sesión lo pisaba. La fecha es la del archivo y la huella de su texto evita guardar dos veces el mismo.
+const carpetaResultados = (estado, lanza) => path.join(carpetaDe(estado, lanza), 'resultados');
+
+/** Los resultados guardados de las revisiones de `lanza` sobre `destino`, del más viejo al más nuevo. */
+function resultadosGuardados(estado, lanza, destino) {
+  let archivos;
+  try { archivos = fs.readdirSync(carpetaResultados(estado, lanza)); } catch (_) { return []; }
+  return archivos.filter((f) => f.startsWith(`${destino}.`) && f.endsWith('.resultado.json')).sort().map((f) => path.join(carpetaResultados(estado, lanza), f));
+}
+
+/**
+ * Guarda con fecha el resultado de la ruta fija, si hay uno y no está guardado; devuelve su ruta guardada o null. Lo
+ * llaman la preparación (antes de que el corredor lo pise) y la anotación.
+ */
+function guardarResultado(estado, lanza, destino) {
+  const fijo = rutaResultado(estado, lanza, destino);
+  let texto;
+  let cuando;
+  try { texto = fs.readFileSync(fijo, 'utf8'); cuando = fs.statSync(fijo).mtime; } catch (_) { return null; }
+  const huella = sha(texto).slice(0, 8);
+  const ya = resultadosGuardados(estado, lanza, destino).find((f) => f.endsWith(`.${huella}.resultado.json`));
+  if (ya) return ya;
+  const fecha = cuando.toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, 'Z');
+  const destinoArchivo = path.join(carpetaResultados(estado, lanza), `${destino}.${fecha}.${huella}.resultado.json`);
+  fs.mkdirSync(carpetaResultados(estado, lanza), { recursive: true });
+  escribirDeUnaVez(destinoArchivo, texto);
+  return destinoArchivo;
+}
+
 module.exports = {
-  rutaResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
+  rutaResultado, resultadosGuardados, guardarResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
-  tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
+  tieneRenglon, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };
+
+// el tope de rechazos, para sus pruebas (start-silences.test.js)
+module.exports.topeDeRechazos = topeDeRechazos;

@@ -120,6 +120,7 @@
     "En lugar de `az pipelines run --id <número> --branch <rama>`: antes de encolar, corta las validaciones de **esa misma",
     "R=\"$(az pipelines runs show --org \"$ORG\" --project \"$PROJ\" --id \"$RUN\" --query \"[status,result]\" -o tsv < /dev/null)\" || { echo \"NO PUDE MIRAR la corrida $RUN\"; exit 2; }",
     "[ \"$(az pipelines show --org \"$ORG\" --project \"$PROJ\" --id \"$id\" --query process.yamlFilename -o tsv < /dev/null)\" = \"pipelines/team-dashboard.yml\" ] && echo \"def=$id\"",
+    "`az repos pr set-vote` reescribe al revisor que vota y le saca la marca de obligatorio, aunque la tuviera. En el",
     "`shared/` entra sin CI; se verifica con `az pipelines runs show` (el commit no aparece en NINGÚN",
     "az boards query --organization <ado_org> --project <ado_project> --output json \\",
     "az devops invoke --org \"$ORG\" --area git --resource items --route-parameters project=\"$PROJ\" repositoryId=\"$REPO\" \\",

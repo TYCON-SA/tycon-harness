@@ -60,7 +60,9 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
 4. **Los cuatro resultados.**
    - **4a. Aprobado** (o aprobado con notas), en una story de rutina con `plan_review.routine_approval: review`. Con
      coordinadora y `plan-approval` delegado, ella firma `complete-step approve-plan --for-session <sesión> --approved
-     "<la revisión>"` (vía `review` en el registro de firmas) y al dueño no le llega nada. Sin coordinadora, la sesión
+     revisión` (vía `review` en el registro de firmas) y al dueño no le llega nada. El texto de la aprobación lo arma el
+     arnés con quién lanzó la revisión y su veredicto: por la revisión, cualquier otro texto en `--approved` se rechaza,
+     porque podría atribuir una firma que nadie dio. Sin coordinadora, la sesión
      cierra con `complete-step approve-plan` sin `--approved`: el guion vuelve a comprobar la revisión (la misma corrida,
      la misma huella del plan, de la story y de la parte) y aprueba sin click, a nombre de «revisión automática»; si el
      plan cambió después de la revisión, frena y hay que volver a lanzarla. Con `person`, sin delegación o en una
@@ -69,7 +71,10 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      plan y lo vuelve a cerrar, y la revisión vuelve a correr. No llega al dueño mientras siga rechazado, salvo con
      `plan_review.rejected_reaches_owner` en sí o al llegar al tope de rechazos seguidos (`review.max_rounds`, de
      fábrica 3): entonces llega con los hallazgos y «rechazado N veces seguidas», y el dueño decide partir la historia o
-     firmar una vuelta extra.
+     firmar una vuelta extra. Un plan delicado con su revisión en rechazo no se aprueba por la delegación, por la
+     terminal ni con un «aprobado» escrito: se corrige el plan y la revisión vuelve a correr. Sólo el dueño puede
+     aprobarlo igual, con su click en el cuadro; el texto lo arma el arnés («rechazo vencido por decisión de la persona, con su click», con
+     el veredicto que se pisa).
    - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan o la historia
      cambiaron mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño. No se
      relanza por cada cambio: se juntan todos, y se relanza cuando el plan y la historia quedaron como van a quedar.
@@ -286,8 +291,9 @@ Antes de presentar el plan, con cualquier stack:
 ```bash
 # HITL — el user aprobó con palabras claras de proceder:
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --approved "<cita textual de la aprobación>"
-# La coordinadora, para otra sesión, sólo con el «aprobado» de su revisión automática (§Quién aprueba el plan):
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --for-session <sesión> --approved "<la revisión>"
+# La coordinadora, para otra sesión, sólo con el «aprobado» de su revisión automática (§Quién aprueba el plan). El texto
+# de la aprobación lo arma el arnés; otro texto en --approved se rechaza:
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --for-session <sesión> --approved revisión
 # Story con pantalla: además la aprobación de la maqueta (§La maqueta):
 #   … --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"
 ```

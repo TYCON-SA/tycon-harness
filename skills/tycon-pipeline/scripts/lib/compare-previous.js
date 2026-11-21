@@ -250,7 +250,7 @@ function clones({ repo, stateDir, sid, mainHead }) {
  * el orden en que el programa las escribe. Con dos tubos el orden dependería de cuál lee primero el padre, y el mismo
  * código daría «distinto» de una corrida a otra.
  */
-function correr({ argv, cwd, env, enc, perfil, tiempoMs, salidaF }) {
+function correr({ argv, cwd, env, enc, perfil, tiempoMs, salidaF, entradaF }) {
   return new Promise((resolve) => {
     const [cmd, ...args] = argv;
     const t0 = Date.now();
@@ -260,11 +260,15 @@ function correr({ argv, cwd, env, enc, perfil, tiempoMs, salidaF }) {
     let tope = false;
     let hijo;
     let fd;
+    let fdEntrada;
     try {
       fd = fs.openSync(salidaF, 'w');
-      hijo = spawn(lanzar[0], lanzar[1], { windowsHide: true, cwd, env, detached: true, stdio: ['ignore', fd, fd] });
+      // la misma entrada que recibió el humo de siempre (un gancho lee su evento por ahí), abierta de nuevo para cada lado
+      if (entradaF) fdEntrada = fs.openSync(entradaF, 'r');
+      hijo = spawn(lanzar[0], lanzar[1], { windowsHide: true, cwd, env, detached: true, stdio: [fdEntrada === undefined ? 'ignore' : fdEntrada, fd, fd] });
     } catch (e) {
       if (fd !== undefined) try { fs.closeSync(fd); } catch (_) { /* ya cerrado */ }
+      if (fdEntrada !== undefined) try { fs.closeSync(fdEntrada); } catch (_) { /* ya cerrado */ }
       resolve({ exit: 127, salida: `no se pudo correr: ${e.message}`, ms: Date.now() - t0, tope: false });
       return;
     }
@@ -276,6 +280,7 @@ function correr({ argv, cwd, env, enc, perfil, tiempoMs, salidaF }) {
       clearTimeout(blando);
       if (duro) clearTimeout(duro);
       try { fs.closeSync(fd); } catch (_) { /* ya cerrado */ }
+      if (fdEntrada !== undefined) try { fs.closeSync(fdEntrada); } catch (_) { /* ya cerrado */ }
       let salida = '';
       let cortada = false;
       try {
@@ -444,7 +449,8 @@ function humosQueCuentan(previas, tope = Infinity) {
  * registro), `cwd` la carpeta desde donde corre el humo. Anota la entrada en el informe de `runDir` y la devuelve:
  * `{ resultado: 'igual' | 'distinto' | 'nuevo' | 'no-comparado', motivo?, main?, cambio?, diff?, encierro, ... }`.
  */
-async function compararHumo({ argv, cmd, cwd = process.cwd(), runDir, sid, stateDir, covers = [], env = process.env }) {
+// `entradaF`: el archivo con la entrada que recibió el humo de siempre; cada lado la lee desde el principio
+async function compararHumo({ argv, cmd, cwd = process.cwd(), runDir, sid, stateDir, covers = [], env = process.env, entradaF }) {
   const t0 = Date.now();
   const tp = topes(env);
   const enc = encierro(env);
@@ -504,7 +510,7 @@ async function compararHumo({ argv, cmd, cwd = process.cwd(), runDir, sid, state
       argv: argv.map((a) => String(a).split('{raiz}').join(raizClon)),
       cwd: fs.existsSync(dirTrabajo) ? dirTrabajo : raizClon,
       env: { ...entornoDeCorrida({ casa, marcas, gitReal }), TMPDIR: temporal, TMP: temporal, TEMP: temporal },
-      enc, perfil, tiempoMs: Math.min(tp.corridaMs, restante), salidaF: path.join(casa, 'salida.txt'),
+      enc, perfil, tiempoMs: Math.min(tp.corridaMs, restante), salidaF: path.join(casa, 'salida.txt'), entradaF,
     });
     let marcasTxt = '';
     try { marcasTxt = fs.readFileSync(marcas, 'utf8').trim(); } catch (_) { marcasTxt = ''; }
@@ -1201,7 +1207,7 @@ if (require.main === module) {
       // el freno de «Preparar el commit» busca el informe en la carpeta de la corrida: acá no lo va a encontrar
       process.stderr.write(`[compare] ⚠️ no encontré la carpeta de la corrida de la sesión ${sid}: el informe queda en ${runDir} y el freno no lo va a ver. Pasá --run-dir.\n`);
     }
-    compararHumo({ argv: comando, cmd, cwd: process.cwd(), runDir, sid, stateDir, covers })
+    compararHumo({ argv: comando, cmd, cwd: process.cwd(), runDir, sid, stateDir, covers, entradaF: val('--stdin-file') || undefined })
       .then((e) => {
         process.stderr.write(`[compare] ${e.resultado}${e.motivo ? ` — ${e.motivo}` : ''}${e.main && e.cambio ? ` (main ${e.main.exit}, cambio ${e.cambio.exit})` : ''} · encierro: ${e.encierro.nombre}\n`);
       })
