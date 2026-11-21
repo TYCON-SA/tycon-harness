@@ -1177,3 +1177,33 @@ test('Pase_HermanoCambiado_FrenaElCierre — si el código de un hermano cambió
   assert.strictEqual(sinSello.length, 1);
   assert.match(sinSello[0].error, /sello/);
 });
+
+test('Pase_PropiaDelHermanoConRepo_NoFrenaElCierre — la prueba propia declarada como `(<repo>) <ruta>` no cuenta como cambio del hermano; el código sí', () => {
+  // 🔴 rojo si: el cierre toma el `--in` crudo y lo resuelve contra la raíz del hermano → la forma `(Front) tests/x.test.js`,
+  // la que pide el paso del pase, frena el cierre como si el hermano hubiera cambiado.
+  const C = corrida('s-ft-hermano');
+  const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
+  fs.mkdirSync(path.join(C.codigo.repo, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, '.tycon', 'advisors.yaml'),
+    `evidence:\n  companion_repos:\n    - ${path.relative(C.codigo.repo, front.repo)}\n`);
+  C.codigo.git('add', '.');
+  C.codigo.git('commit', '-qm', 'declara el hermano');
+  const l = C.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']);
+  assert.strictEqual(l.status, 0, salida(l));
+  const sellos = C.marcador().adversarial.sellos;
+  assert.ok(sellos[front.repo], `el lanzamiento sella el hermano: ${JSON.stringify(sellos)}`);
+  const cerrar = () => {
+    const f = path.join(tmp('ft-res-'), 'step-05b-adversarial.json');
+    fs.writeFileSync(f, JSON.stringify({ confirmed: [{ lens: 'x', summary: 'y' }], sellos }));
+    return C.correr('marker.js', ['mark-adversarial-result', '1', '--type', '5b', '--result', f, '--run', 'r1', '--tests', '1', '--own', '1', '--in', '(Front) tests/x.test.js']);
+  };
+  const HERMANO = /el código de un repo hermano cambió/;
+  fs.writeFileSync(path.join(front.repo, 'tests', 'x.test.js'), '// prueba de regresión del pase\n');
+  const propia = cerrar();
+  assert.doesNotMatch(salida(propia), HERMANO, salida(propia));
+  fs.writeFileSync(path.join(front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  const codigo = cerrar();
+  assert.strictEqual(codigo.status, 2, salida(codigo));
+  assert.match(salida(codigo), HERMANO);
+  assert.match(salida(codigo), /Front: src\/x\.js$/m);
+});
