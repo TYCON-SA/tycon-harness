@@ -296,13 +296,16 @@ CASA="$CASA_BIEN"; REPOS="$REPOS_BIEN"; REGISTRO="$REGISTRO_BIEN"
 { printf 'V := %s\n' "$(head -c 2000 /dev/zero | tr '\0' 'x')"; printf 'bomba:\n\t@echo'; for i in $(seq 1 6000); do printf ' $(V)'; done; printf '\n'; } > "$JUG/mk/bomba.mk"
 mkdir -p "$JUG/fifo"; mkfifo "$JUG/fifo/package.json"
 head -c 60000 /dev/zero | tr '\0' '#' > "$JUG/mk/relleno.mk"
-{ for i in $(seq 1 2500); do printf 'include mk/relleno.mk\n'; done; printf 'nada:\n\t@true\n'; } > "$JUG/mk/incluye.mk"
+{ for i in $(seq 1 2500); do printf 'include mk/relleno.mk\n'; done; printf 'nada:\n\t@true\n'; printf 'leer:\n\t%s\n' "$LEE_CLAVE"; } > "$JUG/mk/incluye.mk"
 for c in "make -f mk/bomba.mk bomba" "make -f mk/incluye.mk nada" "node fifo"; do
   t0="$(node -e 'console.log(Date.now())')"; rc="$(corre "$c")"; ms=$(( $(node -e 'console.log(Date.now())') - t0 ))
   if [ "$rc" = 0 ] && [ "$ms" -lt 5000 ]; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · «${c}» no cuelga al freno"
   else no "T-puerta-38 Freno_NombrarNoEsCorrer · «${c}»: rc=$rc en $ms ms"; fi
 done
-# el mismo archivo incluido miles de veces se lee una sola: no llega al tope de lo que se lee
+# el mismo archivo incluido miles de veces se lee una sola: no llega al tope de lo que se lee. Con el registro vacío
+# antes, y una marca positiva: la receta que sigue a los includes se mira y frena (un registro vacío solo no prueba nada)
+: > "$REGISTRO"
+frena "T-puerta-38 Freno_NombrarNoEsCorrer · después de un include repetido, la receta se mira" "make -f mk/incluye.mk leer" "y este comando lo corre"
 if ! grep -q 'incluye más' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · un include repetido se lee una vez"
 else no "T-puerta-38 Freno_NombrarNoEsCorrer · include repetido: $(grep 'incluye más' "$REGISTRO" | head -c 200)"; fi
 # un include dentro de otro se sigue; lo que pasa de los topes queda dicho
