@@ -262,6 +262,23 @@ const comment = (k) => k.startsWith('__');
 const COMMENT_SECRET = /token|secret|sas|password|passwd|pwd|key|credential/i;
 const fieldComment = (k, v) => comment(k) || (k.startsWith('_') && !COMMENT_SECRET.test(k) && (typeof v === 'string' || (Array.isArray(v) && v.every((s) => typeof s === 'string'))));
 
+// Una copia del arnés sin la carpeta de los conectores (la copia fija del arranque, una copia de prueba) no sabe la forma
+// del repo: entonces no rechaza el archivo. Valida lo que vale para toda plataforma —las claves son textos no vacíos y
+// la última es `repo`— y no los caracteres del nombre, y lo dice una sola vez por proceso.
+let avisoSinConectores = false;
+function sinConectores() {
+  if (avisoSinConectores) return;
+  avisoSinConectores = true;
+  process.stderr.write('⚠ sin conectores: no se validan los nombres de los repos\n');
+}
+/** Las claves del repo `r`: las de la forma de su conector o, sin ella, las suyas propias con `repo` al final. */
+function clavesDe(r) {
+  const forma = repoShape(r.platform);
+  if (forma) return forma.keys;
+  const propias = Object.keys(r).filter((k) => k !== 'platform' && k !== 'repo' && !fieldComment(k, r[k]));
+  return [...propias, 'repo'];
+}
+
 /** Los problemas de un repo en `at`; `[]` si está bien. */
 function repoProblems(value, at) {
   if (!isObject(value)) return [{ path: at, message: 'tiene que ser un objeto con platform y la dirección del repo' }];
@@ -270,7 +287,11 @@ function repoProblems(value, at) {
     return [{ path: `${at}.platform`, message: `tiene que ser ${PLATFORMS.map((p) => `«${p}»`).join(' o ')} (es ${JSON.stringify(platform)})` }];
   }
   const forma = repoShape(platform);
-  if (!forma) return [{ path: `${at}.platform`, message: `no pude leer la forma del repo de ${platform} (repoShape del conector ${connectorOf(platform)}): sin ella no se puede validar` }];
+  if (!forma) {
+    sinConectores();
+    return clavesDe(value).filter((k) => typeof value[k] !== 'string' || !value[k].trim())
+      .map((k) => ({ path: `${at}.${k}`, message: value[k] === undefined ? 'falta' : 'tiene que ser un texto no vacío' }));
+  }
   const out = [];
   const wanted = forma.keys;
   for (const k of Object.keys(value)) {
@@ -292,9 +313,9 @@ const ruleProblem = (rule, at) => (MERGE_RULES.includes(rule) ? [] : [{ path: at
 
 /** La identidad de un repo para compararlo: plataforma y nombres, sin mayúsculas y con los espacios decodificados. */
 function identityKey(r) {
-  if (!isObject(r) || !PLATFORMS.includes(r.platform) || !repoShape(r.platform)) return null;
+  if (!isObject(r) || !PLATFORMS.includes(r.platform)) return null;
   const plain = (v) => { const s = String(v == null ? '' : v); try { return decodeURIComponent(s).toLowerCase(); } catch (_) { return s.toLowerCase(); } };
-  return [r.platform, ...repoShape(r.platform).keys.map((k) => plain(r[k]))].join('/');
+  return [r.platform, ...clavesDe(r).map((k) => plain(r[k]))].join('/');
 }
 
 /** Los problemas de `merge_suites`; `[]` si está bien. */
@@ -935,7 +956,7 @@ function repoId(repo) {
  */
 function harnessCopies(data, platform) {
   if (!isObject(data) || !Array.isArray(data.harness_copies)) return [];
-  const full = (r) => (repoShape(r.platform) ? repoShape(r.platform).keys : []).map((k) => String(r[k]).toLowerCase()).join('/');
+  const full = (r) => clavesDe(r).map((k) => String(r[k]).toLowerCase()).join('/');
   const m = isObject(data.maintainers) && PLATFORMS.includes(data.maintainers.platform) ? data.maintainers : null;
   return data.harness_copies
     .filter((r) => isObject(r) && r.platform === platform)

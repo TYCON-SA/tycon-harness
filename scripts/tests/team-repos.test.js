@@ -1029,3 +1029,26 @@ test('TeamRepos_LaFormaDelRepoLaDeclaraCadaConector: claves y nombre salen del i
   assert.ok(TEAM.repoProblems(github('arnés'), 'x').length);
   assert.ok(TEAM.repoProblems({ ...github('h'), project: 'p' }, 'x').some((p) => /no lleva project/.test(p.message)));
 });
+
+// 🔴 Falla con: una copia del arnés sin la carpeta de los conectores (la copia fija del arranque, una copia de prueba)
+// rechaza el team-repos.json entero porque no sabe la forma del repo; sin ella valida lo que vale para toda plataforma,
+// no rechaza el archivo y lo dice una sola vez
+test('TeamRepos_SinConectores_NoRechazaYAvisaUnaVez: sin integrations/ valida las claves, no los nombres, y lo dice', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sin-conectores-'));
+  fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(tmp, 'scripts', 'lib'), { recursive: true });
+  const prog = `const T = require(${JSON.stringify(path.join(tmp, 'scripts', 'lib', 'team-repos.js'))});
+    const doc = { version: 1, public: { platform: 'github', org: 'acme', repo: 'arnés con tilde' }, profile: { platform: 'azure', org: 'acme', project: 'P', repo: 'perfil' }, operations: { platform: 'github', org: 'acme', repo: 'ops' } };
+    const r = T.parse(JSON.stringify(doc));
+    const malo = T.repoProblems({ platform: 'github', org: '', repo: 'x' }, 'x');
+    const iguales = T.identityKey({ platform: 'github', org: 'ACME', repo: 'Ops' }) === T.identityKey({ platform: 'github', org: 'acme', repo: 'ops' });
+    process.stdout.write(JSON.stringify({ ok: r.ok, malo: malo.map((p) => p.path), iguales }));`;
+  const r = spawnSync(process.execPath, ['-e', prog], { encoding: 'utf8' });
+  try {
+    assert.strictEqual(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.strictEqual(out.ok, true, 'el archivo no se rechaza: el nombre con tilde no se puede validar sin el conector');
+    assert.deepStrictEqual(out.malo, ['x.org'], 'una clave vacía sigue siendo un problema');
+    assert.strictEqual(out.iguales, true, 'la identidad de un repo sale de sus propias claves');
+    assert.strictEqual(r.stderr.split('\n').filter((l) => /sin conectores: no se validan los nombres de los repos/.test(l)).length, 1, `el aviso, una vez: ${r.stderr}`);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
