@@ -88,9 +88,6 @@
     "if (resto.some((f) => f.esBandera && /^--in-file(=|$)/.test(f.texto))) return escondido('el cuerpo de `az devops invoke` sale de un archivo (--in-file) y no se puede leer', 'az-bypass');",
     "return /^\\$|dev\\.azure\\.com|visualstudio\\.com|_apis/i.test(uri.texto) ? escondido('la dirección de `az rest` que escribe la arma la terminal: escribila tal cual', 'az-bypass') : null;"
   ],
-  "scripts/nightly/dependencies/work-items.js": [
-    "*    explícitos en cada llamada: el default de `az devops configure` apunta a un proyecto que ya no"
-  ],
   "scripts/nightly/deployments/azure.js": [
     "*   1. el id de la definición con `az pipelines list --name` (busca por PREFIJO): se queda con la de nombre igual;",
     "*   2. hasta `ventana` corridas (`az pipelines runs list --top`, sin filtrar por estado: las en curso dicen «pendiente»),"
@@ -162,6 +159,9 @@
     "//   az devops invoke --area distributedtask --resource pools --api-version 7.1 --org <org> -o json",
     "//   az pipelines runs list --project <proyecto> [--branch <rama>] --top 100 --org <org> -o json",
     "//   az pipelines runs show --id <n> --project <proyecto> --org <org> -o json   (por cada pedido sin terminar)"
+  ],
+  "integrations/azure-devops/scripts/dependency-notices.js": [
+    "*    explícitos en cada llamada: el default de `az devops configure` apunta a un proyecto que ya no"
   ],
   "integrations/azure-devops/scripts/work-items.js": [
     "//            az boards work-item relation add --organization <org> --id <id> --relation-type parent --target-id <Epic> --output json",
