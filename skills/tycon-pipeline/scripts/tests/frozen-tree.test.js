@@ -1131,3 +1131,79 @@ test('T31 ReviewedTree_MezclaConCambioReal_FrenaPorElReal @story-8.217 @ac-21 �
   assert.match(salida(r), /· src\/b\.js/, salida(r));
   assert.doesNotMatch(salida(r), /· src\/a\.js/, salida(r));
 });
+
+// ── El pase congela también los repos hermanos ───────────────────────────────────────────────────────────────────────
+// Caso: el pase sellaba sólo el repo de la historia; el código de los repos hermanos (backend y formularios) podía cambiar
+// mientras corría, y el pase daba por bueno algo que ya no era lo que miró.
+function conHermano() {
+  const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
+  const priv = repoDeJuguete('Priv', { 'specs/s.md': '# historia\n' });
+  fs.mkdirSync(path.join(priv.repo, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(priv.repo, '.tycon', 'advisors.yaml'),
+    `evidence:\n  companion_repos:\n    - ${path.relative(priv.repo, front.repo)}\n`);
+  priv.git('add', '.');
+  priv.git('commit', '-qm', 'declara el hermano');
+  return { front, priv, story: path.join(priv.repo, 'specs', 's.md') };
+}
+
+test('Pase_ReposDelPase_SumaLosHermanos — el congelado del pase incluye cada repo hermano declarado', () => {
+  // 🔴 rojo si: el pase congela sólo la historia y el repo de la corrida → el código del hermano no tiene sello.
+  const { front, priv, story } = conHermano();
+  const r = ft().reposDelPase({ story, repo: priv.repo });
+  assert.ok(!r.error, JSON.stringify(r));
+  assert.deepStrictEqual(r.repos, [priv.repo, front.repo]);
+  assert.deepStrictEqual(r.hermanos, [front.repo]);
+  // una configuración que no se deja leer no es «sin hermanos»: el congelado frena con el motivo
+  fs.writeFileSync(path.join(priv.repo, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos: [\n');
+  const roto = ft().reposDelPase({ story, repo: priv.repo });
+  assert.ok(roto.error, `una configuración rota no da «sin hermanos»: ${JSON.stringify(roto)}`);
+});
+
+test('Pase_HermanoCambiado_FrenaElCierre — si el código de un hermano cambió desde el lanzamiento, el cierre lo nombra; las pruebas propias declaradas no cuentan', () => {
+  // 🔴 rojo si: el cierre compara sólo las copias → un cambio en el hermano durante el pase pasa sin que nadie lo vea.
+  const { front } = conHermano();
+  const sello = ft().seal(front.repo).tree;
+  const sellos = { [front.repo]: sello };
+  assert.deepStrictEqual(ft().hermanosCambiados({ sellos, hermanos: [front.repo] }), [], 'sin cambios no frena');
+  fs.writeFileSync(path.join(front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  fs.writeFileSync(path.join(front.repo, 'tests', 'x.test.js'), '// prueba de regresión del pase\n');
+  const cambio = ft().hermanosCambiados({ sellos, hermanos: [front.repo] });
+  assert.deepStrictEqual(cambio, [{ repo: front.repo, files: ['src/x.js', 'tests/x.test.js'] }]);
+  // la prueba propia que el cierre declara (--own --in) no cuenta; el código sí
+  const conPropia = ft().hermanosCambiados({ sellos, hermanos: [front.repo], permitidos: [path.join(front.repo, 'tests', 'x.test.js')] });
+  assert.deepStrictEqual(conPropia, [{ repo: front.repo, files: ['src/x.js'] }]);
+  // sin el sello del lanzamiento no se sabe: cuenta como cambio, con el motivo
+  const sinSello = ft().hermanosCambiados({ sellos: {}, hermanos: [front.repo] });
+  assert.strictEqual(sinSello.length, 1);
+  assert.match(sinSello[0].error, /sello/);
+});
+
+test('Pase_PropiaDelHermanoConRepo_NoFrenaElCierre — la prueba propia declarada como `(<repo>) <ruta>` no cuenta como cambio del hermano; el código sí', () => {
+  // 🔴 rojo si: el cierre toma el `--in` crudo y lo resuelve contra la raíz del hermano → la forma `(Front) tests/x.test.js`,
+  // la que pide el paso del pase, frena el cierre como si el hermano hubiera cambiado.
+  const C = corrida('s-ft-hermano');
+  const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
+  fs.mkdirSync(path.join(C.codigo.repo, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, '.tycon', 'advisors.yaml'),
+    `evidence:\n  companion_repos:\n    - ${path.relative(C.codigo.repo, front.repo)}\n`);
+  C.codigo.git('add', '.');
+  C.codigo.git('commit', '-qm', 'declara el hermano');
+  const l = C.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']);
+  assert.strictEqual(l.status, 0, salida(l));
+  const sellos = C.marcador().adversarial.sellos;
+  assert.ok(sellos[front.repo], `el lanzamiento sella el hermano: ${JSON.stringify(sellos)}`);
+  const cerrar = () => {
+    const f = path.join(tmp('ft-res-'), 'step-05b-adversarial.json');
+    fs.writeFileSync(f, JSON.stringify({ confirmed: [{ lens: 'x', summary: 'y' }], sellos }));
+    return C.correr('marker.js', ['mark-adversarial-result', '1', '--type', '5b', '--result', f, '--run', 'r1', '--tests', '1', '--own', '1', '--in', '(Front) tests/x.test.js']);
+  };
+  const HERMANO = /el código de un repo hermano cambió/;
+  fs.writeFileSync(path.join(front.repo, 'tests', 'x.test.js'), '// prueba de regresión del pase\n');
+  const propia = cerrar();
+  assert.doesNotMatch(salida(propia), HERMANO, salida(propia));
+  fs.writeFileSync(path.join(front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  const codigo = cerrar();
+  assert.strictEqual(codigo.status, 2, salida(codigo));
+  assert.match(salida(codigo), HERMANO);
+  assert.match(salida(codigo), /Front: src\/x\.js$/m);
+});
