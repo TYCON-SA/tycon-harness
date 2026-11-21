@@ -455,6 +455,10 @@ test('PlanVisible_ConMaqueta_TambienSeMuestra @story-8.65 @ac-3 @ac-6', () => {
   fs.mkdirSync(path.dirname(mockup), { recursive: true });
   const demo = spawnSync('node', [path.join(SCRIPTS, 'mockup.js'), 'demo', '--out', mockup], { cwd: repo, encoding: 'utf8' });
   assert.equal(demo.status, 0, demo.stderr);
+  // su revisión con navegador, limpia (la de `mockup.js shots`; el navegador se prueba en mockup.test.js)
+  const SH = require(path.join(SCRIPTS, 'lib', 'mockup-shots.js'));
+  const mirada = SH.shotsPaths(mockup);
+  SH.escribirInforme({ report: mirada.report, file: path.basename(mockup), sha256: mk.mockupHash(fs.readFileSync(mockup, 'utf8')), shots: mirada.shots, findings: [] });
   conversacion(home, 's-maqueta', ['Te muestro la maqueta: ' + mockup]);
   const cita = ['--mockup-approved', 'la maqueta está bien, aprobada'];
   // la maqueta aprobada no tapa el plan: un ok sin el plan a la vista no aprueba

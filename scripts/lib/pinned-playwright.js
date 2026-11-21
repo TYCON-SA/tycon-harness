@@ -1,4 +1,6 @@
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 // pinned-playwright.js — la versión fija de Playwright del arnés, en un solo lugar.
 //
 // Playwright no es una dependencia del arnés: lo usan las pruebas del sitio que abren un navegador
