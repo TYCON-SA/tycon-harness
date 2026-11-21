@@ -37,9 +37,6 @@
     "* Cada sesión encola con `az pipelines run --id <validación> --branch <rama>`; si después empuja otro commit y vuelve a",
     "say(`encolada: #${q.json.id} (pipeline ${pipeline}, ${branch}${allNote}) — confirmala con: az pipelines runs show --id ${q.json.id}`);"
   ],
-  "scripts/hooks/failed-query-notice.js": [
-    "*  2. «Ese proyecto no existe». En los segmentos `az repos|pipelines|boards|artifacts|devops …` (y"
-  ],
   "scripts/hooks/pr-auto-complete-guard.js": [
     "* Al ACTUALIZAR no se puede acotar igual: `az repos pr update` identifica el PR por número y **no",
     "* QUÉ HACE. Para cada `az repos pr create` del comando —cada uno con SUS banderas, aunque vengan",
@@ -101,6 +98,10 @@
   "scripts/tools/legacy-retire-check.js": [
     "const bad = list.ok && !Array.isArray(list.json) ? 'az pipelines list no devolvió una lista' : null;",
     "if (!runs.ok || !Array.isArray(runs.json)) { fail(label, `runs list ${p.id}`, runs.error || 'az pipelines runs list no devolvió una lista', extra); continue; }"
+  ],
+  "integrations/azure-devops/scripts/query-notice.js": [
+    "*     `az repos|pipelines|boards|artifacts|devops …` (y SÓLO ahí: `az login -p` es una contraseña, `mkdir -p` no es az)",
+    "*   · `clasificar({ pos, limpio })`: un `az … list/show` (y `az devops invoke` sin método de escritura) es una"
   ],
   "guides/integrations/ado-cola-y-listados.md": [
     "**Qué pasa:** después de cancelar despliegues encolados, `az pipelines runs list` proyecto por",
