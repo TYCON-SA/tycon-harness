@@ -2949,3 +2949,21 @@ test('T49 Status_EsperaVieja_GanaElRegistroDeTurnos: con su portón o su lugar d
   const s2 = C.status(opts(62));
   assert.deepStrictEqual(s2.suiteWaiting.map((x) => x.session), ['Bea'], JSON.stringify(s2.suiteWaiting));
 });
+
+// Caso: con el dueño ausente, la coordinadora no sabía qué hacer con las firmas ni con los avisos por mensajería, y lo
+// decidía de memoria. La línea sale una vez por marca, con lo que dice el perfil del equipo.
+// 🔴 mutación: sacar la línea de capNotice, repetirla en cada turno, o decir «en la tanda de cada hora» de fábrica.
+test('T60 CapNotice_OwnerAway_OnceWithTheProfilePreferences — de fábrica, firmas para cuando vuelva y ningún aviso', () => {
+  const MA = require('../lib/owner-away.js');
+  const t = coordinated();
+  const turno = () => C.capNotice({ ...t.opts, sessionId: 'coord-1' }) || '';
+  assert.doesNotMatch(turno(), /dueño está ausente/, 'sin marca no hay línea');
+  MA.set({ home: t.home, quien: 'coord-1', frase: 'me voy, seguí en autónomo', ahora: mins(5) });
+  const linea = turno();
+  assert.match(linea, /dueño está ausente desde las \d\d:\d\d UTC\. Sin cuadros de opciones[\s\S]*juntas para cuando vuelva, en una sola tanda[\s\S]*avisos por mensajería: ninguno/);
+  assert.doesNotMatch(turno(), /dueño está ausente/, 'la misma marca no se repite');
+  // con el perfil que pide la tanda de cada hora y avisar si algo se rompe, y una marca nueva
+  const u = coordinated({ approvals: { relay_session: 'coordinadora' }, coordination: { away_signatures: 'hourly', away_notify: 'broken-only' } });
+  MA.set({ home: u.home, quien: 'coord-1', frase: 'hasta mañana', ahora: mins(5) });
+  assert.match(C.capNotice({ ...u.opts, sessionId: 'coord-1' }) || '', /en la tanda de cada hora[\s\S]*avisos por mensajería: sólo si algo se rompe de verdad/);
+});

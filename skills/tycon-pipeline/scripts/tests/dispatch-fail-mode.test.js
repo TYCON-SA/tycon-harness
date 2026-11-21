@@ -62,7 +62,7 @@ const TIRA = "module.exports = { handle() { throw new Error('se rompió adentro'
 
 const TABLA = {
   'pre-edit': {
-    'on-controls-off': 'closed', 'on-coordination-write': 'closed', 'on-story-gate': 'closed-on-state',
+    'on-controls-off': 'closed', 'on-coordination-write': 'closed', 'on-owner-away-claude-dir': 'open', 'on-story-gate': 'closed-on-state',
     'on-story-skill-gate': 'open', 'on-dod-evidence-guard': 'closed', 'on-frontmatter-write': 'closed',
     'on-atdd-preedit': 'open', 'on-red-test-edit': 'closed', 'on-write-collision': 'open', 'on-planning-artifact': 'open',
     'on-deprecated-edit': 'open',

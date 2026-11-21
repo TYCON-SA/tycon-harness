@@ -1017,3 +1017,24 @@ test('Lista_AprobadasSinRepetir_NoAprobadaONoLeida (G2) — @story-8.234 @ac-15'
   assert.strictEqual(a.ids.size, 0);
   assert.deepStrictEqual(a.problemas, ['no pude leer los procesos de la máquina: no sé qué firmas ya están aprobadas']);
 });
+
+// Caso: el dueño vuelve y escribe en una sesión de fondo cuyo encargo quedó anotado como de otra sesión. Con la regla de
+// las firmas, su primer mensaje no contaba y la marca del dueño ausente seguía puesta: el cuadro que pedía se negaba.
+// 🔴 mutación: usar esDeLaPersona para volver (el primer mensaje del dueño en la de fondo no cuenta y esto falla).
+test('Volver_PrimerMensajeEnSesionDeFondo_Cuenta — el encargo no; lo envuelto y lo programado tampoco', (t) => {
+  const toy = casaNueva(t);
+  const conv = path.join(toy.raiz, 'conv.jsonl');
+  const renglon = (texto, extra) => JSON.stringify({ type: 'user', message: { role: 'user', content: texto }, ...extra });
+  fs.writeFileSync(conv, `${renglon('implementá la historia 9.9', { origin: { kind: 'peer' } })}\n${renglon('volví, ¿cómo vamos?', { origin: { kind: 'human' } })}\n`);
+  const bg = (prompt) => sl.volvioLaPersona({ prompt, kind: 'bg', transcript: conv });
+  assert.strictEqual(bg('volví, ¿cómo vamos?'), true, 'el primer mensaje del dueño en la de fondo cuenta');
+  assert.strictEqual(sl.esDeLaPersona({ prompt: 'volví, ¿cómo vamos?', kind: 'bg', transcript: conv }), false, 'la regla de las firmas no cambia');
+  assert.strictEqual(bg('implementá la historia 9.9'), false, 'el encargo no');
+  // una conversación con un solo mensaje: ése es el encargo, aunque esté anotado como de persona
+  const sola = path.join(toy.raiz, 'sola.jsonl');
+  fs.writeFileSync(sola, `${renglon('implementá la historia 9.9', { origin: { kind: 'human' } })}\n`);
+  assert.strictEqual(sl.volvioLaPersona({ prompt: 'implementá la historia 9.9', kind: 'bg', transcript: sola }), false);
+  assert.strictEqual(bg('<cross-session-message from="x">hola</cross-session-message>'), false, 'lo envuelto no');
+  assert.strictEqual(sl.volvioLaPersona({ prompt: 'volví', kind: null, transcript: conv }), false, 'sin dato de la sesión no');
+  assert.strictEqual(sl.volvioLaPersona({ prompt: 'volví', kind: 'interactive', transcript: conv }), true);
+});

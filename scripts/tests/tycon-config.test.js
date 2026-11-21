@@ -2757,3 +2757,22 @@ test('Config_DelegationWaitMinutes_SoloDelPerfilYDe1a60 (T22) — @story-8.295 @
   const d = DR.delegable({ firma: 'extra-round', destino: 'ses-a', casa: home, palabras: ['/h/pipeline.js', 'smart-reloop', '--iter', '3', '--extra-round'], cwd: home, arnes: arnesCon(null), env: {}, delegacion: () => ({ ok: true }) });
   assert.deepEqual([d.ok, d.callar], [false, true]);
 });
+
+// ── Las preferencias del dueño ausente: coordination.away_signatures y away_notify ─────────────────────────────────
+
+// 🔴 Falla con: otro valor de fábrica que «on-return» y «never» (avisar de noche por defecto despierta al dueño), o un
+// valor fuera de la lista que el lector acepta.
+test('Config_AwayPreferences_DefaultsAndValues — firmas on-return y avisos never de fábrica; el perfil las cambia; otro valor es error', () => {
+  const fabrica = lib().coordinacion(cargar({ home: casa(), arnes: arnesCon({}) }));
+  assert.deepEqual(fabrica.away_signatures, { value: 'on-return', origin: 'sin-valor' });
+  assert.deepEqual(fabrica.away_notify, { value: 'never', origin: 'sin-valor' });
+  const perfil = lib().coordinacion(cargar({ home: casa(), arnes: arnesCon({ coordination: { away_signatures: 'hourly', away_notify: 'broken-only' } }) }));
+  assert.deepEqual(perfil.away_signatures, { value: 'hourly', origin: 'perfil' });
+  assert.deepEqual(perfil.away_notify, { value: 'broken-only', origin: 'perfil' });
+  const v = cargar({ home: casa(), arnes: arnesCon({}), env: { TYCON_COORDINATION_AWAY_NOTIFY: 'broken-only' } });
+  assert.deepEqual(lib().coordinacion(v).away_notify, { value: 'broken-only', origin: 'env' });
+  for (const [clave, malo] of [['away_signatures', 'weekly'], ['away_notify', 'always']]) {
+    const roto = cargar({ home: casa(), arnes: arnesCon({ coordination: { [clave]: malo } }) });
+    assert.ok(roto.errores.some((e) => e.clave === `coordination.${clave}`), `${clave}=${malo}: ${JSON.stringify(roto.errores.map((e) => e.clave))}`);
+  }
+});
