@@ -549,6 +549,10 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
   for (const o of sinEscapes.matchAll(/\bPath\s*\(\s*[rRbBuUfF]{0,2}(['"])([^'"]+)\1\s*\)\s*\.\s*open\s*\(/g)) {
     if (abreParaEscribir(sinEscapes, o.index + o[0].length, true)) out.add(o[2]);
   }
+  // perl, con el manejador primero: `open(FH, '>f')` (el modo pegado a la ruta) y `open(my $fh, '>', 'f')`; escribe con
+  // `>`, `>>`, `+<` o `+>`
+  for (const o of sinEscapes.matchAll(/\bopen\s*\(?\s*(?:my\s+)?\$?\w+\s*,\s*(['"])\s*(?:\+<|\+?>{1,2})\s*([^'"\s]+)\1/g)) out.add(o[2]);
+  for (const o of sinEscapes.matchAll(/\bopen\s*\(?\s*(?:my\s+)?\$?\w+\s*,\s*(['"])\s*(?:\+<|\+?>{1,2})[^'"]*\1\s*,\s*(['"])([^'"]+)\2/g)) out.add(o[3]);
   for (const texto of new Set([raw, sinEscapes])) {
     const reNodeWrite = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile)\(\s*(['"`])([^'"`]+)\1/g;
     while ((m = reNodeWrite.exec(texto))) out.add(m[2]);
@@ -1024,8 +1028,9 @@ function primerArgumento(texto, desde) {
   return { arg: texto.slice(desde, hasta).trim(), fin: hasta };
 }
 
-// Un modo de abrir que sólo lee: `'r'`, `'rb'`, `"rt"` en python y ruby, `'<'` en perl.
-const MODO_SOLO_LEE = /^(['"])[rbtU<]*\1$/;
+// Un modo de abrir que sólo lee: `'r'`, `'rb'`, `"rt"` en python y ruby, con la codificación de ruby (`'r:utf-8'`,
+// `'rb:BOM|utf-8'`), `'<'` y `'<:encoding(UTF-8)'` en perl, y `os.O_RDONLY` sola en os.open
+const MODO_SOLO_LEE = /^(?:(['"])(?:[rbtU<]*|r[bt]?:[\w|-]+(?::[\w|-]+)?|<:[\w()|:-]+)\1|os\.O_RDONLY)$/;
 const ARGUMENTO_CON_NOMBRE = /^[A-Za-z_]\w*\s*=(?!=)/;
 // los argumentos con nombre de un `open(` que no cambian cómo abre: el archivo y su lectura
 const ARGUMENTOS_DE_LECTURA = new Set(['file', 'path', 'encoding', 'errors', 'newline', 'buffering', 'closefd']);
@@ -1247,6 +1252,11 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
     const sinEscapes = sinEscapesDeComillas(script);
     for (const m of sinEscapes.matchAll(/\bopen\s*\(/g)) {
       const a = primerArgumento(sinEscapes, m.index + m[0].length);
+      // en perl el primer argumento es el manejador (`my $fh`, o `FH` seguido de un modo de perl): su destino lo leen la
+      // regla de perl de abajo y los destinos literales. Un nombre en mayúsculas sin modo de perl es una variable
+      // (`open(P, 'w')` en python): sigue contando
+      const segundo = sinEscapes[a.fin] === ',' ? primerArgumento(sinEscapes, a.fin + 1).arg : '';
+      if (/^(?:my\s+)?\$\w+$/.test(a.arg) || (/^[A-Z][A-Z0-9_]*$/.test(a.arg) && /^(['"])\s*(?:\+?[<>]|\|)/.test(segundo))) continue;
       if (abreParaEscribir(sinEscapes, m.index + m[0].length, false) && sinEscapes[a.fin] === ',') add(a.arg);
     }
     // python: Path(<destino>).write_text / write_bytes

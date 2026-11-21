@@ -503,12 +503,19 @@ test('T34b OpenSinModoDeEscritura_NoEsEscritura', () => {
       `python3 -c "open(r'.github/control-changes/n.md', 'w')"`,
       `python3 -c "from pathlib import Path; Path('.github/control-changes/n.md').open('a').write('x')"`,
       `python3 -c "import io; io.open(file='.github/control-changes/n.md', mode='w')"`,
+      // perl con el manejador primero, en sus dos formas; ruby con codificación y os.open que no sólo lee
+      `perl -e 'open(FH, ">specs/story-x.md")'`,
+      `perl -e 'open(my $fh, ">", ".github/control-changes/n.md")'`,
+      `ruby -e "File.open('specs/story-x.md', 'r+:utf-8').write('x')"`,
+      `python3 -c "import os; os.open('specs/story-x.md', os.O_RDONLY|os.O_TRUNC)"`,
     ]) assert.notEqual(freno(c), '', c);
     // leer una constancia, o un archivo con su modo de lectura entre comillas escapadas, no es escribirlo
     for (const c of [
       `python3 -c "print(open('.github/control-changes/n.md').read())"`,
       `python3 -c "print(open('.github/control-changes/n.md', mode=\\"r\\").read())"`,
       `python3 -c "from pathlib import Path; print(Path('.github/control-changes/n.md').open().read())"`,
+      `ruby -e "File.open('specs/story-x.md', 'r:utf-8').read"`,
+      `python3 -c "import os; os.open('specs/story-x.md', os.O_RDONLY)"`,
       `python3 -c "import sys; print(open(sys.argv[1], \\"r\\").read())" specs/story-x.md`,
       porArchivo("print(open(file=sys.argv[1], errors='replace').read())"),
     ]) assert.equal(freno(c), '', c);
