@@ -171,7 +171,14 @@ function names(text, f, { rel = null, ambiguous = null } = {}) {
   if (dir === '.') return true;
   const parent = path.posix.basename(dir);
   if (nombraEntero(text, `${parent}/${base}`) || nombraEntero(text, parent)) return true;
-  return rel !== null && path.posix.dirname(rel) === dir;
+  if (rel === null) return false;
+  if (path.posix.dirname(rel) === dir) return true;
+  return relativeRefs(text).some((r) => path.posix.join(path.posix.dirname(rel), r) === f || path.posix.join(path.posix.dirname(rel), `${r}.js`) === f);
+}
+
+// las rutas relativas entre comillas (`'../state.js'`, `"./lib/x"`): resueltas desde la suite, dicen qué archivo es
+function relativeRefs(text) {
+  return [...text.matchAll(/['"`](\.\.?\/[^'"`\s]+)['"`]/g)].map((m) => m[1]);
 }
 
 // el nombre sin extensión escrito como el de un archivo: `/state'`, `'state.`, `"state/`

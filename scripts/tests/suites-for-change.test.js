@@ -1224,6 +1224,13 @@ test('Direct_RepeatedName_NeedsItsFolder — un nombre que se repite en el repo 
   put('c.test.js', "const f = path.join(root, 'scripts', 'nightly', 'deps', 'repos.json');\n");
   const cerca = directPlan(dir, ['scripts/nightly/deps/repos.json', 'scripts/lib/util.js']);
   assert.deepStrictEqual(cerca.run.sort(), ALL4, `con su carpeta sí\n${cerca.err}`);
+  // por una ruta relativa desde la suite, que no dice la carpeta: también (resuelta desde scripts/tests)
+  fs.writeFileSync(path.join(dir, 'scripts', 'repos.json'), '{}\n');
+  assert.strictEqual(spawnSync('git', ['-C', dir, 'add', '-A']).status, 0);
+  put('b.test.sh', 'echo nada\n');
+  put('c.test.js', "const f = require('../repos.json');\n");
+  const relativa = directPlan(dir, ['scripts/repos.json', 'scripts/lib/util.js']);
+  assert.deepStrictEqual(relativa.run.sort(), ['a.test.js', 'c.test.js', 'd.test.js'], `la ruta relativa la nombra\n${relativa.err}`);
   // sin git en el repo: el nombre solo cuenta, como antes
   fs.rmSync(path.join(dir, '.git'), { recursive: true, force: true });
   put('b.test.sh', 'cat "$X/other/repos.json"\n');
