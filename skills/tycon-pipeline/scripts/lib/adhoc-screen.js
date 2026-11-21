@@ -56,16 +56,24 @@ function pedidoPorBanderas(args) {
       const v = args[++i];
       if (v === undefined || v.startsWith('-')) return { problema: '--file necesita una ruta, y no puede empezar con «-»' };
       (payload.allowedFiles = payload.allowedFiles || []).push(v);
-    } else if (a === '--reason' || a === '--max-files' || a === '--data') {
-      const clave = { '--reason': 'reason', '--max-files': 'maxFiles', '--data': 'datos' }[a];
+    } else if (a === '--reason' || a === '--max-files' || a === '--data' || a === '--ci-red' || a === '--check') {
+      const clave = { '--reason': 'reason', '--max-files': 'maxFiles', '--data': 'datos', '--ci-red': 'ciRojo', '--check': 'control' }[a];
       const v = args[++i];
       if (clave in payload) return { problema: `${a} va una sola vez` };
       if (v === undefined || v.startsWith('-')) return { problema: `${a} necesita un valor, y no puede empezar con «-»` };
       if (clave === 'maxFiles' && !/^\d+$/.test(v)) return { problema: '--max-files es un número entero' };
-      payload[clave] = clave === 'maxFiles' ? Number(v) : v;
+      if (clave === 'ciRojo' && !/^[1-9]\d*$/.test(v)) return { problema: '--ci-red es el número del pedido' };
+      payload[clave] = clave === 'maxFiles' || clave === 'ciRojo' ? Number(v) : v;
     } else return { problema: `no conozco «${enUnRenglon(a)}»` };
   }
   if (!('reason' in payload)) return { problema: 'falta --reason' };
+  // el arreglo de un rojo de CI va siempre con banderas, desde la sesión o desde la terminal: el pedido y el control que
+  // falló, y nunca con un cupo propio
+  if ('ciRojo' in payload || 'control' in payload) {
+    if (!('ciRojo' in payload) || !('control' in payload)) return { problema: '--ci-red <pedido> y --check "<control que falló>" van juntos' };
+    if ('maxFiles' in payload) return { problema: 'el arreglo de un rojo de CI tiene su propio tope: va sin --max-files' };
+    return { payload };
+  }
   if (!terminal) return { problema: 'esta forma va sólo con --terminal; desde una sesión, el pedido va en JSON' };
   return { payload };
 }

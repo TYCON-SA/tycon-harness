@@ -6852,6 +6852,8 @@ function normalizeFindingRecord(raw, warnings, ctx) {
     ...(refutation ? { refutation } : {}),
     // lo que quedó abierto al llegar al tope de vueltas: deuda visible (lib/review-rounds.js)
     ...(disposition === 'deferred' && String(raw.deuda || '').trim() === 'tope' ? { deuda: 'tope' } : {}),
+    // lo que una vuelta de arreglo encontró fuera de sus líneas (lib/fix-scope.js): seguimiento, no otra vuelta
+    ...(disposition === 'deferred' && String(raw.deuda || '').trim() === 'fuera-del-arreglo' ? { deuda: 'fuera-del-arreglo' } : {}),
   };
 }
 
@@ -7071,6 +7073,16 @@ function writeFindings(args) {
     normWarnings.push(`no pude leer review.blocking_severity de la organización (${String((e && e.message) || e).split('\n')[0]}): uso el corte de fábrica, bug`);
   }
   const records = arr.map((r) => normalizeFindingRecord(r, normWarnings, { roster, errores, runDir, corte }));
+  // los revisores de un arreglo no ensanchan su alcance: lo de la vuelta del arreglo fuera de sus líneas, a seguimiento
+  let fueraDelArreglo = [];
+  try {
+    const marcador = readSessionMarker();
+    if (marcador && String(marcador.storyId) === String(storyId) && marcador.sessionId) {
+      const fx = require('./lib/fix-scope.js');
+      const alcance = fx.alcanceDelArreglo({ stateDir: stateDirOf(), sid: marcador.sessionId, story: storyId });
+      if (alcance) { const a = fx.aplicar(records, alcance); records.splice(0, records.length, ...a.records); fueraDelArreglo = a.fuera; }
+    }
+  } catch (e) { normWarnings.push(`no pude medir qué hallazgos caen fuera del arreglo (${String((e && e.message) || e).split('\n')[0]}): quedan como vinieron`); }
   if (errores.length) {
     return { error: errores.join('\n'), firmantes_invalidos: errores.length, run_dir: runDir,
       note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
@@ -7160,6 +7172,8 @@ function writeFindings(args) {
   } : null;
   return {
     wrote: true, path: outPath, story_id: storyId, total: records.length, counts,
+    // primero los críticos: no frenan el arreglo, pero se ven
+    ...(fueraDelArreglo.length ? { fuera_del_arreglo: fueraDelArreglo.map((f) => ({ rule_id: f.rule_id, severity: f.severity, file: f.file, ...(Number.isInteger(f.line) ? { line: f.line } : {}) })) } : {}),
     ...(rethink ? { rethink } : {}),
     ...(sinMedir.length ? { sin_medir: sinMedir } : {}),
     ...(reportedNote ? { reported_criticals: reportedNote } : {}),
@@ -7167,6 +7181,7 @@ function writeFindings(args) {
     ...(proyeccion.projected ? { projected_to_story_repo: proyeccion.dest } : {}),
     ...(proyeccion.reason && proyeccion.reason.startsWith('no se pudo') ? { warnings: [...normWarnings, `proyección al repo de la story: ${proyeccion.reason}`] } : (normWarnings.length ? { warnings: normWarnings } : {})),
     note: `findings.json escrito (${records.length} findings: ${counts.critical} CRITICAL / ${counts.warning} WARNING). `
+      + (fueraDelArreglo.length ? `${fueraDelArreglo.length} hallazgo(s) de la vuelta del arreglo caen fuera de sus líneas y pasan a seguimiento, sin otra vuelta${fueraDelArreglo.some((f) => /critical/i.test(String(f.severity))) ? ' (hay críticos: van primero en el seguimiento)' : ''}. ` : '')
       + (rethink ? `La corrida lleva ${rethink.rounds} vueltas de revisores y ${rethink.notes_count} nota${rethink.notes_count === 1 ? '' : 's'} de repensar el enfoque (vueltas ${rethink.notes.map((n) => n.iter).join(', ')}): van al informe de «Hallazgos». ` : '')
       + `Siguiente: pipeline.js write-followups --story ${args.story} --findings ${outPath} (persiste los no-resueltos EN la story).`,
   };

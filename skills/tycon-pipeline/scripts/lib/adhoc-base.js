@@ -309,6 +309,10 @@ const corto = (sha) => String(sha).slice(0, 12);
  *    rama como `main`. Se mide desde el punto de salida de la base anotada, con aviso; sin ella, no se mide.
  */
 function laBase(repo, adhoc, nacido) {
+  // el arreglo de un rojo de CI (lib/ci-red-lane.js) se mide desde la punta del pedido que dio rojo: lo ya revisado del
+  // pedido no suma al tope ni pide revisores
+  const delPedido = adhoc && adhoc.ciRojo && adhoc.ciRojo.puntas && adhoc.ciRojo.puntas[repo];
+  if (delPedido && ES_SHA.test(delPedido) && existeElCommit(repo, delPedido)) return { sha: delPedido, de: 'pedido' };
   const anotada = adhoc && adhoc.bases && adhoc.bases[repo];
   const hoy = origenDe(repo);
   const cabeza = () => (nacido ? git(repo, ['rev-parse', '--verify', '-q', 'HEAD']) : null);
