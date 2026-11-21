@@ -345,7 +345,7 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
 //     puede comparar;
 //   · en la carpeta qa de la historia, un archivo de ESTA historia (su nombre empieza con el de la historia) que sea su
 //     guía o su informe (.html, .htm, .md, .pdf) o una imagen, si la carpeta no cuelga de una que la app sirve o compila.
-// Nada de eso vale dentro de una carpeta de instrucciones para un agente (skills, agents, .claude, .github y demás).
+// Nada de eso vale dentro de una carpeta de instrucciones para un agente (skills, agents, la de cada herramienta y demás).
 // Nunca un archivo nuevo o cambiado que no sea común en los dos sellos (`100644`), ni un borrado: un enlace que pasa a
 // archivo, un ejecutable o un submódulo cuentan. Un .md o .txt suelto tampoco: puede ser la instrucción de un agente
 // (un CLAUDE.local.md, lo que importa un CLAUDE.md) o algo que corre (requirements.txt, un doctest). Lo sensible del
@@ -357,7 +357,18 @@ const DE_LA_GUIA = new Set(['.html', '.htm', '.md', '.pdf']);
 // al lado de su prueba): cambiarla cambia lo que la prueba acepta, y cuenta
 const DE_PRUEBA_VISUAL = /(^|\/)[^/]*(test|spec|e2e|cypress|playwright|snapshot|screenshot|baseline|reference|golden|expected|backstop|visual|\.loki|\.reg)[^/]*\//;
 // una imagen o un texto en una carpeta de instrucciones para un agente es parte de esa instrucción: cuenta
-const DE_INSTRUCCIONES = /(^|\/)(skills|agents|commands|steps|prompts|rules|hooks|integrations|packs|guides|\.claude|\.codex|\.cursor|\.github)\//;
+// la carpeta de Claude Code sale de tycon-home.js, el único que la nombra; se lee al usarla, y si no se puede, nada se
+// perdona (null)
+let deInstrucciones;
+function carpetasDeInstrucciones() {
+  if (deInstrucciones !== undefined) return deInstrucciones;
+  try {
+    const deClaude = path.basename(require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js')).claudeDir(path.sep));
+    const carpetas = ['skills', 'agents', 'commands', 'steps', 'prompts', 'rules', 'hooks', 'integrations', 'packs', 'guides', deClaude, '.codex', '.cursor', '.github'];
+    deInstrucciones = new RegExp(`(^|/)(${carpetas.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})/`);
+  } catch (_) { deInstrucciones = null; }
+  return deInstrucciones;
+}
 // una carpeta qa que cuelga de una carpeta que la app sirve o compila no es papeleo: lo que hay ahí puede publicarse
 const DE_LA_APP = /(^|\/)(public|static|www|wwwroot|dist|build|out|assets|src|app|pages|lib)(\/|$)/;
 
@@ -372,7 +383,8 @@ function noSeEjecuta(rel, modos, qaRel, historia) {
   const bajo = String(rel).toLowerCase();
   if (require('./save-ok.js').esSensible(bajo)) return false;
   const ext = path.posix.extname(bajo);
-  if (DE_INSTRUCCIONES.test(bajo)) return false;
+  const instrucciones = carpetasDeInstrucciones();
+  if (!instrucciones || instrucciones.test(bajo)) return false;
   if (qaRel && historia && bajo.startsWith(`${qaRel.toLowerCase()}/`)) {
     if (DE_LA_APP.test(qaRel.toLowerCase())) return false;
     const nombre = bajo.slice(qaRel.length + 1);
