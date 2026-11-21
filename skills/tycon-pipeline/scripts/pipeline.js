@@ -5138,6 +5138,7 @@ function equivalenciasDeModelos() {
 //      diff toca una de esas rutas, corre AUNQUE el risk-class dé LOW. Está en el 4to
 //      lugar a propósito: no puede pisar el kill-switch ni el `off` del dueño del repo, pero sí
 //      gana sobre el criterio por tamaño de diff, que puede dejar pasar un defecto en superficie compartida.
+//   4d) el código va a un repo hermano con su corrida a la vista (lib/delegated-pass.js): esa corrida decide el pase.
 //   5) default → risk-class (NORMAL run / LOW skip). Si el repo NO declaró superficie compartida,
 //      el skip por LOW se decide a ciegas y el veredicto lo dice (`shared_surface_declared:false`).
 // Corre UNA vez por corrida (default: se lanza al cierre de «Correr las pruebas» y el paso del pase adversarial es el join; TYCON_5B_EARLY=0 → se lanza en su paso), NUNCA por re-loop D.i
@@ -5336,7 +5337,17 @@ function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = fa
   const ej = ejecucionDeLaCorrida(args, corrida);
   const constancia = ej ? sk.vigente({ ...ej, casa, userInfo })
     : { ok: false, motivo: 'no hay una ejecución abierta de esta story', ninguna: true };
-  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia, marcador: corrida || null });
+  // el pase que le toca a la corrida del repo hermano: sólo con una corrida de esta story y sin la constancia, que ya saltea.
+  // Lo que no se pudo mirar no deja el pase: el portón sigue como siempre y lo dice
+  let paseDelegado = null;
+  if (ej && !constancia.ok) {
+    try {
+      paseDelegado = require('./lib/delegated-pass.js').paseDelegado({ repo: args.repo, story: args.story, files: args.files, filesDeclarado: args.filesDeclarado, marcador: corrida });
+    } catch (e) {
+      paseDelegado = { ok: false, motivo: `no pude mirar si el pase le toca al repo hermano (${e && e.message})` };
+    }
+  }
+  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia, marcador: corrida || null, paseDelegado });
   let texto = '';
   // Sin corrida no hay ejecución que firmar: la constancia nombra carpeta y comienzo, y no se ofrecen comandos.
   if (result.skip_request && mostrar && !ej) {
@@ -5428,6 +5439,21 @@ function criterioDelPase(args) {
   if (runSize.size === 'liviana') {
     return { run: false, risk: 'liviana', model: null, run_size: 'liviana', reason: `corrida liviana (${runSize.reason}) → sin pase adversarial; override: --deep-review o marker.js set-size completa --reason "<por qué>"` };
   }
+  // 4d) El código va a un repo hermano y su corrida se ve: esa corrida, con su portón, decide el pase sobre ese código.
+  //     Lo mira `deepReviewGateDeLaCorrida` (lib/delegated-pass.js); sin la mirada, o con algo que falte, se sigue
+  //     como siempre y el veredicto dice por qué (`delegation`).
+  const pd = args.paseDelegado || null;
+  if (pd && pd.ok) {
+    return { run: false, risk: 'delegated', model: null, decision: 'delegate', delegated_to: pd.hermanos,
+      reason: `${pd.motivo}: esta corrida no corre el pase ni pregunta (${pd.hermanos.map((h) => `la ejecución de ${h.nombre}, sesión ${h.sesion || '?'}`).join('; ')})` };
+  }
+  const delegacion = pd ? { delegation: { ok: false, motivo: pd.motivo } } : {};
+  const veredicto = criterioDeLaMatriz(args, { model, extras });
+  return veredicto && typeof veredicto === 'object' ? { ...veredicto, ...delegacion } : veredicto;
+}
+
+// La matriz de la organización (lib/review-policy.js `codeReview`): delicada o no, chica o grande, con la densidad.
+function criterioDeLaMatriz(args, { model, extras }) {
   // 5) La matriz de la organización (lib/review-policy.js `codeReview`): delicada o no, chica o grande.
   const rc = computeRiskClass(args);
   // `computeRiskClass` devuelve `{risk:'NORMAL', error, ...}` SIN `criteria` cuando --story es

@@ -524,8 +524,9 @@ fi
 # corrió) y `DOD_BYPASS` (cierra un paso sin la evidencia de la prueba en vivo) van al revés: activan el escape con
 # cualquier valor que no sea 0 ni vacío, así que se frena cualquier asignación salvo a 0 o a nada. El nombre se compara
 # exacto (`TYCON_TEST_GATE_PART` no es ella). Su cartel no trae la receta y su constancia anota la sesión y el escape.
-# `TYCON_NO_DEEP_REVIEW` (apaga el pase adversarial) sigue la misma regla de valores. `TYCON_STATUS_GATE` (apaga el
-# freno que no deja pasar una historia a review o done a mano) también.
+# `TYCON_STATUS_GATE` (apaga el freno que no deja pasar una historia a review o done a mano) sigue la misma regla de
+# valores. `TYCON_NO_DEEP_REVIEW` no se mira: es un pedido de saltear el pase, y el portón sólo saltea con la firma
+# `adversarial-skip`.
 ESC_VARIABLE=""; ESC_VALOR=""; ESC_CARTEL=""
 # el comando sin comillas ni barras invertidas, una sola vez (ESC-C1 y ESC-C2 lo usan). Con `tr`: en el bash de la Mac
 # (3.2), `${CMD//[…]/}` crece con el cuadrado del largo y un heredoc de unos KB tardaba segundos en cada comando
@@ -577,21 +578,20 @@ fi
 # mira, porque escrita no hace nada.
 # `TYCON_MUTATION_CHECK` (saltea los mutantes) y `TYCON_STORY_REVIEW` (saltea la revisión de la historia) las apaga un
 # solo valor (`off` sin distinguir mayúsculas, y `0`): frena ése y uno que no se lee; el que no apaga pasa.
-for _esc in TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW TYCON_STATUS_GATE TYCON_MUTATION_CHECK TYCON_STORY_REVIEW; do
+for _esc in TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_STATUS_GATE TYCON_MUTATION_CHECK TYCON_STORY_REVIEW; do
   # el filtro barato primero: sin el nombre de la variable (sin distinguir mayúsculas, por PowerShell) no hay nada que
   # mirar, y las expresiones de abajo no corren sobre un comando largo que no la nombra
   shopt -s nocasematch
   if [[ "$_esc_cmd" != *"$_esc"* ]]; then shopt -u nocasematch; continue; fi
   shopt -u nocasematch
   _esc_hit=0
-  if [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_NO_DEEP_REVIEW" || "$_esc" == "TYCON_STATUS_GATE" ]]; then
+  if [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_STATUS_GATE" ]]; then
     # éstas activan el escape con cualquier valor que no sea 0 ni vacío: se sacan las asignaciones a 0 o a nada (con
     # espacios alrededor del `=`, por PowerShell) y cualquier otra que quede frena, también un valor que no se ve (`$X`).
     # Todo en minúsculas: PowerShell no distingue mayúsculas en el nombre
     # los nombres son fijos: en minúsculas sin `tr` (una asignación suelta que falla dispararía el `trap 'exit 0' ERR`)
     case "$_esc" in
       TYCON_TEST_GATE) _esc_min="tycon_test_gate" ;;
-      TYCON_NO_DEEP_REVIEW) _esc_min="tycon_no_deep_review" ;;
       TYCON_STATUS_GATE) _esc_min="tycon_status_gate" ;;
       *) _esc_min="dod_bypass" ;;
     esac
@@ -671,7 +671,7 @@ ESC_VARIABLE=""; ESC_VALOR=""
 esc_c1_negar() {
   # las del pipeline, sin la receta: el agente no aprende a ponerse la variable
   case "$1" in
-    TYCON_TEST_GATE|DOD_BYPASS|TYCON_NO_DEEP_REVIEW|TYCON_STATUS_GATE|TYCON_MUTATION_CHECK|TYCON_STORY_REVIEW) ESC_CARTEL="$OW_TEXTO
+    TYCON_TEST_GATE|DOD_BYPASS|TYCON_STATUS_GATE|TYCON_MUTATION_CHECK|TYCON_STORY_REVIEW) ESC_CARTEL="$OW_TEXTO
 Esto lo decide la persona, no el agente: lo aprueba ella en la ventana de permiso de la herramienta, o lo corre ella en su terminal.
 Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>." ;;
     TYCON_NEW_NAMES) ESC_CARTEL="$OW_TEXTO
@@ -685,9 +685,6 @@ Saltear este freno lo decide la persona, no el agente: se repite el comando con 
     DOD_BYPASS) block "ESC-C1" \
         "DOD_BYPASS cierra un paso sin la evidencia de la prueba en vivo." \
         "Corré la prueba en vivo de verdad (la evidencia la escriben los guiones que corren las pruebas). Si no se puede, decíselo a la persona." ;;
-    TYCON_NO_DEEP_REVIEW) block "ESC-C1" \
-        "TYCON_NO_DEEP_REVIEW apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
-        "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona, en la ventana de permiso." ;;
     TYCON_STATUS_GATE) block "ESC-C1" \
         "TYCON_STATUS_GATE apaga el freno que no deja pasar una historia a review o done escribiendo el archivo a mano." \
         "El estado lo cambia el orquestador, que corre los controles del cierre: node \"\$HOME/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js\" update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona, en la ventana de permiso." ;;
@@ -766,9 +763,10 @@ fi
 ESC_CARTEL=""
 # Declarar un control en verde a mano (`marker.js set-check … --force-manual`) o dar por corridos revisores que el arnés
 # no vio (`pipeline.js check-count --trust-ran`) también lo decide la persona, y frena con la ejecución en verde: el
-# escape es el verde, no cerrar en rojo. Apagar el pase adversarial (`--no-deep-review` en `pipeline.js
-# start|deep-review-gate` o `marker.js mark-adversarial-skipped`) frena siempre, también antes de que exista la
-# ejecución: `start` la crea.
+# escape es el verde, no cerrar en rojo. Un `--env-file` delante de `pipeline.js start|deep-review-gate` o de `marker.js
+# mark-adversarial-skipped` frena siempre, también antes de que exista la ejecución (`start` la crea): puede traer una
+# variable que cambia la decisión del pase. `--no-deep-review` solo es un pedido: el portón sólo saltea con la firma
+# `adversarial-skip`, y la bandera no pide otra.
 # El comando lo lee lib/marker-command.js como lo lee el shell (comillas, renglones, `$(…)`, barras de Windows,
 # mayúsculas); acá sólo se mira si nombra `marker` o `pipeline`, sin distinguir mayúsculas, para no correr node en cada
 # comando.
@@ -936,7 +934,7 @@ fi
 # terminal. Casos: scripts/tests/owner-window.test.js (la decisión) y scripts/tests/safety-escape.test.js (el freno).
 ow_regla() { # $1 = la firma → la regla con que frena o deja constancia
   case "$1" in
-    escape:TYCON_SAFETY_OFF|escape:TYCON_PROD_LINT|escape:TYCON_NEW_NAMES|escape:TYCON_TEST_GATE|escape:DOD_BYPASS|escape:TYCON_NO_DEEP_REVIEW|escape:TYCON_STATUS_GATE|escape:TYCON_MUTATION_CHECK|escape:TYCON_STORY_REVIEW) echo "ESC-C1" ;;
+    escape:TYCON_SAFETY_OFF|escape:TYCON_PROD_LINT|escape:TYCON_NEW_NAMES|escape:TYCON_TEST_GATE|escape:DOD_BYPASS|escape:TYCON_STATUS_GATE|escape:TYCON_MUTATION_CHECK|escape:TYCON_STORY_REVIEW) echo "ESC-C1" ;;
     escape:cerrar-como-deuda|escape:rojo-esperado-de-la-matriz) echo "ESC-C4" ;;
     plan-approval) echo "ESC-C6" ;;
     control-change|refresh-after-main) echo "ESC-C7" ;;
@@ -972,8 +970,8 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
           "Confiar en la lista de revisores que da el agente (pipeline.js check-count --trust-ran) deja la constancia de revisores que el arnés no vio correr; así escrito (escondido, en una variable o en una envoltura) no se firma." \
           "Lanzá los revisores que faltan y volvé a correr check-count. Si no se puede, decíselo a la persona: si lo decide ella, la firma va en su forma exacta, sola: pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]." ;;
       no-deep-review) BLOCK_MOTIVO="no-deep-review"; block "ESC-C3" \
-          "--no-deep-review en ${sub} apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
-          "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona, en la ventana de permiso." ;;
+          "Un --env-file delante de ${sub} puede traer una variable que cambia la decisión del pase adversarial (como el umbral de densidad) sin que el comando la muestre." \
+          "Corré el comando sin --env-file. Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; saltearlo lo firma la persona (marker.js sign-adversarial-skip)." ;;
       set-autonomous) BLOCK_MOTIVO="set-autonomous"; block "ESC-C3" \
           "Apagar el modo autónomo (marker.js set-autonomous ${a1}) saca el lazo que no deja cerrar el turno con un control en rojo.${_c3_motivo:+ Hoy: ${_c3_motivo}.}" \
           "Arreglá lo que está en rojo y volvé a correr el control. Si no se puede, decíselo a la persona." ;;

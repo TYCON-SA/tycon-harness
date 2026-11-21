@@ -1551,6 +1551,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/adversarial-skip-one-signature.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/reviewers-cost.test.sh",
       "requiere": []
     },
@@ -1593,6 +1598,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-skip-signed.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/delegated-pass.test.js",
       "requiere": []
     },
     {

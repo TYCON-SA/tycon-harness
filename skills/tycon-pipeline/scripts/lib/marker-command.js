@@ -431,7 +431,7 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
 
 /**
  * Lo que la llamada pide decidir a la persona: 'set-autonomous', 'cerrar la ejecución', 'force-manual', 'trust-ran',
- * 'no-deep-review', la variable que un `--env-file` puede traer ('TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW') o null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
+ * 'no-deep-review' (un `--env-file` delante de los guiones del pase; la bandera sola es un pedido), la variable que un `--env-file` puede traer ('TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW') o null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
  */
 // Las opciones que llevan valor, por guion: lo que va después de una de ellas es su valor (`--repo $PWD`). Las de
 // `pipeline.js` se leen de su propio lector de opciones (las que consumen `argv[++i]`), así una opción nueva no queda
@@ -549,13 +549,14 @@ function escapeDe(llamada, sid, comando = null) {
   if (llamada.guion === 'pipeline') {
     // `check-count --trust-ran`: la lista de revisores la da el agente y el arnés no la vio correr
     if (sub === 'check-count') return pide('--trust-ran') && !porSuGuion('trust-ran') ? 'trust-ran' : null;
-    // apagar el pase adversarial al arrancar la historia o al consultar el portón; un `--env-file` delante del guion
-    // puede traer `TYCON_NO_DEEP_REVIEW` sin que el comando la muestre
-    if (sub === 'start' || sub === 'deep-review-gate') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
+    // `--no-deep-review` es un pedido: el pase se saltea sólo con la firma `adversarial-skip`, y la bandera no pide otra.
+    // Un `--env-file` delante del guion al arrancar la historia o al consultar el portón sí: puede traer una variable que
+    // cambia la decisión del pase (el umbral de densidad) sin que el comando la muestre
+    if (sub === 'start' || sub === 'deep-review-gate') return llamada.envFile ? 'no-deep-review' : null;
     // la revisión de la historia (`validators`, su nombre viejo y su portón): el archivo puede traer TYCON_STORY_REVIEW
     if (llamada.envFile && ['validators', 'validadores', 'story-review-gate', null].includes(sub)) return 'TYCON_STORY_REVIEW';
-    // sin subcomando a la vista: puede ser cualquiera de los dos
-    if (sub === null && llamada.dudosa) return pide('--trust-ran') ? 'trust-ran' : pide('--no-deep-review') ? 'no-deep-review' : null;
+    // sin subcomando a la vista: puede ser `check-count`, o el portón del pase con un `--env-file`
+    if (sub === null && llamada.dudosa) return pide('--trust-ran') ? 'trust-ran' : llamada.envFile ? 'no-deep-review' : null;
     return null;
   }
   // cerrar las pruebas (por su nombre, el del marcador viejo o en una variable): el archivo puede traer TYCON_MUTATION_CHECK.
@@ -563,11 +564,12 @@ function escapeDe(llamada, sid, comando = null) {
   if (sub === 'complete-step' && llamada.envFile && (!args[0] || !lit(args[0]) || ['run-tests', 'implement', '4'].includes(args[0].texto.trim()))) return 'TYCON_MUTATION_CHECK';
   // `set-check <nombre> <estado> --force-manual`: un control declarado a mano, en cualquier estado
   if (sub === 'set-check') return pide('--force-manual') && !porSuGuion('force-manual') ? 'force-manual' : null;
-  // `mark-adversarial-skipped --no-deep-review`: abandonar el pase aunque el portón diga que corre
-  if (sub === 'mark-adversarial-skipped') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
-  // sin subcomando a la vista (por `xargs`, en una variable, tras una comilla sin cerrar): puede ser `clear`
-  // con la bandera del pase a la vista: apagarlo frena siempre, también con la ejecución en verde o sin ejecución
-  if (sub === null) return !llamada.dudosa ? null : pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : 'cerrar la ejecución';
+  // `mark-adversarial-skipped`: el salteo lo decide el portón que llama, con la firma `adversarial-skip`; un `--env-file`
+  // delante puede traerle una variable que cambia esa decisión
+  if (sub === 'mark-adversarial-skipped') return llamada.envFile ? 'no-deep-review' : null;
+  // sin subcomando a la vista (por `xargs`, en una variable, tras una comilla sin cerrar): puede ser `clear`, o el
+  // salteo con un `--env-file`, que frena siempre, también con la ejecución en verde o sin ejecución
+  if (sub === null) return !llamada.dudosa ? null : llamada.envFile ? 'no-deep-review' : 'cerrar la ejecución';
   if (sub === 'set-autonomous') {
     const v = args[0];
     return lit(v) && ['true', '1', 'on'].includes(v.texto) ? null : 'set-autonomous';
