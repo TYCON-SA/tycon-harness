@@ -5641,6 +5641,10 @@ function cmdPr(numRaw, rest = []) {
       else if (storyPathArg || repoNombre !== delaHistoria) anotarEnElRegistro({ storyFile, id: vivo.storyId, repo: repoNombre, numero, estricto: Boolean(storyPathArg) });
     }
     vivo.pr = { number: numero, merged, ...(repoNombre ? { repo: repoNombre } : {}) };
+    // y por repo: el pedido de otro repo anotado después no pisa el de la historia (la espera de la compilación los
+    // necesita todos). Sin --repo, el número es del repo de la corrida
+    const delRepo = repoNombre || SR.nombreDelRepo(vivo.repoPath);
+    if (delRepo) vivo.prs = { ...(vivo.prs || {}), [delRepo]: numero };
     vivo.lastTouch = nowIso();
     writeMarker(vivo);
     process.stderr.write(`[marker] pedido #${numero}${merged ? ' (mergeado)' : ''} anotado en la corrida de la ${vivo.storyId}\n`);
@@ -5687,28 +5691,132 @@ function cmdPr(numRaw, rest = []) {
   } catch (e) { process.stderr.write(`[marker] no pude armar el renglón final (${e.message})\n`); }
 }
 
-// Avisa, sin frenar, los repos de la corrida con commits propios cuyo pedido no quedó anotado: sin él, la regla de la entrada
-// no va a reconocer esa fusión como de esta historia. Nunca rompe el cierre.
-function avisarPedidosSinAnotar(marker) {
+/**
+ * Los pedidos de la corrida, por repo: `{ pedidos: [{ repo, nombre, numero, rama }], faltan: [nombre], problemas: [texto] }`.
+ * `faltan`: los repos con commits propios (adelante de `origin/main`) cuyo pedido no quedó anotado; sin él, la regla de la
+ * entrada no reconoce esa fusión como de esta historia, y el cierre no puede esperar su compilación. Nunca tira.
+ */
+function pedidosDeLaCorrida(marker) {
+  const out = { pedidos: [], faltan: [], problemas: [] };
   try {
     const SR = require('./lib/story-requests.js');
     const storyFile = resolveStoryPath(marker.storyPath, marker);
     const { key } = require('./lib/evidence-key.js').keyInfoOr(storyFile, String(marker.storyId));
     const { dir } = require('./lib/evidence-config.js').evidenceDirForStory(storyFile, marker.repoPath);
     // sólo cuenta un renglón de esta corrida: uno de un pedido anterior no cubre los commits de ahora
-    const anotados = new Set();
+    const anotados = new Map();
     const deEstaCorrida = (f) => f.clave === key && (!marker.startedAt || (f.ts && f.ts >= marker.startedAt));
-    for (const [k, filas] of SR.leer({ dirs: dir ? [dir] : [] }).porPedido) if (filas.some(deEstaCorrida)) anotados.add(k.split('#')[0]);
+    for (const [k, filas] of SR.leer({ dirs: dir ? [dir] : [] }).porPedido) {
+      if (!filas.some(deEstaCorrida)) continue;
+      const i = k.lastIndexOf('#');
+      anotados.set(k.slice(0, i), Number(k.slice(i + 1)));
+    }
+    for (const [nombre, n] of Object.entries(marker.prs || {})) if (Number.isInteger(n) && n > 0) anotados.set(nombre, n);
     const pr = marker.pr;
-    if (pr) anotados.add(pr.repo || SR.nombreDelRepo(marker.repoPath));
+    if (pr && Number.isInteger(pr.number)) anotados.set(pr.repo || SR.nombreDelRepo(marker.repoPath), pr.number);
+    const git = (repo, args) => require('child_process').spawnSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true });
     for (const repo of reposParaComparar(marker)) {
       const nombre = SR.nombreDelRepo(repo);
-      if (!nombre || anotados.has(nombre)) continue;
-      const r = require('child_process').spawnSync('git', ['rev-list', '--count', 'origin/main..HEAD'], { cwd: repo, encoding: 'utf8', windowsHide: true });
-      if (r.status !== 0) process.stderr.write(`[marker] ${nombre}: no pude ver si tiene commits sin pedido anotado (git no contestó)\n`);
-      else if (Number(r.stdout.trim()) > 0) process.stderr.write(`[marker] ${nombre}: tiene commits de la corrida y sin pedido anotado (marker.js pr <número> --repo <carpeta>)\n`);
+      if (!nombre) continue;
+      if (anotados.has(nombre)) {
+        const rama = git(repo, ['symbolic-ref', '-q', '--short', 'HEAD']);
+        const punta = git(repo, ['rev-parse', 'HEAD']);
+        out.pedidos.push({ repo, nombre, numero: anotados.get(nombre), rama: rama.status === 0 ? rama.stdout.trim() : null, commit: punta.status === 0 ? punta.stdout.trim() : null });
+        continue;
+      }
+      if ((marker.noPr || {})[nombre]) continue;
+      // sólo los commits de esta corrida: los de la historia escrita antes, o los de `dev` en un hermano, no piden pedido
+      const r = git(repo, ['rev-list', '--count', ...(marker.startedAt ? [`--since=${marker.startedAt}`] : []), 'origin/main..HEAD']);
+      if (r.status !== 0) out.problemas.push(`${nombre}: no pude ver si tiene commits sin pedido anotado (git no contestó)`);
+      else if (Number(r.stdout.trim()) > 0) out.faltan.push(nombre);
     }
-  } catch (e) { process.stderr.write(`[marker] no pude revisar los pedidos anotados (${e.message})\n`); }
+  } catch (e) { out.problemas.push(`no pude revisar los pedidos anotados (${e.message})`); }
+  return out;
+}
+
+// Avisa, sin frenar, los repos de la corrida con commits propios cuyo pedido no quedó anotado. Nunca rompe el cierre.
+function avisarPedidosSinAnotar(marker) {
+  const p = pedidosDeLaCorrida(marker);
+  for (const x of p.problemas) process.stderr.write(`[marker] ${x}\n`);
+  for (const n of p.faltan) process.stderr.write(`[marker] ${n}: tiene commits de la corrida y sin pedido anotado (marker.js pr <número> --repo <carpeta>)\n`);
+}
+
+/**
+ * Con «Preparar el pull request» cerrado, el cierre no da la corrida por terminada si un repo con commits no tiene su
+ * pedido anotado: sin él no se espera su compilación, y el pedido se presentaría como listo con la CI sin ver (el
+ * pedido del backend que nadie anotó). Sale 2 nombrando cada repo. Antes de ese paso, como siempre: sólo avisa.
+ */
+function frenarSiFaltanPedidos(marker) {
+  if (!marker || !marker.storyId || !STEPS_LIB.isDone(marker, 'prepare-commit')) return;
+  const p = pedidosDeLaCorrida(marker);
+  if (!p.faltan.length) return;
+  console.error(`marker.js clear: ${p.faltan.join(', ')} ${p.faltan.length === 1 ? 'tiene' : 'tienen'} commits de la corrida y sin pedido anotado. `
+    + 'Sin el pedido de cada repo no se espera su compilación y la corrida no se puede dar por lista: abrí el pedido y anotalo con '
+    + '`marker.js pr <número> --repo <carpeta>`; después, volvé a correr `marker.js clear`. Si ese repo no lleva pedido a '
+    + 'propósito: `marker.js clear --no-pr <nombre del repo> --reason "<por qué>"` (queda en gates.log, y ese repo no cuenta como listo).');
+  process.exit(2);
+}
+
+/**
+ * `clear --no-pr <repo> --reason "<por qué>"` (repetible): los repos que a propósito no llevan pedido. Quedan en el
+ * marcador (`noPr`) y en `gates.log`; la espera de la compilación no los cuenta. Sale 2 si falta el motivo.
+ */
+function reposSinPr(marker, rest) {
+  const nombres = [];
+  for (let i = 0; i < rest.length; i++) if (rest[i] === '--no-pr' && rest[i + 1]) nombres.push(rest[++i]);
+  if (!nombres.length || !marker) return marker;
+  const k = rest.indexOf('--reason');
+  const motivo = k >= 0 ? String(rest[k + 1] || '').trim() : '';
+  if (motivo.length < 8) { console.error('marker.js clear --no-pr: va con --reason "<por qué ese repo no lleva pedido>" (8 letras o más).'); process.exit(2); }
+  marker.noPr = { ...(marker.noPr || {}) };
+  for (const n of nombres) marker.noPr[n] = motivo;
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'clear-no-pr', story: marker.storyId, repos: nombres, motivo });
+  process.stderr.write(`[marker] sin pedido a propósito: ${nombres.join(', ')} («${motivo}»)\n`);
+  return marker;
+}
+
+/**
+ * Lanza de fondo la espera de la compilación de cada pedido de la corrida (lib/pr-build-wait.js). La lista va en un
+ * archivo del estado: la espera lo lee y lo borra. Devuelve los pedidos que espera, o null si no lanzó nada.
+ */
+function lanzarEsperaDeCompilacion(marker) {
+  if (!marker || !marker.storyId || !STEPS_LIB.isDone(marker, 'prepare-commit')) return null;
+  const p = pedidosDeLaCorrida(marker);
+  for (const x of p.problemas) process.stderr.write(`[marker] ${x}\n`);
+  if (!p.pedidos.length) return null;
+  try {
+    const dir = path.join(STATE_DIR, 'pr-build-wait');
+    fs.mkdirSync(dir, { recursive: true });
+    const archivo = path.join(dir, `${SID}-${Date.now()}.json`);
+    fs.writeFileSync(archivo, JSON.stringify({ session: SID, storyId: String(marker.storyId), pedidos: p.pedidos }), 'utf8');
+    const hijo = require('child_process').spawn(process.execPath, [path.join(__dirname, 'lib', 'pr-build-wait.js'), '--file', archivo], {
+      detached: true, stdio: 'ignore', windowsHide: true, env: process.env,
+    });
+    hijo.unref();
+    return p.pedidos;
+  } catch (e) {
+    process.stderr.write(`[marker] no pude lanzar la espera de la compilación (${e.message}): los pedidos NO están listos hasta ver su compilación en verde\n`);
+    return null;
+  }
+}
+
+/**
+ * `clear --replaced-by <commit>`: `{ ok, commit, repo, archivos }` si el commit está en origin/main (después de traerlo)
+ * y toca archivos que editó la ejecución (lib/replaced-run.js); sin la bandera, null. Si no se comprueba, sale 1 y no
+ * borra nada.
+ */
+function reemplazoPedido(marker, rest) {
+  const i = rest.indexOf('--replaced-by');
+  if (i < 0) return null;
+  const sha = String(rest[i + 1] || '').trim();
+  const r = require('./lib/replaced-run.js').comprobar({ marker, sha, fetch: true });
+  if (!r.ok) {
+    console.error(`marker.js clear --replaced-by: no lo pude comprobar (${r.motivo}). No se borró nada. Si el arreglo no está en main, la ejecución se cierra como siempre: marker.js clear (pide la firma de cerrarla).`);
+    process.exit(1);
+  }
+  appendLog('gates.log', { name: 'clear-replaced-by', story: marker && marker.storyId, commit: sha, repo: r.repo, archivos: r.archivos });
+  return { ...r, commit: sha };
 }
 
 function cmdClear(rest = []) {
@@ -5723,6 +5831,11 @@ function cmdClear(rest = []) {
   frenarSiIlegible(markerFilePath(SID), SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
   frenarSiPerdida(SID, 'clear', marcadorAntes && marcadorAntes.repoPath);
+  // `--replaced-by <commit>`: el arreglo de la ejecución ya entró a main por otro lado. Se comprueba con main traído; sin
+  // poder comprobarlo no cierra así, y queda la salida de siempre (la firma de cerrar la ejecución)
+  const reemplazo = reemplazoPedido(marcadorAntes, rest);
+  marcadorAntes = reposSinPr(marcadorAntes, rest);
+  if (!reemplazo) frenarSiFaltanPedidos(marcadorAntes);
   // una ejecución detenida la cierra el dueño: el perfil puede delegar «cerrar la ejecución», pero esa firma por
   // delegación (o la automática) no alcanza para salir de una detención que espera su decisión
   let crudo = null;
@@ -5801,7 +5914,7 @@ function cmdClear(rest = []) {
       // Cómo terminó la ejecución (lib/run-close.js): completa, o abortada con su motivo y quién autorizó cerrar. Un
       // cierre ya escrito (la deuda de close-as-debt) no se pisa. Que falle no frena el archivo: queda dicho.
       try {
-        marker.cierre = require('./lib/run-close.js').cierreDe(marker, { sid: SID });
+        marker.cierre = require('./lib/run-close.js').cierreDe(marker, { sid: SID, reemplazo });
         const c = marker.cierre;
         cerradaEnClear = cerrarEjecucion(SID, marker, { registrar: false, estado: c.estado, motivo: c.motivo || null, via: c.via || null, ...(c.deuda ? { extra: { deuda: c.deuda } } : {}) });
       } catch (e) {
@@ -5879,6 +5992,12 @@ function cmdClear(rest = []) {
       }
       // Cómo terminó cada paso y con qué resultado cerró la corrida, después de la línea de costo; y un aviso
       if (STEPS_LIB.schemeOf(marker) === STEPS_LIB.SCHEME) decirRenglonesDelCierre(marker, dumpFinal, marker.runDir || carpetaDelVolcado);
+      // la compilación de cada pedido se espera de fondo: el pedido no está listo para aprobar hasta verla en verde
+      const esperados = lanzarEsperaDeCompilacion(marker);
+      if (esperados) {
+        process.stderr.write(`[corrida] pedidos abiertos, compilación corriendo: no están listos todavía (${esperados.map((x) => `#${x.numero} de ${x.nombre}`).join(', ')}). `
+          + 'El aviso de «listos para aprobar» llega cuando todas den verde; no pidas la aprobación antes.\n');
+      }
       // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
       // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
       // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.
@@ -8150,6 +8269,22 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(`adhoc: captura anotada ${file}\n`);
     process.exit(0);
   }
+  // `adhoc ci-wait`: después de empujar el arreglo de un rojo de CI, la espera de la compilación del pedido con la punta
+  // nueva; con verde, la espera cierra el arreglo (lib/pr-build-wait.js `--close-adhoc`). No pide firma
+  if (sub === 'ci-wait') {
+    const a = io.readAdhoc(STATE_DIR, SID);
+    if (!a || !a.ciRojo) { console.error('marker.js adhoc ci-wait: esta sesión no tiene abierto el arreglo de un rojo de CI.'); process.exit(2); }
+    const pedidos = require('./lib/ci-red-lane.js').esperaTrasEmpujar(a);
+    if (!pedidos) { console.error(`marker.js adhoc ci-wait: no pude leer la punta de ${a.ciRojo.nombre}.`); process.exit(1); }
+    const dir = path.join(STATE_DIR, 'pr-build-wait');
+    fs.mkdirSync(dir, { recursive: true });
+    const archivo = path.join(dir, `${SID}-${Date.now()}.json`);
+    fs.writeFileSync(archivo, JSON.stringify({ session: SID, storyId: a.ciRojo.storyId || `pedido #${a.ciRojo.pedido}`, pedidos, closeAdhoc: true }), 'utf8');
+    require('child_process').spawn(process.execPath, [path.join(__dirname, 'lib', 'pr-build-wait.js'), '--file', archivo], { detached: true, stdio: 'ignore', windowsHide: true, env: process.env }).unref();
+    appendLog('gates.log', { name: 'ci-red-lane', status: 'wait', pedido: a.ciRojo.pedido, commit: pedidos[0].commit });
+    console.error(`marker.js adhoc ci-wait: espero la compilación del pedido #${a.ciRojo.pedido} con ${pedidos[0].commit.slice(0, 12)}; con verde cierro el arreglo y aviso. El pedido no está listo hasta ese aviso.`);
+    process.exit(0);
+  }
   if (sub === 'allow-data-change') return cmdAdhocAllowDataChange(io);
   if (sub === 'allow-foreign-save') return cmdAdhocAllowForeignSave(io);
   if (sub === 'clear') {
@@ -8374,6 +8509,8 @@ function cmdAdhoc(sub, payloadJson) {
     console.error(`marker.js adhoc set: la lista (${allowedFiles.length} archivos): ${relLista.map(renglon).join(', ')}`);
     // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
     const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos de implementación, sin pruebas ni guías` : `el cupo de la organización (${topes.maximo} archivos de implementación, o el que ya tenía)`;
+    // el arreglo de un rojo de CI (lib/ci-red-lane.js): se valida más abajo, con la firma que pide el comando
+    let ciRojo = null;
     // por delegación, el dueño se entera antes de la constancia, por los canales del perfil: sin entrega, no hay arreglo
     const antes = (viaPedida, registro) => {
       // «hecho y avisado» (pestaña sin permisos) cuenta como delegado: tampoco lo leyó una persona
@@ -8407,7 +8544,8 @@ function cmdAdhoc(sub, payloadJson) {
       const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida, topes, sobreCupo: firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo, { cwd: carpetaDeLaLista }) === firmas.SOBRE_CUPO && viaPedida === 'delegacion' });
       // el de una pestaña sin permisos lo abrió la propia sesión, sin firma: «hecho y avisado»
       const quien = registro && registro.via === 'avisado' ? `la sesión ${registro.sesion} abrió sin firma (pestaña sin permisos)` : 'la coordinadora abrió';
-      const a = so.avisar({ texto: `Arreglo rápido: ${quien} el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
+      const delRojo = ciRojo ? ` Es el arreglo del rojo de CI del pedido #${ciRojo.pedido} (${ciRojo.nombre}), control «${ciRojo.control}», sin plan ni revisores: ${relLista.join(', ')}.` : '';
+      const a = so.avisar({ texto: `Arreglo rápido: ${quien} el de la sesión ${destino}: «${reason}» · hasta ${ciRojo ? firmas.TOPE_CI_ROJO : cupo} archivos, sin tocar lo sensible.${delRojo}`,
         canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) });
       return a.ok ? null : { codigo: 1, motivo: `sin aviso a la persona, la coordinadora no abre el arreglo rápido (${a.motivo})` };
     };
@@ -8421,8 +8559,24 @@ function cmdAdhoc(sub, payloadJson) {
     const firmas = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
     // la misma regla que mira el freno: pasar el tope es otra firma
     const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo, { cwd: carpetaDeLaLista });
+    // el arreglo de un rojo de CI: sólo sobre el pedido en rojo de esta sesión, dentro de su repo y su tope, sin lo sensible
+    if (payload.ciRojo !== undefined) {
+      if (firmaDelPedido !== firmas.CI_ROJO) {
+        console.error(`marker.js adhoc set: la lista nombra más de ${firmas.TOPE_CI_ROJO} archivos de implementación: el arreglo de un rojo de CI llega hasta ahí; lo demás va por el camino corto de siempre o por una historia.`);
+        process.exit(2);
+      }
+      const v = require('./lib/ci-red-lane.js').validarApertura({ stateDir: STATE_DIR, sesion: destino, pedido: payload.ciRojo, control: payload.control, allowedFiles, codigo: deCodigo, tope: firmas.TOPE_CI_ROJO });
+      if (v.problema) { console.error(`marker.js adhoc set: ${v.problema}.`); process.exit(2); }
+      ciRojo = v.ciRojo;
+    } else if (actual && actual.ciRojo) {
+      // agrandar el arreglo de un rojo con un pedido común le sacaría los revisores con otra firma: no se mezcla
+      console.error(`marker.js adhoc set: esta sesión tiene abierto el arreglo del rojo de CI del pedido #${actual.ciRojo.pedido}, sin revisores; un arreglo común no se le suma. Cerralo (marker.js adhoc clear) y abrí el que necesites.`);
+      process.exit(2);
+    }
     const enLaLista = `${allowedFiles.length} archivo${allowedFiles.length === 1 ? '' : 's'} (${relLista.slice(0, 2).join(', ')}${relLista.length > 2 ? ', …' : ''})`;
-    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
+    const delRojo = ciRojo ? `arreglo del rojo de CI del pedido #${ciRojo.pedido} (${ciRojo.nombre}${ciRojo.etapa ? `, falló «${ciRojo.etapa}»` : ''}), control «${ciRojo.control}», sin plan ni revisores, de la sesión ${destino}` : null;
+    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(delRojo ? `${conRiesgo}${delRojo}: «${reason}» · ${enLaLista} · hasta ${firmas.TOPE_CI_ROJO} archivos de implementación`
+      : `${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
       propia: PROPIA, anotar: anotarFirma, antes });
     if (r.codigo !== 0) {
       // la forma con JSON sólo si hace falta: la maqueta no entra en la otra, y hay motivos que no se pueden citar en ella
@@ -8430,7 +8584,9 @@ function cmdAdhoc(sub, payloadJson) {
       const sinJson = screen.motivoSeCita(reason) && (porBanderas || (!maqueta && require('./lib/runtime-waiver.js').esWindows()));
       const pedidoEnJson = porBanderas ? JSON.stringify(payload) : String(payloadJson);
       const conLista = relLista.map((f) => ` --file ${/^[\w./-]+$/.test(f) ? f : `"${f}"`}`).join('');
-      const pedidoEnTerminal = sinJson ? `--reason "${reason}"${payload.maxFiles !== undefined ? ` --max-files ${payload.maxFiles}` : ''}${payload.datos ? ` --data ${payload.datos}` : ''}${conLista}` : `'${pedidoEnJson.replace(/'/g, "'\\''")}'`;
+      // el arreglo de un rojo de CI va sólo con banderas: su pedido y su control, siempre
+      const delRojoEnTerminal = ciRojo ? `--ci-red ${ciRojo.pedido} --check "${ciRojo.control.replace(/"/g, '')}" ` : '';
+      const pedidoEnTerminal = sinJson || ciRojo ? `${delRojoEnTerminal}--reason "${reason}"${payload.maxFiles !== undefined ? ` --max-files ${payload.maxFiles}` : ''}${payload.datos ? ` --data ${payload.datos}` : ''}${conLista}` : `'${pedidoEnJson.replace(/'/g, "'\\''")}'`;
       console.error(`🔒 marker.js adhoc set: la persona no lo aprobó — ${r.motivo}`);
       console.error('   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma');
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
@@ -8455,7 +8611,7 @@ function cmdAdhoc(sub, payloadJson) {
     const by = r.sesion || SID;
     const existing = io.readAdhoc(STATE_DIR, destino);
     const pedido = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : topes.maximo);
-    const maxFiles = cupoAlDeclarar({ pedido: payload.maxFiles, existing, via, topes, sobreCupo: firmaDelPedido === firmas.SOBRE_CUPO });
+    const maxFiles = ciRojo ? firmas.TOPE_CI_ROJO : cupoAlDeclarar({ pedido: payload.maxFiles, existing, via, topes, sobreCupo: firmaDelPedido === firmas.SOBRE_CUPO });
     // la marca del sobre cupo: la pone la firma nueva y se conserva mientras el cupo siga por encima del tope. Un carril
     // anterior con más que el tope no la tiene: termina con su número, sin pedirla
     const sobreCupo = firmaDelPedido === firmas.SOBRE_CUPO ? { sobreCupo: true, cupoPedido: maxFiles, eligio: via === 'delegacion' ? 'coordinadora' : 'persona' }
@@ -8484,6 +8640,8 @@ function cmdAdhoc(sub, payloadJson) {
       ...(existing && existing.frenoDatos ? { frenoDatos: existing.frenoDatos } : {}),
       ...(existing && existing.datosPermitido ? { datosPermitido: existing.datosPermitido } : {}),
       ...(existing && existing.untilAt ? { untilAt: existing.untilAt } : {}),
+      // el arreglo de un rojo de CI: el pedido, el control que falló y la punta desde la que se mide
+      ...(ciRojo ? { ciRojo } : {}),
       // las rutas anotadas, la marca de riesgo y las constancias, con el motivo que sea: valen por su huella, y declarar
       // el carril de nuevo no las vence
       ...(existing ? Object.fromEntries(['rutas', 'riesgoAlto', 'revisoresEsperados', 'revisores', 'pase', 'pruebas', 'pruebasPorRepo']
@@ -8508,7 +8666,10 @@ function cmdAdhoc(sub, payloadJson) {
     const maquina = r.registro && r.registro.maquina ? r.registro.maquina : null;
     appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null,
       files: obj.files.length, cwd: process.cwd(), via, by, destino, ...sobreCupo, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }),
-      ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}), ...(obj.datos ? { datos: obj.datos } : {}), allowedFiles });
+      ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}), ...(obj.datos ? { datos: obj.datos } : {}), allowedFiles,
+      ...(ciRojo ? { ciRojo: { pedido: ciRojo.pedido, control: ciRojo.control, repo: ciRojo.nombre } } : {}) });
+    // el arreglo de un rojo de CI queda también entre las firmas, con su pedido, su control y sus archivos
+    if (ciRojo) appendLog('gates.log', { name: 'ci-red-lane', status: 'open', pedido: ciRojo.pedido, control: ciRojo.control, repo: ciRojo.nombre, via, files: relLista });
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     if (maxFiles < pedido) {
       const antes = Number(payload.maxFiles) > 0 ? `pediste ${pedido}` : `tenía ${pedido}`;
@@ -8517,6 +8678,7 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     // el aviso de las pruebas, al abrir y no recién al guardar; por la salida de errores: el JSON queda igual (@story-8.319)
     console.error(`Si este camino corto cambia código, guardar pide una corrida en verde: ${require('./lib/open-runs.js').markerEstable(os.homedir())} adhoc test -- <el comando de las pruebas>. Si cambiás código después, se vence.`);
+    if (ciRojo) console.error(`Arreglo del rojo de CI del pedido #${ciRojo.pedido}: sin plan ni revisores. Antes de guardar corre el control «${ciRojo.control}»; después de empujar, ${require('./lib/open-runs.js').markerEstable(os.homedir())} adhoc ci-wait espera la compilación y cierra el arreglo con el verde.`);
     process.exit(0);
   }
   console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc allow-data-change --changed "…" --recommends pasar|historia|descartar --why "…" | adhoc allow-foreign-save | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
