@@ -518,7 +518,19 @@ test('T34b OpenSinModoDeEscritura_NoEsEscritura', () => {
       `python3 -c "import os; os.open('specs/story-x.md', os.O_RDONLY)"`,
       `python3 -c "import sys; print(open(sys.argv[1], \\"r\\").read())" specs/story-x.md`,
       porArchivo("print(open(file=sys.argv[1], errors='replace').read())"),
+      `F=specs/story-x.md; python3 -c "print(open(\\"$F\\").read())"`,
     ]) assert.equal(freno(c), '', c);
+    // la ruta como argumento con nombre (`file=`, `path=`, en cualquier lugar) y una variable entre comillas escapadas del
+    // shell: los frena el freno de historias, no otro que justo aplica. Sin la corrida abierta, que con un destino que no
+    // resuelve frena antes como edición invisible
+    fs.rmSync(path.join(estado, 'active', `${SID}.json`));
+    for (const c of [
+      `python3 -c "import sys; open(file=sys.argv[1], mode='w')" specs/story-x.md`,
+      `python3 -c "import sys; open(mode='w', file=sys.argv[1])" specs/story-x.md`,
+      `python3 -c "import sys; open(path=sys.argv[1], mode='a')" specs/story-x.md`,
+      `F=specs/story-x.md; python3 -c "open(\\"$F\\", \\"w\\")"`,
+      `F=specs/story-x.md; python3 -c "open(\\"$F\\", 'w').write('x')"`,
+    ]) assert.equal(freno(c), HISTORIA, c);
   });
 });
 

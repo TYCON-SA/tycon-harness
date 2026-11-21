@@ -1034,6 +1034,30 @@ const MODO_SOLO_LEE = /^(?:(['"])(?:[rbtU<]*|r[bt]?:[\w|-]+(?::[\w|-]+)?|<:[\w()
 const ARGUMENTO_CON_NOMBRE = /^[A-Za-z_]\w*\s*=(?!=)/;
 // los argumentos con nombre de un `open(` que no cambian cómo abre: el archivo y su lectura
 const ARGUMENTOS_DE_LECTURA = new Set(['file', 'path', 'encoding', 'errors', 'newline', 'buffering', 'closefd']);
+/** Los argumentos de la llamada que abre en `desde`, hasta 16; null si no se terminan de leer. */
+function argumentosDeLlamada(texto, desde) {
+  const args = [];
+  let pos = desde;
+  for (let k = 0; k < 16; k++) {
+    const a = primerArgumento(texto, pos);
+    if (a.arg) args.push(a.arg);
+    if (texto[a.fin] === ')') return args;
+    if (texto[a.fin] !== ',') return null;
+    pos = a.fin + 1;
+  }
+  return null;
+}
+/**
+ * El archivo que abre un `open(` que empieza en `desde`: el de `file=` o `path=` en cualquier lugar
+ * (`open(mode='w', file=p)`), o el primer argumento posicional. null si no se terminan de leer.
+ */
+function archivoQueAbre(texto, desde) {
+  const args = argumentosDeLlamada(texto, desde);
+  if (!args) return null;
+  const conNombre = args.map((a) => /^(file|path)\s*=(?!=)\s*([\s\S]*)$/i.exec(a)).find(Boolean);
+  if (conNombre) return conNombre[2].trim();
+  return args.find((a) => !ARGUMENTO_CON_NOMBRE.test(a)) || null;
+}
 /**
  * Si el `open(` que empieza en `desde` (justo después del paréntesis) puede escribir. Lee como abre: el segundo argumento
  * o `mode=` en cualquier lugar (`open(p, encoding='utf-8', mode='w')`). Escribe con un modo que no es un literal de sólo
@@ -1042,17 +1066,8 @@ const ARGUMENTOS_DE_LECTURA = new Set(['file', 'path', 'encoding', 'errors', 'ne
  * el primer argumento: un modo de escritura, o uno que no es un literal.
  */
 function abreParaEscribir(texto, desde, metodo) {
-  const args = [];
-  let pos = desde;
-  for (let k = 0; k < 16; k++) {
-    const a = primerArgumento(texto, pos);
-    if (a.arg) args.push(a.arg);
-    if (texto[a.fin] === ')') break;
-    if (texto[a.fin] !== ',') return true;
-    pos = a.fin + 1;
-    if (k === 15) return true;
-  }
-  if (args.some((a) => a.startsWith('*'))) return true;
+  const args = argumentosDeLlamada(texto, desde);
+  if (!args || args.some((a) => a.startsWith('*'))) return true;
   const conNombre = args.filter((a) => ARGUMENTO_CON_NOMBRE.test(a));
   const posicionales = args.filter((a) => !ARGUMENTO_CON_NOMBRE.test(a));
   for (const a of conNombre) {
@@ -1257,7 +1272,8 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
       // (`open(P, 'w')` en python): sigue contando
       const segundo = sinEscapes[a.fin] === ',' ? primerArgumento(sinEscapes, a.fin + 1).arg : '';
       if (/^(?:my\s+)?\$\w+$/.test(a.arg) || (/^[A-Z][A-Z0-9_]*$/.test(a.arg) && /^(['"])\s*(?:\+?[<>]|\|)/.test(segundo))) continue;
-      if (abreParaEscribir(sinEscapes, m.index + m[0].length, false) && sinEscapes[a.fin] === ',') add(a.arg);
+      // el archivo puede ir con nombre y en cualquier lugar: `open(mode='w', file=sys.argv[1])`
+      if (abreParaEscribir(sinEscapes, m.index + m[0].length, false) && sinEscapes[a.fin] === ',') add(archivoQueAbre(sinEscapes, m.index + m[0].length) || a.arg);
     }
     // python: Path(<destino>).write_text / write_bytes
     llamadas(/\bPath\s*\(/g, (a) => /^\)\s*\.(?:write_text|write_bytes)\s*\(/.test(script.slice(a.fin)));
@@ -3722,7 +3738,10 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   const valoresDe = (raw) => {
     // la comilla invertida que cierra (`echo \`sed -i … h.md\``) tampoco
     const limpio = String(raw).replace(/[)`]+$/, '');
-    return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor]
+    // con comillas escapadas del shell (`python3 -c "open(\"$F\", \"w\")"`) el lector de variables no sabe leer el
+    // comando y deja la variable sin expandir: cuenta también lo que valdría leído con esas comillas como comillas
+    return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor,
+      expandirRuta(sinEscapesDeComillas(cmd), limpio, { posibles: true }).valor]
       .flatMap((v) => (v ? expandirLlaves(v) : [v])))];
   };
   for (const raw of crudos) for (const valor of valoresDe(raw)) {
