@@ -66,9 +66,12 @@ function laboratorio() {
   execFileSync('git', ['clone', '-q', origen, otro], { env });
   const o = en(otro);
   // main cambia otros archivos mientras la corrida sigue
+  // un archivo en null se borra; los nuevos se agregan
   const avanzarMain = (archivos) => {
-    escribir(otro, archivos);
-    o('commit', '-qam', 'otro pedido');
+    for (const [rel, txt] of Object.entries(archivos)) if (txt === null) fs.rmSync(path.join(otro, rel));
+    escribir(otro, Object.fromEntries(Object.entries(archivos).filter(([, txt]) => txt !== null)));
+    o('add', '-A');
+    o('commit', '-qm', 'otro pedido');
     o('push', '-q', 'origin', 'main');
     git('fetch', '-q', 'origin');
   };
@@ -142,6 +145,41 @@ test('MainAdvances_RunTouchesOtherStory_StillCounts (T4)', () => {
     fs.writeFileSync(path.join(L.repo, OTRA), historia('9.2', 'review'));
     assert.deepEqual(L.sinDeclarar().sobra, [OTRA], `main otra vez: ${otraVez}`);
   }
+});
+
+test('MainAdvances_BroughtThenMainRevertsOrDeletes_NotCounted (T6)', () => {
+  // la rama trajo algo de main, y después main lo revierte, lo borra o lo renombra: lo de la rama sigue siendo de main
+  const NUEVO = 'specs/nuevo.md';
+  const casos = [
+    ['revierte', { [OTRA]: historia('9.2', 'done') }, () => ({ [OTRA]: historia('9.2', 'in-progress') })],
+    ['borra lo agregado', { [NUEVO]: 'nuevo\n' }, () => ({ [NUEVO]: null })],
+    ['renombra lo agregado', { [NUEVO]: 'nuevo\n' }, () => ({ [NUEVO]: null, 'specs/renombrado.md': 'nuevo\n' })],
+  ];
+  for (const [nombre, primero, despues] of casos) {
+    const L = laboratorio();
+    L.avanzarMain(primero);
+    L.git('merge', '-q', '--no-edit', 'origin/main');
+    L.avanzarMain(despues());
+    const u = L.sinDeclarar();
+    assert.equal(u.medido, true, u.motivo);
+    assert.deepEqual(u.sobra, [], `${nombre}: ${JSON.stringify(u)}`);
+  }
+});
+
+test('MainAdvances_RunRevertsToOldMainVersion_StillCounts (T7)', () => {
+  // un commit de la rama anterior al arranque cambió un archivo; la corrida lo devuelve por la terminal a la versión vieja
+  // de main, la rama trae main (otro archivo) y main después cambia ese archivo: main nunca lo trajo, cuenta
+  const L = laboratorio();
+  fs.writeFileSync(path.join(L.repo, 'src', 'f.js'), 'de la tanda anterior\n');
+  L.git('add', '.');
+  L.git('commit', '-qm', 'tanda anterior');
+  const base = L.git('rev-parse', 'HEAD');
+  L.avanzarMain({ 'src/z.js': 'z de main\n' });
+  L.git('merge', '-q', '--no-edit', 'origin/main');
+  fs.rmSync(path.join(L.repo, 'src', 'f.js'));
+  L.avanzarMain({ 'src/f.js': 'f de main\n' });
+  const u = uc().computeUndeclared({ repo: L.repo, baseSha: base, storyPath: path.join(L.repo, STORY), registrados: [path.join(L.repo, 'src', 'a.js')] });
+  assert.deepEqual(u.sobra, ['src/f.js'], JSON.stringify(u));
 });
 
 test('MainAdvances_SprintRowBroughtThenMainMoves_NotCounted (T5)', () => {

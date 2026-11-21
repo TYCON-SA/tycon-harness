@@ -169,30 +169,28 @@ function entradosPorMain(repo, baseSha, candidatos) {
   if (d.error) return [];
   const enMain = new Set(lineas(d.out).map(toPosix));
   const repoReal = real(repo);
-  // las versiones de main contra las que se compara: la punta de origin/main y lo que la rama ya trajo (su punto en común
-  // con main). Si main vuelve a avanzar después de traerlo, lo traído sigue siendo de main: el sello de lo revisado
-  // compara igual, con el punto en común
-  // (sólo si la rama trajo main después del arranque: si no, ese punto es el de antes del arranque y no trajo nada)
+  // Lo que la rama ya trajo de main después del arranque: lo que main cambió entre el punto en común del arranque y el
+  // de ahora. Un archivo de esa lista igual a lo traído sigue siendo de main aunque main lo vuelva a cambiar, lo revierta
+  // o lo borre después (el sello de lo revisado compara igual, con el punto en común). Sin traer nada, la lista es vacía.
   const mb = git(repo, ['merge-base', 'HEAD', MAIN]);
   const mb0 = git(repo, ['merge-base', baseSha, MAIN]);
-  const trajo = !mb.error && !mb0.error && mb.out.trim() && mb.out.trim() !== mb0.out.trim();
-  const refs = [MAIN, ...(trajo ? [mb.out.trim()] : [])];
-  return candidatos.filter((f) => {
-    if (!enMain.has(f)) return false;
-    // borrado en la carpeta y también en main: el mismo estado que main (git tiene que contestar que no está)
+  const punto = !mb.error && !mb0.error && mb.out.trim() && mb.out.trim() !== mb0.out.trim() ? mb.out.trim() : null;
+  let traido = new Set();
+  if (punto) {
+    const t = git(repo, ['diff', '--name-only', '--no-renames', '--relative', mb0.out.trim(), punto, '--']);
+    if (!t.error) traido = new Set(lineas(t.out).map(toPosix));
+  }
+  // igual a la versión de `ref`: el mismo blob, o borrado en los dos (git tiene que contestar que no está)
+  const igualA = (f, ref) => {
     if (!fs.existsSync(path.join(repoReal, f))) {
-      return refs.some((ref) => {
-        const t = git(repo, ['ls-tree', '--name-only', ref, '--', f]);
-        return !t.error && lineas(t.out).length === 0;
-      });
+      const t = git(repo, ['ls-tree', '--name-only', ref, '--', f]);
+      return !t.error && lineas(t.out).length === 0;
     }
     const local = git(repo, ['hash-object', '--', f]);
-    if (local.error || local.out.trim() === '') return false;
-    return refs.some((ref) => {
-      const remoto = git(repo, ['rev-parse', '--verify', '--quiet', `${ref}:./${f}`]);
-      return !remoto.error && local.out.trim() === remoto.out.trim();
-    });
-  }).sort();
+    const remoto = git(repo, ['rev-parse', '--verify', '--quiet', `${ref}:./${f}`]);
+    return !local.error && !remoto.error && local.out.trim() !== '' && local.out.trim() === remoto.out.trim();
+  };
+  return candidatos.filter((f) => (enMain.has(f) && igualA(f, MAIN)) || (traido.has(f) && igualA(f, punto))).sort();
 }
 
 /**
