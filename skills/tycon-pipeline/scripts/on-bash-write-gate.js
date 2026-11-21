@@ -655,11 +655,26 @@ const palabraExpandida = (cmd, w) => String(expandirRuta(cmd, w).valor).replace(
 const SOLO_VARIABLE = /^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$/;
 // lo que el shell lee antes del programa dentro de un tramo: `if`, `then`, `do`, `!`…
 const ANTES_DEL_PROGRAMA = /^(?:if|then|else|elif|do|while|until|!)$/;
-// programas que no corren sus argumentos: un guion que aparece entre ellos se lee o se nombra, no se ejecuta
-const NO_CORRE_ARGUMENTOS = new Set(['git', 'cat', 'wc', 'grep', 'rg', 'diff', 'ls', 'stat', 'head', 'tail', 'echo',
-  'printf', 'file', 'du', 'cp', 'mv', 'mkdir', 'touch', 'chmod', 'test', 'less', 'sort', 'uniq', 'cut', 'tr', 'basename',
-  'dirname', 'realpath', 'readlink', 'shasum', 'sha256sum', 'md5', 'md5sum', 'tar', 'zip', 'eslint', 'prettier', 'tsc',
-  'black', 'ruff', 'flake8', 'mypy']);
+// programas que no corren sus argumentos: un guion que aparece entre ellos se lee o se nombra, no se ejecuta. Son los
+// lectores y vecinos que el freno ya conoce (LEE_ARCHIVOS, VECINOS, sin los intérpretes ni `cd`) más estos
+const NO_CORRE_PROPIOS = ['rg', 'file', 'du', 'cp', 'mv', 'rm', 'ln', 'mkdir', 'touch', 'chmod', 'cmp', 'less', 'readlink',
+  'shasum', 'sha1sum', 'sha256sum', 'md5', 'md5sum', 'xxd', 'tar', 'zip', 'rsync', 'scp', 'eslint', 'prettier', 'tsc',
+  'black', 'ruff', 'flake8', 'mypy'];
+const noCorreSusArgumentos = (programa) => !CORRE_ARCHIVO.test(programa) && programa !== 'cd'
+  && (NO_CORRE_PROPIOS.includes(programa) || LEE_ARCHIVOS.has(programa) || VECINOS.has(programa));
+
+/**
+ * El programa escrito de un tramo: la primera palabra que no es del shell ni una asignación, sin comillas, leída del texto
+ * (así `"$PWD"/node_modules/.bin/tsc` es `tsc`). Una variable con valor conocido vale su programa. `{ programa, ilegible }`.
+ */
+function programaEscrito(cmd, tramo) {
+  const partes = String(tramo).trim().split(/\s+/).map((w) => sinGrupo(w)).filter(Boolean);
+  const w = partes.find((x) => !ANTES_DEL_PROGRAMA.test(x) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(x));
+  if (!w) return { programa: '', ilegible: false };
+  const s = w.replace(/["']/g, '');
+  if (SOLO_VARIABLE.test(s) || /^\$\((?!\()|^`/.test(s)) return { programa: interpreteDe(cmd, s), ilegible: noSeLeeElPrograma(cmd, s) };
+  return { programa: nombreDeComando(s), ilegible: false };
+}
 
 /** El programa de una palabra. Una variable con valor conocido (`N=/usr/bin/node`, `N="env node --test"`) es su programa. */
 function interpreteDe(cmd, w) {
@@ -675,7 +690,8 @@ function interpreteDe(cmd, w) {
 /** ¿El freno no puede leer qué programa es esta palabra? Una variable sin valor conocido, una sustitución o `eval`. */
 function noSeLeeElPrograma(cmd, w) {
   const s = String(w);
-  if (s === 'eval' || /\$\(|`/.test(s)) return true;
+  // `$((…))` es una cuenta, no una sustitución
+  if (s === 'eval' || /\$\((?!\()|`/.test(s)) return true;
   if (!SOLO_VARIABLE.test(s)) return false;
   const e = expandirRuta(cmd, s);
   return e.sinResolver.length > 0 || /^\$/.test(String(e.valor));
@@ -689,10 +705,10 @@ function noSeLeeElPrograma(cmd, w) {
  * (`git diff $(…) -- x.js`, `wc -l $F x.js`). Detrás de `xargs` el guion llega por la entrada: cuenta el de cualquier
  * parte del comando. `[{ interprete, valor, argv }]`.
  */
-function guionesDelPeorCaso(cmd, crudas, todas) {
+function guionesDelPeorCaso(cmd, crudas, todas, escrito) {
   const i0 = crudas.findIndex((w) => !ANTES_DEL_PROGRAMA.test(w) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
   if (i0 < 0) return [];
-  if (!noSeLeeElPrograma(cmd, crudas[i0]) && NO_CORRE_ARGUMENTOS.has(nombreDeComando(crudas[i0]))) return [];
+  if (!escrito.ilegible && noCorreSusArgumentos(escrito.programa)) return [];
   const deGuion = (w) => { const v = palabraExpandida(cmd, w); return [v, Object.keys(EXTENSION_DE).find((f) => EXTENSION_DE[f].test(v))]; };
   const out = [];
   let ilegible = -1;
@@ -908,13 +924,16 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     }
     // lo que el freno no puede leer (un programa en una variable sin valor conocido, `$(…)`, `eval`): el peor caso, cada
     // guion que sigue se mira como si corriera. Sobre las palabras del tramo sin recortar
+    const escrito = programaEscrito(cmd, tramo);
     if (!soloNombra) {
       const crudas = palabras(tramo.trim()).map(sinGrupo).filter((w) => w !== '');
-      for (const g of guionesDelPeorCaso(cmd, crudas, todosLosTramos.flatMap(palabrasDe))) abrir(g.interprete, g.valor, argumentos(g.argv));
+      for (const g of guionesDelPeorCaso(cmd, crudas, todosLosTramos.flatMap(palabrasDe), escrito)) abrir(g.interprete, g.valor, argumentos(g.argv));
     }
+    // en un tramo de un programa que no corre sus argumentos, una variable con valor conocido es un argumento más
+    const lector = !escrito.ilegible && noCorreSusArgumentos(escrito.programa);
     // de un tramo que sólo nombra, el intérprete es la primera palabra: `grep node x` o un archivo `node` de la lista no lo son
     for (let k = 0; k < (soloNombra ? 1 : words.length); k++) {
-      const interprete = interpreteDe(cmd, words[k]);
+      const interprete = lector ? nombreDeComando(words[k]) : interpreteDe(cmd, words[k]);
       if (!CORRE_ARCHIVO.test(interprete)) continue;
       const familia = familiaDe(interprete);
       let i = k + 1;

@@ -360,6 +360,25 @@ test('T16 BigScript_PathStartingWithVariable_IsItsProgram', () => {
   ]) assert.strictEqual(correr(command), '', command);
 });
 
+// T17 BigScript_ReaderWithVariable_PassesAsInMain
+// 🔴 Falla con: tratar como peor caso un tramo cuyo programa no corre sus argumentos (los lectores que el freno ya conoce,
+//    `rm`, `cmp`, `[`), una cuenta `$((…))` como sustitución, una ruta entre comillas (`"$PWD"/…/tsc`) como variable
+//    suelta, o una variable con valor conocido como intérprete cuando es argumento de un lector. En main todos pasan.
+test('T17 BigScript_ReaderWithVariable_PassesAsInMain', () => {
+  const correr = conGuionesGrandes();
+  for (const command of [
+    'sed -n 1,40p $F scripts/grande.test.js',
+    'rm $F scripts/grande.test.js',
+    'cmp $F scripts/grande.test.js',
+    'jq . $F scripts/grande.test.js',
+    '[ "$X" = scripts/grande.test.js ] && echo si',
+    'sleep $((2*3)) scripts/grande.test.js',
+    '"$PWD"/node_modules/.bin/tsc --noEmit scripts/grande.test.js',
+    'G=git; $G diff $(x) -- scripts/grande.test.js',
+    'P=python3; sed -n 1p $P scripts/grande.py',
+  ]) assert.strictEqual(correr(command), '', command);
+});
+
 // T13 BigScript_VariableWithOptions_StillBlocks
 // 🔴 Falla con: tomar el valor entero de la variable como nombre del programa: `N="node --test"` o `N="/usr/bin/env
 //    node"` no eran un intérprete y el guion pasaba.
