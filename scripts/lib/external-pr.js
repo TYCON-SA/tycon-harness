@@ -163,7 +163,15 @@ function leer(comando) {
   }
   // la forma está en el texto y el lector no la encontró: no se sabe qué pedido es
   if (!out.length && !/^\s*(echo|printf|grep|rg|git)\b/.test(cmd)) {
-    const nombra = gh.comandosGh(cmd, 0, {}).some((c) => c.grupo === null || c.enSustitucion || (c.porOtroPrograma && !SOLO_NOMBRA.has(nombreDe(c.lanzadoPor))));
+    // un comando de pedidos con un verbo literal que no es merge, o una consulta a la API escrita entera que no encola,
+    // ya se leyó: la palabra «merge» en su --json o su --jq es un campo, no un merge
+    const yaLeido = (c) => {
+      const ps = c.palabras || [];
+      const verbo = c.verbo || c.verboTrasOpciones;
+      if (c.grupo === 'pr') return !!(ps[1] && ps[1].literal && verbo && verbo !== 'merge');
+      return c.grupo === 'api' && ps.every((p) => p.literal) && deApi(ps, c, cmd) === null;
+    };
+    const nombra = gh.comandosGh(cmd, 0, {}).some((c) => !yaLeido(c) && (c.grupo === null || c.enSustitucion || (c.porOtroPrograma && !SOLO_NOMBRA.has(nombreDe(c.lanzadoPor)))));
     if (nombra) out.push({ ilegible: 'el comando nombra un merge que este freno no lee entero: escribilo en su forma exacta, solo' });
   }
   return out;

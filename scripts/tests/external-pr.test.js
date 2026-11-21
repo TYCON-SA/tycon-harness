@@ -298,3 +298,30 @@ test('T12 Pase_CambiarDeCuentaEnLaMismaLinea_Frena — el freno miró con la cue
   // una cuenta que dice `null` no es una cuenta
   assert.ok(decidir(t, 'gh pr merge 77 -R acme/arnes --merge', { gh, tree, env: { GH_FALSO_YO: 'null' } }).frena);
 });
+
+// Caso: el freno frenaba una consulta que sólo lee, `gh pr view N --json state,mergedAt` dentro de `$( … )`: la red gruesa
+// contaba la palabra «merge» de un campo como un merge que no se leía entero. Lo que encola o mergea sigue frenando
+// aunque esa palabra también aparezca en un --json o un --jq.
+test('T13 SoloLee_ConLaPalabraMerge_NoFrena — y lo que encola o mergea sigue frenando', () => {
+  const leer = require(LECTOR).leer;
+  for (const cmd of [
+    'gh pr view 1320 -R acme/arnes --json state,mergedAt',
+    's=$(gh pr view 1320 -R acme/arnes --json state,mergedAt --jq .mergedAt)',
+    'for n in 1320 1322; do echo "$(gh pr view $n -R acme/arnes --json state,mergedAt --jq \'"\\(.state) \\(.mergedAt)"\')"; done',
+    'gh pr list -R acme/arnes --json number,mergeable,mergeStateStatus',
+    'x=$(gh api repos/acme/arnes/pulls/1320 --jq .merged)',
+  ]) assert.deepStrictEqual(leer(cmd), [], cmd);
+  // lo que encola o mergea, con la palabra también en un --json o un --jq, sigue apareciendo
+  const pedido = (x) => JSON.parse(JSON.stringify({ repo: x.repo === undefined ? undefined : x.repo && x.repo.toLowerCase(), numero: x.numero, id: x.id }));
+  for (const [cmd, esperado] of [
+    ['gh pr view 1320 -R acme/arnes --json mergedAt && gh pr merge 1320 -R acme/arnes --merge', [{ repo: 'acme/arnes', numero: 1320 }]],
+    ['x=$(gh pr merge 1320 -R acme/arnes --merge --json mergedAt)', [{ repo: 'acme/arnes', numero: 1320 }]],
+    ['s=$(gh api graphql -f query=\'mutation{enqueuePullRequest(input:{pullRequestId:"PR_afuera"}){clientMutationId}}\' --jq .data)', [{ id: 'PR_afuera' }]],
+    ['gh api graphql -f query=\'mutation{enqueuePullRequest(input:{pullRequestId:"PR_afuera"}){mergeQueueEntry{id}}}\' --jq .data.enqueuePullRequest', [{ id: 'PR_afuera' }]],
+  ]) assert.deepStrictEqual(leer(cmd).map(pedido), esperado, cmd);
+  // con el verbo armado por la terminal, no se sabe si mergea: frena
+  for (const cmd of ['y=$(gh pr $V 1320 -R acme/arnes --json mergedAt)', 'gh pr $V 1320 -R acme/arnes --json mergedAt']) {
+    const l = leer(cmd);
+    assert.ok(l.length && l.every((x) => x.ilegible), `${cmd}: ${JSON.stringify(l)}`);
+  }
+});
