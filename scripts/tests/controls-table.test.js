@@ -44,7 +44,7 @@ test('ControlsTable_CuentaPorFrenoYRegla', (t) => {
     ['test-scope-guard', 'suite-completa', 0, 0, 0, 1],
   ]);
   assert.strictEqual(r.frenos.malas, 1);
-  assert.match(r.md, /\| safety-guard \| GIT-C1 \| 2 \| 0 \| 1 \| 0 \| no medido \|/);
+  assert.match(r.md, /\| safety-guard \| GIT-C1 \| 2 \| 0 \| 1 \| 0 \| 0 \| no medido \|/);
   assert.match(r.md, /1 ilegible/);
 });
 
@@ -171,7 +171,7 @@ test('T8b ControlsTable_PipelineGatesFromGatesLog — frena por `action` tambié
   const e = r.porGate.get('red-test-edit').get('claude-opus-5-5');
   assert.deepStrictEqual({ decidio: e.decidio, bloqueo: e.bloqueo, aviso: e.aviso, paso: e.paso, sinDecision: e.sinDecision },
     { decidio: 3, bloqueo: 1, aviso: 1, paso: 1, sinDecision: 2 });
-  assert.match(filaDe(r.md, 'red-test-edit', 'claude-opus-5-5'), /\| 1 \| 2 \|$/);
+  assert.match(filaDe(r.md, 'red-test-edit', 'claude-opus-5-5'), /\| 1 \| 0 \| 2 \|$/);
 });
 
 function escribirClasificacion(t, entradas) {

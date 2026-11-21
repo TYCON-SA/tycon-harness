@@ -268,6 +268,17 @@ return enCurso;
 }
 
 function bloquear(bloqueos) {
+// El perfil por modelo (lib/control-profile.js): si el dueño relajó este control para el perfil del modelo de esta
+// sesión, no frena y lo anota como `paso-por-perfil`, para que la tabla de controles lo siga contando. Sin relajación,
+// sin modelo o con cualquier duda, frena como siempre.
+let perfil = { on: true };
+try { perfil = require(require('path').join(__dirname, '..', 'lib', 'control-profile.js')).decide({ control: 'pr-uno-por-repo', sessionId: sesion }); } catch { perfil = { on: true }; }
+if (perfil.aviso) console.error(`[pr-uno-por-repo] ${perfil.aviso}`);
+if (!perfil.on) {
+  console.error(`[pr-uno-por-repo] no freno: ${perfil.motivo}.`);
+  constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso-por-perfil', cmd, sesion });
+  process.exit(0);
+}
 const cabeceras = bloqueos.map(({ donde, enCurso }) => `🔴 ${donde} YA TIENE ${enCurso.length} pull request CONSTRUYENDO:\n\n` +
   enCurso.map((p) => `  · PR ${p.pullRequestId} — ${p.title} (rama ${String(p.sourceRefName || '').replace('refs/heads/', '')})`).join('\n')).join('\n\n');
 console.error(`${cabeceras}

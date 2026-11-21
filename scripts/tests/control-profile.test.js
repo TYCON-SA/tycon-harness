@@ -1,0 +1,116 @@
+'use strict';
+// control-profile.test.js — el perfil por modelo: un control que el dueño relajó para un perfil deja
+// de frenar sólo para los modelos de ese perfil; una exigencia, un modelo que no se pudo leer, una clasificación sin firmar
+// o una relajación vencida dejan todo prendido. Árbol, casa y conversación de juguete.
+// Correr: cd scripts/tests && HOME=$(mktemp -d) node --test control-profile.test.js < /dev/null
+
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..', '..');
+const CP = require('../lib/control-profile.js');
+const TR = require('../lib/team-repos.js');
+
+const dirs = [];
+test.after(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });
+const tmp = (p) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), p)); dirs.push(d); return d; };
+
+// stable-data: un día fijo; las fechas de revisión se comparan contra él
+const AHORA = Date.parse('2026-11-21T12:00:00Z');
+const BASE = { version: 1, public: { platform: 'github', org: 'acme', repo: 'arnes' }, profile: { platform: 'github', org: 'acme', repo: 'perfil' }, operations: { platform: 'github', org: 'acme', repo: 'operaciones' } };
+const relajacion = (o = {}) => ({ control: 'pr-uno-por-repo', profile: 'fuertes', review_before: '2027-01-20', approved_by: 'el dueño', approved_on: '2026-11-21', ...o });
+const CLASIF = {
+  'pr-uno-por-repo': { tipo: 'preferencia', motivo: 'm', review_before: '2027-01-20', estado: 'firmada', firmada_el: '2026-11-21', firmo: 'el dueño' },
+  'safety-guard': { tipo: 'exigencia', motivo: 'protege producción y datos', review_before: '2027-11-21', estado: 'firmada' },
+  'test-scope-guard': { tipo: 'preferencia', motivo: 'm', review_before: '2027-01-20', estado: 'propuesta' },
+};
+
+/** Un árbol de juguete con su team-repos.json y su clasificación. */
+function arbol({ perfil, clasif = CLASIF } = {}) {
+  const t = tmp('arbol-');
+  fs.writeFileSync(path.join(t, 'team-repos.json'), JSON.stringify(perfil === undefined ? BASE : { ...BASE, control_profiles: perfil }));
+  fs.mkdirSync(path.join(t, 'scripts', 'metrics'), { recursive: true });
+  fs.writeFileSync(path.join(t, 'scripts', 'metrics', 'controls-classification.json'), JSON.stringify(clasif));
+  return t;
+}
+const modelo = (m) => () => (m ? { model: m } : { model: null, noMedido: 'sin conversación' });
+const decidir = (o) => CP.decide({ control: 'pr-uno-por-repo', sessionId: 's1', home: tmp('casa-'), now: AHORA, modelOf: modelo('claude-opus-5-5'), ...o });
+
+test('T18 ControlProfile_NoSection_AllOn — sin la sección del perfil, todo prendido', () => {
+  assert.strictEqual(decidir({ tree: arbol() }).on, true);
+  assert.strictEqual(decidir({ tree: arbol({ perfil: { relaxed: [] } }) }).on, true, 'con la sección vacía, también');
+});
+
+test('T19a ControlProfile_StrongModel_PreferenceRelaxed — una preferencia firmada y relajada para fuertes, con una sesión opus, no frena', () => {
+  const r = decidir({ tree: arbol({ perfil: { relaxed: [relajacion()] } }) });
+  assert.deepStrictEqual([r.on, r.perfil, r.modelo], [false, 'fuertes', 'claude-opus-5-5']);
+  assert.match(r.motivo, /hasta 2027-01-20/);
+  assert.strictEqual(decidir({ tree: arbol({ perfil: { relaxed: [relajacion()] } }), modelOf: modelo('claude-sonnet-5-5') }).on, true, 'sonnet es del resto: frena');
+});
+
+test('T20 ControlProfile_UnknownModel_AllOn — sin modelo leído, o sin sesión, todo prendido', () => {
+  const t = arbol({ perfil: { relaxed: [relajacion({ profile: 'resto' })] } });
+  assert.strictEqual(decidir({ tree: t, modelOf: modelo(null) }).on, true, 'sin modelo: no es de ningún perfil');
+  assert.strictEqual(decidir({ tree: t, sessionId: null }).on, true, 'sin sesión');
+  assert.deepStrictEqual([CP.perfilDe('claude-fable-5-1'), CP.perfilDe('gpt-5'), CP.perfilDe(null)], ['fuertes', 'resto', null]);
+});
+
+test('T21 ControlProfile_ExigenciaListed_Ignored — el perfil nombra una exigencia: se ignora, avisa una vez por día y sigue prendida', () => {
+  const t = arbol({ perfil: { relaxed: [relajacion({ control: 'safety-guard' })] } });
+  const casa = tmp('casa-');
+  const a = CP.decide({ control: 'safety-guard', sessionId: 's1', tree: t, home: casa, now: AHORA, modelOf: modelo('claude-opus-5-5') });
+  const b = CP.decide({ control: 'safety-guard', sessionId: 's1', tree: t, home: casa, now: AHORA, modelOf: modelo('claude-opus-5-5') });
+  assert.strictEqual(a.on, true);
+  assert.match(a.aviso, /es una exigencia/);
+  assert.strictEqual(b.aviso, null, 'el mismo día no avisa dos veces');
+  // una preferencia propuesta (sin firmar) tampoco se relaja
+  assert.strictEqual(CP.decide({ control: 'test-scope-guard', sessionId: 's1', tree: arbol({ perfil: { relaxed: [relajacion({ control: 'test-scope-guard' })] } }), home: casa, now: AHORA, modelOf: modelo('claude-opus-5-5') }).on, true);
+});
+
+test('T22 ControlProfile_ExpiredRelaxation_BackOn — una relajación vencida vuelve a frenar', () => {
+  const r = decidir({ tree: arbol({ perfil: { relaxed: [relajacion({ review_before: '2026-11-20' })] } }) });
+  assert.strictEqual(r.on, true);
+  assert.match(r.motivo, /venció/);
+});
+
+test('ControlProfile_BadSection_AllOnAndSaid — una relajación mal escrita deja la sección sin usar, y el archivo sigue valiendo', () => {
+  const r = TR.parse(JSON.stringify({ ...BASE, control_profiles: { relaxed: [relajacion({ profile: 'todos', review_before: 'pronto' })] } }));
+  assert.strictEqual(r.ok, true, 'el archivo vale');
+  assert.strictEqual(r.data.control_profiles, undefined, 'sin la sección');
+  assert.deepStrictEqual(r.sectionProblems.control_profiles.map((p) => p.path).sort(), ['control_profiles.relaxed.0.profile', 'control_profiles.relaxed.0.review_before']);
+  assert.strictEqual(decidir({ tree: arbol({ perfil: { relaxed: [relajacion({ profile: 'todos' })] } }) }).on, true);
+});
+
+// 🔴 Falla con: un freno que no pregunta al perfil, o que no anota el paso por el perfil (la tabla dejaría de contarlo).
+test('T19 ControlProfile_HookRelaxed_PassesAndRecords — el freno de un pedido por repo, relajado para fuertes: con opus no frena y anota paso-por-perfil', () => {
+  const t = arbol({ perfil: { relaxed: [relajacion()] } });
+  const casa = tmp('casa-');
+  const sid = 'sesion-de-prueba-perfil';
+  fs.mkdirSync(path.join(casa, '.claude', 'projects', 'p'), { recursive: true });
+  const conv = (m) => fs.writeFileSync(path.join(casa, '.claude', 'projects', 'p', `${sid}.jsonl`), `${JSON.stringify({ type: 'assistant', message: { model: m } })}\n`);
+  // un az de mentira: un pedido abierto en el repo, construyendo
+  const bin = tmp('bin-');
+  const fix = tmp('fix-');
+  fs.writeFileSync(path.join(fix, 'prs.json'), JSON.stringify([{ pullRequestId: 2845, title: 'otro', sourceRefName: 'refs/heads/ci/otra' }]));
+  fs.writeFileSync(path.join(fix, 'policy.json'), JSON.stringify([{ configuration: { type: { displayName: 'Build' } }, status: 'running' }]));
+  fs.writeFileSync(path.join(bin, 'az'), `#!/usr/bin/env bash\nfor a in "$@"; do [ "$a" = policy ] && { cat "${fix}/policy.json"; exit 0; }; done\ncat "${fix}/prs.json"\n`);
+  fs.chmodSync(path.join(bin, 'az'), 0o755);
+  const CREAR = 'az repos pr create --org https://x --project Totora --repository FrontEnd --source-branch ci/nueva --target-branch main --title t';
+  const correr = () => spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'hooks', 'pr-one-per-repo-guard.js')], {
+    input: JSON.stringify({ session_id: sid, tool_input: { command: CREAR } }), encoding: 'utf8',
+    env: { ...process.env, HOME: casa, USERPROFILE: casa, TYCON_TREE: t, TYCON_PR_ONE_PER_REPO: '1', PATH: `${bin}:${process.env.PATH}` },
+  });
+  const frenos = () => { try { return fs.readFileSync(path.join(require('../setup/harness/tycon-home.js').stateDir(casa), 'frenos.jsonl'), 'utf8'); } catch (_) { return ''; } };
+  conv('claude-opus-5-5');
+  const conOpus = correr();
+  assert.strictEqual(conOpus.status, 0, conOpus.stderr);
+  assert.match(conOpus.stderr, /no freno: relajado para el perfil fuertes/);
+  assert.match(frenos(), /"veredicto":"paso-por-perfil"/, 'anotado para la tabla');
+  conv('claude-sonnet-5-5');
+  const conSonnet = correr();
+  assert.strictEqual(conSonnet.status, 2, 'con sonnet frena como siempre');
+});
