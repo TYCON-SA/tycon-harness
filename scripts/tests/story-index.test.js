@@ -589,3 +589,132 @@ test('StoryDiscovery_TituloEnBloque_LoLee (T5) @story-8.282 @ac-5', () => {
   fs.writeFileSync(f, '---\nepic: 9\nstory: "9.2"\ntitle: x\nstatus: >-\n  draft\n---\n');
   assert.strictEqual(D.probeStoryFile(f).status, '>-');
 });
+
+// ── El texto a mano de los índices, al migrar ────────────────────────────────────────────────────
+// Un índice a mano guarda más que la nota de cada renglón. Cada renglón de ese texto termina en un solo lugar, y el
+// informe cuenta cuántos fueron a cada uno.
+
+/** Un juguete sin introducción de épicas, con los dos índices escritos a mano. */
+function jugueteAMano(nombre, { sprint, epics }) {
+  const dir = juguete(nombre);
+  fs.rmSync(path.join(dir, 'specs', 'epics-intro.md'));
+  fs.writeFileSync(path.join(dir, SPRINT), sprint.join('\n'));
+  if (epics) fs.writeFileSync(path.join(dir, EPICS), epics.join('\n'));
+  return dir;
+}
+const SPRINT_A_MANO = [
+  '# Este archivo lo lee bmad-create-story.', '# Una nota general sin historia.', '',
+  'generated: "2026-09-05"', 'last_updated: 2026-11-12   # una nota en una clave de arriba', 'development_status:', '',
+  '  # ═══════════════════════════', '  # Épica 1: Lo primero', '  # ═══════════════════════════', '  epic-1: in-progress',
+  '  # Prosa de la épica, escrita después de su renglón.', '  1-9-gamma: backlog',
+  '  # La 1.2 se cerró después de la demo.', '  # Decisión del dev.', '  1-2-alfa: done',
+  '  # Un comentario encima de una sin archivo.', '  1-50-perdida: backlog', '  epic-1-retrospective: optional', '',
+  '  # Un comentario al final, de nadie.', '',
+];
+const EPICS_A_MANO = [
+  '# Épicas del arnés', '', '> Índice mínimo.', '', '## Épica 1 — Uno', '', 'La prosa de la épica uno.', 'Sigue acá.', '',
+  '| Story | Título | Depende de | Ficha |', '|---|---|---|---|',
+  '| 1.2 | Alfa | — | ✅ **hecha** (2026-09-15) · `specs/story-1.2-alfa.md` |', '| 1.9 | Gamma | 1.2 | `specs/story-1.9-gamma.md` |',
+  '| 1.77 | Fantasma | — | sin archivo |', '',
+];
+
+test('Migrate_CommentBlockAboveARowGoesToItsChangeLog (T20) @story-8.227 @ac-1', () => {
+  const dir = jugueteAMano('t20', { sprint: SPRINT_A_MANO });
+  const r = correr(['--repo', dir, '--migrate', '--report', path.join(dir, 'specs', 'qa', 'm.md')]);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(leer(dir, 'specs/story-1.2-alfa.md'), /comentario de su renglón en sprint-status\.yaml \(del índice\).*La 1\.2 se cerró después de la demo\. Decisión del dev\./);
+  // el de encima de un renglón sin archivo va a la historia mínima que reserva su número
+  assert.match(leer(dir, 'specs/story-1.50-perdida.md'), /Un comentario encima de una sin archivo\./);
+});
+
+test('Migrate_EpicsMdColumnsGoToTheChangeLog (T21) @story-8.227 @ac-1', () => {
+  const dir = jugueteAMano('t21', { sprint: ['development_status:', '  1-2-alfa: done', '  1-9-gamma: backlog', ''], epics: EPICS_A_MANO });
+  const r = correr(['--repo', dir, '--migrate', '--report', path.join(dir, 'specs', 'qa', 'm.md')]);
+  assert.strictEqual(r.code, 0, r.out);
+  const alfa = leer(dir, 'specs/story-1.2-alfa.md');
+  assert.match(alfa, /notas de su renglón en epics\.md \(del índice\).*Ficha: ✅ \*\*hecha\*\* \(2026-09-15\)/);
+  assert.doesNotMatch(alfa, /notas de su renglón.*specs\/story-1\.2-alfa\.md/, 'la ruta de la historia no es una nota: la arma el generado');
+  assert.doesNotMatch(alfa, /Depende de: —/, 'una columna vacía (una raya) no es una nota');
+  assert.match(leer(dir, 'specs/story-1.9-gamma.md'), /Depende de: 1\.2/);
+});
+
+test('Migrate_EpicProseStatusAndRetroGoToIntro (T22) @story-8.227 @ac-1', () => {
+  const dir = jugueteAMano('t22', { sprint: SPRINT_A_MANO, epics: EPICS_A_MANO });
+  const r = correr(['--repo', dir, '--migrate', '--report', path.join(dir, 'specs', 'qa', 'm.md')]);
+  assert.strictEqual(r.code, 0, r.out);
+  const intro = leer(dir, 'specs/epics-intro.md');
+  assert.match(intro, /^## Épica 1 — Uno$/m);
+  assert.match(intro, /La prosa de la épica uno\.\nSigue acá\./);
+  assert.match(intro, /Estado de la épica en el índice a mano: in-progress; retrospectiva: optional\./);
+  assert.match(intro, /> Épica 1: Lo primero/, 'el encabezado de la épica del sprint-status');
+  assert.doesNotMatch(intro, /═/, 'un renglón de adorno no es texto');
+  // la prosa vuelve en el índice generado
+  assert.match(leer(dir, EPICS), /La prosa de la épica uno\./);
+});
+
+test('Migrate_LooseNotesInTheReportAndTheCountAddsUp (T23) @story-8.227 @ac-1 @ac-2', () => {
+  const dir = jugueteAMano('t23', { sprint: SPRINT_A_MANO, epics: EPICS_A_MANO });
+  const informe = path.join(dir, 'specs', 'qa', 'm.md');
+  const r = correr(['--repo', dir, '--migrate', '--report', informe]);
+  assert.strictEqual(r.code, 0, r.out);
+  const txt = fs.readFileSync(informe, 'utf8');
+  for (const suelto of ['Este archivo lo lee bmad-create-story.', 'Una nota general sin historia.', 'Un comentario al final, de nadie.', '> Índice mínimo.', 'Ficha: sin archivo', 'Título: Fantasma', 'una nota en una clave de arriba']) {
+    assert.ok(txt.split('## Notas sin historia')[1].includes(suelto), `«${suelto}» va a Notas sin historia`);
+  }
+  const m = /a mano en los dos índices: (\d+)\. Al Change Log de su historia: (\d+)\. A\n\S+: (\d+)\. A «Notas sin historia»: (\d+)\./.exec(txt);
+  assert.ok(m, txt);
+  const [total, cl, intro, sin] = m.slice(1).map(Number);
+  assert.strictEqual(cl + intro + sin, total, 'la suma da el total');
+  // la cuenta es la de verdad. A los Change Logs (6): 2 + 1 comentarios, la ficha de alfa, y de gamma su dependencia y
+  // su título a mano («Gamma», no el de la historia). A la introducción (4): dos de prosa, el título del sprint-status y
+  // la prosa escrita después de `epic-1:`. Sueltos (8): las dos generales, la nota de `last_updated`, la del final del
+  // sprint-status, el título y la cita de epics.md, y el título y la ficha de la fantasma, sin archivo
+  assert.strictEqual(cl, 6);
+  assert.strictEqual(intro, 4);
+  assert.strictEqual(sin, 8);
+  assert.match(txt, /Renglones de adorno \(═══, ───\), que no son\ntexto: 2\./);
+});
+
+test('Migrate_TwoReadingsThatExist_TheFileNameDecides (T25) @story-8.227 @ac-3', () => {
+  // `2-17-1-epsilon` puede ser delta con slug «1-epsilon» o epsilon con slug «epsilon»: las dos existen
+  const dir = jugueteAMano('t25', { sprint: ['development_status:', '  # la de epsilon, no la de delta', '  2-17-1-epsilon: backlog   # nota de epsilon', ''] });
+  const informe = path.join(dir, 'specs', 'qa', 'm.md');
+  const r = correr(['--repo', dir, '--migrate', '--report', informe]);
+  assert.strictEqual(r.code, 0, r.out);
+  const epsilon = leer(dir, 'specs/story-2.17.1-epsilon.md');
+  assert.match(epsilon, /nota de epsilon/);
+  assert.match(epsilon, /la de epsilon, no la de delta/);
+  assert.doesNotMatch(leer(dir, 'specs/story-2.17-delta.md'), /epsilon/);
+  assert.match(fs.readFileSync(informe, 'utf8'), /## Ambiguos \(no se tocan\)\n\n- ninguno/);
+});
+
+test('Migrate_SecondRunRefuses_HandTitleKept_EpicTextAfterItsLine_HeaderlessTable (T26) @story-8.227 @ac-1', () => {
+  const dir = jugueteAMano('t26', { sprint: SPRINT_A_MANO, epics: [...EPICS_A_MANO, '## Épica 2 — Dos', '', '| 2.17 | Delta a mano | una nota sin cabecera |', ''] });
+  const informe = path.join(dir, 'specs', 'qa', 'm.md');
+  assert.strictEqual(correr(['--repo', dir, '--migrate', '--report', informe]).code, 0);
+  // el título a mano que no es el de la historia va a su Change Log; el que coincide, no
+  assert.match(leer(dir, 'specs/story-1.9-gamma.md'), /Título: Gamma;/);
+  assert.doesNotMatch(leer(dir, 'specs/story-1.2-alfa.md'), /Título: Alfa/);
+  // lo escrito después de `epic-1:` y antes de su primera historia es de la épica
+  assert.match(leer(dir, 'specs/epics-intro.md'), /> Prosa de la épica, escrita después de su renglón\./);
+  assert.doesNotMatch(leer(dir, 'specs/story-1.9-gamma.md'), /Prosa de la épica/);
+  // una tabla sin cabecera no pierde su primera fila
+  assert.match(leer(dir, 'specs/story-2.17-delta.md'), /Título: Delta a mano; columna 3: una nota sin cabecera/);
+  // otra corrida sobre los índices ya generados no hace nada
+  const antes = leer(dir, 'specs/story-1.2-alfa.md');
+  const otra = correr(['--repo', dir, '--migrate', '--report', informe]);
+  assert.strictEqual(otra.code, 1, otra.out);
+  assert.match(otra.out, /ya son los generados/);
+  assert.strictEqual(leer(dir, 'specs/story-1.2-alfa.md'), antes, 'no toca ninguna historia');
+});
+
+test('Migrate_ExistingIntroIsNotOverwritten (T24) @story-8.227 @ac-1', () => {
+  const dir = juguete('t24');
+  const antes = leer(dir, 'specs/epics-intro.md');
+  fs.writeFileSync(path.join(dir, SPRINT), ['development_status:', '  # Épica 1: un título viejo', '  epic-1: done', '  1-2-alfa: done', ''].join('\n'));
+  const informe = path.join(dir, 'specs', 'qa', 'm.md');
+  const r = correr(['--repo', dir, '--migrate', '--report', informe]);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(leer(dir, 'specs/epics-intro.md'), antes, 'la introducción que ya estaba no cambia');
+  assert.match(fs.readFileSync(informe, 'utf8'), /la épica 1 \(ya tiene su introducción.*\): Épica 1: un título viejo/, 'lo del índice va al informe, entero');
+});
