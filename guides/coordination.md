@@ -591,6 +591,11 @@ espera la compilación y, con verde, cierra el arreglo.
 las líneas que cambió el arreglo pasa a seguimiento (`deuda: fuera-del-arreglo`) y no abre otra vuelta; un crítico
 también, y sale primero.
 
+**Una ejecución abierta cuyo arreglo ya entró a main por otro lado** (un commit del dueño, otro pedido) se cierra con
+`marker.js clear --replaced-by <commit>`. El arnés trae main y comprueba que el commit está en `origin/main` y toca un
+archivo que la ejecución editó: si es así, la cierra `reemplazada`, sin el pase, los pasos ni la firma que le faltaban.
+Si no lo puede comprobar, no cierra así y queda la salida de siempre (la firma de cerrar la ejecución).
+
 **Un cambio de los datos no es camino corto.** Al abrir, la sesión responde si el cambio cambia de dónde sale un dato o
 quién lo puede ver (`"datos": "sin-cambio"` o `"cambian"`); con «cambian» no abre, y un carril abierto no cambia. Al
 guardar, el freno busca en las líneas que el carril agrega o borra las señales del paquete del stack (una llamada a un

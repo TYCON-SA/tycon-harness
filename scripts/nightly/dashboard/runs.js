@@ -597,13 +597,14 @@ function agruparEventos(eventos) {
  */
 /**
  * Cómo terminó una ejecución: la marca `cierre` del marcador; sin ella (un volcado de antes de la marca), lo que dicen
- * sus pasos. Terminada es sólo `completa`: una en deuda, abortada o abandonada no terminó lo que la historia pedía.
- * → `{ estado: completa|deuda|abortada|abandonada|incompleta, inferido }`.
+ * sus pasos. Terminada es sólo `completa`: una en deuda, abortada o abandonada no terminó lo que la historia pedía; una
+ * `reemplazada` tampoco: su arreglo entró a main por otro lado.
+ * → `{ estado: completa|deuda|abortada|abandonada|reemplazada|incompleta, inferido }`.
  */
 function cierreDeCorrida(d) {
   const m = d.marker || {};
   const e = m.cierre && typeof m.cierre === 'object' ? String(m.cierre.estado || '') : '';
-  if (['completa', 'deuda', 'abortada', 'abandonada'].includes(e)) return { estado: e, inferido: false };
+  if (['completa', 'deuda', 'abortada', 'abandonada', 'reemplazada'].includes(e)) return { estado: e, inferido: false };
   if (d.sinCerrar === true) return { estado: 'abandonada', inferido: true };
   // el cierre de la historia (después del merge) no cuenta como pendiente
   const pendientes = (Array.isArray(m.stepsPending) ? m.stepsPending : []).map(String).filter((p) => p !== 'close-work-item' && p !== '9');
