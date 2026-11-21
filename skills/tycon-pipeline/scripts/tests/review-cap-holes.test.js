@@ -126,6 +126,36 @@ test('CapHoles_DeletedServed_MirrorKeepsCount (T5)', () => {
   assert.match(b.stderr, /tope de 3/);
 });
 
+test('CapHoles_OtherSessionSubfolderRepo_Blocked (T13)', () => {
+  // --repo en una subcarpeta del repo es el mismo repo
+  const lab = laboratorio();
+  const r = lab.pipeline(['advisors', '--repo', path.join(lab.repo, 'src'), '--files', 'a.js'], { CLAUDE_CODE_SESSION_ID: 'otra-sesion' });
+  assert.equal(r.status, 3, `una subcarpeta del repo saca el set: ${r.stdout.slice(0, 200)}`);
+  assert.match(r.stderr, /sesión de la corrida/);
+});
+
+test('CapHoles_OtherSessionWithOwnMarker_Blocked (T14)', () => {
+  // una sesión con su propio marcador, de otra historia en otro repo, tampoco usa la corrida al tope de esta
+  const lab = laboratorio();
+  const otro = tmp('rch-otro-');
+  fs.writeFileSync(path.join(otro, 'story.md'), '---\nstory: 1.1\n---\n');
+  fs.writeFileSync(path.join(lab.state, 'active', 'sesion-b.json'), JSON.stringify({ storyId: '1.1', storyPath: path.join(otro, 'story.md'), repoPath: otro, sessionId: 'sesion-b', iterations: {} }));
+  const r = lab.pipeline(['smart-reloop', '--iter', '1', '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js'], { CLAUDE_CODE_SESSION_ID: 'sesion-b' });
+  assert.equal(r.status, 3, `otra sesión con marcador propio saca el set: ${r.stdout.slice(0, 200)}`);
+  assert.match(r.stderr, /sesión de la corrida/);
+});
+
+test('CapHoles_NestedWorktreeRunOfOther_DoesNotBlockMain (T15)', () => {
+  // una corrida de otra sesión en una copia de trabajo anidada es de otro repo: no frena el principal
+  const lab = laboratorio({ abierta: false, servidas: [] });
+  const wt = path.join(lab.repo, '.claude', 'worktrees', 'wt');
+  fs.mkdirSync(wt, { recursive: true });
+  fs.writeFileSync(path.join(wt, '.git'), 'gitdir: /nada\n');
+  fs.appendFileSync(path.join(lab.state, 'gates.log'), `${JSON.stringify({ ts: HACE(60), name: 'run-open', sesion: 'otra', story: '1.1', repo: wt, runDir: path.join(wt, '.advisors', 'pipeline-runs', '1.1-x') })}\n`);
+  const r = lab.pipeline(['advisors', '--repo', lab.repo, '--files', 'src/a.js'], { CLAUDE_CODE_SESSION_ID: 'tercera' });
+  assert.equal(r.status, 0, r.stderr);
+});
+
 // ── 2. Lanzar los revisores a mano ──────────────────────────────────────────────────────────────────────────────────
 
 test('CapHoles_ManualLaunchAtCap_Denied (T6)', () => {
@@ -148,7 +178,7 @@ test('CapHoles_ManualLaunchNotReviewer_Allowed (T7)', () => {
 });
 
 test('CapHoles_ManualLaunchBelowCap_Allowed (T8)', () => {
-  const lab = laboratorio({ fotos: [1, 2] });
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
   const r = lab.hook('tycon-plugin-security-basics');
   assert.equal(r.status, 0, r.stderr);
 });
@@ -161,6 +191,13 @@ test('CapHoles_ManualLaunchOpenRoundAtCap_Allowed (T12)', () => {
   assert.equal(a.status, 0, a.stderr);
   const b = lab.hook('tycon-plugin-security-basics');
   assert.equal(b.status, 2, 'el mismo revisor otra vez en la vuelta al tope');
+});
+
+test('CapHoles_ManualLaunchServedCountWithoutPhotos_Denied (T16)', () => {
+  // las fotos caen en la misma clave si las vueltas se piden sin --iter: cuentan también las servidas
+  const lab = laboratorio({ fotos: [1] });
+  const r = lab.hook('tycon-plugin-security-basics');
+  assert.equal(r.status, 2, `con tres vueltas servidas y una sola foto, el lanzamiento a mano pasa: ${r.stderr}`);
 });
 
 // ── 3. La misma vuelta pedida otra vez ──────────────────────────────────────────────────────────────────────────────
@@ -184,6 +221,14 @@ test('CapHoles_SameRoundAfterEdit_CountsAsNew (T10)', () => {
   const r = lab.pipeline(['smart-reloop', '--iter', '3', '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js']);
   assert.equal(r.status, 3, `la vuelta 3 se volvió a servir con archivos cambiados: ${r.stdout.slice(0, 200)}`);
   assert.match(r.stderr, /tope de 3/);
+});
+
+test('CapHoles_SameRoundAfterNonReviewerLaunch_StillSame (T17)', () => {
+  // un agente que no es revisor del set (otra herramienta) no cuenta como vuelta lanzada
+  const lab = laboratorio({ fotos: [1, 2] });
+  lab.registro([{ ts: HACE(60), advisor: 'web-fetch', repo: lab.repo, story: '9.8' }]);
+  const r = lab.pipeline(['smart-reloop', '--iter', '3', '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js']);
+  assert.equal(r.status, 0, r.stderr);
 });
 
 test('CapHoles_SameRoundNothingInBetween_StillSame (T11)', () => {

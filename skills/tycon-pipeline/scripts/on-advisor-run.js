@@ -444,8 +444,16 @@ function frenoDelTope({ sessionId, advisor }) {
     const P = require('./pipeline.js');
     if (!P.revisoresDelCatalogo().has(advisor)) return null;
     const rr = require('./lib/review-rounds.js');
+    const rt = require('./lib/rethink.js');
     const repo = path.resolve(m.repoPath);
-    const n = rr.vueltas(m);
+    const storyAbs = path.isAbsolute(m.storyPath) ? m.storyPath : path.join(repo, m.storyPath);
+    const storyId = String(m.storyId || '');
+    const runDir = storyId ? P.resolveRunDir(repo, storyId, false, storyAbs, { marker: m }) : null;
+    // las vueltas: las fotos del marcador o las servidas de la corrida (served.json y su copia de fuera del repo), la
+    // mayor. Las fotos llevan el número que declaró quien pidió el set: pedidas sin --iter caen todas en la misma.
+    const servida = rt.readServed(runDir);
+    const espejo = rt.readServedMirror({ stateDir: stateDirOf(os.homedir()), runDir });
+    const n = Math.max(rr.vueltas(m), servida.ok ? servida.last : 0, espejo.ok ? espejo.last : 0);
     if (n < rr.tope({ repo }).value) return null;
     // la vuelta abierta: un revisor de su set que todavía no se lanzó en ella es de esa vuelta, no de una más
     let parsed = [];
@@ -456,9 +464,6 @@ function frenoDelTope({ sessionId, advisor }) {
     const idx = require('./lib/advisor-round.js').inicioDeLaRonda(parsed);
     if (idx >= 0 && Array.isArray(parsed[idx].expected) && parsed[idx].expected.includes(advisor)
       && !parsed.slice(idx + 1).some((d) => d && d.advisor === advisor)) return null;
-    const storyAbs = path.isAbsolute(m.storyPath) ? m.storyPath : path.join(repo, m.storyPath);
-    const storyId = String(m.storyId || '');
-    const runDir = storyId ? P.resolveRunDir(repo, storyId, false, storyAbs, { marker: m }) : null;
     const cartel = P.topeDeVueltas({ args: {}, iter: n + 1, rr, runDir, repoAbs: repo, storyId });
     if (!cartel) return null;
     const stateDir = stateDirOf(os.homedir());

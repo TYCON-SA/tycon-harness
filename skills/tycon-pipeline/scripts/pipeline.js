@@ -6562,7 +6562,8 @@ function emptyWorkGate(args) {
 }
 
 // Las corridas abiertas de OTRAS sesiones en el repo (lib/open-runs.js: el último evento de cada sesión es su apertura):
-// `{ lista }` o `{ error }` si el registro existe y no se puede leer.
+// `{ lista }` o `{ error }` si el registro existe y no se puede leer. El repo se compara por su raíz de git (una subcarpeta
+// es el mismo repo; una copia de trabajo anidada es otro); una apertura sin repo, por la raíz de git de su carpeta.
 function corridasAbiertasDeOtras(repoAbs) {
   const or = require('./lib/open-runs.js');
   const r = or.leerEventos(os.homedir());
@@ -6570,9 +6571,11 @@ function corridasAbiertasDeOtras(repoAbs) {
   const ultimo = new Map();
   for (const e of r.eventos) ultimo.set(e.sesion, e);
   const yo = resolveSessionId();
+  const raiz = or.raizDeGit(repoAbs) || repoAbs;
+  const mismo = (p) => or.dentroDe(p, raiz) && or.dentroDe(raiz, p);
   const lista = [...ultimo.values()].filter((e) => e.name === 'run-open' && e.sesion !== yo
-    && ((typeof e.repo === 'string' && or.dentroDe(e.repo, repoAbs) && or.dentroDe(repoAbs, e.repo))
-      || (typeof e.runDir === 'string' && or.dentroDe(e.runDir, repoAbs))));
+    && (typeof e.repo === 'string' ? mismo(or.raizDeGit(e.repo) || e.repo)
+      : typeof e.runDir === 'string' && mismo(or.raizDeGit(e.runDir) || e.runDir)));
   return { lista };
 }
 
@@ -6587,10 +6590,12 @@ function movidaDesde(desde, marcador) {
   if (Object.values((marcador && marcador.filesTouchedAt) || {}).some((v) => v && Number(v.ts) > desde)) return true;
   let lineas = [];
   try { lineas = fs.readFileSync(sessionLogPath(), 'utf8').split('\n'); } catch { return false; }
+  // revisor = del set (núcleo y paquetes) y no de otra etapa: lo mismo que cuenta el gancho de lanzamientos
   const { esRevisor } = require('./lib/late-snapshot.js');
+  const catalogo = revisoresDelCatalogo();
   return lineas.some((l) => {
     if (!l.trim()) return false;
-    try { const d = JSON.parse(l); return esRevisor(d.advisor) && Date.parse(d.ts) > desde; } catch { return false; }
+    try { const d = JSON.parse(l); return esRevisor(d.advisor) && catalogo.has(d.advisor) && Date.parse(d.ts) > desde; } catch { return false; }
   });
 }
 
@@ -6625,10 +6630,19 @@ function rethinkGate(args) {
   // El freno es de las corridas del pipeline: hay corrida si el marcador trae story, o si --story resuelve una carpeta de
   // corrida. Fuera de una corrida no hay vueltas que contar: --iter ausente, 1 o 2 pasa como siempre; desde la tercera (la que pide nota) frena.
   const marcadorConStory = !!(marcador && typeof marcador.storyPath === 'string' && marcador.storyPath);
-  // Sin el marcador de una corrida, el pedido no usa la cuenta de vueltas de ninguna: si el repo tiene una corrida abierta
-  // de otra sesión, la vuelta se pide desde esa sesión. Si no, otra sesión, la variable de sesión cambiada en el comando o
-  // una copia de la historia con otro número sacaban el set completo de una corrida al tope.
-  if (!marcadorConStory) {
+  // ¿El pedido es de la corrida del marcador de esta sesión (el mismo repo, por su raíz de git, y la misma historia)?
+  const orLib = require('./lib/open-runs.js');
+  const raizDe = (p) => orLib.raizDeGit(p) || path.resolve(p);
+  const mismaRaiz = (a, b) => orLib.dentroDe(raizDe(a), raizDe(b)) && orLib.dentroDe(raizDe(b), raizDe(a));
+  const storyDelMarcador = marcadorConStory
+    ? deriveStoryId(path.isAbsolute(marcador.storyPath) ? marcador.storyPath : path.join(path.resolve(marcador.repoPath || repoAbs), marcador.storyPath))
+    : null;
+  const deEstaCorrida = marcadorConStory && mismaRaiz(marcador.repoPath || repoAbs, repoAbs)
+    && (!storyId || String(storyId) === String(storyDelMarcador));
+  // Fuera de la corrida de su marcador, el pedido no usa la cuenta de vueltas de ninguna: si el repo tiene una corrida
+  // abierta de otra sesión, la vuelta se pide desde esa sesión. Si no, otra sesión (con o sin marcador propio), la
+  // variable de sesión cambiada en el comando o una copia de la historia con otro número sacaban el set de una corrida al tope.
+  if (!deEstaCorrida) {
     const ajenas = corridasAbiertasDeOtras(repoAbs);
     if (ajenas.error) {
       return `🛑 No pude leer el registro de corridas abiertas (${ajenas.error}): sin él no sé si ${repoAbs} tiene una corrida de otra sesión, y ante la duda no devuelvo el set.\n`;
@@ -6674,11 +6688,11 @@ function rethinkGate(args) {
   // Pedir de nuevo el set de la última vuelta servida, sin que se haya lanzado, es la MISMA vuelta; con sus revisores
   // lanzados, pedirla otra vez es una vuelta nueva: max(declarada, marcador, última servida + 1). También es nueva si desde
   // que se sirvió se lanzó algún revisor o cambió algún archivo: si no, dejar un revisor sin lanzar repetía la vuelta con
-  // arreglos en el medio. Sin marcador con la story no hay fotos que mirar: ahí cada pedido es una vuelta nueva, para que
-  // repetir no esquive la nota.
+  // arreglos en el medio. Sin el marcador de esta corrida no hay fotos que mirar (las de otra historia no cuentan): ahí cada
+  // pedido es una vuelta nueva, para que repetir no esquive la nota.
   const rr = require('./lib/review-rounds.js');
   const servidaEn = espejo.last === ultima && espejo.ts ? espejo.ts : (runDir ? horaDe(rt.servedPath(runDir)) : null);
-  const ultimaLanzada = ultima > 0 && (!marcadorConStory || rr.lanzada(marcador, ultima) || movidaDesde(servidaEn, marcador));
+  const ultimaLanzada = ultima > 0 && (!deEstaCorrida || rr.lanzada(marcador, ultima) || movidaDesde(servidaEn, marcador));
   const iter = ultima > 0 ? Math.max(pedida, ultimaLanzada ? ultima + 1 : ultima) : pedida;
   // El tope de vueltas: más allá no hay otra vuelta (topeDeVueltas dice qué hacer con lo que quedó abierto).
   const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId });
