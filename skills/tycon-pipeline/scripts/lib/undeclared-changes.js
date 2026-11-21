@@ -169,16 +169,29 @@ function entradosPorMain(repo, baseSha, candidatos) {
   if (d.error) return [];
   const enMain = new Set(lineas(d.out).map(toPosix));
   const repoReal = real(repo);
+  // las versiones de main contra las que se compara: la punta de origin/main y lo que la rama ya trajo (su punto en común
+  // con main). Si main vuelve a avanzar después de traerlo, lo traído sigue siendo de main: el sello de lo revisado
+  // compara igual, con el punto en común
+  // (sólo si la rama trajo main después del arranque: si no, ese punto es el de antes del arranque y no trajo nada)
+  const mb = git(repo, ['merge-base', 'HEAD', MAIN]);
+  const mb0 = git(repo, ['merge-base', baseSha, MAIN]);
+  const trajo = !mb.error && !mb0.error && mb.out.trim() && mb.out.trim() !== mb0.out.trim();
+  const refs = [MAIN, ...(trajo ? [mb.out.trim()] : [])];
   return candidatos.filter((f) => {
     if (!enMain.has(f)) return false;
     // borrado en la carpeta y también en main: el mismo estado que main (git tiene que contestar que no está)
     if (!fs.existsSync(path.join(repoReal, f))) {
-      const t = git(repo, ['ls-tree', '--name-only', MAIN, '--', f]);
-      return !t.error && lineas(t.out).length === 0;
+      return refs.some((ref) => {
+        const t = git(repo, ['ls-tree', '--name-only', ref, '--', f]);
+        return !t.error && lineas(t.out).length === 0;
+      });
     }
-    const remoto = git(repo, ['rev-parse', '--verify', '--quiet', `${MAIN}:./${f}`]);
     const local = git(repo, ['hash-object', '--', f]);
-    return !local.error && !remoto.error && local.out.trim() !== '' && local.out.trim() === remoto.out.trim();
+    if (local.error || local.out.trim() === '') return false;
+    return refs.some((ref) => {
+      const remoto = git(repo, ['rev-parse', '--verify', '--quiet', `${ref}:./${f}`]);
+      return !remoto.error && local.out.trim() === remoto.out.trim();
+    });
   }).sort();
 }
 
