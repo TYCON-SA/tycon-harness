@@ -264,6 +264,19 @@ test('T24 CompareWaiver_SinFirmaNoEscribe @story-8.167 @ac-20 — sin firma no h
   assert.match(L2.cerrar().stderr, FRENO);
 });
 
+// 🔴 Falla con: la exención que el arnés firma como trámite (el perfil lista `compare-waiver` en
+//    approvals.delegated_signing) sale con la vía «firma de trámite · arnés», que la constancia no reconoce: marker.js
+//    compare-waiver gasta la firma y después dice que la constancia no vale.
+test('CompareWaiver_DeTramite_LaConstanciaVale — la exención firmada como trámite se anota y vale', () => {
+  const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+  // como la arma compare-waiver con lo que devuelve la firma de trámite (owner-window.js exigir: `automatica: true`)
+  const q = ow.quienFirmo({ via: 'delegacion', automatica: true, sesion: 's-gate' }, 'persona');
+  const linea = { ts: new Date().toISOString(), story: '9.9', command: 'cli.js', reason: 'usa la red', ...q, via: `compare-waiver (${q.via})` };
+  assert.strictEqual(require(CW).constanciaInvalida(linea), null, JSON.stringify(linea));
+  // una vía que no dice cómo se firmó sigue sin valer
+  assert.match(require(CW).constanciaInvalida({ ...linea, via: 'compare-waiver (a mano)' }), /vía/);
+});
+
 // Dos comandos de main cambiados por la rama, cada uno de una tanda: `otro.js` es de la A (ya en main, done) y `cli.js`
 // de la B, la de la corrida. La comparación con main mide sólo la tanda de la corrida
 const OTRO = CLI.replace("console.log('uso');", "console.log('uso de otro');");
