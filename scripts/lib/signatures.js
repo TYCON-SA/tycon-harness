@@ -112,7 +112,7 @@ const LEVELS = Object.freeze([
   ['save', 1, AMBOS, 'guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible'],
   ['browser-test:prepare', 1, AMBOS, 'preparar la prueba con navegador'],
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
-  ['adhoc-lane:ci-rojo', 1, AMBOS, 'abrir el arreglo de un rojo de CI de un pedido abierto, sin plan ni revisores (hasta 3 archivos de implementación; antes de guardar corren el control que falló y las pruebas tocadas)'],
+  ['adhoc-lane:ci-rojo', 1, AMBOS, 'abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores (hasta 3 archivos de implementación; antes de guardar corren el control que falló y las pruebas tocadas)'],
   ['compare-waiver', 1, AMBOS, 'eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['lost-run:particion', 1, AMBOS, 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
@@ -350,7 +350,7 @@ const SIGNATURES = Object.freeze([
     clickDelDueno: true, descripciones: Object.freeze(['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.', 'No se abre el arreglo, y el trabajo va por una historia.']) },
   // el arreglo del rojo de CI de un pedido abierto: el dueño en la ventana, su click o su terminal, o la coordinadora si el
   // perfil lo delega
-  { id: CI_ROJO, approves: 'abrir el arreglo de un rojo de CI de un pedido abierto, sin plan ni revisores', command: 'marker.js adhoc set --ci-red <pedido> --check <control> --reason <motivo> --data sin-cambio --file <ruta>', otherSession: 'yes',
+  { id: CI_ROJO, approves: 'abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores', command: 'marker.js adhoc set --ci-red <pedido> --check <control> --reason <motivo> --data sin-cambio --file <ruta>', otherSession: 'yes',
     terminal: 'marker.js adhoc set --ci-red <pedido> --check <control> --reason "<motivo>" --data sin-cambio --file <ruta> --terminal --for-session <id>' },
   // dejar pasar el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente;
   // nunca un «aprobado» escrito, la delegación ni la ventana de permiso
