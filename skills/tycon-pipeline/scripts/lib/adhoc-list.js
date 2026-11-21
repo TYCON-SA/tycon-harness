@@ -514,7 +514,51 @@ function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), 
   return { archivo: abs, motivo: 'no está en la lista' };
 }
 
+// Ampliar la lista firmada sin otra firma: sobre una lista que firmó una persona o la
+// coordinadora por delegación, nunca sobre una abierta sin firma («hecho y avisado»), y hasta este total de archivos
+const VIAS_FIRMADAS = new Set(['delegacion', 'terminal', 'ventana', 'click', 'mensaje']);
+const TOPE_SIN_FIRMA = 5;
+
+/**
+ * ¿Se amplía la lista sin otra firma? `{ ok: true, agregados }` sólo si la nueva contiene entera a la firmada y suma algo,
+ * tiene 5 archivos o menos, todos en los repos que ya nombraba, sin nada sensible ni de riesgo alto (lo que no se pudo
+ * medir cuenta como riesgo), y el resto del carril no cambia (motivo, cupo, datos, maqueta, sobre cupo). Si no,
+ * `{ ok: false, motivo }`, y la ampliación pide la firma de siempre. Al dueño le llega el aviso: eso lo hace quien llama.
+ */
+function ampliacionSinFirma({ actual, nueva, reason, maxFiles, datos, maqueta, sobreCupo, riesgo = riesgoDeLaLista }) {
+  const no = (motivo) => ({ ok: false, motivo });
+  if (!actual || !Array.isArray(actual.allowedFiles) || !actual.allowedFiles.length) return no('no hay una lista firmada que ampliar');
+  if (!VIAS_FIRMADAS.has(actual.via)) return no('la lista abierta no la firmó nadie');
+  if (!Array.isArray(nueva) || faltanEnLaNueva(actual.allowedFiles, nueva).length) return no('la lista nueva no contiene entera a la firmada');
+  const firmada = new Set(actual.allowedFiles.map(unidadEnMayuscula));
+  const agregados = nueva.filter((f) => !firmada.has(unidadEnMayuscula(f)));
+  if (!agregados.length) return no('la lista nueva no suma nada');
+  if (nueva.length > TOPE_SIN_FIRMA) return no(`la lista nueva tiene ${nueva.length} archivos, y sin firma llega hasta ${TOPE_SIN_FIRMA}`);
+  if (reason !== actual.reason) return no('cambia el motivo del arreglo');
+  if (maxFiles !== undefined && maxFiles !== actual.maxFiles) return no('cambia el cupo');
+  if (datos !== undefined && datos !== actual.datos) return no('cambia la respuesta sobre los datos');
+  if (maqueta) return no('anota una maqueta');
+  if (sobreCupo || actual.sobreCupo) return no('el arreglo pasa el tope de la organización');
+  const repos = new Set(actual.allowedFiles.map(raizDe));
+  if (agregados.some((f) => { const r = raizDe(f); return !r || !repos.has(r); })) return no('suma un archivo de otro repo, o fuera de todo repo');
+  let r;
+  try { r = riesgo(nueva); } catch (_) { r = { regla: 'no-pude-saber', archivo: agregados[0] }; }
+  if (r) return no(`la lista nombra una ruta de ${textoDelRiesgo(r)}`);
+  return { ok: true, agregados };
+}
+
+/**
+ * La hora de la firma de la declaración y sus ampliaciones. Ampliada sin firma conserva la de la lista firmada (el portón
+ * busca su renglón en el registro con esa hora) y anota lo que sumó; con una firma nueva, la hora es la de ahora.
+ */
+function camposDeLaFirma({ existing, sinFirma, agregados = [], ahora }) {
+  const previas = existing && Array.isArray(existing.ampliaciones) ? existing.ampliaciones : null;
+  if (sinFirma && existing) return { firmadaEn: existing.firmadaEn, ampliaciones: [...(previas || []), { at: ahora, agregados }] };
+  return { firmadaEn: ahora, ...(previas ? { ampliaciones: previas } : {}) };
+}
+
 module.exports = {
+  ampliacionSinFirma, camposDeLaFirma,
   sinEnlaces, unidadEnMayuscula, faltanEnLaNueva, normalizar, relDeLaLista, reposDeLaLista, repoDelCarril, repoVecinoFueraDelGrupo, carpetaDeLaSesion, raizDe, esCodigo, esCodigoRel, contar, problemaDeTopes, problemaDelMotivo, variosTemas, vago, sinUnaPersona,
   esPapeleo, esPapeleoDeLaLista, esPruebaDe, esTemporal, fueraDeLaLista, rechazoDeLaLista, textoDeAmpliar, textoOtroCarril, riesgoDeLaLista, textoDelRiesgo,
 };

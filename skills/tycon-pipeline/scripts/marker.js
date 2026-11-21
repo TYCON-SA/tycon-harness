@@ -8422,8 +8422,23 @@ function cmdAdhoc(sub, payloadJson) {
     // la misma regla que mira el freno: pasar el tope es otra firma
     const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo, { cwd: carpetaDeLaLista });
     const enLaLista = `${allowedFiles.length} archivo${allowedFiles.length === 1 ? '' : 's'} (${relLista.slice(0, 2).join(', ')}${relLista.length > 2 ? ', …' : ''})`;
-    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
-      propia: PROPIA, anotar: anotarFirma, antes });
+    // ampliar la lista firmada sin otra firma: con las condiciones de `ampliacionSinFirma` y
+    // el aviso a la persona entregado. Si falta una de las dos, la firma de siempre
+    let r = null;
+    const ampliacion = LISTA.ampliacionSinFirma({ actual, nueva: allowedFiles, reason, maxFiles: payload.maxFiles, datos: payload.datos, maqueta,
+      sobreCupo: firmaDelPedido === firmas.SOBRE_CUPO });
+    if (ampliacion.ok) {
+      const agregadosRel = ampliacion.agregados.map((f) => LISTA.relDeLaLista(f, carpetaDeLaLista, pedidaLista.hermanos));
+      const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
+      const a = require('./lib/save-ok.js').avisar({ texto: enUnRenglon(`Arreglo rápido: la sesión ${destino} sumó a su lista firmada, sin otra firma: ${agregadosRel.join(', ')} («${reason}»).`),
+        canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) });
+      if (a.ok) r = { codigo: 0, via: actual.via, sinFirma: true, agregados: agregadosRel };
+      else console.error(`marker.js adhoc set: la ampliación cumple para ir sin firma, pero el aviso a la persona no salió (${a.motivo}): sigue la firma de siempre.`);
+    }
+    if (!r) {
+      r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
+        propia: PROPIA, anotar: anotarFirma, antes });
+    }
     if (r.codigo !== 0) {
       // la forma con JSON sólo si hace falta: la maqueta no entra en la otra, y hay motivos que no se pueden citar en ella
       const screen = require('./lib/adhoc-screen.js');
@@ -8470,8 +8485,9 @@ function cmdAdhoc(sub, payloadJson) {
       cwd: process.cwd(),
       via, by,
       ...sobreCupo,
-      // la hora de la firma: el portón acepta la declaración sólo con el renglón `-signed` de su firma, de esta hora
-      firmadaEn: nowIso(),
+      // la hora de la firma: el portón acepta la declaración sólo con el renglón `-signed` de su firma, de esta hora.
+      // Ampliada sin firma, la de la lista firmada, con lo que sumó
+      ...LISTA.camposDeLaFirma({ existing, sinFirma: !!r.sinFirma, agregados: r.agregados, ahora: nowIso() }),
       // la hora de fin que declaró la sesión con `adhoc until` sigue valiendo al agrandar el carril
       ...(existing && existing.until ? { until: existing.until } : {}),
       // la maqueta aprobada y la captura también: el freno de guardar mide si siguen valiendo
@@ -8507,7 +8523,7 @@ function cmdAdhoc(sub, payloadJson) {
     const gateOn = String(process.env.TYCON_STORY_GATE || '').toLowerCase() !== 'off';
     const maquina = r.registro && r.registro.maquina ? r.registro.maquina : null;
     appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null,
-      files: obj.files.length, cwd: process.cwd(), via, by, destino, ...sobreCupo, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }),
+      files: obj.files.length, cwd: process.cwd(), via, by, destino, ...sobreCupo, ...(r.sinFirma ? { sinFirma: true, agregados: r.agregados } : {}), ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }),
       ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}), ...(obj.datos ? { datos: obj.datos } : {}), allowedFiles });
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     if (maxFiles < pedido) {

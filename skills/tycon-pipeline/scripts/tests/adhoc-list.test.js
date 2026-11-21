@@ -1120,3 +1120,74 @@ test('P3 Lista_PedidaPorUnEnlace_NombraLasRutasDelRepo — @story-8.316 @ac-11',
   assert.ok(n.lista, n.problema);
   assert.deepStrictEqual(n.lista.map((f) => lista().relDeLaLista(f, enlace, n.hermanos)).sort(), ['B/src/A.cs', 'src/a.js']);
 });
+
+// ── ampliar la lista firmada sin otra firma ─────────────────────────────────────────────
+
+// 🔴 Falla con: ampliar la lista firmada pedía siempre otra firma, aunque la nueva sumara un archivo al mismo repo y no
+// nombrara nada sensible. Ahora va sin firma con las tres condiciones y el aviso; si falla una, sigue la firma.
+test('T60 AmpliarSinFirma_LasTresCondiciones', () => {
+  const raiz = tmp('t60-');
+  const dir = repo(raiz, 'producto');
+  const otro = repo(raiz, 'otro');
+  const L = lista();
+  const a = (rel, d = dir) => path.join(d, rel);
+  const actual = { reason: 'arreglo del combo de clientes', maxFiles: 5, datos: 'sin-cambio', via: 'ventana', allowedFiles: [a('src/a.js')] };
+  const sinRiesgo = () => null;
+  const pide = (o = {}) => L.ampliacionSinFirma({ actual, nueva: [a('src/a.js'), a('src/b.js')], reason: actual.reason, datos: 'sin-cambio', riesgo: sinRiesgo, ...o });
+  // las tres condiciones: pasa, y dice qué suma
+  const ok = pide();
+  assert.strictEqual(ok.ok, true, ok.motivo);
+  assert.deepStrictEqual(ok.agregados, [a('src/b.js')]);
+  // también la firmada por delegación de la coordinadora
+  assert.strictEqual(pide({ actual: { ...actual, via: 'delegacion' } }).ok, true);
+  // no contiene entera a la firmada
+  assert.match(pide({ nueva: [a('src/b.js')] }).motivo, /no contiene entera/);
+  // más de 5 en total
+  assert.match(pide({ nueva: ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => a(`src/${n}.js`)) }).motivo, /5/);
+  // algo sensible o de riesgo alto (lo dice la lectura del riesgo de la lista); y si no se puede leer, tampoco
+  assert.match(pide({ riesgo: () => ({ regla: 'controles', archivo: a('src/b.js') }) }).motivo, /riesgo alto/);
+  assert.match(pide({ riesgo: () => { throw new Error('x'); } }).motivo, /riesgo alto/);
+  // lo demás del carril no cambia: el motivo, el cupo, los datos, una maqueta nueva, el sobre cupo
+  assert.strictEqual(pide({ reason: 'otro arreglo distinto' }).ok, false);
+  assert.strictEqual(pide({ maxFiles: 3 }).ok, false);
+  assert.strictEqual(pide({ datos: 'cambia-permisos' }).ok, false);
+  assert.strictEqual(pide({ maqueta: { file: 'm.png' } }).ok, false);
+  assert.strictEqual(pide({ sobreCupo: true }).ok, false);
+  // sin sumar nada, sin lista firmada, o una abierta sin firma («hecho y avisado»)
+  assert.strictEqual(pide({ nueva: [a('src/a.js')] }).ok, false);
+  assert.strictEqual(pide({ actual: null }).ok, false);
+  assert.strictEqual(pide({ actual: { ...actual, via: 'avisado' } }).ok, false);
+  // un archivo de otro repo, o fuera de todo repo: sigue la firma
+  assert.strictEqual(pide({ nueva: [a('src/a.js'), a('src/x.js', otro)] }).ok, false);
+  assert.strictEqual(pide({ nueva: [a('src/a.js'), '/opt/tycon-no-existe/x.js'] }).ok, false);
+  // la lectura del riesgo de verdad: un archivo de las firmas del arnés no se suma sin firma
+  const sensible = L.ampliacionSinFirma({ actual, nueva: [a('src/a.js'), a('scripts/lib/signatures.js')], reason: actual.reason, datos: 'sin-cambio' });
+  assert.strictEqual(sensible.ok, false, 'sumó un archivo sensible sin firma');
+});
+
+// La declaración ampliada sin firma conserva la hora de la firma de la lista (el portón la busca en el registro) y anota
+// lo que sumó; una firma nueva la cambia.
+test('T61 AmpliarSinFirma_ConservaLaFirmaYAnotaLaAmpliacion', () => {
+  const L = lista();
+  const existing = { firmadaEn: '2026-11-21T10:00:00.000Z', ampliaciones: [{ at: '2026-11-21T10:30:00.000Z', agregados: ['src/b.js'] }] };
+  const c = L.camposDeLaFirma({ existing, sinFirma: true, agregados: ['src/c.js'], ahora: '2026-11-21T11:00:00.000Z' });
+  assert.strictEqual(c.firmadaEn, '2026-11-21T10:00:00.000Z');
+  assert.deepStrictEqual(c.ampliaciones.map((x) => x.agregados), [['src/b.js'], ['src/c.js']]);
+  const firmada = L.camposDeLaFirma({ existing, sinFirma: false, ahora: '2026-11-21T11:00:00.000Z' });
+  assert.strictEqual(firmada.firmadaEn, '2026-11-21T11:00:00.000Z');
+  assert.deepStrictEqual(firmada.ampliaciones, existing.ampliaciones);
+  assert.deepStrictEqual(L.camposDeLaFirma({ existing: null, sinFirma: false, ahora: 'x' }), { firmadaEn: 'x' });
+});
+
+// Sin aviso entregado a la persona, la ampliación que cumple las tres condiciones sigue pidiendo la firma.
+test('T62 AmpliarSinFirma_SinAviso_SigueLaFirma', () => {
+  const raiz = tmp('t62-');
+  const dir = repo(raiz, 'producto');
+  const h = tmp('home-');
+  assert.equal(marker(h, 's62', ['adhoc', 'set', pedido({ allowedFiles: ['src/a.js'] })], { cwd: dir, ventana: true }).status, 0);
+  const antes = leerCarril(h, 's62');
+  const r = marker(h, 's62', ['adhoc', 'set', pedido({ allowedFiles: ['src/a.js', 'src/b.js'] })], { cwd: dir });
+  assert.notEqual(r.status, 0, r.stderr);
+  assert.match(r.stderr, /cumple para ir sin firma, pero el aviso a la persona no salió/);
+  assert.deepStrictEqual(leerCarril(h, 's62').allowedFiles, antes.allowedFiles);
+});
