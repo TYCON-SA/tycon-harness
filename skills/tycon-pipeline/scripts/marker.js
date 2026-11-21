@@ -6908,8 +6908,11 @@ function cmdWaiveCritical(argv) {
       // pidió (la coordinadora, si la pidió para otra sesión) y a la persona en cuyo nombre se firma, para que los
       // lectores de la exención la reconozcan como la delegación
       const pidio = firma.sesion && firma.sesion !== firma.destino ? `coordinadora (sesión ${firma.sesion})` : `sesión ${firma.sesion || PROPIA}`;
+      const persona = (val('--approved-by') || '').trim() || quien;
+      const noEs = cw.noEsPersona(persona);
+      if (noEs) { console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — ${noEs}. Va el nombre de la persona en cuyo nombre se firma: --approved-by "<nombre>".`); process.exit(2); }
       entrada = { tipo: 'automatica', quien: `${pidio}, firma de trámite del arnés`,
-        delegacion: `${(val('--approved-by') || '').trim() || quien}, por el perfil del equipo (approvals.delegated_signing)`, via: 'waive-critical (firma de trámite · arnés)' };
+        delegacion: `${persona}${cw.POR_EL_PERFIL} (approvals.delegated_signing)`, via: 'waive-critical (firma de trámite · arnés)' };
     } else {
       const q = quienFirmo(firma, quien);
       entrada = { ...q, via: `waive-critical (${q.via})` };
@@ -6918,6 +6921,9 @@ function cmdWaiveCritical(argv) {
   // Primero el renglón del registro del arnés (que el agente no puede escribir): es lo que hace valer la constancia al
   // cerrar. Si no quedó escrito, no se anota nada ni se anuncia un éxito que después el cierre contradiría.
   const constancia = { ts: nowIso(), rule_id: rule, file, reason, ...entrada };
+  // la constancia que los cierres van a rechazar no se anota ni se anuncia como eximida
+  const mala = cw.constanciaInvalida(constancia);
+  if (mala) { console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — la constancia no valdría (${mala}).`); process.exit(2); }
   appendLog('gates.log', { name: 'critical-waiver', status: 'ok', story: m.storyId, rule, file, ts: constancia.ts, tipo: constancia.tipo, quien: constancia.quien, via: constancia.via, huella: cw.huella(constancia) });
   const enRegistro = cw.fueraDelRegistro(constancia, { story: m.storyId });
   if (enRegistro) {

@@ -25,13 +25,17 @@ const esCriticoEximido = (f) => !!f && String(f.severity || '').trim().toUpperCa
 // ventana, que salió de una cita en la conversación, ya no vale: la conversación no se lee para firmar nada.
 // La firma de trámite (el perfil del equipo delega critical-waiver) la ata el renglón que dejó el freno, como la delegada.
 const sinCita = (via) => /terminal|ventana|delegada|firma de trámite|click en el cuadro|«aprobado» escrito/.test(String(via || ''));
+// lo que sigue al nombre en la constancia de una firma de trámite (marker.js waive-critical)
+const POR_EL_PERFIL = ', por el perfil del equipo';
 const CITA_VIEJA = 'esta exención se firmó con una cita en la conversación, que ya no cuenta: firmala en la ventana';
 
 function constanciaInvalida(l) {
   if (!l || typeof l !== 'object') return 'no es un objeto';
   if (!String(l.rule_id || '').trim()) return 'no dice la regla';
   if (!['manual', 'automatica'].includes(l.tipo)) return `tipo ${JSON.stringify(l.tipo)}`;
-  if (!String(l.quien || '').trim() || noEsPersona(l.tipo === 'manual' ? l.quien : (l.delegacion || ''))) return 'no nombra a la persona que dio el ok';
+  // la de trámite lleva el nombre y, después, «, por el perfil del equipo (…)»: se juzga el nombre solo
+  const persona = l.tipo === 'manual' ? l.quien : String(l.delegacion || '').split(POR_EL_PERFIL)[0];
+  if (!String(l.quien || '').trim() || noEsPersona(persona)) return 'no nombra a la persona que dio el ok';
   if (!String(l.via || '').trim()) return 'no dice por qué vía';
   if (!sinCita(l.via)) return CITA_VIEJA;
   if (!String(l.ts || '').trim()) return 'no dice cuándo se anotó';
@@ -427,4 +431,4 @@ function noEsPersona(quien) {
 }
 
 module.exports = { DESIGNACION, RETIRADA, CONFIRMADA, RE_NIEGA, juezDesignacion, designar, designacionVigente, ultimaDesignacion, designacionConfirmada,
-  estadoInicial, esEstado, plegarRenglones, vigenteDe, confirmationRecord, confirmaLaDesignacion, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, agrupar, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
+  estadoInicial, esEstado, plegarRenglones, vigenteDe, confirmationRecord, confirmaLaDesignacion, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, agrupar, POR_EL_PERFIL, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };

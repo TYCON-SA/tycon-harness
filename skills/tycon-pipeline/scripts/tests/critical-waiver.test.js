@@ -341,6 +341,19 @@ test('WaiveCritical_DeTramite_LaVeWriteFindings: la exención de trámite nombra
   assert.equal(w.status, 0, `${w.stdout}${w.stderr}`);
   const { verificarExenciones } = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
   assert.equal(verificarExenciones(lab.runDir, { home: lab.home, env: lab.env, story: '9.91' }).faltan.length, 0);
+  // a nombre de alguien que no es una persona: no se exime ni se anuncia (pase adversarial)
+  const otro = laboratorio();
+  designarCoordinadora(otro.home);
+  for (const nombre of ['claude', 'sin nombrar']) {
+    const sinPersona = ['waive-critical', '--rule', CRITICO.rule_id, '--file', CRITICO.file, '--reason', 'x', '--approved-by', nombre];
+    const n = spawnSync(process.execPath, [MARKER, ...sinPersona], { cwd: otro.repo, encoding: 'utf8', env: conVentana(otro.env, { delegadaPor: 's-coord', via: 'automatica' }), detached: true });
+    assert.notEqual(n.status, 0, `${nombre}: ${n.stderr}`);
+    assert.doesNotMatch(n.stderr, /eximido/, nombre);
+    assert.match(n.stderr, /no es una persona/, nombre);
+  }
+  assert.equal(lineas(path.join(otro.runDir, 'critical-waivers.jsonl')).length, 0, 'no se anotó nada');
+  const st = require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(otro.home);
+  assert.doesNotMatch(fs.readFileSync(path.join(st, 'gates.log'), 'utf8'), /"name":"critical-waiver"/, 'ni en el registro');
 });
 
 // La constancia de trámite de antes, sin el nombre de quien delegó, sigue sin valer (y dice cómo se arregla).
@@ -349,6 +362,7 @@ test('Constancia_DeTramiteSinNombre_NoVale: una de trámite sin a nombre de qui�
   const base = { rule_id: 'X-C1', tipo: 'automatica', quien: 'arnés (firma de trámite)', via: 'waive-critical (firma de trámite · arnés)', ts: 't' };
   assert.match(constanciaInvalida(base), /no nombra a la persona/);
   assert.equal(constanciaInvalida({ ...base, delegacion: 'Dueño, por el perfil del equipo' }), null);
+  assert.match(constanciaInvalida({ ...base, delegacion: 'sin nombrar, por el perfil del equipo' }), /no nombra a la persona/);
 });
 
 // WriteFindings_TresDeLaMismaRegla_UnaSolaExencion
