@@ -1167,7 +1167,8 @@ function freno({ storyPath, repos, runDir, stateDir, story, marker = null }) {
   } else if (runDir) {
     try { fs.rmSync(path.join(runDir, AVISOS), { force: true }); } catch (_) { /* no estaba */ }
   }
-  return { medido: true, candidatos: c.candidatos, sinRepo: c.sinRepo, bloquea: !!(j.faltan.length || j.noDeclaradas.length), lineas, avisos, juicio: j };
+  // los no medidos van también en el resultado: quien anota en el registro los nombra, no sólo la pantalla
+  return { medido: true, candidatos: c.candidatos, sinRepo: c.sinRepo, noMedidos: (c.noMedidos || []).map((x) => ({ archivo: x.archivo, repo: path.basename(x.repo), motivo: x.motivo })), bloquea: !!(j.faltan.length || j.noDeclaradas.length), lineas, avisos, juicio: j };
 }
 
 module.exports = { compararHumo, normalizar, comparar, tocaLoReal, encierro, perfilSandbox, barrer, limpiar, leerInforme, anotarEntrada, informeVerificado, raizDelHumo, reposDeLaSesion, archivoQueCorre, topes,

@@ -571,6 +571,22 @@ test('P6 HumoDeOtraVersion_NoCuenta @story-8.167 @ac-11 — el freno mira sobre 
   assert.strictEqual(cp().freno({ storyPath: L2.storyPath, repos: [L2.repo], runDir: L2.runDir(), stateDir: L2.state, story: '9.9' }).bloquea, true);
 });
 
+// 🔴 Falla con: el renglón del freno en gates.log sin los no medidos que la pantalla sí dice
+test('P13b NoMedidos_ConOtrosCandidatos_QuedanEnElRegistro @story-8.243 — con un candidato medido y otro no, el renglón del registro nombra al no medido', () => {
+  const L = laboratorio({ sid: 's-gate-p13b', archivos: { 'cli.js': CLI, 'otro.js': CLI }, cambios: { 'cli.js': enGet, 'otro.js': enGet }, modificar: ['cli.js', 'otro.js'] });
+  fs.rmSync(path.join(L.repo, 'otro.js'));
+  const f = cp().freno({ storyPath: L.storyPath, repos: [L.repo], runDir: L.runDir(), stateDir: L.state, story: '9.9' });
+  assert.strictEqual(f.medido, true, 'con un candidato medido, el freno mide');
+  assert.deepStrictEqual(f.noMedidos.map((x) => x.archivo), ['otro.js']);
+  const r = L.cerrar();
+  assert.match(r.stderr, FRENO, r.stderr);
+  // el renglón del freno que frenó: el que trae lo que falta
+  const bloqueo = lineasDelFreno(L.state).find((g) => Array.isArray(g.faltan));
+  assert.ok(bloqueo, JSON.stringify(lineasDelFreno(L.state)));
+  assert.deepStrictEqual(bloqueo.noMedidos.map((x) => x.archivo), ['otro.js'], JSON.stringify(bloqueo));
+  assert.match(bloqueo.noMedidos[0].motivo, /no pude leer el archivo de ahora/);
+});
+
 test('P13 Candidatos_LoQueNoSePuedeMirar_EsNoMedido @story-8.167 @ac-11 — el archivo de ahora ilegible, una ruta que se sale del repo y sin punto en común con main', () => {
   // el comando se borró en el cambio: su diff existe, pero el archivo de ahora no se lee
   const L = laboratorio({ sid: 's-gate-p13' });

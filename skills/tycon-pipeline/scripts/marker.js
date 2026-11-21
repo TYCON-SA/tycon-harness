@@ -2457,13 +2457,13 @@ function cmdCompleteStep(nRaw, flags) {
         for (const a of f.avisos) console.error(`⚠️  complete-step ${n}: ${a}`);
         if (f.bloquea) {
           appendLog('gates.log', { name: 'compare-previous-gate', action: 'bloqueo', story: marker.storyId || null,
-            faltan: f.juicio.faltan.map((x) => x.archivo), noDeclaradas: f.juicio.noDeclaradas.map((x) => x.cmd) });
+            faltan: f.juicio.faltan.map((x) => x.archivo), noDeclaradas: f.juicio.noDeclaradas.map((x) => x.cmd), noMedidos: f.noMedidos || [] });
           console.error(`marker.js complete-step ${n} BLOQUEADO — ${f.lineas[0]}`);
           for (const l of f.lineas.slice(1)) console.error(l.startsWith('comparación con main') ? `   ${l}` : l);
           process.exit(1);
         }
         for (const l of f.lineas) console.error(`   ${l.trim()}`);
-        appendLog('gates.log', { name: 'compare-previous-gate', action: 'verde', story: marker.storyId || null, candidatos: f.candidatos.map((x) => x.archivo), avisos: f.juicio.avisos.length });
+        appendLog('gates.log', { name: 'compare-previous-gate', action: 'verde', story: marker.storyId || null, candidatos: f.candidatos.map((x) => x.archivo), avisos: f.juicio.avisos.length, noMedidos: f.noMedidos || [] });
       }
     }
     // Un crítico de seguridad o de datos abierto o diferido no cierra callado: lo arregla una vuelta (extra, si se llegó al
