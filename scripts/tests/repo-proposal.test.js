@@ -767,17 +767,38 @@ test('T14 Aplicar_RevisionEnCurso_ReintentaYCompleta @story-2.39 @ac-4', { skip:
   } finally { await m.cerrar(); }
 });
 
-test('T15 Aplicar_RevisionQueNoTermina_DiceQueSigueEvaluando @story-2.39 @ac-5', { skip: SIN_BACKEND }, async () => {
+// El criterio 5 cambió el 21/11: el pedido 6751 quedó abierto sin auto-completar con la opción prendida, porque la
+// plataforma tardó en evaluar la revisión. Ahora el sitio deja prendido el completar automático, sin saltear políticas.
+test('T15 Aplicar_RevisionQueNoTermina_PrendeElAutoCompletar @story-2.39 @ac-5', { skip: SIN_BACKEND }, async () => {
   const m = await montar();
   try {
     m.api.st.politicas = [votoDelAutorCuenta(m.api)];
     dejarCompletar(m);
+    m.api.st.permitirAutoCompletar = true;
     m.api.st.evaluaciones = () => [{ configuration: { isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' } }, status: 'queued' }];
+    const puntaAntes = m.r.ref('refs/heads/main');
     const res = await proponer(aplicando(m));
-    assert.deepStrictEqual([res.ok, res.codigo], [true, 'no_aplica_solo'], textoDe(res));
-    assert.match(res.message, /todavía no terminó de evaluar la revisión/);
+    assert.deepStrictEqual([res.ok, res.codigo, res.autoCompletar], [true, 'no_aplica_solo', true], textoDe(res));
+    assert.match(res.message, /se completa solo cuando termine de evaluar/);
+    assert.ok(res.message.includes(res.enlace), res.message);
     assert.ok(!/pide «/.test(res.message), 'no dice que la rama pide algo más');
-    assert.deepStrictEqual(m.api.llamadas.filter((l) => l.method === 'PATCH'), []);
+    const parches = m.api.llamadas.filter((l) => l.method === 'PATCH');
+    assert.strictEqual(parches.length, 1, 'un solo cambio del pedido');
+    assert.deepStrictEqual(m.api.prohibidas(), [], 'ni completar a la fuerza ni saltear políticas');
+    assert.strictEqual(m.api.st.pedidos[0].autoCompleteSetBy.id, m.api.st.pedidos[0].createdBy.id, 'con la identidad del sitio');
+    assert.strictEqual(m.r.ref('refs/heads/main'), puntaAntes, 'main no se mueve hasta que la plataforma lo complete');
+    // si la plataforma no deja prenderlo, queda para aprobar, como antes
+    const n = await montar();
+    try {
+      n.api.st.politicas = [votoDelAutorCuenta(n.api)];
+      dejarCompletar(n);
+      n.api.st.permitirAutoCompletar = true;
+      n.api.st.fallarAutoCompletar = 403;
+      n.api.st.evaluaciones = m.api.st.evaluaciones;
+      const r2 = await proponer(aplicando(n));
+      assert.deepStrictEqual([r2.codigo, r2.autoCompletar], ['no_aplica_solo', undefined], textoDe(r2));
+      assert.match(r2.message, /todavía no terminó de evaluar la revisión/);
+    } finally { await n.cerrar(); }
   } finally { await m.cerrar(); }
 });
 
