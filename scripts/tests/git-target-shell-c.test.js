@@ -29,6 +29,14 @@ test('T1 BashC_DosPush_SeVenLosDos — con -C y con cd, en bash, sh y zsh', () =
   assert.deepStrictEqual(carpetas("/bin/zsh -lc 'git -C /r/a push origin main && git -C /r/b push origin main'"), [a, b]);
 });
 
+// lo que encontró el pase adversarial: un subshell adentro del bash -c, y un cd de adentro que no es la carpeta de afuera
+test('T1b BashC_SubshellAdentro_Y_CdQueNoSale', () => {
+  assert.deepStrictEqual(carpetas('bash -c "(cd /x && git push origin main)"'), [path.resolve('/x')]);
+  assert.deepStrictEqual(carpetas("bash -c 'cd /a'; git push origin main"), [BASE], 'el cd de adentro no cambia la carpeta de afuera');
+  assert.deepStrictEqual(carpetas("bash -c 'cd /a && git status' && git push origin main"), [BASE]);
+  assert.deepStrictEqual(carpetas("bash -c 'cd /a && git push origin main' && git push origin main"), [path.resolve('/a'), BASE]);
+});
+
 test('T2 SinBashC_ComoAntes — la misma cadena sin envoltorio, y un bash que no es -c', () => {
   assert.deepStrictEqual(carpetas('git -C /r/a push origin main && git -C /r/b push origin main'), [path.resolve('/r/a'), path.resolve('/r/b')]);
   assert.deepStrictEqual(carpetas('bash scripts/x.sh && git push origin main'), [BASE]);
