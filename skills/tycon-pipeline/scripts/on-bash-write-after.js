@@ -44,6 +44,14 @@ const { stateDir: stateDirOf } = require('./lib/state-dir.js');
 const { homeCommand } = require('./lib/home-command.js');
 const photo = require('./lib/protected-photo.js');
 
+// El comando del orquestador que se le muestra al agente: la carpeta de Claude Code la da tycon-home.js; sin él (una
+// copia sin el instalador), la ruta absoluta de este marker.js
+const MARCADOR = (() => {
+  const lib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js');
+  if (!fs.existsSync(lib)) return `node "${path.join(__dirname, 'marker.js')}"`;
+  return homeCommand(`${path.basename(require(lib).claudeDir('/'))}/agent-skills/skills/tycon-pipeline/scripts/marker.js`);
+})();
+
 const RAIZ_DEL_ARNES = path.resolve(__dirname, '..', '..', '..');
 const EVENTOS_DE_DESPUES = ['PostToolUse', 'PostToolUseFailure'];
 const SIN_ESCRIBIR = new Set(['cd', 'echo', 'true', 'pwd', 'test', '[', ':']);
@@ -312,7 +320,7 @@ function mensaje(hechas, fallas, mezclado) {
   lineas.push('', 'Una historia que no está en borrador, el estado de un borrador, una constancia y los marcadores de la ejecución no se',
     'escriben desde un comando: desde la consola no se ve qué queda escrito. La historia se edita con la herramienta de',
     'edición y su estado lo cambia marker.js:',
-    `  · ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} update-story-status <ruta de la historia> <estado>`);
+    `  · ${MARCADOR} update-story-status <ruta de la historia> <estado>`);
   if (mezclado) lineas.push('', 'El comando mezclaba el del orquestador (marker.js) con otros programas: después de correr no se sabe cuál',
     'escribió cada cosa. Corré el del orquestador solo, sin otros programas en la misma línea.');
   return lineas.join('\n');
@@ -322,7 +330,7 @@ function mensaje(hechas, fallas, mezclado) {
 const COMO_SE_LIBERA = (sid) => [
   'La libera otra sesión, nunca ésta: la coordinadora (si el perfil le delega la firma) o la persona en su terminal, después',
   'de mirar las historias y las constancias que pudo tocar el comando:',
-  `  · ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} release-write-after --for-session ${sid || '<sesión>'} --reason "<qué miró>" [--terminal]`,
+  `  · ${MARCADOR} release-write-after --for-session ${sid || '<sesión>'} --reason "<qué miró>" [--terminal]`,
 ].join('\n');
 
 /**
