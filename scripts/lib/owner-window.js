@@ -840,7 +840,17 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   const faltan = (pedidos || []).filter((n) => !c.lista.some((x) => x.ac === n));
   // con criterios sin correr el guion rechaza por eso, con la lista entera: la ventana dice el mismo motivo, no el de
   // «no está pendiente de firma», que manda a buscar por el lado equivocado
-  const sinCorrer = (c.matrix && c.matrix.notRun) || [];
+  let sinCorrer = (c.matrix && c.matrix.notRun) || [];
+  // con la ejecución a la vista, los mismos que cuenta el guion: con tanda anotada, sólo los de esa tanda
+  if (faltan.length && sinCorrer.length) {
+    try {
+      const mm = m || (sesion ? marcadorEn(path.join(stateDir(casa), 'active', `${sesion}.json`)) : null);
+      if (mm && wd.esLaDelMarcador(abs, mm)) {
+        const firma = wd.matrixForSignature(abs, mm);
+        if (!firma.structuralError) sinCorrer = firma.notRun || [];
+      }
+    } catch (_) { /* sin marcador legible queda la matriz entera: el motivo sigue siendo cierto */ }
+  }
   if (faltan.length && sinCorrer.length) {
     const otros = faltan.filter((n) => !sinCorrer.includes(n));
     return { error: `hay criterios SIN CORRER que no se pueden eximir: AC ${sinCorrer.map((n) => `#${n}`).join(', ')}. Los corre el agente${otros.length ? `; además, el AC ${otros.join(', ')} no es un criterio pendiente de firma` : ''}` };
