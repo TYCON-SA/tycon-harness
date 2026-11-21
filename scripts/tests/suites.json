@@ -2939,6 +2939,12 @@
       "requiere": []
     },
     {
+      "__nota": "el aviso de contexto al cerrar un paso pesado del pipeline: sobre el umbral recomienda /compact o sesión nueva; debajo, en un paso liviano, tras compactar o apagado, nada. Nunca frena.",
+      "raiz": "arnes",
+      "ruta": "tests/context-at-step-close.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.53: la descripción de cada agente tiene 200 caracteres o menos y, si es condicional, sigue nombrando su disparador.",
       "raiz": "arnes",
       "ruta": "tests/agent-descriptions.test.js",

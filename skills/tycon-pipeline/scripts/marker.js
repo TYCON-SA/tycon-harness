@@ -2855,6 +2855,17 @@ function cmdCompleteStep(nRaw, flags) {
   syncSessionState(SID);
   process.stdout.write(JSON.stringify(marker, null, 2));
   if (nuevo) decirRenglonDelPaso(marker, paso);
+  avisarContextoAlCerrar(ids);
+}
+
+// Al cerrar un paso pesado con la sesión sobre el umbral de contexto, que es el momento de compactar o de abrir una
+// sesión nueva (scripts/hooks/context-size-notice.js). Avisa, nunca frena.
+function avisarContextoAlCerrar(ids) {
+  try {
+    const aviso = require(path.join(__dirname, '..', '..', '..', 'scripts', 'hooks', 'context-size-notice.js'))
+      .avisoAlCerrarPaso({ pasos: ids, sessionId: SID, home: os.homedir() });
+    if (aviso) process.stderr.write(`${aviso}\n`);
+  } catch (e) { process.stderr.write(`🧠 contexto: no pude medir la sesión al cerrar el paso (${e.message})\n`); }
 }
 
 /**

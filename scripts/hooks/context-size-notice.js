@@ -218,6 +218,47 @@ function run(evento, { env = process.env, home = os.homedir(), tree, now = Date.
   };
 }
 
+// ── al cerrar un paso pesado ─────────────────────────────────────────────────────────────────────────────────────
+// El aviso de arriba sale cuando la persona escribe, y una corrida larga casi no tiene mensajes suyos: una sesión llegó a
+// 832 mil tokens sin cortar en sus puntos de control. `marker.js complete-step` lo pide al cerrar cada paso pesado; ahí
+// es el corte, así que lo dice cada vez que la sesión está sobre el umbral, sin el tramo de 100 mil del aviso.
+const PASOS_PESADOS = { implement: 'Implementar', 'run-tests': 'Correr las pruebas', reviewers: 'Revisores',
+  'adversarial-pass': 'Pase adversarial', 'live-check': 'Probar en vivo',
+  // el marcador viejo, por número
+  4: 'Implementar', 5: 'Revisores', '5b': 'Pase adversarial', '7c': 'Probar en vivo' };
+
+/** La conversación de la sesión donde la guarda Claude Code (`~/.claude/projects/<carpeta>/<sesión>.jsonl`), o null. */
+function conversacionDe(home, sid) {
+  if (!sid || safeSid(sid) !== String(sid)) return null;
+  const raiz = path.join(home, '.claude', 'projects');
+  let dirs;
+  try { dirs = fs.readdirSync(raiz, { withFileTypes: true }); } catch { return null; }
+  for (const d of dirs) {
+    if (!d.isDirectory()) continue;
+    const r = path.join(raiz, d.name, `${sid}.jsonl`);
+    if (fs.existsSync(r)) return r;
+  }
+  return null;
+}
+
+/**
+ * El renglón que dice el cierre de un paso pesado con la sesión sobre el umbral, o ''. `pasos`: los ids que cierra el
+ * comando. Lo que no se puede medir calla: el aviso de los mensajes ya lo dice una vez.
+ */
+function avisoAlCerrarPaso({ pasos, sessionId, home = os.homedir(), env = process.env, tree, transcriptPath } = {}) {
+  if (env.TYCON_CONTEXT_NOTICE === '0') return '';
+  const pesado = (pasos || []).map(String).find((p) => PASOS_PESADOS[p]);
+  if (!pesado) return '';
+  const tp = transcriptPath || conversacionDe(home, sessionId);
+  if (!tp) return '';
+  const estado = leerEstado(path.join(stateDirOf(home), 'context-notice', `${safeSid(sessionId)}.json`));
+  const m = medir(tp, Number.isFinite(estado.resetAt) ? estado.resetAt : null);
+  if (!Number.isFinite(m.tokens)) return '';
+  const { tokens: umbral } = thresholdTokens({ env, tree, homeDir: home });
+  if (m.tokens < umbral) return '';
+  return `🧠 contexto: esta sesión lleva ${mil(m.tokens)} tokens (umbral ${mil(umbral)}) y se cerró «${PASOS_PESADOS[pesado]}», un paso pesado: es el momento de cortar. Antes del paso siguiente, recomendale a la persona /compact o una sesión nueva (cada turno relee todo).${comoRetomar(home, sessionId)}`;
+}
+
 // Con una ejecución del pipeline abierta en esta sesión, cómo seguirla en otra: el marcador queda con el id de ésta, y
 // `/clear` también cambia el id. Sin marcador legible, nada.
 function comoRetomar(home, sid) {
@@ -238,7 +279,7 @@ function main() {
   if (out) process.stdout.write(out + '\n');
 }
 
-module.exports = { thresholdTokens, orgContextNotice, medir, tokensDe, run, DEFAULT_TOKENS, MIN_TOKENS, MAX_TOKENS };
+module.exports = { thresholdTokens, orgContextNotice, medir, tokensDe, run, avisoAlCerrarPaso, PASOS_PESADOS, DEFAULT_TOKENS, MIN_TOKENS, MAX_TOKENS };
 
 if (require.main === module) {
   try { main(); } catch (e) {
