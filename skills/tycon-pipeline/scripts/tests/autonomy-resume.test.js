@@ -21,6 +21,7 @@
  *   T15 el recordatorio llega con un mensaje que no es de la persona
  *   T16 una detención de antes, sin hora, se pide y se retoma
  *   T17 cerrar o borrar una detenida le pide al dueño
+ *   T18 la coordinadora la pide para la sesión detenida: con el click del dueño en su cuadro vuelve al autónomo
  *
  * stable-data: las detenciones de prueba llevan hora fija; el reloj real fecha sólo lo que el código escribe al correr
  * (la hora de una detención nueva, un click reciente) y se compara con márgenes, nunca con un valor del día.
@@ -53,7 +54,7 @@ const DS = require(path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js'));
 const fuentes = require(path.join(RAIZ, 'scripts', 'lib', 'signature-sources.js'));
 const firmas = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
 const { APPROVERS } = require(path.join(RAIZ, 'scripts', 'lib', 'approver.js'));
-const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
+const { conVentana, arbolDelFreno, arbolDelGuion } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
 
 const S = 'ses-s';          // la sesión detenida
 const T = 'ses-t';          // otra sesión
@@ -590,7 +591,8 @@ test('T13 NoSeDelega_NiConElPerfil @story-8.298 @ac-15', (t) => {
   assert.strictEqual(r.motivo, DS.NUNCA_DELEGABLES.get('autonomy-resume'));
   assert.match(r.motivo, /volver al modo autónomo lo decide el dueño con su click o su terminal: no se delega/);
   const s = firmas.SIGNATURES.find((x) => x.id === 'autonomy-resume');
-  assert.ok(s && s.clickDelDueno === true && s.otherSession === 'no' && s.level === 2, JSON.stringify(s));
+  // se pide desde la pestaña de la coordinadora para la sesión detenida (T18), y sigue sin delegarse
+  assert.ok(s && s.clickDelDueno === true && s.otherSession === 'yes' && s.level === 2, JSON.stringify(s));
   assert.deepStrictEqual(s.descripciones, ['La sesión vuelve a correr los controles y sigue arreglando sola, con vueltas nuevas', 'La sesión queda detenida hasta que entres a ella']);
 });
 
@@ -603,7 +605,7 @@ test('T14 NingunaOtraViaDecide @story-8.298 @ac-16 @ac-17', (t) => {
     assert.notStrictEqual(r.status, 0, `${JSON.stringify(ventana)}: ${r.stdout}${r.stderr}`);
     assert.deepStrictEqual(leerMarcador(c), m, `${JSON.stringify(ventana)}: no toca el marcador`);
   }
-  // otra sesión no la pide para S
+  // otra sesión la pide para S, pero sin el click del dueño no decide
   sesion(c.casa, T, 'Sesion-T');
   let r = marker(c, ['resume-autonomy', '--for-session', S], { sid: T });
   assert.notStrictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
@@ -720,4 +722,38 @@ test('T17 CerrarOBorrarUnaDetenida_PideAlDueno @story-8.298 @ac-14 @ac-19', (t) 
   r = marker(c, ['clear-session', S], { sid: T });
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.ok(!fs.existsSync(marcadorDe(c)));
+});
+
+// 🔴 Falla con: la coordinadora que pide la decisión para la sesión detenida y recibe «no se corre desde la pestaña de
+// otra sesión»: con el dueño fuera de la máquina, la ejecución queda parada hasta que entre a esa sesión.
+test('T18 Coordinadora_ParaLaDetenida_ConElClickVuelveAlAutonomo', (t) => {
+  const c = casaNueva(t);
+  escribirMarcador(c, DETENIDA);
+  // el freno, desde la pestaña de la coordinadora: no la niega por ser de otra sesión
+  const cmd = `${CMD} --for-session ${S}`;
+  const f = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_02', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, cwd: c.repo, permission_mode: 'bypassPermissions' },
+    escapes: [], arbol: FONDO, pid: 201, casa: c.casa, delegacion: () => ({ ok: true, maquina: 'm' }), clasificar: () => null,
+    aprobador: () => APPROVERS.maintainers, aprobaciones: { buscar: () => ({ ok: false, motivo: 'sin click' }), consumir: oa.consumir, devolver: oa.devolver, coordinadoraConfirmada: () => COORD },
+    lista: { arnes: ARNES, env: {} } });
+  assert.strictEqual(f.decision, 'deny', f.texto);
+  assert.doesNotMatch(f.texto || '', /no se corre desde la pestaña de otra sesión/);
+  assert.notStrictEqual(f.via, 'delegacion', 'la delegación no la firma aunque diga que sí');
+  // sin el click, el guion de la coordinadora no toca el marcador de S
+  const antes = leerMarcador(c);
+  let r = marker(c, ['resume-autonomy', '--for-session', S], { sid: COORD, ventana: { delegadaPor: COORD } });
+  assert.notStrictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.deepStrictEqual(leerMarcador(c), antes);
+  // con el click del dueño en el cuadro de la coordinadora: el freno deja el registro para S, y el guion lo verifica con
+  // el árbol de procesos de verdad
+  const conElClick = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_03', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, cwd: c.repo, permission_mode: 'bypassPermissions' },
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: c.casa, delegacion: () => ({ ok: true, maquina: 'm' }), clasificar: () => null,
+    aprobador: () => APPROVERS.maintainers, aprobaciones: { buscar: () => ({ ok: true, aprobacion: { id: 'a1', sesion: COORD, tipo: 'click' }, via: 'click' }), consumir: () => ({ ok: true }), devolver: () => {}, coordinadoraConfirmada: () => COORD },
+    lista: { arnes: ARNES, env: {} } });
+  assert.deepStrictEqual([conElClick.decision, conElClick.via], ['allow', 'click'], conElClick.texto);
+  r = marker(c, ['resume-autonomy', '--for-session', S], { sid: COORD, ventana: { arbol: { arbol: arbolDelGuion(c.casa, cmd), pid: 301, ahora: Date.now() } } });
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, new RegExp(`la sesión ${S} volvió al modo autónomo\\. Avisale que siga`));
+  const d = leerMarcador(c);
+  assert.deepStrictEqual([d.autonomous, d.iter, d.escalationsResolved.length, d.escalationsResolved[0].decision.via], [true, 0, 1, 'click']);
+  assert.ok(!fs.existsSync(marcadorDe(c, COORD)), 'el marcador de la coordinadora no se crea');
 });

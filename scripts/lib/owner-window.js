@@ -948,6 +948,14 @@ function formaCanonica(palabras, { historia } = {}) {
   return [...prefijo, ...orden.flatMap((x) => x.p)];
 }
 
+/** La ruta resuelta del archivo de una firma sobre un archivo (`sign-file <firma> <archivo>`), o null. */
+function archivoDelPedido(firma, palabras, cwd) {
+  if (!String(firma).startsWith('escape:') || !FIRMAS_DE_ARCHIVO.includes(firma.slice('escape:'.length)) || !palabras) return null;
+  const i = palabras.indexOf('sign-file');
+  const archivo = i >= 0 ? palabras[i + 2] : undefined;
+  return archivo && !archivo.startsWith('--') ? rutaReal(archivo, cwd) : null;
+}
+
 /**
  * El cuadro de opciones de una firma, armado por este módulo y no por el agente (owner-approvals.js `cuadroDe`). El mismo
  * pedido da el mismo cuadro: la huella y el comando que se muestra salen de su forma canónica (`formaCanonica`), sin la
@@ -989,8 +997,10 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     partes = { queHace: [d.linea], fuente: '' };
     delComando = d.detalle;
   }
-  // la huella ata el click a lo que se mostró: el pedido y la fuente de la pregunta
-  const huella = sha256(`${delPedido}\0${partes.fuente || ''}`).slice(0, 8);
+  // la huella ata el click a lo que se mostró: el pedido y la fuente de la pregunta. Una firma sobre un archivo suma la
+  // ruta resuelta: una ruta relativa desde otra carpeta es otro archivo, y el click dado a uno no vale para el otro
+  const real = archivoDelPedido(firma, sinDestino, cwd);
+  const huella = sha256(`${delPedido}\0${partes.fuente || ''}${real ? `\0${real}` : ''}`).slice(0, 8);
   const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
     completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
     // sólo la fuente que lee la explicación del cambio la trae (null si la leyó y no hay): las demás, el cuadro de siempre
@@ -1618,7 +1628,8 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // delega con la misma condición (el guardado ajeno; el freno de los datos, nunca: delegated-signing.js)
   const clickDelDueno = pendientes.length === 1 && !!(firmaDe(pendientes[0]) || {}).clickDelDueno;
   // una firma de click que no es de esas no llega a preguntarle a la delegación, diga lo que diga el perfil
-  const clickDelegable = !(soloClick || clickDelDueno) || DELEGABLE_EXCEPTIONS.includes(pendientes[0]);
+  // y la que es sólo del dueño aunque se pida para otra sesión no le pregunta nunca, diga lo que diga la delegación
+  const clickDelegable = (!(soloClick || clickDelDueno) || DELEGABLE_EXCEPTIONS.includes(pendientes[0])) && !pendientes.some((id) => PARA_OTRA_SESION_SIN_DELEGAR.includes(id));
   if (!enWindows && clickDelegable) try {
     const estado = stateDir(casa);
     const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras), pendiente: pendienteDe(can && can.palabras) }));

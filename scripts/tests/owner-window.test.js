@@ -3013,12 +3013,12 @@ test('ExcepcionesDeTramite_ParaOtraSesion_FirmanPorDelegacion', (t) => {
     const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), vigentes(casa)[0]), 'utf8'));
     assert.deepStrictEqual([reg.firma, reg.via, reg.destino], [firma, 'delegacion', 'ses-b'], cmd);
   }
-  // las firmas sobre un archivo que no son de trámite siguen sin correrse desde otra pestaña (la exención de la prueba en
-  // vivo sí, por el cuadro de la coordinadora: Exencion_DesdeLaCoordinadora_*)
-  for (const nombre of ['story-skill-bypass']) {
+  // las firmas sobre un archivo que no son de trámite se piden desde otra pestaña, pero nunca por delegación: van a la
+  // ventana de quien las pide (Exencion_*)
+  for (const nombre of ['story-skill-bypass', 'dod_runtime_exempt']) {
     const r = pedir(casaNueva(t), `node ${MARKER} sign-file ${nombre} /r/x.md --for-session ses-b`, { delegacion });
-    assert.strictEqual(r.decision, 'deny', nombre);
-    assert.match(r.texto, /no se corre desde la pestaña de otra sesión/, nombre);
+    assert.strictEqual(r.decision, 'ask', `${nombre}: ${r.texto}`);
+    assert.notStrictEqual(r.via, 'delegacion', nombre);
   }
 });
 
@@ -3028,10 +3028,9 @@ test('AdhocSet_SobreCupo_ParaOtraSesion_ElGuionTambienLoNiega @story-8.181 @ac-3
   const r = ow.exigir({ firma: SOBRE_CUPO, argv: [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","allowedFiles":["src/sp.js"],"maxFiles":9}', '--for-session', 'ses-b'], propia: 'ses-a' });
   assert.notStrictEqual(r.codigo, 0, JSON.stringify(r));
   assert.match(r.motivo, /no pasó por la ventana/);
-  // la que no es de trámite sigue sin correrse desde otra pestaña
+  // la del freno de los datos se pide desde otra pestaña, pero sin el click del dueño el guion tampoco la firma
   const datos = ow.exigir({ firma: 'adhoc-lane:datos', argv: [MARKER, 'adhoc', 'allow-data-change', '--changed', 'x', '--recommends', 'pasar', '--why', 'y', '--for-session', 'ses-b'], propia: 'ses-a' });
-  assert.strictEqual(datos.codigo, 1, JSON.stringify(datos));
-  assert.match(datos.motivo, /se corre desde la sesión destino/);
+  assert.notStrictEqual(datos.codigo, 0, JSON.stringify(datos));
 });
 
 // 🔴 Falla con: la lista cruda, con pruebas y sondas, que niega un cupo que alcanza y empuja a la firma de sobre cupo.
@@ -4647,7 +4646,53 @@ test('Exencion_ElCartelDiceComoPedirlaALaCoordinadora', () => {
   assert.strictEqual(f.desdeLaCoordinadora, `${ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md')} --for-session ses-a`);
   assert.strictEqual(f.renglones.length, 3);
   assert.match(f.renglones[2], /pestaña de la coordinadora.*nunca por delegación/);
-  // otra firma de archivo, o sin sesión, no lo dice
-  assert.strictEqual(ow.formasDeFirmar('story-skill-bypass', '/r/x.md', 'ses-a').renglones.length, 2);
+  // la otra sólo del dueño sobre un archivo, también; una de trámite (la pide la coordinadora por delegación), o sin
+  // sesión, no lo dice
+  assert.strictEqual(ow.formasDeFirmar('story-skill-bypass', '/r/x.md', 'ses-a').renglones.length, 3);
+  assert.strictEqual(ow.formasDeFirmar('cambiar-el-estado', '/r/x.md', 'ses-a').renglones.length, 2);
   assert.strictEqual(ow.formasDeFirmar('dod_runtime_exempt', '/r/x.md', null).desdeLaCoordinadora, null);
+});
+
+// 🔴 Falla con: el mismo sello para una ruta relativa desde dos carpetas: el click dado viendo un archivo vale para otro
+// si la sesión cambia de carpeta antes de repetir el comando (pase adversarial).
+test('Exencion_RutaRelativa_ElSelloAtaElArchivoResuelto', (t) => {
+  const casa = casaNueva(t);
+  const palabras = (ruta) => [MARKER, 'sign-file', 'dod_runtime_exempt', ruta, '--for-session', 'ses-a'];
+  const cuadro = (ruta, cwd) => ow.cuadroPara({ firma: 'escape:dod_runtime_exempt', palabras: palabras(ruta), destino: 'ses-a', cwd, casa, sesion: 'ses-coord' });
+  const x = cuadro('specs/story-1.md', '/repoX');
+  const y = cuadro('specs/story-1.md', '/repoY');
+  assert.ok(x.sello && y.sello, JSON.stringify(x));
+  assert.notStrictEqual(x.sello, y.sello, 'otra carpeta, otro archivo: otro sello');
+  // la misma ruta absoluta desde cualquier carpeta es el mismo archivo y el mismo sello
+  assert.strictEqual(cuadro('/repoX/specs/story-1.md', '/repoX').sello, cuadro('/repoX/specs/story-1.md', '/repoY').sello);
+  // la relativa y la absoluta del mismo archivo son dos textos de comando: el click dado a uno no vale para el otro
+  assert.notStrictEqual(x.sello, cuadro('/repoX/specs/story-1.md', '/otra').sello);
+});
+
+// 🔴 Falla con: una firma sólo del dueño que la coordinadora pide para otra sesión firmada por delegación, con una
+// delegación que diga que sí a todo (el freno no la consulta), o negada por ser de otra pestaña.
+test('SoloDelDueno_ParaOtraSesion_NuncaPorDelegacion', (t) => {
+  const casos = [
+    `node ${MARKER} sign-file dod_runtime_exempt /r/specs/story-9.99.md --for-session ses-a`,
+    `node ${MARKER} sign-file story-skill-bypass /r/specs/story-9.99.md --for-session ses-a`,
+    `node ${MARKER} resume-autonomy --for-session ses-a`,
+    `node ${MARKER} adhoc allow-data-change --changed "la fuente" --recommends pasar --why "es la misma tabla" --for-session ses-a`,
+  ];
+  let consultas = 0;
+  const siATodo = () => { consultas++; return { ok: true, maquina: 'm' }; };
+  for (const cmd of casos) {
+    const casa = casaConDesignada(t);
+    const r = pedirSinVentana(casa, cmd, { delegacion: siATodo });
+    assert.notStrictEqual(r.via, 'delegacion', `${cmd}: ${r.texto}`);
+    assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
+    assert.doesNotMatch(r.texto, /no se corre desde la pestaña de otra sesión/, cmd);
+    assert.strictEqual(registros(casa).length, 0, cmd);
+  }
+  assert.strictEqual(consultas, 0, 'la delegación no se consulta para ninguna');
+  // las cuatro dicen «sí» en el catálogo, y ninguna es delegable
+  const cat = require('../lib/signatures.js');
+  for (const id of cat.PARA_OTRA_SESION_SIN_DELEGAR) {
+    assert.strictEqual(cat.SIGNATURES.find((s) => s.id === id).otherSession, 'yes', id);
+    assert.strictEqual(DS.delegaSinVentana({ firma: id, sesion: 'ses-coord', destino: 'ses-a', home: casaConDesignada(t), perfil: () => ({ ...PERFIL, delegated_signing: [id, 'escape-phrases'] }), huella: () => ({ huella: HUELLA }) }).ok, false, id);
+  }
 });
