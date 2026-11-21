@@ -1,5 +1,5 @@
 {
-  "$comentario": "Qué hace cada freno cuando falla (no puede leer su entrada, le falta una pieza o se queda sin tiempo). Un renglón por registro de scripts/setup/hooks-list.json con effect: blocks. Clase: critico (frena en su terreno), calidad (deja pasar, avisa y anota) o cierre (deja cerrar y anota). fail_closed_today: los caminos que hoy, a propósito, frenan al fallar; una prueba los protege (hook-failure-matrix.test.js). Por ahora trae sólo el freno de publicación; los demás se suman con su clase.",
+  "$comentario": "Qué hace cada freno cuando falla (no puede leer su entrada, le falta una pieza o se queda sin tiempo). Un renglón por registro de scripts/setup/hooks-list.json con effect: blocks (el par spec, evento y matcher), más el freno de producción, que instala su propio instalador en la configuración administrada (origen: managed-settings). Clase: critico (frena en su terreno), calidad (deja pasar, avisa y anota) o cierre (deja cerrar y anota). como_frena: codigo-2, deny (un JSON con permissionDecision deny y código 0) o decision-block (el cierre del turno). fail_closed_today: los caminos que hoy, a propósito, frenan al fallar; la matriz (hook-failure-matrix.test.js) tiene un caso para cada uno y exige que siga frenando. fuera_de_la_matriz: los que la matriz no arma, con la suite que ejercita ese freno y por qué. salidas_1_a_proposito: «pasa y se dice». owner: el modo que decide otra historia. timeout_del_instalador: en segundos. modos_que_no_aplican: el modo y su motivo; la matriz comprueba que de verdad no lo usa. entrada_en_la_prueba: la entrada típica es un comando de una plataforma, y vive en la prueba, no acá.",
   "frenos": [
     {
       "guion": "public-push-guard.js",
@@ -7,20 +7,947 @@
       "clase": "critico",
       "terreno": "el texto crudo trae un `gh` que publica (pr, issue, release, api, gist, repo, label) o un `push`",
       "fail_closed_today": [
-        { "camino": "entrada-sin-comando-con-gh", "dispara": "la entrada no trae un comando legible y su texto crudo trae un `gh` que publica" },
-        { "camino": "error-propio-con-gh-o-push", "dispara": "la revisión del comando falla por dentro y el comando trae un `gh` que publica o un `push`" },
-        { "camino": "error-en-la-salida-principal", "dispara": "un error que se escapa hasta la salida principal del modo freno: frena siempre" }
+        {
+          "camino": "entrada-sin-comando-con-gh",
+          "dispara": "la entrada no trae un comando legible y su texto crudo trae un `gh` que publica"
+        },
+        {
+          "camino": "error-propio-con-gh-o-push",
+          "dispara": "la revisión del comando falla por dentro y el comando trae un `gh` que publica o un `push`"
+        },
+        {
+          "camino": "error-en-la-salida-principal",
+          "dispara": "un error que se escapa hasta la salida principal del modo freno: frena siempre"
+        }
       ],
       "fail_closed_new": [
-        { "camino": "sin-node-en-su-terreno", "dispara": "no hay Node: el lanzador mira el texto crudo con el terreno" },
-        { "camino": "reloj-vencido-en-su-terreno", "dispara": "la revisión no contesta en su reloj propio" }
+        {
+          "camino": "sin-node-en-su-terreno",
+          "dispara": "no hay Node: el lanzador mira el texto crudo con el terreno"
+        },
+        {
+          "camino": "reloj-vencido-en-su-terreno",
+          "dispara": "la revisión no contesta en su reloj propio"
+        }
       ],
       "salidas_1_a_proposito": [],
       "reloj_propio_ms": 60000,
       "timeout_del_instalador": null,
       "lanzador": "node-missing-launcher.sh",
-      "plataformas": { "mac": true, "linux": true, "windows": true },
-      "limites": ["en Windows no lleva el lanzador: sin Node el freno no arranca y la herramienta deja pasar"]
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [
+        "en Windows no lleva el lanzador: sin Node el freno no arranca y la herramienta deja pasar"
+      ],
+      "spec": "@tcg:public-push-guard.js",
+      "matcher": "Bash|PowerShell",
+      "como_frena": "codigo-2",
+      "llama": [
+        "git"
+      ],
+      "entrada_tipica": null,
+      "fuera_del_terreno": "ls -la",
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "owner": {},
+      "fuera_de_la_matriz": [],
+      "entrada_en_la_prueba": true
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {
+        "todos": {
+          "historia": "8.257",
+          "suite": "tycon-pipeline/scripts/tests/dispatch-fail-mode.test.js"
+        }
+      },
+      "fail_closed_today": [],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git"
+      ],
+      "guion": "hook-pre-edit.js",
+      "spec": "tycon-pipeline/scripts/hook-pre-edit.js",
+      "evento": "PreToolUse",
+      "matcher": "Edit|Write",
+      "clase": "calidad",
+      "como_frena": "codigo-2",
+      "entrada_tipica": {
+        "tool_name": "Write",
+        "tool_input": {
+          "file_path": "/tmp/x.md",
+          "content": "x"
+        }
+      }
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [
+        "sin una de las cinco bibliotecas que carga al arrancar sale 1: el comando pasa y no queda anotado"
+      ],
+      "owner": {},
+      "fail_closed_today": [
+        {
+          "camino": "freno-de-guardar-caido-en-corrida",
+          "dispara": "el freno de guardar no carga o no decide, la sesión tiene una corrida abierta y el comando parece guardar"
+        },
+        {
+          "camino": "corrida-con-registro-ilegible",
+          "dispara": "el registro de aperturas no se puede leer y la sesión tiene marcador: no sabe si la corrida quedó perdida"
+        },
+        {
+          "camino": "marcador-de-corrida-ilegible-hacia-el-equipo",
+          "dispara": "el marcador de la corrida no se lee y el comando empuja a una rama compartida o abre o mergea un pedido"
+        }
+      ],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [
+        {
+          "camino": "story-sin-lector-de-criterios",
+          "dispara": "el lector de criterios no carga al pasar una historia a review o done: cuenta «sin criterios»",
+          "suite": "tycon-pipeline/scripts/tests/story-headings.test.js",
+          "motivo": "el caso necesita una historia que pasa a review o done con su corrida armada; su suite prueba la carga rota del lector y que cuenta «sin criterios»"
+        },
+        {
+          "camino": "cierre-sin-poder-medir-el-diff-entero",
+          "dispara": "con el plan aprobado por la coordinadora, no puede medir el diff entero del cierre",
+          "suite": "tycon-pipeline/scripts/tests/save-brake.test.js",
+          "motivo": "el caso necesita una corrida armada entera (plan, revisores, constancias): lo prueba su suite"
+        },
+        {
+          "camino": "roster-de-revisores-ilegible",
+          "dispara": "al pasar a done, la lista de revisores de la corrida no se puede leer",
+          "suite": "tycon-pipeline/scripts/tests/review-roster.test.js",
+          "motivo": "el caso necesita una corrida armada entera (plan, revisores, constancias): lo prueba su suite"
+        },
+        {
+          "camino": "guardar-sin-medir",
+          "dispara": "la familia «sin medir no guarda» del freno de guardar: una consulta a git o a un archivo que falla dentro de una corrida o un carril",
+          "suite": "tycon-pipeline/scripts/tests/save-brake.test.js",
+          "motivo": "el caso necesita una corrida armada entera (plan, revisores, constancias): lo prueba su suite"
+        }
+      ],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git"
+      ],
+      "guion": "on-pre-commit.js",
+      "spec": "tycon-pipeline/scripts/on-pre-commit.js",
+      "evento": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "clase": "calidad",
+      "como_frena": "codigo-2",
+      "entrada_tipica": "git commit -m x"
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": false
+      },
+      "limites": [],
+      "owner": {},
+      "fail_closed_today": [],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git",
+        "az",
+        "gh"
+      ],
+      "guion": "pr-one-per-repo-guard.js",
+      "spec": "@tcg:pr-one-per-repo-guard.js",
+      "evento": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "clase": "calidad",
+      "como_frena": "codigo-2",
+      "entrada_tipica": null,
+      "encendido": {
+        "TYCON_PR_ONE_PER_REPO": "1"
+      },
+      "entrada_en_la_prueba": true
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {},
+      "fail_closed_today": [
+        {
+          "camino": "lector-de-merge-no-carga",
+          "dispara": "la biblioteca que lee un pedido de merge en la plataforma no carga y el comando lo menciona"
+        }
+      ],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [
+        {
+          "camino": "texto-de-pedido-ilegible",
+          "dispara": "un pedido de la plataforma que corre otro intérprete o lleva valores o banderas que arma la terminal: lo que no se lee no está aprobado",
+          "suite": "tests/pr-auto-complete-guard.test.sh",
+          "motivo": "es una regla sobre un texto que no se puede leer, no una pieza que falla: la prueba su suite"
+        }
+      ],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep",
+        "without-git": "no llama a git: con y sin git decide igual"
+      },
+      "llama": [],
+      "guion": "pr-auto-complete-guard.js",
+      "spec": "@tcg:pr-auto-complete-guard.js",
+      "evento": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "clase": "calidad",
+      "como_frena": "codigo-2",
+      "entrada_tipica": null,
+      "entrada_en_la_prueba": true
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [
+        "sin ps no puede contar las sesiones vivas y frena todo comando que abre una sesión de `claude` (medido por la matriz)"
+      ],
+      "owner": {},
+      "fail_closed_today": [
+        {
+          "camino": "entrada-ilegible-con-claude",
+          "dispara": "la entrada no es un objeto JSON y su texto crudo abre una sesión de `claude`"
+        },
+        {
+          "camino": "no-pude-decidir",
+          "dispara": "el lector del comando o la coordinación no cargan y el comando abre una sesión de `claude`"
+        },
+        {
+          "camino": "no-pude-contar",
+          "dispara": "el estado de las sesiones de la máquina no se puede leer"
+        },
+        {
+          "camino": "no-pude-anotar",
+          "dispara": "debajo del tope, la sesión que abre no se puede anotar"
+        }
+      ],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-git": "no llama a git: con y sin git decide igual"
+      },
+      "llama": [
+        "ps"
+      ],
+      "guion": "session-cap-guard.js",
+      "spec": "@tcg:session-cap-guard.js",
+      "evento": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "clase": "calidad",
+      "como_frena": "codigo-2",
+      "entrada_tipica": "claude --bg x"
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": 20000,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {
+        "reloj-vencido": {
+          "historia": "8.308",
+          "suite": "tycon-pipeline/scripts/tests/bash-gate-clock.test.js"
+        }
+      },
+      "fail_closed_today": [
+        {
+          "camino": "red-del-freno-caido-escribe-historia",
+          "dispara": "el freno no carga o falla sin atrapar, y el texto del comando escribe y nombra una historia o una constancia"
+        },
+        {
+          "camino": "ejecucion-perdida-sin-poder-revisar",
+          "dispara": "el registro de aperturas no se puede leer con una corrida a la vista: frena todo comando que no sólo lee"
+        },
+        {
+          "camino": "borra-carpeta-sin-leer-aperturas",
+          "dispara": "borrar o mover una carpeta sin poder leer el registro de aperturas"
+        },
+        {
+          "camino": "historia-ilegible-cuenta-como-historia",
+          "dispara": "el archivo que escribe existe y no se puede leer: cuenta como una historia que no está en borrador"
+        }
+      ],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [
+        {
+          "camino": "poda-de-worktree-sin-poder-leer-git",
+          "dispara": "`git worktree prune` sin poder leer la lista de copias, con una corrida abierta",
+          "suite": "tycon-pipeline/scripts/tests/lost-run-loop.test.js",
+          "motivo": "el caso necesita una corrida armada entera (plan, revisores, constancias): lo prueba su suite"
+        },
+        {
+          "camino": "repo-con-historias-por-error",
+          "dispara": "el descubridor de historias falla: se toma el repo como uno con historias",
+          "suite": "tycon-pipeline/scripts/tests/story-gate.test.js",
+          "motivo": "es una regla sobre un texto que no se puede leer, no una pieza que falla: la prueba su suite"
+        },
+        {
+          "camino": "restaurar-sin-poder-preguntarle-a-git",
+          "dispara": "git no contesta qué cambió o qué sigue en el repo ante un restore o checkout de una historia",
+          "suite": "tycon-pipeline/scripts/tests/story-gate.test.js",
+          "motivo": "es una regla sobre un texto que no se puede leer, no una pieza que falla: la prueba su suite"
+        },
+        {
+          "camino": "destino-sin-resolver",
+          "dispara": "un destino con una variable sin definir, un cd que no se sabe o un tramo recortado",
+          "suite": "tycon-pipeline/scripts/tests/bash-write-unresolved-path.test.js",
+          "motivo": "es una regla sobre un texto que no se puede leer, no una pieza que falla: la prueba su suite"
+        },
+        {
+          "camino": "guion-que-no-se-puede-leer-entero",
+          "dispara": "un guion invocado demasiado grande o ilegible que escribe y nombra una historia",
+          "suite": "tycon-pipeline/scripts/tests/bash-write-big-script.test.js",
+          "motivo": "es una regla sobre un texto que no se puede leer, no una pieza que falla: la prueba su suite"
+        },
+        {
+          "camino": "carpeta-que-no-se-puede-leer-al-expandir-comodin",
+          "dispara": "un comodín o un cd sobre una carpeta que no se puede leer: puede tener historias",
+          "suite": "tycon-pipeline/scripts/tests/story-gate.test.js",
+          "motivo": "no lo reproduje aislado: llega sólo con un destino que el freno resuelve como comodín; queda para la tanda B"
+        }
+      ],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git"
+      ],
+      "guion": "on-bash-write-gate.js",
+      "spec": "tycon-pipeline/scripts/on-bash-write-gate.js",
+      "evento": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "clase": "calidad",
+      "como_frena": "codigo-2",
+      "entrada_tipica": "rm specs/a.md"
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {},
+      "fail_closed_today": [
+        {
+          "camino": "lista-de-corridas-ilegible-retiene",
+          "dispara": "el registro de aperturas no se puede leer y la sesión tiene marcador"
+        },
+        {
+          "camino": "no-pude-revisar-las-piezas-retiene",
+          "dispara": "la revisión de la corrida perdida tira (un evento con la carpeta que no es texto)"
+        },
+        {
+          "camino": "contador-de-frenos-ilegible-retiene",
+          "dispara": "el contador de veces que retuvo no se puede leer ni anotar: retiene en cada cierre, sin tope"
+        }
+      ],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [
+        {
+          "camino": "copia-de-apertura-ilegible-retiene",
+          "dispara": "la copia de la apertura de la corrida, en el repo, no se puede leer",
+          "suite": "tycon-pipeline/scripts/tests/lost-run-loop.test.js",
+          "motivo": "el caso necesita una corrida armada entera (plan, revisores, constancias): lo prueba su suite"
+        }
+      ],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git"
+      ],
+      "guion": "on-stop-dod-gate.js",
+      "spec": "tycon-pipeline/scripts/on-stop-dod-gate.js",
+      "evento": "Stop",
+      "matcher": "",
+      "clase": "cierre",
+      "como_frena": "decision-block",
+      "entrada_tipica": {
+        "session_id": "s1"
+      }
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {},
+      "fail_closed_today": [],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [
+        {
+          "camino": "registro-de-relevo-ilegible",
+          "dispara": "el registro de las preguntas desviadas a la coordinadora no se puede leer ni escribir",
+          "suite": "tests/background-question-guard.test.js",
+          "motivo": "necesita la máquina del caso: coordinadora confirmada y viva y una sesión lanzada por ella; la arma su suite"
+        },
+        {
+          "camino": "lanzadas-ilegible-sesion-de-fondo",
+          "dispara": "la lista de sesiones lanzadas no se puede leer y la sesión es de fondo",
+          "suite": "tests/background-question-guard.test.js",
+          "motivo": "ídem"
+        },
+        {
+          "camino": "mensaje-a-sesion-de-fondo-sin-poder-leer",
+          "dispara": "un mensaje a una sesión de fondo o a un destino que no resuelve, con la lista de lanzadas o un archivo de sesión ilegible, o la coordinación que no carga",
+          "suite": "tests/background-question-guard.test.js",
+          "motivo": "ídem"
+        }
+      ],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git"
+      ],
+      "guion": "background-question-guard.js",
+      "spec": "@tcg:background-question-guard.js",
+      "evento": "PreToolUse",
+      "matcher": "AskUserQuestion|mcp__spokenly__ask_user_dictation|SendMessage",
+      "clase": "calidad",
+      "como_frena": "deny",
+      "entrada_tipica": {
+        "tool_name": "AskUserQuestion",
+        "tool_input": {
+          "questions": [
+            {
+              "question": "¿Aprobás?"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [
+        "en su camino de la consola, sin la biblioteca que dice si la sesión es de fondo sale 1: el comando pasa"
+      ],
+      "owner": {},
+      "fail_closed_today": [],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git"
+      ],
+      "guion": "background-question-guard.js",
+      "spec": "@tcg:background-question-guard.js",
+      "evento": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "clase": "calidad",
+      "como_frena": "deny",
+      "entrada_tipica": "rm -rf x"
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {},
+      "fail_closed_today": [
+        {
+          "camino": "fecha-de-entrada-ajena-ilegible-reclama",
+          "dispara": "un merge de otra sesión con la fecha ilegible: no se sabe su edad y se reclama"
+        },
+        {
+          "camino": "carpeta-no-es-repo-se-reclama",
+          "dispara": "la carpeta del merge existe y no es un repo, o git no contesta sobre main: se reclama"
+        },
+        {
+          "camino": "contador-de-bloqueos-ilegible-frena-sin-tope",
+          "dispara": "el contador de bloqueos no se puede leer ni escribir: retiene en cada cierre, sin tope"
+        }
+      ],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git",
+        "gh",
+        "az"
+      ],
+      "guion": "retro-pending.js",
+      "spec": "@tcg:retro-pending.js",
+      "evento": "Stop",
+      "matcher": "",
+      "clase": "cierre",
+      "como_frena": "decision-block",
+      "entrada_tipica": {
+        "hook_event_name": "Stop",
+        "session_id": "s1"
+      }
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {},
+      "fail_closed_today": [],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [
+        {
+          "camino": "motivo-de-lugares-libres-ilegible-no-calla",
+          "dispara": "el motivo vigente para dejar lugares libres no se puede leer: no cubre el trabajo y retiene",
+          "suite": "tests/coordination-fill-gate.test.js",
+          "motivo": "necesita la coordinadora designada, lugares libres y memoria medida; la arma su suite"
+        }
+      ],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git"
+      ],
+      "guion": "coordination-fill-gate.js",
+      "spec": "@tcg:coordination-fill-gate.js",
+      "evento": "Stop",
+      "matcher": "",
+      "clase": "cierre",
+      "como_frena": "decision-block",
+      "entrada_tipica": {
+        "hook_event_name": "Stop",
+        "session_id": "s1"
+      }
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {},
+      "fail_closed_today": [
+        {
+          "camino": "repo-no-escaneado-retiene",
+          "dispara": "git no contesta sobre un repo del registro: retiene en cada cierre, sin memoria ni tope"
+        },
+        {
+          "camino": "estado-de-avisados-no-anotable-retiene",
+          "dispara": "el archivo de lo ya avisado no se puede escribir: el mismo trabajo retiene en cada cierre"
+        },
+        {
+          "camino": "carpeta-borrada-sin-poder-mirarla",
+          "dispara": "la carpeta del registro ya no existe y no se puede saber qué tenía (sin commits, sin repo común o git que no contesta): retiene una vez"
+        }
+      ],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git"
+      ],
+      "guion": "unpushed-work-notice.js",
+      "spec": "@tcg:unpushed-work-notice.js",
+      "evento": "Stop",
+      "matcher": "",
+      "clase": "cierre",
+      "como_frena": "decision-block",
+      "entrada_tipica": {
+        "hook_event_name": "Stop",
+        "session_id": "s1",
+        "stop_hook_active": false
+      }
+    },
+    {
+      "salidas_1_a_proposito": [
+        {
+          "camino": "git-c4-ciego",
+          "dispara": "un `git add -A` o `git add .` cuando la carpeta de las skills es un enlace colgado o no se puede leer: pasa y lo dice"
+        }
+      ],
+      "reloj_propio_ms": 20000,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [
+        "sin ps ni /proc el reloj no actúa (decide igual)",
+        "el trap ERR deja pasar y lo anota: pasa a frenar sólo con la medición del banco (tanda B)"
+      ],
+      "owner": {},
+      "fail_closed_today": [
+        {
+          "camino": "entrada-vacia",
+          "dispara": "la entrada llega vacía o no se pudo leer"
+        },
+        {
+          "camino": "entrada-no-json",
+          "dispara": "la entrada no es un documento JSON"
+        },
+        {
+          "camino": "without-jq-or-node",
+          "dispara": "no hay jq ni node para leer la entrada"
+        },
+        {
+          "camino": "reloj-vencido",
+          "dispara": "el freno no termina de mirar el comando en su reloj"
+        }
+      ],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [
+        {
+          "camino": "git-c4-desbordado",
+          "dispara": "un `git add -A` con más carpetas que el tope: no pudo saber si cae en el árbol de las skills",
+          "suite": "tests/safety-guard-err-trap.test.js",
+          "motivo": "es una regla sobre un texto que no se puede leer, no una pieza que falla: la prueba su suite"
+        }
+      ],
+      "modos_que_no_aplican": {
+        "without-git": "no llama a git: con y sin git decide igual"
+      },
+      "llama": [
+        "jq",
+        "node",
+        "ps",
+        "pgrep"
+      ],
+      "guion": "safety-guard-pre.sh",
+      "spec": "@tcg:safety-guard-pre.sh",
+      "evento": "PreToolUse",
+      "matcher": "Bash|PowerShell|Monitor",
+      "clase": "critico",
+      "terreno": "todo comando: frena cuando no pudo leer el comando o no pudo correr; cuando lo leyó, decide normal aunque falte una pieza auxiliar",
+      "como_frena": "codigo-2",
+      "entrada_tipica": "ls -la",
+      "fuera_del_terreno": null
+    },
+    {
+      "salidas_1_a_proposito": [
+        {
+          "camino": "cannot-read",
+          "dispara": "la entrada vacía o ilegible, o sin jq ni node: no revisó el comando y lo deja pasar"
+        }
+      ],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {},
+      "fail_closed_today": [],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [],
+      "modos_que_no_aplican": {
+        "without-ps": "no usa ps ni pgrep",
+        "without-git": "no llama a git: con y sin git decide igual"
+      },
+      "llama": [
+        "jq",
+        "node"
+      ],
+      "guion": "test-scope-guard-pre.sh",
+      "spec": "@tcg:test-scope-guard-pre.sh",
+      "evento": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "clase": "calidad",
+      "como_frena": "codigo-2",
+      "entrada_tipica": "ls -la"
+    },
+    {
+      "salidas_1_a_proposito": [
+        {
+          "camino": "cannot-read",
+          "dispara": "la entrada vacía o ilegible que nombra un commit, en un repo con memoria"
+        },
+        {
+          "camino": "destino-sin-ubicar",
+          "dispara": "no pudo saber en qué repo se hace el commit y la carpeta de la sesión guarda memoria"
+        }
+      ],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {},
+      "fail_closed_today": [],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [],
+      "modos_que_no_aplican": {
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git",
+        "jq",
+        "node",
+        "engram"
+      ],
+      "guion": "engram-pre-commit.sh",
+      "spec": "@tcg:engram-pre-commit.sh",
+      "evento": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "clase": "calidad",
+      "como_frena": "codigo-2",
+      "entrada_tipica": "git commit -m x"
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": null,
+      "timeout_del_instalador": null,
+      "lanzador": null,
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": true
+      },
+      "limites": [],
+      "owner": {},
+      "fail_closed_today": [],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [
+        {
+          "camino": "destino-git-irresuelto-se-asume-la-sesion",
+          "dispara": "con otra sesión viva, un git que escribe con un destino que no se resuelve se toma por el checkout de la sesión",
+          "suite": "tests/session-collision-guard.test.js",
+          "motivo": "es una regla sobre un texto que no se puede leer, no una pieza que falla: la prueba su suite"
+        }
+      ],
+      "modos_que_no_aplican": {
+        "without-jq-or-node": "es un guion de Node: sin node lo cubre «sin node»",
+        "without-ps": "no usa ps ni pgrep"
+      },
+      "llama": [
+        "git"
+      ],
+      "guion": "session-collision-guard.js",
+      "spec": "@tcg:session-collision-guard.js",
+      "evento": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "clase": "calidad",
+      "como_frena": "codigo-2",
+      "entrada_tipica": "git commit -m x",
+      "encendido": {
+        "TYCON_SESSION_GUARD": "1"
+      }
+    },
+    {
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": 5000,
+      "timeout_del_instalador": 30,
+      "lanzador": "node-shim.sh",
+      "plataformas": {
+        "mac": true,
+        "linux": true,
+        "windows": false
+      },
+      "limites": [],
+      "owner": {
+        "timeout-del-gancho": {
+          "historia": "8.308",
+          "suite": "tests/prod-access-guard.test.sh"
+        }
+      },
+      "fail_closed_today": [
+        {
+          "camino": "json-ilegible-con-base",
+          "dispara": "la entrada no es JSON y su texto crudo nombra una base"
+        },
+        {
+          "camino": "sin-comando-con-base",
+          "dispara": "la entrada no trae el comando y su texto crudo nombra una base"
+        },
+        {
+          "camino": "comando-gigante-con-base",
+          "dispara": "un comando de más de 32 KB que nombra una base"
+        }
+      ],
+      "fail_closed_new": [],
+      "fuera_de_la_matriz": [
+        {
+          "camino": "falla-propia",
+          "dispara": "una excepción al decidir, con el texto que nombra una base",
+          "suite": "tests/prod-access-guard.test.sh",
+          "motivo": "forzarla pide tocar el guion: la prueba su suite"
+        },
+        {
+          "camino": "reloj-vencido",
+          "dispara": "el freno no decide en 5 s y el comando nombra un servidor",
+          "suite": "tests/prod-access-guard.test.sh",
+          "motivo": "el reloj de 5 s no tiene variable para acortarlo"
+        },
+        {
+          "camino": "indice-ilegible",
+          "dispara": "no puede leer el índice de servidores y el comando nombra uno",
+          "suite": "tests/prod-access-guard.test.sh",
+          "motivo": "ídem: lo arma su suite"
+        },
+        {
+          "camino": "sin-ps-ni-sesion",
+          "dispara": "no halla la sesión de claude que lo lanzó",
+          "suite": "tests/prod-access-guard.test.sh",
+          "motivo": "sólo existe con el freno instalado en /opt/tycon: lo prueba su suite con una raíz falsa"
+        },
+        {
+          "camino": "shell-de-login",
+          "dispara": "el shell de login no es zsh ni bash, no contesta o define un nombre secuestrado",
+          "suite": "tests/prod-access-guard.test.sh",
+          "motivo": "ídem: lo arma su suite"
+        },
+        {
+          "camino": "puerta-alterada",
+          "dispara": "la puerta no coincide con su huella",
+          "suite": "tests/install-guard.test.sh",
+          "motivo": "sólo existe con el freno instalado en /opt/tycon: lo prueba su suite con una raíz falsa"
+        },
+        {
+          "camino": "lanzador-sin-decidir",
+          "dispara": "el lanzador frena todo comando si el freno no contesta: reloj de 7 s, señal o un código que no es 0 ni 2",
+          "suite": "tests/install-guard.test.sh",
+          "motivo": "sólo existe con el freno instalado en /opt/tycon: lo prueba su suite con una raíz falsa"
+        },
+        {
+          "camino": "lanzador-no-corrio-con-base",
+          "dispara": "el Node o el freno de /opt/tycon faltan o no son de root y el texto nombra una base",
+          "suite": "tests/install-guard.test.sh",
+          "motivo": "sólo existe con el freno instalado en /opt/tycon: lo prueba su suite con una raíz falsa"
+        }
+      ],
+      "modos_que_no_aplican": {
+        "without-git": "no llama a git",
+        "without-jq-or-node": "es un guion de Node con su propio Node en /opt/tycon",
+        "without-ps": "sin ps no halla la sesión y frena: lo prueba su suite",
+        "without-node": "el lanzador de /opt/tycon usa su propio Node: sin él es «lanzador-no-corrio-con-base», fuera de la matriz"
+      },
+      "llama": [
+        "ps"
+      ],
+      "guion": "prod-access-guard.js",
+      "spec": null,
+      "origen": "managed-settings",
+      "evento": "PreToolUse",
+      "matcher": "Bash",
+      "clase": "critico",
+      "terreno": "el texto crudo nombra una base de datos o un borrado en Azure",
+      "como_frena": "codigo-2",
+      "entrada_tipica": "sqlcmd -S prod.example.com -Q x",
+      "fuera_del_terreno": "ls -la",
+      "guion_repo": "scripts/hooks/prod-access-guard.js",
+      "lanzador_repo": "scripts/production/node-shim.sh"
     }
   ]
 }

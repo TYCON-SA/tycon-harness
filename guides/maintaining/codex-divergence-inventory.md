@@ -448,3 +448,29 @@ se corra. Lo usa la prueba de que el reloj propio de un freno vence antes (`hook
 | Codex | tope_s: 600 | NO MEDIDO (no documentado) | https://learn.chatgpt.com/docs/hooks («Codex uses `600` seconds for most hooks») |
 
 Codex acepta un `timeout` por gancho, en segundos.
+
+<!-- modos-de-falla -->
+## Un gancho que falla antes de una herramienta — medido en las dos (2026-11-21)
+
+Qué hace cada herramienta con un gancho antes de la consola que sale con 1, con 127 o que se cuelga más que su `timeout`.
+Un solo gancho elige el modo por el comando y deja una marca al empezar; un gancho después de la consola deja la del
+comando, que sólo dispara si el comando corrió. Sin la marca del gancho, el modo diría NO MEDIDO. El `timeout` del gancho
+de prueba es de 5 s, y el que se cuelga espera 15 s. Una sesión mínima por herramienta, medida con:
+
+```bash
+node scripts/controls-bench/live-fire.js --tool claude --failure-modes
+node scripts/controls-bench/live-fire.js --tool codex --failure-modes
+```
+
+Lo usa la decisión D3 (la salida 1) de los frenos cuando algo falla.
+
+| Herramienta | Sale con 1 | Sale con 127 | Se cuelga más que su timeout | El aviso del que sale con 1 |
+|---|---|---|---|---|
+| Claude Code 2.1.312 | el comando corre | el comando corre | lo corta a los 5 s (respeta el `timeout`) y el comando corre | no llega al modelo |
+| Codex 0.162.1 | el comando corre | el comando corre | lo corta a los 5 s (respeta el `timeout`) y el comando corre | no llega al modelo |
+
+Con esto, la fila de Codex de la tabla de arriba deja de ser NO MEDIDO: al vencer, la herramienta corre igual.
+
+Las dos herramientas tratan igual las tres fallas: ninguna frena, y el texto que el gancho escribe por la salida de
+errores con código 1 no le llega al modelo (le pedimos que lo repitiera y ninguna lo vio). Una «salida 1 que pasa y se dice»
+pasa, pero no se dice: nadie la ve en la conversación. No hay asimetría que declarar.
