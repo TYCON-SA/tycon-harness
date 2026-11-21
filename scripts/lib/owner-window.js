@@ -548,6 +548,7 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
     if (sub === 'mark-tested') return 'manual-test';
     if (sub === 'runtime-waiver') return 'runtime-waiver';
     if (sub === 'compare-waiver') return 'compare-waiver';
+    if (sub === 'release-write-after') return 'write-after-release';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
     if (sub === 'approve-pending') return 'pending-approval';
     if (sub === 'approve-save') return 'save';

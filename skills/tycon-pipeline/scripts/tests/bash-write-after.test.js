@@ -38,14 +38,20 @@ function lab() {
   fs.writeFileSync(path.join(repo, '.tycon', 'control-changes', 'c1.json'), '{"ok":true}\n');
   const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home };
   const estado = require(path.resolve(__dirname, '..', 'lib', 'state-dir.js')).stateDir(home);
-  return { base, repo, home, env, estado, f: (rel) => path.join(repo, rel) };
+  // la conversación de la sesión: lo que la herramienta dice que corrió
+  const transcript = path.join(base, 'conversacion.jsonl');
+  fs.writeFileSync(transcript, '');
+  return { base, repo, home, env, estado, transcript, f: (rel) => path.join(repo, rel) };
 }
+
+/** Anota en la conversación una llamada a una herramienta, como la escribe Claude Code. */
+const enLaConversacion = (l, id, name, input) => fs.appendFileSync(l.transcript, `${JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] } })}\n`);
 
 let n = 0;
 /** Corre el gancho antes, el comando (o `hacer`, en lugar del comando), y el gancho después. */
 function correr(l, comando, { hacer = null, evento = 'PostToolUse', sesion = 's1' } = {}) {
   const id = `toolu_${++n}`;
-  const ev = (hook_event_name) => JSON.stringify({ session_id: sesion, tool_use_id: id, cwd: l.repo, hook_event_name, tool_name: 'Bash', tool_input: { command: comando } });
+  const ev = (hook_event_name) => JSON.stringify({ session_id: sesion, tool_use_id: id, transcript_path: l.transcript, cwd: l.repo, hook_event_name, tool_name: 'Bash', tool_input: { command: comando } });
   const pre = spawnSync(process.execPath, [HOOK], { input: ev('PreToolUse'), env: l.env, encoding: 'utf8' });
   assert.strictEqual(pre.status, 0, pre.stderr);
   if (hacer) hacer(); else spawnSync('bash', ['-c', comando], { cwd: l.repo, env: l.env, encoding: 'utf8' });
@@ -307,9 +313,13 @@ test('WriteAfter_CdWithOptionsOrQuotes_RepoWatched @story-8.320 @ac-1', () => {
 
 // ── lo que no se deshace, la familia entera y la carpeta de las fotos ────────────────────────────────────────────────
 
-/** Un evento suelto del gancho (para un Edit o un Write que corre a la vez que el comando). */
-function evento(l, ev) {
-  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ session_id: 's1', cwd: l.repo, ...ev }), env: l.env, encoding: 'utf8' });
+/**
+ * Un evento suelto del gancho (para un Edit o un Write que corre a la vez que el comando). El de antes queda también en
+ * la conversación, como lo deja la herramienta, salvo con `conversacion: false`.
+ */
+function evento(l, ev, { conversacion = true } = {}) {
+  if (conversacion && ev.hook_event_name === 'PreToolUse') enLaConversacion(l, ev.tool_use_id, ev.tool_name, ev.tool_input);
+  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ session_id: 's1', transcript_path: l.transcript, cwd: l.repo, ...ev }), env: l.env, encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stderr);
 }
 
@@ -362,6 +372,57 @@ test('WriteAfter_ParallelToolsOfTheSameSession @story-8.320 @ac-11', () => {
   assert.strictEqual(fs.readFileSync(f, 'utf8'), antes2);
 });
 
+// 🔴 Falla con: el comando fabrica la excepción y lo suyo no se deshace — un Edit que otro freno negó antes, un
+//    registro falso en la carpeta de las fotos, una sesión viva que aparece durante el comando, un marker.js abierto de
+//    antes, o un marker.js en paralelo que no nombra la historia.
+test('WriteAfter_ExceptionsTheCommandCanForge_DoNotCount @story-8.320 @ac-11', () => {
+  const l = lab();
+  const f = l.f('specs/story-1.1-hecha.md');
+  const original = fs.readFileSync(f, 'utf8');
+  const vuelve = (como) => assert.strictEqual(fs.readFileSync(f, 'utf8'), original, como);
+  // un Edit negado por otro freno: empezó antes del comando y nunca terminó
+  evento(l, { tool_use_id: 'edit-negado', hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { file_path: f } });
+  correr(l, 'N=sed; $N -i x', { hacer: () => fs.writeFileSync(f, historia('1.1', 'done')) });
+  vuelve('Edit negado antes');
+  // un registro que escribió el comando mismo: no está en la conversación
+  const enCurso = path.join(l.estado, 'write-photos', 'en-curso');
+  correr(l, 'cosa', { hacer: () => {
+    fs.writeFileSync(path.join(enCurso, 's1-falso.json'), JSON.stringify({ sesion: 's1', id: 'falso', tool: 'Write', inicio: Date.now(), fin: null, archivos: [f] }));
+    fs.writeFileSync(path.join(enCurso, 's1-raro.json'), JSON.stringify({ sesion: 's1', id: 'raro', tool: 'Write', inicio: Date.now(), fin: null, archivos: [7] }));
+    fs.writeFileSync(f, historia('1.1', 'done'));
+  } });
+  vuelve('registro falso');
+  // un registro con el id de una llamada de verdad pero otro archivo
+  enLaConversacion(l, 'edit-otro', 'Edit', { file_path: l.f('src/x.js') });
+  correr(l, 'cosa', { hacer: () => {
+    fs.writeFileSync(path.join(enCurso, 's1-edit-otro.json'), JSON.stringify({ sesion: 's1', id: 'edit-otro', tool: 'Edit', inicio: Date.now(), fin: null, archivos: [f] }));
+    fs.writeFileSync(f, historia('1.1', 'done'));
+  } });
+  vuelve('registro con otro archivo');
+  // una sesión viva que aparece durante el comando
+  correr(l, 'cosa', { hacer: () => {
+    fs.mkdirSync(path.join(l.estado, 'active'), { recursive: true });
+    const recien = new Date().toISOString(); // stable-data: el marcador falso se ve vivo
+    fs.writeFileSync(path.join(l.estado, 'active', 'falsa.json'), JSON.stringify({ storyId: '9.9', repoPath: l.repo, lastTouch: recien, startedAt: recien }));
+    fs.writeFileSync(f, historia('1.1', 'done'));
+  } });
+  vuelve('sesión fabricada durante el comando');
+  fs.rmSync(path.join(l.estado, 'active', 'falsa.json'));
+  // un marker.js abierto de antes (no llegó a su después)
+  const mk = `node "${MARKER}" update-story-status ${f} review`;
+  evento(l, { tool_use_id: 'mk-abierto', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: mk } });
+  correr(l, 'cosa', { hacer: () => fs.writeFileSync(f, historia('1.1', 'done')) });
+  vuelve('marker.js abierto de antes');
+  // un marker.js en paralelo que sólo lee: no nombra la historia
+  const st = `node "${MARKER}" status`;
+  correr(l, 'cosa', { hacer: () => {
+    evento(l, { tool_use_id: 'mk-status', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: st } });
+    fs.writeFileSync(f, historia('1.1', 'done'));
+    evento(l, { tool_use_id: 'mk-status', hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: st } });
+  } });
+  vuelve('marker.js status en paralelo');
+});
+
 // 🔴 Falla con: alguna forma de la familia que sigue abierta en el freno de antes escribe la historia y queda.
 test('T6 · WriteAfter_FamilyForms_AllRestored @story-8.320 @ac-6', () => {
   const l = lab();
@@ -400,4 +461,76 @@ test('WriteAfter_PhotosProtectedByTheGateBefore @story-8.320 @ac-1', () => {
   assert.equal(require('../lib/story-gate.js').signedRecordKind(path.join(fotos, 's1-x.json')), 'write-photos');
   const leer = spawnSync(process.execPath, [GATE], { input: JSON.stringify({ session_id: 's1', tool_name: 'Bash', cwd: l.repo, tool_input: { command: `cat ${path.join(fotos, 's1-x.json')}` } }), env: l.env, encoding: 'utf8', cwd: l.repo });
   assert.ok(leer.status === 0 && !/"deny"|"block"/.test(leer.stdout), `leer se frenó: ${leer.stdout}`);
+});
+
+// ── el freno que deja una mirada fallida ─────────────────────────────────────────────────────────────────────────────
+
+/** El gancho de antes, solo: `{ status, err }` (2 si frena). */
+function antes(l, comando, sesion = 's1') {
+  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ session_id: sesion, tool_use_id: `pre-${++n}`, cwd: l.repo, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: comando } }), env: l.env, encoding: 'utf8' });
+  return { status: r.status, err: r.stderr };
+}
+
+// 🔴 Falla con: una mirada que no se pudo hacer deja seguir a la sesión como si nada.
+test('T7 · WriteAfter_PhotoUnusable_LogsAndNextCommandStops @story-8.320 @ac-7', () => {
+  const casos = {
+    'foto alterada': (l) => {
+      const dir = path.join(l.estado, 'write-photos');
+      for (const n2 of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) { const p = path.join(dir, n2); const j = JSON.parse(fs.readFileSync(p, 'utf8')); j.at = 1; fs.writeFileSync(p, JSON.stringify(j)); }
+    },
+    'foto borrada': (l) => { for (const n2 of fs.readdirSync(path.join(l.estado, 'write-photos')).filter((x) => x.endsWith('.json'))) fs.rmSync(path.join(l.estado, 'write-photos', n2)); },
+  };
+  for (const [caso, romper] of Object.entries(casos)) {
+    const l = lab();
+    const r = correr(l, 'cosa', { hacer: () => romper(l) });
+    assert.match(r.ctx, /no pude mirar .*\n.*queda frenada/, caso);
+    assert.match(fs.readFileSync(path.join(l.estado, 'hook-errors.log'), 'utf8'), /no se pudo mirar/, caso);
+    const frenado = antes(l, `N=node; \${N:-node} x.js`);
+    assert.strictEqual(frenado.status, 2, `${caso}: el siguiente comando frena`);
+    assert.match(frenado.err, /ESTA SESIÓN ESTÁ FRENADA/);
+    assert.match(frenado.err, /release-write-after --for-session s1/);
+    for (const lee of ['git status', 'cat specs/story-1.1-hecha.md | grep status', 'git log -1 --oneline', 'cd specs && ls']) assert.strictEqual(antes(l, lee).status, 0, `${caso}: leer sigue: ${lee}`);
+    for (const escribe of ['echo x > specs/a.md', 'git commit -m x', 'git push', 'cat a | tee b', `node "${MARKER}" help`]) assert.strictEqual(antes(l, escribe).status, 2, `${caso}: ${escribe}`);
+    assert.strictEqual(antes(l, `\${N:-node} x.js`, 'otra').status, 0, `${caso}: otra sesión no queda frenada`);
+  }
+});
+
+// 🔴 Falla con: lo que no se pudo deshacer queda escrito y la sesión sigue; o la foto que no se pudo sacar no se dice.
+test('T8 · WriteAfter_RestoreFailsOrNoPhoto_LogsAndNextCommandStops @story-8.320 @ac-7', () => {
+  const l = lab();
+  const f = l.f('specs/story-1.1-hecha.md');
+  const r = correr(l, 'cosa', { hacer: () => { fs.writeFileSync(f, historia('1.1', 'done')); fs.rmSync(path.join(l.estado, 'write-photos', 'blobs'), { recursive: true }); } });
+  assert.match(r.ctx, /no se pudo deshacer \(no está la copia/);
+  assert.match(r.ctx, /queda frenada/);
+  assert.strictEqual(antes(l, 'cosa').status, 2);
+  const l2 = lab();
+  fs.mkdirSync(path.join(l2.estado, 'write-photos'), { recursive: true });
+  fs.writeFileSync(path.join(l2.estado, 'write-photos', 'blobs'), 'no es una carpeta');
+  const r2 = correr(l2, 'cosa');
+  assert.match(r2.ctx, /no pude sacar la foto antes del comando/);
+  assert.strictEqual(antes(l2, 'cosa').status, 2);
+});
+
+// 🔴 Falla con: la sesión frenada se libera sola, o el guion libera una sesión que no está frenada.
+test('WriteAfter_Release_NeverByTheStoppedSession @story-8.320 @ac-7', () => {
+  const l = lab();
+  require('../lib/protected-photo.js').setBrake(l.estado, 's1', 'prueba');
+  const liberar = (propia, extra = []) => spawnSync(process.execPath, [MARKER, 'release-write-after', '--for-session', 's1', '--reason', 'miré la historia', ...extra],
+    { env: { ...l.env, CLAUDE_CODE_SESSION_ID: propia }, encoding: 'utf8', cwd: l.repo });
+  const propia = liberar('s1');
+  assert.strictEqual(propia.status, 2, propia.stderr);
+  assert.match(propia.stderr, /la sesión frenada no se libera sola/);
+  assert.ok(require('../lib/protected-photo.js').readBrake(l.estado, 's1'), 'sigue frenada');
+  // sin terminal, `--terminal` no firma
+  const sinTty = liberar('otra', ['--terminal']);
+  assert.notStrictEqual(sinTty.status, 0, sinTty.stderr);
+  assert.ok(require('../lib/protected-photo.js').readBrake(l.estado, 's1'), 'sigue frenada');
+  // otra sesión sin la firma de la ventana no la libera
+  const sinFirma = liberar('otra');
+  assert.notStrictEqual(sinFirma.status, 0, sinFirma.stderr);
+  assert.match(sinFirma.stderr, /🔒 marker\.js: .*(ventana|firma)/i, 'la niega la firma, no otra cosa');
+  assert.ok(require('../lib/protected-photo.js').readBrake(l.estado, 's1'), 'sigue frenada');
+  const noFrenada = spawnSync(process.execPath, [MARKER, 'release-write-after', '--for-session', 'nadie', '--reason', 'x'], { env: { ...l.env, CLAUDE_CODE_SESSION_ID: 'otra' }, encoding: 'utf8', cwd: l.repo });
+  assert.strictEqual(noFrenada.status, 1, noFrenada.stderr);
+  assert.match(noFrenada.stderr, /no está frenada/);
 });
