@@ -90,7 +90,7 @@ function texto({ storyId, resultado }) {
   if (resultado.estado === 'listos') return [`${h}: pedidos listos para aprobar.`, ...resultado.pedidos.map(renglon)].join('\n');
   if (resultado.estado === 'rojo') {
     const rojo = resultado.pedidos.find((p) => p.veredicto === 'rojo');
-    const corto = rojo ? `Un rojo chico se arregla sin otra corrida: marker.js adhoc set --ci-red ${rojo.numero} --check "<el control que falló>" --reason "<qué se arregla>" --data sin-cambio --file <ruta> (lo aprueba el dueño, o la coordinadora si el perfil lo delega).` : null;
+    const corto = rojo ? `Un rojo chico se arregla sin otra corrida: marker.js adhoc set --ci-red ${rojo.numero} --check "<el control que falló>" --reason "<qué se arregla>" --data sin-cambio --file <ruta> (lo aprueba la persona en la ventana de permiso, o la coordinadora si el perfil lo delega).` : null;
     return [`${h}: un pedido tiene la compilación en rojo. No está listo: arreglá el rojo y volvé a empujar.`, ...resultado.pedidos.map(renglon), ...(corto ? [corto] : [])].join('\n');
   }
   return [`${h}: no pude ver la compilación de todos los pedidos. No están listos hasta verla en verde.`, ...resultado.pedidos.map(renglon)].join('\n');
