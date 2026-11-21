@@ -28,6 +28,9 @@ productos, y en cualquier máquina, sin lista de máquinas.
   con la emergencia), apagar un freno o saltear las pruebas o el pase (todo `approvals.owner_only`: `TYCON_SAFETY_OFF`,
   `TYCON_TEST_GATE`, `DOD_BYPASS`, `adversarial-skip`, `no-deep-review` y los demás), y nombrar o retirar a la coordinadora.
   Ninguna de esas sale sola aunque un perfil la liste.
+- **Eximir un hallazgo crítico (`critical-waiver`) tampoco sale sola**, aunque el perfil la liste: un crítico lo decide
+  una persona, y la constancia del trámite no nombra a ninguna. Va por la delegación a la coordinadora, que nombra al
+  dueño, o por el click del dueño. La terminal queda de emergencia.
 - **Los escapes de trámite** (los `escape:…` de la lista, que pasan por el freno de seguridad) también salen solos, cada
   uno en su forma de siempre y sin otra firma en el mismo comando. Su constancia la escribe el freno de seguridad con vía
   `automatica`, y vale para lo que la pide después (cerrar como deuda, el rojo esperado de la matriz).
