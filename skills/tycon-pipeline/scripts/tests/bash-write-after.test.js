@@ -153,7 +153,7 @@ test('T15 · WriteAfter_MixedRecognizedAndOther_UndoneWithAdvice @story-8.320 @a
   for (const comando of [`node "${MARKER}" update-story-status ${f} review; \${N:-node} x.js`, `node "${MARKER}" update-story-status ${f} review > ${f}`, `node --require ./x.js "${MARKER}" help`, `node --require=./x.js "${MARKER}" help`]) {
     const r = correr(l, comando, { hacer: () => fs.writeFileSync(f, historia('1.1', 'review')) });
     assert.strictEqual(fs.readFileSync(f, 'utf8'), antes, comando);
-    if (!comando.includes('>') && !comando.includes('--require')) assert.match(r.ctx, /marker\.js en un comando aparte/);
+    if (!comando.includes('>') && !comando.includes('--require')) assert.match(r.ctx, /Corré el del orquestador solo/);
   }
 });
 
