@@ -276,7 +276,10 @@ const SECCION_DE_SEGUIMIENTOS = /^Review Follow-ups \(Advisors\)$/i;
 const SECCION_DE_CRITERIOS = /^Acceptance Criteria\b/i;
 const CAMPO_DE_LA_TANDA = /^(\s+)(status|acs_pending|tasks_pending|tests_pending)\s*:/;
 const MARCA = /\s*`?@runtime-exempt\(.*$/;
-const MARCA_DE_PANTALLA = /\s*`?@(?:sin-)?pantalla\b`?/gi;
+// sólo la que saca la pantalla, como palabra suelta: cambiar `@pantalla`, o una marca pegada a otra palabra, cuenta
+const MARCA_DE_PANTALLA = /\s+`?@sin-pantalla`?(?=\s|$|[.,;:)])/gi;
+// las claves de un renglón del enlace `followed_up_by:` (story-format.md §1.2)
+const CLAVE_DEL_ENLACE = /^\s*(?:-\s+)?(?:id|date|type|summary|reason)\s*:/;
 const BLOQUE = /^\s*(```|~~~)/;
 // lo que corta el motivo partido de una marca: un renglón en blanco, sin sangría, otro criterio o elemento, un bloque
 const CORTA_EL_MOTIVO = /^\s*$|^\S|^\s*(\d+\.|[-*+])\s|^\s*(```|~~~)/;
@@ -297,6 +300,8 @@ function sinPapeleoDeLaHistoria(txt) {
       if (i > 0 && l === '---') { enFrontmatter = false; out.push(l); continue; }
       // una lista escrita a la misma sangría que su campo (`- id: …`) sigue siendo del campo
       if (/^\S/.test(l) && !(enEnlace && /^- /.test(l))) { enPipelines = /^pipelines\s*:/.test(l); campoDeLaTanda = null; enEnlace = /^followed_up_by\s*:/.test(l); }
+      // dentro del enlace, sólo sus claves: otra clave escondida ahí (un `files_to_create:` sangrado) cuenta
+      if (enEnlace && !/^followed_up_by\s*:/.test(l) && !CLAVE_DEL_ENLACE.test(l)) enEnlace = false;
       if (enEnlace) continue;
       if (enPipelines) {
         const sangria = l.match(/^(\s*)/)[1].length;
@@ -327,7 +332,7 @@ function sinPapeleoDeLaHistoria(txt) {
         // la marca sola en su renglón: el renglón entero es papeleo, y su motivo puede seguir abajo
         if (!sinMarca.trim()) { motivoAbierto = true; continue; }
       }
-      // la marca de pantalla de un criterio (`@sin-pantalla`, `@pantalla`, lib de la matriz) la pone «Probar en vivo»: papeleo
+      // la marca `@sin-pantalla` de un criterio la pone «Probar en vivo»: papeleo
       sinMarca = sinMarca.replace(MARCA_DE_PANTALLA, '');
     }
     out.push(sinMarca.replace(/^(\s*[-*]\s*)\[[ xX]\]/, '$1[ ]'));

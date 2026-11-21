@@ -1184,6 +1184,9 @@ test('T35 StoryPaperwork_FollowedUpBy_IsPaperwork — el enlace a la historia qu
   assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('title: "x"', 'title: "y"')), ft().sinPapeleoDeLaHistoria(base));
   const despues = conEnlace.replace('---\n# h', 'files_to_modify:\n  - src/a.js\n---\n# h');
   assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(despues), ft().sinPapeleoDeLaHistoria(base));
+  // una clave que no es del enlace, escondida con sangría dentro de él, cuenta
+  const escondida = conEnlace.replace('    summary: "el arreglo"\n', '    summary: "el arreglo"\n  files_to_create:\n    - src/b.js\n');
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(escondida), ft().sinPapeleoDeLaHistoria(base));
 });
 
 // Caso: en un producto con la historia y el código en el mismo repo, la corrida en una copia de trabajo
@@ -1223,12 +1226,17 @@ test('T36 PrepareCommit_StoryInAnotherCopyOfTheRepo_PaperworkStillPaperwork — 
 
 // Caso: después de la tercera vuelta, «Probar en vivo» marcó un criterio con
 // `@sin-pantalla` y pedía una cuarta vuelta. La marca de pantalla de un criterio es papeleo; el texto del criterio, no.
-test('T37 StoryPaperwork_ScreenMarkOnCriterion_IsPaperwork — @sin-pantalla y @pantalla; el texto sigue contando', () => {
+test('T37 StoryPaperwork_ScreenMarkOnCriterion_IsPaperwork — @sin-pantalla suelta; @pantalla, una marca pegada y el texto siguen contando', () => {
   const base = ['---', 'story: "9.9"', 'status: review', '---', '# h', '', '## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado.', '', '## Tasks', ''].join('\n');
-  for (const marca of [' `@sin-pantalla`', ' @sin-pantalla', ' @pantalla']) {
+  for (const marca of [' `@sin-pantalla`', ' @sin-pantalla']) {
     assert.strictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', `resultado.${marca}`)), ft().sinPapeleoDeLaHistoria(base), marca);
   }
   assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', 'otro resultado. @sin-pantalla')), ft().sinPapeleoDeLaHistoria(base));
+  // `@pantalla` (agregarla o cambiarla) y una marca pegada a otra palabra cuentan
+  const conPantalla = base.replace('resultado.', 'resultado. @pantalla');
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(conPantalla), ft().sinPapeleoDeLaHistoria(base));
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(conPantalla.replace('@pantalla', '@sin-pantalla')), ft().sinPapeleoDeLaHistoria(conPantalla));
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', 'resultado@sin-pantallax.')), ft().sinPapeleoDeLaHistoria(base));
   // fuera de los criterios, la palabra no se toca
   assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('## Tasks\n', '## Tasks\n\n- usar @sin-pantalla\n')), ft().sinPapeleoDeLaHistoria(base));
 });
