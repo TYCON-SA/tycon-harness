@@ -2376,6 +2376,10 @@ test('PrWaitStory_EndsWhenTheStoryOpensItsPullRequest: termina con el número cu
   // el título que nombra la historia también cuenta, con el número entero (8.32 no es 8.325 ni 8.32.1)
   const porTitulo = async () => ({ ok: true, value: [pedidoDe(50, 'wt/x', 'feat: algo (8.325)'), pedidoDe(51, 'wt/y', 'fix: 8.32.1'), pedidoDe(52, 'wt/z', 'feat(freno): el tope (8.32 A)')] });
   assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: porTitulo, sleep: async () => {} }), { code: 0, text: 'open 52' });
+  // (el pase) el pedido de otra historia que cita ésta en el título, o el número pegado a una letra, no terminan la espera
+  const citas = [{ ok: true, value: [pedidoDe(80, 'story/8.33', 'feat 8.33 (sigue a 8.32)'), pedidoDe(81, 'wt/x', 'v8.32 algo')] }, { ok: true, value: [pedidoDe(82, 'wt/y', 'fix (8.32 B)')] }];
+  let k = 0;
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: async () => citas[k++], sleep: async () => {} }), { code: 0, text: 'open 82' });
   // dos de la misma historia: los dos números
   const dos = async () => ({ ok: true, value: [pedidoDe(60, 'story/8.32'), pedidoDe(61, 'story/8.32/b')] });
   assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: dos, sleep: async () => {} }), { code: 0, text: 'open 60 61' });

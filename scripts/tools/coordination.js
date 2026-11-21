@@ -3006,16 +3006,17 @@ const HISTORIA = /^\d+(?:\.\d+)*$/;
 
 /**
  * ¿El pedido abierto es de la historia? Por la rama (`story/<id>`, `story/<id>-…` o `story/<id>/…`) o, si el número
- * lleva punto, por el título que lo nombra entero (`8.32` no es `8.325` ni `8.32.1`). Un número suelto sólo por la rama:
- * «25» en un título no dice de qué historia es.
+ * lleva punto, por el título que lo nombra entero (`8.32` no es `8.325`, `8.32.1` ni `v8.32`), salvo que el pedido salga
+ * de la rama de otra historia. Un número suelto sólo por la rama: «25» en un título no dice de qué historia es.
  */
 function esDeLaHistoria(pedido, historia) {
   const rama = String((pedido && pedido.sourceBranch) || '').replace(/^refs\/heads\//, '');
   if (rama === `story/${historia}` || rama.startsWith(`story/${historia}-`) || rama.startsWith(`story/${historia}/`)) return true;
-  if (!historia.includes('.')) return false;
+  // un pedido de la rama de otra historia que la cita en el título («sigue a 8.32») no es de ésta
+  if (!historia.includes('.') || /^story\//.test(rama)) return false;
   const titulo = String((pedido && pedido.title) || '');
   const exacto = historia.replace(/\./g, '\\.');
-  return new RegExp(`(^|[^\\d.])${exacto}(?!\\d|\\.\\d)`).test(titulo);
+  return new RegExp(`(^|[^\\w.])${exacto}(?!\\d|\\.\\d)`).test(titulo);
 }
 
 /**
