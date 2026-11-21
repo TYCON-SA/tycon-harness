@@ -540,10 +540,10 @@ async function projectPendingIn(browser, scheme, sdir, url, shots) {
       fs.writeFileSync(path.join(sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: `kanban de la oficina, ${scheme}`, declaredAt: new Date().toISOString() }));
       await page.waitForFunction((s) => [...document.querySelectorAll('#board .item')].some((n) => n.textContent.includes(`kanban de la oficina, ${s}`)), scheme, { timeout: 8000 });
       check(await fold.getAttribute('aria-expanded') === 'true' && await card.isVisible(), `E1 (8.251, ${scheme}): una foto nueva no la cierra`);
-      // los números siguen contando la columna entera, con la historia plegada: el encabezado y la línea del kanban
+      // desde la 8.313 la historia plegada tiene su propio número: el encabezado y la línea del kanban no la cuentan
       const header = await page.locator('#board .col h3', { hasText: 'Sin sesión' }).innerText();
       const cruce = await pend.locator('.escrito').innerText();
-      check(/^Sin sesión · 1$/.test(header.trim()) && /\b1 sin sesión\b/.test(cruce), `E1 (8.251, ${scheme}): el encabezado y «En el kanban, de a uno» cuentan la columna entera (${header.trim()} · ${cruce.replace(/\s+/g, ' ')})`);
+      check(/^Sin sesión · 0$/.test(header.trim()) && /\b0 sin sesión\b/.test(cruce), `E1 (8.313, ${scheme}): el encabezado y «En el kanban, de a uno» no cuentan la plegada (${header.trim()} · ${cruce.replace(/\s+/g, ' ')})`);
       if (shots) await page.locator('#board').screenshot({ path: path.join(shots, `kanban-${scheme}.png`) });
       await page.close();
 }

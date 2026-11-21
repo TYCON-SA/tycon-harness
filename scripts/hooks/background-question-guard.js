@@ -6,7 +6,9 @@
  *
  *   Claude: PreToolUse de AskUserQuestion y del dictado (mcp__spokenly__ask_user_dictation). Niega si la sesión es de
  *           fondo, la abrió `coordination.js open` (su renglón en `<estado>/coordination/launched.json`) y hay una
- *           coordinadora confirmada por el dueño y viva que no es ella. El texto dice qué mandarle y a quién.
+ *           coordinadora confirmada por el dueño y viva que no es ella. El texto dice qué mandarle y a quién. La pregunta
+ *           queda anotada (coordination.js questionRelay) y sale en el aviso de cada turno de la coordinadora; si la sesión
+ *           repite la misma pregunta pasado `plan_review.coordinator_wait_minutes`, le llega a la persona.
  *
  * Claude: PreToolUse de Bash. En una sesión de fondo (su archivo de Claude Code dice `kind: bg`), niega el comando que
  *           haría que Claude Code le pida permiso a una persona aun sin permisos (lib/bg-permission-shapes.js: un `rm`
@@ -267,7 +269,7 @@ function decidirBash(d, { home, env }) {
 /**
  * Lo que decide el freno: null (pasa) o `{ decision: 'deny', reason }`. `home`, `env` y `arnes` (el árbol con el perfil del equipo) se pasan en las pruebas.
  */
-function decidir(evento, { home = os.homedir(), env = process.env, arnes } = {}) {
+function decidir(evento, { home = os.homedir(), env = process.env, arnes, ahora = Date.now() } = {}) {
   const d = evento && typeof evento === 'object' ? evento : {};
   if (env.TYCON_BG_QUESTION_GUARD === '0') return null;
   if (d.hook_event_name && d.hook_event_name !== 'PreToolUse') return null;
@@ -283,9 +285,19 @@ function decidir(evento, { home = os.homedir(), env = process.env, arnes } = {})
   if (!sid || !/^[\w-]+$/.test(String(sid))) return null;
   const c = coordinadoraDeLaLanzada({ home, sid, env, arnes });
   if (!c) return null;
+  // la coordinadora tiene sus minutos para contestar; si no, la pregunta le llega a la persona y la sesión no queda quieta.
+  // El registro lo lleva este freno: sin poder leerlo o escribirlo, se niega como siempre, y queda anotado
+  let espera = null;
+  try {
+    const r = require('../tools/coordination.js').questionRelay({ home, sesion: sid, a: c.sid, pregunta: textoDe(d.tool_input), ahora });
+    if (r.pasa) return null;
+    espera = r.quedan;
+  } catch (e) { logError(home, `no pude llevar el registro de las preguntas a la coordinadora (${(e && e.message) || e}): negué sin plazo`); }
   const m = SELLO.exec(textoDe(d.tool_input));
   const firma = m ? m[1] : null;
-  return { decision: 'deny', reason: textoDeLaNegativa({ nombre: c.name, sid: c.sid, firma, soloClick: firma ? esSoloClick(home, firma) : false, duda: c.duda }) };
+  const base = textoDeLaNegativa({ nombre: c.name, sid: c.sid, firma, soloClick: firma ? esSoloClick(home, firma) : false, duda: c.duda });
+  const plazo = espera ? ` La coordinadora lo ve en su aviso de cada turno. Si en ${espera} min no te la resuelve, volvé a hacer la misma pregunta con el cuadro: le llega a la persona.` : '';
+  return { decision: 'deny', reason: `${base}${plazo}` };
 }
 
 module.exports = { QUESTION_TOOLS, MESSAGE_TOOL, decidir, textoDeLaNegativa, textoDeLaNegativaDelMensaje, coordinadoraDeLaLanzada, esDeFondo };

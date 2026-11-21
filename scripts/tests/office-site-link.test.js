@@ -2433,3 +2433,18 @@ test('T14 Foto_NoLlevaLasFechas — @story-8.306 @ac-13', () => {
   data.meta.teTocaDesde = { Algo: '2026-06-01T08:00' };
   assert.ok(!JSON.stringify(pick(data, '/home/nadie')).includes('teTocaDesde'), 'al sitio tampoco');
 });
+
+test('T22 Sitio_NoRecibeLasAbiertas @story-8.313 @ac-19: kanban.abiertas no viaja, está en LOCAL_ONLY, y la foto no lleva la ruta de un repo', () => {
+  const { buildOffice } = office();
+  const { pick, LOCAL_ONLY } = fields();
+  const nowMs = Date.parse('2026-06-01T12:00:00Z');
+  const repo = `${USERS_HOME}/SourceCode/acme-historias`;
+  const proyecto = { nombre: 'acme', traidoAt: null, deTuCopia: false, sinLeer: 0, repos: ['github/acme/historias'], remoto: 'github/acme/historias', commit: 'c'.repeat(40), lugar: { repo, ref: 'origin/main', common: `${repo}/.git` }, historias: [], abiertas: [{ id: '1.1', archivo: 'story-1.1.md', estado: 'review' }] };
+  const projectStories = { snap: { at: new Date(nowMs - 60e3).toISOString(), proyectos: [proyecto], sinHistorias: [] }, runs: [], alive: new Set(), stopped: [], coordinator: { sid: 'coord', cwd: repo, remote: 'github/acme/historias' }, remoteOf: () => null, fetchedOf: () => null };
+  const { data } = buildOffice({ wip: { rows: [], details: [], extra: [], free: [], halfway: [], unreadable: [] }, nowMs, projectStories });
+  assert.ok(data.kanban.abiertas && data.kanban.abiertas.principal, 'la foto local la trae');
+  assert.ok(!JSON.stringify(data).includes(repo), 'la foto no lleva la ruta del repo');
+  const sent = pick(data, '/home/nadie');
+  assert.ok(!('abiertas' in sent.kanban), 'no viaja');
+  assert.ok(typeof LOCAL_ONLY['kanban.abiertas'] === 'string' && LOCAL_ONLY['kanban.abiertas'].length > 20, 'dice por qué no viaja');
+});

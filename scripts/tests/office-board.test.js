@@ -1073,3 +1073,270 @@ test('T13 Regresion_FirmasYPreguntasViejas_NoVencen — @story-8.306 @ac-13', ()
   assert.strictEqual(boardTool.sync(sdir, [], { now: NOW, live: [] }).written, false);
   assert.deepStrictEqual({ text: fs.readFileSync(file, 'utf8'), at: fs.statSync(file).mtimeMs }, before);
 });
+
+// ---------- 8.313: las historias abiertas en main, por grupo, el proyecto principal y la hora del dato ----------
+
+const OFFICE_8313 = require(OFFICE);
+const { buildTables } = OFFICE_8313;
+const { execFileSync } = require('child_process');
+const PS_8313 = require(path.join(path.dirname(OFFICE), 'office', 'project-stories.js'));
+const SD_8313 = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+const HOUR_8313 = 3600e3;
+const ymd8313 = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const ab8313 = (id, estado = 'ready-for-dev', extra = {}) => ({ id, archivo: `story-${id}.md`, estado, ...extra });
+const key8313 = (nombre) => `github/acme/${nombre}`;
+/** Un proyecto de la lectura de fondo, con sus abiertas; su lugar es una carpeta de mentira. */
+const proy8313 = (nombre, abiertas, extra = {}) => ({ nombre, traidoAt: atIso(NOW - 5 * HOUR_8313), deTuCopia: false, sinLeer: 0, repos: [key8313(nombre)], remoto: key8313(nombre), commit: 'c'.repeat(40), lugar: { repo: `/r/${nombre}`, ref: 'origin/main', common: `/r/${nombre}/.git` }, historias: [], abiertas, ...extra });
+const snap8313 = (proyectos, at = NOW - 10 * 60e3) => ({ at: atIso(at), proyectos, sinHistorias: [], commitsPropios: { medido: true } });
+// la carpeta de cada repo de mentira es de su proyecto: /r/<nombre> → github/acme/<nombre>
+const remoteOf8313 = (dir) => { const m = /^\/r\/([^/]+)/.exec(String(dir || '')); return m ? key8313(m[1]) : null; };
+const coord8313 = (nombre) => ({ sid: 'coord', cwd: `/r/${nombre}`, remote: key8313(nombre) });
+/** Lo que la foto le pasa a la cuenta: la lectura, las ejecuciones y quién coordina. */
+const open8313 = (snap, more = {}) => OFFICE_8313.openStories({ snap, runs: [], alive: new Set(), stopped: [], sessionStories: [], coordinator: coord8313('acme'), remoteOf: remoteOf8313, fetchedOf: () => null, nowMs: NOW, ...more });
+const nums8313 = (p) => p && { total: p.total, enCurso: p.enCurso, enEspera: p.enEspera, sinComenzar: p.sinComenzar, conParte: p.conParte };
+/** La foto de la oficina con la lectura de fondo y dos filas del tablero sin sesión. */
+const office8313 = (projectStories, filas = []) => buildOffice({
+  wip: wip([]), nowMs: NOW,
+  board: OFFICE_8313.buildBoard({ pendientes: filas }),
+  projectStories: { runs: [], alive: new Set(), stopped: [], coordinator: coord8313('acme'), remoteOf: remoteOf8313, fetchedOf: () => null, ...projectStories },
+}).data;
+const FILAS_8313 = [{ id: 'T-1', titulo: 'Fila uno', estado: 'espera', grupo: 'Hoy', orden: 1 }, { id: 'T-2', titulo: 'Fila dos', estado: 'espera', grupo: 'Hoy', orden: 2 }];
+
+test('T3 Grupos_CadaHistoriaEnUnoYSumanElTotal @story-8.313 @ac-2 @ac-3 — cada camino en su grupo, la suma da el total y conParte cuenta la in-progress sola', () => {
+  const hoy = ymd8313(NOW);
+  const ayer = ymd8313(NOW - 24 * HOUR_8313);
+  const acme = proy8313('acme', [
+    ab8313('3.1', 'in-progress'), ab8313('3.2', 'in-progress'), ab8313('3.3', 'ready-for-dev'),
+    ab8313('3.4', 'review'), ab8313('3.5', 'blocked'), ab8313('3.6', 'ready-for-dev', { pendientes: ['9.9'] }),
+    ab8313('3.7', 'ready-for-dev', { pausa: hoy }), ab8313('3.8', 'ready-for-dev', { pausa: ayer }),
+    ab8313('3.9', 'ready-for-dev'), ab8313('3.10', 'in-progress'),
+  ]);
+  const a = open8313(snap8313([acme]), {
+    runs: [{ archivo: 'story-3.1.md', sessionId: 'viva', activo: true, repoPath: '/r/acme/wt' }],
+    alive: new Set(['viva']),
+    stopped: [{ storyId: '3.2', archivo: 'story-3.2.md', repoPath: '/r/acme' }],
+    sessionStories: [{ id: '3.3', remote: key8313('acme') }],
+  });
+  assert.ok(a.principal, JSON.stringify(a));
+  assert.deepStrictEqual(nums8313(a.principal), { total: 10, enCurso: 3, enEspera: 4, sinComenzar: 3, conParte: 1 });
+  assert.strictEqual(a.principal.enCurso + a.principal.enEspera + a.principal.sinComenzar, a.principal.total);
+  assert.strictEqual(a.principal.total, acme.abiertas.length, 'el total es la cantidad de abiertas');
+  assert.strictEqual(a.principal.nombre, 'acme');
+  assert.strictEqual(a.principal.leidoAt, atIso(NOW - 10 * 60e3));
+  assert.strictEqual(a.principal.commit, 'c'.repeat(40));
+  assert.strictEqual(a.linea, 'Abiertas: 10 · 3 en curso · 4 en espera · 3 sin comenzar');
+  assert.strictEqual(a.principal.detalle, 'Abiertas: 10 · 3 en curso · 4 en espera · 3 sin comenzar (1 con una parte hecha)');
+});
+
+test('T4 Grupos_MarcadorDeSesionMuerta_NoEsEnCurso @story-8.313 @ac-3 — sesión muerta, cierre reciente, la coordinadora y lo de otro repo con el mismo archivo no son «en curso»', () => {
+  const acme = proy8313('acme', [ab8313('4.1'), ab8313('4.2'), ab8313('4.3'), ab8313('4.4'), ab8313('4.5')]);
+  const a = open8313(snap8313([acme]), {
+    runs: [
+      { archivo: 'story-4.1.md', sessionId: 'muerta', activo: true, repoPath: '/r/acme' },
+      { archivo: 'story-4.2.md', sessionId: 'cerro', activo: false, repoPath: '/r/acme' },
+      { archivo: 'story-4.3.md', sessionId: 'coord', activo: true, repoPath: '/r/acme' },
+      { archivo: 'story-4.4.md', sessionId: 'viva', activo: true, repoPath: '/r/otro' },
+    ],
+    alive: new Set(['cerro', 'coord', 'viva']),
+    stopped: [{ storyId: '4.5', archivo: 'story-4.5.md', repoPath: '/r/otro' }],
+  });
+  assert.deepStrictEqual(nums8313(a.principal), { total: 5, enCurso: 0, enEspera: 0, sinComenzar: 5, conParte: 0 });
+  // en la foto, la sesión coordinadora con tarjeta que nombra una historia tampoco cuenta
+  const data = buildOffice({
+    wip: wip([{ session: 'Coordinadora', sid: 'coord', work: 'Story 4.3', extra: { kind: 'pipeline', storyId: '4.3', current: 'implement', steps: STEPS } }]),
+    nowMs: NOW, coordinatorSid: 'coord', coordinatorName: 'Coordinadora',
+    projectStories: { snap: snap8313([acme]), runs: [], alive: new Set(['coord']), stopped: [], coordinator: coord8313('acme'), remoteOf: remoteOf8313, fetchedOf: () => null },
+  }).data;
+  assert.strictEqual(data.kanban.abiertas.principal.enCurso, 0, JSON.stringify(data.kanban.abiertas));
+});
+
+test('T5 Principal_EsElProyectoDeLaCoordinadora @story-8.313 @ac-2 @ac-5 — dos proyectos, la coordinadora en una copia del segundo: office.js --json trae sus números', () => {
+  const { home } = toyHome();
+  const sdir = SD_8313.stateDir(home);
+  // la carpeta de la coordinadora: una copia de trabajo del segundo proyecto, con su remoto (sin red)
+  const copia = fs.mkdtempSync(path.join(os.tmpdir(), 'office-8313-copia-'));
+  const g = (...args) => execFileSync('git', ['-c', 'init.defaultBranch=main', ...args], { cwd: copia, stdio: 'pipe' });
+  g('init', '-q');
+  g('remote', 'add', 'origin', 'https://github.com/acme/dos.git');
+  const key = PS_8313.remoteKey(copia);
+  assert.ok(key, 'el remoto de la copia se reconoce');
+  const now = Date.now();
+  const uno = { ...proy8313('uno', [ab8313('1.1'), ab8313('1.2')]), traidoAt: null };
+  const dos = { ...proy8313('dos', [ab8313('2.1', 'review'), ab8313('2.2'), ab8313('2.3', 'in-progress')]), remoto: key, repos: [key], traidoAt: null };
+  fs.mkdirSync(path.join(sdir, 'office'), { recursive: true });
+  fs.writeFileSync(path.join(sdir, 'office', 'project-stories.json'), JSON.stringify(snap8313([uno, dos], now - 60e3)));
+  fs.writeFileSync(path.join(sdir, 'gates.log'), `${JSON.stringify({ name: 'relay-designation', status: 'ok', sesion: 'coord', via: 'click', ts: atIso(now - HOUR_8313) })}\n`);
+  fs.writeFileSync(path.join(home, '.claude', 'sessions', 'coord.json'), JSON.stringify({ pid: process.pid, sessionId: 'coord', name: 'Coordinadora', status: 'idle', statusUpdatedAt: now, cwd: copia }));
+  const data = JSON.parse(run(home, ['--json', '--now', new Date(now).toISOString()]));
+  const a = data.kanban.abiertas;
+  assert.ok(a && a.principal, JSON.stringify(a));
+  assert.strictEqual(a.principal.nombre, 'dos');
+  assert.deepStrictEqual(nums8313(a.principal), { total: 3, enCurso: 0, enEspera: 1, sinComenzar: 2, conParte: 1 });
+  assert.deepStrictEqual(a.otros.map((p) => [p.nombre, p.total]), [['uno', 2]]);
+  assert.strictEqual(a.linea, 'Abiertas: 3 · 0 en curso · 1 en espera · 2 sin comenzar');
+  assert.ok(!JSON.stringify(a).includes('/r/'), 'ni la ruta de un repo');
+});
+
+test('T6 Otros_VanAparteYNoSeSuman @story-8.313 @ac-6 — el principal cuenta lo suyo; el otro va aparte con sus grupos y su renglón', () => {
+  const a = open8313(snap8313([proy8313('acme', [ab8313('6.1'), ab8313('6.2', 'review'), ab8313('6.3')]), proy8313('beta', [ab8313('7.1', 'blocked'), ab8313('7.2')])]));
+  assert.strictEqual(a.principal.total, 3);
+  assert.strictEqual(a.otros.length, 1);
+  assert.deepStrictEqual(nums8313(a.otros[0]), { total: 2, enCurso: 0, enEspera: 1, sinComenzar: 1, conParte: 0 });
+  assert.strictEqual(a.otros[0].renglon, 'beta: 2 abiertas · 0 en curso · 1 en espera · 1 sin comenzar');
+});
+
+test('T7 SinPrincipal_DiceElMotivo @story-8.313 @ac-13 — sin coordinadora, sin carpeta, repo ajeno y empate: sin principal, todos en otros y la nota', () => {
+  const ps = [proy8313('acme', [ab8313('7.1')]), proy8313('beta', [ab8313('7.2')])];
+  const empate = [proy8313('acme', [ab8313('7.1')]), proy8313('beta', [ab8313('7.2')], { remoto: key8313('acme') })];
+  const casos = [
+    ['sin coordinadora', { coordinator: null }, ps, /no hay coordinadora designada/],
+    ['sin carpeta', { coordinator: { sid: 'coord', cwd: null, remote: null } }, ps, /no sé en qué carpeta trabaja la coordinadora/],
+    ['repo ajeno', { coordinator: coord8313('gamma') }, ps, /no es de ningún proyecto leído/],
+    ['empate', {}, empate, /más de un proyecto/],
+  ];
+  for (const [nombre, more, proyectos, motivo] of casos) {
+    const a = open8313(snap8313(proyectos), more);
+    assert.strictEqual(a.principal, undefined, nombre);
+    assert.strictEqual(a.otros.length, 2, `${nombre}: todos en otros`);
+    assert.match(a.nota, /^Sin proyecto principal: /, nombre);
+    assert.match(a.nota, motivo, nombre);
+    assert.strictEqual(a.linea, a.nota, `${nombre}: la pantalla muestra la nota en lugar del número`);
+  }
+});
+
+test('T8 Abiertas_SinLecturaOVieja_NoDaNumero @story-8.313 @ac-12 — sin archivo, roto, de 61 minutos o de antes del cambio: sin números, con nota', () => {
+  const dir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'office-8313-lectura-'));
+  const sinArchivo = dir();
+  const roto = dir();
+  fs.mkdirSync(path.join(roto, 'office'));
+  fs.writeFileSync(path.join(roto, 'office', 'project-stories.json'), '{ roto');
+  const vieja = dir();
+  fs.mkdirSync(path.join(vieja, 'office'));
+  fs.writeFileSync(path.join(vieja, 'office', 'project-stories.json'), JSON.stringify(snap8313([proy8313('acme', [ab8313('8.1')])], NOW - 61 * 60e3)));
+  for (const [nombre, sd] of [['sin archivo', sinArchivo], ['rota', roto], ['de 61 minutos', vieja]]) {
+    const r = PS_8313.readSnapshot(sd, NOW);
+    const a = open8313(r.snap, { nota: r.nota });
+    assert.strictEqual(a.principal, undefined, nombre);
+    assert.ok(!('total' in a) && !(a.otros || []).length, `${nombre}: sin números`);
+    assert.strictEqual(a.linea, 'Abiertas: sin dato', nombre);
+    assert.strictEqual(a.nota, r.nota, `${nombre}: con el motivo de readSnapshot`);
+  }
+  const antes = snap8313([{ ...proy8313('acme', [ab8313('8.1')]), abiertas: undefined }]);
+  const a = open8313(antes);
+  assert.strictEqual(a.linea, 'Abiertas: sin dato');
+  assert.match(a.nota, /antes del número de abiertas: se relee en el próximo control/);
+  // en pantalla
+  const data = office8313({ snap: null, nota: 'No pude leer los pendientes de tus proyectos' });
+  assert.ok(wallTexts(data).includes('Abiertas: sin dato'), 'la pared lo dice');
+  assert.ok(!wallTexts(data).some((t) => /^Abiertas: \d/.test(t)), 'nunca un número');
+});
+
+test('T11 Pantalla_MuestraElNumeroYSuHora @story-8.313 @ac-4 @ac-11 — pared, detalle y kanban dicen el número y de cuándo es', () => {
+  const snap = snap8313([proy8313('acme', [ab8313('11.1'), ab8313('11.2', 'review')])]);
+  const leido = `Leído a las ${hm(NOW - 10 * 60e3)}`;
+  const con = (fetchedOf, more = {}) => office8313({ snap, fetchedOf, ...more });
+  const linea = 'Abiertas: 2 · 0 en curso · 1 en espera · 1 sin comenzar';
+  const enLasTres = (data, hora) => {
+    const pared = wallTexts(data);
+    assert.ok(pared.includes(linea), `la pared: ${pared.join(' | ')}`);
+    assert.ok(pared.includes(hora), `la pared, la hora: ${pared.join(' | ')}`);
+    const detalle = textOf(openWallPanel(data));
+    assert.ok(detalle.includes(linea) && detalle.includes(hora) && detalle.includes('acme'), `el detalle: ${detalle}`);
+    const kanban = textOf(drawKanban(data).body);
+    assert.ok(kanban.includes(linea) && kanban.includes(hora) && kanban.includes('acme'), `el kanban: ${kanban}`);
+  };
+  enLasTres(con(() => atIso(NOW - 3 * 60e3)), `${leido} · main traído hace 3 min`);
+  enLasTres(con(() => atIso(NOW - 3 * HOUR_8313)), `${leido} · main traído hace 3 h`);
+  // un fetch más nuevo sin releer: se ve en la foto siguiente
+  enLasTres(con(() => atIso(NOW - 60e3)), `${leido} · main traído hace 1 min`);
+  // sin poder leer el FETCH_HEAD, vale el guardado (hace 5 h)
+  enLasTres(con(() => null), `${leido} · main traído hace 5 h`);
+  // sin ninguna de las dos
+  const sinHora = snap8313([proy8313('acme', [ab8313('11.1'), ab8313('11.2', 'review')], { traidoAt: null })]);
+  enLasTres(office8313({ snap: sinHora, fetchedOf: () => null }), `${leido} · no sé cuándo se trajo main`);
+  // leída de la copia
+  const copia = snap8313([proy8313('acme', [ab8313('11.1'), ab8313('11.2', 'review')], { deTuCopia: true, commit: null })]);
+  enLasTres(office8313({ snap: copia, fetchedOf: () => null }), `${leido} · de tu copia`);
+});
+
+test('T12 Detalle_ListaLosOtrosProyectos @story-8.313 @ac-4 @ac-6 @ac-14 — los otros con sus avisos en el detalle; el principal con su parte hecha; la pared no los nombra', () => {
+  const snap = snap8313([
+    proy8313('acme', [ab8313('12.1', 'in-progress'), ab8313('12.2')]),
+    proy8313('beta', [ab8313('13.1')], { sinLeer: 1 }),
+    proy8313('gamma', [ab8313('14.1'), ab8313('14.2')], { deTuCopia: true, commit: null }),
+  ]);
+  const data = office8313({ snap });
+  const detalle = textOf(openWallPanel(data));
+  assert.ok(detalle.includes('(1 con una parte hecha)'), detalle);
+  assert.ok(detalle.includes('Otros proyectos'), detalle);
+  assert.ok(detalle.includes('beta: 1 abiertas · 0 en curso · 0 en espera · 1 sin comenzar · 1 no se pudo leer'), detalle);
+  assert.ok(detalle.includes('gamma: 2 abiertas · 0 en curso · 0 en espera · 2 sin comenzar · de tu copia'), detalle);
+  const pared = wallTexts(data).join(' | ');
+  assert.ok(!/beta|gamma/.test(pared), `la pared no los muestra: ${pared}`);
+  assert.strictEqual(data.kanban.abiertas.principal.total, 2, 'no se suman al principal');
+});
+
+test('T13 SinSesion_NoCuentaLasPlegadas @story-8.313 @ac-7 — 2 filas y 3 historias plegadas: la columna dice 2 en todos lados y la línea plegada 3', () => {
+  const hist = (id) => ({ id, archivo: `story-${id}.md`, titulo: `La historia ${id}`, estado: 'ready-for-dev', prioridad: null, trabajo: null });
+  const acme = proy8313('acme', [ab8313('5.1'), ab8313('5.2'), ab8313('5.3')], { historias: [hist('5.1'), hist('5.2'), hist('5.3')] });
+  const data = office8313({ snap: snap8313([acme]) }, FILAS_8313);
+  const { body } = drawKanban(data);
+  const nodos = all(body, () => true);
+  assert.ok(nodos.some((n) => n.tag === 'h3' && n.textContent === 'Sin sesión · 2'), 'el encabezado');
+  assert.ok(nodos.some((n) => n.tag === 'button' && n.textContent === 'Historias de tus proyectos · 3'), 'la línea plegada');
+  const pared = wallTexts(data);
+  const i = pared.indexOf('Sin sesión');
+  assert.strictEqual(pared[i - 1], '2', `la pared: ${pared.join(' | ')}`);
+  const detalle = all(openWallPanel(data), (n) => n.className === 'cnt').map(textOf);
+  assert.ok(detalle.includes('2Sin sesión'), `el detalle: ${detalle.join(' | ')}`);
+  const t = buildTables({ kanban: data.kanban, nowMs: NOW, sinModelo: true });
+  assert.match(t.pendientes.cruce, /\b2 sin sesión\b/);
+});
+
+test('Regresion_ParedSinPrincipal_ElMotivoEntero @story-8.313 @ac-13 — en la pared, el motivo largo de «Sin proyecto principal» entra en el ancho del panel, sin cortarse', () => {
+  const data = office8313({ snap: snap8313([proy8313('beta', [ab8313('1.1')])]), coordinator: coord8313('gamma') });
+  const motivo = data.kanban.abiertas.linea;
+  assert.match(motivo, /^Sin proyecto principal: el repo de la coordinadora no es de ningún proyecto leído$/);
+  // la pared, con un lienzo que mide: cada letra ocupa lo que dice su tamaño de letra
+  const html = page(data);
+  const fn = (html.match(/function drawPanel\(\)\{[\s\S]*?texPanel\.needsUpdate=true;\}/) || [])[0];
+  const order = (html.match(/function paredEnOrden\(K\)\{.*\}\n/) || [])[0];
+  assert.ok(fn && order, 'la página trae el dibujo de la pared');
+  const lines = [];
+  const state = { font: '26px x' };
+  const px = () => Number((/(\d+)px/.exec(state.font) || [0, 26])[1]);
+  const g = new Proxy({}, {
+    get: (_, k) => (k === 'fillText' ? (t, x) => lines.push({ t: String(t), x, w: String(t).length * px() * 0.55 })
+      : k === 'measureText' ? (t) => ({ width: String(t).length * px() * 0.55 }) : k === 'font' ? state.font : () => {}),
+    set: (_, k, v) => { if (k === 'font') state.font = v; return true; },
+  });
+  new Function('texPanel', 'T', 'KCOL', 'HALF', 'FONT', 'stampOf', `${order}${fn};drawPanel();`)({ userData: { g } }, { kanban: () => data.kanban, meta: () => data.meta }, {}, '#f00', 'x', () => 'sello');
+  const parts = lines.filter((l) => motivo.includes(l.t.trim()) && l.t.trim().length > 3);
+  assert.ok(parts.length, `la pared dice el motivo: ${lines.map((l) => l.t).join(' | ')}`);
+  assert.strictEqual(parts.map((l) => l.t.trim()).join(' '), motivo, 'el motivo entero, aunque vaya en dos renglones');
+  for (const l of parts) assert.ok(l.x + l.w <= 768 - 36, `«${l.t}» entra en el panel (termina en ${Math.round(l.x + l.w)})`);
+});
+
+test('Regresion_PrincipalConNoLeidas_LoDice @story-8.313 @ac-14 — si el proyecto principal tiene historias sin leer, la pared, el detalle y el kanban lo dicen junto al número', () => {
+  const data = office8313({ snap: snap8313([proy8313('acme', [ab8313('9.1'), ab8313('9.2', 'review')], { sinLeer: 2 })]) });
+  assert.strictEqual(data.kanban.abiertas.principal.total, 2, 'las no leídas no entran en el total');
+  const aviso = '2 no se pudieron leer';
+  assert.ok(wallTexts(data).some((t) => t.includes(aviso)), `la pared: ${wallTexts(data).join(' | ')}`);
+  assert.ok(textOf(openWallPanel(data)).includes(aviso), 'el detalle');
+  assert.ok(textOf(drawKanban(data).body).includes(aviso), 'el kanban');
+});
+
+test('T20 Regresion_TarjetasYColumnasIguales @story-8.313 @ac-20 — la misma foto con y sin abiertas: tarjetas, filas «De tus proyectos» y columnas iguales', () => {
+  const hist = (id) => ({ id, archivo: `story-${id}.md`, titulo: `La historia ${id}`, estado: 'ready-for-dev', prioridad: null, trabajo: null });
+  const con = proy8313('acme', [ab8313('20.1'), ab8313('20.2', 'draft')], { historias: [hist('20.1')] });
+  const sin = { ...con };
+  delete sin.abiertas;
+  const a = office8313({ snap: snap8313([con]) }, FILAS_8313);
+  const b = office8313({ snap: snap8313([sin]) }, FILAS_8313);
+  assert.ok(a.kanban.abiertas.principal && !b.kanban.abiertas.principal, 'una trae el número y la otra no');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(a.kanban.columnas)), JSON.parse(JSON.stringify(b.kanban.columnas)));
+  const ta = buildTables({ kanban: a.kanban, nowMs: NOW, sinModelo: true });
+  const tb = buildTables({ kanban: b.kanban, nowMs: NOW, sinModelo: true });
+  assert.deepStrictEqual(ta.pendientes.filas, tb.pendientes.filas);
+  assert.strictEqual(ta.pendientes.cruce, tb.pendientes.cruce);
+});

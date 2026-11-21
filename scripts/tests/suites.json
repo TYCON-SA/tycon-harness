@@ -662,6 +662,12 @@
       "requiere": []
     },
     {
+      "__nota": "una sesión no queda quieta esperando a una coordinadora que no atiende: si la designada no vive, la revisión del plan la lanza la sesión; si vive y no toma el pedido que le anota el arnés en plan_review.coordinator_wait_minutes, también, y la coordinadora lo ve en su aviso. Una revisión suya en curso cuenta como tomada y cada relanzamiento tiene su propio plazo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review-wait.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "lo que se firma sin persona pasa el control previo de su guion: la maqueta (nunca la de la propia sesión), el pendiente (la coordinadora confirmada, sobre un repo de la sesión destino) y lo de rutina que el perfil delega (sólo con una historia de rutina). Los guiones de verdad en una casa de juguete; unos veinte segundos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/approve-without-person.test.js",
@@ -1953,6 +1959,12 @@
       "__nota": "Parte 4 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p4.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.298: la detención del modo autónomo le llega al dueño como un pendiente (firma autonomy-resume); la contesta con su click o su terminal y sólo la toma la sesión detenida con marker.js resume-autonomy; el «No» queda anotado; set-autonomous true, set con otra historia, clear sin firma y clear-session de otra sesión no son salidas. La firma por la terminal se mide con un pty de Python y se dice NO MEDIDA si no hay.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/autonomy-resume.test.js",
       "requiere": []
     },
     {
