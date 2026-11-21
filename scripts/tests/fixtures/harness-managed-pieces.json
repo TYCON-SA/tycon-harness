@@ -110,6 +110,7 @@
     { "kind": "hook", "id": "SessionStart:@tcg:office-message-rule.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": false },
     { "kind": "hook", "id": "SessionStart:@tcg:office-inbox-watch.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": false },
     { "kind": "hook", "id": "Stop:@tcg:office-inbox-watch.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": false },
+    { "kind": "hook", "id": "StopFailure:@tcg:provider-retry.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": false },
     { "kind": "hook", "id": "SessionStart:@tcg:worktree-sweep.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:temp-sweep.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:@tcg:missing-path-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": false },
