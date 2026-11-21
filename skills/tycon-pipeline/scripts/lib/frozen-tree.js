@@ -276,6 +276,7 @@ const SECCION_DE_SEGUIMIENTOS = /^Review Follow-ups \(Advisors\)$/i;
 const SECCION_DE_CRITERIOS = /^Acceptance Criteria\b/i;
 const CAMPO_DE_LA_TANDA = /^(\s+)(status|acs_pending|tasks_pending|tests_pending)\s*:/;
 const MARCA = /\s*`?@runtime-exempt\(.*$/;
+const MARCA_DE_PANTALLA = /\s*`?@(?:sin-)?pantalla\b`?/gi;
 const BLOQUE = /^\s*(```|~~~)/;
 // lo que corta el motivo partido de una marca: un renglón en blanco, sin sangría, otro criterio o elemento, un bloque
 const CORTA_EL_MOTIVO = /^\s*$|^\S|^\s*(\d+\.|[-*+])\s|^\s*(```|~~~)/;
@@ -290,10 +291,13 @@ function sinPapeleoDeLaHistoria(txt) {
   let enFrontmatter = conFrontmatter;
   let enPipelines = false;
   let campoDeLaTanda = null;   // la sangría del campo que se saca, con sus renglones de continuación
+  let enEnlace = false;        // `followed_up_by:`: el enlace a la historia que la sigue, que escribe el arnés
   for (const [i, l] of lineas.entries()) {
     if (enFrontmatter) {
       if (i > 0 && l === '---') { enFrontmatter = false; out.push(l); continue; }
-      if (/^\S/.test(l)) { enPipelines = /^pipelines\s*:/.test(l); campoDeLaTanda = null; }
+      // una lista escrita a la misma sangría que su campo (`- id: …`) sigue siendo del campo
+      if (/^\S/.test(l) && !(enEnlace && /^- /.test(l))) { enPipelines = /^pipelines\s*:/.test(l); campoDeLaTanda = null; enEnlace = /^followed_up_by\s*:/.test(l); }
+      if (enEnlace) continue;
       if (enPipelines) {
         const sangria = l.match(/^(\s*)/)[1].length;
         // su continuación: más sangrada, o una lista escrita a la misma sangría que el campo (también es YAML válido)
@@ -323,6 +327,8 @@ function sinPapeleoDeLaHistoria(txt) {
         // la marca sola en su renglón: el renglón entero es papeleo, y su motivo puede seguir abajo
         if (!sinMarca.trim()) { motivoAbierto = true; continue; }
       }
+      // la marca de pantalla de un criterio (`@sin-pantalla`, `@pantalla`, lib de la matriz) la pone «Probar en vivo»: papeleo
+      sinMarca = sinMarca.replace(MARCA_DE_PANTALLA, '');
     }
     out.push(sinMarca.replace(/^(\s*[-*]\s*)\[[ xX]\]/, '$1[ ]'));
   }
@@ -343,7 +349,8 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
 /**
  * Los archivos que difieren entre dos sellos de un repo: `{ files, papeleo }` o `{ error }`. Papeleo es lo que no cuenta
  * para el ok de guardar (`esPapeleoDeLaHuella`), `tasks/todo.md`, la historia de la corrida (`storyRel`, relativa al
- * repo) cuando sólo cambió su estado, sus tildes, su Change Log, su Dev Agent Record, sus «Cambios de comportamiento» o
+ * repo) cuando sólo cambió su estado, sus tildes, su enlace a la historia que la sigue (`followed_up_by:`), su Change Log, su
+ * Dev Agent Record, sus «Cambios de comportamiento» o
  * su sección de seguimientos, y el `sprint-status.yaml` de la carpeta de la historia cuando sólo cambió el renglón de
  * esa historia (lo pasa a review el cierre). Si el estado del sprint no está en alguno de los dos sellos, o la historia no
  * dice qué número es, cuenta como cambio.

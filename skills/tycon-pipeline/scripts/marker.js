@@ -940,6 +940,25 @@ function vueltaCongeladaComprobada(tipo, quien) {
  * (nunca la del pase) y compara con su sello: los archivos distintos, sin el papeleo, frenan con el comando de la
  * vuelta (`reviewed-tree-mismatch`). Una vuelta sin sello (de antes) no se compara: se dice y queda en gates.log.
  */
+/**
+ * La ruta de `storyAbs` dentro de su repo, si `repo` es otra copia (worktree) de ese mismo repo; si no, null. Se reconoce
+ * por la carpeta git común de los dos.
+ */
+function rutaEnOtraCopia(repo, storyAbs) {
+  const comun = (dir) => {
+    const g = require('child_process').spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', windowsHide: true });
+    if (g.status !== 0) return null;
+    try { return fs.realpathSync(String(g.stdout).trim()); } catch (_e) { return null; }
+  };
+  try {
+    const raiz = require('./lib/reloop-code.js').raizDelRepo(storyAbs);
+    if (!raiz) return null;
+    const a = comun(repo);
+    if (!a || a !== comun(raiz)) return null;
+    return path.relative(raiz, storyAbs);
+  } catch (_e) { return null; }
+}
+
 function comprobarLoRevisado(marker, quien) {
   const ft = require('./lib/frozen-tree.js');
   const { isControlApproval } = require('./lib/story-gate.js');
@@ -971,7 +990,10 @@ function comprobarLoRevisado(marker, quien) {
   for (const r of v.repos) {
     const ahora = ft.seal(r.repo);
     if (ahora.error) frenar(`no pude sellar lo que se guarda para compararlo con lo revisado (${ahora.error}).`);
-    const rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
+    let rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
+    // la historia nombrada en otra copia del mismo repo (la principal, y la corrida en una copia de trabajo): en esta
+    // copia es el mismo archivo, por su ruta dentro del repo
+    if (rel && (rel.startsWith('..') || path.isAbsolute(rel))) rel = rutaEnOtraCopia(r.repo, storyAbs) || rel;
     // lo que trajo main en archivos que la corrida no tocó no es «no revisado»: se separa con el punto en común con main
     // del sello y el de ahora, del mismo repo
     const pm = r.mainBase ? ft.puntoComunConMain(r.repo) : { error: `${path.basename(r.repo)}: la vuelta se selló sin el punto en común con main` };

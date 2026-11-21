@@ -1171,3 +1171,64 @@ test('T34 PrepareCommit_PastTheCap_RestoreToReviewed — sin cuarta vuelta: los 
   const despues = prepararCommit(C);
   assert.doesNotMatch(salida(despues), /BLOQUEADO — (lo que se guarda no es lo revisado|cambió código después de los revisores)/, salida(despues));
 });
+
+// Caso: al abrir una historia de arreglo, el arnés le agrega a la que sigue su enlace `followed_up_by:` en el encabezado;
+// después de la tercera vuelta, ese renglón pedía una cuarta que no existe. Es papeleo, como para la revisión del plan.
+test('T35 StoryPaperwork_FollowedUpBy_IsPaperwork — el enlace a la historia que la sigue; otro campo del encabezado cuenta', () => {
+  const base = ['---', 'story: "9.9"', 'title: "x"', 'status: review', '---', '# h', '', '## Acceptance Criteria', '', '1. algo', ''].join('\n');
+  const conEnlace = base.replace('status: review\n', 'status: review\nfollowed_up_by:\n  - id: "9.10"\n    date: "2026-11-20"\n    summary: "el arreglo"\n');
+  const aLaMisma = base.replace('status: review\n', 'status: review\nfollowed_up_by:\n- id: "9.10"\n  type: "gap-fill"\n');
+  assert.strictEqual(ft().sinPapeleoDeLaHistoria(conEnlace), ft().sinPapeleoDeLaHistoria(base));
+  assert.strictEqual(ft().sinPapeleoDeLaHistoria(aLaMisma), ft().sinPapeleoDeLaHistoria(base));
+  // otro campo del encabezado, o uno que viene después del enlace, sigue contando
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('title: "x"', 'title: "y"')), ft().sinPapeleoDeLaHistoria(base));
+  const despues = conEnlace.replace('---\n# h', 'files_to_modify:\n  - src/a.js\n---\n# h');
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(despues), ft().sinPapeleoDeLaHistoria(base));
+});
+
+// Caso: en un producto con la historia y el código en el mismo repo, la corrida en una copia de trabajo
+// (worktree) y la historia nombrada en la copia principal. Después de la tercera vuelta sólo cambió el papeleo de la
+// historia en la copia (el registro de cambios y la sección de seguimientos, nueva), y el freno la contaba como código.
+test('T36 PrepareCommit_StoryInAnotherCopyOfTheRepo_PaperworkStillPaperwork — la misma historia en otra copia del repo', () => {
+  const base = tmp('ft-copia-');
+  const home = path.join(base, 'home');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.symlinkSync(RAIZ, path.join(home, '.claude', 'agent-skills'));
+  fs.symlinkSync(RAIZ, path.join(home, '.claude', 'tycon-harness'));
+  const historia = ['---', 'story: "9.9"', 'title: "sello"', 'status: ready-for-dev', 'files_to_modify:', '  - src/a.js', '---',
+    '# Story 9.9', '', '## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado.', '', '### Tests', '',
+    '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.caso1` | 1 | unit | x | y |', '',
+    '## Tasks / Subtasks', '', '- [ ] Task 1: hacerlo (AC: 1)', '', '## Change Log', '', '- hoy: escrita', ''].join('\n');
+  const uno = repoDeJuguete('uno', { 'stories/story-9.9-sello.md': historia, 'src/a.js': 'module.exports = 1;\n' });
+  const copia = path.join(base, 'uno--wt-9.9');
+  uno.git('worktree', 'add', '-q', '-b', 'wt/9.9', copia);
+  const enLaPrincipal = path.join(uno.repo, 'stories', 'story-9.9-sello.md');
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-ft36', TYCON_LANE_LLM: '0', TYCON_HOME: '', TYCON_TIME_TRACKING: 'none', TYCON_MUTATION_CHECK: 'off' };
+  for (const k of ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[k];
+  const correr = (script, args) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env, input: '', cwd: copia });
+  const r0 = correr('pipeline.js', ['start', '--story', enLaPrincipal, '--repo', copia, '--brief']);
+  assert.strictEqual(r0.status, 0, salida(r0));
+  const v = correr('pipeline.js', ['advisors', '--story', enLaPrincipal, '--repo', copia, '--files', 'src/a.js', '--iter', '1']);
+  assert.strictEqual(v.status, 0, salida(v));
+  // en la copia: entradas nuevas en el registro y la sección de seguimientos que escribe «Hallazgos», por primera vez
+  const enLaCopia = path.join(copia, 'stories', 'story-9.9-sello.md');
+  fs.writeFileSync(enLaCopia, `${fs.readFileSync(enLaCopia, 'utf8')}- después: revisores, vuelta 1\n${SEGUIMIENTOS}`);
+  let r = correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order']);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // un criterio cambiado en la copia sigue contando
+  fs.writeFileSync(enLaCopia, fs.readFileSync(enLaCopia, 'utf8').replace('**Then** resultado.', '**Then** otro resultado.'));
+  r = correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order']);
+  assert.match(salida(r), MISMATCH, salida(r));
+});
+
+// Caso: después de la tercera vuelta, «Probar en vivo» marcó un criterio con
+// `@sin-pantalla` y pedía una cuarta vuelta. La marca de pantalla de un criterio es papeleo; el texto del criterio, no.
+test('T37 StoryPaperwork_ScreenMarkOnCriterion_IsPaperwork — @sin-pantalla y @pantalla; el texto sigue contando', () => {
+  const base = ['---', 'story: "9.9"', 'status: review', '---', '# h', '', '## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado.', '', '## Tasks', ''].join('\n');
+  for (const marca of [' `@sin-pantalla`', ' @sin-pantalla', ' @pantalla']) {
+    assert.strictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', `resultado.${marca}`)), ft().sinPapeleoDeLaHistoria(base), marca);
+  }
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', 'otro resultado. @sin-pantalla')), ft().sinPapeleoDeLaHistoria(base));
+  // fuera de los criterios, la palabra no se toca
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('## Tasks\n', '## Tasks\n\n- usar @sin-pantalla\n')), ft().sinPapeleoDeLaHistoria(base));
+});
