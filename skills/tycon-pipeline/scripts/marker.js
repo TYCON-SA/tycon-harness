@@ -4633,7 +4633,8 @@ function cmdMarkModelsWarned(keys) {
  */
 function congelarPase(marker, etiqueta, quien) {
   const ft = require('./lib/frozen-tree.js');
-  const rutas = ft.reposDe([resolveStoryPath(marker.storyPath, marker) || marker.storyPath, marker.repoPath]);
+  // el pase mira también el código de los repos hermanos: se sellan con los de la vuelta
+  const rutas = ft.reposDelPase({ story: resolveStoryPath(marker.storyPath, marker) || marker.storyPath, repo: marker.repoPath });
   const congelada = rutas.error ? rutas
     : rutas.repos.length ? ft.sealAndFreeze({ stateDir: STATE_DIR, sid: SID, etiqueta, repos: rutas.repos, tipo: 'pase', story: marker.storyId || null })
       : { repos: [] };
@@ -5003,6 +5004,21 @@ function cmdMarkAdversarialResult(countRaw) {
           console.error(`marker.js mark-adversarial-result BLOQUEADO — ${c.error}. No se anotó nada.`);
           process.exit(2);
         }
+      }
+      // El código de los repos hermanos (los sellados que no son la historia ni el repo de la corrida) no puede haber
+      // cambiado desde el lanzamiento: el pase daría por bueno algo que no miró. Las pruebas propias que este cierre
+      // declara (`--in`) se escriben a propósito después del pase y no cuentan.
+      const principales = ft.reposDe([resolveStoryPath(corrida.storyPath, corrida) || corrida.storyPath, corrida.repoPath]);
+      const hermanos = principales.error ? Object.keys(lanzado.sellos) : Object.keys(lanzado.sellos).filter((r) => !principales.repos.includes(r));
+      const iIn = argv.indexOf('--in');
+      const permitidos = iIn >= 0 ? String(nn(argv[iIn + 1], '')).split(',').map((s) => s.trim()).filter(Boolean) : [];
+      const cambiados = ft.hermanosCambiados({ sellos: lanzado.sellos, hermanos, permitidos });
+      if (cambiados.length) {
+        appendLog('gates.log', { name: 'frozen-sibling', status: 'blocked', quien: 'mark-adversarial-result', repos: cambiados.map((x) => x.repo) });
+        console.error('marker.js mark-adversarial-result BLOQUEADO — el código de un repo hermano cambió después de lanzar el pase: el pase no miró esto.');
+        for (const x of cambiados) console.error(`   · ${path.basename(x.repo)}: ${x.error || x.files.join(', ')}`);
+        console.error('  Relanzá el pase sobre lo de ahora (freeze-adversarial y mark-adversarial-launched --relaunch). No se anotó nada.');
+        process.exit(2);
       }
     }
     const lanz = lanzado ? Date.parse(lanzado.launchedAt) : NaN;

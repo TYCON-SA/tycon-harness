@@ -203,6 +203,56 @@ function reposDe(rutas) {
   return { repos };
 }
 
+/**
+ * Los repos del pase adversarial: los de la vuelta (la historia y el repo del código) más cada repo hermano declarado
+ * (`.tycon/advisors.yaml → evidence.companion_repos`, con la misma lista que usa el portón de pruebas). `{ repos, hermanos }`
+ * o `{ error }`: una configuración que no se deja leer no es «sin hermanos».
+ */
+function reposDelPase({ story, repo }) {
+  const base = reposDe([story, repo]);
+  if (base.error) return base;
+  let hermanos;
+  try {
+    // un hermano declarado que no está en disco, o un bloque `evidence:` del que no sale ninguno, no se puede sellar
+    const { parseEvidenceConfig } = require('./evidence-config.js');
+    for (const r of base.repos) {
+      const cfg = parseEvidenceConfig(r);
+      if (cfg.missing.length) return { error: `${r} declara repos hermanos que no están en disco: ${cfg.missing.join(', ')}` };
+      if (cfg.blockPresent && !cfg.roots.length && !cfg.fePaths.length) return { error: `${r} tiene el bloque evidence: y no pude leer de él ningún repo hermano` };
+    }
+    hermanos = require('./companion-repos.js').companionRoots(repo, story || null);
+  } catch (e) {
+    return { error: `no pude leer los repos hermanos de ${repo}: ${unaLinea(e.message)}` };
+  }
+  const todos = reposDe([...base.repos, ...hermanos]);
+  if (todos.error) return todos;
+  return { repos: todos.repos, hermanos: todos.repos.filter((r) => !base.repos.includes(r)) };
+}
+
+/**
+ * ¿Cambió el código de algún hermano desde que se lanzó el pase? Se vuelve a sellar cada hermano de la carpeta viva y se
+ * compara con su sello del lanzamiento. `permitidos`: las pruebas propias que el cierre declara (`--own --in`), escritas
+ * a propósito después del pase; no cuentan. Devuelve `[{ repo, files }]` o `[{ repo, error }]` por cada hermano que no se
+ * puede dar por igual; `[]` si todos siguen iguales.
+ */
+function hermanosCambiados({ sellos, hermanos, permitidos = [] }) {
+  const out = [];
+  for (const repo of hermanos || []) {
+    const tree = sellos && sellos[repo];
+    if (!tree) { out.push({ repo, error: `el lanzamiento no trae el sello de ${repo}` }); continue; }
+    const ahora = seal(repo);
+    if (ahora.error) { out.push({ repo, error: ahora.error }); continue; }
+    if (ahora.tree === tree) continue;
+    const c = changed(repo, tree, ahora.tree, {});
+    if (c.error) { out.push({ repo, error: c.error }); continue; }
+    const raiz = real(repo);
+    const libres = new Set(permitidos.map((p) => real(path.resolve(repo, p))));
+    const files = [...c.files, ...(c.papeleo || [])].filter((f) => !libres.has(path.join(raiz, f))).sort();
+    if (files.length) out.push({ repo, files });
+  }
+  return out;
+}
+
 // El registro de las vueltas congeladas de una sesión, junto a sus copias: se borra con ellas.
 const registroDeVueltas = (stateDir, sid) => path.join(raizDeCopias(stateDir), seguro(sid), 'vueltas.jsonl');
 
@@ -552,7 +602,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
-  seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
+  seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
   contenidoDelSello, difiereSoloEnComentarios, vueltaCerradaDeLosRevisores, comentariosMovidosDesdeLaVuelta,
 };
 
