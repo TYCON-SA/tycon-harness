@@ -716,6 +716,12 @@
       "requiere": []
     },
     {
+      "__nota": "dónde escribe un unzip para el freno de guardar: listar o mandar a la salida no escribe, y extraer escribe en la carpeta de -d o en la del shell.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/save-brake-archive.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el cambio a mano del estado de una historia lo ve el freno en cada tanda del bloque pipelines (la forma de lista y la de mapa), no sólo en la última.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-transition.test.js",

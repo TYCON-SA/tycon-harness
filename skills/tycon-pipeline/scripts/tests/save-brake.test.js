@@ -1772,26 +1772,3 @@ test('SaveBrake_Chdir_Sigue_YFallaDeGitVaAFallas @story-8.282 @ac-15 @ac-16', (t
   assert.ok(quieto.cs.some((c) => c.opaco));
   assert.deepStrictEqual(quieto.dudas, []);
 });
-
-// 🔴 Falla con: un `unzip` que sólo lista (`-l`, `-Z1`, `-t`) o que manda a la salida (`-p`), leído como si escribiera en
-// la carpeta del commit: el freno cuenta la carpeta entera como cambiada y frena un guardado que no cambió nada. Y con
-// `-d`, lo que escribe es la carpeta de `-d`, no la del shell.
-test('SaveBrake_UnzipQueNoEscribe_NoCuenta: listar no escribe, y extraer escribe donde dice -d', (t) => {
-  const h = home(t);
-  const a = repoConOrigin(t);
-  const escritos = (cmd) => (brake().comandosQueGuardan(cmd, a, h).find((c) => c.tipo === 'commit') || {}).escritos;
-  for (const lista of ['unzip -l /tmp/x.zip', 'unzip -Z1 /tmp/x.zip', 'unzip -t /tmp/x.zip', 'unzip -p /tmp/x.zip a.txt', 'unzip -qql /tmp/x.zip']) {
-    assert.deepStrictEqual(escritos(`${lista} && git commit -m x`), [], `«${lista}» no escribe`);
-  }
-  const otra = tmp(t, 'unzip-destino-');
-  assert.deepStrictEqual(escritos(`unzip -o /tmp/x.zip -d ${otra} && git commit -m x`), [otra], 'con -d, escribe en esa carpeta');
-  assert.deepStrictEqual(escritos(`unzip -o /tmp/x.zip -d${otra} && git commit -m x`), [otra], 'con -d pegado, igual');
-  // extraer en la carpeta del shell: la carpeta, como antes
-  assert.deepStrictEqual(escritos('unzip -o /tmp/x.zip && git commit -m x'), [a], 'sin -d, la carpeta del shell');
-  // las letras del valor pegado a -d o a -P no son banderas: «-dout» extrae en «out» aunque traiga una t
-  for (const d of ['out', 'tmp', 'lib', 'vendor']) {
-    assert.deepStrictEqual(escritos(`unzip -o /tmp/x.zip -d${d} && git commit -m x`), [path.join(a, d)], `-d${d} extrae en ${d}`);
-    assert.deepStrictEqual(escritos(`unzip -qd${d} /tmp/x.zip && git commit -m x`), [path.join(a, d)], `-qd${d}, igual`);
-  }
-  assert.deepStrictEqual(escritos('unzip -Pclavetl /tmp/x.zip && git commit -m x'), [a], 'la clave de -P no es una bandera de listar');
-});
