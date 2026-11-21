@@ -1,5 +1,5 @@
 'use strict';
-// office-page-english.test.js — the office page also in English (T-117, first part): the fixed texts of the page (titles,
+// office-page-english.test.js — the office page also in English (T-117, first and second part): the fixed texts of the page (titles,
 // buttons, columns, the page's own notices) come out in the language of whoever looks. On the site, the language of the
 // page the site built; on the local office and the fixed photo, the browser's. The texts the photo builds (states, notes,
 // topics) stay in Spanish until the second part.
@@ -102,7 +102,7 @@ test('T8 Translate_PhrasesBuiltByParts — las frases armadas por partes salen e
     'Las otras 4': 'The other 4',
     'y 2 mensajes más': 'and 2 more message(s)',
     'Ver los 7': 'See all 7',
-    'lun 10:40 · se pasó de la hora': 'Mon 10:40 · se pasó de la hora',
+    'lun 10:40 · se pasó de la hora': 'Mon 10:40 · past its time',
     'Ctrl + rueda para acercar': 'Ctrl + wheel to zoom',
     'Y 2 sesión(es) más: están en las tarjetas de abajo.': 'And 2 more session(s): they are in the cards below.',
     'Se cortó la conexión con el sitio. Lo que ves es lo último que llegó; vuelvo a intentar en 4 s.': 'The connection with the site was cut. What you see is the last that arrived; trying again in 4 s.',
@@ -137,4 +137,62 @@ test('T11 Translate_WhatAPhraseCaptures — lo que captura una frase también se
   assert.strictEqual(traducir('Inactiva: sin novedades desde las 10:40.'), 'Inactive: no news since 10:40.');
   assert.strictEqual(traducir('No se pudo quitar: la oficina no contestó'), 'Could not remove: the office did not answer');
   assert.strictEqual(traducir('Agrandar la oficina de mac-mini'), 'Enlarge the office of mac-mini', 'un dato que no conoce queda igual');
+});
+
+// Segunda parte (T-117): lo que arma la foto también sale en inglés — columnas, tablas, grupos, horas y lo que hace cada sesión.
+const OFFICE_JS = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office.js'), 'utf8');
+const WIP_JS = fs.readFileSync(path.join(__dirname, '..', 'tools', 'work-in-progress.js'), 'utf8');
+
+test('T12 PhotoWords_HaveTheirEnglish — cada columna, tabla, grupo y frase fija de la foto tiene su versión en inglés', () => {
+  const { EN } = block();
+  const tablas = /const TABLES = \{([\s\S]*?)\n\};/.exec(OFFICE_JS)[1];
+  const palabras = new Set([...tablas.matchAll(/'([^']+)'/g)].map((m) => m[1]).filter((w) => /[A-ZÁÉÍÓÚ]/.test(w[0])));
+  for (const decl of ['COLUMN_WORD', 'BOARD_GROUPS', 'KANBAN_COLUMNS']) {
+    const cuerpo = new RegExp(`const ${decl} = ([^;]+);`).exec(OFFICE_JS)[1];
+    for (const m of cuerpo.matchAll(/'([^']+)'/g)) if (/[A-ZÁÉÍÓÚ]/.test(m[1][0])) palabras.add(m[1]);
+  }
+  palabras.add(/const OVERDUE_HOUR = '([^']+)'/.exec(WIP_JS)[1]);
+  palabras.add(/const SAVE_ASK = '([^']+)'/.exec(WIP_JS)[1]);
+  for (const m of OFFICE_JS.matchAll(/haciendo: '([^']+)'/g)) palabras.add(m[1]);
+  const faltan = [...palabras].filter((w) => !EN[w]);
+  assert.deepStrictEqual(faltan, []);
+});
+
+test('T13 Translate_PhotoPhrases — las frases con datos que arma la foto salen en inglés', () => {
+  const { traducir } = block({ source: 'site', lang: 'en' });
+  const casos = {
+    'lun 10:40 · +1 h 20 tarde': 'Mon 10:40 · +1 h 20 late',
+    'mar 09:00 · 35 min antes': 'Tue 09:00 · 35 min early',
+    'se pasó de la hora · sin novedades desde las 10:40': 'past its time · no news since 10:40',
+    'espera 3 tareas de fondo': 'waits for 3 background tasks',
+    '2 en curso · 1 en espera · 4 sin comenzar': '2 in progress · 1 waiting · 4 not started',
+    'Va por el paso «Correr pruebas».': 'On the step «Correr pruebas».',
+    'Tablero escrito a las 10:00 (vieja)': 'Board written at 10:00 (old)',
+    'Aprobar el plan: La historia (Alfa)': 'Approve the plan: La historia (Alfa)',
+    'Terminó la story 7.1: falta cerrarla.': 'Finished story 7.1: it still has to be closed.',
+  };
+  for (const [es, en] of Object.entries(casos)) assert.strictEqual(traducir(es), en, es);
+});
+
+test('T14 BoardNote_NotTranslated — la nota de una tarjeta la escribe una persona: va marcada', () => {
+  assert.ok(CODE.includes('v===i.nota?Object.assign(el("span","n",v),{translate:false})'));
+});
+
+// Pase de la segunda parte (21/11): la nota se traducía en el detalle y en el panel; la cuenta de agentes salía mezclada; y
+// las frases que llevan el título de una historia traducían el título.
+test('T15 PhotoPhrases_AfterThePass — la nota en todas sus vistas, los agentes en sus tres formas y el título adentro de una frase', () => {
+  assert.ok(CODE.includes('fila("Nota",i.nota?Object.assign(el("span",null,i.nota),{translate:false}):i.nota)'), 'la nota en el detalle');
+  assert.ok(CODE.includes('li.append(Object.assign(mk("span","m",r.nota),{translate:false}))'), 'la nota en el panel');
+  const { traducir } = block({ source: 'site', lang: 'en' });
+  const casos = {
+    '1 agente trabajando': '1 agent working',
+    '3 agentes revisando': '3 agents reviewing',
+    'Unos 4 agentes trabajando': 'About 4 agents working',
+    'Aprobar el plan: Historia clínica del alta (s)': 'Approve the plan: Historia clínica del alta (s)',
+    'Firma: Hoy': 'Signature: Hoy',
+    'Abrir el pull request: Pase adversarial': 'Open the pull request: Pase adversarial',
+    'Historia 8.3': 'Story 8.3',
+    'Historia clínica': 'Historia clínica',
+  };
+  for (const [es, en] of Object.entries(casos)) assert.strictEqual(traducir(es), en, es);
 });
