@@ -319,6 +319,13 @@ test('T13 SoloLee_ConLaPalabraMerge_NoFrena — y lo que encola o mergea sigue f
     ['s=$(gh api graphql -f query=\'mutation{enqueuePullRequest(input:{pullRequestId:"PR_afuera"}){clientMutationId}}\' --jq .data)', [{ id: 'PR_afuera' }]],
     ['gh api graphql -f query=\'mutation{enqueuePullRequest(input:{pullRequestId:"PR_afuera"}){mergeQueueEntry{id}}}\' --jq .data.enqueuePullRequest', [{ id: 'PR_afuera' }]],
   ]) assert.deepStrictEqual(leer(cmd).map(pedido), esperado, cmd);
+  // el pase adversarial: lo que lanza otro programa, o se llena al correr, no cuenta como leído; y una consulta a la API
+  // que escribe o lee un archivo tampoco
+  for (const cmd of ['cat n | xargs -I{} gh api -X PUT repos/acme/arnes/pulls/{}/merge', 'xargs -I{} gh pr {} 5 -R acme/arnes --merge <<< merge',
+    'x=$(gh api repos/acme/arnes/pulls/5/merge --input cuerpo.json)', 'timeout 30 gh api graphql -F query=@merge.graphql',
+    'x=$(timeout 30 gh api -X PUT repos/acme/arnes/pulls/5/merge)', 's=$(gh pr view 5 --json mergedAt | xargs gh pr merge 5 -R acme/arnes)']) {
+    assert.ok(leer(cmd).length > 0, `${cmd}: tendría que frenar o nombrar el pedido`);
+  }
   // con el verbo armado por la terminal, no se sabe si mergea: frena
   for (const cmd of ['y=$(gh pr $V 1320 -R acme/arnes --json mergedAt)', 'gh pr $V 1320 -R acme/arnes --json mergedAt']) {
     const l = leer(cmd);

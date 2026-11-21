@@ -39,6 +39,8 @@ const DIRECCION = /^https?:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)\/?$/
 // la red gruesa: un texto que nombra una forma, aunque el lector no la encuentre entera
 const EN_TEXTO = /merge|enqueuePullRequest/i;
 const ESCRIBE = /^(put|post|patch|delete)$/i;
+// los verbos de pedidos que sólo leen: la red gruesa no cuenta la palabra «merge» de su --json o su --jq
+const VERBOS_QUE_LEEN = new Set(['view', 'list', 'status', 'checks', 'diff']);
 const MERGE_CON_VALOR = new Set(['--subject', '-t', '--body', '-b', '--body-file', '-F', '--match-head-commit', '--author-email', '-A', '--repo', '-R']);
 const API_CAMPO = new Set(['-f', '--raw-field', '-F', '--field']);
 const TIEMPO_GH_MS = 6000;
@@ -165,11 +167,25 @@ function leer(comando) {
   if (!out.length && !/^\s*(echo|printf|grep|rg|git)\b/.test(cmd)) {
     // un comando de pedidos con un verbo literal que no es merge, o una consulta a la API escrita entera que no encola,
     // ya se leyó: la palabra «merge» en su --json o su --jq es un campo, no un merge
+    // Sólo por lista: lo que lanza otro programa (`xargs -I{}`, `parallel`, `timeout`) o trae un `{}` que se llena al
+    // correr nunca cuenta como leído
     const yaLeido = (c) => {
       const ps = c.palabras || [];
+      if (c.porOtroPrograma || c.loLanzaOtro || ps.some((p) => /\{\}/.test(p.texto))) return false;
       const verbo = c.verbo || c.verboTrasOpciones;
-      if (c.grupo === 'pr') return !!(ps[1] && ps[1].literal && verbo && verbo !== 'merge');
-      return c.grupo === 'api' && ps.every((p) => p.literal) && deApi(ps, c, cmd) === null;
+      // el verbo escrito tal cual; lo que va después (el número en una variable) no lo cambia
+      if (c.grupo === 'pr') return !!(ps[1] && ps[1].literal) && VERBOS_QUE_LEEN.has(verbo);
+      if (c.grupo !== 'api' || ps.some((p) => !p.literal)) return false;
+      // una consulta a la API que lee: sin método que escriba, sin campos ni archivo, y con una ruta que no es de merge
+      const textos = ps.map((p) => p.texto);
+      for (let i = 0; i < textos.length; i++) {
+        const t = textos[i];
+        const metodo = t === '-X' || t === '--method' ? textos[i + 1] : /^-X./.test(t) ? t.slice(2) : /^--method=/.test(t) ? t.slice(9) : null;
+        if (metodo !== null && !/^GET$/i.test(metodo || '')) return false;
+        if (API_CAMPO.has(t) || /^(-[fF].|--(raw-)?field=|--input)/.test(t)) return false;
+      }
+      const ruta = textos.slice(1).find((t) => !/^-/.test(t));
+      return !!ruta && !/merge|graphql/i.test(ruta);
     };
     const nombra = gh.comandosGh(cmd, 0, {}).some((c) => !yaLeido(c) && (c.grupo === null || c.enSustitucion || (c.porOtroPrograma && !SOLO_NOMBRA.has(nombreDe(c.lanzadoPor)))));
     if (nombra) out.push({ ilegible: 'el comando nombra un merge que este freno no lee entero: escribilo en su forma exacta, solo' });
