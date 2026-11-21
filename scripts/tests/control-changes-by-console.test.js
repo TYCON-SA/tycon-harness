@@ -368,9 +368,9 @@ test('Constancias_TextoEntreComillas_NoEsUnComando', () => {
     'desc="x > .tycon/control-changes.jsonl"',
     "echo 'cp /tmp/x.json .github/control-changes/ > .tycon/control-changes.jsonl'",
     "echo $'it\\'s > .tycon/control-changes.jsonl'",
-    "az repos pr create --title t --description 'git checkout main -- .tycon/control-changes.jsonl' --source-branch x --target-branch dev",
+    "printf '%s\\n' 'git checkout main -- .tycon/control-changes.jsonl' > /tmp/nota.md",
     // nombrar una variable como argumento adentro de una sustitución no la corre
-    "msg='cp /tmp/x.json .github/control-changes/'; git commit -m \"$(printf '%s' \"$msg\")\"",
+    "msg='cp /tmp/x.json .github/control-changes/'; echo \"$(printf '%s' \"$msg\")\" > /tmp/nota.md",
   ];
   for (const c of pasan) {
     const r = correr(c);
@@ -411,4 +411,8 @@ test('Constancias_TextoQueSeCorre_SeSigueMirando', () => {
     assert.ok(r && r.block, `pasó: ${c}`);
     assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
   }
+  // la descripción citada en la línea de `gh` frena (gh puede correr un texto), y el cartel dice cómo salir
+  const desc = correr("gh pr create --title t --body 'ejemplo: echo x > .tycon/control-changes.jsonl'");
+  assert.ok(desc && desc.block, 'la descripción citada en la línea de gh pasó');
+  assert.match(desc.block, /--body-file/, desc.block);
 });
