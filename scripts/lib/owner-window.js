@@ -773,6 +773,29 @@ function corridaDe(casa, destino) {
 const formaCorta = (comando) => require('./owner-approvals.js').sinRutas(String(comando == null ? '' : comando).replace(/\s+/g, ' ').trim());
 
 /**
+ * Lo que dice el cuadro de saltear la cola, según lo que hace el comando (lib/ci-bypass.js): `{ que, siSaleMal }`, o
+ * null si no se lee (el texto del catálogo). Mergear salteando la cola o las políticas, o darse el permiso de hacerlo,
+ * lleva la alarma; cambiar las reglas o una política de la rama dice eso, y que lo que pase depende de lo que cambie.
+ * Con una forma de cada clase en el comando, manda la alarma. La firma es la misma: una vez por comando, del dueño.
+ */
+const SALTEA = { que: 'mergear salteando la cola y la CI de main', siSaleMal: 'el cambio entra a main sin la cola ni la CI, y lo que la CI frenaba llega a main' };
+function textoDeSaltearLaCola(comando) {
+  let hallazgos;
+  try { hallazgos = require('./ci-bypass.js').leer(String(comando || '')).filter((h) => h.legible); } catch (_) { return null; }
+  if (!hallazgos.length) return null;
+  const cambia = (h) => h.forma === 'api-rules' || (h.forma === 'az-bypass' && /^cambiar o borrar una política/.test(h.motivo));
+  if (!hallazgos.every(cambia)) {
+    // darse el permiso de saltear, o escribir sobre un pedido o una política por la API, no es mergear: su motivo
+    const solo = hallazgos.every((h) => h.forma === 'admin-merge' || h.forma === 'api-merge') ? SALTEA.que : null;
+    return { que: solo || [...new Set(hallazgos.filter((h) => !cambia(h)).map((h) => h.motivo))].join('; '), siSaleMal: SALTEA.siSaleMal };
+  }
+  const que = hallazgos.some((h) => h.forma === 'api-rules')
+    ? 'cambiar las reglas o la protección de la rama (por ejemplo, la configuración de la cola de merge)'
+    : 'cambiar o borrar una política de la rama';
+  return { que, siSaleMal: 'la rama queda con las reglas que deja el comando: si sacan un requisito (una prueba obligatoria, la cola), lo que la CI frenaba puede llegar a main' };
+}
+
+/**
  * «Qué hace» de las firmas sin fuente propia (signature-sources.js): la frase del catálogo y el comando en su forma corta
  * (`{ linea, detalle }`; lo entero va al detalle del cuadro). La designación y `sign-file` tienen su texto propio.
  */
@@ -796,7 +819,9 @@ function detalleDe(id, comando, palabras, cwd, casa) {
     return { linea: `sobre el archivo ${path.basename(real || palabras[3])}`, detalle: [`El archivo: ${real}`] };
   }
   const s = firmaDe(id);
-  return { linea: `${s ? `${s.approves}; ` : ''}el comando: ${formaCorta(comando)}`, detalle: [] };
+  const propio = id === MERGE_BYPASS ? textoDeSaltearLaCola(comando) : null;
+  const que = propio ? propio.que : s && s.approves;
+  return { linea: `${que ? `${que}; ` : ''}el comando: ${formaCorta(comando)}`, detalle: [] };
 }
 
 /**
@@ -991,8 +1016,9 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   }
   // la huella ata el click a lo que se mostró: el pedido y la fuente de la pregunta
   const huella = sha256(`${delPedido}\0${partes.fuente || ''}`).slice(0, 8);
-  const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
-    completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
+  const saltear = firma === MERGE_BYPASS ? textoDeSaltearLaCola(comando) : null;
+  const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || (saltear && saltear.que) || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
+    completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: (saltear && saltear.siSaleMal) || s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
     // sólo la fuente que lee la explicación del cambio la trae (null si la leyó y no hay): las demás, el cuadro de siempre
     ...(partes.explica !== undefined ? { explica: partes.explica } : {}),
     comando: comandoDelDetalle(sinDestino && [base(sinDestino[0]), ...sinDestino.slice(1)], texto) });

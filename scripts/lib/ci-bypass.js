@@ -159,7 +159,7 @@ function deApi(ps) {
     if (otraArmada) return escondido('una palabra de `gh api graphql` la arma la terminal: escribila tal cual', 'api-merge');
     const textos = valores.map((v) => v.texto).join('\n');
     if (MUTACION_MERGE.test(textos)) return legible('api-merge', 'mergear o mover una rama por la API saltea la cola y la CI de main');
-    if (MUTACION_REGLAS.test(textos)) return legible('api-rules', 'cambiar las reglas o la protección de una rama por la API saltea la CI de main');
+    if (MUTACION_REGLAS.test(textos)) return legible('api-rules', 'cambiar las reglas o la protección de una rama por la API: si sacan un requisito, la CI deja de frenar');
     // la consulta que no se lee: armada por la terminal, leída de un archivo o por la entrada. Los otros campos son
     // variables de GraphQL: no vuelven una lectura en una mutación
     const ilegible = entrada !== null || valores.some((v) => {
@@ -180,7 +180,7 @@ function deApi(ps) {
   // uno nuevo deja saltear vale sólo para él. Cambiar o borrar uno (PUT, PATCH, DELETE a su número) sí puede aflojar.
   const post = metodo ? /^post$/i.test(metodo) : (campos || entrada !== null);
   if (post && RUTA_REGLAS_NUEVA.test(r)) return null;
-  if (RUTA_REGLAS.test(r)) return legible('api-rules', 'cambiar las reglas o la protección de una rama por la API saltea la CI de main');
+  if (RUTA_REGLAS.test(r)) return legible('api-rules', 'cambiar las reglas o la protección de una rama por la API: si sacan un requisito, la CI deja de frenar');
   // mover una rama es PATCH; crearla (POST) o borrarla (DELETE) no hace entrar nada a main
   if (/^patch$/i.test(metodo || '')) return legible('api-merge', 'mover una rama por la API saltea la cola y la CI de main');
   return null;

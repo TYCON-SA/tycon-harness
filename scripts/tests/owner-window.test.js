@@ -4595,3 +4595,26 @@ test('T11 Firmar_RemoteControlSegunLaVia @story-8.304 @ac-7 @ac-8', (t) => {
     casaDeCuenta: () => casa, anotar: () => {}, appendSignature: (o) => { anotados.push(o.remoteControl); return { ok: true }; } });
   assert.deepStrictEqual(anotados, [true]);
 });
+
+// 🔴 Falla con: el cuadro de la firma de saltear la cola dice «mergear salteando la cola y la CI, o aflojar las
+// políticas… lo que la CI frenaba llega a main» también ante un cambio de las reglas que no saltea nada (la cola pasó a
+// 2 a la vez), y el dueño firma creyendo que la CI se saltea
+test('MergeBypass_CuadroDiceLoQueHaceElComando: cambiar las reglas no se presenta como saltear la CI; mergear con --admin, sí', (t) => {
+  const cuadro = (comando) => ow.cuadroPara({ firma: 'escape:merge-bypass', comando, palabras: null, destino: 'ses-a', sesion: 'ses-a', cwd: os.tmpdir(), casa: casaNueva(t) });
+  const reglas = cuadro('gh api -X PUT repos/acme/arnes/rulesets/25200095 --input reglas.json');
+  assert.match(reglas.pregunta, /cambiar las reglas o la protección de la rama/, reglas.pregunta);
+  assert.match(reglas.pregunta, /cola de merge/, reglas.pregunta);
+  assert.doesNotMatch(reglas.pregunta, /salteando la cola|lo que la CI frenaba llega a main/, reglas.pregunta);
+  const politica = cuadro('az repos policy build update --id 4 --enabled true');
+  assert.match(politica.pregunta, /cambiar o borrar una política de la rama/, politica.pregunta);
+  assert.doesNotMatch(politica.pregunta, /salteando la cola/, politica.pregunta);
+  // lo que de verdad saltea sigue con la alarma
+  const admin = cuadro('gh pr merge 12 --admin --merge');
+  assert.match(admin.pregunta, /salteando la cola y la CI de main/, admin.pregunta);
+  assert.match(admin.pregunta, /lo que la CI frenaba llega a main/, admin.pregunta);
+  const saltea = cuadro('az repos pr update --id 7 --bypass-policy true');
+  assert.match(saltea.pregunta, /lo que la CI frenaba llega a main/, saltea.pregunta);
+  // una forma de cada clase en el mismo comando: manda la alarma
+  const ambas = cuadro('gh api -X PUT repos/acme/arnes/rulesets/1 -f a=b && gh pr merge 3 --admin');
+  assert.match(ambas.pregunta, /lo que la CI frenaba llega a main/, ambas.pregunta);
+});
