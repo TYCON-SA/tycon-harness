@@ -54,6 +54,7 @@ const { writeAtomic, paths: statePaths } = require('./state');
 const M = require('./managed');
 const PD = require('./plugin-dirs.js');
 const RP = require('./read-permissions.js');
+const DP = require('./deny-permissions.js');
 const SL = require('./startup-line');
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -327,6 +328,11 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
           // lista, y sin nada en permissions, también
           if (RP.isRuleId(piece.id)) {
             if (RP.removeRule(d.data, RP.ruleOf(piece.id))) { d.dirty = true; out.removed.push(piece); } else out.absent.push(piece);
+            break;
+          }
+          // una regla deny del arnés: lo mismo en permissions.deny (las del dev quedan)
+          if (DP.isRuleId(piece.id)) {
+            if (DP.removeRule(d.data, DP.ruleOf(piece.id))) { d.dirty = true; out.removed.push(piece); } else out.absent.push(piece);
             break;
           }
           const cur = getPath(d.data, piece.id);

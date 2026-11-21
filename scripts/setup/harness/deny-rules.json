@@ -1,0 +1,18 @@
+{
+  "$comentario": "Las reglas deny del arnés (permissions.deny de Claude Code): sólo lo que nunca necesita la salida de emergencia del freno de mano. Cada regla es la forma exacta, sin comodín: un * después de / frenaría también rm -rf /tmp/x. El freno de mano (scripts/hooks/safety-guard-pre.sh) sigue como segunda red y frena cada una con el mismo id (deny-permissions.test.js lo comprueba). Quedan sólo en el freno, con su emergencia: curl|bash (Claude Code parte el comando en el «|», y la regla tendría que frenar «bash» solo) y el borrado de una base entera (SQL-C1: se autoriza para recrear una base de desarrollo, y va adentro de un cliente de SQL sin forma fija).",
+  "flags": ["-rf", "-fr", "-Rf", "-rF", "-fR", "-RF", "-FR", "-r -f", "-f -r", "-R -f", "-f -R"],
+  "reglas": [
+    {
+      "id": "FS-C2",
+      "que": "borrar la raíz del disco",
+      "porque": "ninguna tarea pide borrar el disco entero: no hay nada que la emergencia tenga que dejar pasar",
+      "destinos": ["/"]
+    },
+    {
+      "id": "FS-C3",
+      "que": "borrar la carpeta personal entera",
+      "porque": "ninguna tarea pide borrar la carpeta personal entera; limpiar algo de adentro se nombra (~/.cache/x) y esto no lo frena",
+      "destinos": ["~", "~/", "$HOME", "$HOME/"]
+    }
+  ]
+}

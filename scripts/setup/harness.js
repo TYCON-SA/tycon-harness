@@ -957,6 +957,11 @@ function sharedPlan(ctx, tree) {
       const RP = mod('read-permissions');
       for (const rule of RP.plannedRules({ home: ctx.home, tree, platform: ctx.platform })) out.push({ kind: 'setting', where: file, id: RP.pieceId(rule), action: RP.hasRule(s, rule) ? 'keep' : 'add' });
     }
+    // las reglas deny del arnés (borrar la raíz o la carpeta personal entera): en el perfil completo
+    if (withSettings && ctx.env.TYCON_NO_DENY_RULES !== '1') {
+      const DP = mod('deny-permissions');
+      for (const rule of DP.ourRules()) out.push({ kind: 'setting', where: file, id: DP.pieceId(rule), action: DP.hasRule(s, rule) ? 'keep' : 'add' });
+    }
     const src = path.join(tree, 'commands');
     if (ctx.env.TYCON_NO_COMMANDS_SYNC !== '1' && fs.existsSync(src)) {
       for (const name of fs.readdirSync(src).filter((n) => n.endsWith('.md') && !n.startsWith('.')).sort()) {
