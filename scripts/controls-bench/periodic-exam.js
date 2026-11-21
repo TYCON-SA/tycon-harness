@@ -938,30 +938,7 @@ async function main(argv) {
     // con `--tool both --baseline check`, para cuando se migra de herramienta o se sospecha de algo puntual. Si el
     // chequeo de vida sostiene el valor, el examen profundo se retira del todo.
     log(`arranca el chequeo de vida de los revisores (~12 min) — el examen profundo quedó a pedido`);
-    // 🔴 `spawn` y no `spawnSync`: con la variante bloqueante el hilo queda detenido durante las
-    // ~5h30 del examen y NINGÚN reloj puede correr — así que el latido que mantiene vivo el candado
-    // sería imposible por construcción. Esperar la promesa deja al proceso atender sus temporizadores.
-    // La salida de error del hijo va por tubo: se copia entera a la del padre (el registro de launchd queda igual) y se
-    // guarda la cola, para que un examen que se cae sin reporte deje dicho POR QUÉ en el intento, no sólo «exit 1».
-    let colaDelHijo = '';
-    let colaCortada = false;
-    const r = await new Promise((res) => {
-      const hijo = spawn(process.execPath, [runner, '--liveness', '--baseline', 'check', '--json', scratch],
-        { stdio: ['inherit', 'inherit', 'pipe'] });
-      // decodificado con estado: un carácter de varios bytes partido entre dos trozos no se convierte en «�»
-      if (hijo.stderr) hijo.stderr.setEncoding('utf8');
-      if (hijo.stderr) hijo.stderr.on('data', (d) => {
-        process.stderr.write(d);
-        const junta = colaDelHijo + d;
-        if (junta.length > 4096) colaCortada = true;
-        colaDelHijo = junta.slice(-4096);
-      });
-      // 🔴 `error` NO siempre significa "el hijo murió": lo típico es que ni arrancó, pero no está
-      // garantizado. Soltar el candado asumiendo que murió deja al examen corriendo de fondo con la
-      // puerta abierta a una segunda corrida encima. Se lo mata explícitamente antes de seguir.
-      hijo.on('error', (e) => { try { hijo.kill('SIGKILL'); } catch (_) { /* ya no está */ } res({ status: null, signal: null, error: e }); });
-      hijo.on('close', (status, signal) => res({ status, signal }));
-    });
+    const { r, cola: colaDelHijo, cortada: colaCortada } = await correrCorredor(runner, ['--liveness', '--baseline', 'check', '--json', scratch]);
 
     // 🔴 El exit code del examen NO decide si midió: sale 1 cuando ENCUENTRA rojos, que es una
     // medición perfectamente buena. Lo que decide es si dejó su reporte.
@@ -1008,6 +985,23 @@ async function main(argv) {
       return 4;
     }
 
+    // Los rojos de criterio se repiten UNA vez: el que acierta al repetirse es inestable, no un revisor que razona mal.
+    // Sólo esos casos, no el examen entero (es una ejecución más de unos pocos casos, no el doble de llamadas).
+    const repetir = casosParaRepetir(medicion);
+    if (repetir.length) {
+      log(`repito una vez los ${repetir.length} caso(s) con rojo de criterio: ${repetir.join(', ')}`);
+      const scratch2 = path.join(benchDir, `examen-repeticion-${process.pid}.json`);
+      const r2 = await correrCorredor(runner, ['--liveness', '--baseline', 'check', '--only', repetir.join(','), '--json', scratch2]);
+      let segunda = null;
+      try { segunda = JSON.parse(fs.readFileSync(scratch2, 'utf8')); } catch (_) { /* no dejó reporte */ }
+      try { fs.unlinkSync(scratch2); } catch (_) { /* */ }
+      const motivo = segunda ? null
+        : `la repetición terminó (exit ${r2.r.status}${r2.r.signal ? `, ${r2.r.signal}` : ''}) sin dejar reporte`;
+      medicion = unirRepeticion(medicion, segunda, repetir, motivo);
+      log(`repetición: ${medicion.repeticion.inestables} inestable(s), ${medicion.repeticion.siguen} siguen de criterio`
+        + (medicion.repeticion.sin_repetir ? `, ${medicion.repeticion.sin_repetir} sin repetir${motivo ? ` (${motivo})` : ''}` : ''));
+    }
+
     // Corrida COMPLETA: recién acá se pisa el reporte que viaja y recién acá se sella.
     const reporte = Object.assign({}, medicion, {
       kind: 'examen-periodico', estado: 'completo', alcance: 'completo',
@@ -1032,7 +1026,7 @@ async function main(argv) {
     let nm = {};
     try { nm = require('./unmeasured-categories.js').rubrosNoMedidos(medicion); } catch (_) { nm = medicion.no_medido || {}; }
     log(`examen completo — criterio=${medicion.criterio}`
-      + ` inestables=${nm.inestables ? 'no medido' : medicion.inestables}`
+      + ` inestables=${medicion.repeticion ? `${medicion.inestables} (de ${medicion.repeticion.repetidos} repetidos)` : nm.inestables ? 'no medido' : medicion.inestables}`
       + ` paridad=${nm.paridad ? 'no medida' : medicion.paridadReal}`
       + ` regresiones=${medicion.baselineRegressions}`);
 
@@ -1122,7 +1116,84 @@ function casosDeGuia(argv, deps = {}) {
   return { corrio: true, codigo: r && r.status };
 }
 
+/**
+ * Lanza el corredor del examen con `args` y espera que termine. 🔴 `spawn` y no `spawnSync`: con la variante bloqueante
+ * el hilo queda detenido durante todo el examen y NINGÚN reloj puede correr — así que el latido que mantiene vivo el
+ * candado sería imposible por construcción. Esperar la promesa deja al proceso atender sus temporizadores. La salida de
+ * error del hijo va por tubo: se copia entera a la del padre (el registro de launchd queda igual) y se guarda la cola,
+ * para que un examen que se cae sin reporte deje dicho POR QUÉ en el intento, no sólo «exit 1».
+ */
+function correrCorredor(runner, args) {
+  let cola = '';
+  let cortada = false;
+  return new Promise((res) => {
+    const hijo = spawn(process.execPath, [runner, ...args], { stdio: ['inherit', 'inherit', 'pipe'] });
+    // decodificado con estado: un carácter de varios bytes partido entre dos trozos no se convierte en «�»
+    if (hijo.stderr) hijo.stderr.setEncoding('utf8');
+    if (hijo.stderr) hijo.stderr.on('data', (d) => {
+      process.stderr.write(d);
+      const junta = cola + d;
+      if (junta.length > 4096) cortada = true;
+      cola = junta.slice(-4096);
+    });
+    // 🔴 `error` NO siempre significa "el hijo murió": lo típico es que ni arrancó, pero no está
+    // garantizado. Soltar el candado asumiendo que murió deja al examen corriendo de fondo con la
+    // puerta abierta a una segunda corrida encima. Se lo mata explícitamente antes de seguir.
+    hijo.on('error', (e) => { try { hijo.kill('SIGKILL'); } catch (_) { /* ya no está */ } res({ r: { status: null, signal: null, error: e }, cola, cortada }); });
+    hijo.on('close', (status, signal) => res({ r: { status, signal }, cola, cortada }));
+  });
+}
+
+/**
+ * Los casos con un rojo de CRITERIO: los que se repiten una vez. Con una sola ejecución por caso, un error esporádico
+ * del modelo se reporta igual que el revisor razonando mal; repetir sólo esos —no el examen entero— los separa por el
+ * costo de unos pocos casos más.
+ */
+function casosParaRepetir(medicion) {
+  const r = (medicion && medicion.results) || {};
+  return Object.keys(r).filter((key) => Object.values((r[key] && r[key].tools) || {})
+    .some((v) => v && v.pass === false && v.clase === 'criterio'));
+}
+
+/**
+ * La medición con la repetición unida. Un rojo de criterio que acierta al repetirse pasa a INESTABLE (cambia de opinión
+ * entre ejecuciones: se rediseña el caso, no se edita el revisor); el que vuelve a fallar sigue de criterio; el que no
+ * se pudo repetir (sin reporte, en error) sigue de criterio, con el motivo. `segunda` null: la repetición no dejó
+ * reporte, y nada cambia de clase. Los contadores de arriba se ajustan con lo que cambió.
+ */
+function unirRepeticion(primera, segunda, repetidos, motivo = null) {
+  const out = JSON.parse(JSON.stringify(primera));
+  let inestables = 0;
+  let siguen = 0;
+  let sinRepetir = 0;
+  for (const key of repetidos) {
+    for (const [tool, v] of Object.entries((out.results[key] && out.results[key].tools) || {})) {
+      if (!v || v.pass !== false || v.clase !== 'criterio') continue;
+      const s = segunda && segunda.results && segunda.results[key] && segunda.results[key].tools && segunda.results[key].tools[tool];
+      if (s && s.pass === true) {
+        v.clase = 'inestable';
+        v.failures = ['INESTABLE: falló en la primera ejecución y acertó al repetirla', ...(v.failures || [])];
+        v.repeticion = 'acertó';
+        inestables++;
+      } else if (s && s.pass === false && s.clase === 'criterio') {
+        v.repeticion = 'falló otra vez';
+        siguen++;
+      } else {
+        v.repeticion = `no se pudo repetir: ${motivo || (s ? `salió ${s.clase || 'sin clase'}` : 'el caso no volvió en la repetición')}`;
+        sinRepetir++;
+      }
+    }
+  }
+  out.criterio = Number(out.criterio || 0) - inestables;
+  // la inestabilidad de los que acertaron de entrada no se midió (una ejecución): el número es el de los repetidos, y
+  // sólo existe si alguno se pudo repetir; sin ninguno medido queda como estaba (`null`, no medido), nunca un 0 pintado
+  if (inestables + siguen > 0) out.inestables = Number(out.inestables || 0) + inestables;
+  out.repeticion = { repetidos: repetidos.length, inestables, siguen, sin_repetir: sinRepetir, ...(motivo ? { motivo } : {}) };
+  return out;
+}
+
 module.exports = {
+  correrCorredor, casosParaRepetir, unirRepeticion,
   VEJEZ_MS, RUTA_REPORTE_QUE_VIAJA, RUTA_GUIAS_QUE_VIAJA, CANDADO_EN_ESCRITURA_MS, publicar, revisionSemanal, casosDeGuia,
   leerConfig, lugarDelExamen, designaMaquina, identidadesDeMaquina, esMaquinaDesignada, periodoCumplido, estadoDelCandado,
   motivoDeGit, colaDeError,
