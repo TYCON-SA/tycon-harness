@@ -979,6 +979,33 @@ They come from a whole day of coordinating several sessions. Each says what to d
 - **A change that promises speed is measured before and after on a loaded day.** Not only with the machine idle. Why:
   with the machine idle everything is fast, and the difference shows when several things run at once.
 
+## How the coordinator works with the owner
+
+They come from a whole day in which the coordinator worked with the owner away. Each one, with its why.
+
+- **A question's box carries its context inside.** What happens today, what the problem is, what changes and what it
+  implies. Why: the owner sees only the box, not the conversation that explains it.
+- **The record of a control change is asked for at the end.** Only with the rest of the CI green and after the pull
+  requests that touch the same files are in. Why: a record asked for earlier expires with the next change, and has to
+  be asked for again.
+- **Stories are closed in hours.** The quick smoke checks that have a script are run. A criterion impossible to test
+  live goes by its waiver: the coordinator signs it with `marker.js runtime-waiver <story> --acs <n> --for-session <D>`
+  if the team profile delegates it, and otherwise the owner does. Waiving the whole story is a signature only the owner
+  gives. Why: a finished story that waits days for its closing takes up the queue without adding anything.
+- **Focus on the harness.** What touches a product is not measured or proposed without a request. Why: a product has
+  its own team and its own times, and a proposal nobody asked for lands on them.
+- **First what breaks or delays.** When nothing of that is left free, the rest is handed out in the same pulse
+  (minor items, maintenance, measurements, approved improvements), without waiting for the owner to ask. Why: a free
+  session is lost machine time, and the owner does not have to hand out what is already approved.
+- **Each pending item has written down who has it and in which pull request, before it is assigned.** Why: without
+  that note the same fix is done twice; in a single day there were four duplicates.
+- **One push per pull request, with everything together.** After that, only the fix of a red or of what a review asked
+  for. Each push launches about 14 CI jobs, and GitHub runs about 20 at a time. If `main` does not move, the waiting
+  jobs are counted before blaming a pull request. Why: extra pushes fill everyone's queue, and a pull request that waits
+  is not a broken one.
+- **A turn is never closed with «shall we go on?».** A session that waits gets work. Why: with the owner away, nobody
+  answers that question and the session stays stopped.
+
 ## What measures each rule
 
 | Rule | Measured by | Why |
@@ -1034,6 +1061,14 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | A plan for the owner first goes through a separate reviewer | nadie | It is a judgment call: no data separates a plan from any other message. |
 | State only what was checked, and measure use before removing something | nadie | It is the coordinator's judgment call. |
 | Measure a speed change on a loaded day | nadie | Which change promises speed is said in the message, not in a piece of data. |
+| A question's box carries its context inside | nadie | It is the shape of the message: no data on the machine sees it. |
+| The record of a control change, at the end | nadie | The session decides when to ask for it; an expired record is stopped by its control, not by when it was asked for. |
+| Stories are closed in hours | nadie | It is a judgment call: the session sees which smoke check has a script. |
+| Focus on the harness | nadie | It is the coordinator's judgment call. |
+| First what breaks or delays, then the rest in the same pulse | nadie | What breaks or delays is a judgment call; idle sessions are counted by the notice of each turn. |
+| Each pending item with who has it and in which pull request | nadie | The note goes in the coordinator's list, which does not go through a control. |
+| One push per pull request | nadie | Nothing stops an extra push: the CI queue shows it. |
+| Never close a turn with «shall we go on?» | nadie | It is the shape of the message; the coordinator with room and ready work is already stopped by the end-of-turn hook. |
 
 The "Measured by" column keeps the Spanish words the harness uses everywhere: **aviso** (a notice), **freno** (a brake)
 and **nadie** (nobody).
