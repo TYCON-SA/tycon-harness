@@ -2829,10 +2829,10 @@ test('T46 CapNotice_QueueWithOneRunning @story-8.291 @ac-12: con gente en la fil
   fs.mkdirSync(doing, { recursive: true });
   fs.writeFileSync(path.join(doing, 's-ana.json'), JSON.stringify({ text: 'implementar la historia', at: new Date(mins(10)).toISOString(), waitingFor: 'turno de suite', waitingSince: new Date(mins(10)).toISOString() }));
   // (d) ninguna corriendo: el texto de hoy
-  assert.match(C.capNotice(opts(62)), /^Coordinación: no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Ana\.$/m);
+  assert.match(C.capNotice(opts(62)), /^Coordinación: no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Ana: heavy-turn\.js grant --to [\w-]+\.$/m);
   slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
   // (a) una, 62 %
-  assert.match(C.capNotice(opts(62)), /^Coordinación: corre Uma \(204 suites de repo, desde las \d\d:\d\d\); hay lugar para una segunda \(memoria libre 62 %, piso 50 %\): dale el «arrancá» a Ana\.$/m);
+  assert.match(C.capNotice(opts(62)), /^Coordinación: corre Uma \(204 suites de repo, desde las \d\d:\d\d\); hay lugar para una segunda \(memoria libre 62 %, piso 50 %\): dale el «arrancá» a Ana: heavy-turn\.js grant --to [\w-]+\.$/m);
   // (b) una, 41 %
   assert.match(C.capNotice(opts(41)), /^Coordinación: corre Uma \(.*\); la segunda no entra \(memoria libre 41 %, piso 50 %\): cuando termine, sigue Ana\.$/m);
   // (e) una, sin medir: ni «null» ni un porcentaje vacío
@@ -2936,7 +2936,7 @@ test('T49 Status_EsperaVieja_GanaElRegistroDeTurnos: con su portón o su lugar d
   waits('s-ana', 'portón final de pruebas de la 9.9');
   slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
   // sin registro de Ana: está en la fila, como hoy
-  assert.match(C.capNotice(opts(62)), /dale el «arrancá» a Ana\./);
+  assert.match(C.capNotice(opts(62)), /dale el «arrancá» a Ana: heavy-turn\.js grant --to [\w-]+\./);
   // su portón corre, anotado antes que la nota: gana el registro
   gateRec(t, { sid: 's-ana', session: 'Ana', what: '81 suites de repo', suites: 81, at: mins(3) });
   const s = C.status(opts(62));

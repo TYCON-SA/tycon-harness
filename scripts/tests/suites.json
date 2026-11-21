@@ -1139,6 +1139,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.274: el cierre de una corrida autónoma con la matriz roja pide la exención por el cuadro de la lista del dueño, y salir del modo autónomo no saltea la matriz en «Preparar».",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/autonomous-close.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "cada proceso le pregunta a git una sola vez lo mismo (la huella de la carpeta, leída del disco); el gancho, la configuración, los hermanos y los controles de la base.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/git-memo.test.js",
