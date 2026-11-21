@@ -1145,22 +1145,29 @@ test('T34 PrepareCommit_PastTheCap_RestoreToReviewed — sin cuarta vuelta: los 
     '--change', 'Cambia el enfoque: el arreglo va a la entrada, antes de tocar el resto', '--repo', C.codigo.repo, '--story', C.story]);
   assert.strictEqual(nota.status, 0, salida(nota));
   assert.strictEqual(C.vuelta(3).r.status, 0, salida(C.vuelta(3).r));
-  // un arreglo después de la tercera: un archivo cambiado y uno nuevo sin agregar
+  // un arreglo después de la tercera, hecho con la herramienta de edición (deja su evento): un .ts cambiado, uno nuevo
+  // sin agregar y uno con `$` en el nombre
   fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 3;\n');
-  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'c.js'), 'module.exports = 4;\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'c.ts'), 'export const c = 4;\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', '$HOME`id`.js'), 'module.exports = 5;\n');
+  const m = C.marcador();
+  const ahora = new Date(Date.now() + 1000).toISOString();
+  m.fileEvents = [...(m.fileEvents || []), ...['b.js', 'c.ts', '$HOME`id`.js'].map((f) => ({ ts: ahora, path: path.join(C.codigo.repo, 'src', f), code: true }))];
+  fs.writeFileSync(path.join(C.estado(), 'active', `${C.sid}.json`), JSON.stringify(m));
+  // `next` no ofrece una cuarta vuelta
+  const sig = C.correr('pipeline.js', ['next']);
+  assert.doesNotMatch(sig.stdout, /Revisores, vuelta 4/, sig.stdout);
   const r = prepararCommit(C);
   assert.strictEqual(r.status, 2, salida(r));
   assert.match(salida(r), /Pasaste el tope de 3 vueltas/, salida(r));
   assert.match(salida(r), /historia de arreglo/);
-  assert.doesNotMatch(salida(r), /smart-reloop/, 'no manda a una vuelta que no existe');
-  const restore = salida(r).split('\n').find((l) => /git -C .* restore --source=[0-9a-f]{40} --staged --worktree -- "src\/b\.js"/.test(l));
-  const clean = salida(r).split('\n').find((l) => /git -C .* clean -f -- "src\/c\.js"/.test(l));
-  assert.ok(restore && clean, salida(r));
-  // los comandos que da, tal cual, vuelven a lo revisado: el paso sigue
-  for (const l of [restore, clean]) {
-    const args = JSON.parse(`[${l.trim().replace(/^git /, '').split(/ (?=(?:[^"]*"[^"]*")*[^"]*$)/).map((x) => (x.startsWith('"') ? x : JSON.stringify(x))).join(',')}]`);
-    execFileSync('git', args, { stdio: 'ignore' });
-  }
+  assert.doesNotMatch(salida(r), /smart-reloop|pipeline\.js next/, 'no manda a una vuelta que no existe');
+  const comandos = salida(r).split('\n').map((l) => l.trim()).filter((l) => /^git -C /.test(l));
+  assert.ok(comandos.some((l) => / stash push --include-untracked /.test(l)), salida(r));
+  // los comandos que da, tal cual y con el shell, guardan el cambio y vuelven a lo revisado; el `$` no se expande
+  for (const l of comandos) execFileSync('bash', ['-c', l], { stdio: 'ignore', env: { ...process.env, HOME: C.home } });
+  assert.strictEqual(fs.existsSync(path.join(C.codigo.repo, 'src', 'c.ts')), false);
+  assert.match(execFileSync('git', ['-C', C.codigo.repo, 'stash', 'show', '--include-untracked', '--name-only'], { encoding: 'utf8' }), /src\/\$HOME`id`\.js/);
   const despues = prepararCommit(C);
-  assert.doesNotMatch(salida(despues), MISMATCH, salida(despues));
+  assert.doesNotMatch(salida(despues), /BLOQUEADO — (lo que se guarda no es lo revisado|cambió código después de los revisores)/, salida(despues));
 });

@@ -1003,8 +1003,9 @@ function comprobarLoRevisado(marker, quien) {
     try { tope = require('./lib/review-rounds.js').tope({ repo: marker.repoPath || undefined }).value; } catch (_e) { tope = null; }
     if (tope !== null && iter > tope) {
       console.error(`  Pasaste el tope de ${tope} vueltas de revisores: no hay otra vuelta. Lo que cambió después de la última sale de esta`);
-      console.error('  historia y va a una historia de arreglo (followup_of: esta historia). Guardá antes el cambio para esa historia');
-      console.error('  (git diff y los archivos nuevos) y volvé a lo revisado:');
+      console.error('  historia y va a una historia de arreglo (followup_of: esta historia). Estos comandos lo guardan en un stash (de ahí');
+      console.error('  sale para la historia de arreglo) y vuelven el disco a lo revisado. Revisá la lista: un archivo de otra tarea');
+      console.error('  también se guarda en el stash, no se pierde.');
       const porRepo = new Map();
       for (const d of distintos) { if (!porRepo.has(d.repo)) porRepo.set(d.repo, []); porRepo.get(d.repo).push(d.f); }
       for (const [repo, archivos] of porRepo) {
@@ -1013,10 +1014,12 @@ function comprobarLoRevisado(marker, quien) {
         const conocido = (f) => require('child_process').spawnSync('git', ['-C', repo, 'ls-files', '--error-unmatch', '--', f], { windowsHide: true }).status === 0
           || (!!sello && require('child_process').spawnSync('git', ['-C', repo, 'cat-file', '-e', `${sello}:${f}`], { windowsHide: true }).status === 0);
         const seguidos = archivos.filter(conocido);
-        const sueltos = archivos.filter((f) => !conocido(f));
-        const q = (f) => JSON.stringify(f);
-        if (seguidos.length) console.error(`     git -C ${q(repo)} restore --source=${sello || '<sello>'} --staged --worktree -- ${seguidos.map(q).join(' ')}`);
-        if (sueltos.length) console.error(`     git -C ${q(repo)} clean -f -- ${sueltos.map(q).join(' ')}`);
+        // comillas simples: dentro de ellas el shell no expande nada (un `$` o una comilla invertida en un nombre)
+        const q = citar;
+        const mensaje = `${marker.storyId || 'historia'}: lo cambiado después de la vuelta ${iter - 1}`;
+        console.error(`     git -C ${q(repo)} stash push --include-untracked -m ${q(mensaje)} -- ${archivos.map(q).join(' ')}`);
+        // lo que se commiteó después de la vuelta no lo devuelve el stash: sale del sello
+        if (seguidos.length && sello) console.error(`     git -C ${q(repo)} restore --source=${sello} --staged --worktree -- ${seguidos.map(q).join(' ')}`);
       }
       console.error('  Con eso lo que se guarda vuelve a ser lo revisado y este paso sigue.');
       process.exit(2);
