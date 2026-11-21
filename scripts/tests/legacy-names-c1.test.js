@@ -284,6 +284,9 @@ test('BatchC1_GeneratedShimOnly — sólo un reemplazo idéntico al generado dej
     assert.ok(!L.isGeneratedShim(rel, forged), 'la marca con otro contenido no es un reemplazo');
     assert.strictEqual(sn.kindOf(rel, forged), 'executable', 'el freno lo mira como cualquier ejecutable');
     assert.ok(!L.isGeneratedShim('scripts/hooks/other-name.js', shim), 'en otra ruta, el mismo texto no es su reemplazo');
+    // el reemplazo lanza su destino con la ventana oculta: en Windows, desde un gancho sin consola, sin ella abre una
+    const lanza = shim.split('\n').find((l) => /spawnSync\(process\.execPath/.test(l)) || '';
+    assert.match(lanza, /windowsHide: true/, `el reemplazo lanza su destino sin windowsHide: ${lanza}`);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
