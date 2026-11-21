@@ -154,7 +154,10 @@ function revisar({ todo, registro }) {
 
 /** ¿El registro del arnés tiene el renglón firmado de esta línea? */
 function firmadaEnElRegistro(l, renglones) {
-  return renglones.some((g) => g && g.name === FIRMADA && g.status === 'ok' && g.via === l.via
+  // la firma de trámite la da el arnés: su renglón dice `automatica` y `exigir` la devuelve como delegación, que es lo que
+  // anota la línea (owner-window.js). Es la misma firma; una línea de otra vía no la firma un renglón automático
+  const misma = (g) => g.via === l.via || (l.via === 'delegacion' && g.via === 'automatica');
+  return renglones.some((g) => g && g.name === FIRMADA && g.status === 'ok' && misma(g)
     && String(g.resumen || '').startsWith(`huella ${l.huella} `));
 }
 
