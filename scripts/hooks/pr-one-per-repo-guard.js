@@ -86,7 +86,7 @@ function pedidosDeGitHub(comando, cwd) {
   const out = [];
   if (/\bgh\b/.test(comando)) {
     let lista = [];
-    try { lista = require('../lib/gh-pr.js').comandosGh(comando, 0, {}); } catch (e) {
+    try { lista = require('../lib/command-readers.js').lectorDe('gh').comandosGh(comando, 0, {}); } catch (e) {
       // no se pudo leer el `gh`: el pedido va sin repo, y la revisión dice que no verificó
       if (/\bpr\s+create\b/.test(comando)) out.push({ repo: null, rama: null, donde: `un gh pr create que no pude leer (${String((e && e.message) || e).slice(0, 60)})` });
     }

@@ -18,7 +18,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
 
-const gh = require(path.resolve(__dirname, '..', 'lib', 'gh-pr.js'));
+const gh = require(path.resolve(__dirname, '..', '..', 'integrations', 'github', 'scripts', 'command-reader.js'));
 const az = require(path.resolve(__dirname, '..', 'lib', 'az-pr.js'));
 
 // armada acá: escrita de corrido, este archivo —que viaja en la copia— dispararía el detector de rutas de máquina

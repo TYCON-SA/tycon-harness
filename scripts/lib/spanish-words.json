@@ -1580,7 +1580,7 @@
     },
     {
       "words": ["hostname", "desc", "filename", "homepage", "iglob", "oneline"],
-      "reason": "opciones de herramientas ajenas, no nombres del arnés: --hostname, --desc, --filename y --homepage son de `gh`, --iglob de `rg` y --oneline de `git log`. El lector de comandos `gh` (scripts/lib/gh-pr.js) las tiene que conocer por su nombre para saber qué texto publica cada una, y sus pruebas las pasan tal cual (story 8.26, tanda F1). Sumadas en modo autónomo la madrugada del 2026-10-10, a confirmar por el dueño (decisión F-18 de su hoja)"
+      "reason": "opciones de herramientas ajenas, no nombres del arnés: --hostname, --desc, --filename y --homepage son de `gh`, --iglob de `rg` y --oneline de `git log`. El lector de comandos `gh` (integrations/github/scripts/command-reader.js) las tiene que conocer por su nombre para saber qué texto publica cada una, y sus pruebas las pasan tal cual (story 8.26, tanda F1). Sumadas en modo autónomo la madrugada del 2026-10-10, a confirmar por el dueño (decisión F-18 de su hoja)"
     },
     {
       "words": ["gcm"],

@@ -212,7 +212,7 @@ _pipelines/azure-pipelines-public-leak-check.yml + scripts/tests/mirror-pipeline
 
 ## scripts/hooks/public-push-guard.js
 
-_scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .githooks/pre-push + scripts/lib/gh-pr.js + scripts/ci/pr-texts.js + guides/maintaining/publicacion-espejo.md_
+_scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .githooks/pre-push + integrations/github/scripts/command-reader.js + scripts/ci/pr-texts.js + guides/maintaining/publicacion-espejo.md_
 
 **Qué es:** El freno antes de publicar: un `pre-push` de git y un freno de `gh` que revisan lo que va a un remoto público.
 

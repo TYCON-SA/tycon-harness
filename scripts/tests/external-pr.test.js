@@ -64,7 +64,7 @@ function ghFalso(t) {
 /** Una copia del árbol del freno con el perfil del equipo en su raíz (`perfil` null: sin perfil). */
 function arbol(t, perfil = PERFIL) {
   const a = carpeta(t, 'external-pr-arbol-');
-  for (const d of ['scripts/hooks', 'scripts/lib', 'scripts/setup', 'skills/tycon-pipeline/scripts/lib']) fs.cpSync(path.join(RAIZ, d), path.join(a, d), { recursive: true });
+  for (const d of ['scripts/hooks', 'scripts/lib', 'scripts/setup', 'skills/tycon-pipeline/scripts/lib', 'integrations']) fs.cpSync(path.join(RAIZ, d), path.join(a, d), { recursive: true });
   if (perfil !== null) fs.writeFileSync(path.join(a, 'team-profile.json'), JSON.stringify(perfil));
   return a;
 }

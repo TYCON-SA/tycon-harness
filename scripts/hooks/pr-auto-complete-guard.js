@@ -137,7 +137,7 @@ function faltasGh(seg) {
 function ghMergeIlegible(comando) {
   if (!/\bmerge\b/.test(comando)) return null;
   let lista;
-  try { lista = require('../lib/gh-pr.js').comandosGh(comando, 0, {}); } catch (e) {
+  try { lista = require('../lib/command-readers.js').lectorDe('gh').comandosGh(comando, 0, {}); } catch (e) {
     return `no pude leer el comando (${String((e && e.message) || e).slice(0, 60)})`;
   }
   const oculto = lista.find((c) => !c.grupo && c.ilegible.length);

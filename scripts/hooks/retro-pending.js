@@ -1160,16 +1160,16 @@ function pedidoDeUnaSentencia(s) {
 // ── los pedidos de GitHub ──────────────────────────────────────────────────────────────────────────
 // Un repo que vive en GitHub entrega con `gh pr create` hacia la rama principal, como uno de Azure con
 // `az repos pr create`. Sin esto, ahí ningún merge por pedido deja entrada y la retrospectiva vuelve a
-// depender de que alguien se acordara. El comando lo lee el lector COMPARTIDO de `gh` (scripts/lib/gh-pr.js,
-// el mismo del freno antes de publicar): acá no hay otro regex.
+// depender de que alguien se acordara. El comando lo lee el lector COMPARTIDO de `gh` (el de su conector, pedido por
+// scripts/lib/command-readers.js; el mismo del freno antes de publicar): acá no hay otro regex.
 // 🔴 Este hook viaja suelto (el banco y las pruebas lo copian con sus librerías, a mano): el lector se carga
-// sólo si el comando parece traer un `gh` y si el archivo está al lado. Sin él, calla.
+// sólo si el comando parece traer un `gh` y si el cargador y el lector están en su árbol. Sin ellos, calla.
 function lectorDeGh(cmd) {
   if (!/gh/i.test(cmd)) return null;   // el descarte barato; si el comando trae un `gh` lo decide el lector, no otro regex
-  const lib = path.join(__dirname, '..', 'lib', 'gh-pr.js');
-  if (!fs.existsSync(lib)) return null;
-  const lector = require(lib);
-  return lector.pareceGh(cmd) ? lector : null;
+  const cargador = path.join(__dirname, '..', 'lib', 'command-readers.js');
+  if (!fs.existsSync(cargador)) return null;
+  const lector = require(cargador).buscarLector('gh');
+  return lector && lector.pareceGh(cmd) ? lector : null;
 }
 
 /** La rama a la que va un pedido que no trae `--base`: la que dice git en local, sin red. `null` = no lo dice. */
