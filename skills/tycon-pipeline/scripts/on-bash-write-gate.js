@@ -646,6 +646,27 @@ function repoConHistorias(carpeta) {
 }
 const EXTENSION_DE = { python: /\.py$/i, node: /\.(?:[cm]?js|[cm]?ts)$/i, perl: /\.p[lm]$/i, ruby: /\.rb$/i };
 const familiaDe = (interprete) => (/^python/.test(interprete) ? 'python' : interprete === 'perl' ? 'perl' : interprete === 'ruby' ? 'ruby' : 'node');
+const INTERPRETE_DE = { python: 'python3', node: 'node', perl: 'perl', ruby: 'ruby' };
+
+/**
+ * El programa de la palabra `k` de un tramo. En una variable (`$N`, `"${NODE}"`) es lo que vale, si el comando lo dice
+ * (`N=/usr/bin/node; $N x.js`). Si no se puede saber (`N=$(command -v node)`), es el intérprete de la familia del primer
+ * guion que la sigue por su extensión: así `$N --test x.js` se mira como `node --test x.js`, y una variable que no
+ * corre un guion (`$P notas.txt`) no se toma por intérprete.
+ */
+function interpreteDe(cmd, words, k) {
+  const w = String(words[k] || '');
+  if (!/^\$/.test(w)) return nombreDeComando(w);
+  const e = expandirRuta(cmd, w);
+  if (!e.sinResolver.length && !/^\$/.test(String(e.valor))) return nombreDeComando(e.valor);
+  for (const x of words.slice(k + 1)) {
+    if (/^(?:\d|&)?[<>]/.test(x)) break;
+    if (x.startsWith('-')) continue;
+    const familia = Object.keys(EXTENSION_DE).find((f) => EXTENSION_DE[f].test(x));
+    if (familia) return INTERPRETE_DE[familia];
+  }
+  return nombreDeComando(w);
+}
 
 /**
  * Las opciones de un intérprete hasta su guion: `{ enLinea, desde, modulos, precargas }`. `enLinea` si el programa va
@@ -837,7 +858,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     }
     // de un tramo que sólo nombra, el intérprete es la primera palabra: `grep node x` o un archivo `node` de la lista no lo son
     for (let k = 0; k < (soloNombra ? 1 : words.length); k++) {
-      const interprete = nombreDeComando(words[k]);
+      const interprete = interpreteDe(cmd, words, k);
       if (!CORRE_ARCHIVO.test(interprete)) continue;
       const familia = familiaDe(interprete);
       let i = k + 1;

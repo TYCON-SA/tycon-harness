@@ -257,3 +257,27 @@ test('8.235 T7 BashWrite_PipelineLista_SubcomandosExisten @story-8.235 @ac-7', (
   const texto = fs.readFileSync(PIPELINE, 'utf8');
   for (const sub of lista) assert.match(texto, new RegExp(`cmd === '${sub}'`), sub);
 });
+
+// T10 BigScript_InterpreterInVariable_StillBlocks
+// 🔴 Falla con: reconocer el intérprete sólo por la palabra escrita: `N=$(command -v node); $N --test x.js` corría un
+//    guion grande que nombra una historia sin que el freno lo viera, y la misma corrida con `node` escrito frenaba.
+test('T10 BigScript_InterpreterInVariable_StillBlocks', () => {
+  const { estado, dir } = repo('specs');
+  const relleno = '// ' + 'x'.repeat(200) + '\n';
+  fs.writeFileSync(path.join(dir, 'scripts', 'grande.test.js'),
+    "const fs = require('fs');\n// pasa la historia a done\nfs.writeFileSync('specs/story-1.1.md', 'x');\n" + relleno.repeat(Math.ceil((300 * 1024) / relleno.length)));
+  fs.writeFileSync(path.join(dir, 'scripts', 'notas.txt'), 'specs/story-1.1.md\n');
+  const correr = (command) => conEnv(ENV, () => {
+    const r = bash.handle({ tool_name: 'Bash', session_id: 'sesion-guion-grande', cwd: dir, tool_input: { command } }, { stateDir: estado, installedRoots: [] });
+    return r && r.block ? r.block.split('\n').find((l) => l.trim()).trim() : '';
+  });
+  for (const command of [
+    'node --test scripts/grande.test.js',
+    `N=${process.execPath}; $N --test scripts/grande.test.js`,
+    'N=$(command -v node); HOME=/tmp/x $N --test scripts/grande.test.js',
+    'NODE="$(which node)"; "$NODE" scripts/grande.test.js > /tmp/salida.txt',
+    'X=$(command -v node); ${X} scripts/grande.test.js',
+  ]) assert.strictEqual(correr(command), FRENO, command);
+  // un programa en una variable con un archivo que no es un guion no lo abre como tal
+  assert.strictEqual(correr('P=$(command -v cat); $P scripts/notas.txt'), '', 'un .txt no es un guion');
+});
