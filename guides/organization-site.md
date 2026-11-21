@@ -807,8 +807,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   frase queda registrada; lo delegado no está protegido contra un agente: si la coordinadora decide aprobarlo por su
   cuenta, el arnés no lo distingue de un ok del dueño, así que se delega sólo lo de bajo riesgo. «Sólo del dueño»
   (`approvals.owner_only`) la traba: el sitio no ofrece delegarla, y lo que no se firma desde la pestaña de otra sesión
-  tampoco se ofrece. El aviso fijo lo dice: «Aflojar un control siempre lo firma una persona, en su terminal; esto no lo
-  cambia.» Sin sesión designada, lo delegado no sirve, y la sección lo avisa. Lo delegado vale sólo en las máquinas de
+  tampoco se ofrece. El aviso fijo lo dice: «Aflojar un control siempre lo aprueba una persona, con un click o en su
+  terminal, y la emergencia sólo en su terminal: no se delega.» Sin sesión designada, lo delegado no sirve, y la sección lo avisa. Lo delegado vale sólo en las máquinas de
   la lista de abajo (`approvals.delegated_machines`), nombradas por su huella: las que el buzón de ejecuciones vio se
   agregan con un botón, y otra escribiendo su huella. De fábrica, en ninguna. Todo vale sólo desde acá, nunca desde
   una máquina.
