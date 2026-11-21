@@ -12,11 +12,6 @@
       "reason": "Es un gancho de fondo que despierta a la sesión al terminar con 2: el banco corre ganchos que contestan y se van, no uno que espera un mensaje. Sus casos corren en office-inbox-watch.test.js (T5-T8, T41) con el gancho real; sale de acá cuando el banco sepa esperar a un gancho de fondo."
     },
     {
-      "script": "provider-retry.js",
-      "date": "2026-11-21",
-      "reason": "Es un gancho de fondo que despierta a la sesión al terminar con 2, como office-inbox-watch.js: el banco corre ganchos que contestan y se van, no uno que espera minutos. Sus casos corren en provider-retry.test.js (T1-T5) con el gancho real y las esperas escaladas, y el despertar se midió con un Claude Code de verdad contra un servidor que contesta 529; sale de acá cuando el banco sepa esperar a un gancho de fondo."
-    },
-    {
       "script": "owner-approval-record.js",
       "date": "2026-11-01",
       "reason": "Anota el «aprobado» escrito y el click en el cuadro para firmar sin terminal. Su caso de verdad necesita un árbol de procesos con la herramienta arriba (sólo anota lo que lanza la herramienta, no la consola de un agente), que el banco no arma; corre en scripts/tests/owner-approvals.test.js (qué anota, qué no, quién lo lanzó, la transcripción, los ganchos ajenos) y en owner-window.test.js (la firma de punta a punta). Sale de acá cuando el banco sepa montar ese árbol."

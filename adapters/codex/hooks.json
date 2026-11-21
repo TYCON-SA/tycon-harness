@@ -486,6 +486,13 @@
       "scripts": [
         "background-question-guard.js"
       ]
+    },
+    {
+      "log": "StopFailure · overloaded|server_error|rate_limit — SOLO Claude Code (reanudar la sesión tras un corte del proveedor)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-21): provider-retry.js espera y despierta a la sesión cuando el proveedor corta el turno, con un gancho de fondo que despierta a la sesión al terminar con 2 (asyncRewake). Codex no tiene el evento StopFailure ni ganchos de fondo que despierten a la sesión, así que de su lado no hay dónde registrarlo; el aviso de espera sigue avisando como siempre.",
+      "scripts": [
+        "provider-retry.js"
+      ]
     }
   ]
 }
