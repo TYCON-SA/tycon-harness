@@ -61,3 +61,26 @@ test('ShellParseHeredoc_Segments_SeeTheCommand — el comando del cuerpo sale co
   const segs = P.segmentos('cat > /tmp/n.txt <<EOF\n$(rm -f /protegido)\nEOF').map((x) => x.texto.trim());
   assert.ok(segs.some((t) => /^rm -f \/protegido$/.test(t)), JSON.stringify(segs));
 });
+
+test('ShellParse_EjecutaTexto_SoloDiceQueNoConProgramasConocidos — ante la duda, un texto puede correrse', () => {
+  // 🔴 rojo si: un texto que el shell SÍ corre se toma por texto (los frenos de constancias y de sesiones dejarían de
+  // mirarlo), o un comando que sólo nombra o guarda texto frena de más
+  const noCorren = [
+    "desc='a > b; bash x'; echo \"$desc\"",
+    "cat >> n.md <<'EOF'\ndon't | bash\nEOF",
+    "msg=x; printf '%s' \"$(printf '%s' \"$msg\")\"",
+    "echo hola # no, it's fine",
+  ];
+  const corren = [
+    'echo hola | bash', '\\bash -c x', '"bash" -c x', "b''ash -c x", '$0 -c x', "trap 'cp a b' EXIT",
+    'if true; then bash x; fi', "bash<<<'x'", "cat >> n.md <<'EOF'\ndon't\nEOF\necho x | bash",
+    'echo "$(bash -c x)"', "su -c 'cp a b'", 'PATH=.:$PATH s.sh', './s.sh', 'c=x; $c',
+    // los que tienen una opción que corre un texto, y lo que una variable de delante cambia (del pase adversarial)
+    "git -c alias.x='!cp a b' x", "git rebase -x 'cp a b' HEAD~1", "gh alias set x --shell 'cp a b'",
+    "az repos pr create --description 'x > y'", 'sort --compress-program=sh f', "GIT_SSH_COMMAND='sh -c x' cat f",
+    // un comentario con un apóstrofo no tapa lo de abajo, y una comilla invertida escapada falla cerrado
+    "echo x # it's\nbash y", 'echo \\` "`bash -c x`"',
+  ];
+  for (const c of noCorren) assert.strictEqual(P.ejecutaTexto(c), false, `tomó por ejecutor: ${c}`);
+  for (const c of corren) assert.strictEqual(P.ejecutaTexto(c), true, `no vio que corre: ${c}`);
+});

@@ -149,7 +149,16 @@ if (evento === 'SessionStart') {
 
 if (evento !== 'PreToolUse' || !['Bash', 'PowerShell'].includes(payload.tool_name)) process.exit(0);
 const cmd = payload.tool_input && payload.tool_input.command;
-if (typeof cmd !== 'string' || !GIT_ESCRIBE.test(cmd)) process.exit(0);
+// El cuerpo de un heredoc es texto: un `cat >> nota.md <<'EOF'` que CITA un `git merge` no toca git. Sólo si nada en el
+// comando puede correr un texto (un shell, `eval`, `source`, `.`, `xargs`, un intérprete, un guion o una variable como
+// programa): las formas de darle un heredoc a un shell no se terminan de enumerar, así que ante la duda el cuerpo cuenta,
+// como antes. Aun sin nada que corra texto, los `$(…)` de un cuerpo sin comillas corren, y se siguen mirando.
+let loQueCorre = typeof cmd === 'string' ? cmd : '';
+try {
+  const sp = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
+  if (loQueCorre && !sp.ejecutaTexto(loQueCorre)) loQueCorre = sp.sinHeredocs(loQueCorre, { salvoShell: true });
+} catch (_) { /* sin el partidor, el texto entero: frena de más, nunca de menos */ }
+if (typeof cmd !== 'string' || !GIT_ESCRIBE.test(loQueCorre)) process.exit(0);
 
 // ── qué repo toca cada git que escribe ───────────────────────────────────────────────────────────
 //
@@ -182,10 +191,10 @@ function baseDelComando() {
   return cwd;
 }
 const base = baseDelComando();
-let destinos = destinoGit.destinos(cmd, base, GIT_QUE_ESCRIBE);
+let destinos = destinoGit.destinos(loQueCorre, base, GIT_QUE_ESCRIBE);
 // El filtro grueso vio un git que escribe pero el análisis por sentencia no lo ubicó (p. ej. dentro
 // de un `sh -c "…"`): se asume el checkout de la sesión, como siempre.
-if (!destinos.length) destinos = [{ dir: base, op: (cmd.match(GIT_ESCRIBE) || [])[1] || 'git', resuelto: true }];
+if (!destinos.length) destinos = [{ dir: base, op: (loQueCorre.match(GIT_ESCRIBE) || [])[1] || 'git', resuelto: true }];
 
 const ahora = Date.now();
 const porRepo = new Map();
