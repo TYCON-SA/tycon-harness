@@ -4468,7 +4468,7 @@ function borraEjecucionAbierta(event) {
     const sueltas = constanciasSinCommitear(c);
     if (sueltas.length) {
       return frena(`🔒 CONSTANCIA SIN COMMITEAR — ${via} saca ${c}, que tiene una constancia de control sin commitear: ${sueltas.join(', ')}. ` +
-        'Sacar la carpeta la borra y la firma del dueño se pierde. Commiteala y empujala a la rama de su pedido antes; con la constancia en la rama, el mismo comando pasa.',
+        'Sacar la carpeta la borra, y con ella la firma. Commiteala y empujala a la rama de su pedido antes; con la constancia en la rama, el mismo comando pasa.',
       `saca una constancia sin commitear: ${sueltas.join(', ')}`);
     }
   }
