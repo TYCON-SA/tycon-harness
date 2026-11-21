@@ -121,7 +121,7 @@ test('T31 Retiradas_Status_LaLineaYJson @story-8.202 @ac-27', () => {
   const anon = s.retired.find((r) => r.short === 'ccccdddd');
   assert.strictEqual(anon.session, 'ccccdddd', 'sin su archivo, el id corto');
   const text = C.statusText(s);
-  assert.match(text, /Cerradas por Claude Code: .*trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min\. Para levantarla: claude respawn aaaabbbb/);
+  assert.match(text, /Cerradas por Claude Code: .*trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, sin anotar qué esperaba\. Para levantarla: claude respawn aaaabbbb/);
   assert.ok(!s.working.some((w) => w.sid === SID_NORTE), 'no cuenta para el tope');
 });
 
@@ -139,7 +139,7 @@ test('T33 OwnerWait_Retirada_TerminaUnaVez @story-8.202 @ac-29', () => {
   job(t, 'aaaabbbb', 'trabajo-norte', SID_NORTE);
   const r = C.ownerWaitOnce(t.opts);
   assert.deepStrictEqual(r.lines.length, 1);
-  assert.match(r.lines[0], /^trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min\. Para levantarla: claude respawn aaaabbbb$/);
+  assert.match(r.lines[0], /^trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, sin anotar qué esperaba\. Para levantarla: claude respawn aaaabbbb$/);
   assert.deepStrictEqual(C.ownerWaitOnce(t.opts).lines, [], 'la segunda vez no');
 });
 
@@ -151,7 +151,7 @@ test('T34 Oficina_Retirada_LaFila @story-8.202 @ac-30', () => {
   assert.match(all, /claude respawn aaaabbbb/);
   assert.doesNotMatch(all, /trabajo-norte[^}]*"estado":"trabajando"/);
   const w = W.renderRetired(wip.retired);
-  assert.match(w, /trabajo-norte: la cerró Claude Code \(falta de memoria\), quieta 27 min — claude respawn aaaabbbb/);
+  assert.match(w, /trabajo-norte: la cerró Claude Code \(falta de memoria\), quieta 27 min, sin anotar qué esperaba — claude respawn aaaabbbb/);
 });
 
 test('T35 Retiradas_SinRegistroOIlegible_NoMedido @story-8.202 @ac-31 @ac-32', () => {
@@ -291,4 +291,32 @@ test('OwnerWait_DejaDeSerCoordinadora_DicePorQueTermina', () => {
     assert.strictEqual(r.code, 0);
     assert.match(r.text, /ya no es la coordinadora confirmada/, 'no termina mudo');
   } finally { OA.coordinadoraConfirmada = antes; }
+});
+
+// Una sesión que Claude Code cerró mientras esperaba algo: la línea dice qué esperaba (su nota de espera, o la espera
+// abierta de su pipeline) y cómo levantarla. Sin nada anotado, lo dice en vez de callarlo.
+test('T38 Retiradas_DicenQueEsperaban', () => {
+  const t = toy();
+  daemon(t, [retire(mins(40), 'aaaabbbb', 27), retire(mins(40), 'eeeeffff', 15), retire(mins(40), 'ccccdddd', 12)]);
+  job(t, 'aaaabbbb', 'trabajo-norte', SID_NORTE);
+  note(t, SID_NORTE, { text: 'espera', at: iso(mins(70)), waitingFor: 'la firma de la coordinadora', waitingSince: iso(mins(70)) });
+  const SID_SUR = 'eeeeffff-sesion-sur';
+  job(t, 'eeeeffff', 'trabajo-sur', SID_SUR);
+  const waits = path.join(t.state, 'wait-notice', 'waits');
+  fs.mkdirSync(waits, { recursive: true });
+  fs.writeFileSync(path.join(waits, `${SID_SUR}.json`), JSON.stringify({ session: SID_SUR, story: '9.9', step: 'approve-plan', stepName: 'Aprobar el plan', kind: 'stop', waiting: '¿Apruebo el plan?', openedAt: iso(mins(60)) }));
+  const s = C.status(t.opts);
+  const norte = s.retired.find((r) => r.sid === SID_NORTE);
+  const sur = s.retired.find((r) => r.sid === SID_SUR);
+  const anon = s.retired.find((r) => r.short === 'ccccdddd');
+  assert.strictEqual(norte.waited, 'la firma de la coordinadora');
+  assert.match(sur.waited, /la 9\.9, Aprobar el plan: ¿Apruebo el plan\?/);
+  assert.strictEqual(anon.waited, undefined, 'sin nada anotado, sin el campo');
+  const text = C.statusText(s);
+  assert.match(text, /trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, esperando la firma de la coordinadora\. Para levantarla: claude respawn aaaabbbb/);
+  assert.match(text, /ccccdddd: la cerró Claude Code .*quieta 12 min, sin anotar qué esperaba\. Para levantarla: claude respawn ccccdddd/);
+  assert.match(W.renderRetired(s.retired), /trabajo-sur: la cerró Claude Code \(falta de memoria\), quieta 15 min, esperando la 9\.9, Aprobar el plan/);
+  const oficina = JSON.stringify(O.buildOffice({ wip: { rows: [], details: [], extra: [], free: [], halfway: [], unreadable: [], retired: s.retired }, nowMs: NOW }).data);
+  assert.match(oficina, /esperaba la firma de la coordinadora; para levantarla: claude respawn aaaabbbb/);
+  assert.match(oficina, /no anotó qué esperaba; para levantarla: claude respawn ccccdddd/);
 });
