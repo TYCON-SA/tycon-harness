@@ -423,3 +423,41 @@ test('T4 Restore_ForSession_GuardLooksAtTheTargetSession @story-8.288 @ac-5 @ac-
   const p = require(SOURCES).partesDe({ firma: 'lost-run', palabras: ['marker.js', 'restore', 's-podada', '--for-session', 's-espera'], cwd: E.repo, estado: E.estado, destino: 's-espera' });
   assert.match(p.queHace.join(' '), /9\.6/);
 });
+
+// T42 Restore_PlanCambiado_NoQuedaAprobado
+// 🔴 Falla con: traer de la podada la aprobación del plan sin comparar la huella. Un plan cambiado mientras la corrida
+// estaba podada volvería aprobado, sin que nadie viera el plan nuevo.
+test('T42 Restore_PlanCambiado_NoQuedaAprobado: la aprobación de la podada vuelve sólo con el mismo plan, y queda el renglón de la herencia', () => {
+  const sha = (t) => require('crypto').createHash('sha256').update(t).digest('hex');
+  for (const caso of ['igual', 'cambia', 'borrado']) {
+    const cambia = caso !== 'igual';
+    const E = entorno();
+    E.arrancar('s-podada', 30);
+    const m = E.leer('s-podada');
+    const plan = '# Plan\n\n1. Cambiar src/a.js.\n';
+    fs.writeFileSync(path.join(m.runDir, 'step-02-bmad-plan.md'), plan);
+    m.planApproval = { mode: 'user', text: 'ok', at: hace(30), planSha: sha(plan) };
+    fs.writeFileSync(E.activo('s-podada'), JSON.stringify(m));
+    assert.strictEqual(E.correr('marker.js', ['list-all'], 's-otra').status, 0);
+    assert.ok(!fs.existsSync(E.activo('s-podada')), 'se podó');
+    // cambiado, o borrado (un plan que no se puede leer tampoco se da por el mismo)
+    if (caso === 'cambia') fs.appendFileSync(path.join(m.runDir, 'step-02-bmad-plan.md'), '2. Un paso nuevo, después de aprobado.\n');
+    if (caso === 'borrado') fs.unlinkSync(path.join(m.runDir, 'step-02-bmad-plan.md'));
+    const rr = E.correr('marker.js', ['restore', 's-podada'], 's-nueva', conVentana({}));
+    assert.strictEqual(rr.status, 0, rr.stderr + rr.stdout);
+    const n = E.leer('s-nueva');
+    const renglon = fs.readFileSync(path.join(E.estado, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
+      .filter((j) => j.name === 'adopt-session' && j.via === 'restore').pop();
+    assert.ok(renglon, 'deja el renglón de la herencia');
+    assert.strictEqual(renglon.desde, 's-podada');
+    if (cambia) {
+      assert.ok(!n.planApproval, 'la aprobación no vuelve');
+      assert.ok(!n.stepsCompleted.includes('approve-plan') && n.stepsPending.includes('approve-plan'), '«Aprobar el plan» vuelve a pendiente');
+      assert.strictEqual(renglon.huellaPlan, null, 'y el renglón no deja heredar la revisión');
+    } else {
+      assert.strictEqual(n.planApproval && n.planApproval.planSha, sha(plan), 'con el mismo plan, la aprobación vuelve');
+      assert.ok(n.stepsCompleted.includes('approve-plan'));
+      assert.strictEqual(renglon.huellaPlan, sha(plan));
+    }
+  }
+});

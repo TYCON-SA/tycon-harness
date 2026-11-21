@@ -6259,6 +6259,9 @@ function cmdSalidaPerdida(modo, sesion) {
     sessionId: SID, lastTouch: nowIso(), restoredFrom: sesion, restoredAt: nowIso(), ...porDe(firma),
     ...(sigue || guardada ? {} : { startedAt: nowIso(), stepScheme: STEPS_LIB.SCHEME, stepsCompleted: [], stepsPending: STEPS_LIB.STEPS.filter((s) => !s.flag).map((s) => s.id) }),
   };
+  // lo que vuelve de la podada es de otra sesión: su aprobación del plan vale sólo con el mismo plan, como al adoptar. El
+  // renglón va cuando el restore terminó: si se corta a mitad, la revisión vieja no vale (lo seguro) hasta repetirlo
+  const herencia = guardada ? heredarElPlan(nuevo) : null;
   // el previo se guarda con sus datos: el marcador nuevo pisa el archivo del que se leyó
   const pendiente = { sesion, story: String(base.story), ts: apertura.ts, antes: !!apertura.antes, pasos: [
     { que: 'apertura', sesion, runDir: base.runDir, story: String(base.story) },
@@ -6266,7 +6269,9 @@ function cmdSalidaPerdida(modo, sesion) {
     { que: 'abrir', story: String(base.story), storyPath: base.storyPath, repo: base.repo, runDir: base.runDir },
     ...(podada ? [{ que: 'podada', sesion }] : []),
   ] };
-  terminar(require('./lib/restore-steps.js').correrRestore({ pendiente, pasos: pasosDelRestore, escribirMarcador: guardarPendiente(nuevo) }), base.story);
+  const hecho = require('./lib/restore-steps.js').correrRestore({ pendiente, pasos: pasosDelRestore, escribirMarcador: guardarPendiente(nuevo) });
+  if (hecho.ok && herencia) anotarHerencia({ story: nuevo.storyId, desde: sesion, ...herencia, via: 'restore' });
+  terminar(hecho, base.story);
 }
 
 // ¿Está viva la sesión? Lo dicen los archivos de sesión de Claude Code (la carpeta de sesiones, <pid>.json, con su
@@ -6458,6 +6463,38 @@ function cmdAdhocClearOrphan(sid) {
 }
 
 /**
+ * Una corrida que pasa a esta sesión (`adopt-session`, o `restore` de un marcador podado) trae la revisión y la
+ * aprobación del plan sólo si el plan es el mismo que se aprobó. Con el plan cambiado, o sin poder compararlo, no trae
+ * nada: la aprobación se borra y «Aprobar el plan» vuelve a pendiente, en los dos esquemas de pasos. Muta `m` y devuelve
+ * `{ hereda, huella, herencia }`: si la revisión de la sesión vieja puede valer, la huella del plan y el porqué.
+ */
+function heredarElPlan(m) {
+  const huella = huellaDelPlan(m);
+  const ap = m.planApproval;
+  if (ap && (!ap.planSha || !huella.sha || ap.planSha !== huella.sha)) {
+    require('./lib/batch-scope.js').volverAlPlan(m);
+    // en el esquema viejo de pasos `volverAlPlan` no toca nada: el paso del plan es el 3
+    if (STEPS_LIB.schemeOf(m) === 1) {
+      m.stepsCompleted = (m.stepsCompleted || []).filter((s) => String(s) !== '3');
+      if (!(m.stepsPending || []).map(String).includes('3')) m.stepsPending = ['3', ...(m.stepsPending || [])];
+    }
+    delete m.planApproval;
+    const herencia = !huella.sha ? `no pude leer el plan (${huella.motivo}): «Aprobar el plan» vuelve a pendiente`
+      : !ap.planSha ? 'la aprobación no guardó la huella del plan: «Aprobar el plan» vuelve a pendiente'
+        : 'el plan cambió desde que se aprobó: «Aprobar el plan» vuelve a pendiente';
+    return { hereda: false, huella, herencia };
+  }
+  return { hereda: !!huella.sha, huella, herencia: ap ? 'el plan es el que se aprobó: la revisión y la aprobación siguen' : 'sin plan aprobado' };
+}
+
+// El renglón que deja que la revisión de la sesión vieja valga para ésta (lib/plan-review.js sesionesDeLaCorrida): con
+// la huella del plan sólo si hereda. Se escribe con el nombre `adopt-session` también desde `restore`; `via` dice cuál.
+function anotarHerencia({ story, desde, hereda, huella, herencia, via }) {
+  appendLog('gates.log', { name: 'adopt-session', status: 'ok', via, story: story || null, desde, a: SID, huellaPlan: hereda ? huella.sha : null, herencia });
+  process.stderr.write(`[marker] ${via}: ${herencia}.\n`);
+}
+
+/**
  * adopt-session — resume cross-session SIN pérdida de estado.
  *
  * Un resume manual (re-escribir el marker con `set` y un payload parcial) PERDERÍA
@@ -6498,29 +6535,9 @@ function cmdAdoptSession(sid) {
   }
   frenarSiPerdida(safe, 'adopt-session', other && other.repoPath);
   const adopted = { ...other, sessionId: SID, lastTouch: nowIso(), adoptedFrom: safe, adoptedAt: nowIso() };
-  // La revisión y la aprobación del plan viajan con la corrida sólo si el plan es el mismo que se aprobó: el renglón de
-  // gates.log, con la huella de ahora, es lo que deja que la revisión de la sesión vieja valga para ésta
-  // (lib/plan-review.js sesionesDeLaCorrida). Con el plan cambiado no se hereda nada: vuelve a «Aprobar el plan».
-  const huella = huellaDelPlan(adopted);
-  const ap = adopted.planApproval;
-  let herencia = 'sin plan aprobado';
-  let hereda = !!huella.sha;
-  if (ap && (!ap.planSha || !huella.sha || ap.planSha !== huella.sha)) {
-    hereda = false;
-    require('./lib/batch-scope.js').volverAlPlan(adopted);
-    // en el esquema viejo de pasos `volverAlPlan` no toca nada: el paso del plan es el 3
-    if (STEPS_LIB.schemeOf(adopted) === 1) {
-      adopted.stepsCompleted = (adopted.stepsCompleted || []).filter((s) => String(s) !== '3');
-      if (!(adopted.stepsPending || []).map(String).includes('3')) adopted.stepsPending = ['3', ...(adopted.stepsPending || [])];
-    }
-    delete adopted.planApproval;
-    herencia = !huella.sha ? `no pude leer el plan (${huella.motivo}): «Aprobar el plan» vuelve a pendiente`
-      : !ap.planSha ? 'la aprobación no guardó la huella del plan: «Aprobar el plan» vuelve a pendiente'
-        : 'el plan cambió desde que se aprobó: «Aprobar el plan» vuelve a pendiente';
-  } else if (ap) herencia = 'el plan es el que se aprobó: la revisión y la aprobación siguen';
+  const { hereda, huella, herencia } = heredarElPlan(adopted);
   writeMarker(adopted);
-  appendLog('gates.log', { name: 'adopt-session', status: 'ok', story: adopted.storyId || null, desde: safe, a: SID, huellaPlan: hereda ? huella.sha : null, herencia });
-  process.stderr.write(`[marker] adopt-session: ${herencia}.\n`);
+  anotarHerencia({ story: adopted.storyId, desde: safe, hereda, huella, herencia, via: 'adopt-session' });
   try { fs.unlinkSync(otherPath); } catch (_e) { /* pruneStale lo limpia */ }
   // quien adopta una corrida en fila la retoma: deja de estar dejada a propósito
   sacarMarca(safe);
