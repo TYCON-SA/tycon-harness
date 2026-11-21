@@ -550,7 +550,7 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
     if (sub === 'compare-waiver') return 'compare-waiver';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
     if (sub === 'approve-pending') return 'pending-approval';
-    if (sub === 'approve-save') return 'save';
+    if (sub === 'sign-atdd-skip') return 'atdd-skip';
     // nombrar a la coordinadora: sin frase, con el click del dueño; con `--quote` (aun vacío), la frase de respaldo, que
     // confirma después confirm-designation
     if (sub === 'designate-relay') return pide('--quote') ? null : 'designation-set';
@@ -1250,7 +1250,7 @@ const PRECHEQUEO_OK = 'tycon-sign-precheck: ok';
 const PRECHEQUEO_VIA = 'TYCON_SIGN_PRECHECK_VIA';
 // las firmas de guion con requisitos propios; el carril y las firmas sobre un archivo no comprueban nada antes de firmar
 // (`adhoc-lane`: el largo del motivo y un tope menor que lo ya tocado se niegan antes de la ventana)
-const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
+const CON_PRECHEQUEO = new Set(['extra-round', 'atdd-skip', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
   // saltear los mutantes sin motivo, o en un paso que no corre las pruebas
   'escape:no-mutation',
@@ -1271,10 +1271,7 @@ const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control
 // ejecución reemplazada por una partición: con la bandera mal puesta, el guion la niega igual
 const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', SOBRE_CUPO, 'extra-round',
   'adhoc-lane', LOST_RUN_PARTICION, 'escape:no-mutation', 'autonomy-resume']);
-// lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
-// 210 s (lib/save-ok.js)
-const PLAZO_DEL_CHEQUEO = { save: 240000 };
-// el de las demás: menos que los 20 s del freno entero, que antes calcula los criterios y después valida el click. Si el
+// lo que espera el chequeo: menos que los 20 s del freno entero, que antes calcula los criterios y después valida el click. Si el
 // guion no contesta a tiempo, la ventana se abre como siempre y el guion vuelve a comprobar todo al firmar
 const PLAZO_DEL_PRECHEQUEO_MS = 12000;
 
@@ -1288,7 +1285,7 @@ function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env, via = nu
   const nombre = base(palabras[0]);
   const sh = nombre.endsWith('.sh');
   const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
-  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_CHEQUEO[firma] || PLAZO_DEL_PRECHEQUEO_MS,
+  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_PRECHEQUEO_MS,
     env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', [PRECHEQUEO_VIA]: via || '', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
   if (r.error || r.status === null) return null;
   if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;
@@ -1300,9 +1297,9 @@ function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env, via = nu
 
 // lo que en una pestaña sin permisos se hace sin firma y queda «hecho y avisado»: autorizaciones de rutina, no lo que
 // afloja un control (cambiar el estado, cerrar una corrida perdida, subir el tope de un arreglo rápido siguen con firma)
-const RUTINA_SIN_PERMISOS = new Set(['pending-approval', 'save', 'plan-approval', 'adhoc-lane']);
-// las que avisan a la persona desde los controles de la delegación de su propio guion (save-ok.js, marker.js adhoc)
-const AVISA_SU_GUION = new Set(['save', 'adhoc-lane']);
+const RUTINA_SIN_PERMISOS = new Set(['pending-approval', 'plan-approval', 'adhoc-lane']);
+// las que avisan a la persona desde los controles de la delegación de su propio guion (marker.js adhoc)
+const AVISA_SU_GUION = new Set(['adhoc-lane']);
 
 /**
  * ¿La firma pedida en una pestaña sin permisos es de rutina? `{ ok }` o `{ ok: false, motivo }`. Va sola, sin escapes;

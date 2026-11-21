@@ -704,9 +704,15 @@
       "requiere": []
     },
     {
-      "__nota": "el ok de guardar una story es la firma «save»: las huellas de cada repo, si el ok sigue valiendo, la story limpia, lo sensible y el aviso al dueño antes de la constancia.",
+      "__nota": "lo que se mide de los repos de una corrida antes de guardarla (las huellas, los controles del commit en sólo lectura, lo sensible, el aviso) y que la firma de guardar ya no está (8.283).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-ok.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "saltear pruebas primero pide la firma del dueño por ejecución (atdd-skip): sin ella no saltea, con la de otra ejecución tampoco, y se firma desde una terminal sin sesión (8.283).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/atdd-skip.test.js",
       "requiere": []
     },
     {

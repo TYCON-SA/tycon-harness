@@ -1047,7 +1047,7 @@ function soloRutinaDelegada(plano, datos, archivo, ignoradas, seccion) {
   const quedan = [];
   for (const valor of lista) {
     for (const id of cat.expand(valor)) {
-      // una forma (plan-approval:delicada, save:sensible) no es una firma: su nivel es el de la tabla, o 2
+      // una forma (plan-approval:delicada) no es una firma: su nivel es el de la tabla, o 2; una retirada no se expande
       const n = cat.delegatedLevel(id, subidos) || cat.effectiveLevel(id, subidos) || 2;
       // una excepción se delega sólo por su nombre: un grupo de antes no la trae
       if (!cat.delegable(id, subidos) || (n >= 2 && valor !== id)) { if (!salen.some((x) => x.id === id)) salen.push({ id, n }); } else if (!quedan.includes(id)) quedan.push(id);
@@ -1121,12 +1121,14 @@ function validarTipo(tipo, valor) {
     }
     case 'firmas':
     case 'firmas-ids': {
-      // las firmas del catálogo (signatures.js): `firmas` acepta además los nombres de grupo y `off`; `firmas-ids`, sólo ids
+      // las firmas del catálogo (signatures.js): `firmas` acepta además los nombres de grupo y `off`; `firmas-ids`, sólo ids.
+      // Una firma retirada (RETIRED) se acepta y no hace nada: el perfil que todavía la nombra sigue valiendo
       const cat = catalogoDeFirmas();
       if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
-      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids(), ...cat.formNames()], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
+      const retiradas = cat.RETIRED || [];
+      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids(), ...cat.formNames(), ...retiradas], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
       if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de ids de firma (guides/firmas-del-arnes.md), no ${JSON.stringify(valor)}`;
-      const malo = valor.find((v) => typeof v !== 'string' || !cat.isId(v.trim()));
+      const malo = valor.find((v) => typeof v !== 'string' || !(cat.isId(v.trim()) || retiradas.includes(v.trim())));
       if (malo !== undefined) return `${JSON.stringify(malo)} no es un id de firma (guides/firmas-del-arnes.md; un grupo no vale acá)`;
       return new Set(valor.map((v) => v.trim())).size === valor.length ? null : `la lista repite una firma: ${JSON.stringify(valor)}`;
     }
@@ -1136,6 +1138,8 @@ function validarTipo(tipo, valor) {
       if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
       if (!esObjeto(valor) || !Object.keys(valor).length) return `tiene que ser un objeto no vacío { "<id de firma>": <nivel> } (guides/firmas-del-arnes.md, «Los niveles»), no ${JSON.stringify(valor)}`;
       for (const [id, n] of Object.entries(valor)) {
+        // una firma retirada se acepta y no sube nada
+        if ((cat.RETIRED || []).includes(id)) continue;
         const base = cat.effectiveLevel(id);
         if (base === null) return `«${id}» no está en la tabla de niveles (guides/firmas-del-arnes.md, «Los niveles»)`;
         if (!Number.isInteger(n) || n < 1 || n > 3) return `el nivel de «${id}» tiene que ser un entero de 1 a 3, no ${JSON.stringify(n)}`;

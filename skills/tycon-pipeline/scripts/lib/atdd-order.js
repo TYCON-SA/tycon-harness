@@ -219,9 +219,10 @@ function atddBlockMessage(r) {
     '  Qué hacer:',
     '   (a) Escribir el/los test(s) que faltan AHORA y verificar que fallan contra el código actual',
     '       (o, si ya pasan, que fallan al romper la pieza a propósito). Después reintentar.',
-    '   (b) Si el orden fue legítimo y podés justificarlo, saltealo explícitamente:',
-    '         marker.js complete-step implement --no-atdd',
-    '       Queda registrado en bypass.log con el detalle — no es un skip silencioso.',
+    '   (b) Si el orden fue legítimo y podés justificarlo, pedí el escape; lo firma una persona, no el agente:',
+    '         marker.js complete-step implement --no-atdd --reason "<por qué>"',
+    '       Sin su firma (`sign-atdd-skip`, una vez por ejecución) frena igual y te da el comando.',
+    '       Con la firma queda registrado en bypass.log con el detalle — no es un skip silencioso.',
   ].join('\n');
 }
 

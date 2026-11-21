@@ -24,9 +24,10 @@
  * Sin la unión, los tests escritos ANTES de crear el marker (Arranque o «Validar la historia», o el reminder de "seteá el
  * marker AHORA") no contarían y el portón denegaría un ATDD impecable — falso positivo.
  *
- * Escapes: marker flag `atddBypass` (marker.js set-flag atddBypass true --reason "<por qué>" — cada edición que el
- * bypass deja pasar queda en bypass.log, y el MISMO flag satisface el gate del complete-step implement) ·
- * env TYCON_ATDD_PREEDIT_GATE=off (apaga la capa entera, p.ej. para debug del propio harness).
+ * Escapes: marker flag `atddBypass` con la firma del dueño para la ejecución (lib/atdd-skip.js, `marker.js
+ * sign-atdd-skip`); sin la firma la marca no saltea. Cada edición que el bypass deja pasar queda en bypass.log, y la
+ * MISMA firma satisface el gate del complete-step implement · env TYCON_ATDD_PREEDIT_GATE=off (apaga la capa entera,
+ * p.ej. para debug del propio harness). `opts.casa`: la casa donde se lee la firma (en las pruebas; si no, la de la cuenta).
  */
 
 'use strict';
@@ -66,7 +67,7 @@ function appendLog(stateDir, fileName, sessionId, obj) {
 
 /**
  * @param {object} event  evento PreToolUse de Claude Code (stdin del dispatcher)
- * @param {object} [opts] { stateDir } — override para tests
+ * @param {object} [opts] { stateDir, casa } — override para tests
  */
 function handle(event, opts = {}) {
   const filePath = event?.tool_input?.file_path;
@@ -124,18 +125,24 @@ function handle(event, opts = {}) {
     stepScheme: marker.stepScheme,
     declarados: declaredFiles(storyText),
   };
-  const r = computeAtddPreEdit({ ...base, bypassed: marker.atddBypass === true });
+  const r = computeAtddPreEdit({ ...base, bypassed: false });
+  if (r.action !== 'block') return null;
 
-  if (r.action !== 'block') {
-    // El bypass se audita SOLO cuando evitó un bloqueo real (sin esto, una línea por CADA
-    // edición de la sesión — ruido que entierra las entradas que importan).
-    if (marker.atddBypass === true && computeAtddPreEdit({ ...base, bypassed: false }).action === 'block') {
+  // La marca saltea sólo con la firma del dueño para esta ejecución (lib/atdd-skip.js), también una puesta antes de que
+  // existiera la firma; sin ella frena, y el pedido queda anotado para que la pueda dar.
+  let pedido = '';
+  if (marker.atddBypass === true) {
+    const d = require('./lib/atdd-skip.js').decidir({ marker, pide: true, camino: 'la marca atddBypass', casa: opts.casa });
+    if (d.saltea) {
+      // El bypass se audita SOLO cuando evitó un bloqueo real (sin esto, una línea por CADA
+      // edición de la sesión — ruido que entierra las entradas que importan).
       appendLog(stateDir, 'bypass.log', sessionId, {
         repoPath: marker.repoPath || null, kind: 'ATDD_PREEDIT_BYPASS', story: marker.storyId, file: filePath,
         reason: marker.atddBypassReason || null,
       });
+      return null;
     }
-    return null;
+    pedido = d.texto;
   }
 
   // repoPath: namespace por repo — misma key que marker.js.
@@ -143,7 +150,7 @@ function handle(event, opts = {}) {
     repoPath: marker.repoPath || null, name: 'atdd-preedit', status: 'blocked', story: marker.storyId, file: filePath, reason: r.reason,
   });
   return {
-    block: preEditBlockMessage({ filePath, storyId: marker.storyId, storyPath: storyAbs }) + '\n',
+    block: preEditBlockMessage({ filePath, storyId: marker.storyId, storyPath: storyAbs }) + '\n' + (pedido ? `${pedido}` : ''),
   };
 }
 

@@ -22,7 +22,7 @@ const { spawnSync } = require('child_process');
 
 const EXTERNAL_FLAGS = ['workSignalStarted', 'adoMarkedActive'];
 const RUN_FLAGS = {
-  atddBypass: 'el escape consciente del freno de pruebas primero: lo pide el agente y queda en bypass.log',
+  atddBypass: 'el escape consciente del freno de pruebas primero: lo pide el agente, lo firma una persona (sign-atdd-skip) y queda en bypass.log',
   waitingForHuman: 'la ejecución espera una respuesta de la persona: lo sabe el agente que hizo la pregunta',
   heavyValidationRequested: 'la persona pidió la validación pesada: el agente anota lo que se le pidió',
 };

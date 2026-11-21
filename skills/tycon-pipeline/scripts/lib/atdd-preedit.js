@@ -148,12 +148,12 @@ function preEditBlockMessage({ filePath, storyId, storyPath }) {
     storyPath ? `       Story: ${storyPath}` : '',
     '',
     '   (b) Si el orden invertido es legítimo y lo podés justificar (refactor sobre una red de tests',
-    '       que ya existe, spike acordado), declarálo explícitamente:',
+    '       que ya existe, spike acordado), pedí el escape; lo firma una persona, no el agente:',
     '',
     `         ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} set-flag atddBypass true --reason "<por qué>"`,
     '',
-    '       Queda en bypass.log con el detalle — no es un skip silencioso, y el cierre de ese paso',
-    '       lo va a seguir reportando.',
+    '       Sin su firma no se escribe: anota el pedido y te da el comando de la firma',
+    '       (`sign-atdd-skip`), que vale para toda la ejecución. Queda en bypass.log con el detalle.',
   ].filter((l) => l !== '').join('\n');
 }
 
