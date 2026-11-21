@@ -2692,6 +2692,20 @@ function uncommittedFiles(top, salida, startedAt) {
       if (!h || h.code !== 0 || delBorrado.has(h.out)) movidos.add(c);
     }
   }
+  // un archivo seguido al que sólo se le cambió el modo (`chmod`) conserva su fecha vieja: git dice el cambio de modo, y
+  // es suyo. Si git no contesta, también
+  const seguidos = before.filter((r) => !sinSeguir.has(r) && !movidos.has(r));
+  if (seguidos.length) {
+    const r = gitIn(top, ['diff', 'HEAD', '--raw', '-z', '--no-renames', '--', ...seguidos]);
+    if (r.code !== 0) for (const s of seguidos) movidos.add(s);
+    else {
+      const raw = r.out.split('\0');
+      for (let i = 0; i + 1 < raw.length; i += 2) {
+        const m = /^:(\d{6}) (\d{6}) /.exec(raw[i]);
+        if (m && m[1] !== m[2]) movidos.add(raw[i + 1]);
+      }
+    }
+  }
   return { own: [...own, ...before.filter((r) => movidos.has(r))], before: before.filter((r) => !movidos.has(r)) };
 }
 

@@ -1523,6 +1523,22 @@ test('T12 CoordinationClose_ArchivosDeAntes_LosSepara @story-8.235 @ac-12: los d
   assert.doesNotMatch(v.message, /falta: \d+ archivo\(s\) sin commitear en /);
 });
 
+test('T12c CoordinationClose_SoloCambioDeModo_EsSuyo @story-8.235 @ac-12: un archivo al que la sesión sólo le cambió el modo conserva la fecha vieja y es suyo', { skip: process.platform === 'win32' }, () => {
+  const t = closeLab();
+  archivo(t.repo, 'guion.sh');
+  git(t.repo, 'add', '.');
+  git(t.repo, 'commit', '-qm', 'guion');
+  git(t.repo, 'push', '-q', 'origin', 'main');
+  fs.chmodSync(path.join(t.repo, 'guion.sh'), 0o755);
+  fechar(t.repo, 'guion.sh', ARRANQUE - 3600000);
+  // y uno de antes, con su contenido cambiado, sigue siendo de antes
+  archivo(t.repo, 'a.txt', ARRANQUE - 3600000);
+  bg(t, 'modo', t.repo, { startedAt: ARRANQUE });
+  const r = closeIt(t, 'modo');
+  assert.strictEqual(r.ok, false, r.message);
+  assert.match(r.message, /falta: 1 archivo\(s\) sin commitear en [^;]*; 1 archivo\(s\) sin commitear de antes de que arrancara \(no parecen suyos\): a\.txt/);
+});
+
 test('T12b CoordinationClose_CarpetaOMovidoSinGit_SonSuyos @story-8.235 @ac-12: una carpeta y un archivo movido sin git conservan la fecha vieja y son suyos', () => {
   const t = closeLab();
   // a tracked file moved without git: deleted under its name and untracked under the new one, with its old date
