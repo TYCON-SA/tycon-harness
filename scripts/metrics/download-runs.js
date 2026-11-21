@@ -966,8 +966,9 @@ async function bajar(opts = {}) {
   }
   const resumidas = new Map();
   // las huellas de cada resumen (`hilo_md5`, `cambio_md5`) quedan en el índice: con `confiarIndice` no se vuelve a abrir
-  // el resumen para leerlas. Las de corridas que el buzón ya no trae salen
-  for (const k of Object.keys(indice.resumenes)) if (!partesDe.has(k)) { delete indice.resumenes[k]; indiceSucio = true; }
+  // el resumen para leerlas. Las de corridas que el buzón ya no trae salen; la bajada sólo de huellas no mira las corridas
+  // y no las toca
+  if (!soloHuellas) for (const k of Object.keys(indice.resumenes)) if (!partesDe.has(k)) { delete indice.resumenes[k]; indiceSucio = true; }
   const huellasDelResumen = (k) => {
     const anotadas = indice.resumenes[k];
     if (confiar && isObject(anotadas)) return anotadas;

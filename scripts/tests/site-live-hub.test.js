@@ -1941,6 +1941,23 @@ test('T12 DownloadRuns_OnlyOfficeKeys_BajaSoloHuellas @story-8.328 @ac-8', async
   } finally { await buzon.cerrar(); fs.rmSync(espejo, { recursive: true, force: true }); }
 });
 
+// 🔴 Falla con: la bajada sólo de huellas borra del índice los resúmenes que anotó la pasada entera; la pasada siguiente,
+//    que confía en el índice, volvería a abrir cada resumen en el disco montado.
+test('T17 DownloadRuns_OnlyOfficeKeys_NoTocaLosResumenesDelIndice @story-8.328 @ac-8', async () => {
+  const k = par();
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'casa-'));
+  const espejo = path.join(casa, 'buzon');
+  const indice = path.join(casa, 'mailbox-downloads.json');
+  const resumenes = { 'maquina-a/2.2-2026-09-02T1000': { hilo_md5: 'h', cambio_md5: 'c' } };
+  fs.writeFileSync(indice, JSON.stringify({ version: 1, destino: 'cuentax/runs', blobs: {}, resumenes }));
+  const buzon = await H.arrancarBuzon({ blobs: { [`maquina-a/office-keys/${k.fingerprint}.json`]: JSON.stringify({ fingerprint: k.fingerprint, publicKey: k.publicKey }) } });
+  try {
+    const r = await bajar({ cuenta: 'cuentax', contenedor: 'runs', credencial: { sas: H.sas() }, urlBase: buzon.base, dir: espejo, budgetMs: 60000, soloHuellas: true });
+    assert.strictEqual(r.codigo, 0, JSON.stringify(r.res));
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(indice, 'utf8')).resumenes, resumenes, 'los resúmenes anotados siguen');
+  } finally { await buzon.cerrar(); fs.rmSync(casa, { recursive: true, force: true }); }
+});
+
 test('T13 DownloadRuns_OnlyOfficeKeys_CortaPorTiempo_LoDice @story-8.328 @ac-10', async () => {
   const k = par();
   const espejo = fs.mkdtempSync(path.join(os.tmpdir(), 'espejo-'));
