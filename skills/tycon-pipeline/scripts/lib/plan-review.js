@@ -796,6 +796,51 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   return { codigo: 0, via: 'revision', constancia: c };
 }
 
+// En la aprobación por la revisión (la delegación, la firma de trámite), `--approved` sólo dice que es la revisión: el
+// texto de la aprobación lo arma el arnés con quién lanzó la revisión y su veredicto. Un texto propio podría atribuir
+// una firma que nadie dio («firma del dueño con el cuadro»), y la constancia lo guardaría como cierto.
+const PALABRA_DE_LA_REVISION = /^(?:la\s+)?revisi[oó]n$/i;
+
+/** null si el `--approved` de una aprobación por la revisión es la palabra «revisión» (o falta); si no, el motivo. */
+function textoPropioPorLaRevision(dado) {
+  if (dado == null || PALABRA_DE_LA_REVISION.test(String(dado).trim())) return null;
+  return 'en la aprobación por la revisión el texto lo arma el arnés (quién lanzó la revisión y su veredicto): '
+    + `cerrá con --approved revisión, sin «${String(dado).replace(/\s+/g, ' ').slice(0, 80)}»`;
+}
+
+/** El texto de una aprobación por la revisión, armado por el arnés con su constancia. */
+function textoDeLaAprobacion(c) {
+  return `revisión ${c.id} ${c.veredicto} (${c.modelo}), lanzada por la sesión ${c.lanzo}`;
+}
+
+/**
+ * ¿La última revisión CON VEREDICTO de esta corrida, de cualquier sesión, está en rechazo, y la historia es delicada?
+ * `{ codigo: 2, motivo }` para no aprobar, por ninguna vía: un plan delicado no se aprueba con su revisión en contra.
+ * null si no. Se lee de gates.log, que no se pisa: ni cambiar el plan después del rechazo ni anotar encima una revisión
+ * sin veredicto lo destapan; lo destapa una revisión aprobada posterior.
+ */
+function revisionEnContra({ estado, destino, marker }) {
+  const plan = planDe(marker);
+  const problemas = [];
+  const conVeredicto = revisionesDe(estado, destino, corridaDe(marker), problemas)
+    .filter((j) => j.veredicto === 'rechazado' || APROBADOS.includes(j.veredicto));
+  const u = conVeredicto[conVeredicto.length - 1];
+  // con el registro ilegible no se sabe si hay una revisión en contra: cuenta como si la hubiera
+  if (!problemas.length && (!u || u.veredicto !== 'rechazado')) return null;
+  const storyFile = storyDe(marker);
+  let storyTexto = null;
+  try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
+  // sin poder saber si es delicada, cuenta como delicada
+  let delicada = true;
+  try {
+    delicada = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parteDe(marker, storyTexto)) }).value !== false;
+  } catch (_) { delicada = true; }
+  if (!delicada) return null;
+  if (problemas.length) return no(`plan delicado y no pude leer sus revisiones (${problemas[0]}): no sé si alguna está en contra`);
+  return no(`plan delicado con su última revisión (${u.ts || 'sin fecha'}) en rechazo: un plan delicado no se aprueba con la revisión en contra. `
+    + 'Corregí el plan con lo que encontró la revisión y lanzala de nuevo: la aprueba una revisión aprobada posterior');
+}
+
 /** ¿El perfil lista el plan de una historia delicada como trámite, que firma el arnés solo? (automatic-signing.js) */
 function delicadaDeTramite({ home } = {}) {
   try {
@@ -938,5 +983,5 @@ module.exports = {
   rutaResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, huellaDe, designadaDeVerdad, sha,
-  tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
+  tieneRenglon, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };

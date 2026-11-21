@@ -1994,7 +1994,13 @@ function cmdCompleteStep(nRaw, flags) {
     let revision = autoRevision;
     const porLaRevision = antesDeLaRevision({ marker });
     const antesDelPlan = (via, registro) => {
+      // un plan delicado con la revisión de este plan en rechazo no se aprueba por ninguna vía
+      const enContra = require('./lib/plan-review.js').revisionEnContra({ estado: STATE_DIR, destino: SID, marker });
+      if (enContra) return enContra;
       if (via === 'delegacion') {
+        // por la revisión, el texto lo arma el arnés: un --approved propio podría atribuir una firma que nadie dio
+        const propio = require('./lib/plan-review.js').textoPropioPorLaRevision(approved);
+        if (propio) return { codigo: 2, motivo: propio };
         const r = porLaRevision(via);
         if (r.codigo) return r;
         revision = r.constancia;
@@ -2022,7 +2028,9 @@ function cmdCompleteStep(nRaw, flags) {
       } catch (e) { bloquear3(`no pude escribir la aprobación de la maqueta (${mockupPlan.p.approval}): ${e.code || e.message}`); }
     }
     const porRevision = !!revision;
-    const textoPlan = approved || (autoRevision ? 'aprobado por la revisión automática de la propia sesión' : 'firmado en la terminal');
+    // por la revisión, el texto lo arma el arnés con quién la lanzó y su veredicto; por una persona, su cita
+    const textoPlan = porRevision ? require('./lib/plan-review.js').textoDeLaAprobacion(revision)
+      : (approved || 'firmado en la terminal');
     // la huella del plan aprobado: con ella, anotar la parte después no lo reabre si no cambió (set-batch)
     const planSha = huellaDelPlan(marker).sha;
     marker.planApproval = { mode: porRevision ? 'revision' : 'user', text: textoPlan, at: at3, ...(planSha ? { planSha } : {}),
