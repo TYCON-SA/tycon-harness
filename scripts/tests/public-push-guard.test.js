@@ -2318,3 +2318,52 @@ test('T84 Status_DiceDeQueOrganizacionEsElPerfil', (t) => {
   assert.match(run(other).stdout, /otra organización/);
   assert.match(run(orgLab(t, OWNER_REPOS)).stdout, /máquina del equipo: sí/);
 });
+
+// ── el perfil local de otra organización (harness.js team-init --local): sin team-repos.json ───────────────────────────
+// Un colaborador de afuera arma su perfil con `team-init --local`, que no trae team-repos.json, y lo instala. Sin otra
+// señal, «sin team-repos.json» es el equipo dueño (T82) y le exigía la lista privada. La señal positiva es el sello de la
+// capa instalada (.tycon-team.json, lo escribe el instalador): el perfil se bajó de una carpeta de esta máquina. Un
+// perfil del equipo dueño se baja de su repo, nunca de una carpeta. Ante cualquier otra cosa, como hoy: lista obligatoria.
+const stamp = (host, extra = {}) => json({ schema: 1, repo: host === 'local' ? '/tmp/perfil-de-acme' : 'https://github.com/equipo-dueno/perfil', host, ref: 'main', name: 'acme', files: [{ path: 'team-profile.json' }], ...extra });
+function layerLab(t, { repos, seal } = {}) {
+  const fx = orgLab(t, repos);
+  if (seal !== undefined) fs.writeFileSync(path.join(fx.harness, '.tycon-team.json'), seal);
+  commitOn(fx, 'limpia', { 'guides/a.md': 'limpio\n' });
+  return fx;
+}
+
+test('T85 PerfilLocalDeOtraOrg_SinTeamRepos_EmpujaConLosControlesGenerales', (t) => {
+  const fx = layerLab(t, { seal: stamp('local') });
+  const r = guard(fx, branchLine(fx, 'limpia'), { list: null });
+  assertPassed(r);
+  assert.strictEqual(r.json.generic_only, true);
+  // lo que no necesita lista se sigue mirando
+  commitOn(fx, 'token', { 'scripts/x.js': `const t = '${TOKEN}';\n` });
+  assertBlocked(fx, guard(fx, branchLine(fx, 'token'), { list: null }), { category: 'secreto', secret: [TOKEN] });
+});
+
+test('T86 SinTeamRepos_ConUnSelloQueNoEsLocal_SigueFrenando', (t) => {
+  // el perfil bajado de un repo, un sello roto, de otra forma o sin sello: ante la duda, el equipo dueño
+  for (const seal of [stamp('github'), stamp('azure'), '{ roto', '[]\n', json({ schema: 1 }), stamp('LOCAL'), stamp('local', { schema: 2 }), undefined]) {
+    const fx = layerLab(t, { seal });
+    const r = guard(fx, branchLine(fx, 'limpia'), { list: null });
+    assert.strictEqual(r.status, 2, `sello ${seal === undefined ? 'ausente' : seal.trim().slice(0, 60)}: lista obligatoria\n${r.all}`);
+  }
+});
+
+test('T87 ElSelloLocal_NoTapaUnTeamReposQueDiceOtraCosa', (t) => {
+  // con team-repos.json, manda él: con `maintainers` o ilegible, el sello local no lo vuelve otra organización
+  for (const repos of [OWNER_REPOS, '{ roto', '{}\n']) {
+    const fx = layerLab(t, { repos, seal: stamp('local') });
+    assert.strictEqual(guard(fx, branchLine(fx, 'limpia'), { list: null }).status, 2, `team-repos.json ${typeof repos === 'string' ? repos.trim() : 'del equipo dueño'}`);
+  }
+});
+
+test('T88 ElSelloDelArbolEmpujado_NoDecideLaOrganizacion', (t) => {
+  // el freno corriendo desde el árbol que se empuja: un sello local que trae la rama no cuenta
+  const inTree = lab(t, { team: false });
+  for (const p of [...PIECES, HISTORY]) write(inTree.work, p, fs.readFileSync(path.join(REPO, p)));
+  commitOn(inTree, 'propia', { 'guides/a.md': 'limpio\n', 'team-profile.json': '{}\n', '.tycon-team.json': stamp('local') });
+  const own = guard({ ...inTree, harness: inTree.work }, branchLine(inTree, 'propia'), { list: null });
+  assert.strictEqual(own.status, 2, `el sello del propio árbol no decide la organización\n${own.all}`);
+});

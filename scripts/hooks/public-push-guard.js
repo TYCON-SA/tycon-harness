@@ -36,7 +36,9 @@
 // del equipo que mantiene el arnés la lista es obligatoria. Sin perfil y sin lista (alguien de afuera con su copia), o con
 // el perfil de OTRA organización, corre lo que no necesita lista, y lo dice: la lista privada no se le da a nadie de
 // afuera. Al equipo dueño lo reconoce el perfil instalado, nunca el árbol que se empuja: el `team-repos.json` al lado de
-// `team-profile.json` (o `perfil-equipo.json`) declara `maintainers`. Ante la duda es el equipo dueño (`machineOrg`).
+// `team-profile.json` (o `perfil-equipo.json`) declara `maintainers`. Sin ese archivo, es otra organización sólo si el
+// sello de la capa instalada (`.tycon-team.json`) dice que el perfil se bajó de una carpeta de esta máquina
+// (`harness.js team-init --local`). Ante la duda es el equipo dueño (`machineOrg`).
 //
 // ¿ESA LISTA ESTÁ AL DÍA? La lista se lee del disco de un clon: si ese clon está
 // atrasado respecto de su remoto, frena por su propia firma lo que una excepción ya
@@ -294,10 +296,24 @@ function machineOrg(top) {
   const file = path.join(ROOT, TEAM_REPOS);
   if (top && (realOf(ROOT) === realOf(top) || isInside(file, top))) return 'owner';
   let doc;
-  try { doc = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return 'owner'; }
+  try { doc = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
+    // sin team-repos.json: otra organización sólo con una señal positiva, la de un perfil armado con
+    // `harness.js team-init --local` (el sello de la capa instalada dice que se bajó de una carpeta de esta máquina); el
+    // perfil del equipo dueño se baja de su repo. Cualquier otra cosa —ilegible, otro sello, sin sello— es el equipo dueño
+    return e && e.code === 'ENOENT' && localLayer() ? 'other' : 'owner';
+  }
   const isObj = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
   if (!isObj(doc) || doc.version !== 1 || !isObj(doc.profile)) return 'owner';
   return Object.prototype.hasOwnProperty.call(doc, 'maintainers') ? 'owner' : 'other';
+}
+
+// el sello que el instalador deja al apilar la capa del equipo sobre la versión bajada (scripts/setup/harness/team.js)
+const TEAM_STAMP = '.tycon-team.json';
+/** ¿La capa del equipo instalada se bajó de una carpeta de esta máquina (`team-init --local`)? Sólo con el sello entero. */
+function localLayer() {
+  let s;
+  try { s = JSON.parse(fs.readFileSync(path.join(ROOT, TEAM_STAMP), 'utf8')); } catch (_) { return false; }
+  return Boolean(s) && typeof s === 'object' && !Array.isArray(s) && s.schema === 1 && s.host === 'local' && typeof s.repo === 'string' && path.isAbsolute(s.repo);
 }
 
 /**

@@ -354,3 +354,200 @@ test('T16 Formas_LoQueEncontroElPase — sin comillas, guiones literales, heredo
   assert.strictEqual(decidir(toy, evento(LANZADA, 'Bash', { command: largo })), null);
   assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 100, 'sesión de fondo');
 });
+
+// ── los mensajes a una sesión de fondo: se mira el destino (`to`), no la sesión que llama ─────────────────────────────
+const OTRA = 'ses-otra-pestana';
+const mensaje = (sid, to = 'Acme1') => evento(sid, 'SendMessage', { to, message: '¿cómo vas?', summary: 'pregunta' });
+const erroresDe = (toy) => { try { return fs.readFileSync(path.join(stateDir(toy.casa), 'hook-errors.log'), 'utf8'); } catch { return ''; } };
+/** La máquina del caso con una pestaña más, que no es la coordinadora ni la lanzada. */
+function maquinaConOtra(t, opts) {
+  const toy = maquina(t, opts);
+  sesion(toy, OTRA, { nombre: 'Otra pestaña', kind: 'interactive', cwd: toy.raiz });
+  return toy;
+}
+
+test('T17 BgGuard_MensajeDeOtraSesionAUnaDeFondo_Niega @story-8.232 @ac-9', (t) => {
+  const toy = maquinaConOtra(t);
+  const r = decidir(toy, mensaje(OTRA));
+  assert.ok(r && r.decision === 'deny', JSON.stringify(r));
+  assert.match(r.reason, /Esa sesión trabaja de fondo: mandáselo a la coordinadora, que se lo pasa\./);
+  assert.match(r.reason, /Coordinadora/);
+  assert.match(r.reason, new RegExp(COORD));
+  assert.doesNotMatch(r.reason, /tres renglones/, 'no es el texto de las preguntas');
+  // el gancho como proceso
+  const p = spawnSync(process.execPath, [ganchoConPerfil()], { input: JSON.stringify(mensaje(OTRA)), encoding: 'utf8', env: { ...process.env, HOME: toy.casa, USERPROFILE: toy.casa, TYCON_BG_QUESTION_GUARD: '' } });
+  assert.strictEqual(p.status, 0, p.stderr);
+  const out = JSON.parse(p.stdout);
+  assert.strictEqual(out.hookSpecificOutput.permissionDecision, 'deny');
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /mandáselo a la coordinadora/);
+  // apagado, pasa
+  assert.strictEqual(decidir(toy, mensaje(OTRA), { TYCON_BG_QUESTION_GUARD: '0' }), null);
+});
+
+test('T18 BgGuard_MensajeDeLaCoordinadora_Pasa @story-8.232 @ac-10', (t) => {
+  const toy = maquinaConOtra(t);
+  assert.strictEqual(decidir(toy, mensaje(COORD)), null, 'la coordinadora le escribe');
+  assert.strictEqual(decidir(toy, mensaje(OTRA)).decision, 'deny', 'el mismo mensaje de otra sesión se niega');
+  // la lanzada le contesta a la coordinadora: el destino no es de fondo lanzado
+  assert.strictEqual(decidir(toy, mensaje(LANZADA, 'Coordinadora')), null);
+});
+
+test('T19 BgGuard_MensajeAUnaConPersona_Pasa @story-8.232 @ac-11', (t) => {
+  const sinRenglon = maquinaConOtra(t, { conRenglon: false });
+  assert.strictEqual(decidir(sinRenglon, mensaje(OTRA)), null, 'fuera del registro de las lanzadas');
+  const conRenglon = maquinaConOtra(t);
+  assert.strictEqual(decidir(conRenglon, mensaje(OTRA)).decision, 'deny', 'con su renglón se niega');
+  // una pestaña interactiva con nombre de lanzada no es de fondo
+  const interactiva = maquinaConOtra(t);
+  sesion(interactiva, LANZADA, { nombre: 'Acme1', kind: 'interactive', startedAt: AT + 7000 });
+  assert.strictEqual(decidir(interactiva, mensaje(OTRA)), null);
+  // sin coordinadora viva, nadie frena
+  const sinCoord = maquinaConOtra(t);
+  sesion(sinCoord, COORD, { nombre: 'Coordinadora', kind: 'interactive', viva: false });
+  assert.strictEqual(decidir(sinCoord, mensaje(OTRA)), null);
+});
+
+test('T20 BgGuard_NombreSinResolverAmbiguoDifusionEIlegible @story-8.232 @ac-12', (t) => {
+  // (a) un nombre que no es ninguna sesión: pasa y queda anotado; `main` y un ayudante pasan sin anotar
+  const sinNombre = maquinaConOtra(t);
+  assert.strictEqual(decidir(sinNombre, mensaje(OTRA, 'Nadie')), null);
+  assert.match(erroresDe(sinNombre), /background-question-guard: .*«Nadie».*ninguna sesión/);
+  const ayudantes = maquinaConOtra(t);
+  assert.strictEqual(decidir(ayudantes, mensaje(OTRA, 'main')), null);
+  assert.strictEqual(decidir(ayudantes, mensaje(OTRA, 'a2a28ee7ed3ab0450')), null);
+  assert.strictEqual(erroresDe(ayudantes), '');
+  // (b) un nombre de dos sesiones, una de fondo lanzada: niega
+  const ambiguo = maquinaConOtra(t);
+  sesion(ambiguo, 'ses-gemela', { nombre: 'Acme1', kind: 'interactive', cwd: ambiguo.raiz });
+  assert.strictEqual(decidir(ambiguo, mensaje(OTRA)).decision, 'deny');
+  // (c) la difusión con una lanzada viva: niega; sin lanzadas, pasa
+  assert.strictEqual(decidir(maquinaConOtra(t), mensaje(OTRA, '*')).decision, 'deny');
+  assert.strictEqual(decidir(maquinaConOtra(t, { conRenglon: false }), mensaje(OTRA, '*')), null);
+  // (d) el registro de las lanzadas ilegible y el destino de fondo: ante la duda, niega
+  const rota = maquinaConOtra(t);
+  fs.writeFileSync(C.launchedFile(rota.casa), '{ no es json');
+  const r = decidir(rota, mensaje(OTRA));
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.reason, /ante la duda/);
+  // las otras formas del destino: el nombre con su referencia y la dirección de respuesta
+  const formas = maquinaConOtra(t);
+  sesion(formas, LANZADA, { nombre: 'Acme1', kind: 'bg', startedAt: AT + 7000, messagingSocketPath: '/tmp/cc-socks/4242.sock' });
+  assert.strictEqual(decidir(formas, mensaje(OTRA, 'Acme1 [6f2349]')).decision, 'deny');
+  assert.strictEqual(decidir(formas, mensaje(OTRA, 'uds:/tmp/cc-socks/4242.sock')).decision, 'deny');
+  assert.strictEqual(decidir(formas, mensaje(OTRA, 'uds:/tmp/cc-socks/9999.sock')), null);
+  // un nombre de más de 40 letras: se compara entero, no recortado
+  const largo = 'Acme'.repeat(13);
+  const larga = maquinaConOtra(t, { conRenglon: false });
+  sesion(larga, LANZADA, { nombre: largo, kind: 'bg', startedAt: AT + 7000 });
+  lanzadas(larga, [{ name: largo, cwd: larga.carpeta, at: AT, por: COORD }]);
+  assert.strictEqual(decidir(larga, mensaje(OTRA, largo)).decision, 'deny', 'el nombre largo entero resuelve');
+  assert.strictEqual(decidir(larga, mensaje(OTRA, largo.slice(0, 40))), null, 'el recortado no es su nombre');
+});
+
+test('T21 BgGuard_ArchivosDeSesionRaros_NoResuelvenDestino @story-8.232 @ac-12', (t) => {
+  // una lanzada muerta no recibe el mensaje: no es destino
+  const muerta = maquinaConOtra(t);
+  sesion(muerta, LANZADA, { nombre: 'Acme1', kind: 'bg', startedAt: AT + 7000, viva: false });
+  assert.strictEqual(decidir(muerta, mensaje(OTRA)), null);
+  // un pid que no es un número entero positivo, o un sessionId que no es texto, tampoco
+  for (const extra of [{ pid: 0 }, { pid: 'x' }, { sessionId: 42 }]) {
+    const rara = maquinaConOtra(t);
+    fs.writeFileSync(path.join(rara.casa, '.claude', 'sessions', `${LANZADA}.json`), JSON.stringify({
+      pid: process.pid, sessionId: LANZADA, name: 'Acme1', kind: 'bg', startedAt: AT + 7000, cwd: rara.carpeta, ...extra,
+    }));
+    assert.strictEqual(decidir(rara, mensaje(OTRA)), null, JSON.stringify(extra));
+  }
+  // un archivo de sesión ilegible se salta y se nombra cuando el mensaje no va a ninguna sesión
+  const rota = maquinaConOtra(t);
+  fs.writeFileSync(path.join(rota.casa, '.claude', 'sessions', 'roto.json'), '{ no es json');
+  assert.strictEqual(decidir(rota, mensaje(OTRA)).decision, 'deny', 'el roto no tapa a la lanzada');
+  // con un archivo ilegible, un destino que no resuelve puede ser justo esa sesión: ante la duda, niega
+  const r = decidir(rota, mensaje(OTRA, 'Nadie'));
+  assert.ok(r && r.decision === 'deny', JSON.stringify(r));
+  assert.match(r.reason, /ante la duda/);
+  assert.match(erroresDe(rota), /«Nadie».*\(roto\.json: /);
+  // a la conversación principal o a un ayudante, nunca
+  assert.strictEqual(decidir(rota, mensaje(OTRA, 'main')), null);
+});
+
+// ── lo que encontró el pase adversarial: las formas del destino que Claude Code entrega, el registro y las fallas ─────
+test('T22 BgGuard_FormasDelDestinoQueClaudeEntrega_Niegan @story-8.232 @ac-9 @ac-12', (t) => {
+  const toy = maquinaConOtra(t);
+  sesion(toy, LANZADA, { nombre: 'Acme1', kind: 'bg', startedAt: AT + 7000, messagingSocketPath: '/tmp/cc-socks/2 x.sock', bridgeSessionId: 'session_ABC' });
+  for (const to of ['acme1 [6f2349]', 'ACME1 [6f2349]', 'Acme1[6f2349]', ' Acme1 ', 'acme1', 'uds:/tmp/cc-socks/2%20x.sock',
+    'uds:%2Ftmp%2Fcc-socks%2F2%20x.sock', '/tmp/cc-socks/2 x.sock', 'bridge:session_ABC', LANZADA]) {
+    const r = decidir(toy, mensaje(OTRA, to));
+    assert.ok(r && r.decision === 'deny', `${JSON.stringify(to)} → ${JSON.stringify(r)}`);
+  }
+  // las mismas formas hacia una sesión con persona delante pasan
+  assert.strictEqual(decidir(toy, mensaje(OTRA, 'otra-pestaña')), null);
+});
+
+test('T23 BgGuard_MensajeALaCoordinadora_NoAnotaNada @story-8.232 @ac-12', (t) => {
+  const toy = maquinaConOtra(t);
+  sesion(toy, COORD, { nombre: 'Coordinadora', kind: 'interactive', cwd: toy.raiz, messagingSocketPath: '/tmp/cc-socks/1.sock' });
+  for (const to of ['Coordinadora', 'Coordinadora [abc123]', 'uds:/tmp/cc-socks/1.sock']) {
+    assert.strictEqual(decidir(toy, mensaje(LANZADA, to)), null, to);
+    assert.strictEqual(decidir(toy, mensaje(OTRA, to)), null, to);
+  }
+  assert.strictEqual(erroresDe(toy), '');
+  // un destino sin sesión se anota en un solo renglón, aunque traiga saltos de línea
+  assert.strictEqual(decidir(toy, mensaje(OTRA, 'Nadie\n[2026-01-01] renglón falso')), null);
+  assert.strictEqual(erroresDe(toy).trim().split('\n').length, 1);
+});
+
+test('T24 BgGuard_LaNegativaNombraALaCoordinadoraEntera @story-8.232 @ac-9', (t) => {
+  const toy = maquinaConOtra(t);
+  const largo = 'Coordinadora de la máquina de la oficina del fondo';
+  sesion(toy, COORD, { nombre: largo, kind: 'interactive', cwd: toy.raiz });
+  const r = decidir(toy, mensaje(OTRA));
+  assert.strictEqual(r.decision, 'deny');
+  assert.ok(r.reason.includes(`«${largo}»`), r.reason);
+});
+
+test('T25 BgGuard_FallaConCoordinadoraViva_NiegaSiElDestinoEsDeFondo @story-8.232 @ac-12', (t) => {
+  const original = C.launchedBy;
+  t.after(() => { C.launchedBy = original; });
+  C.launchedBy = () => { throw new Error('se rompió'); };
+  const toy = maquinaConOtra(t);
+  const r = decidir(toy, mensaje(OTRA));
+  assert.ok(r && r.decision === 'deny', JSON.stringify(r));
+  assert.match(r.reason, /ante la duda/);
+  assert.match(erroresDe(toy), /se rompió/);
+  // a una sesión con persona delante, la misma falla deja pasar y queda anotada
+  const persona = maquinaConOtra(t, { conRenglon: false });
+  sesion(persona, LANZADA, { nombre: 'Acme1', kind: 'interactive', startedAt: AT + 7000 });
+  assert.strictEqual(decidir(persona, mensaje(OTRA)), null);
+  assert.match(erroresDe(persona), /se rompió/);
+  // un destino de fondo ya confirmado no se suelta por la falla de otro destino
+  C.launchedBy = ({ sid }) => { if (sid === LANZADA) return { launched: true }; throw new Error('otro'); };
+  const dos = maquinaConOtra(t);
+  assert.strictEqual(decidir(dos, mensaje(OTRA, '*')).decision, 'deny');
+  // un problema del registro con un destino que no es de fondo: pasa y queda anotado
+  C.launchedBy = () => ({ problem: 'registro raro', background: false });
+  const raro = maquinaConOtra(t);
+  assert.strictEqual(decidir(raro, mensaje(OTRA)), null);
+  assert.match(erroresDe(raro), /registro raro.*dejé pasar/);
+});
+
+test('T26 BgGuard_LoQueQuedabaDeLaVuelta2 @story-8.232 @ac-9 @ac-12', (t) => {
+  const SL = require('../lib/signature-list.js');
+  // los prefijos de dirección en mayúsculas también resuelven
+  const toy = maquinaConOtra(t);
+  sesion(toy, LANZADA, { nombre: 'Acme1', kind: 'bg', startedAt: AT + 7000, messagingSocketPath: '/tmp/cc-socks/3.sock', bridgeSessionId: 'session_XYZ' });
+  for (const to of ['UDS:/tmp/cc-socks/3.sock', 'Bridge:session_XYZ']) assert.strictEqual(decidir(toy, mensaje(OTRA, to)).decision, 'deny', to);
+  // la lanzada que difunde no se cuenta a sí misma como destino de fondo
+  assert.strictEqual(decidir(toy, mensaje(LANZADA, '*')), null);
+  // sin sesión que llama o sin destino, no se mira nada
+  assert.strictEqual(decidir(toy, { hook_event_name: 'PreToolUse', tool_name: 'SendMessage', tool_input: { to: 'Acme1' } }), null);
+  assert.strictEqual(decidir(toy, mensaje(OTRA, '')), null);
+  // una falla general con la coordinadora ya conocida niega; sin coordinadora conocida, pasa
+  const { sesiones, vive } = SL;
+  t.after(() => { SL.sesiones = sesiones; SL.vive = vive; });
+  SL.vive = () => true;
+  SL.sesiones = () => ({ mapa: { get() { throw new Error('mapa roto'); } } });
+  const r = decidir(maquinaConOtra(t), mensaje(OTRA));
+  assert.ok(r && r.decision === 'deny', JSON.stringify(r));
+  SL.sesiones = () => { throw new Error('sin sesiones'); };
+  assert.strictEqual(decidir(maquinaConOtra(t), mensaje(OTRA)), null);
+});

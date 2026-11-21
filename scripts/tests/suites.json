@@ -1834,6 +1834,12 @@
       "requiere": []
     },
     {
+      "__nota": "la comparación con main y la matriz del commit ubican los archivos de repos hermanos escritos como Repo/archivo, también en copias --wt: la copia ajena, el sufijo falseado y la carpeta suelta no cuentan. Repos de juguete, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/sibling-copies.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "lectores que leían mal o callaban: el grupo de rutas «(app)/» no es el prefijo del repo, el normalizador del despachador que no carga deja su línea, owner-away get muestra la marca sin confirmar. HOME de laboratorio, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/quiet-readers.test.js",
@@ -3271,6 +3277,12 @@
       "requiere": []
     },
     {
+      "__nota": "encolar o mergear un pedido de alguien de afuera del equipo lo aprueba el dueño (regla GIT-C7): el lector (scripts/lib/external-pr.js), el freno de la sesión de verdad con una casa de juguete y el cuadro de la firma. GitHub es un gh falso en el PATH. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/external-pr.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las entradas a la rama principal sin su CI (scripts/nightly/main-entries/main-entries.js): GitHub es un servidor local que contesta como su API y Azure un az de mentira. No medido no es cero. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/main-entries.test.js",
@@ -4643,6 +4655,12 @@
       "__nota": "story 8.40, el cierre (T44): las plantillas genéricas del repo de historias de un equipo nuevo (scripts/setup/harness/team-stories/, las usa harness.js team-init): están todas, no nombran ningún producto, cada marcador lo llena team-init y el portón de GitHub pasa las reglas de cualquier workflow público. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/team-stories-templates.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el comando con que harness.js team-init suma el perfil a esta máquina: con la versión bajada, install --version; instalada desde un clon (como trabaja quien contribuye), migrate --to-home --team, porque install --version ahí sale 2 sin escribir. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/team-init-add-profile.test.js",
       "requiere": []
     },
     {

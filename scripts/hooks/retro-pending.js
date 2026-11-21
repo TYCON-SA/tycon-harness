@@ -1041,6 +1041,22 @@ function repoPorNombre(dir, nombre) {
   }
   return { root: null, errores };
 }
+/**
+ * Con la sesión en la carpeta que agrupa los repos de un producto (no es un repo): el repo de una subcarpeta DIRECTA
+ * cuyo `origin` es `ruta` (la de `identidadRemoto`). Sólo si hay exactamente uno; ninguno o dos es null («sin ubicar»).
+ * El nombre de la carpeta nunca cuenta: dos copias del mismo repo son dos candidatos, no una elección.
+ */
+function hijoConOrigen(dir, ruta) {
+  if (!ruta || !fs.existsSync(dir)) return null;
+  const hallados = [];
+  for (const c of subcarpetas(dir, [])) {
+    const root = raizGit(c);
+    if (!root || real(root) !== real(c)) continue;
+    const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
+    if (origen && origen.ruta === ruta) hallados.push(root);
+  }
+  return hallados.length === 1 ? hallados[0] : null;
+}
 function pedidosDeAz(cmd, base) {
   const out = [];
   let statements = [];
@@ -1170,7 +1186,8 @@ function pedidosDeGh(cmd, cwd, powershell) {
     if (c.cwdDesconocido || c.cdIncierto || c.repoDesconocido) { out.push({ resuelto: false }); continue; }
     // los `cd` literales de la línea, en orden; `~` es la carpeta de la persona (la terminal la expande, `path` no)
     const dir = (c.cds || []).reduce((d, paso) => path.resolve(d, String(paso).replace(/^~(?=$|[\\/])/, os.homedir())), cwd);
-    const root = git(dir, ['rev-parse', '--show-toplevel']);
+    // desde la carpeta que agrupa los repos, `--repo` elige al hijo cuyo origin es ese repo
+    const root = git(dir, ['rev-parse', '--show-toplevel']) || (c.repo ? hijoConOrigen(dir, c.repo) : null);
     if (!root) { out.push({ resuelto: false }); continue; }
     if (c.repo) {
       // `--repo`/`GH_REPO` nombran un repo: si no es el `origin` de esta carpeta, el pedido es de OTRO repo
@@ -1198,8 +1215,8 @@ function pedidosDeGh(cmd, cwd, powershell) {
 
 /**
  * Los pedidos que abre la capa de plataforma (`platform.js change-request open`) hacia la rama principal, con la misma
- * forma que `pedidosDeGh`. El repo de `--repo` tiene que ser el `origin` de la carpeta: si no, o si un `cd` lo arma la
- * terminal, el pedido queda «sin ubicar».
+ * forma que `pedidosDeGh`. El repo de `--repo` tiene que ser el `origin` de la carpeta o, si la carpeta no es un repo,
+ * el de exactamente una de sus subcarpetas directas: si no, o si un `cd` lo arma la terminal, el pedido queda «sin ubicar».
  */
 function pedidosDeCapa(cmd, cwd) {
   if (!/platform\.js/.test(cmd)) return [];
@@ -1221,12 +1238,14 @@ function pedidosDeCapa(cmd, cwd) {
     try { args = a ? JSON.parse(a.startsWith('@') ? fs.readFileSync(path.resolve(dir, a.slice(1)), 'utf8') : a) : null; } catch { args = null; }
     if (!args || typeof args.targetBranch !== 'string') { out.push({ resuelto: false }); continue; }
     if (!esPrincipal(args.targetBranch)) continue;
-    const root = !dirIncierto && git(dir, ['rev-parse', '--show-toplevel']);
-    if (!root) { out.push({ resuelto: false }); continue; }
+    if (dirIncierto) { out.push({ resuelto: false }); continue; }
     let repo = null;
     const crudo = valor('--repo');
     try { repo = crudo && crudo.trim().startsWith('{') ? JSON.parse(crudo) : null; } catch { repo = null; }
     const quiere = (repo ? [repo.org, repo.project, repo.repo].filter(Boolean).join('/') : String(crudo || '')).toLowerCase();
+    // desde la carpeta que agrupa los repos, `--repo` elige al hijo cuyo origin es ese repo
+    const root = git(dir, ['rev-parse', '--show-toplevel']) || hijoConOrigen(dir, quiere);
+    if (!root) { out.push({ resuelto: false }); continue; }
     const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
     if (!quiere || !origen || origen.ruta !== quiere) { out.push({ resuelto: false }); continue; }
     const rama = typeof args.sourceBranch === 'string' ? ramaCorta(args.sourceBranch) : null;
