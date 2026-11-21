@@ -474,3 +474,24 @@ test('T13 DelegatedLevelOne_DelicateStory_Denied @story-8.255 @ac-12', (t) => {
   fs.rmSync(m.storyPath);
   assert.match(PR().rutinaParaDelegar({ marker: m }).motivo, /no pude leer la historia/);
 });
+
+// AvisoDelicada_LeeElPerfil
+// 🔴 Falla con: plan-review dice «el plan lo aprueba el dev» en una historia delicada aunque el perfil delega
+//    plan-approval:delicada y complete-step approve-plan la acepta por delegación de la coordinadora.
+test('AvisoDelicada_LeeElPerfil: el aviso del plan delicado dice quién lo puede aprobar según el perfil', () => {
+  const aviso = (o) => PR().avisoDelicada({ reason: 'controles', lanza: 's-coord', destino: 's-dev', estado: os.tmpdir(), ...o });
+  const no = () => false;
+  const si = () => true;
+  // sin delegación: como hoy
+  assert.match(aviso({ delegaDelicada: no, deTramite: no }), /la story es delicada \(controles\): la revisión ataca y avisa, pero el plan lo aprueba el dev\.$/);
+  // delegada a la coordinadora: lo puede aprobar ella con el sí del dueño, y la aprobación dice cuál de las dos
+  const delegada = aviso({ delegaDelicada: si, deTramite: no });
+  assert.doesNotMatch(delegada, /pero el plan lo aprueba el dev/);
+  assert.match(delegada, /el perfil delega plan-approval:delicada/);
+  assert.match(delegada, /coordinadora .*con el sí del dueño/);
+  assert.match(delegada, /el texto de la aprobación dice cuál de los dos lo aprobó/i);
+  // la propia sesión sobre su plan: la delegación es de la coordinadora para otra sesión, así que no aplica
+  assert.match(aviso({ lanza: 's-dev', delegaDelicada: si, deTramite: no }), /pero el plan lo aprueba el dev\.$/);
+  // de trámite: con la revisión aprobada lo firma el arnés
+  assert.match(aviso({ delegaDelicada: no, deTramite: si }), /de trámite/);
+});
