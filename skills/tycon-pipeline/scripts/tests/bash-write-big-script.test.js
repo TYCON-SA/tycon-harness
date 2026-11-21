@@ -261,16 +261,22 @@ test('8.235 T7 BashWrite_PipelineLista_SubcomandosExisten @story-8.235 @ac-7', (
 // T10 BigScript_InterpreterInVariable_StillBlocks
 // 🔴 Falla con: reconocer el intérprete sólo por la palabra escrita: `N=$(command -v node); $N --test x.js` corría un
 //    guion grande que nombra una historia sin que el freno lo viera, y la misma corrida con `node` escrito frenaba.
-test('T10 BigScript_InterpreterInVariable_StillBlocks', () => {
+/** Un repo con historias, un guion grande de node y otro de python que escriben la historia; `correr(cmd)` da el freno. */
+function conGuionesGrandes() {
   const { estado, dir } = repo('specs');
-  const relleno = '// ' + 'x'.repeat(200) + '\n';
+  const relleno = (c) => `${c} ${'x'.repeat(200)}\n`.repeat(Math.ceil((300 * 1024) / 203));
   fs.writeFileSync(path.join(dir, 'scripts', 'grande.test.js'),
-    "const fs = require('fs');\n// pasa la historia a done\nfs.writeFileSync('specs/story-1.1.md', 'x');\n" + relleno.repeat(Math.ceil((300 * 1024) / relleno.length)));
+    "const fs = require('fs');\n// pasa la historia a done\nfs.writeFileSync('specs/story-1.1.md', 'x');\n" + relleno('//'));
+  fs.writeFileSync(path.join(dir, 'scripts', 'grande.py'), "open('specs/story-1.1.md', 'w').write('x')\n" + relleno('#'));
   fs.writeFileSync(path.join(dir, 'scripts', 'notas.txt'), 'specs/story-1.1.md\n');
-  const correr = (command) => conEnv(ENV, () => {
+  return (command) => conEnv(ENV, () => {
     const r = bash.handle({ tool_name: 'Bash', session_id: 'sesion-guion-grande', cwd: dir, tool_input: { command } }, { stateDir: estado, installedRoots: [] });
     return r && r.block ? r.block.split('\n').find((l) => l.trim()).trim() : '';
   });
+}
+
+test('T10 BigScript_InterpreterInVariable_StillBlocks', () => {
+  const correr = conGuionesGrandes();
   for (const command of [
     'node --test scripts/grande.test.js',
     `N=${process.execPath}; $N --test scripts/grande.test.js`,
@@ -280,4 +286,44 @@ test('T10 BigScript_InterpreterInVariable_StillBlocks', () => {
   ]) assert.strictEqual(correr(command), FRENO, command);
   // un programa en una variable con un archivo que no es un guion no lo abre como tal
   assert.strictEqual(correr('P=$(command -v cat); $P scripts/notas.txt'), '', 'un .txt no es un guion');
+});
+
+// T11 BigScript_VariableAsArgument_NotAnInterpreter
+// 🔴 Falla con: tomar por intérprete una variable o un `$(…)` que es argumento de otro programa: frenaba comandos de
+//    lectura que nombran un guion (`git diff $(git merge-base …) -- x.js`, `wc -l $F x.js`).
+test('T11 BigScript_VariableAsArgument_NotAnInterpreter', () => {
+  const correr = conGuionesGrandes();
+  for (const command of [
+    'git diff $(git merge-base HEAD origin/main) -- scripts/grande.test.js',
+    'F=$(mktemp); wc -l $F scripts/grande.test.js',
+    'npx eslint $FLAGS scripts/grande.test.js',
+    'echo $X scripts/grande.test.js',
+  ]) assert.strictEqual(correr(command), '', command);
+  // detrás de un lanzador, la variable sigue siendo el programa
+  assert.strictEqual(correr('N=$(command -v node); timeout 200 $N scripts/grande.test.js'), FRENO, 'detrás de timeout');
+});
+
+// T12 BigScript_ScriptPathInVariableToo_StillBlocks
+// 🔴 Falla con: buscar la extensión del guion en la palabra escrita (`$F`) y no en su valor: con el intérprete y la ruta
+//    en variables, el guion no se miraba.
+test('T12 BigScript_ScriptPathInVariableToo_StillBlocks', () => {
+  const correr = conGuionesGrandes();
+  for (const command of [
+    'F=scripts/grande.test.js; N=$(command -v node); $N $F',
+    'F=scripts/grande.test.js; N=$(command -v node); $N --test "${F}"',
+    'S=scripts/grande.py; P=$(command -v python3); $P $S',
+    // con el nombre escrito y la ruta en una variable entre comillas, tampoco se miraba
+    'F=scripts/grande.test.js; node --test "${F}"',
+  ]) assert.strictEqual(correr(command), FRENO, command);
+});
+
+// T13 BigScript_VariableWithOptions_StillBlocks
+// 🔴 Falla con: tomar el valor entero de la variable como nombre del programa: `N="node --test"` o `N="/usr/bin/env
+//    node"` no eran un intérprete y el guion pasaba.
+test('T13 BigScript_VariableWithOptions_StillBlocks', () => {
+  const correr = conGuionesGrandes();
+  for (const command of [
+    'N="node --test"; $N scripts/grande.test.js',
+    'N="/usr/bin/env node"; $N scripts/grande.test.js',
+  ]) assert.strictEqual(correr(command), FRENO, command);
 });

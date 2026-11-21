@@ -648,21 +648,50 @@ const EXTENSION_DE = { python: /\.py$/i, node: /\.(?:[cm]?js|[cm]?ts)$/i, perl: 
 const familiaDe = (interprete) => (/^python/.test(interprete) ? 'python' : interprete === 'perl' ? 'perl' : interprete === 'ruby' ? 'ruby' : 'node');
 const INTERPRETE_DE = { python: 'python3', node: 'node', perl: 'perl', ruby: 'ruby' };
 
+// Una palabra del comando con sus variables expandidas y sin las comillas que la envuelven: `"${F}"` es la ruta de F
+const palabraExpandida = (cmd, w) => String(expandirRuta(cmd, w).valor).replace(/^"([^"]*)"$|^'([^']*)'$/, (_, a, b) => (a !== undefined ? a : b));
+
+// lo que va delante del programa y lo lanza (`timeout 200 node x.js`, `nice -n 5 …`, `env A=1 …`)
+const LANZADORES = /^(?:command|exec|nohup|time|nice|ionice|timeout|env|stdbuf|caffeinate)$/;
+
+/** La posición del programa del tramo: la primera palabra que no es una asignación ni un lanzador (ni sus opciones). */
+function posicionDelPrograma(words) {
+  let i = 0;
+  while (i < words.length) {
+    const w = String(words[i]);
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) { i++; continue; }
+    const n = nombreDeComando(w);
+    if (!LANZADORES.test(n)) return i;
+    i++;
+    while (i < words.length && (/^-/.test(words[i]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]))) i++;
+    // la duración de `timeout`, el valor de `nice -n`
+    if (n === 'timeout' && i < words.length && /^\d/.test(words[i])) i++;
+  }
+  return -1;
+}
+
 /**
- * El programa de la palabra `k` de un tramo. En una variable (`$N`, `"${NODE}"`) es lo que vale, si el comando lo dice
- * (`N=/usr/bin/node; $N x.js`). Si no se puede saber (`N=$(command -v node)`), es el intérprete de la familia del primer
- * guion que la sigue por su extensión: así `$N --test x.js` se mira como `node --test x.js`, y una variable que no
- * corre un guion (`$P notas.txt`) no se toma por intérprete.
+ * El programa de la palabra `k` de un tramo. Una variable (`$N`, `"${NODE}"`) en la posición del programa es lo que vale
+ * si el comando lo dice (`N=/usr/bin/node; $N x.js`; de un valor con opciones, `node --test` o `env node`, el programa).
+ * Si no se puede saber (`N=$(command -v node)`), es el intérprete de la familia del primer guion que la sigue por su
+ * extensión, con su ruta expandida: así `$N --test x.js` se mira como `node --test x.js`. Una variable que es argumento
+ * de otro programa (`git diff $(…) -- x.js`), o que no corre un guion (`$P notas.txt`), no se toma por intérprete.
  */
 function interpreteDe(cmd, words, k) {
   const w = String(words[k] || '');
-  if (!/^\$/.test(w)) return nombreDeComando(w);
+  if (!/^\$/.test(w) || k !== posicionDelPrograma(words)) return nombreDeComando(w);
   const e = expandirRuta(cmd, w);
-  if (!e.sinResolver.length && !/^\$/.test(String(e.valor))) return nombreDeComando(e.valor);
+  if (!e.sinResolver.length && !/^\$/.test(String(e.valor))) {
+    const partes = String(e.valor).trim().split(/\s+/);
+    const programa = nombreDeComando(partes[0]);
+    if (programa !== 'env') return programa;
+    return nombreDeComando(partes.slice(1).find((x) => !x.startsWith('-') && !x.includes('=')) || 'env');
+  }
   for (const x of words.slice(k + 1)) {
     if (/^(?:\d|&)?[<>]/.test(x)) break;
     if (x.startsWith('-')) continue;
-    const familia = Object.keys(EXTENSION_DE).find((f) => EXTENSION_DE[f].test(x));
+    const valor = palabraExpandida(cmd, x);
+    const familia = Object.keys(EXTENSION_DE).find((f) => EXTENSION_DE[f].test(valor));
     if (familia) return INTERPRETE_DE[familia];
   }
   return nombreDeComando(w);
@@ -710,7 +739,12 @@ function opcionesDelInterprete(familia, words, i) {
 }
 
 /** La palabra sin los signos del shell que la pegan a un grupo: `(python3`, `p.py)`, `{`. */
-const sinGrupo = (w) => String(w).replace(/^[({]+/, '').replace(/[)};]+$/, '');
+// sin lo que abre o cierra una agrupación (`(`, `{`, `)`, `}`, `;`); la llave que cierra una variable (`${F}`) se queda
+const sinGrupo = (w) => {
+  const s = String(w).replace(/^[({]+/, '');
+  const conVariable = s.match(/^(.*\$\{[^{}]*\})[)};]*$/);
+  return conVariable ? conVariable[1] : s.replace(/[)};]+$/, '');
+};
 
 /**
  * El comando con los renglones unidos donde el shell los une: una barra invertida justo antes del salto de línea. No en un
@@ -874,7 +908,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
       for (let j = op.desde; j < words.length && !hallado; j++) {
         const w = words[j];
         if (w === '-' || /^\/dev\/(?:stdin|fd\/0)$/.test(w) || /^(?:\d|&)?[<>]/.test(w)) break;
-        hallado = abrir(interprete, expandirRuta(cmd, w).valor, argumentos(words.slice(j + 1)));
+        hallado = abrir(interprete, palabraExpandida(cmd, w), argumentos(words.slice(j + 1)));
       }
       // `echo p.py | xargs python3`: el guion llega por la entrada; cuenta cada archivo del comando con su extensión
       if (!hallado && words.slice(0, k).some((w) => nombreDeComando(w) === 'xargs')) {
