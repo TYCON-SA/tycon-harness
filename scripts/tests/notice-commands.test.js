@@ -416,6 +416,10 @@ test('Bench_ClassifiesBlockingNotices (T8) @story-8.165 @ac-6', () => {
   assert.strictEqual(clasificarCartel('Frenado: lo dice marker.js cuando falta la firma.'), 'callejon');
   assert.strictEqual(clasificarCartel('Frenado. Corré bash scripts/fix.sh apply'), 'comando');
   assert.strictEqual(clasificarCartel('Frenado.\n  scripts/tools/prepare-machine.js check'), 'comando');
+  // pase adversarial: la ruta de Windows entre comillas, con espacios y «\»
+  assert.strictEqual(clasificarCartel('Frenado.\n  node "C:\\Users\\a b\\.tycon\\harness\\scripts\\marker.js" sign-file X'), 'comando');
+  assert.strictEqual(clasificarCartel('Frenado.\n  "C:\\Program Files\\x\\fix.js" apply'), 'comando');
+  assert.strictEqual(clasificarCartel('Frenado: el guion "pipeline.js" no salió.'), 'callejon');
 });
 
 test('Bench_DeadEnd_NamedNotRed (T9) @story-8.165 @ac-6 @ac-7', (t) => {

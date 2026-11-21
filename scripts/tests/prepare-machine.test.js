@@ -258,6 +258,12 @@ test('Preparar_PerfilIlegible_LoDice — un perfil del equipo que no se lee se d
   const r = text(PM.check({ ...t.opts, repos: [] }));
   assert.match(r, /no pude leer el perfil del equipo/, r);
   assert.match(r, /contraseña/, 'sigue dando el comando con la contraseña');
+  // pase adversarial: un TYCON_PROFILE roto no cambia guard.update (sale del perfil del árbol): no se dice como ilegible
+  const t2 = toy({ profile: { guard: { update: 'password' } }, prod: { viejo: true } });
+  const otro = path.join(t2.home, 'otro-perfil.json');
+  fs.writeFileSync(otro, '{ roto');
+  const r2 = text(PM.check({ ...t2.opts, env: { ...(t2.opts.env || process.env), TYCON_PROFILE: otro }, repos: [] }));
+  assert.doesNotMatch(r2, /no pude leer el perfil del equipo/, r2);
 });
 
 test('Preparar_ImportSinPermiso_NoEsQueNoExista — un import cuya carpeta no se deja mirar es «no pude», no «no existe»', { skip: process.platform === 'win32' ? 'permisos POSIX' : false }, (tt) => {
