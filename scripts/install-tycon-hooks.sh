@@ -142,8 +142,8 @@ unset _SD_LIB
 # lee el aviso de consultas fallidas, que también es de Codex), el chequeo del nombre de proyecto de engram y el
 # AGENTS.md puntero en los repos (es lo que le hace leer a Codex las reglas del repo). Quedan afuera, con su motivo:
 # las suites rápidas de skills (prueban el código del arnés, no algo que Codex use: las cubren la CI y la noche), la
-# versión de engram (lo útil es actualizarlo, más de dos minutos, y sus marcas van a ~/.claude) y sqlite3 (instalarlo
-# con un gestor de paquetes no es liviano y deja su marca en ~/.claude; si falta, el aviso de la memoria de engram, que
+# versión de engram (lo útil es actualizarlo, más de dos minutos, y sus marcas van a la carpeta de Claude Code) y sqlite3 (instalarlo
+# con un gestor de paquetes no es liviano y deja su marca en la carpeta de Claude Code; si falta, el aviso de la memoria de engram, que
 # también corre en Codex, lo dice).
 # Todo lo demás —el lugar del arnés, los enlaces, settings.json, las skills, los bloques de CLAUDE.md, los comandos, el
 # rescate del hilo (lee conversaciones de Claude Code), el banco, las métricas— no corre, y nada se escribe en
