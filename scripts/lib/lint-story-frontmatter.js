@@ -639,8 +639,10 @@ function checkStory(storyFile, content) {
     if (where.includes('unknown') || roots.unreadable) { unsure.push(p); continue; }
     const top = p.split('/')[0];
     if (!(p.includes('/') && roots.some((r) => probe(path.join(r, top)) === 'yes'))) { unsure.push(p); continue; }
-    // antes de darla por inventada: un clon atrasado no tiene un archivo que ya está en la rama principal de su remoto
-    (roots.some((r) => inRemoteMain(r, p) !== 'no') ? unsure : missing).push(p);
+    // antes de darla por inventada: un clon atrasado no tiene un archivo que ya está en la rama principal de su remoto.
+    // Escrita con el nombre del repo delante («Backend/src/…»), en ese repo se busca sin él: su rama no lleva el prefijo
+    const enSuRepo = (r) => (p.startsWith(`${path.basename(r)}/`) ? [p.slice(path.basename(r).length + 1), p] : [p]);
+    (roots.some((r) => enSuRepo(r).some((q) => inRemoteMain(r, q) !== 'no')) ? unsure : missing).push(p);
   }
   return { missing, unsure };
 }

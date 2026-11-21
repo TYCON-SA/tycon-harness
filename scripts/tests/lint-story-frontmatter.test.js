@@ -338,6 +338,29 @@ test('T47 FilesToModify_SoloEnElRemoto_NoFrena: un clon atrasado no hace inventa
   assert.match(r.out, /al día/);
 });
 
+// 🔴 Falla con: la ruta escrita con el nombre del repo delante («Backend/src/…»), que en el disco se encuentra desde la
+//    carpeta de arriba, se busca tal cual en la rama principal del repo hermano: ahí no lleva el prefijo, nunca está, y
+//    el commit de una historia nueva frena por un archivo que existe.
+test('FilesToModify_ConElNombreDelRepo_SoloEnElRemoto_NoFrena: la ruta con el prefijo del repo se busca sin él en su rama principal', () => {
+  const { prod, proj } = productoConCodigo();
+  const back = path.join(prod, 'Backend');
+  fs.rmSync(path.join(back, '.git'), { recursive: true, force: true });
+  execFileSync('git', ['init', '-q'], { cwd: back });
+  execFileSync('git', ['remote', 'add', 'origin', 'https://dev.azure.com/acme/Acme/_git/Backend'], { cwd: back });
+  write(prod, 'Backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs', '// nuevo\n');
+  execFileSync('git', ['add', '.'], { cwd: back });
+  commit(back, '-m', 'con el archivo');
+  execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: back });
+  fs.rmSync(path.join(back, 'src', 'AcmeBackend', 'Features', 'Nuevo'), { recursive: true, force: true });
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['Backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /al día/);
+  // una que no está ni en el disco ni en el remoto, con el prefijo, sigue frenando
+  const g = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['Backend/src/AcmeBackend/Features/Nuevo/Inventado.cs']));
+  assert.notStrictEqual(run([g], proj).code, 0);
+});
+
 // 🔴 Falla con: la consulta a un repo hermano hereda el GIT_DIR que git le pone al gancho de un commit. Esa variable le
 // gana a `-C`: se le pregunta al repo del commit, y un archivo que está en la rama principal del hermano se da por
 // inventado; o al revés, el repo del commit contesta por un hermano que no tiene el archivo.
