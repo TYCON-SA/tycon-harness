@@ -411,6 +411,13 @@ test('Bench_ClassifiesBlockingNotices (T8) @story-8.165 @ac-6', () => {
   assert.strictEqual(clasificarCartel('Frenado.\nAlternativa: escribilo con la herramienta de edición.'), 'llano');
   assert.strictEqual(clasificarCartel('No se puede.'), 'callejon');
   assert.strictEqual(clasificarCartel(''), 'callejon');
+  // un guion nombrado en prosa no es un comando: sin `node`, `bash` o `sh` delante, ni una ruta, el cartel no da salida
+  assert.strictEqual(clasificarCartel('Frenado: no salió pipeline.js de su lectura.'), 'callejon');
+  assert.strictEqual(clasificarCartel('Lo frena marker.js porque la historia no tiene dueño.'), 'callejon');
+  // con la ruta, o con quien lo corre delante, sí
+  assert.strictEqual(clasificarCartel('Frenado. Corré scripts/tools/arreglo.js aplicar'), 'comando');
+  assert.strictEqual(clasificarCartel('Frenado. Corré: bash instalar.sh repetir'), 'comando');
+  assert.strictEqual(clasificarCartel("Frenado.\n  node 'C:/Program Files/arnés/marker.js' sign-file x"), 'comando');
 });
 
 test('Bench_DeadEnd_NamedNotRed (T9) @story-8.165 @ac-6 @ac-7', (t) => {

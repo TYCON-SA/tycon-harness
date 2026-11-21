@@ -472,9 +472,12 @@ function checkExpect(expect, res, vars, failures) {
  * «Si querés»); si no, `callejon`. Es una heurística: un cartel que da su salida con otras palabras cuenta como callejón,
  * y se acepta porque sólo se mide.
  */
+// Un guion con su subcomando es un comando sólo si lo corre alguien (`node`, `bash`, `sh`) o viene con su ruta: nombrado en
+// prosa («no salió pipeline.js de …») el cartel no da salida, y contarlo como comando escondía callejones.
+const COMANDO_EN_CARTEL = /(?:\b(?:node|bash|sh)\s+(?:"[^"\n]*\.(?:js|sh)"|'[^'\n]*\.(?:js|sh)'|[^\s"']+\.(?:js|sh))|"[^"\n]*\/[^"\n]*\.(?:js|sh)"|'[^'\n]*\/[^'\n]*\.(?:js|sh)'|[\w.~$-]*\/[\w./~$-]*\.(?:js|sh)) [a-z][a-z0-9-]*/;
 function clasificarCartel(texto) {
   const t = String(texto || '');
-  if (/[\w./-]+\.(?:js|sh)["']? [a-z][a-z0-9-]*/.test(t)) return 'comando';
+  if (COMANDO_EN_CARTEL.test(t)) return 'comando';
   if (/^[\s>·•*(-]*(?:Usá|Corré|Pedile|Alternativa:|Salida:|Si querés)/mi.test(t)) return 'llano';
   return 'callejon';
 }
