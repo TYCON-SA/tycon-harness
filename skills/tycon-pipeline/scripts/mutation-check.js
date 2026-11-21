@@ -191,20 +191,35 @@ function parseAddedLines(diffText) {
 }
 
 // ── git helpers ──────────────────────────────────────────────────────────────
-function git(repo, args) {
-  const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8' });
+// Con tope, como la copia de trabajo: un git que no termina no deja el chequeo parado (sale como un git que falló)
+function git(repo, args, topeMs = TOPE_GIT_MS) {
+  const r = gitConTope(repo, args, topeMs);
   if (r.error || r.status !== 0) return null;
   return r.stdout;
+}
+function gitConTope(repo, args, topeMs = TOPE_GIT_MS) {
+  return spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', timeout: topeMs, killSignal: 'SIGKILL' });
+}
+const segundosDe = (ms) => String(Math.round(ms / 100) / 10).replace('.', ',');
+
+/** ¿El repo no tiene commits? `true` / `false`, o `null` si git no contestó a tiempo (no es «sin commits»). */
+function sinCommits(repo, topeMs = TOPE_GIT_MS) {
+  const r = spawnSync('git', ['-C', repo, 'rev-parse', '--verify', '-q', 'HEAD'], { windowsHide: true, encoding: 'utf8', timeout: topeMs, killSignal: 'SIGKILL' });
+  if (r.error && r.error.code === 'ETIMEDOUT') return null;
+  return !!(r.error || r.status !== 0);
 }
 
 // Líneas a mutar de UN target ya validado: delta contra la base de la corrida
 // (`base`, lo commiteado durante la corrida también es nuevo) si está tracked,
 // archivo entero si es nuevo (la story lo CREA — todas sus líneas son nuevas,
 // esté o no en `.gitignore`: si la story lo declara, está en scope).
-function addedLinesOf(repo, relFile, base = 'HEAD') {
-  const tracked = git(repo, ['ls-files', '--', relFile]);
+function addedLinesOf(repo, relFile, base = 'HEAD', topeMs = TOPE_GIT_MS) {
+  // un git que no contesta si el archivo está registrado no es «archivo nuevo»: eso mutaría el archivo entero
+  const ls = gitConTope(repo, ['ls-files', '--', relFile], topeMs);
+  if (ls.error && ls.error.code === 'ETIMEDOUT') return { error: `git ls-files no terminó en ${segundosDe(topeMs)} s y se cortó` };
+  const tracked = ls.error || ls.status !== 0 ? null : ls.stdout;
   if (tracked && tracked.trim() !== '') {
-    const diff = git(repo, ['diff', '-U0', base, '--', relFile]);
+    const diff = git(repo, ['diff', '-U0', base, '--', relFile], topeMs);
     // un diff que falla no es «nada agregado»: el que llama lo anota como no medido
     if (diff === null) return null;
     return parseAddedLines(diff);
@@ -455,22 +470,35 @@ function defaultRun({ repo, testFiles, recipe, capMs, nameFilter = null }) {
   return runRecipe({ recipe, capMs });
 }
 
+// El tope de cada llamada a git al armar la copia de trabajo: un clon local y un diff tardan segundos; dos minutos es
+// holgura para un repo grande en una máquina cargada, y no deja un paso parado media hora.
+const TOPE_GIT_MS = 120000;
+
 // ── El chequeo ───────────────────────────────────────────────────────────────
 /**
  * Arma la copia descartable sobre la que se mutan y se corren los tests. Devuelve { dir, noCopiados } o
  * { dir: null, motivo }. `noCopiados`: los archivos nuevos que no se pudieron copiar, con el motivo (un Map de la ruta
  * relativa): en la copia faltan, y eso no es «no existe». Nunca escribe en `repo`.
  */
-function crearCopiaDeTrabajo(repo, log) {
+function crearCopiaDeTrabajo(repo, log, { topeMs = TOPE_GIT_MS } = {}) {
   const { execFileSync } = require('child_process');
-  const g = (cwd, args, opts) => execFileSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...(opts || {}) });
+  // Cada llamada a git con su tope: un git que no termina (un `apply` colgado sin consumir CPU) dejaba «Correr las
+  // pruebas» parado sin límite. Al vencer, la copia no se arma y el chequeo sale «no medido» con el motivo.
+  const segundos = segundosDe(topeMs);
+  const conTope = (args, opts, corre) => {
+    try { return corre({ windowsHide: true, timeout: topeMs, killSignal: 'SIGKILL', ...(opts || {}) }); } catch (e) {
+      if (e && (e.code === 'ETIMEDOUT' || (e.signal && /ETIMEDOUT/.test(String(e.message))))) throw new Error(`git ${args[0]} no terminó en ${segundos} s y se cortó`);
+      throw e;
+    }
+  };
+  const g = (cwd, args, opts) => conTope(args, opts, (o) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...o }));
   let dir = null;
   try {
     // Por su ruta real: en macOS la carpeta temporal es un enlace (/var → /private/var), y .NET restaura los paquetes con
     // una ruta y compila con la otra, y no los encuentra (la base sale en rojo con la suite verde).
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutation-copia-')));
     const head = g(repo, ['rev-parse', 'HEAD']).trim();
-    execFileSync('git', ['clone', '-q', '--shared', '--no-checkout', repo, dir], { windowsHide: true, stdio: 'ignore' });
+    conTope(['clone'], { stdio: 'ignore' }, (o) => execFileSync('git', ['clone', '-q', '--shared', '--no-checkout', repo, dir], o));
     g(dir, ['checkout', '-q', head]);
     // lo que la story cambió y todavía no commiteó (trackeado)
     const patch = g(repo, ['diff', 'HEAD', '--binary'], { maxBuffer: 256 * 1024 * 1024 });
@@ -502,7 +530,10 @@ function crearCopiaDeTrabajo(repo, log) {
     try {
       ignorados = g(repo, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'])
         .split('\0').filter(Boolean);
-    } catch { /* sin lista de ignorados se sigue sin ellos */ }
+    } catch (e) {
+      // sin lista de ignorados se sigue sin ellos; un corte no: la copia saldría sin dependencias y el motivo culparía a la suite
+      if (/no terminó en/.test(String(e && e.message))) throw e;
+    }
     for (const rel of ignorados) {
       const src = path.join(repo, rel); const dst = path.join(dir, rel.replace(/\/$/, ''));
       // `bin/` y `obj/` no se enlazan, en ninguna carpeta: una compilación de .NET en la copia escribiría a través del
@@ -565,10 +596,12 @@ async function runMutationCheck({
   markerError = null,
   // el registro de tiempos de las suites (los de lib/suite-times.js); sin pasarlo, el de esta máquina
   suiteRuns = undefined,
+  // el tope de cada llamada a git (la base, la copia, las líneas agregadas); las pruebas lo achican
+  topeGitMs = TOPE_GIT_MS,
 }) {
   let repo = repoOriginal;
   // La base se resuelve en el repo original: la copia de trabajo tiene otras ramas remotas. Una base descartada se dice.
-  const resuelta = resolverBase({ repo: repoOriginal, env: process.env, marker, markerError });
+  const resuelta = resolverBase({ repo: repoOriginal, env: process.env, marker, markerError, topeMs: topeGitMs });
   const base = resuelta.ref || 'HEAD';
   for (const d of resuelta.descartadas) log(`⚠️  mutation-check: base descartada (${d.source}): ${d.motivo}`);
   // Seam inyectable de fs para la sección SAGRADA del restore (DI con defaults
@@ -588,6 +621,9 @@ async function runMutationCheck({
     log(`🔴 mutation-check: ${motivo}`);
     return { exitCode: 2, result: { motivo, ...ctx } };
   };
+
+  // un git cortado al buscar la base no mide contra otra base: lo que se mediría sería otra cosa
+  if (resuelta.cortado) return fail2(`no medido: ${resuelta.cortado} al buscar la base de la corrida`);
 
   // 1. Repo válido (fail-closed).
   let repoStat = null;
@@ -613,8 +649,10 @@ async function runMutationCheck({
   // excluir): la lista hay que mantenerla, y el día que le falte un nombre el problema vuelve.
   // Sin un commit del que clonar (repo recién iniciado) no hay copia posible: se muta en el propio
   // repo, y se dice — un exit 2 acá apagaría el control en silencio.
-  const sinHead = !git(repoOriginal, ['rev-parse', '--verify', '-q', 'HEAD']);
-  const copia = sinHead ? { dir: null, motivo: 'el repo no tiene commits' } : crearCopiaDeTrabajo(repoOriginal, log);
+  // un git que no contesta a tiempo no es «sin commits»: con eso se mutaría en el propio repo
+  const sinHead = sinCommits(repoOriginal, topeGitMs);
+  if (sinHead === null) return fail2(`git no contestó a tiempo si ${repoOriginal} tiene commits (se cortó a los ${segundosDe(topeGitMs)} s): no medido`);
+  const copia = sinHead ? { dir: null, motivo: 'el repo no tiene commits' } : crearCopiaDeTrabajo(repoOriginal, log, { topeMs: topeGitMs });
   if (!copia.dir && !sinHead) return fail2(`no pude armar la copia de trabajo para mutar: ${copia.motivo}`);
   if (sinHead) log(`⚠️  mutation-check: ${repoOriginal} no tiene commits todavía — se muta EN EL PROPIO REPO (con restore byte a byte), no en una copia`);
   repo = copia.dir || repoOriginal;
@@ -765,7 +803,7 @@ async function runMutationCheck({
         `no se escribe nada fuera de ${realRepo}; no se mutó ningún archivo`
       );
     }
-    const addedLines = addedLinesOf(repo, rel, base);
+    const addedLines = addedLinesOf(repo, rel, base, topeGitMs);
     if (addedLines === null || !Array.isArray(addedLines)) {
       const porque = addedLines && addedLines.error ? addedLines.error : `git diff contra la base ${base} falló`;
       skipped.push({ file: rel, reason: `${porque}: sus líneas no se midieron`, unread: true });
@@ -1092,5 +1130,5 @@ if (require.main === module) {
 module.exports = {
   looksLikeTestPath, parseAddedLines, addedLinesOf, runMutationCheck, parseArgs, defaultRunTests, runRecipe, countTests,
   crearCopiaDeTrabajo, buscarArchivos, BUDGETS, defaultRun, bashRecipe, topesMedidos, MEASURED_RUN_CEIL_MS,
-  MEASURED_TOTAL_CEIL_MS, storyNamePattern, storyIdDe,
+  MEASURED_TOTAL_CEIL_MS, storyNamePattern, storyIdDe, sinCommits, TOPE_GIT_MS,
 };

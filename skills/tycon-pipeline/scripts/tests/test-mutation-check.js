@@ -1633,3 +1633,62 @@ test('dos repos: un repo sin pruebas propias dice que son de otro repo, no que n
   assert.match(r.salida, /las pruebas que la story declara son de otro repo/);
   assert.doesNotMatch(r.salida, /no declara ningún archivo de test/);
 });
+
+// 🔴 Falla con: un git que no termina (un `git apply` colgado, sin consumir CPU) dejaba «Correr las pruebas» parado sin
+//    límite: la copia de trabajo se armaba con execFileSync sin tope. Ahora cada llamada a git tiene su tope, y al vencer
+//    la copia no se arma y el chequeo sale «no medido» con el motivo.
+test('CopiaDeTrabajo_GitColgado_NoMedidoConMotivo — un git que no termina se corta a su tope y dice por qué', () => {
+  const repo = mkRepo();
+  // un git de juguete: se queda dormido en `apply`; lo demás lo hace el git de verdad
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutcheck-git-'));
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\nfor a in "$@"; do [ "$a" = apply ] && exec sleep 300; done\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  const guion = `const c = require(${JSON.stringify(path.join(SCRIPTS, 'mutation-check.js'))}).crearCopiaDeTrabajo(${JSON.stringify(repo)}, () => {}, { topeMs: 1500 });
+process.stdout.write(JSON.stringify({ dir: c.dir, motivo: c.motivo }));`;
+  const inicio = Date.now();
+  const r = spawnSync(process.execPath, ['-e', guion], { encoding: 'utf8', timeout: 30000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  assert.notEqual(r.signal, 'SIGTERM', `la copia quedó colgada más de 30 s (${r.stderr})`);
+  const c = JSON.parse(r.stdout);
+  assert.equal(c.dir, null, 'sin copia');
+  assert.match(c.motivo, /git apply no terminó en 1,5 s/);
+  assert.ok(Date.now() - inicio < 20000, 'se cortó a su tope');
+  // un git que no contesta si el repo tiene commits no se lee como «sin commits» (eso mutaría en el propio repo)
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\nfor a in "$@"; do [ "$a" = rev-parse ] && exec sleep 300; done\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  const s = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(path.join(SCRIPTS, 'mutation-check.js'))}).sinCommits(${JSON.stringify(repo)}, 1500)))`],
+    { encoding: 'utf8', timeout: 30000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  assert.equal(s.stdout, 'null', `un rev-parse colgado no es «sin commits» (${s.stderr})`);
+  assert.equal(checker.sinCommits(repo), false, 'con git sano, el repo tiene commits');
+});
+
+// El chequeo entero con un git de juguete que se duerme cuando `cuando` (un pedazo de shell sobre "$*") da verdadero:
+// devuelve lo que devolvió runMutationCheck, o el corte de la prueba si quedó colgado.
+function chequeoConGitColgado(repo, cuando) {
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutcheck-git-'));
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\nif ${cuando}; then exec sleep 300; fi\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  const guion = `require(${JSON.stringify(path.join(SCRIPTS, 'mutation-check.js'))}).runMutationCheck({ repo: ${JSON.stringify(repo)},
+  storyPath: ${JSON.stringify(path.join(repo, 'story-con-tests.md'))}, log: () => {}, topeGitMs: 1500 })
+  .then((r) => process.stdout.write(JSON.stringify({ exitCode: r.exitCode, motivo: r.result && r.result.motivo, skipped: r.result && r.result.skipped })));`;
+  const r = spawnSync(process.execPath, ['-e', guion], { encoding: 'utf8', timeout: 60000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, TYCON_COVERAGE_BASE: '' } });
+  assert.notEqual(r.signal, 'SIGTERM', `el chequeo quedó colgado más de 60 s (${r.stderr})`);
+  return JSON.parse(r.stdout);
+}
+
+test('Chequeo_GitColgadoAlBuscarLaBase_NoMedido — un merge-base que no termina sale «no medido», no mide contra otra base', () => {
+  const r = chequeoConGitColgado(mkRepo(), 'case "$*" in *merge-base*) true;; *) false;; esac');
+  assert.equal(r.exitCode, 2);
+  assert.match(r.motivo, /no medido: git merge-base no terminó en 1,5 s y se cortó al buscar la base/);
+});
+
+test('Chequeo_ListaDeIgnoradosColgada_NoMedido — la copia no se arma sin dependencias en silencio', () => {
+  const r = chequeoConGitColgado(mkRepo(), 'case "$*" in *--ignored*) true;; *) false;; esac');
+  assert.equal(r.exitCode, 2);
+  assert.match(r.motivo, /git ls-files no terminó en 1,5 s y se cortó/);
+});
+
+test('Chequeo_LsFilesColgado_NoMutaElArchivoEntero — un archivo sin respuesta de git se saltea con su motivo', () => {
+  const r = chequeoConGitColgado(mkRepo(), 'case "$*" in *"ls-files -- calc.js"*) true;; *) false;; esac');
+  const calc = (r.skipped || []).find((x) => x.file === 'calc.js');
+  assert.ok(calc, `calc.js no se mide como archivo nuevo entero: ${JSON.stringify(r)}`);
+  assert.match(calc.reason, /git ls-files no terminó en 1,5 s y se cortó: sus líneas no se midieron/);
+});
