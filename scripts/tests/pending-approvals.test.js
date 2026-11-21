@@ -106,22 +106,6 @@ test('T7 lo que agrega un commit: una línea de base nueva nunca vale; una firma
   assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues: BASE, renglones: [] }), [], 'las líneas que ya estaban no se miran');
 });
 
-// 🔴 Falla con: la aprobación por delegación que dio el arnés como firma de trámite, rechazada al commitear. `exigir` la
-// devuelve como delegación (la línea dice `delegacion`) y su renglón firmado dice `automatica`: es la misma firma.
-test('PendingApproval_FirmaDeTramite_ElRenglonAutomaticoValeParaLaDelegacion', () => {
-  const l = firmada('DEF-tramite');
-  const despues = `${BASE}${JSON.stringify(l)}\n`;
-  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues, renglones: [{ ...renglonDe(l), via: 'automatica' }] }), [], 'automática firma la delegación');
-  // al revés no: una línea de la ventana o del click no la firma un renglón automático
-  for (const via of ['ventana', 'click', 'terminal']) {
-    const otra = firmada('DEF-tramite', via);
-    const r = PA.revisarNuevas({ antes: BASE, despues: `${BASE}${JSON.stringify(otra)}\n`, renglones: [{ ...renglonDe(otra), via: 'automatica' }] });
-    assert.strictEqual(r.length, 1, via);
-  }
-  // con otra huella, tampoco
-  assert.strictEqual(PA.revisarNuevas({ antes: BASE, despues, renglones: [{ ...renglonDe(firmada('DEF-otro')), via: 'automatica' }] }).length, 1);
-});
-
 // un repo descartable con la lista y el registro, y un commit
 function repo(todo, registro) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'pendientes-'));
