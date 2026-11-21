@@ -2183,3 +2183,33 @@ test('T14 StoryGateIo_PorConsola_MismaRegla @story-8.317 @ac-11', () => {
     assert.equal(e.verdict.kind, 'story-out-of-group');
   });
 });
+
+// 🔴 Falla con: lo que confirmó el pase adversarial de la 8.317. Otro checkout del repo de la corrida salía «fuera»; un
+// enlace dentro del repo de la corrida hacía «adentro» el código de otro repo; un repo de la historia que contiene a
+// otros los abría a todos; y sin la carpeta de la historia, un hermano declarado salía «no pude saber».
+test('T16 StoryGateIo_LoQueEncontroElPase @story-8.317 @ac-1 @ac-2 @ac-3', () => {
+  const padre = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't16-8317-')));
+  const corrida = repoDeGit(padre, 'Corrida');
+  const hermano = repoDeGit(padre, 'Hermano');
+  const tercero = repoDeGit(padre, 'Tercero');
+  const deps = { lector: lectorQueDice('Hermano', hermano), esDelArnes: () => false };
+  const decide = (archivo, marker) => io.evaluate({ filePath: archivo, sessionId: 's16', stateDir: conHistoria('s16', marker), installedRoots: [], grupoDeps: deps }).verdict;
+  conModoFreno(() => {
+    // otro checkout del repo de la corrida (un worktree suyo, fuera de su carpeta) es el repo de la corrida
+    const wt = path.join(padre, 'wt-corrida');
+    execFileSync('git', ['-C', corrida, 'worktree', 'add', '-q', '-b', 'y', wt], { stdio: 'ignore' });
+    assert.equal(decide(path.join(wt, 'src', 'a.cs'), { repoPath: corrida, ...APROBADO }).action, 'pass');
+    assert.equal(decide(path.join(corrida, 'src', 'a.cs'), { repoPath: wt, ...APROBADO }).action, 'pass');
+    // un enlace dentro del repo de la corrida que lleva a otro repo no lo vuelve del repo de la corrida
+    fs.symlinkSync(tercero, path.join(corrida, 'enlace'));
+    assert.equal(decide(path.join(corrida, 'enlace', 'src', 'a.cs'), { repoPath: corrida, ...APROBADO }).kind, 'story-out-of-group');
+    // un repo de la historia que contiene a otros repos no los abre
+    const contenedor = path.join(padre, 'contenedor');
+    fs.mkdirSync(path.join(contenedor, 'specs'), { recursive: true });
+    execFileSync('git', ['init', '-q', contenedor], { stdio: 'ignore' });
+    const anidado = repoDeGit(contenedor, 'Anidado');
+    assert.equal(decide(path.join(anidado, 'src', 'a.cs'), { repoPath: corrida, storyPath: path.join(contenedor, 'specs', 's.md'), ...APROBADO }).kind, 'story-out-of-group');
+    // sin la carpeta de la historia, un hermano declarado sigue adentro
+    assert.equal(decide(path.join(hermano, 'src', 'a.cs'), { repoPath: corrida, storyPath: path.join(padre, 'no-existe', 'specs', 's.md'), ...APROBADO }).action, 'pass');
+  });
+});

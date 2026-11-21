@@ -405,33 +405,43 @@ function grupoDelArchivo({ abs, real, marker, deps = {} }) {
   const raiz = deps.raizDeGit || raizDeGit;
   const noSe = (motivo, repoDelArchivo = null) => ({ estado: 'no-pude-saber', repoDelArchivo, motivo });
   if (esDelArnes(abs)) return { estado: 'no-aplica' };
-  // el repo donde vive el archivo de la historia cuenta como adentro: con el plan pendiente frena por el plan
-  if (marker.storyPath) {
-    const historia = path.isAbsolute(String(marker.storyPath)) ? String(marker.storyPath) : path.resolve(marker.repoPath, String(marker.storyPath));
-    const delaHistoria = raiz(path.dirname(historia));
-    if (!delaHistoria) return noSe(`no pude leer el repo de la historia (${historia})`);
-    if (isInside(delaHistoria, abs) || isInside(delaHistoria, real)) return { estado: 'adentro', repoDelArchivo: delaHistoria };
-  }
-  // el repo del archivo, sin el envoltorio que descarta el fallo
+  // el repo del archivo, por su ruta real y sin el envoltorio que descarta el fallo
   let ctx;
-  try { ctx = contexto(abs); } catch (e) { return noSe(`no pude buscar el repo del archivo (${motivoDe(e)})`); }
+  try { ctx = contexto(real || abs); } catch (e) { return noSe(`no pude buscar el repo del archivo (${motivoDe(e)})`); }
   if (ctx.fallo) return noSe(ctx.fallo, ctx.repoRoot || null);
   if (ctx.discoveryPartial) return noSe('la búsqueda de historias del repo se cortó por tiempo: no sé si trabaja con el arnés', ctx.repoRoot || null);
   if (!ctx.repoRoot || (!ctx.repoHasTycon && !ctx.repoHasStories)) return { estado: 'no-aplica', repoDelArchivo: ctx.repoRoot || null };
+  const mismoRepo = (a, b) => !!a && !!b && gate.sameFile(realOMisma(a), realOMisma(b));
+  // el repo donde vive el archivo de la historia cuenta como adentro (con el plan pendiente frena por el plan), si es
+  // justo el repo del archivo: uno que contiene a otros (una carpeta personal versionada) no los abre. Una carpeta que
+  // todavía no existe se lee desde la primera de arriba que sí
+  let historiaSinLeer = null;
+  if (marker.storyPath) {
+    const historia = path.isAbsolute(String(marker.storyPath)) ? String(marker.storyPath) : path.resolve(marker.repoPath, String(marker.storyPath));
+    let dir = path.dirname(historia);
+    while (!fs.existsSync(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
+    const delaHistoria = raiz(dir);
+    if (!delaHistoria) historiaSinLeer = `no pude leer el repo de la historia (${historia})`;
+    else if (mismoRepo(delaHistoria, ctx.repoRoot)) return { estado: 'adentro', repoDelArchivo: ctx.repoRoot };
+  }
   let lector;
   try { lector = deps.lector || require('./repo-group.js'); } catch (e) { return noSe(`no pude cargar el lector del grupo (${motivoDe(e)})`, ctx.repoRoot); }
   try {
-    // el checkout principal del repo del archivo: un worktree de un hermano cuenta como el hermano
+    // el checkout principal del repo del archivo: un worktree de un hermano cuenta como el hermano, y otro checkout del
+    // repo de la corrida, como el repo de la corrida
     const principal = lector.checkoutPrincipal(ctx.repoRoot);
     if (!principal) return noSe(`no encuentro el checkout principal de ${ctx.repoRoot}`, ctx.repoRoot);
+    if (mismoRepo(lector.checkoutPrincipal(marker.repoPath), principal)) return { estado: 'adentro', repoDelArchivo: ctx.repoRoot };
     const h = lector.hermanoDeEdicion(marker.repoPath, path.basename(principal));
+    if (h && !h.problema && mismoRepo(h.raiz, principal)) return { estado: 'adentro', repoDelArchivo: ctx.repoRoot };
+    // si el repo de la historia no se leyó, puede ser éste: no se sabe
+    if (historiaSinLeer) return noSe(historiaSinLeer, ctx.repoRoot);
     if (!h || h.problema) {
       const motivo = (h && h.problema) || 'el lector del grupo no contestó';
       // no estar en el grupo, o estar de un solo lado, es fuera; lo demás (sin rama, sin repo, sin tiempo), no se sabe
       const fuera = !!(h && (h.fueraDelGrupo || /no declara|no hay \.tycon\//.test(h.problema)));
       return fuera ? { estado: 'fuera', repoDelArchivo: ctx.repoRoot, motivo } : noSe(motivo, ctx.repoRoot);
     }
-    if (gate.sameFile(realOMisma(h.raiz), realOMisma(principal))) return { estado: 'adentro', repoDelArchivo: ctx.repoRoot };
     return { estado: 'fuera', repoDelArchivo: ctx.repoRoot, motivo: `${path.basename(principal)} no es el hermano declarado (${h.nombre})` };
   } catch (e) { return noSe(`el lector del grupo falló (${motivoDe(e)})`, ctx.repoRoot); }
 }
@@ -629,7 +639,8 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   if (conHistoria && !marker.repoPath) {
     anotarFueraDelGrupo(stateDir, sessionId, { status: 'unknown', story: marker.storyId, repoPath: null, file: abs, repoDelArchivo: null,
       modo: gate.MODO_FUERA_DEL_GRUPO, motivo: 'el marcador no dice el repo de la corrida' });
-  } else if (conHistoria && !isInside(marker.repoPath, abs) && !isInside(marker.repoPath, realFilePath)) {
+  } else if (conHistoria && !isInside(installedTree.realPath(marker.repoPath), realFilePath)) {
+    // por la ruta real: un enlace dentro del repo de la corrida que lleva a otro repo no lo vuelve del repo de la corrida
     grupo = grupoDelArchivo({ abs, real: realFilePath, marker, deps: grupoDeps || {} });
   }
   const hipotetico = (isHarness) => gate.computeStoryGate({
