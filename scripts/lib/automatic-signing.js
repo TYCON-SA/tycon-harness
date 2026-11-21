@@ -16,6 +16,9 @@
 
 // lo que el arnés nunca firma solo, aunque el perfil lo liste: lo mismo que nunca se delega
 const SOLO_DEL_DUENO = new Set(['adversarial-skip']);
+// lo que nunca sale solo aunque se delegue: la constancia tiene que nombrar a la persona que dio el ok, y la del trámite
+// dice «el arnés» (write-findings la rechazaría después). Va por la delegación, que nombra al dueño, o por su click
+const SIEMPRE_CON_PERSONA = new Map([['critical-waiver', 'un crítico lo decide una persona: va por la delegación o por el click del dueño, no como trámite']]);
 
 /**
  * ¿`firma` es de trámite? `{ ok, motivo? }`. `perfil()` → `{ delegated_signing, owner_only, levels }`, para las
@@ -36,6 +39,7 @@ function esDeTramite({ firma, perfil, env, home, arnes } = {}) {
   if (malFormada) return no(`no pude leer approvals.${malFormada} del perfil: no es una lista`);
   const ids = (v, o) => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []).flatMap((x) => cat.expand(x, o));
   if (ids(a.owner_only, { restringe: true }).includes(firma)) return no(`«${firma}» es sólo del dueño (approvals.owner_only)`);
+  if (SIEMPRE_CON_PERSONA.has(firma)) return no(SIEMPRE_CON_PERSONA.get(firma));
   if (!ids(a.delegated_signing).includes(firma)) return no(`el perfil del equipo no la lista como trámite (approvals.delegated_signing)`);
   if (a.levels && typeof a.levels === 'object' && !cat.delegable(firma, a.levels)) return no(`«${firma}» es sólo del dueño: el perfil le subió el nivel (approvals.levels)`);
   return { ok: true };
