@@ -593,6 +593,8 @@ igual, sólo esta forma exacta, para cualquier plataforma:
 - `node <coordination.js> pr-wait --repo <organización/repo> --story <historia>`, con el mismo `--interval` opcional:
   espera a que la historia abra su pedido. Lee sólo la lista de pedidos abiertos, y termina con el número cuando
   aparece uno de la rama `story/<historia>`, o con la historia en el título.
+- En las dos, `--repo` también va como `<organización>/<proyecto>/<repo>`: un repo de Azure DevOps que `team-repos.json`
+  no declara, leído con su proyecto, sin mirar el perfil.
 
 Los números van escritos tal cual, y la línea no lleva nada más: ni tubos, ni `&&` o `;`, ni redirecciones, ni nada
 armado con `$`. Cualquier otra consola de fondo sigue frenando, también el vigilante propio de una plataforma o un bucle

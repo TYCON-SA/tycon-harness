@@ -36,6 +36,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            máquina; sin coordinadora confirmada, o desde otra sesión, sale enseguida
  *   pr-wait --repo <org/repo> --number <n> [--interval <s>]
  *   pr-wait --repo <org/repo> --story <historia> [--interval <s>]
+ *   (--repo también va como <org>/<proyecto>/<repo>, un repo de Azure DevOps que team-repos.json no declara)
  *                            el vigilante de sólo lectura de un pedido: repite sólo su lectura por la capa de plataforma
  *                            (cada 120 s por defecto) y termina con 0 e imprime el estado cuando deja de estar abierto;
  *                            con 2 si la lectura falla tres veces seguidas. De fondo no le quita a la coordinadora la
@@ -3001,6 +3002,9 @@ const PR_WAIT_INTERVAL_MAX_S = 86400;
 const PR_WAIT_MAX_FAILS = 3;
 const ENTERO = /^[1-9]\d*$/;
 const ORG_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+// un repo de Azure DevOps escrito entero: la organización, el proyecto (puede llevar espacios) y el repo
+const ORG_PROYECTO_REPO = /^([A-Za-z0-9._-]+)\/([A-Za-z0-9._-][A-Za-z0-9._ -]*[A-Za-z0-9._-]|[A-Za-z0-9._-])\/([A-Za-z0-9._-]+)$/;
+const FORMAS_DEL_REPO = '<organización/repo> (o <organización>/<proyecto>/<repo> para un repo de Azure DevOps que team-repos.json no declara)';
 // el número de una historia: `8.326`, `2.3` o uno suelto (`25`)
 const HISTORIA = /^\d+(?:\.\d+)*$/;
 
@@ -3054,7 +3058,7 @@ async function prWaitStory(f, { listar, opciones, repo, sinIdentidad, intervalo,
 async function prWait(f, { leer, listar, tree, sleep = (ms) => new Promise((ok) => setTimeout(ok, ms)) } = {}) {
   const intervalo = f.interval === undefined ? String(PR_WAIT_INTERVAL_S) : f.interval;
   const sobra = Object.keys(f).filter((k) => !['rest', 'repo', 'number', 'story', 'interval'].includes(k));
-  if (typeof f.repo !== 'string' || !ORG_REPO.test(f.repo)) return { code: 2, error: 'pr-wait pide --repo <organización/repo>' };
+  if (typeof f.repo !== 'string' || !(ORG_REPO.test(f.repo) || ORG_PROYECTO_REPO.test(f.repo))) return { code: 2, error: `pr-wait pide --repo ${FORMAS_DEL_REPO}` };
   if (f.number !== undefined && f.story !== undefined) return { code: 2, error: 'pr-wait lleva --number o --story, no los dos' };
   if (f.story !== undefined && (typeof f.story !== 'string' || !HISTORIA.test(f.story))) return { code: 2, error: 'pr-wait: --story va con el número de la historia (8.326, 2.3 o 25)' };
   if (f.story === undefined && (typeof f.number !== 'string' || !ENTERO.test(f.number))) return { code: 2, error: 'pr-wait pide --number <número de pedido>, un entero positivo, o --story <historia>' };
@@ -3066,9 +3070,14 @@ async function prWait(f, { leer, listar, tree, sleep = (ms) => new Promise((ok) 
   const opciones = tree ? { tree } : {};
   let repo = null;
   let sinIdentidad = '';
-  try { repo = platform.identityByName(f.repo, opciones); } catch (e) { sinIdentidad = ` (${(e && e.message) || e})`; }
-  // sin identidad, el motivo de una falla lo dice: en Azure DevOps es casi siempre por eso
-  if (!repo) { repo = f.repo; sinIdentidad = ` · ${f.repo} no tiene identidad en team-repos.json${sinIdentidad}: se leyó como org/repo`; }
+  // con el proyecto escrito, la identidad entera sin mirar el perfil: Azure DevOps necesita el proyecto
+  const entero = ORG_PROYECTO_REPO.exec(f.repo);
+  if (entero) repo = { platform: 'azure', org: entero[1], project: entero[2], repo: entero[3] };
+  else {
+    try { repo = platform.identityByName(f.repo, opciones); } catch (e) { sinIdentidad = ` (${(e && e.message) || e})`; }
+    // sin identidad, el motivo de una falla lo dice: en Azure DevOps es casi siempre por eso
+    if (!repo) { repo = f.repo; sinIdentidad = ` · ${f.repo} no tiene identidad en team-repos.json${sinIdentidad}: se leyó como org/repo; para un repo de Azure DevOps va --repo <organización>/<proyecto>/<repo>`; }
+  }
   if (f.story !== undefined) return prWaitStory(f, { listar, opciones, repo, sinIdentidad, intervalo, sleep });
   const lectura = leer || ((number, r) => platform.run('change-request.read', { number }, { ...opciones, repo: r }));
   const n = Number(f.number);

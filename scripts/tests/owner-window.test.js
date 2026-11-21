@@ -4332,6 +4332,21 @@ test('OwnerWindow_ReadOnlyWatcherStory_DelegatedSignAllowed: con pr-wait --story
   }
 });
 
+// pr-wait con el repo de Azure DevOps escrito entero (<org>/<proyecto>/<repo>) también es de sólo lectura
+test('OwnerWindow_ReadOnlyWatcherOrgProjectRepo_DelegatedSignAllowed: con --repo <org>/<proyecto>/<repo> de fondo, la coordinadora firma por delegación', (t) => {
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo acme/Seguimiento/seguimiento-backend --number 7`,
+    `node "${COORD_PROPIO}" pr-wait --repo "acme/Acme Formularios Propios/formularios-app" --story 2.1 --interval 60`]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.deepStrictEqual([r.decision, r.via], ['allow', 'delegacion'], `${linea}: ${r.texto}`);
+  }
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo a/b/c/d --number 7`, `node "${COORD_PROPIO}" pr-wait --repo a//c --number 7`,
+    `node "${COORD_PROPIO}" pr-wait --repo "a/b;c/d" --number 7`]) {
+    const casa = casaNueva(t);
+    assert.strictEqual(pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) }).decision, 'deny', linea);
+  }
+});
+
 test('Guide_DelegatedSign_NamesReadOnlyWatchers @story-8.270 @ac-17 — la guía de las firmas nombra el vigilante y por qué lo demás frena', () => {
   const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
   const inicio = guia.indexOf('## Aprobar en nombre del dueño');

@@ -2443,6 +2443,37 @@ module.exports = { run: (operacion, args) => {
   assert.deepStrictEqual(calls.map((c) => c.operacion), ['change-request.list', 'change-request.list']);
 });
 
+test('PrWait_OrgProjectRepo_ReadsWithoutTheProfile: --repo <org>/<proyecto>/<repo> lee un repo de Azure DevOps que team-repos.json no declara', async () => {
+  const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-pr-proy-'));
+  fs.writeFileSync(path.join(tree, 'team-profile.json'), '{}');
+  fs.writeFileSync(path.join(tree, 'team-repos.json'), JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'arnes' },
+    profile: { platform: 'github', org: 'acme', repo: 'perfil' }, operations: { platform: 'github', org: 'acme', repo: 'operaciones' } }));
+  const vistos = [];
+  const leer = async (number, repo) => { vistos.push(repo); return { ok: true, value: { number, state: 'merged' } }; };
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/Seguimiento/seguimiento-backend', number: '7' }, { leer, tree }), { code: 0, text: 'merged' });
+  assert.deepStrictEqual(vistos[0], { platform: 'azure', org: 'acme', project: 'Seguimiento', repo: 'seguimiento-backend' });
+  // un proyecto con espacios, como los de Azure DevOps
+  await C.prWait({ rest: [], repo: 'acme/Acme Formularios Propios/formularios-app', number: '7' }, { leer, tree });
+  assert.deepStrictEqual(vistos[1], { platform: 'azure', org: 'acme', project: 'Acme Formularios Propios', repo: 'formularios-app' });
+  // también con --story
+  const listados = [];
+  const listar = async (args, repo) => { listados.push(repo); return { ok: true, value: [{ number: 3, sourceBranch: 'story/2.1', title: 'x' }] }; };
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/Seguimiento/seguimiento-backend', story: '2.1' }, { listar, tree, sleep: async () => {} }), { code: 0, text: 'open 3' });
+  assert.strictEqual(listados[0].project, 'Seguimiento');
+  // otra forma no lee, y el error dice las dos formas
+  for (const malo of ['a/b/c/d', 'a//c', '/b/c', 'a/b/']) {
+    const r = await C.prWait({ rest: [], repo: malo, number: '7' }, { leer, tree });
+    assert.strictEqual(r.code, 2, malo);
+    assert.match(r.error, /<organización>\/<proyecto>\/<repo>/, malo);
+  }
+  assert.strictEqual(vistos.length, 2, 'con otra forma no leyó');
+  // el repo sin identidad que falla dice la forma de Azure DevOps
+  const falla = async () => ({ ok: false, reason: 'rechazado', detail: 'falta el proyecto' });
+  const r = await C.prWait({ rest: [], repo: 'acme/seguimiento-backend', number: '7', interval: '1' }, { leer: falla, tree, sleep: async () => {} });
+  assert.strictEqual(r.code, 2);
+  assert.match(r.error, /<organización>\/<proyecto>\/<repo>/);
+});
+
 // ── El pase al lado de un portón acotado (8.286) ─────────────────────────────────────────────────────────────────
 
 // El registro de un portón sin turno de un proceso vivo (este, salvo que se diga otro), como lo deja heavy-turn.js.
