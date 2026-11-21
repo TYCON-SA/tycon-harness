@@ -1225,6 +1225,26 @@ function preparada(a, extra = {}) {
   return 'prepareCommitHuellas' in extra ? m : { ...m, prepareCommitHuellas: so.huellas(so.reposDeLaCorrida({ marker: m })) };
 }
 
+// 🔴 Falla con: el pedido sin preparar que frena sin decir la salida cuando no es de la historia (el arreglo que destraba
+// su cierre, por ejemplo): la coordinadora cierra la ejecución con el comando exacto, en una línea. El freno no se afloja.
+test('PedidoSinPreparar_DiceLaSalidaSiNoEsDeLaHistoria', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const otro = repoConOrigin(t, 'otro');
+  abrir(h, corrida(a));
+  for (const cwd of [a, otro]) {
+    const r = decide(h, 'gh pr create --fill', cwd) || {};
+    assert.match(r.texto || '', SIN_PREPARAR, JSON.stringify(r));
+    const salida = (r.texto || '').split('\n').filter((l) => /no es de la historia 9\.99/.test(l));
+    assert.strictEqual(salida.length, 1, r.texto);
+    assert.ok(salida[0].includes(`marker.js" clear-session ${SID}`), salida[0]);
+  }
+  // con un empuje a una rama compartida antes del pedido en la misma línea, la salida también aparece
+  assert.match((decide(h, 'git push origin main && gh pr create --fill', a) || {}).texto || '', /no es de la historia 9\.99/);
+  // el empuje a una rama compartida no lleva la salida: no es un pedido
+  assert.doesNotMatch((decide(h, 'git push origin main', a) || {}).texto || '', /no es de la historia/);
+});
+
 // 🔴 Falla con: un commit dentro de una corrida que todavía abre la ventana, una forma de commit que el lector deja de
 // leer, o el commit que pasa sin quedar en el registro del freno.
 test('8.242-Commit_DeLaCorrida_NoPregunta (T1) @story-8.242 @ac-1', (t) => {
