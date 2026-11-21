@@ -294,6 +294,50 @@ test('el archivo de otro repo no salda la entrada', () => {
   assert.strictEqual(JSON.parse(lab.cierre(tmp()).stdout).decision, 'block');
 });
 
+// Caso: el latido corrido desde una copia del repo (`<repo>--wt-X`) deja su archivo con la ruta de la copia. El aviso no lo
+// reconocía para el merge anotado desde la carpeta principal: lo seguía pidiendo y mandaba el latido a la principal, que
+// no tenía el commit y pedía un git fetch.
+test('el archivo del latido corrido desde una copia borrada <repo>--wt-X salda la entrada de la carpeta principal', () => {
+  const base = tmp();
+  const principal = path.join(base, 'producto');
+  fs.mkdirSync(principal);
+  git(principal, ['init', '--quiet', '-b', 'main']);
+  git(principal, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: principal });
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: path.join(base, 'producto--wt-X'), merge_commit: SHA_ENTERO, project: 'x' }));
+  assert.strictEqual(lab.cierre(tmp()).stdout, '');
+});
+
+test('el archivo del latido corrido desde una copia viva <repo>--wt-X salda la entrada de la carpeta principal', () => {
+  const base = tmp();
+  const principal = path.join(base, 'producto');
+  fs.mkdirSync(principal);
+  git(principal, ['init', '--quiet', '-b', 'main']);
+  git(principal, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
+  const copia = path.join(base, 'producto--wt-X');
+  git(principal, ['worktree', 'add', '--quiet', '-b', 'tarea', copia, 'main']);
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: principal });
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: copia, merge_commit: SHA_ENTERO, project: 'x' }));
+  assert.strictEqual(lab.cierre(tmp()).stdout, '');
+});
+
+test('un repo aparte que se llama <repo>--wt-X no salda la entrada de <repo>', () => {
+  const base = tmp();
+  const principal = path.join(base, 'producto');
+  const otro = path.join(base, 'producto--wt-X');
+  for (const d of [principal, otro]) {
+    fs.mkdirSync(d);
+    git(d, ['init', '--quiet', '-b', 'main']);
+    git(d, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
+  }
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: principal });
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: otro, merge_commit: SHA_ENTERO, project: 'x' }));
+  assert.strictEqual(JSON.parse(lab.cierre(tmp()).stdout).decision, 'block');
+});
+
 // Una entrada sin copia y sin carpeta principal no la paga ningún latido (pide el repo y el commit): no corta el turno,
 // se avisa una vez con el comando de corregir. Cortar por ella era pedir algo que nadie puede hacer.
 test('sin copia y sin carpeta principal, el cierre avisa sin cortar', () => {
