@@ -307,6 +307,38 @@ if runs T48; then
   [ -z "$(claude_listing "$H")" ] && ok "nada en ~/.claude" || bad "apareció en ~/.claude: $(claude_listing "$H" | head -12 | tr '\n' ' ')"
 fi
 
+if runs T54; then
+  echo "8.150 T54 · CodexSolo_PiezasLivianas @story-8.150 @ac-10 — lo liviano que Codex usa corre; lo demás queda afuera"
+  # el árbol de este repo con las piezas de fondo de mentira: anotan que corrieron, sin red ni gestores de paquetes
+  TREE54="$BASE/tree54"; mkdir -p "$TREE54"
+  ( cd "$ROOT" && tar --exclude='./scripts/tests' -cf - ./scripts ) | ( cd "$TREE54" && tar -xf - )
+  for f in check-engram-project check-engram-version ensure-sqlite3; do
+    printf 'printf "%%s\\n" %s >> "$HOME/corrio.txt"\n' "$f" > "$TREE54/scripts/setup/$f.sh"
+  done
+  printf 'require("fs").appendFileSync(require("path").join(process.env.HOME, "corrio.txt"), "az-projects " + process.argv.slice(2).join(" ") + "\\n");\n' > "$TREE54/scripts/hooks/failed-query-notice.js"
+  H="$(off_home t54)"; mkdir -p "$H/bin"
+  printf '#!/bin/sh\nexit 0\n' > "$H/bin/az"; chmod +x "$H/bin/az"
+  # un repo del equipo con CLAUDE.md y sin AGENTS.md, y uno ajeno
+  for r in nuestro ajeno; do mkdir -p "$H/repos/$r"; git -C "$H/repos/$r" init -q; : > "$H/repos/$r/CLAUDE.md"; done
+  git -C "$H/repos/nuestro" remote add origin https://dev.azure.com/acme/Proyecto/_git/nuestro
+  git -C "$H/repos/ajeno" remote add origin https://github.com/otro/ajeno
+  PATH="$H/bin:$PATH" real_applier_off "$TREE54" "$H" TYCON_ADO_ORG=https://dev.azure.com/acme TYCON_ENGRAM=1 \
+    TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1 TYCON_NO_GIT_HOOKS=1; RC=$?
+  [ "$RC" = 0 ] && ok "el aplicador sin Claude Code sale 0" || bad "el aplicador salió $RC: $(tail -5 "$H/applier.out")"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q az-projects "$H/corrio.txt" 2>/dev/null && break; sleep 0.5; done
+  grep -q '^az-projects --refresh --org https://dev.azure.com/acme' "$H/corrio.txt" 2>/dev/null && ok "refrescó la lista de proyectos de Azure, con la organización" || bad "no refrescó la lista de Azure: $(cat "$H/corrio.txt" 2>&1 | tr '\n' ' ')"
+  grep -qx check-engram-project "$H/corrio.txt" 2>/dev/null && ok "miró el nombre de proyecto de engram" || bad "no miró el proyecto de engram"
+  grep -q 'leé `./CLAUDE.md` COMPLETO' "$H/repos/nuestro/AGENTS.md" 2>/dev/null && ok "dejó el AGENTS.md puntero en el repo del equipo" || bad "no dejó el AGENTS.md puntero: $(tail -5 "$H/applier.out")"
+  [ ! -e "$H/repos/ajeno/AGENTS.md" ] && ok "y no en el ajeno" || bad "lo dejó en un repo ajeno"
+  ! grep -qx check-engram-version "$H/corrio.txt" 2>/dev/null && ! grep -qx ensure-sqlite3 "$H/corrio.txt" 2>/dev/null && ok "ni la versión de engram ni sqlite3" || bad "corrió lo descartado: $(cat "$H/corrio.txt" | tr '\n' ' ')"
+  [ -z "$(claude_listing "$H")" ] && ok "nada en ~/.claude" || bad "apareció en ~/.claude: $(claude_listing "$H" | head -12 | tr '\n' ' ')"
+  # con el interruptor, sin puntero
+  rm -f "$H/repos/nuestro/AGENTS.md"
+  PATH="$H/bin:$PATH" real_applier_off "$TREE54" "$H" TYCON_ADO_ORG=https://dev.azure.com/acme TYCON_NO_AGENTSMD_POINTER=1 \
+    TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1 TYCON_NO_GIT_HOOKS=1
+  [ ! -e "$H/repos/nuestro/AGENTS.md" ] && ok "con TYCON_NO_AGENTSMD_POINTER=1, sin puntero" || bad "dejó el puntero con el interruptor"
+fi
+
 if runs T49; then
   echo "8.150 T49 · ConClaude_SinCambios @story-8.150 @ac-11"
   harness_lab_create "$BASE/lab49"

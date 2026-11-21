@@ -138,6 +138,13 @@ unset _SD_LIB
 # `TYCON_HARNESS_CLAUDE=off` lo pone harness.js en una máquina que instaló el arnés sin Claude Code (sólo Codex). En
 # ese modo corre una lista cerrada: el candado, el reporte y el plan; la lectura de la configuración y del perfil; los
 # tres hooks globales de git y la mirada al core.hooksPath local de los clones; la recolección de hallazgos y el buzón.
+# Y de lo que corre de fondo con Claude Code, sólo lo liviano que Codex usa: la lista de proyectos de Azure DevOps (la
+# lee el aviso de consultas fallidas, que también es de Codex), el chequeo del nombre de proyecto de engram y el
+# AGENTS.md puntero en los repos (es lo que le hace leer a Codex las reglas del repo). Quedan afuera, con su motivo:
+# las suites rápidas de skills (prueban el código del arnés, no algo que Codex use: las cubren la CI y la noche), la
+# versión de engram (lo útil es actualizarlo, más de dos minutos, y sus marcas van a ~/.claude) y sqlite3 (instalarlo
+# con un gestor de paquetes no es liviano y deja su marca en ~/.claude; si falta, el aviso de la memoria de engram, que
+# también corre en Codex, lo dice).
 # Todo lo demás —el lugar del arnés, los enlaces, settings.json, las skills, los bloques de CLAUDE.md, los comandos, el
 # rescate del hilo (lee conversaciones de Claude Code), el banco, las métricas— no corre, y nada se escribe en
 # ~/.claude. Cada bloque saltado lleva la guarda `CLAUDE_OFF`.
@@ -578,6 +585,74 @@ esac
 PROFILE_FULL=0; [[ "$PROFILE_STATE" == "ok" && "$TYCON_PROFILE_VALUE" != "minimal" ]] && PROFILE_FULL=1
 PROFILE_IS_MINIMAL=0; [[ "$PROFILE_STATE" == "ok" && "$TYCON_PROFILE_VALUE" == "minimal" ]] && PROFILE_IS_MINIMAL=1
 
+# ── Dos piezas que corren con Claude Code y sin él (ver «Sin Claude Code», arriba) ──────────────────────
+# El AGENTS.md puntero en los repos de proyecto (lo explica su llamada, más abajo).
+_agents_md_punteros() {
+  # rc 2 = la configuración del arnés está ROTA (tycon.json / perfil): se dice tal cual y no se deposita nada —
+  # un archivo roto no se lee como «sin raíz» ni como «sin organización». rc 3 = sin valor.
+  # 🔴 `|| _RC=$?` y no `; _RC=$?`: este archivo corre con `set -e`, y una asignación `X="$(cmd)"` con cmd ≠ 0
+  # aborta el instalador ENTERO antes de leer el código.
+  _CFG_ERR="$(mktemp)"; _RC_RAIZ=0; _RC_ORG=0
+  _REPOS_ROOT="$(node "$SCRIPT_DIR/lib/repos-root.js" --plain 2>"$_CFG_ERR")" || _RC_RAIZ=$?
+  _ADO_ORG="$(node "$SCRIPT_DIR/lib/tycon-config.js" get ado.org 2>>"$_CFG_ERR")" || _RC_ORG=$?
+  _ORG_NOMBRE="${_ADO_ORG##*/}"
+  if [[ "$_RC_RAIZ" == "2" || "$_RC_ORG" == "2" ]]; then
+    echo "⚠ tycon/codex: la configuración del arnés está rota — no deposito punteros AGENTS.md hasta que se arregle:"
+    sed 's/^/   /' "$_CFG_ERR"
+    _REPOS_ROOT=""; _ORG_NOMBRE=""
+  fi
+  rm -f "$_CFG_ERR"
+  if [[ "$_RC_RAIZ" == "2" || "$_RC_ORG" == "2" ]]; then
+    :
+  elif [[ -z "$_REPOS_ROOT" ]]; then
+    echo "ℹ tycon/codex: sin raíz de repos conocida (TYCON_REPOS_ROOT, o rutas.repos en ~/.claude/tycon.json): no deposito punteros AGENTS.md"
+  elif [[ -z "$_ORG_NOMBRE" ]]; then
+    echo "ℹ tycon/codex: sin organización de Azure DevOps configurada (ado.org): no sé cuáles repos son del equipo, no deposito punteros AGENTS.md"
+  else
+  # Dos niveles: hay repos anidados en contenedores (ej. Cliente/Backend, Cliente/Project).
+  for repo in "$_REPOS_ROOT"/*/ "$_REPOS_ROOT"/*/*/; do
+    # ! -L además de ! -e: un AGENTS.md symlink ROTO da -e falso y el write saldría POR el
+    # symlink, fuera del repo.
+    [[ -d "$repo/.git" && -f "$repo/CLAUDE.md" && ! -e "$repo/AGENTS.md" && ! -L "$repo/AGENTS.md" ]] || continue
+    # Solo repos DEL EQUIPO (origin en la organización configurada): en un fork ajeno o un repo personal depositar no
+    # corresponde, y borrar el puntero no serviría porque cada arranque lo re-crearía. La guarda por origin lo resuelve
+    # sin opt-out manual.
+    origen="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
+    case "$origen" in
+      *"dev.azure.com/$_ORG_NOMBRE"*|*"$_ORG_NOMBRE.visualstudio.com"*) ;;
+      *) continue ;;
+    esac
+    if [[ "$CHECK_ONLY" == "1" ]]; then
+      echo "⚠ $repo tiene CLAUDE.md sin AGENTS.md — bajo Codex sus reglas de proyecto no se cargan"
+      continue
+    fi
+    cat > "$repo/AGENTS.md" <<'AGENTSMD' || true
+# AGENTS.md — puntero (lo depositó el arnés TYCON; commitealo así le llega al equipo)
+
+Las reglas de este repo viven en `CLAUDE.md`, el canónico multi-herramienta.
+**Antes de trabajar acá: leé `./CLAUDE.md` COMPLETO y aplicalo como si fuera este archivo.**
+Si existe `./CLAUDE.local.md`, leelo y aplicalo también.
+
+No agregues reglas acá: se escriben en `CLAUDE.md` — este puntero existe para que no haya
+dos copias que mantener. (Convención: INSTALL.md del arnés, §Lado Codex.)
+AGENTSMD
+    if [[ -f "$repo/AGENTS.md" ]]; then
+      echo "✓ $repo: AGENTS.md puntero depositado (commitealo cuando puedas)"
+    else
+      echo "⚠ $repo: no pude escribir AGENTS.md (¿permisos?) — sigo con el resto"
+    fi
+  done
+  fi
+}
+
+# El nombre de proyecto de engram del repo de la sesión (lo explica su llamada, más abajo).
+_engram_proyecto() {
+  local chk="$SCRIPT_DIR/setup/check-engram-project.sh"
+  if [[ "$TYCON_INTEG_ENGRAM" == "1" && -f "$chk" ]]; then
+    bash "$chk" "$PWD" 2>/dev/null || true
+  fi
+}
+
 # ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (los hooks de settings.json, los nombres viejos, las suites rápidas, el
 # lado Codex de este archivo, el AGENTS.md puntero, el banco, el examen, los bloques de CLAUDE.md, los comandos, la
 # paridad, los chequeos de engram y las métricas de etapa) no corre
@@ -1016,62 +1091,9 @@ fi
 # La raíz sale de scripts/lib/repos-root.js (TYCON_REPOS_ROOT, ~/.claude/tycon.json,
 # las sesiones) y «repo del equipo» se decide con la organización configurada (ado.org): sin raíz o
 # sin organización no se deposita nada, y se dice. Opt-out: TYCON_NO_AGENTSMD_POINTER=1.
+# Sin Claude Code corre igual (más abajo): Codex es la herramienta de la máquina.
 if [[ "$CODEX_ON" == "1" && "${TYCON_NO_AGENTSMD_POINTER:-0}" != "1" ]]; then
-  # rc 2 = la configuración del arnés está ROTA (tycon.json / perfil): se dice tal cual y no se deposita nada —
-  # un archivo roto no se lee como «sin raíz» ni como «sin organización». rc 3 = sin valor.
-  # 🔴 `|| _RC=$?` y no `; _RC=$?`: este archivo corre con `set -e`, y una asignación `X="$(cmd)"` con cmd ≠ 0
-  # aborta el instalador ENTERO antes de leer el código.
-  _CFG_ERR="$(mktemp)"; _RC_RAIZ=0; _RC_ORG=0
-  _REPOS_ROOT="$(node "$SCRIPT_DIR/lib/repos-root.js" --plain 2>"$_CFG_ERR")" || _RC_RAIZ=$?
-  _ADO_ORG="$(node "$SCRIPT_DIR/lib/tycon-config.js" get ado.org 2>>"$_CFG_ERR")" || _RC_ORG=$?
-  _ORG_NOMBRE="${_ADO_ORG##*/}"
-  if [[ "$_RC_RAIZ" == "2" || "$_RC_ORG" == "2" ]]; then
-    echo "⚠ tycon/codex: la configuración del arnés está rota — no deposito punteros AGENTS.md hasta que se arregle:"
-    sed 's/^/   /' "$_CFG_ERR"
-    _REPOS_ROOT=""; _ORG_NOMBRE=""
-  fi
-  rm -f "$_CFG_ERR"
-  if [[ "$_RC_RAIZ" == "2" || "$_RC_ORG" == "2" ]]; then
-    :
-  elif [[ -z "$_REPOS_ROOT" ]]; then
-    echo "ℹ tycon/codex: sin raíz de repos conocida (TYCON_REPOS_ROOT, o rutas.repos en ~/.claude/tycon.json): no deposito punteros AGENTS.md"
-  elif [[ -z "$_ORG_NOMBRE" ]]; then
-    echo "ℹ tycon/codex: sin organización de Azure DevOps configurada (ado.org): no sé cuáles repos son del equipo, no deposito punteros AGENTS.md"
-  else
-  # Dos niveles: hay repos anidados en contenedores (ej. Cliente/Backend, Cliente/Project).
-  for repo in "$_REPOS_ROOT"/*/ "$_REPOS_ROOT"/*/*/; do
-    # ! -L además de ! -e: un AGENTS.md symlink ROTO da -e falso y el write saldría POR el
-    # symlink, fuera del repo.
-    [[ -d "$repo/.git" && -f "$repo/CLAUDE.md" && ! -e "$repo/AGENTS.md" && ! -L "$repo/AGENTS.md" ]] || continue
-    # Solo repos DEL EQUIPO (origin en la organización configurada): en un fork ajeno o un repo personal depositar no
-    # corresponde, y borrar el puntero no serviría porque cada arranque lo re-crearía. La guarda por origin lo resuelve
-    # sin opt-out manual.
-    origen="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
-    case "$origen" in
-      *"dev.azure.com/$_ORG_NOMBRE"*|*"$_ORG_NOMBRE.visualstudio.com"*) ;;
-      *) continue ;;
-    esac
-    if [[ "$CHECK_ONLY" == "1" ]]; then
-      echo "⚠ $repo tiene CLAUDE.md sin AGENTS.md — bajo Codex sus reglas de proyecto no se cargan"
-      continue
-    fi
-    cat > "$repo/AGENTS.md" <<'AGENTSMD' || true
-# AGENTS.md — puntero (lo depositó el arnés TYCON; commitealo así le llega al equipo)
-
-Las reglas de este repo viven en `CLAUDE.md`, el canónico multi-herramienta.
-**Antes de trabajar acá: leé `./CLAUDE.md` COMPLETO y aplicalo como si fuera este archivo.**
-Si existe `./CLAUDE.local.md`, leelo y aplicalo también.
-
-No agregues reglas acá: se escriben en `CLAUDE.md` — este puntero existe para que no haya
-dos copias que mantener. (Convención: INSTALL.md del arnés, §Lado Codex.)
-AGENTSMD
-    if [[ -f "$repo/AGENTS.md" ]]; then
-      echo "✓ $repo: AGENTS.md puntero depositado (commitealo cuando puedas)"
-    else
-      echo "⚠ $repo: no pude escribir AGENTS.md (¿permisos?) — sigo con el resto"
-    fi
-  done
-  fi
+  _agents_md_punteros
 fi
 
 # ── Ambiente para apps GRÁFICAS en macOS ────────────────────────────────────
@@ -1316,10 +1338,7 @@ fi
 # AVISA sobre el repo de la
 # sesión ($PWD), nunca bloquea, silencioso si coinciden. Opt-out: TYCON_NO_ENGRAM_PROJECT_CHECK=1.
 # ============================================================
-ENGRAM_PROJECT_CHECK="$SCRIPT_DIR/setup/check-engram-project.sh"
-if [[ "$TYCON_INTEG_ENGRAM" == "1" && -f "$ENGRAM_PROJECT_CHECK" ]]; then
-  bash "$ENGRAM_PROJECT_CHECK" "$PWD" 2>/dev/null || true
-fi
+_engram_proyecto
 
 # ============================================================
 # Suites de prueba del arnés — NO CORREN ACÁ
@@ -1387,6 +1406,10 @@ fi
 
 fi
 # ▲ CLAUDE_OFF
+if [[ "$CLAUDE_OFF" == "1" ]]; then
+  [[ "${TYCON_NO_AGENTSMD_POINTER:-0}" != "1" ]] && _agents_md_punteros
+  _engram_proyecto
+fi
 
 # ── El historial viejo de los hooks, a la carpeta del estado ─────────────────────────────────────────────────────────
 # En una máquina que vive en la casa propia, los registros que los hooks dejaron en la carpeta de Claude Code antes de
@@ -1791,8 +1814,8 @@ fi
 # hook la ignora. Off: TYCON_NO_AZ_PROJECTS_REFRESH=1.
 # Sólo con Azure DevOps prendida (ado.org configurada): afuera, con `az` instalado por otro motivo,
 # el instalador no le pregunta a ninguna organización. La organización se le pasa: la del lector, no la de `az devops configure`.
-# Sin Claude Code no corre: la lista la lee un hook de Claude Code.
-if [[ "$CLAUDE_OFF" != "1" && "$TYCON_INTEG_ADO" == "1" && "${TYCON_NO_AZ_PROJECTS_REFRESH:-0}" != "1" && "$CHECK_ONLY" != "1" ]] && command -v az >/dev/null 2>&1; then
+# Corre también sin Claude Code: el hook está en la lista de Codex (adapters/codex/hooks.json).
+if [[ "$TYCON_INTEG_ADO" == "1" && "${TYCON_NO_AZ_PROJECTS_REFRESH:-0}" != "1" && "$CHECK_ONLY" != "1" ]] && command -v az >/dev/null 2>&1; then
   AZ_CACHE="$STATE_DIR/az-projects.json"
   if [[ ! -f "$AZ_CACHE" ]] || [[ -n "$(find "$AZ_CACHE" -mtime +7 2>/dev/null)" ]]; then
     _ORG_REFRESCO="$(node "$SCRIPT_DIR/lib/tycon-config.js" get ado.org 2>/dev/null)" || _ORG_REFRESCO=""
