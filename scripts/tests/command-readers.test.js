@@ -37,3 +37,28 @@ test('CommandReaders_SinLector: un programa sin lector es un error al pedirlo y 
   assert.strictEqual(C.buscarLector('gh', { raiz: d }), null);
   assert.throws(() => C.lectorDe('gh', { raiz: d }), /no hay lector de comandos para gh/);
 });
+
+/** Un árbol de juguete con conectores cuyos lectores son el texto dado. */
+function arbol(lectores) {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'command-readers-'));
+  dirs.push(d);
+  for (const [conector, texto] of Object.entries(lectores)) {
+    fs.mkdirSync(path.join(d, 'integrations', conector, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(d, 'integrations', conector, 'scripts', 'command-reader.js'), texto);
+  }
+  return d;
+}
+
+test('CommandReaders_OtroLectorRoto: no se elige a ciegas — el freno no lee y el aviso calla, sin caerse', () => {
+  const C = require(CARGADOR);
+  const d = arbol({ aaa: "throw new Error('roto');", github: "module.exports = { programas: ['gh'] };" });
+  assert.strictEqual(C.buscarLector('gh', { raiz: d }), null, 'buscar no tira');
+  assert.throws(() => C.lectorDe('gh', { raiz: d }), /no se pudo cargar[\s\S]*aaa/);
+});
+
+test('CommandReaders_DosLectoresParaElMismoPrograma: ninguno tapa al otro — el freno no lee y el aviso calla', () => {
+  const C = require(CARGADOR);
+  const d = arbol({ aaa: "module.exports = { programas: ['gh'], comandosGh: () => [] };", github: "module.exports = { programas: ['gh'] };" });
+  assert.strictEqual(C.buscarLector('gh', { raiz: d }), null);
+  assert.throws(() => C.lectorDe('gh', { raiz: d }), /más de un lector de comandos para gh[\s\S]*aaa[\s\S]*github/);
+});
