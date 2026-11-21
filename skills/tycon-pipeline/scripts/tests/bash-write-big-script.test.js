@@ -317,6 +317,47 @@ test('T12 BigScript_ScriptPathInVariableToo_StillBlocks', () => {
   ]) assert.strictEqual(correr(command), FRENO, command);
 });
 
+// T14 BigScript_VariableAfterShellWord_StillBlocks
+// 🔴 Falla con: no saltar las palabras del shell que van delante del programa (`then`, `do`, `!`): dentro de un `if`, un
+//    `for` o un `while` el intérprete en una variable no se veía.
+test('T14 BigScript_VariableAfterShellWord_StillBlocks', () => {
+  const correr = conGuionesGrandes();
+  for (const command of [
+    'N=$(command -v node); if $N scripts/grande.test.js; then echo ok; fi',
+    'N=$(command -v node); if true; then $N scripts/grande.test.js; fi',
+    'N=$(command -v node); for i in 1; do $N scripts/grande.test.js; done',
+    'N=$(command -v node); ! $N scripts/grande.test.js',
+  ]) assert.strictEqual(correr(command), FRENO, command);
+});
+
+// T15 BigScript_VariableAfterLauncherOptions_StillBlocks
+// 🔴 Falla con: tomar por programa el valor de una opción de un lanzador (`timeout -s KILL`, `sudo -u root`, `ionice -c 3`)
+//    o no ver la variable detrás de `xargs`.
+test('T15 BigScript_VariableAfterLauncherOptions_StillBlocks', () => {
+  const correr = conGuionesGrandes();
+  for (const command of [
+    'N=$(command -v node); timeout -s KILL 200 $N scripts/grande.test.js',
+    'N=$(command -v node); timeout -k 5 200 $N scripts/grande.test.js',
+    'N=$(command -v node); sudo -u root $N scripts/grande.test.js',
+    'N=$(command -v node); ionice -c 3 $N scripts/grande.test.js',
+    'N=$(command -v node); env -u FOO $N scripts/grande.test.js',
+    'N=$(command -v node); stdbuf -o L $N scripts/grande.test.js',
+    'N=$(command -v node); echo scripts/grande.test.js | xargs $N',
+  ]) assert.strictEqual(correr(command), FRENO, command);
+});
+
+// T16 BigScript_PathStartingWithVariable_IsItsProgram
+// 🔴 Falla con: tomar por variable-programa una ruta que sólo empieza con una variable: `${PWD}/node_modules/.bin/eslint`
+//    o `$VENV/bin/black` corren ese programa, no un intérprete.
+test('T16 BigScript_PathStartingWithVariable_IsItsProgram', () => {
+  const correr = conGuionesGrandes();
+  for (const command of [
+    '${PWD}/node_modules/.bin/eslint scripts/grande.test.js',
+    '$VENV/bin/black scripts/grande.py',
+    '${PWD}/node_modules/.bin/tsc --noEmit scripts/grande.test.js',
+  ]) assert.strictEqual(correr(command), '', command);
+});
+
 // T13 BigScript_VariableWithOptions_StillBlocks
 // 🔴 Falla con: tomar el valor entero de la variable como nombre del programa: `N="node --test"` o `N="/usr/bin/env
 //    node"` no eran un intérprete y el guion pasaba.

@@ -651,35 +651,51 @@ const INTERPRETE_DE = { python: 'python3', node: 'node', perl: 'perl', ruby: 'ru
 // Una palabra del comando con sus variables expandidas y sin las comillas que la envuelven: `"${F}"` es la ruta de F
 const palabraExpandida = (cmd, w) => String(expandirRuta(cmd, w).valor).replace(/^"([^"]*)"$|^'([^']*)'$/, (_, a, b) => (a !== undefined ? a : b));
 
-// lo que va delante del programa y lo lanza (`timeout 200 node x.js`, `nice -n 5 …`, `env A=1 …`)
-const LANZADORES = /^(?:command|exec|nohup|time|nice|ionice|timeout|env|stdbuf|caffeinate)$/;
+// lo que va delante del programa y lo lanza (`timeout 200 node x.js`, `nice -n 5 …`, `env A=1 …`, `xargs node`), con
+// las opciones de cada uno que llevan su valor en la palabra siguiente
+const LANZADORES = {
+  command: [], exec: ['-a'], nohup: [], time: ['-f', '-o', '--format', '--output'], caffeinate: ['-t', '-w'],
+  nice: ['-n', '--adjustment'], ionice: ['-c', '-n', '-p', '--class'], stdbuf: ['-i', '-o', '-e'],
+  timeout: ['-s', '-k', '--signal', '--kill-after'], env: ['-u', '-C', '-S', '--unset', '--chdir', '--split-string'],
+  sudo: ['-u', '-g', '-C', '-p', '-h', '-U', '-r', '-t', '-T', '-D'], doas: ['-u', '-C'],
+  xargs: ['-n', '-I', '-L', '-P', '-d', '-E', '-s', '-a', '--max-args', '--replace', '--max-procs', '--delimiter', '--arg-file'],
+};
+// lo que el shell lee antes del programa dentro de un tramo: `if`, `then`, `do`, `!`…
+const ANTES_DEL_PROGRAMA = /^(?:if|then|else|elif|do|while|until|!|time)$/;
 
-/** La posición del programa del tramo: la primera palabra que no es una asignación ni un lanzador (ni sus opciones). */
+/** La posición del programa: la primera palabra que no es del shell, ni una asignación, ni un lanzador con sus opciones. */
 function posicionDelPrograma(words) {
   let i = 0;
   while (i < words.length) {
     const w = String(words[i]);
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) { i++; continue; }
+    if (ANTES_DEL_PROGRAMA.test(w) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) { i++; continue; }
     const n = nombreDeComando(w);
-    if (!LANZADORES.test(n)) return i;
+    const conValor = Object.prototype.hasOwnProperty.call(LANZADORES, n) ? LANZADORES[n] : null;
+    if (!conValor) return i;
     i++;
-    while (i < words.length && (/^-/.test(words[i]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]))) i++;
-    // la duración de `timeout`, el valor de `nice -n`
+    while (i < words.length && (/^-/.test(words[i]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]))) {
+      i += conValor.includes(words[i]) ? 2 : 1;
+    }
+    // la duración de `timeout`
     if (n === 'timeout' && i < words.length && /^\d/.test(words[i])) i++;
   }
   return -1;
 }
 
+// una palabra que es sólo una variable: `$N`, `${N}` (no `$VENV/bin/black`, donde el programa es el nombre escrito)
+const SOLO_VARIABLE = /^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$/;
+
 /**
- * El programa de la palabra `k` de un tramo. Una variable (`$N`, `"${NODE}"`) en la posición del programa es lo que vale
- * si el comando lo dice (`N=/usr/bin/node; $N x.js`; de un valor con opciones, `node --test` o `env node`, el programa).
- * Si no se puede saber (`N=$(command -v node)`), es el intérprete de la familia del primer guion que la sigue por su
- * extensión, con su ruta expandida: así `$N --test x.js` se mira como `node --test x.js`. Una variable que es argumento
- * de otro programa (`git diff $(…) -- x.js`), o que no corre un guion (`$P notas.txt`), no se toma por intérprete.
+ * El programa de la palabra `k` de un tramo. Una palabra que es sólo una variable (`$N`, `"${NODE}"`), y que es el
+ * programa del tramo (`programa`, el de las palabras del tramo sin recortar), vale lo que el comando dice
+ * (`N=/usr/bin/node; $N x.js`; de un valor con opciones, `node --test` o `env node`, el programa). Si no se puede saber
+ * (`N=$(command -v node)`), es el intérprete de la familia del primer guion que la sigue por su extensión, con su ruta
+ * expandida: así `$N --test x.js` se mira como `node --test x.js`. Una variable que es argumento de otro programa
+ * (`git diff $(…) -- x.js`), o que no corre un guion (`$P notas.txt`), no se toma por intérprete.
  */
-function interpreteDe(cmd, words, k) {
+function interpreteDe(cmd, words, k, programa, todas = []) {
   const w = String(words[k] || '');
-  if (!/^\$/.test(w) || k !== posicionDelPrograma(words)) return nombreDeComando(w);
+  if (!SOLO_VARIABLE.test(w) || w !== programa || words.indexOf(w) !== k) return nombreDeComando(w);
   const e = expandirRuta(cmd, w);
   if (!e.sinResolver.length && !/^\$/.test(String(e.valor))) {
     const partes = String(e.valor).trim().split(/\s+/);
@@ -687,12 +703,16 @@ function interpreteDe(cmd, words, k) {
     if (programa !== 'env') return programa;
     return nombreDeComando(partes.slice(1).find((x) => !x.startsWith('-') && !x.includes('=')) || 'env');
   }
+  const familiaDeGuion = (x) => { const v = palabraExpandida(cmd, x); return Object.keys(EXTENSION_DE).find((f) => EXTENSION_DE[f].test(v)); };
   for (const x of words.slice(k + 1)) {
     if (/^(?:\d|&)?[<>]/.test(x)) break;
     if (x.startsWith('-')) continue;
-    const valor = palabraExpandida(cmd, x);
-    const familia = Object.keys(EXTENSION_DE).find((f) => EXTENSION_DE[f].test(valor));
+    const familia = familiaDeGuion(x);
     if (familia) return INTERPRETE_DE[familia];
+  }
+  // detrás de `xargs` el guion llega por la entrada: cuenta un guion de cualquier parte del comando, como con el nombre escrito
+  if (words.slice(0, k).some((x) => nombreDeComando(x) === 'xargs')) {
+    for (const x of todas) { const familia = familiaDeGuion(x); if (familia) return INTERPRETE_DE[familia]; }
   }
   return nombreDeComando(w);
 }
@@ -891,8 +911,11 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
       }
     }
     // de un tramo que sólo nombra, el intérprete es la primera palabra: `grep node x` o un archivo `node` de la lista no lo son
+    // el programa del tramo, de sus palabras sin recortar: el recorte de los lanzadores puede dejar el valor de una opción
+    const crudas = palabras(tramo.trim()).map(sinGrupo).filter((w) => w !== '');
+    const programa = crudas[posicionDelPrograma(crudas)];
     for (let k = 0; k < (soloNombra ? 1 : words.length); k++) {
-      const interprete = interpreteDe(cmd, words, k);
+      const interprete = interpreteDe(cmd, words, k, programa, todosLosTramos.flatMap(palabrasDe));
       if (!CORRE_ARCHIVO.test(interprete)) continue;
       const familia = familiaDe(interprete);
       let i = k + 1;
