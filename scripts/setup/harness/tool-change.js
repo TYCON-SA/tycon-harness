@@ -68,7 +68,9 @@ function clearUnpluggedNotice(state, R) {
 function baselineFor(home, pieces, U, snap) {
   const wanted = new Set(pieces.map((p) => path.resolve(String(p.where))));
   let copies = [];
-  try { copies = require('./snapshot.js').list(home); } catch (_) { copies = []; }
+  // lo que no se pudo leer no es «no hay copia»: viaja en `problems` hasta las líneas del desenchufe
+  const problems = [];
+  try { copies = require('./snapshot.js').list(home, { problems }); } catch (e) { problems.push(`no pude leer las copias (${e.message})`); copies = []; }
   // la copia que CREÓ la pieza (la más nueva donde no existía antes): contra ésa se pregunta si sigue como la dejó.
   // Una copia posterior donde ya existía (un reinstall con la llave apagada) diría «ya existía antes de instalar» y
   // la pieza quedaría viva para siempre
@@ -84,9 +86,10 @@ function baselineFor(home, pieces, U, snap) {
       map[f.path] = f.existed && f.copy ? path.join(c.dir, f.copy) : null;
       if (typeof f.sha256_after === 'string') after[f.path] = f.sha256_after;
     }
-    return { map, after, dir: c.dir };
+    return { map, after, dir: c.dir, problems };
   }
-  return U.baseline(home);
+  const base = U.baseline(home);
+  return { ...base, problems: [...new Set([...problems, ...(base.problems || [])])] };
 }
 
 /** `install --tool <herramienta>` sobre una máquina instalada: enchufa sólo las que faltan. */
@@ -273,6 +276,8 @@ function remove(ctx, state, H) {
       lines.push(`${T.LABELS[t]} desenchufado: ${r.removed.length} pieza(s) quitada(s)${p.links.length ? `, ${p.links.length} enlace(s)` : ''}${r.kept.length - failed.length ? `; quedan ${r.kept.length - failed.length} que no son del arnés o cambiaste vos` : ''}`);
       for (const k of r.kept) if (!k.error) lines.push(`  - queda: ${k.why}`);
       for (const k of r.review) lines.push(`  - revisalo: ${k.why}`);
+      const noLeidas = U.baselineProblemLine && U.baselineProblemLine(base.problems);
+      if (noLeidas) lines.push(`  - revisalo: ${noLeidas}`);
     }
     // el registro: se va lo quitado (y lo que ya no estaba); lo que no se pudo quitar queda, para reintentar
     st.managed = (Array.isArray(st.managed) ? st.managed : []).filter((p) => !gone.has(p));
@@ -287,4 +292,4 @@ function remove(ctx, state, H) {
   }, { env: ctx.env, onBusy: H.busy });
 }
 
-module.exports = { add, remove, ownerOf, removal };
+module.exports = { add, remove, ownerOf, removal, baselineFor };

@@ -11,6 +11,8 @@
  * stable-data: los «git commit» de abajo son textos que se le pasan al freno, no commits; la única hora real es la de la
  * corrida de pruebas en verde que la matriz pide reciente, y no se compara con ninguna fecha fija.
  */
+// sin el perfil del equipo: la prueba fija su ambiente (lib/without-team-profile.js)
+require('./lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -168,6 +170,44 @@ test('OwnerWindow_GuionAprobado_FirmaConVentana (T8)', (t) => {
     assert.strictEqual(g[0].sesion, 'ses-a');
     assert.strictEqual(g[0].destino, 'ses-a');
   }
+});
+
+// «Avisar si cambia la consola»: cuando la herramienta cambia la forma con que corre sus comandos, `desenvolver` no la
+// reconoce y daba null callado: el click del dueño se gastaba sin decir por qué y el freno dejaba de ver las consolas de
+// fondo sin que nadie lo supiera. Ahora el guion lo dice, y las dos cosas quedan en hook-errors.log, que el aviso de
+// arranque cuenta (hook-failures-notice.js), sin la línea de comando.
+test('OwnerWindow_ConsolaConOtraForma_LoDiceYQuedaAnotado @aviso-consola', (t) => {
+  const [firma, cmd, argv] = GUIONES[0];
+  const casa = casaNueva(t);
+  pedir(casa, cmd);
+  const nueva = (c, o) => envolver(casa, c, o).replace(" && { \\builtin unalias", " && \\builtin typeset -g CLAUDE_NUEVO=1 2>/dev/null || true && { \\builtin unalias");
+  assert.notStrictEqual(nueva(cmd), envolver(casa, cmd), 'la prueba arma otra forma');
+  assert.strictEqual(ow.desenvolver(nueva(cmd), casa), null, 'la forma nueva no se reconoce');
+  const log = path.join(require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(casa), 'hook-errors.log');
+  const leer = () => { try { return fs.readFileSync(log, 'utf8'); } catch (_) { return ''; } };
+  const CAMBIO = /cambió la forma de su consola/;
+  // un padre que no es una consola de la herramienta: el motivo de siempre, sin anotar nada
+  let v = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: 'bash /tmp/mio.sh' }), casa, ahora: AHORA });
+  assert.strictEqual(v.ok, false);
+  assert.doesNotMatch(v.motivo, CAMBIO);
+  assert.doesNotMatch(leer(), CAMBIO);
+  // la consola de la herramienta con otra forma: el click no vale, se dice por qué y queda anotado sin la línea de comando
+  v = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: nueva(cmd) }), casa, ahora: AHORA });
+  assert.strictEqual(v.ok, false);
+  assert.match(v.motivo, /la herramienta cambió la forma de su consola/);
+  assert.match(v.motivo, /--terminal/, 'dice la salida por la terminal');
+  assert.match(leer(), /\] owner-window FAILED CLOSED: la herramienta cambió la forma de su consola/);
+  assert.doesNotMatch(leer(), /approve-plan|CLAUDE_NUEVO|dale, seguí/, 'sin la línea de comando');
+  assert.strictEqual(vigentes(casa).length, 1, 'nada lo consumió');
+  // del lado del freno: una consola de fondo con la forma nueva no se ve; queda anotado que el freno no la ve
+  fs.rmSync(log, { force: true });
+  pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [{ pid: 400, ppid: 100, inicio: INICIO, comando: nueva('sleep 99', { deFondo: true }) }] }) });
+  assert.match(leer(), /\] owner-window FAILED OPEN: la herramienta cambió la forma de su consola/);
+  assert.doesNotMatch(leer(), /sleep 99|CLAUDE_NUEVO/, 'sin la línea de comando');
+  // con la forma de siempre no se anota nada
+  fs.rmSync(log, { force: true });
+  pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [{ pid: 400, ppid: 100, inicio: INICIO, comando: envolver(casa, 'sleep 99', { deFondo: true }) }] }) });
+  assert.doesNotMatch(leer(), CAMBIO);
 });
 
 test('OwnerWindow_FirmaEscondida_NoFirma (T9)', (t) => {
@@ -358,6 +398,19 @@ test('OwnerWindow_Terminal_FirmaYSinTtySaleDos (T15)', (t) => {
   casa = casaNueva(t);
   r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, preguntar: () => 'si' } });
   assert.strictEqual(r.codigo, 1);
+  assert.match(r.motivo, /no se firmó: escribiste «si», no «firmo»\. Para firmar, repetí el comando y escribí «firmo»/);
+  assert.strictEqual(gates(casa).length, 0);
+  // un renglón vacío (un Enter de más) vuelve a preguntar; tres vacíos no firman y dicen cómo repetir
+  casa = casaNueva(t);
+  let veces = 0;
+  r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, preguntar: () => (++veces === 1 ? '  ' : 'firmo') } });
+  assert.deepStrictEqual([r.codigo, veces], [0, 2]);
+  assert.strictEqual(gates(casa).find((g) => g.name === 'plan-approval-signed').via, 'terminal');
+  casa = casaNueva(t);
+  veces = 0;
+  r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, preguntar: () => { veces++; return ''; } } });
+  assert.deepStrictEqual([r.codigo, veces], [1, 3]);
+  assert.match(r.motivo, /no se firmó: no escribiste nada\. Para firmar, repetí el comando y escribí «firmo»/);
   assert.strictEqual(gates(casa).length, 0);
   // sin terminal: sale 2 sin escribir
   r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, hay: () => false } });
@@ -2530,7 +2583,7 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
 const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
-  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'lost-run:particion', 'escape:no-mutation'];
+  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion', 'escape:no-mutation'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
@@ -2552,6 +2605,8 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     ['lost-run:particion', `node ${MARKER} clear-session ses-a --lost --partition`],
     // cerrar las pruebas sin los mutantes: sin motivo o en un paso que no las corre, el guion se niega antes de la firma
     ['escape:no-mutation', `node ${MARKER} complete-step run-tests --no-mutation --reason "refactor sin código nuevo"`],
+    // volver al modo autónomo: sin detención, con el botón de pánico o con el «No» del dueño se niega antes del cuadro
+    ['autonomy-resume', `node ${MARKER} resume-autonomy`],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {
@@ -4226,6 +4281,14 @@ test('OwnerWindow_WatcherOtherShapes_StillBlocks @story-8.270 @ac-14 @ac-15 @ac-
     assert.doesNotMatch(r.texto, /PALABRA-CONOCIDA|tee |glab|while /, `${linea}: el freno mostró la línea de comando`);
     assert.strictEqual(registros(casa).length, 0);
   }
+  // dice qué consola cerrar (su número de proceso) y cómo seguir, sin su línea de comando
+  {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, 'sleep 100 # PALABRA-CONOCIDA') });
+    assert.match(r.texto, /la consola de fondo es el proceso 400/);
+    assert.match(r.texto, /pará esa tarea de fondo \(o kill 400\) y repetí el comando, o firmá desde tu terminal/);
+    assert.doesNotMatch(r.texto, /PALABRA-CONOCIDA|sleep/);
+  }
   // el owner-wait de la coordinadora sigue pasando
   const casa = casaNueva(t);
   assert.strictEqual(pedir(casa, GUIONES[0][1], { arbol: conVigilante(casa, `node "${COORD_PROPIO}" owner-wait`) }).decision, 'ask');
@@ -4335,8 +4398,9 @@ test('T6 SoloTerminal_ClickConControlRemoto_NoFirma @story-8.304 @ac-9', (t) => 
 
 test('T14 FirmasDelFreno_ClickConControlRemoto_AvisanSinRenglon @story-8.304 @ac-13', (t) => {
   const { SIGNATURES, ONLY_IN_TERMINAL } = require('../lib/signatures.js');
-  // `escape:rojo-esperado-de-la-matriz` pide además la historia de una corrida para armar su cuadro; pasa por la misma rama
-  const afuera = new Set(['escape:merge-bypass', 'escape:rojo-esperado-de-la-matriz', ...ONLY_IN_TERMINAL]);
+  // `escape:rojo-esperado-de-la-matriz` pide además la historia de una corrida para armar su cuadro; pasa por la misma rama.
+  // `escape:external-pr` pide un pedido de verdad para su cuadro: lo prueba external-pr.test.js
+  const afuera = new Set(['escape:merge-bypass', 'escape:external-pr', 'escape:rojo-esperado-de-la-matriz', ...ONLY_IN_TERMINAL]);
   const firmas = SIGNATURES.filter((s) => s.kind === 'freno' && !afuera.has(s.id)).map((s) => s.id);
   assert.ok(firmas.includes('escape:DOD_BYPASS') && firmas.includes('escape:TYCON_NEW_NAMES'), firmas.join(' '));
   // cada una con su forma a la vista: la variable delante del comando, o el guion que la pide

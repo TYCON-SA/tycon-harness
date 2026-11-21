@@ -3181,7 +3181,7 @@ function cmdStartup(ctx) {
     // un cambio que se cortó a la mitad dejó su copia abierta: se mira ANTES de tomar ninguna copia de este arranque, y
     // antes de la salida a la versión bajada. Con el candado en la mano nadie más está escribiendo: abierta es cortada
     let cutNotice = null;
-    try { cutNotice = mod('snapshot').openCopyNotice(mod('snapshot').list(ctx.home), { cmd: 'harness.js' }); } catch (e) { log(`startup: no pude mirar las copias abiertas (${e.message})`); }
+    try { cutNotice = mod('snapshot').cutNoticeOf(ctx.home, { cmd: 'harness.js' }); } catch (e) { log(`startup: no pude mirar las copias abiertas (${e.message})`); }
     if (cutNotice) log(`startup: ${cutNotice}`);
     // la versión bajada: su arranque no hace git; vive en release.js
     // el aviso de una herramienta sin enchufar se recalcula en cada arranque: el de antes no se arrastra

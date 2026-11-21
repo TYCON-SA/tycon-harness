@@ -469,6 +469,7 @@ function checkRun(o) {
     const desde = [o.since, all.lines[0].ts].filter(Boolean).sort().pop();
     const salidas = spawnsOf(o.stateDir, { story: o.story, since: desde, run: o.run, sessionKeys: o.sessionKeys });
     if (salidas.error) return { error: salidas.error, sinRegistro: false, problemas: [] };
+    if (salidas.unreadable) r.unreadableSpawns = salidas.unreadable;
     const porRevisor = new Map();
     for (const s of salidas.spawns) porRevisor.set(s.advisor, (porRevisor.get(s.advisor) || 0) + 1);
     for (const [a, n] of porRevisor) {
@@ -501,6 +502,8 @@ function spawnsOf(stateDir, { story, since, run, sessionKeys }) {
     return { spawns: [], error: `no pude leer ${dir} (${e.code || e.message})` };
   }
   const spawns = [];
+  // un renglón que no se lee no se cruza: se cuenta, como `readAll` con el registro de críticos
+  let unreadable = 0;
   for (const f of files) {
     let raw;
     try { raw = fs.readFileSync(path.join(dir, f), 'utf8'); } catch (e) { return { spawns: [], error: `no pude leer ${path.join(dir, f)} (${e.code || e.message})` }; }
@@ -508,7 +511,7 @@ function spawnsOf(stateDir, { story, since, run, sessionKeys }) {
     for (const l of raw.split('\n')) {
       if (!l.trim()) continue;
       let d;
-      try { d = JSON.parse(l); } catch { continue; }
+      try { d = JSON.parse(l); } catch { unreadable += 1; continue; }
       if (!d) continue;
       if (d.event === 'run-start') { expected = []; continue; }
       if (d.event === 'step5-start') { expected = Array.isArray(d.expected) ? d.expected : []; continue; }
@@ -518,7 +521,7 @@ function spawnsOf(stateDir, { story, since, run, sessionKeys }) {
       spawns.push({ advisor: d.advisor, ts: d.ts });
     }
   }
-  return { spawns };
+  return { spawns, unreadable };
 }
 
 module.exports = {

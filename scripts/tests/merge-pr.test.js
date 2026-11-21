@@ -250,18 +250,21 @@ test('T18 — el paso 9b abre el pedido por la capa: sola en su llamada, con aut
   const opens = commandsOf(blocks, /platform\.js" change-request open\b/);
   assert.ok(opens.length >= 1, 'el 9b abre el pedido por la capa');
   for (const c of opens) for (const opt of ['--repo', '--auto-complete', "--args '@<argsFile>'"]) assert.ok(c.includes(opt), `change-request open con ${opt}: ${c}`);
-  // la llamada a la capa va sola en su bloque: los frenos la leen entera, sin nada que la terminal tenga que armar
+  // la llamada a la capa va sola en su bloque: los frenos la leen entera, sin nada que la terminal tenga que armar. Lo
+  // único que puede ir antes es el `cd` literal a la carpeta del repo, para que la retrospectiva ubique el pedido.
   for (const b of blocks.filter((x) => /change-request open\b/.test(x))) {
     const lines = b.split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
     assert.strictEqual(lines.length, 1, `la llamada a la capa sola en su bloque: ${b}`);
-    assert.ok(!/&&|\|\||;|\|/.test(b.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""')), `un solo comando en el bloque: ${b}`);
+    assert.match(b, /^cd '<carpeta del repo>' && node /, `entra primero a la carpeta del repo: ${b}`);
+    const sinCd = b.replace(/^cd '[^']*' && /, '');
+    assert.ok(!/&&|\|\||;|\|/.test(sinCd.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""')), `un solo comando en el bloque: ${b}`);
     assert.ok(!/\$\(|`/.test(b), `nada que la terminal tenga que armar: ${b}`);
   }
   // lo que sale de un nombre de rama o de una ruta va entre comillas simples
   for (const b of blocks) {
-    if (!/^\s*(git|gh|node)\s/m.test(b)) continue;   // el bloque del reporte final no es un comando
+    if (!/^\s*(git|gh|node|cd)\s/m.test(b)) continue;   // el bloque del reporte final no es un comando
     const outside = b.replace(/'[^'\n]*'/g, "''");
-    for (const m of outside.matchAll(/<(source|target|argsFile|repo en JSON)>/g)) assert.fail(`<${m[1]}> fuera de comillas simples en: ${b}`);
+    for (const m of outside.matchAll(/<(source|target|argsFile|repo en JSON|carpeta del repo)>/g)) assert.fail(`<${m[1]}> fuera de comillas simples en: ${b}`);
   }
   // el pedido lo abre y lo mergea la capa: ni un comando crudo de la plataforma, ni aplastado, ni reordenado, ni salteando la regla
   const all = blocks.join('\n');

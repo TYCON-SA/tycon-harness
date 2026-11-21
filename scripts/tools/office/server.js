@@ -64,6 +64,8 @@ const TOPICS_MS = 60 * 1000;
 const HALFWAY_MS = 15 * 60 * 1000;
 // las historias de los proyectos de la persona se leen de fondo, a lo sumo una vez cada media hora
 const PROJECTS_MS = 30 * 60 * 1000;
+// y cada minuto se mira si la rama principal de algún proyecto se movió: si sí, se relee sin esperar la media hora
+const PROJECTS_CHECK_MS = 60 * 1000;
 const HALFWAY_OPEN_FRESH_MS = 60 * 1000;
 const MAX_PAYLOAD = 1024;
 const MAX_EVENT_BYTES = 256;
@@ -117,36 +119,51 @@ const ignoredChange = (name) => name != null && BOARD_OWN.test(String(name));
 
 /**
  * Vigila cada carpeta; la que todavía no existe se espera desde la de arriba, y la que no se puede vigilar se anota en
- * `notes`. Devuelve una función que deja de vigilar.
+ * `notes`. Una ruta que se borra o se reemplaza por renombre (la escritura atómica de `gates.log`) deja al vigilante
+ * sobre lo que ya no está, sin error: ante un `rename` que cambió lo que hay en la ruta, se la vuelve a vigilar, o se la
+ * espera desde la de arriba. Devuelve una función que deja de vigilar.
  */
 function watchAll(dirs, onChange, notes) {
-  const watchers = [];
+  const watchers = new Set();
+  let stopped = false;
   const failOn = process.env.TYCON_OFFICE_TEST === '1' ? process.env.TYCON_OFFICE_WATCH_FAIL : null;
   const note = (dir, e) => notes.push(`no se vigila ${dir}: ${e.message || e}; los cambios ahí llegan al reabrir`);
+  const inodeOf = (p) => { try { return fs.statSync(p).ino; } catch { return null; } };
+  const drop = (w) => { watchers.delete(w); try { w.close(); } catch { /* ya cerrado */ } };
   const watchDir = (dir) => {
     try {
       if (failOn && path.basename(dir) === failOn) throw new Error('falla de prueba');
-      const w = fs.watch(dir, (ev, name) => { if (!ignoredChange(name)) onChange(); });
-      w.on('error', (e) => { note(dir, e); try { w.close(); } catch { /* ya cerrado */ } onChange(); });
-      watchers.push(w);
+      const ino = inodeOf(dir);
+      const w = fs.watch(dir, (ev, name) => {
+        if (ev === 'rename' && inodeOf(dir) !== ino) {
+          drop(w);
+          if (!stopped) arm(dir);
+          onChange();
+          return;
+        }
+        if (!ignoredChange(name)) onChange();
+      });
+      w.on('error', (e) => { note(dir, e); drop(w); onChange(); });
+      watchers.add(w);
     } catch (e) { note(dir, e); }
   };
-  for (const dir of dirs) {
-    if (fs.existsSync(dir)) { watchDir(dir); continue; }
+  function arm(dir) {
+    if (fs.existsSync(dir)) { watchDir(dir); return; }
     const parent = path.dirname(dir);
     try {
       const w = fs.watch(parent, (ev, name) => {
         if (name && name !== path.basename(dir)) return;
         if (!fs.existsSync(dir)) return;
-        try { w.close(); } catch { /* ya cerrado */ }
+        drop(w);
         watchDir(dir);
         onChange();
       });
       w.on('error', (e) => { note(dir, e); onChange(); });
-      watchers.push(w);
+      watchers.add(w);
     } catch (e) { note(dir, e); }
   }
-  return () => { for (const w of watchers) { try { w.close(); } catch { /* ya cerrado */ } } };
+  for (const dir of dirs) arm(dir);
+  return () => { stopped = true; for (const w of watchers) { try { w.close(); } catch { /* ya cerrado */ } } watchers.clear(); };
 }
 
 const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -414,11 +431,13 @@ async function serve() {
   let projectsTimer = null;
   let projectsRunning = false;
   const projectsAge = () => { try { return Date.now() - fs.statSync(path.join(sdir, 'office', 'project-stories.json')).mtimeMs; } catch { return Infinity; } };
-  const readProjects = () => {
+  // `mode`: la lectura entera de cada media hora (`--refresh`) o el control de cada minuto (`--refresh-if-moved`); las dos
+  // comparten `projectsRunning`, así que nunca corren a la vez, y el mismo aviso si se caen
+  const readProjects = (mode = '--refresh') => {
     if (projectsRunning || !projectsReader) return;
     projectsRunning = true;
     counters.projectReads += 1;
-    const child = spawn(process.execPath, [projectsReader, '--refresh'], { stdio: 'ignore', windowsHide: true, timeout: 5 * 60 * 1000 });
+    const child = spawn(process.execPath, [projectsReader, mode], { stdio: 'ignore', windowsHide: true, timeout: 5 * 60 * 1000 });
     child.on('error', (e) => { projectsRunning = false; noteOnce(`las historias de tus proyectos no se pudieron leer: ${e.message}`); });
     // un lector que se cae, o al que corta el tope, se dice: si no, la oficina mostraría la lectura vieja sin motivo
     child.on('exit', (code, signal) => {
@@ -434,6 +453,15 @@ async function serve() {
     if (age >= projectsEveryMs) readProjects();
     projectsTimer = setTimeout(projectsTick, age >= projectsEveryMs ? projectsEveryMs : projectsEveryMs - age);
     projectsTimer.unref();
+  };
+  // el control de cada minuto: sólo con alguien mirando, y sin lanzar otro si hay una lectura en curso
+  const projectsCheckMs = numEnv('TYCON_OFFICE_PROJECTS_CHECK_MS', PROJECTS_CHECK_MS);
+  let projectsCheckTimer = null;
+  const projectsCheckTick = () => {
+    if (!clients.size) { projectsCheckTimer = null; return; }
+    readProjects('--refresh-if-moved');
+    projectsCheckTimer = setTimeout(projectsCheckTick, projectsCheckMs);
+    projectsCheckTimer.unref();
   };
 
   // el tema de los trabajos nuevos, de fondo y a lo sumo una vez por minuto: armar la foto no espera al modelo. Sólo con una
@@ -615,6 +643,8 @@ async function serve() {
       reviewLife();
       if (!prTimer) prTick();
       if (!projectsTimer) projectsTick();
+      // el primer control, a su intervalo: al abrir ya corre la lectura de cada media hora si hace falta
+      if (!projectsCheckTimer) { projectsCheckTimer = setTimeout(projectsCheckTick, projectsCheckMs); projectsCheckTimer.unref(); }
       if (!topicsTimer) topicsTick();
       halfwayOnOpen();
       // el canal de vuelta está cerrado: un mensaje cierra la conexión sin leerse
@@ -622,7 +652,7 @@ async function serve() {
       // un mensaje de más de 1 KB lo corta la librería sola, con 1009, antes de leerlo
       // sólo el corte por tamaño es un mensaje de la página; un corte de red no lo es (lo dice el `close`)
       ws.on('error', (e) => { if (e && e.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH') noteOnce(BACK_CHANNEL); });
-      ws.on('close', () => { clients.delete(ws); reviewLife(); if (!clients.size) { clearTimeout(prTimer); prTimer = null; clearTimeout(projectsTimer); projectsTimer = null; clearTimeout(topicsTimer); topicsTimer = null; clearTimeout(halfwayTimer); halfwayTimer = null; } });
+      ws.on('close', () => { clients.delete(ws); reviewLife(); if (!clients.size) { clearTimeout(prTimer); prTimer = null; clearTimeout(projectsTimer); projectsTimer = null; clearTimeout(projectsCheckTimer); projectsCheckTimer = null; clearTimeout(topicsTimer); topicsTimer = null; clearTimeout(halfwayTimer); halfwayTimer = null; } });
       ready.then(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'foto', data: last })); })
         .catch((e) => { noteOnce(`una página no recibió la foto: ${e.message}`); try { ws.close(1011, 'sin foto'); } catch { /* ya cerrada */ } });
     });

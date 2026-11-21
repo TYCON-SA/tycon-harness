@@ -461,7 +461,6 @@ PY
     #   scripts/hooks/finished-open-notice.js — lo terminado sin cerrar de la máquina, dicho al arrancar
     #   scripts/hooks/hook-failures-notice.js — las fallas de los controles de las últimas 24 horas, dichas al arrancar
     #   scripts/hooks/guard-auto-update.js — la actualización del freno de producción sin contraseña, al arrancar
-    #   tycon-pipeline/scripts/reviewer-launch-gate.js — un revisor no sale antes que el pase adversarial que le toca
     #   tycon-pipeline/scripts/on-advisor-done.js — anota los críticos de un revisor apenas termina
     #   scripts/hooks/session-collision-guard.js — el aviso de llegada de otra sesión viva, que ahora va siempre
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
@@ -470,12 +469,12 @@ PY
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
       scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js=3 scripts/hooks/guard-update-notice.js
       scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2
-      scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=8 scripts/hooks/owner-approval-record.js=2
+      scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=9 scripts/hooks/owner-approval-record.js=2
       scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/coordination-fill-gate.js scripts/hooks/office-link-start.js=2
       scripts/hooks/cover-secrets.js
       scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2
-      scripts/hooks/background-question-guard.js scripts/hooks/finished-open-notice.js scripts/hooks/guard-auto-update.js
-      scripts/hooks/hook-failures-notice.js tycon-pipeline/scripts/reviewer-launch-gate.js tycon-pipeline/scripts/on-advisor-done.js
+      scripts/hooks/background-question-guard.js=2 scripts/hooks/finished-open-notice.js scripts/hooks/guard-auto-update.js
+      scripts/hooks/hook-failures-notice.js tycon-pipeline/scripts/on-advisor-done.js
       scripts/hooks/temp-sweep.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"

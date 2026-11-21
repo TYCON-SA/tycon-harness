@@ -27,6 +27,7 @@
  *   node scripts/lib/manifest-engram.js cross   [--repo <dir>] [--against <ref>] [--staged] [--json]
  *   node scripts/lib/manifest-engram.js repair  [--repo <dir>] [--apply] [--json]
  *   node scripts/lib/manifest-engram.js rebuild [--repo <dir>] [--json]   (sólo en «índice local», ver `rehacer`)
+ *   node scripts/lib/manifest-engram.js adopt   [--repo <dir>] [--apply] [--json]   (pasa el repo a «índice local», ver `adoptar`)
  * Códigos de salida: 0 sano · 1 deriva (o algo que reparar, o que quedó afuera) · 3 no se pudo medir (o no aplica).
  * 🔴 Nunca sale 2: ése es el código con el que los hooks BLOQUEAN, y confundirlos haría que un
  * «no pude medir» del criterio se leyera como un bloqueo del hook.
@@ -716,13 +717,22 @@ function main(argv) {
   const cmd = argv[0];
   const val = (bandera) => { const i = argv.indexOf(bandera); return i >= 0 ? argv[i + 1] : undefined; };
   const tiene = (bandera) => argv.includes(bandera);
-  if (!['cross', 'repair', 'rebuild'].includes(cmd)) {
-    console.error('uso: manifest-engram.js cross|repair|rebuild [--repo <dir>] [--against <ref>] [--staged] [--apply] [--json]');
+  if (!['cross', 'repair', 'rebuild', 'adopt'].includes(cmd)) {
+    console.error('uso: manifest-engram.js cross|repair|rebuild|adopt [--repo <dir>] [--against <ref>] [--staged] [--apply] [--json]');
     return SALIDA.NO_MEDIDO;
   }
   const dir = repoDe(val('--repo') || process.cwd());
   const contraCrudo = val('--against');
   const json = tiene('--json');
+
+  if (cmd === 'adopt') {
+    const r = adoptar(dir, { apply: tiene('--apply') });
+    if (json) console.log(JSON.stringify(r, null, 2)); else imprimirAdopcion(r);
+    if (r.estado === 'no-medido') return SALIDA.NO_MEDIDO;
+    if (r.estado === 'por-hacer') return SALIDA.DERIVA;            // en seco, «hay algo que hacer» = 1, como repair
+    if (r.rehecho && (r.rehecho.estado === 'no-medido' || r.rehecho.noAgregadas.length)) return SALIDA.DERIVA;
+    return SALIDA.SANO;
+  }
 
   if (cmd === 'rebuild') {
     const modo = modoDelIndice(dir);
@@ -780,6 +790,69 @@ function rehacerSiLocal(dir) {
   return { aplica: true, ...r, problema };
 }
 
+/**
+ * adoptar(dir, { apply }) — pasa un repo con el índice versionado a «índice local», el cambio de dos líneas de la guía:
+ * `.engram/manifest.json` al final del `.gitignore` y `git rm --cached` del índice. Con el índice en git, cada pedido
+ * que suma memoria agrega su entrada al final de la misma lista y dos pedidos así chocan; el servidor (Azure DevOps,
+ * GitHub) no corre controladores de merge propios, así que la única salida que vale al mergear un pedido es que el
+ * índice no viaje. Los chunks siguen en git, y cada pedido suma archivos nuevos que no chocan.
+ *
+ * Deja los dos cambios preparados para el commit y no commitea: el commit es de la persona, en su rama. No borra el
+ * archivo local: lo rehace (`rehacer`) para que declare todos los chunks. Sin `apply` dice qué haría y no toca nada.
+ * Si después de agregar la línea git todavía no lo ignora (una regla `!` más abajo, un `.gitignore` que no se lee),
+ * no lo saca de git: un índice fuera de git y sin ignorar volvería a entrar con el próximo `git add -A`.
+ */
+function adoptar(dir, { apply = false } = {}) {
+  const base = { repo: dir, estado: 'no-medido', motivo: null, aplicado: false, pasos: [], rehecho: null };
+  const modo = modoDelIndice(dir);
+  if (modo.problema) return { ...base, motivo: modo.problema };
+  if (modo.modo === 'local') return { ...base, estado: 'ya-local' };
+  const top = gitOk(dir, ['rev-parse', '--show-toplevel']);
+  if (!top.ok) return { ...base, motivo: `no es un repo de git: ${top.motivo}` };
+
+  // `--no-index`: sin él, git nunca da por ignorado un archivo que está en git, que es justo el caso de este comando
+  const ignorado = gitOk(dir, ['check-ignore', '-q', '--no-index', '--', REL_INDICE]).ok;
+  const enGit = gitOk(dir, ['ls-files', '--error-unmatch', '--', REL_INDICE]).ok;
+  const pasos = [];
+  if (!ignorado) pasos.push(`agregar «${REL_INDICE}» al final de .gitignore`);
+  if (enGit) pasos.push(`sacar ${REL_INDICE} de git sin borrar el archivo (git rm --cached)`);
+  if (!apply) return { ...base, estado: 'por-hacer', pasos };
+
+  if (!ignorado) {
+    const fIgn = path.join(dir, '.gitignore');
+    let previo = '';
+    try { previo = fs.readFileSync(fIgn, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') return { ...base, pasos, motivo: `no pude leer .gitignore: ${e.message}` }; }
+    const linea = `${previo && !previo.endsWith('\n') ? '\n' : ''}# el índice de memoria no viaja por git: cada clon lo rehace desde sus chunks (índice local, guía de engram)\n${REL_INDICE}\n`;
+    try { fs.appendFileSync(fIgn, linea); } catch (e) { return { ...base, pasos, motivo: `no pude escribir .gitignore: ${e.message}` }; }
+    if (!gitOk(dir, ['check-ignore', '-q', '--no-index', '--', REL_INDICE]).ok) {
+      return { ...base, pasos, motivo: `agregué la línea a .gitignore y git todavía no ignora ${REL_INDICE} (¿una regla «!» más abajo?): no lo saqué de git` };
+    }
+    const add = gitOk(dir, ['add', '--', '.gitignore']);
+    if (!add.ok) return { ...base, pasos, motivo: `no pude preparar .gitignore: ${add.motivo}` };
+  }
+  if (enGit) {
+    const rm = gitOk(dir, ['rm', '--cached', '-q', '--', REL_INDICE]);
+    if (!rm.ok) return { ...base, pasos, motivo: `no pude sacar ${REL_INDICE} de git: ${rm.motivo}` };
+  }
+  const rehecho = rehacer(dir);
+  return { ...base, estado: 'adoptado', aplicado: true, pasos, rehecho };
+}
+
+function imprimirAdopcion(r) {
+  if (r.estado === 'no-medido') {
+    for (const p of r.pasos || []) console.error(`   · ${p}`);
+    console.error(`⚠️  no pude pasar ${r.repo} al índice local: ${r.motivo}`);
+    return;
+  }
+  if (r.estado === 'ya-local') { console.log(`✅ ${r.repo}: ya está en índice local (el índice de memoria no viaja por git).`); return; }
+  for (const p of r.pasos) console.log(`   · ${p}`);
+  if (r.estado === 'por-hacer') { console.log(`\nEn seco: no toqué nada. Para aplicarlo, agregá --apply`); return; }
+  if (r.rehecho) imprimirRehecho(r.rehecho);
+  console.log(`✅ ${r.repo}: pasado al índice local, con los dos cambios preparados. Falta el commit:`);
+  console.log(`   git commit -m "chore(engram): el índice de memoria no viaja por git"`);
+  console.log(`   Los pedidos abiertos chocan UNA última vez («modificado contra borrado»): en su rama, git merge origin/main && git rm --cached ${REL_INDICE} && git commit`);
+}
+
 function comandoDeRehacer(dir) {
   return `node ${JSON.stringify(path.resolve(__filename))} rebuild --repo ${JSON.stringify(path.resolve(dir))}`;
 }
@@ -789,7 +862,7 @@ function comandoDeArreglo(dir) {
   return indiceLocal(dir) ? comandoDeRehacer(dir) : comandoDeReparacion(dir);
 }
 
-module.exports = { cruzar, serializar, reparar, contarChunk, parsearIndice, insertarPorFecha, comandoDeReparacion, indiceLocal, modoDelIndice, rehacer, rehacerSiLocal, comandoDeRehacer, comandoDeArreglo, REL_INDICE, REL_CHUNKS };
+module.exports = { cruzar, serializar, reparar, adoptar, contarChunk, parsearIndice, insertarPorFecha, comandoDeReparacion, indiceLocal, modoDelIndice, rehacer, rehacerSiLocal, comandoDeRehacer, comandoDeArreglo, REL_INDICE, REL_CHUNKS };
 
 if (require.main === module) {
   // El subcomando y la opción viejos siguen andando. Viejo y nuevo juntos: 3, el «no se pudo

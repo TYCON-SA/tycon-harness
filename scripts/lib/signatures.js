@@ -69,6 +69,7 @@ const LEVELS_EN = Object.freeze({
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended (only implementation files count, not tests or guides)',
   'adhoc-lane:datos': 'let a quick fix that changes where a piece of data comes from, or who can see it, go through without a story (only the owner\'s click)',
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view (a person\'s click or terminal, or the coordinator if the profile delegates it)',
+  'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset (only the owner\'s click or terminal)',
   'escape:DOD_BYPASS': 'skip every control of the commit',
   'critical-waiver': 'waive a critical finding',
   'runtime-waiver': 'accept a criterion that cannot be tested live, or exempt the whole story',
@@ -95,6 +96,7 @@ const LEVELS_EN = Object.freeze({
   'escape:TYCON_NEW_NAMES': 'turn off the names check on what is published',
   emergency: 'the emergency exit: let one command that a brake stops go through, with a reason and for that command only',
   'escape:merge-bypass': "merge skipping main's queue and CI, or loosen the branch policies: one command, never delegated",
+  'escape:external-pr': 'queue or merge a pull request from someone outside the team: one command, never delegated',
 });
 
 // id, nivel, perfiles, qué aprueba
@@ -111,6 +113,7 @@ const LEVELS = Object.freeze([
   ['save:sensible', 2, AMBOS, 'guardar cuando un commit toca algo de lo sensible'],
   ['adhoc-lane:datos', 2, AMBOS, 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño)'],
   ['adhoc-lane:guardado-ajeno', 2, AMBOS, 'dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (el click o la terminal de una persona, o la coordinadora si el perfil se lo delega)'],
+  ['autonomy-resume', 2, AMBOS, 'volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero (sólo el click o la terminal del dueño)'],
   ['adhoc-lane:sobre-cupo', 2, AMBOS, 'abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia (cuentan sólo los archivos de implementación, sin pruebas ni guías)'],
   ['escape:DOD_BYPASS', 2, AMBOS, 'saltear todos los controles del commit'],
   ['critical-waiver', 2, AMBOS, 'eximir un hallazgo crítico'],
@@ -137,6 +140,7 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_NEW_NAMES', 3, MANT, 'apagar el control de nombres en lo que se publica'],
   ['emergency', 3, AMBOS, 'la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo'],
   ['escape:merge-bypass', 3, AMBOS, 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: un comando, nunca por delegación'],
+  ['escape:external-pr', 3, AMBOS, 'encolar o mergear un pull request de alguien de afuera del equipo: un comando, nunca por delegación'],
 ].map(([id, level, profiles, approves]) => Object.freeze({ id, level, profiles, approves, approvesEn: LEVELS_EN[id] || null })));
 
 // lo que cubre cada firma de hoy que no es su propio id de la tabla: las dos que juntan dos cosas de distinto peso y
@@ -200,6 +204,7 @@ const CON_NOMBRE = [
   ['no-deep-review', 'saltear el pase adversarial de una ejecución', 'pipeline.js start --no-deep-review'],
   ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'file'],
   ['merge-bypass', 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama', 'gh pr merge <n> --admin (o un merge, una regla o una política por la API)'],
+  ['external-pr', 'encolar o mergear un pull request de alguien de afuera del equipo', 'el comando que encola o mergea el pull request (o la API)'],
 ];
 
 // qué pasa si sale mal: lo dice el cuadro de opciones que arma el guion de la firma (owner-window.js `cuadroPara`). Cada
@@ -228,6 +233,7 @@ const SI_SALE_MAL = Object.freeze({
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'la evidencia de la prueba en vivo queda escrita a mano, y puede decir algo que no pasó',
   'escape:dod_runtime_exempt': 'la historia entera queda sin prueba en vivo, y un error puede llegar a producción',
   'escape:merge-bypass': 'el cambio entra a main sin la cola ni la CI, o una política de la rama queda floja, y lo que la CI frenaba llega a main',
+  'escape:external-pr': 'el código de alguien de afuera entra a main, y lo que hace corre en cada máquina que se actualiza',
   'plan-approval': 'se implementa un plan que no querías; se frena la ejecución y se rehace, y nada entra a main sin revisión',
   'extra-round': 'se gasta una vuelta más de revisores; no cambia el código',
   'refresh-after-main': 'queda firmado un control con lo que trajo main; se revierte con otro pedido',
@@ -245,6 +251,7 @@ const SI_SALE_MAL = Object.freeze({
   'adhoc-lane:sobre-cupo': 'un cambio grande entra sin el plan ni las pruebas de una historia; se cierra el arreglo, y nada entra a main sin revisión',
   'adhoc-lane:datos': 'un cambio de permisos o de la fuente de un dato llega a producción sin que nadie revise quién lo ve, y una persona sin permiso puede quedar trabada',
   'adhoc-lane:guardado-ajeno': 'se guarda una vez algo que no es del camino corto mientras el carril espera sus revisores; si en verdad era del carril, entra sin ellos y se revierte con otro commit',
+  'autonomy-resume': 'la sesión vuelve a iterar sola sobre un rojo que quizá necesitaba otra mirada',
   save: 'se guarda en el repo y se abre el pedido; se revierte con otro commit',
   'designation-confirm': 'esa sesión firma en tu nombre lo que el perfil delega, hasta que se designe otra',
   'designation-set': 'una sesión que no querías firma en tu nombre lo que el perfil delega, hasta que la retires o nombres otra',
@@ -273,6 +280,7 @@ const APPROVES_EN = {
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended',
   'adhoc-lane:datos': 'let a quick fix that changes where a piece of data comes from, or who can see it, go through without a story',
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view',
+  'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset',
   save: 'save the story: commit, push and the pull requests',
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
   'escape:TYCON_PROD_LINT': 'turn off the production query control for one command',
@@ -297,6 +305,7 @@ const APPROVES_EN = {
   'escape:no-deep-review': "skip a run's adversarial pass",
   'escape:cambiar-el-estado': "change a story's status by hand",
   'escape:merge-bypass': "merge skipping main's queue and CI, or loosen the branch policies",
+  'escape:external-pr': 'queue or merge a pull request from someone outside the team',
 };
 
 // las firmas que se dan sobre un archivo (`file` en vez del comando, en CON_NOMBRE): `marker.js sign-file` las pide en
@@ -342,6 +351,12 @@ const SIGNATURES = Object.freeze([
   { id: 'adhoc-lane:guardado-ajeno', approves: 'dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista', command: 'marker.js adhoc allow-foreign-save', otherSession: 'yes',
     terminal: 'marker.js adhoc allow-foreign-save --terminal --for-session <id>',
     clickDelDueno: true, descripciones: Object.freeze(['Pasa una vez: este comando, tal como se ve, sin esperar los revisores del carril.', 'No pasa: la sesión espera los revisores y el pase del carril.']) },
+  // volver al modo autónomo una ejecución que el control de cierre detuvo: sólo el click del dueño, en la pestaña que
+  // trabaja o en la de la coordinadora, o su terminal (que deja un permiso que la sesión detenida consume); nunca la
+  // delegación, «hecho y avisado» ni un «aprobado» escrito. La decisión la toma siempre la sesión detenida
+  { id: 'autonomy-resume', approves: 'volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero', command: 'marker.js resume-autonomy', otherSession: 'no',
+    terminal: 'marker.js resume-autonomy --terminal --for-session <id>',
+    clickDelDueno: true, descripciones: Object.freeze(['La sesión vuelve a correr los controles y sigue arreglando sola, con vueltas nuevas', 'La sesión queda detenida hasta que entres a ella']) },
   { id: 'save', approves: 'guardar la story: commit, push y los pull requests', command: 'marker.js approve-save [--for-session <D>]', otherSession: 'yes', terminal: 'marker.js approve-save --terminal --for-session <D>' },
   { id: 'designation-confirm', approves: 'confirmar qué sesión es la coordinadora de esta máquina', command: 'delegated-signing.js confirm-designation', otherSession: 'no', terminal: 'delegated-signing.js confirm-designation --terminal' },
   // nombrar y retirar a la coordinadora: el click del dueño en la pestaña de esa sesión, nunca por delegación
@@ -373,7 +388,7 @@ const SIGNATURES = Object.freeze([
 const ESCAPES = SIGNATURES.filter((s) => s.id.startsWith('escape:')).map((s) => s.id);
 // lo que nunca se delega (delegated-signing.js NUNCA_DELEGABLES) no entra al grupo que se delega junto; editar la prueba
 // de un control tampoco: se delega sólo nombrándola
-const FUERA_DEL_GRUPO = Object.freeze(['merge-bypass', 'red-control-test-edit']);
+const FUERA_DEL_GRUPO = Object.freeze(['merge-bypass', 'external-pr', 'red-control-test-edit']);
 const ESCAPES_DEL_GRUPO = ESCAPES.filter((id) => ![...POR_GUION, ...POR_SU_PASO].includes(id.slice('escape:'.length)) && !FUERA_DEL_GRUPO.includes(id.slice('escape:'.length)));
 
 const GROUPS = Object.freeze(Object.fromEntries(['refresh-after-main', 'adversarial-skip', 'critical-waiver', 'escape-phrases',

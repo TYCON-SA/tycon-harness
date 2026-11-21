@@ -777,6 +777,40 @@ function parseExencionC8(text) {
 const CMD_MUTATES_RE = /-X\s*['"]?(POST|PUT|PATCH|DELETE)|--data(-raw|-binary|-urlencode)?\b|\s-d\s/i;
 function cmdMutates(cmd) { return CMD_MUTATES_RE.test(typeof cmd === 'string' ? cmd : ''); }
 
+// La regla del @ac exacto (el portón cuenta para un criterio sólo si una prueba que pasó lo nombra) frena en las
+// historias que nacen desde este día. Una historia que ya estaba en su repo antes (la fecha de su primer commit) sigue
+// con la regla de antes —la fila de la tabla cuenta por el portón de su spec— y la matriz le avisa qué pruebas no
+// llevan el @ac. Una historia sin commit, o un repo que git no puede leer, es nueva. La fecha es la del último alta de
+// esa ruta, sin seguir renombres ni copias: una historia copiada o renombrada de otra vieja, o con el nombre de una
+// borrada, nace el día de su alta y no hereda la fecha de aquella.
+const AC_EXACTO_DESDE = '2026-11-21';
+const _nacimiento = new Map();
+function nacioAntesDelAcExacto(storyPath) {
+  if (_nacimiento.has(storyPath)) return _nacimiento.get(storyPath);
+  let antes = false;
+  try {
+    const { sinGitDelPadre, idiomaFijo } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js'));
+    const git = (args) => require('child_process').spawnSync('git', args,
+      { cwd: path.dirname(storyPath), encoding: 'utf8', env: idiomaFijo(sinGitDelPadre()), timeout: 15000, windowsHide: true });
+    const nombre = path.basename(storyPath);
+    if (git(['ls-files', '--error-unmatch', '--', nombre]).status === 0) {
+      const r = git(['log', '--no-renames', '--diff-filter=A', '--format=%cI', '-1', '--', nombre]);
+      const fecha = r.status === 0 ? String(r.stdout).trim() : '';
+      if (fecha) antes = fecha.slice(0, 10) < AC_EXACTO_DESDE;
+    }
+  } catch (_e) { antes = false; }
+  _nacimiento.set(storyPath, antes);
+  return antes;
+}
+
+// ¿Un título nombra el criterio N de la historia `sid` con su marca exacta? `@ac-1` no es `@ac-10` ni `@ac-1.5`, y un
+// título que nombra otra historia (`@story-…`) y no ésta no cuenta para ella.
+function tituloNombraAc(titulo, n, sid) {
+  if (!new RegExp(`@ac-${n}(?![\\w.])`).test(titulo)) return false;
+  const historias = String(titulo).match(/@story-[\w.-]*\w/g) || [];
+  return !historias.length || historias.includes(`@story-${sid}`);
+}
+
 // Un título de test del gate que ejerce la mutación de ESTE AC: `@mutates` + `@ac-N`.
 function tituloEjerceAc(titulo, n) {
   if (!/@mutates\b/i.test(titulo)) return false;
@@ -1355,7 +1389,9 @@ function compute(opts) {
   // `opts.repoRoot` existe para el caller que computa sobre una COPIA tmp del spec (on-pre-commit.js, contenido
   // staged): ahí la discovery desde el path no ve el repo real y degradaría a fail-closed con la evidencia en disco.
   const repoRoot = opts.repoRoot ? path.resolve(opts.repoRoot) : discoverRepoRoot(storyPath);
-  const wsRoot = opts.workspaceRoot || discoverWorkspaceRoot(storyPath);
+  // la carpeta de los repos, desde la ruta REAL: desde la copia tmp no se ve, y sin ella `<Hermano>/archivo` no se lee
+  // y ninguna evidencia cuenta (el commit daba 0 donde el pipeline daba todo en verde)
+  const wsRoot = opts.workspaceRoot || discoverWorkspaceRoot(opts.keyStoryPath ? path.resolve(opts.keyStoryPath) : storyPath);
   const evCfg = parseEvidenceConfig(repoRoot);
   // Cada hermano declarado cuenta también en su worktree de la rama de la story: es el mismo repo, y es donde el portón
   // lo corre (lib/companion-repos.js). Sin esto, su evidencia saldría «de un repo NO declarado» y no contaría.
@@ -2030,13 +2066,42 @@ function compute(opts) {
     });
     const gatesDelAc = freshPassGates.filter((g) => valePara(g, n));
     const usadas = [];
+    const historiaVieja = nacioAntesDelAcExacto(storyPath);
+    // Las pruebas en vivo que la tabla declara para el criterio y que no dieron evidencia: con el criterio en vivo por
+    // otra vía (un humo), lo probado es parte de lo pedido. La guía de quien prueba lo dice; no entra al hash.
+    const enVivoSinCorrer = [];
     for (const re of rowEvidence) {
       if (!re.row.acRefs.includes(n)) continue;
+      const antes = runtime.length;
       if (re.tier === 'runtime') {
-        const gate = re.gates.find((g) => valePara(g, n));
-        if (gate) { runtime.push(`${re.row.tid} (${path.basename(gate.path)})`); fuentes.e2e.push(path.basename(gate.path)); usadas.push(gate); }
-        else vencido.push(`${re.row.tid} (${re.ref}): ${vencioPor(re.gates[0], n)}`);
+        // La fila nombra el spec del portón, no la prueba que corrió: el portón vale para este criterio sólo si alguna
+        // prueba que pasó lo nombra con su @ac exacto. Un portón sin la lista de lo que pasó (un guion propio viejo) no
+        // se puede atar: cuenta para la fila, como antes, y se avisa.
+        const vigentes = re.gates.filter((g) => valePara(g, n));
+        const conTitulos = (g) => Array.isArray(g.titulos) && g.titulos.length > 0;
+        // sin títulos cuenta sólo si ningún portón vigente los anotó: uno viejo no le gana a uno que dice qué corrió
+        let gate = vigentes.find((g) => conTitulos(g) && g.titulos.some((t) => tituloNombraAc(t, n, sid)))
+          || (vigentes.some(conTitulos) ? undefined : vigentes.find((g) => !conTitulos(g)));
+        if (!gate && vigentes.length && historiaVieja) {
+          // la regla de antes, con el aviso de lo que le falta para la de ahora
+          gate = vigentes[0];
+          const sinAc = vigentes.filter(conTitulos).flatMap((g) => g.titulos).filter((t) => !tituloNombraAc(t, n, sid));
+          warnings.push(`AC ${n}: ${re.row.tid} cuenta por el portón ${path.basename(gate.path)} con la regla de antes (la historia nació antes del ` +
+            `${AC_EXACTO_DESDE}). Ninguna prueba que pasó lleva @ac-${n}: ${sinAc.map((t) => `«${t}»`).join(', ') || '(el portón no anotó cuáles)'}. ` +
+            `Poné @ac-${n} en el título (o en su describe) de la que cubre el criterio: en una historia nueva, sin eso no cuenta.`);
+          runtime.push(`${re.row.tid} (${path.basename(gate.path)})`); fuentes.e2e.push(path.basename(gate.path)); usadas.push(gate);
+        } else if (gate) {
+          runtime.push(`${re.row.tid} (${path.basename(gate.path)})`); fuentes.e2e.push(path.basename(gate.path)); usadas.push(gate);
+          if (!conTitulos(gate)) {
+            warnings.push(`AC ${n}: ${re.row.tid} cuenta por el portón ${path.basename(gate.path)}, que no anotó la sección «## Tests corridos»: ` +
+              `no se puede saber si corrió una prueba con @ac-${n}. Con el guion del arnés (scripts/e2e-gate.sh) queda atado al criterio.`);
+          }
+        } else if (vigentes.length) {
+          warnings.push(`AC ${n}: ${re.row.tid} no cuenta por el portón ${path.basename(vigentes[0].path)}: ninguna prueba que pasó ahí ` +
+            `nombra @ac-${n} en su título. Poné @ac-${n} en el título de la prueba que lo cubre y corré el portón de nuevo.`);
+        } else vencido.push(`${re.row.tid} (${re.ref}): ${vencioPor(re.gates[0], n)}`);
       } else if (re.tier === 'code') code.push(`${re.row.tid} (${re.ref})`);
+      if (RUNTIME_NIVEL_RE.test(re.row.nivel || '') && runtime.length === antes) enVivoSinCorrer.push(re.row.tid || re.row.name);
       for (const h of re.simulado || []) simulados.push({ ac: n, ...h, fuente: `${re.row.tid}, portón E2E` });
     }
     for (const e of humosDelAc) {
@@ -2108,6 +2173,7 @@ function compute(opts) {
     const expectativas = humosDelAc.filter((e) => e.v2)
       .map((e) => ({ ts: e.ts, pasaSi: e.pass_if, fallaSi: e.fail_if, output: e.output }));
     if (expectativas.length) perAc[n].expectativas = expectativas;
+    if (enVivoSinCorrer.length) perAc[n].enVivoSinCorrer = enVivoSinCorrer;
   }
 
   // --- hash anti-drift: pinnea (ACs + veredictos + refs de evidencia). El waiver guarda

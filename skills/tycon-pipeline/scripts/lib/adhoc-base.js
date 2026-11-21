@@ -747,7 +747,41 @@ function marcaSinSustento(marca, medida, alDia, bases, adhoc, avisar = () => {})
  * de otro repo del carril lo muestra en los dos, y Mac guarda un nombre con acento en una forma de Unicode y git lo lista en otra.
  * `repos`: los del guardado, además de los del carril; `medida`: la de esta vuelta (sin ella, mide).
  */
-function cuentaDelCarril(adhoc, { repos = [], sinSeguir = false, medida } = {}) {
+// Las carpetas temporales del sistema, por su ruta real (en macOS /tmp es /private/tmp, y la de cada usuario vive en
+// /private/var/folders). Ahí corren los laboratorios y las pruebas.
+function temporalesDelSistema() {
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+  return [...new Set([real(require('os').tmpdir()), real('/tmp'), real('/private/tmp'), real('/private/var/folders')].filter(Boolean))];
+}
+const dentroDe = (dir, p) => p === dir || p.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
+
+/**
+ * El juez de los laboratorios del camino corto: `(raiz) → bool`, si un repo es un laboratorio que no suma al tope. Lo es
+ * un `git init` de prueba en una carpeta temporal del sistema: sin ningún remoto y con su propia carpeta `.git` (un clon,
+ * con el remoto que sea, y un worktree, que tiene un archivo `.git`, suman), cuando la carpeta del camino corto (`cwd`)
+ * vive fuera de los temporales. Los repos anotados del carril no cuentan para decidirlo: el freno de edición anota ahí el
+ * repo de cada archivo tocado, laboratorios incluidos. Si el camino corto vive en un temporal, o no se sabe dónde vive,
+ * nada es laboratorio. Un git que no contesta: suma. `temporales`: otra lista, para las pruebas.
+ */
+function juezDeLaboratorios(adhoc, { temporales = null } = {}) {
+  const tmps = temporales || temporalesDelSistema();
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+  const carril = adhoc && adhoc.cwd ? real(adhoc.cwd) : null;
+  if (!carril || tmps.some((t) => dentroDe(t, carril))) return () => false;
+  const juzgados = new Map();
+  return (raiz) => {
+    const r = real(raiz);
+    if (!r || r === carril || !tmps.some((t) => dentroDe(t, r))) return false;
+    if (!juzgados.has(r)) {
+      let lab = false;
+      try { lab = fs.statSync(path.join(r, '.git')).isDirectory() && git(r, ['remote']).trim() === ''; } catch (_) { lab = false; }
+      juzgados.set(r, lab);
+    }
+    return juzgados.get(r);
+  };
+}
+
+function cuentaDelCarril(adhoc, { repos = [], sinSeguir = false, medida, temporales = null } = {}) {
   const { isImplPath } = require('./atdd-order.js');
   const { isCodeFile } = require('./story-gate.js');
   const m = medida || module.exports.medirLoPropio(adhoc, { repos });
@@ -755,7 +789,9 @@ function cuentaDelCarril(adhoc, { repos = [], sinSeguir = false, medida } = {}) 
   const porRepo = rutasDe(m, adhoc, { como: 'propio', repos: leer, sinSeguir, suma: sumaAlTope });
   const anotadas = new Set([adhoc && adhoc.mockup, adhoc && adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));
   const archivos = new Map();
+  const esLaboratorio = juezDeLaboratorios(adhoc, { temporales });
   for (const repo of Object.keys(porRepo)) {
+    if (esLaboratorio(repo)) continue;
     for (const rel of porRepo[repo]) {
       const abs = path.join(repo, rel);
       if (isImplPath(rel) && isCodeFile(rel) && !anotadas.has(rutaReal(abs))) {
@@ -804,4 +840,4 @@ function mismoRepo(a, b) {
 const huellaCompleta = (h) => typeof h === 'string' && !h.startsWith('incompleta:');
 
 module.exports = { traerBase, conBase, conBasesAlDia, mismoOrigen, formaDeLaRemota, repoConoce, medirLoPropio, rutasDe, reposQueSeMiden, marcaSinSustento,
-  anotarGuardadoDelCarril, puntaConConstancia, reposDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, mismoRepo, raizDe, ubicar, sumaAlTope, RAMA };
+  anotarGuardadoDelCarril, puntaConConstancia, reposDelCarril, cuentaDelCarril, juezDeLaboratorios, sigueElRepo, huellaDelCarril, huellaCompleta, mismoRepo, raizDe, ubicar, sumaAlTope, RAMA };

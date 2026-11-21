@@ -1942,3 +1942,35 @@ test('T8 Descartar_LsTreeColgado_DiceNoPudeSaber @story-8.222 @ac-6', () => {
   assert.match(r.stdout, /no pude saber si .*src\/a\.ts/);
   assert.doesNotMatch(r.stdout, /checkout|para borrar/);
 });
+
+// Un laboratorio con `git init` en una carpeta temporal, tocado por la consola durante un camino corto, sumaba al cupo como
+// si fuera un repo del carril, y el cupo se agotaba con pruebas. No suma un repo en un temporal sin ningún remoto y con su
+// propia carpeta `.git`, si la carpeta del camino corto vive fuera de los temporales, aunque el freno de edición lo haya
+// anotado en el carril. Un clon (con el remoto que sea) o un worktree en un temporal suman; si el camino corto mismo vive
+// en un temporal, o no se sabe dónde vive, también. El freno de guardar usa el mismo juez.
+test('ArchivosQueSuman_LaboratorioEnTemporal_NoSuma @story-8.181 @ac-10', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cupo-')));
+  const archivo = (r) => { fs.mkdirSync(path.join(r, 'src'), { recursive: true }); const f = path.join(r, 'src', 'a.js'); fs.writeFileSync(f, 'x\n'); return f; };
+  const repoDe = (nombre, remoto) => {
+    const r = path.join(base, nombre);
+    fs.mkdirSync(r, { recursive: true });
+    execFileSync('git', ['-C', r, 'init', '-q']);
+    if (remoto) execFileSync('git', ['-C', r, 'remote', 'add', remoto, 'https://example.invalid/r.git']);
+    return { r, f: archivo(r) };
+  };
+  const lab = repoDe('tmp/lab');
+  const clon = repoDe('tmp/clon', 'upstream');
+  const carril = repoDe('el-repo');
+  execFileSync('git', ['-C', carril.r, '-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'a']);
+  const wtDir = path.join(base, 'tmp', 'wt');
+  execFileSync('git', ['-C', carril.r, 'worktree', 'add', '-q', wtDir]);
+  const wt = { r: wtDir, f: archivo(wtDir) };
+  const temporales = [path.join(base, 'tmp')];   // el laboratorio, el clon y el worktree están en «el temporal»; el repo del carril, no
+  assert.deepStrictEqual(io.archivosQueSuman([lab.f, clon.f, wt.f, carril.f], { cwd: carril.r }, { temporales }), [clon.f, wt.f, carril.f],
+    'el laboratorio no suma; el clon con otro remoto y el worktree sí');
+  assert.deepStrictEqual(io.archivosQueSuman([lab.f], { cwd: carril.r, bases: { [lab.r]: {} } }, { temporales }), [],
+    'anotado en el carril por el freno de edición, sigue siendo un laboratorio');
+  assert.deepStrictEqual(io.archivosQueSuman([lab.f], { cwd: lab.r }, { temporales }), [lab.f], 'con el carril en el temporal, suma');
+  assert.deepStrictEqual(io.archivosQueSuman([lab.f], {}, { temporales }), [lab.f], 'sin saber dónde vive el carril, suma');
+  assert.deepStrictEqual(io.archivosQueSuman([lab.f]), [lab.f], 'sin el camino corto, suma');
+});

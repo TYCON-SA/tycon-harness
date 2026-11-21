@@ -81,6 +81,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `save:sensible` | 2 · excepción | dev y mantenimiento | guardar cuando un commit toca algo de lo sensible | `save` |
 | `adhoc-lane:datos` | 2 · excepción | dev y mantenimiento | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño) | `adhoc-lane:datos` |
 | `adhoc-lane:guardado-ajeno` | 2 · excepción | dev y mantenimiento | dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (el click o la terminal de una persona, o la coordinadora si el perfil se lo delega) | `adhoc-lane:guardado-ajeno` |
+| `autonomy-resume` | 2 · excepción | dev y mantenimiento | volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero (sólo el click o la terminal del dueño) | `autonomy-resume` |
 | `adhoc-lane:sobre-cupo` | 2 · excepción | dev y mantenimiento | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia (cuentan sólo los archivos de implementación, sin pruebas ni guías) | `adhoc-lane:sobre-cupo` |
 | `escape:DOD_BYPASS` | 2 · excepción | dev y mantenimiento | saltear todos los controles del commit | `escape:DOD_BYPASS` |
 | `critical-waiver` | 2 · excepción | dev y mantenimiento | eximir un hallazgo crítico | `critical-waiver` |
@@ -107,6 +108,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `escape:TYCON_NEW_NAMES` | 3 · irreversible | sólo mantenimiento | apagar el control de nombres en lo que se publica | `escape:TYCON_NEW_NAMES` |
 | `emergency` | 3 · irreversible | dev y mantenimiento | la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo | todavía no se pide |
 | `escape:merge-bypass` | 3 · irreversible | dev y mantenimiento | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: un comando, nunca por delegación | `escape:merge-bypass` |
+| `escape:external-pr` | 3 · irreversible | dev y mantenimiento | encolar o mergear un pull request de alguien de afuera del equipo: un comando, nunca por delegación | `escape:external-pr` |
 <!-- fin: niveles -->
 
 `emergency` todavía no tiene una firma de hoy que la pida: se da con `harness.js sign emergency --reason "<por qué>"
@@ -132,7 +134,7 @@ vuelve al dueño.
 | `escape:TYCON_STATUS_GATE`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz` | el perfil las acepta, pero su comando corre sólo en la sesión que trabaja y la coordinadora no tiene cómo firmarlas desde su pestaña: hasta que tengan esa vía, las sigue aprobando una persona. Una ejecución perdida la cierra la coordinadora con `lost-run` |
 
 Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el nivel 3 (`escape:TYCON_SAFETY_OFF`,
-`escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `emergency`, `escape:merge-bypass`); `designation-set`,
+`escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `emergency`, `escape:merge-bypass`, `escape:external-pr`); `designation-set`,
 `designation-confirm` y `designation-withdraw`; `adhoc-lane:datos` y `adhoc-lane:sobre-cupo`; `escape:DOD_BYPASS`; `adversarial-skip` (con
 `escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
 `escape:dod_runtime_exempt`; y decir que no a la prueba con navegador (`browser-test`).
@@ -239,8 +241,8 @@ delicada. Es el mismo cuadro con la misma prueba: la pregunta la arma el freno, 
 sirve una vez para ese plan y vence a los 30 minutos. Lo probado es el click desde el teléfono; desde claude.ai en un
 navegador no se midió. Tu «aprobado» escrito sobre esa pregunta también sigue valiendo.
 Lo que hoy sólo se firma en la terminal (apagar el freno de seguridad o el control de producción, y la emergencia) sigue
-ahí, con o sin control remoto. Las demás firmas de nivel 3 (`control-change`, `escape:TYCON_NEW_NAMES` y
-`escape:merge-bypass`) se aprueban como en la máquina, así que también a distancia.
+ahí, con o sin control remoto. Las demás firmas de nivel 3 (`control-change`, `escape:TYCON_NEW_NAMES`,
+`escape:merge-bypass` y `escape:external-pr`) se aprueban como en la máquina, así que también a distancia.
 
 El riesgo que se acepta: quien tenga tu cuenta de claude.ai o tu teléfono con la sesión abierta puede contestar el
 cuadro o escribir «aprobado», y el arnés no distingue si fuiste vos. Por eso:
@@ -450,6 +452,7 @@ vuelve a pedir la firma del dueño.
 | `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'` | sí | `marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --file <ruta> --terminal --for-session <id>` |
 | `adhoc-lane:datos` | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>` | no, en la pestaña de esa sesión | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué> --terminal --for-session <id>` |
 | `adhoc-lane:guardado-ajeno` | dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista | `marker.js adhoc allow-foreign-save` | sí | `marker.js adhoc allow-foreign-save --terminal --for-session <id>` |
+| `autonomy-resume` | volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero | `marker.js resume-autonomy` | no, en la pestaña de esa sesión | `marker.js resume-autonomy --terminal --for-session <id>` |
 | `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `designation-confirm` | confirmar qué sesión es la coordinadora de esta máquina | `delegated-signing.js confirm-designation` | no, en la pestaña de esa sesión | `delegated-signing.js confirm-designation --terminal` |
 | `designation-set` | nombrar a esta sesión coordinadora de la máquina | `marker.js designate-relay` | no, en la pestaña de esa sesión | `marker.js designate-relay --terminal` |
@@ -477,6 +480,7 @@ vuelve a pedir la firma del dueño.
 | `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | sí | `marker.js sign-file cambiar-el-estado <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:merge-bypass` | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama | `gh pr merge <n> --admin (o un merge, una regla o una política por la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
+| `escape:external-pr` | encolar o mergear un pull request de alguien de afuera del equipo | `el comando que encola o mergea el pull request (o la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
 <!-- fin: firmas -->
 
 ## Los grupos de la 8.116
@@ -552,6 +556,15 @@ reglas por la API, `--bypass-policy` en Azure DevOps. Es nivel 3: la aprueba la 
 con un click en el cuadro de opciones o un «aprobado», y vale para ese comando, una vez. En Codex se da en la terminal,
 como las demás. Aunque el perfil la nombre en `approvals.delegated_signing`, la coordinadora no la firma: saltear la CI
 es aflojar todos los controles juntos. El camino normal sigue siendo encolar el pedido: `gh pr merge <n> --merge`.
+
+**Encolar o mergear un pedido de afuera (`external-pr`) tampoco se delega.** La pide el freno de la sesión (regla GIT-C7)
+cuando un comando encola o mergea un pedido de GitHub cuyo autor no está en `pull_requests.team_authors` del perfil del equipo:
+el merge del pedido por su comando (con o sin `--auto`), `enqueuePullRequest`, `enablePullRequestAutoMerge` o `mergePullRequest` por la
+API, o un merge sobre `pulls/<n>/merge`. Un bot es de afuera salvo que el perfil lo nombre. Sin lista en el perfil, es del equipo la cuenta con la que
+el CLI de GitHub está autenticado en la máquina; si no se puede leer, frena. El cuadro dice el autor, el
+número, el título y cuántos archivos toca el pedido. Es nivel 3, se aprueba como `merge-bypass` y vale para ese comando,
+una vez. Si el freno no puede saber de quién es el pedido (sin red, el número armado por la terminal, el perfil roto),
+frena sin pedir firma. Los pedidos del equipo pasan sin pregunta.
 
 **Un mensaje de la oficina nunca vale como firma ni como permiso para firmar por delegación.** Lo que el dueño le escribe a
 una sesión desde `/office` le llega como el aviso de un gancho, que la herramienta anota como aviso del sistema y no como la
@@ -678,8 +691,12 @@ quien lo propone. Ni la máquina ni una variable los cambian. Subir el máximo (
 Un pendiente nuevo de otra sesión (`pending-approval`) se aprueba así desde la sesión designada, con
 `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>`. La delegación vale sólo si la
 carpeta es de esa sesión: el repo de su ejecución abierta, el worktree donde vive la historia de esa ejecución (suele
-ser el privado; el clon principal no cuenta, porque lo comparten varias historias), o el de un arreglo rápido que declaró
-ella misma. Tampoco puede ser un repo de la coordinadora: ni su checkout, ni los de su ejecución abierta y su historia, ni
+ser el privado; el clon principal no cuenta, porque lo comparten varias historias), el de un arreglo rápido que declaró
+ella misma, o, si es una sesión de fondo que abrió la coordinadora y trabaja sin ejecución (modo ágil), la copia que
+armó ella: un worktree agregado que ninguna otra sesión nombra, y donde esa sesión declaró el pendiente con
+`marker.js declare-pending --id <CÓDIGO> --repo <su copia>`. El arnés no sabe quién armó una copia: sin esa
+declaración, una copia de la coordinadora que nadie nombra pasaría por la de la sesión. La declaración vale como de la
+sesión que corre el comando, y el freno la niega si el comando trae una variable de sesión. Tampoco puede ser un repo de la coordinadora: ni su checkout, ni los de su ejecución abierta y su historia, ni
 el de su arreglo rápido. Si uno de los repos de ella no se encuentra, la delegación se niega. Los repos se
 comparan por la carpeta real, así que otra forma de escribir la ruta no cambia el resultado.
 

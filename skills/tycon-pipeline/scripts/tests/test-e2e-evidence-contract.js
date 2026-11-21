@@ -43,6 +43,21 @@ console.log('\n1. Extracción de títulos (lo que produce el contrato)');
   check('json roto no explota', lib.passedTitles({}).length === 0);
 }
 
+console.log('\n1b. Las marcas del describe y de la opción tag viajan con el título (sólo @story y @ac)');
+{
+  const t = lib.passedTitles({ suites: [{ title: 'flujo.spec.ts', specs: [], suites: [{
+    title: 'pantalla de pedidos @story-9.9 @ac-22 @mutates',
+    specs: [
+      { title: 'guarda el pedido', tests: [{ results: [{ status: 'passed' }] }] },
+      { title: 'otro', tags: ['@ac-24'], tests: [{ results: [{ status: 'passed' }] }] },
+    ],
+  }] }] });
+  check('el @ac y el @story del describe quedan en la línea de la prueba',
+    /@story-9\.9/.test(t[0]) && /@ac-22/.test(t[0]) && t[0].startsWith('guarda el pedido'), JSON.stringify(t));
+  check('el @mutates del describe no viaja: la acción la declara la prueba', !/@mutates/.test(t[0]), JSON.stringify(t));
+  check('la marca de la opción tag también', /@ac-24/.test(t[1]), JSON.stringify(t));
+}
+
 console.log('\n2. Totales (skipped NO es failed — daba evidencia contradictoria)');
 {
   const t = lib.totals(REPORTE);

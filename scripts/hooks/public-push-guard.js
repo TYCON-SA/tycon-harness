@@ -33,8 +33,12 @@
 // (`origin/HEAD`, o `origin/main`; sin traer nada): la del disco sólo si el clon no tiene esa rama o la rama no trae la
 // lista. NUNCA el árbol que se empuja: la rama elegiría con qué lista se la mira. Los dos
 // primeros son una declaración: si están declarados y la lista no está, es «no pude mirar». En una máquina con el perfil
-// del equipo (`team-profile.json`, o `perfil-equipo.json`) la lista es obligatoria. Sin perfil y sin lista (alguien de afuera con su copia)
-// corre lo que no necesita lista, y lo dice.
+// del equipo que mantiene el arnés la lista es obligatoria. Sin perfil y sin lista (alguien de afuera con su copia), o con
+// el perfil de OTRA organización, corre lo que no necesita lista, y lo dice: la lista privada no se le da a nadie de
+// afuera. Al equipo dueño lo reconoce el perfil instalado, nunca el árbol que se empuja: el `team-repos.json` al lado de
+// `team-profile.json` (o `perfil-equipo.json`) declara `maintainers`. Sin ese archivo, es otra organización sólo si el
+// sello de la capa instalada (`.tycon-team.json`) dice que el perfil se bajó de una carpeta de esta máquina
+// (`harness.js team-init --local`). Ante la duda es el equipo dueño (`machineOrg`).
 //
 // ¿ESA LISTA ESTÁ AL DÍA? La lista se lee del disco de un clon: si ese clon está
 // atrasado respecto de su remoto, frena por su propia firma lo que una excepción ya
@@ -100,6 +104,8 @@ const TREE_MARK = 'scripts/install-tycon-hooks.sh';
 // el perfil del equipo con su nombre de hoy o el de antes (los dos dicen «este árbol es del equipo»)
 const PROFILES = ['team-profile.json', 'perfil-equipo.json'];
 const hasProfile = (dir) => PROFILES.some((n) => fs.existsSync(path.join(dir, n)));
+// los repos de la organización del perfil, al lado del perfil: dice si es el equipo que mantiene el arnés (`machineOrg`)
+const TEAM_REPOS = 'team-repos.json';
 const LIST_PATH = 'scripts/publishing/denylist.json';
 const HISTORY_PATH = 'scripts/publishing/internal-history.js';
 const HOOK_MARK = 'git-pre-push-global.sh';
@@ -273,7 +279,52 @@ function listPlaces(env) {
   return out;
 }
 
-const isTeamMachine = (top) => hasProfile(ROOT) || (Boolean(top) && hasProfile(top));
+/**
+ * FIRMA: machineOrg(top) → 'none' | 'owner' | 'other'
+ * ¿De qué organización es el perfil de esta máquina? Lo dice el perfil INSTALADO —el del arnés que corre este freno—,
+ * nunca el árbol que se empuja: la rama elegiría con qué reglas se la mira.
+ *   'none'   el arnés que corre no trae perfil
+ *   'owner'  el equipo que mantiene el arnés: su `team-repos.json` declara `maintainers`, el repo de mantenimiento
+ *            donde vive la lista privada
+ *   'other'  otra organización: su `team-repos.json` se lee, tiene la forma conocida y no declara `maintainers`
+ * Ante la duda es 'owner' (la lista sigue siendo obligatoria): sin `team-repos.json` (un perfil local, una instalación a
+ * medias), ilegible, de otra versión o sin `profile`, o con el arnés que corre adentro del árbol que se empuja (un clon
+ * usado como arnés, o el freno prestado del propio árbol: ese `team-repos.json` lo eligió la rama).
+ */
+function machineOrg(top) {
+  if (!hasProfile(ROOT)) return 'none';
+  const file = path.join(ROOT, TEAM_REPOS);
+  if (top && (realOf(ROOT) === realOf(top) || isInside(file, top))) return 'owner';
+  let doc;
+  try { doc = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
+    // sin team-repos.json: otra organización sólo con una señal positiva, la de un perfil armado con
+    // `harness.js team-init --local` (el sello de la capa instalada dice que se bajó de una carpeta de esta máquina); el
+    // perfil del equipo dueño se baja de su repo. Cualquier otra cosa —ilegible, otro sello, sin sello— es el equipo dueño
+    return e && e.code === 'ENOENT' && localLayer() ? 'other' : 'owner';
+  }
+  const isObj = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+  if (!isObj(doc) || doc.version !== 1 || !isObj(doc.profile)) return 'owner';
+  return Object.prototype.hasOwnProperty.call(doc, 'maintainers') ? 'owner' : 'other';
+}
+
+// el sello que el instalador deja al apilar la capa del equipo sobre la versión bajada (scripts/setup/harness/team.js)
+const TEAM_STAMP = '.tycon-team.json';
+/** ¿La capa del equipo instalada se bajó de una carpeta de esta máquina (`team-init --local`)? Sólo con el sello entero. */
+function localLayer() {
+  let s;
+  try { s = JSON.parse(fs.readFileSync(path.join(ROOT, TEAM_STAMP), 'utf8')); } catch (_) { return false; }
+  return Boolean(s) && typeof s === 'object' && !Array.isArray(s) && s.schema === 1 && s.host === 'local' && typeof s.repo === 'string' && path.isAbsolute(s.repo);
+}
+
+/**
+ * ¿La lista es obligatoria en esta máquina? Con el perfil del equipo dueño, sí. Con el de otra organización, no: la lista
+ * privada no se le da a nadie de afuera. Sin perfil instalado, el que traiga el árbol que se mira la vuelve obligatoria
+ * (un clon del perfil empujado por error): ese perfil sólo puede sumar control, nunca sacarlo.
+ */
+const isTeamMachine = (top) => {
+  const org = machineOrg(top);
+  return org === 'owner' || (org === 'none' && Boolean(top) && hasProfile(top));
+};
 
 /**
  * La lista con que se mira. Tira `Blind` si la máquina tiene que tener lista y no la tiene, o si la que hay no se deja
@@ -291,13 +342,14 @@ const isTeamMachine = (top) => hasProfile(ROOT) || (Boolean(top) && hasProfile(t
  *     file      la ruta del archivo de la lista en esta máquina, o null — es lo que se le pasa a `listFreshness`
  *     readFrom  'remote' (la rama principal remota del clon de `file`) | 'disk' — también se le pasa a `listFreshness`
  *     generic   true = no hay lista: sólo lo que no la necesita (source, label y file en null; terms en 0)
+ *     otherOrg  true = el perfil instalado es de otra organización (`machineOrg`): por eso la lista no era obligatoria
  *     cfg, forbidden, termList   lo que usa el detector y los términos tal como están escritos; nunca se imprimen
  * Un `Blind` por una lista que está y no se deja leer lleva `listFile` y `listSource` (para poder decir si ese clon
  * está al día: una lista con las marcas de un merge a medias es justo un clon que no se terminó de traer).
  */
 function resolveList(top, env = process.env, { pushing = false, optional = false, required = false } = {}) {
   const D = detector();
-  const generic = () => ({ cfg: D.cargarConfig('<sin lista>', '{}'), forbidden: [], source: null, label: null, file: null, generic: true, terms: 0, extraForbidden: 0 });
+  const generic = () => ({ cfg: D.cargarConfig('<sin lista>', '{}'), forbidden: [], source: null, label: null, file: null, generic: true, terms: 0, extraForbidden: 0, otherOrg: machineOrg(top) === 'other' });
   const unreadable = (place, message) => Object.assign(new Blind(message), { listFile: place.file, listSource: place.source });
   const inPushedTree = (file) => pushing && Boolean(top) && isInside(file, top);
   for (const place of listPlaces(env)) {
@@ -339,7 +391,7 @@ function resolveList(top, env = process.env, { pushing = false, optional = false
   // `required`: la validación de un pedido (el modo de rango). Ahí no existe «sólo lo que no necesita lista»: el agente
   // que la corre no tiene perfil ni máquina, y un pedido mirado sin la lista saldría verde con cualquier nombre adentro.
   if (required) throw new Blind('sin la lista: un pedido se mira siempre con la lista privada, y no llegó ninguna que no salga del propio pedido (va en TYCON_PUBLISH_DENYLIST, fuera del árbol)');
-  if (isTeamMachine(top) && !optional) throw new Blind('sin la lista: esta máquina es del equipo (tiene su perfil) y no encontré la lista privada en ningún lugar — declarala con `harness.js config set paths.maintainers <clon de mantenimiento>`');
+  if (isTeamMachine(top) && !optional) throw new Blind('sin la lista: esta máquina tiene el perfil del equipo que mantiene el arnés y no encontré la lista privada en ningún lugar — declarala con `harness.js config set paths.maintainers <clon de mantenimiento>`');
   return generic();
 }
 
@@ -1066,6 +1118,7 @@ function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.en
     const list = resolveList(top, env, { pushing: true });
     result.list = { source: list.source };
     result.generic_only = list.generic;
+    if (list.generic) result.other_org = Boolean(list.otherOrg);
     // ¿esa lista está al día? Recién acá —un empuje del arnés a un remoto público, con algo que publicar y una lista
     // elegida—: un empuje que no es asunto de este freno no espera a nadie. Se le pregunta al remoto del clon de la
     // lista porque este empuje ya sale a la red. Es un dato para el aviso: de acá en más nada lo mira para decidir.
@@ -1104,7 +1157,7 @@ function prePushMessage(result) {
   if (result.verdict === 'pass') {
     if (!result.looked.refs) return L;
     L.push(`✓ freno de publicación: ${result.looked.commits} commit(s) y ${result.looked.objects} archivo(s) mirados antes de publicar${result.generic_only
-      ? ' — sin lista en esta máquina: sólo secretos, correos, rutas de máquina, binarios y rutas vedadas' : ''}`);
+      ? ` — sin lista en esta máquina${result.other_org ? ' (el perfil es de otra organización: la lista privada es del equipo que mantiene el arnés)' : ''}: sólo secretos, correos, rutas de máquina, binarios y rutas vedadas` : ''}`);
     // lo que no se midió se dice: que falte el control no puede verse igual que «no había números de pedido»
     if (result.history === false) L.push(`   (los números de pedido en mensajes y nombres de rama NO se miraron: falta ${HISTORY_PATH})`);
     if (result.looked.askedRemote === false) L.push('   (el remoto no contestó qué tiene: se miró todo lo que este empuje alcanza, no sólo lo nuevo)');
@@ -1375,7 +1428,7 @@ function status({ cwd = process.cwd(), env = process.env, fetch = false } = {}) 
   const team = isTeamMachine(top);
   try {
     const list = resolveList(top, env);
-    if (list.generic) L.push('  la lista: no hay, y esta máquina no es del equipo: corre sólo lo que no necesita lista (secretos, correos, rutas de máquina, binarios, rutas vedadas)');
+    if (list.generic) L.push(`  la lista: no hay, y ${list.otherOrg ? 'el perfil de esta máquina es de otra organización' : 'esta máquina no es del equipo'}: corre sólo lo que no necesita lista (secretos, correos, rutas de máquina, binarios, rutas vedadas)`);
     else {
       L.push(`  la lista: ${list.label} — ${list.terms} término(s), ${FORBIDDEN.length + list.extraForbidden} ruta(s) vedada(s)`);
       // ¿está al día? Sin red, salvo que lo pidan. Es un dato: `ok` no se toca
@@ -1387,7 +1440,7 @@ function status({ cwd = process.cwd(), env = process.env, fetch = false } = {}) 
     ok = false;
     L.push(`  la lista: NO — ${e instanceof Blind ? e.message : 'no se pudo leer'}`);
   }
-  L.push(`  máquina del equipo: ${team ? 'sí (la lista es obligatoria)' : 'no'}`);
+  L.push(`  máquina del equipo: ${team ? 'sí (la lista es obligatoria)' : machineOrg(top) === 'other' ? 'no — el perfil es de otra organización (la lista no es obligatoria)' : 'no'}`);
   try {
     if (historyScanner()) L.push('  números de pedido: se miden');
     else { ok = false; L.push(`  números de pedido: NO se miden (falta ${HISTORY_PATH})`); }
@@ -1615,7 +1668,7 @@ function reviewGhCommand(command, { cwd = process.cwd(), env = process.env, powe
     // lo que no se midió se dice, igual que al empujar: que falte el control —o la lista, en una máquina que no es del
     // equipo— no puede verse igual que «se miró todo y estaba limpio»
     const said = [];
-    if (list.generic) said.push(`[public-push-guard] ${names} pasa; sin lista en esta máquina: sólo se miraron secretos, correos, rutas de máquina y binarios.`);
+    if (list.generic) said.push(`[public-push-guard] ${names} pasa; sin lista en esta máquina${list.otherOrg ? ' (el perfil es de otra organización)' : ''}: sólo se miraron secretos, correos, rutas de máquina y binarios.`);
     if (!scan) said.push(`[public-push-guard] ${names} pasa; los números de pedido NO se miraron (falta ${HISTORY_PATH}).`);
     return { code: 0, lines: said };
   } catch (e) {
@@ -1759,7 +1812,7 @@ function main(argv) {
 }
 
 module.exports = {
-  FORBIDDEN, ROUTES, Blind, judgeRemote, isHarnessTree, toplevel, listPlaces, resolveList, isTeamMachine, historyScanner,
+  FORBIDDEN, ROUTES, Blind, judgeRemote, isHarnessTree, toplevel, listPlaces, resolveList, isTeamMachine, machineOrg, historyScanner,
   parseLines, reviewPush, newPairs, prePush, prePushMessage, status, makeReview, reviewIdentity, main,
   publicRemotesOf, reviewGhCommand, reviewLocalFile, hookMode, concernsHarness, lineFacts, whereItRuns, otherHeaders,
   remoteHas, readObjects, repoAt, pushMayBeHarness, isDeclared,

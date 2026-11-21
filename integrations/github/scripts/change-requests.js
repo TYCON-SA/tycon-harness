@@ -328,9 +328,17 @@ function analisisDelPedido(ctx, repo, p, rollup, llamar = gh, { conAlertas = tru
   if (malo) return { estado: 'rojo', motivo: `el análisis de seguridad terminó en ${String(malo.conclusion || 'sin resultado').toLowerCase()}` };
   if (!conAlertas) return { estado: 'sin-mirar', motivo: 'sus alertas no se leen hasta que pueda entrar' };
   if (sinTiempo) return { estado: 'no-se-pudo', motivo: 'no hubo tiempo de leer sus alertas en esta lectura' };
-  const alertas = llamar(ctx, 'GET', `repos/${repo}/code-scanning/alerts?ref=${encodeURIComponent(`refs/pull/${p.number}/merge`)}&state=open&per_page=100`);
-  if (alertas.problem || !Array.isArray(alertas.value)) return { estado: 'no-se-pudo', motivo: 'no pude leer las alertas abiertas del pedido' };
-  if (alertas.value.length) return { estado: 'rojo', motivo: `${alertas.value.length === 100 ? '100 o más' : alertas.value.length} alerta(s) del análisis de seguridad abierta(s)` };
+  // las dos referencias del pedido: un análisis anota en la fusión de prueba (/merge) y otro en la punta (/head); una
+  // alerta anotada sólo en la punta entró a main con este control en verde
+  const abiertas = new Map();
+  let cien = false;
+  for (const ref of ['merge', 'head']) {
+    const alertas = llamar(ctx, 'GET', `repos/${repo}/code-scanning/alerts?ref=${encodeURIComponent(`refs/pull/${p.number}/${ref}`)}&state=open&per_page=100`);
+    if (alertas.problem || !Array.isArray(alertas.value)) return { estado: 'no-se-pudo', motivo: 'no pude leer las alertas abiertas del pedido' };
+    if (alertas.value.length === 100) cien = true;
+    for (const a of alertas.value) abiertas.set(a && a.number != null ? a.number : `${ref}-${abiertas.size}`, a);
+  }
+  if (abiertas.size) return { estado: 'rojo', motivo: `${cien ? '100 o más' : abiertas.size} alerta(s) del análisis de seguridad abierta(s)` };
   return { estado: 'verde', motivo: null };
 }
 

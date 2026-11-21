@@ -357,6 +357,9 @@ Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-security-basics
 | **SEC-C7** | Path traversal en file operations | `Path.GetFullPath` + whitelist de directory root |
 | **SEC-C8** | Connection string hardcoded | `IConnectionFactory` + config |
 | **SEC-C9** | Config de seguridad crítica con fallback hardcodeado silencioso | `throw`/fail-fast en startup si falta la key/credencial — nunca un default operativo. Espejo .NET de AUTH-C6 |
+| **SEC-C10** | Ruta que escribe o lee datos sensibles abierta a «todos los usuarios registrados» (su lista de roles incluye el rol general: `RequireAuthorization`/`[Authorize(Roles)]` equivale a «cualquiera autenticado») | Sacar el rol general de la lista; un caso que pruebe 403 para un usuario con sólo ese rol |
+| **SEC-C11** | Entrada sin tope que se guarda, o que crece sin podar (`ReadToEndAsync` sin límite o con el tope apagado → `NVARCHAR(MAX)`; una fila por guardado). Por tamaño o crecimiento es SEC-C11, no SEC-C3 | Tope de tamaño en la entrada (`[RequestSizeLimit]`, `[MaxLength]`, 413) y podar o actualizar en vez de agregar |
+| **SEC-C12** | Credencial cruda del usuario en una respuesta (un DTO con `RawToken`/`Password`/`Secret`/`ApiKey` en un GET) | Devolver sólo si existe, los últimos 4 caracteres o el vencimiento; la credencial se usa del lado del servidor |
 
 ### WARNING
 
@@ -1013,6 +1016,7 @@ Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude
 | **GIT-C2** | `--no-verify` en `git commit`/`push`/`merge`/`rebase` (también con opciones de git antes del subcomando), `git commit -n`, y `core.hooksPath` apuntado a otra carpeta para ese comando | Arreglar lo que el hook reporta. Si el hook está roto, fixearlo, no bypassearlo. Ver `git-commit-conventions.md` |
 | **GIT-C3** | `git clean -fdx` (incluye gitignored) | Sin `-x`: `git clean -fd`. Para preview: `git clean -ndx` |
 | **GIT-C6** | `git reset --hard` o `git stash` (también `clear` y `drop` sin decir cuál) con cambios sin commitear o la pila con algo: pueden ser de otra sesión | Un commit de trabajo en curso (`git add <tus archivos> && git commit -m wip`), o `git stash push -m <etiqueta> -- <tus archivos>` |
+| **GIT-C7** | Encolar o mergear un pedido de GitHub cuyo autor no es del equipo (`pull_requests.team_authors` del perfil): el merge del pedido por su comando, con o sin `--auto`; `enqueuePullRequest`, `enablePullRequestAutoMerge` o `mergePullRequest` por la API; un merge sobre `pulls/<n>/merge`. Sin saber de quién es el pedido, frena | La firma del dueño (`escape:external-pr`) en la ventana, con un click o un «aprobado»; nunca por delegación |
 
 ### CRITICAL — Supply chain
 

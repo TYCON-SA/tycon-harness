@@ -635,6 +635,58 @@ test('T14 Watch_MissingFolder_AndWatchError: una carpeta que aparece después se
   p.close();
 });
 
+// Un archivo vigilado que se reemplaza por renombre (la escritura atómica de gates.log) deja al vigilante sobre el archivo
+// viejo, sin error: la oficina lo vuelve a vigilar, y los cambios siguientes llegan.
+test('Watch_ReplacedByRename_KeepsWatching @DEF-2.81-B-vigilancia-muda', async () => {
+  const { watchAll } = require(SERVER);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-rewatch-'));
+  const file = path.join(dir, 'gates.log');
+  const sub = path.join(dir, 'doing');
+  fs.writeFileSync(file, 'a\n');
+  fs.mkdirSync(sub);
+  let n = 0;
+  const notes = [];
+  const stop = watchAll([file, sub], () => { n += 1; }, notes);
+  const llega = async () => { for (let i = 0; i < 40 && n === 0; i += 1) await sleep(50); return n; };
+  try {
+    await sleep(150);
+    fs.writeFileSync(`${file}.tmp`, 'b\n');
+    fs.renameSync(`${file}.tmp`, file);
+    assert.ok(await llega() > 0, 'el reemplazo mismo se ve');
+    await sleep(300);
+    n = 0;
+    fs.appendFileSync(file, 'c\n');
+    assert.ok(await llega() > 0, 'un cambio después del reemplazo sigue llegando');
+    // la carpeta borrada y vuelta a crear: lo de adentro sigue llegando
+    fs.rmSync(sub, { recursive: true });
+    await sleep(300);
+    fs.mkdirSync(sub);
+    await sleep(300);
+    n = 0;
+    fs.writeFileSync(path.join(sub, 's1.json'), '{}');
+    assert.ok(await llega() > 0, 'la carpeta vuelta a crear se vigila');
+    assert.deepStrictEqual(notes, []);
+  } finally {
+    stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// server.log junta los arranques: si el proceso nuevo muere sin escribir, la apertura cita su código de salida, no la
+// última línea de un arranque anterior.
+test('Open_DiesWithoutWriting_DoesNotCiteAnOldStart @DEF-2.81-B-vigilancia-muda', { skip: WIN }, () => {
+  const m = toy();
+  const dir = path.join(m.sdir, 'office');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(dir, 'server.log'), 'no arrancó: el motivo de un arranque anterior\n');
+  const muere = path.join(m.home, 'muere.js');
+  fs.writeFileSync(muere, "if (/server\\.js$/.test(process.argv[1] || '')) process.exit(7);\n");
+  const r = openSync(m, { NODE_OPTIONS: `--require ${muere}` });
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.doesNotMatch(r.stderr, /arranque anterior/, 'no cita una línea vieja');
+  assert.match(r.stderr, /código 7/, r.stderr);
+});
+
 test('T15 Open_PortOrLockFails_Exits1: sin poder escribir el candado sale 1 y no deja proceso', { skip: WIN || process.getuid() === 0 }, () => {
   const m = toy();
   const dir = path.join(m.sdir, 'office');
@@ -1419,4 +1471,48 @@ test('T47 Office_LaMarcaDeAusenteSeVe @story-8.221 @ac-36: con la marca puesta, 
   assert.strictEqual(foto().meta.ausente, null, 'borrada, no la trae');
   const html = fs.readFileSync(path.join(ROOT, 'scripts', 'tools', 'office', 'page.html'), 'utf8');
   assert.match(html, /id="ausente"/, 'la página tiene dónde mostrarla');
+});
+
+test('T16 Servidor_ControlaCadaMinutoSoloConAlguienMirando @story-8.313 @ac-8 @ac-10 @ac-15: el control lanza --refresh-if-moved sólo con una página, sin superponerse, y una caída se dice una vez', async () => {
+  // un lector de juguete que tarda: anota cuándo empieza y cuándo termina cada corrida
+  const slowReader = (m, { code = 0 } = {}) => {
+    const script = path.join(m.home, 'control-lento.js');
+    fs.writeFileSync(script, `const fs = require('fs');
+const log = ${JSON.stringify(`${script}.log`)};
+fs.appendFileSync(log, 'inicio ' + process.argv[2] + '\\n');
+Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 700);
+fs.appendFileSync(log, 'fin\\n');
+process.exit(${code});`);
+    return { script, lines: () => { try { return fs.readFileSync(`${script}.log`, 'utf8').trim().split('\n').filter(Boolean); } catch { return []; } } };
+  };
+  const fresh = (m) => {
+    // una lectura recién hecha: la de cada media hora no corre, sólo el control
+    fs.mkdirSync(path.join(m.sdir, 'office'), { recursive: true });
+    fs.writeFileSync(path.join(m.sdir, 'office', 'project-stories.json'), JSON.stringify({ at: new Date().toISOString(), proyectos: [], sinHistorias: [] }));
+  };
+  const m = toy();
+  fresh(m);
+  const f = slowReader(m);
+  openSync(m, { TYCON_OFFICE_PROJECTS_READ: f.script, TYCON_OFFICE_PROJECTS_MS: '3600000', TYCON_OFFICE_PROJECTS_CHECK_MS: '200' });
+  await sleep(800);
+  assert.deepStrictEqual(f.lines(), [], 'sin páginas no controla');
+  const p = page(readLock(m));
+  await p.next();
+  assert.ok(await until(() => f.lines().filter((l) => l === 'fin').length >= 2, PLAZO), `con una página controla (${f.lines().join(' | ')})`);
+  p.close();
+  const lines = f.lines();
+  assert.ok(lines.filter((l) => l.startsWith('inicio')).every((l) => l === 'inicio --refresh-if-moved'), 'lanza el control, no la lectura entera');
+  // nunca dos a la vez: cada inicio va seguido de su fin
+  for (let i = 0; i < lines.length; i += 1) if (lines[i].startsWith('inicio') && i + 1 < lines.length) assert.strictEqual(lines[i + 1], 'fin', `sin superponerse: ${lines.join(' | ')}`);
+  // un control que se cae: la oficina lo dice una vez
+  const n = toy();
+  fresh(n);
+  const g = slowReader(n, { code: 3 });
+  openSync(n, { TYCON_OFFICE_PROJECTS_READ: g.script, TYCON_OFFICE_PROJECTS_MS: '3600000', TYCON_OFFICE_PROJECTS_CHECK_MS: '200' });
+  const q = page(readLock(n));
+  await q.next();
+  const dicho = () => q.fotos.filter((x) => x.data).map((x) => (x.data.unreadable || []).filter((u) => /las historias de tus proyectos no se pudieron leer: .*3/.test(u)).length);
+  assert.ok(await until(() => dicho().some((k) => k > 0), PLAZO), 'llega el aviso');
+  assert.ok(dicho().every((k) => k <= 1), 'una vez por foto, no una por control');
+  q.close();
 });

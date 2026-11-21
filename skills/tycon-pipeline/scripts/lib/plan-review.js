@@ -34,11 +34,102 @@ const APROBADOS = Object.freeze(['aprobado', 'aprobado-con-notas']);
 const LA_COORDINADORA = 'la revisión automática para otra sesión la lanza la coordinadora';
 const ESPERA = 'la revisión no dio aprobado: el plan espera a una persona';
 const CAMBIO = 'el plan cambió mientras corría la revisión';
+const CAMBIO_HISTORIA = 'la historia cambió mientras corría la revisión';
+// el plan o la historia cambiaron mientras corría: los dos cuentan para el reintento, que es uno solo por corrida
+const esCambio = (motivo) => motivo === CAMBIO || motivo === CAMBIO_HISTORIA;
 const KINDS = Object.freeze(['plan', 'code']);
 const CHOICES = Object.freeze(['review', 'skip', 'wait']);
 
 const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
 const SESION = /^[\w-]+$/;
+
+// lo que de la historia no define lo que se construye: el registro de después (story-format.md, «Dev Agent Record» y
+// sus partes, el «Change Log» y los «Follow-ups»), y del frontmatter el estado y los enlaces a las que la siguen
+// «Ajustes después de la firma» guarda los ajustes de redacción que se pasan al cuerpo después de firmar el plan: los
+// revisores y el cierre la leen, y el control del encabezado frena el `done` con uno sin pasar (lint-story-frontmatter.js)
+const SECCIONES_DE_REGISTRO = new Set(['dev agent record', 'change log', 'follow-ups y cambios post-firma', 'agent model used',
+  'debug log references', 'completion notes list', 'file list', 'ajustes después de la firma']);
+const CLAVES_DE_REGISTRO = new Set(['status', 'followed_up_by']);
+
+/**
+ * La historia como la ata la revisión del plan: todo lo que define lo que se construye, sin el registro de después
+ * (`SECCIONES_DE_REGISTRO`, de nivel 2 o 3, y `CLAVES_DE_REGISTRO` del frontmatter). Ante la duda, cuenta: con una forma
+ * que el corte no lee con certeza (un título con sangría o subrayado, un comentario HTML, un bloque de código sin cerrar,
+ * una sección de registro de nivel 1) se usa la historia entera. Sólo se igualan el BOM y los fines de renglón.
+ */
+function textoDeConstruccion(texto) {
+  const entero = String(texto).replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const lineas = entero.split('\n');
+  const salida = [];
+  let i = 0;
+  if (lineas[0] === '---') {
+    const fin = lineas.indexOf('---', 1);
+    if (fin > 0) {
+      salida.push('---');
+      for (let k = 1; k < fin; k++) {
+        const clave = /^([\w-]+)\s*:/.exec(lineas[k]);
+        if (clave && CLAVES_DE_REGISTRO.has(clave[1].toLowerCase())) {
+          // el valor de la clave, también el que sigue en renglones con sangría o como lista
+          while (k + 1 < fin && /^(\s|-\s)/.test(lineas[k + 1])) k++;
+          continue;
+        }
+        salida.push(lineas[k]);
+      }
+      salida.push('---');
+      i = fin + 1;
+    }
+  }
+  // un bloque de código abre con 3 o más ` o ~ (hasta 3 espacios de sangría) y cierra con el mismo signo, al menos igual de
+  // largo y sin nada después; el de ` no lleva ` en su etiqueta
+  let cerco = null;
+  let salteando = 0;
+  let anterior = '';
+  for (; i < lineas.length; i++) {
+    const l = lineas[i];
+    if (cerco) {
+      const cierre = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(l);
+      if (cierre && cierre[1][0] === cerco[0] && cierre[1].length >= cerco.length) cerco = null;
+      if (!salteando) salida.push(l);
+      anterior = l;
+      continue;
+    }
+    const apertura = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(l);
+    if (apertura && !(apertura[1][0] === '`' && apertura[2].includes('`'))) {
+      cerco = apertura[1];
+      if (!salteando) salida.push(l);
+      anterior = l;
+      continue;
+    }
+    // lo que el corte no lee con certeza: la historia entera
+    if (/^ {1,3}#{1,6}(\s|$)/.test(l) || /<!--/.test(l) || (/^ {0,3}(=+|-+)\s*$/.test(l) && anterior.trim() !== '')) return entero;
+    const titulo = /^(#{1,6})(?:\s+(.*?))?\s*#*\s*$/.exec(l);
+    if (titulo) {
+      const nivel = titulo[1].length;
+      const nombre = (titulo[2] || '').replace(/[*_`]/g, '').trim().toLowerCase();
+      if (salteando && nivel <= salteando) salteando = 0;
+      if (SECCIONES_DE_REGISTRO.has(nombre)) {
+        if (nivel === 1) return entero;
+        if (!salteando) salteando = nivel;
+      }
+    }
+    if (!salteando) salida.push(l);
+    anterior = l;
+  }
+  if (cerco) return entero;
+  return salida.join('\n');
+}
+
+const huellaDeConstruccion = (texto) => sha(textoDeConstruccion(texto));
+
+/**
+ * ¿La historia de ahora es la que se revisó? Con la huella de construcción, lo que define la construcción; una
+ * revisión anotada sin ella (de antes) se compara con el archivo entero. Sin texto, no.
+ */
+function mismaHistoria(texto, huellas) {
+  if (texto === null || texto === undefined || !huellas) return false;
+  if (huellas.construccion) return huellaDeConstruccion(texto) === huellas.construccion;
+  return sha(texto) === huellas.story;
+}
 const no = (motivo) => ({ codigo: 2, motivo });
 const pipeline = () => require('../pipeline.js');
 const policy = () => require('./review-policy.js');
@@ -267,6 +358,27 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   let marker;
   try { marker = marcadorDe(estado, dest); } catch (e) { return no(e.message); }
   if (!marker) return no(`la sesión ${dest} no tiene una ejecución abierta`);
+  // la revisión es del plan cerrado: con «Armar el plan» abierto, el plan todavía cambia y la revisión se pierde
+  if (!require('./steps.js').isDone(marker, 'plan')) return no(`el plan de la sesión ${dest} no está cerrado: se lanza la revisión después de cerrar «Armar el plan» (complete-step plan)`);
+  // una pregunta a la persona sin contestar sobre la revisión de este plan: primero su respuesta, salvo que cuente como ausente
+  {
+    const sinRegistro = [];
+    const pregunta = preguntasAbiertas({ estado, problemas: sinRegistro }).find((p) => p.sesion === dest && p.kind === 'plan');
+    if (sinRegistro.length) return no(`no pude leer las preguntas a la persona (${sinRegistro[0]}): sin saber si hay una abierta no se lanza`);
+    if (pregunta) {
+      const cfgPregunta = configUsada(config);
+      let marca = null;
+      try { marca = require(path.join(RAIZ, 'scripts', 'lib', 'owner-away.js')).get({ estado }).mark; } catch (_) { marca = null; }
+      const away = policy().ownerAway({ mark: marca, askedAt: Date.parse(pregunta.ts), now: Date.now(), minutes: cfgPregunta.plan_review.owner_away_minutes });
+      if (!away.away) return no(`hay una pregunta abierta a la persona sobre la revisión de este plan (desde ${pregunta.ts}): se lanza con su respuesta (review-answer) o cuando cuente como ausente`);
+    }
+  }
+  // la cuarta vuelta de la misma historia no se lanza sola: la decide una persona, aunque esté ausente
+  {
+    const v = cuartaVuelta({ estado, destino: dest, marker });
+    if (v.falta) return no(v.vueltas === null ? `no pude leer el registro de vueltas (${v.motivo}): sin saber cuántas van no se lanza`
+      : `ya van ${v.vueltas} vueltas de la revisión del plan de esta historia: la próxima la decide una persona. La sesión ${dest} le pregunta (marker.js review-ask --kind plan, antes del cuadro), se anota su respuesta (marker.js review-answer --kind plan --choice review${dest === lanza ? '' : ` --for-session ${dest}`}) y recién ahí se lanza`);
+  }
   let plan;
   try { plan = planDe(marker); } catch (e) { return no(`no pude encontrar el plan de la corrida (${e.message})`); }
   if (plan.error) return no(`no pude leer el plan de la corrida (${plan.file}: ${plan.error})`);
@@ -288,9 +400,10 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
     lenses: cfg.plan_review.lenses.slice(), verifiers: cfg.review_runner.verifiers, blocking_severity: corte, ...(parte ? { parte } : {}) };
   const pedido = {
     numero, lanzo: lanza, destino: dest, informativa, corte, corrida: corridaDe(marker), storyId: String(marker.storyId), planFile: plan.file, storyFile,
-    huellas: { plan: sha(plan.texto), story: sha(storyTexto) }, delicate, hora: new Date().toISOString(), ...(parte ? { parte } : {}),
+    huellas: { plan: sha(plan.texto), story: sha(storyTexto), construccion: huellaDeConstruccion(storyTexto) }, delicate, hora: new Date().toISOString(), ...(parte ? { parte } : {}),
   };
   escribirDeUnaVez(rutaPedido(estado, lanza, dest), `${JSON.stringify(pedido, null, 2)}\n`);
+  anotarRenglon(estado, { name: LANZADA, status: 'ok', sesion: lanza, destino: dest, story: String(marker.storyId), historia: historiaDe(marker), corrida: pedido.corrida, pedido: numero });
   const argsFile = path.join(carpetaDe(estado, lanza), `${dest}.args.json`);
   escribirDeUnaVez(argsFile, `${JSON.stringify(args, null, 2)}\n`);
   return { codigo: 0, args, argsFile, pedido: rutaPedido(estado, lanza, dest), delicate, informativa, destino: dest };
@@ -323,6 +436,39 @@ function revisionesDe(estado, destino, corrida, problemas) {
   return renglones(estado, problemas).filter((j) => j.name === 'plan-review' && j.destino === destino && mismaCorrida(j.corrida, corrida));
 }
 
+// las vueltas de la revisión del plan de una historia que se lanzan sin preguntar: la siguiente la decide una persona
+const VUELTAS_SIN_PREGUNTAR = 3;
+const LANZADA = 'plan-review-launch';
+
+/**
+ * ¿La próxima vuelta de la revisión del plan de la historia de `marker` necesita la respuesta de una persona? `{ vueltas,
+ * falta }`: las vueltas lanzadas de esa historia (por cualquier motivo y desde cualquier sesión, también las cortadas o
+ * rechazadas), y `falta` si ya van `VUELTAS_SIN_PREGUNTAR` y, después de la última en el registro, no hay un «review» de
+ * la persona para `destino` ni una vuelta extra de esa historia firmada por una persona. Sin el registro legible, falta.
+ */
+function cuartaVuelta({ estado, destino, marker }) {
+  const problemas = [];
+  const todos = renglones(estado, problemas);
+  if (problemas.length) return { vueltas: null, falta: true, motivo: problemas[0] };
+  const storyId = String(marker.storyId);
+  const historia = historiaDe(marker);
+  const deEsta = (j) => j.name === LANZADA && j.story === storyId && (j.historia || null) === historia;
+  let ultima = -1;
+  let vueltas = 0;
+  todos.forEach((j, k) => { if (deEsta(j)) { vueltas++; ultima = k; } });
+  if (vueltas < VUELTAS_SIN_PREGUNTAR) return { vueltas, falta: false };
+  // después de la última vuelta en el orden del registro, no por la hora
+  const respondio = todos.slice(ultima + 1).some((j) => (j.name === 'review-answer' && j.kind === 'plan' && j.sesion === destino && j.choice === 'review')
+    || (j.name === 'extra-round-signed' && j.status === 'ok' && String(j.story) === storyId && VIAS_DE_PERSONA.includes(j.via)));
+  return { vueltas, falta: !respondio };
+}
+
+// las vías de una firma que dio una persona: la delegación, el aviso y la de trámite no son su respuesta
+const VIAS_DE_PERSONA = ['ventana', 'terminal', 'click', 'mensaje'];
+
+/** El archivo de la historia de la corrida, sin su carpeta: la misma historia en otra copia es la misma. */
+const historiaDe = (marker) => { try { return path.basename(storyDe(marker)); } catch (_) { return null; } };
+
 /**
  * Anota el resultado de la revisión preparada: devuelve la constancia escrita, o `{ codigo: 2, motivo }` si no hay pedido.
  * `resultado`: lo que devolvió el pase en modo plan. `sinHerramienta`: el motivo de no poder correrlo (sin veredicto).
@@ -344,13 +490,17 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
   let ahoraPlan = null;
   try { ahoraPlan = fs.readFileSync(pedido.planFile, 'utf8'); } catch (_) { ahoraPlan = null; }
   let reintentar = false;
-  if (ahoraPlan === null || sha(ahoraPlan) !== pedido.huellas.plan) {
+  let ahoraHistoria = null;
+  try { ahoraHistoria = pedido.storyFile ? fs.readFileSync(pedido.storyFile, 'utf8') : null; } catch (_) { ahoraHistoria = null; }
+  const cambioElPlan = ahoraPlan === null || sha(ahoraPlan) !== pedido.huellas.plan;
+  const cambioLaHistoria = !!(pedido.huellas && pedido.huellas.story) && !mismaHistoria(ahoraHistoria, pedido.huellas);
+  if (cambioElPlan || cambioLaHistoria) {
     veredicto = 'sin-veredicto';
-    motivo = CAMBIO;
+    motivo = cambioElPlan ? CAMBIO : CAMBIO_HISTORIA;
     // se reintenta una sola vez por corrida sobre el plan cerrado; la segunda llega al dueño con este motivo. Sin el
     // registro no se sabe si ya se reintentó: no se reintenta
     const sinRegistro = [];
-    const yaReintento = revisionesDe(estado, dest, pedido.corrida, sinRegistro).some((j) => j.motivo === CAMBIO);
+    const yaReintento = revisionesDe(estado, dest, pedido.corrida, sinRegistro).some((j) => esCambio(j.motivo));
     reintentar = !yaReintento && !sinRegistro.length;
   }
   const confirmados = (!sinHerramienta && !noVale && resultado && Array.isArray(resultado.confirmed)) ? resultado.confirmed : [];
@@ -637,7 +787,7 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   const hoy = corridaDe(marker);
   if (c.storyId !== hoy.storyId || c.corrida.storyId !== hoy.storyId || c.corrida.startedAt !== hoy.startedAt) return no(`la revisión es de otra corrida (${c.corrida.storyId}, ${c.corrida.startedAt}): ${ESPERA}`);
   if (!plan.texto || sha(plan.texto) !== c.huellas.plan) return no(`el plan cambió después de la revisión: ${ESPERA}`);
-  if (storyTexto === null || sha(storyTexto) !== c.huellas.story) return no(`la story cambió después de la revisión: ${ESPERA}`);
+  if (!mismaHistoria(storyTexto, c.huellas)) return no(`la story cambió después de la revisión en lo que define la construcción: ${ESPERA}`);
   if (c.delicate.value !== delicate.value) return no(`la story era delicada cuando se revisó y ya no lo es: ${ESPERA}`);
   // la coordinadora aprueba lo que se revisó: la misma parte, igual de válida y con la misma lista
   if (!mismaParte(c.parte, parte)) return no(`la parte o su lista cambiaron desde la revisión (${c.parte ? c.parte.nombre : 'sin parte'} → ${parte ? parte.nombre : 'sin parte'}): ${ESPERA}`);
@@ -755,17 +905,26 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     return { ...out, revisado: c.veredicto, rechazos: n, alDueno: { llega, motivo } };
   }
   if (revisado && c.veredicto !== 'sin-veredicto') return { ...out, revisado: c.veredicto };
+  // sin veredicto sobre este mismo plan porque cambió la historia mientras corría: se relanza como un plan cambiado
+  const deUnCambio = revisado && esCambio(c.motivo);
   // sin veredicto sobre este mismo plan: llega al dueño con el motivo
-  if (revisado) return { ...out, revisado: c.veredicto, alDueno: { llega: true, motivo: `no se pudo revisar: ${c.motivo || 'el pase no midió todo'}` } };
+  if (revisado && !deUnCambio) return { ...out, revisado: c.veredicto, alDueno: { llega: true, motivo: `no se pudo revisar: ${c.motivo || 'el pase no midió todo'}` } };
   // ya se revisó otra versión del plan en esta corrida: se vuelve a lanzar sobre el plan cerrado, sin volver a preguntar
   const deOtraVersion = !!(c && c.huellas && c.huellas.plan !== huellaPlan && mismaCorrida(c.corrida, corridaDe(marker)) && c.veredicto);
-  if (r.decision === 'run' || (deOtraVersion && r.decision === 'ask')) {
+  if (r.decision === 'run' || ((deOtraVersion || deUnCambio) && r.decision === 'ask')) {
     // el plan cambió mientras corría: se reintenta una sola vez sobre el plan cerrado; la segunda llega al dueño
-    const cambios = revisionesDe(estado, sesion, corridaDe(marker)).filter((j) => j.motivo === CAMBIO).length;
-    if (cambios >= 2) return { ...out, alDueno: { llega: true, motivo: `no se pudo revisar: ${CAMBIO}, dos veces` } };
+    const deCambio = revisionesDe(estado, sesion, corridaDe(marker)).filter((j) => esCambio(j.motivo));
+    const cambios = deCambio.length;
+    if (cambios >= 2) return { ...out, alDueno: { llega: true, motivo: `no se pudo revisar: ${deCambio[deCambio.length - 1].motivo}, dos veces` } };
     out.comando = hayCoordinadora ? `marker.js plan-review --for-session ${sesion}` : 'marker.js plan-review';
     out.lanza = hayCoordinadora ? 'coordinator' : 'session';
     if (cambios === 1) out.reintento = true;
+    const v = cuartaVuelta({ estado, destino: sesion, marker });
+    if (v.falta) {
+      out.cuartaVuelta = { vueltas: v.vueltas };
+      out.comando = 'marker.js review-ask --kind plan';
+      out.alDueno = { llega: true, motivo: v.vueltas === null ? `no pude leer el registro de vueltas (${v.motivo}): lo decide una persona` : `ya van ${v.vueltas} vueltas de la revisión del plan de esta historia: la próxima la decide una persona` };
+    }
   } else if (r.decision === 'ask' && !pregunta) {
     out.comando = 'marker.js review-ask --kind plan';
   }
@@ -779,5 +938,5 @@ module.exports = {
   rutaResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, huellaDe, designadaDeVerdad, sha,
-  tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador, revisionesViejas,
+  tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };

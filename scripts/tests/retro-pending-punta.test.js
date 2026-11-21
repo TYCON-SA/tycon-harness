@@ -335,3 +335,80 @@ test('el merge de otra sesión en otro repo cercano avisa sin cortar, con su com
   assert.ok(salida.systemMessage.includes(`--repo "${repo}" --merge ${SHA}`), salida.systemMessage);
   assert.match(salida.systemMessage, /de la sesión otra/);
 });
+
+// ── la sesión en la carpeta que agrupa los repos de un producto (no es un repo) ──
+/** Una carpeta que no es un repo, con un repo hijo bajo el arnés por cada `[nombre, origin]`. */
+function carpetaPadre(hijos) {
+  const padre = path.join(tmp(), 'producto-a');
+  fs.mkdirSync(padre);
+  for (const [nombre, origen] of hijos) {
+    const dir = path.join(padre, nombre);
+    fs.mkdirSync(dir);
+    git(dir, ['init', '--quiet', '-b', 'main']);
+    fs.mkdirSync(path.join(dir, '.tycon'));
+    fs.writeFileSync(path.join(dir, '.tycon', 'advisors.yaml'), '');
+    commit(dir, 'base.txt');
+    git(dir, ['remote', 'add', 'origin', origen]);
+    git(dir, ['checkout', '--quiet', '-b', 'dev']);
+    commit(dir, 'dev.txt');
+    git(dir, ['checkout', '--quiet', 'main']);
+  }
+  return padre;
+}
+const AZ_BACKEND = 'https://dev.azure.com/acme/producto-a/_git/backend';
+const AZ_FRONTEND = 'https://dev.azure.com/acme/producto-a/_git/frontend';
+const CAPA_BACKEND = `node scripts/lib/platform/platform.js change-request open --repo '{"platform":"azure","org":"acme","project":"producto-a","repo":"backend"}' --auto-complete --args '{"targetBranch":"main","sourceBranch":"dev"}'`;
+
+test('la capa desde la carpeta padre anota el repo hijo cuyo origin es el --repo', () => {
+  const padre = carpetaPadre([['backend', AZ_BACKEND], ['frontend', AZ_FRONTEND]]);
+  const lab = laboratorio();
+  lab.pedido(CAPA_BACKEND, padre);
+  const [e, otra] = lab.entradas();
+  assert.ok(e, 'el pedido deja su entrada');
+  assert.strictEqual(otra, undefined);
+  assert.strictEqual(e.repoPath, path.join(padre, 'backend'));
+});
+
+test('la capa desde la carpeta padre sin ningún hijo con ese origin queda sin ubicar', () => {
+  const padre = carpetaPadre([['backend', 'https://dev.azure.com/acme/producto-a/_git/otro'], ['frontend', AZ_FRONTEND]]);
+  const lab = laboratorio();
+  const r = lab.pedido(CAPA_BACKEND, padre);
+  assert.deepStrictEqual(lab.entradas(), []);
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /no pude resolver a qué repo fue/);
+});
+
+test('la capa desde la carpeta padre con dos hijos con ese origin queda sin ubicar', () => {
+  const padre = carpetaPadre([['backend', AZ_BACKEND], ['backend-copia', AZ_BACKEND], ['frontend', AZ_FRONTEND]]);
+  const lab = laboratorio();
+  const r = lab.pedido(CAPA_BACKEND, padre);
+  assert.deepStrictEqual(lab.entradas(), []);
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /no pude resolver a qué repo fue/);
+});
+
+test('la capa con cd al repo hijo sigue anotando ese repo', () => {
+  const padre = carpetaPadre([['backend', AZ_BACKEND], ['frontend', AZ_FRONTEND]]);
+  const lab = laboratorio();
+  lab.pedido(`cd '${path.join(padre, 'backend')}' && ${CAPA_BACKEND}`, padre);
+  const [e] = lab.entradas();
+  assert.ok(e, 'el pedido deja su entrada');
+  assert.strictEqual(e.repoPath, path.join(padre, 'backend'));
+});
+
+test('gh con --repo desde la carpeta padre anota el repo hijo cuyo origin es el --repo', () => {
+  const padre = carpetaPadre([['backend', 'https://github.com/acme/backend.git'], ['frontend', 'https://github.com/acme/frontend.git']]);
+  const lab = laboratorio();
+  lab.pedido('gh pr create --repo acme/backend --base main --head dev --title t --body-file cuerpo.md', padre);
+  const [e] = lab.entradas();
+  assert.ok(e, 'el pedido deja su entrada');
+  assert.strictEqual(e.repoPath, path.join(padre, 'backend'));
+});
+
+test('gh sin --repo desde la carpeta padre queda sin ubicar', () => {
+  const padre = carpetaPadre([['backend', 'https://github.com/acme/backend.git']]);
+  const lab = laboratorio();
+  const r = lab.pedido('gh pr create --base main --head dev --title t --body-file cuerpo.md', padre);
+  assert.deepStrictEqual(lab.entradas(), []);
+  assert.strictEqual(r.status, 2);
+});

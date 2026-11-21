@@ -25,7 +25,6 @@ const SK = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts');
 const SMOKE = path.join(SK, 'smoke-run.sh');
 const ISO = path.join(SK, 'lib', 'isolated-run.js');
 const LAB = path.join(RAIZ, 'scripts', 'lib', 'lab-home.js');
-const MAC = process.platform === 'darwin';
 const POSIX = process.platform !== 'win32';
 
 // la casa de la cuenta, simulada en cada proceso de la cadena: smoke-run.sh, isolated-run.js y el comando

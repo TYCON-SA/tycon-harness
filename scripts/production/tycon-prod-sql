@@ -31,6 +31,13 @@
 #   tycon-prod-sql --close-firewall <host>    la cierra (el hook de fin de sesión agrega --session <id>)
 #   tycon-prod-sql --locks                    dice qué servidores de producción tienen el candado de Azure (sólo lee)
 #   tycon-prod-sql --delete-group <grupo>     borra un grupo de recursos que puede probar que no es de producción
+#   tycon-prod-sql --help                     las formas y el camino de emergencia; no toca nada
+#   tycon-prod-sql --azure <az sin «az»>      un cambio de administración de Azure (alertas, tamaño o plan), con cuadro;
+#                                             sus lecturas (list, show) sin cuadro
+#
+# `--azure` RECIBE CADA ARGUMENTO DE `az` TAL CUAL, en su lugar (nunca un texto que se parte o se evalúa), y sólo corre
+# las operaciones de la lista de abajo: lo que no está, no tiene camino aprobado y se le deja a la persona. El cuadro
+# muestra el comando entero, y un argumento con «@» (az leería un archivo que el cuadro no muestra) no pasa.
 #
 # EL FIREWALL Y SU LÍMITE, ESCRITO: abrir y cerrar llaman a `az`, que NO es un binario de root con huella (es del
 # usuario: Homebrew o el instalador de Microsoft). Rompe la regla de «sólo binarios de root» y se acepta con tres
@@ -275,8 +282,46 @@ $1" 2>/dev/null)" || respuesta=""
   APROBACION=',"aprobacion":"cuadro-propio"'
 }
 
+# ── la ayuda ───────────────────────────────────────────────────────────────────────────────────
+# Sin ella no había forma de descubrir las opciones: en un incidente con producción caída, el asistente no encontró
+# `--open-firewall` y mandó a la persona al portal. No lee la clave, no consulta y no llama a `az`.
+ayuda(){
+  cat <<'AYUDA'
+tycon-prod-sql — la única forma de consultar o cambiar una base de producción. Cada sentencia la aprueba una
+persona en un cuadro de esta Mac; la contraseña no pasa por la conversación. Siempre con la ruta absoluta.
+
+  /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]
+        una sentencia, con cuadro: un select, o un cambio (alter database …, update …). Una por vez, sin GO.
+  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>
+        habilita la IP de esta máquina en el firewall de un Azure SQL de producción, con cuadro. La regla se
+        cierra sola al terminar la sesión.
+  /opt/tycon/bin/tycon-prod-sql --close-firewall <host>     la cierra ya
+  /opt/tycon/bin/tycon-prod-sql --verify                    revisa la instalación y la clave, sin leerla
+  /opt/tycon/bin/tycon-prod-sql --load-key <host>           deja en el Escritorio el archivo para cargar la clave
+  /opt/tycon/bin/tycon-prod-sql --reclassify <host>         baja un host a no producción, con cuadro
+  /opt/tycon/bin/tycon-prod-sql --locks                     qué servidores de producción tienen el candado de Azure
+  /opt/tycon/bin/tycon-prod-sql --delete-group <grupo>      borra un grupo que se prueba que no es de producción
+  /opt/tycon/bin/tycon-prod-sql --azure <comando de az sin «az»>
+        un cambio de administración de un recurso de producción en Azure, con cuadro: alertas
+        (monitor metrics alert create|update|delete) y tamaño o plan (sql db update, sql elastic-pool update).
+        Sus lecturas (list y show, y monitor metrics list) corren sin cuadro. Lo demás no tiene camino aprobado:
+        se le deja el comando a la persona para que lo corra en su terminal.
+
+Emergencia, con producción caída (por ejemplo, la base llegó a su tope y no escribe):
+  1. Probá la conexión: /opt/tycon/bin/tycon-prod-sql <host> 'select 1'
+  2. Si la rechaza el firewall (40615): /opt/tycon/bin/tycon-prod-sql --open-firewall <host>
+  3. Mirá el estado: /opt/tycon/bin/tycon-prod-sql <host> 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'
+     (mide la base a la que entra la puerta: la «base» del servidor en su catálogo; si no la declara, master)
+  4. Mitigá con una sentencia, que la persona aprueba en el cuadro, por ejemplo:
+     /opt/tycon/bin/tycon-prod-sql <host> 'alter database [<base>] modify (maxsize = 250 GB)'
+  5. Contale a la persona qué cambió. La regla del firewall se cierra sola.
+  Detalle: guides/produccion-con-permiso.md § «Emergencia: producción caída».
+AYUDA
+}
+
 # ── argumentos ────────────────────────────────────────────────────────────────────────────────
-[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-rows N]  ·  --load-key <host>  ·  --reclassify <host>  ·  --verify  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks  ·  --delete-group <grupo>"
+[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-rows N]  ·  --load-key <host>  ·  --reclassify <host>  ·  --verify  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks  ·  --delete-group <grupo>  ·  --help"
+case "$1" in (--help|-h) [ $# -eq 1 ] || muere "uso: tycon-prod-sql --help  (sola)"; ayuda; exit 0 ;; esac
 
 MODO=consulta; HOST=""; SENTENCIA=""; SESION_CIERRE=""
 # La consulta desde un archivo no se acepta: el cuadro de aprobación muestra el comando, no lo que trae el archivo.
@@ -303,8 +348,11 @@ case "${1:-}" in
   # 🔴 Cargar la clave SIN tener que fallar una consulta primero (2026-09-15, pedido del dev: el
   # disparador era «corré algo que falle», que es un rodeo). La clave la sigue tipeando la persona en
   # el archivo que deja la puerta: nunca pasa por la conversación ni la escribe el asistente.
+  --azure)        MODO=azure; shift
+                  [ $# -ge 1 ] || muere "uso: tycon-prod-sql --azure <el comando de az, sin «az»>  (cada argumento en su lugar)"
+                  AZ_ARGS=("$@") ;;
   --load-key)     MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --load-key <host>" ;;
-  -*)             muere "primer argumento inválido: sólo <host>, --load-key, --reclassify, --verify, --open-firewall, --close-firewall, --locks o --delete-group" ;;
+  -*)             muere "primer argumento inválido: sólo <host>, --load-key, --reclassify, --verify, --open-firewall, --close-firewall, --locks, --delete-group o --azure (todas, con su explicación: tycon-prod-sql --help)" ;;
   *)              HOST="$1"; SENTENCIA="${2:-}"
                   [ $# -ge 2 ] || muere "falta la sentencia: tycon-prod-sql <host> 'select …'"
                   if [ $# -gt 2 ]; then
@@ -339,6 +387,39 @@ validar_sentencia(){
 }
 [ "$MODO" = consulta ] && validar_sentencia
 
+# ── Azure: qué operación es, si tiene camino y cómo se ve en el cuadro ────────────────────────────────────────────
+# La operación son las palabras antes de la primera opción. Los cambios piden el cuadro; las lecturas no cambian nada y
+# corren sin él (quedan anotadas igual). El firewall tiene su forma propia, y lo demás no tiene camino aprobado.
+validar_azure(){
+  local a op="" en_op=1 texto="az"
+  for a in "${AZ_ARGS[@]}"; do
+    case "$a" in
+      # 🔴 az lee un archivo con «@» al principio Y con «@» después del primer «=» (`--name=@ruta`, `--set clave=@ruta`;
+      # «@-» lee la entrada estándar). Mirar sólo el principio dejaba que una lectura sin cuadro trajera a la conversación
+      # cualquier archivo, también la credencial de Azure (pase adversarial del pedido).
+      @*|*=@*) muere "un argumento trae «@» al principio o después de un «=» (${a}): az leería el contenido de un archivo, y ni el cuadro ni la persona lo ven. Escribí el valor en línea." ;;
+      *"'"*) muere "un argumento tiene una comilla simple: el cuadro no lo podría mostrar tal cual. Escribilo sin ella." ;;
+      # el detalle de az imprime los pedidos HTTP con sus encabezados: la credencial de la sesión llegaría a la conversación
+      --debug|--verbose) muere "${a} no pasa por la puerta: az imprimiría los pedidos con sus encabezados, y la credencial de Azure llegaría a la conversación." ;;
+    esac
+    if [ "$en_op" = 1 ]; then case "$a" in (-*) en_op=0 ;; (*) op="${op:+$op }$a" ;; esac; fi
+    if [[ "$a" =~ ^[A-Za-z0-9._:/=,+%-]+$ ]]; then texto="$texto $a"; else texto="$texto '$a'"; fi
+  done
+  op="$(printf '%s' "$op" | tr '[:upper:]' '[:lower:]')"
+  case "$op" in
+    "monitor metrics alert create"|"monitor metrics alert update"|"monitor metrics alert delete"|"sql db update"|"sql elastic-pool update")
+      AZ_LECTURA=0 ;;
+    "monitor metrics alert show"|"monitor metrics alert list"|"monitor metrics list"|"monitor metrics list-definitions"|"sql db show"|"sql db list"|"sql db list-usages"|"sql db list-editions"|"sql server show"|"sql server list"|"sql elastic-pool show"|"sql elastic-pool list")
+      AZ_LECTURA=1 ;;
+    "sql server firewall-rule"*)
+      muere "la regla de firewall no va por --azure: la IP de esta máquina se habilita con /opt/tycon/bin/tycon-prod-sql --open-firewall <host> (con cuadro, y se cierra sola). Otra regla no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal." ;;
+    *)
+      muere "«${op:-esa operación}» no tiene camino aprobado por la puerta: dejale el comando a la persona para que lo corra en su terminal, y decile qué hace." ;;
+  esac
+  AZ_OP="$op"; SENTENCIA="$texto"
+}
+[ "$MODO" = azure ] && validar_azure
+
 # ── el intérprete (instalada: el de root, verificado) y el índice ─────────────────────────────
 [ -n "$NODE" ] && [ -x "$NODE" ] || muere "no encuentro el intérprete para leer el índice de servidores"
 [ "$INSTALADO" = 1 ] && verificar_binario "$NODE" "/opt/tycon/bin/node" "el intérprete"
@@ -347,7 +428,7 @@ validar_sentencia(){
 # ── la sentencia: lo que engañaría en el cuadro ──────────────────────────────────────────────────
 # La misma lista que el freno, mirada por el intérprete ya verificado y no por grep: grep depende de la configuración
 # regional, y con LC_ALL=C no reconoce un carácter de varios bytes. Si la revisión no se puede hacer, no se conecta.
-if [ "$MODO" = consulta ]; then
+if [ "$MODO" = consulta ] || [ "$MODO" = azure ]; then
   motivo="$(printf '%s' "$SENTENCIA" | "$NODE" -e '
     const fuera = (m) => { process.stdout.write(m); process.exit(2); };
     let t; try { t = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(require("fs").readFileSync(0)); } catch (_) { fuera("no es texto UTF-8 válido"); }
@@ -356,8 +437,9 @@ if [ "$MODO" = consulta ]; then
     if (/[\u{ad}\u{34f}\u{61c}\u{115f}\u{1160}\u{17b4}\u{17b5}\u{180b}-\u{180e}\u{200b}-\u{200f}\u{202a}-\u{202e}\u{2028}\u{2029}\u{2060}-\u{206f}\u{2800}\u{3164}\u{fe00}-\u{fe0f}\u{feff}\u{ffa0}\u{fff9}-\u{fffc}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u.test(t)) fuera("tiene caracteres invisibles o de dirección: en el cuadro se habría leído otra cosa que lo que corre");
   ')" || muere "la sentencia ${motivo:-no se pudo revisar}: mandala sin esos caracteres"
   # lo que el cuadro no muestra entero no se manda a aprobar: cada renglón cuenta como los que ocupa al cortarse, con el
-  # ancho que ocupa en pantalla (un tabulador llega al múltiplo de 8 y un carácter ancho vale 2), como cuenta el freno
-  printf '%s' "$SENTENCIA" | "$NODE" -e '
+  # ancho que ocupa en pantalla (un tabulador llega al múltiplo de 8 y un carácter ancho vale 2), como cuenta el freno.
+  # Una lectura de --azure no abre cuadro: no tiene tope.
+  { [ "$MODO" = azure ] && [ "$AZ_LECTURA" = 1 ]; } || printf '%s' "$SENTENCIA" | "$NODE" -e '
     const t = require("fs").readFileSync(0, "utf8"); const [max, maxR, cols] = process.argv.slice(1).map(Number);
     const doble = /[\u{1100}-\u{10ffff}]|\p{Extended_Pictographic}/u;
     let renglones = 0;
@@ -505,6 +587,27 @@ ubicar_servidor(){
   [ "$encontrados" = 1 ] || { "$FALLA_AZ" "el servidor «${CORTO}» aparece en $encontrados lugar(es) entre tus suscripciones: necesito exactamente uno, no elijo a ciegas."; return 1; }
   printf '%s' "$RG" | grep -qE '^[A-Za-z0-9._()-]+$' || { "$FALLA_AZ" "el grupo de recursos que devolvió az («${RG}») no tiene forma de nombre."; return 1; }
 }
+
+# ── Azure: el cambio de administración, con cuadro; la lectura, sin él ───────────────────────────────────────────
+# az corre con el entorno limpio de `correr_az`: nunca ve la clave de la base ni nada del Llavero. Cada argumento llega en
+# su lugar, sin pasar por un shell.
+if [ "$MODO" = azure ]; then
+  [ -n "$AZ" ] || muere "no encuentro az en sus rutas fijas (/opt/homebrew/bin, /usr/local/bin, /usr/bin): la puerta no usa el del PATH."
+  if [ "$AZ_LECTURA" = 1 ]; then
+    APROBACION=',"aprobacion":"lectura-sin-cuadro"'; ACCION=azure-lectura
+  else
+    aprobar "Cambio de administración en Azure (producción):
+
+$SENTENCIA" azure
+    ACCION=azure
+  fi
+  SALIDA="$(correr_az "${AZ_ARGS[@]}" 2>&1)"; RC=$?
+  printf '%s\n' "$SALIDA"
+  [ "$RC" = 142 ] && printf 'az no contestó en %s s (tope): no sé si el cambio quedó. Miralo con la lectura (list o show) antes de repetirlo.\n' "$AZ_TOPE"
+  printf 'rc=%s\n' "$RC"
+  anotar "\"accion\":\"$ACCION\",\"operacion\":\"$AZ_OP\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\"$APROBACION,\"exit\":$RC"
+  exit "$RC"
+fi
 
 # ── los candados: qué servidores de producción declarados tienen el candado de Azure ───────────────────────────
 # Sólo lee: `account list`, `sql server list` y `lock list`. Cuenta un candado CanNotDelete o ReadOnly sobre el servidor
@@ -1068,5 +1171,16 @@ FILAS="$(printf '%s\n' "$SALIDA" | wc -l | tr -d ' ')"
 printf '%s\n' "$SALIDA" | head -n "$MAX_FILAS"
 [ "$FILAS" -gt "$MAX_FILAS" ] && printf '… (cortado en %s de %s líneas; pedí más con --max-rows N)\n' "$MAX_FILAS" "$FILAS"
 printf 'rc=%s\n' "$RC"
+# El rechazo del firewall nombra el paso siguiente: sin esto, el asistente veía el error de Azure («use the Azure
+# Management Portal») y mandaba a la persona al portal, con producción caída.
+# Se reconoce por el texto del rechazo, no por el número suelto: un «40615» en los datos o en otro error no es el
+# firewall. Y sólo en un Azure SQL, que es lo único que `--open-firewall` atiende.
+if [ "$RC" != 0 ] && [[ "$HOST" == *.database.windows.net ]] \
+   && printf '%s' "$SALIDA" | grep -iE "Client with IP address '[^']*' is not allowed to access the server" >/dev/null; then
+  printf '\n🔥 La conexión la rechazó el firewall de Azure: la IP de esta máquina no está habilitada en «%s».\n' "$HOST"
+  printf '   Paso siguiente (con cuadro; la regla se cierra sola al terminar la sesión):\n'
+  printf '     /opt/tycon/bin/tycon-prod-sql --open-firewall %s\n' "$HOST"
+  printf '   y después volvé a correr esta misma sentencia. No hace falta el portal.\n'
+fi
 anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\"$APROBACION,\"exit\":$RC,\"filas\":$FILAS"
 exit "$RC"

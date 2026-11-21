@@ -639,12 +639,6 @@
       "requiere": []
     },
     {
-      "__nota": "el freno de lanzamiento de revisores: niega con el criterio de next, deja pasar con su motivo, y on-advisor-run.js no anota el negado salvo sin el freno registrado. Todo en un HOME temporal.",
-      "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/reviewer-launch-gate.test.js",
-      "requiere": []
-    },
-    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/approvals.test.js",
       "requiere": []
@@ -659,6 +653,12 @@
       "__nota": "story 1.29: la revisión automática del plan — qué es delicado, el modo plan del pase, la revisión que lanza la coordinadora y su constancia, la aprobación por delegación sólo con el veredicto aprobado, el corte sin persona en la CI y que ningún plan se aprueba solo.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",
       "requiere": []
     },
     {
@@ -1034,6 +1034,12 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-variables.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Con un camino corto con lista, el freno de la consola juzga la ruta real de una variable del comando (también con bucles) y, si no la puede resolver o la carpeta cambió con un cd que no sigue, frena diciendo que no pudo; ve cp, mv y sed -i dentro de bloques.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-unresolved-path.test.js",
       "requiere": []
     },
     {
@@ -1822,6 +1828,24 @@
       "requiere": []
     },
     {
+      "__nota": "la comparación con main y la matriz del commit ubican los archivos de repos hermanos escritos como Repo/archivo, también en copias --wt: la copia ajena, el sufijo falseado y la carpeta suelta no cuentan. Repos de juguete, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/sibling-copies.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "lectores que leían mal o callaban: el grupo de rutas «(app)/» no es el prefijo del repo, el normalizador del despachador que no carga deja su línea, owner-away get muestra la marca sin confirmar. HOME de laboratorio, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/quiet-readers.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "errores que se tragaban en silencio: pasos hechos por set, ediciones y firmas que no se anotan, lo preparado ilegible, marcadores ajenos ilegibles, listas sin cerrar y lanzamientos de revisores ilegibles. HOME de laboratorio, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/swallowed-errors.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/preflight-missing.test.js",
       "requiere": []
@@ -1929,6 +1953,12 @@
       "__nota": "Parte 4 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p4.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.298: la detención del modo autónomo le llega al dueño como un pendiente (firma autonomy-resume); la contesta con su click o su terminal y sólo la toma la sesión detenida con marker.js resume-autonomy; el «No» queda anotado; set-autonomous true, set con otra historia, clear sin firma y clear-session de otra sesión no son salidas. La firma por la terminal se mide con un pty de Python y se dice NO MEDIDA si no hay.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/autonomy-resume.test.js",
       "requiere": []
     },
     {
@@ -2090,6 +2120,16 @@
     {
       "raiz": "arnes",
       "ruta": "tests/prod-firewall-deleted-server.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/prod-emergency.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/prod-azure-admin.test.sh",
       "requiere": []
     },
     {
@@ -3234,6 +3274,12 @@
       "__nota": "mergear salteando la cola y la CI de main lo aprueba una persona (regla GIT-C5): el lector de lo que saltea (scripts/lib/ci-bypass.js), el freno de la sesión de verdad con una casa de juguete y la decisión de la ventana con un árbol de juguete. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/ci-bypass-guard.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "encolar o mergear un pedido de alguien de afuera del equipo lo aprueba el dueño (regla GIT-C7): el lector (scripts/lib/external-pr.js), el freno de la sesión de verdad con una casa de juguete y el cuadro de la firma. GitHub es un gh falso en el PATH. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/external-pr.test.js",
       "requiere": []
     },
     {
@@ -4612,6 +4658,12 @@
       "requiere": []
     },
     {
+      "__nota": "el comando con que harness.js team-init suma el perfil a esta máquina: con la versión bajada, install --version; instalada desde un clon (como trabaja quien contribuye), migrate --to-home --team, porque install --version ahí sale 2 sin escribir. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/team-init-add-profile.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "gitleaks no toma por claves las huellas de la evidencia del arnés (scripts/ci/secret-scan/evidence-hashes.toml): una huella con ruta que dice api bajo .advisors/ pasa; la misma fuera de .advisors/, una clave real y un 40 hex con clave que no es un archivo frenan; las plantillas del portón de historias llevan la excepción tal cual. Ejercita la regla con la expresión de generic-api-key de gitleaks v8.30.1, sin red ni docker.",
       "raiz": "arnes",
       "ruta": "tests/secret-scan-evidence-hashes.test.js",
@@ -5184,6 +5236,18 @@
       "__nota": "story 8.17 (P1-P7): los guiones que MIDEN la base portable —lo que trae la tanda W1— en un agente Windows, y su parte del contrato de pipelines/azure-pipelines-windows.yml (el escenario portable). No mide Windows: mide a los que miden. El escenario corre en los dos trabajos de los ensayos, cada parte por rehearse.js y las suites antes que el banco, sin copiar archivos, sin secretos y sin abrir sesiones del asistente (P1); los guiones de bash con finales de línea de Windows se cuentan archivo por archivo, hooks de git incluidos (P2); los totales de una suite, en las dos formas en que Node los escribe (P3); de un reporte del banco, un veredicto por caso, los rojos por su nombre y los casos que faltan, y los portones por ruta forma por forma (P4); el «En corto», esperado contra medido, y la corrida roja sólo si no se pudo medir (P5); nadie mide fuera de un laboratorio (P6); los bundles traen el «antes», el antepasado común con la rama principal (P7). Y un recorrido entero en modo de laboratorio sobre dos repos de juguete con core.autocrlf=true forzado: el clon nuevo, el que ya existía antes y después del paso que normaliza, y un banco de juguete (~10 s). Nunca toca la carpeta de usuario de quien la corre.",
       "raiz": "arnes",
       "ruta": "tests/windows-portable.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "cortar el corredor de las portables (scripts/tests/portable-suites.test.sh) corta también sus suites: ni el que reparte ni una suite con sus hijos quedan vivos reteniendo memoria. Lanza el corredor sobre una raíz de juguete con una suite que duerme (~5 s).",
+      "raiz": "arnes",
+      "ruta": "tests/portable-suites-cut.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las sondas del arreglo rápido del ensayo de Windows (scripts/tests/windows/waiver-probe.js) traen lo que exige marker.js adhoc set y llegan a la firma; corre en cualquier máquina con el chequeo previo de la firma, sin firmar ni escribir.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-probe-adhoc.test.js",
       "requiere": []
     }
   ],

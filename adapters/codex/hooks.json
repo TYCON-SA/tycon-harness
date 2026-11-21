@@ -481,17 +481,10 @@
       ]
     },
     {
-      "log": "PreToolUse · AskUserQuestion|mcp__spokenly__ask_user_dictation — SOLO Claude Code (las preguntas de una sesión que abrió la coordinadora)",
-      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-04, story 8.211): background-question-guard.js le niega el cuadro de opciones y el dictado a una sesión de fondo que abrió coordination.js open, con la coordinadora confirmada y viva. Codex no abre sesiones de fondo (coordination.js open se lo niega) ni tiene esas herramientas en el modo normal, así que de su lado no hay a quién frenar y el freno no se registra.",
+      "log": "PreToolUse · AskUserQuestion|mcp__spokenly__ask_user_dictation|SendMessage — SOLO Claude Code (las preguntas de una sesión que abrió la coordinadora y los mensajes que le llegan)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-04, story 8.211): background-question-guard.js le niega el cuadro de opciones y el dictado a una sesión de fondo que abrió coordination.js open, con la coordinadora confirmada y viva, y le niega a otra sesión que no es la coordinadora mandarle un mensaje (SendMessage). Codex no abre sesiones de fondo (coordination.js open se lo niega) ni tiene esas herramientas en el modo normal, así que de su lado no hay a quién frenar y el freno no se registra.",
       "scripts": [
         "background-question-guard.js"
-      ]
-    },
-    {
-      "log": "PreToolUse · Task|Agent — SOLO Claude Code (los revisores esperan al pase adversarial)",
-      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-06): reviewer-launch-gate.js niega el lanzamiento de un revisor del arnés mientras el pase adversarial que corresponde no esté en vuelo. Codex no lanza los revisores con una herramienta del agente: los lanza el pipeline (pipeline.js reviewers-run, lib/codex-reviewers.js), así que de su lado no hay lanzamiento que frenar y el freno no se registra. on-advisor-run.js no descuenta nada en Codex.",
-      "scripts": [
-        "reviewer-launch-gate.js"
       ]
     }
   ]

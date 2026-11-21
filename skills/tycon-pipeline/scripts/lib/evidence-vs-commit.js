@@ -303,7 +303,11 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
   function criteriosDeLaPrueba(archivo, carpeta, nombre, desde) {
     let disco;
     try { disco = require('fs').readFileSync(archivo, 'utf8'); } catch (_) { return null; }
-    const rel = rutaEnElRepo(carpeta, nombre);
+    // un git que no contesta la ruta no es «el archivo no está en git»: sin las versiones de HEAD y de la evidencia, los
+    // criterios del disco solos vencerían de menos, y con null vence toda (el lado seguro). Sin rastrear, sólo el disco
+    const enGit = preguntar(carpeta, ['ls-files', '-z', '--full-name', '--', nombre]);
+    if (enGit.codigo !== 0) return null;
+    const rel = enGit.salida.split('\0')[0] || null;
     const textos = [disco];
     for (const rev of ['HEAD', ...(desde ? [desde] : [])]) {
       if (!rel) break;

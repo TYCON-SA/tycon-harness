@@ -274,7 +274,9 @@ function stoppedRuns(home, now, markers, alive, nameOf, problems) {
     const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
     const st = front && /^status:\s*["']?([\w-]+)/m.exec(front[1]);
     if (!st || st[1] !== 'in-progress') continue;
-    out.push({ storyId: label(m.storyId), sid: x.sid, session: nameOf(x.sid), at, pruned: !x.active });
+    // el archivo y el repo: la oficina cruza la detenida con la historia por el nombre del archivo y el remoto del repo,
+    // porque el número solo se repite entre proyectos
+    out.push({ storyId: label(m.storyId), sid: x.sid, session: nameOf(x.sid), at, pruned: !x.active, archivo: path.basename(String(m.storyPath)), repoPath: m.repoPath ? String(m.repoPath) : null });
   }
   return out.sort((a, b) => a.at - b.at);
 }
@@ -438,7 +440,16 @@ function stalledOf(s, f, now) {
   const since = Number.isFinite(pSince) ? pSince : (Number.isFinite(s.statusAt) ? s.statusAt : now);
   // el gancho ya lo anota tapado; se tapa otra vez por los archivos escritos antes de que una forma existiera
   const detail = p && p.detail ? oneLine(require(path.join(__dirname, '..', 'hooks', 'wait-notice.js')).redact(p.detail)).slice(0, 200) : null;
-  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude' };
+  // qué forma del comando lo hizo pedir (lib/bg-permission-shapes.js), si se puede leer del comando anotado
+  let forma = null;
+  if (p && /^Bash$/.test(String(p.tool))) {
+    try {
+      const B = require(path.join(__dirname, '..', 'lib', 'bg-permission-shapes.js'));
+      const f = typeof p.forma === 'string' && B.FORMAS[p.forma] ? { que: B.FORMAS[p.forma] } : (detail ? B.formaQuePidePermiso(detail) : null);
+      forma = f ? f.que : null;
+    } catch (_) { forma = null; }
+  }
+  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', ...(forma ? { forma } : {}) };
 }
 
 // La espera que el archivo de estado anota cuando una sesión abre un cuadro o pide aprobar su plan (hooks/session-state.js).
@@ -471,7 +482,7 @@ function retiredOf(home, now, sessions) {
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
-const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}. Para entrar: claude attach ${x.session}`;
+const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''} Para entrar: claude attach ${x.session}`;
 const retiredLine = (x) => `${x.session}: la cerró Claude Code a las ${hhmm(x.at)} por ${x.reason}, quieta ${x.idleMin} min. Para levantarla: claude respawn ${x.short}`;
 
 /** El estado de la máquina, como datos. `noTranscripts`: sin abrir las conversaciones (el aviso de cada turno). */
@@ -1109,17 +1120,25 @@ function ownerWait(opts = {}) {
  * saltea según esa celda; la del código no se lanza desde acá: se contesta en nombre del dueño ausente y el pase lo
  * lanza la propia sesión.
  */
-function reviewAskLines(opts, sid, now) {
+function reviewAskLines(opts, sid, now, problems = []) {
   const home = opts.home || require('os').homedir();
   const PR = require(path.join(SKILL_LIB, 'plan-review.js'));
-  const abiertas = PR.preguntasAbiertas({ estado: stateDir(home) }).filter((p) => p.sesion !== sid);
+  // un registro ilegible no es «ninguna pregunta»: el motivo va a `problems`, y lo que sí se leyó sigue
+  const noLeido = [];
+  const abiertas = PR.preguntasAbiertas({ estado: stateDir(home), problemas: noLeido }).filter((p) => p.sesion !== sid);
+  for (const m of noLeido) problems.push(`las preguntas de revisar (${m}): puede haber alguna sin respuesta que no veo`);
   if (!abiertas.length) return [];
   const cfg = PR.configDeLaOrganizacion().values;
   const minutos = cfg.plan_review.owner_away_minutes;
   const nombres = signatureList.sesiones(home).mapa;
   // con la marca de ausente puesta, el dueño cuenta como ausente enseguida, igual que en la propia sesión
+  // sin poder leerla, el dueño cuenta como presente (lo decide owner-away), y el motivo se dice
   let marca = null;
-  try { marca = require(path.join(__dirname, '..', 'lib', 'owner-away.js')).get({ estado: stateDir(home), ahora: now }).mark; } catch (_) { marca = null; }
+  try {
+    const g = require(path.join(__dirname, '..', 'lib', 'owner-away.js')).get({ estado: stateDir(home), ahora: now });
+    marca = g.mark;
+    if (g.problem) problems.push(`la marca de ausente (${g.problem}): cuento al dueño como presente`);
+  } catch (e) { problems.push(`la marca de ausente (${e.code || e.message}): cuento al dueño como presente`); }
   return abiertas.map((p) => {
     const quien = nombres.get(p.sesion) && nombres.get(p.sesion).name ? `${nombres.get(p.sesion).name} (${p.sesion})` : p.sesion;
     const desde = Date.parse(p.ts);
@@ -1733,7 +1752,7 @@ function capNotice(opts = {}) {
   lines.push(...waitLines(opts, sid, problems));
   lines.push(...slowGateLines(opts, s, problems));
   try { lines.push(...ownerWaitLines(opts, sid, s)); } catch (e) { problems.push(`lo de owner-wait (${e.code || e.message})`); }
-  try { lines.push(...reviewAskLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now))); } catch (e) { problems.push(`las preguntas de revisar (${e.code || e.message})`); }
+  try { lines.push(...reviewAskLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now), problems)); } catch (e) { problems.push(`las preguntas de revisar (${e.code || e.message})`); }
   try { lines.push(...stalePlanReviewLines(opts, sid, problems)); } catch (e) { problems.push(`las revisiones del plan preparadas (${e.code || e.message})`); }
   try { lines.push(...askingLines(opts, sid, s, problems)); } catch (e) { problems.push(`las preguntas directas (${e.code || e.message})`); }
   try { lines.push(...ownerReplyLines(opts, sid, problems)); } catch (e) { problems.push(`las respuestas de la persona en otras pestañas (${e.code || e.message})`); }
@@ -3025,4 +3044,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, flags, reviewAskLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN,
+  // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
+  stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };
