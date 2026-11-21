@@ -33,7 +33,18 @@ const stateDirOf = (home) => require(path.join(__dirname, '..', '..', 'skills', 
 const VEREDICTOS = ['bloqueo', 'aviso', 'escape', 'paso'];
 const NO_MEDIDO = 'no medido';
 const SIN_MODELO = 'sin modelo';
-const FRENA_GATE = new Set(['blocked', 'bloqueo']);
+// Cómo dice gates.log qué decidió un control: unos en `status`, otros en `action`. Lo que no es una de estas (no medido,
+// desconocido, un estado interno) no es una decisión: no cuenta como que dejó pasar.
+const FRENA_GATE = new Set(['blocked', 'bloqueo', 'block']);
+const PASA_GATE = new Set(['ok', 'green', 'verde', 'cumple', 'pass', 'passed', 'paso', 'unresolved-passed', 'accepted', 'closed']);
+function decisionDeGate(g) {
+  const s = typeof g.status === 'string' ? g.status : '';
+  const a = typeof g.action === 'string' ? g.action : '';
+  if (FRENA_GATE.has(s) || FRENA_GATE.has(a)) return 'bloqueo';
+  if (s.startsWith('warn') || a.startsWith('warn')) return 'aviso';
+  if (PASA_GATE.has(s) || PASA_GATE.has(a)) return 'paso';
+  return null;
+}
 const CLASIFICACION = path.join(__dirname, 'controls-classification.json');
 const SELLO = /^\[(\d{4}-\d{2}-\d{2}T[^\]\s]+)\] (.*)$/s;
 
@@ -107,7 +118,7 @@ function modelosDe(sesiones, { home, modelOf } = {}) {
   return out;
 }
 
-const filaVacia = () => ({ decidio: 0, bloqueo: 0, aviso: 0, escape: 0, paso: 0, a: 0, b: 0, c: 0, sinHuella: 0 });
+const filaVacia = () => ({ decidio: 0, bloqueo: 0, aviso: 0, escape: 0, paso: 0, a: 0, b: 0, c: 0, sinHuella: 0, sinDecision: 0 });
 
 /**
  * Por freno y por modelo: los veredictos y las marcas de cada bloqueo. Un bloqueo cuyo mismo comando (misma huella, mismo
@@ -145,9 +156,12 @@ function contarPorModelo(filas, modelos) {
   return out;
 }
 
-/** Los controles del pipeline que frenaron en el período, por nombre y por modelo; frenó = `blocked` o `bloqueo`. */
+/**
+ * Los controles del pipeline que frenaron en el período, por nombre y por modelo (`decisionDeGate`). Un renglón que no es
+ * una decisión va a `sinDecision`, aparte de lo que dejó pasar.
+ */
 function contarGates(gates, modelos) {
-  const frenaron = new Set(gates.filas.filter((g) => FRENA_GATE.has(g.status)).map((g) => g.name || 'sin nombre'));
+  const frenaron = new Set(gates.filas.filter((g) => decisionDeGate(g) === 'bloqueo').map((g) => g.name || 'sin nombre'));
   const out = new Map();
   for (const g of gates.filas) {
     const nombre = g.name || 'sin nombre';
@@ -157,8 +171,10 @@ function contarGates(gates, modelos) {
     const modelo = (g.sessionId && modelos.get(g.sessionId)) || SIN_MODELO;
     if (!m.has(modelo)) m.set(modelo, filaVacia());
     const c = m.get(modelo);
+    const d = decisionDeGate(g);
+    if (!d) { c.sinDecision++; continue; }
     c.decidio++;
-    if (FRENA_GATE.has(g.status)) c.bloqueo++; else c.paso++;
+    c[d]++;
   }
   return out;
 }
@@ -201,12 +217,13 @@ function revision(entrada, hoy) {
 }
 
 function tablaPorModelo(l, porNombre, clasif, hoy, marcas) {
-  l.push(`| Control | Clasificación | Revisar antes de | Modelo | Tuvo que decidir | Frenó | Avisó | Pasó con firma | Dejó pasar${marcas ? ' | (a) pasó con firma después | (b) pasó sin firma después | (c) no se repitió | sin huella' : ''} |`);
-  l.push(`|---|---|---|---|---:|---:|---:|---:|---:${marcas ? '|---:|---:|---:|---:' : ''}|`);
+  const resto = marcas ? ' | (a) pasó con firma después | (b) pasó sin firma después | (c) no se repitió | sin huella' : ' | Sin decisión (no medido, desconocido)';
+  l.push(`| Control | Clasificación | Revisar antes de | Modelo | Tuvo que decidir | Frenó | Avisó | Pasó con firma | Dejó pasar${resto} |`);
+  l.push(`|---|---|---|---|---:|---:|---:|---:|---:${marcas ? '|---:|---:|---:|---:' : '|---:'}|`);
   for (const nombre of [...porNombre.keys()].sort()) {
     const r = revision(clasif.entradas[nombre], hoy);
     for (const [modelo, c] of [...porNombre.get(nombre).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
-      l.push(`| ${nombre} | ${r.tipo} | ${r.fecha} | ${modelo} | ${c.decidio} | ${c.bloqueo} | ${c.aviso} | ${c.escape} | ${c.paso}${marcas ? ` | ${c.a} | ${c.b} | ${c.c} | ${c.sinHuella}` : ''} |`);
+      l.push(`| ${nombre} | ${r.tipo} | ${r.fecha} | ${modelo} | ${c.decidio} | ${c.bloqueo} | ${c.aviso} | ${c.escape} | ${c.paso}${marcas ? ` | ${c.a} | ${c.b} | ${c.c} | ${c.sinHuella}` : ` | ${c.sinDecision}`} |`);
     }
   }
 }
@@ -278,7 +295,7 @@ function tabla({ home = os.homedir(), desde = null, ahora = new Date().toISOStri
   return { frenos, firmas, conteo, gates, fallas, clasif, porModelo, porGate, md: markdown({ frenos, firmas, conteo, desde, ahora, extra }) };
 }
 
-module.exports = { leerRegistro, contar, markdown, tabla, contarPorModelo, contarGates, contarFallas, leerClasificacion, SIN_MODELO };
+module.exports = { leerRegistro, contar, markdown, tabla, contarPorModelo, contarGates, decisionDeGate, contarFallas, leerClasificacion, SIN_MODELO };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

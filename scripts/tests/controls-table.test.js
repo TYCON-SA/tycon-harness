@@ -154,6 +154,26 @@ test('T8 ControlsTable_PipelineGatesFromGatesLog — los que frenaron como contr
   assert.doesNotMatch(sin.split('##')[0], /story-gate|solo-ok/);
 });
 
+// 🔴 Falla con: un control que frena con `action` (no con `status`) fuera de la tabla, o un renglón que no es una
+//    decisión (no medido, desconocido) contado como que dejó pasar.
+test('T8b ControlsTable_PipelineGatesFromGatesLog — frena por `action` también; lo que no es decisión, aparte', (t) => {
+  const g = (name, extra) => ({ ts: '2026-11-10T10:00:00Z', name, sessionId: 'ses-opus', ...extra });
+  const { casa } = casaNueva(t, { 'gates.log': [
+    g('undeclared-changes', { action: 'bloqueo' }), g('undeclared-changes', { action: 'pass', verdict: 'green' }),
+    g('smoke-secrets', { action: 'block' }),
+    g('red-test-edit', { status: 'blocked' }), g('red-test-edit', { status: 'not-measured' }), g('red-test-edit', { status: 'unknown' }),
+    g('red-test-edit', { status: 'warn' }), g('red-test-edit', { status: 'green' }),
+  ] });
+  const r = ct.tabla({ home: casa, modelOf, ahora: '2026-11-21T00:00:00Z' });
+  assert.deepStrictEqual([...r.porGate.keys()].sort(), ['red-test-edit', 'smoke-secrets', 'undeclared-changes']);
+  const u = r.porGate.get('undeclared-changes').get('claude-opus-5-5');
+  assert.deepStrictEqual([u.decidio, u.bloqueo, u.paso], [2, 1, 1]);
+  const e = r.porGate.get('red-test-edit').get('claude-opus-5-5');
+  assert.deepStrictEqual({ decidio: e.decidio, bloqueo: e.bloqueo, aviso: e.aviso, paso: e.paso, sinDecision: e.sinDecision },
+    { decidio: 3, bloqueo: 1, aviso: 1, paso: 1, sinDecision: 2 });
+  assert.match(filaDe(r.md, 'red-test-edit', 'claude-opus-5-5'), /\| 1 \| 2 \|$/);
+});
+
 function escribirClasificacion(t, entradas) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'clasif-'));
   t.after(() => fs.rmSync(d, { recursive: true, force: true }));
