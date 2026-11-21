@@ -3545,12 +3545,18 @@ function cmdTestsFailed(argv) {
     const porRepeticiones = constanciaVerde && !!opt('--full-suite-by') && !roja && otrasRojas.length === 0 && quedan.length === 0 && ajenas.length === 0
       && /^red\b/.test(String((marker.checks || {}).tests)) && (marker.checksProvenance || {}).tests === 'test-gate'
       && Date.parse((marker.checksAt || {}).tests) <= Date.parse(propia.at);
-    // con lo guardado de la completa roja, la repetición verde se suma con la foto de la carpeta en que corrió
+    // con lo guardado de la completa roja, la repetición se suma con la foto de la carpeta en que corrió: la verde, y la
+    // roja que el juez perdonó, con su falla (el juez la pasó a `inherited.suites` del resumen de la suite sola)
     if (roja && opt('--summary') && opt('--tree')) {
       try {
         const sola = JSON.parse(fs.readFileSync(opt('--summary'), 'utf8'));
         const entry = (sola.suites || [])[0] || null;
-        if (entry && entry.exit === 0) roja.hash = ff.addRepeat(roja.dir, ruta, { tree: opt('--tree'), entry, lcovFile: opt('--coverage-file') });
+        const heredada = argv.includes('--inherited') && entry && entry.exit !== 0
+          ? ((sola.inherited && sola.inherited.suites) || []).find((x) => x && x.entrada && x.entrada.ruta === ruta) || null : null;
+        if (heredada) {
+          const { measured_on: _medida, ...falla } = heredada;
+          roja.hash = ff.addRepeat(roja.dir, ruta, { tree: opt('--tree'), entry, lcovFile: opt('--coverage-file'), falla });
+        } else if (entry && entry.exit === 0) roja.hash = ff.addRepeat(roja.dir, ruta, { tree: opt('--tree'), entry, lcovFile: opt('--coverage-file') });
       } catch (e) { process.stderr.write(`[test-gate] ⚠️  no pude sumar la repetición a lo guardado (${e.message}): la completa va a correr entera\n`); }
     }
     marker.testsFailed = [...ajenas, ...quedan];

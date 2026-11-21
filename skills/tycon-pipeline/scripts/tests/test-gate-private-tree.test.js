@@ -650,7 +650,8 @@ function labTrasMain({ publicoEnRama = false } = {}) {
   escribir(lab.priv, 'lib/priv.js', 'module.exports = 1;\n');
   escribir(lab.priv, 'lib/trae.js', 'module.exports = 1;\n');
   escribir(lab.priv, 'scripts/tests/historia.test.js', suite('historia', 'lib/priv.js'));
-  escribir(lab.priv, 'scripts/tests/falla.test.js', suite('falla', 'lib/priv.js', "if (fs.existsSync(process.env.LAB_STATE + '/roja')) process.exit(1);\n"));
+  // roja sólo con el cambio de la historia: en los dos main (la base del juez de heredados en el árbol armado) sale verde
+  escribir(lab.priv, 'scripts/tests/falla.test.js', suite('falla', 'lib/priv.js', "if (fs.existsSync(process.env.LAB_STATE + '/roja') && require('../../lib/priv.js') === 2) process.exit(1);\n"));
   escribir(lab.priv, 'scripts/tests/trae.test.js', suite('trae', 'lib/trae.js'));
   escribir(lab.pub, 'scripts/tests/otra.test.js', `${suite('otra', 'scripts/lib/otra.js')}if (require('../lib/otra.js') < 1) process.exit(1);\n`);
   escribir(lab.pub, 'scripts/tests/pub-lib.test.js', `${suite('pub-lib', 'scripts/lib/pub-lib.js')}if (require('../lib/pub-lib.js') < 1) process.exit(1);\n`);
@@ -1116,4 +1117,57 @@ test('T21c SavedGreen_UnknownTouched_MustMeasure @story-8.279 @ac-32 — sin sab
   assert.strictEqual(mustMeasureFrom(con('no-se.json', { known: false })), true);
   assert.strictEqual(mustMeasureFrom(con('marca.json', { known: true, must_measure: true })), true);
   assert.strictEqual(mustMeasureFrom(con('conocido.json', { known: true, files: ['docs/x.md'] })), false);
+});
+
+// ── Un caso que la foto no conoce, medido en los dos main ───────────────────────────────────────────────────────────
+// El juez de heredados en el árbol armado: sin la foto (o con un caso que la foto no tiene), la base es el árbol armado
+// de los dos origin/main, medido en el momento. La suite del público prueba `pub-lib.js`: en main devuelve `enMain`.
+function labDosMain({ enMain, conOrigenPublico = true }) {
+  const lab = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  escribir(lab.pub, 'scripts/tests/pub-lib.test.js',
+    "if (require('../lib/pub-lib.js') !== 1) { console.log('✗ caso rojo'); process.exit(1); } console.log('ok pub-lib');\n");
+  escribir(lab.pub, 'scripts/lib/pub-lib.js', `module.exports = ${enMain};\n`);
+  git(lab.pub, 'add', '-A');
+  git(lab.pub, 'commit', '-q', '-m', 'main de hoy');
+  git(lab.priv, 'update-ref', 'refs/remotes/origin/main', 'main');
+  if (conOrigenPublico) git(lab.pub, 'update-ref', 'refs/remotes/origin/main', 'main');
+  // la rama de la historia rompe la suite en el disco (el portón ya la vio roja)
+  escribir(lab.pub, 'scripts/lib/pub-lib.js', 'module.exports = 7;\n');
+  const resumen = path.join(lab.raiz, 'suites.json');
+  fs.writeFileSync(resumen, JSON.stringify({ suites: [{ ruta: path.join(lab.raiz, 'arbol', 'scripts', 'tests', 'pub-lib.test.js'), exit: 1 }],
+    fallas: [{ ruta: path.join(lab.raiz, 'arbol', 'scripts', 'tests', 'pub-lib.test.js'), entrada: { raiz: 'arnes', ruta: 'tests/pub-lib.test.js' }, casos: ['✗ caso rojo'] }],
+    ausentes: [] }));
+  return { lab, resumen };
+}
+function juez({ lab, resumen }) {
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'inherited-reds.js'), 'apply', lab.priv, resumen,
+    '--assembled', '--private', lab.priv, '--public', lab.pub], { encoding: 'utf8', cwd: lab.priv, env: entorno(lab.home), timeout: 120000 });
+  return { status: r.status, out: `${r.stdout}\n${r.stderr}`, resumen: JSON.parse(fs.readFileSync(resumen, 'utf8')) };
+}
+
+test('T23 PrivateGate_NewCase_MeasuredInBase @story-8.279 @ac-35 — en el árbol armado, un caso que la foto no conoce se mide en los dos main: rojo ahí avisa, verde ahí frena', () => {
+  // 🔴 rojo si: el árbol armado sigue sin medir la base («mezcla dos repos») → una deuda que vence hoy frena un portón
+  //    que no la trajo; o si perdona sin medir → un caso de la historia pasa como heredado.
+  const rojo = juez(labDosMain({ enMain: 2 }));
+  assert.equal(rojo.status, 0, rojo.out);
+  assert.match(rojo.out, /roja también en la base/, rojo.out);
+  assert.equal(rojo.resumen.inherited.suites[0].measured_on, 'base', JSON.stringify(rojo.resumen.inherited));
+  assert.deepEqual(rojo.resumen.fallas, []);
+  const verde = juez(labDosMain({ enMain: 1 }));
+  assert.equal(verde.status, 1, verde.out);
+  assert.match(verde.out, /verde en la base: el rojo es del cambio/, verde.out);
+  assert.equal(verde.resumen.fallas.length, 1, JSON.stringify(verde.resumen));
+});
+
+test('T23 PrivateGate_NewCase_BaseUnreadable_Blocks @story-8.279 @ac-35 — sin origin/main en el público no se perdona nada, y el motivo dice qué repo', () => {
+  // 🔴 rojo si: sin poder armar los dos main se perdona igual, o el motivo no dice por qué.
+  const r = juez(labDosMain({ enMain: 2, conOrigenPublico: false }));
+  assert.equal(r.status, 1, r.out);
+  assert.match(r.out, /no medido: no pude armar los dos main \(el público .* no tiene origin\/main\)/, r.out);
+  // sin las raíces de los dos repos, el «no medido» de antes
+  const s = labDosMain({ enMain: 2 });
+  const viejo = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'inherited-reds.js'), 'apply', s.lab.priv, s.resumen, '--assembled'],
+    { encoding: 'utf8', cwd: s.lab.priv, env: entorno(s.lab.home), timeout: 60000 });
+  assert.equal(viejo.status, 1, viejo.stderr);
+  assert.match(viejo.stderr, /mezcla dos repos/, viejo.stderr);
 });
