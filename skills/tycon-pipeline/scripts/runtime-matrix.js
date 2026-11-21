@@ -339,17 +339,32 @@ function mtimeMs(f) { try { return fs.statSync(f).mtimeMs; } catch { return 0; }
 const EXTENSIONES_DE_CARGA = ['.js', '.json', '.ts', '.tsx', '.mjs', '.cjs', '.jsx'];
 
 /**
- * El texto sin sus comentarios. Los textos entre comillas quedan enteros: un `//` adentro de uno (una dirección, una
- * ruta) no es un comentario, y no se lleva lo que sigue en el renglón.
+ * El texto sin sus comentarios. Los textos entre comillas y las expresiones regulares quedan enteros: un `//` o una
+ * comilla adentro de uno (una dirección, una ruta, `/"/g`) no es un comentario ni abre un texto.
  */
 function sinComentariosDe(texto) {
   let out = '';
   let i = 0;
+  // una `/` abre una expresión regular donde no puede ir una división: al principio o después de un operador
+  const abreRegex = () => { const previo = out.trimEnd(); return !previo || /[(,=:[!&|?{};+\-*%<>~^]$|\b(?:return|typeof|case|in|of)$/.test(previo); };
   while (i < texto.length) {
     const c = texto[i];
     const d = texto[i + 1];
     if (c === '/' && d === '/') { while (i < texto.length && texto[i] !== '\n') i += 1; continue; }
     if (c === '/' && d === '*') { const fin = texto.indexOf('*/', i + 2); i = fin < 0 ? texto.length : fin + 2; continue; }
+    if (c === '/' && abreRegex()) {
+      let j = i + 1;
+      let clase = false;
+      while (j < texto.length && texto[j] !== '\n' && (clase || texto[j] !== '/')) {
+        if (texto[j] === '\\') j += 1;
+        else if (texto[j] === '[') clase = true;
+        else if (texto[j] === ']') clase = false;
+        j += 1;
+      }
+      out += texto.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
     if (c === "'" || c === '"' || c === '`') {
       let j = i + 1;
       while (j < texto.length && texto[j] !== c && !(c !== '`' && texto[j] === '\n')) j += texto[j] === '\\' ? 2 : 1;
@@ -386,13 +401,18 @@ function codigoQueCarganLasPruebas(codeFiles, sid, warnings) {
     const criterios = [...new Set([...texto.matchAll(/@ac-(\d+)\b/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
     // la raíz desde la que se nombra la prueba: la ruta del aviso del archivo cargado se cuenta desde la misma
     const raiz = f.abs.endsWith(f.rel) ? f.abs.slice(0, -f.rel.length) : path.dirname(f.abs);
-    // una carga en un comentario no es una carga: se leen los literales del texto entero, y lo no literal sin comentarios
+    // una carga en un comentario no es una carga, y un comentario adentro de la llamada no la esconde: todo se lee sin
+    // comentarios. Una llamada cuyo primer argumento no es un texto entero (una variable, una plantilla, una suma de
+    // textos) es una carga que no se puede seguir
     const sinComentarios = sinComentariosDe(texto);
-    let dudosa = /\b(?:require(?:\.resolve)?|import)\s*\(\s*[^'"\s)]/.test(sinComentarios);
-    const literales = [
-      ...[...texto.matchAll(/\b(?:require(?:\.resolve)?|import)\s*\(\s*(['"])([^'"\n]*)\1\s*[,)]/g)].map((m) => m[2]),
-      ...[...texto.matchAll(/(?:^|[;\n])\s*(?:import|export)\s+(?:[^'";]*?\s+from\s+)?(['"])([^'"\n]*)\1/g)].map((m) => m[2]),
-    ];
+    let dudosa = false;
+    const literales = [];
+    for (const m of sinComentarios.matchAll(/\b(?:require(?:\.resolve)?|import)\s*\(/g)) {
+      const literal = /^\s*(['"])([^'"\n]*)\1\s*[,)]/.exec(sinComentarios.slice(m.index + m[0].length));
+      if (literal) literales.push(literal[2]);
+      else dudosa = true;
+    }
+    for (const m of sinComentarios.matchAll(/(?:^|[;\n{}])\s*(?:import|export)\s+(?:[^'";]*?\s+from\s+)?(['"])([^'"\n]*)\1/g)) literales.push(m[2]);
     for (const carga of new Set(literales)) {
       // relativo: `./…`, `../…`, y también `.` y `..` solos (cargan su index)
       if (!/^\.\.?(\/|$)/.test(carga)) continue;
