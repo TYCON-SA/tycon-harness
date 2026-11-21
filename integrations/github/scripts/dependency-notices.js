@@ -106,7 +106,7 @@ function crearGh({ cmd, tmp }) {
       args.push('--input', f);
     }
     const [exe, pre] = /\.js$/i.test(cmd) ? [process.execPath, [cmd]] : [cmd, []];
-    const r = spawnSync(exe, [...pre, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 120000, env: process.env });
+    const r = spawnSync(exe, [...pre, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 120000, env: process.env, windowsHide: true });
     if (r.error && r.error.code === 'ENOENT') throw new NoSePuedeIntentar(`no se pudo ejecutar ${cmd}: ${r.error.message}`);
     if (r.error) return { ok: false, http: null, motivo: `${cmd} no terminó (${r.error.message})` };
     let valor = null;
@@ -557,7 +557,7 @@ const escribirJsonAtomico = (archivo, obj) => {
 function comandoGh() { return process.env.TYCON_GH_CMD || 'gh'; }
 function chequearGh(cmd) {
   const [exe, pre] = /\.js$/i.test(cmd) ? [process.execPath, [cmd]] : [cmd, []];
-  const v = spawnSync(exe, [...pre, '--version'], { encoding: 'utf8', timeout: 60000 });
+  const v = spawnSync(exe, [...pre, '--version'], { encoding: 'utf8', timeout: 60000, windowsHide: true });
   return v.error || v.status !== 0 ? `\`${cmd} --version\` no responde (${v.error ? v.error.message : `salió ${v.status}`})` : null;
 }
 const hayToken = () => !!(process.env.GH_TOKEN || process.env.GITHUB_TOKEN);
