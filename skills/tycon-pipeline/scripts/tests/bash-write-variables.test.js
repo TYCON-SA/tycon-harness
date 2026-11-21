@@ -488,7 +488,23 @@ test('T34b OpenSinModoDeEscritura_NoEsEscritura', () => {
       porArchivo("from pathlib import Path; Path(sys.argv[1]).open('w').write('x')"),
       `F=specs/story-x.md; python3 -c "open('$F', encoding='utf-8', mode='w').write('x')"`,
       `F=specs/story-x.md; python3 -c "m='w'; open('$F', m).write('x')"`,
+      // el método con un blanco antes de `open`, los modos por palabra clave de os.open y el `::Open(` de .NET
+      porArchivo("from pathlib import Path; Path(sys.argv[1]). open('w').write('x')"),
+      porArchivo("import os; os.open(path=sys.argv[1], flags=os.O_WRONLY)"),
+      `for f in specs/*.md; do python3 -c "import os; os.open('specs/story-x.md', flags=os.O_WRONLY)" "$f"; done`,
+      `for f in specs/*.md; do pwsh -c "[IO.File]::Open(\\"$f\\", [IO.FileMode]::Create)"; done`,
+      // las comillas escapadas del shell, sobre una historia y sobre una constancia; los modos que no son `w` ni `a`
+      `python3 -c "open(\\"specs/story-x.md\\", \\"w\\").write('x')"`,
+      `python3 -c "open(\\".github/control-changes/n.md\\", \\"w\\").write('x')"`,
+      `python3 -c "open('.github/control-changes/n.md', 'r+').write('x')"`,
+      `python3 -c "open('.github/control-changes/n.md', encoding='utf-8', mode='x').write('x')"`,
     ]) assert.notEqual(freno(c), '', c);
+    // leer una constancia, o un archivo con su modo de lectura entre comillas escapadas, no es escribirlo
+    for (const c of [
+      `python3 -c "print(open('.github/control-changes/n.md').read())"`,
+      `python3 -c "import sys; print(open(sys.argv[1], \\"r\\").read())" specs/story-x.md`,
+      porArchivo("print(open(file=sys.argv[1], errors='replace').read())"),
+    ]) assert.equal(freno(c), '', c);
   });
 });
 
