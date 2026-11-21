@@ -23,7 +23,8 @@
  *                       prueba, y la casa de juguete
  *   conVentana(env, { sesionEn: '<archivo>' }) → al salir, el guion deja en ese archivo su variable de sesión
  *   conVentana(env, { via: 'click' }) → la firma queda con esa vía (`click`: el click en el cuadro; `mensaje`: un
- *                       «aprobado» escrito) en vez de `ventana`
+ *                       «aprobado» escrito) en vez de `ventana`. Con `automatica`, la firma de trámite: el guion la
+ *                       recibe como la delegación, con `automatica: true` (con `delegadaPor`, a pedido de esa sesión)
  *   arbolDelFreno() / arbolDelGuion(casa, cmd) → los árboles de procesos de la prueba: el del freno, para `decidir`
  *                       (pid 201), y el del guion que corre `cmd` (pid 301)
  */
@@ -115,7 +116,9 @@ function darPorPasada(ow) {
     // la delegación firma para otra sesión desde la coordinadora; sin ella, el pedido para otra sesión va por el de verdad
     if (pedida && o.propia && pedida !== o.propia && !delegadaPor) return exigir(o);
     const destino = pedida || o.propia || null;
-    const via = delegadaPor ? 'delegacion' : process.env.WINDOW_PASSED_VIA || 'ventana';
+    // la firma de trámite la anota el freno con `automatica` y el guion la recibe como la delegación, marcada
+    const automatica = process.env.WINDOW_PASSED_VIA === 'automatica';
+    const via = delegadaPor && !automatica ? 'delegacion' : process.env.WINDOW_PASSED_VIA || 'ventana';
     const sesion = delegadaPor || destino;
     // como la ventana de verdad: lo que el guion comprueba antes de firmar, y los campos que suma a la firma
     if (o.antes) {
@@ -123,6 +126,7 @@ function darPorPasada(ow) {
       if (n && n.codigo) return { codigo: n.codigo, motivo: n.motivo };
     }
     ow.firmar({ firma: o.firma, via, sesion, destino, resumen: o.resumen || '', casa: os.homedir(), anotar: o.anotar, extra: o.extra });
+    if (automatica) return { codigo: 0, via: 'delegacion', automatica: true, destino, sesion };
     return { codigo: 0, via, destino, sesion };
   };
   porPasada.porPasada = true;

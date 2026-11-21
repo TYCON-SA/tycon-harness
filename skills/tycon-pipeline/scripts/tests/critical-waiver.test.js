@@ -322,6 +322,51 @@ test('WaiveCritical_PorDelegacion_DiceQueFirmoLaCoordinadora @story-8.139 @ac-30
   assert.deepEqual([v.via, v.tipo], ['waive-critical (ventana)', 'manual']);
 });
 
+// WaiveCritical_DeTramite_LaVeWriteFindings
+// 🔴 Falla con: la exención que el arnés da de trámite (el perfil delega critical-waiver) sale bien, pero su constancia
+//    no nombra a nadie y write-findings la rechaza con «no nombra a la persona que dio el ok».
+test('WaiveCritical_DeTramite_LaVeWriteFindings: la exención de trámite nombra a la coordinadora y a la persona, y write-findings la acepta', () => {
+  const lab = laboratorio();
+  designarCoordinadora(lab.home);
+  const args = ['waive-critical', '--rule', CRITICO.rule_id, '--file', CRITICO.file, '--reason', 'falso positivo del humo', '--approved-by', 'Dueño de Prueba'];
+  const r = spawnSync(process.execPath, [MARKER, ...args], { cwd: lab.repo, encoding: 'utf8', env: conVentana(lab.env, { delegadaPor: 's-coord', via: 'automatica' }), detached: true });
+  assert.equal(r.status, 0, r.stderr);
+  const [c] = lineas(path.join(lab.runDir, 'critical-waivers.jsonl'));
+  assert.equal(c.tipo, 'automatica');
+  assert.match(c.quien, /coordinadora \(sesión s-coord\)/);
+  assert.match(c.delegacion, /Dueño de Prueba/);
+  assert.match(c.delegacion, /perfil del equipo/);
+  assert.match(c.via, /firma de trámite/);
+  const w = lab.writeFindings([CRITICO]);
+  assert.equal(w.status, 0, `${w.stdout}${w.stderr}`);
+  const { verificarExenciones } = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  assert.equal(verificarExenciones(lab.runDir, { home: lab.home, env: lab.env, story: '9.91' }).faltan.length, 0);
+});
+
+// La constancia de trámite de antes, sin el nombre de quien delegó, sigue sin valer (y dice cómo se arregla).
+test('Constancia_DeTramiteSinNombre_NoVale: una de trámite sin a nombre de quién no cuenta', () => {
+  const { constanciaInvalida } = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  const base = { rule_id: 'X-C1', tipo: 'automatica', quien: 'arnés (firma de trámite)', via: 'waive-critical (firma de trámite · arnés)', ts: 't' };
+  assert.match(constanciaInvalida(base), /no nombra a la persona/);
+  assert.equal(constanciaInvalida({ ...base, delegacion: 'Dueño, por el perfil del equipo' }), null);
+});
+
+// WriteFindings_TresDeLaMismaRegla_UnaSolaExencion
+// 🔴 Falla con: tres hallazgos de la misma regla en el mismo archivo salen como tres renglones iguales, y quien los lee
+//    pide tres exenciones cuando una alcanza.
+test('WriteFindings_TresDeLaMismaRegla_UnaSolaExencion: los críticos de la misma regla y archivo se nombran juntos y una exención los cubre', () => {
+  const lab = laboratorio();
+  const tres = [10, 20, 30].map((line) => ({ ...CRITICO, line }));
+  const r = lab.writeFindings(tres);
+  assert.notEqual(r.status, 0);
+  const salida = `${r.stdout}${r.stderr}`;
+  assert.equal(salida.split(`· ${CRITICO.rule_id} en ${CRITICO.file}`).length - 1, 1, salida);
+  assert.match(salida, /3 hallazgos: una exención los cubre/);
+  assert.equal(waive(lab, []).status, 0);
+  const w = lab.writeFindings(tres);
+  assert.equal(w.status, 0, `${w.stdout}${w.stderr}`);
+});
+
 test('WaiveCritical_SinConversacion_OfreceLaTerminal @story-8.63 @ac-2', () => {
   const lab = laboratorio();
   fs.rmSync(path.join(lab.home, '.claude', 'projects'), { recursive: true, force: true });
