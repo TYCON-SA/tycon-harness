@@ -89,6 +89,11 @@ test('PrUpdate_BranchUnknown_TrueStopsFalseGoes — sin la rama (pedido que no e
     ['la misma organización, escrita', (v) => upd(7, v, '--org https://dev.azure.com/acme ')],
     ['cambia de carpeta', (v) => `cd /tmp && ${upd(7, v)}`],
     ['sin detección', (v) => upd(7, v, '--detect false ')],
+    ['dos organizaciones', (v) => upd(7, v, '--org https://dev.azure.com/acme --organization https://dev.azure.com/otra ')],
+    ['otra carpeta con env -C', (v) => `env -C /tmp ${upd(7, v)}`],
+    ['otra carpeta entre llaves', (v) => `{ cd /tmp; ${upd(7, v)}; }`],
+    ['cd en otra línea', (v) => `echo x\ncd /tmp\n${upd(7, v)}`],
+    ['una variable delante', (v) => `AZURE_DEVOPS_EXT_ORG=otra ${upd(7, v)}`],
   ];
   for (const [nombre, c] of casos) {
     const conTrue = frenar(m, c('true'));
@@ -101,6 +106,19 @@ test('PrUpdate_BranchUnknown_TrueStopsFalseGoes — sin la rama (pedido que no e
     assert.match(conTrue.err, /no pude leer la rama del pedido/, `${nombre}: dice que no pudo leerla`);
     assert.strictEqual(conFalse.code, 0, `${nombre}: false pasa`);
   }
+});
+
+// 🔴 Falla con: un freno que pregunta en GitHub la rama de un pedido que az busca en Azure DevOps.
+test('PrUpdate_OriginOnAnotherPlatform_NoBranch — con el origin en otra plataforma no se pregunta: true frena', () => {
+  const m = mundo();
+  spawnSync('git', ['-C', m.repo, 'remote', 'set-url', 'origin', 'https://github.com/acme/backend.git']);
+  // un gh de mentira que sí contesta el pedido 7 desde una rama efímera: sin el chequeo, el freno la tomaría
+  const estado = path.join(tmp('gh-'), 'estado.json');
+  fs.writeFileSync(estado, JSON.stringify({ pulls: { 'acme/backend': [{ number: 7, state: 'open', title: 'a', head: { ref: 'story/7', sha: 'a1' }, base: { repo: { full_name: 'acme/backend' } }, user: { login: 'x', type: 'User' } }] } }));
+  Object.assign(m.env, { TYCON_GH_CMD: path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-gh.js'), FAKE_GH_STATE: estado });
+  const r = frenar(m, upd(7, 'true'));
+  assert.strictEqual(r.code, 2);
+  assert.match(r.err, /no pude leer la rama del pedido/);
 });
 
 test('PrUpdate_PublishDraft_UsesTheBranch — publicar un borrador de una rama efímera con true pasa', () => {

@@ -8,7 +8,10 @@
  * —sin remoto de una plataforma, sin credencial, otro repo, se acabó el tiempo— es `null` con su motivo: quien llama
  * decide como si no la tuviera.
  *
- *   ramaDeOrigen({ number, cwd, org, timeoutMs, env }) → { rama: string|null, motivo: string|null }
+ *   ramaDeOrigen({ number, cwd, org, platform, timeoutMs, env }) → { rama: string|null, motivo: string|null }
+ *
+ * `platform`: la plataforma a la que va el comando. Si el `origin` es de otra, no se pregunta: el pedido con ese número
+ * sería de otro lado.
  *
  * `org`: la organización que nombra el comando, si nombra una. Si no se ve que es la del remoto, no se pregunta: el
  * mismo número puede ser otro pedido en otra organización.
@@ -27,7 +30,7 @@ function mismaOrg(texto, org) {
   return Boolean(o) && (t === o || t.endsWith(`/${o}`));
 }
 
-function ramaDeOrigen({ number, cwd, org = null, timeoutMs = TOPE_MS, env = process.env } = {}) {
+function ramaDeOrigen({ number, cwd, org = null, platform = null, timeoutMs = TOPE_MS, env = process.env } = {}) {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { rama: null, motivo: 'el número del pedido no se puede leer' };
   let repo;
@@ -41,6 +44,7 @@ function ramaDeOrigen({ number, cwd, org = null, timeoutMs = TOPE_MS, env = proc
     return { rama: null, motivo: `no pude leer el remoto: ${(e && e.message) || e}` };
   }
   if (!repo) return { rama: null, motivo: 'el repo de esta carpeta no es de una plataforma conocida' };
+  if (platform && repo.platform !== platform) return { rama: null, motivo: `el origin de esta carpeta es de ${repo.platform}, no de la plataforma del comando` };
   if (org !== null && !mismaOrg(org, repo.org)) {
     return { rama: null, motivo: `no veo que la organización del comando (${org}) sea la del repo de esta carpeta (${repo.org})` };
   }

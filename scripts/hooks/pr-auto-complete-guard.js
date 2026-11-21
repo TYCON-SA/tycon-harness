@@ -159,15 +159,22 @@ function constancia(tipo, texto, comando) {
 }
 
 // El número de un pedido vale en una organización: la rama se pregunta en la del repo de la carpeta, y sólo sirve si az va
-// a esa misma. No va si el comando cambia de carpeta antes (otro repo), si apaga la detección (`--detect false`: az toma la
-// organización configurada por defecto) o si nombra una organización que no se puede leer. Una `--org` escrita se
-// compara después con la del remoto (`orgDelComando`).
+// a esa misma. Se pregunta sólo en el caso simple: el comando entero es un único `az …` que empieza por `az` (sin cambiar
+// de carpeta, sin variables delante, sin otra línea ni agrupación), con a lo sumo una organización escrita y la detección
+// prendida. Cualquier otra forma puede llevar az a otro repo u otra organización: no se pregunta. Una organización
+// escrita se compara después con la del remoto (`orgDelComando`).
 function fueraDelRepo(seg) {
-  if (/(^|[;&|(]\s*)(cd|pushd|popd)(\s|$)/.test(cmd)) return 'el comando cambia de carpeta: el pedido puede ser de otro repo';
+  if (az.segmentos(cmd).length !== 1 || /[\n{}()`]|\$\(/.test(cmd) || !/^\s*az\s/.test(cmd)) {
+    return 'el comando no es un único az: puede correr en otra carpeta o con otra organización';
+  }
   const detect = az.valorDe(seg, 'detect');
   if (detect && (!detect.literal || !az.esCierto(detect.texto))) return 'con --detect apagado az toma la organización por defecto, que puede ser otra';
-  const org = az.valorDe(seg, 'org') || az.valorDe(seg, 'organization');
-  if (org && !org.literal) return 'la organización del comando no se puede leer';
+  const org = az.valorDe(seg, 'org');
+  const organization = az.valorDe(seg, 'organization');
+  // `--org` es una abreviatura de `--organization`: cada lectura da la última de las dos, como az. Si difieren, el comando
+  // nombra dos y no se sabe cuál toma
+  if (org && organization && org.texto !== organization.texto) return 'el comando nombra dos organizaciones';
+  if ((org || organization) && !(org || organization).literal) return 'la organización del comando no se puede leer';
   return null;
 }
 /** La organización que nombra el comando (`--org`/`--organization` escrita), o null si no nombra ninguna. */
@@ -223,7 +230,7 @@ for (const seg of az.segmentos(cmd)) {
     if (borrar && borrar.literal && id && id.literal && /^\d+$/.test(id.texto)) {
       const fuera = fueraDelRepo(seg);
       const leida = fuera ? { rama: null, motivo: fuera }
-        : require(path.join(__dirname, '..', 'lib', 'pr-source-branch.js')).ramaDeOrigen({ number: id.texto, cwd: carpeta, org: orgDelComando(seg) });
+        : require(path.join(__dirname, '..', 'lib', 'pr-source-branch.js')).ramaDeOrigen({ number: id.texto, cwd: carpeta, org: orgDelComando(seg), platform: 'azure' });
       ramaDeOrigen = leida.rama;
       // sin la rama, `false` pasa igual que antes: el aviso sólo cuando la falta es por no poder leerla
       if (!leida.rama && az.esCierto(borrar.texto)) console.error(`${TAG} no pude leer la rama del pedido ${id.texto} (${leida.motivo}): juzgo --delete-source-branch sin ella.`);
