@@ -672,6 +672,17 @@ ejecución del pipeline abierta va sin texto, `marker.js doing --waiting-for "<q
 dice qué espera. Cualquier otra nota ahí `marker.js` la niega: el paso ya dice qué hace y a qué hora termina, y una nota
 encima mostraría la historia en pausa. Dejar la historia por otro trabajo es otra sesión.
 
+**La detención del modo autónomo llega como un renglón.** Cuando el control de cierre detiene una sesión autónoma (el tope
+de vueltas o una vuelta sin progreso), anota la hora en su marcador y deja en la lista del dueño un pedido con la firma
+`autonomy-resume`: «¿esta sesión vuelve al modo autónomo?», con el motivo, la hora y los fallos tal como quedaron. La
+coordinadora lo pasa con `owner-next` como cualquier otro; lo contesta sólo el dueño, con su click (en la pestaña de la
+coordinadora o en la de la sesión) o desde su terminal (`marker.js resume-autonomy --terminal --for-session <sesión>`,
+que deja un permiso). La decisión la toma la sesión detenida con `marker.js resume-autonomy`: el mensaje que la
+coordinadora le manda sólo la despierta, y si el comando sale 1 la sesión sigue detenida. Un «No» (`owner-reject`) queda
+anotado y la sesión no vuelve a preguntar sola por esa detención; sólo `resume-autonomy --ask-again` la pide de nuevo.
+Mientras está detenida, ni `set-autonomous true`, ni `set` con otra historia, ni cerrarla sin firma, ni borrarla desde
+otra sesión son salidas. El botón de pánico (`STOP_AUTONOMY`) no deja renglón: lo levanta una persona a mano.
+
 **Una ejecución podada se recupera.** Si igual se podó («abandonada: más de N h sin tocarse»), su marcador quedó
 guardado: la sesión que la retoma corre `marker.js restore <sesión>` (la sesión podada), con la firma del dueño de
 siempre, y vuelve con sus pasos hechos y pendientes, sin repetir firmas.
@@ -699,6 +710,7 @@ con un candado, para que la oficina nunca lo lea a medias:
 node <arnés>/scripts/tools/office/board.js add titulo="Arreglo X" estado=espera grupo=Hoy   # un pendiente nuevo
 node <arnés>/scripts/tools/office/board.js set T-41 estado=curso quien=Sand nota="…"      # cambiar una fila
 node <arnés>/scripts/tools/office/board.js close T-41 [--real AAAA-MM-DDTHH:MM]           # cerrarla
+node <arnés>/scripts/tools/office/board.js drop T-41 --reason "<por qué sale>"            # sacarla sin darla por terminada
 node <arnés>/scripts/tools/office/board.js save --from <tu archivo aparte>                # el tablero entero
 node <arnés>/scripts/tools/office/board.js check                                          # validar sin escribir
 node <arnés>/scripts/tools/office/board.js due                                            # las líneas de «Te toca»
@@ -741,6 +753,35 @@ aparte para `save --from` va fuera de la carpeta de estado. Si algo lo cambió s
 
 «Terminados» es lo hecho hoy, con su hora; lo anterior, o sin `realIso`, va a la tabla «Hechos». «En curso» va por hora de
 fin: lo que sale primero arriba, lo que no tiene hora después y la coordinadora al final.
+
+Una fila que no debía estar (la escribió una prueba, por ejemplo) **no se cierra**: `close` la cuenta como trabajo hecho.
+Se saca con `board.js drop T-41 --reason "<por qué sale>"`, que la quita del tablero sin pasar por «Terminados» ni por
+«Hechos» y anota en el registro de hechos una entrada `descartada` con el número, el título, el motivo y la hora. Sacala
+también de tu archivo aparte, o el próximo `save --from` la devuelve. El número no se pierde: una fila con el mismo título
+lo recupera. Una fila con `historia` no se saca así (sale 2): se cierra con `close`, porque el tablero la volvería a crear
+mientras su sesión siga trabajando.
+
+### Abiertas: el número de historias abiertas
+
+La pared, el detalle del panel «Pendientes» y el kanban dicen
+`Abiertas: 67 · 10 en curso · 27 en espera · 30 sin comenzar`: las historias abiertas en `main` del proyecto de la
+coordinadora (el de su carpeta, por el remoto). Es el número que el dueño usa para decidir, y **la coordinadora informa
+ése**, el de `office.js --json` (`kanban.abiertas`): no lo cuenta aparte.
+
+- **Abiertas**: las historias cuyo estado está en los grupos «backlog», «en curso» o «bloqueado» del vocabulario de
+  estados (borradores y backlog incluidos), leídas de la rama principal traída. Las que no se pudieron leer no entran y se
+  dicen aparte.
+- **En curso**: tiene una ejecución con su sesión viva (de Claude o de Codex; la coordinadora no cuenta), una ejecución
+  detenida con plan firmado de las últimas 24 h, o una sesión con tarjeta que la nombra.
+- **En espera**: está en revisión o bloqueada, espera a otra historia (`depends_on:`), o está pausada hasta hoy o después.
+- **Sin comenzar**: el resto. El detalle dice cuántas tienen una parte hecha (están en `in-progress` sin nadie).
+- Debajo dice de cuándo es el dato: «Leído a las 16:20 · main traído hace 3 min». La lectura se rehace sola al minuto si
+  la rama principal de algún proyecto se movió, sin salir a la red: un `git fetch` (o un `git pull`) la actualiza.
+- Los otros proyectos van aparte, en el detalle, bajo «Otros proyectos», uno por renglón; no se suman al número.
+- Sin lectura, o de más de una hora, dice `Abiertas: sin dato`; sin coordinadora, o si su repo no es de ningún proyecto,
+  dice `Sin proyecto principal:` y el motivo. Nunca un 0 ni un número viejo.
+- **«Sin sesión» ya no suma las historias plegadas**: la columna cuenta sus tarjetas, y la línea «Historias de tus
+  proyectos · N» dice cuántas hay adentro.
 
 ### Las historias de tus proyectos
 

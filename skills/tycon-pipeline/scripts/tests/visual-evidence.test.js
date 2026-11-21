@@ -235,7 +235,8 @@ test('Matriz_CapturaDelE2E_CuentaParaSuAC — la captura de un test @ac-2 cuenta
     { title: 'abre la vista', suite: 'flujo @ac-6', results: [{ status: 'passed', attachments: [['image/png', png('f')]] }] },
   ]);
   writeGate(f, ts, 'story-9-9.spec.ts', ['la lista muestra el total @ac-2', 'el detalle abre', 'la lista y el detalle @ac-3 @ac-4',
-    'el filtro @ac-5', 'abre la vista']);
+    // el portón le suma a la prueba la marca de su describe; la captura, en cambio, va sólo por el título de la prueba
+    'el filtro @ac-5', 'abre la vista @ac-6']);
   const dest = path.join(f.dodDir, `9.9-captures-${ts}`);
   const cli = runCaptures(f, informe, dest);
   assert.equal(cli.status, 0, cli.stderr);

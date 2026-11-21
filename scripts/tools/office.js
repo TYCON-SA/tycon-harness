@@ -850,6 +850,14 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     const v = PS.view({ ...projectStories, filas: (board && board.filas) || [], nameOf: (sid) => names.get(sid) || null, wordOf: (e) => STORY_STATE_WORD[e] || e, now: nowMs });
     kanban.columnas.find((c) => c.id === 'sinEmpezar').tarjetas.push(...v.cards);
     kanban.historias = { filas: v.rows, pie: v.pie, ...(projectStories.nota ? { nota: projectStories.nota } : {}) };
+    // las historias abiertas en main: una sesión con tarjeta (la misma regla que la columna del kanban) que nombra su
+    // historia la tiene en curso, salvo la coordinadora
+    const remoteOf = projectStories.remoteOf || (() => null);
+    const coordSid = (projectStories.coordinator && projectStories.coordinator.sid) || coordinatorSid;
+    const sessionStories = agents.filter((a) => storyOfAgent.get(a) && sidOf.get(a) !== coordSid && !(coordinatorName && a.nombre === coordinatorName)
+      && (a.estado === 'firma' || (a.tipo && a.estado !== 'inactiva' && a.estado !== 'libre')))
+      .map((a) => ({ id: storyOfAgent.get(a), remote: a.carpeta ? remoteOf(a.carpeta) : null }));
+    kanban.abiertas = openStories({ ...projectStories, coordinator: projectStories.coordinator || (coordinatorSid ? { sid: coordinatorSid, cwd: null, remote: null } : null), sessionStories, nowMs });
   }
   const meta = {
     actualizado: hhmm(nowMs),
@@ -1425,6 +1433,108 @@ function doneTable(kanban) {
 }
 
 /**
+ * Lo que la cuenta de abiertas necesita de la máquina, con lo mismo que usa la coordinadora: las sesiones vivas (Claude con
+ * su proceso vivo y los hilos de Codex con actividad reciente), las ejecuciones detenidas con plan firmado, la carpeta y el
+ * remoto de la coordinadora, el remoto de cada carpeta (recordado entre fotos) y la hora del FETCH_HEAD de cada lugar, que
+ * se lee en cada foto sin correr git. coordination.js se carga acá: él carga esta oficina y no se arma un ciclo al arrancar.
+ */
+function openStoriesInputs({ home, sdir, nowMs, sessions, coordinatorSid, codexHome, remembered, problems }) {
+  const CO = require('./coordination.js');
+  const alive = new Set([...sessions].filter(([, s]) => s.alive).map(([sid]) => String(sid)));
+  for (const c of CO.codexThreads(codexHome || path.join(home, '.codex'), problems)) if (c.last && nowMs - c.last < CO.CODEX_IDLE_MS) alive.add(c.id);
+  const markers = CO.markersBySid(home, problems);
+  const nameOf = (sid) => { const s = sessions.get(sid); return (s && s.name) || String(sid).slice(0, 8); };
+  let stopped = [];
+  try { stopped = CO.stoppedRuns(home, nowMs, markers, alive, nameOf, problems); } catch (e) { problems.push(`las ejecuciones detenidas no se pudieron leer (${e.message})`); }
+  const remotes = remembered.storyRemotes || (remembered.storyRemotes = new Map());
+  const remoteOf = (dir) => {
+    if (!remotes.has(dir)) remotes.set(dir, PS.remoteKey(dir));
+    return remotes.get(dir);
+  };
+  const s = coordinatorSid ? sessions.get(coordinatorSid) : null;
+  const cwd = s && s.cwd ? s.cwd : null;
+  return {
+    alive, stopped, remoteOf,
+    coordinator: coordinatorSid ? { sid: coordinatorSid, cwd, remote: cwd ? remoteOf(cwd) : null } : null,
+    fetchedOf: (p) => (p.lugar && p.lugar.common ? PS.fetchedAt(p.lugar.common) : null),
+  };
+}
+
+// El número de abiertas: lo que dice la pantalla sin dato, y la nota de una lectura de antes de este número.
+const OPEN_NO_DATA = 'Abiertas: sin dato';
+const OPEN_OLD_READ = 'La lectura es de antes del número de abiertas: se relee en el próximo control';
+const ymdOf = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+
+/** El proyecto de la coordinadora: `{ principal }` o `{ motivo }`. Primero por su lugar de historias, después por sus repos. */
+function principalOf(proyectos, coordinator) {
+  if (!coordinator || !coordinator.sid) return { motivo: 'no hay coordinadora designada' };
+  if (!coordinator.cwd) return { motivo: 'no sé en qué carpeta trabaja la coordinadora' };
+  const remote = coordinator.remote;
+  if (!remote) return { motivo: 'no reconozco el repo de la carpeta de la coordinadora' };
+  for (const match of [(p) => p.remoto === remote, (p) => (p.repos || []).includes(remote)]) {
+    const found = proyectos.filter(match);
+    if (found.length === 1) return { principal: found[0] };
+    if (found.length > 1) return { motivo: 'más de un proyecto es del repo de la coordinadora' };
+  }
+  return { motivo: 'el repo de la coordinadora no es de ningún proyecto leído' };
+}
+
+/**
+ * Las historias abiertas en main, por proyecto y por grupo, sin leer nada: `kanban.abiertas`. Lo cuenta la foto y la
+ * página sólo dibuja sus líneas, así que `office.js --json` y la pantalla dicen el mismo número. Cada abierta cae en un
+ * solo grupo, en este orden: en curso (una ejecución de `active/` con su sesión viva, que no es la coordinadora; una
+ * detenida con plan firmado; o, en el principal, una sesión con tarjeta que la nombra), en espera (`review`, `blocked`,
+ * `pendientes` o `pausa` de hoy en adelante) y sin comenzar. Las ejecuciones se cruzan por el nombre del archivo y, si se
+ * conoce, por el remoto de su repo. Sin lectura, vieja o de antes de este número: `Abiertas: sin dato` con su nota.
+ */
+function openStories({ snap = null, nota = null, runs = [], alive = null, stopped = [], sessionStories = [], coordinator = null, remoteOf = () => null, fetchedOf = () => null, nowMs = Date.now() } = {}) {
+  if (!snap) return { linea: OPEN_NO_DATA, nota: nota || 'No pude leer los pendientes de tus proyectos' };
+  const proyectos = snap.proyectos || [];
+  if (proyectos.some((p) => !Array.isArray(p.abiertas))) return { linea: OPEN_NO_DATA, nota: OPEN_OLD_READ };
+  const coordSid = coordinator && coordinator.sid ? String(coordinator.sid) : null;
+  const live = runs.filter((r) => r.activo && r.sessionId && alive && alive.has(String(r.sessionId)) && String(r.sessionId) !== coordSid)
+    .map((r) => ({ archivo: r.archivo, remote: r.repoPath ? remoteOf(r.repoPath) : null }));
+  const halted = (stopped || []).map((s) => ({ archivo: s.archivo, remote: s.repoPath ? remoteOf(s.repoPath) : null }));
+  const today = ymdOf(nowMs);
+  const leidoAt = snap.at;
+  const pick = principalOf(proyectos, coordinator);
+  const count = (p, isPrincipal) => {
+    const ofThis = (remote) => !remote || (p.repos || []).includes(remote);
+    const runsHere = (list, a) => list.some((r) => r.archivo === a.archivo && ofThis(r.remote));
+    let enCurso = 0; let enEspera = 0; let sinComenzar = 0; let conParte = 0;
+    for (const a of p.abiertas) {
+      if (runsHere(live, a) || runsHere(halted, a) || (isPrincipal && sessionStories.some((s) => String(s.id) === String(a.id) && ofThis(s.remote)))) enCurso += 1;
+      else if (a.estado === 'review' || a.estado === 'blocked' || (Array.isArray(a.pendientes) && a.pendientes.length) || (a.pausa && a.pausa >= today)) enEspera += 1;
+      else { sinComenzar += 1; if (a.estado === 'in-progress') conParte += 1; }
+    }
+    const total = p.abiertas.length;
+    const traidoAt = fetchedOf(p) || p.traidoAt || null;
+    const grupos = `${enCurso} en curso · ${enEspera} en espera · ${sinComenzar} sin comenzar`;
+    const linea = `Abiertas: ${total} · ${grupos}`;
+    const fetched = Date.parse(traidoAt);
+    const hora = `Leído a las ${hhmm(Date.parse(leidoAt))} · ${p.deTuCopia ? 'de tu copia' : Number.isFinite(fetched) ? `main traído ${PS.ago(nowMs - fetched)}` : 'no sé cuándo se trajo main'}`;
+    const avisos = [];
+    const unread = p.sinLeer ? (p.sinLeer === 1 ? '1 no se pudo leer' : `${p.sinLeer} no se pudieron leer`) : null;
+    if (unread) avisos.push(unread);
+    if (p.deTuCopia) avisos.push('de tu copia');
+    return {
+      nombre: p.nombre, total, enCurso, enEspera, sinComenzar, conParte, leidoAt, traidoAt, commit: p.commit == null ? null : p.commit,
+      // las no leídas no entran en el número: la línea de la hora lo dice, en la pared, el detalle y el kanban («de tu
+      // copia» ya va en ella)
+      linea, hora: unread ? `${hora} · ${unread}` : hora, detalle: conParte ? `${linea} (${conParte} con una parte hecha)` : linea, avisos,
+      renglon: [`${p.nombre}: ${total} abiertas · ${grupos}`, ...avisos].join(' · '),
+    };
+  };
+  const otros = proyectos.filter((p) => p !== pick.principal).map((p) => count(p, false));
+  if (!pick.principal) {
+    const why = `Sin proyecto principal: ${pick.motivo}`;
+    return { linea: why, nota: why, otros };
+  }
+  const principal = count(pick.principal, true);
+  return { principal, otros, linea: principal.linea, hora: principal.hora };
+}
+
+/**
  * Las tablas, sin leer nada: salen enteras de las tarjetas del kanban ya calculado, una fila por tema. `temas` es lo guardado;
  * `sinModelo` y `prs`, el respaldo por títulos de pedidos; `nota`, lo que la tabla tiene que decir una vez del modelo.
  */
@@ -1434,8 +1544,8 @@ function buildTables({ kanban, nowMs, temas = {}, sinModelo = false, prs = [], n
   const cards = (id) => column(id).filter((c) => c.local !== true);
   const entriesOf = (ids) => ids.flatMap(([id]) => cards(id).map((card) => ({ id, card })));
   const stories = kanban.historias || null;
-  // «En el kanban, de a uno» cuenta la columna entera, como la ve la persona: con las tarjetas de historia
-  const inKanban = (ids) => ids.map(([id, nombre]) => `${column(id).length} ${nombre.toLowerCase()}`).join(' · ');
+  // «En el kanban, de a uno» cuenta lo que dice el encabezado de cada columna: sin las historias plegadas, que tienen su número
+  const inKanban = (ids) => ids.map(([id, nombre]) => `${cards(id).length} ${nombre.toLowerCase()}`).join(' · ');
   const cross = (say) => `Agrupa por tema: una fila puede juntar varios trabajos. En el kanban, de a uno: ${say}.`;
   const armada = `Armada a las ${hhmm(nowMs)}`;
   const ctx = { temas, sinModelo, prs };
@@ -2432,6 +2542,7 @@ async function collect(opts = {}) {
   const personSessions = new Set([...sessions].filter(([, s]) => s.kind === 'interactive').map(([sid]) => String(sid)));
   // las historias de tus proyectos: lo que dejó la lectura de fondo, que la foto no espera, y las ejecuciones de esta máquina
   const projectStories = { ...PS.readSnapshot(sdir, nowMs), runs: PS.runsOfThisMachine({ stateDir: sdir, now: nowMs }) };
+  if (projectStories.snap) Object.assign(projectStories, openStoriesInputs({ home, sdir, nowMs, sessions, coordinatorSid, codexHome: opts.codexHome, remembered, problems }));
   // la ficha de cada espera, con un solo tiempo para todas; quien llama con su propio límite lo pasa en `riskUntil`
   const budget = waitCard.newBudget({ until: opts.riskUntil });
   const ownerCard = ({ row, sid }) => waitCard.card({ row, marker: waitCard.markerOf(sdir, sid), budget });
@@ -2665,4 +2776,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES };
+module.exports = { workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES, openStories };

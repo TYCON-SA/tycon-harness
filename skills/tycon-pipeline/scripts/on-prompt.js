@@ -243,6 +243,28 @@ function matches(prompt, patterns) {
 const NON_HUMAN_RE = /<task-notification>|<local-command-stdout>|<command-name>|SYSTEM NOTIFICATION - NOT USER INPUT|<system-reminder>/;
 const { prompt, sessionId, transcriptPath } = readEvent();
 if (!prompt) process.exit(0);
+
+// Una ejecución detenida por el control de cierre (`needs_human`) que despierta con un mensaje que no tipeó la persona:
+// el recordatorio de que la decisión es del dueño (lib/autonomy-decision.js). Va antes del corte de abajo porque un aviso
+// de tarea también la despierta. Fail-open: un error acá no frena el gancho.
+try {
+  // el marcador tal como está: una detención puede ser de un marcador sin historia, que readMarker no devuelve
+  const own = markerFilePath(sessionId);
+  const detenido = fs.existsSync(own) ? JSON.parse(fs.readFileSync(own, 'utf8')) : null;
+  if (detenido && detenido.needs_human === true) {
+    const sl = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-list.js'));
+    // sin archivo de sesión (Codex no lo escribe) se toma como interactiva: lo envuelto sigue sin ser de la persona, y
+    // la conversación todavía puede decir que el mensaje lo puso un programa
+    const s = sl.sesiones(os.homedir()).mapa.get(sessionId);
+    if (!sl.esDeLaPersona({ prompt, kind: s ? s.kind || 'interactive' : 'interactive', transcript: transcriptPath })) {
+      emit(require('./lib/autonomy-decision.js').recordatorio({ casa: os.homedir(), sesion: sessionId, marker: detenido }));
+    }
+  }
+} catch (e) {
+  // fail-open: no frena el gancho, pero queda anotado (no es «no había detención»)
+  try { require('./lib/story-gate-io.js').appendLog(require('./lib/state-dir.js').stateDir(os.homedir()), 'gates.log', sessionId, { repoPath: null, name: 'autonomy-reminder', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco frena */ }
+}
+
 if (NON_HUMAN_RE.test(prompt)) process.exit(0);
 
 // El self-upgrade del SessionStart hook no vive acá: reescribiría

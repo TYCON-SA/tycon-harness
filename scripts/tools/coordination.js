@@ -274,7 +274,9 @@ function stoppedRuns(home, now, markers, alive, nameOf, problems) {
     const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
     const st = front && /^status:\s*["']?([\w-]+)/m.exec(front[1]);
     if (!st || st[1] !== 'in-progress') continue;
-    out.push({ storyId: label(m.storyId), sid: x.sid, session: nameOf(x.sid), at, pruned: !x.active });
+    // el archivo y el repo: la oficina cruza la detenida con la historia por el nombre del archivo y el remoto del repo,
+    // porque el número solo se repite entre proyectos
+    out.push({ storyId: label(m.storyId), sid: x.sid, session: nameOf(x.sid), at, pruned: !x.active, archivo: path.basename(String(m.storyPath)), repoPath: m.repoPath ? String(m.repoPath) : null });
   }
   return out.sort((a, b) => a.at - b.at);
 }
@@ -3146,4 +3148,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, flags, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN,
+  // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
+  stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };

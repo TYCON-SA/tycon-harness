@@ -1390,3 +1390,84 @@ test('T21 Designar_EnPrueba_SeNiega @story-8.314 @ac-14 @ac-19', (t) => {
   assert.notStrictEqual(confirmar.code, 2, confirmar.out);
   assert.doesNotMatch(confirmar.out, /una prueba/, 'sin la marca, no la nombra');
 });
+
+// ── 8.313: sacar una fila sin darla por terminada ───────────────────────────────────────────────────────────────────
+
+const FX_8313 = require('./lib/office-fixtures.js');
+const GUIDES_8313 = path.join(__dirname, '..', '..', 'guides');
+/** Lo que la oficina arma del tablero: las tarjetas de cada columna y lo terminado otros días. */
+const photo8313 = (sdir, nowMs) => {
+  const { data } = FX_8313.buildOffice({ wip: FX_8313.wip([]), nowMs, board: office.buildBoard(JSON.parse(fs.readFileSync(boardFile(sdir), 'utf8')), { now: nowMs }) });
+  const titulos = (id) => data.kanban.columnas.find((c) => c.id === id).tarjetas.map((t) => t.titulo);
+  return { data, titulos, todas: data.kanban.columnas.flatMap((c) => c.tarjetas.map((t) => t.titulo)), anteriores: (data.kanban.anteriores || []).map((t) => t.titulo) };
+};
+const localIso8313 = (ms) => { const d = new Date(ms); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+test('T17 Drop_SacaLaFilaSinContarlaTerminada @story-8.313 @ac-16 — sale del tablero y de Terminados y Hechos; el registro la anota; los números siguen su regla', () => {
+  const sdir = stateDir();
+  board.save(sdir, { pendientes: [row('Una'), row('Otra', { estado: 'hecho', realIso: localIso8313(NOW - HOUR) }), row('Queda', { orden: 3 })] }, quiet(NOW));
+  const ids = Object.fromEntries(readRows(sdir).map((r) => [r.titulo, r.id]));
+  assert.ok(photo8313(sdir, NOW).titulos('hechos').includes('Otra'), 'antes, la hecha de hoy está en Terminados');
+  const r1 = board.drop(sdir, ids.Una, 'la escribió una prueba', quiet(NOW));
+  assert.strictEqual(r1.code, 0, r1.lines.join('\n'));
+  assert.match(r1.lines.join('\n'), /archivo aparte/, 'recuerda sacarla del archivo aparte');
+  const r2 = board.drop(sdir, ids.Otra, 'la escribió una prueba', quiet(NOW));
+  assert.strictEqual(r2.code, 0, r2.lines.join('\n'));
+  assert.deepStrictEqual(readRows(sdir).map((r) => r.titulo), ['Queda']);
+  for (const nowMs of [NOW, NOW + 2 * DAY]) {
+    const f = photo8313(sdir, nowMs);
+    assert.ok(!f.todas.includes('Una') && !f.todas.includes('Otra'), `${nowMs}: en ninguna columna`);
+    assert.ok(!f.anteriores.includes('Otra'), `${nowMs}: tampoco en Hechos`);
+  }
+  const facts = board.readFacts(sdir).filter((f) => f.tipo === 'descartada');
+  assert.deepStrictEqual(facts.map((f) => [f.id, f.clave, f.titulo, f.motivo]), [[ids.Una, `descartada:${ids.Una}`, 'Una', 'la escribió una prueba'], [ids.Otra, `descartada:${ids.Otra}`, 'Otra', 'la escribió una prueba']]);
+  assert.ok(facts.every((f) => /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(f.hora) && f.anotado), 'con la hora');
+  assert.match(board.lastFactLine(sdir, ids.Una), /descartada/);
+  // los números: una fila nueva con otro título recibe uno nuevo; una con el título de la sacada recupera el suyo
+  const quedan = readRows(sdir);
+  assert.strictEqual(board.save(sdir, { pendientes: [...quedan, row('Distinta', { orden: 4 }), row('Una', { orden: 5 })] }, quiet(NOW)).code, 0);
+  const despues = Object.fromEntries(readRows(sdir).map((r) => [r.titulo, r.id]));
+  assert.strictEqual(despues.Una, ids.Una, 'el mismo título recupera su número');
+  assert.ok(!Object.values(ids).includes(despues.Distinta), 'otro título, otro número');
+});
+
+test('T18 Drop_ArgumentosMalos_NoEscribe @story-8.313 @ac-17 — número ajeno, fila con historia, sin motivo, motivo vacío o de más: sale 2 sin escribir', () => {
+  const sdir = stateDir();
+  board.save(sdir, { pendientes: [row('Suelta'), row('De historia', { historia: '9.9', orden: 2 })] }, quiet(NOW));
+  const ids = Object.fromEntries(readRows(sdir).map((r) => [r.titulo, r.id]));
+  const antes = fs.readFileSync(boardFile(sdir));
+  const casos = [
+    [['drop', 'T-99', '--reason', 'x'], /no hay una fila T-99/],
+    [['drop', ids['De historia'], '--reason', 'x'], /close/],
+    [['drop', ids.Suelta], /--reason/],
+    [['drop', ids.Suelta, '--reason', '   '], /--reason/],
+    [['drop', ids.Suelta, 'otra', '--reason', 'x'], /uso: drop/],
+  ];
+  for (const [args, motivo] of casos) {
+    const r = cli(sdir, args);
+    assert.strictEqual(r.code, 2, `${args.join(' ')}: ${r.out}`);
+    assert.match(r.out, motivo, args.join(' '));
+    assert.ok(fs.readFileSync(boardFile(sdir)).equals(antes), `${args.join(' ')}: el tablero no cambió`);
+  }
+  // la de historia se cierra con close: sync volvería a crearla mientras su sesión siga trabajando
+  assert.match(cli(sdir, ['drop', ids['De historia'], '--reason', 'x']).out, /sync/);
+  // la línea de uso nombra drop
+  assert.match(cli(sdir, ['nada']).out, /drop <T-n> --reason/);
+  // por línea de comandos, la buena sale 0
+  assert.strictEqual(cli(sdir, ['drop', ids.Suelta, '--reason', 'la escribió una prueba']).code, 0);
+});
+
+test('T21 Close_SigueContandoTerminada @story-8.313 @ac-18 — una fila cerrada con close hoy está en Terminados hoy', () => {
+  const sdir = stateDir();
+  board.save(sdir, { pendientes: [row('A cerrar')] }, quiet(NOW));
+  assert.strictEqual(board.close(sdir, readRows(sdir)[0].id, quiet(NOW)).code, 0);
+  assert.ok(photo8313(sdir, NOW + 60e3).titulos('hechos').includes('A cerrar'));
+});
+
+test('T23 Guia_DiceElNumeroYDrop @story-8.313 @ac-21 — las dos guías nombran Abiertas, los tres grupos, office.js --json y board.js drop', () => {
+  const es = fs.readFileSync(path.join(GUIDES_8313, 'coordination.md'), 'utf8');
+  const en = fs.readFileSync(path.join(GUIDES_8313, 'coordination.en.md'), 'utf8');
+  for (const t of ['Abiertas', 'en curso', 'en espera', 'sin comenzar', 'office.js --json', 'board.js drop']) assert.ok(es.includes(t), `la guía en castellano: ${t}`);
+  for (const t of ['Abiertas', 'in progress', 'waiting', 'not started', 'office.js --json', 'board.js drop']) assert.ok(en.includes(t), `la guía en inglés: ${t}`);
+  assert.match(es, /Sin sesión[^\n]*plegadas/, 'dice que Sin sesión no suma las plegadas');
+});

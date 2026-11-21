@@ -28,6 +28,7 @@ const NUNCA_DELEGABLES = new Map([
   ['escape:merge-bypass', 'mergear salteando la cola y la CI de main es sólo del dueño: no se delega'],
   ['escape:external-pr', 'encolar o mergear un pedido de alguien de afuera del equipo es sólo del dueño: no se delega'],
   ['adhoc-lane:datos', 'dejar pasar un cambio de datos o de permisos sin historia es sólo del dueño: no se delega'],
+  ['autonomy-resume', 'volver al modo autónomo lo decide el dueño con su click o su terminal: no se delega'],
 ]);
 
 const safeSid = (s) => String(s).replace(/[/\\]/g, '_');

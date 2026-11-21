@@ -116,6 +116,7 @@ const LOCAL_ONLY = Object.freeze({
   'tablero.teToca': 'lo que te toca llega en `meta.teToca`, que lo junta con las firmas y viaja',
   // las historias de los proyectos de la persona son de cada máquina: ni sus tarjetas ni sus filas ni sus avisos salen
   'kanban.historias': 'las filas y los avisos de las historias de los proyectos de esta máquina: en el sitio no dicen nada de la máquina que mira',
+  'kanban.abiertas': 'el número de historias abiertas de los proyectos de esta máquina, por grupo: es de la máquina que lee, no de la que mira',
   'kanban.columnas.tarjetas.local': 'marca la tarjeta de una historia de los proyectos de esta máquina, que no viaja entera',
   'tablas.pendientes.pie': 'los avisos de la lectura de las historias de esta máquina: sus filas tampoco viajan',
   'tablas.pendientes.filas.local': 'marca la fila de un proyecto de esta máquina, que no viaja entera',

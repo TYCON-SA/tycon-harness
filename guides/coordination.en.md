@@ -688,6 +688,18 @@ it goes without text, `marker.js doing --waiting-for "<what it waits for>"`, and
 for. `marker.js` refuses any other note there: the step already says what the run does and when it ends, and a note on
 top would show the story paused. Leaving the story for other work is another session.
 
+**A stopped autonomous mode arrives as a row.** When the closing control stops an autonomous session (the round cap, or
+a round with no progress), it writes the time into its marker and leaves a request in the owner's list with the
+`autonomy-resume` signature: "does this session go back to autonomous mode?", with the reason, the time and the failures
+as they stood. The coordinator passes it with `owner-next` like any other; only the owner answers it, with their click
+(in the coordinator's tab or in the session's) or from their terminal (`marker.js resume-autonomy --terminal
+--for-session <session>`, which leaves a permit). The decision is taken by the stopped session itself with
+`marker.js resume-autonomy`: the message the coordinator sends it only wakes it up, and if the command exits 1 the
+session stays stopped. A "No" (`owner-reject`) is recorded and the session does not ask again on its own for that stop;
+only `resume-autonomy --ask-again` asks again. While it is stopped, neither `set-autonomous true`, nor `set` with another
+story, nor closing it without a signature, nor clearing it from another session are ways out. The panic button
+(`STOP_AUTONOMY`) leaves no row: a person lifts it by hand.
+
 **A pruned run can be recovered.** If it was pruned anyway ("abandonada: más de N h sin tocarse"), its marker was
 saved: the session that takes it back runs `marker.js restore <session>` (the pruned session), with the owner's usual
 signature, and it comes back with its done and pending steps, without repeating signatures.
@@ -716,6 +728,7 @@ and renames it, under a lock, so the office never reads it half written:
 node <harness>/scripts/tools/office/board.js add titulo="Fix X" estado=espera grupo=Hoy    # a new pending item
 node <harness>/scripts/tools/office/board.js set T-41 estado=curso quien=Sand nota="…"     # change a row
 node <harness>/scripts/tools/office/board.js close T-41 [--real YYYY-MM-DDTHH:MM]          # close it
+node <harness>/scripts/tools/office/board.js drop T-41 --reason "<why it goes>"            # remove it without calling it done
 node <harness>/scripts/tools/office/board.js save --from <your separate file>              # the whole board
 node <harness>/scripts/tools/office/board.js check                                         # check without writing
 node <harness>/scripts/tools/office/board.js due                                           # the «Te toca» lines
@@ -758,6 +771,37 @@ says so once under «No se pudo leer». A badly written row is not saved: `board
 
 «Terminados» is what was done today, with its time; anything older, or with no `realIso`, goes to the «Hechos» table. «En
 curso» goes by end time: what ends first on top, what has no time after, and the coordinator last.
+
+A row that should not be there (a test wrote it, for example) **is not closed**: `close` counts it as work done. Remove it
+with `board.js drop T-41 --reason "<why it goes>"`, which takes it off the board without going through «Terminados» or
+«Hechos» and adds a `descartada` entry to the facts log with the number, the title, the reason and the time. Remove it
+from your separate file too, or the next `save --from` brings it back. The number is not lost: a row with the same title
+gets it back. A row with `historia` cannot be removed this way (exit 2): close it with `close`, because the board would
+create it again while its session keeps working.
+
+### Abiertas: the number of open stories
+
+The wall, the detail of the «Pendientes» panel and the kanban say
+`Abiertas: 67 · 10 en curso · 27 en espera · 30 sin comenzar`: the stories open on `main` in the coordinator's project (the one of its folder, by its remote). It is the
+number the owner decides with, and **the coordinator reports that one**, the one in `office.js --json`
+(`kanban.abiertas`): it does not count it separately.
+
+- **Open**: the stories whose state is in the «backlog», «in progress» or «blocked» groups of the state vocabulary (drafts
+  and backlog included), read from the fetched main branch. The ones that could not be read do not count and are named
+  apart.
+- **In progress** (`en curso`): it has a run with its session alive (Claude or Codex; the coordinator does not count), a
+  stopped run with a signed plan from the last 24 h, or a session with a card that names it.
+- **waiting** (`en espera`): it is in review or blocked, it waits for another story (`depends_on:`), or it is paused until
+  today or later.
+- **not started** (`sin comenzar`): the rest. The detail says how many have part of the work done (`in-progress` with
+  nobody on them).
+- Below, it says how old the data is: «Leído a las 16:20 · main traído hace 3 min». The read redoes itself within a minute
+  when the main branch of a project moved, without going to the network: a `git fetch` (or `git pull`) updates it.
+- The other projects go apart, in the detail, under «Otros proyectos», one per line; they are not added to the number.
+- With no read, or one older than an hour, it says `Abiertas: sin dato`; with no coordinator, or if its repo belongs to no
+  project, it says `Sin proyecto principal:` and the reason. Never a 0 or an old number.
+- **«Sin sesión» no longer adds the folded stories**: the column counts its cards, and the line «Historias de tus
+  proyectos · N» says how many are inside.
 
 ### The stories of your projects
 

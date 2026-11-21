@@ -564,6 +564,8 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
     if (sub === 'adhoc' && a[0] === 'allow-data-change') return opaca || (a.includes('--recommends') && a[a.indexOf('--recommends') + 1] === 'pasar') ? 'adhoc-lane:datos' : null;
     // dejar pasar una vez un guardado ajeno al carril que espera sus revisores
     if (sub === 'adhoc' && a[0] === 'allow-foreign-save') return 'adhoc-lane:guardado-ajeno';
+    // volver al modo autónomo una ejecución detenida: la decisión del dueño, con o sin --ask-again
+    if (sub === 'resume-autonomy') return 'autonomy-resume';
     if (sub === 'adhoc' && /[$`]/.test(a[0] || '')) return SOBRE_CUPO;
     // cerrar la ejecución que la partición de su historia dejó sin objeto: la bandera elige la forma de rutina, y el
     // guion comprueba antes de la firma que la historia se partió después de la apertura
@@ -1258,6 +1260,8 @@ const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control
   'adhoc-lane:datos',
   // dejar pasar un guardado ajeno sin un pedido anotado
   'adhoc-lane:guardado-ajeno',
+  // volver al modo autónomo sin una detención abierta, con el botón de pánico puesto o con un «No» del dueño ya dado
+  'autonomy-resume',
   // cerrar como reemplazada por una partición una ejecución cuya historia no se partió después de la apertura
   LOST_RUN_PARTICION]);
 // las de sólo click cuyo chequeo corre antes de dar el cuadro: un pedido que el guion niega igual (un motivo en dos
@@ -1266,7 +1270,7 @@ const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control
 // «datos», con una lista inválida o un cupo menor que lo tocado, `adhoc set` lo niega después del click. Cerrar una
 // ejecución reemplazada por una partición: con la bandera mal puesta, el guion la niega igual
 const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', SOBRE_CUPO, 'extra-round',
-  'adhoc-lane', LOST_RUN_PARTICION, 'escape:no-mutation']);
+  'adhoc-lane', LOST_RUN_PARTICION, 'escape:no-mutation', 'autonomy-resume']);
 // lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
 // 210 s (lib/save-ok.js)
 const PLAZO_DEL_CHEQUEO = { save: 240000 };
@@ -1683,6 +1687,15 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // cuenta (un plan delicado, un guardado que toca algo sensible) pasa
   let aprobada = null;
   let sinAprobacion = null;
+  // La decisión de seguir en autónomo que el dueño ya dio en su terminal (skills/tycon-pipeline/scripts/lib/
+  // autonomy-decision.js): el permiso vive en el estado de la sesión destino, y el comando que lo consume es el mismo
+  // que pide la firma. Con un permiso vigente no hay nada que firmar ni que preguntar: el comando lo valida contra la
+  // detención y lo gasta; uno vencido o de otra detención no deja pasar, y el comando lo borra
+  if (clickDelDueno && pendientes[0] === 'autonomy-resume' && destino === sesion) {
+    let permiso = null;
+    try { permiso = require(path.join(LIB, 'autonomy-decision.js')).permisoVigente(stateDir(casa), destino); } catch (_) { permiso = null; }
+    if (permiso) return { decision: 'none', firmas: [] };
+  }
   if (delegada || sinVentana || deFondo || enWindows || soloClick || clickDelDueno) {
     const cuadro = pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null;
     const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });

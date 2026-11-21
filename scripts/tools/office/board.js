@@ -465,6 +465,35 @@ function close(sdir, id, { real = null, ...opts } = {}) {
   }, opts);
 }
 
+/**
+ * Saca una fila sin darla por terminada: no pasa por «hecho», así que no aparece en «Terminados hoy» ni en «Hechos». Sirve
+ * para una fila que no debía estar (la escribió una prueba, por ejemplo); quien la saca da el motivo, que queda en el
+ * registro de hechos. Una fila con `historia` no se saca así: `sync` la volvería a crear mientras su sesión trabaje, y se
+ * cierra con `close`. El contador de números no se toca: el mismo título recupera su número, como cualquier fila sin `id`.
+ */
+function drop(sdir, id, motivo, opts = {}) {
+  const why = str(motivo);
+  if (!why) return { code: 2, lines: ['⛔ drop va con --reason "<por qué sale>": no escribí nada'] };
+  let gone = null;
+  let logAviso = null;
+  const now = opts.now || Date.now();
+  const res = write(sdir, (raw) => {
+    const r = findRow(raw, id);
+    if (!r) return { code: 2, lines: [`⛔ no hay una fila ${taskId(id) || id} en el tablero`] };
+    if (r.historia) return { code: 2, lines: [`⛔ ${r.id} es de la historia ${r.historia}: se cierra con close. Sacada con drop, sync la volvería a crear mientras su sesión siga trabajando`] };
+    gone = r;
+    return { raw: { ...raw, pendientes: raw.pendientes.filter((x) => x !== r) }, lines: [`saqué ${nameOf(r)} sin darla por terminada: sacala también de tu archivo aparte, o el próximo save --from la devuelve`] };
+  }, {
+    ...opts,
+    afterRename: () => {
+      const a = appendFacts(sdir, [{ id: gone.id, tipo: 'descartada', clave: `descartada:${gone.id}`, titulo: str(gone.titulo), motivo: why, hora: localIso(now), anotado: new Date(now).toISOString() }]);
+      logAviso = a.aviso;
+      return a.lines;
+    },
+  });
+  return logAviso ? { ...res, lines: [...res.lines, `⚠️ ${logAviso}`] } : res;
+}
+
 /** Valida el tablero que hay, sin escribir. */
 function check(sdir, { now = Date.now() } = {}) {
   let current;
@@ -688,6 +717,7 @@ function main(argv, { home = os.homedir(), out = (t) => process.stdout.write(`${
   const sdir = take('--state-dir') || stateDir(home);
   const from = take('--from');
   const real = take('--real');
+  const reason = take('--reason');
   const factsFile = take('--facts');
   const complete = take('--complete', false) === true;
   const allowShrink = take('--allow-shrink', false) === true;
@@ -705,6 +735,7 @@ function main(argv, { home = os.homedir(), out = (t) => process.stdout.write(`${
   else if (cmd === 'add') res = add(sdir, rest, { home });
   else if (cmd === 'set') res = rest.length < 2 ? { code: 2, lines: ['⛔ uso: set <T-n> campo=valor…'] } : set(sdir, rest[0], rest.slice(1), { home });
   else if (cmd === 'close') res = rest.length !== 1 ? { code: 2, lines: ['⛔ uso: close <T-n> [--real AAAA-MM-DDTHH:MM]'] } : close(sdir, rest[0], { real, home });
+  else if (cmd === 'drop') res = rest.length !== 1 ? { code: 2, lines: ['⛔ uso: drop <T-n> --reason "<por qué sale>"'] } : drop(sdir, rest[0], reason, { home });
   else if (cmd === 'check') res = check(sdir);
   else if (cmd === 'sync') {
     let facts = [];
@@ -715,11 +746,11 @@ function main(argv, { home = os.homedir(), out = (t) => process.stdout.write(`${
     if (problem) res = { code: 2, lines: [`⛔ ${problem}`, TOCA_USAGE] };
     else if (!rest.length) res = toca(sdir);
     else res = (rest[0] === 'confirm' ? tocaConfirm : tocaDrop)(sdir, rest[1], { home });
-  } else res = { code: 2, lines: ['uso: board.js save --from <archivo> [--allow-shrink] | backups | restore <copia> | add titulo=… [campo=valor…] | set <T-n> campo=valor… | close <T-n> [--real AAAA-MM-DDTHH:MM] | check | sync --facts <archivo> [--complete] | due [confirm <id> | drop <id>]'] };
+  } else res = { code: 2, lines: ['uso: board.js save --from <archivo> [--allow-shrink] | backups | restore <copia> | add titulo=… [campo=valor…] | set <T-n> campo=valor… | close <T-n> [--real AAAA-MM-DDTHH:MM] | drop <T-n> --reason "<por qué sale>" | check | sync --facts <archivo> [--complete] | due [confirm <id> | drop <id>]'] };
   for (const l of res.lines) (res.code === 0 ? out : err)(l);
   return res.code;
 }
 
-module.exports = { paths, taskId, orderRows, readNumbers, readBoardRaw, rowProblems, numberRows, quienWarnings, save, backups, restore, add, set, close, check, sync, tocaState, toca, tocaConfirm, tocaDrop, mergeFacts, readFacts, lastFactLine, printCheck, ESTADOS, ID, main };
+module.exports = { paths, taskId, orderRows, readNumbers, readBoardRaw, rowProblems, numberRows, quienWarnings, save, backups, restore, add, set, close, drop, check, sync, tocaState, toca, tocaConfirm, tocaDrop, mergeFacts, readFacts, lastFactLine, printCheck, ESTADOS, ID, main };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
