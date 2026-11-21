@@ -323,7 +323,7 @@ correr_hermanos_al_salir() {
   [[ "$final" == "78" ]] && salir_esperando_a_main "repos hermanos (este repo: $rc)"
   node -e '
     const fs = require("fs"), p = require("path");
-    const [out, ts, storyId, rc, final, filas] = process.argv.slice(1);
+    const [out, ts, storyId, rc, final, filas, frescura, repoStory] = process.argv.slice(1);
     const companions = filas.split("\n").filter(Boolean).map((l) => {
       const [root, scope, archivos, exit] = l.split("\x1f");
       const n = Number(exit);
@@ -341,6 +341,16 @@ correr_hermanos_al_salir() {
     }
     art.companions = companions;
     art.all_green = Number(final) === 0;
+    // La huella de cada hermano, con su nombre, al lado de la de este repo: `suite-freshness.js
+    // check` la compara para saber si el verde sigue midiendo el código de los dos. La constancia que arma este bloque
+    // (este repo sin suite propia) no trae la de este repo: se mide acá. Si medir falla, la entrada queda sin huella y el
+    // chequeo dice «sin datos»: el hermano nunca se omite.
+    let sf = null;
+    try { sf = require(frescura); } catch (e) { process.stderr.write(`[test-gate] ⚠️  no pude cargar ${frescura} (${e && e.message}): la constancia queda sin la huella de los hermanos y el chequeo de frescura dirá «sin datos»\n`); }
+    if (sf) {
+      const propia = art.code_state && art.code_state.state_hash !== undefined ? art.code_state : sf.codeState(repoStory);
+      art.code_state = { ...propia, repos: sf.siblingStates(companions.map((c) => c.root)) };
+    }
     // este repo no tiene pruebas que el portón sepa correr, pero un hermano las corrió: lo medido es el hermano, y
     // «pruebas no medidas» ya no es cierto (el marcador lo dejó la corrida del hermano)
     if (art.no_stack && companions.some((c) => c.green)) {
@@ -359,7 +369,7 @@ correr_hermanos_al_salir() {
     }
     fs.mkdirSync(p.dirname(out), { recursive: true });
     fs.writeFileSync(out, JSON.stringify(art, null, 2) + "\n");
-  ' "$OUT_FILE" "$TS" "$STORY_ID" "$rc" "$final" "$filas" \
+  ' "$OUT_FILE" "$TS" "$STORY_ID" "$rc" "$final" "$filas" "$SCRIPT_DIR/lib/suite-freshness.js" "$REPO_STORY" \
     || echo "[test-gate] ⚠️  no pude anotar los repos hermanos en $OUT_FILE (mirá el error de arriba)" >&2
   if [[ "$final" == "7" ]]; then
     marcar_tests_en_rojo 7 "sin acotar: la cubre la CI del pedido (un repo hermano no se pudo acotar a lo tocado); no es verde"
