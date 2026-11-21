@@ -708,6 +708,19 @@ test('Migrate_SecondRunRefuses_HandTitleKept_EpicTextAfterItsLine_HeaderlessTabl
   assert.strictEqual(leer(dir, 'specs/story-1.2-alfa.md'), antes, 'no toca ninguna historia');
 });
 
+test('Migrate_SkippedByRequest_NoMinimalStory_TextInTheReport (T27) @story-8.227 @ac-1 @ac-3', () => {
+  const dir = jugueteAMano('t27', { sprint: ['development_status:', '  # comentario de la salteada', '  1-50-perdida: done   # nota de la salteada', '  1-2-alfa: done', ''] });
+  const informe = path.join(dir, 'specs', 'qa', 'm.md');
+  const r = correr(['--repo', dir, '--migrate', '--report', informe, '--skip', '1.50']);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.ok(!fs.existsSync(path.join(dir, 'specs', 'story-1.50-perdida.md')), 'no crea su historia mínima');
+  const txt = fs.readFileSync(informe, 'utf8');
+  assert.match(txt, /## Salteadas a pedido[^\n]*\n\n- `1-50-perdida`: done/);
+  assert.match(txt, /salteado a pedido\): nota de la salteada/, 'su nota va entera al informe');
+  assert.match(txt, /encima de `1-50-perdida`: comentario de la salteada/, 'y el comentario encima de su renglón también');
+  assert.doesNotMatch(leer(dir, SPRINT), /1-50-perdida/, 'queda fuera del índice generado');
+});
+
 test('Migrate_ExistingIntroIsNotOverwritten (T24) @story-8.227 @ac-1', () => {
   const dir = juguete('t24');
   const antes = leer(dir, 'specs/epics-intro.md');

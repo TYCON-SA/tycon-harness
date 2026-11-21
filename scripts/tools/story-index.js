@@ -528,7 +528,12 @@ function introText(epicas, date) {
   return `${md.join('\n').replace(/\n+$/, '')}\n`;
 }
 
-function migrate(repo, report, date) {
+/**
+ * `saltear`: números de historia que la migración no toca (una historia mínima que no se puede crear todavía, por
+ * ejemplo porque su cierre pide una firma que falta). Su renglón no pasa a historia mínima, su texto va entero al
+ * informe, y el informe dice que quedan fuera de los índices generados hasta que se sume su historia.
+ */
+function migrate(repo, report, date, { saltear = [] } = {}) {
   let old = '';
   // sin el archivo no hay nada que migrar; uno que está y no se lee no es un índice vacío
   try { old = fs.readFileSync(path.join(repo, SPRINT), 'utf8'); } catch (e) {
@@ -565,9 +570,12 @@ function migrate(repo, report, date) {
   const ambiguas = [];
   const conNota = [];
   const invalidas = [];
+  const salteadas = [];
   for (const e of entries) {
     // la clave arma un nombre de archivo: con una barra o un `..` saldría de specs/, y no se toca
     if (/[/\\]|(^|-)\.\.?(-|$)/.test(e.key)) { invalidas.push(e); continue; }
+    // un renglón pedido aparte, sin historia con archivo: no pasa a historia mínima
+    if (e.ids.some((x) => saltear.includes(x.id) && !byId.has(x.id))) { salteadas.push(e); continue; }
     // la lectura de la clave que coincide con una historia existente; sin ninguna, sólo vale una clave sin dudas
     let found = e.ids.filter((x) => byId.has(x.id));
     // con dos lecturas que existen (`<n>.<m>` y `<n>.<m>.1`), decide el nombre del archivo: el resto de la clave es su slug
@@ -611,6 +619,7 @@ function migrate(repo, report, date) {
   const cuenta = { changeLog: conNota.length + sinArchivo.filter((e) => e.note).length, intro: 0, sinHistoria: 0 };
   const sinHistoria = [];
   const suelto = (origen, renglones) => { for (const r of renglones) { sinHistoria.push(`${origen}: ${r}`); cuenta.sinHistoria++; } };
+  for (const e of salteadas) if (e.note) suelto(`sprint-status.yaml, renglón \`${e.key}\` (salteado a pedido)`, [e.note]);
   for (const [clave, renglones] of aMano.porClave) {
     // la historia del renglón, o la historia mínima que acaba de reservar su número
     const s = historiaDeClave.get(clave);
@@ -664,6 +673,8 @@ function migrate(repo, report, date) {
     ...(sinArchivo.length ? sinArchivo.map((e) => `- \`${e.key}\`: ${e.status}${e.note ? ` — ${e.note}` : ''}`) : ['- ninguna']), '',
     '## Ambiguos (no se tocan)', '',
     ...(ambiguas.length ? ambiguas.map((e) => `- \`${e.key}\`: ${e.status} — la clave es ambigua: puede ser ${e.ids.map((x) => x.id).join(' o ')}${e.note ? ` (${e.note})` : ''}`) : ['- ninguno']), '',
+    '## Salteadas a pedido (quedan fuera de los índices generados hasta que se sume su historia)', '',
+    ...(salteadas.length ? salteadas.map((e) => `- \`${e.key}\`: ${e.status} — no pasa a historia mínima en esta migración; su texto, entero, en «Notas sin historia»`) : ['- ninguna']), '',
     '## Claves que no van en un nombre de archivo (no se tocan)', '',
     ...(invalidas.length ? invalidas.map((e) => `- \`${e.key}\`: ${e.status} — tiene una barra o un «..»: no va en un nombre de archivo`) : ['- ninguna']), '',
     '## El texto escrito a mano', '',
@@ -701,7 +712,8 @@ function main(argv) {
   if (argv.includes('--migrate')) {
     const report = arg(argv, '--report');
     if (!report) { console.error('story-index.js --migrate: falta --report <archivo>'); return 2; }
-    return migrate(repo, report, arg(argv, '--date') || new Date().toISOString().slice(0, 10));
+    const saltear = String(arg(argv, '--skip') || '').split(',').map((x) => x.trim()).filter(Boolean);
+    return migrate(repo, report, arg(argv, '--date') || new Date().toISOString().slice(0, 10), { saltear });
   }
   const write = argv.includes('--write');
   if (!write && !argv.includes('--check')) { console.error('story-index.js: falta --write o --check'); return 2; }
