@@ -65,6 +65,12 @@ test('T6 · HiddenWindow_Scanner_SaysWhatItCannotFollow', () => {
     ["const c = process.getBuiltinModule('child_process'); c.spawnSync('ls');", /como texto/],
     ["const r = createRequire(import.meta.url)('node:child_process');", /como texto/],
     ["const m = 'child_' + 'process'; const c = require(m);", /nombre armado/],
+    // pase adversarial: lo que el escáner tampoco sigue
+    ['const c = require(`child_process`); c.spawnSync(\'ls\');', /como texto/],
+    ["const c = require ('child_process'); c.spawnSync('ls');", /como texto/],
+    ["export { spawn } from 'child_process';", /como texto/],
+    ["import * as cp from 'node:child_process'; cp[fn]('ls', [], { windowsHide: true });", /corchetes/],
+    ["import cp from 'child_process'; cp[fn]('ls');", /corchetes/],
   ];
   for (const [texto, forma] of casos) {
     const f = scan.formasQueNoSigue(`const { spawnSync } = require('child_process');\nspawnSync('ls', [], { windowsHide: true });\n${texto}\n`);
@@ -79,6 +85,10 @@ test('T6 · HiddenWindow_Scanner_SaysWhatItCannotFollow', () => {
     "// process.getBuiltinModule('child_process')",
     "const guion = `const c = require('child_process'); c[fn]();`;",
     "const p = require(path.join(__dirname, 'x.js'));",
+    "import * as cp from 'child_process'; cp.spawnSync('ls', [], { windowsHide: true });",
+    // el nombre partido sólo en un comentario o adentro de otro texto no hace sospechoso a un require de una variable
+    "// antes se armaba 'child_' + 'process'\nconst p = require(ruta);",
+    "const aviso = \"no uses 'child_' + 'process'\"; const p = require(ruta);",
   ]) assert.deepStrictEqual(scan.formasQueNoSigue(texto), [], texto);
 });
 
