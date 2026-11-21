@@ -33,16 +33,12 @@
 # la línea de bypass.log.
 #
 # 🟡 Qué hace si no hay NI `jq` NI `node` (o la entrada llega vacía, no se pudo leer o no es JSON): deja
-# pasar, AVISANDO en cada llamada, y sale 1. Es la misma decisión que safety-guard-pre.sh, con el
-# razonamiento completo en su encabezado: frenar (exit 2) frenaría todos los comandos, no sólo los
-# de pruebas; salir 0 con el aviso por stderr es callar (ese stderr va al registro de depuración);
-# con exit 1 el comando corre y a la persona le aparece la primera línea del aviso. Acá el daño de
-# dejar pasar es menor que en el safety-guard (una máquina congelada se recupera). Para frenar:
-# cambiar el `exit 1` de `cannot_read` por `exit 2` y los casos `…-deja-pasar-y-lo-dice` del banco.
-# 🔴 Límite conocido: que con exit 1 el comando corre y el aviso se ve sale de la documentación de hooks de Claude
-# Code; no está medido en vivo, ni en Claude Code ni en Codex. Lo único medido en las dos es que `exit 2` frena y
-# llega al modelo (guides/maintaining/codex-divergence-inventory.md). Se mediría con
-# `scripts/controls-bench/live-fire.js` contra un `PreToolUse` real.
+# pasar, AVISANDO en cada llamada: sale 0 con el aviso en JSON, como mensaje a la persona y como
+# contexto del modelo (`visible_notice`). Frenar (exit 2) frenaría todos los comandos, no sólo los de
+# pruebas. Medido en Claude Code y en Codex (guides/maintaining/codex-divergence-inventory.md, modos de
+# falla): con exit 1 el comando corre y el aviso no le llega a nadie; el contexto del JSON sí llega al
+# modelo. Acá el daño de dejar pasar es menor que en el safety-guard (una máquina congelada se
+# recupera). Para frenar: que `cannot_read` salga 2 y los casos `…-deja-pasar-y-lo-dice` del banco.
 #
 # Test manual:
 #   echo '{"tool_input":{"command":"npm test"},"cwd":"/tmp"}' | bash test-scope-guard-pre.sh; echo "exit=$?"   # → 2
@@ -113,14 +109,28 @@ to_json_text() {
   printf '%s' "$t" | "$HNODE" -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0, "utf8")).replace(/\x7f/g, "\\u007f") + "\n");'
 }
 
-# No se pudo leer la entrada: el comando pasa SIN revisar, y se DICE (decisión a confirmar: ver el
-# encabezado). Una sola línea: la herramienta le muestra a la persona la primera de stderr.
+# Un texto como cadena JSON, sin jq ni node: es justo lo que puede faltar cuando el freno no pudo leer.
+json_text() {
+  local s="$1" b='\' q='"'
+  s=${s//"$b"/"$b$b"}; s=${s//"$q"/"$b$q"}; s=${s//$'\n'/"${b}n"}; s=${s//$'\r'/"${b}r"}; s=${s//$'\t'/"${b}t"}
+  printf '%s%s%s' "$q" "$s" "$q"
+}
+# El aviso de un comando que pasa sin revisar, por los dos canales que se ven (medido en Claude Code y en Codex): el
+# mensaje a la persona y el contexto del modelo. El texto de una salida 1 no le llega a nadie. Sale 0: el comando pasa.
+visible_notice() {
+  local j
+  j=$(json_text "$1")
+  printf '{"systemMessage":%s,"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":%s}}\n' "$j" "$j"
+  echo "$1" >&2
+  exit 0
+}
+
+# No se pudo leer la entrada: el comando pasa SIN revisar, y se DICE por los canales que se ven.
 cannot_read() {
   local reason="la entrada no se pudo leer como UN documento JSON"
   if [[ -z "$INPUT" ]]; then reason="la entrada llegó vacía o no se pudo leer"
   elif [[ "$HAS_JQ" == "0" && "$HAS_NODE" == "0" ]]; then reason="no hay ni jq ni node en el PATH de este hook"; fi
-  echo "⚠️ TYCON test-scope-guard NO REVISÓ este comando y lo dejó pasar: ${reason}. Mientras siga así una suite completa sin filtro corre sin freno. Arreglo: que node (requisito del arnés) esté en el PATH con el que arranca la herramienta." >&2
-  exit 1
+  visible_notice "⚠️ TYCON test-scope-guard NO REVISÓ este comando y lo dejó pasar: ${reason}. Mientras siga así una suite completa sin filtro corre sin freno. Arreglo: que node (requisito del arnés) esté en el PATH con el que arranca la herramienta."
 }
 
 if [[ -z "$INPUT" ]]; then cannot_read; fi

@@ -1778,7 +1778,7 @@
         {
           "id": "commit-que-no-se-puede-ubicar-lo-dice-y-no-escribe-en-ningun-lado",
           "type": "must-run",
-          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. El destino depende de una variable que el comando no define: no se puede saber el repo. Se DICE (exit 1: el comando sigue y el aviso se ve) y no se exporta ni se prepara nada, en ningún repo. Nunca en la carpeta de la sesión por descarte: sin el arreglo, el trozo caía ahí.",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. El destino depende de una variable que el comando no define: no se puede saber el repo. Se DICE y no se exporta ni se prepara nada, en ningún repo. Nunca en la carpeta de la sesión por descarte: sin el arreglo, el trozo caía ahí. Sale 0 con el aviso en JSON, como mensaje a la persona y como contexto del modelo: con 1 el comando corría y el aviso no le llegaba a nadie (medido en Claude Code y en Codex, guides/maintaining/codex-divergence-inventory.md).",
           "setup": [
             "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
             "printf 'proj-sesion' > .engram-project",
@@ -1799,7 +1799,11 @@
             }
           },
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "NO PUDO SABER en qué repo se hace este commit",
               "en ningún repo"
@@ -1925,7 +1929,7 @@
           "id": "sin-el-criterio-un-commit-con-cd-lo-dice-y-no-escribe",
           "type": "must-run",
           "script": "${FIXTURE}/copia/scripts/hooks/engram-pre-commit.sh",
-          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. Una copia del hook SIN su carpeta de criterios (lo mismo vale sin node): con un `cd` en el comando no hay con qué saber el repo, así que lo dice y no escribe. El commit simple, sin `cd` ni `-C`, no tiene nada que resolver y sigue como siempre (casos «sin-el-criterio-no-frena-y-lo-dice» y T35b de manifest-engram.test.sh).",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. Una copia del hook SIN su carpeta de criterios (lo mismo vale sin node): con un `cd` en el comando no hay con qué saber el repo, así que lo dice y no escribe. El commit simple, sin `cd` ni `-C`, no tiene nada que resolver y sigue como siempre (casos «sin-el-criterio-no-frena-y-lo-dice» y T35b de manifest-engram.test.sh). Sale 0 con el aviso en JSON, como mensaje a la persona y como contexto del modelo: con 1 el comando corría y el aviso no le llegaba a nadie (medido en Claude Code y en Codex, guides/maintaining/codex-divergence-inventory.md).",
           "setup": [
             "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
             "printf 'proj-sesion' > .engram-project",
@@ -1947,7 +1951,11 @@
             }
           },
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "NO PUDO SABER en qué repo se hace este commit",
               "falta el criterio"
@@ -2182,7 +2190,7 @@
         {
           "id": "sin-jq-ni-node-en-un-commit-de-un-repo-con-memoria-lo-dice",
           "type": "must-run",
-          "_por_que": "Sin `jq` ni `node` no se puede leer el comando. En un repo con memoria (`.engram-project`) y con «commit» en el texto de la entrada, el hook no frena y no calla: sale 1 —error que no bloquea— y dice que la memoria no se exportó. No corre el sync a ciegas.",
+          "_por_que": "Sin `jq` ni `node` no se puede leer el comando. En un repo con memoria (`.engram-project`) y con «commit» en el texto de la entrada, el hook no frena y no calla: dice que la memoria no se exportó. No corre el sync a ciegas. Sale 0 con el aviso en JSON, como mensaje a la persona y como contexto del modelo: con 1 el comando corría y el aviso no le llegaba a nadie (medido en Claude Code y en Codex, guides/maintaining/codex-divergence-inventory.md).",
           "setup": [
             "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
             "printf 'benchproj' > .engram-project",
@@ -2200,7 +2208,11 @@
             }
           },
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "^.*engram-pre-commit.*NO PUDO LEER.*node",
               "ni jq ni node"
@@ -2284,7 +2296,11 @@
           },
           "stdin": {},
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "^.*engram-pre-commit.*NO PUDO LEER.*vac[ií]a"
             ],
@@ -2311,7 +2327,11 @@
           },
           "stdin": {},
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "^.*engram-pre-commit.*NO PUDO LEER.*vac[ií]a"
             ],

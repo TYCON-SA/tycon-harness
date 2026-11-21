@@ -884,7 +884,7 @@
             "darwin"
           ],
           "__so": "Sólo Linux y Mac: el caso arma un enlace colgado con `ln -s` a una carpeta que no existe, y el bash de Git en Windows no crea un enlace así. En Windows este camino queda sin caso.",
-          "_por_que": "🔴 EL OTRO HUECO (revisión de la story 8.18): callar cuando no pudo mirar. ~/.claude/skills EXISTE pero es un enlace a una carpeta que ya no está (el clon se movió o se borró): la regla no puede saber cuál es el árbol de las skills instaladas, y dejaba pasar `git add -A` sin una palabra. No frena —sin árbol resuelto no sabe si es el lugar— pero lo DICE: sale 1 (error que no bloquea, igual que cuando el freno no puede leer su entrada) con el motivo en la primera línea de stderr.",
+          "_por_que": "🔴 EL OTRO HUECO (revisión de la story 8.18): callar cuando no pudo mirar. ~/.claude/skills EXISTE pero es un enlace a una carpeta que ya no está (el clon se movió o se borró): la regla no puede saber cuál es el árbol de las skills instaladas, y dejaba pasar `git add -A` sin una palabra. No frena —sin árbol resuelto no sabe si es el lugar— pero lo DICE, con el motivo. Sale 0 con el aviso en JSON, como mensaje a la persona y como contexto del modelo: con 1 el comando corría y el aviso no le llegaba a nadie (medido en Claude Code y en Codex, guides/maintaining/codex-divergence-inventory.md).",
           "setup": [
             "git init -q work-clone && mkdir -p \"$SANDBOX_HOME/.claude\" && ln -s \"$FIXTURE/gone/skills\" \"$SANDBOX_HOME/.claude/skills\""
           ],
@@ -896,7 +896,11 @@
             "cwd": "${FIXTURE}/work-clone"
           },
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "^.*safety-guard.*GIT-C4.*NO PUDO MIRAR",
               "enlace"
@@ -914,7 +918,7 @@
             "darwin"
           ],
           "__so": "Sólo Linux y Mac: enlace colgado con `ln -s`, igual que el caso anterior.",
-          "_por_que": "La otra forma de instalación (~/.claude/skills es una carpeta real con un enlace por skill): la entrada tycon-pipeline existe y está colgada. Mismo aviso.",
+          "_por_que": "La otra forma de instalación (~/.claude/skills es una carpeta real con un enlace por skill): la entrada tycon-pipeline existe y está colgada. Mismo aviso. Sale 0 con el aviso en JSON, como mensaje a la persona y como contexto del modelo: con 1 el comando corría y el aviso no le llegaba a nadie (medido en Claude Code y en Codex, guides/maintaining/codex-divergence-inventory.md).",
           "setup": [
             "git init -q work-clone && mkdir -p \"$SANDBOX_HOME/.claude/skills\" && ln -s \"$FIXTURE/gone/skills/tycon-pipeline\" \"$SANDBOX_HOME/.claude/skills/tycon-pipeline\""
           ],
@@ -926,7 +930,11 @@
             "cwd": "${FIXTURE}/work-clone"
           },
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "^.*safety-guard.*GIT-C4.*NO PUDO MIRAR",
               "tycon-pipeline.*enlace"
@@ -941,7 +949,7 @@
             "darwin"
           ],
           "__so": "Sólo Linux y Mac: el caso arma su situación con los permisos de una carpeta (`chmod 000`), que en Windows no existen así. Y supone un usuario sin privilegios (como en el nocturno y en la imagen de máquina limpia): a root ningún permiso le impide entrar, y el caso saldría rojo sin que el control tenga un defecto.",
-          "_por_que": "La otra manera de «existe y no se puede resolver»: ~/.claude/skills es una carpeta a la que no se puede entrar. Mismo aviso, con su motivo.",
+          "_por_que": "La otra manera de «existe y no se puede resolver»: ~/.claude/skills es una carpeta a la que no se puede entrar. Mismo aviso, con su motivo. Sale 0 con el aviso en JSON, como mensaje a la persona y como contexto del modelo: con 1 el comando corría y el aviso no le llegaba a nadie (medido en Claude Code y en Codex, guides/maintaining/codex-divergence-inventory.md).",
           "setup": [
             "git init -q work-clone && mkdir -p \"$SANDBOX_HOME/.claude/skills\" && chmod 000 \"$SANDBOX_HOME/.claude/skills\""
           ],
@@ -953,7 +961,11 @@
             "cwd": "${FIXTURE}/work-clone"
           },
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "^.*safety-guard.*GIT-C4.*NO PUDO MIRAR",
               "no se puede entrar"
@@ -1015,7 +1027,7 @@
             "darwin"
           ],
           "__so": "Sólo Linux y Mac: enlace colgado con `ln -s`.",
-          "_por_que": "Etapa D de las firmas: TYCON_SAFETY_OFF=1 en el ambiente ya no apaga el freno, así que tampoco calla el aviso de que no pudo mirar el árbol.",
+          "_por_que": "Etapa D de las firmas: TYCON_SAFETY_OFF=1 en el ambiente ya no apaga el freno, así que tampoco calla el aviso de que no pudo mirar el árbol. Sale 0 con el aviso en JSON, como mensaje a la persona y como contexto del modelo: con 1 el comando corría y el aviso no le llegaba a nadie (medido en Claude Code y en Codex, guides/maintaining/codex-divergence-inventory.md).",
           "setup": [
             "git init -q work-clone && mkdir -p \"$SANDBOX_HOME/.claude\" && ln -s \"$FIXTURE/gone/skills\" \"$SANDBOX_HOME/.claude/skills\""
           ],
@@ -1032,7 +1044,11 @@
             "tool_use_id": "bench-tu"
           },
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "NO PUDO MIRAR"
             ]
@@ -6685,7 +6701,7 @@
         {
           "id": "sin-jq-ni-node-deja-pasar-y-lo-dice",
           "type": "must-run",
-          "_por_que": "Igual que en el safety-guard: sin con qué leer la entrada, pasa AVISANDO (sale 1, que no bloquea) y nunca en silencio. Decisión a confirmar: ver el encabezado del hook.",
+          "_por_que": "Igual que en el safety-guard: sin con qué leer la entrada, pasa AVISANDO y nunca en silencio. Decisión a confirmar: ver el encabezado del hook. Sale 0 con el aviso en JSON, como mensaje a la persona y como contexto del modelo: con 1 el comando corría y el aviso no le llegaba a nadie (medido en Claude Code y en Codex, guides/maintaining/codex-divergence-inventory.md).",
           "setup": [
             "mkdir -p lab && for t in bash cat date mkdir dirname sed tr head; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
           ],
@@ -6696,7 +6712,11 @@
             }
           },
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "^.*test-scope-guard.*NO REVIS.*node",
               "ni jq ni node"
@@ -6796,7 +6816,11 @@
           "type": "must-run",
           "stdin": {},
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "^.*test-scope-guard.*NO REVIS.*vac[ií]a"
             ]
@@ -6809,10 +6833,14 @@
         {
           "id": "entrada-ilegible-deja-pasar-y-lo-dice",
           "type": "must-run",
-          "_por_que": "Con una carpeta como stdin el `cat` FALLA (no devuelve vacío): es el otro camino al mismo silencio. El aviso tiene que ser la primera línea de stderr, no el error del `cat`.",
+          "_por_que": "Con una carpeta como stdin el `cat` FALLA (no devuelve vacío): es el otro camino al mismo silencio. El aviso tiene que ser la primera línea de stderr, no el error del `cat`. Sale 0 con el aviso en JSON, como mensaje a la persona y como contexto del modelo: con 1 el comando corría y el aviso no le llegaba a nadie (medido en Claude Code y en Codex, guides/maintaining/codex-divergence-inventory.md).",
           "stdin": {},
           "expect": {
-            "exit": 1,
+            "exit": 0,
+            "stdout_re": [
+              "\"additionalContext\":\"⚠️",
+              "\"systemMessage\":\"⚠️"
+            ],
             "stderr_re": [
               "^.*test-scope-guard.*NO REVIS.*vac[ií]a"
             ],

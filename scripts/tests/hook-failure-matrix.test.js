@@ -155,6 +155,8 @@ test('T1 Policy_EveryBlockingRegistrationHasARow @story-8.159 @ac-1 @ac-2 — ca
     assert.ok(['critico', 'calidad', 'cierre'].includes(f.clase), `${h.spec}: clase «${f.clase}»`);
     if (f.clase === 'critico') assert.ok(f.terreno, `${h.spec}: un crítico declara su terreno`);
     for (const k of ['fail_closed_today', 'salidas_1_a_proposito', 'fuera_de_la_matriz']) assert.ok(Array.isArray(f[k]), `${h.spec}: ${k} es una lista`);
+    // un gancho que sale 1 deja correr el comando y su aviso no le llega a nadie (medido en las dos herramientas)
+    assert.deepStrictEqual(f.salidas_1_a_proposito, [], `${h.spec}: ningún camino sale 1 a propósito`);
     assert.ok('reloj_propio_ms' in f && 'timeout_del_instalador' in f, `${h.spec}: dice su reloj y el timeout del instalador`);
     assert.strictEqual(f.timeout_del_instalador, h.timeout === undefined ? null : h.timeout, `${h.spec}: el timeout del renglón es el de la lista`);
     assert.deepStrictEqual(Boolean(f.plataformas && f.plataformas.windows), !(h.platforms && h.platforms.windows === false), `${h.spec}: las plataformas son las de la lista`);
@@ -331,4 +333,52 @@ test('T9 LiveFire_CodexWithoutTimeoutField_IsWritten @story-8.159 @ac-10 — el 
   }
   assert.match(seccion, /live-fire\.js --tool (claude|codex) --failure-modes/, 'el inventario nombra el comando que lo midió');
   assert.match(seccion, /\d{4}-\d{2}-\d{2}/, 'con fecha');
+});
+
+// Los caminos que dejan pasar avisando: salen 0 y el aviso va en JSON, como mensaje a la persona y como contexto del
+// modelo (con 1 el comando corría y el aviso no le llegaba a nadie, medido en Claude Code y en Codex).
+// 🔴 Falla con: cualquiera de los cuatro que vuelva a salir 1, o que avise sólo por la salida de errores.
+const AVISOS = {
+  'test-scope-guard-pre.sh': {
+    'cannot-read': (L) => L.correr(rutaHook('test-scope-guard-pre.sh'), ''),
+  },
+  'engram-pre-commit.sh': {
+    'cannot-read': (L) => {
+      const r = L.repo();
+      fs.writeFileSync(path.join(r.dir, '.engram-project'), 'demo\n');
+      return L.correr(rutaHook('engram-pre-commit.sh'), 'git commit -m x {', { cwd: r.dir });
+    },
+    'destino-sin-ubicar': (L) => {
+      const r = L.repo();
+      fs.writeFileSync(path.join(r.dir, '.engram-project'), 'demo\n');
+      return L.correr(rutaHook('engram-pre-commit.sh'), JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'cd "$NADIE_LA_DEFINE" && git commit -m x' }, cwd: r.dir }), { cwd: r.dir });
+    },
+  },
+  'safety-guard-pre.sh': {
+    'git-c4-ciego': (L) => {
+      const r = L.repo();
+      fs.mkdirSync(path.join(L.casa, '.claude'), { recursive: true });
+      fs.symlinkSync(path.join(L.dir, 'no-existe'), path.join(L.casa, '.claude', 'skills'));
+      return L.correr(rutaHook('safety-guard-pre.sh'), JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git add -A' }, cwd: r.dir }), { cwd: r.dir });
+    },
+  },
+};
+function rutaHook(guion) { return path.join(HL.ROOT, 'scripts', 'hooks', guion); }
+
+test('T12 PassWithNotice_ExitsZeroAndTheNoticeReachesTheModel — los caminos que dejan pasar avisando salen 0 con el aviso en JSON', (t) => {
+  const pol = HL.leerPolicy();
+  let n = 0;
+  for (const f of pol.frenos) {
+    for (const c of f.avisos_que_dejan_pasar || []) {
+      const caso = (AVISOS[f.guion] || {})[c.camino];
+      assert.ok(caso, `${f.guion} · ${c.camino}: tiene su caso`);
+      const r = caso(HL.lab(t));
+      assert.strictEqual(r.code, 0, `${f.guion} · ${c.camino}: sale 0 (${(r.err || '').slice(0, 160)})`);
+      const doc = JSON.parse(r.out.trim().split('\n').pop());
+      assert.match(doc.hookSpecificOutput.additionalContext, /⚠️/, `${f.guion} · ${c.camino}: el aviso va como contexto del modelo`);
+      assert.strictEqual(doc.systemMessage, doc.hookSpecificOutput.additionalContext, `${f.guion} · ${c.camino}: y como mensaje a la persona`);
+      n++;
+    }
+  }
+  assert.strictEqual(n, 4, 'los cuatro caminos que salían 1');
 });

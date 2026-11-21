@@ -665,12 +665,7 @@
       }
     },
     {
-      "salidas_1_a_proposito": [
-        {
-          "camino": "git-c4-ciego",
-          "dispara": "un `git add -A` o `git add .` cuando la carpeta de las skills es un enlace colgado o no se puede leer: pasa y lo dice"
-        }
-      ],
+      "salidas_1_a_proposito": [],
       "reloj_propio_ms": 20000,
       "timeout_del_instalador": null,
       "lanzador": null,
@@ -727,15 +722,16 @@
       "terreno": "todo comando: frena cuando no pudo leer el comando o no pudo correr; cuando lo leyó, decide normal aunque falte una pieza auxiliar",
       "como_frena": "codigo-2",
       "entrada_tipica": "ls -la",
-      "fuera_del_terreno": null
+      "fuera_del_terreno": null,
+      "avisos_que_dejan_pasar": [
+        {
+          "camino": "git-c4-ciego",
+          "dispara": "un `git add -A` o `git add .` cuando la carpeta de las skills es un enlace colgado o no se puede leer: pasa y lo dice; sale 0 con el aviso en JSON (mensaje a la persona y contexto del modelo)"
+        }
+      ]
     },
     {
-      "salidas_1_a_proposito": [
-        {
-          "camino": "cannot-read",
-          "dispara": "la entrada vacía o ilegible, o sin jq ni node: no revisó el comando y lo deja pasar"
-        }
-      ],
+      "salidas_1_a_proposito": [],
       "reloj_propio_ms": null,
       "timeout_del_instalador": null,
       "lanzador": null,
@@ -763,19 +759,16 @@
       "matcher": "Bash|PowerShell",
       "clase": "calidad",
       "como_frena": "codigo-2",
-      "entrada_tipica": "ls -la"
-    },
-    {
-      "salidas_1_a_proposito": [
+      "entrada_tipica": "ls -la",
+      "avisos_que_dejan_pasar": [
         {
           "camino": "cannot-read",
-          "dispara": "la entrada vacía o ilegible que nombra un commit, en un repo con memoria"
-        },
-        {
-          "camino": "destino-sin-ubicar",
-          "dispara": "no pudo saber en qué repo se hace el commit y la carpeta de la sesión guarda memoria"
+          "dispara": "la entrada vacía o ilegible, o sin jq ni node: no revisó el comando y lo deja pasar; sale 0 con el aviso en JSON (mensaje a la persona y contexto del modelo)"
         }
-      ],
+      ]
+    },
+    {
+      "salidas_1_a_proposito": [],
       "reloj_propio_ms": null,
       "timeout_del_instalador": null,
       "lanzador": null,
@@ -804,7 +797,17 @@
       "matcher": "Bash|PowerShell",
       "clase": "calidad",
       "como_frena": "codigo-2",
-      "entrada_tipica": "git commit -m x"
+      "entrada_tipica": "git commit -m x",
+      "avisos_que_dejan_pasar": [
+        {
+          "camino": "cannot-read",
+          "dispara": "la entrada vacía o ilegible que nombra un commit, en un repo con memoria; sale 0 con el aviso en JSON (mensaje a la persona y contexto del modelo)"
+        },
+        {
+          "camino": "destino-sin-ubicar",
+          "dispara": "no pudo saber en qué repo se hace el commit y la carpeta de la sesión guarda memoria; sale 0 con el aviso en JSON (mensaje a la persona y contexto del modelo)"
+        }
+      ]
     },
     {
       "salidas_1_a_proposito": [],

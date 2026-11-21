@@ -123,15 +123,24 @@ read_json_node() {
 # No se pudo leer el comando. Este hook corre en CADA comando y sólo le compete el `git commit` de
 # un repo con memoria, así que avisa sólo ahí: si el texto crudo de la entrada ni nombra «commit»,
 # o el repo no tiene `.engram-project`, calla (no habría hecho nada aunque pudiera leer).
-# 🟡 DECISIÓN A CONFIRMAR: en ese caso NO frena y NO calla — sale 1, que la herramienta trata como
-# error que no bloquea: el commit sigue y a la persona le aparece la primera línea de stderr. Con
-# exit 0 ese aviso iría al registro de depuración (callar), y exit 2 frenaría todos los commits de
-# una máquina sin `node`. El razonamiento completo está en el encabezado de safety-guard-pre.sh.
-# 🔴 FALTA CONFIRMARLO CON UNA SESIÓN REAL: que con exit 1 el comando corre y el aviso se ve sale
-# de la documentación de hooks de Claude Code; no se midió en vivo, ni en Claude Code ni en Codex.
-# Lo único medido en las dos es que `exit 2` frena y llega al modelo
-# (guides/maintaining/codex-divergence-inventory.md). Hay que correr `scripts/controls-bench/live-fire.js`
-# contra un `PreToolUse` real.
+# En ese caso NO frena y NO calla: sale 0 con el aviso en JSON, como mensaje a la persona y como
+# contexto del modelo (`visible_notice`). Exit 2 frenaría todos los commits de una máquina sin `node`.
+# Medido en Claude Code y en Codex (guides/maintaining/codex-divergence-inventory.md, modos de falla):
+# con exit 1 el commit sigue y el aviso no le llega a nadie; el contexto del JSON sí llega al modelo.
+# Un texto como cadena JSON, sin jq ni node: es justo lo que puede faltar cuando no se pudo leer.
+json_text() {
+  local s="$1" b='\' q='"'
+  s=${s//"$b"/"$b$b"}; s=${s//"$q"/"$b$q"}; s=${s//$'\n'/"${b}n"}; s=${s//$'\r'/"${b}r"}; s=${s//$'\t'/"${b}t"}
+  printf '%s%s%s' "$q" "$s" "$q"
+}
+# El aviso de un commit que sigue sin lo que este hook hace, por los canales que se ven, y la salida 0.
+visible_notice() {
+  local j
+  j=$(json_text "$1")
+  printf '{"systemMessage":%s,"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":%s}}\n' "$j" "$j"
+  echo "$1" >&2
+  exit 0
+}
 cannot_read() {
   # 🔴 Una entrada VACÍA (o que no se pudo leer) es «no pude leer», explícito: no se le pregunta si
   # nombra «commit», porque no nombra nada. Si no, caería en el `exit 0` de abajo, mudo.
@@ -146,8 +155,7 @@ cannot_read() {
   if [ -z "$INPUT" ]; then reason="la entrada llegó vacía o no se pudo leer"
   elif [ "$HAS_JQ" = "0" ] && [ "$HAS_NODE" = "0" ]; then reason="no hay ni jq ni node en el PATH de este hook"; fi
   log "no pude leer la entrada: ${reason}"
-  echo "⚠️ tycon: engram-pre-commit NO PUDO LEER este comando: ${reason}. Si es un git commit, la memoria de esta sesión NO se exportó y el índice de memoria no se revisó. Arreglo: que node (requisito del arnés) esté en el PATH con el que arranca la herramienta." >&2
-  exit 1
+  visible_notice "⚠️ tycon: engram-pre-commit NO PUDO LEER este comando: ${reason}. Si es un git commit, la memoria de esta sesión NO se exportó y el índice de memoria no se revisó. Arreglo: que node (requisito del arnés) esté en el PATH con el que arranca la herramienta."
 }
 
 if [ -z "$INPUT" ]; then cannot_read; fi
@@ -308,7 +316,7 @@ unknown_target() { # $1 = qué no se pudo ubicar
   root=$(git -C "$SESSION_DIR" rev-parse --show-toplevel 2>/dev/null)
   if [ -z "$root" ] || [ ! -f "$root/.engram-project" ]; then log "no pude ubicar el commit ($1); la carpeta de la sesión no guarda memoria: callado"; return 1; fi
   log "no pude ubicar el commit: $1"
-  echo "⚠️ tycon: engram-pre-commit NO PUDO SABER en qué repo se hace este commit ($1). No exporté la memoria de esta sesión ni preparé nada, en ningún repo: no se escribe en la carpeta de la sesión por descarte. Si el repo del commit guarda memoria, parado ahí: engram sync --project \"\$(cat .engram-project)\" && git add .engram/ — y sumalo al commit." >&2
+  UNKNOWN_NOTICE="⚠️ tycon: engram-pre-commit NO PUDO SABER en qué repo se hace este commit ($1). No exporté la memoria de esta sesión ni preparé nada, en ningún repo: no se escribe en la carpeta de la sesión por descarte. Si el repo del commit guarda memoria, parado ahí: engram sync --project \"\$(cat .engram-project)\" && git add .engram/ — y sumalo al commit."
   return 0
 }
 
@@ -327,15 +335,17 @@ else
   WARNED=0
   if [ -n "$UNKNOWN" ] && unknown_target "$UNKNOWN"; then WARNED=1; fi
   if [ -z "$COMMIT_DIRS" ]; then
-    # Con exit 1 el comando sigue y el aviso se ve (el mismo criterio que `cannot_read`, arriba).
-    exit "$WARNED"
+    # El commit sigue, con el aviso por los canales que se ven (el mismo criterio que `cannot_read`, arriba).
+    [ "$WARNED" = "1" ] && visible_notice "$UNKNOWN_NOTICE"
+    exit 0
   fi
   if [ "$WARNED" = "0" ] && [ "$(printf '%s\n' "$COMMIT_DIRS" | grep -c .)" = "1" ]; then
     cd "$COMMIT_DIRS" 2>/dev/null || { log "la carpeta del commit no existe todavía ($COMMIT_DIRS), exit 0"; exit 0; }
   else
     # Más de un repo en el mismo comando (o uno ubicado y otro no): una vuelta de este hook por repo.
     # Si alguna frena (el índice de ESE repo pierde entradas), el comando se frena.
-    WORST="$WARNED"
+    # Cada vuelta sale 0 o 2; el aviso del destino sin ubicar lo da esta, una sola vez, si ninguna frenó.
+    WORST=0
     while IFS= read -r d; do
       [ -n "$d" ] || continue
       printf '%s' "$INPUT" | ENGRAM_HOOK_COMMIT_DIR="$d" bash "${BASH_SOURCE[0]}"; rc=$?
@@ -343,6 +353,7 @@ else
     done <<EOF_DIRS
 $COMMIT_DIRS
 EOF_DIRS
+    if [ "$WORST" = "0" ] && [ "$WARNED" = "1" ]; then visible_notice "$UNKNOWN_NOTICE"; fi
     exit "$WORST"
   fi
 fi

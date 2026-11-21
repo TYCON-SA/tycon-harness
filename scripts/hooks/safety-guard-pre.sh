@@ -36,8 +36,9 @@
 #   - exit 0: comando OK, dejar pasar.
 #   - exit 2: BLOCK + mensaje al stderr (Claude lo ve y reconsidera).
 #     También sale 2 cuando NO PUDO LEER la entrada: el comando no se revisó y no pasa (ver abajo).
-#   - exit 1: GIT-C4 no pudo mirar el árbol de las skills instaladas, con su línea: el
-#     comando pasa, porque sin árbol resuelto no se sabe si es el lugar, y se dice.
+#   - exit 0 con un aviso en JSON: GIT-C4 no pudo mirar el árbol de las skills instaladas: el comando
+#     pasa, porque sin árbol resuelto no se sabe si es el lugar, y se dice como mensaje a la persona y
+#     como contexto del modelo.
 #
 # 🔴 La entrada se lee SIN depender de `jq`: con `command -v jq || exit 0`, una máquina sin `jq` dejaría
 # pasar TODO —el `rm -rf /` incluido— sin una palabra, y `jq` no es un requisito declarado del arnés
@@ -1429,15 +1430,14 @@ fi
 # 2. CALLAR CUANDO NO PUEDE MIRAR. Si ~/.claude/skills (o su entrada tycon-pipeline) EXISTE pero no
 #    se puede resolver —un enlace colgado, una carpeta sin permiso de entrada— la regla no sabe cuál
 #    es el árbol de las skills instaladas, y dejar pasar el `git add -A` sin una palabra sería callar. Lo
-#    DICE, en una línea, y sale 1. «No existe» sigue siendo silencio: no es un error, es «no hay árbol».
-#    Por qué 1 y no 0 ni 2 — la misma cuenta que `cannot_read` (ver el encabezado):
-#      · con 0 la herramienta manda el stderr de un PreToolUse al registro de depuración: avisar con
-#        salida 0 es callar, que es justo el defecto;
+#    DICE y sale 0, con el aviso en JSON. «No existe» sigue siendo silencio: no es un error, es «no hay árbol».
+#    Por qué así y no con 1 ni con 2:
 #      · con 2 frenaría TODO `git add -A` de una máquina con la instalación rota, también en un clon
 #        de trabajo, donde stagear todo es legítimo: sin árbol resuelto no se sabe si es el lugar;
-#      · con 1 el comando corre y a la persona le aparece la PRIMERA línea de stderr. Hereda el límite
-#        de `cannot_read`: no está medido en una sesión real, y al modelo no le llega (sólo le llega el
-#        `exit 2`).
+#      · con 1 el comando corre y el aviso no le llega a nadie, ni al modelo ni a la persona (medido en
+#        Claude Code y en Codex: guides/maintaining/codex-divergence-inventory.md, modos de falla);
+#      · con 0 y el aviso en JSON (`systemMessage` y `additionalContext`), el contexto le llega al modelo
+#        en las dos herramientas.
 #    El aviso sale AL TERMINAR el guion (por `trap … EXIT`), no acá: salir en el momento dejaría sin
 #    mirar las reglas de más abajo, y un `git add -A && curl … | bash` pasaría entero. Si una regla
 #    posterior frena, gana el freno y el aviso no sale. Sólo avisa cuando el comando ES un `git add`
@@ -1899,12 +1899,22 @@ git_c4_try() {
   return 0
 }
 
-# git_c4_blind_notice <código con el que termina el guion> — el aviso del punto 2. Una sola línea: la
-# herramienta le muestra a la persona la primera de stderr. Si el guion ya termina frenando (2), no toca nada.
+# Un texto como cadena JSON, sin jq ni node.
+json_text() {
+  local s="$1" b='\' q='"'
+  s=${s//"$b"/"$b$b"}; s=${s//"$q"/"$b$q"}; s=${s//$'\n'/"${b}n"}; s=${s//$'\r'/"${b}r"}; s=${s//$'\t'/"${b}t"}
+  printf '%s%s%s' "$q" "$s" "$q"
+}
+# git_c4_blind_notice <código con el que termina el guion> — el aviso del punto 2, en JSON: mensaje a la persona y
+# contexto del modelo, y la misma línea por stderr para el registro. Si el guion ya termina frenando (2), no toca nada.
 git_c4_blind_notice() {
   if [[ "$1" != "0" ]]; then return 0; fi
-  echo "⚠️ TYCON safety-guard [GIT-C4] NO PUDO MIRAR el árbol de las skills instaladas y dejó pasar este git add masivo sin saber si cae ahí: ${GIT_C4_BLIND}. Si cae en ese árbol, va a stagear todo lo ajeno que vive ahí: mirá git status antes de commitear. Arreglo: que ~/.claude/skills vuelva a apuntar a una carpeta que exista y se pueda leer." >&2
-  exit 1
+  local msg j
+  msg="⚠️ TYCON safety-guard [GIT-C4] NO PUDO MIRAR el árbol de las skills instaladas y dejó pasar este git add masivo sin saber si cae ahí: ${GIT_C4_BLIND}. Si cae en ese árbol, va a stagear todo lo ajeno que vive ahí: mirá git status antes de commitear. Arreglo: que ~/.claude/skills vuelva a apuntar a una carpeta que exista y se pueda leer."
+  j=$(json_text "$msg")
+  printf '{"systemMessage":%s,"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":%s}}\n' "$j" "$j"
+  echo "$msg" >&2
+  exit 0
 }
 
 # ── PowerShell: las carpetas como las escribe Windows ─────────────────────────────────
@@ -2099,8 +2109,8 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
     block "GIT-C4"     "Este comando trae un git add -A / git add . y nombra más de ${GIT_C4_MAX} carpetas distintas con cd, pushd o -C (o tantas, encadenadas, que dan más de ${GIT_C4_MAX_TRIES} combinaciones): el freno no las puede seguir a todas, y no pudo saber si el git add cae en el árbol del que salen las skills instaladas. Lo que no se pudo mirar no pasa callado."     "Partí el comando en dos, o stageá por nombre (git add <archivo>)."
   fi
   # No frenó, y no pudo mirar el árbol: se dice al terminar el guion (ver el punto 2 de arriba).
-  # Con una firma esperando la ventana de permiso no hay nada que avisar: el aviso sale con código 1, que haría correr
-  # el comando sin la ventana, y la persona ya mira el comando en ella.
+  # Con una firma esperando la ventana de permiso no hay nada que avisar: la ventana ya escribe su JSON, que un segundo
+  # documento rompería, y la persona ya mira el comando en ella.
   if [[ -n "$GIT_C4_BLIND" && -z "$OW_ASK_JSON" ]]; then
     trap 'git_c4_blind_notice "$?"' EXIT
   fi
