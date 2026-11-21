@@ -383,6 +383,27 @@ test('RG3 Reviewers_OtherRoundPending_IsTheCurrentStep @story-8.293 @ac-1 @ac-7'
   assert.strictEqual(RL.stateLine(o), '● Revisores — falta la vuelta 2: 1 archivo cambió después de los revisores');
 });
 
+// Renglón 555 de la lista semanal: si no se pudo saber si falta otra vuelta, /wip mostraba «Revisores» como paso actual.
+// «No medido» no es «falta otra vuelta»: el paso es el real, y el renglón de los revisores dice que no se midió.
+test('RG3b Reviewers_RoundNotMeasured_StepIsTheRealOne', () => {
+  const j = juguete();
+  const m = marcador(j, {
+    stepsCompleted: hasta('findings'), stepsPending: ['prepare-commit'], iterations: { 1: {} },
+    stepTimings: { ...TIEMPOS, findings: { startedAt: at(66), completedAt: at(70) }, 'prepare-commit': { startedAt: at(72) } },
+  });
+  const STEPS_LIB = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const original = STEPS_LIB.reviewersRound;
+  STEPS_LIB.reviewersRound = () => { throw new Error('git no contestó'); };
+  try {
+    const o = { marker: m, runDir: j.runDir, stateDir: j.stateDir, gatesLog: [], ...aislado(j) };
+    // el primer paso sin hacer de esta corrida es el pase adversarial
+    const estado = String(RL.stateLine(o));
+    assert.doesNotMatch(estado, /Revisores/, 'no «Revisores»');
+    assert.match(estado, /Pase adversarial/, 'el paso real');
+    assert.match(deUnPaso(RL.lines(o), 'reviewers').text, /no medido/);
+  } finally { STEPS_LIB.reviewersRound = original; }
+});
+
 test('RG4 PrepareBrake_OnlyItsOwnAndCurrent @story-8.293 @ac-2', () => {
   const j = juguete();
   const m = marcador(j, {
