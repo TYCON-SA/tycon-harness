@@ -2001,15 +2001,15 @@ function cmdCompleteStep(nRaw, flags) {
       const enContra = require('./lib/plan-review.js').revisionEnContra({ estado: STATE_DIR, destino: SID, marker });
       if (enContra) {
         const porElClick = registro ? registro.via === 'click' : !['terminal', 'delegacion', 'mensaje'].includes(via);
-        if (!porElClick || !enContra.revision) return { codigo: enContra.codigo, motivo: `${enContra.motivo}. Sólo el dueño puede aprobarlo igual, con su click en el cuadro` };
+        if (!porElClick || !enContra.revision) return { codigo: enContra.codigo, motivo: `${enContra.motivo}. Sólo una persona puede aprobarlo igual, con su click en el cuadro` };
         rechazoVencido = enContra.revision;
       }
       if (via === 'delegacion') {
+        const r = porLaRevision(via);
+        if (r.codigo) return r;
         // por la revisión, el texto lo arma el arnés: un --approved propio podría atribuir una firma que nadie dio
         const propio = require('./lib/plan-review.js').textoPropioPorLaRevision(approved);
         if (propio) return { codigo: 2, motivo: propio };
-        const r = porLaRevision(via);
-        if (r.codigo) return r;
         revision = r.constancia;
         return { via: r.via, resumen: r.resumen };
       }
@@ -2037,7 +2037,7 @@ function cmdCompleteStep(nRaw, flags) {
     const porRevision = !!revision;
     // por la revisión, el texto lo arma el arnés con quién la lanzó y su veredicto; por una persona, su cita
     const textoPlan = porRevision ? require('./lib/plan-review.js').textoDeLaAprobacion(revision)
-      : rechazoVencido ? `rechazo vencido por decisión del dueño: la revisión del ${rechazoVencido.ts || 'sin fecha'}`
+      : rechazoVencido ? `rechazo vencido por decisión de la persona, con su click en el cuadro: la revisión del ${rechazoVencido.ts || 'sin fecha'}`
         + `${rechazoVencido.sesion ? ` (lanzada por la sesión ${rechazoVencido.sesion})` : ''} dijo ${rechazoVencido.veredicto}`
       : (approved || 'firmado en la terminal');
     // la huella del plan aprobado: con ella, anotar la parte después no lo reabre si no cambió (set-batch)

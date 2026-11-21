@@ -841,7 +841,7 @@ test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => 
     };
     const click = porVia('click');
     assert.strictEqual(click.r.status, 0, `${click.r.stdout}${click.r.stderr}`);
-    assert.match(click.pa.text, /rechazo vencido por decisión del dueño/, click.pa.text);
+    assert.match(click.pa.text, /rechazo vencido por decisión de la persona, con su click en el cuadro/, click.pa.text);
     assert.match(click.pa.text, /rechazado/, click.pa.text);
     for (const via of ['delegacion', 'mensaje', 'ventana']) {
       const o = porVia(via);

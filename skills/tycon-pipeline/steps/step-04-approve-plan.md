@@ -73,7 +73,7 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      fábrica 3): entonces llega con los hallazgos y «rechazado N veces seguidas», y el dueño decide partir la historia o
      firmar una vuelta extra. Un plan delicado con su revisión en rechazo no se aprueba por la delegación, por la
      terminal ni con un «aprobado» escrito: se corrige el plan y la revisión vuelve a correr. Sólo el dueño puede
-     aprobarlo igual, con su click en el cuadro; el texto lo arma el arnés («rechazo vencido por decisión del dueño», con
+     aprobarlo igual, con su click en el cuadro; el texto lo arma el arnés («rechazo vencido por decisión de la persona, con su click», con
      el veredicto que se pisa).
    - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan o la historia
      cambiaron mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño. No se
