@@ -2333,7 +2333,7 @@ function cmdCompleteStep(nRaw, flags) {
       console.error(`marker.js complete-step ${n} BLOQUEADO — ${v.faltan.length} crítico(s) marcado(s) como eximido(s) sin el ok de una persona:`);
       for (const l of cw.renglonesDeFaltantes(v)) console.error(l);
       console.error('   Un crítico lo decide una persona: arreglalo, o que el dev lo exima. Los caminos:');
-      for (const f of v.faltan) for (const l of cw.caminos({ marker: __filename, ruleId: f.rule_id, file: f.file || '<archivo>' })) console.error(l);
+      for (const f of cw.agrupar(v.faltan)) for (const l of cw.caminos({ marker: __filename, ruleId: f.rule_id, file: f.file || '<archivo>' })) console.error(l);
       process.exit(1);
     }
     // Los críticos que reportó cada revisor, anotados por el arnés (lib/reported-criticals.js): findings.json se pudo
@@ -6903,12 +6903,27 @@ function cmdWaiveCritical(argv) {
     const firma = firmaDelDueno('critical-waiver', `${rule}${file ? ` en ${file}` : ''}: ${reason}`);
     firmaDada = firma;
     const quien = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
-    const q = quienFirmo(firma, quien);
-    entrada = { ...q, via: `waive-critical (${q.via})` };
+    if (firma.automatica) {
+      // la de trámite la da el arnés porque el perfil del equipo delega critical-waiver: la constancia nombra a quien la
+      // pidió (la coordinadora, si la pidió para otra sesión) y a la persona en cuyo nombre se firma, para que los
+      // lectores de la exención la reconozcan como la delegación
+      const pidio = firma.sesion && firma.sesion !== firma.destino ? `coordinadora (sesión ${firma.sesion})` : `sesión ${firma.sesion || PROPIA}`;
+      const persona = (val('--approved-by') || '').trim() || quien;
+      const noEs = cw.noEsPersona(persona);
+      if (noEs) { console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — ${noEs}. Va el nombre de la persona en cuyo nombre se firma: --approved-by "<nombre>".`); process.exit(2); }
+      entrada = { tipo: 'automatica', quien: `${pidio}, firma de trámite del arnés`,
+        delegacion: `${persona}${cw.POR_EL_PERFIL} (approvals.delegated_signing)`, via: 'waive-critical (firma de trámite · arnés)' };
+    } else {
+      const q = quienFirmo(firma, quien);
+      entrada = { ...q, via: `waive-critical (${q.via})` };
+    }
   }
   // Primero el renglón del registro del arnés (que el agente no puede escribir): es lo que hace valer la constancia al
   // cerrar. Si no quedó escrito, no se anota nada ni se anuncia un éxito que después el cierre contradiría.
   const constancia = { ts: nowIso(), rule_id: rule, file, reason, ...entrada };
+  // la constancia que los cierres van a rechazar no se anota ni se anuncia como eximida
+  const mala = cw.constanciaInvalida(constancia);
+  if (mala) { console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — la constancia no valdría (${mala}).`); process.exit(2); }
   appendLog('gates.log', { name: 'critical-waiver', status: 'ok', story: m.storyId, rule, file, ts: constancia.ts, tipo: constancia.tipo, quien: constancia.quien, via: constancia.via, huella: cw.huella(constancia) });
   const enRegistro = cw.fueraDelRegistro(constancia, { story: m.storyId });
   if (enRegistro) {
