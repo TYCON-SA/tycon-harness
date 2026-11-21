@@ -1862,6 +1862,12 @@
       "requiere": []
     },
     {
+      "__nota": "el despachador dice por qué no mira si el repo declara pedidos de trabajo cuando work-items-config.js carga sin su lista FILES; sin la pieza, calla.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/dispatch-work-items-list.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-gate.test.js",
       "requiere": []

@@ -111,8 +111,13 @@ function platformPiece(file) {
 }
 const oneLineError = (e) => String((e && e.message) || e).split('\n')[0].slice(0, 200);
 function repoDeclaresWorkItems(filePath) {
-  const files = platformPiece('work-items-config.js')?.FILES;
-  if (!Array.isArray(files)) return false;
+  const pieza = platformPiece('work-items-config.js');
+  const files = pieza?.FILES;
+  if (!Array.isArray(files)) {
+    // la pieza carga pero no trae la lista de archivos: el aviso no sale por eso, y se dice, como cuando no carga
+    if (pieza) process.stderr.write('despachador: el aviso del pedido de trabajo no mira work-items-config.js: no exporta FILES (la lista de archivos que declaran los pedidos de trabajo)\n');
+    return false;
+  }
   let dir = path.dirname(path.resolve(String(filePath || '.')));
   for (;;) {
     if (files.some((f) => fs.existsSync(path.join(dir, '.tycon', f)))) return true;
@@ -506,7 +511,7 @@ function dispatch(mode, { hoy = new Date().toISOString().slice(0, 10) } = {}) {
   process.exit(0);
 }
 
-module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries, abrirConsumos, cerrarConsumos, logDispatchFailure, FAIL_CLOSED_ON_THROW_FROM };
+module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries, abrirConsumos, cerrarConsumos, logDispatchFailure, FAIL_CLOSED_ON_THROW_FROM, repoDeclaresWorkItems };
 
 // CLI: `node dispatch.js pre-edit|post-edit` (los entry-scripts hook-*.js lo llaman).
 if (require.main === module) {
