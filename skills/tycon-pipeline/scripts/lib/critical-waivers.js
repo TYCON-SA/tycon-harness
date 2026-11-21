@@ -25,7 +25,7 @@ const esCriticoEximido = (f) => !!f && String(f.severity || '').trim().toUpperCa
 // ventana, que salió de una cita en la conversación, ya no vale: la conversación no se lee para firmar nada.
 const sinCita = (via) => /terminal|ventana|delegada|firma de trámite|click en el cuadro|«aprobado» escrito/.test(String(via || ''));
 // la firma de trámite la da el arnés porque el dueño la listó en el perfil: ese ok es el de la persona
-const DE_TRAMITE = 'el dueño, en el perfil del equipo (approvals.delegated_signing)';
+const DE_TRAMITE = 'la persona que la listó en el perfil del equipo (approvals.delegated_signing)';
 
 /** Lo que `quienFirmo` devuelve para una firma de trámite, con la persona que dio el ok: el dueño, en su perfil. */
 function deTramite(q) {
