@@ -112,23 +112,23 @@ nueve no tienen reloj propio y, si se cuelgan, Claude Code los corta al vencer e
 corre. El freno de producción va aparte, en la configuración administrada: tiene su reloj, y si su gancho falla el
 comando no corre ([producción con permiso](produccion-con-permiso.md)).
 
-| Freno | Reloj propio | Si se traba | Clase (propuesta) |
-|---|---|---|---|
-| `on-pre-commit.js` | No | Pasa a los 600 s | exigencia |
-| `pr-one-per-repo-guard.js` | No | Pasa a los 600 s | preferencia |
-| `pr-auto-complete-guard.js` | No | Pasa a los 600 s | exigencia |
-| `session-cap-guard.js` | No | Pasa a los 600 s | preferencia |
-| `public-push-guard.js` | No | Pasa a los 600 s | exigencia |
-| `on-bash-write-gate.js` | 20 s (`TYCON_BASH_GATE_TIMEOUT_S`, de 1 a 50) | Frena y pide reintentar | exigencia |
-| `safety-guard-pre.sh` | 20 s (`TYCON_SAFETY_TIMEOUT_S`, de 1 a 50) | Frena y pide reintentar | exigencia |
-| `test-scope-guard-pre.sh` | No | Pasa a los 600 s | preferencia |
-| `engram-pre-commit.sh` | No | Pasa a los 600 s | preferencia |
-| `session-collision-guard.js` | No | Pasa a los 600 s | exigencia |
-| `background-question-guard.js` | No | Pasa a los 600 s | preferencia |
+| Freno | Reloj propio | Si se traba |
+|---|---|---|
+| `on-pre-commit.js` | No | Pasa a los 600 s |
+| `pr-one-per-repo-guard.js` | No | Pasa a los 600 s |
+| `pr-auto-complete-guard.js` | No | Pasa a los 600 s |
+| `session-cap-guard.js` | No | Pasa a los 600 s |
+| `public-push-guard.js` | No | Pasa a los 600 s |
+| `on-bash-write-gate.js` | 20 s (`TYCON_BASH_GATE_TIMEOUT_S`, de 1 a 50) | Frena y pide reintentar |
+| `safety-guard-pre.sh` | 20 s (`TYCON_SAFETY_TIMEOUT_S`, de 1 a 50) | Frena y pide reintentar |
+| `test-scope-guard-pre.sh` | No | Pasa a los 600 s |
+| `engram-pre-commit.sh` | No | Pasa a los 600 s |
+| `session-collision-guard.js` | No | Pasa a los 600 s |
+| `background-question-guard.js` | No | Pasa a los 600 s |
 
-La clase dice si el freno es una **exigencia** (protege algo que no se deshace o que no es del agente: producción y
+Cada freno tiene una clase propuesta: **exigencia** (protege algo que no se deshace o que no es del agente: producción y
 datos, secretos, la rama compartida y lo público, las firmas del dueño, las historias y las constancias; no se apaga para
-ningún modelo) o una **preferencia** (un trámite o un estilo que un modelo podría decidir bien solo). Es una propuesta
+ningún modelo) o **preferencia** (un trámite o un estilo que un modelo podría decidir bien solo). Es una propuesta
 hasta que la firma el dueño, control por control, y no cambia lo que el freno decide. Vive, con su motivo y su fecha de
 revisión, en `scripts/metrics/controls-classification.json`; cuánto frenó cada uno, por modelo, lo dice
 `scripts/metrics/controls-table.js`.

@@ -316,13 +316,13 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 ## scripts/metrics/controls-table.js
 
-**Qué es:** La tabla de los controles de esta máquina: por freno y por modelo, cuántas veces tuvo que decidir, frenó, avisó, pasó con firma y dejó pasar, con tres marcas de cada bloqueo (el mismo comando pasó después con firma, pasó sin firma, o no se repitió); los controles del pipeline que frenaron; las fallas de cada freno; y la clasificación de cada uno (exigencia o preferencia) con su fecha de revisión.
+**Qué es:** La tabla de los controles de esta máquina, por freno y por modelo: cuánto frenó, avisó, pasó con firma y dejó pasar, los controles del pipeline que frenaron, las fallas de cada freno y si es exigencia o preferencia.
 
-**Por qué existe:** Para decidir qué freno se queda, cuál se relaja y para qué modelo, hace falta saber cuánto frena y cuánto se firma igual. Lo que sigue sin medir lo dice: ningún registro sabe si un bloqueo atajó algo de verdad, y los frenos que no corren como gancho (los de publicación, en el pre-commit) salen «sin modelo». Sólo lee.
+**Por qué existe:** Para decidir qué freno se relaja y para qué modelo hace falta saber cuánto frena y cuánto se firma igual. Sólo lee.
 
-**Quién la usa:** Quien mantiene el arnés, a mano (`--since <fecha> --out <archivo.md>`). La clasificación vive en `scripts/metrics/controls-classification.json`; el modelo de cada sesión lo lee `scripts/lib/session-model.js` de su conversación.
+**Quién la usa:** Quien mantiene el arnés, a mano. La clasificación vive en `controls-classification.json`.
 
-**Dónde se prueba:** `scripts/tests/controls-table.test.js`, `scripts/tests/controls-classification.test.js`, `scripts/tests/session-model.test.js`
+**Dónde se prueba:** `scripts/tests/controls-table.test.js`
 
 ## scripts/nightly/dashboard/reducer.js
 
