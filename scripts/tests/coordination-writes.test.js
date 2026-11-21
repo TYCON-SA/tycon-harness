@@ -389,12 +389,16 @@ test('T1 CoordinadoraEscribe_Chmod_Frena @story-8.283 @ac-1 @ac-2 @ac-31', (t) =
   for (const f of ['a.md', 'b.md']) fs.writeFileSync(path.join(toy.repo, f), 'a\n');
   // el modo simbólico que empieza con guion es el modo, no una opción: el archivo que sigue es la ruta
   for (const cmd of ['chmod -x acme/a.md', 'chmod -w acme/a.md', 'chmod -rwx acme/a.md', 'chmod u-x acme/a.md',
-    'chmod +x acme/a.md', 'chmod 644 acme/a.md', 'chmod -R 644 acme/a.md', 'chmod -R -x acme/a.md', 'chown -h acme acme/a.md']) {
+    'chmod +x acme/a.md', 'chmod 644 acme/a.md', 'chmod -R 644 acme/a.md', 'chmod -R -x acme/a.md', 'chown -h acme acme/a.md',
+    // varias acciones en una cláusula, la copia de los permisos de otro y cláusulas con quién
+    'chmod -x+w acme/a.md', 'chmod -wx=r acme/a.md', 'chmod -wx-r acme/a.md', 'chmod -g acme/a.md', 'chmod -u acme/a.md',
+    'chmod -o acme/a.md', 'chmod -xX,g=u acme/a.md', 'chmod -x= acme/a.md', 'chmod -R -x+w acme/a.md']) {
     assert.ok(negada(consola(toy, cmd)), cmd);
   }
   // con varios archivos mira todos: el cuidado puede ser el segundo, después de uno de afuera
   fs.writeFileSync(path.join(toy.notas, 'o.txt'), 'o\n');
-  for (const cmd of ['chmod +x notas/o.txt acme/b.md', 'chmod -x notas/o.txt acme/b.md', 'chmod -R -x notas/o.txt acme/b.md', 'chmod -v -R 755 notas/o.txt acme/b.md']) {
+  for (const cmd of ['chmod +x notas/o.txt acme/b.md', 'chmod -x notas/o.txt acme/b.md', 'chmod -R -x notas/o.txt acme/b.md', 'chmod -v -R 755 notas/o.txt acme/b.md',
+    'chmod -g notas/o.txt acme/b.md']) {
     assert.ok(negada(consola(toy, cmd)), cmd);
   }
   // lo de afuera sigue pasando, y otra sesión no nota nada

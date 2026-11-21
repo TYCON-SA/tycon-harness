@@ -91,6 +91,19 @@ test('HistoriaSensible_RutaDesdeArribaOConPunto_EsSensible @story-8.310 @ac-13',
   assert.strictEqual(historiaSensible({ declarados: ['src/x.js'], codigo: [suelto] }), true);
 });
 
+// 🔴 Falla con: la lectura del código que carga firmas rota (una función que ya no existe): el error cae en «no se sabe»
+// y toda historia con código común cuenta como sensible.
+test('HistoriaSensible_CodigoComunEnUnRepo_NoEsSensible @story-8.283 @ac-10', () => {
+  const { historiaSensible } = require(path.join(__dirname, '..', 'lib', 'nightly-coverage.js'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'comun-')));
+  temporales.push(repo);
+  fs.mkdirSync(path.join(repo, '.git'));
+  const comun = escribir(repo, 'src/a.js', 'module.exports = () => 1;\n');
+  assert.strictEqual(historiaSensible({ declarados: ['src/a.js'], codigo: [comun] }), false, 'código común en un repo');
+  const firmas = escribir(repo, 'src/b.js', "const s = require('../scripts/lib/signatures.js');\nmodule.exports = s;\n");
+  assert.strictEqual(historiaSensible({ declarados: ['src/b.js'], codigo: [firmas] }), true, 'código que carga el catálogo de firmas');
+});
+
 test('T15 Signatures_ReglaDeEntrada_EsSensible @story-8.310 @ac-15', () => {
   const { SENSITIVE } = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
   for (const f of ['evidence-vs-commit.js', 'commit-story.js', 'story-requests.js', 'nightly-coverage.js']) {

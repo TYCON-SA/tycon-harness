@@ -436,6 +436,8 @@ const SENSITIVE = Object.freeze([
   '**/settings*.json', 'settings*.json',
   '**/team-profile.json', 'team-profile.json',
 ]);
+// los archivos que definen firmas o avisos: un código que los carga toca firmas (save-ok.js requiereSensible)
+const REQUIERE_SENSIBLE = Object.freeze(['signatures.js', 'owner-window.js', 'delegated-signing.js', 'approvals.js', 'notify.js']);
 
 /**
  * La firma que pide un `adhoc set`, para que el freno y el guion nunca discrepen. `args`: lo que sigue a `set`, cada palabra
@@ -531,4 +533,4 @@ function delegable(id, raised) {
 // Lo que no tiene vuelta atrás: sólo se firma en la terminal de la persona, nunca con un click ni con un «aprobado»
 const ONLY_IN_TERMINAL = Object.freeze(['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency']);
 
-module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, NOT_DELEGATED, RETIRED, DELEGABLE_EXCEPTIONS, DELEGABLE_FORMS, PLAN_DELICADO, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };
+module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, RETIRED, DELEGABLE_EXCEPTIONS, DELEGABLE_FORMS, PLAN_DELICADO, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };

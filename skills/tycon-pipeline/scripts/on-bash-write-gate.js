@@ -4473,8 +4473,11 @@ function borraEjecucionAbierta(event) {
 const TOCAN_LO_QUE_NOMBRAN = new Set(['mv', 'touch', 'mkdir', 'rmdir', 'shred', 'trash', 'install', 'rsync', 'ditto', 'ln', 'truncate', 'chmod', 'chown', 'chgrp', 'vi', 'vim', 'nvim', 'nano', 'emacs', 'ed', 'ex']);
 // de éstos, el primer argumento es el modo o el dueño, no una ruta
 const PRIMERO_NO_ES_RUTA = new Set(['chmod', 'chown', 'chgrp']);
-// el modo simbólico de chmod que empieza con guion (`-x`, `-rwx`, `-w,o-r`) es el modo, no una opción
-const MODO_CON_GUION = /^-[rwxXst]+(?:,[ugoa]*[-+=][rwxXst]*)*$/;
+// el modo simbólico de chmod que empieza con guion es el modo, no una opción: una o varias acciones por cláusula, cada
+// una con letras de permiso o la copia de los de otro (`-x`, `-x+w`, `-wx=r`, `-g`, `-x=`), y más cláusulas con quién
+// (`-w,o-r`, `-xX,g=u`). Ninguna opción de chmod (`-R`, `-f`, `-v`, `-h`) tiene esa forma
+const ACCION_DE_MODO = '(?:[rwxXst]*|[ugo])';
+const MODO_CON_GUION = new RegExp(`^-(?!$)${ACCION_DE_MODO}(?:[-+=]${ACCION_DE_MODO})*(?:,[ugoa]*(?:[-+=]${ACCION_DE_MODO})+)*$`);
 const OPCION_CON_VALOR = /^-(?:m|o|g|t|e|-mode|-owner|-group|-target-directory|-rsh|-exclude|-include|-chmod|-suffix)$/;
 // los subcomandos de git que cambian el árbol de trabajo; commits, empujes y merges quedan fuera (los cubre la guía)
 const GIT_CAMBIA_EL_ARBOL = new Set(['reset', 'clean', 'checkout', 'switch', 'stash', 'restore', 'mv', 'rm']);

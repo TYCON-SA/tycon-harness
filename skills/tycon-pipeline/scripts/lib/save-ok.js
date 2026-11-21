@@ -9,6 +9,7 @@
  *                       índice temporal: entran los archivos sin seguimiento y el índice de la persona no se toca;
  *   · controlesDelCommit el gancho pre-commit de cada repo sobre lo que guardaría el commit, en sólo lectura;
  *   · esSensible        si una ruta está en la lista de lo sensible del catálogo de firmas;
+ *   · requiereSensible  si un código carga un archivo de firmas o de avisos (la cobertura de noche);
  *   · avisar            el aviso por los canales del arnés, que vale sólo con una entrega real;
  *   · fotoDelPedido y evidenciaDelPedido, lo que lleva la ventana del pull request.
  *
@@ -403,6 +404,16 @@ function esSensible(rel) {
   return catalogo().SENSITIVE.map(patron).some((re) => re.test(String(rel).replace(/\\/g, '/').toLowerCase()));
 }
 
+/**
+ * ¿El texto hace `require` (o `import … from`) literal de uno de los archivos que definen firmas o avisos, con o sin
+ * `.js`? Cada nombre entra a la expresión con todos sus caracteres especiales escapados. Lo usa la cobertura de noche
+ * (lib/nightly-coverage.js) para saber si una historia toca firmas.
+ */
+function requiereSensible(texto, lista = catalogo().REQUIERE_SENSIBLE) {
+  const nombres = lista.map((n) => n.replace(/\.js$/, '').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('|');
+  return new RegExp(`(?:require\\s*\\(\\s*|from\\s+)['"\`](?:[^'"\`]*/)?(?:${nombres})(?:\\.js)?['"\`]`, 'i').test(texto);
+}
+
 // ── el aviso ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -483,4 +494,4 @@ function evidenciaDelPedido({ marker = {}, findings = null } = {}) {
   return `Pruebas: ${pruebas} · Revisores: ${revisores} · Pase: ${pase} · Hallazgos: ${hallazgos}`;
 }
 
-module.exports = { raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, huella, huellas, arbolDelCommit, controlesDelCommit, esSensible, avisar, fotoDelPedido, evidenciaDelPedido };
+module.exports = { raizDe, requiereSensible, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, huella, huellas, arbolDelCommit, controlesDelCommit, esSensible, avisar, fotoDelPedido, evidenciaDelPedido };

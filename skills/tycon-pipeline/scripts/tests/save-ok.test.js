@@ -578,13 +578,16 @@ test('SaveOk_NoCompanionOrMissing_AsToday @story-8.277 @ac-14 @ac-15: sin herman
 // 🔴 Falla con: la firma de guardar todavía en el código (sus funciones, su guion o su entrada del catálogo), o el aviso
 // por los canales del arnés roto al sacarla (lo usa el camino corto).
 test('SaveOk_SinFirmaDeGuardar_AvisarSigue (T5) @story-8.283 @ac-9 @ac-10', () => {
-  for (const f of ['vigente', 'limpia', 'antesDeFirmar', 'constancia', 'sensibles', 'requiereSensible', 'lineaDelAviso', 'exencionesDeLaCorrida']) {
+  for (const f of ['vigente', 'limpia', 'antesDeFirmar', 'constancia', 'sensibles', 'lineaDelAviso', 'exencionesDeLaCorrida']) {
     assert.strictEqual(SO[f], undefined, `${f} salió con la firma de guardar`);
   }
   assert.ok(!CAT.SIGNATURES.some((s) => s.id === 'save'), 'la firma de guardar no está en el catálogo');
   assert.ok(!CAT.LEVELS.some((l) => l.id === 'save' || l.id === 'save:sensible'), 'ni en la tabla de niveles');
   assert.ok(Array.isArray(CAT.SENSITIVE) && CAT.SENSITIVE.length, 'la lista de lo sensible se queda');
   assert.strictEqual(typeof SO.esSensible, 'function', 'y su lector también');
+  // la lectura del código que carga firmas se queda: la usa la cobertura de noche (lib/nightly-coverage.js)
+  assert.strictEqual(typeof SO.requiereSensible, 'function', 'requiereSensible se queda');
+  assert.ok(Array.isArray(CAT.REQUIERE_SENSIBLE) && CAT.REQUIERE_SENSIBLE.includes('signatures.js'), 'con su lista');
   // el aviso, igual que antes: vale sólo con una entrega real
   const enviados = [];
   const ok = SO.avisar({ texto: 'hola', canales: () => ({ canales: ['telegram'] }), mandar: (o) => { enviados.push(o); return { resultados: [{ canal: 'telegram', entregado: true }] }; } });
