@@ -996,6 +996,53 @@ function primerArgumento(texto, desde) {
   return { arg: texto.slice(desde, hasta).trim(), fin: hasta };
 }
 
+// Un modo de abrir que sólo lee: `'r'`, `'rb'`, `"rt"` en python y ruby, `'<'` en perl.
+const MODO_SOLO_LEE = /^(['"])[rbtU<]*\1$/;
+const ARGUMENTO_CON_NOMBRE = /^[A-Za-z_]\w*\s*=(?!=)/;
+/**
+ * Si el `open(` que empieza en `desde` (justo después del paréntesis) puede escribir. Lee como abre: el segundo argumento
+ * o `mode=` en cualquier lugar (`open(p, encoding='utf-8', mode='w')`). Escribe con un modo que no es un literal de sólo
+ * lectura —`'w'`, `'a'`, `'x'`, `'+'`, o uno guardado en una variable (`open(p, m)`)—, con argumentos desplegados
+ * (`*a`, `**kw`) y cuando no se terminan de leer. Como método (`Path(p).open('w')`, `os.open(p, flags)`) cuenta también
+ * el primer argumento: un modo de escritura, o uno que no es un literal.
+ */
+function abreParaEscribir(texto, desde, metodo) {
+  const args = [];
+  let pos = desde;
+  for (let k = 0; k < 16; k++) {
+    const a = primerArgumento(texto, pos);
+    if (a.arg) args.push(a.arg);
+    if (texto[a.fin] === ')') break;
+    if (texto[a.fin] !== ',') return true;
+    pos = a.fin + 1;
+    if (k === 15) return true;
+  }
+  if (args.some((a) => a.startsWith('*'))) return true;
+  const conNombre = args.filter((a) => ARGUMENTO_CON_NOMBRE.test(a));
+  const posicionales = args.filter((a) => !ARGUMENTO_CON_NOMBRE.test(a));
+  for (const a of conNombre) {
+    const m = /^mode\s*=\s*([\s\S]*)$/.exec(a);
+    if (m && !MODO_SOLO_LEE.test(m[1].trim())) return true;
+  }
+  if (posicionales.length > 1 && !MODO_SOLO_LEE.test(posicionales[1])) return true;
+  if (metodo && posicionales.length) {
+    const lit = /^(['"])([^'"]*)\1$/.exec(posicionales[0]);
+    // un primer argumento que no es literal puede ser el modo (`p.open(m)`); uno literal escribe si es un modo de escritura
+    if (!lit) return true;
+    if (/^[rwaxbtU+]+$/.test(lit[2]) && /[wax+]/.test(lit[2])) return true;
+  }
+  return false;
+}
+/**
+ * Si algún `open(` del texto puede escribir (ver abreParaEscribir). El texto puede venir con las comillas escapadas del
+ * shell (`open(\"$F\")`): se leen como comillas.
+ */
+function algunOpenEscribe(texto) {
+  const s = String(texto || '').replace(/\\(["'])/g, '$1');
+  for (const m of s.matchAll(/(\.)?\bopen\s*\(/g)) if (abreParaEscribir(s, m.index + m[0].length, Boolean(m[1]))) return true;
+  return false;
+}
+
 /**
  * Las rutas que una expresión nombra si sale sólo de literales: `'a.ts'`, `['a', 'b']`, `os.path.expanduser('~/x')`,
  * `path.join('a', 'b')`, `Path('a')`. null si algo no es literal.
@@ -1159,7 +1206,10 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
       if (script[a.fin] === ',') add(primerArgumento(script, a.fin + 1).arg);
     }
     // python: open(<destino>, 'w'|'a'|'x'|'+'); sin modo es lectura
-    llamadas(/\bopen\s*\(/g, (a) => script[a.fin] === ',' && /^\s*(?:mode\s*=\s*)?[rbt]*['"][^'"]*[wax+]/.test(script.slice(a.fin + 1)));
+    for (const m of script.matchAll(/\bopen\s*\(/g)) {
+      const a = primerArgumento(script, m.index + m[0].length);
+      if (abreParaEscribir(script, m.index + m[0].length, false) && script[a.fin] === ',') add(a.arg);
+    }
     // python: Path(<destino>).write_text / write_bytes
     llamadas(/\bPath\s*\(/g, (a) => /^\)\s*\.(?:write_text|write_bytes)\s*\(/.test(script.slice(a.fin)));
     // perl: open(my $fh, '>', <destino>)
@@ -2224,8 +2274,10 @@ function estadosDelEncabezado(texto) {
   const fm = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(String(texto));
   return fm ? [...fm[1].matchAll(/^["']?status["']?\s*:\s*["']?([\w-]+)/gm)].map((m) => m[1].toLowerCase()) : [];
 }
-// sin ninguna forma de escribir (ni un editor en el lugar), el comando no toca una historia
-const ESCRIBE = new RegExp([...FORMAS_DE_ESCRIBIR, String.raw`\bopen\s*\(`].join('|'), 'i');
+// sin ninguna forma de escribir (ni un editor en el lugar), el comando no toca una historia. Un `open(` cuenta sólo si
+// puede escribir: uno que lee (`open(p)`, `open(p, 'rb')`) no hace de un `for` que lee una escritura
+const FORMAS_DE_ESCRIBIR_RE = new RegExp(FORMAS_DE_ESCRIBIR.join('|'), 'i');
+const ESCRIBE = { test: (t) => FORMAS_DE_ESCRIBIR_RE.test(t) || algunOpenEscribe(t) };
 // una palabra suelta del comando cuenta como destino con un editor en el lugar (`editaEnSitio`), o con un
 // `for … in <comodín>` que escribe. En un `ls specs/*.md > lista.txt` el comodín sólo se lee
 const FOR_IN = /(?:^|[\s;&|(])for\s+\w+\s+in\s/i;
@@ -3583,7 +3635,7 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
     if (i >= 0) for (const w of words.slice(i + 1)) { if (w.startsWith('-') || w === '!' || w === '(') break; bases.push(resolver(w, cwd)); }
   }
   // un guion que escribe, copia, mueve o borra: cuenta cada texto que nombra (`glob.glob('specs/*.md')`, `'h.md'`)
-  const textosDeGuion = scriptsInline(cmd).filter(({ script }) => GUION_ESCRIBE.test(script))
+  const textosDeGuion = scriptsInline(cmd).filter(({ script }) => GUION_ESCRIBE.test(script) || algunOpenEscribe(script))
     .flatMap(({ script }) => [...script.matchAll(/(['"`])((?:\\.|(?!\1)[^\\])*)\1/g)].map((m) => m[2]).filter((t) => !/\s/.test(t)));
   const borrados = destinosB.map((d) => d.raw);
   // lo que sólo se repone (`git checkout -- x`, `git restore x`): cuenta si la historia tiene cambios que perdería
@@ -4788,7 +4840,7 @@ function handleCarrilEHistoria(event, opts = {}) {
       // vive sin historias, la palabra suelta no cuenta: sí la ruta de una historia y la constancia
       if (g.grande) {
         const nombra = () => (repoConHistorias(cwd) || repoConHistorias(path.dirname(g.archivo)) ? MENCIONA_HISTORIA : NOMBRA_RUTA_DE_HISTORIA).test(g.texto);
-        if (!g.texto || (GUION_ESCRIBE.test(g.texto) && nombra())) {
+        if (!g.texto || ((GUION_ESCRIBE.test(g.texto) || algunOpenEscribe(g.texto)) && nombra())) {
           return { block: `⛔ tycon-pipeline — GUION QUE NO SE PUEDE LEER ENTERO\n\n  ${g.archivo}\n  (detectado en ${via})\n  Es demasiado grande para ver qué escribe, y nombra una historia o una constancia. Una historia se edita con\n  la herramienta de edición (Edit/Write); una constancia la firma una persona.\n` };
         }
         continue;
