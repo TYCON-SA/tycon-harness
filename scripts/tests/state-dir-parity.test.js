@@ -103,6 +103,26 @@ const CASES = [
     tyconHome: (h) => path.join(h, 'casa'),
     want: (h) => [path.join(h, CLAUDE, '.tycon-pipeline'), path.join(h, CLAUDE)],
   },
+  // 🔴 Falla con: el shell que no recorta lo que trim() de JS sí (la marca de orden de bytes, el espacio duro, un salto de
+  // línea al principio), o que mira el disco con un «..» que JS resuelve sin mirarlo: los dos leen carpetas distintas.
+  {
+    name: 'TYCON_HOME con la marca de orden de bytes adelante y un espacio duro atrás: se recortan, como trim() en JS',
+    setup: (h) => { fs.mkdirSync(path.join(h, 'casa', 'state'), { recursive: true }); },
+    tyconHome: (h) => `﻿${path.join(h, 'casa')} `,
+    want: (h) => [path.join(h, 'casa', 'state'), path.join(h, 'casa', 'state')],
+  },
+  {
+    name: 'TYCON_HOME con un salto de línea al principio: se recorta',
+    setup: (h) => { fs.mkdirSync(path.join(h, 'casa', 'state'), { recursive: true }); },
+    tyconHome: (h) => `\n${path.join(h, 'casa')}`,
+    want: (h) => [path.join(h, 'casa', 'state'), path.join(h, 'casa', 'state')],
+  },
+  {
+    name: 'TYCON_HOME con «..» que pasa por una carpeta que no existe: se resuelve sin mirar el disco, como en JS',
+    setup: (h) => { fs.mkdirSync(path.join(h, 'casa', 'state'), { recursive: true }); },
+    tyconHome: (h) => `${h}/no-existe/../casa/./`,
+    want: (h) => [path.join(h, 'casa', 'state'), path.join(h, 'casa', 'state')],
+  },
   {
     name: 'TYCON_HOME vacía: como sin la variable',
     setup: (h) => { fs.mkdirSync(path.join(h, '.tycon', 'state'), { recursive: true }); },
@@ -121,6 +141,29 @@ test('T1 Paridad_ShellYTyconHome @story-8.150 @ac-1 — state-dir.sh y tycon-hom
       const js = fromNode(h, th, h);
       assert.deepStrictEqual(sh, js, `${c.name}: shell ${JSON.stringify(sh)} · JS ${JSON.stringify(js)}`);
       assert.deepStrictEqual(sh, c.want(h), `${c.name}: esperaba ${JSON.stringify(c.want(h))}, dieron ${JSON.stringify(sh)}`);
+    } finally {
+      fs.rmSync(h, { recursive: true, force: true });
+    }
+  }
+});
+
+// 🔴 Falla con: el pre-commit global que recorta TYCON_HOME renglón por renglón: con un salto de línea al principio la
+// ruta no empieza con «/», cae a ~/.tycon y busca el arnés en otra casa que la que leen state-dir.sh y JS.
+test('T1c PreCommitGlobal_TyconHomeConBlancosRaros_MismaCasa — el pre-commit recorta como trim() de JS', () => {
+  // el tramo del hook que resuelve el arnés (el nombre del hook va con comodín, como en harness-tools.test.sh)
+  const dir = path.join(ROOT, 'scripts', 'hooks');
+  const hook = fs.readdirSync(dir).find((n) => /^git-pre-c.*-global\.sh$/.test(n));
+  const texto = fs.readFileSync(path.join(dir, hook), 'utf8');
+  const tramo = texto.slice(texto.indexOf('harness_own_home() {'), texto.indexOf('\n_TCG_DIR='));
+  assert.ok(tramo.startsWith('harness_own_home() {'), 'encontré harness_own_home en el gancho');
+  for (const borde of [(c) => `\n${c}`, (c) => `﻿${c} `, (c) => `  ${c}\n\t`]) {
+    const h = lab();
+    try {
+      const casa = path.join(h, 'casa');
+      fs.mkdirSync(path.join(casa, 'harness', 'scripts'), { recursive: true });
+      const r = spawnSync('bash', ['-c', 'eval "$TRAMO"; harness_own_home'],
+        { env: { ...cleanEnv(h, borde(casa)), TRAMO: tramo }, encoding: 'utf8' });
+      assert.strictEqual(r.stdout, path.join(casa, 'harness'), `TYCON_HOME ${JSON.stringify(borde(casa))}: dio «${r.stdout}» ${r.stderr}`);
     } finally {
       fs.rmSync(h, { recursive: true, force: true });
     }

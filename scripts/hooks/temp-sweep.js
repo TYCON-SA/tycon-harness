@@ -153,14 +153,24 @@ function usableRoot(p, uid) {
   return { path: r, dev: st.dev };
 }
 
-function fromProc() {
+function fromProc(raiz = '/proc') {
   let pids;
-  try { pids = fs.readdirSync('/proc').filter((n) => /^\d+$/.test(n)); } catch (_) { return null; }
+  try { pids = fs.readdirSync(raiz).filter((n) => /^\d+$/.test(n)); } catch (_) { return null; }
   const out = new Set();
   for (const pid of pids) {
-    const base = path.join('/proc', pid);
+    const base = path.join(raiz, pid);
     // el de otro usuario no se deja leer, y uno que terminó ya no está: ninguno de los dos cuenta
     try { out.add(fs.readlinkSync(path.join(base, 'cwd'))); } catch (_) { continue; }
+    // el ejecutable y las librerías cargadas también están en uso, aunque no haya un archivo abierto ahí
+    try { const t = fs.readlinkSync(path.join(base, 'exe')); if (t.startsWith('/')) out.add(t.replace(/ \(deleted\)$/, '')); } catch (_) { /* un proceso del núcleo no tiene */ }
+    try {
+      for (const linea of fs.readFileSync(path.join(base, 'maps'), 'utf8').split('\n')) {
+        // la sexta columna es la ruta, desde su «/» hasta el final del renglón (puede traer espacios); las anónimas no
+        // la traen y las del núcleo van entre corchetes
+        const m = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\/.*)$/.exec(linea);
+        if (m) out.add(m[1].replace(/ \(deleted\)$/, ''));
+      }
+    } catch (_) { /* terminó mientras se leía */ }
     let fds;
     try { fds = fs.readdirSync(path.join(base, 'fd')); } catch (e) {
       if (e.code === 'ENOENT' || e.code === 'ESRCH') continue;
@@ -436,4 +446,4 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine };
+module.exports = { sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine, fromProc };

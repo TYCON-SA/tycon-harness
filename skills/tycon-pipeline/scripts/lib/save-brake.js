@@ -811,6 +811,8 @@ const PARECE_GUARDAR = new Set(['commit', 'push', 'pr', 'merge', 'repos']);
 // los programas que cambian archivos: con `-i` (sed, perl), con su salida escrita (curl), o siempre
 const ESCRIBEN = new Set(['tee', 'touch', 'cp', 'mv', 'rm', 'ln', 'install', 'truncate', 'chmod', 'rsync']);
 const ESCRIBEN_EN_LA_CARPETA = new Set(['patch', 'wget', 'unzip', 'tar']);
+// el que abre un zip: escribe donde dice su `-d`, y listar no escribe (se lee por sus banderas)
+const ABREN_ZIP = new Set(['unzip']);
 // un archivo nombrado que existe, o cuya carpeta existe (el que se crea): `s/a/b/` de un sed no lo es
 function rutasEscritas(args, dirs) {
   const out = [];
@@ -911,6 +913,24 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
       for (let k = 0; k < args.length; k++) if (/^(-o|--output)$/.test(args[k])) escritos.push(...rutasEscritas([args[k + 1]], ctx.dirs));
     } else if (cmd === 'dd') {
       escritos.push(...rutasEscritas(args.filter((a) => a.startsWith('of=')).map((a) => a.slice(3)), ctx.dirs));
+    } else if (ABREN_ZIP.has(cmd)) {
+      // listar (`-l`, `-Z1`, `-t`, `-v`) o mandar a la salida (`-p`) no escribe; con `-d`, escribe en esa carpeta (el mismo
+      // criterio que el freno de la consola)
+      // las banderas se leen letra por letra: lo que sigue a `d` o a `P` en el mismo grupo es su valor, no otra bandera
+      // («-dout» extrae en «out» aunque traiga una t)
+      let destino = null;
+      for (let k = 0; k < args.length; k++) {
+        const w = args[k];
+        if (!/^-[A-Za-z]/.test(w) || w.startsWith('--')) continue;
+        for (let j = 1; j < w.length; j++) {
+          const c = w[j];
+          if (c === 'd') { destino = j + 1 < w.length ? w.slice(j + 1) : args[k + 1]; break; }
+          if (c === 'P') break;
+          if ('lZtpv'.includes(c)) return;
+        }
+      }
+      if (destino && !conVariable(destino)) escritos.push(...ctx.dirs.map((d) => path.resolve(d, destino)));
+      else escritos.push(...ctx.dirs);
     } else if (ESCRIBEN_EN_LA_CARPETA.has(cmd)) escritos.push(...ctx.dirs);
   }
 

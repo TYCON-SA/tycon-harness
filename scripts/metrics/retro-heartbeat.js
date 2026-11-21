@@ -94,11 +94,18 @@ const CUBIERTAS = {
     'no la publica ninguna pieza (el recolector de la 2.9 no guarda el archivo del hallazgo, a propósito): a pedido, con el tycon-retrospective-capturer',
 };
 
+const OPCIONES = ['--repo', '--merge', '--story', '--out'];
+
+// lo que no reconoce no se ignora: un «--story <id>» que llegó en una sola palabra (zsh no parte una variable sin
+// comillas) dejaba el latido sin historia. Casos: scripts/tests/retro-heartbeat.test.sh (T21)
 function args(argv) {
   const a = {};
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
-    if (k === '--repo' || k === '--merge' || k === '--story' || k === '--out') a[k.slice(2)] = argv[++i];
+    const igual = /^(--[a-z]+)=(.*)$/s.exec(k);
+    if (igual && OPCIONES.includes(igual[1])) a[igual[1].slice(2)] = igual[2];
+    else if (OPCIONES.includes(k)) a[k.slice(2)] = argv[++i];
+    else salir(`no reconozco el argumento «${k}» (las opciones son ${OPCIONES.join(', ')}, cada una con su valor aparte o con =): no se escribió nada`);
   }
   return a;
 }
