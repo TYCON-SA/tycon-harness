@@ -498,10 +498,17 @@ test('T34b OpenSinModoDeEscritura_NoEsEscritura', () => {
       `python3 -c "open(\\".github/control-changes/n.md\\", \\"w\\").write('x')"`,
       `python3 -c "open('.github/control-changes/n.md', 'r+').write('x')"`,
       `python3 -c "open('.github/control-changes/n.md', encoding='utf-8', mode='x').write('x')"`,
+      // la ruta de una constancia con nombre, con prefijo de texto o en Path(…).open(modo)
+      `python3 -c "open(mode='w', file='.github/control-changes/n.md')"`,
+      `python3 -c "open(r'.github/control-changes/n.md', 'w')"`,
+      `python3 -c "from pathlib import Path; Path('.github/control-changes/n.md').open('a').write('x')"`,
+      `python3 -c "import io; io.open(file='.github/control-changes/n.md', mode='w')"`,
     ]) assert.notEqual(freno(c), '', c);
     // leer una constancia, o un archivo con su modo de lectura entre comillas escapadas, no es escribirlo
     for (const c of [
       `python3 -c "print(open('.github/control-changes/n.md').read())"`,
+      `python3 -c "print(open('.github/control-changes/n.md', mode=\\"r\\").read())"`,
+      `python3 -c "from pathlib import Path; print(Path('.github/control-changes/n.md').open().read())"`,
       `python3 -c "import sys; print(open(sys.argv[1], \\"r\\").read())" specs/story-x.md`,
       porArchivo("print(open(file=sys.argv[1], errors='replace').read())"),
     ]) assert.equal(freno(c), '', c);

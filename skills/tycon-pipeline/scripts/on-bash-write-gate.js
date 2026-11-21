@@ -522,12 +522,34 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
   // 5) scripts inline: open('f','w'|'a'), writeFileSync('f'), fs.writeFile('f', Set-Content/Out-File —
   //    sobre el comando CRUDO (viven dentro de strings que stripNonCommandText vacía a propósito)
   //    también con las comillas escapadas del shell leídas como comillas (`python3 -c "open(\"f\", \"w\")"`)
-  for (const texto of new Set([raw, sinEscapesDeComillas(raw)])) {
-    // open('f', <modo que escribe>): el modo lo dice abreParaEscribir (`'w'`, `'r+'`, `mode='x'`, uno en una variable)
-    // también como método con la ruta primero: `File.open('f', 'w')`, `io.open('f', 'w')`, `codecs.open('f', 'a')`
-    for (const o of texto.matchAll(/(?<![\w$])open\(\s*(['"])([^'"]+)\1\s*,/g)) {
-      if (abreParaEscribir(texto, o.index + o[0].indexOf('(') + 1, false)) out.add(o[2]);
+  // open(<ruta literal>, <modo que escribe>), con el modo leído por abreParaEscribir (`'w'`, `'r+'`, `mode='x'`, uno en
+  // una variable) sobre el texto con las comillas escapadas leídas como comillas: en el crudo, un `\"r\"` no se lee como
+  // lectura. La ruta va primera o como `file=`/`path=`, con o sin prefijo de texto (`r'…'`, `b'…'`); también como método
+  // con la ruta primero (`File.open('f', 'w')`, `io.open`, `codecs.open`) y con la ruta en `Path('f').open('w')`
+  const sinEscapes = sinEscapesDeComillas(raw);
+  const LITERAL = /^[rRbBuUfF]{0,2}(['"])([^'"]+)\1$/;
+  for (const o of sinEscapes.matchAll(/(?<![\w$])open\s*\(/g)) {
+    const desde = o.index + o[0].length;
+    if (!abreParaEscribir(sinEscapes, desde, false)) continue;
+    const primero = primerArgumento(sinEscapes, desde).arg;
+    const conNombre = /^(?:file|path)\s*=\s*([\s\S]+)$/.exec(primero);
+    let lit = LITERAL.exec((conNombre ? conNombre[1] : primero).trim());
+    if (!lit) {
+      // la ruta con nombre puede no ir primera: `open(mode='w', file='f')`
+      for (let pos = desde, k = 0; k < 16; k++) {
+        const a = primerArgumento(sinEscapes, pos);
+        const n = /^(?:file|path)\s*=\s*([\s\S]+)$/.exec(a.arg);
+        if (n) { lit = LITERAL.exec(n[1].trim()); break; }
+        if (sinEscapes[a.fin] !== ',') break;
+        pos = a.fin + 1;
+      }
     }
+    if (lit) out.add(lit[2]);
+  }
+  for (const o of sinEscapes.matchAll(/\bPath\s*\(\s*[rRbBuUfF]{0,2}(['"])([^'"]+)\1\s*\)\s*\.\s*open\s*\(/g)) {
+    if (abreParaEscribir(sinEscapes, o.index + o[0].length, true)) out.add(o[2]);
+  }
+  for (const texto of new Set([raw, sinEscapes])) {
     const reNodeWrite = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile)\(\s*(['"`])([^'"`]+)\1/g;
     while ((m = reNodeWrite.exec(texto))) out.add(m[2]);
     // python: Path('f').write_text(…) / pathlib.Path('f').write_bytes(…)
