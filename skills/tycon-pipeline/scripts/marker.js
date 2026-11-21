@@ -419,6 +419,14 @@ function appendLog(fileName, obj, { estricto = false } = {}) {
 // lectura y la escritura del marcador, así cualquier comando lo ve igual desde cualquier carpeta.
 const conRutas = (m) => require('./lib/run-dir.js').marcadorConRutas(m);
 
+// El marcador de esta sesión tal como está, aunque no nombre historia: una detención del modo autónomo también puede ser
+// de un marcador sin `storyId` (lib/autonomy-decision.js). null si no hay; uno que no se puede leer lanza.
+function readOwnMarkerRaw() {
+  const own = markerFilePath(SID);
+  if (!fs.existsSync(own)) return null;
+  return conRutas(JSON.parse(fs.readFileSync(own, 'utf8')));
+}
+
 // Marker de ESTA sesión. Primero el archivo per-session; si no, fallback al
 // legacy single-file (transición — readonly).
 function readMarker() {
@@ -609,6 +617,20 @@ function cmdSet(payloadJson) {
   // un marcador escrito a mano sobre una ejecución perdida la daría por sana
   frenarSiPerdida(SID, 'set', (existing && existing.repoPath) || payload.repoPath);
   const existingBefore = existing;
+  // La detención del modo autónomo y su resolución las escriben el control de cierre y `resume-autonomy`: un `set` no
+  // las toca, en ninguna historia.
+  for (const k of ['needs_human', 'escalation', 'escalation_reason']) {
+    if (!Object.prototype.hasOwnProperty.call(payload, k)) continue;
+    delete payload[k];
+    console.error(`marker.js set: «${k}» no se cambia con set (lo escriben el control de cierre y resume-autonomy): se descartó.`);
+    appendLog('bypass.log', { kind: 'MARKER_SET_FIELD_DISCARDED', field: k, storyId: payload.storyId });
+  }
+  // Una ejecución detenida espera la decisión del dueño: cambiarla de historia no es una salida (la cierra `clear` con
+  // su firma, o la retoma `resume-autonomy`). Renumerarla conserva la detención.
+  if (existing && existing.needs_human === true && payload.storyId !== existing.storyId && !process.argv.includes('--renumber')) {
+    console.error('marker.js set: Esta ejecución se detuvo y espera la decisión de una persona: marker.js resume-autonomy (o clear, con su firma). No se reemplazó nada.');
+    process.exit(1);
+  }
   // Las banderas de hechos externos tampoco se escriben con set: las pone el arnés cuando hizo el trabajo. Un
   // `get | … | set` que las trae como estaban no cambia nada y pasa.
   {
@@ -2992,6 +3014,11 @@ function cmdSetAutonomous(valRaw) {
   const marker = readMarker();
   if (!marker) {
     console.error('marker.js set-autonomous: no hay marker activo (corré `set` en el Arranque primero)');
+    process.exit(1);
+  }
+  // una ejecución que el control de cierre detuvo espera la decisión del dueño: prenderla sola no es una salida
+  if (on && marker.needs_human === true) {
+    console.error('marker.js set-autonomous: Esta ejecución se detuvo y espera la decisión de una persona: marker.js resume-autonomy. No se cambió nada.');
     process.exit(1);
   }
   marker.autonomous = on;
@@ -5671,6 +5698,20 @@ function cmdClear(rest = []) {
   frenarSiIlegible(markerFilePath(SID), SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
   frenarSiPerdida(SID, 'clear', marcadorAntes && marcadorAntes.repoPath);
+  // una ejecución detenida la cierra el dueño: el perfil puede delegar «cerrar la ejecución», pero esa firma por
+  // delegación (o la automática) no alcanza para salir de una detención que espera su decisión
+  let crudo = null;
+  try { crudo = readOwnMarkerRaw(); } catch (_e) { crudo = null; /* frenarSiIlegible ya frenó uno que no se lee */ }
+  if (crudo && crudo.needs_human === true) {
+    const rc = require('./lib/run-close.js');
+    const frenos = rc.leerFrenos(os.homedir());
+    const l = frenos ? rc.escapeDeCierre(frenos, SID, crudo.startedAt) : null;
+    if (!l || ['delegacion', 'automatica'].includes(l.via)) {
+      console.error(`marker.js clear: una ejecución detenida la cierra una persona, no la delegación ni la firma automática (${l ? `la firma llegó por ${l.via}` : 'no hay constancia de su firma'}). No se borró nada.`);
+      console.error('  O la retoma con su decisión: marker.js resume-autonomy');
+      process.exit(1);
+    }
+  }
   try {
     const marker = readMarker();
     if (marker && marker.storyId) {
@@ -5996,6 +6037,11 @@ function cmdClearSession(sid, rest = []) {
   frenarSiIlegible(p, safe, `clear-session ${safe}`);
   const m = JSON.parse(fs.readFileSync(p, 'utf8'));
   frenarSiPerdida(safe, 'clear-session', m.repoPath);
+  // una ejecución detenida espera la decisión del dueño: desde otra sesión no se borra; la cierra él o la retoma
+  if (m.needs_human === true) {
+    console.error(`marker.js clear-session: esa ejecución espera la decisión de una persona: la cierra ella (clear-session ${safe} --lost, con su firma) o la retoma (resume-autonomy). No se borró nada.`);
+    process.exit(1);
+  }
   // limpiar una corrida dejada a propósito pierde el trabajo: primero se saca la marca, a conciencia
   const marca = marcaDe(safe, m);
   if (marca) {
@@ -7910,6 +7956,92 @@ function cmdAdhocAllowForeignSave(io) {
   process.exit(0);
 }
 
+/**
+ * `resume-autonomy [--ask-again] [--terminal --for-session <sesión>]`: la decisión de seguir en autónomo, que toma la
+ * sesión detenida (lib/autonomy-decision.js). Sin detención abierta, con el botón de pánico puesto o con un «No» del dueño
+ * ya dado (y sin `--ask-again`) sale 1 sin pedir nada. Con un permiso de la terminal vigente y de esta detención, lo
+ * consume. Si no, pide la firma `autonomy-resume`, que aprueba sólo el click del dueño (en esta pestaña o en la de la
+ * coordinadora) o su terminal. Con `--terminal --for-session`, deja el permiso para esa sesión y no toca su marcador.
+ * Con la decisión, relee el marcador, comprueba que la detención es la misma y vuelve a prender el modo con las vueltas
+ * en cero; la detención resuelta queda en `escalationsResolved` y en gates.log.
+ */
+function cmdResumeAutonomy(argv) {
+  const ad = require('./lib/autonomy-decision.js');
+  const ow = ownerWindow();
+  let askAgain = false;
+  let terminal = false;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--ask-again') { askAgain = true; continue; }
+    if (argv[i] === '--terminal') { terminal = true; continue; }
+    if (argv[i] === '--for-session') { i++; continue; }
+    console.error(`marker.js resume-autonomy: no conozco «${String(argv[i]).slice(0, 60)}». Uso: marker.js resume-autonomy [--ask-again] [--terminal --for-session <sesión>]`);
+    process.exit(2);
+  }
+  const comandoTerminal = ad.comandoDeLaTerminal(__filename, SID);
+  const no = (codigo, motivo) => { console.error(`🔒 marker.js resume-autonomy: ${motivo}`); process.exit(codigo); };
+  const cual = ad.panico(STATE_DIR, process.env);
+  if (cual) no(1, `el botón de pánico sigue puesto (${cual}): sacalo antes. No pido la firma.`);
+  // la detención puede ser de un marcador sin historia: se lee tal como está
+  let marker = null;
+  try { marker = readOwnMarkerRaw(); } catch (e) { no(2, `no pude leer el marcador de esta sesión (${e.code || e.message}): no pido la firma.`); }
+  const d = ad.detencionDe(marker);
+  if (!d) no(1, `No hay una detención que retomar en esta sesión (${SID}): el modo autónomo no está detenido esperando a una persona, o no hay marcador.${terminal && SID === '_nosession' ? ' Desde la terminal, la sesión detenida va en --for-session <sesión>.' : ''} No pido la firma.`);
+  // la decisión se aplica sobre el marcador de ahora: si la detención cambió entre el cuadro y el click, no vale
+  const aplicar = ({ via, by, at }) => {
+    let fresco = null;
+    try { fresco = readOwnMarkerRaw(); } catch (_e) { fresco = null; }
+    const ahora = ad.detencionDe(fresco);
+    if (!ahora || ahora.huella !== d.huella) no(1, 'lo que se mostró cambió: pedí el cuadro de nuevo (la detención ya no es la misma). No toqué nada.');
+    fresco.autonomous = true;
+    fresco.iter = 0;
+    fresco.noProgressStreak = 0;
+    fresco.lastFailures = [];
+    delete fresco.needs_human;
+    delete fresco.escalation_reason;
+    delete fresco.escalation;
+    const resueltas = Array.isArray(fresco.escalationsResolved) ? fresco.escalationsResolved : [];
+    fresco.escalationsResolved = [...resueltas, { reason: ahora.reason, failures: ahora.failures, iter: ahora.iter, at: ahora.at, decision: { via, by, at } }].slice(-ad.RESUELTAS_MAX);
+    fresco.lastTouch = nowIso();
+    writeMarker(fresco);
+    syncSessionState(SID);
+    appendLog('gates.log', { name: 'autonomy-resume', status: 'ok', via, by, huella: d.huella, reason: ahora.reason, detenidaEn: ahora.at });
+    process.stdout.write(`Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): corré los controles de nuevo antes de cerrar el turno.\n`);
+    process.exit(0);
+  };
+  if (!terminal) {
+    const p = ad.tomarPermiso(STATE_DIR, SID, d.huella, { seco: PREVIO });
+    if (p.permiso) {
+      if (PREVIO) { process.stdout.write(`${ow.PRECHEQUEO_OK}\n`); process.exit(0); }
+      return aplicar({ via: 'terminal', by: p.permiso.by || 'terminal', at: p.permiso.at || nowIso() });
+    }
+    if (p.motivo) console.error(`ℹ️ marker.js resume-autonomy: ${p.motivo}.`);
+    if (!askAgain) {
+      const r = ad.rechazoDe({ casa: os.homedir(), sesion: SID, detencion: d });
+      if (r && r.ilegible) no(1, `no pude leer si una persona ya dijo que no (${r.ilegible}): no pido la firma. Si la persona está en la sesión y pide seguir: marker.js resume-autonomy --ask-again`);
+      if (r) no(1, `Una persona dijo que no a esta detención (${ad.horaCorta(r.at)}): la sesión queda detenida hasta que la persona entre. Si entró y pide seguir: marker.js resume-autonomy --ask-again`);
+    }
+  }
+  const r = ow.exigir({ firma: 'autonomy-resume', argv: process.argv.slice(1),
+    resumen: `que la ejecución ${marker.storyId ? `de la historia ${marker.storyId} ` : ''}(sesión ${SID}) vuelva al modo autónomo, con las vueltas en cero`,
+    propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
+  if (r.codigo !== 0) {
+    console.error(`🔒 marker.js resume-autonomy: la persona no decidió seguir — ${r.motivo}`);
+    console.error('   Lo decide sólo su click, en esta pestaña o en la de la coordinadora, o su terminal:');
+    console.error(`     ${comandoTerminal}`);
+    process.exit(r.codigo === 2 ? 2 : 1);
+  }
+  if (!['click', 'terminal'].includes(r.via)) no(1, `esto lo decide sólo el click de una persona o su terminal, y volvió por ${r.via}; no toqué nada.`);
+  if (terminal) {
+    // la terminal deja el permiso para la sesión detenida: su marcador es de sólo lectura desde acá, y lo consume ella
+    const permiso = { huella: d.huella, via: 'terminal', by: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'terminal', at: nowIso() };
+    ad.escribirPermiso(STATE_DIR, SID, permiso);
+    appendLog('gates.log', { name: 'autonomy-resume-permit', status: 'ok', destino: SID, huella: d.huella, by: permiso.by });
+    process.stdout.write(`Una persona decidió seguir desde su terminal: el permiso quedó para la sesión ${SID}. Cuando esa sesión corra marker.js resume-autonomy, vuelve al modo autónomo.\n`);
+    process.exit(0);
+  }
+  return aplicar({ via: r.via, by: (r.registro && r.registro.aprobada_en) || r.sesion || SID, at: nowIso() });
+}
+
 function cmdAdhoc(sub, payloadJson) {
   if (sub === 'clear-orphan') return cmdAdhocClearOrphan(payloadJson);
   const io = require('./lib/story-gate-io.js');
@@ -8536,6 +8668,9 @@ switch (cmd) {
     break;
   case 'set-autonomous':
     cmdSetAutonomous(arg1);
+    break;
+  case 'resume-autonomy':
+    cmdResumeAutonomy(process.argv.slice(3));
     break;
   case 'set-batch':
     cmdSetBatch(arg1);

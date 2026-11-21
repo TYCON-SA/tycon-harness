@@ -53,7 +53,10 @@ function estado(marker) {
   const pendientes = (Array.isArray(m.stepsPending) ? m.stepsPending : []).map(String);
   const sinCorrer = requeridos().filter((p) => pendientes.includes(p) || isPending(m, p));
   const paseSinCerrar = !!m.adversarial && veredictoPaseAdversarial(m).veredicto !== 'paso';
-  return { rojos, sinMedir, sinTurno, sinCorrer, paseSinCerrar };
+  // el control de cierre la detuvo y espera la decisión del dueño (lib/autonomy-decision.js): no es un rojo, pero
+  // cerrarla sin él tampoco es una salida
+  const detenida = m.needs_human === true;
+  return { rojos, sinMedir, sinTurno, sinCorrer, paseSinCerrar, detenida };
 }
 
 function abierta(e) {
@@ -67,6 +70,7 @@ function motivoDe(e) {
   if ((e.sinTurno || []).length) partes.push(`pruebas sin turno: no se midieron (${e.sinTurno.join(', ')})`);
   if (e.sinCorrer.length) partes.push(`sin correr: ${e.sinCorrer.join(', ')}`);
   if (e.paseSinCerrar) partes.push('el pase adversarial sin cerrar');
+  if (e.detenida) partes.push('se detuvo y espera la decisión de una persona');
   if (e.sinMedir.length) partes.push(`aceptado sin medir: ${e.sinMedir.join(', ')}`);
   return partes.join('; ');
 }
@@ -125,7 +129,7 @@ function consulta(sid, home) {
   }
   try {
     const e = estado(m);
-    return { hay: true, autonomo: m.autonomous === true, abierta: abierta(e), motivo: motivoDe(e), desde: m.startedAt };
+    return { hay: true, autonomo: m.autonomous === true, abierta: abierta(e), detenida: !!e.detenida, motivo: motivoDe(e), desde: m.startedAt };
   } catch (err) {
     return { hay: '?', motivo: `no pude leer el estado del marcador (${err.message})` };
   }
@@ -173,7 +177,9 @@ if (require.main === module) {
   let r;
   try { r = consulta(sid); } catch (e) { r = { hay: '?', motivo: `no pude consultar la ejecución (${e.message})` }; }
   const hay = r.hay === '?' ? '?' : r.hay ? 1 : 0;
-  process.stdout.write(`hay=${hay}\nautonomo=${r.autonomo ? 1 : 0}\nabierta=${r.abierta ? 1 : 0}\nmotivo=${una(r.motivo)}\n`);
+  // una detenida que espera la decisión del dueño cuenta como abierta para cerrarla: la firma es suya
+  const abiertaODetenida = !!(r.abierta || r.detenida);
+  process.stdout.write(`hay=${hay}\nautonomo=${r.autonomo ? 1 : 0}\nabierta=${abiertaODetenida ? 1 : 0}\nmotivo=${una(r.motivo)}\n`);
   // un marcador que existe y no se puede leer se trata como abierto y con el modo autónomo prendido. Declarar un control
   // a mano o dar por corridos los revisores frena con la ejecución en verde también: el escape es el verde, no el rojo
   for (const pedida of pedidas || []) {
@@ -193,7 +199,7 @@ if (require.main === module) {
     // la firma siempre que haya una ejecución: no dependen de cómo esté (renovar la fecha del rojo esperado se hace con la
     // ejecución en verde)
     const aplica = siempre || deArchivo || esc === 'cerrar como deuda' || esc === 'rojo esperado de la matriz' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
-      : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || r.abierta;
+      : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || abiertaODetenida;
     if (!aplica) continue;
     process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '')}\n`);
     // la huella de la lista y la fecha que va a mostrar la ventana: el freno la anota con la constancia

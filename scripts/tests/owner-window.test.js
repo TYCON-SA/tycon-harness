@@ -2583,7 +2583,7 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
 const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
-  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'lost-run:particion', 'escape:no-mutation'];
+  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion', 'escape:no-mutation'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
@@ -2605,6 +2605,8 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     ['lost-run:particion', `node ${MARKER} clear-session ses-a --lost --partition`],
     // cerrar las pruebas sin los mutantes: sin motivo o en un paso que no las corre, el guion se niega antes de la firma
     ['escape:no-mutation', `node ${MARKER} complete-step run-tests --no-mutation --reason "refactor sin código nuevo"`],
+    // volver al modo autónomo: sin detención, con el botón de pánico o con el «No» del dueño se niega antes del cuadro
+    ['autonomy-resume', `node ${MARKER} resume-autonomy`],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {
