@@ -65,7 +65,8 @@ function compacto(ms) {
  * El repo de historias (con su evidencia) y, si se pide, el hermano `Back`. Las horas, una hora antes de ahora: la fecha
  * de los archivos en disco es la de ahora, así que el juez siempre le pregunta a git.
  */
-function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-progress', propios = {}, delHermano = { 'src/Feature.cs': '// v1\n' } } = {}) {
+function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-progress', propios = {}, delHermano = { 'src/Feature.cs': '// v1\n' }, id = '5.28' } = {}) {
+  const slug = id.replace(/\./g, '-');
   const ws = carpeta();
   const esp = repoNuevo(ws, 'Historias');
   const ahora = Math.floor(Date.now() / 1000) - 3600;
@@ -80,22 +81,22 @@ function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-pr
   if (fePaths.length) yaml.push('  fe_paths:', ...fePaths.map((p) => `    - ${p}`));
   if (yaml.length > 1) escribir(esp, '.tycon/advisors.yaml', yaml.join('\n') + '\n');
   for (const [rel, texto] of Object.entries(propios)) escribir(esp, rel, texto);
-  const cuerpo = ['---', 'story: 5.28', `status: ${estado}`, 'files_to_modify:', ...declarados.map((d) => `  - ${d}`), '---', '',
+  const cuerpo = ['---', `story: ${id}`, `status: ${estado}`, 'files_to_modify:', ...declarados.map((d) => `  - ${d}`), '---', '',
     '## Acceptance Criteria', '', '1. **Given** algo, **When** pasa, **Then** resultado.', '', '### Tests', '',
     '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| E1 | `curl la pantalla` | 1 | e2e | x | y |', ''].join('\n');
-  const storyPath = escribir(esp, 'specs/stories/5-28-carga.md', cuerpo);
+  const storyPath = escribir(esp, `specs/stories/${slug}-carga.md`, cuerpo);
   commit(esp, 'historias', ahora - 900);
   const dod = path.join(esp, '.advisors', 'dod-runtime');
   fs.mkdirSync(dod, { recursive: true });
   const gatesLog = path.join(ws, 'gates.log');
   const humo = (ts = ahora - 50) => {
-    ledgerLine.append({ dodDir: dod, gatesLog, story: '5.28', acs: [1], ts: new Date(ts * 1000).toISOString().replace(/\.\d+Z$/, 'Z'), cmd: 'curl -s http://localhost:5000/pantalla', mirror: true });
+    ledgerLine.append({ dodDir: dod, gatesLog, story: id, acs: [1], ts: new Date(ts * 1000).toISOString().replace(/\.\d+Z$/, 'Z'), cmd: 'curl -s http://localhost:5000/pantalla', mirror: true });
     commit(esp, 'evidencia', ts + 5);
   };
   const gate = (ts = ahora - 40) => {
-    const filtro = 'story-5-28.spec.ts';
-    escribir(esp, `.advisors/dod-runtime/5.28-e2e-gate-${compacto(ts * 1000)}.md`, ['# gate', `**Spec filter**: ${filtro}`, '```', 'verdict=PASS', 'total=1', 'passed=1', '```', '- skipped: 0', ''].join('\n'));
-    fs.appendFileSync(gatesLog, JSON.stringify({ ts: new Date().toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: `bash e2e-gate.sh /fe 5.28 /dir ${filtro}`, exit: 0 }) + '\n');
+    const filtro = `story-${slug}.spec.ts`;
+    escribir(esp, `.advisors/dod-runtime/${id}-e2e-gate-${compacto(ts * 1000)}.md`, ['# gate', `**Spec filter**: ${filtro}`, '```', 'verdict=PASS', 'total=1', 'passed=1', '```', '- skipped: 0', ''].join('\n'));
+    fs.appendFileSync(gatesLog, JSON.stringify({ ts: new Date().toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: `bash e2e-gate.sh /fe ${id} /dir ${filtro}`, exit: 0 }) + '\n');
     commit(esp, 'evidencia del gate', ts + 5);
   };
   const calcular = (extra = {}) => rm.compute({ storyPath, gatesLogPath: gatesLog, testsResults: [], ...extra });
@@ -343,8 +344,8 @@ test('T14 TandaQueDejaDeEstarBloqueada_SuArchivoVuelveAContar', () => {
 // ---------------------------------------------------------------- la copia de la historia y el clon compartido
 
 /** El laboratorio con el hermano y su copia en la rama de la historia; el repo de historias, en esa rama o suelto. */
-function labConCopia({ declarados = ['src/Feature.cs'], suelto = false, copia = true } = {}) {
-  const f = lab({ declarados });
+function labConCopia({ declarados = ['src/Feature.cs'], suelto = false, copia = true, id } = {}) {
+  const f = lab({ declarados, ...(id ? { id } : {}) });
   git(f.esp, ['checkout', '-q', '-b', RAMA]);
   if (suelto) git(f.esp, ['checkout', '-q', '--detach']);
   const wt = path.join(f.ws, 'Back-wt');
@@ -400,6 +401,15 @@ test('T17 HermanoSinCopiaDeLaHistoria_SeJuzgaYLoDice @story-8.235 @ac-17', () =>
   const rd = d.calcular();
   assert.equal(rd.perAc[1].verdict, 'NOT-RUN', avisos(rd));
   assert.match(avisos(rd), /comparada contra Back tal como está declarado: no tomé ninguna copia suya en la rama feature\/5-28-carga ni con el número 5\.28/);
+});
+
+test('T17c HermanoSinCopia_HistoriaSinRamaNiNumero_DiceQueNoBusco @story-8.235 @ac-17', () => {
+  // la historia no tiene número (su id no lleva dígitos) y el repo de historias está suelto: no hay cómo buscar la copia
+  const f = labConCopia({ copia: false, suelto: true, id: 'carga' });
+  avanzaElClon(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /comparada contra Back tal como está declarado: no busqué su copia, la historia no tiene rama ni número/);
 });
 
 test('T17b HermanoEnLaRamaDeLaHistoria_SinAvisoDeCopia @story-8.235 @ac-17', () => {
