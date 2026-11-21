@@ -79,14 +79,6 @@ const CASOS = {
       fs.mkdirSync(carpeta);
       return L.correr(BASH_WRITE, bash(`rm -rf ${carpeta}`, L.dir));
     },
-    'historia-ilegible-cuenta-como-historia': (L) => {
-      const r = L.repo();
-      fs.mkdirSync(path.join(r.dir, 'specs'), { recursive: true });
-      const h = path.join(r.dir, 'specs', 'story-9.99-x.md');
-      fs.writeFileSync(h, '---\nstory: 9.99\nstatus: draft\n---\n# x\n');
-      fs.chmodSync(h, 0o000);
-      return L.correr(BASH_WRITE, bash('echo x >> specs/story-9.99-x.md', r.dir), { cwd: r.dir });
-    },
   },
   'on-stop-dod-gate.js': {
     'lista-de-corridas-ilegible-retiene': (L) => {
@@ -158,13 +150,130 @@ const CASOS = {
     'entrada-vacia': (L) => L.correr(SAFETY, ''),
     'entrada-no-json': (L) => [L.correr(SAFETY, 'hola'), L.correr(SAFETY, '[]')],
     'without-jq-or-node': (L) => L.correr(SAFETY, bash('ls', L.dir), { PATH: L.pathSin(['jq', 'node']) }),
-    'reloj-vencido': (L) => L.correr(SAFETY, '', { argv: ['/bin/bash', '-c', `(sleep 4) | bash "${SAFETY}"`], extra: { TYCON_SAFETY_TIMEOUT_S: '1' } }),
+    // una entrada sana que tarda más que el reloj: sin el reloj pasaría
+    'reloj-vencido': (L) => L.correr(SAFETY, '', { argv: ['/bin/bash', '-c', `(sleep 4; printf '%s' '${bash('ls', L.dir)}') | bash "${SAFETY}"`], extra: { TYCON_SAFETY_TIMEOUT_S: '1' } }),
   },
   'prod-access-guard.js': {
     'json-ilegible-con-base': (L) => L.correr(PROD, 'sqlcmd -S prod.example.com -Q x'),
     'sin-comando-con-base': (L) => L.correr(PROD, JSON.stringify({ x: 'sqlcmd -S prod.example.com -Q x' })),
-    'comando-gigante-con-base': (L) => L.correr(PROD, bash(`sqlcmd -S prod.example.com -Q "${'x'.repeat(40 * 1024)}"`, L.dir)),
+    // un servidor que no es de producción: corto pasa, y sólo el tamaño lo hace frenar
+    'comando-gigante-con-base': (L) => L.correr(PROD, bash(`sqlcmd -S localhost -Q "${'x'.repeat(40 * 1024)}"`, L.dir)),
   },
 };
 
-module.exports = { CASOS };
+// El control de cada caso: el mismo escenario sin la falla, que tiene que dejar pasar. Si el caso frena y su control
+// también, el caso frena por la decisión normal y no protege el camino que nombra.
+const CONTROLES = {
+  'on-pre-commit.js': {
+    'freno-de-guardar-caido-en-corrida': (L) => {
+      const r = L.repo();
+      marcador(L);
+      return L.correr(PRE_COMMIT, bash('git commit -m x', r.dir), { cwd: r.dir });
+    },
+    'corrida-con-registro-ilegible': (L) => {
+      const r = L.repo();
+      marcador(L);
+      fs.writeFileSync(path.join(L.estado, 'gates.log'), '');
+      return L.correr(PRE_COMMIT, bash('git commit -m x', r.dir), { cwd: r.dir });
+    },
+    'marcador-de-corrida-ilegible-hacia-el-equipo': (L) => {
+      const r = L.repo();
+      return L.correr(PRE_COMMIT, bash('git push origin main', r.dir), { cwd: r.dir });
+    },
+  },
+  'pr-auto-complete-guard.js': {
+    'lector-de-merge-no-carga': (L) => L.correr(AUTO_COMPLETE, bash('gh pr merge 5 --merge', L.dir)),
+  },
+  'session-cap-guard.js': {
+    'entrada-ilegible-con-claude': (L) => L.correr(SESSION_CAP, bash('claude --bg x', L.dir)),
+    'no-pude-decidir': (L) => L.correr(SESSION_CAP, bash('claude --bg x', L.dir)),
+    'no-pude-contar': (L) => L.correr(SESSION_CAP, bash('claude --bg x', L.dir)),
+    'no-pude-anotar': (L) => L.correr(SESSION_CAP, bash('claude --bg x', L.dir)),
+  },
+  'on-bash-write-gate.js': {
+    'red-del-freno-caido-escribe-historia': (L) => L.correr(BASH_WRITE, bash('rm specs/a.md', L.dir)),
+    'ejecucion-perdida-sin-poder-revisar': (L) => L.correr(BASH_WRITE, bash('touch x', L.dir)),
+    'borra-carpeta-sin-leer-aperturas': (L) => {
+      const carpeta = path.join(L.dir, 'algo');
+      fs.mkdirSync(carpeta);
+      return L.correr(BASH_WRITE, bash(`rm -rf ${carpeta}`, L.dir));
+    },
+  },
+  'on-stop-dod-gate.js': {
+    'lista-de-corridas-ilegible-retiene': (L) => L.correr(STOP_DOD, JSON.stringify({ session_id: SID })),
+    'no-pude-revisar-las-piezas-retiene': (L) => L.correr(STOP_DOD, JSON.stringify({ session_id: SID, cwd: L.dir })),
+    // con el contador legible, el segundo cierre seguido deja cerrar
+    'contador-de-frenos-ilegible-retiene': (L) => {
+      marcador(L);
+      registroIlegible(L);
+      L.correr(STOP_DOD, JSON.stringify({ session_id: SID }));
+      return L.correr(STOP_DOD, JSON.stringify({ session_id: SID }));
+    },
+  },
+  'retro-pending.js': {
+    'fecha-de-entrada-ajena-ilegible-reclama': (L) => {
+      const r = L.repo();
+      const sha = r.git('rev-parse', 'HEAD').stdout.trim();
+      // stable-data: un merge ajeno recién hecho no se reclama todavía; la hora no se compara
+      fs.writeFileSync(path.join(L.estado, 'retro-pending.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: 'otra', repoPath: r.dir, sha, branch: 'main' })}\n`);
+      return L.correr(RETRO, stop({ cwd: r.dir }), { cwd: r.dir, extra: { TYCON_RETRO_ASK_PR: '0' } });
+    },
+    // la carpeta que ya no existe no se reclama: avisa y deja cerrar
+    'carpeta-no-es-repo-se-reclama': (L) => {
+      const dir = path.join(L.dir, 'ya-no-esta');
+      // stable-data: el merge propio tiene que ser reciente para que el freno lo mire; la hora no se compara
+      fs.writeFileSync(path.join(L.estado, 'retro-pending.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: SID, repoPath: dir, sha: 'a'.repeat(40), branch: 'main' })}\n`);
+      return L.correr(RETRO, stop({ cwd: L.dir }), { cwd: L.dir, extra: { TYCON_RETRO_ASK_PR: '0' } });
+    },
+    // con el contador legible, el cuarto cierre seguido deja cerrar (el tope es tres)
+    'contador-de-bloqueos-ilegible-frena-sin-tope': (L) => {
+      const dir = path.join(L.dir, 'no-es-repo');
+      fs.mkdirSync(dir);
+      // stable-data: el merge propio tiene que ser reciente para que el freno lo reclame; la hora no se compara
+      fs.writeFileSync(path.join(L.estado, 'retro-pending.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: SID, repoPath: dir, sha: 'a'.repeat(40), branch: 'main' })}\n`);
+      return [1, 2, 3, 4].map(() => L.correr(RETRO, stop({ cwd: dir }), { cwd: dir, extra: { TYCON_RETRO_ASK_PR: '0' } })).pop();
+    },
+  },
+  'unpushed-work-notice.js': {
+    // un repo al día no retiene
+    'repo-no-escaneado-retiene': (L) => {
+      const r = L.repo();
+      fs.writeFileSync(path.join(L.estado, `unpushed-commits-${SID}.jsonl`), `${JSON.stringify({ kind: 'commit', repo: r.dir, sha: r.git('rev-parse', 'HEAD').stdout.trim() })}\n`);
+      L.correr(UNPUSHED, stop());
+      return L.correr(UNPUSHED, stop());
+    },
+    // con el archivo de avisados escribible, el mismo trabajo sin subir retiene una vez y después deja cerrar
+    'estado-de-avisados-no-anotable-retiene': (L) => {
+      const r = L.repo();
+      const remoto = path.join(L.dir, 'remoto.git');
+      require('child_process').spawnSync('git', ['init', '-q', '--bare', remoto]);
+      r.git('remote', 'add', 'origin', remoto);
+      r.git('push', '-q', '-u', 'origin', 'main');
+      fs.writeFileSync(path.join(r.dir, 'b.txt'), 'b\n');
+      r.git('add', 'b.txt');
+      r.git('commit', '-q', '-m', 'sin subir');
+      fs.writeFileSync(path.join(L.estado, `unpushed-commits-${SID}.jsonl`), `${JSON.stringify({ kind: 'commit', repo: r.dir, sha: r.git('rev-parse', 'HEAD').stdout.trim() })}\n`);
+      L.correr(UNPUSHED, stop());
+      return L.correr(UNPUSHED, stop());
+    },
+    // la carpeta borrada retiene una sola vez: el segundo cierre deja cerrar
+    'carpeta-borrada-sin-poder-mirarla': (L) => {
+      fs.writeFileSync(path.join(L.estado, `unpushed-commits-${SID}.jsonl`), `${JSON.stringify({ kind: 'commit', repo: path.join(L.dir, 'ya-no-esta') })}\n`);
+      L.correr(UNPUSHED, stop());
+      return L.correr(UNPUSHED, stop());
+    },
+  },
+  'safety-guard-pre.sh': {
+    'entrada-vacia': (L) => L.correr(SAFETY, bash('ls', L.dir)),
+    'entrada-no-json': (L) => L.correr(SAFETY, bash('ls', L.dir)),
+    'without-jq-or-node': (L) => L.correr(SAFETY, bash('ls', L.dir), { PATH: L.pathSin(['jq']) }),
+    'reloj-vencido': (L) => L.correr(SAFETY, '', { argv: ['/bin/bash', '-c', `(sleep 4; printf '%s' '${bash('ls', L.dir)}') | bash "${SAFETY}"`] }),
+  },
+  'prod-access-guard.js': {
+    'json-ilegible-con-base': (L) => L.correr(PROD, 'ls -la'),
+    'sin-comando-con-base': (L) => L.correr(PROD, JSON.stringify({ x: 'ls -la' })),
+    'comando-gigante-con-base': (L) => L.correr(PROD, bash('sqlcmd -S localhost -Q "select 1"', L.dir)),
+  },
+};
+
+module.exports = { CASOS, CONTROLES };

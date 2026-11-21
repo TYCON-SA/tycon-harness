@@ -325,10 +325,6 @@
         {
           "camino": "borra-carpeta-sin-leer-aperturas",
           "dispara": "borrar o mover una carpeta sin poder leer el registro de aperturas"
-        },
-        {
-          "camino": "historia-ilegible-cuenta-como-historia",
-          "dispara": "el archivo que escribe existe y no se puede leer: cuenta como una historia que no está en borrador"
         }
       ],
       "fail_closed_new": [],
@@ -368,6 +364,12 @@
           "dispara": "un comodín o un cd sobre una carpeta que no se puede leer: puede tener historias",
           "suite": "tycon-pipeline/scripts/tests/story-gate.test.js",
           "motivo": "no lo reproduje aislado: llega sólo con un destino que el freno resuelve como comodín; queda para la tanda B"
+        },
+        {
+          "camino": "historia-ilegible-cuenta-como-historia",
+          "dispara": "el archivo que escribe existe y no se puede leer: cuenta como una historia que no está en borrador",
+          "suite": "tycon-pipeline/scripts/tests/story-gate.test.js",
+          "motivo": "por consola el freno frena también una historia legible en borrador: el caso no distingue la falla de la decisión normal"
         }
       ],
       "modos_que_no_aplican": {
@@ -709,14 +711,13 @@
           "motivo": "es una regla sobre un texto que no se puede leer, no una pieza que falla: la prueba su suite"
         }
       ],
-      "modos_que_no_aplican": {
-        "without-git": "no llama a git: con y sin git decide igual"
-      },
+      "modos_que_no_aplican": {},
       "llama": [
         "jq",
         "node",
         "ps",
-        "pgrep"
+        "pgrep",
+        "git"
       ],
       "guion": "safety-guard-pre.sh",
       "spec": "@tcg:safety-guard-pre.sh",

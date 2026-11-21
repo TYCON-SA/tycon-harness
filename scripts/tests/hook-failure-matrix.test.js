@@ -15,7 +15,7 @@ const os = require('os');
 const path = require('path');
 const { ROOT, GUARD, LAUNCHER, lab } = require('./lib/public-guard-lab.js');
 const HL = require('./lib/hook-failure-lab.js');
-const { CASOS } = require('./lib/hook-failure-cases.js');
+const { CASOS, CONTROLES } = require('./lib/hook-failure-cases.js');
 
 const POLICY = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hook-failure-policy.json'), 'utf8'));
 const fila = POLICY.frenos.find((f) => f.guion === 'public-push-guard.js');
@@ -160,7 +160,7 @@ test('T1 Policy_EveryBlockingRegistrationHasARow @story-8.159 @ac-1 @ac-2 — ca
     assert.deepStrictEqual(Boolean(f.plataformas && f.plataformas.windows), !(h.platforms && h.platforms.windows === false), `${h.spec}: las plataformas son las de la lista`);
     assert.ok(['codigo-2', 'deny', 'decision-block'].includes(f.como_frena), `${h.spec}: cómo frena`);
   }
-  assert.strictEqual(filas.size, registros.length, 'un renglón por registro, sin repetidos');
+  assert.strictEqual(POL.frenos.filter((f) => f.spec).length, registros.length, 'un renglón por registro, sin repetidos');
 });
 
 test('T2 Policy_RowWithoutRegistration_Fails_ExceptManagedSettings @story-8.159 @ac-2 — un renglón sin registro falla, salvo el de producción; otra historia y fuera de la matriz, con su suite', () => {
@@ -199,6 +199,8 @@ test('T3 Matrix_EveryHookHasACasePerApplicableMode_TerrainVariants @story-8.159 
   }
 });
 
+const GIT_QUE_ESCRIBE = ['git reset --hard', 'git stash', 'git commit -am x', 'git checkout -- README.md'];
+
 test('T4 Matrix_NotApplicableMode_IsDeclaredAndTrue_PerPlatform @story-8.159 @ac-6 — un freno sin git o sin ps decide igual con y sin ellos', (t) => {
   const L = HL.lab(t);
   const r = L.repo();
@@ -206,7 +208,10 @@ test('T4 Matrix_NotApplicableMode_IsDeclaredAndTrue_PerPlatform @story-8.159 @ac
     if (esDeOtraHistoria(f) || !enEstaPlataforma(f)) continue;
     for (const [m, faltan] of [['without-git', ['git']], ['without-ps', ['pgrep', 'ps']]]) {
       if (!(f.modos_que_no_aplican || {})[m] || /lo prueba su suite/.test(f.modos_que_no_aplican[m])) continue;
-      for (const entrada of Object.values(variantesDe(f))) {
+      // la entrada típica no llega a todas las ramas: un freno de la consola se prueba también con comandos de git que
+      // escriben, sobre un repo con cambios
+      const deLaConsola = f.evento === 'PreToolUse' && /Bash/.test(f.matcher);
+      for (const entrada of [...Object.values(variantesDe(f)), ...(deLaConsola ? GIT_QUE_ESCRIBE : [])]) {
         const { json } = eventoDe(f, entrada, r.dir);
         const con = HL.resultado(L.correr(guionDe(f), json, { extra: { ...(f.encendido || {}) }, cwd: r.dir }));
         const sin = HL.resultado(L.correr(guionDe(f), json, { extra: { ...(f.encendido || {}) }, cwd: r.dir, PATH: L.pathSin(faltan) }));
@@ -282,6 +287,11 @@ test('T11 Matrix_FailClosedToday_EveryPathStillBlocks_TheOtherHooks @story-8.159
       for (const res of [].concat(CASOS[f.guion][c.camino](L))) {
         assert.strictEqual(HL.resultado(res), 'frena', `${f.guion} · ${c.camino}: frena (${(res.err || res.out).replace(/\s+/g, ' ').slice(0, 200)})`);
       }
+      // el mismo escenario sin la falla deja pasar: el caso frena por la falla, no por la decisión normal
+      const ctl = (CONTROLES[f.guion] || {})[c.camino];
+      assert.ok(ctl, `${f.guion} · ${c.camino}: tiene su control sin la falla`);
+      const sana = ctl(HL.lab(t));
+      assert.strictEqual(HL.resultado(sana), 'pasa', `${f.guion} · ${c.camino}: sin la falla deja pasar (${(sana.err || sana.out).replace(/\s+/g, ' ').slice(0, 200)})`);
     }
   }
 });
