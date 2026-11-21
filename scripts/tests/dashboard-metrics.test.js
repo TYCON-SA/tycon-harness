@@ -531,5 +531,20 @@ t('BenchWithoutBaseline_RegressionsCardIsNotMeasured: baselineRegressions null n
   assert.strictEqual(con.estado, 'medido');
 });
 
+// El latido escribía la historia en `story` y el tablero la leía de `story_id`: cada latido quedaba sin historia.
+t('LatidoConStory_ElTableroLeeSuHistoria: `story` vale cuando falta `story_id`', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dash-story-'));
+  const viejo = base();
+  delete viejo.story_id;
+  viejo.story = '8.318';
+  fs.writeFileSync(path.join(dir, 'metrics-2026-11-19-demo-8.318-abc1234.json'), JSON.stringify(viejo));
+  const conLasDos = { ...base(), story_id: '9.1', story: 'otra' };
+  fs.writeFileSync(path.join(dir, 'metrics-2026-11-19-demo-9.1-abc1235.json'), JSON.stringify(conLasDos));
+  const { records } = loadAll(dir);
+  assert.strictEqual(records.find((r) => r.file.includes('8.318')).story_id, '8.318');
+  assert.strictEqual(records.find((r) => r.file.includes('9.1')).story_id, '9.1', 'story_id manda');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(process.exitCode ? '\nFALLARON tests' : `\n${n} tests OK`);
