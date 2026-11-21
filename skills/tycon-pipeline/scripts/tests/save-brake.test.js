@@ -94,9 +94,9 @@ function corrida(repo, extra = {}) {
 function abrir(h, marker, sid = SID) { fs.writeFileSync(marcadorPath(h, sid), JSON.stringify({ ...marker, sessionId: sid }, null, 2)); }
 const SIN_SESION = Object.fromEntries(Object.keys(process.env).filter((k) => !/^(CLAUDE_CODE_SESSION_ID|TYCON_SESSION_ID|CODEX_SESSION_ID)$/.test(k)).map((k) => [k, process.env[k]]));
 /** El gancho con el evento de Claude Code: `{ status, stderr, stdout }`. */
-function gancho(h, command, { cwd, sid = SID, env = {}, transcript, preload, modo } = {}) {
+function gancho(h, command, { cwd, sid = SID, env = {}, transcript, preload, modo, evento = {} } = {}) {
   const ev = { session_id: sid, tool_name: 'Bash', tool_input: { command }, cwd, ...(transcript ? { transcript_path: transcript } : {}),
-    ...(modo ? { permission_mode: modo } : {}) };
+    ...(modo ? { permission_mode: modo } : {}), ...evento };
   const r = spawnSync(process.execPath, [...(preload ? ['--require', preload] : []), HOOK], {
     input: JSON.stringify(ev), cwd, encoding: 'utf8', env: { ...SIN_SESION, ...GIT_ENV, HOME: h, USERPROFILE: h, ...env }, timeout: 60000,
   });
@@ -1224,6 +1224,25 @@ function preparada(a, extra = {}) {
   });
   return 'prepareCommitHuellas' in extra ? m : { ...m, prepareCommitHuellas: so.huellas(so.reposDeLaCorrida({ marker: m })) };
 }
+
+// 🔴 Falla con: en Codex, el pedido preparado que contesta `ask`: Codex no tiene ventana, cuenta el gancho como fallido y
+// el comando corre (medición 562, 21/11). En Codex niega con la pregunta y cómo aprobarlo a mano; en Claude Code, pregunta.
+test('Pedido_EnCodex_NiegaConLaPreguntaYComoAprobarlo', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, preparada(a));
+  const claude = gancho(h, 'gh pr create --fill', { cwd: a });
+  assert.match(claude.stdout, VENTANA, claude.stdout + claude.stderr);
+  for (const [como, opciones] of [['turn_id', { evento: { turn_id: 't1' } }], ['variable', { env: { CODEX_SESSION_ID: SID } }]]) {
+    const r = gancho(h, 'gh pr create --fill', { cwd: a, ...opciones });
+    assert.doesNotMatch(r.stdout, VENTANA, `${como}: ${r.stdout}`);
+    const salida = JSON.parse(r.stdout).hookSpecificOutput;
+    assert.strictEqual(salida.permissionDecision, 'deny', como);
+    assert.match(salida.permissionDecisionReason, ABRO, como);
+    assert.match(salida.permissionDecisionReason, /Codex no muestra la ventana de permiso/, como);
+    assert.ok(salida.permissionDecisionReason.includes('gh pr create --fill'), `${como}: el comando para aprobarlo a mano`);
+  }
+});
 
 // 🔴 Falla con: un commit dentro de una corrida que todavía abre la ventana, una forma de commit que el lector deja de
 // leer, o el commit que pasa sin quedar en el registro del freno.

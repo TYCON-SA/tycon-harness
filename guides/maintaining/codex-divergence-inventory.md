@@ -420,7 +420,7 @@ Codex y Ollama.
 **Lo que Codex NO cubre con esos modelos, dicho y no prometido**: los revisores que usan servidores MCP (el índice de
 código, la memoria) trabajan sin ellos. Caso: `scripts/tests/ollama-tools-probe.test.js`.
 
-## La ventana del pull request — ③ asimetría DECLARADA (2026-11-10)
+## La ventana del pull request — ③ asimetría DECLARADA (2026-11-10), medida el 2026-11-21
 
 **Claude Code**: la persona aprueba el pull request, no el commit (`lib/save-brake.js`). El commit y el empuje de la
 rama de trabajo no preguntan. El pull request y el empuje a una rama compartida frenan sin «Preparar el pull request» o
@@ -428,10 +428,16 @@ con el código cambiado desde su foto, y si no, abren la ventana de permiso (`pe
 evidencia.
 
 **Codex**: registra el mismo `on-pre-commit.js` (`adapters/codex/hooks.json`), y los frenos (salida 2) valen igual: un
-pull request sin preparar o con el código cambiado no sale. La pregunta no: Codex no tiene reglas `ask` equivalentes (ver
-«Freno de producción»), y el banco de controles no puede medir qué hace Codex con esa salida, porque sólo mira la del
-gancho. Es el mismo hueco que ya tenía el «¿guardo?» del commit.
+pull request sin preparar o con el código cambiado no sale. La pregunta no tiene ventana: medido el 2026-11-21 con
+codex-cli 0.162.1, Codex no acepta `ask`. En `codex exec` lo marca «PreToolUse Failed», y en la pantalla interactiva
+«PreToolUse hook returned unsupported permissionDecision:ask». En los dos casos corre el comando igual. `deny` sí frena
+y muestra su motivo.
 
-**Lo que Codex NO cubre, dicho y no prometido**: que una persona diga que sí antes de que el pull request preparado
-salga. Casos: T18 de `skills/tycon-pipeline/scripts/tests/save-brake.test.js` (el gancho registrado en Codex frena un
-pull request sin preparar). Qué hace Codex con `ask` queda por medir en una sesión de Codex.
+Por eso toda pregunta de un gancho sale por `scripts/lib/hook-ask.js` (`salidaDePregunta`): en Claude Code es `ask`, y
+en Codex es `deny` con el texto de la pregunta y cómo aprobarlo a mano (que la persona corra el comando en su
+terminal). La usan el freno de guardar y la ventana del dueño (`owner-window.js gate`, que además ya negaba las firmas
+en Codex).
+
+**Lo que Codex NO cubre, dicho y no prometido**: que una persona diga que sí desde la sesión antes de que el pull
+request preparado salga. En Codex no sale: lo saca la persona desde su terminal. Casos: T18 y
+`Pedido_EnCodex_NiegaConLaPreguntaYComoAprobarlo` de `skills/tycon-pipeline/scripts/tests/save-brake.test.js`.

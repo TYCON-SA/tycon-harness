@@ -1171,7 +1171,8 @@ function main() {
       // los modos de la herramienta en los que la ventana le llega a una persona; sin el dato, se pregunta
       const modo = event.permission_mode == null ? null : String(event.permission_mode);
       if (modo === null || ['default', 'acceptEdits', 'plan'].includes(modo)) {
-        fs.writeSync(1, JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: freno.pregunta } }));
+        // en Codex la pregunta sale como negativa: su `ask` deja correr el comando
+        fs.writeSync(1, require('../../../scripts/lib/hook-ask.js').salidaDePregunta({ evento: event, texto: freno.pregunta }));
       } else {
         process.stderr.write(`⚠️  ${freno.pregunta}\n   Esta pestaña no pide permisos (${modo.slice(0, 40)}): guarda sin preguntar.\n`);
       }
