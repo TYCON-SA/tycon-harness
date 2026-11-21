@@ -502,3 +502,31 @@ test('T2 2.79-Espejo_BajadaYArmado_NoSePisan @story-2.79 @ac-2', { skip: SIN_BAC
     assert.strictEqual(caida.buzonEstado().bajando, false, 'la marca se suelta tras el fallo');
   } finally { caida.detener(); await git.cerrar(); }
 });
+
+test('Sitio_ProximaLectura_ConLasFuentesReales: la hora de la próxima lectura es la de ahora más los minutos de site.refresh_minutes', { skip: SIN_BACKEND }, async () => {
+  // 🔴 rojo si: la hora que muestra «esperando la huella» no sale de la lectura programada (otros minutos, sin hora
+  // aunque ya se programó, o una hora que no avanza). La T52 de site-config.test.js mira el texto; ésta, el número.
+  const buzon = await H.arrancarBuzon({ blobs: blobsDe(1) });
+  const raiz = tmp('mbx-proxima-');
+  const ops = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], refresh_minutes: 7, mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs' } } };
+  repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: ops }), path.join(raiz, 'trabajo'));
+  const git = await arrancarRepoHttp({ raiz, cabecera: CABECERA });
+  const datos = tmp('mbx-proxima-datos-');
+  const v = validarConfiguracion(H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: TOKEN, SITE_MAILBOX_SAS: H.sas(), SITE_DATA_DIR: datos }));
+  assert.ok(v.ok, JSON.stringify(v.problemas));
+  let reloj = Date.parse('2026-11-03T22:08:00.000Z');
+  const fuentes = crearFuentes({ cfg: v.cfg, dataDir: datos, log: () => {}, urlBuzon: buzon.base, ahora: () => reloj });
+  try {
+    assert.strictEqual(fuentes.proximaLectura(), null, 'antes de arrancar no hay hora');
+    fuentes.arrancar();
+    // stable-data: es el plazo de la espera a que arranque, no un dato de la prueba (la hora de las fuentes es `reloj`)
+    const hasta = Date.now() + 30000;
+    while (fuentes.proximaLectura() === null && Date.now() < hasta) await new Promise((r) => setTimeout(r, 50));
+    assert.ok(fuentes.estado().cargado, 'leyó el repo de operaciones y el buzón');
+    assert.strictEqual(fuentes.proximaLectura(), reloj + 7 * 60000, 'ahora más los 7 minutos configurados');
+    // una lectura a mano no mueve la programada; la próxima vuelta del temporizador sí
+    reloj += 60000;
+    await fuentes.refrescar();
+    assert.strictEqual(fuentes.proximaLectura(), Date.parse('2026-11-03T22:15:00.000Z'));
+  } finally { fuentes.detener(); await git.cerrar(); await buzon.cerrar(); }
+});
