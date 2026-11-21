@@ -827,6 +827,33 @@ test('T3 HermanoPorNumero_PalabraEntera @story-7.34 @ac-3 — 1.4 no es 11-4, 1-
   assert.equal(ramaNombraLaStory('feat/1x4', '1.4'), false);
 });
 
+// Renglón 4 de la fila del 21/11 (8.274 B): el portón eligió como público el único worktree cuya rama nombra la story, y era
+// el de la tanda anterior, atrás de main: dio un rojo que main ya había arreglado. Por el número sólo se elige una copia que
+// ya trae su main; una atrás no se elige, y se dice. La de la misma rama sigue ganando, como antes.
+test('T1 HermanoPorNumero_AtrasDeMain_NoLoElige — una copia vieja de otra tanda no se elige por el número', () => {
+  const lab = laboratorioPorNumero({ id: '8.268', backRama: 'story/8.268-c', frontRamas: ['story/8.268-b-medicion'] });
+  const origen = path.join(lab.raiz, 'Front-origen.git');
+  spawnSync('git', ['init', '-q', '--bare', '-b', 'main', origen]);
+  git(lab.front, 'remote', 'add', 'origin', origen);
+  git(lab.front, 'push', '-q', 'origin', 'main');
+  // main sigue con un arreglo que la copia vieja no trae
+  escribir(lab.front, 'scripts/lib/arreglo.js', 'module.exports = 1;\n');
+  git(lab.front, 'add', '-A');
+  git(lab.front, '-c', 'user.email=lab@example.invalid', '-c', 'user.name=lab', 'commit', '-q', '-m', 'el arreglo en main');
+  git(lab.front, 'push', '-q', 'origin', 'main');
+  git(lab.front, 'fetch', '-q', 'origin');
+  const atras = hermanosConAvisos(lab.backWt, lab.story);
+  assert.deepEqual(atras.roots, [lab.front], 'ya entró y quedó atrás de main: el declarado');
+  assert.match(atras.avisos, /ya entró a main y está atrás de origin\/main/, atras.avisos);
+  // con trabajo propio, aunque esté atrás de main, es el código de la story: se elige como siempre. Sin commitear también
+  // cuenta (lo encontró el pase adversarial)
+  escribir(lab.frontWts[0], 'scripts/lib/tanda.js', 'module.exports = 2;\n');
+  assert.deepEqual(hermanosConAvisos(lab.backWt, lab.story).roots, [lab.frontWts[0]], 'trabajo sin commitear');
+  git(lab.frontWts[0], 'add', '-A');
+  git(lab.frontWts[0], '-c', 'user.email=lab@example.invalid', '-c', 'user.name=lab', 'commit', '-q', '-m', 'trabajo de la tanda');
+  assert.deepEqual(hermanosConAvisos(lab.backWt, lab.story).roots, [lab.frontWts[0]], 'trabajo commiteado');
+});
+
 test('T4 HermanoPorNumero_DosCandidatos_NoElige @story-7.34 @ac-4 — dos worktrees con el número: el declarado y se dice', () => {
   const lab = laboratorioPorNumero({ frontRamas: ['feat/conciliacion-1-4-x', 'feature/1-4-lista-negra'] });
   const { roots, avisos } = hermanosConAvisos(lab.backWt, lab.story);
@@ -1044,7 +1071,7 @@ test('T6 8.229-Companion_AbsoluteOrHome_NoFallback @story-8.229 @ac-6 — una ab
 
 // El checkout compartido en `main`, su `origin` y un worktree de la historia 9.1: lo que elige `enLaMismaRama` cuando la
 // historia está en la rama `main`. Corre en otro proceso: los avisos se dicen una vez por proceso.
-function laboratorioMain() {
+function laboratorioMain({ propio = true } = {}) {
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-main-')));
   const semilla = repoGit(path.join(raiz, 'semilla'), { 'a.js': '1\n' });
   const origen = path.join(raiz, 'origen.git');
@@ -1053,6 +1080,12 @@ function laboratorioMain() {
   execFileSync('git', ['clone', '-q', origen, pub]);
   const wt = path.join(raiz, 'pub-wt');
   git(pub, 'worktree', 'add', '-q', '-b', 'story/9.1-x', wt);
+  // la rama de la story tiene trabajo propio: no es una copia vieja que ya entró a main (salvo que la prueba pida esa copia)
+  if (propio) {
+    escribir(wt, 'story.js', 'lo de la story\n');
+    git(wt, 'add', '-A');
+    git(wt, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qm', 'lo de la story');
+  }
   return { pub: fs.realpathSync(pub), wt: fs.realpathSync(wt) };
 }
 function elegir(declarado, rama, numero) {
@@ -1128,15 +1161,15 @@ function avanzarMain(l, n) {
 test('Hermanos_RamaDeLaHistoriaAtrasada_EligeElAlDiaYAvisa (T8) @story-8.274 @ac-10', () => {
   // la rama de la historia ya entró entera a main y quedó 3 atrás: se usa el checkout en main, al día, y se dice
   for (const rama of ['wt/otro-nombre', 'story/9.1-x']) {
-    const l = laboratorioMain();
+    const l = laboratorioMain({ propio: false });
     avanzarMain(l, 3);
     const r = elegir(l.pub, rama, '9.1');
     assert.equal(r.eleccion, l.pub, `${rama}: elige el clon al día`);
-    assert.match(r.avisos, /la rama story\/9\.1-x está 3 commits atrás de main y ya entró entera/, rama);
+    assert.match(r.avisos, /la rama story\/9\.1-x ya entró a main y está atrás de origin\/main \(3 commits\)/, rama);
     assert.ok(r.avisos.includes(l.pub), `${rama}: nombra el clon que usa`);
   }
   // el ancla de la evidencia sigue la misma elección: queda sobre el clon que midió el portón, no sobre la rama vieja
-  const a = laboratorioMain();
+  const a = laboratorioMain({ propio: false });
   avanzarMain(a, 3);
   const esp = repoGit(path.join(path.dirname(a.pub), 'esp'), { '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../pub\n' });
   git(esp, 'checkout', '-q', '-b', 'wt/otro-nombre');

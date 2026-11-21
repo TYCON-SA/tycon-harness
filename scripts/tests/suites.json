@@ -1816,6 +1816,12 @@
       "requiere": []
     },
     {
+      "__nota": "los errores del arranque de una corrida y sus carpetas que se tragaban sin decir nada: cada uno avisa o queda no medido.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-silences.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.161: la copia congelada de lo que revisa cada vuelta (sello, copia de sólo lectura, comparación con lo que se guarda) y la procedencia de cada prueba. Repos de juguete en una carpeta temporal, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/frozen-tree.test.js",
@@ -5028,6 +5034,12 @@
       "__nota": "las entradas del reclamo de la retrospectiva que anotaron el commit equivocado (scripts/hooks/retro-pending.js): la punta que contesta el remoto al abrir el pedido, la rama de origen, la corrección con quién y por qué (--correct), el aviso de «ya estaba en main» y la carpeta principal por nombre. Repos de juguete con git de verdad y un remoto en una carpeta. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-pending-correct.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los git dentro de un `bash -c '…'` se ven todos, cada uno con su carpeta (scripts/lib/git-target.js: lo usan el reclamo de la retrospectiva, el freno de sesiones y el de producción).",
+      "raiz": "arnes",
+      "ruta": "tests/git-target-shell-c.test.js",
       "requiere": []
     },
     {

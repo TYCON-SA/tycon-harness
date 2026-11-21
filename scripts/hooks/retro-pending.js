@@ -375,6 +375,18 @@ function comandoDeCorregir(e) {
 const avisoYaEnMain = (e) => (yaEstabaEnMain(e) ? `\n      ⚠ ese commit ya estaba en ${ramaCorta(e.branch) || 'main'} antes del pedido: la entrada puede haber anotado una rama de origen vieja. Si es así, la corrige una persona con el commit real: ${comandoDeCorregir(e)}` : '');
 
 /**
+ * ¿La sesión es la coordinadora designada de esta máquina? Es para decir quién corrigió, no para dejarla hacer algo: no
+ * pide la confirmación de la firma delegada. Sin poder leerlo, no.
+ */
+function esLaCoordinadora(sesion) {
+  if (!sesion || sesion === '_nosession') return false;
+  try {
+    const d = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js')).designacionVigente({ dir: STATE_DIR });
+    return Boolean(d && !d.error && d.sesion === sesion);
+  } catch { return false; }
+}
+
+/**
  * `--correct --sha <anotado> --real <commit> --reason "<texto>" [--repo <carpeta>]`: agrega la corrección de UNA
  * entrada. Busca en todo el registro, también las entradas que hoy no se reclaman (viejas o de otra carpeta). `--repo`
  * elige entre entradas con la misma sha: la carpeta anotada, o su principal. El commit real tiene que existir en el repo
@@ -415,8 +427,12 @@ function corregir(argv) {
   // el commit real viene después del anotado (el pedido mergeó una punta que ya lo traía): sin eso, una corrección podría
   // saldar la entrada con cualquier commit que ya tenga su retrospectiva
   if (gitOrNull(dir, ['merge-base', '--is-ancestor', e.sha, completo]) === null) return salir(`el commit ${realArg} no trae al anotado (${e.sha}): la corrección apunta al commit que el pedido mergeó, que lo contiene`);
-  const quien = git(dir, ['config', '--get', 'user.name']) || (() => { try { return os.userInfo().username; } catch { return null; } })() || 'sin nombre';
-  const c = { ts: new Date().toISOString(), tipo: 'correccion', entrada: { repo: e.repoPath, sha: e.sha, ts: e.ts }, real: completo.slice(0, 12), motivo, quien, carpeta: dir, sesion: sessionIdOf({}) };
+  const usuario = git(dir, ['config', '--get', 'user.name']) || (() => { try { return os.userInfo().username; } catch { return null; } })() || 'sin nombre';
+  const sesion = sessionIdOf({});
+  // la coordinadora corre con el usuario de git de la máquina: la corrección dice que fue ella, no la persona
+  const coordinadora = esLaCoordinadora(sesion);
+  const quien = coordinadora ? `la coordinadora (sesión ${sesion}, con el usuario de git ${usuario})` : usuario;
+  const c = { ts: new Date().toISOString(), tipo: 'correccion', entrada: { repo: e.repoPath, sha: e.sha, ts: e.ts }, real: completo.slice(0, 12), motivo, quien, ...(coordinadora ? { por: 'coordinadora' } : {}), carpeta: dir, sesion };
   const renglones = copias.map((x) => JSON.stringify({ ...c, entrada: { repo: x.repoPath, sha: x.sha, ts: x.ts } }) + '\n').join('');
   // el catch de `main` se traga todo (un gancho no rompe nada): una corrección que no se pudo escribir se dice acá
   try {
@@ -470,7 +486,11 @@ function numerosDeAz(salida) {
     if (ids.length) return ids;
   }
   const renglones = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  return renglones.length && renglones.every((l) => /^\d+$/.test(l)) ? renglones.map(Number) : [];
+  // `--query pullRequestId -o tsv` contesta el número solo; un `git rev-parse` antes en el mismo comando deja su commit
+  // en otro renglón (letras de la a a la f): ése no es otro texto, y el número sigue siendo el del pedido
+  const esCommit = (l) => /^[0-9a-f]{7,40}$/.test(l) && /[a-f]/.test(l);
+  const numeros = renglones.filter((l) => /^\d+$/.test(l));
+  return numeros.length && renglones.every((l) => /^\d+$/.test(l) || esCommit(l)) ? numeros.map(Number) : [];
 }
 
 /** El número de cada pedido de la salida de la herramienta: `pullRequestId` de az, la dirección `…/pull/N` de gh. */

@@ -778,7 +778,11 @@ function topeDeRechazos(cfg, repo) {
       const v = RR.delYaml(require('./config-source.js').leerCommiteado(repo));
       const n = Number(v);
       if (v !== undefined && Number.isInteger(n) && n >= RR.MINIMO && n <= RR.MAXIMO) return n;
-    } catch (_) { /* sin el ajuste del repo vale el de la organización, el mismo que usan las vueltas del código */ }
+    } catch (e) {
+      // sin el ajuste del repo vale el de la organización, el mismo que usan las vueltas del código; se dice, porque el
+      // número del repo puede ser otro
+      process.stderr.write(`⚠️  no pude leer review.max_rounds de ${repo} (${String((e && e.message) || e).split('\n')[0]}): vale el de la organización (${cfg.review.max_rounds}).\n`);
+    }
   }
   return cfg.review.max_rounds;
 }
@@ -1023,3 +1027,6 @@ module.exports = {
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };
+
+// el tope de rechazos, para sus pruebas (start-silences.test.js)
+module.exports.topeDeRechazos = topeDeRechazos;

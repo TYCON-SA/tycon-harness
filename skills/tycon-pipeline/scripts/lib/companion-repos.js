@@ -240,7 +240,7 @@ function alDiaOVieja(w, worktrees, nombre, elegir, porNumero) {
     const alDia = worktrees.find((x) => x.rama === 'main' && mainAlDia(x.ruta));
     if (alDia) {
       const wt = elegir(alDia.ruta);
-      avisar(`${nombre}: la rama ${w.rama} está ${d.atras} commits atrás de main y ya entró entera: uso ${wt}, al día con main`);
+      avisar(`${nombre}: la rama ${w.rama} ya entró a main y está atrás de origin/main (${d.atras} commits): uso ${wt}, al día con main`);
       return wt;
     }
   }
