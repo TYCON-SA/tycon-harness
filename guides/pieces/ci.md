@@ -327,3 +327,13 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 **Quién la usa:** Quien escribe pruebas de navegador, a mano; los repos salen de `product-parity.json`. Avisa y no frena.
 
 **Dónde se prueba:** `scripts/tests/tests-without-ci.test.sh`
+
+## scripts/tests/hidden-window.test.js
+
+**Qué es:** El control que frena todo lanzamiento de un proceso, en el código que corre en la máquina de quien desarrolla, que no pida la ventana oculta (`windowsHide`).
+
+**Por qué existe:** En Windows, un proceso sin consola que lanza un programa de consola sin esa opción abre una ventana visible: con cientos de git por minuto, una lluvia de ventanas. Cada carpeta de `scripts/` se declara adentro o afuera, con su motivo.
+
+**Quién la usa:** La CI del público, en cada pedido.
+
+**Dónde se prueba:** `scripts/tests/hidden-window.test.js`, con su lector en `scripts/tests/lib/hidden-window-scan.js`

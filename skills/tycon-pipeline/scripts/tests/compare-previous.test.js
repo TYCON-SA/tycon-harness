@@ -91,6 +91,33 @@ test('T1 Compare_CorreConMainYConElCambio @story-8.167 @ac-1 — smoke-run.sh --
   assert.ok(informe[0].main && informe[0].cambio, JSON.stringify(informe[0]));
 });
 
+test('Compare_InputFromFile_BothSidesReadIt — la entrada que recibe el humo desde un archivo la reciben los dos lados', () => {
+  // un gancho lee su evento por la entrada: main la imprime tal cual, el cambio en mayúsculas
+  const L = laboratorio({
+    herramienta: 'process.stdout.write(require("fs").readFileSync(0, "utf8"));\n',
+    cambio: 'process.stdout.write(require("fs").readFileSync(0, "utf8").toUpperCase());\n',
+  });
+  const evento = path.join(L.base, 'evento.txt');
+  fs.writeFileSync(evento, 'evento-de-prueba\n');
+  const fd = fs.openSync(evento, 'r');
+  let r;
+  try {
+    r = spawnSync('bash', [SMOKE, path.join(L.repo, '.advisors', 'dod-runtime'), path.join(L.repo, 'specs', 'story-9.7-cmp.md'), '--compare', '--', process.execPath, 'tool.js'],
+      { cwd: L.repo, encoding: 'utf8', env: L.env(), stdio: [fd, 'pipe', 'pipe'] });
+  } finally { fs.closeSync(fd); }
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(`${r.stdout}${r.stderr}`, /EVENTO-DE-PRUEBA/, 'el humo de siempre (el código del cambio) recibe la entrada');
+  const informe = cp().leerInforme(L.runDir);
+  const e = informe[informe.length - 1];
+  assert.strictEqual(e.resultado, 'distinto', `sin la entrada, los dos lados darían igual: ${JSON.stringify(e)}`);
+  assert.deepStrictEqual(e.diff[0], { linea: 1, main: 'evento-de-prueba', cambio: 'EVENTO-DE-PRUEBA' });
+  // pase adversarial: la entrada por una tubería o un socket (`input:` de Node) no se lee, y se avisa
+  const s = spawnSync('bash', [SMOKE, path.join(L.repo, '.advisors', 'dod-runtime'), path.join(L.repo, 'specs', 'story-9.7-cmp.md'), '--compare', '--', process.execPath, 'tool.js'],
+    { cwd: L.repo, encoding: 'utf8', env: L.env(), input: 'evento-de-prueba\n' });
+  assert.strictEqual(s.status, 0, s.stderr);
+  assert.match(s.stderr, /la comparación corre sin ella/, `una entrada que no se copia se dice: ${s.stderr}`);
+});
+
 test('T2 Compare_Igual @story-8.167 @ac-2 — mismo código y misma salida: igual', () => {
   const L = laboratorio({ cambio: 'console.log("hola");\n// un comentario\n' });
   const { e } = L.comparar(node('tool.js'));

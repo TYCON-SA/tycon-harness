@@ -146,7 +146,11 @@ function validarParte(texto, nombre) {
 function parteMedible(story, batch, { deLaCorrida = false } = {}) {
   if (!batch || !story) return null;
   let texto;
-  try { texto = fs.readFileSync(story, 'utf8'); } catch (_) { return null; }
+  try { texto = fs.readFileSync(story, 'utf8'); } catch (e) {
+    // una historia que no está no tiene parte; una que está y no se lee se dice: se mide la historia entera sin saberlo
+    if (e.code !== 'ENOENT') process.stderr.write(`⚠️  no pude leer la historia ${story} (${e.code || e.message}): no sé su parte ${batch}, se mide la historia entera.\n`);
+    return null;
+  }
   const p = validarParte(texto, batch);
   return p.valid && (!p.done || deLaCorrida) ? p : null;
 }

@@ -494,6 +494,23 @@ test('T12 ExpectRed_Acmatrix_Renew @story-8.252 @ac-7 — renovar dentro del top
   assert.match(E.leer('s-t12').checks.acmatrix, /^green/);
 });
 
+test('ExpectRed_Acmatrix_RenewLogUnwritable_KeepsOldDate — si la renovación no se puede anotar, la fecha nueva no se guarda', () => {
+  const E = paraElRojoEsperado('s-t12b');
+  const T = ['T1', 'T2', 'T3'];
+  E.firmar('s-t12b', { pruebas: T, hasta: fecha(3) });
+  let r = expectRed(E, 's-t12b', T, fecha(3));
+  assert.strictEqual(r.status, 0, r.stderr);
+  // el gates.log no se deja escribir: es una carpeta
+  const gatesLog = path.join(E.dir(), 'gates.log');
+  fs.rmSync(gatesLog);
+  fs.mkdirSync(gatesLog);
+  E.firmar('s-t12b', { pruebas: T, hasta: fecha(10) });
+  r = expectRed(E, 's-t12b', T, fecha(10));
+  assert.notStrictEqual(r.status, 0, 'sin el renglón de la renovación, la renovación no se acepta');
+  assert.match(r.stderr, /gates\.log/);
+  assert.strictEqual(E.leer('s-t12b').expectedRed.acmatrix.until, fecha(3), 'el marcador sigue con la fecha de antes');
+});
+
 test('T8 Notice_ExpiredEvidenceDebt @story-8.252 @ac-8 — la deuda vencida con sus criterios sin correr se avisa al arrancar, con su sello propio', () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'expected-red-notice-'));
   const home = path.join(base, 'home');

@@ -117,6 +117,16 @@ function banco(opts = {}) {
     `const {rubrosNoMedidos}=require(${JSON.stringify(path.join(TCG, 'scripts', 'controls-bench', 'unmeasured-categories.js'))});`,
     'const noMedido=(tool,runs)=>{const nm=rubrosNoMedidos({tool,runs});const o={};if(nm.inestables)o.inestables=nm.inestables;if(nm.paridad)o.paridad=nm.paridad;return Object.keys(o).length?{no_medido:o}:{};};',
     'if(modo==="empty"){if(i>=0)fs.writeFileSync(process.argv[i+1],JSON.stringify({ts:new Date().toISOString(),tool:"claude",runs:1,failed:0,criterio:0,inestables:null,erroresDeCorrida:0,fugas:0,artefactos:0,parityBreaks:null,paridadReal:null,baselineRegressions:0,results:{},...noMedido("claude",1)}));process.exit(0);}',
+    // un rojo de criterio en la primera ejecución; al repetirlo (`--only`), `flaky` acierta y `steady` vuelve a fallar
+    'if(modo==="flaky"||modo==="steady"){',
+    `  fs.appendFileSync(${JSON.stringify(bitacora)}+".llamadas", JSON.stringify(process.argv.slice(2))+"\\n");`,
+    '  const pasa=modo==="flaky"&&process.argv.includes("--only");',
+    '  const v=pasa?{pass:true,clase:"ok"}:{pass:false,clase:"criterio",failures:["no marcó la regla"]};',
+    '  const res={"adv::caso-1":{type:"must-flag",tools:{claude:v}}};',
+    '  if(!process.argv.includes("--only")) res["adv::caso-2"]={type:"must-pass",tools:{claude:{pass:true,clase:"ok"}}};',
+    '  const c={ts:new Date().toISOString(),tool:"claude",runs:1,failed:pasa?0:1,criterio:pasa?0:1,inestables:null,erroresDeCorrida:0,fugas:0,artefactos:0,varianzaDeclarada:0,parityBreaks:null,paridadReal:null,paridadPorInestabilidad:null,baselineRegressions:0,skippedMcp:0,alcance:"vida",results:res,...noMedido("claude",1)};',
+    '  if(i>=0)fs.writeFileSync(process.argv[i+1],JSON.stringify(c));process.exit(pasa?0:1);',
+    '}',
     'const casos={"a|claude":{},"b|claude":{},"c|claude":{}};',
     // 🔴 `--tool both` = DOS ranuras por caso (una por herramienta). Con 3 casos hay 6 ranuras:
     // 3 errores = UNA herramienta entera caída (la otra midió) · 6 = las dos.
@@ -2332,4 +2342,72 @@ test('T80 notice_reads_team_key_from_maintainers_clone: con la máquina designad
   });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /examen de los revisores NO ESTÁ CORRIENDO/, `el aviso denuncia el examen que falta — «${r.stdout}»`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Los rojos de criterio se repiten una vez: el que acierta al repetirse es INESTABLE, no criterio
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+test('Repeticion_RojoQueAcierta_PasaAInestable — se repite sólo el que falló, y el aviso lo cuenta como inestable', () => {
+  // 🔴 rojo: con una ejecución por caso, un error esporádico del modelo sale como «1 de criterio (el revisor razona mal)»
+  const b = banco({ modoRunner: 'flaky' });
+  const r = correr(b);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const llamadas = fs.readFileSync(`${b.bitacora}.llamadas`, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.strictEqual(llamadas.length, 2, 'la primera ejecución y UNA repetición');
+  assert.ok(!llamadas[0].includes('--only'), 'la primera es el chequeo entero');
+  const k = llamadas[1].indexOf('--only');
+  assert.deepStrictEqual(llamadas[1].slice(k, k + 2), ['--only', 'adv::caso-1'], 'se repite sólo el que falló');
+  const rep = JSON.parse(fs.readFileSync(b.reporteQueViaja, 'utf8'));
+  assert.strictEqual(rep.criterio, 0);
+  assert.strictEqual(rep.inestables, 1);
+  assert.deepStrictEqual(rep.repeticion, { repetidos: 1, inestables: 1, siguen: 0, sin_repetir: 0 });
+  assert.strictEqual(rep.results['adv::caso-1'].tools.claude.clase, 'inestable');
+  const a = avisar(b);
+  assert.match(a.stdout, /0 de criterio/, a.stdout);
+  assert.match(a.stdout, /1 inestables de 1 que fallaron y se repitieron/, a.stdout);
+});
+
+test('Repeticion_RojoQueVuelveAFallar_SigueDeCriterio — dos veces rojo es el revisor razonando mal', () => {
+  const b = banco({ modoRunner: 'steady' });
+  const r = correr(b);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const rep = JSON.parse(fs.readFileSync(b.reporteQueViaja, 'utf8'));
+  assert.strictEqual(rep.criterio, 1);
+  assert.strictEqual(rep.inestables, 0);
+  assert.deepStrictEqual(rep.repeticion, { repetidos: 1, inestables: 0, siguen: 1, sin_repetir: 0 });
+  const a = avisar(b);
+  assert.match(a.stdout, /1 de criterio/, a.stdout);
+});
+
+test('Repeticion_SinReporte_NoCambiaNada — una repetición que no midió no convierte un rojo en inestable', () => {
+  // 🔴 rojo: «no pude repetir» leído como «acertó» borraría un rojo de criterio sin haberlo medido
+  const primera = { criterio: 1, inestables: null, results: { 'adv::c': { tools: { claude: { pass: false, clase: 'criterio', failures: ['x'] } } } } };
+  assert.deepStrictEqual(E.casosParaRepetir(primera), ['adv::c']);
+  const u = E.unirRepeticion(primera, null, ['adv::c'], 'la repetición terminó (exit 1) sin dejar reporte');
+  assert.strictEqual(u.criterio, 1);
+  assert.strictEqual(u.inestables, null, 'sin ningún caso repetido, la inestabilidad sigue «no medida»: nunca un 0');
+  assert.strictEqual(u.repeticion.sin_repetir, 1);
+  assert.match(u.results['adv::c'].tools.claude.repeticion, /no se pudo repetir: la repetición terminó/);
+  // lo que no es criterio no se repite: un error de ejecución, una fuga o un verde
+  assert.deepStrictEqual(E.casosParaRepetir({ results: { e: { tools: { claude: { pass: false, clase: 'error' } } }, v: { tools: { claude: { pass: true } } } } }), []);
+  // una repetición que trae el caso en error tampoco lo vuelve inestable
+  const conError = E.unirRepeticion(primera, { results: { 'adv::c': { tools: { claude: { pass: false, clase: 'error' } } } } }, ['adv::c']);
+  assert.strictEqual(conError.criterio, 1);
+  assert.match(conError.results['adv::c'].tools.claude.repeticion, /no se pudo repetir: salió error/);
+});
+
+test('Repeticion_AvisoLeeLaRepeticion — sin repetición medida no hay «0 inestables», y un recuento no lo calla', () => {
+  // 🔴 rojo: el aviso afirma un 0 medido cuando ningún rojo se pudo repetir; o, tras un recuento a mano que vuelve
+  // `inestables` a null, el rojo que pasó a inestable deja de contar y el aviso se calla
+  const b = banco();
+  const base = { kind: 'examen-periodico', estado: 'completo', alcance: 'completo', ts: new Date().toISOString(), maquina: 'mini',
+    tool: 'claude', runs: 1, criterio: 0, paridadReal: null, baselineRegressions: 0, erroresDeCorrida: 0, fugas: 0 };
+  escribir(b.reporteQueViaja, { ...base, criterio: 1, inestables: null, repeticion: { repetidos: 1, inestables: 0, siguen: 0, sin_repetir: 1 } });
+  let a = avisar(b);
+  assert.doesNotMatch(a.stdout, /0 inestables de/, a.stdout);
+  assert.match(a.stdout, /inestables NO MEDIDOS.*1 rojo\(s\) no se pudieron repetir/, a.stdout);
+  escribir(b.reporteQueViaja, { ...base, inestables: null, repeticion: { repetidos: 1, inestables: 1, siguen: 0, sin_repetir: 0 } });
+  a = avisar(b);
+  assert.match(a.stdout, /1 inestables de 1 que fallaron y se repitieron/, `el recuento no calla al inestable: «${a.stdout}»`);
 });

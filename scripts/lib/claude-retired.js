@@ -55,10 +55,39 @@ function jobOf(claudeDir, short) {
   } catch { return null; }
 }
 
+// un texto anotado por la sesión, en una línea, tapado y acotado: lo lee la persona en la coordinación y en la oficina
+function shownWait(s) {
+  let t = String(s).replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim();
+  try { t = require(path.join(__dirname, '..', 'hooks', 'wait-notice.js')).redact(t); } catch (_) { /* sin el tapador, el texto acotado */ }
+  return t.slice(0, 160);
+}
+
+/**
+ * Qué esperaba la sesión cuando la cerraron, de lo que anotó el arnés: su nota de espera (`marker.js doing
+ * --waiting-for`, de las últimas 24 h) o la espera abierta de su pipeline (hooks/wait-notice.js), con la historia y el
+ * paso. null si no anotó nada o no se puede leer: la línea dice «sin anotar qué esperaba».
+ */
+function waitedFor(home, sid, now) {
+  if (!sid) return null;
+  let state;
+  try { state = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(home); } catch (_) { return null; }
+  try {
+    const turn = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-gate-io.js')).waitingTurn(state, sid, now);
+    if (turn && turn.waitingFor) return shownWait(turn.waitingFor);
+  } catch (_) { /* sin la nota, la espera del pipeline */ }
+  try {
+    const w = JSON.parse(fs.readFileSync(path.join(state, 'wait-notice', 'waits', `${String(sid).replace(/[^A-Za-z0-9._-]/g, '_')}.json`), 'utf8'));
+    const where = [w.story ? `la ${w.story}` : null, w.stepName || w.step || null].filter(Boolean).join(', ');
+    const what = w.waiting ? shownWait(w.waiting) : '';
+    if (where || what) return shownWait(`${where}${where && what ? ': ' : ''}${what}`);
+  } catch (_) { /* sin espera abierta */ }
+  return null;
+}
+
 /**
  * Las sesiones retiradas que no se volvieron a levantar: `{ measured, why, bytesRead, retired: [{ session, sid, short, at,
- * reason, idleMin }] }`. `measured: false` con `why` cuando no hay registro, no se puede leer o trae un retiro con otra
- * forma.
+ * reason, idleMin, waited? }] }`. `waited`, sólo si la sesión anotó qué esperaba. `measured: false` con `why` cuando no
+ * hay registro, no se puede leer o trae un retiro con otra forma.
  */
 function retiredSessions({ home, now = Date.now(), claudeDir } = {}) {
   const dir = claudeDir || claudeDirOf(home);
@@ -86,7 +115,9 @@ function retiredSessions({ home, now = Date.now(), claudeDir } = {}) {
   for (const x of last.values()) {
     if (!x) continue;
     const job = jobOf(dir, x.short);
-    retired.push({ session: (job && job.name) || x.short, sid: (job && job.sid) || null, short: x.short, at: x.at, reason: x.reason, idleMin: x.idleMin });
+    const sid = (job && job.sid) || null;
+    const waited = waitedFor(home, sid, now);
+    retired.push({ session: (job && job.name) || x.short, sid, short: x.short, at: x.at, reason: x.reason, idleMin: x.idleMin, ...(waited ? { waited } : {}) });
   }
   return { measured: true, why: null, bytesRead: read.bytes, retired };
 }
