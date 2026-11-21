@@ -447,6 +447,18 @@ function historiaConCriterio(t) {
   return { repo, story };
 }
 
+// 🔴 Falla con: `runtime-waiver --acs` sobre una historia con criterios sin correr que niega con «no es un criterio
+//    pendiente de firma» en vez del motivo real y la lista entera de los que faltan correr (el que da la forma sin --acs).
+test('OwnerWindow_RuntimeWaiver_ConAcs_DiceLosSinCorrer', (t) => {
+  const { story } = historiaConCriterio(t);
+  for (const acs of ['2', '1,2']) {
+    const r = pedir(casaNueva(t), `node ${MARKER} runtime-waiver ${story} --acs ${acs}`);
+    assert.strictEqual(r.decision, 'deny', r.texto);
+    assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #2\. Los corre el agente/, r.texto);
+    assert.doesNotMatch(r.texto, /no es un criterio pendiente de firma/, r.texto);
+  }
+});
+
 test('OwnerWindow_RuntimeWaiver_PasaPorLaVentana (T16)', (t) => {
   const { repo, story } = historiaConCriterio(t);
   // la ventana muestra cada criterio con su texto, por qué no se prueba en vivo y qué lo cubre: no sólo el número

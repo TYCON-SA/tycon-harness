@@ -838,6 +838,13 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   } catch (e) { return { error: `no pude armar los criterios (${una((e && e.message) || String(e), 200)})` }; }
   if (c.error) return { error: `no pude armar los criterios: la matriz no computa (${una(c.error, 200)})` };
   const faltan = (pedidos || []).filter((n) => !c.lista.some((x) => x.ac === n));
+  // con criterios sin correr el guion rechaza por eso, con la lista entera: la ventana dice el mismo motivo, no el de
+  // «no está pendiente de firma», que manda a buscar por el lado equivocado
+  const sinCorrer = (c.matrix && c.matrix.notRun) || [];
+  if (faltan.length && sinCorrer.length) {
+    const otros = faltan.filter((n) => !sinCorrer.includes(n));
+    return { error: `hay criterios SIN CORRER que no se pueden eximir: AC ${sinCorrer.map((n) => `#${n}`).join(', ')}. Los corre el agente${otros.length ? `; además, el AC ${otros.join(', ')} no es un criterio pendiente de firma` : ''}` };
+  }
   if (faltan.length) return { error: `el AC ${faltan.join(', ')} no es un criterio pendiente de firma en ${path.basename(abs)}` };
   if (!c.lista.length) return { error: `${path.basename(abs)} no tiene criterios pendientes de firma` };
   return { lista: c.lista, historia: abs, texto: textoDeLosCriterios(c.lista) };
