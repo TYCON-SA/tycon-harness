@@ -2924,7 +2924,7 @@ function close(opts = {}) {
   // una sesión que ya no corre y cuya carpeta se borró no tiene nada que dejar ahí: se cierra igual, y se dice
   const sinCarpeta = folder.gone && !s.alive;
   if (sinCarpeta) folder = { missing: [], unknown: [] };
-  const nota = sinCarpeta ? ` Su carpeta ${s.cwd} ya no estaba.` : '';
+  const nota = sinCarpeta ? ` Su carpeta ${s.cwd} ya no estaba: no pude mirar si dejó commits sin empujar en su rama.` : '';
   const run = runGaps(sid, home);
   missing.push(...folder.missing, ...run.missing);
   unknown.push(...folder.unknown, ...run.unknown);
@@ -2963,7 +2963,7 @@ function close(opts = {}) {
     return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude sacarla de las abiertas (${e.code || e.message}).${unlaunched}`) };
   }
   if (unlaunched) return { ok: true, closed: true, message: oneLine(`Cerré «${name}»: quedó limpia, sin nada pendiente.${unlaunched}`) };
-  return { ok: true, closed: true, message: `Cerré «${name}»: quedó limpia, sin nada pendiente.${nota}` };
+  return { ok: true, closed: true, message: sinCarpeta ? `Cerré «${name}», que ya no corría.${nota}` : `Cerré «${name}»: quedó limpia, sin nada pendiente.` };
 }
 
 /**
