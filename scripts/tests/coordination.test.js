@@ -3023,6 +3023,9 @@ test('T3 PruneLaunched_ShortName_DropsAsToday @story-8.290 @ac-4: un nombre cort
 });
 
 // Las respuestas de la persona, armadas a mano: el renglón que anota recordOwnerReply y la conversación que lo confirma.
+// A mano y no con recordOwnerReply, que pide una coordinadora confirmada y viva: lo que se prueba acá es la toma y la
+// recuperación de los archivos, no la anotación. Los campos son los que escribe recordOwnerReply (sid, at, text, sha,
+// transcript, from); las pruebas de coordination-notice.test.js anotan con recordOwnerReply y leen por el mismo camino.
 const DEAD_PID = 2147483646;
 function replyLab() {
   const t = toy();
@@ -3068,6 +3071,11 @@ test('T5 OwnerReplies_LiveOrUnknownTakenFile_LeftAndSaid @story-8.290 @ac-6: el 
   fs.writeFileSync(vivo, contenido);
   const raro = `${t.file}.abc.leyendo`;
   fs.writeFileSync(raro, t.row('pid raro'));
+  // el 0 no es un proceso (le preguntaría al grupo), ni uno enorme
+  const cero = `${t.file}.0.leyendo`;
+  fs.writeFileSync(cero, t.row('pid cero'));
+  const enorme = `${t.file}.${'9'.repeat(30)}.leyendo`;
+  fs.writeFileSync(enorme, t.row('pid enorme'));
   const ilegible = `${t.file}.${DEAD_PID}.k2.leyendo`;
   fs.writeFileSync(ilegible, t.row('ilegible'));
   const posix = !POSIX_PERMS.skip;
@@ -3076,7 +3084,7 @@ test('T5 OwnerReplies_LiveOrUnknownTakenFile_LeftAndSaid @story-8.290 @ac-6: el 
   try { r = t.read(); } finally { if (posix) fs.chmodSync(ilegible, 0o644); }
   assert.strictEqual(fs.readFileSync(vivo, 'utf8'), contenido, 'el vivo queda intacto');
   assert.ok(!r.problems.some((p) => p.includes(vivo)), 'el vivo no es un problema');
-  assert.ok(fs.existsSync(raro) && r.problems.some((p) => p.includes(raro)), JSON.stringify(r.problems));
+  for (const f of [raro, cero, enorme]) assert.ok(fs.existsSync(f) && r.problems.some((p) => p.includes(f)), `${f}: ${JSON.stringify(r.problems)}`);
   if (posix) {
     assert.doesNotMatch(r.text, /te contestaron/, r.text);
     assert.ok(fs.existsSync(ilegible) && r.problems.some((p) => p.includes(ilegible)), JSON.stringify(r.problems));
@@ -3091,6 +3099,28 @@ test('T6 OwnerReplies_OrphanTakenByOther_NotReadTwice @story-8.290 @ac-5: si otr
   assert.doesNotMatch(r.text, /te contestaron/, r.text);
   assert.deepStrictEqual(r.problems, []);
   assert.ok(fs.existsSync(huerfano), 'no se borró: no se leyó');
+  // un renombre que falla por otro motivo tampoco lo lee, y lo dice con la ruta
+  const otro = t.read({ renameOrphan: () => { const e = new Error('sin permiso'); e.code = 'EACCES'; throw e; } });
+  assert.doesNotMatch(otro.text, /te contestaron/, otro.text);
+  assert.ok(otro.problems.some((p) => p.includes(huerfano) && /EACCES/.test(p)), JSON.stringify(otro.problems));
+  assert.ok(fs.existsSync(huerfano));
+  // la carpeta que no se puede leer: lo dice y no entrega nada
+  if (!POSIX_PERMS.skip) {
+    const dir = path.dirname(t.file);
+    fs.chmodSync(dir, 0o000);
+    let sin;
+    try { sin = t.read(); } finally { fs.chmodSync(dir, 0o755); }
+    assert.doesNotMatch(sin.text, /te contestaron/, sin.text);
+    assert.ok(sin.problems.some((p) => p.includes(dir) && /EACCES/.test(p)), JSON.stringify(sin.problems));
+  }
+  // el que se toma y no se puede leer vuelve a su nombre y lo dice
+  if (!POSIX_PERMS.skip) {
+    const leido = t.read({ renameOrphan: (de, a) => { fs.renameSync(de, a); fs.chmodSync(a, 0o000); } });
+    assert.ok(fs.existsSync(huerfano), 'volvió a su nombre');
+    fs.chmodSync(huerfano, 0o644);
+    assert.ok(leido.problems.some((p) => p.includes(huerfano)), JSON.stringify(leido.problems));
+    assert.deepStrictEqual(t.taken(), [path.basename(huerfano)], 'no quedó ningún tomado propio');
+  }
 });
 
 test('T7 OwnerReplies_OwnPidLeftover_NotOverwritten @story-8.290 @ac-5 @ac-7: el tomado nuevo lleva su marca y no pisa uno viejo del mismo pid', () => {

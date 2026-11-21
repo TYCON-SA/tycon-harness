@@ -1465,8 +1465,11 @@ function ownerReplyLines(opts, sid, problems) {
     if (fs.statSync(file).size >= REPLIES_MAX_BYTES) problems.push(`${what}: el archivo llegó a ${REPLIES_MAX_BYTES / 1024} KB y las nuevas no se anotan`);
     const mine = takenName();
     fs.renameSync(file, mine);
-    if (opts.onTaken) opts.onTaken(mine);
-    try { held.push({ path: mine, text: fs.readFileSync(mine, 'utf8') }); taken.push(mine); } catch (e) {
+    try {
+      if (opts.onTaken) opts.onTaken(mine);
+      held.push({ path: mine, text: fs.readFileSync(mine, 'utf8') });
+      taken.push(mine);
+    } catch (e) {
       // sin leerlo no se borra: vuelve a su lugar si nadie anotó otro mientras tanto, y si no, queda dicho dónde está
       let kept = mine;
       try { if (!fs.existsSync(file)) { fs.renameSync(mine, file); kept = file; } } catch { /* queda en el tomado */ }
@@ -1557,7 +1560,8 @@ function orphanReplies(file, what, takenName, rename, problems) {
     if (!n.startsWith(base) || !n.endsWith('.leyendo')) continue;
     const orphan = path.join(dir, n);
     const parts = n.slice(base.length, -'.leyendo'.length).split('.');
-    if (parts.length > 2 || !/^\d+$/.test(parts[0])) {
+    // un pid es un entero positivo: el 0 le preguntaría al grupo de procesos y uno enorme no es un proceso
+    if (parts.length > 2 || !/^[1-9]\d*$/.test(parts[0]) || !Number.isSafeInteger(Number(parts[0]))) {
       problems.push(`${what}: ${orphan} quedó tomado y su nombre no dice de qué proceso es: no lo toqué`);
       continue;
     }
@@ -2890,7 +2894,8 @@ function fullSessionName(home, sid, opts = {}) {
   for (const f of files) {
     const p = path.join(dir, f);
     let s;
-    try { s = JSON.parse(read(p)); } catch (e) { unreadable = unreadable || `${p} (${e.code || e.message})`; continue; }
+    // del error de JSON va sólo que no es JSON: su mensaje puede traer un trozo del archivo
+    try { s = JSON.parse(read(p)); } catch (e) { unreadable = unreadable || `${p} (${e.code || (e instanceof SyntaxError ? 'no es JSON' : e.message)})`; continue; }
     if (s && s.sessionId === sid) return typeof s.name === 'string' && s.name.trim() ? oneLine(s.name) : null;
   }
   return unreadable ? { problem: unreadable } : null;
