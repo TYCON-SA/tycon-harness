@@ -1771,6 +1771,15 @@ huella de `stable` (`imgURL=<imagen>@sha256:…`). El hook es un secreto (`SITE_
 registro. Render lo hace de fondo; la prueba sin sesión de la noche siguiente lo confirma. Si Render rechaza la imagen (un
 404), tiene que ser del mismo registro y nombre que la del servicio.
 
+**Si quedó instalado por etiqueta** (optativo): con la llave de la API de Render (`SITE_RENDER_API_KEY`, secreta) y el id
+del servicio (`SITE_RENDER_SERVICE_ID`, el `srv-…` de su URL), el nocturno le pregunta a Render qué imagen corre el
+servicio antes de pedir el redespliegue. Si está fijada por etiqueta (`:stable`, `:latest`), el resultado sale `no_pudo`
+con el motivo «instalado por etiqueta» y la banda del sitio aparece igual que en Azure. Si Render no contesta, sale
+`no_pudo` con su código, nunca «al día». Sin las dos variables, todo sigue como antes. En Azure Pipelines se cargan en
+«Variables» del pipeline (la llave, como secreta); en GitHub, la llave como secreto y el id como variable del repo.
+Render no tiene llaves de sólo lectura: una llave abre todos los espacios de trabajo de su usuario. Creala desde un
+usuario que sólo esté en el espacio del sitio, y revocala desde «Account Settings → API Keys» si se filtra.
+
 ### Una máquina propia
 
 Un Docker en un servidor de la oficina, con `scripts/site/deploy/local/compose.yaml` y los secretos en un `sitio.env`
