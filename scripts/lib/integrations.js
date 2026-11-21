@@ -94,6 +94,24 @@ function installProblems(m, h) {
 }
 
 /** Los motivos por los que un manifiesto no vale (vacío si vale). */
+/**
+ * La forma del repo de un conector de plataforma (`repoShape`): sus claves en orden, la última el nombre del repo; la
+ * expresión (`name`, con sus `flags`) de qué nombre vale; y `nameHint`, lo que vale dicho en palabras. La lee
+ * scripts/lib/team-repos.js para validar los repos de `team-repos.json`. El problema, o null.
+ */
+const CLAVE_DE_REPO = /^[a-z][a-z_]*$/;
+function repoShapeProblem(s) {
+  if (!isObject(s)) return '«repoShape» es un objeto: las claves del repo, la expresión de qué nombre vale y su explicación';
+  if (!Array.isArray(s.keys) || !s.keys.length || !s.keys.every((k) => typeof k === 'string' && CLAVE_DE_REPO.test(k)) || new Set(s.keys).size !== s.keys.length) return '«repoShape.keys» es una lista de claves distintas, en minúsculas';
+  if (s.keys[s.keys.length - 1] !== 'repo') return '«repoShape.keys» termina en «repo», el nombre del repo';
+  if (s.keys.includes('platform')) return '«repoShape.keys» no lleva «platform»: es la clave que elige el conector';
+  if (typeof s.name !== 'string' || !s.name.startsWith('^') || !s.name.endsWith('$')) return '«repoShape.name» es una expresión de un nombre entero, de «^» a «$»';
+  if (s.flags !== undefined && (typeof s.flags !== 'string' || !/^u?$/.test(s.flags))) return '«repoShape.flags» es «u» o vacío';
+  try { new RegExp(s.name, s.flags || ''); } catch (e) { return `«repoShape.name» no compila (${e.message})`; }
+  if (typeof s.nameHint !== 'string' || !s.nameHint.trim()) return '«repoShape.nameHint» dice en palabras qué nombre vale';
+  return null;
+}
+
 function problemsOf(m, folder) {
   const out = [];
   if (!isObject(m)) return ['no es un objeto JSON'];
@@ -161,6 +179,9 @@ function problemsOf(m, folder) {
     else for (const o of m.operations) if (!contrato.operations.includes(o)) out.push(`operación desconocida: ${o} (las del contrato: ${contrato.operations.join(', ')})`);
     if (m.capabilities !== undefined && !isObject(m.capabilities)) out.push('«capabilities» es un objeto');
     if (m.rawCommands !== undefined && !(Array.isArray(m.rawCommands) && m.rawCommands.every((c) => typeof c === 'string' && c.trim()))) out.push('«rawCommands» es una lista de textos');
+    // la forma la pide team-repos.js a los conectores de las plataformas que admite; si está, tiene que valer
+    const forma = m.repoShape === undefined ? null : repoShapeProblem(m.repoShape);
+    if (forma) out.push(forma);
   }
   // `hardSignals`: los patrones de un comando o una dirección de su plataforma que el núcleo no puede sumar (los cuenta el
   // candado, scripts/ci/check-core-neutrality.js): así el núcleo no escribe ninguno
@@ -242,7 +263,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       hooks: Array.isArray(m.hooks) ? m.hooks : [], dispatch: Array.isArray(m.dispatch) ? m.dispatch : [],
       skills: Array.isArray(m.skills) ? m.skills : [], settings: Array.isArray(m.settings) ? m.settings : [],
       mcp: m.mcp ? { server: m.mcp.server, machine: m.mcp.machine === true } : null,
-      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
+      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [], repoShape: m.repoShape } : {}),
       offer: m.offer ? { does: m.offer.does, needs: m.offer.needs } : null,
     });
   }

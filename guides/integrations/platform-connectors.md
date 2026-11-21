@@ -71,6 +71,14 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
   conector nuevo no toca ningún freno, declara sus comandos.
 - `settings` declara sus claves de configuración; las de `type: "secreto"` no se escriben nunca en el perfil del equipo:
   cada persona las carga en su máquina.
+- `repoShape` es la forma de un repo de la plataforma en `team-repos.json`. Lleva cuatro cosas:
+  - `keys`: sus claves en orden; la última es `repo`.
+  - `name`: la expresión, de `^` a `$`, de qué nombre vale.
+  - `flags`: `"u"` si el nombre acepta letras de cualquier idioma.
+  - `nameHint`: lo mismo dicho en palabras, para el mensaje de error.
+
+  La pide el lector de `team-repos.json` (`scripts/lib/team-repos.js`) a cada plataforma que admite: el núcleo no
+  escribe la forma de ninguna, y sin ella los repos de esa plataforma no se pueden validar.
 
 ## El código (`scripts/connector.js`)
 

@@ -999,3 +999,33 @@ test('TeamRepos_ReviewRunnerSeValida (T8) @story-8.221 @ac-8 @ac-26 @ac-45 @ac-4
   assert.equal(v({ review: { blocking_severity: 'bug' } }), ORG.REVIEW_SEVERITY_SINCE);
   assert.notEqual(v({ deep_review: { default: 'always' } }), ORG.DEEP_REVIEW_MATRIX_SINCE, 'sólo la política vieja pide la de antes');
 });
+
+// 🔴 Falla con: el núcleo (team-repos.js) declara la forma del repo de cada plataforma —sus claves y qué nombre
+// vale—, y sumar una plataforma obliga a tocarlo; la forma es del conector, en su integration.json
+test('TeamRepos_LaFormaDelRepoLaDeclaraCadaConector: claves y nombre salen del integration.json de su conector', () => {
+  const INT = require(path.join(ROOT, 'scripts', 'lib', 'integrations.js'));
+  const dir = path.join(ROOT, 'integrations');
+  for (const platform of TEAM.PLATFORMS) {
+    const m = INT.find(TEAM.connectorOf(platform), { kind: 'platform', dir });
+    assert.ok(m && m.repoShape, `el conector de ${platform} declara repoShape`);
+    assert.deepStrictEqual(TEAM.repoShape(platform).keys, m.repoShape.keys, `${platform}: las claves son las del conector`);
+    assert.strictEqual(m.repoShape.keys[m.repoShape.keys.length - 1], 'repo', 'la última clave es el nombre del repo');
+  }
+  // el núcleo no las escribe: ni la lista de claves de una plataforma ni su expresión de nombres
+  const fuente = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'), 'utf8');
+  assert.doesNotMatch(fuente, /\['org', 'project', 'repo'\]|azure: \/\^/, 'team-repos.js no declara la forma de una plataforma');
+  // un conector de plataforma con una forma rota no pasa la validación de su manifiesto (sin forma, sí: no la usa nadie)
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'forma-repo-'));
+  for (const [nombre, forma] of [['rota', { keys: ['org'], name: '(' }], ['sin-repo', { keys: ['org', 'nombre'], name: '^a$', nameHint: 'a' }]]) {
+    const d = path.join(tmp, nombre, 'acme');
+    fs.mkdirSync(path.join(d, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(d, 'scripts', 'connector.js'), '');
+    fs.writeFileSync(path.join(d, 'integration.json'), JSON.stringify({ name: 'acme', label: 'Acme', kind: 'platform', connector: 'scripts/connector.js', operations: ['ci.read'], ...(forma ? { repoShape: forma } : {}) }));
+    const r = INT.listManifests({ dir: path.join(tmp, nombre) });
+    assert.ok(r.problems.some((p) => p.reasons.some((x) => /repoShape/.test(x))), `${nombre}: ${JSON.stringify(r.problems)}`);
+  }
+  // y la validación de un repo sigue igual: Azure con project y tildes, GitHub sin project ni tildes
+  assert.deepStrictEqual(TEAM.repoProblems(azure('arnés'), 'x'), []);
+  assert.ok(TEAM.repoProblems(github('arnés'), 'x').length);
+  assert.ok(TEAM.repoProblems({ ...github('h'), project: 'p' }, 'x').some((p) => /no lleva project/.test(p.message)));
+});

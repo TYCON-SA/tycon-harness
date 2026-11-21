@@ -71,6 +71,7 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
 //               `<org>/<repo>` en GitHub); los problemas, por la salida de errores. Mismos códigos de salida.
 
 const fs = require('fs');
+const path = require('path');
 
 const VERSION = 1;
 const PLATFORMS = ['azure', 'github'];
@@ -79,7 +80,22 @@ const PLATFORMS = ['azure', 'github'];
 const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github' });
 /** El conector de un valor de `platform` de un repo, o null si no es uno de los que el archivo admite. */
 function connectorOf(platform) { return Object.prototype.hasOwnProperty.call(CONNECTORS, platform) ? CONNECTORS[platform] : null; }
-const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
+// La forma del repo de cada plataforma —sus claves y qué nombre vale— la declara su conector, en `repoShape` de su
+// integration.json (scripts/lib/integrations.js la valida): el núcleo no la escribe. Se lee una vez por proceso, de los
+// conectores de este mismo árbol. Sin el manifiesto, null: el repo no se puede validar y se dice.
+const FORMAS = new Map();
+/** `{ keys, name: RegExp, nameHint }` del repo de `platform`, o null si su conector no la declara o no se lee. */
+function repoShape(platform) {
+  if (!FORMAS.has(platform)) {
+    let forma = null;
+    try {
+      const m = require('./integrations.js').find(connectorOf(platform), { kind: 'platform', dir: path.join(__dirname, '..', '..', 'integrations') });
+      if (m && m.repoShape) forma = { keys: m.repoShape.keys, name: new RegExp(m.repoShape.name, m.repoShape.flags || ''), nameHint: m.repoShape.nameHint };
+    } catch (_) { forma = null; }
+    FORMAS.set(platform, forma);
+  }
+  return FORMAS.get(platform);
+}
 const REQUIRED = ['public', 'profile', 'operations'];
 const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'story_index', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review', 'plan_review', 'review_runner'];
 // El umbral del aviso de contexto: tokens enteros de 100.000 a 900.000. Lo lee scripts/hooks/context-size-notice.js,
@@ -237,13 +253,6 @@ const REVIEWER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MERGE_RULES = ['automatico', 'siempre-en-la-maquina', 'confiar-en-el-servidor'];
 const MERGE_ENTRY_KEYS = ['repo', 'rule', 'full_tests_pipeline'];
 const KEYS = ['version', ...REQUIRED, ...OPTIONAL];
-// Los nombres: letras, números, punto, guion, guion bajo, y espacios adentro. Azure acepta letras de cualquier idioma
-// (un proyecto «Arnés del equipo» es válido); GitHub, sólo ASCII.
-const NAME = {
-  azure: /^[\p{L}\p{N}._-](?:[\p{L}\p{N}._ -]*[\p{L}\p{N}._-])?$/u,
-  github: /^[A-Za-z0-9._-](?:[A-Za-z0-9._ -]*[A-Za-z0-9._-])?$/,
-};
-
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // `comment`: la clave de un dato (un revisor) que es un comentario; `fieldComment`: la de un objeto de campos fijos,
 // donde un nombre con «_» no puede ser un campo (`_comment`, `_lea_esto_primero`). Un comentario es texto: un «_» con
@@ -260,17 +269,21 @@ function repoProblems(value, at) {
   if (!PLATFORMS.includes(platform)) {
     return [{ path: `${at}.platform`, message: `tiene que ser ${PLATFORMS.map((p) => `«${p}»`).join(' o ')} (es ${JSON.stringify(platform)})` }];
   }
+  const forma = repoShape(platform);
+  if (!forma) return [{ path: `${at}.platform`, message: `no pude leer la forma del repo de ${platform} (repoShape del conector ${connectorOf(platform)}): sin ella no se puede validar` }];
   const out = [];
-  const wanted = REPO_KEYS[platform];
+  const wanted = forma.keys;
   for (const k of Object.keys(value)) {
     if (k === 'platform' || fieldComment(k, value[k])) continue;
-    if (!wanted.includes(k)) out.push({ path: `${at}.${k}`, message: platform === 'github' && k === 'project' ? 'un repo de GitHub no lleva project' : `clave desconocida en un repo de ${platform}` });
+    // una clave que es de otra plataforma se nombra: es el error de copiar el repo de una en la otra
+    const deOtra = PLATFORMS.some((p) => p !== platform && repoShape(p) && repoShape(p).keys.includes(k));
+    if (!wanted.includes(k)) out.push({ path: `${at}.${k}`, message: deOtra ? `un repo de ${platform} no lleva ${k}` : `clave desconocida en un repo de ${platform}` });
   }
   for (const k of wanted) {
     const v = value[k];
     if (v === undefined) out.push({ path: `${at}.${k}`, message: 'falta' });
     else if (typeof v !== 'string' || !v.trim()) out.push({ path: `${at}.${k}`, message: 'tiene que ser un texto no vacío' });
-    else if (!NAME[platform].test(v)) out.push({ path: `${at}.${k}`, message: `«${v}» tiene caracteres que no van en un nombre de ${platform} (letras${platform === 'github' ? ' sin tilde' : ''}, números, punto, guion, guion bajo; espacios sólo adentro)` });
+    else if (!forma.name.test(v)) out.push({ path: `${at}.${k}`, message: `«${v}» tiene caracteres que no van en un nombre de ${platform} (${forma.nameHint})` });
   }
   return out;
 }
@@ -279,9 +292,9 @@ const ruleProblem = (rule, at) => (MERGE_RULES.includes(rule) ? [] : [{ path: at
 
 /** La identidad de un repo para compararlo: plataforma y nombres, sin mayúsculas y con los espacios decodificados. */
 function identityKey(r) {
-  if (!isObject(r) || !PLATFORMS.includes(r.platform)) return null;
+  if (!isObject(r) || !PLATFORMS.includes(r.platform) || !repoShape(r.platform)) return null;
   const plain = (v) => { const s = String(v == null ? '' : v); try { return decodeURIComponent(s).toLowerCase(); } catch (_) { return s.toLowerCase(); } };
-  return [r.platform, ...REPO_KEYS[r.platform].map((k) => plain(r[k]))].join('/');
+  return [r.platform, ...repoShape(r.platform).keys.map((k) => plain(r[k]))].join('/');
 }
 
 /** Los problemas de `merge_suites`; `[]` si está bien. */
@@ -922,7 +935,7 @@ function repoId(repo) {
  */
 function harnessCopies(data, platform) {
   if (!isObject(data) || !Array.isArray(data.harness_copies)) return [];
-  const full = (r) => REPO_KEYS[r.platform].map((k) => String(r[k]).toLowerCase()).join('/');
+  const full = (r) => (repoShape(r.platform) ? repoShape(r.platform).keys : []).map((k) => String(r[k]).toLowerCase()).join('/');
   const m = isObject(data.maintainers) && PLATFORMS.includes(data.maintainers.platform) ? data.maintainers : null;
   return data.harness_copies
     .filter((r) => isObject(r) && r.platform === platform)
@@ -936,7 +949,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, repoShape, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
