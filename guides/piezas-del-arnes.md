@@ -216,6 +216,7 @@ En [pieces/machine.md](pieces/machine.md):
 - [scripts/hooks/worktree-sweep.js](pieces/machine.md#scriptshooksworktree-sweepjs)
 - [scripts/hooks/dev-behind-main-notice.js](pieces/machine.md#scriptshooksdev-behind-main-noticejs)
 - [scripts/hooks/stuck-pr-notice.js](pieces/machine.md#scriptshooksstuck-pr-noticejs)
+- [scripts/lib/outside-contributions.js](pieces/machine.md#scriptsliboutside-contributionsjs)
 - [scripts/hooks/extension-notices.js](pieces/machine.md#scriptshooksextension-noticesjs)
 - [scripts/hooks/missing-path-notice.js](pieces/machine.md#scriptshooksmissing-path-noticejs)
 - [scripts/hooks/deprecated-session-notice.js](pieces/machine.md#scriptshooksdeprecated-session-noticejs)

@@ -54,7 +54,7 @@ const horasDesde = (fecha, now) => { const t = Date.parse(fecha); return Number.
 function measure({ repo, home, env = process.env, arnes, cwd, run = spawnSync, now = Date.now() } = {}) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(repo || ''))) return { ok: false, reason: `«${limpio(repo)}» no es un repo de GitHub (org/nombre)` };
   // la regla del freno, con el mismo CLI que el resto de la medición
-  const viaGh = (cmd, args, o) => run(cmd === 'gh' ? ((env && env.TYCON_GH_CMD) || 'gh') : cmd, args, o);
+  const viaGh = (cmd, args, o) => run(cmd === 'gh' ? ((env && env.TYCON_GH_CMD) || 'gh') : cmd, args, { ...o, windowsHide: true });
   const ext = require('./external-pr.js');
   const eq = ext.cuentasDelEquipo({ home, env, arnes, cwd, run: viaGh });
   if (eq.error) return { ok: false, reason: `${eq.error}: no sé quién es del equipo` };
