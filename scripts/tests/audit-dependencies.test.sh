@@ -568,5 +568,19 @@ rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"
 rc=$(corre --type vendored)
 { [ "$rc" -eq 2 ] && grep -q "no hay copias de librerías" "$TMP/out.txt"; } \
   && ok "T15 sin copias: no medido" || no "T15 sin copias salió $rc: $(cat "$TMP/out.txt")"
+# lo que vio el pase adversarial: un rango no es una versión exacta (npm auditaría otra versión), una copia que es un
+# enlace no se saltea callada, y un nombre como «constructor» no choca con el objeto
+copias; echo '{"name":"ws","version":"7.0.0 || 8.18.3"}' > "$TMP/repo/lib/vendor/ws/VERSION.json"
+rc=$(corre --type vendored)
+{ [ "$rc" -eq 2 ] && grep -q "no trae nombre y versión exacta" "$TMP/out.txt"; } \
+  && ok "T15 un rango en vez de la versión exacta: no medido" || no "T15 rango salió $rc: $(cat "$TMP/out.txt")"
+copias; mkdir -p "$TMP/otra"; echo '{"name":"lodash","version":"4.17.15"}' > "$TMP/otra/VERSION.json"; ln -s "$TMP/otra" "$TMP/repo/lib/vendor/enlazada"
+rc=$(corre --type vendored)
+{ [ "$rc" -eq 2 ] && grep -q "copias que son un enlace, no se siguen: lib/vendor/enlazada" "$TMP/out.txt"; } \
+  && ok "T15 una copia que es un enlace: no medido, con su nombre" || no "T15 enlace salió $rc: $(cat "$TMP/out.txt")"
+copias; echo "$limpio" > "$TMP/npm.json"; echo '{"name":"constructor","version":"1.0.0"}' > "$TMP/repo/lib/vendor/ws/VERSION.json"
+rc=$(corre --type vendored)
+{ [ "$rc" -eq 0 ] && grep -q "copias auditadas: constructor@1.0.0" "$TMP/out.txt"; } \
+  && ok "T15 un nombre como constructor se audita como cualquier otro" || no "T15 constructor salió $rc: $(cat "$TMP/out.txt")"
 
 [ "$fallos" -eq 0 ] && { echo "✅ auditar-dependencias: todo verde ($casos casos)"; exit 0; } || { echo "❌ auditar-dependencias: $fallos fallo(s)"; exit 1; }

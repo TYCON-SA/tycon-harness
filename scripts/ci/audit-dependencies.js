@@ -462,33 +462,44 @@ function auditarPip(repo, archivoRel) {
 // versiones exactas y se le corre el mismo `npm audit` de siempre. Sin copias, o sin poder resolverlas en el registro,
 // no se midió: nunca «limpio».
 // Cada carpeta de una carpeta `vendor/` es una copia: `archivos`, sus VERSION.json; `sinVersion`, las que no lo traen
-// (una copia sin nombre ni versión no se puede auditar, y no se saltea callada).
+// (una copia sin nombre ni versión no se puede auditar, y no se saltea callada); `enlaces`, una copia o una carpeta
+// `vendor/` que es un enlace (no se sigue: puede apuntar fuera del repo, y tampoco se saltea callada).
 function copiasDe(repo) {
   const archivos = [];
   const sinVersion = [];
+  const enlaces = [];
   const recorrer = (dir) => {
     let entradas;
     try { entradas = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
     for (const e of entradas) {
       // las copias de juguete de las pruebas no viajan como código del repo
-      if (e.name === '.git' || e.name === 'node_modules' || e.name === 'fixtures' || !e.isDirectory()) continue;
+      if (e.name === '.git' || e.name === 'node_modules' || e.name === 'fixtures') continue;
       const p = path.join(dir, e.name);
+      if (e.name === 'vendor' && e.isSymbolicLink()) { enlaces.push(path.relative(repo, p)); continue; }
+      if (!e.isDirectory()) continue;
       if (e.name !== 'vendor') { recorrer(p); continue; }
-      for (const c of fs.readdirSync(p, { withFileTypes: true }).filter((x) => x.isDirectory())) {
+      for (const c of fs.readdirSync(p, { withFileTypes: true })) {
+        if (c.isSymbolicLink()) { enlaces.push(path.relative(repo, path.join(p, c.name))); continue; }
+        if (!c.isDirectory()) continue;
         const v = path.join(p, c.name, 'VERSION.json');
         if (fs.existsSync(v)) archivos.push(v); else sinVersion.push(path.relative(repo, path.join(p, c.name)));
       }
     }
   };
   recorrer(repo);
-  return { archivos: archivos.sort(), sinVersion: sinVersion.sort() };
+  return { archivos: archivos.sort(), sinVersion: sinVersion.sort(), enlaces: enlaces.sort() };
 }
 
+// una versión exacta, como la publica npm: sin rangos, sin espacios ni otra cosa después
+const VERSION_EXACTA = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
 function auditarCopias(repo) {
-  const { archivos, sinVersion } = copiasDe(repo);
+  const { archivos, sinVersion, enlaces } = copiasDe(repo);
+  if (enlaces.length) return { medido: false, motivo: `copias que son un enlace, no se siguen: ${enlaces.join(', ')}` };
   if (sinVersion.length) return { medido: false, motivo: `copias sin VERSION.json (nombre y versión exacta): ${sinVersion.join(', ')}` };
   if (!archivos.length) return { medido: false, motivo: 'no hay copias de librerías (vendor/<nombre>/VERSION.json) en el repo' };
-  const versiones = {};
+  // sin prototipo: un nombre como `constructor` no choca con lo que trae un objeto
+  const versiones = Object.create(null);
   const noAplica = [];
   for (const a of archivos) {
     const rel = path.relative(repo, a);
@@ -500,7 +511,7 @@ function auditarCopias(repo) {
       noAplica.push(`${v.name || rel}: ${v.audit.reason}`);
       continue;
     }
-    if (!v || typeof v.name !== 'string' || !v.name || typeof v.version !== 'string' || !/^\d+\.\d+\.\d+/.test(v.version)) {
+    if (!v || typeof v.name !== 'string' || !v.name || typeof v.version !== 'string' || !VERSION_EXACTA.test(v.version)) {
       return { medido: false, motivo: `${rel} no trae nombre y versión exacta` };
     }
     if (versiones[v.name] && versiones[v.name] !== v.version) return { medido: false, motivo: `dos copias de ${v.name} con versiones distintas (${versiones[v.name]} y ${v.version})` };
