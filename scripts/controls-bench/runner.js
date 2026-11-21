@@ -474,7 +474,10 @@ function checkExpect(expect, res, vars, failures) {
  */
 function clasificarCartel(texto) {
   const t = String(texto || '');
-  if (/[\w./-]+\.(?:js|sh)["']? [a-z][a-z0-9-]*/.test(t)) return 'comando';
+  // un guion que se puede correr: detrás de `node`, `bash` o `sh`, o escrito con su ruta. Nombrado en prosa («no salió
+  // pipeline.js de …») no da salida
+  // (la ruta entre comillas puede llevar espacios, y en Windows separa con «\»)
+  if (/(?:\b(?:node|bash|sh)\s+(?:"[^"]*|'[^']*|[^\s"']*)|["'][^"']*[\\/][^"'\\/]*|[^\s"']*[\\/][^\s"'\\/]*)\.(?:js|sh)["']? [a-z][a-z0-9-]*/.test(t)) return 'comando';
   if (/^[\s>·•*(-]*(?:Usá|Corré|Pedile|Alternativa:|Salida:|Si querés)/mi.test(t)) return 'llano';
   return 'callejon';
 }
