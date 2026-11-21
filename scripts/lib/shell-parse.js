@@ -1507,22 +1507,42 @@ function programasPorEntrada(cmd) {
   return out;
 }
 
-// Lo que puede correr un texto: un shell, `eval`/`source`/`.`, lo que lanza otro programa, un intérprete, y los programas
-// que traen su propia forma de correr texto (`find -exec`, `sed e`, `awk system()`). Se busca en lo
-// que está fuera de comillas: un texto que NOMBRA `bash` no corre nada.
-const EJECUTORES = /(?:^|[\s;&|(`{])(?:[\w./-]*\/)?(?:bash|sh|zsh|dash|ksh|mksh|fish|csh|tcsh|busybox|pwsh|powershell|eval|source|xargs|parallel|exec|builtin|command|env|sudo|doas|nohup|timeout|nice|watch|script|node|nodejs|deno|bun|python[0-9.]*|perl|ruby|php|osascript|make|npx|npm|yarn|pnpm|awk|gawk|sed|find)(?=$|[\s;&|)}])|(?:^|[;&|(\n{]\s*)\.\s/;
-// un guion o un programa dado por su ruta (`./s.sh`, `/tmp/s.sh`, `~/x`)
-const PROGRAMA_POR_RUTA = /(?:^|[;&|(\n{]\s*)(?:[A-Za-z_]\w*=\S*\s+)*(?:\.{0,2}\/|~\/)\S/;
-// una variable como programa (`$c`, `"$c" arg`, `${c}`), mirada en el texto crudo: sus comillas no la vuelven texto
-const PROGRAMA_VARIABLE = /(?:^|[;&|(\n{]\s*)(?:[A-Za-z_]\w*=\S*\s+)*["']?\$\{?[A-Za-z_]/;
+// Los programas que NO corren un texto que reciben. Es una lista de los que se sabe que no, y no de los que sí: las formas
+// de correr un texto no se terminan de enumerar (un shell con otro nombre o escrito entre comillas, `$0`, `trap`, `su -c`,
+// `ssh`, un alias de `git`, un intérprete que no estaba en la lista), así que lo que falta acá frena de más, nunca de menos.
+const NO_CORREN_TEXTO = new Set(['echo', 'printf', 'cat', 'tee', 'az', 'gh', 'git', 'cd', 'pwd', 'ls', 'mkdir', 'touch', 'head',
+  'tail', 'wc', 'grep', 'true', 'false', 'test', '[', 'sort', 'uniq', 'cut', 'tr', 'date', 'sleep', 'jq', 'diff']);
+// lo que separa un comando del siguiente, y lo que abre uno adentro de otro (`$(…)`, comillas invertidas, `<(…)`, `>(…)`)
+const ENTRE_COMANDOS = /\$\(|<\(|>\(|[;&|\n(){}`]/;
 
-/** ¿Algo en el comando puede correr un texto? Ante la duda, sí: un texto que se corre es un comando. */
-function ejecutaTexto(cmd) {
-  const s = String(cmd);
+/**
+ * ¿Algo en el comando puede correr un texto? Ante la duda, sí. Sólo dice que no cuando cada programa del comando está
+ * escrito tal cual (sin comillas, barras ni `$`) y es de `NO_CORREN_TEXTO`, sin palabras de control (`if`, `then`,
+ * `for`, `!`, `time`…) y sin `git -c` (un alias con `!` corre su texto). Los cuerpos de los heredocs no cuentan: el que va
+ * a un programa que corre texto ya está en su renglón (`cat <<EOF | bash`).
+ */
+function ejecutaTexto(cmd, hondo = 0) {
+  const s = sinHeredocs(String(cmd));
+  // una sustitución corre aunque esté entre comillas dobles (`echo "$(bash -c x)"`): se mira lo de adentro, también
+  // la que está entre comillas simples (ahí no corre: mirarla frena de más, nunca de menos)
+  if (hondo > 4) return true;
+  for (const m of s.matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)|`([^`]*)`/g)) {
+    if (ejecutaTexto(m[1] !== undefined ? m[1] : m[2], hondo + 1)) return true;
+  }
   const f = posicionesFueraDeComillas(s);
+  // lo citado o escapado queda como `"`: una palabra con eso adentro no es un programa escrito tal cual
   let afuera = '';
-  for (let i = 0; i < s.length; i++) afuera += f(i) ? s[i] : ' ';
-  return EJECUTORES.test(afuera) || PROGRAMA_POR_RUTA.test(afuera) || PROGRAMA_VARIABLE.test(s);
+  for (let i = 0; i < s.length; i++) afuera += f(i) ? s[i] : '"';
+  for (const tramo of afuera.split(ENTRE_COMANDOS)) {
+    const palabras = tramo.trim().split(/\s+/).filter(Boolean);
+    let k = 0;
+    while (k < palabras.length && /^[A-Za-z_]\w*=/.test(palabras[k])) k++;   // las asignaciones de delante
+    if (k >= palabras.length) continue;                                       // sólo asignaciones, o vacío
+    const programa = /^[^<>]*/.exec(palabras[k])[0];
+    if (!/^[A-Za-z0-9._[-]+$/.test(programa) || !NO_CORREN_TEXTO.has(programa)) return true;
+    if (programa === 'git' && palabras.slice(k + 1).some((w) => /^-c/.test(w))) return true;
+  }
+  return false;
 }
 
 /** El contenido de cada texto entre comillas del comando (`'…'`, `"…"`, `$'…'` con sus escapes de comilla y barra). */
