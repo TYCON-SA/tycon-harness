@@ -888,13 +888,13 @@ function delicadaDeTramite({ home } = {}) {
 /**
  * El aviso de `plan-review` para un plan delicado, con lo mismo que mira `antesDeAprobar`: quién lo puede aprobar según
  * el perfil. Sin delegación, el dev; con `plan-approval:delicada` delegada a la coordinadora que la lanza para otra
- * sesión, también ella con el sí del dueño; de trámite, el arnés con la revisión aprobada.
+ * sesión, también ella con el sí de la persona; de trámite, el arnés con la revisión aprobada.
  */
 function avisoDelicada({ reason, lanza, destino, estado, home, delegaDelicada = delicadaDelegada, deTramite = delicadaDeTramite }) {
   const base = `⚠️  la story es delicada (${reason}): la revisión ataca y avisa`;
   if (deTramite({ home })) return `${base}; el perfil lista ${PLAN_DELICADA} como de trámite: con la revisión aprobada lo firma el arnés, y si no, el dev.`;
   if (lanza !== destino && delegaDelicada({ sesion: lanza, destino, estado, home })) {
-    return `${base}; el perfil delega ${PLAN_DELICADA}: lo puede aprobar la coordinadora con el sí del dueño (complete-step approve-plan --for-session ${destino}), o el dev. El texto de la aprobación dice cuál de los dos lo aprobó.`;
+    return `${base}; el perfil delega ${PLAN_DELICADA}: lo puede aprobar la coordinadora con el sí de la persona (complete-step approve-plan --for-session ${destino}), o el dev. El texto de la aprobación dice cuál de los dos lo aprobó.`;
   }
   return `${base}, pero el plan lo aprueba el dev.`;
 }

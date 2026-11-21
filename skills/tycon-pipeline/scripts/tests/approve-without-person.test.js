@@ -488,7 +488,7 @@ test('AvisoDelicada_LeeElPerfil: el aviso del plan delicado dice quién lo puede
   const delegada = aviso({ delegaDelicada: si, deTramite: no });
   assert.doesNotMatch(delegada, /pero el plan lo aprueba el dev/);
   assert.match(delegada, /el perfil delega plan-approval:delicada/);
-  assert.match(delegada, /coordinadora .*con el sí del dueño/);
+  assert.match(delegada, /coordinadora .*con el sí de la persona/);
   assert.match(delegada, /el texto de la aprobación dice cuál de los dos lo aprobó/i);
   // la propia sesión sobre su plan: la delegación es de la coordinadora para otra sesión, así que no aplica
   assert.match(aviso({ lanza: 's-dev', delegaDelicada: si, deTramite: no }), /pero el plan lo aprueba el dev\.$/);
