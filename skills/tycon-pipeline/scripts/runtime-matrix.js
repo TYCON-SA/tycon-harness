@@ -345,12 +345,56 @@ function isDir(d) { try { return fs.statSync(d).isDirectory(); } catch { return 
 function isFile(f) { try { return fs.statSync(f).isFile(); } catch { return false; } }
 function mtimeMs(f) { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }
 
+// lo que se prueba al resolver una carga relativa sin extensión: el archivo con cada una, o su index
+const EXTENSIONES_DE_CARGA = ['.js', '.json', '.ts', '.tsx', '.mjs', '.cjs', '.jsx'];
+
+/**
+ * El texto sin sus comentarios. Los textos entre comillas y las expresiones regulares quedan enteros: un `//` o una
+ * comilla adentro de uno (una dirección, una ruta, `/"/g`) no es un comentario ni abre un texto.
+ */
+function sinComentariosDe(texto) {
+  let out = '';
+  let i = 0;
+  // una `/` abre una expresión regular donde no puede ir una división: al principio o después de un operador
+  const abreRegex = () => { const previo = out.trimEnd(); return !previo || /[(,=:[!&|?{};+\-*%<>~^]$|\b(?:return|typeof|case|in|of)$/.test(previo); };
+  while (i < texto.length) {
+    const c = texto[i];
+    const d = texto[i + 1];
+    if (c === '/' && d === '/') { while (i < texto.length && texto[i] !== '\n') i += 1; continue; }
+    if (c === '/' && d === '*') { const fin = texto.indexOf('*/', i + 2); i = fin < 0 ? texto.length : fin + 2; continue; }
+    if (c === '/' && abreRegex()) {
+      let j = i + 1;
+      let clase = false;
+      while (j < texto.length && texto[j] !== '\n' && (clase || texto[j] !== '/')) {
+        if (texto[j] === '\\') j += 1;
+        else if (texto[j] === '[') clase = true;
+        else if (texto[j] === ']') clase = false;
+        j += 1;
+      }
+      out += texto.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      let j = i + 1;
+      while (j < texto.length && texto[j] !== c && !(c !== '`' && texto[j] === '\n')) j += texto[j] === '\\' ? 2 : 1;
+      out += texto.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
 /**
  * El código que cargan las pruebas de la historia, un nivel: por cada prueba de `codeFiles` que nombra
- * `@story-<sid>`, los `require('./…')` y `require('../…')` literales que caen en un archivo que no está en la lista, con
- * los criterios que esa prueba nombra (`@ac-N`; sin ninguno, null: vence la evidencia entera). Los de paquetes no se
- * miran. Una prueba ilegible, un `require` que no es un texto literal o uno relativo que no resuelve a un archivo dejan
- * esa prueba juzgada sólo por la lista, y se dice una vez por prueba en `warnings`.
+ * `@story-<sid>`, las cargas relativas literales (`require`, `require.resolve`, `import … from`, `import '…'`,
+ * `export … from` e `import()`) que caen en un archivo que no está en la lista, con los criterios que esa prueba nombra
+ * (`@ac-N`; sin ninguno, null: vence la evidencia entera). Los de paquetes no se miran. Una prueba ilegible, una carga
+ * que no es un texto literal o una relativa que no resuelve a un archivo dejan esa prueba juzgada sólo por la lista, y
+ * se dice una vez por prueba en `warnings`.
  */
 function codigoQueCarganLasPruebas(codeFiles, sid, warnings) {
   const { isTestPath } = require('./lib/atdd-order.js');
@@ -367,14 +411,23 @@ function codigoQueCarganLasPruebas(codeFiles, sid, warnings) {
     const criterios = [...new Set([...texto.matchAll(/@ac-(\d+)\b/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
     // la raíz desde la que se nombra la prueba: la ruta del aviso del archivo cargado se cuenta desde la misma
     const raiz = f.abs.endsWith(f.rel) ? f.abs.slice(0, -f.rel.length) : path.dirname(f.abs);
-    // un `require(` en un comentario no es una carga: se leen los literales del texto entero, y lo no literal sin comentarios
-    const sinComentarios = texto.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
-    let dudosa = /\brequire\s*\(\s*[^'"\s)]/.test(sinComentarios);
-    for (const m of texto.matchAll(/\brequire\s*\(\s*(['"])([^'"\n]*)\1\s*\)/g)) {
-      // relativo: `./…`, `../…`, y también `.` y `..` solos (cargan su index.js)
-      if (!/^\.\.?(\/|$)/.test(m[2])) continue;
-      const base = path.resolve(path.dirname(f.abs), m[2]);
-      const destino = [base, `${base}.js`, `${base}.json`, path.join(base, 'index.js')].find(esArchivo);
+    // una carga en un comentario no es una carga, y un comentario adentro de la llamada no la esconde: todo se lee sin
+    // comentarios. Una llamada cuyo primer argumento no es un texto entero (una variable, una plantilla, una suma de
+    // textos) es una carga que no se puede seguir
+    const sinComentarios = sinComentariosDe(texto);
+    let dudosa = false;
+    const literales = [];
+    for (const m of sinComentarios.matchAll(/\b(?:require(?:\.resolve)?|import)\s*\(/g)) {
+      const literal = /^\s*(['"])([^'"\n]*)\1\s*[,)]/.exec(sinComentarios.slice(m.index + m[0].length));
+      if (literal) literales.push(literal[2]);
+      else dudosa = true;
+    }
+    for (const m of sinComentarios.matchAll(/(?:^|[;\n{}])\s*(?:import|export)\s+(?:[^'";]*?\s+from\s+)?(['"])([^'"\n]*)\1/g)) literales.push(m[2]);
+    for (const carga of new Set(literales)) {
+      // relativo: `./…`, `../…`, y también `.` y `..` solos (cargan su index)
+      if (!/^\.\.?(\/|$)/.test(carga)) continue;
+      const base = path.resolve(path.dirname(f.abs), carga);
+      const destino = [base, ...EXTENSIONES_DE_CARGA.map((x) => `${base}${x}`), ...EXTENSIONES_DE_CARGA.map((x) => path.join(base, `index${x}`))].find(esArchivo);
       if (!destino) { dudosa = true; continue; }
       if (enLaLista.has(destino)) continue;
       out.push({ abs: destino, rel: path.relative(raiz, destino), mt: mtimeMs(destino), prueba: f.rel, criterios: criterios.length ? criterios : null });
