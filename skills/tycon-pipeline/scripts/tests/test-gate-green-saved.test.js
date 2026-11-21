@@ -609,6 +609,23 @@ test('T8 Decision_NothingSaved_SaysWhyWithLastNote @story-8.297 @ac-8 — sin na
   assert.match(lineasDeModo(puerta(s).out)[0], /^\[test-gate\] modo primera /);
 });
 
+test('RedSaved_StoryChange_NotCarriedOver — lo guardado de una completa roja no pasa a otra historia', () => {
+  const l = lab();
+  const guardada = { repo: l.repo, storyId: '9.263', at: new Date().toISOString(), dir: path.join(l.state, 'roja') };
+  const set = (storyId, extra = []) => spawnSync(process.execPath, [path.join(SCRIPTS, 'marker.js'), 'set', JSON.stringify({ storyId, storyPath: '', repoPath: l.repo }), ...extra],
+    { cwd: l.repo, encoding: 'utf8', env: entorno(l) });
+  escribirMarcador(l, { testsRedFull: [guardada], testsGreenFull: [{ ...guardada, dir: path.join(l.state, 'verde') }] });
+  let r = set('9.264', ['--replace']);
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.equal(marcador(l).testsGreenFull, undefined, 'lo verde guardado no pasa a otra historia');
+  assert.equal(marcador(l).testsRedFull, undefined, 'lo rojo guardado no pasa a otra historia');
+  // con la misma historia, lo rojo guardado sigue
+  escribirMarcador(l, { testsRedFull: [guardada], stepsCompleted: [], stepsPending: [] });
+  r = set('9.263');
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.deepEqual(marcador(l).testsRedFull, [guardada], 'con la misma historia, lo rojo guardado sigue');
+});
+
 test('T9 Decision_EveryMode_OneLine @story-8.297 @ac-8 — cada corrida dice un solo renglón con su modo', () => {
   // 🔴 mutación: imprimir el renglón sólo en la completa deja callados el cierre y la acotada
   const l = lab({ listas: true });

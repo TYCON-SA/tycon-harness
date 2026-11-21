@@ -732,8 +732,9 @@ function cmdSet(payloadJson) {
       // las suites que fallaron son de la corrida: heredadas, la primera corrida completa de la story nueva se negaría
       // (76) por suites que sólo rompió la anterior. Lo guardado de una completa verde, igual: la nueva compararía su
       // carpeta con una completa de otra historia. La nota de la última corrida, igual: la primera de la story nueva
-      // saldría «entera», con el motivo de la vieja
-      testsFailed, testsGreenFull, testsSavedNote,
+      // saldría «entera», con el motivo de la vieja. Lo guardado de una completa roja, igual: la nueva repetiría primero
+      // las rojas de otra historia
+      testsFailed, testsGreenFull, testsRedFull, testsSavedNote,
       // la tanda es de la historia: heredada, la matriz de la nueva mediría una tanda que no es suya
       batch, batchSetAt,
       // el pedido es de la corrida: heredado, el cierre de la nueva anunciaría un pedido que no es suyo
@@ -4385,9 +4386,16 @@ function rojoEsperadoDeLaMatriz(marker, tests, args, actual) {
   marker.checks.acmatrix = `rojo-esperado:exit=${m[1]}`;
   marker.expectedRed = Object.assign({}, marker.expectedRed, { acmatrix: { tests, deuda: marker.cierre.deuda, at: nowIso(), until: hasta, via: l.via, constanciaTs: l.ts } });
   marker.lastTouch = nowIso();
+  // el renglón va antes que el marcador y sin él no se guarda nada: es lo que hace hablar al aviso de la deuda vencida,
+  // y un marcador con la fecha nueva sin su renglón dejaría el aviso con la vieja
+  try {
+    if (renovada) appendLog('gates.log', { name: 'acmatrix-debt-renewed', story: nn(marker.storyId, null), storyPath: story, deuda: marker.cierre.deuda, tests, until: hasta, antes: previo.until || null }, { estricto: true });
+    else appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check: 'acmatrix', tests, deuda: marker.cierre.deuda, until: hasta }, { estricto: true });
+  } catch (e) {
+    console.error(`marker.js expect-red: no pude anotar el rojo esperado de la matriz en gates.log (${e.code || e.message}): sin ese renglón nadie avisa cuando venza la deuda. No guardé nada; revisá la carpeta de estado y reintentá.`);
+    process.exit(2);
+  }
   writeMarker(marker);
-  if (renovada) appendLog('gates.log', { name: 'acmatrix-debt-renewed', story: nn(marker.storyId, null), storyPath: story, deuda: marker.cierre.deuda, tests, until: hasta, antes: previo.until || null });
-  else appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check: 'acmatrix', tests, deuda: marker.cierre.deuda, until: hasta });
   process.stdout.write(`acmatrix: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${marker.cierre.deuda}, vence ${hasta}${renovada ? ` (antes ${previo.until || 'sin fecha'})` : ''}\n`);
 }
 

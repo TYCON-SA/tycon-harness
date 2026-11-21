@@ -198,3 +198,21 @@ test('T11 · FinishedOpen_DeletedFolderInLiveRepo_StillBringsTheRepo @story-8.26
   assert.deepEqual(base.reposDelCarril(adhoc), [real], 'sin la opción, como siempre');
   assert.deepEqual(base.reposDelCarril(adhoc, { ubicados: new Map() }), [real], 'con lo ya ubicado compartido, lo mismo');
 });
+
+test('FinishedOpen_MachineThrows_RestStillRuns — si lo de las corridas falla, se dice y los demás avisos salen igual', () => {
+  const C = casa();
+  // el gancho real en su propio proceso, con lo de las corridas roto y una carpeta suelta, cargados antes que él
+  const antes = path.join(C.home, 'romper.js');
+  const lib = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'finished-open.js');
+  fs.writeFileSync(antes, `const lib = require(${JSON.stringify(lib)});
+lib.machine = () => { throw new Error('marcador roto'); };
+lib.unsavedFolders = async () => ['/carpeta/suelta (rama x)'];
+`);
+  const r = spawnSync(process.execPath, ['-r', antes, HOOK], {
+    encoding: 'utf8', input: '{}',
+    env: { ...process.env, HOME: C.home, USERPROFILE: C.home, TYCON_HOME: '', TYCON_EVAL_SANDBOX: '', TYCON_FINISHED_OPEN_NOTICE: '', TYCON_FINISHED_OPEN_NOW: '2026-10-15T12:00:00Z', TYCON_UNSAVED_FOLDERS: '' },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /terminado sin cerrar: no pude mirar \(marcador roto\)/, r.stdout);
+  assert.match(r.stdout, /carpetas de trabajo con cambios sin commitear/, `los avisos que siguen tienen que salir igual: ${r.stdout}`);
+});
