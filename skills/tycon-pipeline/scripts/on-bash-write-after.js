@@ -44,23 +44,31 @@ function logHookError(stateDir, e) {
   } catch (_) { /* nada */ }
 }
 
-/** El repo de la carpeta de la sesión y el de cada `cd` literal del comando, sin repetir. */
+/** El repo de la carpeta de la sesión y el de cada `cd` o `pushd` literal del comando (con sus opciones y comillas). */
 function reposDelComando(cwd, comando) {
   const { findRepoRoot } = require('./lib/story-discovery.js');
   const out = new Set();
   const agregar = (dir) => { const r = findRepoRoot(dir); if (r) out.add(r); };
   agregar(cwd);
-  for (const m of String(comando).matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) {
-    const destino = m[2].replace(/^~(?=\/|$)/, os.homedir());
+  const re = /(?:^|[\s;&|(])(?:cd|pushd)((?:\s+-[-LPe@]*)*)\s+(?:"([^"]+)"|'([^']+)'|([^\s'";&|)]+))/g;
+  for (const m of String(comando).matchAll(re)) {
+    const destino = expandirCasa(m[2] || m[3] || m[4]);
     agregar(path.resolve(cwd, destino));
   }
   return [...out];
 }
 
-/** ¿Hay una redirección a un archivo fuera de comillas? (`2>&1` y `> /dev/null` no escriben nada protegido) */
+/** `~`, `$HOME` y `${HOME}` al principio de una palabra, por la carpeta de la cuenta. */
+const expandirCasa = (p) => String(p).replace(/^(?:~|\$HOME|\$\{HOME\})(?=\/|$)/, os.homedir());
+
+/**
+ * ¿Hay una redirección a un archivo fuera de comillas? `2>&1`, `>&-` y `> /dev/null` no escriben nada protegido;
+ * `>&archivo` sí. Un comando con el citado `$'…'` cuenta como que redirige: el lector no lo entiende.
+ */
 function redirigeAArchivo(comando) {
   let q = null;
   const s = String(comando);
+  if (s.includes("$'")) return true;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (q) { if (c === q) q = null; else if (c === '\\' && q === '"') i++; continue; }
@@ -69,49 +77,73 @@ function redirigeAArchivo(comando) {
     if (c !== '>') continue;
     let j = i + 1;
     if (s[j] === '>' || s[j] === '|') j++;
-    if (s[j] === '&') { i = j; continue; }
+    if (s[j] === '&') {
+      if (/[\d-]/.test(s[j + 1] || '')) { i = j + 1; continue; }
+      return true;
+    }
     while (s[j] === ' ' || s[j] === '\t') j++;
     if (!s.startsWith('/dev/null', j)) return true;
   }
   return false;
 }
 
-/** ¿La ruta real del guion está dentro de este arnés? */
+const realOrNull = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+
+/**
+ * ¿Es un guion de este arnés que se puede reconocer? marker.js siempre; otro guion, sólo si git lo sigue y no tiene
+ * cambios (uno que el agente dejó o editó bajo la raíz no cuenta).
+ */
 function guionDelArnes(palabra, cwd) {
+  const real = realOrNull(path.resolve(cwd, expandirCasa(palabra)));
+  const raiz = realOrNull(RAIZ_DEL_ARNES);
+  if (!real || !raiz || !real.startsWith(raiz + path.sep) || !/\.(c?js|sh)$/.test(real)) return false;
+  if (real === realOrNull(path.join(__dirname, 'marker.js'))) return true;
+  const rel = path.relative(raiz, real);
+  const git = (args) => require('child_process').execFileSync('git', ['-C', raiz, ...args], { windowsHide: true, timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
   try {
-    const real = fs.realpathSync(path.resolve(cwd, palabra.replace(/^~(?=\/|$)/, os.homedir())));
-    const raiz = fs.realpathSync(RAIZ_DEL_ARNES);
-    return real.startsWith(raiz + path.sep) && /\.(c?js|sh)$/.test(real);
+    if (!git(['ls-files', '--', rel]).trim()) return false;
+    git(['diff', '--quiet', 'HEAD', '--', rel]);
+    return true;
   } catch (_) { return false; }
 }
 
+/** ¿Es el `node` de verdad? `node` a secas, o una ruta al mismo ejecutable que corre este gancho. */
+const esNode = (p) => p === 'node' || p === 'node.exe' || (path.isAbsolute(p) && realOrNull(p) === realOrNull(process.execPath));
+
 /**
- * Los programas del comando: `{ todosReconocidos, algunoReconocido }`. Reconocido: marker.js o un guion de este arnés
- * corrido con node o directo; los de SIN_ESCRIBIR no cuentan para ningún lado.
+ * Los programas del comando: `{ todosReconocidos, algunoReconocido, soloGit }`. Reconocido: marker.js o un guion de
+ * este arnés, corrido con node o directo, sin asignaciones delante (`NODE_OPTIONS=`, `PATH=` cambian lo que corre); los
+ * de SIN_ESCRIBIR no cuentan para ningún lado. `soloGit`: todos los programas son git, sin asignaciones.
  */
 function programas(comando, cwd, { powershell = false } = {}) {
   const { segmentos } = require(path.join(RAIZ_DEL_ARNES, 'scripts', 'lib', 'az-pr.js'));
   let reconocidos = 0;
   let otros = 0;
+  let gits = 0;
   for (const seg of segmentos(String(comando || ''), { powershell })) {
     let i = 0;
     while (seg[i] && /^[A-Za-z_][A-Za-z0-9_]*=/.test(seg[i].texto)) i++;
     const p = seg[i];
     if (!p) continue;
     if (!p.esBandera) { otros++; continue; }
-    if (SIN_ESCRIBIR.has(p.texto)) continue;
+    if (SIN_ESCRIBIR.has(p.texto) && i === 0) continue;
+    if (p.texto === 'git' && i === 0) { gits++; continue; }
+    if (i > 0) { otros++; continue; }
     let guion = p.texto;
-    if (/^node(\.exe)?$/i.test(path.basename(p.texto))) {
-      const resto = seg.slice(i + 1);
-      const g = resto.find((x) => !x.texto.startsWith('-'));
+    if (esNode(p.texto)) {
+      const g = seg[i + 1];
       // una opción antes del guion (`--require`, `-e`) puede correr otra cosa
-      if (!g || resto.indexOf(g) !== 0) { otros++; continue; }
+      if (!g || g.texto.startsWith('-')) { otros++; continue; }
       guion = g.texto;
     }
     if (guionDelArnes(guion, cwd)) reconocidos++; else otros++;
   }
   const limpio = !redirigeAArchivo(comando);
-  return { todosReconocidos: limpio && reconocidos > 0 && otros === 0, algunoReconocido: reconocidos > 0 };
+  return {
+    todosReconocidos: limpio && reconocidos > 0 && otros === 0 && gits === 0,
+    algunoReconocido: reconocidos > 0,
+    soloGit: limpio && gits > 0 && otros === 0 && reconocidos === 0,
+  };
 }
 
 function leerEntrada() {
@@ -133,10 +165,17 @@ function mensaje(hechas, fallas, mezclado) {
   lineas.push('', 'Una historia que no está en borrador, el estado de un borrador, una constancia y los marcadores de la ejecución no se',
     'escriben desde un comando: desde la consola no se ve qué queda escrito. La historia se edita con la herramienta de',
     'edición y su estado lo cambia marker.js:',
-    '  · node "$HOME/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js" update-story-status <ruta de la historia> <estado>');
+    '  · node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story-status <ruta de la historia> <estado>');
   if (mezclado) lineas.push('', 'El comando mezclaba marker.js con otros programas: después de correr no se sabe cuál escribió cada cosa.',
     'Corré marker.js en un comando aparte.');
   return lineas.join('\n');
+}
+
+/** Una mirada que no se pudo hacer queda en hook-errors.log y se le dice al agente: callarla dejaría pasar lo escrito. */
+function noSePudoMirar(input, stateDir, motivo) {
+  logHookError(stateDir, new Error(`no se pudo mirar: ${motivo}`));
+  const texto = `⚠️ tycon-pipeline — no pude mirar qué escribió el comando en las historias y las constancias (${motivo}). Si tocó alguna, revisala antes de seguir.`;
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: input.hook_event_name, additionalContext: texto } }) + '\n');
 }
 
 function despues(input, stateDir) {
@@ -144,14 +183,20 @@ function despues(input, stateDir) {
   let foto = null;
   try { foto = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') logHookError(stateDir, e); return; }
   try { fs.rmSync(archivo, { force: true }); } catch (_) { /* nada */ }
-  if (!photo.photoIntact(foto)) { logHookError(stateDir, new Error(`no se pudo mirar: la foto ${archivo} no coincide con su huella`)); return; }
-  const diferencias = photo.differences(foto, { stateDir });
+  if (!photo.photoIntact(foto)) { noSePudoMirar(input, stateDir, `la foto ${archivo} no coincide con su huella`); return; }
+  let diferencias = photo.differences(foto, { stateDir });
   if (!diferencias.length) return;
   const comando = String((input.tool_input || {}).command || '');
   const cwd = input.cwd || process.cwd();
   const prog = programas(comando, cwd, { powershell: input.tool_name === 'PowerShell' });
   if (prog.todosReconocidos) return;
-  const { hechas, fallas } = photo.undo(diferencias, { stateDir });
+  // un cambio de rama, un pull o un merge traen lo commiteado: eso no lo escribió el comando
+  if (prog.soloGit) {
+    const deGit = new Set(photo.gitBrought(foto, diferencias));
+    diferencias = diferencias.filter((d) => !deGit.has(d));
+    if (!diferencias.length) return;
+  }
+  const { hechas, fallas } = photo.undo(foto, diferencias, { stateDir });
   const ts = new Date().toISOString(); // stable-data: la hora del renglón del registro
   const programa = comando.replace(/\s+/g, ' ').slice(0, 160);
   try {
@@ -174,7 +219,9 @@ function main() {
       photo.writeWhole(archivoDeLaFoto(stateDir, input), JSON.stringify(foto));
       return;
     }
-    if (EVENTOS_DE_DESPUES.includes(input.hook_event_name)) despues(input, stateDir);
+    if (EVENTOS_DE_DESPUES.includes(input.hook_event_name)) {
+      try { despues(input, stateDir); } catch (e) { noSePudoMirar(input, stateDir, (e && e.message) || String(e)); }
+    }
   } catch (e) { logHookError(stateDir, e); }
 }
 

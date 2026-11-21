@@ -188,3 +188,116 @@ test('WriteAfter_TamperedPhoto_NotUsedToRestore @story-8.320 @ac-7', () => {
   assert.match(fs.readFileSync(f, 'utf8'), /status: done/, 'una foto alterada no restaura');
   assert.match(fs.readFileSync(path.join(l.estado, 'hook-errors.log'), 'utf8'), /no se pudo mirar: la foto .* no coincide con su huella/);
 });
+
+// ── lo que encontró el pase adversarial ──────────────────────────────────────────────────────────────────────────────
+
+// 🔴 Falla con: algo delante de marker.js (una asignación, otro `node`, una redirección que el lector no ve) que hace
+//    pasar el comando como «todo reconocido».
+test('WriteAfter_RecognizedOnlyWhenNothingChangesWhatRuns @story-8.320 @ac-5', () => {
+  const l = lab();
+  const f = l.f('specs/story-1.1-hecha.md');
+  const antes = fs.readFileSync(f, 'utf8');
+  const falso = path.join(l.base, 'bin', 'node');
+  fs.mkdirSync(path.dirname(falso), { recursive: true });
+  fs.writeFileSync(falso, '#!/bin/sh\n');
+  for (const comando of [`NODE_OPTIONS=--require=./x.js node "${MARKER}" help`, `PATH=${path.dirname(falso)}:$PATH node "${MARKER}" help`,
+    `${falso} "${MARKER}" help`, `echo hola >&${f}; node "${MARKER}" help`, `echo $'\\'' > ${f}; echo '; node "${MARKER}" help'`]) {
+    correr(l, comando, { hacer: () => fs.writeFileSync(f, historia('1.1', 'done')) });
+    assert.strictEqual(fs.readFileSync(f, 'utf8'), antes, comando);
+  }
+  // `2>&1` y `>&2` no son archivos; `$HOME/…` hasta marker.js, sí es marker.js
+  fs.symlinkSync(path.resolve(__dirname, '..', '..', '..', '..'), path.join(l.home, 'arnes'));
+  const conCasa = `node "$HOME/arnes/skills/tycon-pipeline/scripts/marker.js" update-story-status ${f} review 2>&1 >&2`;
+  correr(l, conCasa, { hacer: () => fs.writeFileSync(f, historia('1.1', 'review')) });
+  assert.match(fs.readFileSync(f, 'utf8'), /status: review/, conCasa);
+});
+
+// 🔴 Falla con: la historia cambiada por un enlace, o un `.md` ilegible al lado que apaga la mirada entera.
+test('WriteAfter_LinkOrUnreadable_Restored @story-8.320 @ac-2', () => {
+  const l = lab();
+  const f = l.f('specs/story-1.1-hecha.md');
+  const antes = fs.readFileSync(f, 'utf8');
+  const afuera = path.join(l.base, 'afuera.md');
+  correr(l, 'cosa', { hacer: () => { fs.writeFileSync(afuera, historia('1.1', 'done')); fs.rmSync(f); fs.symlinkSync(afuera, f); } });
+  assert.ok(!fs.lstatSync(f).isSymbolicLink(), 'el enlace se va');
+  assert.strictEqual(fs.readFileSync(f, 'utf8'), antes);
+  // una historia nueva que es un enlace a una hecha: el arnés la lee por el enlace
+  const nueva = l.f('specs/story-1.7-enlace.md');
+  correr(l, 'cosa', { hacer: () => fs.symlinkSync(afuera, nueva) });
+  assert.ok(!fs.existsSync(nueva) && !(() => { try { return fs.lstatSync(nueva); } catch (_) { return null; } })(), 'el enlace nuevo se borra');
+  const ilegible = l.f('specs/zz.md');
+  fs.writeFileSync(ilegible, 'x');
+  fs.chmodSync(ilegible, 0o000);
+  const x = guion(l, 'z.js', `require('fs').writeFileSync(${JSON.stringify(f)}, ${JSON.stringify(historia('1.1', 'done'))});`);
+  correr(l, `N=node; \${N:-node} ${x}`);
+  fs.chmodSync(ilegible, 0o644);
+  assert.strictEqual(fs.readFileSync(f, 'utf8'), antes, 'un .md ilegible al lado no apaga la mirada');
+});
+
+// 🔴 Falla con: un borrador que sale de borrador con una clave citada delante, o una historia que deja de declararse.
+test('WriteAfter_QuotedStatusOrLostIdentity_Restored @story-8.320 @ac-2', () => {
+  const l = lab();
+  const b = l.f('specs/story-1.2-borrador.md');
+  const antesB = fs.readFileSync(b, 'utf8');
+  correr(l, 'cosa', { hacer: () => fs.writeFileSync(b, '---\nstory: "1.2"\n"status": draft\nstatus: done\n---\n') });
+  assert.strictEqual(fs.readFileSync(b, 'utf8'), antesB);
+  const f = l.f('specs/story-1.1-hecha.md');
+  const antes = fs.readFileSync(f, 'utf8');
+  const r = correr(l, 'cosa', { hacer: () => fs.writeFileSync(f, antes.replace('story:', 'storyx:').replace('in-progress', 'done')) });
+  assert.strictEqual(fs.readFileSync(f, 'utf8'), antes);
+  assert.match(r.ctx, /dejó de ser una historia/);
+});
+
+// 🔴 Falla con: un `.md` que ya existía y se vuelve historia se borra entero, en vez de volver a lo que tenía.
+test('WriteAfter_ExistingMdBecomesStory_RestoredNotDeleted @story-8.320 @ac-2', () => {
+  const l = lab();
+  const notas = l.f('specs/notas.md');
+  fs.writeFileSync(notas, 'mis notas sin commitear\n');
+  correr(l, 'cosa', { hacer: () => fs.writeFileSync(notas, historia('1.9', 'ready-for-dev')) });
+  assert.strictEqual(fs.readFileSync(notas, 'utf8'), 'mis notas sin commitear\n');
+  correr(l, 'cosa', { hacer: () => fs.writeFileSync(notas, 'otras notas\n') });
+  assert.strictEqual(fs.readFileSync(notas, 'utf8'), 'otras notas\n', 'un .md que no es historia se edita libre');
+});
+
+// 🔴 Falla con: con la carpeta de historias cambiada por un enlace, deshacer borra y escribe en la carpeta de afuera.
+test('WriteAfter_StoryDirSwappedForLink_TouchesNothingOutside @story-8.320 @ac-2', () => {
+  const l = lab();
+  const afuera = path.join(l.base, 'otro-lugar');
+  fs.mkdirSync(afuera);
+  fs.writeFileSync(path.join(afuera, 'story-5.1-ajena.md'), historia('5.1', 'done'));
+  const r = correr(l, 'cosa', { hacer: () => { fs.renameSync(l.f('specs'), l.f('specs.viejo')); fs.symlinkSync(afuera, l.f('specs')); } });
+  assert.deepStrictEqual(fs.readdirSync(afuera), ['story-5.1-ajena.md'], 'lo de afuera queda como estaba');
+  assert.match(r.ctx, /no se pudo deshacer \(su carpeta ya no es la de la foto/);
+});
+
+// 🔴 Falla con: un cambio de rama que trae historias se deshace y deja el árbol cambiado.
+test('WriteAfter_GitCheckout_NotUndone_ButOtherContentIs @story-8.320 @ac-2', () => {
+  const l = lab();
+  const fecha = '2026-01-01T00:00:00Z';
+  const git = (...a) => execFileSync('git', ['-C', l.repo, '-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a],
+    { stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha } });
+  git('add', '-A'); git('commit', '-qm', 'base'); git('checkout', '-qb', 'otra');
+  fs.writeFileSync(l.f('specs/story-1.1-hecha.md'), historia('1.1', 'done'));
+  fs.writeFileSync(l.f('specs/story-1.5-nueva.md'), historia('1.5', 'review'));
+  git('add', '-A'); git('commit', '-qm', 'otra'); git('checkout', '-q', '-');
+  correr(l, 'git checkout -q otra');
+  assert.match(fs.readFileSync(l.f('specs/story-1.1-hecha.md'), 'utf8'), /status: done/, 'lo que trajo git queda');
+  assert.ok(fs.existsSync(l.f('specs/story-1.5-nueva.md')));
+  // lo que no coincide con lo commiteado sí se deshace, aunque el comando sea git
+  correr(l, 'git status', { hacer: () => fs.writeFileSync(l.f('specs/story-1.1-hecha.md'), historia('1.1', 'otra-cosa')) });
+  assert.match(fs.readFileSync(l.f('specs/story-1.1-hecha.md'), 'utf8'), /status: done/);
+});
+
+// 🔴 Falla con: `cd -- <otro repo>` o `cd "<ruta con espacio>"` no suman ese repo a la foto.
+test('WriteAfter_CdWithOptionsOrQuotes_RepoWatched @story-8.320 @ac-1', () => {
+  const l = lab();
+  const otro = lab();
+  const conEspacio = path.join(otro.base, 'repo con espacio');
+  fs.renameSync(otro.repo, conEspacio);
+  const f = path.join(conEspacio, 'specs', 'story-1.1-hecha.md');
+  const antes = fs.readFileSync(f, 'utf8');
+  for (const cd of [`cd -- "${conEspacio}"`, `cd -P "${conEspacio}"`, `pushd "${conEspacio}"`]) {
+    correr(l, `${cd} && cosa`, { hacer: () => fs.writeFileSync(f, historia('1.1', 'done')) });
+    assert.strictEqual(fs.readFileSync(f, 'utf8'), antes, cd);
+  }
+});
