@@ -453,3 +453,36 @@ test('T23 InternalClone_AzureOrNoTags_UpdatesByAncestry', () => {
   assert.strictEqual(a.status, 'new');
   assert.strictEqual(SRC.assess({ name: 'harness', dir: work, rewrites: false }, tip, installed, { env: ENV }).status, 'up_to_date');
 });
+
+// ── la copia instalada dice su número ────────────────────────────────────────────────────────────────────────────────
+// El version.json de git dice el piso: quien leía a mano el de la copia instalada (npx) veía un número de octubre. La
+// bajada de una versión con etiqueta lo estampa con el número de la etiqueta, y el manifiesto queda con su contenido.
+test('T24 Release_StampVersion_InstalledCopySaysItsTag', () => {
+  const GH = require(path.join(ROOT, 'scripts', 'lib', 'git-tree-hash.js'));
+  const dir = fs.mkdtempSync(path.join(SCRATCH, 'estampa-'));
+  const original = `${JSON.stringify({ version: FLOOR, numbering: 'merge-tag', source: { harness: 'a'.repeat(40) } }, null, 2)}\n`;
+  fs.writeFileSync(path.join(dir, 'version.json'), original);
+  const files = [{ path: 'version.json', mode: '100644', blob: GH.blobSha(Buffer.from(original)) }];
+  assert.strictEqual(RL.stampVersion(dir, files, '2030.01.16.3'), true);
+  const texto = fs.readFileSync(path.join(dir, 'version.json'), 'utf8');
+  const j = JSON.parse(texto);
+  assert.deepStrictEqual([j.version, j.floor, j.numbering, j.source.harness], ['2030.01.16.3', FLOOR, 'merge-tag', 'a'.repeat(40)]);
+  assert.match(j.installed, /v2030\.01\.16\.3/);
+  assert.strictEqual(files[0].blob, GH.blobSha(Buffer.from(texto)), 'el manifiesto anota lo estampado: doctor no lo ve editado');
+  // la estampa sigue cerrando con el número de la versión
+  assert.strictEqual(RL.treeNumberOk(j, '2030.01.16.3'), true);
+  // sin la marca, con el mismo número o ilegible: queda como vino
+  for (const [nombre, contenido, numero] of [['sin marca', JSON.stringify({ version: FLOOR }), '2030.01.16.3'], ['mismo número', original, FLOOR], ['ilegible', '{', '2030.01.16.3']]) {
+    const d = fs.mkdtempSync(path.join(SCRATCH, 'sin-estampa-'));
+    fs.writeFileSync(path.join(d, 'version.json'), contenido);
+    assert.strictEqual(RL.stampVersion(d, [], numero), false, nombre);
+    assert.strictEqual(fs.readFileSync(path.join(d, 'version.json'), 'utf8'), contenido, nombre);
+  }
+});
+
+test('T25 RealVersionJson_SaysItIsTheFloor', () => {
+  if (!fs.existsSync(path.join(ROOT, 'version.json'))) return;   // el repo de mantenimiento no lo lleva: lo mira el público
+  const j = JSON.parse(fs.readFileSync(path.join(ROOT, 'version.json'), 'utf8'));
+  assert.match(String(j.note || ''), /piso/, 'quien lo lee a mano sabe que en git es el piso');
+  assert.match(String(j.note || ''), /etiqueta/, 'y que el número real es la etiqueta');
+});
