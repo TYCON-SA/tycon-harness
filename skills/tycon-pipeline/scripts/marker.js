@@ -1877,6 +1877,33 @@ function cmdCompleteStep(nRaw, flags) {
   // antes: lo que se commitea es lo revisado. Una prueba o un texto no la piden. `--out-of-order` no lo saltea: no es
   // el orden, es lo que se commitea. Con Hallazgos abierto también frena: `next` espera a que cierre, este paso no.
   // ── con el plan aprobado por la coordinadora, el diff entero se vuelve a medir al cerrar ──
+  // ── «Armar el plan» de una historia con código no cierra sin lo que da por cierto del código ──
+  // La sección «## Suposiciones sobre el código», cada renglón con su archivo:línea comprobado en el repo
+  // (lib/plan-assumptions.js). Sin plan escrito no se mira acá: eso lo dice «Aprobar el plan».
+  if (nuevo && ids.includes('plan')) {
+    const plan = planDeLaCorrida(marker);
+    let texto = null;
+    try { texto = plan.file ? fs.readFileSync(plan.file, 'utf8') : null; } catch (_) { texto = null; }
+    if (texto && texto.trim()) {
+      const repo = marker.repoPath || process.cwd();
+      // los hermanos de la ejecución: la historia del repo de historias cita el código del repo hermano
+      let raices = [];
+      try {
+        const cr = require('./lib/companion-repos.js');
+        const story = resolveStoryPath(marker.storyPath, marker) || undefined;
+        raices = [...(story ? [cr.gitRootOf(story)] : []), ...cr.companionRoots(repo, story)].filter(Boolean);
+      } catch (_) { raices = []; }
+      const r = require('./lib/plan-assumptions.js').revisar(texto, { repo, raices });
+      if (r.problemas.length) {
+        appendLog('gates.log', { name: 'plan-assumptions', status: 'blocked', story: marker.storyId, problemas: r.problemas.length });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — ${r.problemas[0]}`);
+        for (const p of r.problemas.slice(1, 6)) console.error(`  · ${p}`);
+        if (r.problemas.length > 6) console.error(`  · y ${r.problemas.length - 6} más`);
+        console.error(`  El plan: ${plan.file}`);
+        process.exit(2);
+      }
+    }
+  }
   if (nuevo && ids.includes('prepare-commit')) {
     const cierre = require('./lib/batch-scope.js').frenoDelCierre({ markerPath: markerFilePath(SID), estado: STATE_DIR, sid: SID });
     if (cierre) { console.error(`marker.js complete-step ${n} BLOQUEADO — ${cierre.texto.replace(/^🔒 cierre: /, '')}`); process.exit(2); }
