@@ -531,12 +531,14 @@ test('T4 Kanban_NoStories_NoFold @story-8.251 @ac-4 — sin tarjetas de historia
   }
 });
 
-test('T5 Kanban_CountsUnchanged @story-8.251 @ac-5 — el encabezado y «En el kanban, de a uno» cuentan la columna entera; las historias no viajan', () => {
+test('T5 Kanban_CountsUnchanged @story-8.251 @ac-5 @story-8.313 @ac-7 — el encabezado y «En el kanban, de a uno» no cuentan las plegadas; las historias no viajan', () => {
   const data = office8251({ snap: reading8251(THREE_8251), runs: [] });
   const { body } = drawKanban(data);
-  assert.ok(column8251(body).col.children.some((n) => n.tag === 'h3' && n.textContent === 'Sin sesión · 5'), 'el encabezado cuenta las cinco');
+  // desde la 8.313, las plegadas tienen su propio número («Historias de tus proyectos · 3») y la columna cuenta las demás
+  assert.ok(column8251(body).col.children.some((n) => n.tag === 'h3' && n.textContent === 'Sin sesión · 2'), 'el encabezado cuenta las dos filas');
+  assert.strictEqual(column8251(body).fold.textContent, 'Historias de tus proyectos · 3', 'la línea plegada sigue diciendo cuántas hay');
   data.tablas = buildTables({ kanban: data.kanban, nowMs: NOW, sinModelo: true });
-  assert.match(data.tablas.pendientes.cruce, /\b5 sin sesión\b/, 'la línea del kanban cuenta la columna entera');
+  assert.match(data.tablas.pendientes.cruce, /\b2 sin sesión\b/, 'la línea del kanban no cuenta las plegadas');
   const sent = FIELDS_8251.pick(data, '/home/nadie');
   assert.deepStrictEqual(sent.kanban.columnas.find((c) => c.id === 'sinEmpezar').tarjetas.map((c) => c.titulo), ['Fila uno', 'Fila dos'], 'al sitio no viajan, como hoy');
 });

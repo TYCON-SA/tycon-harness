@@ -1263,7 +1263,8 @@ test('T279 OtherProject_NotCounted: una sesión de un repo que el arnés no sigu
   assert.strictEqual(card.quien, 'Mesa · Otro proyecto');
   assert.strictEqual(card.otro, true);
   assert.ok(!col(data, 'curso').tarjetas.find((c) => c.quien === 'Nuestra').otro);
-  assert.match(page(data), /list\.filter\(i=>!i\.otro\)\.length/, 'la columna no lo cuenta');
+  // desde la 8.313 el encabezado tampoco cuenta las historias plegadas (`local`)
+  assert.match(page(data), /list\.filter\(i=>!i\.otro&&i\.local!==true\)\.length/, 'la columna no lo cuenta');
   fs.unlinkSync(path.join(m.state, 'stuck-prs-photo.json'));
   assert.notStrictEqual(byName(await collectAt(m, now), 'Mesa').comoTrabaja, 'Otro proyecto', 'sin la lista de repos no se sabe');
 });
