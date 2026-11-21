@@ -20,8 +20,12 @@ const rc = require(RUN_CLOSE);
 const SID = 'sesion-reemplazada';
 
 const FECHA = '2026-11-21T10:00:00Z';
+// la base es de antes del arranque de la ejecución (09:00); los commits del arreglo, de después
+const ARRANQUE = '2026-11-21T09:00:00Z';
+const ANTES = '2026-11-21T08:00:00Z';
+let fecha = FECHA;
 const git = (d, ...a) => spawnSync('git', ['-C', d, '-c', 'user.email=lab@example.invalid', '-c', 'user.name=lab', '-c', 'maintenance.auto=false', ...a],
-  { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA } });
+  { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha } });
 function tmp(t, p) {
   const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), p)));
   t.after(() => fs.rmSync(d, { recursive: true, force: true }));
@@ -48,7 +52,10 @@ function corral(t) {
   git(repo, 'remote', 'add', 'origin', origen);
   escribir(repo, 'plugin.json', '{"a":1}\n');
   escribir(repo, 'src/otro.js');
+  fecha = ANTES;
   git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'base'); git(repo, 'push', '-q', 'origin', 'main');
+  const base = git(repo, 'rev-parse', 'HEAD').stdout.trim();
+  fecha = FECHA;
   escribir(repo, 'plugin.json', '{"a":2}\n');
   git(repo, 'commit', '-q', '-am', 'el arreglo, a mano'); git(repo, 'push', '-q', 'origin', 'main');
   const enMain = git(repo, 'rev-parse', 'HEAD').stdout.trim();
@@ -64,13 +71,13 @@ function corral(t) {
   const story = path.join(repo, 'story.md');
   fs.writeFileSync(story, '---\nstatus: in-progress\n---\n# 2.4\n');
   fs.writeFileSync(path.join(estado, 'active', `${SID}.json`), JSON.stringify({
-    storyId: '2.4', storyPath: story, repoPath: repo, sessionId: SID, startedAt: hace(60),
+    storyId: '2.4', storyPath: story, repoPath: repo, sessionId: SID, startedAt: ARRANQUE,
     checks: { tests: 'green' }, stepsCompleted: ['start', 'plan', 'approve-plan', 'implement'], stepsPending: ['run-tests', 'reviewers', 'prepare-commit'],
     adversarial: { status: 'launched', runId: 'r1' },
     fileEvents: [{ path: path.join(repo, 'plugin.json'), ts: hace(30), code: true }],
   }));
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_LANE_LLM: '0' };
-  return { repo, home, estado, env, story, enMain, otro, local };
+  return { repo, home, estado, env, story, base, enMain, otro, local };
 }
 const cerrar = (c, ...args) => spawnSync(process.execPath, [MARKER, 'clear', ...args], { cwd: c.repo, encoding: 'utf8', env: c.env });
 const marcador = (c) => JSON.parse(fs.readFileSync(path.join(c.estado, 'active', `${SID}.json`), 'utf8'));
@@ -114,6 +121,31 @@ test('ReplacedBy_NotInMain_Refuses (T24) @story-8.322 @ac-23', (t) => {
   assert.match(cerrar(c, '--replaced-by', c.local).stderr, /no está en origin\/main/);
   // la bandera sin commit, o desde una variable, no se comprueba: queda la firma de siempre
   assert.deepStrictEqual(frena(c, `node ${MARKER} clear --replaced-by "$C"`), ['cerrar la ejecución']);
+  // un commit de main anterior al arranque, aunque toque el mismo archivo, no es el arreglo de esta ejecución
+  assert.deepStrictEqual(frena(c, `node ${MARKER} clear --replaced-by ${c.base}`), ['cerrar la ejecución']);
+  assert.match(cerrar(c, '--replaced-by', c.base).stderr, /anterior al arranque de la ejecución/);
+  // la copia local de main movida a mano engaña al freno, pero el guion mira main en el servidor y no cierra
+  git(c.repo, 'update-ref', 'refs/remotes/origin/main', c.local);
+  assert.deepStrictEqual(frena(c, `node ${MARKER} clear --replaced-by ${c.local}`), []);
+  const movido = spawnSync(process.execPath, [MARKER, 'clear', '--replaced-by', c.local], { cwd: c.repo, encoding: 'utf8',
+    env: { ...c.env, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'protocol.file.allow', GIT_CONFIG_VALUE_0: 'never' } });
+  assert.strictEqual(movido.status, 1, movido.stderr);
+  assert.match(movido.stderr, /no está en origin\/main/);
+  // sin poder leer main del servidor, no se comprueba
+  git(c.repo, 'remote', 'set-url', 'origin', path.join(c.repo, 'no-existe.git'));
+  assert.match(cerrar(c, '--replaced-by', c.enMain).stderr, /no pude leer main del servidor/);
+  assert.ok(marcador(c).storyId, 'borró la ejecución');
+});
+
+// 🔴 Falla con: una ejecución detenida, que espera la decisión del dueño, cerrada sin él porque su arreglo está en main.
+test('ReplacedBy_Detained_StillAsksTheOwner (T24b) @story-8.322 @ac-23', (t) => {
+  const c = corral(t);
+  fs.writeFileSync(path.join(c.estado, 'active', `${SID}.json`), JSON.stringify({ ...marcador(c), needs_human: true }));
+  assert.deepStrictEqual(frena(c, `node ${MARKER} clear --replaced-by ${c.enMain}`), ['cerrar la ejecución']);
+  const r = cerrar(c, '--replaced-by', c.enMain);
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.match(r.stderr, /una ejecución detenida la cierra una persona/);
+  assert.ok(marcador(c).storyId, 'borró la ejecución');
 });
 
 // 🔴 Falla con: aceptar un commit de main que no toca nada de lo que editó la ejecución.

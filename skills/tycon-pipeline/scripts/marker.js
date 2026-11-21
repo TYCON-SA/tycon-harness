@@ -5815,7 +5815,7 @@ function cmdClear(rest = []) {
   // delegación (o la automática) no alcanza para salir de una detención que espera su decisión
   let crudo = null;
   try { crudo = readOwnMarkerRaw(); } catch (_e) { crudo = null; /* frenarSiIlegible ya frenó uno que no se lee */ }
-  if (crudo && crudo.needs_human === true && !reemplazo) {
+  if (crudo && crudo.needs_human === true) {
     const rc = require('./lib/run-close.js');
     const frenos = rc.leerFrenos(os.homedir());
     const l = frenos ? rc.escapeDeCierre(frenos, SID, crudo.startedAt) : null;

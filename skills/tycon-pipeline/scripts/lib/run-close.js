@@ -180,6 +180,8 @@ if (require.main === module) {
         if (!sha) return false;
         let m = null;
         try { m = JSON.parse(fs.readFileSync(path.join(stateDir(), 'active', `${sid}.json`), 'utf8')); } catch (_) { return false; }
+        // una detenida espera la decisión del dueño: la cierra él
+        if (m && m.needs_human === true) return false;
         return rr.comprobar({ marker: m, sha }).ok;
       };
       pedidas = todas.map((l) => {

@@ -3,8 +3,9 @@
  * replaced-run.js — una ejecución abierta cuyo arreglo ya entró a `main` por otro lado (un commit de una persona, otro
  * pedido) se cierra como `reemplazada`, sin pase, pasos ni firma: `marker.js clear --replaced-by <commit>`.
  *
- * No se le cree a nadie: el arnés comprueba que el commit está en `origin/main` de un repo de la ejecución y que toca
- * alguno de los archivos que la ejecución editó. Si no lo puede comprobar, queda la salida de siempre (la firma de cerrar
+ * No se le cree a nadie: el arnés comprueba que el commit está en `main` del servidor de un repo de la ejecución, que es
+ * posterior a su arranque y que toca alguno de los archivos que la ejecución editó. Una ejecución detenida, que espera la
+ * decisión del dueño, no se cierra así. Si no lo puede comprobar, queda la salida de siempre (la firma de cerrar
  * la ejecución). La comprobación la hace igual el freno de la consola, antes, sin traer `main` (`fetch: false`), y el
  * guion, después de traerlo.
  *
@@ -16,7 +17,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const SHA = /^[0-9a-f]{7,40}$/i;
-const git = (repo, args, timeout = 20000) => spawnSync('git', ['-C', repo, '-c', 'maintenance.auto=false', ...args], { encoding: 'utf8', windowsHide: true, timeout });
+// sin las variables GIT_* del comando: una configuración o un directorio de git traídos por el entorno no cambian qué es main
+const ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_/.test(k)));
+const git = (repo, args, timeout = 20000) => spawnSync('git', ['-C', repo, '-c', 'maintenance.auto=false', ...args], { encoding: 'utf8', windowsHide: true, timeout, env: ENV });
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
 
 /** La raíz de git de un archivo (el más cercano con `.git`), o null. */
@@ -51,15 +54,34 @@ function comprobar({ marker, sha, fetch = false } = {}) {
   if (!editados.size) return { ok: false, motivo: 'la ejecución no tiene archivos editados anotados: no hay con qué comparar el commit' };
   const vistos = [];
   for (const [repo, archivos] of editados) {
-    if (fetch) git(repo, ['fetch', '--quiet', '--no-tags', 'origin', 'main'], 60000);
+    // con `fetch`, main es lo que el servidor tiene ahora (no la copia local, que se puede mover a mano); sin poder
+    // traerlo, no se comprueba
+    let main = 'origin/main';
+    if (fetch) {
+      const ls = git(repo, ['ls-remote', 'origin', 'refs/heads/main'], 60000);
+      const punta = ls.status === 0 ? (String(ls.stdout).match(/^([0-9a-f]{40})\s/m) || [])[1] : null;
+      if (!punta) { vistos.push(`${path.basename(repo)}: no pude leer main del servidor (${String(ls.stderr || '').trim().split('\n')[0] || 'sin respuesta'})`); continue; }
+      if (git(repo, ['fetch', '--quiet', '--no-tags', 'origin', punta], 60000).status !== 0 && git(repo, ['cat-file', '-e', `${punta}^{commit}`]).status !== 0) {
+        vistos.push(`${path.basename(repo)}: no pude traer main del servidor`);
+        continue;
+      }
+      main = punta;
+    }
     if (git(repo, ['cat-file', '-e', `${sha}^{commit}`]).status !== 0) continue;
-    if (git(repo, ['merge-base', '--is-ancestor', sha, 'origin/main']).status !== 0) {
+    if (git(repo, ['merge-base', '--is-ancestor', sha, main]).status !== 0) {
       vistos.push(`${path.basename(repo)}: el commit no está en origin/main${fetch ? '' : ' (sin traer main)'}`);
       continue;
     }
     // con su primer padre: un commit de merge cuenta lo que trajo su pedido
-    const d = git(repo, ['diff', '--name-only', `${sha}^1`, sha]);
+    const d = git(repo, ['diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-m', '--first-parent', sha]);
     if (d.status !== 0) { vistos.push(`${path.basename(repo)}: no pude leer qué cambió el commit`); continue; }
+    // posterior al arranque: un commit viejo de main que toca el mismo archivo no es el arreglo de esta ejecución
+    const desde = Date.parse((marker && marker.startedAt) || '');
+    const cuando = Number(String(git(repo, ['show', '-s', '--format=%ct', sha]).stdout).trim()) * 1000;
+    if (!Number.isFinite(desde) || !Number.isFinite(cuando) || cuando < desde) {
+      vistos.push(`${path.basename(repo)}: el commit es anterior al arranque de la ejecución${Number.isFinite(desde) ? '' : ' (no sé cuándo arrancó)'}`);
+      continue;
+    }
     const toca = d.stdout.split('\n').map((x) => x.trim()).filter((x) => x && archivos.has(x));
     if (!toca.length) { vistos.push(`${path.basename(repo)}: el commit no toca ninguno de los archivos que editó la ejecución`); continue; }
     return { ok: true, repo, archivos: toca };

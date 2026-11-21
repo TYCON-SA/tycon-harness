@@ -592,9 +592,10 @@ las líneas que cambió el arreglo pasa a seguimiento (`deuda: fuera-del-arreglo
 también, y sale primero.
 
 **Una ejecución abierta cuyo arreglo ya entró a main por otro lado** (un commit del dueño, otro pedido) se cierra con
-`marker.js clear --replaced-by <commit>`. El arnés trae main y comprueba que el commit está en `origin/main` y toca un
-archivo que la ejecución editó: si es así, la cierra `reemplazada`, sin el pase, los pasos ni la firma que le faltaban.
-Si no lo puede comprobar, no cierra así y queda la salida de siempre (la firma de cerrar la ejecución).
+`marker.js clear --replaced-by <commit>`. El arnés lee main del servidor y comprueba que el commit está ahí, que es
+posterior al arranque de la ejecución y que toca un archivo que ella editó: si es así, la cierra `reemplazada`, sin el
+pase, los pasos ni la firma que le faltaban. Si no lo puede comprobar, no cierra así y queda la salida de siempre (la
+firma de cerrar la ejecución). Una ejecución detenida, que espera la decisión del dueño, la sigue cerrando él.
 
 **Un cambio de los datos no es camino corto.** Al abrir, la sesión responde si el cambio cambia de dónde sale un dato o
 quién lo puede ver (`"datos": "sin-cambio"` o `"cambian"`); con «cambian» no abre, y un carril abierto no cambia. Al
