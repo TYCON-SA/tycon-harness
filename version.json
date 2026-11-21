@@ -1,6 +1,7 @@
 {
   "version": "2026.10.15.48",
   "numbering": "merge-tag",
+  "note": "En git, «version» es el piso de la numeración: el número de cada versión es su etiqueta v<número>. La copia que instala harness.js lleva acá el número de su etiqueta.",
   "source": {
     "harness": "b29224c51d24a8d9a8e9034c1c94cbcd167651a3",
     "agent_skills": "b29224c51d24a8d9a8e9034c1c94cbcd167651a3"
