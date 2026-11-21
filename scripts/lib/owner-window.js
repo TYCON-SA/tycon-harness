@@ -43,7 +43,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, DELEGABLE_EXCEPTIONS, firmaDelPedidoAdhoc } = require('./signatures.js');
+const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, firmaDelPedidoAdhoc } = require('./signatures.js');
 const { approverOf } = require('./approver.js');
 const { casaDeLaCuenta } = require('./real-home.js');
 
@@ -2221,12 +2221,17 @@ function formasDeFirmar(firma, archivo, sesion, { casa } = {}) {
   const ventana = comoSeFirma(firma, archivo, { casa });
   const terminal = comoSeFirmaEnLaTerminal(firma, archivo, sesion, { casa });
   const sinCita = sinFormaDeTerminal(archivo, { casa });
+  // la que la coordinadora pide para esta sesión sin delegarla: el dueño la aprueba en la pestaña de ella
+  const desdeLaCoordinadora = PARA_OTRA_SESION_SIN_DELEGAR.includes(`escape:${firma}`) && SESION.test(String(sesion || '')) && sesion !== SIN_SESION
+    ? `${ventana} --for-session ${sesion}` : null;
   return {
     ventana,
     terminal,
+    desdeLaCoordinadora,
     renglones: [
       `en la ventana de permiso (la corre el agente y vos decís que sí): ${ventana}`,
       terminal ? `o en tu terminal: ${terminal}` : `o en tu terminal: ${sinCita || SIN_SESION_TERMINAL}`,
+      ...(desdeLaCoordinadora ? [`o desde la pestaña de la coordinadora, que la pide para esta sesión y vos la aprobás ahí (nunca por delegación): ${desdeLaCoordinadora}`] : []),
     ],
   };
 }

@@ -167,6 +167,9 @@ const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'es
   'lost-run', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz',
   'escape:TYCON_STATUS_GATE', 'escape:cambiar-el-estado', 'escape:set-autonomous',
   'adhoc-lane:guardado-ajeno', 'critical-waiver', 'escape:force-manual', 'escape:red-control-test-edit']);
+// las firmas sobre un archivo que la coordinadora pide para otra sesión aunque no se deleguen: le llegan al dueño en su
+// pestaña (la ventana o el cuadro), así no tiene que entrar a la sesión que escribe. Siguen siendo sólo suyas
+const PARA_OTRA_SESION_SIN_DELEGAR = Object.freeze(['escape:dod_runtime_exempt']);
 // las dos formas de nivel 2 de una firma de rutina, que el perfil delega con su propio nombre (no son firmas de
 // SIGNATURES: se piden con la firma de la derecha, y su guion mira si el perfil nombra la forma): el plan de una historia
 // delicada, sólo con el «aprobado» de la revisión automática que lanzó la coordinadora, y el guardado que toca algo sensible
@@ -370,7 +373,7 @@ const SIGNATURES = Object.freeze([
   ...CON_NOMBRE.map(([nombre, approves, command]) => {
     // la terminal de la persona no tiene la sesión en el ambiente: sin --for-session la constancia no la usaría nadie
     // la coordinadora la pide para otra sesión sólo si es de las que el perfil puede delegar
-    if (command === 'file') return { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: DELEGABLE_EXCEPTIONS.includes(`escape:${nombre}`) ? 'yes' : 'no', terminal: `${sobreArchivo(nombre)} --terminal --for-session <sesión del agente>` };
+    if (command === 'file') return { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: DELEGABLE_EXCEPTIONS.includes(`escape:${nombre}`) || PARA_OTRA_SESION_SIN_DELEGAR.includes(`escape:${nombre}`) ? 'yes' : 'no', terminal: `${sobreArchivo(nombre)} --terminal --for-session <sesión del agente>` };
     if (POR_GUION.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'yes', terminal: `${command.replace(' [--for-session <D>]', '')} --terminal` };
     if (POR_SU_PASO.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: `${command} --terminal --for-session <sesión>` };
     return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando' };
@@ -533,4 +536,4 @@ function delegable(id, raised) {
 // Lo que no tiene vuelta atrás: sólo se firma en la terminal de la persona, nunca con un click ni con un «aprobado»
 const ONLY_IN_TERMINAL = Object.freeze(['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency']);
 
-module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, DELEGABLE_EXCEPTIONS, DELEGABLE_FORMS, PLAN_DELICADO, SAVE_SENSIBLE, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };
+module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, DELEGABLE_FORMS, PLAN_DELICADO, SAVE_SENSIBLE, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };

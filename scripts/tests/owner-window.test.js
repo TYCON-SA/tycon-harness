@@ -3013,8 +3013,9 @@ test('ExcepcionesDeTramite_ParaOtraSesion_FirmanPorDelegacion', (t) => {
     const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), vigentes(casa)[0]), 'utf8'));
     assert.deepStrictEqual([reg.firma, reg.via, reg.destino], [firma, 'delegacion', 'ses-b'], cmd);
   }
-  // las firmas sobre un archivo que no son de trámite siguen sin correrse desde otra pestaña
-  for (const nombre of ['story-skill-bypass', 'dod_runtime_exempt']) {
+  // las firmas sobre un archivo que no son de trámite siguen sin correrse desde otra pestaña (la exención de la prueba en
+  // vivo sí, por el cuadro de la coordinadora: Exencion_DesdeLaCoordinadora_*)
+  for (const nombre of ['story-skill-bypass']) {
     const r = pedir(casaNueva(t), `node ${MARKER} sign-file ${nombre} /r/x.md --for-session ses-b`, { delegacion });
     assert.strictEqual(r.decision, 'deny', nombre);
     assert.match(r.texto, /no se corre desde la pestaña de otra sesión/, nombre);
@@ -4594,4 +4595,59 @@ test('T11 Firmar_RemoteControlSegunLaVia @story-8.304 @ac-7 @ac-8', (t) => {
   ow.firmar({ firma: 'plan-approval', via: 'ventana', sesion: 'ses-p', destino: 'ses-a', herramienta, ahora: AHORA, persona: 'acme', notificar: callado,
     casaDeCuenta: () => casa, anotar: () => {}, appendSignature: (o) => { anotados.push(o.remoteControl); return { ok: true }; } });
   assert.deepStrictEqual(anotados, [true]);
+});
+
+// ── La exención de la prueba en vivo, desde el cuadro de la coordinadora (renglón 34 de la fila) ─────────────────────
+// Eximir una historia de la prueba en vivo es firma sólo del dueño. Hasta ahora se firmaba sólo en la pestaña de la
+// sesión que escribe la historia: el dueño tenía que entrar a esa sesión. Ahora la coordinadora la pide para esa sesión
+// y le llega al dueño en su pestaña (la ventana o el cuadro); nunca por delegación.
+const EXENCION = `node ${MARKER} sign-file dod_runtime_exempt /r/specs/story-9.99.md --for-session ses-a`;
+
+// 🔴 Falla con: la exención negada desde la pestaña de la coordinadora («no se corre desde la pestaña de otra sesión»).
+test('Exencion_DesdeLaCoordinadora_VaASuVentanaOSuCuadro', (t) => {
+  // con permisos: la ventana en la pestaña de la coordinadora, para la sesión que escribe
+  const ventana = pedir(casaConDesignada(t), EXENCION, { evento: DE_LA_COORD });
+  assert.strictEqual(ventana.decision, 'ask', ventana.texto);
+  assert.match(ventana.texto, /ses-a/);
+  // sin permisos y sin la aprobación del dueño: no se firma sola
+  const casa = casaConDesignada(t);
+  const sola = pedirSinVentana(casa, EXENCION);
+  assert.strictEqual(sola.decision, 'deny', sola.texto);
+  assert.strictEqual(registros(casa).length, 0);
+  // con el click del dueño en el cuadro: firmada para la sesión que escribe la historia
+  const casa2 = casaConDesignada(t);
+  const click = pedirSinVentana(casa2, EXENCION, { aprobaciones: conClick() });
+  assert.deepStrictEqual([click.decision, click.via], ['allow', 'click'], click.texto);
+  const reg = registroVigente(casa2);
+  assert.deepStrictEqual([reg.firma, reg.destino], ['escape:dod_runtime_exempt', 'ses-a']);
+});
+
+// 🔴 Falla con: la exención firmada por delegación, con el perfil que delega el grupo de los escapes o la nombra.
+test('Exencion_NuncaPorDelegacion', (t) => {
+  const delega = delegacionReal({ perfil: { ...PERFIL, delegated_signing: [...PERFIL.delegated_signing, 'escape-phrases', 'escape:dod_runtime_exempt'] } });
+  // la coordinadora, sin permisos y sin la aprobación del dueño
+  const casa = casaConDesignada(t);
+  const r = pedirSinVentana(casa, EXENCION, { delegacion: delega });
+  assert.notStrictEqual(r.via, 'delegacion', r.texto);
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.strictEqual(registros(casa).length, 0);
+  // la sesión que escribe la historia, en su pestaña: la ventana, no la delegación
+  const propia = pedir(casaConDesignada(t), `node ${MARKER} sign-file dod_runtime_exempt /r/specs/story-9.99.md`, { evento: { session_id: 'ses-a' }, delegacion: delega });
+  assert.notStrictEqual(propia.via, 'delegacion', propia.texto);
+  assert.notStrictEqual(propia.decision, 'allow', propia.texto);
+  // la delegación del perfil la rechaza por su nombre
+  const d = DS.delegaSinVentana({ firma: 'escape:dod_runtime_exempt', sesion: 'ses-coord', destino: 'ses-a', home: casaConDesignada(t), perfil: () => PERFIL, huella: () => ({ huella: HUELLA }) });
+  assert.strictEqual(d.ok, false);
+  assert.match(d.motivo, /sólo del dueño/);
+});
+
+// 🔴 Falla con: el cartel de la sesión que escribe la historia no dice cómo pedírsela a la coordinadora.
+test('Exencion_ElCartelDiceComoPedirlaALaCoordinadora', () => {
+  const f = ow.formasDeFirmar('dod_runtime_exempt', '/r/specs/story-9.99.md', 'ses-a');
+  assert.strictEqual(f.desdeLaCoordinadora, `${ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md')} --for-session ses-a`);
+  assert.strictEqual(f.renglones.length, 3);
+  assert.match(f.renglones[2], /pestaña de la coordinadora.*nunca por delegación/);
+  // otra firma de archivo, o sin sesión, no lo dice
+  assert.strictEqual(ow.formasDeFirmar('story-skill-bypass', '/r/x.md', 'ses-a').renglones.length, 2);
+  assert.strictEqual(ow.formasDeFirmar('dod_runtime_exempt', '/r/x.md', null).desdeLaCoordinadora, null);
 });
