@@ -61,3 +61,15 @@ test('T2 MarcaIlegible_ElDuenoCuentaComoPresente_Pasa · interruptor apagado pas
   t.after(() => { if (antes === undefined) delete process.env.TYCON_OWNER_AWAY_CLAUDE_DIR_GUARD; else process.env.TYCON_OWNER_AWAY_CLAUDE_DIR_GUARD = antes; });
   assert.strictEqual(C.handle(edicion(ajustes), { home }), null);
 });
+
+test('T3 CarpetaConOtraCaja_Y_CarpetasNuevas — en macOS y Windows ~/.Claude es la misma; dos niveles que no existen se resuelven bien', (t) => {
+  // 🔴 mutación: comparar con la caja de las letras (en macOS `~/.Claude/settings.json` pasa), o resolver mal las carpetas
+  // que todavía no existen.
+  const { home } = casa(t);
+  MA.set({ home, quien: 'coord', frase: 'me voy' });
+  assert.ok(C.handle(edicion(path.join(home, '.claude', 'nuevo', 'dir', 'f.md')), { home }), 'dos carpetas nuevas adentro');
+  assert.strictEqual(C.handle(edicion(path.join(home, '.claude', 'jobs', 'nuevo', 'dir', 'f.md')), { home }), null, 'y dentro de jobs/ pasa');
+  if (process.platform === 'darwin' || process.platform === 'win32') {
+    assert.ok(C.handle(edicion(path.join(home, '.Claude', 'settings.json')), { home }), 'otra caja, la misma carpeta');
+  }
+});

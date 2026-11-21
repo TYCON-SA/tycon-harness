@@ -279,6 +279,7 @@ function textoDeLaNegativaAusente(marca) {
     `El dueño está ausente (la marca se puso a las ${hora}): un cuadro deja esta sesión esperando hasta que vuelva.`,
     'Dejá la decisión escrita, con tu recomendación y lo que se decide en tres renglones (en un archivo, y si hay',
     'coordinadora, mandale la ruta por SendMessage), y seguí con lo demás. Si es una firma, va a la tanda de cuando vuelva.',
+    'Si el dueño está y pidió esto, que escriba que volvió: un mensaje suyo borra la marca, y el cuadro pasa.',
   ].join(' ');
 }
 

@@ -10,8 +10,11 @@
  * su cuenta, y lo demás queda para la vuelta.
  *
  * No cuentan las dos subcarpetas donde Claude Code deja escribir sin preguntar: `jobs/` (la carpeta de trabajo de cada
- * sesión de fondo) y `projects/` (las memorias). Sin poder leer la marca, el dueño cuenta como presente (lo decide
- * owner-away). Se apaga con TYCON_OWNER_AWAY_CLAUDE_DIR_GUARD=0.
+ * sesión de fondo) y `projects/` (las memorias). En macOS y Windows la caja de las letras no cuenta (`~/.Claude` es la misma
+ * carpeta). Sin poder leer la marca, el dueño cuenta como presente (lo decide owner-away).
+ *
+ * Límites declarados: mira Edit y Write (el gancho del despachador no recibe NotebookEdit), y la carpeta es la de la casa
+ * (`~/.claude`), no otra elegida con CLAUDE_CONFIG_DIR. Se apaga con TYCON_OWNER_AWAY_CLAUDE_DIR_GUARD=0.
  */
 
 const fs = require('fs');
@@ -26,7 +29,8 @@ const real = (p) => {
   let dir = p;
   const resto = [];
   for (let i = 0; i < 64; i++) {
-    try { return path.join(fs.realpathSync(dir), ...resto.reverse()); } catch (_) { /* sube */ }
+    // la versión nativa devuelve la caja real del disco: con la de JS, `~/.Claude` no se reconoce como `~/.claude`
+    try { return path.join(fs.realpathSync.native(dir), ...[...resto].reverse()); } catch (_) { /* sube */ }
     const padre = path.dirname(dir);
     if (padre === dir) break;
     resto.push(path.basename(dir));
@@ -38,7 +42,9 @@ const real = (p) => {
 /** ¿`abs` cae dentro de la carpeta de Claude Code de `home`, fuera de sus subcarpetas libres? */
 function enLaCarpetaDeClaude(abs, home) {
   const carpeta = real(require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js')).claudeDir(home));
-  const rel = path.relative(carpeta, real(abs));
+  const sinCaja = process.platform === 'darwin' || process.platform === 'win32';
+  const caja = (x) => (sinCaja ? x.toLowerCase() : x);
+  const rel = path.relative(caja(carpeta), caja(real(abs)));
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
   return !LIBRES.includes(rel.split(path.sep)[0]);
 }

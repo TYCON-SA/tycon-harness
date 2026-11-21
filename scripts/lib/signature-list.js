@@ -669,6 +669,23 @@ function esDeLaPersona({ prompt, kind, transcript }) {
   return (mensajes || []).some((m) => m.humano && m.texto !== t);
 }
 
+/**
+ * ¿El mensaje dice que la persona volvió? Para borrar la marca del dueño ausente (lib/owner-away.js), no para firmar: lo
+ * mismo que `esDeLaPersona`, salvo que en una sesión de fondo alcanza con que no sea el primer mensaje de la conversación
+ * (el encargo). El encargo de la coordinadora puede quedar anotado como de otra sesión, y entonces el primer mensaje del
+ * dueño no tiene otro «de persona» antes: con la regla de las firmas, recién el segundo borraba la marca, y el cuadro que
+ * pedía en ese turno se negaba. Sin dato de la sesión, no cuenta.
+ */
+function volvioLaPersona({ prompt, kind, transcript }) {
+  const t = String(prompt == null ? '' : prompt).trim();
+  if (!t || oa().ENVUELTO.test(t) || kind === null || kind === undefined) return false;
+  const mensajes = mensajesDe(transcript);
+  const anotado = [...(mensajes || [])].reverse().find((m) => m.texto === t);
+  if (anotado && !anotado.humano) return false;
+  if (kind !== 'bg' && kind !== 'background') return true;
+  return (mensajes || []).some((m) => m.texto !== t);
+}
+
 const LEE_BYTES = 2 * 1024 * 1024;
 // Los mensajes del principio y del final de una conversación, `{ texto, humano }`, o null sin poder leerla: el encargo está
 // al principio y el mensaje de ahora, al final.
@@ -697,4 +714,5 @@ function mensajesDe(ruta) {
   return fuera;
 }
 
-module.exports = { viaQueAnda, enLaTerminalDeLaFila, claveDe, archivo, candado, tipoDe, cuadroDeLaFila, aprobadasSinRepetir, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, textoDeSaltados, rechazar, esDeLaPersona };
+module.exports = {
+  volvioLaPersona, viaQueAnda, enLaTerminalDeLaFila, claveDe, archivo, candado, tipoDe, cuadroDeLaFila, aprobadasSinRepetir, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, textoDeSaltados, rechazar, esDeLaPersona };

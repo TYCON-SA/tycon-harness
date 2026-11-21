@@ -566,6 +566,7 @@ test('T30 DuenoAusente_CuadroSeNiegaEnCualquierSesion_ConQueHacer — sin marca 
   const r = dec(evento('ses-sola'));
   assert.ok(r && r.decision === 'deny', JSON.stringify(r));
   assert.match(r.reason, /dueño está ausente[\s\S]*Dejá la decisión escrita, con tu recomendación[\s\S]*seguí con lo demás/);
+  assert.match(r.reason, /Si el dueño está y pidió esto, que escriba que volvió: un mensaje suyo borra la marca/, 'no queda trabado si el dueño está');
   assert.ok(dec(evento('ses-sola', 'mcp__spokenly__ask_user_dictation', { question: '¿Sigo?' })), 'el dictado también');
   assert.ok(dec(evento('ses-sola', 'AskUserQuestion', pregunta('Firma: ¿aprobás? firma plan-approval · sesión ses-sola · código ab12'))), 'un cuadro de firma también');
   assert.strictEqual(dec(evento('ses-sola', 'ExitPlanMode', {})), null, 'salir del modo plan pasa');

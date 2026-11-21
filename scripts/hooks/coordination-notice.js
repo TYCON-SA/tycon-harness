@@ -51,7 +51,8 @@ function borrarLaMarcaSiEscribioLaPersona() {
   if (!g.mark && !g.unconfirmed) return;
   const lista = require(path.join(__dirname, '..', 'lib', 'signature-list.js'));
   const s = lista.sesiones(home).mapa.get(sid);
-  if (!lista.esDeLaPersona({ prompt: event.prompt, kind: s ? s.kind || 'interactive' : null, transcript: event.transcript_path })) return;
+  // la regla de volver, no la de firmar: en una sesión de fondo, el primer mensaje del dueño ya cuenta
+  if (!lista.volvioLaPersona({ prompt: event.prompt, kind: s ? s.kind || 'interactive' : null, transcript: event.transcript_path })) return;
   const r = marca.clear({ home, motivo: `mensaje de la persona en la sesión ${String(sid).slice(0, 8)}` });
   if (r.problem) process.stderr.write(`coordination-notice: la persona volvió y la marca de ausente sigue puesta: ${r.problem}\n`);
 }
