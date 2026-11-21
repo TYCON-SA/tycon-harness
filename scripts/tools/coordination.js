@@ -475,16 +475,50 @@ function retiredOf(home, now, sessions) {
   try { r = require(path.join(__dirname, '..', 'lib', 'claude-retired.js')).retiredSessions({ home, now }); } catch (e) {
     return { measured: false, why: `no pude leer el registro de fondo de Claude Code (${e.code || e.message})`, retired: [] };
   }
-  const retired = r.retired.filter((x) => !(x.sid && sessions.get(x.sid) && sessions.get(x.sid).alive)).map((x) => ({ ...x, session: label(x.session) }));
+  // la que esperaba algo (`waited`, de claude-retired.js) sale primero, porque es la que se perdió; desde cuándo lo
+  // esperaba sale de su nota de espera (`marker.js doing --waiting-for`), que queda después del cierre. Se lee con la
+  // misma lectura que usa claude-retired.js (`waitingTurn`, con su ventana), y vale sólo si `waited` es esa nota: si vino
+  // de la espera del pipeline, la hora de una nota vieja sería la de otra espera
+  const since = (x) => {
+    let turn = null;
+    // una nota rota no tira la lista: la cerrada sale como siempre, sin la hora
+    try { turn = x.sid ? require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-gate-io.js')).waitingTurn(stateDir(home), x.sid, now) : null; } catch { turn = null; }
+    if (!turn) return null;
+    const same = String(turn.waitingFor).replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 160) === x.waited;
+    return same && Number.isFinite(turn.since) ? turn.since : null;
+  };
+  const retired = r.retired.filter((x) => !(x.sid && sessions.get(x.sid) && sessions.get(x.sid).alive))
+    .map((x) => { const at = x.waited ? since(x) : null; return { ...x, session: label(x.session), ...(at == null ? {} : { waitingSince: at }) }; });
+  retired.sort((a, b) => Number(Boolean(b.waited)) - Number(Boolean(a.waited)));
   return { measured: r.measured, why: r.why, retired };
+}
+
+// La memoria de intercambio casi llena (menos de este porcentaje libre): Claude Code empieza a cerrar sesiones quietas.
+const SWAP_LOW_PCT = 15;
+// La lectura de la memoria de intercambio para `status`: `{ pct, why, none }`. Sólo la pide el comando `status`
+// (`opts.swap`); el aviso de cada turno y el freno del cierre no corren `sysctl`.
+function swapOf(opts) {
+  if (!opts.swap && !opts.readSwap) return null;
+  try { return (opts.readSwap || require('./heavy-turn.js').swapFree)() || { pct: null, why: 'sin respuesta', none: false }; } catch (e) { return { pct: null, why: oneLine(e.message), none: false }; }
+}
+// La línea de la memoria de intercambio, o null: medida y con lugar, o sin intercambio en uso, no dice nada.
+function swapLine(s) {
+  const sw = s.swap;
+  if (!sw) return null;
+  if (sw.pct == null) return sw.none ? null : `Memoria de intercambio: no medida (${oneLine(sw.why || 'sin motivo').slice(0, 120)})`;
+  if (sw.pct >= SWAP_LOW_PCT) return null;
+  const idle = [...(s.idle || [])].sort((a, b) => Number(Boolean(b.waitingFor)) - Number(Boolean(a.waitingFor)));
+  const names = idle.map((x) => (x.waitingFor ? `${x.session} (espera ${x.waitingFor})` : x.session));
+  return `Memoria de intercambio casi llena: ${sw.pct} % libre. Claude Code puede cerrar sesiones quietas${names.length ? `: ${names.join(' · ')}` : ' (no hay quietas)'}. Antes de lanzar algo pesado, cerrá las quietas que no esperan nada (guides/coordination.md, «La memoria de intercambio»).`;
 }
 
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
 const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''} Para entrar: claude attach ${x.session}`;
-// qué esperaba, si lo anotó: sin eso nadie sabe qué hay que darle al levantarla (scripts/lib/claude-retired.js)
-const retiredWaited = (x) => (x.waited ? `, esperando ${oneLine(x.waited).slice(0, 160)}` : ', sin anotar qué esperaba');
+// qué esperaba, si lo anotó: sin eso nadie sabe qué hay que darle al levantarla (scripts/lib/claude-retired.js); y desde
+// cuándo, de su nota de espera (retiredOf)
+const retiredWaited = (x) => (x.waited ? `, esperando ${oneLine(x.waited).slice(0, 160)}${x.waitingSince == null ? '' : ` desde las ${hhmm(x.waitingSince)}`}` : ', sin anotar qué esperaba');
 const retiredLine = (x) => `${x.session}: la cerró Claude Code a las ${hhmm(x.at)} por ${x.reason}, quieta ${x.idleMin} min${retiredWaited(x)}. Para levantarla: claude respawn ${x.short}`;
 
 /** El estado de la máquina, como datos. `noTranscripts`: sin abrir las conversaciones (el aviso de cada turno). */
@@ -503,6 +537,7 @@ function status(opts = {}) {
   const passWaiting = [];
   const suiteWaiting = [];
   const outsideWaiting = [];
+  const idle = [];
   const turnProblems = [];
   const suites = suiteHolders(home, now, turnProblems);
   problems.push(...turnProblems);
@@ -527,6 +562,12 @@ function status(opts = {}) {
     try {
       const since = suiteWaitSince(home, sid, runningHeavy);
       if (since != null) suiteWaiting.push({ session: nameOf(sid), sid, since, worked: waitWorked(home, sid, s, m, since, now, problems, nameOf(sid)) });
+      // la que `take` dejó en la fila con su 77 (heavy-turn.js) espera el «arrancá» aunque no tenga nota, o aunque un
+      // portón acotado se la haya borrado: está frenada de verdad, así que no se le pregunta si sigue esperando
+      else if (!(runningHeavy && runningHeavy.has(String(sid)))) {
+        const held = require('./heavy-turn.js').readWait(home, sid, now, { keep: true });
+        if (held) suiteWaiting.push({ session: nameOf(sid), sid, since: held.at, worked: false });
+      }
     } catch (e) { problems.push(`la nota de ${nameOf(sid)} (${e.message})`); }
     const st = stalledOf(s, files.get(String(sid)), now);
     if (st) {
@@ -542,6 +583,11 @@ function status(opts = {}) {
     else if (justOpened.has(s.name)) working.push({ session: nameOf(sid), sid, why: 'recién abierta, todavía arrancando', since: (opened.find((o) => o.name === s.name) || {}).at || null });
     else {
       waiting.push({ session: nameOf(sid), sid, why: story ? `${story}, ${s.status || 'sin estado'}` : 'sin trabajo' });
+      // las que Claude Code puede cerrar si se queda sin memoria de intercambio, con lo que esperan (la línea de la memoria)
+      // una nota rota ya la dice la fila de la suite: acá sólo falta su espera
+      let n = null;
+      try { n = readJson(path.join(stateDir(home), 'doing', `${String(sid).replace(/[/\\]/g, '_')}.json`), null); } catch { n = null; }
+      idle.push({ session: nameOf(sid), sid, ...(n && typeof n.waitingFor === 'string' && n.waitingFor.trim() ? { waitingFor: label(n.waitingFor, 80) } : {}) });
       // una de fondo que anotó que espera algo de afuera (la CI, la cola, una firma): la coordinadora le da lo liviano
       if (s.kind === 'bg') {
         try {
@@ -599,7 +645,7 @@ function status(opts = {}) {
   else if (vigente && vigente.pendiente) pendingDesignation = { sesion: vigente.pendiente.sesion, ts: vigente.pendiente.ts };
   return {
     now, working, waiting, quiet, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
-    retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
+    retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why, idle, swap: swapOf(opts),
     suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
     signatures, pendingDesignation,
     unnamed, problems,
@@ -619,6 +665,8 @@ function statusText(s) {
   for (const w of s.waiting) lines.push(`  · ${w.session} — ${w.why}`);
   if (s.retiredMeasured === false) lines.push(`Sesiones cerradas por Claude Code: no medido (${oneLine(s.retiredWhy).slice(0, 160)})`);
   else if (s.retired && s.retired.length) lines.push(`Cerradas por Claude Code: ${s.retired.map(retiredLine).join(' · ')}`);
+  const swap = swapLine(s);
+  if (swap) lines.push(swap);
   const passText = (a) => `pase adversarial de ${a.storyId ? `la ${a.storyId}` : 'una sesión sin story'} (${a.session}, desde las ${hhmm(a.since)})`;
   const h = s.heavyTurn;
   // con una ejecución grande, si entra la segunda; con dos, las dos
@@ -1728,16 +1776,28 @@ function capNotice(opts = {}) {
   // la fila hasta que confirme que sigue esperando.
   const queue = s.suiteWaiting.filter((x) => x.sid !== sid && !x.worked).sort((a, b) => a.since - b.since);
   const runs = s.suites || (s.suite ? [s.suite] : []);
+  // el «arrancá» es el comando que deja tomar el turno (heavy-turn.js grant): uno vigente no se vuelve a pedir, y la
+  // sesión que dejó vencer el suyo pasa detrás de las demás
+  let grant = null;
+  try { grant = require('./heavy-turn.js').lastGrant({ home: opts.home || require('os').homedir(), now: opts.now == null ? Date.now() : Number(opts.now) }); } catch (e) { problems.push(`el «arrancá» dado (${e.message})`); }
+  if (grant && !grant.inForce) {
+    const late = queue.findIndex((x) => x.sid === grant.to);
+    if (late >= 0 && queue.length > 1) queue.push(...queue.splice(late, 1));
+  }
+  const given = grant && grant.inForce ? (s.suiteWaiting.find((x) => x.sid === grant.to) || { session: label(String(grant.to).slice(0, 8)) }) : null;
+  const arranca = (w) => (given
+    ? `ya le diste el «arrancá» a ${given.session} a las ${hhmm(grant.at)}: si no lo toma en 10 min, vence y sigue la próxima`
+    : `dale el «arrancá» a ${w.session}: heavy-turn.js grant --to ${w.sid}`);
   if (queue.length && !runs.length) {
     lines.push(s.gates.length
       ? `Coordinación: corre ${s.gates.map(gateText).join(' y ')} y hay ${queue.length} esperando turno: cuando termine, sigue ${queue[0].session}.`
-      : `Coordinación: no corre ninguna suite completa y hay ${queue.length} esperando turno: dale el «arrancá» a ${queue[0].session}.`);
+      : `Coordinación: no corre ninguna suite completa y hay ${queue.length} esperando turno: ${arranca(queue[0])}.`);
   } else if (queue.length && runs.length > 1) {
     lines.push(`Coordinación: corren ${runs.map(runText).join(' y ')}; cuando termine una, sigue ${queue[0].session}.`);
   } else if (queue.length) {
     const st = s.secondTurn;
     lines.push(st && st.open
-      ? `Coordinación: corre ${runText(runs[0])}; hay lugar para una segunda (${closedText(st)}): dale el «arrancá» a ${queue[0].session}.`
+      ? `Coordinación: corre ${runText(runs[0])}; hay lugar para una segunda (${closedText(st)}): ${arranca(queue[0])}.`
       : `Coordinación: corre ${runText(runs[0])}; la segunda no entra (${closedText(st)}): cuando termine, sigue ${queue[0].session}.`);
   }
   for (const w of s.suiteWaiting.filter((x) => x.sid !== sid && x.worked).sort((a, b) => a.since - b.since)) {
@@ -3060,7 +3120,8 @@ function main(argv) {
   try { f = flags(more); } catch (e) { process.stderr.write(`coordination.js: ${e.message}\n`); return 2; }
   const base = { env: process.env };
   if (cmd === 'status') {
-    const s = status(base);
+    // sólo acá se lee la memoria de intercambio: el aviso de cada turno y el freno del cierre no corren `sysctl`
+    const s = status({ ...base, swap: true });
     process.stdout.write(f.json ? `${JSON.stringify(s, null, 2)}\n` : `${statusText(s)}\n`);
     return 0;
   }
