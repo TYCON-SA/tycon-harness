@@ -181,10 +181,9 @@ const AZ = [
   'az repos policy build update --id 1 --enabled false',
   'az repos policy delete --id 1',
   'az repos policy approver-count update --id 1 --minimum-approver-count 0',
-  // crear las que pueden permitir lo que otra no, o cuyo contenido no se lee
-  'az repos policy merge-strategy create --repository-id x --branch main --allow-squash true --blocking true --enabled true',
-  'az repos policy file-size create --repository-id x --branch main --maximum-git-blob-size 100 --blocking true --enabled true',
+  // crear una cuyo contenido no se lee, o de un tipo que el lector no conoce
   'az repos policy create --config politica.json',
+  'az repos policy file-path create --repository-id x --branch main --blocking true --enabled true',
   "az rest --method patch --uri https://dev.azure.com/o/p/_apis/git/repositories/r/pullrequests/1?api-version=7.1 --body '{\"status\":\"completed\"}'",
   'az devops invoke --area security --resource accessControlEntries --route-parameters securityNamespaceId=x --http-method POST',
   // la ruta completa de Windows (con espacios), el mismo programa por Python y una duración con decimales
@@ -473,4 +472,57 @@ test('T15 CrearUnaReglaQueEndurece_NoPideLaFirma', (t) => {
   // y cambiar la misma regla, o crear la de otro conjunto, sigue pidiendo la firma
   unaForma('az repos policy approver-count update --id 1 --minimum-approver-count 0', 'az-bypass');
   unaForma('gh api -X PUT repos/o/r/rulesets/1 --input regla.json', 'api-rules');
+});
+
+// Azure DevOps exige todas las políticas que aplican a la rama: una nueva, del tipo que sea, sólo suma un requisito
+// (defecto 23: crear las de un repo nuevo pedía la firma de aflojarlas). La genérica con --config no se lee: sigue.
+const NUEVAS_DE_AZURE = [
+  'az repos policy merge-strategy create --repository-id x --branch main --allow-squash true --blocking true --enabled true',
+  'az repos policy file-size create --repository-id x --branch main --maximum-git-blob-size 100 --blocking true --enabled true',
+  'az repos policy case-enforcement create --repository-id x --blocking true --enabled true',
+];
+
+test('T16 PoliticaNuevaDeAzure_DeCualquierTipo_NoPideLaFirma', (t) => {
+  for (const cmd of NUEVAS_DE_AZURE) assert.deepStrictEqual(formas(cmd), [], cmd);
+  const home = casaNueva(t);
+  const r = freno(NUEVAS_DE_AZURE[0], { home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(!pideVentana(r), 'pidió la ventana para crear una política');
+  // lo que sí puede aflojar sigue pidiendo la firma
+  for (const cmd of ['az repos policy create --config politica.json', 'az repos policy merge-strategy update --id 1 --allow-squash true',
+    'az repos policy delete --id 1', 'az repos pr update --id 1 --bypass-policy true']) unaForma(cmd, 'az-bypass');
+});
+
+/** El texto que la ventana le muestra a la persona para ese comando, desde la carpeta `cwd`. */
+function cuadroDe(casa, cmd, cwd = casa) {
+  const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+  const evento = { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, cwd, permission_mode: 'default' };
+  const r = ow.decidir({ evento, escapes: [FIRMA], arbol: ARBOL, pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => null });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  return r.texto;
+}
+
+// Cambiar un conjunto de reglas de GitHub sigue con la firma: un PUT reemplaza todas sus reglas, y el freno no sale a la
+// red a leer las de hoy. Pero el cuadro dice eso, no «lo que la CI frenaba llega a main» (defecto 23).
+test('T17 ConjuntoDeReglas_ElCuadroDiceQueLoReemplazaOLoBorra', (t) => {
+  const casa = casaNueva(t);
+  const reemplaza = 'gh api -X PUT repos/o/r/rulesets/7 -f name=main -F "rules[][type]=merge_queue"';
+  unaForma(reemplaza, 'api-rules');
+  assert.match(leer(reemplaza)[0].motivo, /reemplaza el conjunto de reglas 7/);
+  const c1 = cuadroDe(casa, reemplaza);
+  assert.match(c1, /reemplaza el conjunto de reglas 7 de la rama con lo que manda este comando: una regla que no esté en lo que se manda queda borrada/);
+  assert.match(c1, /el conjunto de reglas queda como lo escribe el comando; si le falta una regla que estaba/);
+  assert.match(c1, /name, rules\[merge_queue\]/, 'no nombra lo que manda');
+  assert.doesNotMatch(c1, /lo que la CI frenaba/);
+  // lo que manda, leído del archivo de --input; sin cuerpo a la vista, lo dice
+  fs.writeFileSync(path.join(casa, 'regla.json'), JSON.stringify({ name: 'main', rules: [{ type: 'merge_queue', parameters: {} }, { type: 'pull_request' }] }));
+  assert.match(cuadroDe(casa, 'gh api -X PUT repos/o/r/rulesets/7 --input regla.json'), /name, rules\[merge_queue\], rules\[pull_request\]/);
+  assert.match(cuadroDe(casa, 'gh api -X PATCH repos/o/r/rulesets/7'), /no se ve qué manda/);
+  assert.match(cuadroDe(casa, 'gh api -X PUT repos/o/r/rulesets/7 --input no-esta.json'), /no se ve qué manda \(no-esta.json no está\)/);
+  // borrar el conjunto
+  const borra = cuadroDe(casa, 'gh api -X DELETE orgs/o/rulesets/9');
+  assert.match(borra, /borra el conjunto de reglas 9: lo que exigía deja de aplicarse/);
+  assert.doesNotMatch(borra, /lo que la CI frenaba/);
+  // saltear la cola sigue con su cuadro de siempre
+  assert.match(cuadroDe(casa, 'gh pr merge 5 --admin'), /lo que la CI frenaba llega a main/);
 });
