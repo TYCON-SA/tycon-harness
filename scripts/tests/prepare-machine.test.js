@@ -252,6 +252,24 @@ test('8.187 T15b Preparar_LoQueNoPudoMirar_NoEsLoQueFalta @story-8.187 @ac-13: u
   assert.match(text(c), /no pude leer/);
 });
 
+test('Preparar_PerfilIlegible_LoDice — un perfil del equipo que no se lee se dice; no se toma callado como «con la contraseña»', () => {
+  const t = toy({ prod: { viejo: true } });
+  fs.writeFileSync(path.join(t.arnes, 'perfil-equipo.json'), '{ esto no es json');
+  const r = text(PM.check({ ...t.opts, repos: [] }));
+  assert.match(r, /no pude leer el perfil del equipo/, r);
+  assert.match(r, /contraseña/, 'sigue dando el comando con la contraseña');
+});
+
+test('Preparar_ImportSinPermiso_NoEsQueNoExista — un import cuya carpeta no se deja mirar es «no pude», no «no existe»', { skip: process.platform === 'win32' ? 'permisos POSIX' : false }, (tt) => {
+  const t = toy();
+  const fuera = fs.mkdtempSync(path.join(os.tmpdir(), 'prepare-machine-cerrada-'));
+  fs.writeFileSync(path.join(fuera, 'reglas.md'), '# reglas\n');
+  const r = repo(t, 'con-import', { claudeMd: `@${path.join(fuera, 'reglas.md')}\n` });
+  fs.chmodSync(fuera, 0o000);
+  tt.after(() => { fs.chmodSync(fuera, 0o700); fs.rmSync(fuera, { recursive: true, force: true }); });
+  assert.strictEqual(PM.hasExternalImports(r, t.home), null);
+});
+
 test('8.187 T15c Preparar_UnaParteQueSeCae_NoTiraAbajoLoDemas @story-8.187 @ac-13: si mirar el freno o la coordinadora lanza, lo dice como «no pude mirar» y sigue', () => {
   const t = toy();
   const r = PM.check({ ...t.opts, judgeGuard: () => { throw new Error('sin lector'); }, repos: [] });
