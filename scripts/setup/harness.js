@@ -397,8 +397,9 @@ function sharedPieces(ctx, tree, { log, snapshotDir, reads = true }) {
   if (ctx.env.TYCON_NO_AUTOINSTALL === '1') return null;
   try {
     // los dos ajustes son de full: en minimal, o con el perfil sin saber, no se escriben.
-    // `reads: false`: las reglas de lectura las suma readPieces, después del aplicador
-    const r = mod('shared').applyShared({ home: ctx.home, env: ctx.env, tree, backup: !snapshotDir, log, settings: profileFull(profileOf(ctx, tree)), reads, previous: reads ? managedBefore(ctx, log) : [] });
+    // `reads: false`: las reglas de lectura las suma readPieces, después del aplicador. `previous` va siempre: con él las
+    // reglas deny sacan la que el arnés anotó y ya no es suya (con `reads: false` no toca las de lectura)
+    const r = mod('shared').applyShared({ home: ctx.home, env: ctx.env, tree, backup: !snapshotDir, log, settings: profileFull(profileOf(ctx, tree)), reads, previous: managedBefore(ctx, log) });
     return r && r.ok && Array.isArray(r.pieces) ? r.pieces : null;
   } catch (e) {
     // «sin shared.js» sólo si lo que falta ES ese módulo —un árbol viejo (una vuelta atrás corrida desde

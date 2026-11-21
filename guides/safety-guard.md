@@ -109,7 +109,7 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 
 Este freno es un gancho: si alguien apaga los ganchos, o el gancho no corre, no frena nada. Para lo catastrófico, el
 instalador suma además reglas `permissions.deny` a `~/.claude/settings.json`, que Claude Code aplica antes de lanzar
-cualquier gancho y que ningún gancho puede dejar pasar. La lista es `scripts/setup/harness/deny-rules.json`:
+cualquier gancho y que ningún gancho puede dejar pasar. La lista es `RULES` en `scripts/setup/harness/deny-permissions.js`:
 
 | Regla | Qué niega | Por qué nunca necesita emergencia |
 |---|---|---|

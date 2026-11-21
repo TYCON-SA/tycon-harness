@@ -1,6 +1,6 @@
 'use strict';
 // deny-permissions.test.js — las reglas deny del arnés (permissions.deny de Claude Code): niegan borrar la raíz del disco
-// y la carpeta personal entera aunque los ganchos estén apagados. Salen de deny-rules.json; el freno de mano sigue como
+// y la carpeta personal entera aunque los ganchos estén apagados. Salen de RULES en deny-permissions.js; el freno de mano sigue como
 // segunda red y frena cada una con el mismo id; el instalador las suma sin pisar las del dev y desinstalar saca sólo
 // las suyas.
 // Todo en una casa de juguete en una carpeta temporal. Nada lee ni escribe la casa real.
@@ -109,4 +109,39 @@ test('T6 Install_ListaConOtraForma_NoSeToca — un deny que no es una lista no s
   const r = instalar(c);
   assert.strictEqual(leer(c.settings).permissions.deny, 'Bash(rm *)');
   assert.ok(r.notes.some((n) => /permissions\.deny» no es una lista/.test(n)), r.notes.join(' | '));
+});
+
+// Pase adversarial (21/11): pasar al perfil mínimo las saca; una regla anotada que ya no es del arnés se saca en el camino
+// real (applyShared con reads: false); y el módulo anda solo, como en la copia fija del programa (sólo los .js).
+test('T7 Profile_PasarAMinimoLasSaca — su efecto declara sólo el perfil completo', (t) => {
+  const c = casa(t);
+  fs.writeFileSync(c.settings, '{}');
+  const r = instalar(c);
+  const deny = r.pieces.filter((p) => DP.isRuleId(p.id));
+  const PR = require(path.join(H, 'profile.js'));
+  const effects = M.readEffects(ROOT).effects;
+  const fuera = PR.toRemove(deny, [], () => false, { effects, profile: 'minimal' });
+  assert.strictEqual(fuera.length, deny.length, 'el cambio a mínimo saca todas');
+  assert.ok(require(path.join(H, 'plan.js')).effectFor(deny[0], effects), 'el plan las describe');
+});
+
+test('T8 Install_ReglaAnotadaQueYaNoEsDelArnes_SeSaca — también con reads: false, como lo llama harness.js', (t) => {
+  const c = casa(t);
+  fs.writeFileSync(c.settings, JSON.stringify({ permissions: { deny: ['Bash(rm -rf /vieja)', 'Bash(npm publish *)'] } }));
+  const vieja = { kind: 'setting', where: c.settings, id: DP.pieceId('Bash(rm -rf /vieja)'), value: 'Bash(rm -rf /vieja)' };
+  const r = instalar(c, { reads: false, previous: [vieja] });
+  const deny = ADENTRO(c);
+  assert.ok(!deny.includes('Bash(rm -rf /vieja)'), 'la anotada que ya no está en la lista se saca');
+  assert.ok(deny.includes('Bash(npm publish *)'), 'la del dev queda');
+  assert.ok(r.notes.some((n) => /saqué .* regla\(s\) deny/.test(n)), r.notes.join(' | '));
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'harness.js'), 'utf8');
+  assert.match(src, /reads, previous: managedBefore\(ctx, log\) \}\)/, 'harness.js le pasa el registro siempre');
+});
+
+test('T9 Module_AndaSoloComoEnLaCopiaFija — sólo los .js de la carpeta, sin archivos de datos', (t) => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dp-copia-'));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  for (const f of fs.readdirSync(H).filter((x) => x.endsWith('.js'))) fs.copyFileSync(path.join(H, f), path.join(d, f));
+  const copia = require(path.join(d, 'deny-permissions.js'));
+  assert.deepStrictEqual(copia.ourRules(), DP.ourRules());
 });
