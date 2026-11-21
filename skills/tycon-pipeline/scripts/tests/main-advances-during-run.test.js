@@ -182,6 +182,32 @@ test('MainAdvances_RunRevertsToOldMainVersion_StillCounts (T7)', () => {
   assert.deepEqual(u.sobra, ['src/f.js'], JSON.stringify(u));
 });
 
+test('MainAdvances_SymlinkBroughtByMain_NotCounted (T8)', { skip: process.platform === 'win32' }, () => {
+  // un enlace simbólico que trajo main se compara por su destino, como lo guarda git, también si queda colgando
+  for (const destino of ['a.js', 'no-existe.js']) {
+    const L = laboratorio();
+    const otro = path.join(path.dirname(L.repo), 'otro');
+    fs.symlinkSync(destino, path.join(otro, 'src', 'enlace'));
+    L.avanzarMain({});
+    L.git('merge', '-q', '--no-edit', 'origin/main');
+    const u = L.sinDeclarar();
+    assert.deepEqual(u.sobra, [], `${destino}: ${JSON.stringify(u)}`);
+  }
+});
+
+test('MainAdvances_BranchBackToOlderMain_StillCounts (T9)', () => {
+  // la corrida arranca con main traído y después la rama vuelve a un main anterior: lo viejo de main no es «traído»
+  const L = laboratorio();
+  const inicio = L.git('rev-parse', 'HEAD~1');
+  L.avanzarMain({ 'src/b.js': 'b de main\n' });
+  L.git('merge', '-q', '--no-edit', 'origin/main');
+  const base = L.git('rev-parse', 'HEAD');
+  L.git('reset', '-q', '--hard', inicio);
+  fs.writeFileSync(path.join(L.repo, 'src', 'a.js'), 'module.exports = 3;\n');
+  const u = uc().computeUndeclared({ repo: L.repo, baseSha: base, storyPath: path.join(L.repo, STORY), registrados: [path.join(L.repo, 'src', 'a.js')] });
+  assert.deepEqual(u.sobra, ['src/b.js'], JSON.stringify(u));
+});
+
 test('MainAdvances_SprintRowBroughtThenMainMoves_NotCounted (T5)', () => {
   // el sprint-status que trajo el merge, sin el renglón propio registrado: main vuelve a sumar un renglón
   const L = laboratorio();
