@@ -59,9 +59,10 @@ function anotarErrorDeCarga(motivo) {
 
 /**
  * Anota una decisión de un hook del cierre. Devuelve `{ escrito, motivo? }` (para pruebas).
- * @param {{ freno: string, regla: string, veredicto: 'bloqueo'|'paso'|'aviso', huella?: string }} d
+ * `sesion` es la del evento del gancho; guard-record.js descarta una de otra forma y la línea sale igual, sin ella.
+ * @param {{ freno: string, regla: string, veredicto: 'bloqueo'|'paso'|'aviso', huella?: string, sesion?: string }} d
  */
-function anotarCierre({ freno, regla, veredicto, huella } = {}) {
+function anotarCierre({ freno, regla, veredicto, huella, sesion } = {}) {
   // Las suites de agent-skills que llaman a estos hooks con el HOME real lo apagan: sus decisiones son de prueba y
   // no pueden mezclarse con las del equipo en el buzón.
   if (String(require('./legacy-names.js').readEnv('TYCON_CLOSURE_RECORD', { where: 'skills/tycon-pipeline/scripts/lib/closing-record.js' }) || '').toLowerCase() === 'off') return { escrito: false, motivo: 'apagada' };
@@ -75,7 +76,7 @@ function anotarCierre({ freno, regla, veredicto, huella } = {}) {
     return { escrito: false, motivo: 'lib-no-carga' };
   }
   try {
-    return mod.anotar({ freno, regla, veredicto, cmd: typeof huella === 'string' ? huella : undefined });
+    return mod.anotar({ freno, regla, veredicto, cmd: typeof huella === 'string' ? huella : undefined, sesion });
   } catch (e) {
     // `anotar` promete no tirar; si igual tira, es un defecto de la lib: que quede escrito.
     anotarErrorDeCarga(`anotar tiró: ${(e && e.message && e.message.slice(0, 80)) || 'error desconocido'}`);

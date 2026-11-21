@@ -1,0 +1,204 @@
+{
+  "__doc": "La clasificación de cada control del arnés: exigencia (protege algo que no se deshace o que no es del agente: producción y datos, secretos, la rama compartida y lo público, las firmas del dueño, las historias y las constancias, la constitución del arnés; no se apaga para ningún modelo) o preferencia (un trámite o un estilo que un modelo podría decidir bien solo). La clave es el nombre del freno en FRENOS de scripts/lib/guard-record.js; un gancho que frena (effect: blocks en scripts/setup/hooks-list.json) y no anota ahí lleva su propia entrada, con el nombre de su archivo. `ganchos`: los ganchos de hooks-list.json que lo corren; cada gancho que frena aparece en los `ganchos` de una sola entrada, y si corre más de un freno, los otros lo nombran en `tambien_en`. `review_before` (AAAA-MM-DD): vencida, la tabla de controles lo dice; no prende ni apaga nada. `estado`: `propuesta` hasta que el dueño firma; firmada lleva `firmada_el` y `firmada_por`. Nada de este archivo cambia lo que un freno decide. Lo controla scripts/tests/controls-classification.test.js.",
+  "safety-guard": {
+    "tipo": "exigencia",
+    "motivo": "Protege producción y datos, los secretos y la rama compartida: borrados de raíz, empujes forzados a main, lectura de llaves.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": [
+      "safety-guard-pre.sh"
+    ]
+  },
+  "test-scope-guard": {
+    "tipo": "preferencia",
+    "motivo": "Cuida que la máquina no se congele con una suite completa mientras se itera: un trámite de uso de recursos.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": [
+      "test-scope-guard-pre.sh"
+    ]
+  },
+  "pr-uno-por-repo": {
+    "tipo": "preferencia",
+    "motivo": "Evita llenar la cola de pedidos con dos pedidos al mismo repo: un trámite de la cola.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": [
+      "pr-one-per-repo-guard.js"
+    ]
+  },
+  "pr-sin-auto-complete": {
+    "tipo": "exigencia",
+    "motivo": "Protege cómo entra un pedido a la rama compartida: con auto-completar y commit de merge, sin squash.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": [
+      "pr-auto-complete-guard.js"
+    ]
+  },
+  "pr-sin-portables": {
+    "tipo": "exigencia",
+    "motivo": "Protege la rama compartida: un pedido que toca el instalador no entra sin las pruebas portables en verde.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": [],
+    "tambien_en": [
+      "pr-auto-complete-guard.js"
+    ]
+  },
+  "push-referencia-fantasma": {
+    "tipo": "preferencia",
+    "motivo": "Sólo avisa cuando lo que se empuja nombra archivos que no existen; nunca frena.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": [
+      "push-phantom-ref-notice.js"
+    ]
+  },
+  "prod-access-guard": {
+    "tipo": "exigencia",
+    "motivo": "Protege producción y datos: ninguna consulta ni escritura a una base de producción sin permiso.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": []
+  },
+  "on-frontmatter-write": {
+    "tipo": "exigencia",
+    "motivo": "Protege las historias y las constancias: el estado de una historia no se cambia a mano sin su evidencia.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": [
+      "hook-pre-edit.js"
+    ]
+  },
+  "on-pre-commit": {
+    "tipo": "exigencia",
+    "motivo": "Protege las firmas del dueño y la rama compartida: el commit, el empuje y el pedido de una ejecución salen con su evidencia y el ok de guardar.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": [
+      "on-pre-commit.js"
+    ]
+  },
+  "engram-manifest": {
+    "tipo": "preferencia",
+    "motivo": "Mantiene el índice de memoria igual a sus archivos; una memoria perdida se recupera del historial.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": [
+      "engram-pre-commit.sh"
+    ]
+  },
+  "on-dod-evidence-guard": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: la evidencia en vivo de una historia no se escribe sin correrla.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": [],
+    "tambien_en": [
+      "hook-pre-edit.js"
+    ]
+  },
+  "new-names": {
+    "tipo": "exigencia",
+    "motivo": "Protege lo público: un nombre real de un cliente, una persona o un servidor no sale en lo que se publica.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": []
+  },
+  "spanish-names": {
+    "tipo": "preferencia",
+    "motivo": "Un estilo: lo que ejecuta la máquina se nombra en inglés.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": []
+  },
+  "public-push-guard": {
+    "tipo": "exigencia",
+    "motivo": "Protege lo público y los secretos: nada sale al repo público sin pasar por el detector.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": [
+      "public-push-guard.js"
+    ]
+  },
+  "internal-history": {
+    "tipo": "preferencia",
+    "motivo": "Un estilo de la prosa que se publica: sin historia interna del equipo.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": []
+  },
+  "session-cap-guard": {
+    "tipo": "preferencia",
+    "motivo": "Cuida la capacidad de la máquina y lo que el dueño puede revisar: un tope de sesiones trabajando.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": [
+      "session-cap-guard.js"
+    ]
+  },
+  "on-bash-write-gate.js": {
+    "tipo": "exigencia",
+    "motivo": "Protege las historias y las constancias: el estado de la ejecución no se escribe por la línea de comandos, y el código no se escribe fuera de una ejecución.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": [
+      "on-bash-write-gate.js"
+    ]
+  },
+  "on-stop-dod-gate.js": {
+    "tipo": "preferencia",
+    "motivo": "En el modo autónomo, no deja cerrar el turno con un control en rojo; fuera de ese modo no hace nada.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": [
+      "on-stop-dod-gate.js"
+    ]
+  },
+  "background-question-guard.js": {
+    "tipo": "preferencia",
+    "motivo": "Una sesión de fondo le pregunta a la coordinadora y no a la persona: un trámite de a quién se pregunta.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": [
+      "background-question-guard.js"
+    ]
+  },
+  "retro-pending.js": {
+    "tipo": "preferencia",
+    "motivo": "Pide la retrospectiva de cada merge a main antes de cerrar el turno: un trámite de medición.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": [
+      "retro-pending.js"
+    ]
+  },
+  "coordination-fill-gate.js": {
+    "tipo": "preferencia",
+    "motivo": "La coordinadora no deja la máquina vacía con trabajo listo: un trámite de reparto.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": [
+      "coordination-fill-gate.js"
+    ]
+  },
+  "unpushed-work-notice.js": {
+    "tipo": "preferencia",
+    "motivo": "Pregunta una vez si falta empujar lo commiteado; la segunda vez deja cerrar.",
+    "review_before": "2027-01-20",
+    "estado": "propuesta",
+    "ganchos": [
+      "unpushed-work-notice.js"
+    ]
+  },
+  "session-collision-guard.js": {
+    "tipo": "exigencia",
+    "motivo": "Protege el trabajo de otra sesión, que no es del agente: dos sesiones no tocan git a la vez sobre la misma carpeta.",
+    "review_before": "2027-11-21",
+    "estado": "propuesta",
+    "ganchos": [
+      "session-collision-guard.js"
+    ]
+  }
+}

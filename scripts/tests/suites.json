@@ -3420,6 +3420,18 @@
       "requiere": []
     },
     {
+      "__nota": "la clasificación de cada control (scripts/metrics/controls-classification.json): cada freno de guard-record.js y cada gancho que frena tiene su entrada con exigencia o preferencia, motivo y fecha de revisión; una exigencia dice qué protege. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/controls-classification.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el modelo de una sesión (scripts/lib/session-model.js): el primer modelo real de su conversación, leído por tramos; sin conversación, ilegible o sin modelo, «no medido» con el motivo. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/session-model.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el registro común de las firmas (scripts/lib/signature-log.js): cada firma de guion deja un renglón con quién firmó, la vía, si fue delegada, quién la pidió, su id y su nivel del catálogo, la máquina, la hora y el motivo; si no se puede escribir, la firma sigue y avisa.",
       "raiz": "arnes",
       "ruta": "tests/signature-log.test.js",
