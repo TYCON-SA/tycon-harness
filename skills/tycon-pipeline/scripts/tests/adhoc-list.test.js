@@ -352,6 +352,30 @@ test('P2v52 FueraDeLaLista_EnUnProducto_HablaDeVos — @story-8.174 @ac-52', () 
   assert.doesNotMatch(r.message, /delegación|coordinadora|dueño/);
 });
 
+// 🔴 Falla con: el portón que no lee si el repo es del arnés y le pasa siempre el perfil del producto: en el arnés, el
+// rechazo «fuera de la lista» perdería la delegación. La T55 de
+// adhoc-two-profiles.test.js mira el mensaje con el perfil dado; ésta, la lectura del portón sobre un repo de verdad.
+test('P2v52b FueraDeLaLista_EnElArnes_ConservaLaDelegacion — @story-8.174 @ac-52', () => {
+  const raiz = tmp('p2v52b-');
+  const dir = repo(raiz, 'arnes');
+  git(dir, 'remote', 'set-url', 'origin', 'https://github.com/TYCON-SA/tycon-harness.git');
+  const h = tmp('home-');
+  const state = conCarril(h, 's52b', { allowedFiles: [path.join(dir, 'src/a.js')] });
+  // en otro proceso, con el arnés declarado: el portón recuerda por proceso si encontró su criterio, y con la casa vacía
+  // de las pruebas no lo encuentra y decide por el nombre de la carpeta
+  const env = { ...process.env, TYCON_GUIDES_DIR: RAIZ };
+  delete env.NODE_OPTIONS;
+  const hijo = spawnSync(process.execPath, ['-e', `const io = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'story-gate-io.js'))});
+    const [state, file, cwd] = process.argv.slice(1);
+    const r = io.evaluate({ filePath: file, sessionId: 's52b', cwd, via: 'Edit', stateDir: state, installedRoots: [] });
+    process.stdout.write(JSON.stringify({ verdict: r.verdict, message: r.message }));`, state, path.join(dir, 'src/otro.js'), dir], { encoding: 'utf8', env });
+  assert.strictEqual(hijo.status, 0, hijo.stderr);
+  const r = JSON.parse(hijo.stdout);
+  assert.strictEqual(r.verdict.kind, 'adhoc-out-of-list', JSON.stringify(r.verdict));
+  assert.match(r.message, /delegaci[oó]n|delegad[oa]|coordinadora|dueñ[oa]/, r.message);
+  assert.doesNotMatch(r.message, /lo aprobás vos con tu sí/, r.message);
+});
+
 // 🔴 Falla con: una carpeta de carriles que no se lee, que salteaba el «uno por repo» como si no hubiera otros
 // (revisor de fallos silenciosos, vuelta 3).
 test('P10b Delegado_CarrilesQueNoSeLeen_NoAbre — @story-8.174 @ac-35', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
