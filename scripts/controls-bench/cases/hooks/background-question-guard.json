@@ -5,7 +5,7 @@
       "hook": "background-question-guard.js (las preguntas de una sesión que abrió la coordinadora)",
       "script": "${TCG}/scripts/hooks/background-question-guard.js",
       "event": "PreToolUse",
-      "matcher": "AskUserQuestion|mcp__spokenly__ask_user_dictation",
+      "matcher": "AskUserQuestion|mcp__spokenly__ask_user_dictation|SendMessage",
       "cases": [
         {
           "id": "sin-coordinadora-deja-preguntar",
@@ -28,6 +28,18 @@
             "session_id": "bench-bq2",
             "tool_name": "mcp__spokenly__ask_user_dictation",
             "tool_input": { "question": "¿Seguimos?" }
+          },
+          "expect": { "exit": 0, "stdout_not_re": ["permissionDecision"] }
+        },
+        {
+          "id": "mensaje-sin-coordinadora-pasa",
+          "type": "must-not-block",
+          "__doc": "Sin coordinadora designada, un mensaje a otra sesión pasa sin salida (story 8.232). ROJO PREVIO: negar un mensaje sin coordinadora.",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-bq5",
+            "tool_name": "SendMessage",
+            "tool_input": { "to": "Acme1", "message": "¿cómo vas?", "summary": "pregunta" }
           },
           "expect": { "exit": 0, "stdout_not_re": ["permissionDecision"] }
         },
