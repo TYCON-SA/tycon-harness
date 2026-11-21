@@ -309,7 +309,6 @@ test('T13 SoloLee_ConLaPalabraMerge_NoFrena — y lo que encola o mergea sigue f
     's=$(gh pr view 1320 -R acme/arnes --json state,mergedAt --jq .mergedAt)',
     'for n in 1320 1322; do echo "$(gh pr view $n -R acme/arnes --json state,mergedAt --jq \'"\\(.state) \\(.mergedAt)"\')"; done',
     'gh pr list -R acme/arnes --json number,mergeable,mergeStateStatus',
-    'x=$(gh api repos/acme/arnes/pulls/1320 --jq .merged)',
   ]) assert.deepStrictEqual(leer(cmd), [], cmd);
   // lo que encola o mergea, con la palabra también en un --json o un --jq, sigue apareciendo
   const pedido = (x) => JSON.parse(JSON.stringify({ repo: x.repo === undefined ? undefined : x.repo && x.repo.toLowerCase(), numero: x.numero, id: x.id }));
@@ -323,7 +322,10 @@ test('T13 SoloLee_ConLaPalabraMerge_NoFrena — y lo que encola o mergea sigue f
   // que escribe o lee un archivo tampoco
   for (const cmd of ['cat n | xargs -I{} gh api -X PUT repos/acme/arnes/pulls/{}/merge', 'xargs -I{} gh pr {} 5 -R acme/arnes --merge <<< merge',
     'x=$(gh api repos/acme/arnes/pulls/5/merge --input cuerpo.json)', 'timeout 30 gh api graphql -F query=@merge.graphql',
-    'x=$(timeout 30 gh api -X PUT repos/acme/arnes/pulls/5/merge)', 's=$(gh pr view 5 --json mergedAt | xargs gh pr merge 5 -R acme/arnes)']) {
+    'x=$(timeout 30 gh api -X PUT repos/acme/arnes/pulls/5/merge)', 's=$(gh pr view 5 --json mergedAt | xargs gh pr merge 5 -R acme/arnes)',
+    // la vuelta 2: opciones pegadas de la API dentro de una sustitución, y la salida de una lectura que corre otra terminal
+    'jq . <<< "$(gh api -iX PUT repos/acme/arnes/pulls/5/merge)"', 'jq . <<< "$(gh api -H a graphql -ifquery=\'mutation{enqueuePullRequest(input:{pullRequestId:"PR_x"}){clientMutationId}}\')"',
+    'x="$(gh pr status --json merged | bash)"']) {
     assert.ok(leer(cmd).length > 0, `${cmd}: tendría que frenar o nombrar el pedido`);
   }
   // con el verbo armado por la terminal, no se sabe si mergea: frena
