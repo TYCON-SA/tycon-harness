@@ -3780,14 +3780,20 @@ function computeStart(args) {
         // con tanda, la otra sesión que entrega otra tanda de la paraguas no choca; la misma tanda, o sin tanda, sí
         if (tanda && m.batch && String(m.batch) !== tanda.nombre) continue;
         others.push({ sessionId: m.sessionId, lastTouch: m.lastTouch, stepsCompleted: m.stepsCompleted, repoPath: m.repoPath || null });
-      } catch { /* ignore */ }
+      } catch (e) {
+        // un marcador que no se lee puede ser de esta misma historia: no lo veo para el choque, y se dice
+        actions.push(`PIPE-C0: no pude leer el marcador de otra sesión (${f}: ${String((e && (e.code || e.message)) || e).split('\n')[0].slice(0, 120)}): si es de la story ${storyId}, no lo veo.`);
+      }
     }
-  } catch { /* ignore */ }
+  } catch (e) {
+    actions.push(`PIPE-C0: no pude listar los marcadores de las otras sesiones (${String((e && (e.code || e.message)) || e).split('\n')[0].slice(0, 120)}): no sé si otra sesión trabaja la story ${storyId}.`);
+  }
   // PIPE-C0 por hechos: la otra sesión de la misma story en OTRA copia del repo (otra raíz git) y en OTRA rama es otra
   // tanda que trabaja en paralelo, no un choque: no pausa y queda dicho (`parallelWith` en el marcador). La misma copia,
   // o la misma rama en otra copia, pausa como siempre; si no se puede leer la rama de la otra, pausa y lo dice.
   let parallelWith = null;
   let ramaSinLeer = null;
+  let ramaPropiaSinLeer = false;
   if (others.length) {
     const gitDe = (dir, ...a) => {
       try { return execFileSync('git', ['-C', dir, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch { return null; }
@@ -3801,7 +3807,8 @@ function computeStart(args) {
     });
     const sinLeer = vistas.filter((v) => !v.raiz || !v.rama);
     if (!miRaiz || !miRama) {
-      ramaSinLeer = `la de esta sesión (${repo})`;
+      ramaSinLeer = repo;
+      ramaPropiaSinLeer = true;
     } else if (sinLeer.length) {
       ramaSinLeer = sinLeer.map((v) => `${v.sessionId} (${v.repoPath || 'sin repo en su marcador'})`).join(', ');
     } else if (vistas.every((v) => real(v.raiz) !== real(miRaiz) && v.rama !== miRama)) {
@@ -3815,7 +3822,7 @@ function computeStart(args) {
     pauses.push({
       id: 'PIPE-C0-cross-session',
       detail: `Story ${storyId} YA tiene pipeline activo en otra sesión: ${JSON.stringify(others)}`
-        + (ramaSinLeer ? `. No pude leer la rama de la otra sesión (${ramaSinLeer}): ante la duda, pauso.` : ''),
+        + (ramaSinLeer ? `. No pude leer la rama de ${ramaPropiaSinLeer ? 'esta sesión' : 'la otra sesión'} (${ramaSinLeer}): ante la duda, pauso.` : ''),
       options: 'retomar con `marker.js adopt-session <sid>` (copia el estado completo) / clear-session / trabajarla en otra copia del repo y otra rama / cancelar',
     });
   }

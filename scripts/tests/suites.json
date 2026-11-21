@@ -1810,6 +1810,12 @@
       "requiere": []
     },
     {
+      "__nota": "los errores del arranque de una corrida y sus carpetas que se tragaban sin decir nada: cada uno avisa o queda no medido.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-silences.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.161: la copia congelada de lo que revisa cada vuelta (sello, copia de sólo lectura, comparación con lo que se guarda) y la procedencia de cada prueba. Repos de juguete en una carpeta temporal, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/frozen-tree.test.js",
