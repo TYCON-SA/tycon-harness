@@ -2996,6 +2996,8 @@ const SWITCHES = new Set(['json', 'slot']);
 // exacta que el freno de las firmas reconoce como vigilante de sólo lectura (owner-window.js `esVigilanteDeLectura`): un
 // bucle de consola escrito a mano no se distingue de uno que además escribe.
 const PR_WAIT_INTERVAL_S = 120;
+// el intervalo más largo: un día. Más que eso desborda el reloj de node (2^31 ms) y la espera leería sin pausa
+const PR_WAIT_INTERVAL_MAX_S = 86400;
 const PR_WAIT_MAX_FAILS = 3;
 const ENTERO = /^[1-9]\d*$/;
 const ORG_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
@@ -3055,7 +3057,7 @@ async function prWait(f, { leer, listar, tree, sleep = (ms) => new Promise((ok) 
   if (f.number !== undefined && f.story !== undefined) return { code: 2, error: 'pr-wait lleva --number o --story, no los dos' };
   if (f.story !== undefined && (typeof f.story !== 'string' || !HISTORIA.test(f.story))) return { code: 2, error: 'pr-wait: --story va con el número de la historia (8.326, 2.3 o 25)' };
   if (f.story === undefined && (typeof f.number !== 'string' || !ENTERO.test(f.number))) return { code: 2, error: 'pr-wait pide --number <número de pedido>, un entero positivo, o --story <historia>' };
-  if (typeof intervalo !== 'string' || !ENTERO.test(intervalo)) return { code: 2, error: 'pr-wait: --interval va en segundos, un entero positivo' };
+  if (typeof intervalo !== 'string' || !ENTERO.test(intervalo) || Number(intervalo) > PR_WAIT_INTERVAL_MAX_S) return { code: 2, error: `pr-wait: --interval va en segundos, un entero de 1 a ${PR_WAIT_INTERVAL_MAX_S}` };
   if (f.rest.length || sobra.length) return { code: 2, error: `pr-wait no lleva más palabras (${[...sobra.map((k) => `--${k}`), ...f.rest].join(' ')})` };
   const platform = require('../lib/platform/platform.js');
   // el repo con su identidad entera si team-repos.json lo declara (Azure DevOps necesita el proyecto); si no, el texto

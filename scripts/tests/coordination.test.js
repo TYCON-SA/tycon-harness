@@ -2400,7 +2400,9 @@ test('PrWaitStory_FailuresAndShapes: tres lecturas fallidas seguidas cortan con 
   assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: (...a) => mezcla[i++](...a), sleep: async () => {} }), { code: 0, text: 'open 9' });
   let leyo = false;
   const nunca = async () => { leyo = true; return { ok: true, value: [] }; };
-  for (const f of [{ story: '8.32', number: '7' }, { story: 'x8' }, { story: '8.' }, { story: '8..3' }, { story: '' }, { story: '8.32', interval: '0' }]) {
+  // (el pase) un intervalo de más de un día desborda el reloj de node y la espera leería sin pausa
+  for (const f of [{ story: '8.32', number: '7' }, { story: 'x8' }, { story: '8.' }, { story: '8..3' }, { story: '' }, { story: '8.32', interval: '0' },
+    { story: '8.32', interval: '86401' }, { story: '8.32', interval: '99999999999' }, { number: '7', interval: '99999999999' }]) {
     const rr = await C.prWait({ rest: [], repo: 'acme/portal', ...f }, { listar: nunca, leer: nunca, sleep: async () => {} });
     assert.strictEqual(rr.code, 2, JSON.stringify(f));
   }
