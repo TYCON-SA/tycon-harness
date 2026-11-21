@@ -1344,7 +1344,8 @@ for (const pieza of ["x", "a1", ".", "-", "_", "a+b"]) {
   if (ms > 3000) out.push({ pieza, ms: Math.round(ms) });
 }
 const casos = [["user=admin&dbPassword=secreto", "user=admin&dbPassword=<oculto>"], ["ver \"api_key\": \"abc\" y sigue", "ver \"api_key\": \"<oculto>\" y sigue"],
-  ["x\"token\"=abc", "x\"token\"=<oculto>"], ["escribile a ana.lab+ops@example.com hoy", "escribile a <correo> hoy"]];
+  ["x\"token\"=abc", "x\"token\"=<oculto>"], ["escribile a ana.lab+ops@example.com hoy", "escribile a <correo> hoy"],
+  ["dos pegados a@example.com+b@example.org y uno-mas.c@example.net", "dos pegados <correo><correo> y <correo>"]];
 for (const [de, a] of casos) if (sanear(de, "/h") !== a) out.push({ de, salio: sanear(de, "/h") });
 console.log(JSON.stringify(out));
 ' "$DIGEST" 2>&1)"

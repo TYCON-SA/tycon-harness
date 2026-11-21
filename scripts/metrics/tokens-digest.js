@@ -388,8 +388,10 @@ function sanear(txt, home) {
     .replace(RUTA_ABSOLUTA, '<ruta>')
     .replace(CASA_BARRA, '<ruta>')
     .replace(CASA_CONTRABARRA, '<ruta>')
-    // el correo no arranca en el medio de otro: mismo motivo que el nombre de una credencial
-    .replace(/(?<![\w.+-])[\w.+-]+@[\w-]+\.[\w.-]+/g, '<correo>')
+    // lo de antes de la arroba, hasta 64 caracteres (el máximo de una dirección): sin tope, cada letra de una tirada larga
+    // sin arroba la leía hasta el final. Un tope y no «arrancar al principio de la palabra»: un segundo correo pegado al
+    // primero (`a@example.com+b@example.org`) arranca en el medio de una, y tiene que taparse igual
+    .replace(/[\w.+-]{1,64}@[\w-]+\.[\w.-]+/g, '<correo>')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<sesión>');
 }
 
