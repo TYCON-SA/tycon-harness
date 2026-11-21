@@ -2708,7 +2708,7 @@ function folderGaps(dir, opts) {
     if (r.code !== 0 && !(answersOne && r.code === 1)) unknown.push(`no pude mirar ${what} en ${dir} (${r.err || `salió con código ${r.code}`})`);
     return r;
   };
-  if (!fs.existsSync(dir)) return { missing, unknown: [`su carpeta ${dir} ya no está: no puedo mirar su rama`] };
+  if (!fs.existsSync(dir)) return { missing, unknown: [`su carpeta ${dir} ya no está: no puedo mirar su rama`], gone: true };
   const top = gitIn(dir, ['rev-parse', '--show-toplevel']);
   // fuera de un repo no hay nada de git que mirar
   if (top.code !== 0) return /not a git repository/i.test(top.err) ? { missing, unknown } : { missing, unknown: [`no pude mirar el repo de ${dir} (${top.err})`] };
@@ -2920,7 +2920,11 @@ function close(opts = {}) {
     : [];
   const heir = others.filter((x) => x.startedAt > s.startedAt).sort((a, b) => a.startedAt - b.startedAt)[0]
     || others.sort((a, b) => b.startedAt - a.startedAt)[0] || null;
-  const folder = s.cwd ? folderGaps(s.cwd, { home, env, arnes: opts.arnes, startedAt: s.startedAt, heir }) : { missing: [], unknown: ['no anotó su carpeta: no puedo mirarla'] };
+  let folder = s.cwd ? folderGaps(s.cwd, { home, env, arnes: opts.arnes, startedAt: s.startedAt, heir }) : { missing: [], unknown: ['no anotó su carpeta: no puedo mirarla'] };
+  // una sesión que ya no corre y cuya carpeta se borró no tiene nada que dejar ahí: se cierra igual, y se dice
+  const sinCarpeta = folder.gone && !s.alive;
+  if (sinCarpeta) folder = { missing: [], unknown: [] };
+  const nota = sinCarpeta ? ` Su carpeta ${s.cwd} ya no estaba.` : '';
   const run = runGaps(sid, home);
   missing.push(...folder.missing, ...run.missing);
   unknown.push(...folder.unknown, ...run.unknown);
@@ -2936,7 +2940,7 @@ function close(opts = {}) {
     }
     return no(`No cierro «${name}»: ${parts.join('. ')}.${parar}`);
   }
-  if (!/^(bg|background)$/.test(String(s.kind))) return { ok: true, closed: false, message: `«${name}» quedó limpia. Es una pestaña interactiva: la cierra la persona.` };
+  if (!/^(bg|background)$/.test(String(s.kind))) return { ok: true, closed: false, message: `«${name}» quedó limpia. Es una pestaña interactiva: la cierra la persona.${nota}` };
   if (!JOB_ID_RE.test(String(s.jobId || ''))) return no(`«${name}» quedó limpia, pero no anotó un id de fondo válido: no sé cómo cerrarla. Mirá el id con claude agents.`);
   const job = jobVerbs(opts, s.jobId, 'no la cerré');
   if (job.error) return no(`«${name}» quedó limpia, pero ${job.error}`);
@@ -2959,7 +2963,7 @@ function close(opts = {}) {
     return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude sacarla de las abiertas (${e.code || e.message}).${unlaunched}`) };
   }
   if (unlaunched) return { ok: true, closed: true, message: oneLine(`Cerré «${name}»: quedó limpia, sin nada pendiente.${unlaunched}`) };
-  return { ok: true, closed: true, message: `Cerré «${name}»: quedó limpia, sin nada pendiente.` };
+  return { ok: true, closed: true, message: `Cerré «${name}»: quedó limpia, sin nada pendiente.${nota}` };
 }
 
 /**

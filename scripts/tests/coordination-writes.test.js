@@ -382,3 +382,49 @@ test('T12c Designacion_SinCarpetaDeCoordinacion_GuardaLaMemoria @story-8.212 @ac
   assert.strictEqual(lecturas.enteras, 1, 'la segunda llamada no lee el registro');
   assert.doesNotMatch(erroresDeGanchos(toy), /coordination-write/, 'y no se anota ningún error');
 });
+
+// 🔴 Falla con: `git worktree remove --force` de la coordinadora sobre una copia con cambios, que pasaba.
+test('T13 Coordinadora_WorktreeRemoveForzado_SeNiega @story-8.212 @ac-3', (t) => {
+  const toy = casaNueva(t);
+  designar(toy);
+  for (const cmd of ['git -C acme worktree remove --force ../acme--slot-2', `git worktree remove -f ${toy.puesto}`, 'git -C acme worktree remove ../acme--slot-2 --force']) {
+    assert.ok(negada(consola(toy, cmd)), cmd);
+  }
+  // sin --force, git no borra una copia con cambios: pasa, como a toda sesión
+  assert.ok(!negada(consola(toy, 'git -C acme worktree remove ../acme--slot-2')), 'sin --force pasa');
+  assert.ok(!negada(consola(toy, 'git -C acme worktree list')), 'mirar pasa');
+  assert.ok(!negada(consola(toy, 'git -C acme worktree remove --force ../acme--slot-2', OTRA)), 'otra sesión no nota nada');
+});
+
+// 🔴 Falla con: un comando que cambia un repo, aprobado por el dueño con un click en el cuadro, que se frena igual; o que
+//    pasa sin el click, por un mensaje, o dos veces con un mismo click.
+test('T14 Coordinadora_ClickDelDueno_PasaUnaVez @story-8.212 @ac-3', (t) => {
+  const toy = casaNueva(t);
+  designar(toy);
+  const cmd = 'git -C acme switch main';
+  const vistos = [];
+  let respuesta = { ok: false, motivo: 'no hay un click en el cuadro de esta pestaña de los últimos 30 minutos sin usar' };
+  const buscar = (q) => { vistos.push(q); return respuesta; };
+  const con = (c) => conEnv(SOLO_ESTE, () => BASH.handle({ hook_event_name: 'PreToolUse', session_id: COORD, tool_name: 'Bash', tool_input: { command: c }, cwd: toy.raiz },
+    { ...opts(toy), casa: toy.casa, buscarAprobacion: buscar }));
+  // sin el click: se niega y dice el cuadro que tiene que contestar el dueño, atado al comando exacto
+  const r = con(cmd);
+  assert.ok(negada(r), 'sin el click, se niega');
+  const cuadro = CW.cuadroDelComando(cmd, COORD, toy.repo);
+  assert.ok(r.block.includes(`Pregunta: ${cuadro.pregunta}`), r.block);
+  assert.match(r.block, /sólo su click/);
+  assert.strictEqual(vistos[0].sesion, COORD);
+  assert.strictEqual(vistos[0].cuadro.soloClick, true, 'sólo un click: ni un mensaje ni la delegación');
+  assert.strictEqual(vistos[0].cuadro.sello, cuadro.sello);
+  assert.notStrictEqual(CW.cuadroDelComando('git -C acme switch dev', COORD, toy.repo).sello, cuadro.sello, 'otro comando, otro sello');
+  // con el click: pasa, lo anota, y el mismo click no sirve dos veces
+  respuesta = { ok: true, aprobacion: { id: 'click-1' }, via: 'click' };
+  assert.strictEqual(con(cmd), null, 'con el click del dueño, pasa');
+  assert.match(fs.readFileSync(registro(toy), 'utf8'), /"name":"coordinator-repo-write","status":"ok","sesion":"ses-coord"/);
+  assert.ok(fs.existsSync(path.join(toy.estado, 'owner-approvals', 'usadas', 'click-1')), 'el click quedó usado');
+  const otra = con(cmd);
+  assert.ok(negada(otra), 'el mismo click, otra vez: se niega');
+  assert.match(otra.block, /esa aprobación ya la usó otra firma/);
+  // Edit y Write no tienen este camino: lo que cambian lo hace una sesión
+  assert.ok(negada(editar(toy, path.join(toy.repo, 'guias', 'x.md'))));
+});
