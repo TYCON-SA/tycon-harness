@@ -61,7 +61,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * hoy: --force. Probar sin borrar: --dry-run. Otro tope de tiempo, hasta 600 segundos, para una primera pasada con
  * mucho acumulado: --budget-seconds <n>; ese tope cuenta desde que se tiene la lista de procesos vivos. El tope de lsof
  * (5 s), hasta 600 segundos: TYCON_TEMP_SWEEP_PROCESS_LIST_SECONDS (con cientos de procesos lsof tarda más, y la lista queda
- * «no se sabe»). Para las pruebas, la fecha contra la que se mide el plazo: TYCON_TEMP_SWEEP_NOW. Fail-open: un hook de
+ * «no se sabe»). Para las pruebas, la fecha contra la que se mide el plazo: TYCON_TEMP_SWEEP_NOW, y la lista de procesos
+ * vivos sin preguntarle al sistema: TYCON_TEMP_SWEEP_TEST_LIVE_PATHS (tiene que traer la carpeta del gancho). Fail-open: un hook de
  * arranque nunca frena ni tira; si no pudo barrer, lo dice.
  *
  * Uso:
@@ -425,7 +426,12 @@ function main() {
     if (split.outside.length) notes.push(`TYCON_TEMP_SWEEP_ROOTS: ${names(split.outside)} no está dentro de una carpeta temporal y no se mira`);
   }
 
-  const res = sweep({ roots, hours, now, budgetMs, dryRun, lsofTimeoutMs });
+  // para las pruebas, la lista de procesos vivos dada (rutas separadas como en TYCON_TEMP_SWEEP_ROOTS): sin esperar a
+  // lsof, que con muchos procesos tarda decenas de segundos. Pasa por la misma guarda que la de verdad: si no trae la
+  // carpeta de este proceso no se cree, y no se borra nada
+  const givenLive = process.env.TYCON_TEMP_SWEEP_TEST_LIVE_PATHS;
+  const liveReader = givenLive ? () => trusted(new Set(givenLive.split(path.delimiter).filter(Boolean)), real(process.cwd())) : undefined;
+  const res = sweep({ roots, hours, now, budgetMs, dryRun, lsofTimeoutMs, liveReader });
   if (stamped && res.pending) {
     // cortado por el tope: el sello se atrasa para que la próxima pasada sea en una hora y no mañana
     try { const at = new Date(Date.now() - (EVERY_MS - RETRY_MS)); fs.utimesSync(stamp, at, at); } catch (_) { notes.push('no pude atrasar el sello: lo que quedó sin mirar espera a mañana'); }

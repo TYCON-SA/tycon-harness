@@ -40,8 +40,9 @@ const WIN = process.platform === 'win32';
 const ROOT_USER = !WIN && process.getuid() === 0;
 const HOUR = 60 * 60 * 1000;
 // el tope de lsof en las pruebas: con cientos de procesos de la cuenta, lsof tarda más que los 5 s del gancho (medido:
-// 26 s con 450 procesos y carga 15), y la lista quedaría «no se sabe» según cómo esté la máquina. Las pruebas que miran
-// procesos vivos usan lsof de verdad, con un tope que no depende de la carga.
+// 26 s con 450 procesos y carga 15), y la lista quedaría «no se sabe» según cómo esté la máquina. Las dos pruebas que
+// miran procesos vivos (T7, T8) usan lsof de verdad, con un tope que no depende de la carga; las del gancho reciben la
+// lista dada, con la carpeta del gancho adentro, y no esperan a lsof.
 const LSOF_PRUEBA_S = 600;
 const real = (p) => fs.realpathSync.native(p);
 // dentro de una carpeta temporal de verdad: el gancho no acepta mirar en otro lado
@@ -85,7 +86,7 @@ function cuadra(res) {
 function gancho(L, { env = {}, args = [] } = {}) {
   return spawnSync(process.execPath, [HOOK, ...args], {
     cwd: L.base, encoding: 'utf8',
-    env: { ...process.env, HOME: L.home, USERPROFILE: L.home, TYCON_TEMP_SWEEP_ROOTS: L.root, TYCON_TEMP_SWEEP_NOW: new Date(pasadoElPlazo()).toISOString(), TYCON_TEMP_SWEEP_HOURS: '', TYCON_TEMP_SWEEP: '', TYCON_EVAL_SANDBOX: '', TYCON_TEMP_SWEEP_PROCESS_LIST_SECONDS: String(LSOF_PRUEBA_S), ...env },
+    env: { ...process.env, HOME: L.home, USERPROFILE: L.home, TYCON_TEMP_SWEEP_ROOTS: L.root, TYCON_TEMP_SWEEP_NOW: new Date(pasadoElPlazo()).toISOString(), TYCON_TEMP_SWEEP_HOURS: '', TYCON_TEMP_SWEEP: '', TYCON_EVAL_SANDBOX: '', TYCON_TEMP_SWEEP_PROCESS_LIST_SECONDS: '', TYCON_TEMP_SWEEP_TEST_LIVE_PATHS: real(L.base), ...env },
   });
 }
 
@@ -552,4 +553,10 @@ test('T29 el tope de lsof se puede pedir, uno que no vale se dice, y el presupue
   let pedido = null;
   sweep({ roots: [L.root], now: pasadoElPlazo(), lsofTimeoutMs: 1234, liveReader: ({ lsofTimeoutMs }) => { pedido = lsofTimeoutMs; return []; } });
   assert.strictEqual(pedido, 1234, 'el tope pedido llega a quien lee la lista');
+  // la lista dada para las pruebas pasa por la misma guarda: sin la carpeta del gancho no se cree y no se borra nada
+  carpeta(L.root, 'coord-gH4jKl');
+  const sinCarpeta = JSON.parse(gancho(L, { env: { TYCON_TEMP_SWEEP_TEST_LIVE_PATHS: '/otra/carpeta' }, args: ['--force', '--json'] }).stdout);
+  assert.deepStrictEqual(sinCarpeta.removed, [], `una lista sin la carpeta del gancho no se cree: ${JSON.stringify(sinCarpeta)}`);
+  assert.ok(sinCarpeta.unknown > 0, 'y lo cuenta como «no se sabe»');
+  assert.ok(fs.existsSync(path.join(L.root, 'coord-gH4jKl')), 'la carpeta queda');
 });
