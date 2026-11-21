@@ -651,6 +651,64 @@ done
 rc=$(correAz "az repos pr update $ORG8 --id 9007199254740993 --auto-complete true")
 grep -q -- '--id 9007199254740993' "$AZ_LOG" && ok "$T2 un --id largo se consulta tal cual, sin redondear" || no "$T2 el --id largo: $(cat "$AZ_LOG")"
 
+# T6 (8.225, AC 6): un pedido escrito dentro de una sustitución de comandos se juzga como uno suelto
+T6=8.225-Sustitucion_PedidoAdentro_SeJuzga
+DEV6="az repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true"
+EFI6="az repos pr create -t main --title x --auto-complete true --squash false -s story/x --delete-source-branch true"
+for cmd in "VAR=\"\$($DEV6)\"" \
+           "echo \"id: \$($DEV6)\"" \
+           "VAR=\"\`$DEV6\`\"" \
+           "echo \"\$(echo \"\$($DEV6)\")\"" \
+           "az repos pr create -t main --title x --auto-complete true --squash false \$(echo -s) dev --delete-source-branch true" \
+           "az repos pr create -t main --title x --auto-complete true --squash false \`echo -s\` dev --delete-source-branch true" \
+           "VAR=\`$DEV6\`" \
+           "echo \$((1+\$($DEV6 | wc -c)))" \
+           "cat <($DEV6)"; do
+  rc=$(corre "$cmd")
+  [ "$rc" -eq 2 ] && ok "$T6 frena: $cmd" || no "$T6 dejó pasar ($rc): $cmd"
+done
+for cmd in "VAR=\"\$($EFI6)\"" "echo \"listo: \$($EFI6 -o tsv)\"" "echo 'no corre: \$($DEV6)'" "echo \"\\\$($DEV6)\""; do
+  rc=$(corre "$cmd")
+  [ "$rc" -eq 0 ] && ok "$T6 pasa: $cmd" || no "$T6 frenó uno bien armado o que no corre ($rc): $cmd"
+done
+rc=$(corre "TYCON_PR_BY_HAND=1 echo \"\$($DEV6)\"")
+[ "$rc" -eq 2 ] && ok "$T6 el escape afuera de la sustitución no tapa el pedido de adentro" || no "$T6 el escape de afuera tapó el pedido ($rc)"
+rc=$(corre "echo \"\$(TYCON_PR_BY_HAND=1 $DEV6)\"")
+[ "$rc" -eq 0 ] && ok "$T6 el escape adentro, pegado al pedido, vale" || no "$T6 el escape pegado al pedido de adentro no valió ($rc)"
+
+# T7 (8.225, AC 7): un pedido que le llega a az por otro camino no pasa sin mirarlo
+T7=8.225-OtroCamino_NoPasaSinMirar
+for cmd in "echo '$DEV6' | bash" \
+           "printf '%s\\n' '$DEV6' | sh -s" \
+           $'bash <<\'X\'\n'"$DEV6"$'\nX' \
+           $'sh <<EOF\n'"$DEV6"$'\nEOF' \
+           $'python3 - <<\'X\'\nimport os; os.system("'"$DEV6"$'")\nX' \
+           "\$AZ repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+           "\"\$AZ\" repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+           "\${AZ:-az} -o json repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+           "python -m azure.cli repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+           "python3 -m azure.cli repos pr update --id 5 --auto-complete true" \
+           "echo dev | xargs az repos pr create -t main --title x --auto-complete true --squash false --delete-source-branch true -s" \
+           "echo dev | xargs -I{} az repos pr create -t main --title x --auto-complete true --squash false --delete-source-branch true -s {}" \
+           "find . -name dev -exec az repos pr create -t main --title x --auto-complete true --squash false --delete-source-branch true -s {} \\;"; do
+  rc=$(corre "$cmd")
+  [ "$rc" -eq 2 ] && ok "$T7 frena: ${cmd:0:90}" || no "$T7 dejó pasar ($rc): $cmd"
+done
+# lo que lo dice: «no puedo leer» con el camino
+rc=$(corre "echo '$DEV6' | bash")
+grep -q 'NO PUEDO LEER' "$TMP/err.txt" && grep -q 'tubería' "$TMP/err.txt" && ok "$T7 la tubería dice que no puede leer y por qué" || no "$T7 el aviso de la tubería: $(head -c 300 "$TMP/err.txt")"
+rc=$(corre "\$AZ repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true")
+grep -q 'variable' "$TMP/err.txt" && ok "$T7 el programa en una variable lo dice" || no "$T7 el aviso de la variable: $(head -c 300 "$TMP/err.txt")"
+# el heredoc a una terminal se juzga: uno bien armado pasa
+rc=$(corre $'bash <<\'X\'\n'"$EFI6"$'\nX')
+[ "$rc" -eq 0 ] && ok "$T7 un heredoc a bash con un pedido bien armado se juzga y pasa" || no "$T7 frenó el heredoc bien armado ($rc): $(head -c 300 "$TMP/err.txt")"
+# lo de siempre no cambia: la salida de az a otro programa, un python con su módulo, un bash con su guion
+for cmd in "$EFI6 -o json | python3 -m json.tool" "$EFI6 -o json | jq .pullRequestId" "$EFI6 && bash scripts/x.sh" "$EFI6 | tee out.txt" \
+           "echo dev | xargs git push origin && $EFI6"; do
+  rc=$(corre "$cmd")
+  [ "$rc" -eq 0 ] && ok "$T7 pasa: ${cmd:0:110}" || no "$T7 frenó lo de siempre ($rc): $cmd — $(head -c 200 "$TMP/err.txt")"
+done
+
 # T5 (la publicación y las descripciones nombran la consulta)
 T5=8.225-SuitesYBanco_Verdes
 rc=$(corre "$BASE --auto-complete false --squash false")

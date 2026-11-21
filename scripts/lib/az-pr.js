@@ -17,9 +17,10 @@
  * 🔴 Los tres hooks leen de acá, para que el criterio no diverja, y los tres recorren TODOS los `pr create` de una
  * cadena, no el primero. Quien agregue un cuarto lector lo suma acá, no escribe otro regex.
  *
- * Qué NO resuelve, a propósito: sustitución de comandos (`$(…)`), heredocs, backticks. No los expande: en una bandera
+ * Qué NO resuelve, a propósito: no expande sustituciones de comandos (`$(…)`), heredocs ni backticks. En una bandera
  * que el freno juzga, un valor así es ilegible y es una falta (`valorDe`), y lo que se ve no puede decir
- * "auto-complete" sin tenerlo.
+ * "auto-complete" sin tenerlo. Lo que sí hace es encontrar el pedido escrito ADENTRO de ellos, o que le llega a az por
+ * otro camino (`pedidosOcultos`).
  */
 
 const CIERTO = new Set(['true', 't', 'yes', 'y', '1']);
@@ -297,6 +298,113 @@ function pasaCodigoAUnInterprete(seg) {
 
 const pideAyuda = (seg) => seg.some((f) => f.esBandera && (f.texto === '--help' || f.texto === '-h'));
 
+const TERMINAL = /(^|\/|\\)(ba|z|k|da)?sh(\.exe)?$/i;
+const PYTHON = /(^|\/|\\)python[0-9.]*(\.exe)?$/i;
+const PIDE_PR = /\brepos\s+pr\s+(?:create|update)\b/i;
+// las palabras del segmento desde el comando (sin las asignaciones `X=1` de delante)
+const delComando = (seg) => { let k = 0; while (k < seg.length && seg[k].esBandera && /^[A-Za-z_][A-Za-z0-9_]*=/.test(seg[k].texto)) k++; return seg.slice(k); };
+// ¿las palabras traen `repos pr create|update` a partir de la posición `i`, con opciones globales delante?
+function pidePrDesde(palabras, i) {
+  let j = i;
+  while (j < palabras.length && /^-/.test(palabras[j])) { const pegado = palabras[j].includes('='); j++; if (!pegado && j < palabras.length && !/^-/.test(palabras[j]) && palabras[j] !== 'repos') j++; }
+  return palabras[j] === 'repos' && palabras[j + 1] === 'pr' && /^(create|update)$/.test(palabras[j + 2] || '');
+}
+
+/** El índice del `)` que cierra la sustitución que empieza en `i` (adentro del `$(`), con las comillas de adentro. */
+function cierreDe(s, i) {
+  let hondo = 1;
+  let q = null;
+  for (; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\' && q !== "'") { i++; continue; }
+    if (q) { if (c === q) q = null; continue; }
+    if (c === '"' || c === "'") { q = c; continue; }
+    if (c === '(') hondo++;
+    else if (c === ')' && --hondo === 0) return i;
+  }
+  return s.length;
+}
+
+/**
+ * Las sustituciones de comandos (`$(…)` y comillas invertidas) escritas ADENTRO de comillas dobles: el texto de cada una,
+ * que la terminal corre como un comando. Las de afuera ya las parte `fichas` en su propio segmento; las de adentro de
+ * comillas simples no corren.
+ */
+function sustitucionesCitadas(cmd) {
+  const s = String(cmd || '').replace(/\\\r?\n/g, '');
+  const out = [];
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\' && q !== "'") { i++; continue; }
+    if (q === "'") { if (c === "'") q = null; continue; }
+    if (c === '"') { q = q ? null : '"'; continue; }
+    if (c === "'") { q = "'"; continue; }
+    if (q !== '"') continue;
+    if (c === '$' && s[i + 1] === '(' && s[i + 2] !== '(') { const fin = cierreDe(s, i + 2); out.push(s.slice(i + 2, fin)); i = fin; continue; }
+    if (c === '`') { let j = i + 1; while (j < s.length && s[j] !== '`') { if (s[j] === '\\') j++; j++; } out.push(s.slice(i + 1, j).replace(/\\([`$\\])/g, '$1')); i = j; }
+  }
+  return out;
+}
+
+/** Los heredocs que van a una terminal o a python: `{ cuerpo, terminal }`, con el cuerpo tal cual. */
+function heredocsAUnInterprete(cmd) {
+  const s = String(cmd || '').replace(/\\\r?\n/g, '');
+  const out = [];
+  for (const m of s.matchAll(/(?<!<)<<(?!<)-?\s*(["']?)\\?([A-Za-z_][A-Za-z0-9_.-]*)\1/g)) {
+    const finLinea = s.indexOf('\n', m.index);
+    if (finLinea === -1) continue;
+    const segs = segmentos(s.slice(s.lastIndexOf('\n', m.index) + 1, m.index));
+    const palabras = delComando(segs[segs.length - 1] || []);
+    const terminal = !!palabras[0] && TERMINAL.test(palabras[0].texto);
+    if (!terminal && !(palabras[0] && PYTHON.test(palabras[0].texto))) continue;
+    const lineas = s.slice(finLinea + 1).split(/\r?\n/);
+    const fin = lineas.findIndex((l) => l.replace(/^[ \t]+|[ \t]+$/g, '') === m[2]);
+    out.push({ cuerpo: (fin === -1 ? lineas : lineas.slice(0, fin)).join('\n'), terminal });
+  }
+  return out;
+}
+
+/**
+ * Los pedidos que el recorrido común no ve como tales (8.225). `textos`: lo que corre como un comando aparte y se juzga
+ * igual que uno suelto (una sustitución adentro de comillas dobles, el cuerpo de un heredoc a una terminal).
+ * `ilegibles`: `{ seg, motivo }`, un pedido que le llega a az por un camino que no se puede leer desde acá —por una
+ * tubería a un intérprete, el cuerpo de un heredoc a python, el programa en una variable, `python -m azure.cli`, o la
+ * rama agregada al correr por `xargs` o `find -exec`—. El freno los frena con «no puedo leer»: lo que no miró no está
+ * aprobado.
+ */
+function pedidosOcultos(cmd) {
+  const textos = sustitucionesCitadas(cmd);
+  const ilegibles = [];
+  for (const h of heredocsAUnInterprete(cmd)) {
+    if (h.terminal) textos.push(h.cuerpo);
+    else if (PIDE_PR.test(h.cuerpo)) ilegibles.push({ seg: [{ texto: 'python', esBandera: true }], motivo: 'el pedido va en el cuerpo de un heredoc a python' });
+  }
+  let previo = null;
+  let cur = [];
+  const mirar = (seg, op) => {
+    const palabras = delComando(seg);
+    const t = palabras.filter(esPalabra).map((f) => f.texto);
+    if (!palabras.length) return;
+    const lee = (TERMINAL.test(palabras[0].texto) && palabras.slice(1).every((f) => f.esBandera && /^-/.test(f.texto) && f.texto !== '-c'))
+      || (PYTHON.test(palabras[0].texto) && palabras.slice(1).every((f) => f.texto === '-' || (f.esBandera && /^-[^cm]/.test(f.texto))));
+    if (op === '|' && lee) { ilegibles.push({ seg, motivo: `el pedido le llega a \`${palabras[0].texto}\` por una tubería` }); return; }
+    if (palabras[0].expande && pidePrDesde(t, 1)) { ilegibles.push({ seg, motivo: `el programa está en una variable (\`${palabras[0].texto}\`)` }); return; }
+    if (PYTHON.test(t[0] || '') && t[1] === '-m' && /^azure\.cli$/i.test(t[2] || '') && pidePrDesde(t, 3)) { ilegibles.push({ seg, motivo: 'va por `python -m azure.cli`; escribilo con `az`' }); return; }
+    const corre = /^(xargs|parallel)$/.test(t[0] || '') || (t[0] === 'find' && t.some((x) => /^-(exec|execdir|ok|okdir)$/.test(x)));
+    const az = t.findIndex((x, i) => i > 0 && /(^|\/|\\)az(\.cmd|\.exe)?$/i.test(x) && pidePrDesde(t, i + 1));
+    if (corre && az > 0) ilegibles.push({ seg, motivo: `\`${t[0]}\` le agrega palabras al pedido al correr` });
+  };
+  for (const f of fichas(cmd)) {
+    if (f.op === undefined) { cur.push(f); continue; }
+    if (cur.length) mirar(cur, previo);
+    cur = [];
+    previo = f.op;
+  }
+  if (cur.length) mirar(cur, previo);
+  return { textos, ilegibles };
+}
+
 
 /**
  * Texto del segmento, para el mensaje del freno y la línea que deja en bypass.log. Es fiel: partido de nuevo con
@@ -551,4 +659,5 @@ function faltasDe(seg, { cambiaCarpeta = false } = {}) {
 }
 
 module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA,
+  pedidosOcultos, sustitucionesCitadas,
   esDeLargaVida, cambiaCarpetaAntes, consultaDeOrigen, topeDeLaConsulta };

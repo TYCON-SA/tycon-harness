@@ -29,6 +29,9 @@
  * de larga vida; si la consulta no contesta bien, frena. Un `update` que no completa nada no se juzga por la bandera:
  * az conserva la que el pedido ya tenía. Lo que no puede leer (un valor que arma la terminal, un comodín, un
  * `@archivo`) es una falta. Lee el comando con scripts/lib/az-pr.js (`faltasDe`), y la red sólo para esa consulta.
+ * Un pedido escrito adentro de `"$(…)"` o del heredoc de una terminal se juzga como uno suelto; uno que le llega a az
+ * por una tubería a un intérprete, en una variable, por `python -m azure.cli`, `xargs` o `find -exec` frena con «no
+ * puedo leer» (`pedidosOcultos`).
  *
  * QUÉ NO HACE. Un borrador recién creado no se toca (no se completa solo por definición) y lo dice.
  * `--help`, listar, mostrar y abandonar tampoco. Salida para el caso puntual —incluido el legítimo
@@ -165,68 +168,90 @@ let huboEscape = false;   // ¿ya se anotó el escape de este comando?
 let huboJuicio = false;
 const problemas = [];
 const problemasGh = [];
-const segs = az.segmentos(cmd);
-for (let iSeg = 0; iSeg < segs.length; iSeg += 1) {
-  const seg = segs[iSeg];
-  if (az.pideAyuda(seg)) continue;
+function juzgarSegmentos(segs) {
+  for (let iSeg = 0; iSeg < segs.length; iSeg += 1) {
+    const seg = segs[iSeg];
+    if (az.pideAyuda(seg)) continue;
 
-  if (esGh) {
-    const ilegible = ghMergeIlegible(az.textoDe(seg));
-    const faltas = ilegible
-      ? [`el \`gh pr merge\` no se deja leer desde acá (${ilegible}): otro intérprete o una variable lo corre, así que no puedo leer sus banderas — y lo que no pude mirar no está aprobado`]
-      : faltasGh(seg);
-    if (faltas.length) {
+    if (esGh) {
+      const ilegible = ghMergeIlegible(az.textoDe(seg));
+      const faltas = ilegible
+        ? [`el \`gh pr merge\` no se deja leer desde acá (${ilegible}): otro intérprete o una variable lo corre, así que no puedo leer sus banderas — y lo que no pude mirar no está aprobado`]
+        : faltasGh(seg);
+      if (faltas.length) {
+        huboJuicio = true;
+        if (az.tieneEscape(seg)) {
+          constancia('PR_A_MANO', 'TYCON_PR_BY_HAND=1: dejo mergear el pedido a mano. Queda dicho.', az.textoDe(seg));
+          huboEscape = true;
+        } else problemasGh.push({ seg, faltas });
+        continue;
+      }
+    }
+    if (!esAz) continue;
+
+    // Código adentro de una cadena que va a un intérprete: no se puede juzgar lo que se ejecuta.
+    if (az.pasaCodigoAUnInterprete(seg)) {
+      problemas.push({ seg, verbo: 'interprete', faltas: ['el comando viaja adentro de una cadena que ejecuta otro intérprete, así que no puedo leer sus banderas — y lo que no pude mirar no está aprobado'] });
       huboJuicio = true;
-      if (az.tieneEscape(seg)) {
-        constancia('PR_A_MANO', 'TYCON_PR_BY_HAND=1: dejo mergear el pedido a mano. Queda dicho.', az.textoDe(seg));
+      continue;
+    }
+
+    const verbo = az.verboDePr(seg);
+    if (verbo !== 'create' && verbo !== 'update') continue;
+
+    // La regla vive en `faltasDe` (scripts/lib/az-pr.js): la misma que lee la revisión nocturna de las ejecuciones.
+    // Se juzga ANTES de mirar el prefijo: un prefijo puesto sobre un tramo que pasaría igual no es un salteo, y anotarlo
+    // llenaba el registro de salteos que no eran.
+    const { juzgado, borrador, faltas, consultarOrigen } = az.faltasDe(seg, { cambiaCarpeta: az.cambiaCarpetaAntes(segs, iSeg) });
+    let sobra = false;
+    if (az.tieneEscape(seg)) {
+      // con el escape no se consulta: si el pedido necesitaba la consulta, el prefijo no sobraba
+      if (faltas.length || consultarOrigen) {
+        constancia('PR_A_MANO', `TYCON_PR_BY_HAND=1: dejo armar el PR a mano. Queda dicho.`, az.textoDe(seg));
         huboEscape = true;
-      } else problemasGh.push({ seg, faltas });
+        continue;
+      }
+      sobra = true;
+    }
+    // Una línea por tramo: un borrador con el prefijo dice las dos cosas en la misma línea.
+    const SOBRA = 'TYCON_PR_BY_HAND=1: el prefijo sobra, este pedido pasa igual sin él; no lo anoto como salteo.';
+    if (borrador) {
+      console.error(`${TAG} ${sobra ? SOBRA + ' ' : ''}borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true --squash false --delete-source-branch <true|false>.`);
       continue;
     }
-  }
-  if (!esAz) continue;
-
-  // Código adentro de una cadena que va a un intérprete: no se puede juzgar lo que se ejecuta.
-  if (az.pasaCodigoAUnInterprete(seg)) {
-    problemas.push({ seg, verbo: 'interprete', faltas: ['el comando viaja adentro de una cadena que ejecuta otro intérprete, así que no puedo leer sus banderas — y lo que no pude mirar no está aprobado'] });
+    if (sobra) console.error(`${TAG} ${SOBRA}`);
+    if (!juzgado) continue;
     huboJuicio = true;
-    continue;
-  }
-
-  const verbo = az.verboDePr(seg);
-  if (verbo !== 'create' && verbo !== 'update') continue;
-
-  // La regla vive en `faltasDe` (scripts/lib/az-pr.js): la misma que lee la revisión nocturna de las ejecuciones.
-  // Se juzga ANTES de mirar el prefijo: un prefijo puesto sobre un tramo que pasaría igual no es un salteo, y anotarlo
-  // llenaba el registro de salteos que no eran.
-  const { juzgado, borrador, faltas, consultarOrigen } = az.faltasDe(seg, { cambiaCarpeta: az.cambiaCarpetaAntes(segs, iSeg) });
-  let sobra = false;
-  if (az.tieneEscape(seg)) {
-    // con el escape no se consulta: si el pedido necesitaba la consulta, el prefijo no sobraba
-    if (faltas.length || consultarOrigen) {
-      constancia('PR_A_MANO', `TYCON_PR_BY_HAND=1: dejo armar el PR a mano. Queda dicho.`, az.textoDe(seg));
-      huboEscape = true;
-      continue;
+    if (faltas.length) { problemas.push({ seg, verbo, faltas }); continue; }
+    // el `update` que puede completar el pedido o lo borra: la rama se le pregunta a Azure, una llamada por pedido
+    if (consultarOrigen) {
+      const r = az.consultaDeOrigen({ ...consultarOrigen, cwd: eventoCwd });
+      if (r.problema) {
+        problemas.push({ seg, verbo, faltas: [`para ver si borraría una rama de larga vida le pregunté a Azure la rama del pedido ${consultarOrigen.id}, y no pude: ${r.problema}. Repetí el comando cuando az responda; si el pedido sale de dev, develop, main o master, va \`--delete-source-branch false\`; si no, el escape`] });
+      } else if (az.esDeLargaVida(r.rama)) {
+        problemas.push({ seg, verbo, faltas: [`el pedido ${consultarOrigen.id} sale de \`${r.rama}\`, una rama de larga vida: al completarse la plataforma la borraría. Va \`--delete-source-branch false\``] });
+      }
     }
-    sobra = true;
   }
-  // Una línea por tramo: un borrador con el prefijo dice las dos cosas en la misma línea.
-  const SOBRA = 'TYCON_PR_BY_HAND=1: el prefijo sobra, este pedido pasa igual sin él; no lo anoto como salteo.';
-  if (borrador) {
-    console.error(`${TAG} ${sobra ? SOBRA + ' ' : ''}borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true --squash false --delete-source-branch <true|false>.`);
-    continue;
-  }
-  if (sobra) console.error(`${TAG} ${SOBRA}`);
-  if (!juzgado) continue;
-  huboJuicio = true;
-  if (faltas.length) { problemas.push({ seg, verbo, faltas }); continue; }
-  // el `update` que puede completar el pedido o lo borra: la rama se le pregunta a Azure, una llamada por pedido
-  if (consultarOrigen) {
-    const r = az.consultaDeOrigen({ ...consultarOrigen, cwd: eventoCwd });
-    if (r.problema) {
-      problemas.push({ seg, verbo, faltas: [`para ver si borraría una rama de larga vida le pregunté a Azure la rama del pedido ${consultarOrigen.id}, y no pude: ${r.problema}. Repetí el comando cuando az responda; si el pedido sale de dev, develop, main o master, va \`--delete-source-branch false\`; si no, el escape`] });
-    } else if (az.esDeLargaVida(r.rama)) {
-      problemas.push({ seg, verbo, faltas: [`el pedido ${consultarOrigen.id} sale de \`${r.rama}\`, una rama de larga vida: al completarse la plataforma la borraría. Va \`--delete-source-branch false\``] });
+}
+juzgarSegmentos(az.segmentos(cmd));
+
+// El pedido que el recorrido común no ve (8.225): lo que corre aparte —una sustitución adentro de comillas dobles, el
+// cuerpo de un heredoc a una terminal— se juzga como un comando suelto, con su propio escape; lo que le llega a az por
+// un camino que no se lee frena con «no puedo leer». Con un tope de vueltas: un texto anidado no lo recorre para siempre.
+if (esAz) {
+  const vistos = new Set();
+  const pendientes = [cmd];
+  for (let vuelta = 0; pendientes.length && vuelta < 20; vuelta += 1) {
+    const { textos, ilegibles } = az.pedidosOcultos(pendientes.shift());
+    for (const i of ilegibles) {
+      problemas.push({ seg: i.seg, verbo: 'interprete', faltas: [`${i.motivo}, así que no puedo leer sus banderas — y lo que no pude mirar no está aprobado`] });
+      huboJuicio = true;
+    }
+    for (const t of textos.filter((x) => az.pareceAzPr(x) && !vistos.has(x))) {
+      vistos.add(t);
+      juzgarSegmentos(az.segmentos(t));
+      pendientes.push(t);
     }
   }
 }
