@@ -1946,6 +1946,9 @@ function fillCheck(opts = {}) {
 const IDLE_GATE_MIN = 10;
 const IDLE_REASON_TTL_MS = 30 * 60000;
 const idleReasonFile = (home) => path.join(coordinationDir(home), 'idle-reason.json');
+// lo que llega como mensaje a mitad de un turno sin empezar otro: el aviso de un freno del cierre, una tarea de fondo que
+// terminó, un recordatorio del sistema
+const MID_TURN_TEXT = /^(Stop hook feedback|<task-notification>|<system-reminder>)/;
 
 /**
  * Los destinatarios de los mensajes que la coordinadora mandó en este turno (`SendMessage` después del último mensaje
@@ -1959,11 +1962,15 @@ function messagedThisTurn(transcriptPath) {
   for (let i = lines.length - 1; i >= 0; i--) {
     let r;
     try { r = lines[i] ? JSON.parse(lines[i]) : null; } catch { continue; }
-    if (!r || !r.message) continue;
+    if (!r || !r.message || r.isSidechain) continue;
     const c = r.message.content;
     if (r.type === 'user') {
-      // un resultado de herramienta es parte del turno; cualquier otro mensaje lo empieza
+      // empieza el turno un mensaje de la persona o de otra sesión; no lo empiezan un resultado de herramienta, ni lo
+      // que el arnés suma a mitad del turno (el aviso de un freno del cierre, una tarea de fondo que terminó, un recordatorio)
       if (Array.isArray(c) && c.some((x) => x && x.type === 'tool_result')) continue;
+      if (r.isMeta) continue;
+      const texto = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((x) => x && x.type === 'text').map((x) => x.text).join('') : '';
+      if (MID_TURN_TEXT.test(texto.trimStart())) continue;
       break;
     }
     if (r.type === 'assistant' && Array.isArray(c)) {

@@ -600,6 +600,26 @@ test('NadieQuieto_ConMensajeOMotivo_NoFrena: un mensaje a esa sesión en el turn
   assert.strictEqual(G.run({ event: stopEvent(t2, COORD, { transcript_path: transcript(t2) }), home: t2.home, arnes: t2.arnes, env: {}, now: t2.nowMs, readMemory: mem(10), refreshLauncher: () => {} }).stdout, '');
 });
 
+test('NadieQuieto_TurnoNoSeCortaAMitad: el aviso del freno, una tarea de fondo o un recordatorio no empiezan otro turno; otra persona sí', () => {
+  // 🔴 mutación: cortar el turno en cualquier mensaje que no sea un resultado → pierde el mensaje a Ana mandado antes
+  //    del primer bloqueo y vuelve a frenar por ella; contar un subagente → calla a una sesión que nadie avisó
+  const C = require('../tools/coordination.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'turno-'));
+  const send = (to, extra = {}) => ({ type: 'assistant', ...extra, message: { role: 'assistant', content: [{ type: 'tool_use', id: `t-${to}`, name: 'SendMessage', input: { to } }] } });
+  const result = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] } };
+  const write = (rows) => { const f = path.join(root, `${Math.random()}.jsonl`); fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n')); return f; };
+  const prompt = { type: 'user', message: { role: 'user', content: 'seguí' } };
+  const mitad = [
+    { type: 'user', isMeta: true, message: { role: 'user', content: 'Stop hook feedback: no dejes quieta a ninguna sesión' } },
+    { type: 'user', message: { role: 'user', content: '<task-notification><task-id>x</task-id></task-notification>' } },
+    { type: 'user', message: { role: 'user', content: [{ type: 'text', text: '<system-reminder>algo</system-reminder>' }] } },
+  ];
+  for (const m of mitad) assert.deepStrictEqual([...C.messagedThisTurn(write([prompt, send('Ana'), result, m, send('Beto'), result])).to].sort(), ['Ana', 'Beto'], JSON.stringify(m));
+  assert.deepStrictEqual([...C.messagedThisTurn(write([prompt, send('Ana'), result, { type: 'user', message: { role: 'user', content: 'otra cosa' } }, send('Beto')])).to], ['Beto'], 'un mensaje nuevo de la persona empieza otro turno');
+  assert.deepStrictEqual([...C.messagedThisTurn(write([prompt, send('Zoe', { isSidechain: true }), send('Ana')])).to], ['Ana'], 'lo que manda un subagente no cuenta');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('NadieQuieto_NuncaTraba: tres bloqueos seguidos y al cuarto deja cerrar; sin poder leer la conversación, no frena', () => {
   const t = toy({ nowMs: Date.now() });
   session(t, 's-u', 'Uma');
