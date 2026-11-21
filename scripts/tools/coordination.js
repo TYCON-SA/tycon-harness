@@ -476,13 +476,16 @@ function retiredOf(home, now, sessions) {
     return { measured: false, why: `no pude leer el registro de fondo de Claude Code (${e.code || e.message})`, retired: [] };
   }
   // la que esperaba algo (`waited`, de claude-retired.js) sale primero, porque es la que se perdió; desde cuándo lo
-  // esperaba sale de su nota de espera (`marker.js doing --waiting-for`), que queda después del cierre
+  // esperaba sale de su nota de espera (`marker.js doing --waiting-for`), que queda después del cierre. Se lee con la
+  // misma lectura que usa claude-retired.js (`waitingTurn`, con su ventana), y vale sólo si `waited` es esa nota: si vino
+  // de la espera del pipeline, la hora de una nota vieja sería la de otra espera
   const since = (x) => {
-    let note = null;
+    let turn = null;
     // una nota rota no tira la lista: la cerrada sale como siempre, sin la hora
-    try { note = x.sid ? readJson(path.join(stateDir(home), 'doing', `${String(x.sid).replace(/[/\\]/g, '_')}.json`), null) : null; } catch { note = null; }
-    const at = note && typeof note.waitingFor === 'string' && note.waitingFor.trim() ? Date.parse(note.waitingSince || note.at) : NaN;
-    return Number.isFinite(at) ? at : null;
+    try { turn = x.sid ? require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-gate-io.js')).waitingTurn(stateDir(home), x.sid, now) : null; } catch { turn = null; }
+    if (!turn) return null;
+    const same = String(turn.waitingFor).replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 160) === x.waited;
+    return same && Number.isFinite(turn.since) ? turn.since : null;
   };
   const retired = r.retired.filter((x) => !(x.sid && sessions.get(x.sid) && sessions.get(x.sid).alive))
     .map((x) => { const at = x.waited ? since(x) : null; return { ...x, session: label(x.session), ...(at == null ? {} : { waitingSince: at }) }; });
@@ -559,6 +562,12 @@ function status(opts = {}) {
     try {
       const since = suiteWaitSince(home, sid, runningHeavy);
       if (since != null) suiteWaiting.push({ session: nameOf(sid), sid, since, worked: waitWorked(home, sid, s, m, since, now, problems, nameOf(sid)) });
+      // la que `take` dejó en la fila con su 77 (heavy-turn.js) espera el «arrancá» aunque no tenga nota, o aunque un
+      // portón acotado se la haya borrado: está frenada de verdad, así que no se le pregunta si sigue esperando
+      else if (!(runningHeavy && runningHeavy.has(String(sid)))) {
+        const held = require('./heavy-turn.js').readWait(home, sid, now, { keep: true });
+        if (held) suiteWaiting.push({ session: nameOf(sid), sid, since: held.at, worked: false });
+      }
     } catch (e) { problems.push(`la nota de ${nameOf(sid)} (${e.message})`); }
     const st = stalledOf(s, files.get(String(sid)), now);
     if (st) {

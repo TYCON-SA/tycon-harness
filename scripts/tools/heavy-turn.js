@@ -356,12 +356,18 @@ function writeWhole(file, value) {
   try { fs.writeFileSync(tmp, JSON.stringify(value)); fs.renameSync(tmp, file); } finally { try { fs.unlinkSync(tmp); } catch { /* ya renombrado */ } }
 }
 
-/** La espera anotada de `sid` (`{ sid, what, at }`), o null. Una de más de TURN_MAX_MS ya no cuenta, y se borra. */
-function readWait(home, sid, now = Date.now()) {
+/**
+ * La espera anotada de `sid` (`{ sid, what, at }`), o null. Una de más de TURN_MAX_MS ya no cuenta, y se borra; con
+ * `keep` (quien sólo lee, como la fila de la coordinadora) no se borra.
+ */
+function readWait(home, sid, now = Date.now(), { keep = false } = {}) {
   const file = path.join(waitsDir(home), `${safeSid(sid)}.json`);
   const w = readTurn(file);
   if (!w) return null;
-  if (!Number.isFinite(w.at) || now - w.at >= TURN_MAX_MS) { try { fs.unlinkSync(file); } catch { /* otro la borró */ } return null; }
+  if (!Number.isFinite(w.at) || now - w.at >= TURN_MAX_MS) {
+    if (!keep) { try { fs.unlinkSync(file); } catch { /* otro la borró */ } }
+    return null;
+  }
   return w;
 }
 // Anotar no frena el 77: una espera que no se puede escribir se dice y el portón espera igual.
@@ -585,13 +591,15 @@ function freeMemory({ platform = process.platform, run, readFile } = {}) {
 function swapFree({ platform = process.platform, run } = {}) {
   if (platform !== 'darwin') return { pct: null, why: `no sé medirla en ${platform}`, none: false };
   try {
-    const text = String((run || (() => require('child_process').execFileSync('sysctl', ['vm.swapusage'], { encoding: 'utf8', timeout: 5000, windowsHide: true })))());
-    const mb = (k) => { const m = new RegExp(`${k}\\s*=\\s*([\\d.]+)([KMGT])`, 'i').exec(text); return m ? Number(m[1]) * ({ K: 1 / 1024, M: 1, G: 1024, T: 1048576 }[m[2].toUpperCase()]) : null; };
+    // con el idioma fijo: en castellano, sysctl escribe el decimal con coma («7168,00M»); igual se aceptan las dos formas
+    const text = String((run || (() => require('child_process').execFileSync('sysctl', ['vm.swapusage'], { encoding: 'utf8', timeout: 5000, windowsHide: true, env: { ...process.env, LC_ALL: 'C' } })))());
+    const mb = (k) => { const m = new RegExp(`${k}\\s*=\\s*(\\d+(?:[.,]\\d+)?)([KMGT])`, 'i').exec(text); return m ? Number(m[1].replace(',', '.')) * ({ K: 1 / 1024, M: 1, G: 1024, T: 1048576 }[m[2].toUpperCase()]) : null; };
     const total = mb('total');
     const free = mb('free');
     if (total == null || free == null) return { pct: null, why: 'sysctl vm.swapusage no dio el total y lo libre', none: false };
     if (total === 0) return { pct: null, why: 'sin memoria de intercambio en uso', none: true };
-    return { pct: Math.round((free / total) * 100), why: null, none: false };
+    // hacia abajo: un 14,6 % libre es menos del 15 %, y redondeado diría 15 y no avisaría
+    return { pct: Math.floor((free / total) * 100), why: null, none: false };
   } catch (e) { return { pct: null, why: oneLine(e.message), none: false }; }
 }
 

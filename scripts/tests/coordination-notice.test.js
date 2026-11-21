@@ -1957,3 +1957,48 @@ test('Fila_ArrancaConComandoYVencido @story-8.274 @ac-12 @ac-14', () => {
   fs.writeFileSync(grantFile, JSON.stringify({ to: 's-ana', by: COORD, at: mins(11) }));
   assert.match(C.capNotice(t.opts), /dale el «arrancá» a Beto: heavy-turn\.js grant --to s-beto\./);
 });
+
+// 🔴 mutación: armar la fila sólo con la nota de espera. La sesión que `take` frenó con su 77 (o cuya nota borró un
+// portón acotado) queda frenada hasta tres horas sin que nadie pida su «arrancá».
+test('Fila_FrenadaPorTakeSinNota_PideArranca @story-8.274 @ac-12 @ac-14', () => {
+  const t = toy();
+  session(t, 's-bea', 'Bea');
+  const waits = path.join(t.state, 'coordination', 'suite-waits');
+  fs.mkdirSync(waits, { recursive: true });
+  fs.writeFileSync(path.join(waits, 's-bea.json'), JSON.stringify({ sid: 's-bea', what: '120 suites de repo', at: mins(20) }));
+  const n = C.capNotice(t.opts);
+  assert.match(n, /no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Bea: heavy-turn\.js grant --to s-bea\./, n);
+  assert.match(C.statusText(C.status({ ...t.opts, noTranscripts: true })), /Esperando turno de suite o portón: Bea desde las \d\d:\d\d/);
+  // una anotación vencida (más de tres horas) ya no frena a nadie: no sale
+  fs.writeFileSync(path.join(waits, 's-bea.json'), JSON.stringify({ sid: 's-bea', what: '120 suites de repo', at: mins(181) }));
+  assert.strictEqual(C.capNotice(t.opts), null);
+});
+
+// 🔴 mutación: redondear antes de comparar (14,6 % sale 15 y calla) o leer sólo el punto decimal (con el idioma en
+// castellano, sysctl escribe coma y la memoria sale «no medida»).
+test('Memoria_SwapBordeYComaDecimal_Avisa @story-8.274 @ac-19 @ac-20', () => {
+  const HT = require(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'));
+  const mac = (text) => HT.swapFree({ platform: 'darwin', run: () => text });
+  assert.strictEqual(mac('vm.swapusage: total = 1000.00M  used = 854.00M  free = 146.00M  (encrypted)').pct, 14, 'debajo del 15 % no sube al 15');
+  assert.strictEqual(mac('vm.swapusage: total = 7168,00M  used = 6523,38M  free = 644,62M  (encrypted)').pct, 8);
+  assert.strictEqual(mac('vm.swapusage: total = 0,00M  used = 0,00M  free = 0,00M  (encrypted)').none, true);
+  const t = toy();
+  const text = C.statusText(C.status({ ...t.opts, noTranscripts: true, readSwap: () => mac('vm.swapusage: total = 1000.00M  used = 854.00M  free = 146.00M') }));
+  assert.match(text, /Memoria de intercambio casi llena: 14 % libre/);
+});
+
+// 🔴 mutación: pegar la hora de una nota vieja a una espera que vino de otro lado (la del pipeline): la espera parece
+// empezar después del cierre.
+test('Retirada_HoraSoloDeLaMismaEspera @story-8.274 @ac-18', () => {
+  const t = toy();
+  retiredBy(t, [['dddd4444', 'Uma', 'dddd4444-uma', 30]]);
+  esperaAnotada(t, 'dddd4444-uma', 'turno de la suite', 3 * 1440);
+  const waits = path.join(t.state, 'wait-notice', 'waits');
+  fs.mkdirSync(waits, { recursive: true });
+  fs.writeFileSync(path.join(waits, 'dddd4444-uma.json'), JSON.stringify({ session: 'dddd4444-uma', story: '8.1', stepName: 'Preparar', kind: 'stop', waiting: 'firma del dueño', openedAt: new Date(mins(40)).toISOString() }));
+  const s = C.status({ ...t.opts, noTranscripts: true });
+  const uma = s.retired.find((x) => x.short === 'dddd4444');
+  assert.match(String(uma.waited), /la 8\.1, Preparar: firma del dueño/);
+  assert.strictEqual(uma.waitingSince, undefined, 'la hora de la nota vieja no es la de esta espera');
+  assert.doesNotMatch(C.statusText(s), /firma del dueño desde las/);
+});
