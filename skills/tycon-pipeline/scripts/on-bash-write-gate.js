@@ -4375,6 +4375,20 @@ function cartelBorraAbierta(abiertas, sid, via) {
   return lineas.join('\n');
 }
 
+/**
+ * Las constancias de control (`.github/control-changes/`, `.tycon/control-changes/` y su registro `.jsonl`) sin commitear
+ * en el repo o worktree que vive en `dir`, con su ruta relativa. Una carpeta que no es la raíz de un repo, o donde git no
+ * contesta, no tiene: el freno de siempre decide.
+ */
+function constanciasSinCommitear(dir) {
+  if (!fs.existsSync(path.join(dir, '.git'))) return [];
+  const { spawnSync } = require('child_process');
+  const r = spawnSync('git', ['-C', dir, '-c', 'core.quotepath=false', 'status', '--porcelain', '--untracked-files=all', '--', '.github/control-changes', '.tycon/control-changes', '.tycon/control-changes.jsonl'],
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+  if (r.error || r.status !== 0) return [];
+  return String(r.stdout).split('\n').filter(Boolean).map((l) => l.slice(3).trim());
+}
+
 // El comando borra o mueve una carpeta que contiene la carpeta de una ejecución abierta (D4 de la 8.318: abierta según
 // gates.log). Sólo mira cuando el comando borra o mueve, y lee el registro sólo si hay una carpeta que exista en el disco
 // (o un `git worktree prune`). Un registro que no se puede leer frena: lo indecidible frena (8.121, decisión 13).
@@ -4446,6 +4460,16 @@ function borraEjecucionAbierta(event) {
       const r = lasQuePoda(dir);
       if (!r.ok) motivos.push(r.motivo);
       else for (const c of r.carpetas) carpetas.add(c);
+    }
+  }
+  // una constancia de control firmada y sin commitear vive sólo en esa carpeta: sacarla borra la firma del dueño, y
+  // `git worktree remove` sugiere `--force` justamente por ella
+  for (const c of carpetas) {
+    const sueltas = constanciasSinCommitear(c);
+    if (sueltas.length) {
+      return frena(`🔒 CONSTANCIA SIN COMMITEAR — ${via} saca ${c}, que tiene una constancia de control sin commitear: ${sueltas.join(', ')}. ` +
+        'Sacar la carpeta la borra, y con ella la firma. Commiteala y empujala a la rama de su pedido antes; con la constancia en la rama, el mismo comando pasa.',
+      `saca una constancia sin commitear: ${sueltas.join(', ')}`);
     }
   }
   if (!carpetas.size && !motivos.length && !comodines.length) return null;
