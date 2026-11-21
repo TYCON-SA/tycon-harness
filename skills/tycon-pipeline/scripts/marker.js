@@ -8522,10 +8522,14 @@ function cmdAdhoc(sub, payloadJson) {
       const v = require('./lib/ci-red-lane.js').validarApertura({ stateDir: STATE_DIR, sesion: destino, pedido: payload.ciRojo, control: payload.control, allowedFiles, codigo: deCodigo, tope: firmas.TOPE_CI_ROJO });
       if (v.problema) { console.error(`marker.js adhoc set: ${v.problema}.`); process.exit(2); }
       ciRojo = v.ciRojo;
+    } else if (actual && actual.ciRojo) {
+      // agrandar el arreglo de un rojo con un pedido común le sacaría los revisores con otra firma: no se mezcla
+      console.error(`marker.js adhoc set: esta sesión tiene abierto el arreglo del rojo de CI del pedido #${actual.ciRojo.pedido}, sin revisores; un arreglo común no se le suma. Cerralo (marker.js adhoc clear) y abrí el que necesites.`);
+      process.exit(2);
     }
     const enLaLista = `${allowedFiles.length} archivo${allowedFiles.length === 1 ? '' : 's'} (${relLista.slice(0, 2).join(', ')}${relLista.length > 2 ? ', …' : ''})`;
     const delRojo = ciRojo ? `arreglo del rojo de CI del pedido #${ciRojo.pedido} (${ciRojo.nombre}${ciRojo.etapa ? `, falló «${ciRojo.etapa}»` : ''}), control «${ciRojo.control}», sin plan ni revisores, de la sesión ${destino}` : null;
-    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(delRojo ? `${delRojo}: «${reason}» · ${enLaLista} · hasta ${firmas.TOPE_CI_ROJO} archivos de implementación`
+    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(delRojo ? `${conRiesgo}${delRojo}: «${reason}» · ${enLaLista} · hasta ${firmas.TOPE_CI_ROJO} archivos de implementación`
       : `${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
       propia: PROPIA, anotar: anotarFirma, antes });
     if (r.codigo !== 0) {
@@ -8591,7 +8595,7 @@ function cmdAdhoc(sub, payloadJson) {
       ...(existing && existing.datosPermitido ? { datosPermitido: existing.datosPermitido } : {}),
       ...(existing && existing.untilAt ? { untilAt: existing.untilAt } : {}),
       // el arreglo de un rojo de CI: el pedido, el control que falló y la punta desde la que se mide
-      ...(ciRojo ? { ciRojo } : existing && existing.ciRojo ? { ciRojo: existing.ciRojo } : {}),
+      ...(ciRojo ? { ciRojo } : {}),
       // las rutas anotadas, la marca de riesgo y las constancias, con el motivo que sea: valen por su huella, y declarar
       // el carril de nuevo no las vence
       ...(existing ? Object.fromEntries(['rutas', 'riesgoAlto', 'revisoresEsperados', 'revisores', 'pase', 'pruebas', 'pruebasPorRepo']

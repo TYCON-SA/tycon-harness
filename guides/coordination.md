@@ -581,9 +581,11 @@ propio pedido y no pide revisores; lo de riesgo alto que la rama cambió, sí.
 --ci-red <pedido> --check "<el control que falló>" --reason "<qué se arregla>" --data sin-cambio --file <ruta>`, con la
 firma `adhoc-lane:ci-rojo`. La aprueba el dueño, o vos si el perfil la tiene en `delegated_signing`; por delegación le
 llega al dueño una línea con el pedido, el control y los archivos. Abre sólo sobre el pedido en rojo de esa sesión, con
-la punta en el commit que dio rojo, hasta 3 archivos de implementación del repo del pedido y sin lo sensible. No pide plan,
-revisores ni pase: antes de guardar corre otra vez el control que falló (si el repo lo declara para correr en local) y
-sus pruebas. Después de empujar, `marker.js adhoc ci-wait` espera la compilación y, con verde, cierra el arreglo.
+la punta en el commit que dio rojo, hasta 3 archivos de implementación del repo del pedido, sin lo sensible y con el
+control que falló declarado para correr en local (sin él, va por el camino corto de siempre). La ventana dice si la lista
+toca una ruta de riesgo alto. No pide plan, revisores ni pase: antes de guardar corre otra vez el control que falló y sus
+pruebas. Un arreglo común no se le suma: se cierra y se abre el otro. Después de empujar, `marker.js adhoc ci-wait`
+espera la compilación y, con verde, cierra el arreglo.
 
 **Los revisores de un arreglo no ensanchan su alcance.** Desde la segunda vuelta de revisores, lo que encuentran fuera de
 las líneas que cambió el arreglo pasa a seguimiento (`deuda: fuera-del-arreglo`) y no abre otra vuelta; un crítico

@@ -8,11 +8,10 @@
  *
  *   · `validarApertura(...)`  `{ ciRojo }` o `{ problema }`. Abre sólo sobre un pedido que la espera de la compilación
  *                             de ESTA sesión vio en rojo (`pr-build-wait/<sesión>-resultado.json`), con la lista dentro del
- *                             repo de ese pedido, sin archivos sensibles (van con su firma de control) y con la punta del
- *                             repo en el commit que dio rojo. Anota la punta: el carril mide desde ahí, no desde `main`.
- *   · `frenoAlGuardar(carril)` `{ texto }` o null. Corre el control que falló si el repo lo declara para correr en local
- *                             (lib/ci-local-checks.js); si no lo declara, lo dice y quedan las pruebas del carril, que el
- *                             freno de guardar ya exige.
+ *                             repo de ese pedido, sin archivos sensibles (van con su firma de control), con el control
+ *                             declarado para correr en local y con la punta del repo en el commit que dio rojo. Anota la punta: el carril mide desde ahí, no desde `main`.
+ *   · `frenoAlGuardar(carril)` `{ texto }` o null. Corre el control que falló, que el repo tiene que declarar para correr
+ *                             en local (lib/ci-local-checks.js): sin él no abre, y si deja de estar, no guarda.
  *   · `esperaTrasEmpujar(...)` la lista para relanzar la espera de la compilación del pedido con la punta nueva; con
  *                             verde, la espera cierra el carril.
  */
@@ -35,7 +34,7 @@ function resultadoDeLaSesion(stateDir, sesion) {
  * ¿Se puede abrir el arreglo? `pedido` (número), `control` (el nombre del control que falló), `allowedFiles` (absolutas),
  * `codigo` (cuántos son de implementación), `tope`.
  */
-function validarApertura({ stateDir, sesion, pedido, control, allowedFiles = [], codigo, tope }) {
+function validarApertura({ stateDir, sesion, pedido, control, allowedFiles = [], codigo, tope, controlesDe = (repo) => require('./ci-local-checks.js').controlesDe(repo) }) {
   const r = resultadoDeLaSesion(stateDir, sesion);
   if (r.problema) return { problema: r.problema };
   const p = (r.pedidos || []).find((x) => Number(x.numero) === Number(pedido));
@@ -50,6 +49,13 @@ function validarApertura({ stateDir, sesion, pedido, control, allowedFiles = [],
   const so = require('./save-ok.js');
   const sensibles = allowedFiles.map((f) => path.relative(repo, f).split(path.sep).join('/')).filter((rel) => so.esSensible(rel));
   if (sensibles.length) return { problema: `la lista toca lo sensible (${sensibles.join(', ')}): eso va con su firma de control, no por el arreglo de un rojo de CI` };
+  // el control que falló tiene que poder correr en local: es lo único que frena el arreglo antes de empujar
+  const { controles, errores } = controlesDe(repo);
+  if (errores.length) return { problema: `no pude leer los controles de CI que corren en local en ${p.nombre}: ${errores.join('; ')}` };
+  if (!controles.some((x) => x.nombre === String(control).trim())) {
+    const hay = controles.map((x) => `«${x.nombre}»`).join(', ');
+    return { problema: `«${String(control).trim()}» no es un control de CI que ${p.nombre} declare para correr en local (${hay || 'no declara ninguno'}): sin él nada frena el arreglo antes de empujar, y va por el camino corto de siempre` };
+  }
   const punta = git(repo, ['rev-parse', 'HEAD']);
   if (punta.status !== 0) return { problema: `no pude leer la punta de ${p.nombre} (${String(punta.stderr || '').trim() || 'git no contestó'})` };
   const sha = punta.stdout.trim();
@@ -64,10 +70,8 @@ function frenoAlGuardar(carril, { correr = (repo, o) => require('./ci-local-chec
   const { controles, errores } = controlesDe(c.repo);
   if (errores.length) return { texto: `🔒 GUARDAR: el arreglo del rojo de CI del pedido #${c.pedido} no puede correr el control que falló: ${errores.join('; ')}` };
   const declarado = controles.find((x) => x.nombre === c.control);
-  if (!declarado) {
-    process.stderr.write(`⚠️  el control «${c.control}» no está declarado para correr en local en ${c.nombre}: el arreglo guarda con sus pruebas en verde, y la compilación del pedido dice el resto\n`);
-    return null;
-  }
+  // al abrir estaba declarado: si el repo dejó de declararlo, no hay con qué frenar el arreglo
+  if (!declarado) return { texto: `🔒 GUARDAR: el control «${c.control}» ya no está declarado para correr en local en ${c.nombre}: sin él no se guarda el arreglo del rojo de CI del pedido #${c.pedido}` };
   const r = correr(c.repo, { soloNombre: c.control });
   if (r.codigo !== 0) return { texto: `🔒 GUARDAR: el arreglo del rojo de CI del pedido #${c.pedido} todavía no pasa el control que falló: ${r.motivo}` };
   return null;

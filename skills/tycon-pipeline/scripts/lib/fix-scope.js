@@ -47,9 +47,20 @@ function lineasDelArreglo(r, rel) {
 }
 
 /** ¿El hallazgo cae fuera del arreglo? true sólo cuando se pudo medir y no toca nada de lo que el arreglo cambió. */
+/** ¿El archivo está en el árbol sellado de la vuelta? */
+const enElSello = (r, rel) => spawnSync('git', ['-C', r.repo, 'cat-file', '-e', `${r.hasta}:${rel}`], { windowsHide: true }).status === 0;
+
 function estaFuera(f, alcance) {
   if (!alcance || !Number.isInteger(f.iter) || f.iter < 2 || f.iter !== alcance.iter || !f.file) return false;
-  for (const r of alcance.repos) {
+  // con la ruta relativa y varios repos, el repo del hallazgo es el único cuyo sello tiene ese archivo; si son varios o
+  // ninguno, no se sabe de cuál es, y ante la duda es del arreglo
+  let candidatos = alcance.repos;
+  if (!path.isAbsolute(f.file)) {
+    const rel = String(f.file).replace(/\\/g, '/');
+    candidatos = alcance.repos.filter((r) => enElSello(r, rel));
+    if (candidatos.length !== 1) return false;
+  }
+  for (const r of candidatos) {
     const abs = path.isAbsolute(f.file) ? f.file : path.join(r.repo, f.file);
     const rel = path.relative(r.repo, abs);
     if (rel.startsWith('..') || path.isAbsolute(rel)) continue;

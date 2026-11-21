@@ -45,6 +45,8 @@ function mundo(t, { estado = 'rojo', veredicto = 'rojo', numero = 6910 } = {}) {
   escribir(repo, 'plugin.json', JSON.stringify({ name: 'X', version: '1.0.0' }));
   escribir(repo, 'plugin.json.example', JSON.stringify({ name: 'X', version: '1.0.0', defaultSettings: { a: 1 } }));
   escribir(repo, 'src/a.js'); escribir(repo, 'src/b.js'); escribir(repo, 'src/c.js'); escribir(repo, 'src/d.js');
+  // el control de manifiestos, declarado para correr en local
+  escribir(repo, '.tycon/ci-local-checks.json', JSON.stringify({ checks: [{ name: 'Manifest check', run: ['node', '$TYCON_HARNESS_DIR/scripts/ci/check-plugin-manifests.js', '--repo', '.'] }] }));
   git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'base'); git(repo, 'push', '-q', 'origin', 'main');
   git(repo, 'checkout', '-q', '-b', 'story/2.4');
   // la historia ya revisada: muchos archivos, que el arreglo no cuenta
@@ -141,8 +143,9 @@ test('CiRedLane_Save_RunsFailedCheck (T17) @story-8.322 @ac-14', () => {
   let corrido = null;
   assert.strictEqual(lane.frenoAlGuardar(carril, { controlesDe: () => declarado, correr: (repo, o) => { corrido = [repo, o.soloNombre]; return { codigo: 0 }; } }), null);
   assert.deepStrictEqual(corrido, ['/r/backend', 'Manifest check'], 'corrió otro control, o en otro repo');
-  // sin el control declarado: guarda con sus pruebas (las pide el freno de siempre), y lo dice
-  assert.strictEqual(lane.frenoAlGuardar(carril, { controlesDe: () => ({ controles: [], errores: [] }), correr: () => assert.fail('corrió un control que no está declarado') }), null);
+  // el control que dejó de estar declarado: sin él nada frena el arreglo, y no guarda
+  assert.match(lane.frenoAlGuardar(carril, { controlesDe: () => ({ controles: [], errores: [] }), correr: () => assert.fail('corrió un control que no está declarado') }).texto,
+    /el control «Manifest check» ya no está declarado para correr en local en backend: sin él no se guarda/);
   // la lista de controles rota no es «sin el control»
   assert.match(lane.frenoAlGuardar(carril, { controlesDe: () => ({ controles: [], errores: ['el paquete acme: un control le falta «name»'] }) }).texto, /no puede correr el control que falló: el paquete acme/);
   // un carril que no es el arreglo de un rojo no lo corre
@@ -173,6 +176,19 @@ test('CiRedLane_Refuses_GreenOtherOrClosed (T20) @story-8.322 @ac-16', (t) => {
   git(m.repo, 'commit', '-qam', 'se movió');
   assert.match(abrir(m).problema, /no es la que dio rojo/);
   assert.match(abrir(mundo(t), { control: '  ' }).problema, /--check/);
+  // un control que el repo no declara para correr en local: nada frenaría el arreglo antes de empujar
+  assert.match(abrir(mundo(t), { control: 'nombre-inventado' }).problema, /«nombre-inventado» no es un control de CI que backend declare para correr en local \(«Manifest check»\)/);
+  // un arreglo común no se le suma al del rojo: le sacaría los revisores con otra firma
+  const c = mundo(t);
+  fs.mkdirSync(path.join(c.state, 'adhoc'), { recursive: true });
+  // stable-data: la firma del carril tiene que ser de ahora, o el freno lo toma por vencido
+  const ahora = new Date().toISOString();
+  fs.writeFileSync(path.join(c.state, 'adhoc', 's1.json'), JSON.stringify({ reason: 'saca defaultSettings del manifiesto', maxFiles: 3, files: [], allowedFiles: [path.join(c.repo, 'plugin.json')],
+    declaredAt: ahora, lastTouch: ahora, firmadaEn: ahora, via: 'ventana', ciRojo: abrir(c).ciRojo, datos: 'sin-cambio' }));
+  const comun = spawnSync(process.execPath, [MARKER, 'adhoc', 'set', JSON.stringify({ reason: 'agranda el arreglo con otra cosa', datos: 'sin-cambio', maxFiles: 8, allowedFiles: ['plugin.json', 'src/a.js'] })],
+    { cwd: c.repo, encoding: 'utf8', env: { ...process.env, HOME: c.home, USERPROFILE: c.home, CLAUDE_CODE_SESSION_ID: 's1' } });
+  assert.strictEqual(comun.status, 2, comun.stderr);
+  assert.match(comun.stderr, /tiene abierto el arreglo del rojo de CI del pedido #6910, sin revisores; un arreglo común no se le suma/);
   // por la consola: lo rechaza antes de pedir la firma
   const n = mundo(t, { estado: 'listos', veredicto: 'verde' });
   const r = spawnSync(process.execPath, [MARKER, 'adhoc', 'set', '--ci-red', '6910', '--check', 'Manifest check', '--reason', 'saca defaultSettings del manifiesto', '--data', 'sin-cambio', '--file', 'plugin.json'],
@@ -195,6 +211,10 @@ test('CiRedLane_Push_RelaunchesWait_ClosesOnGreen (T21) @story-8.322 @ac-17 @ac-
   assert.strictEqual(espera.cerrarArreglo('s1', { correr: (cmd, args, o) => { llamada = { args, sesion: o.env.CLAUDE_CODE_SESSION_ID }; return { status: 0 }; } }), true);
   assert.deepStrictEqual([llamada.args.slice(-2), llamada.sesion], [['adhoc', 'clear'], 's1']);
   assert.strictEqual(espera.cerrarArreglo('s1', { correr: () => ({ status: 1 }) }), false, 'un cierre que falló se dio por hecho');
+  // con el pedido, sólo si el carril de la sesión sigue siendo el arreglo de ese rojo
+  fs.mkdirSync(path.join(m.state, 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 's1.json'), JSON.stringify({ reason: 'otro carril que la sesión abrió después' }));
+  assert.strictEqual(espera.cerrarArreglo('s1', { pedido: 6910, stateDir: m.state, correr: () => assert.fail('cerró otro carril') }), false);
   // y de verdad: el arreglo abierto de la sesión queda cerrado
   fs.mkdirSync(path.join(m.state, 'adhoc'), { recursive: true });
   fs.writeFileSync(path.join(m.state, 'adhoc', 's1.json'), JSON.stringify({ reason: 'saca defaultSettings del manifiesto', ciRojo: r.ciRojo }));
@@ -248,6 +268,17 @@ test('Findings_OutsideFix_Deferred (T22) @story-8.322 @ac-19 @ac-20 @ac-21', (t)
   assert.deepStrictEqual(como, { DENTRO: 'open', 'MISMO-ARCHIVO-OTRA-LINEA': 'fuera-del-arreglo', 'OTRO-ARCHIVO': 'fuera-del-arreglo', 'SEC-C1': 'fuera-del-arreglo',
     'SIN-LINEA': 'open', 'PRIMERA-VUELTA': 'open', 'SIN-VUELTA': 'open', 'YA-ARREGLADO': 'fixed', 'OTRO-REPO': 'open' });
   assert.deepStrictEqual(r.fuera.map((f) => f.rule_id), ['SEC-C1', 'MISMO-ARCHIVO-OTRA-LINEA', 'OTRO-ARCHIVO'], 'el crítico va primero');
+  // dos repos: una ruta relativa es del único repo cuyo sello la tiene; si la tienen los dos, ante la duda es del arreglo
+  const otro = tmp(t, 'arreglo-otro-');
+  spawnSync('git', ['init', '-q', '-b', 'main', otro]);
+  escribir(otro, 'src/c.js', 'c\n');
+  escribir(otro, 'src/a.js', 'otra a\n');
+  const deOtro = sello(otro);
+  const dos = { iter: 2, repos: [{ repo: otro, desde: deOtro, hasta: deOtro }, { repo, desde: antes, hasta: ahora }] };
+  assert.strictEqual(fixScope.estaFuera(h({ file: 'src/b.js', line: 1 }), dos), true, 'src/b.js es sólo del segundo, y el arreglo no lo tocó');
+  assert.strictEqual(fixScope.estaFuera(h({ file: 'src/a.js', line: 10 }), dos), false, 'src/a.js está en los dos: no se sabe de cuál es');
+  assert.strictEqual(fixScope.estaFuera(h({ file: 'src/c.js', line: 1 }), dos), true);
+  assert.strictEqual(fixScope.estaFuera(h({ file: 'src/no-existe.js', line: 1 }), dos), false);
   // con una sola vuelta no hay arreglo que medir; con el diff ilegible, como vino
   assert.strictEqual(fixScope.alcanceDelArreglo({ stateDir: casa, sid: 's1', story: '7.7' }), null);
   assert.strictEqual(fixScope.estaFuera(h({ file: 'src/b.js' }), { iter: 2, repos: [{ repo, desde: 'f'.repeat(40), hasta: ahora }] }), false);

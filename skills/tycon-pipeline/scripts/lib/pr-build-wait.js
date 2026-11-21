@@ -131,8 +131,16 @@ function avisar({ stateDir, session, storyId, resultado }) {
   return t;
 }
 
-/** Cierra el arreglo rápido de la sesión con `marker.js adhoc clear`, en nombre de esa sesión. Nunca tira. */
-function cerrarArreglo(session, { correr = require('child_process').spawnSync } = {}) {
+/**
+ * Cierra el arreglo del rojo de CI de la sesión con `marker.js adhoc clear`, en nombre de esa sesión, si sigue siendo el
+ * de ese pedido (`pedido`): otro carril que la sesión abrió después no se toca. Nunca tira.
+ */
+function cerrarArreglo(session, { pedido = null, stateDir = null, correr = require('child_process').spawnSync } = {}) {
+  if (pedido !== null) {
+    let a = null;
+    try { a = JSON.parse(fs.readFileSync(path.join(stateDir || require('./state-dir.js').stateDir(), 'adhoc', `${session}.json`), 'utf8')); } catch (_) { a = null; }
+    if (!a || !a.ciRojo || Number(a.ciRojo.pedido) !== Number(pedido)) return false;
+  }
   const env = { ...process.env, CLAUDE_CODE_SESSION_ID: session, TYCON_SESSION_ID: session };
   const r = correr(process.execPath, [path.join(__dirname, '..', 'marker.js'), 'adhoc', 'clear'], { env, encoding: 'utf8', windowsHide: true, timeout: 60000 });
   return Boolean(r && r.status === 0);
@@ -152,7 +160,7 @@ async function main(argv) {
   });
   process.stdout.write(`${avisar({ stateDir: stateDir(), session: lista.session, storyId: lista.storyId, resultado })}\n`);
   // el arreglo de un rojo de CI (marker.js adhoc ci-wait): con verde se cierra, como lo cerraría la sesión
-  if (lista.closeAdhoc && resultado.estado === 'listos') cerrarArreglo(lista.session);
+  if (lista.closeAdhoc && resultado.estado === 'listos') cerrarArreglo(lista.session, { pedido: (lista.pedidos[0] || {}).numero, stateDir: stateDir() });
   return resultado.estado === 'listos' ? 0 : 1;
 }
 
