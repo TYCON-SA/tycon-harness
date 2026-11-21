@@ -240,7 +240,16 @@ function abrirCharla(nombre,boton,p=null){const v=ventana(),box=v.firstElementCh
   const cerrar=botonCerrar(cerrarCharla);box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
   const yo=++ultimoPedido,pedido=p||{...fuenteLocal(),nombre},deSitio=pedido.fuente==="site";
   // lo que falla queda en la consola: en la ventana, la persona ve sólo que no se pudo leer
-  fetch(pedidoDeCharla(pedido),{credentials:"same-origin"}).then(r=>{const que=charlaSegunRespuesta(r.status);if(que==="vacia")return {vacia:true,deSitio};if(que!=="datos")throw new Error("respondió "+r.status);return r.json().then(datos=>{if(!charlaConForma(datos))throw new Error("una conversación sin su forma");return {datos}})}).catch(e=>{console.warn("conversación de "+nombre+": "+(e&&e.message));return {falla:true}}).then(c=>{if(yo!==ultimoPedido||charlaDe!==nombre)return;try{pintarCharla(box,nombre,c,cerrar)}catch(e){console.warn("conversación de "+nombre+": "+(e&&e.message));pintarCharla(box,nombre,{falla:true},cerrar)}});}
+  fetch(pedidoDeCharla(pedido),{credentials:"same-origin"}).then(r=>{const que=charlaSegunRespuesta(r.status);if(que==="vacia")return {vacia:true,deSitio};if(que!=="datos")throw new Error("respondió "+r.status);return r.json().then(datos=>{if(!charlaConForma(datos))throw new Error("una conversación sin su forma");return {datos}})}).catch(e=>{console.warn("conversación de "+nombre+": "+(e&&e.message));return {falla:true}}).then(c=>{if(yo!==ultimoPedido||charlaDe!==nombre)return;try{pintarCharla(box,nombre,c,cerrar)}catch(e){console.warn("conversación de "+nombre+": "+(e&&e.message));pintarCharla(box,nombre,{falla:true},cerrar)}if(c.datos&&box.querySelector(".conVos"))refrescarCharla(nombre,pedido,yo)});}
+// Con la ventana abierta, la conversación se vuelve a leer sola: «Con vos» cambia sólo si llegó algo, y baja al final
+// sólo si la persona ya estaba al pie (si subió a leer, no la mueve). Termina al cerrar la ventana o abrir otra.
+const REFRESCO_MS=15000;
+function refrescarCharla(nombre,pedido,yo){setTimeout(()=>{const sigue=()=>yo===ultimoPedido&&charlaDe===nombre&&vosDe&&vosDe.nombre===nombre;if(!sigue())return;
+  fetch(pedidoDeCharla(pedido),{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{if(!d||!sigue()||!charlaConForma(d))return;
+    const firma=JSON.stringify(d.conVos||[]);if(firma===vosDe.firma)return;vosDe.firma=firma;
+    const ch=vosDe.vos.querySelector(".chat"),alPie=!ch||ch.scrollHeight-ch.scrollTop-ch.clientHeight<40;
+    vosDe.vos.replaceChildren(conVosLista(nombre,d.conVos));const n=vosDe.vos.querySelector(".chat");if(n&&alPie)n.scrollTop=n.scrollHeight})
+    .catch(()=>{}).then(()=>refrescarCharla(nombre,pedido,yo))},REFRESCO_MS)}
 function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.classList.remove("detalle");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null;}
 // Escape cierra sólo la de arriba: la ventana, si está abierta; si no, el panel de la sala
 document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!ventana().hidden){cerrarCharla();return}for(const c of PANELES)if(c())return;});
@@ -250,10 +259,18 @@ function enLinea(padre,texto){for(const p of String(texto).split(/(\*\*[^*\n]+\*
   if(p.startsWith("**")&&p.endsWith("**")&&p.length>4){const e=document.createElement("strong");e.textContent=p.slice(2,-2);padre.append(e)}
   else if(p.startsWith("`")&&p.endsWith("`")&&p.length>2){const e=document.createElement("code");e.textContent=p.slice(1,-1);padre.append(e)}
   else padre.append(document.createTextNode(p))}}
-function formatear(texto){const out=[];let lista=null,codigo=null;
+// una tabla de markdown, como grilla: los renglones seguidos que empiezan con `|`; el de guiones separa el encabezado
+const celdasDe=l=>l.trim().replace(/^\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+function formatear(texto){const out=[];let lista=null,codigo=null,tabla=null;
   for(const linea of String(texto).split("\n")){
-    if(/^\s*```/.test(linea)){if(codigo){codigo=null}else{const pre=document.createElement("pre");codigo=document.createElement("code");pre.append(codigo);out.push(pre);lista=null}continue}
+    if(/^\s*```/.test(linea)){if(codigo){codigo=null}else{const pre=document.createElement("pre");codigo=document.createElement("code");pre.append(codigo);out.push(pre);lista=null;tabla=null}continue}
     if(codigo){codigo.textContent+=(codigo.textContent?"\n":"")+linea;continue}
+    if(/^\s*\|.*\|\s*$/.test(linea)){lista=null;
+      if(/^\s*\|[\s:|-]+\|\s*$/.test(linea)&&/-/.test(linea)){if(tabla&&tabla.cuerpo===null){const tb=document.createElement("tbody");tabla.t.append(tb);tabla.cuerpo=tb}continue}
+      if(!tabla){const caja=document.createElement("div");caja.className="grilla";const t=document.createElement("table");caja.append(t);out.push(caja);const th=document.createElement("thead");t.append(th);tabla={t,cabeza:th,cuerpo:null}}
+      const tr=document.createElement("tr");for(const c of celdasDe(linea)){const td=document.createElement(tabla.cuerpo?"td":"th");enLinea(td,c);tr.append(td)}
+      (tabla.cuerpo||tabla.cabeza).append(tr);continue}
+    tabla=null;
     const it=/^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/.exec(linea);
     if(it){const tipo=it[2]?"OL":"UL";if(!lista||lista.tagName!==tipo){lista=document.createElement(tipo);out.push(lista)}const li=document.createElement("li");enLinea(li,it[3]);lista.append(li);continue}
     lista=null;const limpia=linea.replace(/^\s*#{1,6}\s+/,"");if(!limpia.trim())continue;
@@ -286,7 +303,10 @@ function charlaPorSesion(nombre,sesiones,vacio){if(!sesiones.length)return lista
   elegir(sesiones.find(s=>!s.cerrada)||cerradas[0],botones[0]||deCerradas[0]);return box;}
 // «Con vos», en toda sesión: lo que le escribiste (en su pestaña o desde la oficina) y lo que contestó.
 const VOS_VACIO="No hay mensajes con vos en lo último de su conversación.";
-const conVosLista=(nombre,lista)=>listaCharla((lista||[]).map(m=>msg(m.quien==="vos"?(m.oficina?"Vos · desde la oficina":"Vos"):nombre,m.at,m.texto,m.quien==="vos")),VOS_VACIO);
+// un turno que no arrancó la persona (un mensaje de otra sesión, una tarea de fondo que terminó) va con su origen y otro color
+const conVosLista=(nombre,lista)=>listaCharla((lista||[]).map(m=>{
+  if(m.sinPersona){const b=msg(nombre+" · "+(m.origen||"sin un mensaje tuyo"),m.at,m.texto,false);b.classList.add("sola");return b}
+  return msg(m.quien==="vos"?(m.oficina?"Vos · desde la oficina":"Vos"):nombre,m.at,m.texto,m.quien==="vos")}),VOS_VACIO);
 // la lista «Con vos» de la ventana abierta: al llegar la respuesta se cambia sólo ella, sin tocar lo que está escrito en el campo
 let vosDe=null;
 function pintarCharla(box,nombre,c,cerrar){const fin=x=>{box.insertBefore(x,cerrar)};
@@ -294,16 +314,16 @@ function pintarCharla(box,nombre,c,cerrar){const fin=x=>{box.insertBefore(x,cerr
   // en el sitio, un 404 es que todavía no llegó; en la oficina local, que la sesión ya no está
   if(c.vacia){fin(el("p","m",c.deSitio?"La conversación de esta sesión todavía no llegó al sitio.":"Esta sesión ya no está en la oficina."));return}
   if(c.falla){fin(el("p","m","No se pudo leer la conversación de esta sesión."));return}
-  const d=c.datos||{},vos=el("div","conVos");vos.append(conVosLista(nombre,d.conVos));vosDe={nombre,vos};
+  const d=c.datos||{},vos=el("div","conVos");vos.append(conVosLista(nombre,d.conVos));vosDe={nombre,vos,firma:JSON.stringify(d.conVos||[])};
   const alFinal=()=>box.querySelectorAll(".chat").forEach(ch=>{ch.scrollTop=ch.scrollHeight});
   if(d.sinConversacion){fin(el("p","m","La conversación de esta sesión no se lee desde la oficina."));}
   else if(d.sinCoordinadora){fin(el("h4",null,"Con vos"));fin(vos);fin(el("p","m","Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes. "+ALCANCE));}
   else if(d.conSesiones){pestanasCharla([["Con vos",vos],
       ["Con las sesiones",charlaPorSesion(nombre,d.conSesiones||[],"No hay mensajes con las sesiones en lo último de su conversación.")]]).forEach(fin);
-    fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con cada sesión, en orden; primero la que habló último. "+ALCANCE+" Las contraseñas y las claves se tapan."));}
+    fin(el("p","m","Todos los turnos que se leen de su conversación (los que no arrancaste vos, en otro color), y los últimos 10 mensajes con cada sesión, en orden; primero la que habló último. "+ALCANCE+" Las contraseñas y las claves se tapan."));}
   else{const filas=(d.conCoordinadora||[]).map(m=>msg(m.propio?nombre:m.de,m.at,m.texto,m.propio));if(d.arranque)filas.unshift(msg("Mensaje de arranque",d.arranque.at,d.arranque.texto,false));
     pestanasCharla([["Con vos",vos],["Con la coordinadora",listaCharla(filas,"No hay mensajes con la coordinadora en lo último de su conversación.")]]).forEach(fin);
-    fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con la coordinadora. "+ALCANCE+" Las contraseñas y las claves se tapan."));}
+    fin(el("p","m","Todos los turnos que se leen de su conversación (los que no arrancaste vos, en otro color), y los últimos 10 mensajes con la coordinadora. "+ALCANCE+" Las contraseñas y las claves se tapan."));}
   if(LIVE&&d.oficina)campoMandar(nombre,d.oficina,fin);
   alFinal()}
 // ── Escribirle a la sesión, sólo con la oficina viva. Le llega como un mensaje de la persona y nunca firma ni aprueba nada:
@@ -317,7 +337,8 @@ const enCurso=new Map();
 function campoMandar(nombre,ofi,fin){const sec=el("div","mandar");sec.setAttribute("role","group");sec.setAttribute("aria-label","Escribirle a "+nombre);
   if(ofi.recibe!=="si"&&ofi.recibe!=="espera-cierre"){sec.append(el("p","m noRecibe",ofi.motivo||"Esta sesión no puede recibir mensajes de la oficina."));fin(sec);return}
   const campo=document.createElement("textarea"),boton=el("button","verCharla","Mandar"),estado=el("p","m estadoMensaje");
-  campo.rows=3;campo.setAttribute("aria-label","Mensaje para "+nombre);boton.type="button";estado.setAttribute("role","status");
+  campo.rows=3;campo.setAttribute("aria-label","Mensaje para "+nombre+" (Enter manda; Mayúscula y Enter, otro renglón)");boton.type="button";estado.setAttribute("role","status");
+  campo.placeholder="Enter manda · Mayúscula+Enter, otro renglón";
   estado.textContent=ofi.cuadro?CUADRO_TXT:ofi.recibe==="espera-cierre"?"Lo va a recibir cuando termine lo que está haciendo.":"";
   const mandar=igual=>{const texto=campo.value;
     if(!texto.trim()){estado.textContent="El mensaje está vacío.";return}
@@ -332,6 +353,8 @@ function campoMandar(nombre,ofi,fin){const sec=el("div","mandar");sec.setAttribu
         estado.textContent=j.motivo||"No se pudo mandar."})
       .catch(()=>{boton.disabled=false;estado.textContent="No se pudo mandar."})};
   boton.onclick=()=>mandar(false);
+  // Enter manda, como en un chat; con Mayúscula (o mientras se compone un acento) es otro renglón
+  campo.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&!boton.disabled){e.preventDefault();mandar(false)}};
   sec.append(el("p","m mandarFijo",MANDAR_FIJO),campo,boton,estado);fin(sec)}
 // lo que dice el proceso de un mensaje: recibido, no entregado (vuelve el texto al campo) o entregado y sin aparecer
 // un aviso puede llegar antes que la respuesta de «Mandar» (la sesión lo toma enseguida): se guarda y se aplica al conocer el mensaje

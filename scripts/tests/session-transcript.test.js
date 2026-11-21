@@ -397,7 +397,7 @@ test('Conversacion_ArranqueDeFondo_NoEsDeLaPersona (8.183 T25, transcripción) @
   assert.deepStrictEqual(got.conVos.map((m) => [m.quien, m.texto]), [['vos', '¿cómo vas?'], ['sesion', 'Voy por la mitad.']]);
 });
 
-test('T244 Conversation_WithPerson: cada mensaje con su respuesta, en orden; lo que contestó a una sesión no es una respuesta a la persona', () => {
+test('T244 Conversation_WithPerson: cada mensaje con su respuesta, en orden; lo que contestó a una sesión va marcado como un turno que no arrancó la persona', () => {
   const file = path.join(dir(), 's.jsonl');
   write(file, [
     person('¿Cómo va?', 20), said('Lo miro.', 19), said('Va bien.', 18), turnEnd(18),
@@ -407,9 +407,29 @@ test('T244 Conversation_WithPerson: cada mensaje con su respuesta, en orden; lo 
     { type: 'user', timestamp: at(6), origin: { kind: 'task-notification' }, message: { role: 'user', content: '<task-notification>x</task-notification>' } },
   ]);
   const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true });
-  assert.deepStrictEqual(got.conVos.map((m) => [m.quien, m.texto]), [['vos', '¿Cómo va?'], ['coordinadora', 'Va bien.'], ['vos', 'Seguí.'], ['coordinadora', 'Le avisé.']]);
+  assert.deepStrictEqual(got.conVos.map((m) => [m.quien, m.texto, Boolean(m.sinPersona)]), [['vos', '¿Cómo va?', false], ['coordinadora', 'Va bien.', false], ['coordinadora', 'Gracias, Bruno.', true], ['vos', 'Seguí.', false], ['coordinadora', 'Le avisé.', false]]);
+  assert.strictEqual(got.conVos[2].origen, 'a un mensaje de Bruno');
   assert.deepStrictEqual(got.conSesiones.map((s) => s.sesion), ['Bruno']);
   assert.deepStrictEqual(got.conSesiones[0].mensajes.map((m) => [m.de, m.texto]), [['Bruno', 'Terminé.'], ['Coordinadora', 'Seguí vos.']]);
+});
+
+// 🔴 Falla con: leer sólo los turnos que arrancó la persona (la respuesta a una tarea de fondo o a otra sesión no aparece)
+test('Conversation_TurnsNotStartedByThePerson: una tarea de fondo y un mensaje de otra sesión traen su respuesta, marcada con su origen', () => {
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [
+    person('Arrancá.', 30), said('Arranco.', 29), turnEnd(29),
+    { type: 'user', timestamp: at(25), origin: { kind: 'task-notification' }, message: { role: 'user', content: '<task-notification>x</task-notification>' } },
+    said('Terminó la prueba: verde.', 24), turnEnd(24),
+    peer('Coordinadora', 'Seguí con lo otro.', 20), said('Voy.', 19), turnEnd(19),
+    officeUser('desde la oficina', 15, OFFICE_ID), said('Recibido.', 14), turnEnd(14),
+  ]);
+  const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: false });
+  assert.deepStrictEqual(got.conVos.map((m) => [m.quien, m.texto, m.origen || null]), [
+    ['vos', 'Arrancá.', null], ['sesion', 'Arranco.', null],
+    ['sesion', 'Terminó la prueba: verde.', 'al terminar una tarea de fondo'],
+    ['sesion', 'Voy.', 'a un mensaje de Coordinadora'],
+    ['vos', 'desde la oficina', null], ['sesion', 'Recibido.', null],
+  ]);
 });
 
 test('T247 Conversation_PerSession: cada sesión con sus mensajes en orden, la que habló último primero', () => {
@@ -442,25 +462,25 @@ test('T249 Conversation_OnlySessions: un subagente propio y un mensaje a sí mis
   assert.deepStrictEqual(got.map((s) => s.sesion), ['Bruno']);
 });
 
-test('T250 Conversation_ReadsSessionsAfterTheTwentyMessages: juntados los de la persona, sigue buscando sesiones', () => {
+test('T250 Conversation_ReadsSessionsAfterThePersonMessages: con todos los de la persona juntados, sigue buscando sesiones', () => {
   const file = path.join(dir(), 's.jsonl');
   const lines = [peer('Ana', 'de hace mucho', 900)];
   for (let i = 25; i > 0; i -= 1) lines.push(person(`mensaje ${i}`, i));
   write(file, lines);
   const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true });
-  assert.strictEqual(got.conVos.filter((m) => m.quien === 'vos').length, 20);
+  assert.strictEqual(got.conVos.filter((m) => m.quien === 'vos').length, 25);
   assert.deepStrictEqual(got.conSesiones.map((s) => s.sesion), ['Ana']);
 });
 
-test('T245 Conversation_Limits: se queda con los últimos 20 de la persona, y un tope de lectura lo corta sin romperse', () => {
+test('T245 Conversation_Limits: trae todos los turnos que entran en lo leído, y un tope de lectura lo corta sin romperse', () => {
   const file = path.join(dir(), 's.jsonl');
   const lines = [];
   for (let i = 30; i > 0; i -= 1) lines.push(person(`mensaje ${i}`, i * 2), said(`respuesta ${i}`, i * 2 - 1), turnEnd(i * 2 - 1));
   write(file, lines);
   const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true });
   const mine = got.conVos.filter((m) => m.quien === 'vos');
-  assert.strictEqual(mine.length, 20);
-  assert.strictEqual(mine[0].texto, 'mensaje 20');
+  assert.strictEqual(mine.length, 30);
+  assert.strictEqual(mine[0].texto, 'mensaje 30');
   assert.strictEqual(got.conVos[got.conVos.length - 1].texto, 'respuesta 1');
   // el tope cuenta de a tramos de 1 MB: lo que quedó antes de ese tramo no se lee
   const capped = path.join(dir(), 's.jsonl');
