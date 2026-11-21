@@ -619,6 +619,26 @@ test('T9 7.31-SuitesJson_ConReporte_DaPorcentaje @story-7.31 @ac-8 @ac-14 — co
   assert.deepStrictEqual(g.art.coverage.touched_lines.per_file, { 'scripts/lib/acme.js': { covered: 1, measurable: 2, pct: 50 } });
 });
 
+test('T9d SuitesJson_DePuntaAPunta_ArchivoNuevo_LlenaNewFilesPct — el portón del arnés mide la cobertura del archivo nuevo', () => {
+  // 🔴 rojo: tests-result.json del corredor suites-json con new_files_pct = null para un archivo nuevo que una suite corre
+  const repo = repoDeJuguete('suites-json');
+  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'suites.json'),
+    JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/ok.test.sh' }, { raiz: 'arnes', ruta: 'tests/nuevo.test.js' }], semanales: [] }));
+  git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'base']);
+  fs.mkdirSync(path.join(repo, 'scripts', 'lib'), { recursive: true });
+  // cuatro líneas medibles; la prueba corre tres (la rama del negativo queda sin correr)
+  fs.writeFileSync(path.join(repo, 'scripts', 'lib', 'nuevo.js'), 'module.exports = (n) => {\n  if (n > 0) return 1;\n  return 0;\n};\n');
+  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'nuevo.test.js'),
+    "const { spawnSync } = require('child_process');\nconst r = spawnSync(process.execPath, ['-e', 'require(process.argv[1])(1)', require('path').join(__dirname, '..', 'lib', 'nuevo.js')]);\nprocess.exit(r.status);\n");
+  git(repo, ['add', '-A']);
+  const g = correrGate(repo, '7.31', process.env.PATH, tmpReal('tgr-home-'));
+  assert.strictEqual(g.status, 0, g.stderr + g.stdout);
+  const cov = g.art.coverage;
+  assert.strictEqual(typeof cov.per_new_file['scripts/lib/nuevo.js'], 'number', JSON.stringify(cov, null, 1));
+  assert.strictEqual(typeof cov.new_files_pct, 'number', JSON.stringify(cov, null, 1));
+  assert.ok(cov.new_files_pct > 0 && cov.new_files_pct < 100, `una rama sin correr: ni 0 ni 100 (${cov.new_files_pct})`);
+});
+
 // Un repo con su historia, las salidas del corredor de suites.json (con su lcov) y el informe corrido encima.
 function informeSuitesJson({ base, now, lcov, resumen = '{"corridas":1,"verdes":1,"fallas":[],"ausentes":[],"deferred_suites":[]}' }) {
   const tmp = tmpReal('tgr-sj-');
