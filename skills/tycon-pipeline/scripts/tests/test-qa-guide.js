@@ -5,7 +5,8 @@ const path = require('path');
 const qa = require(path.join(__dirname, '..', 'qa-guide.js'));
 
 let fails = 0;
-function check(name, cond) { if (cond) console.log(`  ✓ ${name}`); else { fails++; console.error(`  ✗ ${name}`); } }
+// el detalle (lo que se obtuvo) se muestra sólo cuando la prueba falla
+function check(name, cond, detalle) { if (cond) console.log(`  ✓ ${name}`); else { fails++; console.error(`  ✗ ${name}${detalle === undefined ? '' : ` — ${detalle}`}`); } }
 
 console.log('qa-guide — casos:');
 
