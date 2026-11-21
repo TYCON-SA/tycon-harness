@@ -17,6 +17,18 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..');
+// la maqueta que arma `mockup.js render` con su revisión con navegador limpia (la de `mockup.js shots`, sin abrir un
+// navegador: acá se prueban las aprobaciones; el navegador, en mockup.test.js)
+function renderMirada(args) {
+  const r = spawnSync('node', [path.join(SCRIPTS, 'mockup.js'), 'render', ...args], { encoding: 'utf8' });
+  if (r.status === 0) {
+    const out = JSON.parse(r.stdout).out;
+    const SH = require(path.join(SCRIPTS, 'lib', 'mockup-shots.js'));
+    const { report, shots } = SH.shotsPaths(out);
+    SH.escribirInforme({ report, file: path.basename(out), sha256: require(path.join(SCRIPTS, 'mockup.js')).mockupHash(fs.readFileSync(out, 'utf8')), shots, findings: [] });
+  }
+  return r;
+}
 const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 const GATE = path.join(RAIZ, 'scripts', 'ci', 'tycon-ci-gate.js');
 const approvals = require(path.join(SCRIPTS, 'lib', 'approvals.js'));
@@ -223,7 +235,7 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan — la maqueta, con el plan y 
   const modelo = path.join(repo, 'modelo.json');
   const pantalla = (texto) => fs.writeFileSync(modelo, JSON.stringify({ title: 'Facturas', screens: [{ name: 'Lista', state: 'con facturas', elements: [{ kind: 'heading', text: texto }] }] }));
   pantalla('Facturas de Acme SA');
-  const render = () => spawnSync('node', [path.join(SCRIPTS, 'mockup.js'), 'render', '--data', modelo, '--story', story], { encoding: 'utf8' });
+  const render = () => renderMirada(['--data', modelo, '--story', story]);
   let r = render();
   assert.equal(r.status, 0, r.stderr);
   const home = tmp('apr-home-');
@@ -492,7 +504,7 @@ test('Aprobar_Maqueta_AnotaEnLosDosRepos @story-8.133 @ac-6', () => {
   const { storyRepo, codeRepo, story } = dosRepos({ pantalla: true });
   const modelo = path.join(codeRepo, 'modelo.json');
   const pantalla = (texto) => fs.writeFileSync(modelo, JSON.stringify({ title: 'Facturas', screens: [{ name: 'Lista', state: 'con facturas', elements: [{ kind: 'heading', text: texto }] }] }));
-  const render = () => spawnSync('node', [path.join(SCRIPTS, 'mockup.js'), 'render', '--data', modelo, '--story', story], { encoding: 'utf8' });
+  const render = () => renderMirada(['--data', modelo, '--story', story]);
   pantalla('Facturas de Acme SA');
   let r = render();
   assert.equal(r.status, 0, r.stderr);
