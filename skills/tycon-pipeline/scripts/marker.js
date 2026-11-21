@@ -2455,15 +2455,17 @@ function cmdCompleteStep(nRaw, flags) {
         appendLog('gates.log', { name: 'compare-previous-gate', action: 'no-medido', story: marker.storyId || null, motivo: noMedido });
       } else if (f && (f.candidatos.length || (f.sinRepo || []).length)) {
         for (const a of f.avisos) console.error(`⚠️  complete-step ${n}: ${a}`);
+        // lo que no se pudo mirar junto a los demás candidatos también queda en el renglón, no sólo en pantalla
+        const noMedidos = (f.noMedidos || []).map((x) => ({ archivo: x.archivo, motivo: x.motivo }));
         if (f.bloquea) {
           appendLog('gates.log', { name: 'compare-previous-gate', action: 'bloqueo', story: marker.storyId || null,
-            faltan: f.juicio.faltan.map((x) => x.archivo), noDeclaradas: f.juicio.noDeclaradas.map((x) => x.cmd) });
+            faltan: f.juicio.faltan.map((x) => x.archivo), noDeclaradas: f.juicio.noDeclaradas.map((x) => x.cmd), ...(noMedidos.length ? { noMedidos } : {}) });
           console.error(`marker.js complete-step ${n} BLOQUEADO — ${f.lineas[0]}`);
           for (const l of f.lineas.slice(1)) console.error(l.startsWith('comparación con main') ? `   ${l}` : l);
           process.exit(1);
         }
         for (const l of f.lineas) console.error(`   ${l.trim()}`);
-        appendLog('gates.log', { name: 'compare-previous-gate', action: 'verde', story: marker.storyId || null, candidatos: f.candidatos.map((x) => x.archivo), avisos: f.juicio.avisos.length });
+        appendLog('gates.log', { name: 'compare-previous-gate', action: 'verde', story: marker.storyId || null, candidatos: f.candidatos.map((x) => x.archivo), avisos: f.juicio.avisos.length, ...(noMedidos.length ? { noMedidos } : {}) });
       }
     }
     // Un crítico de seguridad o de datos abierto o diferido no cierra callado: lo arregla una vuelta (extra, si se llegó al
@@ -7192,7 +7194,7 @@ function cmdApprovePending(argv) {
   if (r.codigo !== 0) { console.error(`🔒 marker.js approve-pending: no se aprobó ${id} — ${r.motivo}`); process.exit(r.codigo); }
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
   const q = r.via === 'terminal' ? { tipo: 'manual', quien: persona } : quienFirmo(r, persona);
-  const escrita = { ...linea, via: r.via, quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
+  const escrita = { ...linea, via: PA.viaDeLaFirma(r), quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
   // cada aprobación en su archivo: dos ramas que aprueban a la vez no chocan en el merge
   const archivo = PA.archivoDe(escrita);
   try {
