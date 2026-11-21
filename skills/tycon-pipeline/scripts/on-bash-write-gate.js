@@ -4383,7 +4383,7 @@ function cartelBorraAbierta(abiertas, sid, via) {
 function constanciasSinCommitear(dir) {
   if (!fs.existsSync(path.join(dir, '.git'))) return [];
   const { spawnSync } = require('child_process');
-  const r = spawnSync('git', ['-C', dir, 'status', '--porcelain', '--untracked-files=all', '--', '.github/control-changes', '.tycon/control-changes', '.tycon/control-changes.jsonl'],
+  const r = spawnSync('git', ['-C', dir, '-c', 'core.quotepath=false', 'status', '--porcelain', '--untracked-files=all', '--', '.github/control-changes', '.tycon/control-changes', '.tycon/control-changes.jsonl'],
     { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
   if (r.error || r.status !== 0) return [];
   return String(r.stdout).split('\n').filter(Boolean).map((l) => l.slice(3).trim());
