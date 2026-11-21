@@ -1691,10 +1691,11 @@ function retiredNow(home, nowMs, sessions, unreadable) {
   }
 }
 
-// Su renglón en /wip, debajo de la tabla: qué pasó y el comando que la levanta.
+// Su renglón en /wip, debajo de la tabla: qué pasó, qué esperaba (si lo anotó) y el comando que la levanta.
 function renderRetired(retired) {
   if (!retired || !retired.length) return '';
-  return `\n\nCerradas por Claude Code:\n${retired.map((x) => `- ${shown(x.session, 40)}: la cerró Claude Code (${shown(x.reason, 40)}), quieta ${x.idleMin} min — claude respawn ${x.short}`).join('\n')}`;
+  const waited = (x) => (x.waited ? `, esperando ${shown(x.waited, 160)}` : ', sin anotar qué esperaba');
+  return `\n\nCerradas por Claude Code:\n${retired.map((x) => `- ${shown(x.session, 40)}: la cerró Claude Code (${shown(x.reason, 40)}), quieta ${x.idleMin} min${waited(x)} — claude respawn ${x.short}`).join('\n')}`;
 }
 
 // De prueba es la sesión que lanzó otra sesión: ninguna de las de verdad desciende de otra. El árbol de procesos sólo se lee si
