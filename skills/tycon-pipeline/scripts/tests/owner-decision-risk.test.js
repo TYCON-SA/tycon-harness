@@ -10,6 +10,8 @@
  * stable-data: escribe historias y repos en carpetas temporales; nunca toca el repo real.
  * Correr: node --test skills/tycon-pipeline/scripts/tests/owner-decision-risk.test.js
  */
+// sin el perfil del equipo: la prueba fija su ambiente (scripts/tests/lib/without-team-profile.js)
+require('../../../../scripts/tests/lib/without-team-profile.js');
 
 const { test } = require('node:test');
 const assert = require('node:assert');

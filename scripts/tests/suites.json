@@ -1828,6 +1828,12 @@
       "requiere": []
     },
     {
+      "__nota": "la comparación con main y la matriz del commit ubican los archivos de repos hermanos escritos como Repo/archivo, también en copias --wt: la copia ajena, el sufijo falseado y la carpeta suelta no cuentan. Repos de juguete, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/sibling-copies.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "lectores que leían mal o callaban: el grupo de rutas «(app)/» no es el prefijo del repo, el normalizador del despachador que no carga deja su línea, owner-away get muestra la marca sin confirmar. HOME de laboratorio, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/quiet-readers.test.js",
@@ -3262,6 +3268,12 @@
       "__nota": "mergear salteando la cola y la CI de main lo aprueba una persona (regla GIT-C5): el lector de lo que saltea (scripts/lib/ci-bypass.js), el freno de la sesión de verdad con una casa de juguete y la decisión de la ventana con un árbol de juguete. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/ci-bypass-guard.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "encolar o mergear un pedido de alguien de afuera del equipo lo aprueba el dueño (regla GIT-C7): el lector (scripts/lib/external-pr.js), el freno de la sesión de verdad con una casa de juguete y el cuadro de la firma. GitHub es un gh falso en el PATH. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/external-pr.test.js",
       "requiere": []
     },
     {

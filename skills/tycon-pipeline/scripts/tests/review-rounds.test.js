@@ -6,6 +6,8 @@
  *
  * Corre pipeline.js y marker.js de verdad sobre una corrida de juguete, con HOME temporal. 0 deps (node:test).
  */
+// sin el perfil del equipo: la prueba fija su ambiente (scripts/tests/lib/without-team-profile.js)
+require('../../../../scripts/tests/lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');

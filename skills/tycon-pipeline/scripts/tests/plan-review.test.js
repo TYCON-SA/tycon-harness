@@ -13,6 +13,8 @@
  * stable-data: las horas de los marcadores y las constancias son las de la corrida de la prueba; ninguna se compara con
  * un reloj fijo.
  */
+// sin el perfil del equipo: la prueba fija su ambiente (scripts/tests/lib/without-team-profile.js)
+require('../../../../scripts/tests/lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -23,8 +25,12 @@ const { spawnSync, execFileSync } = require('child_process');
 
 const SCRIPTS = path.resolve(__dirname, '..');
 const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');
-const MARKER = path.join(SCRIPTS, 'marker.js');
-const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
+// los guiones que la prueba lanza como procesos corren desde la copia del arnés, que no trae el perfil del equipo: en
+// el nocturno y en la validación del privado el árbol real lo trae encima, y TYCON_PROFILE=0 no apaga sus claves
+const { harnessCopy } = require('../../../../scripts/tests/lib/harness-copy.js');
+const COPIA = path.join(harnessCopy(), 'skills', 'tycon-pipeline', 'scripts');
+const MARKER = path.join(COPIA, 'marker.js');
+const PIPELINE = path.join(COPIA, 'pipeline.js');
 const GUION = path.join(SCRIPTS, 'adversarial-verify.workflow.js');
 const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
 const DS = require(path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js'));
@@ -455,7 +461,7 @@ test('ModoPlan_Veredictos (T4) @story-1.29 @ac-3', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wl-plan-'));
   try {
     const out = path.join(dir, 'resultado.json');
-    const wl = spawnSync(process.execPath, [path.join(SCRIPTS, 'workflow-lite.js'), GUION, '--args', JSON.stringify(argsDelPlan({ pedido: undefined })), '--out', out], { encoding: 'utf8' });
+    const wl = spawnSync(process.execPath, [path.join(COPIA, 'workflow-lite.js'), GUION, '--args', JSON.stringify(argsDelPlan({ pedido: undefined })), '--out', out], { encoding: 'utf8' });
     assert.strictEqual(wl.status, 3, `${wl.stdout}${wl.stderr}`);
     assert.deepStrictEqual([JSON.parse(fs.readFileSync(out, 'utf8')).modo, JSON.parse(fs.readFileSync(out, 'utf8')).veredicto], ['plan', 'sin-veredicto']);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }

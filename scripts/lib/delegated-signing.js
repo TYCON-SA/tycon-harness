@@ -26,6 +26,7 @@ const NUNCA_DELEGABLES = new Map([
   ['designation-set', 'nombrar o retirar a la coordinadora lo firma el dueño con su click en la pestaña de esa sesión: no se delega'],
   ['designation-withdraw', 'nombrar o retirar a la coordinadora lo firma el dueño con su click en la pestaña de esa sesión: no se delega'],
   ['escape:merge-bypass', 'mergear salteando la cola y la CI de main es sólo del dueño: no se delega'],
+  ['escape:external-pr', 'encolar o mergear un pedido de alguien de afuera del equipo es sólo del dueño: no se delega'],
   ['adhoc-lane:datos', 'dejar pasar un cambio de datos o de permisos sin historia es sólo del dueño: no se delega'],
 ]);
 
