@@ -526,3 +526,30 @@ test('T17 ConjuntoDeReglas_ElCuadroDiceQueLoReemplazaOLoBorra', (t) => {
   // saltear la cola sigue con su cuadro de siempre
   assert.match(cuadroDe(casa, 'gh pr merge 5 --admin'), /lo que la CI frenaba llega a main/);
 });
+
+// El cuadro lee el archivo de --input sin colgarse ni mentir (pase adversarial del defecto 23): una tubería o un
+// dispositivo no se leen, la tilde es la casa, y con dos conjuntos reemplazados dice lo que manda cada uno.
+test('T18 CuadroDelConjunto_LeeElCuerpoSinColgarseNiMentir', (t) => {
+  const FUENTES = path.join(RAIZ, 'scripts', 'lib', 'signature-sources.js');
+  const casa = casaNueva(t);
+  const partes = (comando) => require(FUENTES).partesDe({ firma: FIRMA, comando, cwd: casa });
+  if (process.platform !== 'win32') {
+    const tubo = path.join(casa, 'tubo');
+    assert.strictEqual(spawnSync('mkfifo', [tubo]).status, 0);
+    // en otro proceso y con tope: si la lectura se cuelga, la prueba falla en vez de colgarse
+    const guion = `const f = require(${JSON.stringify(FUENTES)});
+      process.stdout.write(f.partesDe({ firma: ${JSON.stringify(FIRMA)}, comando: ${JSON.stringify(`gh api -X PUT repos/o/r/rulesets/5 --input ${tubo}`)}, cwd: '/' }).queHace.join('|'));`;
+    const r = spawnSync(process.execPath, ['-e', guion], { encoding: 'utf8', timeout: 5000 });
+    assert.strictEqual(r.status, 0, `se colgó o se cayó con una tubería: ${r.signal || r.stderr}`);
+    assert.match(r.stdout, /no se ve qué manda \(tubo no es un archivo común\)/);
+  }
+  // la tilde: el archivo en la casa de quien corre la prueba
+  const enLaCasa = path.join(os.homedir(), `.ci-bypass-prueba-${process.pid}.json`);
+  fs.writeFileSync(enLaCasa, JSON.stringify({ rules: [{ type: 'deletion' }] }));
+  t.after(() => fs.rmSync(enLaCasa, { force: true }));
+  assert.match(partes(`gh api -X PUT repos/o/r/rulesets/5 --input ~/${path.basename(enLaCasa)}`).queHace.join('|'), /lo que manda: rules\[deletion\]/);
+  // dos conjuntos reemplazados: lo que manda cada uno, con su número
+  fs.writeFileSync(path.join(casa, 'b.json'), JSON.stringify({ rules: [{ type: 'deletion' }] }));
+  const dos = partes('gh api -X PUT repos/o/r/rulesets/12 -f name=a; gh api -X PUT repos/o/r/rulesets/13 --input b.json').queHace.join('|');
+  assert.match(dos, /lo que manda: al 12: name; al 13: rules\[deletion\]/);
+});

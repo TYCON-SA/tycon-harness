@@ -639,8 +639,13 @@ const CLAVES_A_LA_VISTA = 12;
 /** Las claves de primer nivel del cuerpo JSON de `--input` (de una regla, su tipo), o `{ error }` si no se lee. */
 function clavesDelCuerpo(archivo, cwd) {
   try {
-    const ruta = path.resolve(cwd || process.cwd(), archivo);
-    if (fs.statSync(ruta).size > TOPE_DEL_CUERPO) return { error: 'es demasiado grande para leerlo' };
+    // la terminal expande la tilde antes de correr el comando: el cuadro lee el mismo archivo
+    const tilde = /^~(?=[\\/]|$)/.test(archivo) ? require('os').homedir() + archivo.slice(1) : archivo;
+    const ruta = path.resolve(cwd || process.cwd(), tilde);
+    const st = fs.statSync(ruta);
+    // un dispositivo o una tubería dice tamaño 0 y su lectura no termina: el cuadro no espera
+    if (!st.isFile()) return { error: 'no es un archivo común' };
+    if (st.size > TOPE_DEL_CUERPO) return { error: 'es demasiado grande para leerlo' };
     const cuerpo = JSON.parse(fs.readFileSync(ruta, 'utf8'));
     if (!cuerpo || typeof cuerpo !== 'object' || Array.isArray(cuerpo)) return { error: 'no es un objeto JSON' };
     const claves = [];
@@ -682,8 +687,11 @@ function deSaltearLaCola(comando, cwd) {
   const queHace = [];
   for (const h of hs) if (!queHace.includes(h.motivo)) queHace.push(h.motivo);
   const corto = require('./owner-approvals.js').sinRutas(String(comando).replace(/\s+/g, ' ').trim());
-  const reemplaza = conjuntos.find((h) => h.accion === 'replace');
-  queHace.push(`${reemplaza ? `lo que manda: ${loQueManda(reemplaza.manda, cwd)}; ` : ''}el comando: ${corto}`);
+  // lo que manda cada conjunto que se reemplaza, con su número cuando son varios
+  const reemplazos = conjuntos.filter((h) => h.accion === 'replace');
+  const reemplaza = reemplazos.length > 0;
+  const mandas = reemplazos.map((h) => `${reemplazos.length > 1 ? `al ${h.conjunto}: ` : ''}${loQueManda(h.manda, cwd)}`);
+  queHace.push(`${reemplaza ? `lo que manda: ${mandas.join('; ')}; ` : ''}el comando: ${corto}`);
   // con otra forma en el mismo comando (un merge con --admin), su consecuencia de siempre también vale: no se reemplaza
   const soloReglas = conjuntos.length === hs.length;
   return { ...(soloReglas ? { que: 'cambiar o borrar un conjunto de reglas de la rama', siSaleMal: reemplaza ? SI_REEMPLAZA : SI_BORRA } : {}),
