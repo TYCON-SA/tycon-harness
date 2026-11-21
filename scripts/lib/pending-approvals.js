@@ -44,8 +44,9 @@ const FIRMA = 'pending-approval';
 const FIRMADA = `${FIRMA}-signed`;
 // `click` y `mensaje`: la aprobación explícita de la persona en una pestaña sin permisos, un click en el cuadro de
 // opciones o su «aprobado» escrito (owner-approvals.js). `avisado`: la rutina de una pestaña sin permisos, hecha sin firma
-// y avisada a la persona (owner-window.js `RUTINA_SIN_PERMISOS`)
-const VIAS = ['delegacion', 'ventana', 'terminal', 'click', 'mensaje', 'avisado'];
+// y avisada a la persona (owner-window.js `RUTINA_SIN_PERMISOS`). `automatica`: la firma de trámite, que da el arnés sin
+// persona (automatic-signing.js); su renglón firmado lleva esa vía
+const VIAS = ['delegacion', 'ventana', 'terminal', 'click', 'mensaje', 'avisado', 'automatica'];
 // el código de un pendiente: lo que va entre corchetes al principio del renglón
 const CODIGO = /^[A-Za-z0-9._-]+$/;
 // una casilla abierta de primer nivel, con cualquiera de las tres viñetas de markdown; con dos espacios o más adelante es
@@ -152,6 +153,13 @@ function revisar({ todo, registro }) {
   return { ok: !faltan.length && !sinCodigo.length && !rotas.length && !repetidos.length, faltan, rotas, sinCodigo, repetidos };
 }
 
+/**
+ * La vía de la línea de una aprobación, de lo que devolvió la firma (owner-window.js `exigir`). La firma de trámite vuelve
+ * como la delegación, pero su renglón firmado dice `automatica`: la línea lleva la vía del renglón, que es la que busca
+ * el control del commit.
+ */
+const viaDeLaFirma = (r) => (r && r.automatica ? 'automatica' : r && r.via);
+
 /** ¿El registro del arnés tiene el renglón firmado de esta línea? */
 function firmadaEnElRegistro(l, renglones) {
   return renglones.some((g) => g && g.name === FIRMADA && g.status === 'ok' && g.via === l.via
@@ -180,7 +188,16 @@ function renglonesDeFirma(texto) {
  * revisó en su rama, así que no es nuevo. Una línea del registro que ya estaba en otro padre no se mira, y un pendiente
  * abierto allí con su línea en ese mismo registro cuenta como abierto antes.
  */
-function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues = '', sinFirmaLocal = false, otrosPadres = [] }) {
+function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues = '', sinFirmaLocal = false, otrosPadres = [], deTramite }) {
+  // una línea por la firma de trámite vale sólo si abrir un pendiente sigue siendo de trámite en el perfil del equipo:
+  // si el perfil la pasó a «sólo del dueño», esa línea pide la firma de una persona. Se pregunta una vez, al verla
+  let tramite = null;
+  const esDeTramite = () => {
+    if (!tramite) {
+      try { tramite = deTramite ? deTramite() : require('./automatic-signing.js').esDeTramite({ firma: FIRMA }); } catch (e) { tramite = { ok: false, motivo: `no pude leer el perfil del equipo (${e.message})` }; }
+    }
+    return tramite;
+  };
   const previas = new Set(leerRegistro(antes).lineas.map((x) => x.texto));
   const nacimiento = !leerRegistro(antes).lineas.length;
   const abiertosAntes = new Set(pendientesAbiertos(todoAntes).map((p) => p.clave));
@@ -202,6 +219,7 @@ function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues 
       if (!nacimiento) malas.push({ id, motivo: 'es una línea de base nueva, y la base sólo se achica' });
       else if (!abiertosAntes.has(id)) malas.push({ id, motivo: 'es una línea de base para un pendiente que no estaba abierto antes de este commit' });
     } else if (!sinFirmaLocal && !firmadaEnElRegistro(l, renglones)) malas.push({ id, motivo: `no tiene su renglón ${FIRMADA} en el registro del arnés de esta cuenta (no se firmó en esta máquina)` });
+    else if (!sinFirmaLocal && l.via === 'automatica' && !esDeTramite().ok) malas.push({ id, motivo: `se aprobó por la firma de trámite, y abrir un pendiente ya no es de trámite (${esDeTramite().motivo}): lo firma una persona` });
     else firmadasNuevas.add(id);
   }
   for (const p of pendientesAbiertos(todoDespues)) {
@@ -237,6 +255,6 @@ function comandos(id, repo) {
 }
 
 module.exports = {
-  TODO, RECORD, RECORD_DIR, FIRMA, FIRMADA, VIAS, archivoDe, esArchivoDeLaCarpeta, unirRegistro, registroDelDisco, claveSinCodigo, pendientesAbiertos, leerRegistro, huella, lineaNueva, motivoDe,
+  TODO, RECORD, RECORD_DIR, FIRMA, FIRMADA, VIAS, viaDeLaFirma, archivoDe, esArchivoDeLaCarpeta, unirRegistro, registroDelDisco, claveSinCodigo, pendientesAbiertos, leerRegistro, huella, lineaNueva, motivoDe,
   revisar, revisarNuevas, renglonesDeFirma, firmadaEnElRegistro, registroDelNacimiento, comandos,
 };

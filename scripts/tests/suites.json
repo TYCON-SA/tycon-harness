@@ -2127,6 +2127,12 @@
       "requiere": []
     },
     {
+      "__nota": "el candado del instalador no vence por edad mientras su dueño vive; con el dueño vivo, a la hora. Evalúa sólo _lock_stale, sin correr el instalador.",
+      "raiz": "arnes",
+      "ruta": "tests/install-lock-owner.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/guard-update-notice.test.sh",
       "requiere": []
