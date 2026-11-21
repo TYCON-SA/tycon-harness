@@ -31,7 +31,8 @@
  *              "repo": <raíz del repo|null>, "story": <id de story|null>}.
  * El repo y la story los resuelve lib/repo-attrib.js (marker de la sesión → raíz de git del cwd).
  * Lo lee `pipeline.js advisor-runs`, que contesta "¿corrieron los revisores de la story X?".
- * Exit 0 SIEMPRE (advisory — nunca bloquea un spawn).
+ * Exit 0 salvo un caso: al tope de vueltas de revisores, un revisor del set fuera de la vuelta abierta sale 2 con el
+ * cartel del tope (frenoDelTope). Todo lo demás es advisory y nunca bloquea un spawn.
  *
  * Env:
  *   TYCON_ADHOC_SPAWN_WARN=<n>   umbral de aviso por fase (default 5; 0 = desactiva)
@@ -427,6 +428,46 @@ function recordLaunch(o) {
   return { sessionId, cwd, logPath, repo, story, ok: !lineError, ...(lineError ? { error: lineError } : {}) };
 }
 
+/**
+ * ¿Se niega este lanzamiento por el tope de vueltas? El mensaje (el cartel del tope) o null. Se niega un revisor del set
+ * (el núcleo y los paquetes; no el validador, ni los chequeadores de otras etapas, ni la exploración libre) cuando la
+ * corrida de la sesión ya llegó al tope y el revisor no es de la vuelta abierta, o ya se lanzó en ella. Un fallo propio deja
+ * pasar: el gancho no rompe un lanzamiento por un error suyo.
+ */
+function frenoDelTope({ sessionId, advisor }) {
+  try {
+    const { esRevisor } = require('./lib/late-snapshot.js');
+    if (!esRevisor(advisor)) return null;
+    const key = sessionIdFileKey(sessionId);
+    const m = require('./lib/repo-attrib.js').readMarkerFile(key);
+    if (!m || typeof m.storyPath !== 'string' || !m.storyPath || !m.repoPath) return null;
+    const P = require('./pipeline.js');
+    if (!P.revisoresDelCatalogo().has(advisor)) return null;
+    const rr = require('./lib/review-rounds.js');
+    const repo = path.resolve(m.repoPath);
+    const n = rr.vueltas(m);
+    if (n < rr.tope({ repo }).value) return null;
+    // la vuelta abierta: un revisor de su set que todavía no se lanzó en ella es de esa vuelta, no de una más
+    let parsed = [];
+    try {
+      parsed = fs.readFileSync(path.join(stateDirOf(os.homedir()), 'advisor-runs', `${key}.jsonl`), 'utf8')
+        .split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
+    } catch { parsed = []; }
+    const idx = require('./lib/advisor-round.js').inicioDeLaRonda(parsed);
+    if (idx >= 0 && Array.isArray(parsed[idx].expected) && parsed[idx].expected.includes(advisor)
+      && !parsed.slice(idx + 1).some((d) => d && d.advisor === advisor)) return null;
+    const storyAbs = path.isAbsolute(m.storyPath) ? m.storyPath : path.join(repo, m.storyPath);
+    const storyId = String(m.storyId || '');
+    const runDir = storyId ? P.resolveRunDir(repo, storyId, false, storyAbs, { marker: m }) : null;
+    const cartel = P.topeDeVueltas({ args: {}, iter: n + 1, rr, runDir, repoAbs: repo, storyId });
+    if (!cartel) return null;
+    const stateDir = stateDirOf(os.homedir());
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: key, name: 'review-cap-launch-denied', story: storyId || null, iter: n + 1, advisor })}\n`);
+    return `🛑 No lanzo ${advisor}: la corrida ya hizo ${n} vueltas de revisores y no es de la vuelta abierta. Lanzarlo a mano sería una vuelta más.\n${cartel}`;
+  } catch { return null; }
+}
+
 function main() {
   let event;
   try {
@@ -475,6 +516,12 @@ function main() {
     }
     return;
   }
+
+  // ── El tope de vueltas también vale a mano ──
+  // Al tope, un revisor del set que no es de la vuelta abierta (o que ya se lanzó en ella) se niega con el cartel del
+  // tope: si no, lanzarlo con la herramienta de agentes sacaba una vuelta más sin pasar por el guion y sin foto.
+  const negado = frenoDelTope({ sessionId: event.session_id, advisor });
+  if (negado) return { negado };
 
   // el registro de antes de este lanzamiento: dice si el pedido trae su lectura curada (y entonces no explora)
   const fileKey = sessionIdFileKey(event.session_id);
@@ -597,9 +644,14 @@ function main() {
   } catch { /* nunca romper el spawn */ }
 }
 
-module.exports = { recordLaunch, curatedReading, phaseStart };
+module.exports = { recordLaunch, curatedReading, phaseStart, frenoDelTope };
 
 if (require.main === module) {
-  try { main(); } catch { /* fail-safe */ }
+  let r = null;
+  try { r = main(); } catch { /* fail-safe */ }
+  if (r && r.negado) {
+    process.stderr.write(r.negado);
+    process.exit(2);
+  }
   process.exit(0);
 }

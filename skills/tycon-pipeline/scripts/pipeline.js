@@ -1318,6 +1318,12 @@ function revisoresDelNucleo() {
     ...NECESITAN_STORY_NUCLEO,
   ]);
 }
+/** Los revisores que el set de una vuelta puede traer: los del núcleo y los de los paquetes instalados (si cargan). */
+function revisoresDelCatalogo() {
+  const nombres = new Set(coreReviewerNames());
+  try { for (const p of paquetesInstalados()) for (const r of p.revisores) nombres.add(r.agente); } catch { /* paquete roto: quedan los del núcleo */ }
+  return nombres;
+}
 function paquetesInstalados() {
   return packsLib.cargarPaquetes({ nucleo: revisoresDelNucleo(), banderas: BANDERAS_DETECCION });
 }
@@ -6555,6 +6561,39 @@ function emptyWorkGate(args) {
     '   Causa típica: algo apartó los cambios mientras tanto (un `git stash` de fondo, un checkout). Recuperalos y volvé a pedir la vuelta.\n';
 }
 
+// Las corridas abiertas de OTRAS sesiones en el repo (lib/open-runs.js: el último evento de cada sesión es su apertura):
+// `{ lista }` o `{ error }` si el registro existe y no se puede leer.
+function corridasAbiertasDeOtras(repoAbs) {
+  const or = require('./lib/open-runs.js');
+  const r = or.leerEventos(os.homedir());
+  if (!r.ok) return r.ausente ? { lista: [] } : { error: r.error };
+  const ultimo = new Map();
+  for (const e of r.eventos) ultimo.set(e.sesion, e);
+  const yo = resolveSessionId();
+  const lista = [...ultimo.values()].filter((e) => e.name === 'run-open' && e.sesion !== yo
+    && ((typeof e.repo === 'string' && or.dentroDe(e.repo, repoAbs) && or.dentroDe(repoAbs, e.repo))
+      || (typeof e.runDir === 'string' && or.dentroDe(e.runDir, repoAbs))));
+  return { lista };
+}
+
+// La hora (ms) en que se escribió un archivo, o null.
+function horaDe(file) {
+  try { return fs.statSync(file).mtimeMs; } catch { return null; }
+}
+
+// ¿Desde `desde` (ms) se lanzó algún revisor en esta sesión o cambió algún archivo de la corrida? Sin hora, no.
+function movidaDesde(desde, marcador) {
+  if (!desde) return false;
+  if (Object.values((marcador && marcador.filesTouchedAt) || {}).some((v) => v && Number(v.ts) > desde)) return true;
+  let lineas = [];
+  try { lineas = fs.readFileSync(sessionLogPath(), 'utf8').split('\n'); } catch { return false; }
+  const { esRevisor } = require('./lib/late-snapshot.js');
+  return lineas.some((l) => {
+    if (!l.trim()) return false;
+    try { const d = JSON.parse(l); return esRevisor(d.advisor) && Date.parse(d.ts) > desde; } catch { return false; }
+  });
+}
+
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
 // Si sigue, anota la vuelta servida en la carpeta de la corrida (rethink/served.json). La corrida se busca como en el
 // resto del pipeline (`resolveRunDir`); sin story o sin carpeta no hay nota posible. Ante la duda, frena.
@@ -6586,6 +6625,19 @@ function rethinkGate(args) {
   // El freno es de las corridas del pipeline: hay corrida si el marcador trae story, o si --story resuelve una carpeta de
   // corrida. Fuera de una corrida no hay vueltas que contar: --iter ausente, 1 o 2 pasa como siempre; desde la tercera (la que pide nota) frena.
   const marcadorConStory = !!(marcador && typeof marcador.storyPath === 'string' && marcador.storyPath);
+  // Sin el marcador de una corrida, el pedido no usa la cuenta de vueltas de ninguna: si el repo tiene una corrida abierta
+  // de otra sesión, la vuelta se pide desde esa sesión. Si no, otra sesión, la variable de sesión cambiada en el comando o
+  // una copia de la historia con otro número sacaban el set completo de una corrida al tope.
+  if (!marcadorConStory) {
+    const ajenas = corridasAbiertasDeOtras(repoAbs);
+    if (ajenas.error) {
+      return `🛑 No pude leer el registro de corridas abiertas (${ajenas.error}): sin él no sé si ${repoAbs} tiene una corrida de otra sesión, y ante la duda no devuelvo el set.\n`;
+    }
+    if (ajenas.lista.length) {
+      const nombradas = ajenas.lista.map((e) => `sesión ${e.sesion}, story ${e.story}`).join('; ');
+      return `🛑 ${repoAbs} tiene una corrida abierta de otra sesión (${nombradas}) y esta sesión no tiene el marcador de esa corrida: sus vueltas de revisores las cuenta su marcador, y desde acá no se ven. Pedilo desde la sesión de la corrida.\n`;
+    }
+  }
   if (!marcadorConStory && !propia) {
     // el tope vale también fuera de una corrida (con tope 1, la vuelta 2 no pasa)
     const iterSin = Math.max(Number.isInteger(declarada) ? declarada : 0, delMarcador);
@@ -6611,14 +6663,23 @@ function rethinkGate(args) {
   if (!servidas.ok) {
     return `🛑 El registro de vueltas servidas de la corrida (${rt.servedPath(runDir)}) existe y no se puede leer: ${servidas.reason}. Sin él no sé cuántas vueltas de revisores lleva, y ante la duda no devuelvo el set. Corregilo o borralo.\n`;
   }
+  // la copia de fuera del repo: borrar o achicar served.json no baja la cuenta
+  const espejo = rt.readServedMirror({ stateDir: stateDirOf(os.homedir()), runDir });
+  if (!espejo.ok) {
+    return `🛑 El registro de vueltas servidas de la carpeta de estado (gates.log) existe y no se puede leer: ${espejo.reason}. Sin él no sé cuántas vueltas de revisores lleva la corrida, y ante la duda no devuelvo el set.\n`;
+  }
+  const ultima = Math.max(servidas.last, espejo.last);
   const pedida = Math.max(Number.isInteger(declarada) ? declarada : 0, delMarcador);
   // Una vuelta es un número de iteración que llegó a lanzar revisores (la foto que el arnés toma al lanzar el último).
   // Pedir de nuevo el set de la última vuelta servida, sin que se haya lanzado, es la MISMA vuelta; con sus revisores
-  // lanzados, pedirla otra vez es una vuelta nueva: max(declarada, marcador, última servida + 1). Sin marcador con la story
-  // no hay fotos que mirar: ahí cada pedido es una vuelta nueva, para que repetir no esquive la nota.
+  // lanzados, pedirla otra vez es una vuelta nueva: max(declarada, marcador, última servida + 1). También es nueva si desde
+  // que se sirvió se lanzó algún revisor o cambió algún archivo: si no, dejar un revisor sin lanzar repetía la vuelta con
+  // arreglos en el medio. Sin marcador con la story no hay fotos que mirar: ahí cada pedido es una vuelta nueva, para que
+  // repetir no esquive la nota.
   const rr = require('./lib/review-rounds.js');
-  const ultimaLanzada = servidas.last > 0 && (!marcadorConStory || rr.lanzada(marcador, servidas.last));
-  const iter = servidas.last > 0 ? Math.max(pedida, ultimaLanzada ? servidas.last + 1 : servidas.last) : pedida;
+  const servidaEn = espejo.last === ultima && espejo.ts ? espejo.ts : (runDir ? horaDe(rt.servedPath(runDir)) : null);
+  const ultimaLanzada = ultima > 0 && (!marcadorConStory || rr.lanzada(marcador, ultima) || movidaDesde(servidaEn, marcador));
+  const iter = ultima > 0 ? Math.max(pedida, ultimaLanzada ? ultima + 1 : ultima) : pedida;
   // El tope de vueltas: más allá no hay otra vuelta (topeDeVueltas dice qué hacer con lo que quedó abierto).
   const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId });
   if (bloqueoDelTope) return bloqueoDelTope;
@@ -6627,7 +6688,7 @@ function rethinkGate(args) {
     if (iter !== declarada) {
       dice.push(`Pediste la vuelta ${args.iter === undefined ? '(sin --iter)' : declarada}, pero ${iter === pedida
         ? `el marcador de la sesión lleva ${iter - 1} vuelta(s) cerrada(s)`
-        : `ya se sirvió la vuelta ${servidas.last} en esta corrida`}: vale la mayor, la ${iter}.`);
+        : `ya se sirvió la vuelta ${ultima} en esta corrida`}: vale la mayor, la ${iter}.`);
     }
     const diceAmbas = dice.length ? `\n${dice.join(' ')}` : '';
     const leida = rt.readNote(runDir, iter);
@@ -6646,6 +6707,8 @@ function rethinkGate(args) {
   if (donde) {
     const anotada = rt.recordServed(donde, iter);
     if (!anotada.ok) return `🛑 No pude anotar la vuelta ${iter} en la carpeta de la corrida (${rt.servedPath(donde)}): ${anotada.reason}. Sin ese registro la próxima vuelta no se puede contar, y ante la duda no devuelvo el set.\n`;
+    const copia = rt.recordServedMirror({ stateDir: stateDirOf(os.homedir()), runDir: donde, iter, story: storyId, sessionId: resolveSessionId() || null });
+    if (!copia.ok) return `🛑 No pude anotar la vuelta ${iter} en el gates.log de la carpeta de estado: ${copia.reason}. Sin esa copia, borrar served.json bajaría la cuenta, y ante la duda no devuelvo el set.\n`;
   } else {
     // Sin carpeta de corrida no hay dónde contar las vueltas: un `--iter 1` repetido podría ser la tercera. Ante la duda,
     // no se devuelve el set.
@@ -8888,6 +8951,8 @@ function main() {
 // más evadibles/sutiles tienen tests). require() NO ejecuta main().
 module.exports = {
   matchGlob,
+  // el cartel del tope de vueltas: lo muestra también el gancho que niega lanzar revisores a mano al tope
+  topeDeVueltas, revisoresDelCatalogo,
   // los revisores de un crítico arreglado sin confirmar, que vuelven a la vuelta siguiente
   revisoresPorConfirmar,
   // La configuración `models` de la organización (la usa también on-advisor-run.js)

@@ -1710,6 +1710,12 @@
       "requiere": []
     },
     {
+      "__nota": "los huecos del tope de vueltas: otra sesión o sin marcador, served.json borrado, revisores lanzados a mano al tope y la misma vuelta pedida otra vez con revisores lanzados o archivos cambiados.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/review-cap-holes.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.293: los renglones de una corrida (uno por paso y el final), lo que imprimen complete-step y clear, el pedido por marker.js pr y el aviso del cierre contra un Telegram falso.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-lines.test.js",

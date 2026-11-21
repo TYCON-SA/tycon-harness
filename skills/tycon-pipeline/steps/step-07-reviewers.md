@@ -577,8 +577,11 @@ waiveados explícitamente por el user (con razón registrada — `had_override: 
 **El tope de vueltas** (`review.max_rounds`: 3 de fábrica, el mismo para la revisión del plan y la del código; la
 organización lo cambia en el sitio, en Configuración; el repo, en `.tycon/advisors.yaml` commiteado; no hay ajuste por
 máquina: un `review-max-rounds.json` viejo se ignora y se dice una vez). Una vuelta es un número de
-iteración que llegó a lanzar revisores: pedir dos veces el set de la misma vuelta, sin lanzarla, no suma. Más allá del
-tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
+iteración que llegó a lanzar revisores: pedir dos veces el set de la misma vuelta, sin lanzarla, no suma; si en el medio
+se lanzó algún revisor o cambió algún archivo, sí suma. La vuelta se pide desde la sesión de la corrida: sin su marcador,
+con una corrida abierta de otra sesión en el repo, el set no sale. Más allá del tope, `smart-reloop` no devuelve el set,
+el gancho de lanzamientos niega un revisor del set lanzado a mano fuera de la vuelta abierta, y los dos dicen qué quedó
+abierto:
 - **un crítico de seguridad o de datos** (reglas SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE, y las que
   sume la organización; también si lo confirmó el pase adversarial): lo decide una persona. Mostrale el resumen y
   preguntale: abrir una historia de arreglo (`followup_of:` esta historia) y eximirlo nombrándola, o eximirlo sin
