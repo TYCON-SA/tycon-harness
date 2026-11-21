@@ -597,7 +597,7 @@ function shimText(entry, oldAbs, newAbs, root) {
       `  if (/^true$/i.test(process.env.TF_BUILD || '')) process.stderr.write(${JSON.stringify(`${warn}\n`)});`,
       '})();',
       'if (require.main === module) {',
-      "  const r = require('child_process').spawnSync(process.execPath, [...process.execArgv, target, ...process.argv.slice(2)], { stdio: 'inherit' });",
+      "  const r = require('child_process').spawnSync(process.execPath, [...process.execArgv, target, ...process.argv.slice(2)], { stdio: 'inherit', windowsHide: true });",
       "  if (r.error) { process.stderr.write(`no pude correr ${target}: ${r.error.message}\\n`); process.exit(1); }",
       '  if (r.signal) process.kill(process.pid, r.signal);',
       '  process.exitCode = r.status === null ? 1 : r.status;',

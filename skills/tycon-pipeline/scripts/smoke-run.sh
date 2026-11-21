@@ -186,14 +186,14 @@ case "$DECIDE_RC" in
   2) exit 2 ;;
   *)
     if [ "$COMPARE" = 1 ]; then
-      echo "smoke-run.sh: no pude armar la corrida aislada ($ISOLATED_JS no está o no contestó): un humo comparado no corre con la casa real — no se corre." >&2
+      echo "smoke-run.sh: no pude armar la ejecución aislada ($ISOLATED_JS no está o no contestó): un humo comparado no corre con la casa real — no se corre." >&2
       exit 2
     fi
     LAB_NOMBRADO=0
     case " $* " in *.advisors/dod-runtime/*|*" /tmp/"*|*" /private/tmp/"*|*/var/folders/*) LAB_NOMBRADO=1 ;; esac
     if [ -n "${TMPDIR:-}" ]; then case " $* " in *"${TMPDIR%/}"*) LAB_NOMBRADO=1 ;; esac; fi
     if [ "$LAB_NOMBRADO" = 1 ]; then
-      echo "smoke-run.sh: no pude armar la corrida aislada ($ISOLATED_JS no está o no contestó) y el comando nombra una carpeta de laboratorio: no corre con la casa real — no se corre." >&2
+      echo "smoke-run.sh: no pude armar la ejecución aislada ($ISOLATED_JS no está o no contestó) y el comando nombra una carpeta de laboratorio: no corre con la casa real — no se corre." >&2
       exit 2
     fi
     echo "[smoke-run] ⚠️ no pude decidir si el humo es de laboratorio ($ISOLATED_JS no está o no contestó): corre con la casa de siempre." >&2 ;;

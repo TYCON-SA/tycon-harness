@@ -2620,18 +2620,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const isAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 
 // El proceso del candado contesta en 1 s, con su pid.
-function answers(lock) {
-  return new Promise((resolve) => {
-    if (!lock || !Number.isInteger(lock.pid) || !Number.isInteger(lock.port) || !isAlive(lock.pid)) { resolve(false); return; }
-    const req = require('http').get({ host: '127.0.0.1', port: lock.port, path: `/health?t=${lock.token}`, headers: { host: `127.0.0.1:${lock.port}` }, timeout: 1000 }, (res) => {
-      let body = '';
-      res.on('data', (d) => { body += d; });
-      res.on('end', () => { try { resolve(res.statusCode === 200 && JSON.parse(body).pid === lock.pid); } catch { resolve(false); } });
-    });
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.on('error', () => resolve(false));
-  });
-}
+const answers = (lock) => require('./office/site-link.js').lockOwner(lock, 1000).then((o) => o === 'office');
 
 /**
  * La oficina viva: reusa el proceso local si contesta o arranca uno aparte, y devuelve su dirección. Dos aperturas a la

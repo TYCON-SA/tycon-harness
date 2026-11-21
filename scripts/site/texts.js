@@ -1683,6 +1683,8 @@ const TEXTOS = {
   'pantalla.revisionSemanal': { es: 'Revisión de la semana', en: 'Weekly review' },
   'pantalla.revisionSemanalAyuda': { es: 'Una vez por semana un agente lee los trabajos sumados de los siete días y propone un control por cada causa que se repite. Nunca aplica nada: las propuestas las decide una persona.', en: 'Once a week an agent reads the merged work of the last seven days and proposes a control for each cause that repeats. It never applies anything: a person decides each proposal.' },
   'pantalla.revisionSemanalCampo': { es: 'Prendida', en: 'On' },
+  'pantalla.avisoDeEsperaCampo': { es: 'si está prendido', en: 'whether it is on' },
+  'pantalla.revisionSemanalSiPrendida': { es: 'si está prendida', en: 'whether it is on' },
   'pantalla.revisionSemanalDeFabrica': { es: 'De fábrica (prendida)', en: 'Default (on)' },
   'pantalla.revisionSemanalPrendida': { es: 'Prendida', en: 'On' },
   'pantalla.revisionSemanalApagada': { es: 'Apagada', en: 'Off' },

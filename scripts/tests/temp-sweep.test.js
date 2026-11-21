@@ -33,6 +33,8 @@ const { spawn, spawnSync } = require('child_process');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'scripts', 'hooks', 'temp-sweep.js');
+// en una máquina cargada `lsof` tarda más que los 5 s de fábrica: la prueba mide el barrido, no la máquina
+process.env.TYCON_TEMP_SWEEP_LIVE_WAIT_SECONDS = '60';
 const { stateDir } = require(path.join(REPO, 'scripts', 'setup', 'harness', 'tycon-home.js'));
 const { sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine } = require(HOOK);
 
