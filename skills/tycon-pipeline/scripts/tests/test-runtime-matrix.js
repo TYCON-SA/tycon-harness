@@ -2419,6 +2419,40 @@ withWaiverLog(() => {
         && veredictos(rSin) === '1:RUNTIME 2:RUNTIME 3:RUNTIME' && !rSin.warnings.some((w) => /no pude leer lo que carga/.test(w)),
       JSON.stringify({ v: veredictos(r), avisos, w: r.warnings.slice(0, 4), sin: rSin.warnings.slice(0, 3) }));
   }
+  {
+    // las otras formas de cargar: `import … from`, `import()`, `require.resolve` y un `.ts` sin extensión en la carga
+    const vence = (carga, cambiado) => {
+      const l = labCarga(carga);
+      const destino = cambiado ? path.join(l.f.repo, cambiado) : l.cargado;
+      if (cambiado) { fs.writeFileSync(destino, 'export const x = 1;\n'); }
+      l.ahora(destino, 'module.exports = 2;\n');
+      return l.calcular();
+    };
+    const desdeImport = vence("import x from '../lib/x.js'");
+    const dinamico = vence("await import('../lib/x.js')");
+    const resuelto = vence("require.resolve('../lib/x.js')");
+    const ts = vence("import { x } from '../lib/y'", 'lib/y.ts');
+    // un `//` dentro de un texto no esconde la carga que sigue en el renglón; un import() no literal también se dice
+    const conBarras = labCarga("const u = 'a//b'; require(u)").calcular();
+    const importVariable = labCarga("const m = '../lib/x.js'; await import(m)").calcular();
+    // una suma de textos no es un literal; una comilla en una expresión regular no abre un texto
+    const suma = labCarga("const n = 'x'; require('../lib/' + n + '.js')").calcular();
+    const conRegex = labCarga("'a'.replace(/\"/g, 'b'); const u = \"http://x\"; require(u)").calcular();
+    // un comentario adentro de la llamada no la esconde; una llave antes del import tampoco; una carga comentada no carga
+    const comentarioAdentro = vence("require(/* la ayuda */ '../lib/x.js')");
+    const trasLlave = vence("if (1) {} import x from '../lib/x.js'");
+    const comentada = labCarga("// require('../lib/x.js')");
+    comentada.ahora(comentada.cargado, 'module.exports = 2;\n');
+    const rComentada = comentada.calcular();
+    const avisa = (r) => r.warnings.filter((w) => NO_PUDE.test(w)).length === 1;
+    check('Matriz_CargasPorImportYResolve_Vencen_YLasNoLiteralesSeDicen',
+      [desdeImport, dinamico, resuelto, ts, comentarioAdentro, trasLlave].every((r) => veredictos(r) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME')
+        && [conBarras, importVariable, suma, conRegex].every(avisa)
+        && veredictos(rComentada) === '1:RUNTIME 2:RUNTIME 3:RUNTIME',
+      JSON.stringify({ i: veredictos(desdeImport), d: veredictos(dinamico), r: veredictos(resuelto), ts: veredictos(ts),
+        ca: veredictos(comentarioAdentro), ll: veredictos(trasLlave), com: veredictos(rComentada),
+        barras: conBarras.warnings.slice(0, 3), iv: importVariable.warnings.slice(0, 3), suma: suma.warnings.slice(0, 3), rx: conRegex.warnings.slice(0, 3) }));
+  }
 }
 
 // La captura de un portón E2E vencido para un criterio no cuenta para ese criterio: la captura es evidencia del mismo

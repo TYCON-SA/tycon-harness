@@ -7237,7 +7237,7 @@ function cmdApprovePending(argv) {
   if (r.codigo !== 0) { console.error(`🔒 marker.js approve-pending: no se aprobó ${id} — ${r.motivo}`); process.exit(r.codigo); }
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
   const q = r.via === 'terminal' ? { tipo: 'manual', quien: persona } : quienFirmo(r, persona);
-  const escrita = { ...linea, via: r.via, quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
+  const escrita = { ...linea, via: PA.viaDeLaFirma(r), quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
   // cada aprobación en su archivo: dos ramas que aprueban a la vez no chocan en el merge
   const archivo = PA.archivoDe(escrita);
   try {

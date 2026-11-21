@@ -67,7 +67,9 @@ function main() {
   const { input, problem } = readStdin();
   const cwd = input.cwd || process.cwd();
   const conSesion = Boolean(input.session_id);
-  const sid = String(input.session_id || '_nosession').replace(/[/\\]/g, '_');
+  // un subagente comparte la sesión con su madre: lo que se le dijo a él no está en el contexto de ella, y anota aparte
+  const agente = typeof input.agent_id === 'string' && input.agent_id ? `--${input.agent_id}` : '';
+  const sid = `${input.session_id || '_nosession'}${agente}`.replace(/[/\\]/g, '_');
   const lib = require(path.join(__dirname, '..', 'lib', 'extension-notices.js'));
   const comando = EVENTOS_DE_COMANDO.includes(input.hook_event_name);
   enComando = comando;
