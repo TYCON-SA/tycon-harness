@@ -288,11 +288,13 @@ function argumentosDificiles({ dir, W, rec }) {
 
 // Los pedidos del arreglo rápido de las sondas, completos como los pide `marker.js adhoc set` (motivo, «datos» y la lista
 // de archivos): sin algo que exige, el comando sale 2 antes de la ventana y la sonda da un hallazgo que no midió nada.
-// La prueba de que llegan a la firma está en scripts/tests/windows-probe-adhoc.test.js.
+// La prueba de que llegan a la firma está en scripts/tests/windows-probe-adhoc.test.js. Las sesiones de las sondas no
+// tienen carpeta conocida: `--repo .` ancla la lista en la carpeta donde corre la sonda (la del repo de juguete); sin
+// eso, un pedido con --for-session frena antes de la ventana.
 const ADHOC_SONDAS = {
-  agente: ['adhoc', 'set', '--reason', 'sonda de la ventana', '--data', 'sin-cambio', '--file', 'regla.txt', '--terminal', '--for-session', 'waiver-agente'],
-  json: ['adhoc', 'set', '{"reason":"sonda de la ventana","datos":"sin-cambio","allowedFiles":["regla.txt"],"maxFiles":3}', '--terminal', '--for-session', 'waiver-adhoc'],
-  banderas: ['adhoc', 'set', '--reason', 'sonda de la ventana', '--data', 'sin-cambio', '--file', 'regla.txt', '--max-files', '3', '--terminal', '--for-session', 'waiver-adhoc'],
+  agente: ['adhoc', 'set', '--reason', 'sonda de la ventana', '--data', 'sin-cambio', '--file', 'regla.txt', '--repo', '.', '--terminal', '--for-session', 'waiver-agente'],
+  json: ['adhoc', 'set', '{"reason":"sonda de la ventana","datos":"sin-cambio","allowedFiles":["regla.txt"],"maxFiles":3}', '--repo', '.', '--terminal', '--for-session', 'waiver-adhoc'],
+  banderas: ['adhoc', 'set', '--reason', 'sonda de la ventana', '--data', 'sin-cambio', '--file', 'regla.txt', '--max-files', '3', '--repo', '.', '--terminal', '--for-session', 'waiver-adhoc'],
 };
 
 function arregloComoElAgente({ x, env, rec }) {
