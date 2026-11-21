@@ -1675,7 +1675,10 @@ function chequeoConGitColgado(repo, cuando) {
 }
 
 test('Chequeo_GitColgadoAlBuscarLaBase_NoMedido — un merge-base que no termina sale «no medido», no mide contra otra base', () => {
-  const r = chequeoConGitColgado(mkRepo(), 'case "$*" in *merge-base*) true;; *) false;; esac');
+  // la rama se llama main: con otro nombre por defecto (el de la CI) no hay rama principal y el merge-base no corre
+  const repo = mkRepo();
+  sh('git', ['branch', '-M', 'main'], repo);
+  const r = chequeoConGitColgado(repo, 'case "$*" in *merge-base*) true;; *) false;; esac');
   assert.equal(r.exitCode, 2);
   assert.match(r.motivo, /no medido: git merge-base no terminó en 1,5 s y se cortó al buscar la base/);
 });

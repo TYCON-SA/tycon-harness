@@ -491,14 +491,14 @@ function crearCopiaDeTrabajo(repo, log, { topeMs = TOPE_GIT_MS } = {}) {
       throw e;
     }
   };
-  const g = (cwd, args, opts) => conTope(args, opts, (o) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...o }));
+  const g = (cwd, args, opts) => conTope(args, opts, (o) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...o, windowsHide: true }));
   let dir = null;
   try {
     // Por su ruta real: en macOS la carpeta temporal es un enlace (/var → /private/var), y .NET restaura los paquetes con
     // una ruta y compila con la otra, y no los encuentra (la base sale en rojo con la suite verde).
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutation-copia-')));
     const head = g(repo, ['rev-parse', 'HEAD']).trim();
-    conTope(['clone'], { stdio: 'ignore' }, (o) => execFileSync('git', ['clone', '-q', '--shared', '--no-checkout', repo, dir], o));
+    conTope(['clone'], { stdio: 'ignore' }, (o) => execFileSync('git', ['clone', '-q', '--shared', '--no-checkout', repo, dir], { ...o, windowsHide: true }));
     g(dir, ['checkout', '-q', head]);
     // lo que la story cambió y todavía no commiteó (trackeado)
     const patch = g(repo, ['diff', 'HEAD', '--binary'], { maxBuffer: 256 * 1024 * 1024 });
