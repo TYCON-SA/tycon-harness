@@ -134,9 +134,21 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Por qué existe:** Un pedido con auto-completar que choca, o que está limpio y no entra, no le avisa a nadie: se queda abierto días mientras todos creen que ya entró. Lee los repos del arnés que declara `team-repos.json` por la capa de plataforma, con tope de 5 s y una foto de 10 minutos; si no pudo leer dice «no medido», nunca calla como si no hubiera nada.
 
+También dice, si el repo público es de GitHub, cada pedido o issue abierto de gente de afuera del equipo («pedido de afuera esperando: #N de <cuenta>, hace X h; su CI espera aprobación»), de la foto que deja su lectura de fondo (`scripts/lib/outside-contributions.js`).
+
 **Quién la usa:** El arranque de sesión, en los repos del arnés. Umbral: `TYCON_STUCK_PR_HOURS` (1). Se apaga con `TYCON_STUCK_PR_NOTICE=0`.
 
-**Dónde se prueba:** `scripts/tests/stuck-pr-notice.test.js`
+**Dónde se prueba:** `scripts/tests/stuck-pr-notice.test.js`, `scripts/tests/outside-contributions.test.js`
+
+## scripts/lib/outside-contributions.js
+
+**Qué es:** Mide los pedidos y los issues abiertos de gente de afuera del equipo en el repo público, y si la CI de un pedido espera aprobación.
+
+**Por qué existe:** Un pedido desde un fork no corre su CI hasta que alguien del equipo la aprueba, y un issue de afuera no le llega a nadie: sin aviso, el de afuera espera días. Quién es de afuera lo decide la regla del freno de pedidos de afuera (`scripts/lib/external-pr.js`). Sin red, o sin saber quién es del equipo, dice «no medido».
+
+**Quién la usa:** `scripts/hooks/stuck-pr-notice.js` al arrancar y `scripts/nightly/open-prs/open-prs.js --outside-from` en el resumen diario.
+
+**Dónde se prueba:** `scripts/tests/outside-contributions.test.js`
 
 ## scripts/hooks/extension-notices.js
 

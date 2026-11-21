@@ -256,7 +256,7 @@ function decidir(comando, { cwd, home, env = process.env, arnes, run } = {}) {
   return firmas.length ? { firmas } : null;
 }
 
-module.exports = { FIRMA, leer, aLaVista, cuentasDelEquipo, datosDelPedido, detalleDe, decidir };
+module.exports = { FIRMA, leer, aLaVista, cuentaComparable, cuentasDelEquipo, datosDelPedido, detalleDe, decidir };
 
 if (require.main === module) {
   const fs = require('fs');

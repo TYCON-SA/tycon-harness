@@ -31,9 +31,17 @@
  * `activo: false`) por la capa de plataforma (`change-request.list`). Un repo que no se pudo leer deja la sección en
  * «no se pudo consultar», con el repo y el motivo.
  *
+ * LO DE AFUERA (`--outside-from <team-repos.json> --outside-out <archivo>`): los pedidos y los issues abiertos de gente de
+ * afuera del equipo en el repo `public` que declara ese archivo, si es de GitHub (scripts/lib/outside-contributions.js;
+ * quién es de afuera lo decide la regla del freno de pedidos de afuera). Al registro, un renglón por cada uno; a
+ * `--outside-out`, el renglón «De afuera: …» que el resumen diario pega como otra línea (`--extra`): número, cuenta y edad
+ * de cada uno, que en un repo público ya ve cualquiera; el título no va. Sin red o sin saber quién es del equipo, «no
+ * medido» y el guion sale 1. `--profile <carpeta>/team-profile.json`: el perfil del equipo con la lista de sus cuentas,
+ * leído como el perfil del árbol de esa carpeta (la lista vale sólo de ahí); sin él, el del árbol de este guion.
+ *
  * USO
  *   node scripts/nightly/open-prs/open-prs.js --today <YYYY-MM-DD> [--days 2] [--out <archivo>] [--json <archivo>] [--org <url>]
- *     [--provider azure|github] [--repos <repos.json>]
+ *     [--provider azure|github] [--repos <repos.json>] [--outside-from <team-repos.json> --outside-out <archivo> [--profile <team-profile.json>]]
  *   --json: además, el archivo para el sitio de la organización (`.dashboard/open-prs/open-prs-<día>.json`):
  *   número, proyecto, repo, días, autor (identidad única) y enlace de cada PR abierto; sin título ni nombre para mostrar.
  *   (--org por defecto: `azure.org` de scripts/nightly/dependencies/repos.json)
@@ -189,7 +197,7 @@ function paraElSitio(prs, { hoy, org }) {
 }
 
 function parseArgs(argv) {
-  const a = { hoy: null, dias: 2, out: null, json: null, provider: null, org: null, repos: REPOS_POR_DEFECTO, error: null, ayuda: false };
+  const a = { hoy: null, dias: 2, out: null, json: null, provider: null, org: null, repos: REPOS_POR_DEFECTO, afuera: null, afueraOut: null, perfil: null, error: null, ayuda: false };
   const valor = (i) => (i < argv.length && !String(argv[i]).startsWith('--') ? argv[i] : (a.error = `falta el valor de ${argv[i - 1]}`, null));
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -200,6 +208,9 @@ function parseArgs(argv) {
     else if (v === '--provider') a.provider = valor(++i);
     else if (v === '--org') a.org = valor(++i);
     else if (v === '--repos') a.repos = valor(++i);
+    else if (v === '--outside-from') a.afuera = valor(++i);
+    else if (v === '--outside-out') a.afueraOut = valor(++i);
+    else if (v === '--profile') a.perfil = valor(++i);
     else if (v === '-h' || v === '--help') a.ayuda = true;
     else a.error = `opción desconocida: ${v}`;
   }
@@ -218,9 +229,26 @@ function organizacionConfigurada() {
   return { prendida: ado.prendida, apagada: ado.apagada, org: ado.prendida ? ado.config.valores.ado.org : null };
 }
 
+/**
+ * Lo de afuera del repo público que declara `team-repos.json`: `{ medido, lineas, resumen }`. Un repo público que no es de
+ * GitHub no tiene pedidos desde forks que mirar: «no aplica», que no es «ninguno».
+ */
+function deAfuera(archivo, arnes) {
+  const OC = require(path.join(__dirname, '..', '..', 'lib', 'outside-contributions.js'));
+  const TR = require(path.join(__dirname, '..', '..', 'lib', 'team-repos.js'));
+  let r;
+  try { r = TR.load(archivo); } catch (e) { r = { ok: false, problems: [{ message: e.message }] }; }
+  let m;
+  if (!r.ok) m = { ok: false, reason: `${path.basename(archivo)}: ${(r.problems[0] || {}).message || 'no se lee'}` };
+  else if (!r.data.public || r.data.public.platform !== 'github') return { medido: true, lineas: ['De afuera: no aplica (el repo público no es de GitHub)'], resumen: 'De afuera: no aplica' };
+  else m = OC.measure({ repo: `${r.data.public.org}/${r.data.public.repo}`, arnes, cwd: path.dirname(path.resolve(archivo)) });
+  const lineas = OC.lines(m, { max: MAX_LINEAS });
+  return { medido: m.ok, lineas: lineas.length ? lineas : ['De afuera: ninguno'], resumen: OC.summaryLine(m) };
+}
+
 async function main(argv) {
   const a = parseArgs(argv);
-  const uso = () => console.error('uso: open-prs.js --today <YYYY-MM-DD> [--days 2] [--out <archivo>] [--org <url>] [--provider azure|github] [--repos <repos.json>]');
+  const uso = () => console.error('uso: open-prs.js --today <YYYY-MM-DD> [--days 2] [--out <archivo>] [--org <url>] [--provider azure|github] [--repos <repos.json>] [--outside-from <team-repos.json> --outside-out <archivo> [--profile <team-profile.json>]]');
   if (a.ayuda) { uso(); return 0; }
   const dias = Number(a.dias);
   if (a.error || !esFecha(a.hoy) || !Number.isInteger(dias) || dias < 0) {
@@ -271,8 +299,15 @@ async function main(argv) {
       codigo = 1;
     }
   }
-  const texto = lineas.join('\n');
+  if ((a.afueraOut || a.perfil) && !a.afuera) { console.error('--outside-out y --profile van con --outside-from'); uso(); return 2; }
+  if (a.perfil && path.basename(a.perfil) !== 'team-profile.json') { console.error(`--profile tiene que ser un team-profile.json, no «${a.perfil}»`); uso(); return 2; }
+  const afuera = a.afuera ? deAfuera(a.afuera, a.perfil ? path.dirname(path.resolve(a.perfil)) : undefined) : null;
+  if (afuera && !afuera.medido) codigo = 1;
+  const texto = [...lineas, ...(afuera ? afuera.lineas : [])].join('\n');
   console.log(texto);
+  if (afuera && a.afueraOut) {
+    try { fs.writeFileSync(a.afueraOut, `${afuera.resumen}\n`); } catch (e) { console.error(`🔴 prs-abiertos: no se pudo escribir ${a.afueraOut}: ${e.message}`); codigo = 1; }
+  }
   if (a.out) {
     try { fs.writeFileSync(a.out, `${cantidad(dias, n)}\n`); } catch (e) {
       console.error(`🔴 prs-abiertos: no se pudo escribir ${a.out}: ${e.message}`);

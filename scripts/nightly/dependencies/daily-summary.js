@@ -869,12 +869,18 @@ function escribirConstancia(archivo, resumen) {
  * Las líneas que otros pasos dejan en un archivo para el FINAL del mismo mensaje (`--extra`, que se puede repetir), cada
  * una con su forma: sólo números. Los pedidos abiertos (`open-prs.js`): la cantidad, con el plazo que se haya pedido
  * (`--days N`) y, si los hay, los que no se pudieron medir. Las entradas a la rama principal sin su CI (`main-entries.js`).
+ * Lo de afuera del repo público (`open-prs.js --outside-out`): número, cuenta de GitHub y edad de cada pedido o issue.
  */
+// un pedido o un issue de afuera: «pedido #N de <cuenta> hace X h (borrador) (CI espera aprobación)»
+const DE_AFUERA = '(?:pedido|issue) #\\d+ de (?:\\?|(?:app\\/)?[A-Za-z0-9][A-Za-z0-9-]{0,38}) (?:hace \\d+ (?:min|h|días)|sin fecha)(?: \\(borrador\\))?(?: \\(CI espera aprobación\\))?';
 const FORMAS_EXTRA = [
   { inicio: /^PR abiertos\b/, sin: () => 'PR abiertos: ? (no se pudo consultar)',
     forma: /^PR abiertos hace más de \d+ días: (\d+( \(\+\d+ sin fecha legible\))?|\? \((no se pudo consultar|Azure DevOps apagado|GitHub todavía no se lee)\))$/ },
   { inicio: /^Main sin su CI\b/, sin: (l) => `${(/^Main sin su CI \(\d+ h\)/.exec(l) || ['Main sin su CI'])[0]}: ? (no se pudo consultar)`,
     forma: /^Main sin su CI \(\d+ h\): GitHub (\d+|\?) · Azure (\d+|\?) · reglas (al día|cambiaron|\?)$/ },
+  // los pedidos y los issues de afuera del repo público (open-prs.js --outside-out): número, cuenta de GitHub y edad
+  { inicio: /^De afuera\b/, sin: () => 'De afuera: ? (no medido)',
+    forma: new RegExp(`^De afuera: (ninguno|no aplica|\\? \\(no medido\\)|${DE_AFUERA}(?: · (?:${DE_AFUERA}|\\+\\d+(?: o más)? más))*)$`) },
   // el inventario de adopción del portón de CI (scripts/nightly/gate-adoption/gate-adoption.js): sólo números
   { inicio: /^Portón de CI \(repos\)/, sin: () => 'Portón de CI (repos): ?',
     forma: /^Portón de CI \(repos\): (requerido \d+ · con escape \d+ · pipeline sin política \d+ · sin portón \d+ · no aplica \d+ · no medido \d+|\?)$/ },

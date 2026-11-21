@@ -198,24 +198,6 @@ jobs:
           ${{ each name in parameters.hostsSecrets }}:
             ${{ name }}: $(${{ name }})
 
-      - script: |
-          # Los pull requests abiertos hace más de dos días: sólo LEE, y deja una sección que el resumen pega al final. Si
-          # Azure no contesta, la sección lo dice y el paso queda naranja: el resumen se entrega igual.
-          set -uo pipefail
-          HOY="${HOY_NOCTURNO:-}"
-          if [ -z "$HOY" ]; then
-            echo "##vso[task.logissue type=warning]Falta HOY_NOCTURNO (la fecha del paso del vigilante): los pull requests abiertos no se consultaron."
-            exit 1
-          fi
-          if ! node scripts/nightly/open-prs/open-prs.js --today "$HOY" --org "$(System.CollectionUri)" --out "$(Agent.TempDirectory)/prs-abiertos.txt"; then
-            echo "##vso[task.logissue type=warning]Los pull requests abiertos no se pudieron consultar: el resumen lo va a decir."
-            exit 1
-          fi
-        displayName: 'Listar los pull requests abiertos'
-        continueOnError: true
-        env:
-          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
-
       - ${{ if or(ne(parameters.mainEntriesGithubRepo, ''), ne(parameters.mainEntriesAzureRepo, '')) }}:
         - script: |
             # Las entradas a la rama principal sin su CI, en GitHub y en Azure DevOps: sólo LEE, y deja la línea que el
@@ -300,6 +282,31 @@ jobs:
           CLONE_TOKEN: $(System.AccessToken)
 
       - script: |
+          # Los pull requests abiertos hace más de dos días, y los pedidos e issues de gente de afuera del equipo en el repo
+          # público (`public` de team-repos.json, si es de GitHub; quién es del equipo lo dice el perfil que dejó el paso de
+          # arriba): sólo LEE, y deja dos líneas que el resumen pega al final. Si Azure o GitHub no contestan, la línea lo
+          # dice y el paso queda naranja: el resumen se entrega igual. Va después del perfil, que trae la lista del equipo.
+          set -uo pipefail
+          # Una variable que no está en la definición NO llega vacía: Azure deja el literal `$(NOMBRE)`. Se trata como ausente.
+          case "${GH_TOKEN:-}" in *'$('*) unset GH_TOKEN ;; esac
+          HOY="${HOY_NOCTURNO:-}"
+          if [ -z "$HOY" ]; then
+            echo "##vso[task.logissue type=warning]Falta HOY_NOCTURNO (la fecha del paso del vigilante): los pull requests abiertos no se consultaron."
+            exit 1
+          fi
+          PF=(); [ -n "${TEAM_PROFILE:-}" ] && [ -f "$TEAM_PROFILE" ] && PF=(--profile "$TEAM_PROFILE")
+          if ! node scripts/nightly/open-prs/open-prs.js --today "$HOY" --org "$(System.CollectionUri)" --out "$(Agent.TempDirectory)/prs-abiertos.txt" \
+            --outside-from "$(Build.SourcesDirectory)/team-repos.json" --outside-out "$(Agent.TempDirectory)/de-afuera.txt" ${PF[@]+"${PF[@]}"}; then
+            echo "##vso[task.logissue type=warning]Los pull requests abiertos o los de afuera no se pudieron consultar: el resumen lo va a decir."
+            exit 1
+          fi
+        displayName: 'Listar los pull requests abiertos y los de afuera'
+        continueOnError: true
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+          GH_TOKEN: $(GH_TOKEN)
+
+      - script: |
           # El resumen diario, parte del vigilante: edita el mensaje que mandó dependencias a las 04:00 (su identificador
           # está en la foto de dependencias de hoy) agregando esta sección; si dependencias no entregó, manda uno nuevo y lo
           # dice. Va antes de guardar, para que la constancia viaje con la foto. No entregado: naranja, nunca rojo.
@@ -318,6 +325,9 @@ jobs:
           # Las líneas de los pasos de arriba, siempre en el mismo orden y aunque el paso no haya dejado su archivo: el
           # resumen dice «?» por lo que falta, nunca la saltea en silencio. La de main, sólo si el paso está configurado.
           EX=(--extra "$(Agent.TempDirectory)/prs-abiertos.txt")
+          AFUERA_TXT="$(Agent.TempDirectory)/de-afuera.txt"
+          [ -s "$AFUERA_TXT" ] || echo "De afuera: ? (no medido)" > "$AFUERA_TXT"
+          EX+=(--extra "$AFUERA_TXT")
           if [ "${MAIN_ENTRIES_ON:-}" = "True" ]; then
             MAIN_TXT="$(Agent.TempDirectory)/main-sin-ci.txt"
             [ -s "$MAIN_TXT" ] || echo "Main sin su CI (72 h): GitHub ? · Azure ? · reglas ?" > "$MAIN_TXT"
