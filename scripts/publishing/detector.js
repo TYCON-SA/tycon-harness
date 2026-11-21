@@ -54,14 +54,16 @@ const PATRONES_GENERICOS = [
   // La misma clave ENTRE COMILLAS (`Password="…"`, `bizuit:emailPassword="…"`): la regla de arriba corta en la comilla
   // y no vería esta forma. Los marcadores de plantilla no son una clave:
   // `$VAR`, `{0}`, `%X%`, `***` y `<clave>` no disparan, ni un booleano (`requirePassword="true"`).
-  { nombre: 'clave-entre-comillas', categoria: 'secreto', regex: /\b[A-Za-z0-9_.:-]*?(?:password|pwd)\s*=\s*(["'])(?![$%{<]|\*+\1|(?:true|false)\1)[^"'\s]{4,}\1/gi },
+  // Arranca sólo en el primer borde de palabra de su tirada (`(?<=…)`): desde uno más adentro ve lo mismo que desde el
+  // primero, y probarlos todos hacía crecer el tiempo al cuadrado con una tirada larga sin espacios. Lo mismo el correo.
+  { nombre: 'clave-entre-comillas', categoria: 'secreto', regex: /\b(?<=(?:^|[^A-Za-z0-9_.:-])[.:-]*)[A-Za-z0-9_.:-]*?(?:password|pwd)\s*=\s*(["'])(?![$%{<]|\*+\1|(?:true|false)\1)[^"'\s]{4,}\1/gi },
   // Un proceso exportado con la organización como sufijo del nombre: `<algo>__<org>.bpmn` o `.vdw`.
   // Es un patrón de forma: la organización no tiene que estar en ninguna lista.
   // Sobre la lista de rutas de una copia, cubre también el nombre del archivo. La extensión, sin
   // caja: un `.BPMN` es el mismo archivo.
   { nombre: 'nombre-con-sufijo-de-organizacion', categoria: 'cliente', regex: /[A-Za-z0-9]__[A-Za-z0-9][A-Za-z0-9-]*\.(?:bpmn|vdw)\b/gi },
   { nombre: 'ruta-de-maquina', categoria: 'ruta-de-maquina', regex: /\/(?:Users|home)\/[a-z][a-z0-9._-]*\/|\b[A-Z]:\\Users\\[A-Za-z][^\\\s]*\\/g },
-  { nombre: 'email', categoria: 'email', regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g },
+  { nombre: 'email', categoria: 'email', regex: /\b(?<=(?:^|[^A-Za-z0-9._%+-])[.%+-]*)[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g },
   // Una licencia ajena que no se puede redistribuir: el aviso de copyright CON la reserva de todos los
   // derechos en la misma línea, o el frontmatter de una skill propietaria. La frase suelta en prosa no alcanza. Escrito
   // con escapes para que este archivo, que sale en la copia, no se dispare a sí mismo.
