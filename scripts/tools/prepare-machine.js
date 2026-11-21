@@ -116,6 +116,10 @@ function hasExternalImports(main, home = os.homedir()) {
 function guardUpdate(cfg) {
   const rota = (cfg.errores || []).find((e) => e.clave === 'guard.update');
   if (rota) return { value: 'password', note: `guard.update está roto en el perfil del equipo (${rota.motivo}): lo tomo como «con la contraseña»` };
+  // el perfil entero ilegible (un error sin clave) no es «la organización eligió con la contraseña»: se dice, como lo
+  // dice el lanzador de la actualización sola
+  const ilegible = (cfg.errores || []).find((e) => !e.clave);
+  if (ilegible) return { value: 'password', note: `no pude leer el perfil del equipo (${ilegible.motivo}): no sé si la organización eligió que el freno se actualice solo; mientras tanto, con la contraseña` };
   return { value: cfg.valores && cfg.valores.guard && cfg.valores.guard.update === 'auto' ? 'auto' : 'password' };
 }
 

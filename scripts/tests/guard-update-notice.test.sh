@@ -85,6 +85,18 @@ s="$(aviso)"
 if ! tiene -- "falló" && ! tiene -- "🟠" && tiene -- "2026.11.09.3" && tiene -- "ya se resolvió"; then
   ok "T25c · una falla que una instalación con contraseña posterior resolvió no vuelve a pedir la contraseña"
 else no "T25c · $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-300)"; fi
+# una falla de antes de saber la versión (sin attempted_version): la resuelve una instalación posterior a la falla, por
+# la fecha de la constancia de la instalada. Sin esto, la falla se mostraba para siempre.
+printf '{"at":"2026-10-22T09:00:00Z","to_version":"2026.10.22.5"}\n{"status":"failed","reason":"sin origen fijado","at":"2026-11-09T10:00:00Z"}\n' > "$PROD/update-log.jsonl"
+touch -t 202611101200 "$PROD/installed-release.json"
+s="$(aviso)"
+if ! tiene -- "falló" && tiene -- "ya se resolvió"; then
+  ok "T25e · una falla sin versión que una instalación posterior resolvió no vuelve a pedir la contraseña"
+else no "T25e · $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-300)"; fi
+# la instalada de ANTES de la falla no la resuelve
+touch -t 202611081200 "$PROD/installed-release.json"
+s="$(aviso)"
+tiene -- "falló" && tiene -- "sin origen fijado" && ok "T25f · una falla sin versión posterior a la instalada sigue avisando" || no "T25f · $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-300)"
 rm -f "$PROD/update-log.jsonl" "$PROD/installed-release.json"
 
 # ── lo que no tiene que hacer: hablar en una máquina sin freno, o con el aviso apagado ────────────────────────────────
