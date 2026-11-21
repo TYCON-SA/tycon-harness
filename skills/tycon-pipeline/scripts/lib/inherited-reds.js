@@ -22,8 +22,11 @@
  *    traigan uno que la base no tiene (con las dos listas completas): ése la deja no heredada; cualquier otra cosa → «no
  *    medido». Nadie la declara a mano: lo decide la medición. Una sola corrida alcanza: una suite de azar que da rojo en
  *    la base queda heredada acá, y la validación del pedido la sigue juzgando contra la foto.
+ *    En el árbol armado del privado (`--assembled`, con `--private <raíz> --public <raíz>`) la base es el árbol armado de
+ *    los dos `origin/main` (lib/private-tree.js buildAtMain), con el reloj de ahora: un caso que la foto no conoce se
+ *    perdona sólo si también falla ahí. Sin las dos raíces, sin `origin/main` en alguno o sin poder armarlo, «no medido».
  *    No se mide (cada roja dice «no medido» y su motivo): sin `origin/main`; con el árbol igual a la base y sin cambios;
- *    en el árbol armado del privado (`--assembled`: mezcla dos repos); en una carpeta que no es git; la suite que no está
+ *    en el árbol armado sin las dos raíces; en una carpeta que no es git; la suite que no está
  *    en la base; una ausente (no existe en el cambio); las que pasan del tope de suites. En la base la suite corre sin
  *    TYCON_SKILLS_DIR: las skills son las de la base, no las del cambio. Si el árbol que se mide es una subcarpeta del
  *    repo, en la base se mide la misma subcarpeta. Límite conocido: el árbol de la base trae sólo lo commiteado (sin lo
@@ -48,7 +51,7 @@
  *
  * Con suites sin medir en la corrida no se perdona nada: no decidir no es verde.
  *
- * CLI: node inherited-reds.js apply <árbol> <resumen suites.json> [--assembled]
+ * CLI: node inherited-reds.js apply <árbol> <resumen suites.json> [--assembled [--private <raíz> --public <raíz>]]
  *   0 todo lo rojo ya estaba rojo · 1 queda algún rojo nuevo (o sin medir) · 2 no se pudo decidir · 10 no aplica (sin
  *   foto y con la medición en la base apagada) · 78 todo lo que queda rojo está roto igual en la punta de main: la
  *   corrida espera a main (sólo con TYCON_MAIN_CHECK=1)
@@ -180,7 +183,7 @@ const ultimaLinea = (r) => String((r && (r.stderr || r.stdout)) || '').trim().sp
  * Corre las fallas sobre la base. Devuelve `{ base, suites, heredadas }`: `suites` con el veredicto de cada una
  * (`heredada` · `no-heredada` · `no-medido`, con su motivo) y `heredadas` las fallas que dieron rojo también ahí.
  */
-function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled }) {
+function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privateRoot = null, publicRoot = null }) {
   const suites = [];
   const heredadas = [];
   const todas = (motivo) => {
@@ -191,8 +194,9 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled }) {
     return { base, suites, heredadas };
   };
   const g = (...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', tree, ...a], { windowsHide: true, encoding: 'utf8' });
-  if (assembled) { todas('no medido: el árbol armado del privado mezcla dos repos'); return fin(null); }
+  if (assembled && !(privateRoot && publicRoot)) { todas('no medido: el árbol armado del privado mezcla dos repos y no sé de qué repos'); return fin(null); }
   if (!fallas.length) return fin(null);
+  if (assembled) return medirEnLosDosMain(fallas, ausentes, { max, timeout, privateRoot, publicRoot, suites, heredadas, todas, fin });
   if (g('rev-parse', '--is-inside-work-tree').status !== 0) { todas('no medido: el árbol no es un repo de git'); return fin(null); }
   if (g('rev-parse', '--verify', '--quiet', 'origin/main^{commit}').status !== 0) { todas('no medido: no hay origin/main contra qué medir'); return fin(null); }
   const mb = g('merge-base', 'HEAD', 'origin/main');
@@ -202,17 +206,8 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled }) {
   const sucio = g('status', '--porcelain');
   if (head === base && sucio.status === 0 && !sucio.stdout.trim()) { todas('no medido: el árbol es la base, sin cambios'); return fin(base); }
 
-  const medibles = [];
-  for (const f of fallas) {
-    if (!rutaDe(f)) suites.push({ ruta: String(f && f.ruta), raiz: null, verdict: 'no-medido', motivo: 'no medido: la falla no trae su entrada de suites.json' });
-    else if (medibles.length < max) medibles.push(f);
-    else suites.push({ ruta: rutaDe(f), raiz: f.entrada.raiz || null, verdict: 'no-medido', motivo: `no medido: pasó del tope de ${max} suites` });
-  }
-  if (!medibles.length) return fin(base);
-  if (!fs.existsSync(RUN_CAPPED)) {
-    for (const f of medibles) suites.push({ ruta: rutaDe(f), raiz: f.entrada.raiz || null, verdict: 'no-medido', motivo: `no medido: falta ${RUN_CAPPED}` });
-    return fin(base);
-  }
+  const medibles = losMedibles(fallas, max, suites);
+  if (!medibles) return fin(base);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heredados-base-'));
   const arbolBase = path.join(dir, 'base');
   let armado = false;
@@ -226,52 +221,7 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled }) {
     // el árbol que se mide puede ser una subcarpeta del repo (el portón acotado a un proyecto): en la base, la misma
     const prefijo = g('rev-parse', '--show-prefix').stdout.trim();
     const raizBase = prefijo ? path.join(arbolBase, prefijo) : arbolBase;
-    let enLaBase = null;
-    let ilegible = '';
-    try {
-      const d = JSON.parse(fs.readFileSync(path.join(raizBase, 'scripts', 'tests', 'suites.json'), 'utf8'));
-      enLaBase = [...(d.diarias || []), ...(d.semanales || [])];
-    } catch (e) { ilegible = e.code === 'ENOENT' ? '' : e.message; enLaBase = e.code === 'ENOENT' ? [] : null; }
-    if (!enLaBase) {
-      for (const f of medibles) suites.push({ ruta: rutaDe(f), raiz: f.entrada.raiz || null, verdict: 'no-medido', motivo: `no medido: la lista de suites de la base no se deja leer (${ilegible})` });
-      return fin(base);
-    }
-    // las skills de la base, no las del cambio: el corredor lee la variable antes que el clon
-    const env = { ...process.env };
-    delete env.TYCON_SKILLS_DIR;
-    medibles.forEach((f, i) => {
-      const ruta = rutaDe(f);
-      const raiz = f.entrada.raiz || null;
-      if (!enLaBase.some((s) => s && s.ruta === ruta && (s.raiz || null) === raiz)) {
-        suites.push({ ruta, raiz, verdict: 'no-medido', motivo: 'no medido: la suite no está en la base' });
-        return;
-      }
-      const out = path.join(dir, `resumen-${i}.json`);
-      const marca = path.join(dir, `tope-${i}`);
-      const r = spawnSync(process.execPath, [RUN_CAPPED, '--seconds', String(timeout), '--mark', marca, '--',
-        process.execPath, RUNNER, raizBase, out, '--suite', ruta],
-      { windowsHide: true, cwd: raizBase, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: (timeout + 60) * 1000 });
-      if (fs.existsSync(marca)) { suites.push({ ruta, raiz, verdict: 'no-medido', motivo: `no medido: pasó el tope de ${timeout} s` }); return; }
-      if (r.status === 0) { suites.push({ ruta, raiz, verdict: 'no-heredada', motivo: 'verde en la base: el rojo es del cambio' }); return; }
-      let roja = null;
-      if (r.status === 1) {
-        try { roja = (JSON.parse(fs.readFileSync(out, 'utf8')).fallas || []).find((x) => rutaDe(x) === ruta) || null; } catch (_) { roja = null; }
-      }
-      // Roja en la base también: con los casos de los dos lados, un caso que la base no tenía la vuelve del cambio.
-      const comp = roja ? casosNuevos(f, roja) : null;
-      if (comp && comp.nuevos && comp.nuevos.length) {
-        suites.push({ ruta, raiz, verdict: 'no-heredada', motivo: `roja también en la base, pero con caso(s) nuevo(s): ${comp.nuevos.join(' · ')}` });
-        return;
-      }
-      if (roja) {
-        suites.push({ ruta, raiz, verdict: 'heredada', motivo: comp.nuevos ? 'roja también en la base, sin el cambio'
-          : `roja también en la base, sin el cambio (se juzgó por suite: ${comp.porque})` });
-        heredadas.push(f);
-      } else {
-        const como = r.error ? r.error.message : (r.signal ? `cortada por ${r.signal}` : `salió ${r.status}`);
-        suites.push({ ruta, raiz, verdict: 'no-medido', motivo: `no medido: en la base la suite ${como} sin dar un rojo legible` });
-      }
-    });
+    correrEnLaBase(medibles, { raizBase, dir, timeout, extra: [], suites, heredadas });
     return fin(base);
   } finally {
     if (armado) g('worktree', 'remove', '--force', arbolBase);
@@ -280,7 +230,99 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled }) {
   }
 }
 
-function apply(tree, summaryPath, { assembled = false } = {}) {
+/** Las fallas que se miden (hasta `max`, con su entrada de la lista); las demás van a `suites` con su motivo. null si ninguna. */
+function losMedibles(fallas, max, suites) {
+  const medibles = [];
+  for (const f of fallas) {
+    if (!rutaDe(f)) suites.push({ ruta: String(f && f.ruta), raiz: null, verdict: 'no-medido', motivo: 'no medido: la falla no trae su entrada de suites.json' });
+    else if (medibles.length < max) medibles.push(f);
+    else suites.push({ ruta: rutaDe(f), raiz: f.entrada.raiz || null, verdict: 'no-medido', motivo: `no medido: pasó del tope de ${max} suites` });
+  }
+  if (!medibles.length) return null;
+  if (!fs.existsSync(RUN_CAPPED)) {
+    for (const f of medibles) suites.push({ ruta: rutaDe(f), raiz: f.entrada.raiz || null, verdict: 'no-medido', motivo: `no medido: falta ${RUN_CAPPED}` });
+    return null;
+  }
+  return medibles;
+}
+
+/**
+ * Corre cada falla sola sobre la base ya armada en `raizBase`, con el corredor de la puerta y su tope, y anota en `suites`
+ * el veredicto de cada una (y en `heredadas` las que dieron rojo también ahí). `extra`: opciones más para el corredor.
+ */
+function correrEnLaBase(medibles, { raizBase, dir, timeout, extra, suites, heredadas }) {
+  let enLaBase = null;
+  let ilegible = '';
+  try {
+    const d = JSON.parse(fs.readFileSync(path.join(raizBase, 'scripts', 'tests', 'suites.json'), 'utf8'));
+    enLaBase = [...(d.diarias || []), ...(d.semanales || [])];
+  } catch (e) { ilegible = e.code === 'ENOENT' ? '' : e.message; enLaBase = e.code === 'ENOENT' ? [] : null; }
+  if (!enLaBase) {
+    for (const f of medibles) suites.push({ ruta: rutaDe(f), raiz: f.entrada.raiz || null, verdict: 'no-medido', motivo: `no medido: la lista de suites de la base no se deja leer (${ilegible})` });
+    return;
+  }
+  // las skills de la base, no las del cambio: el corredor lee la variable antes que el clon
+  const env = { ...process.env };
+  delete env.TYCON_SKILLS_DIR;
+  medibles.forEach((f, i) => {
+    const ruta = rutaDe(f);
+    const raiz = f.entrada.raiz || null;
+    if (!enLaBase.some((s) => s && s.ruta === ruta && (s.raiz || null) === raiz)) {
+      suites.push({ ruta, raiz, verdict: 'no-medido', motivo: 'no medido: la suite no está en la base' });
+      return;
+    }
+    const out = path.join(dir, `resumen-${i}.json`);
+    const marca = path.join(dir, `tope-${i}`);
+    const r = spawnSync(process.execPath, [RUN_CAPPED, '--seconds', String(timeout), '--mark', marca, '--',
+      process.execPath, RUNNER, raizBase, out, '--suite', ruta, ...extra],
+    { windowsHide: true, cwd: raizBase, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: (timeout + 60) * 1000 });
+    if (fs.existsSync(marca)) { suites.push({ ruta, raiz, verdict: 'no-medido', motivo: `no medido: pasó el tope de ${timeout} s` }); return; }
+    if (r.status === 0) { suites.push({ ruta, raiz, verdict: 'no-heredada', motivo: 'verde en la base: el rojo es del cambio' }); return; }
+    let roja = null;
+    if (r.status === 1) {
+      try { roja = (JSON.parse(fs.readFileSync(out, 'utf8')).fallas || []).find((x) => rutaDe(x) === ruta) || null; } catch (_) { roja = null; }
+    }
+    // Roja en la base también: con los casos de los dos lados, un caso que la base no tenía la vuelve del cambio.
+    const comp = roja ? casosNuevos(f, roja) : null;
+    if (comp && comp.nuevos && comp.nuevos.length) {
+      suites.push({ ruta, raiz, verdict: 'no-heredada', motivo: `roja también en la base, pero con caso(s) nuevo(s): ${comp.nuevos.join(' · ')}` });
+      return;
+    }
+    if (roja) {
+      suites.push({ ruta, raiz, verdict: 'heredada', motivo: comp.nuevos ? 'roja también en la base, sin el cambio'
+        : `roja también en la base, sin el cambio (se juzgó por suite: ${comp.porque})` });
+      heredadas.push(f);
+    } else {
+      const como = r.error ? r.error.message : (r.signal ? `cortada por ${r.signal}` : `salió ${r.status}`);
+      suites.push({ ruta, raiz, verdict: 'no-medido', motivo: `no medido: en la base la suite ${como} sin dar un rojo legible` });
+    }
+  });
+}
+
+/**
+ * En el árbol armado del privado la base es el árbol armado de los dos `origin/main` (lib/private-tree.js buildAtMain),
+ * medido en el momento: un caso que la foto nocturna no conoce (una deuda que vence hoy) se perdona sólo si también falla
+ * ahí. Sin `origin/main` en alguno o sin poder armarlo, cada falla queda «no medido», con el motivo.
+ */
+function medirEnLosDosMain(fallas, ausentes, { max, timeout, privateRoot, publicRoot, suites, heredadas, todas, fin }) {
+  const medibles = losMedibles(fallas, max, suites);
+  if (!medibles) return fin(null);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heredados-main-'));
+  try {
+    let armado;
+    try { armado = require('./private-tree.js').buildAtMain(privateRoot, publicRoot, dir); } catch (e) {
+      for (const f of medibles) suites.push({ ruta: rutaDe(f), raiz: f.entrada.raiz || null, verdict: 'no-medido', motivo: `no medido: no pude armar los dos main (${e.message})` });
+      return fin(null);
+    }
+    const base = `${armado.private.commit.slice(0, 10)}+${armado.public.commit.slice(0, 10)}`;
+    correrEnLaBase(medibles, { raizBase: armado.tree, dir, timeout, extra: ['--skills', armado.skills], suites, heredadas });
+    return fin(base);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function apply(tree, summaryPath, { assembled = false, privateRoot = null, publicRoot = null } = {}) {
   const lines = [];
   const max = entero('TYCON_INHERITED_BASE_MAX', 3, lines);
   const timeout = entero('TYCON_INHERITED_BASE_TIMEOUT_S', 600, lines) || 600;
@@ -329,7 +371,7 @@ function apply(tree, summaryPath, { assembled = false } = {}) {
   }
   let baseCheck = null;
   if (max > 0 && (fallas.length || ausentes.length)) {
-    const m = medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled });
+    const m = medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privateRoot, publicRoot });
     const at = new Date().toISOString();
     baseCheck = { base: m.base, at, suites: m.suites };
     const vienen = new Set(m.heredadas);
@@ -386,11 +428,19 @@ module.exports = { apply, casosNuevos };
 
 if (require.main === module) {
   const [cmd, tree, summaryPath, ...resto] = process.argv.slice(2);
-  if (cmd !== 'apply' || !tree || !summaryPath || resto.some((a) => a !== '--assembled')) {
-    process.stderr.write('uso: node inherited-reds.js apply <árbol> <resumen suites.json> [--assembled]\n');
+  const opciones = { assembled: false, privateRoot: null, publicRoot: null };
+  let malo = false;
+  for (let i = 0; i < resto.length; i++) {
+    if (resto[i] === '--assembled') opciones.assembled = true;
+    else if (resto[i] === '--private' && resto[i + 1]) opciones.privateRoot = resto[++i];
+    else if (resto[i] === '--public' && resto[i + 1]) opciones.publicRoot = resto[++i];
+    else malo = true;
+  }
+  if (cmd !== 'apply' || !tree || !summaryPath || malo) {
+    process.stderr.write('uso: node inherited-reds.js apply <árbol> <resumen suites.json> [--assembled [--private <raíz> --public <raíz>]]\n');
     process.exitCode = 2;
   } else {
-    const r = apply(tree, summaryPath, { assembled: resto.includes('--assembled') });
+    const r = apply(tree, summaryPath, opciones);
     for (const l of r.lines) process.stderr.write(`🟡 [test-gate] ${l}\n`);
     process.exitCode = r.code;
   }

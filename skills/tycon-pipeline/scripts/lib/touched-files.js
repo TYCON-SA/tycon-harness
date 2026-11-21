@@ -15,7 +15,9 @@
  * commits que la principal no tiene: pueden ser de la story, commiteados antes de la base.
  * El árbol armado del privado pasa `onlyCommitsBeforeBase`: ahí sólo los commits que la base contiene dejan el «no sé»,
  * porque el diff ve todos los posteriores. Con esa opción, una rama con commits propios sale con `must_measure: true`: lo
- * tocado se sabe, pero sin correr alguna suite no vale como medido. Las demás llamadas siguen sin la opción.
+ * tocado se sabe, pero sin correr alguna suite no vale como medido. Con esa misma opción, lo que llegó sólo por main
+ * (main traído durante la corrida) sale del diff y queda en `sources.from_main`: igual a `origin/main` en el disco y sin
+ * commits propios de la rama que lo toquen; sin `origin/main` cuenta todo. Las demás llamadas siguen sin la opción.
  * Límites conocidos:
  *   · en un repo sin remoto, con los commits de la story sobre la propia `main` local, `main..HEAD` da 0 y no se ven
  *     como propios. Pedir el remoto haría correr todo en cualquier repo sin él; un clon real tiene `origin/main`;
@@ -88,6 +90,32 @@ function commitsBeforeBase(repo, baseRef, main) {
 
 const lines = (s) => String(s || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
 
+/**
+ * Lo que llegó sólo por main: de `files`, los que main cambió desde la base, que en el disco son iguales a `origin/main`
+ * y que ningún commit propio de la rama tocó. Ante cualquier duda (sin `origin/main`, git que falla) no saca nada.
+ * Propios son los commits que descienden de la base y llegan a HEAD sin estar en la línea principal de `origin/main`
+ * (sus primeros padres): así un commit de la corrida que ya entró a main por un merge sigue siendo propio. Un pedido que
+ * entró a main sin commit de fusión (squash o rebase) queda en esa línea y se toma como de main.
+ */
+function soloDeMain(repo, baseRef, files) {
+  if (!files.length || git(repo, ['rev-parse', '--verify', '-q', 'origin/main^{commit}']).error) return new Set();
+  const deMain = git(repo, ['diff', '--name-only', '--no-renames', baseRef, 'origin/main', '--']);
+  const distintos = git(repo, ['diff', '--name-only', '--no-renames', 'origin/main', '--']);
+  const desdeLaBase = git(repo, ['rev-list', '--ancestry-path', '--no-merges', `${baseRef}..HEAD`]);
+  const lineaDeMain = git(repo, ['rev-list', '--first-parent', `${baseRef}..origin/main`]);
+  if (deMain.error || distintos.error || desdeLaBase.error || lineaDeMain.error) return new Set();
+  const deLaLinea = new Set(lines(lineaDeMain.out));
+  const propios = lines(desdeLaBase.out).filter((c) => !deLaLinea.has(c));
+  let tocadosPorLaRama = [];
+  if (propios.length) {
+    const t = git(repo, ['log', '--no-walk=unsorted', '--no-renames', '--name-only', '--format=', ...propios, '--']);
+    if (t.error) return new Set();
+    tocadosPorLaRama = lines(t.out);
+  }
+  const noIgual = new Set([...lines(distintos.out), ...tocadosPorLaRama]);
+  return new Set(lines(deMain.out).filter((f) => !noIgual.has(f)));
+}
+
 function touchedFiles({ repo, storyPath, baseRef, baseSource, onlyCommitsBeforeBase = false } = {}) {
   const sources = { declared: [], diff: [], untracked: [] };
   let storyError = null;
@@ -119,6 +147,14 @@ function touchedFiles({ repo, storyPath, baseRef, baseSource, onlyCommitsBeforeB
   if (u.error) return unknown(u.error);
   sources.diff = lines(d.out);
   sources.untracked = lines(u.out);
+  // En el árbol armado, main traído durante la corrida no es de la historia: lo que llegó sólo por main sale del diff.
+  if (onlyCommitsBeforeBase) {
+    const ajenos = soloDeMain(repo, baseRef, sources.diff);
+    if (ajenos.size) {
+      sources.from_main = sources.diff.filter((f) => ajenos.has(f));
+      sources.diff = sources.diff.filter((f) => !ajenos.has(f));
+    }
+  }
   // Lo declarado NO entra: una story de varias tandas declara los
   // archivos de las que vienen, y sumarlos correría suites de 10+ min en tandas que no las tocan. Queda en
   // `sources.declared` como dato. Lo commiteado antes de la base es de una tanda anterior con su control hecho.

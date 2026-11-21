@@ -32,6 +32,12 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  *   Los exit codes no pisan los de test-gate.sh (0/2/3/4): un consumidor puede
  *   encadenarlos sin ambigüedad.
  *
+ * Los repos hermanos: una story con código en otro repo deja en la constancia la lista
+ * `companions` y, en `code_state.repos`, la huella de cada uno (`{name, root, git, state_hash, code_files}`; los campos
+ * planos siguen siendo los del repo de la historia). Entonces el verde que cuenta es el total (`all_green`), y cada
+ * hermano se mide en la raíz guardada: un cambio en cualquiera es STALE con su nombre; un hermano sin huella guardada o
+ * que no se puede leer es SIN DATOS (y, si además otro cambió, va al motivo del STALE). Sin `companions`, como siempre.
+ *
  * Quién lo consume: test-gate.sh (escribe `code_state` en tests-result.json al
  * cerrar cada corrida) y la vuelta de revisores (chequea al salir del loop de iteraciones,
  * ANTES de continuar al paso «Probar en vivo»). Fail-open con constancia: sin git, o con git
@@ -117,8 +123,48 @@ function codeState(repoDir) {
   }
 }
 
+/** La huella de cada repo hermano, con su nombre (la carpeta): lo que el portón guarda en `code_state.repos`. */
+function siblingStates(roots) {
+  return (roots || []).map((root) => ({ name: path.basename(root), root, ...codeState(root) }));
+}
+
 /**
- * Compara el estado actual contra el que registró la última corrida del gate.
+ * Los repos hermanos de la constancia contra su huella guardada: las raíces de `companions` y las de `code_state.repos`,
+ * medidas en la raíz guardada (no se vuelven a buscar). Devuelve { stale: [motivos], noData: [motivos] }.
+ */
+function compareSiblings(art) {
+  const guardadas = new Map();
+  for (const r of (art.code_state && Array.isArray(art.code_state.repos)) ? art.code_state.repos : []) {
+    if (r && r.root) guardadas.set(r.root, r);
+  }
+  const raices = [...new Set([
+    ...(Array.isArray(art.companions) ? art.companions : []).map((c) => c && c.root).filter(Boolean),
+    ...guardadas.keys(),
+  ])];
+  const stale = [];
+  const noData = [];
+  for (const root of raices) {
+    const g = guardadas.get(root);
+    const nombre = (g && g.name) || path.basename(root);
+    if (!g || !g.state_hash) {
+      noData.push(`la constancia no guarda la huella del repo hermano ${nombre}: no se puede validar su frescura`);
+      continue;
+    }
+    const ahora = codeState(root);
+    if (!ahora.git || !ahora.state_hash) {
+      noData.push(`no se pudo medir el código del repo hermano ${nombre} (${root})${ahora.error ? `: ${ahora.error}` : ''}`);
+    } else if (ahora.state_hash !== g.state_hash) {
+      stale.push(`el repo hermano ${nombre} cambió su código desde la corrida verde de ${art.ts || 's/f'}`);
+    }
+  }
+  return { stale, noData };
+}
+
+/**
+ * Compara el estado actual contra el que registró la última corrida del gate. Con repos hermanos en la constancia
+ * (`companions`), el verde que cuenta es el total (`all_green`) y se compara también la huella de cada hermano: un
+ * cambio en cualquiera es STALE (con todos los motivos, también los de lo que no se pudo medir); lo que no se pudo medir,
+ * sin ningún cambio, es SIN DATOS.
  * Devuelve { status: 'fresh'|'stale'|'no-data', reason }.
  */
 function checkFreshness(repoDir, testsResultPath) {
@@ -134,23 +180,35 @@ function checkFreshness(repoDir, testsResultPath) {
       reason: 'el artefacto no registra code_state (corrida anterior a este control, o un freno) — no se puede validar frescura',
     };
   }
-  if (!art.suite_green) {
-    return { status: 'no-data', reason: 'la última corrida no fue verde — lo que corresponde es correr el gate, no validar frescura' };
+  const conHermanos = Array.isArray(art.companions) && art.companions.length > 0;
+  if (conHermanos ? art.all_green !== true : !art.suite_green) {
+    return {
+      status: 'no-data',
+      reason: conHermanos
+        ? 'el total con los repos hermanos no fue verde — lo que corresponde es correr el gate, no validar frescura'
+        : 'la última corrida no fue verde — lo que corresponde es correr el gate, no validar frescura',
+    };
   }
   const now = codeState(repoDir);
   if (!now.git || !now.state_hash) {
     return { status: 'no-data', reason: `no se pudo medir el estado actual del código${now.error ? ` (${now.error})` : ''}` };
   }
-  if (now.state_hash === rec.state_hash) {
-    return { status: 'fresh', reason: `el verde de ${art.ts || 's/f'} midió exactamente este código (${now.code_files} archivos)` };
+  const propio = now.state_hash === rec.state_hash ? null
+    : `hubo cambios de código desde la corrida verde de ${art.ts || 's/f'} — ese verde describe un código que ya no existe: re-correr test-gate.sh`;
+  const hermanos = compareSiblings(art);
+  if (propio || hermanos.stale.length) {
+    const motivos = [propio, ...hermanos.stale.map((m) => `${m} — re-correr test-gate.sh`), ...hermanos.noData].filter(Boolean);
+    return { status: 'stale', reason: motivos.join('; ') };
   }
+  if (hermanos.noData.length) return { status: 'no-data', reason: hermanos.noData.join('; ') };
+  const medidos = (art.code_state.repos || []).length;
   return {
-    status: 'stale',
-    reason: `hubo cambios de código desde la corrida verde de ${art.ts || 's/f'} — ese verde describe un código que ya no existe: re-correr test-gate.sh`,
+    status: 'fresh',
+    reason: `el verde de ${art.ts || 's/f'} midió exactamente este código (${now.code_files} archivos${medidos ? `, y ${medidos} repo(s) hermano(s)` : ''})`,
   };
 }
 
-module.exports = { codeState, checkFreshness, CODE_RE, isCodeFile };
+module.exports = { codeState, siblingStates, checkFreshness, CODE_RE, isCodeFile };
 
 if (require.main === module) {
   const [cmd, repoDir, artPath] = process.argv.slice(2);

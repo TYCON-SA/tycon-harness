@@ -418,3 +418,78 @@ test('T18 Touched_WithoutOption_AsToday @story-8.279 @ac-30 — sin la opción, 
   assert.equal(conCodigo.known, true, JSON.stringify(conCodigo));
   assert.equal(conCodigo.must_measure, undefined, JSON.stringify(conCodigo));
 });
+
+// ── Lo que llegó sólo por main ───────────────────────────────────────────────────────────────────────────────────────
+/** Rama `story` con un commit propio después de la base; `main` avanza con `ajeno` (y `compartido`, que la rama también
+ *  cambia) y `origin/main` apunta a esa punta. La rama todavía no trajo main. */
+function labConMainTraido({ ajeno = 'scripts/hooks/de-main.js', compartido = null } = {}) {
+  const L = labConRama();
+  commitear(L, 'scripts/hooks/x.js', 'module.exports = 2;\n');
+  git(L.repo, 'checkout', '-q', 'main');
+  L.write(ajeno, 'module.exports = "main";\n');
+  if (compartido) L.write(compartido, 'module.exports = "main";\n');
+  git(L.repo, 'add', '-A');
+  git(L.repo, 'commit', '-q', '-m', 'main avanza');
+  git(L.repo, 'update-ref', 'refs/remotes/origin/main', 'main');
+  git(L.repo, 'checkout', '-q', 'story');
+  if (compartido) commitear(L, compartido, 'module.exports = "historia";\n');
+  return L;
+}
+
+test('T24 Touched_TreeOption_MainBroughtIn_NotCounted @story-8.279 @ac-36 @ac-37 — con la opción, lo que llegó sólo por main no cuenta y la marca sigue; sin origin/main cuenta todo', () => {
+  // 🔴 rojo si: lo que trajo main cuenta como tocado → el portón corre las suites de main (de 50 a 104 el 18/11); o si,
+  //    sin origin/main, se saca algo igual → ante la duda corren suites de menos.
+  const { touchedFiles } = require(LIB);
+  const L = labConMainTraido();
+  git(L.repo, 'merge', '-q', '--no-edit', 'main');
+  const opts = { repo: L.repo, storyPath: '', baseRef: L.base, baseSource: 'marker', onlyCommitsBeforeBase: true };
+  let r = touchedFiles(opts);
+  assert.equal(r.known, true, JSON.stringify(r));
+  assert.deepEqual(r.files, ['scripts/hooks/x.js'], `lo de main no cuenta: ${JSON.stringify(r)}`);
+  assert.equal(r.must_measure, true, JSON.stringify(r));
+  // sin la opción, como hoy: el diff cuenta lo traído
+  const sinOpcion = touchedFiles({ ...opts, onlyCommitsBeforeBase: false });
+  assert.deepEqual([...sinOpcion.files].sort(), ['scripts/hooks/de-main.js', 'scripts/hooks/x.js'], JSON.stringify(sinOpcion));
+  // lo traído y después cambiado en el disco (sin commitear) es de la historia
+  L.write('scripts/hooks/de-main.js', 'module.exports = "editado";\n');
+  r = touchedFiles(opts);
+  assert.deepEqual([...r.files].sort(), ['scripts/hooks/de-main.js', 'scripts/hooks/x.js'], `editado después: ${JSON.stringify(r)}`);
+  // sin origin/main no se puede saber qué llegó por main: cuenta todo
+  L.write('scripts/hooks/de-main.js', 'module.exports = "main";\n');
+  git(L.repo, 'update-ref', '-d', 'refs/remotes/origin/main');
+  r = touchedFiles(opts);
+  assert.deepEqual([...r.files].sort(), ['scripts/hooks/de-main.js', 'scripts/hooks/x.js'], `sin origin/main: ${JSON.stringify(r)}`);
+});
+
+test('T24 Touched_TreeOption_MainAndStorySameFile_Counts @story-8.279 @ac-37 — un archivo que cambiaron la historia y main cuenta, también si quedó igual a main', () => {
+  // 🔴 rojo si: un archivo igual al de main se saca aunque un commit propio de la rama lo tocó → la suite que lo lee no corre.
+  const { touchedFiles } = require(LIB);
+  const L = labConMainTraido({ compartido: 'scripts/hooks/comun.js' });
+  // el choque se resuelve tomando la versión de main: el archivo queda igual a main, pero la historia lo tocó
+  spawnSync('git', ['-C', L.repo, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', 'merge', '-q', '--no-edit', 'main'], { encoding: 'utf8' });
+  git(L.repo, 'checkout', 'main', '--', 'scripts/hooks/comun.js');
+  git(L.repo, 'commit', '-q', '--no-edit', '-a');
+  const r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: L.base, baseSource: 'marker', onlyCommitsBeforeBase: true });
+  assert.equal(r.known, true, JSON.stringify(r));
+  assert.ok(r.files.includes('scripts/hooks/comun.js'), `el compartido cuenta: ${JSON.stringify(r)}`);
+  assert.ok(!r.files.includes('scripts/hooks/de-main.js'), `el ajeno no: ${JSON.stringify(r)}`);
+});
+
+test('T24 Touched_TreeOption_StoryCommitMergedIntoMain_Counts @story-8.279 @ac-36 — un commit de la corrida que ya entró a main por un merge sigue contando como tocado', () => {
+  // 🔴 rojo si: los commits propios salen sólo de `origin/main..HEAD` → el pedido de la tanda mezclado y main traído de
+  //    vuelta dejan lo que editó la corrida como «sólo de main», y sus suites no corren (pase adversarial, 21/11).
+  const { touchedFiles } = require(LIB);
+  const L = labConRama();
+  commitear(L, 'scripts/hooks/x.js', 'module.exports = 2;\n');
+  git(L.repo, 'checkout', '-q', 'main');
+  git(L.repo, 'merge', '-q', '--no-ff', '--no-edit', 'story');
+  L.write('scripts/hooks/de-main.js', 'module.exports = "main";\n');
+  git(L.repo, 'add', '-A');
+  git(L.repo, 'commit', '-q', '-m', 'main avanza');
+  git(L.repo, 'update-ref', 'refs/remotes/origin/main', 'main');
+  git(L.repo, 'checkout', '-q', 'story');
+  git(L.repo, 'merge', '-q', '--ff-only', 'main');
+  const r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: L.base, baseSource: 'marker', onlyCommitsBeforeBase: true });
+  assert.equal(r.known, true, JSON.stringify(r));
+  assert.deepEqual(r.files, ['scripts/hooks/x.js'], `lo de la corrida cuenta y lo de main no: ${JSON.stringify(r)}`);
+});
