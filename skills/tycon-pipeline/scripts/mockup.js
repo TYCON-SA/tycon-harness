@@ -246,12 +246,13 @@ const STYLE = `
   .button.primary { background: #2f5bd3; border-color: #2f5bd3; color: #fff; }
   .button.icon { border: 0; box-shadow: none; background: transparent; color: #5a6475; font-size: 18px; padding: 4px 8px; }
   .link { color: #2f5bd3; text-decoration: underline; }
-  .field { display: flex; flex-direction: column; gap: 4px; min-width: 260px; max-width: 100%; }
+  .field { display: flex; flex-direction: column; gap: 4px; width: 260px; max-width: 100%; box-sizing: border-box; }
   .field .label { font-size: 13px; font-weight: 600; }
   .field .input { border: 1px solid #c3c9d3; border-radius: 8px; padding: 8px 12px; min-height: 20px; }
   .field .ph { color: #8a93a3; }
   .field .ph-note { font-size: 12px; color: #8a93a3; }
   .checkbox { display: flex; gap: 8px; align-items: center; }
+  .checkbox > * { min-width: 0; overflow-wrap: break-word; }
   .cb-mark { width: 14px; height: 14px; border: 1px solid #9aa3b2; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; flex: none; font-size: 12px; line-height: 1; font-weight: 700; }
   .checkbox.disabled { color: #9aa3b2; }
   .checkbox.disabled .cb-mark { border-color: #c3c9d3; background: #f0f2f5; }
@@ -260,14 +261,21 @@ const STYLE = `
   fieldset.group legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
   .group-row { display: flex; flex-direction: row; flex-wrap: wrap; gap: 16px; }
   .existing { filter: saturate(0.35); opacity: 0.78; }
-  .new { position: relative; outline: 2px solid #6d28d9; outline-offset: 5px; border-radius: 6px; }
-  .new-tag { position: absolute; top: -22px; left: 4px; z-index: 1; font-size: 12px; font-weight: 700; line-height: 1; color: #fff; background: #6d28d9; border-radius: 4px; padding: 3px 7px; }
-  .opens { position: relative; display: inline-block; }
-  .open-tag { position: absolute; bottom: -26px; right: 0; z-index: 1; white-space: nowrap; font-size: 12px; font-weight: 700; line-height: 1; color: #1d2433; background: #ffe7a3; border: 1px solid #e0a100; border-radius: 4px; padding: 2px 6px; }
+  .new { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; max-width: 100%; box-sizing: border-box; border: 2px solid #6d28d9; background: #f6f1ff; border-radius: 8px; padding: 6px 8px 8px; }
+  .new-tag { font-size: 12px; font-weight: 700; line-height: 1; color: #fff; background: #6d28d9; border-radius: 4px; padding: 3px 7px; }
+  .opens { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .open-tag { white-space: nowrap; font-size: 12px; font-weight: 700; line-height: 1; color: #1d2433; background: #ffe7a3; border: 1px solid #e0a100; border-radius: 4px; padding: 2px 6px; }
   .trigger { outline: 3px solid #e0a100; outline-offset: 3px; }
   .new .trigger { outline: 0; }
   .ph-bar { display: block; width: 180px; max-width: 40vw; height: 12px; border-radius: 6px; background: #e3e6eb; }
-  table.table { border-collapse: collapse; min-width: 420px; }
+  /* la tabla ocupa el ancho que hay y parte el texto de sus celdas; si igual no entra, su caja se desplaza y una sombra
+     en el borde dice que sigue (se ve también en una captura, sin barra) */
+  .table-wrap { align-self: stretch; overflow-x: auto;
+    background: linear-gradient(to right, #fff 30%, rgba(255, 255, 255, 0)) left / 24px 100% no-repeat local, linear-gradient(to left, #fff 30%, rgba(255, 255, 255, 0)) right / 24px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(16, 24, 40, 0.28), transparent) left / 12px 100% no-repeat scroll, radial-gradient(farthest-side at 100% 50%, rgba(16, 24, 40, 0.28), transparent) right / 12px 100% no-repeat scroll; }
+  table.table { border-collapse: collapse; width: 100%; }
+  table.table th, table.table td { overflow-wrap: break-word; }
+  .table-note { margin: -8px 0 0; font-size: 12px; color: #6b7485; }
   table.table th, table.table td { border-bottom: 1px solid #e3e6eb; padding: 8px 12px; text-align: left; font-size: 14px; }
   table.table th { color: #5a6475; font-weight: 600; }
   ul.list { margin: 0; padding-left: 20px; }
@@ -292,13 +300,16 @@ const STYLE = `
   .screen-body.zoned { align-items: stretch; padding: 0; gap: 0; }
   .zone-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 16px 24px; }
   .zone-head { border-bottom: 1px solid #eef0f3; }
-  .zone-row:has(.new), .screen-body:not(.zoned):has(> .new:first-child) { padding-top: 32px; }
   .zone-foot { border-top: 1px solid #eef0f3; }
-  .zone-middle { display: flex; flex-wrap: nowrap; gap: 0; align-items: stretch; flex: 1; padding: 0; }
-  .zone { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; min-width: 0; overflow-wrap: anywhere; }
+  .zone-middle { display: flex; flex-wrap: wrap; gap: 0; align-items: stretch; flex: 1; padding: 0; }
+  .zone { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; min-width: 0; overflow-wrap: break-word; box-sizing: border-box; }
   .zone-middle .zone { padding: 20px 24px; }
-  .zone-left { flex: 0 0 34%; min-width: 200px; box-sizing: border-box; border-right: 1px solid #e3e6eb; background: #fbfbfc; padding: 0 !important; }
-  .zone-center, .zone-right { flex: 1; min-width: 0; }
+  .zone-left { flex: 1 1 260px; max-width: 100%; border-right: 1px solid #e3e6eb; background: #fbfbfc; }
+  .zone-middle .zone-left:has(ul.list) { padding: 0; }
+  /* nada pasa del ancho de su caja: lo que no entra se parte (una dirección, un número de cuenta) o se desplaza (una tabla) */
+  .screen-body > *, .zone > *, .new > *, .variant > *, .variant-zone-preview > *, .zone-row > * { max-width: 100%; box-sizing: border-box; overflow-wrap: break-word; }
+  .zone-center { flex: 3 1 320px; }
+  .zone-right { flex: 1 1 220px; }
   .zone-middle .zone:has(> .chat), .zone-middle .zone:has(> div > .chat) { padding: 0; }
   .zone-middle .zone > .chat, .zone-middle .zone > div > .chat { border-radius: 0; flex: 1; }
   .zone-middle .zone:has(> div > .chat) > div:has(> .chat) { flex: 1; display: flex; flex-direction: column; }
@@ -306,7 +317,7 @@ const STYLE = `
   .variants { margin-top: 18px; }
   .variants-title { margin: 0 0 10px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #5a6475; }
   .variant-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; align-items: stretch; }
-  .variant { max-width: 560px; background: #fff; border: 1px solid #cfd4dc; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; min-width: 0; overflow-wrap: anywhere; }
+  .variant { max-width: 560px; background: #fff; border: 1px solid #cfd4dc; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; min-width: 0; overflow-wrap: break-word; }
   .variant-when { margin: 0; font-size: 14px; font-weight: 600; }
   .variant-zone { display: block; font-weight: 400; font-size: 12px; color: #5a6475; }
   .variant-note { margin: 0; font-size: 14px; color: #3b4456; }
@@ -318,7 +329,7 @@ const STYLE = `
   .dev-notes { font-size: 12px; color: #6b7485; margin-top: 12px; border-top: 1px solid #d5d9e0; padding-top: 10px; }
   .dev-notes p { margin: 0; }
   .dev-notes ul { margin: 4px 0 0; padding-left: 20px; }
-  @media (max-width: 600px) { body { padding: 20px 12px 32px; } .zone-middle { flex-direction: column; } .zone-left { flex: none; border-right: 0; border-bottom: 1px solid #e3e6eb; } .bubble { max-width: 88%; } }
+  @media (max-width: 600px) { body { padding: 20px 12px 32px; } .zone-middle { flex-direction: column; } .zone-middle .zone { flex: none; } .zone-left { flex: none; border-right: 0; border-bottom: 1px solid #e3e6eb; } .bubble { max-width: 88%; } }
 `;
 // Sólo va cuando la maqueta tiene una capa: una maqueta sin capas sale sin esa parte.
 const LAYER_STYLE = `
@@ -370,7 +381,9 @@ function renderMockup(model) {
       case 'group': return `<fieldset class="group"><legend>${T(x.legend, x.kind, i)}</legend><div class="group-row">${x.items.map((c) => casilla(c, i, T)).join('')}</div></fieldset>`;
       case 'table': {
         const rows = (Array.isArray(x.rows) ? x.rows : []).map((r) => `<tr>${(Array.isArray(r) ? r : []).map((c) => `<td>${E(c)}</td>`).join('')}</tr>`).join('');
-        return `<table class="table"><thead><tr>${x.columns.map((c) => `<th>${T(c, x.kind, i)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+        // con muchas columnas, una nota para quien aprueba (no se compara): la captura no muestra la barra de desplazamiento
+        const nota = x.columns.length >= 5 ? `<p class="table-note">${x.columns.length} columnas: si no entran, la tabla se desplaza de costado.</p>` : '';
+        return `<div class="table-wrap"><table class="table"><thead><tr>${x.columns.map((c) => `<th>${T(c, x.kind, i)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>${nota}`;
       }
       case 'list': return `<ul class="list">${x.items.map((it) => `<li${it === x.selected ? ' class="selected"' : ''}>${T(it, x.kind, i)}</li>`).join('')}</ul>`;
       case 'message': return `<div class="message tone-${TONES.includes(x.tone) ? x.tone : 'info'}">${T(x.text, x.kind, i)}</div>`;

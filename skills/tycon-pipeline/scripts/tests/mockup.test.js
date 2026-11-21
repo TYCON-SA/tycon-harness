@@ -468,9 +468,10 @@ test('T40 Mockup_SinCapa_HtmlIgualAlDeHoy @story-7.48 @ac-3 @story-8.129 @ac-11'
   // la huella del HTML del modelo de muestra sin capas. Cambia a propósito cuando cambia el dibujo: con la cabecera
   // «esquema, no aspecto» y la marca de la casilla, y otra vez con la maqueta legible (frase arriba, zonas, lo nuevo
   // marcado, los archivos al pie y los casos repetidos como variantes), y otra con el aspecto de pantalla real (sin barra
-  // de ventana, lo de hoy atenuado pero legible, lo nuevo en violeta, la línea para el programador al pie). Una maqueta aprobada no se invalida, porque su
+  // de ventana, lo de hoy atenuado pero legible, lo nuevo en violeta, la línea para el programador al pie), y otra con lo
+  // nuevo marcado sin tapar nada y las zonas que bajan de renglón. Una maqueta aprobada no se invalida, porque su
   // huella sale del archivo guardado y nadie la vuelve a dibujar
-  const HOY = 'd31d699575c30fc0043dcb07ebc57c54f96b04a7a4e282422ddb412400456cee';
+  const HOY = 'f84fa3b7e0dd7f98c214b2c3c75bbae09d9958820c5314f8adb7b64a0cee5c09';
   const { renderMockup } = require(MOCKUP);
   const huella = (m) => require('crypto').createHash('sha256').update(renderMockup(m)).digest('hex');
   assert.strictEqual(huella(MODELO()), HOY);
@@ -963,4 +964,32 @@ test('T52 Mockup_PareceLaPantalla_ElegidoIconoYMiniaturaDeLaZona', () => {
   assert.strictEqual(r.rc, 2, r.all);
   assert.match(r.err, /selected/);
   assert.ok(!fs.existsSync(out));
+});
+
+// 🔴 Falla con: la marca «Nuevo» flotaba encima del renglón de arriba (posición absoluta) y su borde (outline) no ocupaba
+//    lugar, así que tapaba el contenido vecino; las zonas del medio no bajaban de renglón y una tabla con ancho mínimo se
+//    montaba sobre la de al lado; y el texto se partía en cualquier letra para entrar en una zona angosta.
+test('T53 Mockup_LoNuevoNoTapaNadaYLasZonasEntran — la marca va en su renglón, el borde ocupa lugar, las zonas bajan y las palabras no se parten', () => {
+  const html = armar(CUENTAS_NUEVO());
+  const tag = regla(html, '.new-tag') || '';
+  assert.doesNotMatch(tag, /position\s*:\s*absolute/, 'la marca no flota encima del contenido');
+  const nuevo = regla(html, '.new') || '';
+  assert.match(nuevo, /border\s*:/, 'lo nuevo se marca con un borde que ocupa lugar');
+  assert.doesNotMatch(nuevo, /outline/);
+  assert.match(regla(html, '.zone-middle') || '', /flex-wrap\s*:\s*wrap/, 'una zona que no entra baja de renglón');
+  assert.doesNotMatch(regla(html, 'table.table') || '', /min-width/, 'la tabla no fuerza un ancho que no entra');
+  assert.doesNotMatch(html, /overflow-wrap\s*:\s*anywhere/, 'ninguna palabra se parte letra por letra');
+  assert.doesNotMatch(regla(html, '.field') || '', /min-width\s*:\s*\d+px/, 'un campo no pide más ancho que el que hay');
+  assert.match(regla(html, '.field') || '', /max-width\s*:\s*100%/);
+  // la marca de lo que abre una ventana tampoco va encima: va en su renglón, debajo del botón
+  assert.doesNotMatch(regla(html, '.open-tag') || '', /position\s*:\s*absolute/);
+  // 🔴 una tabla que no entra no se corta: su caja se desplaza, y con muchas columnas una nota lo dice (no se compara)
+  const ancha = armar({ storyId: '9.9', title: 'x', screens: [{ name: 'a', elements: [
+    { kind: 'table', columns: ['Uno', 'Dos', 'Tres', 'Cuatro', 'Cinco'], rows: [['1', '2', '3', '4', '5']] },
+    { kind: 'table', columns: ['A', 'B'], rows: [['1', '2']] }] }] });
+  assert.match(regla(ancha, '.table-wrap') || '', /overflow-x\s*:\s*auto/);
+  assert.match(ancha, /<div class="table-wrap"><table class="table">/);
+  assert.strictEqual((ancha.match(/class="table-note"/g) || []).length, 1, 'la nota, sólo en la tabla de muchas columnas');
+  assert.match(ancha, /5 columnas: si no entran, la tabla se desplaza de costado\./);
+  assert.ok(!require(MOCKUP).mockupTexts(ancha).some((t) => /columnas/.test(t.text || t)), 'la nota no se compara con la pantalla');
 });
