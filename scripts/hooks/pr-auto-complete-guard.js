@@ -237,21 +237,37 @@ function juzgarSegmentos(segs) {
 juzgarSegmentos(az.segmentos(cmd));
 
 // El pedido que el recorrido común no ve (8.225): lo que corre aparte —una sustitución adentro de comillas dobles, el
-// cuerpo de un heredoc a una terminal— se juzga como un comando suelto, con su propio escape; lo que le llega a az por
-// un camino que no se lee frena con «no puedo leer». Con un tope de vueltas: un texto anidado no lo recorre para siempre.
+// cuerpo de un heredoc a una terminal o el que expande— se juzga como un comando suelto, con su propio escape; lo que le
+// llega a az por un camino que no se lee frena con «no puedo leer». Y la red de abajo: si el comando nombra más pedidos
+// de los que se juzgaron y algo en él corre código (`quienEjecuta`), frena aunque la forma no esté en la lista. Con un
+// tope de vueltas: cada texto es más corto que el que lo contiene, pero un comando enorme no se recorre sin fin.
 if (esAz) {
-  const vistos = new Set();
+  const cuenta = (segs) => segs.filter((x) => ['create', 'update'].includes(az.verboDePr(x))).length;
+  let juzgados = cuenta(az.segmentos(cmd));
+  let ejecutor = null;
+  const tuberias = [];
   const pendientes = [cmd];
-  for (let vuelta = 0; pendientes.length && vuelta < 20; vuelta += 1) {
-    const { textos, ilegibles } = az.pedidosOcultos(pendientes.shift());
-    for (const i of ilegibles) {
+  for (let vuelta = 0; pendientes.length && vuelta < 50; vuelta += 1) {
+    const oculto = az.pedidosOcultos(pendientes.shift());
+    ejecutor = ejecutor || oculto.ejecutor;
+    for (const i of oculto.ilegibles) {
+      if (i.porTuberia) { tuberias.push(i); continue; }
       problemas.push({ seg: i.seg, verbo: 'interprete', faltas: [`${i.motivo}, así que no puedo leer sus banderas — y lo que no pude mirar no está aprobado`] });
       huboJuicio = true;
     }
-    for (const t of textos.filter((x) => az.pareceAzPr(x) && !vistos.has(x))) {
-      vistos.add(t);
-      juzgarSegmentos(az.segmentos(t));
+    for (const t of oculto.textos.filter((x) => az.pareceAzPr(x))) {
+      const segsDeAdentro = az.segmentos(t);
+      juzgados += cuenta(segsDeAdentro);
+      juzgarSegmentos(segsDeAdentro);
       pendientes.push(t);
+    }
+  }
+  if (!problemas.length && az.mencionesDePedido(cmd) > juzgados) {
+    const sinLeer = tuberias.length ? tuberias.map((i) => ({ seg: i.seg, motivo: i.motivo }))
+      : (ejecutor ? [{ seg: az.segmentos(cmd)[0] || [], motivo: `el comando nombra un pedido que no se deja leer como tal, y \`${ejecutor}\` corre código` }] : []);
+    for (const i of sinLeer) {
+      problemas.push({ seg: i.seg, verbo: 'interprete', faltas: [`${i.motivo}, así que no puedo leer sus banderas — y lo que no pude mirar no está aprobado. Escribí el pedido con \`az\` directo`] });
+      huboJuicio = true;
     }
   }
 }

@@ -127,6 +127,16 @@ function fichas(cmd, opts = {}) {
       continue;
     }
 
+    // `$'…'` (citado ANSI-C): adentro la barra escapa, también la comilla (`$'it\'s'`). Leído como una cadena común, la
+    // comilla escapada la cerraba y el resto del comando quedaba «entre comillas», sin mirar
+    if (c === '$' && n === "'" && !ps) {
+      if (!abierta) { abierta = true; empezoLibre = false; }
+      expande = true;
+      let j = i + 2;
+      while (j < s.length && s[j] !== "'") { if (s[j] === '\\' && j + 1 < s.length) { texto += s[j] + s[j + 1]; j += 2; continue; } texto += s[j]; j++; }
+      i = j;
+      continue;
+    }
     if (c === '"' || c === "'") {
       if (!abierta) { abierta = true; empezoLibre = false; }
       q = c;
@@ -330,16 +340,18 @@ function cierreDe(s, i) {
  * que la terminal corre como un comando. Las de afuera ya las parte `fichas` en su propio segmento; las de adentro de
  * comillas simples no corren.
  */
-function sustitucionesCitadas(cmd) {
+function sustitucionesCitadas(cmd, { cuerpo = false } = {}) {
   const s = String(cmd || '').replace(/\\\r?\n/g, '');
   const out = [];
-  let q = null;
+  // `cuerpo`: el de un heredoc que expande; ahí las comillas son texto y toda sustitución corre
+  let q = cuerpo ? '"' : null;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (c === '\\' && q !== "'") { i++; continue; }
     if (q === "'") { if (c === "'") q = null; continue; }
-    if (c === '"') { q = q ? null : '"'; continue; }
-    if (c === "'") { q = "'"; continue; }
+    if (!cuerpo && c === '"') { q = q ? null : '"'; continue; }
+    if (!q && c === '$' && s[i + 1] === "'") { i += 2; while (i < s.length && s[i] !== "'") { if (s[i] === '\\') i++; i++; } continue; }
+    if (!q && c === "'") { q = "'"; continue; }
     if (q !== '"') continue;
     if (c === '$' && s[i + 1] === '(' && s[i + 2] !== '(') { const fin = cierreDe(s, i + 2); out.push(s.slice(i + 2, fin)); i = fin; continue; }
     if (c === '`') { let j = i + 1; while (j < s.length && s[j] !== '`') { if (s[j] === '\\') j++; j++; } out.push(s.slice(i + 1, j).replace(/\\([`$\\])/g, '$1')); i = j; }
@@ -347,38 +359,57 @@ function sustitucionesCitadas(cmd) {
   return out;
 }
 
-/** Los heredocs que van a una terminal o a python: `{ cuerpo, terminal }`, con el cuerpo tal cual. */
-function heredocsAUnInterprete(cmd) {
+/**
+ * Los heredocs del comando: `{ cuerpo, lector, expande }`. `lector`: 'terminal' o 'python' si alguna palabra del renglón lo
+ * es (también detrás de `env`, `sudo` o una tubería: `cat <<EOF | bash`), o null. `expande`: el delimitador va sin
+ * comillas ni barra, y la terminal corre las sustituciones del cuerpo antes de pasarlo.
+ */
+function heredocs(cmd) {
   const s = String(cmd || '').replace(/\\\r?\n/g, '');
   const out = [];
-  for (const m of s.matchAll(/(?<!<)<<(?!<)-?\s*(["']?)\\?([A-Za-z_][A-Za-z0-9_.-]*)\1/g)) {
+  for (const m of s.matchAll(/(?<!<)<<(?!<)-?\s*(["']?)(\\?)([A-Za-z_][A-Za-z0-9_.-]*)\1/g)) {
     const finLinea = s.indexOf('\n', m.index);
     if (finLinea === -1) continue;
-    const segs = segmentos(s.slice(s.lastIndexOf('\n', m.index) + 1, m.index));
-    const palabras = delComando(segs[segs.length - 1] || []);
-    const terminal = !!palabras[0] && TERMINAL.test(palabras[0].texto);
-    if (!terminal && !(palabras[0] && PYTHON.test(palabras[0].texto))) continue;
+    const palabras = fichas(s.slice(s.lastIndexOf('\n', m.index) + 1, finLinea)).filter((f) => f.op === undefined && esPalabra(f)).map((f) => f.texto);
+    const lector = palabras.some((t) => TERMINAL.test(t)) ? 'terminal' : (palabras.some((t) => PYTHON.test(t)) ? 'python' : null);
     const lineas = s.slice(finLinea + 1).split(/\r?\n/);
-    const fin = lineas.findIndex((l) => l.replace(/^[ \t]+|[ \t]+$/g, '') === m[2]);
-    out.push({ cuerpo: (fin === -1 ? lineas : lineas.slice(0, fin)).join('\n'), terminal });
+    const fin = lineas.findIndex((l) => l.replace(/^[ \t]+|[ \t]+$/g, '') === m[3]);
+    out.push({ cuerpo: (fin === -1 ? lineas : lineas.slice(0, fin)).join('\n'), lector, expande: !m[1] && !m[2] });
   }
   return out;
 }
 
+// Algo del comando corre código que el freno no ve como pedido: una terminal o python, `eval`, `source`, `xargs`,
+// `parallel`, `find -exec`, `ssh`, una sustitución de procesos o el programa en una variable. Devuelve cuál, o null.
+const EJECUTA = /(^|[\s/|&;(`'"{<])((?:ba|z|k|da)?sh|python[0-9.]*|eval|source|xargs|parallel|ssh|-exec|-execdir|-ok|-okdir)(\.exe)?(?=$|[\s;|&)}'"`>])/i;
+function quienEjecuta(cmd) {
+  const crudo = String(cmd || '');
+  const m = crudo.match(EJECUTA);
+  if (m) return m[2];
+  if (/[<>]\(/.test(crudo)) return 'una sustitución de procesos';
+  const deVariable = segmentos(crudo).map(delComando).find((p) => p[0] && p[0].expande);
+  return deVariable ? deVariable[0].texto : null;
+}
+/** Cuántas veces el texto nombra un pedido (`repos pr create|update`), sin comillas ni barras. */
+const mencionesDePedido = (cmd) => (String(cmd || '').replace(/\\\r?\n/g, ' ').replace(/["'\\]/g, '').match(/\brepos\s+pr\s+(?:create|update)\b/gi) || []).length;
+
 /**
  * Los pedidos que el recorrido común no ve como tales (8.225). `textos`: lo que corre como un comando aparte y se juzga
  * igual que uno suelto (una sustitución adentro de comillas dobles, el cuerpo de un heredoc a una terminal).
- * `ilegibles`: `{ seg, motivo }`, un pedido que le llega a az por un camino que no se puede leer desde acá —por una
- * tubería a un intérprete, el cuerpo de un heredoc a python, el programa en una variable, `python -m azure.cli`, o la
- * rama agregada al correr por `xargs` o `find -exec`—. El freno los frena con «no puedo leer»: lo que no miró no está
- * aprobado.
+ * `ilegibles`: `{ seg, motivo, porTuberia? }`, un pedido que le llega a az por un camino que no se puede leer desde acá
+ * —por una tubería a un intérprete, el cuerpo de un heredoc a python, el programa en una variable, `python -m azure.cli`,
+ * o la rama agregada al correr por `xargs` o `find -exec`—. El freno los frena con «no puedo leer»: lo que no miró no
+ * está aprobado. `ejecutor`: qué del comando corre código (`quienEjecuta`); con un pedido nombrado que nadie juzgó, el
+ * freno frena por él aunque la forma no esté en la lista (un `env bash`, `$C`, `eval "$C"`).
  */
 function pedidosOcultos(cmd) {
   const textos = sustitucionesCitadas(cmd);
   const ilegibles = [];
-  for (const h of heredocsAUnInterprete(cmd)) {
-    if (h.terminal) textos.push(h.cuerpo);
-    else if (PIDE_PR.test(h.cuerpo)) ilegibles.push({ seg: [{ texto: 'python', esBandera: true }], motivo: 'el pedido va en el cuerpo de un heredoc a python' });
+  for (const h of heredocs(cmd)) {
+    if (h.lector === 'terminal') textos.push(h.cuerpo);
+    else if (h.lector === 'python' && PIDE_PR.test(h.cuerpo)) ilegibles.push({ seg: [{ texto: 'python', esBandera: true }], motivo: 'el pedido va en el cuerpo de un heredoc a python' });
+    // el cuerpo que expande corre sus sustituciones aunque el heredoc vaya a `cat`
+    if (h.expande && h.lector !== 'terminal') textos.push(...sustitucionesCitadas(h.cuerpo, { cuerpo: true }));
   }
   let previo = null;
   let cur = [];
@@ -388,7 +419,7 @@ function pedidosOcultos(cmd) {
     if (!palabras.length) return;
     const lee = (TERMINAL.test(palabras[0].texto) && palabras.slice(1).every((f) => f.esBandera && /^-/.test(f.texto) && f.texto !== '-c'))
       || (PYTHON.test(palabras[0].texto) && palabras.slice(1).every((f) => f.texto === '-' || (f.esBandera && /^-[^cm]/.test(f.texto))));
-    if (op === '|' && lee) { ilegibles.push({ seg, motivo: `el pedido le llega a \`${palabras[0].texto}\` por una tubería` }); return; }
+    if (op === '|' && lee) { ilegibles.push({ seg, porTuberia: true, motivo: `el pedido le llega a \`${palabras[0].texto}\` por una tubería` }); return; }
     if (palabras[0].expande && pidePrDesde(t, 1)) { ilegibles.push({ seg, motivo: `el programa está en una variable (\`${palabras[0].texto}\`)` }); return; }
     if (PYTHON.test(t[0] || '') && t[1] === '-m' && /^azure\.cli$/i.test(t[2] || '') && pidePrDesde(t, 3)) { ilegibles.push({ seg, motivo: 'va por `python -m azure.cli`; escribilo con `az`' }); return; }
     const corre = /^(xargs|parallel)$/.test(t[0] || '') || (t[0] === 'find' && t.some((x) => /^-(exec|execdir|ok|okdir)$/.test(x)));
@@ -402,7 +433,7 @@ function pedidosOcultos(cmd) {
     previo = f.op;
   }
   if (cur.length) mirar(cur, previo);
-  return { textos, ilegibles };
+  return { textos, ilegibles, ejecutor: quienEjecuta(cmd) };
 }
 
 
@@ -659,5 +690,5 @@ function faltasDe(seg, { cambiaCarpeta = false } = {}) {
 }
 
 module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA,
-  pedidosOcultos, sustitucionesCitadas,
+  pedidosOcultos, sustitucionesCitadas, mencionesDePedido,
   esDeLargaVida, cambiaCarpetaAntes, consultaDeOrigen, topeDeLaConsulta };

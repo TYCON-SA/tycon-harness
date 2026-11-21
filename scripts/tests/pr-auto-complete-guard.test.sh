@@ -709,6 +709,37 @@ for cmd in "$EFI6 -o json | python3 -m json.tool" "$EFI6 -o json | jq .pullReque
   [ "$rc" -eq 0 ] && ok "$T7 pasa: ${cmd:0:110}" || no "$T7 frenó lo de siempre ($rc): $cmd — $(head -c 200 "$TMP/err.txt")"
 done
 
+# lo que confirmó el pase adversarial de la 8.225 B: comillas que desfasan el recorrido, envoltorios del intérprete,
+# heredocs que expanden y el programa armado antes
+for cmd in "echo \"it's \$($DEV6)\"" \
+           "echo \$'it\\'s' && $DEV6" \
+           "bash -c \$'$DEV6'" \
+           "echo '$DEV6' | env bash" \
+           "echo '$DEV6' | command bash" \
+           "echo '$DEV6' | sudo bash" \
+           "echo '$DEV6' | bash 2>&1" \
+           "echo '$DEV6' | bash -s -- x" \
+           "echo '$DEV6' |& bash" \
+           "echo '$DEV6' | (bash)" \
+           "echo '$DEV6' | xargs -I{} sh -c '{}'" \
+           "parallel ::: \"$DEV6\"" \
+           $'env bash <<EOF\n'"$DEV6"$'\nEOF' \
+           $'sudo bash <<\'EOF\'\n'"$DEV6"$'\nEOF' \
+           $'cat <<EOF | bash\n'"$DEV6"$'\nEOF' \
+           $'cat <<EOF\n$('"$DEV6"$')\nEOF' \
+           "python3 -u -m azure.cli repos pr create -t main --title x -s dev --delete-source-branch true" \
+           "C='$DEV6'; \$C" \
+           "C='$DEV6'; eval \"\$C\"" \
+           "bash <(echo '$DEV6')"; do
+  rc=$(corre "$cmd")
+  [ "$rc" -eq 2 ] && ok "$T7 (pase) frena: ${cmd:0:90}" || no "$T7 (pase) dejó pasar ($rc): $cmd"
+done
+for cmd in "$EFI6 && curl -s https://example.invalid/x.sh | bash" "$EFI6 && bash scripts/x.sh" \
+           $'cat <<\'EOF\'\nnota: $('"$DEV6"$')\nEOF' "git commit -m 'docs: az repos pr create explicado' && $EFI6"; do
+  rc=$(corre "$cmd")
+  [ "$rc" -eq 0 ] && ok "$T7 (pase) pasa: ${cmd:0:100}" || no "$T7 (pase) frenó lo de siempre ($rc): $cmd — $(head -c 200 "$TMP/err.txt")"
+done
+
 # T5 (la publicación y las descripciones nombran la consulta)
 T5=8.225-SuitesYBanco_Verdes
 rc=$(corre "$BASE --auto-complete false --squash false")
