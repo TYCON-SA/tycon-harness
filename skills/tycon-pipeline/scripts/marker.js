@@ -8426,7 +8426,7 @@ function cmdAdhoc(sub, payloadJson) {
     // el aviso a la persona entregado. Si falta una de las dos, la firma de siempre
     let r = null;
     const ampliacion = LISTA.ampliacionSinFirma({ actual, nueva: allowedFiles, reason, maxFiles: payload.maxFiles, datos: payload.datos, maqueta,
-      sobreCupo: firmaDelPedido === firmas.SOBRE_CUPO });
+      sobreCupo: firmaDelPedido === firmas.SOBRE_CUPO, otraSesion: deOtraSesion, firmaVigente: !!(actual && io.adhocFirmado(STATE_DIR, destino, actual)) });
     if (ampliacion.ok) {
       const agregadosRel = ampliacion.agregados.map((f) => LISTA.relDeLaLista(f, carpetaDeLaLista, pedidaLista.hermanos));
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));

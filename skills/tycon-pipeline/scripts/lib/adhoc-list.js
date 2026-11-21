@@ -518,15 +518,22 @@ function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), 
 // coordinadora por delegación, nunca sobre una abierta sin firma («hecho y avisado»), y hasta este total de archivos
 const VIAS_FIRMADAS = new Set(['delegacion', 'terminal', 'ventana', 'click', 'mensaje']);
 const TOPE_SIN_FIRMA = 5;
+// un archivo que cambia lo que corre la CI o el despliegue no se suma sin firma, aunque el riesgo de la lista no lo cuente
+const CI_O_DESPLIEGUE = /(^|[\\/])(\.github[\\/]workflows[\\/]|\.gitlab-ci\.ya?ml$|azure-pipelines[^\\/]*\.ya?ml$|pipelines[\\/])/i;
 
 /**
- * ¿Se amplía la lista sin otra firma? `{ ok: true, agregados }` sólo si la nueva contiene entera a la firmada y suma algo,
+ * ¿Se amplía la lista sin otra firma? `{ ok: true, agregados }` sólo si la pide la propia sesión (`otraSesion: false`)
+ * sobre su lista con la firma vigente (`firmaVigente: true`: el portón todavía encuentra su renglón), la nueva contiene
+ * entera a la firmada y suma algo,
  * tiene 5 archivos o menos, todos en los repos que ya nombraba, sin nada sensible ni de riesgo alto (lo que no se pudo
  * medir cuenta como riesgo), y el resto del carril no cambia (motivo, cupo, datos, maqueta, sobre cupo). Si no,
  * `{ ok: false, motivo }`, y la ampliación pide la firma de siempre. Al dueño le llega el aviso: eso lo hace quien llama.
  */
-function ampliacionSinFirma({ actual, nueva, reason, maxFiles, datos, maqueta, sobreCupo, riesgo = riesgoDeLaLista }) {
+function ampliacionSinFirma({ actual, nueva, reason, maxFiles, datos, maqueta, sobreCupo, otraSesion, firmaVigente, riesgo = riesgoDeLaLista }) {
   const no = (motivo) => ({ ok: false, motivo });
+  // la lista de otra sesión (--for-session, la coordinadora) sólo se amplía con la firma de siempre
+  if (otraSesion !== false) return no('la pide otra sesión');
+  if (firmaVigente !== true) return no('la lista abierta no tiene su firma vigente');
   if (!actual || !Array.isArray(actual.allowedFiles) || !actual.allowedFiles.length) return no('no hay una lista firmada que ampliar');
   if (!VIAS_FIRMADAS.has(actual.via)) return no('la lista abierta no la firmó nadie');
   if (!Array.isArray(nueva) || faltanEnLaNueva(actual.allowedFiles, nueva).length) return no('la lista nueva no contiene entera a la firmada');
@@ -541,6 +548,7 @@ function ampliacionSinFirma({ actual, nueva, reason, maxFiles, datos, maqueta, s
   if (sobreCupo || actual.sobreCupo) return no('el arreglo pasa el tope de la organización');
   const repos = new Set(actual.allowedFiles.map(raizDe));
   if (agregados.some((f) => { const r = raizDe(f); return !r || !repos.has(r); })) return no('suma un archivo de otro repo, o fuera de todo repo');
+  if (agregados.some((f) => CI_O_DESPLIEGUE.test(path.relative(raizDe(f), f)))) return no('suma un archivo de la CI o del despliegue');
   let r;
   try { r = riesgo(nueva); } catch (_) { r = { regla: 'no-pude-saber', archivo: agregados[0] }; }
   if (r) return no(`la lista nombra una ruta de ${textoDelRiesgo(r)}`);

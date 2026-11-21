@@ -1133,7 +1133,7 @@ test('T60 AmpliarSinFirma_LasTresCondiciones', () => {
   const a = (rel, d = dir) => path.join(d, rel);
   const actual = { reason: 'arreglo del combo de clientes', maxFiles: 5, datos: 'sin-cambio', via: 'ventana', allowedFiles: [a('src/a.js')] };
   const sinRiesgo = () => null;
-  const pide = (o = {}) => L.ampliacionSinFirma({ actual, nueva: [a('src/a.js'), a('src/b.js')], reason: actual.reason, datos: 'sin-cambio', riesgo: sinRiesgo, ...o });
+  const pide = (o = {}) => L.ampliacionSinFirma({ actual, nueva: [a('src/a.js'), a('src/b.js')], reason: actual.reason, datos: 'sin-cambio', riesgo: sinRiesgo, otraSesion: false, firmaVigente: true, ...o });
   // las tres condiciones: pasa, y dice qué suma
   const ok = pide();
   assert.strictEqual(ok.ok, true, ok.motivo);
@@ -1160,8 +1160,16 @@ test('T60 AmpliarSinFirma_LasTresCondiciones', () => {
   // un archivo de otro repo, o fuera de todo repo: sigue la firma
   assert.strictEqual(pide({ nueva: [a('src/a.js'), a('src/x.js', otro)] }).ok, false);
   assert.strictEqual(pide({ nueva: [a('src/a.js'), '/opt/tycon-no-existe/x.js'] }).ok, false);
+  // la pide otra sesión (--for-session, la coordinadora), o la lista ya no tiene su firma vigente: sigue la firma
+  assert.match(pide({ otraSesion: true }).motivo, /otra sesión/);
+  assert.strictEqual(pide({ otraSesion: undefined }).ok, false);
+  assert.match(pide({ firmaVigente: false }).motivo, /firma vigente/);
+  // un archivo de la CI o del despliegue no se suma sin firma
+  for (const rel of ['.github/workflows/ci.yml', 'azure-pipelines.yml', 'pipelines/deploy.yml', '.gitlab-ci.yml']) {
+    assert.match(pide({ nueva: [a('src/a.js'), a(rel)] }).motivo, /CI o del despliegue/, rel);
+  }
   // la lectura del riesgo de verdad: un archivo de las firmas del arnés no se suma sin firma
-  const sensible = L.ampliacionSinFirma({ actual, nueva: [a('src/a.js'), a('scripts/lib/signatures.js')], reason: actual.reason, datos: 'sin-cambio' });
+  const sensible = L.ampliacionSinFirma({ actual, nueva: [a('src/a.js'), a('scripts/lib/signatures.js')], reason: actual.reason, datos: 'sin-cambio', otraSesion: false, firmaVigente: true });
   assert.strictEqual(sensible.ok, false, 'sumó un archivo sensible sin firma');
 });
 
