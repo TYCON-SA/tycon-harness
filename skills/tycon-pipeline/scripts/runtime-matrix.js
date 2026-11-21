@@ -791,7 +791,7 @@ function nacioAntesDelAcExacto(storyPath) {
   try {
     const { sinGitDelPadre, idiomaFijo } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js'));
     const git = (args) => require('child_process').spawnSync('git', args,
-      { cwd: path.dirname(storyPath), encoding: 'utf8', env: idiomaFijo(sinGitDelPadre()), timeout: 15000 });
+      { cwd: path.dirname(storyPath), encoding: 'utf8', env: idiomaFijo(sinGitDelPadre()), timeout: 15000, windowsHide: true });
     const nombre = path.basename(storyPath);
     if (git(['ls-files', '--error-unmatch', '--', nombre]).status === 0) {
       const r = git(['log', '--no-renames', '--diff-filter=A', '--format=%cI', '-1', '--', nombre]);
