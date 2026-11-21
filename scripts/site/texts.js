@@ -639,6 +639,9 @@ const TEXTOS = {
   'mant.paso.esteProblema': { es: 'tuvo este problema: {nombre}', en: 'had this problem: {nombre}' },
   'mant.paso.historias': { es: 'Historias: {lista}.', en: 'Stories: {lista}.' },
   'mant.paso.maquinas': { es: 'Máquinas: {lista}.', en: 'Machines: {lista}.' },
+  'mant.paso.sesiones': { es: 'Sesiones: {lista}.', en: 'Sessions: {lista}.' },
+  'mant.paso.sesionesSinNombre': { es: 'Sesiones: {lista} ({k} ejecuciones sin nombre).', en: 'Sessions: {lista} ({k} runs without a name).' },
+  'mant.paso.sesionesSinNombreUna': { es: 'Sesiones: {lista} (una ejecución sin nombre).', en: 'Sessions: {lista} (one run without a name).' },
   'mant.paso.yMas': { es: ' y {n} más', en: ' and {n} more' },
   // lo que sigue a «terminó»: qué control faltó, dicho para quien no lo conoce
   'mant.como.sinAdversarial': { es: 'sin el pase adversarial, la revisión que intenta romper lo que ya se aprobó', en: 'without the adversarial pass, the review that tries to break what was already approved' },

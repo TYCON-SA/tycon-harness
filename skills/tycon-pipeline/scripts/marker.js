@@ -477,8 +477,36 @@ function avisarOficina(sesion = SID) {
   try { require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'office-event.js')).notify(sesion); } catch (_e) { /* la vigilancia de la oficina lo ve después */ }
 }
 
+// Las sesiones que pasaron por la corrida, con su nombre (`marker.sesiones`, scripts/lib/session-name.js): la entrada de
+// la sesión que corre el comando se pone al día en los cinco comandos que marcan el arranque, cada paso, cada pase de
+// sesión y el cierre. El nombre se lee una vez por comando. Leerlo nunca frena ni cambia la salida: si no se puede, la
+// entrada queda sin nombre (o, sin la librería, la lista queda como estaba) y sale una línea con el código.
+const COMANDOS_CON_NOMBRE = new Set(['set', 'complete-step', 'adopt-session', 'restore', 'clear']);
+let nombreDelComando;
+function conSesionNombrada(marker) {
+  if (PREVIO || SOLO_LECTURA || SID !== PROPIA || SID === '_nosession' || !COMANDOS_CON_NOMBRE.has(process.argv[2])) return marker;
+  if (!marker || typeof marker !== 'object' || !marker.storyId) return marker;
+  if (nombreDelComando === undefined) {
+    try {
+      const lib = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'session-name.js'));
+      nombreDelComando = { lib, leido: lib.nombreDeSesion({ sid: SID, home: os.homedir() }), visto: nowIso() };
+      if (nombreDelComando.leido.problema) process.stderr.write(`[marker] no pude leer el nombre de la sesión (${nombreDelComando.leido.problema})\n`);
+    } catch (_e) {
+      nombreDelComando = null;
+      process.stderr.write('[marker] no pude leer el nombre de la sesión (sin-libreria)\n');
+    }
+  }
+  if (!nombreDelComando) return marker;
+  try {
+    const { lib, leido, visto } = nombreDelComando;
+    marker.sesiones = lib.conSesion(marker.sesiones, { id: SID, nombre: leido.nombre, cortado: leido.cortado, visto });
+  } catch (_e) { /* la lista queda como estaba: el marcador se escribe igual */ }
+  return marker;
+}
+
 function writeMarker(marker) {
   sinFirmaNoSeEscribe();
+  conSesionNombrada(marker);
   ensureActiveDir();
   pruneStale();
   const p = markerFilePath(SID);
@@ -739,6 +767,8 @@ function cmdSet(payloadJson) {
       batch, batchSetAt,
       // el pedido es de la corrida: heredado, el cierre de la nueva anunciaría un pedido que no es suyo
       pr,
+      // las sesiones que pasaron son de la corrida: heredadas, la ficha de la nueva nombraría sesiones de la anterior
+      sesiones,
       ...carryOver
     } = existing;
     console.error(
@@ -5742,6 +5772,8 @@ function cmdClear(rest = []) {
   try {
     const marker = readMarker();
     if (marker && marker.storyId) {
+      // la sesión que cierra entra a la lista antes de armar el volcado: viaja en `marker.sesiones`
+      conSesionNombrada(marker);
       let gates = [];
       try {
         const raw = fs.readFileSync(path.join(STATE_DIR, 'gates.log'), 'utf8');

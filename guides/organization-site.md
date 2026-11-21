@@ -246,7 +246,11 @@ la fila vuelve a «Te toca decidir» con el porqué. El tipo del pedido de traba
 
 Cada tarjeta dice **qué pasó** en llano, con los datos de la ficha. En una de ejecuciones, por ejemplo: «Entre el 21/10 y
 el 24/10, 4 ejecuciones terminaron sin el pase adversarial, la revisión que intenta romper lo que ya se aprobó.
-Historias: 4.1, 4.3. Máquinas: mac-a, mac-b.» Si hay análisis, dice **por qué** pasa, qué **recomienda** y qué
+Historias: 4.1, 4.3. Máquinas: mac-a, mac-b. Sesiones: Ponzio-5, Carrizo-4.» El nombre de cada sesión es el nombre que
+tenía la sesión en su máquina durante la ejecución, y entra sólo si tiene forma de nombre de sesión (letras sin acento,
+números, guion o guion bajo, sin espacios, hasta 40 caracteres); las ejecuciones con un nombre sin esa forma, o sin
+nombre, se cuentan aparte («2 ejecuciones sin nombre»). Una ejecución cerrada antes de que el arnés anotara los nombres no
+lo trae. Si hay análisis, dice **por qué** pasa, qué **recomienda** y qué
 se haría si se arregla, y aclara si lo escribió el modelo de la noche o una persona. Sin análisis, dice por qué no lo
 tiene. Si la noche dejó una propuesta, dice que la escribió el modelo de IA que revisa cada noche, y su botón queda
 resaltado. Los botones para decidir están siempre a la vista, bajo el título **Decidir**.
