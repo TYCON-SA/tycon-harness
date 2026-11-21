@@ -272,14 +272,26 @@ function setBrake(stateDir, sid, motivo) {
   escribirEntero(archivoDelFreno(stateDir, sid), JSON.stringify({ sesion: sid || null, motivo, desde: new Date().toISOString() }));
 }
 
-/** El freno de la sesión: `{ sesion, motivo, desde }`, o null si no está frenada. Un archivo ilegible cuenta como freno. */
+/**
+ * El freno de la sesión: `{ sesion, motivo, desde }`, o null si no está frenada. Cualquier cosa en el lugar del freno
+ * cuenta como freno: un archivo ilegible, una carpeta, un enlace, o una carpeta `frenadas` que no es una carpeta (si no,
+ * poner algo ahí antes evitaría quedar frenada).
+ */
 function readBrake(stateDir, sid) {
-  const m = mirar(archivoDelFreno(stateDir, sid));
-  if (!m) return null;
-  if (!m.contenido) return { sesion: sid, motivo: 'el registro del freno no se puede leer', desde: null };
-  try { return JSON.parse(m.contenido.toString('utf8')); } catch (_) { return { sesion: sid, motivo: 'el registro del freno no se puede leer', desde: null }; }
+  const ilegible = { sesion: sid, motivo: 'el registro del freno no se puede leer', desde: null };
+  const archivo = archivoDelFreno(stateDir, sid);
+  // con `frenadas` como archivo, mirar adentro da ENOTDIR: cuenta como freno, como todo lo que no es «no existe»
+  let st;
+  try { st = fs.lstatSync(archivo); } catch (e) { return e.code === 'ENOENT' ? null : ilegible; }
+  if (!st.isFile()) return ilegible;
+  const m = mirar(archivo);
+  if (!m || !m.contenido) return ilegible;
+  try {
+    const r = JSON.parse(m.contenido.toString('utf8'));
+    return r && typeof r === 'object' && typeof r.motivo === 'string' ? r : ilegible;
+  } catch (_) { return ilegible; }
 }
 
-const clearBrake = (stateDir, sid) => fs.rmSync(archivoDelFreno(stateDir, sid), { force: true });
+const clearBrake = (stateDir, sid) => fs.rmSync(archivoDelFreno(stateDir, sid), { force: true, recursive: true });
 
 module.exports = { setBrake, readBrake, clearBrake, takePhoto, photoIntact, differences, undo, gitBrought: traidasPorGit, photosDir: dirFotos, writeWhole: escribirEntero, storyStatusOf: estadoDelTexto };

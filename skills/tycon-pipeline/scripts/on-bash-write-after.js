@@ -23,8 +23,9 @@
  * se deshace: se anota `escritura-dudosa` en gates.log y se avisa. Es dudoso un cambio con otra sesión viva en el mismo
  * repo desde antes del comando (las que ve live-sessions.js, en la foto y otra vez después), o con otro comando de la
  * misma sesión que corría marker.js sobre ese archivo. La hora de un archivo no decide nada: un guion la pone donde
- * quiere. Una sesión que se ve viva porque un comando anterior tocó su conversación o su marcador sigue contando: lo
- * cambiado queda como dudoso, anotado y avisado, no deshecho.
+ * quiere. De la conversación cuenta sólo lo que estaba escrito antes del comando. Un comando anterior que prepara la
+ * trampa (agrega una llamada falsa a la conversación, o hace que otra sesión se vea viva) no se ve: lo que cambie el
+ * comando siguiente queda sin deshacer, o como dudoso, anotado y avisado. Para eso queda la red del commit.
  *
  * Límites conocidos: un proceso que el comando deja vivo (`&`, `nohup`) y escribe cuando el comando ya terminó, un
  * comando cortado por tiempo que no llega al evento de después, un guion que escribe en otro repo sin nombrarlo con
@@ -186,17 +187,18 @@ const TOPE_DE_LA_CONVERSACION = 8 * 1024 * 1024;
 
 /**
  * Las llamadas a herramientas de la conversación de la sesión, por su id: `Map<id, { name, input }>`, mirando la cola
- * del archivo (los últimos 8 MB). La conversación la escribe la herramienta, no el agente (el freno de mano frena
- * escribirla): es lo que dice qué corrió de verdad. Sin conversación legible, el mapa queda vacío.
+ * del archivo (los últimos 8 MB) hasta `hasta`: el largo que tenía antes del comando. Las llamadas que corren a la vez
+ * ya están escritas ahí (la herramienta escribe el mensaje entero antes de correrlas); lo que se agregó después lo pudo
+ * escribir el comando mismo y no cuenta. Sin conversación legible, el mapa queda vacío.
  */
-function llamadasDeLaConversacion(transcriptPath, ids) {
+function llamadasDeLaConversacion(transcriptPath, ids, hasta) {
   const out = new Map();
-  if (!transcriptPath || !ids.length) return out;
+  if (!transcriptPath || !ids.length || !(hasta > 0)) return out;
   let texto;
   try {
     const fd = fs.openSync(transcriptPath, 'r');
     try {
-      const tam = fs.fstatSync(fd).size;
+      const tam = Math.min(fs.fstatSync(fd).size, hasta);
       const largo = Math.min(tam, TOPE_DE_LA_CONVERSACION);
       const buf = Buffer.alloc(largo);
       fs.readSync(fd, buf, 0, largo, tam - largo);
@@ -231,7 +233,7 @@ const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string'
  * conversación de la sesión trae esa llamada, con la misma herramienta y el mismo archivo: un registro que escribió el
  * comando mismo no está ahí.
  */
-function aLaVez(stateDir, input, desde) {
+function aLaVez(stateDir, input, desde, largoDeLaConversacion) {
   const propio = path.basename(archivoEnCurso(stateDir, input));
   const ahora = Date.now(); // stable-data: el fin de la ventana del comando
   const candidatos = [];
@@ -249,7 +251,7 @@ function aLaVez(stateDir, input, desde) {
     const terminoAdentro = typeof r.fin === 'number' && r.fin >= desde;
     if (empezoAdentro || terminoAdentro) candidatos.push(r);
   }
-  const llamadas = llamadasDeLaConversacion(input.transcript_path, candidatos.map((r) => r.id));
+  const llamadas = llamadasDeLaConversacion(input.transcript_path, candidatos.map((r) => r.id), largoDeLaConversacion);
   return candidatos.filter((r) => {
     const l = llamadas.get(r.id);
     if (!l || l.name !== r.tool) return false;
@@ -281,7 +283,9 @@ function sesionesVivas(roots, input) {
  * corriendo a la vez. El resto se deshace.
  */
 function separar(foto, diferencias, input, stateDir) {
-  const juntas = aLaVez(stateDir, input, foto.at);
+  const juntas = aLaVez(stateDir, input, foto.at, foto.conversacion);
+  // el marcador propio de la sesión y el viejo `active.json`; el de otra sesión lo cierra esa sesión
+  const marcadorPropio = (abs) => path.basename(abs) === 'active.json' || path.basename(abs) === `${String(input.session_id || '').replace(/[/\\]/g, '_')}.json`;
   const editados = new Set(juntas.filter((r) => HERRAMIENTAS_QUE_EDITAN.includes(r.tool)).flatMap((r) => strings(r.archivos)).map(rutaReal));
   const nombradosPorMarker = new Set(juntas.filter((r) => r.reconocido).flatMap((r) => strings(r.nombra)).map(rutaReal));
   const antes = foto.vivas || {};
@@ -290,7 +294,8 @@ function separar(foto, diferencias, input, stateDir) {
   const dudosas = [];
   for (const d of diferencias) {
     if (editados.has(rutaReal(d.abs))) continue;
-    if (nombradosPorMarker.has(rutaReal(d.abs)) || (d.kind === 'marker' && juntas.some((r) => r.reconocido))) { dudosas.push({ ...d, porque: 'mientras corría, otro comando de esta sesión corría marker.js sobre ese archivo' }); continue; }
+    if (d.kind === 'marker' && !marcadorPropio(d.abs)) { dudosas.push({ ...d, porque: 'es el marcador de otra sesión, que puede haber cerrado su ejecución' }); continue; }
+    if (nombradosPorMarker.has(rutaReal(d.abs)) || (d.kind === 'marker' && juntas.some((r) => r.reconocido))) { dudosas.push({ ...d, porque: 'mientras corría, otro comando de esta sesión corría el del orquestador (marker.js) sobre ese archivo' }); continue; }
     const raiz = foto.roots.find((r) => d.abs.startsWith(r + path.sep));
     const otras = raiz ? strings(antes[raiz]).filter((id) => strings(ahora[raiz]).includes(id)) : [];
     if (otras.length) { dudosas.push({ ...d, porque: `otra sesión trabaja en el mismo repo (${otras.map((s) => s.slice(0, 8)).join(', ')})` }); continue; }
@@ -317,7 +322,7 @@ function mensaje(hechas, fallas, mezclado) {
 const COMO_SE_LIBERA = (sid) => [
   'La libera otra sesión, nunca ésta: la coordinadora (si el perfil le delega la firma) o la persona en su terminal, después',
   'de mirar las historias y las constancias que pudo tocar el comando:',
-  `  · node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js release-write-after --for-session ${sid || '<sesión>'} --reason "<qué miró>" [--terminal]`,
+  `  · ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} release-write-after --for-session ${sid || '<sesión>'} --reason "<qué miró>" [--terminal]`,
 ].join('\n');
 
 /**
@@ -332,24 +337,33 @@ function noSePudoMirar(input, stateDir, motivo) {
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: input.hook_event_name, additionalContext: texto } }) + '\n');
 }
 
-// lo que se puede correr con la sesión frenada: programas que sólo leen, sin redirecciones a archivos
-const LECTORES = new Set(['cat', 'head', 'tail', 'less', 'ls', 'grep', 'egrep', 'fgrep', 'rg', 'wc', 'pwd', 'echo', 'true', 'false',
+// lo que se puede correr con la sesión frenada: programas que sólo leen, sin redirecciones a archivos ni sustituciones.
+// Ninguno ejecuta otro programa por una opción (por eso no están `rg` ni `git grep`, que lo hacen con `--pre` y `-O`)
+const LECTORES = new Set(['cat', 'head', 'tail', 'less', 'ls', 'grep', 'egrep', 'fgrep', 'wc', 'pwd', 'echo', 'printf', 'true', 'false',
   'test', '[', 'stat', 'file', 'diff', 'cmp', 'which', 'type', 'date', 'whoami', 'id', 'uname', 'basename', 'dirname', 'realpath',
-  'readlink', 'jq', 'cut', 'tr', 'nl', 'od', 'cd']);
-const GIT_LEE = new Set(['status', 'log', 'diff', 'show', 'rev-parse', 'ls-files', 'blame', 'grep', 'describe']);
+  'readlink', 'jq', 'cut', 'tr', 'nl', 'od', 'cd', 'uniq']);
+const GIT_LEE = new Set(['status', 'log', 'diff', 'show', 'rev-parse', 'ls-files', 'blame', 'describe']);
+// las opciones de git que escriben un archivo o corren otro programa, en cualquier subcomando
+const GIT_OPCION_QUE_HACE = /^(?:-c|--config-env|--exec-path|--output|--ext-diff|-O|--open-files-in-pager|--textconv)(?:=|$)|^-[cO]./;
+// lo que el shell corre adentro de una palabra: aun entre comillas dobles, `$(…)` y los acentos graves corren
+const SUSTITUCION = /\$\(|`|<\(|>\(|\$\{|@\(/;
 
-/** ¿El comando sólo lee? Cada tramo corre un lector o `git` con un subcomando que lee. */
+/** ¿El comando sólo lee? Cada tramo corre un lector o `git` (con su `-C <carpeta>`) con un subcomando que lee. */
 function soloLee(comando, { powershell = false } = {}) {
-  if (redirigeAArchivo(comando)) return false;
+  if (redirigeAArchivo(comando) || SUSTITUCION.test(String(comando || ''))) return false;
   const { segmentos } = require(path.join(RAIZ_DEL_ARNES, 'scripts', 'lib', 'az-pr.js'));
   return segmentos(String(comando || ''), { powershell }).every((seg) => {
     const p = seg[0];
     if (!p) return true;
     if (!p.esBandera) return false;
     if (LECTORES.has(p.texto)) return true;
-    const resto = seg.slice(1).map((x) => x.texto).filter((x) => !x.startsWith('-'));
-    if (p.texto === 'git') return GIT_LEE.has(resto[0]);
-    return false;
+    if (p.texto === 'sort') return !seg.slice(1).some((x) => /^(?:-o|--output)/.test(x.texto));
+    if (p.texto !== 'git') return false;
+    const palabras = seg.slice(1).map((x) => x.texto);
+    if (palabras.some((x) => GIT_OPCION_QUE_HACE.test(x))) return false;
+    let i = 0;
+    while (palabras[i] === '-C' || palabras[i] === '--no-pager') i += palabras[i] === '-C' ? 2 : 1;
+    return GIT_LEE.has(palabras[i]);
   });
 }
 
@@ -440,7 +454,10 @@ function main() {
       let foto;
       try {
         const roots = reposDelComando(cwd, comando);
-        foto = photo.takePhoto({ roots, stateDir, extra: { vivas: sesionesVivas(roots, input) } });
+        // el largo de la conversación antes del comando: lo que se agregue después pudo escribirlo él
+        let conversacion = 0;
+        try { conversacion = input.transcript_path ? fs.statSync(input.transcript_path).size : 0; } catch (_) { conversacion = 0; }
+        foto = photo.takePhoto({ roots, stateDir, extra: { vivas: sesionesVivas(roots, input), conversacion } });
       } catch (e) {
         // sin foto no hay contra qué comparar: el evento de después lo dice y frena
         logHookError(stateDir, e);
