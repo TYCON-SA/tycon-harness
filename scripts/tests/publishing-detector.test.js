@@ -114,6 +114,21 @@ test('Email_PersonaSiEjemploYServicioNo', () => {
   assert.deepStrictEqual(r.json.hallazgos.filter((h) => h.categoria === 'email').map((h) => h.texto), ['juana@empresa.com.ar']);
 });
 
+test('Email_ElUsuarioDeServicioDeGitlabYLaClaveDeUnaDireccionNo_UnCorreoDeVerdadSi', () => {
+  // Caso: la prueba del conector de GitLab de un colaborador-externo frenaba su empuje por la dirección SSH de GitLab
+  // (`git` en `gitlab.com:grupo/web.git`), como las de GitHub y Azure, que ya pasaban. El usuario y la clave de una
+  // dirección web de ejemplo, con el dominio en cualquier caja, tampoco son un correo. Uno de verdad sigue frenando.
+  // Las direcciones van partidas: escritas enteras, un freno instalado de antes de este arreglo frenaría este archivo.
+  const real = ['juana', 'empresa.com.ar'].join('@');
+  const gitlab = ['git', 'gitlab.com'].join('@');
+  const { dir, cfgPath } = sandbox({
+    'a.md': [`C.identityFromRemote('${gitlab}:grupo/web.git')`, `git clone ${gitlab}:grupo/otro.git`,
+      "'https://usuario:clave@GitLab.Example.com/Producto/Plataforma/servicio'", `avisar a ${real}`, ''].join('\n'),
+  }, CFG);
+  const r = correrJson(dir, cfgPath);
+  assert.deepStrictEqual(r.json.hallazgos.filter((h) => h.categoria === 'email').map((h) => h.texto), [real]);
+});
+
 test('Email_ElNoreplyDeGithubNoEsElCorreoDeNadie_UnoQueSoloSeLeParece_Si', () => {
   // con el arnés mantenido en su repo público se firma con el `noreply` que GitHub le da a cada cuenta, y todo merge
   // hecho en su web lo firma `noreply@github.com`: si el detector los contara como correos de persona, cada commit
