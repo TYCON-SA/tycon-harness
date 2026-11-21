@@ -228,6 +228,41 @@ function findLaunches(text) {
   return out;
 }
 
+/**
+ * Los lugares donde el código llega a `child_process` de un modo que el escáner no sigue, en vez de enseñarle cada uno:
+ *   · el nombre del módulo como texto en el código fuera de `require(…)`, `import(…)` o `from`
+ *     (`process.getBuiltinModule('child_process')`, `createRequire(…)('child_process')`, una lista de módulos);
+ *   · el módulo guardado en una variable y usado con corchetes (`cp[fn](…)`);
+ *   · un `require` o un `import(…)` con el nombre armado (no un texto) en un archivo que nombra `child_process`.
+ * Lo que aparece acá es «no lo pude leer», no «oculta la ventana»: `[{ line, forma }]`.
+ */
+function formasQueNoSigue(text) {
+  const partido = /(['"`])child_?\1\s*\+|child_\$\{|\bchild_['"`]\s*\+\s*['"`]process/.test(text);
+  if (!/child_process/.test(text) && !partido) return [];
+  const mask = nonCodeMask(text);
+  const out = [];
+  const linea = (i) => text.slice(0, i).split('\n').length;
+  // un texto en el código: la comilla que abre es lo primero marcado después de código
+  for (const m of text.matchAll(/(['"])(?:node:)?child_process\1/g)) {
+    if (m.index > 0 && mask[m.index - 1]) continue;
+    const antes = text.slice(Math.max(0, m.index - 40), m.index);
+    if (/(?:\brequire|\bimport)\s*\(\s*$/.test(antes) || /\bfrom\s*$/.test(antes)) continue;
+    out.push({ line: linea(m.index), forma: 'el nombre del módulo como texto, fuera de require o import' });
+  }
+  const modulos = [...text.matchAll(new RegExp(`(?<![.\\w$])(${NAME})\\s*=\\s*${MODULE}(?!\\s*\\.)`, 'g'))].filter((m) => !mask[m.index]).map((m) => m[1]);
+  for (const nombre of new Set(modulos)) {
+    for (const m of text.matchAll(new RegExp(`(?<![.\\w$])${nombre.replace(/\$/g, '\\$')}\\s*\\??\\.?\\s*\\[`, 'g'))) {
+      if (!mask[m.index]) out.push({ line: linea(m.index), forma: `el módulo en ${nombre} usado con corchetes` });
+    }
+  }
+  // `require(m)` con una variable, en un archivo que arma el nombre del módulo partido (`'child_' + 'process'`, una
+  // plantilla): una ruta armada con `path.join` no es el módulo de procesos
+  for (const m of text.matchAll(new RegExp(`\\b(?:require|import)\\s*\\(\\s*(${NAME})\\s*\\)`, 'g'))) {
+    if (!mask[m.index] && partido) out.push({ line: linea(m.index), forma: `un require o un import con el nombre armado en ${m[1]}` });
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+
 /** ¿El código (no un texto ni un comentario) carga el módulo `child_process`, con `require`, `import(…)` o `from`? */
 function usesChildProcess(text) {
   if (!/child_process/.test(text)) return false;
@@ -272,4 +307,4 @@ function scanTree(root, dirs, skip = []) {
   return out;
 }
 
-module.exports = { FUNCTIONS, findLaunches, windowState, scanTree, scriptFiles, isLegacyShim, usesChildProcess };
+module.exports = { FUNCTIONS, findLaunches, windowState, scanTree, scriptFiles, isLegacyShim, usesChildProcess, formasQueNoSigue };

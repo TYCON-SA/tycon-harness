@@ -1486,7 +1486,13 @@ test('RunDir_RelativeInMarker_ResolvesAgainstItsRepo (T2) @story-8.287 @ac-2 @ac
     assert.strictEqual(r.status, 0, r.err);
     assert.strictEqual(r.out, c.runDir, `${rel}: no es la carpeta del repo del marcador`);
   }
-  for (const m of [{ ...base, runDir: path.join('otra', 'forma', nombre) }, (({ repoPath: _r, ...resto }) => ({ ...resto, runDir: path.join(TRAMO, nombre) }))(base)]) {
+  // un marcador viejo sin el repo pero con la historia absoluta: el repo es el de la historia, nunca la carpeta del proceso
+  {
+    const r = resolver((({ repoPath: _r, ...resto }) => ({ ...resto, runDir: path.join(TRAMO, nombre) }))(base));
+    assert.strictEqual(r.status, 0, r.err);
+    assert.strictEqual(r.out, c.runDir, 'sin repoPath, la carpeta relativa se ubica en el repo de la historia');
+  }
+  for (const m of [{ ...base, runDir: path.join('otra', 'forma', nombre) }]) {
     const r = resolver(m);
     assert.strictEqual(r.status, 0, r.err);
     assert.strictEqual(r.out, nueva, `${JSON.stringify(m)}: tenía que caer en la regla sin marcador`);
