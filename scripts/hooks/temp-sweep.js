@@ -59,8 +59,10 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *
  * Apagar: TYCON_TEMP_SWEEP=0. Plazo en horas, de 1 para arriba: TYCON_TEMP_SWEEP_HOURS (24). Forzar la pasada de
  * hoy: --force. Probar sin borrar: --dry-run. Otro tope de tiempo, hasta 600 segundos, para una primera pasada con
- * mucho acumulado: --budget-seconds <n>. Para las pruebas, la fecha contra la que se mide el plazo:
- * TYCON_TEMP_SWEEP_NOW. Fail-open: un hook de arranque nunca frena ni tira; si no pudo barrer, lo dice.
+ * mucho acumulado: --budget-seconds <n>; ese tope cuenta desde que se tiene la lista de procesos vivos. El tope de lsof
+ * (5 s), hasta 600 segundos: TYCON_TEMP_SWEEP_PROCESS_LIST_SECONDS (con cientos de procesos lsof tarda más, y la lista queda
+ * «no se sabe»). Para las pruebas, la fecha contra la que se mide el plazo: TYCON_TEMP_SWEEP_NOW. Fail-open: un hook de
+ * arranque nunca frena ni tira; si no pudo barrer, lo dice.
  *
  * Uso:
  *   node scripts/hooks/temp-sweep.js                                   ← el hook de arranque
@@ -174,11 +176,11 @@ function fromProc() {
   return out;
 }
 
-function fromLsof() {
+function fromLsof(timeoutMs = LSOF_TIMEOUT_MS) {
   // por su ruta del sistema: uno encontrado en el PATH podría ser otro programa
   const bin = ['/usr/sbin/lsof', '/usr/bin/lsof'].find((p) => fs.existsSync(p));
   if (!bin) return null;
-  const r = spawnSync(bin, ['-u', String(process.getuid()), '-Fn'], { windowsHide: true, encoding: 'utf8', timeout: LSOF_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync(bin, ['-u', String(process.getuid()), '-Fn'], { windowsHide: true, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024 * 1024 });
   // lsof sale 1 cuando no pudo leer algún proceso y la lista sirve igual; cortado por una señal, queda por la mitad
   if (r.error || r.signal || (r.status !== 0 && r.status !== 1) || !r.stdout) return null;
   const out = new Set();
@@ -193,10 +195,10 @@ function trusted(found, own) { return found && own && found.has(own) ? [...found
  * Las rutas que usan los procesos vivos del usuario: su carpeta de trabajo y sus archivos abiertos. `null` si no se
  * pudo saber. En Windows devuelve una lista vacía: ahí lo dice el cambio de nombre, al borrar.
  */
-function livePaths({ win = WIN } = {}) {
+function livePaths({ win = WIN, lsofTimeoutMs = LSOF_TIMEOUT_MS } = {}) {
   if (win) return [];
   let found = process.platform === 'linux' ? fromProc() : null;
-  if (!found) found = fromLsof();
+  if (!found) found = fromLsof(lsofTimeoutMs);
   return trusted(found, real(process.cwd()));
 }
 
@@ -294,10 +296,10 @@ function remove(entry, { win = WIN } = {}) {
  * `live`: las rutas en uso (por defecto, las de los procesos vivos); `null` es «no se sabe».
  */
 function sweep(opts) {
-  const { roots, hours = DEFAULT_HOURS, now = Date.now(), budgetMs = BUDGET_MS, dryRun = false, win = WIN } = opts;
+  const { roots, hours = DEFAULT_HOURS, now = Date.now(), budgetMs = BUDGET_MS, dryRun = false, win = WIN, lsofTimeoutMs = LSOF_TIMEOUT_MS } = opts;
+  const liveReader = opts.liveReader || livePaths;
   const uid = 'uid' in opts ? opts.uid : (process.getuid ? process.getuid() : null);
   const res = { removed: [], failed: [], inUse: 0, unsafe: 0, unknown: 0, pending: 0, gone: 0, checked: 0, skippedRoots: [] };
-  const deadline = Date.now() + budgetMs;
   const cutoff = now - hours * HOUR_MS;
   const dirs = [];
   for (const p of roots) {
@@ -305,8 +307,11 @@ function sweep(opts) {
     if (!root) res.skippedRoots.push(p);
     else if (!dirs.some((d) => same(d.path, root.path))) dirs.push(root);
   }
-  const live = 'live' in opts ? opts.live : livePaths({ win });
+  const live = 'live' in opts ? opts.live : liveReader({ win, lsofTimeoutMs });
   const busy = live ? live.filter((p) => dirs.some((d) => under(p, d.path))) : null;
+  // el presupuesto es para mirar las entradas: la lista de procesos vivos tiene su propio tope, y si se lo comiera, con
+  // muchos procesos no quedaría tiempo para mirar nada
+  const deadline = Date.now() + budgetMs;
   for (const root of dirs) {
     let names;
     try { names = fs.readdirSync(root.path).sort(); } catch (_) { res.skippedRoots.push(root.path); continue; }
@@ -397,6 +402,12 @@ function main() {
     if (asked !== null && asked !== undefined && Number.isFinite(Number(asked)) && Number(asked) >= 0) budgetMs = Math.min(Number(asked) * 1000, MAX_BUDGET_MS);
     else notes.push(`--budget-seconds «${asked}» no vale (segundos, de 0 a ${MAX_BUDGET_MS / 1000}): uso ${BUDGET_MS / 1000}`);
   }
+  let lsofTimeoutMs = LSOF_TIMEOUT_MS;
+  const askedLsof = process.env.TYCON_TEMP_SWEEP_PROCESS_LIST_SECONDS;
+  if (askedLsof) {
+    if (Number.isFinite(Number(askedLsof)) && Number(askedLsof) > 0) lsofTimeoutMs = Math.min(Number(askedLsof) * 1000, MAX_BUDGET_MS);
+    else notes.push(`TYCON_TEMP_SWEEP_PROCESS_LIST_SECONDS «${askedLsof}» no vale (segundos, más de 0 y hasta ${MAX_BUDGET_MS / 1000}): uso ${LSOF_TIMEOUT_MS / 1000}`);
+  }
   let now = Date.now();
   const askedNow = process.env.TYCON_TEMP_SWEEP_NOW;
   if (askedNow) {
@@ -414,7 +425,7 @@ function main() {
     if (split.outside.length) notes.push(`TYCON_TEMP_SWEEP_ROOTS: ${names(split.outside)} no está dentro de una carpeta temporal y no se mira`);
   }
 
-  const res = sweep({ roots, hours, now, budgetMs, dryRun });
+  const res = sweep({ roots, hours, now, budgetMs, dryRun, lsofTimeoutMs });
   if (stamped && res.pending) {
     // cortado por el tope: el sello se atrasa para que la próxima pasada sea en una hora y no mañana
     try { const at = new Date(Date.now() - (EVERY_MS - RETRY_MS)); fs.utimesSync(stamp, at, at); } catch (_) { notes.push('no pude atrasar el sello: lo que quedó sin mirar espera a mañana'); }

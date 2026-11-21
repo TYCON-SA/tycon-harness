@@ -39,6 +39,10 @@ const { sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, insp
 const WIN = process.platform === 'win32';
 const ROOT_USER = !WIN && process.getuid() === 0;
 const HOUR = 60 * 60 * 1000;
+// el tope de lsof en las pruebas: con cientos de procesos de la cuenta, lsof tarda más que los 5 s del gancho (medido:
+// 26 s con 450 procesos y carga 15), y la lista quedaría «no se sabe» según cómo esté la máquina. Las pruebas que miran
+// procesos vivos usan lsof de verdad, con un tope que no depende de la carga.
+const LSOF_PRUEBA_S = 600;
 const real = (p) => fs.realpathSync.native(p);
 // dentro de una carpeta temporal de verdad: el gancho no acepta mirar en otro lado
 const TEMP = defaultRoots().find((p) => fs.existsSync(p)) || os.tmpdir();
@@ -81,7 +85,7 @@ function cuadra(res) {
 function gancho(L, { env = {}, args = [] } = {}) {
   return spawnSync(process.execPath, [HOOK, ...args], {
     cwd: L.base, encoding: 'utf8',
-    env: { ...process.env, HOME: L.home, USERPROFILE: L.home, TYCON_TEMP_SWEEP_ROOTS: L.root, TYCON_TEMP_SWEEP_NOW: new Date(pasadoElPlazo()).toISOString(), TYCON_TEMP_SWEEP_HOURS: '', TYCON_TEMP_SWEEP: '', TYCON_EVAL_SANDBOX: '', ...env },
+    env: { ...process.env, HOME: L.home, USERPROFILE: L.home, TYCON_TEMP_SWEEP_ROOTS: L.root, TYCON_TEMP_SWEEP_NOW: new Date(pasadoElPlazo()).toISOString(), TYCON_TEMP_SWEEP_HOURS: '', TYCON_TEMP_SWEEP: '', TYCON_EVAL_SANDBOX: '', TYCON_TEMP_SWEEP_PROCESS_LIST_SECONDS: String(LSOF_PRUEBA_S), ...env },
   });
 }
 
@@ -181,7 +185,7 @@ test('T7 la carpeta de trabajo de un proceso vivo no se toca, y la de al lado s�
   const libre = carpeta(L.root, 'coord-zY9xWv');
   const child = await vivo('0', usada);
   try {
-    const res = sweep({ roots: [L.root], now: pasadoElPlazo() });
+    const res = sweep({ roots: [L.root], now: pasadoElPlazo(), lsofTimeoutMs: LSOF_PRUEBA_S * 1000 });
     assert.strictEqual(res.unknown, 0, 'la lista de procesos vivos se pudo leer');
     assert.deepStrictEqual(res.removed, ['coord-zY9xWv']);
     assert.strictEqual(res.inUse, 1);
@@ -198,7 +202,7 @@ test('T8 una carpeta con un archivo abierto por un proceso vivo no se toca, aunq
   fs.symlinkSync(L.root, enlace);
   const child = await vivo("require('fs').openSync(process.argv[1], 'r')", L.base, [path.join(usada, 'a', 'b', 'dato.txt')]);
   try {
-    const res = sweep({ roots: [enlace], now: pasadoElPlazo() });
+    const res = sweep({ roots: [enlace], now: pasadoElPlazo(), lsofTimeoutMs: LSOF_PRUEBA_S * 1000 });
     assert.strictEqual(res.unknown, 0, 'la lista de procesos vivos se pudo leer');
     assert.strictEqual(res.checked, 1, 'la raíz se mira por su ruta real');
     assert.deepStrictEqual(res.removed, []);
@@ -527,4 +531,25 @@ test('T27 el guion suelto, sin la librería que sabe dónde va el sello, no barr
   assert.ok(fs.existsSync(dir));
   const j = spawnSync(process.execPath, [suelto, '--json'], { cwd: L.base, encoding: 'utf8', env: { ...process.env, HOME: L.home, USERPROFILE: L.home, TYCON_TEMP_SWEEP: '', TYCON_EVAL_SANDBOX: '' } });
   assert.ok(JSON.parse(j.stdout).error, 'con --json, el fallo también sale en JSON');
+});
+
+// 🔴 Falla con: el tope de lsof fijo en el código, o el presupuesto que empieza a contar antes de pedir la lista de
+// procesos vivos. Con una máquina con cientos de procesos lsof tarda más que el tope y el presupuesto se va en esperarlo:
+// las pruebas de procesos vivos y del gancho dan rojo según la carga, y el gancho no mira nada.
+test('T29 el tope de lsof se puede pedir, uno que no vale se dice, y el presupuesto cuenta después de la lista', () => {
+  const L = lugar();
+  carpeta(L.root, 'coord-aB3dEf');
+  // un tope que no vale: se dice y se usa el de siempre
+  for (const malo of ['mucho', '0', '-3']) {
+    const r = gancho(L, { env: { TYCON_TEMP_SWEEP_PROCESS_LIST_SECONDS: malo }, args: ['--dry-run', '--json'] });
+    assert.match(JSON.parse(r.stdout).notes.join('\n'), new RegExp(`TYCON_TEMP_SWEEP_PROCESS_LIST_SECONDS «${malo}» no vale`), malo);
+  }
+  // el tope pedido llega a lsof: con una lista que tarda más que el presupuesto, el presupuesto no se gasta en esperarla
+  const lenta = () => { const hasta = Date.now() + 300; while (Date.now() < hasta) { /* espera */ } return []; };
+  const res = sweep({ roots: [L.root], now: pasadoElPlazo(), budgetMs: 100, liveReader: lenta });
+  assert.strictEqual(res.pending, 0, `el presupuesto empieza después de la lista: ${JSON.stringify(res)}`);
+  assert.deepStrictEqual(res.removed, ['coord-aB3dEf']);
+  let pedido = null;
+  sweep({ roots: [L.root], now: pasadoElPlazo(), lsofTimeoutMs: 1234, liveReader: ({ lsofTimeoutMs }) => { pedido = lsofTimeoutMs; return []; } });
+  assert.strictEqual(pedido, 1234, 'el tope pedido llega a quien lee la lista');
 });
