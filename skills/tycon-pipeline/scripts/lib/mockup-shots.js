@@ -32,37 +32,55 @@ function medirEnLaPagina(max) {
   const W = window.innerWidth;
   const sw = document.documentElement.scrollWidth;
   if (sw > W + 1) out.push({ kind: 'desborde', what: `la página mide ${sw} px de ancho y la ventana ${W}: hay que correrla de costado` });
-  const oculto = (el) => !!el.closest('[aria-hidden="true"]');
+  // lo que no se ve no cuenta: lo marcado `aria-hidden` (la pantalla detrás de una ventana) y lo invisible
+  const oculto = (el) => {
+    if (el.closest('[aria-hidden="true"]')) return true;
+    const s = getComputedStyle(el);
+    return s.visibility !== 'visible' || Number(s.opacity) === 0;
+  };
   const visible = (r) => r.width > 0 && r.height > 0;
-  // los textos: cada elemento con texto propio (un nodo de texto directo que no está vacío)
-  const textos = [];
+  // lo recortado: un recuadro que esconde lo que no entra (overflow hidden o clip) y tiene contenido más ancho
   for (const el of document.body.querySelectorAll('*')) {
-    if (oculto(el)) continue;
-    const propio = [...el.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim()).map((n) => n.textContent.trim()).join(' ');
-    if (!propio) continue;
-    const r = el.getBoundingClientRect();
-    if (visible(r)) textos.push({ el, r, t: propio.slice(0, 40) });
+    if (out.length >= max) break;
+    const ox = getComputedStyle(el).overflowX;
+    if ((ox === 'hidden' || ox === 'clip') && el.scrollWidth > el.clientWidth + 1 && !oculto(el)) {
+      out.push({ kind: 'recortado', what: `un recuadro de ${el.clientWidth} px esconde contenido de ${el.scrollWidth} px («${(el.textContent || '').trim().slice(0, 40)}»)` });
+    }
+  }
+  // los textos: cada nodo de texto con sus cajas renglón por renglón (las del elemento entero se cruzan entre dos textos
+  // seguidos en el mismo párrafo, sin que se pisen)
+  const range = document.createRange();
+  const cajasDe = (n) => { range.selectNodeContents(n); return [...range.getClientRects()].filter(visible); };
+  const textos = [];
+  const todos = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = todos.nextNode(); n; n = todos.nextNode()) {
+    if (!n.textContent.trim() || !n.parentElement || oculto(n.parentElement)) continue;
+    const cajas = cajasDe(n);
+    if (cajas.length) textos.push({ n, cajas, t: n.textContent.trim().slice(0, 40) });
   }
   const cruza = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2;
   for (let i = 0; i < textos.length && out.length < max; i++) {
     for (let j = i + 1; j < textos.length && out.length < max; j++) {
       const a = textos[i];
       const b = textos[j];
-      if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
-      if (cruza(a.r, b.r)) out.push({ kind: 'se pisan', what: `«${a.t}» y «${b.t}» se dibujan uno encima del otro` });
+      if (a.cajas.some((x) => b.cajas.some((y) => cruza(x, y)))) out.push({ kind: 'se pisan', what: `«${a.t}» y «${b.t}» se dibujan uno encima del otro` });
     }
   }
-  // las palabras partidas: una palabra de dos letras o más cuyo dibujo ocupa más de un renglón. El guion y la barra son
-  // donde un renglón se puede cortar: separan palabras
+  // las palabras partidas: una palabra de dos letras o más cuyo dibujo ocupa más de un renglón. Donde el navegador corta
+  // un renglón a propósito separa palabras: el guion, el guion blando, la barra y lo que corta una dirección (? & =).
+  // La escritura sin espacios (japonés, chino) se corta entre letras: no cuenta
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  const range = document.createRange();
   for (let n = walker.nextNode(); n && out.length < max; n = walker.nextNode()) {
     if (!n.parentElement || oculto(n.parentElement)) continue;
-    const re = /[^\s\-‐–—/]{2,}/g;
+    const re = /[^\s\-‐–—/­?&=]{2,}/g;
     for (let m = re.exec(n.textContent); m && out.length < max; m = re.exec(n.textContent)) {
+      if (/[　-鿿가-힯＀-￯]/.test(m[0])) continue;
+      // al lado de un guion blando, el navegador mide el corte junto con la palabra: ese corte es a propósito
+      if (n.textContent[m.index - 1] === '­' || n.textContent[m.index + m[0].length] === '­') continue;
       range.setStart(n, m.index);
       range.setEnd(n, m.index + m[0].length);
-      const tops = new Set([...range.getClientRects()].filter(visible).map((r) => Math.round(r.top)));
+      // una caja de menos de 2 px es la del corte mismo (el guion blando la deja), no un pedazo de la palabra
+      const tops = new Set([...range.getClientRects()].filter((r) => r.width >= 2 && r.height > 0).map((r) => Math.round(r.top)));
       if (tops.size > 1) out.push({ kind: 'palabra partida', what: `«${m[0].slice(0, 40)}» queda cortada en ${tops.size} renglones` });
     }
   }
@@ -89,7 +107,8 @@ async function revisar({ mockupPath, pw, env = process.env } = {}) {
       const page = await browser.newPage({ viewport: { width: w, height: HEIGHT } });
       // la maqueta no carga nada (su política lo niega): igual se corta toda red que no sea el archivo
       await page.route('**/*', (r) => (r.request().url().startsWith('file:') ? r.continue() : r.abort()));
-      await page.goto(`file://${path.resolve(mockupPath)}`, { waitUntil: 'load' });
+      // la dirección del archivo bien escrita: una carpeta con «#», «?» o «%» se abre igual
+      await page.goto(require('url').pathToFileURL(path.resolve(mockupPath)).href, { waitUntil: 'load' });
       await page.screenshot({ path: shots[w], fullPage: true });
       const deEste = await page.evaluate(medirEnLaPagina, MAX_FINDINGS);
       for (const f of deEste) findings.push({ width: w, ...f });

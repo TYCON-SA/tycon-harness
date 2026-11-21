@@ -473,7 +473,7 @@ test('T40 Mockup_SinCapa_HtmlIgualAlDeHoy @story-7.48 @ac-3 @story-8.129 @ac-11'
   // de ventana, lo de hoy atenuado pero legible, lo nuevo en violeta, la línea para el programador al pie), y otra cuando
   // lo nuevo pasó a fondo y borde, las palabras se cortan sólo si no entran y las zonas pasan abajo. Una maqueta aprobada
   // no se invalida, porque su huella sale del archivo guardado y nadie la vuelve a dibujar
-  const HOY = '34c6aeca8002f48a5629fc3e0375a7c25f8e471f57b4f79cddc1c21f9a723d15';
+  const HOY = 'bfd929fed5ddb0773d5edd6b320d389b8728f77caf363c964666aabdb0c3bc06';
   const { renderMockup } = require(MOCKUP);
   const huella = (m) => require('crypto').createHash('sha256').update(renderMockup(m)).digest('hex');
   assert.strictEqual(huella(MODELO()), HOY);
@@ -1032,6 +1032,27 @@ test('T54 Shots_LoQueSeLeeMal_LoEncuentra: desborde, textos que se pisan y palab
   for (const k of ['desborde', 'se pisan', 'palabra partida']) assert.ok(tipos.has(k), `${k}: ${JSON.stringify(r.findings)}`);
   assert.ok(!r.findings.some((x) => /Detrás|También/.test(x.what)), 'lo marcado aria-hidden no cuenta');
   assert.strictEqual(r.ok, false);
+});
+
+// Shots_LoQueSeLeeBien_NoLoMarca (pase adversarial): los cortes legítimos del navegador, el texto invisible y dos textos
+// seguidos en el mismo renglón no son hallazgos; lo recortado dentro de un recuadro sí; y una carpeta con «#» se abre
+test('T57 Shots_LoQueSeLeeBien_NoLoMarca: renglones partidos, invisibles, guion blando y URL no frenan; lo recortado sí', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const carpeta = path.join(TMP, 'con#raro%41');
+  fs.mkdirSync(carpeta, { recursive: true });
+  const bien = path.join(carpeta, 'bien-mockup.html');
+  fs.writeFileSync(bien, '<!doctype html><html><body style="margin:0">'
+    + '<p style="width:200px"><span>uno dos tres cuatro cinco seis siete ocho nueve diez once doce</span><b>fin</b></p>'
+    + '<p style="width:45px">pala&shy;bra</p>'
+    + '<p style="width:80px">https://acme.example/x?q=uno&amp;r=dos</p>'
+    + '<div style="position:relative"><p style="margin:0">Visible</p><p style="margin:0;position:absolute;top:0;visibility:hidden">Oculto</p></div>'
+    + '</body></html>');
+  const r = await SHOTS.revisar({ mockupPath: bien, pw: PW });
+  assert.ok(!r.error, r.error);
+  assert.deepStrictEqual(r.findings, [], JSON.stringify(r.findings, null, 1));
+  const recortado = path.join(TMP, 'recortado-mockup.html');
+  fs.writeFileSync(recortado, '<!doctype html><html><body style="margin:0"><div style="overflow:hidden;width:300px"><div style="width:900px;white-space:nowrap">un renglón que no entra y queda cortado</div></div></body></html>');
+  const c = await SHOTS.revisar({ mockupPath: recortado, pw: PW });
+  assert.ok(c.findings.some((x) => x.kind === 'recortado'), JSON.stringify(c.findings));
 });
 
 // Shots_SinNavegador_NoDiceLimpio: sin Playwright no hay informe ni «sin hallazgos»

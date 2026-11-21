@@ -319,7 +319,7 @@ const STYLE = `
   .dev-notes { font-size: 12px; color: #6b7485; margin-top: 12px; border-top: 1px solid #d5d9e0; padding-top: 10px; }
   .dev-notes p { margin: 0; }
   .dev-notes ul { margin: 4px 0 0; padding-left: 20px; }
-  @media (max-width: 600px) { body { padding: 20px 12px 32px; } .zone-middle { flex-direction: column; } .zone-left { flex: none; border-right: 0; border-bottom: 1px solid #e3e6eb; } .bubble { max-width: 88%; } }
+  @media (max-width: 600px) { body { padding: 20px 12px 32px; } .zone-middle { flex-direction: column; } .zone-left { flex: none; border-right: 0; border-bottom: 1px solid #e3e6eb; } .zone-center, .zone-right { flex: none; } .zone-middle .zone, .zone-row { padding-left: 12px; padding-right: 12px; } .new { padding: 4px 6px; } table.table th, table.table td { padding: 6px 4px; font-size: 12px; } .bubble { max-width: 88%; } }
 `;
 // Sólo va cuando la maqueta tiene una capa: una maqueta sin capas sale sin esa parte.
 const LAYER_STYLE = `
