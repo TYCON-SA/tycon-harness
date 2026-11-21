@@ -1507,7 +1507,64 @@ function programasPorEntrada(cmd) {
   return out;
 }
 
+// Lo que puede correr un texto: un shell, `eval`/`source`/`.`, lo que lanza otro programa, un intérprete, y los programas
+// que traen su propia forma de correr texto (`find -exec`, `sed e`, `awk system()`). Se busca en lo
+// que está fuera de comillas: un texto que NOMBRA `bash` no corre nada.
+const EJECUTORES = /(?:^|[\s;&|(`{])(?:[\w./-]*\/)?(?:bash|sh|zsh|dash|ksh|mksh|fish|csh|tcsh|busybox|pwsh|powershell|eval|source|xargs|parallel|exec|builtin|command|env|sudo|doas|nohup|timeout|nice|watch|script|node|nodejs|deno|bun|python[0-9.]*|perl|ruby|php|osascript|make|npx|npm|yarn|pnpm|awk|gawk|sed|find)(?=$|[\s;&|)}])|(?:^|[;&|(\n{]\s*)\.\s/;
+// un guion o un programa dado por su ruta (`./s.sh`, `/tmp/s.sh`, `~/x`)
+const PROGRAMA_POR_RUTA = /(?:^|[;&|(\n{]\s*)(?:[A-Za-z_]\w*=\S*\s+)*(?:\.{0,2}\/|~\/)\S/;
+// una variable como programa (`$c`, `"$c" arg`, `${c}`), mirada en el texto crudo: sus comillas no la vuelven texto
+const PROGRAMA_VARIABLE = /(?:^|[;&|(\n{]\s*)(?:[A-Za-z_]\w*=\S*\s+)*["']?\$\{?[A-Za-z_]/;
+
+/** ¿Algo en el comando puede correr un texto? Ante la duda, sí: un texto que se corre es un comando. */
+function ejecutaTexto(cmd) {
+  const s = String(cmd);
+  const f = posicionesFueraDeComillas(s);
+  let afuera = '';
+  for (let i = 0; i < s.length; i++) afuera += f(i) ? s[i] : ' ';
+  return EJECUTORES.test(afuera) || PROGRAMA_POR_RUTA.test(afuera) || PROGRAMA_VARIABLE.test(s);
+}
+
+/** El contenido de cada texto entre comillas del comando (`'…'`, `"…"`, `$'…'` con sus escapes de comilla y barra). */
+function citados(cmd) {
+  const out = [];
+  for (const m of String(cmd).matchAll(/\$'((?:\\.|[^'\\])*)'|'([^']*)'|"((?:\\.|[^"\\])*)"/g)) {
+    if (m[1] !== undefined) out.push(m[1].replace(/\\(['\\])/g, '$1'));
+    else if (m[2] !== undefined) out.push(m[2]);
+    else out.push(m[3].replace(/\\(["\\$`])/g, '$1'));
+  }
+  return out.filter((t) => t.trim());
+}
+
+/**
+ * ¿Cada posición del texto está fuera de comillas? Con las reglas de la terminal: entre comillas simples nada escapa,
+ * entre dobles la barra escapa, fuera la barra escapa el carácter que sigue y `$'…'` deja escapar su comilla.
+ */
+function posicionesFueraDeComillas(texto) {
+  const s = String(texto);
+  const fuera = new Array(s.length + 1).fill(true);
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      fuera[i] = false;
+      if (q === "'") { if (c === "'") q = null; continue; }
+      if (c === '\\') { fuera[i + 1] = false; i++; continue; }
+      if (c === (q === "$'" ? "'" : '"')) q = null;
+      continue;
+    }
+    if (c === '\\') { fuera[i + 1] = false; i++; continue; }
+    // `$$` es el número del proceso: la comilla que lo siga es simple común, no `$'…'`
+    if (c === '$' && s[i + 1] === '$') { i++; continue; }
+    if (c === '$' && s[i + 1] === "'") { fuera[i] = false; fuera[i + 1] = false; q = "$'"; i++; continue; }
+    if (c === "'" || c === '"') { fuera[i] = false; q = c; }
+  }
+  return (i) => fuera[i] !== false;
+}
+
 module.exports = {
+  // si un comando puede correr un texto, y qué hay entre comillas (los frenos de escritura y de sesiones)
+  ejecutaTexto, citados, posicionesFueraDeComillas,
   // las de siempre
   programasPorEntrada,
   sinHeredocs, segmentos, tokens, PREFIJOS, expandir, variablesDelComando, SIN_RESOLVER,

@@ -810,3 +810,63 @@ test('HeredocCierre_SinExpresionArmadaConTextoDeAfuera', () => {
   const fuente = require('fs').readFileSync(path.resolve(__dirname, '..', 'lib', 'az-pr.js'), 'utf8');
   assert.strictEqual(/new RegExp\s*\(/.test(fuente), false, 'az-pr.js arma una RegExp con texto');
 });
+
+// ── el citado ANSI-C (`$'…'`): adentro, `\'` es una comilla del texto, no el cierre ──────────────────────────────────
+// Sin esto el lector se desincroniza: invierte qué está entre comillas (una bandera escrita en el título cuenta, y una de
+// verdad queda escondida) y un `<<PALABRA` que está entre comillas se toma por un bloque que se traga los renglones de abajo.
+const palabras = (cmd) => az.segmentos(cmd).map((s) => s.map((f) => [f.texto, f.esBandera]));
+
+test('AnsiC_ComillaEscapada_NoInvierteLasComillas — `$\'it\\\'s …\'` es UN título; lo de adentro no es bandera', () => {
+  // 🔴 rojo: `--auto-complete true` escrito en el título cuenta como bandera (falso negativo del freno)
+  const titulo = "az repos pr create --title $'it\\'s --auto-complete true' --source-branch x --target-branch dev";
+  const [seg] = az.segmentos(titulo);
+  assert.strictEqual(az.valorDe(seg, 'auto-complete'), null, JSON.stringify(palabras(titulo)));
+  assert.strictEqual((az.valorDe(seg, 'target-branch') || {}).texto, 'dev', JSON.stringify(palabras(titulo)));
+  // 🔴 rojo: la bandera de verdad, después del título, queda adentro de una comilla que no existe (falso positivo)
+  const despues = "az repos pr create --title $'it\\'s' --auto-complete true --source-branch x --target-branch dev";
+  const [seg2] = az.segmentos(despues);
+  assert.strictEqual((az.valorDe(seg2, 'auto-complete') || {}).texto, 'true', JSON.stringify(palabras(despues)));
+});
+
+test('AnsiC_HeredocEntreComillas_NoEscondeLosRenglonesDeAbajo — un `<<EOF` citado después de `$\'…\\\'…\'` es texto', () => {
+  // 🔴 rojo: el `<<EOF` de la descripción se toma por un bloque y el segundo pedido no se juzga
+  const cmd = "az repos pr create --title $'it\\'s' --description 'ver <<EOF'\naz repos pr create --source-branch x --target-branch main";
+  const segs = az.segmentos(cmd).filter((s) => az.verboDePr(s) === 'create');
+  assert.strictEqual(segs.length, 2, JSON.stringify(palabras(cmd)));
+  assert.strictEqual((az.valorDe(segs[1], 'target-branch') || {}).texto, 'main');
+  // y el `<<EOF` adentro del propio `$'…'` tampoco abre nada
+  const adentro = "az repos pr create --title $'a\\' <<EOF' --description b\naz repos pr create --source-branch x --target-branch main\nEOF";
+  assert.strictEqual(az.segmentos(adentro).filter((s) => az.verboDePr(s) === 'create').length, 2, JSON.stringify(palabras(adentro)));
+});
+
+test('AnsiC_BarraEscapadaAntesDelSalto_Cierra — `$\'x\\\\\'` antes de un salto cierra y el pedido de abajo se ve', () => {
+  // 🔴 rojo: juntar los renglones se come la segunda barra de `\\` y deja `\'`, que no cierra la cadena
+  const cmd = "echo $'x\\\\\n'\naz repos pr create --source-branch x --target-branch main";
+  const segs = az.segmentos(cmd).filter((s) => az.verboDePr(s) === 'create');
+  assert.strictEqual(segs.length, 1, JSON.stringify(palabras(cmd)));
+  assert.strictEqual((az.valorDe(segs[0], 'target-branch') || {}).texto, 'main');
+});
+
+test('Continuacion_DosSeguidas_SeJuntanLasDos — `\\<salto>\\<salto>` se junta entero, como en la terminal', () => {
+  // 🔴 rojo: la segunda continuación queda y parte la palabra (`cre\\<salto>\\<salto>ate` dejaba de ser `create`)
+  const cmd = 'az repos pr cre\\\n\\\nate --source-branch x --target-branch main';
+  const segs = az.segmentos(cmd).filter((s) => az.verboDePr(s) === 'create');
+  assert.strictEqual(segs.length, 1, JSON.stringify(palabras(cmd)));
+  assert.strictEqual((az.valorDe(segs[0], 'target-branch') || {}).texto, 'main');
+});
+
+test('AnsiC_DobleSigno_NoAbreElCitado — en `$$\'x\\\'` el `$$` es el proceso y la comilla es simple común', () => {
+  // 🔴 rojo: el segundo `$` abre `$'…'`, el `\'` no cierra y se traga el pedido que sigue
+  const cmd = "echo $$'x\\'; az repos pr create --source-branch x --target-branch main";
+  const segs = az.segmentos(cmd).filter((s) => az.verboDePr(s) === 'create');
+  assert.strictEqual(segs.length, 1, JSON.stringify(palabras(cmd)));
+  assert.strictEqual((az.valorDe(segs[0], 'target-branch') || {}).texto, 'main');
+});
+
+test('AnsiC_HeredocDeVerdad_SigueSiendoBloque — un `<<EOF` fuera de comillas, después de un `$\'…\'`, sigue siendo un bloque', () => {
+  // 🔴 rojo: arreglar el citado no puede dejar de ver los bloques reales: su cuerpo es texto, no un comando
+  const cmd = "cat <<EOF > n.md\naz repos pr create --title $'it\\'s'\nEOF\naz repos pr create --source-branch x --target-branch main";
+  const segs = az.segmentos(cmd).filter((s) => az.verboDePr(s) === 'create');
+  assert.strictEqual(segs.length, 1, JSON.stringify(palabras(cmd)));
+  assert.strictEqual((az.valorDe(segs[0], 'target-branch') || {}).texto, 'main');
+});

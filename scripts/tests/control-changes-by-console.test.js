@@ -358,3 +358,57 @@ test('Constancias_SustitucionDeProceso_SeSigueMirando', () => {
   assert.ok(r && r.block);
   assert.match(r.block, /constancia de cambio de control no se escribe a mano/);
 });
+
+// 🔴 Falla con (lado del texto): un texto entre comillas leído como comando. El valor de una variable o de una
+// descripción que CITA el guion de la firma o una redirección a la constancia frenaba sin que se escribiera nada.
+test('Constancias_TextoEntreComillas_NoEsUnComando', () => {
+  const correr = correrEn(repoConRamas());
+  const pasan = [
+    "desc='Trae main con git merge origin/main; la constancia la escribe bash scripts/ci/run-base-controls.sh approve > .tycon/control-changes.jsonl'; echo \"$desc\"",
+    'desc="x > .tycon/control-changes.jsonl"',
+    "echo 'cp /tmp/x.json .github/control-changes/ > .tycon/control-changes.jsonl'",
+    "echo $'it\\'s > .tycon/control-changes.jsonl'",
+    "az repos pr create --title t --description 'git checkout main -- .tycon/control-changes.jsonl' --source-branch x --target-branch dev",
+    // nombrar una variable como argumento adentro de una sustitución no la corre
+    "msg='cp /tmp/x.json .github/control-changes/'; git commit -m \"$(printf '%s' \"$msg\")\"",
+  ];
+  for (const c of pasan) {
+    const r = correr(c);
+    assert.ok(!(r && r.block && /constancia de cambio de control/.test(r.block)), `frenó un texto: ${c}\n${r && r.block}`);
+  }
+});
+
+// 🔴 Falla con (lado del comando): un texto entre comillas que después SE CORRE —con `bash -c`, `eval`, o guardado en
+// una variable que corre `eval "$c"`, `bash -c "$c"` o `$c`— pasa sin mirar. Lo que se corre es un comando.
+test('Constancias_TextoQueSeCorre_SeSigueMirando', () => {
+  const correr = correrEn(repoConRamas());
+  const frenan = [
+    "bash -c 'cp /tmp/x.json .github/control-changes/'",
+    "eval 'echo hola > .tycon/control-changes.jsonl'",
+    "c='cp /tmp/x.json .github/control-changes/'; eval \"$c\"",
+    "c='echo hola > .tycon/control-changes.jsonl'; bash -c \"$c\"",
+    "export c='cp /tmp/x.json .github/control-changes/'; sh -c \"$c\"",
+    "c='cp /tmp/x.json .github/control-changes/'; $c",
+    'c="git checkout firma -- .tycon/control-changes.jsonl"; eval ${c}',
+    // el texto que entra a un shell o a otro programa por otro camino que `-c` (del pase adversarial)
+    "echo 'echo hola > .tycon/control-changes.jsonl' | bash",
+    "echo 'cp /tmp/x.json .github/control-changes/' | sh -s",
+    "printf '%s' 'cp /tmp/x.json .github/control-changes/' | xargs -0 bash -c",
+    "echo 'echo hola > .tycon/control-changes.jsonl' > /tmp/s.sh && bash /tmp/s.sh",
+    "echo 'cp /tmp/x.json .github/control-changes/' > /tmp/s.sh; chmod +x /tmp/s.sh; /tmp/s.sh",
+    "bash <<< 'cp /tmp/x.json .github/control-changes/'",
+    "read c <<< 'cp /tmp/x.json .github/control-changes/'; eval \"$c\"",
+    "bash -c $'cp /tmp/x.json .github/control-changes/'",
+    "sh -c $'echo hola > .tycon/control-changes.jsonl'",
+    "c=$'cp /tmp/x.json .github/control-changes/'; eval \"$c\"",
+    "c='cp /tmp/x.json .github/control-changes/'; builtin eval \"$c\"",
+    // armado acá: escrito entero, el freno instalado leería este archivo como un guion que escribe la constancia
+    `node -e "require('fs').writeFileSync('${['.tycon', 'control-changes.jsonl'].join('/')}', 'x')"`,
+    'echo "$(echo \'x\') > .tycon/control-changes.jsonl"; bash -c "echo hola > .tycon/control-changes.jsonl"',
+  ];
+  for (const c of frenan) {
+    const r = correr(c);
+    assert.ok(r && r.block, `pasó: ${c}`);
+    assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
+  }
+});
