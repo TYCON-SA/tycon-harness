@@ -953,7 +953,10 @@ function archivoDelPedido(firma, palabras, cwd) {
   if (!String(firma).startsWith('escape:') || !FIRMAS_DE_ARCHIVO.includes(firma.slice('escape:'.length)) || !palabras) return null;
   const i = palabras.indexOf('sign-file');
   const archivo = i >= 0 ? palabras[i + 2] : undefined;
-  return archivo && !archivo.startsWith('--') ? rutaReal(archivo, cwd) : null;
+  if (!archivo || archivo.startsWith('--')) return null;
+  // una ruta relativa sin la carpeta del pedido no se resuelve contra la de quien dibuja el cuadro: el mismo pedido daría
+  // otro sello en cada proceso. Queda el texto, marcado, y el click no vale para el pedido con carpeta
+  return path.isAbsolute(archivo) || cwd ? rutaReal(archivo, cwd) : `sin-carpeta:${archivo}`;
 }
 
 /**

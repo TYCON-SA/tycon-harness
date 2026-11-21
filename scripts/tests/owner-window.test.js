@@ -4696,3 +4696,17 @@ test('SoloDelDueno_ParaOtraSesion_NuncaPorDelegacion', (t) => {
     assert.strictEqual(DS.delegaSinVentana({ firma: id, sesion: 'ses-coord', destino: 'ses-a', home: casaConDesignada(t), perfil: () => ({ ...PERFIL, delegated_signing: [id, 'escape-phrases'] }), huella: () => ({ huella: HUELLA }) }).ok, false, id);
   }
 });
+
+// 🔴 Falla con: sin la carpeta del pedido, el sello de una ruta relativa sale de la carpeta del proceso que dibuja el
+// cuadro (la coordinadora, la oficina): el mismo renglón da otro código en cada uno (pase adversarial).
+test('Exencion_RutaRelativaSinCarpeta_ElSelloNoDependeDeQuienLoDibuja', (t) => {
+  const casa = casaNueva(t);
+  const palabras = [MARKER, 'sign-file', 'dod_runtime_exempt', 'notas.md', '--for-session', 'ses-a'];
+  const cuadro = () => ow.cuadroPara({ firma: 'escape:dod_runtime_exempt', palabras, destino: 'ses-a', cwd: null, casa, sesion: 'ses-coord' }).sello;
+  const antes = process.cwd();
+  let enTmp; let enRaiz;
+  try { process.chdir(os.tmpdir()); enTmp = cuadro(); process.chdir(path.parse(antes).root); enRaiz = cuadro(); } finally { process.chdir(antes); }
+  assert.strictEqual(enTmp, enRaiz);
+  // y no es el sello del mismo pedido con carpeta
+  assert.notStrictEqual(enTmp, ow.cuadroPara({ firma: 'escape:dod_runtime_exempt', palabras, destino: 'ses-a', cwd: os.tmpdir(), casa, sesion: 'ses-coord' }).sello);
+});
