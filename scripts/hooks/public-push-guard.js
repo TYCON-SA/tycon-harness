@@ -17,7 +17,8 @@
 //     tiene: contra la punta remota que informa git y lo que el propio remoto dice tener; si no contesta, todo). Un binario
 //     sin permiso, un enlace simbólico y un submódulo cuentan como «sin leer»;
 //   · el mensaje, el autor y el committer de cada commit, y el nombre, el mensaje y el firmante de una marca anotada: el
-//     nombre contra la lista, y el correo tiene que ser un `noreply` de GitHub;
+//     nombre contra la lista, y el correo tiene que ser un `noreply` de GitHub en una máquina del equipo dueño y en la
+//     validación de un pedido (en la de otra organización, o sin perfil, el correo de quien firma es suyo);
 //   · el nombre de la rama o de la marca, y que la ref sea una rama o una marca (una nota o un guardado no se publican);
 //   · un número de pedido en un mensaje o en un nombre de ref (la forma la define scripts/publishing/internal-history.js;
 //     un nombre de ref se mira además con sus separadores vueltos espacios). Un pedido del repo público no cuenta —el
@@ -349,7 +350,10 @@ const isTeamMachine = (top) => {
  */
 function resolveList(top, env = process.env, { pushing = false, optional = false, required = false } = {}) {
   const D = detector();
-  const generic = () => ({ cfg: D.cargarConfig('<sin lista>', '{}'), forbidden: [], source: null, label: null, file: null, generic: true, terms: 0, extraForbidden: 0, otherOrg: machineOrg(top) === 'other' });
+  // el correo `noreply` de quien firma protege los correos del equipo dueño: se exige en su máquina, y siempre en la
+  // validación de un pedido (`required`); en la de otra organización, o sin perfil, el correo es de quien firma
+  const strictEmail = required || isTeamMachine(top);
+  const generic = () => ({ cfg: D.cargarConfig('<sin lista>', '{}'), forbidden: [], source: null, label: null, file: null, generic: true, terms: 0, extraForbidden: 0, otherOrg: machineOrg(top) === 'other', strictEmail });
   const unreadable = (place, message) => Object.assign(new Blind(message), { listFile: place.file, listSource: place.source });
   const inPushedTree = (file) => pushing && Boolean(top) && isInside(file, top);
   for (const place of listPlaces(env)) {
@@ -383,7 +387,7 @@ function resolveList(top, env = process.env, { pushing = false, optional = false
     }
     const globs = raw.forbiddenPaths === undefined ? [] : raw.forbiddenPaths;
     if (!Array.isArray(globs) || globs.some((g) => typeof g !== 'string' || !g.trim())) throw Object.assign(unreadable(place, `la lista de ${place.label} trae "forbiddenPaths" mal escritas (es una lista de rutas)`), { listReadFrom: readFrom });
-    return { cfg, forbidden: globs.map((g) => D.globARegex(g)), source: place.source, label: place.label, file: place.file, readFrom, termList: raw.terminos, generic: false, terms: raw.terminos.length, extraForbidden: globs.length };
+    return { cfg, forbidden: globs.map((g) => D.globARegex(g)), source: place.source, label: place.label, file: place.file, readFrom, termList: raw.terminos, generic: false, terms: raw.terminos.length, extraForbidden: globs.length, strictEmail };
   }
   // `optional`: quien llama no sabe si lo que mira va al repo público del arnés (un `gh` de destino desconocido). En la
   // máquina de alguien del equipo que no mantiene —tiene el perfil, no tiene la lista— exigirla ahí frenaría un `gh`
@@ -786,20 +790,29 @@ function makeReview(list, scan) {
     const spaced = name.replace(/[^A-Za-z0-9]+/g, ' ').replace(/([A-Za-z])(?=\d)/g, '$1 ').trim();
     for (const variant of new Set([name, spaced, spaced.toUpperCase(), spaced.toLowerCase()])) history(variant, where);
   };
-  return { D, findings, add, text, message, refName };
+  // una lista armada sin el dato (otro guion que la construye a mano) exige el noreply, como siempre
+  return { D, findings, add, text, message, refName, strictEmail: !list || list.strictEmail !== false };
 }
 
-/** `Nombre <correo> fecha zona` → el nombre contra la lista, y el correo: un `noreply` de GitHub. */
+/**
+ * `Nombre <correo> fecha zona` → el nombre contra la lista, y el correo: un `noreply` de GitHub en una máquina del
+ * equipo dueño (`R.strictEmail`, de `resolveList`). En la de otra organización el correo de quien firma es suyo.
+ */
 function reviewIdentity(R, line, who, where) {
   const m = /^(.*?) ?<([^<>]*)>(?: \d+ [+-]\d{4})?$/.exec(String(line || ''));
   if (!m) { R.add('identidad', null, `${where}: no se puede leer quién es`); return; }
   const email = m[2].trim().toLowerCase();
   const fine = NOREPLY.test(email) || (who === 'committer' && email === GITHUB_ITSELF);
-  if (!fine) R.add('identidad', null, `${where}: su correo no es un \`noreply\` de GitHub`);
+  if (!fine && R.strictEmail) R.add('identidad', null, `${where}: su correo no es un \`noreply\` de GitHub`);
   for (const h of R.text(m[1], ROUTES.identity)) R.add(h.categoria, h.regla, where);
   // y el nombre de la cuenta que va adentro del `noreply` (`<número>+<cuenta>@…`): también es un nombre que se publica
   const account = fine ? email.replace(/@.*$/, '').replace(/^\d+\+/, '') : '';
   if (account) for (const h of R.text(account, ROUTES.identity)) R.add(h.categoria, h.regla, `${where} (la cuenta de su correo)`);
+  // el correo real que se deja pasar se publica entero: sus palabras, contra la lista de la máquina. Partido en palabras,
+  // para que el patrón genérico de correos no frene lo que esta regla deja pasar
+  if (!fine && !R.strictEmail) {
+    for (const h of R.text(email.replace(/[^a-z0-9]+/g, ' ').trim(), ROUTES.identity)) R.add(h.categoria, h.regla, `${where} (su correo)`);
+  }
 }
 
 const isForbidden = (list, rel) => FORBIDDEN.some((p) => rel.startsWith(p)) || list.forbidden.some((g) => g.test(rel));
