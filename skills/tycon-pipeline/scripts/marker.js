@@ -6740,7 +6740,7 @@ function cmdPlanReview(argv) {
     process.stdout.write(`${JSON.stringify({ scriptPath: path.join(__dirname, 'adversarial-verify.workflow.js'), args: p.args, argsFile: p.argsFile, delicate: p.delicate,
       informativa: p.informativa, comando, lite: comando, despues: `marker.js plan-review${conSesion} --result <resultado.json> --model ${p.args.model}` }, null, 2)}\n`);
     if (p.informativa) console.error('ℹ️  revisión informativa (la story es delicada o la organización pide el click): informa, y el plan lo firma una persona.');
-    if (p.delicate && p.delicate.value) console.error(`⚠️  la story es delicada (${p.delicate.reason}): la revisión ataca y avisa, pero el plan lo aprueba el dev.`);
+    if (p.delicate && p.delicate.value) console.error(pr.avisoDelicada({ reason: p.delicate.reason, lanza: PROPIA, destino, estado: STATE_DIR }));
     process.exit(0);
   }
   let res = null;
