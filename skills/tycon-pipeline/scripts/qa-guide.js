@@ -360,11 +360,23 @@ function estadoDelArnes(pa) {
     }
   }
   if (v === 'RUNTIME') {
+    // en vivo por otra vía, con la prueba en vivo que la tabla le declara sin correr: lo probado es parte de lo pedido
+    const faltan = Array.isArray(pa.enVivoSinCorrer) ? pa.enVivoSinCorrer : [];
+    if (faltan.length) {
+      return { tier: 'pend', badge: `Provisorio: el arnés lo probó en parte; ${faltan.join(', ')} no corrió. Probalo a mano`, como: null };
+    }
     const e2e = pa.fuentes && Array.isArray(pa.fuentes.e2e) && pa.fuentes.e2e.length > 0;
     return { tier: 'run', badge: '✓ el arnés ya lo probó', como: `Lo probó corriendo la app${e2e ? ', con una prueba de punta a punta' : ''}. Probarlo a mano es un segundo control.` };
   }
   if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') return { tier: 'wv', badge: 'La app no lo muestra: lo cubre una prueba del código', como: null };
   return { tier: 'pend', badge: 'El arnés no lo probó: probalo a mano', como: null };
+}
+
+// Cuántos criterios probó el arnés y cuántos quedan para probar a mano, con la misma insignia que ve quien prueba: un
+// criterio provisorio no se cuenta como probado.
+function contarCriterios(acs, perAc) {
+  const tiers = acs.map((a) => estadoDelArnes((perAc || {})[a.n]).tier);
+  return { runtime: tiers.filter((t) => t === 'run').length, pending: tiers.filter((t) => t === 'pend').length };
 }
 
 // «el 20/10 a las 10:31», en la hora de la máquina que genera la guía
@@ -1149,10 +1161,9 @@ function main() {
 
   const stats = {
     total: matrix.stats.total,
-    runtime: matrix.stats.runtime,
+    ...contarCriterios(acs, matrix.perAc),
     waived: matrix.stats.waived,
     notVerifiable: matrix.stats.notVerifiable,
-    pending: acs.filter((a) => estadoDelArnes(matrix.perAc[a.n]).tier === 'pend').length,
   };
 
   // Con la opción de la organización prendida, quién marcó cada criterio a mano y qué falta.
@@ -1217,7 +1228,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { estadoDelArnes, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
+module.exports = { estadoDelArnes, contarCriterios, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
 if (require.main === module) {
   // La opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');
