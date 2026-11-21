@@ -547,7 +547,13 @@ function estadoDelExamen(benchDir) {
     // sobre corridas que NO quedaron aisladas, o sea que canta verde una corrida no medida.
     // Es el mismo error que la nota de arriba documenta para `erroresDeCorrida`, con otro nombre.
     const fugas = rep.fugas || 0;
-    const rojos = (rep.criterio || 0) + (rep.inestables || 0) + (rep.paridadReal || 0)
+    // con una ejecución por caso, el examen repite los rojos de criterio: ahí sí se sabe cuáles son inestables (los que
+    // acertaron de entrada no se repiten, y su inestabilidad sigue sin medir). El número sale de la repetición misma, no
+    // del contador de arriba (un recuento a mano lo vuelve a «no medido»), y sólo si alguno se pudo repetir
+    const rp = rep.repeticion && typeof rep.repeticion.repetidos === 'number' ? rep.repeticion : null;
+    const rpMedida = rp && Number(rp.inestables || 0) + Number(rp.siguen || 0) > 0;
+    const inestablesN = rpMedida ? Number(rp.inestables || 0) : (rep.inestables || 0);
+    const rojos = (rep.criterio || 0) + inestablesN + (rep.paridadReal || 0)
       + (rep.baselineRegressions || 0) + errores + salteados + fugas;
     // Lo que esta corrida NO pudo medir se dice con esas palabras, nunca "0". No suma
     // rojos —no dice nada del revisor— y NO fuerza la línea: un examen fresco y sin rojos sigue
@@ -556,9 +562,12 @@ function estadoDelExamen(benchDir) {
     // arranque para siempre, y un aviso que sale siempre se ignora. El silencio no afirma nada;
     // lo que afirmaría algo es el 0, y ése no se imprime ni cuando la línea sale (T50, T54).
     const nm = rubrosNoMedidos({ tool: rep.tool, runs: rep.runs });
-    const inestables = nm.inestables
-      ? `inestables NO MEDIDOS (${nm.inestables})`
-      : `${rep.inestables || 0} inestables (cambia de opinión entre ejecuciones)`;
+    const sinRepetir = rp && rp.sin_repetir ? ` (${rp.sin_repetir} rojo(s) no se pudieron repetir)` : '';
+    const inestables = nm.inestables && rpMedida
+      ? `${inestablesN} inestables de ${rp.repetidos} que fallaron y se repitieron${sinRepetir}`
+      : nm.inestables
+        ? `inestables NO MEDIDOS (${nm.inestables})${sinRepetir}`
+        : `${rep.inestables || 0} inestables (cambia de opinión entre ejecuciones)`;
     const paridad = nm.paridad
       ? `paridad NO MEDIDA (${nm.paridad})`
       : `paridad rota ${rep.paridadReal || 0}`;

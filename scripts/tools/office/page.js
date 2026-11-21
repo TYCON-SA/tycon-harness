@@ -448,7 +448,7 @@ function drawPanel(){const {g}=texPanel.userData,w=768,h=640,k=T.kanban(),meta=T
   // debajo de los cuadros, las historias abiertas en main y de cuándo es el dato (los otros proyectos van sólo al detalle)
   // la línea que no entra en el ancho (el motivo de «Sin proyecto principal») va en dos renglones, cortada por palabras
   const A=k&&k.abiertas;if(A&&A.linea){g.fillStyle="#ffffff";g.font="700 23px "+FONT;const ancho=t=>{const m=g.measureText&&g.measureText(t);return (m&&m.width)||0},cabe=w-72,pal=A.linea.split(" ");let uno=A.linea,dos="";
-    if(ancho(A.linea)>cabe){uno="";for(let i=0;i<pal.length;i++){const p=uno?uno+" "+pal[i]:pal[i];if(uno&&ancho(p)>cabe){dos=pal.slice(i).join(" ");break}uno=p}}
+    if(ancho(A.linea)>cabe){uno="";for(let i=0;i<pal.length;i++){const p=uno?uno+" "+pal[i]:pal[i];if(uno&&ancho(p)>cabe){dos=pal.slice(i).join(" ");break;}uno=p;}}
     g.fillText(uno,36,dos?552:562);if(dos)g.fillText(dos,36,580);if(A.hora){g.fillStyle="#9fb0d8";g.font="600 20px "+FONT;g.fillText(A.hora,36,dos?604:588);}}
   g.fillStyle="#dfe6ff";g.font="600 26px "+FONT;g.textAlign="right";g.fillText("tocá para ver el detalle",w-36,622);g.textAlign="left";
   if(meta&&meta.actualizado){g.fillStyle="#9fb0d8";g.font="600 26px "+FONT;g.fillText(stampOf(k,meta),36,622);}texPanel.needsUpdate=true;}

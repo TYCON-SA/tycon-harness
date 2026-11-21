@@ -119,6 +119,7 @@ En [pieces/ci.md](pieces/ci.md):
 - [scripts/ci/check-product-parity.js](pieces/ci.md#scriptscicheck-product-parityjs)
 - [scripts/ci/check-trigger-without-docs.js](pieces/ci.md#scriptscicheck-trigger-without-docsjs)
 - [scripts/ci/check-tests-without-ci.js](pieces/ci.md#scriptscicheck-tests-without-cijs)
+- [scripts/tests/hidden-window.test.js](pieces/ci.md#scriptstestshidden-windowtestjs)
 
 ## Las bibliotecas del pipeline
 
@@ -172,6 +173,8 @@ En [pieces/metrics.md](pieces/metrics.md):
 - [scripts/nightly/watcher/vigilante.js](pieces/metrics.md#scriptsnightlywatchervigilantejs) _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 - [scripts/controls-bench/periodic-exam.js](pieces/metrics.md#scriptscontrols-benchperiodic-examjs)
 - [scripts/ci/push-nightly-data.js](pieces/metrics.md#scriptscipush-nightly-datajs)
+- [scripts/lib/result-travel.js](pieces/metrics.md#scriptslibresult-traveljs)
+- [scripts/ci/carry-night-results.js](pieces/metrics.md#scriptscicarry-night-resultsjs)
 - [pipelines/azure-pipelines-banco.yml](pieces/metrics.md#pipelinesazure-pipelines-bancoyml)
 - [scripts/ci/suites-shard.js](pieces/metrics.md#scriptscisuites-shardjs) _(scripts/ci/suites-shard.js + scripts/ci/suites-weights.json)_
 - [scripts/ci/suites-over-limit.json](pieces/metrics.md#scriptscisuites-over-limitjson) _(scripts/ci/suites-over-limit.json + scripts/tests/lib/suite-parts.js + scripts/tests/lib/suite-parts.sh)_

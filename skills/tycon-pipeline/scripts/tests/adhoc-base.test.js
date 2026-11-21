@@ -148,6 +148,69 @@ test('T11 AdhocBase_FollowupOnBranchWithConstancy_MeasuresFromThatTip @story-8.2
   });
 });
 
+// Defecto 13 (21/11, Producto A 2.10): un arreglo rápido sobre la rama de una historia con su corrida abierta, ya revisada,
+// medía contra main: un cambio de un archivo vio como «fuera de la lista» los 11 ya revisados y pidió el sobre-cupo. La punta
+// con constancia es también el commit igual (sin papeleo) a lo que vio la última vuelta cerrada de revisores de una corrida
+// abierta de ese repo. Lo que cambió después de esa punta cuenta igual: no se cuela nada sin revisar.
+const FT = () => require(path.join(SCRIPTS, 'lib', 'frozen-tree.js'));
+/** La corrida abierta de la historia, con su vuelta de revisores sellada sobre el árbol de ahora y cerrada `cierre` ms después. */
+function corridaRevisada(h, d, { cierre = 1000 } = {}) {
+  const sid = 'ses-corrida';
+  const v = FT().sealAndFreeze({ stateDir: estado(h), sid, etiqueta: 'vuelta-1', repos: [d], tipo: 'revisores', story: '9.99' });
+  assert.ok(!v.error, v.error);
+  const ts = Date.parse(FT().ultimaVuelta(estado(h), sid, 'revisores').ts);
+  fs.writeFileSync(path.join(estado(h), 'active', `${sid}.json`), JSON.stringify({ sessionId: sid, storyId: '9.99', repoPath: d,
+    stepTimings: { reviewers: { completedAt: new Date(ts + cierre).toISOString() } } }));
+}
+
+test('T1 AdhocBase_OpenRunReviewedRound_MeasuresFromTheReviewedTip — la vuelta cerrada de la corrida abierta es la punta', async (t) => {
+  await t.test('un arreglo de un archivo sobre 11 revisados cuenta uno', (tt) => {
+    const d = repoConOrigin(tt);
+    const h = home(tt);
+    for (const r of archivos('r', 11)) escribir(d, r, `// ${r}\n`);
+    sh(d, 'add', '-A');
+    sh(d, 'commit', '-q', '-m', 'la historia, revisada');
+    const P = sh(d, 'rev-parse', 'HEAD');
+    corridaRevisada(h, d);
+    carril(h, d);
+    escribir(d, 'src/r3.js', '// el arreglo rápido\n');
+    const e = medida(h, d);
+    assert.deepStrictEqual(e.base, { sha: P, de: 'constancia' });
+    assert.deepStrictEqual(rutasDe(e), ['src/r3.js']);
+  });
+  await t.test('lo commiteado después de la vuelta, sin revisar, cuenta', (tt) => {
+    const d = repoConOrigin(tt);
+    const h = home(tt);
+    for (const r of archivos('r', 3)) escribir(d, r, `// ${r}\n`);
+    sh(d, 'add', '-A');
+    sh(d, 'commit', '-q', '-m', 'la historia, revisada');
+    const P = sh(d, 'rev-parse', 'HEAD');
+    corridaRevisada(h, d);
+    escribir(d, 'src/sin-revisar.js', '// después de la vuelta\n');
+    sh(d, 'add', '-A');
+    sh(d, 'commit', '-q', '-m', 'sin revisar');
+    carril(h, d);
+    escribir(d, 'src/r0.js', '// el arreglo rápido\n');
+    const e = medida(h, d);
+    assert.deepStrictEqual(e.base, { sha: P, de: 'constancia' });
+    assert.deepStrictEqual(rutasDe(e), ['src/r0.js', 'src/sin-revisar.js']);
+  });
+  await t.test('una vuelta sin cerrar no es constancia', (tt) => {
+    const d = repoConOrigin(tt);
+    const h = home(tt);
+    const M = sh(d, 'rev-parse', 'origin/main');
+    for (const r of archivos('r', 3)) escribir(d, r, `// ${r}\n`);
+    sh(d, 'add', '-A');
+    sh(d, 'commit', '-q', '-m', 'la historia');
+    corridaRevisada(h, d, { cierre: -60000 });
+    carril(h, d);
+    escribir(d, 'src/r0.js', '// el arreglo rápido\n');
+    const e = medida(h, d);
+    assert.strictEqual(e.base.sha, M);
+    assert.strictEqual(rutasDe(e).length, 3);
+  });
+});
+
 // 🔴 Falla con: un archivo que la constancia no cubría perdonado por medir desde la punta.
 test('T12 AdhocBase_FileOutsideConstancyCounts @story-8.276 @ac-14', (t) => {
   const d = repoConOrigin(t);

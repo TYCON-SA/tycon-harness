@@ -248,6 +248,23 @@ test('WorkflowLite_ElCorredorDePruebaNuncaApruebaNiMide — con TYCON_WFLITE_AGE
   assert.match(m.motivo, /corredor de prueba/);
 });
 
+// Defecto 9 (20/11): la revisión automática del plan dejaba sólo el total de tokens, y no se podía saber cuánto costó.
+// Cada agente deja su consumo por tipo (entrada, salida, creación y lectura de caché), y el corredor lo suma por agente.
+test('T1 ReviewRunner_UsageByType_PerAgent — cada agente deja su consumo por tipo; dos intentos se suman', () => {
+  const integ = RR.loadIntegration({ env: {} });
+  const ok = RR.readAnswer(integ.runners.claude, { stdout: fs.readFileSync(path.join(FIX, 'claude-ok.json'), 'utf8'), stderr: '', code: 0 });
+  assert.deepStrictEqual(ok.usage, { input_tokens: 2, cache_creation_input_tokens: 31155, cache_read_input_tokens: 0, output_tokens: 74 });
+  assert.strictEqual(RR.readAnswer(integ.runners.codex, { stdout: '', stderr: '', code: 0, fileText: '{"eco":"x"}' }).usage, null, 'sin consumo medible, null');
+  const { anotarUso } = require('../workflow-lite.js');
+  const corredor = {};
+  anotarUso(corredor, { clave: 'plan-hunt:ac', fase: 'Hunt', nombre: 'claude', modelo: 'opus', usage: ok.usage });
+  anotarUso(corredor, { clave: 'plan-hunt:ac', fase: 'Hunt', nombre: 'claude', modelo: 'opus', usage: { input_tokens: 1, output_tokens: 6 } });
+  anotarUso(corredor, { clave: 'plan-verify:ac', fase: 'Verify', nombre: 'claude', modelo: 'opus', usage: null });
+  assert.deepStrictEqual(corredor.usoPorAgente, {
+    'plan-hunt:ac': { fase: 'Hunt', corredor: 'claude', modelo: 'opus', intentos: 2, input_tokens: 3, cache_creation_input_tokens: 31155, cache_read_input_tokens: 0, output_tokens: 80 },
+  });
+});
+
 test('T60 ReviewRunner_LeeLaRespuestaYElTopeDeCadaCorredor @story-8.221 @ac-2 @ac-4 @ac-5 — salidas reales: respuesta, tokens, error y tope; sin confinamiento no corre en el modo código', () => {
   const integ = RR.loadIntegration({ env: {} });
   const claude = integ.runners.claude;
