@@ -197,11 +197,12 @@ test('T9 ControlsTable_HookFailuresCounted — dos que dejaron pasar y dos que f
   ].join('\n') + '\n');
   const r = ct.tabla({ home: casa, modelOf, ahora: '2026-11-21T00:00:00Z' });
   const p = Object.fromEntries([...r.fallas.porFreno.entries()]);
-  assert.deepStrictEqual(p['on-bash-write-gate'], { total: 2, abiertas: 1, cerradas: 1 });
-  assert.deepStrictEqual(p['safety-guard'], { total: 1, abiertas: 1, cerradas: 0 });
-  assert.deepStrictEqual(p['session-cap-guard'], { total: 1, abiertas: 0, cerradas: 1 });
-  assert.deepStrictEqual(p['constancia-freno'], { total: 1, abiertas: 0, cerradas: 0 });
-  assert.deepStrictEqual(p['un-control'], { total: 1, abiertas: 0, cerradas: 0 });
+  assert.deepStrictEqual(p['on-bash-write-gate'], { total: 2, abiertas: 1, cerradas: 1, primera: '2026-11-10T10:00:00.000Z', ultima: '2026-11-10T10:02:00.000Z', recientes: 0, ultimaAbierta: '2026-11-10T10:00:00.000Z', abiertasRecientes: 0 });
+  assert.strictEqual(p['safety-guard'].total, 1);
+  assert.strictEqual(p['safety-guard'].abiertas, 1);
+  assert.strictEqual(p['session-cap-guard'].cerradas, 1);
+  assert.deepStrictEqual([p['constancia-freno'].total, p['constancia-freno'].abiertas, p['constancia-freno'].cerradas], [1, 0, 0]);
+  assert.deepStrictEqual([p['un-control'].total, p['un-control'].abiertas, p['un-control'].cerradas], [1, 0, 0]);
   assert.ok(filaDe(r.md, 'on-bash-write-gate', '2', '1'), r.md);
 });
 
@@ -246,4 +247,25 @@ test('T14 ControlsTable_ReadOnly — la carpeta de estado queda igual, byte por 
   assert.deepStrictEqual(contenido(estado), antesEstado);
   assert.deepStrictEqual(listado(casa), antesCasa);
   assert.match(fs.readFileSync(out, 'utf8'), /## Por freno y por modelo/);
+});
+
+// 🔴 Falla con: un agujero cerrado hace semanas que se ve igual que uno vivo: sin la fecha de la última falla ni cuántas
+//    hubo en los últimos 7 días.
+test('T9b ControlsTable_HookFailures_OldHoleLooksClosed — la última falla y las de los últimos 7 días', (t) => {
+  const { casa, estado } = casaNueva(t);
+  fs.writeFileSync(path.join(estado, 'hook-errors.log'), [
+    '[2026-10-25T10:00:00.000Z] viejo FAILED OPEN: un defecto ya arreglado',
+    '[2026-11-01T10:00:00.000Z] viejo FAILED OPEN: un defecto ya arreglado',
+    '[2026-11-10T10:00:00.000Z] vivo FAILED OPEN: otro',
+    '[2026-11-20T10:00:00.000Z] vivo FAILED OPEN: otro',
+    '[2026-11-20T11:00:00.000Z] viejo FAILED CLOSED: frena por la falla, no deja pasar',
+  ].join('\n') + '\n');
+  const r = ct.tabla({ home: casa, modelOf, ahora: '2026-11-21T00:00:00.000Z' });
+  const viejo = r.fallas.porFreno.get('viejo');
+  const vivo = r.fallas.porFreno.get('vivo');
+  // su última falla es reciente, pero la última que dejó pasar es vieja: el agujero se cerró
+  assert.deepStrictEqual([viejo.ultima, viejo.recientes, viejo.ultimaAbierta, viejo.abiertasRecientes], ['2026-11-20T11:00:00.000Z', 1, '2026-11-01T10:00:00.000Z', 0]);
+  assert.deepStrictEqual([vivo.primera, vivo.recientes], ['2026-11-10T10:00:00.000Z', 1]);
+  assert.match(filaDe(r.md, 'viejo', '2026-10-25'), /\| 2026-11-01 \| 0 \|$/);
+  assert.match(filaDe(r.md, 'vivo', '2026-11-10'), /\| 2026-11-20 \| 1 \|$/);
 });

@@ -179,8 +179,14 @@ function contarGates(gates, modelos) {
   return out;
 }
 
-/** Las fallas de cada freno en `hook-errors.log`: `{ estado, porFreno: Map(freno → { total, abiertas, cerradas }) }`. */
-function contarFallas(file, desde) {
+/**
+ * Las fallas de cada freno en `hook-errors.log`: `{ estado, porFreno: Map(freno → { total, abiertas, cerradas, primera,
+ * ultima, recientes, ultimaAbierta, abiertasRecientes }) }`. `primera` y `ultima` son las fechas de la primera y la última
+ * falla; `recientes`, las de los 7 días antes de `ahora`; `ultimaAbierta` y `abiertasRecientes`, lo mismo para las que
+ * dejaron pasar. Un agujero ya cerrado tiene su última falla que dejó pasar vieja y ninguna reciente.
+ */
+function contarFallas(file, desde, ahora = new Date().toISOString()) {
+  const semana = new Date(Date.parse(ahora) - 7 * 24 * 3600 * 1000).toISOString();
   let texto;
   try { texto = fs.readFileSync(file, 'utf8'); } catch (e) {
     return e.code === 'ENOENT' ? { estado: 'ausente', porFreno: new Map() } : { estado: 'ilegible', porFreno: new Map(), motivo: e.code || e.message };
@@ -194,9 +200,17 @@ function contarFallas(file, desde) {
     renglones++;
     const falla = clasificar(m[2]);
     const freno = falla ? falla.control : (m[2].split(/\s/)[0] || 'sin nombre').replace(/:$/, '').replace(/\.js$/, '');
-    const c = porFreno.get(freno) || { total: 0, abiertas: 0, cerradas: 0 };
+    const c = porFreno.get(freno) || { total: 0, abiertas: 0, cerradas: 0, primera: m[1], ultima: m[1], recientes: 0, ultimaAbierta: null, abiertasRecientes: 0 };
     c.total++;
-    if (falla && falla.frena) c.cerradas++; else if (falla) c.abiertas++;
+    if (m[1] < c.primera) c.primera = m[1];
+    if (m[1] > c.ultima) c.ultima = m[1];
+    if (m[1] >= semana && m[1] <= ahora) c.recientes++;
+    if (falla && falla.frena) c.cerradas++;
+    else if (falla) {
+      c.abiertas++;
+      if (!c.ultimaAbierta || m[1] > c.ultimaAbierta) c.ultimaAbierta = m[1];
+      if (m[1] >= semana && m[1] <= ahora) c.abiertasRecientes++;
+    }
     porFreno.set(freno, c);
   }
   return { estado: 'ok', porFreno, renglones };
@@ -270,9 +284,10 @@ function markdownExtra(l, { frenos, gates, fallas, clasif, porModelo, porGate, a
   else if (fallas.estado === 'ilegible') l.push(`${NO_MEDIDO} (no se pudo leer hook-errors.log: ${fallas.motivo}).`);
   else if (!fallas.porFreno.size) l.push('Ningún freno falló en el período.');
   else {
-    l.push('| Freno | Fallas | Dejaron pasar | Frenaron por la falla | Sin marca |', '|---|---:|---:|---:|---:|');
+    l.push('Una falla vieja sin ninguna en los últimos 7 días es, casi siempre, un agujero que ya se cerró: la fecha de la última lo dice.', '',
+      '| Freno | Fallas | Dejaron pasar | Frenaron por la falla | Sin marca | Primera | Última | Últimos 7 días | Última que dejó pasar | Dejaron pasar, últimos 7 días |', '|---|---:|---:|---:|---:|---|---|---:|---|---:|');
     for (const [f, c] of [...fallas.porFreno.entries()].sort((x, y) => y[1].total - x[1].total)) {
-      l.push(`| ${f} | ${c.total} | ${c.abiertas} | ${c.cerradas} | ${c.total - c.abiertas - c.cerradas} |`);
+      l.push(`| ${f} | ${c.total} | ${c.abiertas} | ${c.cerradas} | ${c.total - c.abiertas - c.cerradas} | ${c.primera.slice(0, 10)} | ${c.ultima.slice(0, 10)} | ${c.recientes} | ${c.ultimaAbierta ? c.ultimaAbierta.slice(0, 10) : '—'} | ${c.abiertasRecientes} |`);
     }
   }
   const vencidas = Object.entries(clasif.entradas).filter(([, e]) => typeof e.review_before === 'string' && e.review_before < hoy).map(([k]) => k).sort();
@@ -284,7 +299,7 @@ function tabla({ home = os.homedir(), desde = null, ahora = new Date().toISOStri
   const frenos = leerRegistro(path.join(dir, 'frenos.jsonl'), desde);
   const firmas = leerRegistro(path.join(dir, 'signatures.jsonl'), desde);
   const gates = leerRegistro(path.join(dir, 'gates.log'), desde);
-  const fallas = contarFallas(path.join(dir, 'hook-errors.log'), desde);
+  const fallas = contarFallas(path.join(dir, 'hook-errors.log'), desde, ahora);
   const clasif = leerClasificacion(clasificacion);
   const conteo = contar({ frenos, firmas });
   const sesiones = new Set([...frenos.filas.map((f) => f.sesion), ...gates.filas.filter((g) => g.name).map((g) => g.sessionId)].filter((s) => typeof s === 'string' && s));
