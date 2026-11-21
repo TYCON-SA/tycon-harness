@@ -3511,6 +3511,12 @@
       "requiere": []
     },
     {
+      "__nota": "El freno de pedidos juzga --delete-source-branch de un az repos pr update con la rama del pedido, que le pregunta al conector de la plataforma del repo (con el az de mentira).",
+      "raiz": "arnes",
+      "ruta": "tests/pr-update-source-branch.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Los pedidos de cambio por la capa de plataforma: abrir uno en Azure DevOps y en GitHub contra el az y el gh de mentira (reusar el abierto, releerlo por rama si la respuesta no trae el número, lo que no abre), listar los de GitHub, el freno de un pedido por repo y los nocturnos que leen las dos plataformas.",
       "raiz": "arnes",
       "ruta": "tests/platform-change-request.test.js",
