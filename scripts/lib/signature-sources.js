@@ -563,11 +563,19 @@ function deLaDesignacion(firma, destino, cwd, palabras) {
 /**
  * El rojo esperado de la matriz (`marker.js expect-red acmatrix --tests … --until …`): los criterios que la lista deja
  * sin evidencia en vivo, con su texto, las pruebas y la fecha, de la matriz de la historia de la corrida. Sin el comando
- * a la vista, sin la historia o sin la matriz, `{ error }`: sin los criterios a la vista no se firma.
+ * a la vista, sin la historia o sin la matriz, `{ error }`: sin los criterios a la vista no se firma. El de un control
+ * (`expect-red <control> --tests …`, la misma firma) no tiene fecha ni matriz: el control, las pruebas y la deuda.
  */
 function delRojoEsperado(palabras, m) {
   if (!palabras) return { error: 'el comando no está escrito tal cual (una envoltura, una variable): sin los criterios a la vista no se firma' };
   const pruebas = String(valor(palabras, '--tests') || '').split(',').map((t) => t.trim()).filter(Boolean);
+  const control = String(palabras[2] || '');
+  if (control && !control.startsWith('-') && control !== 'acmatrix') {
+    if (!pruebas.length) return { error: 'el comando no dice las pruebas (--tests): sin ellas a la vista no se firma' };
+    const deuda = m && m.cierre && m.cierre.estado === 'deuda' && m.cierre.deuda ? m.cierre.deuda : null;
+    const linea = `Dejar el control ${control} en rojo esperado hasta el commit, con las pruebas ${pruebas.join(', ')}${deuda ? `, en la deuda ${deuda}` : ''}`;
+    return { queHace: [linea], fuente: linea, que: `dejar ${control} en rojo esperado (pruebas ${pruebas.join(', ')})${deuda ? ` en la deuda ${deuda}` : ''}` };
+  }
   const fecha = valor(palabras, '--until');
   if (!pruebas.length || !fecha) return { error: 'el comando no dice las pruebas (--tests) o la fecha (--until): sin ellas a la vista no se firma' };
   const historia = rutaDeLaHistoria(m);

@@ -519,6 +519,22 @@ function topesDelCaminoCorto(casa) {
 }
 
 /**
+ * Si la ejecución sobre la que trabaja `set-autonomous` (la de `--for-session`, o la del evento) tiene el modo autónomo
+ * prendido. Sin ejecución, no (el guion sale sin hacer nada). Sin `donde`, con la sesión que no se lee o con un marcador
+ * que no se lee, cuenta como prendido: no poder mirar no es poder pasar.
+ */
+function autonomoPrendido(args, donde) {
+  if (!donde) return true;
+  const i = args.indexOf('--for-session');
+  const sid = i >= 0 ? args[i + 1] : donde.sesion;
+  if (!/^[\w-]+$/.test(String(sid || ''))) return true;
+  try {
+    const r = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'run-close.js')).consulta(sid, donde.casa);
+    return r.hay === '?' || (r.hay === true && r.autonomo === true);
+  } catch (_) { return true; }
+}
+
+/**
  * La firma que pide un llamado a un guion. `donde` (`{ cwd, casa, sesion }`, la carpeta y la sesión del evento): con él,
  * la lista de un `adhoc set` se clasifica contra la carpeta del pedido, donde `<Nombre>/<ruta>` nombra un repo hermano,
  * como la clasifica el guion; sin él, cada ruta tal como viene.
@@ -544,6 +560,11 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
       if (pideDespues('--no-mutation')) return 'escape:no-mutation';
     }
     if (sub === 'approve-mockup') return 'plan-approval';
+    // cerrar como deuda y el rojo esperado, de la matriz o de un control: los dos rojos con la misma firma
+    if (sub === 'close-as-debt') return 'escape:cerrar-como-deuda';
+    if (sub === 'expect-red') return 'escape:rojo-esperado-de-la-matriz';
+    // apagar el modo autónomo, si la ejecución lo tiene prendido (o no se sabe): ya apagado no hay nada que firmar
+    if (sub === 'set-autonomous') return !(pal[0] && pal[0].literal && ['true', '1', 'on'].includes(a[0])) && autonomoPrendido(a, donde) ? 'escape:set-autonomous' : null;
     if (sub === 'waive-critical') return 'critical-waiver';
     if (sub === 'mark-tested') return 'manual-test';
     if (sub === 'runtime-waiver') return 'runtime-waiver';
@@ -1252,6 +1273,8 @@ const PRECHEQUEO_VIA = 'TYCON_SIGN_PRECHECK_VIA';
 // (`adhoc-lane`: el largo del motivo y un tope menor que lo ya tocado se niegan antes de la ventana)
 const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
+  // una deuda sin anotar, un rojo esperado sin ejecución en deuda o con la fecha fuera del tope, una ejecución que no hay
+  'escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous',
   // saltear los mutantes sin motivo, o en un paso que no corre las pruebas
   'escape:no-mutation',
   // nombrar sin id de sesión, o retirar desde una sesión que no es la coordinadora, se niega sin gastar el click

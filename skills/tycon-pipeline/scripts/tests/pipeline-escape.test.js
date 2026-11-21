@@ -513,6 +513,50 @@ test('ExcepcionesDeTramite_ForSession_ElGuionFirmaPorDelegacion', (t) => {
   }
 });
 
+// 🔴 Falla con: cerrar como deuda, el rojo esperado de la matriz y apagar el modo autónomo, delegados en el perfil, no
+// se pueden correr para otra sesión (los pedía el freno de seguridad en la sesión propia): le llegaban al dueño.
+test('TresFirmasDelFreno_ForSession_LaCoordinadoraLasFirmaPorDelegacion', (t) => {
+  const designar = (lab) => {
+    const d = { name: 'relay-designation', status: 'ok', ts: new Date(AHORA - 3600000).toISOString(), sesion: COORD, rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
+    fs.appendFileSync(path.join(lab.estadoDir, 'gates.log'), `${[d, DS.confirmationRecord(d, new Date(AHORA - 3500000).toISOString())].map((l) => JSON.stringify(l)).join('\n')}\n`);
+  };
+  const delegacion = (perfil) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
+  const destino = (lab) => JSON.parse(lab.leer(DESTINO));
+  const cambiar = (lab, f) => { const m = destino(lab); f(m); fs.writeFileSync(lab.marcador(DESTINO), JSON.stringify(m)); };
+  // la historia de ses-a con un criterio, su prueba y su deuda anotada
+  const conDeuda = (lab) => fs.appendFileSync(lab.stories[DESTINO], ['## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado uno.', '',
+    '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.uno` | 1 | integration | x | y |', '',
+    '## Dev Agent Record', '', '- Deuda: DEF-9.91-juguete — falta la librería', ''].join('\n'));
+  const d = new Date();
+  const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const casos = [
+    ['escape:set-autonomous', (lab) => cambiar(lab, (m) => { m.autonomous = true; }), ['set-autonomous', 'false', '--for-session', DESTINO],
+      (m) => assert.strictEqual(m.autonomous, false)],
+    ['escape:cerrar-como-deuda', (lab) => conDeuda(lab), ['close-as-debt', '--reason', 'falta la librería', '--debt', 'DEF-9.91-juguete', '--for-session', DESTINO],
+      (m) => assert.deepStrictEqual([m.cierre.estado, m.cierre.deuda, m.cierre.via, m.cierre.por], ['deuda', 'DEF-9.91-juguete', 'delegacion', COORD])],
+    ['escape:rojo-esperado-de-la-matriz', (lab) => { conDeuda(lab); cambiar(lab, (m) => { m.cierre = { estado: 'deuda', deuda: 'DEF-9.91-juguete', motivo: 'x', via: 'ventana', at: new Date().toISOString() }; m.checks = { acmatrix: 'red:exit=1' }; }); },
+      ['expect-red', 'acmatrix', '--tests', 'T1', '--until', hoy, '--for-session', DESTINO],
+      (m) => assert.deepStrictEqual([m.checks.acmatrix, m.expectedRed.acmatrix.until, m.expectedRed.acmatrix.via], ['rojo-esperado:exit=1', hoy, 'delegacion'])],
+  ];
+  for (const [firma, preparar, args, comprobar] of casos) {
+    const lab = laboratorioOtraSesion(t);
+    designar(lab);
+    preparar(lab);
+    const p = lab.pedir(lab.comando(args), { delegacion: delegacion({ ...PERFIL, delegated_signing: [firma] }) });
+    assert.deepStrictEqual([p.decision, p.via], ['allow', 'delegacion'], `${firma}: ${p.texto}`);
+    const r = lab.correr(args);
+    assert.strictEqual(r.status, 0, `${firma}: ${r.stdout}${r.stderr}`);
+    comprobar(destino(lab));
+    assert.deepStrictEqual(lab.gates().filter((g) => g.name === `${firma}-signed`).map((g) => g.via), ['delegacion'], firma);
+    assert.strictEqual(lab.vigentes().length, 0, `${firma}: el pedido se gasta`);
+    // sin su nombre en el perfil, la misma firma pide la ventana del dueño
+    const otro = laboratorioOtraSesion(t);
+    designar(otro);
+    preparar(otro);
+    assert.strictEqual(otro.pedir(otro.comando(args), { delegacion: delegacion(PERFIL) }).decision, 'ask', `${firma} sin delegar`);
+  }
+});
+
 test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {
   const designar = (lab, { sesion = COORD, confirmada = true } = {}) => {
     const d = { name: 'relay-designation', status: 'ok', ts: new Date(AHORA - 3600000).toISOString(), sesion, rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };

@@ -583,15 +583,20 @@ const VERDE = {
 const ROJO = { ...VERDE, checks: { tests: 'red:exit=1' } };
 
 test('T3 EscC3_SetAutonomousFalse_SinFrase_Frena @story-8.92 — apagar el lazo con las pruebas en rojo, sin la frase', () => {
-  // `TRUE` en mayúsculas también apaga: marker.js compara exacto
-  for (const c of [CMD.apagar, CMD.apagarCero, CMD.apagarOff, `${MARKER} set-autonomous TRUE`]) {
+  // `TRUE` en mayúsculas también apaga: marker.js compara exacto. La forma exacta la pide su guion en la ventana (8.323;
+  // Codex no tiene: va a la terminal); la escondida (detrás de un `cd`), el cartel de siempre
+  for (const [c, exacta] of [[CMD.apagar, true], [CMD.apagarCero, true], [CMD.apagarOff, false], [`${MARKER} set-autonomous TRUE`, true]]) {
     assert.notStrictEqual(veredicto(freno(c, { home: homeConMarcador(ROJO, [deLaPersona('arreglá las pruebas')]) })), 'allow', c);
     const r = freno(c, { codex: true, home: homeConMarcador(ROJO, [deLaPersona('arreglá las pruebas')]) });
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
     assert.match(r.stderr, /ESC-C3/);
-    assert.match(r.stderr, /lo decide ella/);
-    assert.match(r.stderr, /close-as-debt/);
-    assert.match(r.stderr, /Esta firma se da en tu terminal: el mismo comando\./);
+    if (exacta) assert.match(r.stderr, /Esta firma se da en tu terminal: marker\.js set-autonomous false --terminal/, c);
+    else {
+      assert.match(r.stderr, /lo decide ella/, c);
+      assert.match(r.stderr, /close-as-debt/, c);
+      // la escondida no se firma: la terminal es la forma exacta
+      assert.match(r.stderr, /Esta firma se da en tu terminal: marker\.js set-autonomous false --terminal/, c);
+    }
     assert.doesNotMatch(r.stderr, /TYCON_SAFETY_OFF=1/, 'el cartel no da la receta');
   }
 });
@@ -600,7 +605,8 @@ test('T3 EscC3_SetAutonomousFalse_SinFrase_Frena @story-8.92 — apagar el lazo 
 // 🔴 Falla con: el cartel que abre con «si quiere hacerlo igual, lo dice ella» y deja la salida sin la persona para
 //    después: con el cartel así, el agente pide la frase sin intentar antes la salida.
 test('EscC3_Cartel_PrimeroLaSalidaSinFrase — el cartel ofrece primero lo que el agente puede hacer solo, y no pide ninguna frase', () => {
-  const r = freno(CMD.apagar, { codex: true, home: homeConMarcador(ROJO, [deLaPersona('arreglá las pruebas')]) });
+  // la forma escondida: la exacta la pide su guion en la ventana (8.323) y no lleva este cartel
+  const r = freno(CMD.apagarOff, { codex: true, home: homeConMarcador(ROJO, [deLaPersona('arreglá las pruebas')]) });
   assert.strictEqual(r.status, 2, r.stderr);
   const sinFrase = r.stderr.indexOf('Primero lo que no necesita a la persona');
   assert.ok(sinFrase >= 0, r.stderr);
@@ -780,7 +786,16 @@ const DEUDA = {
 };
 
 test('T19 EscC4_CloseAsDebtYExpectRed_VanALaVentana @story-8.93 @ac-10 @ac-11 — en verde y en rojo frena o pide la ventana; la frase no firma', () => {
-  for (const c of [DEUDA.cerrar, DEUDA.rojo]) {
+  // `close-as-debt` en su forma exacta la pide su guion en la ventana (8.323; en Codex, la terminal con esa forma); detrás
+  // de un `cd`, o el rojo esperado de un control que no es la matriz, el cartel de siempre
+  const DEUDA_ESCONDIDA = 'cd /tmp && node marker.js close-as-debt --reason "sin versión compatible" --debt DEF-9.9-angular';
+  // la escondida no se firma: la de la terminal es la forma exacta. El rojo esperado de un control lleva la firma del rojo
+  // esperado (8.323), con su forma exacta
+  const TERMINAL = {
+    deuda: /Esta firma se da en tu terminal: marker\.js close-as-debt --reason "<texto>" --debt <DEF-id> --terminal/,
+    rojo: /Esta firma se da en tu terminal: marker\.js expect-red <acmatrix\|control> --tests <T1,T2> \[--until <AAAA-MM-DD>\] --terminal/,
+  };
+  for (const [c, terminal] of [[DEUDA.cerrar, TERMINAL.deuda], [DEUDA_ESCONDIDA, TERMINAL.deuda], [DEUDA.rojo, TERMINAL.rojo]]) {
     for (const marcador of [VERDE, ROJO]) {
       // sin frase, o dicha por el agente: no deja pasar, en verde y en rojo; en Codex frena con el camino de la terminal
       for (const conversacion of [[deLaPersona('seguí')], [deLaPersona('seguí'), delAgente(FRASE_DEUDA, 1)]]) {
@@ -788,7 +803,7 @@ test('T19 EscC4_CloseAsDebtYExpectRed_VanALaVentana @story-8.93 @ac-10 @ac-11 �
         const r = freno(c, { codex: true, home: homeConMarcador(marcador, conversacion) });
         assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
         assert.match(r.stderr, /ESC-C4/);
-        assert.match(r.stderr, /Esta firma se da en tu terminal: el mismo comando\./);
+        assert.match(r.stderr, terminal, c);
         assert.doesNotMatch(r.stderr, /TYCON_SAFETY_OFF=1|«autorizo /, 'el cartel no da la receta ni pide una frase');
       }
     }
@@ -1827,6 +1842,9 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['escape:force-manual', ['node', M, 'set-check', 'tests', 'green', '--force-manual']],
     ['escape:trust-ran', ['node', P, 'check-count', '--repo', '/r', '--story', 's.md', '--trust-ran']],
     ['escape:no-mutation', ['node', M, 'complete-step', 'run-tests', '--no-mutation', '--reason', 'refactor sin código nuevo']],
+    ['escape:cerrar-como-deuda', ['node', M, 'close-as-debt', '--reason', 'sin versión compatible', '--debt', 'DEF-9.99-a']],
+    ['escape:rojo-esperado-de-la-matriz', ['node', M, 'expect-red', 'acmatrix', '--tests', 'T1', '--until', '2026-11-30']],
+    ['escape:set-autonomous', ['node', M, 'set-autonomous', 'false']],
     ['adhoc-lane',['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido"}']],
     ['adhoc-lane:sobre-cupo', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido","maxFiles":9}']],
     ['adhoc-lane:datos', ['node', M, 'adhoc', 'allow-data-change', '--changed', 'el botón pide al proceso', '--recommends', 'pasar', '--why', 'autorizo el cambio']],
@@ -1913,7 +1931,8 @@ test('T29 FrenoDeSeguridad_SinEsperaNiLecturaDeConversacion @story-8.139 @ac-29 
 test('T37 FrenoDeSeguridad_C3YC5_NoDictanLaFrase @story-8.139 @ac-37 — ningún cartel de ESC-C3 ni de ESC-C5 dicta la frase ni la variable; ESC-C5 nombra la guía', () => {
   const VARIABLE = /\b[A-Z][A-Z0-9_]{2,}=/;
   const casos = [
-    ['ESC-C3', CMD.apagar, { home: homeConMarcador(ROJO, [deLaPersona('seguí')]) }],
+    // la forma escondida: la exacta la pide su guion en la ventana (8.323)
+    ['ESC-C3', CMD.apagarOff, { home: homeConMarcador(ROJO, [deLaPersona('seguí')]) }],
     ['ESC-C3', CMD.cerrar, { home: homeConMarcador(ROJO, [deLaPersona('seguí')]) }],
     ['ESC-C3', `bash -c '${MARKER} set-check tests green --force-manual'`, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
     ['ESC-C3', `cd /tmp && ${PIPELINE} check-count --trust-ran --ran a,b`, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],

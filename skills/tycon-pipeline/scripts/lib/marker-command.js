@@ -570,14 +570,13 @@ function escapeDe(llamada, sid, comando = null) {
   if (sub === null) return !llamada.dudosa ? null : pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : 'cerrar la ejecución';
   if (sub === 'set-autonomous') {
     const v = args[0];
-    return lit(v) && ['true', '1', 'on'].includes(v.texto) ? null : 'set-autonomous';
+    return (lit(v) && ['true', '1', 'on'].includes(v.texto)) || porSuGuion('set-autonomous') ? null : 'set-autonomous';
   }
   if (sub === 'clear') return 'cerrar la ejecución';
-  // cerrar la historia como deuda, o registrar un control en rojo como esperado: siempre lo decide la persona. El rojo
-  // esperado de la matriz tiene su propia firma, que muestra los criterios y la fecha; un control que no se ve
-  // (`expect-red "$C"`) puede ser la matriz
-  if (sub === 'close-as-debt') return 'cerrar como deuda';
-  if (sub === 'expect-red') return !args[0] || !lit(args[0]) || args[0].texto === 'acmatrix' ? 'rojo esperado de la matriz' : 'cerrar como deuda';
+  // cerrar la historia como deuda, o registrar un rojo como esperado (de la matriz o de un control, con una sola firma):
+  // siempre lo decide la persona. En su forma canónica las dos las pide su guion en la ventana
+  if (sub === 'close-as-debt') return porSuGuion('cerrar-como-deuda') ? null : 'cerrar como deuda';
+  if (sub === 'expect-red') return porSuGuion('rojo-esperado-de-la-matriz') ? null : 'rojo esperado de la matriz';
   if (sub === 'clear-session') {
     const v = args[0];
     if (!v || !lit(v)) return 'cerrar la ejecución';

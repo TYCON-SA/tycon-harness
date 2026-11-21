@@ -204,6 +204,11 @@ const PARA_OTRA_SESION = {
   // un control declarado a mano y un criterio que no se prueba en vivo: los firma la persona, en la ventana o la terminal
   'set-check': { firma: 'escape:force-manual', marcador: true, si: (a) => a.includes('--force-manual') },
   'runtime-waiver': { firma: 'runtime-waiver', marcador: true },
+  // cerrar como deuda, el rojo esperado de la matriz y apagar el modo autónomo: sobre la ejecución abierta del destino
+  'close-as-debt': { firma: 'escape:cerrar-como-deuda', marcador: true },
+  // el rojo esperado, de la matriz o de un control: la misma firma
+  'expect-red': { firma: 'escape:rojo-esperado-de-la-matriz', marcador: true },
+  'set-autonomous': { firma: 'escape:set-autonomous', marcador: true, si: (a) => !['true', '1', 'on'].includes(a[3]) },
   'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') && !a.includes('--partition') },
   // el ok de guardar: sobre la corrida abierta del destino, la que vio el dueño
   'approve-save': { firma: 'save', marcador: true },
@@ -3029,7 +3034,7 @@ function cmdMarkDodRuntimeChecked(payloadJson) {
 
 function cmdSetAutonomous(valRaw) {
   const on = valRaw === 'true' || valRaw === '1' || valRaw === 'on';
-  const marker = readMarker();
+  let marker = readMarker();
   if (!marker) {
     console.error('marker.js set-autonomous: no hay marker activo (corré `set` en el Arranque primero)');
     process.exit(1);
@@ -3038,6 +3043,15 @@ function cmdSetAutonomous(valRaw) {
   if (on && marker.needs_human === true) {
     console.error('marker.js set-autonomous: Esta ejecución se detuvo y espera la decisión de una persona: marker.js resume-autonomy. No se cambió nada.');
     process.exit(1);
+  }
+  // apagarlo saca el lazo que no deja cerrar el turno con un control en rojo: lo firma una persona, o la coordinadora por
+  // delegación. Ya apagado, no hay nada que firmar ni que escribir
+  let firma = null;
+  if (!on) {
+    if (marker.autonomous !== true) { process.stdout.write('autonomous: false (ya estaba apagado)\n'); return; }
+    firma = firmaDelDueno('escape:set-autonomous', `apagar el modo autónomo de ${marker.storyId || 'la ejecución'}`);
+    marker = readMarker();
+    if (!marker) { console.error('🔒 marker.js set-autonomous: la ejecución se cerró mientras se firmaba. No se escribió nada.'); process.exit(2); }
   }
   marker.autonomous = on;
   if (on) {
@@ -3049,6 +3063,7 @@ function cmdSetAutonomous(valRaw) {
   }
   marker.lastTouch = nowIso();
   writeMarker(marker);
+  if (firma) appendLog('gates.log', { name: 'set-autonomous', story: nn(marker.storyId, null), autonomous: false, via: firma.constancia.via, ...porDe(firma) });
   process.stdout.write(`autonomous: ${on}\n`);
 }
 
@@ -4173,7 +4188,7 @@ function cmdCloseAsDebt(args) {
     console.error('marker.js close-as-debt: uso: close-as-debt --reason "<qué quedó pendiente y por qué>" --debt <DEF-id>');
     process.exit(2);
   }
-  const marker = readMarker();
+  let marker = readMarker();
   if (!marker) {
     console.error('marker.js close-as-debt: no hay marker activo para esta sesión');
     process.exit(1);
@@ -4197,28 +4212,22 @@ function cmdCloseAsDebt(args) {
     console.error('  El repo puede no tener tasks/todo.md: alcanza con la historia.');
     process.exit(2);
   }
-  const frenos = require('./lib/run-close.js').leerFrenos();
-  const l = frenos ? require('./lib/run-close.js').escapeDeCierre(frenos, SID, marker.startedAt, 'cerrar-como-deuda') : null;
-  const via = l && require('./lib/run-close.js').VIAS_DE_CIERRE.includes(l.via) ? l.via : null;
-  // la frase la juzga el freno; acá se exige su constancia: si el freno no vio la llamada (un nombre armado, otra copia
-  // del guion), la deuda no se cierra sin que una persona la haya autorizado
-  if (!via) {
-    console.error(frenos
-      ? 'marker.js close-as-debt: no encuentro la constancia de que una persona autorizó esta deuda (regla ESC-C4 del freno de seguridad). Volvé a correr el comando tal cual: el freno le abre a la persona la ventana de permiso.'
-      : 'marker.js close-as-debt: no pude leer el registro de escapes del freno de seguridad: sin él no sé si una persona autorizó la deuda.');
-    process.exit(2);
-  }
-  marker.cierre = { estado: 'deuda', motivo, deuda, via, ...(l.relevo ? { relevo: l.relevo } : {}), at: nowIso() };
+  // lo firma una persona, o la coordinadora por delegación; recién con la firma se escribe, sobre el marcador que quedó
+  const firma = firmaDelDueno('escape:cerrar-como-deuda', `cerrar ${marker.storyId || 'la ejecución'} como deuda ${deuda}: ${motivo}`);
+  marker = readMarker();
+  if (!marker) { console.error('🔒 marker.js close-as-debt: la ejecución se cerró mientras se firmaba. No se escribió nada.'); process.exit(2); }
+  const via = firma.constancia.via;
+  marker.cierre = { estado: 'deuda', motivo, deuda, via, ...porDe(firma), at: nowIso() };
   marker.lastTouch = nowIso();
   writeMarker(marker);
-  appendLog('gates.log', { name: 'close-as-debt', story: nn(marker.storyId, null), deuda, motivo, via });
+  appendLog('gates.log', { name: 'close-as-debt', story: nn(marker.storyId, null), deuda, motivo, via, ...porDe(firma) });
   process.stdout.write(`cierre: deuda (${deuda}) — la ejecución sigue hasta el commit: revisores sobre lo que sí cambió, el pase y la línea «Deuda:» del mensaje.\n`);
 }
 
 // Levantar una deuda que se pagó antes del commit: `lift-debt --debt <DEF-id>`, con el id de la deuda del cierre. Saca
 // el cierre y deja cada control en rojo esperado como el rojo que dejaría `run-check` con ese exit: «Preparar» vuelve a
 // pedir todo en verde. No pide firma porque no afloja nada. Del rojo esperado queda sólo la hora de la constancia ya
-// usada, que `expect-red acmatrix` toma como piso: la firma vieja no vuelve a valer con una deuda nueva.
+// usada, si el marcador la tenía.
 function cmdLiftDebt(args) {
   const deuda = String(opcion(args, 'debt') || '').trim();
   if (!deuda) {
@@ -4282,11 +4291,19 @@ function cmdExpectRed(args) {
     console.error(`marker.js expect-red: el control ${check} no está en rojo (${actual || 'sin registrar'}): no hay rojo que esperar`);
     process.exit(2);
   }
-  marker.checks[check] = `rojo-esperado:exit=${m[1]}`;
-  marker.expectedRed = Object.assign({}, marker.expectedRed, { [check]: { tests, deuda: marker.cierre.deuda, at: nowIso() } });
-  marker.lastTouch = nowIso();
-  writeMarker(marker);
-  appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check, tests, deuda: marker.cierre.deuda });
+  // lo firma una persona, o la coordinadora por delegación, con la misma firma que el rojo esperado de la matriz; recién
+  // con la firma se escribe, sobre el marcador que quedó, y sólo si el control sigue en ese rojo
+  const firma = firmaDelDueno('escape:rojo-esperado-de-la-matriz', `dejar ${check} en rojo esperado (${tests.join(', ')}) en la deuda ${marker.cierre.deuda}`);
+  const fresco = readMarker();
+  if (!fresco || !fresco.cierre || fresco.cierre.estado !== 'deuda' || String(nn(at(fresco.checks, check), '')) !== actual) {
+    console.error('🔒 marker.js expect-red: la ejecución cambió mientras se firmaba (se cerró, salió de la deuda o el control ya no es ese rojo). No se escribió nada.');
+    process.exit(2);
+  }
+  fresco.checks[check] = `rojo-esperado:exit=${m[1]}`;
+  fresco.expectedRed = Object.assign({}, fresco.expectedRed, { [check]: { tests, deuda: fresco.cierre.deuda, at: nowIso() } });
+  fresco.lastTouch = nowIso();
+  writeMarker(fresco);
+  appendLog('gates.log', { name: 'expect-red', story: nn(fresco.storyId, null), check, tests, deuda: fresco.cierre.deuda, via: firma.constancia.via, ...porDe(firma) });
   process.stdout.write(`${check}: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${marker.cierre.deuda}\n`);
 }
 
@@ -4303,30 +4320,10 @@ function sumarDias(fecha, dias) {
 }
 const esFecha = (t) => /^\d{4}-\d{2}-\d{2}$/.test(String(t || '')) && sumarDias(String(t), 0) === String(t);
 
-/**
- * La constancia del freno para el rojo esperado de la matriz: la de esta sesión y esta ejecución, con la huella de esta
- * lista y esta fecha, y posterior a la última que ya se usó (`desde`). Una constancia, una escritura.
- */
-function constanciaDelRojoEsperado(frenos, sid, startedAt, desde, detalle) {
-  const inicio = Date.parse(startedAt || '');
-  const usada = Date.parse(desde || '');
-  const vias = require('./lib/run-close.js').VIAS_DE_CIERRE;
-  for (let i = frenos.length - 1; i >= 0; i--) {
-    const l = frenos[i];
-    if (l.freno !== 'safety-guard' || l.veredicto !== 'escape' || l.escape !== 'rojo-esperado-de-la-matriz' || l.sesion !== sid) continue;
-    if (l.detalle !== detalle || !vias.includes(l.via)) continue;
-    const ts = Date.parse(l.ts);
-    if (Number.isFinite(inicio) && !(ts >= inicio)) continue;
-    if (Number.isFinite(usada) && !(ts > usada)) continue;
-    return l;
-  }
-  return null;
-}
-
 // El rojo esperado de la matriz: `expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD>`. Lleva al commit los criterios
 // sin evidencia en vivo que cubre la lista, hasta la fecha, con un tope de 14 días desde el cierre en deuda. Pide su propia
-// firma, cuya constancia trae la huella de la lista y la fecha que vio la persona. Con el control ya en rojo esperado,
-// el mismo comando renueva la fecha (y la lista) dentro del mismo tope.
+// firma, sobre este comando: la lista y la fecha que vio la persona. Con el control ya en rojo esperado, el mismo comando
+// renueva la fecha (y la lista) dentro del mismo tope.
 function rojoEsperadoDeLaMatriz(marker, tests, args, actual) {
   const previo = (marker.expectedRed || {}).acmatrix || null;
   const m = /^red:exit=(\d+)/.exec(actual) || (previo ? /^rojo-esperado:exit=(\d+)/.exec(actual) : null);
@@ -4372,19 +4369,17 @@ function rojoEsperadoDeLaMatriz(marker, tests, args, actual) {
     console.error(`marker.js expect-red: ${ajenas.join(', ')} no está(n) en la tabla ### Tests de la historia (${story}): la lista nombra pruebas de la tabla`);
     process.exit(2);
   }
-  const detalle = require('./lib/marker-command.js').detalleDelRojoEsperado('acmatrix', tests, hasta);
-  const frenos = require('./lib/run-close.js').leerFrenos();
-  const l = frenos ? constanciaDelRojoEsperado(frenos, SID, marker.startedAt, previo && previo.constanciaTs, detalle) : null;
-  // la frase la juzga el freno; acá se exige su constancia, atada a esta lista y esta fecha, y sin usar
-  if (!l) {
-    console.error(frenos
-      ? 'marker.js expect-red: no encuentro la constancia de que una persona autorizó este rojo esperado de la matriz, con esta lista y esta fecha (regla ESC-C4 del freno de seguridad). Volvé a correr el comando tal cual: el freno le abre a la persona la ventana de permiso, con los criterios y la fecha.'
-      : 'marker.js expect-red: no pude leer el registro de escapes del freno de seguridad: sin él no sé si una persona autorizó el rojo esperado de la matriz.');
+  // lo firma una persona, o la coordinadora por delegación, sobre esta lista y esta fecha: la firma es de este comando
+  const firma = firmaDelDueno('escape:rojo-esperado-de-la-matriz', `${marker.storyId || 'la ejecución'}: ${tests.join(', ')} sin evidencia en vivo hasta ${hasta} (deuda ${marker.cierre.deuda})`);
+  const despues = readMarker();
+  if (!despues || !despues.cierre || despues.cierre.estado !== 'deuda' || String(nn(at(despues.checks, 'acmatrix'), '')) !== actual) {
+    console.error('🔒 marker.js expect-red: la ejecución cambió mientras se firmaba. No se escribió nada.');
     process.exit(2);
   }
+  marker = despues;
   const renovada = !!previo && /^rojo-esperado/.test(actual);
   marker.checks.acmatrix = `rojo-esperado:exit=${m[1]}`;
-  marker.expectedRed = Object.assign({}, marker.expectedRed, { acmatrix: { tests, deuda: marker.cierre.deuda, at: nowIso(), until: hasta, via: l.via, constanciaTs: l.ts } });
+  marker.expectedRed = Object.assign({}, marker.expectedRed, { acmatrix: { tests, deuda: marker.cierre.deuda, at: nowIso(), until: hasta, via: firma.constancia.via, ...porDe(firma) } });
   marker.lastTouch = nowIso();
   // el renglón va antes que el marcador y sin él no se guarda nada: es lo que hace hablar al aviso de la deuda vencida,
   // y un marcador con la fecha nueva sin su renglón dejaría el aviso con la vieja

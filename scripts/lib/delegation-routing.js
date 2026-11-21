@@ -46,6 +46,10 @@ const RUTAS = Object.freeze({
   'manual-test': Object.freeze({ rutas: [], conPunto: [] }),
   'lost-run': Object.freeze({ rutas: [], conPunto: [] }),
   'escape:force-manual': Object.freeze({ rutas: [], conPunto: [] }),
+  // los escapes del cierre que pide el marcador, sobre la ejecución abierta del destino: sin rutas
+  'escape:set-autonomous': Object.freeze({ rutas: [], conPunto: [] }),
+  'escape:cerrar-como-deuda': Object.freeze({ rutas: [], conPunto: [] }),
+  'escape:rojo-esperado-de-la-matriz': Object.freeze({ rutas: [], conPunto: [] }),
 });
 
 const no = (motivo, callar = false) => ({ ok: false, motivo, callar });
