@@ -93,14 +93,26 @@ const lines = (s) => String(s || '').split(/\r?\n/).map((x) => x.trim()).filter(
 /**
  * Lo que llegó sólo por main: de `files`, los que main cambió desde la base, que en el disco son iguales a `origin/main`
  * y que ningún commit propio de la rama tocó. Ante cualquier duda (sin `origin/main`, git que falla) no saca nada.
+ * Propios son los commits que descienden de la base y llegan a HEAD sin estar en la línea principal de `origin/main`
+ * (sus primeros padres): así un commit de la corrida que ya entró a main por un merge sigue siendo propio. Un pedido que
+ * entró a main sin commit de fusión (squash o rebase) queda en esa línea y se toma como de main.
  */
 function soloDeMain(repo, baseRef, files) {
   if (!files.length || git(repo, ['rev-parse', '--verify', '-q', 'origin/main^{commit}']).error) return new Set();
   const deMain = git(repo, ['diff', '--name-only', '--no-renames', baseRef, 'origin/main', '--']);
   const distintos = git(repo, ['diff', '--name-only', '--no-renames', 'origin/main', '--']);
-  const propios = git(repo, ['log', '--no-merges', '--no-renames', '--name-only', '--format=', 'origin/main..HEAD', '--']);
-  if (deMain.error || distintos.error || propios.error) return new Set();
-  const noIgual = new Set([...lines(distintos.out), ...lines(propios.out)]);
+  const desdeLaBase = git(repo, ['rev-list', '--ancestry-path', '--no-merges', `${baseRef}..HEAD`]);
+  const lineaDeMain = git(repo, ['rev-list', '--first-parent', `${baseRef}..origin/main`]);
+  if (deMain.error || distintos.error || desdeLaBase.error || lineaDeMain.error) return new Set();
+  const deLaLinea = new Set(lines(lineaDeMain.out));
+  const propios = lines(desdeLaBase.out).filter((c) => !deLaLinea.has(c));
+  let tocadosPorLaRama = [];
+  if (propios.length) {
+    const t = git(repo, ['log', '--no-walk=unsorted', '--no-renames', '--name-only', '--format=', ...propios, '--']);
+    if (t.error) return new Set();
+    tocadosPorLaRama = lines(t.out);
+  }
+  const noIgual = new Set([...lines(distintos.out), ...tocadosPorLaRama]);
   return new Set(lines(deMain.out).filter((f) => !noIgual.has(f)));
 }
 
