@@ -2022,3 +2022,78 @@ test('PlanReview_RegistroIlegible_LlegaAlDuenoSinRelanzar (T12) @story-8.281 @ac
   volver();
   assert.strictEqual(SGIO.listaDelPlanDelegado(lab.estado, DESTINO, marker), null, 'legible y sin parte: como hoy');
 });
+
+// ── la corrida que pasa a otra sesión (marker.js adopt-session) ──────────────────────────────────────────────────────
+
+const NUEVA = 'ses-nueva';
+const STEPS = () => require(path.join(SCRIPTS, 'lib', 'steps.js'));
+/** La corrida de ses-a, revisada y aprobada por la delegación, pasa a ses-nueva (con el plan cambiado antes, si se pide). */
+function adoptada(t, { cambiarPlan = false } = {}) {
+  const lab = laboratorio(t);
+  lab.revisar(APROBADO);
+  const ap = aprobarPorDelegacion(lab);
+  assert.strictEqual(ap.status, 0, `${ap.stdout}${ap.stderr}`);
+  if (cambiarPlan) fs.appendFileSync(lab.planFile, '4. Un paso que no estaba cuando se revisó.\n');
+  const r = lab.marker(NUEVA, ['adopt-session', DESTINO]);
+  return { lab, r };
+}
+
+test('Adopt_MismoPlan_LaRevisionYLaAprobacionViajan (AD1): la corrida adoptada sobre el mismo plan no vuelve a pedir la firma «sin revisión»', (t) => {
+  // 🔴 mutación: sin el renglón de la adopción (o sin buscar la revisión de la sesión vieja), la coordinadora no puede
+  //    firmar por la revisión y el cuadro dice «sin revisión», con el mismo plan ya revisado y aprobado.
+  const { lab, r } = adoptada(t);
+  assert.match(r.stderr, /el plan es el que se aprobó: la revisión y la aprobación siguen/, r.stderr);
+  const m = markerDe(lab, NUEVA);
+  assert.ok(m.planApproval && STEPS().isDone(m, 'approve-plan'), `la aprobación sigue: ${JSON.stringify({ ap: m.planApproval, hechos: m.stepsCompleted })}`);
+  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: NUEVA, marker: m });
+  assert.strictEqual(a.codigo, 0, JSON.stringify(a));
+  assert.match(PR().lineaDelCuadro({ estado: lab.estado, destino: NUEVA, marker: m }).linea, /^revisado/);
+});
+
+test('Adopt_PlanCambiado_NoHeredaNada (AD2): con el plan cambiado, la corrida adoptada vuelve a «Aprobar el plan» sin revisión heredada', (t) => {
+  // 🔴 mutación: heredar sin comparar la huella deja aprobado, con la revisión de otro plan, un plan que nadie vio.
+  const { lab, r } = adoptada(t, { cambiarPlan: true });
+  assert.match(r.stderr, /el plan cambió desde que se aprobó/, r.stderr);
+  const m = markerDe(lab, NUEVA);
+  assert.ok(!m.planApproval, `la aprobación no viaja: ${JSON.stringify(m.planApproval)}`);
+  assert.ok(!STEPS().isDone(m, 'approve-plan'), 'vuelve a pendiente');
+  assert.strictEqual(PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: NUEVA, marker: m }).codigo, 2);
+  const renglon = renglonesDe(lab, 'adopt-session').pop();
+  assert.strictEqual(renglon.huellaPlan, null, 'el renglón no deja heredar nada');
+});
+
+test('Adopt_SinAdoptarDeVerdad_NoHereda (AD3): un marcador copiado a mano (sin el renglón de la adopción) no trae la revisión de la otra sesión', (t) => {
+  // 🔴 mutación: tomar `adoptedFrom` del marcador como prueba deja que cualquiera se haga pasar por la corrida revisada.
+  const lab = laboratorio(t);
+  lab.revisar(APROBADO);
+  const copia = { ...JSON.parse(lab.leer(DESTINO)), sessionId: NUEVA, adoptedFrom: DESTINO };
+  fs.writeFileSync(lab.marcador(NUEVA), JSON.stringify(copia));
+  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: NUEVA, marker: copia });
+  assert.strictEqual(a.codigo, 2, JSON.stringify(a));
+  assert.match(a.motivo, /no hay una revisión automática de este plan/);
+  // y un renglón de adopción con la huella de otro plan tampoco
+  fs.appendFileSync(path.join(lab.estado, 'gates.log'), `${JSON.stringify({ name: 'adopt-session', status: 'ok', desde: DESTINO, a: NUEVA, huellaPlan: sha('otro plan') })}\n`);
+  assert.strictEqual(PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: NUEVA, marker: copia }).codigo, 2);
+});
+
+test('Adopt_RevisionPropia_SinCoordinadora_Viaja (AD4): sin coordinadora, la revisión que la corrida lanzó para sí en la sesión vieja vale en la nueva', (t) => {
+  // 🔴 mutación: buscar la revisión propia sólo en la sesión que firma deja a la nueva sin poder aprobar el mismo plan,
+  //    y el cuadro dice «revisado» mientras la firma dice que no hay revisión.
+  const lab = laboratorio(t, { designada: null });
+  revisionPropia(lab);
+  const r = lab.marker(NUEVA, ['adopt-session', DESTINO]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: NUEVA, destino: NUEVA, marker: markerDe(lab, NUEVA) });
+  assert.strictEqual(a.codigo, 0, JSON.stringify(a));
+});
+
+test('Adopt_Next_VeLaRevisionYCuentaLosRechazos (AD5): `next` de la sesión nueva ve la revisión de la vieja y sigue la cuenta de rechazos', (t) => {
+  // 🔴 mutación: `next` sólo con la sesión nueva manda relanzar la revisión, y la cuenta de rechazos vuelve a cero.
+  const lab = laboratorio(t);
+  const config = cfgCon({ plan_review: { routine: 'always' } });
+  lab.revisar(RECHAZADO);
+  const r = lab.marker(NUEVA, ['adopt-session', DESTINO]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const a = PR().accionDelPlan({ estado: lab.estado, sesion: NUEVA, marker: markerDe(lab, NUEVA), config, home: lab.home });
+  assert.strictEqual(a.rechazos, 1, JSON.stringify(a));
+});

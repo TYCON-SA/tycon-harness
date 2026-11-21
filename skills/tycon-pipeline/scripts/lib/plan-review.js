@@ -398,14 +398,25 @@ function anotarPedido({ estado, a, destino, huellaPlan, corrida, tras = null, ah
  * puede leer, también ninguno, y el motivo va a `problemas` cuando quien llama lo pide: un registro ilegible no es uno
  * vacío.
  */
+// gates.log puede pesar decenas de MB y un cuadro lo lee varias veces: se relee sólo si cambió su tamaño o su hora
+let renglonesLeidos = null;
 function renglones(estado, problemas) {
+  const archivo = path.join(estado, 'gates.log');
+  let st;
+  try { st = fs.statSync(archivo); } catch (e) {
+    if (e.code !== 'ENOENT' && Array.isArray(problemas)) problemas.push(`no pude leer gates.log: ${e.code || e.message}`);
+    return [];
+  }
+  const firma = `${archivo}|${st.size}|${st.mtimeMs}`;
+  if (renglonesLeidos && renglonesLeidos.firma === firma) return renglonesLeidos.out;
   let lineas = [];
-  try { lineas = fs.readFileSync(path.join(estado, 'gates.log'), 'utf8').split('\n'); } catch (e) {
+  try { lineas = fs.readFileSync(archivo, 'utf8').split('\n'); } catch (e) {
     if (e.code !== 'ENOENT' && Array.isArray(problemas)) problemas.push(`no pude leer gates.log: ${e.code || e.message}`);
     return [];
   }
   const out = [];
   for (const l of lineas) { if (!l.trim()) continue; try { out.push(JSON.parse(l)); } catch (_) { /* un renglón roto no cuenta */ } }
+  renglonesLeidos = { firma, out };
   return out;
 }
 
@@ -510,8 +521,10 @@ function comandoLite(argsFile, out, { order, integration } = {}) {
 }
 
 /** Los renglones `plan-review` de un destino y una corrida, en orden. */
+// `destino`: una sesión, o la lista de las sesiones de la corrida (`sesionesDeLaCorrida`)
 function revisionesDe(estado, destino, corrida, problemas) {
-  return renglones(estado, problemas).filter((j) => j.name === 'plan-review' && j.destino === destino && mismaCorrida(j.corrida, corrida));
+  const sesiones = Array.isArray(destino) ? destino : [destino];
+  return renglones(estado, problemas).filter((j) => j.name === 'plan-review' && sesiones.includes(j.destino) && mismaCorrida(j.corrida, corrida));
 }
 
 // las vueltas de la revisión del plan de una historia que se lanzan sin preguntar: la siguiente la decide una persona
@@ -685,6 +698,26 @@ function ultimaDelDestino({ estado, destino }) {
  * ¿La constancia tiene su renglón en gates.log, con la misma huella y sin ser informativa? Con el registro ilegible no
  * lo tiene, y el motivo va a `problemas` si quien llama lo pide.
  */
+/**
+ * Las sesiones cuya revisión vale para la corrida de `destino`: ella misma y, por cada vez que la corrida pasó de una
+ * sesión a otra con `marker.js adopt-session` sobre el mismo plan, la sesión de la que vino. Cada paso lo prueba su
+ * renglón `adopt-session` en gates.log (lo escribe el arnés al adoptar, con la huella del plan de ese momento), y vale
+ * sólo con la huella del plan de ahora: adoptar una sesión no trae la revisión de otro plan. Más nueva primero.
+ */
+function sesionesDeLaCorrida({ estado, destino, huellaPlan, problemas }) {
+  const out = [destino];
+  if (!huellaPlan) return out;
+  const pasos = renglones(estado, problemas).filter((j) => j.name === 'adopt-session' && j.status === 'ok' && j.huellaPlan === huellaPlan);
+  let actual = destino;
+  for (let i = 0; i < 10; i += 1) {
+    const paso = [...pasos].reverse().find((j) => j.a === actual && j.desde && !out.includes(j.desde));
+    if (!paso) break;
+    out.push(paso.desde);
+    actual = paso.desde;
+  }
+  return out;
+}
+
 function tieneRenglon(estado, firmante, destino, texto, problemas) {
   const h = sha(texto);
   return renglones(estado, problemas).some((j) => j.name === 'plan-review' && j.sesion === firmante && j.destino === destino && j.huella === h && j.informativa !== true);
@@ -755,7 +788,9 @@ function respuestaDe({ estado, sesion, kind, huella, problemas }) {
 
 /** ¿Para este plan (su huella) se eligió seguir sin revisión? La última respuesta sobre esa huella manda. */
 function eligioSeguir({ estado, destino, huellaPlan, problemas }) {
-  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === 'plan' && j.sesion === destino && j.huella === huellaPlan);
+  // «seguir sin revisión» sobre este plan también viaja con la corrida adoptada
+  const sesiones = sesionesDeLaCorrida({ estado, destino, huellaPlan, problemas });
+  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === 'plan' && sesiones.includes(j.sesion) && j.huella === huellaPlan);
   return r.length ? r[r.length - 1].choice === 'skip' : false;
 }
 
@@ -812,7 +847,10 @@ function lineaDelCuadro({ estado, destino, marker, config }) {
   renglones(estado, sinRegistro);
   if (sinRegistro.length) return { linea: `${sinRegistro[0]}: no sé cómo quedó la revisión`, detalle: [] };
   if (huellaPlan && eligioSeguir({ estado, destino, huellaPlan })) return { linea: 'sin revisión (se eligió seguir)', detalle: [] };
-  const c = ultimaDelDestino({ estado, destino });
+  // la de la sesión de la corrida o, si la adoptó sobre este mismo plan, la de la sesión de la que vino
+  const sesiones = sesionesDeLaCorrida({ estado, destino, huellaPlan });
+  let c = null;
+  for (const s of sesiones) { c = ultimaDelDestino({ estado, destino: s }); if (c && c.veredicto) break; }
   const deEsta = c && c.veredicto && mismaCorrida(c.corrida, corrida) ? c : null;
   if (!deEsta) {
     const delicate = pipeline().computeDelicate({ story: storyDe(marker), repo: marker.repoPath, planText: plan.texto || '' });
@@ -823,10 +861,10 @@ function lineaDelCuadro({ estado, destino, marker, config }) {
   const lista = (hs) => (hs || []).map((h) => `- [${h.lente || '?'}] ${h.resumen}`);
   if (deEsta.veredicto === 'sin-veredicto') return { linea: `no se pudo revisar: ${deEsta.motivo || 'el pase no midió todo'}`, detalle: [] };
   if (deEsta.veredicto === 'rechazado') {
-    const n = rechazosSeguidos({ estado, destino, corrida });
+    const n = rechazosSeguidos({ estado, destino: sesiones, corrida });
     return { linea: `revisado, rechazado ${n} ${n === 1 ? 'vez' : 'veces seguidas'}`, detalle: lista(deEsta.hallazgos) };
   }
-  const corregidos = hallazgosCorregidos({ estado, destino, corrida });
+  const corregidos = hallazgosCorregidos({ estado, destino: sesiones, corrida });
   const base = corregidos ? `revisado, ${corregidos} hallazgos corregidos` : 'revisado, sin hallazgos';
   if (deEsta.veredicto === 'aprobado-con-notas') {
     const k = (deEsta.notas || []).length;
@@ -862,14 +900,27 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
     try { d = delegacion({ firma: 'plan-approval', sesion: firmante, destino, home, estado }); } catch (e) { d = { ok: false, motivo: e.message }; }
     if (!d || !d.ok) return no(`el perfil no delega la aprobación del plan (${(d && d.motivo) || 'sin respuesta'}): ${ESPERA}`);
   }
-  const r = leerConstancia({ estado, lanza: firmante, destino });
+  // la revisión de la corrida: la de su sesión o, si la adoptó sobre este mismo plan, la de la sesión de la que vino
+  // (`sesionesDeLaCorrida`). La coordinadora firma con la que lanzó ella para cualquiera de esas sesiones; la propia
+  // sesión (firmante = destino), con la que esa misma corrida lanzó para sí en cada una
+  const huellaHoy = plan.texto ? sha(plan.texto) : null;
+  const deLaCorrida = sesionesDeLaCorrida({ estado, destino, huellaPlan: huellaHoy });
+  let r = { ok: false, ausente: true };
+  let destinoDeLaRevision = destino;
+  let lanzador = firmante;
+  for (const s of deLaCorrida) {
+    lanzador = firmante === destino ? s : firmante;
+    r = leerConstancia({ estado, lanza: lanzador, destino: s });
+    destinoDeLaRevision = s;
+    if (!(!r.ok && r.ausente)) break;
+  }
   if (!r.ok && r.ausente) return no(`no hay una revisión automática de este plan lanzada por esta sesión (marker.js plan-review${firmante === destino ? '' : ` --for-session ${destino}`}): ${ESPERA}`);
   if (!r.ok) return no(`la constancia de la revisión no se puede leer (${r.motivo}): ${ESPERA}`);
   const c = r.constancia;
   if (c.informativa === true) return no(`la revisión es informativa (la lanzó la propia sesión cuando no podía firmar): sólo informa: ${ESPERA}`);
-  if (c.lanzo !== firmante || c.destino !== destino) return no(`la revisión la lanzó otra sesión (${c.lanzo}), no la que firma: ${ESPERA}`);
+  if (c.lanzo !== lanzador || c.destino !== destinoDeLaRevision) return no(`la revisión la lanzó otra sesión (${c.lanzo}), no la que firma: ${ESPERA}`);
   const sinRegistro = [];
-  if (!tieneRenglon(estado, firmante, destino, r.texto, sinRegistro)) return no(`${sinRegistro[0] || 'la constancia de la revisión no tiene su renglón en gates.log'}: ${ESPERA}`);
+  if (!tieneRenglon(estado, lanzador, destinoDeLaRevision, r.texto, sinRegistro)) return no(`${sinRegistro[0] || 'la constancia de la revisión no tiene su renglón en gates.log'}: ${ESPERA}`);
   const hoy = corridaDe(marker);
   if (c.storyId !== hoy.storyId || c.corrida.storyId !== hoy.storyId || c.corrida.startedAt !== hoy.startedAt) return no(`la revisión es de otra corrida (${c.corrida.storyId}, ${c.corrida.startedAt}): ${ESPERA}`);
   if (!plan.texto || sha(plan.texto) !== c.huellas.plan) return no(`el plan cambió después de la revisión: ${ESPERA}`);
@@ -1020,7 +1071,9 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   // que llevan el caso al dueño: llega al dueño ahora, sin relanzar
   if (sinRegistro.length) return { ...out, alDueno: { llega: true, motivo: `${sinRegistro[0]}: lo decide una persona` } };
   if (eligioSeguir({ estado, destino: sesion, huellaPlan })) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
-  const c = ultimaDelDestino({ estado, destino: sesion });
+  // la revisión de la corrida: la de esta sesión o la de la sesión de la que la adoptó sobre este mismo plan
+  let c = null;
+  for (const s of sesionesDeLaCorrida({ estado, destino: sesion, huellaPlan })) { c = ultimaDelDestino({ estado, destino: s }); if (c && c.veredicto) break; }
   // con coordinadora, una informativa no tapa la revisión que ella tiene que lanzar; la de la propia sesión que puede
   // firmar (rutina con `review`) sí cuenta: aprueba en los dos casos
   const informativa = !!c && c.informativa === true;
@@ -1028,7 +1081,7 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     && !(hayCoordinadora && informativa && r.approves === 'coordinator');
   if (revisado && c.veredicto === 'rechazado') {
     // rechazado: la sesión corrige y vuelve a cerrar el plan; llega al dueño con O5 en sí o al tope de rechazos seguidos
-    const n = rechazosSeguidos({ estado, destino: sesion, corrida: corridaDe(marker) });
+    const n = rechazosSeguidos({ estado, destino: sesionesDeLaCorrida({ estado, destino: sesion, huellaPlan }), corrida: corridaDe(marker) });
     // el mismo tope que las vueltas de revisores del código: el repo manda sobre la organización
     const tope = topeDeRechazos(cfg, marker.repoPath);
     const llega = cfg.plan_review.rejected_reaches_owner || n >= tope;
@@ -1107,7 +1160,7 @@ module.exports = {
   rutaResultado, resultadosGuardados, guardarResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
-  tieneRenglon, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
+  tieneRenglon, sesionesDeLaCorrida, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };
 
 // el tope de rechazos, para sus pruebas (start-silences.test.js)

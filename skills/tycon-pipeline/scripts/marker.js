@@ -6498,7 +6498,29 @@ function cmdAdoptSession(sid) {
   }
   frenarSiPerdida(safe, 'adopt-session', other && other.repoPath);
   const adopted = { ...other, sessionId: SID, lastTouch: nowIso(), adoptedFrom: safe, adoptedAt: nowIso() };
+  // La revisión y la aprobación del plan viajan con la corrida sólo si el plan es el mismo que se aprobó: el renglón de
+  // gates.log, con la huella de ahora, es lo que deja que la revisión de la sesión vieja valga para ésta
+  // (lib/plan-review.js sesionesDeLaCorrida). Con el plan cambiado no se hereda nada: vuelve a «Aprobar el plan».
+  const huella = huellaDelPlan(adopted);
+  const ap = adopted.planApproval;
+  let herencia = 'sin plan aprobado';
+  let hereda = !!huella.sha;
+  if (ap && (!ap.planSha || !huella.sha || ap.planSha !== huella.sha)) {
+    hereda = false;
+    require('./lib/batch-scope.js').volverAlPlan(adopted);
+    // en el esquema viejo de pasos `volverAlPlan` no toca nada: el paso del plan es el 3
+    if (STEPS_LIB.schemeOf(adopted) === 1) {
+      adopted.stepsCompleted = (adopted.stepsCompleted || []).filter((s) => String(s) !== '3');
+      if (!(adopted.stepsPending || []).map(String).includes('3')) adopted.stepsPending = ['3', ...(adopted.stepsPending || [])];
+    }
+    delete adopted.planApproval;
+    herencia = !huella.sha ? `no pude leer el plan (${huella.motivo}): «Aprobar el plan» vuelve a pendiente`
+      : !ap.planSha ? 'la aprobación no guardó la huella del plan: «Aprobar el plan» vuelve a pendiente'
+        : 'el plan cambió desde que se aprobó: «Aprobar el plan» vuelve a pendiente';
+  } else if (ap) herencia = 'el plan es el que se aprobó: la revisión y la aprobación siguen';
   writeMarker(adopted);
+  appendLog('gates.log', { name: 'adopt-session', status: 'ok', story: adopted.storyId || null, desde: safe, a: SID, huellaPlan: hereda ? huella.sha : null, herencia });
+  process.stderr.write(`[marker] adopt-session: ${herencia}.\n`);
   try { fs.unlinkSync(otherPath); } catch (_e) { /* pruneStale lo limpia */ }
   // quien adopta una corrida en fila la retoma: deja de estar dejada a propósito
   sacarMarca(safe);
