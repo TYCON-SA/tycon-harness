@@ -1309,3 +1309,27 @@ test('T37 StoryPaperwork_ScreenMarkOnCriterion_IsPaperwork — @sin-pantalla sue
   // fuera de los criterios, la palabra no se toca
   assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('## Tasks\n', '## Tasks\n\n- usar @sin-pantalla\n')), ft().sinPapeleoDeLaHistoria(base));
 });
+
+// Caso: después de la tercera vuelta, un control de la historia pidió cambiar la columna «Bloquea» del archivo de
+// intención (`<historia>.intent.md`) de «sólo T14» a «no», y esa palabra pedía una cuarta vuelta. Las tablas de ese
+// archivo son el registro de lo preguntado y lo decidido: papeleo. Su encabezado (el objetivo y los resultados) cuenta.
+test('T38 Changed_IntentFile_TablesArePaperwork_HeaderCounts — el archivo de intención de la historia', () => {
+  // 🔴 mutación: sacar la rama del archivo de intención en changed (entonces la respuesta cuenta como código).
+  const intencion = ['---', 'id: story-9.9-sello', 'status: draft', 'objective: "que algo pase"', 'outcomes:', '  - "resultado uno"', '---', '',
+    '# Sello', '', '## Preguntas abiertas', '', '| # | Pregunta | Bloquea | Estado | Respuesta |', '|---|---|---|---|---|',
+    '| Q1 | ¿Algo? | sólo T14 | abierta | |', ''].join('\n');
+  // la historia en `stories/`, como en los productos con la historia y el código en el mismo repo (`specs/` ya es papeleo)
+  const R = repoDeJuguete('intencion', { 'stories/story-9.9-sello.md': '---\nstory: "9.9"\n---\n# 9.9\n', 'stories/story-9.9-sello.intent.md': intencion, 'src/a.js': '1;\n' });
+  const rel = 'stories/story-9.9-sello.md';
+  const relI = 'stories/story-9.9-sello.intent.md';
+  const antes = ft().seal(R.repo).tree;
+  const archivo = path.join(R.repo, relI);
+  const cambiar = (de, a) => fs.writeFileSync(archivo, reemplazarTexto(fs.readFileSync(archivo, 'utf8'), de, a));
+  const d = () => ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: rel });
+  cambiar('| sólo T14 | abierta | |', '| no | contestada | Sí, con lo que dijo el dueño. |');
+  cambiar('status: draft', 'status: approved');
+  assert.deepStrictEqual([d().files, d().papeleo], [[], [relI]]);
+  // el objetivo o un resultado cambiado cuenta
+  cambiar('"resultado uno"', '"resultado distinto"');
+  assert.deepStrictEqual(d().files, [relI]);
+});

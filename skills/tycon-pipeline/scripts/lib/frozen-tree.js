@@ -421,6 +421,19 @@ function noSeEjecuta(rel, modos, qaRel, historia) {
  * Con `sinEjecutar` (defectos del 20/11, punto 1), un archivo que no se ejecuta (`noSeEjecuta`: una imagen, la guía y
  * las capturas de la historia en su carpeta qa) va a `noSeEjecutan` y no a `files`. Sin la opción, la salida no trae ese campo.
  */
+/**
+ * Lo que cuenta del archivo de intención de la historia (`<historia>.intent.md`): su encabezado (el objetivo y los
+ * resultados, lo que guía al agente), sin su estado. El cuerpo (las tablas de preguntas abiertas y decisiones reservadas,
+ * con sus respuestas) es el registro de lo que se preguntó y se decidió: papeleo. Sin encabezado, el archivo entero.
+ */
+function encabezadoDeLaIntencion(txt) {
+  const lineas = String(txt).split('\n');
+  if (lineas[0] !== '---') return String(txt);
+  const fin = lineas.indexOf('---', 1);
+  if (fin < 0) return String(txt);
+  return lineas.slice(1, fin).filter((l) => !/^status\s*:/.test(l)).join('\n');
+}
+
 function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null, comentarios = false, sinEjecutar = false } = {}) {
   if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}), ...(sinEjecutar ? { noSeEjecutan: [] } : {}) };
   const d = git(['-C', repo, 'diff-tree', '-r', '-z', '--no-renames', treeA, treeB]);
@@ -445,6 +458,7 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
   };
   const leer = (t, rel) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
   const estadoDelSprint = storyRel ? path.posix.join(path.posix.dirname(storyRel), 'sprint-status.yaml') : null;
+  const intencion = storyRel && /\.md$/.test(storyRel) ? storyRel.replace(/\.md$/, '.intent.md') : null;
   // la entrada de una ruta en un árbol: modo, tipo y objeto («» si no existe, null si no se pudo leer). Así cuentan también
   // un cambio de permisos y el puntero de un submódulo, que el contenido solo no muestra
   const entrada = (t, rel) => { const r = git(['-C', repo, 'ls-tree', t, '--', rel]); return r.ok ? r.out.split('\t')[0] : null; };
@@ -475,6 +489,11 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
       const a = leer(treeA, rel);
       const b = leer(treeB, rel);
       esPapeleo = a !== null && b !== null && sinPapeleoDeLaHistoria(a) === sinPapeleoDeLaHistoria(b);
+    } else if (intencion && rel === intencion) {
+      // el archivo de intención de la historia: cuenta su encabezado; las respuestas de sus tablas son papeleo
+      const a = leer(treeA, rel);
+      const b = leer(treeB, rel);
+      esPapeleo = a !== null && b !== null && encabezadoDeLaIntencion(a) === encabezadoDeLaIntencion(b);
     } else if (rel === estadoDelSprint) {
       // el estado del sprint: sólo el renglón de la historia de la corrida, con el número que dice la historia de ahora
       const clave = claveDeLaHistoria(leer(treeB, storyRel));
@@ -625,6 +644,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
+  encabezadoDeLaIntencion,
   seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
   contenidoDelSello, difiereSoloEnComentarios, vueltaCerradaDeLosRevisores, comentariosMovidosDesdeLaVuelta, noSeEjecuta,
 };
