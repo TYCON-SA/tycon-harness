@@ -258,3 +258,13 @@ test('8.187 T15c Preparar_UnaParteQueSeCae_NoTiraAbajoLoDemas @story-8.187 @ac-1
   assert.strictEqual(r.code, 2);
   assert.match(text(r), /no pude saber si el freno.*sin lector/);
 });
+
+test('Preparar_PerfilIlegible_LoDiceYNoLoTomaComoContrasena: un perfil del equipo que no se deja leer se avisa como «no pude leer»', () => {
+  // 🔴 rojo si: el error del perfil entero (sin clave) se toma como «con la contraseña» sin decirlo, como si la
+  // organización lo hubiera elegido. El lanzador de la actualización sola ya lo dice como «no pude leer».
+  const t = toy({ prod: { viejo: true } });
+  fs.writeFileSync(path.join(t.arnes, 'perfil-equipo.json'), '{ esto no es json');
+  const r = PM.check({ ...t.opts, repos: [] });
+  assert.match(text(r), /no pude leer el perfil del equipo/, text(r));
+  assert.strictEqual(r.code, 2, 'lo que no pudo mirar no es «lista»');
+});

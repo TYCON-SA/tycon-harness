@@ -82,8 +82,16 @@ function laQueAnda(renglones, prod) {
   return inst || 'la instalada';
 }
 
-// Una falla que una instalación posterior ya resolvió: la versión instalada es la que falló, o una más nueva.
+// Una falla que una instalación posterior ya resolvió: la versión instalada es la que falló, o una más nueva. Una falla de
+// antes de saber la versión (sin `attempted_version`) no se puede comparar por versión: la resuelve una instalación de
+// después de la falla, por la fecha de la constancia de la instalada. Sin eso se mostraba para siempre.
 function fallaResuelta(falla, prod) {
+  if (!falla.attempted_version) {
+    const at = Date.parse(falla.at);
+    let instalada = NaN;
+    try { instalada = fs.statSync(path.join(prod, 'installed-release.json')).mtimeMs; } catch { /* sin constancia */ }
+    return Number.isFinite(at) && Number.isFinite(instalada) && instalada > at;
+  }
   const c = compararVersiones(versionInstalada(prod), falla.attempted_version);
   return c !== null && c >= 0;
 }
