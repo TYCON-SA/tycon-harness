@@ -183,7 +183,9 @@ function esNombreDeCredencial(nombre) {
  * del `=` y encuentra al siguiente.
  */
 function taparCredencialesConNombre(txt) {
-  const re = /(["']?)([A-Za-z][A-Za-z0-9_\-]*)\1(\s*[=:]\s*)/g;
+  // El nombre no arranca en el medio de otro nombre: desde ahí termina donde termina el entero y nunca encuentra lo que
+  // al entero le faltó, y probar cada letra de una tirada larga sin espacios hacía crecer el tiempo al cuadrado.
+  const re = /(["']?)(?<![A-Za-z0-9_-])([A-Za-z][A-Za-z0-9_\-]*)\1(\s*[=:]\s*)/g;
   let out = '';
   let pos = 0;
   let m;
@@ -386,7 +388,10 @@ function sanear(txt, home) {
     .replace(RUTA_ABSOLUTA, '<ruta>')
     .replace(CASA_BARRA, '<ruta>')
     .replace(CASA_CONTRABARRA, '<ruta>')
-    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '<correo>')
+    // lo de antes de la arroba, hasta 64 caracteres (el máximo de una dirección): sin tope, cada letra de una tirada larga
+    // sin arroba la leía hasta el final. Un tope y no «arrancar al principio de la palabra»: un segundo correo pegado al
+    // primero (`a@example.com+b@example.org`) arranca en el medio de una, y tiene que taparse igual
+    .replace(/[\w.+-]{1,64}@[\w-]+\.[\w.-]+/g, '<correo>')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<sesión>');
 }
 

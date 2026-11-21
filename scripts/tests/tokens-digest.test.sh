@@ -1328,6 +1328,33 @@ else
   bad "T45 · sanear al cuadrado o con otro resultado" "salió: $r45"
 fi
 
+# ──────────────────────────────────────────────────────────────────────────────────────────────
+# T46 Sanear_LetrasPegadas_Lineal — una tirada larga de letras sin espacios (un encargo pegado, una cadena en base64):
+# la búsqueda de `nombre=valor` y la de correos volvían a empezar en cada letra de la tirada y leían hasta su final, y el
+# tiempo crecía al cuadrado (18 000 letras: 1,4 s; 60 000, unos 15 s). Con un tope de 3 s por forma: lineal tarda
+# milisegundos. Y tapa lo mismo que antes: la credencial con nombre pegado a otra palabra y el correo.
+# 🔴 Falla con: una de esas dos búsquedas que puede arrancar en el medio de una palabra.
+r46="$(node -e '
+const { sanear } = require(process.argv[1]);
+const out = [];
+for (const pieza of ["x", "a1", ".", "-", "_", "a+b"]) {
+  const a = process.hrtime.bigint();
+  sanear(pieza.repeat(Math.ceil(60000 / pieza.length)), "/h");
+  const ms = Number(process.hrtime.bigint() - a) / 1e6;
+  if (ms > 3000) out.push({ pieza, ms: Math.round(ms) });
+}
+const casos = [["user=admin&dbPassword=secreto", "user=admin&dbPassword=<oculto>"], ["ver \"api_key\": \"abc\" y sigue", "ver \"api_key\": \"<oculto>\" y sigue"],
+  ["x\"token\"=abc", "x\"token\"=<oculto>"], ["escribile a ana.lab+ops@example.com hoy", "escribile a <correo> hoy"],
+  ["dos pegados a@example.com+b@example.org y uno-mas.c@example.net", "dos pegados <correo><correo> y <correo>"]];
+for (const [de, a] of casos) if (sanear(de, "/h") !== a) out.push({ de, salio: sanear(de, "/h") });
+console.log(JSON.stringify(out));
+' "$DIGEST" 2>&1)"
+if [ "$r46" = '[]' ]; then
+  ok "T46 · sanear crece lineal con letras pegadas sin espacios, y tapa lo mismo que antes"
+else
+  bad "T46 · sanear al cuadrado con letras pegadas, o con otro resultado" "salió: $r46"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 if [ "$fallos" -eq 0 ]; then echo "✅ tokens-digest: todo verde"; exit 0; fi
 echo "❌ tokens-digest: $fallos rojos"; exit 1
