@@ -839,7 +839,7 @@ test('T1 HermanoPorNumero_AtrasDeMain_NoLoElige — una copia vieja de otra tand
   // main sigue con un arreglo que la copia vieja no trae
   escribir(lab.front, 'scripts/lib/arreglo.js', 'module.exports = 1;\n');
   git(lab.front, 'add', '-A');
-  git(lab.front, 'commit', '-q', '-m', 'el arreglo en main');
+  git(lab.front, '-c', 'user.email=lab@example.invalid', '-c', 'user.name=lab', 'commit', '-q', '-m', 'el arreglo en main');
   git(lab.front, 'push', '-q', 'origin', 'main');
   git(lab.front, 'fetch', '-q', 'origin');
   const atras = hermanosConAvisos(lab.backWt, lab.story);
@@ -850,7 +850,7 @@ test('T1 HermanoPorNumero_AtrasDeMain_NoLoElige — una copia vieja de otra tand
   escribir(lab.frontWts[0], 'scripts/lib/tanda.js', 'module.exports = 2;\n');
   assert.deepEqual(hermanosConAvisos(lab.backWt, lab.story).roots, [lab.frontWts[0]], 'trabajo sin commitear');
   git(lab.frontWts[0], 'add', '-A');
-  git(lab.frontWts[0], 'commit', '-q', '-m', 'trabajo de la tanda');
+  git(lab.frontWts[0], '-c', 'user.email=lab@example.invalid', '-c', 'user.name=lab', 'commit', '-q', '-m', 'trabajo de la tanda');
   assert.deepEqual(hermanosConAvisos(lab.backWt, lab.story).roots, [lab.frontWts[0]], 'trabajo commiteado');
 });
 
