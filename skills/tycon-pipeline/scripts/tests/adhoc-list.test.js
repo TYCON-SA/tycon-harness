@@ -19,6 +19,7 @@
  *   T50 un commit delegado con algo sensible frena al guardar
  *   T51 la entrada que sale con cambios frena al guardar
  *   T52 el carril viejo sin lista sigue con el tope hasta su próximo set; con el portón apagado
+ *   T52b lo mismo por la consola: sin lista y sin delegación no frena por la lista; con lista, sí
  *   T57 abrir trae la base de cada repo de la lista; sin red abre con «sin traer»; agrandar no la cambia
  *
  * stable-data: crea repos de git en carpetas temporales con commits propios; nunca toca el repo real.
@@ -558,6 +559,22 @@ test('T52 CarrilViejoSinLista_ComoHoyHastaElSet — @story-8.174 @ac-49', () => 
   conCarril(h, 'per', { allowedFiles: [path.join(dir, 'src/a.js')] });
   assert.equal(ev(state, 'del', path.join(dir, 'docs/x.md'), dir).verdict.kind, 'adhoc-out-of-list');
   assert.notEqual(ev(state, 'per', path.join(dir, 'docs/x.md'), dir).verdict.kind, 'adhoc-out-of-list');
+});
+
+// el mismo criterio por la consola: el carril viejo sin lista y sin delegación no frena por la lista; uno con lista sí
+test('T52b CarrilViejoSinLista_PorLaConsola_ComoHoy — @story-8.174 @ac-49', () => {
+  const raiz = tmp('t52b-');
+  const dir = repo(raiz, 'producto');
+  const h = tmp('home-');
+  const state = conCarril(h, 'viejo');
+  conCarril(h, 'conLista', { allowedFiles: [path.join(dir, 'src/a.js')] });
+  for (const command of ["sed -i '' 's/a/b/' docs/x.md", 'echo x | tee docs/x.md', 'echo x > docs/x.md']) {
+    escribir(dir, 'docs/x.md');
+    const viejo = porConsola(state, 'viejo', dir, command);
+    assert.ok(!/FUERA DE LA LISTA/.test((viejo && viejo.block) || ''), `${command}: ${JSON.stringify(viejo)}`);
+    const conLista = porConsola(state, 'conLista', dir, command);
+    assert.ok(conLista && /FUERA DE LA LISTA/.test(conLista.block || ''), `${command}: ${JSON.stringify(conLista)}`);
+  }
 });
 
 // ── el carril trae la base al abrir ─────────────────────────────────────────────────────────────

@@ -507,6 +507,8 @@ function dispatch(mode, { hoy = new Date().toISOString().slice(0, 10) } = {}) {
 }
 
 module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries, abrirConsumos, cerrarConsumos, logDispatchFailure, FAIL_CLOSED_ON_THROW_FROM };
+// para las pruebas: si la capa de plataforma elige dónde crear el pedido de trabajo
+module.exports.layerChoosesWorkItems = layerChoosesWorkItems;
 
 // CLI: `node dispatch.js pre-edit|post-edit` (los entry-scripts hook-*.js lo llaman).
 if (require.main === module) {

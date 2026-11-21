@@ -816,6 +816,12 @@
       "requiere": []
     },
     {
+      "__nota": "si git log o git grep fallan al buscar si una historia ya existe, la historia no se toma como nueva (scripts/lib/followup-of.js); git grep sin coincidencias sí es una respuesta.",
+      "raiz": "arnes",
+      "ruta": "tests/followup-of-git-errors.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/lint-story-frontmatter.test.js",
       "requiere": []
@@ -1859,6 +1865,18 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-discovery.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el despachador, cuando la capa de plataforma carga pero su choose tira: no da el aviso del pedido de trabajo y lo dice con el motivo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/dispatch-layer-choose.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la procedencia de una prueba con un marcador sin carpeta de corrida: run en null y por qué (sin historia, o historia sin carpeta todavía).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/provenance-without-run-dir.test.js",
       "requiere": []
     },
     {
