@@ -28,10 +28,11 @@ const FECHA = '2026-11-21T10:00:00Z';
 const git = (d, ...a) => spawnSync('git', ['-C', d, '-c', 'user.email=lab@example.invalid', '-c', 'user.name=lab', '-c', 'maintenance.auto=false', ...a],
   { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA } });
 
-// el control de manifiestos como lo declara el paquete del stack: con el guion del arnés y las migraciones contadas
+// el control de manifiestos como lo declara el paquete del stack: con el guion del arnés, sin consola, y las migraciones
+// contadas por el guion
 const MANIFIESTOS = {
   name: 'Manifest check',
-  run: ['bash', '-c', 'node "$TYCON_HARNESS_DIR/scripts/ci/check-plugin-manifests.js" --repo . --migrations "$(ls database 2>/dev/null | grep -cE \'^[0-9]{3}_.*\\.sql$\')"'],
+  run: ['node', '$TYCON_HARNESS_DIR/scripts/ci/check-plugin-manifests.js', '--repo', '.', '--migrations', 'auto'],
   whenFile: 'plugin.json',
   timeoutSeconds: 60,
 };
@@ -119,7 +120,15 @@ test('CiLocal_RepoAddsAndOptsOut (T3) @story-8.322 @ac-3', (t) => {
   // apagar los del paquete sin commitear no vale
   fs.writeFileSync(path.join(repo, ci.ARCHIVO_DEL_REPO), JSON.stringify({ ...propio, fromPacks: false }));
   assert.match(cierre(repo).motivo, /«Del paquete»/);
+  // sacar el paquete de la lista `packs:` del repo sin commitear tampoco
+  fs.writeFileSync(path.join(repo, ci.ARCHIVO_DEL_REPO), JSON.stringify(propio));
+  fs.writeFileSync(path.join(repo, '.tycon', 'advisors.yaml'), 'packs: []\n');
+  assert.match(cierre(repo).motivo, /«Del paquete»/, 'una lista packs: sin commitear apagó los controles del paquete');
+  git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'el repo no usa paquetes');
+  assert.deepStrictEqual(ci.controlesDe(repo).controles.map((c) => c.nombre), ['Del repo']);
+  git(repo, 'rm', '-q', '.tycon/advisors.yaml'); git(repo, 'commit', '-q', '-m', 'vuelve a usar los paquetes');
   // commiteado, sí: corre sólo el del repo, y se dice
+  fs.writeFileSync(path.join(repo, ci.ARCHIVO_DEL_REPO), JSON.stringify({ ...propio, fromPacks: false }));
   git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'apaga los del paquete');
   const r = ci.controlesDe(repo);
   assert.deepStrictEqual(r.controles.map((c) => c.nombre), ['Del repo']);
@@ -210,4 +219,6 @@ test('Wait_TimeoutOrNoPlatform_NotMeasured (T11) @story-8.322 @ac-10', async () 
   const tira = await espera.esperar({ pedidos: PEDIDOS.slice(0, 1), leer: async () => { throw new Error('se cayó'); }, dormir: async () => {}, ahora: (() => { let t = 0; return () => (t += 60000); })(), topeMs: 120000, cadaMs: 60000 });
   assert.strictEqual(tira.estado, 'no-medido');
   assert.match(espera.texto({ storyId: '2.4', resultado: tira }), /no medido \(se cayó; pasó el tope/);
+  // sin el commit de la punta no se lee: una compilación de un empuje anterior en verde diría «listo»
+  assert.deepStrictEqual(await espera.lectorReal()({ repo: '/r/backend', nombre: 'backend', numero: 6910 }), { ok: false, reason: 'no_medido', detail: 'backend: no sé el commit de la punta del pedido' });
 });

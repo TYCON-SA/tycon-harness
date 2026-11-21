@@ -7,14 +7,15 @@
  * tiene por qué esperar al pedido: un rojo así se ve antes de pedir la aprobación. No se lee el YAML de la CI (cada
  * plataforma y cada plantilla lo escriben distinto): cada control se DECLARA.
  *
- *   · El paquete del stack, en `ciLocalChecks` de su `pack.json`.
+ *   · El paquete del stack, en `ciLocalChecks` de su `pack.json`, si la organización lo activa y la lista `packs:` de
+ *     `.tycon/advisors.yaml` del repo, commiteada, no lo saca.
  *   · El repo, en `.tycon/ci-local-checks.json`: `{ "checks": [...], "fromPacks": false? }`. Se lee de lo COMMITEADO
  *     (config-source.js `archivoParaFreno`): `fromPacks: false` apaga los del paquete, y apagar un control no puede
  *     alcanzar con escribir un archivo sin commitearlo.
  *
  * Un control: `{ "name", "run": [argv], "whenFile"?: "<nombre de archivo>", "timeoutSeconds"?: 1-600 }`. `run[0]`
- * `node` corre con el node de este proceso. Corre en la raíz del repo con `TYCON_HARNESS_DIR` (la raíz del arnés) y
- * `TYCON_REPO_DIR` en el entorno. `whenFile`: corre sólo si el repo tiene en su raíz, sin ignorar, un archivo con ese
+ * `node` corre con el node de este proceso. Corre en la raíz del repo, sin consola, con `TYCON_HARNESS_DIR` (la raíz del
+ * arnés) y `TYCON_REPO_DIR` en el entorno; escritas así en una palabra de `run`, se reemplazan por la carpeta. `whenFile`: corre sólo si el repo tiene en su raíz, sin ignorar, un archivo con ese
  * nombre.
  *
  * Un control mal escrito, o que no termina en su tope, no es verde: frena con «no medido».
@@ -61,7 +62,13 @@ function deLosPaquetes(repo) {
     const packs = require('./packs.js');
     // como source-signals.js: con las banderas de las condiciones, que es como el pipeline valida los paquetes
     const instalados = packs.cargarPaquetes({ banderas: packs.BANDERAS });
-    return { paquetes: packs.paquetesActivos({ repo, instalados }).map((p) => ({ nombre: p.nombre, checks: p.controlesDeCi || [] })) };
+    if (!instalados.length) return { paquetes: [] };
+    const org = packs.activosDeLaOrganizacion({ instalados, dir: packs.dirPaquetes() });
+    // la lista `packs:` del repo, de lo commiteado: achicarla con un archivo sin commitear no apaga estos controles
+    const txt = require('./config-source.js').textoParaFreno(repo);
+    const declarados = txt ? packs.paquetesDeclarados(txt) : null;
+    const activos = declarados === null ? org : org.filter((p) => declarados.map((n) => packs.nombreActual(n)).includes(p.nombre));
+    return { paquetes: activos.map((p) => ({ nombre: p.nombre, checks: p.controlesDeCi || [] })) };
   } catch (e) {
     const detalle = Array.isArray(e && e.errores) && e.errores.length ? e.errores.map((x) => x.motivo).join('; ') : String((e && e.message) || e).split('\n')[0];
     return { error: `no pude leer los paquetes activos (${detalle})` };
@@ -128,7 +135,8 @@ function correr(repo, { limite = Infinity, leerPaquetes } = {}) {
     }
     const queda = limite - Date.now();
     if (queda <= 0) return { codigo: 2, motivo: `${nombre}: no medido «${c.nombre}»: se terminó el plazo de los controles` };
-    const [cmd, ...args] = c.argv;
+    // las dos carpetas van también escritas en el comando: sin consola en el medio, que Windows no siempre tiene
+    const [cmd, ...args] = c.argv.map((a) => a.split('$TYCON_HARNESS_DIR').join(RAIZ_DEL_ARNES).split('$TYCON_REPO_DIR').join(repo));
     const r = spawnSync(cmd === 'node' ? process.execPath : cmd, args, {
       cwd: repo, encoding: 'utf8', windowsHide: true, timeout: Math.min(c.topeS * 1000, queda), maxBuffer: 16 * 1024 * 1024,
       env: { ...process.env, TYCON_HARNESS_DIR: RAIZ_DEL_ARNES, TYCON_REPO_DIR: repo },

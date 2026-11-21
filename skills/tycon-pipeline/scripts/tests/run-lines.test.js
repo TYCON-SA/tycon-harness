@@ -778,9 +778,27 @@ test('MarkerClear_RenglonDeUnPedidoViejo_FrenaIgual @story-8.310 @ac-17 @story-8
   fs.writeFileSync(REGISTRO(E), `${JSON.stringify({ historia: '9.9', clave: '9.9', repo: 'viejo', pedido: 3, ts: new Date(T0 - 86400000).toISOString() })}\n`);
   const sid = 'clear-viejo';
   E.escribir(sid, E.base9(sid, { stepsCompleted: [...TODOS], stepsPending: [], deepReviewDone: true, dodRuntimeChecked: true, fileEvents: [{ path: path.join(viejo, 'a.js'), ts: at(1) }] }));
+  // un commit de antes de la corrida (la historia escrita antes, `dev` en un hermano) no pide pedido
+  const antiguo = repoAparte(E, 'antiguo');
+  fs.writeFileSync(path.join(antiguo.r, 'a.js'), '2\n');
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-C', antiguo.r, 'commit', '-qam', 'de antes'], { stdio: 'ignore',
+    env: { ...process.env, GIT_AUTHOR_DATE: new Date(T0 - 86400000).toISOString(), GIT_COMMITTER_DATE: new Date(T0 - 86400000).toISOString() } });
   const c = E.correr(['clear'], sid);
   assert.strictEqual(c.status, 2, c.stderr);
   assert.match(c.stderr, /marker\.js clear: viejo tiene commits de la corrida y sin pedido anotado/);
+  // el repo que a propósito no lleva pedido: con su motivo, cierra y queda anotado
+  const sinMotivo = E.correr(['clear', '--no-pr', 'viejo'], sid);
+  assert.strictEqual(sinMotivo.status, 2, 'sin motivo cerró');
+  assert.match(sinMotivo.stderr, /marker\.js clear --no-pr: va con --reason "<por qué ese repo no lleva pedido>"/);
+  const sinPedido = E.correr(['clear', '--no-pr', 'viejo', '--reason', 'la corrida se descartó'], sid);
+  assert.strictEqual(sinPedido.status, 0, sinPedido.stderr);
+  assert.match(sinPedido.stderr, /sin pedido a propósito: viejo \(«la corrida se descartó»\)/);
+  const gates = fs.readFileSync(path.join(E.stateDir, 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse);
+  assert.ok(gates.some((g) => g.name === 'clear-no-pr' && g.repos[0] === 'viejo' && g.motivo === 'la corrida se descartó'), 'no quedó en gates.log');
+  E.escribir(sid, E.base9(sid, { stepsCompleted: [...TODOS], stepsPending: [], deepReviewDone: true, dodRuntimeChecked: true,
+    fileEvents: [{ path: path.join(antiguo.r, 'a.js'), ts: at(1) }] }));
+  const soloAntiguo = E.correr(['clear'], sid);
+  assert.strictEqual(soloAntiguo.status, 0, soloAntiguo.stderr);
   // antes de «Preparar el pull request», como siempre: avisa y cierra
   const antes = 'clear-viejo-antes';
   E.escribir(antes, E.base9(antes, { stepsCompleted: TODOS.filter((s) => s !== 'prepare-commit'), stepsPending: ['prepare-commit'], fileEvents: [{ path: path.join(viejo, 'a.js'), ts: at(1) }] }));

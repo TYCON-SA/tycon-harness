@@ -1,7 +1,8 @@
 'use strict';
 // ci-queue.js — la CI de un repo de Azure DevOps (`ci.read`) y la cola de la organización (`queue.read`).
 //
-// La CI, de una rama, de un commit o de un pedido (`pullRequest`: su fusión de prueba, `refs/pull/<n>/merge`):
+// La CI, de una rama, de un commit o de un pedido (`pullRequest`: su fusión de prueba, `refs/pull/<n>/merge`; con
+// `commit`, sólo las corridas de esa punta de la rama del pedido, `triggerInfo['pr.sourceSha']`):
 //   az pipelines runs list --project <proyecto> [--branch <rama>] --top 100 --org <org> -o json
 //   az devops invoke --area build --resource timeline --route-parameters project=<proyecto> buildId=<n>
 //     --api-version 7.1 --org <org> -o json
@@ -45,7 +46,10 @@ function leerCi(args, ctx) {
   if (!Array.isArray(lista.value)) return no('no_medido', 'la lista de corridas no es una lista');
   if (lista.value.length >= VENTANA) return no('no_medido', `las últimas ${VENTANA} corridas del proyecto no alcanzan: alguna de ${repo.repo} pudo quedar más atrás${rama ? '' : ' (con la rama además del commit, la lista se achica)'}`);
   const nombre = String(repo.repo).toLowerCase();
-  const delCommit = (r) => !commit || String(r.sourceVersion || '').toLowerCase().startsWith(commit.toLowerCase());
+  // la de un pedido corre sobre su fusión de prueba: su commit es el de la punta de la rama del pedido
+  // (`triggerInfo['pr.sourceSha']`), no `sourceVersion`. Una corrida sin ese dato no cuenta como la del empuje
+  const deLaCorrida = (r) => (args.pullRequest != null ? (r.triggerInfo && r.triggerInfo['pr.sourceSha']) : r.sourceVersion);
+  const delCommit = (r) => !commit || String(deLaCorrida(r) || '').toLowerCase().startsWith(commit.toLowerCase());
   const delRepo = lista.value.filter((r) => r && r.repository && String(r.repository.name).toLowerCase() === nombre && delCommit(r));
   if (!delRepo.length) return { ok: true, value: { state: 'none', stages: [] } };
   const porPipeline = new Map();

@@ -231,7 +231,8 @@ firma de control del dueño, que no cambia.
    cierre. Sin `--repo` el número también queda sólo en la corrida, sin saber de qué repo es. Así se sabe de qué historia es cada fusión aunque su rama
    sea `wt/<sesión>`.
 6. Al final, **`marker.js clear`**, después del último push y del último pull request. Si un repo con commits de la
-   corrida no tiene su pedido anotado, frena y lo nombra: abrilo, anotalo y volvé a correrlo. Imprime los renglones y el
+   corrida no tiene su pedido anotado, frena y lo nombra: abrilo, anotalo y volvé a correrlo. Un repo que a propósito no
+   lleva pedido se nombra con `clear --no-pr <repo> --reason "<por qué>"`: queda en `gates.log` y no cuenta como listo. Imprime los renglones y el
    renglón final («pedido #12 abierto, compilación sin ver: no está listo todavía — 52 min de trabajo, …») y manda un
    aviso por los canales de la sesión; repetí el renglón final al cerrar tu mensaje.
    Cerrá la ejecución antes de borrar o mover su carpeta de trabajo (`git worktree remove`, `rm -rf`, `mv`): la copia de

@@ -43,6 +43,7 @@
  * Uso:
  *   check-plugin-manifests.js --repo <ruta>              # un plugin
  *   check-plugin-manifests.js --repo <ruta> --migrations <n>    # además, n archivos van al ZIP
+ *   check-plugin-manifests.js --repo <ruta> --migrations auto   # las cuenta de <ruta>/database (NNN_*.sql)
  *   check-plugin-manifests.js --pairs <dir>              # pares <nombre>.plugin.json[.example]
  *
  * Salida: 0 coinciden · 1 divergen · 2 no se pudo mirar (que NO es "coinciden").
@@ -115,11 +116,18 @@ function main(argv0) {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--repo') o.repo = argv[++i];
     else if (argv[i] === '--pairs') o.pares = argv[++i];
-    else if (argv[i] === '--migrations') o.migraciones = Number(argv[++i]);
+    else if (argv[i] === '--migrations') { const v = argv[++i]; o.migraciones = v === 'auto' ? 'auto' : Number(v); }
     else if (argv[i] === '--help' || argv[i] === '-h') {
-      console.log('uso: --repo <ruta> [--migrations <n>]  |  --pairs <dir>');
+      console.log('uso: --repo <ruta> [--migrations <n>|auto]  |  --pairs <dir>');
       return 0;
     } else { console.log(`🔴 argumento desconocido: ${argv[i]}`); return 2; }
+  }
+  // `auto`: las cuenta de la carpeta database/ del repo, como las cuenta el pipeline (NNN_*.sql), sin consola en el medio
+  if (o.migraciones === 'auto') {
+    if (!o.repo) { console.log('🔴 --migrations auto va con --repo'); return 2; }
+    let nombres = [];
+    try { nombres = fs.readdirSync(path.join(o.repo, 'database')); } catch (e) { if (e.code !== 'ENOENT') { console.log(`🔴 no pude leer ${path.join(o.repo, 'database')}: ${e.message}`); return 2; } }
+    o.migraciones = nombres.filter((n) => /^[0-9]{3}_.*\.sql$/.test(n)).length;
   }
   if (o.migraciones !== null && !Number.isFinite(o.migraciones)) {
     console.log('🔴 --migrations necesita un número'); return 2;

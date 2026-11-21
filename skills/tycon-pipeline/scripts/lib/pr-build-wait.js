@@ -6,7 +6,8 @@
  * Un pedido no está listo porque se abrió: está listo cuando su compilación terminó en verde. El cierre de la corrida
  * (`marker.js clear`) lanza esta espera de fondo con la lista de sus pedidos y no dice «listo» en ningún lado. La espera
  * lee la CI de cada pedido por la capa de plataforma (`ci.read`, con `pullRequest`: en Azure DevOps la compilación de un
- * pedido corre sobre su fusión de prueba) y termina en uno de tres avisos, por los canales de la sesión:
+ * pedido corre sobre su fusión de prueba; y con `commit`, la punta empujada: la compilación de un empuje anterior no
+ * cuenta) y termina en uno de tres avisos, por los canales de la sesión:
  *
  *   · todos en verde → «listos para aprobar», con cada pedido;
  *   · uno en rojo    → «en rojo», con la etapa que falló; no espera a los demás;
@@ -98,11 +99,13 @@ function lectorReal({ env = process.env } = {}) {
   const platform = require(path.join(RAIZ, 'scripts', 'lib', 'platform', 'platform.js'));
   const { hostOf } = require(path.join(RAIZ, 'scripts', 'tools', 'merge-pr.js'));
   return async (p) => {
+    // sin el commit de la punta no se sabe cuál es la compilación del último empuje: una vieja en verde diría «listo»
+    if (!p.commit) return { ok: false, reason: 'no_medido', detail: `${p.nombre}: no sé el commit de la punta del pedido` };
     const where = hostOf(p.repo);
     if (where.problem) return { ok: false, reason: 'no_medido', detail: where.problem };
     const repo = platform.identityFromRemote(where);
     if (!repo) return { ok: false, reason: 'sin_plataforma', detail: `${p.nombre}: su remoto no es de una plataforma conocida` };
-    return platform.run('ci.read', { pullRequest: p.numero, ...(p.rama ? { branch: p.rama } : {}), deadlineMs: Date.now() + 120000 }, { env, repo, tree: RAIZ });
+    return platform.run('ci.read', { pullRequest: p.numero, commit: p.commit, ...(p.rama ? { branch: p.rama } : {}), deadlineMs: Date.now() + 120000 }, { env, repo, tree: RAIZ });
   };
 }
 

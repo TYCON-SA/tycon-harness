@@ -186,6 +186,13 @@ test('ChangeRequestBuild_Ado_ByPullRequest (T5) @story-8.322 @ac-5', async () =>
   assert.strictEqual(C().verdictOf(await ci(m, { pullRequest: 6910 }, AZ)), 'corriendo');
   az.poner('runs-Producto.json', [corrida(73, { sourceBranch: 'refs/heads/story/2.4' })]);
   assert.strictEqual(C().verdictOf(await ci(m, { pullRequest: 6910 }, AZ)), 'ninguna');
+  // con el commit del empuje: la compilación de un empuje anterior, en verde, no cuenta; sin ese dato tampoco
+  const nueva = 'beef000beef000beef000beef000beef000beef0';
+  az.poner('runs-Producto.json', [corrida(74, { sourceBranch: fusion, triggerInfo: { 'pr.sourceSha': 'dead000beef000dead000beef000dead000beef0' } }), corrida(75, { sourceBranch: fusion })]);
+  assert.strictEqual(C().verdictOf(await ci(m, { pullRequest: 6910, commit: nueva }, AZ)), 'ninguna', 'tomó la compilación de otro empuje');
+  az.poner('runs-Producto.json', [corrida(76, { sourceBranch: fusion, result: 'succeeded', triggerInfo: { 'pr.sourceSha': nueva } }), corrida(77, { sourceBranch: fusion, result: 'failed', triggerInfo: { 'pr.sourceSha': 'dead000beef000dead000beef000dead000beef0' } })]);
+  az.poner('timeline-76.json', { records: [etapa('Build', 'succeeded')] });
+  assert.strictEqual(C().verdictOf(await ci(m, { pullRequest: 6910, commit: nueva.slice(0, 7) }, AZ)), 'verde');
   // un número que no es número no llega a az
   for (const malo of [0, -1, 'x', 1.5]) {
     const r2 = await ci(m, { pullRequest: malo }, AZ);

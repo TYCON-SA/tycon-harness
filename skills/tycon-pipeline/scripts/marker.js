@@ -5695,10 +5695,13 @@ function pedidosDeLaCorrida(marker) {
       if (!nombre) continue;
       if (anotados.has(nombre)) {
         const rama = git(repo, ['symbolic-ref', '-q', '--short', 'HEAD']);
-        out.pedidos.push({ repo, nombre, numero: anotados.get(nombre), rama: rama.status === 0 ? rama.stdout.trim() : null });
+        const punta = git(repo, ['rev-parse', 'HEAD']);
+        out.pedidos.push({ repo, nombre, numero: anotados.get(nombre), rama: rama.status === 0 ? rama.stdout.trim() : null, commit: punta.status === 0 ? punta.stdout.trim() : null });
         continue;
       }
-      const r = git(repo, ['rev-list', '--count', 'origin/main..HEAD']);
+      if ((marker.noPr || {})[nombre]) continue;
+      // sólo los commits de esta corrida: los de la historia escrita antes, o los de `dev` en un hermano, no piden pedido
+      const r = git(repo, ['rev-list', '--count', ...(marker.startedAt ? [`--since=${marker.startedAt}`] : []), 'origin/main..HEAD']);
       if (r.status !== 0) out.problemas.push(`${nombre}: no pude ver si tiene commits sin pedido anotado (git no contestó)`);
       else if (Number(r.stdout.trim()) > 0) out.faltan.push(nombre);
     }
@@ -5724,8 +5727,28 @@ function frenarSiFaltanPedidos(marker) {
   if (!p.faltan.length) return;
   console.error(`marker.js clear: ${p.faltan.join(', ')} ${p.faltan.length === 1 ? 'tiene' : 'tienen'} commits de la corrida y sin pedido anotado. `
     + 'Sin el pedido de cada repo no se espera su compilación y la corrida no se puede dar por lista: abrí el pedido y anotalo con '
-    + '`marker.js pr <número> --repo <carpeta>`; después, volvé a correr `marker.js clear`.');
+    + '`marker.js pr <número> --repo <carpeta>`; después, volvé a correr `marker.js clear`. Si ese repo no lleva pedido a '
+    + 'propósito: `marker.js clear --no-pr <nombre del repo> --reason "<por qué>"` (queda en gates.log, y ese repo no cuenta como listo).');
   process.exit(2);
+}
+
+/**
+ * `clear --no-pr <repo> --reason "<por qué>"` (repetible): los repos que a propósito no llevan pedido. Quedan en el
+ * marcador (`noPr`) y en `gates.log`; la espera de la compilación no los cuenta. Sale 2 si falta el motivo.
+ */
+function reposSinPr(marker, rest) {
+  const nombres = [];
+  for (let i = 0; i < rest.length; i++) if (rest[i] === '--no-pr' && rest[i + 1]) nombres.push(rest[++i]);
+  if (!nombres.length || !marker) return marker;
+  const k = rest.indexOf('--reason');
+  const motivo = k >= 0 ? String(rest[k + 1] || '').trim() : '';
+  if (motivo.length < 8) { console.error('marker.js clear --no-pr: va con --reason "<por qué ese repo no lleva pedido>" (8 letras o más).'); process.exit(2); }
+  marker.noPr = { ...(marker.noPr || {}) };
+  for (const n of nombres) marker.noPr[n] = motivo;
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'clear-no-pr', story: marker.storyId, repos: nombres, motivo });
+  process.stderr.write(`[marker] sin pedido a propósito: ${nombres.join(', ')} («${motivo}»)\n`);
+  return marker;
 }
 
 /**
@@ -5765,6 +5788,7 @@ function cmdClear(rest = []) {
   frenarSiIlegible(markerFilePath(SID), SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
   frenarSiPerdida(SID, 'clear', marcadorAntes && marcadorAntes.repoPath);
+  marcadorAntes = reposSinPr(marcadorAntes, rest);
   frenarSiFaltanPedidos(marcadorAntes);
   // una ejecución detenida la cierra el dueño: el perfil puede delegar «cerrar la ejecución», pero esa firma por
   // delegación (o la automática) no alcanza para salir de una detención que espera su decisión

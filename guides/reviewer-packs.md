@@ -38,13 +38,14 @@ aprobación, no media hora después.
 
 ```json
 "ciLocalChecks": [
-  { "name": "Manifest check", "run": ["bash", "-c", "node \"$TYCON_HARNESS_DIR/scripts/ci/check-plugin-manifests.js\" --repo ."],
+  { "name": "Manifest check", "run": ["node", "$TYCON_HARNESS_DIR/scripts/ci/check-plugin-manifests.js", "--repo", ".", "--migrations", "auto"],
     "whenFile": "plugin.json", "timeoutSeconds": 60 }
 ]
 ```
 
-`run` es el comando, palabra por palabra (`node` corre con el node del arnés); corre en la raíz del repo, con
-`TYCON_HARNESS_DIR` y `TYCON_REPO_DIR` en el entorno. `whenFile` (opcional): corre sólo si el repo tiene en su raíz un
+`run` es el comando, palabra por palabra y sin consola en el medio (`node` corre con el node del arnés; `bash -c` no
+anda en un Windows sin bash). Corre en la raíz del repo; `$TYCON_HARNESS_DIR` y `$TYCON_REPO_DIR` escritos en una
+palabra se reemplazan por la carpeta del arnés y la del repo, y también van en el entorno. `whenFile` (opcional): corre sólo si el repo tiene en su raíz un
 archivo con ese nombre. `timeoutSeconds` (opcional, de 1 a 600; 120 por defecto). Un repo suma los suyos en
 `.tycon/ci-local-checks.json` (`{ "checks": [...] }`), y apaga los del paquete con `"fromPacks": false`; ese archivo se
 lee de lo commiteado. Un control mal escrito, o que no termina, frena con «no medido»: no es verde.
