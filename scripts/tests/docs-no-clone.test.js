@@ -69,7 +69,7 @@ const GUIDES = [
     says: ['~/.tycon/harness', 'usar no es mantener'],
   },
   {
-    file: 'guides/maintaining/mecanismo-de-instalacion.md',
+    file: 'guides/maintaining/installation-mechanism.md',
     // la sección de los guiones de entrada (la que explica cómo se instala)
     use: (t) => { const s = t.indexOf('## Los guiones de entrada'); return t.slice(s, t.indexOf('\n## ', s + 3)); },
     says: ['usar el arnés no es mantenerlo', 'link --local', 'link --managed', 'no usa git ni lo pide'],
@@ -107,7 +107,7 @@ test('T35b Docs_NoCloneToUse_CloneOnlyForMaintainers', () => {
 
 test('T35c Docs_DeveloperMode_IsTheWayToTryBeforePublishing', () => {
   // el INSTALL.md no explica el modo desarrollador: lo hace la guía del mecanismo
-  const file = 'guides/maintaining/mecanismo-de-instalacion.md';
+  const file = 'guides/maintaining/installation-mechanism.md';
   const t = read(file);
   assert.match(t, /link --local/, `${file}: no nombra link --local`);
   assert.match(t, /link --managed/, `${file}: no nombra link --managed`);
@@ -127,7 +127,7 @@ const PUBLIC_ONLY_GUIDES = [
   'README.md', 'INDEX.md', 'INSTALL.md',   // el índice de guías; README.md es la portada
   'guides/maintaining/publicacion-espejo.md',
   'guides/agent-architecture.md', 'guides/ci-gate.md', 'guides/codex-migration.md', 'guides/integrations/instinct-mining.md',
-  'guides/maintaining/mecanismo-de-instalacion.md', 'guides/reviewer-rules.md',
+  'guides/maintaining/installation-mechanism.md', 'guides/reviewer-rules.md',
   'guides/decisions/codex-etapa-d-retro-red.md', 'guides/decisions/controles-apagables-por-config-2026-08-25.md',
 ];
 /** Las carpetas que no viajan: ahí un marcador de bloque no publica nada (una story o una medición que lo cita como

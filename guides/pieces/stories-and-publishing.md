@@ -264,7 +264,7 @@ _scripts/setup/npm/index.js + home-paths.json + package.json + README.md_
 
 **Dónde se prueba:** `scripts/tests/npx-installer.test.sh` y `scripts/tests/npm-package.test.js`
 
-**Guía:** [paquete-npm.md](../maintaining/paquete-npm.md)
+**Guía:** [npm-package.md](../maintaining/npm-package.md)
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupnpmindexjs)
 
@@ -280,7 +280,7 @@ _.github/workflows/npm-publish.yml + scripts/ci/check-public-workflow.js `--publ
 
 **Dónde se prueba:** `scripts/tests/npm-publish-workflow.test.js`
 
-**Guía:** [guides/maintaining/paquete-npm.md](../maintaining/paquete-npm.md)
+**Guía:** [guides/maintaining/npm-package.md](../maintaining/npm-package.md)
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#githubworkflowsnpm-publishyml)
 

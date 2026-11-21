@@ -350,7 +350,7 @@ _(scripts/setup/harness/tools.js + `scripts/setup/harness/tool-change.js` + `scr
 
 **Dónde se prueba:** `scripts/tests/harness-tools.test.sh`, `scripts/tests/agents-md-blocks.test.js`
 
-**Guía:** [mecanismo-de-instalacion](../maintaining/mecanismo-de-instalacion.md)
+**Guía:** [installation-mechanism](../maintaining/installation-mechanism.md)
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnesstoolsjs)
 
@@ -458,7 +458,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** `scripts/tests/install-effects.test.js`
 
-**Guía:** [mecanismo-de-instalacion.md](../maintaining/mecanismo-de-instalacion.md)
+**Guía:** [installation-mechanism.md](../maintaining/installation-mechanism.md)
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupinstall-effectsjson)
 
@@ -472,7 +472,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** `scripts/tests/harness-prompt.test.js`, `scripts/tests/harness-plan.test.js` y `scripts/tests/harness-plan.test.sh`
 
-**Guía:** [mecanismo-de-instalacion.md](../maintaining/mecanismo-de-instalacion.md)
+**Guía:** [installation-mechanism.md](../maintaining/installation-mechanism.md)
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnessplanjs-y-promptjs)
 
@@ -486,7 +486,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** `scripts/tests/harness-profile.test.sh`
 
-**Guía:** [mecanismo-de-instalacion.md](../maintaining/mecanismo-de-instalacion.md)
+**Guía:** [installation-mechanism.md](../maintaining/installation-mechanism.md)
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnessprofilejs)
 
@@ -512,7 +512,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** `scripts/tests/harness-questions.test.sh`
 
-**Guía:** [mecanismo-de-instalacion.md](../maintaining/mecanismo-de-instalacion.md)
+**Guía:** [installation-mechanism.md](../maintaining/installation-mechanism.md)
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnessquestionsjs)
 
@@ -526,6 +526,6 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** `scripts/tests/get-harness.test.sh`
 
-**Guía:** [mecanismo-de-instalacion.md](../maintaining/mecanismo-de-instalacion.md)
+**Guía:** [installation-mechanism.md](../maintaining/installation-mechanism.md)
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupget-harnesssh-y-get-harnessps1)

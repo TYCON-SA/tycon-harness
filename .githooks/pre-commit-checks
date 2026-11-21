@@ -193,7 +193,7 @@ if [ -f "$CORE_NEUTRALITY" ] && ! node "$CORE_NEUTRALITY" --repo "$REPO_ROOT"; t
 fi
 
 # ── Las palabras de las guías en castellano ──
-# Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulario.md): el control señala las palabras que
+# Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulary.md): el control señala las palabras que
 # no se escriben en la prosa de una guía y pasan el techo de su archivo. Informa y no frena el commit. Las reglas:
 # scripts/ci/vocabulary.json.
 # Casos: scripts/tests/vocabulary.test.js
@@ -224,7 +224,7 @@ elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.jso
 fi
 
 # ── La historia interna en los comentarios del código ──
-# Un comentario dice qué hace el código y por qué, en presente (guides/maintaining/estilo-de-codigo.md). Mira lo que el
+# Un comentario dice qué hace el código y por qué, en presente (guides/maintaining/code-style.md). Mira lo que el
 # commit AGREGA a los comentarios, neto por archivo: una línea vieja con historia que el commit no suma no frena. Sólo en el
 # árbol que se publica: en el repo del equipo dice que no aplica, y en un repo sin el guion no corre. El modo de cada forma
 # está en scripts/publishing/internal-history.json → zones.comment; la misma variable TYCON_INTERNAL_HISTORY lo baja.

@@ -83,7 +83,7 @@ pregunta: no la aplica sin que lo pidas (`npx @tyconsa/harness@latest`, que preg
 `TYCON_UPDATE=0` la apaga; `harness.js doctor` dice cómo quedó todo y `harness.js uninstall` quita sólo lo que registró.
 Cómo funciona por dentro (el estado, los canales y las versiones, las copias y la vuelta atrás, la desinstalación, lo
 que queda fuera en Windows y cuándo se reabre la decisión sobre la integridad) vive en una sola guía,
-[`guides/maintaining/mecanismo-de-instalacion.md`](guides/maintaining/mecanismo-de-instalacion.md); acá queda el paso a paso.
+[`guides/maintaining/installation-mechanism.md`](guides/maintaining/installation-mechanism.md); acá queda el paso a paso.
 
 **En Windows, `~/.tycon/versions`.** Cada versión vive en su carpeta, `~/.tycon/versions/<versión>/`, y `~/.tycon/harness`
 y `~/.tycon/previous` son uniones (enlaces de carpeta) a la activa y a la anterior. Así la actualización anda con otras
@@ -112,7 +112,7 @@ como a un dev del equipo:
 
 **1. Los paquetes vienen con el perfil de tu equipo.** El núcleo no trae paquetes: los revisores, skills, guías y
 plantillas de un stack (por ejemplo, el de .NET + React/Next.js sobre BIZUIT) viven en el repo del perfil de cada
-equipo y llegan con su capa (`guides/maintaining/mecanismo-de-instalacion.md`, «La capa del equipo sobre la versión bajada»). Los
+equipo y llegan con su capa (`guides/maintaining/installation-mechanism.md`, «La capa del equipo sobre la versión bajada»). Los
 activa la organización con `packs.default` en ese perfil (o en la pestaña Configuración del sitio, sección Paquetes);
 sin perfil, tu máquina puede fijarlo en `~/.claude/tycon.json` (`"packs": { "default": "all" }`) o con
 `TYCON_PACKS_DEFAULT=all` (si el perfil los declara, el perfil del equipo gana sobre ese archivo). Un repo sólo puede
@@ -570,7 +570,7 @@ git push
 - **Los tres "Claude"** (multi-modelo): la herramienta canónica se nombra (Claude Code), el
   actor de runtime y el modelo son genéricos ("el agente"/"el modelo" — también en cópulas:
   "Claude es un…"), las primitivas son de quien son. Criterio completo y disparador:
-  [guides/maintaining/criterio-tres-claude.md](guides/maintaining/criterio-tres-claude.md).
+  [guides/maintaining/three-claude-criterion.md](guides/maintaining/three-claude-criterion.md).
 - **Español** (idioma default del equipo).
 - **Copy-pasteable**: comandos y snippets ejecutables, no pseudocódigo.
 - **Sin detalles proyecto-específicos**: los nombres de proyectos concretos solo aparecen en tablas ilustrativas. Las reglas deben ser universales para todos los proyectos TYCON.

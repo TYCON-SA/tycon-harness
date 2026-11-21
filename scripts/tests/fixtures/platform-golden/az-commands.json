@@ -102,7 +102,7 @@
     "const bad = list.ok && !Array.isArray(list.json) ? 'az pipelines list no devolvió una lista' : null;",
     "if (!runs.ok || !Array.isArray(runs.json)) { fail(label, `runs list ${p.id}`, runs.error || 'az pipelines runs list no devolvió una lista', extra); continue; }"
   ],
-  "guides/integrations/ado-cola-y-listados.md": [
+  "guides/integrations/ado-queue-and-listings.md": [
     "**Qué pasa:** después de cancelar despliegues encolados, `az pipelines runs list` proyecto por",
     "**Qué pasa:** tras un push a `main`, `az pipelines runs list` puede seguir sin mostrar el run del",
     "2. **Probar por id**: `az pipelines runs show --id <N>` con los ids siguientes al último run",

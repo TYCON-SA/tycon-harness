@@ -207,7 +207,7 @@ test('T5 Vocabulario_InglesYFueraDeAlcanceNoSeMiden @story-8.154 @ac-5', () => {
 });
 
 test('T6 Vocabulario_GlosarioIgualALasReglas @story-8.154 @ac-6', () => {
-  const guide = fs.readFileSync(path.join(ROOT, 'guides', 'maintaining', 'vocabulario.md'), 'utf8');
+  const guide = fs.readFileSync(path.join(ROOT, 'guides', 'maintaining', 'vocabulary.md'), 'utf8');
   const rules = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'vocabulary.json'), 'utf8'));
   const fromGuide = VOC.glossaryTable(guide);
   const fromRules = rules.terms.map((t) => ({ use: t.use, avoid: [...t.avoid].sort() }));

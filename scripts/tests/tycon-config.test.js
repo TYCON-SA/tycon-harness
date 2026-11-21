@@ -1711,7 +1711,7 @@ test('8.29 · T17 Docs_PacksOrderSaidOnce @story-8.29 @ac-18 — donde se descri
   const RAIZ = path.join(SCRIPTS, '..');
   // el lector y el pipeline están en todo árbol; las guías, en el interno y en la copia que las trae
   const siempre = ['scripts/lib/tycon-config.js', 'skills/tycon-pipeline/scripts/lib/packs.js'];
-  const guias = ['guides/agent-architecture.md', 'guides/maintaining/publicacion-espejo.md', 'guides/maintaining/mecanismo-de-instalacion.md', 'INSTALL.md'];
+  const guias = ['guides/agent-architecture.md', 'guides/maintaining/publicacion-espejo.md', 'guides/maintaining/installation-mechanism.md', 'INSTALL.md'];
   // el árbol interno se reconoce por el perfil del equipo, que la copia pública no trae: ahí tienen que estar los seis
   const interno = fs.existsSync(path.join(RAIZ, 'perfil-equipo.json'));
   // el orden anterior, escrito de corrido: la variable, y enseguida el archivo de la máquina

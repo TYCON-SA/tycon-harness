@@ -2,7 +2,7 @@
 
 /**
  * code-comments.test.js — el freno de historia interna en los comentarios del código (scripts/publishing/internal-history.js,
- * zona `comment`). La regla: guides/maintaining/estilo-de-codigo.md.
+ * zona `comment`). La regla: guides/maintaining/code-style.md.
  *
  * Lo que no se puede perder:
  *   · Que el lector mire sólo los comentarios: ni el código ni las cadenas, y con la línea real del archivo.
@@ -451,7 +451,7 @@ test('T7 CommentGuard_MessageNamesFileLineForm — archivo, línea, forma y qué
   assert.strictEqual(r.code, 1, r.out);
   assert.match(r.out, /scripts\/run\.sh:2\s+debt-id — sacá el código de la deuda/, 'al lado, qué escribir en su lugar');
   for (const form of COMMENT_FORMS) assert.ok(ih.COMMENT_HINTS[form], `${form}: tiene su pista`);
-  const todo = r.out.split('\n').filter((x) => /guides\/maintaining\/estilo-de-codigo\.md/.test(x));
+  const todo = r.out.split('\n').filter((x) => /guides\/maintaining\/code-style\.md/.test(x));
   assert.strictEqual(todo.length, 1, 'una sola línea dice qué hacer');
   assert.match(todo[0], /presente/);
   assert.match(todo[0], /internal-history-allowed\.json/);

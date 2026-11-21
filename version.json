@@ -91,7 +91,7 @@
       "transform": "not-in-copy"
     },
     {
-      "path": "guides/maintaining/mecanismo-de-instalacion.md",
+      "path": "guides/maintaining/installation-mechanism.md",
       "transform": "not-in-copy"
     },
     {
