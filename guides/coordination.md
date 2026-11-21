@@ -22,7 +22,9 @@ Cómo se nombra: en cada máquina, el dueño le pide a la sesión elegida, con s
 perfil, esa sesión corre `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión
 es y en qué carpeta, y con el click del dueño queda nombrada y confirmada. El arnés no lee la frase. Para dejar de serlo,
 `marker.js withdraw-relay`, con su propio cuadro. Las dos firmas son sólo del dueño, con su click en la pestaña de esa
-sesión: no se delegan. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la terminal del
+sesión: no se delegan. Si a esa sesión la abrió de fondo otra coordinadora (`coordination.js open`), el cuadro se
+muestra igual en su pestaña y la sesión le avisa a la coordinadora que la abrió: el dueño lo contesta ahí o por
+control remoto. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la terminal del
 dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`). Sin perfil, por ahora se
 nombra con la frase (`designate-relay --approved-by '<el dev>' --quote '<su frase>'`).
 

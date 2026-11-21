@@ -1076,9 +1076,11 @@ function negarConElCuadro(motivo, ids, sesion, cuadro = null, deFondo = false, a
   // una sesión que abrió la coordinadora no le muestra el cuadro a la persona (scripts/hooks/background-question-guard.js):
   // se lo manda a la coordinadora, que lo muestra en su pestaña
   const aQuien = coordinadora ? `«${coordinadora.name}» (${coordinadora.sid})` : null;
-  if (aQuien && cuadro && cuadro.soloClick) {
-    return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esta sesión la abrió la coordinadora y esta firma sólo la aprueba un click en la pestaña que trabaja: no muestres el cuadro. `
-      + `Queda la terminal del dueño (${t || 'el mismo comando con --terminal'}): mandale eso a ${aQuien} por SendMessage, con lo que se decide en tres renglones, y esperá su aviso.` };
+  // la de sólo click vale únicamente en esta pestaña: el cuadro se muestra acá aunque la sesión la haya abierto la
+  // coordinadora, y ella se entera para que el dueño entre (o la abra por control remoto). La terminal queda de emergencia
+  if (aQuien && cuadro && cuadro.soloClick && !cuadro.error) {
+    return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo elige la persona con un click en el cuadro de opciones de esta pestaña, aunque la sesión la haya abierto la coordinadora: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}», con la descripción «${cuadro.descripciones[0]}», y «${cuadro.opciones[1]}», con la descripción «${cuadro.descripciones[1]}». `
+      + `Antes, avisale a ${aQuien} por SendMessage que hay un cuadro esperando en esta pestaña, con lo que se decide en tres renglones: el dueño lo contesta acá o por control remoto. Con su click, repetí el mismo comando. Un mensaje escrito no vale, ni un click en otra pestaña. ${otraForma}` };
   }
   if (aQuien && !anotado && cuadro && !cuadro.error && ids.length === 1) {
     return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esta sesión la abrió la coordinadora: no le muestres el cuadro a la persona. `
