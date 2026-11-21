@@ -172,11 +172,10 @@ test('T8 · dos veredictos limpios seguidos después de implementar → el re-lo
   assert.deepEqual([g[0].invoca, g[0].limpias_seguidas, g[0].iter, g[0].storyId], [false, 2, 3, '9.9']);
   assert.equal(path.resolve(g[0].repoPath), path.resolve(repo));
 
-  // Pedir la cuenta 4 después de servir la 3 (el helper le pone su nota).
+  // La vuelta siguiente a la 3 pasa el tope fijo de 3: no hay set que dar.
   const r2 = correr(home, repo, ['advisors', '--iter', '4']);
-  assert.equal(r2.status, 0, r2.stderr);
-  assert.ok(!r2.json.all.includes(VAL), `advisors en la vuelta siguiente tampoco: ${JSON.stringify(r2.json.all)}`);
-  assert.equal(r2.json.validador_reloop.invoca, false);
+  assert.notEqual(r2.status, 0, r2.stdout);
+  assert.match(r2.stderr || '', /tope de 3 vueltas/);
 });
 
 // ── T8b · sin story en los argumentos, los dos chequeos usan la del marcador ──
@@ -290,8 +289,12 @@ test('T11 · la vuelta 1 no decide nada y el re-loop forzado invoca', (t) => {
   assert.equal(r1.json.validador_reloop, undefined, 'la vuelta 1 no anota decisión');
   assert.equal(lineasValidador(home).length, 0);
 
-  // El marcador lleva dos fotos: la primera llamada es la 3, así que la forzada es la 4.
-  const r3 = correr(home, repo, ['smart-reloop', '--iter', '4', '--force-full-reloop']);
+  // Con una sola foto, la primera llamada es la 2 y la forzada es la 3: dentro del tope fijo de 3.
+  const marcador = path.join(home, '.claude', '.tycon-pipeline', 'active', `${SID}.json`);
+  const m = JSON.parse(fs.readFileSync(marcador, 'utf8'));
+  delete m.iterations[2];
+  fs.writeFileSync(marcador, JSON.stringify(m));
+  const r3 = correr(home, repo, ['smart-reloop', '--iter', '3', '--force-full-reloop']);
   assert.equal(r3.status, 0, r3.stderr);
   assert.ok(r3.json.rerun.includes(VAL), 'forzado → el validador está');
   const g = lineasValidador(home);

@@ -34,7 +34,8 @@ const ENUMS = Object.freeze({
 const RANGES = Object.freeze({
   plan_review: { owner_away_minutes: [5, 240], coordinator_wait_minutes: [1, 120] },
   deep_review: { small_max_files: [1, 50] },
-  review: { max_rounds: [1, 6] },
+  // el mismo rango que el tope del código (lib/review-rounds.js): se baja, no se sube
+  review: { max_rounds: [1, 3] },
 });
 
 const BOOLEANS = Object.freeze({

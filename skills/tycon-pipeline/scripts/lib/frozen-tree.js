@@ -276,6 +276,10 @@ const SECCION_DE_SEGUIMIENTOS = /^Review Follow-ups \(Advisors\)$/i;
 const SECCION_DE_CRITERIOS = /^Acceptance Criteria\b/i;
 const CAMPO_DE_LA_TANDA = /^(\s+)(status|acs_pending|tasks_pending|tests_pending)\s*:/;
 const MARCA = /\s*`?@runtime-exempt\(.*$/;
+// sólo la que saca la pantalla, como palabra suelta: cambiar `@pantalla`, o una marca pegada a otra palabra, cuenta
+const MARCA_DE_PANTALLA = /\s+`?@sin-pantalla`?(?=\s|$|[.,;:)])/gi;
+// las claves de un renglón del enlace `followed_up_by:` (story-format.md §1.2)
+const CLAVE_DEL_ENLACE = /^\s*(?:-\s+)?(?:id|date|type|summary|reason)\s*:/;
 const BLOQUE = /^\s*(```|~~~)/;
 // lo que corta el motivo partido de una marca: un renglón en blanco, sin sangría, otro criterio o elemento, un bloque
 const CORTA_EL_MOTIVO = /^\s*$|^\S|^\s*(\d+\.|[-*+])\s|^\s*(```|~~~)/;
@@ -290,10 +294,15 @@ function sinPapeleoDeLaHistoria(txt) {
   let enFrontmatter = conFrontmatter;
   let enPipelines = false;
   let campoDeLaTanda = null;   // la sangría del campo que se saca, con sus renglones de continuación
+  let enEnlace = false;        // `followed_up_by:`: el enlace a la historia que la sigue, que escribe el arnés
   for (const [i, l] of lineas.entries()) {
     if (enFrontmatter) {
       if (i > 0 && l === '---') { enFrontmatter = false; out.push(l); continue; }
-      if (/^\S/.test(l)) { enPipelines = /^pipelines\s*:/.test(l); campoDeLaTanda = null; }
+      // una lista escrita a la misma sangría que su campo (`- id: …`) sigue siendo del campo
+      if (/^\S/.test(l) && !(enEnlace && /^- /.test(l))) { enPipelines = /^pipelines\s*:/.test(l); campoDeLaTanda = null; enEnlace = /^followed_up_by\s*:/.test(l); }
+      // dentro del enlace, sólo sus claves: otra clave escondida ahí (un `files_to_create:` sangrado) cuenta
+      if (enEnlace && !/^followed_up_by\s*:/.test(l) && !CLAVE_DEL_ENLACE.test(l)) enEnlace = false;
+      if (enEnlace) continue;
       if (enPipelines) {
         const sangria = l.match(/^(\s*)/)[1].length;
         // su continuación: más sangrada, o una lista escrita a la misma sangría que el campo (también es YAML válido)
@@ -323,6 +332,8 @@ function sinPapeleoDeLaHistoria(txt) {
         // la marca sola en su renglón: el renglón entero es papeleo, y su motivo puede seguir abajo
         if (!sinMarca.trim()) { motivoAbierto = true; continue; }
       }
+      // la marca `@sin-pantalla` de un criterio la pone «Probar en vivo»: papeleo
+      sinMarca = sinMarca.replace(MARCA_DE_PANTALLA, '');
     }
     out.push(sinMarca.replace(/^(\s*[-*]\s*)\[[ xX]\]/, '$1[ ]'));
   }
@@ -340,10 +351,64 @@ function claveDeLaHistoria(txt) {
 const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
   .filter((l) => { const t = l.trimStart(); return !(t.startsWith(clave) && !/^\d+-/.test(t.slice(clave.length))); }).join('\n');
 
+// Lo que no se ejecuta (defectos del 20/11, punto 1), por lista y no por descarte: lo que no está en la lista cuenta.
+//   · una imagen (.png, .jpg, .jpeg, .gif, .webp) fuera de una ruta de pruebas o de referencias, que una prueba visual
+//     puede comparar;
+//   · en la carpeta qa de la historia, un archivo de ESTA historia (su nombre empieza con el de la historia) que sea su
+//     guía o su informe (.html, .htm, .md, .pdf) o una imagen, si la carpeta no cuelga de una que la app sirve o compila.
+// Nada de eso vale dentro de una carpeta de instrucciones para un agente (skills, agents, la de cada herramienta y demás).
+// Nunca un archivo nuevo o cambiado que no sea común en los dos sellos (`100644`), ni un borrado: un enlace que pasa a
+// archivo, un ejecutable o un submódulo cuentan. Un .md o .txt suelto tampoco: puede ser la instrucción de un agente
+// (un CLAUDE.local.md, lo que importa un CLAUDE.md) o algo que corre (requirements.txt, un doctest). Lo sensible del
+// catálogo cuenta siempre.
+const IMAGENES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+const DE_LA_GUIA = new Set(['.html', '.htm', '.md', '.pdf']);
+// una imagen en una ruta de pruebas o de referencias la puede comparar una prueba visual (cada herramienta usa su carpeta:
+// `*-snapshots`, `backstop_data/bitmaps_reference`, `baseline_images`, `.loki/reference`, `.reg/expected`, la de Flutter
+// al lado de su prueba): cambiarla cambia lo que la prueba acepta, y cuenta
+const DE_PRUEBA_VISUAL = /(^|\/)[^/]*(test|spec|e2e|cypress|playwright|snapshot|screenshot|baseline|reference|golden|expected|backstop|visual|\.loki|\.reg)[^/]*\//;
+// una imagen o un texto en una carpeta de instrucciones para un agente es parte de esa instrucción: cuenta
+// la carpeta de Claude Code sale de tycon-home.js, el único que la nombra; se lee al usarla, y si no se puede, nada se
+// perdona (null)
+let deInstrucciones;
+function carpetasDeInstrucciones() {
+  if (deInstrucciones !== undefined) return deInstrucciones;
+  try {
+    const deClaude = path.basename(require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js')).claudeDir(path.sep));
+    const carpetas = ['skills', 'agents', 'commands', 'steps', 'prompts', 'rules', 'hooks', 'integrations', 'packs', 'guides', deClaude, '.codex', '.cursor', '.github'];
+    deInstrucciones = new RegExp(`(^|/)(${carpetas.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})/`);
+  } catch (_) { deInstrucciones = null; }
+  return deInstrucciones;
+}
+// una carpeta qa que cuelga de una carpeta que la app sirve o compila no es papeleo: lo que hay ahí puede publicarse
+const DE_LA_APP = /(^|\/)(public|static|www|wwwroot|dist|build|out|assets|src|app|pages|lib)(\/|$)/;
+
+/**
+ * ¿`rel` (relativa al repo, con `/`) es algo que no se ejecuta? `modos` son los dos de git (`[antes, después]`, con
+ * `000000` para lo que no existía), `qaRel` la carpeta qa de la historia relativa al mismo repo (o null si la historia no
+ * está en él) y `historia` el nombre del archivo de la historia sin `.md`.
+ */
+function noSeEjecuta(rel, modos, qaRel, historia) {
+  const [antes, despues] = modos;
+  if (despues !== '100644' || (antes !== '100644' && antes !== '000000')) return false;
+  const bajo = String(rel).toLowerCase();
+  if (require('./save-ok.js').esSensible(bajo)) return false;
+  const ext = path.posix.extname(bajo);
+  const instrucciones = carpetasDeInstrucciones();
+  if (!instrucciones || instrucciones.test(bajo)) return false;
+  if (qaRel && historia && bajo.startsWith(`${qaRel.toLowerCase()}/`)) {
+    if (DE_LA_APP.test(qaRel.toLowerCase())) return false;
+    const nombre = bajo.slice(qaRel.length + 1);
+    return !nombre.includes('/') && nombre.startsWith(`${historia.toLowerCase()}-`) && (DE_LA_GUIA.has(ext) || IMAGENES.has(ext));
+  }
+  return IMAGENES.has(ext) && !DE_PRUEBA_VISUAL.test(bajo);
+}
+
 /**
  * Los archivos que difieren entre dos sellos de un repo: `{ files, papeleo }` o `{ error }`. Papeleo es lo que no cuenta
  * para el ok de guardar (`esPapeleoDeLaHuella`), `tasks/todo.md`, la historia de la corrida (`storyRel`, relativa al
- * repo) cuando sólo cambió su estado, sus tildes, su Change Log, su Dev Agent Record, sus «Cambios de comportamiento» o
+ * repo) cuando sólo cambió su estado, sus tildes, su enlace a la historia que la sigue (`followed_up_by:`), su Change Log, su
+ * Dev Agent Record, sus «Cambios de comportamiento» o
  * su sección de seguimientos, y el `sprint-status.yaml` de la carpeta de la historia cuando sólo cambió el renglón de
  * esa historia (lo pasa a review el cierre). Si el estado del sprint no está en alguno de los dos sellos, o la historia no
  * dice qué número es, cuenta como cambio.
@@ -353,9 +418,24 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
  * Con `comentarios` (historia 8.217), un archivo con el mismo modo en los dos árboles que sólo movió comentarios
  * (lib/comment-only.js) va a `comentarios` y no a `files`; cualquier error al mirarlo lo deja en `files`. Sin la opción,
  * la salida no trae ese campo.
+ * Con `sinEjecutar` (defectos del 20/11, punto 1), un archivo que no se ejecuta (`noSeEjecuta`: una imagen, la guía y
+ * las capturas de la historia en su carpeta qa) va a `noSeEjecutan` y no a `files`. Sin la opción, la salida no trae ese campo.
  */
-function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null, comentarios = false } = {}) {
-  if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}) };
+/**
+ * Lo que cuenta del archivo de intención de la historia (`<historia>.intent.md`): su encabezado (el objetivo y los
+ * resultados, lo que guía al agente), sin su estado. El cuerpo (las tablas de preguntas abiertas y decisiones reservadas,
+ * con sus respuestas) es el registro de lo que se preguntó y se decidió: papeleo. Sin encabezado, el archivo entero.
+ */
+function encabezadoDeLaIntencion(txt) {
+  const lineas = String(txt).split('\n');
+  if (lineas[0] !== '---') return String(txt);
+  const fin = lineas.indexOf('---', 1);
+  if (fin < 0) return String(txt);
+  return lineas.slice(1, fin).filter((l) => !/^status\s*:/.test(l)).join('\n');
+}
+
+function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null, comentarios = false, sinEjecutar = false } = {}) {
+  if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}), ...(sinEjecutar ? { noSeEjecutan: [] } : {}) };
   const d = git(['-C', repo, 'diff-tree', '-r', '-z', '--no-renames', treeA, treeB]);
   if (!d.ok) return { error: `no pude comparar ${repo} entre ${treeA} y ${treeB}: ${unaLinea(d.err)}` };
   const { esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo } = require('./save-ok.js');
@@ -364,6 +444,9 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
   const papeleo = [];
   const deMain = [];
   const movidos = [];
+  const sinEjecutarse = [];
+  // la carpeta qa de la historia, relativa a este repo (la elige qa-dir.js); null si la historia no está en él
+  const qaRel = sinEjecutar && storyRel ? path.relative(repo, require('./qa-dir.js').qaDirFor(path.join(repo, storyRel))).split(path.sep).join('/') : null;
   const soloComentarios = (rel, modoA, modoB) => {
     if (!comentarios || modoA !== modoB) return false;
     try {
@@ -375,6 +458,7 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
   };
   const leer = (t, rel) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
   const estadoDelSprint = storyRel ? path.posix.join(path.posix.dirname(storyRel), 'sprint-status.yaml') : null;
+  const intencion = storyRel && /\.md$/.test(storyRel) ? storyRel.replace(/\.md$/, '.intent.md') : null;
   // la entrada de una ruta en un árbol: modo, tipo y objeto («» si no existe, null si no se pudo leer). Así cuentan también
   // un cambio de permisos y el puntero de un submódulo, que el contenido solo no muestra
   const entrada = (t, rel) => { const r = git(['-C', repo, 'ls-tree', t, '--', rel]); return r.ok ? r.out.split('\t')[0] : null; };
@@ -405,6 +489,11 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
       const a = leer(treeA, rel);
       const b = leer(treeB, rel);
       esPapeleo = a !== null && b !== null && sinPapeleoDeLaHistoria(a) === sinPapeleoDeLaHistoria(b);
+    } else if (intencion && rel === intencion) {
+      // el archivo de intención de la historia: cuenta su encabezado; las respuestas de sus tablas son papeleo
+      const a = leer(treeA, rel);
+      const b = leer(treeB, rel);
+      esPapeleo = a !== null && b !== null && encabezadoDeLaIntencion(a) === encabezadoDeLaIntencion(b);
     } else if (rel === estadoDelSprint) {
       // el estado del sprint: sólo el renglón de la historia de la corrida, con el número que dice la historia de ahora
       const clave = claveDeLaHistoria(leer(treeB, storyRel));
@@ -420,9 +509,12 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
     if (esPapeleo) papeleo.push(rel);
     else if (trajoMain(rel, rel === estadoDelSprint && storyRel ? (t) => sinRenglonDeLaHistoria(t, claveDeLaHistoria(leer(treeB, storyRel)) || '\0') : undefined)) deMain.push(rel);
     else if (soloComentarios(rel, meta[0], meta[1])) movidos.push(rel);
+    // la historia de la corrida tiene su regla: lo que no es papeleo de ella (un criterio) cuenta, aunque sea un .md
+    else if (sinEjecutar && rel !== storyRel && noSeEjecuta(rel, [meta[0], meta[1]], qaRel && !qaRel.startsWith('..') ? qaRel : null,
+      storyRel ? path.posix.basename(storyRel, '.md') : null)) sinEjecutarse.push(rel);
     else files.push(rel);
   }
-  return { files, papeleo, deMain, ...(comentarios ? { comentarios: movidos } : {}) };
+  return { files, papeleo, deMain, ...(comentarios ? { comentarios: movidos } : {}), ...(sinEjecutar ? { noSeEjecutan: sinEjecutarse } : {}) };
 }
 
 /**
@@ -552,8 +644,9 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
+  encabezadoDeLaIntencion,
   seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
-  contenidoDelSello, difiereSoloEnComentarios, vueltaCerradaDeLosRevisores, comentariosMovidosDesdeLaVuelta,
+  contenidoDelSello, difiereSoloEnComentarios, vueltaCerradaDeLosRevisores, comentariosMovidosDesdeLaVuelta, noSeEjecuta,
 };
 
 // `node frozen-tree.js procedencia <repo>`: la procedencia como fragmento JSON (`"run":…,"tree":…`), para sumar a un

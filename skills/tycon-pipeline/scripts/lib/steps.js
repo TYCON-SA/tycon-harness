@@ -335,7 +335,11 @@ function reviewersRound(marker, { aunConHallazgos = false } = {}) {
   const archivos = previo && Array.isArray(previo.archivos) ? previo.archivos.filter((a) => typeof a === 'string') : [];
   for (const nombre of nombresDeArchivos(cuentan, marker)) if (!archivos.includes(nombre)) archivos.push(nombre);
   if (!archivos.length) return null;
-  return { round: (Number(t.rounds) || 1) + 1, archivos, desde: new Date(desde).toISOString() };
+  const round = (Number(t.rounds) || 1) + 1;
+  // pasado el tope no hay otra vuelta (lib/review-rounds.js): lo cambiado después lo frena el sello al guardar
+  // (comprobarLoRevisado, en marker.js), que dice cómo volver a lo revisado. Si el tope no se puede leer, se pide la vuelta.
+  try { if (round > require('./review-rounds.js').tope({ repo: marker.repoPath || undefined }).value) return null; } catch (_) { /* se pide */ }
+  return { round, archivos, desde: new Date(desde).toISOString() };
 }
 
 /** Una falla al mirar lo revisado: queda en hook-errors.log y la decisión sigue como si no se hubiera mirado. */

@@ -3873,7 +3873,7 @@ ${trabajandoJs}
       d.coverage.min_touched_lines_pct = numOTexto(v);
     }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric' }));
   }
-  // las vueltas de revisores: el tope (entero de 1 a 6; vacío, el de fábrica, 2) y los prefijos que la organización suma
+  // las vueltas de revisores: el tope (entero de 1 a 3; vacío, el de fábrica, 3) y los prefijos que la organización suma
   // a los de fábrica como «seguridad o datos». Una clave que queda vacía se saca: no se propone un «{}»
   function editorRevision(s, d, pr) {
     var r = esObjeto(d.review) ? d.review : {};

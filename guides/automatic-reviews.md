@@ -31,7 +31,7 @@ instalador, producción, una migración, o declara `sensible:`. En duda, delicad
 
 Se lanza con «Armar el plan» cerrado y sin una pregunta abierta a la persona sobre esta revisión (salvo que cuente como
 ausente): antes, `plan-review` se niega sin lanzar nada y dice por qué. La cuarta vuelta de la misma historia, por
-cualquier motivo, la decide una persona: su «review» a la pregunta, o la vuelta extra firmada; su ausencia no alcanza. La lanza la coordinadora (`marker.js plan-review --for-session <sesión>`); sin coordinadora, la propia sesión
+cualquier motivo, la decide una persona: su «review» a la pregunta; su ausencia no alcanza. La lanza la coordinadora (`marker.js plan-review --for-session <sesión>`); sin coordinadora, la propia sesión
 (`marker.js plan-review`). La de la propia sesión aprueba un plan de rutina igual que la de la coordinadora; sólo
 informa en una historia delicada o con `plan_review.routine_approval: person`. De fábrica corre una lente, «suposición
 falsa»: lo que el plan cree del código y no es cierto. Los resultados:
@@ -157,7 +157,7 @@ constancia del verificador, diferido, o eximido por el dueño.
 | O12 | El orden de respaldo de los revisores | `review_runner.order` | lista sin repetidos de esos valores | `["claude"]` | para tener un respaldo cuando uno llega a su tope de uso |
 | O13 | Minutos sin respuesta para contar al dueño como ausente | `plan_review.owner_away_minutes` | entero de 5 a 240 | `20` | más si el dueño suele contestar tarde |
 | O14 | El comando del revisor propio (sólo con `custom`) | `review_runner.custom_command` | texto | — | con un revisor que no es de los de fábrica |
-| O15 | El tope de vueltas, el mismo para el plan y el código | `review.max_rounds` | entero de 1 a 6 | `3` | menos para cortar antes; más si tus historias son largas |
+| O15 | El tope de vueltas, el mismo para el plan y el código | `review.max_rounds` | entero de 1 a 3 | `3` | menos para cortar antes; no se sube: después del tope no hay vuelta extra |
 | O16 | Cuántos verificadores | `review_runner.verifiers` | `per_lens` · `per_finding` | `per_lens` | `per_finding` para medir uno por hallazgo |
 | O17 | Desde qué gravedad un hallazgo confirmado frena | `review.blocking_severity` | `bug` · `robustness` · `all` | `bug` | `robustness` o `all` para frenar también por lo demás |
 | O18 | Qué lentes corre la revisión del plan | `plan_review.lenses` | lista de `suposicion-falsa` · `ac-sin-cubrir` · `prueba-que-falta` · `riesgo-sin-defensa` | `["suposicion-falsa"]` | sumar lentes para una revisión más amplia, a cambio de más agentes |

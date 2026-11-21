@@ -69,7 +69,7 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      plan y lo vuelve a cerrar, y la revisión vuelve a correr. No llega al dueño mientras siga rechazado, salvo con
      `plan_review.rejected_reaches_owner` en sí o al llegar al tope de rechazos seguidos (`review.max_rounds`, de
      fábrica 3): entonces llega con los hallazgos y «rechazado N veces seguidas», y el dueño decide partir la historia o
-     firmar una vuelta extra.
+     responder «review» para una vuelta más.
    - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan o la historia
      cambiaron mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño. No se
      relanza por cada cambio: se juntan todos, y se relanza cuando el plan y la historia quedaron como van a quedar.
@@ -83,8 +83,7 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      commitea (el control del encabezado, `lint-story-frontmatter.js`).
    - **La cuarta vuelta.** Tres vueltas de la revisión del plan de la misma historia (por cualquier motivo: cortadas,
      sin veredicto, rechazadas o aprobadas) se lanzan sin preguntar; la cuarta no. `plan-review` se niega hasta que la
-     persona responde «review» a su pregunta (`review-ask --kind plan` y `review-answer`), o firma la vuelta extra de esa
-     historia. Su ausencia no la destraba.
+     persona responde «review» a su pregunta (`review-ask --kind plan` y `review-answer`). Su ausencia no la destraba.
    - **4d. Sin revisión.** Con `skip`, con `never` o eligiendo seguir sin revisión: el plan lo firma el dueño, y su
      cuadro lo dice («sin revisión (se eligió seguir)» o «sin revisión (el perfil no revisa)»).
 

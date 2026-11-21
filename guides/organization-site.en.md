@@ -793,7 +793,7 @@ be, to copy it and open the request by hand.
   (empty, 600,000). It never applies anything: a person decides each proposal. It lives in `team-repos.json`, in the
   profile repo. A maintainer reviews it.
 - **Reviewer rounds**: how many reviewer rounds a story gets before it stops, and how many rejections of its plan in a
-  row before the owner decides (1 to 6; empty, 3). At the cap, a security or data critical is decided by a person and the rest stays as visible debt. You can also add
+  row before the owner decides (1 to 3; empty, 3: it can go lower, not higher). At the cap, a security or data critical is decided by a person, who waives it or opens a fix story, and the rest stays as visible debt. There is no extra round past the cap. You can also add
   rules that count as security or data. A repo can adjust the cap in its `.tycon/advisors.yaml`. It lives in
   `team-repos.json` → `review`, in the profile repo. A maintainer reviews it.
 - **Your technology**: what the harness already recognizes, the file endings your team adds as code,
@@ -968,7 +968,7 @@ be, to copy it and open the request by hand.
 | O12 | The reviewers' fallback order | `review_runner.order` | list of those values, no repeats | `["claude"]` | to have a fallback when one hits its usage limit |
 | O13 | Minutes without an answer to count the owner as away | `plan_review.owner_away_minutes` | integer from 5 to 240 | `20` | more if the owner usually answers late |
 | O14 | Your own reviewer's command (only with `custom`) | `review_runner.custom_command` | text | — | with a reviewer that is not a built-in one |
-| O15 | The rounds cap, the same for plan and code | `review.max_rounds` | integer from 1 to 6 | `3` | lower to stop sooner; higher if your stories are long |
+| O15 | The rounds cap, the same for plan and code | `review.max_rounds` | integer from 1 to 3 | `3` | lower to stop sooner; it does not go higher: there is no extra round past the cap |
 | O16 | How many verifiers | `review_runner.verifiers` | `per_lens` · `per_finding` | `per_lens` | `per_finding` to measure one per finding |
 | O17 | From what severity a confirmed finding blocks | `review.blocking_severity` | `bug` · `robustness` · `all` | `bug` | `robustness` or `all` to also block on the rest |
 | O18 | Which lenses the plan review runs | `plan_review.lenses` | list of `suposicion-falsa` · `ac-sin-cubrir` · `prueba-que-falta` · `riesgo-sin-defensa` | `["suposicion-falsa"]` | add lenses for a wider review, at the cost of more agents |
