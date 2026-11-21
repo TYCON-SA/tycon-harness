@@ -10,7 +10,7 @@
           "id": "grita-repo-fuera-de-main",
           "type": "must-emit",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git -C tcg init -q -b codex/etapa-x && git -C tcg -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
             "mkdir -p $SANDBOX_HOME/.claude/agent-skills && git -C $SANDBOX_HOME/.claude/agent-skills init -q -b main && git -C $SANDBOX_HOME/.claude/agent-skills -c user.email=b@b -c user.name=b commit -q --allow-empty -m x"
           ],
@@ -28,7 +28,7 @@
           "id": "quiet-ambos-en-main",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git -C tcg init -q -b main && git -C tcg -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
             "mkdir -p $SANDBOX_HOME/.claude/agent-skills && git -C $SANDBOX_HOME/.claude/agent-skills init -q -b main && git -C $SANDBOX_HOME/.claude/agent-skills -c user.email=b@b -c user.name=b commit -q --allow-empty -m x"
           ],
@@ -44,7 +44,7 @@
             "TYCON_BRANCH_GUARD": "0"
           },
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git -C tcg init -q -b codex/etapa-x && git -C tcg -c user.email=b@b -c user.name=b commit -q --allow-empty -m x"
           ],
           "stdin": {
@@ -60,7 +60,7 @@
             "git clone -q origen tcg",
             "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2 && git -C tcg fetch -q origin",
             "printf 'local\\n' > tcg/guides/guide-update-proposals.md",
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/"
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/"
           ],
           "expect": {
             "stdout_re": [
@@ -79,7 +79,7 @@
           "setup": [
             "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
             "git clone -q origen tcg",
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/"
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/"
           ]
         },
         {
@@ -92,7 +92,7 @@
             "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2",
             "printf 'local\\n' > tcg/guides/guide-update-proposals.md",
             "git -C tcg pull --ff-only --quiet --autostash origin main >/dev/null 2>&1 || true",
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/"
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/"
           ],
           "expect": {
             "stdout_re": [
@@ -113,7 +113,7 @@
           "setup": [
             "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
             "git clone -q origen tcg",
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git init -q -b main asup && mkdir -p asup/skills/acme && printf 'v1\\n' > asup/skills/acme/SKILL.md && git -C asup add -A && git -C asup -c user.email=b@b -c user.name=b commit -q -m v1",
             "mkdir -p $SANDBOX_HOME/.claude && git clone -q asup $SANDBOX_HOME/.claude/agent-skills",
             "git -C asup rm -q skills/acme/SKILL.md && git -C asup -c user.email=b@b -c user.name=b commit -q -m retiro",
@@ -212,8 +212,8 @@
           }
         },
         {
-          "id": "dispara-con-optin-y-deja-throttle",
-          "type": "must-run",
+          "id": "quiet-con-optin-no-lanza-el-observador",
+          "type": "must-stay-quiet",
           "env": {
             "TYCON_INSTINCT_OBSERVER": "1",
             "TYCON_GUIDES_DIR": "${FIXTURE}/tcg"
@@ -227,38 +227,10 @@
             "source": "startup"
           },
           "expect": {
-            "file_exists": [
-              "${SANDBOX_HOME}/.claude/instinct-observer.last",
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/inbox/instincts/observer.log"
-            ],
             "file_absent": [
+              "${SANDBOX_HOME}/.claude/instinct-observer.last",
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/inbox/instincts/observer.log",
               "${FIXTURE}/tcg/inbox"
-            ]
-          }
-        },
-        {
-          "id": "dispara-con-buzon-registra-en-el-arbol",
-          "type": "must-run",
-          "env": {
-            "TYCON_INSTINCT_OBSERVER": "1",
-            "TYCON_GUIDES_DIR": "${FIXTURE}/tcg"
-          },
-          "setup": [
-            "mkdir -p tcg/scripts/instincts tcg/scripts/setup/harness tcg/inbox/instincts",
-            "printf '# el buzon del arbol de prueba\\n' > tcg/inbox/instincts/README.md",
-            "cp $TCG/scripts/instincts/instinct-dirs.js tcg/scripts/instincts/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
-            "printf 'process.exit(0)\\n' > tcg/scripts/instincts/instinct-observer.js"
-          ],
-          "stdin": {
-            "source": "startup"
-          },
-          "expect": {
-            "file_exists": [
-              "${SANDBOX_HOME}/.claude/instinct-observer.last",
-              "${FIXTURE}/tcg/inbox/instincts/observer.log"
-            ],
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/inbox"
             ]
           }
         }
@@ -274,10 +246,11 @@
           "id": "quiet-default-apagado",
           "type": "must-stay-quiet",
           "env": {
+            "TYCON_INSTINCTS": "0",
             "TYCON_INSTINCT_MINING": "1",
             "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
           },
-          "__doc": "La integración apagada (nadie la prende) no graba nada, aunque la variable vieja diga 1: la grabación la decide sólo la integración instincts.",
+          "__doc": "La integración apagada no graba nada, aunque la variable vieja diga 1: la grabación la decide sólo la integración instincts. El caso la apaga con TYCON_INSTINCTS=0 porque el perfil del equipo puede prenderla, y el banco mide el gancho, no esa decisión.",
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
@@ -360,6 +333,7 @@
           "id": "reenvio-quiet-apagado",
           "type": "must-stay-quiet",
           "env": {
+            "TYCON_INSTINCTS": "0",
             "TYCON_INSTINCT_MINING": "1",
             "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
           },
@@ -408,6 +382,9 @@
         {
           "id": "quiet-apagada-sin-variables-viejas",
           "type": "must-stay-quiet",
+          "env": {
+            "TYCON_INSTINCTS": "0"
+          },
           "stdin": {
             "source": "startup"
           },
@@ -421,6 +398,7 @@
           "id": "dice-una-vez-que-las-variables-viejas-no-prenden",
           "type": "must-run",
           "env": {
+            "TYCON_INSTINCTS": "0",
             "TYCON_INSTINCT_MINING": "1"
           },
           "stdin": {

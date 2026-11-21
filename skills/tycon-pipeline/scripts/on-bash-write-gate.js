@@ -20,8 +20,16 @@
  * positivos: sólo el token DESPUÉS de `>`/`>>`/`tee`, sólo tokens con extensión de código tras
  * `sed -i`/`perl -i`, sólo el ÚLTIMO token de un `cp`/`mv`.
  *
- * Exit: 0 deja pasar · 2 deniega (stderr = mensaje). Fail-open VISIBLE: errores a hook-errors.log.
+ * Exit: 0 deja pasar · 2 deniega (stderr = mensaje). Los errores van a hook-errors.log.
  * Escape: el mismo del portón (env TYCON_STORY_GATE=off · config commiteada del repo).
+ *
+ * ── CUANDO EL FRENO MISMO FALLA ───────────────────────────────────────────────────────────
+ * Una falla sin prever, un módulo del arranque que no carga o una entrada que no se puede leer: frena sólo el comando
+ * que escribe y nombra una historia o una constancia, leído como texto (`frenaLaRed`); lo demás sigue. Cada una queda en
+ * hook-errors.log: «FRENÓ POR FALLA» o «FAILED OPEN». Límite conocido: un error de sintaxis en este archivo no llega a
+ * correr nada.
+ * El análisis corre en un hilo y `lib/gate-clock.js` mira el reloj (20 s, `TYCON_BASH_GATE_TIMEOUT_S`): si no alcanza a
+ * decidir, el comando no corre. Sin esa biblioteca, el análisis corre acá, sin reloj, y queda «FAILED OPEN».
  *
  * ── SEGUNDA RESPONSABILIDAD: la puerta Bash del freno de STORY A MANO ────────────────
  * El caso que motiva ese freno son los heredocs de Bash —
@@ -37,6 +45,10 @@
  * con escape auditado. Kill-switch propio: TYCON_STORY_SKILL_GATE=off (independiente del carril).
  * Una historia que existe y no está en borrador no se escribe desde acá: desde un comando no se ve qué queda escrito, y
  * su estado lo cambia marker.js. Frena con o sin ejecución abierta.
+ * Un guion en archivo (python, node, perl, ruby) con una historia entre sus argumentos cuenta como que la escribe, aunque
+ * sólo la lea. Límite conocido: no ve la historia que el guion recibe por otro camino — por `xargs`, `find -exec`,
+ * `$(cat lista)`, una variable de entorno, la entrada estándar o una carpeta entera que recorre. La orden que corre por
+ * `find -exec`, `xargs` o un heredoc a un shell sí se mira como otro comando, por lo que escribe o borra ella misma.
  *
  * ── TERCERA: los marcadores de la ejecución ───────────────────────────────────────────────
  * Borrar o mover un marcador (`<estado>/active/`, `<estado>/active.json`, o una carpeta que los contiene), de esta
@@ -46,17 +58,116 @@
 
 'use strict';
 
+// Antes de todo módulo del arnés: el hilo principal sólo mira el reloj, y este mismo archivo corre en un hilo aparte
+const { isMainThread, workerData, parentPort } = require('worker_threads');
+let relojRoto = null;
+if (require.main === module && isMainThread) {
+  try {
+    require('./lib/gate-clock.js').vigilar({ archivo: __filename });
+    return;
+  } catch (e) { relojRoto = e; }
+}
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+// en un repo sin historias, la palabra suelta no alcanza: cuenta una constancia o la ruta de una historia (de otro repo),
+// también armada por partes (`Path('specs') / n`, `os.path.join('stories', f)`, `'specs/' + n + '.md'`)
+const NOMBRA_RUTA_DE_HISTORIA = /control-changes|(?:^|[\\/'"`\s])(?:\.?specs?|stories)[\\/][^\s'"`]*\.md\b|\bstory-[\w.-]*\.md\b|['"`](?:\.\/)?(?:\.?specs?|stories)\/?['"`]/i;
+// las llamadas de un guion que escriben, copian, mueven o borran un archivo
+const GUION_ESCRIBE = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync|renameSync|rename|replace|unlinkSync|rmSync|truncateSync|write_text|write_bytes|copy|copyfile|copy2|copytree|move|remove|unlink|truncate)\s*\(|\bopen\s*\([^)]*,\s*["'][^"']*[wax+]|\bFile\.(?:write|delete|rename)\b|\bFileUtils\.\w+/;
+// las formas de escribir, borrar, mover o reponer un archivo desde un comando, sin contar un `open(` que puede ser de lectura
+const FORMAS_DE_ESCRIBIR = [
+  String.raw`(?:^|[\s;&|(])(?:[^\s;&|()'"]*[\\/])?\\?(?:rm|del|erase|unlink|remove-item|ri|mv|move|mi|move-item|rename-item|ren|cp|copy|copy-item|install|rsync|ditto|scp|dd|truncate|ln)(?:\.exe)?(?=\s)`,
+  String.raw`\bgit\b[^\n;&|]*\s(?:checkout|restore|rm|mv)\b`,
+  String.raw`\b(?:curl|wget)\b[^\n;&|]*\s(?:-o|-O|--output)`,
+  String.raw`>{1,2}(?![&>])(?!\s*/dev/(?:null|stdout|stderr)\b)`,
+  String.raw`\btee\b`,
+  String.raw`\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|write_text|write_bytes)\b`,
+  String.raw`\b(?:Set-Content|Out-File|Add-Content)\b|::(?:Write|Append)All`,
+  GUION_ESCRIBE.source,
+];
+
+// ── la red de abajo: el freno que falla ───────────────────────────────────────────────────────────
+// Va antes de todo `require` del arnés: tiene que andar aunque no cargue ninguno, y por eso lee el comando como texto.
+// Del lado que frena: suma los editores y las formas de abrir para escribir que el freno normal lee por palabras.
+// También con una comilla antes: `bash -c 'rm h.md'`, y el primer comando de una entrada rota, pegado a su comilla.
+const LA_RED_ESCRIBE = new RegExp([...FORMAS_DE_ESCRIBIR,
+  String.raw`['"\`](?:[^\s;&|()'"]*[\\/])?\\?(?:rm|del|erase|unlink|remove-item|ri|mv|move|mi|move-item|rename-item|ren|cp|copy|copy-item|install|rsync|ditto|scp|dd|truncate|ln)(?:\.exe)?(?=\s)`,
+  String.raw`\b(?:g?sed|perl|ruby)\b[^\n;&|]*\s-(?:[A-Za-z0-9]*i|-in-place)`,
+  String.raw`\bg?awk\b[^\n;&|]*\s-i\s*inplace\b`,
+  String.raw`(?:^|[\s;&|('"\`])(?:ed|ex|sponge|patch)(?=\s)`,
+  String.raw`\b(?:n?vim?)\b[^\n;&|]*\s-[a-zA-Z]*[es]\b`,
+  String.raw`\bgit\b[^\n;&|]*\sapply\b`,
+  String.raw`\bopen\s*\([^)]*\bmode\s*=\s*["'][^"']*[wax+]`,
+  String.raw`\.open\s*\(\s*["'][^"']*[wax+]`,
+  String.raw`\bopenSync\s*\([^)]*,\s*["'][^"']*[wax+]`,
+].join('|'), 'i');
+// la carpeta entera también nombra lo que tiene adentro (`rm -rf specs`, `cd specs && sed -i … *.md`), y la ruta pegada a
+// lo que la antecede también cuenta (`echo x >specs/a.md`, `dd of=specs/a.md`)
+const LA_RED_NOMBRA = new RegExp(`${NOMBRA_RUTA_DE_HISTORIA.source}|\\bstory-[^\\s'"\`]*\\.md\\b|(?:^|[\\s/\\\\'"\`<>=(;:|&])(?:\\.?specs?|stories)(?:[\\\\/][^\\s'"\`]*\\.md\\b|[\\\\/]?(?=[\\s'"\`;&|)]|$))`, 'i');
+const frenaLaRed = (texto) => LA_RED_ESCRIBE.test(texto) && LA_RED_NOMBRA.test(texto);
+// sin el lector de rutas no se sabe dónde vive el estado: el registro va a la carpeta temporal, y el mensaje lo dice
+const carpetaDelEstado = () => {
+  try { return stateDirOf(os.homedir()); } catch { return os.tmpdir(); }
+};
+/** Lo último que hace el freno cuando falló sin haber mirado el comando: frena o sigue, y lo deja dicho. */
+// en una entrada rota, los saltos de línea siguen escritos como `\n`. En un comando ya leído es otra cosa: `\rm` es `rm`
+const textoDeUnaEntradaRota = (cruda) => String(cruda || '').replace(/\\[nrt]/g, ' ');
+function salirPorLaRed(e, texto) {
+  if (frenaLaRed(String(texto || ''))) {
+    logHookError(e, 'FRENÓ POR FALLA');
+    try {
+      process.stderr.write([
+        '⛔ tycon-pipeline — EL FRENO FALLÓ Y ESTE COMANDO ESCRIBE UNA HISTORIA O UNA CONSTANCIA',
+        `  No pude mirar qué escribe. La falla quedó en ${path.join(carpetaDelEstado(), 'hook-errors.log')}.`,
+        '  Una historia se edita con la herramienta de edición (Edit/Write); una constancia la firma una persona.',
+        '',
+      ].join('\n'));
+    } catch { /* sin dónde decirlo, frena igual */ }
+    process.exit(2);
+  }
+  logHookError(e, 'FAILED OPEN');
+  process.exit(0);
+}
+let entradaCruda = null;
+let yaDecidio = false;
+function leerEntrada() {
+  if (entradaCruda === null) {
+    // la segunda lectura recibe el texto que ya leyó el análisis: la entrada estándar no se puede leer dos veces
+    if (!isMainThread && workerData && typeof workerData.entrada === 'string') entradaCruda = workerData.entrada;
+    // sin texto no hay qué frenar: el comando pasa sin mirarse
+    else try { entradaCruda = fs.readFileSync(0, 'utf8'); } catch (e) { entradaCruda = ''; logHookError(e, 'FAILED OPEN'); }
+    if (!isMainThread && parentPort) require('./lib/gate-clock.js').entregarEntrada(parentPort, workerData, entradaCruda);
+  }
+  return entradaCruda;
+}
+function salirPorLaRedConLaEntrada(e) {
+  const cruda = leerEntrada();
+  let texto = textoDeUnaEntradaRota(cruda);
+  try { texto = JSON.parse(cruda).tool_input.command; } catch { /* entrada rota o sin comando: se lee el texto entero */ }
+  salirPorLaRed(e, texto);
+}
+if (require.main === module) {
+  // lo que `try` no alcanza: un módulo de los de abajo que no carga, o una falla después de decidir, en los avisos
+  process.on('uncaughtException', (e) => {
+    if (yaDecidio) { logHookError(e); process.exit(0); }
+    salirPorLaRedConLaEntrada(e);
+  });
+}
+
+// la carpeta del estado, de una sola pieza. Sin `lib/state-dir.js`: la red de arriba la necesita aunque ese módulo no cargue
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+if (relojRoto) logHookError(relojRoto, 'FAILED OPEN');
+// la segunda lectura va acá: necesita la carpeta del estado para su renglón, y ninguno de los módulos de abajo
+if (require.main === module && !isMainThread && workerData && workerData.modo === 'net') salirPorLaRedConLaEntrada(workerData.falla);
 const { isCodeFile, isManifestFile, NEVER_CODE_SEGMENTS } = require('./lib/story-gate.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 // Con respaldo, como en dispatch.js y on-write-collision.js: sin la lib (un skill instalado a medias) el portón no puede
 // morir al cargar —saldría 1, que no frena, y sin dejar constancia—: resuelve las rutas como antes.
 let nativePath = (p) => p;
-try { ({ nativePath } = require('./lib/path-shape.js')); } catch { /* sin normalización de rutas: conducta previa */ }
+try { ({ nativePath } = require('./lib/path-shape.js')); } catch (e) { logHookError(e); /* sin normalización de rutas: conducta previa */ }
 
 // ── extracción de targets de escritura ────────────────────────────────────────────────────────────
 
@@ -66,7 +177,34 @@ function tok(m, i) { return m[i] ?? m[i + 1] ?? m[i + 2] ?? null; }
 function splitSegments(cmd) {
   // Separadores de comandos (no dentro de comillas — aproximación: split simple alcanza para lo
   // que buscamos; las comillas raras caen del lado conservador = no se extrae nada).
-  return String(cmd).split(/\s*(?:&&|\|\||;|\||\n)\s*/).filter(Boolean);
+  // también un `&` solo (segundo plano): `echo hi & cp a b` corre el cp. No `&&`, ni los de una redirección (`2>&1`, `&>`)
+  return String(cmd).split(/\s*(?:&&|\|\||\|&|;|\||\n|(?<![<>&|\\])&(?![&>]))\s*/).filter(Boolean);
+}
+
+/**
+ * El tramo sin lo que el shell pone delante de un comando dentro de un bloque: `do`, `then`, `else`, `elif`, `if`,
+ * `while`, `until`, `time`, `!`, y un `(` o `{` pegado. `for f in a; do cp a src/b.js; done` copia a `src/b.js` igual
+ * que `cp a src/b.js`. Sacar de más sólo hace mirar de más.
+ */
+function sinPalabrasDeBloque(seg) {
+  let t = String(seg).trim();
+  for (let antes = null; antes !== t;) {
+    antes = t;
+    t = t.replace(/^(?:(?:do|then|else|elif|if|while|until|time|!)(?=[\s({])|[({])\s*/, '');
+  }
+  // el `)` del paréntesis que se sacó adelante, pegado al último archivo (`(sed -i … docs/a.js)`): sólo los que sobran,
+  // para no tocar un `$(…)` del final
+  // (de atrás para adelante, una sola vez: con miles de `)` el recuento por vuelta colgaría el freno)
+  let sobran = (t.match(/\)/g) || []).length - (t.match(/\(/g) || []).length;
+  let fin = t.length;
+  while (sobran > 0) {
+    let k = fin;
+    while (k > 0 && /\s/.test(t[k - 1])) k--;
+    if (k === 0 || t[k - 1] !== ')') break;
+    fin = k - 1;
+    sobran--;
+  }
+  return t.slice(0, fin).trimEnd();
 }
 
 /**
@@ -114,7 +252,7 @@ function lastWord(seg) {
  */
 function stripNonCommandText(s) {
   // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador.
-  let t = String(s).replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  let t = String(s).replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   // Strings entre comillas que no siguen a un operador de redirección / tee: se vacían (quedan las comillas), salvo
   // los que pueden ser un nombre de archivo (sin espacios ni operadores): `cp a "<dir>/b.md"` sigue nombrando su destino.
   t = t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g,
@@ -196,7 +334,7 @@ function resolverCd(cmd, baseCwd) {
     return d ? { dir: resolveTarget(d, baseCwd), forma: 'hoy', s } : { dir: baseCwd, forma: 'hoy', s };
   };
   try {
-    s = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)([\s\S]*?)(\n[ \t]*\3[ \t]*(?=\n|$))/g, (m, cab, _q, _d, cuerpo, cierre) => cab + cuerpo.replace(/[^\n]/g, ' ') + cierre);
+    s = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)((?:[\s\S]*?\n)??)([ \t]*\3[ \t]*(?=\n|$))/g, (m, cab, _q, _d, cuerpo, cierre) => cab + cuerpo.replace(/[^\n]/g, ' ') + cierre);
     cds = [...s.matchAll(/\bcd\b/g)];
     if (!cds.length) return { dir: baseCwd, forma: 'sin-cd', s };
     const m = /(^|;|\n|&&)[ \t]*cd[ \t]+([^\s;&|()<>'"`\\]+)[ \t]*&&/.exec(s.slice(Math.max(0, cds[0].index - 3)));
@@ -267,7 +405,7 @@ const DESTINO_CON_SUBCOMANDO = new RegExp(String.raw`((?:^|[^<>&])(?:>{1,2}|\bte
 function posicionesDeComando(cmd) {
   const s = String(cmd || '');
   const es = new Array(s.length).fill(true);
-  for (const m of s.matchAll(/<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n([\s\S]*?\n)[ \t]*\2[ \t]*(?=\n|$)/g)) {
+  for (const m of s.matchAll(/<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n((?:[\s\S]*?\n)??)[ \t]*\2[ \t]*(?=\n|$)/g)) {
     const desde = m.index + m[0].indexOf('\n') + 1;
     for (let i = desde; i < m.index + m[0].length; i++) es[i] = false;
   }
@@ -340,7 +478,9 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
 
   // 3) sed -i / --in-place / perl -i / -pi / -ni : todo token con extensión de código del segmento, o que quien llama
   //    quiere mirar igual (`keep`: el estado y el árbol instalado, sea cual sea la extensión)
-  for (const seg of splitSegments(s)) {
+  for (const crudo of splitSegments(s)) {
+    // la palabra de un bloque o el paréntesis delante no es el comando: `do cp a b`, `then sed -i …`, `if cp a b`, `(cp a b)`
+    const seg = sinPalabrasDeBloque(crudo);
     // Anclados al INICIO del segmento: `grep -i "sed" src/a.ts` no es un sed -i.
     const head = seg.trim().replace(/^(?:\w+=\S+\s+)*(?:sudo\s+)?/, '');
     const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
@@ -365,13 +505,16 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
         if (t === '') { if (!(isSedI && previo === '-i' && sufijoVacio)) args++; continue; }
         args++;
         const esExpresion = !conExpresionAparte && args === 1;
-        if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t))) out.add(t);
+        // una ruta con variable (`$f`, `${D}/x.js`) también es un destino, que se resuelve o se dice que no. Una expresión
+        // de sed que quedó en otro lugar (`-i''` pegado corre la cuenta) no: lleva espacios o arranca con `s/`, `y/`
+        const rutaConVariable = /\$\{?[A-Za-z_]/.test(t) && !/\s/.test(t) && !/^[sy][^\w\s]/.test(t);
+        if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t)) || (!esExpresion && rutaConVariable)) out.add(t);
       }
     }
-    // 4) cp / mv → destino = último token del segmento. También sus formas de PowerShell (Copy-Item /
-    //    Move-Item y sus alias copy / cpi / move / mi; no distingue mayúsculas): por la herramienta PowerShell de
-    //    Windows.
-    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv)\b/.test(seg.trim()) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(seg.trim())) {
+    // 4) cp / mv / ln → destino = último token del segmento (un enlace también deja un archivo en su destino). También
+    //    las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi; no distingue
+    //    mayúsculas): por la herramienta PowerShell de Windows.
+    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|ln)\b/.test(seg.trim()) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(seg.trim())) {
       for (const t of cpMvDest(seg)) out.add(t);
     }
   }
@@ -443,7 +586,7 @@ function scriptsInline(cmd) {
   // cada parte con una sola lectura posible: una barra invertida es siempre escape, una opción empieza con letra
   const conFlag = new RegExp(`${inicio}((?:\\s+-{1,2}[A-Za-z][\\w-]*(?:=[^\\s'"]+)?)*?)\\s+(?:-[a-zA-Z]*[epc]|--eval|--print|-Command)\\s+(['"])((?:\\\\[\\s\\S]|(?!\\2)[^\\\\])*)\\2([^\\n;&|]*)`, 'gi');
   // sin los cuerpos de los heredocs: un `node -e` adentro de un `.md` que se escribe es texto, no un comando
-  const sinCuerpos = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  const sinCuerpos = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   for (const m of sinCuerpos.matchAll(conFlag)) out.push({ script: m[3], argv: argumentosDe(m[4]) });
   // por la entrada: el heredoc o el here-string que llega a un intérprete como su programa, detrás de un envoltorio,
   // en otra etapa de la tubería o con `/dev/stdin`
@@ -462,11 +605,11 @@ function scriptsInline(cmd) {
 let lectorDeEntrada;
 function programasPorEntrada(raw) {
   if (lectorDeEntrada === undefined) {
-    try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch { lectorDeEntrada = null; }
+    try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch (e) { logHookError(e); lectorDeEntrada = null; }
   }
   if (lectorDeEntrada) return lectorDeEntrada(raw);
-  return [...raw.matchAll(/(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g)]
-    .map((m) => ({ interprete: '', conGuion: false, despues: [], cuerpo: m[3], comillas: Boolean(m[1]) }));
+  return [...raw.matchAll(/(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)[^\n]*\n(?:([\s\S]*?)\n)??[ \t]*\2[ \t]*(?=\n|$)/g)]
+    .map((m) => ({ interprete: '', conGuion: false, despues: [], cuerpo: m[3] || '', comillas: Boolean(m[1]) }));
 }
 
 // los intérpretes que corren un guion guardado en un archivo
@@ -474,7 +617,33 @@ const CORRE_ARCHIVO = /^(?:node|nodejs|python[0-9.]*|perl|ruby|bun|deno|tsx|ts-n
 // lo que el guion escribe se lee entero hasta este tamaño; más grande, cuenta si nombra una historia o una constancia
 const GUION_TOPE = 256 * 1024;
 const GUION_TOPE_DURO = 64 * 1024 * 1024;
-const MENCIONA_HISTORIA = /control-changes|stor(?:y|ies)|historia/i;
+const ESCANEO_REINTENTO_MS = 3000;
+const CORCHETE_TOPE = 64;
+const CLASES_POSIX = {
+  alnum: '\\p{L}\\p{N}', alpha: '\\p{L}', blank: ' \\t', cntrl: '\\p{Cc}', digit: '0-9', graph: '\\S', lower: '\\p{Ll}', print: '\\S ',
+  punct: '\\p{P}\\p{S}', space: '\\s', upper: '\\p{Lu}', xdigit: '0-9a-fA-F',
+};
+// la palabra entera: «historial», «storage» o «restore» no nombran una historia
+const MENCIONA_HISTORIA = /control-changes|\bstor(?:y|ies)\b|\bhistorias?\b/i;
+
+/**
+ * ¿La carpeta está en un repo con historias? Su raíz de git (sin git, la carpeta misma) con `.tycon/`, o con alguna
+ * historia que encuentre el descubridor del arnés (el mismo de los demás frenos). Sin su caché: un «ninguna» de hace
+ * una hora no ve la primera historia recién escrita. Un escaneo que falló cuenta como que sí: no se sabe. Uno que no
+ * terminó y no encontró ninguna se repite con más tiempo, para que lo cargada que esté la máquina no decida; si tampoco
+ * termina, cuenta como que no y queda dicho: la ruta de una historia y la constancia frenan igual.
+ */
+function repoConHistorias(carpeta) {
+  try {
+    const sd = require('./lib/story-discovery.js');
+    const raiz = sd.findRepoRoot(carpeta) || carpeta;
+    if (fs.existsSync(path.join(raiz, '.tycon'))) return true;
+    let r = sd.discoverStories(raiz, { cache: false });
+    if (r.partial && !r.stories.length) r = sd.discoverStories(raiz, { cache: false, budgetMs: ESCANEO_REINTENTO_MS });
+    if (r.partial && !r.stories.length) logHookError(new Error(`el escaneo de historias de ${raiz} no terminó en ${ESCANEO_REINTENTO_MS} ms`));
+    return r.stories.length > 0;
+  } catch (e) { logHookError(e); return true; }
+}
 const EXTENSION_DE = { python: /\.py$/i, node: /\.(?:[cm]?js|[cm]?ts)$/i, perl: /\.p[lm]$/i, ruby: /\.rb$/i };
 const familiaDe = (interprete) => (/^python/.test(interprete) ? 'python' : interprete === 'perl' ? 'perl' : interprete === 'ruby' ? 'ruby' : 'node');
 
@@ -523,27 +692,66 @@ function opcionesDelInterprete(familia, words, i) {
 const sinGrupo = (w) => String(w).replace(/^[({]+/, '').replace(/[)};]+$/, '');
 
 /**
+ * El comando con los renglones unidos donde el shell los une: una barra invertida justo antes del salto de línea. No en un
+ * comentario, donde el salto corta igual; tampoco una barra escapada (`\\`), ni delante de un `\r`, que para el shell es un
+ * carácter más. Es para ver un comando largo entero al buscar guiones; `tramos` queda como la leen los demás frenos. Con
+ * un heredoc no une nada: en su cuerpo la barra es texto, y unir la línea de cierre correría el cierre a un renglón posterior
+ * y borraría lo que hay en el medio.
+ */
+function sinContinuaciones(cmd) {
+  const s = String(cmd);
+  if (s.includes('<<')) return s;
+  let out = '';
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q === "'") { out += c; if (c === "'") q = null; continue; }
+    if (c === '\\') {
+      if (s[i + 1] !== '\n') out += c + (s[i + 1] ?? '');
+      i++;
+      continue;
+    }
+    if (q === '"') { out += c; if (c === '"') q = null; continue; }
+    if (c === "'" || c === '"') { q = c; out += c; continue; }
+    // empieza una palabra: después de un espacio o de un signo que corta palabras (`true;#\`)
+    if (c === '#' && (i === 0 || /[\s;&|()<>`]/.test(s[i - 1]))) {
+      const fin = s.indexOf('\n', i);
+      const hasta = fin < 0 ? s.length : fin;
+      out += s.slice(i, hasta);
+      i = hasta - 1;
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+/**
  * Los guiones que el comando corre desde un archivo (`python3 p.py a`, `time node p.js`, `./x.py`, `python3 -m x`,
  * `node -r ./p.js`), leídos: `[{ interprete, archivo, texto, argv, grande }]`. El intérprete se busca en cualquier
  * palabra del tramo, detrás de cualquier envoltorio (`time`, `sudo -u x`, `nice -10`, `if … then`, `xargs`); el guion
  * es la primera palabra después de sus opciones que existe, desde cada carpeta donde puede estar parado el comando, o
  * que escribe un heredoc del mismo comando. Se lee de su ruta real, la misma que corre el intérprete, y con él los
  * módulos locales que importa. Un guion de la instalación del arnés no cuenta, por la ruta real ya resuelta: el
- * orquestador escribe historias.
+ * orquestador escribe historias. Un guion que un tramo sólo nombra tampoco (`tramoQueSoloNombra`).
  */
+function rutaRealDelGuion(valor, base) {
+  const crudo = valor.startsWith('~/') ? os.homedir() + valor.slice(1) : path.isAbsolute(valor) ? valor : `${base}${path.sep}${valor}`;
+  try { return fs.realpathSync.native(crudo); } catch { return null; }
+}
+
 function guionesEnArchivo(cmd, bases, instalados = []) {
   const out = [];
   const vistos = new Set();
   const escritos = heredocs(cmd).filter((h) => h.target);
-  const todosLosTramos = comandosAnidados(cmd).flatMap((sub) => tramos(sub));
+  const todosLosTramos = comandosAnidados(sinContinuaciones(cmd)).flatMap((sub) => tramos(sub));
   const palabrasDe = (tramo) => palabras(tramo.trim().replace(PREFIJO, '')).map(sinGrupo).filter((w) => w !== '');
   // la ruta real del guion tal como la abre el intérprete: unida a la carpeta sin normalizar, para que `enlace/..` se
   // resuelva por donde lleva el enlace y no por el texto (la versión nativa: la otra normaliza el `..` antes)
-  const rutaReal = (valor, base) => {
-    const crudo = valor.startsWith('~/') ? os.homedir() + valor.slice(1) : path.isAbsolute(valor) ? valor : `${base}${path.sep}${valor}`;
-    try { return fs.realpathSync.native(crudo); } catch { return null; }
-  };
-  const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real);
+  const rutaReal = rutaRealDelGuion;
+  // lo que git contestó, por esta llamada: un módulo que importan varios se pregunta una vez
+  const memo = { porRuta: new Map() };
+  const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real, memo);
   const leer = (real) => {
     try {
       const st = fs.statSync(real);
@@ -554,9 +762,13 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     } catch { return null; }
   };
   // el guion y los módulos locales que importa, hasta dos niveles y veinte archivos; uno del arnés no se revisa, pero
-  // lo que importa pasa la misma prueba
+  // lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la cuenta aparte: no le comen
+  // el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre
+  const modulos = { exentos: 0, revisados: 0 };
   const agregar = (interprete, real, leido, argv, hondo = 0, exento = false) => {
-    if (vistos.has(real) || vistos.size >= 20) return;
+    if (vistos.has(real)) return;
+    const cuenta = exento ? 'exentos' : 'revisados';
+    if (hondo > 0 && modulos[cuenta]++ >= 20) return;
     vistos.add(real);
     if (!exento) out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
     if (hondo >= 2 || (leido.grande && !exento)) return;
@@ -588,12 +800,19 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     return false;
   };
   const argumentos = (ws) => ws.filter((w) => !/^(?:\d|&)?[<>]/.test(w)).map((w) => expandirRuta(cmd, w).valor);
+  // el `pipeline.js` o el `marker.js` de la instalación, desde cada carpeta donde puede estar parado el comando
+  const esGuionInstalado = (valor, nombre) => {
+    const reales = bases.map((b) => rutaReal(valor, b)).filter(Boolean);
+    return reales.length > 0 && reales.every((r) => path.basename(r) === nombre && instalado(r));
+  };
+  const noTocaElShell = comandoNoTocaElShell(cmd);
   for (const tramo of todosLosTramos) {
     const words = palabrasDe(tramo);
-    // el ejecutable directo con su línea `#!` (`./x.py`, `bin/x`)
-    for (let k = 0; k < words.length; k++) {
-      if (!words[k].includes('/')) continue;
+    const soloNombra = noTocaElShell && tramoQueSoloNombra(cmd, tramo, esGuionInstalado);
+    // el ejecutable directo con su línea `#!` (`./x.py`, `bin/x`), también en una variable (`G=./x.py; "$G"`)
+    for (let k = 0; k < words.length && !soloNombra; k++) {
       const valor = expandirRuta(cmd, words[k]).valor;
+      if (!String(valor).includes('/')) continue;
       for (const base of bases) {
         const real = rutaReal(valor, base);
         if (!real) continue;
@@ -610,11 +829,14 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
             const leido = leer(real);
             if (leido) agregar(interprete, real, leido, argumentos(words.slice(k + 1)), 0, instalado(real));
           }
-        } catch { /* no se lee: no es un guion */ }
+        } catch (e) {   // no se lee: no es un guion. Lo que no es «no existe» o «es una carpeta» queda dicho
+          if (!['ENOENT', 'ENOTDIR', 'EISDIR'].includes(e && e.code)) logHookError(e);
+        }
         break;
       }
     }
-    for (let k = 0; k < words.length; k++) {
+    // de un tramo que sólo nombra, el intérprete es la primera palabra: `grep node x` o un archivo `node` de la lista no lo son
+    for (let k = 0; k < (soloNombra ? 1 : words.length); k++) {
       const interprete = nombreDeComando(words[k]);
       if (!CORRE_ARCHIVO.test(interprete)) continue;
       const familia = familiaDe(interprete);
@@ -661,10 +883,21 @@ function importsLocales(familia, texto, dir) {
 
 /**
  * ¿`real` es un guion del árbol de este freno, y ese árbol es el arnés y no un repo donde se trabaja? Sin git (una
- * versión bajada) es el arnés. En un clon de trabajo, el de quien lo mantiene, cuenta sólo lo versionado y sin
- * cambios: un guion nuevo o cambiado ahí no es del arnés. Si git no responde, tampoco.
+ * versión bajada) es el arnés. En un clon de trabajo, el de quien lo mantiene, cuenta sólo lo versionado, sin cambios
+ * y como está en main del servidor: un guion nuevo, cambiado ahí o que sólo trae otra rama no es del arnés. Si git no
+ * responde, tampoco.
+ *
+ * `memo` (de una sola llamada del freno) guarda la respuesta por ruta, la rama principal y si HEAD tiene commits que
+ * ella no tiene: sin ninguno, ningún archivo tiene uno propio y no se pregunta archivo por archivo.
  */
-function versionadoEnElArbolPropio(real) {
+function versionadoEnElArbolPropio(real, memo = { porRuta: new Map() }) {
+  if (memo.porRuta.has(real)) return memo.porRuta.get(real);
+  const r = versionadoSinMemo(real, memo);
+  memo.porRuta.set(real, r);
+  return r;
+}
+
+function versionadoSinMemo(real, memo) {
   const arbol = (() => { try { return fs.realpathSync.native(path.resolve(__dirname, '..', '..', '..')); } catch { return null; } })();
   if (!arbol || !isInsideReal(arbol, real)) return false;
   const conGit = (() => {
@@ -677,10 +910,13 @@ function versionadoEnElArbolPropio(real) {
   const rel = path.relative(arbol, real);
   const { spawnSync } = require('child_process');
   // sin el repo de quien llama: un GIT_DIR heredado haría contestar a otro repo; la ruta, literal: `orq-[x].js` no
-  // es un patrón que encuentre a `orq-x.js`
-  const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_LITERAL_PATHSPECS: '1' };
+  // es un patrón que encuentre a `orq-x.js`. Sin los reemplazos de objetos: `refs/replace/<punta de main>` haría pasar
+  // otro commit por main
+  const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_LITERAL_PATHSPECS: '1', GIT_NO_REPLACE_OBJECTS: '1' };
   for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']) delete env[k];
-  const git = (args) => spawnSync('git', ['-C', arbol, ...args], { encoding: 'utf8', timeout: 3000, env });
+  // sin el programa que el clon configure para vigilar archivos: lo correría el freno, y puede mostrar limpio un guion
+  // editado. Sin el índice de archivos tocados por commit: si lo reescriben, esconde el commit local que tocó el guion
+  const git = (args) => spawnSync('git', ['-C', arbol, '-c', 'core.fsmonitor=false', '-c', 'commitGraph.readChangedPaths=false', ...args], { windowsHide: true, encoding: 'utf8', timeout: 3000, env });
   // `-v` marca con minúscula o con `S` lo que git dejó de mirar (`--assume-unchanged`, `--skip-worktree`)
   const versionado = git(['ls-files', '-v', '--error-unmatch', '--', rel]);
   if (versionado.status !== 0) return false;
@@ -688,9 +924,27 @@ function versionadoEnElArbolPropio(real) {
   if (lineas.length !== 1 || lineas[0] !== `H ${rel.split(path.sep).join('/')}`) return false;
   const cambios = git(['status', '--porcelain', '--', rel]);
   if (cambios.status !== 0 || cambios.stdout.trim() !== '') return false;
-  // versionado en un commit que sólo está en este clon no cuenta: lo pudo escribir quien llama
-  const locales = git(['rev-list', '-n1', 'HEAD', '--not', '--remotes']);
-  return locales.status === 0 && locales.stdout.trim() === '';
+  // un commit que no está en main del servidor y toca el guion no cuenta: lo pudo escribir quien llama, y empujarlo a
+  // otra rama del servidor no lo hace revisado. Los que tocan otros archivos no cambian este guion. Sin main, no cuenta
+  if (!memo.arbol || memo.arbol.raiz !== arbol) {
+    const principal = ['refs/remotes/origin/main', 'refs/remotes/origin/master']
+      .find((ref) => git(['rev-parse', '--verify', '-q', `${ref}^{commit}`]).status === 0);
+    // sin commits propios en todo HEAD, tampoco los hay para un archivo; si git no contesta, se pregunta por archivo
+    const propios = principal ? git(['rev-list', '-n1', 'HEAD', '--not', principal]) : null;
+    memo.arbol = { raiz: arbol, main: principal, sinPropios: !!propios && propios.status === 0 && propios.stdout.trim() === '' };
+  }
+  const main = memo.arbol.main;
+  if (!main) return false;
+  if (memo.arbol.sinPropios) return true;
+  const locales = git(['rev-list', '-n1', '--full-history', 'HEAD', '--not', main, '--', rel]);
+  if (locales.status !== 0) return false;
+  if (locales.stdout.trim() === '') return true;
+  // salvo que lo deje igual a la punta de main. Igual a una versión vieja o a otra rama no cuenta
+  const relGit = rel.split(path.sep).join('/');
+  if (/[\n\r]/.test(relGit)) return false;
+  const propio = git(['rev-parse', '--verify', '-q', `HEAD:${relGit}`]);
+  const enMain = git(['rev-parse', '--verify', '-q', `${main}:${relGit}`]);
+  return propio.status === 0 && enMain.status === 0 && propio.stdout.trim() === enMain.stdout.trim();
 }
 
 /** ¿`p` (ya resuelta) cae adentro de la carpeta `dir`, comparadas por su ruta real? */
@@ -884,10 +1138,12 @@ function leerArmado(expr, script, argv) {
  */
 function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
   const vistos = new Map();
-  for (const { script, argv } of guiones) {
+  for (const [n, { script, argv }] of guiones.entries()) {
+    // la misma expresión en dos guiones es otro destino: `p` vale lo que asigna cada guion
     const add = (e) => {
       const x = String(e || '').trim();
-      if (x && !DESTINO_LITERAL.test(x) && !vistos.has(x)) vistos.set(x, { expr: x, ...leerArmado(x, script, argv) });
+      const clave = `${n}\u0000${x}`;
+      if (x && !DESTINO_LITERAL.test(x) && !vistos.has(clave)) vistos.set(clave, { expr: x, ...leerArmado(x, script, argv) });
     };
     const llamadas = (re, quePasa) => {
       for (const m of script.matchAll(re)) {
@@ -915,14 +1171,112 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
   return [...vistos.values()];
 }
 
-/** Los tramos de un comando (`;`, `&&`, `||`, `|`, salto de línea), sin cortar adentro de las comillas ni de los heredocs. */
+const DELIMITADOR_DE_HEREDOC = /-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)/y;
+
+function sinBlancosAlBorde(linea) {
+  let ini = 0;
+  let fin = linea.length;
+  while (ini < fin && (linea[ini] === ' ' || linea[ini] === '\t')) ini++;
+  while (fin > ini && (linea[fin - 1] === ' ' || linea[fin - 1] === '\t')) fin--;
+  return linea.slice(ini, fin);
+}
+
+/**
+ * Los delimitadores que abre el renglón, en orden. No abren nada lo de adentro de comillas, lo escapado, lo que sigue a
+ * un `$((` ni lo que sigue a un `#` que empieza una palabra: ahí el shell ve un comentario y el renglón siguiente corre.
+ */
+function* delimitadoresQueAbre(linea) {
+  const aritmetica = linea.indexOf('$((');
+  const tope = aritmetica < 0 ? linea.length : Math.min(linea.length, aritmetica + 3);
+  for (let i = 0; i < tope; i++) {
+    const c = linea[i];
+    if (c === '\\') {
+      i++;
+    } else if (c === '#' && (i === 0 || /[\s;&|()]/.test(linea[i - 1]))) {
+      return;
+    } else if (c === "'") {
+      const cierra = linea.indexOf("'", i + 1);
+      if (cierra < 0) return;
+      i = cierra;
+    } else if (c === '"') {
+      let j = i + 1;
+      while (j < linea.length && linea[j] !== '"') j += linea[j] === '\\' ? 2 : 1;
+      if (j >= linea.length) return;
+      i = j;
+    } else if (c === '<' && linea[i + 1] === '<' && linea[i - 1] !== '<' && linea[i + 2] !== '<') {
+      DELIMITADOR_DE_HEREDOC.lastIndex = i + 2;
+      const m = DELIMITADOR_DE_HEREDOC.exec(linea);
+      if (m) yield m[2];
+    }
+  }
+}
+
+/**
+ * Cada heredoc que se cierra: `{ abre, desde, cierre, indice }`. `abre` es el renglón que lo abre, su cuerpo va de `desde`
+ * a `cierre` sin incluirlo, e `indice` es su lugar entre los que abre ese renglón: varios en un renglón se leen uno detrás
+ * del otro. Va por renglones, con los cierres en un índice: con muchas aperturas sin cierre, una expresión que busca el
+ * cierre desde cada una es cuadrática.
+ */
+function heredocsCerrados(lineas) {
+  const renglonesDe = new Map();
+  lineas.forEach((linea, n) => {
+    const clave = sinBlancosAlBorde(linea);
+    if (renglonesDe.has(clave)) renglonesDe.get(clave).push(n); else renglonesDe.set(clave, [n]);
+  });
+  const cierreTras = (delimitador, n) => {
+    const renglones = renglonesDe.get(delimitador) || [];
+    let bajo = 0;
+    let alto = renglones.length;
+    while (bajo < alto) {
+      const medio = (bajo + alto) >> 1;
+      if (renglones[medio] > n) alto = medio; else bajo = medio + 1;
+    }
+    return bajo < renglones.length ? renglones[bajo] : -1;
+  };
+  const out = [];
+  for (let n = 0; n < lineas.length - 1; n++) {
+    let cursor = n;
+    let indice = 0;
+    // un heredoc sin cierre se come el resto: los que siguen en el renglón ya no tienen cuerpo
+    for (const delimitador of delimitadoresQueAbre(lineas[n])) {
+      const cierre = cierreTras(delimitador, cursor);
+      if (cierre < 0) break;
+      out.push({ abre: n, desde: cursor + 1, cierre, indice: indice++ });
+      cursor = cierre;
+    }
+    n = cursor;
+  }
+  return out;
+}
+
+/** El comando sin los cuerpos de sus heredocs ni sus renglones de cierre. Un heredoc sin cierre queda como está. */
+function quitarCuerposDeHeredoc(cmd) {
+  const s = String(cmd || '');
+  if (!s.includes('<<')) return s;
+  const lineas = s.split('\n');
+  const out = [];
+  let n = 0;
+  for (const { abre, cierre } of heredocsCerrados(lineas)) {
+    while (n <= abre) out.push(lineas[n++]);
+    out.push('');
+    n = cierre + 1;
+  }
+  while (n < lineas.length) out.push(lineas[n++]);
+  return out.join('\n');
+}
+
+/**
+ * Los tramos de un comando (`;`, `&&`, `||`, `|`, salto de línea), sin cortar adentro de las comillas ni de los heredocs.
+ * Lo escapado con `\` no corta ni cierra comillas dobles, como en el shell.
+ */
 function tramos(cmd) {
-  const s = String(cmd || '').replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  const s = quitarCuerposDeHeredoc(cmd);
   const out = [];
   let q = null;
   let actual = '';
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
+    if (c === '\\' && q !== "'") { actual += c + (s[i + 1] || ''); i++; continue; }
     if (q) { actual += c; if (c === q) q = null; continue; }
     if (c === "'" || c === '"') { q = c; actual += c; continue; }
     if (c === ';' || c === '\n' || c === '|' || (c === '&' && s[i + 1] === '&')) {
@@ -947,13 +1301,14 @@ const PS_CON_VALOR = /^-(?:filter|include|exclude|erroraction|ea|credential|stre
  * <ruta>`, `git restore <ruta>`): `[{ raw, kind: 'delete'|'restore', base?, quizas?, git? }]`. `base` es la carpeta de un
  * `git -C`. `quizas`: un `git checkout <nombre>` sin `--`, que es una ruta si existe y si no una rama. `git`: lo borra un
  * `git rm`, que deja el borrado en el índice. Lo que sólo toca el
- * índice (`git restore --staged`, `git rm --cached`) no cambia el archivo.
+ * índice (`git restore --staged`, `git rm --cached`) no cambia el archivo. Se lee también lo que corre adentro
+ * (`$(…)`, comillas invertidas, `sh -c`) y detrás de las palabras del shell (`{`, `if`, `!`, `time`…).
  */
 function destinosBorrados(cmd) {
   const out = [];
-  for (const tramo of tramos(cmd)) {
+  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
     const sinComentario = tramo.replace(/(^|\s)#.*$/, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
-    const words = palabras(sinComentario.trim().replace(PREFIJO, '')).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
+    const words = palabras(sinPalabrasDelShell(sinComentario)).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
     if (!words.length) continue;
     const c = path.basename(words[0].replace(/^\\/, '')).toLowerCase().replace(/\.exe$/, '');
     if (['rm', 'del', 'erase', 'remove-item', 'ri', 'rmdir', 'rd', 'unlink'].includes(c)) {
@@ -1010,11 +1365,12 @@ function destinosBorrados(cmd) {
 const LECTORES_DE_FIND = String.raw`(?:wc|cat|head|tail|grep|egrep|fgrep|rg|ls|stat|file|echo|printf|du|basename|dirname|readlink|realpath|shasum|sha1sum|sha256sum|md5|md5sum|cksum|jq|diff|cmp|test)(?=[\s;'"]|$)`;
 const BORRA_O_MUEVE = new RegExp([
   // el comando con su ruta (`/bin/rm`) o con la barra que saltea un alias (`\rm`) es el mismo comando
-  String.raw`(?:^|[\s;&|(` + '`' + String.raw`'"])(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:rm|rmdir|unlink|mv|move|remove-item|move-item|rename-item|shred|trash|truncate)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
+  String.raw`(?:^|[\s;&|(` + '`' + String.raw`'"])(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:rm|rmdir|unlink|mv|move|remove-item|move-item|rename-item|rni|shred|trash|truncate)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
   String.raw`(?:^|[;&|(` + '`' + String.raw`'"\n]|\bcmd(?:\.exe)?\s+/[ck])\s*(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:del|erase|rd|ren|mi|ri)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
   String.raw`(?:^|\s)--?delete\b`,
   String.raw`(?:^|\s)-exec(?:dir)?\s+(?!` + LECTORES_DE_FIND + ')',
-  String.raw`\bgit\b[^\n;&|]*\s(?:rm|clean|checkout|restore|mv)\b`,
+  // `git worktree move` ya casa por `move` suelto, en la primera forma (@story-8.318)
+  String.raw`\bgit\b[^\n;&|]*\s(?:rm|clean|checkout|restore|mv|worktree\s+(?:remove|prune))\b`,
   String.raw`\b(?:unlinkSync|unlink|rmSync|rm|rmdirSync|rmdir|renameSync|rename|rmtree|removedirs|remove|replace|move|delete|rm_rf|rm_r|remove_dir|remove_entry(?:_secure)?)\s*\(`,
   String.raw`\bunlink\b`,
 ].join('|'), 'i');
@@ -1054,6 +1410,21 @@ const BUSCADOR_EJECUTA = {
 const BUSCADORES = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack']);
 // la salida de un comando que la ejecuta otro: ahí lo citado puede terminar corriendo
 const A_UN_SHELL = /\|&?\s*(?:(?:\/|[^\s-]\S*\/)?(?:sudo|env|busybox|command|exec|nohup|nice|time)(?:\s+-\S+)*\s+)*(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish|xargs|eval|source|python\d*(?:\.\d+)?|node|perl|ruby|php|pwsh|powershell)\b/;
+const TOPE_DE_TUBERIAS = 500;
+let enteroMirado = null;
+let enteroVaAUnShell = false;
+
+// Se pregunta una vez por tramo sobre el mismo comando, y la búsqueda arranca en cada `|`: se recuerda la última
+// respuesta y, pasado el tope, se contesta que sí, que es lo que hace mirar de más: nada cuenta como citado.
+function vaAUnShell(entero) {
+  const texto = String(entero || '');
+  if (texto === enteroMirado) return enteroVaAUnShell;
+  let tuberias = 0;
+  for (let i = texto.indexOf('|'); i >= 0 && tuberias <= TOPE_DE_TUBERIAS; i = texto.indexOf('|', i + 1)) tuberias++;
+  enteroMirado = texto;
+  enteroVaAUnShell = tuberias > TOPE_DE_TUBERIAS || A_UN_SHELL.test(texto);
+  return enteroVaAUnShell;
+}
 
 /**
  * Los textos con blancos de un tramo que se citan y no se ejecutan: el patrón y los argumentos de un buscador (`grep`,
@@ -1062,7 +1433,7 @@ const A_UN_SHELL = /\|&?\s*(?:(?:\/|[^\s-]\S*\/)?(?:sudo|env|busybox|command|exe
  */
 function textosCitados(tramo, entero) {
   const out = new Set();
-  if (A_UN_SHELL.test(String(entero || ''))) return out;
+  if (vaAUnShell(entero)) return out;
   const words = palabras(String(tramo).trim().replace(PREFIJO, '')).filter((w) => w !== '');
   const c = path.basename(words[0] || '').toLowerCase();
   const busca = (BUSCADORES.has(c) || (c === 'git' && words[1] === 'grep'))
@@ -1343,6 +1714,28 @@ function guionesInternos(cmd) {
   return out;
 }
 
+// los niveles de `$(…)`, comillas invertidas y `sh -c` que se leen como otro comando; lo de más adentro no se lee
+const TOPE_ANIDADOS = 4;
+
+/**
+ * Lo que corre adentro del comando, nivel por nivel (`guionesInternos`, sin el texto de los heredocs que nadie corre):
+ * `{ leidos, hondos }`. `leidos`, hasta `TOPE_ANIDADOS` niveles; `hondos`, lo del nivel siguiente, que no se lee.
+ */
+function anidadosHasta(cmd) {
+  const leidos = [];
+  const hondos = [];
+  const ver = (texto, nivel) => {
+    for (const g of guionesInternos(sinCuerposDeTexto(texto))) {
+      if (!String(g).trim()) continue;
+      if (nivel >= TOPE_ANIDADOS) { hondos.push(g); continue; }
+      leidos.push(g);
+      ver(g, nivel + 1);
+    }
+  };
+  ver(String(cmd || ''), 0);
+  return { leidos, hondos };
+}
+
 /** Lo que borra cada tramo, también los de adentro de `bash -c '…'`, y lo que recorre un `find` que borra. */
 function borradosProfundos(cmd) {
   const out = [];
@@ -1371,16 +1764,20 @@ function origenesMovidos(cmd) {
     const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
     if (!words.length) continue;
     const c = nombreDeComando(words[0]);
-    if (!['mv', 'move', 'mi', 'move-item', 'rename-item', 'ren'].includes(c)) continue;
+    if (!['mv', 'move', 'mi', 'move-item', 'rename-item', 'ren', 'rni'].includes(c)) continue;
     const args = [];
+    // el destino dicho con su nombre (`-Destination`, `-NewName`, `-t`): entonces todos los sueltos son orígenes
+    let destinoNombrado = false;
     for (let i = 1; i < words.length; i++) {
-      if (/^-(?:destination|t|target-directory|newname)$/i.test(words[i])) { i++; continue; }
+      // `-t` y `--target-directory` de mv nombran el destino; `-T` (sin carpeta destino) no lleva valor
+      if (/^-(?:destination|newname)$/i.test(words[i]) || /^(?:-[a-zA-SU-Z]*t|--target-directory)$/.test(words[i])) { destinoNombrado = true; i++; continue; }
+      if (/^--target-directory=/.test(words[i])) { destinoNombrado = true; continue; }
       if (/^-(?:path|literalpath)$/i.test(words[i])) { if (words[i + 1]) args.push(words[++i]); continue; }
       if (words[i].startsWith('-')) continue;
       args.push(words[i]);
     }
-    // el último es el destino (salvo con -t, que ya se salteó)
-    out.push(...(/(?:^|\s)-(?:t|-target-directory)\b/.test(tramo) ? args : args.slice(0, -1)));
+    // si no, el último es el destino
+    out.push(...(destinoNombrado || /(?:^|\s)-(?:t|-target-directory)\b/.test(tramo) ? args : args.slice(0, -1)));
   }
   return out;
 }
@@ -1393,6 +1790,197 @@ function origenesMovidos(cmd) {
  * sólo si es lo que el comando borra o recorre.
  */
 function marcadoresTocados(cmd, cwd, stateDir) {
+  const installedTree = require('./lib/installed-tree.js');
+  const registros = [stateDir, installedTree.realPath(stateDir)].filter(Boolean).map((b) => path.join(b, 'gates.log'));
+  // el registro de aperturas (`gates.log`) y la copia de una apertura (`.advisors/pipeline-runs/<carpeta>/run-open.json`):
+  // las otras dos piezas de una ejecución abierta (lib/open-runs.js)
+  const pieza = (r) => registros.includes(r) || (path.basename(r) === 'run-open.json' && path.basename(path.dirname(path.dirname(r))) === 'pipeline-runs');
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'active', nombres: ['active', 'active.json'], pieza });
+}
+
+/**
+ * Lo que el comando borra o mueve del registro de las aprobaciones de la persona (`owner-approvals/`, de cualquier
+ * estado): lo gastado está en `usadas/`, y borrarlo devuelve una aprobación ya usada. Sin interruptor.
+ */
+function aprobacionesTocadas(cmd, cwd, stateDir) {
+  const { isOwnerApprovalsRecord } = require('./lib/story-gate.js');
+  // el nombre alcanza donde la ruta no se puede resolver: un guion que la arma por partes, una variable, o una relativa con
+  // un `cd` adelante. Una ruta que se lee sola se resuelve, y una carpeta de un producto que se llama igual no es el registro
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'owner-approvals', nombres: ['owner-approvals'], pieza: isOwnerApprovalsRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])owner-approvals(?![\w.-])/i.test(t) });
+}
+
+/**
+ * Lo que el comando borra o mueve de las marcas de las constancias dadas en la terminal (`terminal-acknowledgments/`, de
+ * cualquier estado): sin la marca, una constancia de Codex no vale, y una puesta a mano la finge. Sin interruptor.
+ */
+function marcasDeTerminalTocadas(cmd, cwd, stateDir) {
+  const { isTerminalAcknowledgmentsRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'terminal-acknowledgments', nombres: ['terminal-acknowledgments'], pieza: isTerminalAcknowledgmentsRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])terminal-acknowledgments(?![\w.-])/i.test(t) });
+}
+
+/**
+ * Lo que el comando borra o mueve del registro de las sesiones que abrió la coordinadora (`coordination/launched.json`, de
+ * cualquier estado): sacar un renglón deja a esa sesión preguntarle a la persona. Sin interruptor.
+ */
+function lanzadasTocadas(cmd, cwd, stateDir) {
+  const { isLaunchedSessionsRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: path.join('coordination', 'launched.json'), nombres: [path.join('coordination', 'launched.json')], pieza: isLaunchedSessionsRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])coordination[\\/]launched\.json(?![\w.-])/i.test(t) });
+}
+
+/**
+ * Lo que el comando borra o mueve del buzón de la oficina (`office/inbox`, `tomados`, `usados` y el registro, de cualquier
+ * estado): borrar lo usado devuelve un mensaje ya gastado, y mover algo al buzón finge uno de la persona. Sin interruptor.
+ */
+function buzonTocado(cmd, cwd, stateDir) {
+  const { isOfficeMailboxRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  const { isInside } = require('./lib/atdd-preedit.js');
+  const installedTree = require('./lib/installed-tree.js');
+  const oficinas = [...new Set([stateDir, installedTree.realPath(stateDir)].filter(Boolean))].map((b) => path.join(b, 'office'));
+  // por la ruta (el estado de cualquier cuenta) o por estar en el buzón de este estado, se llame como se llame su carpeta
+  const pieza = (r) => isOfficeMailboxRecord(r) || oficinas.some((o) => r === path.join(o, 'messages.jsonl') || r === path.join(o, 'messages.jsonl.1')
+    || ['inbox', 'tomados', 'usados', 'vigilantes'].some((n) => r === path.join(o, n) || isInside(path.join(o, n), r)));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: path.join('office', 'inbox'), nombres: ['office'], pieza,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])office[\\/](?:inbox|tomados|usados|vigilantes|messages\.jsonl(?:\.1)?)(?![\w.-])/i.test(t) });
+}
+
+/**
+ * Lo que el comando borra o mueve del registro de los críticos que reportaron los revisores (`reported-criticals/`, de
+ * cualquier estado): borrar un renglón es borrar lo que dijo un revisor. Sin interruptor.
+ */
+function criticosTocados(cmd, cwd, stateDir) {
+  const { isReportedCriticalsRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'reported-criticals', nombres: ['reported-criticals'], pieza: isReportedCriticalsRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])reported-criticals(?![\w.-])/i.test(t) });
+}
+
+/**
+ * Lo que el comando borra o mueve del registro de corridas de los revisores (`advisor-runs/`, de cualquier estado): el
+ * cierre lo lee para ver lo que dijo un revisor fuera del registro de críticos, y borrarlo es saltear esa revisión. El
+ * subcomando `pipeline.js advisor-runs` no es una ruta y no cuenta. Sin interruptor.
+ */
+function corridasDeRevisoresTocadas(cmd, cwd, stateDir) {
+  const { isAdvisorRunsRecord } = require('./lib/story-gate.js');
+  // `pipeline.js advisor-runs` es un subcomando que lee el registro, no una ruta: se saca antes de buscar la palabra
+  // (sólo si `pipeline.js` es lo que corre node: `rm pipeline.js advisor-runs` borra la carpeta)
+  // (con opciones de node antes del guion, y con la ruta entre comillas si tiene espacios)
+  cmd = String(cmd || '').replace(/(\bnode(?:\.exe)?["']?(?:\s+-{1,2}[\w-]+(?:=[^\s;&|]*)?)*\s+(?:"[^"]*pipeline\.js"|'[^']*pipeline\.js'|[^\s;&|'"]*pipeline\.js)\s+)advisor-runs(?![\w.\/-])/gi, '$1(subcomando)');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(cmd);
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'advisor-runs', nombres: ['advisor-runs'], pieza: isAdvisorRunsRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])advisor-runs(?![\w.-])/i.test(t) });
+}
+
+/**
+ * Lo que el comando borra o mueve de la revisión automática del plan (`plan-review/`, de cualquier estado): el pedido, el
+ * resultado del corredor y la constancia con el veredicto. Moverlo o borrarlo deja otra constancia en su lugar. Lo que
+ * se escribe ahí lo frena el freno del estado; pasan sólo `marker.js plan-review` y el corredor del pase del arnés
+ * (`corredorDelPase`). Sin interruptor.
+ */
+function revisionDelPlanTocada(cmd, cwd, stateDir) {
+  const { isPlanReviewRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'plan-review', nombres: ['plan-review'], pieza: isPlanReviewRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])plan-review[\\/](?![\w.-]*\.md\b)/i.test(t) });
+}
+
+/**
+ * Un `--out` que cae en la carpeta de la revisión del plan desde un comando que no es el corredor del pase del arnés:
+ * `node <workflow-lite.js del arnés> <adversarial-verify.workflow.js del arnés> … --out <ruta>`, con las dos rutas
+ * resueltas contra el arnés instalado. Devuelve la ruta del `--out` que no vale, o null. Otro guion con `--out` ahí, o el
+ * corredor con otro workflow, escribiría un resultado que la revisión tomaría por el del pase.
+ */
+/**
+ * Los corredores del pase que eligió la organización, como los escribe el arnés en `--runners`: `{ lista, motivo }`.
+ * Si no se pueden leer, `lista` es null (el corredor con `--runners` se frena) y `motivo` dice por qué, también por la
+ * salida de errores. `leer` reemplaza la lectura de la configuración (las pruebas).
+ */
+function corredoresDeLaOrganizacion({ leer } = {}) {
+  try {
+    const raw = leer ? leer() : require('./lib/plan-review.js').configDeLaOrganizacion().raw;
+    const orden = require('./lib/review-runner.js').runnerOrder(raw).order;
+    return { lista: Array.isArray(orden) ? orden.join(',') : null, motivo: null };
+  } catch (e) {
+    const motivo = `no pude leer la lista de corredores de la organización (${(e && e.message) || e}): el corredor con --runners se frena`;
+    process.stderr.write(`[on-bash-write-gate] ${motivo}\n`);
+    return { lista: null, motivo };
+  }
+}
+
+function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
+  const { isPlanReviewRecord } = require('./lib/story-gate.js');
+  const { isInside } = require('./lib/atdd-preedit.js');
+  const installedTree = require('./lib/installed-tree.js');
+  const carpetas = [...new Set([stateDir, installedTree.realPath(stateDir)].filter(Boolean))].map((b) => path.join(b, 'plan-review'));
+  const enLaRevision = (abs) => isPlanReviewRecord(abs) || carpetas.some((c) => abs === c || isInside(c, abs) || isInside(c, installedTree.realPath(abs)));
+  const delArnes = (ruta, nombre) => {
+    const real = installedTree.realPath(path.resolve(cwd, ruta));
+    return path.basename(real) === nombre && (installedRoots || []).some((r) => {
+      const raiz = installedTree.realPath(r);
+      return real === installedTree.realPath(path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', nombre));
+    });
+  };
+  // un destino que no se lee hasta correr (una variable, una sustitución, o relativo después de un `cd`) cuenta como de
+  // la revisión si el comando nombra la carpeta de la revisión (`plan-review`, o `…}-review` armada por partes) o el
+  // estado; «review» suelto en otra palabra (`code-review`, `preview`, un subcomando `review`) no. El límite de la guía sigue:
+  // esto cierra el camino fácil, no una falsificación armada a propósito
+  const nombraLaRevision = /(^|[^\w-])plan-review|\}-review|tycon[\\/]state|\.tycon-pipeline/i.test(String(cmd || ''));
+  const cambiaDeCarpeta = /(^|[;&|(\s])(?:cd|pushd)(\s|$)/.test(String(cmd));
+  // los corredores del pase: sólo la lista de la organización, como la escribe el arnés; revisores propios, nunca
+  const opcionesDelArnes = (w) => {
+    if (w.some((x) => x === '--agents-dir' || x.startsWith('--agents-dir='))) return false;
+    const ri = w.findIndex((x) => x === '--runners' || x.startsWith('--runners='));
+    if (ri < 0) return true;
+    const lista = w[ri].startsWith('--runners=') ? w[ri].slice('--runners='.length) : w[ri + 1];
+    return !!lista && lista === corredoresDeLaOrganizacion().lista;
+  };
+  // el pedido que preparó el arnés: `--args "$(cat '<carpeta de la revisión>/<destino>.args.json')"`, una sola vez
+  const pedidoDelArnes = (tramo) => {
+    const todos = String(tramo).match(/(?:^|\s)--args(?:=|\s)/g) || [];
+    const m = String(tramo).match(/(?:^|\s)--args\s+"\$\(cat\s+(?:'([^']+)'|([^\s'"()$`]+))\)"(?=\s|$)/);
+    if (todos.length !== 1 || !m) return false;
+    const archivo = resolveTarget(m[1] || m[2], cwd, process.platform, { homeVariable: true });
+    return /\.args\.json$/.test(archivo) && enLaRevision(archivo);
+  };
+  for (const tramo of tramos(cmd)) {
+    const w = palabras(tramo);
+    // cada `--out` del tramo, no sólo el primero
+    const destinos = [];
+    w.forEach((x, i) => {
+      if (x.startsWith('--out=')) destinos.push(x.slice('--out='.length));
+      else if (x === '--out' && w[i + 1] != null) destinos.push(w[i + 1]);
+    });
+    for (const destino of destinos) {
+      const opaco = /[$`]/.test(destino) || (cambiaDeCarpeta && !path.isAbsolute(destino) && !/^~/.test(destino));
+      const abs = opaco ? null : resolveTarget(destino, cwd, process.platform, { homeVariable: true });
+      if (opaco ? !nombraLaRevision : !enLaRevision(abs)) continue;
+      const corredor = !opaco && destinos.length === 1 && /^(?:.*[\\/])?node(?:js)?(?:\.exe)?$/i.test(w[0] || '') && w[1] && w[2]
+        && delArnes(w[1], 'workflow-lite.js') && delArnes(w[2], 'adversarial-verify.workflow.js') && pedidoDelArnes(tramo)
+        && opcionesDelArnes(w);
+      if (!corredor) return abs || destino;
+    }
+  }
+  return null;
+}
+
+/**
+ * Lo que el comando borra o mueve de una zona del estado: `carpeta` y `nombres` adentro del estado, o lo que `pieza` dice.
+ * `enTexto`: cuándo un texto la nombra sin que la ruta se pueda resolver (un guion que la arma por partes); sin él, el nombre de la carpeta del estado.
+ */
+function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = null }) {
   if (!BORRA_O_MUEVE.test(String(cmd || ''))) return [];
   // un `git checkout|restore|rm` dice sus rutas (destinosBorrados las lee una por una): si es lo único que borra, el
   // nombre de la carpeta del estado suelto en otro lado del comando (`gh … --json state`) no es lo que borra
@@ -1401,28 +1989,23 @@ function marcadoresTocados(cmd, cwd, stateDir) {
   const { isInside } = require('./lib/atdd-preedit.js');
   const installedTree = require('./lib/installed-tree.js');
   const bases = [...new Set([stateDir, installedTree.realPath(stateDir)].filter(Boolean))];
-  const comodin = (glob) => new RegExp(`^${glob.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]')}$`);
-  const alcanza = (seg) => expandirLlaves(seg).some((s) => s === 'active' || s === 'active.json'
-    || (/[*?[]/.test(s) && (comodin(s).test('active') || comodin(s).test('active.json'))));
-  // la ruta cae en un marcador (o en su carpeta); `arriba`: también una carpeta que los contiene
-  // el registro de aperturas (`gates.log`) y la copia de una apertura (`.advisors/pipeline-runs/<carpeta>/run-open.json`):
-  // las otras dos piezas de una ejecución abierta (lib/open-runs.js)
-  const esPiezaDeEjecucion = (r) => bases.some((b) => r === path.join(b, 'gates.log'))
-    || (path.basename(r) === 'run-open.json' && path.basename(path.dirname(path.dirname(r))) === 'pipeline-runs');
+  const alcanza = (seg) => expandirLlaves(seg).some((s) => nombres.includes(s)
+    || (/[*?[]/.test(s) && nombres.some((n) => comodinDelShell(s).test(n))));
+  // la ruta cae en la zona; `arriba`: también una carpeta que la contiene
   const toca = (abs, arriba) => {
     const reales = [...new Set([abs, installedTree.realPath(abs)].filter(Boolean))];
-    if (reales.some(esPiezaDeEjecucion)) return true;
+    if (reales.some(pieza)) return true;
     return bases.some((b) => {
-      const activos = path.join(b, 'active');
+      const activos = path.join(b, carpeta);
       return reales.some((r) => {
-        if (r === activos || r === path.join(b, 'active.json') || isInside(activos, r)) return true;
+        if (nombres.some((n) => r === path.join(b, n)) || isInside(activos, r)) return true;
         if (arriba && isInside(r, activos)) return true;
         const dir = path.dirname(r);
         if (!/[*?[]/.test(path.basename(r))) return false;
         // un comodín: en active/, o al lado de active y active.json, o (si es lo borrado) en una carpeta de arriba
         if (dir === activos || isInside(activos, dir)) return true;
         if (dir === b) return alcanza(path.basename(r));
-        return arriba && isInside(dir, activos) && comodin(path.basename(r)).test(path.relative(dir, activos).split(path.sep)[0]);
+        return arriba && isInside(dir, activos) && comodinDelShell(path.basename(r)).test(path.relative(dir, activos).split(path.sep)[0]);
       });
     });
   };
@@ -1445,7 +2028,8 @@ function marcadoresTocados(cmd, cwd, stateDir) {
   };
   const out = [];
   for (const w of palabrasProfundas(cmd)) {
-    if (porTexto && nombraPorTexto(w)) { out.push(w); continue; }
+    // `enTexto`: la zona dice cómo se la nombra; el nombre suelto de la carpeta del estado no habla de ella
+    if (porTexto && (enTexto ? enTexto(w) : nombraPorTexto(w))) { out.push(w); continue; }
     if (/\s/.test(w)) continue;
     for (const x of expandirLlaves(w)) {
       const abs = resolver(x);
@@ -1465,13 +2049,14 @@ function marcadoresTocados(cmd, cwd, stateDir) {
 /**
  * ¿Algún tramo edita en el lugar los archivos que nombra? `sed`/`perl`/`ruby` con una opción que lleva `i` (`-i`,
  * `-ibak`, `-0pi`, `--in-place`), `awk -i inplace`, `ed` o `ex`. Se lee por palabras con sus comillas (un `;` o un `|`
- * dentro del guion de `sed` no corta) y también detrás de `xargs`, `find -exec` y adentro de `bash -c '…'`.
+ * dentro del guion de `sed` no corta) y también detrás de `xargs`, `find -exec`, las palabras del shell (`{`, `if`…) y
+ * adentro de `bash -c '…'`, `$(…)` y las comillas invertidas.
  */
 function editaEnSitio(cmd) {
   const opcionI = (w) => /^-[A-Za-z0-9]*i/.test(w) || /^--in-place\b/.test(w);
   const ver = (texto, nivel) => {
     for (const tramo of tramos(texto)) {
-      const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
+      const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
       for (let k = 0; k < words.length; k++) {
         const c = path.basename(words[k]).toLowerCase().replace(/\.exe$/, '');
         const resto = words.slice(k + 1);
@@ -1484,7 +2069,7 @@ function editaEnSitio(cmd) {
     }
     return false;
   };
-  return ver(String(cmd || ''), 0);
+  return [String(cmd || ''), ...anidadosHasta(cmd).leidos].some((t) => ver(t, 0));
 }
 
 /**
@@ -1531,20 +2116,33 @@ function guionDeSedSinEfectos(guion) {
     }
     if ('dDpPnNgGhHxlz='.includes(c)) continue;
     if (c === 'q' || c === 'Q') { while (/\d/.test(s[i] || '')) i++; continue; }
-    // el texto de `a`, `i` y `c`, y la etiqueta de `b`, `t`, `T` y `:`, llegan hasta el fin de la línea o del guion
+    // el texto de `a`, `i` y `c` llega hasta el fin de la línea o del guion; la etiqueta de `b`, `t`, `T` y `:`, hasta el
+    // primer espacio o `;`, como la corta el `sed` de GNU: lo que sigue es otro comando (`t x e` corre `e`)
     if ('aic'.includes(c)) { const nl = s.indexOf('\n', i); i = nl < 0 ? s.length : nl + 1; continue; }
-    if ('btT:'.includes(c)) { while (i < s.length && !/[;\n]/.test(s[i])) i++; continue; }
+    if ('btT:'.includes(c)) { while (/[ \t]/.test(s[i] || '')) i++; while (i < s.length && !/[\s;]/.test(s[i])) i++; continue; }
     return false;
   }
   return true;
 }
 
 /**
- * Los `sed` en el lugar de un comando cuando todos nombran sus archivos tal cual: `[{ sed, opciones, guiones, archivo }]`,
- * con el archivo como palabra (una variable del comando ya resuelta). null si algún editor en el lugar no es así: un
- * `perl`/`ruby`/`awk`/`ed`, un `sed` detrás de `xargs`, `find -exec`, un `for` o adentro de `bash -c`, un archivo con
- * comodín, llaves, `~+`, `$(…)` o una variable que no se resuelve, un guion que lee, escribe o corre algo aparte, o
- * una opción que no se conoce. Con esa forma, lo que el editor escribe es sólo lo que nombra.
+ * ¿La palabra es un nombre tal cual o un comodín que se expande igual en bash y en zsh (`*`, `?` y corchetes, tramo por
+ * tramo)? No lo es con `**` (zsh baja por todas las carpetas) ni con `^`, `~` (fuera del principio), `#`, `<` o `>`,
+ * que zsh puede leer como parte del comodín.
+ */
+function comodinSimple(w) {
+  const s = String(w);
+  if (!/[*?[\]]/.test(s)) return true;
+  return !/\*\*|[\^#<>]/.test(s) && !/.~/.test(s);
+}
+
+/**
+ * Los `sed` en el lugar de un comando cuando todos nombran sus archivos: `[{ sed, opciones, guiones, archivo }]`, con el
+ * archivo como palabra (una variable del comando ya resuelta) o como un comodín simple (`comodinSimple`), que se expande
+ * desde cada carpeta donde puede correr. null si algún editor en el lugar no es así: un `perl`/`ruby`/`awk`/`ed`, un
+ * `sed` detrás de `xargs`, `find -exec`, un `for` o adentro de `bash -c`, un archivo con otro comodín, llaves, `~+`,
+ * `$(…)` o una variable que no se resuelve, un guion que lee, escribe o corre algo aparte, o una opción que no se
+ * conoce. Con esa forma, lo que el editor escribe es sólo lo que nombra.
  */
 function sedsLiterales(cmd) {
   if (FOR_IN.test(String(cmd || ''))) return null;
@@ -1596,9 +2194,9 @@ function sedsLiterales(cmd) {
     if (!guiones.length) { if (!archivos.length) return null; guiones.push(archivos.shift()); }
     if (!archivos.length || !guiones.every(guionDeSedSinEfectos)) return null;
     for (const a of archivos) {
-      if (!a || /[*?[\]{}]/.test(a) || /^~[+-]/.test(a) || a.includes('@')) return null;
+      if (!a || /[{}]/.test(a) || /^~[+-]/.test(a) || a.includes('@') || !comodinSimple(a)) return null;
       const ex = expandirRuta(cmd, a);
-      if (ex.sinResolver.length || /[*?[\]{}]/.test(ex.valor)) return null;
+      if (ex.sinResolver.length || /[{}]/.test(ex.valor) || !comodinSimple(ex.valor)) return null;
       out.push({ sed: words[0], opciones, guiones, archivo: ex.valor });
     }
   }
@@ -1614,7 +2212,7 @@ function ensayarSeds(abs, seds) {
   try { texto = fs.readFileSync(abs, 'utf8'); } catch (e) { logHookError(e); return null; }
   for (const s of seds) {
     const r = require('child_process').spawnSync(s.sed, [...s.opciones, ...s.guiones.flatMap((g) => ['-e', g])],
-      { input: texto, encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] });
+      { windowsHide: true, input: texto, encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] });
     if (r.error || r.status !== 0) return null;
     texto = r.stdout;
   }
@@ -1626,21 +2224,8 @@ function estadosDelEncabezado(texto) {
   const fm = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(String(texto));
   return fm ? [...fm[1].matchAll(/^["']?status["']?\s*:\s*["']?([\w-]+)/gm)].map((m) => m[1].toLowerCase()) : [];
 }
-// las llamadas de un guion que escriben, copian, mueven o borran un archivo
-const GUION_ESCRIBE = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync|renameSync|rename|replace|unlinkSync|rmSync|truncateSync|write_text|write_bytes|copy|copyfile|copy2|copytree|move|remove|unlink|truncate)\s*\(|\bopen\s*\([^)]*,\s*["'][^"']*[wax+]|\bFile\.(?:write|delete|rename)\b|\bFileUtils\.\w+/;
-// las formas de escribir, borrar, mover o reponer un archivo desde un comando: sin ninguna (ni un editor en el lugar), el
-// comando no toca una historia
-const ESCRIBE = new RegExp([
-  String.raw`(?:^|[\s;&|(])(?:[^\s;&|()'"]*[\\/])?\\?(?:rm|del|erase|unlink|remove-item|ri|mv|move|mi|move-item|rename-item|ren|cp|copy|copy-item|install|rsync|ditto|scp|dd|truncate)(?:\.exe)?(?=\s)`,
-  String.raw`\bgit\b[^\n;&|]*\s(?:checkout|restore|rm|mv)\b`,
-  String.raw`\b(?:curl|wget)\b[^\n;&|]*\s(?:-o|-O|--output)`,
-  String.raw`>{1,2}(?![&>])(?!\s*/dev/(?:null|stdout|stderr)\b)`,
-  String.raw`\btee\b`,
-  String.raw`\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|write_text|write_bytes)\b`,
-  String.raw`\bopen\s*\(`,
-  String.raw`\b(?:Set-Content|Out-File|Add-Content)\b|::(?:Write|Append)All`,
-  GUION_ESCRIBE.source,
-].join('|'), 'i');
+// sin ninguna forma de escribir (ni un editor en el lugar), el comando no toca una historia
+const ESCRIBE = new RegExp([...FORMAS_DE_ESCRIBIR, String.raw`\bopen\s*\(`].join('|'), 'i');
 // una palabra suelta del comando cuenta como destino con un editor en el lugar (`editaEnSitio`), o con un
 // `for … in <comodín>` que escribe. En un `ls specs/*.md > lista.txt` el comodín sólo se lee
 const FOR_IN = /(?:^|[\s;&|(])for\s+\w+\s+in\s/i;
@@ -1693,14 +2278,26 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
   const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw));
   const esRuta = (p) => isControlApproval(p) || isControlApproval(`${p}/`);
   const out = [];
-  const todos = comandosAnidados(cmd).flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/));
+  // se lee también con la continuación de renglón juntada: `cat <<'EOF' \` y abajo `> constancia` es una redirección del
+  // `cat`. La lectura de siempre sigue, y toma lo de abajo como comando. Lo que otro programa corre (el heredoc a un
+  // shell, `xargs`, `find -exec`) se mira como un comando más
+  const plano = String(cmd).replace(/\\\r?\n/g, ' ');
+  const lecturas = plano === String(cmd) ? [cmd] : [cmd, plano];
+  const todos = [...new Set(lecturas.flatMap((t) => [...comandosAnidados(t), ...comandosPorOtroPrograma(t, cwd)]))]
+    .flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/));
   for (const tramo of todos) {
     base = cwd;
     // sin las redirecciones de lectura con su archivo (`< lista`): no son argumentos de la copia
     const limpio = sinPalabrasDelShell(tramo);
-    // las redirecciones y el tee a una constancia, también adentro de `bash -c` (los tramos anidados están en `todos`)
-    for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?)\|?\s*(['"]?)([^\s<>;&|'"]+)\1/g)) if (es(m[2])) out.push(m[2]);
-    const words = palabras(limpio.replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ').trim().replace(PREFIJO, '')).filter((w) => w !== '' && w !== '\\');
+    // las redirecciones y el tee a una constancia, también adentro de `bash -c` (los tramos anidados están en `todos`);
+    // `<>` abre el archivo para leer y escribir
+    // el destino es la palabra entera del shell, con sus comillas resueltas (`.tycon/'control-changes.jsonl'`); uno armado
+    // con una sustitución que nombra una constancia no se puede resolver y no pasa
+    for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*((?:\$\([^()]*\)|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s<>;&|'"\\])+)/g)) {
+      const destino = palabraDelShell(m[1]);
+      if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log/i.test(destino))) out.push(destino);
+    }
+    const words = palabras(sinRedireccionesDeSalida(limpio).replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ').trim().replace(PREFIJO, '')).filter((w) => w !== '' && w !== '\\');
     let c = nombreDeComando(words[0]);
     let args = words.slice(1);
     if (c === 'xargs') {
@@ -1725,6 +2322,32 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     };
     if (c === 'tee') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
     if (c === 'sponge') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
+    // los que escriben un archivo que nombran: `sort -o` y `shuf -o`, la salida de `uniq` (su segundo archivo), `awk -i
+    // inplace`, `ruby -i`, los editores (y su `w <archivo>` en `-c` o `+`), el `w` de un guion de `sed`, y `touch`, que la
+    // crea vacía. El valor de una opción que sólo se lee (`touch -r`, `vim -u`, `uniq -f`) no es lo que se escribe
+    if (['sort', 'gsort', 'shuf'].includes(c)) { out.push(...lleva(['-o', '--output']).filter(es)); continue; }
+    if (c === 'uniq') { const s = posicionales(args, /^-[fsw]$|^--(?:skip-fields|skip-chars|check-chars)$/); if (s[1] && es(s[1])) out.push(s[1]); continue; }
+    if (c === 'awk' || c === 'gawk') {
+      const incluye = lleva(['-i', '--include']).concat(args.filter((w) => /^-i./.test(w)).map((w) => w.slice(2)));
+      if (incluye.some((v) => /(?:^|[\\/])inplace(?:\.awk)?$/.test(v))) out.push(...posicionales(args, /^-[ifvE]$|^--(?:include|file|assign|exec)$/).slice(1).filter(es));
+      continue;
+    }
+    if (c === 'ruby' && args.some((w) => /^-[A-Za-z]*i/.test(w))) { out.push(...posicionales(args, /^-[eIrC]$/).filter(es)); continue; }
+    if (['ex', 'vi', 'vim', 'nvim', 'gvim', 'rvim', 'view', 'vimdiff', 'nano', 'pico', 'emacs', 'micro', 'ed', 'touch'].includes(c)) {
+      const conValor = c === 'touch' ? /^-[rdt]$|^--(?:reference|date)$/ : /^-[uUiTcSsWwq]$|^--cmd$/;
+      out.push(...posicionales(args, conValor).filter((w) => !w.startsWith('+')).filter(es));
+      if (c !== 'touch') {
+        // `+'w x'` llega como dos palabras: el `+` solo y la orden
+        const ordenes = [...lleva(['-c', '--cmd']), ...args.filter((w) => w.startsWith('+')).map((w) => w.slice(1)), ...args.filter((w, k) => args[k - 1] === '+')];
+        out.push(...ordenes.flatMap((o) => [...o.matchAll(/(?:^|[|\s])(?:w(?:rite)?|sav(?:eas)?|x(?:it)?|wq)!?\s+(\S+)/g)].map((x) => x[1])).filter(es));
+      }
+      continue;
+    }
+    if (c === 'sed' || c === 'gsed') {
+      // `w <archivo>` (o el modificador `w` de `s///w <archivo>`) escribe hasta el final del renglón del guion
+      const guiones = [...lleva(['-e', '--expression']), ...(args.some((w) => /^-[A-Za-z]*[ef]$|^--(?:expression|file)/.test(w)) ? [] : posicionales(args, /^-[lf]$/).slice(0, 1))];
+      out.push(...guiones.flatMap((g) => [...g.matchAll(/(?:^|[;\n}\s]|\/[gpIi0-9]*)w\s+([^\n;]+)/g)].map((x) => x[1].trim())).filter(es));
+    }
     if (c === 'curl' || c === 'wget') { out.push(...lleva(['-o', '--output', '-O', '--output-document']).filter(es)); continue; }
     if (c === 'tar' || c === 'bsdtar' || c === 'unzip' || c === 'cpio') {
       // lo que trae un archivo comprimido no se ve antes de abrirlo: a la carpeta de una constancia, no pasa
@@ -1775,7 +2398,13 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     }
     const sueltos = args.filter((w) => !w.startsWith('-') && !w.startsWith('<'));
     if (['cp', 'mv', 'git mv', 'install', 'rsync', 'ditto', 'scp', 'ln'].includes(c)) {
-      const copia = destinoDeLaCopia(args, ['cp', 'mv', 'install', 'ln'].includes(c));
+      // el valor de una opción de `rsync`, `scp`, `install` o `ditto` (`--exclude x`) no es el destino
+      let deLaCopia = args;
+      if (OPCIONES_CON_VALOR[c]) {
+        const { sueltos, carpeta } = argumentosDeCopia(c, args);
+        deLaCopia = carpeta ? ['--target-directory', carpeta, ...sueltos] : sueltos;
+      }
+      const copia = destinoDeLaCopia(deLaCopia, ['cp', 'mv', 'install', 'ln'].includes(c));
       if (!copia) continue;
       if (es(copia.destino)) { out.push(copia.destino); continue; }
       // cp, install, scp y rsync sólo bajan a una carpeta con su opción
@@ -1821,9 +2450,9 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
           // como agregado); `restore --source` también borra, así que cuenta todo
           const filtro = c === 'git checkout' ? ['--diff-filter=a'] : [];
           const r = require('child_process').spawnSync('git', ['-C', base, 'diff', '--name-only', ...filtro, '--end-of-options', desdeRef, '--', ...rutas],
-            { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+            { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
           if (r.error || r.status !== 0) {
-            const raiz = require('child_process').spawnSync('git', ['-C', base, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+            const raiz = require('child_process').spawnSync('git', ['-C', base, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
             const top = raiz.status === 0 ? String(raiz.stdout).trim() : null;
             // sin la raíz del repo, una ruta suelta a un archivo no puede traer una constancia; una carpeta, un patrón o
             // una ruta que nombra la carpeta de las constancias, sí
@@ -1846,8 +2475,9 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
       const textos = [];
       const heredoc = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(tramo);
       if (heredoc) {
-        const cuerpo = new RegExp(`<<-?[ \\t]*(['"]?)${heredoc[2]}\\1[^\\n]*\\n([\\s\\S]*?)\\n[ \\t]*${heredoc[2]}[ \\t]*(?=\\n|$)`).exec(cmd);
-        textos.push(cuerpo ? cuerpo[2] : null);
+        // otro heredoc antes con la misma marca no es el del parche: se miran todos los cuerpos con esa marca
+        const cuerpos = [...String(cmd).matchAll(new RegExp(`<<-?[ \\t]*(['"]?)${heredoc[2]}\\1[^\\n]*\\n([\\s\\S]*?)\\n[ \\t]*${heredoc[2]}[ \\t]*(?=\\n|$)`, 'g'))];
+        if (cuerpos.length) textos.push(...cuerpos.map((x) => x[2])); else textos.push(null);
       }
       const entrada = /(?<!<)<(?!<)\s*([^\s<>;&|]+)/.exec(tramo);
       // la marca del texto en línea (`<<'EOF'`) no es un archivo
@@ -1886,6 +2516,27 @@ function destinoDeLaCopia(args, conT) {
   if (t) return { destino: t, origenes: sueltos, carpeta: true };
   if (sueltos.length < 2) return null;
   return { destino: sueltos[sueltos.length - 1], origenes: sueltos.slice(0, -1), carpeta: false };
+}
+
+/**
+ * Los argumentos que no son opciones, sin el valor de las opciones que lo llevan aparte (`conValor`). `-` (la entrada
+ * estándar) cuenta como uno, y después de `--` cuentan todos.
+ */
+function posicionales(args, conValor) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--') { out.push(...args.slice(i + 1)); break; }
+    if (w === '-' || !w.startsWith('-')) { out.push(w); continue; }
+    if (conValor.test(w)) i++;
+  }
+  return out;
+}
+
+/** Una palabra del shell con sus comillas y sus escapes resueltos: `.tycon/'control-changes.jsonl'` es una sola ruta. */
+function palabraDelShell(w) {
+  return String(w).replace(/'([^']*)'|"((?:\\.|[^"\\])*)"|\\(.)/g, (m, simple, doble, escapado) => (simple !== undefined ? simple
+    : doble !== undefined ? doble.replace(/\\(["\\$`])/g, '$1') : escapado));
 }
 
 /** Los archivos de parche de un `patch`: el de `-i`/`--input`, o el segundo argumento suelto (el primero es el que se parcha). */
@@ -1932,7 +2583,7 @@ function parcheNombraConstancia(texto, isControlApproval) {
 function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
   const { spawnSync } = require('child_process');
   const git = (argv) => {
-    const r = spawnSync('git', ['-C', base, ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    const r = spawnSync('git', ['-C', base, ...argv], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
     return r.error || r.status !== 0 ? null : String(r.stdout);
   };
   const tramo = String(extra.tramo || '');
@@ -2185,7 +2836,7 @@ function archivoDeTar(args) {
 function contenidoDelArchivo(c, args, tramo, abs) {
   const { spawnSync } = require('child_process');
   const correr = (bin, argv, input) => {
-    const r = spawnSync(bin, argv, { input, encoding: 'utf8', stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 32 * 1024 * 1024 });
+    const r = spawnSync(bin, argv, { windowsHide: true, input, encoding: 'utf8', stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 32 * 1024 * 1024 });
     return r.error || r.status !== 0 ? null : String(r.stdout).split(/\r?\n/).filter(Boolean);
   };
   if (c === 'cpio') {
@@ -2241,10 +2892,109 @@ function sinPalabrasDelShell(tramo) {
 }
 
 /**
- * El comando y lo que corre adentro de él: `$(…)`, comillas invertidas, `bash -c '…'`, `eval …` y `find … -exec …`.
- * Cada uno se mira como otro comando.
+ * El tramo sin sus redirecciones de salida (`2>&1`, `> f`, `>> f`, `&> f`, `2> f`), que no son argumentos. Un `>` entre
+ * comillas o escapado es texto, y `>(…)` lleva un comando: quedan como están.
  */
-function comandosAnidados(cmd, hondo = 0) {
+function sinRedireccionesDeSalida(tramo) {
+  const s = String(tramo);
+  const es = posicionesDeComando(s);
+  // el destino es la palabra entera del shell: con comillas pegadas a texto (`>'a'a`) o con una sustitución (`> $(date).log`)
+  return s.replace(/(?:(?<![^\s])\d+|&)?(?<!\\)>>?(?!\()[|&]?[ \t]*(?:\$\([^()]*\)|'[^']*'|"[^"]*"|[^\s'"|;&<>]+)*/g, (m, en) => (es[en] ? ' ' : m));
+}
+
+// un heredoc entero: lo que tiene delante en su línea, la comilla y la marca, lo que tiene detrás, el cuerpo y el cierre
+const HEREDOC_ENTERO = /(^|\n)([^\n]*?)(?<![\\<])<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()]+)\3(?=[\s;&|()<>]|$)([^\n]*)\n([\s\S]*?)(\n[ \t]*\4[ \t]*)(?=\n|$)/g;
+// un grupo, una comilla invertida o una palabra de control abierta antes del heredoc: lo que escribe puede seguir camino a otro programa
+const GRUPO_O_CONTROL = /[({`]|(?:^|[\s;&|])(?:if|then|else|elif|do|while|until|for|case|select|function)(?=[\s;]|$)/;
+const CAT_O_TEE_REDEFINIDO = /(?:^|[\s;&|(])(?:function[ \t]+(?:cat|tee)\b|alias[ \t]+(?:cat|tee)=|(?:cat|tee)[ \t]*\(\s*\))/;
+// lo que puede ir detrás de la marca sin que la línea siga abajo ni el cuerpo vaya a otro programa: palabras y
+// redirecciones. El `&` sólo vale en `N>&M`: `&&` y `&` empiezan otro comando, que puede correr lo que se escribió
+const DETRAS_DE_LA_MARCA = /^[ \t\w./~@%+=:,>-]*$/;
+const REDIRECCION_A_DESCRIPTOR = /\d*>&\d+/g;
+
+/**
+ * El comando sin el texto de los heredocs que nadie corre: la marca va entre comillas (el shell no expande el cuerpo) y
+ * el cuerpo sólo llega a un archivo o a un mensaje. Eso es `cat` o `tee` sin una tubería ni un grupo que lo lleve a otro
+ * programa, o `git commit` y `gh pr|issue` con `"$(cat <<'X'`. Con una barra invertida, una comilla abierta o un `$(` tras
+ * la marca, la línea sigue abajo y lo que parece el cuerpo es parte del comando. El cuerpo de cualquier otro se sigue
+ * mirando, y con dos heredocs en una línea, lo que sigue también: no se sabe de cuál es cada texto.
+ */
+function sinTextoDeHeredocs(cmd) {
+  const s = String(cmd);
+  if (!s.includes('<<') || CAT_O_TEE_REDEFINIDO.test(s)) return s;
+  const es = posicionesDeComando(s);
+  const comandoHasta = (fin) => { let t = ''; for (let i = 0; i < fin; i++) if (es[i]) t += s[i]; return t; };
+  const soloTexto = (m) => {
+    const [todo, ini, antes, comilla, marca, despues, cuerpo] = m;
+    const linea = m.index + ini.length;
+    const abre = linea + antes.length;
+    if (!comilla || s.slice(0, linea).endsWith('\\\n')) return false;
+    // con el cuerpo vacío, el shell cerró en la primera línea y lo que sigue, hasta la otra marca, es comando
+    if (cuerpo.split('\n')[0].trim() === marca) return false;
+    const mensaje = /^(.*)"\$\(cat[ \t]+$/.exec(antes);
+    if (mensaje) {
+      const comilla0 = linea + mensaje[1].length;
+      if (comilla0 === 0 || !es[comilla0 - 1] || despues.trim() || !/^\s*\)"/.test(s.slice(m.index + todo.length))) return false;
+      if (GRUPO_O_CONTROL.test(comandoHasta(comilla0)) || mensaje[1].includes('#')) return false;
+      const w = palabras(sinPalabrasDelShell(tramos(mensaje[1]).pop() || '')).filter((x) => x !== '').join(' ');
+      return /^(?:git(?: -[cC] \S+)* commit|gh (?:pr|issue) \S+)(?: |$)/.test(w);
+    }
+    if (!es[abre] || antes.includes('#') || /\||>\(/.test(antes) || !DETRAS_DE_LA_MARCA.test(despues.replace(REDIRECCION_A_DESCRIPTOR, ' '))) return false;
+    if (GRUPO_O_CONTROL.test(comandoHasta(abre))) return false;
+    const w = palabras(sinPalabrasDelShell(tramos(antes).pop() || '')).filter((x) => x !== '');
+    return w[0] === 'cat' || w[0] === 'tee';
+  };
+  let out = '';
+  let hasta = 0;
+  for (const m of s.matchAll(HEREDOC_ENTERO)) {
+    if (m[2].includes('<<') || m[5].includes('<<')) break;
+    if (!soloTexto(m)) continue;
+    const fin = m.index + m[0].length;
+    out += s.slice(hasta, fin - m[6].length - m[7].length) + m[7];
+    hasta = fin;
+  }
+  return out + s.slice(hasta);
+}
+
+// los programas que leen el cuerpo de un heredoc como texto (un mensaje o el texto de un pedido): no lo corren
+const LEE_EL_CUERPO_COMO_TEXTO = /^(?:git(?: -[cC] \S+)* commit|gh \S+|az \S+|grep|egrep|fgrep|rg|wc)(?: |$)/;
+
+/**
+ * El comando sin el cuerpo de los heredocs cuyo `$(…)` no corre, para leer lo anidado: la marca va entre comillas (el
+ * shell no expande el cuerpo) y lo lee como texto un programa que no es un shell (`git commit -F -`, `gh … --body-file
+ * -`, `grep`). `sinTextoDeHeredocs` se queda con esos cuerpos porque una redirección ahí podría seguir camino; un
+ * `$(…)` sin expandir, no. Con el cuerpo vacío, en un grupo o con algo detrás de la marca, el cuerpo se sigue mirando.
+ */
+function sinCuerposDeTexto(cmd) {
+  const s = sinTextoDeHeredocs(cmd);
+  if (!s.includes('<<')) return s;
+  const es = posicionesDeComando(s);
+  const comandoHasta = (fin) => { let t = ''; for (let i = 0; i < fin; i++) if (es[i]) t += s[i]; return t; };
+  let out = '';
+  let hasta = 0;
+  for (const m of s.matchAll(HEREDOC_ENTERO)) {
+    const [todo, ini, antes, comilla, marca, despues, cuerpo, cierre] = m;
+    if (antes.includes('<<') || despues.includes('<<')) break;
+    const linea = m.index + ini.length;
+    const abre = linea + antes.length;
+    if (!comilla || s.slice(0, linea).endsWith('\\\n') || cuerpo.split('\n')[0].trim() === marca) continue;
+    if (!es[abre] || antes.includes('#') || /\||>\(/.test(antes) || !DETRAS_DE_LA_MARCA.test(despues.replace(REDIRECCION_A_DESCRIPTOR, ' '))) continue;
+    if (GRUPO_O_CONTROL.test(comandoHasta(abre))) continue;
+    const w = palabras(sinPalabrasDelShell(tramos(antes).pop() || '')).filter((x) => x !== '').join(' ');
+    if (!LEE_EL_CUERPO_COMO_TEXTO.test(w)) continue;
+    const fin = m.index + todo.length;
+    out += s.slice(hasta, fin - cuerpo.length - cierre.length) + cierre;
+    hasta = fin;
+  }
+  return out + s.slice(hasta);
+}
+
+/**
+ * El comando y lo que corre adentro de él: `$(…)`, comillas invertidas, `bash -c '…'`, `eval …` y `find … -exec …`.
+ * Cada uno se mira como otro comando. El texto de un heredoc que nadie corre no es un comando.
+ */
+function comandosAnidados(comando, hondo = 0) {
+  const cmd = sinTextoDeHeredocs(comando);
   const out = [cmd];
   if (hondo > 3) return out;
   const sumar = (c) => { if (c && String(c).trim()) out.push(...comandosAnidados(String(c), hondo + 1)); };
@@ -2280,6 +3030,58 @@ function dentroDeUnRepo(p) {
   }
 }
 
+// Las opciones de cada copiador que llevan su valor en la palabra que sigue: ese valor (un patrón de `--exclude`, el
+// programa de `-e`, el puerto de `scp -P`) no es un origen ni el destino. Sólo las que significan lo mismo en las
+// versiones de GNU y de BSD: tomar de más una opción que no lleva valor haría perder el destino. Las largas van sin sus
+// dos guiones: son las opciones de esos programas, no nombres del arnés
+const conGuiones = (nombres) => nombres.map((n) => `--${n}`);
+const OPCIONES_CON_VALOR = {
+  rsync: {
+    cortas: 'efBTM@',
+    largas: conGuiones(['exclude', 'include', 'exclude-from', 'include-from', 'filter', 'files-from', 'rsh',
+      'rsync-path', 'info', 'debug', 'stderr', 'backup-dir', 'suffix', 'chmod', 'chown', 'copy-as',
+      'block-size', 'max-delete', 'max-size', 'min-size', 'max-alloc', 'partial-dir', 'usermap', 'groupmap',
+      'timeout', 'contimeout', 'modify-window', 'temp-dir', 'compare-dest', 'copy-dest', 'link-dest',
+      'compress-choice', 'zc', 'compress-level', 'zl', 'skip-compress', 'address', 'port', 'sockopts',
+      'out-format', 'log-file', 'log-file-format', 'password-file', 'bwlimit', 'stop-after', 'stop-at',
+      'write-batch', 'only-write-batch', 'read-batch', 'protocol', 'iconv', 'checksum-choice', 'cc',
+      'checksum-seed', 'remote-option', 'outbuf', 'early-input']),
+  },
+  scp: { cortas: 'cDFiJloPSX', largas: [] },
+  install: { cortas: 'mog', largas: conGuiones(['mode', 'owner', 'group', 'suffix', 'strip-program']) },
+  ditto: { cortas: '', largas: conGuiones(['arch', 'bom']) },
+};
+
+/**
+ * Las palabras sueltas de un copiador (orígenes y destino) y la carpeta de `install -t`: sin sus opciones ni el valor de
+ * las que lo llevan aparte (`rsync a/ b/ --exclude x`, `rsync -e ssh a h:b`). Después de `--` todo es suelto.
+ */
+function argumentosDeCopia(c, args) {
+  const tabla = OPCIONES_CON_VALOR[c] || { cortas: '', largas: [] };
+  const sueltos = [];
+  let carpeta = null;
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--') { sueltos.push(...args.slice(i + 1)); break; }
+    if (!w.startsWith('-') || w === '-') { sueltos.push(w); continue; }
+    if (c === 'install') {
+      if (w === '-t' || w === '--target-directory') { carpeta = args[++i] ?? null; continue; }
+      const pegado = /^(?:--target-directory=|-t)(.+)$/.exec(w);
+      if (pegado) { carpeta = pegado[1]; continue; }
+      // `-t` dentro de un grupo de cortas (`-Dt dir`, `-vtdir`): la carpeta es lo que sigue a la `t`, o la palabra que sigue
+      const enGrupo = /^-([A-Za-z]*?)t(.*)$/.exec(w);
+      if (enGrupo && !w.startsWith('--') && /^[A-Za-z]*$/.test(enGrupo[1])) { carpeta = enGrupo[2] || (args[++i] ?? null); continue; }
+    }
+    if (w.startsWith('--')) { if (!w.includes('=') && tabla.largas.includes(w)) i++; continue; }
+    // un grupo de cortas (`-avz`, `-ae ssh`): la primera que lleva valor se queda con el resto del grupo o, si es la
+    // última, con la palabra que sigue
+    const letras = w.slice(1);
+    const k = [...letras].findIndex((l) => tabla.cortas.includes(l));
+    if (k >= 0 && k === letras.length - 1) i++;
+  }
+  return { sueltos, carpeta };
+}
+
 /** Los destinos de los que copian sin que `extractWriteTargets` los vea: `install`, `rsync`, `ditto`, `scp`, `curl -o`, `wget -O`. */
 function destinosDeCopia(cmd) {
   const out = [];
@@ -2287,8 +3089,10 @@ function destinosDeCopia(cmd) {
     const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
     const c = nombreDeComando(words[0]);
     if (['install', 'rsync', 'ditto', 'scp'].includes(c)) {
-      const sueltos = words.slice(1).filter((w) => !w.startsWith('-'));
-      if (sueltos.length >= 2) out.push(sueltos[sueltos.length - 1]);
+      const { sueltos, carpeta } = argumentosDeCopia(c, words.slice(1));
+      // `install -t <carpeta>`: cada origen llega a la carpeta con su nombre
+      if (carpeta) out.push(carpeta, ...sueltos.map((s) => `${carpeta.replace(/[\\/]+$/, '')}/${s.split(/[\\/]/).pop()}`));
+      else if (sueltos.length >= 2) out.push(sueltos[sueltos.length - 1]);
     }
     if (c === 'curl' || c === 'wget') {
       for (let i = 1; i < words.length; i++) {
@@ -2302,29 +3106,407 @@ function destinosDeCopia(cmd) {
 }
 
 /**
+ * El corchete que abre en `g[i]`, como comparador de un carácter, y dónde cierra. `[!a]` y `[^a]` son la negación, un `]`
+ * que va primero es un carácter más, `\]` es un `]` que no cierra y `[:digit:]` es su clase. Sin cerrar, o con un rango al
+ * revés, devuelve null: es texto, como para el shell.
+ * El que cierra a más de `CORCHETE_TOPE` caracteres coincide con cualquiera, del lado que frena, sin armar su clase: armar
+ * una por cada `[` de una tira larga hace crecer el tiempo con el cuadrado del largo, y como texto dejaría pasar lo que nombra.
+ * Una clase que no se conoce, también: depende del idioma de la máquina.
+ */
+function corcheteDelShell(g, i) {
+  let j = i + 1;
+  const negado = g[j] === '!' || g[j] === '^';
+  if (negado) j++;
+  const desde = j;
+  const escapar = (c) => (/[\\\]\[^-]/.test(c) ? `\\${c}` : c);
+  const adentro = [];
+  let cualquiera = false;
+  let trasClase = false;
+  if (g[j] === ']') { adentro.push('\\]'); j++; }
+  while (j < g.length && g[j] !== ']') {
+    if (g[j] === '\\' && j + 1 < g.length) { adentro.push(escapar(g[j + 1])); j += 2; continue; }
+    // `[=a=]` y `[.a.]` dependen del idioma de la máquina: como una clase que no se conoce
+    if (g[j] === '[' && (g[j + 1] === '=' || g[j + 1] === '.')) {
+      const cierre = new RegExp(`^.{0,12}?\\${g[j + 1]}\\]`).exec(g.slice(j + 2, j + 16).join(''));
+      if (cierre) { cualquiera = true; j += cierre[0].length + 2; trasClase = true; continue; }
+    }
+    if (g[j] === '[' && g[j + 1] === ':') {
+      const nombre = /^([a-z]*):\]/.exec(g.slice(j + 2, j + 16).join(''));
+      if (nombre) {
+        if (Object.hasOwn(CLASES_POSIX, nombre[1])) adentro.push(CLASES_POSIX[nombre[1]]); else cualquiera = true;
+        j += nombre[0].length + 2;
+        trasClase = true;
+        continue;
+      }
+    }
+    // un rango que arranca o termina en una clase (`[[:digit:]-_]`) no dice qué abarca: del lado que frena. Al final, el
+    // guion es un carácter más
+    if (g[j] === '-' && g[j + 1] !== ']' && (trasClase || (g[j + 1] === '[' && g[j + 2] === ':'))) cualquiera = true;
+    adentro.push(g[j] === '-' ? (g[j + 1] === ']' ? '\\-' : '-') : escapar(g[j]));
+    trasClase = false;
+    j++;
+  }
+  if (j >= g.length) {
+    // el único `]` era parte de lo que parecía una clase, o tenía la barra: el corchete puede cerrar ahí, del lado que frena
+    const primero = g.indexOf(']', g[desde] === ']' ? desde + 1 : desde);
+    return primero < 0 ? null : { fin: primero, coincide: () => true };
+  }
+  if (cualquiera || j - desde > CORCHETE_TOPE) return { fin: j, coincide: () => true };
+  let clase;
+  // un rango al revés no abarca nada: solo no nombra nada, y negado nombra cualquier carácter
+  try { clase = new RegExp(`^[${adentro.join('')}]$`, 'u'); } catch { return negado ? { fin: j, coincide: () => true } : null; }
+  return { fin: j, coincide: (c) => clase.test(c) !== negado };
+}
+
+/**
+ * Un comodín del shell para un tramo de una ruta: `*`, `?` y los corchetes. Compara carácter por carácter, sin una
+ * expresión para el comodín entero: una excepción o una expresión que no termina abrirían el freno, y acá el peor caso es
+ * el largo del comodín por el largo del nombre.
+ */
+function comodinDelShell(glob) {
+  const g = [...String(glob)];
+  const ESTRELLA = null;
+  const partes = [];
+  // después del último `]` no hay nada que cerrar: una tira de `[` no busca el cierre hasta el final en cada uno
+  const ultimoCierre = g.lastIndexOf(']');
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i];
+    // la barra escapa el carácter que sigue (en Windows ya no llega: separa carpetas)
+    if (c === '\\' && i + 1 < g.length) { const x = g[++i]; partes.push((y) => y === x); continue; }
+    if (c === '*') { if (partes[partes.length - 1] !== ESTRELLA) partes.push(ESTRELLA); continue; }
+    if (c === '?') { partes.push(() => true); continue; }
+    const corchete = c === '[' && i < ultimoCierre ? corcheteDelShell(g, i) : null;
+    if (corchete) { partes.push(corchete.coincide); i = corchete.fin; continue; }
+    partes.push((x) => x === c);
+  }
+  return {
+    test(nombre) {
+      const n = [...String(nombre)];
+      let p = 0;
+      let i = 0;
+      // al fallar se vuelve sólo a la última estrella: darle un carácter más alcanza, las anteriores ya coincidieron
+      let trasEstrella = -1;
+      let desde = 0;
+      while (i < n.length) {
+        if (p < partes.length && partes[p] === ESTRELLA) { trasEstrella = ++p; desde = i; continue; }
+        if (p < partes.length && partes[p](n[i])) { p++; i++; continue; }
+        if (trasEstrella < 0) return false;
+        p = trasEstrella;
+        i = ++desde;
+      }
+      while (p < partes.length && partes[p] === ESTRELLA) p++;
+      return p === partes.length;
+    },
+  };
+}
+
+/**
  * Las rutas que un comodín (`specs/*.md`, `specs/story-2.?`) nombra en el disco, desde `base` (hasta 200 en cada
  * tramo). Si se le pasa `aviso`, `aviso.recortado` queda en true cuando algún tramo pasó de 200.
  */
 function expandirComodin(patron, base, aviso) {
   const absoluto = path.isAbsolute(patron) ? patron : path.join(base, patron);
-  const partes = absoluto.split(/[\\/]+/);
+  // la barra invertida separa carpetas sólo en Windows: en los demás, `[1\]]` es un solo tramo
+  const partes = absoluto.split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
   let actuales = [partes[0] === '' ? path.sep : `${partes[0]}${path.sep}`];
-  const aRegex = (g) => new RegExp(`^${g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
   for (const parte of partes.slice(1)) {
     if (!parte) continue;
     const sig = [];
+    const comodin = /[*?[]/.test(parte) ? comodinDelShell(parte) : null;
     for (const dir of actuales) {
-      if (!/[*?[]/.test(parte)) { sig.push(path.join(dir, parte)); continue; }
+      if (!comodin) { sig.push(path.join(dir, parte.replace(/\\(.)/g, '$1'))); continue; }
       let nombres = [];
       try { nombres = fs.readdirSync(dir); } catch { continue; }
-      const re = aRegex(parte);
-      for (const n of nombres) if (re.test(n) && (!n.startsWith('.') || parte.startsWith('.'))) sig.push(path.join(dir, n));
+      // un `\.` al comienzo pide los ocultos igual que un `.`
+      for (const n of nombres) if (comodin.test(n) && (!n.startsWith('.') || /^\\?\./.test(parte))) sig.push(path.join(dir, n));
     }
     if (aviso && sig.length > 200) aviso.recortado = true;
     actuales = sig.slice(0, 200);
     if (!actuales.length) break;
   }
   return actuales.filter((p) => fs.existsSync(p));
+}
+
+/**
+ * El cuerpo de cada guion de shell que el comando escribe con un heredoc y después corre (`sh x.sh`, `bash -e x.sh`,
+ * `. x.sh`, `source x.sh`), con la ruta relativa o absoluta: lo comparan resuelta desde cada carpeta de `bases`. Un
+ * guion que ya estaba en el disco no se lee acá.
+ */
+function guionesDeShellEscritos(cmd, bases) {
+  const escritos = heredocs(cmd).filter((h) => h.target);
+  if (!escritos.length) return [];
+  const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
+  const out = [];
+  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+    const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
+    const c = words[0] === '.' || words[0] === 'source' ? 'source' : nombreDeComando(words[0]);
+    if (!['source', 'sh', 'bash', 'zsh', 'dash', 'ksh'].includes(c)) continue;
+    const opciones = words.slice(1).filter((w) => w.startsWith('-'));
+    if (c !== 'source' && opciones.some((w) => /^-[A-Za-z]*c/.test(w))) continue;
+    const guion = guionDelShell(words);
+    if (!guion) continue;
+    for (const base of bases) {
+      const h = escritos.find((x) => resolver(x.target, base) === resolver(guion, base));
+      if (h) { out.push(h.body); break; }
+    }
+  }
+  return out;
+}
+
+/** Los `.md` adentro de una carpeta cuyo nombre cumple `cumple`, hasta cuatro niveles y 500 archivos. */
+function mdAdentro(dir, cumple = () => true) {
+  const out = [];
+  const ver = (d, nivel) => {
+    let entradas = [];
+    try { entradas = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entradas) {
+      if (out.length >= 500) return;
+      if (e.isDirectory() && nivel < 4 && !NEVER_CODE_SEGMENTS.has(e.name) && e.name !== '.git') ver(path.join(d, e.name), nivel + 1);
+      else if (e.isFile() && /\.md$/i.test(e.name) && cumple(e.name)) out.push(path.join(d, e.name));
+    }
+  };
+  ver(dir, 0);
+  return out;
+}
+
+const SHELLS_QUE_LEEN_COMANDOS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
+const LECTORES_DE_HISTORIA = new Set(['cat', 'grep', 'head', 'tail', 'wc', 'ls']);
+// las opciones de xargs que llevan su valor en la palabra siguiente (GNU y BSD); `-I`, `-J` y `-i` fijan el marcador
+const XARGS_CON_VALOR = new Set(['-n', '-L', '-P', '-d', '-E', '-s', '-a', '-R', '-S', '--max-args', '--max-lines',
+  '--max-procs', '--delimiter', '--max-chars', '--arg-file']);
+// lo que puede ir delante de un `xargs` sin cambiar qué corre
+const PALABRA_ANTES_DE_XARGS = /^(?:\{|!|time(?:\s+-p)?|then|do|else|elif|if|while|until)\s+/;
+
+// una redirección con su destino (`<<EOF`, `<<< "x"`, `> f`, `2>&1`): `palabras` saca el operador y deja el destino
+const REDIRECCION = /(?<![^\s;&|(])\d*(?:<<<|<<-?|&>>?|[<>]{1,2}&?)[ \t]*(?:'[^']*'|"(?:[^"\\]|\\.)*"|[^\s;&|()<>]+)?/g;
+
+/** El guion que corre un shell (`bash -o errexit x.sh` → `x.sh`), o null: las opciones con valor no son el guion. */
+function guionDelShell(words) {
+  for (let i = 1; i < words.length; i++) {
+    if (words[i] === '--') return words[i + 1] || null;
+    if (/^[+-][oO]$/.test(words[i]) || /^--(?:rcfile|init-file)$/.test(words[i])) { i++; continue; }
+    if (/^[+-]/.test(words[i])) continue;
+    return words[i];
+  }
+  return null;
+}
+
+/** ¿El tramo es un shell que lee sus comandos de la entrada? Sí sin guion o con `-s`; no con `-c` ni con un guion. */
+function shellLeeEntrada(tramo) {
+  const words = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).filter((w) => w !== '');
+  if (!SHELLS_QUE_LEEN_COMANDOS.has(nombreDeComando(words[0]))) return false;
+  for (let i = 1; i < words.length; i++) {
+    if (/^-[A-Za-z]*c/.test(words[i])) return false;
+    if (/^-[A-Za-z]*s/.test(words[i])) return true;
+  }
+  return guionDelShell(words) === null;
+}
+
+/** Las tuberías de un renglón y los tramos de cada una, sin cortar adentro de las comillas. */
+function tuberiasDelRenglon(linea) {
+  const tuberias = [[]];
+  let actual = '';
+  let q = null;
+  const cerrarTramo = () => { tuberias[tuberias.length - 1].push(actual); actual = ''; };
+  for (let i = 0; i < linea.length; i++) {
+    const c = linea[i];
+    if (q) { actual += c; if (c === '\\' && q === '"') actual += linea[++i] || ''; else if (c === q) q = null; continue; }
+    if (c === "'" || c === '"') { q = c; actual += c; continue; }
+    if (c === '\\') { actual += c + (linea[++i] || ''); continue; }
+    const doble = linea[i + 1] === c;
+    if (c === ';' || (c === '&' && linea[i + 1] !== '>' && linea[i - 1] !== '>') || (c === '|' && doble)) {
+      cerrarTramo();
+      tuberias.push([]);
+      if (doble) i++;
+      continue;
+    }
+    if (c === '|') { cerrarTramo(); if (linea[i + 1] === '&') i++; continue; }
+    actual += c;
+  }
+  cerrarTramo();
+  return tuberias;
+}
+
+/**
+ * ¿El heredoc `indice` del renglón llega a un shell que lo corre? Lo corre si el tramo que lo abre es un shell que lee su
+ * entrada (`bash <<EOF`, no `bash x.sh <<EOF`), o si su tubería sigue en uno (`cat <<EOF | bash`).
+ */
+function heredocVaAUnShell(linea, indice) {
+  let visto = 0;
+  for (const tuberia of tuberiasDelRenglon(linea)) {
+    for (let t = 0; t < tuberia.length; t++) {
+      const abiertos = [...delimitadoresQueAbre(tuberia[t])].length;
+      if (indice >= visto + abiertos) { visto += abiertos; continue; }
+      return tuberia.slice(t).some((tramo) => shellLeeEntrada(tramo));
+    }
+  }
+  return false;
+}
+const FIN_DE_EXEC = new Set([';', '\\;', '+', '\\']);
+const citarParaElShell = (w) => (/^[\w@%+=:,./~*?[\]{}-]+$/.test(w) ? w : `'${w.replace(/'/g, "'\\''")}'`);
+
+/** ¿El nombre cumple el patrón de `-name`? Un patrón que no se entiende cumple: se mira de más. */
+function cumplePatronDeFind(patron, sinMayusculas) {
+  let re;
+  try {
+    // `[!x]` niega como `[^x]`
+    const fuente = String(patron).replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*+/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^');
+    re = new RegExp(`^${fuente}$`, sinMayusculas ? 'i' : '');
+  } catch { return () => true; }
+  return (nombre) => re.test(nombre);
+}
+
+/** Lo que corre cada `-exec`, `-execdir`, `-ok` y `-okdir` de un `find`, con `{}` reemplazado por las historias que alcanza. */
+function ordenesDeFind(words, absoluta) {
+  const carpetas = [];
+  for (let i = 1; i < words.length && !/^[-!(]/.test(words[i]); i++) carpetas.push(words[i]);
+  if (!carpetas.length) carpetas.push('.');
+  // con una negación, un «o» o un `-prune`, un `-name` ya no dice qué alcanza: se miran todas
+  const filtros = [];
+  const sinFiltro = words.some((w) => ['!', '-not', '-o', '-or', ',', '-prune'].includes(w));
+  if (!sinFiltro) words.forEach((w, k) => { if ((w === '-name' || w === '-iname') && words[k + 1] !== undefined) filtros.push(cumplePatronDeFind(words[k + 1], w === '-iname')); });
+  const cumple = filtros.length ? (nombre) => filtros.some((f) => f(nombre)) : () => true;
+  const alcanzadas = () => carpetas.flatMap(absoluta).flatMap((abs) => {
+    try { if (fs.statSync(abs).isFile()) return cumple(path.basename(abs)) ? [abs] : []; } catch { return []; }
+    return mdAdentro(abs, cumple);
+  });
+  const out = [];
+  for (let k = 0; k < words.length; k++) {
+    if (!/^-(?:exec|execdir|ok|okdir)$/.test(words[k])) continue;
+    let fin = k + 1;
+    while (fin < words.length && !FIN_DE_EXEC.has(words[fin])) fin++;
+    const orden = words.slice(k + 1, fin);
+    k = fin;
+    if (!orden.length || LECTORES_DE_HISTORIA.has(nombreDeComando(orden[0]))) continue;
+    const archivos = orden.some((w) => w.includes('{}')) ? alcanzadas() : [];
+    out.push(orden.flatMap((w) => (w.includes('{}') ? archivos.map((a) => citarParaElShell(w.split('{}').join(a))) : [citarParaElShell(w)])).join(' '));
+  }
+  return out;
+}
+
+/**
+ * Lo que corre un `xargs`, con las palabras del tramo anterior como argumentos. Con marcador (`-I`, `-J`, `-i`,
+ * `--replace`) corre una orden por argumento, con el marcador reemplazado adentro de cada palabra.
+ */
+function ordenesDeXargs(words, previas) {
+  let i = 1;
+  let marca = null;
+  for (; i < words.length && words[i].startsWith('-'); i++) {
+    const w = words[i];
+    if (w === '--') { i++; break; }
+    if (w === '-I' || w === '-J') { marca = words[++i] || null; continue; }
+    if (/^-[IJ]./.test(w)) { marca = w.slice(2); continue; }
+    if (w === '-i' || w === '--replace') { marca = '{}'; continue; }
+    if (/^-i./.test(w)) { marca = w.slice(2); continue; }
+    if (w.startsWith('--replace=')) { marca = w.slice('--replace='.length) || '{}'; continue; }
+    if (XARGS_CON_VALOR.has(w)) i++;
+  }
+  const orden = words.slice(i);
+  if (!orden.length) return [];
+  if (marca) return previas.map((a) => orden.map((w) => citarParaElShell(w.split(marca).join(a))).join(' '));
+  return [[...orden, ...previas].map(citarParaElShell).join(' ')];
+}
+
+/**
+ * Lo que corre otro programa, como texto de un comando: la orden de un `find -exec`, la de un `xargs` y lo que un heredoc o
+ * un `<<<` le da a un shell. El cuerpo de un heredoc que va a otro programa no se lee como comando.
+ */
+function comandosPorOtroPrograma(cmd, cwd) {
+  const s = String(cmd || '');
+  if (!/\bfind\b|\bxargs\b|<</.test(s)) return [];
+  const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
+  const bases = [cwd];
+  for (const m of s.matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) bases.push(resolver(m[2], cwd));
+  const absoluta = (raw) => [...new Set(bases.map((b) => resolver(raw, b)))];
+  const out = [];
+  for (const crudo of [s, ...anidadosHasta(s).leidos]) {
+    // la continuación de renglón (`\` y salto) junta los dos renglones en una orden, como en el shell
+    const texto = crudo.replace(/\\\r?\n/g, ' ');
+    // el `\;` de un `-exec` no separa comandos: lo que sigue es del mismo `find`
+    const lista = [];
+    for (const t of tramos(texto)) {
+      const previo = lista[lista.length - 1];
+      if (previo !== undefined && previo.trimEnd().endsWith('\\')) lista[lista.length - 1] = `${previo} ${t}`;
+      else lista.push(t);
+    }
+    lista.forEach((tramo, k) => {
+      // sinPalabrasDelShell se come el `xargs` con sus opciones: acá sólo se sacan los prefijos y las palabras del shell
+      let antes = tramo.trim();
+      for (let previo = null; previo !== antes;) { previo = antes; antes = antes.replace(PREFIJO, '').replace(PALABRA_ANTES_DE_XARGS, '').trim(); }
+      const crudas = palabras(antes).filter((w) => w !== '');
+      if (nombreDeComando(crudas[0]) === 'xargs') {
+        out.push(...ordenesDeXargs(crudas, k ? palabras(lista[k - 1]).filter((w) => w !== '') : []));
+        return;
+      }
+      const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
+      const programa = nombreDeComando(words[0]);
+      if (programa === 'find') out.push(...ordenesDeFind(words, absoluta));
+      if (!shellLeeEntrada(tramo)) return;
+      const entrada = /<<<[ \t]*(?:'([^']*)'|"([^"]*)"|([^\s;&|]+))/.exec(tramo);
+      if (entrada) out.push(entrada[1] ?? entrada[2] ?? entrada[3]);
+    });
+    const lineas = texto.split('\n');
+    for (const { abre, desde, cierre, indice } of heredocsCerrados(lineas)) {
+      if (heredocVaAUnShell(lineas[abre], indice)) out.push(lineas.slice(desde, cierre).join('\n'));
+    }
+  }
+  return [...new Set(out)];
+}
+
+const NO_VA_FUERA_DEL_FOR = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'eval', 'source', '.', 'xargs', 'find']);
+
+/**
+ * Las palabras de los bucles del comando, si lo de afuera sólo lee: cada tubería que nombra una historia está hecha de
+ * lectores y afuera no corre un shell. null si no se puede afirmar: entonces cuentan todas las palabras. Un `pipeline.js`
+ * es lector sólo si es el instalado y sus opciones no piden otra cosa (`tramoQueSoloNombra`).
+ */
+function palabrasDelBucleSiFueraSoloSeLee(cmd, bases, instalados) {
+  const { tramos: lista, subs, abierta, conParentesis } = require('./lib/marker-command.js').tramos(String(cmd), 'bash');
+  if (abierta || conParentesis || subs.length || lista.some((t) => t.heredocs.length)) return null;
+  const delBucle = [];
+  const fuera = [];
+  let hondo = 0;
+  let recienCerrado = false;
+  for (const t of lista) {
+    const w = t.palabras.map((p) => p.texto);
+    const abreBucle = ['for', 'while', 'until'].includes(w[0]);
+    if (t.tras === '|' && (recienCerrado || abreBucle)) return null;
+    recienCerrado = false;
+    if (abreBucle) hondo++;
+    if (hondo > 0) {
+      delBucle.push(...w);
+      if (w[0] === 'done') { hondo--; recienCerrado = true; }
+      continue;
+    }
+    if (w[0] === 'done' || w[0] === 'do') return null;
+    fuera.push(t);
+  }
+  if (hondo !== 0) return null;
+  const memo = { porRuta: new Map() };
+  const esGuionInstalado = (valor, nombre) => {
+    const reales = bases.map((b) => rutaRealDelGuion(valor, b)).filter(Boolean);
+    return reales.length > 0 && reales.every((r) => path.basename(r) === nombre
+      && (instalados.some((x) => isInsideReal(x, r)) || versionadoEnElArbolPropio(r, memo)));
+  };
+  const lee = (t) => {
+    const w = t.palabras.map((p) => p.texto);
+    if (w.some((x) => /[<>]/.test(x))) return false;
+    if (LECTORES_DE_HISTORIA.has(w[0])) return true;
+    if (!/^node(?:js)?$/.test(nombreDeComando(w[0])) || !w[1]) return false;
+    if (PIPELINE_LEE.has(w[2]) && w.slice(3).every((x) => !x.startsWith('--output'))
+      && esGuionInstalado(expandirRuta(cmd, w[1]).valor, 'pipeline.js')) return true;
+    return tramoQueSoloNombra(cmd, w.map((x) => (/\s/.test(x) ? `'${x.replace(/'/g, '')}'` : x)).join(' '), esGuionInstalado);
+  };
+  const cadenas = [];
+  for (const t of fuera) {
+    if (t.tras === '|' && cadenas.length) cadenas[cadenas.length - 1].push(t);
+    else cadenas.push([t]);
+    const w = t.palabras.map((p) => p.texto);
+    if (NO_VA_FUERA_DEL_FOR.has(path.basename(w[0] || '')) || w.includes('for')) return null;
+    if (!lee(t) && t.palabras.some((p) => !p.literal)) return null;
+  }
+  const nombra = (t) => t.palabras.some((p) => NOMBRA_RUTA_DE_HISTORIA.test(p.texto));
+  return cadenas.every((c) => !c.some(nombra) || c.every(lee)) ? delBucle : null;
 }
 
 /**
@@ -2335,7 +3517,7 @@ function estadoDeHistoria(abs) {
   let texto = '';
   try { texto = fs.readFileSync(abs, 'utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n'); } catch (e) { logHookError(e); return '?'; }
   let declares = (t) => /^---[\s\S]*?^[ \t]*story[ \t]*:/m.test(t);
-  try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch { /* la forma de siempre */ }
+  try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch (e) { logHookError(e); /* la forma de siempre */ }
   if (!declares(texto)) return null;
   const fm = /^---\n([\s\S]*?)\n---/.exec(texto);
   const estado = fm && /^["']?status["']?\s*:\s*["']?([\w-]+)/m.exec(fm[1]);
@@ -2350,9 +3532,21 @@ function estadoDeHistoria(abs) {
  * estado lo cambia marker.js. Un borrador pasa sólo si el comando lo reescribe entero con un heredoc legible que lo
  * deja en borrador (ahí lo juzga el freno de la historia sin validar); escribirle encima de otra forma podría cerrarla.
  */
-function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = []) {
+function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = [], hondo = 0, instalados = []) {
   const enSitio = editaEnSitio(cmd);
-  if (!enSitio && !ESCRIBE.test(String(cmd || ''))) return [];
+  const destinosB = destinosBorrados(cmd);
+  // más allá del tope no se sabe qué corre: si nombra la ruta de una historia y escribe o borra, frena por el texto
+  const sinLeer = anidadosHasta(cmd).hondos.some((h) => NOMBRA_RUTA_DE_HISTORIA.test(h) && (ESCRIBE.test(h) || BORRA_O_MUEVE.test(h)));
+  // un guion de shell que escribe un heredoc del mismo comando corre lo que dice, y lo mismo lo que llega por otro
+  // programa: se mira como otro comando, un nivel
+  if (hondo === 0) {
+    for (const texto of [...guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])]), ...comandosPorOtroPrograma(cmd, cwd)]) {
+      const h = historiasPorConsola(texto, cwd, extractWriteTargets(texto, { keep: () => true }), sesion, [], hondo + 1, instalados);
+      if (h.length) return h;
+    }
+  }
+  if (sinLeer) return [`(un comando anidado a más de ${TOPE_ANIDADOS} niveles nombra una historia y escribe o borra: no se lee qué corre)`];
+  if (!enSitio && !destinosB.length && !ESCRIBE.test(String(cmd || ''))) return [];
   // con todos los editores en el lugar escritos como `sed` que nombra sus archivos, lo que escriben es lo que nombran:
   // la carpeta de un `cd` es desde dónde se leen, y una historia que tocan se ensaya para ver si le cambia el estado
   const seds = enSitio ? sedsLiterales(cmd) : null;
@@ -2391,7 +3585,6 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   // un guion que escribe, copia, mueve o borra: cuenta cada texto que nombra (`glob.glob('specs/*.md')`, `'h.md'`)
   const textosDeGuion = scriptsInline(cmd).filter(({ script }) => GUION_ESCRIBE.test(script))
     .flatMap(({ script }) => [...script.matchAll(/(['"`])((?:\\.|(?!\1)[^\\])*)\1/g)].map((m) => m[2]).filter((t) => !/\s/.test(t)));
-  const destinosB = destinosBorrados(cmd);
   const borrados = destinosB.map((d) => d.raw);
   // lo que sólo se repone (`git checkout -- x`, `git restore x`): cuenta si la historia tiene cambios que perdería
   // (desde otra rama o commit, `git checkout <ref> -- x` o `git restore --source`, la cambia aunque no tenga cambios)
@@ -2406,25 +3599,13 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
     ...movidosFueraDeMd(cmd),
     ...destinosDeCopia(cmd),
     ...textosDeGuion,
-    ...(enSitio || FOR_IN.test(cmd) ? nombradas : []),
+    // con un `for`, cuentan todas las palabras salvo que lo de afuera del bucle sólo lea
+    ...(enSitio ? nombradas : (FOR_IN.test(cmd) ? (palabrasDelBucleSiFueraSoloSeLee(cmd, [...new Set([cwd, sesion])], instalados) || nombradas) : [])),
   ];
   // una carpeta cuenta por las historias que tiene adentro cuando el comando la borra, la repone o la edita en el lugar
   // (`git checkout <rama> -- specs/`, `git restore .`, `grep -rl x specs | xargs sed -i`)
   const porCarpeta = new Set([...borrados, ...(enSitio ? nombradas : [])]);
-  const adentro = (dir) => {
-    const out = [];
-    const ver = (d, nivel) => {
-      let entradas = [];
-      try { entradas = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-      for (const e of entradas) {
-        if (out.length >= 500) return;
-        if (e.isDirectory() && nivel < 4 && !NEVER_CODE_SEGMENTS.has(e.name) && e.name !== '.git') ver(path.join(d, e.name), nivel + 1);
-        else if (e.isFile() && /\.md$/i.test(e.name)) out.push(path.join(d, e.name));
-      }
-    };
-    ver(dir, 0);
-    return out;
-  };
+  const adentro = (dir) => mdAdentro(dir);
   const vistos = new Set();
   const repuestos = new Set();   // las que sólo se nombran como algo que se repone
   const otros = new Set();
@@ -2434,9 +3615,12 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   const sedsDe = new Map();
   // el paréntesis que cierra un subshell no es parte de la ruta: `(cd specs; echo x >> h.md)`. Una variable que puede no
   // haber quedado puesta (`cd wt && f=specs/h.md && python3 - "$f" <<EOF`) cuenta también por lo que valdría si corrió
+  // (con las llaves expandidas, como el shell: `specs/{h,x}.md` nombra `specs/h.md` entera)
   const valoresDe = (raw) => {
-    const limpio = String(raw).replace(/\)+$/, '');
-    return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor])];
+    // la comilla invertida que cierra (`echo \`sed -i … h.md\``) tampoco
+    const limpio = String(raw).replace(/[)`]+$/, '');
+    return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor]
+      .flatMap((v) => (v ? expandirLlaves(v) : [v])))];
   };
   for (const raw of crudos) for (const valor of valoresDe(raw)) {
     // una palabra que no nombra un archivo no es un destino: el `))` que cierra una cuenta queda vacío sin sus
@@ -2450,8 +3634,12 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
       else sedsDe.set(abs, [...(sedsDe.get(abs) || []), ...seds.filter((x) => x.archivo === raw)]);
     };
     for (const base of bases) {
-      const rutas = /[*?[]/.test(valor) ? expandirComodin(valor.replace(/^~(?=\/|$)/, os.homedir()), base)
+      // el comodín de un `sed` que nombra sus archivos cuenta sólo por lo que expande: recortado, puede dejar una
+      // historia afuera
+      const aviso = {};
+      const rutas = /[*?[]/.test(valor) ? expandirComodin(valor.replace(/^~(?=\/|$)/, os.homedir()), base, aviso)
         : [resolveTarget(valor, base, process.platform, { homeVariable: true })];
+      if (aviso.recortado && deSed.has(raw)) cdSinResolver.push(`${raw} (más de 200 coincidencias desde ${base})`);
       for (const abs of rutas) {
         let esCarpeta = false;
         try { esCarpeta = porCarpeta.has(raw) && !NEVER_CODE_SEGMENTS.has(path.basename(abs)) && fs.statSync(abs).isDirectory(); } catch { /* no existe */ }
@@ -2500,7 +3688,7 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   // reponer una historia sin cambios no le cambia nada: pasa (`git restore .` después de tocar código)
   const conCambios = (abs) => {
     const r = require('child_process').spawnSync('git', ['-C', path.dirname(abs), 'status', '--porcelain', '--', abs],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
     return r.error || r.status !== 0 || String(r.stdout).trim() !== '';
   };
   for (const abs of repuestos) if (!otros.has(abs) && !conCambios(abs)) vistos.delete(abs);
@@ -2514,13 +3702,16 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   return [...sinResolver, ...[...vistos].filter((abs) => {
     const estado = estadoDeHistoria(abs);
     if (estado === null) return false;
-    // un `sed` que deja el estado del encabezado como estaba no la cierra: pasa como el cuerpo editado con Edit
+    // un `sed` que deja el encabezado como estaba no la cierra: pasa como el cuerpo editado con Edit. Los `status:` de
+    // arriba tienen que quedar iguales y, además, la herramienta de edición tiene que dejar pasar el mismo cambio (una
+    // tanda del bloque `pipelines` a `done`, el número de la historia, un estado repetido)
     if (sedsDe.has(abs) && !noSoloSed.has(abs)) {
       let antes = null;
       try { antes = fs.readFileSync(abs, 'utf8'); } catch (e) { logHookError(e); }
       const despues = antes == null ? null : ensayarSeds(abs, [...new Set(sedsDe.get(abs))]);
       const ea = estadosDelEncabezado(antes || '');
-      if (despues != null && ea.length && JSON.stringify(ea) === JSON.stringify(estadosDelEncabezado(despues))) return false;
+      if (despues != null && ea.length && JSON.stringify(ea) === JSON.stringify(estadosDelEncabezado(despues))
+        && !require('./lib/story-transition.js').transicionAMano(abs, antes, despues)) return false;
     }
     if (estado !== 'draft') return true;
     // el estado del encabezado del cuerpo (todos sus `status:` en borrador), no un `status: draft` cualquiera más abajo
@@ -2533,10 +3724,10 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
 /** Lo que git sigue en esa ruta (un archivo, una carpeta, un comodín): `[rutas absolutas]`, o null si no se pudo preguntar. */
 function seguidos(repo, abs) {
   const r = require('child_process').spawnSync('git', ['-C', repo, 'ls-files', '-z', '--full-name', '--', abs],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
   if (r.error || r.status !== 0) return null;
   const top = require('child_process').spawnSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
   const raiz = top.status === 0 ? String(top.stdout).trim() : repo;
   return String(r.stdout).split('\0').filter(Boolean).map((f) => path.join(raiz, f));
 }
@@ -2600,7 +3791,7 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
     if (declarados) return declarados;
     declarados = new Set();
     let texto = '';
-    try { texto = marker.storyPath ? fs.readFileSync(marker.storyPath, 'utf8') : ''; } catch (_) { return declarados; }
+    try { texto = marker.storyPath ? fs.readFileSync(marker.storyPath, 'utf8') : ''; } catch (e) { logHookError(e); return declarados; }
     const ts = require('./lib/test-scope.js');
     const finales = [...ts.parseDeclaredFiles(texto), ...ts.parseFilesToDelete(texto)]
       .map((f) => String(f).replace(/\\/g, '/').replace(/^\.\//, '')).filter((f) => f.includes('/') && !f.split('/').includes('..'));
@@ -2671,12 +3862,12 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
  */
 function heredocs(cmd) {
   const out = [];
-  const re = /(^|[\n;&|][ \t]*)([^\n]*?)(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\3(?=[\s;&|()<>]|$)([^\n]*)\n([\s\S]*?)\n[ \t]*\4[ \t]*(?=\n|$)/g;
+  const re = /(^|[\n;&|][ \t]*)([^\n]*?)(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\3(?=[\s;&|()<>]|$)([^\n]*)\n(?:([\s\S]*?)\n)??[ \t]*\4[ \t]*(?=\n|$)/g;
   let m;
   while ((m = re.exec(String(cmd || '')))) {
     const line = `${m[2]} ${m[5]}`;
     const t = extractWriteTargets(line);
-    out.push({ body: m[6], target: t.length === 1 ? t[0] : null });
+    out.push({ body: m[6] || '', target: t.length === 1 ? t[0] : null });
   }
   return out;
 }
@@ -2731,6 +3922,40 @@ const { expandirRuta } = require('./lib/command-vars.js');
  * Cada destino de escritura del comando, con su ruta absoluta: `[{ raw, abs, sinResolver: [nombres] }]`.
  * `sinResolver` lista lo que no se pudo resolver (vacía si se resolvió todo).
  */
+// Lo que el shell pone y nunca trae una barra ni `..`: un número (`$$`, `$!`, `$?`, `$#`). `$RANDOM`, `$SECONDS` y los
+// demás no: con `unset RANDOM` vuelven a ser variables comunes (`RANDOM=../src`)
+const SIN_BARRAS = new Set(['$$', '$!', '$?', '$#']);
+/** ¿Todo lo que quedó sin resolver en una ruta es de lo que nunca trae una barra? */
+function sinBarras(nombres) {
+  return nombres.length > 0 && nombres.every((n) => SIN_BARRAS.has(String(n)));
+}
+
+/** El mensaje del camino corto cuando un destino de escritura tiene una variable que no se pudo resolver. */
+function mensajeRutaSinResolver(d, via) {
+  const nombres = [...new Set(d.sinResolver)].map((n) => (String(n).startsWith('$') ? n : `$${n}`)).join(', ');
+  return [
+    '⛔ camino corto — NO PUDE RESOLVER LA RUTA',
+    `  (detectado en ${via})`,
+    `  El comando escribe en «${String(d.raw).slice(0, 120)}» y no pude saber qué vale ${nombres}: viene de afuera del`,
+    '  comando, de un `$(…)`, de un bucle, o de una forma que el freno no lee. Sin la ruta real no sé si el archivo',
+    '  está en la lista de este camino corto, así que frena.',
+    '  Para seguir: escribí la ruta entera, o poné la variable en el mismo comando con un valor fijo',
+    '  (`D=/ruta/de/la/carpeta; cat > "$D/x"`), sin `$(…)`.',
+  ].join('\n') + '\n';
+}
+
+/** El mensaje del camino corto cuando un destino relativo cae en una carpeta que el freno no sigue (un `cd` adentro). */
+function mensajeCarpetaSinSeguir(d, via) {
+  return [
+    '⛔ camino corto — NO PUDE RESOLVER LA RUTA',
+    `  (detectado en ${via})`,
+    `  El comando escribe en «${String(d.raw).slice(0, 120)}» después de cambiar de carpeta con un \`cd\` que el freno no`,
+    '  sigue (adentro de un paréntesis, de un bucle o después de otro comando). Sin la carpeta no sé si el archivo está',
+    '  en la lista de este camino corto, así que frena.',
+    '  Para seguir: escribí la ruta entera, o empezá el comando con el `cd` (`cd /ruta && cp a b`).',
+  ].join('\n') + '\n';
+}
+
 function destinosResueltos(cmd, cwd, platform = process.platform, { keep = null } = {}) {
   return extractWriteTargets(cmd, { keep }).map((raw) => {
     const { valor, sinResolver } = expandirRuta(cmd, raw);
@@ -2749,7 +3974,7 @@ function renameOrCopyOfExistingStory(cmd, cwd) {
   try {
     const { probeStoryFile } = require('./lib/story-discovery.js');
     return fs.existsSync(src) && probeStoryFile(src) ? { src, dest } : null;
-  } catch { return null; }
+  } catch (e) { logHookError(e); return null; }   // sin mirarla, la copia se juzga como historia nueva
 }
 
 /** El nombre sugiere story cuando no hay contenido legible (cp / mv / tee desde un pipe). */
@@ -2760,12 +3985,14 @@ function nameSuggestsStory(abs) {
 
 // ── hook ──────────────────────────────────────────────────────────────────────────────────────────
 
-function logHookError(e) {
+// «FAILED OPEN» es sólo la falla que deja pasar el comando sin mirarlo, y «FRENÓ POR FALLA» la que lo frena sin mirarlo: las
+// de arriba de todo. Las demás se atrapan donde pasan, y el freno sigue con lo que sabe
+function logHookError(e, rotulo = 'falla atrapada') {
   try {
-    const dir = path.join(stateDirOf(os.homedir()));
+    const dir = carpetaDelEstado();
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'hook-errors.log'),
-      `[${new Date().toISOString()}] on-bash-write-gate FAILED OPEN: ${(e && e.stack) || e}\n\n`, 'utf8');
+      `[${new Date().toISOString()}] on-bash-write-gate ${rotulo}: ${(e && e.stack) || e}\n\n`, 'utf8');
   } catch { /* noop */ }
 }
 
@@ -2796,9 +4023,18 @@ function anotarBorradosDeLaStory({ stateDir, sessionId, marker, rutas, via }) {
     m.fileEvents = Array.isArray(m.fileEvents) ? m.fileEvents : [];
     for (const p of rutas) {
       if (!m.filesTouched.includes(p)) m.filesTouched.push(p);
-      m.fileEvents.push({ path: p, ts });
+      // la marca `code`, como on-edit: si la regla falla, pide otra vuelta (ante la duda, se revisa)
+      let code;
+      try { code = require('./lib/reloop-code.js').pideOtraVuelta(p, { storyPath: m.storyPath }); } catch (_) { code = true; }
+      m.fileEvents.push({ path: p, ts, code });
     }
     if (m.fileEvents.length > 500) m.fileEvents = m.fileEvents.slice(-500);
+    // `otraVuelta`, la decisión de `next` escrita para el cartel (lib/steps.js `otraVueltaDe`)
+    try {
+      const v = require('./lib/steps.js').otraVueltaDe(m);
+      if (v === undefined) delete m.otraVuelta;
+      else m.otraVuelta = v;
+    } catch (e) { delete m.otraVuelta; logHookError(e); }   // sin el campo, el cartel usa su regla de antes
     m.lastTouch = ts;
     const tmp = `${archivo}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(m, null, 2) + '\n', 'utf8');
@@ -2839,7 +4075,17 @@ function anotarEscriturasConsola(stateDir, sessionId, rutas, kind = null) {
 // esta lista con palabras literales, sin redirecciones, sin `$(…)`, sin heredocs y sin asignaciones delante.
 const LEE = new Set(['cat', 'ls', 'grep', 'head', 'tail']);
 const MARKER_LEE = new Set(['get', 'list-all', 'find-by-story', 'clear-session', 'restore']);
-const PIPELINE_LEE = new Set(['risk-class', 'followups-status']);
+// Los programas que leen los archivos que reciben y no corren ninguno. Sin `awk`, `rg --pre`, `sort --compress-program`
+// ni `open`, que pueden correr lo que se les da; `sed` va aparte (`sedQueLee`). Las listas de `pipeline.js` son las
+// mismas que usa el freno de la firma
+const LEE_ARCHIVOS = new Set([...LEE, 'wc', 'stat']);
+const { PIPELINE_LEE, PIPELINE_LISTA } = require('./lib/marker-command.js');
+// Lo que puede ir en el mismo comando sin cambiar qué programa corre un nombre: un programa aparte no toca al shell. Lo
+// que sí lo toca (`hash -p`, `source`, `export`, un alias, una función) no está, sin hacer falta conocerlo uno por uno
+const VECINOS = new Set([...LEE_ARCHIVOS, 'sed', 'git', 'node', 'nodejs', 'cd', 'echo', 'printf', 'pwd', 'true', 'false', 'test', '[',
+  'sleep', 'date', 'sort', 'uniq', 'cut', 'tr', 'jq', 'diff', 'tee', 'basename', 'dirname', 'realpath']);
+// una variable suelta que cambia qué se corre o cómo se parte (`PATH`, `path`, `NODE_OPTIONS`, `BASH_ENV`, `IFS`)
+const VARIABLE_DEL_SHELL = /path$|env$|options$|^ifs$|^(?:ld|dyld)_/i;
 // El programa vale por su nombre sólo si es el del sistema: sin ruta (lo busca el PATH), en una carpeta del sistema, o
 // el mismo node que corre este gancho. Un `./cat` plantado en el repo no es leer.
 const CARPETAS_DEL_SISTEMA = ['/bin/', '/usr/bin/', '/usr/local/bin/', '/opt/homebrew/bin/'];
@@ -2858,6 +4104,77 @@ function esteGuion(arg, guion, cwd) {
     return fs.realpathSync(dado) === fs.realpathSync(path.join(__dirname, guion));
   } catch { return false; }
 }
+const gitQueLee = (w) => ['status', 'diff', 'log'].includes(w[1] && w[1].texto) && !w.some((x) => /^--output\b/.test(x.texto));
+// `git add` guarda el guion que nombra, no lo corre (no vale para decir que el comando sólo lee)
+const gitQueNombra = (w) => gitQueLee(w) || (w[1] && w[1].texto) === 'add';
+
+/**
+ * ¿Este `sed` sólo lee? El de GNU corre lo que le pide `e`, también sobre las líneas del archivo (`sed e ./x`), y lee las
+ * opciones en cualquier lugar: vale un guion a la vista y sin efectos, y detrás sólo archivos escritos tal cual.
+ */
+function sedQueLee(w) {
+  let i = 1;
+  while (w[i] && /^-[nEr]+$/.test(w[i].texto)) i++;
+  const resto = w.slice(i + 1);
+  return !!w[i] && w[i].literal && !w[i].texto.startsWith('-') && guionDeSedSinEfectos(w[i].texto)
+    && resto.every((x) => x.literal && !x.texto.startsWith('-'));
+}
+
+/**
+ * ¿Ningún tramo del comando, ni de lo que corre adentro de él, puede cambiar qué programa corre un nombre? Cada uno es un
+ * programa de `VECINOS` o una variable suelta que no es del shell. Lee programas, no texto: un `function` o un `f()`
+ * entre comillas es lo que se busca, no una función.
+ */
+function comandoNoTocaElShell(cmd, hondo = 0) {
+  const mc = require('./lib/marker-command.js');
+  const { tramos: lista, subs, abierta } = mc.tramos(sinRedireccionesDeSalida(cmd), 'bash');
+  if (abierta || hondo > 3) return false;
+  return subs.every((s) => comandoNoTocaElShell(s, hondo + 1)) && lista.every((t) => {
+    const w = t.palabras;
+    if (!w.length) return true;
+    const asignada = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/.exec(w[0].texto);
+    if (asignada) return w.length === 1 && !VARIABLE_DEL_SHELL.test(asignada[1]);
+    if (!w[0].literal || !programaDelSistema(w[0].texto)) return false;
+    const prog = nombreDeComando(w[0].texto);
+    return VECINOS.has(prog) && !(prog === 'printf' && w[1] && w[1].texto === '-v');
+  });
+}
+
+/**
+ * ¿El tramo nombra guiones sin correrlos? Sí, si su programa sólo lee sus archivos o es un comando de sólo lectura del
+ * `pipeline.js` instalado, solo o como lo corre el `marker.js run-check <paso> --` instalado: la lista es de lo que no
+ * corre, y lo que no está en ella cuenta, sin hacer falta conocer cada envoltura (`stdbuf`, `flock`, `caffeinate`). El
+ * tramo se lee como lo lee el shell (lib/marker-command.js): si ahí hay más de uno (`&`, paréntesis), o un comando adentro,
+ * no se exime. Se pregunta sólo si el comando entero no puede cambiar qué programa corre ese nombre (`comandoNoTocaElShell`).
+ */
+function tramoQueSoloNombra(cmd, tramo, esGuionInstalado) {
+  const mc = require('./lib/marker-command.js');
+  // sin las redirecciones de salida: el `&` de `2>&1` no empieza otro tramo, y lo que escriben lo miran los demás frenos
+  const texto = sinRedireccionesDeSalida(tramo);
+  const { tramos: lista, subs, abierta } = mc.tramos(texto, 'bash');
+  if (subs.length || abierta || lista.length !== 1) return false;
+  const w = lista[0].palabras;
+  if (!w.length) return false;
+  const prog = nombreDeComando(w[0].texto);
+  if (LEE_ARCHIVOS.has(prog) || (prog === 'sed' && sedQueLee(w)) || (prog === 'git' && gitQueNombra(w))) return true;
+  if (prog !== 'node' && prog !== 'nodejs') return false;
+  // `node marker.js run-check <paso> -- node pipeline.js …`: lo que se mira es lo que va detrás del `--`
+  const envuelto = w.length > 5 && w[2].texto === 'run-check' && w[3].literal && w[4].texto === '--';
+  if (envuelto && !esGuionInstalado(expandirRuta(cmd, w[1].texto).valor, 'marker.js')) return false;
+  const p = envuelto ? w.slice(5) : w;
+  if (envuelto && !/^node(?:js)?$/.test(nombreDeComando(p[0].texto))) return false;
+  const llamadas = mc.llamadas(envuelto ? p.map((x) => (/\s/.test(x.texto) ? `'${x.texto.replace(/'/g, '')}'` : x.texto)).join(' ') : texto, { shell: 'bash' });
+  const l = llamadas[0];
+  if (llamadas.length !== 1 || l.guion !== 'pipeline' || !PIPELINE_LISTA.has(l.sub) || !p[2] || p[2].texto !== l.sub) return false;
+  // las banderas se leen como las lee el freno de firmas: una que no se ve puede ser la que pide una firma. La vuelta
+  // extra escrita tal cual sí se exime (su firma la pide el freno de firmas, aparte); la que llega por una variable o
+  // por lo que no se ve, no
+  const sinLaVueltaALaVista = { ...l, args: (l.args || []).filter((a) => !(a.literal && a.texto === '--extra-round')) };
+  if (l.envFile || l.porXargs || mc.escapeDe(l, null) || mc.lectorDeBanderas(sinLaVueltaALaVista)('--extra-round')) return false;
+  // una variable que no se sabe queda escrita en la ruta, y esa ruta no existe
+  return esGuionInstalado(expandirRuta(cmd, p[1].texto).valor, 'pipeline.js');
+}
+
 function soloLee(cmd, shell, cwd) {
   const { tramos, subs, abierta } = require('./lib/marker-command.js').tramos(String(cmd), shell);
   if (subs.length || abierta || !tramos.length) return false;
@@ -2869,7 +4186,7 @@ function soloLee(cmd, shell, cwd) {
     if (!programaDelSistema(w[0].texto)) return false;
     const prog = path.basename(w[0].texto.replace(/\\/g, '/')).toLowerCase().replace(/\.exe$/, '');
     if (LEE.has(prog)) return true;
-    if (prog === 'git') return ['status', 'diff', 'log'].includes(w[1] && w[1].texto) && !w.some((x) => /^--output\b/.test(x.texto));
+    if (prog === 'git') return gitQueLee(w);
     if (prog !== 'node' && prog !== 'nodejs') return false;
     const guion = w[1] ? path.basename(w[1].texto.replace(/\\/g, '/')).toLowerCase() : '';
     // el nombre no alcanza: un marker.js cualquiera podría escribir; vale sólo el guion de esta misma carpeta
@@ -2898,7 +4215,406 @@ function ejecucionPerdida(event) {
   if (soloLee(cmd, event?.tool_name === 'PowerShell' ? 'powershell' : 'bash', nativePath(event?.cwd || process.cwd()))) return null;
   const io = require('./lib/story-gate-io.js');
   io.appendLog(io.DEFAULT_STATE_DIR, 'gates.log', sessionId, { name: 'story-gate', status: 'blocked', kind: 'ejecucion-perdida', via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`, story: p.story, reason: `ejecución perdida (${p.caso}): ${p.falta}` });
-  return { block: or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }) + '\n' };
+  return { block: or.cartel(p) + '\n' };
+}
+
+// ── la carpeta de una ejecución abierta no se borra ni se mueve: primero se cierra la ejecución (@story-8.318) ────────
+
+/**
+ * Lo que el comando borra o mueve, para buscar adentro una ejecución abierta: `{ rutas: [{ raw, base? }], prune: [base] }`.
+ * Los borrados de un programa que borra (`rm -r`, `Remove-Item`, `rd`, `del`; no los de `git rm|checkout|restore`, que sólo
+ * tocan lo versionado, ni `find -delete`, que borra por nombre), los orígenes de `mv`, `Move-Item` y `Rename-Item`,
+ * también detrás de `cmd /c`, y la carpeta de `git worktree remove|move`. `prune` trae la carpeta desde la que corre cada
+ * `git worktree prune` (la de `-C`, o null para la del comando).
+ */
+// las palabras de control del shell y los envoltorios que corren otro comando (@story-8.318)
+// `time` va con los envoltorios: lleva opciones (`time -p`)
+const CONTROL = new Set(['if', 'while', 'until', 'then', 'do', 'else', 'elif', '!', '{', '(']);
+const ENVOLTORIOS = new Set(['sudo', 'doas', 'setsid', 'ionice', 'nice', 'env', 'command', 'exec', 'time', 'timeout', 'nohup', 'stdbuf', 'chrt', 'taskset']);
+/**
+ * Las palabras otra vez como un tramo: entre comillas simples las que lo necesitan, donde la barra y la comilla doble
+ * son letras; una comilla simple se cierra, se escapa y se vuelve a abrir (`'\''`).
+ */
+const comoTramo = (words) => words.map((w) => (/[\s'"\\$`]/.test(w) ? `'${w.split("'").join("'\\''")}'` : w)).join(' ');
+
+function carpetasQueBorraOMueve(cmd) {
+  // `cmd /c`, `pushd` y `Set-Location` cambian de forma, no de efecto; las palabras de control del shell (`if`, `then`,
+  // `do`, `else`, `time`, `!`, `{`, `(`) no son el comando
+  const sinCmd = String(cmd || '')
+    // la continuación de línea junta los renglones
+    .replace(/\\\r?\n/g, ' ')
+    // `cd` solo va a la carpeta personal; `cd "<carpeta>"` sin espacios es `cd <carpeta>`
+    .replace(/(^|[;&|(\n]\s*)cd(?=\s*(?:[;&|\n)]|$))/g, '$1cd $HOME')
+    .replace(/\bcd\s+"([^"\s]*)"/g, 'cd $1')
+    .replace(/\$\(\s*pwd\s*\)|\$\{PWD(?::?[-?=+][^}]*)?\}/g, '$PWD')
+    // comillas pegadas a la palabra sin espacios adentro (`wt-"a"`): la misma palabra
+    .replace(/(?<=[^\s=])(["'])([^"'\s]*)\1/g, '$2')
+    // una redirección no cambia qué se borra ni dónde (`cd X >/dev/null && rm -rf wt`)
+    .replace(/(?<=[ \t])\d?>{1,2}&?[ \t]*(?:\/dev\/null|&?\d|NUL)\b/gi, '')
+    .replace(/(^|[;&|(\n]\s*)cmd(?:\.exe)?\s+\/[ck]\s+/gi, '$1')
+    .replace(/(^|[;&|(\n{]\s*)(?:pushd|set-location|sl|chdir)(?=\s)/gi, '$1cd')
+    // un subshell o un grupo que abre el tramo (`(cd x && …)`, `{ rm …; }`): sin la llave ni el paréntesis
+    .replace(/(^|[;&|\n])[ \t]*[({]+/g, '$1 ');
+  const rutas = [];
+  const prune = [];
+  // un borrado cuenta si puede llevarse una carpeta con algo adentro: `rm` con `-r`, `Remove-Item` (y sus alias) con
+  // `-Recurse`, `rd`/`rmdir` con `/s`. `rm -f <carpeta>` o un `rmdir` de una carpeta vacía no se la llevan
+  const recursivo = (words) => {
+    const c = nombreDeComando(words[0] || '');
+    const resto = words.slice(1);
+    if (c === 'rm') return resto.some((w) => /^-[a-zA-Z]*[rR]/.test(w) || w === '--recursive');
+    // `/s` también pegado a otros (`/s/q`, `/q/s`)
+    if (['rd', 'rmdir', 'remove-item', 'ri', 'del', 'erase'].includes(c)) return resto.some((w) => /^(?:\/[a-z])*\/s(?:\/[a-z])*$/i.test(w) || /^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?$/i.test(w));
+    return false;
+  };
+  const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'cmd', 'pwsh', 'powershell', 'eval', 'xargs', 'env', 'sudo', 'nohup', 'nice', 'time']);
+  const textos = [sinCmd];
+  const ver = (texto, nivel) => {
+    for (const tramo of tramos(texto)) {
+      // sin PREFIJO: los envoltorios se sacan acá, con sus opciones (`sudo -u x`: PREFIJO dejaría `x` como el comando)
+      let words = palabras(tramo.trim()).filter((w) => w !== '');
+      let tramoDe = tramo;
+      // las palabras de control (`then`, `do`, `!`, `time`…) y los envoltorios que corren otro comando, con sus opciones
+      // y valores (`sudo -u x`, `env -u X`, `nice -5`): se sacan de a una palabra, sin una expresión que pueda retroceder
+      // con un índice y un solo corte al final: `shift()` mueve el arreglo entero en cada palabra (cuadrático)
+      let k0 = 0;
+      for (let vuelta = 0; vuelta < 64 && k0 < words.length; vuelta++) {
+        const w0 = words[k0];
+        if (CONTROL.has(w0) || /^[A-Za-z_]\w*=/.test(w0)) { k0++; continue; }
+        if (!ENVOLTORIOS.has(nombreDeComando(w0))) break;
+        k0++;
+        while (k0 < words.length && (words[k0].startsWith('-') || /^[A-Za-z_]\w*=/.test(words[k0]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[k0]))) {
+          const op = words[k0++];
+          if (/^-[ugnc]$/.test(op) && k0 < words.length) k0++;
+        }
+      }
+      if (k0) { words = words.slice(k0); tramoDe = comoTramo(words); }
+      // `xargs [opciones] rm -rf <ruta>` y `eval rm -rf <ruta>`: el comando es lo que sigue
+      if (['xargs', 'eval'].includes(nombreDeComando(words[0] || ''))) {
+        let k = 1;
+        while (nombreDeComando(words[0]) === 'xargs' && k < words.length && words[k].startsWith('-')) k += /^-(?:I|n|P|L|d|E|s|a)$/.test(words[k]) ? 2 : 1;
+        words = words.slice(k);
+        tramoDe = comoTramo(words);
+      }
+      if (recursivo(words)) for (const d of destinosBorrados(tramoDe)) if (d.kind === 'delete' && !d.git) rutas.push({ raw: d.raw });
+      for (const raw of origenesMovidos(tramoDe)) rutas.push({ raw });
+      // `trash <carpeta>` la saca entera (a la papelera)
+      if (nombreDeComando(words[0] || '') === 'trash') for (const w of words.slice(1)) if (!w.startsWith('-')) rutas.push({ raw: w });
+      // `find <carpetas> -exec rm -r {}` sin elegir por nombre: borra las carpetas enteras
+      if (nombreDeComando(words[0] || '') === 'find') {
+        const e = words.findIndex((w) => /^-exec(?:dir)?$/.test(w));
+        const porNombre = words.some((w) => /^-(?:i?name|i?path|i?wholename|i?regex|newer\w*|[acm]time|[acm]min|size|perm|user|group)$/.test(w));
+        if (e > 0 && !porNombre && recursivo(words.slice(e + 1))) {
+          // `-H`, `-L` y `-P` van antes de las carpetas
+          const desde = words.slice(1);
+          while (/^-[HLP]$/.test(desde[0] || '')) desde.shift();
+          for (const w of desde) { if (w.startsWith('-') || w === '!' || w === '(') break; rutas.push({ raw: w }); }
+        }
+      }
+      // adentro de un texto sólo cuando lo corre otro shell (`bash -c '…'`): el texto de un `echo` o un mensaje no borra
+      if (nivel < 2 && SHELLS.has(nombreDeComando(words[0] || ''))) for (const w of words.slice(1)) if (/\s/.test(w)) { textos.push(w); ver(w, nivel + 1); }
+      if (nombreDeComando(words[0] || '') !== 'git') continue;
+      let i = 1;
+      let base = null;
+      while (i < words.length && words[i].startsWith('-')) {
+        // varios `-C` se encadenan como git: uno absoluto empieza de nuevo
+        if (words[i] === '-C') { const v = words[i + 1]; base = base && !(path.isAbsolute(v) || /^[A-Za-z]:[\\/]/.test(v)) ? `${base}/${v}` : v; i += 2; continue; }
+        if (['-c', '--git-dir', '--work-tree', '--namespace'].includes(words[i])) { i += 2; continue; }
+        i++;
+      }
+      if (words[i] !== 'worktree') continue;
+      const sub = words[i + 1];
+      const opciones = words.slice(i + 2).filter((w) => w.startsWith('-'));
+      const resto = words.slice(i + 2).filter((w) => !w.startsWith('-'));
+      if ((sub === 'remove' || sub === 'move') && resto[0]) rutas.push({ raw: resto[0], ...(base ? { base } : {}) });
+      // `--dry-run` (`-n`) sólo dice qué podaría
+      if (sub === 'prune' && !opciones.some((w) => w === '-n' || w === '--dry-run')) prune.push(base);
+    }
+  };
+  ver(sinCmd, 0);
+  // la lista con coma de PowerShell (`Remove-Item a,b -Recurse`): cada una, además de la palabra entera
+  const conComas = [];
+  for (const r of rutas) { conComas.push(r); if (/,/.test(r.raw)) for (const x of r.raw.split(',')) if (x.trim()) conComas.push({ ...r, raw: x.trim() }); }
+  return { rutas: conComas, prune, texto: sinCmd, textos };
+}
+
+/**
+ * Las carpetas de trabajo que un `git worktree prune` corrido en `dir` olvidaría: las que git marca `prunable`.
+ * `{ ok: true, carpetas }`, o `{ ok: false, motivo }` si git no se pudo leer o no trae el campo `prunable` (anterior a
+ * 2.31): una carpeta anotada que ya no existe, sin la marca, no se sabe si se poda.
+ */
+function lasQuePoda(dir) {
+  const r = require('child_process').spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: dir, encoding: 'utf8', timeout: 10000, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+  if (r.status !== 0) return { ok: false, motivo: `no pude leer las carpetas de trabajo de git (${String(r.stderr || (r.error && r.error.code) || 'sin salida').trim().split('\n')[0]})` };
+  const lista = [];
+  let cur = null;
+  for (const l of String(r.stdout).split(/\r?\n/)) {
+    if (l.startsWith('worktree ')) { cur = { path: nativePath(l.slice(9)), prunable: false, locked: false }; lista.push(cur); }
+    else if (cur && (l === 'prunable' || l.startsWith('prunable '))) cur.prunable = true;
+    else if (cur && (l === 'locked' || l.startsWith('locked '))) cur.locked = true;
+  }
+  const hayCampo = lista.some((w) => w.prunable);
+  const faltan = lista.slice(1).filter((w) => !w.locked && !fs.existsSync(w.path));
+  if (!hayCampo && faltan.length) return { ok: false, motivo: 'este git no marca qué carpetas poda (le falta el campo «prunable», anterior a 2.31): no pude saber qué se poda' };
+  return { ok: true, carpetas: lista.slice(1).filter((w) => w.prunable).map((w) => w.path) };
+}
+
+/** El cartel de «cerrá la ejecución antes»: cada ejecución con su historia, su sesión y cómo se cierra. */
+function cartelBorraAbierta(abiertas, sid, via) {
+  const or = require('./lib/open-runs.js');
+  const lineas = [`🔒 CERRÁ LA EJECUCIÓN ANTES — ${via} borra o mueve la carpeta de una ejecución abierta. Si se va, la ejecución queda perdida y para salir hace falta la firma de una persona.`];
+  for (const a of abiertas) {
+    const propia = a.sesion === String(sid);
+    const f = or.formaDeMarker(propia ? 'clear' : `clear-session ${a.sesion}`, a.sesion);
+    lineas.push(`  · story ${a.story || '?'} (sesión ${a.sesion}), su carpeta ${a.runDir}, dentro de ${a.en}.`);
+    lineas.push(propia
+      ? `    Cerrala antes, después del último push y del último pedido: ${f.ventana}`
+      : `    Es de otra sesión: se cierra desde esa sesión, con ${f.ventana}. Si esa sesión ya no está, la cierra una persona en su terminal: ${f.terminal}`);
+  }
+  lineas.push('Con la ejecución cerrada, el mismo comando pasa.');
+  return lineas.join('\n');
+}
+
+// El comando borra o mueve una carpeta que contiene la carpeta de una ejecución abierta (D4 de la 8.318: abierta según
+// gates.log). Sólo mira cuando el comando borra o mueve, y lee el registro sólo si hay una carpeta que exista en el disco
+// (o un `git worktree prune`). Un registro que no se puede leer frena: lo indecidible frena (8.121, decisión 13).
+function borraEjecucionAbierta(event) {
+  if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
+  const cmd = event?.tool_input?.command;
+  if (!cmd || !BORRA_O_MUEVE.test(String(cmd))) return null;
+  const { rutas, prune, textos } = carpetasQueBorraOMueve(cmd);
+  if (!rutas.length && !prune.length) return null;
+  const baseCwd = nativePath(event?.cwd || process.cwd());
+  // las carpetas desde donde puede correr: las del original y las del texto sin subshells ni `pushd`, también adentro
+  // de un `bash -c '…'`
+  const cwds = [...new Set([cmd, ...textos].flatMap((t) => carpetasDelComando(conLosCdDeSiempre(t), baseCwd)))];
+  // `{1..3}` y `{a..c}` como el shell, en una lista con coma (hasta 64)
+  const conRangos = (raw) => String(raw).replace(/\{(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])\}/g, (m, a, b) => {
+    const num = /\d/.test(a);
+    const x = num ? Number(a) : a.charCodeAt(0);
+    const y = num ? Number(b) : b.charCodeAt(0);
+    if (Math.abs(y - x) > 63) return m;
+    const out = [];
+    for (let v = x; x <= y ? v <= y : v >= y; v += x <= y ? 1 : -1) out.push(num ? String(v) : String.fromCharCode(v));
+    return `{${out.join(',')}}`;
+  });
+  // `$PWD` y `$(pwd)` son la carpeta del comando; una ruta que no se resuelve se mira por su parte fija de adelante
+  // (`../wt-$X` mira `..`): lo que se borra está adentro de esa carpeta
+  const fija = (raw) => {
+    const i = String(raw).search(/[$`]/);
+    if (i <= 0) return null;
+    const pre = String(raw).slice(0, i);
+    return /[\\/]$/.test(pre) ? pre : path.dirname(pre);
+  };
+  const resolver = (raw, base, desde) => {
+    // comillas y escapes pegados a la palabra (`wt-"a"`, `wt\-a`) son la misma ruta; en Windows la barra invertida separa
+    const limpia = String(raw).replace(/["']/g, '').replace(process.platform === 'win32' ? /^$/ : /\\(.)/g, '$1');
+    const conPwd = limpia.replace(/\$\{?PWD\}?|\$\(\s*pwd\s*\)/g, () => desde);
+    let dir = desde;
+    if (base) { const b = expandirRuta(cmd, base); if (b.sinResolver.length) return { sinResolver: true }; dir = resolveTarget(b.valor, desde, process.platform, { homeVariable: true }); }
+    const ruta = expandirRuta(cmd, conPwd);
+    if (!ruta.sinResolver.length) return { abs: resolveTarget(ruta.valor, dir, process.platform, { homeVariable: true }) };
+    const f = fija(conPwd);
+    return f ? { abs: resolveTarget(f, dir, process.platform, { homeVariable: true }), aproximada: true } : { sinResolver: true };
+  };
+  const esCarpeta = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+  const carpetas = new Set();
+  const comodines = [];
+  for (const desde of cwds) {
+    for (const d of rutas) {
+      for (const raw of expandirLlaves(conRangos(d.raw))) {
+        const r = resolver(raw, d.base, desde);
+        if (!r.abs) continue;
+        // un comodín no se expande (la lista tiene tope y su orden depende del disco): se compara con cada ejecución
+        if (/[*?[]/.test(r.abs)) comodines.push(r.abs);
+        else if (esCarpeta(r.abs)) carpetas.add(r.abs);
+      }
+    }
+  }
+  const sid = resolveSessionId(event?.session_id);
+  const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
+  const frena = (texto, reason, story) => {
+    // el registro se carga recién al frenar: una falla suya no cambia lo que pasa sin frenar
+    try { const io = require('./lib/story-gate-io.js'); io.appendLog(io.DEFAULT_STATE_DIR, 'gates.log', sid, { name: 'story-gate', status: 'blocked', kind: 'borra-ejecucion-abierta', via, story: story || null, reason }); } catch { /* el registro no traba el freno */ }
+    return { block: texto + '\n' };
+  };
+  const motivos = [];
+  if (prune.length) {
+    for (const desde of cwds) for (const b of prune) {
+      const dir = b ? resolver(b, null, desde).abs : desde;
+      if (!dir) { motivos.push('no pude resolver la carpeta del `git worktree prune`'); continue; }
+      const r = lasQuePoda(dir);
+      if (!r.ok) motivos.push(r.motivo);
+      else for (const c of r.carpetas) carpetas.add(c);
+    }
+  }
+  if (!carpetas.size && !motivos.length && !comodines.length) return null;
+  const or = require('./lib/open-runs.js');
+  const r = or.abiertasDentro([...carpetas], { comodines });
+  if (!r.ok) {
+    return frena(`🔒 CERRÁ LA EJECUCIÓN ANTES — ${via} borra o mueve carpetas, y no pude leer el registro de aperturas (gates.log: ${r.error}): no sé si adentro hay una ejecución abierta, y lo que no se puede decidir frena.`, `registro ilegible: ${r.error}`);
+  }
+  if (r.abiertas.length) {
+    return frena(cartelBorraAbierta(r.abiertas, sid, via), `borra o mueve la carpeta de ${r.abiertas.map((a) => `la ejecución de la story ${a.story} (sesión ${a.sesion})`).join(', ')}`, r.abiertas[0].story);
+  }
+  if (motivos.length) {
+    // sin saber qué se poda, pesa sólo si hay alguna ejecución abierta en la máquina
+    const todas = or.hayAbiertas();
+    if (!todas.ok || todas.n > 0) {
+      return frena(`🔒 CERRÁ LA EJECUCIÓN ANTES — ${via}: ${[...new Set(motivos)].join('; ')}. Hay una ejecución abierta en esta máquina y podar podría borrar el último rastro de su carpeta: lo que no se puede decidir frena. Cerrá la ejecución antes, o mirá con \`git worktree list --porcelain\` qué se poda.`, [...new Set(motivos)].join('; '));
+    }
+  }
+  return null;
+}
+
+// Lo que la coordinadora escribe o borra por la consola y el lector de destinos de siempre no ve: el origen de un `mv`,
+// los comandos que tocan lo que nombran, las descargas, `find -delete` y los `git` que cambian el árbol de trabajo (éstos,
+// como la carpeta del repo entera). `[{ raw, base? }]`, sin resolver.
+const TOCAN_LO_QUE_NOMBRAN = new Set(['mv', 'touch', 'mkdir', 'rmdir', 'shred', 'trash', 'install', 'rsync', 'ditto', 'ln', 'truncate', 'chmod', 'chown', 'chgrp', 'vi', 'vim', 'nvim', 'nano', 'emacs', 'ed', 'ex']);
+// de éstos, el primer argumento es el modo o el dueño, no una ruta
+const PRIMERO_NO_ES_RUTA = new Set(['chmod', 'chown', 'chgrp']);
+const OPCION_CON_VALOR = /^-(?:m|o|g|t|e|-mode|-owner|-group|-target-directory|-rsh|-exclude|-include|-chmod|-suffix)$/;
+// los subcomandos de git que cambian el árbol de trabajo; commits, empujes y merges quedan fuera (los cubre la guía)
+const GIT_CAMBIA_EL_ARBOL = new Set(['reset', 'clean', 'checkout', 'switch', 'stash', 'restore', 'mv', 'rm']);
+const FIND_QUE_ESCRIBE = new Set(['rm', 'mv', 'sed', 'perl', 'truncate', 'shred', 'chmod', 'chown', 'cp', 'tee', 'dd']);
+function destinosDeLaCoordinadora(cmd) {
+  const out = [];
+  for (const tramo of tramos(cmd)) {
+    const limpio = tramo.replace(/(^|\s)#.*$/, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    const words = palabras(limpio.trim().replace(PREFIJO, '')).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
+    if (!words.length) continue;
+    const c = path.basename(words[0].replace(/^\\/, '')).toLowerCase().replace(/\.exe$/, '');
+    const resto = words.slice(1);
+    const args = [];
+    for (let i = 0; i < resto.length; i++) {
+      if (resto[i] === '--') { args.push(...resto.slice(i + 1)); break; }
+      if (resto[i].startsWith('-')) { if (OPCION_CON_VALOR.test(resto[i])) i++; continue; }
+      args.push(resto[i]);
+    }
+    const poner = (raw, base) => { if (raw) out.push({ raw, ...(base ? { base } : {}) }); };
+    if (TOCAN_LO_QUE_NOMBRAN.has(c)) { for (const a of PRIMERO_NO_ES_RUTA.has(c) ? args.slice(1) : args) poner(a); continue; }
+    if (c === 'gsed' && resto.some((w) => /^-i/.test(w) || w.startsWith('--in-place'))) {
+      for (const a of resto.includes('-e') || resto.includes('-f') ? args : args.slice(1)) poner(a);
+      continue;
+    }
+    if ((c === 'awk' || c === 'gawk') && resto.join(' ').includes('-i inplace')) { for (const a of args.filter((w) => w !== 'inplace').slice(1)) poner(a); continue; }
+    if (c === 'curl') {
+      resto.forEach((w, i) => {
+        if (w === '-o' || w === '--output') poner(resto[i + 1]);
+        else if (/^-o\S/.test(w)) poner(w.slice(2));
+        else if (w === '-O' || w === '--remote-name' || /^-[a-zA-Z]*O$/.test(w)) poner('.');
+      });
+      continue;
+    }
+    if (c === 'wget') {
+      const o = resto.findIndex((w) => w === '-O' || w === '--output-document');
+      const p = resto.findIndex((w) => w === '-P' || w === '--directory-prefix');
+      if (o >= 0) { if (resto[o + 1] !== '-') poner(resto[o + 1]); } else poner(p >= 0 ? resto[p + 1] : '.');
+      continue;
+    }
+    if (c === 'dd') { for (const w of resto) if (/^of=/.test(w)) poner(w.slice(3)); continue; }
+    if (c === 'find') {
+      const exec = resto.findIndex((w) => ['-exec', '-execdir', '-ok', '-okdir'].includes(w));
+      const escribe = resto.includes('-delete') || (exec >= 0 && FIND_QUE_ESCRIBE.has(path.basename(String(resto[exec + 1] || ''))));
+      if (!escribe) continue;
+      const raices = [];
+      for (const w of resto) { if (w.startsWith('-') || w === '(' || w === '!') break; raices.push(w); }
+      for (const r of raices.length ? raices : ['.']) poner(r);
+      continue;
+    }
+    if (c === 'git') {
+      let i = 0;
+      let base = null;
+      while (i < resto.length && resto[i].startsWith('-')) {
+        if (resto[i] === '-C') { base = base ? `${base}/${resto[i + 1]}` : resto[i + 1]; i += 2; continue; }
+        if (['-c', '--git-dir', '--work-tree', '--namespace'].includes(resto[i])) { i += 2; continue; }
+        i++;
+      }
+      const sub = resto[i];
+      const deSub = resto.slice(i + 1);
+      if (!GIT_CAMBIA_EL_ARBOL.has(sub)) continue;
+      if (sub === 'reset' && !deSub.some((w) => /^--(?:hard|merge|keep)$/.test(w))) continue;
+      if (sub === 'clean' && deSub.some((w) => w === '-n' || w === '--dry-run')) continue;
+      if (sub === 'stash' && ['list', 'show', 'create'].includes(deSub[0])) continue;
+      poner('.', base);
+    }
+  }
+  return out;
+}
+
+// Lo que no es una redirección aunque lleve `>`: una cuenta `$((1>2))`, un `\>`, un valor `${x:-a>b}` y la entrada de
+// otro comando `>(…)` (queda como `$(…)`: su destino no se resuelve sin ejecutar).
+function sinMayoresQueNoRedirigen(cmd) {
+  return String(cmd).replace(/\$\(\([\s\S]*?\)\)/g, ' ').replace(/\\>/g, ' ').replace(/\$\{[^}]*>[^}]*\}/g, '"$__SIN_RESOLVER__"').replace(/>\(/g, '$(');
+}
+
+// El `cd` en otro renglón, con `|| exit` o con `cd --` es el mismo `cd`: así lo ven las carpetas del comando.
+function conLosCdDeSiempre(cmd) {
+  const CD = String.raw`(\bcd[ \t]+(?:'[^']*'|"[^"]*"|[^\s;&|()<>'"` + '`' + String.raw`]+))`;
+  return String(cmd)
+    .replace(/\bcd[ \t]+--[ \t]+/g, 'cd ')
+    .replace(new RegExp(`${CD}[ \\t]*\\|\\|[ \\t]*(?:exit|return)\\b[^;&\\n]*`, 'g'), '$1')
+    .replace(new RegExp(`${CD}[ \\t]*\\n`, 'g'), '$1 && ');
+}
+
+// ¿Algún `cd` del comando va a una carpeta armada con una variable o un comando (`cd "$TMPDIR"`, `cd "$(mktemp -d)"`)?
+// Las carpetas del comando no siguen ese `cd`: lo relativo de después no se sabe dónde cae.
+function cdSinResolver(cmd) {
+  for (const m of String(cmd).matchAll(/\bcd[ \t]+(?:--[ \t]+)?(?:'([^']*)'|"([^"]*)"|([^\s;&|()<>'"]+))/g)) {
+    if (/[`$]/.test(m[2] ?? m[3] ?? '')) return true;
+  }
+  return false;
+}
+
+// La coordinadora no cambia archivos de los repos (scripts/lib/coordination-writes.js): lo que el comando escribe o
+// borra, con cada carpeta donde puede caer una escritura relativa. Lo que no se resuelve sin ejecutar pasa (también lo
+// relativo detrás de un `cd` a una carpeta sin resolver), y lo que escribe un guion guardado en un archivo no se mira:
+// los guiones del arnés que corre la coordinadora escriben su estado.
+function coordinadoraPorConsola(event, opts = {}) {
+  if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
+  const original = event?.tool_input?.command;
+  if (!original) return null;
+  const cmd = sinMayoresQueNoRedirigen(original);
+  const baseCwd = nativePath(event?.cwd || process.cwd());
+  const archivos = () => {
+    const out = [];
+    const soloAbsolutos = cdSinResolver(cmd);
+    const absoluta = (raw) => {
+      const v = String(expandirRuta(cmd, raw).valor);
+      return path.isAbsolute(v) || /^~(?:\/|$)/.test(v) || /^\$\{?HOME\}?(?:\/|$)/.test(v);
+    };
+    const resolverEn = (cwd, d) => {
+      const ruta = expandirRuta(cmd, d.raw);
+      if (ruta.sinResolver.length) return null;
+      let base = cwd;
+      if (d.base) {
+        const b = expandirRuta(cmd, d.base);
+        if (b.sinResolver.length) return null;
+        if (soloAbsolutos && !absoluta(d.base)) return null;
+        base = resolveTarget(b.valor, cwd, process.platform, { homeVariable: true });
+      } else if (soloAbsolutos && !absoluta(d.raw)) return null;
+      return resolveTarget(ruta.valor, base, process.platform, { homeVariable: true });
+    };
+    for (const cwd of carpetasDelComando(conLosCdDeSiempre(cmd), baseCwd)) {
+      for (const d of destinosResueltos(cmd, cwd, process.platform, { keep: () => true })) {
+        if (d.sinResolver.length || (soloAbsolutos && !absoluta(d.raw))) continue;
+        out.push(d.abs);
+      }
+      for (const d of destinosBorrados(cmd)) {
+        const abs = resolverEn(cwd, d);
+        // `git checkout <nombre>` sin `--`: si no hay un archivo con ese nombre, es una rama (la cuenta la regla de git)
+        if (abs && !(d.quizas && !fs.existsSync(abs))) out.push(abs);
+      }
+      for (const d of destinosDeLaCoordinadora(cmd)) {
+        const abs = resolverEn(cwd, d);
+        if (abs) out.push(abs);
+      }
+    }
+    return [...new Set(out)];
+  };
+  return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'coordination-writes.js')).judge({
+    sessionId: event.session_id, files: archivos, home: opts.home, stateDir: opts.stateDir, installedRoots: opts.installedRoots,
+  });
 }
 
 function handle(event, opts = {}) {
@@ -2906,6 +4622,32 @@ function handle(event, opts = {}) {
     let perdida = null;
     try { perdida = ejecucionPerdida(event); } catch (e) { logHookError(e); perdida = { block: `🔴 EJECUCIÓN PERDIDA — no pude revisar las piezas de la ejecución (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (perdida) return perdida;
+  }
+  {
+    let abierta = null;
+    try { abierta = borraEjecucionAbierta(event); } catch (e) { logHookError(e); abierta = { block: `🔒 CERRÁ LA EJECUCIÓN ANTES — no pude revisar si el comando borra la carpeta de una ejecución abierta (${e.message}): frena hasta poder mirarlo.\n` }; }
+    if (abierta) return abierta;
+  }
+  {
+    let coordinadora = null;
+    try { coordinadora = coordinadoraPorConsola(event, opts); } catch (e) { logHookError(e); coordinadora = null; }
+    if (coordinadora) return coordinadora;
+  }
+  // el stash que se llevaría archivos de otra sesión viva, y el drop/pop/clear de lo que guardó otra
+  // (lib/stash-guard.js). Una falla del freno queda en hook-errors.log y deja pasar: el caso de «no pude calcular» lo decide él
+  if (!event?.tool_name || event.tool_name === 'Bash' || event.tool_name === 'PowerShell') {
+    let stash = null;
+    try {
+      const cmd = event?.tool_input?.command;
+      if (typeof cmd === 'string' && /\bstash\b/.test(cmd)) {
+        stash = require('./lib/stash-guard.js').evaluar({
+          cmd, cwd: nativePath(event?.cwd || process.cwd()), sessionId: resolveSessionId(event?.session_id),
+          stateDir: opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR,
+          avisar: (texto) => logHookError(texto, 'stash-guard sin medir'),
+        });
+      }
+    } catch (e) { logHookError(e, 'stash-guard'); stash = null; }
+    if (stash && stash.block) return stash;
   }
   let deprecado = null;
   try {
@@ -2974,6 +4716,62 @@ function handleCarrilEHistoria(event, opts = {}) {
   };
   // las constancias de cambio de control, sin interruptor: como el freno de Edit y Write
   const constancias = constanciasTocadas(cmd, cwd, stateDir);
+  // el registro de las aprobaciones de la persona, también al borrarlo o moverlo
+  const aprobaciones = constancias.length ? [] : aprobacionesTocadas(cmd, cwd, stateDir);
+  if (aprobaciones.length) {
+    const sg = require('./lib/story-gate.js');
+    const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
+    // el comando que nombra el registro (su carpeta, un archivo suyo, su nombre en un texto) recibe su cartel. El que lo
+    // alcanza sólo por una carpeta que lo contiene borra el estado entero, con los marcadores: el cartel es el del estado,
+    // que dice cómo se cierra una ejecución; el del registro queda para cuando ese freno está apagado (éste no se apaga)
+    const directo = aprobaciones.some((a) => /(^|[^\w.-])owner-approvals(?![\w.-])/i.test(String(a)));
+    const tocados = directo || laneOff ? [] : marcadoresTocados(cmd, cwd, stateDir);
+    return { block: (tocados.length ? sg.markerDeleteMessage(tocados, via) : sg.blockMessage({ kind: 'owner-approvals' }, { filePath: aprobaciones[0], via })) + '\n' };
+  }
+  // las marcas de las constancias dadas en la terminal, también al borrarlas o moverlas
+  const marcasDeTerminal = constancias.length ? [] : marcasDeTerminalTocadas(cmd, cwd, stateDir);
+  if (marcasDeTerminal.length) {
+    const sg = require('./lib/story-gate.js');
+    const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
+    // como el registro: el que las alcanza sólo por una carpeta de arriba borra el estado entero y recibe ese cartel
+    const directo = marcasDeTerminal.some((a) => /(^|[^\w.-])terminal-acknowledgments(?![\w.-])/i.test(String(a)));
+    const tocados = directo || laneOff ? [] : marcadoresTocados(cmd, cwd, stateDir);
+    return { block: (tocados.length ? sg.markerDeleteMessage(tocados, via) : sg.blockMessage({ kind: 'terminal-acknowledgments' }, { filePath: marcasDeTerminal[0], via })) + '\n' };
+  }
+  // el registro de las sesiones que abrió la coordinadora, también al borrarlo o moverlo
+  const lanzadas = constancias.length ? [] : lanzadasTocadas(cmd, cwd, stateDir);
+  if (lanzadas.length) {
+    const sg = require('./lib/story-gate.js');
+    return { block: sg.blockMessage({ kind: 'launched-sessions' }, { filePath: lanzadas[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
+  // el buzón de la oficina, también al borrarlo o moverlo
+  const buzon = constancias.length ? [] : buzonTocado(cmd, cwd, stateDir);
+  if (buzon.length) {
+    const sg = require('./lib/story-gate.js');
+    const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
+    const directo = buzon.some((a) => /(^|[^\w.-])office[\\/](?:inbox|tomados|usados|messages\.jsonl)/i.test(String(a)) || /[\\/]office[\\/]?$/.test(String(a)));
+    const tocados = directo || laneOff ? [] : marcadoresTocados(cmd, cwd, stateDir);
+    return { block: (tocados.length ? sg.markerDeleteMessage(tocados, via) : sg.blockMessage({ kind: 'office-mailbox' }, { filePath: buzon[0], via })) + '\n' };
+  }
+  // el registro de los críticos que reportaron los revisores, también al borrarlo o moverlo
+  const criticos = constancias.length ? [] : criticosTocados(cmd, cwd, stateDir);
+  if (criticos.length) {
+    const sg = require('./lib/story-gate.js');
+    return { block: sg.blockMessage({ kind: 'reported-criticals' }, { filePath: criticos[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
+  // el registro de corridas de los revisores, también al borrarlo o moverlo
+  const corridas = constancias.length ? [] : corridasDeRevisoresTocadas(cmd, cwd, stateDir);
+  if (corridas.length) {
+    const sg = require('./lib/story-gate.js');
+    return { block: sg.blockMessage({ kind: 'advisor-runs' }, { filePath: corridas[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
+  // la revisión automática del plan, también al borrarla o moverla, o con un `--out` que no es el del corredor del pase
+  const ajena = constancias.length ? null : salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots);
+  const revisionDelPlan = constancias.length ? [] : ajena ? [ajena] : revisionDelPlanTocada(cmd, cwd, stateDir);
+  if (revisionDelPlan.length) {
+    const sg = require('./lib/story-gate.js');
+    return { block: sg.blockMessage({ kind: 'plan-review' }, { filePath: revisionDelPlan[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
   if (constancias.length) {
     const sg = require('./lib/story-gate.js');
     // el registro del arnés y la carpeta de una ejecución son estado del pipeline; lo demás, su constancia
@@ -2986,9 +4784,11 @@ function handleCarrilEHistoria(event, opts = {}) {
   {
     for (const g of guionesEnArchivo(cmd, [...new Set([cwd, baseCwd])], installedRoots)) {
       const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 100)} (el guion ${path.basename(g.archivo)})`;
-      // uno muy grande no se lee entero: si escribe y nombra una historia o una constancia, frena
+      // uno muy grande no se lee entero: si escribe y nombra una historia o una constancia, frena. Donde corre y donde
+      // vive sin historias, la palabra suelta no cuenta: sí la ruta de una historia y la constancia
       if (g.grande) {
-        if (!g.texto || (GUION_ESCRIBE.test(g.texto) && MENCIONA_HISTORIA.test(g.texto))) {
+        const nombra = () => (repoConHistorias(cwd) || repoConHistorias(path.dirname(g.archivo)) ? MENCIONA_HISTORIA : NOMBRA_RUTA_DE_HISTORIA).test(g.texto);
+        if (!g.texto || (GUION_ESCRIBE.test(g.texto) && nombra())) {
           return { block: `⛔ tycon-pipeline — GUION QUE NO SE PUEDE LEER ENTERO\n\n  ${g.archivo}\n  (detectado en ${via})\n  Es demasiado grande para ver qué escribe, y nombra una historia o una constancia. Una historia se edita con\n  la herramienta de edición (Edit/Write); una constancia la firma una persona.\n` };
         }
         continue;
@@ -3002,8 +4802,42 @@ function handleCarrilEHistoria(event, opts = {}) {
         const sg = require('./lib/story-gate.js');
         return { block: sg.blockMessage({ kind: sg.signedRecordKind(constancia) || 'control-approvals' }, { filePath: constancia, via }) + '\n' };
       }
-      const historias = skillOff ? [] : abs.filter((p) => /\.md$/i.test(p) && fs.existsSync(p) && estadoDeHistoria(p) !== null);
-      if (historias.length) return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, via) + '\n' };
+      if (skillOff) continue;
+      // una historia entre los argumentos cuenta como escrita: lo que el guion hace con ella no se termina de ver desde acá
+      // (un modo en una variable, en el lugar, un programa que lanza). También pegada a una opción (`--file=<historia>`,
+      // `file:<historia>`, `-o<historia>`), con variables, llaves y comodines del shell, y por un enlace, aunque no
+      // termine en `.md`; un comodín que puede traer una historia y tiene más archivos de los que se miran, frena
+      let recortado = false;
+      const argumentos = g.argv.flatMap((a) => {
+        const v = String(a);
+        const formas = [v, v.replace(/^[^=:]*[=:]/, '')];
+        if (/^-[A-Za-z]./.test(v)) formas.push(v.slice(2));
+        return [...new Set(formas)];
+      }).flatMap((v) => {
+        // `$PWD` es la carpeta desde donde corre el comando
+        const valor = String(expandirRuta(cmd, v.replace(/^\$\{?PWD\}?(?=[\\/]|$)/, cwd)).valor ?? v);
+        return expandirLlaves(valor).flatMap((x) => {
+          if (!/[*?[]/.test(x)) return [x];
+          const aviso = {};
+          const halladas = expandirComodin(x, cwd, aviso);
+          if (aviso.recortado && !/\.(?!md$)[A-Za-z0-9]+$/i.test(x)) recortado = true;
+          return halladas;
+        });
+      });
+      const esHistoria = (p) => {
+        const real = installedTree.realPath(p) || p;
+        let st;
+        try { st = fs.statSync(real); } catch { return false; }
+        // un archivo grande que no termina en `.md` no se abre para ver si es una historia
+        if (!st.isFile() || (st.size > 1024 * 1024 && !/\.md$/i.test(p) && !/\.md$/i.test(real))) return false;
+        return estadoDeHistoria(real) !== null;
+      };
+      const historias = [...new Set([...abs, ...argumentos.map(resolver)])].filter(esHistoria);
+      if (recortado) historias.push('(un comodín entre los argumentos con más archivos de los que se miran)');
+      if (historias.length) {
+        const recibe = historias.some((h) => !abs.includes(h)) ? ' — recibe la historia por argumento: para leerla, la herramienta de lectura' : '';
+        return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, via + recibe) + '\n' };
+      }
     }
   }
   if (!laneOff) {
@@ -3049,18 +4883,53 @@ function handleCarrilEHistoria(event, opts = {}) {
   const targets = extractWriteTargets(cmdDestinos, { keep });
   if (!skillOff) {
     // una historia que existe y no está en borrador no se escribe por consola (con o sin ejecución abierta)
-    const historias = historiasPorConsola(cmd, cwd, targets, baseCwd, sub.destinos);
+    const historias = historiasPorConsola(cmd, cwd, targets, baseCwd, sub.destinos, 0, installedRoots);
     if (historias.length) {
       return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`) + '\n' };
     }
   }
-  if (!targets.length) return null;
+  // Lo que un guion escribe a un destino armado (`p = 'src/x.js'` y después `open(p, 'w')`): la ruta que se lee de su
+  // asignación o de sus argumentos es un destino más. La que no se lee se juzga abajo, como código en la carpeta donde
+  // corre, cuando no hay carril ni ejecución abiertos. Sin esto, sin carril, sólo frenaban las rutas escritas a la vista.
+  const armadosAbs = [];
+  const armadosSinLeer = [];
+  for (const a of destinosArmados(cmd)) {
+    const lits = a.literal ? [a.literal] : (a.literales || []);
+    if (lits.length) {
+      for (const l of lits) {
+        const ex = expandirRuta(cmd, l);
+        // con una variable que no se resuelve (`"$F"` sin definir) la ruta no se lee: puede ser cualquier archivo
+        if (ex.sinResolver.length) armadosSinLeer.push(l);
+        else armadosAbs.push(resolveTarget(ex.valor, cwd, process.platform, { homeVariable: true }));
+      }
+      continue;
+    }
+    if (a.ext && !isCodeFile(`x${a.ext}`) && !isManifestFile(a.cola)) continue;
+    armadosSinLeer.push(a.expr);
+  }
+  if (!targets.length && !armadosAbs.length && !armadosSinLeer.length) return null;
 
   const sessionId = resolveSessionId(event?.session_id);
   // Con las variables del comando (y del ambiente) expandidas; lo no resuelto queda anotado para el mensaje
   const resueltos = destinosResueltos(cmdDestinos, cwd, process.platform, { keep });
-  const absTargets = resueltos.map((d) => d.abs);
+  const absTargets = [...new Set([...resueltos.map((d) => d.abs), ...armadosAbs])];
   const sinResolverDe = new Map(resueltos.filter((d) => d.sinResolver.length).map((d) => [d.abs, d]));
+  // los destinos relativos, si el comando cambia de carpeta con un `cd` (o `pushd`/`popd`) que no es el que se sigue: el
+  // del principio, o el de la forma mínima de `resolverCd`. Ahí la carpeta de esos destinos no se sabe
+  const relativosConCdSinSeguir = new Map();
+  try {
+    const sinCuerpos = String(cmdDestinos).replace(/'[^']*'|"[^"]*"/g, '""');
+    if (/(^|[^\w./-])(?:cd|pushd|popd)(?=[\s;&|)]|$)/.test(sinCuerpos)) {
+      const forma = resolverCd(cmdDestinos, nativePath(event?.cwd || process.cwd()));
+      const seguido = forma.forma === 'minima' || (forma.forma === 'hoy' && leadingCd(cmdDestinos) && !/(^|[^\w./-])(?:pushd|popd)(?=[\s;&|)]|$)/.test(sinCuerpos));
+      if (!seguido) {
+        for (const d of resueltos) {
+          const v = String(expandirRuta(cmdDestinos, d.raw).valor);
+          if (!path.isAbsolute(v) && !/^~/.test(v) && !/^[A-Za-z]:[\\/]/.test(v)) relativosConCdSinSeguir.set(d.abs, d);
+        }
+      }
+    }
+  } catch (e) { logHookError(e); }
   // Antes de decidir y aunque los frenos estén apagados: dónde escribió la consola es un dato de la
   // corrida, no una decisión del freno.
   anotarEscriturasConsola(stateDir, sessionId, absTargets);
@@ -3070,6 +4939,24 @@ function handleCarrilEHistoria(event, opts = {}) {
   // ── Portón de CARRIL (código + estado del pipeline) ──────────────────────────────────────────
   if (!laneOff) {
     const passedCode = [];
+    // un carril delegado no escribe una ruta de riesgo alto aunque no sea código (`.tycon/production.json`): sus
+    // destinos ya leídos van todos al portón, que decide
+    // (y un carril con lista no deja escribir lo que no nombra, sea código o no: también van todos)
+    let delegado = false;
+    let conLista = false;
+    try {
+      const a = io.readAdhoc(stateDir, sessionId);
+      delegado = !!(a && (a.via === 'delegacion' || Array.isArray(a.allowedFiles)));
+      conLista = !!(a && Array.isArray(a.allowedFiles));
+    } catch (e) { logHookError(e); }
+    // un destino armado que no se lee puede ser cualquier archivo: se le pregunta al portón como si fuera código de la
+    // carpeta donde corre, y frena lo que no tiene carril y la ejecución a la que le falta una pieza (no dependen del
+    // archivo). Con un carril o una ejecución sana pasa: no se sabe qué archivo es, y no se gasta el cupo con uno inventado
+    if (armadosSinLeer.length) {
+      const r = io.evaluate({ filePath: path.join(cwd, 'destino-armado.js'), sessionId, cwd, stateDir, installedRoots,
+        via: `${via} (un guion escribe a una ruta que no se puede leer: ${armadosSinLeer.map((x) => String(x).slice(0, 60)).join(', ')})` });
+      if (r.verdict.action === 'block' && (r.verdict.kind === 'no-lane' || r.verdict.kind === 'ejecucion-perdida')) return { block: r.message + '\n' };
+    }
     for (const abs of absTargets) {
       // un destino con una variable sin resolver PUEDE ser código aunque su ruta cruda no tenga la extensión
       // (`cat > $F`, `src/x.$EXT`): para el registro cuenta como código
@@ -3078,10 +4965,33 @@ function handleCarrilEHistoria(event, opts = {}) {
       // un manifiesto o su lock: para el registro es código; para el carril, no
       const quizasCodigo = isCodeFile(abs) || isManifestFile(abs) || (sinResolverDe.has(abs) && !extLiteral);
       const enProtegido = protegido(abs);
-      if (!quizasCodigo && !enProtegido) continue;
-      if (isCodeFile(abs) || enProtegido) {
+      if (!quizasCodigo && !enProtegido && !delegado) continue;
+      if (isCodeFile(abs) || enProtegido || delegado) {
         const r = io.evaluate({ filePath: abs, sessionId, cwd, via, stateDir, installedRoots });
-        if (r.verdict.action === 'block') return { block: r.message + '\n' };
+        // un destino con una variable sin resolver no es un archivo del repo que se sepa (`$P/probe.js`, con
+        // P=$(mktemp -d)): no gasta el cupo del carril. El tope lo vuelve a medir el freno de guardar, con git
+        const sinCupo = r.verdict.kind === 'adhoc-cap' && sinResolverDe.has(abs);
+        // con lista, una ruta que no se resolvió no se juzga por su texto: `<repo>/$D/x` no es ningún archivo, y una
+        // variable con `..` o con una ruta entera lleva a cualquiera (`/tmp/$F` con F=../<repo>/src/x.js), aunque el
+        // portón dejaría pasar el texto (la lista nombra `$D/x`, parece papeleo, cae en la carpeta temporal). Frena
+        // diciendo eso, en vez de «fuera de la lista». Pasa sólo lo que no lleva barras (`$$`, `$!`): con eso la
+        // carpeta se sabe, y el portón ya juzgó el archivo
+        // con lista, un destino relativo de un comando que cambia de carpeta con un `cd` que el freno no sigue (adentro de
+        // un paréntesis, de un bucle, después de otro comando): no se sabe en qué carpeta cae, y frena diciendo eso
+        if (conLista && relativosConCdSinSeguir.has(abs)) {
+          try { io.appendLog(stateDir, 'gates.log', sessionId, { name: 'story-gate', status: 'blocked', kind: 'adhoc-path-unresolved', file: abs, via }); } catch (e) { logHookError(e); }
+          return { block: mensajeCarpetaSinSeguir(relativosConCdSinSeguir.get(abs), via) };
+        }
+        const rutaSinResolver = conLista && sinResolverDe.get(abs);
+        // (con `$$` y además una variable con nombre, `$D/x$$`, el portón juzgó el texto `$D/…`, no la ruta: tampoco pasa)
+        const soloSinBarras = sinBarras(rutaSinResolver ? rutaSinResolver.sinResolver : []) && !/\$\{?[A-Za-z_]/.test(rutaSinResolver.raw);
+        if (rutaSinResolver && !soloSinBarras && (r.verdict.action !== 'block' || r.verdict.kind === 'adhoc-out-of-list')) {
+          if (r.verdict.action !== 'block') {
+            try { io.appendLog(stateDir, 'gates.log', sessionId, { name: 'story-gate', status: 'blocked', kind: 'adhoc-path-unresolved', file: abs, via }); } catch (e) { logHookError(e); }
+          }
+          return { block: mensajeRutaSinResolver(rutaSinResolver, via) };
+        }
+        if (r.verdict.action === 'block' && !sinCupo) return { block: r.message + '\n' };
       }
       if (quizasCodigo) passedCode.push(abs);
     }
@@ -3123,7 +5033,7 @@ function handleCarrilEHistoria(event, opts = {}) {
             repoPath: (marker && marker.repoPath) || null, name: 'ledger-visible', status: 'blocked',
             storyId: (marker && marker.storyId) || null, files: vis.files.length, via,
           }) + '\n', 'utf8');
-        } catch { /* el freno no depende del log */ }
+        } catch (e) { logHookError(e); /* el freno no depende del log */ }
         const sinResolver = vis.files.filter((f) => sinResolverDe.has(f))
           .map((f) => ({ file: f, vars: sinResolverDe.get(f).sinResolver }));
         return { block: lv.mensaje(vis.files, marker && marker.storyId, { sinResolver, codex: require('./lib/story-skill-gate-io.js').isCodexEvent(event) }) + '\n' };
@@ -3145,8 +5055,20 @@ function handleCarrilEHistoria(event, opts = {}) {
 
     // Cupo ad-hoc: Bash no tiene PostToolUse nuestro, así que el registro va acá (best-effort: el
     // comando puede fallar después, pero sin esto un hotfix hecho con heredocs nunca suma al cupo).
-    for (const abs of passedCode.filter((f) => isCodeFile(f))) {   // un destino sin resolver no suma al cupo: no se sabe cuál es
-      try { io.recordAdhocFile(stateDir, sessionId, abs); } catch { /* best-effort */ }
+    // La sonda de un agente del pase no es del carril, por la consola igual que con la herramienta de edición. No se
+    // exime lo que el freno no puede ver hasta el final: un destino con una variable sin resolver, un comando que crea
+    // enlaces (el destino puede pasar por uno que todavía no existe) o una ruta con `..` (después de un enlace cae en
+    // otra carpeta que la que queda al normalizarla). Ante cualquier falla del criterio, se anota.
+    const textoDestinos = String(cmdDestinos);
+    const noSeVe = /(^|[\s;&|(])ln\s[^;&|]*-[a-zA-Z]*s/.test(textoDestinos) || /(^|[\s/'"=])\.\.([\\/]|$)/.test(textoDestinos);
+    // un destino sin resolver no suma al cupo: no se sabe cuál es
+    for (const abs of passedCode.filter((f) => isCodeFile(f) && !sinResolverDe.has(f))) {
+      let sonda = false;
+      if (!noSeVe) {
+        try { sonda = require('./on-edit.js').esSondaDeSubagente(event, abs, sessionId, stateDir); } catch (e) { logHookError(e); }
+      }
+      if (sonda) continue;
+      try { io.recordAdhocFile(stateDir, sessionId, abs); } catch (e) { logHookError(e); }
     }
   }
 
@@ -3170,7 +5092,7 @@ function handleCarrilEHistoria(event, opts = {}) {
     if (mdNew.length) {
       const sio = require('./lib/story-skill-gate-io.js');
       let declares = (t) => /^---[\s\S]*?^[ \t]*story[ \t]*:/m.test(t);
-      try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch { /* fallback regex */ }
+      try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch (e) { logHookError(e); /* fallback regex */ }
       const hds = heredocs(cmdDestinos);
       const sameFile = (a, b) => String(a).replace(/\\/g, '/').toLowerCase() === String(b).replace(/\\/g, '/').toLowerCase();
       // el mismo destino que se juzgó arriba, con las variables del comando expandidas
@@ -3199,14 +5121,19 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory };
+module.exports = { handle, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
 
 if (require.main === module) {
+  const cruda = leerEntrada();
   let event = null;
-  try { event = JSON.parse(fs.readFileSync(0, 'utf8') || 'null'); } catch { event = null; }
+  try { event = JSON.parse(cruda || 'null'); } catch (e) { salirPorLaRed(e, textoDeUnaEntradaRota(cruda)); }
   let r = null;
-  try { r = handle(event || {}); } catch (e) { logHookError(e); r = null; }
-  if (r && r.block) { process.stderr.write(r.block); process.exit(2); }
+  try { r = handle(event || {}); } catch (e) { salirPorLaRed(e, event && event.tool_input && event.tool_input.command); }
+  if (r && r.block) {
+    try { process.stderr.write(r.block); } catch { /* sin dónde decirlo, frena igual */ }
+    process.exit(2);
+  }
+  yaDecidio = true;
   // Antes de cerrar «Aprobar el plan», el arnés le muestra a la persona el plan si el agente no lo hizo (lib/plan-display.js) y,
   // si la historia cambia una pantalla en un repo sin prueba con navegador, la oferta de prepararla (lib/browser-test.js).
   // Van en un solo aviso.

@@ -12,7 +12,7 @@
           "type": "must-block",
           "__doc": "Otra transcripción en la carpeta de sesiones de ESTE cwd, tocada hace segundos, con un último pedido legible. El commit se frena y el mensaje nombra la sesión y su pedido. ROJO PREVIO: sin el hook registrado, el commit pasa.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos la story 2.1\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
           ],
@@ -43,7 +43,7 @@
           "type": "must-not-block",
           "__doc": "Sin otra transcripción no hay nadie con quien colisionar. Un freno que frena estando solo se apaga el primer día.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\""
           ],
@@ -60,7 +60,7 @@
           "type": "must-not-block",
           "__doc": "La carpeta acumula meses de sesiones cerradas. Lo que decide es el mtime dentro de la ventana (10 min), no la existencia del archivo: si contara todo, el freno estaría prendido para siempre en cualquier repo con historia.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"algo de ayer\"}}' > \"$D/cccc3333-vieja.jsonl\" && touch -t 202601010000 \"$D/cccc3333-vieja.jsonl\""
           ],
@@ -77,7 +77,7 @@
           "type": "must-not-block",
           "__doc": "status, log, diff, show, fetch, merge-base y stash list no cambian nada. Frenarlos sería ruido puro, y `merge-base` / `stash list` son las trampas del regex (contienen merge y stash).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"x\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
           ],
@@ -94,7 +94,7 @@
           "type": "must-not-block",
           "__doc": "La transcripción de la sesión que ejecuta el comando se toca en cada turno: si contara, el freno se dispararía siempre. Se excluye por session_id (y por transcript_path).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"x\"}}' > \"$D/bbbb2222-la-mia.jsonl\""
           ],
@@ -111,7 +111,7 @@
           "type": "must-not-block",
           "__doc": "Coordinado a propósito: TYCON_SESSION_GUARD_OK=1 como prefijo pegado al comando. Pasa, pero queda dicho en stderr (y en bypass.log). Un escape mudo es un apagado.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"x\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
           ],
@@ -133,7 +133,7 @@
           "type": "must-not-block",
           "__doc": "Fail-open: si el cwd no es un repo, el comando git va a fallar solo y el freno no tiene checkout que proteger.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"x\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
           ],
           "stdin": {
@@ -148,7 +148,7 @@
           "id": "payload-basura-no-rompe-el-turno",
           "type": "must-not-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -161,7 +161,7 @@
           "id": "un-git--C-sobre-OTRO-repo-no-frena-aunque-aca-haya-otra-viva",
           "type": "must-not-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "mkdir -p otro && git -C otro init -q && git -C otro -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"dale\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
@@ -179,7 +179,7 @@
           "id": "un-cd-con-variable-y-||-hacia-OTRO-repo-no-frena",
           "type": "must-not-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "mkdir -p otro && git -C otro init -q && git -C otro -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"dale\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
@@ -197,7 +197,7 @@
           "id": "un-git--C-al-PROPIO-checkout-sigue-frenando",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"dale\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
           ],
@@ -221,7 +221,7 @@
           "id": "un-destino-que-NO-se-puede-resolver-se-trata-como-el-propio-checkout",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"dale\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
           ],
@@ -244,7 +244,7 @@
           "id": "una-cadena-mixta-frena-por-el-git-que-toca-el-checkout",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "mkdir -p otro && git -C otro init -q && git -C otro -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"dale\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
@@ -268,7 +268,7 @@
           "id": "el-OTRO-repo-con-su-propia-sesion-viva-frena-y-lo-nombra",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "mkdir -p otro && git -C otro init -q && git -C otro -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log((process.env.FIXTURE+\"/otro\").replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"tocando otro\"}}' > \"$D/dddd4444-en-otro.jsonl\""
@@ -301,9 +301,9 @@
         {
           "id": "al-abrir-con-otra-sesion-viva-avisa-y-la-nombra",
           "type": "must-emit",
-          "__doc": "Abrir no rompe nada, así que avisa en vez de frenar: 'acá ya hay alguien'. Nombra la sesión y dice que el freno de git va a parar.",
+          "__doc": "Abrir no rompe nada, así que avisa en vez de frenar: 'acá ya hay alguien'. Nombra la sesión y le pide al agente que se lo diga a la persona (story 8.292: ya no promete el freno, que viene apagado).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"seguimos con el tablero\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
           ],
@@ -314,7 +314,49 @@
             "stdout_re": [
               "otra\\(s\\) sesi[oó]n",
               "aaaa1111",
-              "seguimos con el tablero"
+              "seguimos con el tablero",
+              "Decile a la persona"
+            ],
+            "stdout_not_re": [
+              "este freno te va a parar"
+            ]
+          }
+        },
+        {
+          "id": "al-abrir-con-un-subagente-de-la-otra-en-vuelo-avisa",
+          "type": "must-emit",
+          "__doc": "Story 8.292, el primer hueco: la otra sesión tiene la transcripción principal quieta (corre un revisor o un pase largo) y un agente de su Workflow escribió hace segundos. ROJO PREVIO: el aviso miraba sólo <carpeta>/*.jsonl y la daba por muerta.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D/cccc3333-con-subagente/subagents/workflows/wf_x\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"pase adversarial\"}}' > \"$D/cccc3333-con-subagente.jsonl\" && touch -t 200001010000 \"$D/cccc3333-con-subagente.jsonl\" && printf '{}\\n' > \"$D/cccc3333-con-subagente/subagents/workflows/wf_x/agent-y.jsonl\""
+          ],
+          "stdin": {
+            "session_id": "bbbb2222-la-mia"
+          },
+          "expect": {
+            "stdout_re": [
+              "cccc3333",
+              "subagente"
+            ]
+          }
+        },
+        {
+          "id": "al-abrir-con-una-corrida-abierta-de-la-otra-avisa",
+          "type": "must-emit",
+          "__doc": "Story 8.292, el segundo hueco: la otra sesión no tiene transcripción reciente (espera a la persona) pero tiene su corrida del pipeline abierta sobre este checkout. ROJO PREVIO: el aviso no miraba los marcadores.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "S=\"$(node -p 'require(process.env.FIXTURE + \"/tcg/scripts/setup/harness/tycon-home.js\").stateDir(process.env.HOME)')\" && mkdir -p \"$S/active\" && R=\"$(cd \"$FIXTURE\" && pwd -P)\" && printf '{\"sessionId\":\"dddd4444-con-corrida\",\"storyId\":\"5.5\",\"stepsPending\":[\"plan\"],\"repoPath\":\"%s\"}\\n' \"$R\" > \"$S/active/dddd4444-con-corrida.json\""
+          ],
+          "stdin": {
+            "session_id": "bbbb2222-la-mia"
+          },
+          "expect": {
+            "stdout_re": [
+              "dddd4444",
+              "historia 5\\.5"
             ]
           }
         },
@@ -323,7 +365,7 @@
           "type": "must-stay-quiet",
           "__doc": "Sin otra sesión viva, silencio: un aviso en cada arranque se deja de leer.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base"
           ],
           "stdin": {
@@ -348,7 +390,7 @@
           "type": "must-block",
           "__doc": "Otra transcripción en la carpeta de sesiones de ESTE cwd, tocada hace segundos, con un último pedido legible. El commit se frena y el mensaje nombra la sesión y su pedido. ROJO PREVIO: sin el hook registrado, el commit pasa.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
             "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos la story 2.1\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
           ],

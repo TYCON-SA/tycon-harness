@@ -37,6 +37,65 @@ function leerCuerpo(req) {
   });
 }
 
+/*
+ * El modo de VARIOS repos (el inventario de adopción del portón): actúa sólo con `st.repos` cargado; sin él, el servidor
+ * es el de un repo de siempre. Cada repo: `{ name, id, defaultBranch, isDisabled, size, archivos: { ruta: texto },
+ * definiciones: [{ id, name, yaml }], politicas: [], politicas403, fallarDefiniciones, fallarArchivo, ramas }` (`ramas`:
+ * los `refs/heads/…` que tiene; sin ella, sólo la principal).
+ * `st.reposPorPagina` parte la lista con `x-ms-continuationtoken`; `st.fallarListaRepos` (código) la hace fallar entera y
+ * `st.fallarPaginaRepos` (número de página, desde 1) sólo esa página. Devuelve true si contestó.
+ */
+function variosRepos(st, u, resto, res) {
+  const json = (status, doc, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json', ...headers }); res.end(JSON.stringify(doc)); return true; };
+  const porId = (id) => st.repos.find((r) => r.id === id || r.name === id);
+  if (resto === 'git/repositories') {
+    if (st.fallarListaRepos) return json(st.fallarListaRepos, { message: 'lista de repos caída' });
+    const tam = st.reposPorPagina || st.repos.length || 1;
+    const desde = Number(u.searchParams.get('continuationToken') || 0);
+    const pagina = Math.floor(desde / tam) + 1;
+    if (st.fallarPaginaRepos === pagina) return json(500, { message: `página ${pagina} caída` });
+    const value = st.repos.slice(desde, desde + tam).map((r) => ({ id: r.id, name: r.name, defaultBranch: r.defaultBranch, isDisabled: !!r.isDisabled, size: r.size === undefined ? 100 : r.size }));
+    const mas = desde + tam < st.repos.length ? { 'x-ms-continuationtoken': String(desde + tam) } : {};
+    return json(200, { value, count: value.length }, mas);
+  }
+  let m;
+  if (resto === 'build/definitions') {
+    const r = porId(u.searchParams.get('repositoryId'));
+    if (!r) return json(200, { value: [], count: 0 });
+    if (r.fallarDefiniciones) return json(r.fallarDefiniciones, { message: 'definiciones caídas' });
+    const value = (r.definiciones || []).map((d) => ({ id: d.id, name: d.name, process: { type: 2, yamlFilename: d.yaml }, repository: { id: r.id } }));
+    return json(200, { value, count: value.length });
+  }
+  if ((m = /^git\/repositories\/([^/]+)\/items$/.exec(resto))) {
+    const r = porId(m[1]);
+    const ruta = String(u.searchParams.get('path') || '').replace(/^\/+/, '');
+    if (!r) return json(404, { message: 'repo desconocido' });
+    if (r.fallarArchivo) return json(r.fallarArchivo, { message: 'archivo ilegible' });
+    if (!r.archivos || r.archivos[ruta] === undefined) return json(404, { message: `no existe ${ruta}` });
+    return json(200, { path: `/${ruta}`, content: r.archivos[ruta] });
+  }
+  if ((m = /^git\/repositories\/([^/]+)\/refs$/.exec(resto))) {
+    const r = porId(m[1]);
+    if (!r) return json(404, { message: 'repo desconocido' });
+    const filtro = `refs/${String(u.searchParams.get('filter') || '')}`;
+    const value = (r.ramas || [r.defaultBranch]).filter((n) => n && n.startsWith(filtro)).map((name) => ({ name, objectId: 'c'.repeat(40) }));
+    return json(200, { value, count: value.length });
+  }
+  if (resto === 'policy/configurations') {
+    const r = porId(u.searchParams.get('repositoryId'));
+    if (!r) return json(200, { value: [], count: 0 });
+    if (r.politicas403) return json(403, { message: 'sin permiso para leer políticas' });
+    if (r.politicas500) return json(500, { message: 'políticas caídas' });
+    return json(200, { value: r.politicas || [], count: (r.politicas || []).length });
+  }
+  return false;
+}
+
+/** Una política de validación por compilación, habilitada y bloqueante, sobre refs/heads/main del repo `repoId`. */
+function politicaDeCompilacion(repoId, buildDefinitionId, { isEnabled = true, isBlocking = true } = {}) {
+  return { isEnabled, isBlocking, type: { id: 'tipo-compilacion', displayName: 'Build' }, settings: { buildDefinitionId, scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: repoId }] } };
+}
+
 async function arrancarAdoFalso({ org = 'acme', project = 'Proy', repo = 'ops', token } = {}) {
   const llamadas = [];
   const st = {
@@ -60,6 +119,7 @@ async function arrancarAdoFalso({ org = 'acme', project = 'Proy', repo = 'ops', 
     if (!auth || (st.exigirAuth && auth !== st.exigirAuth)) return json(401, { message: 'sin credencial' });
     if (!ruta.startsWith(prefijo)) return json(404, { message: `fuera de ${prefijo}` });
     const resto = ruta.slice(prefijo.length);
+    if (st.repos && req.method === 'GET' && variosRepos(st, u, resto, res)) return;
     let m;
     if (req.method === 'GET' && resto === `git/repositories/${repo}`) return json(200, { id: st.repoId, name: repo, webUrl: webRepo });
     if (req.method === 'GET' && resto === `git/repositories/${repo}/refs`) {
@@ -113,9 +173,17 @@ async function arrancarAdoFalso({ org = 'acme', project = 'Proy', repo = 'ops', 
     if ((m = new RegExp(`^git/repositories/${repo}/pullrequests/(\\d+)$`, 'i').exec(resto)) && req.method === 'PATCH') {
       const p = st.pedidos.find((x) => String(x.pullRequestId) === m[1]);
       const completar = cuerpo && cuerpo.status === 'completed';
-      if (!st.permitirCompletar || !completar || (cuerpo.completionOptions && cuerpo.completionOptions.bypassPolicy)) llamada.prohibida = true;
+      // el completar automático: sólo con la suite que lo deja, sin cambiar el estado y sin saltear políticas
+      const autoCompletar = cuerpo && cuerpo.autoCompleteSetBy && cuerpo.status === undefined;
+      const salteaPoliticas = cuerpo && cuerpo.completionOptions && cuerpo.completionOptions.bypassPolicy;
+      if (salteaPoliticas || !(autoCompletar ? st.permitirAutoCompletar : st.permitirCompletar && completar)) llamada.prohibida = true;
       if (!p) return json(404, { message: 'no existe el pedido' });
       if (llamada.prohibida) return json(200, p);
+      if (autoCompletar) {
+        if (st.fallarAutoCompletar) return json(st.fallarAutoCompletar, { message: 'no se pudo prender el completar automático' });
+        p.autoCompleteSetBy = cuerpo.autoCompleteSetBy;
+        return json(200, p);
+      }
       if (st.fallarCompletar) return json(st.fallarCompletar, { message: 'TF401181: el pedido no se puede completar' });
       if (!st.completarTarde) {
         if (st.alCompletar) st.alCompletar(p, cuerpo);
@@ -171,4 +239,4 @@ async function arrancarAdoFalso({ org = 'acme', project = 'Proy', repo = 'ops', 
   };
 }
 
-module.exports = { arrancarAdoFalso, TIPO_REVISORES };
+module.exports = { arrancarAdoFalso, TIPO_REVISORES, politicaDeCompilacion };

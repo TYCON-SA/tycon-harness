@@ -70,7 +70,7 @@ test('T6 Revisar_MismoLector_ProblemasConRuta @story-2.29 @ac-6 — el lector de
 test('T17 Perfil_SinVersionMinima_NoPropone @story-2.29 @ac-17 — la parte común del texto, sin la cola del clon', () => {
   const bajo = ORG.profileGateProblem(JSON.stringify({ requires: { harness: '>= 2026.10.01.1' } }));
   assert.match(bajo, /todavía no se puede proponer/);
-  assert.match(bajo, new RegExp(ORG.TEAM_REPOS_SINCE.replace(/\./g, '\\.')));
+  assert.match(bajo, new RegExp(ORG.TEAM_REPOS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(bajo, /quedó guardado en tu clon/);
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify({ requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } })), null);
   assert.match(ORG.profileGateProblem('no es json'), /no pude leer team-layer\.json/);
@@ -413,8 +413,8 @@ test('T3 Escritura_SinOrigenSinTokenNoJsonGrande_NadaCreado @story-2.29 @ac-3', 
     assert.notStrictEqual(tok, otro, 'cada sesión, su token');
     const cuerpo = JSON.stringify({ seccion: 'responsables', borrador: { owners: { default: LEAD } } });
     const casos = [
-      [{ 'content-type': 'application/json', 'x-site-token': tok }, cuerpo, 403, /falta el origen del pedido/],
-      [{ origin: 'https://otro.example', 'content-type': 'application/json', 'x-site-token': tok }, cuerpo, 403, /el pedido viene de otro origen/],
+      [{ 'content-type': 'application/json', 'x-site-token': tok }, cuerpo, 403, /falta el origen de la solicitud/],
+      [{ origin: 'https://otro.example', 'content-type': 'application/json', 'x-site-token': tok }, cuerpo, 403, /la solicitud viene de otro origen/],
       [{ origin: 'http://127.0.0.1', 'content-type': 'application/json' }, cuerpo, 403, /falta el token del sitio/],
       [{ origin: 'http://127.0.0.1', 'content-type': 'application/json', 'x-site-token': otro }, cuerpo, 403, /el token no es el de tu sesión/],
       [{ origin: 'http://127.0.0.1', 'content-type': 'text/plain', 'x-site-token': tok }, cuerpo, 415, null],
@@ -1057,13 +1057,13 @@ test('Pantalla_RechazoEnLlano_NuncaRespuestaN @story-2.38 @ac-4 — un rechazo d
   const casos = [
     [vacio(401), /la sesión venció o se cerró: recargá la página/],
     // el sitio manda su motivo en cada 403: uno vacío lo dio lo que está delante (el candado de la nube)
-    [vacio(403), /lo rechazó lo que está delante del sitio, no el sitio: recargá la página.*quien mantiene/],
+    [vacio(403), /la rechazó lo que está delante del sitio, no el sitio: recargá la página.*quien mantiene/],
     [vacio(503), /el sitio está cargando o frenado: probá de nuevo en unos segundos/],
     [vacio(418), /el sitio contestó con un error \(418\)/],
     // con el mensaje del servidor, ése (aunque el JSON no traiga `ok`)
     [() => Promise.resolve({ status: 403, json: () => Promise.resolve({ ok: false, codigo: 'sin_rol', message: 'tu cuenta ana@acme.example no está entre los que mantienen el sitio' }) }), /tu cuenta ana@acme\.example no está entre los que mantienen el sitio/],
     // un JSON sin `message`: el llano de su estado
-    [() => Promise.resolve({ status: 403, json: () => Promise.resolve({ ok: false }) }), /lo rechazó lo que está delante del sitio/],
+    [() => Promise.resolve({ status: 403, json: () => Promise.resolve({ ok: false }) }), /la rechazó lo que está delante del sitio/],
   ];
   for (const [f, rx] of casos) {
     const t = await correrPantalla(f);
@@ -1195,6 +1195,15 @@ test('Mensajes_EnLlano_SinRutasNiClaves — la pantalla muestra dónde con los n
 // ── dónde corren las suites al mergear y los modelos de cada trabajo ──────────────────────
 const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
 const TR_BASE = { version: 1, public: GH('harness'), profile: GH('profile'), operations: GH('ops') };
+/** El espejo del buzón con máquinas que dieron noticias el día de la prueba, cada una con su versión del arnés. */
+function buzonConMaquinas(maquinas = { 'mac-1': '2026.11.03.40' }) {
+  const d = tmp('site-config-buzon-');
+  for (const [m, version] of Object.entries(maquinas)) {
+    fs.mkdirSync(path.join(d, m, 'registros'), { recursive: true });
+    fs.writeFileSync(path.join(d, m, 'registros', 'place.json'), JSON.stringify({ day: HOY, install: { version } }));
+  }
+  return d;
+}
 const PERFIL_ENV = { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: 't' };
 const capa = (v) => ({ requires: { harness: `>= ${v}` } });
 /** La pestaña con el perfil: `team-repos.json` y `team-layer.json` dados; `fn` recibe lo mismo que conPestana más `seccion(id)`. */
@@ -1328,7 +1337,7 @@ test('7.29-T23 Config_Modelos_PortonDeVersion @story-7.29 @ac-5 — con varias c
   assert.strictEqual(g(ORG.MODELS_SINCE, { ...conModelos, ...SUITES_OK }), null);
   await conPerfil({ layer: capa(ORG.MERGE_SUITES_SINCE) }, async ({ revisar, proponer }) => {
     const r = await revisar('modelos', { models: { reviewers: 'opus' } });
-    assert.match((await proponer('modelos', r.texto)).message, new RegExp(`todavía no se puede proponer.*>= ${ORG.MODELS_SINCE.replace(/\./g, '\\.')}`));
+    assert.match((await proponer('modelos', r.texto)).message, new RegExp(`todavía no se puede proponer.*>= ${ORG.MODELS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 });
 
@@ -1351,7 +1360,7 @@ test('T37 Modelos_ProblemaDeSeccion_NoSePropone @story-2.29 @ac-4 — el lector 
 
 // ── lo que la pantalla de las dos secciones (suites y modelos) tiene que aguantar ─────────────────
 /** La pantalla real sobre un documento mínimo con eventos: `click(texto, seccion)` aprieta un botón; `pedidos` anota cada fetch. */
-async function pantallaFalsa(secciones, respuestas = {}) {
+async function pantallaFalsa(secciones, respuestas = {}, idioma = 'es') {
   const creados = [];
   const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, on: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener(e, f) { n.on[e] = f; }, replaceChildren(...cs) { n.hijos = cs; } }; creados.push(n); return n; };
   const app = nodo('div');
@@ -1360,7 +1369,7 @@ async function pantallaFalsa(secciones, respuestas = {}) {
   const respuesta = { ok: true, secciones, proponer: {}, versiones: [], productos: [] };
   const fetch = (ruta, o) => { pedidos.push({ ruta, cuerpo: o && o.body ? JSON.parse(o.body) : null }); return Promise.resolve({ status: 200, json: () => Promise.resolve(ruta === '/api/config' ? respuesta : respuestas[ruta] ? respuestas[ruta](o && o.body ? JSON.parse(o.body) : null) : { ok: false, problems: [] }) }); };
   let error = null;
-  try { new Function('document', 'fetch', ORG.pantalla())(document, fetch); } catch (e) { error = e; }
+  try { new Function('document', 'fetch', ORG.pantalla(idioma))(document, fetch); } catch (e) { error = e; }
   const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
   await esperar();
   const todo = (n) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
@@ -1369,7 +1378,7 @@ async function pantallaFalsa(secciones, respuestas = {}) {
   const click = async (texto, id) => { const b = todo(sec(id)).find((n) => n.tag === 'button' && n.textContent === texto); assert.ok(b, `hay «${texto}» en ${id}`); b.on.click({}); await esperar(); };
   return { error, sec, textoDe, todo, click, pedidos, app };
 }
-const seccionPerfil = (id, borrador, problems = []) => ({ id, titulo: id, repo: 'perfil', estado: 'cargado', soloLectura: false, motivo: null, borrador, problems, avisos: [], extras: id === 'modelos' ? { hoy: { reviewers: 'sonnet' } } : (id === 'aprobaciones' ? ORG.extrasDeAprobaciones(null) : undefined) });
+const seccionPerfil = (id, borrador, problems = []) => ({ id, titulo: id, repo: 'perfil', estado: 'cargado', soloLectura: false, motivo: null, borrador, problems, avisos: [], extras: id === 'modelos' ? { hoy: { reviewers: 'sonnet' } } : (id === 'aprobaciones' ? ORG.extrasDeAprobaciones(null, { lector: TC, approvals: borrador && borrador.approvals }) : undefined) });
 
 test('T41 Pantalla_SuitesYModelos_TodoProblemaSeVe_YSeEditaComoTexto @story-2.29 @ac-4 (tanda C, pase adversarial) — ningún problema del lector queda sin dibujar', async () => {
   const pm = [['models.ceiling', 'un techo sin techo'], ['models.foo', 'clave desconocida foo'], ['models.session.huge', 'subclave huge'], ['models.adversarial', 'adversarial no es objeto']];
@@ -1449,7 +1458,8 @@ test('2.31-T1 ResponseSection_ShowsCurrentValueAndSource @story-2.31 @ac-1 — i
   });
   await conEquipo({}, async ({ seccion }) => {
     const v = await seccion('respuesta');
-    assert.deepStrictEqual(v.extras.vigente, { language: 'es', style: 'neutral', max_chars: TC.TOPE_POR_ESTILO.neutral });
+    // sin idioma declarado vale el de fábrica: el de la persona
+    assert.deepStrictEqual(v.extras.vigente, { language: 'auto', style: 'neutral', max_chars: TC.TOPE_POR_ESTILO.neutral });
     assert.deepStrictEqual(v.extras.origen, { language: 'por defecto', style: 'por defecto', max_chars: 'del estilo' });
   });
   // la pantalla: los tres estilos con su línea, el idioma y el largo, y lo vigente dicho en llano
@@ -1457,7 +1467,46 @@ test('2.31-T1 ResponseSection_ShowsCurrentValueAndSource @story-2.31 @ac-1 — i
   assert.strictEqual(p.error, null);
   const opciones = p.todo(p.sec('respuesta')).filter((n) => n.tag === 'option').map((n) => n.attrs.value);
   for (const o of ['executive', 'detailed', 'neutral', 'es', 'en']) assert.ok(opciones.includes(o), `opción ${o}: ${opciones}`);
-  assert.match(p.textoDe('respuesta'), /Hoy: executive · es · 1300 caracteres \(del perfil\)/);
+  assert.match(p.textoDe('respuesta'), /Hoy: ejecutivo · castellano · 1300 caracteres \(del perfil\)/);
+});
+
+test('T6 Sitio_OfreceAuto @story-8.149 @ac-5 — el idioma de las respuestas ofrece auto, es el de fábrica y se muestra con su texto', async () => {
+  // la vista vigente de la pestaña: sin declarar, auto; declarado, el del perfil
+  await conEquipo({}, async ({ seccion }) => {
+    const v = await seccion('respuesta');
+    assert.deepStrictEqual([v.extras.vigente.language, v.extras.origen.language], ['auto', 'por defecto']);
+  });
+  await conEquipo({ profile: { ...PERFIL_TYCON, response: { language: 'auto' } } }, async ({ seccion }) => {
+    const v = await seccion('respuesta');
+    assert.deepStrictEqual([v.extras.vigente.language, v.extras.origen.language], ['auto', 'perfil']);
+  });
+  // la pantalla, en los dos idiomas del sitio
+  const textos = {
+    es: { persona: 'el idioma de la persona', fabrica: 'el idioma de la persona (de fábrica)', castellano: /castellano/ },
+    en: { persona: "the person's language", fabrica: "the person's language (default)", castellano: /Spanish/ },
+  };
+  for (const idioma of ['es', 'en']) {
+    const t = textos[idioma];
+    const p = await pantallaFalsa([{ ...seccionPerfil('respuesta', { response: {} }), extras: { vigente: { language: 'auto', style: 'neutral', max_chars: 2000 }, origen: { language: 'por defecto', style: 'por defecto', max_chars: 'del estilo' } } }], {}, idioma);
+    assert.strictEqual(p.error, null);
+    const opciones = p.todo(p.sec('respuesta')).filter((n) => n.tag === 'option');
+    const de = (valor) => opciones.find((n) => n.attrs.value === valor);
+    assert.ok(de('auto'), `${idioma}: ofrece auto (${opciones.map((n) => n.attrs.value)})`);
+    assert.strictEqual(de('auto').textContent, t.persona, `${idioma}: auto con su texto`);
+    // el rótulo de «sin declarar» ya no dice castellano: dice el de fábrica nuevo
+    assert.strictEqual(de('').textContent, t.fabrica, `${idioma}: sin declarar`);
+    assert.doesNotMatch(de('').textContent, t.castellano, `${idioma}: sin declarar ya no es castellano`);
+    // el renglón «hoy» nombra auto con su texto, no el código suelto
+    const hoy = p.todo(p.sec('respuesta')).map((n) => n.textContent).find((x) => x.includes(' · 2000'));
+    assert.ok(hoy && hoy.includes(` · ${t.persona} · `), `${idioma}: renglón hoy con el texto de auto: ${hoy}`);
+    assert.ok(!hoy.includes(' · auto · '), `${idioma}: sin el código suelto`);
+  }
+  // lo que el sitio y la portada cuentan del bloque de estilo dice la fábrica nueva, no castellano
+  const efecto = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'install-effects.json'), 'utf8')).effects.find((e) => e.id === 'TYCON_BLOCK:response-style');
+  assert.match(efecto.does, /sin elegir: [^)]*idioma en que le escribís\)/, efecto.does);
+  assert.doesNotMatch(efecto.does, /sin elegir: [^)]*castellano/, efecto.does);
+  assert.match(efecto.en.does, /by default: [^)]*language you write in\)/, efecto.en.does);
+  assert.doesNotMatch(efecto.en.does, /by default: [^)]*Spanish/, efecto.en.does);
 });
 
 test('2.31-T2 ResponseSection_ProposesOnlyResponseKey_RestByteIdentical @story-2.31 @ac-2 — sólo cambia response; el archivo entero pasa el lector del perfil', async () => {
@@ -1557,7 +1606,7 @@ test('2.31-T12 ThreadsToggle_ProposesOnlySiteMailboxThreads @story-2.31 @ac-14 @
   await conEquipo({}, async ({ seccion }) => {
     const v = await seccion('hilos');
     assert.strictEqual(v.soloLectura, true);
-    assert.match(v.motivo, /buzón/);
+    assert.match(v.motivo, /depósito/);
   });
 });
 
@@ -1647,6 +1696,40 @@ test('2.31-T21 Espera_SeccionConSuPorton @story-2.31 @story-7.20 — el plazo de
       assert.match((await proponer('espera', r.texto)).message, espera);
     });
   }
+});
+
+test('Espera_PlazoDelDueno_ConElMismoLectorYSuVersion — el plazo del dueño se edita en la misma sección, lo valida el lector y pide la versión que lo lee', async () => {
+  // 🔴 rojo: el campo no está en la pantalla, un valor fuera de rango pasa, o se propone a una capa que no lo lee.
+  const malo = ORG.revisar({ seccion: 'espera', texto: ORG.formatJson(TR_BASE), borrador: { wait_notice: { owner_minutes: 121 } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(malo.ok, false);
+  assert.deepStrictEqual(malo.problems.map((p) => p.path), ['wait_notice.owner_minutes']);
+  const bien = ORG.revisar({ seccion: 'espera', texto: ORG.formatJson(TR_BASE), borrador: { wait_notice: { minutes: 5, owner_minutes: 45 } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.ok(ORG.versionAtLeast(ORG.WAIT_NOTICE_OWNER_SINCE, ORG.WAIT_NOTICE_ENABLED_SINCE) && ORG.WAIT_NOTICE_OWNER_SINCE !== ORG.WAIT_NOTICE_ENABLED_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ wait_notice: { owner_minutes: 45 } }).version, ORG.WAIT_NOTICE_OWNER_SINCE);
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) for (const k of ['pantalla.minutosHastaElDueno', 'pantalla.esperaDelDuenoDeFabrica', 'pantalla.minutosAlDueno']) assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('espera', { repo: 'perfil', borrador: {} })] });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-espera').pop();
+  const out = []; const walk = (x) => { if (x.tag === 'input' && x.attrs['data-path'] === 'wait_notice.owner_minutes') out.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+  assert.strictEqual(out.length, 1, 'el campo del plazo del dueño está en la sección');
+});
+
+test('Espera_PlazoDeLaEsperaDeOtraSesion_ConElMismoLectorYSuVersion — el plazo del dueño para la espera de otra sesión se edita en la misma sección, lo valida el lector y pide la versión que lo lee', async () => {
+  // 🔴 rojo: el campo no está en la pantalla, un valor fuera de rango pasa, o se propone a una capa que no lo lee.
+  const malo = ORG.revisar({ seccion: 'espera', texto: ORG.formatJson(TR_BASE), borrador: { wait_notice: { peer_owner_minutes: TR.WAIT_NOTICE_PEER_MAX + 1 } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(malo.ok, false);
+  assert.deepStrictEqual(malo.problems.map((p) => p.path), ['wait_notice.peer_owner_minutes']);
+  const bien = ORG.revisar({ seccion: 'espera', texto: ORG.formatJson(TR_BASE), borrador: { wait_notice: { minutes: 5, peer_owner_minutes: 240 } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.ok(ORG.versionAtLeast(ORG.WAIT_NOTICE_PEER_SINCE, ORG.WAIT_NOTICE_OWNER_SINCE) && ORG.WAIT_NOTICE_PEER_SINCE !== ORG.WAIT_NOTICE_OWNER_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ wait_notice: { peer_owner_minutes: 240 } }).version, ORG.WAIT_NOTICE_PEER_SINCE);
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) for (const k of ['pantalla.minutosHastaElDuenoOtraSesion', 'pantalla.esperaDeOtraSesionDeFabrica', 'pantalla.minutosAlDuenoOtraSesion']) assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('espera', { repo: 'perfil', borrador: {} })] });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-espera').pop();
+  const out = []; const walk = (x) => { if (x.tag === 'input' && x.attrs['data-path'] === 'wait_notice.peer_owner_minutes') out.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+  assert.strictEqual(out.length, 1, 'el campo del plazo de la espera de otra sesión está en la sección');
 });
 
 test('T12 7.31-Cobertura_SeccionConSuPorton @story-7.31 @ac-11 @ac-12 — el umbral de cobertura se edita en team-repos.json, con el lector y la versión que lo leen', async () => {
@@ -2006,7 +2089,7 @@ test('T6 2.40-Personas_EditaLaLista @story-2.40 @ac-6 @ac-5', async () => {
   const basura = { version: 1, owners: { default: LEAD }, site: { maintainers: ['no es un correo'] } };
   await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': basura }), config: opsBase() }) }, async ({ h, entrar }) => {
     const s = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((x) => x.id === 'sitio');
-    assert.match(String(s.extras.migracion), /1 correo\(s\) .*quedaron afuera/, JSON.stringify(s.extras));
+    assert.match(String(s.extras.migracion), /1 correo .*quedó afuera/, JSON.stringify(s.extras));
   });
   // la pantalla: sumar a alguien, sumar un correo y elegir el rol, sin JSON a mano
   const sec = { id: 'sitio', titulo: 'sitio', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [],
@@ -2137,7 +2220,7 @@ test('T8 Interruptor_ElQueCuentaEsElDeMain @story-2.39 @ac-8', { skip: SIN_BACKE
     const antes = r.ref('refs/heads/main');
     const p = await proponer('aplicar', rev.texto);
     assert.strictEqual(p.ok, true, JSON.stringify(p));
-    assert.match(p.message, /^Pedido abierto: /);
+    assert.match(p.message, /^Pull request abierto: /);
     assert.deepStrictEqual(parches(ado), [], 'prenderla nunca se aplica sola');
     assert.strictEqual(r.ref('refs/heads/main'), antes);
   });
@@ -2196,7 +2279,7 @@ test('T11 EstadoProponer_DiceSiSeAplicaSolo @story-2.39 @ac-10', { skip: SIN_BAC
   });
   // la pantalla dice qué va a pasar antes de tocar «Proponer»
   const codigo = ORG.pantalla();
-  assert.ok(codigo.includes('Se aplica solo: el sitio aprueba y completa el pedido'), 'el texto de «se aplica solo»');
+  assert.ok(codigo.includes('Se aplica solo: el sitio aprueba y completa el pull request'), 'el texto de «se aplica solo»');
 });
 
 test('Aplicado_RefrescoLento_ContestaAlTope @story-2.68 @ac-1', { skip: SIN_BACKEND }, async () => {
@@ -2381,7 +2464,7 @@ test('T17 2.36-Seccion_FichasQueMuestraElSitio @story-2.36 @ac-2 — la sección
   const vuelta = ORG.revisar({ seccion: 'fichas', texto: r.texto, borrador: { site: { maintainers: [LEAD], refresh_minutes: 15 } }, lectores: { 'operations-config.js': OPS } });
   assert.strictEqual(vuelta.texto, ORG.formatJson(base));
   const codigo = pantallaEnCastellano();
-  assert.match(codigo, /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos'\]/);
+  assert.match(codigo, /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'\]/);
   assert.match(codigo, /fichas: editorFichas/);
   // en el sitio, la sección llega con las 25 fichas y su casilla
   const ops = clon({ 'operations.json': opsBase() });
@@ -2499,7 +2582,7 @@ test('T27 TeamRepos_StackKey_SinceVersion @story-8.48 @ac-27 @ac-33 — `stack` 
   assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['team-repos.json', 'perfil', 'team-repos.js', ['stack'], 'repos']);
   assert.ok(ORG.versionAtLeast(ORG.STACK_SINCE, ORG.COVERAGE_SINCE) && ORG.STACK_SINCE !== ORG.COVERAGE_SINCE, 'la versión de `stack` es posterior a la de cobertura');
   const borrador = { stack: { code_extensions: ['.ex'], rules: { test_names: 'snake' } } };
-  for (const [v, espera] of [[ORG.COVERAGE_SINCE, new RegExp(`todavía no se puede proponer.*stack.*${ORG.STACK_SINCE.replace(/\./g, '\\.')}`)], [ORG.STACK_SINCE, PASO_EL_PORTON]]) {
+  for (const [v, espera] of [[ORG.COVERAGE_SINCE, new RegExp(`todavía no se puede proponer.*stack.*${ORG.STACK_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)], [ORG.STACK_SINCE, PASO_EL_PORTON]]) {
     await conPerfil({ layer: capa(v) }, async ({ seccion, revisar, proponer }) => {
       const sec = await seccion('tecnologia');
       assert.strictEqual(sec.estado, 'cargado');
@@ -2683,7 +2766,7 @@ test('Config_ReposDeLaOrganizacion_DeLosLectoresDelSitio — los de la revisión
     // las terminaciones que ya reconoce, del lector del árbol (code-files.js), no escritas en el sitio
     assert.deepStrictEqual([tec.extras.reconocidas, tec.extras.reconocidasMotivo], [CODE_FILES.byLanguage(), null]);
     // la entrada «C» (ado sin la forma proyecto/repo) no se ofrece, y se dice
-    assert.strictEqual(tec.extras.reposMotivo, '1 entrada(s) de repos.json no nombran un repo («ado» o «github») y no se ofrecen');
+    assert.strictEqual(tec.extras.reposMotivo, '1 entrada de repos.json no nombra un repo («ado» o «github») y no se ofrece');
   });
   // sin copia de operaciones, o con la lista ilegible: lo dice, y ofrece los de team-repos.json
   const opsRota = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': '{ roto' });
@@ -2806,7 +2889,7 @@ test('T30d SiteConfig_ReplaceBuiltIn_CopiesPhraseForThatTool — «Reemplazar» 
   try {
     for (const [idioma, frase, despues] of [
       ['es', 'quiero reemplazar la herramienta de pruebas Node (node --test) de mi proyecto por una receta propia en la configuración del arnés, detectada por package.json (la receta está en la sección «Tu tecnología» de guides/organization-site.md del arnés)',
-        'El agente arma el pedido, lo aprueba un admin y desde la próxima ejecución se usa la tuya.'],
+        'El agente arma el pull request, lo aprueba un admin y desde la próxima ejecución se usa la tuya.'],
       ['en', 'I want to replace the Node (node --test) test tool in my project with our own recipe in the harness configuration, detected by package.json (the recipe is in the «Your technology» section of the harness guides/organization-site.en.md)',
         'The agent builds the request, an admin approves it, and from the next execution on yours is used.'],
     ]) {
@@ -2872,7 +2955,7 @@ test('E1 SiteConfig_TuTecnologia_RendersInPage @story-8.48 @ac-25 @ac-28 @ac-36 
   // revisado y bien escrito: la pantalla dice que no se aplica solo, que se abre un pedido que alguien aprueba
   const q = await pantallaTec({ stack: { code_extensions: ['.ex'] } }, 'es', { texto: '{}\n', proponer: { perfil: { habilitado: true } } });
   await q.revisado();
-  assert.match(q.texto(), /Se abre un pedido de cambio en .*Entra cuando alguien lo aprueba/);
+  assert.match(q.texto(), /Se abre un pull request en .*Entra cuando alguien lo aprueba/);
 });
 
 // ── Personas: un renglón por persona ─────────────────────────────────────────────────────────────────────────────────
@@ -3472,7 +3555,7 @@ test('T4 Repos_QueHace_HojaConTema @story-2.59.2 @ac-4', () => {
 test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja el agente»', () => {
   const s = ORG.seccionPorId('aprobaciones');
   assert.ok(s, 'la sección existe');
-  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines']]);
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels']]);
   const rev = (borrador) => ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
   const ok = rev({ approvals: { relay_session: 'coordinadora' } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
@@ -3484,7 +3567,7 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
   for (const idioma of ['es', 'en']) {
     const js = ORG.pantalla(idioma);
     assert.match(js, /aprobaciones: editorAprobaciones/);
-    assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones'/);
+    assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones'/);
     // sí o no: el «sí» escribe el rol que ya tenga o «coordinadora» (su nombre se cambia aparte; la prueba de abajo);
     // la sesión se designa en la máquina, así que la pantalla nunca pide el nombre de una sesión
     assert.match(js, /selector\(T\('pantalla\.quienReenviaElOk'\), rol \? 'si' : ''/);
@@ -3568,12 +3651,39 @@ test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sec
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
 });
 
-// ── Cuántas sesiones trabajan a la vez (coordination.max_working) ──────────────────────────────────────────────────────
+// ── La dirección del sitio en cada máquina (site.url del perfil), la que abre el comando de barra org-site ───────────
+test('org-site · Config_DireccionSitio_SeccionYPedido — la sección, sus textos en dos lenguas, lo que propone y la versión que pide', async () => {
+  const s = ORG.seccionPorId('direccionSitio');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['site'], ['site.url'], ['site']]);
+  const rev = (borrador) => ORG.revisar({ seccion: 'direccionSitio', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ site: { url: 'https://sitio.acme.example' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, site: { url: 'https://sitio.acme.example' } }));
+  assert.strictEqual(rev({ site: { url: 'http://sitio.acme.example' } }).ok, false, 'sin https no');
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['pantalla.direccionSitioTitulo', 'pantalla.direccionSitioDescripcion', 'pantalla.direccionSitioAyuda', 'pantalla.para.direccionSitio', 'org.capaSinSite']) assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+    // sin «https://» escrito: el código de la pantalla no lleva direcciones (T4a)
+    assert.match(textos.t(idioma, 'pantalla.direccionSitioAyuda'), /https\)/);
+    assert.match(ORG.pantalla(idioma), /direccionSitio: editorDireccionSitio/);
+  }
+  const p = await pantallaFalsa([seccionPerfil('direccionSitio', {})]);
+  assert.strictEqual(p.error, null);
+  assert.ok(p.todo(p.sec('direccionSitio')).some((n) => n.tag === 'input'), 'hay un campo');
+  // con site en el perfil, la capa tiene que pedir la versión que la lee
+  const CON = { ...PERFIL_TYCON, site: { url: 'https://sitio.acme.example' } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SWITCHES_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/); assert.match(bajo, /site/); assert.ok(bajo.includes(`>= ${ORG.SITE_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SITE_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
+// ── Las sesiones de cada máquina: el tope (coordination.max_working) ───────────────────────────────────────────────────
 // El tope es del equipo y va en la pestaña; la carpeta de las firmas del dueño es de cada máquina y no aparece.
 test('8.122 T9 · Config_CoordinationCap_SectionAndRequest @story-8.122 @ac-9', async () => {
   const s = ORG.seccionPorId('coordinacion');
   assert.ok(s, 'la sección existe');
-  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['coordination'], ['coordination.max_working'], ['coordination']]);
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['coordination'], ['coordination.max_working', 'coordination.session_names'], ['coordination']]);
   const rev = (borrador) => ORG.revisar({ seccion: 'coordinacion', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
   const ok = rev({ coordination: { max_working: 5 } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
@@ -3598,6 +3708,250 @@ test('8.122 T9 · Config_CoordinationCap_SectionAndRequest @story-8.122 @ac-9', 
   const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
   assert.match(bajo, /todavía no se puede proponer/); assert.ok(bajo.includes(`>= ${ORG.COORDINATION_SINCE}`), bajo);
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
+// ── Los topes del camino corto (short_path, @story-8.182) ──────────────────────────────────────────────────────────────
+// Los configura cada organización dentro de un máximo (6 y 12). La sección nunca se aplica sola: un cambio de estos topes
+// lo aprueba una persona que no sea quien lo propone.
+
+test('T7 Sitio_SeccionCaminoCorto_ExisteConSusTextos @story-8.182 @ac-7', async () => {
+  const s = ORG.seccionPorId('caminoCorto');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita, s.noSeAplicaSola],
+    ['team-profile.json', 'perfil', 'harness-config', ['short_path'], ['short_path.coordinator_max_files', 'short_path.max_files'], ['short_path'], true]);
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['pantalla.caminoCortoTitulo', 'pantalla.caminoCortoDescripcion', 'pantalla.caminoCortoDelegado', 'pantalla.caminoCortoMaximo', 'pantalla.caminoCortoAyuda', 'pantalla.caminoCortoNoSeAplicaSola', 'pantalla.para.caminoCorto', 'org.capaSinShortPath']) {
+      assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+    }
+    // los textos dicen el valor por defecto y el máximo de cada tope
+    assert.match(textos.t(idioma, 'pantalla.caminoCortoDelegado'), /5/); assert.match(textos.t(idioma, 'pantalla.caminoCortoDelegado'), /6/);
+    assert.match(textos.t(idioma, 'pantalla.caminoCortoMaximo'), /8/); assert.match(textos.t(idioma, 'pantalla.caminoCortoMaximo'), /12/);
+    // y qué pasa al subirlos: el primero deja más archivos sin revisores, el segundo saca el click aparte
+    const ayuda = textos.t(idioma, 'pantalla.caminoCortoAyuda');
+    assert.match(ayuda, idioma === 'es' ? /Subir el primero[^.]*revisores/ : /Raising the first[^.]*reviewers/);
+    assert.match(ayuda, idioma === 'es' ? /Subir el segundo[^.]*click/ : /Raising the second[^.]*click/);
+    assert.match(ORG.pantalla(idioma), /caminoCorto: editorCaminoCorto/);
+  }
+  const p = await pantallaFalsa([seccionPerfil('caminoCorto', {})]);
+  assert.strictEqual(p.error, null);
+  const campos = p.todo(p.sec('caminoCorto')).filter((n) => n.tag === 'input').map((n) => n.attrs['data-path']);
+  assert.deepStrictEqual(campos, ['short_path.coordinator_max_files', 'short_path.max_files'], 'los dos campos');
+  assert.match(p.textoDe('caminoCorto'), /nunca se aplica sola/i);
+});
+
+test('T8 Sitio_FueraDeRango_NoSePropone @story-8.182 @ac-8', () => {
+  const rev = (borrador) => ORG.revisar({ seccion: 'caminoCorto', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ short_path: { coordinator_max_files: 4, max_files: 10 } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, short_path: { coordinator_max_files: 4, max_files: 10 } }));
+  assert.strictEqual(rev({ short_path: { coordinator_max_files: 7 } }).ok, false, 'el delegado pasa de 6');
+  assert.strictEqual(rev({ short_path: { max_files: 13 } }).ok, false, 'el máximo pasa de 12');
+  assert.strictEqual(rev({ short_path: { max_files: 0 } }).ok, false);
+  const cruzado = rev({ short_path: { coordinator_max_files: 6, max_files: 4 } });
+  assert.strictEqual(cruzado.ok, false, 'el delegado no pasa del otro');
+  assert.ok(cruzado.problems.some((x) => /coordinator_max_files/.test(x.path)), JSON.stringify(cruzado.problems));
+});
+
+test('T9 Sitio_CapaVieja_PideVersion @story-8.182 @ac-9', () => {
+  const CON = { ...PERFIL_TYCON, short_path: { max_files: 10 } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/);
+  assert.match(bajo, /short_path/);
+  assert.ok(bajo.includes(`>= ${ORG.SHORT_PATH_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SHORT_PATH_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+  // un perfil que no trae la sección no pide la versión
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', actual: PERFIL_TYCON, doc: PERFIL_TYCON }), null);
+});
+
+test('T10 Sitio_CampoVacio_SacaLaClave @story-8.182 @ac-10', async () => {
+  const PERFIL = { ...PERFIL_TYCON, short_path: { coordinator_max_files: 3, max_files: 10 } };
+  const rev = (borrador) => ORG.revisar({ seccion: 'caminoCorto', texto: ORG.formatJson(PERFIL), borrador, lectores: { 'harness-config': TC } });
+  const uno = rev({ short_path: { coordinator_max_files: 3 } });
+  assert.strictEqual(uno.ok, true, JSON.stringify(uno.problems));
+  assert.strictEqual(uno.texto, ORG.formatJson({ ...PERFIL_TYCON, short_path: { coordinator_max_files: 3 } }), 'la clave vacía sale, no queda en blanco');
+  const ninguno = rev({});
+  assert.strictEqual(ninguno.ok, true, JSON.stringify(ninguno.problems));
+  assert.strictEqual(ninguno.texto, ORG.formatJson(PERFIL_TYCON), 'sin las dos claves, la sección sale entera');
+  // en la pantalla: vaciar el campo saca la clave de lo que se revisa
+  const pedidos = [];
+  const p = await pantallaFalsa([seccionPerfil('caminoCorto', { short_path: { coordinator_max_files: 3, max_files: 10 } })], { '/api/config/revisar': (cuerpo) => { pedidos.push(cuerpo); return { ok: true, problems: [] }; } });
+  const campo = p.todo(p.sec('caminoCorto')).find((n) => n.tag === 'input' && n.attrs['data-path'] === 'short_path.max_files');
+  campo.on.input({ target: { value: '' } });
+  await p.click('Revisar cambios', 'caminoCorto');
+  assert.deepStrictEqual(pedidos.pop().borrador.short_path, { coordinator_max_files: 3 });
+});
+
+/** El perfil del equipo por HTTP con Azure de juguete que deja completar, y la organización con «se aplican solos». */
+async function conPerfilQueSeAplicaSolo({ politica }, fn) {
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado; let r; let dir;
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'perfil' });
+    ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: politica === 'autor', scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+    ({ r, dir } = await opsPorHttp({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.SHORT_PATH_SINCE), 'team-repos.json': TR_BASE }));
+    ado.st.permitirCompletar = true;
+    ado.st.alCompletar = (p) => { const s = r.ref(p.sourceRefName); spawnSync('git', ['update-ref', 'refs/heads/main', s], { cwd: r.bare }); };
+    const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
+    const config = opsBase({ site: { maintainers: [LEAD], auto_apply: true } });
+    const espejo = buzonConMaquinas({ 'mac-1': '2026.11.08.99', 'mac-2': '2026.11.08.99' });
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': config }), perfil: dir, config, espejo }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
+      const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
+      const estado = async () => (await ctx.h.pedir('/api/config', { cookie: lead })).json;
+      const revisar = async (id, borrador) => (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: id, borrador })).json;
+      const proponer = async (id, texto) => { const s = (await estado()).secciones.find((x) => x.id === id); return (await ctx.escribir('/api/config/proponer', lead, tok, { seccion: id, texto, oid: s.oid })).json; };
+      await fn({ ...ctx, ado, r, estado, revisar, proponer });
+    });
+  } finally { await cerrarTodos(ado, r); }
+}
+
+test('T11 Sitio_AutoAplicar_EstaSeccionEspera @story-8.182 @ac-12', { skip: SIN_BACKEND, timeout: 120000 }, async () => {
+  // la rama deja que quien propone apruebe: las demás secciones se aplican solas; ésta queda con «Proponer» apagado
+  await conPerfilQueSeAplicaSolo({ politica: 'autor' }, async ({ estado, revisar, proponer, ado, r }) => {
+    const e = await estado();
+    const p = e.proponer.perfil;
+    assert.ok(p.porSeccion && p.porSeccion.caminoCorto, JSON.stringify(p));
+    assert.strictEqual(p.porSeccion.caminoCorto.habilitado, false, JSON.stringify(p.porSeccion.caminoCorto));
+    assert.match(p.porSeccion.caminoCorto.motivo, /Allow requestors to approve their own changes/);
+    const rev = await revisar('caminoCorto', { short_path: { max_files: 10 } });
+    assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+    const antes = r.ref('refs/heads/main');
+    const no = await proponer('caminoCorto', rev.texto);
+    assert.strictEqual(no.ok, false, JSON.stringify(no));
+    assert.strictEqual(r.ref('refs/heads/main'), antes, 'main no cambió');
+    // la otra sección del mismo archivo sí se aplica sola
+    const otra = await revisar('oficina', { office: { quiet_minutes: 20 } });
+    const si = await proponer('oficina', otra.texto);
+    assert.strictEqual(si.codigo, 'aplicado', JSON.stringify(si));
+    assert.strictEqual(ado.st.pedidos.length, 1);
+  });
+  // la rama pide un revisor que no sea quien propone: abre el pedido, no lo completa, y la pantalla dice que espera
+  await conPerfilQueSeAplicaSolo({ politica: 'otro' }, async ({ estado, revisar, proponer, ado, r }) => {
+    const p = (await estado()).proponer.perfil.porSeccion.caminoCorto;
+    assert.deepStrictEqual([p.habilitado, p.aplicaSolo], [true, false], JSON.stringify(p));
+    assert.match(p.motivoAplicar, /nunca se aplica sola/i);
+    const rev = await revisar('caminoCorto', { short_path: { max_files: 10 } });
+    const antes = r.ref('refs/heads/main');
+    const abierto = await proponer('caminoCorto', rev.texto);
+    assert.strictEqual(abierto.ok, true, JSON.stringify(abierto));
+    assert.notStrictEqual(abierto.codigo, 'aplicado');
+    assert.strictEqual(ado.llamadas.filter((l) => l.method === 'PATCH').length, 0, 'nadie lo completó');
+    assert.strictEqual(r.ref('refs/heads/main'), antes);
+    assert.strictEqual(JSON.parse(r.archivoEn(ado.st.pedidos[0].sourceRefName, 'team-profile.json')).short_path.max_files, 10);
+  });
+});
+
+// 🔴 Falla con: el estado de «Proponer» de la sección que nunca se aplica sola consultado con el nombre de hoy del perfil
+// cuando el repo todavía usa el de antes: una política con filtro de ruta a perfil-equipo.json lo apagaba, y el servidor
+// igual aceptaba la propuesta (hallazgo del pase adversarial, prueba promovida).
+test('T11b Sitio_SeccionQueEspera_ConElNombreViejoDelPerfil @story-8.182 @ac-12', { skip: SIN_BACKEND, timeout: 120000 }, async () => {
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado; let r; let dir;
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'perfil' });
+    ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Required reviewers' },
+      settings: { minimumApproverCount: 1, creatorVoteCounts: false, addedFilesOnly: false, requiredReviewerIds: ['grupo'], filenamePatterns: ['/perfil-equipo.json'], scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+    ({ r, dir } = await opsPorHttp({ 'perfil-equipo.json': {}, 'team-layer.json': capa(ORG.SHORT_PATH_SINCE), 'team-repos.json': TR_BASE }));
+    const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
+    const config = opsBase();
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': config }), perfil: dir, config }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
+      const lead = await ctx.entrar(LEAD);
+      const e = (await ctx.h.pedir('/api/config', { cookie: lead })).json;
+      assert.strictEqual(e.secciones.find((x) => x.id === 'caminoCorto').archivo, 'perfil-equipo.json');
+      const p = e.proponer.perfil.porSeccion.caminoCorto;
+      assert.strictEqual(p.habilitado, true, JSON.stringify(p));
+    });
+  } finally { await cerrarTodos(ado, r); }
+});
+
+// ── Los nombres de las sesiones nuevas (coordination.session_names) ─────────────────────────────────────────────────────
+// El sitio elige para la organización «como hoy» o un tema de fábrica; la lista propia de cada dev va en su máquina y la
+// arma su sesión. Una lista escrita a mano en el perfil se muestra y no se pisa.
+test('Config_SessionNames_ThemeFromTheSite', async () => {
+  assert.deepStrictEqual(ORG.seccionPorId('coordinacion').rutas, ['coordination.max_working', 'coordination.session_names']);
+  const rev = (borrador) => ORG.revisar({ seccion: 'coordinacion', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ coordination: { session_names: 'rivers' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, coordination: { session_names: 'rivers' } }));
+  assert.strictEqual(rev({ coordination: { session_names: 'dinosaurios' } }).ok, false, 'un tema que no existe no se propone');
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const temas = Object.keys(TC.temasDeSesion());
+  assert.ok(temas.length >= 3, temas.join(','));
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['pantalla.nombresTitulo', 'pantalla.nombresAyuda', 'pantalla.nombresDeDonde', 'pantalla.nombresComoHoy', 'pantalla.nombresEjemplo', 'pantalla.nombresEjemploComoHoy', 'pantalla.nombresListaPropiaOpcion', 'pantalla.nombresUnoPorRenglon', 'org.capaSinNombresDeSesion', ...temas.map((id) => `pantalla.nombresTema.${id}`)]) {
+      assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+    }
+  }
+  // la pantalla: un selector con «como hoy», cada tema y «Lista propia», y el ejemplo de los nombres (la
+  // lista propia se escribe acá; el texto que la mandaba a la sesión ya no está)
+  let p = await pantallaFalsa([seccionPerfil('coordinacion', { coordination: { session_names: 'animals' } })]);
+  assert.strictEqual(p.error, null);
+  const sel = p.todo(p.sec('coordinacion')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'coordination.session_names');
+  assert.ok(sel, 'hay un selector de nombres');
+  assert.deepStrictEqual(sel.hijos.map((o) => o.attrs.value), ['', ...temas, '__propia']);
+  assert.strictEqual(sel.value, 'animals');
+  const texto = p.textoDe('coordinacion');
+  assert.ok(texto.includes(`Así salen: ${TC.temasDeSesion().animals.slice(0, 5).join(', ')}`), texto);
+  assert.doesNotMatch(texto, /pedísela a tu sesión/);
+  // una lista escrita en el perfil: «Lista propia», con su campo de un nombre por renglón
+  p = await pantallaFalsa([seccionPerfil('coordinacion', { coordination: { session_names: ['Norte', 'Sur'] } })]);
+  const sel2 = p.todo(p.sec('coordinacion')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'coordination.session_names');
+  assert.strictEqual(sel2.value, '__propia');
+  assert.strictEqual(p.todo(p.sec('coordinacion')).find((n) => n.tag === 'textarea').textContent, 'Norte\nSur');
+  assert.match(p.textoDe('coordinacion'), /Así salen: Norte, Sur/);
+  // elegir un tema y volver a la lista repone la lista en lo que se revisa
+  const pedidos = [];
+  p = await pantallaFalsa([seccionPerfil('coordinacion', { coordination: { session_names: ['Norte', 'Sur'] } })], { '/api/config/revisar': (cuerpo) => { pedidos.push(cuerpo); return { ok: true, problems: [] }; } });
+  const sel3 = p.todo(p.sec('coordinacion')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'coordination.session_names');
+  const cambiar = (x) => { sel3.value = x; (sel3.on.change || sel3.onchange)({ target: sel3 }); };
+  cambiar('animals'); cambiar(''); cambiar('__propia');
+  await p.click('Revisar cambios', 'coordinacion');
+  assert.deepStrictEqual(pedidos.pop().borrador.coordination.session_names, ['Norte', 'Sur']);
+  // la capa: proponer los nombres pide la versión que los lee; el tope solo no la pide
+  const CON = { ...PERFIL_TYCON, coordination: { max_working: 5, session_names: 'trees' } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', actual: { ...PERFIL_TYCON, coordination: { max_working: 5 } }, doc: CON });
+  assert.match(bajo, /coordination\.session_names/); assert.ok(bajo.includes(`>= ${ORG.SESSION_NAMES_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SESSION_NAMES_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', actual: PERFIL_TYCON, doc: { ...PERFIL_TYCON, coordination: { max_working: 5 } } }), null);
+});
+
+// ── Frenos y medidores (switches) ─────────────────────────────────────────────────────────────────────────────────────
+// Un freno sólo se enciende desde el sitio (sus opciones: de fábrica o encendido); un medidor, además, se apaga. Un freno
+// «apagado» escrito a mano no se propone: el lector lo nombra. Y el aviso de espera se apaga desde su propia sección.
+test('Config_Switches_SectionOnlyTurnsBrakesOn', async () => {
+  const s = ORG.seccionPorId('interruptores');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['switches'], ['switches']]);
+  const rev = (borrador) => ORG.revisar({ seccion: 'interruptores', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ switches: { session_guard: 'on', response_meter: 'off' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, switches: { session_guard: 'on', response_meter: 'off' } }));
+  const apagar = rev({ switches: { test_scope_guard: 'off' } });
+  assert.strictEqual(apagar.ok, false, 'un freno apagado no se propone');
+  assert.ok(apagar.problems.some((x) => x.path === 'switches.test_scope_guard' && /TYCON_TEST_SCOPE_GUARD=0/.test(x.message)), JSON.stringify(apagar.problems));
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = ['pantalla.interruptoresTitulo', 'pantalla.interruptoresDescripcion', 'pantalla.para.interruptores', 'org.capaSinSwitches', 'pantalla.esperaEncendido'];
+  for (const k of Object.keys(TC.SWITCHES)) claves.push(`pantalla.interruptor.${k}`, `pantalla.interruptorAyuda.${k}`);
+  for (const idioma of ['es', 'en']) {
+    for (const k of claves) assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+    assert.match(ORG.pantalla(idioma), /interruptores: editorInterruptores/);
+  }
+  const p = await pantallaFalsa([seccionPerfil('interruptores', {})]);
+  assert.strictEqual(p.error, null);
+  const sels = p.todo(p.sec('interruptores')).filter((n) => n.tag === 'select');
+  assert.strictEqual(sels.length, Object.keys(TC.SWITCHES).length, 'un selector por interruptor');
+  const valores = (sel) => p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value);
+  const porRuta = Object.fromEntries(sels.map((sel) => [sel.attrs['data-path'], valores(sel)]));
+  for (const [k, sw] of Object.entries(TC.SWITCHES)) {
+    assert.deepStrictEqual(porRuta[`switches.${k}`], sw.brake ? ['', 'on'] : ['', 'on', 'off'], k);
+  }
+  const CON = { ...PERFIL_TYCON, switches: { session_guard: 'on' } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/); assert.ok(bajo.includes(`>= ${ORG.SWITCHES_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SWITCHES_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+  // el aviso de espera apagado por la organización pide la versión que lee la clave
+  assert.strictEqual(ORG.versionQuePide({ wait_notice: { enabled: false } }).version, ORG.WAIT_NOTICE_ENABLED_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ wait_notice: { minutes: 7 } }).version, ORG.WAIT_NOTICE_SINCE);
 });
 
 // ── Cómo se actualiza el freno de producción (guard.update) y la firma delegada (approvals.delegated_signing) ──────
@@ -3651,7 +4005,7 @@ test('8.88 T51 · Site_Approvals_DelegatedSigningSelector_DefaultOff @story-8.88
   const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } }, lectores: { 'harness-config': TC } });
   assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
   const prendida = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } })]);
-  assert.match(prendida.textoDe('aprobaciones'), /vuelve a firmar en nombre del dueño un pedido que él ya firmó, cuando lo único nuevo es que se trajo main/);
+  assert.match(prendida.textoDe('aprobaciones'), /vuelve a firmar en nombre del dueño un pull request que él ya firmó, cuando lo único nuevo es que se trajo main/);
   assert.match(prendida.textoDe('aprobaciones'), /Aflojar un control siempre lo firma una persona/);
 });
 
@@ -3672,7 +4026,28 @@ test('8.116 T36 SiteConfig_SelectorDe888_LeeLaLista', async () => {
     const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', ...(firma === undefined ? {} : { delegated_signing: firma }) } })]);
     assert.strictEqual(p.error, null);
     assert.strictEqual(selectorDeFirma(p).value || '', prendida ? 'delegada' : '', JSON.stringify(firma));
-    assert.strictEqual(/vuelve a firmar en nombre del dueño un pedido que él ya firmó/.test(p.textoDe('aprobaciones')), prendida, JSON.stringify(firma));
+    assert.strictEqual(/vuelve a firmar en nombre del dueño un pull request que él ya firmó/.test(p.textoDe('aprobaciones')), prendida, JSON.stringify(firma));
+  }
+});
+
+// una firma que no se corre desde otra sesión: delegada, dice que no rinde; a la ventana, que no se puede delegar
+test('SiteConfig_Firma_DelegadaSinOtraSesion_DiceQueNoRinde', async () => {
+  // las firmas que no se corren desde otra sesión son todas de nivel 2 o más: van en el bloque de la excepción, que dice
+  // que no se delega, delegadas o no, y su selector no ofrece delegarlas
+  const enSuBloque = (p) => {
+    const nodos = p.todo(p.sec('aprobaciones')).filter((n) => n.attrs['data-nivel-bloque'] || n.attrs['data-firma-grupo']);
+    const i = nodos.findIndex((n) => n.attrs['data-firma-grupo'] === 'adversarial-skip');
+    const bloque = nodos.slice(0, i).reverse().find((n) => n.attrs['data-nivel-bloque']);
+    return { fila: nodos[i], bloque };
+  };
+  const delegada = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['adversarial-skip'] } })]);
+  assert.strictEqual(delegada.error, null);
+  for (const p of [delegada, await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })])]) {
+    const { fila, bloque } = enSuBloque(p);
+    assert.strictEqual(bloque.attrs['data-nivel-bloque'], '2');
+    assert.match(p.todo(bloque).map((n) => n.textContent || '').join(' '), /no se delega/);
+    assert.doesNotMatch(p.todo(fila).map((n) => n.textContent || '').join(' '), /está delegada/);
+    assert.ok(!selectorDeFirma(p, 'adversarial-skip').hijos.some((o) => o.attrs.value === 'delegada'), 'no ofrece delegarla');
   }
 });
 
@@ -3728,7 +4103,8 @@ test('8.116 T29 SiteConfig_Aprobaciones_FirmasYMaquinas', async () => {
     const sel = selectorDeFirma(p, f.id);
     assert.ok(sel, `la firma ${f.id} tiene su fila`);
     assert.strictEqual(sel.value || '', '', `${f.id}: de fábrica, a la ventana`);
-    assert.deepStrictEqual(opciones(p, f.id), f.otherSession === 'yes' ? ['', 'delegada', 'dueno'] : ['', 'dueno'], f.id);
+    // se ofrece delegar sólo la rutina que se firma desde otra sesión
+    assert.deepStrictEqual(opciones(p, f.id), f.otherSession === 'yes' && SIG.delegatedLevel(f.id) === 1 ? ['', 'delegada', 'dueno'] : ['', 'dueno'], f.id);
   }
   assert.match(p.textoDe('aprobaciones'), /Lo delegado no está protegido contra un agente/);
   assert.match(p.textoDe('aprobaciones'), /Ninguna máquina todavía\./);
@@ -3929,7 +4305,7 @@ test('T16 Config_SeccionPedidosMuestraTipoCamposYTabla_EsEn @story-4.9 @ac-10 �
   assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto, s.necesita], ['Pedidos de trabajo', 'operations.json', 'operaciones', 'operations-config.js', ['work_items'], 'operations', ['work_items']]);
   assert.strictEqual(ORG.lectorSabe(OPS, s), true, 'el lector de hoy conoce la clave');
   assert.strictEqual(ORG.lectorSabe({ ...OPS, KEYS: OPS.KEYS.filter((k) => k !== 'work_items') }, s), false, 'uno anterior deja la sección en «todavía no sabe leer»');
-  assert.match(pantallaEnCastellano(), /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos'\]/);
+  assert.match(pantallaEnCastellano(), /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'\]/);
   for (const idioma of ['es', 'en']) {
     const sec = SEC('pedidos', { borrador: { work_items: WI_RIESGO } });
     const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec], idioma, hash: '#seccion-pedidos' });
@@ -3940,7 +4316,7 @@ test('T16 Config_SeccionPedidosMuestraTipoCamposYTabla_EsEn @story-4.9 @ac-10 �
     for (const p of ['work_items.type', 'work_items.fixed_fields.Custom.Categoria', 'work_items.fixed_fields.Custom.Probabilidad']) assert.ok(rutas.includes(p), `${idioma}: el campo ${p}`);
     for (const g of OPS.SEVERITIES) assert.ok(rutas.includes(`work_items.by_severity.${g}.Custom.Impacto`), `${idioma}: la fila de ${g}`);
     const texto = nodos.map((n) => n.textContent || '').join(' | ');
-    assert.match(texto, idioma === 'es' ? /Pedidos de trabajo/ : /Work items/);
+    assert.match(texto, idioma === 'es' ? /Tareas/ : /Work items/);
     assert.match(texto, idioma === 'es' ? /Crítica/ : /Critical/, `${idioma}: la gravedad dicha en el idioma`);
   }
   // el editor cambia el borrador con la forma del lector: renombrar una fila la mueve en las cuatro gravedades, un número va como número
@@ -4053,8 +4429,8 @@ const WI_TABLA = { type: 'Riesgo', fixed_fields: { 'Custom.Categoria': 'Segurida
 const LISTAS_RIESGO = { '/api/config/tipos-de-pedido': () => ({ ok: true, tipos: ['Bug', 'Riesgo'] }), '/api/config/campos-de-pedido': () => ({ ok: true, proyecto: 'Ventas', campos: CAMPOS_RIESGO }) };
 const GRAVEDADES_4 = ['critical', 'high', 'moderate', 'low'];
 /** La sección de los pedidos sobre la pantalla de mentira, con las listas que contesta el sitio. */
-async function tablaDePedidos(work_items, respuestas = LISTAS_RIESGO) {
-  const p = await pantallaFalsa([SEC('pedidos', { titulo: 'Pedidos de vulnerabilidades', borrador: { work_items: JSON.parse(JSON.stringify(work_items)) } })], respuestas);
+async function tablaDePedidos(work_items, respuestas = LISTAS_RIESGO, idioma = 'es') {
+  const p = await pantallaFalsa([SEC('pedidos', { titulo: 'Pedidos de vulnerabilidades', borrador: { work_items: JSON.parse(JSON.stringify(work_items)) } })], respuestas, idioma);
   const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
   await esperar();
   const nodos = () => p.todo(p.sec('pedidos'));
@@ -4146,7 +4522,7 @@ test('T16g Tabla_CampoSinValores_CampoDeTexto @story-4.9 @ac-10 — un campo sin
 
 test('T16h Tabla_SinLista_TextoAvisoYGuardadoIntacto @story-4.9 @ac-10 — sin las listas, campos de texto, el aviso con el motivo y lo guardado sin cambios', async () => {
   // 🔴 rojo: sin permiso desaparecen los campos o la tabla, no dice por qué, o revisar sin tocar nada cambia lo guardado.
-  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo' };
+  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de tarea: falta su permiso de lectura de tareas (work items)' };
   const t = await tablaDePedidos(WI_TABLA, { '/api/config/tipos-de-pedido': () => sinPermiso });
   assert.strictEqual(t.error, null);
   assert.ok(!t.nodos().some((n) => n.tag === 'select' || n.tag === 'datalist'), 'sin listas, todo se escribe');
@@ -4156,7 +4532,7 @@ test('T16h Tabla_SinLista_TextoAvisoYGuardadoIntacto @story-4.9 @ac-10 — sin l
   for (const g of GRAVEDADES_4) assert.strictEqual(t.en(`work_items.by_severity.${g}.Custom.Impacto`).tag, 'input');
   const aviso = t.nodos().find((n) => n.attrs.class === 'aviso-listas');
   assert.ok(aviso, 'el aviso de arriba');
-  assert.match(t.textoDe('pedidos'), /Sin las listas de la plataforma: el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo\. Podés escribir los nombres y los valores; se validan al revisar\./);
+  assert.match(t.textoDe('pedidos'), /Sin las listas de la plataforma: el sitio no puede leer los tipos de tarea: falta su permiso de lectura de tareas \(work items\)\. Podés escribir los nombres y los valores; se validan al revisar\./);
   assert.ok(t.nodos().some((n) => n.tag === 'button' && n.textContent === '+ campo'), '«+ campo» también sin lista');
   assert.deepStrictEqual(await t.revisado(), WI_TABLA, 'lo guardado, intacto');
 });
@@ -4271,7 +4647,7 @@ test('T18 Pedidos_LecturaDeTiposYCampos_ConPermisoSinPermisoYCaidas @story-4.9 @
   assert.deepStrictEqual((await RP.tiposDePedido({ ...base, fetch: conOcultos })).tipos, ['Bug']);
   const sin = await RP.tiposDePedido({ ...base, fetch: resp(401) });
   assert.deepStrictEqual([sin.ok, sin.codigo], [false, 'sin_permiso']);
-  assert.match(sin.message, /lectura de pedidos de trabajo/);
+  assert.match(sin.message, /necesita poder leer las tareas/);
   assert.strictEqual((await RP.tiposDePedido({ ...base, token: null, fetch: resp(200) })).codigo, 'sin_permiso', 'sin credencial no pregunta');
   assert.strictEqual((await RP.tiposDePedido({ ...base, fetch: async () => { throw new Error('red'); } })).codigo, 'sin_respuesta');
   assert.strictEqual((await RP.tiposDePedido({ ...base, fetch: resp(200, 'no es json') })).codigo, 'sin_respuesta');
@@ -4280,7 +4656,7 @@ test('T18 Pedidos_LecturaDeTiposYCampos_ConPermisoSinPermisoYCaidas @story-4.9 @
   assert.deepStrictEqual(campos, { ok: true, campos: [{ referencia: 'Custom.Impacto', nombre: 'Impacto', valores: ['1', '2', '3'] }, { referencia: 'System.Title', nombre: 'Title', valores: [] }] });
   assert.match(urls[urls.length - 1], /\/workitemtypes\/Riesgo\/fields\?\$expand=allowedValues&api-version=7\.1$/);
   const noEsta = await RP.camposDelTipo({ ...base, tipo: 'Nada', fetch: resp(404) });
-  assert.deepStrictEqual([noEsta.codigo, /no tiene el tipo de pedido Nada/.test(noEsta.message)], ['no_reconozco', true]);
+  assert.deepStrictEqual([noEsta.codigo, /no tiene el tipo de tarea Nada/.test(noEsta.message)], ['no_reconozco', true]);
   for (const tipo of ['', '..', 'a/b', 'a?b']) assert.strictEqual((await RP.camposDelTipo({ ...base, tipo, fetch: resp(200) })).codigo, 'no_reconozco', JSON.stringify(tipo));
 });
 
@@ -4298,14 +4674,14 @@ test('T19 Pedidos_PantallaOfreceLasListas_YSinPermisoDejaEscribirConAviso @story
   assert.deepStrictEqual(valores('work_items.fixed_fields.Custom.Impacto'), ['1', '2', '3'], 'los valores permitidos del campo');
   assert.match(con.textoDe('pedidos'), /no incluye los de Compras/);
   assert.deepStrictEqual(con.pedidos.filter((x) => x.ruta === '/api/config/campos-de-pedido').map((x) => x.cuerpo), [{ tipo: 'Riesgo' }], 'los campos, una vez por tipo');
-  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo. Mientras tanto, escribí el nombre' };
+  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de tarea: falta su permiso de lectura de tareas (work items). Mientras tanto, escribí el nombre' };
   const sin = await pantallaFalsa([sec()], { '/api/config/tipos-de-pedido': () => sinPermiso });
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   const n2 = sin.todo(sin.sec('pedidos'));
   const t2 = n2.find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.type');
   assert.ok(t2 && t2.attrs.value === 'Riesgo' && !t2.attrs.list, 'el campo de siempre, con lo guardado');
   assert.ok(!n2.some((n) => n.tag === 'datalist'), 'sin listas');
-  assert.match(sin.textoDe('pedidos'), /Sin las listas de la plataforma: el sitio no puede leer los tipos de pedido/);
+  assert.match(sin.textoDe('pedidos'), /Sin las listas de la plataforma: el sitio no puede leer los tipos de tarea/);
   assert.deepStrictEqual(sin.pedidos.filter((x) => x.ruta === '/api/config/campos-de-pedido'), [], 'sin tipos no pide campos');
 });
 
@@ -4337,7 +4713,7 @@ test('T20 Pedidos_ElSitioLeeDeLosProyectosDeLosProductos_ConElTokenDeSoloLectura
       const c = (await escribir('/api/config/campos-de-pedido', lead, tok, { tipo: 'Riesgo' })).json;
       assert.deepStrictEqual([c.ok, c.proyecto, c.campos[0].valores], [true, 'Ventas', ['1', '2']]);
       const nada = (await escribir('/api/config/campos-de-pedido', lead, tok, { tipo: 'Inexistente' })).json;
-      assert.match(nada.message, /ningún proyecto de los productos tiene el tipo de pedido Inexistente/);
+      assert.match(nada.message, /ningún proyecto de los productos tiene el tipo de tarea Inexistente/);
     });
     vistos.length = 0;
     const soloCompras = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': JSON.stringify({ azure: { org: 'acme' }, repos: [{ producto: 'C', ado: 'Compras/app' }] }) });
@@ -4345,7 +4721,7 @@ test('T20 Pedidos_ElSitioLeeDeLosProyectosDeLosProductos_ConElTokenDeSoloLectura
       const lead = await entrar(LEAD); const tok = await token(lead);
       const t = (await escribir('/api/config/tipos-de-pedido', lead, tok, {})).json;
       assert.deepStrictEqual([t.ok, t.codigo], [false, 'sin_permiso']);
-      assert.match(t.message, /necesita lectura de pedidos de trabajo/);
+      assert.match(t.message, /necesita poder leer las tareas/);
     });
   } finally { await new Promise((r) => az.close(r)); }
 });
@@ -4493,7 +4869,7 @@ test('T13b Modelos_CodexReviewersInherit_PideSuVersion · se revisa con el lecto
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { codex_reviewers: 'inherit' } }).version, ORG.CODEX_REVIEWERS_SINCE);
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced', codex_reviewers: 'inherit' } }).version, ORG.CODEX_REVIEWERS_SINCE, 'con niveles, la mayor');
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE, 'sin la clave, como hoy');
-  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { codex_reviewers: 'inherit' } })), new RegExp(ORG.CODEX_REVIEWERS_SINCE.replace(/\./g, '\\.')));
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { codex_reviewers: 'inherit' } })), new RegExp(ORG.CODEX_REVIEWERS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   const ok = ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models: { codex_reviewers: 'inherit' } }, lectores: { 'team-repos.js': TEAM } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
   assert.match(ok.texto, /"codex_reviewers": "inherit"/);
@@ -4527,7 +4903,7 @@ test('T13 Modelos_NivelesPidenSuVersion @story-2.70 @ac-11', async () => {
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'sonnet' } }).version, ORG.MODELS_SINCE, 'con nombres, la de siempre');
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE);
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { session: { heavy: 'max' } } }).version, ORG.MODEL_LEVELS_SINCE, 'un nivel adentro de un objeto');
-  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } })), new RegExp(ORG.MODEL_LEVELS_SINCE.replace(/\./g, '\\.')));
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } })), new RegExp(ORG.MODEL_LEVELS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } }), null);
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'sonnet' } }), null);
   // un comentario cuyo texto es un nivel no es un nivel: ni pide la versión ni se traduce
@@ -4658,7 +5034,7 @@ test('T40 Proveedores_PidenSuVersion @story-2.73 @ac-32', () => {
   assert.notStrictEqual(ORG.MODEL_PROVIDERS_SINCE, ORG.CODEX_REVIEWERS_SINCE);
   for (const models of [{ providers: { ollama: { economy: 'x' } } }, { allowed: { ollama: ['x'] } }, { nightly: { provider: 'anthropic' } }]) {
     assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models }).version, ORG.MODEL_PROVIDERS_SINCE, JSON.stringify(models));
-    assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.CODEX_REVIEWERS_SINCE)), { ...TR_BASE, models })), new RegExp(ORG.MODEL_PROVIDERS_SINCE.replace(/\./g, '\\.')));
+    assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.CODEX_REVIEWERS_SINCE)), { ...TR_BASE, models })), new RegExp(ORG.MODEL_PROVIDERS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE);
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'sonnet' } }).version, ORG.MODELS_SINCE);
@@ -4668,7 +5044,7 @@ test('T41 Textos_ProveedoresEnEsYEn @story-2.73 @ac-33', () => {
   const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
   const claves = ['pantalla.porProveedor', 'pantalla.porProveedorAyuda', 'pantalla.proveedor.anthropic', 'pantalla.proveedor.openai', 'pantalla.proveedor.ollama',
-    'pantalla.proveedor.cursor', 'pantalla.nivel2', 'pantalla.elDelDev', 'pantalla.anthropicFija', 'pantalla.cursorNoSeAplica', 'pantalla.permitidos',
+    'pantalla.proveedor.cursor', 'pantalla.columnaNivel', 'pantalla.elDelDev', 'pantalla.anthropicFija', 'pantalla.cursorNoSeAplica', 'pantalla.permitidos',
     'pantalla.permitidosAyuda', 'pantalla.elProcesoDeLaNoche', 'pantalla.nocheProveedor', 'pantalla.nocheSinConfigurar', 'pantalla.nocheHoy',
     'pantalla.nocheSinModelo', 'pantalla.nocheLlave', 'pantalla.equivalenciaDelNivel', 'org.nocheSinModelo'];
   for (const k of claves) {
@@ -4795,7 +5171,8 @@ test('Config_TimeTracking_RaisesRequiresAndDropsOldKey @story-7.40 @ac-10', { sk
     ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: false, scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
     ({ r, dir } = await opsPorHttp({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.RESPONSE_SINCE), 'team-repos.json': TR_BASE }));
     const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
-    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
+    // la capa sube sólo si todas las máquinas activas tienen la versión: una al día en el buzón
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir, espejo: buzonConMaquinas() }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
       const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
       const { clockify: _c, ...integSinVieja } = PERFIL_TYCON.integrations;
       const rev = (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: 'integraciones', borrador: { integrations: { ...integSinVieja, timeTracking: 'clockify' } } })).json;
@@ -4873,7 +5250,8 @@ test('T54 Config_NotifyChannels_RaisesRequires @story-7.40 @ac-18', { skip: SIN_
     ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: false, scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
     ({ r, dir } = await opsPorHttp({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.RESPONSE_SINCE), 'team-repos.json': TR_BASE }));
     const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
-    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
+    // la capa sube sólo si todas las máquinas activas tienen la versión: una al día en el buzón
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir, espejo: buzonConMaquinas() }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
       const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
       const rev = (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: 'integraciones', borrador: { integrations: { ...PERFIL_TYCON.integrations, notify: { channels: ['slack', 'mail'], mail_host: 'smtp.acme.example' } } } })).json;
       assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
@@ -5054,7 +5432,7 @@ test('2.75-T25 Estimates_PideSuVersion @story-2.75 @ac-22 — con la clave, el p
   assert.strictEqual(con.version, ORG.ESTIMATES_SINCE);
   assert.ok(con.claves.includes('estimates'));
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE }).version, ORG.TEAM_REPOS_SINCE, 'sin la clave, la de siempre');
-  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_PROVIDERS_SINCE)), { ...TR_BASE, estimates: { unit: 'days' } })), new RegExp(ORG.ESTIMATES_SINCE.replace(/\./g, '\\.')));
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_PROVIDERS_SINCE)), { ...TR_BASE, estimates: { unit: 'days' } })), new RegExp(ORG.ESTIMATES_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
 test('2.75-T26 Textos_EnEsYEn @story-2.75 @ac-26 — los textos de la sección y de la vista existen en castellano y en inglés', () => {
@@ -5282,7 +5660,7 @@ test('T76 Config_Pedidos_EnNavegadorReal @story-4.11 @ac-43', { skip: SIN_NAVEGA
         await sec.getByRole('button', { name: 'Revisar cambios' }).click();
         await sec.getByRole('button', { name: 'Proponer el cambio' }).click();
         await sec.getByRole('button', { name: 'Confirmar y proponer' }).click();
-        await sec.getByRole('link', { name: 'Ver el pedido de cambio' }).waitFor({ timeout: 20000 })
+        await sec.getByRole('link', { name: 'Ver el pull request' }).waitFor({ timeout: 20000 })
           .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await sec.innerText()}`); });
         assert.strictEqual(gh.st.pedidos.length, 1, 'se abrió un pedido');
         const rama = r.empujes.at(-1).ref.replace('refs/heads/', '');
@@ -5290,4 +5668,1479 @@ test('T76 Config_Pedidos_EnNavegadorReal @story-4.11 @ac-43', { skip: SIN_NAVEGA
       } finally { await navegador.close(); }
     });
   } finally { await cerrarTodos(r, gh); }
+});
+
+// ── E1-E3: en un navegador de verdad, contra el sitio entero ───────────────────────────────────────────────────────────
+// Las capturas quedan en TYCON_E2E_CAPTURE (la carpeta de evidencia de la historia) o en una carpeta temporal.
+const capturas8203 = () => { const d = process.env.TYCON_E2E_CAPTURE || tmp('capturas-8203-'); fs.mkdirSync(d, { recursive: true }); return d; };
+/** Un navegador con la sesión de quien mantiene; `alPedir(ruta, rt)` puede contestar una ruta de la API (si no, la contesta el sitio). */
+async function navegadorConSesion(h, lead, { ancho = 1280, alPedir = null } = {}, fn) {
+  const navegador = await PLAYWRIGHT.chromium.launch();
+  try {
+    const ctx = await navegador.newContext({ viewport: { width: ancho, height: 900 } });
+    await ctx.setExtraHTTPHeaders({ cookie: lead });
+    const page = await ctx.newPage();
+    await page.route('**/api/config**', async (rt) => {
+      if (alPedir && await alPedir(new URL(rt.request().url()).pathname, rt)) return;
+      await rt.fulfill({ response: await rt.fetch({ headers: { ...rt.request().headers(), cookie: lead, origin: 'http://127.0.0.1' } }) });
+    });
+    await fn(page);
+  } finally { await navegador.close(); }
+}
+const textoDeSeccion = async (sec) => sec.innerText().catch(() => '(no está)');
+
+// E1 E2E_Sitio_RevisarCambiosDiceRevisando @story-8.203 @ac-1 @ac-2 @ac-3
+// 🔴 Falla con: un «Revisar cambios» que no se apaga ni dice «Revisando…» mientras el servidor tarda, que no dice el
+//    motivo cuando falla, o que queda apagado después.
+test('E1 E2E_Sitio_RevisarCambiosDiceRevisando @story-8.203 @ac-1 @ac-2 @ac-3 — el servidor tarda 3 s y falla: «Revisando…» apagado, el motivo y habilitado otra vez', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': opsBase() }) });
+  await conPestana({ fuentes }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    // «Revisar» tarda 3 s y contesta un error del servidor; el resto de la API, el sitio de verdad
+    const alPedir = async (ruta, rt) => {
+      if (ruta !== '/api/config/revisar') return false;
+      await new Promise((r) => setTimeout(r, 3000));
+      await rt.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, message: 'el lector se cayó a propósito' }) });
+      return true;
+    };
+    await navegadorConSesion(h, lead, { alPedir }, async (page) => {
+      await page.goto(`${h.base}/configuracion#seccion-responsables`);
+      const sec = page.locator('#seccion-responsables');
+      await sec.getByRole('button', { name: 'Revisar cambios' }).click({ timeout: 20000 });
+      const ocupado = sec.locator('button[aria-busy="true"]');
+      await ocupado.waitFor({ timeout: 1000 });
+      assert.strictEqual((await ocupado.textContent()).trim(), 'Revisando…');
+      assert.ok(await ocupado.isDisabled(), 'apagado mientras trabaja');
+      await page.screenshot({ path: path.join(capturas8203(), 'e1-revisando.png') });
+      await sec.getByText('el lector se cayó a propósito').waitFor({ timeout: 10000 })
+        .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await textoDeSeccion(sec)}`); });
+      assert.strictEqual(await sec.locator('button[aria-busy="true"]').count(), 0);
+      assert.ok(await sec.getByRole('button', { name: 'Revisar cambios' }).isEnabled(), 'habilitado otra vez');
+      await page.screenshot({ path: path.join(capturas8203(), 'e1-fallo.png') });
+    });
+  });
+});
+
+/** El perfil del equipo servido por HTTP, con Azure DevOps de juguete que pide un revisor, y el buzón con dos máquinas. */
+async function conPerfilEscribible(archivos, fn) {
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado; let r; let dir;
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'perfil' });
+    ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: false, scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+    ({ r, dir } = await opsPorHttp(archivos));
+    const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
+    const espejo = buzonConMaquinas({ 'mac-1': '2026.11.03.40', 'mac-2': '2026.11.03.40' });
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir, espejo }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => fn({ ...ctx, ado, r }));
+  } finally { await cerrarTodos(ado, r); }
+}
+
+// E2 E2E_Sitio_ProponerSubeLaCapa @story-8.203 @ac-12
+// 🔴 Falla con: un cambio de los nombres de las sesiones que frena por la versión aunque las dos máquinas activas la
+//    tienen, que no avisa antes de confirmar, o un pedido que no trae team-layer.json con la versión nueva.
+test('E2 E2E_Sitio_ProponerSubeLaCapa @story-8.203 @ac-12 — los nombres de las sesiones: el aviso de la versión y el pedido con los dos archivos', { skip: SIN_NAVEGADOR, timeout: 180000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  await conPerfilEscribible({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.RESPONSE_SINCE), 'team-repos.json': TR_BASE }, async ({ h, entrar, ado, r }) => {
+    const lead = await entrar(LEAD);
+    await navegadorConSesion(h, lead, {}, async (page) => {
+      await page.goto(`${h.base}/configuracion#seccion-coordinacion`);
+      const sec = page.locator('#seccion-coordinacion');
+      await sec.locator('select[data-path="coordination.session_names"]').selectOption('rivers', { timeout: 20000 });
+      await sec.getByRole('button', { name: 'Revisar cambios' }).click();
+      const aviso = `El pull request también pide el arnés ${ORG.SESSION_NAMES_SINCE}, por coordination.session_names: las máquinas activas (2) ya lo tienen.`;
+      await sec.getByText(aviso).waitFor({ timeout: 20000 })
+        .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await textoDeSeccion(sec)}`); });
+      await page.screenshot({ path: path.join(capturas8203(), 'e2-aviso-de-la-version.png') });
+      await sec.getByRole('button', { name: 'Proponer el cambio' }).click();
+      await sec.getByRole('button', { name: 'Confirmar y proponer' }).click();
+      await sec.getByRole('link', { name: 'Ver el pull request' }).first().waitFor({ timeout: 30000 })
+        .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await textoDeSeccion(sec)}`); });
+      await page.screenshot({ path: path.join(capturas8203(), 'e2-pedido-abierto.png') });
+    });
+    assert.strictEqual(ado.st.pedidos.length, 1, 'un pedido');
+    const ref = ado.st.pedidos[0].sourceRefName;
+    assert.strictEqual(JSON.parse(r.archivoEn(ref, 'team-profile.json')).coordination.session_names, 'rivers');
+    assert.strictEqual(JSON.parse(r.archivoEn(ref, 'team-layer.json')).requires.harness, `>= ${ORG.SESSION_NAMES_SINCE}`, 'el mismo pedido sube la capa');
+  });
+});
+
+// E3 E2E_Sitio_DiferenciaYBotones @story-8.203 @ac-20 @ac-23
+// 🔴 Falla con: la diferencia de team-repos.json escrito en otra forma que muestra los renglones de forma, sin la marca
+//    del valor o sin la línea que los cuenta; o los botones de «Máquinas con oficina» pegados a 390 px.
+test('E3 E2E_Sitio_DiferenciaYBotones @story-8.203 @ac-20 @ac-23 — la diferencia corta con la marca y la línea de forma; los botones de las máquinas separados', { skip: SIN_NAVEGADOR, timeout: 180000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const remoto = (repo) => `{ "platform": "github", "org": "acme", "repo": "${repo}" }`;
+  const viejo = `{\n  "version": 1,\n  "context_notice": { "tokens": 750000 },\n  "public":      ${remoto('harness')},\n  "profile":     ${remoto('profile')},\n  "operations":  ${remoto('ops')}\n}\n`;
+  const esperado = ORG.diferenciaDeJson(viejo, ORG.formatJson({ ...JSON.parse(viejo), context_notice: { tokens: 800000 } }));
+  assert.ok(esperado.forma > 0);
+  await conPerfilEscribible({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.CONTEXT_NOTICE_SINCE), 'team-repos.json': viejo }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    await navegadorConSesion(h, lead, {}, async (page) => {
+      await page.goto(`${h.base}/configuracion#seccion-contexto`);
+      const sec = page.locator('#seccion-contexto');
+      await sec.locator('input[data-path="context_notice.tokens"]').fill('800000', { timeout: 20000 });
+      await sec.getByRole('button', { name: 'Revisar cambios' }).click();
+      await sec.getByRole('button', { name: 'Proponer el cambio' }).click({ timeout: 20000 });
+      await sec.getByText(`Además, el pull request acomoda el formato del archivo: renglones que cambian de forma, no de valor: ${esperado.forma}.`).waitFor({ timeout: 20000 })
+        .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await textoDeSeccion(sec)}`); });
+      // la pantalla se vuelve a dibujar mientras termina de cargar: se lee hasta que se asienta
+      let marcas = [];
+      for (let i = 0; i < 40 && JSON.stringify(marcas) !== '["75","80"]'; i += 1) { marcas = await sec.locator('.dif mark').allTextContents(); if (JSON.stringify(marcas) !== '["75","80"]') await page.waitForTimeout(250); }
+      assert.deepStrictEqual(marcas, ['75', '80'], 'lo cambiado, marcado dentro del renglón');
+      assert.strictEqual(await sec.locator('.dif-sale').count(), 1, 'un renglón quitado: sólo el del valor');
+      await page.screenshot({ path: path.join(capturas8203(), 'e3-diferencia.png') });
+    });
+  });
+  // los botones de «Máquinas con oficina», a lo ancho de un teléfono
+  const { crearLlaves } = require(path.join(ROOT, 'scripts', 'site', 'machine-keys.js'));
+  const llaves = crearLlaves({ dataDir: tmp('llaves-8203-') });
+  const publicKey = Buffer.from(crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x, 'base64url').toString('base64');
+  const fingerprint = crypto.createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex');
+  llaves.pedir({ publicKey, fingerprint, nombre: 'pista', direccion: '10.0.0.1' });
+  const conf = opsBase({ people: { machines: { 'maq-a': { person: DEV, reported_sha256: crypto.createHash('sha256').update(DEV).digest('hex'), confirmed_by: LEAD, confirmed_on: '2026-10-01' } } } });
+  conf.site = { ...conf.site, mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs' } };
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': conf }), config: conf, informados: H.informados({ 'maq-a': DEV }) });
+  fuentes.huellas = () => ({ medido: true, carpetas: { 'maq-a': { huellas: [fingerprint], llena: false } } });
+  await conPestana({ fuentes, opciones: { llaves } }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    assert.strictEqual(JSON.parse((await escribir('/api/config/oficinas', lead, await token(lead), { accion: 'approve', fingerprint })).texto).ok, true);
+    await navegadorConSesion(h, lead, { ancho: 390 }, async (page) => {
+      await page.goto(`${h.base}/configuracion#seccion-personas`);
+      await page.locator('#seccion-personas .tabla .acc').first().waitFor({ timeout: 20000 });
+      // la pantalla se vuelve a dibujar mientras termina de cargar: la celda se busca y se mide en el mismo paso
+      const medir = () => page.evaluate(() => {
+        const acc = document.querySelector('#seccion-personas .tabla .acc');
+        if (!acc) return [];
+        acc.scrollIntoView({ block: 'center' });
+        return [...acc.querySelectorAll('button')].map((b) => { const r = b.getBoundingClientRect(); return { izq: r.left, der: r.right, arriba: r.top, abajo: r.bottom }; });
+      });
+      let cajas = await medir();
+      for (let i = 0; i < 40 && cajas.length < 2; i += 1) { await page.waitForTimeout(250); cajas = await medir(); }
+      assert.ok(cajas.length >= 2, `dos o más acciones: ${cajas.length}`);
+      for (let i = 1; i < cajas.length; i += 1) {
+        const [a, b] = [cajas[i - 1], cajas[i]];
+        const mismaFila = Math.abs(a.arriba - b.arriba) < 2;
+        const separacion = mismaFila ? b.izq - a.der : b.arriba - a.abajo;
+        assert.ok(separacion >= 4, `botones ${i - 1} y ${i} separados (${separacion} px, ${mismaFila ? 'en la misma fila' : 'en otra fila'})`);
+      }
+      await page.screenshot({ path: path.join(capturas8203(), 'e3-maquinas-telefono.png') });
+    });
+  });
+});
+
+// con `site.auto_apply`, el encabezado y «¿Cómo funciona?» no prometen la aprobación de otra persona; sin ella, la dicen
+test('Configuracion_AplicaSolo_EncabezadoSinOtraPersona', async () => {
+  // con la opción, el sitio aprueba solo cuando la política del repo lo deja; sin ella, siempre otra persona
+  for (const [autoApply, dice, noDice] of [[true, /el sitio los aprueba solo, con registro de quién los pidió, cuando la política del repo lo permite/, /antes de llegar al equipo/], [false, /los aprueba otra persona antes de llegar al equipo/, /el sitio los aprueba solo/]]) {
+    await conPestana({ fuentes: fuentesCon({ ops: null, config: opsBase({ site: { maintainers: [LEAD], auto_apply: autoApply } }) }) }, async ({ h, entrar }) => {
+      const p = (await h.pedir('/configuracion', { cookie: await entrar(LEAD) })).texto;
+      assert.match(p, dice, `auto_apply ${autoApply}: el encabezado`);
+      assert.doesNotMatch(p, noDice, `auto_apply ${autoApply}`);
+      const como = (/<details class="mas-info como-funciona">[\s\S]*?<\/details>/.exec(p) || [''])[0];
+      assert.ok(como, '«¿Cómo funciona?» está');
+      if (autoApply) assert.match(como, /un pull request que el sitio aprueba solo/);
+      else assert.doesNotMatch(como, /aprueba solo/);
+    });
+  }
+});
+
+// ── el mismo dato dice lo mismo en Configuración ────────────────────────────────────────────────────
+
+// T15 2.79-Versiones_AlDia_NombraLaVersionDeReferencia @story-2.79 @ac-12
+// 🔴 Falla con: «al día» sin decir contra qué versión se compara.
+test('T15 2.79-Versiones_AlDia_NombraLaVersionDeReferencia @story-2.79 @ac-12 — «al día: igual o más nueva que la de este sitio (X)»', () => {
+  const espejo = tmp('site-config-aldia-');
+  const d = path.join(espejo, 'maq-n', 'registros', 'v20261015T100000000Z');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'place.json'), JSON.stringify({ install: { version: '2026.10.16.2' } }));
+  const [f] = ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.15.48', ahora: Date.parse('2026-10-16T12:00:00Z') });
+  assert.strictEqual(f.estado, 'al_dia');
+  assert.strictEqual(f.texto, 'al día: igual o más nueva que la de este sitio (2026.10.15.48)');
+});
+
+// T16 2.79-Versiones_MaquinaSinEjecuciones_TextoNoDiceUltimaEjecucion @story-2.79 @ac-13
+// 🔴 Falla con: «la que informó con su última ejecución» para una máquina que informa sin ejecuciones.
+test('T16 2.79-Versiones_MaquinaSinEjecuciones_TextoNoDiceUltimaEjecucion @story-2.79 @ac-13 — la versión es la de la subida diaria', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.match(t('es', 'pantalla.laQueInformoCadaUna'), /última subida diaria, con o sin ejecuciones/);
+  assert.doesNotMatch(t('es', 'pantalla.laQueInformoCadaUna'), /última ejecución/);
+  assert.match(t('en', 'pantalla.laQueInformoCadaUna'), /latest daily upload, with or without runs/);
+});
+
+// T23 2.79-Paridad_CuentaProductosNoRepos @story-2.79 @ac-20
+// 🔴 Falla con: «N productos» contando repos cuando una entrada de la lista no trae `producto`.
+test('T23 2.79-Paridad_CuentaProductosNoRepos @story-2.79 @ac-20 — «repos» cuando falta el producto; con todos, el número de productos', async () => {
+  const resultado = { estado: 'medido', fecha: '2026-10-16', divergencias: [], declaradas: [], vencidas: [], por_ruta: [] };
+  const sinProducto = ORG.paridadPorProducto({ lista: { grupos: { web: { repos: [{ ruta: 'a/front', producto: 'A' }, { ruta: 'b/front' }] } } }, resultado, hoy: '2026-10-16' });
+  assert.strictEqual(sinProducto.unidad, 'repos');
+  const conProducto = ORG.paridadPorProducto({ lista: { grupos: { web: { repos: [{ ruta: 'a/front', producto: 'A' }, { ruta: 'a/back', producto: 'A' }, { ruta: 'b/front', producto: 'B' }] } } }, resultado, hoy: '2026-10-16' });
+  assert.strictEqual(conProducto.unidad, 'productos');
+  assert.strictEqual(conProducto.productos.length, 2, 'dos productos, no tres repos');
+  const seccion = (vista) => ({ id: 'paridad', titulo: 'paridad', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, borrador: {}, problems: [], avisos: [], vista });
+  const p = await pantallaFalsa([seccion(sinProducto)]);
+  assert.strictEqual(p.error, null);
+  assert.match(p.textoDe('paridad'), /Los 2 repos coinciden con los demás/);
+  assert.doesNotMatch(p.textoDe('paridad'), /productos coinciden/);
+  const q = await pantallaFalsa([seccion(conProducto)]);
+  assert.match(q.textoDe('paridad'), /Los 2 productos coinciden con los demás/);
+});
+
+// T25 2.79-Repos_EspacioYPorciento20_UnaFila @story-2.79 @ac-21 @ac-22
+// 🔴 Falla con: el mismo repo dos veces (con espacio y con %20), o Productos sin la ruta de cada entrada ni el aviso de
+//    las repetidas; o dos carpetas o dos tipos del mismo repo marcados como repetidos.
+test('T25 2.79-Repos_EspacioYPorciento20_UnaFila @story-2.79 @ac-21 @ac-22 — una fila por repo; Productos con su ruta y las repetidas avisadas', async () => {
+  const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': { repos: [
+    { producto: 'Zeta Pago', ruta: 'Zeta/Back', ado: 'Zeta Pago/back', tipo: 'nuget' },
+    { producto: 'Zeta Pago', ruta: 'Zeta/Back', ado: 'Zeta%20Pago/back', tipo: 'nuget' },
+    { producto: 'Zeta Pago', ruta: 'Zeta/Back', ado: 'Zeta Pago/back', tipo: 'npm' },
+    { producto: 'Zeta Pago', ruta: 'Zeta/Back', ado: 'Zeta Pago/back', tipo: 'nuget', subruta: 'web' },
+  ] } });
+  // la sección de tecnología trae la lista de repos sólo con el repo del perfil configurado
+  const perfil = clon({ 'team-repos.json': TR_BASE, 'team-layer.json': { requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } } });
+  const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Ops', repo: 'ops', web: 'https://dev.azure.example/acme/Ops/_git/ops' } };
+  await conPestana({ fuentes: fuentesCon({ ops, perfil }), env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') }, opciones: { remotos } }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const tec = r.secciones.find((s) => s.id === 'tecnologia');
+    const zeta = tec.extras.repos.filter((x) => /zeta/i.test(x.project || ''));
+    assert.deepStrictEqual(zeta.map((x) => `${x.project}/${x.repo}`), ['Zeta Pago/back'], 'una sola fila, sin %20');
+    const prods = r.productos.filter((p) => p.producto === 'Zeta Pago');
+    assert.deepStrictEqual(prods.map((p) => [p.ruta, p.repo, Boolean(p.repetida)]), [
+      ['Zeta/Back', 'Zeta Pago/back', false], ['Zeta/Back', 'Zeta Pago/back', true], ['Zeta/Back', 'Zeta Pago/back', false], ['Zeta/Back', 'Zeta Pago/back', false]],
+    'la segunda repite ruta, carpeta y tipo; otro tipo u otra carpeta no es repetida');
+  });
+  // un nombre con un «%» ilegible queda anotado una vez y en un solo renglón, aunque traiga un salto de línea
+  const registro = [];
+  const opsRaro = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': { repos: [
+    { producto: 'Raro', ruta: 'Raro/Back', ado: 'Raro%zz\nfalso: línea/back', tipo: 'npm' }] } });
+  await conPestana({ fuentes: fuentesCon({ ops: opsRaro }), opciones: { log: (l) => registro.push(l) } }, async ({ h, entrar }) => {
+    await h.pedir('/api/config', { cookie: await entrar(LEAD) });
+    await h.pedir('/api/config', { cookie: await entrar(LEAD) });
+  });
+  const raros = registro.filter((l) => /trae un «%» que no se pudo leer/.test(l));
+  assert.strictEqual(raros.length, 1, `una vez por nombre: ${raros.length}`);
+  assert.doesNotMatch(raros[0], /[\n\r]/, 'el nombre no parte el renglón del registro');
+  // en la pantalla: la ruta de cada entrada y el aviso de la repetida
+  const p = await pantallaConPestanas({ secciones: [], extras: { productos: [{ producto: 'Zeta Pago', origen: 'dependencias', ruta: 'Zeta/Back', repo: 'Zeta Pago/back', activo: true, repetida: false }, { producto: 'Zeta Pago', origen: 'dependencias', ruta: 'Zeta/Back', repo: 'Zeta Pago/back', activo: true, repetida: true }] } });
+  const texto = p.creados.map((n) => n.textContent || '').join(' | ');
+  assert.match(texto, /Zeta\/Back/, 'la ruta de cada entrada');
+  assert.match(texto, /Zeta Pago · back/, 'el repo con el mismo rótulo «producto · repo» de Proyectos y Ejecuciones');
+  assert.doesNotMatch(texto, /Zeta Pago\/back/, 'sin la forma «proyecto/repo» de Azure');
+  assert.match(texto, /repetida: repite ruta, carpeta y tipo de otra entrada/);
+});
+
+// T31 2.79-Umbrales_ParaQue_NoDiceSoloMirar @story-2.79 @ac-28
+// 🔴 Falla con: el «Para qué» de Umbrales diciendo «Sólo se puede mirar» a quien puede cambiarlo.
+test('T31 2.79-Umbrales_ParaQue_NoDiceSoloMirar @story-2.79 @ac-28 — «sólo mirar» sólo para quien no puede cambiarlo', async () => {
+  const umbrales = (soloLectura) => ({ ...secOps('umbrales', { thresholds: {} }), lector: 'thresholds', soloLectura, motivo: soloLectura ? 'tu nocturno todavía no lee este archivo' : null });
+  const mantiene = await pantallaFalsa([umbrales(false)]);
+  assert.strictEqual(mantiene.error, null);
+  assert.match(mantiene.textoDe('umbrales'), /Para qué: a partir de qué valor/);
+  assert.doesNotMatch(mantiene.textoDe('umbrales'), /s[óo]lo se puede mirar|se puede mirar, pero no cambiar/i);
+  const lectura = await pantallaFalsa([umbrales(true)]);
+  assert.match(lectura.textoDe('umbrales'), /se puede mirar, pero no cambiar/);
+});
+
+// T32 2.79-Revisores_UnaVezPorPaqueteYDelArnesConNombre @story-2.79 @ac-29
+// 🔴 Falla con: un revisor dos veces en su paquete (y contado dos veces), o uno del arnés rotulado «propio de tu organización».
+test('T32 2.79-Revisores_UnaVezPorPaqueteYDelArnesConNombre @story-2.79 @ac-29 — una vez con aviso; el del arnés no es «propio»', async () => {
+  const sec = { ...secModelos({}), extras: { hoy: MOD_DEFAULTS, revisores: [], porPaquete: [
+    { paquete: null, revisores: [{ id: 'arnes-sin-nombre-x', fabrica: null }] },
+    { paquete: 'clientes', revisores: [{ id: 'clientes-revisor', fabrica: null }, { id: 'clientes-revisor', fabrica: null }] },
+  ] } };
+  const p = await compacta(sec);
+  const t = p.textoDe('modelos');
+  assert.strictEqual((t.match(/clientes-revisor/g) || []).length, 1, 'una vez');
+  assert.match(t, /el paquete lo nombra dos veces: se muestra una/);
+  assert.match(t, /Ver los 2 revisores|2 revisores/, 'el total no lo cuenta dos veces');
+  assert.doesNotMatch(t, /arnes-sin-nombre-x \| revisor propio de tu organización/);
+  assert.match(t, /revisor del arnés \(sin nombre en castellano\)/);
+});
+
+// T33 2.79-Personas_DosFilasMismoDueno_Avisa @story-2.79 @ac-30
+// 🔴 Falla con: dos correos que comparten una máquina, cada uno en su fila sin ningún aviso.
+test('T33 2.79-Personas_DosFilasMismoDueno_Avisa @story-2.79 @ac-30 — dos correos que comparten máquina: pueden ser la misma persona', async () => {
+  const OTRO = 'dev.b@otra.example';
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }, { role: 'dev', emails: [OTRO] }] }, people: { machines: { 'maq-comun-12345678': { person: DEV, confirmed_by: LEAD, confirmed_on: '2026-10-10' } } } });
+  const ops = clon({ 'operations.json': config });
+  await conPestana({ fuentes: fuentesCon({ ops, config, informados: H.informados({ 'maq-comun-12345678': OTRO }) }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    const por = Object.fromEntries(p.extras.personas.map((x) => [x.correo, x]));
+    assert.deepStrictEqual(por[DEV].comparteCon, [OTRO]);
+    assert.deepStrictEqual(por[OTRO].comparteCon, [DEV]);
+  });
+  const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [], borrador: { people: {} },
+    extras: { personas: [{ correo: DEV, sugeridos: [], caida: false, comparteCon: [OTRO] }, { correo: OTRO, sugeridos: [], caida: false, comparteCon: [DEV] }] } };
+  const pa = await pantallaFalsa([seccion]);
+  assert.match(pa.textoDe('personas'), /puede ser la misma persona que dev\.b@otra\.example: comparten una máquina/);
+});
+
+// T34 2.79-Umbrales_SinCorridasConError_EnElArbol @story-2.79 @ac-31
+// 🔴 Falla con: el umbral retirado `corridas_con_error` todavía en la copia por defecto, el ejemplo, el mapa o su texto.
+test('T34 2.79-Umbrales_SinCorridasConError_EnElArbol @story-2.79 @ac-31 — ni en el árbol ni en la lista de Umbrales', async () => {
+  for (const f of ['scripts/lib/org-config.js', 'scripts/site/texts.js', 'scripts/nightly/dashboard/sources.json', 'pipelines/operations/examples/sources.json', 'scripts/tests/fixtures/runs-2.60/noche.html']) {
+    assert.ok(fs.existsSync(path.join(ROOT, f)), `${f} existe (si se mudó, la prueba se actualiza; no se saltea)`);
+    const t = texto(f);
+    assert.doesNotMatch(t, /corridas_con_error/, `${f} no nombra corridas_con_error`);
+    assert.doesNotMatch(t, /corridasDondeUnControlEncontro/, `${f} no trae su texto`);
+  }
+  // la sección real de Umbrales, con un operaciones sin umbrales propios: lo que lista sale de la copia por defecto
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }) }) }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const umbrales = r.secciones.find((s) => s.id === 'umbrales');
+    assert.ok(umbrales, 'la sección de Umbrales está');
+    assert.doesNotMatch(JSON.stringify(umbrales), /corridas_con_error|corridasDondeUnControlEncontro/, 'Umbrales no la lista');
+  });
+});
+
+test('T48 2.79-Corridas_DatosCrudosEnLlano @story-2.79 @ac-39 — en Configuración: el estilo y el idioma vigentes, la opción y el campo sin lista, en llano', async () => {
+  // 🔴 rojo: «Hoy: executive · es», «avisa (warn)» o un campo fijo rotulado «Custom.Categoria». La mitad del detalle de
+  // las ejecuciones («DoD PASS») está en dashboard-runs.test.sh con el mismo nombre.
+  const vigente = { language: 'en', style: 'detailed', max_chars: 1300 };
+  const origen = { language: 'perfil', style: 'perfil', max_chars: 'perfil' };
+  for (const [idioma, hoy] of [['es', /Hoy: detallado · inglés · 1300/], ['en', /detailed · English · 1300/]]) {
+    const sec = SEC('respuesta', { borrador: { response: vigente }, extras: { vigente, origen } });
+    const r = await pantallaConPestanas({ secciones: [...TODAS.filter((id) => id !== 'respuesta').map((id) => SEC(id)), sec], idioma, hash: '#seccion-respuesta' });
+    const caja = r.creados.filter((n) => n.attrs.id === 'seccion-respuesta').pop();
+    const nodos = []; const walk = (x) => { nodos.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+    const texto = nodos.map((n) => n.textContent || '').join(' | ');
+    assert.match(texto, hoy, `${idioma}: lo vigente dicho en llano`);
+    if (idioma === 'en') assert.doesNotMatch(texto, /Today: detailed · en\b/, 'el idioma no sale como «en»');
+    const pedidos = SEC('pedidos', { borrador: { work_items: WI_RIESGO } });
+    const p = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), pedidos], idioma, hash: '#seccion-pedidos' });
+    const cajaP = p.creados.filter((n) => n.attrs.id === 'seccion-pedidos').pop();
+    const nodosP = []; const walkP = (x) => { nodosP.push(x); (x.hijos || []).forEach(walkP); }; walkP(cajaP);
+    const rotulos = nodosP.filter((n) => n.tag === 'label').map((n) => n.textContent || n.attrs.text || '');
+    assert.ok(rotulos.includes('Categoria') && rotulos.includes('Probabilidad'), `${idioma}: el campo sin lista se nombra por su última parte: ${rotulos}`);
+    assert.ok(!rotulos.some((t) => /^Custom\./.test(t)), `${idioma}: ningún rótulo «Custom.…»: ${rotulos}`);
+  }
+  // la opción con texto propio se ve sólo con su texto: el valor técnico entre paréntesis («avisa (warn)») no vuelve
+  assert.doesNotMatch(ORG.pantalla(), /TX\['repoOpcion_' \+ o\] \+ ' \('/, 'la opción no lleva su valor técnico al lado');
+});
+
+// niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido
+// 🔴 Falla con: un selector que deja bajar el nivel de la tabla, un nivel en la base escrito igual en el perfil, una
+// firma que queda en 2 o más y se sigue ofreciendo para delegar, o un pedido que el lector rechazaría.
+test('niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido', async () => {
+  const nivel = (p, id) => p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${id}`);
+  const valores = (sel) => sel.hijos.map((o) => o.attrs.value);
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round'] } })]);
+  for (const l of require(path.join(ROOT, 'scripts', 'lib', 'signatures.js')).LEVELS) {
+    assert.deepStrictEqual(valores(nivel(p, l.id)), ['1', '2', '3'].slice(l.level - 1), `${l.id}: sólo desde su nivel para arriba`);
+  }
+  assert.ok(valores(selectorDeFirma(p, 'plan-approval')).includes('delegada'), 'la rutina se ofrece para delegar');
+  nivel(p, 'plan-approval').on.change({ target: { value: '2' } });
+  let b = await borradorAlRevisar(p);
+  assert.deepStrictEqual(b.approvals.levels, { 'plan-approval': 2 });
+  assert.deepStrictEqual(b.approvals.delegated_signing, ['extra-round'], 'subirla a 2 la saca de la delegación');
+  assert.ok(!valores(selectorDeFirma(p, 'plan-approval')).includes('delegada'), 'y ya no se ofrece para delegar');
+  const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: b, lectores: { 'harness-config': TC } });
+  assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+  assert.deepStrictEqual(JSON.parse(rev.texto).approvals.levels, { 'plan-approval': 2 });
+  // volver al nivel de la tabla saca la clave: el perfil no repite lo que ya dice la tabla
+  nivel(p, 'plan-approval').on.change({ target: { value: '1' } });
+  b = await borradorAlRevisar(p);
+  assert.ok(!('levels' in b.approvals) || b.approvals.levels === '', JSON.stringify(b.approvals));
+  // una firma que la tabla pone en 2 no se ofrece para delegar
+  assert.ok(!valores(selectorDeFirma(p, 'escape:trust-ran')).includes('delegada'), 'una excepción no se delega');
+  // el lector rechaza bajar un nivel aunque llegue escrito a mano
+  const bajo = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { approvals: { levels: { 'control-change': 1 } } }, lectores: { 'harness-config': TC } });
+  assert.strictEqual(bajo.ok, false);
+  // una capa cuyo lector todavía no conoce los niveles no los recibe: los leería como rotos y perdería lo delegado
+  const capaCon = (v) => JSON.stringify({ requires: { harness: `>= ${v}` } });
+  const gate = (v) => ORG.teamProfileGateProblem({ layerText: capaCon(v), versionImagen: '2026.10.15.48', doc: { ...PERFIL_TYCON, approvals: { levels: { 'plan-approval': 2 } } } });
+  assert.match(String(gate(ORG.OWNER_ONLY_SINCE)), /todavía no se puede proponer/);
+  assert.ok(String(gate(ORG.OWNER_ONLY_SINCE)).includes(`>= ${ORG.LEVELS_SINCE}`));
+  assert.strictEqual(gate(ORG.LEVELS_SINCE), null, 'con la capa al día pasa');
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.match(p.textoDe('aprobaciones'), /Quién firma cada nivel/, 'la sección dice quién firma cada nivel');
+  // lo que se lee en cada opción, no sólo que la clave exista: una clave repetida en la tabla de textos se pisa con otra
+  const rotulos = (sel) => sel.hijos.map((o) => o.textContent || o.attrs.text || '');
+  assert.deepStrictEqual(rotulos(nivel(p, 'extra-round')), ['1 · rutina', '2 · excepción', '3 · irreversible']);
+  for (const k of ['pantalla.nivelesTitulo', 'pantalla.nivelesAyuda', 'pantalla.nivelesQuienFirma', 'pantalla.nivel1', 'pantalla.nivel2', 'pantalla.nivel3']) {
+    const es = textos.t('es', k); const en = textos.t('en', k);
+    assert.ok(es && en && es !== k && en !== k && es !== en, `${k} existe y está traducida`);
+  }
+});
+
+// ── Lo que se lee en gris y en celular ──────────────────────────────────────────────────────────────
+
+/** Las variables de los tres bloques de `site.css`: el claro, el oscuro por preferencia y el oscuro elegido a mano. */
+function variablesDelCss() {
+  const css = texto('scripts/site/static/site.css');
+  const leer = (bloque) => { const v = {}; for (const m of bloque.matchAll(/--([\w-]+):([^;}]+)/g)) v[m[1]] = m[2].trim(); return v; };
+  const claro = leer((/^:root\{color-scheme:light;([^}]*)\}/m.exec(css) || [])[1] || '');
+  const oscuroMedia = leer((/@media \(prefers-color-scheme:dark\)\{:root:not\(\[data-theme="light"\]\)\{([^}]*)\}/.exec(css) || [])[1] || '');
+  const oscuroMano = leer((/^:root\[data-theme="dark"\]\{([^}]*)\}/m.exec(css) || [])[1] || '');
+  return { css, temas: { claro, oscuroMedia: { ...claro, ...oscuroMedia }, oscuroMano: { ...claro, ...oscuroMano } } };
+}
+/** Un color de CSS (#rgb, #rrggbb, rgba(…)) como [r, g, b, alfa]. */
+function rgba(c) {
+  let m = /^#([0-9a-f]{6})$/i.exec(c);
+  if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)).concat(1);
+  m = /^#([0-9a-f]{3})$/i.exec(c);
+  if (m) return [...m[1]].map((x) => parseInt(x + x, 16)).concat(1);
+  m = /^rgba?\(([^)]+)\)$/.exec(c);
+  if (m) { const p = m[1].split(',').map((x) => Number(x.trim())); return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; }
+  throw new Error(`color que la prueba no sabe leer: ${c}`);
+}
+/** `arriba` (con su alfa) puesto sobre `abajo` (opaco). */
+const componer = (arriba, abajo) => [0, 1, 2].map((i) => arriba[i] * arriba[3] + abajo[i] * (1 - arriba[3])).concat(1);
+/** El contraste de WCAG 2 entre dos colores opacos. */
+function contraste(a, b) {
+  const lum = (c) => { const [r, g, bb] = c.slice(0, 3).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * bb; };
+  const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+
+// T53 2.79-Css_Contraste @story-2.79 @ac-43
+// 🔴 Falla con: `--muted` del claro en #7d7b75 (3,75 sobre `--page`), o el motivo de la ficha gris en `--muted` sobre la
+//    trama (2,94).
+test('T53 2.79-Css_Contraste @story-2.79 @ac-43 — el gris de los textos y el del motivo de NO MEDIDO se leen en los dos temas', () => {
+  const { css, temas } = variablesDelCss();
+  const col = (v, nombre) => { assert.ok(v[nombre], `--${nombre} está definida`); return rgba(v[nombre]); };
+  for (const [tema, v] of Object.entries(temas)) {
+    const muted = col(v, 'muted');
+    for (const fondo of ['page', 'surface']) {
+      const c = contraste(muted, col(v, fondo));
+      assert.ok(c >= 4.5, `${tema}: --muted sobre --${fondo} da ${c.toFixed(2)}`);
+    }
+    // la trama es un color con alfa: se mide compuesta sobre cada fondo donde va
+    for (const fondo of ['page', 'surface', 'surface-2']) {
+      const c = contraste(col(v, 'nm-ink'), componer(col(v, 'hatch'), col(v, fondo)));
+      assert.ok(c >= 4.5, `${tema}: --nm-ink sobre la trama encima de --${fondo} da ${c.toFixed(2)}`);
+    }
+  }
+  assert.match(css, /\.tile\.blind \.t-den\{[^}]*color:var\(--nm-ink\)/, 'el motivo de la ficha gris va en --nm-ink, no en --muted');
+});
+
+// T54 2.79-Grises_LasCincoUbicaciones @story-2.79 @ac-43
+// 🔴 Falla con: el repo sin política como frase gris al lado del botón, el nombre del proyecto como campo apagado, o la
+//    nota de la integración tachada en letra de 12 px y --muted.
+test('T54 2.79-Grises_LasCincoUbicaciones @story-2.79 @ac-43 — el aviso de seguridad, los proyectos, el examen y la nota tachada', async () => {
+  const dentro = (n) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
+  const dice = (n) => n.textContent || n.attrs.text || '';
+  // (4) el repo sin política: un aviso con la clase de advertencia, no una frase gris al lado del botón
+  const motivo = 'el repo no tiene una política que pida revisión en main: sin ella, la identidad del sitio podría escribir main';
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id)), extras: { proponer: { operaciones: { habilitado: false, codigo: 'sin_politica', motivo } } } });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-canal').pop();
+  const avisos = dentro(caja).filter((n) => /\bmsg warn\b/.test(n.attrs.class || ''));
+  assert.ok(avisos.some((a) => dentro(a).some((x) => dice(x).includes(motivo))), 'el repo sin política sale como advertencia, con su motivo');
+  assert.ok(!dentro(caja).some((n) => /por-que/.test(n.attrs.class || '') && dice(n).includes(motivo)), 'no como frase gris al lado del botón');
+  // (5) Responsable por proyecto: el nombre del proyecto es texto
+  const resp = SEC('responsables', { borrador: { owners: { default: LEAD, by_project: { 'Proyecto Uno': 'u@acme.example' } } } });
+  const p = await pantallaConPestanas({ secciones: [resp, ...TODAS.filter((id) => id !== 'responsables').map((id) => SEC(id))] });
+  const cajaR = p.creados.filter((n) => n.attrs.id === 'seccion-responsables').pop();
+  const apagados = dentro(cajaR).filter((n) => ['input', 'select'].includes(n.tag) && n.attrs.disabled);
+  assert.deepStrictEqual(apagados.map((n) => n.attrs.value || n.attrs['data-path']), [], 'ningún campo apagado para el nombre');
+  assert.ok(dentro(cajaR).some((n) => !['input', 'select', 'textarea'].includes(n.tag) && dice(n) === 'Proyecto Uno'), 'el nombre se ve como texto');
+  // (2) y (3): el examen de revisores y la nota de la integración tachada no van en letra chica gris
+  const { css } = variablesDelCss();
+  const regla = (sel) => { const m = new RegExp(`(?:^|\\})${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\{([^}]*)\\}`, 'm').exec(css); assert.ok(m, `${sel} está en site.css`); return m[1]; };
+  for (const sel of ['.ct-nota', '.lista .estado']) {
+    const r1 = regla(sel);
+    const px = Number((/font-size:([\d.]+)px/.exec(r1) || [])[1]);
+    assert.ok(px >= 13, `${sel}: letra de ${px} px`);
+    assert.doesNotMatch(r1, /color:var\(--(muted|ink-3)\)/, `${sel}: no en el gris claro`);
+  }
+  assert.match(texto('scripts/site/tabs/how-it-works.js'), /class="ct-nota">\$\{esc\(T\('comoTrabaja\.orgIntegracionesAyuda'\)\)/, 'la nota tachada usa esa clase');
+  assert.match(regla('.pill.nm'), /color:var\(--nm-ink\)/, 'la marca de NO MEDIDO del examen va en --nm-ink, sobre la trama');
+});
+
+/** Un navegador del arnés contra el sitio, al ancho dado; `fn(page)` mide. */
+async function enNavegador({ ancho, ruta, alto = 800 }, fn) {
+  await conPestana({ fuentes: fuentesCon({ ops: null, config: opsBase() }) }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const navegador = await PLAYWRIGHT.chromium.launch();
+    try {
+      const ctx = await navegador.newContext({ viewport: { width: ancho, height: alto } });
+      await ctx.setExtraHTTPHeaders({ cookie: lead });
+      const page = await ctx.newPage();
+      await page.goto(`${h.base}${ruta}`);
+      await page.waitForLoadState('networkidle');
+      await fn(page, { alto });
+    } finally { await navegador.close(); }
+  });
+}
+const SIN_PLAYWRIGHT = process.env.E2E_REQUIRED === '1' ? false : (!PLAYWRIGHT && PINNED_PW.locate().why);
+
+// T60 2.79-Configuracion_PestanasSinBarraSuelta @story-2.79 @ac-49
+// 🔴 Falla con: `.pestanas` con desplazamiento vertical (la barra suelta) o el menú que corta «Configuración» a «Con…».
+test('T60 2.79-Configuracion_PestanasSinBarraSuelta @story-2.79 @ac-49 — a 600 px, sin barra suelta y el menú entero', { skip: SIN_PLAYWRIGHT, timeout: 120000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  await enNavegador({ ancho: 600, ruta: '/configuracion' }, async (page) => {
+    await page.locator('.pestanas').first().waitFor({ timeout: 20000 });
+    const m = await page.evaluate(() => {
+      const p = document.querySelector('.pestanas');
+      const vista = document.documentElement.clientWidth;
+      const enlaces = [...document.querySelectorAll('.tabs a')].map((a) => { const r = a.getBoundingClientRect(); return { t: a.textContent.trim(), izq: r.left, der: r.right, corta: a.scrollWidth > a.clientWidth + 1 }; });
+      return { scrollH: p.scrollHeight, clientH: p.clientHeight, overflowY: getComputedStyle(p).overflowY, vista, enlaces };
+    });
+    assert.ok(m.scrollH <= m.clientH || m.overflowY === 'hidden', `.pestanas: alto ${m.scrollH} contra ${m.clientH} visible, overflow-y ${m.overflowY}`);
+    for (const e of m.enlaces) assert.ok(!e.corta && e.izq >= 0 && e.der <= m.vista + 0.5, `el menú corta «${e.t}» (${e.izq}–${e.der} de ${m.vista})`);
+    assert.ok(m.enlaces.some((e) => /Configuración/.test(e.t)), `«Configuración» está en el menú: ${m.enlaces.map((e) => e.t)}`);
+  });
+});
+
+// T61 2.79-Celular_SoloLaBarraFija @story-2.79 @ac-50
+// 🔴 Falla con: el menú con el tema y el idioma pegados arriba, debajo de la barra, a 390 px.
+test('T61 2.79-Celular_SoloLaBarraFija @story-2.79 @ac-50 — a 390 px sólo queda fija la barra de arriba', { skip: SIN_PLAYWRIGHT, timeout: 120000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  await enNavegador({ ancho: 390, alto: 844, ruta: '/' }, async (page, { alto }) => {
+    await page.locator('header.barra').waitFor({ timeout: 20000 });
+    const fijos = await page.evaluate(() => [...document.querySelectorAll('body *')].filter((n) => ['fixed', 'sticky'].includes(getComputedStyle(n).position) && n.getBoundingClientRect().height > 0)
+      .map((n) => ({ que: n.tagName.toLowerCase() + (n.className ? '.' + String(n.className).split(' ')[0] : ''), alto: n.getBoundingClientRect().height })));
+    assert.deepStrictEqual(fijos.map((f) => f.que), ['header.barra'], `lo fijo arriba: ${JSON.stringify(fijos)}`);
+    assert.ok(fijos[0].alto < alto / 4, `la barra mide ${fijos[0].alto} de ${alto}`);
+  });
+});
+
+// 2.79-Gravedades_ValorCruzado_Avisa
+// 🔴 Falla con: una gravedad guardada con el valor de otra («Crítica» como «Alto (15-20)») que la tabla muestra sin
+//    decir nada, el sitio que lo corrige solo (decisión 11), o un aviso sobre un valor del mismo nombre en otro género
+//    («Alta» como «Alto») o sobre un valor que no nombra ninguna gravedad (un número, un texto libre).
+test('T73 2.79-Gravedades_ValorCruzado_Avisa @story-2.79 @ac-66 — la fila avisa el valor que nombra otra gravedad, y sólo ése', async () => {
+  const cruzado = JSON.parse(JSON.stringify(WI_TABLA));
+  cruzado.by_severity.high['Custom.PrioridadDelRiesgo'] = '🟠 Alto (15-20)';
+  const t = await tablaDePedidos(cruzado);
+  const aviso = (g, campo) => t.en(`work_items.by_severity.${g}.${campo}.gravedad`);
+  assert.ok(aviso('critical', 'Custom.PrioridadDelRiesgo'), '«Crítica» guardada como «Alto (15-20)»: avisa');
+  assert.match(aviso('critical', 'Custom.PrioridadDelRiesgo').textContent, /Alto \(15-20\)/, 'el aviso nombra el valor guardado');
+  assert.strictEqual(aviso('high', 'Custom.PrioridadDelRiesgo'), undefined, '«Alta» como «Alto»: es la misma gravedad');
+  for (const [g, campo] of [['critical', 'Custom.Impacto'], ['moderate', 'Custom.Impacto'], ['low', 'Custom.Disparador']]) assert.strictEqual(aviso(g, campo), undefined, `${g} ${campo}: sin nombre de gravedad, sin aviso`);
+  assert.deepStrictEqual(await t.revisado(), cruzado, 'avisa sin corregir nada');
+  // pase adversarial: el valor en minúscula, en mayúsculas o con otra tilde avisa igual, y con la página en inglés
+  // también (los valores se guardan en el idioma del proceso, no en el de quien mira); un texto que sólo se parece, no
+  for (const [g, valor, avisa] of [['critical', 'alto', true], ['critical', 'ALTO', true], ['low', 'crítico', true], ['high', 'Critica', true], ['critical', 'medio', true], ['moderate', 'Raja', false], ['high', 'alta', false]]) {
+    for (const idioma of ['es', 'en']) {
+      const w = JSON.parse(JSON.stringify(WI_TABLA));
+      w.by_severity[g]['Custom.PrioridadDelRiesgo'] = valor;
+      const u = await tablaDePedidos(w, LISTAS_RIESGO, idioma);
+      const a = u.en(`work_items.by_severity.${g}.Custom.PrioridadDelRiesgo.gravedad`);
+      assert.strictEqual(Boolean(a), avisa, `${idioma}: «${valor}» guardado en ${g} ${avisa ? 'avisa' : 'no avisa'}`);
+    }
+  }
+});
+
+// 2.79-Firmas_UnaFilaPorFirmaYValorDesconocido
+// 🔴 Falla con: las formas de pedir una misma firma (el guion y su frase de escape) en filas sueltas que parecen firmas
+//    distintas, una fila que mezcla sus estados en uno, una forma que no dice cómo se pide, o un valor guardado fuera del
+//    catálogo —en la delegación o en sólo del dueño— que la tabla no muestra y por eso no se puede quitar.
+test('T64 2.79-Firmas_UnaFilaPorFirmaYValorDesconocido @story-2.79 @ac-53 — una fila por firma, cada forma con su estado; el desconocido, con su error y Quitar', async () => {
+  const SIGS = require(path.join(ROOT, 'scripts', 'lib', 'signatures.js'));
+  const grupos = new Map();
+  for (const f of SIGS.SIGNATURES) { const k = f.covers.join(','); grupos.set(k, [...(grupos.get(k) || []), f.id]); }
+  const nodos = (p) => p.todo(p.sec('aprobaciones'));
+  let p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', owner_only: ['escape:no-deep-review'] } })]);
+  assert.strictEqual(p.error, null);
+  const filas = nodos(p).filter((n) => n.attrs['data-firma-grupo']);
+  assert.strictEqual(filas.length, grupos.size, 'una fila por firma, no por forma');
+  const fila = filas.find((n) => n.attrs['data-firma-grupo'] === 'adversarial-skip');
+  assert.ok(fila, 'la fila del pase adversarial');
+  const dentro = p.todo(fila);
+  const estado = (id) => (dentro.find((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.firma.${id}`) || {}).value;
+  assert.deepStrictEqual(grupos.get('adversarial-skip').map((id) => estado(id) || ''), ['', '', 'dueno'], 'cada forma con su propio estado, sin mezclarlos');
+  const texto = dentro.map((n) => n.textContent || '').join(' ');
+  assert.match(texto, /con su comando/, 'dice cómo se pide el guion');
+  assert.match(texto, /con la frase/, 'y cómo se pide la frase del freno');
+  // prender y apagar una forma de la fila deja el archivo igual
+  const sel = () => nodos(p).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.firma.escape:no-deep-review');
+  sel().on.change({ target: { value: '' } });
+  sel().on.change({ target: { value: 'dueno' } });
+  assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.owner_only, ['escape:no-deep-review']);
+  // lo guardado que no está en el catálogo: su fila, con el error y el botón para quitarlo, en las dos listas
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'firma-que-no-existe'], owner_only: ['otra-que-no-existe'] } })]);
+  for (const v of ['firma-que-no-existe', 'otra-que-no-existe']) {
+    const f = nodos(p).find((n) => n.attrs['data-firma-desconocida'] === v);
+    assert.ok(f, `la fila de ${v}`);
+    assert.ok(p.todo(f).some((n) => n.attrs.class === 'err' && n.textContent.includes(v)), `${v}: el error`);
+    assert.ok(p.todo(f).some((n) => n.tag === 'button' && n.textContent === 'Quitar'), `${v}: el botón para quitarlo`);
+  }
+  p.todo(nodos(p).find((n) => n.attrs['data-firma-desconocida'] === 'firma-que-no-existe')).find((n) => n.tag === 'button' && n.textContent === 'Quitar').on.click();
+  p.todo(nodos(p).find((n) => n.attrs['data-firma-desconocida'] === 'otra-que-no-existe')).find((n) => n.tag === 'button' && n.textContent === 'Quitar').on.click();
+  const ap = (await borradorAlRevisar(p)).approvals;
+  assert.deepStrictEqual(ap.delegated_signing, ['refresh-after-main'], 'quitar saca sólo el desconocido');
+  assert.strictEqual(ap.owner_only, undefined, 'la lista que queda vacía se saca');
+});
+
+// 2.79-Firmas_LoQueElLectorRechaza: la pantalla no deja guardar en las listas de firmas lo que el lector rechazaría
+// 🔴 Falla con: un «off» o un nombre de grupo en «sólo del dueño» que la pantalla da por bueno (el lector descarta la
+//    lista entera y se cae la delegación en todas las máquinas), o un id con espacios que la pantalla marca como
+//    desconocido aunque el lector lo acepta. El veredicto es el del lector (validarTipo), no una copia de su regla.
+test('T64 2.79-Firmas_LoQueElLectorRechaza @story-2.79 @ac-53 — la fila de error sale por cada valor que el lector rechaza en su lista, y sólo por ésos', async () => {
+  const nodos = (p) => p.todo(p.sec('aprobaciones'));
+  const SIGS = require(path.join(ROOT, 'scripts', 'lib', 'signatures.js'));
+  // un grupo que no es también el id de una firma (la mayoría se llaman como su única firma)
+  const grupo = Object.keys(SIGS.GROUPS).find((g) => !SIGS.SIGNATURES.some((s) => s.id === g));
+  const id = SIGS.SIGNATURES[0].id;
+  const approvals = { relay_session: 'coordinadora', delegated_signing: [grupo], owner_only: ['off', grupo, ` ${id} `] };
+  // el lector, con la lista entera: rechaza «sólo del dueño» y acepta las delegadas
+  const tipo = (k) => TC.VOCABULARIO.approvals[k];
+  assert.ok(TC.validarTipo(tipo('owner_only'), approvals.owner_only), 'el lector rechaza la lista de sólo del dueño');
+  assert.strictEqual(TC.validarTipo(tipo('delegated_signing'), approvals.delegated_signing), null, 'y acepta las delegadas');
+  let p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals })]);
+  assert.strictEqual(p.error, null);
+  const filas = () => nodos(p).filter((n) => n.attrs['data-firma-desconocida']).map((n) => n.attrs['data-firma-desconocida']);
+  assert.deepStrictEqual(filas().sort(), ['off', grupo].sort(), 'avisa «off» y el grupo (en sólo del dueño), no el id con espacios');
+  for (const v of ['off', grupo]) p.todo(nodos(p).find((n) => n.attrs['data-firma-desconocida'] === v)).find((n) => n.tag === 'button' && n.textContent === 'Quitar').on.click();
+  const ap = (await borradorAlRevisar(p)).approvals;
+  // lo que se guarda pasa por el mismo lector
+  assert.strictEqual(TC.validarTipo(tipo('owner_only'), ap.owner_only), null, `lo que queda en sólo del dueño lo acepta el lector: ${JSON.stringify(ap.owner_only)}`);
+  assert.deepStrictEqual(ap.owner_only, [` ${id} `], 'el id con espacios se queda');
+  // «Quitar» el grupo de sólo del dueño no lo saca de las delegadas, donde vale
+  assert.deepStrictEqual(ap.delegated_signing, [grupo], 'el grupo sigue en las delegadas, donde vale');
+  // sin el lector, la pantalla no inventa el veredicto: no marca nada y el lector lo juzga al revisar
+  p = await pantallaFalsa([{ ...seccionPerfil('aprobaciones', { approvals }), extras: ORG.extrasDeAprobaciones(null) }]);
+  assert.deepStrictEqual(filas(), [], 'sin el lector, ninguna fila de error inventada');
+  // cada valor vale solo, pero la lista entera no: «off» junto a un grupo en las delegadas. La fila sale por la lista y
+  // ofrece quitar uno; lo que queda lo acepta el lector
+  const juntos = { relay_session: 'coordinadora', delegated_signing: ['off', grupo] };
+  assert.ok(TC.validarTipo(tipo('delegated_signing'), juntos.delegated_signing), 'el lector rechaza la combinación');
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: juntos })]);
+  const lista = nodos(p).find((n) => n.attrs['data-firma-lista'] === 'delegated_signing');
+  assert.ok(lista, 'la fila de la lista que el lector rechaza');
+  const quitarOff = p.todo(lista).find((n) => n.tag === 'button' && n.attrs['data-quitar'] === 'off');
+  assert.ok(quitarOff, 'ofrece quitar «off»');
+  quitarOff.on.click();
+  const queda = (await borradorAlRevisar(p)).approvals.delegated_signing;
+  assert.strictEqual(TC.validarTipo(tipo('delegated_signing'), Array.isArray(queda) ? queda : [queda]), null, `lo que queda lo acepta el lector: ${JSON.stringify(queda)}`);
+  assert.ok(!nodos(p).some((n) => n.attrs['data-firma-lista']), 'con la lista cambiada, la fila ya no sale');
+});
+
+// 2.79-AgregarProducto_PipelinesDelProyecto
+// 🔴 Falla con: «Agregar un producto» que ofrece siempre los pipelines del proyecto de operaciones, aunque el producto
+//    viva en otro, o un campo de proyecto que no arranca en el de operaciones o que al cambiarlo no recarga la lista.
+test('T65 2.79-AgregarProducto_PipelinesDelProyecto @story-2.79 @ac-54 — el proyecto del producto arranca en operaciones y elige de qué proyecto son los pipelines', async () => {
+  const sec = { id: 'despliegues', titulo: 'despliegues', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], extras: { plataforma: 'azure', org: 'acme', proyecto: 'Ops' }, borrador: { deployments: { provider: 'azure', products: {} } } };
+  const POR_PROYECTO = { Ops: [{ id: 7, nombre: 'Ops-Noche', carpeta: null }], Ventas: [{ id: 41, nombre: 'Ventas-CD', carpeta: null }] };
+  const p = await pantallaFalsa([sec], { '/api/config/pipelines': (c) => ({ ok: true, pipelines: POR_PROYECTO[c.project] || [] }) });
+  assert.strictEqual(p.error, null);
+  const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  await esperar();
+  const nodos = () => p.todo(p.sec('despliegues'));
+  const proyecto = () => nodos().find((n) => n.tag === 'input' && n.attrs['data-path'] === 'deployments.proyectoDelProducto');
+  const opciones = () => (nodos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'deployments.pipeline') || { hijos: [] }).hijos.map((o) => o.textContent);
+  assert.ok(proyecto(), 'el campo «Proyecto del producto»');
+  assert.strictEqual(proyecto().value || proyecto().attrs.value, 'Ops', 'arranca en el proyecto de operaciones');
+  assert.ok(opciones().includes('Ops-Noche'), 'con los pipelines de operaciones');
+  proyecto().on.change({ target: { value: 'Ventas' } });
+  await esperar();
+  assert.deepStrictEqual(p.pedidos.filter((x) => x.ruta === '/api/config/pipelines').map((x) => x.cuerpo.project), ['Ops', 'Ventas'], 'al cambiarlo, pide la lista de ese proyecto');
+  assert.ok(opciones().includes('Ventas-CD') && !opciones().includes('Ops-Noche'), `el desplegable trae los del producto: ${opciones()}`);
+  assert.strictEqual(proyecto().value || proyecto().attrs.value, 'Ventas', 'el campo queda en el proyecto elegido');
+});
+
+// 2.79-Personas_Prolijas
+// 🔴 Falla con: el estado de una invitación pegado a su «Revocar» («todavía no entróRevocar»), el ejemplo del campo de
+//    productos cortado, o el rol que se llama «dev» en un lado y «Programador» en la lista.
+test('T70 2.79-Personas_Prolijas @story-2.79 @ac-63 — el estado separado del botón, el ejemplo entero y «programador» en todos lados', async () => {
+  const sec = { id: 'sitio', titulo: 'sitio', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], borrador: { site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }] } },
+    extras: { conAcceso: true, invitaciones: { boton: true, permiso: { ok: true }, estados: { [DEV]: { estado: 'enviada', texto: 'invitación enviada, todavía no entró' } } } } };
+  const p = await pantallaFalsa([sec]);
+  assert.strictEqual(p.error, null);
+  const nodos = p.todo(p.sec('sitio'));
+  const invitado = nodos.find((n) => n.attrs.class === 'invitado');
+  assert.ok(invitado, 'el estado de la invitación');
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  assert.match(css, /\.invitado\{[^}]*gap:/, 'el estado y «Revocar» con espacio entre los dos');
+  const productos = nodos.find((n) => n.tag === 'input' && n.attrs.class === 'productos');
+  assert.ok(productos, 'el campo de productos con su clase');
+  const ancho = Number((/\.invitar input\.productos\{[^}]*min-width:(\d+)ch/.exec(css) || [])[1]);
+  assert.ok(ancho >= productos.attrs.placeholder.length, `el ejemplo («${productos.attrs.placeholder}») entra en el campo (${ancho}ch)`);
+  const texto = p.textoDe('sitio');
+  assert.doesNotMatch(texto, /como dev\b/, 'el rol no se llama «dev» en la ayuda');
+  assert.match(texto, /como programador/, 'se llama como en la lista');
+  assert.match(texto, /Programador/, 'la lista dice Programador');
+});
+
+// 2.79-Cerrar_DosNombres
+// 🔴 Falla con: «Cerrar» que pliega el panel de un repo con el mismo nombre que «Cerrar» la diferencia aceptada, que
+//    sí cambia algo: es fácil confundirlos.
+test('T71 2.79-Cerrar_DosNombres @story-2.79 @ac-64 — «Dar por cerrada» para la diferencia aceptada, «Plegar» para el panel del repo', () => {
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.strictEqual(TX.t('es', 'pantalla.cerrar'), 'Dar por cerrada');
+  assert.strictEqual(TX.t('es', 'pantalla.repoCerrar'), 'Plegar');
+  assert.notStrictEqual(TX.t('en', 'pantalla.cerrar'), TX.t('en', 'pantalla.repoCerrar'), 'distintos también en inglés');
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  // el botón dice que trabaja mientras revisa (botonQueTrabaja)
+  assert.match(src, /text: T\('pantalla\.cerrar'\) \}, function \(\) \{ return revisarSeccion\(s, \{ accion: 'close'/, 'la diferencia aceptada usa «Dar por cerrada»');
+  assert.match(src, /r\.abierto \? T\('pantalla\.repoCerrar'\)/, 'el panel del repo, «Plegar»');
+});
+
+// 2.79-AyudaAprobaciones_OpcionExiste
+// 🔴 Falla con: la ayuda de «Quién autoriza saltarse un control» que dice «si no, dejá «No»» cuando las opciones son
+//    otras: la persona busca una opción que no está.
+test('T72 2.79-AyudaAprobaciones_OpcionExiste @story-2.79 @ac-65 — la opción que cita la ayuda está en la lista', async () => {
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) {
+    const ayuda = TX.t(idioma, 'pantalla.para.aprobaciones');
+    const citadas = [...ayuda.matchAll(/(?:dejá|leave) «([^»]+)»/g)].map((m) => m[1]);
+    assert.ok(citadas.length, `${idioma}: la ayuda cita la opción por defecto`);
+    const opciones = [TX.t(idioma, 'pantalla.quienReenviaElOkNo'), TX.t(idioma, 'pantalla.quienReenviaElOkSi')];
+    for (const c of citadas) assert.ok(opciones.some((o) => o.startsWith(c)), `${idioma}: «${c}» es una de ${JSON.stringify(opciones)}`);
+  }
+});
+
+// 2.79-Firmas_PorNivelConMatrizYSinIds
+// 🔴 Falla con: las firmas en una sola lista sin su nivel, un bloque sin la frase de quién lo firma, una fila en el bloque
+//    de un nivel que no es el mayor de sus formas, la matriz corta ausente o distinta de la de la guía, un nombre interno
+//    del catálogo («plan-approval», «extra-round») a la vista, «pasala a la ventana» en una firma de nivel 2 que no se
+//    delega, los encabezados apilados en vez de en columnas, o la página que se corre de costado a 390 px.
+const SIGS_79 = () => require(path.join(ROOT, 'scripts', 'lib', 'signatures.js'));
+/** La matriz «¿Quién firma? En corto» de la guía del sitio en ese idioma: sus renglones, celda por celda. */
+function matrizDeLaGuia(idioma) {
+  const texto = fs.readFileSync(path.join(ROOT, 'guides', idioma === 'en' ? 'organization-site.en.md' : 'organization-site.md'), 'utf8').split('\n');
+  const desde = texto.findIndex((l) => l.includes(idioma === 'en' ? '**Who signs? In short.**' : '**¿Quién firma? En corto.**'));
+  assert.ok(desde >= 0, `${idioma}: la guía tiene la matriz corta`);
+  const filas = [];
+  for (let i = desde + 1; i < texto.length; i++) {
+    const l = texto[i].trim();
+    if (!l) { if (filas.length) break; continue; }
+    if (!l.startsWith('|')) break;
+    if (/^\|[-|\s]+\|$/.test(l)) continue;
+    filas.push(l.split('|').slice(1, -1).map((c) => c.trim().replace(/\\\*/g, '*')));
+  }
+  return filas;
+}
+test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — por nivel, con la matriz de la guía arriba, sin ids y sin ofrecer delegar lo que no se delega', async () => {
+  const SIG = SIGS_79();
+  const nivelDe = new Map(SIG.LEVELS.map((l) => [l.id, l.level]));
+  // como el sitio: lo que nunca se delega (guardar algo sensible) no sube el nivel de su firma, que es rutina
+  const nivelDeForma = (f) => Math.max(...f.covers.filter((c) => !SIG.NOT_DELEGATED.includes(c)).map((c) => nivelDe.get(c) || 3));
+  const grupos = new Map();
+  for (const f of SIG.SIGNATURES) { const k = f.covers.join(','); grupos.set(k, Math.max(grupos.get(k) || 0, nivelDeForma(f))); }
+  for (const idioma of ['es', 'en']) {
+    const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', owner_only: ['critical-waiver'] } })], {}, idioma);
+    assert.strictEqual(p.error, null);
+    const nodos = p.todo(p.sec('aprobaciones'));
+    // los tres bloques, en orden, cada uno con su frase
+    const bloques = nodos.filter((n) => n.attrs['data-nivel-bloque']);
+    assert.deepStrictEqual(bloques.map((b) => b.attrs['data-nivel-bloque']), ['1', '2', '3'], `${idioma}: los tres bloques en orden`);
+    for (const b of bloques) assert.ok(p.todo(b).some((n) => (n.textContent || '').length > 20), `${idioma}: el bloque ${b.attrs['data-nivel-bloque']} dice qué es y quién lo firma`);
+    // cada fila en el bloque del mayor nivel de sus formas, y los bloques en el orden de la tabla
+    const enOrden = nodos.filter((n) => n.attrs['data-nivel-bloque'] || n.attrs['data-firma-grupo']);
+    let actual = 0;
+    for (const n of enOrden) {
+      if (n.attrs['data-nivel-bloque']) { actual = Number(n.attrs['data-nivel-bloque']); continue; }
+      assert.strictEqual(actual, grupos.get(n.attrs['data-firma-grupo']), `${idioma}: ${n.attrs['data-firma-grupo']} va en el bloque de su nivel`);
+    }
+    assert.strictEqual(enOrden.filter((n) => n.attrs['data-firma-grupo']).length, grupos.size, `${idioma}: todas las firmas`);
+    // la matriz corta, igual a la de la guía
+    const matriz = nodos.find((n) => n.attrs['data-matriz'] === 'corta');
+    assert.ok(matriz, `${idioma}: la matriz corta está arriba de los bloques`);
+    assert.ok(nodos.indexOf(matriz) < nodos.indexOf(bloques[0]), `${idioma}: la matriz va antes que los bloques`);
+    const filas = p.todo(matriz).filter((n) => n.attrs.role === 'row').map((r) => p.todo(r).filter((c) => ['cell', 'columnheader', 'rowheader'].includes(c.attrs.role)).map((c) => c.textContent));
+    assert.deepStrictEqual(filas, matrizDeLaGuia(idioma), `${idioma}: la matriz del sitio es la de la guía`);
+    // ningún nombre interno del catálogo a la vista
+    const visible = nodos.map((n) => n.textContent || '').join(' \n ');
+    // los que tienen guion o dos puntos: «save» o «emergency» son también palabras del texto en inglés
+    const ids = new Set([...SIG.SIGNATURES.map((f) => f.id), ...SIG.LEVELS.map((l) => l.id)].filter((id) => /[-:]/.test(id)));
+    for (const id of ids) assert.ok(!visible.includes(id), `${idioma}: «${id}» no se ve`);
+    // una firma de nivel 2 en «Sólo el dueño» no invita a delegarla
+    const exime = nodos.find((n) => n.attrs['data-firma-grupo'] === 'critical-waiver');
+    assert.ok(exime, `${idioma}: la fila de eximir un crítico`);
+    const suTexto = p.todo(exime).map((n) => n.textContent || '').join(' ');
+    assert.doesNotMatch(suTexto, /pasala a la ventana|move it to the window/, `${idioma}: no ofrece delegar una firma de nivel 2`);
+  }
+});
+
+// la parte con navegador: a 1280 los encabezados en columnas; a 390, en los dos temas, sin desplazarse de costado. Desde el
+// AC 71 la tabla de firmas lleva también el nivel (tres columnas) y la de niveles aparte ya no está: eso lo mide la T78
+test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — en el navegador: encabezados en columnas y sin desplazamiento a 390 px', { skip: SIN_PLAYWRIGHT, timeout: 180000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const SERVER = require(path.join(ROOT, 'scripts', 'site', 'server.js'));
+  const sitio = SERVER.crearSitioDemo({ env: { SITE_DEMO: '1' }, dir: tmp('demo-firmas-'), log: () => {} });
+  await sitio.iniciar();
+  await new Promise((r) => sitio.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${sitio.server.address().port}`;
+  const navegador = await PLAYWRIGHT.chromium.launch();
+  try {
+    for (const [ancho, tema] of [[1280, 'light'], [390, 'light'], [390, 'dark']]) {
+      const ctx = await navegador.newContext({ viewport: { width: ancho, height: 900 }, colorScheme: tema });
+      const page = await ctx.newPage();
+      await page.goto(`${base}/configuracion#seccion-aprobaciones`);
+      await page.locator('.tabla2.firmas').first().waitFor({ state: 'attached', timeout: 60000 });
+      await page.locator('#seccion-aprobaciones').scrollIntoViewIfNeeded();
+      const m = await page.evaluate(() => {
+        const cab = (sel) => [...document.querySelectorAll(`${sel} [role=columnheader]`)].filter((x) => x.getBoundingClientRect().height > 0).map((x) => Math.round(x.getBoundingClientRect().top));
+        return { firmas: cab('.tabla2.firmas'), ancho: document.documentElement.scrollWidth, vista: document.documentElement.clientWidth };
+      });
+      assert.ok(m.ancho <= m.vista, `${ancho} ${tema}: la página mide ${m.ancho} de ancho contra ${m.vista} visibles`);
+      if (ancho === 1280) {
+        assert.strictEqual(m.firmas.length, 3, 'firmas: tres encabezados a la vista (firma, nivel y quién la firma)');
+        assert.strictEqual(new Set(m.firmas).size, 1, `firmas: los encabezados en columnas, a la misma altura (${m.firmas})`);
+      }
+      await ctx.close();
+    }
+  } finally {
+    await navegador.close();
+    await sitio.cerrar();
+  }
+});
+
+// 2.79-Firmas_UnaSolaTablaConNivel
+// 🔴 Falla con: la tabla «El nivel de cada firma» todavía aparte, una cosa cubierta sin su selector de nivel o con dos
+//    (`save:sensible`, que nunca se delega, o `emergency`, que no tiene firma del catálogo), la misma firma con un nombre en
+//    la fila y otro en su selector de nivel, o subir el nivel que deja «Delegada» en el selector de quién firma de la fila.
+test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — una tabla con firma, nivel y quién; un selector por cada nivel; subir a 2 saca «Delegada» en la fila', async () => {
+  const SIG = SIGS_79();
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const clase = (n, c) => new RegExp(`(^| )${c}( |$)`).test(n.attrs.class || '');
+  const nombre = (idioma, pref, id, porDefecto) => { const v = TX.t(idioma, `${pref}${id}`); return v === `${pref}${id}` ? porDefecto : v; };
+  const valores = (sel) => sel.hijos.map((o) => o.attrs.value);
+  for (const idioma of ['es', 'en']) {
+    const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round'] } })], {}, idioma);
+    assert.strictEqual(p.error, null);
+    const nodos = () => p.todo(p.sec('aprobaciones'));
+    assert.ok(!nodos().some((n) => clase(n, 'tabla2') && clase(n, 'niveles')), `${idioma}: ya no está la tabla de niveles aparte`);
+    const tablas = nodos().filter((n) => clase(n, 'tabla2') && clase(n, 'firmas'));
+    assert.strictEqual(tablas.length, 1, `${idioma}: una sola tabla de firmas`);
+    const cab = p.todo(tablas[0]).filter((n) => n.attrs.role === 'columnheader').map((n) => n.textContent);
+    assert.deepStrictEqual(cab, ['pantalla.firmasColFirma', 'pantalla.nivelesColNivel', 'pantalla.firmasColQuien'].map((k) => TX.t(idioma, k)), `${idioma}: tres columnas, la firma, su nivel y quién la firma`);
+    const dentro = p.todo(tablas[0]);
+    const filas = dentro.filter((n) => n.attrs.role === 'row');
+    const filaDe = (sel) => filas.find((r) => r !== filas[0] && p.todo(r).includes(sel));
+    for (const l of SIG.LEVELS) {
+      const sels = nodos().filter((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${l.id}`);
+      assert.strictEqual(sels.length, 1, `${idioma}: ${l.id}, exactamente un selector de nivel`);
+      assert.ok(dentro.includes(sels[0]), `${idioma}: ${l.id}, en la tabla única`);
+      assert.deepStrictEqual(valores(sels[0]), ['1', '2', '3'].slice(l.level - 1), `${idioma}: ${l.id}, sólo desde su nivel para arriba`);
+    }
+    // lo que nunca se delega, en la fila de su firma; lo cubierto sin firma del catálogo, en su fila y sin grupo
+    const sel = (id) => nodos().find((n) => n.tag === 'select' && n.attrs['data-path'] === id);
+    assert.strictEqual(filaDe(sel('approvals.nivel.save:sensible')).attrs['data-firma-grupo'], 'save,save:sensible', `${idioma}: guardar algo sensible, en la fila de guardar`);
+    const suelta = filaDe(sel('approvals.nivel.emergency'));
+    assert.strictEqual(suelta.attrs['data-nivel-suelto'], 'emergency', `${idioma}: la emergencia, en su fila`);
+    assert.strictEqual(suelta.attrs['data-firma-grupo'], undefined, `${idioma}: sin grupo de firma`);
+    // la misma firma con un solo nombre: en una fila que cubre una sola cosa, el selector de nivel se llama como la fila
+    const grupos = new Map();
+    for (const f of SIG.SIGNATURES) { const k = f.covers.join(','); grupos.set(k, [...(grupos.get(k) || []), f]); }
+    for (const [k, fs] of grupos) {
+      const cubre = k.split(',');
+      const cabeza = fs.find((f) => f.id === k) || fs[0];
+      const suNombre = nombre(idioma, 'pantalla.firmaQue.', cabeza.id, cabeza.approves);
+      const fila = filas.find((r) => r.attrs['data-firma-grupo'] === k);
+      assert.ok(fila, `${idioma}: la fila de ${k}`);
+      if (cubre.length !== 1) continue;
+      const nivel = p.todo(fila).find((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${cubre[0]}`);
+      assert.strictEqual(nivel.attrs['aria-label'], suNombre, `${idioma}: ${k}, el selector de nivel se llama como su fila`);
+      const otro = nombre(idioma, 'pantalla.nivelQue.', cubre[0], null);
+      if (otro && otro !== suNombre) assert.ok(!p.todo(fila).some((n) => n.textContent === otro), `${idioma}: ${k}, sin un segundo nombre a la vista («${otro}»)`);
+    }
+    // subir a 2 saca «Delegada» del selector de quién firma de esa fila, sin volver a cargar
+    assert.ok(valores(sel('approvals.firma.plan-approval')).includes('delegada'), `${idioma}: la rutina se ofrece para delegar`);
+    sel('approvals.nivel.plan-approval').on.change({ target: { value: '2' } });
+    // la pantalla se vuelve a dibujar: las filas se leen de nuevo
+    const filasNuevas = p.todo(nodos().find((n) => clase(n, 'tabla2') && clase(n, 'firmas'))).filter((n) => n.attrs.role === 'row');
+    const fila = filasNuevas.find((r) => p.todo(r).includes(sel('approvals.nivel.plan-approval')));
+    assert.strictEqual(fila.attrs['data-firma-grupo'], 'plan-approval', `${idioma}: el nivel y quién firma, en la misma fila`);
+    assert.ok(!valores(p.todo(fila).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.firma.plan-approval')).includes('delegada'), `${idioma}: subida a 2, ya no se ofrece para delegar`);
+    // el borrador se lee con el botón en castellano (borradorAlRevisar lo busca por su texto)
+    if (idioma === 'es') {
+      const b = await borradorAlRevisar(p);
+      assert.deepStrictEqual(b.approvals.levels, { 'plan-approval': 2 }, 'el nivel subido se guarda');
+      assert.deepStrictEqual(b.approvals.delegated_signing, ['extra-round'], 'y sale de lo delegado en el mismo cambio');
+    }
+  }
+});
+
+// la parte con navegador: la tabla única a 1280 y a 390 px, en los dos temas, sin la de niveles y sin desplazarse de costado
+test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — en el navegador: una tabla de tres columnas, sin la de niveles y sin desplazamiento', { skip: SIN_PLAYWRIGHT, timeout: 180000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const SERVER = require(path.join(ROOT, 'scripts', 'site', 'server.js'));
+  const sitio = SERVER.crearSitioDemo({ env: { SITE_DEMO: '1' }, dir: tmp('demo-tabla-unica-'), log: () => {} });
+  await sitio.iniciar();
+  await new Promise((r) => sitio.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${sitio.server.address().port}`;
+  const navegador = await PLAYWRIGHT.chromium.launch();
+  try {
+    for (const [ancho, tema] of [[1280, 'light'], [1280, 'dark'], [390, 'light'], [390, 'dark']]) {
+      const ctx = await navegador.newContext({ viewport: { width: ancho, height: 900 }, colorScheme: tema });
+      const page = await ctx.newPage();
+      await page.goto(`${base}/configuracion#seccion-aprobaciones`);
+      await page.locator('.tabla2.firmas').first().waitFor({ state: 'attached', timeout: 60000 });
+      await page.locator('#seccion-aprobaciones').scrollIntoViewIfNeeded();
+      const m = await page.evaluate(() => ({
+        cab: [...document.querySelectorAll('.tabla2.firmas [role=columnheader]')].filter((x) => x.getBoundingClientRect().height > 0).map((x) => Math.round(x.getBoundingClientRect().top)),
+        niveles: document.querySelectorAll('.tabla2.niveles').length,
+        selectores: document.querySelectorAll('.tabla2.firmas select[data-path^="approvals.nivel."]').length,
+        ancho: document.documentElement.scrollWidth,
+        vista: document.documentElement.clientWidth,
+      }));
+      assert.strictEqual(m.niveles, 0, `${ancho} ${tema}: sin la tabla de niveles aparte`);
+      assert.ok(m.selectores > 0, `${ancho} ${tema}: los selectores de nivel, en la tabla de firmas`);
+      assert.ok(m.ancho <= m.vista, `${ancho} ${tema}: la página mide ${m.ancho} de ancho contra ${m.vista} visibles`);
+      if (ancho === 1280) {
+        assert.strictEqual(m.cab.length, 3, `${tema}: tres encabezados a la vista`);
+        assert.strictEqual(new Set(m.cab).size, 1, `${tema}: en columnas, a la misma altura (${m.cab})`);
+      }
+      await ctx.close();
+    }
+  } finally {
+    await navegador.close();
+    await sitio.cerrar();
+  }
+});
+
+test('ContextNotice_EditableOnSite @story-7.54 @ac-3 — el umbral del aviso de contexto se edita en team-repos.json, con su campo, su validación y su texto', async () => {
+  // 🔴 rojo: la sección no existe, no tiene su campo, no está en «Avisos», o un valor fuera de rango pasa sin motivo.
+  const s = ORG.seccionPorId('contexto');
+  assert.ok(s, 'hay una sección del aviso de contexto');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['Aviso de contexto', 'team-repos.json', 'perfil', 'team-repos.js', ['context_notice'], 'repos']);
+  const rev = (cn) => ORG.revisar({ seccion: 'contexto', texto: ORG.formatJson(TR_BASE), borrador: { context_notice: cn }, lectores: { 'team-repos.js': TR } });
+  const bien = rev({ tokens: 250000 });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto), { ...TR_BASE, context_notice: { tokens: 250000 } }, 'el resto del archivo igual');
+  for (const n of [50000, 950000, '300000']) {
+    const malo = rev({ tokens: n });
+    assert.strictEqual(malo.ok, false, `tokens ${JSON.stringify(n)}`);
+    assert.deepStrictEqual(malo.problems.map((p) => p.path), ['context_notice.tokens']);
+  }
+  // el perfil tiene que pedir la versión del lector que conoce la clave
+  assert.ok(ORG.CONTEXT_NOTICE_SINCE && ORG.versionAtLeast(ORG.CONTEXT_NOTICE_SINCE, ORG.ESTIMATES_SINCE));
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, context_notice: { tokens: 250000 } }).version, ORG.CONTEXT_NOTICE_SINCE);
+  // el campo está en la pantalla, en «Avisos y la noche», con su texto
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('contexto', { repo: 'perfil', borrador: {} })] });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-contexto').pop();
+  const hallados = []; const walk = (x) => { if (x.tag === 'input' && x.attrs['data-path'] === 'context_notice.tokens') hallados.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+  assert.strictEqual(hallados.length, 1, 'la sección trae el campo del umbral');
+  assert.strictEqual(r.panelDe('seccion-contexto').attrs.id, 'pestana-avisos');
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.ok(TEXTOS['pantalla.avisoDeContexto'] && TEXTOS['pantalla.avisoDeContextoAyuda'] && TEXTOS['pantalla.avisoDeContextoCampo'], 'los textos de la sección');
+});
+
+test('DeepReviewDefault_EditableOnSite_NoOff @story-7.54 @ac-6 — la política del pase adversarial se elige en el sitio, con dos valores y sin off', async () => {
+  // 🔴 rojo: la sección no existe, el selector ofrece «off», o un off se propone sin el motivo de la firma.
+  const s = ORG.seccionPorId('paseAdversarial');
+  assert.ok(s, 'hay una sección del pase adversarial');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['Pase adversarial', 'team-repos.json', 'perfil', 'team-repos.js', ['deep_review'], 'repos']);
+  const rev = (dr) => ORG.revisar({ seccion: 'paseAdversarial', texto: ORG.formatJson(TR_BASE), borrador: { deep_review: dr }, lectores: { 'team-repos.js': TR } });
+  for (const v of ['always', 'auto']) {
+    const bien = rev({ default: v });
+    assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+    assert.deepStrictEqual(JSON.parse(bien.texto), { ...TR_BASE, deep_review: { default: v } });
+  }
+  const off = rev({ default: 'off' });
+  assert.strictEqual(off.ok, false, 'un off no se propone');
+  assert.match(off.problems.map((p) => p.message).join(' '), /firma/);
+  assert.ok(ORG.DEEP_REVIEW_SINCE && ORG.versionAtLeast(ORG.DEEP_REVIEW_SINCE, ORG.ESTIMATES_SINCE));
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, deep_review: { default: 'always' } }).version, ORG.DEEP_REVIEW_SINCE);
+  // el selector: vacío (de fábrica), always y auto; nunca off
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('paseAdversarial', { repo: 'perfil', borrador: {} })] });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-paseAdversarial').pop();
+  const selects = []; const walk = (x) => { if (x.tag === 'select' && x.attrs['data-path'] === 'deep_review.default') selects.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+  assert.strictEqual(selects.length, 1, 'la sección trae el selector');
+  const valores = selects[0].hijos.filter((h) => h.tag === 'option').map((o) => (o.attrs.value !== undefined ? o.attrs.value : o.value));
+  assert.deepStrictEqual(valores, ['', 'always', 'auto'], 'dos valores y el de fábrica; sin off');
+  assert.strictEqual(r.panelDe('seccion-paseAdversarial').attrs.id, 'pestana-claude');
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.ok(TEXTOS['pantalla.paseAdversarialTitulo'] && TEXTOS['pantalla.paseAdversarialAyuda'], 'los textos de la sección');
+});
+
+// ── la revisión de la semana se configura desde el sitio ─────────────────────────────────────────────────────────────
+const SEC_WR = (extra = {}) => SEC('revisionSemanal', Object.assign({ repo: 'perfil', borrador: {} }, extra));
+const WR_PATHS = ['weekly_review.enabled', 'weekly_review.budget_usd', 'weekly_review.max_chars'];
+
+test('RevisionSemanal_SeccionConSusTresCampos @story-2.58 @ac-1 — la sección muestra sus tres campos, con los valores del archivo o vacíos', async () => {
+  // 🔴 rojo: la sección no existe, le falta un campo, o no muestra lo que dice el archivo.
+  const s = ORG.seccionPorId('revisionSemanal');
+  assert.ok(s, 'hay una sección de la revisión de la semana');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['Revisión de la semana', 'team-repos.json', 'perfil', 'team-repos.js', ['weekly_review'], 'repos']);
+  // sin la clave: los tres campos, vacíos
+  const vacia = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC_WR()] });
+  const camposVacios = nodosDe(vacia, 'revisionSemanal', (x) => WR_PATHS.includes(x.attrs['data-path']));
+  assert.deepStrictEqual(camposVacios.map((x) => x.attrs['data-path']).sort(), [...WR_PATHS].sort(), 'los tres campos');
+  for (const c of camposVacios.filter((x) => x.tag === 'input')) assert.strictEqual(c.attrs.value, '', `${c.attrs['data-path']} vacío`);
+  assert.strictEqual(camposVacios.find((x) => x.attrs['data-path'] === 'weekly_review.enabled').value, '', 'sin la clave: «de fábrica»');
+  // con la clave: los valores del archivo
+  const llena = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('cobertura'), SEC_WR({ borrador: { weekly_review: { enabled: false, budget_usd: 2.5, max_chars: 300000 } } })] });
+  const valor = (p) => nodosDe(llena, 'revisionSemanal', (x) => x.attrs['data-path'] === p).pop();
+  assert.strictEqual(valor('weekly_review.budget_usd').attrs.value, '2.5');
+  assert.strictEqual(valor('weekly_review.max_chars').attrs.value, '300000');
+  assert.strictEqual(valor('weekly_review.enabled').value, 'false', 'el selector muestra «apagada»');
+  // en «Cómo trabaja el agente», justo después de «Cobertura de las pruebas»
+  const panel = llena.panelDe('seccion-revisionSemanal');
+  assert.strictEqual((panel || { attrs: {} }).attrs.id, 'pestana-claude');
+  const orden = []; const walk = (x) => { if (/^seccion-/.test(x.attrs.id || '')) orden.push(x.attrs.id); (x.hijos || []).forEach(walk); }; walk(panel);
+  assert.strictEqual(orden[orden.indexOf('seccion-cobertura') + 1], 'seccion-revisionSemanal');
+});
+
+// todos los textos de la sección, en los dos idiomas, y el renglón de cada guía: las reglas recorren la clase entera
+const WR_TEXTOS = () => {
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = Object.keys(TEXTOS).filter((k) => /^pantalla\.revisionSemanal/.test(k) || k === 'pantalla.para.revisionSemanal');
+  return { TEXTOS, claves, textos: claves.flatMap((k) => ['es', 'en'].map((idioma) => ({ k, idioma, t: TEXTOS[k][idioma] || '' }))) };
+};
+const WR_GUIA = (archivo, titulo) => {
+  const g = fs.readFileSync(path.join(ROOT, 'guides', archivo), 'utf8');
+  const desde = g.indexOf(`- **${titulo}**`);
+  assert.ok(desde >= 0, `${archivo} nombra la sección`);
+  const hasta = g.indexOf('\n- **', desde + 1);
+  return g.slice(desde, hasta < 0 ? undefined : hasta);
+};
+// los límites salen de los mensajes del lector, no copiados: un número suelto en las tres grafías (10000, 10.000, 10,000)
+const WR_LIMITES = () => TR.weeklyReviewProblems({ budget_usd: 0, max_chars: 10 })
+  .flatMap((p) => (p.message.replace(/\(es [^)]*\)/, '').match(/\d+/g) || []).map(Number)).filter((n) => n > 0);
+const WR_GRAFIAS = (n) => [String(n), n.toLocaleString('de-DE'), n.toLocaleString('en-US')];
+const WR_REPITE_LIMITE = (t) => WR_LIMITES().flatMap(WR_GRAFIAS)
+  .find((g) => new RegExp(`(?<![\\d.,])${g.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\d.,])`).test(t));
+// en castellano «merge» no va en ninguna forma; en inglés «merged» sí, «merge» y «merges» como palabra no
+const WR_MERGE = { es: /\bmerge\w*/i, en: /\bmerges?\b/i };
+
+test('RevisionSemanal_ValorFueraDeRango_NoSePropone @story-2.58 @ac-2 — un valor que el lector rechaza se marca en su campo y no se propone', async () => {
+  // 🔴 rojo: el valor pasa, o el campo no muestra el mensaje del lector.
+  const rev = (wr) => ORG.revisar({ seccion: 'revisionSemanal', texto: ORG.formatJson(TR_BASE), borrador: { weekly_review: wr }, lectores: { 'team-repos.js': TR } });
+  const bien = rev({ enabled: true, budget_usd: 3, max_chars: 200000 });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto), { ...TR_BASE, weekly_review: { enabled: true, budget_usd: 3, max_chars: 200000 } }, 'el resto del archivo igual');
+  const malo = rev({ budget_usd: 0, max_chars: 10 });
+  assert.strictEqual(malo.ok, false);
+  assert.ok(!malo.texto, 'no arma el pedido');
+  assert.deepStrictEqual(malo.problems.map((p) => p.path).sort(), ['weekly_review.budget_usd', 'weekly_review.max_chars']);
+  const delLector = TR.weeklyReviewProblems({ budget_usd: 0, max_chars: 10 });
+  assert.deepStrictEqual(malo.problems.map((p) => p.message).sort(), delLector.map((p) => p.message).sort(), 'el mensaje es el del lector');
+  // en la pantalla, cada campo con su mensaje
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC_WR({ borrador: { weekly_review: { budget_usd: 0, max_chars: 10 } }, problems: malo.problems })] });
+  for (const p of ['weekly_review.budget_usd', 'weekly_review.max_chars']) {
+    const input = nodosDe(r, 'revisionSemanal', (x) => x.tag === 'input' && x.attrs['data-path'] === p).pop();
+    assert.strictEqual(input.attrs.class, 'bad', `${p} marcado`);
+    const msg = malo.problems.find((x) => x.path === p).message;
+    assert.ok(nodosDe(r, 'revisionSemanal', (x) => x.attrs.class === 'err' && x.textContent === msg).length, `${p} con el mensaje del lector`);
+  }
+  // los rangos los dice el lector al revisar: ningún texto de la sección, en ningún idioma, los repite
+  assert.deepStrictEqual(WR_LIMITES(), [100, 10000, 2000000], 'los límites, leídos de los mensajes del lector');
+  const { TEXTOS, textos } = WR_TEXTOS();
+  for (const { k, idioma, t } of textos) {
+    assert.strictEqual(WR_REPITE_LIMITE(t), undefined, `${k} (${idioma}) repite un límite del lector: ${t}`);
+    assert.doesNotMatch(t, /más de 0 a|more than 0, up to/i, `${k} (${idioma})`);
+  }
+  // los dos campos, en los dos idiomas, sí dicen su valor de fábrica
+  for (const idioma of ['es', 'en']) {
+    assert.match(TEXTOS['pantalla.revisionSemanalTopeDeFabrica'][idioma], /(?<![\d.,])5(?![\d.,])/, `tope (${idioma})`);
+    assert.match(TEXTOS['pantalla.revisionSemanalMaterialDeFabrica'][idioma], /(?<![\d.,])600[.,]?000(?![\d.,])/, `material (${idioma})`);
+  }
+  for (const [archivo, titulo] of [['organization-site.md', 'Revisión de la semana'], ['organization-site.en.md', 'Weekly review']]) {
+    assert.strictEqual(WR_REPITE_LIMITE(WR_GUIA(archivo, titulo)), undefined, `${archivo} repite un límite del lector`);
+  }
+  // dónde está el problema, con el nombre de su campo: el tope de material no se llama como el largo de las respuestas
+  const donde = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id, id === 'sitio' ? { problems: [
+    { path: 'weekly_review.max_chars', message: 'x', sinCampo: true },
+    { path: 'response.max_chars', message: 'y', sinCampo: true },
+  ] } : {})) });
+  const lineas = []; const walk = (n) => { if (n.textContent) lineas.push(n.textContent); (n.hijos || []).forEach(walk); }; walk(donde.panelDe('seccion-sitio'));
+  const err = lineas.filter((t) => / › /.test(t)).join('\n');
+  assert.match(err, /Revisión de la semana › Tope de material, en caracteres: x/, err);
+  assert.match(err, /› Largo máximo de cada respuesta, en caracteres: y/, err);
+  // la tabla de nombres no repite claves: una clave repetida pisa en silencio a la otra
+  const fuente = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  const desde = fuente.indexOf('var PALABRAS = {');
+  const tabla = fuente.slice(desde, fuente.indexOf('\n  };', desde));
+  const claves = [...tabla.matchAll(/(?:^|[{,\s])'?([A-Za-z_][\w.]*)'?\s*:\s*T\(/g)].map((m) => m[1]);
+  assert.ok(claves.length > 50, `la tabla de nombres se leyó entera (${claves.length})`);
+  assert.deepStrictEqual(claves.filter((k, i) => claves.indexOf(k) !== i), [], 'sin claves repetidas en la tabla de nombres');
+});
+
+test('RevisionSemanal_VacioEsPorDefecto @story-2.58 @ac-3 — vaciar un campo saca su subclave; vaciar los tres saca weekly_review', async () => {
+  // 🔴 rojo: un campo vacío queda escrito, o queda `weekly_review: {}` en el archivo.
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC_WR({ borrador: { weekly_review: { enabled: false, budget_usd: 2, max_chars: 300000 } } })] });
+  const nodo = (pred) => nodosDe(r, 'revisionSemanal', pred).pop();
+  const escribir = (p, v) => nodo((x) => x.tag === 'input' && x.attrs['data-path'] === p).on.input({ target: { value: v } });
+  const elegir = (v) => nodo((x) => x.tag === 'select' && x.attrs['data-path'] === 'weekly_review.enabled').on.change({ target: { value: v } });
+  const revisar = async () => {
+    nodo((x) => x.tag === 'button' && x.textContent === 'Revisar cambios').on.click();
+    for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x));
+    return r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador;
+  };
+  escribir('weekly_review.budget_usd', '');
+  assert.deepStrictEqual((await revisar()).weekly_review, { enabled: false, max_chars: 300000 }, 'sale sólo budget_usd');
+  escribir('weekly_review.max_chars', '');
+  elegir('');
+  assert.strictEqual((await revisar()).weekly_review, undefined, 'sin subclaves, sin weekly_review');
+});
+
+test('RevisionSemanal_PideSuVersion @story-2.58 @ac-4 — con weekly_review en el archivo, el perfil pide la versión de la 1.27', () => {
+  // 🔴 rojo: la clave no pide versión, o pide una inventada.
+  assert.strictEqual(ORG.WEEKLY_REVIEW_SINCE, '2026.10.19.20', 'la etiqueta del merge de la 1.27 en el público');
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, weekly_review: { enabled: false } }).version, ORG.WEEKLY_REVIEW_SINCE);
+});
+
+test('RevisionSemanal_TextosYGuia @story-2.58 @ac-5 @ac-6 — los textos en castellano y en inglés, y las dos guías nombran la sección', () => {
+  // 🔴 rojo: falta un texto o un idioma, o una guía no nombra la sección.
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = Object.keys(TEXTOS).filter((k) => /^pantalla\.revisionSemanal/.test(k));
+  assert.ok(claves.length >= 6, `título, ayuda, tres campos y sus valores de fábrica (hay ${claves.length})`);
+  for (const k of [...claves, 'pantalla.para.revisionSemanal']) {
+    assert.ok(TEXTOS[k] && TEXTOS[k].es && TEXTOS[k].en, `${k} en los dos idiomas`);
+  }
+  assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8'), /\*\*Revisión de la semana\*\*/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'), /\*\*Weekly review\*\*/);
+  // en palabras llanas: ningún texto ni renglón de guía dice «merge», con la regla de cada idioma
+  for (const { k, idioma, t } of WR_TEXTOS().textos) assert.doesNotMatch(t, WR_MERGE[idioma], `${k} (${idioma})`);
+  assert.match(TEXTOS['pantalla.revisionSemanalAyuda'].es, /los trabajos sumados/);
+  assert.match(TEXTOS['pantalla.revisionSemanalAyuda'].en, /merged work/);
+  const guiaEs = WR_GUIA('organization-site.md', 'Revisión de la semana');
+  const guiaEn = WR_GUIA('organization-site.en.md', 'Weekly review');
+  assert.doesNotMatch(guiaEs, WR_MERGE.es, 'la guía en castellano');
+  assert.match(guiaEs, /los trabajos sumados/);
+  assert.doesNotMatch(guiaEn, WR_MERGE.en, 'la guía en inglés');
+  assert.match(guiaEn, /merged work/);
+});
+
+const textosDe = (raiz) => { const out = []; const walk = (x) => { if (x.textContent) out.push(x.textContent); if (x.attrs && x.attrs.text) out.push(x.attrs.text); (x.hijos || []).forEach((h) => { if (typeof h === 'string') out.push(h); else walk(h); }); }; walk(raiz); return out; };
+
+test('Regresion_OficinasEnConfiguracion_AprobarYDarDeBaja @story-8.171 @ac-9 — quien mantiene decide con la API y sin pedido al repo', async () => {
+  // 🔴 rojo: la ruta no existe, un dev puede decidir, se aprueba sin la huella del buzón, o la baja no queda.
+  const { crearLlaves } = require(path.join(ROOT, 'scripts', 'site', 'machine-keys.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'llaves-'));
+  const llaves = crearLlaves({ dataDir: dir });
+  const clave = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x;
+  const publicKey = Buffer.from(clave, 'base64url').toString('base64');
+  const fingerprint = crypto.createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex');
+  assert.strictEqual(llaves.pedir({ publicKey, fingerprint, nombre: 'pista', direccion: '10.0.0.1' }).status, 202);
+  const machines = { 'maq-a': { person: DEV, reported_sha256: crypto.createHash('sha256').update(DEV).digest('hex'), confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  const conf = opsBase({ people: { machines } });
+  conf.site = { ...conf.site, mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs' } };
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': conf }), config: conf, informados: H.informados({ 'maq-a': DEV }) });
+  let huellas = { medido: true, carpetas: {} };
+  fuentes.huellas = () => huellas;
+  await conPestana({ fuentes, opciones: { llaves } }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const vista = async () => JSON.parse((await h.pedir('/api/config', { cookie: lead })).texto).secciones.find((s) => s.id === 'personas').extras.oficinas;
+    let of = await vista();
+    assert.strictEqual(of.pedidos[0].situacion, 'esperando_huella');
+    assert.strictEqual(of.pedidos[0].huella.length, 19, 'la huella en grupos de cuatro');
+    assert.strictEqual(of.sinDisco, true, 'sin SITE_DATA_DIR lo dice');
+    const accion = async (cuerpo) => JSON.parse((await escribir('/api/config/oficinas', lead, tok, cuerpo)).texto);
+    // sin la huella por el buzón no se aprueba
+    const antes = await accion({ accion: 'approve', fingerprint });
+    assert.strictEqual(antes.ok, false);
+    assert.match(antes.message, /la máquina todavía no dejó la huella con sus ejecuciones/);
+    huellas = { medido: true, carpetas: { 'maq-a': { huellas: [fingerprint], llena: false } } };
+    of = await vista();
+    assert.strictEqual(of.pedidos[0].situacion, 'listo');
+    assert.strictEqual(of.pedidos[0].maquina, 'maq-a');
+    const ok = await accion({ accion: 'approve', fingerprint });
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok));
+    assert.deepStrictEqual(ok.oficinas.pedidos, []);
+    assert.strictEqual(ok.oficinas.maquinas[0].maquina, 'maq-a');
+    assert.strictEqual((await accion({ accion: 'disable', maquina: 'maq-a' })).oficinas.maquinas[0].deBaja, true);
+    assert.strictEqual((await accion({ accion: 'reactivate', maquina: 'maq-a' })).oficinas.maquinas[0].deBaja, false);
+    // la marca: sin marca lo dice, y con marca la borra
+    assert.match((await accion({ accion: 'clear_mark', maquina: 'maq-a' })).message, /no tiene la marca/);
+    for (let i = 0; i < 11; i += 1) llaves.anotarDesplazamiento('maq-a');
+    assert.strictEqual((await vista()).maquinas[0].copiada, true);
+    assert.strictEqual((await accion({ accion: 'clear_mark', maquina: 'maq-a' })).oficinas.maquinas[0].copiada, false);
+    // retirar la clave: la máquina deja de tener oficina, y dos veces lo dice
+    const retirada = await accion({ accion: 'revoke', maquina: 'maq-a' });
+    assert.strictEqual(retirada.ok, true, JSON.stringify(retirada));
+    assert.deepStrictEqual(retirada.oficinas.maquinas, []);
+    assert.match((await accion({ accion: 'revoke', maquina: 'maq-a' })).message, /no tiene una clave aprobada/);
+    // confirmar una huella en conflicto, y rechazar un pedido
+    const clavePedido = () => {
+      const pk = Buffer.from(crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x, 'base64url').toString('base64');
+      const fp = crypto.createHash('sha256').update(Buffer.from(pk, 'base64')).digest('hex');
+      assert.strictEqual(llaves.pedir({ publicKey: pk, fingerprint: fp, nombre: 'otra', direccion: '10.0.0.2' }).status, 202);
+      return fp;
+    };
+    const f1 = clavePedido(); const f2 = clavePedido();
+    huellas = { medido: true, carpetas: { 'maq-a': { huellas: [f1, f2], llena: false } } };
+    assert.strictEqual((await vista()).pedidos.find((p) => p.fingerprint === f1).situacion, 'conflicto');
+    const vista1 = await accion({ accion: 'confirm', fingerprint: f1 });
+    assert.strictEqual(vista1.oficinas.pedidos.find((p) => p.fingerprint === f1).situacion, 'listo');
+    const sinF2 = await accion({ accion: 'reject', fingerprint: f2 });
+    assert.strictEqual(sinF2.ok, true);
+    assert.ok(!sinF2.oficinas.pedidos.some((p) => p.fingerprint === f2));
+    // una acción que no existe, y un dev
+    assert.strictEqual((await escribir('/api/config/oficinas', lead, tok, { accion: 'borrar_todo' })).status, 400);
+    const dev = await entrar(DEV);
+    assert.strictEqual((await h.pedir('/api/config/oficinas', { method: 'POST', cookie: dev, body: '{}', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1', 'x-site-token': tok } })).status, 403);
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Regresion_PantallaDeOficinas_ConLosTextosDeLaMaqueta @story-8.171 @ac-9 — lo que aprobó el dueño', async () => {
+  const oficinas = {
+    conBuzon: true, sinDisco: false,
+    pedidos: [
+      { fingerprint: 'a'.repeat(64), huella: 'aaaa-aaaa-aaaa-aaaa', nombre: 'pista', situacion: 'listo', maquina: 'maquina-a', person: DEV },
+      { fingerprint: 'b'.repeat(64), huella: 'bbbb-bbbb-bbbb-bbbb', nombre: 'maquina-c', situacion: 'esperando_huella', maquina: null, person: null },
+      { fingerprint: 'c'.repeat(64), huella: 'cccc-cccc-cccc-cccc', nombre: 'x', situacion: 'conflicto', maquina: 'maquina-b', person: DEV },
+    ],
+    maquinas: [
+      { maquina: 'maquina-f', person: DEV, fingerprint: 'f'.repeat(64), ultimaConexion: 1, conectada: true, deBaja: false, copiada: false, masNueva: false },
+      { maquina: 'maquina-g', person: DEV, ultimaConexion: 1, conectada: false, deBaja: false, copiada: true, masNueva: false },
+      { maquina: 'maquina-h', person: DEV, ultimaConexion: 1, conectada: false, deBaja: true, copiada: false, masNueva: false },
+      { maquina: 'maquina-i', person: DEV, ultimaConexion: 1, conectada: true, deBaja: false, copiada: false, masNueva: true },
+    ],
+  };
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas } }) : SEC(id))) });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-personas').pop();
+  const textos = textosDe(caja).join(' | ');
+  for (const t of ['La oficina de cada máquina', 'Solicitudes de alta', 'Máquinas con oficina', 'Retirar esta clave', 'Aprobar', 'Rechazar', 'Es la que vio el dev', 'Dar de baja', 'Reactivar', 'Borrar la marca', 'Posible clave copiada', 'Conectada', 'De baja', 'Dice llamarse «maquina-c»', 'El sitio todavía no leyó la huella de esta máquina: la lee en su próxima pasada', 'Conflicto: confirmá la huella con el dev', 'Nada: la máquina dejó la misma huella con sus ejecuciones']) assert.ok(textos.includes(t), `falta «${t}»`);
+  assert.ok(textos.includes('Más nueva que el sitio'));
+  // sin pedidos y sin buzón
+  const vacia = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas: { conBuzon: false, sinDisco: true, pedidos: [], maquinas: [] } } }) : SEC(id))) });
+  const t2 = textosDe(vacia.creados.filter((n) => n.attrs.id === 'seccion-personas').pop()).join(' | ');
+  for (const t of ['No hay solicitudes de alta.', 'Este sitio no sabe dónde dejan sus ejecuciones las máquinas', 'Este sitio no tiene disco propio']) assert.ok(t2.includes(t), `falta «${t}»`);
+});
+
+test('T52 Sitio_DiceCuandoRelee_YLaSubidaDiceLaHuella @story-8.171 @ac-29 — «esperando la huella» dice cuándo vuelve a mirar el buzón', async () => {
+  // 🔴 rojo: el pedido dice «esperando» aunque la huella ya esté en el buzón y sólo falte la relectura, sin decir cuándo.
+  const proxima = Date.parse('2026-11-03T22:15:00.000Z');
+  const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const oficinas = { conBuzon: true, sinDisco: false, proximaLectura: proxima, maquinas: [], pedidos: [{ fingerprint: 'b'.repeat(64), huella: 'bbbb-bbbb-bbbb-bbbb', nombre: 'maquina-c', situacion: 'esperando_huella', maquina: null, person: null }] };
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas } }) : SEC(id))) });
+  const textos = textosDe(r.creados.filter((n) => n.attrs.id === 'seccion-personas').pop()).join(' | ');
+  assert.ok(textos.includes(`la próxima lectura, a las ${hhmm(proxima)}`), textos);
+  // sin la hora (un sitio que todavía no programó la lectura), el texto de siempre, sin hora inventada
+  const sin = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas: { ...oficinas, proximaLectura: null } } }) : SEC(id))) });
+  assert.ok(!textosDe(sin.creados.filter((n) => n.attrs.id === 'seccion-personas').pop()).join(' | ').includes('la próxima lectura'));
+  // el sitio la saca de su lectura programada del buzón
+  const { crearFuentes } = require(path.join(ROOT, 'scripts', 'site', 'sources.js'));
+  assert.strictEqual(typeof crearFuentes, 'function');
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'sources.js'), 'utf8'), /proximaLectura: \(\) =>/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'tabs', 'config.js'), 'utf8'), /proximaLectura: typeof fuentes\.proximaLectura === 'function'/);
+});
+
+test('T53 Botones_ConEspacio @story-8.171 @ac-30 — los botones de una fila de oficinas van separados', () => {
+  // 🔴 rojo: «Dar de baja» y «Retirar esta clave» salen pegados.
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  // con su elemento: en Ejecuciones «tabla» es la caja que envuelve la tabla (site-guide.test.js, T13)
+  const regla = /(?:^|\n)table\.tabla td > \.acc\{([^}]*)\}/.exec(css);
+  assert.ok(regla, 'una regla para la fila de botones de una tabla');
+  const gap = /(?:^|;)gap:(\d+)px/.exec(regla[1]);
+  assert.ok(gap && Number(gap[1]) >= 8, `al menos 8 px entre botones: ${regla[1]}`);
+  assert.match(regla[1], /display:inline-flex/);
+  // en Configuración manda una regla más específica: es la que da el espacio que de verdad queda
+  const enConfig = /(?:^|\n)#config-app \.tabla \.acc\{([^}]*)\}/.exec(css);
+  assert.ok(enConfig, 'la regla de Configuración');
+  const gapConfig = /(?:^|;)gap:(\d+)px/.exec(enConfig[1]);
+  assert.ok(gapConfig && Number(gapConfig[1]) >= 8, `en Configuración, también al menos 8 px: ${enConfig[1]}`);
+  const pantalla = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  assert.ok((pantalla.match(/var acciones = el\('span', \{ class: 'acc' \}\);/g) || []).length >= 2, 'los pedidos y las máquinas usan esa fila');
+});
+
+// ── las revisiones automáticas se configuran desde el sitio ────────────────────────────────────────────────────────
+const RA_TEXTOS = (prefijo) => {
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  return Object.keys(TEXTOS).filter((k) => k.startsWith(prefijo)).map((k) => [k, TEXTOS[k]]);
+};
+const controlesDe = (r, id) => nodosDe(r, id, (x) => (x.tag === 'select' || x.tag === 'input') && x.attrs['data-path']).map((x) => x.attrs['data-path']);
+const opcionesRA = (r, id, p) => {
+  const s = nodosDe(r, id, (x) => x.tag === 'select' && x.attrs['data-path'] === p).pop();
+  return s ? s.hijos.filter((h) => h.tag === 'option').map((o) => (o.attrs.value !== undefined ? o.attrs.value : o.value)) : null;
+};
+const revisarCon = (seccion, borrador) => ORG.revisar({ seccion, texto: ORG.formatJson(TR_BASE), borrador, lectores: { 'team-repos.js': TR } });
+
+test('SiteConfig_LaSeccionDelRevisor (T9) @story-8.221 @ac-9 — el revisor, el orden, el comando propio y los verificadores', async () => {
+  const s = ORG.seccionPorId('conQueRevisa');
+  assert.ok(s, 'hay una sección «Con qué corre la revisión»');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves], ['team-repos.json', 'perfil', 'team-repos.js', ['review_runner']]);
+  const pantalla = (borrador) => pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('conQueRevisa', { repo: 'perfil', borrador })] });
+  const vacia = await pantalla({});
+  assert.deepStrictEqual(controlesDe(vacia, 'conQueRevisa').sort(), ['review_runner.first', 'review_runner.verifiers'], 'sin custom, sin el comando propio');
+  assert.deepStrictEqual(opcionesRA(vacia, 'conQueRevisa', 'review_runner.verifiers'), ['', 'per_lens', 'per_finding']);
+  assert.deepStrictEqual(opcionesRA(vacia, 'conQueRevisa', 'review_runner.first'), ['', 'claude', 'codex', 'cursor', 'claude-ollama', 'custom']);
+  const conCustom = await pantalla({ review_runner: { order: ['custom', 'claude'], custom_command: 'mi-revisor' } });
+  assert.ok(controlesDe(conCustom, 'conQueRevisa').includes('review_runner.custom_command'), 'con custom, el comando propio');
+  assert.deepStrictEqual(nodosDe(conCustom, 'conQueRevisa', (x) => x.tag === 'input' && /^review_runner\.order\.\d+$/.test(x.attrs['data-path'] || '')).map((x) => x.attrs.value), ['custom', 'claude'], 'la lista del orden');
+  const bien = revisarCon('conQueRevisa', { review_runner: { order: ['codex', 'claude'], verifiers: 'per_lens' } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto).review_runner, { order: ['codex', 'claude'], verifiers: 'per_lens' });
+  assert.strictEqual(revisarCon('conQueRevisa', { review_runner: { order: ['custom'] } }).ok, false, 'custom sin comando no se propone');
+  assert.strictEqual(conCustom.panelDe('seccion-conQueRevisa').attrs.id, 'pestana-claude');
+  for (const [k, t] of RA_TEXTOS('pantalla.conQueRevisa')) assert.ok(t.es && t.en, `${k} en los dos idiomas`);
+  const para = RA_TEXTOS('pantalla.para.conQueRevisa');
+  assert.ok(para.length && /Para qué/.test(para[0][1].es) && /What for/.test(para[0][1].en), 'su «Para qué»');
+});
+
+test('SiteConfig_LaSeccionDeLaRevisionDelPlan (T28) @story-8.221 @ac-22 — siete controles, el JSON que acepta el lector y el valor malo', async () => {
+  const s = ORG.seccionPorId('revisionDelPlan');
+  assert.ok(s, 'hay una sección «Revisión del plan»');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves], ['team-repos.json', 'perfil', 'team-repos.js', ['plan_review']]);
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('revisionDelPlan', { repo: 'perfil', borrador: { plan_review: { lenses: ['suposicion-falsa'] } } })] });
+  // `routine_approval` reemplaza a la fila de `coordinator_approves`, que queda como nombre viejo en el lector
+  const siete = ['plan_review.delicate', 'plan_review.routine', 'plan_review.routine_owner_away', 'plan_review.routine_approval', 'plan_review.rejected_reaches_owner', 'plan_review.owner_away_minutes', 'plan_review.lenses.0'];
+  for (const p of siete) assert.ok(nodosDe(r, 'revisionDelPlan', (x) => x.attrs['data-path'] === p).length, `el control ${p}`);
+  assert.deepStrictEqual(opcionesRA(r, 'revisionDelPlan', 'plan_review.routine'), ['', 'always', 'ask', 'never']);
+  // @story-8.267 @ac-18: quién aprueba un plan de rutina revisado, con su valor de fábrica
+  assert.deepStrictEqual(opcionesRA(r, 'revisionDelPlan', 'plan_review.routine_approval'), ['', 'review', 'person']);
+  assert.ok(!nodosDe(r, 'revisionDelPlan', (x) => x.attrs['data-path'] === 'plan_review.coordinator_approves').length, 'la fila vieja sigue en la pestaña');
+  const persona = revisarCon('revisionDelPlan', { plan_review: { routine_approval: 'person' } });
+  assert.strictEqual(persona.ok, true, JSON.stringify(persona.problems));
+  const bien = revisarCon('revisionDelPlan', { plan_review: { routine: 'always', owner_away_minutes: 30, lenses: ['suposicion-falsa', 'prueba-que-falta'] } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto).plan_review, { routine: 'always', owner_away_minutes: 30, lenses: ['suposicion-falsa', 'prueba-que-falta'] });
+  const malo = revisarCon('revisionDelPlan', { plan_review: { owner_away_minutes: 500 } });
+  assert.strictEqual(malo.ok, false);
+  assert.ok(malo.problems.some((p) => p.path === 'plan_review.owner_away_minutes'));
+  for (const [k, t] of RA_TEXTOS('pantalla.revisionDelPlan')) assert.ok(t.es && t.en, `${k} en los dos idiomas`);
+  // los valores de fábrica, dichos en los textos
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.match(TEXTOS['pantalla.revisionDelPlanMinutos'].es, /20/);
+});
+
+test('SiteConfig_LasOpcionesDelPaseAdversarial (T38) @story-8.221 @ac-28 @ac-45 @ac-46 — cinco controles nuevos y la gravedad en las vueltas', async () => {
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('paseAdversarial', { repo: 'perfil', borrador: {} }), SEC('revision', { repo: 'perfil', borrador: {} })] });
+  const cinco = ['deep_review.delicate', 'deep_review.small_max_files', 'deep_review.small_routine_day', 'deep_review.small_routine_owner_away', 'deep_review.large_routine'];
+  for (const p of cinco) assert.ok(controlesDe(r, 'paseAdversarial').includes(p), `el control ${p}`);
+  assert.deepStrictEqual(opcionesRA(r, 'paseAdversarial', 'deep_review.small_routine_owner_away'), ['', 'run', 'skip', 'wait']);
+  assert.deepStrictEqual(opcionesRA(r, 'revision', 'review.blocking_severity'), ['', 'bug', 'robustness', 'all']);
+  const bien = revisarCon('paseAdversarial', { deep_review: { default: 'auto', small_max_files: 8, small_routine_day: 'run' } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto).deep_review, { default: 'auto', small_max_files: 8, small_routine_day: 'run' });
+  assert.strictEqual(revisarCon('paseAdversarial', { deep_review: { small_max_files: 0 } }).ok, false);
+  const sev = revisarCon('revision', { review: { blocking_severity: 'robustness' } });
+  assert.strictEqual(sev.ok, true, JSON.stringify(sev.problems));
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.match(TEXTOS['pantalla.topeDeVueltasCampo'].es, /vacío: 3/);
+  assert.match(TEXTOS['pantalla.vueltasDeRevisoresAyuda'].es, /De fábrica, 3/);
+  // T58: el tope vale para las dos revisiones, en los dos idiomas
+  assert.match(TEXTOS['pantalla.topeDeVueltasCampo'].en, /empty: 3/);
+  assert.match(TEXTOS['pantalla.vueltasDeRevisoresAyuda'].en, /Built-in: 3/);
+  assert.match(TEXTOS['pantalla.vueltasDeRevisoresAyuda'].es, /revisan y corrigen.*rechazar su plan/);
+  assert.match(TEXTOS['pantalla.vueltasDeRevisoresAyuda'].en, /review and fix.*plan can be rejected/);
+});
+
+// ── Las máquinas que no son del equipo: «No es del equipo», «Ocultar» y «Mostrar» ─────────────────────────────────────
+
+/** La pantalla de Configuración en un DOM falso, con botones que se pueden tocar; `revisar` contesta /api/config/revisar. */
+async function pantallaPersonas(seccion, revisar = () => new Promise(() => {})) {
+  const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, on: {}, setAttribute(k, v) { n.attrs[k] = String(v); }, getAttribute(k) { return k in n.attrs ? n.attrs[k] : null; }, removeAttribute(k) { delete n.attrs[k]; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener(e, f) { n.on[e] = f; }, replaceChildren(...cs) { n.hijos = cs; } }; return n; };
+  const app = nodo('div');
+  const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : null), createElement: (tg) => nodo(tg) };
+  const respuesta = { ok: true, secciones: [seccion], proponer: { operaciones: { habilitado: true }, perfil: { habilitado: true } }, versiones: [], productos: [] };
+  const pedidos = [];
+  const fetch = (ruta, o) => {
+    const cuerpo = o && o.body ? JSON.parse(o.body) : null;
+    pedidos.push({ ruta, cuerpo });
+    if (ruta === '/api/config') return Promise.resolve({ status: 200, json: () => Promise.resolve(respuesta) });
+    if (ruta === '/api/config/revisar') return Promise.resolve({ status: 200, json: () => Promise.resolve(revisar(cuerpo)) });
+    return new Promise(() => {});
+  };
+  new Function('document', 'fetch', ORG.pantalla('es'))(document, fetch);
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  const todo = (n) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
+  const renglon = (maquina) => todo(app).filter((n) => n.tag === 'li' && todo(n).some((x) => x.textContent === maquina)).pop();
+  const botones = (n) => todo(n || app).filter((x) => x.tag === 'button').map((b) => b.textContent);
+  const tocar = async (maquina, texto) => { const b = todo(renglon(maquina)).filter((x) => x.tag === 'button' && x.textContent === texto).pop(); assert.ok(b, `«${texto}» en ${maquina}`); b.on.click({}); for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  return { renglon, botones, tocar, pedidos };
+}
+const SEC_PERSONAS = (extras, people) => ({ id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, borrador: { people }, problems: [], avisos: [], extras });
+const esTexto = (k) => require(path.join(ROOT, 'scripts', 'site', 'texts.js')).t('es', k);
+
+test('T21 SiteAccess_PorConfirmar_TieneNoEsDelEquipo @story-8.234 @ac-21 — la máquina por confirmar trae «Confirmar» y «No es del equipo»; la confirmada, «Ocultar»; la oculta, «Mostrar»', async () => {
+  const people = { machines: { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } }, hidden_machines: { 'maq-lab': { reason: 'hidden', hidden_by: LEAD, hidden_on: '2026-11-01' } } };
+  const extras = {
+    porConfirmar: [{ maquina: 'maq-c', estado: 'sin_confirmar', correo: 'dev.c@ejemplo.test', dia: '2026-10-15', corridas: 2, otras: [] }],
+    ocultas: [{ maquina: 'maq-lab', razon: 'hidden', por: LEAD, el: '2026-11-01', confirmada: true }],
+  };
+  const p = await pantallaPersonas(SEC_PERSONAS(extras, people), () => ({ ok: true, texto: '{}\n', diferencia: [], resumen: [], problems: [], avisos: [], borrador: { people } }));
+  assert.deepStrictEqual(p.botones(p.renglon('maq-c')), [esTexto('pantalla.confirmar'), esTexto('pantalla.noEsDelEquipo')]);
+  assert.ok(p.botones(p.renglon('maq-a')).includes(esTexto('pantalla.ocultar')), 'la confirmada se puede ocultar');
+  assert.ok(p.botones(p.renglon('maq-lab')).includes(esTexto('pantalla.mostrar')), 'la oculta se puede mostrar');
+  // cada botón pide su borrador por el mismo camino que «Confirmar»
+  await p.tocar('maq-c', esTexto('pantalla.noEsDelEquipo'));
+  const q = await pantallaPersonas(SEC_PERSONAS(extras, people), () => ({ ok: true, texto: '{}\n', diferencia: [], resumen: [], problems: [], avisos: [], borrador: { people } }));
+  await q.tocar('maq-a', esTexto('pantalla.ocultar'));
+  const r = await pantallaPersonas(SEC_PERSONAS(extras, people), () => ({ ok: true, texto: '{}\n', diferencia: [], resumen: [], problems: [], avisos: [], borrador: { people } }));
+  await r.tocar('maq-lab', esTexto('pantalla.mostrar'));
+  const accion = (x) => x.pedidos.filter((y) => y.ruta === '/api/config/revisar').map((y) => [y.cuerpo.borrador.accion, y.cuerpo.borrador.maquina]);
+  assert.deepStrictEqual([...accion(p), ...accion(q), ...accion(r)], [['not_team', 'maq-c'], ['hide', 'maq-a'], ['show', 'maq-lab']]);
+});
+
+test('T22 SiteAccess_NoEsDelEquipo_SeOcultaSinBorrar @story-8.234 @ac-22 — el borrador anota quién y cuándo en hidden_machines, el lector lo valida y la carpeta sigue', async () => {
+  const ops = clon({ 'operations.json': opsBase() });
+  const espejo = tmp('site-config-ocultas-');
+  fs.mkdirSync(path.join(espejo, 'maq-c', 'registros'), { recursive: true });
+  const inf = H.informados({ 'maq-c': 'dev.c@ejemplo.test' });
+  await conPestana({ fuentes: fuentesCon({ ops, informados: inf, espejo }), opciones: { hoy: () => HOY } }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const r = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { accion: 'not_team', maquina: 'maq-c', people: {} } })).json;
+    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+    const doc = JSON.parse(r.texto);
+    assert.deepStrictEqual(doc.people.hidden_machines, { 'maq-c': { reason: 'not_team', hidden_by: LEAD, hidden_on: HOY } });
+    assert.ok(!doc.people.machines || !doc.people.machines['maq-c'], 'no la confirma');
+    assert.ok(fs.existsSync(path.join(espejo, 'maq-c')), 'la carpeta del buzón sigue');
+    // con el pedido aplicado, no sale por confirmar y sí en «Ocultas»
+    const aplicado = opsBase({ people: doc.people });
+    const fuentes2 = fuentesCon({ ops: clon({ 'operations.json': aplicado }), config: aplicado, informados: inf, espejo });
+    await conPestana({ fuentes: fuentes2 }, async ({ h: h2, entrar: e2 }) => {
+      const vista = (await h2.pedir('/api/config', { cookie: await e2(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+      assert.deepStrictEqual(vista.extras.porConfirmar, []);
+      assert.deepStrictEqual(vista.extras.ocultas.map((x) => [x.maquina, x.razon, x.por, x.el]), [['maq-c', 'not_team', LEAD, HOY]]);
+    });
+    // el lector: una razón fuera de la lista, un correo o un día mal escritos, una clave desconocida, no pasan
+    const malas = [
+      [{ reason: 'otra', hidden_by: LEAD, hidden_on: HOY }, 'people.hidden_machines.maq-c.reason'],
+      [{ reason: 'hidden', hidden_by: 'no-es-correo', hidden_on: HOY }, 'people.hidden_machines.maq-c.hidden_by'],
+      [{ reason: 'hidden', hidden_by: LEAD, hidden_on: '2026-13-40' }, 'people.hidden_machines.maq-c.hidden_on'],
+      [{ reason: 'hidden', hidden_by: LEAD, hidden_on: HOY, extra: 1 }, 'people.hidden_machines.maq-c'],
+      [{ reason: 'hidden', hidden_by: LEAD }, 'people.hidden_machines.maq-c.hidden_on'],
+    ];
+    for (const [entrada, ruta] of malas) {
+      const m = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { people: { hidden_machines: { 'maq-c': entrada } } } })).json;
+      assert.strictEqual(m.ok, false, JSON.stringify(entrada));
+      assert.ok(m.problems.some((x) => x.path === ruta || x.path.startsWith(`${ruta}.`)), `${ruta}: ${JSON.stringify(m.problems)}`);
+    }
+    const nombreMalo = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { people: { hidden_machines: { 'Maq C': { reason: 'hidden', hidden_by: LEAD, hidden_on: HOY } } } } })).json;
+    assert.strictEqual(nombreMalo.ok, false);
+  });
+});
+
+test('T23 SiteAccess_Confirmada_SeOcultaYSeMuestra @story-8.234 @ac-23 — Configuración: ocultar deja la confirmación, mostrar la devuelve; caida y «Versiones» no la cuentan', async () => {
+  const machines = { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' }, 'maq-lab': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }] }, people: { machines } });
+  const inf = H.informados({ 'maq-a': null, 'maq-lab': null });
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': config }), config, informados: inf }), opciones: { hoy: () => HOY } }, async ({ entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const o = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { accion: 'hide', maquina: 'maq-lab', people: { machines } } })).json;
+    assert.strictEqual(o.ok, true, JSON.stringify(o.problems));
+    const doc = JSON.parse(o.texto);
+    assert.deepStrictEqual(doc.people.machines, machines, 'la confirmación queda intacta');
+    assert.deepStrictEqual(doc.people.hidden_machines, { 'maq-lab': { reason: 'hidden', hidden_by: LEAD, hidden_on: HOY } });
+    const m = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { accion: 'show', maquina: 'maq-lab', people: doc.people } })).json;
+    assert.strictEqual(m.ok, true, JSON.stringify(m.problems));
+    const doc2 = JSON.parse(m.texto);
+    assert.deepStrictEqual(doc2.people.machines, machines);
+    assert.ok(!doc2.people.hidden_machines, 'sin ocultas, la clave sale');
+  });
+  // la persona con todas sus máquinas ocultas o en orden no figura «caída»: una oculta no cuenta
+  const conOculta = opsBase({ site: config.site, people: { machines, hidden_machines: { 'maq-lab': { reason: 'hidden', hidden_by: LEAD, hidden_on: HOY } } } });
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': conOculta }), config: conOculta, informados: inf }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    assert.strictEqual(p.extras.personas.find((x) => x.correo === DEV).caida, false);
+  });
+  const soloOculta = opsBase({ site: config.site, people: { machines: { 'maq-lab': machines['maq-lab'] }, hidden_machines: { 'maq-lab': { reason: 'hidden', hidden_by: LEAD, hidden_on: HOY } } } });
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': soloOculta }), config: soloOculta, informados: inf }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    assert.strictEqual(p.extras.personas.find((x) => x.correo === DEV).caida, false, 'esconder su única máquina no la vuelve caída');
+  });
+  // «Versiones»: la oculta no arma fila, así que tampoco frena subir la versión mínima del arnés
+  const espejo = tmp('site-config-versiones-');
+  for (const [m, v] of [['maq-a', '2026.10.15.48'], ['maq-lab', '2026.09.01.1']]) {
+    fs.mkdirSync(path.join(espejo, m, 'registros'), { recursive: true });
+    fs.writeFileSync(path.join(espejo, m, 'registros', 'place.json'), JSON.stringify({ day: '2026-10-15', install: { version: v } }));
+  }
+  const AHORA_V = Date.parse('2026-10-16T12:00:00Z');
+  const todas = ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.15.48', ahora: AHORA_V });
+  assert.deepStrictEqual(todas.map((x) => x.maquina), ['maq-a', 'maq-lab']);
+  const sinOculta = ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.15.48', ahora: AHORA_V, ocultas: new Set(['maq-lab']) });
+  assert.deepStrictEqual(sinOculta.map((x) => x.maquina), ['maq-a']);
+});
+
+test('T24 SiteAccess_NoAdministrador_SinBotones @story-8.234 @ac-24 — una persona no recibe Configuración, ni sus botones ni hidden_machines', async () => {
+  const conOculta = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }] }, people: { machines: {}, hidden_machines: { 'maq-lab': { reason: 'not_team', hidden_by: LEAD, hidden_on: HOY } } } });
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': conOculta }), config: conOculta, informados: H.informados({ 'maq-lab': null }) }) }, async ({ h, entrar, token, escribir }) => {
+    const dev = await entrar(DEV);
+    const r = await h.pedir('/api/config', { cookie: dev });
+    assert.strictEqual(r.status, 403);
+    assert.ok(!String(r.texto || '').includes('hidden_machines') && !String(r.texto || '').includes('maq-lab'));
+    const tok = await token(dev).catch(() => null);
+    const w = await escribir('/api/config/revisar', dev, tok, { seccion: 'personas', borrador: { accion: 'not_team', maquina: 'maq-x', people: {} } });
+    assert.strictEqual(w.status, 403);
+  });
 });

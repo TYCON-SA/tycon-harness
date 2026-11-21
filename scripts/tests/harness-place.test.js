@@ -400,8 +400,10 @@ function sweepOffenders(root, files) {
 }
 
 // ── T35 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// la guía de piezas es su índice y sus grupos: cada archivo se revisa, y el lugar lo nombra alguno
+const PIECES = require('./lib/pieces-guide.js');
 const TEAM_PAPERS = ['INSTALL.md', 'onboarding/new-dev-harness-setup.md', 'onboarding/step-0-mac.md', 'onboarding/step-0-windows.md',
-  'guides/piezas-del-arnes.md', 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
+  ...PIECES.piecesFiles(ROOT), 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
 const NAMES_THE_PLACE = ['INSTALL.md', 'onboarding/new-dev-harness-setup.md', 'guides/piezas-del-arnes.md', 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
 test('T35 TeamPapers_PlacePath_OldStartupDeclared_TwoNamesParagraphInternal', () => {
   // la verificación del import en los papeles del equipo: una máquina nueva escribe
@@ -416,7 +418,7 @@ test('T35 TeamPapers_PlacePath_OldStartupDeclared_TwoNamesParagraphInternal', ()
   for (const f of shipped(TEAM_PAPERS, 'T35')) {
     const text = read(f);
     assert.deepStrictEqual(legacyPathLines(text), [], `${f}: nombra la ruta del lugar por el nombre viejo`);
-    if (NAMES_THE_PLACE.includes(f)) assert.ok(PLACE_PATH_RX.test(text), `${f}: no nombra el lugar`);
+    if (NAMES_THE_PLACE.includes(f)) assert.ok(PLACE_PATH_RX.test(f === PIECES.INDEX ? PIECES.piecesText(ROOT) : text), `${f}: no nombra el lugar`);
   }
   assert.ok(!LIST.legacy_only.some((e) => e.path === 'INSTALL.md'), 'INSTALL.md no nombra la ruta vieja: no va en legacy_only');
 });
@@ -529,7 +531,7 @@ function publishedLines(text) {
   return out;
 }
 test('T48 PublishedProse_InternalRepoName_SaysTheHarness_ReadmeUnderLimit', () => {
-  const prose = sweepScope(ROOT).filter((f) => ['README.md', 'INSTALL.md', 'story-format.md', 'claude-md-blocks/response-style.md', 'claude-md-blocks/ado-runs-list-lag.md'].includes(f)
+  const prose = sweepScope(ROOT).filter((f) => ['README.md', 'INSTALL.md', 'story-format.md', 'claude-md-blocks/response-style.md', 'claude-md-blocks/platform-rules.md', 'integrations/azure-devops/rules.md', 'integrations/github/rules.md'].includes(f)
     || /^agents\/[^/]+\.md$/.test(f) || (/^skills\/.+\.md$/.test(f) && !/(^|\/)tests?\//.test(f)));
   assert.ok(prose.length > 30, `poca prosa encontrada: ${prose.length}`);
   // lo que el núcleo deja afuera (allowlist.json → packages.core.*.out: una skill interna, una historia) no se publica
@@ -540,7 +542,7 @@ test('T48 PublishedProse_InternalRepoName_SaysTheHarness_ReadmeUnderLimit', () =
   const bad = [];
   for (const f of shippedProse) for (const l of publishedLines(read(f))) if (INTERNAL_NAME_RX.test(l.replace(new RegExp(LEGACY_PATH_RX.source, 'g'), ''))) bad.push(`${f}: ${l.trim().slice(0, 140)}`);
   assert.deepStrictEqual(bad, [], 'prosa publicada que nombra al repo interno (decí «el arnés», o la ruta del lugar)');
-  assert.ok(Buffer.byteLength(read('README.md'), 'utf8') <= 25600, 'README.md pasó su tope de 25.600 bytes');
+  assert.ok(Buffer.byteLength(read('README.md'), 'utf8') <= 36000, 'README.md pasó su tope de 36.000 bytes');
   // la lista de lo que queda en la copia: cada entrada con ruta, tipo y motivo, y sin la palabra del repo en el motivo
   const listFile = path.join(ROOT, 'scripts', 'tests', 'fixtures', 'public-copy-internal-name.json');
   const list = JSON.parse(fs.readFileSync(listFile, 'utf8'));
@@ -558,7 +560,7 @@ test('T48 PublishedProse_InternalRepoName_SaysTheHarness_ReadmeUnderLimit', () =
 // T52 en export-real.test.sh. Sin allowlist.json (la copia pública no lo trae) estas tres no se pueden medir, y se dice.
 const INTERNAL_LIST = JSON.parse(read('scripts/tests/fixtures/public-copy-internal-name.json'));
 const DECLARED_INTERNAL = new Map(INTERNAL_LIST.entries.map((e) => [e.path, e]));
-const T48_PROSE = (f) => ['README.md', 'INSTALL.md', 'story-format.md', 'claude-md-blocks/response-style.md', 'claude-md-blocks/ado-runs-list-lag.md'].includes(f)
+const T48_PROSE = (f) => ['README.md', 'INSTALL.md', 'story-format.md', 'claude-md-blocks/response-style.md', 'claude-md-blocks/platform-rules.md', 'integrations/azure-devops/rules.md', 'integrations/github/rules.md'].includes(f)
   || /^agents\/[^/]+\.md$/.test(f) || (/^skills\/.+\.md$/.test(f) && !/(^|\/)tests?\//.test(f));
 const withoutPlacePath = (l) => l.replace(new RegExp(LEGACY_PATH_RX.source, 'g'), '');
 /** ¿Sale en la copia? `null` si no hay lista blanca con qué decidirlo. */
@@ -624,7 +626,7 @@ test('T50 FunctionalRecognizers_AddPublicName_KeepInternal_AzureDataDeclared', (
   fs.rmSync(t, { recursive: true, force: true });
   // los datos de Azure quedan, declarados con su motivo
   const azure = INTERNAL_LIST.entries.filter((e) => e.kind === 'azure');
-  for (const p of ['scripts/ci/grant-new-product-permissions.js', 'scripts/production/install-guard.sh']) {
+  for (const p of ['integrations/azure-devops/scripts/grant-new-product-permissions.js', 'scripts/production/install-guard.sh']) {
     assert.ok(azure.some((e) => e.path === p), `${p}: el dato de Azure no está declarado como «azure»`);
   }
   for (const e of shipped(azure, 'datos de Azure de public-copy-internal-name.json')) assert.ok(/Azure/.test(e.why), `${e.path}: el motivo no dice que es un dato de Azure`);

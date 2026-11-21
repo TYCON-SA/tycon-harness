@@ -152,4 +152,26 @@ else
   bad "T17 la suite no escribe en el arnés" "escritas en la casa=${ESCRITAS:-0} de $ESPERADAS · árbol de prueba: $(ls -A "$ARBOL" | tr '\n' ' ')· real antes=[$REAL_ANTES] ahora=[$(real_ahora)]"
 fi
 
+# ── T48 Trigger_NeverLaunchesObserver_KeepsBootstrapHeal ──
+# El observador ya no se lanza por máquina: con TYCON_INSTINCT_OBSERVER=1 y sin sello de 12 h, y con la variable sin
+# definir, el disparador no lanza node; la reparación de la línea de arranque corre en los dos.
+T48="$LAB/t48"; mkdir -p "$T48/scripts/hooks" "$T48/scripts/instincts" "$T48/home"
+cp "$TCG/scripts/hooks/instinct-trigger.sh" "$T48/scripts/hooks/"
+printf '#!/usr/bin/env bash\necho x >> "%s/reparo.txt"\n' "$T48" > "$T48/scripts/hooks/harness-bootstrap-heal.sh"
+printf 'require("fs").appendFileSync(%s, "x\\n");\n' "\"$T48/corrio.txt\"" > "$T48/scripts/instincts/instinct-observer.js"
+for MODO in prendida sin_definir; do
+  rm -f "$T48/corrio.txt" "$T48/reparo.txt" "$T48/home/.claude/instinct-observer.last"
+  if [ "$MODO" = prendida ]; then
+    env -i HOME="$T48/home" PATH="$LAB/bin:/usr/bin:/bin" TYCON_INSTINCT_OBSERVER=1 bash "$T48/scripts/hooks/instinct-trigger.sh" < /dev/null > /dev/null 2>&1; RC=$?
+  else
+    env -i HOME="$T48/home" PATH="$LAB/bin:/usr/bin:/bin" bash "$T48/scripts/hooks/instinct-trigger.sh" < /dev/null > /dev/null 2>&1; RC=$?
+  fi
+  sleep 1
+  if [ "$RC" = 0 ] && [ ! -e "$T48/corrio.txt" ] && [ "$(grep -c x "$T48/reparo.txt" 2>/dev/null)" = 1 ]; then
+    ok "T48 ($MODO) el disparador no lanza el observador y la reparación de arranque corre"
+  else
+    bad "T48 ($MODO)" "rc=$RC corrió=$([ -e "$T48/corrio.txt" ] && echo sí || echo no) reparó=$(grep -c x "$T48/reparo.txt" 2>/dev/null || echo 0)"
+  fi
+done
+
 echo; [ "$fallos" = "0" ] && { echo "✅ instinct-executor: todo verde"; exit 0; } || { echo "❌ instinct-executor: $fallos fallo(s)"; exit 1; }

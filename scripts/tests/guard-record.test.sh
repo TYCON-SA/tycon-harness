@@ -19,6 +19,7 @@
 #  T12 — un bloqueo por falla propia del freno también queda escrito
 #  T13 — la constancia no depende del nombre con que el freno encuentra su biblioteca (el actual o el anterior al renombre),
 #        y que no encuentre ninguna no queda callado (en la copia pública sólo está el actual)
+#  T15 — un escape aprobado con un click o un «aprobado» queda con esa vía; una vía fuera de la lista no se anota
 #
 # 🔴 HOME falso siempre: la constancia vive bajo el home, en la carpeta de estado del arnés.
 # Correr: bash scripts/tests/guard-record.test.sh
@@ -216,7 +217,7 @@ correr "$P2" 'az repos pr create --source-branch x --target-branch dev --title t
 correr "$P2" 'az repos pr create --source-branch x --target-branch main --title t --draft true' >/dev/null
 correr "$P2" 'az repos pr create --help' >/dev/null
 fuera=$(lineas)
-correr "$P2" 'az repos pr create --source-branch x --target-branch main --title t --auto-complete true --squash false' >/dev/null
+correr "$P2" 'az repos pr create --source-branch x --target-branch main --title t --auto-complete true --squash false --delete-source-branch true' >/dev/null
 dentro=$(lineas)
 if [ "$fuera" = "0" ] && [ "$dentro" = "1" ]; then
   ok "T10 lo declarado fuera de alcance no deja línea; lo que sí juzga, sí"
@@ -431,6 +432,64 @@ else
   else
     no "7.2-T2b viejo-del-mapa=[${VIEJO_CIERRE}] exits=[$eoff] anotaron=[$registro] suites-sin-interruptor:[$sin_marca]"
   fi
+fi
+
+# ── T14 — el bloqueo anota su motivo, un código de la lista de su regla ────────────────────────
+# Una regla que frena por varias causas distintas no se puede medir junta: ESC-C3 son cinco frenos y `produccion` de
+# producción son cuatro. El motivo va como código cerrado; uno libre no se escribe y la línea sale igual.
+mundo
+printf '%s' 'x' | HOME="$CASA" node "$LIB" --guard safety-guard --rule ESC-C3 --verdict bloqueo --reason trust-ran --cmd-stdin
+printf '%s' 'x' | HOME="$CASA" node "$LIB" --guard safety-guard --rule ESC-C3 --verdict bloqueo --reason 'cerrar con /ruta/secreta' --cmd-stdin
+printf '%s' 'x' | HOME="$CASA" node "$LIB" --guard safety-guard --rule GIT-C1 --verdict bloqueo --reason trust-ran --cmd-stdin
+reg="$(cat "$(REG)" 2>/dev/null || true)"
+l1="$(sed -n 1p "$(REG)")"; l2="$(sed -n 2p "$(REG)")"; l3="$(sed -n 3p "$(REG)")"
+if [ "$(lineas)" = "3" ] && echo "$l1" | grep '"motivo":"trust-ran"' >/dev/null && ! echo "$l2" | grep '"motivo"' >/dev/null \
+   && ! echo "$reg" | grep 'secreta' >/dev/null && ! echo "$l3" | grep '"motivo"' >/dev/null; then
+  ok "T14 el motivo de la lista se anota; uno libre o de otra regla no, y la línea sale igual"
+else
+  no "T14 reg=[$reg]"
+fi
+
+# T14b — el freno de producción separa sus motivos con el freno REAL
+mundo
+pg_motivo(){ # $1 comando → el motivo de la última línea (vacío si no tiene)
+  node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",tool_input:{command:process.argv[1]}}))' "$1" \
+    | HOME="$CASA" node "$AQUI/scripts/hooks/prod-access-guard.js" >/dev/null 2>&1
+  tail -n 1 "$(REG)" 2>/dev/null | sed -n 's/.*"motivo":"\([^"]*\)".*/\1/p'
+}
+m_estado="$(pg_motivo "rm -f $CASA/.claude/.tycon-pipeline/production""-index.json")"
+m_variable="$(pg_motivo 'sqlcmd -S "$SRV" -Q "select 1"')"
+if [ "$m_estado" = "escritura-protegida" ] && [ "$m_variable" = "servidor-no-literal" ]; then
+  ok "T14b producción: la escritura protegida y el servidor que no es literal se anotan con su motivo"
+else
+  no "T14b escritura=[$m_estado] servidor=[$m_variable] reg=[$(cat "$(REG)" 2>/dev/null)]"
+fi
+
+# ── T15 — la vía de la persona sin terminal: el click y el «aprobado» quedan como lo que fueron ──────────
+via_de(){ # $1 vía → la vía que quedó en la última línea, o «sin-via»
+  mundo
+  printf '%s' 'comando' | HOME="$CASA" node "$LIB" --guard safety-guard --rule GIT-C1 --verdict escape --via "$1" --cmd-stdin 2>/dev/null
+  HOME="$CASA" node -e '
+    const fs=require("fs"), path=require("path");
+    const ls=fs.readFileSync(path.join(process.env.HOME,".claude",".tycon-pipeline","frenos.jsonl"),"utf8").trim().split("\n");
+    process.stdout.write(JSON.parse(ls[ls.length-1]).via||"sin-via");
+  '
+}
+for v in click mensaje; do
+  if [ "$(via_de "$v")" = "$v" ]; then ok "T15 un escape aprobado por $v queda con esa vía"; else no "T15 $v: reg=[$(cat "$(REG)" 2>/dev/null)]"; fi
+done
+if [ "$(via_de inventada)" = "sin-via" ] && [ "$(lineas)" = "1" ]; then
+  ok "T15 una vía fuera de la lista no se anota, y la línea se escribe igual"
+else
+  no "T15 vía inventada: reg=[$(cat "$(REG)" 2>/dev/null)]"
+fi
+# la vía es de un escape: en un bloqueo no dice nada, aunque venga
+mundo
+printf '%s' 'comando' | HOME="$CASA" node "$LIB" --guard safety-guard --rule GIT-C1 --verdict bloqueo --via click --cmd-stdin 2>/dev/null
+if ! grep '"via"' "$(REG)" >/dev/null 2>&1 && [ "$(lineas)" = "1" ]; then
+  ok "T15 un bloqueo no lleva vía aunque se la pasen"
+else
+  no "T15 bloqueo con vía: reg=[$(cat "$(REG)" 2>/dev/null)]"
 fi
 
 echo "─────────────────────────────"

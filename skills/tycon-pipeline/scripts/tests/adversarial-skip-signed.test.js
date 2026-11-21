@@ -83,8 +83,10 @@ const arbolDelFreno = () => [...BASE, herramienta(),
 const arbolDelGuion = (casa, cmd, consola) => [...BASE, herramienta(),
   { pid: 300, ppid: 100, inicio: INICIO, comando: consola || envolver(casa, cmd) },
   { pid: 301, ppid: 300, inicio: INICIO, comando: cmd }];
-const evento = (command) => ({ session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } });
-const pedir = (casa, cmd, escapes = []) => ow.decidir({ evento: evento(cmd), escapes, arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA });
+const evento = (command) => ({ session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command } });
+// el chequeo antes de la ventana corre el guion de verdad, que lee la casa de la cuenta y no la de la prueba: acá se
+// prueba la ventana (el chequeo tiene sus pruebas en owner-window.test.js)
+const pedir = (casa, cmd, escapes = []) => ow.decidir({ evento: evento(cmd), escapes, arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA, comprobar: () => null });
 
 const MOTIVO = 'sólo cambia un texto de ayuda';
 const firmaCmd = (motivo = MOTIVO, extra = '') => `node ${MARKER} sign-adversarial-skip --story 9.99 --reason "${motivo}"${extra}`;
@@ -663,7 +665,7 @@ test('AdversarialSkip_LivianaSinFirma_ConCodigoTocado_ElPaseCorre', (t) => {
   assert.strictEqual(pipeline.computeRunSize({ story, repo }).size, 'liviana', 'lo declarado solo es liviano');
   const sinFirma = pipeline.computeRunSize({ story, repo, files, runSize: { size: 'liviana', reason: 'sólo docs' } });
   assert.strictEqual(sinFirma.size, 'completa', sinFirma.reason);
-  assert.match(sinFirma.reason, /sin la firma del dueño/);
+  assert.match(sinFirma.reason, /sin la firma de una persona/);
   const g = pipeline.computeDeepReviewGate({ story, repo, files, runSize: { size: 'liviana', reason: 'sólo docs' } });
   assert.strictEqual(g.run, true, g.reason);
   // con la firma, el forzado vale; sin código tocado, también

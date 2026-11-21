@@ -17,7 +17,8 @@
 //     tiene: contra la punta remota que informa git y lo que el propio remoto dice tener; si no contesta, todo). Un binario
 //     sin permiso, un enlace simbólico y un submódulo cuentan como «sin leer»;
 //   · el mensaje, el autor y el committer de cada commit, y el nombre, el mensaje y el firmante de una marca anotada: el
-//     nombre contra la lista, y el correo tiene que ser un `noreply` de GitHub;
+//     nombre contra la lista, y el correo tiene que ser un `noreply` de GitHub en una máquina del equipo dueño y en la
+//     validación de un pedido (en la de otra organización, o sin perfil, el correo de quien firma es suyo);
 //   · el nombre de la rama o de la marca, y que la ref sea una rama o una marca (una nota o un guardado no se publican);
 //   · un número de pedido en un mensaje o en un nombre de ref (la forma la define scripts/publishing/internal-history.js;
 //     un nombre de ref se mira además con sus separadores vueltos espacios). Un pedido del repo público no cuenta —el
@@ -33,8 +34,12 @@
 // (`origin/HEAD`, o `origin/main`; sin traer nada): la del disco sólo si el clon no tiene esa rama o la rama no trae la
 // lista. NUNCA el árbol que se empuja: la rama elegiría con qué lista se la mira. Los dos
 // primeros son una declaración: si están declarados y la lista no está, es «no pude mirar». En una máquina con el perfil
-// del equipo (`team-profile.json`, o `perfil-equipo.json`) la lista es obligatoria. Sin perfil y sin lista (alguien de afuera con su copia)
-// corre lo que no necesita lista, y lo dice.
+// del equipo que mantiene el arnés la lista es obligatoria. Sin perfil y sin lista (alguien de afuera con su copia), o con
+// el perfil de OTRA organización, corre lo que no necesita lista, y lo dice: la lista privada no se le da a nadie de
+// afuera. Al equipo dueño lo reconoce el perfil instalado, nunca el árbol que se empuja: el `team-repos.json` al lado de
+// `team-profile.json` (o `perfil-equipo.json`) declara `maintainers`. Sin ese archivo, es otra organización sólo si el
+// sello de la capa instalada (`.tycon-team.json`) dice que el perfil se bajó de una carpeta de esta máquina
+// (`harness.js team-init --local`). Ante la duda es el equipo dueño (`machineOrg`).
 //
 // ¿ESA LISTA ESTÁ AL DÍA? La lista se lee del disco de un clon: si ese clon está
 // atrasado respecto de su remoto, frena por su propia firma lo que una excepción ya
@@ -74,7 +79,9 @@
 //        [--body-file <archivo>] [--json]       (un PEDIDO, en su validación — cada commit que suma a
 //        su rama destino, el nombre de la rama, el título y el cuerpo. No le pregunta nada al remoto y la lista es
 //        siempre obligatoria; lo llama el paso «El freno de publicación sobre el pedido» de pipelines/azure-pipelines-maintainers-pr.yml)
-//   node public-push-guard.js status [--fetch]                         (¿está puesto?, ¿de dónde sale la lista?, ¿está al
+//   node public-push-guard.js pre-commit                               (lo que agrega este commit, dentro del control del
+//        commit: lo llama .githooks/pre-commit-checks. Más abajo, `preCommit`)
+//   node public-push-guard.js status [--fetch]                       (¿está puesto?, ¿de dónde sale la lista?, ¿está al
 //        día?; con `--fetch` se le pregunta además al remoto del clon de la lista. Su código no cambia por la frescura)
 //   node public-push-guard.js                                          (sin argumentos: el freno previo a la herramienta
 //        de Claude Code y de Codex, con el evento por la entrada; mira los `gh` que publican sin empujar — más abajo)
@@ -98,6 +105,8 @@ const TREE_MARK = 'scripts/install-tycon-hooks.sh';
 // el perfil del equipo con su nombre de hoy o el de antes (los dos dicen «este árbol es del equipo»)
 const PROFILES = ['team-profile.json', 'perfil-equipo.json'];
 const hasProfile = (dir) => PROFILES.some((n) => fs.existsSync(path.join(dir, n)));
+// los repos de la organización del perfil, al lado del perfil: dice si es el equipo que mantiene el arnés (`machineOrg`)
+const TEAM_REPOS = 'team-repos.json';
 const LIST_PATH = 'scripts/publishing/denylist.json';
 const HISTORY_PATH = 'scripts/publishing/internal-history.js';
 const HOOK_MARK = 'git-pre-push-global.sh';
@@ -126,17 +135,23 @@ const MODE_SUBMODULE = '160000';
 class Blind extends Error {}
 /** El tope de tiempo. Si para entonces ya había hallazgos, se dicen (y que no se terminó de mirar); si no, es «no pude mirar». */
 class OutOfTime extends Blind {}
+/** git en inglés (scripts/lib/clean-git-env.js), para poder leer sus errores. Si la biblioteca no carga, «no pude mirar». */
+function gitLanguage() {
+  try { return require(path.join(ROOT, 'scripts', 'lib', 'clean-git-env.js')); } catch (_) {
+    throw new Blind('no pude cargar scripts/lib/clean-git-env.js: sin ella no sé pedirle a git sus mensajes en inglés');
+  }
+}
 const CHUNK = 200;   // cuántos archivos se leen de git por vez: un empuje enorme no carga todo en memoria
 
 const short = (sha) => String(sha).slice(0, 10);
 
-function git(cwd, args, { input, binary = false } = {}) {
+function git(cwd, args, { input, binary = false, env = null } = {}) {
   // la entrada va como bytes: con `encoding: 'buffer'` Node no sabe convertir un texto
   // GIT_NO_REPLACE_OBJECTS: se lee el objeto de VERDAD. Con un reemplazo (`git replace`) git muestra otro objeto en su
   // lugar, pero el empuje manda el original: un commit sucio «arreglado» con un reemplazo se miraría limpio y saldría tal cual.
   return spawnSync('git', ['-C', cwd, '-c', 'core.quotePath=false', ...args], {
     input: input === undefined ? undefined : Buffer.from(input), ...(binary ? {} : { encoding: 'utf8' }), maxBuffer: 1024 * 1024 * 1024, windowsHide: true,
-    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' },
+    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1', ...env },
   });
 }
 /** La salida de git, o «no pude mirar» nombrando sólo el subcomando (el error de git puede repetir un nombre de rama). */
@@ -169,7 +184,7 @@ function toplevel(cwd) {
  * lo es — leído como «no es un clon», el `gh` corrido ahí saldría sin mirar. Se le pide a git en inglés para poder leerlo.
  */
 function repoAt(dir) {
-  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', windowsHide: true, env: { ...process.env, LC_ALL: 'C', LANG: 'C' } });
+  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', windowsHide: true, env: gitLanguage().idiomaFijo() });
   if (!r.error && r.status === 0 && String(r.stdout).trim()) return { top: path.resolve(String(r.stdout).trim()), known: true };
   return { top: null, known: !r.error && r.status === 128 && /not a git repository/i.test(String(r.stderr || '')) };
 }
@@ -265,7 +280,52 @@ function listPlaces(env) {
   return out;
 }
 
-const isTeamMachine = (top) => hasProfile(ROOT) || (Boolean(top) && hasProfile(top));
+/**
+ * FIRMA: machineOrg(top) → 'none' | 'owner' | 'other'
+ * ¿De qué organización es el perfil de esta máquina? Lo dice el perfil INSTALADO —el del arnés que corre este freno—,
+ * nunca el árbol que se empuja: la rama elegiría con qué reglas se la mira.
+ *   'none'   el arnés que corre no trae perfil
+ *   'owner'  el equipo que mantiene el arnés: su `team-repos.json` declara `maintainers`, el repo de mantenimiento
+ *            donde vive la lista privada
+ *   'other'  otra organización: su `team-repos.json` se lee, tiene la forma conocida y no declara `maintainers`
+ * Ante la duda es 'owner' (la lista sigue siendo obligatoria): sin `team-repos.json` (un perfil local, una instalación a
+ * medias), ilegible, de otra versión o sin `profile`, o con el arnés que corre adentro del árbol que se empuja (un clon
+ * usado como arnés, o el freno prestado del propio árbol: ese `team-repos.json` lo eligió la rama).
+ */
+function machineOrg(top) {
+  if (!hasProfile(ROOT)) return 'none';
+  const file = path.join(ROOT, TEAM_REPOS);
+  if (top && (realOf(ROOT) === realOf(top) || isInside(file, top))) return 'owner';
+  let doc;
+  try { doc = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
+    // sin team-repos.json: otra organización sólo con una señal positiva, la de un perfil armado con
+    // `harness.js team-init --local` (el sello de la capa instalada dice que se bajó de una carpeta de esta máquina); el
+    // perfil del equipo dueño se baja de su repo. Cualquier otra cosa —ilegible, otro sello, sin sello— es el equipo dueño
+    return e && e.code === 'ENOENT' && localLayer() ? 'other' : 'owner';
+  }
+  const isObj = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+  if (!isObj(doc) || doc.version !== 1 || !isObj(doc.profile)) return 'owner';
+  return Object.prototype.hasOwnProperty.call(doc, 'maintainers') ? 'owner' : 'other';
+}
+
+// el sello que el instalador deja al apilar la capa del equipo sobre la versión bajada (scripts/setup/harness/team.js)
+const TEAM_STAMP = '.tycon-team.json';
+/** ¿La capa del equipo instalada se bajó de una carpeta de esta máquina (`team-init --local`)? Sólo con el sello entero. */
+function localLayer() {
+  let s;
+  try { s = JSON.parse(fs.readFileSync(path.join(ROOT, TEAM_STAMP), 'utf8')); } catch (_) { return false; }
+  return Boolean(s) && typeof s === 'object' && !Array.isArray(s) && s.schema === 1 && s.host === 'local' && typeof s.repo === 'string' && path.isAbsolute(s.repo);
+}
+
+/**
+ * ¿La lista es obligatoria en esta máquina? Con el perfil del equipo dueño, sí. Con el de otra organización, no: la lista
+ * privada no se le da a nadie de afuera. Sin perfil instalado, el que traiga el árbol que se mira la vuelve obligatoria
+ * (un clon del perfil empujado por error): ese perfil sólo puede sumar control, nunca sacarlo.
+ */
+const isTeamMachine = (top) => {
+  const org = machineOrg(top);
+  return org === 'owner' || (org === 'none' && Boolean(top) && hasProfile(top));
+};
 
 /**
  * La lista con que se mira. Tira `Blind` si la máquina tiene que tener lista y no la tiene, o si la que hay no se deja
@@ -283,13 +343,17 @@ const isTeamMachine = (top) => hasProfile(ROOT) || (Boolean(top) && hasProfile(t
  *     file      la ruta del archivo de la lista en esta máquina, o null — es lo que se le pasa a `listFreshness`
  *     readFrom  'remote' (la rama principal remota del clon de `file`) | 'disk' — también se le pasa a `listFreshness`
  *     generic   true = no hay lista: sólo lo que no la necesita (source, label y file en null; terms en 0)
+ *     otherOrg  true = el perfil instalado es de otra organización (`machineOrg`): por eso la lista no era obligatoria
  *     cfg, forbidden, termList   lo que usa el detector y los términos tal como están escritos; nunca se imprimen
  * Un `Blind` por una lista que está y no se deja leer lleva `listFile` y `listSource` (para poder decir si ese clon
  * está al día: una lista con las marcas de un merge a medias es justo un clon que no se terminó de traer).
  */
 function resolveList(top, env = process.env, { pushing = false, optional = false, required = false } = {}) {
   const D = detector();
-  const generic = () => ({ cfg: D.cargarConfig('<sin lista>', '{}'), forbidden: [], source: null, label: null, file: null, generic: true, terms: 0, extraForbidden: 0 });
+  // el correo `noreply` de quien firma protege los correos del equipo dueño: se exige en su máquina, y siempre en la
+  // validación de un pedido (`required`); en la de otra organización, o sin perfil, el correo es de quien firma
+  const strictEmail = required || isTeamMachine(top);
+  const generic = () => ({ cfg: D.cargarConfig('<sin lista>', '{}'), forbidden: [], source: null, label: null, file: null, generic: true, terms: 0, extraForbidden: 0, otherOrg: machineOrg(top) === 'other', strictEmail });
   const unreadable = (place, message) => Object.assign(new Blind(message), { listFile: place.file, listSource: place.source });
   const inPushedTree = (file) => pushing && Boolean(top) && isInside(file, top);
   for (const place of listPlaces(env)) {
@@ -323,7 +387,7 @@ function resolveList(top, env = process.env, { pushing = false, optional = false
     }
     const globs = raw.forbiddenPaths === undefined ? [] : raw.forbiddenPaths;
     if (!Array.isArray(globs) || globs.some((g) => typeof g !== 'string' || !g.trim())) throw Object.assign(unreadable(place, `la lista de ${place.label} trae "forbiddenPaths" mal escritas (es una lista de rutas)`), { listReadFrom: readFrom });
-    return { cfg, forbidden: globs.map((g) => D.globARegex(g)), source: place.source, label: place.label, file: place.file, readFrom, termList: raw.terminos, generic: false, terms: raw.terminos.length, extraForbidden: globs.length };
+    return { cfg, forbidden: globs.map((g) => D.globARegex(g)), source: place.source, label: place.label, file: place.file, readFrom, termList: raw.terminos, generic: false, terms: raw.terminos.length, extraForbidden: globs.length, strictEmail };
   }
   // `optional`: quien llama no sabe si lo que mira va al repo público del arnés (un `gh` de destino desconocido). En la
   // máquina de alguien del equipo que no mantiene —tiene el perfil, no tiene la lista— exigirla ahí frenaría un `gh`
@@ -331,7 +395,7 @@ function resolveList(top, env = process.env, { pushing = false, optional = false
   // `required`: la validación de un pedido (el modo de rango). Ahí no existe «sólo lo que no necesita lista»: el agente
   // que la corre no tiene perfil ni máquina, y un pedido mirado sin la lista saldría verde con cualquier nombre adentro.
   if (required) throw new Blind('sin la lista: un pedido se mira siempre con la lista privada, y no llegó ninguna que no salga del propio pedido (va en TYCON_PUBLISH_DENYLIST, fuera del árbol)');
-  if (isTeamMachine(top) && !optional) throw new Blind('sin la lista: esta máquina es del equipo (tiene su perfil) y no encontré la lista privada en ningún lugar — declarala con `harness.js config set paths.maintainers <clon de mantenimiento>`');
+  if (isTeamMachine(top) && !optional) throw new Blind('sin la lista: esta máquina tiene el perfil del equipo que mantiene el arnés y no encontré la lista privada en ningún lugar — declarala con `harness.js config set paths.maintainers <clon de mantenimiento>`');
   return generic();
 }
 
@@ -435,7 +499,9 @@ function listClone(file, env) {
   let real;
   try { real = fs.realpathSync.native(file); } catch (_) { return { why: 'el archivo de la lista no está', clone: null }; }
   // a git se le pregunta en inglés (hay que leerle un error) y sin tomar candados: es una lectura
-  const local = { env, timeout: LIST_LOCAL_GIT_MS, extra: { LC_ALL: 'C', LANG: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } };
+  let language;
+  try { language = gitLanguage(); } catch (e) { return { why: e.message, clone: null }; }
+  const local = { env, timeout: LIST_LOCAL_GIT_MS, extra: { ...language.IDIOMA_DE_GIT, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } };
   const ask = (dir, args, more = {}) => gitElsewhere(dir, [...LIST_CLONE_GIT, ...args], { ...local, ...more });
   const said = (r) => (!r.error && r.status === 0 ? String(r.stdout || '').trim() : null);
   const where = ask(path.dirname(real), ['rev-parse', '--show-toplevel']);
@@ -492,7 +558,7 @@ function listFreshness(file, { env = process.env, askRemote = false, remoteMs = 
     //     no corre nunca es lo que ese clon configure para OTRAS cosas (`core.fsmonitor`, protocolos externos, filtros).
     if (askRemote) {
       const quiet = Object.fromEntries(Object.entries(env).filter(([k]) => k !== 'GIT_ASKPASS' && k !== 'SSH_ASKPASS'));
-      const extra = { LC_ALL: 'C', LANG: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
+      const extra = { ...gitLanguage().IDIOMA_DE_GIT, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
       const ssh = quiet.GIT_SSH_COMMAND || said(ask(clone, ['config', '--get', 'core.sshCommand'])) || (quiet.GIT_SSH ? `"${quiet.GIT_SSH}"` : 'ssh');
       extra.GIT_SSH_COMMAND = `${ssh} ${/plink/i.test(ssh) ? '-batch' : '-oBatchMode=yes -oConnectTimeout=5'}`;
       const r = ask(clone, ['-c', 'core.askPass=', 'ls-remote', 'origin', `refs/heads/${branch}`], { env: quiet, extra, timeout: remoteMs });
@@ -724,20 +790,29 @@ function makeReview(list, scan) {
     const spaced = name.replace(/[^A-Za-z0-9]+/g, ' ').replace(/([A-Za-z])(?=\d)/g, '$1 ').trim();
     for (const variant of new Set([name, spaced, spaced.toUpperCase(), spaced.toLowerCase()])) history(variant, where);
   };
-  return { D, findings, add, text, message, refName };
+  // una lista armada sin el dato (otro guion que la construye a mano) exige el noreply, como siempre
+  return { D, findings, add, text, message, refName, strictEmail: !list || list.strictEmail !== false };
 }
 
-/** `Nombre <correo> fecha zona` → el nombre contra la lista, y el correo: un `noreply` de GitHub. */
+/**
+ * `Nombre <correo> fecha zona` → el nombre contra la lista, y el correo: un `noreply` de GitHub en una máquina del
+ * equipo dueño (`R.strictEmail`, de `resolveList`). En la de otra organización el correo de quien firma es suyo.
+ */
 function reviewIdentity(R, line, who, where) {
   const m = /^(.*?) ?<([^<>]*)>(?: \d+ [+-]\d{4})?$/.exec(String(line || ''));
   if (!m) { R.add('identidad', null, `${where}: no se puede leer quién es`); return; }
   const email = m[2].trim().toLowerCase();
   const fine = NOREPLY.test(email) || (who === 'committer' && email === GITHUB_ITSELF);
-  if (!fine) R.add('identidad', null, `${where}: su correo no es un \`noreply\` de GitHub`);
+  if (!fine && R.strictEmail) R.add('identidad', null, `${where}: su correo no es un \`noreply\` de GitHub`);
   for (const h of R.text(m[1], ROUTES.identity)) R.add(h.categoria, h.regla, where);
   // y el nombre de la cuenta que va adentro del `noreply` (`<número>+<cuenta>@…`): también es un nombre que se publica
   const account = fine ? email.replace(/@.*$/, '').replace(/^\d+\+/, '') : '';
   if (account) for (const h of R.text(account, ROUTES.identity)) R.add(h.categoria, h.regla, `${where} (la cuenta de su correo)`);
+  // el correo real que se deja pasar se publica entero: sus palabras, contra la lista de la máquina. Partido en palabras,
+  // para que el patrón genérico de correos no frene lo que esta regla deja pasar
+  if (!fine && !R.strictEmail) {
+    for (const h of R.text(email.replace(/[^a-z0-9]+/g, ' ').trim(), ROUTES.identity)) R.add(h.categoria, h.regla, `${where} (su correo)`);
+  }
 }
 
 const isForbidden = (list, rel) => FORBIDDEN.some((p) => rel.startsWith(p)) || list.forbidden.some((g) => g.test(rel));
@@ -1002,6 +1077,38 @@ function concernsHarness({ repo, top, lines, url, env }) {
   return false;
 }
 
+const MAIN_REF = 'refs/heads/main';
+const QUEUE_REASON = 'main del arnés público entra por la cola: abrí un pedido y `gh pr merge <n> --merge`';
+
+/** El empuje a la rama principal del arnés público: frena (1) y lo anota. Un administrador la podría saltear en GitHub. */
+function mainBlocked(result) {
+  result.verdict = 'main';
+  result.reason = QUEUE_REASON;
+  record('main-branch', 'bloqueo');
+  return { code: 1, result };
+}
+
+/**
+ * La rama principal del remoto, como lista de nombres: primero lo que el clon ya sabe (`refs/remotes/<remoto>/HEAD`); si
+ * no, se le pregunta al remoto qué tiene (`git ls-remote`) y son las ramas cuya punta es la de su `HEAD` (si dos
+ * coinciden, cuentan las dos: ante la duda, frena). null si no se puede saber.
+ */
+function mainOfRemote(top, remoteName, url) {
+  if (remoteName && /^[A-Za-z0-9._-]+$/.test(remoteName)) {
+    const r = git(top, ['symbolic-ref', '--quiet', `refs/remotes/${remoteName}/HEAD`]);
+    const m = !r.error && r.status === 0 ? /^refs\/remotes\/[^/]+\/(.+)$/.exec(String(r.stdout).trim()) : null;
+    if (m) return [m[1]];
+  }
+  const r = spawnSync('git', ['-C', top, 'ls-remote', String(url)], { encoding: 'utf8', timeout: REMOTE_ANSWER_MS, windowsHide: true,
+    maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+  if (r.error || r.status !== 0) return null;
+  const refs = String(r.stdout).split('\n').map((l) => l.split('\t')).filter((p) => p.length === 2);
+  const head = refs.find(([, ref]) => ref === 'HEAD');
+  if (!head) return null;
+  const ramas = refs.filter(([sha, ref]) => sha === head[0] && ref.startsWith('refs/heads/')).map(([, ref]) => ref.slice('refs/heads/'.length));
+  return ramas.length ? ramas : null;
+}
+
 /** El modo `pre-push`. `input`: lo que git manda (null si no se pudo leer). Devuelve `{ code, result }`. */
 function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.env }) {
   const result = { verdict: 'skip', remote: null, reason: null, findings: [], looked: { commits: 0, objects: 0, refs: 0, tags: 0 }, list: null, generic_only: false };
@@ -1016,10 +1123,15 @@ function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.en
     const lines = parseLines(input);
     if (!concernsHarness({ repo, top, lines, url: target, env })) { result.reason = 'no es un empuje del arnés'; return { code: 0, result }; }
     result.verdict = 'pass';
-    if (!lines.some((l) => !ZERO.test(l.localSha))) return { code: 0, result };   // nada que publicar (o sólo borrados)
+    // la rama principal del arnés público entra por la cola, también para borrarla: un empuje que la nombra no sale
+    const aMain = lines.some((l) => l.remoteRef === MAIN_REF);
+    if (!lines.some((l) => !ZERO.test(l.localSha))) return aMain ? mainBlocked(result) : { code: 0, result };   // nada que publicar (o sólo borrados)
+    gitLanguage();   // sin la biblioteca del idioma de git, el freno no puede leer lo que git le diga: no deja pasar
+    if (aMain) return mainBlocked(result);
     const list = resolveList(top, env, { pushing: true });
     result.list = { source: list.source };
     result.generic_only = list.generic;
+    if (list.generic) result.other_org = Boolean(list.otherOrg);
     // ¿esa lista está al día? Recién acá —un empuje del arnés a un remoto público, con algo que publicar y una lista
     // elegida—: un empuje que no es asunto de este freno no espera a nadie. Se le pregunta al remoto del clon de la
     // lista porque este empuje ya sale a la red. Es un dato para el aviso: de acá en más nada lo mira para decidir.
@@ -1032,6 +1144,12 @@ function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.en
     if (r.publicProblem.length) result.publicProblem = r.publicProblem;
     if (r.partial) result.partial = r.partial;
     if (r.findings.length) { result.verdict = 'findings'; record('finding', 'bloqueo'); return { code: 1, result }; }
+    // la rama principal que el remoto informa, aunque no se llame main: sólo si se empuja alguna rama
+    if (lines.some((l) => l.remoteRef.startsWith('refs/heads/'))) {
+      const principal = mainOfRemote(repo, remoteName, target);
+      if (principal === null) throw new Blind('no pude mirar cuál es la rama principal del remoto (no contestó, o no hay credencial), y la principal del arnés público entra por la cola');
+      if (lines.some((l) => principal.some((p) => l.remoteRef === `refs/heads/${p}`))) return mainBlocked(result);
+    }
     record(list.generic ? 'generic-only' : 'clean', 'paso');
     return { code: 0, result };
   } catch (e) {
@@ -1052,11 +1170,16 @@ function prePushMessage(result) {
   if (result.verdict === 'pass') {
     if (!result.looked.refs) return L;
     L.push(`✓ freno de publicación: ${result.looked.commits} commit(s) y ${result.looked.objects} archivo(s) mirados antes de publicar${result.generic_only
-      ? ' — sin lista en esta máquina: sólo secretos, correos, rutas de máquina, binarios y rutas vedadas' : ''}`);
+      ? ` — sin lista en esta máquina${result.other_org ? ' (el perfil es de otra organización: la lista privada es del equipo que mantiene el arnés)' : ''}: sólo secretos, correos, rutas de máquina, binarios y rutas vedadas` : ''}`);
     // lo que no se midió se dice: que falte el control no puede verse igual que «no había números de pedido»
     if (result.history === false) L.push(`   (los números de pedido en mensajes y nombres de rama NO se miraron: falta ${HISTORY_PATH})`);
     if (result.looked.askedRemote === false) L.push('   (el remoto no contestó qué tiene: se miró todo lo que este empuje alcanza, no sólo lo nuevo)');
     L.push(...stale());
+    return L;
+  }
+  if (result.verdict === 'main') {
+    L.push(`⛔ EMPUJE FRENADO — ${result.reason}.`);
+    L.push('   Nada salió. La rama principal del arnés público no se empuja ni se borra desde acá: un cambio entra por un pedido que pasa la cola y la CI.');
     return L;
   }
   if (result.verdict === 'blind') {
@@ -1080,6 +1203,84 @@ function prePushMessage(result) {
     // acá es donde más importa: la excepción que falta puede estar en los commits que ese clon no tiene
     L.push(...stale());
   }
+  return L;
+}
+
+// ── el modo del commit: lo que este commit agrega, antes de que exista ────────────────────────
+// La identidad con que se arma el commit: la de verdad la mira el empuje. Va por el ambiente porque git le exporta el autor al
+// gancho en todo commit, y ese ambiente le gana a la configuración.
+const LOOK_WHO = 'public-push-guard';
+const LOOK_EMAIL = `${LOOK_WHO}@users.noreply.github.com`;
+const LOOK_IDENTITY = { GIT_AUTHOR_NAME: LOOK_WHO, GIT_AUTHOR_EMAIL: LOOK_EMAIL, GIT_COMMITTER_NAME: LOOK_WHO, GIT_COMMITTER_EMAIL: LOOK_EMAIL };
+const LOOK_MESSAGE = 'lo que guardaría el commit';
+const COMMIT_MARK = / ?\(commit [0-9a-f]+\)/;
+
+/**
+ * Lo que este commit agrega, mirado por el freno como lo miraría al empujar. Corre dentro del control del commit, donde git
+ * ya sabe qué entra (el índice que deja en GIT_INDEX_FILE vale para `git add`, `-a` y las rutas). Se arma el commit con sus
+ * padres de verdad, también los de un merge en curso, y se mira sólo él: lo que ya está en un padre no es de este commit,
+ * así que un `--amend` que saca un dato pasa, y un dato de un commit anterior lo sigue frenando el empuje. No le pregunta
+ * nada al remoto, no mira el mensaje ni el autor y no anota en el registro: nada se publicó ni se frenó todavía.
+ * Sin la lista (la CI pública, alguien de afuera) no mira: tampoco están sus excepciones, y frenaría lo que ya está permitido.
+ * Mira sólo `origin`; otro remoto público lo mira el empuje.
+ * Devuelve `{ code, result }`: 0 limpio, o no es asunto de este freno · 1 hallazgos · 2 no pude mirar.
+ */
+function preCommit({ cwd = process.cwd(), env = process.env } = {}) {
+  const result = { verdict: 'skip', reason: null, findings: [], looked: { commits: 0, objects: 0, refs: 0, tags: 0 }, list: null };
+  try {
+    const top = toplevel(cwd);
+    if (!top) { result.reason = 'no es un árbol de trabajo'; return { code: 0, result }; }
+    const remote = git(top, ['remote', 'get-url', '--push', 'origin']);
+    const url = remote.status === 0 ? String(remote.stdout || '').trim() : '';
+    if (!url) { result.reason = 'sin origin: lo mira el empuje'; return { code: 0, result }; }
+    if (judgeRemote(url, top, env).kind !== 'public') { result.reason = 'el remoto no es público'; return { code: 0, result }; }
+    if (!isHarnessTree(top) && !isDeclared(harnessRepo().identidadRemoto(url), env)) { result.reason = 'no es un commit del arnés'; return { code: 0, result }; }
+    result.verdict = 'pass';
+    const tree = gitOut(top, ['write-tree']).trim();
+    const head = git(top, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+    const parents = head.status === 0 ? [String(head.stdout).trim()] : [];
+    const merging = gitOut(top, ['rev-parse', '--path-format=absolute', '--git-path', 'MERGE_HEAD']).trim();
+    if (fs.existsSync(merging)) parents.push(...fs.readFileSync(merging, 'utf8').split('\n').map((s) => s.trim()).filter((s) => SHA.test(s)));
+    if (parents.length === 1 && gitOut(top, ['rev-parse', 'HEAD^{tree}']).trim() === tree) return { code: 0, result };
+    const list = resolveList(top, env, { pushing: true });
+    result.list = { source: list.source };
+    if (list.generic) { result.verdict = 'skip'; result.reason = 'sin la lista no están sus excepciones: lo mira el empuje'; return { code: 0, result }; }
+    const scan = historyScanner({ top, remote: null });
+    const R = makeReview(list, scan);
+    const tip = gitOut(top, ['commit-tree', tree, ...parents.flatMap((p) => ['-p', p]), '-m', LOOK_MESSAGE], { env: LOOK_IDENTITY }).trim();
+    const limitMs = limitOf(env);
+    const deadline = Date.now() + limitMs;
+    const tick = () => { if (Date.now() >= deadline) throw new OutOfTime(`pasé el tope de tiempo (${Math.round(limitMs / 1000)} s) sin terminar de mirar el commit`); };
+    try {
+      reviewCommitsInto(R, result.looked, { top, tips: [tip], excludes: new Set(parents), list, tick });
+    } catch (e) {
+      if (!(e instanceof OutOfTime) || !R.findings.length) throw e;
+      result.partial = e.message;
+    }
+    // el commit armado no existe en la historia de nadie: su sha no le dice nada a quien lee
+    result.findings = R.findings.map((f) => ({ ...f, place: f.place.replace(COMMIT_MARK, '') }));
+    if (result.findings.length) { result.verdict = 'findings'; return { code: 1, result }; }
+    return { code: 0, result };
+  } catch (e) {
+    result.verdict = 'blind';
+    result.reason = e instanceof Blind ? e.message : `el freno falló por dentro (${(e && (e.code || e.name)) || 'error'})`;
+    return { code: 2, result };
+  }
+}
+
+function preCommitMessage(result) {
+  const L = [];
+  if (result.verdict === 'blind') {
+    L.push(`⚠️  freno de publicación: no pude mirar lo que lleva este commit (${result.reason}). El empuje lo vuelve a mirar.`);
+    return L;
+  }
+  if (result.verdict !== 'findings') return L;
+  L.push(`⛔ COMMIT FRENADO — el remoto es público y ${result.findings.length} cosa(s) de este commit no podrían salir al empujar:`);
+  for (const f of result.findings.slice(0, MAX_SHOWN)) L.push(`   · [${f.category}${f.rule ? `/${f.rule}` : ''}] ${f.place}`);
+  if (result.findings.length > MAX_SHOWN) L.push(`   · … y ${result.findings.length - MAX_SHOWN} más`);
+  if (result.partial) L.push(`   Y no terminé de mirar: ${result.partial}. Puede haber más.`);
+  L.push('   El commit no se hizo. Sacalo de lo preparado y volvé a commitear.');
+  L.push('   Un secreto de verdad se da por comprometido: rotalo. Si es un freno falso, la salida es una excepción con motivo en la lista privada (`permitidos`).');
   return L;
 }
 
@@ -1240,7 +1441,7 @@ function status({ cwd = process.cwd(), env = process.env, fetch = false } = {}) 
   const team = isTeamMachine(top);
   try {
     const list = resolveList(top, env);
-    if (list.generic) L.push('  la lista: no hay, y esta máquina no es del equipo: corre sólo lo que no necesita lista (secretos, correos, rutas de máquina, binarios, rutas vedadas)');
+    if (list.generic) L.push(`  la lista: no hay, y ${list.otherOrg ? 'el perfil de esta máquina es de otra organización' : 'esta máquina no es del equipo'}: corre sólo lo que no necesita lista (secretos, correos, rutas de máquina, binarios, rutas vedadas)`);
     else {
       L.push(`  la lista: ${list.label} — ${list.terms} término(s), ${FORBIDDEN.length + list.extraForbidden} ruta(s) vedada(s)`);
       // ¿está al día? Sin red, salvo que lo pidan. Es un dato: `ok` no se toca
@@ -1252,7 +1453,7 @@ function status({ cwd = process.cwd(), env = process.env, fetch = false } = {}) 
     ok = false;
     L.push(`  la lista: NO — ${e instanceof Blind ? e.message : 'no se pudo leer'}`);
   }
-  L.push(`  máquina del equipo: ${team ? 'sí (la lista es obligatoria)' : 'no'}`);
+  L.push(`  máquina del equipo: ${team ? 'sí (la lista es obligatoria)' : machineOrg(top) === 'other' ? 'no — el perfil es de otra organización (la lista no es obligatoria)' : 'no'}`);
   try {
     if (historyScanner()) L.push('  números de pedido: se miden');
     else { ok = false; L.push(`  números de pedido: NO se miden (falta ${HISTORY_PATH})`); }
@@ -1480,7 +1681,7 @@ function reviewGhCommand(command, { cwd = process.cwd(), env = process.env, powe
     // lo que no se midió se dice, igual que al empujar: que falte el control —o la lista, en una máquina que no es del
     // equipo— no puede verse igual que «se miró todo y estaba limpio»
     const said = [];
-    if (list.generic) said.push(`[public-push-guard] ${names} pasa; sin lista en esta máquina: sólo se miraron secretos, correos, rutas de máquina y binarios.`);
+    if (list.generic) said.push(`[public-push-guard] ${names} pasa; sin lista en esta máquina${list.otherOrg ? ' (el perfil es de otra organización)' : ''}: sólo se miraron secretos, correos, rutas de máquina y binarios.`);
     if (!scan) said.push(`[public-push-guard] ${names} pasa; los números de pedido NO se miraron (falta ${HISTORY_PATH}).`);
     return { code: 0, lines: said };
   } catch (e) {
@@ -1584,6 +1785,13 @@ function main(argv) {
     else for (const l of prePushMessage(result)) process.stderr.write(`${l}\n`);
     return code;
   }
+  if (mode === 'pre-commit') {
+    const { code, result } = preCommit();
+    for (const l of preCommitMessage(result)) process.stderr.write(`${l}\n`);
+    if (code === 1) return 1;
+    // no poder mirar: el commit se deshace y el empuje vuelve a mirar. El chequeo previo de un ok de guardar, en cambio, no firma
+    return code === 2 && process.env.TYCON_PRECOMMIT_READ_ONLY === '1' ? 2 : 0;
+  }
   if (mode === 'status') {
     const s = status({ fetch: rest.includes('--fetch') });
     process.stdout.write(`${s.lines.join('\n')}\n`);
@@ -1617,12 +1825,14 @@ function main(argv) {
 }
 
 module.exports = {
-  FORBIDDEN, ROUTES, Blind, judgeRemote, isHarnessTree, toplevel, listPlaces, resolveList, isTeamMachine, historyScanner,
+  FORBIDDEN, ROUTES, Blind, judgeRemote, isHarnessTree, toplevel, listPlaces, resolveList, isTeamMachine, machineOrg, historyScanner,
   parseLines, reviewPush, newPairs, prePush, prePushMessage, status, makeReview, reviewIdentity, main,
   publicRemotesOf, reviewGhCommand, reviewLocalFile, hookMode, concernsHarness, lineFacts, whereItRuns, otherHeaders,
   remoteHas, readObjects, repoAt, pushMayBeHarness, isDeclared,
   // el modo de rango (la validación de un pedido)
   rangeMode, rangeMessage,
+  // el modo del commit (dentro del control del commit)
+  preCommit, preCommitMessage,
   // ¿la lista está al día? (lo usan también `harness.js doctor` y scripts/publishing/new-names.js; las
   // firmas, en el comentario de cada función)
   listFreshness, freshnessText, freshnessLines, gitElsewhere, HOOK_MARK, LIST_PATH, LIST_STALE_DAYS, LIST_REMOTE_ANSWER_MS,

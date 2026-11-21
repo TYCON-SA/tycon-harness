@@ -97,3 +97,41 @@ test('SoloUsuario_AvisaYCheckRechaza @story-7.34 @ac-11 — un «Usuario:» suel
   assert.equal(chk.rc, 2, chk.out);
   assert.match(chk.out, /\(2\) ACs verificados corriendo SIN pasos-tester: #1/, chk.out);
 });
+
+test('Check_SinGuiaHtml_FrenaYDiceElComando — sin la guía HTML el chequeo da rojo y dice cómo generarla, sin generarla', () => {
+  const f = storyCorrida(NUMERADOS);
+  const html = path.join(f.repo, 'specs', 'qa', '9-9-fixture-guia-qa.html');
+  const sin = qa(f, '--check');
+  assert.equal(sin.rc, 2, sin.out);
+  assert.match(sin.out, /Falta la guía HTML/, sin.out);
+  assert.ok(sin.out.includes(html), sin.out);
+  assert.ok(sin.out.includes(`${QA} --story ${f.storyPath}`), `dice el comando que la genera: ${sin.out}`);
+  assert.ok(!fs.existsSync(html), 'el chequeo no la genera');
+  assert.equal(qa(f).rc, 0);
+  const con = qa(f, '--check');
+  assert.doesNotMatch(con.out, /Falta la guía HTML/, con.out);
+});
+
+test('QaGuide_OutOfBound_SaysMeasuredNotUntested @story-8.260 @ac-23', () => {
+  const { estadoDelArnes } = require(QA);
+  const m = { nombre: 'duration', medido: 3010, medidoTexto: '3010 ms', cota: '< 2000 ms', estado: 'fuera', humo: '2026-11-17T10:00:00Z' };
+  const fuera = estadoDelArnes({ verdict: 'FUERA-DE-COTA', medida: m, fuentes: { smoke: ['x'], e2e: [] } });
+  assert.strictEqual(fuera.tier, 'pend');
+  assert.match(fuera.badge, /lo midió/);
+  assert.match(fuera.badge, /3010 ms/);
+  assert.match(fuera.badge, /< 2000 ms/);
+  assert.doesNotMatch(fuera.badge, /no lo probó/);
+  const sin = estadoDelArnes({ verdict: 'SIN-MEDICION', medida: { ...m, medido: null, medidoTexto: undefined, estado: 'sin-medicion', motivo: 'ningún humo fresco del criterio trae la medida p95' } });
+  assert.strictEqual(sin.tier, 'pend');
+  assert.match(sin.badge, /falta la medida/);
+  for (const v of ['NOT-VERIFIABLE', 'WAIVED-USER']) {
+    const f = estadoDelArnes({ verdict: v, medida: m });
+    assert.match(f.badge, /sin medirlo dentro de la cota/, v);
+    assert.match(f.badge, /3010 ms/, v);
+    assert.doesNotMatch(f.badge, /lo cubre una prueba del código/, v);
+  }
+  // los de siempre no cambian
+  assert.strictEqual(estadoDelArnes({ verdict: 'WAIVED-USER' }).badge, 'La app no lo muestra: lo cubre una prueba del código');
+  assert.strictEqual(estadoDelArnes({ verdict: 'RUNTIME', fuentes: { smoke: ['x'], e2e: [] } }).badge, '✓ el arnés ya lo probó');
+  assert.strictEqual(estadoDelArnes({ verdict: 'NOT-RUN' }).badge, 'El arnés no lo probó: probalo a mano');
+});

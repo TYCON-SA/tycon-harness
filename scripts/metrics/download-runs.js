@@ -18,8 +18,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *    baja, no crea la carpeta, sale 0 y lo anota UNA vez por día. `az` corre sin entrada (stdin cerrado) y
  *    con tope de tiempo: no puede abrir un login ni esperar una respuesta.
  *
- * Qué se baja: sólo nombres con forma `<maquina>/<volcado, hilo o cambio>` o `<maquina>/registros/<registro>` (lo que la
- * subida escribe), y sus versiones: `<maquina>/v<versión>/<archivo>` y
+ * Qué se baja: sólo nombres con forma `<maquina>/<volcado, hilo o cambio>`, `<maquina>/registros/<registro>` o
+ * `<maquina>/office-keys/<huella>.json`, todas las huellas, sin contarlas como corridas (lo que la subida escribe), y sus
+ * versiones: `<maquina>/v<versión>/<archivo>` y
  * `<maquina>/registros/v<versión>/<registro>` (la subida no pisa: lo que vuelve a subir lleva versión). De cada
  * corrida se baja SÓLO la versión más nueva (el nombre sin versión es la más vieja; las otras se cuentan en
  * `versiones_viejas`), y de los registros de cada máquina el juego más nuevo que está COMPLETO —su cobertura, y cada
@@ -57,6 +58,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   --instincts: baja también los días de instintos (`<maquina>/instincts/v<versión>/<día>.jsonl.gz`, la versión más
  *   nueva de cada día) a `<maquina>/instincts/<día>.jsonl.gz`. Traen comandos: sin la opción —el nocturno, el sitio—
  *   no se bajan y se cuentan en `omitidos`, uno por carpeta y día. Lo usa el que propone instintos.
+ *   --workdays: baja también los días de horas y tokens (`<maquina>/jornadas/v<versión>/<día>.json`, la versión más
+ *   nueva de cada día) a `<maquina>/jornadas/<día>.json`. Sin la opción se cuentan en `omitidos`, como los instintos. Lo
+ *   pide el sitio (`jornadas: true`, por scripts/site/cloud/azure.js) para la pestaña «Horas y tokens».
  *
  *   --merges-to <dir>: baja también los archivos de métricas de cada merge (`<maquina>/merges/<archivo>` y sus
  *   versiones, la más nueva de cada uno) al espejo, y deja en <dir> uno por merge de todas las máquinas: el que trae
@@ -102,13 +106,16 @@ const http = require('http');
 const https = require('https');
 const { spawnSync } = require('child_process');
 const { readEnv, resolveFile, prepareStateWrite } = require('../lib/legacy-names.js');
-const { leerConfig, integracionBuzon, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
+const { leerConfig, integracionBuzon, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_JORNADA, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
 
 // el nombre del archivo de métricas de un merge, el que escribe retro-heartbeat.js
 const FORMA_MERGE = /^metrics-[A-Za-z0-9._-]+\.json$/;
+// la huella de la oficina de una máquina: el sha256 de su clave pública, en hexadecimal
+const FORMA_HUELLA = /^[0-9a-f]{64}\.json$/;
 
 const CASA_PIPELINE = path.join(stateDirOf(os.homedir()));
 const DONDE = 'scripts/metrics/download-runs.js';
+const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
 function hoy() { return new Date().toISOString().slice(0, 10); }
 
@@ -173,12 +180,20 @@ function formaDelNombre(nombre) {
   if (partes.length === 4 && partes[1] === 'instincts' && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[2]) && FORMA_INSTINTO.test(partes[3])) {
     return { maquina: partes[0], archivo: `instincts/${partes[3]}`, version: partes[2] };
   }
+  // un día de horas y tokens: siempre con versión
+  if (partes.length === 4 && partes[1] === 'jornadas' && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[2]) && FORMA_JORNADA.test(partes[3])) {
+    return { maquina: partes[0], archivo: `jornadas/${partes[3]}`, version: partes[2] };
+  }
   // el archivo de métricas de un merge: `<maquina>/merges/<archivo>` y, re-subido, `<maquina>/merges/v<versión>/<archivo>`
   if (partes.length === 4 && partes[1] === 'merges' && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[2]) && FORMA_MERGE.test(partes[3])) {
     return { maquina: partes[0], archivo: `merges/${partes[3]}`, version: partes[2] };
   }
   if (partes.length === 3 && partes[1] === 'merges' && FORMA_MAQUINA.test(partes[0]) && FORMA_MERGE.test(partes[2])) {
     return { maquina: partes[0], archivo: `merges/${partes[2]}`, version: null };
+  }
+  // la huella de la oficina de la máquina: un archivo por huella, sin versiones. No es una corrida
+  if (partes.length === 3 && partes[1] === 'office-keys' && FORMA_MAQUINA.test(partes[0]) && FORMA_HUELLA.test(partes[2])) {
+    return { maquina: partes[0], archivo: `office-keys/${partes[2]}`, version: null };
   }
   if (partes.length === 3 && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[1]) && FORMA_ARCHIVO.test(partes[2])) {
     return { maquina: partes[0], archivo: partes[2], version: partes[1] };
@@ -218,7 +233,7 @@ function tokenDeAz(tenant) {
   const bin = process.env.TYCON_AZ_BIN || 'az';
   const args = ['account', 'get-access-token', '--resource', 'https://storage.azure.com/', '--query', 'accessToken', '-o', 'tsv'];
   if (tenant) args.push('--tenant', tenant);
-  const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 45000, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, AZURE_CORE_NO_COLOR: '1', AZURE_CORE_ONLY_SHOW_ERRORS: '1' } });
+  const r = spawnSync(bin, args, { windowsHide: true, encoding: 'utf8', timeout: 45000, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, AZURE_CORE_NO_COLOR: '1', AZURE_CORE_ONLY_SHOW_ERRORS: '1' } });
   if (r.error && r.error.code === 'ENOENT') return { estado: 'sin_az', motivo: `no hay az en esta máquina (${bin}): el buzón sólo lo leen quienes tienen el rol de lectura, con su sesión de az` };
   if (r.error) return { estado: 'sin_sesion', motivo: `az no respondió (${r.error.code || r.error.message}): no se pide un login desde acá` };
   const token = String(r.stdout || '').trim();
@@ -276,6 +291,8 @@ function tipoDelBlob(forma) {
   if (!forma) return 'ignorado';
   if (forma.archivo.startsWith('registros/')) return 'registros';
   if (forma.archivo.startsWith('instincts/')) return 'instintos';
+  if (forma.archivo.startsWith('jornadas/')) return 'jornadas';
+  if (forma.archivo.startsWith('office-keys/')) return 'huella';
   if (forma.archivo.endsWith('.hilo.jsonl.gz')) return 'hilo';
   if (forma.archivo.endsWith('.cambio.json.gz')) return 'cambio';
   return 'volcado';
@@ -318,7 +335,7 @@ async function informeDeReescrituras(opts = {}) {
     else if (b.modificado - b.creado > 1000) c.reescritos += 1;
   };
   const total = cuenta();
-  const porTipo = { registros: cuenta(), volcado: cuenta(), hilo: cuenta(), cambio: cuenta(), ignorado: cuenta() };
+  const porTipo = { registros: cuenta(), volcado: cuenta(), hilo: cuenta(), cambio: cuenta(), huella: cuenta(), instintos: cuenta(), jornadas: cuenta(), ignorado: cuenta() };
   const porMaquina = new Map();
   for (const b of ls.blobs) {
     const forma = formaDelNombre(b.nombre);
@@ -502,10 +519,13 @@ function carpetasDeMaquina(espejoDir, opts = {}) {
 }
 
 /** Deja la unión en el espejo: `.carpetas-de-maquina.json`. Devuelve null si pudo, o el motivo. */
-function escribirCarpetasDeMaquina(espejoDir) {
+function escribirCarpetasDeMaquina(espejoDir, aMedias = null) {
   const u = carpetasDeMaquina(espejoDir);
   // sin poder mirar el espejo no se escribe: un archivo con cero uniones pisaría uno bueno y diría «medidas»
   if (u.no_medido) return `no se escribió .carpetas-de-maquina.json: ${u.no_medido}`;
+  // una carpeta vieja con un archivo que no bajó tiene una huella que no se puede confiar: queda la unión anterior
+  const tocada = aMedias ? Object.keys(u.carpetas).find((v) => aMedias.has(v)) : null;
+  if (tocada) return `no se escribió .carpetas-de-maquina.json: la carpeta ${tocada} no bajó entera (queda la anterior)`;
   try { escribirAtomico(path.join(espejoDir, '.carpetas-de-maquina.json'), `${JSON.stringify(u, null, 1)}\n`); return null; }
   catch (e) { return `no se pudo escribir .carpetas-de-maquina.json (${e.code || 'error'})`; }
 }
@@ -585,9 +605,11 @@ function podarEspejo(dirBuzon, listado, log) {
   const CORRIDA = /^(.+)\.(json|hilo\.jsonl\.gz|cambio\.json\.gz|resumen\.json\.gz)$/;
   const listados = new Set();
   const volcados = new Set();
+  const huellasListadas = new Set();
   for (const b of listado) {
     const f = formaDelNombre(b.nombre);
-    if (!f || f.archivo.startsWith('registros/')) continue;
+    if (f && f.archivo.startsWith('office-keys/')) huellasListadas.add(`${f.maquina}/${f.archivo}`);
+    if (!f || f.archivo.startsWith('registros/') || f.archivo.startsWith('office-keys/')) continue;
     listados.add(`${f.maquina}/${f.archivo}`);
     const m = CORRIDA.exec(f.archivo);
     if (m && m[2] === 'json') volcados.add(`${f.maquina}/${m[1]}`);
@@ -607,6 +629,16 @@ function podarEspejo(dirBuzon, listado, log) {
       if (queda) continue;
       try { fs.rmSync(path.join(dirBuzon, maquina, f), { force: true }); n += 1; }
       catch (e) { log(`no se pudo podar ${maquina}/${f} (${e.code || e.message})`); }
+    }
+    // una huella borrada del buzón sale del espejo: es lo que destraba un conflicto causado por una huella ajena
+    // (con un listado vacío no: un buzón vacío de golpe es más probable que sea un error que una limpieza total)
+    let huellas = [];
+    try { if (listado.length) huellas = fs.readdirSync(path.join(dirBuzon, maquina, 'office-keys')); }
+    catch (e) { if (e.code !== 'ENOENT') log(`no se pudo podar las huellas de ${maquina} (${e.code || e.message})`); }
+    for (const f of huellas) {
+      if (huellasListadas.has(`${maquina}/office-keys/${f}`)) continue;
+      try { fs.rmSync(path.join(dirBuzon, maquina, 'office-keys', f), { force: true }); n += 1; }
+      catch (e) { log(`no se pudo podar ${maquina}/office-keys/${f} (${e.code || e.message})`); }
     }
   }
   if (n) log(`el espejo borró ${n} archivo(s) de ejecuciones que ya no están en el buzón`);
@@ -689,13 +721,17 @@ async function bajarUnaCorrida(opts = {}) {
 }
 
 async function bajar(opts = {}) {
-  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, registros_enteros: true };
+  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, registros_enteros: true, volcados_enteros: true };
   const log = (m) => { if (opts.log) opts.log(m); };
-  // Desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo
+  // Desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo, salvo la que
+  // cortó antes de bajar todos los volcados, o la que no pudo bajar un archivo de una carpeta vieja: con la vieja a medio
+  // bajar su huella no coincide y la unión cambiaría de una pasada a otra. Ésas dejan la anterior.
   let espejoParaUniones = null;
+  let aMedias = null;   // las carpetas con un archivo que no bajó o no se pudo comparar
   // Una pasada que no terminó bien nunca dice «bajado»: lo que sí bajó queda en disco y contado en `bajados`.
   const fin = (codigo, estado, motivo) => {
-    if (espejoParaUniones) { const m = escribirCarpetasDeMaquina(espejoParaUniones); res.uniones = m || 'escritas'; if (m) log(m); }
+    if (espejoParaUniones && !(res.registros_enteros && res.volcados_enteros)) res.uniones = 'no escritas: la pasada cortó antes de bajar todos los volcados';
+    else if (espejoParaUniones) { const m = escribirCarpetasDeMaquina(espejoParaUniones, aMedias); res.uniones = m || 'escritas'; if (m) log(m); }
     if (espejoParaUniones && opts.mergesA) {
       try { res.merges = mergesDelEspejo(espejoParaUniones, opts.mergesA); }
       catch (e) { res.merges = null; log(`no se pudieron dejar los merges en ${opts.mergesA} (${e.code || e.message})`); if (codigo === 0) { codigo = 1; estado = 'error_merges'; motivo = `los merges bajados no se pudieron escribir (${e.code || e.message})`; } }
@@ -789,6 +825,15 @@ async function bajar(opts = {}) {
     const i = JSON.parse(fs.readFileSync(resolveFile(rutaIndice, { where }), 'utf8'));
     if (i && i.destino === indice.destino && i.blobs && typeof i.blobs === 'object') indice = i;
   } catch (_) { /* sin índice: se compara por MD5, y lo que no traiga MD5 se baja una vez */ }
+  // `confiarIndice` (el sitio, entre una verificación entera y la siguiente): un blob cuyo MD5 y tamaño son los que el
+  // índice anotó al bajarlo no se mira en el disco. En el disco montado del sitio cada mirada es una apertura que se
+  // cobra; el espejo sólo lo escribe esta bajada, así que lo anotado es lo que hay. Lo que el buzón ya no lista sale del
+  // índice: si vuelve, se mira de nuevo
+  const confiar = opts.confiarIndice === true;
+  let indiceSucio = false;
+  const listados = new Set(listado.map((b) => b.nombre));
+  for (const n of Object.keys(indice.blobs)) if (!listados.has(n)) { delete indice.blobs[n]; indiceSucio = true; }
+  if (!isObject(indice.resumenes)) indice.resumenes = {};
 
   // 2 · qué falta o cambió
   const md5Local = (ruta, st, previo) => {
@@ -823,6 +868,8 @@ async function bajar(opts = {}) {
     // los días de instintos traen comandos: se bajan sólo con `--instincts` (el que propone); sin la opción se
     // cuentan una vez por carpeta y día, no por versión
     if (forma.archivo.startsWith('instincts/') && opts.instintos !== true) { instintosOmitidos.add(`${forma.maquina}/${forma.archivo}`); continue; }
+    // los días de horas y tokens los baja quien los muestra (`--workdays`, el sitio); sin la opción, como los instintos
+    if (forma.archivo.startsWith('jornadas/') && opts.jornadas !== true) { instintosOmitidos.add(`${forma.maquina}/${forma.archivo}`); continue; }
     // los archivos de los merges los baja sólo quien los junta (`--merges-to`, el nocturno del tablero)
     if (forma.archivo.startsWith('merges/') && !opts.mergesA) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
     if (forma.archivo.startsWith('registros/')) {
@@ -887,7 +934,8 @@ async function bajar(opts = {}) {
     let elegido = null;
     for (const v of versiones) {
       const r = await juegoCompleto(maquina, vs.get(v));
-      if (r.estado) return fin(1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`);
+      // cortó antes de bajar los volcados: no deja la unión de carpetas (la misma regla que la pasada sin tiempo)
+      if (r.estado) { res.registros_enteros = false; return fin(1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`); }
       if (r.completo) { elegido = v; break; }
       if (!r.ilegible) res.versiones_incompletas += 1;   // la ilegible ya quedó en no_leidos: no es «incompleta»
     }
@@ -910,9 +958,21 @@ async function bajar(opts = {}) {
     }
   }
   const resumidas = new Map();
+  // las huellas de cada resumen (`hilo_md5`, `cambio_md5`) quedan en el índice: con `confiarIndice` no se vuelve a abrir
+  // el resumen para leerlas. Las de corridas que el buzón ya no trae salen
+  for (const k of Object.keys(indice.resumenes)) if (!partesDe.has(k)) { delete indice.resumenes[k]; indiceSucio = true; }
+  const huellasDelResumen = (k) => {
+    const anotadas = indice.resumenes[k];
+    if (confiar && isObject(anotadas)) return anotadas;
+    const doc = leerResumenDe(path.join(dirBuzon, ...k.split('/')) + '.json');
+    const h = doc ? { hilo_md5: doc.hilo_md5 || null, cambio_md5: doc.cambio_md5 || null } : null;
+    if (h && (!isObject(anotadas) || anotadas.hilo_md5 !== h.hilo_md5 || anotadas.cambio_md5 !== h.cambio_md5)) { indice.resumenes[k] = h; indiceSucio = true; }
+    if (!h && anotadas) { delete indice.resumenes[k]; indiceSucio = true; }
+    return h;
+  };
   const estaResumida = (k) => {
     if (!resumidas.has(k)) {
-      const doc = leerResumenDe(path.join(dirBuzon, ...k.split('/')) + '.json');
+      const doc = huellasDelResumen(k);
       resumidas.set(k, Boolean(doc) && partesDe.get(k).every(({ b, forma }) => (b.md5
         ? doc[/\.hilo\.jsonl\.gz$/.test(forma.archivo) ? 'hilo_md5' : 'cambio_md5'] === b.md5
         : Boolean(b.etag && indice.blobs[b.nombre] && indice.blobs[b.nombre].etag === b.etag))));
@@ -952,6 +1012,7 @@ async function bajar(opts = {}) {
     if (base && estaResumida(base)) { res.resumidos += 1; continue; }
     if (base && topeHilo && grandeSinBajar(base)) continue;
     const previo = indice.blobs[b.nombre];
+    if (confiar && previo && b.md5 && previo.md5 === b.md5 && previo.size === b.largo) { res.al_dia += 1; continue; }
     let st = null;
     try { st = fs.statSync(local); } catch (e) { if (e.code !== 'ENOENT') { noLeidos.push(`${b.nombre} (${e.code})`); continue; } }
     if (st && st.size === b.largo) {
@@ -976,6 +1037,7 @@ async function bajar(opts = {}) {
   // 3 · bajar, archivo por archivo, dentro del presupuesto
   // el viejo (de antes del renombre) pasa al nuevo antes de la primera escritura: el que se escribe ya lo trae en `indice`
   const guardarIndice = () => { prepareStateWrite(rutaIndice, { where }); escribirAtomico(rutaIndice, JSON.stringify(indice, null, 1) + '\n'); };
+  if (indiceSucio) { try { guardarIndice(); } catch (_) { /* el índice sólo ahorra: la próxima pasada mira el disco */ } }
   const malos = [];
   // La cobertura de una máquina se escribe sólo si ninguno de SUS registros falló en esta pasada.
   // 🔴 `.jsonl.gz` también: sin eso, una falla de hallazgos.jsonl.gz no retendría la cobertura.
@@ -1057,14 +1119,17 @@ async function bajar(opts = {}) {
       }
     };
     await Promise.all(Array.from({ length: Math.min(conc, cola.length) }, trabajador));
-    if (fatal) return fin(...fatal);
-    if (corto) { res.sin_tiempo = pendientes.length - tomados; if (fase < 2) res.registros_enteros = false; break; }
+    // un corte en cualquier fase deja volcados sin bajar; en las de registros, además, registros
+    if (fatal) { res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; return fin(...fatal); }
+    if (corto) { res.sin_tiempo = pendientes.length - tomados; res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; break; }
   }
   // lo que quedó por el tope es trabajo pendiente, como lo que quedó sin tiempo: la pasada no está entera, y la
   // siguiente sigue (sources.js → buzon.seguir)
   res.sin_tiempo += res.por_tope;
 
   if (noLeidos.length || malos.length) {
+    // un archivo que no bajó puede ser un volcado: la huella de su carpeta no se puede confiar
+    aMedias = new Set([...noLeidos, ...malos].map((x) => x.split('/')[0]));
     if (noLeidos.length) res.no_leidos = noLeidos;
     if (malos.length) res.no_bajados = malos;
     return fin(1, 'parcial', `${[...noLeidos, ...malos].length} archivo(s) no se pudieron bajar o comparar: ${[...noLeidos, ...malos].slice(0, 3).join(', ')}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`);
@@ -1093,6 +1158,7 @@ if (require.main === module) {
     // así nunca se apaga el filtro en silencio
     hilosDesde: args.includes('--threads-since') ? (valor('--threads-since') || '') : undefined,
     instintos: args.includes('--instincts'),
+    jornadas: args.includes('--workdays'),
     // como `--threads-since`: sin valor, o con otra opción detrás, llega vacío y `bajar()` lo rechaza (si no, los
     // merges irían a `ignorados` con la bajada completa, sin que nadie se entere)
     mergesA: args.includes('--merges-to') ? (valor('--merges-to') && !valor('--merges-to').startsWith('--') ? path.resolve(valor('--merges-to')) : '') : undefined,

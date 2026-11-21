@@ -21,20 +21,31 @@ Si alguna falla → ABORT con instrucción de crear/checkear la branch.
 ```bash
 git status --porcelain
 ```
-Si retorna líneas → PAUSAR y preguntar:
+Si retorna líneas → antes de preguntar, mirar si hay otra sesión viva en este checkout:
+
+```bash
+node ~/.claude/tycon-harness/scripts/lib/live-sessions.js --root "$(git rev-parse --show-toplevel)"
+```
+
+Con otra sesión viva, la opción (a) no se ofrece: un stash del árbol entero se llevaría los cambios de la otra sesión
+(y el freno del stash ajeno lo para). Se ofrecen (c) y (b), con una línea de por qué. Sin otra sesión, PAUSAR y
+preguntar con las tres:
 
 ```
 Working tree tiene cambios sin commitear:
 {output del git status}
 
 Opciones:
-(a) Stashear los cambios y seguir (`git stash push -m "pre-merge stash"`)
+(a) Stashear los cambios y seguir (`git stash push -m "[sesión <id corto>] pre-merge stash"`)
 (b) Cancelar el merge — commiteá vos primero
 (c) Correr el merge desde el worktree persistente de merge (`<parent>/<Repo>--merge`) —
     tu working tree queda como está, sin stash ni checkout
 ```
 
-Si elige (a) → ejecutar stash y registrar `had_stash: true` para que Step 10 ofrezca `git stash pop` al final.
+Si elige (a) → ejecutar el stash con la marca de la sesión (`<id corto>`: los primeros 8 caracteres de
+`$CLAUDE_CODE_SESSION_ID`, o de `$CODEX_SESSION_ID`) y registrar `had_stash: true` para que Step 10 ofrezca devolverlo
+al final. La marca hace que el freno del stash ajeno reconozca la entrada como propia si otra sesión llega durante el
+merge.
 Si elige (b) → ABORT.
 Si elige (c) → **modo worktree** (convención: `~/.claude/tycon-harness/guides/git-worktrees.md` §4):
 
@@ -131,7 +142,7 @@ Sale 0 con un JSON (sale 2 sólo si no pudo leer el repo o su configuración del
 - `legacyNote`: si no es `null`, el repo deja las suites al servidor por `merge.mode: pr` (la forma
   vieja). Se muestra en el HITL #1 como aviso de una línea.
 
-`check` y `canMerge` son del Step 9c: los vuelve a dar su propio plan.
+`check` y `canMerge` son del Step 9b con GitHub: los vuelve a dar su propio plan.
 
 ## Output del step
 

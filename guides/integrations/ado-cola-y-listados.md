@@ -1,7 +1,9 @@
 # Azure DevOps — por qué el bloque de reglas dice lo que dice
 
-> **Qué es este documento.** El bloque `claude-md-blocks/ado-runs-list-lag.md` se carga **entero,
-> en cada sesión, en cada máquina del equipo**. Al 2026-09-06 pesaba **9.979 bytes** —el 27 % del
+> **Qué es este documento.** Las reglas de Azure DevOps viven en `integrations/azure-devops/rules.md` y el agente
+> las ve la primera vez que usa esa CLI en una sesión, sólo en las organizaciones que eligieron Azure DevOps. Antes
+> eran el bloque `claude-md-blocks/ado-runs-list-lag.md`, que se cargaba **entero, en cada sesión, en cada máquina del
+> equipo**. Al 2026-09-06 pesaba **9.979 bytes** —el 27 % del
 > `CLAUDE.md`— y casi todo ese peso era **explicación**: cada regla arrastraba su diagnóstico
 > completo. Acá vive el porqué de cada regla; en el bloque queda
 > la regla. Es la misma poda que se le hizo al bloque de estilo el 2026-09-03
@@ -26,8 +28,14 @@ La forma de confirmar la ausencia, en orden:
 1. **El bump delata al run**: si `origin/main` tiene un `chore: bump version ... [skip ci]`
    POSTERIOR al commit propio, un run YA corrió o está corriendo — no encolar nada.
 2. **Probar por id**: `az pipelines runs show --id <N>` con los ids siguientes al último run
-   conocido — el show por id NO laguea como el list (así aparece el run que el listado no muestra).
-3. **La UI del pipeline** ante la duda, o esperar ≥5 min desde el push.
+   conocido. Suele aparecer antes que el listado (así aparece el run que el listado no muestra), pero
+   también se atrasa: si no aparece, tampoco prueba nada. Un dev del equipo reportó el 2026-11-03 una
+   ejecución que tardó 8 minutos en aparecer por id. El dato es suyo: no lo medimos acá.
+3. **La UI del pipeline** ante la duda, o esperar ≥5 min desde el push. Esperar no es una prueba: con
+   un atraso como el de ese reporte, 5 minutos pueden no alcanzar.
+
+`manual` tampoco prueba que lo haya lanzado una persona: el mismo dev reportó una ejecución que figura
+`manual` aunque nació sola. Tampoco lo medimos acá.
 
 > ⚠️ **Nota de la poda (2026-09-06):** el bloque arrastraba una coletilla sobre la regla propia
 > de un repo (forzar el disparo con un commit que toque un `.cs`) que **ya no es

@@ -25,6 +25,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
+// --trust-ran lo firma el dueño en la ventana de permiso; acá se da por pasada
+const { conVentana } = require('../../../../scripts/tests/lib/window-passed.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -78,8 +80,8 @@ function mkHome(repo, pasos, { marker = {}, conversacion = true, lineasCrudas = 
   const h = fs.mkdtempSync(path.join(os.tmpdir(), 'valrl-home-'));
   const activo = path.join(h, '.claude', '.tycon-pipeline', 'active');
   fs.mkdirSync(activo, { recursive: true });
-  // el tope de vueltas al máximo (el ajuste de la máquina): acá se mide qué revisores entran en cada vuelta, no el tope
-  fs.writeFileSync(path.join(h, '.claude', '.tycon-pipeline', 'review-max-rounds.json'), '{ "max_rounds": 99 }\n');
+  // las vueltas extra ya firmadas: acá se mide qué revisores entran en cada vuelta, no el tope
+  fs.appendFileSync(path.join(h, '.claude', '.tycon-pipeline', 'gates.log'), Array.from({ length: 30 }, (_, i) => JSON.stringify({ name: 'extra-round', status: 'ok', story: '9.9', iter: i + 1 })).join('\n') + '\n');
   const story = path.join(repo, 'specs', 'story-9.9-algo.md');
   const a = path.join(repo, 'src', 'a.js');
   fs.writeFileSync(path.join(activo, `${SID}.json`), JSON.stringify({
@@ -125,7 +127,7 @@ function correr(home, repo, args, envExtra = {}, { sinStory = false } = {}) {
     assert.equal(n.status, 0, `no se pudo dejar la nota de la vuelta ${iter}: ${n.stderr}`);
   }
   const r = spawnSync(process.execPath, [PIPELINE, ...args, '--repo', repo, ...story, '--files', 'src/a.js'],
-    { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_GUIDES_DIR: TCG || '', ...envExtra } });
+    { encoding: 'utf8', env: (args.includes('--trust-ran') ? conVentana : (e) => e)({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_GUIDES_DIR: TCG || '', ...envExtra }) });
   let json = null;
   try { json = JSON.parse(r.stdout); } catch { /* se asserta abajo */ }
   return { status: r.status, json, stderr: r.stderr, stdout: r.stdout };
@@ -371,7 +373,9 @@ test('T14 · runStoryChecks y mech-check no ganan VAL-*; parsePipelinesBlock só
   const res = checks.runStoryChecks({ repo, storyPath: s, files: ['src/a.js'] });
   assert.ok(!res.findings.some((f) => /^VAL-/.test(f.rule)), `runStoryChecks no puede traer VAL-*: ${JSON.stringify(res.findings)}`);
   const p = checks.parsePipelinesBlock(fs.readFileSync(s, 'utf8'));
-  assert.deepEqual(Object.keys(p[0]).sort(), ['acs', 'acsPending', 'blockedBy', 'name', 'pendingItems', 'status']);
+  // la 8.240 suma a propósito las tareas y las pruebas de cada tanda (`tasks`, `tests` y sus pendientes): la matriz las
+  // usa para atar un archivo a su tanda; el parser sigue sin traer reglas del validador
+  assert.deepEqual(Object.keys(p[0]).sort(), ['acs', 'acsPending', 'blockedBy', 'name', 'pendingItems', 'status', 'tasks', 'tasksPending', 'tests', 'testsPending']);
   assert.deepEqual([p[0].name, p[0].status, p[0].blockedBy], ['B-front', 'blocked', null]);
   const mc = spawnSync(process.execPath, [PIPELINE, 'mech-check', '--repo', repo, '--story', s, '--files', 'src/a.js'], { encoding: 'utf8', env: { ...process.env, HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'valrl-mc-')) } });
   const j = JSON.parse(mc.stdout);

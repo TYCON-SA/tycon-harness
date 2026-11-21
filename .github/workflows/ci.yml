@@ -28,10 +28,11 @@
 #     (public-ci.sh, TYCON_PUBLIC_CI_PART); la lista tiene que traer `checks`, `controls-bench` y TODAS las
 #     `suites-<i>-of-<n>`, de 1 a n: una que falta deja pasos sin correr y el veredicto igual verde. Una base que todavía
 #     no conoce la parte `controls-bench` corre el banco dentro de `checks`: esa parte sale verde y lo dice;
-#   · en un pull request corren SÓLO `checks` y `controls-bench`: cada `suites-<i>-of-<n>` y `installer-floor` terminan al
-#     instante, verdes, con una línea que lo dice. La corrida entera va en la cola (merge_group) y en un push a main que
-#     no hizo la cola: un pedido no la paga dos veces (unos 20 minutos cada una). Lo que entra por la cola la pasó antes;
-#     lo que un administrador mergea salteándola la corre después, en main, sin que nada la corte (ver `concurrency`);
+#   · en un pull request corren todas las partes y el ensayo de Windows: el error de un pedido se ve en su pedido, y no
+#     recién en la cola. La cola las corre otra vez sobre el pedido combinado con los que entraron antes, que no es el
+#     commit que probó el pedido. Sólo `installer-floor` termina al instante en un pedido, verde, con una línea que lo
+#     dice: corre en la cola y en un push a main que no hizo la cola. Lo que un administrador mergea salteándola la corre
+#     después, en main, sin que nada la corte (ver `concurrency`);
 #   · el ensayo de Windows (`windows`): un trabajo windows-latest por escenario, los cuatro de
 #     scripts/ci/windows-rehearsal.js. Los escenarios y el job los exige la regla `windows` del control;
 #   · el último job se llama `public-ci` y es el ÚNICO chequeo que las reglas de la rama exigen. Tiene nombre estable a
@@ -70,7 +71,7 @@ jobs:
       fail-fast: false
       matrix:
         node: [24]
-        part: [checks, controls-bench, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]
+        part: [checks, controls-bench, controls-bench-base, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -86,11 +87,6 @@ jobs:
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          # en un pedido corren sólo `checks` y el banco: las suites las corre la cola, y nada entra a main sin pasarlas
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" != "checks" ] && [ "${TYCON_PUBLIC_CI_PART}" != "controls-bench" ]; then
-            echo "en un pedido corren sólo las partes checks y controls-bench: ${TYCON_PUBLIC_CI_PART} corre en la cola de merge"
-            exit 0
-          fi
           # en un pedido BASE_REF es «main»; en la cola es «refs/heads/main»: se le saca el prefijo
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
             # los controles y su regla salen de la base: en la cola, la base del grupo; en un pedido, la punta de la rama
@@ -104,6 +100,11 @@ jobs:
             # una base que no conoce la parte del banco lo corre dentro de `checks`: acá no queda nada que correr
             if [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench" ] && ! grep -q -- '|controls-bench)' "${RUNNER_TEMP}/public-ci-base.sh"; then
               echo "la base todavía corre el banco de controles dentro de la parte checks: esta parte no tiene nada que correr"
+              exit 0
+            fi
+            # una base que no conoce la parte del banco de la base (el pedido que la introduce) no tiene con qué correrla
+            if [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench-base" ] && ! grep -q -- 'controls-bench-base)' "${RUNNER_TEMP}/public-ci-base.sh"; then
+              echo "la base todavía no conoce la parte del banco de la base: esta parte no tiene nada que correr"
               exit 0
             fi
             bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD" --base "${BASE}"
@@ -144,7 +145,7 @@ jobs:
         run: |
           # en un pedido no corre: el piso lo corre la cola, y en la cola y en el push a main corre siempre, entero
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            echo "en un pedido corren sólo las partes checks y controls-bench: installer-floor corre en la cola de merge"
+            echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: installer-floor corre en la cola de merge"
             exit 0
           fi
           bash scripts/ci/public-ci.sh --clean-machine
@@ -165,8 +166,8 @@ jobs:
   # la actualización; `waiver`, las firmas del dueño por terminal; `old-node`, un Node más viejo que el piso; `npx`, el
   # instalador por npx. Sin setup-node a propósito: se ensaya con el Node que trae la máquina, como un dev. Rojo es no
   # haber podido ensayar, o que ningún paso midiera; lo que el ensayo encuentra va en el resumen de la corrida y no pone
-  # rojo el trabajo. En un pedido sale en verde sin ensayar (unos 12 minutos el más largo): corre en la cola de merge y
-  # en el push a main. El tope es el de Azure: si un paso se cuelga, cada uno corta en el suyo y el reporte llega a salir.
+  # rojo el trabajo. Corre en el pedido, en la cola de merge y en el push a main (unos 12 minutos el más largo). El tope
+  # es el de Azure: si un paso se cuelga, cada uno corta en el suyo y el reporte llega a salir.
   # Obligatorio: el chequeo `public-ci` lo espera como a los demás.
   windows:
     name: Windows · ${{ matrix.scenario }}
@@ -182,13 +183,17 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # los comandos que imprime la ejecución perdida, pegados en Windows PowerShell 5.1, PowerShell 7 y cmd (8.318, AC 12):
+      # sale con el código de la prueba, así que un rojo pone rojo el trabajo y el pedido no entra
+      - name: Los comandos de la ejecución perdida en las tres consolas de Windows
+        run: |
+          node --test --test-name-pattern "T13 " skills/tycon-pipeline/scripts/tests/lost-run-loop.test.js
+          exit $LASTEXITCODE
       - name: El ensayo de Windows de este escenario
         env:
           SCENARIO: ${{ matrix.scenario }}
           WORK: ${{ runner.workspace }}\tycon-rehearsal
         run: |
-          # en un pedido sale en verde sin ensayar: corre en la cola y en el push a main
-          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') { Write-Output 'en un pedido el ensayo de Windows no corre: corre en la cola de merge'; exit 0 }
           node scripts/ci/windows-rehearsal.js --scenario "$env:SCENARIO" --work "$env:WORK"
           exit $LASTEXITCODE
 

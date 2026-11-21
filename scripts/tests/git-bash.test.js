@@ -22,7 +22,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const MODULE = path.join(__dirname, '..', 'lib', 'git-bash.js');
-const { findGitBash, isWslLauncher, ENV_VAR } = require(MODULE);
+const { findGitBash, isWslLauncher, windowsGitNotice, ENV_VAR } = require(MODULE);
 
 const GIT_ROOT = 'C:\\Program Files\\Git';
 const GIT_BASH = `${GIT_ROOT}\\bin\\bash.exe`;
@@ -46,6 +46,31 @@ function windows(files, env) {
   };
 }
 const pathOf = (...dirs) => dirs.join(';');
+
+test('GitBash_AvisoDeWindows — sin Git avisa, sin dar por medido que no hay freno; con Git, y fuera de Windows, no avisa', () => {
+  const sin = windowsGitNotice(windows([], {}).ctx);
+  assert.strictEqual(sin.level, 'warn', 'visible, y no rojo: no impide instalar');
+  assert.match(sin.text, /freno de seguridad/);
+  assert.match(sin.text, /se traba la terminal/);
+  assert.match(sin.text, /winget install Git\.Git/);
+  assert.match(sin.text, /ventana nueva de tres palabras/);
+  assert.deepStrictEqual(windowsGitNotice(windows([GIT_BASH], {}).ctx), { level: 'ok', text: `Git para Windows: ${GIT_BASH}` });
+  assert.strictEqual(windowsGitNotice({ platform: 'darwin', env: {} }), null);
+});
+
+// 🔴 Falla con: un aviso que no llega al diagnóstico, o que lo pone rojo (no tiene que impedir instalar).
+test('GitBash_ElDiagnostico_AvisaSinGitYNoSePoneRojo', (t) => {
+  const home = fs.mkdtempSync(path.join(require('os').tmpdir(), 'git-bash-doctor-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const harness = path.join(__dirname, '..', 'setup', 'harness.js');
+  const guion = `Object.defineProperty(process, 'platform', { value: 'win32' }); const h = require(${JSON.stringify(harness)}); Promise.resolve(h.main(['doctor'])).then((r) => { process.stdout.write((r && r.lines ? r.lines.join('\\n') : '') + '\\n::' + (r && r.code)); });`;
+  const env = { PATH: path.dirname(process.execPath), HOME: home, USERPROFILE: home, ProgramFiles: path.join(home, 'nada'), LOCALAPPDATA: path.join(home, 'nada') };
+  const r = spawnSync(process.execPath, ['-e', guion], { encoding: 'utf8', env, timeout: 60000 });
+  const salida = `${r.stdout}${r.stderr}`;
+  assert.match(salida, /Git para Windows: no está/, salida.slice(0, 600));
+  const linea = salida.split('\n').find((l) => l.includes('Git para Windows'));
+  assert.match(linea, /^\s*!/, `es un aviso, no un rojo: ${linea}`);
+});
 
 // ── T18 ───────────────────────────────────────────────────────────────────────────────────────────────
 test('T18a GitBash_Find_Env — la variable manda: su bash.exe gana aunque haya git en el PATH', () => {

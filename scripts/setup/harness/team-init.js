@@ -12,7 +12,8 @@
 //
 // No crea repos ni pide credenciales: dice dónde crear el repo vacío; si hay git y la persona
 // dice que sí, lo sube con el git de la máquina (su credencial, la de siempre); si no, imprime los dos comandos. Con el
-// push hecho, ofrece instalar esta máquina con el perfil (`install --version <la instalada> --team <repo>`).
+// push hecho, ofrece instalar esta máquina con el perfil (`install --version <la instalada> --team <repo>`, o
+// `migrate --to-home --team <repo>` si el arnés se instaló desde un clon).
 //
 // Al final ofrece el repo de HISTORIAS del equipo: las plantillas genéricas del núcleo
 // (team-stories/, al lado de este archivo en el árbol instalado) llenas y en su lugar, al lado de la carpeta del perfil. Va al final para que
@@ -61,6 +62,20 @@ const fail = (code, line) => ({ code, lines: [`harness.js team-init: ${line}`] }
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const fmt = (j) => `${JSON.stringify(j, null, 2)}\n`;
 const fromTree = (tree, rel) => require(path.join(tree, ...rel.split('/')));
+
+/**
+ * Cómo se suma el perfil `team` a esta máquina: `{ args, cmd }`. Con la versión bajada, `install --version`. Instalada
+ * desde un clon (como trabaja quien contribuye al arnés), `install --version` sale 2 sin escribir: ahí la capa la apila
+ * la mudanza a ~/.tycon (`migrate --to-home`), que deja el clon donde está.
+ */
+function addProfile(tree, state, version, team) {
+  let clone = false;
+  try { clone = !fromTree(tree, 'scripts/setup/harness/state.js').isRelease(state); } catch (_) { clone = false; }
+  const head = clone ? ['migrate', '--to-home'] : ['install', '--version', version];
+  // una carpeta va entre comillas (una carpeta personal con espacios rompería la línea pegada); un org/repo, tal cual
+  const shown = path.isAbsolute(team) || /[\s"'$`\\]/.test(team) ? `"${team}"` : team;
+  return { args: [...head, '--team', team], cmd: `node "${path.join(tree, 'scripts', 'setup', 'harness.js')}" ${head.join(' ')} --team ${shown}` };
+}
 
 /** Una respuesta de la terminal; `null` si no hay terminal o la entrada se terminó. */
 function ask(P, out, question) {
@@ -286,8 +301,7 @@ function runLocal({ tree, home, env, opts, state, version, name, T, P, out, dry 
   out('');
   out(`listo: el perfil de ${name} quedó en ${dir} (${files.join(', ')}), en un repo git de esta máquina con un commit en main, validado con los lectores de esta versión (${version}).`);
   out('lo que sigue:');
-  const installArgs = ['install', '--version', version, '--team', dir];
-  const installCmd = `node "${path.join(tree, 'scripts', 'setup', 'harness.js')}" install --version ${version} --team "${dir}"`;
+  const { args: installArgs, cmd: installCmd } = addProfile(tree, state, version, dir);
   let installRc = 0;
   if (P.saidYes(ask(P, out, '  1. ¿Instalo esta máquina con el perfil ahora? [s/N] ') || '')) {
     const r = spawnSync(process.execPath, [path.join(tree, 'scripts', 'setup', 'harness.js'), ...installArgs], { stdio: 'inherit', env, windowsHide: true });
@@ -395,10 +409,10 @@ function run(ctx) {
     for (const c of cmds) out(`       ${c}`);
   }
   // la ruta del árbol, entre comillas: una carpeta personal con espacios (Windows) rompería la línea pegada
-  const installCmd = `node "${path.join(tree, 'scripts', 'setup', 'harness.js')}" install --version ${version} --team ${src.repo}`;
+  const { args: installArgs, cmd: installCmd } = addProfile(tree, state, version, src.repo);
   let installRc = 0;
   if (pushed && P.saidYes(ask(P, out, '  3. ¿Instalo esta máquina con el perfil ahora? [s/N] ') || '')) {
-    const r = spawnSync(process.execPath, [path.join(tree, 'scripts', 'setup', 'harness.js'), 'install', '--version', version, '--team', src.repo], { stdio: 'inherit', env, windowsHide: true });
+    const r = spawnSync(process.execPath, [path.join(tree, 'scripts', 'setup', 'harness.js'), ...installArgs], { stdio: 'inherit', env, windowsHide: true });
     installRc = r.error || r.signal || r.status === null ? 1 : r.status;
     const why = r.error ? `no arrancó (${r.error.code || r.error.message})` : r.signal ? `se cortó con la señal ${r.signal}` : `salió ${installRc}`;
     if (installRc !== 0) out(`     la instalación con el perfil ${why}: probala de nuevo con ${installCmd}`);
@@ -423,4 +437,4 @@ function run(ctx) {
   return { code: gitFailed ? 1 : installRc || storiesRc, lines: [] };
 }
 
-module.exports = { run, build, fetchExample, publicRepoOf, buildStories, FILES, EXAMPLE_REPO, STORIES_MARKERS, STORIES_DIR };
+module.exports = { run, build, fetchExample, publicRepoOf, buildStories, addProfile, FILES, EXAMPLE_REPO, STORIES_MARKERS, STORIES_DIR };

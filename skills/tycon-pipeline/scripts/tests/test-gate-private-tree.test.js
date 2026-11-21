@@ -30,7 +30,8 @@ const TEST_GATE = path.join(SCRIPTS, 'test-gate.sh');
 const DEL_ENTORNO = ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'DOD_BYPASS',
   'TYCON_TEST_SCOPE', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_PART', 'TYCON_EVIDENCE_DIR',
   'TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_COVERAGE_BASE', 'STOP_AUTONOMY', 'TYCON_SKILLS_DIR',
-  'HARNESS_TEAM_DIR', 'TYCON_PRIVATE_TREE_TMP', 'TF_BUILD', 'TYCON_HOME'];
+  'HARNESS_TEAM_DIR', 'TYCON_PRIVATE_TREE_TMP', 'TYCON_SUITE_HOMES_ROOT', 'TF_BUILD', 'TYCON_HOME',
+  'TYCON_GATE_ALL_SUITES'];
 
 function entorno(home, extra) {
   const env = { ...process.env };
@@ -178,6 +179,171 @@ test('PrivateTree_UsesStoryBranchPublic @story-7.36 @ac-2', () => {
   assert.notStrictEqual(r.code, 0, `midió el worktree de la rama (con la skill rota): rojo\n${r.salida}`);
 });
 
+// La superposición deja el público en un commit local del árbol, y el árbol no declara su punta como rama del servidor:
+// esa punta puede ser la rama del pedido, y el freno de guiones reconoce un guion del arnés sólo si está en main. Las
+// suites que pasan un guion del arnés por el freno arman su propia copia (scripts/tests/lib/harness-copy.js).
+// 🔴 Falla con: declarar la punta del público como rama del servidor (un guion reescrito en la rama del pedido pasa por
+//    publicado).
+test('PrivateTree_PublicTip_IsNotAServerBranch', () => {
+  const lab = laboratorio();
+  const dir = tmp('privado-arbol-');
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, lab.story, dir],
+    { encoding: 'utf8', env: entorno(lab.home) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const arbol = JSON.parse(r.stdout).tree;
+  const ramas = git(arbol, 'for-each-ref', '--format=%(refname)', 'refs/remotes').split('\n').filter(Boolean);
+  assert.deepStrictEqual(ramas.filter((ref) => !ref.startsWith('refs/remotes/origin/')), [], 'sólo las ramas del servidor del privado');
+  assert.ok(!ramas.some((ref) => git(arbol, 'rev-parse', ref) === git(lab.pub, 'rev-parse', 'HEAD')), 'ninguna apunta a la punta del público');
+});
+
+// Las suites que miden «lo propio de la rama» lo cortan con `merge-base origin/main HEAD`. Un clon de un repo local toma
+// como origin/main la rama main LOCAL de ese repo, que en un checkout que nadie pone al día queda atrás: lo que ya entró
+// a main se veía como propio de la rama. El árbol trae el origin/main del repo de origen; sin él, el de siempre.
+// 🔴 Falla con: el árbol y su público con origin/main igual a la rama main local de su repo de origen.
+test('PrivateTree_OriginMain_IsTheSourceServerBranch', () => {
+  // una story sólo del privado: el público suelto va en su versión del servidor
+  const lab = laboratorio({ modificar: ['specs/s.md'] });
+  const servidor = {};
+  for (const [repo, nombre] of [[lab.priv, 'priv'], [lab.pub, 'pub']]) {
+    const local = git(repo, 'rev-parse', 'main');
+    escribir(repo, 'ya-en-main.txt', `${nombre}\n`);
+    git(repo, 'add', 'ya-en-main.txt');
+    git(repo, 'commit', '-q', '-m', 'entró a main en el servidor');
+    servidor[nombre] = git(repo, 'rev-parse', 'HEAD');
+    git(repo, 'update-ref', 'refs/remotes/origin/main', servidor[nombre]);
+    git(repo, 'update-ref', 'refs/heads/main', local);   // la rama main local, atrás
+    git(repo, 'checkout', '-q', '--detach', servidor[nombre]);
+  }
+  // una rama local que es el comienzo de una del servidor no frena el armado
+  git(lab.priv, 'branch', 'story');
+  git(lab.priv, 'update-ref', 'refs/remotes/origin/story/x', servidor.priv);
+  const dir = tmp('privado-arbol-');
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, lab.story, dir],
+    { encoding: 'utf8', env: entorno(lab.home) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(git(JSON.parse(r.stdout).tree, 'rev-parse', 'refs/remotes/origin/main'), servidor.priv, 'el árbol: el origin/main del privado');
+  assert.strictEqual(git(path.join(dir, 'publico'), 'rev-parse', 'refs/remotes/origin/main'), servidor.pub, 'el público: su origin/main');
+  // sin origin/main en el repo de origen, el clon se queda con lo que git le da (su main)
+  const solo = repoGit(tmp('sin-servidor-'), { 'a.txt': 'a\n' });
+  const dest = path.join(tmp('sin-servidor-clon-'), 'c');
+  require(path.join(SCRIPTS, 'lib', 'private-tree.js')).cloneWithDisk(solo, dest);
+  assert.strictEqual(git(dest, 'rev-parse', 'refs/remotes/origin/main'), git(solo, 'rev-parse', 'main'));
+});
+
+// Sin una rama de la story en el público, el hermano declarado es la carpeta que esté al lado: el main local de un clon
+// que nadie pone al día, o la rama de otra sesión con sus cambios sin commit. Lo que va debajo es la versión del
+// servidor (el origin/main del público), sin copiar su disco, y lo de esa carpeta no cuenta como tocado por la story.
+// 🔴 Falla con: el armado de siempre (HEAD de la carpeta vecina y su disco encima).
+test('PrivateTree_PublicNotOfStory_UsesServerVersion', () => {
+  // una story sólo del privado: con la del público, la versión del servidor no mide lo suyo (la prueba de abajo)
+  const lab = laboratorio({ modificar: ['specs/s.md'] });
+  const servidor = git(lab.pub, 'rev-parse', 'HEAD');
+  git(lab.pub, 'update-ref', 'refs/remotes/origin/main', servidor);
+  git(lab.priv, 'checkout', '-q', '-b', 'story/9.36-lab');
+  // la carpeta vecina: en la rama de otra sesión, con un commit propio y un cambio sin commit, los dos rompen la skill
+  git(lab.pub, 'checkout', '-q', '-b', 'fix/otra-sesion');
+  escribir(lab.pub, 'skills/demo/lib.js', SKILL_ROTA);
+  git(lab.pub, 'commit', '-q', '-am', 'otra sesión rompe la skill');
+  escribir(lab.pub, 'scripts/lib/otra.js', 'module.exports = 2;\n');
+  const arbol = (story) => {
+    const dir = tmp('privado-arbol-');
+    const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, story, dir],
+      { encoding: 'utf8', env: entorno(lab.home) });
+    assert.strictEqual(r.status, 0, r.stderr);
+    return { dir, j: JSON.parse(r.stdout) };
+  };
+  const { dir, j } = arbol(lab.story);
+  assert.strictEqual(j.base.source, 'server', JSON.stringify(j.base));
+  assert.strictEqual(j.base.commit, servidor);
+  assert.strictEqual(j.base.uncommitted, false);
+  assert.strictEqual(git(path.join(dir, 'publico'), 'rev-parse', 'HEAD'), servidor, 'debajo va el origin/main del público');
+  assert.strictEqual(fs.readFileSync(path.join(j.tree, 'skills/demo/lib.js'), 'utf8'), SKILL_SANA, 'ni el commit de la otra rama');
+  assert.strictEqual(fs.readFileSync(path.join(j.tree, 'scripts/lib/otra.js'), 'utf8'), 'module.exports = 1;\n', 'ni su disco');
+  // el portón lo dice, y lo de la carpeta vecina no cuenta como tocado: la story no tocó nada (sin acotar, 7), y nada
+  // de lo roto en esa carpeta se mide
+  const r = portón(lab);
+  assert.match(r.salida, /público debajo: versión del servidor/, r.salida);
+  assert.strictEqual(r.code, 7, r.salida);
+  assert.ok(!/ROJO\(/.test(r.salida) && !nombra(r, 'otra.test.js') && !nombra(r, 'demo.test.js'), `lo de la carpeta vecina no es de la story\n${r.salida}`);
+  // con el público en la rama de la story, se mide esa rama con su disco, como siempre
+  git(lab.pub, 'checkout', '-q', '-b', 'story/9.36-lab');
+  const deLaStory = arbol(lab.story).j;
+  assert.strictEqual(deLaStory.base.source, 'story', JSON.stringify(deLaStory.base));
+  assert.strictEqual(deLaStory.base.uncommitted, true);
+  // sin servidor conocido (un público sin origin/main), lo que hay, como siempre
+  git(lab.pub, 'checkout', '-q', 'fix/otra-sesion');
+  git(lab.pub, 'update-ref', '-d', 'refs/remotes/origin/main');
+  assert.strictEqual(arbol(lab.story).j.base.source, 'disk');
+});
+
+// Una story que declara archivos del público y el público fuera de su rama: la versión del servidor no trae esos
+// cambios, y medirla daba un verde que no decía nada de la story. No se arma el árbol y el portón no sale verde.
+// 🔴 Falla con: armar sobre la versión del servidor y avisar en un renglón informativo.
+test('PrivateTree_ServerVersion_StoryDeclaresPublic_Red', () => {
+  const lab = laboratorio({ modificar: ['Pub/skills/demo/lib.js', 'Pub/skills/demo/nuevo.js'] });
+  git(lab.pub, 'update-ref', 'refs/remotes/origin/main', git(lab.pub, 'rev-parse', 'HEAD'));
+  git(lab.priv, 'checkout', '-q', '-b', 'story/9.36-lab');
+  git(lab.pub, 'checkout', '-q', '-b', 'fix/otra-sesion');
+  const dir = tmp('privado-arbol-');
+  const b = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, lab.story, dir],
+    { encoding: 'utf8', env: entorno(lab.home) });
+  assert.strictEqual(b.status, 4, b.stdout + b.stderr);
+  assert.match(b.stderr, /declara archivos del público/, b.stderr);
+  const r = portón(lab);
+  assert.strictEqual(r.code, 4, r.salida);
+  assert.match(r.salida, /fix\/otra-sesion/, `nombra la rama en que está el público\n${r.salida}`);
+  assert.ok(!nombra(r, 'demo.test.js') && !nombra(r, 'pub-lib.test.js'), `no corrió nada\n${r.salida}`);
+  // un archivo nuevo que todavía no existe en ninguna carpeta también es del público
+  const solo = laboratorio({ modificar: ['Pub/skills/demo/nuevo.js'] });
+  git(solo.pub, 'update-ref', 'refs/remotes/origin/main', git(solo.pub, 'rev-parse', 'HEAD'));
+  git(solo.priv, 'checkout', '-q', '-b', 'story/9.36-lab');
+  git(solo.pub, 'checkout', '-q', '-b', 'fix/otra-sesion');
+  assert.strictEqual(portón(solo).code, 4);
+});
+
+// La ruta de la story no se encuentra (relativa, lanzada desde otra carpeta): sin ella el portón no sabe qué público
+// medir ni qué tocó la story. Frena con un mensaje claro y no corre nada.
+// 🔴 Falla con: seguir como si no hubiera story.
+test('TestGate_StoryNotFound_Stops', () => {
+  const lab = laboratorio();
+  const r = spawnSync('bash', [TEST_GATE, lab.priv, 'specs/s.md'], { encoding: 'utf8', cwd: lab.raiz,
+    env: entorno(lab.home, { TYCON_PRIVATE_TREE_TMP: path.join(lab.raiz, 'tmp') }), timeout: 120000 });
+  const salida = `${r.stdout}\n${r.stderr}`;
+  assert.strictEqual(r.status, 2, salida);
+  assert.match(salida, /no encontré la story «specs\/s\.md»/, salida);
+  assert.ok(salida.includes(fs.realpathSync(lab.raiz)) || salida.includes(lab.raiz), `dice desde qué carpeta\n${salida}`);
+  assert.match(salida, /ruta absoluta/, salida);
+  assert.ok(!/árbol armado/.test(salida) && !/ok {7}/.test(salida), `no corrió nada\n${salida}`);
+});
+
+// El origin/main de una carpeta que nadie pone al día está tan atrás como su main: antes de usarlo, se trae.
+// 🔴 Falla con: leer el origin/main tal como quedó en la última traída.
+test('PrivateTree_ServerVersion_FetchedFirst', () => {
+  const lab = laboratorio({ modificar: ['specs/s.md'] });
+  const servidor = path.join(lab.raiz, 'servidor.git');
+  git(lab.raiz, 'clone', '-q', '--bare', lab.pub, servidor);
+  git(lab.pub, 'remote', 'add', 'origin', servidor);
+  git(lab.pub, 'fetch', '-q', 'origin');
+  // en el servidor entra algo después de la última traída de la carpeta
+  const otro = path.join(lab.raiz, 'otro-clon');
+  git(lab.raiz, 'clone', '-q', servidor, otro);
+  escribir(otro, 'entro-despues.txt', 'nuevo\n');
+  git(otro, 'add', '-A');
+  git(otro, '-c', 'user.email=prueba@ejemplo.invalid', '-c', 'user.name=prueba', 'commit', '-q', '-m', 'entró al servidor');
+  git(otro, 'push', '-q', 'origin', 'HEAD:main');
+  const nuevo = git(otro, 'rev-parse', 'HEAD');
+  git(lab.priv, 'checkout', '-q', '-b', 'story/9.36-lab');
+  git(lab.pub, 'checkout', '-q', '-b', 'fix/otra-sesion');
+  const dir = tmp('privado-arbol-');
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, lab.story, dir],
+    { encoding: 'utf8', env: entorno(lab.home) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const j = JSON.parse(r.stdout);
+  assert.strictEqual(j.base.source, 'server');
+  assert.strictEqual(j.base.commit, nuevo, 'lo que está hoy en el servidor');
+  assert.ok(j.base.date, 'con su fecha');
+});
+
 // ── Lo que se mide ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('PrivateTree_SkillsFromTree_NeverInstalled @story-7.36 @ac-3', () => {
@@ -210,6 +376,19 @@ test('PrivateTree_NoPublic_Exit4 @story-7.36 @ac-6', () => {
   assert.strictEqual(r.code, 4, r.salida);
   assert.match(r.salida, /no encontré el público/, r.salida);
   assert.ok(!nombra(r, 'demo.test.js') && !nombra(r, 'pub-lib.test.js') && !/corriendo scripts\/tests\/suites\.json/.test(r.salida), `no corrió nada\n${r.salida}`);
+  // sin un público al lado en la rama de la story, el comando de la corrida cruzada va con el hueco a llenar
+  assert.ok(r.salida.includes(`test-gate.sh' '<clon o worktree del público>' '${fs.realpathSync(lab.story)}'`), `nombra la corrida cruzada\n${r.salida}`);
+});
+
+test('PrivateTree_NoPublic_FromWorktree_NamesCrossRunReady', () => {
+  // el worktree del privado no trae el hermano declarado; el del público está al lado, en la misma rama
+  const lab = laboratorio({ declarar: false });
+  git(lab.priv, 'checkout', '-q', '-b', 'story/x-arreglo');
+  git(lab.pub, 'checkout', '-q', '-b', 'story/x-arreglo');
+  const r = portón(lab);
+  assert.strictEqual(r.code, 4, r.salida);
+  assert.ok(r.salida.includes(`test-gate.sh' '${fs.realpathSync(lab.pub)}' '${fs.realpathSync(lab.story)}'`), `el comando va listo, con el público de la rama\n${r.salida}`);
+  assert.ok(!nombra(r, 'demo.test.js') && !nombra(r, 'pub-lib.test.js'), `no corrió nada\n${r.salida}`);
 });
 
 test('PrivateTree_BrokenBranch_Red_EvenIfInstalledGreen @story-7.36 @ac-9', () => {
@@ -332,6 +511,21 @@ test('PrivateTree_OnlyTouchedSuitesRun @story-7.36 @ac-13', () => {
   assert.doesNotMatch(r.salida, /repo hermano Pub: la story declara ahí/, r.salida);
 });
 
+// El árbol armado vive en la carpeta temporal: las HOME vacías de las portables van bajo `.advisors/` del privado de
+// verdad, fuera de ella, porque hay suites que tratan la carpeta temporal como «de prueba».
+// 🔴 mutación: no declarar TYCON_SUITE_HOMES_ROOT → la HOME queda bajo el árbol, dentro de la carpeta temporal.
+test('PrivateTree_SuiteHomes_OutsideTheTree', () => {
+  const lab = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  const anota = path.join(lab.raiz, 'casa.txt');
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  fs.appendFileSync(path.join(lab.pub, 'scripts/tests/pub-lib.test.js'), `require('fs').writeFileSync(${JSON.stringify(anota)}, process.env.HOME);\n`);
+  const r = portón(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  const casa = fs.readFileSync(anota, 'utf8');
+  assert.ok(casa.startsWith(path.join(lab.priv, '.advisors', 'suite-homes-')), `la HOME bajo .advisors del privado: ${casa}`);
+  assert.ok(!casa.startsWith(path.join(lab.raiz, 'tmp')), `y no bajo el árbol armado: ${casa}`);
+});
+
 // ── Sin efectos ────────────────────────────────────────────────────────────────────────────────────────────────
 
 test('PrivateTree_LeavesReposUntouched @story-7.36 @ac-8', () => {
@@ -437,4 +631,489 @@ test('PrivateTree_BrokenThinList_Exit4_NeverInstalled @story-7.36 @ac-17', () =>
     assert.match(r.salida, /privado adelgazado/, r.salida);
     assert.ok(!r.salida.includes(path.join(lab.home, '.claude', 'agent-skills')), `nunca lee lo instalado\n${r.salida}`);
   }
+});
+
+// ── Traer main no repite lo que ya se midió (lib/after-main.js, en el árbol armado) ────────────────────────────────
+
+const SOLO_MAIN = /lo único que cambió es lo que trajo main/;
+const MEDIDO = (lab) => path.join(lab.priv, '.advisors', 'test-gate-measured.json');
+
+/**
+ * Un laboratorio con la historia en el privado: `historia` y `falla` nombran su archivo, `trae` nombra uno que traerá main,
+ * y las del público son las de siempre. `falla` sale roja si existe `<estado>/roja`. Con `publicoEnRama`, el público está en
+ * la rama de la historia; sin eso, debajo va su versión del servidor. Cada suite anota su nombre al correr.
+ */
+function labTrasMain({ publicoEnRama = false } = {}) {
+  const lab = laboratorio({ modificar: ['lib/priv.js'] });
+  lab.estado = tmp('privado-estado-');
+  const suite = (nombre, nombra, extra = '') => `// ${nombra}\nconst fs = require('fs');\nfs.appendFileSync(process.env.LAB_STATE + '/corridas', '${nombre}\\n');\n${extra}`;
+  escribir(lab.priv, 'lib/priv.js', 'module.exports = 1;\n');
+  escribir(lab.priv, 'lib/trae.js', 'module.exports = 1;\n');
+  escribir(lab.priv, 'scripts/tests/historia.test.js', suite('historia', 'lib/priv.js'));
+  escribir(lab.priv, 'scripts/tests/falla.test.js', suite('falla', 'lib/priv.js', "if (fs.existsSync(process.env.LAB_STATE + '/roja')) process.exit(1);\n"));
+  escribir(lab.priv, 'scripts/tests/trae.test.js', suite('trae', 'lib/trae.js'));
+  escribir(lab.pub, 'scripts/tests/otra.test.js', `${suite('otra', 'scripts/lib/otra.js')}if (require('../lib/otra.js') < 1) process.exit(1);\n`);
+  escribir(lab.pub, 'scripts/tests/pub-lib.test.js', `${suite('pub-lib', 'scripts/lib/pub-lib.js')}if (require('../lib/pub-lib.js') < 1) process.exit(1);\n`);
+  escribir(lab.priv, 'scripts/tests/suites.json', `${JSON.stringify({ diarias: ['historia', 'falla', 'trae', 'otra', 'pub-lib'].map((n) => ({ raiz: 'arnes', ruta: `tests/${n}.test.js`, requiere: [] })) }, null, 2)}\n`);
+  for (const repo of [lab.priv, lab.pub]) {
+    git(repo, 'add', '-A', '-f');
+    git(repo, 'commit', '-q', '-m', 'las suites del laboratorio');
+    git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    if (repo === lab.priv || publicoEnRama) git(repo, 'checkout', '-q', '-b', 'story/9.36-lab');
+  }
+  return lab;
+}
+const portónTM = (lab, extra) => portón(lab, { LAB_STATE: lab.estado, ...(extra || {}) });
+const corridasTM = (lab) => { try { return fs.readFileSync(path.join(lab.estado, 'corridas'), 'utf8').split('\n').filter(Boolean).sort(); } catch (_) { return []; } };
+const borrarCorridasTM = (lab) => fs.rmSync(path.join(lab.estado, 'corridas'), { force: true });
+
+/** Main de `repo` suma un commit que cambia `rel`, sin tocar la carpeta; devuelve su sha. */
+function mainAvanzaTM(repo, rel, texto = 'module.exports = 3;\n') {
+  const wt = tmp('privado-main-');
+  git(repo, 'worktree', 'add', '-q', '--detach', wt, 'refs/remotes/origin/main');
+  escribir(wt, rel, texto);
+  git(wt, 'add', '-A');
+  git(wt, 'commit', '-q', '-m', 'lo de main');
+  const sha = git(wt, 'rev-parse', 'HEAD');
+  git(repo, 'worktree', 'remove', '--force', wt);
+  git(repo, 'update-ref', 'refs/remotes/origin/main', sha);
+  return sha;
+}
+
+/** La primera ejecución: el cambio de la historia, sólo preparado, medido y anotado. */
+function primeraTM(lab, { roja = false, extra } = {}) {
+  escribir(lab.priv, 'lib/priv.js', 'module.exports = 2;\n');
+  git(lab.priv, 'add', 'lib/priv.js');
+  if (roja) fs.writeFileSync(path.join(lab.estado, 'roja'), '');
+  const r = portónTM(lab, extra);
+  assert.strictEqual(r.code, roja ? 1 : 0, r.salida);
+  assert.ok(fs.existsSync(MEDIDO(lab)), `queda anotado lo medido\n${r.salida}`);
+  fs.rmSync(path.join(lab.estado, 'roja'), { force: true });
+  borrarCorridasTM(lab);
+  return r;
+}
+
+test('Arbol_SoloMainDelPrivado_CorreLaQueFalloYLasQueLoNombran — el caso real: traer main no repite lo de la historia', () => {
+  // 🔴 mutación: dejar el atajo sólo fuera del árbol (la condición de antes) corre también `historia`.
+  const lab = labTrasMain();
+  primeraTM(lab, { roja: true });
+  git(lab.priv, 'merge', '-q', '--ff-only', mainAvanzaTM(lab.priv, 'lib/trae.js'));
+  const r = portónTM(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.match(r.salida, SOLO_MAIN, r.salida);
+  assert.deepStrictEqual(corridasTM(lab), ['falla', 'trae'], r.salida);
+});
+
+test('Arbol_SoloMainDelPublico_CorreLoMismo — con el público en su versión del servidor y en la rama de la historia', () => {
+  // 🔴 mutación: mirar sólo el privado da «no cambió nada» cuando el que avanzó es el público, que se trae solo en cada ejecución.
+  const servidor = labTrasMain();
+  primeraTM(servidor);
+  mainAvanzaTM(servidor.pub, 'scripts/lib/otra.js');
+  const a = portónTM(servidor);
+  assert.strictEqual(a.code, 0, a.salida);
+  assert.match(a.salida, SOLO_MAIN, a.salida);
+  assert.deepStrictEqual(corridasTM(servidor), ['otra'], a.salida);
+
+  const enRama = labTrasMain({ publicoEnRama: true });
+  primeraTM(enRama);
+  git(enRama.pub, 'merge', '-q', '--ff-only', mainAvanzaTM(enRama.pub, 'scripts/lib/otra.js'));
+  const b = portónTM(enRama);
+  assert.strictEqual(b.code, 0, b.salida);
+  assert.match(b.salida, SOLO_MAIN, b.salida);
+  assert.deepStrictEqual(corridasTM(enRama), ['otra'], b.salida);
+});
+
+test('Arbol_SinSuitesElegidas_NoEsSinAcotar — main trae algo que ninguna suite lee: verde, no la salida 7', () => {
+  // 🔴 mutación: dejar `--only-touched` al elegir por main sale 7, y el portón pide una CI por un cambio que ya está en main.
+  const lab = labTrasMain();
+  primeraTM(lab);
+  git(lab.priv, 'merge', '-q', '--ff-only', mainAvanzaTM(lab.priv, 'lib/nadie.js'));
+  const r = portónTM(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.match(r.salida, SOLO_MAIN, r.salida);
+  assert.deepStrictEqual(corridasTM(lab), [], r.salida);
+});
+
+test('Arbol_RetoqueEnUnRepo_CorreLoDeSiempre — un cambio propio de más, en cualquiera de los dos, lo apaga', () => {
+  // 🔴 mutación: comparar sólo contra main, o un solo repo, deja pasar sin medir el retoque.
+  const priv = labTrasMain();
+  primeraTM(priv);
+  git(priv.priv, 'merge', '-q', '--ff-only', mainAvanzaTM(priv.priv, 'lib/trae.js'));
+  escribir(priv.priv, 'lib/priv.js', 'module.exports = 4;\n');
+  const a = portónTM(priv);
+  assert.doesNotMatch(a.salida, SOLO_MAIN, a.salida);
+  assert.ok(corridasTM(priv).includes('historia'), a.salida);
+
+  const pub = labTrasMain({ publicoEnRama: true });
+  primeraTM(pub);
+  git(pub.pub, 'merge', '-q', '--ff-only', mainAvanzaTM(pub.pub, 'scripts/lib/otra.js'));
+  escribir(pub.pub, 'scripts/lib/pub-lib.js', 'module.exports = 4;\n');
+  const b = portónTM(pub);
+  assert.doesNotMatch(b.salida, SOLO_MAIN, b.salida);
+  assert.ok(corridasTM(pub).includes('pub-lib'), b.salida);
+});
+
+test('Arbol_CambioElPerfilDelEquipo_CorreLoDeSiempre — la capa del equipo entra al árbol: otra capa es otro árbol', () => {
+  // 🔴 mutación: no anotar el perfil elige por main un árbol que además cambió de perfil, y nadie mide ese cambio.
+  const lab = labTrasMain();
+  const equipo = repoGit(path.join(lab.raiz, 'Perfil'), { 'team-profile.json': '{ "name": "acme" }\n' });
+  primeraTM(lab, { extra: { HARNESS_TEAM_DIR: equipo } });
+  git(lab.priv, 'merge', '-q', '--ff-only', mainAvanzaTM(lab.priv, 'lib/trae.js'));
+  escribir(equipo, 'team-profile.json', '{ "name": "otra" }\n');
+  const r = portónTM(lab, { HARNESS_TEAM_DIR: equipo });
+  assert.match(r.salida, /corre lo de siempre: cambió el perfil del equipo/, r.salida);
+  assert.ok(corridasTM(lab).includes('historia'), r.salida);
+});
+
+test('Arbol_PublicoCambioDeRamaAServidor_CorreLoDeSiempre — lo de debajo salió de otro lado', () => {
+  // 🔴 mutación: comparar el público sin mirar de dónde salió trata la rama vieja como si fuera un antecesor del servidor.
+  const lab = labTrasMain({ publicoEnRama: true });
+  primeraTM(lab);
+  git(lab.pub, 'checkout', '-q', '--detach', 'refs/remotes/origin/main');
+  const r = portónTM(lab);
+  assert.match(r.salida, /corre lo de siempre: el público de debajo salió de otro lado/, r.salida);
+});
+
+test('Arbol_CarpetaCambioAlArmar_NoAnota — lo que cambió mientras se armaba o mientras corría no queda como medido', () => {
+  // 🔴 mutación: no comparar la huella del armado anota como medido lo que el árbol no trae.
+  const lab = labTrasMain();
+  const am = path.join(SCRIPTS, 'lib', 'after-main.js');
+  const huella = (repo) => git(repo, 'rev-parse', 'HEAD^{tree}');
+  const servidor = git(lab.pub, 'rev-parse', 'HEAD');
+  const foto = (privada) => spawnSync(process.execPath, [am, 'snapshot-tree', lab.priv, lab.pub, 'server', servidor, '-', privada, huella(lab.pub)], { encoding: 'utf8', env: entorno(lab.home) });
+  assert.strictEqual(foto(huella(lab.priv)).status, 0, 'con la misma huella, anota');
+  const distinta = foto('0'.repeat(40));
+  assert.notStrictEqual(distinta.status, 0, distinta.stdout);
+  assert.match(distinta.stderr, /cambió mientras se armaba/);
+
+  // una suite que escribe en el repo de verdad mientras corre: mide algo que ya no es lo que hay
+  const mientras = labTrasMain();
+  escribir(mientras.priv, 'lib/priv.js', 'module.exports = 2;\n');
+  escribir(mientras.priv, 'scripts/tests/historia.test.js', `// lib/priv.js\nrequire('fs').writeFileSync(${JSON.stringify(path.join(mientras.priv, 'lib/priv.js'))}, 'module.exports = 5;\\n');\n`);
+  const r = portónTM(mientras);
+  assert.match(r.salida, /no anoto lo medido: una carpeta cambió mientras corría/, r.salida);
+  assert.ok(!fs.existsSync(MEDIDO(mientras)), r.salida);
+});
+
+test('Arbol_Cobertura_NoSeCalculaAlElegirPorMain — la historia no corrió: su porcentaje mentiría', () => {
+  // 🔴 mutación: dejar lo tocado de los dos repos para el informe calcula el porcentaje sin las suites de la historia.
+  const lab = labTrasMain();
+  primeraTM(lab);
+  git(lab.priv, 'merge', '-q', '--ff-only', mainAvanzaTM(lab.priv, 'lib/trae.js'));
+  const r = portónTM(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  const cov = r.resumen.art.coverage;
+  assert.strictEqual(cov.touched_lines_pct, null, JSON.stringify(cov));
+  assert.match(cov.touched_no_cross_check, /eligió sólo lo que trajo main/);
+});
+
+test('Arbol_ServidorQueNoDesciende_CorreLoDeSiempre — si la versión del servidor se reescribió, lo medido ya no es su antecesor', () => {
+  // 🔴 mutación: no mirar la descendencia trata como «lo que trajo main» un servidor que perdió commits.
+  const lab = labTrasMain();
+  primeraTM(lab);
+  const wt = tmp('privado-main-');
+  git(lab.pub, 'worktree', 'add', '-q', '--detach', wt, 'refs/remotes/origin/main~1');
+  escribir(wt, 'scripts/lib/otra.js', 'module.exports = 9;\n');
+  git(wt, 'add', '-A');
+  git(wt, 'commit', '-q', '-m', 'otra historia');
+  const sha = git(wt, 'rev-parse', 'HEAD');
+  git(lab.pub, 'worktree', 'remove', '--force', wt);
+  git(lab.pub, 'update-ref', 'refs/remotes/origin/main', sha);
+  const r = portónTM(lab);
+  assert.match(r.salida, /corre lo de siempre: la versión del servidor del público no desciende de la medida/, r.salida);
+});
+
+test('Arbol_LoAnotadoSinHash_NoAcota — lo que no es un hash no llega a git', () => {
+  // 🔴 mutación: aceptar cualquier texto deja que un valor con guion se lea como una opción de git.
+  const { decidir, decidirDelArbol } = require(path.join(SCRIPTS, 'lib', 'after-main.js'));
+  const hash = 'a'.repeat(40);
+  const bien = { head: hash, tree: hash };
+  const mala = { head: hash, tree: '--output=/tmp/x' };
+  assert.match(decidir({ repo: '.', anotado: { ...mala, failed: [] }, ahora: hash }).no, /no dejó qué midió/);
+  for (const parte of [{ privado: mala, publico: bien }, { privado: bien, publico: mala }]) {
+    const d = decidirDelArbol({ anotado: { origen: { fuente: 'server' }, failed: [], ...parte }, ahora: { origen: { fuente: 'server' }, privado: bien, publico: bien } });
+    assert.match(d.no, /no dejó qué midió/);
+  }
+});
+
+// ── Lo guardado de la última completa, en el árbol armado ─────────────────────────────────────────────────────────────
+// Con un marcador de corrida: lo guardado vive en el marcador de la sesión.
+// stable-data: el marcador lleva la hora de ahora a propósito, para que marker.js no lo dé por abandonado; no se compara.
+function conMarcador(lab, sid) {
+  const activo = path.join(lab.home, '.claude', '.tycon-pipeline', 'active', `${sid}.json`);
+  fs.mkdirSync(path.dirname(activo), { recursive: true });
+  fs.writeFileSync(activo, JSON.stringify({ storyId: '9.36', storyPath: lab.story, repoPath: lab.priv, baseSha: git(lab.priv, 'rev-parse', 'HEAD'),
+    sessionId: sid, startedAt: new Date().toISOString(), lastTouch: new Date().toISOString(), stepsCompleted: [0, 1, 2, 3, 4, 5],
+    stepsPending: [6, 7, 8, 9, 10, 11], filesTouched: [], iterations: {}, fileEvents: [], checks: {} }));
+  return { CLAUDE_CODE_SESSION_ID: sid, leer: () => JSON.parse(fs.readFileSync(activo, 'utf8')) };
+}
+
+test('T14 PrivateTree_GreenAndRedSaved_ComparedPerRepo @story-8.263 @ac-8 @ac-9 — en el árbol armado se compara repo por repo', () => {
+  const lab = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js', 'Pub/scripts/lib/otra.js'] });
+  const perfil = cloneDelPerfil(lab);
+  const m = conMarcador(lab, 'pt-verde');
+  const env = { CLAUDE_CODE_SESSION_ID: m.CLAUDE_CODE_SESSION_ID, HARNESS_TEAM_DIR: perfil };
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  let r = portón(lab, env);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok((m.leer().testsGreenFull || []).length === 1, `guarda la completa verde del árbol\n${r.salida}`);
+  // cambia un archivo del público: corre sólo la suite que lo lee
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/otra.js'), '// el arreglo\n');
+  r = portón(lab, env);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok(nombra(r, 'otra.test.js') && !nombra(r, 'pub-lib.test.js'), `corre sólo la que lee lo cambiado\n${r.salida}`);
+  assert.match(r.salida, /más 1 suites? por lo cambiado \(scripts\/lib\/otra\.js\)/, r.salida);
+  // el perfil del equipo cambia: la completa como siempre
+  fs.appendFileSync(path.join(perfil, 'team-profile.json'), '\n');
+  r = portón(lab, env);
+  assert.match(r.salida, /corre la completa como siempre: [^\n]*cambió el perfil del equipo/, r.salida);
+  // un repo que no se puede comparar: la completa como siempre, con su motivo
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/otra.js'), '// otro\n');
+  const bin = tmp('pt-bin-');
+  const real = execFileSync('bash', ['-lc', 'command -v git'], { encoding: 'utf8' }).trim();
+  escribir(bin, 'git', `#!/usr/bin/env bash\nfor a in "$@"; do [[ "$a" == diff-tree ]] && { echo "fatal: de mentira" >&2; exit 128; }; done\nexec "${real}" "$@"\n`);
+  fs.chmodSync(path.join(bin, 'git'), 0o755);
+  r = portón(lab, { ...env, PATH: `${bin}:${process.env.PATH}` });
+  assert.match(r.salida, /corre la completa como siempre: no pude comparar/, r.salida);
+  // la completa roja del árbol se guarda, y repetir sola su roja cierra como la 8.208 (el caso P9)
+  const roja = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  const mr = conMarcador(roja, 'pt-roja');
+  fs.writeFileSync(path.join(roja.pub, 'scripts/lib/pub-lib.js'), 'module.exports = 2;\n');
+  r = portón(roja, { CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID });
+  assert.notStrictEqual(r.code, 0, r.salida);
+  assert.ok((mr.leer().testsRedFull || []).length === 1, `guarda la completa roja del árbol\n${r.salida}`);
+  fs.writeFileSync(path.join(roja.pub, 'scripts/lib/pub-lib.js'), 'module.exports = 1;\n');
+  const sola = spawnSync('bash', [TEST_GATE, roja.priv, roja.story, '--suite', 'tests/pub-lib.test.js'], { encoding: 'utf8', cwd: roja.priv,
+    env: entorno(roja.home, { TYCON_PRIVATE_TREE_TMP: path.join(roja.raiz, 'tmp'), CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID }), timeout: 120000 });
+  assert.strictEqual(sola.status, 0, `${sola.stdout}${sola.stderr}`);
+  r = portón(roja, { CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID });
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.match(r.salida, /la carpeta cambió desde la completa roja \(scripts\/lib\/pub-lib\.js\)/, r.salida);
+  assert.match(r.salida, /cierra con la completa de las \d\d:\d\d/, r.salida);
+});
+
+// El .gitignore real del privado deja dentro de git la carpeta de la evidencia, donde el portón deja su constancia.
+const IGNORE_DEL_PRIVADO = '**/.advisors/*\n!**/.advisors/dod-runtime/\n';
+function conIgnoreDelPrivado(lab) {
+  escribir(lab.priv, '.gitignore', IGNORE_DEL_PRIVADO);
+  git(lab.priv, 'add', '.gitignore');
+  git(lab.priv, 'commit', '-q', '-m', 'ignore del privado');
+}
+
+test('PrivateTree_SavedRun_ClosesWhenNothingReadsTheChange @story-8.263 @ac-6 @ac-8 @ac-9 — lo que ninguna suite lee y la propia constancia del portón no impiden cerrar con lo guardado; un control del privado pide la completa', () => {
+  // verde: un cambio del privado que ninguna suite lee cierra con lo guardado, no sale 7
+  const lab = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  const perfil = cloneDelPerfil(lab);
+  const m = conMarcador(lab, 'pt-nadie-lee');
+  const env = { CLAUDE_CODE_SESSION_ID: m.CLAUDE_CODE_SESSION_ID, HARNESS_TEAM_DIR: perfil };
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  let r = portón(lab, env);
+  assert.strictEqual(r.code, 0, r.salida);
+  escribir(lab.priv, 'docs/nota.md', 'una nota que ninguna suite lee\n');
+  r = portón(lab, env);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.doesNotMatch(r.salida, /sin acotar/, r.salida);
+  assert.match(r.salida, /cierra con la completa de las \d\d:\d\d/, r.salida);
+  // un control del privado (sus ganchos o sus pipelines) pide la completa, aunque ninguna suite lo lea
+  for (const rel of ['scripts/hooks/nuevo.js', 'pipelines/nuevo.yml', 'scripts/hooks/nuevo+1.js']) {
+    escribir(lab.priv, rel, '// un control\n');
+    r = portón(lab, env);
+    assert.match(r.salida, new RegExp(`corre la completa como siempre: cambió un control del privado \\(${rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`), r.salida);
+  }
+  // verde con el .gitignore del privado: volver a correr sin cambios no corre ninguna suite
+  const otro = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  conIgnoreDelPrivado(otro);
+  const perfil2 = cloneDelPerfil(otro);
+  const m2 = conMarcador(otro, 'pt-ignore-verde');
+  const env2 = { CLAUDE_CODE_SESSION_ID: m2.CLAUDE_CODE_SESSION_ID, HARNESS_TEAM_DIR: perfil2 };
+  fs.appendFileSync(path.join(otro.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  r = portón(otro, env2);
+  assert.strictEqual(r.code, 0, r.salida);
+  r = portón(otro, env2);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.match(r.salida, /la carpeta es la que midió la completa verde: no corro ninguna suite/, r.salida);
+  // roja con el .gitignore del privado: la repetición sola deja su constancia y la completa igual cierra
+  const roja = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  conIgnoreDelPrivado(roja);
+  const mr = conMarcador(roja, 'pt-ignore-roja');
+  fs.writeFileSync(path.join(roja.pub, 'scripts/lib/pub-lib.js'), 'module.exports = 2;\n');
+  r = portón(roja, { CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID });
+  assert.notStrictEqual(r.code, 0, r.salida);
+  fs.writeFileSync(path.join(roja.pub, 'scripts/lib/pub-lib.js'), 'module.exports = 1;\n');
+  const sola = spawnSync('bash', [TEST_GATE, roja.priv, roja.story, '--suite', 'tests/pub-lib.test.js'], { encoding: 'utf8', cwd: roja.priv,
+    env: entorno(roja.home, { TYCON_PRIVATE_TREE_TMP: path.join(roja.raiz, 'tmp'), CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID }), timeout: 120000 });
+  assert.strictEqual(sola.status, 0, `${sola.stdout}${sola.stderr}`);
+  r = portón(roja, { CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID });
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.doesNotMatch(r.salida, /cambió después de repetir/, r.salida);
+  assert.match(r.salida, /cierra con la completa de las \d\d:\d\d/, r.salida);
+});
+
+// ── El privado acota lo que no es código ─────────────────────────────────────────────────────────────
+// Con `.test-gate.yaml` commiteado en el privado, el árbol armado suma `--scoped-by-repo` a `--only-touched`: un cambio
+// que ninguna suite lee cierra en verde y dice quién corre la completa; sin la clave, como hoy (salida 7).
+// 🔴 Falla con: el árbol que no lee el alcance del privado (sale 7 con sólo papeles), o `--scoped-by-repo` EN LUGAR de
+//    `--only-touched` (sin saber qué se tocó, correría todas las suites del árbol).
+const ALCANCE = 'test_gate:\n  scope: touched\n  full_suite_by: "la validación de prueba del privado"\n';
+
+function labConAlcance({ alcance = ALCANCE, modificar } = {}) {
+  const lab = laboratorio({ modificar });
+  if (alcance) escribir(lab.priv, '.test-gate.yaml', alcance);
+  escribir(lab.priv, 'docs/x.md', 'v1\n');
+  git(lab.priv, 'add', '-A', '-f'); git(lab.priv, 'commit', '-q', '-m', 'alcance y papeles');
+  return lab;
+}
+
+test('T7a PrivateGate_DocsOnly_NoSuites @story-8.279 @ac-9 @ac-11 — sólo papeles: ninguna suite, verde, y el cierre dice quién corre la completa', () => {
+  const lab = labConAlcance({ modificar: ['docs/x.md'] });
+  fs.appendFileSync(path.join(lab.priv, 'docs/x.md'), 'v2\n');
+  const r = portón(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok(!nombra(r, 'pub-lib.test.js') && !nombra(r, 'otra.test.js') && !nombra(r, 'demo.test.js'), r.salida);
+  assert.match(r.salida, /ninguna suite lee lo tocado; la suite completa la corre la validación de prueba del privado/, r.salida);
+  assert.doesNotMatch(r.salida, /sin acotar/, r.salida);
+});
+
+test('T7b PrivateGate_TouchedRead_RunsThose @story-8.279 @ac-10 — con la clave, lo que una suite lee corre esa suite y nada más', () => {
+  const lab = labConAlcance({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  const r = portón(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok(nombra(r, 'pub-lib.test.js'), r.salida);
+  assert.ok(!nombra(r, 'otra.test.js'), r.salida);
+});
+
+test('T7c Gate_NoScopeFile_RunsAllAsToday @story-8.279 @ac-11 @ac-25 — sin la clave el árbol sigue como hoy (sólo papeles: 7); con `scope: full` el privado no acota', () => {
+  const lab = labConAlcance({ alcance: null, modificar: ['docs/x.md'] });
+  fs.appendFileSync(path.join(lab.priv, 'docs/x.md'), 'v2\n');
+  const r = portón(lab);
+  assert.strictEqual(r.code, 7, r.salida);
+  assert.doesNotMatch(r.salida, /la validación de prueba del privado/, r.salida);
+  const full = labConAlcance({ alcance: 'test_gate:\n  scope: full\n  full_suite_by: "nadie"\n' });
+  const s = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'test-gate-scope.js'), full.priv], { encoding: 'utf8' });
+  assert.strictEqual(s.status, 10, `${s.stdout}${s.stderr}`);
+  const con = labConAlcance();
+  const c = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'test-gate-scope.js'), con.priv], { encoding: 'utf8' });
+  assert.strictEqual(c.status, 0, `${c.stdout}${c.stderr}`);
+  assert.strictEqual(c.stdout.trim(), 'la validación de prueba del privado');
+});
+
+test('T7d PrivateGate_UnknownTouched_StaysUnscoped @story-8.279 @ac-11 — las dos marcas juntas, sin saber qué se tocó: 7 sin correr nada; `--scoped-by-repo` sola, también', () => {
+  const lab = laboratorio();
+  const arbolDir = tmp('arbol-sin-tocado-');
+  escribir(arbolDir, 'scripts/tests/suites.json', JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/u.test.js' }] }));
+  escribir(arbolDir, 'scripts/tests/u.test.js', "require('fs').appendFileSync(process.env.LAB_RAN_FILE, 'u\\n');\n");
+  const marca = path.join(arbolDir, 'corrio');
+  const correr = (marcas) => spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'run-suites-json.js'), arbolDir, path.join(arbolDir, 'r.json'), '--skills', path.join(arbolDir, 'skills'), ...marcas],
+    { encoding: 'utf8', cwd: arbolDir, env: entorno(lab.home, { LAB_RAN_FILE: marca }) });
+  const dos = correr(['--only-touched', '--scoped-by-repo', 'la validación de prueba del privado']);
+  assert.strictEqual(dos.status, 7, `${dos.stdout}${dos.stderr}`);
+  assert.ok(!fs.existsSync(marca), 'no corrió ninguna suite');
+  const sola = correr(['--scoped-by-repo', 'la validación de prueba del privado']);
+  // la completa no corre en la máquina: sin saber qué se tocó, tampoco con la marca del repo sola
+  assert.strictEqual(sola.status, 7, `${sola.stdout}${sola.stderr}`);
+  assert.ok(!fs.existsSync(marca), 'sola, tampoco corre ninguna');
+});
+
+// ── Papeles commiteados en el árbol armado: sólo se suman pruebas ────────────────────────────────────────────────────
+// La rama de cada repo sale de `main`, y lo de la historia se commitea después: sin eso `main..HEAD` da 0 y la prueba no
+// mide el caso. `TYCON_COVERAGE_BASE` hace de marcador en el privado; en el público no existe y su base es la bifurcación.
+function labRamaDeLaHistoria({ modificar }) {
+  const lab = labConAlcance({ modificar });
+  lab.base = git(lab.priv, 'rev-parse', 'HEAD');
+  for (const repo of [lab.priv, lab.pub]) git(repo, 'checkout', '-q', '-b', 'story/9.36-lab');
+  return lab;
+}
+function commitear(repo, rel, texto) {
+  escribir(repo, rel, texto);
+  git(repo, 'add', '-A', '-f');
+  git(repo, 'commit', '-q', '-m', `toca ${rel}`);
+}
+const portónDeLaRama = (lab) => portón(lab, { TYCON_COVERAGE_BASE: lab.base });
+function sinAcotarSinCorrer(r) {
+  assert.strictEqual(r.code, 7, r.salida);
+  assert.match(r.salida, /sin acotar/, r.salida);
+  assert.ok(!nombra(r, 'pub-lib.test.js') && !nombra(r, 'otra.test.js') && !nombra(r, 'demo.test.js'), r.salida);
+  assert.doesNotMatch(r.salida, /corrieron sólo las suites que leen lo tocado/, r.salida);
+}
+
+test('T17a PrivateGate_DocsCommitted_PublicCodeRuns @story-8.279 @ac-29 — papeles commiteados y código del público que una suite nombra: esa suite corre', () => {
+  // 🔴 rojo si: el «no sé» del privado sigue anulando al público → sale 7 sin correr nada (los portones de la 8.254 y la 8.260).
+  const lab = labRamaDeLaHistoria({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  commitear(lab.priv, 'docs/x.md', 'v2\n');
+  commitear(lab.pub, 'scripts/lib/pub-lib.js', 'module.exports = 1; // tocado\n');
+  const r = portónDeLaRama(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok(nombra(r, 'pub-lib.test.js'), r.salida);
+  assert.ok(!nombra(r, 'otra.test.js'), r.salida);
+  assert.doesNotMatch(r.salida, /sin acotar/, r.salida);
+});
+
+test('T17b PrivateGate_DocsCommitted_NoSuites_StaysUnscoped @story-8.279 @ac-29 @ac-31 — papeles commiteados sin código: ninguna suite y sigue en «sin acotar»', () => {
+  // 🔴 rojo si: saber lo tocado alcanza para cerrar → verde sin haber medido nada.
+  const lab = labRamaDeLaHistoria({ modificar: ['docs/x.md'] });
+  commitear(lab.priv, 'docs/x.md', 'v2\n');
+  sinAcotarSinCorrer(portónDeLaRama(lab));
+});
+
+test('T17c PrivateGate_DocsCommitted_UnnamedCode_StaysUnscoped @story-8.279 @ac-29 @ac-31 — código del público que ninguna suite nombra: sigue en «sin acotar»', () => {
+  // 🔴 rojo si: el caso que rechazó la tercera revisión del plan: pasaba de 7 a verde sin correr nada.
+  const lab = labRamaDeLaHistoria({ modificar: ['Pub/scripts/lib/sin-suite.js'] });
+  commitear(lab.priv, 'docs/x.md', 'v2\n');
+  commitear(lab.pub, 'scripts/lib/sin-suite.js', 'module.exports = 1;\n');
+  sinAcotarSinCorrer(portónDeLaRama(lab));
+});
+
+test('T17d PrivateGate_YamlCommitted_StaysUnscoped @story-8.279 @ac-27 @ac-29 — un .yaml commiteado que ninguna suite nombra: sigue en «sin acotar»', () => {
+  // 🔴 rojo si: la marca depende de que el diff sea sólo `.md` → un .yaml no pasa por la guarda y cierra en verde.
+  const lab = labRamaDeLaHistoria({ modificar: ['specs/estado.yaml'] });
+  commitear(lab.priv, 'specs/estado.yaml', 'a: 1\n');
+  sinAcotarSinCorrer(portónDeLaRama(lab));
+});
+
+function ramaConMarcador(modificar, sid) {
+  const lab = labRamaDeLaHistoria({ modificar });
+  const m = conMarcador(lab, sid);
+  return { lab, m, env: { CLAUDE_CODE_SESSION_ID: m.CLAUDE_CODE_SESSION_ID, TYCON_COVERAGE_BASE: lab.base } };
+}
+function commitearPapelesYCodigoSinSuite(lab) {
+  git(lab.priv, 'commit', '-q', '-am', 'papeles');
+  commitear(lab.pub, 'scripts/lib/sin-suite.js', 'module.exports = 1;\n');
+}
+
+test('T21a PrivateGate_SavedGreenWithoutSuites_NotMeasured @story-8.279 @ac-32 — un verde guardado que no corrió ninguna suite no cuenta como medido', () => {
+  // 🔴 rojo si: lo guardado reemplaza a la marca → código que ninguna suite nombra cierra con «más 0 suites por lo cambiado».
+  const { lab, m, env } = ramaConMarcador(['docs/x.md', 'Pub/scripts/lib/sin-suite.js'], 'pt-sin-medir');
+  fs.appendFileSync(path.join(lab.priv, 'docs/x.md'), 'v2\n');
+  const papeles = portón(lab, env);
+  assert.strictEqual(papeles.code, 0, papeles.salida);
+  assert.strictEqual((m.leer().testsGreenFull || []).length, 1, `guarda el verde de los papeles\n${papeles.salida}`);
+  commitearPapelesYCodigoSinSuite(lab);
+  sinAcotarSinCorrer(portón(lab, env));
+});
+
+test('T21b PrivateGate_SavedGreenThatRan_ClosesAsToday @story-8.279 @ac-32 — un verde guardado que sí corrió suites sigue cerrando con lo guardado', () => {
+  // 🔴 rojo si: la marca descarta todo lo guardado → cada arreglo después del portón vuelve a pedir lo que ya se midió.
+  const { lab, m, env } = ramaConMarcador(['docs/x.md', 'Pub/scripts/lib/pub-lib.js', 'Pub/scripts/lib/sin-suite.js'], 'pt-medido');
+  fs.appendFileSync(path.join(lab.priv, 'docs/x.md'), 'v2\n');
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  const medido = portón(lab, env);
+  assert.strictEqual(medido.code, 0, medido.salida);
+  assert.ok(nombra(medido, 'pub-lib.test.js'), medido.salida);
+  assert.strictEqual((m.leer().testsGreenFull || []).length, 1, `guarda el verde que midió\n${medido.salida}`);
+  commitearPapelesYCodigoSinSuite(lab);
+  const r = portón(lab, env);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.match(r.salida, /más 0 suites por lo cambiado/, r.salida);
+});
+
+test('T21c SavedGreen_UnknownTouched_MustMeasure @story-8.279 @ac-32 — sin saber qué se tocó, lo guardado tampoco alcanza', () => {
+  // 🔴 rojo si: un archivo de lo tocado ausente o con «no sé» se lee como «no hace falta medir» → verde guardado sin medir.
+  const { mustMeasureFrom } = require(path.join(SCRIPTS, 'lib', 'failed-first.js'));
+  const dir = tmp('pt-tocado-');
+  const con = (nombre, datos) => { escribir(dir, nombre, JSON.stringify(datos)); return path.join(dir, nombre); };
+  assert.strictEqual(mustMeasureFrom(path.join(dir, 'no-esta.json')), true);
+  assert.strictEqual(mustMeasureFrom(con('no-se.json', { known: false })), true);
+  assert.strictEqual(mustMeasureFrom(con('marca.json', { known: true, must_measure: true })), true);
+  assert.strictEqual(mustMeasureFrom(con('conocido.json', { known: true, files: ['docs/x.md'] })), false);
 });

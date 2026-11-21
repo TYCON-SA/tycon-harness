@@ -23,7 +23,8 @@ bad() { echo "❌ branch-guard-notice: $1"; FALLAS=$((FALLAS + 1)); }
 g() { env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
   GIT_AUTHOR_NAME=Lab GIT_AUTHOR_EMAIL=lab@example.com GIT_COMMITTER_NAME=Lab GIT_COMMITTER_EMAIL=lab@example.com \
   git -c core.hooksPath=/dev/null "$@"; }
-HOOK_DIR="$BASE/sin-repo/scripts/hooks"; mkdir -p "$HOOK_DIR"; cp "$TCG/scripts/hooks/branch-guard-notice.js" "$HOOK_DIR/"
+HOOK_DIR="$BASE/sin-repo/scripts/hooks"; mkdir -p "$HOOK_DIR" "$BASE/sin-repo/scripts/lib"; cp "$TCG/scripts/hooks/branch-guard-notice.js" "$HOOK_DIR/"
+cp "$TCG/scripts/lib/clean-git-env.js" "$BASE/sin-repo/scripts/lib/"
 ( cd "$BASE/sin-repo" && git rev-parse --git-dir >/dev/null 2>&1 ) && { echo "❌ branch-guard-notice: ${BASE} quedó dentro de un repo"; exit 1; }
 
 # el aviso, como lo corre el arranque, con un HOME de juguete
@@ -248,7 +249,7 @@ estado "$H" "{\"schema\":1,\"mode\":\"managed\",\"tree\":\"/\",\"notice\":null,$
 g -C "$H.up" checkout -q mirror/sync; printf 'sync reescrita\n' > "$H.up/skills/own/SKILL.md"; g -C "$H.up" commit -q --amend -am S2; g -C "$H.up" checkout -q main
 g -C "$H/.claude/agent-skills" fetch -q origin '+refs/heads/*:refs/remotes/origin/*'
 out="$(TYCON_UPDATE_APPLY=auto notice "$H")"; rc=$?
-if [ "$rc" -eq 0 ] && grep -q 'ARNÉS ATRASADO' <<<"$out" && grep -q 'origin/mirror/sync' <<<"$out" && grep -q 'harness.js update' <<<"$out" && ! grep -q 'merge --ff-only origin/main' <<<"$out"; then
+if [ "$rc" -eq 0 ] && grep -q 'ARNÉS ATRASADO' <<<"$out" && grep -q 'origin/mirror/sync' <<<"$out" && grep -q 'harness.js" update' <<<"$out" && ! grep -q 'merge --ff-only origin/main' <<<"$out"; then
   ok "A4 la rama del canal se movió en el remoto: «atrasado» contra origin/mirror/sync, y el consejo es harness.js update"
 else bad "A4 atraso contra la ref del estado (rc=$rc): $out"; fi
 
@@ -264,8 +265,8 @@ else bad "A4 atraso contra la ref del estado (rc=$rc): $out"; fi
 # juguete los dos enlaces al MISMO clon (el de agent-skills, con el canonical-path.js real)
 single() {
   local h="$1" up="$1.up" cl="$1.clone"
-  g init -q -b main "$up"; mkdir -p "$up/scripts/hooks" "$up/skills/tycon-pipeline" "$up/agents"
-  cp "$TCG/scripts/hooks/branch-guard-notice.js" "$up/scripts/hooks/"
+  g init -q -b main "$up"; mkdir -p "$up/scripts/hooks" "$up/scripts/lib" "$up/skills/tycon-pipeline" "$up/agents"
+  cp "$TCG/scripts/hooks/branch-guard-notice.js" "$up/scripts/hooks/"; cp "$TCG/scripts/lib/clean-git-env.js" "$up/scripts/lib/"
   printf '# skill de juguete\n' > "$up/skills/tycon-pipeline/SKILL.md"; printf '# revisor de juguete\n' > "$up/agents/rev.md"
   g -C "$up" add -A && g -C "$up" commit -q -m A
   g clone -q "$up" "$cl"; mkdir -p "$h/.claude/.tycon-pipeline"
@@ -330,7 +331,7 @@ else bad "REG-A3 en main con tycon/installed ya creada (rc=$rc, consejo rc=$rcb,
 printf 'v3\n' > "$H.up/skills/tycon-pipeline/SKILL.md"; g -C "$H.up" commit -q -am 'C: otra version'; g -C "$CL" fetch -q origin
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 if [ "$rc" -eq 0 ] && grep -q 'ARNÉS ATRASADO' <<<"$out" && [ "$(offenders "$out")" = 1 ] && grep -q '1 commit' <<<"$out" \
-   && grep -q 'harness.js update' <<<"$out" && ! grep -q 'FUERA de\|merge --ff-only\|checkout main' <<<"$out"; then
+   && grep -q 'harness.js" update' <<<"$out" && ! grep -q 'FUERA de\|merge --ff-only\|checkout main' <<<"$out"; then
   ok "REG-A4 repo único atrasado: un solo renglón, sin «FUERA de», y el consejo es harness.js update"
 else bad "REG-A4 repo único atrasado (rc=$rc): $out"; fi
 # …y la ref es la del estado: siguiendo `mirror/sync` (parado en su punta), que origin/main haya seguido no es atraso
@@ -349,14 +350,14 @@ out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 # 🔴 sin esto salen dos renglones, y para «agent-skills» (el mismo clon) el consejo `git stash` + `merge --ff-only origin/main`
 printf 'v2\n' > "$H.up/skills/tycon-pipeline/SKILL.md"; g -C "$H.up" commit -q -am 'B: version nueva'; g -C "$CL" fetch -q origin
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"
-if grep -q 'ARNÉS ATRASADO' <<<"$out" && [ "$(offenders "$out")" = 1 ] && grep -q 'harness.js update' <<<"$out" \
+if grep -q 'ARNÉS ATRASADO' <<<"$out" && [ "$(offenders "$out")" = 1 ] && grep -q 'harness.js" update' <<<"$out" \
    && ! grep -q 'merge --ff-only\|git -C .* stash\|FUERA de' <<<"$out"; then
   ok "REG-A5 recién instalado y atrasado: un renglón, y el consejo es harness.js update (nunca un merge con origin/main)"
 else bad "REG-A5 recién instalado y atrasado (renglones $(offenders "$out")): $out"; fi
 g -C "$CL" checkout -q -b mine
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"
 if [ "$(offenders "$out")" = 1 ] && grep -q 'está en "mine"' <<<"$out" && ! grep -q 'checkout main\|checkout tycon/installed' <<<"$out" \
-   && ! grep -qi 'volver a main' <<<"$out" && grep -q 'harness.js update' <<<"$out"; then
+   && ! grep -qi 'volver a main' <<<"$out" && grep -q 'harness.js" update' <<<"$out"; then
   ok "REG-A5 recién instalado y en otra rama: avisa una vez; el consejo no es checkout main ni un checkout de una rama que no existe"
 else bad "REG-A5 recién instalado en otra rama (renglones $(offenders "$out")): $out"; fi
 # una fuente `harness` sin `dir` en el estado: su carpeta es el `tree` del estado
@@ -407,7 +408,7 @@ out="$(TYCON_UPDATE_APPLY=auto notice "$H")"
 # only_unread <salida> <texto que tiene que nombrar>: una sola línea, «no pude leer», sin veredicto ni cambio de rama
 only_unread() {
   [ "$(grep -c . <<<"$1")" = 1 ] && grep -q 'no pude leer' <<<"$1" && grep -qF -- "$2" <<<"$1" \
-    && ! grep -q 'FUERA de\|Volver:\|checkout\|ARNÉS ATRASADO\|merge --ff-only\|harness.js update' <<<"$1"
+    && ! grep -q 'FUERA de\|Volver:\|checkout\|ARNÉS ATRASADO\|merge --ff-only\|harness.js" update' <<<"$1"
 }
 # la rama tycon/installed con basura adentro, y el clon del público parado en main
 # 🔴 sin esto, el `rev-parse --verify` fallido se lee como «todavía no existe» → main vale como rama de casa y el
@@ -595,7 +596,7 @@ out="$(TYCON_BRANCH_GUARD=0 retiro 2026-11-21)"
 # nombre viejo se arma por partes (esta prueba sale en la copia pública) y el mapa de laboratorio lo declara.
 HOY_VIEJA="TYCON_$(printf 'H')OY"
 RDIR="$BASE/sin-repo-lib/scripts"; mkdir -p "$RDIR/hooks" "$RDIR/lib"
-cp "$TCG/scripts/hooks/branch-guard-notice.js" "$RDIR/hooks/"; cp "$TCG/scripts/lib/legacy-names.js" "$RDIR/lib/"
+cp "$TCG/scripts/hooks/branch-guard-notice.js" "$RDIR/hooks/"; cp "$TCG/scripts/lib/legacy-names.js" "$TCG/scripts/lib/clean-git-env.js" "$RDIR/lib/"
 printf '{ "__about": "laboratorio", "retire_after": "2026-11-20", "entries": [ { "kind": "env", "old": "%s", "new": "TYCON_TODAY", "batch": "lab" } ] }\n' "$HOY_VIEJA" > "$RMAP"
 usos "$U_ENV"
 out="$(env -u TYCON_TODAY "$HOY_VIEJA=2026-11-21" TYCON_LEGACY_NAMES_MAP="$RMAP" HOME="$RH" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null node "$RDIR/hooks/branch-guard-notice.js")"
@@ -609,9 +610,13 @@ grep -q 'TYCON_NO_LAB_OLD' <<<"$out" && ok "T57 el día con el nombre viejo de l
 # quedara la del unificado, el clon viejo saldría «atrasado» en cada sesión). Va al final: el laboratorio cambia la HOME.
 # shellcheck disable=SC1091
 source "$TCG/scripts/tests/lib/harness-lab.sh"
+# El arranque corre en el lugar: desprendido, con la máquina cargada (la puerta de pruebas corre varias suites a la vez)
+# pasa sus 20 s de espera, sale 0 y sigue aparte con el candado tomado, y el comando siguiente de la prueba sale 3
+# «otra sesión está actualizando». El arranque desprendido con su candado lo mide harness-update.test.sh (T39L).
+export TYCON_STARTUP_DETACH=0
 export TYCON_UPDATE_APPLY=auto
 shape_notice() { node "$LAB_TREE/scripts/hooks/branch-guard-notice.js"; }   # el aviso del propio clon del arnés, con la HOME del laboratorio
-with_hook() { mkdir -p "$LAB_TREE/scripts/hooks" && cp "$TCG/scripts/hooks/branch-guard-notice.js" "$LAB_TREE/scripts/hooks/"; }
+with_hook() { mkdir -p "$LAB_TREE/scripts/hooks" "$LAB_TREE/scripts/lib" && cp "$TCG/scripts/hooks/branch-guard-notice.js" "$LAB_TREE/scripts/hooks/" && cp "$TCG/scripts/lib/clean-git-env.js" "$LAB_TREE/scripts/lib/"; }
 quiet() { ! grep -q 'ATRASADO\|FUERA de\|no pude leer' <<<"$1"; }
 if harness_lab_team_machine "$BASE/t36" toy >/dev/null && harness install --yes >/dev/null 2>&1 && harness_lab_cut && harness update >/dev/null 2>&1 && with_hook; then
   out="$(shape_notice)"

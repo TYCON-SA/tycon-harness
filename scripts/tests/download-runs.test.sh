@@ -310,7 +310,8 @@ blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.json"
 
 # ── T9 · el instalador: barrido → subida → bajada, cada llave apaga sólo lo suyo ────────
 # Se extrae del instalador REAL el bloque «Rescate del hilo…» (hasta el siguiente bloque) y se corre con
-# SCRIPT_DIR en un temporal donde tres dobles anotan el orden en que los llaman. Correr el instalador
+# SCRIPT_DIR en un temporal donde tres dobles anotan el orden en que los llaman. La carpeta del estado la resuelve el
+# instalador más arriba (scripts/lib/state-dir.sh): acá es un dato de entrada, STATE_DIR. Correr el instalador
 # entero en un temporal arrastra decenas de dependencias ajenas a este caso.
 # 🔴 Falla con: bajar antes de subir → la página propia sale sin lo de hoy; sin la bajada en el bloque,
 #    quienes leen el buzón nunca ven lo del resto del equipo.
@@ -337,7 +338,7 @@ instalar9() {  # <líneas esperadas> <VAR=valor>...
   : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
   # TYCON_INTEG_MAILBOX=1: el bloque extraído lee la llave del buzón que el instalador resuelve más arriba; acá es un
   # dato de entrada, y el caso de abajo la apaga para probar que apaga sólo lo suyo.
-  env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 PROFILE_FULL=1 "$@" \
+  env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 PROFILE_FULL=1 "$@" \
     bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
   local n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge "${esperadas}" ] && break; sleep 0.25; n=$((n+1)); done
   sleep 1   # por si aparece algo que no debía
@@ -389,13 +390,13 @@ rm -f "${T}/scripts/metrics/collect-findings.js"   # los casos que siguen miden 
 #    agente, y la carpeta de la máquina efímera del agente llega al buzón del equipo.
 printf "setTimeout(() => require('fs').appendFileSync(process.env.ORDER_LOG, 'recoleccion\\\\n'), 200);\n" > "${T}/scripts/metrics/collect-findings.js"
 : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
-env HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 PROFILE_FULL=1 TF_BUILD=True bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
+env HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 PROFILE_FULL=1 TF_BUILD=True bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 sleep 2
 [ ! -s "${T}/orden.txt" ] && [ ! -e "${T}/home/.claude/.tycon-pipeline/upload-runs.log" ] && grep -q 'ejecución de Azure DevOps' "${T}/inst.log" \
   && ok "2.12-T14 InstaladorEnCi_NoLanzaLaTanda: con TF_BUILD=True el bloque no lanza barrido, recolección, subida ni bajada, y lo dice por stderr" \
   || mal "2.12-T14 InstaladorEnCi_NoLanzaLaTanda con TF_BUILD=True se lanzó: $(tr '\n' '|' < "${T}/orden.txt") · salida: $(head -c 200 "${T}/inst.log")"
 : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
-env HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 PROFILE_FULL=1 TF_BUILD=true bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
+env HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 PROFILE_FULL=1 TF_BUILD=true bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 sleep 2
 [ ! -s "${T}/orden.txt" ] && ok "2.12-T14 también con TF_BUILD=true en minúsculas" || mal "2.12-T14 con TF_BUILD=true se lanzó: $(tr '\n' '|' < "${T}/orden.txt")"
 rm -f "${T}/scripts/metrics/collect-findings.js"
@@ -436,7 +437,7 @@ grep -q 'const esFallaDeRegistro = (x) => REGISTROS.some(' "${RAIZ}/scripts/metr
 mkdir -p "${T}/home/.claude/.tycon-pipeline"; : > "${T}/orden.txt"
 echo "LINEA-DE-LA-SESION-ANTERIOR" > "${T}/home/.claude/.tycon-pipeline/upload-runs.log"
 echo "LINEA-DE-LA-SESION-ANTERIOR" > "${T}/home/.claude/.tycon-pipeline/download-runs.log"
-env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
+env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 # Sin PROFILE_FULL el bloque lanza la subida y la bajada, no el barrido: son DOS líneas. Esperar tres agota los 10 s del
 # tope en cada una de estas dos corridas.
 n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge 2 ] && break; sleep 0.25; n=$((n+1)); done; sleep 1
@@ -445,7 +446,7 @@ grep -q 'LINEA-DE-LA-SESION-ANTERIOR' "${T}/home/.claude/.tycon-pipeline/upload-
 # pasado el tope (~512 KB) el registro viejo se mueve a .1 y el nuevo arranca de cero
 # 🔴 Falla con: sin rotación, un registro que se agrega crece para siempre.
 : > "${T}/orden.txt"; head -c 600000 /dev/zero | tr '\0' 'x' > "${T}/home/.claude/.tycon-pipeline/upload-runs.log"
-env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
+env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge 2 ] && break; sleep 0.25; n=$((n+1)); done; sleep 1
 [ "$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log.1" 2>/dev/null | tr -d ' ')" = "600000" ] && [ "$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log" | tr -d ' ')" -lt 1000 ] && ok "T9 registro de más de 512 KB → pasa a .1 entero y el nuevo arranca chico" || mal "T9 rotación: .1=$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log.1" 2>/dev/null) actual=$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log")"
 
@@ -698,19 +699,44 @@ t = sys.stdin.read()
 i = 0 if t.startswith('{') else t.find('\n{') + 1
 print(json.dumps(f(json.JSONDecoder().raw_decode(t[i:])[0]), sort_keys=True, indent=1))" 2>/dev/null; }
   TYCON_MACHINE=maq-otra node "${TABLERO}" --view runs --runs-dir "${T}/vacio" --mailbox "${E}" --json --dry-run 2>/dev/null | sed "s#${E}#ESPEJO#g" | sin_hora > "${T}/${B}-runs.json"
-  TYCON_MACHINE=maq-otra node "${TABLERO}" --nightly --mailbox "${E}" --mailbox-state "${T}/${B}-estado.json" --output "${T}/${B}-noche.html" --json > "${T}/${B}-noche.crudo" 2>/dev/null
+  # lo único distinto entre las dos pasadas es el buzón: el mismo día y el mismo instante (no el reloj, que avanza entre
+  # una y otra), una casa vacía propia y una carpeta del tablero vacía (no la del árbol, que otra prueba puede tocar)
+  mkdir -p "${T}/casa-${B}" "${T}/tablero-vacio"
+  HOME="${T}/casa-${B}" TYCON_TODAY=2026-10-21 TYCON_MACHINE=maq-otra node "${TABLERO}" --nightly --mailbox "${E}" --mailbox-state "${T}/${B}-estado.json" --dir "${T}/tablero-vacio" --now 1792584000000 --output "${T}/${B}-noche.html" --json > "${T}/${B}-noche.crudo" 2>/dev/null
   # el nocturno imprime su resumen de fuentes y después el modelo en JSON: se toma el JSON
-  sed "s#${E}#ESPEJO#g; s#${T}/${B}#CASO#g" "${T}/${B}-noche.crudo" | sin_hora > "${T}/${B}-noche.json"
+  sed "s#${E}#ESPEJO#g; s#${T}/casa-${B}#CASA#g; s#${T}/${B}#CASO#g" "${T}/${B}-noche.crudo" | sin_hora > "${T}/${B}-noche.json"
 done
 if [ "$(campo "${T}/plano" completo)" = "true" ] && [ "$(campo "${T}/versionado" completo)" = "true" ] && diff -r "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" >/dev/null \
    && [ -s "${T}/plano-runs.json" ] && cmp -s "${T}/plano-runs.json" "${T}/versionado-runs.json" && [ -s "${T}/plano-noche.json" ] && cmp -s "${T}/plano-noche.json" "${T}/versionado-noche.json"; then
   ok "2.24-T20 un buzón versionado y uno plano con el mismo contenido dan el mismo espejo, la misma vista de ejecuciones y la misma página del equipo (completo en los dos)"
 else
-  mal "2.24-T20 completo plano=$(campo "${T}/plano" completo) versionado=$(campo "${T}/versionado" completo) · espejos: $(diff -rq "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" 2>&1 | head -3) · runs $(cmp "${T}/plano-runs.json" "${T}/versionado-runs.json" 2>&1) · noche $(cmp "${T}/plano-noche.json" "${T}/versionado-noche.json" 2>&1) $(wc -c < "${T}/plano-noche.json") · $(head -c 300 "${T}/plano-noche.crudo")"
+  mal "2.24-T20 completo plano=$(campo "${T}/plano" completo) versionado=$(campo "${T}/versionado" completo) · espejos: $(diff -rq "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" 2>&1 | head -3) · runs $(cmp "${T}/plano-runs.json" "${T}/versionado-runs.json" 2>&1) · noche $(cmp "${T}/plano-noche.json" "${T}/versionado-noche.json" 2>&1) $(wc -c < "${T}/plano-noche.json") · $(diff "${T}/plano-noche.json" "${T}/versionado-noche.json" 2>&1 | head -12 | tr '\n' ' ') · $(head -c 300 "${T}/plano-noche.crudo")"
 fi
 
 # ── T18 · OverwritesReport_SoloListaYCuentaSinNombres ──────────────────────────────
 # 🔴 Falla con: el informe no existe (la bandera se ignora y baja todo), o nombra las máquinas (se llaman como personas).
+# T8171 · la huella de la oficina tiene su forma y su tipo: baja al espejo y no cuenta como volcado ni como ignorado.
+#         Rojo: `formaDelNombre` no la reconoce (cae en `ignorados`) o `tipoDelBlob` la cuenta como volcado.
+T="${BASE}/t8171"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+HUELLA="$(printf 'a%.0s' $(seq 1 64))"
+blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
+blob "${T}/b" "mac-a/office-keys/${HUELLA}.json" 100
+bajar "${T}" "${T}/bin/az"
+[ -f "${T}/estado/corridas-buzon/mac-a/office-keys/${HUELLA}.json" ] && python3 -c "import json,sys;d=json.load(open(sys.argv[1]));assert d['ignorados']==0,d" "${T}/out.json" \
+  && ok "T8171 la huella baja al espejo y no se ignora" || mal "T8171 la huella no bajó al espejo o se ignoró: $(cat "${T}/out.json")"
+bajar "${T}" "${T}/bin/az" --overwrites-report
+python3 -c "import json,sys;t=json.load(open(sys.argv[1]))['por_tipo'];assert t['huella']['blobs']==1 and t['volcado']['blobs']==1 and t['ignorado']['blobs']==0,t" "${T}/out.json" \
+  && ok "T8171 el informe la cuenta con su propio tipo" || mal "T8171 el informe por tipo: $(cat "${T}/out.json")"
+
+# TINST · un día de instintos tiene su propia cuenta en el informe. Rojo: `tipoDelBlob` da un tipo que `porTipo` no trae,
+#         y el informe se cae con exit 1 y sin salida.
+T="${BASE}/t-informe-instintos"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
+blob "${T}/b" "mac-a/instincts/v20261001T100000000Z/2026-10-01.jsonl.gz" 100
+bajar "${T}" "${T}/bin/az" --overwrites-report
+[ "${RC}" -eq 0 ] && python3 -c "import json,sys;t=json.load(open(sys.argv[1]))['por_tipo'];assert t['instintos']['blobs']==1 and t['volcado']['blobs']==1 and t['ignorado']['blobs']==0,t" "${T}/out.json" \
+  && ok "TINST el informe no se cae y cuenta el día de instintos con su propio tipo" || mal "TINST rc=${RC} · $(head -c 400 "${T}/out.json") · $(head -2 "${T}/err.txt")"
+
 T="${BASE}/t224-18"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
 blob "${T}/b" "mac-a/1.1-2026-10-01T1000.hilo.jsonl.gz" 300
@@ -872,6 +898,40 @@ echo "macbook-pro-1a2b3c4d/9.2-2026-10-15T0900.json" > "${T}/b/corromper"
 bajar "${T}" "${T}/bin/az"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "parcial" ] && echo "$(uniones "${T}")" | grep '"estado": "unida"' > /dev/null \
   && ok "2.28-T35 la bajada parcial también deja el archivo" || mal "2.28-T35 parcial: rc=${RC} estado=$(campo "${T}" estado) uniones=$(uniones "${T}")"
+# ── 2.79-T1 · Uniones_PasadaCortadaAntesDeLosVolcados_DejaLaAnterior ── con la carpeta vieja a medio bajar, su huella
+# no coincide y la unión cambiaría: la pasada que cortó antes de bajar todos los volcados deja el archivo anterior.
+# 🔴 Falla con: escribir la unión en toda pasada que leyó el listado.
+T="${BASE}/t279-1"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+volcado228 "${T}/b" macbook-pro "9.1-2026-10-14T0900" 2026-10-14
+place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
+mkdir -p "${T}/estado/corridas-buzon"; echo '{"schema":1,"carpetas":{"previa":{"estado":"unida","nueva":"otra"}},"no_leidas":[],"regeneradas":{}}' > "${T}/estado/corridas-buzon/.carpetas-de-maquina.json"
+bajar "${T}" "${T}/bin/az" --no-threads --budget-ms 1
+[ "$(campo "${T}" registros_enteros)" = "false" ] && echo "$(uniones "${T}")" | grep '"previa"' > /dev/null \
+  && ok "2.79-T1 la pasada cortada antes de los volcados deja la unión anterior" || mal "2.79-T1 cortada: registros_enteros=$(campo "${T}" registros_enteros) uniones=$(uniones "${T}")"
+# la que falla al bajar los volcados (lista pero no lee) tampoco la reescribe
+echo 403 > "${T}/b/modo-get"; bajar "${T}" "${T}/bin/az" --no-threads; rm -f "${T}/b/modo-get"
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" registros_enteros)" = "false" ] && echo "$(uniones "${T}")" | grep '"previa"' > /dev/null \
+  && ok "2.79-T1 la pasada que falla antes de bajar los volcados deja la unión anterior" || mal "2.79-T1 fallida: rc=${RC} registros_enteros=$(campo "${T}" registros_enteros) uniones=$(uniones "${T}")"
+bajar "${T}" "${T}/bin/az" --no-threads
+echo "$(uniones "${T}")" | grep '"estado": "unida"' | grep -v '"previa"' > /dev/null \
+  && ok "2.79-T1 la pasada con todos los volcados la reescribe" || mal "2.79-T1 entera: rc=${RC} uniones=$(uniones "${T}")"
+# con los registros enteros, un volcado que no baja o un corte en la fase de los volcados tampoco la reescriben
+# 🔴 Falla con: mirar sólo los cortes de las fases de registros (pase adversarial, 2.79).
+T="${BASE}/t279-1b"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+# más volcados que bajadas a la vez (8), para que el corte por tiempo caiga entre ellos
+for i in $(seq 10 21); do volcado228 "${T}/b" macbook-pro "9.${i}-2026-10-14T${i}00" 2026-10-14; done
+place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
+mkdir -p "${T}/estado/corridas-buzon"; echo '{"schema":1,"carpetas":{"previa":{"estado":"unida","nueva":"otra"}},"no_leidas":[],"regeneradas":{}}' > "${T}/estado/corridas-buzon/.carpetas-de-maquina.json"
+echo "macbook-pro/9.12-2026-10-14T1200.json" > "${T}/b/falla-get"; bajar "${T}" "${T}/bin/az" --no-threads; rm -f "${T}/b/falla-get"
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" registros_enteros)" = "true" ] && campo "${T}" uniones | grep 'macbook-pro no bajó entera' > /dev/null && echo "$(uniones "${T}")" | grep '"previa"' > /dev/null \
+  && ok "2.79-T1 un volcado de la carpeta vieja que no baja deja la unión anterior" || mal "2.79-T1 volcado sin bajar: rc=${RC} res.uniones=$(campo "${T}" uniones) uniones=$(uniones "${T}")"
+rm -rf "${T}/estado/corridas-buzon/macbook-pro"; echo 400 > "${T}/b/demora"
+bajar "${T}" "${T}/bin/az" --no-threads --budget-ms 300; rm -f "${T}/b/demora"
+[ "$(campo "${T}" registros_enteros)" = "true" ] && [ "$(campo "${T}" volcados_enteros)" = "false" ] && echo "$(uniones "${T}")" | grep '"previa"' > /dev/null \
+  && ok "2.79-T1 la pasada cortada entre los volcados deja la unión anterior" || mal "2.79-T1 corte en volcados: registros_enteros=$(campo "${T}" registros_enteros) volcados_enteros=$(campo "${T}" volcados_enteros) uniones=$(uniones "${T}")"
+bajar "${T}" "${T}/bin/az" --no-threads
+[ "$(campo "${T}" volcados_enteros)" = "true" ] && echo "$(uniones "${T}")" | grep '"estado": "unida"' | grep -v '"previa"' > /dev/null \
+  && ok "2.79-T1 con todos los volcados la reescribe" || mal "2.79-T1 entera tras el corte: rc=${RC} uniones=$(uniones "${T}")"
 
 # «no pude mirar» no es «no recibió nada»: una carpeta vieja que no se deja listar no se une y queda nombrada
 # 🔴 Falla con: que el listado fallido dé «último día vacío» y la vieja quede unida.

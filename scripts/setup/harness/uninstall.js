@@ -58,18 +58,26 @@ const expandHome = (p, home) => (typeof p === 'string' ? p.replace(/^~(?=$|[\\/]
  */
 function baseline(home, env = process.env) {
   let copies = [];
-  try { copies = SN.list(home); } catch (_) { copies = []; }
+  // lo que no se pudo leer (la carpeta de copias, un manifiesto) no es «no hay copia»: va en `problems`, y el plan lo dice
+  const problems = [];
+  try { copies = SN.list(home, { problems }); } catch (e) { problems.push(`no pude leer las copias (${e.message})`); copies = []; }
   const installs = copies.filter((c) => c.manifest && c.manifest.reason === 'install');
   const oldest = installs[installs.length - 1];   // list: la más nueva primero
   const map = {}; const after = {};
-  if (!oldest || !Array.isArray(oldest.manifest.files)) return { map, after, dir: null, skipped: [] };
+  if (!oldest || !Array.isArray(oldest.manifest.files)) return { map, after, dir: null, skipped: [], problems };
   // sólo lo que la copia puede nombrar: dentro de la HOME (o la lista fija de hoy) y con su copia en su carpeta
   const { files: usables, skipped } = SN.safeFiles(oldest, { home, env });
   for (const f of usables) {
     map[f.path] = f.existed && f.copy ? path.join(oldest.dir, f.copy) : null;
     if (typeof f.sha256_after === 'string') after[f.path] = f.sha256_after;
   }
-  return { map, after, dir: oldest.dir, skipped };
+  return { map, after, dir: oldest.dir, skipped, problems };
+}
+
+/** La línea de revisión de las copias que no se pudieron leer, o null: sin ellas no se sabe cómo estaba cada archivo. */
+function baselineProblemLine(problems) {
+  if (!Array.isArray(problems) || !problems.length) return null;
+  return `no pude leer todas las copias del arnés (${problems.join('; ')}): sin la de la instalación no sé cómo estaba cada archivo antes: lo que dependa de eso queda o va a revisar, y ningún archivo vuelve a su forma de antes`;
 }
 
 /** La raíz de repos: `TYCON_REPOS_ROOT` o `rutas.repos` de ~/.claude/tycon.json (como la lee el aplicador). */
@@ -154,6 +162,17 @@ function plan(ctx, state) {
     const p = path.join(claude, s.name);
     if (lexists(p)) keep.push(`${s.what} ${p}${s.dir ? `/ — para borrarlo: rm -rf "${p}"` : ''}`);
   }
+  // en una máquina que vive en la casa propia, los hooks guardan esos registros en la carpeta del estado
+  // (scripts/lib/loose-logs.js), y desinstalar la quita entera (harness.js uninstall): se dicen con ella
+  const goesWithState = [];
+  const TH = require('./tycon-home.js');
+  if (TH.livesInOwnHome(home)) {
+    const own = TH.ownStateDir(home);
+    for (const s of HOOK_STORES) {
+      const p = path.join(own, s.name);
+      if (lexists(p)) goesWithState.push(`${s.what} ${p}${s.dir ? '/' : ''} — se va con la carpeta del estado`);
+    }
+  }
   for (const k of dry.kept) if (!k.error) keep.push(k.why);
   keep.push('engram, sqlite3 y node: herramientas del sistema, cada una con su instalador');
   // el Node propio del arnés: se deja, como node, engram y sqlite3, con el comando para borrarlo
@@ -171,6 +190,8 @@ function plan(ctx, state) {
   }
 
   const review = dry.review.map((r) => r.why);
+  const noLeidas = baselineProblemLine(base.problems);
+  if (noLeidas) review.push(noLeidas);
   for (const p of base.skipped) review.push(`${p}: la copia de la instalación lo nombra fuera de la HOME o con su copia fuera de la carpeta — no lo tomo como base`);
   const hooksDir = (env.TYCON_GIT_HOOKS_DIR) || path.join(home, '.git-hooks');
   let names = [];
@@ -184,7 +205,7 @@ function plan(ctx, state) {
   if (rr.root) pointers = findPointers(rr.root);
   else keep.push('sin raíz de repos conocida (TYCON_REPOS_ROOT, o rutas.repos en ~/.claude/tycon.json): no busqué AGENTS.md puntero en los repos de producto');
 
-  return { remove, retry, failing: failing.map((k) => k.why), keep, review, pointers, tree, treeMissing, nothing: false, baseline: base.map, afterSha: base.after, stateFile, home };
+  return { remove, retry, failing: failing.map((k) => k.why), keep, goesWithState, review, pointers, tree, treeMissing, nothing: false, baseline: base.map, afterSha: base.after, stateFile, home };
 }
 
 /** Las piezas por archivo, en una línea cada uno: «settings.json (<ruta>): 38 hooks, la línea de arranque, env.X». */
@@ -233,6 +254,7 @@ function describePlan(p) {
   L.push('quita (sólo lo registrado):');
   for (const l of summarize(p.remove, { home: p.home })) L.push(`  - ${l}`);
   L.push(`  - el estado ${p.stateFile}`);
+  for (const l of p.goesWithState || []) L.push(`  - ${l}`);
   if (p.failing && p.failing.length) {
     L.push('no se pueden quitar ahora (se reintentan; si siguen fallando, quedan en el estado para otra ejecución):');
     for (const w of p.failing) L.push(`  ✗ ${w}`);
@@ -264,7 +286,10 @@ function run(ctx, state, { log = null } = {}) {
       const left = Object.assign({}, state, { managed: errors.map((k) => k.piece), notice: `uninstall: ${errors.length} pieza(s) no se pudieron quitar — harness.js uninstall --yes las reintenta` });
       writeState(home, left);
     }
-  } catch (e) { errors.push({ why: `no pude ${errors.length ? 'reescribir' : 'borrar'} el estado ${p.stateFile} (${e.code || e.message})` }); }
+  } catch (e) {
+    if (e && e.code === 'TYCON_LOCK_LOST') throw e;   // otro tiene el candado: no es una pieza que quedó
+    errors.push({ why: `no pude ${errors.length ? 'reescribir' : 'borrar'} el estado ${p.stateFile} (${e.code || e.message})` });
+  }
   say(`quitadas ${r.removed.length}, quedan ${r.kept.length}, a revisar ${r.review.length}, errores ${errors.length}`);
 
   const L = [];
@@ -284,4 +309,4 @@ function run(ctx, state, { log = null } = {}) {
   return { ok: errors.length === 0, lines: L };
 }
 
-module.exports = { plan, run, describePlan, planLines: describePlan, baseline, findPointers, reposRoot, productionGuard, HOOK_STORES };
+module.exports = { plan, run, describePlan, planLines: describePlan, baseline, baselineProblemLine, findPointers, reposRoot, productionGuard, HOOK_STORES };

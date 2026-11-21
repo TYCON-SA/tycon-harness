@@ -6,7 +6,7 @@
  * sus funciones con los datos de ejemplo de «acme» (demo/data.js): abierto con un link, sin cuenta, de sólo lectura de
  * punta a punta. Este módulo trae lo propio de ese modo:
  *
- *   · `validarDemo(env)`      la lista cerrada de variables: acepta sólo SITE_DEMO, PORT y SITE_PUBLIC_URL. Cualquier otra
+ *   · `validarDemo(env)`      la lista cerrada de variables: acepta sólo SITE_DEMO, PORT, SITE_PUBLIC_URL y SITE_TRUST_PROXY. Cualquier otra
  *                             variable del sitio o de identidad de la plataforma hace que no arranque, y dice cuál.
  *   · `ponerFreno(…)`         el freno central (demo-guard.js, que server.js carga antes que nada): nada de conexiones
  *                             afuera, de procesos ni de escrituras fuera de la carpeta temporal propia. Cada intento se
@@ -143,6 +143,8 @@ function crearFuentesDemo({ dir, ahora = Date.now, log = () => {}, version = DAT
     config: () => vigente().config,
     modelo: () => vigente().modelo,
     personas: () => vigente().personas,
+    // los días de horas y tokens de ejemplo, leídos con la misma función que los del espejo real
+    jornadas: () => require('./tabs/workdays.js').jornadasDe(DATOS.jornadasDeEjemplo(ahora())),
     detener() { /* sin temporizador */ },
     clones: () => vigente().clones,
     exclusivo: (fn) => { const p = cola.then(() => fn()); cola = p.catch(() => {}); return p; },
@@ -161,7 +163,7 @@ function crearFuentesDemo({ dir, ahora = Date.now, log = () => {}, version = DAT
 // El modo demo acepta sólo estas tres. Cualquier otra variable del sitio, o una de identidad de la plataforma (la que
 // da a un proceso el token de una identidad administrada), hace que no arranque: un error de instalación no puede dejar
 // una credencial real en una instancia pública.
-const VARIABLES_DEL_MODO = Object.freeze(['SITE_DEMO', 'PORT', 'SITE_PUBLIC_URL']);
+const VARIABLES_DEL_MODO = Object.freeze(['SITE_DEMO', 'PORT', 'SITE_PUBLIC_URL', 'SITE_TRUST_PROXY']);
 
 /** `{ ok, problemas: [{ variable, motivo }], cfg: { port, publicUrl } }` — sin valores en los motivos. */
 function validarDemo(env) {
@@ -186,6 +188,8 @@ function validarDemo(env) {
     else cfg.publicUrl = `${u.protocol}//${u.host}`;
   }
   if (!cfg.publicUrl) cfg.publicUrl = `http://localhost:${cfg.port}`;
+  // detrás de un intermediario (la entrada de la plataforma), su lista o `1`: la misma regla que el sitio real
+  try { require('./live-hub.js').confianzaDe(env.SITE_TRUST_PROXY); } catch (e) { falta('SITE_TRUST_PROXY', e.message); }
   return { ok: problemas.length === 0, problemas, cfg };
 }
 
@@ -194,21 +198,20 @@ function validarDemo(env) {
 const { ponerFreno, frenoTemprano, frenoActual, alIntentar } = require('./demo-guard.js');
 
 // ── lo mínimo de un sitio público ───────────────────────────────────────────────────────────────────────────────────────
-/** La dirección de un pedido: la ÚLTIMA de X-Forwarded-For (la agrega la entrada de la plataforma; las anteriores las inventa quien pide); sin ella, la del socket. */
-function direccionDe(req) {
-  const cab = req.headers && req.headers['x-forwarded-for'];
-  const partes = String(Array.isArray(cab) ? cab.join(',') : (cab || '')).split(',').map((x) => x.trim()).filter(Boolean);
-  return partes.length ? partes[partes.length - 1] : ((req.socket && req.socket.remoteAddress) || 'desconocida');
+// la dirección de quien pide, con la misma regla que el sitio real (live-hub.js): X-Forwarded-For sólo con
+// SITE_TRUST_PROXY. Creerle siempre dejaba que quien entra directo al demo se inventara la dirección y salteara el tope
+function direccionDe(req, confiar = false) {
+  return require('./live-hub.js').direccionDe(req, confiar);
 }
 
 /** El tope de pedidos por dirección: `porMinuto` en una ventana de un minuto. `(req) → { ok } | { ok: false, reintentarEn }` (segundos). */
-function crearTope({ ahora = Date.now, porMinuto = 60 } = {}) {
+function crearTope({ ahora = Date.now, porMinuto = 60, confiar = false } = {}) {
   const VENTANA = 60000;
   const MAX_DIRECCIONES = 10000;
   const cuentas = new Map();
   return (req) => {
     const t = ahora();
-    const d = direccionDe(req);
+    const d = direccionDe(req, confiar);
     let c = cuentas.get(d);
     if (!c || t - c.desde >= VENTANA) {
       c = { desde: t, n: 0 };
@@ -318,13 +321,17 @@ function crearModoDemo({ env = { SITE_DEMO: '1' }, dir, log = () => {}, ahora = 
     ...require('./tabs/runs.js').crearRutas({ cfg: { ...cfg, dataDir: dir }, fuentes, version, skillsDir, log }),
     // las fichas de la noche de ejemplo: confirmar dice lo que pasaría, sin abrir ningún pedido
     ...require('./tabs/findings.js').crearRutas({ ...comun, demo: true }),
+    // las oficinas inventadas: la misma página, sin conexión de ninguna máquina
+    ...require('./tabs/offices.js').crearRutas({ log, demo: true, fuentes, oficinasDeEjemplo: DATOS.oficinasDeEjemplo, ahora }),
+    // los días de horas y tokens de las máquinas inventadas
+    ...require('./tabs/workdays.js').crearRutas({ fuentes, log, ahora }),
     ...require('./help.js').crearRutas({ log }),
   ];
   // el token de la sesión de ejemplo: el mismo para todas las visitas (no hay nada que proteger de otra persona: nada se escribe)
   const tok = crypto.randomBytes(32).toString('base64url');
   const sesion = (cookies) => ({ email: comoDe(cookies) === 'persona' ? DATOS.ANA : DATOS.LEAD, sub: 'demo', prov: 'demo', iss: 'demo', exp: Number.MAX_SAFE_INTEGER, tok });
   const proveedor = { nombre: 'demo', emisor: 'demo', listo: () => true, preparar: async () => {}, urlDeInicio: () => '/', vias: null };
-  return { cfg, fuentes, rutasExtra, vigia: crearVigiaFijo({ version, ahora }), invitaciones, proveedor, sesion, comoDe, comoValido, cookieDeVista, marcar: marcarPagina, tope: crearTope({ ahora }),
+  return { cfg, fuentes, rutasExtra, vigia: crearVigiaFijo({ version, ahora }), invitaciones, proveedor, sesion, comoDe, comoValido, cookieDeVista, marcar: marcarPagina, tope: crearTope({ ahora, confiar: require('./live-hub.js').confianzaDe(env.SITE_TRUST_PROXY) }),
     version, remotoOperaciones: PLATAFORMA().remotos.operaciones };
 }
 

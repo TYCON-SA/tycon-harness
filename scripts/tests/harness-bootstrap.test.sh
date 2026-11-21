@@ -45,6 +45,10 @@ if grep -nE '/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+' "$SRC/bootstrap.js" "
 
 # ─── el laboratorio ─────────────────────────────────────────────────────────────────────────────────────────────────
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
+# El arranque corre en el lugar: desprendido, con la máquina cargada (la puerta de pruebas corre varias suites a la vez)
+# pasa sus 20 s de espera, sale 0 y sigue aparte con el candado tomado, y el comando siguiente de la prueba sale 3
+# «otra sesión está actualizando». El arranque desprendido con su candado lo mide harness-update.test.sh (T39L).
+export TYCON_STARTUP_DETACH=0
 harness_lab_create "$BASE/lab" || { echo "❌ harness-bootstrap: no pude armar el laboratorio"; exit 1; }
 PIPE="$LAB_HOME/.claude/.tycon-pipeline"; HDIR="$PIPE/harness"; STATE="$PIPE/harness-state.json"
 LINK="$LAB_HOME/.claude/tycon-claude-guides"; FAKE_LOG="$PIPE/fake-harness.log"; APPLIER_LOG="$PIPE/lab-applier.log"

@@ -25,6 +25,9 @@
 // el lugar del arnés: su nombre sale de place.js
 const path = require('path');
 const PLACE = require('./place.js');
+// el comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; desde la copia fija
+// del programa, que no trae las skills, este archivo escribe el mismo texto
+const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return require('fs').existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
 const PROFILES = Object.freeze(['minimal', 'full']);
 // los opt-in que nacen prendidos: cuentan en lo que trae un perfil (los demás, no: nacen apagados)
 const BORN_ON = Object.freeze(['optin:TYCON_SAFETY_GUARD', 'optin:TYCON_TEST_SCOPE_GUARD']);
@@ -198,7 +201,7 @@ const samePacks = (a, b) => (Array.isArray(a) && Array.isArray(b)
 
 /** La línea que `install` deja cuando no preguntó las integraciones: cómo cambiar el perfil
  *  y las integraciones después. Una sola línea. */
-const CHANGE_HINT = `para cambiar el perfil o las integraciones: node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install --profile minimal|full --integrations <lista|none> --packs all|none|<a,b> (o tycon-config.js set <clave> <valor>)`;
+const CHANGE_HINT = `para cambiar el perfil o las integraciones: ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install --profile minimal|full --integrations <lista|none> --packs all|none|<a,b> (o tycon-config.js set <clave> <valor>)`;
 
 /** Cómo se dice el origen de un valor de la configuración, para una persona. */
 /**

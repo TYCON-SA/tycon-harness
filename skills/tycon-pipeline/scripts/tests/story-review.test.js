@@ -361,7 +361,7 @@ function cerrarCorrida(l) {
   const set = spawnSync(process.execPath, [MARKER, 'set', JSON.stringify({ storyId: '9.4', storyPath: l.story, repoPath: l.repo, startedAt: new Date().toISOString() })],
     { encoding: 'utf8', env: e, cwd: l.repo });
   assert.equal(set.status, 0, `${set.stdout}\n${set.stderr}`);
-  const c = spawnSync(process.execPath, [MARKER, 'clear'], { encoding: 'utf8', env: e, cwd: l.repo });
+  const c = spawnSync(process.execPath, [MARKER, 'clear', '--discard'], { encoding: 'utf8', env: e, cwd: l.repo });
   assert.equal(c.status, 0, `${c.stdout}\n${c.stderr}`);
   const { stateDir } = require(path.join(SCRIPTS, 'lib', 'state-dir.js'));
   const dir = path.join(stateDir(l.home), 'timing-history');
@@ -452,11 +452,29 @@ function examenVale(hash, archivo) {
   return onlyDescriptionChanged(antes.stdout, fs.readFileSync(archivo, 'utf8'));
 }
 
-test('NoRegresion_ValidadorYCincoB @story-8.84 @ac-19 — el examen del validador sigue en 13 de 13', () => {
+test('NoRegresion_ValidadorYCincoB @story-8.84 @ac-19 — el examen del validador pasa todos sus casos', () => {
   const examen = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'controls-bench', 'reviewer-exams', 'tycon-story-validator.json'), 'utf8'));
-  assert.equal(examen.passed, 13);
-  assert.equal(examen.total, 13);
+  const casos = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'controls-bench', 'cases', 'advisors', 'tycon-story-validator.json'), 'utf8')).cases;
+  assert.equal(examen.total, casos.length, 'el examen no corrió todos los casos del revisor');
+  assert.equal(examen.passed, examen.total);
   assert.ok(examenVale(examen.hash, path.join(RAIZ, 'agents', 'tycon-story-validator.md')), 'el validador cambió sin volver a examinarlo');
   const md = fs.readFileSync(path.join(RAIZ, 'agents', 'tycon-story-validator.md'), 'utf8');
   assert.doesNotMatch(md, /SADV/);
+});
+
+// T6 StoryReviewGate_OffWritesBypassLine @story-8.256 @ac-6
+// 🔴 Falla con: la revisión de la historia apagada sin rastro (el registro del salteo quedaba en manos del modelo), o
+//    el portón que cambia lo que contesta por anotar.
+test('T6 StoryReviewGate_OffWritesBypassLine @story-8.256 @ac-6', () => {
+  const n = lab('normal');
+  const g = gate(n, { TYCON_STORY_REVIEW: '0', CLAUDE_CODE_SESSION_ID: 's-rev' });
+  assert.equal(g.json.run, false, g.out);
+  assert.equal(g.json.motivo, 'apagado', g.out);
+  const estado = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(n.home);
+  const lineas = fs.readFileSync(path.join(estado, 'bypass.log'), 'utf8').trim().split('\n').map((x) => JSON.parse(x));
+  assert.deepStrictEqual(lineas.map((x) => `${x.kind}:${x.sessionId}:${x.variable}`), ['STORY_REVIEW_OFF:s-rev:TYCON_STORY_REVIEW']);
+  // prendida, no anota nada
+  const m = lab('normal');
+  gate(m, { CLAUDE_CODE_SESSION_ID: 's-rev' });
+  assert.ok(!fs.existsSync(path.join(require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(m.home), 'bypass.log')));
 });

@@ -1,0 +1,99 @@
+{
+  "azure": {
+    "v": 1,
+    "proveedor": "azure",
+    "ventana": 30,
+    "productos": {
+      "Acme": {
+        "estado": "parcial",
+        "motivo": "sin_declarar",
+        "staging": {
+          "estado": "no_medido",
+          "motivo": "sin_declarar"
+        },
+        "produccion": {
+          "estado": "desplegado",
+          "fecha": "2026-10-14T11:00:00Z",
+          "corrida": "20261015.1001",
+          "commit": "1001aaa",
+          "commit_fuente": "sourceVersion",
+          "con_avisos": false,
+          "pipeline": "Proy/Acme Prod",
+          "constancia_humo": null
+        },
+        "produccion_atrasada": null,
+        "aprobacion": {
+          "estado": "ninguna"
+        },
+        "main": "no_medido",
+        "pipelines": [
+          {
+            "pipeline": "Proy/Acme Prod",
+            "entorno": "production",
+            "estado": "medido",
+            "motivo": "ok",
+            "detalle": ""
+          }
+        ]
+      }
+    },
+    "avisos": [],
+    "fallas": []
+  },
+  "github": {
+    "v": 1,
+    "proveedor": "github",
+    "ventana": 30,
+    "productos": {
+      "Acme": {
+        "estado": "parcial",
+        "motivo": "parcial",
+        "staging": {
+          "estado": "no_medido",
+          "motivo": "environment_no_existe"
+        },
+        "produccion": {
+          "estado": "desplegado",
+          "fecha": "2026-10-13T01:00:00Z",
+          "corrida": "3",
+          "commit": "ccccccc",
+          "commit_fuente": "sha",
+          "con_avisos": false,
+          "pipeline": "org/app:prod",
+          "constancia_humo": null
+        },
+        "produccion_atrasada": null,
+        "aprobacion": {
+          "estado": "ninguna",
+          "vencida": "no_medido",
+          "motivo": "github_no_distingue_vencida"
+        },
+        "main": "no_medido",
+        "pipelines": [
+          {
+            "pipeline": "org/app:nada",
+            "entorno": "staging",
+            "estado": "no_medido",
+            "motivo": "environment_no_existe",
+            "detalle": "el environment no existe en el repo"
+          },
+          {
+            "pipeline": "org/app:prod",
+            "entorno": "production",
+            "estado": "medido",
+            "motivo": "ok",
+            "detalle": ""
+          }
+        ]
+      }
+    },
+    "avisos": [],
+    "fallas": [
+      {
+        "codigo": "environment_no_existe",
+        "producto": "Acme",
+        "pipeline": "org/app:nada"
+      }
+    ]
+  }
+}

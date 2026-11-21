@@ -8,6 +8,9 @@ const os = require('os');
 const path = require('path');
 
 const rm = require(path.join(__dirname, '..', 'runtime-matrix.js'));
+// Las escotillas de la matriz se retiran en la fecha de corte de la lista única de interruptores: los casos que las usan
+// fijan un día anterior, así no cambian solos ese día.
+const ANTES_DEL_CORTE = '2026-11-01';
 
 let failures = 0;
 function check(name, cond, detail) {
@@ -41,10 +44,9 @@ function makeWorkspace(opts = {}) {
     '---',
     'story: 9.9',
     'status: in-progress',
-    'files_to_modify:',
     // repo-relativo (como las stories reales de un repo del equipo); ws-relativo con opts.wsRelFiles
-    // (como las de un producto cuyas stories nombran el repo hermano en el path).
-    `  - ${opts.wsRelFiles ? 'Proj/src/Feature.cs' : 'src/Feature.cs'}`,
+    // (como las de un producto cuyas stories nombran el repo hermano en el path). `listaArchivos`: los renglones tal cual.
+    ...(opts.listaArchivos || ['files_to_modify:', `  - ${opts.wsRelFiles ? 'Proj/src/Feature.cs' : 'src/Feature.cs'}`]),
     ...(opts.ack || []),
     '---',
   ].join('\n');
@@ -94,12 +96,14 @@ function writeMirroredSmoke(dodDir, gatesLog, sid, acs, cmd = 'curl -s http://ap
 // `marker.js run-check dod -- bash <gate> ... <specFilter>` en producción. Pasar
 // mirror=false para simular un gate forjado a mano (sin espejo → no debe contar).
 // `skipped`: las pruebas apagadas que anota el gate (`- skipped: N`, como el del arnés); null = constancia sin la línea.
-function writeGate(dodDir, sid, tsCompact, verdict, specFilter, gatesLog, mirror = true, titulos = null, skipped = 0) {
+// `frontendDir`: la línea `- frontend_dir:` que escribe el gate del arnés; null = constancia sin la línea.
+function writeGate(dodDir, sid, tsCompact, verdict, specFilter, gatesLog, mirror = true, titulos = null, skipped = 0, frontendDir = null) {
   fs.writeFileSync(path.join(dodDir, `${sid}-e2e-gate-${tsCompact}.md`), [
     `# DoD Runtime Evidence — Story ${sid} — Playwright Gate (scoped)`,
     `**Spec filter**: ${specFilter}`,
     '```', `verdict=${verdict}`, 'total=1', `passed=${verdict === 'PASS' ? 1 : 0}`, '```',
     ...(skipped === null ? [] : [`- skipped: ${skipped}`]),
+    ...(frontendDir === null ? [] : [`- frontend_dir: ${frontendDir}`]),
     // Contrato DODRT-C8: los títulos de los tests que pasaron.
     ...(titulos ? ['', '## Tests corridos (títulos completos — contrato DODRT-C8)', ...titulos.map((t) => `- ${t}`), ''] : []),
   ].join('\n'));
@@ -294,7 +298,7 @@ for (const cmd of ['vstest.console.exe App.Tests.dll --logger:trx', '"C:/VS/Comm
   const rmPath = require.resolve('../runtime-matrix.js');
   delete require.cache[rmPath];
   const rmLegacy = require(rmPath);
-  const r = rmLegacy.compute({ storyPath: f.storyPath, gatesLogPath: fakeGatesLog });
+  const r = rmLegacy.compute({ storyPath: f.storyPath, gatesLogPath: fakeGatesLog, stateDir: path.join(f.ws, 'estado'), today: ANTES_DEL_CORTE });
   if (prev === undefined) delete process.env.TYCON_RUNTIME_MATRIX_LEGACY;
   else process.env.TYCON_RUNTIME_MATRIX_LEGACY = prev;
   delete require.cache[rmPath];
@@ -761,7 +765,7 @@ withWaiverLog(() => {
   process.env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK = '1';
   delete require.cache[require.resolve(path.join(__dirname, '..', 'runtime-matrix.js'))];
   const rmLegacy = require(path.join(__dirname, '..', 'runtime-matrix.js'));
-  const rLegacy = rmLegacy.compute({ storyPath: f2.storyPath, gatesLogPath: f2.gatesLog });
+  const rLegacy = rmLegacy.compute({ storyPath: f2.storyPath, gatesLogPath: f2.gatesLog, stateDir: path.join(f2.ws, 'estado'), today: ANTES_DEL_CORTE });
   check('la escotilla documentada desactiva la regla', (rLegacy.accionNoEjercida || []).length === 0,
     JSON.stringify(rLegacy.accionNoEjercida));
   delete process.env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK;
@@ -938,7 +942,8 @@ withWaiverLog(() => {
 // 23. Sin repo git determinable NO hay atribución segura → NINGUNA evidencia cuenta,
 //     con el motivo escrito (fail-closed; un warning que igual suma es peor que nada).
 {
-  const f = makeWorkspace({ noGit: true });
+  // La ruta escrita desde la carpeta de arriba: sin repo git, es el único lugar donde la matriz puede leer el archivo.
+  const f = makeWorkspace({ noGit: true, wsRelFiles: true });
   writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog);
   writeTestsResult(f.advDir, '9.9', true, new Date().toISOString());
   const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
@@ -1410,8 +1415,14 @@ withWaiverLog(() => {
   // dan EXACTAMENTE lo mismo que el dorado de la sección de arriba.
   {
     const f = makeWorkspace();
+    // El spec y el guion existen y no simulan el servidor: sin ellos, la matriz avisa que no los pudo leer.
+    const fe = path.join(f.repo, 'web');
+    fs.mkdirSync(fe, { recursive: true });
+    fs.writeFileSync(path.join(fe, 'story-9-9.spec.ts'), "test('flujo: abre la vista @ac-1', async ({ page }) => { await page.goto('/'); });\n");
+    fs.writeFileSync(path.join(f.repo, '.advisors', 'smoke-e2e.mjs'), "await fetch('http://app/x', { method: 'POST' });\n");
+    // la prueba que pasó nombra los dos criterios de E1: el portón vale para la fila sólo con el @ac de cada uno
     writeGate(f.dodDir, '9.9', recentCompact(20), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true,
-      ['flujo: abre la vista @ac-1']);
+      ['flujo: abre la vista @ac-1 @ac-3'], 0, fe);
     L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2], cmd: 'curl -s http://app/x' });
     L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [3], cmd: 'node .advisors/smoke-e2e.mjs', mutates: true });
     const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
@@ -1598,6 +1609,1591 @@ withWaiverLog(() => {
     check('un gate con varios filtros atribuye a cada spec, no sólo al primero', r.perAc[1].verdict === 'RUNTIME',
       JSON.stringify(r.perAc[1]));
   }
+}
+
+// ---------------------------------------------------------------- la lista de archivos, escrita como esté
+// Una evidencia fresca de los tres criterios: el portón cubre el 1 y el 3, el humo el 2. Con `editadoDespues`, el archivo
+// tiene una fecha posterior a toda esa evidencia. Estos laboratorios no tienen git de verdad: nadie contesta que no cambió.
+{
+  const labLista = (listaArchivos, { editadoDespues = false } = {}) => {
+    const f = makeWorkspace({ listaArchivos });
+    writeGate(f.dodDir, '9.9', recentCompact(10), 'PASS', 'story-9-9.spec.ts', f.gatesLog);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [2]);
+    writeTestsResult(f.advDir, '9.9', true, new Date().toISOString());
+    if (editadoDespues) {
+      const despues = new Date(Date.now() + 60 * 1000);
+      fs.utimesSync(f.codeFile, despues, despues);
+    }
+    return { f, r: rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog }) };
+  };
+  const vencida = ({ r }) => r.perAc[1].verdict === 'NOT-RUN' && r.perAc[2].verdict === 'NOT-RUN' && r.codeMtime > 0 && !r.green;
+  const leida = (nombre, lista) => {
+    const lab = labLista(lista, { editadoDespues: true });
+    check(nombre, vencida(lab), JSON.stringify({ ac1: lab.r.perAc[1].verdict, codeMtime: lab.r.codeMtime }));
+  };
+
+  leida('T1 Lista_ComillasDobles_ArchivoEditadoDespues_NoCuenta @story-8.191 @ac-1', ['files_to_modify:', '  - "src/Feature.cs"']);
+  leida('T2 Lista_ComillasSimples_ArchivoEditadoDespues_NoCuenta @story-8.191 @ac-1', ['files_to_modify:', "  - 'src/Feature.cs'"]);
+  leida('T3 Lista_ComentarioAntesDelPrimerItem_LeeLoQueSigue @story-8.191 @ac-2', ['files_to_modify:', '  # público', '  - src/Feature.cs']);
+  leida('T4 Lista_ComentarioEntreItems_LeeLoQueSigue @story-8.191 @ac-2', ['files_to_modify:', '  - src/Otro.cs', '  # público', '  - src/Feature.cs']);
+  leida('T5 Lista_ComentarioTrasLaClave_LaLee @story-8.191 @ac-3', ['files_to_modify:  # público', '  - src/Feature.cs']);
+  leida('T6 Lista_EnLinea_LaLee @story-8.191 @ac-4', ['files_to_modify: ["src/Feature.cs"]']);
+  leida('T7 Lista_ItemsALaMismaSangria_LosLee @story-8.191 @ac-5', ['files_to_modify:', '- src/Feature.cs']);
+  leida('T8 Item_ComentarioAlFinal_RutaLimpia @story-8.191 @ac-6', ['files_to_modify:', '  - "src/Feature.cs"  # AC1']);
+  leida('T6 Matriz_ComentarioSinSangria_ArchivoEditado_NoCuenta @story-8.194 @ac-6',
+    ['files_to_modify:', '  - src/Otro.cs', '# público', '  - src/Feature.cs']);
+  leida('T7 Matriz_ListaPartida_ArchivoEditado_NoCuenta @story-8.194 @ac-7', ['files_to_modify: [', '  "src/Feature.cs"', ']']);
+
+  const conAviso = labLista(['files_to_modify:', '  - "src/Feature.cs"'], { editadoDespues: true });
+  const aviso = conAviso.r.warnings.find((w) => /es ANTERIOR al último edit de código/.test(w)) || '';
+  check('T9 Aviso_NombraLaRutaSinComillas @story-8.191 @ac-7', aviso.includes('(src/Feature.cs:') && !aviso.includes('"src/Feature.cs"'), conAviso.r.warnings.join('\n'));
+
+  const fuente = fs.readFileSync(path.join(__dirname, '..', 'runtime-matrix.js'), 'utf8');
+  check('T10 Matriz_UsaElLectorCompartido @story-8.191 @ac-8',
+    /parseDeclaredFiles\(content, \{ allForms: true \}\)/.test(fuente) && !fuente.includes('frontmatterFileList'));
+
+  const sinComillas = ['files_to_modify:', '  - src/Feature.cs'];
+  const fresca = labLista(sinComillas);
+  check('T11 ListaSinComillas_ResultadoIgualQueHoy @story-8.191 @ac-9', fresca.r.green && vencida(labLista(sinComillas, { editadoDespues: true })), JSON.stringify(fresca.r.pendientes));
+
+  const conComillas = labLista(['files_to_modify:', '  - "src/Feature.cs"']);
+  check('T12 ComillasConEvidenciaPosterior_SigueVerde @story-8.191 @ac-10', conComillas.r.green, JSON.stringify(conComillas.r.pendientes));
+
+  // Desde la 8.200, un archivo de código declarado que no se puede leer deja la matriz en rojo, con comillas o sin ellas.
+  const inexistente = labLista(['files_to_modify:', '  - "src/NoExiste.cs"'], { editadoDespues: true });
+  check('T13 ArchivoDeclaradoInexistente_Rojo @story-8.191 @ac-11',
+    !inexistente.r.green && inexistente.r.noLeidos.map((n) => n.rel).join() === 'src/NoExiste.cs', JSON.stringify(inexistente.r.noLeidos));
+
+  const noCodigo = makeWorkspace({ listaArchivos: ['files_to_modify:', '  - "docs/x.md"'] });
+  writeGate(noCodigo.dodDir, '9.9', recentCompact(10), 'PASS', 'story-9-9.spec.ts', noCodigo.gatesLog);
+  writeMirroredSmoke(noCodigo.dodDir, noCodigo.gatesLog, '9.9', [2]);
+  writeTestsResult(noCodigo.advDir, '9.9', true, new Date().toISOString());
+  const doc = path.join(noCodigo.repo, 'docs', 'x.md');
+  fs.mkdirSync(path.dirname(doc), { recursive: true });
+  fs.writeFileSync(doc, '# x\n');
+  const rDoc = rm.compute({ storyPath: noCodigo.storyPath, gatesLogPath: noCodigo.gatesLog });
+  check('T14 NoEsCodigoEntreComillas_NoVence @story-8.191 @ac-12', rDoc.green, JSON.stringify(rDoc.pendientes));
+}
+
+// ---------------------------------------------------------------- servidor simulado
+// Una prueba con el servidor simulado no cuenta como prueba en vivo: ni por el portón E2E ni por un humo.
+{
+  let sim = {};
+  try { sim = require(path.join(__dirname, '..', 'lib', 'simulated-server.js')); } catch (e) { check('lib/simulated-server.js se carga', false, e.message); }
+  const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..');
+  const vacio = () => fs.mkdtempSync(path.join(os.tmpdir(), 'sim-active-'));
+  const calc = (f, extra = {}) => rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, activeDir: vacio(), ...extra });
+  const SPEC_SIMULADO = [
+    "import { test, expect } from '@playwright/test';",
+    "test('flujo @ac-1 @ac-3', async ({ page }) => {",
+    "  await page.route('**/api/pedidos', (r) => r.fulfill({ json: [] }));",
+    "  await page.goto('/');",
+    '});',
+  ].join('\n');
+  const SPEC_REAL = "import { test } from '@playwright/test';\ntest('mira @ac-3', async ({ page }) => { await page.goto('/'); });\n";
+  // Un frontend de laboratorio con sus specs: { 'tests/story-9-9.spec.ts': texto }.
+  const frente = (f, specs) => {
+    const fe = path.join(f.repo, 'web');
+    for (const [rel, texto] of Object.entries(specs)) {
+      fs.mkdirSync(path.dirname(path.join(fe, rel)), { recursive: true });
+      fs.writeFileSync(path.join(fe, rel), texto);
+    }
+    return fe;
+  };
+  const cambiarHistoria = (f, de, a) => fs.writeFileSync(f.storyPath, fs.readFileSync(f.storyPath, 'utf8').replace(de, a));
+  const simDe = (r, ac) => (r.simulados || []).filter((s) => s.ac === ac);
+
+  // T1 — un spec del portón que contesta /api/pedidos con route.fulfill no cuenta en vivo; tampoco un .spec.tsx.
+  {
+    const f = makeWorkspace();
+    const fe = frente(f, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, 0, fe);
+    const r = calc(f);
+    const s = simDe(r, 1);
+    check('T1 RuntimeMatrix_SpecConFulfillDeNegocio_NoCuentaEnVivo @story-8.220 @ac-1',
+      r.perAc[1].verdict === 'NOT-RUN' && !r.green && s.length === 1 && /story-9-9\.spec\.ts$/.test(s[0].archivo) && s[0].linea === 3,
+      JSON.stringify({ v: r.perAc[1].verdict, s }));
+    const md = rm.renderMd(r);
+    check('T1 la salida nombra el archivo, la regla y no elegir por la persona @story-8.220 @ac-1 @ac-7',
+      /Probados con servidor simulado/.test(md) && /story-9-9\.spec\.ts:3/.test(md) && /runtime-waiver/.test(md) && /no elijas por ella/.test(md), md.slice(-1500));
+
+    const g = makeWorkspace();
+    const feX = frente(g, { 'src/story-9-9.spec.tsx': SPEC_SIMULADO });
+    writeGate(g.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', g.gatesLog, true, null, 0, feX);
+    const rX = calc(g);
+    check('T1 un .spec.tsx del filtro también se mira @story-8.220 @ac-1', rX.perAc[1].verdict === 'NOT-RUN' && simDe(rX, 1).length === 1,
+      JSON.stringify({ v: rX.perAc[1].verdict, s: rX.simulados }));
+  }
+
+  // T2 — el mismo criterio declarado espera la firma de la persona, y con la firma queda perdonado.
+  withWaiverLog(() => {
+    const f = makeWorkspace({ ack: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "sólo se probó con el servidor simulado"', '    covered_by: E1'] });
+    const fe = frente(f, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, 0, fe);
+    const r1 = calc(f);
+    check('T2 RuntimeMatrix_SimuladoDeclarado_EsperaFirma @story-8.220 @ac-2',
+      r1.perAc[1].verdict === 'NOT-VERIFIABLE' && simDe(r1, 1).length === 1 && /AC#1: `[^`]*story-9-9\.spec\.ts:3`/.test(rm.renderMd(r1)),
+      JSON.stringify({ v: r1.perAc[1].verdict, s: r1.simulados }));
+    waiverLib.appendWaiver({ story: '9.9', acs: [1], matrixHash: r1.hash, approvedBy: 'DevA', nowIso: new Date().toISOString(),
+      declHashByAc: { 1: waiverLib.declHashFor('sólo se probó con el servidor simulado', 'E1') } });
+    const r2 = calc(f);
+    check('T2 con la firma queda WAIVED-USER @story-8.220 @ac-2', r2.perAc[1].verdict === 'WAIVED-USER', r2.perAc[1].verdict);
+  });
+
+  // T3 — las rutas excluidas no son simulación; en un spec con las dos, sólo se nombra la de negocio.
+  {
+    const f = makeWorkspace();
+    const fe = frente(f, { 'tests/story-9-9.spec.ts': [
+      "test('flujo @ac-1', async ({ page }) => {",
+      "  await page.route('**/api/auth/refresh', (r) => r.fulfill({ json: {} })); // auth refresh only",
+      "  await page.route('**/health', (r) => r.fulfill({ body: 'ok' }));",
+      '});',
+    ].join('\n') });
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, 0, fe);
+    const r = calc(f);
+    check('T3 RuntimeMatrix_SoloRutasExcluidas_SigueEnVivo @story-8.220 @ac-3',
+      r.perAc[1].verdict === 'RUNTIME' && !(r.simulados || []).length, JSON.stringify({ v: r.perAc[1].verdict, s: r.simulados }));
+
+    const g = makeWorkspace();
+    const lineas = ['// línea 1', '// línea 2', '// línea 3', "test('flujo @ac-1', async ({ page }) => {",
+      "  await page.route('**/api/auth/refresh', (r) => r.fulfill({ json: {} }));", '  // línea 6', '  // línea 7', '  // línea 8',
+      "  await page.route('**/api/pedidos', (r) => r.fulfill({ json: [] }));", '});'];
+    const feG = frente(g, { 'tests/story-9-9.spec.ts': lineas.join('\n') });
+    writeGate(g.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, null, 0, feG);
+    const s = simDe(calc(g), 1);
+    check('T3 sólo la línea de negocio (9), no la excluida (5) @story-8.220 @ac-3',
+      s.length === 1 && s[0].linea === 9, JSON.stringify(s));
+  }
+
+  // T4 — un humo cuyo guion simula el servidor no cuenta en vivo, ni por la acción ni por la imagen.
+  {
+    const f = makeWorkspace();
+    fs.writeFileSync(path.join(f.repo, 'probe.mjs'), "import { setupServer } from 'msw/node';\nsetupServer().listen();\n");
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1], 'node probe.mjs');
+    const r = calc(f);
+    const s = simDe(r, 1);
+    check('T4 RuntimeMatrix_HumoConGuionQueSimula_NoCuentaEnVivo @story-8.220 @ac-4',
+      r.perAc[1].verdict !== 'RUNTIME' && s.length === 1 && /probe\.mjs$/.test(s[0].archivo) && s[0].linea === 1 &&
+      /AC#1: `probe\.mjs:1`/.test(rm.renderMd(r)) &&
+      !r.warnings.some((w) => /NO ejercita la app/.test(w)), JSON.stringify({ v: r.perAc[1].verdict, s, w: r.warnings }));
+
+    const g = makeWorkspace();
+    const abs = path.join(g.repo, 'tools', 'probe.mjs');
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, "// sonda\nawait page.routeFromHAR('pedidos.har');\n");
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [1], `node ${abs}`);
+    const rG = calc(g);
+    check('T4 ruta absoluta y routeFromHAR @story-8.220 @ac-4',
+      rG.perAc[1].verdict !== 'RUNTIME' && simDe(rG, 1).some((x) => x.linea === 2), JSON.stringify({ v: rG.perAc[1].verdict, s: rG.simulados }));
+
+    // Un curl no es un guion: la URL y la salida de -o no se leen, aunque terminen en .js.
+    const c = makeWorkspace();
+    fs.writeFileSync(path.join(c.repo, 'salida.js'), "import 'msw';\n");
+    writeMirroredSmoke(c.dodDir, c.gatesLog, '9.9', [1], 'curl -s -o salida.js http://app/static/app.js');
+    const rC = calc(c);
+    check('T4 un curl con -o y una URL en .js no es simulación @story-8.220 @ac-4',
+      rC.perAc[1].verdict === 'RUNTIME' && !(rC.simulados || []).length, JSON.stringify({ v: rC.perAc[1].verdict, s: rC.simulados }));
+
+    // Criterio de pantalla y de acción: el humo simulado con --mutates y --capture no aporta ni la acción ni la imagen.
+    const p = makeWorkspace();
+    cambiarHistoria(p, '3. **Given** otra cosa, **Then** otro resultado.', '3. El usuario puede guardar el pedido. @pantalla');
+    fs.writeFileSync(path.join(p.repo, 'probe.mjs'), "import nock from 'nock';\n");
+    const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('captura')]);
+    fs.writeFileSync(path.join(p.dodDir, 'guardar.png'), PNG);
+    const shaPng = crypto717.createHash('sha256').update(PNG).digest('hex');
+    const ts = new Date(Date.now() - 60 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+    fs.appendFileSync(path.join(p.dodDir, '9.9-smoke-ledger.jsonl'), JSON.stringify({ ts, story: '9.9', acs: [3], cmd: 'node probe.mjs', exit: 0,
+      via: 'smoke-run.sh', mutates: true, capture: 'guardar.png', capture_sha: shaPng }) + '\n');
+    fs.appendFileSync(p.gatesLog, JSON.stringify({ type: 'smoke-run', ts, story: '9.9', acs: [3], exit: 0, mutates: true, capture_sha: shaPng }) + '\n');
+    writeMirroredSmoke(p.dodDir, p.gatesLog, '9.9', [3], 'curl -s http://app/pedidos');
+    const rP = calc(p);
+    check('T4 el humo simulado no aporta la acción ni la imagen @story-8.220 @ac-4',
+      rP.perAc[3].mutacion === null && !(rP.perAc[3].visual || []).includes('guardar.png') && rP.perAc[3].verdict !== 'RUNTIME',
+      JSON.stringify(rP.perAc[3]));
+  }
+
+  // T5 — el guion del humo ya no está: cuenta como hoy, con aviso. Lo mismo un humo que corre un guion sin nombrar
+  // ninguno que se pueda leer (`npm run smoke`), y un ayudante importado que no se puede leer.
+  {
+    const f = makeWorkspace();
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1], 'node probe.mjs');
+    const r = calc(f);
+    check('T5 RuntimeMatrix_HumoConGuionIlegible_ComoHoyConAviso @story-8.220 @ac-5',
+      r.perAc[1].verdict === 'RUNTIME' && r.warnings.some((w) => /no pude leer probe\.mjs/.test(w)), JSON.stringify({ v: r.perAc[1].verdict, w: r.warnings }));
+
+    const g = makeWorkspace();
+    const sinGuion = ['npm run smoke', 'cd web && npm run smoke', './smoke.sh', 'make smoke'];
+    for (const cmd of sinGuion) writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [1], cmd);
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [3], 'curl -s http://app/x');
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [3], 'wget -qO- http://app/x | grep ok');
+    const rG = calc(g);
+    const avisosSinGuion = rG.warnings.filter((w) => /no sé si simuló/.test(w));
+    check('T5 un humo que corre un guion sin nombrarlo avisa; un curl o un wget no @story-8.220 @ac-5',
+      rG.perAc[1].verdict === 'RUNTIME' && avisosSinGuion.length === sinGuion.length &&
+      sinGuion.every((c) => avisosSinGuion.some((w) => w.includes(c))), JSON.stringify(rG.warnings));
+
+    const h = makeWorkspace();
+    fs.writeFileSync(path.join(h.repo, 'probe.mjs'), "import { arma } from './falta.mjs';\nawait fetch('http://app/x');\n");
+    writeMirroredSmoke(h.dodDir, h.gatesLog, '9.9', [1], 'node probe.mjs');
+    const rH = calc(h);
+    check('T5 un ayudante importado que no está se avisa @story-8.220 @ac-5',
+      rH.perAc[1].verdict === 'RUNTIME' && rH.warnings.some((w) => /falta\.mjs/.test(w) && /no sé si simuló/.test(w)), JSON.stringify(rH.warnings));
+  }
+
+  // T6 — una historia que arrancó antes de la regla: el simulado sigue contando y se avisa (portón y humo).
+  {
+    const antes = new Date(Date.parse(rm.SIMULATED_SERVER_FROM) - 24 * 60 * 60 * 1000).toISOString();
+    const f = makeWorkspace();
+    const fe = frente(f, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, 0, fe);
+    const r = calc(f, { startedAt: antes });
+    const g = makeWorkspace();
+    fs.writeFileSync(path.join(g.repo, 'probe.mjs'), "import { setupServer } from 'msw/node';\n");
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [1], 'node probe.mjs');
+    const rG = calc(g, { startedAt: antes });
+    check('T6 RuntimeMatrix_SimuladoEnHistoriaVieja_SoloAvisa @story-8.220 @ac-6',
+      r.perAc[1].verdict === 'RUNTIME' && r.warnings.some((w) => /story-9-9\.spec\.ts/.test(w) && /simulad/.test(w)) &&
+      rG.perAc[1].verdict === 'RUNTIME' && rG.warnings.some((w) => /probe\.mjs/.test(w) && /simulad/.test(w)),
+      JSON.stringify({ a: r.perAc[1].verdict, b: rG.perAc[1].verdict, w: r.warnings.concat(rG.warnings) }));
+  }
+
+  // T7 — la lista del agente del control de realismo y la de la lib son la misma.
+  {
+    const agente = fs.readFileSync(path.join(REPO_ROOT, 'agents', 'tycon-e2e-realness-checker.md'), 'utf8');
+    const linea = agente.split('\n').find((l) => l.includes('lib/simulated-server.js')) || '';
+    const tramo = (nombre) => ((linea.match(new RegExp(`${nombre} ([^;]+)`)) || [])[1] || '').match(/`[^`]+`/g) || [];
+    const limpio = (xs) => xs.map((x) => x.slice(1, -1)).sort();
+    const iguales = (a, b) => JSON.stringify(a) === JSON.stringify([...b].sort());
+    const seg = limpio(tramo('segmentos'));
+    const pre = limpio(tramo('prefijos'));
+    const ext = limpio(tramo('extensiones'));
+    check('T7 SimulatedServer_ListaDeNegocio_IgualAlControlDeRealismo @story-8.220 @ac-3',
+      seg.length === 14 && pre.length === 3 && ext.length > 0 &&
+      iguales(seg, sim.SEGMENTOS) && iguales(pre, sim.PREFIJOS) && iguales(ext, sim.EXTENSIONES) &&
+      linea.includes('`/(api|graphql|rpc)/`') && String(sim.INCLUSION) === '/(api|graphql|rpc)/',
+      JSON.stringify({ seg, pre, ext, lib: [sim.SEGMENTOS, sim.PREFIJOS, sim.EXTENSIONES] }));
+  }
+
+  // T8 — el portón no lleva a un spec legible: cuenta como hoy, con aviso; un frontend_dir relativo se resuelve.
+  {
+    const a = makeWorkspace();
+    cambiarHistoria(a, '`story-9-9.spec.ts::flujo`', '`no-existe::flujo`');
+    const feA = frente(a, { 'tests/otro.spec.ts': SPEC_SIMULADO });
+    writeGate(a.dodDir, '9.9', recentCompact(), 'PASS', 'no-existe', a.gatesLog, true, null, 0, feA);
+    const rA = calc(a);
+    const b = makeWorkspace();
+    frente(b, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
+    writeGate(b.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', b.gatesLog);
+    const rB = calc(b);
+    const c = makeWorkspace();
+    frente(c, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
+    writeGate(c.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', c.gatesLog, true, null, 0, 'web');
+    const rC = calc(c);
+    // Un portón sin filtro corrió todos los specs: se miran todos. Las carpetas de compilación no se recorren.
+    // Se ve en la acción: el título `@mutates` de un portón sin filtro con un spec simulado no acredita nada.
+    const sinFiltro = (specs) => {
+      const w = makeWorkspace();
+      cambiarHistoria(w, '3. **Given** otra cosa, **Then** otro resultado.', '3. El usuario puede guardar el pedido.');
+      const feW = frente(w, specs);
+      writeGate(w.dodDir, '9.9', recentCompact(), 'PASS', '', w.gatesLog, true, ['@mutates guarda @ac-3'], 0, feW);
+      writeMirroredSmoke(w.dodDir, w.gatesLog, '9.9', [3], 'curl -s http://app/pedidos');
+      return calc(w).perAc[3];
+    };
+    const conSimulado = sinFiltro({ 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
+    const soloEnDist = sinFiltro({ 'tests/real.spec.ts': SPEC_REAL, 'dist/copia.spec.ts': SPEC_SIMULADO });
+    check('T8 un portón sin filtro mira todos los specs, sin carpetas de compilación @story-8.220 @ac-1',
+      conSimulado.mutacion === null && /@mutates/.test(soloEnDist.mutacion || ''),
+      JSON.stringify({ conSimulado: conSimulado.mutacion, soloEnDist: soloEnDist.mutacion }));
+    // Un filtro que sale de la carpeta del frontend no se lee.
+    const e = makeWorkspace();
+    cambiarHistoria(e, '`story-9-9.spec.ts::flujo`', '`../afuera.spec.ts::flujo`');
+    const feE = frente(e, { 'tests/real.spec.ts': SPEC_REAL });
+    fs.writeFileSync(path.join(e.repo, 'afuera.spec.ts'), SPEC_SIMULADO);
+    writeGate(e.dodDir, '9.9', recentCompact(), 'PASS', '../afuera.spec.ts', e.gatesLog, true, null, 0, feE);
+    const rE = calc(e);
+    check('T8 un filtro que sale del frontend_dir no se lee @story-8.220 @ac-5',
+      rE.perAc[1].verdict === 'RUNTIME' && !(rE.simulados || []).length && rE.warnings.some((w) => /afuera\.spec\.ts/.test(w) && /no sé si simuló/.test(w)),
+      JSON.stringify({ v: rE.perAc[1].verdict, s: rE.simulados, w: rE.warnings }));
+    // Una carpeta que no se puede leer, con otro spec que sí: se avisa que faltó mirar.
+    if (process.getuid && process.getuid() !== 0) {
+      const u = makeWorkspace();
+      const feU = frente(u, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'cerrada/story-9-9.spec.ts': SPEC_SIMULADO });
+      fs.chmodSync(path.join(feU, 'cerrada'), 0o000);
+      writeGate(u.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', u.gatesLog, true, null, 0, feU);
+      const rU = calc(u);
+      fs.chmodSync(path.join(feU, 'cerrada'), 0o755);
+      check('T8 una carpeta ilegible bajo el frontend_dir se avisa @story-8.220 @ac-5',
+        rU.warnings.some((w) => /no pude leer/.test(w) && /cerrada/.test(w)), JSON.stringify(rU.warnings));
+    }
+    check('T8 RuntimeMatrix_PortonSinSpecLegible_ComoHoyConAviso @story-8.220 @ac-5',
+      rA.perAc[1].verdict === 'RUNTIME' && rA.warnings.some((w) => /no pude leer no-existe/.test(w)) &&
+      rB.perAc[1].verdict === 'RUNTIME' && rB.warnings.some((w) => /no pude leer/.test(w) && /frontend_dir/.test(w)) &&
+      rC.perAc[1].verdict === 'NOT-RUN',
+      JSON.stringify({ a: rA.perAc[1].verdict, b: rB.perAc[1].verdict, c: rC.perAc[1].verdict, wa: rA.warnings, wb: rB.warnings }));
+  }
+
+  // T9 — un portón con un spec simulado no acredita la acción ni aporta su captura; con un filtro real y otro simulado,
+  // el portón entero es simulado.
+  {
+    const f = makeWorkspace();
+    cambiarHistoria(f, '3. **Given** otra cosa, **Then** otro resultado.', '3. El usuario puede guardar el pedido. @pantalla');
+    cambiarHistoria(f, '| E1 | `story-9-9.spec.ts::flujo` | 1,3 | e2e | x | y |',
+      '| E1 | `real.spec.ts::mira` | 3 | e2e | x | y |\n| E2 | `sim.spec.ts::guarda` | 3 | e2e | x | y |');
+    const fe = frente(f, { 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
+    writeGate(f.dodDir, '9.9', recentCompact(20), 'PASS', 'real.spec.ts', f.gatesLog, true, ['mira @ac-3'], 0, fe);
+    const tsSim = recentCompact(10);
+    writeGate(f.dodDir, '9.9', tsSim, 'PASS', 'sim.spec.ts', f.gatesLog, true, ['@mutates guarda @ac-3'], 0, fe);
+    const dir = path.join(f.dodDir, `9.9-captures-${tsSim}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('guardado')]);
+    fs.writeFileSync(path.join(dir, '01-guarda.png'), PNG);
+    const crudo = JSON.stringify([{ file: '01-guarda.png', title: '@mutates guarda @ac-3', acs: [3], sha256: crypto717.createHash('sha256').update(PNG).digest('hex') }]);
+    fs.writeFileSync(path.join(dir, 'captures.json'), crudo);
+    fs.appendFileSync(f.gatesLog, JSON.stringify({ type: 'e2e-captures', ts: new Date().toISOString(), folder: path.basename(dir),
+      sha256: crypto717.createHash('sha256').update(crudo).digest('hex') }) + '\n');
+    const r = calc(f);
+    check('T9 RuntimeMatrix_PortonSimulado_NoAcreditaAccionNiImagen @story-8.220 @ac-1',
+      r.perAc[3].mutacion === null && !(r.perAc[3].visual || []).some((v) => /01-guarda\.png/.test(v)) && r.perAc[3].verdict !== 'RUNTIME',
+      JSON.stringify(r.perAc[3]));
+
+    const m = makeWorkspace();
+    cambiarHistoria(m, '| E1 | `story-9-9.spec.ts::flujo` | 1,3 | e2e | x | y |', '| E1 | `real.spec.ts::mira` | 1 | e2e | x | y |');
+    const feM = frente(m, { 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
+    writeGate(m.dodDir, '9.9', recentCompact(), 'PASS', 'real.spec.ts sim.spec.ts', m.gatesLog, true, null, 0, feM);
+    const rM = calc(m);
+    check('T9 un portón con un filtro real y otro simulado es simulado entero @story-8.220 @ac-1',
+      rM.perAc[1].verdict === 'NOT-RUN' && simDe(rM, 1).length > 0, JSON.stringify({ v: rM.perAc[1].verdict, s: rM.simulados }));
+  }
+
+  // T10 — cada vía de simulación, una por caso.
+  {
+    const via = (texto) => sim.simulaServidor(texto);
+    const casos = [
+      ['route.fulfill', "await page.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['context.route', "await context.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['routeFromHAR', "await page.routeFromHAR('x.har');", 1],
+      ['continue con cambios', "await page.route('**/api/x', (r) => r.continue({ headers: {} }));", 1],
+      ['continue sin cambios', "await page.route('**/api/x', (r) => r.continue());", 0],
+      ['abort', "await page.route('**/api/x', (r) => r.abort());", 1],
+      ['import msw', "import { http } from 'msw';", 1],
+      ['require nock', "const nock = require('nock');", 1],
+      ['patrón no literal', "await page.route(URL_PEDIDOS, (r) => r.fulfill({}));", 1],
+      ['en un comentario', "// await page.route('**/api/x', (r) => r.fulfill({}));", 0],
+      ['en un bloque de comentario', "/* import 'msw'; */", 0],
+      ['en una cadena', "const s = \"page.route('**/api/x', r => r.fulfill())\";", 0],
+      ['page.context().route', "await page.context().route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['receptor con otro nombre', "await ctx.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['encadenado opcional', "await page?.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['import dinámico', "const m = await import('msw');", 1],
+      ['export from', "export * from 'msw';", 1],
+      ['manejador que delega', "await page.route('**/api/x', (r) => mockOk(r));", 1],
+      ['espía con registro', "await page.route('**/api/x', (r) => { log(r.request()); r.continue(); });", 0],
+      ['predicado con flecha y manejador con nombre', "await page.route((u) => u.pathname.startsWith('/api'), stub);", 1],
+      ['regex con paréntesis y comilla antes', "const re = /\\(\"'/;\nawait page.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['regex con comilla invertida antes', "const re = /`/;\nawait page.route('**/api/x', (r) => r.fulfill({}));\nconst t = `x`;", 1],
+      ['regex con paréntesis de cierre', "await page.route(/\\/api\\/x\\)/, (r) => r.fulfill({}));", 1],
+    ];
+    const fallas = casos.filter(([, t, n]) => via(t).length !== n).map(([nombre, t]) => `${nombre}: ${JSON.stringify(via(t))}`);
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-ayudante-'));
+    fs.writeFileSync(path.join(d, 'ayudante.ts'), "export async function stub(page) {\n  await page.route('**/api/x', (r) => r.fulfill({}));\n}\n");
+    fs.writeFileSync(path.join(d, 'a.spec.ts'), "import { stub } from './ayudante';\ntest('x', async ({ page }) => { await stub(page); });\n");
+    const ay = sim.deArchivo(path.join(d, 'a.spec.ts'));
+    const delAyudante = ay.leido && ay.hallazgos.some((h) => /ayudante\.ts$/.test(h.archivo) && h.linea === 2);
+    check('T10 SimulatedServer_Vias_UnaPorCaso @story-8.220 @ac-1', !fallas.length && delAyudante, JSON.stringify({ fallas, ay }));
+  }
+
+  // T10b — un archivo grande, con comentarios largos y una división por renglón, se lee en segundos: mirar si una `/`
+  // abre una regex no recorre todo lo leído (así tardaba 30 s en 300 KB, y el freno corta el cuadro del dueño a los 20).
+  {
+    const bloque = `/* ${'x'.repeat(400)} */\nconst a = b / c; // ${'y'.repeat(200)}\n`;
+    const grande = bloque.repeat(Math.ceil(300000 / bloque.length));
+    const t0 = Date.now();
+    const hallados = sim.simulaServidor(grande);
+    const ms = Date.now() - t0;
+    check('T10b SimulatedServer_ArchivoGrande_SeLeeEnSegundos', ms < 3000 && hallados.length === 0, JSON.stringify({ ms, hallados: hallados.length }));
+  }
+
+  // T11 — el paso «Probar en vivo» escribe las dos reglas.
+  {
+    const paso = fs.readFileSync(path.join(__dirname, '..', '..', 'steps', 'step-10-live-check.md'), 'utf8');
+    check('T11 StepLiveCheck_SimuladoYPreguntaAbierta_Escritas @story-8.220 @ac-7',
+      paso.includes('Una prueba de navegador con el servidor simulado no cierra «Probar en vivo» sin la firma de la persona') &&
+      paso.includes('la pregunta sigue abierta: no elijas por ella'), '');
+  }
+}
+
+// Historia paraguas: la matriz mide sólo la tanda de la ejecución (`compute({ batch })`). El criterio 1 es de la
+// primera tanda, el 2 de la segunda y el 3 de ninguna, salvo que `pipelines` lo ponga en otra; cada uno con su fila.
+{
+  const paraguas = (pipelines) => {
+    const f = makeWorkspace();
+    fs.writeFileSync(f.storyPath, [
+      '---', 'story: 9.9', 'status: in-progress', 'files_to_modify:', '  - src/Feature.cs', 'pipelines:', ...pipelines, '---', '',
+      '## Acceptance Criteria', '',
+      '1. **Given** algo, **When** pasa, **Then** resultado.',
+      '2. **Given** otra cosa, **Then** otro resultado.',
+      '3. **Given** una tercera, **Then** su resultado.', '',
+      '### Tests', '',
+      '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `FeatureTests.Caso1` | 1 | integration | x | y |',
+      '| T2 | `FeatureTests.Caso2` | 2 | integration | x | y |',
+      '| T3 | `FeatureTests.Caso3` | 3 | integration | x | y |', '',
+    ].join('\n'));
+    return f;
+  };
+  const AB = ['  - name: A-la-primera', '    status: pending', '    acs: [1]', '  - name: B-la-segunda', '    status: pending', '    acs: [2]'];
+
+  {
+    const f = paraguas(AB);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 3]);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera', changed: [] });
+    check('T1 Matrix_Batch_OnlyItsAcs @story-8.239 @ac-1',
+      !r.structuralError && JSON.stringify(r.acs) === '[1,3]' && r.green === true && r.batch === 'A-la-primera',
+      JSON.stringify({ e: r.structuralError, acs: r.acs, green: r.green, notRun: r.notRun, batch: r.batch }));
+  }
+  {
+    const f = paraguas([...AB, '  - name: C-la-bloqueada', '    status: blocked', '    blocked_by: "espera a la A"', '    acs_pending: [3]']);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1]);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera', changed: [] });
+    const md = r.structuralError ? '' : rm.renderMd(r);
+    check('T2 Matrix_Batch_OtherPendingOut_Said @story-8.239 @ac-2',
+      JSON.stringify(r.acs) === '[1]' && JSON.stringify(r.outOfBatchAcs) === '[2]'
+        && r.warnings.some((w) => w.includes('fuera de esta tanda: B-la-segunda (AC 2)'))
+        && r.warnings.some((w) => /tanda blocked/.test(w) && /C-la-bloqueada/.test(w))
+        && md.includes('A-la-primera') && md.includes('fuera de esta tanda: B-la-segunda (AC 2)'),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, out: r.outOfBatchAcs, w: r.warnings }));
+  }
+  {
+    const f = paraguas(['  - name: A-la-primera', '    status: done', '    acs: [1]', '  - name: B-la-segunda', '    status: pending', '    acs: [2]']);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [2, 3]);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'B-la-segunda', changed: [] });
+    check('T3 Matrix_Batch_DoneOut @story-8.239 @ac-2',
+      JSON.stringify(r.acs) === '[2,3]' && r.green === true && r.warnings.some((w) => w.includes('fuera de esta tanda: A-la-primera (AC 1)')),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, w: r.warnings }));
+  }
+  {
+    const f = paraguas(AB);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 3]);
+    const sin = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    const nulo = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: null });
+    check('T4 Matrix_NoBatch_AsToday @story-8.239 @ac-3',
+      JSON.stringify(sin.acs) === '[1,2,3]' && sin.green === false && JSON.stringify(sin.notRun) === '[2]'
+        && sin.batch === null && sin.outOfBatchAcs.length === 0 && sin.hash === nulo.hash
+        && !sin.warnings.some((w) => /fuera de esta tanda/.test(w)),
+      JSON.stringify({ acs: sin.acs, notRun: sin.notRun, batch: sin.batch, out: sin.outOfBatchAcs }));
+  }
+  {
+    const f = paraguas([...AB, '  - name: C-sin-criterios', '    status: pending']);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'C-sin-criterios' });
+    check('T5 Matrix_Batch_WithoutAcs_AsToday @story-8.239 @ac-4',
+      JSON.stringify(r.acs) === '[1,2,3]' && r.outOfBatchAcs.length === 0
+        && r.warnings.some((w) => /C-sin-criterios/.test(w) && /no declara criterios/.test(w)),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, w: r.warnings }));
+  }
+  {
+    const z = rm.compute({ storyPath: paraguas(AB).storyPath, batch: 'Z' });
+    const hecha = rm.compute({ storyPath: paraguas(['  - name: A-la-primera', '    status: done', '    acs: [1]']).storyPath, batch: 'A-la-primera' });
+    const repetida = rm.compute({ storyPath: paraguas([...AB, '  - name: A-la-primera', '    status: pending', '    acs: [3]']).storyPath, batch: 'B-la-segunda' });
+    const inexistente = rm.compute({ storyPath: paraguas(['  - name: A-la-primera', '    status: pending', '    acs: [1, 9]']).storyPath, batch: 'A-la-primera' });
+    const ninguno = rm.compute({ storyPath: paraguas([...AB, '  - name: C-otra', '    status: pending', '    acs: [8, 9]']).storyPath, batch: 'C-otra' });
+    check('T6 Matrix_Batch_Invalid_StructuralError @story-8.239 @ac-4',
+      /Z/.test(z.structuralError || '') && /A-la-primera/.test(z.structuralError || '') && /B-la-segunda/.test(z.structuralError || '')
+        && /done/.test(hecha.structuralError || '')
+        && /repetid/.test(repetida.structuralError || '')
+        && !inexistente.structuralError && inexistente.warnings.some((w) => /9/.test(w) && /no está entre los criterios/.test(w))
+        && /medirla sería medir nada/.test(ninguno.structuralError || ''),
+      JSON.stringify({ z: z.structuralError, hecha: hecha.structuralError, repetida: repetida.structuralError, inex: inexistente.structuralError || inexistente.warnings, ninguno: ninguno.structuralError }));
+  }
+  {
+    const f = paraguas(['  - name: A-la-primera', '    status: pending', '    acs: [1]', '  - name: B-la-segunda', '    status: blocked', '    blocked_by: "espera"', '    acs_pending: [2]']);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'B-la-segunda', changed: [] });
+    check('T7 Matrix_Batch_OwnBlockedMeasured @story-8.239 @ac-1',
+      JSON.stringify(r.acs) === '[2,3]' && !(r.blockedAcs || []).includes(2),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, blocked: r.blockedAcs }));
+  }
+  {
+    const f = paraguas(AB);
+    const home = path.join(f.ws, 'home');
+    const gl = path.join(require(path.join(__dirname, '..', 'lib', 'state-dir.js')).stateDir(home), 'gates.log');
+    fs.mkdirSync(path.dirname(gl), { recursive: true });
+    writeMirroredSmoke(f.dodDir, gl, '9.9', [1, 3]);
+    // un repo git de verdad: sin marcador, la lista de cambios sale de --code-repo (8.240 AC 8)
+    fs.rmSync(path.join(f.repo, '.git'), { recursive: true, force: true });
+    const git = (...a) => require('child_process').execFileSync('git', ['-C', f.repo, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a],
+      { stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: '2026-11-08T10:00:00Z', GIT_COMMITTER_DATE: '2026-11-08T10:00:00Z' } });
+    git('init', '-q');
+    git('add', '.');
+    git('commit', '-qm', 'inicio');
+    const cli = (extra) => require('child_process').spawnSync(process.execPath,
+      [path.join(__dirname, '..', 'runtime-matrix.js'), '--story', f.storyPath, '--no-write', ...extra],
+      { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home } });
+    const con = cli(['--batch', 'A-la-primera', '--code-repo', f.repo]);
+    const sin = cli([]);
+    check('T8 MatrixCli_BatchFlag @story-8.239 @ac-7',
+      con.status === 0 && /tanda A-la-primera/.test(con.stdout.split('\n')[0]) && sin.status === 1 && !/tanda A-la-primera/.test(sin.stdout.split('\n')[0]),
+      JSON.stringify({ con: con.status, l: con.stdout.split('\n')[0], err: con.stderr.slice(0, 300), sin: sin.status }));
+  }
+}
+
+// Historia paraguas con archivos atados a tandas (8.240): la corrida que toca un archivo de otra tanda devuelve sus
+// criterios a la matriz. `archivos`: los renglones de files_to_modify; `cuerpo`: renglones extra (tareas, filas).
+{
+  const atada = (pipelines, archivos = [], cuerpo = [], filas = []) => {
+    const f = makeWorkspace();
+    const viejo = new Date(Date.now() - 60 * 60 * 1000);
+    for (const n of ['a.js', 'b.js', 'c.js', 'd.js', 'e.js', 'x.js']) {
+      const p = path.join(f.repo, 'src', n);
+      fs.writeFileSync(p, '// code\n');
+      fs.utimesSync(p, viejo, viejo);
+    }
+    fs.writeFileSync(f.storyPath, [
+      '---', 'story: 9.9', 'status: in-progress', 'files_to_modify:', '  - src/Feature.cs', ...archivos, 'pipelines:', ...pipelines, '---', '',
+      '## Acceptance Criteria', '',
+      '1. **Given** algo, **When** pasa, **Then** resultado.',
+      '2. **Given** otra cosa, **Then** otro resultado.',
+      '3. **Given** una tercera, **Then** su resultado.',
+      '4. **Given** una cuarta, **Then** su resultado.', '',
+      '### Tests', '',
+      '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `FeatureTests.Caso1` | 1 | integration | x | y |',
+      '| T2 | `FeatureTests.Caso2` | 2 | integration | x | y |',
+      '| T3 | `FeatureTests.Caso3` | 3 | integration | x | y |',
+      '| T4 | `FeatureTests.Caso4` | 4 | integration | x | y |', ...filas, '',
+      '## Tasks / Subtasks', '', ...cuerpo, '',
+    ].join('\n'));
+    return f;
+  };
+  const LISTA = ['  - name: A-la-primera', '    status: pending', '    acs: [1]',
+    '  - name: B-la-segunda', '    status: pending', '    acs: [2]', '    tasks_pending: [5]', '    tests_pending: ["T9"]'];
+  const MAPA = ['  A-la-primera:', '    status: pending', '    acs: [1]',
+    '  B-la-segunda:', '    status: pending', '    acs: [2]', '    tasks_pending: [5]', '    tests_pending: ["T9"]'];
+  const TAREA = ['- [ ] [SEQ] Task 5: cambia `src/c.js` (AC: 2)'];
+  const FILA = ['| T9 | `src/d.js::caso` | 2 | unit | x | y |'];
+  const B_ARCH = ['  - src/b.js  # tanda B'];
+  const correr = (f, changed, batch = 'A-la-primera') => rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch, changed, codeRepo: f.repo });
+
+  {
+    const f = atada(LISTA, B_ARCH);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 3, 4]);
+    const r = correr(f, ['src/b.js']);
+    const md = r.structuralError ? '' : rm.renderMd(r);
+    check('T1 Matrix_Batch_TouchedOtherBatchFile_ReturnsItsAcs @story-8.240 @ac-1',
+      !r.structuralError && r.acs.includes(2) && JSON.stringify(r.returnedAcs) === '[2]' && !(r.outOfBatchAcs || []).includes(2)
+        && /B-la-segunda/.test((r.returnedBy || []).join(' '))
+        && r.warnings.some((w) => /vuelven a la matriz: B-la-segunda \(AC 2\)/.test(w) && w.includes('src/b.js'))
+        && /vuelven a la matriz/.test(md) && !(r.fueraDeTanda || []).some((t) => /B-la-segunda/.test(t)),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, ret: r.returnedAcs, by: r.returnedBy, out: r.outOfBatchAcs, w: r.warnings }));
+  }
+  {
+    const f = atada(LISTA, [], TAREA, FILA);
+    const porTarea = correr(f, ['src/c.js']);
+    const porFila = correr(f, ['src/d.js']);
+    check('T2 Matrix_Batch_ReturnByTaskAndTestRow @story-8.240 @ac-1',
+      JSON.stringify(porTarea.returnedAcs) === '[2]' && JSON.stringify(porFila.returnedAcs) === '[2]',
+      JSON.stringify({ tarea: porTarea.structuralError || porTarea.returnedAcs, fila: porFila.structuralError || porFila.returnedAcs }));
+  }
+  {
+    const f = atada(['  - name: A-la-primera', '    status: pending', '    acs: [1]',
+      '  - name: C-hecha', '    status: done', '    acs: [3]',
+      '  - name: D-frenada', '    status: blocked', '    blocked_by: "espera a la A"', '    acs_pending: [4]'],
+    ['  - src/c.js  # tanda C', '  - src/e.js  # tanda D']);
+    const r = correr(f, ['src/c.js', 'src/e.js']);
+    check('T3 Matrix_Batch_TouchedDoneOrBlockedBatch_Returns @story-8.240 @ac-1',
+      !r.structuralError && JSON.stringify(r.returnedAcs) === '[3,4]' && r.acs.includes(3) && r.acs.includes(4) && !(r.blockedAcs || []).includes(4),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, ret: r.returnedAcs, blocked: r.blockedAcs }));
+  }
+  {
+    const f = atada(LISTA, ['  - src/b.js  # tanda A, tanda B', '  - src/x.js']);
+    const compartido = correr(f, ['src/b.js', 'src/x.js']);
+    const vacia = correr(f, []);
+    check('T4 Matrix_Batch_SharedOrUnattributedFile_NoReturn @story-8.240 @ac-2',
+      !compartido.structuralError && (compartido.returnedAcs || []).length === 0 && JSON.stringify(compartido.acs) === JSON.stringify(vacia.acs),
+      JSON.stringify({ c: compartido.structuralError || compartido.returnedAcs, acs: compartido.acs, vacia: vacia.acs }));
+  }
+  {
+    const f = atada(LISTA, B_ARCH);
+    const sin = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera' });
+    const nula = correr(f, null);
+    const vacia = correr(f, []);
+    const dice = (r) => r.warnings.some((w) => /sin la lista de cambios de la corrida no achico: mido todas las tandas/.test(w));
+    check('T5 Matrix_Batch_NoChangedList_MeasuresAll @story-8.240 @ac-3',
+      sin.batch === null && nula.batch === null && dice(sin) && dice(nula) && sin.acs.includes(2)
+        && vacia.batch === 'A-la-primera' && !vacia.acs.includes(2),
+      JSON.stringify({ sin: [sin.batch, sin.acs], nula: [nula.batch, nula.acs], vacia: [vacia.batch, vacia.acs] }));
+  }
+  {
+    const lista = atada(LISTA, B_ARCH, TAREA, FILA);
+    const mapa = atada(MAPA, B_ARCH, TAREA, FILA);
+    const iguales = ['src/b.js', 'src/c.js', 'src/d.js'].every((c) => JSON.stringify(correr(lista, [c]).returnedAcs) === '[2]'
+      && JSON.stringify(correr(mapa, [c]).returnedAcs) === '[2]');
+    check('T9 Matrix_Batch_MapFormPipelines @story-8.240 @ac-6', iguales,
+      JSON.stringify(['src/b.js', 'src/c.js', 'src/d.js'].map((c) => [c, correr(mapa, [c]).structuralError || correr(mapa, [c]).returnedAcs])));
+  }
+  {
+    const f = atada(['  A-la-primera:', '    status: pending', '    acs: [1]',
+      '  B-frenada:', '    status: blocked', '    blocked_by: "espera a la A"', '    acs_pending: [2]'],
+    ['  - src/nueva-de-b.js  # tanda B']);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('T10 Matrix_BlockedFileNotCreated_MapForm @story-8.240 @ac-6',
+      r.warnings.some((w) => /Todavía sin crear, de una tanda bloqueada: src\/nueva-de-b\.js/.test(w)),
+      JSON.stringify(r.warnings));
+  }
+  {
+    const f = atada(LISTA, B_ARCH);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 3]);
+    const sin = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    const con = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, changed: ['src/b.js'], codeRepo: f.repo });
+    check('T25 Matrix_NoBatch_WithChanged_AsBefore @story-8.240 @ac-16',
+      JSON.stringify(sin.acs) === JSON.stringify(con.acs) && sin.green === con.green && sin.hash === con.hash && (con.returnedAcs || []).length === 0,
+      JSON.stringify({ sin: [sin.acs, sin.green, sin.hash], con: [con.acs, con.green, con.hash] }));
+  }
+}
+
+// La prueba que la historia corrigió después de la evidencia vence sólo los criterios que nombra. Un repo
+// de verdad: main con el código y las pruebas (también como origin/main), y la rama de la historia con su humo.
+{
+  const { execFileSync } = require('child_process');
+  const HACE_UNA_HORA = new Date(Date.now() - 60 * 60 * 1000);
+  const labCriterios = (acsDelHumo = [1, 2, 3, 4, 5], marcasDeLaPrueba = '@ac-2 @ac-3') => {
+    const f = makeWorkspace({ listaArchivos: ['files_to_modify:', '  - src/Feature.cs', '  - tests/feature.test.js', '  - tests/otra.test.js'] });
+    fs.rmSync(path.join(f.repo, '.git'), { recursive: true, force: true });
+    const git = (...a) => execFileSync('git', ['-C', f.repo, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a],
+      { stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: '2026-11-08T10:00:00Z', GIT_COMMITTER_DATE: '2026-11-08T10:00:00Z' } });
+    const st = fs.readFileSync(f.storyPath, 'utf8').split('## Acceptance Criteria')[0];
+    fs.writeFileSync(f.storyPath, [st, '## Acceptance Criteria', '',
+      ...[1, 2, 3, 4, 5].map((n) => `${n}. **Given** algo ${n}, **When** pasa, **Then** resultado ${n}.`), '',
+      '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `FeatureTests.Caso1` | 1,2,3,4,5 | integration | x | y |', ''].join('\n'));
+    const prueba = path.join(f.repo, 'tests', 'feature.test.js');
+    const otra = path.join(f.repo, 'tests', 'otra.test.js');
+    fs.mkdirSync(path.dirname(prueba), { recursive: true });
+    fs.writeFileSync(prueba, `test('caso @story-9.9 ${marcasDeLaPrueba}', () => {});\n`);
+    fs.writeFileSync(otra, "test('otro @story-9.9 @ac-4', () => {});\n");
+    git('init', '-q', '-b', 'main');
+    git('add', '.');
+    git('commit', '-qm', 'inicio');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git('switch', '-q', '-c', 'feature/9-9-fixture');
+    for (const p of [f.codeFile, prueba, otra]) fs.utimesSync(p, HACE_UNA_HORA, HACE_UNA_HORA);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', acsDelHumo);
+    git('add', '.');
+    git('commit', '-qm', 'el humo');
+    const ahora = (p, txt) => { fs.writeFileSync(p, txt); const d = new Date(Date.now() + 1000); fs.utimesSync(p, d, d); };
+    const calcular = () => rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, testsResults: [] });
+    return { f, prueba, otra, ahora, calcular };
+  };
+  const veredictos = (r) => r.acs.map((n) => `${n}:${r.perAc[n].verdict}`).join(' ');
+  {
+    const L = labCriterios();
+    L.ahora(L.prueba, "test('caso @story-9.9 @ac-2 @ac-3', () => { /* arreglada */ });\n");
+    const r = L.calcular();
+    const fila = (r.perAc[2].vencioPor || []).join(' ');
+    check('T19 RuntimeMatrix_TestFixedAfterEvidence_OnlyItsCriteriaReturn @story-8.263 @ac-14',
+      veredictos(r) === '1:RUNTIME 2:NOT-RUN 3:NOT-RUN 4:RUNTIME 5:RUNTIME'
+        && /venció por tests\/feature\.test\.js, que prueba los criterios 2 y 3/.test(fila)
+        && /\| #2 \|[^\n]*⌛ humo [^|]*venció por tests\/feature\.test\.js, que prueba los criterios 2 y 3/.test(rm.renderMd(r)),
+      JSON.stringify({ v: veredictos(r), fila, w: r.warnings.slice(0, 4) }));
+  }
+  {
+    const L = labCriterios();
+    L.ahora(L.f.codeFile, '// code cambiado\n');
+    const r = L.calcular();
+    check('T20 RuntimeMatrix_CodeFileChanged_AllReturn @story-8.263 @ac-16',
+      veredictos(r) === '1:NOT-RUN 2:NOT-RUN 3:NOT-RUN 4:NOT-RUN 5:NOT-RUN', JSON.stringify({ v: veredictos(r), w: r.warnings.slice(0, 3) }));
+  }
+  {
+    // caso 1: dos pruebas de la historia, de los criterios 2 y 3 y del 4; caso 2: la prueba del 2 y código más viejo
+    const L1 = labCriterios();
+    L1.ahora(L1.prueba, "test('caso @story-9.9 @ac-2 @ac-3', () => { /* arreglada */ });\n");
+    L1.ahora(L1.otra, "test('otro @story-9.9 @ac-4', () => { /* arreglada */ });\n");
+    const r1 = L1.calcular();
+    const L2 = labCriterios();
+    fs.writeFileSync(L2.f.codeFile, '// code cambiado\n');
+    L2.ahora(L2.prueba, "test('caso @story-9.9 @ac-2', () => { /* arreglada */ });\n");
+    const r2 = L2.calcular();
+    check('T22 RuntimeMatrix_MixedChanges_UnionOrAll @story-8.263 @ac-19',
+      veredictos(r1) === '1:RUNTIME 2:NOT-RUN 3:NOT-RUN 4:NOT-RUN 5:RUNTIME' && veredictos(r2) === '1:NOT-RUN 2:NOT-RUN 3:NOT-RUN 4:NOT-RUN 5:NOT-RUN',
+      JSON.stringify({ r1: veredictos(r1), r2: veredictos(r2) }));
+  }
+  {
+    const L = labCriterios([1, 2], '@ac-2');
+    L.ahora(L.prueba, "test('caso @story-9.9 @ac-2', () => { /* arreglada */ });\n");
+    const r = L.calcular();
+    check('T23 RuntimeMatrix_EvidenceCoveringTwoCriteria_CountsPerCriterion @story-8.263 @ac-20',
+      r.perAc[1].verdict === 'RUNTIME' && r.perAc[2].verdict === 'NOT-RUN'
+        && /venció por tests\/feature\.test\.js, que prueba el criterio 2/.test((r.perAc[2].vencioPor || []).join(' ')),
+      JSON.stringify({ v: veredictos(r), fila: r.perAc[2].vencioPor }));
+  }
+}
+
+// El código que cargan las pruebas de la historia (8.282): una prueba con `@story-9.9 @ac-N` que carga con un `require`
+// literal un archivo fuera de la lista vence sus criterios cuando ese archivo cambia después de la evidencia, como la
+// regla 6; uno que no cambió no vence nada. Un `require` que no se puede leer deja la vigencia como antes y lo dice.
+{
+  const { execFileSync } = require('child_process');
+  const HACE_UNA_HORA = new Date(Date.now() - 60 * 60 * 1000);
+  const labCarga = (cargaDeLaPrueba = "require('../lib/x.js')", marcas = '@story-9.9 @ac-2') => {
+    const f = makeWorkspace({ listaArchivos: ['files_to_modify:', '  - src/Feature.cs', '  - tests/feature.test.js', '  - tests/otra.test.js'] });
+    fs.rmSync(path.join(f.repo, '.git'), { recursive: true, force: true });
+    const env = { ...process.env, GIT_AUTHOR_DATE: '2026-11-08T10:00:00Z', GIT_COMMITTER_DATE: '2026-11-08T10:00:00Z' };
+    const git = (...a) => execFileSync('git', ['-C', f.repo, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { stdio: 'ignore', env });
+    const st = fs.readFileSync(f.storyPath, 'utf8').split('## Acceptance Criteria')[0];
+    fs.writeFileSync(f.storyPath, [st, '## Acceptance Criteria', '',
+      ...[1, 2, 3].map((n) => `${n}. **Given** algo ${n}, **When** pasa, **Then** resultado ${n}.`), '',
+      '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `FeatureTests.Caso1` | 1,2,3 | integration | x | y |', ''].join('\n'));
+    const prueba = path.join(f.repo, 'tests', 'feature.test.js');
+    const otra = path.join(f.repo, 'tests', 'otra.test.js');
+    const cargado = path.join(f.repo, 'lib', 'x.js');
+    const ayuda = path.join(f.repo, 'tests', 'ayuda.js');
+    for (const p of [prueba, cargado]) fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(prueba, `${cargaDeLaPrueba};\nrequire('./ayuda.js');\nrequire('node:assert');\ntest('caso ${marcas}', () => {});\n`);
+    fs.writeFileSync(otra, "test('otro @story-9.9 @ac-1', () => {});\n");
+    fs.writeFileSync(cargado, 'module.exports = 1;\n');
+    fs.writeFileSync(ayuda, 'module.exports = 1;\n');
+    git('init', '-q', '-b', 'main');
+    git('add', '.');
+    git('commit', '-qm', 'inicio');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git('switch', '-q', '-c', 'feature/9-9-fixture');
+    for (const p of [f.codeFile, prueba, otra, cargado, ayuda]) fs.utimesSync(p, HACE_UNA_HORA, HACE_UNA_HORA);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 2, 3]);
+    git('add', '.');
+    git('commit', '-qm', 'el humo');
+    const ahora = (p, txt) => { fs.writeFileSync(p, txt); const d = new Date(Date.now() + 1000); fs.utimesSync(p, d, d); };
+    // un cambio commiteado por otra historia: su rama fusionada con el asunto de un pedido
+    const deOtraHistoria = (p, txt) => {
+      git('switch', '-q', '-c', 'story/9-8-otra');
+      ahora(p, txt);
+      git('commit', '-qam', 'otra historia');
+      git('switch', '-q', 'feature/9-9-fixture');
+      git('merge', '-q', '--no-ff', '-m', 'Merge pull request 77 from story/9-8-otra into feature/9-9-fixture', 'story/9-8-otra');
+    };
+    const calcular = () => rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, testsResults: [] });
+    return { f, cargado, ayuda, ahora, deOtraHistoria, calcular };
+  };
+  const veredictos = (r) => r.acs.map((n) => `${n}:${r.perAc[n].verdict}`).join(' ');
+  const NO_PUDE = /no pude leer lo que carga tests\/feature\.test\.js: vigencia por la lista de la historia/;
+  {
+    const cambia = labCarga();
+    cambia.ahora(cambia.cargado, 'module.exports = 2;\n');
+    const r = cambia.calcular();
+    const fila = (r.perAc[2].vencioPor || []).join(' ');
+    const sigue = labCarga().calcular();
+    const otra = labCarga();
+    otra.deOtraHistoria(otra.ayuda, 'module.exports = 3;\n');
+    const rOtra = otra.calcular();
+    // `require('..')` es relativo (carga ../index.js); un `require(` en un comentario no se traga al literal que sigue
+    const punto = labCarga("require('..')");
+    punto.ahora(path.join(punto.f.repo, 'index.js'), 'module.exports = 2;\n');
+    const rPunto = punto.calcular();
+    const comentario = labCarga("// se carga con require (ver abajo\nrequire('../lib/x.js')");
+    comentario.ahora(comentario.cargado, 'module.exports = 2;\n');
+    const rComentario = comentario.calcular();
+    check('Matriz_CodigoQueCargaLaPruebaCambio_Vence @story-8.282 @ac-10 @ac-11 @ac-28',
+      veredictos(r) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME'
+        && /venció por lib\/x\.js, que carga tests\/feature\.test\.js/.test(fila)
+        && veredictos(sigue) === '1:RUNTIME 2:RUNTIME 3:RUNTIME'
+        && veredictos(rOtra) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME'
+        && /venció por tests\/ayuda\.js, que carga tests\/feature\.test\.js/.test((rOtra.perAc[2].vencioPor || []).join(' '))
+        && veredictos(rPunto) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME' && /venció por index\.js/.test((rPunto.perAc[2].vencioPor || []).join(' '))
+        && veredictos(rComentario) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME',
+      JSON.stringify({ r: veredictos(r), fila, sigue: veredictos(sigue), otra: veredictos(rOtra), filaOtra: rOtra.perAc[2].vencioPor,
+        punto: veredictos(rPunto), comentario: veredictos(rComentario), w: r.warnings.slice(0, 3) }));
+  }
+  {
+    const variable = labCarga("const ruta = '../lib/x.js';\nrequire(ruta)");
+    variable.ahora(variable.cargado, 'module.exports = 2;\n');
+    const r = variable.calcular();
+    const avisos = r.warnings.filter((w) => NO_PUDE.test(w));
+    const plantilla = labCarga('require(`../lib/${"x"}.js`)').calcular();
+    const noResuelve = labCarga("require('../lib/no-existe.js')").calcular();
+    // sin pruebas con marcas de la historia: como antes, sin aviso
+    const sinMarcas = labCarga("require('../lib/x.js')", '');
+    sinMarcas.ahora(sinMarcas.cargado, 'module.exports = 2;\n');
+    const rSin = sinMarcas.calcular();
+    check('Matriz_CargaNoLiteral_ComoHoyYLoDice @story-8.282 @ac-12',
+      veredictos(r) === '1:RUNTIME 2:RUNTIME 3:RUNTIME' && avisos.length === 1
+        && plantilla.warnings.filter((w) => NO_PUDE.test(w)).length === 1
+        && noResuelve.warnings.filter((w) => NO_PUDE.test(w)).length === 1
+        && veredictos(rSin) === '1:RUNTIME 2:RUNTIME 3:RUNTIME' && !rSin.warnings.some((w) => /no pude leer lo que carga/.test(w)),
+      JSON.stringify({ v: veredictos(r), avisos, w: r.warnings.slice(0, 4), sin: rSin.warnings.slice(0, 3) }));
+  }
+}
+
+// La captura de un portón E2E vencido para un criterio no cuenta para ese criterio: la captura es evidencia del mismo
+// portón. Laboratorio: el portón pasa con su captura del criterio 3 (de pantalla), la historia corrige la prueba que
+// nombra el 3, y un humo sin captura corre los criterios 1 y 3. Sin el portón, el 3 queda sin evidencia: con el portón
+// vencido tiene que quedar igual.
+{
+  const { execFileSync } = require('child_process');
+  const crypto = require('crypto');
+  const ledger = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
+  const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
+  const compacta = (minutos) => new Date(Date.now() - minutos * 60000).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const SPEC_1 = "import { test } from '@playwright/test';\ntest('mira @story-9.9 @ac-3', async ({ page }) => { await page.goto('/'); });\n";
+  const SPEC_2 = "import { test } from '@playwright/test';\ntest('mira @story-9.9 @ac-3', async ({ page }) => { await page.goto('/lista'); });\n";
+  const caso = (conPorton) => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'rm-captura-vencida-'));
+    const repo = path.join(ws, 'Proj');
+    const dod = path.join(repo, '.advisors', 'dod-runtime');
+    fs.mkdirSync(dod, { recursive: true });
+    fs.mkdirSync(path.join(repo, 'specs', 'stories'), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+    const code = path.join(repo, 'src', 'Feature.cs');
+    fs.writeFileSync(code, '// code\n');
+    const fe = path.join(repo, 'web');
+    const spec = path.join(fe, 'tests', 'real.spec.ts');
+    fs.mkdirSync(path.dirname(spec), { recursive: true });
+    fs.writeFileSync(spec, SPEC_1);
+    const story = path.join(repo, 'specs', 'stories', '9-9-fixture.md');
+    fs.writeFileSync(story, ['---', 'story: 9.9', 'status: in-progress', 'files_to_modify:', '  - src/Feature.cs', '  - web/tests/real.spec.ts', '---', '',
+      '## Acceptance Criteria', '', '1. **Given** algo, **When** pasa, **Then** resultado.', '3. El usuario ve la lista de pedidos. @pantalla', '',
+      '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `FeatureTests.Caso1` | 1 | integration | x | y |', '| E1 | `real.spec.ts::mira` | 3 | e2e | x | y |', ''].join('\n'));
+    const gatesLog = path.join(ws, 'gates.log');
+    fs.writeFileSync(gatesLog, '');
+    const vieja = new Date(Date.now() - 3600000);
+    for (const p of [code, spec]) fs.utimesSync(p, vieja, vieja);
+    const git = (...a) => execFileSync('git', ['-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', '-c', 'gc.auto=0', ...a], { stdio: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    git('add', '.');
+    git('commit', '-qm', 'inicio');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git('switch', '-q', '-c', 'feature/9-9-fixture');
+    if (conPorton) {
+      const ts = compacta(20);
+      fs.writeFileSync(path.join(dod, `9.9-e2e-gate-${ts}.md`), ['# DoD Runtime Evidence — Story 9.9 — Playwright Gate (scoped)', '**Spec filter**: real.spec.ts',
+        '```', 'verdict=PASS', 'total=1', 'passed=1', '```', '- skipped: 0', `- frontend_dir: ${fe}`, '', '## Tests corridos (títulos completos — contrato DODRT-C8)', '- mira @story-9.9 @ac-3', ''].join('\n'));
+      fs.appendFileSync(gatesLog, JSON.stringify({ ts: new Date().toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: 'bash e2e-gate.sh /fe 9.9 /dir real.spec.ts', exit: 0 }) + '\n');
+      const dir = path.join(dod, `9.9-captures-${ts}`);
+      fs.mkdirSync(dir);
+      const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('lista')]);
+      fs.writeFileSync(path.join(dir, '01-lista.png'), png);
+      const crudo = JSON.stringify([{ file: '01-lista.png', title: 'mira @story-9.9 @ac-3', acs: [3], sha256: sha(png) }]);
+      fs.writeFileSync(path.join(dir, 'captures.json'), crudo);
+      fs.appendFileSync(gatesLog, JSON.stringify({ type: 'e2e-captures', ts: new Date().toISOString(), folder: path.basename(dir), sha256: sha(crudo) }) + '\n');
+      git('add', '.');
+      git('commit', '-qm', 'el portón');
+    }
+    fs.writeFileSync(spec, SPEC_2);
+    const cinco = new Date(Date.now() - 5 * 60000);
+    fs.utimesSync(spec, cinco, cinco);
+    git('add', '.');
+    git('commit', '-qm', 'corrige la prueba');
+    ledger.append({ dodDir: dod, gatesLog, story: '9.9', acs: [1, 3] });
+    const r = rm.compute({ storyPath: story, gatesLogPath: gatesLog, testsResults: [], activeDir: fs.mkdtempSync(path.join(ws, 'act-')) });
+    return { verdict: r.perAc[3].verdict, visual: r.perAc[3].visual || [], vencio: (r.perAc[3].vencioPor || []).join(' '), notRun: r.notRun, green: r.green };
+  };
+  const con = caso(true);
+  const sin = caso(false);
+  check('RuntimeMatrix_CaptureOfGateExpiredForCriterion_DoesNotCount @story-8.263 @ac-20',
+    con.visual.length === 0 && con.verdict === sin.verdict && con.notRun.includes(3) && con.green === false
+      && /venció por web\/tests\/real\.spec\.ts, que prueba el criterio 3/.test(con.vencio),
+    JSON.stringify({ con, sin }));
+}
+
+// T5 RuntimeMatrix_LegacyHatches_WriteBypassLine @story-8.256 @ac-6
+// 🔴 Falla con: una escotilla de la matriz que pasa sin dejar rastro en bypass.log, leída al cargar el módulo (no se
+//    ve el `env` de la llamada), o un renglón por cada cálculo (la matriz corre varias veces por comando).
+{
+  const f = makeWorkspace();
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-casa-'));
+  const estado = path.join(casa, 'estado');
+  const lineas = () => { try { return fs.readFileSync(path.join(estado, 'bypass.log'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_e) { return []; } };
+  for (const v of ['TYCON_RUNTIME_MATRIX_LEGACY', 'TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK']) {
+    for (let i = 0; i < 3; i++) rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, env: { [v]: '1' }, today: ANTES_DEL_CORTE, stateDir: estado, sessionId: 's-rmx' });
+  }
+  rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, env: {}, stateDir: estado, sessionId: 's-rmx' });
+  const l = lineas();
+  check('RuntimeMatrix_LegacyHatches_WriteBypassLine @story-8.256 @ac-6',
+    l.length === 2 && l.map((x) => x.kind).sort().join(',') === 'RUNTIME_MATRIX_LEGACY,RUNTIME_MATRIX_NO_MUTATION_CHECK'
+      && l.every((x) => x.story === '9.9' && x.sessionId === 's-rmx'),
+    JSON.stringify(l));
+}
+
+// T14 RuntimeMatrix_Hatches_RetiredAfterCut @story-8.256 @ac-13
+// 🔴 Falla con: una escotilla que sigue valiendo desde la fecha de corte, o que antes del corte deja de funcionar, de
+//    avisar o de anotar; el aviso del corte sin la salida normal de cada una.
+{
+  const ES = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+  const corte = ES.corteDe('TYCON_RUNTIME_MATRIX_LEGACY');
+  const despues = new Date(Date.parse(`${corte}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  const lineas = (d) => { try { return fs.readFileSync(path.join(d, 'bypass.log'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
+  // LEGACY: un humo que no corre la app cuenta como corrida real sólo antes del corte
+  const humo = () => {
+    const f = makeWorkspace();
+    const ts = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    fs.writeFileSync(path.join(f.dodDir, '9.9-smoke-ledger.jsonl'),
+      JSON.stringify({ ts, story: '9.9', acs: [2], cmd: 'node --test tests/unit/foo.test.js', exit: 0, via: 'smoke-run.sh' }) + '\n');
+    fs.writeFileSync(path.join(f.ws, 'gates.log'), JSON.stringify({ type: 'smoke-run', ts, story: '9.9', acs: [2], exit: 0 }) + '\n');
+    return f;
+  };
+  let f = humo();
+  let est = path.join(f.ws, 'estado');
+  let r = rm.compute({ storyPath: f.storyPath, gatesLogPath: path.join(f.ws, 'gates.log'), stateDir: est, env: { TYCON_RUNTIME_MATRIX_LEGACY: '1' }, today: ANTES_DEL_CORTE });
+  check('T14 RuntimeMatrix_Hatches_RetiredAfterCut @story-8.256 @ac-13 — LEGACY antes del corte: funciona, avisa y anota',
+    r.perAc[2].verdict === 'RUNTIME' && r.warnings.some((w) => w.includes(`se retira el ${corte}`))
+      && lineas(est).some((l) => l.kind === 'RUNTIME_MATRIX_LEGACY'), JSON.stringify([r.perAc[2], r.warnings, lineas(est)]));
+  f = humo();
+  est = path.join(f.ws, 'estado');
+  r = rm.compute({ storyPath: f.storyPath, gatesLogPath: path.join(f.ws, 'gates.log'), stateDir: est, env: { TYCON_RUNTIME_MATRIX_LEGACY: '1' }, today: despues });
+  check('T14 RuntimeMatrix_Hatches_RetiredAfterCut @story-8.256 @ac-13 — LEGACY desde el corte: se ignora y nombra su salida normal',
+    r.perAc[2].verdict !== 'RUNTIME' && r.warnings.some((w) => /runtime_not_verifiable/.test(w) && /runtime-waiver/.test(w))
+      && !lineas(est).length, JSON.stringify([r.perAc[2], r.warnings, lineas(est)]));
+  // NO_MUTATION_CHECK: la regla de las acciones vuelve a mirar desde el corte
+  const accion = () => {
+    const g = makeWorkspace();
+    fs.writeFileSync(g.storyPath, fs.readFileSync(g.storyPath, 'utf8')
+      .replace('3. **Given** otra cosa, **Then** otro resultado.', '3. El usuario puede confirmar la operación.'));
+    writeGate(g.dodDir, '9.9', recentCompact(30), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, ['flujo sólo observa @ac-1 @ac-3']);
+    return g;
+  };
+  let g = accion();
+  r = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado'), env: { TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK: '1' }, today: ANTES_DEL_CORTE });
+  check('T14 RuntimeMatrix_Hatches_RetiredAfterCut @story-8.256 @ac-13 — NO_MUTATION_CHECK antes del corte: desactiva la regla',
+    (r.accionNoEjercida || []).length === 0 && r.warnings.some((w) => w.includes(`se retira el ${corte}`)), JSON.stringify([r.accionNoEjercida, r.warnings]));
+  g = accion();
+  r = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado'), env: { TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK: '1' }, today: despues });
+  check('T14 RuntimeMatrix_Hatches_RetiredAfterCut @story-8.256 @ac-13 — NO_MUTATION_CHECK desde el corte: la regla mira y el aviso nombra la salida',
+    (r.accionNoEjercida || []).length > 0 && r.warnings.some((w) => /@runtime-exempt\(DODRT-C8\)/.test(w)), JSON.stringify([r.accionNoEjercida, r.warnings]));
+}
+
+// ---------------------------------------------------------------- criterio con cota (@measure)
+// Un criterio con un número («responde en menos de 2 s») lleva la marca `@measure(duration < 2s)`: la matriz compara lo
+// que midió el humo (`duration_ms`, o un `TYCON_MEASURE` del comando) con esa cota. Fuera de la cota o sin medición, el
+// criterio no sale verde. Sin marca, nada cambia.
+{
+  const L = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
+  const tsHace = (min) => new Date(Date.now() - min * 60 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+  // un taller con los criterios dados (uno por renglón numerado) y una prueba de integración por criterio
+  const conCriterios = (acs, { ack = [], tests = null, cuerpo = null } = {}) => {
+    const f = makeWorkspace({ ack });
+    const fm = fs.readFileSync(f.storyPath, 'utf8').split('\n## Acceptance Criteria')[0];
+    const filas = tests || acs.map((_, i) => `| T${i + 1} | \`FeatureTests.Caso${i + 1}\` | ${i + 1} | integration | x | y |`);
+    fs.writeFileSync(f.storyPath, fm + '\n' + (cuerpo || ['', '## Acceptance Criteria', '', ...acs.map((t, i) => `${i + 1}. ${t}`), ''].join('\n')) +
+      ['', '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', ...filas, ''].join('\n'));
+    return f;
+  };
+  const humo = (f, acs, o = {}) => L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs, cmd: o.cmd || 'curl -s http://app/x',
+    ts: o.ts, durationMs: o.ms, measures: o.measures, enRegistro: o.enRegistro, env: o.env });
+  const calc = (f, extra = {}) => rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, activeDir: fs.mkdtempSync(path.join(os.tmpdir(), 'cota-')), ...extra });
+  const DUR = '**Given** la consulta, **Then** responde en menos de 2 s. @measure(duration < 2s)';
+  const p95 = (v) => [{ name: 'p95', value: v, unit: 'ms' }];
+
+  // T9 — Matrix_DurationOverBound_FueraDeCota (AC 7, 10, 14)
+  {
+    const f = conCriterios([DUR]); humo(f, [1], { ms: 3010 });
+    const r = calc(f); const md = rm.renderMd(r);
+    const g = conCriterios([DUR]); humo(g, [1], { ms: 1005 });
+    const rg = calc(g);
+    const h = conCriterios(['**Then** responde rápido. @measure(duration < 2s) @measure(p95 <= 200ms)']); humo(h, [1], { ms: 1005, measures: p95(250) });
+    const rh = calc(h);
+    const PANT = '**Then** el usuario ve la lista enseguida. @pantalla @measure(duration < 2s)';
+    const s1 = conCriterios([PANT]); humo(s1, [1], { ms: 1005 });
+    const s2 = conCriterios([PANT]); humo(s2, [1], { ms: 3010 });
+    check('Matrix_DurationOverBound_FueraDeCota @story-8.260 @ac-7 @ac-10 @ac-14',
+      r.perAc[1].verdict === 'FUERA-DE-COTA' && !r.green && r.fueraDeCota.includes(1) && r.pendientes.includes(1) && !r.notRun.includes(1)
+        && /medido 3010 ms; la cota es < 2000 ms \(humo /.test(md)
+        && rg.perAc[1].verdict === 'RUNTIME' && rg.green
+        && rh.perAc[1].verdict === 'FUERA-DE-COTA' && rh.perAc[1].medida.nombre === 'p95'
+        && calc(s1).perAc[1].verdict === 'SIN-EVIDENCIA' && calc(s2).perAc[1].verdict === 'FUERA-DE-COTA',
+      JSON.stringify({ r: r.perAc[1], rg: rg.perAc[1].verdict, rh: rh.perAc[1].medida, s1: calc(s1).perAc[1].verdict, s2: calc(s2).perAc[1].verdict }));
+  }
+
+  // T10 — Matrix_EmittedMeasure_RuntimeOutOrMissing (AC 8)
+  {
+    const P = '**Then** el percentil 95 no pasa de 200 ms. @measure(p95 <= 200ms)';
+    const v = (marca, o) => { const f = conCriterios([marca]); humo(f, [1], o); return calc(f).perAc[1]; };
+    const a = v(P, { ms: 100, measures: p95(180) });
+    const b = v(P, { ms: 100, measures: p95(250) });
+    const c = v(P, { ms: 100 });
+    const sinDur = [v(DUR, {}), v(DUR, { ms: null }), v(DUR, { ms: -5 })];
+    check('Matrix_EmittedMeasure_RuntimeOutOrMissing @story-8.260 @ac-8',
+      a.verdict === 'RUNTIME' && b.verdict === 'FUERA-DE-COTA' && c.verdict === 'SIN-MEDICION'
+        && /ningún humo fresco del criterio trae la medida p95/.test(c.medida.motivo)
+        && sinDur.every((x) => x.verdict === 'SIN-MEDICION' && /ningún humo fresco del criterio trae la medida duration/.test(x.medida.motivo)),
+      JSON.stringify({ a: a.verdict, b: b.verdict, c: c.medida, d: sinDur.map((x) => [x.verdict, x.medida && x.medida.motivo]) }));
+  }
+
+  // T11 — Matrix_LatestFreshDecides_OthersListed_UnitTestNotCounted (AC 9)
+  {
+    const f = conCriterios([DUR]);
+    humo(f, [1], { ms: 3010, ts: tsHace(3) }); humo(f, [1], { ms: 2500, ts: tsHace(2) }); humo(f, [1], { ms: 1005, ts: tsHace(1) });
+    const r = calc(f); const md = rm.renderMd(r);
+    // el de node --test (más nuevo, dentro) no cuenta para la medida, tampoco con la variable vieja
+    const u = conCriterios([DUR]);
+    humo(u, [1], { ms: 3010, ts: tsHace(2) }); humo(u, [1], { ms: 100, ts: tsHace(1), cmd: 'node --test x.test.js' });
+    const ru = calc(u); const rl = calc(u, { env: { TYCON_RUNTIME_MATRIX_LEGACY: '1' } });
+    // el simulado no cuenta, ni antes ni después del corte
+    const sim = (startedAt) => {
+      const s = conCriterios([DUR]);
+      fs.writeFileSync(path.join(s.repo, 'probe.mjs'), "import { setupServer } from 'msw/node';\nsetupServer().listen();\n");
+      humo(s, [1], { ms: 3010, ts: tsHace(2) }); humo(s, [1], { ms: 100, ts: tsHace(1), cmd: 'node probe.mjs' });
+      return calc(s, startedAt ? { startedAt } : {}).perAc[1];
+    };
+    const simDespues = sim(null); const simAntes = sim('2000-01-01T00:00:00Z');
+    // dos con el mismo ts: decide el peor, en los dos órdenes
+    const mismo = (orden) => { const s = conCriterios([DUR]); const ts = tsHace(1); for (const ms of orden) humo(s, [1], { ms, ts }); return calc(s).perAc[1].verdict; };
+    check('Matrix_LatestFreshDecides_OthersListed_UnitTestNotCounted @story-8.260 @ac-9',
+      r.perAc[1].verdict === 'RUNTIME' && /2 de 3 fuera de cota/.test(md)
+        && ru.perAc[1].verdict === 'FUERA-DE-COTA' && rl.perAc[1].verdict === 'FUERA-DE-COTA'
+        && simDespues.medida.medido === 3010 && simAntes.verdict === 'FUERA-DE-COTA'
+        && mismo([1005, 3010]) === 'FUERA-DE-COTA' && mismo([3010, 1005]) === 'FUERA-DE-COTA',
+      JSON.stringify({ r: r.perAc[1].verdict, ru: ru.perAc[1].verdict, rl: rl.perAc[1].verdict, sd: simDespues, sa: simAntes.verdict, m1: mismo([1005, 3010]), m2: mismo([3010, 1005]) }));
+  }
+
+  // T12 — Matrix_UnreadableMark_SinMedicion (AC 11)
+  {
+    const a = conCriterios(['**Then** responde. @measure(p95 ~ 2)']); humo(a, [1], { ms: 100 });
+    const ra = calc(a);
+    const largo = conCriterios([`**Then** ${'responde bien y sin errores '.repeat(30)} @measure(duration < 2s)`]); humo(largo, [1], { ms: 3010 });
+    const citada = conCriterios(['**Then** se escribe `@measure(duration < 2s)` en el criterio.']); humo(citada, [1], { ms: 3010 });
+    const gh = conCriterios([], { cuerpo: ['', '## Acceptance Criteria', '', '```gherkin', 'Given la consulta', 'When se pide',
+      'Then responde @measure(duration < 2s)', '```', ''].join('\n'), tests: ['| T1 | `FeatureTests.Caso1` | 1 | integration | x | y |'] });
+    humo(gh, [1], { ms: 3010 });
+    const sinHumo = conCriterios(['**Then** responde. @measure(p95 ~ 2)', '**Then** otro.']);
+    const rs = calc(sinHumo);
+    const hoy = calc(conCriterios(['**Then** responde.', '**Then** otro.']));
+    check('Matrix_UnreadableMark_SinMedicion @story-8.260 @ac-11',
+      ra.perAc[1].verdict === 'SIN-MEDICION' && /marca ilegible: @measure\(p95 ~ 2\)/.test(ra.perAc[1].medida.motivo)
+        && ra.warnings.some((w) => /marca ilegible/.test(w))
+        && calc(largo).perAc[1].verdict === 'FUERA-DE-COTA' && calc(citada).perAc[1].verdict === 'RUNTIME'
+        && calc(gh).perAc[1].verdict === 'FUERA-DE-COTA'
+        && rs.perAc[1].verdict === hoy.perAc[1].verdict && rs.warnings.some((w) => /marca ilegible/.test(w)),
+      JSON.stringify({ a: ra.perAc[1], l: calc(largo).perAc[1].verdict, c: calc(citada).perAc[1].verdict, g: calc(gh).perAc[1].verdict, s: rs.perAc[1].verdict, h: hoy.perAc[1].verdict }));
+  }
+
+  // T13 — Matrix_MeasuredAc_DeclaredThenWaived (AC 13)
+  withWaiverLog(() => {
+    const DECL = (cov) => ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el entorno de prueba no deja medir"', `    covered_by: ${cov}`];
+    const fuera = (ack, conPrueba) => { const f = conCriterios([DUR], { ack }); humo(f, [1], { ms: 3010 }); if (conPrueba) writeTestsResult(f.advDir, '9.9', true, new Date().toISOString()); return f; };
+    const r0 = calc(fuera([], true));
+    const rSinPrueba = calc(fuera(DECL('TX'), false));
+    const fD = fuera(DECL('T1'), true); const rD = calc(fD); const mdD = rm.renderMd(rD);
+    const firmar = (f, r) => waiverLib.appendWaiver({ story: '9.9', acs: [1], matrixHash: r.hash, approvedBy: 'DevA', nowIso: new Date().toISOString(),
+      declHashByAc: { 1: waiverLib.declHashFor('el entorno de prueba no deja medir', 'T1') } });
+    firmar(fD, rD); const rW = calc(fD);
+    const fS = conCriterios(['**Then** el p95 no pasa de 200 ms. @measure(p95 <= 200ms)'], { ack: DECL('T1') });
+    humo(fS, [1], { ms: 100 }); writeTestsResult(fS.advDir, '9.9', true, new Date().toISOString());
+    firmar(fS, calc(fS)); const rS = calc(fS);
+    const fN = conCriterios([DUR], { ack: DECL('T1') }); writeTestsResult(fN.advDir, '9.9', true, new Date().toISOString());
+    firmar(fN, calc(fN)); const rN = calc(fN);
+    // una firma sobre el fuera de cota sin declarar: se ignora
+    const fI = fuera([], true); const rI0 = calc(fI);
+    waiverLib.appendWaiver({ story: '9.9', acs: [1], matrixHash: rI0.hash, approvedBy: 'DevA', nowIso: new Date().toISOString() });
+    const rI = calc(fI);
+    check('Matrix_MeasuredAc_DeclaredThenWaived @story-8.260 @ac-13',
+      r0.perAc[1].verdict === 'FUERA-DE-COTA' && !r0.green
+        && rSinPrueba.perAc[1].verdict === 'FUERA-DE-COTA' && rSinPrueba.warnings.some((w) => /AC#1/.test(w) && /sigue FUERA-DE-COTA/.test(w))
+        && !rSinPrueba.warnings.some((w) => /AC#1/.test(w) && /NO-CORRIDO/.test(w))
+        && rD.perAc[1].verdict === 'NOT-VERIFIABLE' && /declarado imposible de medir; medido 3010 ms, la cota es < 2000 ms/.test(mdD)
+        && rW.perAc[1].verdict === 'WAIVED-USER' && rW.green
+        && rS.perAc[1].verdict === 'WAIVED-USER' && rN.perAc[1].verdict === 'WAIVED-USER'
+        && rI.perAc[1].verdict === 'FUERA-DE-COTA'
+        && /se mide de nuevo/.test(rm.renderMd(r0)) && /se cambia el criterio/.test(rm.renderMd(r0)) && /lo firma una persona/.test(rm.renderMd(r0)),
+      JSON.stringify({ r0: r0.perAc[1].verdict, sp: rSinPrueba.perAc[1].verdict, d: rD.perAc[1].verdict, w: rW.perAc[1].verdict, s: rS.perAc[1].verdict, n: rN.perAc[1].verdict, i: rI.perAc[1].verdict }));
+  });
+
+  // T14 — Matrix_NoRuntime_KeepsVerdict_AddsMeasureNote (AC 14)
+  {
+    const f = conCriterios([DUR, '**Then** responde.']);
+    writeTestsResult(f.advDir, '9.9', true, new Date().toISOString());
+    humo(f, [1, 2], { ms: 100, cmd: 'node --test x.test.js' });
+    const r = calc(f);
+    const p = conCriterios(['**When** el usuario crea el pedido, **Then** queda guardado en menos de 2 s. @measure(duration < 2s)']);
+    humo(p, [1], { ms: 3010, cmd: 'curl -s http://app/pedidos' });
+    const rp = calc(p);
+    check('Matrix_NoRuntime_KeepsVerdict_AddsMeasureNote @story-8.260 @ac-14',
+      r.perAc[1].verdict === r.perAc[2].verdict && /además pide la medida duration/.test(rm.renderMd(r))
+        && rp.perAc[1].verdict === 'FUERA-DE-COTA',
+      JSON.stringify({ v1: r.perAc[1].verdict, v2: r.perAc[2].verdict, p: rp.perAc[1].verdict }));
+  }
+
+  // T15 — Matrix_EditedDurationInLedger_NotCounted (AC 15)
+  {
+    const editado = (o) => { const f = conCriterios([o.marca || DUR, '**Then** responde.']); humo(f, [1, 2], o); return calc(f); };
+    const a = editado({ ms: 3010, enRegistro: { duration_ms: 1005 } });
+    const b = editado({ ms: 1005, enRegistro: { duration_ms: 100 } });
+    const c = editado({ marca: '**Then** p95 bajo. @measure(p95 <= 200ms)', ms: 10, measures: p95(1800), enRegistro: { measures: p95(180) } });
+    const f = conCriterios([DUR]);
+    humo(f, [1], { ms: 3010, ts: tsHace(2) }); humo(f, [1], { ms: 3010, ts: tsHace(1), enRegistro: { duration_ms: 1005 } });
+    const d = calc(f);
+    const noConf = (r) => r.perAc[1].verdict === 'SIN-MEDICION' && /no confirmada por el espejo/.test(r.perAc[1].medida.motivo);
+    check('Matrix_EditedDurationInLedger_NotCounted @story-8.260 @ac-15',
+      noConf(a) && noConf(b) && noConf(c) && a.perAc[2].verdict === 'RUNTIME'
+        && d.perAc[1].verdict === 'FUERA-DE-COTA' && /no confirmada por el espejo/.test(rm.renderMd(d)),
+      JSON.stringify({ a: a.perAc[1], b: b.perAc[1].verdict, c: c.perAc[1].verdict, a2: a.perAc[2].verdict, d: d.perAc[1] }));
+  }
+
+  // T16 — Matrix_Report_SaysOneRunNotLoad (AC 16)
+  {
+    const f = conCriterios([DUR]); humo(f, [1], { ms: 1005, env: { os: 'darwin', node: 'v22', tool: 'claude' } });
+    const md = rm.renderMd(calc(f));
+    const RAIZ = path.join(__dirname, '..', '..', '..', '..');
+    const dod = fs.readFileSync(path.join(RAIZ, 'guides', 'definition-of-done.md'), 'utf8');
+    const sf = fs.readFileSync(path.join(RAIZ, 'story-format.md'), 'utf8');
+    const dice = (t) => /no es una prueba de carga/i.test(t) && /servidor de CI/.test(t) && /TYCON_MEASURE/.test(t) && /lo que el comando dice/.test(t);
+    check('Matrix_Report_SaysOneRunNotLoad @story-8.260 @ac-16',
+      /una corrida en darwin \(claude\), \d{4}-\d{2}-\d{2}; no es una prueba de carga ni dice nada de producción/.test(md) && dice(dod) && dice(sf),
+      md.split('\n').find((l) => l.startsWith('| #1')));
+  }
+
+  // T18 — Matrix_HashSameWithoutMarks_WaiverStillApplies (AC 19)
+  withWaiverLog(() => {
+    const DECL = ['runtime_not_verifiable:', '  - ac: 2', '    reason: "esquema, no observable"', '    covered_by: T2'];
+    // el mismo sello en todos: el hash nombra la evidencia por su sello
+    const TS = tsHace(1);
+    const armar = (ac1, conMedidas) => {
+      const f = conCriterios([ac1, '**Then** el esquema queda.'], { ack: DECL });
+      writeTestsResult(f.advDir, '9.9', true, new Date().toISOString());
+      humo(f, [1], conMedidas ? { ms: 1005, measures: p95(10), ts: TS } : { ts: TS });
+      return f;
+    };
+    const sinMarca = '**Then** responde.';
+    const h0 = calc(armar(sinMarca, false)).hash;
+    const fM = armar(sinMarca, true); const rM = calc(fM);
+    // una firma anclada a la declaración (la de hoy) y una vieja, anclada sólo al hash
+    waiverLib.appendWaiver({ story: '9.9', acs: [2], matrixHash: rM.hash, approvedBy: 'DevA', nowIso: new Date().toISOString(),
+      declHashByAc: { 2: waiverLib.declHashFor('esquema, no observable', 'T2') } });
+    const decl = () => calc(fM).perAc[2].verdict;
+    const okDecl = decl() === 'WAIVED-USER';
+    const cumple = (() => { const f = armar(`${sinMarca} @measure(duration < 2s)`, true); return calc(f).hash; })();
+    const fNo = armar(`${sinMarca} @measure(duration < 1s)`, true); const rNo = calc(fNo);
+    // la vieja, sólo por hash: en otro registro, para ver que deja de aplicar cuando el hash cambia
+    const viejaVale = withWaiverLog(() => {
+      waiverLib.appendWaiver({ story: '9.9', acs: [2], matrixHash: rM.hash, approvedBy: 'DevA', nowIso: new Date().toISOString() });
+      return [calc(fM).perAc[2].verdict, calc(fNo).perAc[2].verdict];
+    });
+    check('Matrix_HashSameWithoutMarks_WaiverStillApplies @story-8.260 @ac-19',
+      h0 === rM.hash && okDecl && cumple === rM.hash && rNo.hash !== rM.hash && rNo.perAc[2].verdict === 'WAIVED-USER'
+        && viejaVale[0] === 'WAIVED-USER' && viejaVale[1] === 'NOT-VERIFIABLE',
+      JSON.stringify({ h0, hM: rM.hash, cumple, hNo: rNo.hash, okDecl, no2: rNo.perAc[2].verdict, viejaVale }));
+  });
+
+  // T35 — Matrix_SameTs_WorstReportedAnyOrder (AC 9): con el mismo sello se informa el peor, en cualquier orden
+  {
+    const mismo = (orden, marca = DUR) => { const f = conCriterios([marca]); const ts = tsHace(1); for (const ms of orden) humo(f, [1], { ms, ts }); return calc(f).perAc[1]; };
+    const a = mismo([2500, 3010]); const b = mismo([3010, 2500]);
+    // con `>`, el peor es el más chico; y si todos cumplen, también se informa el mismo en los dos órdenes
+    const MIN = '**Then** tarda al menos 2 s. @measure(duration > 2s)';
+    const c = mismo([1500, 1000], MIN); const d = mismo([1000, 1500], MIN);
+    const e = mismo([1005, 1500]); const g = mismo([1500, 1005]);
+    check('Matrix_SameTs_WorstReportedAnyOrder @story-8.260 @ac-9',
+      a.verdict === 'FUERA-DE-COTA' && a.medida.medido === 3010 && b.medida.medido === 3010
+        && c.medida.medido === 1000 && d.medida.medido === 1000
+        && e.verdict === 'RUNTIME' && e.medida.medido === 1500 && g.medida.medido === 1500,
+      JSON.stringify([a.medida, b.medida, c.medida, d.medida, e.medida, g.medida]));
+  }
+
+  // T19 — Matrix_OldLinesAndUnmarkedAcs_Unchanged (AC 20): renglones sin duración y criterios sin marca no ganan campos
+  {
+    const f = conCriterios(['**Then** responde.', '**Then** otro.']);
+    humo(f, [1]); humo(f, [2], { ms: 1005, measures: p95(10) });
+    const r = calc(f);
+    check('Matrix_OldLinesAndUnmarkedAcs_Unchanged @story-8.260 @ac-20',
+      r.perAc[1].verdict === 'RUNTIME' && r.perAc[2].verdict === 'RUNTIME' && !('medida' in r.perAc[1]) && !('medida' in r.perAc[2])
+        && !/FUERA-DE-COTA|SIN-MEDICION|cota/.test(rm.renderMd(r)),
+      JSON.stringify(r.perAc));
+  }
+}
+
+// ---------------------------------------------------------------- la regla de la entrada a main (historia 8.310)
+// Estas necesitan git de verdad: un repo con su origin/main, ramas y fusiones de pedido.
+{
+  const { execFileSync, spawnSync } = require('child_process');
+  const ledgerLine = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
+  const BASE = Math.floor(Date.now() / 1000) - 12 * 3600;
+
+  function labEntrada({ iniciales = {}, declarados, acs = [1, 2], pipelines = [], filas, frente = [] } = {}) {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-entrada-'));
+    const repo = path.join(fs.realpathSync(ws), 'Proj');
+    fs.mkdirSync(repo);
+    const gatesLog = path.join(ws, 'gates.log');
+    const dod = path.join(repo, '.advisors', 'dod-runtime');
+    const git = (args, t) => execFileSync('git', ['-c', 'user.name=Lab', '-c', 'user.email=l@example.invalid', '-c', 'commit.gpgsign=false', ...args],
+      { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...(t ? { GIT_COMMITTER_DATE: `${t} +0000`, GIT_AUTHOR_DATE: `${t} +0000` } : {}) } }).trim();
+    const escribir = (rel, texto) => { const a = path.join(repo, rel); fs.mkdirSync(path.dirname(a), { recursive: true }); fs.writeFileSync(a, texto); return a; };
+    const tabla = filas || [`| T1 | \`FeatureTests.Caso\` | ${acs.join(',')} | integration | x | y |`];
+    const historia = ['---', 'story: 9.9', 'status: in-progress', ...(pipelines.length ? ['pipelines:', ...pipelines] : []), 'files_to_modify:',
+      ...declarados.map((d) => `  - ${d}`), ...frente, '---', '', '## Acceptance Criteria', '',
+      ...acs.map((n) => `${n}. **Given** algo ${n}, **When** pasa, **Then** resultado ${n}.`), '',
+      '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', ...tabla, ''].join('\n');
+    const storyPath = escribir('specs/stories/9-9-lab.md', historia);
+    for (const [rel, texto] of Object.entries(iniciales)) escribir(rel, texto);
+    git(['init', '-q', '-b', 'main']);
+    const guardar = (mensaje, t) => { git(['add', '-A']); git(['commit', '-q', '-m', mensaje], t); return git(['rev-parse', '--short', 'HEAD']); };
+    guardar('inicio', BASE);
+    git(['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']);
+    const L = {
+      ws, repo, dod, gatesLog, storyPath, git, escribir, guardar,
+      rama(nombre, cambios, t, mensaje = 'cambio', desde = 'main') {
+        git(['switch', '-q', '-C', nombre, desde]);
+        for (const [rel, texto] of Object.entries(cambios)) escribir(rel, texto);
+        return guardar(mensaje, t);
+      },
+      humo(ids, t, extra = {}) {
+        const ts = new Date(t * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+        const r = ledgerLine.append({ dodDir: dod, gatesLog, story: '9.9', acs: ids, ts });
+        if (Object.keys(extra).length) {
+          const f = path.join(dod, '9.9-smoke-ledger.jsonl');
+          const lineas = fs.readFileSync(f, 'utf8').trim().split('\n');
+          lineas[lineas.length - 1] = JSON.stringify({ ...JSON.parse(lineas[lineas.length - 1]), ...extra });
+          fs.writeFileSync(f, `${lineas.join('\n')}\n`);
+        }
+        return r;
+      },
+      fusion(rama, numero, t) {
+        git(['switch', '-q', 'main']);
+        git(['merge', '-q', '--no-ff', '-m', `Merge pull request #${numero} from org/${rama}`, rama], t);
+        git(['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']);
+        return git(['rev-parse', '--short', 'HEAD']);
+      },
+      // la rama de la historia: cambia su código, corre el humo, guarda la evidencia y entra por el pedido 1
+      entra(cambios, ids) {
+        L.rama('wt/Uno', cambios, BASE + 100);
+        L.humo(ids, BASE + 150);
+        L.guardar('evidencia', BASE + 200);
+        return L.fusion('wt/Uno', 1, BASE + 300);
+      },
+      otra(cambios, numero, t, mensaje) { L.rama(`wt/Otra${numero}`, cambios, t - 50, mensaje); return L.fusion(`wt/Otra${numero}`, numero, t); },
+      calc: () => rm.compute({ storyPath, gatesLogPath: gatesLog, testsResults: [] }),
+    };
+    return L;
+  }
+  const veredicto = (r, n) => r.perAc[n] && r.perAc[n].verdict;
+  const avisos = (r) => r.warnings.join('\n');
+  const SIMPLE = { iniciales: { 'src/a.js': '// a0\n' }, declarados: ['src/a.js'] };
+
+  // T5: el aviso nombra la entrada y separa las fusiones de otra historia de las que no se sabe de quién son
+  {
+    const L = labEntrada(SIMPLE);
+    const entrada = L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    const ajena = L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const nadie = L.otra({ 'src/a.js': '// a3\n' }, 3, BASE + 500);
+    L.escribir('.advisors/dod-runtime/9.8-pedidos.jsonl', `${JSON.stringify({ historia: '9.8', clave: '9.8', repo: 'Proj', pedido: 2, ts: 'x' })}\n{ roto\n`);
+    const r = L.calc();
+    const a = avisos(r);
+    check('Matriz_Entrada_AvisoNombraEntradaYFusiones @story-8.310 @ac-5',
+      veredicto(r, 1) === 'RUNTIME' && a.includes(entrada) && new RegExp(`otra historia[^\\n]*${ajena}[^\\n]*9\\.8`).test(a)
+        && new RegExp(`sin historia conocida[^\\n]*${nadie}`).test(a) && /9\.8-pedidos\.jsonl/.test(a), a);
+  }
+
+  // T1d: un .json declarado no se juzga ni habilita; una prueba que entró tampoco habilita
+  {
+    const base = { iniciales: { 'src/a.js': '// a0\n', 'config/x.json': '{"v":0}\n', 'tests/a.test.js': '// a\n' }, declarados: ['src/a.js', 'config/x.json', 'tests/a.test.js'], acs: [1] };
+    const L1 = labEntrada(base);
+    L1.rama('wt/Uno', { 'src/a.js': '// a1\n', 'config/x.json': '{"v":1}\n' }, BASE + 100);
+    L1.humo([1], BASE + 150);
+    L1.guardar('evidencia', BASE + 200);
+    L1.otra({ 'config/x.json': '{"v":9}\n' }, 5, BASE + 250);
+    L1.git(['merge', '-q', '-X', 'theirs', '--no-ff', '-m', 'Merge pull request #1 from org/wt/Uno', 'wt/Uno'], BASE + 300);
+    L1.git(['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']);
+    L1.otra({ 'src/a.js': '// a2\n' }, 6, BASE + 400);
+    const L2 = labEntrada(base);
+    L2.entra({ 'config/x.json': '{"v":1}\n' }, [1]);
+    L2.otra({ 'src/a.js': '// a2\n' }, 6, BASE + 400);
+    const L3 = labEntrada(base);
+    L3.entra({ 'tests/a.test.js': '// a1\n' }, [1]);
+    L3.otra({ 'src/a.js': '// a2\n' }, 6, BASE + 400);
+    const v = [L1, L2, L3].map((L) => veredicto(L.calc(), 1));
+    check('Matriz_JsonDeclarado_NoSeJuzgaNiHabilita @story-8.310 @ac-1', v[0] === 'RUNTIME' && v[1] !== 'RUNTIME' && v[2] !== 'RUNTIME', JSON.stringify(v));
+  }
+
+  // T4: lo que es sólo de otra tanda no vence el humo, aunque lo cambie la propia historia
+  {
+    const L = labEntrada({
+      iniciales: { 'src/a.js': '// a0\n', 'src/b.js': '// b0\n', 'tests/b.test.js': "// @story-9.9 @ac-2\nrequire('../src/ayuda.js');\n", 'src/ayuda.js': '// h\n' },
+      declarados: ['src/a.js', 'src/b.js', 'tests/b.test.js'],
+      pipelines: ['  - name: A-uno', '    status: done', '    acs: [1]', '    files:', '      - src/a.js', '  - name: B-dos', '    status: done', '    acs_pending: [2]', '    files:', '      - src/b.js', '      - tests/b.test.js'],
+    });
+    L.entra({ 'src/a.js': '// a1\n' }, [1]);
+    L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    L.otra({ 'src/b.js': '// b1\n', 'tests/b.test.js': "// @story-9.9 @ac-2 cambiada\nrequire('../src/ayuda.js');\n", 'src/ayuda.js': '// h2\n' }, 3, BASE + 500, 'fix(9.9 B): lo de la tanda B');
+    const r = L.calc();
+    check('Matriz_Tandas_ArchivoDeOtraTanda_NoVence @story-8.310 @ac-4', veredicto(r, 1) === 'RUNTIME', `${JSON.stringify(r.perAc[1])} ${avisos(r)}`);
+  }
+
+  // T10b: lo que carga una prueba: un cambio ajeno no vence, uno propio vence sus criterios, y sin código que entró no hay regla
+  {
+    const base = { iniciales: { 'src/a.js': '// a0\n', 'src/ayuda.js': '// h0\n', 'tests/a.test.js': "// x @story-9.9 @ac-1\nrequire('../src/ayuda.js');\n" }, declarados: ['src/a.js', 'tests/a.test.js'] };
+    const ajeno = labEntrada(base);
+    ajeno.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    ajeno.otra({ 'src/ayuda.js': '// h1\n' }, 2, BASE + 400);
+    ajeno.otra({ 'src/a.js': '// a2\n' }, 3, BASE + 500);
+    const rA = ajeno.calc();
+    const propio = labEntrada(base);
+    propio.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    propio.otra({ 'src/ayuda.js': '// h1\n' }, 2, BASE + 400, 'fix(9.9): la ayuda');
+    propio.otra({ 'src/a.js': '// a2\n' }, 3, BASE + 500);
+    const rP = propio.calc();
+    const sinCodigo = labEntrada(base);
+    sinCodigo.entra({ 'tests/a.test.js': "// y @story-9.9 @ac-1\nrequire('../src/ayuda.js');\n" }, [1, 2]);
+    sinCodigo.otra({ 'src/ayuda.js': '// h1\n' }, 2, BASE + 400);
+    const rS = sinCodigo.calc();
+    check('Matriz_CargadoCambiado_HumoPorEntrada_SigueContando @story-8.310 @ac-10',
+      veredicto(rA, 1) === 'RUNTIME' && veredicto(rA, 2) === 'RUNTIME' && veredicto(rP, 1) !== 'RUNTIME' && veredicto(rP, 2) === 'RUNTIME' && veredicto(rS, 1) !== 'RUNTIME',
+      JSON.stringify([veredicto(rA, 1), veredicto(rA, 2), veredicto(rP, 1), veredicto(rP, 2), veredicto(rS, 1)]));
+  }
+
+  // T11: dos humos verdes del mismo criterio con guion distinto avisan, sin cambiar el veredicto
+  {
+    const caso = (primero, segundo) => {
+      const L = labEntrada(SIMPLE);
+      L.humo([1, 2], BASE + 100, primero);
+      L.humo([1, 2], BASE + 200, segundo);
+      L.guardar('evidencia', BASE + 300);
+      L.git(['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']);
+      return L.calc();
+    };
+    const a = { script: '.advisors/dod-runtime/9.9-x.js', script_sha: 'a'.repeat(64) };
+    const b = { script: '.advisors/dod-runtime/9.9-x.js', script_sha: 'b'.repeat(64) };
+    const dis = caso(a, b);
+    const sinUno = caso({}, b);
+    const sinDos = caso({}, {});
+    const avisa = (r) => /guion/.test(avisos(r)) && /una persona/.test(avisos(r)) && /AC#1/.test(avisos(r));
+    check('Matriz_GuionDistinto_AvisaSinCambiarVeredicto @story-8.310 @ac-11',
+      avisa(dis) && avisa(sinUno) && !/guion distinto/.test(avisos(sinDos)) && [dis, sinUno, sinDos].every((r) => veredicto(r, 1) === 'RUNTIME'), `${avisos(dis)} | ${avisos(sinUno)}`);
+  }
+
+  // T11b: un humo corrido después de la entrada no usa la regla
+  {
+    const L = labEntrada(SIMPLE);
+    L.rama('wt/Uno', { 'src/a.js': '// a1\n' }, BASE + 100);
+    L.fusion('wt/Uno', 1, BASE + 200);
+    L.humo([1, 2], BASE + 300);
+    L.guardar('evidencia', BASE + 350);
+    L.git(['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']);
+    L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const r = L.calc();
+    check('Matriz_HumoPosteriorALaEntrada_NoLaUsa @story-8.310 @ac-11', veredicto(r, 1) !== 'RUNTIME', JSON.stringify(r.perAc[1]));
+  }
+
+  // T12: la matriz no toca la historia, y lo roto lo sigue contando el aviso de la noche
+  {
+    const L = labEntrada(SIMPLE);
+    L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const antes = fs.readFileSync(L.storyPath, 'utf8');
+    const r = L.calc();
+    // el aviso de la suite roja con lo que entró desde su última noche verde: se corre la prueba que lo mide. Sin
+    // NODE_TEST_CONTEXT: corrida esta suite bajo `node --test` (la T18 de evidence-vs-commit), el hijo lo heredaría y no
+    // correría ningún archivo («run() is being called recursively»)
+    const envNoche = { ...process.env, HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-noche-')) };
+    delete envNoche.NODE_TEST_CONTEXT;
+    const noche = spawnSync(process.execPath, ['--test', '--test-name-pattern=SuitesRed_NamesThePullRequestsSinceItsLastGreenNight',
+      path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'night-notices.test.js')], { encoding: 'utf8', env: envNoche });
+    const avisoMedido = noche.status === 0 && /# pass 1|ℹ pass 1/.test(noche.stdout) && !/# fail [1-9]|ℹ fail [1-9]/.test(noche.stdout);
+    check('Entrada_CambioAjenoConSuiteEnRojo_NoTocaLaHistoria @story-8.310 @ac-12',
+      fs.readFileSync(L.storyPath, 'utf8') === antes && veredicto(r, 1) === 'RUNTIME' && avisoMedido, noche.stdout.slice(-400) + noche.stderr.slice(-400));
+  }
+
+  // T13: lo sensible sin prueba de noche no cuenta por la entrada, ni con un humo ni con un portón E2E
+  {
+    const sensible = 'skills/tycon-pipeline/scripts/marker.js';
+    const nocturnas = JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/n.test.js' }], semanales: [] });
+    const iniciales = { [sensible]: '// m0\n', 'scripts/tests/suites.json': nocturnas, 'scripts/tests/n.test.js': "test('N @story-9.9 @ac-1', f);\n" };
+    const L = labEntrada({ iniciales, declarados: [sensible, 'scripts/tests/n.test.js'] });
+    L.entra({ [sensible]: '// m1\n' }, [1, 2]);
+    L.otra({ [sensible]: '// m2\n' }, 2, BASE + 400);
+    const r = L.calc();
+    const G = labEntrada({ iniciales, declarados: [sensible], filas: ['| E1 | `story-9-9.spec.ts::flujo` | 1 | e2e | x | y |', '| E2 | `story-9-9.spec.ts::otro` | 2 | e2e | x | y |'] });
+    G.rama('wt/Uno', { [sensible]: '// m1\n' }, BASE + 100);
+    const ms = (BASE + 150) * 1000;
+    const compacto = new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    G.escribir(`.advisors/dod-runtime/9.9-e2e-gate-${compacto}.md`, ['# Gate', '**Spec filter**: story-9-9.spec.ts', '```', 'verdict=PASS', '```', '- skipped: 0', ''].join('\n'));
+    fs.appendFileSync(G.gatesLog, `${JSON.stringify({ ts: new Date(ms).toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: 'bash e2e-gate.sh /fe 9.9 /dir story-9-9.spec.ts', exit: 0 })}\n`);
+    G.guardar('evidencia', BASE + 200);
+    G.fusion('wt/Uno', 1, BASE + 300);
+    G.otra({ [sensible]: '// m2\n' }, 2, BASE + 400);
+    const rG = G.calc();
+    check('Matriz_Sensible_SinPruebaDeNoche_NoCuenta @story-8.310 @ac-13',
+      veredicto(r, 1) === 'RUNTIME' && veredicto(r, 2) !== 'RUNTIME' && /AC#2[^\n]*prueba que corra de noche/.test(avisos(r))
+        && veredicto(rG, 1) !== 'RUNTIME' && veredicto(rG, 2) !== 'RUNTIME' && /prueba que corra de noche/.test(avisos(rG)),
+      `${JSON.stringify([veredicto(r, 1), veredicto(r, 2), veredicto(rG, 1), veredicto(rG, 2)])} ${avisos(r)} ${avisos(rG)}`);
+  }
+
+  // T13b: también es sensible lo que carga un archivo de firmas, un .json de la lista, y lo que no se puede leer
+  {
+    const noche = require(path.join(__dirname, '..', 'lib', 'nightly-coverage.js'));
+    const carga = labEntrada({ iniciales: { 'src/x.js': "require('./owner-window.js');\n// x0\n" }, declarados: ['src/x.js'] });
+    carga.entra({ 'src/x.js': "require('./owner-window.js');\n// x1\n" }, [1, 2]);
+    carga.otra({ 'src/x.js': "require('./owner-window.js');\n// x2\n" }, 2, BASE + 400);
+    const lista = labEntrada({ iniciales: { 'src/x.js': '// x0\n', 'scripts/setup/hooks-list.json': '{}\n' }, declarados: ['src/x.js', 'scripts/setup/hooks-list.json'] });
+    lista.entra({ 'src/x.js': '// x1\n' }, [1, 2]);
+    lista.otra({ 'src/x.js': '// x2\n' }, 2, BASE + 400);
+    // el control: la misma forma sin lo sensible cuenta, así que el rojo de arriba es por la prueba de noche
+    const control = labEntrada({ iniciales: { 'src/x.js': '// x0\n' }, declarados: ['src/x.js'] });
+    control.entra({ 'src/x.js': '// x1\n' }, [1, 2]);
+    control.otra({ 'src/x.js': '// x2\n' }, 2, BASE + 400);
+    const porNoche = (r) => veredicto(r, 1) !== 'RUNTIME' && /AC#1[^\n]*prueba que corra de noche/.test(avisos(r));
+    check('Matriz_CargaUnArchivoDeFirmas_EsSensible @story-8.310 @ac-13',
+      porNoche(carga.calc()) && porNoche(lista.calc()) && veredicto(control.calc(), 1) === 'RUNTIME'
+        && noche.historiaSensible({ declarados: ['src/x.js'], codigo: ['/no/existe/x.js'] }) === true
+        && noche.historiaSensible({ declarados: ['src/x.js'], codigo: [] }) === false);
+  }
+
+  // T16: lo que sólo se probó en vivo se acepta, y el riesgo queda escrito
+  {
+    const L = labEntrada(SIMPLE);
+    L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    const nadie = L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const r = L.calc();
+    const md = rm.renderMd(r);
+    const limpio = labEntrada(SIMPLE);
+    limpio.humo([1, 2], BASE + 100);
+    limpio.guardar('evidencia', BASE + 200);
+    check('Matriz_SoloEnVivo_RiesgoEscrito @story-8.310 @ac-16',
+      veredicto(r, 1) === 'RUNTIME' && md.includes('Aceptado sin cobertura posterior') && md.includes('si otra historia lo rompe, ninguna prueba de noche lo va a avisar')
+        && md.includes(nadie) && /pudieron ser de esta misma historia/.test(md) && !rm.renderMd(limpio.calc()).includes('Aceptado sin cobertura posterior'), md.slice(0, 600));
+  }
+
+  // El aviso nombra todas las fusiones del código declarado; sólo lo que cargan las pruebas se resume
+  {
+    const L = labEntrada(SIMPLE);
+    L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    const cortos = [];
+    for (let i = 0; i < 7; i++) cortos.push(L.otra({ 'src/a.js': `// a${i + 2}\n` }, 2 + i, BASE + 400 + i * 100));
+    const a = avisos(L.calc());
+    const C = labEntrada({ iniciales: { 'src/a.js': '// a0\n', 'src/ayuda.js': '// h0\n', 'tests/a.test.js': "// x @story-9.9 @ac-1\nrequire('../src/ayuda.js');\n" }, declarados: ['src/a.js', 'tests/a.test.js'] });
+    C.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    for (let i = 0; i < 7; i++) C.otra({ 'src/ayuda.js': `// h${i + 1}\n` }, 2 + i, BASE + 400 + i * 100);
+    C.otra({ 'src/a.js': '// a2\n' }, 20, BASE + 1200);
+    const ac = avisos(C.calc());
+    check('Matriz_Entrada_CodigoDeclarado_NombraTodasLasFusiones @story-8.310 @ac-5',
+      cortos.every((c) => a.includes(c)) && !/y \d+ más/.test(a) && /src\/ayuda\.js[^\n]*y 2 más/.test(ac), `${a}\n${ac}`);
+  }
+
+  // Un portón E2E que cuenta por su entrada pone en el riesgo sólo los criterios que cubre
+  {
+    const G = labEntrada({ iniciales: { 'src/a.js': '// a0\n' }, declarados: ['src/a.js'], filas: ['| E1 | `story-9-9.spec.ts::flujo` | 1 | e2e | x | y |'] });
+    G.rama('wt/Uno', { 'src/a.js': '// a1\n' }, BASE + 100);
+    const ms = (BASE + 150) * 1000;
+    const compacto = new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    G.escribir(`.advisors/dod-runtime/9.9-e2e-gate-${compacto}.md`, ['# Gate', '**Spec filter**: story-9-9.spec.ts', '```', 'verdict=PASS', '```', '- skipped: 0', ''].join('\n'));
+    fs.appendFileSync(G.gatesLog, `${JSON.stringify({ ts: new Date(ms).toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: 'bash e2e-gate.sh /fe 9.9 /dir story-9-9.spec.ts', exit: 0 })}\n`);
+    G.guardar('evidencia', BASE + 200);
+    G.fusion('wt/Uno', 1, BASE + 300);
+    G.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const r = G.calc();
+    const riesgo = (r.aceptadoSinCobertura || []).map((x) => x.ac);
+    check('Matriz_PortonPorEntrada_RiesgoSoloDeLoQueCubre @story-8.310 @ac-16',
+      veredicto(r, 1) === 'RUNTIME' && veredicto(r, 2) !== 'RUNTIME' && riesgo.includes(1) && !riesgo.includes(2), JSON.stringify([veredicto(r, 1), veredicto(r, 2), riesgo]));
+  }
+
+  // Un humo que hoy cuenta y tiene un criterio vencido no pierde los demás en una historia sensible
+  {
+    const sensible = 'skills/tycon-pipeline/scripts/marker.js';
+    const L = labEntrada({ iniciales: { [sensible]: '// m0\n', 'tests/a.test.js': '// @story-9.9 @ac-1\n' }, declarados: [sensible, 'tests/a.test.js'] });
+    L.entra({ [sensible]: '// m1\n' }, [1, 2]);
+    L.rama('story/9.9-prueba', { 'tests/a.test.js': '// @story-9.9 @ac-1 corregida\n' }, BASE + 350);
+    L.fusion('story/9.9-prueba', 2, BASE + 400);
+    const r = L.calc();
+    check('Matriz_HumoQueHoyCuenta_ConUnCriterioVencido_NoPierdeLosDemas @story-8.310 @ac-13',
+      veredicto(r, 1) !== 'RUNTIME' && veredicto(r, 2) === 'RUNTIME', `${JSON.stringify([veredicto(r, 1), veredicto(r, 2)])} ${avisos(r)}`);
+  }
+
+  // También es sensible una historia que borra un archivo de la lista, que lo nombra desde la carpeta de arriba o que
+  // declara un archivo que no se puede leer
+  {
+    const caso = (opciones) => {
+      const L = labEntrada(opciones);
+      L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+      L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+      return veredicto(L.calc(), 1);
+    };
+    const borra = caso({ ...SIMPLE, frente: ['files_to_delete:', '  - scripts/lib/notify.js'] });
+    const desdeArriba = caso({ iniciales: { 'src/a.js': '// a0\n', 'skills/tycon-pipeline/scripts/marker.js': '// m\n' }, declarados: ['src/a.js', 'Proj/skills/tycon-pipeline/scripts/marker.js'] });
+    const falta = caso({ ...SIMPLE, declarados: ['src/a.js', 'src/falta.js'] });
+    const comun = caso(SIMPLE);
+    check('Matriz_BorraONombraDesdeArribaOFalta_EsSensible @story-8.310 @ac-13',
+      borra !== 'RUNTIME' && desdeArriba !== 'RUNTIME' && falta !== 'RUNTIME' && comun === 'RUNTIME', JSON.stringify({ borra, desdeArriba, falta, comun }));
+  }
+}
+
+// ---------------------------------------------------------------- el portón cuenta para un criterio sólo por su @ac
+// Una fila de navegador de la tabla nombra el spec del portón: si el portón corrió, la fila valía para todos sus
+// criterios aunque la prueba que corrió fuera otra. Con los títulos de lo que pasó, cuenta sólo para el criterio que
+// alguno nombra con su @ac exacto: `@ac-1` no es `@ac-10`, y el nombre parecido de otra prueba no cubre nada.
+{
+  const r = (titulos) => {
+    const g = makeWorkspace();
+    writeGate(g.dodDir, '9.9', recentCompact(5), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, titulos);
+    return rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado') });
+  };
+  const soloUno = r(['flujo @story-9.9 @ac-1']);
+  check('Matriz_PortonSinElAcDelCriterio_NoLoCubre — el portón corrió sólo la prueba del criterio 1: el 3 no queda en vivo',
+    soloUno.perAc[1].verdict === 'RUNTIME' && soloUno.perAc[3].verdict !== 'RUNTIME'
+      && soloUno.warnings.some((w) => /AC 3/.test(w) && /@ac-3/.test(w)), JSON.stringify([soloUno.perAc[3], soloUno.warnings]));
+  const parecido = r(['flujo @story-9.9 @ac-1', 'otro resultado parecido @story-9.9 @ac-30']);
+  check('Matriz_AcParecido_NoCuenta — @ac-30 no cubre el criterio 3',
+    parecido.perAc[3].verdict !== 'RUNTIME', JSON.stringify(parecido.perAc[3]));
+  const losDos = r(['flujo @story-9.9 @ac-1 @ac-3']);
+  check('Matriz_PortonConElAc_LoCubre — con @ac-3 en lo que pasó, el criterio 3 queda en vivo',
+    losDos.perAc[1].verdict === 'RUNTIME' && losDos.perAc[3].verdict === 'RUNTIME', JSON.stringify(losDos.perAc[3]));
+  // el criterio 3 en vivo por un humo, con E1 (la prueba en vivo que le declara la tabla) sin correr para él: lo anota
+  {
+    const g = makeWorkspace();
+    writeGate(g.dodDir, '9.9', recentCompact(5), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, ['flujo @story-9.9 @ac-1']);
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [3]);
+    const h = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado') });
+    check('Matriz_EnVivoPorHumo_AnotaLaPruebaDeclaradaSinCorrer — el 3 queda en vivo y dice que E1 no corrió para él',
+      h.perAc[3].verdict === 'RUNTIME' && JSON.stringify(h.perAc[3].enVivoSinCorrer) === '["E1"]' && !h.perAc[1].enVivoSinCorrer,
+      JSON.stringify([h.perAc[1], h.perAc[3]]));
+  }
+  const otraHistoria = r(['flujo @story-9.9 @ac-1', 'de otra historia @story-9.8 @ac-3']);
+  check('Matriz_AcDeOtraHistoria_NoCuenta — @story-9.8 @ac-3 no cubre el criterio 3 de la 9.9',
+    otraHistoria.perAc[3].verdict !== 'RUNTIME', JSON.stringify(otraHistoria.perAc[3]));
+  {
+    const g = makeWorkspace();
+    writeGate(g.dodDir, '9.9', recentCompact(10), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, null);
+    writeGate(g.dodDir, '9.9', recentCompact(5), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, ['flujo @story-9.9 @ac-1']);
+    const h = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado') });
+    check('Matriz_PortonViejoSinTitulos_NoLeGanaAlNuevo — con un portón que anotó títulos, el que no anotó no da crédito',
+      h.perAc[1].verdict === 'RUNTIME' && h.perAc[3].verdict !== 'RUNTIME', JSON.stringify(h.perAc[3]));
+  }
+  // Gradual: la regla del @ac exacto frena en las historias que nacen desde su corte. Una que ya estaba en su repo antes
+  // (su primer commit) sigue como antes, con un aviso que lista las pruebas que pasaron sin el @ac del criterio.
+  {
+    const g = makeWorkspace({ noGit: true });
+    const { execFileSync } = require('child_process');
+    const env = { ...require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre(),
+      GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.invalid', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.invalid',
+      GIT_AUTHOR_DATE: '2026-01-05T10:00:00Z', GIT_COMMITTER_DATE: '2026-01-05T10:00:00Z' };
+    for (const args of [['init', '-q'], ['add', '-A'], ['commit', '-qm', 'historia']]) execFileSync('git', args, { cwd: g.repo, env });
+    writeGate(g.dodDir, '9.9', recentCompact(5), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, ['flujo @story-9.9 @ac-1', 'el detalle abre']);
+    const h = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado') });
+    check('Matriz_HistoriaVieja_SigueComoAntesYAvisa — antes del corte, E1 cubre el 3 y el aviso nombra las pruebas sin @ac-3',
+      h.perAc[3].verdict === 'RUNTIME' && h.warnings.some((w) => /AC 3/.test(w) && /@ac-3/.test(w) && /el detalle abre/.test(w)),
+      JSON.stringify([h.perAc[3].verdict, h.warnings]));
+  }
+  // una historia nueva copiada de una vieja, o con el nombre de una borrada, no hereda la fecha de aquella
+  {
+    const g = makeWorkspace({ noGit: true });
+    const { execFileSync } = require('child_process');
+    const base = { ...require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre(),
+      GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.invalid', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.invalid' };
+    const en = (fecha) => ({ ...base, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha });
+    const git = (args, fecha) => execFileSync('git', args, { cwd: g.repo, env: en(fecha) });
+    const vieja = fs.readFileSync(g.storyPath, 'utf8');
+    git(['init', '-q'], '2026-01-05T10:00:00Z'); git(['add', '-A'], '2026-01-05T10:00:00Z'); git(['commit', '-qm', 'vieja'], '2026-01-05T10:00:00Z');
+    const copia = path.join(path.dirname(g.storyPath), '9-9-copia.md');
+    fs.renameSync(g.storyPath, copia);
+    git(['add', '-A'], '2026-12-01T10:00:00Z'); git(['commit', '-qm', 'nueva copiada'], '2026-12-01T10:00:00Z');
+    writeGate(g.dodDir, '9.9', recentCompact(5), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, ['flujo @story-9.9 @ac-1', 'el detalle abre']);
+    const h = rm.compute({ storyPath: copia, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado') });
+    check('Matriz_HistoriaCopiadaDeUnaVieja_EsNueva — la copia commiteada después del corte aplica el @ac exacto',
+      h.perAc[3].verdict !== 'RUNTIME', JSON.stringify(h.perAc[3].verdict));
+    // el nombre de la vieja, reusado sin commitear: es nueva
+    fs.writeFileSync(g.storyPath, vieja);
+    const k = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado2') });
+    check('Matriz_NombreDeUnaBorrada_SinCommit_EsNueva — reusar la ruta de una historia borrada no trae su fecha',
+      k.perAc[3].verdict !== 'RUNTIME', JSON.stringify(k.perAc[3].verdict));
+  }
+  const sinTitulos = r(null);
+  check('Matriz_PortonSinTitulos_SigueComoAntes — un portón sin la lista de lo que pasó cuenta para la fila, y lo avisa',
+    sinTitulos.perAc[3].verdict === 'RUNTIME' && sinTitulos.warnings.some((w) => /Tests corridos/.test(w) && /AC 3/.test(w)),
+    JSON.stringify(sinTitulos.warnings));
 }
 
 console.log('');

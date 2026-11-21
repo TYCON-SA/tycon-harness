@@ -17,6 +17,10 @@
 // Uso: node scripts/lib/platform/platform.js <operación> [--repo <org/repo | JSON de la identidad>] [--args <JSON | @archivo>]
 //   La operación va en una palabra o en dos (`work-item.close` o `work-item close`).
 //   node scripts/lib/platform/platform.js choose <operación> [--repo …]: qué conector la atendería, sin pedirle nada.
+//   node scripts/lib/platform/platform.js chosen: las plataformas que la organización eligió para algo.
+//   node scripts/lib/platform/platform.js raw-command '<comando>': qué conector reconoce ese comando crudo (sale 1 si
+//     ninguno, y 2 si lo reconoce más de uno o si alguna integración no se puede leer).
+//   `change-request open` pide `--auto-complete` en la línea, y acepta `--wait-minutes` y `--poll-seconds`.
 //   Imprime el resultado en JSON y sale 0 siempre que el contrato se cumplió (aunque diga que no); 2 si se usó mal. Las
 //   operaciones del pedido de trabajo traen además `summary`: la línea que el paso muestra y lleva al cierre.
 //
@@ -28,7 +32,7 @@ const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
-const { OPERATIONS, REASONS, REPO_OPERATIONS, areaOf, shapeProblem } = require('./contract.js');
+const { OPERATIONS, REASONS, REPO_OPERATIONS, ESTIMATE_OPERATIONS, areaOf, shapeProblem, estimateProblem, openProblem } = require('./contract.js');
 const INT = require('../integrations.js');
 const TEAM_REPOS = require('../team-repos.js');
 
@@ -89,6 +93,26 @@ function identidades(tr) {
   const ms = tr.merge_suites && Array.isArray(tr.merge_suites.repos) ? tr.merge_suites.repos.map((e) => e && e.repo) : [];
   return [tr.public, tr.profile, tr.operations, tr.maintainers, ...(Array.isArray(tr.harness_copies) ? tr.harness_copies : []), ...ms]
     .filter((r) => r && typeof r === 'object' && r.org && r.repo);
+}
+
+/**
+ * Los repos que team-repos.json declara además de los de `identidades`: los de los índices de historias
+ * (`story_index.repos`) y los de cada herramienta de prueba (`stack.test_runners[].repos`). Su plataforma también es
+ * una elegida (`chosen`); no entran a la búsqueda por nombre, que mira los repos del arnés y de la cola.
+ */
+function otrosRepos(tr) {
+  if (!tr || typeof tr !== 'object') return [];
+  const lista = (v) => (Array.isArray(v) ? v : []);
+  const historias = lista(tr.story_index && tr.story_index.repos).map((e) => e && e.repo);
+  const pruebas = lista(tr.stack && tr.stack.test_runners).flatMap((r) => lista(r && r.repos).map((e) => e && e.repo));
+  return [...historias, ...pruebas].filter((r) => r && typeof r === 'object' && r.platform);
+}
+
+/** La identidad de un repo por su nombre (`repo` u `org/repo`), de las que declara team-repos.json; null si no está. */
+function identityByName(name, opts = {}) {
+  const tr = teamRepos(opts);
+  const wanted = String(name || '').toLowerCase();
+  return identidades(tr.data).find((r) => String(r.repo).toLowerCase() === wanted || `${r.org}/${r.repo}`.toLowerCase() === wanted) || null;
 }
 
 /** Una identidad de repo a partir de lo que llega: un objeto, un JSON o `org/repo`. */
@@ -172,6 +196,28 @@ function choose(operation, opts = {}) {
   return { ok: true, value: { connector: name, origin } };
 }
 
+/**
+ * Las plataformas que la organización eligió para algo: `{ok:true, value:[conector, …]}` (ordenada, sin repetir) o
+ * `{ok:false, reason:'no_medido', detail}` si la configuración no se lee. Juntan: el valor por defecto y las áreas de
+ * `integrations.platform`, la plataforma de cada repo de team-repos.json (incluidos el de operaciones, los de los
+ * índices de historias y los de las herramientas de prueba) traducida al
+ * nombre del conector, y Azure DevOps si la máquina tiene `ado.org` (lo que hoy prende Azure DevOps en la máquina). Lo
+ * usa el gancho de avisos: las reglas de una plataforma no elegida no se muestran.
+ */
+function chosen(opts = {}) {
+  const perfil = profileChoice(opts);
+  if (perfil.problem) return no('no_medido', `la elección de plataforma del perfil no se lee: ${perfil.problem}`);
+  const out = new Set();
+  for (const v of Object.values(perfil.value || {})) if (typeof v === 'string' && v.trim()) out.add(v.trim());
+  const leido = teamRepos(opts);
+  if (leido.problem) return no('no_medido', leido.problem);
+  for (const r of [...identidades(leido.data), ...otrosRepos(leido.data)]) { const c = TEAM_REPOS.connectorOf(r.platform); if (c) out.add(c); }
+  try {
+    if (perfil.config && require('../tycon-config.js').integraciones(perfil.config).ado === true) out.add(TEAM_REPOS.connectorOf('azure'));
+  } catch (e) { return no('no_medido', `no pude saber si Azure DevOps está prendida en la máquina (${String((e && e.message) || e).split('\n')[0]})`); }
+  return { ok: true, value: [...out].sort() };
+}
+
 /** Lo que el conector recibe además de los argumentos: el estado de sus secretos y los valores de la configuración. */
 function context(manifest, opts) {
   const env = opts.env || process.env;
@@ -210,6 +256,16 @@ function context(manifest, opts) {
 /** Le pasa la operación a un conector ya elegido y deja la respuesta dentro del contrato. */
 async function call(manifest, operation, args, opts) {
   if (!manifest.operations.includes(operation)) return no('no_soportado', `${manifest.label} no declara ${operation}`);
+  // una estimación sin forma no llega al conector: cargaría un número que nadie escribió
+  if (ESTIMATE_OPERATIONS.includes(operation) && args && args.estimate !== undefined && args.estimate !== null) {
+    const mala = estimateProblem(args.estimate);
+    if (mala) return no('rechazado', `estimación sin forma: ${mala}`);
+  }
+  // un pedido de cambio sin forma no llega a la plataforma: una rama que empieza con `-` sería una opción de su CLI
+  if (operation === 'change-request.open') {
+    const malo = openProblem(args);
+    if (malo) return no('rechazado', `pedido de cambio sin forma: ${malo}`);
+  }
   let mod;
   try { mod = require(path.join(manifest.dir, manifest.connector)); } catch (e) {
     return no('no_medido', `el conector ${manifest.name} no carga (${(e && e.code) || String((e && e.message) || e).split('\n')[0]})`);
@@ -248,6 +304,15 @@ function summary(operation, r, label) {
     else if (v.hoursAs === 'comment') t += ` · ${v.hours} h como comentario (${label || 'la plataforma'} no tiene un campo de horas)`;
     else t += ` · ${v.hours} h en ${v.hoursField || 'el campo de horas'}`;
   }
+  if (v.estimateFallback && typeof v.estimateFallback === 'object') {
+    const porque = v.estimateFallback.reason === 'sin_credencial' ? 'sin permiso para el proyecto' : v.estimateFallback.reason === 'no_encontrado' ? 'el proyecto o el campo no se encontró' : v.estimateFallback.reason;
+    // si el comentario tampoco salió, decir «como comentario» contradiría el aviso que lo cuenta
+    t += v.estimateAs === 'comment'
+      ? ` · estimación como comentario: ${porque} (${v.estimateFallback.detail})`
+      : ` · estimación sin cargar: ${porque} (${v.estimateFallback.detail})`;
+  } else if (v.estimateAs === 'field') t += ` · estimación en ${v.estimateField}`;
+  else if (v.estimateAs === 'project') t += ` · estimación en el campo ${v.estimateField} del proyecto`;
+  else if (v.estimateAs === 'comment') t += v.estimateUnchanged ? ' · estimación sin cambios (ya estaba comentada)' : ' · estimación como comentario';
   const faltan = (Array.isArray(v.unsupported) ? v.unsupported : []).map((u) => u && u.field).filter(Boolean).sort();
   if (faltan.length) t += ` · no soportado${en}: ${faltan.join(', ')}`;
   for (const w of Array.isArray(v.warnings) ? v.warnings : []) t += ` · ${w}`;
@@ -263,7 +328,11 @@ async function run(operation, args = {}, opts = {}) {
   const r = c.ok ? await call(manifest, operation, args, opts) : c;
   if (!operation.startsWith('work-item.')) return r;
   // los avisos del conector pueden traer el texto de un error de la plataforma: pasan por la misma limpieza que un «no»
-  const v = r.ok && r.value && Array.isArray(r.value.warnings) ? { ...r, value: { ...r.value, warnings: r.value.warnings.map(limpiar) } } : r;
+  let v = r.ok && r.value && Array.isArray(r.value.warnings) ? { ...r, value: { ...r.value, warnings: r.value.warnings.map(limpiar) } } : r;
+  // el detalle de por qué la estimación no fue al proyecto también es texto de la plataforma
+  if (v.ok && v.value && v.value.estimateFallback && typeof v.value.estimateFallback === 'object') {
+    v = { ...v, value: { ...v.value, estimateFallback: { ...v.value.estimateFallback, detail: limpiar(v.value.estimateFallback.detail) } } };
+  }
   return { ...v, summary: summary(operation, v, manifest && manifest.label) };
 }
 
@@ -276,7 +345,11 @@ async function conformance(name, opts = {}) {
   const c = connector(name, env);
   if (c.problem) return { problems: [c.problem] };
   const problems = [];
-  const PRUEBA = { entrada: { pipeline: 'Proyecto/publicar', stages: ['Prod'], repo: 'acme/portal', environment: 'production' }, entorno: 'production' };
+  // el pedido de prueba tiene forma, para que llegue al conector, y no espera nada
+  const PRUEBA = {
+    entrada: { pipeline: 'Proyecto/publicar', stages: ['Prod'], repo: 'acme/portal', environment: 'production' }, entorno: 'production',
+    sourceBranch: 'prueba/conformidad', targetBranch: 'main', text: 'prueba de conformidad', deleteSourceBranch: true, waitMinutes: 0, pollSeconds: 0,
+  };
   for (const op of c.manifest.operations) {
     const r = await call(c.manifest, op, PRUEBA, { ...opts, repo: opts.repo || { org: 'acme', repo: 'portal' } });
     const mal = shapeProblem(r);
@@ -286,7 +359,66 @@ async function conformance(name, opts = {}) {
   return { problems };
 }
 
+/**
+ * Los comandos crudos que declaran los conectores de plataforma en `rawCommands`: `[{ name, words }]`, con las palabras
+ * del comando (`['gh', 'pr', 'create']`). Lanza si alguna integración no se puede leer: sin ella no se sabe qué comandos
+ * declara.
+ */
+function rawCommands(opts = {}) {
+  const leidas = INT.listManifests({ env: opts.env || process.env });
+  if (leidas.problems.length) {
+    throw new Error(`no pude leer ${leidas.problems.map((p) => `${p.name} (${p.reasons.join('; ')})`).join(' · ')}`);
+  }
+  return leidas.manifests.filter((m) => m.kind === 'platform')
+    .flatMap((m) => (m.rawCommands || []).map((c) => ({ name: m.name, words: c.trim().split(/\s+/) })));
+}
+
+/**
+ * Qué conector reconoce un comando crudo de su plataforma (el `gh pr create` de GitHub, el pedido de Azure DevOps): el nombre, o null si
+ * ninguno lo declara en `rawCommands`. Mira el binario de cada tramo del comando (después de `env` y de las variables) y
+ * sus palabras, salteando las opciones; un texto entre comillas no es un comando.
+ * Lanza si alguna integración no se puede leer (sin ella no se sabe qué comandos declara, y «ninguno» sería adivinar) y
+ * si lo reconoce más de un conector.
+ */
+function rawCommandOf(cmd, opts = {}) {
+  if (typeof cmd !== 'string' || !cmd.trim()) return null;
+  const dichos = rawCommands(opts);
+  const hallados = new Set();
+  for (const seg of require('../az-pr.js').segmentos(cmd)) {
+    let i = 0;
+    while (i < seg.length && seg[i].esBandera && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(seg[i].texto) || seg[i].texto === 'env' || seg[i].texto === 'command')) i++;
+    if (i >= seg.length || !seg[i].esBandera) continue;
+    const binario = path.basename(seg[i].texto.replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '');
+    for (const d of dichos) {
+      if (d.words[0] !== binario) continue;
+      let j = i + 1;
+      let ok = true;
+      for (const w of d.words.slice(1)) {
+        // las opciones antes de la palabra se saltean, con su valor si lo traen (`gh -R acme/x pr merge`)
+        while (j < seg.length && seg[j].texto !== w && seg[j].texto.startsWith('-')) {
+          j++;
+          if (j < seg.length && seg[j].texto !== w && !seg[j].texto.startsWith('-')) j++;
+        }
+        if (j < seg.length && seg[j].esBandera && seg[j].texto === w) j++;
+        else { ok = false; break; }
+      }
+      if (ok) hallados.add(d.name);
+    }
+  }
+  // dos conectores que dicen el mismo comando no es «ninguno»: no se sabe cuál lo mira
+  if (hallados.size > 1) throw new Error(`lo reconocen ${[...hallados].sort().join(' y ')}: no elijo a ciegas`);
+  return hallados.size === 1 ? [...hallados][0] : null;
+}
+
 function main(argv) {
+  // `raw-command <comando>`: qué conector reconoce ese comando crudo (lo usan los frenos de otra herramienta)
+  if (argv[0] === 'raw-command') {
+    if (!argv[1]) { process.stderr.write('uso: platform.js raw-command <comando>\n'); return Promise.resolve(2); }
+    let name;
+    try { name = rawCommandOf(argv[1]); } catch (e) { process.stderr.write(`${limpiar(e.message)}\n`); return Promise.resolve(2); }
+    if (name) process.stdout.write(`${name}\n`);
+    return Promise.resolve(name ? 0 : 1);
+  }
   // `choose <operación>`: qué conector la atendería, sin pedirle nada (un paso que tiene un camino propio de una
   // plataforma lo pregunta antes de tomarlo)
   if (argv[0] === 'choose') {
@@ -294,6 +426,11 @@ function main(argv) {
     if (!OPERATIONS.includes(op)) { process.stderr.write(`uso: platform.js choose <operación>\noperaciones: ${OPERATIONS.join(', ')}\n`); return Promise.resolve(2); }
     const i = argv.indexOf('--repo');
     process.stdout.write(`${JSON.stringify(choose(op, { repo: i >= 0 ? argv[i + 1] : undefined }))}\n`);
+    return Promise.resolve(0);
+  }
+  // `chosen`: las plataformas que la organización eligió para algo (el gancho de avisos las pregunta)
+  if (argv[0] === 'chosen') {
+    process.stdout.write(`${JSON.stringify(chosen())}\n`);
     return Promise.resolve(0);
   }
   // la operación en una palabra (`work-item.create`) o en dos (`work-item create`)
@@ -311,9 +448,19 @@ function main(argv) {
     const crudo = opt('--args');
     try { args = JSON.parse(crudo.startsWith('@') ? fs.readFileSync(crudo.slice(1), 'utf8') : crudo); } catch (e) { process.stderr.write(`--args no es JSON (${e.message})\n`); return Promise.resolve(2); }
   }
+  if (operation === 'change-request.open') {
+    // abrir un pedido es pedir que entre solo: quien lo llama lo dice en la línea, donde el freno lo lee
+    if (!rest.includes('--auto-complete')) { process.stderr.write('change-request open pide --auto-complete: el pedido se abre para entrar solo cuando su control da verde\n'); return Promise.resolve(2); }
+    for (const [flag, k] of [['--wait-minutes', 'waitMinutes'], ['--poll-seconds', 'pollSeconds']]) {
+      if (opt(flag) === undefined) continue;
+      const n = Number(opt(flag));
+      if (!Number.isFinite(n) || n < 0) { process.stderr.write(`${flag} es un número mayor o igual que 0\n`); return Promise.resolve(2); }
+      args = { ...args, [k]: n };
+    }
+  }
   return run(operation, args, { repo: opt('--repo') }).then((r) => { process.stdout.write(`${JSON.stringify(r)}\n`); return 0; });
 }
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, run, call, conformance, connector, identityFromRemote, limpiar, summary, main, OPERATIONS, REASONS };
+module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityByName, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };

@@ -30,6 +30,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-collision-guard.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/dashboard-notice.js"
           },
           {
@@ -78,6 +82,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/finished-open-notice.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/extension-notices.js"
           },
           {
@@ -86,11 +94,31 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/temp-sweep.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/production-notice.js"
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/hook-failures-notice.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/guard-update-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/guard-auto-update.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/context-size-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -101,6 +129,10 @@
           {
             "type": "command",
             "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-prompt.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/context-size-notice.js"
           },
           {
             "type": "command",
@@ -117,6 +149,14 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/response-style-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/why-blocked-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -218,6 +258,18 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/failed-query-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/cover-secrets.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/extension-notices.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       },
@@ -231,6 +283,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/rebuild-before-verify.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -265,6 +321,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/wait-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -285,6 +345,13 @@
       "verdict": "VERIFICADO 2026-08-22 (sonda E2): el spawn de subagentes en Codex es la tool collaborationspawn_agent con tool_input.task_name (underscoreado). SubagentStart NO sirve para el ledger: su payload trae agent_id + agent_type='default' sin el nombre — la apuesta del inventario §A.2 quedó REVERTIDA con evidencia. on-advisor-run.js acepta las tres tools y des-underscorea el task_name.",
       "scripts": [
         "on-advisor-run.js"
+      ]
+    },
+    {
+      "log": "SubagentStop · on-advisor-done.js (claude) — SIN equivalente en Codex: lo hace reviewers-run",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-10): en Claude Code el revisor lo lanza el agente, de fondo, y lo que contestó se lee de su transcripción cuando termina (SubagentStop). En Codex los revisores los lanza el pipeline (pipeline.js reviewers-run), que lee el reporte al cerrar cada proceso y lo anota en el mismo registro de críticos reportados (lib/reported-criticals.js): no hace falta gancho. Un revisor que en Codex lanza el modelo con collaborationspawn_agent deja su lanzamiento (on-advisor-run.js) y ningún reporte, y el cierre dice «no pude leer lo que reportó»: nunca «no reportó nada».",
+      "scripts": [
+        "on-advisor-done.js"
       ]
     },
     {
@@ -321,6 +388,13 @@
       "scripts": []
     },
     {
+      "log": "SessionStart y UserPromptSubmit · office-link-start.js — SOLO Claude Code, por ahora",
+      "verdict": "ASIMETRÍA A PROPÓSITO, PENDIENTE DE DECISIÓN (2026-11-04, story 8.171): el gancho pide el alta de la máquina en el sitio, lanza el proceso de la oficina y pone al día la capa del equipo mientras se trabaja. El proceso cuenta las sesiones por su archivo de sesión de Claude Code, así que una máquina que trabaja sólo con Codex no tendría qué mostrar. Si se suma Codex lo decide DEF-8.171-A-codex (tasks/todo.md del repo del equipo); hasta entonces, el caso 79 del banco corre sólo con Claude.",
+      "scripts": [
+        "office-link-start.js"
+      ]
+    },
+    {
       "log": "PostToolUse · Artifact — SOLO Claude Code (Codex no tiene la tool)",
       "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-30): la tool Artifact (publicar páginas en claude.ai) existe únicamente en Claude Code — Codex nunca emite ese tool_name, así que no hay evento que registrar de su lado ni conducta que traducir. Los artefactos nacen sólo en sesiones Claude y el archivado al repo (<repo>/artifacts/ + índice con la URL) lo cubre el hook del lado Claude. Caso 28 del banco con tools:['claude'] y la misma asimetría declarada.",
       "scripts": [
@@ -335,8 +409,8 @@
       ]
     },
     {
-      "log": "session-collision-guard.js — retirado del set canónico",
-      "verdict": "RETIRADO 2026-09-15 del lado Codex, igual que del lado Claude el 2026-09-07: frenaba trabajo legítimo. En Claude queda como opción apagada (TYCON_SESSION_GUARD=1); en Codex no se registra. El script y sus casos del banco siguen.",
+      "log": "session-collision-guard.js — el freno de git retirado del set canónico; el aviso de llegada registrado (story 8.292)",
+      "verdict": "El FRENO (PreToolUse) sigue RETIRADO del lado Codex desde el 2026-09-15, igual que del lado Claude el 2026-09-07: frenaba trabajo legítimo. En Claude queda como opción apagada (TYCON_SESSION_GUARD=1); en Codex no se registra. El AVISO de llegada (SessionStart) se registra en las dos desde la story 8.292 (2026-11-17): Codex dispara SessionStart con el mismo payload, y el aviso ve a la otra sesión por su marcador del pipeline (igual en las dos herramientas) y por las transcripciones de la carpeta de la propia (la de Codex mezcla cwds y se filtra por el cwd de cada una). Como todo cambio de guion, Codex pide aprobarlo otra vez (/hooks).",
       "scripts": [
         "session-collision-guard.js"
       ]
@@ -355,6 +429,8 @@
         "safety-guard-pre.sh",
         "test-scope-guard-pre.sh",
         "failed-query-notice.js",
+        "cover-secrets.js",
+        "extension-notices.js",
         "rebuild-before-verify.js",
         "session-collision-guard.js",
         "on-bash-write-gate.js",
@@ -381,6 +457,34 @@
       "verdict": "ASIMETRÍA DECLARADA (2026-10-22, story 8.95): deprecated-read-notice.js avisa al leer un archivo deprecado. Del lado Claude se registra con matcher Read|Bash|PowerShell; Codex no emite evento para su herramienta propia de lectura, así que de su lado el aviso corre sólo por la terminal (su evento Bash: cat, sed -n, head…). Lo que Codex lea sin la terminal queda cubierto por la instrucción del arranque (deprecated-session-notice.js) y por los revisores, que reciben marcados los archivos deprecados del diff.",
       "scripts": [
         "deprecated-read-notice.js"
+      ]
+    },
+    {
+      "log": "session-state.js — Claude: SessionStart, SessionEnd, PermissionRequest, Notification (permission_prompt), PreToolUse de las preguntas, PostToolUse, UserPromptSubmit y Stop ↔ Codex: SessionStart, UserPromptSubmit, Stop y PostToolUse de Bash y apply_patch (story 2.81, tanda A; el PostToolUse, story 8.209: sólo refresca el tramo trabajado de la sesión)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-01, story 2.81, decisión 7): Codex no avisa cuando pide un permiso ni cuando la sesión se cierra, y no tiene la herramienta de preguntas con opciones. De su lado el archivo de estado se crea al arrancar, el mensaje de la persona deja la sesión ocupada y el fin del turno la deja parada, sin anotar una espera; un pedido de permiso de Codex no se ve, y la oficina no lo inventa. El fin de la sesión se infiere: sin pid estable (decisión 24d), una sesión sin cambios hace más de 2 h se muestra inactiva, y su archivo no se borra. En Claude se anotan los dos momentos que Codex no tiene: el pedido de permiso (PermissionRequest, con qué pide, y Notification) y el cierre (SessionEnd, que borra el archivo). Su PostToolUse de Bash y apply_patch sólo refresca el tramo trabajado (`lastEventAt`, story 8.209): un turno de Codex que muere sin Stop cierra en su última herramienta.",
+      "scripts": [
+        "session-state.js"
+      ]
+    },
+    {
+      "log": "PreToolUse · Bash|PowerShell — SOLO Claude Code (el tope de sesiones por cualquier camino)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-01, story 8.178): session-cap-guard.js frena las sesiones de fondo que abre el agente con la máquina en el tope. Codex no abre sesiones de fondo (coordination.js open ya se lo niega), así que de su lado no hay nada que frenar y el freno no se registra.",
+      "scripts": [
+        "session-cap-guard.js"
+      ]
+    },
+    {
+      "log": "Stop — SOLO Claude Code (la coordinadora no deja la máquina vacía)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-18, story 8.307): coordination-fill-gate.js frena el cierre del turno de la sesión designada coordinadora con lugar, memoria libre y una historia lista sin sesión. Codex no coordina (coordinate se lo dice y no sigue: sus mensajes a otra sesión no pasan por una herramienta que el arnés pueda mirar), así que de su lado no hay turno que frenar y el freno no se registra.",
+      "scripts": [
+        "coordination-fill-gate.js"
+      ]
+    },
+    {
+      "log": "PreToolUse · AskUserQuestion|mcp__spokenly__ask_user_dictation|SendMessage — SOLO Claude Code (las preguntas de una sesión que abrió la coordinadora y los mensajes que le llegan)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-04, story 8.211): background-question-guard.js le niega el cuadro de opciones y el dictado a una sesión de fondo que abrió coordination.js open, con la coordinadora confirmada y viva, y le niega a otra sesión que no es la coordinadora mandarle un mensaje (SendMessage). Codex no abre sesiones de fondo (coordination.js open se lo niega) ni tiene esas herramientas en el modo normal, así que de su lado no hay a quién frenar y el freno no se registra.",
+      "scripts": [
+        "background-question-guard.js"
       ]
     }
   ]

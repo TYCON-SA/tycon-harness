@@ -37,7 +37,15 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma «Invitar a alguien» y «El permiso de
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma que SITE_TRUST_PROXY toma la lista de
+// direcciones del intermediario (y que con `1` el sitio avisa); antes dejó fuera del candado las rutas de la máquina, dice
+// el paso de una vez para las oficinas y que el sitio tiene que ver la dirección de quien pide; antes dijo cuándo sale la invitación de Microsoft (en el
+// primer ciclo del sitio, o cuando alguien entra si está dormido), que Microsoft no reenvía el correo a una dirección
+// invitada hace poco y qué hacer entonces, y que el correo puede caer en spam, con su remitente;
+// antes decía cómo entra el sitio en GitHub (une directo,
+// prende la unión automática o el pedido queda para aprobar a mano), donde antes decía que todavía no entraba solo;
+// antes sumaba que una organización puede no pedir el
+// revisor en sus repos de producto, y entonces «Proponer» queda apagado ahí; antes sumaba «Invitar a alguien» y «El permiso de
 // invitar» (el botón, sus estados, revocar, el permiso User.Invite.All con su riesgo, cómo se da y se saca);
 // antes sumaba la regla «todo automático» de la rama de operaciones (la política de Azure DevOps con el voto del autor, lo que se resigna y cómo volver a pedir aprobación); antes sumaba que «Salir» no pasa por el candado ni por Microsoft y deja la marca de «salió», y que la página «Saliste» libre del candado se ve aunque el candado haya vencido; antes sumaba que sin disco «Salir» avisa que no pudo invalidar la sesión, y de dónde lee operaciones (la copia en un
 // contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
@@ -50,10 +58,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
 // inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas; y «ejecución» donde decía «corrida»; y el secreto
 // SITE_PRODUCTS_WRITE_TOKEN de los repos de producto, en la tabla de secretos y en «El permiso para Proponer»; y la
-// línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone.
+// línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
+// de los botones entre paréntesis.
 const HUELLA_INSTALACION = {
-  es: '098d3645d3efd25ee5e955189fd40c0b0733fd63f5291675ab58ee3d7576e56d',
-  en: 'd756324d881d16071d74eb74e077e374a8fde5bc6a7c28e8e9aa3ec1646de842',
+  es: 'd7e47784e6016bb4da4f727f6b00df6a6377eb09031792cb17bf8b49845c517d',
+  en: '66a4ae50dc645b5ea9dfe8d165968c2e228b4c2670b8d87fd20466ec28e9661b',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -187,8 +196,9 @@ test('T9 Capturas_SinNombresReales @story-2.32 @ac-13', (t) => {
   if (!fs.existsSync(lista)) { t.skip('NO MEDIDO: esta copia no trae la lista privada (scripts/publishing/denylist.json); los correos sí se midieron'); return; }
   const detector = require(path.join(ROOT, 'scripts', 'publishing', 'detector.js'));
   const cfg = detector.cargarConfig(lista);
-  const hallazgos = textos.flatMap(([n, h]) => detector.reviewText(cfg, h, `capturas/${n}.html`).hallazgos.map((x) => `${n}: ${x.regla} (línea ${x.linea})`));
-  // el mensaje no trae el texto encontrado: la regla y la línea alcanzan para buscarlo
+  // el mensaje no trae el término encontrado: `regla` y `texto` del detector lo nombran, así que sólo van la categoría
+  // y la línea, que alcanzan para buscarlo
+  const hallazgos = textos.flatMap(([n, h]) => detector.reviewText(cfg, h, `capturas/${n}.html`).hallazgos.map((x) => `${n}: ${x.categoria} (línea ${x.linea})`));
   assert.deepStrictEqual(hallazgos, [], 'el HTML de una captura trae un término de la lista privada');
 });
 
@@ -422,4 +432,98 @@ test('2.76-Guia_SitioDemo @story-2.76 @ac-11 — qué es, qué no hace, cómo se
   assert.ok(ayuda.includes(`'${dicen.es.titulo}': MANTIENE`) && ayuda.includes(`'${dicen.en.titulo}': MANTIENE`), 'help.js la conoce, para quien mantiene');
   // el instalador trae la fase que la guía nombra
   assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'deploy', 'azure-container-apps.js'), 'utf8'), /FASES = \['ambiente', 'sitio', 'demo'/);
+});
+
+// T26 2.79-Guia_PestanasYBloquesComoElSitio @story-2.79 @ac-23
+// 🔴 Falla con: la Ayuda contando «cinco pestañas» o «tres bloques» que el sitio ya no tiene, sin «Ya decididas», o
+//    con fuera del recorrido «otra vuelta de revisores» en vez de «Cerrar la historia» y «En cualquier paso».
+test('T26 2.79-Guia_PestanasYBloquesComoElSitio @story-2.79 @ac-23 — pestañas, bloques y pasos aparte con los nombres del sitio, en los dos idiomas', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  // la sub-sección `### <título>` hasta la próxima `### ` o `## `
+  const sub = (txt, titulo) => { const i = txt.indexOf(`\n### ${titulo}`); if (i < 0) return null; const r = txt.slice(i + 5); const j = r.search(/\n##+ /); return j < 0 ? r : r.slice(0, j); };
+  // las pestañas de quien mantiene y las de una persona, como las arman las rutas del sitio (server.js y tabs/*.js)
+  const MANTIENE_VE = ['inicio', 'corridas', 'mantenimiento', 'aprendizajes', 'proyectos', 'arnes', 'comoTrabaja', 'configuracion', 'ayuda'];
+  const PERSONA_VE = ['inicio', 'corridas', 'proyectos', 'ayuda'];
+  const LADOS = [
+    { idioma: 'es', guia: GUIA, ingreso: 'El primer ingreso', mant: 'Mantenimiento', como: 'Cómo trabaja', viejo: /cinco pestañas|tres pestañas|tres bloques|otra vuelta de revisores/i },
+    { idioma: 'en', guia: GUIA_EN, ingreso: 'Signing in for the first time', mant: 'Maintenance', como: 'How it works', viejo: /five tabs|three tabs|three blocks|another round of reviewers/i },
+  ];
+  for (const l of LADOS) {
+    const g = leer(l.guia);
+    const ingreso = seccion(g, l.ingreso).replace(/\s+/g, ' ');
+    const mant = sub(g, l.mant).replace(/\s+/g, ' ');
+    const como = sub(g, l.como).replace(/\s+/g, ' ');
+    for (const [nombre, s] of [['ingreso', ingreso], ['mantenimiento', mant], ['cómo trabaja', como]]) assert.doesNotMatch(s, l.viejo, `${l.idioma} · ${nombre}: sin lo que el sitio ya no tiene`);
+    const renglon = (rx) => (ingreso.match(rx) || [''])[0];
+    const deMantiene = renglon(l.idioma === 'es' ? /\*\*Quien mantiene\*\*[^-]*/ : /\*\*A maintainer\*\*[^-]*/);
+    const dePersona = renglon(l.idioma === 'es' ? /\*\*Una persona confirmada\*\*[^-]*/ : /\*\*A confirmed person\*\*[^-]*/);
+    for (const id of MANTIENE_VE) assert.ok(deMantiene.includes(t(l.idioma, `pestana.${id}`)), `${l.idioma}: quien mantiene ve «${t(l.idioma, `pestana.${id}`)}»: ${deMantiene}`);
+    for (const id of PERSONA_VE) assert.ok(dePersona.includes(t(l.idioma, `pestana.${id}`)), `${l.idioma}: una persona ve «${t(l.idioma, `pestana.${id}`)}»: ${dePersona}`);
+    for (const id of MANTIENE_VE.filter((x) => !PERSONA_VE.includes(x))) assert.ok(!dePersona.includes(t(l.idioma, `pestana.${id}`)), `${l.idioma}: una persona no ve «${t(l.idioma, `pestana.${id}`)}»`);
+    // los bloques de Mantenimiento, con su título del sitio y en el orden de la página
+    const bloques = ['mant.toca.titulo', 'mant.espera.titulo', 'mant.marcha.titulo', 'mant.decididas.titulo'].map((k) => t(l.idioma, k, { n: '' }).replace(/\s*\(\)$/, ''));
+    const donde = bloques.map((b) => mant.indexOf(`**${b}**`));
+    assert.ok(donde.every((i) => i >= 0), `${l.idioma}: Mantenimiento nombra ${bloques.join(', ')} en negrita`);
+    assert.deepStrictEqual([...donde].sort((a, b) => a - b), donde, `${l.idioma}: en el orden de la página`);
+    // los pasos aparte de Cómo trabaja
+    for (const k of ['paso.close-work-item', 'comoTrabaja.fueraDelRecorrido', 'comoTrabaja.enCualquierPaso']) assert.ok(como.includes(t(l.idioma, k)), `${l.idioma}: Cómo trabaja nombra «${t(l.idioma, k)}»`);
+  }
+});
+
+test('T13 2.78-Guia_TarjetaDeFirmas @story-2.78 @ac-12 — la tarjeta de las firmas, en la pestaña de ejecuciones de las dos guías', () => {
+  // 🔴 rojo: falta la tarjeta, de dónde salen las firmas, alguna de las tres marcas, la nota de otra carpeta o lo del
+  //    saneado con tope, en cualquiera de las dos guías.
+  const sub = (t, titulo) => { const i = t.indexOf(`\n### ${titulo}\n`); if (i < 0) return ''; const j = t.indexOf('\n### ', i + 5); return t.slice(i, j < 0 ? undefined : j); };
+  const casos = [
+    [GUIA, 'Ejecuciones', [/«Las firmas»/, /registro común de firmas/, /«Tuya»/, /«Por delegación»/, /«Hecha y avisada»/, /otra carpeta/, /saneado/, /tope/, /8 caracteres/]],
+    [GUIA_EN, 'Runs', [/«Signatures»/, /common signature log/, /«Yours»/, /«By delegation»/, /«Done and notified»/, /another folder/, /sanitized/, /capped/, /8 characters/]],
+  ];
+  for (const [guia, titulo, exige] of casos) {
+    const s = sub(leer(guia), titulo);
+    assert.ok(s, `${path.basename(guia)}: no está la sección «${titulo}»`);
+    for (const re of exige) assert.match(s, re, `${path.basename(guia)} «${titulo}»: falta ${re}`);
+  }
+});
+
+test('T52 2.79-Guia_SinElIdDeLaFicha @story-2.79 @ac-42 — las dos guías no muestran el id «corridas» como texto; la dirección /corridas se queda', () => {
+  // 🔴 rojo: vuelve «(`corridas`)» junto a la ficha de la duración de una ejecución, en cualquiera de las dos guías.
+  for (const guia of [GUIA, GUIA_EN]) {
+    const t = leer(guia);
+    assert.doesNotMatch(t, /`corridas`/, `${path.basename(guia)}: el id de la ficha como texto`);
+    // lo que queda con «corridas» es una dirección, un archivo de captura o el nombre de una sección en castellano
+    const sueltas = t.split('\n').filter((l) => /\bcorridas\b/.test(l.replace(/\([^)]*\.png\)/g, '').replace(/\/corridas\b/g, '').replace(/\*[^*]*corridas[^*]*\*/g, '')));
+    assert.deepStrictEqual(sueltas, [], `${path.basename(guia)}: «corridas» suelto`);
+  }
+});
+
+test('T22 4.13-Guide_LearningsTabInRolesAndSections @story-4.13 @ac-20 — la sección «Aprendizajes» en los dos idiomas, con lo que necesita', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const sub = (txt, titulo) => { const i = txt.indexOf(`\n### ${titulo}`); if (i < 0) return null; const r = txt.slice(i + 5); const j = r.search(/\n##+ /); return j < 0 ? r : r.slice(0, j); };
+  for (const [idioma, guia] of [['es', GUIA], ['en', GUIA_EN]]) {
+    const g = leer(guia);
+    const s = (sub(g, t(idioma, 'pestana.aprendizajes')) || '').replace(/\s+/g, ' ');
+    assert.ok(s, `${idioma}: la sección ### ${t(idioma, 'pestana.aprendizajes')}`);
+    assert.ok(s.includes('team-learnings.md'), `${idioma}: dice adónde va lo aprobado`);
+    assert.match(s, idioma === 'es' ? /sólo para quienes mantienen/ : /only for the maintainers/, `${idioma}: el repo de operaciones, de lectura sólo para quienes mantienen`);
+    // las variables de la instalación van en la parte que ve sólo quien mantiene (la pestaña la lee también una persona)
+    assert.ok(!s.includes('SITE_'), `${idioma}: la pestaña no nombra variables`);
+    const necesita = (sub(g, idioma === 'es' ? 'Lo que necesita «Aprendizajes»' : 'What «Learnings» needs') || '').replace(/\s+/g, ' ');
+    for (const x of ['SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_WRITE_TOKEN']) assert.ok(necesita.includes(x), `${idioma}: «lo que necesita» nombra ${x}`);
+  }
+});
+
+test('T20 4.14-Guide_LearningsSectionsUpdated @story-4.14 @ac-19 — las guías dicen la recomendación, el rechazo en grupo y qué no propone la noche', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const seccion = (txt, titulo) => { const i = txt.indexOf(`\n### ${titulo}`); assert.ok(i >= 0, titulo); const r = txt.slice(i + 5); const j = r.search(/\n##+ /); return (j < 0 ? r : r.slice(0, j)).replace(/\s+/g, ' '); };
+  for (const [idioma, guia, resaltado] of [['es', GUIA, 'resaltado'], ['en', GUIA_EN, 'highlighted']]) {
+    const s = seccion(leer(guia), t(idioma, 'pestana.aprendizajes'));
+    const seguir = t(idioma, 'aprend.seguir', { n: 'N' }).replace(' (N)', '');
+    for (const x of [seguir, t(idioma, 'aprend.rechazarElegidas'), t(idioma, 'aprend.elegir'), resaltado]) assert.ok(s.includes(x), `${idioma}: la sección nombra «${x}»`);
+  }
+  const mineria = leer(path.join(ROOT, 'guides', 'integrations', 'instinct-mining.md')).replace(/\s+/g, ' ');
+  for (const x of ['recomendaciones.json', 'proyectos-con-reglas.json', 'carpeta de trabajo', 'ruta de una sola máquina', 'nace redactada', 'un solo proyecto']) assert.ok(mineria.includes(x), `la guía de instintos dice «${x}»`);
+  assert.ok(!mineria.includes('salen sólo con los números'), 'ya no dice que sin redacción la propuesta sale igual');
+  const operaciones = leer(path.join(ROOT, 'pipelines', 'operations', 'README.md'));
+  assert.ok(!operaciones.includes('sólo con los números'), 'la guía de los pipelines tampoco');
+  assert.ok(require('./lib/pieces-guide.js').piecesText(ROOT).includes('recomendaciones.json'), 'la ficha nombra el archivo de la noche');
 });

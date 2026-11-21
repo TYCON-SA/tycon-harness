@@ -109,7 +109,7 @@ function adversarialInFlight(marker) {
 function killTree(pid) {
   if (!Number.isInteger(pid)) return;
   if (process.platform === 'win32') {
-    require('child_process').spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 10000 });
+    require('child_process').spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 10000 });
     return;
   }
   try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch { /* ya no está */ } }
@@ -122,7 +122,7 @@ function alive(pid) {
 /** La línea de comando de un proceso vivo, o null si no se puede saber (sin `ps`, en Windows). */
 function commandOf(pid) {
   if (process.platform === 'win32') return null;
-  const r = require('child_process').spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', timeout: 5000 });
+  const r = require('child_process').spawnSync('ps', ['-p', String(pid), '-o', 'command='], { windowsHide: true, encoding: 'utf8', timeout: 5000 });
   return r.status === 0 ? String(r.stdout || '').trim() : null;
 }
 
@@ -157,7 +157,8 @@ function promptFor({ advisor, contextFile, storyPath, repo, preamble }) {
     `context_file: ${contextFile}\n` +
     `story_path: ${storyPath}\nrepo_path: ${repo}\nphase: post-implementation\n\n` +
     `Revisá según tu procedimiento (${advisor}) lo que dice el context_file: la story y los archivos tocados. ` +
-    'Devolvé el reporte con tu formato, cada hallazgo con su regla entre corchetes, y cerrá con el renglón «Veredicto:».';
+    'Devolvé el reporte con tu formato, cada hallazgo con su regla entre corchetes, y cerrá con el renglón de veredicto, ' +
+    'solo, con la regla de cada hallazgo una vez por hallazgo: «Veredicto: limpio» o «Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí».';
 }
 
 /**
@@ -229,7 +230,17 @@ async function run(o) {
     (done.size ? `. Ya hechos en esta vuelta: ${[...done].join(', ')}` : '') + '.');
 
   const { recordLaunch } = require('../on-advisor-run.js');
+  // El registro de críticos reportados: el lanzamiento al lanzar, y lo que dejó el revisor al cerrar su proceso, leído en
+  // ese momento (después, el archivo de la carpeta de la corrida lo puede tocar cualquiera). Un registro que no se puede
+  // escribir no corta la vuelta: queda dicho, y el cierre dice «no pude leer lo que reportó».
+  const rc = require('./reported-criticals.js');
+  const runName = path.basename(runDir);
+  const anotar = (fn, que) => {
+    try { return fn(); } catch (e) { say(`reviewers-run: no pude anotar ${que} en el registro de críticos (${e.message || e}).`); return null; }
+  };
   const procs = {};
+  // la hora del primer arranque de cada revisor: si se lo corre de nuevo, lo que vio primero es lo que menos vio
+  const primerArranque = {};
   const writePids = () => {
     try { fs.writeFileSync(pidsFile, JSON.stringify({ iter: start.iter ?? null, procs }, null, 2)); } catch { /* el relanzado sólo pierde el corte */ }
   };
@@ -240,71 +251,110 @@ async function run(o) {
   process.once('SIGTERM', onSignal);
 
   const results = [];
-  const launchOne = (advisor) => new Promise((resolve) => {
-    const report = path.join(reportsDir, `${advisor}.md`);
-    try { fs.rmSync(report, { force: true }); } catch { /* no estaba */ }
-    const contextFile = overrides[advisor] || start.context_file || '(sin context_file: leé la story y el diff)';
-    const preamble = helpers.codexInvokePreamble ? (() => { try { return helpers.codexInvokePreamble(advisor); } catch { return ''; } })() : '';
-    const sandbox = helpers.codexSandbox ? helpers.codexSandbox(advisor) : 'read-only';
-    const args = ['exec', '-p', advisor, '--sandbox', sandbox, '--skip-git-repo-check', ...sessionArgs(session), '-o', report,
-      promptFor({ advisor, contextFile, storyPath, repo, preamble })];
-    const errLog = path.join(reportsDir, `${advisor}.stderr.log`);
+  // Una corrida de `codex exec`: `{ exit, tail }`, con `exit` el código, 'timeout' o -1 (no arrancó). El tope y el corte del
+  // árbol de procesos valen para cada corrida.
+  const correr = (advisor, args) => new Promise((resolve) => {
     let tail = '';
     // Un `.cmd` sin shell no arranca en Windows (Node tira EINVAL al lanzar, no como evento): se cierra como falla con su
     // motivo, nunca rompe la corrida entera.
     let ch = null;
     let spawnError = null;
     try {
-      ch = spawn(codex, args, { cwd: repo, env, stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });
+      ch = spawn(codex, args, { windowsHide: true, cwd: repo, env, stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });
     } catch (e) { spawnError = e; }
     if (ch) {
       children.add(ch);
       procs[advisor] = { pid: ch.pid, startedAt: new Date().toISOString() };
+      if (!primerArranque[advisor]) primerArranque[advisor] = procs[advisor].startedAt;
       writePids();
       ch.stderr.on('data', (d) => { tail = (tail + d).slice(-4000); });
     }
     let timedOut = false;
     const killer = setTimeout(() => { timedOut = true; if (ch) killTree(ch.pid); }, timeoutMs);
-    // `error` (no arrancó) y `close` pueden llegar los dos: se cierra una sola vez, o la línea se anotaría dos veces
+    // `error` (no arrancó) y `close` pueden llegar los dos: se cierra una sola vez
     let finished = false;
-    const finish = (code) => {
+    const fin = (code) => {
       if (finished) return;
       finished = true;
       clearTimeout(killer);
       children.delete(ch);
       delete procs[advisor];
       writePids();
-      try { fs.writeFileSync(errLog, tail); } catch { /* informativo */ }
-      const exit = timedOut ? 'timeout' : code;
-      const corrio = exit === 0 && validReport(report);
-      // Sólo un revisor que corrió pasa por la constancia común (cuenta para la ronda, la foto y el registro de autoría).
-      // El que falló queda en su propia línea, sin `advisor`: `check-count` la nombra en el rojo y nada lo da por corrido.
-      let rec = { ok: true };
-      if (corrio) rec = recordLaunch({ sessionId, cwd: repo, advisor, model: modelOf(advisor), extra: { launcher: 'pipeline', exit, report } });
-      else {
-        try {
-          fs.appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: 'launch-failed', failed_advisor: advisor,
-            model: modelOf(advisor), repo, story: storyId, launcher: 'pipeline', exit, report }) + '\n');
-        } catch (e) { rec = { ok: false, error: e.message }; }
-      }
-      const r = { advisor, exit, report, model: modelOf(advisor), ok: corrio && rec.ok !== false };
-      if (rec.ok === false) say(`reviewers-run: ${advisor} terminó, pero su línea no quedó en el registro (${rec.error}): check-count no lo va a contar.`);
-      else if (!r.ok) {
-        say(`reviewers-run: ${advisor} ${exit === 'timeout' ? `timeout (pasó ${Math.round(timeoutMs / 1000)} s)` : exit === 0 ? 'terminó sin reporte' : `salió ${exit}`}` +
-          `${OLLAMA_INALCANZABLE.test(tail) ? '; no llegó a Ollama (la caja de arena sin red, u Ollama apagado)' : ''}; lo que dijo, en ${errLog}.`);
-      }
-      results.push(r);
-      resolve(r);
+      resolve({ exit: timedOut ? 'timeout' : code, tail });
     };
     if (spawnError) {
       tail += `\nno arrancó: ${spawnError.message || spawnError}` +
         (/\.(cmd|bat)$/i.test(codex) ? ' (en Windows un .cmd no se lanza sin shell: apuntá TYCON_CODEX_BIN a codex.exe)' : '') + '\n';
-      finish(-1);
+      fin(-1);
     } else {
-      ch.on('error', (e) => { tail += `\nno arrancó: ${(e && e.message) || e}\n`; finish(-1); });
-      ch.on('close', (code) => finish(code));
+      ch.on('error', (e) => { tail += `\nno arrancó: ${(e && e.message) || e}\n`; fin(-1); });
+      ch.on('close', (code) => fin(code));
     }
   });
+  const motivoDe = (exit, corrio, texto) => (corrio ? (texto ? null : 'no pude leer el reporte que dejó')
+    : (exit === 'timeout' ? 'se cortó por el tope de tiempo' : exit === 0 ? 'terminó sin reporte' : `salió ${exit}`));
+  const leer = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };
+
+  const launchOne = async (advisor) => {
+    const report = path.join(reportsDir, `${advisor}.md`);
+    const retryReport = path.join(reportsDir, `${advisor}.retry.md`);
+    for (const f of [report, retryReport]) { try { fs.rmSync(f, { force: true }); } catch { /* no estaba */ } }
+    const contextFile = overrides[advisor] || start.context_file || '(sin context_file: leé la story y el diff)';
+    const preamble = helpers.codexInvokePreamble ? (() => { try { return helpers.codexInvokePreamble(advisor); } catch { return ''; } })() : '';
+    const sandbox = helpers.codexSandbox ? helpers.codexSandbox(advisor) : 'read-only';
+    const prompt = promptFor({ advisor, contextFile, storyPath, repo, preamble });
+    const argsDe = (out, p) => ['exec', '-p', advisor, '--sandbox', sandbox, '--skip-git-repo-check', ...sessionArgs(session), '-o', out, p];
+    const errLog = path.join(reportsDir, `${advisor}.stderr.log`);
+    const salida = anotar(() => rc.recordLaunched({ stateDir, sessionKey: sessionId, advisor, story: storyId, run: runName, launcher: 'pipeline' }),
+      `el lanzamiento de ${advisor}`);
+    const iter = salida ? salida.iter : null;
+    const primera = await correr(advisor, argsDe(report, prompt));
+    let { exit, tail } = primera;
+    let corrio = exit === 0 && validReport(report);
+    let texto = corrio ? leer(report) : '';
+    anotar(() => rc.recordReport({
+      stateDir, sessionKey: sessionId, advisor, iter, story: storyId, run: runName, source: 'reviewers-run', text: texto, error: motivoDe(exit, corrio, texto),
+    }), `el reporte de ${advisor}`);
+    // Salió bien, con reporte y sin su renglón de veredicto: una sola corrida más sobre el mismo contexto, con su propio
+    // reporte (el primero no se pisa). Un revisor que falló, se cortó o no dejó reporte no se vuelve a correr.
+    let reporteFinal = report;
+    if (corrio && texto && rc.unreadableReason(texto)) {
+      anotar(() => rc.recordVerdictRetry({ stateDir, sessionKey: sessionId, advisor, iter, story: storyId, run: runName }), `el pedido del renglón a ${advisor}`);
+      const segunda = await correr(advisor, argsDe(retryReport, `${prompt}\n\n${rc.VERDICT_REQUEST}`));
+      exit = segunda.exit;
+      tail = `${tail}\n--- segunda corrida (el renglón de veredicto) ---\n${segunda.tail}`.slice(-4000);
+      corrio = exit === 0 && validReport(retryReport);
+      texto = corrio ? leer(retryReport) : '';
+      anotar(() => rc.recordReport({
+        stateDir, sessionKey: sessionId, advisor, iter, story: storyId, run: runName, source: 'reviewers-run', text: texto, error: motivoDe(exit, corrio, texto),
+      }), `el segundo reporte de ${advisor}`);
+      reporteFinal = retryReport;
+    }
+    try { fs.writeFileSync(errLog, tail); } catch { /* informativo */ }
+    return cerrar({ advisor, exit, corrio, report: reporteFinal, tail, errLog });
+  };
+
+  // la línea del revisor en el registro de lanzamientos, una sola por revisor: la del resultado final
+  const cerrar = ({ advisor, exit, corrio, report, tail, errLog }) => {
+    // Sólo un revisor que corrió pasa por la constancia común (cuenta para la ronda, la foto y el registro de autoría).
+    // El que falló queda en su propia línea, sin `advisor`: `check-count` la nombra en el rojo y nada lo da por corrido.
+    let rec = { ok: true };
+    if (corrio) rec = recordLaunch({ sessionId, cwd: repo, advisor, model: modelOf(advisor), extra: { launcher: 'pipeline', lanzado_ts: primerArranque[advisor], exit, report } });
+    else {
+      try {
+        fs.appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: 'launch-failed', failed_advisor: advisor,
+          model: modelOf(advisor), repo, story: storyId, launcher: 'pipeline', exit, report }) + '\n');
+      } catch (e) { rec = { ok: false, error: e.message }; }
+    }
+    const r = { advisor, exit, report, model: modelOf(advisor), ok: corrio && rec.ok !== false };
+    if (rec.ok === false) say(`reviewers-run: ${advisor} terminó, pero su línea no quedó en el registro (${rec.error}): check-count no lo va a contar.`);
+    else if (!r.ok) {
+      say(`reviewers-run: ${advisor} ${exit === 'timeout' ? `timeout (pasó ${Math.round(timeoutMs / 1000)} s)` : exit === 0 ? 'terminó sin reporte' : `salió ${exit}`}` +
+        `${OLLAMA_INALCANZABLE.test(tail) ? '; no llegó a Ollama (la caja de arena sin red, u Ollama apagado)' : ''}; lo que dijo, en ${errLog}.`);
+    }
+    results.push(r);
+    return r;
+  };
 
   const queue = [...pending];
   const workers = Array.from({ length: Math.min(window, queue.length) }, async () => {

@@ -141,6 +141,8 @@ printf 'Usuario por defecto: operador\n\n## AC 1\nAbrir la pantalla y mirar el r
 printf 'veredicto: OK\n' > "$QA4/epic-07__1.1-legibilidad.md"
 # Una story de pantalla también necesita la revisión de su pantalla, con la misma clave.
 printf 'veredicto: OK\nscreens: src/Pantalla.tsx\ncaptures: ninguna — sin E2E en esta prueba\n' > "$QA4/epic-07__1.1-legibilidad-ui.md"
+# y la guía HTML que abre el tester (va por el nombre del archivo de la story, no por la clave)
+printf '<html></html>\n' > "$QA4/1-1-y-guia-qa.html"
 mkdir -p "$M4/src"; printf 'export const P = () => <p>Pantalla de prueba</p>;\n' > "$M4/src/Pantalla.tsx"
 ca="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-05/1-1-x.md" --check 2>&1)"; rca=$?
 cb="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-07/1-1-y.md" --check 2>&1)"; rcb=$?
@@ -229,6 +231,7 @@ files_to_modify:
 mkdir -p "$M8/qa"; printf 'Usuario por defecto: operador\n\n## AC 1\nAbrir la pantalla y mirar el resultado.\n' > "$M8/qa/1.9-pasos.md"
 printf 'veredicto: OK\n' > "$M8/qa/1.9-legibilidad.md"
 printf 'veredicto: OK\nscreens: src/Pantalla.tsx\ncaptures: ninguna — sin E2E en esta prueba\n' > "$M8/qa/1.9-legibilidad-ui.md"
+printf '<html></html>\n' > "$M8/qa/story-1-9-x-guia-qa.html"
 # Una pantalla declarada que no está en el disco frena (no se puede revisar lo que no se ve).
 mkdir -p "$M8/src"; printf 'export const P = () => <p>Pantalla de prueba</p>;\n' > "$M8/src/Pantalla.tsx"
 node -e '
@@ -282,7 +285,7 @@ else no "T10 ConstanciaDeGatesLog_LlevaLaRuta — la línea de gates.log trae: $
 M11="$(mundo m11)"; S11="$M11/.specs/a/stories/1-1-x.md"; story "$S11" 1.1; story "$M11/.specs/b/stories/1-1-y.md" 1.1
 corrida "$M11" "a__1.1-20261006100000"; corrida "$M11" "b__1.1-20261006110000"
 printf '{"sessionId":"s11","storyId":"1.1","storyPath":"%s","repoPath":"%s","stepsCompleted":[0],"checks":{}}\n' "$S11" "$M11" > "$HOME/.claude/.tycon-pipeline/active/s11.json"
-(cd "$M11" && CLAUDE_CODE_SESSION_ID=s11 node "$SK/marker.js" clear >/dev/null 2>&1)
+(cd "$M11" && CLAUDE_CODE_SESSION_ID=s11 node "$SK/marker.js" clear --discard >/dev/null 2>&1)
 t11a="$(ls "$M11/.advisors/pipeline-runs/a__1.1-20261006100000" | grep -c '^timing-dump-')"
 t11b="$(ls "$M11/.advisors/pipeline-runs/b__1.1-20261006110000" | grep -c '^timing-dump-')"
 rm -f "$HOME/.claude/.tycon-pipeline/active/s11.json"

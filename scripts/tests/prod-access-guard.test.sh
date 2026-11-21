@@ -15,7 +15,8 @@
 #   T30 — sin snapshot (Claude Code 2.1.272 ya no lo escribe) se le pregunta al shell de login en vivo:
 #         limpio pasa; secuestrado, mudo, colgado o de un shell que no sé leer frena
 #   T31 — se mira el snapshot de ESTA sesión, no el más nuevo
-#   T35 — la consulta de un archivo cerca del tope llega entera por una tubería
+#   6.6 T1-T8, T13 — el cuadro muestra la consulta: --file se frena (con el comando en línea listo), la consulta en
+#         línea tiene un tope de 20 renglones de pantalla y una lista de caracteres que engañan
 #   T32 — la guía declara que la regla de firewall es de cortesía
 #
 # 🔴 HOME falso siempre: el hook lee ~/.claude (snapshots, índice, registros).
@@ -111,7 +112,7 @@ corre "sqlcmd -S $PROD -Q \"select 1\"" >/dev/null                     # primera
 printf '{"servers":[{"host":"'$PROD'","environment":"no-produccion"}]}' > "$REPOS/backend-acme/.tycon/production.json"
 rm -f "$CASA/.claude/.tycon-pipeline/production-index.json"
 rc="$(corre "sqlcmd -S $PROD -Q \"select 1\"")"
-if [ "$rc" = 2 ] && grep -q -- "--reclasificar" "$TMP/err"; then ok "T15 · sigue frenando y ofrece --reclasificar"
+if [ "$rc" = 2 ] && grep -q -- "--reclassify" "$TMP/err"; then ok "T15 · sigue frenando y ofrece --reclassify"
 else no "T15 · el host se destrabó reescribiendo el catálogo (rc=$rc)"; fi
 
 # ── T4 · todas las formas de nombrar un servidor ──────────────────────────────────────────────
@@ -150,7 +151,7 @@ mundo
 snapshot "" ""
 PUERTA="/opt/tycon/bin/tycon-prod-sql"
 pasa  "T6a · la forma canónica pasa" "$PUERTA $PROD 'select 1'"
-pasa  "T6b · canónica con --max-filas" "$PUERTA $PROD 'select 1' --max-filas 50"
+pasa  "T6b · canónica con --max-rows" "$PUERTA $PROD 'select 1' --max-rows 50"
 # 6.4 · T10: `--locks` sola es una forma canónica (pasa al cuadro); con cualquier argumento más, se corta
 pasa  "6.4 T10 · la puerta --locks sola pasa al cuadro" "$PUERTA --locks"
 frena "6.4 T10 · la puerta --locks con un argumento se corta" "$PUERTA --locks acme-sql"
@@ -468,6 +469,28 @@ frena "8.14 WildcardWithDot_IsHiddenFolder (control .tycon-pipel*)" "rm -rf ~/.c
 frena "8.14 WildcardWithDot_IsHiddenFolder (control .*)" "rm -rf ~/.claude/.*"
 frena_indecidible "8.14 DotGlobOn_WildcardMayBeHiddenFolder (setopt globdots)" "setopt globdots; rm -rf ~/.claude/*-*"
 frena_indecidible "8.14 DotGlobOn_WildcardMayBeHiddenFolder (GLOBIGNORE)" "GLOBIGNORE=x; rm -rf ~/.claude/*-*"
+
+# (4a') Vaciar cachés de usuario fuera de los repos. Un comodín con punto (`.[!.]*`) en una carpeta que existe y no tiene
+# adentro `.tycon` ni `.tycon-pipeline` no puede borrar ninguna de las dos; la variable de un `for` con palabras que se
+# leen vale esas palabras, no «desconocida». Los dos «casos reales» son comandos de vaciado de cachés tal como se escriben.
+mkdir -p "$CASA/Library/Caches/Google/.oculta" "$CASA/Library/Caches/java-db/x" "$CASA/Library/Caches/com.spotify.client/.y"
+pasa "Caches_DotGlob_FolderWithoutProtected_Passes" "rm -rf ~/Library/Caches/Google/.[!.]*"
+pasa "Caches_DotGlob_MissingFolder_Passes (nada que casar)" "rm -rf ~/Library/Caches/no-existe/.[!.]*"
+pasa "Caches_DotGlob_FromVariable_Passes" "p=~/Library/Caches/Google; rm -rf \"\$p\"/.[!.]*"
+pasa "Caches_ForLoop_RmDotGlob_Passes (caso real 1)" 'for d in Google java-db com.spotify.client; do p=~/Library/Caches/$d; for x in "$p"/* "$p"/.[!.]*; do [ -e "$x" ] && rm -rf -- "$x"; done; done'
+pasa "Caches_ForLoop_FindExecRm_Passes (caso real 2)" 'for d in Google java-db com.spotify.client; do find "$HOME/Library/Caches/$d" -mindepth 1 -maxdepth 1 -exec rm -rf {} + ; done'
+# lo legítimo sigue frenando: la carpeta tiene `.tycon` o `.tycon-pipeline`, el bucle llega al catálogo, o no se lee
+frena "Caches_DotGlob_RepoRoot_Blocks (rm -rf <repo>/.[!.]*)" "rm -rf $REPOS/backend-acme/.[!.]*"
+frena "Caches_DotGlob_PipelineParent_Blocks (rm -rf ~/.claude/.[!.]*)" "rm -rf ~/.claude/.[!.]*"
+frena "Caches_ForLoop_ReachesCatalog_Blocks (for … find -delete)" "for d in backend-acme otro; do find \"$REPOS/\$d\" -name '*.json' -delete; done"
+frena "Caches_ForLoop_CatalogByName_Blocks (for … rm production.json)" "for d in backend-acme; do rm -f \"$REPOS/\$d/.tycon/production.json\"; done"
+frena "Caches_ForLoop_UnresolvedWords_Blocks (for d in \$(ls))" "for d in \$(ls $REPOS); do rm -rf \"$REPOS/\$d\"/.[!.]*; done"
+mkdir -p "$CASA/Library/Caches/proyecto/.tycon"
+frena "Caches_ForLoop_FindOverFolderWithRepo_Blocks" 'for d in Caches; do find "$HOME/Library/$d" -mindepth 1 -maxdepth 1 -exec rm -rf {} + ; done'
+rm -rf "$CASA/Library/Caches/proyecto"
+mkdir -p "$TMP/cerrada/.x"; chmod 000 "$TMP/cerrada"
+frena "Caches_DotGlob_UnreadableFolder_Blocks" "rm -rf $TMP/cerrada/.[!.]*"
+chmod 755 "$TMP/cerrada"
 
 # (4b) Con la carpeta de trabajo en la raíz del pipeline: `sed` sin -i no escribe sus archivos, y lo que un intérprete
 # recibe de una variable o sustitución sin resolver es dato de su programa (el programa calcula qué abre).
@@ -881,8 +904,12 @@ EOF"
 t27="$(REPO_ROOT="$AQUI" node - <<'JS'
 const fs = require('fs'); const path = require('path'); const crypto = require('crypto'); const { spawnSync } = require('child_process');
 const ROOT = process.env.REPO_ROOT; const REF = '6e01463';
-const HUELLA_CRUDO = '66fceabd7e5f83b141a2b4bbd22211129159ccd116a2e4e70e31c2016591cdb3';
-const HUELLA_SHIM = 'b3251a743f5a0300dde442b73858c80877f99778734fc7c294ace2ee888ae9bc';
+// Las huellas de hoy: el índice y la memoria con su nombre viejo ya no se nombran (el freno no los protege). Contra REF
+// se le sacan a la referencia esos dos nombres y nada más, así cualquier otro cambio del criterio sigue en rojo.
+const HUELLA_CRUDO = '72198852a4628e026ff193ebabd31ecea454f0a14be4600c12b011040b018c68';
+const HUELLA_SHIM = 'd18d1386883f225f231321752585aca269ab8360a67bd1ebecb7d98252e16c44';
+const sinEstadosViejos = (src) => src.replace(", 'produccion-indice\\\\.json', 'produccion-memoria\\\\.json'", '')
+  .replace('|produccion-(indice|memoria)\\.json', '');
 const trozos = (src) => [/const CLIENTES = \{[\s\S]*?\n\};/, /const VARIABLES_SERVIDOR = \[[^\]]*\];/, /const escRe = [^\n]*;/,
   /const CRUDO = new RegExp\([\s\S]*?'i'\);/].map((re) => { const m = re.exec(src); if (!m) throw new Error(`sin ${re}`); return m[0]; }).join('\n');
 const criterio = (src) => new Function(`${trozos(src)}\nreturn CRUDO;`)();
@@ -909,13 +936,13 @@ const A = criterio(hoy);
 let via;
 if (refHook.status === 0) {
   via = REF;
-  const B = criterio(refHook.stdout);
+  const B = criterio(sinEstadosViejos(refHook.stdout));
   for (const c of cmds) if (A.test(c) !== B.test(c)) mal.push(`veredicto distinto: «${c.slice(0, 60)}»`);
 } else {
   via = 'huella fijada';
   if (sha(trozos(hoy)) !== HUELLA_CRUDO) mal.push('CRUDO cambió (huella distinta)');
 }
-const shimRef = refShim.status === 0 ? sha(shim(refShim.stdout)) : HUELLA_SHIM;
+const shimRef = refShim.status === 0 ? sha(shim(sinEstadosViejos(refShim.stdout))) : HUELLA_SHIM;
 if (!shim(shimHoy) || sha(shim(shimHoy)) !== shimRef) mal.push('nombra_bases() de node-shim.sh cambió');
 console.log(mal.length ? `NO ${mal.join(' · ')}` : `OK ${cmds.length} comandos contra ${via}`);
 JS
@@ -1008,23 +1035,169 @@ pasa  "G1 CarpetaDeEstado_BorrarUnaCosa_Pasa" "rm -rf ~/.tycon/state/active/viej
 pasa  "G1 CarpetaDeEstado_ListarConComodin_Pasa" "ls ~/.tycon/state/*"
 pasa  "G1 CarpetaDeEstado_CopiarConComodin_Pasa" "cp -r ~/.tycon/state/* /tmp/estado-copia/"
 
-# ── T35 · la consulta de un archivo cerca del tope llega ENTERA por una tubería ─────────────
-# El anfitrión lee el mensaje por una tubería: si el freno sale antes de terminar de escribirlo, llegan los primeros
-# 64 KB y el resto de la consulta no se muestra.
+# ── 6.6 · el cuadro muestra la consulta: el archivo ya no pasa, la consulta en línea tiene tope ─────────────────────────
+# El cuadro de aprobación muestra el comando y nada más: lo que el freno escribe aparece después.
+# Por eso `--file` se frena, con el comando en línea listo cuando se puede armar, y la consulta en línea tiene un tope de
+# renglones (el cuadro corta el principio sin aviso) y una lista de caracteres que engañan.
 mundo
 snapshot "" ""
-# 1920 renglones: el archivo queda justo bajo los 64 KB y el mensaje, con sus saltos escapados, pasa el búfer de la
-# tubería; el lector espera antes de leer, como un anfitrión ocupado.
-{ echo 'select 1'; for _ in $(seq 1920); do echo '-- relleno para acercarse al tope'; done; echo '-- FIN-DE-LA-CONSULTA'; } > "$TMP/cerca.sql"
-huella="$(shasum -a 256 "$TMP/cerca.sql" | cut -d' ' -f1)"
-payload="$(CMD="$PUERTA $PROD --file $TMP/cerca.sql --sha256 $huella" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:"/tmp",tool_input:{command:process.env.CMD}}))')"
-printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" 2>"$TMP/err" | { sleep 1; cat; } > "$TMP/out"
-rc="${PIPESTATUS[1]}"
-if [ "$rc" = 0 ] && node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).systemMessage; process.exit(/FIN-DE-LA-CONSULTA/.test(m)?0:1)' "$TMP/out" 2>/dev/null; then
-  ok "6.2 T35 · la consulta de un archivo de $(wc -c < "$TMP/cerca.sql" | tr -d ' ') bytes llega entera por una tubería"
-else
-  no "6.2 T35 · el mensaje llegó cortado o no salió (rc=$rc, $(wc -c < "$TMP/out" | tr -d ' ') bytes) — err: $(head -c 120 "$TMP/err")"
-fi
+mkdir -p "$TMP/q"
+printf 'select top 3 Id,\n       Nombre\nfrom Articulos\n' > "$TMP/q/consulta.sql"
+H66="$(shasum -a 256 "$TMP/q/consulta.sql" | cut -d' ' -f1)"
+mkdir -p "$TMP/q/con espacio"; cp "$TMP/q/consulta.sql" "$TMP/q/con espacio/c.sql"
+
+# T1 · toda invocación con --file sale 2, sin systemMessage; las formas raras, sin comando listo
+t1(){ local etiqueta="$1" cmd="$2" listo="$3" rc; rc="$(corre "$cmd")"
+  if [ "$rc" = 2 ] && ! grep -q systemMessage "$TMP/out" && grep -q "no muestra el contenido de un archivo" "$TMP/err" \
+     && { [ "$listo" = si ] && grep -qF "$PUERTA $PROD 'select top 3" "$TMP/err" || { [ "$listo" = no ] && ! grep -qF "$PUERTA $PROD '" "$TMP/err"; }; }; then
+    ok "6.6 T1 Guard_File_AlwaysBlocks · $etiqueta"
+  else no "6.6 T1 Guard_File_AlwaysBlocks · $etiqueta (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi; }
+t1 "huella buena" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 $H66" si
+t1 "huella vieja" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 0000000000000000000000000000000000000000000000000000000000000000" si
+t1 "sin huella" "$PUERTA $PROD --file $TMP/q/consulta.sql" si
+t1 "con --max-rows" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 $H66 --max-rows 7" si
+grep -qF -- "--max-rows 7" "$TMP/err" && ok "6.6 T1 Guard_File_AlwaysBlocks · el comando listo conserva --max-rows" || no "6.6 T1 · el comando listo perdió --max-rows — err: $(head -c 200 "$TMP/err")"
+t1 "ruta con espacios" "$PUERTA $PROD --file '$TMP/q/con espacio/c.sql' --sha256 $H66" no
+t1 "--file antes del host" "$PUERTA --file $TMP/q/consulta.sql $PROD" no
+t1 "--file=<ruta>" "$PUERTA $PROD --file=$TMP/q/consulta.sql" no
+
+# T2 · el comando listo, con lo que el shell interpreta, es canónico para el freno
+printf "select 'a''b' as x,\t\"c\" -- \$(id) \\\\ # ; | fin\nfrom T where n = 'it''s'\n-- tercera\n" > "$TMP/q/raro.sql"
+rc="$(corre "$PUERTA $PROD --file $TMP/q/raro.sql")"
+LISTO="$(grep -F "$PUERTA $PROD '" "$TMP/err" | head -1 | sed 's/^ *//')"
+# el comando puede ocupar varios renglones del mensaje: se toma desde su primera línea hasta la comilla de cierre
+LISTO="$(node -e '
+  const t = require("fs").readFileSync(process.argv[1], "utf8"); const i = t.indexOf(process.argv[2]);
+  if (i < 0) process.exit(1);
+  const resto = t.slice(i); const m = /^\S+ \S+ (?:\x27(?:[^\x27]|\x27\\\x27\x27)*\x27)(?: --max-rows \d+)?/.exec(resto);
+  if (!m) process.exit(1); process.stdout.write(m[0]);' "$TMP/err" "$PUERTA $PROD '")" || LISTO=""
+if [ "$rc" = 2 ] && [ -n "$LISTO" ]; then
+  rc2="$(corre "$LISTO")"
+  if [ "$rc2" = 0 ]; then ok "6.6 T2 Guard_File_GivesInlineCommand · el comando listo pasa al cuadro como forma canónica"
+  else no "6.6 T2 Guard_File_GivesInlineCommand · el comando listo no es canónico (rc=$rc2) — err: $(head -c 200 "$TMP/err")"; fi
+  printf '%s' "$LISTO" > "$TMP/q/listo.cmd"
+else no "6.6 T2 Guard_File_GivesInlineCommand · no trajo el comando (rc=$rc) — err: $(head -c 300 "$TMP/err")"; fi
+
+# T4 · el archivo que no pasa las reglas no trae comando: el motivo, y nunca el contenido del protegido
+mkdir -p "$TMP/q/carpeta"; ln -sf "$TMP/q/consulta.sql" "$TMP/q/enlace.sql"
+head -c 66560 /dev/zero | tr '\0' 'a' > "$TMP/q/grande.sql"
+printf 'select \377\376 1\n' > "$TMP/q/binario.sql"
+printf 'select 1 \033[2J\n' > "$TMP/q/ansi.sql"
+printf 'select 1 \302\233 x\n' > "$TMP/q/c1.sql"
+printf 'select 1 \342\200\213 x\n' > "$TMP/q/invisible.sql"
+for _ in $(seq 21); do echo 'select 1'; done > "$TMP/q/largo.sql"
+: > "$TMP/q/vacio.sql"
+printf -- '-i /tmp/x.sql\n' > "$TMP/q/guion.sql"
+printf 'select 1\nGO\nselect 2\n' > "$TMP/q/go.sql"
+printf 'select 1\n:r /etc/passwd\n' > "$TMP/q/r.sql"
+printf '{"servers":[{"host":"SECRETO-DEL-CATALOGO"}]}' > "$TMP/q/production.json"
+# lo que no es una consulta no se lee para el asistente: otra extensión, o una carpeta oculta en el camino
+printf 'SECRETO-DEL-CATALOGO\n' > "$TMP/q/credenciales"; printf 'SECRETO-DEL-CATALOGO\n' > "$TMP/q/clave.txt"
+mkdir -p "$TMP/q/.oculta"; printf 'select 1 -- SECRETO-DEL-CATALOGO\n' > "$TMP/q/.oculta/c.sql"
+for caso in "carpeta:archivo común" "enlace.sql:enlace" "grande.sql:mide" "binario.sql:UTF-8" "ansi.sql:control" "c1.sql:control" \
+            "invisible.sql:invisible" "largo.sql:partila" "vacio.sql:vacía" "guion.sql:«-»" "go.sql:GO" "r.sql:comando del cliente" \
+            "production.json:protegido" "credenciales:.sql" "clave.txt:.sql" ".oculta/c.sql:carpeta oculta"; do
+  f="${caso%%:*}"; motivo="${caso#*:}"
+  rc="$(corre "$PUERTA $PROD --file $TMP/q/$f --sha256 $H66")"
+  if [ "$rc" = 2 ] && grep -qF -- "$motivo" "$TMP/err" && ! grep -qF "$PUERTA $PROD '" "$TMP/err" && ! grep -q "SECRETO-DEL-CATALOGO" "$TMP/err"; then
+    ok "6.6 T4 Guard_File_BadFile_NoCommandWithReason · $f"
+  else no "6.6 T4 Guard_File_BadFile_NoCommandWithReason · $f (rc=$rc, esperaba «${motivo}») — err: $(head -c 200 "$TMP/err")"; fi
+done
+
+# T5 · justo 20 renglones de pantalla, contando el prefijo, pasa al cuadro (también con tabuladores). El primer renglón
+# lleva el prefijo de la puerta y «select 1»: 69 columnas, dos renglones de 60
+veinte="$(for i in $(seq 18); do echo "select $i"; done)"
+pasa "6.6 T5 Guard_Inline_UnderCap_Asks · 20 renglones" "$PUERTA $PROD '$veinte
+fin'"
+tabs="$(for i in $(seq 17); do printf 'a\t\t\t\t\t\t\tb\n'; done)"   # 7 tabuladores: 57 columnas, un renglón cada uno
+pasa "6.6 T5 Guard_Inline_UnderCap_Asks · 20 renglones con tabuladores" "$PUERTA $PROD 'select 1
+${tabs}fin'"
+
+# T6 · más de 20 renglones de pantalla sale 2 y dice cuántos
+sobre(){ local etiqueta="$1" cmd="$2" rc; rc="$(corre "$cmd")"
+  if [ "$rc" = 2 ] && grep -qE "ocupa [0-9]+" "$TMP/err" && grep -q "partí la consulta" "$TMP/err"; then ok "6.6 T6 Guard_Inline_OverCap_Blocks · $etiqueta"
+  else no "6.6 T6 Guard_Inline_OverCap_Blocks · $etiqueta (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi; }
+sobre "21 renglones" "$PUERTA $PROD '$veinte
+x
+fin'"
+sobre "un renglón de 1600 caracteres" "$PUERTA $PROD 'select $(head -c 1600 /dev/zero | tr '\0' 'a')'"
+sobre "20 renglones con 10 tabuladores" "$PUERTA $PROD '$(for i in $(seq 20); do printf 'a\t\t\t\t\t\t\t\t\t\tb\n'; done)'"
+sobre "20 renglones de 40 anchos" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf '漢'; done; echo; done)'"
+# los anchos que no están en las tablas de siempre (Tangut, kana suplementaria) también cuentan 2
+sobre "20 renglones de 40 Tangut" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf '\360\227\200\200'; done; echo; done)'"
+sobre "20 renglones de 40 kana suplementaria" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf '\360\233\200\200'; done; echo; done)'"
+# un ancho que no entra en la última columna baja entero al renglón siguiente: ese hueco también cuenta
+diecisiete="$(for i in $(seq 15); do echo "select $i"; done)"
+corte="$(head -c 59 /dev/zero | tr '\0' 'a')漢$(head -c 59 /dev/zero | tr '\0' 'a')"
+sobre "un ancho en la última columna" "$PUERTA $PROD 'select 1
+$diecisiete
+$corte
+fin'"
+# lo que el shell ignora al final también llega al cuadro: se cuenta
+cola="$(for i in $(seq 40); do echo; done; echo x)"; cola="${cola%x}"
+sobre "20 renglones y 40 saltos al final" "$PUERTA $PROD '$veinte
+fin'$cola"
+sobre "20 renglones de 40 letras con acento combinante" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf 'e\314\201'; done; echo; done)'"
+# el tope es el de la puerta: renglones de 60 columnas y hasta 1200 caracteres. 15 renglones de 70 columnas ocupan 30
+a70="$(head -c 70 /dev/zero | tr '\0' 'a')"
+sobre "15 renglones de 70 columnas" "$PUERTA $PROD 'select 1
+$(for i in $(seq 15); do echo "$a70"; done)
+fin'"
+# 20 renglones de 60 columnas entran en pantalla, pero el comando pasa de 1200 caracteres contando los saltos
+pre="$PUERTA $PROD 'select "; a60="$(head -c 60 /dev/zero | tr '\0' 'a')"
+sobre "20 renglones y 1218 caracteres" "$pre$(head -c $((120 - ${#pre})) /dev/zero | tr '\0' 'a')
+$(for i in $(seq 17); do echo "$a60"; done)
+$(head -c 59 /dev/zero | tr '\0' 'a')'"
+
+# T7 · caracteres que engañan en la consulta en línea: sale 2 con el motivo, sin el carácter en el mensaje
+for raro in '\033[2J' '\r' '\302\233' '\302\255' '\330\234' '\342\200\256' '\342\200\213' '\357\270\217' '\363\240\201\201'; do
+  c="$(printf "$raro")"
+  rc="$(corre "$PUERTA $PROD 'select 1 ${c} x'")"
+  if [ "$rc" = 2 ] && grep -qE "control|invisible" "$TMP/err" && ! grep -qF "$c" "$TMP/err"; then ok "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro"
+  else no "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+done
+# los de formato que también se ven como nada (Mongolia, jemer, U+2065, U+206A-206F, relleno de media anchura, objeto)
+for raro in '\341\240\213' '\341\236\264' '\342\201\245' '\342\201\252' '\357\276\240' '\357\277\274'; do
+  c="$(printf "$raro")"
+  rc="$(corre "$PUERTA $PROD 'select 1 ${c} x'")"
+  if [ "$rc" = 2 ] && grep -q "invisible" "$TMP/err"; then ok "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro"
+  else no "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+done
+# en las puntas del comando, fuera de las comillas: el freno no las recorta antes de mirar
+for raro in '\r' '\013' '\014' '\357\273\277' '\342\200\250'; do
+  rc="$(corre "$PUERTA $PROD 'select 1'$(printf "$raro")")"
+  if [ "$rc" = 2 ] && grep -qE "control|invisible" "$TMP/err"; then ok "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro al final del comando"
+  else no "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro al final del comando (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+done
+# un sustituto suelto: UTF-16 roto en el JSON, que no llega como carácter de reemplazo
+payload="$(CMD="$PUERTA $PROD 'select 1 @@ x'" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:"/tmp",tool_input:{command:process.env.CMD}}).replace("@@","\\ud800"))')"
+printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" >"$TMP/out" 2>"$TMP/err"; rc=$?
+if [ "$rc" = 2 ] && grep -q "UTF-8" "$TMP/err"; then ok "6.6 T7 Guard_Inline_DeceivingChars_Block · sustituto suelto"
+else no "6.6 T7 Guard_Inline_DeceivingChars_Block · sustituto suelto (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+# UTF-8 inválido: llega al freno como un carácter de reemplazo (los bytes malos no sobreviven al JSON)
+rc="$(corre "$PUERTA $PROD 'select 1 $(printf '\357\277\275') x'")"
+if [ "$rc" = 2 ] && grep -q "UTF-8" "$TMP/err"; then ok "6.6 T7 Guard_Inline_DeceivingChars_Block · UTF-8 inválido"
+else no "6.6 T7 Guard_Inline_DeceivingChars_Block · UTF-8 inválido (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+
+# T8 · las otras formas no cambian; Codex sigue cortado, con o sin --file
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --reclassify" "$PUERTA --reclassify $PROD"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --verify" "$PUERTA --verify"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --load-key" "$PUERTA --load-key $PROD"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --open-firewall" "$PUERTA --open-firewall $PROD"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --close-firewall" "$PUERTA --close-firewall $PROD"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --locks" "$PUERTA --locks"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --delete-group" "$PUERTA --delete-group acme-prueba-rg"
+codex(){ local cmd="$1" payload; payload="$(CMD="$cmd" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",turn_id:"t1",cwd:"/tmp",tool_input:{command:process.env.CMD}}))')"
+  printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" >"$TMP/out" 2>"$TMP/err"; echo $?; }
+for cmd in "$PUERTA $PROD 'select 1'" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 $H66" "$PUERTA $PROD --file $TMP/q/consulta.sql" "$PUERTA --file $TMP/q/consulta.sql $PROD"; do
+  rc="$(codex "$cmd")"
+  if [ "$rc" = 2 ]; then ok "6.6 T8 Guard_OtherForms_Unchanged · Codex sale 2 («${cmd#* * }»)"
+  else no "6.6 T8 Guard_OtherForms_Unchanged · Codex no se cortó (rc=$rc)"; fi
+done
+
+# T13 · la guía no ofrece --file y dice el tope
+if [ -f "$GUIA" ] && ! grep -qF -- "--file" "$GUIA" && grep -q "20 renglones" "$GUIA"; then ok "6.6 T13 Guide_NoFileForm · la guía no ofrece --file y dice el tope"
+else no "6.6 T13 Guide_NoFileForm · la guía todavía ofrece --file o no dice el tope de 20 renglones"; fi
 
 # ── T32 · la guía declara la cortesía de la regla de firewall ─────────────────────────
 if [ -f "$GUIA" ] && grep -qi "cortes" "$GUIA" && grep -qi "firewall" "$GUIA"; then
@@ -1053,6 +1226,26 @@ else
 fi
 if [ -z "$t33_falta" ]; then ok "8.14 T33 Guide_DeclaresShellFormsAndLimits (las formas, la medición y los cinco límites)"
 else no "8.14 T33 Guide_DeclaresShellFormsAndLimits — falta:$t33_falta"; fi
+
+# ── T-puerta-12 Guia_LosLimitesReales — la guía no promete una barrera que no existe ──────────────────────────────
+# La guía decía que a un programa propio lo frena que «no tiene la clave»: cualquier programa de la cuenta la lee con
+# /usr/bin/security sin cuadro. Lo que dice ahora son los cinco límites reales.
+t12_falta=""
+if [ -f "$GUIA" ]; then
+  grep -q "no tiene la clave" "$GUIA" && t12_falta="$t12_falta todavía dice «no tiene la clave»;"
+  for limite in "Cualquier programa de tu cuenta puede leer la clave" "El freno lee texto" "permiso de Accesibilidad" \
+                "El modo sin permisos de Claude Code" "más grande que 64 KB"; do
+    grep -qF -- "$limite" "$GUIA" || t12_falta="${t12_falta} el límite «${limite}»;"
+  done
+  grep -qF "la propia puerta abre un cuadro del sistema" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «Cómo funciona»;"
+  # una sola ventana por sentencia: la del cuadro de la puerta (Claude Code ya no pregunta además)
+  grep -qF "Una sola ventana por sentencia: la de la puerta" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «El día a día»;"
+  ! grep -qF "Dos cuadros por sentencia" "$GUIA" || t12_falta="$t12_falta la guía dice todavía «Dos cuadros por sentencia»;"
+else
+  t12_falta=" la guía no existe ($GUIA);"
+fi
+if [ -z "$t12_falta" ]; then ok "T-puerta-12 Guia_LosLimitesReales (sin «no tiene la clave», con los cinco límites y el cuadro propio)"
+else no "T-puerta-12 Guia_LosLimitesReales — falta:$t12_falta"; fi
 
 echo "— prod-guard: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

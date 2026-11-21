@@ -151,7 +151,7 @@ n=$(node -e "const h=require('$TMP/out/dependencias-2026-09-02.json').hallazgos;
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c5.json" 2 A
 noche "$TMP/c5.json" 2026-09-01 >/dev/null
 echo "$UNA" > "$TMP/fix/A.json"
-echo '{"revision":"2026-12-31","paquetes":[{"paquete":"browserslist","advisories":["GHSA-73wf"]}]}' > "$TMP/mundo/A/vulnerabilidades-pendientes.json"
+echo '{"revision":"2026-12-31","paquetes":[{"paquete":"browserslist","advisories":["GHSA-73wf"]}]}' > "$TMP/mundo/A/pending-vulnerabilities.json"
 ( cd "$TMP/mundo/A" && git add -A && git commit -qm "declaro la deuda" && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1   # 🔴 se audita lo PUBLICADO: una declaración sin commitear no ampara
 noche "$TMP/c5.json" 2026-09-02 >/dev/null
 [ "$(anunciados)" -eq 0 ] && ok "lo declarado como deuda no genera aviso" || no "lo declarado despertó a alguien"
@@ -159,7 +159,7 @@ noche "$TMP/c5.json" 2026-09-02 >/dev/null
 # 🔴 La declaración nombra los avisos que ampara: declarar sólo el nombre
 # ampararía el paquete entero, para todo aviso futuro.
 # ── 11. …pero si la declaración VENCE, vuelve a contar ──────────────────────────────────────
-echo '{"revision":"2026-01-01","paquetes":[{"paquete":"browserslist","advisories":["GHSA-73wf"]}]}' > "$TMP/mundo/A/vulnerabilidades-pendientes.json"
+echo '{"revision":"2026-01-01","paquetes":[{"paquete":"browserslist","advisories":["GHSA-73wf"]}]}' > "$TMP/mundo/A/pending-vulnerabilities.json"
 ( cd "$TMP/mundo/A" && git add -A && git commit -qm "declaro la deuda" && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1   # 🔴 se audita lo PUBLICADO: una declaración sin commitear no ampara
 noche "$TMP/c5.json" 2026-09-03 >/dev/null
 [ "$(anunciados)" -eq 1 ] && ok "una declaración vencida vuelve a despertar" || no "la declaración vencida siguió tapando"
@@ -341,11 +341,11 @@ noche "$TMP/c25.json" 2026-09-03 >/dev/null
   || no "25b: el borrador no se resolvió con raíz y subcarpeta medidas y limpias — $(ls "$TMP/pend"/* 2>/dev/null | tr '\n' ' ')"
 
 # ── 26. 🔴 la deuda declarada se lee EN LA SUBCARPETA: el gateway entra en silencio ──────────
-# El archivo ya existe en tools/chat-gateway/vulnerabilidades-pendientes.json. La raíz acá
+# El archivo ya existe en tools/chat-gateway/pending-vulnerabilities.json. La raíz acá
 # tiene la misma vulnerabilidad SIN declarar a propósito: si el nocturno audita la raíz por error,
 # avisa; si audita la subcarpeta y lee su declaración, calla.
 rm -rf "$TMP/out" "$TMP/pend"; mundosub A sub; echo "$UNA" > "$TMP/fix/A.json"; echo "$UNA" > "$TMP/fix/A-sub.json"
-echo '{"revision":"2026-12-31","paquetes":[{"paquete":"browserslist","advisories":["GHSA-73wf"]}]}' > "$TMP/mundo/A/sub/vulnerabilidades-pendientes.json"
+echo '{"revision":"2026-12-31","paquetes":[{"paquete":"browserslist","advisories":["GHSA-73wf"]}]}' > "$TMP/mundo/A/sub/pending-vulnerabilities.json"
 ( cd "$TMP/mundo/A" && git add -A && git commit -qm "el gateway declara su deuda" && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1
 configsub "$TMP/c26.json" "$SUB_A"
 noche "$TMP/c26.json" 2026-09-01 >/dev/null
@@ -414,12 +414,12 @@ declarar(){ # <repo> <fecha-vencimiento> <aviso>...
   local avs="" a
   for a in "$@"; do avs="$avs\"$a\","; done
   echo "{\"revision\":\"$vence\",\"paquetes\":[{\"paquete\":\"browserslist\",\"advisories\":[${avs%,}]}]}" \
-    > "$TMP/mundo/$r/vulnerabilidades-pendientes.json"
+    > "$TMP/mundo/$r/pending-vulnerabilities.json"
   ( cd "$TMP/mundo/$r" && git add -A && git commit -qm "declaro la deuda" \
     && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1
 }
 desdeclarar(){ # <repo> — saca la declaración y la publica
-  rm -f "$TMP/mundo/$1/vulnerabilidades-pendientes.json"
+  rm -f "$TMP/mundo/$1/pending-vulnerabilities.json"
   ( cd "$TMP/mundo/$1" && git add -A && git commit -qm "saco la deuda" \
     && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1
 }
@@ -1834,7 +1834,7 @@ deuda_en(){ # <carpeta relativa a mundo/A, "" = raíz> <vencimiento> <aviso>... 
   for a in "$@"; do avs="$avs\"$a\","; done
   mkdir -p "$TMP/mundo/$RAIZ_DEBE/$d"
   echo "{\"revision\":\"$vence\",\"paquetes\":[{\"paquete\":\"browserslist\",\"advisories\":[${avs%,}]}]}" \
-    > "$TMP/mundo/$RAIZ_DEBE/$d/vulnerabilidades-pendientes.json"
+    > "$TMP/mundo/$RAIZ_DEBE/$d/pending-vulnerabilities.json"
   ( cd "$TMP/mundo/$RAIZ_DEBE" && git add -A && git commit -qm "declaro la deuda" \
     && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1
 }

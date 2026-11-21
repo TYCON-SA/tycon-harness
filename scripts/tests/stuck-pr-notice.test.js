@@ -15,6 +15,7 @@ const { spawnSync, execFileSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
 const HOOK = path.join(ROOT, 'scripts', 'hooks', 'stuck-pr-notice.js');
 const FAKE_AZ = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-az.sh');
+const FAKE_GH = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-gh.js');
 const { stateDir } = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
 const HARNESS_URL = 'https://dev.azure.com/acme/Harness/_git/harness';
 const HACE_61 = () => new Date(Date.now() - 61 * 60000).toISOString();
@@ -53,7 +54,10 @@ function mundo(prs, teamRepos) {
   const az = path.join(tmp('spn-az-'), 'az');
   fs.copyFileSync(FAKE_AZ, az);
   fs.chmodSync(az, 0o755);
-  const w = { tree, home, fix, az, cwd: repoGit(HARNESS_URL) };
+  // el repo público vive en GitHub: su gh de mentira no tiene pedidos abiertos
+  const ghState = path.join(tmp('spn-gh-'), 'estado.json');
+  fs.writeFileSync(ghState, '{}');
+  const w = { tree, home, fix, az, ghState, cwd: repoGit(HARNESS_URL) };
   ponerPedidos(w, prs);
   return w;
 }
@@ -68,6 +72,7 @@ const llamadas = (w) => { try { return fs.readFileSync(path.join(w.fix, 'llamada
 function correr(w, extra = {}, cwd = w.cwd) {
   const env = {
     PATH: process.env.PATH, HOME: w.home, TYCON_TREE: w.tree, TYCON_ADO_CMD: w.az, FIXAZ: w.fix, TYCON_PROFILE: '0',
+    TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: w.ghState,
     TYCON_HARNESS_IDENTITIES: HARNESS_URL, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...extra,
   };
   const t0 = Date.now();
@@ -307,6 +312,133 @@ test('Notice_ThresholdUnderHour_SaysMinutes @story-8.131 @ac-9', () => {
   assert.match(r.out, /pedido 8 \(harness-maintainers\) en choque hace 16 min · story\/8/);
 });
 
+// GitHub: los pedidos del repo público, de una sola consulta. `ghPull` es uno como lo guarda el gh de mentira.
+const HACE = (min) => new Date(Date.now() - min * 60000).toISOString();
+function ghPull(n, o = {}) {
+  return {
+    number: n, state: 'open', draft: false, mergeable: true, mergeable_state: 'clean', title: `pedido ${n}`,
+    head: { ref: `fix/${n}`, sha: `${n}`.padStart(40, 'b') }, created_at: '2026-10-25T10:00:00Z', user: { login: 'quien' },
+    auto_merge: null, merge_queue: null, ...o,
+  };
+}
+function ponerGh(w, pulls) { fs.writeFileSync(w.ghState, JSON.stringify({ pulls: { 'acme/harness': pulls } })); }
+const claveGh = (n) => `acme/harness#${n}`;
+
+test('Notice_GithubDroppedFromQueue_SaysWhy', () => {
+  const w = mundo([]);
+  ponerGh(w, [
+    ghPull(842, { queue_drop: { kind: 'removed', reason: 'failed_checks', at: HACE(30) } }),
+    ghPull(843, { mergeable: false, mergeable_state: 'dirty', queue_drop: { kind: 'removed', reason: 'merge_conflict', at: HACE(125) } }),
+    ghPull(844, { queue_drop: { kind: 'auto_merge_disabled', reason: 'MERGE_CONFLICT', at: HACE(10) } }),
+    ghPull(845, { queue_drop: { kind: 'removed', reason: 'dequeued_manually', at: HACE(5) } }),
+  ]);
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  // una caída es un hecho: sale enseguida, sin esperar la hora, con el motivo de GitHub en castellano
+  assert.match(r.out, /pedido 842 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo · fix\/842/);
+  assert.match(r.out, /pedido 843 \(harness\) se cayó de la cola hace 2 h: choca con main · fix\/843/);
+  assert.match(r.out, /pedido 844 \(harness\) se cayó de la cola hace 10 min: choca con main · fix\/844/);
+  assert.match(r.out, /pedido 845 \(harness\) se cayó de la cola hace 5 min: la plataforma dice «dequeued_manually» · fix\/845/);
+  assert.doesNotMatch(r.out, /no medido/, r.out);
+});
+
+test('Notice_GithubDroppedButBack_Silent', () => {
+  const w = mundo([]);
+  ponerGh(w, [
+    // volvió a pedir el auto-merge, o ya está en la cola: no está caído
+    ghPull(1, { auto_merge: { merge_method: 'merge' }, queue_drop: { kind: 'removed', reason: 'failed_checks', at: HACE(30) } }),
+    ghPull(2, { merge_queue: { state: 'QUEUED' }, queue_drop: { kind: 'removed', reason: 'failed_checks', at: HACE(30) } }),
+    // un borrador caído no se manda a entrar
+    ghPull(3, { draft: true, queue_drop: { kind: 'removed', reason: 'failed_checks', at: HACE(30) } }),
+    // sin auto-merge y sin caída: nadie pidió que entre
+    ghPull(4),
+  ]);
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.strictEqual(r.out, '', r.out);
+});
+
+test('Notice_GithubAutoMergeWithoutQueueEntry_Shown', () => {
+  const w = mundo([]);
+  ponerGh(w, [ghPull(850, { auto_merge: { merge_method: 'merge' } })]);
+  escribirEstado(w, { [claveGh(850)]: { estado: 'clean', punta: '850'.padStart(40, 'b'), vistoDesde: HACE_61() } });
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 850 \(harness\) con auto-completar no entró hace 1 h \(clean, sin lugar en la cola\) · fix\/850/);
+  // en la cola no está trabado por esto: espera su turno
+  ponerGh(w, [ghPull(850, { auto_merge: { merge_method: 'merge' }, merge_queue: { state: 'AWAITING_CHECKS' } })]);
+  fs.rmSync(fotoArchivo(w), { force: true });
+  assert.doesNotMatch(correr(w).out, /sin lugar en la cola/);
+});
+
+test('Notice_GithubUnknownMergeState_KeepsClock', () => {
+  // GitHub contesta UNKNOWN hasta que calcula si choca: eso no es un cambio de estado y no vuelve el reloj a cero
+  const w = mundo([]);
+  ponerGh(w, [ghPull(851, { auto_merge: { merge_method: 'merge' }, mergeable: undefined, mergeable_state: undefined })]);
+  const desde = HACE_61();
+  escribirEstado(w, { [claveGh(851)]: { estado: 'conflict', punta: '851'.padStart(40, 'b'), vistoDesde: desde } });
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.strictEqual(leerEstado(w)[claveGh(851)].vistoDesde, desde);
+  assert.match(r.out, /pedido 851 \(harness\) en choque hace 1 h/);
+});
+
+test('Notice_GithubOneQueryPerRepo_NoChecksRead', () => {
+  const w = mundo([]);
+  ponerGh(w, [ghPull(1), ghPull(2, { auto_merge: { merge_method: 'merge' } }), ghPull(3)]);
+  const log = path.join(tmp('spn-ghlog-'), 'gh.log');
+  const r = correr(w, { FAKE_GH_LOG: log });
+  assert.strictEqual(r.rc, 0, r.err);
+  const rutas = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l).ruta);
+  // una consulta, sin la lista REST ni una lectura de controles por pedido (eso agotaba el tope de 5 s). Por repo, como
+  // mucho las dos lecturas que dicen si tiene análisis de seguridad; los controles y la regla vienen en la consulta
+  const porRepo = rutas.filter((r) => /^repos\/acme\/harness\/code-scanning\/(default-setup|analyses\?per_page=1)$/.test(r));
+  assert.ok(porRepo.length <= 2, rutas.join(' · '));
+  assert.deepStrictEqual(rutas.filter((r) => !porRepo.includes(r)), ['graphql'], rutas.join(' · '));
+});
+
+test('Notice_SlowRead_FinishesInBackground_NextStartUsesIt', async () => {
+  // un az que tarda 6 s: el arranque corta a los 5 y lo dice; la lectura sigue de fondo y deja la foto para el próximo
+  const w = mundo([pr(7, { mergeStatus: 'conflicts' })]);
+  escribirEstado(w, { [clave(7)]: { estado: 'conflict', punta: '7'.padStart(40, 'a'), vistoDesde: HACE_61() } });
+  const lento = path.join(tmp('spn-azlento-'), 'az');
+  fs.writeFileSync(lento, `#!/bin/sh\nsleep 6\nexec "${w.az}" "$@"\n`);
+  fs.chmodSync(lento, 0o755);
+  const extra = { TYCON_ADO_CMD: lento, TYCON_STUCK_PR_REFRESH_MS: '30000' };
+  const r = correr(w, extra);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /no medido \(.*tope.*sigue midiendo de fondo: sale en el próximo arranque/, r.out);
+  assert.ok(r.ms < 5000 + 3000, `el arranque no espera la lectura de fondo: tardó ${r.ms} ms`);
+  const limite = Date.now() + 25000;
+  while (!fs.existsSync(fotoArchivo(w)) && Date.now() < limite) await new Promise((ok) => setTimeout(ok, 200));
+  assert.ok(fs.existsSync(fotoArchivo(w)), 'la lectura de fondo dejó la foto');
+  const s = correr(w, extra);
+  assert.strictEqual(s.rc, 0, s.err);
+  assert.match(s.out, /pedido 7 \(harness-maintainers\) en choque hace 1 h/, s.out);
+  assert.doesNotMatch(s.out, /no medido/, s.out);
+});
+
+test('Notice_SlowRead_UsesOldPhotoWithItsAge', () => {
+  // la lectura de ahora no llega, pero hay una foto de hace 2 h con ese repo leído: vale, y se dice su edad
+  const w = mundo([]);
+  fs.writeFileSync(w.az, '#!/bin/sh\nsleep 30\n');
+  fs.chmodSync(w.az, 0o755);
+  const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
+  const prOk = { number: 4, draft: false, autoComplete: true, mergeState: 'conflict', sourceBranch: 'story/4', sourceCommit: 'c4', createdAt: '', title: '' };
+  const vacio = { ok: true, value: [] };
+  fs.mkdirSync(stateDir(w.home), { recursive: true });
+  fs.writeFileSync(fotoArchivo(w), JSON.stringify({ at: HACE(120), repos, lecturas: {
+    'acme/harness': vacio, 'acme/Harness/harness-team-profile': vacio, 'acme/Harness/harness-team-operations': vacio,
+    'acme/Harness/harness-maintainers': { ok: true, value: [prOk] },
+  } }));
+  escribirEstado(w, { [clave(4)]: { estado: 'conflict', punta: 'c4', vistoDesde: HACE_61() } });
+  const r = correr(w, { TYCON_STUCK_PR_REFRESH_MS: '2000' });
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 4 \(harness-maintainers\) en choque hace 1 h/, r.out);
+  assert.match(r.out, /con la foto de hace 2 h \(la lectura de ahora no llegó a tiempo y sigue de fondo\)/, r.out);
+  assert.doesNotMatch(r.out, /no medido/, r.out);
+});
+
 test('Notice_Registered_BothTools @story-8.131 @ac-8', () => {
   const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
   const hooks = Array.isArray(lista) ? lista : lista.hooks;
@@ -316,4 +448,564 @@ test('Notice_Registered_BothTools @story-8.131 @ac-8', () => {
   assert.ok(lista2.some((e) => e.id === 'SessionStart:@tcg:stuck-pr-notice.js' && e.switch === 'TYCON_STUCK_PR_NOTICE=0'), 'install-effects.json');
   const codex = fs.readFileSync(path.join(ROOT, 'adapters', 'codex', 'hooks.json'), 'utf8');
   assert.match(codex, /scripts\/hooks\/stuck-pr-notice\.js/, 'adapters/codex/hooks.json');
+});
+
+// ── listo y sin entrar, en GitHub: limpio, sin auto-merge y fuera de la cola ────────────────────────────────────────────
+const SPN = () => require(HOOK);
+const ghRepo = { platform: 'github', org: 'acme', repo: 'harness' };
+const verde = (n, o = {}) => ({ number: n, draft: false, autoComplete: false, inQueue: false, lastQueueDrop: null, mergeState: 'clean', author: 'quien', sourceCommit: `c${n}`, sourceBranch: `fix/${n}`, createdAt: '2026-10-25T10:00:00Z', ...o });
+
+test('GreenIdle_TenMinutes_SaysHowToQueue — un pedido listo sin auto-merge fuera de la cola avisa a los 10 min, con el comando para encolarlo', () => {
+  const ahora = Date.parse('2026-11-01T22:00:00Z');
+  const leidas = { 'acme/harness': { ok: true, value: [verde(882)] } };
+  const primera = SPN().verdesSinEntrar([ghRepo], leidas, {}, ahora, 10);
+  assert.deepStrictEqual(primera.trabados, [], 'recién visto, nada');
+  const k = 'acme/harness#882';
+  assert.strictEqual(primera.estado[k].estado, 'verde-sin-auto');
+  const despues = SPN().verdesSinEntrar([ghRepo], leidas, primera.estado, ahora + 11 * 60000, 10);
+  assert.strictEqual(despues.trabados.length, 1);
+  assert.match(despues.trabados[0].linea, /pedido 882 \(harness\) listo y sin auto-merge hace 11 min, fuera de la cola/);
+  assert.match(despues.trabados[0].linea, /gh pr merge 882 -R acme\/harness --merge/);
+  // con el identificador del pedido, también la mutación que lo encola en un repo con cola de merge
+  const conId = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(882, { nodeId: 'PR_kw882' })] } }, primera.estado, ahora + 11 * 60000, 10);
+  assert.match(conId.trabados[0].linea, /con cola de merge: gh api graphql -f query='mutation\(\$id:ID!\)\{enqueuePullRequest.*' -f id=PR_kw882\)/);
+  // con otra punta, el reloj vuelve a cero
+  const otra = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(882, { sourceCommit: 'nueva' })] } }, primera.estado, ahora + 11 * 60000, 10);
+  assert.deepStrictEqual(otra.trabados, []);
+});
+
+test('GreenIdle_Azure_SinAutoCompletar_DiceComoPonerlo — un pedido privado sin choque y sin auto-completar avisa, sin decir «listo»', () => {
+  const ahora = Date.parse('2026-11-01T22:00:00Z');
+  const az = azRepo('harness-maintainers');
+  const k = 'acme/Harness/harness-maintainers#6010';
+  const previo = { [k]: { estado: 'verde-sin-auto', punta: 'c6010', vistoDesde: '2026-11-01T20:00:00Z' } };
+  const leido = (o) => ({ 'acme/Harness/harness-maintainers': { ok: true, value: [verde(6010, { inQueue: undefined, lastQueueDrop: undefined, autoCompleteCommand: 'az repos pr update --id 6010 --auto-complete true --org https://dev.azure.com/acme', ...o })] } });
+  const r = SPN().verdesSinEntrar([az], leido(), previo, ahora, 10);
+  assert.strictEqual(r.trabados.length, 1, 'nadie lo va a completar: avisa');
+  // sin leer sus controles, «limpio» sólo dice que no choca: no se afirma que está listo
+  assert.match(r.trabados[0].linea, /pedido 6010 \(harness-maintainers\) sin choque y sin auto-completar hace 2 h/);
+  assert.doesNotMatch(r.trabados[0].linea, /listo/);
+  assert.match(r.trabados[0].linea, /az repos pr update --id 6010 --auto-complete true --org https:\/\/dev\.azure\.com\/acme/);
+  assert.strictEqual(r.estado[k].vistoDesde, '2026-11-01T20:00:00Z', 'conserva el reloj');
+  // con auto-completar, borrador, en choque o de un bot: no
+  for (const o of [{ autoComplete: true }, { draft: true }, { mergeState: 'conflict' }, { author: 'build[bot]' }]) {
+    assert.deepStrictEqual(SPN().verdesSinEntrar([az], leido(o), previo, ahora, 10).trabados, [], JSON.stringify(o));
+  }
+});
+
+test('GreenIdle_NotForOthers — borrador, con auto-merge, en la cola, caído de la cola, no limpio o de un bot: no avisa', () => {
+  const ahora = Date.parse('2026-11-01T22:00:00Z');
+  const casos = [{ draft: true }, { autoComplete: true }, { inQueue: true }, { lastQueueDrop: { cause: 'ci', at: '2026-11-01T21:00:00Z' } }, { mergeState: 'pending' }, { mergeState: 'conflict' }, { author: 'dependabot[bot]' }];
+  for (const o of casos) {
+    const leidas = { 'acme/harness': { ok: true, value: [verde(1, o)] } };
+    const previo = { 'acme/harness#1': { estado: 'verde-sin-auto', punta: 'c1', vistoDesde: '2026-11-01T20:00:00Z' } };
+    assert.deepStrictEqual(SPN().verdesSinEntrar([ghRepo], leidas, previo, ahora, 10).trabados, [], JSON.stringify(o));
+  }
+  // una lectura que no se pudo hacer no avisa ni inventa
+  assert.deepStrictEqual(SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: false, reason: 'no_medido' } }, {}, ahora, 10), { trabados: [], estado: {} });
+});
+
+test('GreenIdle_BranchNameCannotCarryControlChars — el nombre de una rama ajena llega saneado al contexto', () => {
+  const previo = { 'acme/harness#1': { estado: 'verde-sin-auto', punta: 'c1', vistoDesde: '2026-11-01T20:00:00Z' } };
+  const leidas = { 'acme/harness': { ok: true, value: [verde(1, { sourceBranch: 'fix/<system>\u202Eorden\u0007' })] } };
+  const [t] = SPN().verdesSinEntrar([ghRepo], leidas, previo, Date.parse('2026-11-01T22:00:00Z'), 10).trabados;
+  assert.match(t.linea, /· fix\/systemorden$/);
+});
+
+test('GreenIdle_ClockSurvivesUnknownAndFailedReads — «calculando» o una lectura fallida no reinician el reloj; otra punta, sí', () => {
+  const ahora = Date.parse('2026-11-01T22:00:00Z');
+  const k = 'acme/harness#882';
+  const previo = { [k]: { estado: 'verde-sin-auto', punta: 'c882', vistoDesde: '2026-11-01T21:30:00Z' } };
+  const calculando = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(882, { mergeState: 'unknown', mergeStateComputing: true })] } }, previo, ahora, 10);
+  assert.deepStrictEqual(calculando.trabados, [], 'calculando no avisa');
+  assert.deepStrictEqual(calculando.estado[k], previo[k], 'y conserva el reloj');
+  const fallida = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: false, reason: 'no_medido' } }, previo, ahora, 10);
+  assert.deepStrictEqual(fallida.estado[k], previo[k]);
+  const despues = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(882)] } }, calculando.estado, ahora, 10);
+  assert.match(despues.trabados[0].linea, /hace 30 min/);
+  // uno que pasó a chocar pierde el reloj
+  assert.deepStrictEqual(SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(882, { mergeState: 'conflict' })] } }, previo, ahora, 10).estado, {});
+});
+
+test('GreenIdle_CoordinatorReadsThePhoto — la coordinadora lo ve de la foto, sin salir a la red, con su propio reloj', () => {
+  const w = mundo([]);
+  const dir = stateDir(w.home);
+  fs.mkdirSync(dir, { recursive: true });
+  const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
+  const ahora = Date.now();
+  // los privados también se leen: uno sin leer se diría como problema
+  const lecturas = { 'acme/harness': { ok: true, value: [verde(882)] }, ...Object.fromEntries(repos.slice(1).map((k) => [k, { ok: true, value: [] }])) };
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - 60000).toISOString(), repos, lecturas }));
+  fs.writeFileSync(path.join(dir, 'green-prs.json'), JSON.stringify({ 'acme/harness#882': { estado: 'verde-sin-auto', punta: 'c882', vistoDesde: new Date(ahora - 15 * 60000).toISOString() } }));
+  const r = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
+  assert.strictEqual(r.problem, null);
+  assert.strictEqual(r.lines.length, 1, r.lines.join('\n'));
+  assert.match(r.lines[0], /pedido 882 .* hace 15 min/);
+  assert.ok(!fs.existsSync(path.join(dir, 'stuck-prs-refresh.lock')), 'con la foto vigente no lanza la lectura de fondo');
+  // sin foto, nada que decir; la lectura de fondo no se lanza con una ya en curso (el candado), y nunca con la casa real
+  const w2 = mundo([]);
+  const dir2 = stateDir(w2.home);
+  fs.mkdirSync(dir2, { recursive: true });
+  const candado = path.join(dir2, 'stuck-prs-refresh.lock');
+  fs.writeFileSync(candado, JSON.stringify({ at: new Date().toISOString() }));
+  const antes = fs.readFileSync(candado, 'utf8');
+  const sinFoto = SPN().coordinatorLines({ home: w2.home, tree: w2.tree, now: ahora });
+  assert.deepStrictEqual(sinFoto.lines, []);
+  assert.match(sinFoto.problem, /sin lectura de la última hora, sigue midiendo de fondo/, 'callar se leería como que no hay ninguno');
+  assert.strictEqual(fs.readFileSync(candado, 'utf8'), antes, 'con una lectura en curso no lanza otra');
+  // una foto vigente con un repo sin leer también lo dice
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - 60000).toISOString(), repos, lecturas: { 'acme/harness': { ok: false, reason: 'no_medido' } } }));
+  assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora }).problem, /la última lectura no pudo leer harness/);
+});
+
+// una foto de la coordinadora de `minutos` atrás, con una lectura en curso (el candado): no se lanza otra
+function fotoDeLaCoordinadora(w, lecturas, minutos, ahora) {
+  const dir = stateDir(w.home);
+  fs.mkdirSync(dir, { recursive: true });
+  const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
+  // los privados que la prueba no nombra, leídos y sin pedidos: uno sin leer se diría como problema
+  const todas = { ...Object.fromEntries(repos.map((k) => [k, { ok: true, value: [] }])), ...lecturas };
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - minutos * 60000).toISOString(), repos, lecturas: todas }));
+  fs.writeFileSync(path.join(dir, 'stuck-prs-refresh.lock'), JSON.stringify({ at: new Date().toISOString() }));
+  return dir;
+}
+
+test('T1 Coordinadora_FotoDeMasDeDiezMinutos_NoDiceFueraDeLaCola @story-8.274 @ac-1: con la foto de 15 min dice de cuándo es la lectura; con la de 1 min, como siempre', () => {
+  // 🔴 mutación: no pasar la edad de la foto a verdesSinEntrar (vuelve «fuera de la cola: nadie lo va a mergear»)
+  const w = mundo([]);
+  const ahora = Date.now();
+  const dir = fotoDeLaCoordinadora(w, { 'acme/harness': { ok: true, value: [verde(882)] } }, 15, ahora);
+  fs.writeFileSync(path.join(dir, 'green-prs.json'), JSON.stringify({ 'acme/harness#882': { estado: 'verde-sin-auto', punta: 'c882', vistoDesde: new Date(ahora - 20 * 60000).toISOString() } }));
+  const r = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
+  assert.strictEqual(r.lines.length, 1, r.lines.join('\n'));
+  assert.match(r.lines[0], /pedido 882 \(harness\) .*según la lectura de hace 15 min/);
+  assert.match(r.lines[0], /la lectura nueva corre de fondo/);
+  assert.doesNotMatch(r.lines[0], /fuera de la cola|nadie lo va a mergear|sin auto-merge/);
+  // con la foto vigente, la línea de siempre
+  fotoDeLaCoordinadora(w, { 'acme/harness': { ok: true, value: [verde(882)] } }, 1, ahora);
+  const fresca = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
+  assert.match(fresca.lines[0], /listo y sin auto-merge hace 20 min, fuera de la cola: nadie lo va a mergear/);
+});
+
+test('T1b Arranque_LecturaCortadaConFotoVieja_NoDiceFueraDeLaCola @story-8.274 @ac-1: la lectura en vivo llega a su tope y vale la foto de hace 30 min', () => {
+  // 🔴 mutación: en el arranque, no pasar la edad de la foto vieja (vuelve «fuera de la cola»)
+  const w = mundo([]);
+  // un gh que siempre dice que hay otra página: la lista de GitHub llega a su tope de páginas, como una lectura cortada
+  const sinFin = path.join(tmp('spn-sinfin-'), 'gh');
+  fs.writeFileSync(sinFin, `#!/bin/sh\necho '${JSON.stringify({ data: { repository: { pullRequests: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'x' } } } } })}'\n`);
+  fs.chmodSync(sinFin, 0o755);
+  const ahora = Date.now();
+  const vacio = { ok: true, value: [] };
+  const dir = fotoDeLaCoordinadora(w, { 'acme/harness': { ok: true, value: [verde(882)] }, 'acme/Harness/harness-team-profile': vacio,
+    'acme/Harness/harness-team-operations': vacio, 'acme/Harness/harness-maintainers': vacio }, 30, ahora);
+  fs.writeFileSync(path.join(dir, 'stuck-prs.json'), JSON.stringify({ 'acme/harness#882': { estado: 'verde-sin-auto', punta: 'c882', vistoDesde: new Date(ahora - 40 * 60000).toISOString() } }));
+  const r = correr(w, { TYCON_GH_CMD: sinFin });
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 882 \(harness\) .*según la lectura de hace 30 min/, r.out);
+  assert.doesNotMatch(r.out, /fuera de la cola: nadie lo va a mergear/, r.out);
+});
+
+test('T2 Coordinadora_PedidoEnLaCola_NoAvisaNiDiceSinAutoMerge @story-8.274 @ac-2 @ac-3: con la lectura nueva y el pedido en la cola, ningún aviso de ese pedido', () => {
+  // 🔴 mutación: sacar `p.inQueue === true` del filtro de verdesSinEntrar (sale «sin auto-merge … fuera de la cola»)
+  const w = mundo([]);
+  const ahora = Date.now();
+  const dir = fotoDeLaCoordinadora(w, { 'acme/harness': { ok: true, value: [verde(1133, { inQueue: true, autoComplete: false })] } }, 1, ahora);
+  fs.writeFileSync(path.join(dir, 'green-prs.json'), JSON.stringify({ 'acme/harness#1133': { estado: 'verde-sin-auto', punta: 'c1133', vistoDesde: new Date(ahora - 30 * 60000).toISOString() } }));
+  const r = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
+  assert.deepStrictEqual(r.lines, [], r.lines.join('\n'));
+  assert.strictEqual(r.problem, null);
+  // y sale del reloj: si vuelve a salir de la cola, cuenta de cero
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'green-prs.json'), 'utf8')), {});
+});
+
+// un correo de juguete, armado por partes: entero en el archivo lo frena el control de publicación
+const mail = (who) => [who, 'acme.com'].join('@');
+
+test('OwnPrs_OneQueryPerPlace — los pedidos de la persona, de todos sus repos; lo que no se pudo saber se dice', () => {
+  const dir = tmp('spn-own-');
+  const fake = (nombre, salida) => { const f = path.join(dir, nombre); const datos = path.join(dir, `${nombre}.json`); fs.writeFileSync(datos, JSON.stringify(salida) || ''); fs.writeFileSync(f, salida == null ? '#!/bin/sh\nexit 1\n' : `#!/bin/sh\nif [ "$1" = "account" ]; then echo ${mail('YO')}; else cat ${JSON.stringify(datos)}; fi\n`); fs.chmodSync(f, 0o755); return f; };
+  const gh = fake('gh', { data: { viewer: { login: 'yo' }, search: { nodes: [{ number: 1, title: 'a', isDraft: false, headRefName: 'fix/a', isInMergeQueue: true, mergeable: 'MERGEABLE', autoMergeRequest: null, author: { login: 'yo' }, repository: { nameWithOwner: 'org/uno' } }, { number: 2, title: 'b', isDraft: true, headRefName: 'fix/b', isInMergeQueue: false, mergeable: 'CONFLICTING', autoMergeRequest: { enabledAt: 'x' }, author: { login: 'yo' }, repository: { nameWithOwner: 'otra/dos' } }] } } });
+  const azPr = (id, autor, project, name) => ({ pullRequestId: id, title: `p${id}`, isDraft: false, autoCompleteSetBy: { id: 'x' }, mergeStatus: 'conflicts', sourceRefName: `refs/heads/fix/${id}`, createdBy: { uniqueName: autor }, repository: { name, project: { name: project } } });
+  const az = fake('az', { value: [azPr(7, mail('yo'), 'Mora', 'Back'), azPr(8, mail('ana'), 'Mora', 'Back'), azPr(9, mail('yo'), 'Otro Proy', 'Forms')] });
+  const repos = [{ platform: 'github', org: 'org', repo: 'uno' }, { platform: 'azure', org: 'biz', project: 'P', repo: 'r' }, { platform: 'azure', org: 'biz', project: 'Q', repo: 's' }];
+  const ok = SPN().leerPropios({ repos, env: { ...process.env, TYCON_GH_CMD: gh, TYCON_ADO_CMD: az } });
+  assert.deepStrictEqual(Object.keys(ok.lecturas).sort(), ['biz/Mora/Back', 'biz/Otro Proy/Forms', 'org/uno', 'otra/dos'], 'en cualquier repo y en varios proyectos, con una consulta por organización');
+  assert.deepStrictEqual(ok.lecturas['biz/Mora/Back'].value.map((p) => [p.number, p.autoComplete, p.mergeState, p.sourceBranch]), [[7, true, 'conflict', 'fix/7']], 'sólo los de la persona');
+  assert.deepStrictEqual(ok.lecturas['otra/dos'].value.map((p) => [p.draft, p.autoComplete, p.mergeState]), [[true, true, 'conflict']]);
+  assert.strictEqual(ok.lecturas['org/uno'].value[0].inQueue, true);
+  assert.deepStrictEqual(ok.fallos, []);
+  const sinNada = SPN().leerPropios({ repos, env: { ...process.env, TYCON_GH_CMD: fake('gh2'), TYCON_ADO_CMD: fake('az2') } });
+  assert.deepStrictEqual(sinNada.lecturas, {});
+  assert.deepStrictEqual(sinNada.fallos, ['GitHub', 'biz'], 'lo que no se pudo saber se dice');
+  const muchos = fake('az3', { value: Array.from({ length: 1000 }, (_, i) => azPr(i, mail('ana'), 'M', 'B')) });
+  assert.match(SPN().leerPropios({ repos: repos.slice(1), env: { ...process.env, TYCON_ADO_CMD: muchos } }).fallos[0], /puede faltar alguno/);
+});
+
+// 🔴 Falla con: en Windows gh se lanza por la consola (shell), y gh abre su propia ventana negra al leer los pedidos.
+test('OwnPrs_WindowsGhWithoutShell — en Windows gh va directo y oculto; az, por la consola con cada argumento entre comillas', () => {
+  const { llamadaDe } = SPN();
+  const gh = llamadaDe('gh', ['api', 'graphql', '-f', 'query=query { viewer { login } }'], 'win32');
+  assert.deepStrictEqual(gh, { file: 'gh', args: ['api', 'graphql', '-f', 'query=query { viewer { login } }'], shell: false }, 'gh es gh.exe: sin consola en el medio');
+  assert.deepStrictEqual(llamadaDe('az', ['account', 'show', '--query', 'user.name'], 'win32'),
+    { file: 'az', args: ['"account"', '"show"', '"--query"', '"user.name"'], shell: true }, 'az es az.cmd: sólo corre por la consola');
+  assert.deepStrictEqual(llamadaDe('az', ['account', 'show'], 'darwin'), { file: 'az', args: ['account', 'show'], shell: false });
+  assert.equal(llamadaDe('az', ['a"b'], 'win32').problem, 'az: argumentos con caracteres no seguros para la consola');
+  // lo que llega a spawnSync: oculto siempre
+  const vistas = [];
+  const run = (file, args, opts) => { vistas.push({ file, args, opts }); return { status: 0, stdout: '{}' }; };
+  SPN().salidaDe('gh', ['api'], { plataforma: 'win32', run });
+  assert.equal(vistas[0].opts.shell, false);
+  assert.equal(vistas[0].opts.windowsHide, true);
+  assert.equal(SPN().salidaDe('az', ['a"b'], { plataforma: 'win32', run }), '', 'un argumento que la consola leería distinto no se lanza');
+  assert.equal(llamadaDe('az', ['C:\\dir\\'], 'win32').problem, 'az: argumentos con caracteres no seguros para la consola', 'una barra al final escaparía la comilla');
+  assert.equal(vistas.length, 1);
+  // un doble con ruta: un .cmd va por la consola (con la ruta entre comillas si tiene espacios); un .js, con Node
+  assert.deepStrictEqual(llamadaDe('C:\\Program Files\\az.cmd', ['account'], 'win32'), { file: '"C:\\Program Files\\az.cmd"', args: ['"account"'], shell: true });
+  assert.deepStrictEqual(llamadaDe('D:\\t\\fake-az.js', ['account'], 'win32'), { file: process.execPath, args: ['D:\\t\\fake-az.js', 'account'], shell: false });
+  // las consultas de verdad: en Windows gh sale sin consola y cada argumento de az pasa por la consola, entre comillas
+  const llamadas = [];
+  const responde = (file, args, opts) => {
+    llamadas.push({ file, args, opts });
+    if (file === 'gh') return { status: 0, stdout: JSON.stringify({ data: { viewer: { login: 'yo' }, search: { nodes: [] } } }) };
+    return { status: 0, stdout: args.includes('"account"') ? mail('yo') : JSON.stringify({ value: [] }) };
+  };
+  const repos = [{ platform: 'github', org: 'org', repo: 'uno' }, { platform: 'azure', org: 'biz', project: 'P', repo: 'r' }];
+  const leido = SPN().leerPropios({ repos, env: { PATH: process.env.PATH }, plataforma: 'win32', run: responde });
+  assert.deepStrictEqual(leido.fallos, [], 'las consultas de verdad pasan el filtro de la consola: nada quedó sin leer');
+  assert.deepStrictEqual(llamadas.map((l) => [l.file, l.opts.shell, l.opts.windowsHide]), [['gh', false, true], ['az', true, true], ['az', true, true]]);
+  assert.ok(llamadas.slice(1).every((l) => l.args.every((a) => /^".*"$/.test(a))), 'cada argumento de az, entre comillas');
+});
+
+/** ¿La llamada pide windowsHide: true en su objeto de opciones (el último argumento, al primer nivel de llaves)? */
+function ocultaLaVentana(call) {
+  const inner = call.slice(call.indexOf('(') + 1, call.lastIndexOf(')'));
+  let depth = 0, start = 0, quote = null;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (quote) { if (ch === '\\') i++; else if (ch === quote) quote = null; continue; }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+    if ('([{'.includes(ch)) depth++;
+    else if (')]}'.includes(ch)) depth--;
+    else if (ch === ',' && depth === 0) start = i + 1;
+  }
+  const last = inner.slice(start).trim();
+  if (!last.startsWith('{')) return false;
+  depth = 0; quote = null;
+  for (let i = 0; i < last.length; i++) {
+    const ch = last[i];
+    if (quote) { if (ch === '\\') i++; else if (ch === quote) quote = null; continue; }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+    if ('([{'.includes(ch)) depth++;
+    else if (')]}'.includes(ch)) depth--;
+    else if (depth === 1 && /^windowsHide\s*:\s*true/.test(last.slice(i))) return true;
+  }
+  return false;
+}
+
+// 🔴 Falla con: algo que la oficina o el aviso de arranque lanzan cada pocos minutos no oculta su ventana, y en Windows
+// se abre una consola negra (gh, el servidor de la oficina, la lectura de cada repo de GitHub).
+test('Windows_EverythingTheOfficeLaunchesHidesItsWindow — lo que lanzan el aviso, la oficina y la lectura de GitHub, oculto', () => {
+  const archivos = [
+    HOOK,
+    path.join(ROOT, 'scripts', 'tools', 'office.js'),
+    path.join(ROOT, 'scripts', 'tools', 'office', 'server.js'),
+    ...fs.readdirSync(path.join(ROOT, 'integrations', 'github', 'scripts')).filter((f) => f.endsWith('.js')).map((f) => path.join(ROOT, 'integrations', 'github', 'scripts', f)),
+  ];
+  const sinOcultar = [];
+  let llamadas = 0;
+  for (const f of archivos) {
+    const text = fs.readFileSync(f, 'utf8');
+    const re = /(?<!\w)(?:spawnSync|spawn|execFileSync|execFile|execSync)\(|(?<![\w.])run\(/g;   // `require('child_process').spawnSync(` también
+    let m;
+    while ((m = re.exec(text))) {
+      let depth = 0, i = m.index + m[0].length - 1;
+      for (; i < text.length; i++) { if (text[i] === '(') depth++; else if (text[i] === ')') { depth--; if (!depth) break; } }
+      const call = text.slice(m.index, i + 1);
+      const line = text.slice(0, m.index).split('\n').length;
+      const lineText = text.split('\n')[line - 1];
+      if (/^\s*(\/\/|\*)/.test(lineText)) continue;
+      // `run(` cuenta sólo cuando lanza un proceso con sus opciones (tres argumentos), no como nombre de otra función
+      if (m[0] === 'run(' && (/function\s+$/.test(text.slice(0, m.index)) || !/^run\([^,]+,[^,]+,/.test(call))) continue;
+      llamadas++;
+      if (!ocultaLaVentana(call)) sinOcultar.push(`${path.relative(ROOT, f)}:${line}`);
+    }
+  }
+  assert.ok(llamadas >= 5, `la red no encontró lanzamientos que mirar (${llamadas}): no midió nada`);
+  assert.deepStrictEqual(sinOcultar, [], 'lanzamientos sin windowsHide: true en sus opciones (en Windows abren una consola)');
+  assert.equal(ocultaLaVentana("spawnSync('gh', ['x'], { windowsHide: true, env })"), true);
+  assert.equal(ocultaLaVentana("spawnSync('gh', ['x'], { env: Object.assign({}, env, { windowsHide: true }) })"), false);
+  assert.equal(ocultaLaVentana("spawnSync('gh', ['x'])"), false);
+});
+
+// ── re-encolar el que quedó limpio y fuera de la cola después de un empuje ────────────────────────────────────────────────
+// Ya había pedido entrar (se cayó de la cola, o tenía el auto-merge puesto) y se empujó después: GitHub no lo vuelve a
+// encolar solo. Se re-encola una sola vez por punta, y sólo aprobado (o sin revisión exigida), limpio y con todo en verde.
+const listo = (n, o = {}) => verde(n, {
+  nodeId: `PR_kw${n}`, reviewDecision: null, mergeStatus: 'CLEAN', ciState: 'SUCCESS', headCommittedAt: '2026-11-06T15:00:00Z',
+  autoMergeSince: null, lastQueueDrop: { cause: 'ci', reason: 'failed_checks', at: '2026-11-06T14:00:00Z' }, ...o,
+});
+const leidasDe = (...prs) => ({ 'acme/harness': { ok: true, value: prs } });
+
+test('Requeue_DroppedThenPushed_OncePerHead — se cayó, se empujó y quedó listo: se re-encola una vez por punta', () => {
+  const r = SPN().paraReencolar([ghRepo], leidasDe(listo(1039)), {});
+  assert.deepStrictEqual(r.encolar.map((e) => [e.clave, e.nodeId, e.punta]), [['acme/harness#1039', 'PR_kw1039', 'c1039']]);
+  const intentado = { 'acme/harness#1039': { punta: 'c1039', at: '2026-11-06T15:10:00Z', ok: false, detalle: 'x' } };
+  assert.deepStrictEqual(SPN().paraReencolar([ghRepo], leidasDe(listo(1039)), intentado).encolar, [], 'misma punta: no otra vez');
+  assert.strictEqual(SPN().paraReencolar([ghRepo], leidasDe(listo(1039, { sourceCommit: 'otra' })), intentado).encolar.length, 1, 'otra punta: sí');
+});
+
+test('Requeue_AutoMergeBeforePush_NotQueued — con el auto-merge puesto antes del empuje y fuera de la cola, también', () => {
+  const p = listo(1042, { lastQueueDrop: null, autoComplete: true, autoMergeSince: '2026-11-06T14:30:00Z' });
+  assert.strictEqual(SPN().paraReencolar([ghRepo], leidasDe(p), {}).encolar.length, 1);
+});
+
+test('Requeue_NotWhen — sin aprobar, no limpio, no verde, borrador, de un bot, en la cola, sin empuje posterior o nunca pidió entrar: no', () => {
+  const casos = [
+    [{ reviewDecision: 'CHANGES_REQUESTED' }, /pidieron cambios/],
+    [{ reviewDecision: 'REVIEW_REQUIRED' }, /falta la aprobación/],
+    [{ mergeStatus: 'UNSTABLE' }, /no está limpio \(UNSTABLE\)/],
+    [{ mergeStatus: 'BEHIND' }, /no está limpio \(BEHIND\)/],
+    [{ ciState: 'FAILURE' }, /comprobaciones no están en verde \(FAILURE\)/],
+    [{ ciState: 'PENDING' }, /comprobaciones no están en verde \(PENDING\)/],
+    [{ ciState: null }, /comprobaciones no están en verde/],
+    [{ nodeId: 'PR x"y' }, /sin identificador/],
+  ];
+  for (const [o, motivo] of casos) {
+    const r = SPN().paraReencolar([ghRepo], leidasDe(listo(7, o)), {});
+    assert.deepStrictEqual(r.encolar, [], JSON.stringify(o));
+    assert.strictEqual(r.esperan.length, 1, JSON.stringify(o));
+    assert.match(r.esperan[0].linea, /pedido 7 \(harness\) quedó fuera de la cola después del empuje: no lo re-encolo porque/);
+    assert.match(r.esperan[0].linea, motivo);
+  }
+  // los que no cuentan: ni re-encolar ni avisar por esto
+  const callados = [{ draft: true }, { author: 'dependabot[bot]' }, { inQueue: true }, { headCommittedAt: '2026-11-06T13:00:00Z' },
+    { lastQueueDrop: null }, { headCommittedAt: '' }];
+  for (const o of callados) assert.deepStrictEqual(SPN().paraReencolar([ghRepo], leidasDe(listo(8, o)), {}), { encolar: [], esperan: [] }, JSON.stringify(o));
+  // en Azure no: no tiene esta cola
+  const az = azRepo('harness-maintainers');
+  assert.deepStrictEqual(SPN().paraReencolar([az], { 'acme/Harness/harness-maintainers': { ok: true, value: [listo(9)] } }, {}), { encolar: [], esperan: [] });
+});
+
+test('Requeue_RunsTheMutationOnceAndRecords — encola con enqueuePullRequest y anota el intento, salga bien o mal', () => {
+  const llamadas = [];
+  const bien = (file, args) => { llamadas.push([file, ...args]); return { status: 0, stdout: '{"data":{"enqueuePullRequest":{"mergeQueueEntry":{"state":"QUEUED"}}}}' }; };
+  const item = { clave: 'acme/harness#1039', repo: ghRepo, number: 1039, nodeId: 'PR_kw1039', punta: 'c1039' };
+  const ok = SPN().reencolar([item], { run: bien, env: {}, ahora: Date.parse('2026-11-06T15:10:00Z') });
+  assert.deepStrictEqual(ok['acme/harness#1039'], { punta: 'c1039', nodeId: 'PR_kw1039', at: '2026-11-06T15:10:00.000Z', ok: true, detalle: 'QUEUED' });
+  assert.strictEqual(llamadas.length, 1);
+  assert.ok(llamadas[0].some((a) => /enqueuePullRequest/.test(a)), llamadas[0].join(' '));
+  assert.ok(llamadas[0].includes('id=PR_kw1039'), llamadas[0].join(' '));
+  const mal = () => ({ status: 1, stdout: '', stderr: 'gh: Pull request is not mergeable' });
+  const fallo = SPN().reencolar([item], { run: mal, env: {}, ahora: Date.parse('2026-11-06T15:10:00Z') });
+  assert.strictEqual(fallo['acme/harness#1039'].ok, false);
+  assert.match(fallo['acme/harness#1039'].detalle, /not mergeable/);
+});
+
+test('Requeue_CoordinatorSeesItEveryTurn — la caída, el re-encolado y el que no se re-encola, en cada turno y de la foto', () => {
+  const w = mundo([]);
+  const dir = stateDir(w.home);
+  fs.mkdirSync(dir, { recursive: true });
+  const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
+  const ahora = Date.now();
+  const hace = (min) => new Date(ahora - min * 60000).toISOString();
+  const caido = listo(1037, { autoComplete: false, headCommittedAt: hace(90), lastQueueDrop: { cause: 'ci', reason: 'failed_checks', at: hace(30) } });
+  const reencolado = listo(1039, { headCommittedAt: hace(20), lastQueueDrop: { cause: 'ci', reason: 'failed_checks', at: hace(40) } });
+  const esperando = listo(1038, { headCommittedAt: hace(20), lastQueueDrop: { cause: 'ci', reason: 'failed_checks', at: hace(40) }, ciState: 'PENDING' });
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: hace(1), repos, lecturas: { 'acme/harness': { ok: true, value: [caido, reencolado, esperando] } } }));
+  fs.writeFileSync(path.join(dir, 'requeued-prs.json'), JSON.stringify({ 'acme/harness#1039': { punta: 'c1039', at: hace(5), ok: true, detalle: 'QUEUED' } }));
+  const r = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
+  const texto = r.lines.join('\n');
+  assert.match(texto, /pedido 1037 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo/);
+  assert.match(texto, /pedido 1039 \(harness\) quedó fuera de la cola después del empuje: lo re-encolé hace 5 min/);
+  assert.match(texto, /pedido 1038 \(harness\) quedó fuera de la cola después del empuje: no lo re-encolo porque sus comprobaciones no están en verde \(PENDING\)/);
+  // el intento fallido se dice con cómo encolarlo a mano
+  fs.writeFileSync(path.join(dir, 'requeued-prs.json'), JSON.stringify({ 'acme/harness#1039': { punta: 'c1039', nodeId: 'PR_kw1039', at: hace(5), ok: false, detalle: 'gh: boom' } }));
+  assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora }).lines.join('\n'),
+    /pedido 1039 \(harness\) quedó fuera de la cola después del empuje: no pude re-encolarlo \(gh: boom\); encolalo a mano con gh api graphql -f query='mutation.*enqueuePullRequest.*' -f id=PR_kw1039/);
+});
+
+test('Requeue_FromGithubRead_SaysWhyNot — de la lectura de GitHub de punta a punta: caído, empujado después y sin verde', () => {
+  const w = mundo([]);
+  ponerGh(w, [ghPull(1038, { mergeable_state: 'clean', ci_state: 'PENDING', committed_at: HACE(10),
+    queue_drop: { kind: 'removed', reason: 'failed_checks', at: HACE(30) } })]);
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 1038 \(harness\) quedó fuera de la cola después del empuje: no lo re-encolo porque sus comprobaciones no están en verde \(PENDING\)/);
+  assert.doesNotMatch(r.out, /pedido 1038 \(harness\) se cayó de la cola/, 'con una punta nueva, la caída ya no es la noticia');
+});
+
+function refrescarYa(w) {
+  const env = { PATH: process.env.PATH, HOME: w.home, TYCON_TREE: w.tree, TYCON_ADO_CMD: w.az, FIXAZ: w.fix, TYCON_PROFILE: '0',
+    TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: w.ghState, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
+  const r = spawnSync(process.execPath, [HOOK, '--refresh', w.tree], { env, encoding: 'utf8', timeout: 30000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+}
+const ghEstado = (w) => JSON.parse(fs.readFileSync(w.ghState, 'utf8'));
+
+test('Requeue_BackgroundReadQueuesOncePerHead — la lectura de fondo lo encola, lo anota y no repite con la misma punta', () => {
+  const w = mundo([]);
+  const p = ghPull(1039, { node_id: 'PR_kw1039', ci_state: 'SUCCESS', committed_at: HACE(60),
+    queue_drop: { kind: 'removed', reason: 'failed_checks', at: HACE(30), before_sha: 'vieja'.padStart(40, '0') } });
+  ponerGh(w, [p]);
+  refrescarYa(w);
+  assert.strictEqual(ghEstado(w).enqueue_calls, 1, 'el commit es de antes de la caída, pero es otra punta: se encola');
+  assert.deepStrictEqual(ghEstado(w).pulls['acme/harness'][0].merge_queue, { state: 'QUEUED' });
+  const anotado = JSON.parse(fs.readFileSync(path.join(stateDir(w.home), 'requeued-prs.json'), 'utf8'))[claveGh(1039)];
+  assert.strictEqual(anotado.ok, true);
+  assert.strictEqual(anotado.punta, p.head.sha);
+  // se vuelve a caer con la misma punta: no se intenta otra vez
+  fs.writeFileSync(w.ghState, JSON.stringify({ pulls: { 'acme/harness': [p] }, enqueue_calls: 1 }));
+  refrescarYa(w);
+  assert.strictEqual(ghEstado(w).enqueue_calls, 1, 'una sola vez por punta');
+  // la misma punta que tenía al caerse no es un empuje nuevo
+  const w3 = mundo([]);
+  ponerGh(w3, [{ ...p, queue_drop: { ...p.queue_drop, before_sha: p.head.sha } }]);
+  refrescarYa(w3);
+  assert.strictEqual(ghEstado(w3).enqueue_calls, undefined);
+  // un error de GitHub queda anotado como no encolado
+  const w2 = mundo([]);
+  fs.writeFileSync(w2.ghState, JSON.stringify({ pulls: { 'acme/harness': [p] }, enqueue: 'error' }));
+  refrescarYa(w2);
+  const fallo = JSON.parse(fs.readFileSync(path.join(stateDir(w2.home), 'requeued-prs.json'), 'utf8'))[claveGh(1039)];
+  assert.strictEqual(fallo.ok, false);
+  assert.match(fallo.detalle, /not mergeable/);
+});
+
+test('Requeue_ForcePushOfAnOldCommitCounts — sin el commit de la caída, un empuje forzado posterior cuenta como punta nueva', () => {
+  const p = listo(5, { headCommittedAt: '2026-11-06T13:00:00Z', headPushedAt: '2026-11-06T15:00:00Z' });
+  assert.strictEqual(SPN().paraReencolar([ghRepo], leidasDe(p), {}).encolar.length, 1);
+});
+
+test('Requeue_OnlyApprovedOrNoReview — una decisión de revisión desconocida no se re-encola', () => {
+  for (const d of ['DISMISSED', 'PENDING', 'algo']) {
+    const r = SPN().paraReencolar([ghRepo], leidasDe(listo(6, { reviewDecision: d })), {});
+    assert.deepStrictEqual(r.encolar, [], d);
+    assert.match(r.esperan[0].linea, new RegExp(`la revisión dice ${d}`));
+  }
+  assert.strictEqual(SPN().paraReencolar([ghRepo], leidasDe(listo(6, { reviewDecision: 'APPROVED' })), {}).encolar.length, 1);
+});
+
+test('Requeue_GithubIdsWithBase64Chars — un identificador con + o / es válido; uno que empieza con - no', () => {
+  for (const id of ['MDExOlB1bGxSZXF1ZXN0MTIzNDU+/abc', 'PR_kwDO/legit==', 'PR_kwDO+legit==']) {
+    assert.strictEqual(SPN().paraReencolar([ghRepo], leidasDe(listo(7, { nodeId: id })), {}).encolar.length, 1, id);
+  }
+  assert.deepStrictEqual(SPN().paraReencolar([ghRepo], leidasDe(listo(7, { nodeId: '-f' })), {}).encolar, []);
+});
+
+test('Requeue_OrderDoesNotDependOnGithub — el orden de la respuesta no cambia el de los pedidos ni el de los avisos', () => {
+  const a = SPN().paraReencolar([ghRepo], leidasDe(listo(3), listo(1), listo(2)), {}).encolar.map((e) => e.number);
+  const b = SPN().paraReencolar([ghRepo], leidasDe(listo(2), listo(3), listo(1)), {}).encolar.map((e) => e.number);
+  assert.deepStrictEqual(a, [1, 2, 3]);
+  assert.deepStrictEqual(b, [1, 2, 3]);
+});
+
+test('Requeue_OddAnswersAreNotQueued — una respuesta sin forma, que no es JSON o sin respuesta no cuenta como encolado', () => {
+  const item = { clave: 'acme/harness#1', repo: ghRepo, number: 1, nodeId: 'PR_kw1', punta: 'c1' };
+  for (const r of [{ status: 0, stdout: '{}' }, { status: 0, stdout: '{"data":null}' }, { status: 0, stdout: 'no es json' }, null]) {
+    const i = SPN().reencolar([item], { run: () => r, env: {}, ahora: 0 })['acme/harness#1'];
+    assert.strictEqual(i.ok, false, JSON.stringify(r));
+    assert.ok(i.detalle, JSON.stringify(r));
+  }
+});
+
+test('Requeue_LinesOrderAndCap — caídas, re-encolados, los que esperan y los trabados, en ese orden y con el tope', () => {
+  const w = mundo([]);
+  const dir = stateDir(w.home);
+  fs.mkdirSync(dir, { recursive: true });
+  const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
+  const ahora = Date.now();
+  const hace = (min) => new Date(ahora - min * 60000).toISOString();
+  const caida = (n) => listo(n, { headCommittedAt: hace(90), lastQueueDrop: { cause: 'ci', reason: 'x', at: hace(30) } });
+  const reenc = listo(2, { headCommittedAt: hace(20), lastQueueDrop: { cause: 'ci', reason: 'x', at: hace(40) } });
+  const espera = listo(3, { headCommittedAt: hace(20), lastQueueDrop: { cause: 'ci', reason: 'x', at: hace(40) }, ciState: 'PENDING' });
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: hace(1), repos, lecturas: { 'acme/harness': { ok: true, value: [espera, caida(6), reenc, caida(1), caida(4), caida(5)] } } }));
+  fs.writeFileSync(path.join(dir, 'requeued-prs.json'), JSON.stringify({ 'acme/harness#2': { punta: 'c2', at: hace(5), ok: true, detalle: 'QUEUED' } }));
+  const { lines } = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
+  assert.strictEqual(lines.length, 6, lines.join('\n'));
+  assert.match(lines[0], /pedido 1 .*se cayó/);
+  assert.match(lines[5], /^ {3}\(\+1 más\)$/, 'seis avisos: se muestran cinco');
+  // las caídas primero, por número; después el re-encolado y el que espera
+  assert.deepStrictEqual(lines.slice(0, 4).map((l) => Number(/pedido (\d+)/.exec(l)[1])), [1, 4, 5, 6]);
+});
+
+test('Requeue_FailsClosedOnItsRecord — con los intentos ilegibles no re-encola y lo dice; sin poder anotar, no llama a GitHub', () => {
+  const dir = tmp('spn-req-');
+  const leidas = leidasDe(listo(1039));
+  let llamadas = 0;
+  const run = () => { llamadas += 1; return { status: 0, stdout: '{"data":{"enqueuePullRequest":{"mergeQueueEntry":{"state":"QUEUED"}}}}' }; };
+  // ilegible: nada
+  fs.writeFileSync(path.join(dir, 'requeued-prs.json'), '{roto');
+  SPN().reencolarLosListos(dir, [ghRepo], leidas, Date.parse('2026-11-06T15:10:00Z'), { run, env: {} });
+  assert.strictEqual(llamadas, 0, 'ilegible no es «nunca se intentó»');
+  assert.strictEqual(fs.readFileSync(path.join(dir, 'requeued-prs.json'), 'utf8'), '{roto', 'y no lo pisa');
+  // sin poder escribir el intento: tampoco llama
+  const soloLectura = tmp('spn-ro-');
+  fs.chmodSync(soloLectura, 0o500);
+  try {
+    if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+      SPN().reencolarLosListos(soloLectura, [ghRepo], leidas, Date.parse('2026-11-06T15:10:00Z'), { run, env: {} });
+      assert.strictEqual(llamadas, 0, 'sin anotar el intento, no se encola');
+    }
+  } finally { fs.chmodSync(soloLectura, 0o700); }
+  // legible: llama una vez y anota
+  const bien = tmp('spn-ok-');
+  SPN().reencolarLosListos(bien, [ghRepo], leidas, Date.parse('2026-11-06T15:10:00Z'), { run, env: {} });
+  assert.strictEqual(llamadas, 1);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(bien, 'requeued-prs.json'), 'utf8'))['acme/harness#1039'].ok, true);
+});
+
+test('Requeue_UnreadableRecordIsSaid — la coordinadora se entera si los intentos no se pueden leer', () => {
+  const w = mundo([]);
+  const dir = stateDir(w.home);
+  fs.mkdirSync(dir, { recursive: true });
+  const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(Date.now() - 60000).toISOString(), repos, lecturas: { 'acme/harness': { ok: true, value: [] } } }));
+  fs.writeFileSync(path.join(dir, 'requeued-prs.json'), '[1,2]');
+  assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree }).problem, /no pude leer los pedidos re-encolados/);
+});
+
+// ── el análisis de seguridad: sin él en verde, un pedido no está listo ──────────────────────────────────────────────────
+// La cola de GitHub sólo exige lo que la regla de la rama pide: un pedido con el análisis de seguridad en rojo o sin
+// correr sale CLEAN o UNSTABLE igual. El conector trae `codeScanning` por pedido; el aviso no lo da por listo ni lo
+// re-encola si no está en verde.
+const analisis = (estado, motivo = null) => ({ codeScanning: { estado, motivo } });
+
+test('CodeScanning_GreenIdle_NotReadyWithoutIt — con el análisis en rojo, corriendo, sin correr o ilegible: no pide encolar', () => {
+  const ahora = Date.parse('2026-11-01T22:00:00Z');
+  const previo = { 'acme/harness#1': { estado: 'verde-sin-auto', punta: 'c1', vistoDesde: '2026-11-01T21:00:00Z' } };
+  for (const [estado, motivo] of [['rojo', 'el análisis de seguridad terminó en failure'], ['falta', 'el análisis de seguridad no corrió en la punta'], ['corriendo', null], ['no-se-pudo', 'no pude leer las alertas abiertas del pedido']]) {
+    const [t] = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(1, analisis(estado, motivo))] } }, previo, ahora, 10).trabados;
+    assert.ok(t, estado);
+    assert.match(t.linea, /pedido 1 \(harness\) con los controles requeridos en verde hace 1 h, pero no está listo: /, estado);
+    assert.match(t.linea, motivo ? new RegExp(motivo) : /el análisis de seguridad está corriendo/, estado);
+    assert.doesNotMatch(t.linea, /gh pr merge|encolalo con/, `${estado}: no da el comando para encolarlo`);
+  }
+  // verde, sin análisis en el repo, o una plataforma que no lo trae: lo de siempre
+  for (const o of [analisis('verde'), analisis('no-aplica'), {}]) {
+    const [t] = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(1, o)] } }, previo, ahora, 10).trabados;
+    assert.match(t.linea, /listo y sin auto-merge hace 1 h, fuera de la cola: nadie lo va a mergear — encolalo con gh pr merge 1/, JSON.stringify(o));
+  }
+});
+
+test('CodeScanning_Requeue_NotWithoutIt — no se re-encola sin el análisis en verde, y dice por qué', () => {
+  const r = SPN().paraReencolar([ghRepo], leidasDe(listo(7, analisis('falta', 'el análisis de seguridad no corrió en la punta'))), {});
+  assert.deepStrictEqual(r.encolar, []);
+  assert.match(r.esperan[0].linea, /no lo re-encolo porque su análisis de seguridad no está en verde \(el análisis de seguridad no corrió en la punta\)/);
+  assert.strictEqual(SPN().paraReencolar([ghRepo], leidasDe(listo(7, analisis('verde'))), {}).encolar.length, 1, 'en verde, se re-encola');
+});
+
+test('CodeScanning_RuleNotRequired_OnlyWithAnAffectedPr — la regla que no lo exige se dice una vez por repo, sólo con un pedido afectado', () => {
+  const sin = { codeScanningRequired: false, baseBranch: 'main' };
+  const lineas = SPN().reglaSinAnalisis([ghRepo], { 'acme/harness': { ok: true, value: [verde(2, { ...sin, ...analisis('falta', 'no corrió') }), verde(1, { ...sin, ...analisis('rojo', 'en rojo') }), verde(3, { ...sin, ...analisis('verde') })] } });
+  assert.strictEqual(lineas.length, 1);
+  assert.match(lineas[0], /harness: la regla de main no exige el análisis de seguridad, así que la cola deja entrar un pedido con él en rojo o sin correr \(hoy: 1, 2\)\. Exigirlo cambia las reglas del repo: lo decide el dueño\./);
+  // todos en verde, sin mirar, borradores o sin análisis en el repo: no hay nada nuevo que decir en cada turno
+  for (const o of [analisis('verde'), analisis('sin-mirar'), { ...analisis('falta'), draft: true }, analisis('no-aplica'), {}]) {
+    assert.deepStrictEqual(SPN().reglaSinAnalisis([ghRepo], { 'acme/harness': { ok: true, value: [verde(1, { ...sin, ...o })] } }), [], JSON.stringify(o));
+  }
+  // la regla lo exige, o no se supo: nada
+  for (const v of [true, null, undefined]) {
+    assert.deepStrictEqual(SPN().reglaSinAnalisis([ghRepo], { 'acme/harness': { ok: true, value: [verde(1, { codeScanningRequired: v, ...analisis('falta') })] } }), [], String(v));
+  }
+  assert.deepStrictEqual(SPN().reglaSinAnalisis([ghRepo], { 'acme/harness': { ok: false } }), []);
 });

@@ -29,18 +29,20 @@ nombra_bases() {
   # puede derivar (bash, y justo cuando node no está), así que lo sostiene un caso de la suite que
   # prueba CADA cliente de esa lista de los dos lados: si alguien suma un cliente allá y no acá, se
   # pone rojo. Eran dos listas a mano y ya se habían separado (pase adversarial 2026-09-15).
-  printf '%s' "$ENTRADA" | grep -qiE '(^|[^A-Za-z0-9_-])(sqlcmd|bcp|mssql-cli|sqlps|osql|tsql|mssql|usql|invoke-sqlcmd|sqlpackage)([^A-Za-z0-9_-]|$)|SQLCMDSERVER[[:space:]]*=|MSSQL_HOST[[:space:]]*=|PGHOST[[:space:]]*=|DBSERVER[[:space:]]*=|(^|[^A-Za-z0-9_])Server[[:space:]]*=|Data[[:space:]]+Source[[:space:]]*=|Addr(ess)?[[:space:]]*=|Network[[:space:]]+Address[[:space:]]*=|az[[:space:]]+sql|Microsoft\.Sql/servers|(jdbc:)?(sqlserver|mssql|tds)://|tycon-prod-sql|\.tycon/production\.json|production-(index|memory)\.json|\.tycon/produccion\.json|produccion-(indice|memoria)\.json|security[[:space:]]+(-i|find-|dump-keychain|export|[a-z-]*generic-password)'
+  printf '%s' "$ENTRADA" | grep -qiE '(^|[^A-Za-z0-9_-])(sqlcmd|bcp|mssql-cli|sqlps|osql|tsql|mssql|usql|invoke-sqlcmd|sqlpackage)([^A-Za-z0-9_-]|$)|SQLCMDSERVER[[:space:]]*=|MSSQL_HOST[[:space:]]*=|PGHOST[[:space:]]*=|DBSERVER[[:space:]]*=|(^|[^A-Za-z0-9_])Server[[:space:]]*=|Data[[:space:]]+Source[[:space:]]*=|Addr(ess)?[[:space:]]*=|Network[[:space:]]+Address[[:space:]]*=|az[[:space:]]+sql|Microsoft\.Sql/servers|(jdbc:)?(sqlserver|mssql|tds)://|tycon-prod-sql|\.tycon/production\.json|production-(index|memory)\.json|\.tycon/produccion\.json|security[[:space:]]+(-i|find-|dump-keychain|export|[a-z-]*generic-password)'
 }
 
 # ¿el comando borra un grupo, un candado o un recurso de Azure? (mismo criterio que nombraBorradoAzure() en prod-access-guard.js;
 # la T18 de prod-guard-azure-delete.test.sh compara los dos). Va aparte de nombra_bases(), que fija la T27.
 nombra_borrado() {
-  # el separador incluye `\n`, `\t` y `\r` escritos (el lanzador lee el JSON crudo del evento), y cada palabra puede venir
-  # entre comillas, con su escape del JSON. El patrón va en un heredoc entre comillas: lleva comillas simples.
+  # el lanzador lee el JSON crudo del evento: un salto de línea, real o escrito (`\n`, `\r`), corta el comando como en el
+  # freno, que parte el texto en tramos; `\t` escrito separa palabras. `az` cuenta como programa con las mismas puntas que
+  # el freno acepta (no detrás de un `=`: `x=az group …` corre `group`). Cada palabra puede venir entre comillas, con su
+  # escape del JSON. El patrón va en un heredoc entre comillas: lleva comillas simples.
   IFS= read -r _patron <<'PATRON'
-(^|[^A-Za-z0-9_.-]|\\[ntr]|[\\\"'])az(\.cmd|\.exe)?[\\\"']*(([[:space:]]|\\[ntr])[^;|&]*)?([[:space:]]|\\[ntr])[\\\"']*(group|lock|resource)[\\\"']*([[:space:]]|\\[ntr])([^;|&]*([[:space:]]|\\[ntr]))?[\\\"']*delete([^A-Za-z0-9_-]|$)|(^|[^A-Za-z0-9_.-]|\\[ntr]|[\\\"'])az(\.cmd|\.exe)?[\\\"']*(([[:space:]]|\\[ntr])[^;|&]*)?([[:space:]]|\\[ntr])[\\\"']*rest[\\\"']*([[:space:]]|\\[ntr])([^;|&]*([[:space:]]|\\[ntr]))?(--m[a-z]*|-m)[^A-Za-z0-9]{0,4}delete([^A-Za-z0-9_-]|$)|(^|[^A-Za-z0-9_.-]|\\[ntr])azd(\.exe)?([[:space:]]|\\[ntr])+down([^A-Za-z0-9_-]|$)|Remove-Az(ResourceGroup|ResourceLock|Resource|SqlServer|SqlDatabase)([^A-Za-z0-9_]|$)|Invoke-AzRestMethod[^;|&]*[[:space:]]-M[a-z]*[^A-Za-z0-9$]{1,4}(delete([^A-Za-z0-9_-]|$)|\$)|Invoke-AzRestMethod[^;|&]*[[:space:]]@[A-Za-z_]
+(^|[[:space:];|&\\/:\"'`({$]|\\t)az(\.cmd|\.exe)?[\\\"']*(([[:space:]]|\\t)[^;|&]*)?([[:space:]]|\\t)[\\\"']*(group|lock|resource)[\\\"']*([[:space:]]|\\t)([^;|&]*([[:space:]]|\\t))?[\\\"']*delete([^A-Za-z0-9_-]|$)|(^|[[:space:];|&\\/:\"'`({$]|\\t)az(\.cmd|\.exe)?[\\\"']*(([[:space:]]|\\t)[^;|&]*)?([[:space:]]|\\t)[\\\"']*rest[\\\"']*([[:space:]]|\\t)([^;|&]*([[:space:]]|\\t))?(--m[a-z]*|-m)([[:space:]=]|\\t)*[\\\"'$]*delete([^A-Za-z0-9_-]|$)|(^|[[:space:];|&\\/:\"'`({$]|\\t)azd(\.exe)?([[:space:]]|\\t)+[\\\"']*down([^A-Za-z0-9_-]|$)|Remove-Az(ResourceGroup|ResourceLock|Resource|SqlServer|SqlDatabase)([^A-Za-z0-9_]|$)|Invoke-AzRestMethod[^;|&]*[[:space:]]-M[a-z]*[^A-Za-z0-9$]{1,4}(delete([^A-Za-z0-9_-]|$)|\$)|Invoke-AzRestMethod[^;|&]*[[:space:]]@[A-Za-z_]
 PATRON
-  printf '%s' "$ENTRADA" | grep -qiE "$_patron"
+  printf '%s' "$ENTRADA" | tr '\n\r' ';;' | sed 's/\\[nr]/;/g' | grep -qiE "$_patron"
 }
 
 registro_de() {

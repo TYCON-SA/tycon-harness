@@ -1,0 +1,165 @@
+{
+  "__doc": "El registro de la meta de las suites lentas: la suite completa en la Mac de quien mantiene tarda menos de 20 min de reloj. `antes` y `despues` son las dos mediciones de la suite completa (TYCON_GATE_ALL_SUITES=1 sobre una copia del público en un commit fijo), cada una con su commit, su carga al arrancar y cuántas corrieron a la vez. Se toman en un día normal, con la carga que haya y la regla de trabajadores sin variable, seguidas: son también `antes_con_carga` y `despues_con_carga`. Si el después no llega, `falta_s` dice cuánto falta y `excepcion` trae la del dueño. `bajadas`, una fila por suite que se bajó: su tiempo de antes, la meta (la mitad o 60 s, lo que sea mayor), el de después, qué se cambió, qué se rompió a propósito y qué caso dio rojo, y la excepción escrita del dueño si no llegó. `github`, los segundos de cada parte de suites de la CI de GitHub: el antes, de una corrida de la cola de merge sobre main; el después, de la CI del pedido, cuando corre. Lo lee scripts/tests/slow-suites-goal.test.js: con las tablas vacías da rojo.",
+  "antes": {
+    "commit": "5a48ea35e299c6be44716c562ab854f85b9be6cc",
+    "fecha": "2026-11-17T13:33",
+    "carga": 25.73,
+    "trabajadores": 4,
+    "nucleos": 10,
+    "suites": 791,
+    "verdes": 788,
+    "rojas": [
+      "tests/installer-repeated-hooks.test.sh",
+      "tests/harness-install.test.sh",
+      "tests/minimal-lane-gate.test.sh"
+    ],
+    "reloj_s": 6916,
+    "suma_s": 25602,
+    "mediana_s": 6.7
+  },
+  "despues": {
+    "commit": "973d2a25f1326d54b33074c14b9ac0bb4a20c78e",
+    "fecha": "2026-11-17T15:28",
+    "carga": 8.12,
+    "trabajadores": 4,
+    "nucleos": 10,
+    "suites": 792,
+    "verdes": 789,
+    "rojas": [
+      "tests/installer-repeated-hooks.test.sh",
+      "tests/harness-install.test.sh",
+      "tests/minimal-lane-gate.test.sh"
+    ],
+    "reloj_s": 6844,
+    "suma_s": 24700,
+    "mediana_s": 5.6,
+    "falta_s": 5645,
+    "excepcion": "aceptada por el dueño (17/11 16:30, «si», por Coordinadora-2): la suite completa no llega a 20 min; queda escrito cuánto falta y la meta se vuelve a medir en el seguimiento con la máquina vacía"
+  },
+  "antes_con_carga": {
+    "commit": "5a48ea35e299c6be44716c562ab854f85b9be6cc",
+    "fecha": "2026-11-17T13:33",
+    "carga": 25.73,
+    "trabajadores": 4,
+    "nucleos": 10,
+    "suites": 791,
+    "verdes": 788,
+    "rojas": [
+      "tests/installer-repeated-hooks.test.sh",
+      "tests/harness-install.test.sh",
+      "tests/minimal-lane-gate.test.sh"
+    ],
+    "reloj_s": 6916,
+    "suma_s": 25602,
+    "mediana_s": 6.7
+  },
+  "despues_con_carga": {
+    "commit": "973d2a25f1326d54b33074c14b9ac0bb4a20c78e",
+    "fecha": "2026-11-17T15:28",
+    "carga": 8.12,
+    "trabajadores": 4,
+    "nucleos": 10,
+    "suites": 792,
+    "verdes": 789,
+    "rojas": [
+      "tests/installer-repeated-hooks.test.sh",
+      "tests/harness-install.test.sh",
+      "tests/minimal-lane-gate.test.sh"
+    ],
+    "reloj_s": 6844,
+    "suma_s": 24700,
+    "mediana_s": 5.6,
+    "falta_s": 5645,
+    "excepcion": "aceptada por el dueño (17/11 16:30, «si», por Coordinadora-2): la suite completa no llega a 20 min; queda escrito cuánto falta y la meta se vuelve a medir en el seguimiento con la máquina vacía"
+  },
+  "bajadas": [
+    {
+      "archivo": "scripts/tests/base-controls.test.sh",
+      "antes_s": 714,
+      "meta_s": 357,
+      "despues_s": 357,
+      "medida": "sola, con la carga que había (12,7 antes y 16,3 después)",
+      "cambio": "run-base-controls.sh recuerda cada commit:ruta y cada versión escrita entera: las preguntas a git bajaron de 23 986 a 14 320. Los casos no cambiaron.",
+      "rompi": "recordar «no está» (salida 1) de un commit entero aunque no se sepa que existe: la corrida crea commits después",
+      "caso_rojo": "T36 (con T26 y MainChangedSignedFileWithCleanMerge, 21 casos en rojo)",
+      "excepcion": null
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/tests/save-brake.test.js",
+      "antes_s": 450,
+      "meta_s": 225,
+      "despues_s": 298,
+      "medida": "sola, con la carga que había (14,5 antes y 11,4 después)",
+      "cambio": "el gancho del commit pregunta una vez la lista del commit y la configuración del repo: las preguntas a git bajaron de 13 905 a 12 961. Casi todas las hace la propia prueba al armar el laboratorio de cada caso. Los casos no cambiaron.",
+      "rompi": "comandosQueGuardan de lib/save-brake.js devuelve una lista vacía: ningún comando se lee como un commit",
+      "caso_rojo": "Commit_CadaForma_SeLee (T1) @story-8.151 @ac-1",
+      "excepcion": "aceptada por el dueño (17/11 16:3x, «si», por Coordinadora-2): no llega a la meta; se vuelve a medir en el seguimiento con la máquina vacía"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/tests/plan-review.test.js",
+      "antes_s": 135,
+      "meta_s": 68,
+      "despues_s": 120,
+      "medida": "sola, con la carga que había (13,3 antes y 10,1 después)",
+      "cambio": "la rama de un repo hermano y la configuración del repo, una vez por proceso: las preguntas a git bajaron de 3 649 a 3 413. Los casos no cambiaron.",
+      "rompi": "computeDelicate de pipeline.js contesta «no delicado» en cada regla que coincide",
+      "caso_rojo": "Delicado_CadaRegla_ConSuMotivo (T1) @story-1.29 @ac-1",
+      "excepcion": "aceptada por el dueño (17/11 16:3x, «si», por Coordinadora-2): no llega a la meta; se vuelve a medir en el seguimiento con la máquina vacía"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/tests/unit.test.js",
+      "antes_s": 70,
+      "meta_s": 60,
+      "despues_s": 63,
+      "medida": "sola, con la carga que había (10,4 antes y 7,7 después)",
+      "cambio": "la rama de un repo hermano y la configuración del repo, una vez por proceso: las preguntas a git bajaron de 1 729 a 1 691. Los casos no cambiaron.",
+      "rompi": "parseAcsFromSpec de on-pre-commit.js devuelve una lista vacía",
+      "caso_rojo": "parseAcsFromSpec extrae ACs canónicos",
+      "excepcion": "aceptada por el dueño (17/11 16:3x, «si», por Coordinadora-2): no llega a la meta; se vuelve a medir en el seguimiento con la máquina vacía"
+    }
+  ],
+  "github": [
+    {
+      "parte": "suites-1-of-5",
+      "antes_s": 380,
+      "corrida_antes": "44152618452",
+      "despues_s": 342,
+      "corrida_despues": "44202013060"
+    },
+    {
+      "parte": "suites-2-of-5",
+      "antes_s": 511,
+      "corrida_antes": "44152618452",
+      "despues_s": 498,
+      "corrida_despues": "44202013060"
+    },
+    {
+      "parte": "suites-3-of-5",
+      "antes_s": 524,
+      "corrida_antes": "44152618452",
+      "despues_s": 326,
+      "corrida_despues": "44202013060"
+    },
+    {
+      "parte": "suites-4-of-5",
+      "antes_s": 544,
+      "corrida_antes": "44152618452",
+      "despues_s": 462,
+      "corrida_despues": "44202013060"
+    },
+    {
+      "parte": "suites-5-of-5",
+      "antes_s": 505,
+      "corrida_antes": "44152618452",
+      "despues_s": 469,
+      "corrida_despues": "44202013060"
+    },
+    {
+      "parte": "installer-floor",
+      "antes_s": 132,
+      "corrida_antes": "44152618452",
+      "despues_s": null,
+      "corrida_despues": null
+    }
+  ]
+}

@@ -86,6 +86,7 @@ function night(at, over = {}) {
     'scripts/controls-bench/ultimo-banco.json': JSON.stringify({ ts: iso(at), tool: 'both', ran: 12, failed: 0, skipped: 0, nomedido: 0, parityBreaks: 0, baselineRegressions: 0, origen: 'azure-pipelines', estado: 'completo' }),
     'scripts/controls-bench/ultimo-suites.json': JSON.stringify({ kind: 'bash-tests', ts: iso(at), origen: 'azure-pipelines', corridas: 3, failures: [], motivos: {}, unmeasured: [], complete: true, ran: ['a.test.js', 'b.test.sh', 'c.test.js'], disappeared: [] }),
     'artifacts/tablero-del-arnes.html': SEAL(iso(at)),
+    'scripts/controls-bench/ultimo-constancias.json': JSON.stringify({ kind: 'constancias-borradas', ts: iso(at), ref: 'main', tip: 'a'.repeat(40), medido: true, con_firma: [], sin_firma: [] }),
   };
   for (const [k, v] of Object.entries(over)) { if (v === null) delete files[k]; else files[k] = v; }
   return files;
@@ -239,7 +240,9 @@ test('T85 NoPhoto_AndUnreadablePhoto_AreSaid_EachWithItsOwnText', () => {
   const n = perNightly(none);
   for (const k of ['dependencias', 'vigilante', 'banco', 'suites']) assert.match(n[k], /^🔴 .*no hay ninguna foto/, `${k} sin foto calla o dice otra cosa:\n${none.all}`);
   assert.match(n.tablero, /no está publicado/, none.all);
-  assert.strictEqual(none.lines.length, 5, none.all);
+  // la sexta es la foto de las constancias del dueño que salieron de main, que tampoco está
+  assert.match(line(none, /constancias del dueño/), /no hay ninguna foto/, none.all);
+  assert.strictEqual(none.lines.length, 6, none.all);
 
   const broken = startup(machine({ published: night(at, { [BANCO]: '{', [SUITES]: 'esto no es JSON', [depsFile(at)]: 'null', [vigFile(at)]: '[' }) }));
   const b = perNightly(broken);
@@ -509,7 +512,7 @@ test('T85 EachNotice_CopiedAlone_WorksAsToday', () => {
 
 // ── 13 · queda escrito quién trae el clon y cuándo ────────────────────────────────────────────────────────────────────
 test('T85 TheGuide_SaysWhoBringsTheMaintainersClone_AndWhen', () => {
-  const guide = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const guide = require('./lib/pieces-guide.js').piecesText(ROOT);
   const i = guide.indexOf('## scripts/lib/night-data.js');
   assert.ok(i >= 0, 'guides/piezas-del-arnes.md no tiene la ficha de scripts/lib/night-data.js');
   // la ficha corta y su detalle (guides/maintaining/piezas-en-detalle.md, mismo título) se leen juntos
@@ -1043,4 +1046,97 @@ test('T85 PhotoFolderThatCannotBeListed_IsSaid_NotReadAsNoHistory', () => {
   assert.strictEqual(w.estado, 'no-leida', JSON.stringify(w));
   assert.match(D.redactarVigilante(w, {}) || '', /^🔴 vigilante: no pude leer la carpeta de sus fotos \(EACCES/);
   assert.strictEqual(D.evaluarVigilante({ vigOut: '/x', ahora, fuente: missing }).estado, 'sin-historia');
+});
+
+// ── la suite roja dice qué entró desde su última noche verde ────────────────
+// Cada pedido corre sólo las suites que nombran lo que tocó; lo que rompe por un camino indirecto lo ve la noche. El
+// aviso nombra los pedidos del privado que entraron a main desde la última foto en que esa suite estaba verde, y el
+// rango del público con su enlace. Sólo en la máquina que tiene el clon de mantenimiento.
+function nextNight(lab, files, prs, directs = 0) {
+  const origin = path.join(lab.base, 'remotos', 'mantenimiento');
+  for (let i = 0; i < directs; i += 1) {
+    write(path.join(origin, `directo-${i}.txt`), `${i}\n`);
+    git(lab, origin, ['add', '-A']); git(lab, origin, ['commit', '-qm', `un commit directo ${i}`]);
+  }
+  for (const n of prs) {
+    git(lab, origin, ['checkout', '-q', '-b', `rama-${n}`]);
+    write(path.join(origin, `cambio-${n}.txt`), `${n}\n`);
+    git(lab, origin, ['add', '-A']); git(lab, origin, ['commit', '-qm', `cambio ${n}`]);
+    git(lab, origin, ['checkout', '-q', 'main']);
+    git(lab, origin, ['merge', '-q', '--no-ff', '-m', `Merge pull request ${n} from rama-${n} into main`, `rama-${n}`]);
+  }
+  for (const [rel, text] of Object.entries(files)) write(path.join(origin, ...rel.split('/')), text);
+  git(lab, origin, ['add', '-A', '-f']); git(lab, origin, ['commit', '-qm', 'otra noche']);
+  git(lab, lab.priv, ['fetch', '-q', 'origin']);
+  git(lab, lab.priv, ['merge', '-q', '--ff-only', 'origin/main']);
+  const head = path.join(lab.priv, '.git', 'FETCH_HEAD');
+  fs.writeFileSync(head, `${git(lab, lab.priv, ['rev-parse', 'origin/main'])}\t\tbranch 'main' of ${origin}\n`);
+}
+
+test('SuitesRed_NamesThePullRequestsSinceItsLastGreenNight', () => {
+  const at = Date.now() - HOUR;
+  const green = night(at - 24 * HOUR);
+  green[SUITES] = edit(green, SUITES, (j) => { j.harness = { source: 'github', commit: 'a'.repeat(40) }; });
+  const lab = machine({ published: green });
+  const red = night(at);
+  nextNight(lab, { [SUITES]: edit(red, SUITES, (j) => { j.failures = ['a.test.js']; j.harness = { source: 'github', commit: 'b'.repeat(40) }; }) }, [7001, 7002], 1);
+  const s = startup(lab);
+  const extra = s.bench.split('\n').find((l) => /desde su última noche verde/.test(l)) || '';
+  assert.match(extra, /a\.test\.js/, s.bench);
+  assert.match(extra, /privado: 7001, 7002/, extra);
+  const url = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'public-remotes.json'), 'utf8')).remotes[0];
+  assert.ok(extra.includes(`${url}/compare/aaaaaaa...bbbbbbb`), `el rango del público con su enlace:\n${extra}`);
+  assert.match(extra, /^\s/, 'va debajo de la línea de las suites, no como un aviso aparte');
+  assert.match(extra, /privado: 7001, 7002 y 1 commit\(s\) directo\(s\) a main/, 'cuenta los commits directos, no la foto misma');
+  assert.match(extra, /puede caer en la siguiente/, 'dice que el rango va por la hora de cada foto');
+});
+
+test('SuitesRed_NoGreenNightInTheHistory_SaysNothingMore', () => {
+  const at = Date.now() - HOUR;
+  const base = night(at);
+  const s = startup(machine({ published: { ...base, [SUITES]: edit(base, SUITES, (j) => { j.failures = ['a.test.js']; }) } }));
+  assert.doesNotMatch(s.bench, /desde su última noche verde/, s.bench);
+});
+
+// ── las constancias del dueño que salieron de main: el aviso lee su foto ──────────────────────────────────────────────
+test('Nightly_CountsRemoved_NoticeSaysTheUnsigned @story-8.248 @ac-9', () => {
+  const at = Date.now() - HOUR;
+  const lab = machine({});
+  const datos = path.join(lab.base, 'constancias');
+  let n = 0;
+  const foto = (j) => { n += 1; const f = path.join(datos, `foto-${n}.json`); write(f, JSON.stringify(j)); return f; };
+  const base = { kind: 'constancias-borradas', ts: iso(at), ref: 'main', desde: iso(at - 24 * HOUR) };
+  const sinFirma = startup(lab, { TYCON_APPROVALS_REPORT: foto({ ...base, medido: true, con_firma: [{ commit: 'a'.repeat(40), path: '.github/control-changes/aaa.json' }], sin_firma: [{ commit: 'b'.repeat(40), path: '.github/control-changes/bbb.json' }] }) });
+  const l = line(sinFirma, /constancias del dueño/);
+  assert.match(l, /1 sin su firma/, sinFirma.bench);
+  assert.match(l, /\.github\/control-changes\/bbb\.json/, l);
+  assert.doesNotMatch(l, /aaa\.json/, 'la que tiene la firma del dueño no se cobra');
+  const noMedido = startup(lab, { TYCON_APPROVALS_REPORT: foto({ ...base, medido: false, motivo: 'git log falló', con_firma: [], sin_firma: [] }) });
+  const nm = line(noMedido, /constancias del dueño/);
+  assert.match(nm, /no medido/, noMedido.bench);
+  assert.match(nm, /git log falló/, nm);
+  assert.doesNotMatch(nm, /\b0 sin/, 'no medido nunca se dice como cero');
+  const cero = startup(lab, { TYCON_APPROVALS_REPORT: foto({ ...base, medido: true, con_firma: [], sin_firma: [] }) });
+  assert.strictEqual(line(cero, /constancias del dueño/), '', 'sin borrados sin firma, el aviso calla');
+  // una foto vieja ya no es el estado de hoy: no se lee como cero
+  const vieja = startup(lab, { TYCON_APPROVALS_REPORT: foto({ ...base, ts: iso(at - 5 * 24 * HOUR), medido: true, con_firma: [], sin_firma: [] }) });
+  assert.match(line(vieja, /constancias del dueño/), /NO ESTÁ CORRIENDO/, vieja.bench);
+  // una lista mal formada es «no medido», nunca cero
+  const rota = startup(lab, { TYCON_APPROVALS_REPORT: foto({ ...base, medido: true, con_firma: [], sin_firma: 'nada' }) });
+  assert.match(line(rota, /constancias del dueño/), /no medido/, rota.bench);
+});
+
+test('Nightly_CountsRemoved_MissingPhotoOnTheMachineThatWaits_IsSaid @story-8.248 @ac-9', () => {
+  const at = Date.now() - HOUR;
+  // la máquina que espera los nocturnos, con la noche publicada sin la foto de las constancias
+  const lab = machine({ published: night(at, { 'scripts/controls-bench/ultimo-constancias.json': null }) });
+  const s = startup(lab);
+  // con la foto del banco de esa noche, la que falta es sólo la de la cuenta: «no medido», sin decir que no hay fotos
+  assert.match(line(s, /constancias del dueño/), /no medido — la noche dejó la foto del banco y no la de esta cuenta/, s.bench);
+  assert.doesNotMatch(line(s, /constancias del dueño/), /no hay ninguna foto/, s.bench);
+  // sin ninguna foto de la noche, lo de siempre
+  const nada = startup(machine({ published: night(at, { 'scripts/controls-bench/ultimo-constancias.json': null, [BANCO]: null }) }));
+  assert.match(line(nada, /constancias del dueño/), /no hay ninguna foto|no sé si corrió/, nada.bench);
+  // con la foto fresca y sin borrados sin firma, calla
+  assert.strictEqual(line(startup(machine({})), /constancias del dueño/), '');
 });

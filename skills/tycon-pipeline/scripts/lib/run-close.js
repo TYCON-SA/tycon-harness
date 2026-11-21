@@ -3,10 +3,10 @@
 /**
  * run-close — cómo termina una ejecución del pipeline (`cierre`) y si cerrarla ahora la deja a medias.
  *
- * Una ejecución está «abierta» si tiene un control registrado en rojo (`marker.checks` que empieza con `red`), pasos sin
- * correr (alguno de los que `prepare-commit` exige, directa o indirectamente, en `ORDER_REQUIRES`) o el pase adversarial
- * lanzado sin cerrar (`veredictoPaseAdversarial` no da `paso`). Los controles que el pipeline acepta diciéndolo
- * (`sin-medir`, `sin-acotar`) no la abren: se nombran en el motivo.
+ * Una ejecución está «abierta» si tiene un control registrado en rojo (`marker.checks` que empieza con `red`), pruebas
+ * que no corrieron por falta de turno (`sin-turno`), pasos sin correr (alguno de los que `prepare-commit` exige, directa o
+ * indirectamente, en `ORDER_REQUIRES`) o el pase adversarial lanzado sin cerrar (`veredictoPaseAdversarial` no da
+ * `paso`). Los controles que el pipeline acepta diciéndolo (`sin-medir`, `sin-acotar`) no la abren: se nombran en el motivo.
  *
  * `cierre` es la marca única de cómo terminó: `completa` (no estaba abierta), `abortada` (se cerró abierta), `deuda` (la
  * escribe `marker.js close-as-debt`; la ejecución sigue hasta el commit, y el `clear` del final la conserva) y
@@ -19,8 +19,9 @@
  *   entrada, además un `frena=<escape>\t<subcomando>\t<valor>` por cada llamada a marker.js o pipeline.js que, con este
  *   marcador, pide la firma de la persona (lib/marker-command.js las encuentra); cada una va a la ventana de permiso. La
  *   salida de una ejecución perdida (`clear-session <sesión> --lost`, `restore <sesión>`) frena siempre y su renglón
- *   suma `\t<apertura>\t<sin reenvío 0|1>`: la apertura de esa ejecución (`-` si no se ve) y lo del reenvío, que lo
- *   decide lib/open-runs.js. No lee la conversación: ninguna firma sale de ahí.
+ *   suma `\t<apertura>`: desde cuándo vale la firma de esa ejecución (`-` si no se ve). El rojo esperado de la matriz
+ *   suma un `detalle=<huella>` de su lista y su fecha, si están escritas tal cual. La delegación desde la sesión
+ *   designada la decide la ventana de permiso. No lee la conversación: ninguna firma sale de ahí.
  */
 const fs = require('fs');
 const path = require('path');
@@ -41,28 +42,35 @@ function requeridos(paso = 'prepare-commit', vistos = new Set()) {
   return [...vistos];
 }
 
-/** `{ rojos, sinMedir, sinCorrer, paseSinCerrar }` del marcador. */
+/** `{ rojos, sinMedir, sinTurno, sinCorrer, paseSinCerrar }` del marcador. */
 function estado(marker) {
   const m = marker || {};
   const checks = m.checks && typeof m.checks === 'object' ? m.checks : {};
   const rojos = Object.keys(checks).filter((k) => /^red/.test(String(checks[k])));
   const sinMedir = Object.keys(checks).filter((k) => ACEPTADOS.includes(String(checks[k])));
+  // las pruebas que no corrieron por falta de turno: no es un rojo, pero tampoco se aceptan; se pueden medir después
+  const sinTurno = Object.keys(checks).filter((k) => String(checks[k]) === 'sin-turno');
   const pendientes = (Array.isArray(m.stepsPending) ? m.stepsPending : []).map(String);
   const sinCorrer = requeridos().filter((p) => pendientes.includes(p) || isPending(m, p));
   const paseSinCerrar = !!m.adversarial && veredictoPaseAdversarial(m).veredicto !== 'paso';
-  return { rojos, sinMedir, sinCorrer, paseSinCerrar };
+  // el control de cierre la detuvo y espera la decisión del dueño (lib/autonomy-decision.js): no es un rojo, pero
+  // cerrarla sin él tampoco es una salida
+  const detenida = m.needs_human === true;
+  return { rojos, sinMedir, sinTurno, sinCorrer, paseSinCerrar, detenida };
 }
 
 function abierta(e) {
-  return e.rojos.length > 0 || e.sinCorrer.length > 0 || e.paseSinCerrar;
+  return e.rojos.length > 0 || (e.sinTurno || []).length > 0 || e.sinCorrer.length > 0 || e.paseSinCerrar;
 }
 
 /** El motivo, en llano: qué estaba en rojo, sin correr o sin cerrar. */
 function motivoDe(e) {
   const partes = [];
   if (e.rojos.length) partes.push(`en rojo: ${e.rojos.join(', ')}`);
+  if ((e.sinTurno || []).length) partes.push(`pruebas sin turno: no se midieron (${e.sinTurno.join(', ')})`);
   if (e.sinCorrer.length) partes.push(`sin correr: ${e.sinCorrer.join(', ')}`);
   if (e.paseSinCerrar) partes.push('el pase adversarial sin cerrar');
+  if (e.detenida) partes.push('se detuvo y espera la decisión de una persona');
   if (e.sinMedir.length) partes.push(`aceptado sin medir: ${e.sinMedir.join(', ')}`);
   return partes.join('; ');
 }
@@ -87,8 +95,9 @@ function escapeDeCierre(frenos, sid, desde, escape = 'cerrar-la-ejecucion') {
   return null;
 }
 
-// las vías del registro de escapes por las que una persona autorizó cerrar (la delegación firma en su nombre)
-const VIAS_DE_CIERRE = ['persona', 'reenvio', 'ventana', 'delegacion'];
+// las vías del registro de escapes por las que se autorizó cerrar: una persona, la delegación en su nombre, o el arnés
+// cuando el perfil pone el escape como trámite (automatic-signing.js)
+const VIAS_DE_CIERRE = ['persona', 'reenvio', 'ventana', 'delegacion', 'click', 'mensaje', 'automatica'];
 
 /** El `cierre` que deja `clear`. Uno ya escrito (`deuda`) se devuelve tal cual. */
 function cierreDe(marker, { sid, home, ahora = new Date().toISOString() } = {}) {
@@ -120,7 +129,7 @@ function consulta(sid, home) {
   }
   try {
     const e = estado(m);
-    return { hay: true, autonomo: m.autonomous === true, abierta: abierta(e), motivo: motivoDe(e), desde: m.startedAt };
+    return { hay: true, autonomo: m.autonomous === true, abierta: abierta(e), detenida: !!e.detenida, motivo: motivoDe(e), desde: m.startedAt };
   } catch (err) {
     return { hay: '?', motivo: `no pude leer el estado del marcador (${err.message})` };
   }
@@ -147,21 +156,18 @@ if (require.main === module) {
       const or = require('./open-runs.js');
       const cmd = fs.readFileSync(0, 'utf8');
       const todas = llamadas(cmd, { shell: arg('--shell') === 'powershell' ? 'powershell' : 'bash' });
-      // la salida de una ejecución perdida: la frase vale desde la apertura de esa ejecución y, según la decisión única de
-      // open-runs.js, sin reenvío
-      const salida = or.delegacionDeLaSalida();
-      const aperturaDe = (s) => {
-        const ult = or.vigente(s);
-        if (ult && ult.name === 'run-open') return ult;
-        const raiz = or.raizDeGit(process.cwd());
-        const copias = raiz ? or.copiasDe(raiz, s) : [];
-        return copias.length ? copias[copias.length - 1].copia : null;
-      };
+      // la salida de una ejecución perdida: la firma es de la ejecución que abrió esa apertura. La busca la misma regla
+      // que marker.js (open-runs.js `aperturaParaSalida`): al restaurar, también la copia podada y el restore a medias.
+      // Sin `startedAt` en la podada, la hora es su último toque, y va con «antes de». El restore a medias o terminado se
+      // busca en la sesión que el restore escribe: la de `--for-session`, si la trae. Uno terminado no hace nada: no se firma
+      const aperturaDe = (s, modo, propia) => or.aperturaParaSalida(s, { modo, cwd: process.cwd(), estado: stateDir(), propia });
       pedidas = todas.map((l) => {
         const s = salidaPerdida(l);
-        if (!s) return { l, esc: escapeDe(l, sid) };
-        const ap = s.sesion ? aperturaDe(s.sesion) : null;
-        return { l, esc: 'cerrar la ejecución', siempre: true, perdida: true, desde: (ap && ap.ts) || '-', sinReenvio: !salida.reenvio };
+        if (!s) return { l, esc: escapeDe(l, sid, cmd) };
+        const ap = s.sesion ? aperturaDe(s.sesion, l.sub === 'restore' ? 'restore' : 'lost', s.destino || sid) : null;
+        if (ap && ap.deDonde === 'terminado') return { l, esc: null };
+        const desde = ap && ap.ts ? `${ap.antes ? 'antes de ' : ''}${ap.ts}` : '-';
+        return { l, esc: 'cerrar la ejecución', siempre: true, perdida: true, desde };
       }).filter((x) => x.esc);
     } catch (e) {
       pedidas = dudoso(`no pude leer el comando: ${e.message}`);
@@ -171,25 +177,35 @@ if (require.main === module) {
   let r;
   try { r = consulta(sid); } catch (e) { r = { hay: '?', motivo: `no pude consultar la ejecución (${e.message})` }; }
   const hay = r.hay === '?' ? '?' : r.hay ? 1 : 0;
-  process.stdout.write(`hay=${hay}\nautonomo=${r.autonomo ? 1 : 0}\nabierta=${r.abierta ? 1 : 0}\nmotivo=${una(r.motivo)}\n`);
+  // una detenida que espera la decisión del dueño cuenta como abierta para cerrarla: la firma es suya
+  const abiertaODetenida = !!(r.abierta || r.detenida);
+  process.stdout.write(`hay=${hay}\nautonomo=${r.autonomo ? 1 : 0}\nabierta=${abiertaODetenida ? 1 : 0}\nmotivo=${una(r.motivo)}\n`);
   // un marcador que existe y no se puede leer se trata como abierto y con el modo autónomo prendido. Declarar un control
   // a mano o dar por corridos los revisores frena con la ejecución en verde también: el escape es el verde, no el rojo
   for (const pedida of pedidas || []) {
-    const { l, esc, siempre, perdida, desde, sinReenvio } = pedida;
-    // la salida de una ejecución perdida: además, desde cuándo vale la firma y si acepta el reenvío (nunca vacíos: el
-    // freno parte el renglón por tabuladores y dos seguidos se juntan)
+    const { l, esc, siempre, perdida, desde } = pedida;
+    // la salida de una ejecución perdida: además, desde cuándo vale la firma (nunca vacía: el freno parte el renglón por
+    // tabuladores y dos seguidos se juntan)
     if (perdida) {
-      process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '') || '-'}\t${una(desde)}\t${sinReenvio ? 1 : 0}\n`);
+      process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '') || '-'}\t${una(desde)}\n`);
       continue;
     }
     // apagar el pase adversarial pide la firma siempre, también sin ejecución: `pipeline.js start` la crea. Un comando
     // que no se pudo leer, también
-    if (hay === 0 && esc !== 'no-deep-review' && !siempre) continue;
-    // cerrar como deuda, declarar un control a mano y dar por corridos los revisores piden la firma siempre que haya una
-    // ejecución: no dependen de cómo esté
-    const aplica = siempre || esc === 'cerrar como deuda' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
-      : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || r.abierta;
+    // los mutantes y la revisión de la historia por un `--env-file`, también: se piden como su variable
+    const deArchivo = esc === 'TYCON_MUTATION_CHECK' || esc === 'TYCON_STORY_REVIEW';
+    if (hay === 0 && esc !== 'no-deep-review' && !deArchivo && !siempre) continue;
+    // cerrar como deuda, el rojo esperado de la matriz, declarar un control a mano y dar por corridos los revisores piden
+    // la firma siempre que haya una ejecución: no dependen de cómo esté (renovar la fecha del rojo esperado se hace con la
+    // ejecución en verde)
+    const aplica = siempre || deArchivo || esc === 'cerrar como deuda' || esc === 'rojo esperado de la matriz' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
+      : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || abiertaODetenida;
     if (!aplica) continue;
     process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '')}\n`);
+    // la huella de la lista y la fecha que va a mostrar la ventana: el freno la anota con la constancia
+    if (esc === 'rojo esperado de la matriz') {
+      const detalle = require('./marker-command.js').detalleDeLaLlamada(l);
+      if (detalle) process.stdout.write(`detalle=${detalle}\n`);
+    }
   }
 }

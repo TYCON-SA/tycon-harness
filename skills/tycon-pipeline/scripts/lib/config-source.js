@@ -38,20 +38,23 @@
  * Es la dirección correcta de falla, y los frenos lo dicen en su mensaje en vez de dejar al dev
  * adivinando.
  *
- * Costo: una lectura de git (~10ms) que el freno hermano ya paga, cacheada por proceso. El
- * comportamiento sólo cambia cuando la carpeta difiere de lo commiteado, y `.tycon/` se toca pocas veces
- * (entre 2 y 15 por repo cada 6 meses).
+ * Costo: lo commiteado se pregunta a git una vez por carpeta mientras no cambie su huella (`lib/git-stamp.js`: el
+ * `HEAD`, su historial y el índice, leídos del disco): «¿hay historia?» y la lista de `.tycon/` del `HEAD`, y el
+ * contenido sólo de lo que está. La carpeta de trabajo se lee del disco cada vez: nunca se recuerda. Una respuesta
+ * fallida de git (no contestó, salió con error) tampoco se recuerda.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { spawnSync } = require('child_process');
+const { memo } = require('./git-stamp.js');
 
 const NOMBRES = ['advisors.yaml', 'advisors.yml'];
 const _cache = new Map();
 
 function git(repoRoot, args) {
-  return execFileSync('git', ['-C', repoRoot, ...args], {
+  return spawnSync('git', ['-C', repoRoot, ...args], {
+    windowsHide: true,
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000,
   });
 }
@@ -64,16 +67,53 @@ function leerCarpeta(repoRoot) {
   return null;
 }
 
+/**
+ * ¿El repo tiene un commit? `rev-parse -q --verify` sale 0 (true) o 1 (false); otra cosa es git que no contestó (null,
+ * sin recordar).
+ */
+function cabeza(repoRoot) {
+  return memo(_cache, repoRoot, 'head', () => {
+    const r = git(repoRoot, ['rev-parse', '-q', '--verify', 'HEAD']);
+    if (!r.error && r.status === 0) return { valor: true, recordar: true };
+    if (!r.error && r.status === 1) return { valor: false, recordar: true };
+    return { valor: null, recordar: false };
+  });
+}
+/** Como siempre: git que no contestó cuenta como «sin historia». */
+const tieneHead = (repoRoot) => cabeza(repoRoot) === true;
+
+/** Los archivos de `.tycon/` en el `HEAD` (un Set), o null si git no contestó. Sin historia, vacío. */
+function tyconCommiteado(repoRoot) {
+  return memo(_cache, repoRoot, 'tycon', () => {
+    const h = cabeza(repoRoot);
+    if (h === null) return { valor: null, recordar: false };
+    if (h === false) return { valor: new Set(), recordar: true };
+    // --full-tree: la ruta y lo que imprime son desde la raíz, como `show HEAD:<ruta>`, aunque repoRoot sea una subcarpeta
+    const r = git(repoRoot, ['ls-tree', '-r', '-z', '--full-tree', '--name-only', 'HEAD', '--', '.tycon/']);
+    if (r.error || r.status !== 0) return { valor: null, recordar: false };
+    return { valor: new Set(String(r.stdout).split('\0').filter(Boolean)), recordar: true };
+  });
+}
+
+/** El contenido de `rel` en el `HEAD`, o null si no está commiteado (o git no contestó). */
+function commiteadoDe(repoRoot, rel) {
+  return memo(_cache, repoRoot, `show:${rel}`, () => {
+    const lista = rel.startsWith('.tycon/') ? tyconCommiteado(repoRoot) : null;
+    if (lista && !lista.has(rel)) return { valor: null, recordar: true };
+    const r = git(repoRoot, ['show', `HEAD:${rel}`]);
+    if (!r.error && r.status === 0) return { valor: r.stdout, recordar: true };
+    // sin la lista no se distingue «no está» de «git no contestó»: no se recuerda
+    return { valor: null, recordar: false };
+  });
+}
+
 /** El yaml tal como está en el ÚLTIMO COMMIT, o null si no está commiteado. */
 function leerCommiteado(repoRoot) {
   for (const n of NOMBRES) {
-    try { return git(repoRoot, ['show', `HEAD:.tycon/${n}`]); } catch (_e) { /* siguiente */ }
+    const v = commiteadoDe(repoRoot, `.tycon/${n}`);
+    if (v !== null) return v;
   }
   return null;
-}
-
-function tieneHead(repoRoot) {
-  try { git(repoRoot, ['rev-parse', '--verify', 'HEAD']); return true; } catch (_e) { return false; }
 }
 
 /**
@@ -85,13 +125,10 @@ function tieneHead(repoRoot) {
  */
 function leerAmbas(repoRoot) {
   if (!repoRoot) return { carpeta: null, commiteado: null, hayHistoria: false, difieren: false };
-  if (_cache.has(repoRoot)) return _cache.get(repoRoot);
   const carpeta = leerCarpeta(repoRoot);
   const commiteado = leerCommiteado(repoRoot);
   const hayHistoria = commiteado !== null || tieneHead(repoRoot);
-  const out = { carpeta, commiteado, hayHistoria, difieren: (carpeta || '') !== (commiteado || '') };
-  _cache.set(repoRoot, out);
-  return out;
+  return { carpeta, commiteado, hayHistoria, difieren: (carpeta || '') !== (commiteado || '') };
 }
 
 /**
@@ -119,8 +156,7 @@ function textoParaFreno(repoRoot) {
 function archivoParaFreno(repoRoot, relativo) {
   if (!repoRoot || !relativo) return null;
   const rel = String(relativo).replace(/\\/g, '/');
-  let commiteado = null;
-  try { commiteado = git(repoRoot, ['show', `HEAD:${rel}`]); } catch (_e) { commiteado = null; }
+  const commiteado = commiteadoDe(repoRoot, rel);
   if (commiteado !== null) return commiteado;
   // Sin el archivo en HEAD: si el repo TIENE historia, esa ausencia es la respuesta (no está
   // commiteado ⇒ no cuenta). Sin historia todavía no hay contra qué contrastar → la carpeta.

@@ -462,7 +462,7 @@ test('T22 Tablero_FichaDesplieguesDeLaFoto', () => {
 test('T28 Registro_SuiteYPiezas', () => {
   const s = fs.readFileSync(path.join(ROOT, 'scripts', 'tests', 'suites.json'), 'utf8');
   assert.match(s, /"tests\/nightly-deployments\.test\.js"/);
-  const g = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const g = require('./lib/pieces-guide.js').piecesText(ROOT);
   assert.match(g, /deployments\.js/);
   assert.match(g, /nightly-deployments/);
 });

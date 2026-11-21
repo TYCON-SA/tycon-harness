@@ -32,7 +32,7 @@ const STEPS = [
   { number: 8, id: 'adversarial-pass', name: 'Pase adversarial', file: 'step-08-adversarial-pass.md', old: ['5b'], flag: 'deepReviewDone' },
   { number: 9, id: 'findings', name: 'Hallazgos', file: 'step-09-findings.md', old: ['6', '7'], waitsForPerson: true },
   { number: 10, id: 'live-check', name: 'Probar en vivo', file: 'step-10-live-check.md', old: ['7c'], flag: 'dodRuntimeChecked' },
-  { number: 11, id: 'prepare-commit', name: 'Preparar el commit', file: 'step-11-prepare-commit.md', old: ['8'] },
+  { number: 11, id: 'prepare-commit', name: 'Preparar el pull request', file: 'step-11-prepare-commit.md', old: ['8'] },
 ];
 // Corre aparte, después del merge (`/tycon-pipeline close`): no está en la numeración.
 const CLOSE_STEP = { id: 'close-work-item', name: 'Cerrar la historia', file: 'close-work-item.md', old: ['9'] };
@@ -221,6 +221,17 @@ function resolveStepArg(marker, raw, opts = {}) {
   return { ok: false, message: `«${v}» no es un paso. Los pasos: ${nombresValidos()}.` };
 }
 
+/**
+ * ¿Los `ids` que cierra `complete-step` (los de `resolveStepArg`) cierran el paso `id`? En el marcador nuevo, si lo
+ * nombran; en el viejo, si traen todos sus números de entonces (el «Preparar el pull request» viejo es el 8).
+ */
+function closesStep(marker, ids, id) {
+  const lista = (Array.isArray(ids) ? ids : []).map(String);
+  if (lista.includes(id)) return true;
+  if (schemeOf(marker) !== 1 || !OLD_CLOSE[id]) return false;
+  return OLD_CLOSE[id].every((o) => lista.includes(o));
+}
+
 /** Las partes del Arranque que corren y todavía no se hicieron, ni fallaron. `applies`: `{ 'time-tracking': bool, ado: bool }`. */
 function startPartsPending(marker, applies) {
   const avisadas = new Set((Array.isArray(marker && marker.startWarnings) ? marker.startWarnings : []).map((w) => w && w.part));
@@ -253,21 +264,114 @@ function startWarningLines(marker) {
   return out;
 }
 
+/** El último cierre de los revisores, en milisegundos: `completedAt` guarda el de la primera vuelta. */
+function reviewersClose(marker) {
+  const t = ((marker && marker.stepTimings) || {}).reviewers || {};
+  const cierre = Date.parse(t.lastCompletedAt || t.completedAt || '');
+  return Number.isFinite(cierre) ? cierre : null;
+}
+
+/**
+ * Los nombres de unos archivos: la ruta desde la raíz de su repo (o desde el de la historia; si no, entera). Si dos
+ * archivos de repos distintos dan el mismo nombre (`src/index.ts` en el repo de la historia y en un hermano), los dos
+ * llevan delante la carpeta de su repo: si no, se contarían como uno.
+ */
+function nombresDeArchivos(absolutos, marker) {
+  const { raizDelRepo } = require('./reloop-code.js');
+  const partes = absolutos.map((abs) => {
+    const base = raizDelRepo(abs) || (marker && marker.repoPath ? path.resolve(marker.repoPath) : null);
+    const rel = base ? path.relative(base, abs) : '';
+    return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? { base, rel: rel.split(path.sep).join('/') } : { base: null, rel: abs };
+  });
+  const veces = new Map();
+  for (const p of partes) veces.set(p.rel, (veces.get(p.rel) || 0) + 1);
+  return partes.map((p) => (p.base && veces.get(p.rel) > 1 ? `${path.basename(p.base)}/${p.rel}` : p.rel));
+}
+
 /**
  * ¿Hay que volver a los revisores? Con Hallazgos cerrado, una edición de código posterior al último cierre de los
- * revisores es un arreglo: toca otra vuelta. → `{ round }` o `null`. `isCode(path)` decide qué es código.
+ * revisores es un arreglo: toca otra vuelta. → `{ round, archivos, desde }` o `null`: los archivos de código sin
+ * repetir, como se nombran, y la hora del primero. Qué edición cuenta lo decide lib/reloop-code.js.
+ *
+ * Lo ya anotado en `otraVuelta` del marcador después del mismo cierre de los revisores se conserva: `fileEvents` se
+ * recorta a 500 y un cambio viejo no se pierde por eso.
+ *
+ * `aunConHallazgos`: decide también con Hallazgos abierto. Lo usa el freno de «Preparar el commit»: un arreglo hecho
+ * después de los revisores pide la vuelta aunque Hallazgos no se haya cerrado; `next` espera a que cierre.
+ *
+ * Un archivo que quedó igual a lo revisado, salvo el lugar de sus comentarios, no cuenta (historia 8.217): lo decide
+ * lib/frozen-tree.js contra el sello de la última vuelta cerrada. Si eso falla, no se saca ninguno.
  */
-function reviewersRound(marker, isCode) {
-  if (!marker || schemeOf(marker) !== 2 || !isDone(marker, 'findings')) return null;
+function reviewersRound(marker, { aunConHallazgos = false } = {}) {
+  if (!marker || schemeOf(marker) !== 2) return null;
+  if (!aunConHallazgos && !isDone(marker, 'findings')) return null;
+  if (aunConHallazgos && !isDone(marker, 'reviewers')) return null;
   const t = (marker.stepTimings || {}).reviewers || {};
-  // el ÚLTIMO cierre de los revisores: `completedAt` guarda el de la primera vuelta (la que miden los tiempos)
-  const cierre = Date.parse(t.lastCompletedAt || t.completedAt || '');
-  if (!Number.isFinite(cierre)) return null;
-  const arreglo = (Array.isArray(marker.fileEvents) ? marker.fileEvents : [])
-    // la marca `code` del evento (la pone on-edit) gana: el cartel decide con ella y tiene que decidir igual
-    .some((e) => e && Date.parse(e.ts || '') > cierre && (typeof e.code === 'boolean' ? e.code : (!isCode || isCode(e.path))));
-  if (!arreglo) return null;
-  return { round: (Number(t.rounds) || 1) + 1 };
+  const cierre = reviewersClose(marker);
+  if (cierre === null) return null;
+  const { pideOtraVuelta } = require('./reloop-code.js');
+  const previo = marker.otraVuelta && typeof marker.otraVuelta === 'object' && Date.parse(marker.otraVuelta.desde || '') > cierre ? marker.otraVuelta : null;
+  let desde = previo ? Date.parse(previo.desde) : null;
+  // si la regla falla, el archivo pide otra vuelta: ante la duda, se revisa (lo mismo que anota on-edit)
+  const pide = (p) => { try { return pideOtraVuelta(p, { storyPath: marker.storyPath, repoPath: marker.repoPath }); } catch (_) { return true; } };
+  // sin repetir por la ruta entera: por el nombre, dos archivos de repos distintos se juntarían
+  const absolutos = [];
+  const primero = new Map();
+  for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {
+    const ts = Date.parse((e && e.ts) || '');
+    // la marca `code` en falso (la pone on-edit) gana: el cartel decide con ella y tiene que decidir igual; en verdadero
+    // no alcanza, porque un marcador de antes la ponía también en lo que el arnés escribe en .advisors o en una prueba
+    if (!(ts > cierre) || e.code === false || !pide(e.path)) continue;
+    const abs = path.resolve(String(e.path));
+    if (!absolutos.includes(abs)) absolutos.push(abs);
+    if (!primero.has(abs) || ts < primero.get(abs)) primero.set(abs, ts);
+  }
+  let movidos = new Set();
+  if (absolutos.length) {
+    try { movidos = require('./frozen-tree.js').comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos: absolutos }); } catch (e) { anotarFalla(e); }
+  }
+  const cuentan = absolutos.filter((abs) => !movidos.has(abs));
+  for (const abs of cuentan) if (desde === null || primero.get(abs) < desde) desde = primero.get(abs);
+  const archivos = previo && Array.isArray(previo.archivos) ? previo.archivos.filter((a) => typeof a === 'string') : [];
+  for (const nombre of nombresDeArchivos(cuentan, marker)) if (!archivos.includes(nombre)) archivos.push(nombre);
+  if (!archivos.length) return null;
+  return { round: (Number(t.rounds) || 1) + 1, archivos, desde: new Date(desde).toISOString() };
+}
+
+/** Una falla al mirar lo revisado: queda en hook-errors.log y la decisión sigue como si no se hubiera mirado. */
+function anotarFalla(e) {
+  try {
+    const fs = require('fs');
+    const dir = require('./state-dir.js').stateDir(require('os').homedir());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] reviewersRound: no pude ver si sólo se movieron comentarios (${String((e && e.message) || e).split('\n')[0]}) — cuentan todos\n`, 'utf8');
+  } catch (_) { /* ayuda, no evidencia */ }
+}
+
+/**
+ * Lo que se guarda en el marcador como `otraVuelta` (el cartel lo lee y no decide la vuelta por su cuenta): el
+ * resultado de `reviewersRound`, o `undefined` (el campo no va) en un marcador por número o antes de cerrar Hallazgos,
+ * cuando todavía no puede haber otra vuelta.
+ */
+function otraVueltaDe(marker) {
+  if (!marker || schemeOf(marker) !== 2 || !isDone(marker, 'findings')) return undefined;
+  return reviewersRound(marker);
+}
+
+/**
+ * ¿Hay que volver a «Preparar el commit»? Sí, si estaba hecho y los revisores cerraron después: lo que preparó ya no es
+ * lo revisado. Compara dos horas del marcador; el cartel tiene una copia de esta regla (mods/harness-mods/hooks/run.mjs)
+ * y la prueba de igualdad de harness-mods.test.js frena si se separan.
+ */
+function prepareCommitStale(marker) {
+  if (!marker || schemeOf(marker) !== 2 || !isDone(marker, 'prepare-commit')) return false;
+  const cierre = reviewersClose(marker);
+  const ultimo = Date.parse((((marker.stepTimings || {})['prepare-commit']) || {}).completedAt || '');
+  if (cierre === null || !Number.isFinite(ultimo) || cierre <= ultimo) return false;
+  // con la hora del último revisor lanzado (on-advisor-run.js la anota y sólo avanza): una vuelta que se cerró sola
+  // después de «Preparar» no lanzó ninguno y no cambió lo preparado. Sin la hora, o ilegible, como antes
+  const revisor = Date.parse(typeof marker.ultimoRevisorTs === 'string' ? marker.ultimoRevisorTs : '');
+  return !Number.isFinite(revisor) || revisor > ultimo;
 }
 
 /** ¿Está abierto Hallazgos? (los revisores cerrados y Hallazgos sin cerrar, en un marcador nuevo) */
@@ -366,7 +470,7 @@ function retireCheck({ mirror, since, today, stateFile }) {
 module.exports = {
   SCHEME, STEPS, CLOSE_STEP, TOTAL, OLD_IDS, ORDER_REQUIRES, START_PARTS, OLD_NUMBERS_UNTIL, SCHEME_TWO_SINCE,
   STEP_CLOSE_CHECKS, closeControlsByStep, byId, byNumber, fromOld, newFromOld, schemeOf, stepName, stepNames, isDone, isPending, pendingSteps,
-  resolveStepArg, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersRound, findingsOpen, noteFindingsWait, noteFindingsAnswer, retireCheck,
+  resolveStepArg, closesStep, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersClose, reviewersRound, otraVueltaDe, prepareCommitStale, findingsOpen, noteFindingsWait, noteFindingsAnswer, retireCheck,
 };
 
 if (require.main === module) {

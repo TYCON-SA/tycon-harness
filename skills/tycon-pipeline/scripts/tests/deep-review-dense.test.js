@@ -153,7 +153,7 @@ test('un override explícito decide SIN necesitar la densidad: forzar el pase, o
 
   const pedido = gateCrudo(repo, { TYCON_NO_DEEP_REVIEW: '1' }, []);
   assert.equal(pedido.status, 2, 'sin la firma, el pedido no decide: falta la densidad');
-  assert.match(pedido.stderr, /saltearlo lo firma el dueño/);
+  assert.match(pedido.stderr, /saltearlo lo firma una persona/);
 
   const { computeDeepReviewGate } = require(PIPELINE);
   const firmado = computeDeepReviewGate({ repo, story: path.join(repo, 'story.md'), files: [], noDeepReview: true,
@@ -252,4 +252,78 @@ test('@story-7.26 un archivo del repo hermano a más de 12 carpetas de su raíz 
   const v = gate(a, {}, f);
   assert.equal(v.archivos_no_medidos, undefined, JSON.stringify(v));
   assert.equal(v.lineas_agregadas, 2);
+});
+
+// ── Lo commiteado durante la corrida también es del diff ───────────────────────────────────────────
+//
+// El conteo comparaba contra HEAD: con la implementación ya commiteada, el portón contaba 0 líneas, daba LOW y salteaba
+// el pase sin aviso. Se mide contra la base de la corrida (`baseSha` del marcador) o, sin marcador, contra la
+// bifurcación con la rama principal (lib/coverage-base.js).
+
+// Un repo con su base commiteada y, encima, `extra` líneas commiteadas en otra rama. Devuelve el repo y la base.
+function repoConTrabajoCommiteado(extra) {
+  const r = mkRepoConScope(1);
+  git(r, 'add', '-A');
+  git(r, 'commit', '-q', '-m', 'base');
+  const base = git(r, 'rev-parse', 'HEAD').trim();
+  git(r, 'checkout', '-q', '-b', 'story/x');
+  fs.appendFileSync(path.join(r, 'src', 'vista.js'), Array.from({ length: extra }, (_, i) => `const w${i} = ${i};`).join('\n') + '\n');
+  git(r, 'commit', '-q', '-am', 'trabajo de la corrida');
+  return { r, base };
+}
+
+test('con el trabajo commiteado y una rama principal, cuenta lo de la rama: no da 0 líneas', () => {
+  const { r, base } = repoConTrabajoCommiteado(400);
+  git(r, 'update-ref', 'refs/remotes/origin/main', base);
+  const v = gate(r, {}, 'src/vista.js');
+  assert.equal(v.lineas_agregadas, 400, `midió ${v.lineas_agregadas}: lo commiteado en la rama también cambió`);
+  assert.equal(v.run, true);
+  assert.equal(v.risk, 'dense');
+});
+
+test('con la base de la corrida en el marcador, cuenta desde ahí aunque no haya rama principal', () => {
+  const { r, base } = repoConTrabajoCommiteado(400);
+  const { densidadDelDiff } = require(PIPELINE);
+  assert.equal(densidadDelDiff(r, ['src/vista.js'], { marcador: { baseSha: base, repoPath: r } }).lineas, 400);
+});
+
+test('un marcador de otro repo no presta su base: se mide contra la bifurcación con la rama principal', () => {
+  // La base del marcador ajeno es el HEAD de este repo: si la prestara, contaría 0.
+  const { r } = repoConTrabajoCommiteado(400);
+  const otro = mkRepoConScope(1);
+  const { densidadDelDiff } = require(PIPELINE);
+  const head = git(r, 'rev-parse', 'HEAD').trim();
+  assert.equal(densidadDelDiff(r, ['src/vista.js'], { marcador: { baseSha: head, repoPath: otro } }).lineas, 400);
+});
+
+test('el portón toma la base de la corrida que lee de la máquina (deepReviewGateDeLaCorrida)', () => {
+  // Sin rama principal (se borra `main`), sólo el marcador sabe dónde arrancó la corrida.
+  const { r, base } = repoConTrabajoCommiteado(400);
+  git(r, 'branch', '-D', 'main');
+  const { deepReviewGateDeLaCorrida } = require(PIPELINE);
+  const args = { repo: r, story: path.join(r, 'story.md'), files: ['src/vista.js'], filesDeclarado: true };
+  const sin = deepReviewGateDeLaCorrida({ args, corrida: null }).result;
+  assert.equal(sin.lineas_agregadas, 0, 'sin la corrida, contra HEAD: lo commiteado no se ve');
+  const con = deepReviewGateDeLaCorrida({ args, corrida: { baseSha: base, repoPath: r } }).result;
+  assert.equal(con.lineas_agregadas, 400, JSON.stringify(con));
+  assert.equal(con.run, true);
+});
+
+test('una base de la corrida que no sirve se dice en el veredicto, no cae callada a HEAD', () => {
+  const { r } = repoConTrabajoCommiteado(10);
+  git(r, 'branch', '-D', 'main');
+  const { deepReviewGateDeLaCorrida } = require(PIPELINE);
+  const args = { repo: r, story: path.join(r, 'story.md'), files: ['src/vista.js'], filesDeclarado: true };
+  const v = deepReviewGateDeLaCorrida({ args, corrida: { baseSha: 'f'.repeat(40), repoPath: r } }).result;
+  assert.ok(Array.isArray(v.base_descartada) && /marcador/.test(v.base_descartada[0]), JSON.stringify(v));
+});
+
+test('un marcador de este repo con una base perdida cae a la bifurcación, no a HEAD', () => {
+  // Lo encontró el pase adversarial: el respaldo a la bifurcación sólo corría sin marcador o con el de otro repo.
+  const { r, base } = repoConTrabajoCommiteado(400);
+  git(r, 'update-ref', 'refs/remotes/origin/main', base);
+  const { densidadDelDiff } = require(PIPELINE);
+  const d = densidadDelDiff(r, ['src/vista.js'], { marcador: { baseSha: 'f'.repeat(40), repoPath: r } });
+  assert.equal(d.lineas, 400);
+  assert.ok(d.avisosBase.some((a) => /marcador/.test(a)), JSON.stringify(d.avisosBase));
 });

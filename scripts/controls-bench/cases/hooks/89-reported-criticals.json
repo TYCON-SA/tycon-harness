@@ -1,0 +1,91 @@
+{
+  "__doc": "Los críticos que reporta un revisor los anota el arnés, no el agente (2026-11-10). `findings.json` lo arma el agente: podía omitir un crítico, rebajarlo o darlo por arreglado sin que nada lo comprobara. El gancho del fin del subagente (on-advisor-done.js, SubagentStop) lee lo que contestó un revisor del set de la vuelta de su propia transcripción —el renglón «Veredicto: hallazgos (…)», la regla una vez por hallazgo— y lo anota en el registro de críticos reportados del estado, que después cruzan write-findings y el cierre de «Hallazgos». Estos casos fijan que anota la cuenta por regla de las palabras del revisor (no del pedido del orquestador), que un agente que no salió en la vuelta no se anota, y que un reporte sin el renglón queda ilegible, nunca «sin críticos».",
+  "hooks": [
+    {
+      "hook": "on-advisor-done.js (el registro de críticos reportados)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-done.js",
+      "event": "SubagentStop",
+      "matcher": "",
+      "cases": [
+        {
+          "id": "anota-la-regla-con-su-cuenta-de-las-palabras-del-revisor",
+          "type": "must-run",
+          "__nota": "El revisor salió en la vuelta (su renglón `launched`) y cerró con dos SEC-C1. El pedido del orquestador nombra PIPE-C9: no es palabra del revisor y no se anota.",
+          "files": {
+            "_registro.jsonl": "{\"ts\":\"2026-11-10T10:00:00.000Z\",\"kind\":\"launched\",\"advisor\":\"tycon-plugin-security-basics\",\"iter\":1,\"story\":\"9.9\",\"run\":null,\"launcher\":\"claude\"}\n",
+            "_transcripcion.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Revisá; ojo con [PIPE-C9].\"}]}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"- Dos secretos en el código; bloquea.\\nVeredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí\"}]}}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/reported-criticals",
+            "cp _registro.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/reported-criticals/bench-rc1.jsonl"
+          ],
+          "stdin": {
+            "hook_event_name": "SubagentStop",
+            "session_id": "bench-rc1",
+            "agent_id": "ag-1",
+            "agent_type": "tycon-plugin-security-basics",
+            "agent_transcript_path": "${FIXTURE}/_transcripcion.jsonl"
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/reported-criticals/bench-rc1.jsonl", "re": "\"kind\":\"report\".*\"readable\":true.*\"criticals\":\\[\\{\"rule\":\"SEC-C1\",\"count\":2\\}\\]" }
+            ],
+            "file_not_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/reported-criticals/bench-rc1.jsonl", "re": "PIPE-C9" }
+            ]
+          }
+        },
+        {
+          "id": "un-agente-que-no-salio-en-la-vuelta-no-se-anota",
+          "type": "must-stay-quiet",
+          "__nota": "Un agente de exploración termina con críticos en su texto: no tiene lanzamiento en el registro, así que no es un revisor del set y no se anota nada. Afirma que algo NO pasa: es la contracara del primer caso, y un control mudo también lo cumple (por eso no es un must-run).",
+          "files": {
+            "_registro.jsonl": "{\"ts\":\"2026-11-10T10:00:00.000Z\",\"kind\":\"launched\",\"advisor\":\"tycon-plugin-security-basics\",\"iter\":1,\"story\":\"9.9\",\"run\":null,\"launcher\":\"claude\"}\n",
+            "_transcripcion.jsonl": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Veredicto: hallazgos (SEC-C7) · bloquea: sí\"}]}}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/reported-criticals",
+            "cp _registro.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/reported-criticals/bench-rc2.jsonl"
+          ],
+          "stdin": {
+            "hook_event_name": "SubagentStop",
+            "session_id": "bench-rc2",
+            "agent_id": "ag-2",
+            "agent_type": "Explore",
+            "agent_transcript_path": "${FIXTURE}/_transcripcion.jsonl"
+          },
+          "expect": {
+            "file_not_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/reported-criticals/bench-rc2.jsonl", "re": "\"kind\":\"report\"" }
+            ]
+          }
+        },
+        {
+          "id": "sin-el-renglon-de-veredicto-queda-ilegible",
+          "type": "must-run",
+          "__nota": "El revisor devolvió sus bullets y «tengo el detalle», sin el renglón: queda anotado como ilegible, con el motivo. El cierre lo dice («no pude leer lo que reportó»), nunca lo toma como «sin críticos».",
+          "files": {
+            "_registro.jsonl": "{\"ts\":\"2026-11-10T10:00:00.000Z\",\"kind\":\"launched\",\"advisor\":\"tycon-plugin-security-basics\",\"iter\":1,\"story\":\"9.9\",\"run\":null,\"launcher\":\"claude\"}\n",
+            "_transcripcion.jsonl": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"- Encontré algo; tengo el detalle, pedímelo.\\n**Veredicto**: RED\"}]}}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/reported-criticals",
+            "cp _registro.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/reported-criticals/bench-rc3.jsonl"
+          ],
+          "stdin": {
+            "hook_event_name": "SubagentStop",
+            "session_id": "bench-rc3",
+            "agent_id": "ag-3",
+            "agent_type": "tycon-plugin-security-basics",
+            "agent_transcript_path": "${FIXTURE}/_transcripcion.jsonl"
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/reported-criticals/bench-rc3.jsonl", "re": "\"kind\":\"report\".*\"readable\":false.*Veredicto" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

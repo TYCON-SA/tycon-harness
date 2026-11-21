@@ -109,8 +109,20 @@ try { ({ rubrosNoMedidos } = require(path.join(__dirname, '..', 'controls-bench'
 // (vacía) callaría sobre el examen y dejaría el sello de la corrida sin reporte que lo respalde.
 let LUGAR_EXAMEN = null;
 try { if (EXAMEN && typeof EXAMEN.lugarDelExamen === 'function') LUGAR_EXAMEN = EXAMEN.lugarDelExamen(); } catch { /* clon viejo */ }
-const RUTA_EXAMEN = leerVariable('TYCON_EXAM_REPORT')
-  || (LUGAR_EXAMEN ? path.join(LUGAR_EXAMEN.repo, EXAMEN.RUTA_REPORTE_QUE_VIAJA) : path.join(__dirname, '..', 'controls-bench', 'ultimo-examen.json'));
+// El camino de los resultados de la noche (scripts/lib/result-travel.js): dónde se guardan y si viajaron. Sin él (clon
+// viejo, o el hook copiado solo), no hay nada de eso que leer.
+let VIAJE = null;
+try { VIAJE = require(path.join(__dirname, '..', 'lib', 'result-travel.js')); } catch { /* clon viejo */ }
+// El reporte del examen más nuevo, por `ts`, entre el del clon y el guardado en la carpeta de estado: uno publicado que el
+// clon todavía no bajó vive en el estado, y leer sólo el del clon denunciaría un examen viejo. Con la variable, manda ella.
+const RUTA_EXAMEN = leerVariable('TYCON_EXAM_REPORT') || (() => {
+  const delClon = LUGAR_EXAMEN ? path.join(LUGAR_EXAMEN.repo, EXAMEN.RUTA_REPORTE_QUE_VIAJA) : path.join(__dirname, '..', 'controls-bench', 'ultimo-examen.json');
+  if (!VIAJE || !EXAMEN) return delClon;
+  let guardado;
+  try { guardado = VIAJE.keptPath('exam', EXAMEN.RUTA_REPORTE_QUE_VIAJA); } catch { return delClon; }
+  const fecha = (p) => { const r = readJson(p); const t = r && r.ts ? Date.parse(r.ts) : NaN; return Number.isFinite(t) ? t : -Infinity; };
+  return fecha(guardado) > fecha(delClon) ? guardado : delClon;
+})();
 
 function readJson(p) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
@@ -129,7 +141,10 @@ try { const { clean } = require(path.join(__dirname, '..', 'lib', 'maintainers-s
 function examenSinMaquinaDesignada() {
   const ruta = leerVariable('TYCON_EXAM_CONFIG') || (LUGAR_EXAMEN && LUGAR_EXAMEN.config)
     || path.join(__dirname, '..', 'controls-bench', 'exam-config.json');
-  const cfg = readJson(ruta);
+  // las claves del equipo que el clon de mantenimiento trae encima (`teamConfig`): las compone el examen, para leer
+  // la misma máquina designada que el disparador y la corrida
+  const cfg = !leerVariable('TYCON_EXAM_CONFIG') && LUGAR_EXAMEN && LUGAR_EXAMEN.teamConfig && typeof EXAMEN.leerConfig === 'function'
+    ? EXAMEN.leerConfig(LUGAR_EXAMEN) : readJson(ruta);
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return false;
   return !String(cfg.designated_machine == null ? '' : cfg.designated_machine).trim();
 }
@@ -200,6 +215,44 @@ function fotoNocturna(nombre, variable) {
 }
 const fotoDelBanco = () => fotoNocturna('ultimo-banco.json', 'TYCON_BENCH_REPORT');
 const fotoDeLasSuites = () => fotoNocturna('ultimo-suites.json', 'TYCON_SUITES_REPORT');
+const fotoDeLasConstancias = () => fotoNocturna('ultimo-constancias.json', 'TYCON_APPROVALS_REPORT');
+
+/**
+ * Las constancias del dueño que salieron de main sin su firma (scripts/ci/approvals-removed.js). Calla sólo con una foto
+ * fresca, medida y sin borrados sin firma. En la máquina que espera los nocturnos, sin foto o con una ilegible lo dice;
+ * una foto vieja dice que no se sabe si la cuenta corrió (sus «cero» ya no son el estado de hoy), y una que no se pudo
+ * medir, o con la lista mal formada, dice «no medido», nunca cero.
+ */
+function estadoDeLasConstancias() {
+  const QUE = 'constancias del dueño que salieron de main';
+  const foto = fotoDeLasConstancias();
+  const rep = foto.rep;
+  if (!rep && !foto.espera) return [];
+  if (!rep) {
+    // la noche dejó la foto del banco y no la de la cuenta: el pipeline del banco no la corrió, o falló antes de guardarla
+    if (foto.estado !== 'ilegible' && fotoDelBanco().rep) {
+      return [`🟠 ${QUE}: no medido — la noche dejó la foto del banco y no la de esta cuenta (el pipeline del banco no la corrió o falló antes de guardarla)${foto.nota}`];
+    }
+    return [sinFoto(QUE, foto)];
+  }
+  const t = rep.ts ? Date.parse(rep.ts) : NaN;
+  const fecha = rep.ts ? limpio(String(rep.ts).slice(0, 10)) : '?';
+  if (Number.isNaN(t) || (Date.now() - t) > BANCO_VEJEZ_MS) {
+    // como las demás fotos de la noche: con la copia del clon vieja no se sabe; con la copia fresca, dejó de correr
+    const vieja = copiaVieja(foto, t);
+    if (vieja) return [`🟠 ${QUE}: no sé si la cuenta corrió — su última foto es del ${fecha} y ${vieja}${foto.nota}`];
+    const dias = Number.isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000);
+    return [`🔕 la cuenta de las ${QUE} NO ESTÁ CORRIENDO desde el ${fecha}${dias === null ? ' (fecha ilegible)' : ` (hace ${dias} día(s))`}`
+      + ' — su «cero» ya no es el estado de hoy · revisar el pipeline "Banco de controles (nocturno)" en Azure DevOps' + foto.nota];
+  }
+  if (rep.medido !== true) return [`🟠 ${QUE} (${fecha}): no medido — ${limpio(rep.motivo || 'la foto no dice por qué')}${foto.nota}`];
+  const sin = rep.sin_firma;
+  if (!Array.isArray(sin)) return [`🟠 ${QUE} (${fecha}): no medido — la foto no trae la lista de las que salieron sin firma${foto.nota}`];
+  if (!sin.length) return [];
+  const nombres = sin.slice(0, 3).map((x) => limpio((x && x.path) || '?')).join(' · ');
+  return [`🔴 constancias del dueño que salieron de main (${fecha}): ${sin.length} sin su firma — ${nombres}${sin.length > 3 ? ` (+${sin.length - 3} más)` : ''}`
+    + ` · el registro de lo que firmó se perdió: revisá esos commits${foto.nota}`];
+}
 /** En la máquina que espera los nocturnos, «no hay foto» y «la foto no se lee» se dicen, cada una con su texto. */
 function sinFoto(que, foto) {
   if (foto.estado === 'ilegible') return `🔴 ${que}: la foto está en el clon de mantenimiento y no se puede leer${foto.nota}`;
@@ -294,7 +347,78 @@ function estadoDeLasSuitesNocturnas() {
   const MAX_ROJAS = 3;
   const nombradas = conMotivo.slice(0, MAX_ROJAS).join(' · ') + (rojas.length > MAX_ROJAS ? ` · y ${rojas.length - MAX_ROJAS} más` : '');
   return [`🔴 suites de prueba nocturnas (foto del ${fecha}${cuando}): ${rojas.length} en rojo — ${nombradas}`
-    + (sinMedir ? ` · 🟡 ${sinMedir}` : '') + ' · detalle: scripts/controls-bench/ultimo-suites.json' + cola + foto.nota];
+    + (sinMedir ? ` · 🟡 ${sinMedir}` : '') + ' · detalle: scripts/controls-bench/ultimo-suites.json' + cola + foto.nota,
+  ...desdeLaUltimaVerde(rojas.slice(0, MAX_ROJAS), rep, foto)];
+}
+
+// ── Qué entró desde la última noche verde de cada suite roja ────────────────────────────────────────────────────────
+// Cada pedido corre sólo las suites que nombran lo que tocó (scripts/ci/suites-for-change.js --direct); lo que rompe
+// por un camino indirecto lo ve la noche. Para saber a quién le toca, la línea de abajo nombra los pedidos del privado
+// que entraron a main desde la última foto en que esa suite estaba verde, y el rango del público con su enlace. Sólo en
+// la máquina que lee las fotos de su clon de mantenimiento (ahí está la historia); sin una noche verde en las últimas
+// HISTORIA_NOCHES fotos, si git no contesta o si se pasa de TOPE_MS en total (el arranque no espera), no agrega nada.
+// El rango va de la foto verde a la roja, por la hora en que cada una se guardó: un pedido que entró mientras corría la
+// noche puede caer en la noche siguiente. Por eso la línea lo dice, y cuenta también los commits directos a main.
+const HISTORIA_NOCHES = 12;
+const TOPE_MS = 4000;
+function desdeLaUltimaVerde(rojas, rep, foto) {
+  if (!foto.espera || !NOCHE || !rojas.length) return [];
+  const { spawnSync } = require('child_process');
+  const hasta = Date.now() + TOPE_MS;
+  let agotado = false;
+  const git = (args) => {
+    const resta = hasta - Date.now();
+    if (resta <= 0) { agotado = true; return null; }
+    const r = spawnSync('git', ['-C', NOCHE.dir, ...args], { windowsHide: true, encoding: 'utf8', timeout: resta, maxBuffer: 16 * 1024 * 1024 });
+    if (r.status !== 0) { agotado = agotado || Date.now() >= hasta; return null; }
+    return String(r.stdout);
+  };
+  const ARCHIVO = 'scripts/controls-bench/ultimo-suites.json';
+  const log = git(['log', 'origin/main', '--format=%H', `-n${HISTORIA_NOCHES}`, '--', ARCHIVO]);
+  const shas = log ? log.split('\n').filter(Boolean) : [];
+  if (shas.length < 2) return [];
+  const fotos = new Map();
+  const fotoEn = (sha) => {
+    if (!fotos.has(sha)) {
+      let j = null;
+      const t = git(['show', `${sha}:${ARCHIVO}`]);
+      try { j = t ? JSON.parse(t) : null; } catch (_) { j = null; }
+      fotos.set(sha, j && typeof j === 'object' ? j : null);
+    }
+    return fotos.get(sha);
+  };
+  let url = null;
+  try { url = String(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'setup', 'public-remotes.json'), 'utf8')).remotes[0] || '').replace(/\.git$/, '') || null; } catch (_) { url = null; }
+  const corto = (c) => String(c).slice(0, 7);
+  const comun = (j) => (j && j.harness && /^[0-9a-f]{7,40}$/.test(String(j.harness.commit)) ? String(j.harness.commit) : null);
+  const out = [];
+  for (const suite of rojas) {
+    const verde = shas.slice(1).find((sha) => {
+      const j = fotoEn(sha);
+      return j && Array.isArray(j.ran) && j.ran.includes(suite) && !(j.failures || []).includes(suite);
+    });
+    if (agotado) return [];
+    if (!verde) continue;
+    // los commits de main entre las dos fotos: los merges dan los números de pedido; los demás (salvo los que guardan la
+    // propia foto) son commits directos. Si git no contesta, la línea no se escribe: «ningún pedido» sería falso.
+    const commits = git(['log', '--first-parent', '--format=%H%x09%P%x09%s', `${verde}..${shas[0]}`]);
+    if (commits === null) { if (agotado) return []; continue; }
+    const filas = commits.split('\n').filter(Boolean).map((l) => { const [h, p, ...s] = l.split('\t'); return { h, merge: p.trim().split(/\s+/).length > 1, s: s.join('\t') }; });
+    // del más viejo al más nuevo (git log da primero el último)
+    const prs = [...new Set(filas.filter((f) => f.merge).flatMap((f) => [...f.s.matchAll(/pull request (\d+)/gi)].map((m) => m[1])))].reverse();
+    // las fotos mismas no son cambios: se guardan en commits propios de la noche
+    const directos = filas.filter((f) => !f.merge && !shas.includes(f.h) && !/\[nocturno\]/i.test(f.s)).length;
+    const antes = comun(fotoEn(verde));
+    const ahora = comun(rep);
+    const publico = antes && ahora && antes !== ahora
+      ? (url ? `${url}/compare/${corto(antes)}...${corto(ahora)}` : `${corto(antes)}...${corto(ahora)}`) : null;
+    const fecha = limpio(String((fotoEn(verde) || {}).ts || '').slice(0, 10)) || '?';
+    out.push(`   ↳ ${limpio(suite)} — entró desde su última noche verde (${fecha}): privado: ${prs.length ? prs.join(', ') : 'ningún pedido'}`
+      + (directos ? ` y ${directos} commit(s) directo(s) a main` : '')
+      + (publico ? ` · público: ${limpio(publico, 200)}` : '')
+      + ' · por la hora en que se guardó cada foto: un pedido que entró mientras corría la noche puede caer en la siguiente');
+  }
+  return out;
 }
 
 function estadoDelBancoNocturno() {
@@ -324,6 +448,8 @@ function estadoDelBancoNocturno() {
   }
   const rojos = (rep.failed || 0) + (rep.parityBreaks || 0) + (rep.baselineRegressions || 0);
   const nm = rep.nomedido || 0;
+  const sinBase = rep.sinLineaDeBase ? ' · regresiones sin comparar: no había línea de base legible' : '';
+  if (sinBase && rojos === 0 && nm === 0) return [`🟡 banco de controles nocturno (${fecha}): ${Number(rep.ran) || 0} caso(s), sin rojos${sinBase}${foto.nota}`];
   if (rojos === 0 && nm === 0) {
     if (!foto.espera) return [];   // fresco y limpio: silencio, como siempre
     // En la máquina que espera los nocturnos habla igual, y dice ✅ sólo si la foto dice que corrió algún caso:
@@ -333,10 +459,15 @@ function estadoDelBancoNocturno() {
       ? `✅ banco de controles nocturno (${fecha}): ${casos} caso(s), sin rojos${foto.nota}`
       : `🟡 banco de controles nocturno (${fecha}): la foto no dice que haya corrido ningún caso — no es verde${foto.nota}`];
   }
+  // La foto junta dice por qué; una de antes de juntar sólo pudo quedar sin medir por el tiempo.
+  const motivos = rep.nomedidoPorMotivo && typeof rep.nomedidoPorMotivo === 'object'
+    ? Object.entries(rep.nomedidoPorMotivo).filter(([, n]) => typeof n === 'number' && n > 0).sort((a, b) => b[1] - a[1])
+      .map(([m, n]) => `${n}: ${limpio(m)}`).join(' · ')
+    : '';
   return [`${rojos ? '🔴' : '🟡'} banco de controles nocturno (${fecha}): ${rep.failed || 0} rojos`
     + ` · paridad rota ${rep.parityBreaks || 0} · regresiones ${rep.baselineRegressions || 0}`
-    + (nm ? ` · 🟡 ${nm} NO MEDIDO(s) (se les agotó el tiempo — la ejecución no está completa)` : '')
-    + ' · detalle: scripts/controls-bench/ultimo-banco.json' + foto.nota];
+    + (nm ? ` · 🟡 ${nm} NO MEDIDO(s) (${motivos || 'se les agotó el tiempo'} — la ejecución no está completa)` : '')
+    + sinBase + ' · detalle: scripts/controls-bench/ultimo-banco.json' + foto.nota];
 }
 
 // ── ¿El sello diario lo escribió el JOB, o una mano? ─────────────────────────
@@ -416,7 +547,13 @@ function estadoDelExamen(benchDir) {
     // sobre corridas que NO quedaron aisladas, o sea que canta verde una corrida no medida.
     // Es el mismo error que la nota de arriba documenta para `erroresDeCorrida`, con otro nombre.
     const fugas = rep.fugas || 0;
-    const rojos = (rep.criterio || 0) + (rep.inestables || 0) + (rep.paridadReal || 0)
+    // con una ejecución por caso, el examen repite los rojos de criterio: ahí sí se sabe cuáles son inestables (los que
+    // acertaron de entrada no se repiten, y su inestabilidad sigue sin medir). El número sale de la repetición misma, no
+    // del contador de arriba (un recuento a mano lo vuelve a «no medido»), y sólo si alguno se pudo repetir
+    const rp = rep.repeticion && typeof rep.repeticion.repetidos === 'number' ? rep.repeticion : null;
+    const rpMedida = rp && Number(rp.inestables || 0) + Number(rp.siguen || 0) > 0;
+    const inestablesN = rpMedida ? Number(rp.inestables || 0) : (rep.inestables || 0);
+    const rojos = (rep.criterio || 0) + inestablesN + (rep.paridadReal || 0)
       + (rep.baselineRegressions || 0) + errores + salteados + fugas;
     // Lo que esta corrida NO pudo medir se dice con esas palabras, nunca "0". No suma
     // rojos —no dice nada del revisor— y NO fuerza la línea: un examen fresco y sin rojos sigue
@@ -425,9 +562,12 @@ function estadoDelExamen(benchDir) {
     // arranque para siempre, y un aviso que sale siempre se ignora. El silencio no afirma nada;
     // lo que afirmaría algo es el 0, y ése no se imprime ni cuando la línea sale (T50, T54).
     const nm = rubrosNoMedidos({ tool: rep.tool, runs: rep.runs });
-    const inestables = nm.inestables
-      ? `inestables NO MEDIDOS (${nm.inestables})`
-      : `${rep.inestables || 0} inestables (cambia de opinión entre ejecuciones)`;
+    const sinRepetir = rp && rp.sin_repetir ? ` (${rp.sin_repetir} rojo(s) no se pudieron repetir)` : '';
+    const inestables = nm.inestables && rpMedida
+      ? `${inestablesN} inestables de ${rp.repetidos} que fallaron y se repitieron${sinRepetir}`
+      : nm.inestables
+        ? `inestables NO MEDIDOS (${nm.inestables})${sinRepetir}`
+        : `${rep.inestables || 0} inestables (cambia de opinión entre ejecuciones)`;
     const paridad = nm.paridad
       ? `paridad NO MEDIDA (${nm.paridad})`
       : `paridad rota ${rep.paridadReal || 0}`;
@@ -456,6 +596,68 @@ function estadoDelExamen(benchDir) {
   return lineas;
 }
 
+// El nocturno lleva las entradas a main cerca de las 07:15 UTC; lo publicado después espera a la noche siguiente.
+// 36 h cubren una noche perdida por la hora, no dos.
+const PLAZO_DEL_NOCTURNO_MS = 36 * 60 * 60 * 1000;
+/**
+ * ¿Viajaron los resultados de la noche? (scripts/lib/result-travel.js). Una línea por pieza que no pudo publicar; y de lo
+ * publicado, lo que `carried.json` de `origin/main` del clon dice rechazado, o que no llegó a main en el plazo. Sin salir
+ * a la red: con la copia del clon anterior al plazo, no se sabe, y se dice con el comando para traerla.
+ */
+function estadoDelViaje() {
+  // Sin la librería calla: el aviso y la librería viajan juntos, y los casos del banco copian el aviso solo y esperan
+  // silencio (scripts/controls-bench/cases/hooks/08-bench-notice.json).
+  if (!VIAJE) return [];
+  const QUE = 'resultados de la noche';
+  const st = VIAJE.readStatus();
+  if (st.state === 'missing') return [];
+  if (st.state === 'unreadable') return [`🟠 ${QUE}: no sé si viajaron — no puedo leer ${limpio(st.path, 300)} (${limpio(st.why)})`];
+  let ND = null;
+  try { ND = require(path.join(__dirname, '..', 'lib', 'night-data.js')); } catch { /* clon viejo */ }
+  const dir = LUGAR_EXAMEN && LUGAR_EXAMEN.repo;
+  let llevados = null;
+  const leerLlevados = () => {
+    if (llevados) return llevados;
+    if (!ND || !dir) return (llevados = { state: 'unknown', why: 'no sé cuál es el clon de mantenimiento' });
+    const r = ND.readPublished(dir, VIAJE.CARRIED);
+    if (r.from !== 'published') return (llevados = { state: 'unknown', why: r.why || 'no pude leer lo publicado' });
+    if (r.state === 'missing') return (llevados = { state: 'ok', entries: {} });
+    try {
+      const d = JSON.parse(r.text);
+      return (llevados = { state: 'ok', entries: d && d.entries && typeof d.entries === 'object' ? d.entries : {} });
+    } catch { return (llevados = { state: 'unknown', why: `${VIAJE.CARRIED} de main no es JSON` }); }
+  };
+  const lineas = [];
+  for (const [pieza, nombre] of Object.entries(VIAJE.PIECES)) {
+    const p = st.pieces[pieza];
+    if (!p || typeof p !== 'object') continue;
+    if (p.ok === false) {
+      lineas.push(`🔴 ${QUE}: ${nombre} no se pudo publicar (${limpio(String(p.at || '?').slice(0, 10), 10)}): ${limpiarLinea(p.motivo || 'sin motivo', 300)}`
+        + ` — lo medido quedó guardado en ${limpio(path.join(VIAJE.rootDir(), pieza), 300)}`);
+      continue;
+    }
+    if (!p.entry || !p.publishedAt) continue;
+    const t = Date.parse(p.publishedAt);
+    const fecha = limpio(String(p.publishedAt).slice(0, 10), 10);
+    const c = leerLlevados();
+    const e = c.entries && c.entries[p.entry];
+    if (e && e.status === 'carried') continue;
+    if (e && e.status === 'rejected') {
+      lineas.push(`🔴 ${QUE}: ${nombre} (publicado el ${fecha}) no entró a main: ${limpiarLinea(e.reason || 'sin motivo', 200)} — el nocturno rechazó su entrada`);
+      continue;
+    }
+    if (Number.isNaN(t) || Date.now() - t <= PLAZO_DEL_NOCTURNO_MS) continue;
+    const vieja = c.state === 'ok' ? ND.copyAfter(dir, t + PLAZO_DEL_NOCTURNO_MS) : c.why;
+    if (vieja) {
+      lineas.push(`🟠 ${QUE}: no sé si ${nombre} (publicado el ${fecha}) llegó a main — ${limpio(vieja, 200)}`);
+      if (ND && dir) lineas.push(ND.fetchHint(dir));
+      continue;
+    }
+    lineas.push(`🔴 ${QUE}: ${nombre} se publicó el ${fecha} y no llegó a main en 36 h — revisar el trabajo NightResults del pipeline "Banco de controles (nocturno)"`);
+  }
+  return lineas;
+}
+
 // 🔴 El examen se evalúa Y SE IMPRIME acá arriba, en su propio `try`, ANTES de tocar nada del
 // banco. Todo lo de abajo vive dentro de un único bloque que atrapa cualquier error y se calla
 // (fail-open: un aviso jamás puede romper el arranque de sesión) — así que si la denuncia del
@@ -468,6 +670,43 @@ try {
 } catch (e) {
   console.log(`examen de revisores: no pude evaluar si está corriendo (${limpio(e && e.message)}) — asumilo NO medido`);
 }
+
+// Main roto en esta máquina (skills/tycon-pipeline/scripts/lib/main-check.js): una línea por registro abierto en
+// `<estado>/main-check/*.json`, leídos sin cargar ese guion. Un archivo que no se deja leer se dice: no medido no es «sin
+// main roto». Cerrado el registro (main pasó), deja de salir. Va en su propio `try`, como el examen.
+function estadoDeMainRoto() {
+  const dir = path.join(stateDirOf(require('os').homedir()), 'main-check');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort(); } catch { return []; }
+  const out = [];
+  for (const f of files) {
+    let s;
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (e) { out.push(`🟡 main roto: no pude leer ${limpio(f, 80)} (${limpio(e && e.message, 80)}): no medido`); continue; }
+    const repo = limpio(s && s.repo ? path.basename(String(s.repo)) : f.replace(/-[0-9a-f]{8}\.json$/, ''), 80);
+    for (const r of Array.isArray(s && s.broken) ? s.broken : []) {
+      if (!r || r.closed) continue;
+      const d = new Date(r.since);
+      const hh = Number.isNaN(d.getTime()) ? '??:??' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const suites = (Array.isArray(r.suites) ? r.suites : []).map((x) => path.basename(String(x))).join(', ');
+      const n = Array.isArray(r.waiting) ? r.waiting.length : 0;
+      const arreglo = r.fix && r.fix.pr ? `pedido #${limpio(r.fix.pr, 12)}` : r.fix && r.fix.session ? `lo tomó ${limpio(String(r.fix.session).slice(0, 8), 8)}, sin pedido` : 'nadie lo tomó';
+      out.push(`🔴 main roto en ${repo} desde ${hh} (${limpio(r.id, 20)}): ${limpio(suites)}; esperan ${n} sesiones; arreglo: ${arreglo}`);
+    }
+  }
+  return out;
+}
+try {
+  for (const l of estadoDeMainRoto()) console.log(l);
+} catch (e) {
+  console.log(`main roto: no pude evaluar los registros (${limpio(e && e.message)}) — asumilo NO medido`);
+}
+// Lo mismo con el viaje de los resultados de la noche: su estado vive en la carpeta de estado, no en .bench/, y se dice
+// aunque esta máquina no tenga .bench/.
+try {
+  for (const l of estadoDelViaje()) console.log(l);
+} catch (e) {
+  console.log(`resultados de la noche: no pude evaluar si viajaron (${limpio(e && e.message)}) — asumilo NO medido`);
+}
 if (NOCTURNOS) {
   try {
     for (const l of estadoDelBancoNocturno()) console.log(l);
@@ -478,6 +717,11 @@ if (NOCTURNOS) {
     for (const l of estadoDeLasSuitesNocturnas()) console.log(l);
   } catch (e) {
     console.log(`suites nocturnas: no pude evaluar si están corriendo (${limpio(e && e.message)}) — asumilo NO medido`);
+  }
+  try {
+    for (const l of estadoDeLasConstancias()) console.log(l);
+  } catch (e) {
+    console.log(`constancias del dueño que salieron de main: no pude evaluarlas (${limpio(e && e.message)}) — asumilo NO medido`);
   }
 }
 
@@ -548,13 +792,10 @@ try {
     }
     if (r.kind === 'examen-periodico-intento') {
       // Un intento que no terminó NO es un verde y NO es una medición: es un "no pude mirar".
-      if (r.estado === 'no-viajo') {
-        // Midió bien, pero el resultado no llegó a nadie. En la máquina que lo corrió el sello y el
-        // reporte local quedan frescos, así que sin esta línea el único lugar donde se sabría sería
-        // el log de launchd — un canal invisible.
-        problems.push(`el examen midió pero el resultado NO VIAJÓ (${String(r.ts || '').slice(0, 16)}): ${r.motivo || 'sin motivo'}`
-          + ` — el resto del equipo no lo ve; hay que pushearlo a mano`);
-      } else if (r.estado !== 'completo') {
+      // `no-viajo` es un intento de antes de la rama de resultados: midió bien. Que un resultado no viajó lo dice ahora la
+      // línea de los resultados de la noche; acá no es «incompleto».
+      if (r.estado === 'no-viajo') continue;
+      if (r.estado !== 'completo') {
         problems.push(`el examen de revisores quedó INCOMPLETO (${String(r.ts || '').slice(0, 16)}): ${r.motivo || 'sin motivo registrado'}`
           + ` — es una ejecución que NO midió, no un resultado`);
       }
@@ -601,7 +842,7 @@ try {
         // `nota` (cancelación, contexto), se muestra: es la explicación que evita el susto.
         const dias = r.ts ? Math.floor((Date.now() - new Date(r.ts).getTime()) / 86400000) : null;
         const edad = dias === null ? '' : dias >= 1 ? ` — FOTO DE HACE ${dias} DÍA(S), anterior a lo que se arregló después` : '';
-        problems.push(`${f}: ${desglose} · ${par} · regresiones ${r.baselineRegressions}`
+        problems.push(`${f}: ${desglose} · ${par} · regresiones ${r.baselineRegressions == null ? 'sin comparar (no se leyó la línea de base)' : r.baselineRegressions}`
           + (noMedidos ? ` · 🟡 ${noMedidos} NO MEDIDO(s) (se les agotó el tiempo — la ejecución no está completa)` : '')
           + ` (${r.ts})${edad}`
           + (r.nota ? `\n     ℹ️ ${r.nota}` : ''));

@@ -9,9 +9,8 @@
  * `.github/SECURITY.md`, la CI (`.github/workflows/ci.yml`), las tres páginas de primeros pasos (`getting-started/`), el
  * guion de entrada (`scripts/setup/get-harness.{sh,ps1}`) y la lista de remotos públicos
  * (`scripts/setup/public-remotes.json`).
- * En el repo privado son plantillas (`scripts/publishing/public-files/<destino>`, con la
- * dirección del repo por marcadores) que el exportador pone en su lugar; acá se escriben en su ruta
- * real, con la dirección ya puesta. Esta suite los lee en esa ruta (`RAIZ/<destino>`) y los compara contra lo que existe
+ * Se escriben en su ruta real, con la dirección del repo ya puesta. Esta suite los lee en esa ruta (`RAIZ/<destino>`) y
+ * los compara contra lo que existe
  * en este mismo repo: el manifiesto de terceros, la lista de hooks, la lista de efectos, el instalador, las skills y los
  * paquetes (en el repo unido viven en `skills/` y `packs/`, no en un clon aparte). No usa red ni herramientas de afuera.
  *
@@ -27,11 +26,11 @@
  *     actualiza» con los comandos, la retención, los números de versión y la copia fija; el permiso de lectura; las 6
  *     horas; Node 22. Por palabras clave, en los dos idiomas, cada una con su espejo.
  *   · T35 — la guía de publicación dice qué recibe la publicación, punto por punto.
+ *   · T36 — a cada papel lo toma un «in» del núcleo de la lista blanca, en su lugar.
  *
- * Lo que la versión del privado medía y acá no está, porque es de la tubería privada de publicación y no existe en este
- * repo: que los repos internos no lleven `LICENSE`, el contacto permitido en `denylist.json`, los sintéticos de
- * `allowlist.json` que traían cada papel desde `public-files/`, `public-repos.json` (acá el nombre público lo declara
- * `scripts/setup/public-remotes.json`) y la evidencia de la historia de publicación en `specs/`. Cada lugar lo dice donde estaba.
+ * Lo que no se mide acá, porque es de la tubería privada de publicación y no existe en este repo: el contacto permitido
+ * en `denylist.json`, `public-repos.json` (acá el nombre público lo declara `scripts/setup/public-remotes.json`) y la
+ * evidencia de la historia de publicación en `specs/`.
  */
 
 const test = require('node:test');
@@ -45,8 +44,7 @@ const { spawnSync } = require('child_process');
 const RAIZ = path.resolve(__dirname, '..', '..');
 const PUBLISHING = path.join(RAIZ, 'scripts', 'publishing');
 
-// Los papeles, por la ruta donde viven en este repo. Son los catorce que en el privado eran plantillas de
-// scripts/publishing/public-files/<destino>, uno a uno.
+// Los catorce papeles, por la ruta donde viven en este repo.
 const PAPERS = [
   '.github/CODE_OF_CONDUCT.md', '.github/CONTRIBUTING.md', 'README.es.md', 'README.md', '.github/SECURITY.md',
   '.github/workflows/ci.yml', 'LICENSE', 'NOTICE', 'getting-started/linux.md', 'getting-started/mac.md',
@@ -82,11 +80,12 @@ const LICENSE_LINES = 202;
 const CONTACT = 'info@tycon.com.ar';
 const MIT_PERMISSION = 'Permission is hereby granted, free of charge, to any person obtaining a copy';
 
-// T13: las secciones de las dos portadas, en orden (inglés, castellano). La portada abre con el ciclo y su frase (sin
-// título: va antes del primer `##`) y sigue con el camino del dev solo —instalar y su primera historia—, lo que hace
+// T13: las secciones de las dos portadas, en orden (inglés, castellano). La portada abre con el speech del arnés (sin
+// título: va antes del primer `##`), sigue con cómo funciona y después con el camino del dev solo —instalar y su primera historia—, lo que hace
 // falta, la instalación guiada, el camino del equipo y lo demás. Debajo, la referencia, con las palabras del arnés
 // primero y lo que cambia la instalación completa junto a la elección de la instalación.
 const SECTIONS = [
+  ['How it works', 'Cómo funciona'],
   ['Start on your own', 'Empezá solo'],
   ['Your first story', 'Tu primera historia'],
   ['What you need', 'Qué necesitás'],
@@ -110,6 +109,8 @@ const SECTIONS = [
   // el núcleo no trae paquetes: llegan con el repo del equipo
   ['Reviewers for your stack', 'Revisores para tu tecnología'],
   ['What is optional', 'Qué es opcional'],
+  // el paso guiado de la máquina y el permiso del freno, antes de trabajar con una coordinadora
+  ['Before working with a coordinator', 'Antes de trabajar con una coordinadora'],
   ['What it writes on your machine and what it does on its own', 'Qué escribe en tu máquina y qué hace solo'],
   ['Your product repo', 'El repo del producto'],
   ['Offline', 'Sin red'],
@@ -144,7 +145,7 @@ const CLONE_LINE = {
   bash: `git clone https://github.com/${ORG_REPO} ${CLONE_DIR} && node ${CLONE_DIR}/scripts/setup/harness.js install`,
   powershell: `git clone https://github.com/${ORG_REPO} ${CLONE_DIR}; node ${CLONE_DIR}/scripts/setup/harness.js install`,
 };
-const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification', 'SessionEnd'];
+const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUseFailure', 'PostToolUse', 'Stop', 'Notification', 'SessionEnd', 'PermissionRequest', 'SubagentStop'];
 
 // ── utilidades ──────────────────────────────────────────────────────────────────────────────────────────────────
 const exists = (abs) => fs.existsSync(abs);
@@ -274,8 +275,6 @@ function variableCorpus({ withHooks = false } = {}) {
     'scripts/setup/harness.js',
     // El paso de terceros del instalador: su tope de red (`TYCON_THIRD_PARTY_NETWORK_BUDGET_S`) vive acá.
     'scripts/publishing/install-third-party.js',
-    // La consulta al modelo del portón de edición: su interruptor (`TYCON_LANE_LLM`) vive acá.
-    'skills/tycon-pipeline/scripts/lib/lane-classifier.js',
     // El guion de entrada de la portada: el permiso de lectura le llega por `TYCON_GITHUB_TOKEN`.
     'scripts/setup/get-harness.sh',
   ].map((f) => path.join(RAIZ, f));
@@ -363,7 +362,12 @@ test('Papeles_Comunidad_SusSecciones', () => {
   assert.match(contributing, /TYCON lo revisa y decide/, 'CONTRIBUTING: tiene que decir quién revisa y decide');
   assert.match(contributing, /se mergea acá/, 'CONTRIBUTING: tiene que decir que uno aceptado se mergea en este repo');
   assert.match(contributing, /se cierra con su motivo/, 'CONTRIBUTING: tiene que decir que uno no aceptado se cierra con su motivo');
-  assert.match(contributing, /\(un fork\)/, 'CONTRIBUTING: tiene que decir qué pasa por ahora con un pull request desde una copia');
+  assert.match(contributing, /\(un fork\)/, 'CONTRIBUTING: tiene que decir qué pasa con un pull request desde una copia');
+  // la CI corre en un pedido de un fork después de que un mantenedor aprueba la corrida (política del repo para
+  // contribuyentes externos): decir que no corre era falso
+  assert.match(contributing, /Approve and run workflows/, 'CONTRIBUTING: tiene que decir que un mantenedor aprueba la corrida de un fork');
+  assert.doesNotMatch(contributing, /does not run on pull requests from a fork|no corre sobre un pull request/i, 'CONTRIBUTING: la CI sí corre en un pedido de un fork, una vez aprobada');
+  assert.match(contributing, /abrí un issue/, 'CONTRIBUTING: falta el consejo de abrir un issue antes de un cambio grande');
   assert.ok(contributing.includes('bash scripts/ci/public-ci.sh'), 'CONTRIBUTING: falta cómo correr lo mismo que la CI');
   assert.ok(contributing.includes('guides/maintaining/nombres-en-ingles.md'), 'CONTRIBUTING: falta la regla de nombres en inglés');
   assert.match(contributing, /nombres inventados/, 'CONTRIBUTING: falta la regla de ejemplos con nombres inventados');
@@ -455,8 +459,7 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
     }
   }
 
-  // y cada pedido existe como papel, en su ruta. (El privado medía además su sintético en allowlist.json, el que lo traía
-  // desde public-files/: era la tubería privada de publicación, y acá el papel ya está en su lugar.)
+  // y cada pedido existe como papel, en su ruta
   for (const guided of GUIDED_PAPERS) {
     assert.ok(exists(path.join(RAIZ, guided)), `${guided}: el papel no existe`);
     // la dirección del repo (la de raw.githubusercontent.com que baja el guion) es la declarada, y la bajada no va por la API
@@ -611,7 +614,7 @@ const FRONT_PAGE_KEYWORDS = [
     en: ['`latest` together with `auto` asks you to confirm'],
     es: ['`latest` junto con `auto` te pide que lo confirmes'],
   }),
-  keywordPoint('cómo se actualiza: update', IN_UPDATES, { both: ['harness.js update --check', 'harness.js update --yes'] }),
+  keywordPoint('cómo se actualiza: update', IN_UPDATES, { both: ['harness.js update --check', 'npx @tyconsa/harness@latest'] }),
   keywordPoint('cómo se actualiza: rollback vuelve a una COPIA', IN_UPDATES, {
     both: ['harness.js rollback --list'],
     en: ['harness.js rollback --to <copy>'],
@@ -844,8 +847,8 @@ function effectsProblems(text, lang, effects) {
 const GUIDED_INSTALL_KEYWORDS = [
   // lo ya dicho sobre el mecanismo de instalación sigue dicho
   keywordPoint('AC 5 · aprobado en la 8.13 D: la consulta cada 6 horas', IN_ON_ITS_OWN, { en: ['at most once every 6 hours'], es: ['como mucho una vez cada 6 horas'] }),
-  keywordPoint('AC 5 · aprobado en la 8.13 D: no aplica sin update --yes desde una terminal', IN_ON_ITS_OWN, {
-    both: ['harness.js update --yes'], en: ['unless you ask for it from a terminal'], es: ['sin que se lo pidas desde una terminal'],
+  keywordPoint('AC 5 · aprobado en la 8.13 D: no aplica sin la línea de npx desde una terminal', IN_ON_ITS_OWN, {
+    both: ['npx @tyconsa/harness@latest'], en: ['unless you ask for it from a terminal'], es: ['sin que se lo pidas desde una terminal'],
   }),
   keywordPoint('AC 5 · aprobado en la 8.13 D: los números de versión', IN_UPDATES, { en: ['`YYYY.MM.DD.N`'], es: ['`AAAA.MM.DD.N`'] }),
   keywordPoint('AC 5 · aprobado en la 8.13 D: latest con auto se confirma', IN_UPDATES, {
@@ -886,7 +889,8 @@ const GUIDED_INSTALL_KEYWORDS = [
     both: ['harness.js uninstall'], en: ['removes only what the mechanism recorded', 'It leaves'], es: ['quita sólo lo que el mecanismo registró', 'Deja'],
   }),
   keywordPoint('AC 6 · primer uso', IN_FIRST_USE, {
-    both: ['harness.js doctor', 'implementemos la story'], en: ['never commits'], es: ['nunca commitea'],
+    // la persona aprueba el pull request, no el commit: lo que el agente nunca hace sin permiso es abrirlo
+    both: ['harness.js doctor', 'implementemos la story'], en: ['never opens a pull request'], es: ['nunca abre un pull request'],
   }),
   keywordPoint('AC 6 · toda la salida está sólo en castellano (portada en inglés)', IN_WHAT_IT_IS, { en: ['are in Spanish only today'] }),
   // qué pone un repo bajo el arnés
@@ -1612,25 +1616,23 @@ test('T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission —
   });
 });
 
-// ── La primera pantalla de la portada: el ciclo, su frase y el primer paso ──────────────────────────────────────────
-// Antes del primer `##` va la frase del ciclo, literal, con una línea por cada una de sus cuatro palabras; la portada
-// habla de «agentes de código» y nombra una vez cada herramienta con la que funciona; el título no nombra ninguna; BIZUIT
-// no aparece arriba. En «Empezá solo», qué lenguajes sirven hoy va antes de la línea npx: quien programa en otro lo sabe
+// ── La primera pantalla de la portada: el speech y el primer paso ──────────────────────────────────────────────────
+// Antes del primer `##` va el speech del arnés, entero: se controla que abra y cierre con sus frases, literales; habla
+// de «agentes de IA» y nombra una vez cada herramienta con la que funciona; el título no nombra ninguna; BIZUIT no
+// aparece arriba. En «Empezá solo», qué lenguajes sirven hoy va antes de la línea npx: quien programa en otro lo sabe
 // antes de instalar.
-const COVER_PHRASE = {
-  en: 'A development cycle for coding agents: complete, consistent, controlled and adaptable.',
-  es: 'Un ciclo de desarrollo para agentes de código: completo, consistente, controlado y adaptable.',
+const COVER_OPENING = {
+  en: 'Today an AI agent writes in minutes the code that used to take hours, and it solves tasks without anyone telling it each step.',
+  es: 'Hoy un agente de IA escribe en minutos el código que antes llevaba horas, y resuelve las tareas sin que nadie le indique cada paso.',
 };
-const COVER_WORDS = { en: ['Complete', 'Consistent', 'Controlled', 'Adaptable'], es: ['Completo', 'Consistente', 'Controlado', 'Adaptable'] };
-const COVER_AGENT = { en: 'coding agent', es: 'agente de código' };
+const COVER_PHRASE = {
+  en: 'The agents bring the speed. TYCON Harness brings the method, the quality and the control. Together, they do software engineering with AI.',
+  es: 'Los agentes aportan la velocidad. TYCON Harness aporta el método, la calidad y el control. Juntos, hacen ingeniería de software con IA.',
+};
+const COVER_AGENT = { en: 'AI agent', es: 'agente de IA' };
 const STACKS_LINE = { en: 'It works today for .NET, JavaScript, TypeScript, Python, Go and Java', es: 'Sirve hoy para .NET, JavaScript, TypeScript, Python, Go y Java' };
 // lo que vale en otros lenguajes, dicho junto a la línea de arriba
 const OTHER_STACKS = { en: 'that step does not recognize your tests yet', es: 'ese paso todavía no reconoce tus pruebas' };
-// los seis pasos del ciclo, en orden, cada uno en negrita con su número
-const CYCLE_STEPS = {
-  en: ['Request and story', 'Approved plan', 'Tests and code', 'Review', 'Delivery', 'Operation and measurement'],
-  es: ['Pedido e historia', 'Plan aprobado', 'Pruebas y código', 'Revisión', 'Entrega', 'Operación y medición'],
-};
 // el primer paso del dev solo: el único sí después del plan, cómo se saca, y qué pasa sin `_bmad/` y en `main`
 const FIRST_STEP_SAYS = {
   start: ['¿Instalo? [s/N]', 'harness.js uninstall --yes'],
@@ -1643,13 +1645,11 @@ function coverTopProblems(text, lang) {
   const top = coverTop(text);
   const title = (top.match(/^# .*$/m) || [''])[0];
   if (/Claude|Codex/.test(title)) out.push(`el título nombra una herramienta: «${title}»`);
-  if (!top.includes(`**${COVER_PHRASE[lang]}**`)) out.push('falta la frase del ciclo, literal y en negrita');
-  for (const w of COVER_WORDS[lang]) if (!new RegExp(`^- \\*\\*${w}:\\*\\* \\S`, 'm').test(top)) out.push(`falta la línea de «${w}»`);
+  if (!top.includes(COVER_OPENING[lang])) out.push('falta la apertura del speech, literal');
+  if (!top.includes(COVER_PHRASE[lang])) out.push('falta el cierre del speech, literal');
   if (!top.includes(COVER_AGENT[lang])) out.push(`no dice «${COVER_AGENT[lang]}»`);
   for (const tool of ['Claude Code', 'Codex']) if (countOf(top, tool) !== 1) out.push(`nombra ${tool} ${countOf(top, tool)} veces arriba (una)`);
   if (/BIZUIT|Bizuit/.test(top)) out.push('nombra BIZUIT arriba');
-  const steps = [...top.matchAll(/^\d+\. \*\*([^*:]+):\*\*/gm)].map((m) => m[1]);
-  if (JSON.stringify(steps) !== JSON.stringify(CYCLE_STEPS[lang])) out.push(`los pasos del ciclo o su orden: ${steps.join(', ') || 'ninguno'}`);
   const startSection = section(text, titleOf(at('Start on your own'), lang));
   if (startSection === null) out.push(`falta la sección «${titleOf(at('Start on your own'), lang)}»`);
   const storySection = section(text, titleOf(at('Your first story'), lang));
@@ -1675,12 +1675,12 @@ test('Papeles_Portada_CicloYPrimerPaso', async (t) => {
         assert.notStrictEqual(toy, real, `${what}: la portada de juguete es igual a la real`);
         assert.ok(coverTopProblems(toy, lang).some((m) => m.includes(needle)), `${what} tenía que fallar con «${needle}»`);
       };
-      fails(real.replace(COVER_PHRASE[lang], COVER_PHRASE[lang].replace('adapt', 'ad')), 'la frase del ciclo', 'sin la frase');
-      fails(real.replace(`- **${COVER_WORDS[lang][2]}:**`, '- **x:**'), COVER_WORDS[lang][2], 'sin una palabra');
+      fails(real.replace(COVER_OPENING[lang], 'x'), 'la apertura del speech', 'sin la apertura');
+      fails(real.replace(COVER_PHRASE[lang], COVER_PHRASE[lang].replace('control', 'x')), 'el cierre del speech', 'sin el cierre');
       fails(real.replace(/^# (.*)$/m, '# $1 para Claude Code'), 'el título', 'el título con la herramienta');
-      fails(real.replace(`**${COVER_PHRASE[lang]}**`, `**${COVER_PHRASE[lang]}** BIZUIT`), 'BIZUIT', 'BIZUIT arriba');
-      fails(real.replace(`**${COVER_PHRASE[lang]}**`, `**${COVER_PHRASE[lang]}** Codex`), 'Codex', 'una herramienta dos veces');
-      fails(real.replace(`**${COVER_PHRASE[lang]}**`, `**${COVER_PHRASE[lang]}** Claude Code`), 'nombra Claude Code', 'Claude Code dos veces');
+      fails(real.replace(COVER_PHRASE[lang], `${COVER_PHRASE[lang]} BIZUIT`), 'BIZUIT', 'BIZUIT arriba');
+      fails(real.replace(COVER_PHRASE[lang], `${COVER_PHRASE[lang]} Codex`), 'Codex', 'una herramienta dos veces');
+      fails(real.replace(COVER_PHRASE[lang], `${COVER_PHRASE[lang]} Claude Code`), 'nombra Claude Code', 'Claude Code dos veces');
       const top = coverTop(real);
       fails(real.replace(top, () => top.split(COVER_AGENT[lang]).join('x')), COVER_AGENT[lang], 'sin «agente de código»');
       const noStart = real.replace(`## ${titleOf(at('Start on your own'), lang)}`, '## x');
@@ -1690,7 +1690,6 @@ test('Papeles_Portada_CicloYPrimerPaso', async (t) => {
       fails(real.replace(start, () => moved), 'después de la línea npx', 'los lenguajes después de npx');
       fails(real.replace(start, () => start.split('npx @tyconsa/harness@latest').join('npm')), 'no trae la línea npx', 'sin la línea npx');
       fails(real.replace(start, () => start.replace(loose(OTHER_STACKS[lang]), 'x')), 'otros lenguajes', 'sin lo que pasa en otros lenguajes');
-      fails(real.replace(`**${CYCLE_STEPS[lang][3]}:**`, '**x:**'), 'los pasos del ciclo', 'sin un paso del ciclo');
       for (const k of FIRST_STEP_SAYS.start) fails(real.replace(start, () => start.split(k).join('x')), k, `«Empezá solo» sin ${k}`);
       const story = section(real, titleOf(at('Your first story'), lang));
       for (const k of FIRST_STEP_SAYS.story) fails(real.replace(story, () => story.split(k).join('x')), k, `«Tu primera historia» sin ${k}`);
@@ -1736,4 +1735,61 @@ test('Papeles_Referencia_SeccionDePalabras', async (t) => {
       assert.ok(harnessWordsProblems(cover.split(WORDS_ANCHOR[lang]).join('x'), reference, lang).some((m) => m.includes('enlaza')), 'sin el enlace tenía que fallar');
     });
   }
+});
+
+// Cada papel sale por la lista blanca desde su lugar: lo toma un «in» del núcleo. La clasificación del exportador —la que
+// usan el freno de nombres y el de historia interna— decide con esa lista qué sale y qué se mira. Un papel que ningún
+// «in» toma no lo mira nadie, y LICENSE o NOTICE en la raíz quedan sin clasificar.
+const { coincide } = require(path.join(PUBLISHING, 'export.js'));
+const corePublicIn = () => {
+  const list = JSON.parse(fs.readFileSync(path.join(PUBLISHING, 'allowlist.json'), 'utf8'));
+  return (((list.packages || {}).core || {}).arnes || {}).in || [];
+};
+const papersWithoutIn = (globs) => PAPERS.filter((p) => !globs.some((g) => coincide(g, p)));
+
+test('T36 Papeles_EntranPorSuPropioIn — a cada papel lo toma un «in» del núcleo, en su lugar', () => {
+  const globs = corePublicIn();
+  assert.ok(globs.length > 0, 'la lista blanca no trae «in» del núcleo: la prueba no estaría mirando nada');
+  assert.deepStrictEqual(papersWithoutIn(globs), [], 'papeles que ningún «in» del núcleo toma (van a la lista blanca, en scripts/publishing/allowlist.json)');
+});
+
+test('T36 Papeles_EntranPorSuPropioIn — laboratorio: sin su «in», el papel se nombra', () => {
+  const globs = corePublicIn();
+  for (const paper of ['LICENSE', 'getting-started/mac.md', '.github/workflows/ci.yml']) {
+    const sin = globs.filter((g) => !coincide(g, paper));
+    assert.ok(papersWithoutIn(sin).includes(paper), `sin el «in» que toma ${paper}, la prueba tenía que nombrarlo`);
+  }
+});
+
+// ── Los topes del camino corto los configura cada organización (@story-8.182) ───────────────────────────────────────
+// Los papeles son fijos y no leen la configuración: un número del tope sin «por defecto» le promete a una organización
+// que lo cambió un valor que no rige.
+const MENCION_DEL_TOPE = /\b(?:hasta|más de|up to|more than|tope de|cap of|limit of)\s+[58]\s+(?:archivos|files)\b|\bcupo (?:es de )?[58]\b|maxFiles (?:mayor que|greater than) [58]\b|\b[Mm]ás de [58]:|\b[58] archivos como mucho|\b[58] files at most|\bat most [58] files\b/;
+const POR_DEFECTO = /por defecto|de fábrica|by default|factory/i;
+
+// 🔴 Falla con: un diagrama de la portada que vuelve a decir «hasta 5» u «hasta 8», o un texto que pierde el «por defecto».
+test('T21 Portada_DiagramaSinNumeros_YPorDefectoEnElTexto @story-8.182 @ac-20', () => {
+  const dicen = { es: /por defecto, 5 y 8/, en: /by default, 5 and 8/ };
+  for (const lang of ['es', 'en']) {
+    const texto = readPaper(README[lang]);
+    const diagramas = [...texto.matchAll(/```mermaid\n([\s\S]*?)```/g)].map((m) => m[1]);
+    assert.ok(diagramas.length > 0, `${README[lang]}: tiene sus diagramas`);
+    for (const d of diagramas) assert.doesNotMatch(d, /\b(?:hasta|up to) [58]\b/, `${README[lang]}: un diagrama no trae el número del tope`);
+    assert.match(texto, dicen[lang], `${README[lang]}: el texto dice «por defecto»`);
+  }
+});
+
+// 🔴 Falla con: una guía que nombra el 5 o el 8 del camino corto como un número fijo.
+test('T23 Guias_NombranElTope_DicenPorDefecto @story-8.182 @ac-19', () => {
+  const guias = ['guides/coordination.md', 'guides/coordination.en.md', 'guides/firmas-del-arnes.md', 'guides/what-the-harness-does.md', 'skills/tycon-pipeline/SKILL.md'];
+  for (const g of guias) {
+    const renglones = readPaper(g).split('\n');
+    const sinPorDefecto = renglones.map((l, i) => [i + 1, l]).filter(([, l]) => MENCION_DEL_TOPE.test(l) && !POR_DEFECTO.test(l));
+    assert.deepStrictEqual(sinPorDefecto.map(([n, l]) => `${g}:${n}: ${l.trim().slice(0, 140)}`), [], `${g}: cada mención del tope dice «por defecto»`);
+  }
+  // el control encuentra lo que busca
+  assert.ok(MENCION_DEL_TOPE.test('el cupo es de 5 archivos como mucho'));
+  assert.ok(MENCION_DEL_TOPE.test('Asking for more than 8 files is the signature'));
+  assert.ok(MENCION_DEL_TOPE.test('the quota is at most 5 files (asking for more is denied'));
+  assert.ok(!MENCION_DEL_TOPE.test('El tope es `coordination.max_working`, de 1 a 20'));
 });

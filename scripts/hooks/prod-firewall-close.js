@@ -97,8 +97,8 @@ function puerta(args) {
   const quedan = PRESUPUESTO_MS - (Date.now() - inicio);
   if (quedan < 5000) return { rc: 1, salida: 'no quedó tiempo para intentarlo (tope del hook)', tope: true };
   const r = INSTALADA
-    ? spawnSync(PUERTA, args, { encoding: 'utf8', timeout: quedan })
-    : spawnSync('bash', [PUERTA, ...args], { encoding: 'utf8', timeout: quedan });
+    ? spawnSync(PUERTA, args, { windowsHide: true, encoding: 'utf8', timeout: quedan })
+    : spawnSync('bash', [PUERTA, ...args], { windowsHide: true, encoding: 'utf8', timeout: quedan });
   const tope = !!r.signal || (r.error && r.error.code === 'ETIMEDOUT');
   const salida = `${r.stdout || ''}${r.stderr || ''}`.trim();
   return { rc: r.status === null ? 1 : r.status, salida: tope ? `se cortó por tiempo (tope del hook)${salida ? `: ${salida.split('\n').pop()}` : ''}` : salida, tope };
@@ -134,6 +134,9 @@ function barrido() {
     const desde = r.abierta ? ` (abierta desde ${r.abierta})` : '';
     if (res.rc !== 0) {
       lineas.push(`🔴 prod-firewall: no pude cerrar la regla ${r.regla || 'tycon-gate'} de ${r.host}${desde}: ${ultimaLinea(res.salida)}. Cerrala con: ${cierreAMano(r.host)}`);
+    } else if (/ya no existe/.test(res.salida)) {
+      // el servidor se borró y se llevó la regla: la puerta lo probó, no hay nada que cerrar a mano
+      lineas.push(`🔒 prod-firewall: el servidor de ${r.host} ya no existe: doy por cerrada su regla ${r.regla || 'tycon-gate'}${desde}.`);
     } else if (/cerrada/.test(res.salida)) {
       lineas.push(`🔒 prod-firewall: cerré la regla ${r.regla || 'tycon-gate'} de ${r.host}${desde}: la sesión que la abrió ya no está.`);
     }

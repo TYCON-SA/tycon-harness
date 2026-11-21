@@ -315,3 +315,41 @@ test('T24 Terminal_EscriturasArmadasYCopiasAUnaCarpeta_SeJuzganIgual', () => {
   frena(comando(`cp ${sin} ~/.claude/`, c), 'cp a la carpeta');
   pasa(comando(`cp ${sin} ${c.h}/otra/`, c), 'cp a otra carpeta');
 });
+
+// T2 ControlsOff_ApagaUsesTheList @story-8.256 @ac-3 @ac-27
+// 🔴 Falla con: `apaga()` sin leer la lista única (la escotilla de la matriz con `1` pasaba en la configuración), o lo
+//    que ya se reconocía que deja de reconocerse.
+test('T2 ControlsOff_ApagaUsesTheList @story-8.256 @ac-3 @ac-27', () => {
+  assert.ok(CO.apaga('TYCON_RUNTIME_MATRIX_LEGACY', '1'), 'LEGACY=1');
+  assert.ok(!CO.apaga('TYCON_RUNTIME_MATRIX_LEGACY', '0'), 'LEGACY=0');
+  for (const [k, v] of [['TYCON_MUTATION_CHECK', 'off'], ['TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', '1'], ['TYCON_STORY_REVIEW', '0']]) {
+    assert.ok(CO.apaga(k, v), `${k}=${v}`);
+  }
+  const c = casa();
+  const conf = config({ extra: { env: { TYCON_REPOS_ROOT: '/h/src', TYCON_RUNTIME_MATRIX_LEGACY: '1' } } });
+  frena(edicion('Write', { file_path: path.join(c.repo, '.claude', 'settings.json'), content: texto(conf) }, c), 'LEGACY en env');
+});
+
+// T25 ControlsOff_SkillsEnUnClonAparte_LeeLaListaDelLugar
+// 🔴 Falla con: el lector de la lista buscado sólo al lado de las skills (con las skills en ~/.claude/agent-skills el
+//    módulo no carga y el gancho de cada edición sale 2), la variable TYCON_GUIDES_DIR tomada como lugar de la lista, o
+//    la falta de lista tratada como «no apaga».
+test('T25 ControlsOff_SkillsEnUnClonAparte_LeeLaListaDelLugar', () => {
+  const h = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ctl-off-skills-')));
+  const lib = path.join(h, '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+  fs.mkdirSync(lib, { recursive: true });
+  for (const f of ['controls-off.js', 'harness-path.js']) fs.copyFileSync(path.join(SCRIPTS, 'lib', f), path.join(lib, f));
+  const apagaCero = (env) => {
+    const codigo = `const co = require(${JSON.stringify(path.join(lib, 'controls-off.js'))}); process.stdout.write(String(co.apaga('TYCON_RUNTIME_MATRIX_LEGACY', '0')) + ' ' + String(co.apaga('TYCON_RUNTIME_MATRIX_LEGACY', '1')));`;
+    const r = spawnSync(process.execPath, ['-e', codigo], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: h, USERPROFILE: h, ...env } });
+    assert.strictEqual(r.status, 0, `el módulo tenía que cargar\n${r.stderr}`);
+    return r.stdout;
+  };
+  // sin el lugar: carga y juzga sin la lista, que frena más (LEGACY=0 cuenta como apagado)
+  assert.strictEqual(apagaCero({}), 'true true', 'sin lugar');
+  // la variable no es el lugar de la lista
+  assert.strictEqual(apagaCero({ TYCON_GUIDES_DIR: ROOT }), 'true true', 'con TYCON_GUIDES_DIR y sin enlace');
+  // con el lugar: lee la lista (LEGACY=0 no apaga, LEGACY=1 sí)
+  fs.symlinkSync(ROOT, path.join(h, '.claude', 'tycon-harness'), 'dir');
+  assert.strictEqual(apagaCero({}), 'false true', 'con el lugar');
+});

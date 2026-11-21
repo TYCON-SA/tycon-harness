@@ -54,6 +54,9 @@ function repo({ bmad = false, specs = false } = {}) {
 
 const respuestas = (extra = {}) => ({
   title: 'El total del carrito suma el envío',
+  // la intención: el problema y lo que tiene que pasar
+  problem: 'el total del carrito no muestra el envío y la persona se entera al pagar',
+  outcome: 'el total que ve antes de pagar ya incluye el envío',
   asA: 'quien compra en la tienda de acme',
   iWant: 'ver el total con el envío incluido',
   soThat: 'no llevarme una sorpresa al pagar',
@@ -687,4 +690,103 @@ test('T44 Numero_IlegibleConNumeroEnElNombre_NoLoPisa: un story: sin número leg
   const r = correr(['mode', '--repo', d]);
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(r.json.number, '1.7');
+});
+
+test('StoryWithoutBmad_IntentTextRoundTrip_AndUnsafeQuestions @story-8.258 @ac-9', () => {
+  const intent = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'intent.js'));
+  // lo que escribe el guion vuelve igual por el lector: tabuladores, comillas, barras y tildes
+  const d = repo();
+  const problema = 'el total\tno suma "x" en C:\\temp, é';
+  const r = correr(['write', '--repo', d, '--answers', escribirRespuestas(respuestas({ problem: problema }))]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const leida = intent.readIntent(fs.readFileSync(r.json.intent, 'utf8'), { raiz: d });
+  assert.strictEqual(leida.frontmatter.objective, problema);
+  // una pregunta que rompería su propia intención (un comentario HTML, un bloque de código, una marca) no se escribe
+  for (const texto of ['¿dejamos los <!-- comentarios?', 'cierra con -->', 'cierra con --!>', 'con ``` adentro', 'ver [falta: Q7]']) {
+    const d2 = repo();
+    const r2 = correr(['write', '--repo', d2, '--answers', escribirRespuestas(respuestas({ questions: [{ question: texto, why: 'w', who: 'x', blocks: false }] }))]);
+    assert.strictEqual(r2.status, 2, `${texto}: ${r2.stdout}`);
+    assert.ok(!fs.existsSync(path.join(d2, 'stories')), `${texto}: no tenía que escribir nada`);
+  }
+});
+
+test('StoryWithoutBmad_WritesIntent (T14) @story-8.258 @ac-9: la intención al lado, en borrador; sin pisar ni dejar una sola', () => {
+  const intent = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'intent.js'));
+  const preguntas = [
+    { question: '¿El envío gratis cuenta?', why: 'cambia el total', who: 'quien vende', blocks: true },
+    { question: '¿Se redondea?', why: 'cambia los centavos', who: 'quien vende', blocks: false },
+  ];
+  // con dos preguntas: la intención al lado, en draft, con su id y dos filas abiertas
+  const d = repo();
+  const r = correr(['write', '--repo', d, '--answers', escribirRespuestas(respuestas({ questions: preguntas }))]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const ruta = r.json.path.replace(/\.md$/, '.intent.md');
+  assert.strictEqual(r.json.intent, ruta);
+  assert.ok(r.stdout.indexOf('"path"') < r.stdout.indexOf('"intent"'), 'la salida conserva path primero');
+  const leida = intent.readIntent(fs.readFileSync(ruta, 'utf8'), { raiz: d });
+  assert.deepStrictEqual(leida.problemas, [], JSON.stringify(leida.problemas));
+  assert.strictEqual(leida.frontmatter.status, 'draft');
+  assert.strictEqual(leida.frontmatter.id, path.basename(r.json.path, '.md'));
+  assert.strictEqual(leida.frontmatter.objective, respuestas().problem);
+  assert.deepStrictEqual(leida.frontmatter.outcomes, [respuestas().outcome]);
+  assert.deepStrictEqual(leida.preguntas.map((f) => [f['#'], f.Bloquea, f.Estado, f.Fuente]), [['Q1', 'sí', 'abierta', '—'], ['Q2', 'no', 'abierta', '—']]);
+  assert.deepStrictEqual(leida.reservadas, []);
+
+  // sin preguntas: «Ninguna.»
+  const d2 = repo();
+  const r2 = correr(['write', '--repo', d2, '--answers', escribirRespuestas(respuestas())]);
+  assert.strictEqual(r2.status, 0, r2.stderr);
+  const sinPreguntas = fs.readFileSync(r2.json.intent, 'utf8');
+  assert.match(sinPreguntas, /## Preguntas abiertas\n\nNinguna\.\n/);
+  assert.deepStrictEqual(intent.readIntent(sinPreguntas, { raiz: d2 }).problemas, []);
+
+  // mal formado: sale 2 sin escribir nada
+  for (const malo of [{ problem: '' }, { outcome: undefined }, { questions: [{ question: 'x', why: 'y', who: 'z', blocks: 'sí' }] }, { questions: 'una' }]) {
+    const d3 = repo();
+    const r3 = correr(['write', '--repo', d3, '--answers', escribirRespuestas(respuestas(malo))]);
+    assert.strictEqual(r3.status, 2, `${JSON.stringify(malo)}: ${r3.stdout}`);
+    assert.ok(!fs.existsSync(path.join(d3, 'stories')), `${JSON.stringify(malo)}: no tenía que escribir nada`);
+  }
+
+  // con la intención ya existente: sale 2 sin escribir nada
+  const d4 = repo();
+  fs.mkdirSync(path.join(d4, 'stories'));
+  const ocupada = path.join(d4, 'stories', 'story-1.1-el-total-del-carrito-suma-el-envio.intent.md');
+  fs.writeFileSync(ocupada, 'mía\n');
+  const r4 = correr(['write', '--repo', d4, '--answers', escribirRespuestas(respuestas())]);
+  assert.strictEqual(r4.status, 2, r4.stdout);
+  assert.ok(r4.stderr.includes(ocupada), r4.stderr);
+  assert.deepStrictEqual(fs.readdirSync(path.join(d4, 'stories')), [path.basename(ocupada)]);
+  assert.strictEqual(fs.readFileSync(ocupada, 'utf8'), 'mía\n');
+
+  // con la constancia que falla: ni historia ni intención, y el siguiente intento escribe las dos
+  const d5 = repo();
+  const home = tmp('home');
+  const estado = require(STATE_DIR).stateDir(home);
+  fs.mkdirSync(estado, { recursive: true });
+  fs.writeFileSync(path.join(estado, 'first-time-stories'), 'un archivo donde va la carpeta\n');
+  const r5 = correr(['write', '--repo', d5, '--answers', escribirRespuestas(respuestas())], { home });
+  assert.strictEqual(r5.status, 2, r5.stdout);
+  assert.deepStrictEqual(fs.readdirSync(path.join(d5, 'stories')), []);
+  fs.rmSync(path.join(estado, 'first-time-stories'));
+  const r6 = correr(['write', '--repo', d5, '--answers', escribirRespuestas(respuestas())], { home });
+  assert.strictEqual(r6.status, 0, r6.stderr);
+  assert.deepStrictEqual(fs.readdirSync(path.join(d5, 'stories')).sort(), [path.basename(r6.json.intent), path.basename(r6.json.path)].sort());
+});
+
+// T45 Write_QueExisteHoy_ArchivoDeUnHermano
+// En el repo de historias, un archivo nombrado `<Repo>/…` vive en un repo hermano declarado (`companion_repos`). Se
+// buscaba adentro del repo de historias y la historia decía «No existe» de un archivo que estaba.
+// 🔴 Falla con: buscar el archivo sólo en el repo de historias, sin resolverlo contra los hermanos declarados.
+test('T45 Write_QueExisteHoy_ArchivoDeUnHermano: `<Repo>/…` se busca en el hermano declarado', () => {
+  const prod = producto();
+  const historias = repoDe(prod, 'Historias', { yaml: 'evidence:\n  companion_repos:\n    - Front\n' });
+  const front = repoDe(prod, 'Front');
+  fs.mkdirSync(path.join(front, 'src'));
+  fs.writeFileSync(path.join(front, 'src', 'cart.js'), 'module.exports = {};\n');
+  const txt = escribir(historias, { filesToModify: ['Front/src/cart.js'], filesToCreate: ['Front/src/envio.js'] });
+  const hoy = txt.slice(txt.indexOf('\n### Que existe hoy\n'), txt.indexOf('\n### Que hay que hacer (la delta)\n'));
+  assert.match(hoy, /\*\*Archivo:\*\* `Front\/src\/cart\.js` — lo modifica la historia/);
+  assert.match(hoy, /\*\*No existe:\*\* `Front\/src\/envio\.js`/);
+  assert.doesNotMatch(hoy, /No existe:[^\n]*cart\.js/);
 });

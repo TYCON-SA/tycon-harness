@@ -39,7 +39,7 @@ const TABLA = [
   [8, 'adversarial-pass', 'Pase adversarial', 'step-08-adversarial-pass.md'],
   [9, 'findings', 'Hallazgos', 'step-09-findings.md'],
   [10, 'live-check', 'Probar en vivo', 'step-10-live-check.md'],
-  [11, 'prepare-commit', 'Preparar el commit', 'step-11-prepare-commit.md'],
+  [11, 'prepare-commit', 'Preparar el pull request', 'step-11-prepare-commit.md'],
 ];
 const CIERRE = ['close-work-item', 'Cerrar la historia', 'close-work-item.md'];
 // Los quince archivos de paso del esquema viejo: ninguna ruta nueva puede ser igual a una de éstas.
@@ -164,6 +164,35 @@ test('T8 CompleteStep_NumberRejectedOnNewMarker @story-7.23 @ac-6 — con el mar
   const mal = E.correr('marker.js', ['complete-step', 'revisores'], 's-t8');
   assert.notStrictEqual(mal.status, 0);
   assert.match(mal.stderr, /reviewers/, 'dice los nombres que sí existen');
+});
+
+test('RunTests_RegistroVacio_NoCierra @story-8.230 @ac-11 — «Correr las pruebas» no cierra si el portón nunca anotó nada; lo que hoy cierra sigue cerrando', () => {
+  // 🔴 mutación: sacar el freno del registro vacío → el primer caso sale 0 sin que el portón haya corrido.
+  const E = entorno();
+  const base = arrancar(E, 's-rt');
+  const cerrar = (checks, prov) => {
+    E.escribir('s-rt', nuevo(base, 'implement', { checks, checksProvenance: prov }));
+    return E.correr('marker.js', ['complete-step', 'run-tests'], 's-rt');
+  };
+  const vacio = cerrar({}, {});
+  assert.notStrictEqual(vacio.status, 0, 'sin checks.tests no cierra');
+  assert.match(vacio.stderr, /falta el verde del portón de pruebas/);
+  assert.match(vacio.stderr, /test-gate\.sh/, 'y dice con qué se mide');
+  assert.ok(!E.leer('s-rt').stepsCompleted.includes('run-tests'), 'el paso sigue pendiente');
+  for (const [checks, prov, caso] of [
+    [{ tests: 'green' }, { tests: 'test-gate' }, 'verde del portón'],
+    [{ tests: 'green' }, { tests: 'manual-forced' }, 'verde forzado por la persona'],
+    [{ tests: 'sin-acotar' }, { tests: 'test-gate' }, 'sin acotar'],
+    [{ tests: 'sin-medir' }, { tests: 'test-gate' }, 'sin medir'],
+  ]) {
+    const r = cerrar(checks, prov);
+    assert.strictEqual(r.status, 0, `${caso} cierra: ${r.stderr}`);
+    assert.ok(E.leer('s-rt').stepsCompleted.includes('run-tests'), `${caso}: el paso queda cerrado`);
+  }
+  const turno = cerrar({ tests: 'sin-turno' }, { tests: 'test-gate' });
+  assert.notStrictEqual(turno.status, 0, 'sin turno sigue frenando');
+  assert.match(turno.stderr, /no tuvo el turno/, 'con su mensaje de siempre');
+  assert.doesNotMatch(turno.stderr, /falta el verde del portón de pruebas/, 'no con el del registro vacío');
 });
 
 test('T9 CompleteStep_OldMarkerUntilRetireDate @story-7.23 @ac-7 — el marcador viejo sigue con sus números hasta la fecha', () => {
@@ -594,6 +623,40 @@ test('T27 CartelYNext_LaMismaVuelta @story-7.23 @ac-9 @ac-16 — el cartel y nex
     const run = readRun(JSON.stringify(m), Date.parse(iso(10)));
     assert.strictEqual(run.current.id === 'reviewers', vuelve, `el cartel con ${f}`);
   }
+});
+
+test('T27b OtraVuelta_SoloConCodigo — la historia, la carpeta qa y lo que el arnés escribe en .advisors no piden otra vuelta', async () => {
+  const E = entorno();
+  const base = arrancar(E, 's-t27b');
+  const { readRun } = await import(require('url').pathToFileURL(path.join(RAIZ, 'mods', 'harness-mods', 'hooks', 'run.mjs')).href);
+  const qa = path.join(E.repo, 'specs', 'qa');
+  const dod = path.join(E.repo, '.advisors', 'dod-runtime');
+  fs.mkdirSync(qa, { recursive: true });
+  fs.mkdirSync(dod, { recursive: true });
+  // la vuelta 2 de los revisores cerró en verde; todo lo de abajo pasa después
+  const m = nuevo(base, 'live-check', { deepReviewDone: true, dodRuntimeChecked: true,
+    stepTimings: { reviewers: { completedAt: '2026-01-01T10:00:00Z', lastCompletedAt: '2026-01-01T12:00:00Z', rounds: 2 }, findings: { completedAt: '2026-01-01T12:10:00Z' } } });
+  const editar = (abs) => E.correr('on-edit.js', [], 's-t27b', JSON.stringify({ tool_name: 'Edit', session_id: 's-t27b', tool_input: { file_path: abs } }));
+  const sinCodigo = [E.story, path.join(qa, '9.9-pasos.md'), path.join(dod, '9.9-smokes.py'), path.join(dod, '9.9-ui-smoke.cjs')];
+  for (const f of sinCodigo) fs.writeFileSync(f, '# x\n');
+  E.escribir('s-t27b', m);
+  for (const f of sinCodigo) editar(f);
+  const conEventos = E.leer('s-t27b');
+  for (const f of sinCodigo) assert.strictEqual(conEventos.fileEvents.find((e) => e.path === f).code, false, `on-edit marca ${path.basename(f)} como no código`);
+  let n = next(E, 's-t27b');
+  assert.strictEqual(n.next_step, 'prepare-commit', `sin código después de la vuelta 2 sigue el commit: ${n.step_name}`);
+  assert.notStrictEqual(readRun(JSON.stringify(conEventos), Date.now()).current.id, 'reviewers', 'el cartel tampoco pide otra vuelta');
+  // un marcador de antes, con la marca `code` vieja en lo de .advisors, tampoco pide otra vuelta
+  const viejoCode = { ...m, fileEvents: sinCodigo.map((f) => ({ path: f, ts: '2026-01-01T13:00:00Z', code: !f.endsWith('.md') })) };
+  E.escribir('s-t27b', viejoCode);
+  assert.strictEqual(next(E, 's-t27b').next_step, 'prepare-commit', 'la marca vieja de .advisors no gana');
+  assert.notStrictEqual(readRun(JSON.stringify(viejoCode), Date.parse('2026-01-01T14:00:00Z')).current.id, 'reviewers', 'ni en el cartel');
+  // un archivo de código sí: vuelta 3
+  E.escribir('s-t27b', m);
+  editar(path.join(E.repo, 'src', 'a.js'));
+  n = next(E, 's-t27b');
+  assert.strictEqual(n.next_step, 'reviewers');
+  assert.strictEqual(n.step_name, 'Revisores, vuelta 3');
 });
 
 test('T28 RetireCheck_VersionMalEscrita @story-7.23 @ac-7 — un --since que no es una versión no da «llegó a todas»', () => {

@@ -78,6 +78,62 @@ test('RefreshAfterMain_TraerMain_EsRefirma (T40)', () => {
   assert.strictEqual(r.refirma_de, anterior.hash);
 });
 
+/**
+ * Dos archivos de control firmados juntos; `main` cambia sólo el segundo y el pedido lo trae: el primero queda tal cual
+ * lo firmó el dueño y el segundo es la fusión. Devuelve el repo, la constancia y las dos entradas de ahora.
+ */
+const G = 'scripts/hooks/otro-control.sh';
+function refirmaMezclada() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'refresh-after-main-'));
+  LABS.push(dir);
+  git(dir, 'init', '-q', '-b', 'main');
+  escribir(dir, F, texto({}));
+  escribir(dir, G, texto({}));
+  commit(dir, 'base');
+  git(dir, 'checkout', '-q', '-b', 'pedido');
+  escribir(dir, F, texto({ 1: 'linea 1 endurecida' }));
+  escribir(dir, G, texto({ 1: 'linea 1 endurecida' }));
+  const c = commit(dir, 'el cambio propio');
+  const anterior = constancia([{ path: F, blob: blob(dir, c, F) }, { path: G, blob: blob(dir, c, G) }]);
+  git(dir, 'checkout', '-q', 'main');
+  escribir(dir, G, texto({ 10: 'linea 10 de main' }));
+  commit(dir, 'main avanza en el segundo');
+  git(dir, 'checkout', '-q', 'pedido');
+  git(dir, 'merge', '-q', '--no-edit', 'main');
+  return { dir, anterior, entradas: [{ path: F, blob: blob(dir, 'HEAD', F) }, { path: G, blob: blob(dir, 'HEAD', G) }] };
+}
+
+// 🔴 Falla con: un archivo que quedó tal cual lo firmó el dueño que impide reconocer lo que trajo main en otro.
+test('RefreshAfterMain_UnoTalCualYOtroDeMain_EsRefirma', () => {
+  const { dir, anterior, entradas } = refirmaMezclada();
+  assert.strictEqual(entradas[0].blob, anterior.rules[0].blob, 'el primero quedó como se firmó');
+  const r = clasificar(dir, { entries: entradas, approvals: [anterior] });
+  assert.strictEqual(r.clase, 'refresh-after-main', r.motivo);
+  assert.strictEqual(r.refirma_de, anterior.hash);
+  // todo tal cual no es traer main: ese hash ya está firmado
+  const soloElPrimero = clasificar(dir, { entries: [entradas[0]], approvals: [anterior] });
+  assert.strictEqual(soloElPrimero.clase, 'control-change');
+  assert.match(soloElPrimero.motivo, /tal cual/);
+});
+
+// 🔴 Falla con: el archivo tal cual que cambió de modo, o se aflojó después de traer main, y pasa por lo firmado.
+test('RefreshAfterMain_UnoTalCualPeroCambiado_EsControl', () => {
+  {
+    const { dir, anterior, entradas } = refirmaMezclada();
+    fs.chmodSync(path.join(dir, F), 0o755);
+    git(dir, 'update-index', '--cacheinfo', `100755,${git(dir, 'rev-parse', `:${F}`)},${F}`);
+    git(dir, 'commit', '-q', '-m', 'modo');
+    const r = clasificar(dir, { entries: entradas, approvals: [anterior] });
+    assert.strictEqual(r.clase, 'control-change');
+    assert.match(r.motivo, /modo/);
+  }
+  const { dir, anterior, entradas } = refirmaMezclada();
+  escribir(dir, F, texto({ 1: 'linea 1 endurecida', 5: 'linea 5 aflojada' }));
+  commit(dir, 'afloja el primero');
+  const r = clasificar(dir, { entries: [{ path: F, blob: blob(dir, 'HEAD', F) }, entradas[1]], approvals: [anterior] });
+  assert.strictEqual(r.clase, 'control-change');
+});
+
 test('RefreshAfterMain_CambioPropioNuevo_EsControl (T40)', () => {
   const { dir, anterior } = refirmaReal();
   // después de traer main, el pedido afloja otra línea: eso no lo firmó el dueño

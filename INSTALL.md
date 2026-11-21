@@ -79,8 +79,11 @@ nombra. (En Windows, el enlace a un archivo suelto pide el modo desarrollador: s
 `harness.js install` escribe las dos piezas (el import y la línea de arranque) y registra en `~/.claude/settings.json` el
 set de hooks del instalador (la tabla de «Los hooks que instala», más abajo), con una copia de seguridad antes de cada
 cambio. En cada sesión, la línea de arranque mira si hay una versión nueva del canal «estable» y, si la hay, avisa y
-pregunta: no la aplica sin que lo pidas (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`).
+pregunta: no la aplica sin que lo pidas (`npx @tyconsa/harness@latest`, que pregunta antes de actualizar).
 `TYCON_UPDATE=0` la apaga; `harness.js doctor` dice cómo quedó todo y `harness.js uninstall` quita sólo lo que registró.
+Cómo funciona por dentro (el estado, los canales y las versiones, las copias y la vuelta atrás, la desinstalación, lo
+que queda fuera en Windows y cuándo se reabre la decisión sobre la integridad) vive en una sola guía,
+[`guides/maintaining/mecanismo-de-instalacion.md`](guides/maintaining/mecanismo-de-instalacion.md); acá queda el paso a paso.
 
 **En Windows, `~/.tycon/versions`.** Cada versión vive en su carpeta, `~/.tycon/versions/<versión>/`, y `~/.tycon/harness`
 y `~/.tycon/previous` son uniones (enlaces de carpeta) a la activa y a la anterior. Así la actualización anda con otras
@@ -174,7 +177,7 @@ perfil). Qué puede pisar cada máquina sobre lo del equipo, en
 | Registro de horas | `integrations.timeTracking` (`none` o el nombre de una integración de horas; sin ella, la llave vieja de cada herramienta, en `guides/integrations/`) | no se registra ningún hook de horas; el despachador de ediciones sigue, sin el control de la integración. Cada integración trae los suyos en `integrations/<nombre>/` |
 | engram | `integrations.engram` | no se registran el sync de commit ni el aviso diario; los chequeos de versión/proyecto no corren; cada comando de engram lo dice y sale 0 |
 | CodeGraph | `integrations.codegraph` (informativa) | la instala cada dev con `install-codegraph.sh`; el arnés no registra nada de CodeGraph por sí mismo |
-| Buzón de corridas | la llave scripts/metrics/corridas-buzon.json del arnés interno (o `integrations.mailbox`) | no se sube ni se baja nada; la vista de corridas es sólo de esta máquina |
+| Buzón de corridas | `integrations.mailbox`; la llave es `scripts/metrics/corridas-buzon.json`, que llega con el perfil de tu equipo (o la ruta de `TYCON_MAILBOX_JSON`) | no se sube ni se baja nada; la vista de corridas es sólo de esta máquina |
 | Instintos | `integrations.instincts` del perfil del equipo (para apagarla en una máquina: `TYCON_INSTINCTS=0`) | no se registra la grabadora (`instinct-observe.js`) ni se graba nada; el aviso de arranque sólo dice, una vez, si las variables viejas siguen puestas |
 | Codex | `integrations.codex`: `true` · `false` · `"detect"` (`TYCON_CODEX` manda) | no se despliega el lado Codex |
 | Nocturnos del equipo | `integrations.nightly` | no se registran los avisos de tablero, dependencias y retro; `bench-notice` calla lo nocturno y sigue con el banco local |
@@ -212,9 +215,13 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `push-phantom-ref-notice.js` | PreToolUse (Bash) | Antes de subir cambios, avisa si nombran un archivo de código que no existe en el repo | No | full | `TYCON_PUSH_GHOST=0` |
 | `pr-one-per-repo-guard.js` | PreToolUse (Bash) | Apagado de fábrica. Prendido, frena abrir un pull request en Azure DevOps si ese repo ya tiene uno abierto | Sí, sólo prendido | full | `TYCON_PR_ONE_PER_REPO=1` lo prende |
 | `pr-auto-complete-guard.js` | PreToolUse (Bash) | Frena el pull request a `main` armado con `az` sin `--auto-complete true` y `--squash false` explícitos | Sí | full | `TYCON_PR_AUTO_COMPLETE_GUARD=0` · puntual: `TYCON_PR_BY_HAND=1` pegado al comando |
+| `session-cap-guard.js` | PreToolUse (Bash) | Frena abrir una sesión de Claude de fondo, por cualquier camino, cuando la máquina ya está en el tope de sesiones trabajando; si no puede contarlas, frena igual. Dice el camino: `coordination.js open`, que espera turno | Sí | full | ninguno: el tope lo cambia una persona (`coordination.max_working`) |
+| `coordination-fill-gate.js` | Stop | Sólo en la sesión coordinadora: con lugar, memoria libre (40 % o más) y una historia lista sin sesión de su proyecto, no deja cerrar el turno hasta que abra una sesión o anote por qué no; tres bloqueos seguidos y al cuarto deja cerrar y lo anota | Sí | full | ninguno: la salida es el motivo (`coordination.js keep-free`, vale 30 minutos) |
 | `public-push-guard.js` | PreToolUse (Bash) | En un clon del arnés con un remoto público, frena el `gh` que publica un texto que no puede salir (un secreto, un correo, una ruta de máquina, un término de la lista privada) o que no se puede leer desde el comando | Sí | full | ninguno: de un freno falso se sale con una excepción con motivo en la lista privada |
 | `tycon-pipeline/scripts/on-bash-write-gate.js` | PreToolUse (Bash) | El portón de carril por la terminal: deniega escribir código con `sed -i`, heredoc, `tee` o `cp` sin pipeline ni ad-hoc declarado | Sí | full | `TYCON_STORY_GATE=off` |
 | `tycon-pipeline/scripts/on-advisor-run.js` | PreToolUse (Task\|Agent) | Anota cada subagente lanzado: es lo que cuenta el pipeline para saber qué revisores corrieron | No | minimal y full | ninguno propio |
+| `tycon-pipeline/scripts/on-advisor-run.js` | PostToolUse (Task\|Agent) | Ata cada revisor lanzado al agente que le dio la herramienta: si uno muere al arrancar y se relanza, el reporte del relanzado va a su salida | No | minimal y full | ninguno propio |
+| `tycon-pipeline/scripts/on-advisor-done.js` | SubagentStop | Cuando termina un revisor, anota los críticos que reportó, leídos de sus propias palabras: el cierre de los hallazgos frena si el agente no los anotó todos | No | minimal y full | ninguno propio |
 | `tycon-pipeline/scripts/on-stop-dod-gate.js` | Stop | Con el pipeline en modo autónomo, no deja cerrar el turno con un control de la definición de hecho en rojo | Sí, sólo en modo autónomo | full | ninguno propio (fuera del modo autónomo no hace nada) |
 | `response-style-meter.js` | Stop | Mide la prosa del mensaje final del turno y deja el veredicto para el turno siguiente | No | full | `TYCON_RESPONSE_METER=0` |
 | `response-style-notice.js` | UserPromptSubmit | Cobra el veredicto del medidor de estilo del turno anterior | No | full | `TYCON_RESPONSE_METER=0` |
@@ -222,11 +229,27 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `wait-notice.js` | PreToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | Una pregunta a la persona abre la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | PostToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | La respuesta cierra la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | UserPromptSubmit | La persona escribió: la espera del aviso se cierra | No | full | `TYCON_WAIT_NOTICE=0` |
+| `background-question-guard.js` | PreToolUse (AskUserQuestion\|mcp__spokenly__ask_user_dictation\|SendMessage) | Una sesión de fondo que abrió la coordinadora no le pregunta a la persona, y sólo la coordinadora le escribe: con la coordinadora confirmada y viva, niega y dice qué mandarle a ella | Sí | full | `TYCON_BG_QUESTION_GUARD=0` |
+| `owner-approval-record.js` | UserPromptSubmit | Anota el «aprobado» que escribe la persona, para que una firma pendiente lo use sin terminal, una vez | No | minimal y full | `TYCON_OWNER_APPROVALS=0` |
+| `owner-approval-record.js` | PostToolUse (AskUserQuestion) | Anota el click de la persona en el cuadro de opciones, para que una firma pendiente lo use sin terminal, una vez | No | minimal y full | `TYCON_OWNER_APPROVALS=0` |
+| `context-size-notice.js` | UserPromptSubmit | Cuando la sesión pasa el umbral de tokens (300 mil), le pide al agente que recomiende `/clear` o una sesión nueva al terminar el paso; otra vez cada 100 mil más | No | full | `TYCON_CONTEXT_NOTICE=0` |
+| `context-size-notice.js` | SessionStart | Después de `/clear` o de compactar, el aviso de contexto vuelve a cero | No | full | `TYCON_CONTEXT_NOTICE=0` |
 | `wait-notice.js` | Notification (permission_prompt) | Un pedido de permiso abre la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | SessionEnd | La sesión se cerró: su espera se cierra sin avisar | No | full | `TYCON_WAIT_NOTICE=0` |
+| `session-state.js` | SessionStart | Anota el estado de la sesión para /office: su nombre, su proceso y su paso | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | Notification (permission_prompt) | Un pedido de permiso: la sesión espera «un permiso» | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PermissionRequest (Bash\|PowerShell\|Edit\|Write\|MultiEdit\|NotebookEdit\|Read\|Glob\|Grep\|WebFetch\|WebSearch\|mcp__.*) | Un pedido de permiso, en el momento: anota la herramienta y qué pide, para que la coordinadora se entere con `owner-wait` | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PreToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | Una pregunta a la persona: la sesión espera «una respuesta» | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PostToolUse | Terminó el uso de una herramienta: la espera de un permiso se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PostToolUseFailure | Una herramienta falló (un comando aprobado que salió distinto de 0): la espera de un permiso también se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | UserPromptSubmit | La persona escribió: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | Stop | El turno se cerró: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | SessionEnd | La sesión se cerró: su archivo de estado se borra | No | full | `TYCON_SESSION_STATE=0` |
 | `blocking-meter.js` | Stop | Mide la herramienta bloqueante más larga del turno y los mensajes que quedaron esperando | No | full | `TYCON_BLOCKING_METER=0` |
 | `blocking-notice.js` | UserPromptSubmit | Cobra el veredicto del medidor de bloqueo del turno anterior | No | full | `TYCON_BLOCKING_METER=0` |
-| `coordination-notice.js` | UserPromptSubmit | Sólo en la sesión coordinadora: avisa cuando la máquina está en el tope de sesiones trabajando o lo pasó | No | full | `TYCON_COORDINATION_NOTICE=0` |
+| `coordination-notice.js` | UserPromptSubmit | Sólo en la sesión coordinadora: avisa una vez cuando la máquina llega al tope de sesiones trabajando, lo pasa o cambia cuántas trabajan, y una vez por día de las firmas que esperan hace más de un día | No | full | `TYCON_COORDINATION_NOTICE=0` |
+| `coordination-notice.js` | SessionStart | Después de compactar o de limpiar la conversación, le pide a la sesión coordinadora que lea sus reglas otra vez; si limpiarla le quitó la designación, le dice cómo recuperarla | No | full | `TYCON_COORDINATION_NOTICE=0` |
+| `why-blocked-notice.js` | UserPromptSubmit | Cuando preguntás por qué te frenó el arnés, le pasa al asistente el último freno de la sesión para que te lo explique en llano | No | full | `TYCON_WHY_BLOCKED_NOTICE=0` |
 | `large-read-meter.js` | Stop | Mide cuánto se leyó de un solo archivo en el turno; anota y no avisa | No | full | `TYCON_READ_METER=0` |
 | `harness-bootstrap-heal.sh` | SessionStart | Si la línea de arranque hace los `git pull` pero no corre el instalador, le agrega la llamada (con copia de seguridad) | No | minimal y full | `TYCON_NO_BOOTSTRAP_HEAL=1` |
 | `branch-guard-notice.js` | SessionStart | Avisa si el clon del arnés o el de las skills no está en `main`, o está atrasado; con `paths.maintainers`, pone al día de fondo el clon de mantenimiento (sólo en full) | No | minimal y full | `TYCON_BRANCH_GUARD=0` · `TYCON_MAINTAINERS_SYNC=0` |
@@ -242,18 +265,30 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `owner-email-notice.js` | SessionStart | Dice una vez que la máquina informa al equipo el correo global de git, y cómo verlo o cambiarlo; otra vez sólo si cambia | No | minimal y full | `TYCON_OWNER_EMAIL_NOTICE=0`; integración del buzón (`TYCON_MAILBOX=0`) |
 | `unclosed-runs-notice.js` | SessionStart | Dice una vez por día si alguna corrida del pipeline quedó sin cerrar, de qué stories y qué hacer; esas corridas se suben marcadas | No | minimal y full | `TYCON_UNCLOSED_NOTICE=0`; integración del buzón (`TYCON_MAILBOX=0`) |
 | `production-notice.js` | SessionStart | Regenera el índice de servidores de producción declarados y, en las máquinas autorizadas, avisa si el freno de producción falta | No | full | `TYCON_PRODUCTION_NOTICE=0` |
+| `hook-failures-notice.js` | SessionStart | Avisa qué controles del arnés fallaron en las últimas 24 horas, con cuántas veces dejaron pasar y cuántas frenaron; calla sin fallas | No | full | — (sin fallas, calla; nunca frena) |
 | `guard-update-notice.js` | SessionStart | En las máquinas con el freno de producción, compara el permiso de actualizarlo sin contraseña con lo que eligió la organización y da el comando para corregirlo | No | full | `TYCON_GUARD_UPDATE_NOTICE=0` |
-| `lane-llm-notice.js` | SessionStart | Avisa si el desempate por modelo del portón de carril abrió permisos | No | full | `TYCON_LANE_LLM_NOTICE=0` |
+| `guard-auto-update.js` | SessionStart | En las máquinas con el freno de producción y el permiso de actualizarlo sin contraseña, si la organización eligió que se actualice solo y quedó viejo, lanza la actualización de fondo; no reintenta una versión que ya falló | No | full | `TYCON_GUARD_AUTO_UPDATE=0` |
+| `lane-llm-notice.js` | SessionStart | Cuenta los arreglos rápidos de los últimos 7 días y cómo se firmaron, si hubo alguno nuevo | No | full | `TYCON_LANE_LLM_NOTICE=0` |
 | `engram-drift-notice.js` | SessionStart | Revisa la memoria de engram una vez por día: proyectos sin nombre fijo, memoria repartida, observaciones sin exportar | No | minimal y full | `TYCON_ENGRAM_DRIFT=0`; integración engram (`TYCON_ENGRAM=0`) |
 | `unpushed-work-notice.js` | SessionStart | Avisa las ramas del repo y de su grupo con commits que no están en el remoto | No | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `dev-behind-main-notice.js` | SessionStart | En un repo de producto del equipo, avisa si a `dev` le faltan commits de `main` o tiene trabajo trabado hace una semana | No | full | `TYCON_DEV_BEHIND_NOTICE=0` |
+| `finished-open-notice.js` | SessionStart | Avisa las ejecuciones que terminaron todos sus pasos y siguen abiertas, y los caminos cortos con su pedido abierto o ya en main, con cómo se cierra cada uno; no cierra nada | No | full | `TYCON_FINISHED_OPEN_NOTICE=0` |
 | `stuck-pr-notice.js` | SessionStart | En un repo del arnés, avisa qué pedidos con auto-completar llevan más de una hora en choque o sin entrar | No | full | `TYCON_STUCK_PR_NOTICE=0` |
 | `extension-notices.js` | SessionStart | Dice los avisos de los paquetes activos (su `notices.json`) que aplican en el repo de la sesión, una vez por sesión | No | minimal y full | `TYCON_EXTENSION_NOTICES=0` |
+| `extension-notices.js` | PostToolUse | Después del primer comando de una plataforma que la organización eligió (su CLI), le da al asistente las reglas de ese conector (su `notices.json`), una vez por sesión | No | minimal y full | `TYCON_EXTENSION_NOTICES=0` |
+| `extension-notices.js` | PostToolUseFailure | Lo mismo cuando ese primer comando falló (Claude Code avisa el comando fallado con este evento) | No | minimal y full | `TYCON_EXTENSION_NOTICES=0` |
 | `unpushed-work-notice.js` | PostToolUse (Bash) | Anota los repos donde se commiteó y, al subir a `main`, avisa si un repo hermano tiene trabajo sólo local | No | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `unpushed-work-notice.js` | Stop | Si la sesión commiteó y quedó algo sin subir, frena el cierre una vez por repo y rama | Sí, una vez | full | `TYCON_UNPUSHED_NOTICE=0` |
+| `office-link-start.js` | SessionStart | Con la dirección del sitio en el perfil, pide el alta de la máquina en la oficina del sitio y lanza el proceso que le manda la foto | No | full | `TYCON_OFFICE_LINK=0` |
+| `office-message-rule.js` | SessionStart | Le dice a la sesión qué es un mensaje que la persona le escribe desde `/office`, cómo lo comprueba y que nunca firma | No | full | `TYCON_OFFICE_MESSAGES=0` |
+| `office-inbox-watch.js` | SessionStart | De fondo: espera los mensajes que la persona le escribe a esta sesión desde `/office` y la despierta con ellos | No | full | `TYCON_OFFICE_MESSAGES=0` |
+| `office-inbox-watch.js` | Stop | Al cerrar cada turno vuelve a armar el vigilante de los mensajes de `/office`, si el anterior ya entregó o se fue | No | full | `TYCON_OFFICE_MESSAGES=0` |
+| `office-link-start.js` | UserPromptSubmit | Mientras se trabaja, a lo sumo cada 30 min, pone al día la capa del equipo sin cambiar la versión y, si trae la dirección del sitio, enlaza la oficina sin abrir sesión | No | full | `TYCON_TEAM_REFRESH=0` |
 | `worktree-sweep.js` | SessionStart | Una vez por día borra las carpetas de trabajo (worktrees) limpias y ya mergeadas, con su rama; las que tienen trabajo sólo las nombra | No | full | `TYCON_WORKTREE_SWEEP=0` |
+| `temp-sweep.js` | SessionStart | Una vez por día borra de las carpetas temporales lo que dejaron las pruebas y las sesiones y nadie usa hace 24 horas; lo que está en uso o es de otra aplicación no lo toca | No | full | `TYCON_TEMP_SWEEP=0` |
 | `missing-path-notice.js` | PostToolUse (Bash) | Avisa cuando un comando de lectura nombró una ruta que no existe | No | full | `TYCON_MISSING_PATH_NOTICE=0` |
 | `deprecated-read-notice.js` | PostToolUse (Read, Bash) | Al leer un archivo deprecado, le recuerda al modelo el motivo y que no lo copie | No | full | — (sin la clave, calla) |
+| `cover-secrets.js` | PostToolUse (Bash, Read, Grep) | Tapa los valores reales de los secretos de la máquina en lo que devuelven las herramientas | No | minimal y full | `TYCON_COVER_SECRETS=0` |
 | `failed-query-notice.js` | PostToolUse (Bash) | Avisa cuando una consulta a un servicio volvió vacía con el código de salida tapado | No | full | `TYCON_FAILED_QUERY_NOTICE=0` |
 | `rebuild-before-verify.js` | PostToolUse (Edit\|Write, Bash) | Marca el frontend como «sucio» al editar un componente y lo limpia al correr el build de desarrollo que declara el repo | No | full | `TYCON_REBUILD_VERIFY=0` |
 | `rebuild-before-verify.js` | UserPromptSubmit | Con el frontend sucio, recuerda correr el build antes de pedir una verificación visual | No | full | `TYCON_REBUILD_VERIFY=0` |
@@ -263,7 +298,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `engram-pre-commit.sh` | PreToolUse (Bash) | En un `git commit` de un repo con su archivo .engram-project, exporta la memoria y la suma al commit; frena si el commit pierde una entrada del índice de memoria | Sí, por el índice | minimal y full | `TYCON_ENGRAM_HOOK=0` · sólo el freno del índice: `TYCON_ENGRAM_MANIFEST_GUARD=0`; integración engram (`TYCON_ENGRAM=0`) |
 | `telegram-zombie-sweep.sh` | SessionStart | Sólo en máquinas con el plugin oficial de Telegram: cierra sus lanzadores huérfanos | No | full | `TYCON_TG_ZOMBIE_SWEEP=0` |
 | `session-collision-guard.js` | PreToolUse (Bash) | Apagado por defecto. Prendido, frena tocar git si otra sesión viva trabaja sobre el mismo checkout | Sí | minimal y full | `TYCON_SESSION_GUARD=1` lo prende |
-| `session-collision-guard.js` | SessionStart | Apagado por defecto. Prendido, avisa al abrir una sesión donde ya hay otra viva | No | minimal y full | `TYCON_SESSION_GUARD=1` lo prende |
+| `session-collision-guard.js` | SessionStart | Avisa al abrir una sesión donde ya hay otra viva (también si sólo se mueve un subagente suyo o tiene su ejecución abierta) y le pide al agente que se lo diga a la persona | No | minimal y full | `TYCON_SESSION_GUARD=0` lo calla |
 
 ### 5. Verificar
 
@@ -287,6 +322,13 @@ Si alguno falla, revisá:
 - La actualización (paso 4): `harness.js version` muestra la versión instalada y el canal; `harness.js doctor` dice si
   algo quedó mal
 
+Para trabajar con una coordinadora, el paso guiado dice qué le falta a la máquina, de a una y con su comando (las
+carpetas principales que aprobar, el freno de producción, la confirmación de la coordinadora). Sólo lee:
+
+```bash
+node ~/.tycon/harness/scripts/tools/prepare-machine.js --repo <repo> [--repo <otro repo>]
+```
+
 ### 6. Cómo llegan las actualizaciones
 
 La versión bajada vive en `~/.tycon/harness` (`~/.claude/tycon-harness` es un enlace a esa carpeta). No es un clon: no
@@ -294,8 +336,8 @@ hay `git pull` que hacer. Al arrancar cada sesión, el arnés mira si su canal t
 depende de la política, `update.apply`:
 
 - **`ask`** (la de fábrica): deja un aviso en la sesión y no toca nada; mira como mucho una vez cada 6 horas. La versión
-  nueva se aplica a mano, desde una terminal:
-  `node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`.
+  nueva se aplica a mano, desde una terminal: `npx @tyconsa/harness@latest` (la misma línea que instala; con el arnés
+  instalado, pregunta «¿Actualizo?» y actualiza).
 - **`auto`**: la instala sola al arrancar la sesión.
 
 La política se fija con `update.apply` en `~/.claude/tycon.json` o con la variable `TYCON_UPDATE_APPLY`; `TYCON_UPDATE=0`
@@ -407,7 +449,7 @@ escribió no se edita a mano: se edita el canónico, que lo re-pisa. Todo se man
 | Reglas globales | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` (espejo del global + su propia tabla de nombres) | `sync-claude-md-blocks.sh` |
 | Reglas de proyecto | `CLAUDE.md` de cada repo | `AGENTS.md` puntero de una línea en el mismo repo ("leé CLAUDE.md") — sin copia; se commitea al repo | el instalador lo deposita si falta |
 | 28 advisors | `~/.claude/agent-skills/agents/*.md` | `~/.codex/<name>.config.toml` (perfiles, `codex exec -p <name>`) **y** `~/.codex/agents/<name>.toml` (subagentes nativos) | `build/generate.js --deploy` |
-| ~20 hooks | scripts reales en los repos del equipo (el arnés y `agent-skills`), registrados en `~/.claude/settings.json` | los MISMOS scripts, registrados en `~/.codex/hooks.json` (merge quirúrgico — lo tuyo queda intacto) | `build/deploy-codex-hooks.js` |
+| Los hooks del arnés | scripts reales en los repos del equipo (el arnés y `agent-skills`), registrados en `~/.claude/settings.json` | los MISMOS scripts, registrados en `~/.codex/hooks.json` (merge quirúrgico — lo tuyo queda intacto) | `build/deploy-codex-hooks.js` |
 | Servidores MCP | el registro de TU máquina (`~/.claude.json`; los que vienen por plugin, de la tabla de equivalencias) | `[mcp_servers]` de `~/.codex/config.toml` + los `writable_roots` del sandbox (secretos jamás al archivo) | `build/deploy-codex-mcp.js` |
 | ~160 skills (BMAD incluido) | `~/.claude/agent-skills/skills/` | `~/.codex/skills/*` → symlinks — BMAD se instala UNA vez, del lado Claude, SIEMPRE | `build/deploy-shared-skills.js` |
 
@@ -445,7 +487,7 @@ Asimetrías declaradas: `guides/maintaining/codex-divergence-inventory.md`.
    ```
 4. Commit + push.
 
-Los devs reciben la guía con la próxima actualización del arnés (sola, o con `harness.js update --yes`). Nadie toca su
+Los devs reciben la guía con la próxima actualización del arnés (sola, o con `npx @tyconsa/harness@latest`). Nadie toca su
 CLAUDE.md personal.
 
 ### Modificar una guía existente

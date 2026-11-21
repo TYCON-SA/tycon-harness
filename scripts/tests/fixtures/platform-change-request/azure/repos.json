@@ -1,0 +1,4 @@
+{ "azure": { "org": "https://dev.azure.com/acme" }, "repos": [
+  { "producto": "Producto X", "ruta": "X/back", "ado": "Proyecto X/Back", "activo": true },
+  { "producto": "Producto W", "ruta": "W/web", "github": "acme/widgets", "activo": true }
+] }

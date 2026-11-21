@@ -19,6 +19,7 @@
  */
 const path = require('path');
 const { isCodeFile } = require('./story-gate.js');
+const { homeCommand } = require('./home-command.js');
 
 /**
  * @param {object} p
@@ -57,7 +58,7 @@ function mensaje({ iter, ts, archivos }) {
   return [
     `⚠ tycon-post-revision: ${archivos.length} archivo(s) de código entraron DESPUÉS de la última ronda de revisores (ronda ${iter}, ${hora} UTC): ${lista}`,
     '   Ningún revisor los vio. Si no es un arreglo mínimo ya revisado, corré otra ronda antes de commitear:',
-    `   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js smart-reloop --iter ${iter + 1} --repo . --story <story>`,
+    `   ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} smart-reloop --iter ${iter + 1} --repo . --story <story>`,
     '   (Aviso, no freno. Caso: la migración 054 del repo del framework entró así y rompió el despliegue.)',
   ].join('\n');
 }

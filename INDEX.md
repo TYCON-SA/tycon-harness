@@ -14,7 +14,7 @@ cuando la tarea lo pide. Vale igual con Claude Code y con Codex. Si algo del arn
 
 Cada pieza (guía, script, hook, control) con su caso y su medición: **[guides/piezas-del-arnes.md](guides/piezas-del-arnes.md)**,
 a demanda; el árbol y sus reglas: [Dónde vive cada cosa](guides/piezas-del-arnes.md#dónde-vive-cada-cosa).
-Recorrido completo: **[guides/que-hace-el-arnes.md](guides/que-hace-el-arnes.md)**.
+Recorrido completo: **[guides/what-the-harness-does.md](guides/what-the-harness-does.md)**.
 Las guías: `guides/` para usar el arnés, `guides/integrations/` para las integraciones opcionales y
 `guides/maintaining/` para quien lo mantiene.
 
@@ -25,11 +25,14 @@ la fila aplica.
 
 | Trabajando en... | Leer (on-demand) |
 |---|---|
-| Entender el arnés entero, explicárselo a alguien, o dar la charla | `guides/que-hace-el-arnes.md` |
+| Entender el arnés entero, explicárselo a alguien, o dar la charla | `guides/what-the-harness-does.md` |
 | Entender en detalle UNA pieza — su porqué, su medición, su red de pruebas | `guides/piezas-del-arnes.md` (este archivo es el índice; el detalle está ahí) |
 | Ver qué versión del arnés tenés, si está bien instalado y si hay una nueva | el comando `/tycon-harness` (sólo mira, no cambia nada) |
 | Ver qué está en curso en esta máquina: qué hace cada sesión, en qué paso va, a qué hora termina y qué sesiones están libres | el comando `/wip` (sólo mira, no cambia nada) |
+| Ver lo mismo dibujado como una oficina en 3D: una persona por sesión, con su estado, su hora de fin y los pasos de su corrida · escribirle a una sesión desde su ventana · recibir un aviso de gancho que empieza con `[oficina <id>]` | el comando `/office` (no cambia nada; lo que le escribís a una sesión nunca firma) · `commands/office.md` §«Escribirle a una sesión»; `/office-local` abre la página local aunque la máquina esté aprobada en el sitio |
+| Abrir el sitio de la organización en el navegador · el comando dice que la organización no cargó la dirección | el comando `/org-site` (sólo abre, no cambia nada; la dirección es `site.url` del perfil del equipo) |
 | Coordinar varias sesiones en una máquina: qué va al dueño, abrir y nombrar sesiones, el tope, los turnos del pase adversarial, las firmas · el comando `/coordinate` | `guides/coordination.md` (en inglés, `guides/coordination.en.md`) + `scripts/tools/coordination.js` |
+| Dejar lista una máquina para trabajar con una coordinadora: qué carpetas aprobar, el freno, la confirmación · una sesión que abrió la coordinadora pidió aprobar la carpeta | `node scripts/tools/prepare-machine.js --repo <repo>` (sólo lee) + `guides/working-with-a-coordinator.md` §«Cómo se arranca» |
 | Dar de alta una organización nueva: el repo del perfil del equipo con sus tres archivos | `harness.js team-init` (`getting-started/reference.es.md` §Dar de alta tu organización) |
 | Configurar el arnés para una organización: dónde vive cada repo, a quién se asignan los avisos de la noche, los despliegues, las personas, los umbrales | con el sitio de la organización desplegado, su pestaña **Configuración** (sólo para los que mantienen: valida con los lectores del arnés y propone cada cambio con un pedido; `guides/organization-site.md`); sin sitio, con un pedido al repo de operaciones (`harness.js team-config` muestra de sólo lectura lo que hay en los clones; la portada, §Para equipos) |
 | «Configurá las pruebas de mi proyecto en la configuración del arnés» (la frase del sitio): declarar la herramienta de prueba de un proyecto que la puerta no conoce, con su detalle por repo, como pedido al perfil del equipo | `guides/organization-site.md` §«Tu tecnología» (en inglés, `guides/organization-site.en.md`): lo que la receta permite, dónde está el clon del perfil y cómo va el pedido |
@@ -38,10 +41,11 @@ la fila aplica.
 | Linkear una story nueva a la que viene a fixear/recalibrar (back-links `followup_of:` / `followed_up_by:`) | `story-format.md` §1.2 |
 | Back-fillear back-links de follow-ups en stories existentes (audit periódico de un repo) | `scripts/tools/tycon-backfill-followups.js` (dry-run / `--apply` / `--render-table`) |
 | Una story "no aparece" para el validator / el backfill / los scripts de status, o adoptar el lint de frontmatter en un repo | `story-format.md` §1.0 + `scripts/lib/lint-story-frontmatter.js` |
-| **Agregar o tocar una integración** (avisos, registro de horas, índice de código, revisores propios, cualquier herramienta de afuera) — la regla innegociable: el núcleo no nombra herramientas | `guides/constitucion.md` |
+| **Agregar o tocar una integración** (avisos, registro de horas, índice de código, revisores propios, cualquier herramienta de afuera) — la regla innegociable: el núcleo no nombra herramientas | `guides/constitution.md` |
 | Memoria persistente con engram (si la integración está prendida) | `guides/integrations/engram-workflow.md` |
 | Commit, push, merge, cualquier cosa de git | `guides/git-commit-conventions.md` |
 | Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/maintaining/nombres-en-ingles.md` |
+| Qué palabra va en una guía en castellano (historia, revisor, ejecución, arnés, portón, historial) · avisó el control de las palabras de las guías | `guides/maintaining/vocabulario.md` |
 | Escribir o revisar los comentarios del código (qué hace y por qué, en presente; sin historia ni referencias internas) | `guides/maintaining/estilo-de-codigo.md` |
 | Sumar o actualizar una skill de terceros · de quién es cada cosa y con qué licencia | el manifiesto `scripts/publishing/third-party-skills.json` + `guides/maintaining/publicacion-espejo.md` §«Las skills de terceros» |
 | Correr 2 pipelines/stories en paralelo en el mismo repo · mergear sin congelar el working tree del dev · aislar escrituras de agentes paralelos | `guides/git-worktrees.md` (helper: `scripts/tools/tycon-worktree.sh`) |
@@ -49,25 +53,27 @@ la fila aplica.
 | Crear/reescribir un artefacto de planning (UX spec, navigation map, architecture, PRD) sobre dominio ya cubierto por un artefacto aprobado | `guides/workflow-orchestration.md` §12 — frontmatter `reconciles:`/`supersedes_in:` OBLIGATORIO; sin eso no pasa de `draft` (caso UX spec V7 que ignoró el catálogo firmado) |
 | Story que crea/modifica layout o navegación de pantalla | `guides/workflow-orchestration.md` §11 — validar contra el artefacto de IA antes de `done` (enforced por `WIRING-C5` desde 2026-06-10) |
 | Pipeline de agentes, invocar advisors, integración BMAD | `guides/agent-architecture.md` |
+| Cuándo corren la revisión del plan y la del código, quién la lanza, con qué revisor, quién aprueba, cuándo el dueño cuenta como ausente (`skills/tycon-pipeline/scripts/marker.js owner-away`), o configurarlas | `guides/automatic-reviews.md` (en inglés, `guides/automatic-reviews.en.md`) |
 | Entender qué hace el pase adversarial del pipeline (el paso «Pase adversarial»), leer las pruebas con las que confirmó un hallazgo, o promoverlas a la suite (`skills/tycon-pipeline/scripts/marker.js promote-probe`) | `skills/tycon-pipeline/steps/step-08-adversarial-pass.md` |
 | Entender por qué un advisor reportó X, agregar/retirar reglas | `guides/advisor-rules-catalog.md` |
 | Armar un paquete de revisores propio para el stack de tu organización: qué archivos lleva, cuándo corre un revisor, cómo se activa y cómo se examina (con un ejemplo para Svelte y FastAPI) | `guides/reviewer-packs.md` (en inglés, `guides/reviewer-packs.en.md`) + `examples/packs/svelte-fastapi/` |
 | Cerrar una story (transición a `review`/`done`) — protocolo ACCOV-C7..C10 | `guides/accov-governance-protocol.md` |
 | Configurar hooks `.claude/settings.json` en un proyecto .NET TYCON (migraciones inmutables, dotnet format) (paquete bizuit) | `packs/bizuit/guides/dotnet-hooks.md` |
 | Pasar una story de `review` → `done` (sign-off post-implementación) | `guides/definition-of-done.md` |
-| Un formulario queda sin pruebas y el pipeline lo frena · declarar o pagar una deuda de pruebas en `pruebas-pendientes.json` | `packs/bizuit/guides/deuda-de-pruebas-formularios.md` (paquete bizuit) |
+| Un formulario queda sin pruebas y el pipeline lo frena · declarar o pagar una deuda de pruebas en `pending-tests.json` | `packs/bizuit/guides/deuda-de-pruebas-formularios.md` (paquete bizuit) |
 | Se versionaron y redesplegaron TODOS los formularios de un repo sin motivo · por qué el detector de cambios no cuenta los merges | cabecera y bucle de `scripts/ci/forms-to-version.sh` |
 | Por qué en `main` se construyen y empaquetan TODOS los formularios aunque sólo algunos suban de versión · antes de proponer «construir sólo lo que sube» | `guides/piezas-del-arnes.md` §`affected-forms.js` («construir en `main` también los que NO suben de versión… pone al día producción») |
 | Un merge de **sólo documentación** construyó, desplegó a staging, subió la versión y pidió aprobación de PROD · qué rutas pueden ir en el `trigger` de un pipeline y cuáles no (`.tycon/**` no) · un sitio sin filtro de rutas | `scripts/ci/check-trigger-without-docs.js` (cabecera; se corre a mano sin argumentos) |
 | Escribí pruebas de navegador y quiero saber si el pipeline las corre · el control dice que un repo tiene pruebas sin correr | `scripts/ci/check-tests-without-ci.js` (cabecera; se corre a mano sin argumentos, avisa y no frena) |
 | **Correr CUALQUIER test** (vitest/jest/dotnet) — SIEMPRE antes de `npm test`/`dotnet test` | `guides/test-execution-discipline.md` |
+| Cambiar la matriz o un control de cierre: probarlos sobre un producto de tres repos, contar cuántas historias cambian entre dos versiones, sumar un caso al laboratorio | `scripts/tests/lib/product-lab.js` y `scripts/tools/compare-matrix.js` (cabeceras) |
 | Instalar el MCP de la herramienta de horas (opcional) | `guides/integrations/clockify-mcp.md` |
 | Registro automático de horas (timer con confirmación + cierre por inactividad) | `guides/integrations/clocki-tracking.md` |
 | Registrar horas en otra herramienta (opcional): la URL en el perfil, el token de cada dev, qué hace y qué avisa | `guides/integrations/solidtime.md` |
 | Usar el arnés con modelos de Ollama (Claude Code o Codex): variables, perfiles, qué anda y qué no | `guides/integrations/ollama.md` (en inglés, `guides/integrations/ollama.en.md`) |
 | Usar el arnés con Cursor: qué anda tal cual, qué falta y las advertencias | `guides/integrations/cursor.md` (en inglés, `guides/integrations/cursor.en.md`) |
 | Instalar/configurar CodeGraph (índice de código MCP, opcional) | `guides/integrations/codegraph-mcp.md` |
-| Crear stories que generen work items en Azure DevOps; configurar `.tycon/ado-config.yaml` | `guides/integrations/ado-projects.md` |
+| Crear stories que generen su pedido de trabajo en la plataforma del equipo; configurar `.tycon/work-items.yaml` · sumar un conector de plataforma | `guides/integrations/ado-projects.md` (Azure DevOps), `guides/integrations/github-platform.md` (GitHub), `guides/integrations/platform-connectors.md` (uno nuevo) |
 | Consultar una base de PRODUCCIÓN · te frenó el freno de producción y querés saber por qué · declarar un servidor en `.tycon/production.json` · instalar o actualizar el freno (pide `sudo`) | `guides/produccion-con-permiso.md` |
 | Activar/desactivar el freno de mano del harness (bloqueo de `rm -rf /`, `--no-verify`, `curl\|bash`, `DROP DATABASE`, etc.) | `guides/safety-guard.md` |
 | Qué firmas le pide el arnés al dueño, cuáles se pueden delegar a la coordinadora y cuáles son sólo del dueño (`approvals.delegated_signing`, `approvals.owner_only`) | `guides/firmas-del-arnes.md` |
@@ -116,11 +122,14 @@ aplica. Setup (opcional, por dev): `guides/integrations/codegraph-mcp.md`.
 - Review: `bmad-code-review`, `security-review`, advisors `tycon-plugin-*`.
 - Merge a main: `/tycon-merge-to-main`. Drift de stories: `/check-story-drift`.
 - Engram (si la integración está prendida): siempre con `project:` (nombres canónicos en `guides/integrations/engram-workflow.md`).
-- **Commits: el agente NUNCA commitea ni pushea sin autorización explícita.**
+- **Commits: en una ejecución, el agente commitea y empuja su rama de trabajo solo; la persona aprueba el pull request y cada
+  empuje a una rama compartida, en la ventana de permiso. Fuera de una ejecución, NUNCA commitea ni empuja sin
+  autorización explícita.**
 
 ---
 
 ## Instalación y mantenimiento
 
 El setup por máquina y el opcional (la herramienta de horas, CodeGraph), el mantenimiento y el troubleshooting
-viven en **[INSTALL.md](INSTALL.md)**: onboarding humano de una sola vez, no contexto de cada sesión.
+viven en **[INSTALL.md](INSTALL.md)**: onboarding humano de una sola vez, no contexto de cada sesión. Cómo instala,
+actualiza, vuelve atrás y desinstala el arnés, en una sola guía: `guides/maintaining/mecanismo-de-instalacion.md`.

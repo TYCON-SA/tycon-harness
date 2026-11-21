@@ -41,7 +41,7 @@ function frenar(texto) {
   return 1;
 }
 function git(cwd, args) {
-  return spawnSync('git', args, { cwd, encoding: 'utf8' });
+  return spawnSync('git', args, { windowsHide: true, cwd, encoding: 'utf8' });
 }
 
 /**
@@ -82,7 +82,7 @@ function correrReglas(dir, deadline) {
     if (!fs.existsSync(path.join(dir, suite))) { decir(`${suite}: no viaja en este commit, la salteo.`); continue; }
     const queda = deadline - Date.now();
     if (queda <= 0) return `pasó el tope de ${CAP_MS / 1000} s antes de correr ${suite}.`;
-    const r = spawnSync(process.execPath, [suite], { cwd: dir, env, encoding: 'utf8', timeout: queda, killSignal: 'SIGKILL' });
+    const r = spawnSync(process.execPath, [suite], { windowsHide: true, cwd: dir, env, encoding: 'utf8', timeout: queda, killSignal: 'SIGKILL' });
     if (r.error && r.error.code === 'ETIMEDOUT') return `pasó el tope de ${CAP_MS / 1000} s con ${suite} corriendo.`;
     if (r.error) return `no pude correr ${suite}: ${r.error.message}`;
     if (r.signal || cortado) return `el empuje se cortó con ${suite} corriendo.`;

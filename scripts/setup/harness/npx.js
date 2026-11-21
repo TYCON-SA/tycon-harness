@@ -172,7 +172,18 @@ function steps({ ctx, env, home, tty, ask, secret, launch, tree, io }) {
   const missing = requisites({ env, args: rest, tools: io.tools || null });
   if (missing.length) { missing.forEach(say); throw new Stop(1, `no instalé nada: instalá lo que falta y volvé a correr npx ${PACKAGE}@latest`); }
   let src = o.team ? teamOf(o.team, home) : null;
-  if (o.team && !src) throw new Stop(2, `el repo del perfil tiene que ser ${SHAPES}: «${bare(o.team)}». No instalé nada.`);
+  if (o.team && !src) {
+    // un perfil de esta máquina (harness.js team-init --local) no se instala con npx: se suma después, desde el arnés
+    // instalado (la versión bajada vive en la casa propia, la de TYCON_HOME si está), con las mismas herramientas
+    const p = T.parseTeam(o.team, { home });
+    if (p.ok && p.host === 'local') {
+      const harness = path.join(require('./tycon-home.js').ownRootOf(home), 'harness', 'scripts', 'setup', 'harness.js');
+      const tools = rest.flatMap((a, i) => (a === '--tool' && rest[i + 1] ? [a, rest[i + 1]] : a.startsWith('--tool=') ? [a] : []));
+      const again = ['npx', `${PACKAGE}@latest`, ...tools.map(quote)].join(' ');
+      throw new Stop(2, `«${bare(o.team)}» es una carpeta de esta máquina: npx instala sólo desde un repo (${SHAPES}). Con un perfil local, instalá el arnés sin --team (${again}) y después sumalo: node ${quote(harness)} install --team ${quote(bare(o.team))}${tools.length ? ` ${tools.map(quote).join(' ')}` : ''}. No instalé nada.`);
+    }
+    throw new Stop(2, `el repo del perfil tiene que ser ${SHAPES}: «${bare(o.team)}». No instalé nada.`);
+  }
 
   const here = installed(home);
   if (here) {
@@ -260,11 +271,26 @@ function steps({ ctx, env, home, tty, ask, secret, launch, tree, io }) {
   // ── la instalación, de este árbol y en esta misma terminal ────────────────────────────────────────────────────
   const args = ['install', '--version', 'latest', ...(repo ? ['--repo', repo] : []), ...(team ? ['--team', team] : []), ...(rest.includes('--defaults') ? [] : ['--defaults']), ...rest];
   const status = launch('harness.js install', tree(...args));
+  if (status === 0 && audience !== 'org') nextStep(home);
   if (audience !== 'org' || status !== 0) return status;
   // «dar de alta mi organización»: install sale 0 también sin instalar (el «no» al plan, --dry-run): sin arnés no hay alta
   if (S.read(home).status !== 'ok') { say('no se instaló nada: el alta de tu organización queda para cuando instales (volvé a correr la misma línea)'); return 0; }
   say('instalado: ahora el alta de tu organización (harness.js team-init)');
   return launch('harness.js team-init', tree('team-init'));
+}
+
+// Después de una instalación nueva, el primer día en tres pasos y la página de un minuto del árbol instalado. Sin arnés
+// instalado (el «no» al plan, --dry-run) no hay próximo paso.
+function nextStep(home) {
+  const r = S.read(home);
+  if (r.status !== 'ok' || !r.state || !r.state.tree) return;
+  say('El próximo paso:');
+  // Codex aprueba sus hooks uno por uno: sin ese paso, los controles del arnés no corren en Codex
+  if (Array.isArray(r.state.tools) && r.state.tools.includes('codex')) say('  0. en Codex: abrí codex, corré /hooks y aprobalos una vez; sin eso los controles no corren;');
+  say('  1. abrí tu agente de código en la carpeta de tu repo (si ya estaba abierto, cerralo y abrilo de nuevo);');
+  say('  2. pedile «creá una historia para …» con lo que quieras hacer, y revisala;');
+  say('  3. decí «implementemos la story»: el arnés te lleva paso a paso.');
+  say(`  El arnés en un minuto: ${path.join(r.state.tree, 'getting-started', 'one-minute.es.md')}`);
 }
 
 module.exports = { run, requisites, tarCmd, splitArgs, teamOf, NODE_FLOOR, HARNESS_JS, PACKAGE };

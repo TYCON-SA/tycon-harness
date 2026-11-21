@@ -24,7 +24,10 @@
  *   2. **Evidencia de cierre** — una story que pasa a `review`/`done` en este diff tiene que traer
  *      su evidencia EN EL REPO (`.advisors/dod-runtime/<id>-*.md`, sin contar la matriz por AC, el
  *      self-audit ni el plan manual). Es la mitad del gate local que no depende de la
- *      sesión. Si el código vive en otro repo, la evidencia igual nace acá (`guides/ci-gate.md`).
+ *      sesión. Si el código vive en otro repo, la evidencia igual nace acá (`guides/ci-gate.md`). Se busca en git (en el
+ *      índice con `--staged`) y de lo que dice sólo se lee si declara FAIL. Lo que eso agrega avisa hasta
+ *      STRICT_EVIDENCE_FROM y frena desde ese día; también la carpeta de corrida que, por la fecha en que entró en git,
+ *      pide registro de autoría.
  *   3. **Constancia de revisores** — una story que pasa a `done` tiene que tener una corrida del
  *      pipeline en el repo (`.advisors/pipeline-runs/<id>-…`). Es el ADVISORS-GATE del pre-commit,
  *      en su mitad verificable desde el servidor (la otra mitad vive en el `gates.log` local).
@@ -32,11 +35,27 @@
  *   6. **Examen del revisor que cambia** — un cambio a `agents/<revisor>.md` trae el resultado del examen de ese revisor
  *      sobre ese archivo exacto, con puntaje igual o mayor que la línea de base (`controls-bench/reviewer-change-check.js`).
  *
- * Los seis son MECÁNICOS: sin modelo, sin red, sin estado de sesión.
+ * Todos corren sin modelo, sin red y sin estado de sesión, pero no verifican lo mismo. Cada chequeo dice su nivel en la
+ * salida y en `--json` (`verificacion`):
+ *
+ *   · LOS QUE VERIFICA EL SERVIDOR él mismo con el repo: el frontmatter legible (1), el índice de memoria (5) y el
+ *     examen del revisor que cambia (6, recalcula el puntaje).
+ *   · LOS QUE SÓLO MIRAN QUE EXISTA un archivo con el nombre esperado: la evidencia de cierre (2) y la constancia de
+ *     revisores (3). Una evidencia que dice «hola» los pasa.
+ *   · Los que leen un registro con forma válida de que algo corrió («ejecución registrada»): el registro de autoría (4),
+ *     el de aprobaciones (4b) y el veredicto de la evidencia («no declara FAIL»). Que tenga forma válida no prueba que lo
+ *     escribió el pipeline.
+ *   · «No medido»: un chequeo que esta vez no se hizo (el examen sin su control junto a este guion, el índice local o
+ *     que no se pudo comparar, la regla que no cargó, el chequeo que una exención perdona). Nunca va como verificado.
+ *
+ * El servidor no re-ejecuta nada: no compila, no corre pruebas, no levanta la app. Las exenciones se listan con su
+ * razón, que se exige (`exencion-sin-razon`: avisa hasta EXEMPT_REASON_FROM y frena desde ese día), pero no se firman
+ * acá: el portón no sabe quién las autorizó.
  *
  * ── ADOPCIÓN ────────────────────────────────────────────────────────────────────────────────────
  * Opt-in por repo: meter un paso nuevo en un pipeline de cliente
- * es decisión del dev, no de un script. El snippet de ADO está en `guides/ci-gate.md`.
+ * es decisión del dev, no de un script. El snippet de ADO está en `guides/ci-gate.md`. Dónde no está lo dice cada noche
+ * el inventario de adopción (`scripts/nightly/gate-adoption/gate-adoption.js`).
  *
  * Uso:  node tycon-ci-gate.js [--repo <dir>] [--base <ref>] [--staged] [--json] [--selftest]
  *       `--staged` mira lo que está por commitearse (para el `.githooks/pre-commit` del repo) en
@@ -100,6 +119,86 @@ function escalar(fm, clave) {
 
 const LISTOS = new Set(['review', 'done']);
 
+// Los cuatro niveles de un chequeo (ver la cabecera). Van literales en `--json`.
+const NIVELES = Object.freeze({
+  ARCHIVO: 'archivo-presente',
+  REGISTRO: 'ejecucion-registrada',
+  SERVIDOR: 'verificado-por-el-servidor',
+  NO_MEDIDO: 'no-medido',
+});
+const NIVEL_EN_PALABRAS = {
+  'archivo-presente': 'archivo presente',
+  'ejecucion-registrada': 'ejecución registrada',
+  'verificado-por-el-servidor': 'verificado por el servidor',
+  'no-medido': 'no medido',
+};
+
+// Una exención sin su razón entra avisando: hasta esta fecha avisa y deja pasar; desde esta fecha frena. Son dos semanas
+// desde que el portón empieza a pedirla, para que cada repo complete las razones de sus historias cerradas. Ninguna
+// variable de ambiente la mueve: la fecha se compara con el `hoy` que recibe `revisar`.
+const EXEMPT_REASON_FROM = '2026-12-03';
+const EXENCIONES = ['dod_runtime_exempt', 'advisors_exempt'];
+
+// Lo que el portón empieza a reclamar al mirar git y el veredicto entra avisando, con la misma regla: hasta esta fecha
+// avisa; desde ella frena. Son la evidencia que declara FAIL o no se pudo leer, la que está en el disco y no en git, y la
+// carpeta de corrida que por su fecha en git pide registro de autoría. Lo que ya frenaba sigue frenando desde el primer
+// día. Ninguna variable de ambiente la mueve.
+const STRICT_EVIDENCE_FROM = '2026-12-07';
+
+/** La fecha UTC del día, `AAAA-MM-DD`. */
+function hoyUtc() { return new Date().toISOString().slice(0, 10); }
+
+/**
+ * La razón de una exención (`<campo>_reason`), o null si falta, está vacía o es un nulo de YAML (`~`, `null`). `escalar`
+ * es de una línea: con una razón en bloque (`|` o `>`) devolvería el indicador, que no es una razón. Acá se juntan las
+ * líneas indentadas que siguen al indicador, o a la clave sin valor (una razón escrita en la línea de abajo).
+ */
+function razonDe(fm, campo) {
+  const lineas = String(fm).split('\n');
+  const clave = new RegExp(`^${campo}_reason\\s*:`);
+  const i = lineas.findIndex((l) => clave.test(l));
+  if (i === -1) return null;
+  let valor = lineas[i].replace(clave, '').trim();
+  // entre comillas, la razón es lo de adentro; sin comillas, un `#` después de un espacio empieza un comentario
+  const entre = /^(["'])(.*)\1(\s+#.*)?$/.exec(valor);
+  if (entre) return entre[2].trim() || null;
+  valor = valor.replace(/(^|\s)#.*$/, '').trim();
+  if (!valor && /^\s*#/.test(lineas[i].replace(clave, ''))) return null;
+  if (!valor || /^[|>][+-]?\d*$/.test(valor)) {
+    const bloque = [];
+    for (let j = i + 1; j < lineas.length && (/^\s+\S/.test(lineas[j]) || !lineas[j].trim()); j++) {
+      if (lineas[j].trim()) bloque.push(lineas[j].trim());
+    }
+    return bloque.length ? bloque.join(' ') : null;
+  }
+  return !/^(~|null|Null|NULL)$/.test(valor) ? valor : null;
+}
+
+/**
+ * El nivel del examen de revisores: lo verifica el servidor si su control está junto a este guion y pudo comparar; si
+ * no estaba, o no pudo comparar (`examen.error`), no se midió.
+ */
+function nivelDelExamen(controlPresente, examen) {
+  return controlPresente && !(examen && examen.error) ? NIVELES.SERVIDOR : NIVELES.NO_MEDIDO;
+}
+
+/** El nivel de un chequeo que busca un archivo con la clave de la story: sin clave, o exento, no se buscó nada. */
+function nivelDeBusqueda(exenta, clave) { return exenta || !clave ? NIVELES.NO_MEDIDO : NIVELES.ARCHIVO; }
+
+// la razón la escribe quien abre el pedido: antes de imprimirla, que no pueda dar órdenes al registro (`##vso[…]`)
+const textoDeAfuera = (t) => String(t).replace(/#{2,}/g, '#');
+
+/**
+ * El nivel del chequeo del índice de memoria, según lo que devolvió `revisarIndiceDeMemoria`: null si el diff no lo
+ * toca (no se nombra), no medido si el índice es local o no se pudo comparar, y del servidor si se comparó.
+ */
+function nivelDelIndice(mem) {
+  if (!mem) return null;
+  if (mem.engram && mem.engram.estado === 'indice-local') return NIVELES.NO_MEDIDO;
+  if ((mem.avisos || []).some((a) => a.regla === 'indice-de-memoria-no-comparable')) return NIVELES.NO_MEDIDO;
+  return NIVELES.SERVIDOR;
+}
+
 // El árbol vacío de git. Con él se puede pedir un `diff --cached` en un repo que todavía no tiene
 // ningún commit — ahí `HEAD` no existe y la forma corta falla.
 const ARBOL_VACIO = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
@@ -155,6 +254,154 @@ function esEvidenciaDeCierre(f) {
   const n = String(f || '');
   if (ES_EVIDENCIA_ADEMAS.some((re) => re.test(n))) return true;
   return n.endsWith('.md') && !NO_ES_EVIDENCIA_DE_CIERRE.some((re) => re.test(n));
+}
+
+// ¿La evidencia declara FAIL? Es una COPIA deliberada de `evidenciaDeclaraFail` de `lib/closing-evidence.js` del skill,
+// por el mismo motivo que la de arriba: el portón corre sin las skills. La compara
+// `scripts/tests/closing-evidence-parity.test.js`. Es lo único que el portón lee de lo que dice la evidencia: una que
+// dice «hola» no declara FAIL.
+function evidenciaDeclaraFail(content) {
+  if (!content) return false;
+  if (/(^|\n)[ \t]*(?:[-*][ \t]*)?(?:\*\*)?verdict(?:[ \t]+global)?(?:\*\*)?[ \t]*[:=][ \t]*(?:\*\*)?[ \t]*FAIL\b/i.test(content)) return true;
+  if (/##[ \t]*verdict[ \t]+global[ \t]*(?:\r?\n)+[ \t]*(?:\*\*)?FAIL\b/i.test(content)) return true;
+  return false;
+}
+
+/**
+ * Lo que hay en git: el árbol que va a escribir el commit con `--staged`, `HEAD` sin él. `{ lista, submodulos }` o
+ * `{ error }`: un git que falla no es «no hay». Con `--staged` se lista el árbol de `write-tree` y no `ls-files`: una
+ * ruta anotada con `git add -N` está en el índice sin contenido y el commit no la lleva. `submodulos`: los del primer
+ * nivel, donde también busca el disco; git del repo no lista lo que tienen adentro.
+ */
+function archivosEnGit(repo, staged) {
+  try {
+    const arbol = staged ? git(repo, ['write-tree']).trim() : 'HEAD';
+    const lista = [];
+    const submodulos = [];
+    for (const e of git(repo, ['ls-tree', '-r', '-z', arbol]).split('\0')) {
+      const m = /^\d+ (\w+) [0-9a-f]+\t(.+)$/s.exec(e);
+      if (!m) continue;
+      if (m[1] === 'blob') lista.push(m[2]);
+      else if (m[1] === 'commit' && !m[2].includes('/')) submodulos.push(m[2]);
+    }
+    return { lista, submodulos };
+  } catch (_e) {
+    return { error: staged ? 'git no listó lo que está por commitearse' : 'git no listó lo que trae el commit' };
+  }
+}
+
+/** ¿Algún submódulo del primer nivel trae en el disco lo de la clave? Ahí el portón no puede decir «no está en git». */
+function enSubmodulo(repo, sub, prefijo, enGit) {
+  return !!(enGit && enGit.submodulos) && enGit.submodulos.some((s) => {
+    try {
+      return fs.readdirSync(path.join(repo, s, '.advisors', sub)).some((f) => f.startsWith(prefijo) && (sub !== 'dod-runtime' || esEvidenciaDeCierre(f)));
+    } catch (_e) { return false; }
+  });
+}
+
+// `.advisors/<sub>/<nombre>[/<archivo>]`, en la raíz o un nivel más abajo (monorepos), como la búsqueda en el disco.
+const EN_ADVISORS = /^(?:([^/]+)\/)?\.advisors\/(dod-runtime|pipeline-runs)\/([^/]+)(?:\/(.+))?$/;
+function enAdvisors(rel) {
+  const m = EN_ADVISORS.exec(rel);
+  if (!m || (m[1] && (m[1].startsWith('.') || m[1] === 'node_modules'))) return null;
+  return { sub: m[2], nombre: m[3], adentro: m[4] || null, carpeta: `${m[1] ? `${m[1]}/` : ''}.advisors/${m[2]}/${m[3]}` };
+}
+
+/** La evidencia de cierre de la clave que está en git: `[{ rel, nombre }]`. */
+function evidenciaEnGit(lista, prefijo) {
+  return lista.map((rel) => ({ rel, e: enAdvisors(rel) }))
+    .filter(({ e }) => e && e.sub === 'dod-runtime' && !e.adentro && e.nombre.startsWith(prefijo) && esEvidenciaDeCierre(e.nombre))
+    .map(({ rel, e }) => ({ rel, nombre: e.nombre }));
+}
+
+/** Las carpetas de corrida de la clave que tienen algún archivo en git: `[{ rel, nombre }]`. Git no guarda carpetas. */
+function carpetasEnGit(lista, prefijo) {
+  const clave = prefijo.slice(0, -1);
+  const vistas = new Map();
+  for (const rel of lista) {
+    const e = enAdvisors(rel);
+    if (!e || e.sub !== 'pipeline-runs' || !e.adentro) continue;
+    if (e.nombre !== clave && !e.nombre.startsWith(prefijo)) continue;
+    vistas.set(e.carpeta, { rel: e.carpeta, nombre: e.nombre });
+  }
+  return [...vistas.values()];
+}
+
+/** ¿El registro de humos tiene al menos una línea JSON con `exit` igual a 0? (`smoke-run.sh` lo escribe en cada línea) */
+function registroConSalidaCero(texto) {
+  return String(texto).split('\n').some((l) => {
+    try { const j = JSON.parse(l); return !!j && typeof j === 'object' && j.exit === 0; } catch (_e) { return false; }
+  });
+}
+
+/**
+ * El veredicto de la evidencia de cierre en git: pasa si algún archivo no declara FAIL (un `.md`) o tiene una salida 0
+ * (el registro de humos). Un archivo que git no devuelve, o que no es texto, no deja pasar: `no-leido` si ningún otro
+ * pasa. `{ estado: 'pasa' | 'falla' | 'no-leido', ilegibles }`.
+ */
+function veredictoDeEvidencia(repo, ref, archivos) {
+  let pasa = false;
+  const ilegibles = [];
+  for (const { rel, nombre } of archivos) {
+    const txt = contenidoEn(repo, ref, rel);
+    if (txt === null) { ilegibles.push(`${rel} (git no lo devolvió)`); continue; }
+    if (txt.includes('\u0000')) { ilegibles.push(`${rel} (no es texto)`); continue; }
+    if (ES_EVIDENCIA_ADEMAS.some((re) => re.test(nombre)) ? registroConSalidaCero(txt) : !evidenciaDeclaraFail(txt)) pasa = true;
+  }
+  return { estado: pasa ? 'pasa' : (ilegibles.length ? 'no-leido' : 'falla'), ilegibles };
+}
+
+/**
+ * Cuándo entró una carpeta de corrida en la historia de `ref`: `{ nueva: true }` si no está ahí, `{ fecha: 'AAAA-MM-DD' }`
+ * o `{ error }`. La fecha es la del primer commit que la agregó en `ref`: la de un commit del pedido no cuenta. En un clon
+ * recortado git no falla, contesta la fecha del borde del recorte, así que se pregunta antes. `correr`: el ejecutor de git.
+ */
+function fechaDeCarpeta(repo, ref, rel, correr = git) {
+  if (!ref) return { nueva: true };
+  try {
+    if (!correr(repo, ['--literal-pathspecs', 'ls-tree', '-d', '--name-only', ref, '--', rel]).trim()) return { nueva: true };
+    const recortado = correr(repo, ['rev-parse', '--is-shallow-repository']).trim();
+    if (recortado !== 'false') {
+      return { error: recortado === 'true' ? 'el clon está recortado y git daría la fecha del borde del recorte' : 'git no dijo si el clon está recortado' };
+    }
+    const fechas = correr(repo, ['--literal-pathspecs', 'log', ref, '--diff-filter=A', '--format=%cs', '--', rel])
+      .split('\n').map((l) => l.trim()).filter((l) => /^\d{4}-\d{2}-\d{2}$/.test(l));
+    return fechas.length ? { fecha: fechas[fechas.length - 1] } : { error: 'git no dijo cuándo entró' };
+  } catch (_e) {
+    return { error: 'git no contestó' };
+  }
+}
+
+const conGuiones = (aaaammdd) => `${aaaammdd.slice(0, 4)}-${aaaammdd.slice(4, 6)}-${aaaammdd.slice(6, 8)}`;
+
+/**
+ * El registro de autoría mirado por git: alcanza con un `review-roster.json` válido en git, en alguna carpeta de la clave.
+ * Sin él, se exige por cada carpeta nueva en el pedido, con el nombre que traiga; por la que ya estaba y entró desde el
+ * corte; por la que trae en el nombre una fecha desde el corte; y por la que no se pudo fechar. La que trae en el nombre
+ * una fecha anterior al corte y entró después no se exige: es una contradicción que se avisa.
+ */
+function autoriaPorGit({ repo, refNuevo, refViejo, carpetas, fechar = fechaDeCarpeta }) {
+  const valida = carpetas.some(({ rel }) => {
+    const txt = contenidoEn(repo, refNuevo, `${rel}/review-roster.json`);
+    if (txt === null) return false;
+    try { return validarRoster(JSON.parse(txt), null).ok; } catch (_e) { return false; }
+  });
+  const exige = [];
+  const contradictorias = [];
+  if (valida) return { exige, contradictorias };
+  for (const c of carpetas) {
+    const m = c.nombre.match(/-(\d{8})(?:-?\d*)?$/);
+    const sello = m ? m[1] : null;
+    if (sello && sello >= CUTOFF_ROSTER) { exige.push({ ...c, motivo: `su nombre trae el ${conGuiones(sello)}, desde el corte` }); continue; }
+    const f = fechar(repo, refViejo, c.rel);
+    if (f.nueva) exige.push({ ...c, motivo: 'es nueva en este pedido' });
+    else if (f.error) exige.push({ ...c, motivo: `no pude fechar la carpeta: ${f.error}` });
+    else if (f.fecha.replace(/-/g, '') >= CUTOFF_ROSTER) {
+      if (sello) contradictorias.push({ ...c, fechaNombre: conGuiones(sello), fechaGit: f.fecha });
+      else exige.push({ ...c, motivo: `entró en git el ${f.fecha}, desde el corte` });
+    }
+  }
+  return { exige, contradictorias };
 }
 
 // La CLAVE de la evidencia de cierre: con un número repetido en el repo, `<id>-*` es la
@@ -573,6 +820,11 @@ function revisarIndiceDeMemoria(repo, base, staged) {
   try { criterio = require(path.join(__dirname, '..', 'lib', 'manifest-engram.js')); }
   catch (e) { return { avisos: [{ archivo: '.engram/manifest.json', regla: 'indice-de-memoria-no-comparable', mensaje: `no pude comparar el índice de memoria: falta el criterio (${e.message})` }] }; }
 
+  // En «índice local» el índice no está en el árbol: no hay nada que comparar, y se dice.
+  const modo = criterio.modoDelIndice ? criterio.modoDelIndice(repo) : { modo: null, problema: null };
+  if (modo.problema) return { avisos: [{ archivo: '.engram/manifest.json', regla: 'indice-de-memoria-no-comparable', mensaje: `no pude comparar el índice de memoria: ${modo.problema}` }] };
+  if (modo.modo === 'local') return { engram: { estado: 'indice-local', motivo: 'índice local: no viaja por git' } };
+
   // 🔴 «Lo de antes» es la BASE DE MERGE, no la punta de `--base`.
   // `tocaEngram` y `mdDelDiff` ya usan `base...HEAD` (tres puntos = desde donde se separó la rama);
   // cruzar contra la punta de main sería otra noción de «antes» en el mismo control, y frenaría pull
@@ -621,13 +873,16 @@ function revisarIndiceDeMemoria(repo, base, staged) {
   return { engram: r };
 }
 
-function revisar({ repo, base, staged }) {
+// `hoy` (`AAAA-MM-DD`): contra él se comparan las fechas de corte escritas en el código. Por defecto, la fecha UTC del día.
+function revisar({ repo, base, staged, hoy = hoyUtc() }) {
   const hallazgos = [];
   const avisos = [];
   const revisadas = [];
   const aprobaciones = [];
+  const verificacion = [];
+  const exenciones = [];
   const { files, error } = mdDelDiff(repo, base, staged);
-  if (error) return { error, hallazgos, revisadas };
+  if (error) return { error, hallazgos, revisadas, verificacion, exenciones };
 
   // Qué es "lo nuevo" y qué es "lo de antes" depende de dónde corre el portón. En el servidor lo
   // nuevo ya es un commit (HEAD) y lo de antes es la rama destino del pull request. En el
@@ -635,6 +890,16 @@ function revisar({ repo, base, staged }) {
   // —qué frena y qué no— es EL MISMO: lo único que cambia es contra qué se compara.
   const refNuevo = staged ? '' : 'HEAD';
   const refViejo = staged ? 'HEAD' : base;
+  // Lo que hay en git, una vez por corrida y sólo si alguna historia lo pide. Sin `HEAD` (el primer commit) no hay
+  // referencia vieja: toda carpeta es nueva.
+  let enGit;
+  const listaDeGit = () => (enGit !== undefined ? enGit : (enGit = archivosEnGit(repo, staged)));
+  let hayCabeza;
+  const refDeAntes = () => {
+    if (!staged) return refViejo;
+    if (hayCabeza === undefined) { try { git(repo, ['rev-parse', '--verify', '-q', 'HEAD']); hayCabeza = true; } catch (_e) { hayCabeza = false; } }
+    return hayCabeza ? refViejo : null;
+  };
 
   for (const rel of files) {
     const nuevo = contenidoEn(repo, refNuevo, rel);
@@ -695,10 +960,66 @@ function revisar({ repo, base, staged }) {
     // Perezosa: sólo se recorre el repo si alguna de las dos reglas la necesita.
     let prefStory;
     const prefijoDeLaStory = () => (prefStory !== undefined ? prefStory : (prefStory = prefijoDeEvidencia(idBruto, path.join(repo, rel))));
+    // con el archivo: dos historias pueden declarar el mismo número
+    const nivel = (chequeo, n, detalle) => verificacion.push({ story: idBruto, archivo: rel, chequeo, nivel: n, ...(detalle ? { detalle } : {}) });
+    // Lo que entra con una fecha de corte: antes de la fecha avisa; desde ella va por `destino` (así `review → done` en el
+    // pre-commit sigue avisando). `cuando` es la frase que lo dice en el mensaje.
+    const porFecha = (fecha) => {
+      const desde = hoy >= fecha;
+      const canal = desde ? destino : avisos;
+      const cuando = !desde ? `Avisa hasta el ${fecha} y frena desde ese día`
+        : canal === hallazgos ? 'Frena'
+          : `Desde el ${fecha} en el pedido frena; acá (\`review → done\` antes del commit) avisa`;
+      return { canal, cuando, antes: !desde };
+    };
+    const estricto = (regla, mensaje) => {
+      const { canal, cuando, antes } = porFecha(STRICT_EVIDENCE_FROM);
+      canal.push({ archivo: rel, story: idBruto, regla, mensaje: `${mensaje} ${cuando}.`, ...(antes ? { porFecha: true } : {}) });
+    };
+    const noEstaEnGit = (que, falla) => (falla
+      ? `no pude buscar ${que} en git (${falla}); en el disco está`
+      : `${que} está en el disco y no en ${staged ? 'lo que se va a commitear' : 'el commit'}: el servidor no la va a ver. Puede faltar un \`git add\`, o el \`.gitignore\` la deja afuera (la guía del portón dice qué tiene que dejar pasar)`);
+
+    // (1) su frontmatter se leyó: lo verificó el servidor
+    nivel('frontmatter-legible', NIVELES.SERVIDOR);
+
+    // Las exenciones, con su razón. Sin razón: avisa hasta EXEMPT_REASON_FROM y frena desde ese día (por `destino`, así
+    // `review → done` en el pre-commit sigue avisando).
+    for (const campo of EXENCIONES) {
+      if (!new RegExp(`^${campo}:\\s*true\\b`, 'm').test(fmNuevo)) continue;
+      const razon = razonDe(fmNuevo, campo);
+      exenciones.push({ story: idBruto, archivo: rel, campo, razon });
+      if (razon) continue;
+      const { canal, cuando } = porFecha(EXEMPT_REASON_FROM);
+      canal.push({ archivo: rel, story: idBruto, regla: 'exencion-sin-razon',
+        mensaje: `declara \`${campo}: true\` sin \`${campo}_reason\`. La exención apaga un chequeo del portón: su razón va escrita en la story, que es lo único que el servidor puede mostrar (no sabe quién la autorizó). ${cuando}.` });
+    }
 
     // (2) evidencia de cierre en el repo
     const exentaDod = /^dod_runtime_exempt:\s*true\b/m.test(fmNuevo);
-    if (!exentaDod && !hayEvidencia(repo, 'dod-runtime', idBruto, path.join(repo, rel), prefijoDeLaStory())) {
+    nivel('evidencia-de-cierre', exentaDod ? NIVELES.NO_MEDIDO : nivelDeBusqueda(false, prefijoDeLaStory()));
+    // Primero git: la evidencia que se commitea (o ya está en el commit) es la que cuenta, esté o no en el disco. Sin ella
+    // en git, el disco decide como siempre: si tampoco está ahí frena como hoy; si está, sale por la regla de fecha.
+    const gitDod = !exentaDod && prefijoDeLaStory() ? listaDeGit() : null;
+    const dodEnGit = gitDod && gitDod.lista ? evidenciaEnGit(gitDod.lista, prefijoDeLaStory()) : [];
+    if (dodEnGit.length) {
+      const v = veredictoDeEvidencia(repo, refNuevo, dodEnGit);
+      if (v.estado === 'no-leido') nivel('veredicto-de-la-evidencia', NIVELES.NO_MEDIDO);
+      else nivel('veredicto-de-la-evidencia', NIVELES.REGISTRO, v.estado === 'pasa' ? 'no declara FAIL' : 'declara FAIL');
+      if (v.estado === 'falla') {
+        estricto('evidencia-de-cierre-falla', `pasa a \`${estadoNuevo}\` y toda su evidencia de cierre declara FAIL (${dodEnGit.length} archivo(s)). El portón sólo lee eso: que una no declare FAIL no prueba que pasó. Hace falta una ejecución que no falle.`);
+      } else if (v.estado === 'no-leido') {
+        estricto('veredicto-no-leido', `pasa a \`${estadoNuevo}\` y no pude leer el veredicto de su evidencia de cierre: ${v.ilegibles.join(', ')}. No es «está bien»: es «no lo pude leer».`);
+      }
+    } else if (!exentaDod) {
+      nivel('veredicto-de-la-evidencia', NIVELES.NO_MEDIDO);
+    }
+    const dodEnDisco = !exentaDod && !dodEnGit.length && hayEvidencia(repo, 'dod-runtime', idBruto, path.join(repo, rel), prefijoDeLaStory());
+    if (dodEnDisco && enSubmodulo(repo, 'dod-runtime', prefijoDeLaStory(), gitDod)) {
+      // en un submódulo: pasa como antes de leer git, y su veredicto queda «no medido» (arriba)
+    } else if (dodEnDisco) {
+      estricto('sin-evidencia-de-cierre', `pasa a \`${estadoNuevo}\` y ${noEstaEnGit(`su evidencia de cierre (\`.advisors/dod-runtime/${prefijoDeLaStory()}*\`)`, gitDod && gitDod.error)}.`);
+    } else if (!exentaDod && !dodEnGit.length) {
       // Igual que la constancia de revisores (abajo): sin clave el portón no miró, y la salida no es declarar una
       // exención — que taparía un número repetido — sino arreglar lo que impide calcularla.
       const prefDod = prefijoDeLaStory();
@@ -720,8 +1041,21 @@ function revisar({ repo, base, staged }) {
       for (const h of apr.hallazgos) if (!(exentaAdv && POR_FALTA.has(h.regla))) destino.push({ archivo: rel, story: idBruto, ...h });
       if (!exentaAdv) for (const a of apr.avisos) avisos.push({ archivo: rel, story: idBruto, ...a });
       aprobaciones.push({ story: idBruto, archivo: rel, ...apr.resumen });
+      // Sin la lib, o sin ningún registro en sus carpetas de corrida, el registro no se leyó.
+      const leido = !!approvalsLib && runDirsDeStory(repo, idBruto, path.join(repo, rel)).some(({ dir }) => approvalsLib.leer(dir).existe);
+      nivel('registro-de-aprobaciones', leido ? NIVELES.REGISTRO : NIVELES.NO_MEDIDO);
     }
-    if (estadoNuevo === 'done' && !exentaAdv && !hayEvidencia(repo, 'pipeline-runs', idBruto, path.join(repo, rel), prefijoDeLaStory())) {
+    if (estadoNuevo === 'done') nivel('constancia-de-revisores', exentaAdv ? NIVELES.NO_MEDIDO : nivelDeBusqueda(false, prefijoDeLaStory()));
+    // la carpeta de corrida, con la misma regla: está en git si algún archivo suyo lo está
+    const gitRuns = estadoNuevo === 'done' && !exentaAdv && prefijoDeLaStory() ? listaDeGit() : null;
+    const carpetasGit = gitRuns && gitRuns.lista ? carpetasEnGit(gitRuns.lista, prefijoDeLaStory()) : [];
+    const constanciaEnGit = carpetasGit.some(({ nombre }) => nombre.startsWith(prefijoDeLaStory()));
+    const runsEnDisco = estadoNuevo === 'done' && !exentaAdv && !constanciaEnGit && hayEvidencia(repo, 'pipeline-runs', idBruto, path.join(repo, rel), prefijoDeLaStory());
+    if (runsEnDisco && enSubmodulo(repo, 'pipeline-runs', prefijoDeLaStory(), gitRuns)) {
+      // en un submódulo: pasa como antes de leer git
+    } else if (runsEnDisco) {
+      estricto('sin-constancia-de-revisores', `pasa a \`done\` y ${noEstaEnGit(`su carpeta de revisores (\`.advisors/pipeline-runs/${prefijoDeLaStory()}*/\`)`, gitRuns && gitRuns.error)}.`);
+    } else if (estadoNuevo === 'done' && !exentaAdv && !constanciaEnGit) {
       const pref = prefijoDeLaStory();
       // Sin clave el portón NO miró (falla cerrado): el hallazgo lo dice, no sólo el aviso por stderr.
       // «No pude verificar» y «no hay constancia» piden cosas distintas al dev.
@@ -747,6 +1081,9 @@ function revisar({ repo, base, staged }) {
     // Vuelve a frenar con TYCON_ROSTER_NAMES=block, y `write-findings` la deja casi imposible de
     // fallar (el firmante de un hallazgo se ELIGE de los revisores que corrieron, no se tipea):
     // cuando eso esté, se revisa si vuelve a frenar o si directamente sobra.
+    // ejecución registrada sólo si alguna carpeta de corrida trae su registro: sin él, el portón no leyó nada
+    const conRegistro = () => runDirsDeStory(repo, idBruto, path.join(repo, rel)).some(({ dir }) => fs.existsSync(path.join(dir, 'review-roster.json')));
+    if (estadoNuevo === 'done') nivel('registro-de-autoria', !exentaAdv && conRegistro() ? NIVELES.REGISTRO : NIVELES.NO_MEDIDO);
     if (estadoNuevo === 'done' && !exentaAdv) {
       // 🔴 El canal lo decide el PROPIO hallazgo, no la regla entera: uno que trae
       // su `tramo` fue validado al escribirse contra el registro de esa corrida, así que si igual
@@ -754,9 +1091,23 @@ function revisar({ repo, base, staged }) {
       // validó— y sigue avisando. Vuelve a frenar sola a medida que las corridas viejas dejan de
       // cerrarse, sin día de corte y sin depender de que alguien cierre una ventana de medición.
       const nombresFrenan = llaveFrena(readEnv('TYCON_ROSTER_NAMES', { where: WHERE }));
-      for (const h of revisarAutoria(repo, idBruto, path.join(repo, rel))) {
+      const autoria = revisarAutoria(repo, idBruto, path.join(repo, rel));
+      for (const h of autoria) {
         const esAviso = h.regla === 'roster-incoherente' && !nombresFrenan && !h.validado;
         (esAviso ? avisos : destino).push({ archivo: rel, story: idBruto, ...h });
+      }
+      // Lo de arriba mira el disco y la fecha del nombre, y frena como siempre. Si no reclamó nada, se mira git: la fecha
+      // en que la carpeta entró, que no elige quien la crea. Lo que encuentra sale por la regla de fecha. La incoherencia
+      // del disco no es un reclamo: con ella sola, un registro que no está en git pasaría.
+      if (!autoria.some((h) => h.regla !== 'roster-incoherente') && carpetasGit.length) {
+        const a = autoriaPorGit({ repo, refNuevo, refViejo: refDeAntes(), carpetas: carpetasGit });
+        for (const c of a.contradictorias) {
+          avisos.push({ archivo: rel, story: idBruto, regla: 'carpeta-fecha-contradictoria',
+            mensaje: `\`${c.rel}/\` trae en el nombre el ${c.fechaNombre}, antes del corte del registro de autoría, y entró en git el ${c.fechaGit}, después. No se le exige el registro (una ejecución vieja que entró por squash o por una migración); si no lo es, revisalo. Avisa y no frena.` });
+        }
+        if (a.exige.length) {
+          estricto('sin-registro-de-autoria', `pasa a \`done\` y ninguna carpeta de ejecución trae en git un \`review-roster.json\` válido, y lo piden: ${a.exige.map((c) => `\`${c.rel}/\` (${c.motivo})`).join(', ')}. La fecha sale de git, no del nombre: el nombre lo elige quien crea la carpeta. Lo escribe el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.`);
+        }
       }
     }
   }
@@ -766,21 +1117,27 @@ function revisar({ repo, base, staged }) {
     for (const h of (mem.hallazgos || [])) hallazgos.push(h);
     for (const a of (mem.avisos || [])) avisos.push(a);
   }
+  const nivelMem = nivelDelIndice(mem);
+  if (nivelMem) verificacion.push({ story: null, chequeo: 'indice-de-memoria', nivel: nivelMem });
 
   // (6) el examen del revisor que cambia — a nivel REPO, sólo si el control está junto a este guion
   const examenPath = path.join(__dirname, '..', 'controls-bench', 'reviewer-change-check.js');
-  if (fs.existsSync(examenPath)) {
-    const examen = require(examenPath).checkReviewerChange({ repo, base, staged });
+  const examen = fs.existsSync(examenPath) ? require(examenPath).checkReviewerChange({ repo, base, staged }) : null;
+  verificacion.push({ story: null, chequeo: 'examen-de-revisores', nivel: nivelDelExamen(!!examen, examen) });
+  if (examen) {
     if (examen.error) hallazgos.push({ archivo: 'agents/', regla: 'reviewer-exam-not-comparable', mensaje: `no pude comparar los cambios de revisores: ${examen.error}. Comando: \`node scripts/controls-bench/reviewer-change-check.js check\`` });
     for (const h of examen.hallazgos) hallazgos.push({ archivo: h.archivo, regla: h.regla, mensaje: `${h.mensaje} Comando: \`${h.comando}\`` });
     for (const a of examen.avisos) avisos.push(a);
   }
 
-  return { hallazgos, avisos, revisadas, aprobaciones, archivos: files.length, ...(mem && mem.engram ? { engram: mem.engram } : {}) };
+  return { hallazgos, avisos, revisadas, aprobaciones, verificacion, exenciones, archivos: files.length, ...(mem && mem.engram ? { engram: mem.engram } : {}) };
 }
 
 // ── selftest ────────────────────────────────────────────────────────────────────────────────────
 function selftest() {
+  // La autoprueba deja la evidencia en el disco sin commitearla: con un `hoy` fijo, anterior a las fechas de corte, no se
+  // pone roja sola el día que llega una. Lo que pasa desde cada fecha lo prueban sus suites.
+  const HOY_FIJO = '2026-11-01';
   const os = require('os');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cigate-'));
   const sh = (...a) => execFileSync('git', ['-C', tmp, ...a], { stdio: 'ignore' });
@@ -794,7 +1151,7 @@ function selftest() {
   const conStory = (txt) => { fs.writeFileSync(path.join(tmp, 'specs', 'stories', '1-1.md'), txt); sh('add', '-A'); sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'x'); };
 
   conStory(story('done'));
-  const sinNada = revisar({ repo: tmp, base });
+  const sinNada = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
   // 🔴 Lo que NO es evidencia de cierre aunque lleve el prefijo: la matriz por AC,
   // el self-audit y el plan manual. Con estos archivos el portón daría VERDE — una
@@ -803,36 +1160,36 @@ function selftest() {
   for (const f of ['1.1-runtime-matrix.md', '1.1-self-audit-iter1.md', '1.1-manual-test-plan.md']) {
     fs.writeFileSync(path.join(tmp, '.advisors', 'dod-runtime', f), 'no es evidencia');
   }
-  const soloMatriz = revisar({ repo: tmp, base });
+  const soloMatriz = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   // 🔴 …pero el ledger de smokes SÍ: es el registro crudo de cada
   // prueba que corrió, escrito por la máquina. La definición única rige en las cuatro capas a la vez.
   fs.writeFileSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-smoke-ledger.jsonl'), '{"story":"1.1","acs":[1],"exit":0}\n');
-  const conLedger = revisar({ repo: tmp, base });
+  const conLedger = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   fs.rmSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-smoke-ledger.jsonl'));
   // …y el gate E2E del proyecto (commiteado a mano) sí lo es.
   fs.writeFileSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-e2e-gate-20260905T120000Z.md'), 'verdict=PASS');
-  const conGate = revisar({ repo: tmp, base });
+  const conGate = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   fs.rmSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-e2e-gate-20260905T120000Z.md'));
   // …y el smoke driven de UI (`<id>-ui-smoke-<ts>.md`) y el del macro (`<id>-<ts>.md`) también.
   fs.writeFileSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-ui-smoke-20260905T120000Z.md'), 'AC→assertion');
-  const conUiSmoke = revisar({ repo: tmp, base });
+  const conUiSmoke = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   fs.rmSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-ui-smoke-20260905T120000Z.md'));
 
   fs.writeFileSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-20260825.md'), 'evidencia');
-  const soloDod = revisar({ repo: tmp, base });
+  const soloDod = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260825'), { recursive: true });
-  const completo = revisar({ repo: tmp, base });
+  const completo = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
-  conStory(story('done', 'dod_runtime_exempt: true\nadvisors_exempt: true\n'));
+  conStory(story('done', 'dod_runtime_exempt: true\ndod_runtime_exempt_reason: autoprueba\nadvisors_exempt: true\nadvisors_exempt_reason: autoprueba\n'));
   fs.rmSync(path.join(tmp, '.advisors'), { recursive: true, force: true });
-  const exenta = revisar({ repo: tmp, base });
+  const exenta = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
   conStory('---\nstory: "1.1"\nstatus: done\n# falta el cierre\n');
-  const roto = revisar({ repo: tmp, base });
+  const roto = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
   conStory(story('in-progress'));
-  const sinTransicion = revisar({ repo: tmp, base });
+  const sinTransicion = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
   // 🔴 Un reporte de medición SIN frontmatter que menciona `story:` en el cuerpo no es una story y no
   // se puede tratar como una story rota. Se caza con el detector del lint local.
@@ -840,30 +1197,30 @@ function selftest() {
   fs.writeFileSync(path.join(tmp, 'mediciones', 'resultado.md'),
     '# Qué reglas implementa el proceso\n\nmide: cadena\nstory: 4.37\nmaterial: filas.json\n');
   sh('add', '-A'); sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'medicion');
-  const medicion = revisar({ repo: tmp, base });
+  const medicion = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
   // ── Regla 4: registro de autoría ────────────────────────────────────────────────────────────
-  conStory(story('done', 'dod_runtime_exempt: true\n'));
+  conStory(story('done', 'dod_runtime_exempt: true\ndod_runtime_exempt_reason: autoprueba\n'));
   const runPost = path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260901120000');
   fs.mkdirSync(runPost, { recursive: true });
   // (a) run POSTERIOR al corte y sin roster → frena
-  const postSinRoster = revisar({ repo: tmp, base });
+  const postSinRoster = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   const rosterOk = {
     version: 1, story: '1.1', implementer: { kind: 'sesion-principal', session_id: 's1' },
     reviewers: [{ agent: 'tycon-plugin-security-basics', kind: 'subagente', model: 'opus' }], iterations: 1,
   };
   // (b) con roster válido → limpio
   fs.writeFileSync(path.join(runPost, 'review-roster.json'), JSON.stringify(rosterOk));
-  const postConRoster = revisar({ repo: tmp, base });
+  const postConRoster = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   // (c) el que implementó figura como revisor → frena (aunque el run sea viejo)
   fs.writeFileSync(path.join(runPost, 'review-roster.json'), JSON.stringify({
     ...rosterOk, reviewers: [{ agent: 'yo-mismo', kind: 'sesion-principal' }],
   }));
-  const autoRevision = revisar({ repo: tmp, base });
+  const autoRevision = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   // (d) findings nombra un advisor que el roster no lista → incoherente
   fs.writeFileSync(path.join(runPost, 'review-roster.json'), JSON.stringify(rosterOk));
   fs.writeFileSync(path.join(runPost, 'findings.json'), JSON.stringify([{ advisor: 'fantasma', rule_id: 'X-1' }]));
-  const incoherente = revisar({ repo: tmp, base });
+  const incoherente = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   // (d1) la misma entrada con la llave puesta: la regla vuelve a frenar (el kill-switch se prueba,
   // no se confía — un interruptor que nadie ejerce es un interruptor que no se sabe si anda).
   const incoherenteFreno = (() => {
@@ -873,7 +1230,7 @@ function selftest() {
     const antes = nombres.map((k) => process.env[k]);
     for (const k of nombres) delete process.env[k];
     process.env.TYCON_ROSTER_NAMES = 'block';
-    try { return revisar({ repo: tmp, base }); }
+    try { return revisar({ hoy: HOY_FIJO, repo: tmp, base }); }
     finally { nombres.forEach((k, i) => { if (antes[i] === undefined) delete process.env[k]; else process.env[k] = antes[i]; }); }
   })();
   // (d1b) el MISMO hallazgo, pero escrito por `write-findings` con su `tramo`: eso
@@ -881,31 +1238,31 @@ function selftest() {
   // incoherencia es REAL y frena sin necesidad de la llave. Es cómo la regla vuelve sola a frenar
   // a medida que las corridas del formato viejo dejan de cerrarse.
   fs.writeFileSync(path.join(runPost, 'findings.json'), JSON.stringify([{ advisor: 'fantasma', rule_id: 'X-1', tramo: 'revision' }]));
-  const incoherenteValidado = revisar({ repo: tmp, base });
+  const incoherenteValidado = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   // (d2) las fuentes del propio pipeline no son revisores y NO pueden frenar
   fs.writeFileSync(path.join(runPost, 'findings.json'), JSON.stringify([
     { advisor: 'mech-check', rule_id: 'MECH-2' },
     { advisor: 'adversarial-verify:algorithmic-correctness', rule_id: 'ADV-1' },
     { advisor: 'tycon-plugin-security-basics', rule_id: 'SEC-C1' },
   ]));
-  const sinteticas = revisar({ repo: tmp, base });
+  const sinteticas = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   // (e) roster ilegible → frena siempre
   fs.rmSync(path.join(runPost, 'findings.json'));
   fs.writeFileSync(path.join(runPost, 'review-roster.json'), '{ esto no es json');
-  const ilegible = revisar({ repo: tmp, base });
+  const ilegible = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   // (f) run ANTERIOR al corte y sin roster → no se le puede reclamar
   fs.rmSync(runPost, { recursive: true, force: true });
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260825120000'), { recursive: true });
-  const preCutoff = revisar({ repo: tmp, base });
+  const preCutoff = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   // (g) la OTRA forma real del nombre (`-YYYYMMDD-HHMM`): también es una fecha, y también es vieja.
   // Leerla mal dejaría el run "sin fecha" y lo frenaría.
   fs.rmSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260825120000'), { recursive: true, force: true });
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260824-1200'), { recursive: true });
-  const preCutoffConHora = revisar({ repo: tmp, base });
+  const preCutoffConHora = revisar({ hoy: HOY_FIJO, repo: tmp, base });
   // (h) un nombre SIN fecha (otra convención de repo) tampoco se reclama
   fs.rmSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260824-1200'), { recursive: true, force: true });
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-corrida-manual'), { recursive: true });
-  const sinFecha = revisar({ repo: tmp, base });
+  const sinFecha = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
   // ── Modo `--staged`: el MISMO control, antes de que el commit exista ───────────
   // Caso: una story que entra declarándose `review` con su código sin pushear. El freno local
@@ -916,11 +1273,11 @@ function selftest() {
   conStory(story('in-progress'));                        // punto de partida, ya commiteado
   fs.writeFileSync(path.join(tmp, 'specs', 'stories', '1-1.md'), story('review'));
   sh('add', '-A');                                       // en el índice, SIN commitear
-  const stagedSinEvidencia = revisar({ repo: tmp, staged: true });
+  const stagedSinEvidencia = revisar({ hoy: HOY_FIJO, repo: tmp, staged: true });
 
   fs.mkdirSync(path.join(tmp, '.advisors', 'dod-runtime'), { recursive: true });
   fs.writeFileSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-20260904.md'), 'evidencia');
-  const stagedConEvidencia = revisar({ repo: tmp, staged: true });
+  const stagedConEvidencia = revisar({ hoy: HOY_FIJO, repo: tmp, staged: true });
 
   // 🔴 Lo que YA está commiteado no se vuelve a reclamar. Sin esto, cada commit posterior del repo
   // frenaría por una story cerrada hace semanas — y un freno que muerde sin motivo se apaga en una
@@ -929,7 +1286,7 @@ function selftest() {
   fs.rmSync(path.join(tmp, '.advisors'), { recursive: true, force: true });
   fs.writeFileSync(path.join(tmp, 'otro.md'), '# nada que ver\n');
   sh('add', '-A');
-  const stagedOtraCosa = revisar({ repo: tmp, staged: true });
+  const stagedOtraCosa = revisar({ hoy: HOY_FIJO, repo: tmp, staged: true });
 
   // 🔴 `review → done` en `--staged` AVISA y no frena: la decisión
   // tiene que vivir en las dos copias, o el aviso del skill es inerte. Con la llave, frena.
@@ -939,12 +1296,12 @@ function selftest() {
   fs.rmSync(path.join(tmp, '.advisors'), { recursive: true, force: true });
   fs.writeFileSync(path.join(tmp, 'specs', 'stories', '1-1.md'), story('done'));
   sh('add', '-A');
-  const stagedInterna = revisar({ repo: tmp, staged: true });
+  const stagedInterna = revisar({ hoy: HOY_FIJO, repo: tmp, staged: true });
   const llaveVieja = process.env.TYCON_REVIEW_A_DONE;
   process.env.TYCON_REVIEW_A_DONE = 'block';
-  const stagedInternaFreno = revisar({ repo: tmp, staged: true });
+  const stagedInternaFreno = revisar({ hoy: HOY_FIJO, repo: tmp, staged: true });
   if (llaveVieja === undefined) delete process.env.TYCON_REVIEW_A_DONE; else process.env.TYCON_REVIEW_A_DONE = llaveVieja;
-  const ciInterna = revisar({ repo: tmp, base });        // en el pull request sigue frenando
+  const ciInterna = revisar({ hoy: HOY_FIJO, repo: tmp, base });        // en el pull request sigue frenando
   let cliInterna = -1;
   try { execFileSync(process.execPath, [__filename, '--repo', tmp, '--staged'], { stdio: 'ignore' }); cliInterna = 0; }
   catch (e) { cliInterna = e.status; }
@@ -1007,7 +1364,7 @@ function selftest() {
 
   escribirIndice(['aaaa1111', 'bbbb2222']);          // el índice pierde una entrada
   commit2('el índice truncado entra al pull request');
-  const prQuePierde = revisar({ repo: tmp2, base: baseEngram });
+  const prQuePierde = revisar({ hoy: HOY_FIJO, repo: tmp2, base: baseEngram });
 
   // Heredado: la base YA venía en deriva y el pull request no empeora nada (toca otra cosa de
   // `.engram/`, así que el chequeo igual mira).
@@ -1022,18 +1379,18 @@ function selftest() {
   fs.writeFileSync(path.join(tmp3, '.engram', 'chunks', 'dddd4444.jsonl.gz'), zlib.gzipSync('{}\n'));
   fs.writeFileSync(path.join(tmp3, '.engram', 'manifest.json'), JSON.stringify({ version: 1, chunks: [entrada('aaaa1111', 1), entrada('bbbb2222', 2), entrada('dddd4444', 4)] }, null, 2));
   sh3('add', '-A'); sh3('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'agrega uno bien declarado');
-  const prHeredado = revisar({ repo: tmp3, base: baseHeredada });
+  const prHeredado = revisar({ hoy: HOY_FIJO, repo: tmp3, base: baseHeredada });
 
   // Un diff que NO toca `.engram/`: el chequeo no lee nada (cero costo, cero ruido).
   fs.writeFileSync(path.join(tmp3, 'otra-cosa.txt'), 'x');
   sh3('add', '-A'); sh3('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'nada que ver');
   const baseSinEngram = git(tmp3, ['rev-parse', 'HEAD~1']).trim();
-  const prSinEngram = revisar({ repo: tmp3, base: baseSinEngram });
+  const prSinEngram = revisar({ hoy: HOY_FIJO, repo: tmp3, base: baseSinEngram });
 
   // `--staged`: el mismo criterio antes de que el commit exista.
   escribirIndice(['aaaa1111']);                       // pierde otra más, sin commitear
   sh2('add', '-A');
-  const stagedQuePierde = revisar({ repo: tmp2, staged: true });
+  const stagedQuePierde = revisar({ hoy: HOY_FIJO, repo: tmp2, staged: true });
 
   // La referencia vieja ilegible: avisa, no frena. Nunca se rechaza un pull request por lo que no
   // se pudo comparar, y nunca se lo da por bueno por eso mismo.
@@ -1048,7 +1405,7 @@ function selftest() {
   fs.writeFileSync(path.join(tmp4, '.engram', 'chunks', 'bbbb2222.jsonl.gz'), zlib.gzipSync('{}\n'));
   fs.writeFileSync(path.join(tmp4, '.engram', 'manifest.json'), JSON.stringify({ version: 1, chunks: [entrada('aaaa1111', 1)] }, null, 2));
   sh4('add', '-A'); sh4('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'ahora el índice parsea');
-  const prBaseIlegible = revisar({ repo: tmp4, base: baseIlegible });
+  const prBaseIlegible = revisar({ hoy: HOY_FIJO, repo: tmp4, base: baseIlegible });
 
   // 🔴 Base de merge, no punta de main: main repara el índice DESPUÉS
   // del fork; la rama, abierta antes, ni tocó esos ids. Contra la punta saldrían como «perdidas».
@@ -1068,7 +1425,7 @@ function selftest() {
   fs.writeFileSync(path.join(tmp5, '.engram', 'manifest.json'), JSON.stringify({ version: 1, chunks: [entrada('aaaa1111', 1), entrada('bbbb2222', 2)] }, null, 2));
   commit5('main repara el huérfano después del fork');
   sh5('checkout', '-q', 'rama');
-  const prContraMainReparado = revisar({ repo: tmp5, base: 'main' });
+  const prContraMainReparado = revisar({ hoy: HOY_FIJO, repo: tmp5, base: 'main' });
   fs.rmSync(tmp5, { recursive: true, force: true });
 
   // 🔴 Los avisos del chequeo 5 llegan al CLI aunque no haya stories ni hallazgos:
@@ -1090,7 +1447,7 @@ function selftest() {
   sh6('checkout', '-q', '--orphan', 'huerfana');                       // historia SIN ancestro común
   fs.writeFileSync(path.join(tmp6, '.engram', 'manifest.json'), JSON.stringify({ version: 1, chunks: [entrada('aaaa1111', 1)] }, null, 2));
   sh6('add', '-A'); sh6('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'huérfana: 1 de 2');
-  const prSinBaseComun = revisar({ repo: tmp6, base: 'main' });
+  const prSinBaseComun = revisar({ hoy: HOY_FIJO, repo: tmp6, base: 'main' });
   fs.rmSync(tmp6, { recursive: true, force: true });
 
   // 🔴 Un archivo MOVIDO fuera de `.engram/` no esquiva el chequeo. `git diff --name-only` empareja el borrado con el
@@ -1113,10 +1470,10 @@ function selftest() {
   const movedIndexBase = git(tmp7.d, ['rev-parse', 'HEAD']).trim();
   tmp7.sh('mv', '.engram/manifest.json', 'backup/manifest.json');
   tmp7.sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'el índice se muda de carpeta');
-  const movedIndexPr = revisar({ repo: tmp7.d, base: movedIndexBase });
+  const movedIndexPr = revisar({ hoy: HOY_FIJO, repo: tmp7.d, base: movedIndexBase });
   const tmp8 = memoryRepo('cigate-engram7-');
   tmp8.sh('mv', '.engram/chunks/bbbb2222.jsonl.gz', 'backup/bbbb2222.jsonl.gz');   // stageado, sin commitear
-  const movedChunkStaged = revisar({ repo: tmp8.d, staged: true });
+  const movedChunkStaged = revisar({ hoy: HOY_FIJO, repo: tmp8.d, staged: true });
   // el espejo: mover algo que no es de la memoria sigue sin leer nada del índice
   const tmp9 = memoryRepo('cigate-engram8-');
   fs.writeFileSync(path.join(tmp9.d, 'note.txt'), 'una nota cualquiera, con texto suficiente para que git la empareje\n');
@@ -1124,7 +1481,7 @@ function selftest() {
   const movedNoteBase = git(tmp9.d, ['rev-parse', 'HEAD']).trim();
   tmp9.sh('mv', 'note.txt', 'backup/note.txt');
   tmp9.sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'la nota se muda');
-  const movedNotePr = revisar({ repo: tmp9.d, base: movedNoteBase });
+  const movedNotePr = revisar({ hoy: HOY_FIJO, repo: tmp9.d, base: movedNoteBase });
   for (const t of [tmp7, tmp8, tmp9]) fs.rmSync(t.d, { recursive: true, force: true });
 
   let cliEngram = 0;
@@ -1235,20 +1592,54 @@ function main() {
   // antes del bloque de avisos, todo aviso del chequeo 5 —«no pude comparar el índice de
   // memoria», «deriva heredada»— se tragaría y el portón imprimiría ✅. Nunca se da por bueno
   // lo que no se pudo medir.
+  if (r.engram && r.engram.estado === 'indice-local') console.log(`ℹ️  índice de memoria: ${r.engram.motivo} (no se compara).`);
+  // Lo que dice toda línea verde: el visto bueno es «hay archivos con el nombre correcto y lo que el servidor verificó
+  // él mismo», no «se probó».
+  const SIN_REEJECUTAR = 'El servidor no re-ejecutó nada: no compiló, no corrió pruebas ni levantó la app.';
   if (!r.revisadas.length && !r.hallazgos.length && !(r.avisos || []).length) {
-    console.log(`✅ tycon-ci-gate: ninguna story pasa a review/done en ${dondeMira} (${r.archivos} .md mirados).`);
+    console.log(`✅ tycon-ci-gate: ninguna story pasa a review/done en ${dondeMira} (${r.archivos} .md mirados). ${SIN_REEJECUTAR}`);
     return 0;
   }
+  const verif = r.verificacion || [];
+  const enPalabras = (lista) => lista.map((v) => `${v.chequeo.replace(/-/g, ' ')}: ${NIVEL_EN_PALABRAS[v.nivel] || v.nivel}${v.detalle ? `: ${v.detalle}` : ''}`).join(' · ');
   if (r.revisadas.length) {
     console.log(`tycon-ci-gate: ${r.revisadas.length} story(s) declarándose lista(s):`);
-    for (const s of r.revisadas) console.log(`   · ${s.story} (${s.de} → ${s.a}) — ${s.archivo}`);
+    for (const s of r.revisadas) {
+      console.log(`   · ${s.story} (${s.de} → ${s.a}) — ${s.archivo}`);
+      const deLaStory = verif.filter((v) => v.archivo === s.archivo);
+      if (deLaStory.length) console.log(`     chequeos: ${enPalabras(deLaStory)}`);
+    }
+  }
+  const delRepo = verif.filter((v) => v.story === null);
+  if (delRepo.length) console.log(`   chequeos del repo: ${enPalabras(delRepo)}`);
+  const exen = r.exenciones || [];
+  if (exen.length) {
+    console.log(`   ${exen.length} exención(es): ${exen.map((e) => `${e.campo} (razón: ${e.razon ? textoDeAfuera(e.razon) : 'FALTA'})`).join(' · ')}`);
+    console.log('   (la razón la escribe la story; el servidor no sabe quién autorizó la exención)');
   }
   for (const a of r.aprobaciones || []) {
     const total = a.manual + a.automatica;
     if (!total) continue;
     console.log(`   aprobaciones de ${a.story}: ${a.manual} ${a.manual === 1 ? 'manual' : 'manuales'} · ${a.automatica} ${a.automatica === 1 ? 'automática' : 'automáticas'}${a.sinNombrar ? ` (${a.sinNombrar} sin nombrar)` : ''}`);
   }
-  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla) && h.regla !== 'sin-registro-de-aprobaciones');
+  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla) && h.regla !== 'sin-registro-de-aprobaciones' && h.regla !== 'exencion-sin-razon' && !h.porFecha && h.regla !== 'carpeta-fecha-contradictoria');
+  // Lo que el portón empieza a frenar con la lectura por git y del veredicto: su propio bloque, por la fecha.
+  const avisosPorFecha = (r.avisos || []).filter((h) => h.porFecha);
+  if (avisosPorFecha.length) {
+    console.error(`\n⚠️  AVISO — lo que el portón empieza a frenar (avisa hasta el ${STRICT_EVIDENCE_FROM}; desde ese día frena):`);
+    for (const h of avisosPorFecha) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
+  }
+  const avisosDeFecha = (r.avisos || []).filter((h) => h.regla === 'carpeta-fecha-contradictoria');
+  if (avisosDeFecha.length) {
+    console.error('\n⚠️  AVISO — carpetas de ejecución cuya fecha en el nombre no coincide con la de git (no frena):');
+    for (const h of avisosDeFecha) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
+  }
+  // Su propio bloque: no depende de `review → done` ni de TYCON_REVIEW_A_DONE, sino de una fecha.
+  const avisosDeExencion = (r.avisos || []).filter((h) => h.regla === 'exencion-sin-razon');
+  if (avisosDeExencion.length) {
+    console.error(`\n⚠️  AVISO — exenciones sin su razón (avisa hasta el ${EXEMPT_REASON_FROM}; desde ese día frena):`);
+    for (const h of avisosDeExencion) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
+  }
   const avisosDeAprobaciones = (r.avisos || []).filter((h) => h.regla === 'sin-registro-de-aprobaciones');
   if (avisosDeAprobaciones.length) {
     console.error('\n⚠️  AVISO — ejecuciones sin registro de aprobaciones (no frena):');
@@ -1288,7 +1679,7 @@ function main() {
     console.error(`\n⚠️  AVISO — el índice de memoria de engram (no frena, pero NO es «está bien»):`);
     for (const h of avisosDeMemoria) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
   }
-  if (!r.hallazgos.length) { console.log(r.avisos && r.avisos.length ? '✅ Nada que frene (el aviso de arriba se mide, no frena).' : '✅ Todas traen su evidencia en el repo.'); return 0; }
+  if (!r.hallazgos.length) { console.log(`${r.avisos && r.avisos.length ? '✅ Nada que frene (el aviso de arriba se mide, no frena).' : '✅ Todas traen su evidencia en el repo: los archivos con el nombre correcto y lo que el servidor verificó él mismo (arriba, chequeo por chequeo).'} ${SIN_REEJECUTAR}`); return 0; }
   console.error(`\n❌ tycon-ci-gate — ${r.hallazgos.length} problema(s):`);
   for (const h of r.hallazgos) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
   if (staged) {
@@ -1318,4 +1709,4 @@ if (require.main === module) process.exitCode = main();
 // `mdDelDiff` y `contenidoEn` se exportan para que `cierre-recortado` T12 pueda
 // EJECUTARLAS en vez de comparar sus bytes contra `main`. Comparar texto no distingue una mejora
 // de un deterioro: cualquier cambio sale rojo.
-module.exports = { llaveFrena, revisar, revisarAprobaciones, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn };
+module.exports = { EXEMPT_REASON_FROM, STRICT_EVIDENCE_FROM, evidenciaDeclaraFail, fechaDeCarpeta, NIVELES, nivelDelExamen, nivelDeBusqueda, nivelDelIndice, razonDe, llaveFrena, revisar, revisarAprobaciones, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn };

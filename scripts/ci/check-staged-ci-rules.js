@@ -12,6 +12,10 @@
 //      lista que ya cumple pide salir de la lista.
 //   3. El conteo del catálogo de reglas, cuando el commit toca agents/ o el catálogo (scripts/lib/rules-catalog-count.js;
 //      la prueba: el caso C5 de rules-catalog.test.sh).
+//   4. Ésta la veía sólo la revisión de la noche: el inventario de los controles contra el pre-commit del repo privado,
+//      cuando el commit toca el inventario o el pre-commit, en la máquina que declara el clon privado
+//      (scripts/lib/private-inventory.js; la prueba: private-inventory.test.js). Avisa y no frena: el privado sólo puede
+//      sumar un control nuevo después de que éste entra.
 // La lógica de cada regla vive en su módulo y la usan la prueba y este freno: no hay una segunda copia que se separe.
 //
 // Rápido a propósito, porque corre en cada commit: una sola lectura del índice (`git cat-file --batch`) para todos los
@@ -24,17 +28,37 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 // Sin sus módulos no hay reglas que aplicar: «no pude mirar» (2), no un hallazgo (1) ni un error de programa a secas.
-let grepQ, stable, catalogCount;
+let grepQ, stable, catalogCount, privateInventory;
 try {
   grepQ = require('../lib/grep-q-pipefail.js');
   stable = require('../lib/stable-test-data.js');
   catalogCount = require('../lib/rules-catalog-count.js');
+  privateInventory = require('../lib/private-inventory.js');
 } catch (e) {
   console.error(`⛔ reglas de la CI antes del commit: no pude mirar (falta un módulo: ${e.message.split('\n')[0]}). Si el checkout está incompleto: git checkout scripts/lib/`);
   process.exit(2);
 }
 
 const CATALOG_REL = 'guides/advisor-rules-catalog.md';
+// La lista del repo privado adelgazado: si declara el catálogo como registro que se compone por secciones, su copia
+// trae sólo lo propio y el conteo se hace sobre el catálogo compuesto, el que miden su CI y los nocturnos.
+const THIN_LIST_REL = '.tycon/internal-forms.json';
+
+function composesCatalog(listText) {
+  if (listText == null) return false;
+  try {
+    const data = JSON.parse(listText);
+    const own = data && data.layout === 'thin' && data.own && data.own[CATALOG_REL];
+    return Boolean(own && typeof own === 'object' && own.merge === 'sections');
+  } catch (_) { return false; }
+}
+
+/** Lo público más las secciones «## » propias cuyo título el público no trae (las que sí, ya están). */
+function composeSections(publicText, ownText) {
+  const titles = new Set(publicText.split('\n').filter((l) => /^## /.test(l)).map((l) => l.trim()));
+  const own = ownText.split(/^(?=## )/m).filter((s) => /^## /.test(s) && !titles.has(s.split('\n')[0].trim()));
+  return own.length ? `${publicText.trimEnd()}\n\n${own.map((s) => s.trimEnd()).join('\n\n')}\n` : publicText;
+}
 
 function git(root, args, input) {
   const r = spawnSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { input, maxBuffer: 256 * 1024 * 1024, windowsHide: true });
@@ -86,9 +110,10 @@ function main() {
     // agents/ y el catálogo (el pedido), más lo que también mueve el conteo: el padrón de revisores y el paquete de clientes.
     const catalogTouched = touched.some((r) => r === CATALOG_REL || r.startsWith('agents/')
       || r.startsWith('adapters/codex/agents/') || r === 'packs/clients/pack.json');
-    if (!shs.length && !tests.length && !gone.length && !catalogTouched) return 0;
+    const inventoryTouched = privateInventory.toca(touched);
+    if (!shs.length && !tests.length && !gone.length && !catalogTouched && !inventoryTouched) return 0;
 
-    const wanted = [...new Set([...shs, ...tests, ...(tests.length || gone.length ? stable.BASELINES : []), ...(catalogTouched ? [CATALOG_REL] : [])])];
+    const wanted = [...new Set([...shs, ...tests, ...(tests.length || gone.length ? stable.BASELINES : []), ...(catalogTouched ? [CATALOG_REL, THIN_LIST_REL] : [])])];
     const index = readIndex(root, wanted);
 
     // 1. `| grep -q` con pipefail
@@ -132,7 +157,11 @@ function main() {
       // El padrón de revisores y el paquete de clientes se leen del disco (no del índice): con un staging parcial de esos
       // archivos puede contar una versión que no es la del commit. La CI lo vuelve a contar sobre lo commiteado. Un repo
       // sin los .toml del padrón cuenta con los del arnés donde corre este guion, y lo avisa.
-      const text = index.get(CATALOG_REL);
+      let text = index.get(CATALOG_REL);
+      if (text != null && composesCatalog(index.get(THIN_LIST_REL))) {
+        text = composeSections(fs.readFileSync(path.join(__dirname, '..', '..', CATALOG_REL), 'utf8'), text);
+        console.error('ℹ️  reglas de la CI: el catálogo se compone: el del arnés que corre más las secciones propias de este repo, como lo arma la superposición.');
+      }
       if (text == null) {
         console.error(`ℹ️  reglas de la CI: el commit deja sin ${CATALOG_REL}: no hay conteo del catálogo que hacer (la prueba C5 también lo saltea).`);
       } else {
@@ -149,6 +178,13 @@ function main() {
           fs.rmSync(tmp, { recursive: true, force: true });
         }
       }
+    }
+
+    // 4. el inventario contra el pre-commit del privado: un aviso, nunca un hallazgo que frene
+    if (inventoryTouched) {
+      console.error('▸ reglas de la CI: el inventario de los controles contra el pre-commit del privado…');
+      const msg = privateInventory.aviso(privateInventory.comparar({ repo: root }));
+      if (msg) console.error(msg);
     }
   } catch (e) {
     console.error(`⛔ reglas de la CI antes del commit: no pude mirar (${e.message}). No medido no es verde.`);

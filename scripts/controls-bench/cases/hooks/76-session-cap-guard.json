@@ -1,0 +1,67 @@
+{
+  "__doc": "session-cap-guard.js (story 8.178): con la máquina en el tope de sesiones trabajando, el agente no abre otra de fondo por ningún camino. El caso real: una sesión abrió otra con `claude --bg` a mano y salteó `coordination.js open`, el único que cumplía el tope. El tope sale de un perfil de juguete y las sesiones ocupadas usan el pid 1, que siempre está vivo. Las demás formas de fondo las cubre scripts/tests/session-cap-guard.test.js.",
+  "hooks": [
+    {
+      "hook": "session-cap-guard.js (freno: el tope de sesiones por cualquier camino)",
+      "script": "${TCG}/scripts/hooks/session-cap-guard.js",
+      "event": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "tools": ["claude"],
+      "asymmetry": "Codex no abre sesiones de fondo (coordination.js open ya se lo niega) y no corre este freno; la declaración está en adapters/codex/hooks.json.",
+      "cases": [
+        {
+          "id": "el-caso-real-claude-bg-en-el-tope-se-niega",
+          "type": "must-block",
+          "__doc": "Dos ocupadas con tope 2: `claude --bg` se niega, dice el conteo y da el comando de open. ROJO PREVIO: sin el freno registrado, la sesión se abre y la máquina se carga de más.",
+          "env": { "TYCON_PROFILE": "${FIXTURE}/perfil.json" },
+          "files": { "perfil.json": "{\"coordination\":{\"max_working\":2}}" },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/sessions\" && for i in 1 2; do printf \"{\\\"pid\\\":1,\\\"sessionId\\\":\\\"s-$i\\\",\\\"name\\\":\\\"Sesion$i\\\",\\\"nameSource\\\":\\\"user\\\",\\\"status\\\":\\\"busy\\\",\\\"statusUpdatedAt\\\":1,\\\"cwd\\\":\\\"/x\\\"}\" > \"$SANDBOX_HOME/.claude/sessions/s-$i.json\"; done"
+          ],
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "session_id": "s-la-mia",
+            "tool_input": { "command": "claude --bg -n otra -- hola" }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["2 de 2", "Sesion1", "Sesion2", "open --name"]
+          }
+        },
+        {
+          "id": "debajo-del-tope-claude-bg-pasa",
+          "type": "must-not-block",
+          "__doc": "Una ocupada con tope 2: pasa. Un freno que niega debajo del tope se apaga el primer día.",
+          "env": { "TYCON_PROFILE": "${FIXTURE}/perfil.json" },
+          "files": { "perfil.json": "{\"coordination\":{\"max_working\":2}}" },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/sessions\" && printf \"{\\\"pid\\\":1,\\\"sessionId\\\":\\\"s-1\\\",\\\"name\\\":\\\"Sesion1\\\",\\\"nameSource\\\":\\\"user\\\",\\\"status\\\":\\\"busy\\\",\\\"statusUpdatedAt\\\":1,\\\"cwd\\\":\\\"/x\\\"}\" > \"$SANDBOX_HOME/.claude/sessions/s-1.json\""
+          ],
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "session_id": "s-la-mia",
+            "tool_input": { "command": "claude --bg -n otra -- hola" }
+          }
+        },
+        {
+          "id": "en-el-tope-claude-en-primer-plano-pasa",
+          "type": "must-not-block",
+          "__doc": "`claude -p` en primer plano no deja una sesión de fondo: en el tope, pasa. ROJO PREVIO: frenar por nombrar al programa, sin mirar si queda de fondo.",
+          "env": { "TYCON_PROFILE": "${FIXTURE}/perfil.json" },
+          "files": { "perfil.json": "{\"coordination\":{\"max_working\":2}}" },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/sessions\" && for i in 1 2; do printf \"{\\\"pid\\\":1,\\\"sessionId\\\":\\\"s-$i\\\",\\\"name\\\":\\\"Sesion$i\\\",\\\"nameSource\\\":\\\"user\\\",\\\"status\\\":\\\"busy\\\",\\\"statusUpdatedAt\\\":1,\\\"cwd\\\":\\\"/x\\\"}\" > \"$SANDBOX_HOME/.claude/sessions/s-$i.json\"; done"
+          ],
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "session_id": "s-la-mia",
+            "tool_input": { "command": "claude -p hola" }
+          }
+        }
+      ]
+    }
+  ]
+}

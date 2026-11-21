@@ -25,6 +25,9 @@
 #     en la ventana de permiso; con `--terminal`, en una terminal de verdad, como `marker.js runtime-waiver`. El rojo
 #     imprime el comando exacto;
 #   · borrar una regla o un workflow que la base tiene es un aflojamiento;
+#   · borrar o cambiar una constancia del dueño que el ancestro tiene (un archivo de una carpeta de constancias, o un
+#     renglón de un registro .jsonl) pide la constancia del dueño, como una regla con «sign_on_change»: se compara lo que
+#     guarda git, así que mudarla tal cual no cuenta y sumar renglones al final tampoco;
 #   · el pedido frena → rojo, como siempre.
 # Cada cambio queda listado archivo por archivo: lo que se suma (+), lo que se saca (-) y lo que cambia (~).
 #
@@ -40,6 +43,9 @@
 #   bash scripts/ci/run-base-controls.sh pending --root <pedido> --base <rev> --range <base>...<punta> [--approvals-out <ruta>]
 #   bash scripts/ci/run-base-controls.sh approve --root <dir> [--base <rev>] --entries '<json>' [--out <ruta>] [--terminal]
 #   bash scripts/ci/run-base-controls.sh approve --root <dir> --file <ruta> --rev <commit> [--out <ruta>] [--terminal]
+#   bash scripts/ci/run-base-controls.sh removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>]
+#        (la cuenta de la noche: las constancias que salieron de <rev>, con y sin la firma del dueño; la llama
+#        scripts/ci/approvals-removed.js)
 #   bash scripts/ci/run-base-controls.sh classify --root <dir> --base <rev> --entries '<json>'   (la clase de la firma, en JSON)
 #
 # LA REFIRMA TRAS TRAER MAIN. Traer main a un pedido con un cambio de control firmado cambia el blob de lo firmado y pide
@@ -83,7 +89,7 @@ const [cmd, ...rest] = enLaVentana ? JSON.parse(process.env.BASE_CONTROLS_WINDOW
 delete process.env.BASE_CONTROLS_WINDOW_ARGS;
 
 function usage(code) {
-  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json>');
+  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json> · removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>]');
   process.exit(code);
 }
 function opt(name) {
@@ -104,20 +110,53 @@ function git(root, args, { input, env, allowFail } = {}) {
   return r;
 }
 const trimNl = (s) => s.replace(/\n+$/, '');
+// Una corrida pregunta muchas veces lo mismo de la base. Con la versión escrita entera (40 caracteres) la respuesta no
+// cambia: se recuerda. «No está» (sale 1) se recuerda sólo si ya se sabe que ese commit existe: la corrida crea commits
+// (la fusión con main, la refirma) y un commit que todavía no existía puede aparecer. Con un nombre (`main`, `HEAD`) se
+// pregunta cada vez. Un error de git no se recuerda. TYCON_GIT_MEMO=0 lo apaga.
+const RECUERDO = new Map();
+const EXISTEN = new Set();
+const fija = (rev) => process.env.TYCON_GIT_MEMO !== '0' && /^[0-9a-f]{40}$/.test(String(rev));
+function recordado(root, rev, args, leer) {
+  if (!fija(rev)) return leer(git(root, args, { allowFail: true }));
+  const k = `${root}\0${args.join('\0')}`;
+  if (RECUERDO.has(k)) return RECUERDO.get(k);
+  const r = git(root, args, { allowFail: true });
+  const v = leer(r);
+  if (r.status === 0) { RECUERDO.set(k, v); EXISTEN.add(`${root}\0${rev}`); }
+  else if (r.status === 1 && EXISTEN.has(`${root}\0${rev}`)) RECUERDO.set(k, v);
+  return v;
+}
 function resolveCommit(root, rev) {
-  const r = git(root, ['rev-parse', '--verify', '-q', `${rev}^{commit}`], { allowFail: true });
-  return r.status === 0 ? trimNl(r.stdout) : null;
+  return recordado(root, rev, ['rev-parse', '--verify', '-q', `${rev}^{commit}`], (r) => (r.status === 0 ? trimNl(r.stdout) : null));
 }
 // un blob, por la ruta exacta desde la raíz (`rev:./x` resolvería contra la carpeta de quien llama)
 function blobOf(root, rev, p) {
   if (!p || p.startsWith('.') && (p.startsWith('./') || p.startsWith('../'))) return null;
-  const r = git(root, ['rev-parse', '--verify', '-q', `${rev}:${p}`], { allowFail: true });
-  return r.status === 0 ? trimNl(r.stdout) : null;
+  return recordado(root, rev, ['rev-parse', '--verify', '-q', `${rev}:${p}`], (r) => (r.status === 0 ? trimNl(r.stdout) : null));
 }
 function show(root, rev, p) {
   if (!blobOf(root, rev, p)) return null;
-  const r = git(root, ['cat-file', 'blob', `${rev}:${p}`], { allowFail: true });
-  return r.status === 0 ? r.stdout : null;
+  return recordado(root, rev, ['cat-file', 'blob', `${rev}:${p}`], (r) => (r.status === 0 ? r.stdout : null));
+}
+// muchos blobs con un solo git, `{ id → texto }`, o null si git falló; lo que no es un blob no está. Un proceso por constancia tarda más que el
+// tope del freno de seguridad con la máquina cargada, y el clasificador y el chequeo previo de la firma corren dentro de él
+function blobsOf(root, ids) {
+  const out = new Map();
+  if (!ids.length) return out;
+  const r = spawnSync('git', ['-C', root, 'cat-file', '--batch'], { input: `${ids.join('\n')}\n`, env: GIT_ENV, maxBuffer: 512 * 1024 * 1024 });
+  if (r.error || r.status !== 0) return null;
+  const b = r.stdout;
+  for (let i = 0; i < b.length;) {
+    const nl = b.indexOf(10, i);
+    if (nl < 0) break;
+    const [id, tipo, largo] = b.toString('utf8', i, nl).split(' ');
+    i = nl + 1;
+    if (largo === undefined) continue;
+    if (tipo === 'blob') out.set(id, b.toString('utf8', i, i + Number(largo)));
+    i += Number(largo) + 1;
+  }
+  return out;
 }
 // la lista de archivos de un árbol, una vez por árbol: el recorrido del código pregunta por muchas rutas
 const TREES = new Map();
@@ -446,14 +485,17 @@ function readApprovalDir(root, rev, dir) {
   const r = git(root, ['ls-tree', '-z', rev, '--', dir], { allowFail: true });
   // una carpeta que no está sale 0 y vacía: un error es «no pude listar», y se dice
   if (r.status !== 0) { notSigning(dir, rev, 'no pude listar la carpeta'); return out; }
-  for (const rec of r.stdout.split('\0').filter(Boolean)) {
+  const recs = r.stdout.split('\0').filter(Boolean);
+  const textos = blobsOf(root, recs.map((rec) => rec.slice(0, rec.indexOf('\t')).split(' ')).filter(([, type]) => type === 'blob').map(([, , id]) => id));
+  if (!textos) { notSigning(dir, rev, 'no pude leer las constancias'); return out; }
+  for (const rec of recs) {
     const tab = rec.indexOf('\t');
-    const [mode, type] = rec.slice(0, tab).split(' ');
+    const [mode, type, id] = rec.slice(0, tab).split(' ');
     const p = rec.slice(tab + 1);
     const name = p.slice(dir.length);
     if (type !== 'blob' || (mode !== '100644' && mode !== '100755')) { notSigning(p, rev, 'no es un archivo común del primer nivel de la carpeta'); continue; }
     if (!name.endsWith('.json')) { notSigning(p, rev, 'no es un .json'); continue; }
-    const text = show(root, rev, p);
+    const text = textos.has(id) ? textos.get(id) : null;
     let a; try { a = text === null ? null : JSON.parse(text); } catch (_) { a = null; }
     if (a === null) { notSigning(p, rev, 'no se lee'); continue; }
     const why = approvalProblem(a);
@@ -464,7 +506,8 @@ function readApprovalDir(root, rev, dir) {
   return out;
 }
 const approvedEntry = (approvals, p, blob) => approvals.some((a) => a && Array.isArray(a.rules) && a.rules.some((r) => r && r.path === p && r.blob === blob));
-const approvalLine = (entries) => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by: 'dueño' });
+// `by`: quién firmó — el dueño en su terminal o su ventana, la coordinadora en la ventana de la sesión designada
+const approvalLine = (entries, by = 'dueño') => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by });
 // la refirma tras traer main, firmada por la sesión designada: la anterior del dueño, la máquina y la sesión del registro
 const refreshLine = (entries, refirmaDe, maquina, sesion) => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by: 'refirma', via: 'delegacion', clase: REFRESH, refirma_de: refirmaDe, maquina, signed_by_session: sesion });
 // los hashes de las constancias de la base, en cualquiera de las rutas de su inventario y sin mirar la forma: una
@@ -477,12 +520,79 @@ function baseApprovalHashes(root, base) {
   const add = (text) => { try { const a = JSON.parse(text); if (a && typeof a.hash === 'string') hashes.add(a.hash); } catch (_) { /* no es una constancia */ } };
   for (const file of approvalFiles(read.inv)) {
     if (!isApprovalDir(file)) { const text = show(root, base, file); if (text !== null) text.split('\n').filter((l) => l.trim()).forEach(add); continue; }
-    const r = git(root, ['ls-tree', '-z', '--name-only', base, '--', file], { allowFail: true });
+    const r = git(root, ['ls-tree', '-z', base, '--', file], { allowFail: true });
     if (r.status !== 0) return null;
-    for (const p of r.stdout.split('\0').filter(Boolean)) { const text = show(root, base, p); if (text !== null) add(text); }
+    const textos = blobsOf(root, r.stdout.split('\0').filter(Boolean).map((rec) => rec.slice(0, rec.indexOf('\t')).split(' ')[2]));
+    if (!textos) return null;
+    for (const text of textos.values()) add(text);
   }
   return hashes;
 }
+// Las constancias de un árbol como las guarda git, sin leerlas: el blob de cada archivo que cuelga de una carpeta y los
+// renglones de cada .jsonl. Borrar o cambiar una del ancestro es un cambio de control aunque no se sostenga, así que se
+// compara lo que git guarda y no lo que el lector acepta. `ls-tree` distingue «no está» (sale 0 y vacío) de «no pude
+// mirar» (sale con error), y un error nunca se lee como «no hay constancias». `{ ok, why, files: ruta → blob, lines:
+// ruta → renglones }`
+function approvalSnapshot(root, rev, files) {
+  const out = { ok: true, why: null, files: new Map(), lines: new Map() };
+  for (const file of files) {
+    const r = git(root, ['ls-tree', ...(isApprovalDir(file) ? ['-r'] : []), '-z', rev, '--', file], { allowFail: true });
+    if (r.status !== 0) return { ok: false, why: `no pude listar ${safe(file)} en ${short(rev)} (${safe((r.stderr || '').trim().split('\n')[0])})` };
+    const recs = r.stdout.split('\0').filter(Boolean).map((rec) => {
+      const tab = rec.indexOf('\t');
+      const [, type, id] = rec.slice(0, tab).split(' ');
+      return { p: rec.slice(tab + 1), type, id };
+    });
+    if (isApprovalDir(file)) { for (const x of recs) out.files.set(x.p, x.id); continue; }
+    const x = recs.find((y) => y.p === file);
+    if (!x) continue;
+    // en lugar del registro hay otra cosa (una carpeta, un submódulo): sus renglones son ésa, para que cambiarlo cuente
+    if (x.type !== 'blob') { out.lines.set(file, [`${x.type} ${x.id}`]); continue; }
+    const c = git(root, ['cat-file', 'blob', x.id], { allowFail: true });
+    if (c.status !== 0) return { ok: false, why: `no pude leer ${safe(file)} en ${short(rev)}` };
+    out.lines.set(file, c.stdout.split('\n').filter((l) => l.trim()));
+  }
+  return out;
+}
+// los renglones de `before` que faltan en `after`, contados como multiconjunto (dos renglones iguales son dos)
+function missingLines(before, after) {
+  const left = new Map();
+  for (const l of after || []) left.set(l, (left.get(l) || 0) + 1);
+  return before.filter((l) => { const n = left.get(l) || 0; left.set(l, n - 1); return n < 1; });
+}
+// Las constancias del ancestro que la punta saca o cambia: `{ ok, why, changed: [ruta], before, after }`. Un archivo de una
+// carpeta cuenta si en su ruta hay otro contenido o nada. Sin nada en su ruta, no cuenta sólo si el mismo contenido aparece
+// en una ruta nueva (una mudanza tal cual); una ruta del ancestro que conserva su contenido no sirve de destino, así que
+// reescribir una constancia y dejar una copia de la vieja en otra carpeta cuenta igual. Se compara el blob, nunca el campo
+// `hash`. Un .jsonl cuenta si le falta un renglón del ancestro; los agregados no, porque cada firma suma uno
+function approvalChanges(root, from, to, files) {
+  const a = approvalSnapshot(root, from, files);
+  if (!a.ok) return a;
+  const b = approvalSnapshot(root, to, files);
+  if (!b.ok) return b;
+  const destinos = new Map();
+  for (const [q, blob] of b.files) if (a.files.get(q) !== blob) destinos.set(blob, (destinos.get(blob) || 0) + 1);
+  const changed = [];
+  for (const [p, blob] of a.files) {
+    if (b.files.has(p)) { if (b.files.get(p) !== blob) changed.push(p); continue; }
+    const n = destinos.get(blob) || 0;
+    if (n > 0) destinos.set(blob, n - 1); else changed.push(p);
+  }
+  for (const [p, lines] of a.lines) if (missingLines(lines, b.lines.get(p)).length) changed.push(p);
+  return { ok: true, why: null, changed: changed.sort(), before: a, after: b };
+}
+// Adónde va la firma de un cambio que saca renglones de un .jsonl de constancias: firmarlo en ese mismo registro le
+// cambiaría el blob y la firma no cuadraría nunca. Sin destino pedido, va a la primera carpeta del inventario.
+// `{ out, noFolder }`: `noFolder` son los registros cuya firma no tiene dónde ir
+function approvalsTarget(changed, files, pedido, porDefecto) {
+  const registros = changed.filter((p) => files.includes(p) && !isApprovalDir(p));
+  let out = pedido || porDefecto;
+  if (!registros.length || isApprovalDir(out)) return { out, noFolder: [] };
+  const carpeta = files.find(isApprovalDir);
+  if (!pedido && carpeta) out = carpeta;
+  return { out, noFolder: isApprovalDir(out) ? [] : registros, hayCarpeta: Boolean(carpeta) };
+}
+const NO_FOLDER = (ps, hayCarpeta) => `la firma de lo que el pedido saca de ${ps.map(safe).join(', ')} va en una carpeta de constancias${hayCarpeta ? ' (--approvals-out <carpeta>/), nunca en ese mismo registro' : ', y el inventario no tiene ninguna'}: no se puede firmar`;
 // el clasificador de la refirma: en la CI, el de la base (un pedido no trae el suyo); al firmar, el de al lado del guion
 const CLASSIFIER = 'scripts/lib/refresh-after-main.js';
 function classifierOfBase(root, base, work) {
@@ -493,13 +603,29 @@ function classifierOfBase(root, base, work) {
   // sin clasificador ninguna refirma vale: se dice por qué, para que el rojo no parezca una firma mal hecha
   try { return require(file); } catch (e) { console.log(`     ⚠️ no pude cargar el clasificador de la refirma de la base: ${e.message}`); return null; }
 }
+// el hash de la constancia del dueño si lo que pide firma es lo que firmó más lo que trajo main con fusión limpia (lo
+// comprueba el clasificador de la base sobre el pedido); null si no, o si no se puede comprobar
+function refreshedFrom(a, work, approvals, baseHashes) {
+  if (!baseHashes || !a.entries.length) return null;
+  const classifier = classifierOfBase(a.root, a.base, work);
+  if (!classifier || typeof classifier.classify !== 'function') return null;
+  const c = classifier.classify({ root: a.root, base: a.base, tip: a.prHead || a.tip, entries: a.entries, approvals, baseHashes });
+  return c && c.clase === REFRESH && typeof c.refirma_de === 'string' ? c.refirma_de : null;
+}
 function classifierHere() {
   try { return require(path.join(process.env.BASE_CONTROLS_SELF_DIR || '', '..', 'lib', 'refresh-after-main.js')); } catch (_) { return null; }
 }
 // un argumento de shell entre comillas simples, para pegar tal cual en una terminal
 const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
-function signCommand(root, entries, out, base) {
-  return `bash ${SELF} approve --root ${root === '<repo>' ? root : shq(root)}${base ? ` --base ${shq(base)}` : ''} --out ${shq(out)} --entries ${shq(JSON.stringify(entries))}`;
+// este guion con su ruta completa, para el comando que se le da a una persona: corre desde cualquier carpeta. En Git Bash
+// de Windows la carpeta llega como /c/… o C:/…, o con barras \: sale con /, sin resolverla contra la unidad de trabajo
+function selfPath() {
+  const dir = process.env.BASE_CONTROLS_SELF_DIR;
+  return dir ? `${dir.replace(/\\/g, '/').replace(/\/+$/, '')}/run-base-controls.sh` : null;
+}
+// con `guion` el comando nombra ese guion entre comillas; sin él, la ruta del repo (el rojo de la CI, que lee otra máquina)
+function signCommand(root, entries, out, base, { guion = null } = {}) {
+  return `bash ${guion ? shq(guion) : SELF} approve --root ${root === '<repo>' ? root : shq(root)}${base ? ` --base ${shq(base)}` : ''} --out ${shq(out)} --entries ${shq(JSON.stringify(entries))}`;
 }
 
 // ── el commit armado ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -553,7 +679,9 @@ function runPass(a, work, label, rev, parentRev) {
         continue;
       }
       const argv = pass.cmd.map((x) => x.replace(/\{base\}/g, parentRev).replace(/\{tip\}/g, rev).replace(/\{root\}/g, dir));
-      const env = { ...GIT_ENV, TYCON_GUIDES_DIR: dir, TYCON_SKILLS_DIR: dir, TYCON_NO_LIVENESS_PRECOMMIT: 'ci' };
+      // la pasada revisa un pedido: el pre-commit corre en modo pedido (TYCON_CHECKS_ON_PR), donde el freno de pendientes
+      // acepta la aprobación del commit con su forma y su huella, porque acá no está el registro de la máquina que firmó
+      const env = { ...GIT_ENV, TYCON_GUIDES_DIR: dir, TYCON_SKILLS_DIR: dir, TYCON_NO_LIVENESS_PRECOMMIT: 'ci', TYCON_CHECKS_ON_PR: '1' };
       const r = spawnSync(argv[0], argv.slice(1), { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024 });
       const output = `${r.stdout || ''}${r.stderr || ''}`.trim();
       const ok = r.status === 0 && !r.error;
@@ -605,13 +733,23 @@ function analyze() {
   const added = [...codeClosure(root, tip, [inv.hook, ...scriptsOfBase])]
     .filter((p) => !controlFiles.includes(p) && !blobOf(root, mb, p) && !blobOf(root, base, p));
   for (const p of added) owner.set(p, 'código que corre un control');
-  const changed = [...controlFiles.filter((p) => blobOf(root, mb, p) !== blobOf(root, tip, p)), ...added].sort();
+  const changed = [...controlFiles.filter((p) => blobOf(root, mb, p) !== blobOf(root, tip, p)), ...added];
+  // las constancias del dueño que el pedido saca o cambia: se firman como un cambio de control, aunque la base y el pedido
+  // pasen. Sin poder medirlas no se sigue: un verde sin mirarlas dejaría borrar una firma sin aviso
+  const ap = approvalChanges(root, mb, tip, approvalFiles(inv));
+  if (!ap.ok) notRun(`no pude medir las constancias del dueño: ${ap.why}`);
+  for (const p of ap.changed) {
+    if (!changed.includes(p)) changed.push(p);
+    owner.set(p, 'constancia del dueño');
+    signOnChange.add(p);
+  }
+  changed.sort();
   // la constancia ancla lo que el dueño ve en su rama: el pedido, no el merge que arma GitHub
   const signedRev = prHead || tip;
   const entries = changed.map((p) => ({ path: p, blob: blobOf(root, signedRev, p) || 'borrado' }));
   const files = approvalFiles(inv);
-  const approvalsOut = opt('--approvals-out') || files[0] || '.tycon/control-changes.jsonl';
-  return { root, base, baseArg, rangeBase, tip, mb, prHead, inv, rules, owner, workflows, signOnChange, controlFiles, changed, entries, hash: hashOf(entries), approvalsOut };
+  const target = approvalsTarget(changed, files, opt('--approvals-out'), files[0] || '.tycon/control-changes.jsonl');
+  return { root, base, baseArg, rangeBase, tip, mb, prHead, inv, rules, owner, workflows, signOnChange, controlFiles, changed, entries, hash: hashOf(entries), approvalsOut: target.out, noFolder: target.noFolder, hayCarpeta: target.hayCarpeta };
 }
 function printChanges(a) {
   if (!a.changed.length) { console.log('base-controls: el pedido no cambia ningún archivo de regla ni workflow del inventario'); return; }
@@ -641,7 +779,7 @@ function alarm(a) {
     const before = blobOf(a.root, from, w.path); const after = blobOf(a.root, to, w.path);
     if (before === after || approvedEntry(approvals, w.path, after || 'borrado')) continue;
     const last = trimNl(git(a.root, ['log', '-1', '--format=%H', `${from}..${to}`, '--', w.path], { allowFail: true }).stdout || '') || to;
-    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, firmalo desde una terminal: bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
+    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, firmalo desde una sesión, con tu click en el cuadro de opciones o tu «aprobado» (o en una terminal, con --terminal): bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
   }
   for (const p of [...a.rules].sort()) {
     if (!p.endsWith('.json') || blobOf(a.root, from, p) === blobOf(a.root, to, p)) continue;
@@ -744,13 +882,19 @@ function cmdRun() {
     if (unproven.length && !inBase) reasons.push(`no pude leer las constancias de la base ${short(a.base)}: una aprobación por delegación no se da por buena sin compararla (${unproven.map((x) => short(x.hash)).join(', ')})`);
     else if (unproven.length) reasons.push(`una aprobación por delegación nueva ya no vale: el dueño la firma en la ventana o en su terminal (${unproven.map((x) => short(x.hash)).join(', ')})`);
     let approved = false;
+    let refreshedOf = null;
     const mustSign = a.changed.filter((p) => a.signOnChange.has(p));
     if ((baseRed || mustSign.length) && !prRed) {
       if (a.changed.length) {
         // la línea tiene que cuadrar entera: el hash del cambio, y sus reglas son las que dan ese hash
         const signed = approvals.some((x) => x && x.hash === a.hash && Array.isArray(x.rules) && hashOf(x.rules) === a.hash && !unproven.includes(x));
-        if (!signed) {
-          reasons.push(`el pedido afloja un control sin la constancia del dueño: ${a.changed.join(', ')}. La firma, desde una terminal (con el arnés instalado si el repo no trae este guion): ${signCommand('<repo>', a.entries, a.approvalsOut, a.baseArg)}`);
+        // sin línea para este hash: la constancia del dueño cubre lo que trajo main, si el clasificador de la base lo comprueba
+        const viaMain = signed ? null : refreshedFrom(a, work, approvals.filter((x) => !unproven.includes(x)), inBase);
+        if (viaMain) refreshedOf = viaMain;
+        if (!signed && !viaMain && a.noFolder.length) {
+          reasons.push(NO_FOLDER(a.noFolder, a.hayCarpeta));
+        } else if (!signed && !viaMain) {
+          reasons.push(`el pedido afloja un control sin la constancia del dueño: ${a.changed.join(', ')}. La firma, desde una sesión, con el click del dueño en el cuadro de opciones o su «aprobado» (o en una terminal, con --terminal; con el arnés instalado si el repo no trae este guion): ${signCommand('<repo>', a.entries, a.approvalsOut, a.baseArg)}`);
         } else {
           // con la constancia: la regla de la base menos lo aprobado, que va en su versión del pedido; tiene que dar verde
           const rest = [...a.rules].filter((p) => !a.changed.includes(p));
@@ -769,6 +913,8 @@ function cmdRun() {
     if (reasons.length) {
       for (const r of reasons) console.log(`❌ base-controls: rojo — ${r}`);
       process.exitCode = 1;
+    } else if (approved && refreshedOf) {
+      console.log(`✅ base-controls: cambio de control aprobado: ${a.changed.join(', ')} (constancia del dueño ${refreshedOf.slice(0, 12)} más lo que trajo main: sin firma nueva)`);
     } else if (approved) {
       console.log(`✅ base-controls: cambio de control aprobado: ${a.changed.join(', ')} (constancia del dueño ${a.hash.slice(0, 12)})`);
     } else if (a.changed.length) {
@@ -790,9 +936,33 @@ function cmdPending() {
   printChanges(a);
   if (!a.changed.length) { console.log('base-controls: no hay nada que firmar'); return; }
   console.log(`hash: ${a.hash}`);
-  const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg);
-  console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso): ${firma}`);
-  console.log(`o desde tu terminal: ${firma} --terminal`);
+  if (a.noFolder.length) { console.log(`base-controls: ${NO_FOLDER(a.noFolder, a.hayCarpeta)}`); return; }
+  // las constancias del dueño (sin `via`) de lo commiteado, con el archivo de donde salió cada una
+  const rev = a.prHead || a.tip;
+  const todas = [];
+  for (const file of approvalFiles(a.inv)) {
+    for (const x of readApprovals(a.root, rev, [file])) todas.push({ x, file });
+  }
+  const deDueno = todas.filter(({ x }) => x.via === undefined);
+  // una de este mismo cambio que no es del dueño: se dice por qué no cuenta, así nadie la da por buena
+  for (const { x, file } of todas) {
+    if (x.via !== undefined && x.hash === a.hash) console.log(`base-controls: hay una constancia de este cambio en ${safe(file)}, pero es por delegación: no cuenta como la firma del dueño`);
+  }
+  // la constancia de este mismo cambio ya está: la sesión que lee esto no tiene que pedir la firma otra vez
+  const mismo = deDueno.find(({ x }) => x.hash === a.hash && Array.isArray(x.rules) && hashOf(x.rules) === a.hash);
+  if (mismo) {
+    const donde = isApprovalDir(mismo.file) ? `${mismo.file}${a.hash}.json` : mismo.file;
+    console.log(`base-controls: no hace falta firmar: el dueño ya firmó este mismo cambio (${safe(donde)}); la revisión vuelve a pasar los controles con ella`);
+    return;
+  }
+  // lo firmado más lo que trajo main: la revisión lo acepta con la constancia que ya está, sin firma nueva
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'base-controls-'));
+  let deMain = null;
+  try { deMain = refreshedFrom(a, work, deDueno.map(({ x }) => x), baseApprovalHashes(a.root, a.base)); } finally { fs.rmSync(work, { recursive: true, force: true }); }
+  if (deMain) { console.log(`base-controls: no hace falta firmar: es lo que el dueño firmó (${deMain.slice(0, 12)}) más lo que trajo main, con fusión limpia`); return; }
+  const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg, { guion: selfPath() });
+  console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso, o, donde la ventana no llega, con su click en el cuadro de opciones o su «aprobado»): ${firma}`);
+  console.log(`o, si prefiere, en su terminal: ${firma} --terminal`);
 }
 
 // la ventana nueva de Windows (skills/tycon-pipeline/scripts/lib/runtime-waiver.js, del mismo árbol que este guion)
@@ -881,6 +1051,11 @@ function cmdApprove() {
   // el destino puede salir del inventario del pedido: se mira antes de preguntar, y la persona ve adónde va la firma
   const where = insideRepo(root, out);
   if (where) { console.error(`run-base-controls approve: el destino ${safe(out)} ${where}: no se firmó nada.`); process.exit(2); }
+  // firmar lo que se saca de un registro en ese mismo registro le cambia el blob, y la firma no cuadraría nunca
+  if (!isApprovalDir(out) && entries.some((e) => e.path === out)) {
+    console.error(`run-base-controls approve: la firma de lo que el pedido saca de ${safe(out)} va en una carpeta de constancias (--out <carpeta>/), nunca en ese mismo registro: no se firmó nada.`);
+    process.exit(1);
+  }
   if (!enTerminal) { approveByWindow(root, out, entries, classifyApprove(root, entries, read.inv)); return; }
   const rw = waiverLib();
   if (rw && rw.esWindows()) { approveInNewWindow(rw, root, out, entries); return; }
@@ -911,6 +1086,92 @@ function classifyApprove(root, entries, inv) {
   if (!baseHashes) return { clase: 'control-change', motivo: `no pude leer las constancias de la base ${safe(base)}` };
   return classifier.classify({ root, base: baseC, tip: 'HEAD', entries, approvals, baseHashes });
 }
+// ── la cuenta de la noche ─────────────────────────────────────────────────────────────────────────────────────────────
+// Las constancias que salieron de `--ref`: cada commit de su primera línea contra su primer padre, con la misma
+// comparación que la revisión de un pedido. Qué commits se miran: con `--from <commit>` (la punta que vio la medición
+// anterior), los que entraron desde ahí, sin mirar fechas, así que un commit con fecha vieja empujado hoy también cuenta y
+// ninguna noche deja un hueco; sin `--from` (la primera medición), los de `--since` a `--until` por fecha. Las rutas
+// salen del inventario del padre y del commit, juntos: un commit que saca una carpeta del inventario, o el inventario
+// entero, junto con sus constancias, también cuenta. Con la firma del dueño = ese commit suma una constancia del dueño
+// (sin `via`, que su padre no tenía) que se sostiene y aprueba esa ruta con lo que quedó (`borrado`, el blob nuevo del archivo, o un registro
+// .jsonl al que tampoco le quedan los renglones que se sacaron). Una línea de JSON: `{ medido: true, ref, tip, desde,
+// hasta, from, con_firma, sin_firma }` (cada una `[{ commit, path }]`), o `{ medido: false, motivo }` y sale 3: lo que no
+// se pudo mirar nunca se dice como cero.
+function cmdRemovedApprovals() {
+  const root = path.resolve(opt('--root') || '.');
+  const ref = opt('--ref') || 'main';
+  const since = opt('--since'); const until = opt('--until'); const from = opt('--from');
+  // los avisos de las constancias que no firman nada no se imprimen: la salida es sólo el JSON
+  console.log = () => {};
+  const say = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
+  const noMedido = (motivo) => { say({ medido: false, ref, desde: since, hasta: until, from, motivo }); process.exit(3); };
+  if (!from && (!since || Number.isNaN(Date.parse(since)))) noMedido('sin --from, --since pide una fecha');
+  if (until && Number.isNaN(Date.parse(until))) noMedido('--until pide una fecha');
+  const tip = resolveCommit(root, ref);
+  if (!tip) noMedido(`${ref} no resuelve a un commit en ${root}`);
+  let rango;
+  if (from) {
+    const desde = resolveCommit(root, from);
+    if (!desde) noMedido(`la punta de la medición anterior (${short(from)}) no está en la historia que hay (¿un clon recortado?)`);
+    const anc = git(root, ['merge-base', '--is-ancestor', desde, tip], { allowFail: true });
+    if (anc.status === 1) noMedido(`la punta de la medición anterior (${short(from)}) ya no está en la línea de ${ref}: la historia se reescribió`);
+    if (anc.status !== 0) noMedido(`no pude comparar la medición anterior con ${ref} (${(anc.stderr || '').trim().split('\n')[0]})`);
+    rango = [`${desde}..${tip}`];
+  } else {
+    rango = [`--since=${since}`, ...(until ? [`--until=${until}`] : []), tip];
+  }
+  const log = git(root, ['rev-list', '--first-parent', ...rango], { allowFail: true });
+  if (log.status !== 0) noMedido(`no pude leer la historia de ${ref} (${(log.stderr || '').trim().split('\n')[0]})`);
+  const con = []; const sin = [];
+  for (const c of trimNl(log.stdout).split('\n').filter(Boolean).reverse()) {
+    // el primer padre que dice el commit; en un clon recortado puede no estar, y entonces ese commit no se pudo mirar
+    const obj = git(root, ['cat-file', '-p', c], { allowFail: true });
+    if (obj.status !== 0) noMedido(`no pude leer el commit ${short(c)}`);
+    const m = /^parent ([0-9a-f]{40,64})$/m.exec(obj.stdout);
+    if (!m) continue;   // el primer commit de la historia no saca nada
+    const parent = resolveCommit(root, m[1]);
+    if (!parent) noMedido(`la historia de ${ref} no llega al padre de ${short(c)} (¿un clon recortado?)`);
+    const files = [];
+    for (const rev of [parent, c]) {
+      const read = readInventory(root, rev);
+      if (read.error) noMedido(`el inventario de ${short(rev)} no se lee: ${read.error}`);
+      if (read.inv) for (const f of approvalFiles(read.inv)) if (!files.includes(f)) files.push(f);
+    }
+    if (!files.length) continue;
+    const ch = approvalChanges(root, parent, c, files);
+    if (!ch.ok) noMedido(ch.why);
+    if (!ch.changed.length) continue;
+    // sólo cuentan las constancias del dueño que entraron en ese mismo commit: una vieja que aprobó otra versión de un
+    // registro no puede tapar un borrado posterior
+    const yaEstaban = new Set(readApprovals(root, parent, files).map((x) => x.hash));
+    const delDueno = readApprovals(root, c, files).filter((x) => x.via === undefined && !yaEstaban.has(x.hash));
+    for (const p of ch.changed) {
+      const firmado = ch.before.lines.has(p)
+        ? registroFirmado(root, delDueno, p, missingLines(ch.before.lines.get(p), ch.after.lines.get(p)))
+        : approvedEntry(delDueno, p, ch.after.files.get(p) || 'borrado');
+      (firmado ? con : sin).push({ commit: c, path: p });
+    }
+  }
+  say({ medido: true, ref, tip, desde: since || null, hasta: until || null, from: from || null, con_firma: con, sin_firma: sin });
+}
+// ¿Una constancia del dueño aprueba que se saquen esos renglones de un registro .jsonl? Aprueba el registro con un blob
+// (el de la punta del pedido que firmó, que puede no ser el que quedó en main si main sumó renglones después) al que
+// tampoco le quedan esos renglones, o con el registro borrado. Lo que no se puede leer no aprueba
+function registroFirmado(root, aprobaciones, p, sacados) {
+  for (const a of aprobaciones) {
+    for (const r of a.rules || []) {
+      if (!r || r.path !== p) continue;
+      if (r.blob === 'borrado') return true;
+      if (!/^[0-9a-f]{40,64}$/.test(r.blob)) continue;
+      const t = git(root, ['cat-file', 'blob', r.blob], { allowFail: true });
+      if (t.status !== 0) continue;
+      const quedan = new Set(t.stdout.split('\n').filter((l) => l.trim()));
+      if (sacados.every((l) => !quedan.has(l))) return true;
+    }
+  }
+  return false;
+}
+
 function cmdClassify() {
   const root = path.resolve(opt('--root') || '.');
   let entries;
@@ -927,7 +1188,7 @@ function cmdClassify() {
 // La refirma tras traer main la puede dar la sesión designada (el freno la deja pasar sin ventana, con `via: delegacion`
 // en su registro): el guion la vuelve a clasificar y escribe la línea de la refirma sólo si da lo mismo que el registro
 function approveByWindow(root, out, entries, c) {
-  const terminal = `${signCommand(root, entries, out, opt('--base'))} --terminal`;
+  const terminal = `${signCommand(root, entries, out, opt('--base'), { guion: selfPath() })} --terminal`;
   let ow = null;
   let porQue = '';
   try { ow = require(path.join(process.env.BASE_CONTROLS_SELF_DIR || '', '..', 'lib', 'owner-window.js')); } catch (e) { ow = null; porQue = ` (${String((e && e.message) || e).split('\n')[0]})`; }
@@ -936,15 +1197,35 @@ function approveByWindow(root, out, entries, c) {
   const argv = [path.join(process.env.BASE_CONTROLS_SELF_DIR, 'run-base-controls.sh'), cmd, ...rest];
   const sesion = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID || undefined;
   const firma = c && c.clase === REFRESH ? REFRESH : 'control-change';
-  const r = ow.exigir({ firma, argv, resumen: entries.map((e) => e.path).join(', '), propia: sesion });
+  // la constancia que ya está en la carpeta se mira antes de la firma: después, el «Sí» del dueño no escribiría nada
+  const antes = () => { const y = yaEnLaCarpeta(root, out, entries); return y ? { codigo: 1, motivo: y } : null; };
+  const r = ow.exigir({ firma, argv, resumen: entries.map((e) => e.path).join(', '), propia: sesion, antes, terminal });
   if (r.codigo !== 0) { console.error(`run-base-controls approve: ${r.motivo}: no se firmó nada.`); process.exit(1); }
-  if (r.via !== 'delegacion') { writeApproval(root, out, entries, approvalLine(entries)); return; }
+  if (r.via !== 'delegacion') {
+    let by = 'dueño';
+    try { by = require(path.join(process.env.BASE_CONTROLS_SELF_DIR, '..', 'lib', 'delegated-signing.js')).signerOf(r); } catch (_) { /* sin la biblioteca, el de siempre */ }
+    writeApproval(root, out, entries, approvalLine(entries, by));
+    return;
+  }
   const reg = r.registro || {};
   if (firma !== REFRESH || reg.firma !== REFRESH || reg.refirma_de !== c.refirma_de || typeof reg.maquina !== 'string' || !reg.maquina || typeof reg.sesion !== 'string' || !reg.sesion) {
     console.error(`run-base-controls approve: la refirma no da lo mismo que el registro de la ventana (${safe(c ? c.motivo : 'sin clase')}): no se firmó nada. Va a la ventana del dueño, o a su terminal: ${terminal}`);
     process.exit(1);
   }
   writeApproval(root, out, entries, refreshLine(entries, c.refirma_de, reg.maquina, reg.sesion));
+}
+
+// por qué la firma no escribiría nada en la carpeta de constancias (la de este cambio ya está, o algo con su nombre), o null
+function yaEnLaCarpeta(root, out, entries) {
+  if (!isApprovalDir(out)) return null;
+  const rel = `${out}${hashOf(entries)}.json`;
+  let st;
+  try { st = fs.lstatSync(path.join(root, rel)); } catch (_) { return null; }
+  if (!st.isFile()) return `${safe(rel)} ya existe y no es un archivo común: no hace falta firmar, hay que mirarlo`;
+  let prev = null;
+  try { prev = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8')); } catch (_) { prev = null; }
+  if (prev && holdsUp(prev) && prev.hash === hashOf(entries)) return `${safe(rel)} ya trae esta misma firma: no hace falta firmar de nuevo`;
+  return `${safe(rel)} ya existe y no es esta firma: miralo antes de pedir la firma`;
 }
 
 // la constancia en un .jsonl, o un archivo por firma en una carpeta
@@ -989,6 +1270,7 @@ try {
   else if (cmd === 'pending') cmdPending();
   else if (cmd === 'approve') cmdApprove();
   else if (cmd === 'classify') cmdClassify();
+  else if (cmd === 'removed-approvals') cmdRemovedApprovals();
   else if (cmd === '-h' || cmd === '--help') usage(0);
   else usage(2);
 } catch (e) {

@@ -520,3 +520,73 @@ test('T46 Examen_ControlesBaratos_LoNeto: lo que el archivo ya traía en HEAD no
   const r = run(dir, ['run', '--agent', AGENT], { TYCON_REVIEWER_EXAM_RUNNER: runner({ [`${AGENT}::a`]: true, [`${AGENT}::b`]: true, [`${AGENT}::c`]: false }) });
   assert.strictEqual(r.code, 0, r.out);
 });
+
+test('T47 Porton_LineaDeBaseDeLaBaseIlegible_Frena: si la línea de base de la base no se lee, no se compara contra la del cambio', () => {
+  const dir = harness();
+  fs.writeFileSync(blPath(dir), '{ rota');
+  commit(dir, 'línea de base rota en main');
+  const base = change(dir);
+  const doc = { fixed_at: '2026-10-01', tool: 'claude', runs: 3, cases: { [`${AGENT}::a`]: false, [`${AGENT}::b`]: false, [`${AGENT}::c`]: false } };
+  fs.writeFileSync(blPath(dir), JSON.stringify(doc, null, 2));
+  handResult(dir, { cases: { [`${AGENT}::a`]: false, [`${AGENT}::b`]: false, [`${AGENT}::c`]: false } });
+  commit(dir);
+  const r = run(dir, ['check', '--base', base]);
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /la línea de base de la base no se puede leer/);
+  assert.doesNotMatch(r.out, /revisor nuevo/);
+});
+
+// ── El examen en los controles del commit, antes de la firma ─────────────────────────────────────────────────
+// El tramo del control del commit, cortado hasta su `fi` de primer nivel y corrido en el arnés de juguete: el mismo que
+// corren «Preparar el pull request» y el ok de guardar en sólo lectura, antes de pedir la firma.
+const HOOK = path.join(ROOT, '.githooks', 'pre-commit-checks');
+function examBlock() {
+  const hook = fs.readFileSync(HOOK, 'utf8');
+  const from = hook.indexOf('# ── El examen del revisor tocado');
+  assert.ok(from > 0, 'el control del commit tiene el tramo del examen');
+  return hook.slice(from, hook.indexOf('\nfi\n', from) + 4);
+}
+/** El control del repo de juguete: un guion sin versionar que llama al de verdad. */
+function withControl(dir) {
+  write(dir, { 'scripts/controls-bench/reviewer-change-check.js': `const r = require('child_process').spawnSync(process.execPath, [${JSON.stringify(CHECK)}, ...process.argv.slice(2)], { stdio: 'inherit' }); process.exitCode = r.status;\n` });
+}
+function runExamBlock(dir, extra = {}) {
+  const cambiados = git(dir, ['diff', '--cached', '--name-only', '--', 'agents/*.md', 'packs/*/agents/*.md']);
+  const r = spawnSync('bash', ['-c', `set -uo pipefail\ncd "$1" || exit 9\ncambiados="$2"\n${examBlock()}\necho fin`, 'x', dir, cambiados], { env: env(extra), encoding: 'utf8' });
+  return { code: r.status, out: `${r.stdout}${r.stderr}` };
+}
+
+// 🔴 Falla con: el examen del revisor visto recién en el pedido, después de la firma (el control del commit no lo mira),
+// o un control que frena un commit que no toca revisores, o que deja pasar uno sin examen en sólo lectura.
+test('T48 Commit_RevisorSinExamen_FrenaAntesDeLaFirma: el control del commit frena el revisor sin examen, también en sólo lectura', () => {
+  const dir = harness();
+  withControl(dir);
+  change(dir);
+  git(dir, ['add', `agents/${AGENT}.md`]);
+  const red = runExamBlock(dir);
+  assert.strictEqual(red.code, 1, red.out);
+  assert.match(red.out, new RegExp(`${AGENT}.*sin el examen`));
+  assert.match(red.out, /COMMIT RECHAZADO — un revisor cambia sin su examen al día/);
+  // en sólo lectura, sobre la copia del índice de «Preparar» y del ok de guardar: frena igual
+  fs.copyFileSync(path.join(dir, '.git', 'index'), path.join(dir, '.git', 'save-ok-controls-1'));
+  const ro = runExamBlock(dir, { GIT_INDEX_FILE: path.join(dir, '.git', 'save-ok-controls-1'), TYCON_PRECOMMIT_READ_ONLY: '1' });
+  assert.strictEqual(ro.code, 1, ro.out);
+  // con su examen al día, pasa
+  assert.strictEqual(run(dir, ['run', '--agent', AGENT], { TYCON_REVIEWER_EXAM_RUNNER: runner(ALL()) }).code, 0);
+  git(dir, ['add', `agents/${AGENT}.md`, 'scripts/controls-bench']);
+  const green = runExamBlock(dir);
+  assert.strictEqual(green.code, 0, green.out);
+  assert.match(green.out, /fin/);
+});
+
+test('T49 Commit_SinControlOSinRevisor_NoMira: sin el control en el repo, o sin un revisor de la raíz en el commit, sigue', () => {
+  const sinControl = harness();
+  change(sinControl);
+  git(sinControl, ['add', `agents/${AGENT}.md`]);
+  assert.strictEqual(runExamBlock(sinControl).code, 0, 'el examen vive en el repo que trae el control');
+  const sinRevisor = harness();
+  withControl(sinRevisor);
+  write(sinRevisor, { 'LEEME.md': 'otra cosa\n' });
+  git(sinRevisor, ['add', 'LEEME.md']);
+  assert.strictEqual(runExamBlock(sinRevisor).code, 0);
+});

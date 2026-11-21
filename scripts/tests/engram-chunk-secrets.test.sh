@@ -12,7 +12,7 @@
 # Casos: E1 con clave no se crea · E2 limpia pasa y viaja · E3 la clave no se muestra · E4 el pendiente se sigue
 # frenando en el commit siguiente · E5 clave de licencia junto a su palabra · E6 cadena de conexión · E7 sin el
 # detector no se prepara nada y el commit pasa · E8 lo que parece una clave y no es · E9-E13 lo que encontraron la
-# revisión de seguridad y el pase adversarial.
+# revisión de seguridad y el pase adversarial · E18-E20 el chequeo de sólo lectura antes de la firma del ok de guardar.
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -187,6 +187,44 @@ montar; gz_nota "Credenciales" "la llave es $AWS" "$T/uno.gz"; gzip -c "$T/uno.g
 echo x >> "$T/repo/README"; git -C "$T/repo" add -A
 commit_a_mano "cambio c17b" TYCON_ENGRAM_HOOK=1
 if creado c17b; then mal "E17: un gzip dentro de otro viajó con la clave"; else ok "E17: gzip dentro de gzip frena"; fi
+
+echo "== E18 en sólo lectura (el chequeo antes de una firma) no exporta la memoria"
+montar; nota "$T/nota.json" "Decisión" "nada secreto"
+echo x >> "$T/repo/README"; git -C "$T/repo" add README
+cp "$T/repo/.git/index" "$T/repo/.git/save-ok-controls-1"
+( cd "$T/repo" && PATH="$T/bin:$PATH" TYCON_GUIDES_DIR="$RAIZ" TYCON_ENGRAM_HOOK=1 ENGRAM_CHUNK="$T/nota.json" ENGRAM_ID=c18 \
+    GIT_INDEX_FILE="$T/repo/.git/save-ok-controls-1" TYCON_PRECOMMIT_READ_ONLY=1 git -c core.hooksPath="$T/hooks" hook run pre-commit ) > "$T/salida.txt" 2>&1
+RC=$?
+if [ "$RC" = 0 ] && [ ! -e "$T/repo/.engram/chunks/c18.jsonl.gz" ]; then ok "E18: pasa sin escribir la memoria"; else mal "E18: en sólo lectura exportó la memoria o frenó (rc $RC)"; fi
+if GIT_INDEX_FILE="$T/repo/.git/save-ok-controls-1" git -C "$T/repo" diff --cached --name-only | grep '^.engram/' >/dev/null; then mal "E18: preparó la memoria"; else ok "E18: no preparó nada"; fi
+echo "== E19 en un commit de verdad la variable de sólo lectura no apaga la memoria"
+( cd "$T/repo" && PATH="$T/bin:$PATH" TYCON_GUIDES_DIR="$RAIZ" TYCON_ENGRAM_HOOK=1 ENGRAM_CHUNK="$T/nota.json" ENGRAM_ID=c19 \
+    TYCON_PRECOMMIT_READ_ONLY=1 git -c core.hooksPath="$T/hooks" commit -q -m "cambio c19" ) > "$T/salida.txt" 2>&1
+if creado c19 && en_commit .engram/chunks/c19.jsonl.gz; then ok "E19: la memoria viaja igual"; else mal "E19: con la variable puesta, un commit de verdad salteó la memoria"; fi
+
+echo "== E20 en sólo lectura la emergencia del commit se mira sin gastarla; en un commit de verdad se gasta"
+# un arnés de mentira: el catálogo de producción siempre rechaza y la biblioteca de la emergencia anota cómo la llamaron
+# (la de verdad lee la casa de la cuenta, no la de la prueba). HAS_PERMIT=1 contesta que hay una emergencia vigente
+montar; F="$T/arnes"; mkdir -p "$F/scripts/production" "$F/scripts/lib"
+echo 'process.exit(1)' > "$F/scripts/production/lint-production-json.js"
+cat > "$F/scripts/lib/harness-sign.js" <<'SIG'
+require('fs').appendFileSync(process.env.SIGN_LOG, `${process.argv[2]}\n`);
+process.exit(process.env.HAS_PERMIT === '1' ? 0 : 1);
+SIG
+echo x >> "$T/repo/README"; git -C "$T/repo" add README
+cp "$T/repo/.git/index" "$T/repo/.git/save-ok-controls-1"
+solo_lectura_e20() { # <HAS_PERMIT>
+  ( cd "$T/repo" && TYCON_GUIDES_DIR="$F" SIGN_LOG="$T/sign.log" HAS_PERMIT="$1" GIT_INDEX_FILE="$T/repo/.git/save-ok-controls-1" \
+      TYCON_PRECOMMIT_READ_ONLY=1 git -c core.hooksPath="$T/hooks" hook run pre-commit ) > "$T/salida.txt" 2>&1
+  RC=$?
+}
+: > "$T/sign.log"; solo_lectura_e20 1
+if [ "$RC" = 0 ] && [ "$(cat "$T/sign.log")" = has-commit ]; then ok "E20: con emergencia firmada pasa, y sólo la mira"; else mal "E20: con emergencia, rc $RC y la biblioteca recibió «$(tr '\n' ' ' < "$T/sign.log")»"; fi
+: > "$T/sign.log"; solo_lectura_e20 0
+if [ "$RC" = 1 ] && grep -q "rechazaría el commit" "$T/salida.txt" && ! grep -q consume "$T/sign.log"; then ok "E20: sin emergencia frena, sin gastar nada"; else mal "E20: sin emergencia, rc $RC y la biblioteca recibió «$(tr '\n' ' ' < "$T/sign.log")»"; fi
+: > "$T/sign.log"
+( cd "$T/repo" && TYCON_GUIDES_DIR="$F" SIGN_LOG="$T/sign.log" HAS_PERMIT=1 TYCON_PRECOMMIT_READ_ONLY=1 git -c core.hooksPath="$T/hooks" commit -q -m "cambio c20" ) > "$T/salida.txt" 2>&1
+if grep -qx "consume-commit" "$T/sign.log"; then ok "E20: en un commit de verdad la emergencia se gasta"; else mal "E20: el commit de verdad no gastó la emergencia (recibió «$(tr '\n' ' ' < "$T/sign.log")»)"; fi
 
 echo
 if [ "$FALLOS" = 0 ]; then echo "✅ engram-chunk-secrets: todo en orden"; exit 0; fi

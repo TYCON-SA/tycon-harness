@@ -469,7 +469,7 @@ test('Export_JoinedBranch_DiffOnlyTouchedFiles — la imagen por el exportador: 
   fs.writeFileSync(list, JSON.stringify({
     packages: { core: { arnes: { in: ['scripts/**'], out: [] }, 'agent-skills': { in: ['agents/*.md', 'skills/**'], out: [] } } },
     skillRenames: [{ source: 'agent-skills', from: 'skills/tycon-create-story', to: 'skills/tycon-create-story', why: 'x', reason: 'x' }],
-    synthetic: [{ target: 'NOTICE', from: 'scripts/publishing/public-files/NOTICE', reason: 'x', packages: ['core'] }],
+    synthetic: [{ target: 'NOTICE', from: 'scripts/publishing/sample-papers/NOTICE', reason: 'x', packages: ['core'] }],
   }));
   const before = handCopy({
     'skills/tycon-create-story/SKILL.md': 'antes\n', NOTICE: 'antes\n', 'adapters/codex/agents/revisor.toml': 'antes\n',
@@ -480,11 +480,11 @@ test('Export_JoinedBranch_DiffOnlyTouchedFiles — la imagen por el exportador: 
     'adapters/codex/agents-native/revisor.toml': 'después\n', 'agents/revisor.md': 'después\n',
   });
   const touched = path.join(path.dirname(list), 'tocados.txt');
-  fs.writeFileSync(touched, 'skills/tycon-create-story/SKILL.md\nscripts/publishing/public-files/NOTICE\nagents/revisor.md\n');
+  fs.writeFileSync(touched, 'skills/tycon-create-story/SKILL.md\nscripts/publishing/sample-papers/NOTICE\nagents/revisor.md\n');
   let r = trees(before, after, ['--touched', touched, '--allowlist', list]);
   assert.strictEqual(r.code, 0, `${r.err}\n${r.out}`);
   assert.deepStrictEqual(r.json.explained.map((x) => `${x.path} <- ${x.by}`).sort(), [
-    'NOTICE <- scripts/publishing/public-files/NOTICE',
+    'NOTICE <- scripts/publishing/sample-papers/NOTICE',
     'adapters/codex/agents-native/revisor.toml <- agents/revisor.md',
     'adapters/codex/agents/revisor.toml <- agents/revisor.md',
     'agents/revisor.md <- agents/revisor.md',
@@ -517,7 +517,7 @@ test('Export_TreesTouched_OnlyWhatShipsExplains — un archivo tocado que el exp
       'agent-skills': { in: ['skills/**', 'agents/*.md'], out: [] },
     } },
     skillRenames: [],
-    synthetic: [{ target: 'guides/guide-update-proposals.md', from: 'scripts/publishing/public-files/guides/guide-update-proposals.md', reason: 'x', packages: ['core'] }],
+    synthetic: [{ target: 'guides/guide-update-proposals.md', from: 'scripts/publishing/sample-papers/guides/guide-update-proposals.md', reason: 'x', packages: ['core'] }],
   }));
   const before = handCopy({ 'README.md': 'hola\n', 'guides/guide-update-proposals.md': 'el papel público\n', 'guides/guia.md': 'antes\n' });
   const after = alteredCopy(before, {
@@ -540,10 +540,10 @@ test('Export_TreesTouched_OnlyWhatShipsExplains — un archivo tocado que el exp
   assert.deepStrictEqual(r.json.explained.map((x) => x.path), ['guides/guia.md'], 'el espejo: lo que sale y se tocó sigue explicado');
 
   // el espejo del papel: tocar su «from» explica su destino
-  fs.writeFileSync(touched, 'scripts/publishing/public-files/guides/guide-update-proposals.md\n');
+  fs.writeFileSync(touched, 'scripts/publishing/sample-papers/guides/guide-update-proposals.md\n');
   r = trees(before, alteredCopy(before, { 'guides/guide-update-proposals.md': 'el papel público, retocado\n' }), ['--touched', touched, '--allowlist', list]);
   assert.strictEqual(r.code, 0, `${r.err}\n${r.out}`);
-  assert.deepStrictEqual(r.json.explained.map((x) => `${x.path} <- ${x.by}`), ['guides/guide-update-proposals.md <- scripts/publishing/public-files/guides/guide-update-proposals.md']);
+  assert.deepStrictEqual(r.json.explained.map((x) => `${x.path} <- ${x.by}`), ['guides/guide-update-proposals.md <- scripts/publishing/sample-papers/guides/guide-update-proposals.md']);
 
   // sin la tabla privada al lado de la lista no se sabe qué deja afuera: «no pude mirar»
   fs.rmSync(path.join(dir, 'replacements.json'));

@@ -105,7 +105,7 @@ function bloque({ storyId, lista }) {
   return [
     `Vas a marcar como probado a mano, en la historia ${storyId}:`,
     ...lista.map((c) => `  · Criterio ${c.n} — ${c.text}`),
-    'Para confirmarlo, aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No». Una respuesta en el chat no lo marca.',
+    'Para confirmarlo, aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No». Lo marca esa aprobación, no otra respuesta en el chat.',
   ].join('\n');
 }
 
@@ -121,7 +121,7 @@ function storyDe(marker) {
   return fs.existsSync(p) ? p : null;
 }
 function carpetaDeLaCorrida(marker) {
-  return require('../pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyDe(marker) || undefined);
+  return require('../pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyDe(marker) || undefined, { marker });
 }
 
 // Arma la muestra, si corresponde. La constancia la escribe quien muestra, después de mostrar (`anotar`).

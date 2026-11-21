@@ -1,0 +1,32 @@
+{
+  "vacia": [
+    {
+      "status": 0,
+      "stdout": "{\"ado\":false,\"clockify\":false,\"engram\":false,\"codegraph\":false,\"mailbox\":false,\"codex\":false,\"nightly\":false,\"instincts\":false,\"telegram\":false,\"timeTracking\":\"none\"}\n"
+    },
+    {
+      "status": 0,
+      "stdout": "TYCON_INTEG_ADO=0\nTYCON_INTEG_CLOCKIFY=0\nTYCON_INTEG_ENGRAM=0\nTYCON_INTEG_CODEGRAPH=0\nTYCON_INTEG_MAILBOX=0\nTYCON_INTEG_CODEX=0\nTYCON_INTEG_NIGHTLY=0\nTYCON_INTEG_INSTINCTS=0\nTYCON_INTEG_TELEGRAM=0\nTYCON_TIME_TOOL=none\n"
+    }
+  ],
+  "azure": [
+    {
+      "status": 0,
+      "stdout": "{\"ado\":true,\"clockify\":false,\"engram\":false,\"codegraph\":false,\"mailbox\":false,\"codex\":false,\"nightly\":false,\"instincts\":false,\"telegram\":false,\"timeTracking\":\"none\"}\n"
+    },
+    {
+      "status": 0,
+      "stdout": "TYCON_INTEG_ADO=1\nTYCON_INTEG_CLOCKIFY=0\nTYCON_INTEG_ENGRAM=0\nTYCON_INTEG_CODEGRAPH=0\nTYCON_INTEG_MAILBOX=0\nTYCON_INTEG_CODEX=0\nTYCON_INTEG_NIGHTLY=0\nTYCON_INTEG_INSTINCTS=0\nTYCON_INTEG_TELEGRAM=0\nTYCON_TIME_TOOL=none\n"
+    }
+  ],
+  "avisos": [
+    {
+      "status": 0,
+      "stdout": "{\"ado\":false,\"clockify\":false,\"engram\":false,\"codegraph\":false,\"mailbox\":false,\"codex\":false,\"nightly\":false,\"instincts\":false,\"telegram\":true,\"timeTracking\":\"none\"}\n"
+    },
+    {
+      "status": 0,
+      "stdout": "TYCON_INTEG_ADO=0\nTYCON_INTEG_CLOCKIFY=0\nTYCON_INTEG_ENGRAM=0\nTYCON_INTEG_CODEGRAPH=0\nTYCON_INTEG_MAILBOX=0\nTYCON_INTEG_CODEX=0\nTYCON_INTEG_NIGHTLY=0\nTYCON_INTEG_INSTINCTS=0\nTYCON_INTEG_TELEGRAM=1\nTYCON_TIME_TOOL=none\n"
+    }
+  ]
+}

@@ -40,6 +40,16 @@ harness_dir() {
   printf '%s' "${HOME:-}/.claude/tycon-harness"
 }
 
+# Sólo lectura: el chequeo antes de la firma del ok de guardar (lib/save-ok.js) corre estos controles con
+# TYCON_PRECOMMIT_READ_ONLY=1 sobre un índice propio (save-ok-controls-*). Lo que escribe no escribe y lo que consulta al
+# modelo no corre. Vale sólo con ese índice: en un commit de verdad (el índice del repo o su .lock) corre todo.
+solo_lectura() {
+  [ "${TYCON_PRECOMMIT_READ_ONLY:-}" = 1 ] || return 1
+  case "${GIT_INDEX_FILE##*/}" in save-ok-controls-*) return 0 ;; esac
+  echo "▸ pre-commit: TYCON_PRECOMMIT_READ_ONLY no vale en un commit: corren todos los controles." >&2
+  return 1
+}
+
 checks_harness() (
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$REPO_ROOT" || exit 0
@@ -121,6 +131,17 @@ elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.jso
   exit 1
 fi
 
+# ── El freno de publicación sobre lo que agrega este commit ──
+# El mismo que corre al empujar, con su misma lista: lo que el empuje frenaría se ve antes de que exista el commit, y no hay
+# historia que reescribir. Sin poder mirar, avisa y sigue, a diferencia de los demás: el commit se deshace y el empuje vuelve
+# a mirar; el chequeo previo de un ok de guardar, con TYCON_PRECOMMIT_READ_ONLY, sí frena.
+# Casos: scripts/tests/public-push-guard-commit.test.js
+PUBLISH_GUARD="$REPO_ROOT/scripts/hooks/public-push-guard.js"
+if [ -f "$PUBLISH_GUARD" ] && ! node "$PUBLISH_GUARD" pre-commit; then
+  echo "⛔ COMMIT RECHAZADO — el freno de publicación no deja salir lo que lleva este commit, o no pudo mirarlo (arriba dice dónde y cómo salir)." >&2
+  exit 1
+fi
+
 # ── El freno de claves enteras con forma de proveedor ──
 # Una clave con la forma que el escaneo de secretos de GitHub reconoce (AWS, GitHub, Stripe, Google, una llave privada…)
 # que el commit AGREGA no entra: lo que ya estaba, retocado o movido, no frena, y «AKIA» suelto o una clave armada por
@@ -158,6 +179,27 @@ TOOL_NAMES="$REPO_ROOT/scripts/ci/tool-names.js"
 if [ -f "$TOOL_NAMES" ] && ! node "$TOOL_NAMES" --repo "$REPO_ROOT"; then
   echo "⛔ COMMIT RECHAZADO — el nombre de una herramienta de horas fuera de su integración, o no se pudo mirar (arriba dice dónde)." >&2
   exit 1
+fi
+
+# ── Los comandos y las direcciones de una plataforma fuera de su conector ──
+# El núcleo dice qué se hace; cómo, el conector: un commit que sube las líneas con un comando o una dirección de una
+# plataforma fuera de integrations/ y las pruebas, sobre el techo de su archivo o con una entrada mal escrita, no se crea.
+# Las señales salen de los manifiestos de plataforma (hardSignals); la lista, de scripts/ci/neutrality-allowlist.json.
+# Casos: scripts/tests/platform-neutrality.test.js
+CORE_NEUTRALITY="$REPO_ROOT/scripts/ci/check-core-neutrality.js"
+if [ -f "$CORE_NEUTRALITY" ] && ! node "$CORE_NEUTRALITY" --repo "$REPO_ROOT"; then
+  echo "⛔ COMMIT RECHAZADO — un comando o una dirección de una plataforma fuera de su conector, o no se pudo mirar (arriba dice dónde)." >&2
+  exit 1
+fi
+
+# ── Las palabras de las guías en castellano ──
+# Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulario.md): el control señala las palabras que
+# no se escriben en la prosa de una guía y pasan el techo de su archivo. Informa y no frena el commit. Las reglas:
+# scripts/ci/vocabulary.json.
+# Casos: scripts/tests/vocabulary.test.js
+VOCABULARY="$REPO_ROOT/scripts/ci/vocabulary.js"
+if [ -f "$VOCABULARY" ]; then
+  node "$VOCABULARY" --repo "$REPO_ROOT" || true
 fi
 
 # ── La historia interna en la prosa que se publica ──
@@ -258,10 +300,22 @@ else
   fi
 fi
 
-# ── Tres reglas de la CI pública, sobre lo que trae el commit ──
+# ── Los pendientes nuevos de la lista, con la aprobación de la coordinadora ──
+# Un renglón `- [ ]` nuevo en tasks/todo.md entra sólo con su aprobación firmada en el registro: tasks/pending-approvals.jsonl
+# y un archivo por aprobación en tasks/pending-approvals/ (scripts/lib/pending-approvals.js). Corre si el commit toca la
+# lista o el registro: en el arnés no hay lista, y el repo privado corre el mismo bloque. Casos: scripts/tests/pending-approvals.test.js
+if grep -qE '^tasks/(todo\.md|pending-approvals\.jsonl|pending-approvals/)' <<<"$STAGED_ALL"; then
+  echo "▸ pre-commit: pendientes nuevos de la lista…"
+  if ! node "$REPO_ROOT/scripts/ci/check-pending-approvals.js" --staged --repo "$REPO_ROOT"; then
+    echo "⛔ COMMIT RECHAZADO — la lista de pendientes trae un pendiente sin la aprobación de la coordinadora (motivo arriba)." >&2
+    exit 1
+  fi
+fi
+
+# ── Cuatro reglas que veían la CI pública o la noche, sobre lo que trae el commit ──
 # `| grep -q` con pipefail en un .sh, una prueba que depende de un sha o de una hora que cambian, y el conteo del
-# catálogo de reglas cuando el commit toca agents/ o el catálogo; con la misma lógica que sus pruebas (los módulos de
-# scripts/lib/). Sin nada de eso sale en milisegundos. Sin el guion: en el arnés (trae la lista blanca de publicación)
+# catálogo de reglas cuando el commit toca agents/ o el catálogo, y (aviso, no freno) el inventario de los controles
+# contra el pre-commit del privado; con la misma lógica que sus pruebas (los módulos de scripts/lib/). Sin nada de eso sale en milisegundos. Sin el guion: en el arnés (trae la lista blanca de publicación)
 # frena; en un repo de juguete de las suites del hook, lo dice y sigue.
 # Casos: scripts/tests/check-staged-ci-rules.test.js
 CI_RULES="$REPO_ROOT/scripts/ci/check-staged-ci-rules.js"
@@ -348,7 +402,12 @@ if [ -n "$MAPA_TOCADO" ]; then
     fi
     MAPA_PUB="onboarding/mini-class/mapa-del-arnes.html"
     if ! git show ":$MAPA_PUB" 2>/dev/null | cmp -s - "$MAPA_TMP/publica.html"; then
-      if echo "$MAPA_TOCADO" | grep -qvE "^$MAPA_PUB\$"; then
+      if echo "$MAPA_TOCADO" | grep -qvE "^$MAPA_PUB\$" && solo_lectura; then
+        # sólo lectura (el chequeo antes de una firma): regenerarla acá cambiaría el repo; se dice cómo dejarla al día
+        rm -rf "$MAPA_TMP"
+        echo "⛔ COMMIT RECHAZADO — la versión pública del mapa ($MAPA_PUB) quedó vieja y el commit la regeneraría. Regenerala antes: node $MAPA_GEN --input artifacts/mapa-arnes.html --config scripts/tools/harness-map/publica.json --output $MAPA_PUB" >&2
+        exit 1
+      elif echo "$MAPA_TOCADO" | grep -qvE "^$MAPA_PUB\$"; then
         if ! { cp "$MAPA_TMP/publica.html" "$REPO_ROOT/$MAPA_PUB" && git add "$MAPA_PUB"; }; then
           rm -rf "$MAPA_TMP"
           echo "⛔ COMMIT RECHAZADO — la versión pública del mapa se regeneró pero no pude ponerla en este commit ($MAPA_PUB)." >&2
@@ -474,6 +533,23 @@ cambiados="$(git diff --cached --name-only -- 'agents/*.md' 'packs/*/agents/*.md
 }
 [ -z "$cambiados" ] && exit 0
 
+# ── El examen del revisor tocado ──
+# El portón del pedido frena un revisor que cambia sin su examen al día. Acá se ve antes de pedir la firma: en «Preparar
+# el pull request» y antes del ok de guardar (los dos corren estos controles en sólo lectura), y en el commit. Mira los
+# revisores de la raíz (`agents/*.md`) del repo que trae el control, porque el examen vive en ese repo. No consulta al
+# modelo: compara el resultado guardado con la línea de base. Casos: scripts/tests/reviewer-change-check.test.js.
+EXAMEN="$(pwd)/scripts/controls-bench/reviewer-change-check.js"
+if [ -f "$EXAMEN" ] && grep -q '^agents/' <<<"$cambiados"; then
+  if ! command -v node >/dev/null 2>&1; then
+    echo "⛔ COMMIT RECHAZADO — el examen del revisor tocado: sin node no pude mirarlo, y no poder mirar no es verde." >&2
+    exit 1
+  fi
+  if ! node "$EXAMEN" check --repo "$(pwd)" --staged >&2; then
+    echo "⛔ COMMIT RECHAZADO — un revisor cambia sin su examen al día, o no pude compararlo (arriba dice cuál y el comando que lo corre)." >&2
+    exit 1
+  fi
+fi
+
 CHECK="$TCG/build/check.js"
 if [ ! -f "$CHECK" ] || ! command -v node >/dev/null 2>&1; then
   # sin el arnés no se puede verificar: se avisa fuerte, no se bloquea
@@ -495,6 +571,8 @@ if node "$CHECK" >"$LOG" 2>&1; then
   # plomería (sin red, sin sesión, el corral que se escapa: avisa y deja pasar). Apagado: TYCON_NO_LIVENESS_PRECOMMIT=1
   VIDA="$TCG/scripts/hooks/advisor-liveness-on-change.js"
   [ -f "$VIDA" ] || VIDA="$TCG/scripts/hooks/advisor-liveness-on-change.js"
+  # en el chequeo antes de la firma del ok de guardar corre igual: no escribe en el repo, y si frenara al commitear el
+  # arreglo vencería el ok recién firmado
   if [ -f "$VIDA" ]; then
     # shellcheck disable=SC2086
     node "$VIDA" $cambiados || exit 1

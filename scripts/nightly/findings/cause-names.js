@@ -19,7 +19,13 @@ const NOMBRES_CAUSA = {
     MUTATION_CHECK_OFF: 'prueba de mutación salteada', TYCON_MUTATION_CHECK: 'prueba de mutación salteada',
     LIVENESS_PRECOMMIT_OFF: 'chequeo de vida de revisores salteado', TYCON_NO_LIVENESS_PRECOMMIT: 'chequeo de vida de revisores salteado',
     STORY_GATE_OFF_ADHOC: 'ajuste puntual con el portón apagado', TYCON_STORY_GATE: 'ajuste puntual con el portón apagado',
+    RUNTIME_MATRIX_LEGACY: 'prueba en vivo con todo humo como ejecución real', TYCON_RUNTIME_MATRIX_LEGACY: 'prueba en vivo con todo humo como ejecución real',
+    RUNTIME_MATRIX_NO_MUTATION_CHECK: 'prueba de mutación salteada',
+    STORY_REVIEW_OFF: 'revisión de la historia salteada', TYCON_STORY_REVIEW: 'revisión de la historia salteada',
+    ESCAPE_NOTICE_PERIOD: 'escape avisado antes de su fecha de corte', COVERAGE_BELOW_FLOOR: 'umbral de cobertura bajado en la máquina',
+    ATDD_PREEDIT_GATE_OFF: 'pruebas primero apagado',
     TYCON_SAFETY_OFF: 'freno de seguridad apagado', TYCON_SESSION_GUARD_OK: 'freno de sesiones salteado',
+    TYCON_STASH_GUARD_OK: 'freno del stash ajeno salteado',
     TYCON_ENGRAM_MANIFEST_OK: 'freno de memoria salteado', STOP_AUTONOMY: 'cierre sin esperar a la persona',
     DOD_EVIDENCE_MANUAL_WRITE: 'evidencia escrita a mano', SIZE_FORCED_LIGHT_WITH_CODE: 'pipeline liviano con código',
     'story-skill-bypass': 'freno de stories salteado', STORY_SKILL_BYPASS: 'freno de stories salteado',
@@ -44,18 +50,41 @@ const NOMBRES_CAUSA = {
   },
 };
 const HOOK_TIEMPO = 'aviso automático que se pasó de tiempo';
+const HOOK_TIEMPO_CODIGO = 'RR-HOOK:/tiempo';
 const hasOwnCausa = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 /**
- * El nombre de una causa de ejecuciones (`{ regla, categoria }`); la regla tiene que estar en la tabla. Una variante
- * (`X/variante`) que la tabla no nombra lleva el nombre de `X`.
+ * El código de una causa de ejecuciones (`{ regla, categoria }`): `<regla>:<fila de la tabla que la nombra>`, con `_`
+ * para la categoría que la tabla no conoce. Una variante (`X/variante`) que la tabla no nombra lleva el código de `X`.
+ * Con una regla que la tabla no tiene, null. Es la clave con la que el sitio traduce el nombre.
  */
-const nombreCausa = (c) => {
+const codigoCausa = (c) => {
+  if (!hasOwnCausa(NOMBRES_CAUSA, c.regla)) return null;
   const t = NOMBRES_CAUSA[c.regla];
-  if (c.regla === 'RR-HOOK' && typeof c.categoria === 'string' && c.categoria.endsWith('/tiempo')) return HOOK_TIEMPO;
-  if (c.categoria === null || typeof c.categoria !== 'string') return t._;
-  if (hasOwnCausa(t, c.categoria)) return t[c.categoria];
+  if (c.regla === 'RR-HOOK' && typeof c.categoria === 'string' && c.categoria.endsWith('/tiempo')) return HOOK_TIEMPO_CODIGO;
+  if (c.categoria === null || typeof c.categoria !== 'string') return `${c.regla}:_`;
+  if (hasOwnCausa(t, c.categoria)) return `${c.regla}:${c.categoria}`;
   const raiz = c.categoria.split('/')[0];
-  return raiz !== c.categoria && hasOwnCausa(t, raiz) ? t[raiz] : t._;
+  return `${c.regla}:${raiz !== c.categoria && hasOwnCausa(t, raiz) ? raiz : '_'}`;
+};
+/** El nombre en castellano de un código de `codigoCausa`. */
+const nombreDelCodigo = (codigo) => {
+  if (codigo === HOOK_TIEMPO_CODIGO) return HOOK_TIEMPO;
+  const i = codigo.indexOf(':');
+  return NOMBRES_CAUSA[codigo.slice(0, i)][codigo.slice(i + 1)];
+};
+/** El código de la causa de una ficha (`causa: '<regla>'` o `'<regla>:<categoría>'`), o null. */
+const codigoDeLaFicha = (causa) => {
+  const s = typeof causa === 'string' ? causa : '';
+  const i = s.indexOf(':');
+  return codigoCausa(i < 0 ? { regla: s, categoria: null } : { regla: s.slice(0, i), categoria: s.slice(i + 1) });
+};
+/** Todos los códigos: uno por fila de la tabla, más el del aviso que se pasó de tiempo. */
+const CODIGOS_CAUSA = Object.freeze([...Object.entries(NOMBRES_CAUSA).flatMap(([r, t]) => Object.keys(t).map((k) => `${r}:${k}`)), HOOK_TIEMPO_CODIGO]);
+/** El nombre de una causa de ejecuciones (`{ regla, categoria }`); la regla tiene que estar en la tabla. */
+const nombreCausa = (c) => {
+  const codigo = codigoCausa(c);
+  if (!codigo) throw new TypeError(`regla sin nombre: ${c.regla}`);
+  return nombreDelCodigo(codigo);
 };
 const NOMBRES_VALIDOS = new Set([HOOK_TIEMPO, ...Object.values(NOMBRES_CAUSA).flatMap((t) => Object.values(t))]);
 
@@ -92,4 +121,4 @@ const APARTE = Object.freeze({
   'RR-NODE:en-obra': 'el guion que no cargó es una prueba del arnés en obra (el clon o un worktree), no una pieza instalada',
 });
 
-module.exports = { NOMBRES_CAUSA, HOOK_TIEMPO, nombreCausa, NOMBRES_VALIDOS, hasOwnCausa, nombreDe, APARTE };
+module.exports = { NOMBRES_CAUSA, HOOK_TIEMPO, nombreCausa, NOMBRES_VALIDOS, hasOwnCausa, nombreDe, APARTE, codigoCausa, codigoDeLaFicha, nombreDelCodigo, CODIGOS_CAUSA };

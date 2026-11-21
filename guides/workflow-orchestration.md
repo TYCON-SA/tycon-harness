@@ -82,6 +82,11 @@ Ante errores de compilación, tests fallando, o bugs detectados, el agente DEBE:
 
 **NO preguntar** "¿querés que arregle el error?" — arreglarlo. Solo pedir guía si el fix cambia el scope de la tarea original, hay múltiples approaches válidos que el usuario debe decidir, o el error revela un problema de diseño que requiere replanificación.
 
+Una prueba que ya existía y estaba en rojo no se edita para que pase: se para y se dice por qué. Si lo que está mal es
+la prueba, la razón se anota (`marker.js note-red-test --test <ruta> --reason "<motivo>"`) y viaja a los revisores y al
+mensaje del commit; si es la prueba de un control, la edición la firma el dueño. El freno `on-red-test-edit.js` lo pide
+dentro de una ejecución del pipeline.
+
 ---
 
 ## 3. Estructura `tasks/`
@@ -156,9 +161,12 @@ Responder con "probablemente...", "creo que...", o referenciar archivos/métodos
 
 ### Commit/push sin consentimiento
 
-Ejecutar `git commit` o `git push` sin autorización explícita del usuario. Aplica incluso cuando todo está verde y el trabajo parece completo.
+Abrir el pull request o empujar a una rama compartida sin autorización explícita del usuario, o commitear y empujar
+fuera de una ejecución sin ella. Aplica incluso cuando todo está verde y el trabajo parece completo.
 
-**Correcto:** preparar el commit (staging, mensaje), mostrarlo al usuario, esperar aprobación.
+**Correcto:** en una ejecución, el agente commitea y empuja su rama de trabajo; la persona aprueba el pull request en la
+ventana de permiso, con la evidencia adelante. Fuera de una ejecución, preparar el commit (staging, mensaje), mostrarlo al
+usuario, esperar aprobación.
 
 ---
 
@@ -182,14 +190,14 @@ Esta sección define **cuándo invocar subagentes advisor** en conjunto con los 
 
 ### Regla general
 
-Después de invocar un skill BMAD que **implementa código** o **modifica artefactos críticos**, invocar los advisors Core correspondientes **antes de preparar el commit**.
+Después de **implementar código** o **modificar artefactos críticos**, en el pipeline o con un skill BMAD usado a mano, invocar los advisors Core correspondientes **antes de preparar el commit**.
 
 ### Skills BMAD que disparan advisors
 
 | Skill BMAD | Advisor(s) a invocar después | Phase |
 |---|---|---|
 | `tycon-create-story` / `bmad-edit-prd` → genera/edita una story | `tycon-story-validator` | pre (antes de pasar a implementación) |
-| `bmad-dev-story`, `bmad-quick-dev`, `bmad-agent-dev` → implementan código | `tycon-plugin-dotnet-conventions` + `tycon-plugin-tests-coverage` + `tycon-plugin-security-basics` en paralelo | during/post |
+| `bmad-dev-story`, `bmad-quick-dev`, `bmad-agent-dev`, usados a mano → implementan código | `tycon-plugin-dotnet-conventions` + `tycon-plugin-tests-coverage` + `tycon-plugin-security-basics` en paralelo | during/post |
 | Cualquier merge a `main` — salvo el push que trajo SÓLO tests/docs sin cerrar una story, que `retro-pending.js` exime por los ARCHIVOS del push (nunca por el mensaje) y CUENTA (`--report`); un merge de story la pide siempre, por repo. Desde 2026-09-16 la escribe un script, no un agente; el agente queda a pedido con «retro con modelo» | `scripts/metrics/retro-heartbeat.js` (latido: un segundo, sin modelo) · `tycon-retrospective-capturer` sólo a pedido | post-push (paso 10b) |
 
 ### Cómo invocar los advisors
@@ -220,7 +228,7 @@ No mostrar al dev 3 reportes separados — siempre consolidar.
 El pipeline tiene 3 puntos donde el humano aprueba explícitamente:
 
 1. **Aprobar la story** (después de `tycon-create-story` + `tycon-story-validator`)
-2. **Aprobar el plan de implementación** (después de `bmad-dev-story` en plan mode)
+2. **Aprobar el plan de implementación** (después de «Armar el plan»)
 3. **Aprobar o pedir cambios** (después del reporte consolidado de advisors + `bmad-code-review`)
 
 **El agente NUNCA commitea/pushea sin aprobación explícita en el paso 3**, aunque todos los advisors reporten OK. Ver [`git-commit-conventions.md`](git-commit-conventions.md).
@@ -250,7 +258,7 @@ Los advisors Core skipean automático si no aplican al repo:
 
 ### Skill orchestrator `tycon-pipeline`
 
-Para implementar una story se invoca el skill `tycon-pipeline`: encapsula BMAD → advisors → reporte consolidado → checkpoints HITL, y calcula él mismo qué advisors corren (`pipeline.js mech-check` + `pipeline.js advisors`). Para una story, esta sección describe lo que el skill orquesta y no se coordina a mano (§9.3). El código fuera de una story (p. ej. `bmad-quick-dev` en el carril ad-hoc) sigue la regla general: los revisores Core se invocan a mano antes del commit.
+Para implementar una story se invoca el skill `tycon-pipeline`: encapsula plan → implementación → advisors → reporte consolidado → checkpoints HITL, y calcula él mismo qué advisors corren (`pipeline.js mech-check` + `pipeline.js advisors`). Para una story, esta sección describe lo que el skill orquesta y no se coordina a mano (§9.3). El código fuera de una story (p. ej. `bmad-quick-dev` en el carril ad-hoc) sigue la regla general: los revisores Core se invocan a mano antes del commit.
 
 ---
 
@@ -384,7 +392,7 @@ Lifecycle:
 - **El paso «Arranque» (preflight, PIPE-C4)** setea el marker.
 - **Cada `complete-step <paso>`** actualiza `stepsCompleted` y `stepsPending`.
 - **Cada Edit/Write** appende `file_path` a `filesTouched` (via hook `on-edit.js`).
-- **El paso «Preparar el commit»** o el cierre en ADO limpian el marker.
+- **El paso «Preparar el pull request»** o el cierre en ADO limpian el marker.
 
 Utility: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js <cmd> [arg]`.
 
@@ -406,7 +414,7 @@ Wireados en `~/.claude/settings.json` bajo `UserPromptSubmit`, `PostToolUse`, y 
 El user pide "implementemos la `<N.M>`" y el orchestrator (Claude) **va paso a paso manual** en lugar de invocar `Skill(skill="tycon-pipeline")`. Resultado:
 - El preflight del «Arranque» se saltea.
 - «Validar la historia» corre a mano.
-- «Armar el plan», «Aprobar el plan» e «Implementar» (BMAD plan + approve + execute) se reemplazan por edición directa.
+- «Armar el plan», «Aprobar el plan» e «Implementar» se reemplazan por edición directa.
 - **Los revisores NO se corren**, y nadie lo nota hasta el cierre.
 
 Causa raíz: el skill activa solo con invocación explícita; si el agente no la reconoce, todo el flujo se salta. Sin un mecanismo persistente, nada dice "estás mid-impl de una story". Solución implementada: marker + hooks (Reglas 9.1, 9.2).
@@ -417,7 +425,7 @@ La sesión A implementa una task de backend de una story, con build verde y spec
 
 **Sin discovery cross-sesión, la sesión B va a**:
 - Re-ejecutar desde cero desde el «Arranque» hasta «Aprobar el plan».
-- Re-correr «Validar la historia» (el validador) + «Armar el plan» (BMAD plan, Amelia).
+- Re-correr «Validar la historia» (el validador) + «Armar el plan».
 - Re-preguntar al user las decisiones ya tomadas.
 - Re-implementar archivos ya creados en la sesión A → colisión Write sobre archivos no commiteados.
 - Re-escribir código con el spec drift no detectado (columnas asumidas que no existen en el schema real).
@@ -449,10 +457,10 @@ Lifecycle del `status:` orquestado por el pipeline:
 | Transición | Paso | Cómo |
 |---|---|---|
 | `ready-for-dev` → `in-progress` | «Arranque», PIPE-C5 | `marker.js update-story-status <path> "in-progress"` |
-| `in-progress` → `review` | «Preparar el commit» | `marker.js update-story-status <path> "review"` |
+| `in-progress` → `review` | «Preparar el pull request» | `marker.js update-story-status <path> "review"` |
 | `review` → `done` | el cierre en ADO | `marker.js update-story-status <path> "done"` |
 
-Si una sesión muere sin completar «Preparar el commit» ni el cierre en ADO → próxima sesión que abra `tycon-pipeline` lee `status: in-progress` y trata como "pipeline abandonado": ofrece (a) retomar / (b) reset a `ready-for-dev`.
+Si una sesión muere sin completar «Preparar el pull request» ni el cierre en ADO → próxima sesión que abra `tycon-pipeline` lee `status: in-progress` y trata como "pipeline abandonado": ofrece (a) retomar / (b) reset a `ready-for-dev`.
 
 ### Regla 9.6 — PreToolUse hook `on-write-collision.js` como defense-in-depth (2026-05-20)
 
@@ -590,7 +598,7 @@ Si el artefacto nuevo cambia un modelo (navegación, layout, flujo) que estaba e
 `azure-pipelines.yml` nuevo con `paths.include` que cubre `*/src/**` y poco más, y un commit
 legítimo que se mergea a `main` **sin que corra un solo pipeline** — sin error, sin aviso, porque
 un trigger que no matchea no falla: no existe. Un commit que arregla un bug real de
-`shared/` entra sin CI; se verifica con `az pipelines runs show` (el commit no aparece en NINGÚN
+`shared/` entra sin CI; se verifica con la CI de la plataforma (`platform.js ci read`: el commit no aparece en NINGÚN
 run). Y cada vez se redescubre desde cero.
 
 **Checklist al crear o clonar un `azure-pipelines.yml`** — cotejar `trigger.paths.include` contra

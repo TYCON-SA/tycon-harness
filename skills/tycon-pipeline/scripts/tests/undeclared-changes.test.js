@@ -369,3 +369,52 @@ test('T34 Cierre_BorradoPorLaEjecucionQueMainConserva_Sobra', () => {
   assert.deepEqual(r.sobra, ['viejo.js'], JSON.stringify(r));
   fs.rmSync(c.home, { recursive: true, force: true });
 });
+
+// ── La memoria exportada (8.271) ──────────────────────────────────────────────────────────────────────────────────────
+//
+// La regla global pide exportar la memoria (`engram sync`) antes de cada commit: escribe trozos en `.engram/chunks/` y
+// reescribe `.engram/manifest.json`. La huella de guardar ya los da por papeleo; este control tiene que decir lo mismo.
+// Lo demás de `.engram/` (la configuración, una subcarpeta, un enlace) sigue contando.
+
+/** Un corral con el índice de memoria ya commiteado en el arranque. */
+function corralConMemoria() {
+  const c = corral();
+  fs.mkdirSync(path.join(c.repo, '.engram', 'chunks'), { recursive: true });
+  fs.writeFileSync(path.join(c.repo, '.engram', 'manifest.json'), '{"chunks":[]}\n');
+  git(c.repo, 'add', '-A');
+  git(c.repo, 'commit', '-q', '-m', 'memoria');
+  c.baseSha = git(c.repo, 'rev-parse', 'HEAD');
+  return c;
+}
+
+test('Cierre_MemoriaExportada_NoSobra @story-8.271 @ac-7 @ac-9', () => {
+  const c = corralConMemoria();
+  fs.writeFileSync(path.join(c.repo, '.engram', 'chunks', 'a.jsonl.gz'), 'trozo');
+  fs.writeFileSync(path.join(c.repo, '.engram', 'manifest.json'), '{"chunks":["a"]}\n');
+  marcador(c.home, 'und-memoria', { storyPath: c.storyPath, repoPath: c.repo, baseSha: c.baseSha });
+  const r = cerrar(c.home, 'und-memoria');
+  assert.doesNotMatch(r.stderr, /BLOQUEADO — cambios sin declarar/, r.stderr);
+  assert.match(r.stderr, /memoria exportada \(no cuenta\): 2 archivo\(s\)/);
+  const l = lineasDelControl(c.home);
+  assert.equal(l.length, 1);
+  assert.equal(l[0].action, 'verde');
+  fs.rmSync(c.home, { recursive: true, force: true });
+});
+
+test('Cierre_OtroArchivoDeEngram_Sobra @story-8.271 @ac-8 @ac-17', () => {
+  const casos = [
+    ['.engram/config.json', (repo) => fs.writeFileSync(path.join(repo, '.engram', 'config.json'), '{"project":"otro"}\n')],
+    ['.engram/chunks/sub/a.jsonl.gz', (repo) => { fs.mkdirSync(path.join(repo, '.engram', 'chunks', 'sub')); fs.writeFileSync(path.join(repo, '.engram', 'chunks', 'sub', 'a.jsonl.gz'), 'x'); }],
+    ['.engram/chunks/b.jsonl.gz', (repo) => fs.symlinkSync(path.join(repo, 'package.json'), path.join(repo, '.engram', 'chunks', 'b.jsonl.gz'))],
+  ];
+  for (const [rel, hacer] of casos) {
+    const c = corralConMemoria();
+    hacer(c.repo);
+    marcador(c.home, 'und-engram', { storyPath: c.storyPath, repoPath: c.repo, baseSha: c.baseSha });
+    const r = cerrar(c.home, 'und-engram');
+    assert.notEqual(r.status, 0, `${rel}: ${r.stderr}`);
+    assert.match(r.stderr, /BLOQUEADO — cambios sin declarar/, rel);
+    assert.ok(r.stderr.includes(`· ${rel}`), `${rel}: ${r.stderr}`);
+    fs.rmSync(c.home, { recursive: true, force: true });
+  }
+});

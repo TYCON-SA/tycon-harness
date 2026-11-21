@@ -266,3 +266,206 @@ test('T20 el control del commit: crear el registro con la base pasa; reabrir con
   assert.match(r.stderr, /la base sólo se achica/);
   assert.match(r.stderr, /no trae su aprobación firmada en este commit/);
 });
+
+test('T21 el registro con el que nace: todo lo abierto en el último commit va de base; se quedan las firmas de lo abierto después', () => {
+  const despues = JSON.stringify(firmada('DEF-despues'));
+  const rota = JSON.stringify({ ...firmada('DEF-roto'), huella: '0000000000000000' });
+  const viejo = `${base('DEF-cerrado')}\n${JSON.stringify(firmada('DEF-viejo'))}\n${despues}\n${rota}\n`;
+  const r = PA.registroDelNacimiento({ antes: '', registro: viejo, todoAntes: LISTA });
+  assert.ok(!r.error, r.error);
+  // DEF-viejo va de base aunque traiga firma (la de otra máquina no pasaría el commit); DEF-cerrado y la rota salen
+  assert.deepStrictEqual(PA.leerRegistro(r.texto).lineas.map((x) => [x.valor.id, x.valor.via]),
+    [['DEF-viejo', 'base'], [PA.claveSinCodigo(SIN_CODIGO), 'base'], ['DEF-despues', 'delegacion']]);
+  assert.deepStrictEqual([r.base, r.firmadas, r.descartadas], [2, 1, 3]);
+  assert.ok(PA.revisar({ todo: LISTA, registro: r.texto }).ok, 'lo que arma cubre la lista');
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: '', despues: r.texto, renglones: [renglonDe(firmada('DEF-despues'))], todoAntes: LISTA, todoDespues: `${LISTA}- [ ] [DEF-despues] x\n` }), [], 'el commit que crea el registro lo acepta');
+  // sin registro en el disco: toda la lista va de base
+  assert.strictEqual(PA.registroDelNacimiento({ todoAntes: LISTA }).texto, `${JSON.stringify({ id: 'DEF-viejo', via: 'base' })}\n${JSON.stringify({ id: PA.claveSinCodigo(SIN_CODIGO), via: 'base' })}\n`);
+  // ya nacido, o con un renglón que no se lee: no arma nada
+  assert.match(PA.registroDelNacimiento({ antes: BASE, registro: BASE, todoAntes: LISTA }).error, /ya nació/);
+  assert.match(PA.registroDelNacimiento({ registro: 'no es json\n', todoAntes: LISTA }).error, /no se leen/);
+});
+
+test('T22 --create-base: arma lo que el commit que crea el registro acepta, y con el registro ya commiteado no escribe', (t) => {
+  const { d, git } = repo(`${LISTA}- [ ] [DEF-commiteado] abierto en el commit\n`, null);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  // en el disco, una base vieja con un pendiente que ya se cerró y la lista con uno que no está commiteado
+  fs.writeFileSync(path.join(d, PA.RECORD), `${base('DEF-cerrado')}\n`);
+  fs.appendFileSync(path.join(d, PA.TODO), '- [ ] [DEF-del-disco] escrito después del commit\n');
+  const r = check(d, '--create-base');
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /3 línea\(s\) de base y 0 aprobación\(es\) firmada\(s\)\. Descarté 1 línea/);
+  const ids = PA.leerRegistro(fs.readFileSync(path.join(d, PA.RECORD), 'utf8')).lineas.map((x) => x.valor.id);
+  assert.deepStrictEqual(ids, ['DEF-viejo', PA.claveSinCodigo(SIN_CODIGO), 'DEF-commiteado'], 'sale de la lista commiteada, sin la base vieja');
+  git('add', PA.RECORD);
+  const nace = check(d, '--staged');
+  assert.strictEqual(nace.status, 0, nace.stderr);
+  git('commit', '-q', '-m', 'registro');
+  const antes = fs.readFileSync(path.join(d, PA.RECORD), 'utf8');
+  const otra = check(d, '--create-base');
+  assert.strictEqual(otra.status, 1);
+  assert.match(otra.stderr, /ya nació.*No escribí nada/);
+  assert.strictEqual(fs.readFileSync(path.join(d, PA.RECORD), 'utf8'), antes);
+  assert.strictEqual(check(d, '--create-base', '--staged').status, 2, 'las dos opciones juntas no van');
+});
+
+test('T23 el comando que se sugiere para aprobar es el que approve-pending acepta: sin --for-session', (t) => {
+  const { d } = repo(`${LISTA}- [ ] [DEF-nuevo] algo\n`, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  const r = check(d);
+  assert.strictEqual(r.status, 1);
+  assert.match(r.stderr, /approve-pending --id DEF-nuevo --repo \S+\n/);
+  assert.doesNotMatch(r.stderr, /--for-session/);
+  assert.doesNotMatch(SIGNATURES.find((x) => x.id === PA.FIRMA).command, /--for-session/);
+  // el ejemplo del portón de escrituras es para la coordinadora, que aprueba el pendiente de otra sesión: ése sí lleva
+  // --for-session con la sesión que lo abrió, y la carpeta absoluta (ella corre desde la suya)
+  assert.match(sg.blockMessage({ action: 'block', kind: 'pending-approvals', reason: 'x' }, { filePath: '/r/tasks/pending-approvals.jsonl' }), /approve-pending --id <CÓDIGO> --repo <carpeta absoluta> --for-session <sesión que lo abrió>/);
+});
+
+// el servidor corre el pre-commit sobre el pedido entero y no tiene el registro del arnés de la máquina que firmó
+test('T24 --no-local-signature (la validación de pedidos): una aprobación con forma y huella entra sin el renglón de la cuenta; lo demás frena igual', (t) => {
+  const l = firmada('DEF-nuevo');
+  const todoDespues = `${LISTA}- [ ] [DEF-nuevo] algo\n`;
+  const despues = `${BASE}${JSON.stringify(l)}\n`;
+  // sin la opción, la misma línea frena: no hay renglón de la firma en esta cuenta
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues, renglones: [], todoAntes: LISTA, todoDespues }).map((x) => x.id), ['DEF-nuevo', 'DEF-nuevo']);
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues, renglones: [], todoAntes: LISTA, todoDespues, sinFirmaLocal: true }), []);
+  // una línea mal formada, una base nueva y una aprobación vieja que abre otro pendiente frenan igual
+  const rota = PA.revisarNuevas({ antes: BASE, despues: `${BASE}${JSON.stringify({ ...l, huella: 'otra' })}\n`, renglones: [], todoAntes: LISTA, todoDespues, sinFirmaLocal: true });
+  assert.ok(rota.some((x) => x.id === 'DEF-nuevo'), 'una huella que no es la suya frena');
+  const baseNueva = PA.revisarNuevas({ antes: BASE, despues: `${BASE}${base('DEF-nuevo')}\n`, renglones: [], todoAntes: LISTA, todoDespues, sinFirmaLocal: true });
+  assert.match(baseNueva[0].motivo, /la base sólo se achica/);
+  const vieja = PA.revisarNuevas({ antes: BASE, despues: BASE, renglones: [], todoAntes: LISTA.replace('- [ ] [DEF-viejo]', '- [x] [DEF-viejo]'), todoDespues: LISTA, sinFirmaLocal: true });
+  assert.deepStrictEqual(vieja.map((x) => x.id), ['DEF-viejo']);
+  // el control: con --staged entra; sin --staged la opción no va
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(d, PA.TODO), todoDespues);
+  fs.writeFileSync(path.join(d, PA.RECORD), despues);
+  git('add', '-A');
+  assert.strictEqual(check(d, '--staged').status, 1, 'en una máquina la firma local se sigue exigiendo');
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(check(d, '--no-local-signature').status, 2, 'sin --staged no hay firma que saltear');
+});
+
+test('T25 un merge que trae de la otra rama un pendiente ya aprobado allá no lo trata como nuevo', (t) => {
+  const l = firmada('DEF-de-main');
+  const todoMain = `${LISTA}- [ ] [DEF-de-main] aprobado en la otra rama\n`;
+  const registroMain = `${BASE}${JSON.stringify(l)}\n`;
+  const otrosPadres = [{ registro: registroMain, todo: todoMain }];
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues: registroMain, renglones: [], todoAntes: LISTA, todoDespues: todoMain }).map((x) => x.id), ['DEF-de-main', 'DEF-de-main'], 'sin el otro padre, frena');
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues: registroMain, renglones: [], todoAntes: LISTA, todoDespues: todoMain, otrosPadres }), []);
+  // abierto en la otra rama pero sin su línea allá: sigue siendo nuevo
+  const sinLinea = PA.revisarNuevas({ antes: BASE, despues: BASE, renglones: [], todoAntes: LISTA, todoDespues: todoMain, otrosPadres: [{ registro: BASE, todo: todoMain }] });
+  assert.deepStrictEqual(sinLinea.map((x) => x.id), ['DEF-de-main']);
+  // lo que el merge agrega por su cuenta se mira igual
+  const propio = PA.revisarNuevas({ antes: BASE, despues: registroMain, renglones: [], todoAntes: LISTA, todoDespues: `${todoMain}- [ ] [DEF-propio] x\n`, otrosPadres });
+  assert.deepStrictEqual(propio.map((x) => x.id), ['DEF-propio']);
+
+  // el control del commit lo lee de MERGE_HEAD
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  const rama = git('rev-parse', '--abbrev-ref', 'HEAD').stdout.trim();
+  git('checkout', '-q', '-b', 'otra');
+  fs.writeFileSync(path.join(d, PA.TODO), todoMain);
+  fs.writeFileSync(path.join(d, PA.RECORD), registroMain);
+  git('add', '-A');
+  git('commit', '-q', '-m', 'aprobado en la otra rama');
+  git('checkout', '-q', rama);
+  fs.writeFileSync(path.join(d, 'otro.txt'), 'x');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'trabajo propio');
+  const m = git('merge', '-q', '--no-ff', '--no-commit', 'otra');
+  assert.strictEqual(m.status, 0, m.stderr);
+  const r = check(d, '--staged');
+  assert.strictEqual(r.status, 0, r.stderr);
+  git('merge', '--abort');
+  fs.writeFileSync(path.join(d, PA.TODO), todoMain);
+  fs.writeFileSync(path.join(d, PA.RECORD), registroMain);
+  git('add', '-A');
+  assert.strictEqual(check(d, '--staged').status, 1, 'fuera de un merge, la misma línea frena');
+});
+
+// Cada aprobación nueva en su propio archivo de la carpeta: el registro es el archivo de antes más los de la carpeta.
+// 🔴 mutación: sin leer la carpeta → una aprobación en su archivo no aprueba, y el pendiente frena.
+test('T26 el registro unido: el archivo de antes y los de la carpeta, por nombre; sin ninguno de los dos, null', (t) => {
+  const a = JSON.stringify(firmada('DEF-a'));
+  const b = JSON.stringify(firmada('DEF-b'));
+  assert.strictEqual(PA.unirRegistro(BASE, [`${b}\n`, a]), `${BASE}${b}\n${a}\n`);
+  assert.strictEqual(PA.unirRegistro('', []), '');
+  assert.strictEqual(PA.archivoDe(firmada('DEF-a')), `${PA.RECORD_DIR}/DEF-a.${firmada('DEF-a').huella}.json`);
+  assert.ok(PA.esArchivoDeLaCarpeta(PA.archivoDe(firmada('DEF-a'))));
+  for (const r of [PA.RECORD, `${PA.RECORD_DIR}/sub/x.json`, `${PA.RECORD_DIR}/x.txt`, 'otra/pending-approvals/x.json']) assert.ok(!PA.esArchivoDeLaCarpeta(r), r);
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'pendientes-'));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  assert.strictEqual(PA.registroDelDisco(d), null);
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR), { recursive: true });
+  fs.writeFileSync(path.join(d, PA.RECORD_DIR, 'z.json'), `${b}\n`);
+  fs.writeFileSync(path.join(d, PA.RECORD_DIR, 'a.json'), `${a}\n`);
+  fs.writeFileSync(path.join(d, PA.RECORD_DIR, 'nota.txt'), 'no es una aprobación');
+  assert.strictEqual(PA.registroDelDisco(d), `${a}\n${b}\n`, 'sólo los .json, en el orden de sus nombres');
+  fs.writeFileSync(path.join(d, PA.RECORD), BASE);
+  assert.strictEqual(PA.registroDelDisco(d), `${BASE}${a}\n${b}\n`);
+});
+
+test('T27 el control lee la carpeta: en el árbol y en el commit; un archivo cambiado después de firmar se nombra', (t) => {
+  const { d, git } = repo(`${LISTA}- [ ] [DEF-nuevo] algo\n`, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  assert.strictEqual(check(d).status, 1, 'sin su aprobación frena');
+  const l = firmada('DEF-nuevo');
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  const ok = check(d);
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  assert.strictEqual(check(d, '--staged').status, 1, 'sin agregar, el commit no la lleva');
+  git('add', '-A');
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 0, r.stderr);
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify({ ...l, id: 'DEF-otro' })}\n`);
+  const mala = check(d);
+  assert.strictEqual(mala.status, 1);
+  assert.match(mala.stderr, /huella/);
+});
+
+// El caso que lo pide: dos ramas que aprueban a la vez chocaban en el archivo de antes, y el merge pedía resolverlo a mano.
+// 🔴 mutación: approve-pending que agrega al archivo de antes → el merge de las dos ramas choca.
+test('T28 dos ramas que aprueban cada una su pendiente se mergean sin choque, y el merge pasa el control', (t) => {
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  const rama = git('rev-parse', '--abbrev-ref', 'HEAD').stdout.trim();
+  const abrir = (nombre, todo, l) => {
+    git('checkout', '-q', '-b', nombre, rama);
+    fs.writeFileSync(path.join(d, PA.TODO), todo);
+    fs.mkdirSync(path.join(d, PA.RECORD_DIR), { recursive: true });
+    fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+    git('add', '-A');
+    git('commit', '-q', '-m', nombre);
+  };
+  // los renglones nuevos de la lista, en lugares distintos: lo que se mide es el registro
+  abrir('una', LISTA.replace('# Pendientes\n', '# Pendientes\n- [ ] [DEF-a] de una rama\n'), firmada('DEF-a'));
+  abrir('otra', `${LISTA}- [ ] [DEF-b] de la otra\n`, firmada('DEF-b'));
+  const m = git('merge', '-q', '--no-ff', '--no-commit', 'una');
+  assert.strictEqual(m.status, 0, `el merge chocó: ${m.stdout}${m.stderr}`);
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 0, r.stderr);
+  git('merge', '--abort');
+  // la vara: con el archivo de antes, las mismas dos aprobaciones chocan
+  git('checkout', '-q', '-b', 'vieja-una', rama);
+  fs.appendFileSync(path.join(d, PA.RECORD), `${JSON.stringify(firmada('DEF-a'))}\n`);
+  git('commit', '-q', '-am', 'vieja-una');
+  git('checkout', '-q', '-b', 'vieja-otra', rama);
+  fs.appendFileSync(path.join(d, PA.RECORD), `${JSON.stringify(firmada('DEF-b'))}\n`);
+  git('commit', '-q', '-am', 'vieja-otra');
+  assert.notStrictEqual(git('merge', '-q', '--no-commit', 'vieja-una').status, 0, 'el archivo de antes choca: la vara está viva');
+  git('merge', '--abort');
+});
+
+test('T29 la carpeta tampoco se escribe a mano: el freno de edición para sus archivos y la carpeta misma', () => {
+  for (const f of ['/r/tasks/pending-approvals/DEF-a.0123456789abcdef.json', '/r/tasks/pending-approvals', '/r/tasks/pending-approvals/']) {
+    assert.strictEqual(sg.signedRecordKind(f), 'pending-approvals', f);
+  }
+  for (const f of ['/r/tasks/pending-approvals-notas.md', '/r/otra/pending-approvals/x.json']) assert.strictEqual(sg.signedRecordKind(f), null, f);
+  const r = sg.computeStoryGate({ filePath: '/r/tasks/pending-approvals/DEF-a.0123456789abcdef.json', gateEnabled: false, marker: null, adhoc: null });
+  assert.strictEqual(r.kind, 'pending-approvals');
+});

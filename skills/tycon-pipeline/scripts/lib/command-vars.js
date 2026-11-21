@@ -29,6 +29,12 @@
  *   · una asignación que puede no haber quedado puesta (subshell, después de `||` o de `&&`, al lado de un caño `|`,
  *     en segundo plano `&`, dentro de un bloque `if`/`for`/`while`/`until`/`case`, en un cuerpo de función, o de
  *     prefijo de otro comando) deja la variable en «no sé»;
+ *   · la variable de un `for` (`for f in …; do …; done`) queda en «no sé» desde el `for`, esté donde esté la palabra
+ *     (`time for …` también), y lo que se asigna adentro del cuerpo puede no haber pasado; las demás variables del comando
+ *     se siguen leyendo. Un `for ((…))` o un `for` sin un nombre de variable después no se lee;
+ *   · un `do`, `then`, `elif` o `else` sin su `for`/`while`/`if` contado (`time for …`) abre un bloque igual;
+ *   · adentro del cuerpo de un bucle (`do … done`), una variable que se asigna más adelante en ese cuerpo es «no sé»:
+ *     desde la segunda vuelta vale lo nuevo (`D=docs; for i in 1 2; do cp a $D/x; D=../src; done`);
  *   · un comando con comillas escapadas, comentarios `#` o comillas sin cerrar no se lee: todas sus asignaciones son
  *     «no sé» (la variable no cae al ambiente);
  *   · si el comando no la asignó antes de ese punto, vale el ambiente (`HOME` es la carpeta de la persona);
@@ -43,6 +49,23 @@
 const os = require('os');
 
 const NO_SE = Symbol('no-se');
+
+/** El texto con cada `$(…)` en blanco (mismo largo): lo que corre adentro va en otro shell. */
+function sinSubcomandos(s) {
+  let out = '';
+  let prof = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '$' && s[i + 1] === '(') { prof++; out += '$('; i++; continue; }
+    if (prof > 0) {
+      if (s[i] === '(') prof++;
+      else if (s[i] === ')') prof--;
+      out += prof === 0 ? ')' : (s[i] === '\n' ? '\n' : ' ');
+      continue;
+    }
+    out += s[i];
+  }
+  return out;
+}
 const BLOQUE_ABRE = new Set(['if', 'while', 'until', 'for', 'case', 'select']);
 const BLOQUE_CIERRA = new Set(['fi', 'done', 'esac']);
 
@@ -100,7 +123,7 @@ function ilegible(s) {
 // converge, así que la lista es cerrada y todo lo demás es «no sé»).
 // 🔴 Sólo `[ \t]` entre piezas, nunca `\s*`: sobre el cuerpo de un heredoc en blanco (miles de líneas de espacios) un
 // `\s*` que cruza saltos de línea vuelve cuadrática la búsqueda (medido: 11 s con 20000 líneas).
-const ORDENES_QUE_ASIGNAN = /(^|[\s;&|(){}])(declare|typeset|local|readonly|export[ \t]+-|eval|read|readarray|mapfile|printf[ \t]+-v|source|unset|let|getopts)(?=[\s;]|$)/;
+const ORDENES_QUE_ASIGNAN = /(^|[\s;&|(){}])(declare|typeset|local|readonly|export[ \t]+-|eval|read|readarray|mapfile|printf[ \t]+-v|source|unset|let|getopts|trap)(?=[\s;]|$)/;
 const PUNTO_COMO_SOURCE = /(^|[;&|(){}\n])[ \t]*\.[ \t]+\S/;
 
 /**
@@ -147,6 +170,10 @@ function aritmeticaQueAsigna(s) {
 /** ¿El lector no puede decir nada seguro de las variables de este comando? */
 function noSeLee(s, sinCierre = false) {
   if (sinCierre || ilegible(s)) return true;
+  // una barra invertida pegada a un salto de línea: como continuación junta palabras (`D\<salto>=src` es `D=src`,
+  // `echo y\<salto>done` no cierra el bucle), y escapada (`\\<salto>`) el salto corta la sentencia. El lector no cuenta
+  // barras: cualquiera de las dos deja el comando sin leer
+  if (/\\\n/.test(s)) return true;
   // sobre el texto CRUDO: estas dos asignan en el shell actual aunque vayan entre comillas dobles
   if (aritmeticaQueAsigna(s) || /\$\{[A-Za-z_][A-Za-z0-9_]*:?=/.test(s)) return true;
   const f = fueraDeComillas(s);
@@ -155,7 +182,10 @@ function noSeLee(s, sinCierre = false) {
     || /(^|[\s;&|(])[{}](?=\s|;|$)/.test(f)              // llaves: bloque o cuerpo de función
     || /\b[A-Za-z_][A-Za-z0-9_]*[ \t]*\([ \t]*\)/.test(f) // definición de función
     || /(^|[\s;&|(])function\s+[A-Za-z_]/.test(f)
-    || /(^|[\s;&|(])(for|select|case)\s/.test(f)        // bucles y case reasignan
+    || /(^|[\s;&|(])(select|case)\s/.test(f)            // select y case reasignan
+    // un `for` se lee sólo con la forma `for NOMBRE …`: su variable queda en «no sé» (`asignaciones`). `for ((…))`, o
+    // un `for` sin nombre detrás, no
+    || /(^|[\s;&|(])for(?![ \t]+[A-Za-z_][A-Za-z0-9_]*(?=[\s;]|$))(?=[\s(;]|$)/.test(f)
     || /(^|[\s;&|(])[A-Za-z_][A-Za-z0-9_]*\+=/.test(f)   // VAR+=…
     || ORDENES_QUE_ASIGNAN.test(f)
     || PUNTO_COMO_SOURCE.test(f);
@@ -176,6 +206,14 @@ function asignaciones(cmd) {
   let bloque = 0;            // if/for/while/until/case … fi/done/esac
   let trasIncierto = false;  // la sentencia arranca después de ||, &&, | o & (puede no correr, o corre en un subshell)
   let inicio = true;         // estamos al principio de una sentencia
+  const abiertos = [];       // dónde empieza cada bucle todavía sin su `done`
+  const bucles = [];         // los bucles, [palabra, done]: una vuelta corre otra vez lo que está antes en el texto
+  // dónde arranca cada bucle: su palabra al principio de una sentencia (también después de `do`, `then`, `time`, `!`). La
+  // condición de un `while`/`until` vuelve a correr después del cuerpo: el bucle la incluye. Sin palabra a la vista, desde
+  // el principio del comando (marca de más, nunca de menos)
+  const palabrasDeBucle = [...sinSubcomandos(fueraDeComillas(s)).matchAll(/(?:^|[;&|(\n{!]|\b(?:do|then|else|elif|time)[ \t])[ \t]*(while|until|for|select)(?![\w.\/-])/g)]
+    .map((m) => m.index + m[0].length - m[1].length);
+  const inicioDelBucle = (pos) => palabrasDeBucle.filter((x) => x < pos).pop() ?? 0;
   const n = s.length;
   const esSeparador = (c) => c === ';' || c === '&' || c === '|' || c === '\n';
   while (i < n) {
@@ -184,13 +222,21 @@ function asignaciones(cmd) {
       if (c === ' ' || c === '\t') { i++; continue; }
       if (c === '(') { subshell++; i++; continue; }
       if (c === '{') { i++; continue; }
+      if (c === '!') { i++; continue; }   // `! D=x` niega el resultado; la asignación queda puesta igual
       // palabra de bloque o `export`
       const palabra = /^[A-Za-z_][A-Za-z0-9_]*/.exec(s.slice(i, i + 64));
       if (palabra && !/^=/.test(s.slice(i + palabra[0].length, i + palabra[0].length + 1))) {
         const w = palabra[0];
         if (BLOQUE_ABRE.has(w)) bloque++;
         if (BLOQUE_CIERRA.has(w)) bloque = Math.max(0, bloque - 1);
-        if (w === 'then' || w === 'else' || w === 'elif' || w === 'do' || w === 'export') { i += w.length; continue; }
+        if (w === 'do') abiertos.push(inicioDelBucle(i));
+        if (w === 'done' && abiertos.length) bucles.push([abiertos.pop(), i]);
+        // un `do`/`then`/`else`/`elif` cuyo `for`/`while`/`if` no se contó (`time for x in a; do D=…; done`): lo que sigue
+        // está adentro de un bloque igual
+        if ((w === 'then' || w === 'else' || w === 'elif' || w === 'do') && bloque === 0) bloque = 1;
+        // también `while`/`until`/`if`/`time`: lo que sigue puede ser una asignación (`while D=src; false; do …`), que en un
+        // bloque queda en «no sé»
+        if (['then', 'else', 'elif', 'do', 'export', 'while', 'until', 'if', 'time'].includes(w)) { i += w.length; continue; }
       }
       // un grupo de asignaciones al principio: A=1 B=2 [cmd]
       const grupo = [];
@@ -246,6 +292,16 @@ function asignaciones(cmd) {
     if (c === '(') { subshell++; i++; continue; }
     i++;
   }
+  // la variable de cada `for NOMBRE`, esté o no al principio de una sentencia (`time for D in …` también asigna): desde
+  // ahí vale lo que dejó la última vuelta, que este lector no sabe. Contar de más sólo deja más cosas en «no sé»
+  for (const m of fueraDeComillas(s).matchAll(/(^|[\s;&|(])for[ \t]+([A-Za-z_][A-Za-z0-9_]*)/g)) {
+    out.push({ nombre: m[2], valor: '', pos: m.index + m[1].length, cierta: false });
+  }
+  // en orden de posición: quien busca el valor toma la última asignación antes del destino
+  out.sort((a, b) => a.pos - b.pos);
+  // un `do` sin su `done` (el comando se cortó, o el lector no lo vio): el cuerpo llega hasta el final
+  for (const ini of abiertos) bucles.push([ini, n]);
+  out.bucles = bucles;
   return out;
 }
 
@@ -274,8 +330,14 @@ function enComillasSimples(s, pos) {
 function expandirEn(t, pos, asigs, env, home, prof = 0) {
   // `$(…)`, comillas invertidas, el tope de profundidad, y las variables posicionales o especiales (`$1`, `${1}`, `$@`,
   // `$$`, `$?`…): «no sé»
-  const especial = /\$(\{)?([0-9@*#?$!-])/.exec(String(t));
-  if (especial) return { valor: null, sinResolver: [`$${especial[2]}`] };
+  // todas, no sólo la primera: quien llama deja pasar una ruta cuyo único «no sé» es un `$$` (no trae barras), y una
+  // variable al lado (`$D/x$$`) tiene que quedar a la vista
+  const especiales = [...String(t).matchAll(/\$(\{)?([0-9@*#?$!-])/g)].map((m) => {
+    if (!m[1]) return `$${m[2]}`;
+    const fin = String(t).indexOf('}', m.index);
+    const cuerpo = String(t).slice(m.index + 2, fin < 0 ? undefined : fin);
+    return cuerpo === m[2] ? `$${m[2]}` : `\${${cuerpo}}`;
+  });
   if (/\$\(|`/.test(t) || prof > MAX_PROFUNDIDAD) {
     const nombres = [...String(t).matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)].map((x) => x[1]);
     return { valor: null, sinResolver: nombres.length ? nombres : ['$(…)'] };
@@ -283,6 +345,10 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
   const sinResolver = [];
   const valorDe = (nombre) => {
     let a = null;
+    // adentro de un bucle, una asignación que viene DESPUÉS en el mismo cuerpo vale desde la segunda vuelta
+    // (`D=docs; for i in 1 2; do cp a $D/x; D=../src; done`): «no sé»
+    const enBucle = (asigs.bucles || []).filter(([ini, fin]) => pos > ini && pos < fin);
+    if (enBucle.some(([ini, fin]) => asigs.some((x) => x.nombre === nombre && x.pos > pos && x.pos < fin && x.pos > ini))) return NO_SE;
     for (const x of asigs) { if (x.nombre === nombre && x.pos < pos) a = x; }
     if (a) {
       if (a.resuelto === undefined) {
@@ -308,11 +374,13 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
   };
   const valor = String(t).replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)([^}]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (m, llave, operador, suelta) => {
     const nombre = llave || suelta;
-    if (llave && operador) { sinResolver.push(nombre); return m; }   // ${VAR:-x}, ${VAR%…}: no se interpreta
+    // ${VAR:-x}, ${VAR%…}: no se interpreta, y se informa con su texto (`${RANDOM:+..}` puede traer barras)
+    if (llave && operador) { sinResolver.push(m); return m; }
     const v = valorDe(nombre);
     if (v === NO_SE) { sinResolver.push(nombre); return m; }
     return v;
   });
+  sinResolver.unshift(...especiales);
   return { valor: sinResolver.length ? null : valor, sinResolver };
 }
 
@@ -350,7 +418,9 @@ function expandirRutaSinRed(cmd, raw, opts) {
   const home = opts.home || os.homedir();
   // con `posibles`, una asignación que puede no haber quedado puesta (`cd x && f=a.md`) cuenta como puesta: lo que
   // valdría si corrió. Sirve a un freno que suma destinos posibles, nunca a uno que deja pasar lo resuelto
-  const asigs = asignaciones(cmd).map((a) => (opts.posibles ? { ...a, cierta: true } : a));
+  const crudas = asignaciones(cmd);
+  const asigs = crudas.map((a) => (opts.posibles ? { ...a, cierta: true } : a));
+  asigs.bucles = crudas.bucles;
   // Todos los lugares donde aparece el texto del destino (fuera de los cuerpos de heredoc); si no aparece, el final.
   const s = sinCuerposDeHeredoc(cmd);
   const posiciones = [];

@@ -291,10 +291,11 @@ esac
 # ── T10 · Exportador_SigueExcluyendoDashboard ──
 # 🔴 Mutación que lo pone en rojo: sacar `.dashboard/**` de las exclusiones fijas del exportador.
 # T10, T12 y T14 miran cómo está cableada la pieza en el repo del equipo (la lista del exportador, el pipeline nocturno,
-# el .gitignore que deja pasar la foto, el mapa del arnés). La copia pública no trae nada de eso (no tiene los papeles
-# del exportador, ni pipelines/, ni artifacts/, y su .gitignore ignora .dashboard/ entero porque no hay nocturno):
+# el .gitignore que deja pasar la foto, el mapa del arnés). La copia pública no trae nada de eso (no tiene la lista de
+# denegación del exportador, ni pipelines/, ni artifacts/, y su .gitignore ignora .dashboard/ entero porque no hay nocturno):
 # ahí salen NO MEDIDO, no verdes. Lo que mide la foto misma corre igual en los dos lados.
-INTERNO=0; [ -d "$RAIZ/scripts/publishing/public-files" ] && INTERNO=1
+# (la señal es la lista de denegación del exportador: es lo que pide su --explain, y la copia pública no la trae)
+INTERNO=0; [ -f "$RAIZ/scripts/publishing/denylist.json" ] && INTERNO=1
 if [ "$INTERNO" = 0 ]; then
   echo "  ⏭️   — T10 NO MEDIDO: la copia pública no trae la lista del exportador. No es un verde."
 elif node "$RAIZ/scripts/publishing/export.js" --explain 2>&1 | grep -E '\.dashboard/\*\*.*' >/dev/null \
@@ -397,7 +398,9 @@ for f in scripts/tests/suites.json artifacts/mapa-arnes.html guides/piezas-del-a
     *) PAT='scripts/nightly/projects/snapshot.js' ;;
   esac
   if [ "$INTERNO" = 0 ] && [ ! -f "$RAIZ/$f" ]; then echo "  ⏭️   — T14 NO MEDIDO: la copia pública no trae $f. No es un verde."; continue; fi
-  grep -q "$PAT" "$RAIZ/$f" && ok "T14 $f nombra la pieza" || mal "T14 $f no nombra $PAT"
+  # la guía de piezas es su índice y sus grupos (guides/pieces/)
+  DONDE=("$RAIZ/$f"); [ "$f" = guides/piezas-del-arnes.md ] && DONDE+=("$RAIZ/guides/pieces")
+  grep -rq "$PAT" "${DONDE[@]}" && ok "T14 $f nombra la pieza" || mal "T14 $f no nombra $PAT"
 done
 
 # ── T15 · SnapshotSdlc_IdenticoConYSinElPaso ──

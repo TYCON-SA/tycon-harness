@@ -55,6 +55,7 @@ const childProcess = require('child_process');
 const OPS = require('../lib/operations-config.js');
 const people = require('../lib/people.js');
 const COPIA = require('./operations-copy.js');
+const { validAgeDays } = require('../nightly/projects/state-age.js');
 
 /** Un proceso sin bloquear: { status, stdout, stderr, error }. Nunca rechaza; con `timeout`, lo corta. */
 function correr(cmd, args, { cwd, env, timeout = 180000 } = {}) {
@@ -77,6 +78,11 @@ const PLAZO_COPIA_MS = 24 * 3600000;
 const REFRESCO_POR_DEFECTO = 15;
 const EDAD_MAXIMA_SIN_DECLARAR = 2;
 const ARCHIVO_ESTADO = 'configuracion-estado.json';
+// lo que el sitio recuerda del espejo del buzón entre refrescos y entre despertares (ver «La memoria del espejo»)
+const ARCHIVO_MEMORIA = 'espejo-memoria.json';
+const FORMATO_MEMORIA = 1;
+// cada cuánto la bajada vuelve a mirar el disco entero aunque nada haya cambiado
+const VERIFICAR_CADA_MS = 6 * 3600000;
 // cuánto bajan de conversaciones (y cambios de git) una pasada del buzón, antes de resumirlas y borrarlas del disco: el
 // disco del sitio guarda a lo sumo esto más los resúmenes y los volcados
 const TOPE_CONVERSACIONES_BYTES = 300 * 1024 * 1024;
@@ -84,6 +90,8 @@ const TOPE_CONVERSACIONES_BYTES = 300 * 1024 * 1024;
 // 159 MB que cada máquina volvía a subir con otra huella): bajarla de nuevo cada vez llenaba la tanda entera y la pestaña
 // no terminaba nunca de leer el buzón. Por arriba de esto la corrida queda en la tabla sin su conversación, y lo dice
 const TOPE_CONVERSACION_BYTES = 50 * 1024 * 1024;
+// lo más que una bajada espera a que termine el armado de Ejecuciones: el corte del armado en su hilo (tabs/runs.js)
+const ESPERA_ARMADO_MS = 10 * 60 * 1000;
 const SOURCES_DEL_ARNES = path.join(__dirname, '..', 'nightly', 'dashboard', 'sources.json');
 
 /** La regla de operations.json: la de people.js, la única. */
@@ -235,6 +243,54 @@ function fotoDelDia(dir, patron, dia, raiz = dir, log = () => {}) {
   return r.doc || null;
 }
 
+const HUELLA_ARCHIVO = /^([0-9a-f]{64})\.json$/;
+const HUELLA_BYTES = 512;
+const HUELLAS_POR_CARPETA = 20;
+
+/**
+ * Las huellas de oficina que subió cada carpeta del buzón: `{ medido, carpetas: { <carpeta>: { huellas, llena } } }`. Una
+ * vale sólo si su nombre, su campo y el sha256 de su clave coinciden; lo demás se ignora y se anota. Una carpeta con más de
+ * 20 queda marcada. Se llama desde el hilo aparte: recorre el espejo en el disco montado.
+ */
+function leerHuellas(dirBuzon, log = () => {}) {
+  const { fingerprintOf } = require('../tools/office/fields.js');
+  const carpetas = {};
+  let maquinas;
+  try { maquinas = fs.readdirSync(dirBuzon, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return { medido: false, carpetas }; }
+  for (const carpeta of maquinas) {
+    const dir = path.join(dirBuzon, carpeta, 'office-keys');
+    let archivos;
+    try { archivos = fs.readdirSync(dir); } catch (e) {
+      if (e.code === 'ENOENT') continue;
+      // no poder leer una carpeta no es que no tenga huellas: con eso se soltaría una clave cuya huella sigue ahí
+      log(`oficinas: las huellas de ${carpeta} no se pudieron leer (${e.code || e.message})`);
+      return { medido: false, carpetas: {} };
+    }
+    const huellas = [];
+    // una línea por carpeta en cada lectura: una carpeta con mil archivos raros no llena el registro
+    const motivos = new Set();
+    let ignorados = 0;
+    const ignorar = (motivo) => { ignorados += 1; motivos.add(motivo); };
+    for (const a of archivos) {
+      const m = HUELLA_ARCHIVO.exec(a);
+      if (!m) { ignorar('el nombre del archivo no tiene la forma'); continue; }
+      let doc = null;
+      try {
+        const f = path.join(dir, a);
+        if (fs.statSync(f).size > HUELLA_BYTES) { ignorar(`pasa de ${HUELLA_BYTES} bytes`); continue; }
+        doc = JSON.parse(fs.readFileSync(f, 'utf8'));
+      } catch { ignorar('no se pudo leer'); continue; }
+      if (!isObject(doc) || doc.fingerprint !== m[1] || typeof doc.publicKey !== 'string' || fingerprintOf(doc.publicKey) !== m[1]) { ignorar('el nombre, el campo y la clave no coinciden'); continue; }
+      huellas.push(m[1]);
+    }
+    if (ignorados) log(`oficinas: archivos de huellas de ${carpeta} que se ignoran: ${ignorados} (${[...motivos].join('; ')})`);
+    // se cuentan los archivos, no las huellas que valen: una carpeta llena de basura también queda marcada
+    const llena = archivos.length > HUELLAS_POR_CARPETA;
+    if (huellas.length || llena) carpetas[carpeta] = { huellas, llena };
+  }
+  return { medido: true, carpetas };
+}
+
 /** Las corridas del espejo del buzón, contadas con `leerRegistro` de runs.js (las copias de una sesión, una vez). */
 function leerCorridas(dirBuzon) {
   const runs = require('../nightly/dashboard/runs.js');
@@ -293,9 +349,46 @@ function umbralesProyectados(th) {
   return out;
 }
 
+/** Los dos días de edad en el estado (`params.edad_en_estado_dias`), validados como el tablero; si no valen, null. */
+function stateAgeDaysProjected(params) {
+  const d = isObject(params) ? params.edad_en_estado_dias : undefined;
+  return validAgeDays(d) ? [d[0], d[1]] : null;
+}
+
 const DIR_SEGURO = /^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]*(\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)$/;
 // como mucho dos `*`: muchos comodines encadenados dan una expresión con retroceso catastrófico sobre los nombres
 const PATRON_SEGURO = /^(?!(?:[^*]*\*){3})[A-Za-z0-9._*-]{1,80}$/;
+
+/**
+ * Cómo quedó instalado el sitio, según las actualizaciones de la noche (`.dashboard/site-update/`, que guarda el
+ * nocturno de operaciones): `{ porEtiqueta, dia }`, o null sin ningún resultado que se pueda leer. Se mira el último
+ * resultado de CADA plataforma que aparece ahí (el campo `plataforma`, sin nombrar ninguna): una plataforma que no sabe
+ * qué imagen corre nunca dice «instalado por etiqueta», y su resultado más nuevo no tapa el de otra. El del demo va en
+ * su propia carpeta (`demo/`), que no se lee. Del resultado sólo sale si el motivo es «instalado por etiqueta».
+ */
+function instalacionDelSitio(dash, clon, log) {
+  const dir = path.join(dash, 'site-update');
+  let nombres = [];
+  try { nombres = fs.readdirSync(dir).filter((n) => /^site-update-\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort().reverse(); } catch (e) {
+    // sin la carpeta, no hay nada que decir; una que no se puede leer se dice (el aviso de la etiqueta faltaría callado)
+    if (!e || e.code !== 'ENOENT') log(`la carpeta de la actualización del sitio no se pudo leer (${(e && e.code) || 'error'})`);
+    return null;
+  }
+  const vistas = new Set();
+  let out = null;
+  for (const n of nombres) {
+    const ruta = path.join(dir, n);
+    if (!dentroDe(clon, ruta)) continue;
+    const r = leerJsonDe(ruta);
+    if (!r.doc) { log(`la actualización del sitio del ${n.slice(12, 22)} no se pudo leer`); continue; }
+    if (!isObject(r.doc) || typeof r.doc.plataforma !== 'string' || vistas.has(r.doc.plataforma)) continue;
+    vistas.add(r.doc.plataforma);
+    const dia = n.slice(12, 22);
+    if (typeof r.doc.motivo === 'string' && r.doc.motivo.startsWith('instalado por etiqueta')) return { porEtiqueta: true, dia };
+    if (!out) out = { porEtiqueta: false, dia };
+  }
+  return out;
+}
 
 // ── El modelo (lista blanca), desde un clon del repo de operaciones ───────────────────────────────────────────────
 function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin_buzon'), carpetas = null, fichas, log: logCrudo = () => {} } = {}) {
@@ -457,7 +550,7 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
       productos[texto(k, 120)] = {
         estado: ['medido', 'parcial', 'no_medido'].includes(p.estado) ? p.estado : 'no_medido', motivo: codigoDe(p.motivo),
         staging: lado(p.staging), produccion: lado(p.produccion), produccion_atrasada: typeof p.produccion_atrasada === 'boolean' ? p.produccion_atrasada : null,
-        aprobacion: typeof apr === 'string' ? { estado: codigoDe(apr) } : (isObject(apr) ? { estado: codigoDe(apr.estado) } : null),
+        aprobacion: typeof apr === 'string' ? { estado: codigoDe(apr) } : (isObject(apr) ? { estado: codigoDe(apr.estado), motivo: codigoDe(apr.motivo) } : null),
         main: codigoDe(p.main),
       };
     }
@@ -517,8 +610,10 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
     return f.ok ? { id: texto(s.id, 60), estado: 'medido', codigo: null, fecha: f.fecha } : { id: texto(s.id, 60), ...f.fuente };
   }) };
   m.umbrales = umbralesProyectados(sourcesCfg.thresholds);
+  m.stateAgeDays = stateAgeDaysProjected(sourcesCfg.params);
   m.corridas = corridas;
   m.carpetas = carpetasProyectadas(carpetas);
+  m.instalacion = instalacionDelSitio(dash, clon, log);
   // las fichas del tablero nocturno, ya calculadas aparte (refrescarUnaVez → calcularFichas). `null` = todavía no
   // se calcularon; sin la clave (las pruebas que no las piden) el modelo no las trae.
   if (fichas !== undefined) m.fichas = fichas;
@@ -543,7 +638,7 @@ function estadoDeGit(stderr) {
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
 function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000,
   topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, topeConversacionBytes = TOPE_CONVERSACION_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
-  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null, opcionesPodaCopia = {} }) {
+  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null, opcionesPodaCopia = {}, version = null, esperaArmadoMs = ESPERA_ARMADO_MS }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control
   const log = (l) => logCrudo(limpiarLinea(l));
@@ -567,7 +662,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
   // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva — lo informado por cada máquina
   // (de la última bajada entera del buzón) y la lista de repos.json
-  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, armable: false, generacion: 0, seguir: false, pendientes: 0 }, copia: null, copiaHora: null };
+  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, huellas: { medido: false, carpetas: {} }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, armable: false, generacion: 0, seguir: false, pendientes: 0 }, copia: null, copiaHora: null };
   // quien quiere saber que el refresco terminó (la pestaña Corridas rearma su vista si el espejo cambió)
   const oyentes = [];
   let temporizador = null;
@@ -583,6 +678,41 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     if (Number.isFinite(g.fallaDesde)) { st.fallaDesde = g.fallaDesde; st.fallaMotivo = texto(g.fallaMotivo, 2000); st.fallaRutas = texto(g.fallaRutas, 500); }
     if (conCopia && Number.isFinite(g.copiaHora)) st.copiaHora = g.copiaHora;
   } else if (guardado.codigo !== 'sin_foto') log('el estado de la configuración guardado en SITE_DATA_DIR no se pudo leer: se arranca sin último bueno');
+
+  // ── La memoria del espejo ──────────────────────────────────────────────────────────────────────────────────────
+  // El espejo vive en el disco montado, donde cada apertura de archivo se cobra, y SÓLO lo cambia este sitio: la bajada
+  // (lo que trae y lo que poda) y el resumen de las conversaciones. `generacion` sube cuando alguno de los dos cambió algo;
+  // con la misma generación, lo leído del espejo (las corridas, lo informado, las fichas) sigue valiendo y no se vuelve
+  // a abrir. Un cambio real en el buzón llega por el listado, que es por la red y se pide en cada refresco: si trae
+  // algo, la bajada lo escribe y la generación sube. Cada `VERIFICAR_CADA_MS` la bajada mira el disco entero (sin
+  // confiar en su índice) y lo leído se relee. Vive en SITE_DATA_DIR: un despertar no vuelve a leer todo. Otra versión
+  // del sitio puede leer distinto: la memoria de otra versión se descarta entera.
+  const rutaMemoria = path.join(dataDir, ARCHIVO_MEMORIA);
+  // una memoria nueva arranca su generación en la hora: nunca repite la de una memoria anterior que se perdió
+  const memoria = { formato: FORMATO_MEMORIA, version, generacion: Math.floor(ahora()), verificado: null, resumido: null, lectura: null, fichas: null };
+  const memoriaGuardada = leerJsonDe(rutaMemoria);
+  if (memoriaGuardada.doc && isObject(memoriaGuardada.doc) && memoriaGuardada.doc.formato === FORMATO_MEMORIA && memoriaGuardada.doc.version === version && Number.isInteger(memoriaGuardada.doc.generacion)) {
+    const g = memoriaGuardada.doc;
+    memoria.generacion = g.generacion;
+    memoria.verificado = Number.isFinite(g.verificado) ? g.verificado : null;
+    memoria.resumido = Number.isInteger(g.resumido) ? g.resumido : null;
+    memoria.lectura = isObject(g.lectura) && g.lectura.generacion === g.generacion && isObject(g.lectura.leido) ? g.lectura : null;
+    memoria.fichas = isObject(g.fichas) && typeof g.fichas.clave === 'string' ? g.fichas : null;
+  } else if (memoriaGuardada.doc && isObject(memoriaGuardada.doc) && memoriaGuardada.doc.version !== version) log('la memoria del espejo es de otra versión del sitio: se relee el espejo');
+  else if (memoriaGuardada.codigo !== 'sin_foto') log('la memoria del espejo guardada en SITE_DATA_DIR no se pudo usar: se relee el espejo');
+
+  function guardarMemoria() {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+      const tmp = `${rutaMemoria}.tmp-${process.pid}`;
+      fs.writeFileSync(tmp, `${JSON.stringify(memoria)}\n`, { mode: 0o600 });
+      fs.renameSync(tmp, rutaMemoria);
+    } catch (e) { log(`no se pudo guardar la memoria del espejo en SITE_DATA_DIR (${e.code || e.message}): el próximo despertar relee el espejo`); }
+  }
+  // los días de horas y tokens leídos del espejo, con la generación del espejo en que se leyeron
+  let jornadasLeidas = null;
+  /** El espejo cambió: lo leído de él ya no vale. */
+  function espejoCambio() { memoria.generacion += 1; memoria.lectura = null; memoria.fichas = null; }
 
   function guardarEstado() {
     try { escribirAtomico(rutaEstado, `${JSON.stringify({ ultimoBueno: st.ultimoBueno, fallaDesde: st.fallaDesde, fallaMotivo: st.fallaMotivo, fallaRutas: st.fallaRutas, ...(conCopia ? { copiaHora: st.copiaHora } : {}) })}\n`); }
@@ -611,7 +741,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // las variables del sitio (sus credenciales) no viajan al proceso git: no las necesita
     const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^SITE_/.test(k))), GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: String(conf.length) };
     conf.forEach(([k, v], i) => { env[`GIT_CONFIG_KEY_${i}`] = k; env[`GIT_CONFIG_VALUE_${i}`] = v; });
-    return spawn(git, args, { cwd, env, timeout: 180000 });
+    // en inglés: `estadoDeGit` reconoce la credencial, el permiso y la rama por el texto del error, que git traduce
+    return spawn(git, args, { cwd, env: require('../lib/clean-git-env.js').idiomaFijo(env), timeout: 180000 });
   }
 
   /** Baja o pone al día un clon superficial de `main` (`url` en `dir`), con la cabecera `cab`. `nombre`: para el registro. */
@@ -739,7 +870,33 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   // ── El buzón ───────────────────────────────────────────────────────────────────────────────────────────────────
   const ESTADO_BUZON = { llave_con_escritura: 'credencial_rechazada', sin_permiso: 'credencial_rechazada', sin_permiso_a_mitad: 'credencial_rechazada', credencial_rechazada: 'credencial_rechazada', sin_red: 'sin_red', servicio_fallo: 'sin_red', parcial: 'parcial', sin_tiempo: 'parcial', bajado: 'parcial', al_dia: 'parcial', sin_contenedor: 'sin_configurar', config_rota: 'sin_configurar', sin_configurar: 'sin_configurar' };
 
+  // el armado de Ejecuciones lee el espejo: la bajada no lo escribe mientras se arma (2.79). La pestaña dice si arma
+  const armando = [];
+  /** Con un armado en curso, la bajada espera hasta `esperaArmadoMs`; vencida, esta pasada no baja y lo registra. */
+  async function esperarAlArmado() {
+    // una pestaña que no puede decir si arma cuenta como armando (no se escribe el espejo a ciegas): espera y lo registra
+    // el registro sale una vez por espera: la pregunta se repite cada segundo
+    let avisado = false;
+    const hay = () => armando.some((fn) => { try { return Boolean(fn()); } catch (e) { if (!avisado) { avisado = true; log(`buzón: la pestaña de Ejecuciones no pudo decir si arma (${String((e && (e.code || e.name)) || 'error').slice(0, 40)}): se la espera como si armara`); } return true; } });
+    const hasta = Date.now() + esperaArmadoMs;
+    while (hay()) {
+      if (Date.now() >= hasta) return false;
+      await new Promise((r) => setTimeout(r, Math.max(10, Math.min(1000, Math.floor(esperaArmadoMs / 10)))));
+    }
+    return true;
+  }
+
   async function leerBuzon(conf, previo, t) {
+    if (!(await esperarAlArmado())) {
+      log(`buzón: el armado de Ejecuciones sigue en curso después de ${Math.round(esperaArmadoMs / 1000)} s: esta pasada no baja, para no escribir el espejo que se está leyendo; se sirve la vista que hay`);
+      // lo que había, con su estado y su motivo; sin nada antes, «parcial»
+      return previo || noMedida('parcial');
+    }
+    st.buzon.bajando = true;
+    try { return await leerBuzonSinArmado(conf, previo, t); } finally { st.buzon.bajando = false; }
+  }
+
+  async function leerBuzonSinArmado(conf, previo, t) {
     const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
     const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
     if (!mb) { st.fallas.buzon = null; st.personas.informados = null; return noMedida('sin_buzon'); }
@@ -758,6 +915,9 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // un disco del sitio (SITE_DATA_DIR): pesan casi un giga, y sin disco se volverían a bajar enteros en cada despertar
     const conHilos = mb.threads === true && Boolean(cfg.dataDir);
     if (mb.threads === true && !cfg.dataDir) log('site.mailbox.threads está en true pero SITE_DATA_DIR no está puesta: no se bajan las conversaciones (sin un disco del sitio se bajarían enteras en cada despertar)');
+    // la verificación entera: la primera vez y cada VERIFICAR_CADA_MS; entre una y otra, la bajada confía en su índice
+    const verificar = !Number.isFinite(memoria.verificado) || t - memoria.verificado >= VERIFICAR_CADA_MS;
+    const generacionAntes = memoria.generacion;
     let r;
     try {
       // con conversaciones: por tandas de `topeConversacionesBytes`, cada una resumida y borrada antes de la siguiente (el
@@ -765,17 +925,31 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       // la bajada recorre el espejo en el disco montado: con el módulo de la nube cargado de cloud/, en un hilo aparte
       // (el principal contesta las sondas); una nube dada a mano (las pruebas) corre acá
       const opts = { cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
-        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, hiloTopeBytes: conHilos ? topeConversacionBytes : null, podar: true, log: (l) => log(`buzón: ${l}`) };
+        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, hiloTopeBytes: conHilos ? topeConversacionBytes : null, podar: true, confiarIndice: !verificar, jornadas: true, log: (l) => log(`buzón: ${l}`) };
       r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts);
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
-    if (conHilos) {
+    // lo que trajo, lo que podó y los resúmenes de conversaciones grandes cambian el espejo (también en una pasada a medias)
+    const res = r.res || {};
+    if ((res.bajados || 0) + (res.podados || 0) + (res.hilos_grandes || 0) > 0) espejoCambio();
+    // una bajada que falló pudo escribir y podar antes de caerse sin contarlo: se da el espejo por cambiado y la
+    // pasada siguiente verifica entera, sin confiar en el índice
+    if (r.codigo !== 0) { espejoCambio(); memoria.verificado = null; }
+    // el resumen recorre el espejo entero: sólo si cambió desde el último resumen entero, o en la verificación
+    if (conHilos && (verificar || memoria.resumido !== memoria.generacion)) {
       // pase lo que pase con la bajada: lo que llegó a bajar se resume y se borra (un disco lleno no se espera a la pasada entera)
       try {
         const s = await resumir({ buzon: dirBuzon });
-        if (s.resumidas) log(`buzón: ${s.resumidas} ejecución(es) resumida(s); sus conversaciones ya no ocupan el disco`);
-        if (s.fallidas) log(`buzón: ${s.fallidas} ejecución(es) no se pudieron resumir y siguen en el disco: ${(s.motivos || []).join(', ')}`);
-      } catch (e) { log(`buzón: no se pudieron resumir las conversaciones bajadas (${e.code || e.message}): siguen en el disco`); }
+        if (s.resumidas) log(s.resumidas === 1 ? 'buzón: 1 ejecución resumida; su conversación ya no ocupa el disco' : `buzón: ${s.resumidas} ejecuciones resumidas; sus conversaciones ya no ocupan el disco`);
+        if (s.fallidas) log(`buzón: ${s.fallidas === 1 ? '1 ejecución no se pudo resumir y sigue' : `${s.fallidas} ejecuciones no se pudieron resumir y siguen`} en el disco: ${(s.motivos || []).join(', ')}`);
+        if (s.resumidas) espejoCambio();
+        if (!s.fallidas) memoria.resumido = memoria.generacion;
+      } catch (e) {
+        log(`buzón: no se pudieron resumir las conversaciones bajadas (${e.code || e.message}): siguen en el disco`);
+        // pudo resumir y borrar una parte antes de caerse
+        espejoCambio();
+      }
     }
+    if (verificar && r.codigo === 0 && res.completo === true) memoria.verificado = t;
     const est = r.res.estado;
     // 🔴 «leído entero» lo dice `completo` (download-runs.js), no el estado: 'bajado' también sale con el presupuesto agotado
     // la pestaña Corridas arma con una bajada entera, la misma que fija lo informado por las máquinas; con una a medias,
@@ -785,30 +959,40 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     st.buzon.completo = r.codigo === 0 && r.res.completo === true;
     st.buzon.armable = st.buzon.completo || (r.codigo === 0 && r.res.registros_enteros === true);
     st.buzon.pendientes = st.buzon.armable && !st.buzon.completo ? r.res.sin_tiempo || 0 : 0;
+    if (st.buzon.armable && !st.buzon.completo && !(Number.isInteger(r.res.sin_tiempo) && r.res.sin_tiempo >= 0)) log(`buzón: la pasada quedó a medias sin decir cuántos archivos faltan (sin_tiempo: ${JSON.stringify(r.res.sin_tiempo)}): la banda de pendientes no se muestra`);
     // la pasada cortó por TIEMPO pero avanzó: la siguiente va enseguida y retoma donde quedó, en vez de
     // esperar el refresco de los minutos de siempre. Sin avance, no: sería un lazo.
     st.buzon.seguir = r.codigo === 0 && !st.buzon.completo && r.res.sin_tiempo > 0 && r.res.bajados > 0;
-    if (st.buzon.seguir) log(`buzón: la pasada cortó ${r.res.por_tope ? 'por el tope de conversaciones' : 'por tiempo'} con ${r.res.sin_tiempo} archivo(s) pendientes; la siguiente sigue enseguida`);
-    if (r.res.hilos_grandes) log(`buzón: ${r.res.hilos_grandes} conversación(es) pasan el tope de ${Math.round(topeConversacionBytes / (1024 * 1024))} MB: no se bajan, y sus ejecuciones lo dicen en la tabla`);
+    if (st.buzon.seguir) log(`buzón: la pasada cortó ${r.res.por_tope ? 'por el tope de conversaciones' : 'por tiempo'} con ${r.res.sin_tiempo} ${r.res.sin_tiempo === 1 ? 'archivo pendiente' : 'archivos pendientes'}; la siguiente sigue enseguida`);
+    if (r.res.hilos_grandes) log(`buzón: ${r.res.hilos_grandes === 1 ? '1 conversación pasa' : `${r.res.hilos_grandes} conversaciones pasan`} el tope de ${Math.round(topeConversacionBytes / (1024 * 1024))} MB: no se bajan, y sus ejecuciones lo dicen en la tabla`);
     if (st.buzon.armable) {
       st.buzon.generacion += 1;
       st.fallas.buzon = null;
       st.hilos = conHilos;
       // lo informado se lee del mismo espejo, entero: con una bajada a medias queda el de la última entera. Las dos
       // lecturas recorren el espejo en el disco montado: en un hilo aparte, para que el principal siga contestando
+      // con la misma generación y fuera de la verificación, lo leído la última vez sigue valiendo
       let leido;
-      try { leido = await leerEspejo({ buzon: dirBuzon }); }
-      catch (e) {
-        const motivo = `la lectura del espejo falló (${e.code || e.message})`;
-        leido = { corridas: { ...noMedida('ilegible'), _motivo: motivo }, informados: { maquinas: {}, uniones: { schema: 1, carpetas: {}, regeneradas: {}, no_medido: motivo }, no_medido: motivo } };
+      if (!verificar && memoria.lectura && memoria.lectura.generacion === memoria.generacion) leido = JSON.parse(JSON.stringify(memoria.lectura.leido));
+      else {
+        try { leido = await leerEspejo({ buzon: dirBuzon }); }
+        catch (e) {
+          const motivo = `la lectura del espejo falló (${e.code || e.message})`;
+          leido = { corridas: { ...noMedida('ilegible'), _motivo: motivo }, informados: { maquinas: {}, uniones: { schema: 1, carpetas: {}, regeneradas: {}, no_medido: motivo }, no_medido: motivo } };
+        }
+        // sólo una lectura buena se recuerda: una que falló se vuelve a intentar en el próximo refresco
+        memoria.lectura = leido.corridas && leido.corridas.estado === 'medido' && !leido.informados.no_medido ? { generacion: memoria.generacion, leido: JSON.parse(JSON.stringify(leido)) } : null;
       }
+      guardarMemoria();
       const c = leido.corridas;
       st.personas.informados = leido.informados;
+      st.huellas = leido.huellas || st.huellas;
       if (st.personas.informados.no_medido) log(`lo informado por las máquinas no se pudo leer: ${st.personas.informados.no_medido}`);
       if (c.estado !== 'medido') log(`el espejo del buzón se bajó entero pero no se pudo leer${c._motivo ? `: ${c._motivo}` : ''}`);
       delete c._motivo;
       return { ...c, fecha: diaUtc(t) };
     }
+    if (memoria.generacion !== generacionAntes || verificar) guardarMemoria();
     const codigo = ESTADO_BUZON[est] || 'sin_red';
     log(`el buzón no se leyó entero (${est}${r.res.sin_tiempo ? `, ${r.res.sin_tiempo} sin tiempo` : ''}): ${r.res.motivo || 'sin motivo'}`);
     st.fallas.buzon = st.fallas.buzon || { desde: t, estado: codigo };
@@ -834,8 +1018,16 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
    */
   async function calcularFichas(corridas, t) {
     const ocultas = st.ultimoBueno && st.ultimoBueno.site && Array.isArray(st.ultimoBueno.site.hidden_cards) ? st.ultimoBueno.site.hidden_cards : [];
+    const buzonLeido = Boolean(corridas && corridas.estado === 'medido');
+    // las fichas recorren el espejo: con la misma generación, la misma foto de operaciones, las mismas ocultas y la misma
+    // hora (las fichas cuentan edades), valen las de la última vez
+    const foto = await fotoDeOperaciones();
+    const clave = foto ? JSON.stringify([memoria.generacion, foto, ocultas, buzonLeido, new Date(t).toISOString().slice(0, 13)]) : null;
+    if (clave && memoria.fichas && memoria.fichas.clave === clave) return memoria.fichas.valor;
     try {
-      return await calcularFichasEn({ clon, dirBuzon, buzonLeido: Boolean(corridas && corridas.estado === 'medido'), ocultas, ahora: t, log: (l) => log(`fichas: ${l}`) });
+      const valor = await calcularFichasEn({ clon, dirBuzon, buzonLeido, ocultas, ahora: t, log: (l) => log(`fichas: ${l}`) });
+      if (clave) { memoria.fichas = { clave, valor }; guardarMemoria(); }
+      return valor;
     } catch (e) {
       log(`las fichas del tablero no se pudieron calcular (${(e && e.code) || (e && e.name) || 'error'}): ${st.fichas ? 'queda la última lista buena' : 'salen no medidas'}`);
       // la última lista buena no se presenta como de hoy: cada ficha lleva la fecha de su fuente y la pantalla la muestra
@@ -843,10 +1035,18 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     }
   }
 
+  /** Qué foto de operaciones se lee: el commit (y la huella) de la copia, o el commit del clon. null = no se sabe. */
+  async function fotoDeOperaciones() {
+    if (conCopia) return st.copia && st.copia.indice ? `${st.copia.indice.commit}:${st.copia.indice.huella}` : null;
+    const r = await correrGit(['-C', clon, 'rev-parse', 'HEAD'], null, undefined);
+    const commit = String(r.stdout || '').trim();
+    return r.status === 0 && /^[0-9a-f]{40,64}$/.test(commit) ? commit : null;
+  }
+
   /** Lo que se puede armar sin el repo (la primera lectura sin clon): todo «no medido» con el estado. */
   function modeloVacio(codigo, t, corridas) {
     const n = noMedida(codigo);
-    return { generado: t, dependencias: n, vigilante: n, banco: n, suites: n, examen: n, declarados: n, productos: [], productosFuente: n, proyectos: n, despliegues: n, paridad: n, prs: n, pedidos: n, tablero: n, sources: { lista: [] }, umbrales: {}, corridas: corridas || n, carpetas: null };
+    return { generado: t, dependencias: n, vigilante: n, banco: n, suites: n, examen: n, declarados: n, productos: [], productosFuente: n, proyectos: n, despliegues: n, paridad: n, prs: n, pedidos: n, tablero: n, sources: { lista: [] }, umbrales: {}, stateAgeDays: null, corridas: corridas || n, carpetas: null };
   }
 
   /**
@@ -915,8 +1115,12 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   const SEGUIR_MS = 10000;
   const proximoRefrescoMs = () => (st.buzon.seguir ? SEGUIR_MS : minutos() * 60000);
 
+  // a qué hora va la próxima lectura (ms): «esperando la huella» la dice, porque la huella puede estar ya en el buzón
+  let proximaEn = null;
   function programar() {
-    temporizador = setTimeout(async () => { await refrescar(); programar(); }, proximoRefrescoMs());
+    const ms = proximoRefrescoMs();
+    proximaEn = ahora() + ms;
+    temporizador = setTimeout(async () => { proximaEn = null; await refrescar(); programar(); }, ms);
     if (temporizador.unref) temporizador.unref();
   }
 
@@ -937,6 +1141,13 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     modelo: () => st.modelo,
     /** Lo que la regla de quién es quién necesita y el modelo no lleva: `{ informados, repos }` (nunca a una vista). */
     personas: () => st.personas,
+    /** Las huellas de oficina que subió cada carpeta del buzón (`leerHuellas`). */
+    huellas: () => st.huellas,
+    /** Los días de horas y tokens del espejo (`tabs/workdays.js leerJornadas`), releídos sólo si el espejo cambió. */
+    jornadas: () => {
+      if (!jornadasLeidas || jornadasLeidas.generacion !== memoria.generacion) jornadasLeidas = { generacion: memoria.generacion, valor: require('./tabs/workdays.js').leerJornadas(dirBuzon) };
+      return jornadasLeidas.valor;
+    },
     detener() { if (temporizador) clearTimeout(temporizador); temporizador = null; },
     /**
      * Los clones que lee la pestaña Configuración: `{ operaciones: { dir } | null, perfil: { dir, estado, motivo } | null }`.
@@ -969,12 +1180,18 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // `armable`: la pestaña puede armar (entera, o con todos los volcados y registros); `pendientes`: archivos de
     // conversaciones que esa pasada dejó para la siguiente
     // `siguiendo`: la última pasada cortó por tiempo y la siguiente ya está en camino (la pestaña dice «cargando»)
-    buzonEstado: () => ({ completo: st.buzon.completo, armable: st.buzon.armable, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir, pendientes: st.buzon.pendientes || 0 }),
+    buzonEstado: () => ({ completo: st.buzon.completo, armable: st.buzon.armable, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir, pendientes: st.buzon.pendientes || 0, bajando: st.buzon.bajando === true }),
+    /** La pestaña de Ejecuciones dice si está armando: mientras arma, la bajada espera (2.79). */
+    alArmar(fn) { if (typeof fn === 'function') armando.push(fn); },
+    /** La generación del espejo (ver «La memoria del espejo»): igual número, mismo contenido. La pestaña Corridas no lo recorre para saberlo. */
+    espejoGeneracion: () => memoria.generacion,
     /** En cuántos ms va el próximo refresco (las pruebas lo miran). */
     proximoRefrescoMs,
+    /** A qué hora (ms) va la próxima lectura programada del buzón; null si todavía no hay una, o si está leyendo. */
+    proximaLectura: () => proximaEn,
     /** `fn` corre al terminar cada refresco (la pestaña Corridas mira si el espejo cambió). */
     alRefrescar(fn) { oyentes.push(fn); },
   };
 }
 
-module.exports = { crearFuentes, nubes, prepararClonDeEscritura, construirDesdeClon, estadoDeLaConfiguracion, estadoDelSitio, leerRepos, estadoDeGit, limpiarLinea, leerCorridas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };
+module.exports = { crearFuentes, nubes, prepararClonDeEscritura, construirDesdeClon, estadoDeLaConfiguracion, estadoDelSitio, leerRepos, estadoDeGit, limpiarLinea, leerCorridas, leerHuellas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };

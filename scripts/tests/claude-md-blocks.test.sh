@@ -281,7 +281,7 @@ else
 fi
 
 # C-27c · 🔴 una entrada MULTILÍNEA no se trunca. En markdown una viñeta sigue en las líneas
-# indentadas, y el README puede tener una ficha así (`guides/que-hace-el-arnes.md`).
+# indentadas, y el README puede tener una ficha así (`guides/what-the-harness-does.md`).
 # `entradasDe` devuelve el primer renglón —lo que hace falta para medir el tope por entrada— y con
 # eso una poda perdería bytes EN SILENCIO: el verificador compararía el mismo
 # texto truncado en los dos lados, o sea que se verificaría a sí mismo. Quien MUEVE texto usa
@@ -416,12 +416,13 @@ if git -C "$RAIZ" cat-file -e "${BASE_REF}^{commit}" 2>/dev/null; then
   rm -rf "$OLD/claude-md-blocks" && cp -R "$RAIZ/claude-md-blocks" "$OLD/claude-md-blocks" \
     && for f in "$OLD"/claude-md-blocks/*.md; do grep -v '^<!-- requires-profile:' "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
   # el sync de entonces no conoce las variantes de estilo ni las filas por integración. Recibe el bloque de
-  # estilo ya elegido (sin perfil: neutral, en es, con el tope del estilo) y la tabla con las filas de las cuatro
-  # integraciones prendidas (las prende ROWS_ON en los dos lados), sin sus marcas.
+  # estilo ya elegido (sin perfil: neutral, en auto —el castellano con la regla de idioma—, con el tope
+  # del estilo) y la tabla con las filas de las cuatro integraciones prendidas (las prende ROWS_ON en los dos lados), sin
+  # sus marcas.
   python3 - "$OLD/claude-md-blocks" <<'PYX'
 import os, re, shutil, sys
 d = sys.argv[1]
-src = open(os.path.join(d, "response-style", "neutral.es.md"), encoding="utf-8").read()
+src = open(os.path.join(d, "response-style", "neutral.auto.md"), encoding="utf-8").read()
 src = "\n".join(l for l in src.split("\n") if not l.startswith("<!-- requires-profile:"))
 open(os.path.join(d, "response-style.md"), "w", encoding="utf-8").write(src.replace("{{max_chars}}", "2000").replace("{{max_lines}}", "20"))
 shutil.rmtree(os.path.join(d, "response-style"))
@@ -465,10 +466,12 @@ else
   mal "T34 NO MEDIDO — no está el commit de antes de la tanda (${BASE_REF}): no puedo comparar con el sync de entonces"
 fi
 # los marcadores de los bloques reales: se miden también en la copia (no necesitan historia)
-for b in response-style response-style/executive.es response-style/executive.en response-style/detailed.es response-style/detailed.en response-style/neutral.es response-style/neutral.en tool-names background-execution; do
+for b in response-style response-style/executive.es response-style/executive.en response-style/detailed.es response-style/detailed.en response-style/neutral.es response-style/neutral.en response-style/executive.auto response-style/detailed.auto response-style/neutral.auto tool-names background-execution platform-rules; do
   head -n 3 "$RAIZ/claude-md-blocks/$b.md" | grep -x '<!-- requires-profile: full -->' >/dev/null && ok "T34 $b.md lleva el marcador" || mal "T34 $b.md no lleva <!-- requires-profile: full -->"
 done
-grep -q 'requires-profile' "$RAIZ/claude-md-blocks/ado-runs-list-lag.md" && mal "T34 ado-runs-list-lag.md cambió (no lleva el marcador)" || ok "T34 ado-runs-list-lag.md sin el marcador"
+# el bloque de Azure DevOps se retiró (su regla viaja con el conector): no está, y quedó en la lista de retirados
+[ ! -e "$RAIZ/claude-md-blocks/ado-runs-list-lag.md" ] && grep -q '"ado-runs-list-lag"' "$RAIZ/claude-md-blocks/retired.json" \
+  && ok "T34 ado-runs-list-lag.md retirado (en retired.json)" || mal "T34 ado-runs-list-lag.md sigue en claude-md-blocks/ o falta en retired.json"
 rm -rf "$P"
 
 # ── T69 · la tabla de nombres de tools trae las filas de la herramienta de horas elegida, de su integración ──────────────
@@ -519,8 +522,10 @@ H="$P/h-rota"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCO
 { grep -q 'no pude leer integrations/rota/integration.json' "$P/sync.out" && tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md; } \
   && ok "T69 un manifiesto que no se lee: lo dice y las filas de la elegida van igual" || mal "T69 manifiesto roto: $(head -3 "$P/sync.out" | tr '\n' ' ')"
 rm -rf "$A/integrations/rota" "$A/integrations/otra"
-# un manifiesto anidado de más (el lector de JSON se queda sin pila): es uno que no se lee, y el sync sigue
-mkdir -p "$A/integrations/honda" && python3 -c "print('['*100000 + ']'*100000)" > "$A/integrations/honda/integration.json"
+# un manifiesto anidado de más (el lector de JSON se queda sin pila): es uno que no se lee, y el sync sigue.
+# Un millón de niveles y no cien mil: desde Python 3.14 el tope de anidamiento sale de la pila real, y en
+# Linux cien mil entran y el archivo se lee.
+mkdir -p "$A/integrations/honda" && python3 -c "print('['*1000000 + ']'*1000000)" > "$A/integrations/honda/integration.json"
 H="$P/h-honda"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$ONE"
 { grep -q 'no pude leer integrations/honda/integration.json' "$P/sync.out" && tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md; } \
   && ok "T69 un manifiesto anidado de más: lo dice y el sync escribe igual las filas de la elegida" || mal "T69 manifiesto anidado: $(head -3 "$P/sync.out" | tr '\n' ' ')"

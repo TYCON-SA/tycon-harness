@@ -43,8 +43,10 @@ Ten words, each with a single meaning on these pages:
 
 - **No GitHub account**: this repository is public, and the harness is downloaded from it without a credential.
 - **Your coding agent**: Claude Code or Codex, installed and signed in.
-- **On Windows, native**: Node 24 (Node 22 or later is enough), PowerShell 7 and `tar` (Windows 10 and later bring it). Git and Python
-  are not needed. Through WSL, the same as on Mac and Linux, inside WSL.
+- **On Windows, native**: Node 24 (Node 22 or later is enough), PowerShell 7, `tar` (Windows 10 and later bring it) and Git for
+  Windows. Git is needed so the controls that are bash scripts run, the safety guard among them, and to sign with a click.
+  What happens to those controls without it was not measured: that is why it is required. The harness still downloads as
+  files. Python is not needed. Through WSL, the same as on Mac and Linux, inside WSL.
 - **On Mac and Linux**: Bash, Python 3, `tar`, `curl` and Node 24 (Node 22 or later is enough; tested on 22 and 24). Git is not needed.
 - **Node 20**: 20 is tolerated only to update an existing installation; it is not tested.
 - **The reviewers for your stack** that your team brings may need more (the .NET ones, the .NET SDK your plugin
@@ -81,6 +83,7 @@ missing, from any terminal:
 ```powershell
 winget install OpenJS.NodeJS.LTS
 winget install Microsoft.PowerShell
+winget install Git.Git
 ```
 
 Close the terminal and open **PowerShell 7** (that is its name in the Start menu): every command on this page runs
@@ -318,8 +321,8 @@ node $HOME/.tycon/harness/scripts/setup/harness.js team-init
 ```
 
 It asks for whatever you did not pass as an option: the organization name (`--name`: unaccented letters, digits, dot and
-dash), where the team repo lives (`--platform github|azure` and `--profile-repo`, a GitHub `org/repo` or
-`https://dev.azure.com/<org>/<project>/_git/<repo>`) and the folder for the files (`--dir`; by default `~/<repo>`; a
+dash), where the team repo lives (`--platform github|azure` and `--profile-repo`, a GitHub `org/repo` or the repo's
+address on Azure DevOps, whose form is in [Azure DevOps](../guides/integrations/ado-projects.md#la-url-de-un-repo)) and the folder for the files (`--dir`; by default `~/<repo>`; a
 folder with something in it is left alone). It downloads the published example (`harness-team-profile-example`) and
 writes only the three required files:
 
@@ -349,7 +352,7 @@ There are two, `minimal` and `full`, and there is no default: `install` asks if 
 pass `--profile`.
 
 - **`minimal`**: the guides, the skills, the reviewers, the story workflow and the new-version notice. It does not
-  change how the assistant answers. It registers nine hooks (six that only take notes, the one that shows package notices, the brake against
+  change how the assistant answers. It registers 17 hooks (ten that only take notes, the four that show notices —packages' at startup, another live session in the same checkout, and the platform's after its first command, whether it worked or failed—, the one that covers the machine's secrets, the brake against
   destructive commands and the one against editing code without a story or a one-off fix), plus those of each optional connection you turn on, and brings the links, commands and third-party skills.
 - **`full`**: everything in `minimal`, plus the other brakes (the same gate for code written from the
   terminal, and the one against committing a story without the evidence it asks for), the three blocks that change how the assistant answers in all your projects (in Spanish,
@@ -400,7 +403,7 @@ el repo declara el paquete «<nombre>» en `packs:` y no está instalado en …
 ```
 
 If you see it, the pack did not arrive with what your team brings: update with
-`node ~/.claude/tycon-harness/scripts/setup/harness.js update`, and if it persists, ask your team's admin.
+`npx @tyconsa/harness@latest`, and if it persists, ask your team's admin.
 
 ## What is optional
 
@@ -427,6 +430,30 @@ and logged in, and `TYCON_CODEX=1`. Details in [INSTALL.md](../INSTALL.md).
 **Four proprietary skills** (`docx`, `pdf`, `pptx`, `xlsx`) are not part of this repo and are not downloaded: they come
 with Anthropic's official plugin. Install it if you want them.
 
+## Before working with a coordinator
+
+A guided step says, one at a time, what your machine is missing, each with its command:
+
+```bash
+node ~/.tycon/harness/scripts/tools/prepare-machine.js --repo <repo> [--repo <another repo>]
+```
+
+It checks each repo's main folder (whether Claude Code approved it, or whether its CLAUDE.md imports files from outside
+that are not accepted), the coordinator's confirmation if your organization uses her to sign, and the production guard
+if the machine has one. It only reads: it approves nothing and does not ask for your password. When nothing is missing,
+it says «lista» (ready). With the main folder approved, the sessions the coordinator opens in copies of the repo start
+without asking you anything ([guides/working-with-a-coordinator.en.md](../guides/working-with-a-coordinator.en.md)).
+
+If your organization chose that the production guard updates itself (`guard.update: auto`), each production machine
+installs the permission once, with your password:
+
+```bash
+sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --allow-auto-update
+```
+
+What it enables, what it rehearses before replacing and what does not install itself:
+[guides/produccion-con-permiso.md](../guides/produccion-con-permiso.md).
+
 ## What it writes on your machine and what it does on its own
 
 This section comes from a declared list, `scripts/setup/install-effects.json`, which a test checks against the
@@ -444,7 +471,7 @@ writes three blocks of rules into `~/.claude/CLAUDE.md`, between their own marke
 - `background-execution`: steps longer than two minutes run in the background and are announced first. Another hook
   measures what kept the conversation blocked (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: the table with the exact name of every tool those rules mention.
-- The import line loads the harness `INDEX.md` in every session: about 15 KB, in Spanish, with the index of the
+- The import line loads the harness `INDEX.md` in every session: about 17 KB, in Spanish, with the index of the
   guides and the always-on rules.
 - The links in `~/.claude/skills` and `~/.claude/agents` make the harness skills and reviewers available in all your
   sessions: the name and description of each one load in every session.
@@ -468,7 +495,7 @@ The full table, with what each hook does, whether it blocks and its switch, is i
 
 **What it does on its own**: when a session starts, the startup line checks whether your channel has a new version,
 at most once every 6 hours. If it does, it tells you and waits: it does not apply it unless you ask for it from a
-terminal (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`). Then it runs the installer.
+terminal (`npx @tyconsa/harness@latest`, which asks before updating). Then it runs the installer.
 `TYCON_UPDATE=0` turns the check off; `TYCON_UPDATE_CHANNEL` and `TYCON_UPDATE_APPLY` set the channel and the policy.
 
 - At every startup, in the background: it runs a few quick tests of the harness itself, and re-reads the workflow
@@ -476,8 +503,6 @@ terminal (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`).
 - Once a day, in the background: it walks the git history of up to 200 repos in the parent folder of the clone and
   leaves one file per day in the `.dashboard/` folder of the clone (`TYCON_STAGE_METRICS=0`); and it gathers, into a
   file on your machine, the findings the reviewers left in your repos (`TYCON_NO_COLLECT_FINDINGS=1`).
-- When an "ad-hoc" lane is declared, the edit gate launches, on its own, one short query to your assistant's model, with
-  your last requests, to decide whether it applies (`TYCON_LANE_LLM=0`).
 
 **What it writes and keeps on disk**:
 
@@ -625,7 +650,7 @@ of yours stay untouched. `--tool claude` or `--tool codex` unplugs only that too
   `update.apply` in `~/.claude/tycon.json`. Choosing `latest` together with `auto` asks you to confirm: you get every
   change that lands on `main`, within minutes, with no review of yours. If your team profile sets `auto`, the profile
   wins: neither the machine, the variable nor `TYCON_UPDATE=0` changes it, and `doctor` says which value went unused.
-- **By hand**: `harness.js update --check` says whether there is a new version; `harness.js update --yes` applies it;
+- **By hand**: `harness.js update --check` says whether there is a new version; `npx @tyconsa/harness@latest` applies it (it asks first);
   `harness.js version` shows what is installed; `harness.js doctor` diagnoses without changing anything.
 - **Going back**: `harness.js rollback --list` shows the copies it can go back to, and
   `harness.js rollback --to <copy>` goes back to the one you choose. After going back, the harness stops updating on

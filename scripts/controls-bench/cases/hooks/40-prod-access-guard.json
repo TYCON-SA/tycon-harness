@@ -1318,7 +1318,7 @@
     {
      "id": "borrar-la-memoria-con-comodin-se-frena",
      "type": "must-block",
-     "__doc": "AC 4/9 · `rm ~/.claude/.tycon-pipeline/produccion-*`: el comodín no nombra el archivo literal. ROJO PREVIO: pasaba y borraba memoria e índice (revisores del Step 5).",
+     "__doc": "AC 4/9 · `rm ~/.claude/.tycon-pipeline/production-*`: el comodín no nombra el archivo literal. ROJO PREVIO: pasaba y borraba memoria e índice (revisores del Step 5). Desde la 8.15 tanda D el estado se protege sólo con su nombre en inglés: el caso apunta a ése.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
      },
@@ -1329,7 +1329,7 @@
      "stdin": {
       "tool_name": "Bash",
       "tool_input": {
-       "command": "rm -f ~/.claude/.tycon-pipeline/produccion-*"
+       "command": "rm -f ~/.claude/.tycon-pipeline/production-*"
       }
      },
      "expect": {
@@ -1679,6 +1679,73 @@
      "expect": {
       "exit": 0,
       "stdout_empty": true
+     }
+    },
+    {
+     "id": "vaciar-caches-con-comodin-de-punto-en-un-for-pasa",
+     "type": "must-not-block",
+     "__doc": "Caso real del 2026-11-01, liberando disco: vaciar tres cachés de usuario con un `for` y un comodín con punto (`.[!.]*`). El freno lo trataba como «puede ser .tycon» en cualquier carpeta. Una carpeta escrita entera que no tiene adentro `.tycon` ni `.tycon-pipeline` no puede perderlos. ROJO PREVIO: sin el arreglo, sale 2 con «ESCRIBE sobre ~/Library/Caches/Google/.[!.]*».",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"$HOME/Library/Caches/Google/.oculta\" \"$HOME/Library/Caches/com.spotify.client/.y\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "for d in Google java-db com.spotify.client; do p=~/Library/Caches/$d; for x in \"$p\"/* \"$p\"/.[!.]*; do [ -e \"$x\" ] && rm -rf -- \"$x\"; done; done"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
+    },
+    {
+     "id": "vaciar-caches-con-find-en-un-for-pasa",
+     "type": "must-not-block",
+     "__doc": "Caso real del 2026-11-01: `find` sobre `$HOME/Library/Caches/$d` dentro de un `for` con palabras escritas. La variable del bucle quedaba «desconocida» y el `find` se trataba como si pudiera llegar a un repo. Con todas las palabras leídas, vale esas palabras. ROJO PREVIO: sin el arreglo, sale 2 con «ESCRIBE sobre production.json (find borra o reescribe lo que encuentra debajo de «$HOME/Library/Caches/$d»)».",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"$HOME/Library/Caches/Google/a\" \"$HOME/Library/Caches/java-db/b\" \"$HOME/Library/Caches/com.spotify.client/c\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "for d in Google java-db com.spotify.client; do find \"$HOME/Library/Caches/$d\" -mindepth 1 -maxdepth 1 -exec rm -rf {} + ; done"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
+    },
+    {
+     "id": "comodin-de-punto-en-la-raiz-de-un-repo-se-frena",
+     "type": "must-block",
+     "__doc": "El lado que no se afloja: `rm -rf <repo>/.[!.]*` en la raíz de un repo con `.tycon/` borra el catálogo. La carpeta existe y SÍ tiene `.tycon` adentro: sigue frenando. ROJO PREVIO: un arreglo que dejara pasar todo comodín con punto en una carpeta escrita entera lo dejaría pasar.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "rm -rf ${FIXTURE}/repos/backend-acme/.[!.]*"
+      }
+     },
+     "expect": {
+      "exit": 2
      }
     },
     {
@@ -2816,33 +2883,6 @@
       "stderr_re": [
        "escribe",
        "production-(index|memory)\\.json"
-      ],
-      "stderr_not_re": [
-       "no pude|no encontr|sin tiempo|no parece"
-      ]
-     }
-    },
-    {
-     "id": "brace-list-on-old-state-names-is-blocked",
-     "type": "must-block",
-     "__doc": "Story 8.14 · fila R3 (AC 3) · lo mismo que R2 con los nombres viejos, que se protegen mientras dure la escritura doble de la 8.9. ROJO PREVIO: en main 24151e89 (y 6e01463) sale 0.",
-     "files": {
-      "repos/r/.tycon/production.json": "{\"servers\": [{\"host\": \"x.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-x\"}]}"
-     },
-     "setup": [
-      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
-      "git -C repos/r init -q ."
-     ],
-     "stdin": {
-      "tool_name": "Bash",
-      "tool_input": {
-       "command": "rm -f ~/.claude/.tycon-pipeline/produccion-{indice,memoria}.json"
-      }
-     },
-     "expect": {
-      "exit": 2,
-      "stderr_re": [
-       "escribe"
       ],
       "stderr_not_re": [
        "no pude|no encontr|sin tiempo|no parece"
@@ -4801,9 +4841,9 @@
      }
     },
     {
-     "id": "archivo-con-huella-muestra-la-consulta",
-     "type": "must-not-block",
-     "__doc": "Story 6.2 · T35 · `--file <ruta> --sha256 <sha256>` con la huella que coincide: el freno muestra en pantalla (systemMessage) el host, la huella y la consulta con sus saltos de línea, y deja que decida el cuadro. ROJO PREVIO: la forma no era canónica y se cortaba.",
+     "id": "archivo-con-huella-da-el-comando",
+     "type": "must-block",
+     "__doc": "Story 6.6 · T1 · `--file` con la huella que coincide: el cuadro de aprobación no muestra el contenido del archivo, así que sale 2 y el mensaje trae el comando con la consulta en línea, listo para pegar. ROJO PREVIO: con la huella buena salía 0 y el cuadro mostraba sólo la ruta.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
@@ -4821,25 +4861,24 @@
       }
      },
      "expect": {
-      "exit": 0,
-      "stdout_re": [
-       "systemMessage",
-       "acme-sql\\.database\\.windows\\.net",
-       "cf0775a30a4ced382854d382d935b8c0313ddc342afd126658e7e4b86e3d694c",
-       "from Articulos",
-       "Nombre"
+      "exit": 2,
+      "stderr_re": [
+       "contenido de un archivo",
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net 'select top 3 Id,"
+      ],
+      "stdout_not_re": [
+       "systemMessage"
       ]
      },
      "tools": [
       "claude"
      ],
-     "sin_freno_instalado": true,
-     "asymmetry": "En Codex toda invocación de la puerta se frena: lo cubre `codex-frena-archivo`."
+     "asymmetry": "En Codex toda invocación de la puerta se frena antes, con su propio motivo: lo cubre `codex-frena-archivo`."
     },
     {
-     "id": "archivo-sin-huella-da-la-huella-actual",
+     "id": "archivo-sin-huella-da-el-comando",
      "type": "must-block",
-     "__doc": "Story 6.2 · T36 · sin `--sha256` no hay cuadro: sale 2 y el mensaje trae la huella actual del archivo y el comando listo para reintentar.",
+     "__doc": "Story 6.6 · T1 · `--file` sin `--sha256`: el cuadro de aprobación no muestra el contenido del archivo, así que sale 2 y el mensaje trae el comando con la consulta en línea, listo para pegar. ROJO PREVIO: con la huella buena salía 0 y el cuadro mostraba sólo la ruta.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
@@ -4859,19 +4898,22 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
-       "cf0775a30a4ced382854d382d935b8c0313ddc342afd126658e7e4b86e3d694c",
-       "--sha256"
+       "contenido de un archivo",
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net 'select top 3 Id,"
+      ],
+      "stdout_not_re": [
+       "systemMessage"
       ]
      },
      "tools": [
       "claude"
      ],
-     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
+     "asymmetry": "En Codex toda invocación de la puerta se frena antes, con su propio motivo: lo cubre `codex-frena-archivo`."
     },
     {
-     "id": "archivo-con-huella-vieja-da-la-actual",
+     "id": "archivo-con-huella-vieja-da-el-comando",
      "type": "must-block",
-     "__doc": "Story 6.2 · T36 · con una huella que no coincide (el archivo cambió después de que la persona lo leyó): sale 2 con la huella actual.",
+     "__doc": "Story 6.6 · T1 · `--file` con una huella que no coincide: el cuadro de aprobación no muestra el contenido del archivo, así que sale 2 y el mensaje trae el comando con la consulta en línea, listo para pegar. ROJO PREVIO: con la huella buena salía 0 y el cuadro mostraba sólo la ruta.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
@@ -4891,18 +4933,149 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
-       "cf0775a30a4ced382854d382d935b8c0313ddc342afd126658e7e4b86e3d694c"
+       "contenido de un archivo",
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net 'select top 3 Id,"
+      ],
+      "stdout_not_re": [
+       "systemMessage"
       ]
      },
      "tools": [
       "claude"
      ],
-     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
+     "asymmetry": "En Codex toda invocación de la puerta se frena antes, con su propio motivo: lo cubre `codex-frena-archivo`."
+    },
+    {
+     "id": "archivo-da-el-comando-en-linea",
+     "type": "must-block",
+     "__doc": "Story 6.6 · T2 · el comando listo conserva `--max-rows` y lleva la consulta entre comillas simples, con las suyas escapadas.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "cwd": "${FIXTURE}",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net --file ${FIXTURE}/q/consulta.sql --sha256 cf0775a30a4ced382854d382d935b8c0313ddc342afd126658e7e4b86e3d694c --max-rows 7"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "contenido de un archivo",
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net 'select top 3 Id,",
+       "--max-rows 7"
+      ]
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex toda invocación de la puerta se frena antes, con su propio motivo."
+    },
+    {
+     "id": "en-linea-sobre-el-tope-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.6 · T6 · el cuadro muestra unos 20 renglones y corta el principio sin aviso: una consulta en línea de 21 renglones sale 2 y dice cuántos ocupa. ROJO PREVIO: salía 0 y el cuadro escondía el principio.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "cwd": "${FIXTURE}",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select 1\nselect 2\nselect 3\nselect 4\nselect 5\nselect 6\nselect 7\nselect 8\nselect 9\nselect 10\nselect 11\nselect 12\nselect 13\nselect 14\nselect 15\nselect 16\nselect 17\nselect 18\nselect 19\nselect 20\nselect 21'"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ocupa 2[0-9]",
+       "partí la consulta"
+      ]
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex toda invocación de la puerta se frena antes, con su propio motivo."
+    },
+    {
+     "id": "en-linea-con-ansi-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.6 · T7 · una secuencia de la terminal en la consulta en línea haría ver otra cosa en el cuadro: sale 2. ROJO PREVIO: era forma canónica y salía 0.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "cwd": "${FIXTURE}",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select 1 \u001b[2J x'"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "control"
+      ]
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex toda invocación de la puerta se frena antes, con su propio motivo."
+    },
+    {
+     "id": "en-linea-con-invisible-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.6 · T7 · un carácter invisible en la consulta en línea cambia cómo se lee sin cambiar los bytes: sale 2. ROJO PREVIO: era forma canónica y salía 0.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "cwd": "${FIXTURE}",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select 1 \u200b x'"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "invisible"
+      ]
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex toda invocación de la puerta se frena antes, con su propio motivo."
     },
     {
      "id": "archivo-enlace-se-frena",
      "type": "must-block",
-     "__doc": "Story 6.2 · T37 · un enlace no es un archivo común: un enlace puede apuntar a otra cosa entre el freno y la puerta.",
+     "__doc": "Story 6.6 · T4 · un enlace no es un archivo común: un enlace puede apuntar a otra cosa entre el freno y la puerta. No trae el comando en línea: sólo el motivo.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
@@ -4923,7 +5096,11 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
+       "contenido de un archivo",
        "enlace"
+      ],
+      "stderr_not_re": [
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net '"
       ]
      },
      "tools": [
@@ -4934,7 +5111,7 @@
     {
      "id": "archivo-carpeta-se-frena",
      "type": "must-block",
-     "__doc": "Story 6.2 · T37 · una carpeta no es una consulta.",
+     "__doc": "Story 6.6 · T4 · una carpeta no es una consulta. No trae el comando en línea: sólo el motivo.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
@@ -4954,7 +5131,11 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
+       "contenido de un archivo",
        "archivo común"
+      ],
+      "stderr_not_re": [
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net '"
       ]
      },
      "tools": [
@@ -4965,7 +5146,7 @@
     {
      "id": "archivo-grande-se-frena",
      "type": "must-block",
-     "__doc": "Story 6.2 · T37 · más de 64 KB no se muestra entero en pantalla: no se acepta.",
+     "__doc": "Story 6.6 · T4 · más de 64 KB no se muestra entero en pantalla: no se acepta. No trae el comando en línea: sólo el motivo.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
@@ -4986,7 +5167,11 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
+       "contenido de un archivo",
        "mide"
+      ],
+      "stderr_not_re": [
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net '"
       ]
      },
      "tools": [
@@ -4997,7 +5182,7 @@
     {
      "id": "archivo-binario-se-frena",
      "type": "must-block",
-     "__doc": "Story 6.2 · T37 · lo que no es texto UTF-8 no se puede mostrar tal cual.",
+     "__doc": "Story 6.6 · T4 · lo que no es texto UTF-8 no se puede mostrar tal cual. No trae el comando en línea: sólo el motivo.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
@@ -5018,7 +5203,11 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
+       "contenido de un archivo",
        "UTF-8"
+      ],
+      "stderr_not_re": [
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net '"
       ]
      },
      "tools": [
@@ -5087,7 +5276,7 @@
     {
      "id": "archivo-con-ansi-se-frena",
      "type": "must-block",
-     "__doc": "Story 6.2 · T37 · una secuencia ANSI puede esconder texto en pantalla: lo que se ve no sería lo que corre.",
+     "__doc": "Story 6.6 · T4 · una secuencia ANSI puede esconder texto en pantalla: lo que se ve no sería lo que corre. No trae el comando en línea: sólo el motivo.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n",
@@ -5108,7 +5297,11 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
+       "contenido de un archivo",
        "control"
+      ],
+      "stderr_not_re": [
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net '"
       ]
      },
      "tools": [
@@ -5119,7 +5312,7 @@
     {
      "id": "archivo-con-retorno-se-frena",
      "type": "must-block",
-     "__doc": "Story 6.2 · T37 · un retorno de carro puede pisar una línea en pantalla y esconder un comando del cliente.",
+     "__doc": "Story 6.6 · T4 · un retorno de carro puede pisar una línea en pantalla y esconder un comando del cliente. No trae el comando en línea: sólo el motivo.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n",
@@ -5140,7 +5333,11 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
+       "contenido de un archivo",
        "control"
+      ],
+      "stderr_not_re": [
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net '"
       ]
      },
      "tools": [
@@ -5151,7 +5348,7 @@
     {
      "id": "archivo-con-invisible-se-frena",
      "type": "must-block",
-     "__doc": "Story 6.2 · T37 · un carácter invisible o de dirección (bidi) cambia cómo se lee la consulta sin cambiar los bytes.",
+     "__doc": "Story 6.6 · T4 · un carácter invisible o de dirección (bidi) cambia cómo se lee la consulta sin cambiar los bytes. No trae el comando en línea: sólo el motivo.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n",
@@ -5172,7 +5369,11 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
+       "contenido de un archivo",
        "invisible"
+      ],
+      "stderr_not_re": [
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net '"
       ]
      },
      "tools": [
@@ -5181,9 +5382,9 @@
      "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
-     "id": "archivo-cerca-del-tope-se-muestra-entero",
-     "type": "must-not-block",
-     "__doc": "Story 6.2 · T35 · un archivo cerca de los 64 KB se muestra ENTERO: el mensaje se escribía y el proceso salía enseguida, y por una tubería se cortaba (pase adversarial).",
+     "id": "archivo-largo-no-da-el-comando",
+     "type": "must-block",
+     "__doc": "Story 6.6 · T4 · un archivo de casi 2000 renglones no entra en el cuadro: sale 2, dice que hay que partirlo y no trae el comando en línea.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n",
@@ -5202,22 +5403,24 @@
       }
      },
      "expect": {
-      "exit": 0,
-      "stdout_re": [
-       "systemMessage",
-       "FIN-DE-LA-CONSULTA"
+      "exit": 2,
+      "stderr_re": [
+       "contenido de un archivo",
+       "partila"
+      ],
+      "stderr_not_re": [
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net '"
       ]
      },
      "tools": [
       "claude"
      ],
-     "sin_freno_instalado": true,
-     "asymmetry": "En Codex toda invocación de la puerta se frena."
+     "asymmetry": "En Codex toda invocación de la puerta se frena antes, con su propio motivo: lo cubre `codex-frena-archivo`."
     },
     {
      "id": "archivo-ruta-con-guion-se-frena",
      "type": "must-block",
-     "__doc": "Story 6.2 · T37 · una ruta que empieza con «-» se tomaría como una opción del intérprete en la puerta: no es canónica.",
+     "__doc": "Story 6.6 · T1 · una ruta que empieza con «-» tampoco pasa: toda invocación con `--file` sale 2, y ésta no trae comando listo.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
@@ -5237,7 +5440,10 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
-       "canónica"
+       "contenido de un archivo"
+      ],
+      "stderr_not_re": [
+       "tycon-prod-sql acme-sql\\.database\\.windows\\.net '"
       ]
      }
     },
@@ -5888,6 +6094,202 @@
      "acme-sql"
     ]
    }
+    },
+    {
+     "id": "guion-guardado-que-llama-a-la-puerta-se-frena",
+     "type": "must-block",
+     "__doc": "Sonda p10: un guion que llama a la puerta. La regla de aprobación de Claude Code mira el texto del comando, y ahí no aparece la puerta: el freno mira adentro del guion. El banco arma el caso en una carpeta temporal, donde el freno ya leía los guiones, pero el análisis de siempre no buscaba la puerta adentro: el motivo exigido («llama a la puerta») sólo lo da la capa nueva. ROJO PREVIO: con el freno de antes, `bash scripts/consulta.sh` pasaba y consultaba producción sin ningún cuadro. (El guion que lee la clave, en cambio, el freno de antes ya lo frenaba en una carpeta temporal: ése se prueba fuera de ella, en prod-saved-scripts.test.sh.)",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "scripts/consulta.sh": "#!/usr/bin/env bash\n/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select 1'\n"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "bash scripts/consulta.sh"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "consulta\\.sh",
+       "llama a la puerta"
+      ]
+     }
+    },
+    {
+     "id": "npm-run-que-lee-la-clave-se-frena",
+     "type": "must-block",
+     "__doc": "Sonda p05: `npm run leer`, cuyo script lee la clave. El freno lee el script del package.json. ROJO PREVIO: pasaba, el texto del comando no nombra nada.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "package.json": "{\"name\": \"juguete\", \"scripts\": {\"leer\": \"/usr/bin/security find-generic-password -s tycon-prod-acme -w\", \"build\": \"echo armando\"}}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "npm run leer"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "package\\.json",
+       "leer",
+       "tycon-prod-acme"
+      ]
+     }
+    },
+    {
+     "id": "npm-run-que-no-nombra-nada-pasa",
+     "type": "must-not-block",
+     "__doc": "El reverso de la sonda p05: un script de npm que no nombra nada de producción pasa.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "package.json": "{\"name\": \"juguete\", \"scripts\": {\"leer\": \"/usr/bin/security find-generic-password -s tycon-prod-acme -w\", \"build\": \"echo armando\"}}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "npm run build"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
+    },
+    {
+     "id": "make-que-lee-la-clave-se-frena",
+     "type": "must-block",
+     "__doc": "Sonda p06: `make leer`, cuya receta lee la clave. El freno lee la receta del objetivo (y la de sus prerrequisitos). ROJO PREVIO: pasaba.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "Makefile": "leer:\n\t@/usr/bin/security find-generic-password -s tycon-prod-acme -w\n\ncompilar:\n\techo compilando\n"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "make leer"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "Makefile",
+       "leer",
+       "tycon-prod-acme"
+      ]
+     }
+    },
+    {
+     "id": "make-otro-objetivo-pasa",
+     "type": "must-not-block",
+     "__doc": "El reverso de la sonda p06: otro objetivo del mismo Makefile, que no nombra nada, pasa.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "Makefile": "leer:\n\t@/usr/bin/security find-generic-password -s tycon-prod-acme -w\n\ncompilar:\n\techo compilando\n"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "make compilar"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
+    },
+    {
+     "id": "automatizar-la-pantalla-se-frena",
+     "type": "must-block",
+     "__doc": "El cuadro de producción lo contesta una persona: un `osascript` con System Events que aprieta una tecla podría contestarlo. ROJO PREVIO: pasaba.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "osascript -e 'tell application \"System Events\" to keystroke return'"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "pantalla"
+      ]
+     }
+    },
+    {
+     "id": "cliclick-se-frena",
+     "type": "must-block",
+     "__doc": "Lo mismo con `cliclick`, que hace clic en un punto de la pantalla. ROJO PREVIO: pasaba.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cliclick c:500,400"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "pantalla"
+      ]
+     }
+    },
+    {
+     "id": "osascript-display-notification-pasa",
+     "type": "must-not-block",
+     "__doc": "El reverso: un `osascript` que sólo muestra una notificación no aprieta nada y pasa.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "osascript -e 'display notification \"listo\"'"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
     }
    ]
   }

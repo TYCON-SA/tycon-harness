@@ -34,13 +34,16 @@ const fs = require('fs');
 const argv = process.argv.slice(2);
 const adv = argv[argv.indexOf('-p') + 1];
 const out = argv[argv.indexOf('-o') + 1];
-const beh = (JSON.parse(process.env.FAKE_CODEX_BEHAVIOR || '{}')[adv]) || {};
+const todo = (JSON.parse(process.env.FAKE_CODEX_BEHAVIOR || '{}')[adv]) || {};
+// la segunda corrida del pedido del renglón (8.296) escribe su propio -o: <revisor>.retry.md, con su propio comportamiento
+const esRetry = /\\.retry\\.md$/.test(out);
+const beh = esRetry ? (todo.retry || {}) : todo;
 let stdinClosed = false;
 try { stdinClosed = fs.fstatSync(0).isCharacterDevice() || fs.readFileSync(0).length === 0; } catch { stdinClosed = true; }
-const rec = { adv, argv, stdinClosed, pid: process.pid, start: Date.now() };
+const rec = { adv, argv, stdinClosed, pid: process.pid, start: Date.now(), retry: esRetry };
 fs.appendFileSync(process.env.FAKE_CODEX_LOG, JSON.stringify({ ...rec, event: 'start' }) + '\\n');
 const fin = () => {
-  if (!beh.noReport) fs.writeFileSync(out, '## ' + adv + '\\nVeredicto: limpio\\n');
+  if (!beh.noReport) fs.writeFileSync(out, '## ' + adv + (beh.noVerdict ? '\\nLimpio, 0 hallazgos\\n' : '\\nVeredicto: limpio\\n'));
   fs.appendFileSync(process.env.FAKE_CODEX_LOG, JSON.stringify({ adv, pid: process.pid, event: 'end', end: Date.now() }) + '\\n');
   if (beh.stderr) process.stderr.write(beh.stderr);
   process.exit(beh.exit || 0);
@@ -249,6 +252,21 @@ test('ReviewersRun_WritesTheRunLine_CheckCountCountsIt @story-8.97 @ac-3', () =>
   assert.match(cc2.stderr, /sin reporte/);
 });
 
+// 🔴 Falla con: que el renglón, escrito al terminar el proceso, no diga cuándo arrancó: una vuelta siguiente daría por
+// visto lo que se editó mientras el revisor corría.
+test('ReviewersRun_RunLine_SaysWhenTheProcessStarted @story-8.288 @ac-1', () => {
+  const e = mkEnv();
+  const antes = Date.now();
+  const r = runReviewers(e);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const lines = ledger(e).filter((l) => l.launcher === 'pipeline');
+  assert.ok(lines.length > 0);
+  for (const l of lines) {
+    const t = Date.parse(l.lanzado_ts);
+    assert.ok(Number.isFinite(t) && t >= antes - 1000 && t <= Date.parse(l.ts), `${l.advisor}: arranque ${l.lanzado_ts}, renglón ${l.ts}`);
+  }
+});
+
 test('ReviewersRun_MissingCodexOrProfile_SaysWhichAndCountFailsClosed @story-8.97 @ac-10', () => {
   const sinCodex = mkEnv({ withCodex: false });
   const r1 = runReviewers(sinCodex);
@@ -389,4 +407,85 @@ test('ReviewersRun_OllamaInalcanzable_NombraLaCausa @story-8.108 @ac-6', () => {
   assert.match(linea, /tycon-plugin-security-basics\.stderr\.log/);
   const otra = r.stderr.split('\n').find((l) => l.includes('tycon-spec-first-checker') && /no llegó a Ollama/.test(l));
   assert.strictEqual(otra, undefined, 'el revisor que anduvo no lleva la causa');
+});
+
+// ── 8.296: Codex le pide el renglón de veredicto con una segunda corrida, una sola vez ─────────────────────────────────
+//
+// 🔴 Mutaciones que los ponen en rojo: no correr la segunda, correr una tercera, o relanzar al que falló (T8, T9, T10);
+// pisar el primer reporte, perder el motivo de la segunda o anotar dos líneas de lanzamiento (T8, T25).
+
+const SEC = 'tycon-plugin-security-basics';
+const registroDe = (e) => {
+  const f = path.join(e.stateDir, 'reported-criticals', `${SID}.jsonl`);
+  return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+};
+const corridasDe = (e, adv = SEC) => fakeCalls(e).filter((c) => c.event === 'start' && c.adv === adv);
+
+test('Codex_SinVeredicto_UnaSegundaCorridaMismoIter @story-8.296 @ac-10 @ac-16', () => {
+  const e = mkEnv({ advisors: [SEC], behavior: { [SEC]: { noVerdict: true } } });
+  const r = runReviewers(e);
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  const corridas = corridasDe(e);
+  assert.strictEqual(corridas.length, 2, JSON.stringify(corridas));
+  const [primera, segunda] = corridas;
+  assert.ok(!primera.retry && segunda.retry, 'la segunda no escribió su propio reporte');
+  // el mismo perfil, el mismo contexto y la misma historia, con el pedido del renglón al final del prompt
+  assert.strictEqual(segunda.argv[segunda.argv.indexOf('-p') + 1], SEC);
+  const prompt = segunda.argv[segunda.argv.length - 1];
+  assert.ok(prompt.includes(path.join(e.home, 'context.md')) && prompt.includes(e.storyPath), prompt);
+  assert.match(prompt, /no trae el renglón de veredicto/);
+  // los dos reportes quedan en la carpeta, el primero sin pisar
+  const dir = reportsDir(e);
+  assert.match(fs.readFileSync(path.join(dir, `${SEC}.md`), 'utf8'), /Limpio, 0 hallazgos/);
+  assert.match(fs.readFileSync(path.join(dir, `${SEC}.retry.md`), 'utf8'), /Veredicto: limpio/);
+  const reg = registroDe(e);
+  const reps = reg.filter((x) => x.kind === 'report');
+  assert.deepStrictEqual(reps.map((x) => [x.iter, x.readable]), [[1, false], [1, true]], JSON.stringify(reps));
+  assert.strictEqual(reg.filter((x) => x.kind === 'verdict-retry').length, 1);
+  assert.strictEqual(reg.filter((x) => x.kind === 'launched').length, 1, 'la segunda corrida anotó otra salida');
+  const lineas = ledger(e).filter((l) => l.launcher === 'pipeline');
+  assert.strictEqual(lineas.length, 1, JSON.stringify(lineas));
+  assert.strictEqual(lineas[0].advisor, SEC);
+  assert.strictEqual(lineas[0].report, path.join(dir, `${SEC}.retry.md`));
+});
+
+test('Codex_SegundaSinVeredicto_NoHayTercera @story-8.296 @ac-10', () => {
+  const e = mkEnv({ advisors: [SEC], behavior: { [SEC]: { noVerdict: true, retry: { noVerdict: true } } } });
+  runReviewers(e);
+  assert.strictEqual(corridasDe(e).length, 2, 'corrió una tercera vez');
+  const reps = registroDe(e).filter((x) => x.kind === 'report');
+  assert.deepStrictEqual(reps.map((x) => x.readable), [false, false]);
+  const rc = require(path.join(SCRIPTS, 'lib', 'reported-criticals.js'));
+  const cruce = rc.cross({ lines: registroDe(e), findings: [] });
+  const p = cruce.problemas.find((x) => x.tipo === 'sin-reporte');
+  assert.ok(p, JSON.stringify(cruce.problemas));
+  assert.match(p.texto, /ya se le pidió el renglón una vez/);
+});
+
+test('Codex_SalioConErrorOTiempo_NoSeVuelveACorrer @story-8.296 @ac-10', () => {
+  const falla = mkEnv({ advisors: [SEC], behavior: { [SEC]: { exit: 1, noVerdict: true } } });
+  runReviewers(falla);
+  assert.strictEqual(corridasDe(falla).length, 1, 'relanzó un revisor que salió con error');
+  const corte = mkEnv({ advisors: [SEC], behavior: { [SEC]: { hang: true } }, env: { TYCON_REVIEWER_TIMEOUT_MS: '1500' } });
+  runReviewers(corte);
+  assert.strictEqual(corridasDe(corte).length, 1, 'relanzó un revisor cortado por tiempo');
+  assert.strictEqual(registroDe(corte).filter((x) => x.kind === 'verdict-retry').length, 0);
+});
+
+test('Codex_SegundaCorridaFalla_ElPrimerReporteQuedaYSeAnotaElMotivo @story-8.296 @ac-10', () => {
+  const e = mkEnv({ advisors: [SEC], behavior: { [SEC]: { noVerdict: true, retry: { exit: 1, noReport: true } } } });
+  const r = runReviewers(e);
+  assert.strictEqual(r.status, 1, r.stderr + r.stdout);
+  assert.strictEqual(corridasDe(e).length, 2);
+  const dir = reportsDir(e);
+  assert.match(fs.readFileSync(path.join(dir, `${SEC}.md`), 'utf8'), /Limpio, 0 hallazgos/, 'se pisó el primer reporte');
+  const reps = registroDe(e).filter((x) => x.kind === 'report');
+  assert.strictEqual(reps.length, 2);
+  assert.strictEqual(reps[1].iter, reps[0].iter);
+  assert.strictEqual(reps[1].readable, false);
+  assert.match(reps[1].reason, /salió 1/);
+  const lineas = ledger(e).filter((l) => l.launcher === 'pipeline');
+  assert.strictEqual(lineas.length, 1, JSON.stringify(lineas));
+  assert.strictEqual(lineas[0].failed_advisor, SEC, JSON.stringify(lineas[0]));
+  assert.strictEqual(lineas[0].exit, 1);
 });

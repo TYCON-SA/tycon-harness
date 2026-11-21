@@ -54,7 +54,7 @@ function main() {
   const fixedDir = state ? path.join(state, 'harness') : null;
   const bootstrap = fixedDir ? path.join(fixedDir, 'bootstrap.js') : null;
   if (bootstrap && fs.existsSync(bootstrap)) {
-    const r = spawnSync(process.execPath, [bootstrap], { encoding: 'utf8', env: process.env, timeout: STARTUP_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'] });
+    const r = spawnSync(process.execPath, [bootstrap], { windowsHide: true, encoding: 'utf8', env: process.env, timeout: STARTUP_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'] });
     if (r.stdout) process.stdout.write(r.stdout);
     if (r.status === 0) return;
     // la copia fija no pudo arrancar el programa: el respaldo en shell de su misma carpeta, como en la línea de Claude

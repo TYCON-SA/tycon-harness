@@ -48,9 +48,9 @@
  *     siempre — crear la story, tocar `plugin.json`, escribir la evidencia del DoD, todo eso es
  *     trabajo legítimo sin carril. (Explícito: implementación hecha 100% en config
  *     —`plugin.json`, `appsettings`, `.csproj`, `.bpmn`— no dispara el carril.)
- *   · El carril ad-hoc es UN comando (`marker.js adhoc set '{"reason":"…"}'`) — pero el mensaje de
- *     bloqueo exige que el USER lo decida, y reconoce que si el user ya pidió "Barry"/quick-dev/un
- *     hotfix con esas palabras, ESO es la decisión (no se re-pregunta). Queda en `adhoc.log`.
+ *   · El carril ad-hoc es UN comando (`marker.js adhoc set '{"reason":"…"}'`), y lo aprueba el dueño en la ventana
+ *     de permiso (la firma `adhoc-lane`): el agente lo pide, la ventana le muestra el motivo y el cupo. Queda en
+ *     `adhoc.log`.
  *   · Resume cross-session: antes de decir "no hay carril", el handler busca markers de OTRAS
  *     sesiones cuyo repo contenga el archivo y ofrece `adopt-session`.
  *   · Kill-switch del dev: env `TYCON_STORY_GATE=off` (el agente no puede setearlo: las env de los
@@ -71,6 +71,7 @@
 const path = require('path');
 const { isTestPath, isImplPath } = require('./atdd-order.js');
 const { isInside } = require('./atdd-preedit.js');
+const { homePath, signatureCommand } = require('./home-command.js');
 
 // Código = lo que `atdd-order` ya considera código, más lo que en los stacks del equipo se edita
 // como implementación y no es "markup de specs": SQL (migraciones), estilos, templates .NET/HTML.
@@ -101,8 +102,35 @@ const NEVER_CODE_SEGMENTS = new Set([
 // scripts/tests/fixtures/harness-place-names.json → recognizers).
 const HARNESS_REPO_SEGMENTS = new Set(['agent-skills', 'tycon-claude-guides', 'tycon-harness']);
 
+// Los topes de FÁBRICA del camino corto. Cada organización los cambia en su perfil (`short_path`, tycon-config.js); éstos
+// rigen sin perfil o cuando el lector no se puede leer. Esta biblioteca no lee archivos: el tope que rige le llega del
+// borde (story-gate-io.js → topesDelCaminoCorto).
 const DEFAULT_ADHOC_MAX_FILES = 8;
-const MARKER_JS = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+// el arreglo rápido que abre la coordinadora por delegación: más chico que el que firma una persona
+const DELEGATED_ADHOC_MAX_FILES = 5;
+const cupoDelegado = (pedido, tope = DELEGATED_ADHOC_MAX_FILES) => Math.min(pedido, tope);
+/**
+ * El cupo que queda al declarar: el pedido, el que ya tenía o el de la organización. Lo hecho por delegación o en una
+ * pestaña sin permisos va con el cupo delegado. Pedir sin número no achica lo que la persona ya eligió con su click:
+ * trabaría el arreglo. `topes`: `{ delegado, maximo }` de la organización; sin ellos, los de fábrica. `sobreCupo`: la
+ * coordinadora firmó pasar el tope (`adhoc-lane:sobre-cupo`, delegada en el perfil): el cupo pedido no se recorta.
+ */
+function cupoAlDeclarar({ pedido, existing, via, topes, sobreCupo = false }) {
+  const delegado = topes && Number.isInteger(topes.delegado) ? topes.delegado : DELEGATED_ADHOC_MAX_FILES;
+  const maximo = topes && Number.isInteger(topes.maximo) ? topes.maximo : DEFAULT_ADHOC_MAX_FILES;
+  const cupo = pedido !== undefined ? pedido : (existing ? existing.maxFiles : maximo);
+  const porDelegacion = via === 'delegacion' || via === 'avisado';
+  return porDelegacion && !sobreCupo && !(pedido === undefined && existing && existing.sobreCupo) ? cupoDelegado(cupo, delegado) : cupo;
+}
+/** El cupo de un carril: el suyo, o `defecto` (el tope de la organización) si no trae uno que se pueda leer. */
+const cupoDelCarril = (adhoc, defecto = DEFAULT_ADHOC_MAX_FILES) => (Number.isFinite(Number(adhoc && adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0 ? Number(adhoc.maxFiles) : defecto);
+// la ruta de marker.js bajo la carpeta de la persona: `node ${MARKER_JS} …` imprime `node "$HOME/…"`, que anda también en
+// PowerShell; una firma se imprime con la ruta absoluta (signatureCommand), porque la forma de la firma exige un literal
+const MARKER_REL = '.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+const MARKER_JS = homePath(MARKER_REL);
+// el tablero de la oficina, en la carpeta de estado: lo escribe sólo su comando
+const BOARD_FILE = /(^|[\\/])coordination[\\/]tablero\.json$/;
+const BOARD_JS = homePath('.tycon/harness/scripts/tools/office/board.js');
 
 function norm(p) {
   return String(p || '').replace(/\\/g, '/');
@@ -177,18 +205,61 @@ function isControlApproval(p) {
 const ADVERSARIAL_SKIP_FILE = /(^|\/)adversarial-skips\.jsonl$/i;
 function isAdversarialSkipRecord(p) { return ADVERSARIAL_SKIP_FILE.test(norm(String(p || ''))); }
 // El registro de aprobaciones de la lista de pendientes: lo escribe sólo `marker.js approve-pending`, con la firma.
-const PENDING_APPROVALS_FILE = /(^|\/)tasks\/pending-approvals\.jsonl$/i;
+// El archivo de antes y la carpeta de un archivo por aprobación (la carpeta misma también: `cp x tasks/pending-approvals/`)
+const PENDING_APPROVALS_FILE = /(^|\/)tasks\/pending-approvals(\.jsonl$|\/|$)/i;
 function isPendingApprovalsRecord(p) { return PENDING_APPROVALS_FILE.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals` o null. */
+// El registro de las aprobaciones de la persona (scripts/lib/owner-approvals.js) y lo ya gastado (`usadas/`): lo escribe sólo
+// su gancho, y borrar una usada devuelve una aprobación ya gastada. Sólo se lee del estado de la cuenta, en una de sus dos
+// carpetas (la carpeta misma también): una con ese nombre en un producto no es el registro
+const OWNER_APPROVALS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/owner-approvals(\/|$)/i;
+function isOwnerApprovalsRecord(p) { return OWNER_APPROVALS_DIR.test(norm(String(p || ''))); }
+// Las sesiones que abrió la coordinadora (scripts/tools/coordination.js `noteLaunched`): sacar un renglón deja a esa sesión
+// preguntarle a la persona. Lo escribe sólo `coordination.js`; como el registro de arriba, sólo en el estado de la cuenta
+const LAUNCHED_SESSIONS_FILE = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/coordination\/launched\.json$/i;
+function isLaunchedSessionsRecord(p) { return LAUNCHED_SESSIONS_FILE.test(norm(String(p || ''))); }
+// El buzón de la oficina (scripts/lib/office-messages.js): lo que la persona le manda a cada sesión, lo tomado, lo ya usado y
+// el registro. Lo escriben sólo el proceso de la oficina, el vigilante de cada sesión y `office-message.js verify`: escribirlo a
+// mano es fingir un mensaje de la persona, y borrar lo usado devuelve uno ya gastado. Sólo en el estado de la cuenta
+const OFFICE_MAILBOX = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/office\/(?:(?:inbox|tomados|usados|vigilantes)(\/|$)|messages\.jsonl(?:\.1)?$)/i;
+function isOfficeMailboxRecord(p) { return OFFICE_MAILBOX.test(norm(String(p || ''))); }
+// El registro de los críticos que reportó cada revisor (lib/reported-criticals.js): lo escriben sólo el gancho del fin
+// del revisor, el de su lanzamiento y `reviewers-run`. Escribirlo es inventar o borrar lo que dijo un revisor. Sólo en el
+// estado de la cuenta, en una de sus dos carpetas (la carpeta misma también)
+const REPORTED_CRITICALS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/reported-criticals(\/|$)/i;
+function isReportedCriticalsRecord(p) { return REPORTED_CRITICALS_DIR.test(norm(String(p || ''))); }
+// El registro de corridas de los revisores (lib/advisor-ledger.js): lo escriben sólo el gancho del lanzamiento de cada
+// revisor (on-advisor-run.js) y el de Codex. El cierre lo usa para ver salidas de revisores que no quedaron en el registro
+// de críticos: borrarlo apaga ese control y deja saltear revisores. Sólo en el estado de la cuenta (la carpeta también)
+const ADVISOR_RUNS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/advisor-runs(\/|$)/i;
+function isAdvisorRunsRecord(p) { return ADVISOR_RUNS_DIR.test(norm(String(p || ''))); }
+// La revisión automática del plan (lib/plan-review.js): el pedido, sus args, el resultado del corredor y la constancia
+// con el veredicto. Lo escriben sólo `marker.js plan-review` y el corredor del pase (`workflow-lite.js` con el guion del
+// pase del arnés). Escribir el resultado o la constancia es darse un «aprobado». Sólo en el estado de la cuenta
+const PLAN_REVIEW_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/plan-review(\/|$)/i;
+function isPlanReviewRecord(p) { return PLAN_REVIEW_DIR.test(norm(String(p || ''))); }
+// Las marcas de la constancia de Codex (scripts/lib/harness-sign.js `acknowledge`): las escribe sólo la terminal de la
+// persona, y owner-approvals.js las exige al lado de su renglón del registro. Escribir una es fingir una constancia. Sólo
+// en el estado de la cuenta, en una de sus dos carpetas (la carpeta misma también)
+const TERMINAL_ACKS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/terminal-acknowledgments(\/|$)/i;
+function isTerminalAcknowledgmentsRecord(p) { return TERMINAL_ACKS_DIR.test(norm(String(p || ''))); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `terminal-acknowledgments`, `launched-sessions`, `office-mailbox`, `reported-criticals`, `plan-review` o null. */
 function signedRecordKind(p) {
+  if (isPlanReviewRecord(p)) return 'plan-review';
   if (isControlApproval(p)) return 'control-approvals';
   if (isPendingApprovalsRecord(p)) return 'pending-approvals';
+  if (isOwnerApprovalsRecord(p)) return 'owner-approvals';
+  if (isTerminalAcknowledgmentsRecord(p)) return 'terminal-acknowledgments';
+  if (isLaunchedSessionsRecord(p)) return 'launched-sessions';
+  if (isOfficeMailboxRecord(p)) return 'office-mailbox';
+  if (isReportedCriticalsRecord(p)) return 'reported-criticals';
+  if (isAdvisorRunsRecord(p)) return 'advisor-runs';
   return isAdversarialSkipRecord(p) ? 'adversarial-skip-record' : null;
 }
 
 function computeStoryGate({
   filePath, stateDir, homeDir, repoRoot, repoHasTycon, repoHasStories, gateEnabled = true, marker, adhoc,
-  isHarness, realFilePath = null, installedRoots = [], realStateDir = null,
+  isHarness, realFilePath = null, installedRoots = [], realStateDir = null, sensitiveCheck = null,
+  adhocRepoRoot = null, riesgoAlto = null, listGateEnabled = true, batchList = null,
 }) {
   if (!filePath) return { action: 'pass', reason: 'sin file_path' };
   // la ruta real (por los enlaces) la resuelve el borde; sin ella, la escrita
@@ -217,12 +288,116 @@ function computeStoryGate({
   if (isPendingApprovalsRecord(filePath) || isPendingApprovalsRecord(real)) {
     return { action: 'block', kind: 'pending-approvals', reason: 'escritura a mano del registro de aprobaciones de pendientes' };
   }
+  if (isOwnerApprovalsRecord(filePath) || isOwnerApprovalsRecord(real)) {
+    return { action: 'block', kind: 'owner-approvals', reason: 'escritura a mano del registro de aprobaciones de la persona' };
+  }
+  if (isTerminalAcknowledgmentsRecord(filePath) || isTerminalAcknowledgmentsRecord(real)) {
+    return { action: 'block', kind: 'terminal-acknowledgments', reason: 'escritura a mano de la marca de una constancia dada en la terminal' };
+  }
+  if (isLaunchedSessionsRecord(filePath) || isLaunchedSessionsRecord(real)) {
+    return { action: 'block', kind: 'launched-sessions', reason: 'escritura a mano del registro de las sesiones que abrió la coordinadora' };
+  }
+  if (isOfficeMailboxRecord(filePath) || isOfficeMailboxRecord(real)) {
+    return { action: 'block', kind: 'office-mailbox', reason: 'escritura a mano del buzón de la oficina' };
+  }
+  if (isReportedCriticalsRecord(filePath) || isReportedCriticalsRecord(real)) {
+    return { action: 'block', kind: 'reported-criticals', reason: 'escritura a mano del registro de críticos reportados' };
+  }
+  if (isAdvisorRunsRecord(filePath) || isAdvisorRunsRecord(real)) {
+    return { action: 'block', kind: 'advisor-runs', reason: 'escritura a mano del registro de corridas de los revisores' };
+  }
+  if (isPlanReviewRecord(filePath) || isPlanReviewRecord(real)) {
+    return { action: 'block', kind: 'plan-review', reason: 'escritura a mano de la constancia de la revisión del plan' };
+  }
+  // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
+  // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
+  // arnés (scripts/lib/signatures.js): unas skills instaladas aparte no la alcanzan, y sin la lista el carril delegado
+  // no toca nada
+  // (el de una pestaña sin permisos, «hecho y avisado», tampoco)
+  // La raíz del repo para estos dos frenos la resuelve el borde (`adhocRepoRoot`): sin ella, la de la llamada.
+  const raizDelCarril = adhocRepoRoot || repoRoot;
+  if (adhoc && adhoc.reason && (adhoc.via === 'delegacion' || adhoc.via === 'avisado') && raizDelCarril) {
+    const rels = [filePath, real].map((f) => norm(path.relative(raizDelCarril, f))).filter((rel) => !rel.startsWith('..'));
+    let sensible;
+    try {
+      const esSensible = sensitiveCheck || require('./save-ok.js').esSensible;
+      sensible = rels.find((rel) => esSensible(rel));
+    } catch (_) {
+      if (rels.length) return { action: 'block', kind: 'adhoc-sensitive', reason: `el arreglo rápido delegado no encuentra la lista de lo sensible del arnés (scripts/lib/signatures.js): ${rels[0]} lo firma una persona` };
+    }
+    if (sensible) {
+      return { action: 'block', kind: 'adhoc-sensitive', reason: `el arreglo rápido delegado no toca lo sensible (${sensible}): ese cambio lo firma una persona` };
+    }
+  }
+  // Un camino rápido de riesgo alto no se delega: el carril abierto por delegación no escribe una ruta de riesgo alto,
+  // sea código o no. La regla la calcula el borde (lib/risk-paths.js, la misma de la historia) y llega en `riesgoAlto`.
+  if (adhoc && adhoc.reason && adhoc.via === 'delegacion' && riesgoAlto && riesgoAlto.value) {
+    const archivo = norm(raizDelCarril ? path.relative(raizDelCarril, filePath) : filePath);
+    return {
+      action: 'block', kind: 'adhoc-high-risk', regla: riesgoAlto.rule, archivo,
+      reason: `el camino rápido delegado no escribe una ruta de riesgo alto (${archivo}: ${riesgoAlto.reason})`,
+    };
+  }
+  // La lista del camino corto: lo que no nombra no se edita, sea código o no, en el arnés y en un producto. Con una
+  // corrida abierta manda la corrida. El carril delegado (o de una pestaña sin permisos) frena aunque el portón del repo
+  // esté apagado; el de una persona, sólo con el portón prendido. La comparación vive en `lib/adhoc-list.js`.
+  if (adhoc && adhoc.reason && Array.isArray(adhoc.allowedFiles) && !(marker && marker.storyId)) {
+    const delegado = adhoc.via === 'delegacion' || adhoc.via === 'avisado';
+    if (delegado || listGateEnabled !== false) {
+      const fuera = require('./adhoc-list.js').fueraDeLaLista({
+        lista: adhoc.allowedFiles, filePath, real, repoRoot: adhocRepoRoot, home: homeDir, delegado,
+      });
+      if (fuera) {
+        // el archivo de un repo al lado que no vale como hermano: el texto dice por qué no se puede sumar a la lista
+        const vecino = require('./adhoc-list.js').repoVecinoFueraDelGrupo({ repoRoot: adhocRepoRoot, cwd: adhoc.cwd });
+        return {
+          action: 'block', kind: 'adhoc-out-of-list', archivo: fuera.archivo, lista: adhoc.allowedFiles, ...(vecino ? { vecino } : {}),
+          reason: `${fuera.archivo}: ${fuera.motivo} del camino corto «${adhoc.reason}»`,
+        };
+      }
+    }
+  }
 
   if (gateEnabled === false) return { action: 'pass', reason: 'gate apagado (env o config commiteada del repo)' };
+  // Con el plan de una parte aprobado por delegación, la implementación se queda en la lista congelada al aprobar (la de
+  // la constancia de la revisión, que el borde verificó): antes del pase del arnés, que es donde aprueba la coordinadora,
+  // y con la regla de código por extensión (la de las historias): el código dentro de `.advisors/` también cuenta. Una
+  // guía o una configuración fuera de la lista no frena acá: la mide el cierre. La prueba de un archivo de la lista y el
+  // papeleo pasan.
+  // se mira la ruta dentro del repo: un repo puesto bajo una carpeta `tests/` o `specs/` no hace pasar todo por prueba
+  const relDeLaCorrida = () => {
+    const raiz = (batchList && batchList.repoRoot) || (marker && marker.repoPath) || null;
+    if (!raiz) return filePath;
+    for (const [r, f] of [[raiz, filePath], [raiz, real]]) {
+      if (f && isInside(r, f)) return path.relative(r, f).split(path.sep).join('/');
+    }
+    try {
+      const rr = require('fs').realpathSync(raiz);
+      if (real && isInside(rr, real)) return path.relative(rr, real).split(path.sep).join('/');
+    } catch (_) { /* sin raíz real, la ruta como vino */ }
+    return filePath;
+  };
+  const esCodigoDeLaParte = () => { const rel = relDeLaCorrida(); return isImplPath(rel) && require('./story-checks.js').isCodeFile(rel); };
+  // dentro del repo de la corrida, por la ruta escrita o por la real (una carpeta temporal con enlaces, en Mac)
+  const enElRepoDeLaCorrida = !marker || !marker.repoPath || isInside(marker.repoPath, filePath) || isInside(marker.repoPath, real);
+  if (marker && marker.storyId && batchList && esCodigoDeLaParte() && enElRepoDeLaCorrida) {
+    if (batchList.problema) {
+      return { action: 'block', kind: 'batch-out-of-list', archivo: filePath, lista: [], parte: marker.batch || null, reason: batchList.problema };
+    }
+    const fuera = require('./adhoc-list.js').fueraDeLaLista({ lista: batchList.lista, filePath, real, repoRoot: batchList.repoRoot || null, delegado: true });
+    if (fuera) {
+      return {
+        action: 'block', kind: 'batch-out-of-list', archivo: fuera.archivo, lista: batchList.lista, parte: batchList.parte,
+        reason: `${fuera.archivo} no está en la lista de la parte ${batchList.parte}, la que quedó al aprobar el plan por delegación`,
+      };
+    }
+  }
   if (!isCodeFile(filePath)) return { action: 'pass', reason: 'no es código' };
   // `isHarness` booleano = el borde ya leyó el remoto; sin él decide la carpeta (respaldo).
   const harness = typeof isHarness === 'boolean' ? isHarness : isHarnessPath(filePath);
-  if (harness) return { action: 'pass', reason: 'repo del harness (agent-skills / el arnés)' };
+  // con un carril abierto rige su tope también en el arnés; sin carril, o con una ejecución de historia, el arnés pasa
+  const carrilEnElArnes = harness && adhoc && adhoc.reason && !(marker && marker.storyId);
+  if (harness && !carrilEnElArnes) return { action: 'pass', reason: 'repo del harness (agent-skills / el arnés)' };
 
   // ── Carril STORY (pipeline activo) — se mira ANTES que el repo ───────────────────────────────
   if (marker && marker.storyId) {
@@ -245,15 +420,15 @@ function computeStoryGate({
 
   if (!repoRoot) return { action: 'pass', reason: 'archivo fuera de un repo git' };
   if (homeDir && sameFile(repoRoot, homeDir)) return { action: 'pass', reason: 'el "repo" es el home (dotfiles) — no cuenta' };
-  if (!repoHasTycon && !repoHasStories) {
+  // un clon del arnés puede no tener `.tycon/`: trabaja con el arnés igual
+  if (!harness && !repoHasTycon && !repoHasStories) {
     return { action: 'pass', reason: 'el repo no trabaja con el arnés (sin .tycon/ ni stories Mary+GOLD)' };
   }
 
   // ── Carril AD-HOC (hotfix / ajuste chico, sin story) ─────────────────────────────────────────
   if (adhoc && adhoc.reason) {
     const files = Array.isArray(adhoc.files) ? adhoc.files : [];
-    const max = Number.isFinite(Number(adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0
-      ? Number(adhoc.maxFiles) : DEFAULT_ADHOC_MAX_FILES;
+    const max = cupoDelCarril(adhoc);
     const already = files.some((f) => sameFile(f, filePath));
     // Al cupo cuentan sólo los archivos de IMPLEMENTACIÓN (un hotfix .cs + su test = 1).
     const countsTowardCap = isImplPath(filePath);
@@ -261,6 +436,8 @@ function computeStoryGate({
       return {
         action: 'block',
         kind: 'adhoc-cap',
+        tocados: files.length,
+        cupo: max,
         reason: `el ad-hoc "${adhoc.reason}" ya tocó ${files.length} archivo(s) de implementación (cupo ${max})`,
       };
     }
@@ -298,9 +475,119 @@ const PREGUNTA_SIN_CARRIL = [
   'Lo tenés que escribir vos en el chat: el cuadro de botones no vale.',
 ];
 
-function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } = {}) {
+/**
+ * El mensaje al pasar el tope, al editar y al guardar: recomienda la historia y nombra el click aparte como segunda salida,
+ * en los dos perfiles. En un producto lo lee el dev («vos») y no nombra las piezas de la capa de mantenimiento.
+ */
+// Cuántos archivos se nombran: en una rama grande, una lista entera repetida en cada intento desplaza del registro el
+// renglón de la firma del carril, y el carril deja de contar como abierto.
+const TOPE_DE_NOMBRES = 50;
+
+function textoDelTope({ harness = true, tocados, cupo, archivos = [], ibaA = null, via = '' }) {
+  const pedido = `${signatureCommand(MARKER_REL)} adhoc set '{"reason":"<qué y por qué>","maxFiles":<N>}'`;
+  return [
+    '⛔ camino corto — PASÓ EL TOPE DE ARCHIVOS',
+    via,
+    `  Este arreglo ya cambió ${tocados} archivo(s) de implementación (cupo ${cupo}).${ibaA ? ` Ibas a tocar otro más: ${ibaA}.` : ''}`,
+    ...archivos.slice(0, TOPE_DE_NOMBRES).map((a) => `   · ${a}`),
+    ...(archivos.length > TOPE_DE_NOMBRES ? [`   · y ${archivos.length - TOPE_DE_NOMBRES} más`] : []),
+    '  Se recomienda que siga por una historia, con su plan aprobado, las pruebas primero y sus revisores:',
+    '   `Skill(skill="tycon-create-story", …)` si no existe, y después `Skill(skill="tycon-pipeline", args="implementemos la story X.Y")`.',
+    ...(harness ? [
+      '  Si el dev elige seguir sin historia, es su click aparte, en esta pestaña; la coordinadora no lo da:',
+    ] : [
+      '  Si preferís seguir sin historia, lo elegís vos con un click aparte, en esta pestaña:',
+    ]),
+    `   ${pedido}`,
+    '  Ese comando trae el cuadro. Cuentan sólo los archivos de implementación, sin pruebas ni guías.',
+  ].filter((l) => l !== '').join('\n');
+}
+
+function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, harness = true, topes = null } = {}) {
+  // el tope de la organización que nombra el mensaje (lo lee el borde); sin él, el de fábrica
+  const maximo = topes && Number.isInteger(topes.maximo) ? topes.maximo : DEFAULT_ADHOC_MAX_FILES;
   const f = norm(filePath);
   const viaLine = via ? `  (detectado en ${via})\n` : '';
+  if (r.kind === 'adhoc-high-risk') {
+    // los dos perfiles: en un producto el camino rápido lo abre el dev con su sí; en el arnés, una persona y no la
+    // delegación. Un producto no nombra las piezas de la capa de mantenimiento.
+    const regla = r.regla || 'riesgo alto';
+    return (harness ? [
+      '⛔ camino rápido delegado — RUTA DE RIESGO ALTO',
+      viaLine.replace(/\n$/, ''),
+      `  ${f} es de riesgo alto (regla: ${regla}).`,
+      '  Un camino rápido de riesgo alto no se delega: la coordinadora no lo abre por delegación. Lo abre una persona con',
+      '  su sí en la ventana de permiso, y antes de guardar corren los revisores y el pase adversarial sobre su diff.',
+      '  Salidas: pedíselo a una persona (que abra ella el camino rápido), o escribí la historia que lo lleva.',
+    ] : [
+      '⛔ camino rápido — RUTA DE RIESGO ALTO',
+      viaLine.replace(/\n$/, ''),
+      `  ${f} es de riesgo alto (regla: ${regla}).`,
+      '  Este cambio lo aprobás vos: abrí el camino rápido con tu sí en la ventana de permiso. Antes de guardar corren',
+      '  los revisores y el pase adversarial sobre su diff.',
+    ]).filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'adhoc-sensitive') {
+    // el carril está abierto (por delegación o «hecho y avisado»): lo que falta es la firma de una persona, no un carril.
+    // Sin la lista de lo sensible no se sabe si el archivo lo es: se dice eso, no que es sensible
+    if (/no encuentra la lista de lo sensible/.test(String(r.reason))) {
+      return [
+        '⛔ camino rápido delegado — FALTA LA LISTA DE LO SENSIBLE',
+        viaLine.replace(/\n$/, ''),
+        `  Ibas a editar ${f}: ${r.reason}.`,
+        '  Sin esa lista no se sabe qué archivos son sensibles, y el camino rápido delegado no toca ninguno. Suele ser una',
+        '  instalación del arnés incompleta: reinstalarlo la trae. Mientras tanto, pedíselo a una persona.',
+      ].filter((l) => l !== '').join('\n');
+    }
+    return [
+      '⛔ camino rápido delegado — ARCHIVO SENSIBLE',
+      viaLine.replace(/\n$/, ''),
+      `  Ibas a editar ${f}: ${r.reason}.`,
+      '  Un camino rápido abierto por delegación no toca firmas, frenos, avisos, permisos ni el perfil.',
+      '  Salidas: pedíselo a una persona (que abra ella el camino rápido, con su firma), o escribí la historia que lo lleva.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'batch-out-of-list') {
+    const lista = (Array.isArray(r.lista) ? r.lista : []).slice(0, TOPE_DE_NOMBRES);
+    return [
+      '⛔ tycon-pipeline — FUERA DE LA PARTE',
+      viaLine.replace(/\n$/, ''),
+      `  ${r.reason}.`,
+      ...(lista.length ? ['  La lista de la parte, como quedó al aprobar el plan:', ...lista.map((a) => `   · ${a}`)] : []),
+      '  El plan lo aprobó la coordinadora para esa parte: la implementación se queda en su lista. Agregar el archivo a',
+      '  `files:` de la parte en la historia, o a otra lista, no la amplía.',
+      '  Salida: que una persona apruebe el plan para lo que hace falta (con «Aprobar el plan» pendiente otra vez), o',
+      '  dejá ese cambio para su parte.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'adhoc-out-of-list') {
+    // los dos perfiles: en un producto amplía la lista el dev con su sí; en el arnés, una persona o la delegación
+    // (que no saca entradas firmadas). Un producto no nombra las piezas de la capa de mantenimiento.
+    const lista = (Array.isArray(r.lista) ? r.lista : []).slice(0, TOPE_DE_NOMBRES);
+    const pedido = `${signatureCommand(MARKER_REL)} adhoc set '{"reason":"<el mismo motivo>","datos":"sin-cambio","allowedFiles":[<la lista de antes>, "<el archivo nuevo>"]}'`;
+    return [
+      '⛔ camino corto — FUERA DE LA LISTA',
+      viaLine.replace(/\n$/, ''),
+      `  ${r.archivo || f} no está en la lista de archivos de este camino corto. La lista:`,
+      ...lista.map((a) => `   · ${a}`),
+      ...(Array.isArray(r.lista) && r.lista.length > TOPE_DE_NOMBRES ? [`   · y ${r.lista.length - TOPE_DE_NOMBRES} más`] : []),
+      ...(r.vecino ? [`  Ese archivo es de ${r.vecino}: ampliar la lista no alcanza.`] : []),
+      harness
+        ? '  Para tocarlo, ampliá la lista: es otra autorización del mismo tipo que abrir, que da una persona (por delegación, la lista nueva contiene entera la firmada):'
+        : '  Para tocarlo, ampliá la lista: lo aprobás vos con tu sí, como al abrir:',
+      `   ${pedido}`,
+      '  Si el arreglo creció, la salida es una historia: `Skill(skill="tycon-create-story", …)`.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'state-dir' && BOARD_FILE.test(String(f))) {
+    // el tablero de la oficina tiene su comando: valida cada fila y pone el número
+    return [
+      '⛔ El tablero se escribe sólo con board.js, que valida cada fila y pone el número.',
+      viaLine.replace(/\n$/, ''),
+      `   Para esto: node ${BOARD_JS} set T-41 estado=curso nota="…"`,
+      '   (una fila nueva: add; cerrarla: close T-41; el tablero entero: save --from <tu archivo aparte>)',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'state-dir') {
     return [
       '⛔ tycon-pipeline — ESCRITURA DIRECTA AL ESTADO DEL PIPELINE',
@@ -332,8 +619,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '⛔ una constancia de cambio de control no se escribe a mano',
       viaLine.replace(/\n$/, ''),
       `  ${f}`,
-      '  La escribe `bash scripts/ci/run-base-controls.sh approve`: el dueño en su terminal, o la sesión designada con',
-      '  la frase del dueño (`--relayed-by`). `pending` da los dos comandos.',
+      '  La escribe `bash scripts/ci/run-base-controls.sh approve`: una persona en su terminal, o la sesión designada con',
+      '  la frase de la persona (`--relayed-by`). `pending` da los dos comandos.',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'adversarial-skip-record') {
@@ -341,8 +628,75 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '⛔ la constancia del salteo del pase adversarial no se escribe a mano',
       viaLine.replace(/\n$/, ''),
       `  ${f}`,
-      '  La escribe `marker.js sign-adversarial-skip --story <S> --reason "<motivo>"`, con la firma del dueño en la',
+      '  La escribe `marker.js sign-adversarial-skip --story <S> --reason "<motivo>"`, con la firma de una persona en la',
       '  ventana de permiso o en su terminal (`--terminal`). Sin ella, el pase corre.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'owner-approvals') {
+    return [
+      '⛔ el registro de las aprobaciones de la persona no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escribe sólo el gancho que anota su click en el cuadro de opciones o su «aprobado», y lo gastado queda en',
+      '  `usadas/`: escribirlo es fingir una aprobación, y borrar ahí devuelve una que ya se usó. Si falta una firma, pedile',
+      '  la aprobación a la persona.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'terminal-acknowledgments') {
+    return [
+      '⛔ la marca de una constancia dada en la terminal no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  La deja sólo `harness.js sign acknowledge`, en la terminal de la persona, junto con su renglón del registro de',
+      '  aprobaciones: escribirla es fingir una constancia de Codex. Si falta una, pedile a la persona que la dé en su terminal.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'launched-sessions') {
+    return [
+      '⛔ el registro de las sesiones que abrió la coordinadora no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escribe sólo `coordination.js` al abrir y cerrar una sesión de fondo: sacar un renglón deja a esa sesión',
+      '  preguntarle a la persona. Si una pregunta tiene que llegarle, mandásela a la coordinadora.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'office-mailbox') {
+    return [
+      '⛔ el buzón de la oficina no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escriben sólo la oficina (/office), el vigilante de cada sesión y `office-message.js verify`: escribirlo es fingir',
+      '  un mensaje de la persona, y borrar lo usado devuelve uno ya gastado. Para hablarle a una sesión, la persona le',
+      '  escribe desde la oficina o en su pestaña.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'advisor-runs') {
+    return [
+      '⛔ el registro de corridas de los revisores no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escribe sólo el arnés al lanzar cada revisor. El cierre lo lee para ver lo que dijo un revisor que no quedó en el',
+      '  registro de críticos: borrarlo o escribirlo es saltear esa revisión. Si un revisor falló, se vuelve a correr.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'reported-criticals') {
+    return [
+      '⛔ el registro de críticos reportados no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escriben sólo el arnés al lanzar un revisor y al leer lo que contestó: escribirlo o borrarlo es cambiar lo que dijo',
+      '  un revisor. Si un revisor no se pudo leer, se vuelve a correr; si un crítico no aplica, va en findings.json con su',
+      '  motivo, o lo exime una persona (marker.js waive-critical).',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'plan-review') {
+    return [
+      '⛔ escritura a mano de la constancia de la revisión del plan',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  La escriben sólo marker.js plan-review y el corredor del pase (workflow-lite.js con el guion del pase del arnés,',
+      '  con el --out que dio la preparación): escribir el resultado o la constancia es darse un «aprobado». Para revisar',
+      '  el plan, corré el comando que devuelve marker.js plan-review.',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'pending-approvals') {
@@ -350,8 +704,9 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '⛔ el registro de aprobaciones de pendientes no se escribe a mano',
       viaLine.replace(/\n$/, ''),
       `  ${f}`,
-      '  Un pendiente nuevo lo aprueba la coordinadora desde su pestaña: `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>`',
-      '  (o la persona en la ventana de permiso, o en su terminal con `--terminal`). Esa firma escribe la línea.',
+      '  Un pendiente nuevo lo aprueba la coordinadora desde su pestaña, para la sesión que lo abrió:',
+      '  `marker.js approve-pending --id <CÓDIGO> --repo <carpeta absoluta> --for-session <sesión que lo abrió>` (o la persona',
+      '  en la ventana de permiso, o en su terminal con `--terminal`). Esa firma escribe la línea.',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'plan') {
@@ -359,7 +714,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       `⛔ tycon-pipeline — CÓDIGO ANTES DEL PLAN APROBADO (story ${marker?.storyId || '?'})`,
       viaLine + '',
       `  Ibas a editar código (${f}) y «Aprobar el plan» —el user aprueba el plan— todavía está PENDIENTE en el`,
-      '  marker. El orden del pipeline es: validar story → BMAD arma plan → EL USER LO APRUEBA → recién ahí',
+      '  marker. El orden del pipeline es: validar story → armar el plan → EL USER LO APRUEBA → recién ahí',
       '  tests (ATDD) y código. Saltearse el HITL del plan es exactamente lo que este portón impide.',
       '',
       '  Salidas:',
@@ -367,9 +722,10 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '      presentáselo al user. NO codees "mientras tanto".',
       '   2. Si el user YA aprobó el plan (palabras claras de proceder, sin condiciones) →',
       // el paso como lo acepta el marcador de esta ejecución: por nombre en el nuevo, por número en el viejo
-      `        node ${MARKER_JS} complete-step ${require('./steps.js').schemeOf(marker) === 2 ? 'approve-plan' : '3'} --approved "<cita textual de la aprobación>"`,
-      ...(storyNeedsMockup(marker) ? ['        --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"   (story con pantalla: la maqueta la ve una persona, también con LOW)'] : []),
-      '      (auto-aprobación Nivel 2, SOLO story LOW-risk — se verifica: `--auto-approved "<criterios>"`).',
+      `        ${signatureCommand(MARKER_REL)} complete-step ${require('./steps.js').schemeOf(marker) === 2 ? 'approve-plan' : '3'} --approved "<cita textual de la aprobación>"`,
+      ...(storyNeedsMockup(marker) ? ['        --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"   (story con pantalla: la maqueta la ve una persona)'] : []),
+      '      (un plan de rutina lo aprueba el «aprobado» de su revisión automática, con o sin coordinadora;',
+      '      uno delicado, o con plan_review.routine_approval: person, el user).',
       '   3. Si estás retomando un pipeline (sesión nueva / compactación) → `pipeline.js next` +',
       '      `marker.js get` y cerrá los pasos que efectivamente ya pasaron, con su evidencia.',
       '',
@@ -377,20 +733,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
     ].join('\n');
   }
   if (r.kind === 'adhoc-cap') {
-    return [
-      '⛔ tycon-pipeline — EL AD-HOC YA NO ES UN AJUSTE CHICO',
-      viaLine + '',
-      `  ${r.reason}. Ibas a tocar otro más: ${f}.`,
-      '  Un hotfix no recorre media base de código. Si el trabajo creció, es una funcionalidad y va por',
-      '  story + pipeline (con plan aprobado, tests primero, advisors, DoD).',
-      '',
-      '  Salidas (la decide el USER, no vos — preguntale):',
-      '   (a) Story + pipeline → `Skill(skill="tycon-create-story", …)` (si no existe) y después',
-      '       `Skill(skill="tycon-pipeline", args="implementemos la story X.Y")`.',
-      '   (b) El user confirma que sigue siendo un ajuste acotado → re-declará con cupo mayor y motivo:',
-      `        node ${MARKER_JS} adhoc set '{"reason":"<motivo del user>","maxFiles":<N>}'`,
-      '       (queda en adhoc.log con el cupo anterior y el nuevo).',
-    ].join('\n');
+    return textoDelTope({ harness, tocados: r.tocados, cupo: r.cupo, ibaA: f, via: viaLine.replace(/\n$/, '') });
   }
   // no-lane
   const resume = otherMarkers.length
@@ -416,14 +759,17 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
     '       El pipeline setea el marker en el «Arranque» y este portón se abre solo.',
     '',
     '   (b) HOTFIX / AJUSTE CHICO SIN STORY (bug puntual, refactor acotado, cleanup) → carril ad-hoc:',
-    `         node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué, en palabras del user>"}'`,
-    `       Cupo por default: ${DEFAULT_ADHOC_MAX_FILES} archivos de implementación distintos (ajustable con "maxFiles"). Queda en adhoc.log.`,
+    `         ${signatureCommand(MARKER_REL)} adhoc set '{"reason":"<qué y por qué>","datos":"sin-cambio"}'`,
+    '       "datos": "sin-cambio" sólo si el cambio no cambia de dónde sale un dato ni quién lo puede ver; si lo cambia, va',
+    '       por historia, aunque sea corta. Ante la duda, historia.',
+    '       Lo aprueba una persona en la ventana de permiso, que le muestra el motivo y el cupo: corré el comando solo, en',
+    `       su forma exacta. Cupo de la organización: ${maximo} archivos de implementación distintos (ajustable con "maxFiles"). Queda en adhoc.log.`,
     ...resume,
     '',
     '  🔴 QUIÉN ELIGE: el USER. Si YA lo dijo —"hablar con Barry"/quick-dev, "un hotfix", "arreglá esto',
-    '     rápido", o "implementemos la story X"— ESO es la decisión: declará el carril citándolo, sin',
-    '     re-preguntar. Elegir (b) por tu cuenta para una feature es el anti-pattern que motivó este',
-    '     portón (2026-08-19: el agente anunció "story + pipeline" y se largó a codear).',
+    '     rápido", o "implementemos la story X"— seguí por ese carril sin re-preguntar: el (b) igual lo',
+    '     aprueba él en la ventana. Elegir (b) por tu cuenta para una feature es el anti-pattern que motivó',
+    '     este portón (2026-08-19: el agente anunció "story + pipeline" y se largó a codear).',
     '',
     '  🔴 SI NO LO DIJO — PREGUNTALE, y prohibido cerrar el turno pegándole este texto:',
     '     esta salida está escrita para VOS, no para él. "carril", "marker", "ad-hoc", "story Mary+GOLD",',
@@ -434,8 +780,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
     '',
     ...PREGUNTA_SIN_CARRIL.map((l) => `       ${l}`),
     '',
-    '     Su respuesta destraba: cualquier frase clara suya vale —"arreglo rápido: …", "es un hotfix",',
-    '     "sin story"— para declarar (b) citándolo; "con historia" es (a).',
+    '     Su respuesta decide el carril: "arreglo rápido: …", "es un hotfix" o "sin story" es (b), que él',
+    '     aprueba después en la ventana de permiso; "con historia" es (a).',
     '   · SUBAGENTE (sin AskUserQuestion): no elijas vos. Cerrá tu reporte pidiéndole al orquestador',
     '     que le pregunte al user cuál de las dos va, y no toques el archivo.',
     '',
@@ -464,21 +810,16 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
 //
 // El diseño no adivina:
 //   · Carril PIPELINE = hay marker (el pipeline CORRIÓ su Arranque — estado real, no una frase).
-//   · Carril AD-HOC   = `marker.js adhoc set` citando palabras del user (reasonInPrompts, mecánico)
-//                       o, si la cita no alcanza, el clasificador por modelo leyendo los prompts
-//                       REALES del user decide — castellano lo interpreta un modelo, no un regex
-//                       (lib/lane-classifier.js; sin modelo, se deniega y se le pregunta al user).
+//   · Carril AD-HOC   = `marker.js adhoc set`, que el dueño aprueba en la ventana de permiso (la firma
+//                       `adhoc-lane`). Nada del chat lo abre: la conversación guardada la puede escribir
+//                       la sesión.
 //   · Sin carril       = el portón bloquea el primer toque de código y el agente PREGUNTA en
 //                       castellano llano. Una pregunta por sesión: ése es el costo total de no
 //                       adivinar, y es más barato que cualquiera de esos casos.
 
-// Pedido explícito de implementar una STORY (id N.M o pipeline nombrado). Fuente ÚNICA: los usa
-// el reminder de on-prompt.js (avisar "esto va por pipeline") y el veto mecánico de marker.js
-// (sin modelo disponible, el agente puede citar
-// "implementemos la story X" como motivo de un AD-HOC y pasar — el texto citado ES un pedido de
-// story, y eso se detecta sin adivinar nada: el user lo escribió con id y todo).
-// 🔴 Esto NO es detectLane volviendo: no corre en cada prompt ni fija carril — juzga UNA
-// declaración explícita, mirando sólo el prompt que la declaración cita como su autorización.
+// Pedido explícito de implementar una STORY (id N.M o pipeline nombrado). Lo usa el aviso de
+// on-prompt.js ("esto va por pipeline").
+// 🔴 Esto NO es detectLane volviendo: no fija carril, sólo avisa.
 const STORY_INTENT_PATTERNS = [
   /\bimplement(emos|ar|á|alos?|emos)\b.*\b\d+\.\d+(\.\d+)?\b/i,
   /\b(arranqu|empez|hag|trabajemos|codeemos)\w*\b.*\b(story|historia|tarea)\s*\d+\.\d+(\.\d+)?\b/i,
@@ -486,56 +827,6 @@ const STORY_INTENT_PATTERNS = [
   /^\s*(implementemos|implementar|implementá)\s+(la\s+)?\d+\.\d+(\.\d+)?\b/i,
   /\b(apply|run|correr|ejecutar)\b.*\btycon[- ]pipeline\b/i,
 ];
-
-// El registro de una versión anterior guarda textos sueltos, sin origen. Lo que llegó de otra sesión, de un agente o como
-// nota lateral empieza con lo que le pone Claude Code; eso no cuenta, y el resto se lee como antes hasta que vence la
-// sesión.
-const AJENO_EN_REGISTRO_VIEJO = /^\s*(?:Another Claude session sent a message:|<cross-session-message\b|<agent-message\b|Here is a note offered by a side agent)/;
-
-/**
- * Los textos que escribió el dueño, en orden. Cada entrada del registro es `{ texto, origen, de? }` (cuenta sólo
- * `origen: 'dueno'`, que sale de la marca de Claude Code, no del texto) o un texto de la forma vieja.
- */
-function soloDelDueno(entradas) {
-  const out = [];
-  for (const e of Array.isArray(entradas) ? entradas : []) {
-    if (typeof e === 'string') { if (!AJENO_EN_REGISTRO_VIEJO.test(e)) out.push(e); continue; }
-    if (e && e.origen === 'dueno' && typeof e.texto === 'string') out.push(e.texto);
-  }
-  return out;
-}
-
-/** ¿Alguno de los prompts del dueño que CONTIENEN la cita es un pedido explícito de story? */
-function quotedPromptAsksStory(reason, prompts) {
-  const r = normalizeWords(reason);
-  if (!r) return false;
-  return soloDelDueno(prompts)
-    .filter((p) => normalizeWords(p).includes(r))
-    .some((p) => STORY_INTENT_PATTERNS.some((re) => re.test(String(p))));
-}
-
-/** Normaliza texto para comparar "palabras del user": minúsculas, sin acentos, sin comillas, espacios colapsados. */
-function normalizeWords(s) {
-  return String(s || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[`"'“”‘’]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-const ADHOC_REASON_MIN_CHARS = 8;
-
-/**
- * ¿El motivo del ad-hoc es un fragmento LITERAL de algo que escribió el user? (≥8 caracteres
- * normalizados). Cierra el agujero de "reason en palabras del user" que nadie verificaba: una
- * paráfrasis del agente no pasa; citarlo, sí. Lo de otra sesión, de un agente o sin marca no se cita.
- */
-function reasonInPrompts(reason, prompts) {
-  const r = normalizeWords(reason);
-  if (r.length < ADHOC_REASON_MIN_CHARS) return false;
-  return soloDelDueno(prompts).some((p) => normalizeWords(p).includes(r));
-}
 
 /** El cartel de borrar o mover un marcador de ejecución por consola: qué se tocó y qué comando usar en su lugar. */
 function markerDeleteMessage(rutas, via) {
@@ -568,8 +859,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
-  reasonInPrompts, soloDelDueno, normalizeWords, ADHOC_REASON_MIN_CHARS,
-  STORY_INTENT_PATTERNS, quotedPromptAsksStory,
-  DEFAULT_ADHOC_MAX_FILES, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  STORY_INTENT_PATTERNS,
+  DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };

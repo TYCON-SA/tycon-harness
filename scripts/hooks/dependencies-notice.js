@@ -139,7 +139,7 @@ const unaLinea = (t, max) => String(t === undefined || t === null ? '' : t).repl
  */
 function fuentePublicada(raiz, gitCmd = 'git') {
   const git = (args) => execFileSync(gitCmd, ['-C', raiz, ...args],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 64 * 1024 * 1024 });
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 64 * 1024 * 1024 });
   const porque = (e) => (e && e.code === 'ENOENT' ? 'no se pudo ejecutar git'
     : e && e.code === 'ETIMEDOUT' ? 'git tardó más de 5 s' : `git salió ${e && e.status != null ? e.status : 'con error'}`);
   try {

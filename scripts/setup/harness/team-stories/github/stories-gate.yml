@@ -25,16 +25,24 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
+      # La versión del arnés: `main` por defecto, o la variable del repo TYCON_HARNESS_REF (una rama, una etiqueta o un
+      # commit) para fijarla. Fijada, el repo queda atrás en los arreglos hasta que la sube. El commit que se usó queda
+      # impreso, para poder reproducir un veredicto viejo.
       - name: El portón del arnés contra la rama destino del pedido
         env:
           BASE: ${{ github.base_ref }}
+          HARNESS_REF: ${{ vars.TYCON_HARNESS_REF || 'main' }}
         run: |
           set -u
           TCG="${RUNNER_TEMP}/tcg"
-          if ! git clone --quiet --depth 1 --single-branch --branch main --no-tags https://github.com/TYCON-SA/tycon-harness.git "${TCG}"; then
-            echo "::error::no pude bajar el arnés público: un control que no corrió no está aprobado"
+          # `clone --branch` no acepta un commit: se baja la versión con fetch y se pasa a ella con checkout
+          if ! { git init --quiet "${TCG}" \
+            && git -C "${TCG}" fetch --quiet --depth 1 https://github.com/TYCON-SA/tycon-harness.git "${HARNESS_REF}" \
+            && git -C "${TCG}" checkout --quiet FETCH_HEAD; }; then
+            echo "::error::no pude bajar el arnés público en ${HARNESS_REF}: un control que no corrió no está aprobado"
             exit 1
           fi
+          echo "Arnés público en $(git -C "${TCG}" rev-parse HEAD) (${HARNESS_REF})"
           GATE="${TCG}/scripts/ci/tycon-ci-gate.js"
           if [ ! -f "${GATE}" ]; then
             echo "::error::no encontré el portón en ${GATE}: un control ausente no es un control aprobado"
@@ -54,9 +62,21 @@ jobs:
           set -u
           IMAGE=zricethezav/gitleaks:v8.30.1
           for intento in 1 2 3; do docker pull -q "${IMAGE}" >/dev/null && break; [ "${intento}" = 3 ] && { echo "::error::no pude bajar ${IMAGE}: el escaneo no corrió"; exit 1; }; sleep $((intento * 10)); done
+          # La configuración: las reglas de fábrica (o el .gitleaks.toml del repo, si trae uno) más la excepción de las huellas
+          # de la evidencia del arnés, copiada tal cual de scripts/ci/secret-scan/evidence-hashes.toml del arnés
+          CFG="${RUNNER_TEMP}/gitleaks-evidencia.toml"
+          if [ -f "${GITHUB_WORKSPACE}/.gitleaks.toml" ]; then printf '[extend]\npath = "/repo/.gitleaks.toml"\n\n' > "${CFG}"; else printf '[extend]\nuseDefault = true\n\n' > "${CFG}"; fi
+          cat >> "${CFG}" <<'GITLEAKS_HUELLAS'
+          [[allowlists]]
+          description = "huellas git de la evidencia del arnés: ruta de archivo como clave y 40 hex como valor, sólo bajo .advisors/"
+          condition = "AND"
+          regexTarget = "match"
+          paths = ['''(^|/)\.advisors/''']
+          regexes = ['''^[\w.-]*\.(js|mjs|cjs|ts|tsx|jsx|json|jsonl|md|cs|csproj|sln|sh|ps1|py|yml|yaml|sql|txt|html|css|scss|xml|toml|config|lock|svg|png)"\s*:\s*"[0-9a-f]{40}"$''']
+          GITLEAKS_HUELLAS
           ESPERADOS=$(git rev-list --count --no-merges "origin/${BASE}..HEAD")
-          SALIDA=$(docker run --rm -v "${GITHUB_WORKSPACE}":/repo -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
-            "${IMAGE}" detect --source /repo --log-opts="--no-merges origin/${BASE}..HEAD" --redact --verbose --no-banner --no-color 2>&1) && RC=0 || RC=$?   # Actions corre con bash -e: sin esto, un hallazgo (sale 1) corta el paso antes de mostrarlo
+          SALIDA=$(docker run --rm -v "${GITHUB_WORKSPACE}":/repo -v "${CFG}":/cfg/gitleaks.toml:ro -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            "${IMAGE}" detect --source /repo --config /cfg/gitleaks.toml --log-opts="--no-merges origin/${BASE}..HEAD" --redact --verbose --no-banner --no-color 2>&1) && RC=0 || RC=$?   # Actions corre con bash -e: sin esto, un hallazgo (sale 1) corta el paso antes de mostrarlo
           printf '%s\n' "${SALIDA}"
           ESCANEADOS=$(printf '%s\n' "${SALIDA}" | sed -n 's/.* \([0-9][0-9]*\) commits scanned.*/\1/p' | tail -1)
           if [ "${RC}" -ne 0 ] && [ "${RC}" -ne 1 ]; then echo "::error::gitleaks terminó con código ${RC}: el escaneo no corrió bien"; exit 1; fi

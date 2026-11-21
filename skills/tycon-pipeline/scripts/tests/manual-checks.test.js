@@ -128,7 +128,7 @@ test('ManualChecks_PuertaBashLaMuestra @story-7.46 @ac-9', () => {
   const msg = mostrar(lab, '2');
   assert.match(msg, /Vas a marcar como probado a mano, en la historia 9\.94:/);
   assert.match(msg, /Criterio 2 — Un pedido ya despachado no muestra el botón «Cancelar»\./);
-  assert.match(msg, /aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No»\. Una respuesta en el chat no lo marca\./);
+  assert.match(msg, /aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No»\. Lo marca esa aprobación, no otra respuesta en el chat\./);
   assert.doesNotMatch(msg, /contestá|«probé /, 'no enseña a contestar en el chat');
   const g = gates(lab).filter((x) => x.name === 'manual-check-shown');
   assert.equal(g.length, 1);
@@ -184,7 +184,7 @@ test('MarcaAMano_ForSession_EscribeLaCorridaDestino (T5) @story-8.142 @ac-2 @ac-
   const args = ['mark-tested', '--acs', '1,2', '--approved-by', 'Dev de Prueba', '--for-session', 's-dest'];
   const cmd = `node ${MARKER} ${args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`;
   const ahora = Date.now();
-  const p = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+  const p = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
     escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
   assert.equal(p.decision, 'ask', p.texto);
   const r = spawnSync(process.execPath, [MARKER, ...args], { cwd: lab.repo, encoding: 'utf8',
@@ -243,6 +243,20 @@ test('ManualChecks_Apagada_NoAnota @story-7.46 @ac-11', () => {
   const r = marcar(lab, '2');
   assert.equal(r.status, 0, r.stderr);
   assert.match(`${r.stdout}${r.stderr}`, /tu organización no pide la marca a mano; no anoté nada/);
+  assert.equal(marcas(lab).length, 0);
+});
+
+// 🔴 Falla con: el chequeo previo de la ventana que sale 0 sin su ok, y la ventana que se abre para una firma sin efecto.
+test('ManualChecks_Apagada_ElChequeoPrevioNiega_SinVentana', () => {
+  const lab = laboratorio({ opcion: null });
+  const { PRECHEQUEO, PRECHEQUEO_OK, comprobarConElGuion } = require(path.join(ARNES, 'scripts', 'lib', 'owner-window.js'));
+  const r = lab.marker(['mark-tested', '--acs', '2'], { [PRECHEQUEO]: '1' }, { ventana: false });
+  assert.notEqual(r.status, 0, 'el chequeo previo tiene que negar: si sale 0, la ventana se abre igual');
+  assert.doesNotMatch(r.stdout, new RegExp(PRECHEQUEO_OK));
+  assert.match(r.stderr, /no hace falta firmar/);
+  const c = comprobarConElGuion({ firma: 'manual-test', palabras: [MARKER, 'mark-tested', '--acs', '2'], cwd: lab.repo, sesion: lab.sid, casa: lab.home, env: lab.env });
+  assert.ok(c && c.niega, `la ventana tiene que saber que se niega: ${JSON.stringify(c)}`);
+  assert.match(c.niega, /tu organización no pide la marca a mano/);
   assert.equal(marcas(lab).length, 0);
 });
 

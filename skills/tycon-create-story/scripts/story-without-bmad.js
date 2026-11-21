@@ -42,6 +42,7 @@ const PIPELINE_LIB = path.join(__dirname, '..', '..', 'tycon-pipeline', 'scripts
 const { probeStoryFile, declaredStoryId } = require(path.join(PIPELINE_LIB, 'story-discovery.js'));
 const { productSiblings } = require(path.join(PIPELINE_LIB, 'product-siblings.js'));
 const { writeRecord, RECORD_DIR } = require(path.join(PIPELINE_LIB, 'first-time-record.js'));
+const { companionRoots, resolveDeclared } = require(path.join(PIPELINE_LIB, 'companion-repos.js'));
 
 const BMAD_CONFIG = path.join('_bmad', 'bmm', 'config.yaml');
 const EPIC = 1;
@@ -233,30 +234,83 @@ function siblingStoryRepos(repo) {
   return out;
 }
 
+/**
+ * El repo de historias que declara el repo, ya comprobado: `null` sin declaración, o `{ abs }` (la carpeta, que puede ser
+ * el mismo repo). Frena si lo declarado no es un repo al lado de este o no está clonado.
+ */
+function declaredStoriesPlace(repo) {
+  const declared = declaredStoriesRepo(repo);
+  if (!declared) return null;
+  const abs = path.resolve(repo, declared.repo);
+  // lo declarado es un repo del mismo producto: al lado de este o dentro de su carpeta, nunca cualquier carpeta del disco
+  const rel = path.relative(path.dirname(repo), abs);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Refusal(`\`.tycon/advisors.yaml\` dice que las historias están en ${shown(declared.repo)}, que no es un repo al lado de este. Declará la ruta del repo de historias del producto (por ejemplo ../Project).`);
+  }
+  if (abs !== repo && !fs.existsSync(path.join(abs, '.git'))) {
+    throw new Refusal(`Las historias de este producto están en ${shown(declared.remote || declared.repo)}, y no está clonado en ${abs}: clonalo ahí o decime dónde está. No creo la historia en este repo.`);
+  }
+  return { abs };
+}
+
 /** Dónde ya hay historias de este producto: `{ places, siblingsOnly }`. Frena si el repo declarado no está clonado. */
 function storyPlaces(repo, { thisRepo = false } = {}) {
   const places = [];
   const own = storiesOf(repo);
   if (own.ids.length && !own.ids.every((id) => FIRST_TIME_ID.test(id))) places.push(placeOf(repo, own));
-  const declared = declaredStoriesRepo(repo);
+  const declared = declaredStoriesPlace(repo);
   if (declared) {
-    const abs = path.resolve(repo, declared.repo);
-    // lo declarado es un repo del mismo producto: al lado de este o dentro de su carpeta, nunca cualquier carpeta del disco
-    const rel = path.relative(path.dirname(repo), abs);
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
-      throw new Refusal(`\`.tycon/advisors.yaml\` dice que las historias están en ${shown(declared.repo)}, que no es un repo al lado de este. Declará la ruta del repo de historias del producto (por ejemplo ../Project).`);
-    }
-    if (abs !== repo) {
-      if (!fs.existsSync(path.join(abs, '.git'))) {
-        throw new Refusal(`Las historias de este producto están en ${shown(declared.remote || declared.repo)}, y no está clonado en ${abs}: clonalo ahí o decime dónde está. No creo la historia en este repo.`);
-      }
-      places.push(placeOf(abs));
-    }
+    if (declared.abs !== repo) places.push(placeOf(declared.abs));
     return { places, siblingsOnly: false };
   }
   if (thisRepo) return { places, siblingsOnly: false };
   const siblings = siblingStoryRepos(repo);
   return { places: places.concat(siblings), siblingsOnly: places.length === 0 && siblings.length > 0 };
+}
+
+/**
+ * La carpeta de historias de BMAD que declara el repo (`_bmad/bmm/config.yaml → implementation_artifacts`, con
+ * `{project-root}` por la raíz), o null: sin la clave, o con un archivo que no se puede leer, es «no declarado».
+ */
+function implementationArtifactsDir(repo) {
+  let txt;
+  try { txt = fs.readFileSync(path.join(repo, BMAD_CONFIG), 'utf8'); } catch { return null; }
+  const m = /^implementation_artifacts\s*:\s*(.+?)\s*(?:#.*)?$/m.exec(txt);
+  if (!m) return null;
+  const v = m[1].trim().replace(/^(['"])(.*)\1$/, '$2').replace(/\{project-root\}/g, repo);
+  return v ? path.resolve(repo, v) : null;
+}
+
+/**
+ * Dónde están las historias de un repo para la oficina: los mismos lugares que `storyPlaces`, sin el filtro de la
+ * primera vez (un repo cuyas historias son todas de la primera épica también da su carpeta) y con la carpeta de
+ * BMAD, que manda sobre `specs/` o `stories/`. Nunca tira: `{ places, problem }`. `storyPlaces` queda igual para crear
+ * historias.
+ */
+function projectStoryPlaces(repo) {
+  try {
+    const own = (r) => {
+      const bmadDir = implementationArtifactsDir(r);
+      if (bmadDir) return { repo: r, dir: bmadDir, count: null, bmad: true };
+      const s = storiesOf(r);
+      return s.ids.length ? placeOf(r, s) : null;
+    };
+    const places = [];
+    const mine = own(repo);
+    if (mine) places.push(mine);
+    const declared = declaredStoriesPlace(repo);
+    if (declared) {
+      if (declared.abs !== repo) places.push(own(declared.abs) || placeOf(declared.abs));
+      return { places: places.filter((p) => p.dir), problem: null };
+    }
+    for (const p of siblingStoryRepos(repo)) {
+      const o = own(p.repo);
+      if (o || p.dir) places.push(o || p);
+    }
+    return { places: places.filter((p) => p.dir), problem: null };
+  } catch (e) {
+    return { places: [], problem: (e && e.message) || String(e) };
+  }
 }
 
 /** Lo que el agente le dice a la persona cuando ya hay historias: dónde están y, con más de un lugar, la pregunta. */
@@ -291,6 +345,23 @@ function problems(a) {
   if (!text(a.title)) out.push('falta el título');
   if (/["\\\n]/.test(a.title || '')) out.push('el título no puede llevar comillas dobles, barras invertidas ni saltos de línea (usá comillas simples)');
   for (const k of ['asA', 'iWant', 'soThat']) if (!text(a[k])) out.push(`falta «${{ asA: 'como', iWant: 'quiero', soThat: 'para' }[k]}»`);
+  // la intención: qué se quiere resolver y qué tiene que pasar (las preguntas, si hubo)
+  if (!text(a.problem)) out.push('falta «problem»: qué se quiere resolver');
+  if (!text(a.outcome)) out.push('falta «outcome»: qué tiene que pasar cuando esté resuelto');
+  if (a.questions !== undefined) {
+    if (!Array.isArray(a.questions)) out.push('«questions» tiene que ser una lista');
+    else {
+      a.questions.forEach((q, i) => {
+        for (const k of ['question', 'why', 'who']) {
+          if (!text(q && q[k])) out.push(`a la pregunta ${i + 1} le falta «${k}»`);
+          // lo que el lector de intenciones toma por un comentario, un bloque de código o una marca rompería la tabla
+          // (`--!>` también cierra un comentario en HTML)
+          else if (/<!--|--!?>|```|~~~|\[falta:/.test(q[k])) out.push(`la pregunta ${i + 1}: «${k}» no puede llevar «<!--», «-->», «--!>», «\`\`\`», «~~~» ni «[falta:»`);
+        }
+        if (typeof (q && q.blocks) !== 'boolean') out.push(`la pregunta ${i + 1}: «blocks» va true o false`);
+      });
+    }
+  }
   const criteria = Array.isArray(a.criteria) ? a.criteria : [];
   const tests = Array.isArray(a.tests) ? a.tests : [];
   if (!criteria.length) out.push('no hay ningún criterio de aceptación');
@@ -463,6 +534,44 @@ function render(a, number, verify, exists = () => false) {
   ].join('\n');
 }
 
+/** La intención de la historia (story-format.md, «La intención»): en borrador, con las preguntas como filas abiertas. */
+function renderIntent(a, id) {
+  const qs = a.questions || [];
+  return [
+    '---',
+    `id: ${id}`,
+    'status: draft',
+    `objective: ${JSON.stringify(oneLine(a.problem))}`,
+    'outcomes:',
+    `  - ${JSON.stringify(oneLine(a.outcome))}`,
+    '---',
+    '',
+    `# ${oneLine(a.title)}`,
+    '',
+    '## Preguntas abiertas',
+    '',
+    ...(qs.length
+      ? ['| # | Pregunta | Por qué importa | Quién contesta | Bloquea | Estado | Respuesta | Fuente |', '|---|---|---|---|---|---|---|---|',
+        ...qs.map((q, i) => `| Q${i + 1} | ${cell(q.question)} | ${cell(q.why)} | ${cell(q.who)} | ${q.blocks ? 'sí' : 'no'} | abierta |  | — |`)]
+      : ['Ninguna.']),
+    '',
+    '## Decisiones reservadas',
+    '',
+    'Ninguna.',
+    '',
+  ].join('\n');
+}
+
+/** Escribe `contenido` en `target` sin pisar nada: un archivo temporal y un enlace duro, que falla si el destino existe. */
+function writeNew(target, contenido) {
+  const tmpFile = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpFile, contenido, { flag: 'wx' });
+  try { fs.linkSync(tmpFile, target); } finally {
+    // si borrar el temporal falla, no tapa el error del enlace (un «ya existe» tiene que seguir diciéndose así)
+    try { fs.unlinkSync(tmpFile); } catch (_e) { /* el temporal queda; no cambia lo que se escribió */ }
+  }
+}
+
 function write(repo, answersPath, home, { thisRepo = false } = {}) {
   if (isBmad(repo)) throw new Refusal(`este repo es un proyecto BMAD (${BMAD_CONFIG}): la historia se crea con el flujo de BMAD, no con el modo primera vez`);
   // un repo que ya tiene historias propias, o cuyo producto las tiene en otro lado, no escribe una de primera vez
@@ -476,30 +585,40 @@ function write(repo, answersPath, home, { thisRepo = false } = {}) {
   if (bad.length) throw new Refusal(`no escribí la historia:\n${bad.map((p) => `  - ${p}`).join('\n')}`);
   const verify = verifyCommands(repo, answers);
   const { dir, number } = nextStory(repo);
-  const target = path.join(dir, `story-${number}-${slug(answers.title)}.md`);
-  if (fs.existsSync(target)) throw new Refusal(`no escribí la historia: ya existe ${target} y no lo piso`);
+  const name = `story-${number}-${slug(answers.title)}`;
+  const target = path.join(dir, `${name}.md`);
+  // la intención va al lado, con el mismo nombre (story-format.md, «La intención»)
+  const intentTarget = path.join(dir, `${name}.intent.md`);
+  for (const t of [target, intentTarget]) if (fs.existsSync(t)) throw new Refusal(`no escribí la historia: ya existe ${t} y no lo piso`);
   fs.mkdirSync(dir, { recursive: true });
-  const tmpFile = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(tmpFile, render(answers, number, verify, (f) => fs.existsSync(path.join(repo, f))), { flag: 'wx' });
-  try { fs.linkSync(tmpFile, target); } catch (e) {
-    fs.unlinkSync(tmpFile);
+  // un archivo nombrado `<Repo>/…` vive en un repo hermano declarado: se busca donde lo buscará el recorrido
+  const companions = companionRoots(repo, target);
+  const exists = (f) => fs.existsSync(path.join(repo, f)) || resolveDeclared(f, repo, companions).where !== null;
+  try { writeNew(target, render(answers, number, verify, exists)); } catch (e) {
     if (e.code === 'EEXIST') throw new Refusal(`no escribí la historia: ya existe ${target} y no lo piso`);
     throw e;
   }
-  fs.unlinkSync(tmpFile);
+  // Una historia nueva nunca queda sin su intención, ni una intención sin su historia: lo que falla después de escribir
+  // la historia se deshace entero.
+  const undo = (why, paths) => {
+    const left = [];
+    for (const p of paths) { try { fs.unlinkSync(p); } catch (err) { if (err.code !== 'ENOENT') left.push(`${p} (${err.code || err.message})`); } }
+    if (left.length) throw new Refusal(`${why}, y tampoco pude borrar ${left.join(', ')}: borralos a mano, una historia sin su intención o sin su constancia no arranca`);
+    throw new Refusal(`${why}; no dejé nada escrito. Revisalo y volvé a correrlo`);
+  };
+  try { writeNew(intentTarget, renderIntent(answers, name)); } catch (e) {
+    undo(e.code === 'EEXIST' ? `no escribí la intención: ya existe ${intentTarget} y no lo piso` : `no pude escribir la intención ${intentTarget} (${e.code || e.message})`, [target]);
+  }
   // Sin constancia la historia no arranca sola: antes que dejarla a medias, no se deja.
   try { writeRecord(home, target, number); } catch (e) {
-    const why = `no pude dejar la constancia de la historia en la carpeta de estado del arnés (${e.code || e.message})`;
-    try { fs.unlinkSync(target); } catch (err) {
-      throw new Refusal(`${why}, y tampoco pude borrar ${target} (${err.code || err.message}): borrala a mano, sin la constancia no arranca sola`);
-    }
-    throw new Refusal(`${why}; no la dejé escrita. Revisá esa carpeta y volvé a correrlo`);
+    undo(`no pude dejar la constancia de la historia en la carpeta de estado del arnés (${e.code || e.message})`, [target, intentTarget]);
   }
   const rel = path.relative(repo, target).split(path.sep).join('/');
   // el cierre viaja en el resultado: lo que va sólo por la salida de errores el agente no lo dice
   const closing = `Listo, tu historia quedó en \`${rel}\`. Para implementarla, pedime: «implementemos la story ${rel}». ` +
     'Si el repo no tiene git o estás en `main`, el recorrido lo prepara solo: crea la rama de trabajo y te lo dice.';
-  return { path: target, story: number, phrase: `implementemos la story ${rel}`, closing };
+  // `path` va primero: el registro del validador toma el primer "path" de la salida
+  return { path: target, intent: intentTarget, story: number, phrase: `implementemos la story ${rel}`, closing };
 }
 
 function main(argv) {
@@ -540,6 +659,6 @@ function main(argv) {
   }
 }
 
-module.exports = { nextStory, problems, render, verifyCommands, isBmad, RECORD_DIR };
+module.exports = { nextStory, problems, render, verifyCommands, isBmad, RECORD_DIR, storyPlaces, projectStoryPlaces };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

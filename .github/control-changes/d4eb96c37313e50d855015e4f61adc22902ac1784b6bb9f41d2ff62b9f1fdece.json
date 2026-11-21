@@ -1,0 +1,1 @@
+{"hash":"d4eb96c37313e50d855015e4f61adc22902ac1784b6bb9f41d2ff62b9f1fdece","rules":[{"path":".githooks/pre-commit-checks","blob":"30c90ef0ec3b7b158fb8320147699e0a2ce5c4d7"},{"path":"scripts/ci/vocabulary.js","blob":"c015fdfa4ae5370696ee4924a8224ebdd6d0d69c"},{"path":"scripts/ci/vocabulary.json","blob":"79e416bee03b7a9c779290ef70297d201e5934dd"}],"at":"2026-11-02","by":"dueño"}

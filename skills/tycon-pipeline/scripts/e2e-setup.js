@@ -65,7 +65,7 @@ function browserDir({ platform = process.platform, env = process.env, home = os.
 
 // Los argumentos de npm y npx son fijos (nunca vienen de la historia ni de la persona): por eso pueden ir por la consola en Windows.
 function correr(cmd, args, cwd) {
-  const r = spawnSync(cmd, args, { cwd, stdio: 'inherit', ...runner() });
+  const r = spawnSync(cmd, args, { windowsHide: true, cwd, stdio: 'inherit', ...runner() });
   if (r.error) throw new Error(`no pude correr ${cmd} ${args.join(' ')}: ${r.error.message}`);
   if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')} salió con ${r.status}`);
 }
@@ -90,13 +90,19 @@ function dentroDeVerdad(repo, p) {
  * La aprobación de la persona en la ventana de permiso (o con --terminal, en su terminal). La cita y el reenvío ya no
  * firman. `{ codigo: 0, via }` o `{ codigo, motivo }`.
  */
-function firmaDeLaPersona(argv, resumen, propia = PROPIA) {
+function firmaDeLaPersona(argv, resumen, propia = PROPIA, { sub, story, repo } = {}) {
   if (argv.includes('--relayed-by') || argv.includes('--ok')) {
     return { codigo: 2, motivo: 'la cita o el reenvío ya no firman: la persona lo aprueba en la ventana de permiso (este comando sin --ok ni --relayed-by) o en su terminal (--terminal)' };
   }
   const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  // por la delegación: preparar, sólo en una historia de rutina; decir que no (nivel 2), nunca
+  const antes = (via) => {
+    if (via !== 'delegacion') return null;
+    if (sub !== 'prepare') return { codigo: 1, motivo: 'decir que no a la prueba con navegador lo decide una persona: por delegación no se firma' };
+    return require('./lib/plan-review.js').rutinaParaDelegar({ story, repo });
+  };
   const r = ow.exigir({ firma: 'browser-test', argv: process.argv.slice(1), resumen,
-    propia,
+    propia, antes,
     anotar: (renglon) => bt.anotar(stateDir(), { ts: new Date().toISOString(), ...renglon }) });
   if (r.codigo !== 0) return { codigo: 2, motivo: r.motivo };
   // recién con la firma dada, el proceso pasa a trabajar sobre la sesión destino
@@ -117,12 +123,13 @@ function paraOtraSesion(cmd, argv) {
   const pedida = opcion(argv, '--for-session');
   if (!pedida || pedida === PROPIA) return null;
   // sin variable de sesión y sin terminal no hay quién pida la firma para otra sesión
-  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return 'sin variable de sesión, la firma para una sesión se da en la terminal del dueño (--terminal). No escribí nada.';
+  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return 'sin variable de sesión, la firma para una sesión se da en la terminal de la persona (--terminal). No escribí nada.';
   // en la terminal del dueño, --for-session dice la sesión de su agente, que puede preparar fuera de una corrida: no
   // la pide otra sesión, así que no se exige la ejecución abierta
   if (PROPIA === '_nosession') return null;
   if (!['prepare', 'defer'].includes(cmd)) return `--for-session con otra sesión vale sólo para prepare y defer: ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.`;
   if (!/^[\w-]+$/.test(pedida)) return 'la sesión de --for-session no se puede leer. No escribí nada.';
+  if (pedida === '_nosession') return '«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id. No escribí nada.';
   let abierta;
   try { abierta = leerMarcador(pedida); } catch (e) { return `${e.message}. No escribí nada.`; }
   if (!abierta || !abierta.storyId) return `la sesión ${pedida} no tiene una ejecución abierta. No escribí nada.`;
@@ -249,8 +256,7 @@ function cmdPrepare(argv) {
   const id = bt.storyIdDe(content, h.path);
   const ajena = historiaAjena(id);
   if (ajena) { process.stderr.write(`e2e-setup.js prepare: ${ajena}\n`); return 2; }
-  const ok = firmaDeLaPersona(argv, `preparar la prueba con navegador de la historia ${id} en ${repo}`);
-  if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js prepare: no preparo nada — ${ok.motivo}\n`); return 2; }
+  // todo lo que se comprueba va antes de la firma: después, una negativa pierde el «Sí» de la persona
   if (fs.existsSync(path.join(repo, MANIFEST))) { process.stderr.write('e2e-setup.js prepare: este repo ya tiene una preparación anotada (.tycon/e2e-setup.json)\n'); return 1; }
   if (bt.repoReady(repo).ready) { process.stdout.write('El repo ya tiene la prueba con navegador: no hace falta preparar nada.\n'); return 1; }
   const clave = bt.claveDe(h.path, content);
@@ -264,6 +270,8 @@ function cmdPrepare(argv) {
   if (paginaRel && !CARPETA_SEGURA.test(paginaRel)) { process.stderr.write(`e2e-setup.js prepare: la carpeta de la página (${paginaRel}) tiene caracteres que no puedo poner en un comando\n`); return 2; }
   // el lector del bloque e2e: corta en el primer espacio: una carpeta con espacios quedaría mal leída
   if (!CARPETA_SEGURA.test(rel(repo, pkg))) { process.stderr.write(`e2e-setup.js prepare: la carpeta del package.json (${rel(repo, pkg)}) tiene caracteres que .tycon/advisors.yaml no puede leer\n`); return 2; }
+  const ok = firmaDeLaPersona(argv, `preparar la prueba con navegador de la historia ${id} en ${repo}`, PROPIA, { sub: 'prepare', story: h.path, repo });
+  if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js prepare: no preparo nada — ${ok.motivo}\n`); return 2; }
   const advisors = path.join(repo, '.tycon', 'advisors.yaml');
   const yaTeniaE2e = fs.existsSync(advisors) && /^e2e\s*:/m.test(fs.readFileSync(advisors, 'utf8'));
 
@@ -379,10 +387,10 @@ function cmdDefer(argv) {
   if (!/\bno\b/i.test(cita)) { process.stderr.write(`e2e-setup.js defer: «${cita}» no dice que no: poné en --no la respuesta de la persona a la oferta.\n`); return 2; }
   // en la terminal del dueño no hay variable de sesión: el «no» contesta la oferta, y la firma es para su sesión
   const propia = PROPIA === '_nosession' && oferta.sessionId ? oferta.sessionId : PROPIA;
-  const ok = firmaDeLaPersona(argv, `dejar pendiente la prueba con navegador de la historia ${id}: «${cita}»`, propia);
-  if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js defer: no anoto nada — ${ok.motivo}\n`); return 2; }
   const m = txt.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) { process.stderr.write('e2e-setup.js defer: la historia no tiene frontmatter\n'); return 2; }
+  const ok = firmaDeLaPersona(argv, `dejar pendiente la prueba con navegador de la historia ${id}: «${cita}»`, propia, { sub: 'defer', story: h.path, repo });
+  if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js defer: no anoto nada — ${ok.motivo}\n`); return 2; }
   const fecha = new Date().toISOString().slice(0, 10);
   const motivo = `${fecha} — la persona: «${cita}»`.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const fm = m[1].split(/\r?\n/).filter((l) => !/^browser_test(_reason)?\s*:/.test(l));

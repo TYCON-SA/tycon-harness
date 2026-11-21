@@ -13,8 +13,7 @@
  *   T70 · smoke-run.sh corre contra un servidor de juguete con un PATH sin `python3` y deja lo mismo que con Python.
  *   T74 · una suite no medida llega al artefacto con su motivo (además de contar como ausente).
  *   T73 · sin el corredor (`npx` o `dotnet` fuera del PATH) test-gate.sh dice «no pude correr las pruebas: falta …» y
- *         el artefacto lo anota, nunca verde; sin `timeout` ni `realpath` da el mismo resultado. (La parte del `claude`
- *         que en Windows es un `.cmd` está en lane-classifier.test.js.)
+ *         el artefacto lo anota, nunca verde; sin `timeout` ni `realpath` da el mismo resultado.
  *
  * Las esperadas (fixtures/test-gate-report/<caso>/expected.json) se capturaron corriendo el bloque de Python original
  * sobre las mismas entradas:
@@ -240,8 +239,13 @@ test('T69 TestGate_NodeReport_EqualsThePythonReport_WorksWithoutPython3 — el i
     const caso = armarCaso(n);
     const { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { PATH: sinPython });
     assert.strictEqual(rc, 0, `${n}: el informe salió ${rc}\n${stderr}`);
-    // lo único que el bloque de Python no escribía es de dónde salió el umbral; el resto, igual
+    // lo único que el bloque de Python no escribía es de dónde salió el umbral, la entrada de suites.json de cada falla
+    // (la repetición verde busca por ella, lib/failed-first.js) y la procedencia de la corrida (historia 8.161); el
+    // resto, igual
     for (const art of [got.tests_result, got.sellada]) {
+      // `run_error` es parte de la procedencia: dice por qué no hay `run` (sin sesión, sin marcador)
+      if (art) for (const k of ['cmd', 'exit', 'run', 'run_error', 'tree', 'tree_error', 'commit', 'env', 'by']) delete art[k];
+      if (art && art.totals && Array.isArray(art.totals.failure_entries)) delete art.totals.failure_entries;
       if (!art || !art.coverage) continue;
       assert.ok(['maquina', 'organizacion', 'por_defecto'].includes(art.coverage.threshold_source), `${n}: threshold_source ${art.coverage.threshold_source}`);
       delete art.coverage.threshold_source;
@@ -615,6 +619,26 @@ test('T9 7.31-SuitesJson_ConReporte_DaPorcentaje @story-7.31 @ac-8 @ac-14 — co
   assert.deepStrictEqual(g.art.coverage.touched_lines.per_file, { 'scripts/lib/acme.js': { covered: 1, measurable: 2, pct: 50 } });
 });
 
+test('T9d SuitesJson_DePuntaAPunta_ArchivoNuevo_LlenaNewFilesPct — el portón del arnés mide la cobertura del archivo nuevo', () => {
+  // 🔴 rojo: tests-result.json del corredor suites-json con new_files_pct = null para un archivo nuevo que una suite corre
+  const repo = repoDeJuguete('suites-json');
+  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'suites.json'),
+    JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/ok.test.sh' }, { raiz: 'arnes', ruta: 'tests/nuevo.test.js' }], semanales: [] }));
+  git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'base']);
+  fs.mkdirSync(path.join(repo, 'scripts', 'lib'), { recursive: true });
+  // cuatro líneas medibles; la prueba corre tres (la rama del negativo queda sin correr)
+  fs.writeFileSync(path.join(repo, 'scripts', 'lib', 'nuevo.js'), 'module.exports = (n) => {\n  if (n > 0) return 1;\n  return 0;\n};\n');
+  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'nuevo.test.js'),
+    "const { spawnSync } = require('child_process');\nconst r = spawnSync(process.execPath, ['-e', 'require(process.argv[1])(1)', require('path').join(__dirname, '..', 'lib', 'nuevo.js')]);\nprocess.exit(r.status);\n");
+  git(repo, ['add', '-A']);
+  const g = correrGate(repo, '7.31', process.env.PATH, tmpReal('tgr-home-'));
+  assert.strictEqual(g.status, 0, g.stderr + g.stdout);
+  const cov = g.art.coverage;
+  assert.strictEqual(typeof cov.per_new_file['scripts/lib/nuevo.js'], 'number', JSON.stringify(cov, null, 1));
+  assert.strictEqual(typeof cov.new_files_pct, 'number', JSON.stringify(cov, null, 1));
+  assert.ok(cov.new_files_pct > 0 && cov.new_files_pct < 100, `una rama sin correr: ni 0 ni 100 (${cov.new_files_pct})`);
+});
+
 // Un repo con su historia, las salidas del corredor de suites.json (con su lcov) y el informe corrido encima.
 function informeSuitesJson({ base, now, lcov, resumen = '{"corridas":1,"verdes":1,"fallas":[],"ausentes":[],"deferred_suites":[]}' }) {
   const tmp = tmpReal('tgr-sj-');
@@ -715,7 +739,7 @@ test('T10 7.31-Umbral_MaquinaOrganizacionDefecto @story-7.31 @ac-9 — el umbral
     return d;
   };
   const casos = [
-    ['60', conOrg(80), 60, 'maquina', null],
+    ['90', conOrg(80), 90, 'maquina', null],
     ['abc', conOrg(80), 80, 'organizacion', /TYCON_COVERAGE_MIN/],
     ['0', conOrg(80), 80, 'organizacion', /TYCON_COVERAGE_MIN/],
     ['', conOrg(80), 80, 'organizacion', null],
@@ -742,6 +766,73 @@ test('T10 7.31-Umbral_MaquinaOrganizacionDefecto @story-7.31 @ac-9 — el umbral
 });
 
 // ── El portón de pruebas ────────────────────────────────────────────────────────────────────────────────────────────────
+// El piso del umbral de cobertura: la máquina sólo lo sube. Desde la fecha de corte de la lista
+// única de interruptores, un valor de la máquina menor que el de la organización (o que el de fábrica, sin
+// organización) no se usa; antes, se usa con aviso y renglón. La fecha se inyecta: el reloj no cambia el resultado.
+const pisoDelUmbral = () => {
+  const { resolverUmbral } = require(REPORT);
+  const ES = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+  const corte = ES.corteDe('TYCON_COVERAGE_MIN');
+  const antes = new Date(Date.parse(`${corte}T00:00:00Z`) - 86400000);
+  const despues = new Date(Date.parse(`${corte}T00:00:00Z`) + 3600000);
+  const arbol = (team) => {
+    const d = tmpReal('tgr-piso-');
+    fs.mkdirSync(path.join(d, 'scripts'));
+    fs.writeFileSync(path.join(d, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/bash\n');
+    if (team !== undefined) fs.writeFileSync(path.join(d, 'team-repos.json'), JSON.stringify({ version: 1,
+      public: { platform: 'github', org: 'acme', repo: 'harness' }, profile: { platform: 'azure', org: 'acme', project: 'Main', repo: 'team-profile' },
+      operations: { platform: 'azure', org: 'acme', project: 'Main', repo: 'team-operations' }, ...team }));
+    return d;
+  };
+  const correr = (maquina, guias, today) => {
+    const casa = tmpReal('tgr-piso-casa-');
+    const r = resolverUmbral(maquina, { TYCON_GUIDES_DIR: guias, CLAUDE_CODE_SESSION_ID: 's-piso' }, casa, { today });
+    let renglones = [];
+    try { renglones = fs.readFileSync(path.join(require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(casa), 'bypass.log'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { /* sin renglones */ }
+    return { ...r, renglones };
+  };
+  return { arbol, correr, antes, despues, corte };
+};
+
+// T15 ResolverUmbral_MachineCannotLowerOrg @story-8.256 @ac-14
+// 🔴 Falla con: la máquina bajando el umbral de la organización desde el corte, una máquina mayor que no gana, o un
+//    valor menor antes del corte sin su aviso o sin su renglón.
+test('T15 ResolverUmbral_MachineCannotLowerOrg @story-8.256 @ac-14', () => {
+  const { arbol, correr, antes, despues } = pisoDelUmbral();
+  const org = arbol({ coverage: { min_touched_lines_pct: 75 } });
+  let r = correr('1', org, despues);
+  assert.deepStrictEqual([r.threshold, r.source], [75, 'organizacion']);
+  assert.ok(r.problems.some((p) => /TYCON_COVERAGE_MIN/.test(p) && /\b1\b/.test(p)), JSON.stringify(r.problems));
+  r = correr('90', org, despues);
+  assert.deepStrictEqual([r.threshold, r.source], [90, 'maquina']);
+  r = correr('', org, despues);
+  assert.deepStrictEqual([r.threshold, r.source], [75, 'organizacion']);
+  r = correr('1', org, antes);
+  assert.deepStrictEqual([r.threshold, r.source], [1, 'maquina']);
+  assert.ok(r.problems.some((p) => /esto pide la firma del dueño|no baja/.test(p)), JSON.stringify(r.problems));
+  assert.deepStrictEqual(r.renglones.map((l) => l.kind), ['COVERAGE_BELOW_FLOOR']);
+});
+
+// T29 ResolverUmbral_NoOrgFloorIsFactoryDefault @story-8.256 @ac-14
+// 🔴 Falla con: sin umbral de la organización (sin archivo, o con su sección inválida), la máquina bajando el 75 de
+//    fábrica desde el corte.
+test('T29 ResolverUmbral_NoOrgFloorIsFactoryDefault @story-8.256 @ac-14', () => {
+  const { arbol, correr, antes, despues } = pisoDelUmbral();
+  for (const guias of [arbol(), arbol({ coverage: { min_touched_lines_pct: 101 } })]) {
+    let r = correr('1', guias, despues);
+    assert.deepStrictEqual([r.threshold, r.source], [75, 'por_defecto']);
+    assert.ok(r.problems.some((p) => /TYCON_COVERAGE_MIN/.test(p) && /\b1\b/.test(p)), JSON.stringify(r.problems));
+    r = correr('90', guias, despues);
+    assert.deepStrictEqual([r.threshold, r.source], [90, 'maquina']);
+    r = correr('', guias, despues);
+    assert.deepStrictEqual([r.threshold, r.source], [75, 'por_defecto']);
+    r = correr('1', guias, antes);
+    assert.deepStrictEqual([r.threshold, r.source], [1, 'maquina']);
+    assert.deepStrictEqual(r.renglones.map((l) => l.kind), ['COVERAGE_BELOW_FLOOR']);
+    assert.ok(r.problems.some((p) => p.includes('por debajo del de fábrica (75)')), JSON.stringify(r.problems));
+  }
+});
+
 test('T1 8.55-ClaveHeredada_NoCambiaElResultado @story-8.55 @ac-1 — la clave de la evidencia que exporta un test-gate.sh de afuera no cambia el resultado', () => {
   // 🔴 rojo: test-gate.sh exporta TYCON_EVIDENCE_KEY (o _FAILED) cuando recibe la ruta de una story, y esta suite corre
   //    dentro de él: el informe nombraba la copia sellada con la clave de afuera y dos casos de esta suite salían rojos.
@@ -755,7 +846,7 @@ test('T1 8.55-ClaveHeredada_NoCambiaElResultado @story-8.55 @ac-1 — la clave d
   }
 });
 
-test('T6 8.55-Informe_Salida7_SinAcotar @story-8.55 @ac-6 — la salida 7 es «sin acotar»: no es verde y el merge exige la CI completa', () => {
+test('T6 8.55-Informe_Salida7_SinAcotar @story-8.55 @ac-6 — la salida 7 es «sin acotar»: no es verde y la cubre la CI del pedido', () => {
   // 🔴 rojo: el informe leía la salida 7 como una suite roja más, sin decir que no se corrió nada ni por qué.
   const tmp = tmpReal('tgr-sinacotar-');
   const repo = path.join(tmp, 'repo');
@@ -782,6 +873,36 @@ test('T6 8.55-Informe_Salida7_SinAcotar @story-8.55 @ac-6 — la salida 7 es «s
   const regla = fs.readFileSync(path.join(SCRIPTS, '..', '..', '..', 'agents', 'tycon-plugin-tests-coverage.md'), 'utf8')
     .split('\n').find((l) => l.startsWith('| **TEST-C1** |')) || '';
   assert.match(regla, /unscoped/, `la regla TEST-C1 no nombra «sin acotar»: ${regla}`);
+});
+
+test('Heredado_MedidoEnMainEnElMomento (constancia) @story-8.230 @ac-14 — la constancia copia la medición en la base, la entrada de cada falla y de dónde vino cada heredada', () => {
+  // 🔴 mutación: no pasar base_check ni inherited.base a la constancia → el revisor de pruebas no ve qué se midió.
+  const tmp = tmpReal('tgr-base-');
+  const repo = path.join(tmp, 'repo');
+  const results = path.join(tmp, 'results');
+  fs.mkdirSync(repo, { recursive: true });
+  execFileSync('git', ['init', '-q', repo], { stdio: 'ignore' });
+  escribir(repo, { 'scripts/tests/suites.json': { text: '{"diarias":[],"semanales":[]}\n' } });
+  git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'base']);
+  fs.mkdirSync(results, { recursive: true });
+  const baseCheck = { base: 'a'.repeat(40), at: '2026-11-07T12:00:00Z', suites: [{ ruta: 'tests/a.test.sh', raiz: 'arnes', verdict: 'heredada', motivo: 'roja también en la base, sin el cambio' },
+    { ruta: 'tests/b.test.sh', raiz: 'arnes', verdict: 'no-medido', motivo: 'no medido: pasó del tope de 3 suites' }] };
+  fs.writeFileSync(path.join(results, 'suites.json'), JSON.stringify({ corridas: 2, verdes: 0, ausentes: [], deferred_suites: [],
+    fallas: [{ ruta: path.join(repo, 'scripts', 'tests', 'b.test.sh'), exit: 1, entrada: { raiz: 'arnes', ruta: 'tests/b.test.sh' } }],
+    inherited: { snapshot_ts: null, snapshot_build: null, base: { sha: 'a'.repeat(40), at: '2026-11-07T12:00:00Z' },
+      suites: [{ ruta: path.join(repo, 'scripts', 'tests', 'a.test.sh'), entrada: { raiz: 'arnes', ruta: 'tests/a.test.sh' }, measured_on: 'base' }] },
+    base_check: baseCheck }));
+  const out = path.join(tmp, 'out.json');
+  const r = spawnSync(process.execPath, [REPORT, 'suites-json', repo, repo, results, out, '1', '8.230', '75', '2026-11-07T12:00:00Z',
+    '0', '', 'explicito', '', '{"git":true}', '', '{"ref":null,"source":null,"descartadas":[]}'],
+  { encoding: 'utf8', env: { ...process.env, HOME: tmp, USERPROFILE: tmp, TYCON_GUIDES_DIR: tmp, TYCON_EVIDENCE_DIR: path.join(tmp, 'ev') } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const t = JSON.parse(fs.readFileSync(out, 'utf8')).totals;
+  assert.deepStrictEqual(t.base_check, baseCheck);
+  assert.deepStrictEqual(t.failure_entries, [{ raiz: 'arnes', ruta: 'tests/b.test.sh' }]);
+  assert.deepStrictEqual(t.inherited_suites, ['a.test.sh']);
+  assert.strictEqual(t.inherited_snapshot_ts, null);
+  assert.strictEqual(t.inherited_base.sha, 'a'.repeat(40));
 });
 
 test('T75 TestGate_AcotadaPorElRepo_NadieLee_EsVerde — acotada por el repo y sin suite que lea lo tocado es verde y dice quién corre la completa; sin esa constancia, cero corridas sigue sin ser verde', () => {
@@ -834,4 +955,50 @@ test('T74 TestGate_SuitesJson_UnmeasuredReasonReachesArtifact — la suite no me
   assert.strictEqual(art.totals.unmeasured, 1);
   assert.deepStrictEqual(art.totals.unmeasured_suites, [noMedida]);
   assert.strictEqual(art.suite_green, false, 'nunca verde');
+});
+
+test('T76 TestGate_TouchedLines_GitPrefixConfig — con diff.mnemonicPrefix o diff.noprefix en la máquina, las líneas tocadas salen igual', () => {
+  // 🔴 rojo si: el diff de las líneas tocadas usa los prefijos que configura la máquina → las rutas salen «w/…» o sin
+  //    prefijo, no calzan con la cobertura y el número queda en null con un motivo que no es el de verdad.
+  for (const [clave, valor] of [['diff.mnemonicPrefix', 'true'], ['diff.noprefix', 'true']]) {
+    const caso = armarCaso('suites-json-coverage');
+    const { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { TYCON_GUIDES_DIR: tmpReal('tgr-sin-org-'),
+      GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: clave, GIT_CONFIG_VALUE_0: valor });
+    assert.strictEqual(rc, 0, stderr);
+    assert.strictEqual(got.tests_result.coverage.touched_lines_pct, 50, `${clave}: ${JSON.stringify(got.tests_result.coverage, null, 1)}`);
+  }
+});
+
+test('T77 TestGate_NewFileCoverage_MatchesOnFolderBoundary — el archivo nuevo de un proyecto en subcarpeta calza con su cobertura, y un homónimo de otra carpeta no', () => {
+  // 🔴 rojo si: la búsqueda por terminación no exige el límite de carpeta → `mysrc/a.js` presta su cobertura a `src/a.js`;
+  //    o si exige la ruta entera → el proyecto en subcarpeta (rutas desde la raíz del repo o desde la carpeta) no calza.
+  const { calzaPorTerminacion } = require(REPORT);
+  assert.strictEqual(calzaPorTerminacion('/tmp/r/web/src/price.ts', 'web/src/price.ts'), true);
+  assert.strictEqual(calzaPorTerminacion('src/price.ts', 'web/src/price.ts'), true);
+  assert.strictEqual(calzaPorTerminacion('web/src/price.ts', 'web/src/price.ts'), true);
+  assert.strictEqual(calzaPorTerminacion('/tmp/r/mysrc/price.ts', 'src/price.ts'), false);
+  assert.strictEqual(calzaPorTerminacion('/tmp/r/web/src/xprice.ts', 'price.ts'), false);
+});
+
+test('T78 TestGate_ToolExits3_IsRed — una herramienta de pruebas que sale 3 es un rojo, no «sin suite»', () => {
+  // 🔴 rojo si: sólo el corredor genérico convierte sus salidas 3 a 7 → un vitest que sale 3 se lee como el 3 del gate
+  //    («no hay suite») y quien llama lo cuenta como «sin pruebas» y no como rojo.
+  const bin = tmpReal('tgr-fakebin3-');
+  fs.writeFileSync(path.join(bin, 'npx'), '#!/usr/bin/env bash\n# npx de juguete (test-gate-report.test.js): vitest que sale 3\nexit 3\n', { mode: 0o755 });
+  const repo = repoDeJuguete('vitest');
+  const r = correrGate(repo, '9.12', bin + path.delimiter + process.env.PATH, tmpReal('tgr-home-'));
+  assert.strictEqual(r.status, 1, `salió ${r.status}\n${r.stderr}`);
+  assert.match(r.stderr, /vitest salió 3: cuenta como falla/);
+});
+
+test('T79 TestGate_WorkFiles_GoToTmpdir — los archivos de trabajo de la puerta van a TMPDIR, no a /tmp fijo', () => {
+  // 🔴 rojo si: la carpeta de resultados y los errores intermedios se crean en /tmp aunque TMPDIR diga otra cosa.
+  const tmpdir = tmpReal('tgr-tmpdir-');
+  const repo = repoDeJuguete('vitest');
+  const env = { ...process.env, PATH: binDeJuguete() + path.delimiter + process.env.PATH, HOME: tmpReal('tgr-home-'),
+    CLAUDE_CODE_SESSION_ID: SESION, TYCON_COVERAGE_BASE: '', TMPDIR: tmpdir + '/' };
+  delete env.TYCON_TEST_SCOPE; delete env.TYCON_EVIDENCE_DIR;
+  const r = spawnSync('bash', [GATE, repo, '9.12'], { encoding: 'utf8', env, timeout: 180000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(fs.readdirSync(tmpdir).some((n) => /^test-gate-/.test(n)), `nada de la puerta en TMPDIR: ${fs.readdirSync(tmpdir)}`);
 });

@@ -579,3 +579,57 @@ test('D2 SitioDemo_ActualizaConSuPrueba — con demo, la prueba es la del demo: 
     } finally { await real.cerrar(); }
   } finally { await reg.cerrar(); }
 });
+
+// ── El sitio instalado por etiqueta: la noche lo dice con su motivo propio ─────────────────────────────────────────
+
+test('T27 Site_InstaladoPorEtiqueta_Avisa @story-8.234 @ac-27 — la noche: Azure y máquina propia con la imagen por etiqueta dan no_pudo «instalado por etiqueta», escrito en el resultado', async () => {
+  const reg = await registro();
+  try {
+    const az = azDeJuguete(`${IMAGEN}:2026.11.05.6`);
+    const dir = tmp();
+    const r = await UP.actualizar({ ...base(reg, { estadoDir: dir }), plataforma: 'azure', modo: 'auto', azure: AZURE, correr: az.correr, probar: async () => ({ ok: true }) });
+    assert.strictEqual(r.resultado, 'no_pudo');
+    assert.match(r.motivo, /^instalado por etiqueta: fijalo por huella/);
+    assert.deepStrictEqual(az.updates(), [], 'no toca nada');
+    const escrito = JSON.parse(fs.readFileSync(path.join(dir, 'site-update-2026-10-18.json'), 'utf8'));
+    assert.strictEqual(escrito.plataforma, 'azure');
+    assert.match(escrito.motivo, /^instalado por etiqueta/);
+    assert.ok(!JSON.stringify(escrito).includes('2026.11.05.6'), 'la etiqueta no se copia al resultado');
+    // la máquina propia, igual; su salida la ve el cron (start.js --update sale 1 con no_pudo)
+    const d = dockerDeJuguete(`${IMAGEN}:latest`);
+    const l = await UP.actualizar({ ...base(reg), plataforma: 'local', modo: 'auto', local: { compose: '/opt/sitio/compose.yaml', url: 'http://127.0.0.1:8080' }, correr: d.correr, probar: async () => ({ ok: true }) });
+    assert.strictEqual(l.resultado, 'no_pudo');
+    assert.match(l.motivo, /^instalado por etiqueta/);
+    assert.ok(UP.MOTIVOS.some((m) => l.motivo.startsWith(m)), 'el motivo está en la lista cerrada');
+  } finally { await reg.cerrar(); }
+});
+
+test('T28 Site_FijadoPorHuella_NoAvisa @story-8.234 @ac-28 — fijado por huella, u otra falla de lectura: sin el motivo de la etiqueta', async () => {
+  const reg = await registro({ stable: VIEJA });
+  try {
+    const az = azDeJuguete();
+    const r = await UP.actualizar({ ...base(reg), plataforma: 'azure', modo: 'auto', azure: AZURE, correr: az.correr, probar: async () => ({ ok: true }) });
+    assert.strictEqual(r.resultado, 'al_dia');
+    assert.strictEqual(r.motivo, null);
+    // az que no contesta: sigue siendo «no se pudo leer la imagen que corre», no la etiqueta
+    const caido = await UP.actualizar({ ...base(reg), plataforma: 'azure', modo: 'auto', azure: AZURE, correr: () => ({ status: 1, stdout: '', stderr: 'sin sesión' }), probar: async () => ({ ok: true }) });
+    assert.strictEqual(caido.resultado, 'no_pudo');
+    assert.match(caido.motivo, /^no se pudo leer la imagen que corre/);
+  } finally { await reg.cerrar(); }
+});
+
+test('Regresion_SalidaRara_NoEsEtiqueta @story-8.234 @ac-27 — una salida que no es un nombre de imagen no se lee como «instalado por etiqueta»', async () => {
+  const reg = await registro();
+  try {
+    for (const rara of ['None', 'ERROR: algo salió mal', 'sha256:corta', '{"x":1}']) {
+      const r = await UP.actualizar({ ...base(reg), plataforma: 'azure', modo: 'auto', azure: AZURE, correr: () => ({ status: 0, stdout: `${rara}\n`, stderr: '' }), probar: async () => ({ ok: true }) });
+      assert.strictEqual(r.resultado, 'no_pudo', rara);
+      assert.match(r.motivo, /^no se pudo leer la imagen que corre/, rara);
+    }
+    // un nombre de imagen con etiqueta, con y sin registro, sí lo es
+    for (const tag of [`${IMAGEN}:2026.11.05.6`, 'arnes:latest', 'registro.acme.example:5000/acme/arnes:v1']) {
+      const r = await UP.actualizar({ ...base(reg), plataforma: 'azure', modo: 'auto', azure: AZURE, correr: () => ({ status: 0, stdout: `${tag}\n`, stderr: '' }), probar: async () => ({ ok: true }) });
+      assert.match(r.motivo, /^instalado por etiqueta/, tag);
+    }
+  } finally { await reg.cerrar(); }
+});

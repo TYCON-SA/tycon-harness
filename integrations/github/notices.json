@@ -1,0 +1,5 @@
+{
+  "notices": [
+    { "id": "reglas-de-la-plataforma", "text": "rules.md", "when": "after-command", "commands": ["gh pr", "gh run", "gh api", "gh issue"] }
+  ]
+}

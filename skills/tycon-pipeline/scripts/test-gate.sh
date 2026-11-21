@@ -26,15 +26,17 @@
 #   hay story, del diff real. Si no se puede deducir, FRENA (exit 4) en vez de
 #   elegir mal. Ver `lib/test-scope.js`.
 #   Pasar la RUTA de la story en $2 (en vez del id) habilita la deducción por
-#   declaración y saca el id del frontmatter.
+#   declaración y saca el id del frontmatter. Una ruta que no se encuentra frena (2): una relativa se lee desde la
+#   carpeta en que se lanza el portón.
 #
-# Exit: el exit code REAL de la suite (0 verde, !=0 rojo) · 3 «sin medir»: no reconoce ninguna herramienta de pruebas
+# Exit: el exit code REAL de la suite (0 verde, !=0 rojo) · 2 la story del argumento no está (no se corrió NADA)
+#       · 3 «sin medir»: no reconoce ninguna herramienta de pruebas
 #       (deja tests-result.json con `no_stack` y el motivo en llano, y el check `tests` en `sin-medir`)
 #       · 4 alcance ambiguo (no se corrió NADA) · 5 falta la herramienta que corre las
 #       pruebas, `npx`, `dotnet` o `npm` (no se corrió NADA)
 #       · 6 la suite salió 0 sin ninguna prueba corrida, o sin informe que lo cuente (no es verde).
 #       · 7 «sin acotar»: la corrida del repo hermano no pudo acotarse a lo tocado (no se sabe qué se tocó, o ninguna
-#       suite lo lee) y no corrió nada: no es verde ni rojo; la cubre la CI del pedido, y el merge la exige en verde.
+#       suite lo lee) y no corrió nada: no es verde ni rojo; la cubre la CI del pedido (esta máquina no comprueba que salga verde).
 #
 # Sin `python3`, `timeout` ni `realpath`: en Windows no son
 # requisito. El informe es lib/test-gate-report.js.
@@ -71,6 +73,8 @@ set -- ${_TG_ARGS[@]+"${_TG_ARGS[@]}"}
 REPO="$(cd "${1:?Falta <repo-dir>}" && pwd)"
 STORY_ARG="${2:-}"
 STORY_ID="${STORY_ARG:-unknown}"
+# Los archivos de trabajo de la corrida van a la carpeta temporal del sistema (TMPDIR), no a /tmp fijo.
+TG_TMP="${TMPDIR:-/tmp}"; TG_TMP="${TG_TMP%/}"
 # La CLAVE con que se nombra la copia sellada del resultado: el número solo si es único en el
 # repo de la story, `<tema>__<número>` si se repite. La calcula lib/evidence-key.js desde la RUTA de la
 # story; si no puede decidirla, la copia no se escribe (lo dice el informe) — las pruebas corren igual.
@@ -129,6 +133,15 @@ marcar_tests_en_rojo() {
       node -e 'console.error("test-gate: " + process.argv[1]); process.exit(Number(process.argv[2]))' "$motivo" "$codigo" ) >&2 || true
 }
 
+# Una story pasada como ruta que no se encuentra: sin ella el portón no sabe qué tocó la story ni qué rama del hermano
+# medir, y seguir sin story daría un verde que no dice nada de ella. Una ruta relativa se lee desde la carpeta en que
+# se lanza el portón, no desde el repo.
+if [[ "$STORY_ARG" == *.md && ! -f "$STORY_ARG" ]]; then
+  echo "[test-gate] 🔴 no encontré la story «${STORY_ARG}» desde $(pwd): sin ella no sé qué tocó ni qué rama medir, y no corro nada. Pasá la ruta absoluta de la story." >&2
+  marcar_tests_en_rojo 2 "no encontré la story $STORY_ARG: no corrí nada"
+  exit 2
+fi
+
 # --- El repo hermano ----------------------------------------------
 # Una story que vive en este repo y cambia otro declarado en `.tycon/advisors.yaml → evidence.companion_repos` (el repo
 # hermano): al SALIR —por cualquiera de las salidas de abajo, también la 3 «sin pruebas acá», porque el repo de la story
@@ -174,6 +187,34 @@ TG_TREE_PUB_ROOT=""
 TG_NO_COMPANIONS=""
 TG_TREE_TOUCHED_FILE=""
 TG_TOP_FULL=""
+TG_FULL_SUITE_BY=""
+TG_MEASURED=""
+TG_AFTER_MAIN=""
+# El id de esta corrida: lo fija la de arriba y lo heredan sus partes y sus repos hermanos. Con él, la espera a main de dos
+# partes de la misma corrida se suma (marker.js waiting-on-main set), y la de una corrida nueva reemplaza la de antes.
+# El corredor no se lo pasa a las suites.
+[[ -n "${TYCON_TEST_GATE_RUN:-}" ]] || export TYCON_TEST_GATE_RUN="$$-$(date +%s)"
+# La salida de una parte o de un repo hermano sumada al total (`$1`): un rojo (cualquier salida fuera de 0, 3, 7 y 78)
+# gana sobre todo y el primero se queda; la espera a main (78) gana sobre verde, «sin pruebas» (3) y «sin acotar» (7);
+# «sin acotar» gana sobre verde y «sin pruebas». Imprime el total nuevo.
+combinar_salida() {
+  local final="$1" hrc="$2"
+  _es_rojo() { [[ "$1" != "0" && "$1" != "3" && "$1" != "7" && "$1" != "78" ]]; }
+  if _es_rojo "$hrc"; then _es_rojo "$final" || final="$hrc"
+  elif [[ "$hrc" == "78" ]]; then _es_rojo "$final" || final=78
+  elif [[ "$hrc" == "7" && ( "$final" == "0" || "$final" == "3" ) ]]; then final=7; fi
+  echo "$final"
+}
+# Total 78 de partes o hermanos: no queda tests-result.json (ni la copia que viaja de esta corrida) y el check `tests` dice
+# espera-main, aunque una parte o un hermano lo haya dejado verde. Sin la espera anotada no se puede: queda rojo.
+salir_esperando_a_main() {
+  rm -f "$OUT_FILE"
+  [[ -n "${TYCON_EVIDENCE_KEY:-}" ]] && rm -f "${TYCON_EVIDENCE_DIR:-$REPO/.advisors/dod-runtime}/${TYCON_EVIDENCE_KEY}-tests-result.json"
+  ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main mark ) >&2 \
+    || marcar_tests_en_rojo 78 "el total espera a main pero no quedó la espera anotada: no es verde"
+  echo "🟡 [test-gate] $1: resultado total → salida 78, la corrida espera a main. No es un rojo de la historia; no quedó tests-result.json." >&2
+  exit 78
+}
 borrar_arbol_privado() {
   # La corrida de las suites va en su propio grupo de procesos (ver la rama suites.json): se corta el grupo entero, así
   # run-check y el corredor reciben la señal y el corredor corta sus suites. Cortar sólo el subshell las dejaría vivas
@@ -197,6 +238,15 @@ cortar_arbol_privado() {
   trap - EXIT
   exit "$1"
 }
+# Lo mismo fuera del árbol armado: una señal corta el grupo del corredor y sus suites, el check `tests` queda en rojo y no
+# se corren los hermanos. Sin esto, bash esperaba al corredor en primer plano para atender la señal, y el corredor seguía
+# con el turno de las ejecuciones grandes (casos: tests/test-gate-failed-first.test.js T31).
+cortar_corrida() {
+  borrar_arbol_privado
+  [[ -n "$SUITE_ONLY" ]] || marcar_tests_en_rojo "$1" "la corrida se cortó (señal): no es verde"
+  trap - EXIT
+  exit "$1"
+}
 correr_hermanos_al_salir() {
   local rc=$?
   trap - EXIT
@@ -210,7 +260,7 @@ correr_hermanos_al_salir() {
   fi
   local story_abs blancos err
   story_abs="$(cd "$(dirname "$STORY_ARG")" && pwd)/$(basename "$STORY_ARG")"
-  err="$(mktemp /tmp/test-gate-hermanos-XXXXXX)"
+  err="$(mktemp "$TG_TMP/test-gate-hermanos-XXXXXX")"
   if ! blancos="$(node "$SCRIPT_DIR/lib/companion-repos.js" targets "$REPO_STORY" "$story_abs" 2>"$err")"; then
     # «No pude averiguar» no es «no hay hermanos»: con el repo en verde, salir 0 dejaría sin correr la suite de un
     # hermano que la story toca. Sale 4 (el «no sé qué correr» del gate) y el check `tests` queda en rojo.
@@ -261,13 +311,15 @@ correr_hermanos_al_salir() {
       echo "[test-gate] ⚠️  el repo hermano $(basename "$root") salió 7 sin la constancia de «sin acotar»: es un rojo" >&2
       hrc=1
     fi
+    # 78: el hermano espera a main (lib/main-check.js); su espera quedó anotada con su repo
+    [[ "$hrc" == "78" ]] && echo "🟡 [test-gate] el repo hermano $(basename "$root") espera a main" >&2
     filas+="${root}"$'\x1f'"${scope}"$'\x1f'"${archivos}"$'\x1f'"${hrc}"$'\n'
-    # Un rojo de verdad gana; «sin acotar» (7) gana sobre verde y sobre «sin pruebas» (3).
-    if [[ "$final" == "0" || "$final" == "3" || "$final" == "7" ]] && [[ "$hrc" != "0" && "$hrc" != "3" && "$hrc" != "7" ]]; then final="$hrc"
-    elif [[ "$final" == "0" || "$final" == "3" ]] && [[ "$hrc" == "7" ]]; then final=7
-    # el 3 de «la herramienta no arrancó» no es «sin pruebas acá»: este repo tiene pruebas y no se midieron
-    elif [[ "$final" == "3" && "$hrc" == "0" && -z "${TG_NOT_MEASURED:-}" ]]; then final=0; fi
+    # Un rojo de verdad gana; la espera a main, sobre verde, 3 y 7; «sin acotar» (7), sobre verde y «sin pruebas» (3).
+    # El 3 de «la herramienta no arrancó» no es «sin pruebas acá»: este repo tiene pruebas y no se midieron.
+    if [[ "$final" == "3" && "$hrc" == "0" && -z "${TG_NOT_MEASURED:-}" ]]; then final=0
+    else final="$(combinar_salida "$final" "$hrc")"; fi
   done <<< "$blancos"
+  [[ "$final" == "78" ]] && salir_esperando_a_main "repos hermanos (este repo: $rc)"
   node -e '
     const fs = require("fs"), p = require("path");
     const [out, ts, storyId, rc, final, filas] = process.argv.slice(1);
@@ -311,7 +363,7 @@ correr_hermanos_al_salir() {
   if [[ "$final" == "7" ]]; then
     marcar_tests_en_rojo 7 "sin acotar: la cubre la CI del pedido (un repo hermano no se pudo acotar a lo tocado); no es verde"
     ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-scoped "un repo hermano no se pudo acotar a lo tocado" ) >&2 || true
-    echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — el merge exige la CI completa en verde." >&2
+    echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — antes del merge, mirá que salga verde (esta máquina no lo comprueba)." >&2
   elif [[ "$final" == "3" && -n "${TG_NOT_MEASURED:-}" ]]; then
     # la corrida del hermano dejó su verde en el marcador: el total vuelve a «sin medir»
     ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-measured "$TG_NOT_MEASURED" ) >&2 \
@@ -375,17 +427,21 @@ correr_partes() {
     fi
     # un 7 de una parte sin la constancia de «sin acotar» es un rojo de verdad
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$out"; then hrc=1; fi
-    filas+="${scope}"$'\x1f'"${hrc}"$'\x1f'"${out}"$'\n'
-    # un rojo de verdad gana sobre «sin acotar» (7), y éste sobre verde y sobre «sin pruebas» (3)
-    if [[ "$hrc" != "0" && "$hrc" != "3" && "$hrc" != "7" ]]; then
-      [[ "$final" == "0" || "$final" == "7" ]] && final="$hrc"
-    elif [[ "$hrc" == "7" && "$final" == "0" ]]; then final=7; fi
+    # 78: la parte espera a main (lib/main-check.js); su espera quedó anotada, sumada a la de las otras partes
+    [[ "$hrc" == "78" ]] && echo "🟡 [test-gate] la parte $scope espera a main" >&2
+    filas+="${scope}"$'\x1f'"${hrc}"$'\n'
+    # un rojo de verdad gana sobre la espera a main (78), ésta sobre «sin acotar» (7), y éste sobre verde
+    final="$(combinar_salida "$final" "$hrc")"
   done
+  [[ "$final" == "78" ]] && salir_esperando_a_main "partes (${partes//,/, })"
   node -e '
     const fs = require("fs"), p = require("path");
-    const [out, ts, storyId, final, filas] = process.argv.slice(1);
+    const [out, ts, storyId, final, filas, dir] = process.argv.slice(1);
+    // la carpeta viaja como argumento propio, no dentro de las filas: el bash de Git en Windows convierte una ruta
+    // suelta a la forma que lee node, y una ruta pegada a otros campos no
     const parts = filas.split("\n").filter(Boolean).map((l) => {
-      const [scope, exit, file] = l.split("\x1f");
+      const [scope, exit] = l.split("\x1f");
+      const file = p.join(dir, `tests-result.part-${scope.replace(/\//g, "_")}.json`);
       let a = null; try { a = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_e) { a = null; }
       return { scope, exit: Number(exit), green: Number(exit) === 0, runner: a ? a.runner : null, totals: a ? a.totals : {}, artifact: file };
     });
@@ -415,7 +471,7 @@ correr_partes() {
         ts, runner: art.runner, suite_exit: art.suite_exit, suite_green: art.suite_green, halted: null, totals: art.totals,
         coverage: art.coverage, provenance: art.provenance }, null, 2));
     }
-  ' "$OUT_FILE" "$TS" "$STORY_ID" "$final" "$filas" || {
+  ' "$OUT_FILE" "$TS" "$STORY_ID" "$final" "$filas" "$OUT_DIR" || {
     echo "[test-gate] 🔴 no pude juntar las partes en $OUT_FILE: sin artefacto, esto no es verde" >&2
     [[ "$final" == "0" ]] && final=1
   }
@@ -696,7 +752,10 @@ if [[ -n "$_NO_LANZA" ]]; then
 fi
 
 # --- Correr la suite (UNA vez) vía run-check → exit code real + gates.log ----
-RESULTS_DIR="$(mktemp -d /tmp/test-gate-XXXXXX)"
+# Las carpetas de resultados de más de 7 días que dejó la puerta (resumen y salida entera de cada suite roja) se borran
+# acá: nadie más las limpia. Sólo las de este usuario con el nombre de mktemp de abajo.
+node "$SCRIPT_DIR/lib/old-gate-results.js" "$TG_TMP" || true
+RESULTS_DIR="$(mktemp -d "$TG_TMP/test-gate-XXXXXX")"
 SUITE_EXIT=0
 TEST_PROJECTS=()  # declarado arriba: la rama vitest también lo expande (set -u safe)
 
@@ -783,7 +842,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # Corre TODA la lista (diarias + semanales) con el mismo runner que usa el nocturno. El resumen
   # queda en $RESULTS_DIR/suites.json y el exit es el ACUMULADO: una roja o una AUSENTE = rojo.
   #
-  # Story 7.15 (2026-09-29): el runner corre en paralelo (la mitad de los núcleos) y DIFIERE las
+  # Story 7.15 (2026-09-29): el runner corre en paralelo (según los núcleos y la carga) y DIFIERE las
   # suites con `gate_only_when_touching` que la story no toca (hoy exportador-real, 24-41 min). Para
   # eso necesita saber qué toca la story: lo declarado + el diff contra la base de la corrida + lo sin
   # trackear (lib/touched-files.js). La base se resuelve ACÁ, antes de correr, y el parser la reusa.
@@ -836,9 +895,31 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
                else _tg_capa="sin capa del equipo: $(_tg_tree_field teamProblem)"; fi ;;
       *) _tg_capa='sin capa del equipo (ni HARNESS_TEAM_DIR ni paths.team en la configuración de la máquina)' ;;
     esac
-    echo "[test-gate] árbol armado del privado adelgazado — público debajo: $_TG_PUB_ROOT (rama ${_tg_rama:-suelta}, commit $(_tg_tree_field base.commit | cut -c1-12)$([[ "$(_tg_tree_field base.uncommitted)" == "true" ]] && echo ', con cambios sin commit')) · $_tg_capa · armado en $(_tg_tree_field seconds) s"
+    # Sin la rama de la story en el público, debajo va la versión del servidor y lo tocado es sólo del privado.
+    _TG_PUB_TOUCHED="$_TG_PUB_ROOT"
+    if [[ "$(_tg_tree_field base.source)" == "server" ]]; then
+      _TG_PUB_TOUCHED="-"
+      echo "[test-gate] árbol armado del privado adelgazado — público debajo: versión del servidor (origin/main de $_TG_PUB_ROOT, commit $(_tg_tree_field base.commit | cut -c1-12) del $(_tg_tree_field base.date | cut -c1-16)): esa carpeta está en ${_tg_rama:-un commit suelto}, que no es la rama del privado ni nombra la story ·$_tg_capa · armado en $(_tg_tree_field seconds) s"
+    else
+      echo "[test-gate] árbol armado del privado adelgazado — público debajo: $_TG_PUB_ROOT (rama ${_tg_rama:-suelta}, commit $(_tg_tree_field base.commit | cut -c1-12)$([[ "$(_tg_tree_field base.uncommitted)" == "true" ]] && echo ', con cambios sin commit')) · $_tg_capa · armado en $(_tg_tree_field seconds) s"
+    fi
+    # el árbol vive en la carpeta temporal: las HOME vacías de las portables van bajo `.advisors/` del privado de verdad
+    # (git la ignora), fuera de ella, porque hay suites que tratan esa carpeta como «de prueba»
+    export TYCON_SUITE_HOMES_ROOT="${TYCON_SUITE_HOMES_ROOT:-$REPO_RUN/.advisors}"
+    # El alcance del privado se lee del privado de verdad (lo commiteado, lib/test-gate-scope.js), no del árbol
+    # temporal. Si acota, el árbol SUMA `--scoped-by-repo` a `--only-touched`: sabiendo qué se tocó y sin suite que lo
+    # lea, cierra en verde diciendo quién corre la completa; sin saber qué se tocó, `--only-touched` lo deja en 7 sin
+    # correr nada (`--scoped-by-repo` sola correría todas las suites del árbol).
+    _tg_scope_rc=0
+    _tg_scope_by="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO_RUN")" || _tg_scope_rc=$?
     REPO_RUN="$(_tg_tree_field tree)"
     TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --only-touched)
+    if [[ "$_tg_scope_rc" == "0" && -n "$_tg_scope_by" ]]; then
+      TG_FULL_SUITE_BY="$_tg_scope_by"
+      TG_TREE_ARGS+=(--scoped-by-repo "$TG_FULL_SUITE_BY")
+    elif [[ "$_tg_scope_rc" != "10" ]]; then
+      echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml del privado (salió $_tg_scope_rc): el árbol acota como siempre, sin cerrar en verde lo que ninguna suite lee" >&2
+    fi
     echo "[test-gate] en la máquina corren sólo las suites que leen lo tocado; las otras quedan diferidas (las corre la CI del pedido y el nocturno)"
   fi
   # --- Primero la suite que falló ---
@@ -846,9 +927,53 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # la completa no lanza nada: sale 76 y da el comando para repetir cada una sola. Relanzar todas para ver si se arregló
   # una cuesta la suite entera cada vez. «Completa» es la de arriba sin `--suite`, con los recortes que la puerta pone
   # sola (lo tocado, la liviana, la cruzada); una parte o un repo hermano no anotan ni se niegan.
-  # `--suite <ruta>` corre esa sola en el check `tests-suite`: en verde la saca de la lista, y nunca escribe el check
-  # `tests` ni tests-result.json (una suite sola no es la corrida completa).
+  # `--suite <ruta>` corre esa sola en el check `tests-suite`: en verde la saca de la lista. Una suite sola no es la
+  # corrida completa: no escribe el check `tests`, salvo en una corrida acotada (la completa la corre la CI del pedido),
+  # sin lo guardado de la completa roja, cuando saca la última roja y la constancia queda en verde. De tests-result.json,
+  # la constancia de la completa que lee el revisor de pruebas, sólo saca su falla si es de esa misma completa: ver
+  # `tests-failed clear`.
+  # Repetir solas cierra (story 8.208), en un repo que acota el portón o en el árbol armado del privado: con la
+  # lista vacía, la próxima completa no siempre corre todo. Si la carpeta no cambió desde la completa roja ni desde cada
+  # repetición, cierra con lo guardado sin correr ninguna suite (la carpeta no cambió). Si cambió entre la completa y las
+  # repeticiones, corren sólo las suites que leen lo cambiado. Si no, corre la completa como siempre (ver abajo).
   _TG_SUITES_FILE="$REPO_RUN/scripts/tests/suites.json"
+  # --- La espera a main ---
+  # La de este repo se lee una sola vez por corrida (marker.js waiting-on-main suites): las suites de la lista de esta
+  # corrida que esperan a main, y el id de su registro. Si no se deja leer, la corrida no se acota (TG_WAIT_NO). Se borra
+  # suite por suite, sólo con la suite medida en esta corrida: una corrida ocupada, sin turno o cortada no la borra, y una
+  # que sale 0 sin haberla corrido tampoco.
+  TG_WAIT_JSON='{"id":null,"suites":[]}'; TG_WAIT_NO=""
+  leer_espera_main() {
+    local out rc=0
+    out="$(cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main suites --repo "$REPO_STORY" --list "$_TG_SUITES_FILE")" || rc=$?
+    if [[ "$rc" == "0" && -n "$out" ]]; then TG_WAIT_JSON="$out"; else TG_WAIT_NO="no pude leer la espera a main (salió $rc)"; fi
+  }
+  _tg_espera_suites() { node -e 'try{process.stdout.write(JSON.stringify(JSON.parse(process.argv[1]).suites||[]))}catch(e){process.stdout.write("[]")}' "$TG_WAIT_JSON"; }
+  # lo que corrió en esta corrida sale de la espera: en el cierre con lo guardado, el resumen nuevo, no el juntado
+  _tg_borrar_espera_medida() {
+    local medido="$RESULTS_DIR/suites.json"
+    [[ "${TG_CLOSE_MODE:-}" == "same" ]] && return 0
+    [[ "${TG_CLOSE_MODE:-}" == "changed" && -s "$RESULTS_DIR/suites-nuevas.json" ]] && medido="$RESULTS_DIR/suites-nuevas.json"
+    [[ -s "$medido" ]] || return 0
+    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main clear --repo "$REPO_STORY" --measured "$medido" ) \
+      || echo "[test-gate] ⚠️  no pude sacar de la espera a main las suites que corrieron: queda anotada hasta la próxima corrida" >&2
+  }
+  # Roja con una suite que esperaba a main: si main ya pasó y esta rama no lo trae, se dice antes de que se arregle la
+  # suite (lib/main-check.js branch-check, que no afirma nada que no pueda comprobar).
+  _tg_branch_check() {
+    local id linea rc=0
+    id="$(node -e 'try{const w=JSON.parse(process.argv[1]);const r=JSON.parse(require("fs").readFileSync(process.argv[2],"utf8"));const rojas=new Set((r.fallas||[]).map((f)=>f&&f.entrada&&f.entrada.ruta));if(w.id&&(w.suites||[]).some((s)=>rojas.has(s)))process.stdout.write(w.id)}catch(e){process.stdout.write("?")}' "$TG_WAIT_JSON" "$RESULTS_DIR/suites.json")"
+    if [[ "$id" == "?" ]]; then
+      echo "🟡 [test-gate] no pude comprobar si main ya pasó (la espera o el resumen no se dejan leer): si una suite esperaba a main, traé main antes de tocarla" >&2
+      return 0
+    fi
+    [[ -n "$id" ]] || return 0
+    linea="$(node "$SCRIPT_DIR/lib/main-check.js" branch-check --repo "$REPO_RUN" --id "$id" 2>&1)" || rc=$?
+    if [[ "$rc" != "0" ]]; then echo "🟡 [test-gate] no pude comprobar si main ya pasó (branch-check salió $rc: ${linea%%$'\n'*})" >&2
+    elif [[ "$linea" == "no pude comprobar"* ]]; then echo "🟡 [test-gate] $linea" >&2
+    elif [[ -n "$linea" ]]; then echo "🔴 [test-gate] $linea" >&2; fi
+    return 0
+  }
   if [[ -n "$SUITE_ONLY" ]]; then
     _tg_has=0
     node "$SCRIPT_DIR/lib/failed-first.js" has "$_TG_SUITES_FILE" "$SUITE_ONLY" || _tg_has=$?
@@ -858,18 +983,82 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     fi
     _TG_ONE_ARGS=()
     [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _TG_ONE_ARGS=(--skills "$(_tg_tree_field skills)")
-    echo "[test-gate] una sola suite: $SUITE_ONLY (mismo ambiente que la corrida completa; no escribe el check tests ni tests-result.json)"
+    echo "[test-gate] una sola suite: $SUITE_ONLY (mismo ambiente que la corrida completa; no escribe el check tests; en verde, saca su falla de la constancia de la completa)"
     _tg_rc=0
+    # la repetición vuelve a medir esta suite: si no sale 78, sale de la espera a main al terminar (abajo)
+    leer_espera_main
+    # La foto de la carpeta en que corre la repetición (story 8.208): para cerrar sin otra completa, la carpeta de ahora
+    # tiene que ser ésta. Sin foto, la repetición no se suma y la completa corre entera.
+    _TG_ONE_TREE=""
+    if [[ -z "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+      _TG_ONE_TREE="$(node "$SCRIPT_DIR/lib/after-main.js" snapshot "$REPO_RUN" 2>/dev/null | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{try{process.stdout.write(JSON.parse(t).tree||"")}catch(e){}})' || true)"
+    elif node "$SCRIPT_DIR/lib/after-main.js" snapshot-tree "$(_tg_tree_field private.root)" "$_TG_PUB_ROOT" "$(_tg_tree_field base.source)" "$(_tg_tree_field base.commit)" "${_tg_equipo:--}" "$(_tg_tree_field measured.private)" "$(_tg_tree_field measured.public)" > "$RESULTS_DIR/one-start.json" 2>/dev/null; then
+      # en el árbol armado, la foto de cada repo, en una línea: la misma que compara lo guardado
+      _TG_ONE_TREE="$(node "$SCRIPT_DIR/lib/after-main.js" fingerprint "$RESULTS_DIR/one-start.json" 2>/dev/null || true)"
+    fi
+    [[ -n "$_TG_ONE_TREE" ]] || echo "[test-gate] ⚠️  no pude sacar la foto de la carpeta: esta repetición no se suma a lo guardado y la próxima completa corre entera" >&2
+    # --run-check: el corredor lo anota en el resumen con las marcas de la puerta; en rojo guarda además los casos que
+    # fallaron y la salida entera de cada suite (la cola de run-check sola deja afuera el caso del medio).
     ( cd "$REPO" && node "$MARKER_JS" run-check tests-suite -- \
-        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" --suite "$SUITE_ONLY" ${_TG_ONE_ARGS[@]+"${_TG_ONE_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" ) || _tg_rc=$?
+        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" --suite "$SUITE_ONLY" ${_TG_ONE_ARGS[@]+"${_TG_ONE_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" --run-check tests-suite ) || _tg_rc=$?
+    # El mismo juez que en la completa: si ya estaba roja antes del cambio (la foto o la base), avisa, no frena y sale de la
+    # lista. Sin él, la completa se seguiría negando por un rojo que el pedido no frena.
+    _TG_ONE_INHERITED=""
+    if [[ "$_tg_rc" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
+      _tg_her=0
+      TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
+      if [[ "$_tg_her" == "0" ]]; then
+        echo "🟡 [test-gate] $SUITE_ONLY ya estaba roja antes del cambio, en el nocturno de esta mañana o en la base: avisa y no frena, igual que en la validación del pedido" >&2
+        ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests-suite -- node -e 'console.error(`test-gate: ${process.argv[1]} ya estaba roja antes del cambio: avisa, no frena`)' "$SUITE_ONLY" ) >&2 \
+          || echo "[test-gate] ⚠️  no pude dejar en verde el check tests-suite: queda como lo dejó la corrida" >&2
+        _tg_rc=0
+        _TG_ONE_INHERITED=1
+      fi
+      # 78: la suite está roja también en la punta de main, con los mismos casos (el tercer juez, lib/main-check.js): es
+      # de main, no de la historia. La corrida espera a main: la espera queda anotada (marcador, registro de main roto,
+      # nota de la sesión) y la suite sale de la lista de repetir primero. No es verde ni rojo: no queda tests-result.json.
+      if [[ "$_tg_her" == "78" ]]; then
+        # --merge: la espera de las otras suites sigue; esta repetición suma la suya, no la reemplaza
+        ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main set --repo "$REPO_STORY" --tree "$REPO_RUN" --summary "$RESULTS_DIR/suites.json" --run "$TYCON_TEST_GATE_RUN" --merge --single-suite ) \
+          || echo "[test-gate] ⚠️  no pude anotar la espera a main: el check tests queda como lo dejó la corrida" >&2
+        rm -f "$OUT_FILE"
+        echo "🟡 [test-gate] $SUITE_ONLY está roja también en la punta de main, con los mismos casos: la corrida espera a main (arriba, el registro). No es un rojo de la historia: no toques esa prueba ni el código por eso; no quedó tests-result.json." >&2
+        borrar_arbol_privado; trap - EXIT; exit 78
+      fi
+    fi
+    # lo que corrió sale de la espera a main; roja y con la suite en la espera, si main ya pasó y la rama no lo trae, lo dice
+    [[ "$_tg_rc" == "1" ]] && _tg_branch_check
+    [[ "$_tg_rc" == "0" || "$_tg_rc" == "1" ]] && _tg_borrar_espera_medida
     if [[ "$_tg_rc" == "0" ]]; then
-      ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed clear --path "$SUITE_ONLY" --repo "$REPO_STORY" ) \
+      # La copia que viaja de la constancia, donde la escribe el informe: la clave de la evidencia (o el id) en su carpeta.
+      _TG_SEALED=""
+      if [[ -n "$STORY_ARG" && -z "${TYCON_EVIDENCE_KEY_FAILED:-}" ]]; then
+        _TG_SEALED="${TYCON_EVIDENCE_DIR:-$REPO/.advisors/dod-runtime}/${TYCON_EVIDENCE_KEY:-$STORY_ID}-tests-result.json"
+      fi
+      # Quién corre la completa si esta corrida está acotada (la cruzada, el árbol armado del privado o el repo que acota
+      # en .test-gate.yaml): con eso, sacar la última roja con la constancia en verde deja el check `tests` en verde.
+      _TG_ONE_BY=""
+      if [[ "$TG_CROSS" == "1" ]]; then _TG_ONE_BY="la CI del pedido (la corrida cruzada se acota a lo tocado)"
+      elif [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then _TG_ONE_BY="la CI del pedido y el nocturno (árbol armado del privado)"
+      else
+        # salida 10: el repo no acota (lo normal); otra salida no acota y se dice, con el motivo que imprimió arriba
+        _tg_one_rc=0
+        _TG_ONE_BY="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO_RUN")" || _tg_one_rc=$?
+        if [[ "$_tg_one_rc" != "0" ]]; then
+          [[ "$_tg_one_rc" == "10" ]] || echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml (salió $_tg_one_rc): la repetición no deja el check tests en verde" >&2
+          _TG_ONE_BY=""
+        fi
+      fi
+      ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed clear --path "$SUITE_ONLY" --repo "$REPO_STORY" ${_TG_ONE_TREE:+--summary "$RESULTS_DIR/suites.json" --tree "$_TG_ONE_TREE" --coverage-file "$RESULTS_DIR/coverage/lcov.info"} \
+          --result "$OUT_FILE" --story-id "$STORY_ID" ${_TG_SEALED:+--sealed "$_TG_SEALED"} ${_TG_ONE_INHERITED:+--inherited} ${_TG_ONE_BY:+--full-suite-by "$_TG_ONE_BY"} ) \
         || echo "[test-gate] ⚠️  $SUITE_ONLY salió verde pero no pude sacarla de la lista de las que fallaron: la corrida completa la va a seguir pidiendo" >&2
     fi
     borrar_arbol_privado; trap - EXIT; exit "$_tg_rc"
   fi
   if [[ "${TYCON_TEST_GATE_PART:-}" != "1" && "${TYCON_TEST_GATE_COMPANION:-}" != "1" ]]; then
     TG_TOP_FULL=1
+    # cuánto tardó la corrida de arriba, para su renglón en gates.log
+    _TG_T0_S="$(date +%s)"
     _tg_pend=0
     ( cd "$REPO" && node "$MARKER_JS" tests-failed pending --suites "$_TG_SUITES_FILE" --gate "$SCRIPT_DIR/test-gate.sh" --repo "$REPO_STORY" ${STORY_ARG:+--story "$STORY_ARG"} ) || _tg_pend=$?
     if [[ "$_tg_pend" == "76" ]]; then
@@ -880,6 +1069,10 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     fi
     [[ "$_tg_pend" == "0" ]] || echo "[test-gate] ⚠️  no pude leer la lista de las suites que fallaron (salida $_tg_pend): corro la completa igual" >&2
   fi
+  # la espera a main de este repo, también en una parte y en un hermano: lo que espera corre en esta corrida
+  leer_espera_main
+  [[ -n "$TG_WAIT_NO" ]] && echo "[test-gate] ⚠️  $TG_WAIT_NO: la corrida no se acota con lo guardado ni con lo que trajo main" >&2
+  [[ "$(_tg_espera_suites)" != "[]" ]] && echo "[test-gate] esperan a main en este repo: $(_tg_espera_suites)"
   BASE_JSON="$(TYCON_TEST_GATE_CROSS_REPO="$TG_CROSS" node "$SCRIPT_DIR/lib/coverage-base.js" "$REPO" 2>/dev/null)" || BASE_JSON=""
   [[ -n "$BASE_JSON" ]] || BASE_JSON='{"ref":null,"source":null,"descartadas":[{"source":"coverage-base","motivo":"no se pudo correr lib/coverage-base.js"}]}'
   # Sin base, touched-files dice «no sé» y el runner corre todo (el lado seguro; la corrida cruzada sale 7 sin correr
@@ -896,7 +1089,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   TOUCHED_ARGS=()
   if [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
     # en el árbol armado, lo tocado es lo de los dos repos (las rutas del árbol son las de cada uno)
-    if node "$SCRIPT_DIR/lib/private-tree.js" touched "$REPO" "$_TG_PUB_ROOT" "$_TG_STORY_ARG" "$RESULTS_DIR/touched.json" 2>"$RESULTS_DIR/touched.err"; then
+    if node "$SCRIPT_DIR/lib/private-tree.js" touched "$REPO" "$_TG_PUB_TOUCHED" "$_TG_STORY_ARG" "$RESULTS_DIR/touched.json" 2>"$RESULTS_DIR/touched.err"; then
       TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched.json")
       # el informe cuenta las líneas tocadas en cada repo contra su base (no el árbol contra la base del privado). Va
       # sólo al informe, en su línea: exportada, la heredaban las suites que corren su propio portón de juguete.
@@ -925,9 +1118,45 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     TG_FULL_SUITE_BY="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO_RUN")" || _tg_scope_rc=$?
     if [[ "$_tg_scope_rc" == "0" && -n "$TG_FULL_SUITE_BY" ]]; then
       LIGHT_ARGS=(--scoped-by-repo "$TG_FULL_SUITE_BY")
-      echo "[test-gate] el repo acota el portón (test_gate en .test-gate.yaml): corren sólo las suites que leen lo tocado; la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY)"
+      echo "[test-gate] el repo acota el portón (test_gate en .test-gate.yaml): si se sabe qué se tocó, corren sólo las suites que lo leen; la suite completa la corre $TG_FULL_SUITE_BY"
     elif [[ "$_tg_scope_rc" != "10" ]]; then
       echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml (salió $_tg_scope_rc): corre la suite entera" >&2
+    fi
+  fi
+  # Ya acotado porque una CI corre la completa, y lo único que cambió desde la última corrida es lo que trajo main: corren
+  # las suites que fallaron y las que nombran lo que trajo main (lib/after-main.js). Lo de la historia ya se midió. Cualquier
+  # otro cambio corre lo de siempre. Lo medido se anota al cerrar; si esta corrida no termina, no queda nada anotado.
+  # En el árbol armado se compara cada repo de verdad: el árbol es una carpeta nueva cada vez, y main no la tiene.
+  if [[ "$TG_TOP_FULL" == "1" ]]; then
+    TG_MEASURED="$OUT_DIR/test-gate-measured.json"
+    _tg_acotado="${#LIGHT_ARGS[@]}"
+    if [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+      # el árbol armado siempre está acotado: sus suites enteras las corren la CI del pedido y el nocturno
+      _tg_acotado=1
+      _tg_foto=(snapshot-tree "$(_tg_tree_field private.root)" "$_TG_PUB_ROOT" "$(_tg_tree_field base.source)" "$(_tg_tree_field base.commit)" "${_tg_equipo:--}" "$(_tg_tree_field measured.private)" "$(_tg_tree_field measured.public)")
+      _tg_decide=(decide-tree)
+    else
+      _tg_foto=(snapshot "$REPO_RUN")
+      _tg_decide=(decide "$REPO_RUN")
+    fi
+    if node "$SCRIPT_DIR/lib/after-main.js" "${_tg_foto[@]}" > "$RESULTS_DIR/measured-start.json"; then
+      # con suites que esperan a main (o sin poder leer la espera), no: lo que esperaba tiene que volver a correr
+      if [[ "$_tg_acotado" -gt 0 && "${TYCON_GATE_ALL_SUITES:-}" != "1" && -z "$TG_WAIT_NO" && "$(_tg_espera_suites)" == "[]" ]] \
+        && node "$SCRIPT_DIR/lib/after-main.js" "${_tg_decide[@]}" "$TG_MEASURED" "$RESULTS_DIR/measured-start.json" "$RESULTS_DIR/touched.json"; then
+        TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched.json")
+        if [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+          TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
+          TG_TREE_TOUCHED_FILE=""
+        else
+          LIGHT_ARGS=(--scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
+        fi
+        TG_AFTER_MAIN=1
+      fi
+      rm -f "$TG_MEASURED"
+    else
+      echo "[test-gate] ⚠️  no pude anotar qué mide esta corrida: si después se trae main, corre lo de siempre" >&2
+      rm -f "$TG_MEASURED"
+      TG_MEASURED=""
     fi
   fi
   _TG_SIZE="$(node "$MARKER_JS" get 2>/dev/null | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(t).size||""))}catch(e){process.stderr.write("[test-gate] no pude leer el tamaño de la corrida del marcador: corren las suites de siempre\n")}})' || true)"
@@ -935,23 +1164,184 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     LIGHT_ARGS+=(--light)
     echo "[test-gate] corrida liviana: sólo las suites que leen algún archivo tocado (las demás, diferidas por corrida liviana)"
   fi
+  # --- Repetir solas cierra (story 8.208), y lo guardado de una completa verde ---
+  # Después de una completa roja, con sus rojas repetidas solas en verde, la completa no se vuelve a correr entera: si la
+  # carpeta no cambió desde la completa ni desde cada repetición, cierra con lo guardado (la carpeta no cambió); si cambió
+  # desde la completa (también por main traído), corren sólo las suites que leen lo cambiado, y cada repetida cuya
+  # carpeta cambió después de repetirla vuelve a correr. Con cualquier duda (otro recorte, la lista de suites cambiada, lo
+  # guardado tocado), corre la completa como siempre. Después de un verde, lo mismo contra él: contra el último verde de la
+  # historia, que es una completa verde o el resumen juntado de un cierre en verde, nunca una acotada sola; un cambio en
+  # un control, el instalador, lo compartido o la lista de suites, u otra historia, corre la completa como siempre. Sólo
+  # en un repo que acota el portón (la completa la corre después la CI del pedido) o en el árbol armado del privado (ahí
+  # la comparación es por repo). Lo guardado lo escriben `marker.js tests-failed save-red` y `save-green`, al final de la
+  # corrida (bloque «Lo guardado de la historia»).
+  _TG_RECORTE="${LIGHT_ARGS[*]-}"
+  TG_CLOSE_MODE=""; TG_CLOSE_DIR=""; TG_CLOSE_ORIGIN=""
+  _TG_MARKER_STORY="$(node "$MARKER_JS" get 2>/dev/null | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(t).storyId||""))}catch(e){}})' || true)"
+  # Cada corrida de arriba dice un solo renglón con su modo y su motivo, y lo anota al final. «primera»:
+  # el marcador no tiene la nota de una corrida terminada de esta historia en este repo (`testsSavedNote`); si la tiene
+  # y esa corrida no guardó, su motivo acompaña a «no hay un verde guardado».
+  TG_RUN_MODO=""; TG_RUN_MOTIVO=""; TG_RUN_TEXTO=""; TG_RUN_ORIGEN_AT=""
+  # `get` imprime `{}` sin corrida y también con un marcador roto: --strict sale distinto de 0 con el roto, y si no se
+  # pudo preguntar tampoco se sabe si es la primera
+  _TG_GET_RC=0
+  _TG_GET="$(node "$MARKER_JS" get --strict 2>/dev/null)" || _TG_GET_RC=$?
+  _TG_NOTA="?"
+  [[ "$_TG_GET_RC" == "0" && -n "$_TG_GET" ]] && _TG_NOTA="$(printf '%s' "$_TG_GET" | node -e '
+    let t=""; process.stdin.on("data",(d)=>{t+=d;}).on("end",()=>{ try {
+      if (!t.trim() || t.trim() === "null") return;
+      const m = JSON.parse(t); const fs = require("fs");
+      let r = process.argv[1]; try { r = fs.realpathSync(r); } catch (_) { /* la ruta tal cual */ }
+      const n = (Array.isArray(m.testsSavedNote) ? m.testsSavedNote : []).find((x) => x && x.repo === r && (x.storyId || null) === (m.storyId || null));
+      if (!n) return;
+      const d = new Date(n.at); const hh = Number.isNaN(d.getTime()) ? "??:??" : `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+      process.stdout.write(n.guardo === "no" ? `la última corrida, de las ${hh}, no guardó: ${n.motivo || "sin motivo"}` : "-");
+    } catch (e) { process.stdout.write("?"); } });' "$REPO_STORY" || true)"
+  # sin corrida abierta no hay nota: primera. Un marcador que no se deja leer no dice si es la primera: cuenta como
+  # entera, que nunca achica las repeticiones
+  _TG_PRIMERA_O_ENTERA=entera; [[ -z "$_TG_NOTA" ]] && _TG_PRIMERA_O_ENTERA=primera
+  [[ "$_TG_NOTA" == "?" ]] && _TG_NOTA="no pude leer el marcador: no sé si es la primera corrida"
+  _tg_completa() { TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="$1"; TG_RUN_TEXTO="corre la completa como siempre: $1"; }
+  if [[ "${TYCON_GATE_ALL_SUITES:-}" == "1" ]]; then
+    TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="TYCON_GATE_ALL_SUITES=1 pide correr todo"; TG_RUN_TEXTO="corre todo: $TG_RUN_MOTIVO"
+  elif [[ "${TG_AFTER_MAIN:-}" == "1" ]]; then
+    TG_RUN_MODO=acotada; TG_RUN_MOTIVO="lo único que cambió es lo que trajo main"; TG_RUN_TEXTO="$TG_RUN_MOTIVO"
+  elif [[ "$TG_CROSS" == "1" ]]; then
+    TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="la historia vive en otro repo: corren las suites que leen lo tocado"; TG_RUN_TEXTO="$TG_RUN_MOTIVO"
+  elif [[ -z "${TG_PRIVATE_TREE_DIR:-}" && -z "${TG_FULL_SUITE_BY:-}" ]]; then
+    TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="el repo no acota el portón"; TG_RUN_TEXTO="corre todo: $TG_RUN_MOTIVO"
+  fi
+  if [[ "$TG_TOP_FULL" == "1" && ( -n "${TG_PRIVATE_TREE_DIR:-}" || -n "${TG_FULL_SUITE_BY:-}" ) && "${TYCON_GATE_ALL_SUITES:-}" != "1" \
+    && "${TG_AFTER_MAIN:-}" != "1" ]]; then
+    _tg_roja_rc=0
+    _tg_roja="$(cd "$REPO" && node "$MARKER_JS" tests-failed red-full --repo "$REPO_STORY")" || _tg_roja_rc=$?
+    if [[ "$_tg_roja_rc" == "0" && ( -z "$_tg_roja" || "$_tg_roja" == "null" ) ]]; then
+      _tg_roja="$(cd "$REPO" && node "$MARKER_JS" tests-failed green-full --repo "$REPO_STORY")" || _tg_roja_rc=$?
+    fi
+    if [[ -n "$TG_WAIT_NO" ]]; then
+      _tg_completa "$TG_WAIT_NO"
+    elif [[ "$_tg_roja_rc" != "0" ]]; then
+      _tg_completa "no pude leer lo guardado de la última completa (salió $_tg_roja_rc)"
+    elif [[ -z "$_tg_roja" || "$_tg_roja" == "null" ]]; then
+      TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="no hay un verde guardado de esta historia en esta sesión"
+      [[ -n "$_TG_NOTA" && "$_TG_NOTA" != "-" ]] && TG_RUN_MOTIVO="$TG_RUN_MOTIVO; $_TG_NOTA"
+      TG_RUN_TEXTO="corre la completa: $TG_RUN_MOTIVO"
+    elif [[ ! -s "$RESULTS_DIR/measured-start.json" ]]; then
+      _tg_completa "no hay foto de la carpeta al arrancar para comparar con lo guardado"
+    else
+      _tg_dec="$(node -e '
+        const [roja, inicio, repo, base, recorte, storyId, ff, tocado, espera] = process.argv.slice(1);
+        try {
+          const r = JSON.parse(roja); const foto = JSON.parse(require("fs").readFileSync(inicio, "utf8"));
+          // en el árbol armado la foto es la de cada repo; fuera, el árbol de la carpeta
+          const tree = foto && foto.privado && foto.publico ? foto : foto.tree;
+          const lib = require(ff);
+          const d = lib.decide({ dir: r.dir, hash: r.hash, repo, tree, base: base || null, recorte, storyId: storyId || null, mustMeasure: lib.mustMeasureFrom(tocado), esperaMain: JSON.parse(espera) });
+          process.stdout.write(JSON.stringify({ ...d, dir: r.dir }));
+        } catch (e) { process.stdout.write(JSON.stringify({ mode: "full", reason: `no pude decidir (${e.message})` })); }
+      ' "$_tg_roja" "$RESULTS_DIR/measured-start.json" "$REPO_RUN" "$_TG_BASE" "$_TG_RECORTE" "$_TG_MARKER_STORY" "$SCRIPT_DIR/lib/failed-first.js" "$RESULTS_DIR/touched.json" "$(_tg_espera_suites)")"
+      _tg_campo() { node -e 'try{const v=JSON.parse(process.argv[1])[process.argv[2]];process.stdout.write(Array.isArray(v)?v.join(","):String(v??""))}catch(e){}' "$_tg_dec" "$1"; }
+      # los nombres de una lista de suites de la decisión (`reactivadas`: `{ raiz, ruta, nombre, motivo }`), para el renglón
+      _tg_campo_nombres() { node -e 'try{const v=JSON.parse(process.argv[1])[process.argv[2]];process.stdout.write(Array.isArray(v)?v.map((x)=>x&&x.nombre).filter(Boolean).join(", "):"")}catch(e){}' "$_tg_dec" "$1"; }
+      TG_CLOSE_MODE="$(_tg_campo mode)"; TG_CLOSE_DIR="$(_tg_campo dir)"; TG_CLOSE_ORIGIN="$(_tg_campo origen)"; TG_RUN_ORIGEN_AT="$(_tg_campo origen_at)"
+      case "$TG_CLOSE_MODE" in
+        same) TG_RUN_MODO="sin correr"
+              TG_RUN_TEXTO="la carpeta es la que midió la completa $TG_CLOSE_ORIGIN$([[ "$TG_CLOSE_ORIGIN" == "roja" ]] && echo ' y cada repetición'): no corro ninguna suite"
+              TG_RUN_MOTIVO="$TG_RUN_TEXTO" ;;
+        changed)
+          # `rerun_suites`: las repetidas cuya carpeta cambió después de repetirlas; `reactivated_suites`: las que vuelven
+          # por sus carpetas (diferidas o medidas por la completa), con su motivo aparte en `reactivated_reasons`. Van aparte
+          # de los archivos: son claves de la lista de suites, no rutas del repo, y el corredor las corre antes de cualquier
+          # filtro. Las listas salen de la decisión entera (JSON), no de un texto partido por comas; si no se dejan leer, la
+          # completa: unas repetidas viejas que no vuelven a correr dejarían en verde un arreglo deshecho.
+          if node -e 'const [f, dec, base] = process.argv.slice(1); const d = JSON.parse(dec); const rerun = d.rerun || []; const vuelven = d.reactivadas || []; if (!Array.isArray(d.files) || !Array.isArray(rerun) || !Array.isArray(vuelven)) throw new Error("la decisión no trae sus listas"); const clave = (x) => `${x.raiz}:${x.ruta}`; require("fs").writeFileSync(f, JSON.stringify({ known: true, files: d.files, rerun_suites: rerun, reactivated_suites: vuelven.map(clave), reactivated_reasons: Object.fromEntries(vuelven.map((x) => [clave(x), x.motivo])), sources: {}, reason: null, base: { ref: base || null, source: "repetidas" } }))' \
+            "$RESULTS_DIR/touched-repetidas.json" "$_tg_dec" "$_TG_BASE"; then
+            TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched-repetidas.json")
+            # en el árbol armado, que ninguna suite lea lo cambiado es cerrar con lo guardado, no «sin acotar» (salida 7)
+            [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
+            TG_RUN_MODO=acotada
+            _tg_vuelven="$(_tg_campo_nombres reactivadas)"
+            _tg_viejas="$([[ -n "$(_tg_campo rerun)" ]] && echo " y las repetidas que quedaron viejas ($(_tg_campo rerun))")"
+            if [[ -n "$_tg_vuelven" ]]; then
+              TG_RUN_TEXTO="la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren las suites que leen lo cambiado y las que vuelven por sus carpetas ($_tg_vuelven)$_tg_viejas"
+            else
+              TG_RUN_TEXTO="la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren sólo las suites que leen lo cambiado$_tg_viejas"
+            fi
+            TG_RUN_MOTIVO="$TG_RUN_TEXTO"
+          else
+            _tg_completa "no pude leer las listas de la decisión sobre lo guardado"
+            TG_CLOSE_MODE=""; TG_CLOSE_ORIGIN=""; TG_RUN_ORIGEN_AT=""
+          fi ;;
+        *) _tg_motivo="$(_tg_campo reason)"
+           _tg_completa "${_tg_motivo:-no pude leer lo guardado}"; TG_CLOSE_MODE=""; TG_CLOSE_ORIGIN=""; TG_RUN_ORIGEN_AT="" ;;
+      esac
+    fi
+  fi
+  [[ "$TG_TOP_FULL" == "1" && -n "$TG_RUN_MODO" ]] && echo "[test-gate] modo $TG_RUN_MODO · $TG_RUN_TEXTO"
+  # el cierre con lo guardado corre run-check desde el repo del marcador: en el árbol armado, el privado de verdad
+  _TG_CLOSE_CWD="$REPO_RUN"; [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _TG_CLOSE_CWD="$REPO"
+  # Lo que corrió por lo cambiado se junta con lo guardado de la completa (y las repeticiones, si era roja). Por run-check,
+  # como en `same`: el check `tests` queda con el veredicto del resumen juntado, no con el del corredor.
+  juntar_con_lo_guardado() {
+    if [[ "$TG_CLOSE_MODE" == "changed" && ( "$SUITE_EXIT" == "0" || "$SUITE_EXIT" == "1" ) && -f "$RESULTS_DIR/suites.json" ]]; then
+      cp "$RESULTS_DIR/suites.json" "$RESULTS_DIR/suites-nuevas.json"
+      SUITE_EXIT=0
+      ( cd "$_TG_CLOSE_CWD" && node "$MARKER_JS" run-check tests -- \
+          node "$SCRIPT_DIR/lib/failed-first.js" merge --dir "$TG_CLOSE_DIR" --new "$RESULTS_DIR/suites-nuevas.json" --changed "$(_tg_campo files)" --out "$RESULTS_DIR/suites.json" --coverage "$RESULTS_DIR/coverage" ) || SUITE_EXIT=$?
+    fi
+  }
   # Con la cobertura pedida, cada suite corre bajo el medidor de Node y deja su lcov; el informe lee el
   # juntado ($RESULTS_DIR/coverage/lcov.info) para las líneas tocadas.
-  echo "[test-gate] suites.json — corriendo scripts/tests/suites.json en paralelo, con cobertura (1 sola corrida, resumen → $RESULTS_DIR/suites.json)"
-  if [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+  # Las suites que esperan a main corren en toda corrida que corre algo, sin pasar por los filtros (las repetidas del
+  # corredor, que van antes de «no lee lo tocado» y de la cercanía): sin esto, en una corrida cruzada o sin nada guardado
+  # una que no lee lo tocado quedaría diferida, y su espera no se borraría nunca. Sin archivo de lo tocado, el corredor
+  # corre todo (o sale 7 sin correr): el borrado mira qué corrió de verdad.
+  if [[ "$TG_CLOSE_MODE" != "same" && "$(_tg_espera_suites)" != "[]" && ${#TOUCHED_ARGS[@]} -eq 2 ]]; then
+    if node -e '
+      const fs = require("fs");
+      const [src, dst, espera] = process.argv.slice(1);
+      const t = JSON.parse(fs.readFileSync(src, "utf8"));
+      const s = JSON.parse(espera);
+      t.rerun_suites = [...new Set([...(Array.isArray(t.rerun_suites) ? t.rerun_suites : []), ...s])];
+      t.rerun_reasons = { ...(t.rerun_reasons || {}), ...Object.fromEntries(s.map((r) => [r, "espera a main: vuelve a correr"])) };
+      fs.writeFileSync(dst, JSON.stringify(t));
+    ' "${TOUCHED_ARGS[1]}" "$RESULTS_DIR/touched-con-espera.json" "$(_tg_espera_suites)"; then
+      TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched-con-espera.json")
+    else
+      echo "[test-gate] ⚠️  no pude sumar las suites que esperan a main a lo tocado: pueden quedar diferidas y su espera sigue" >&2
+    fi
+  fi
+  [[ "$TG_CLOSE_MODE" == "same" ]] || echo "[test-gate] suites.json — corriendo scripts/tests/suites.json en paralelo, con cobertura (1 sola corrida, resumen → $RESULTS_DIR/suites.json)"
+  if [[ "$TG_CLOSE_MODE" == "same" ]]; then
+    ( cd "$_TG_CLOSE_CWD" && node "$MARKER_JS" run-check tests -- \
+        node "$SCRIPT_DIR/lib/failed-first.js" merge --dir "$TG_CLOSE_DIR" --out "$RESULTS_DIR/suites.json" --coverage "$RESULTS_DIR/coverage" ) || SUITE_EXIT=$?
+  elif [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
     # De fondo y con `wait`: así una señal corta la espera, el trap borra el árbol y no se espera a la suite. Con
     # `set -m` el trabajo de fondo tiene su propio grupo de procesos, que el trap corta entero.
     # El marcador es el del privado: run-check corre desde él; el corredor mide el árbol.
     set -m
-    ( cd "$REPO" && node "$MARKER_JS" run-check tests -- \
-        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} "${TG_TREE_ARGS[@]}" --coverage "$RESULTS_DIR/coverage" ) &
+    ( cd "$REPO" && TYCON_GATE_PROCESS=$$ node "$MARKER_JS" run-check tests -- \
+        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} "${TG_TREE_ARGS[@]}" --coverage "$RESULTS_DIR/coverage" --run-check tests ) &
     TG_SUITES_PID=$!
     set +m
     wait "$TG_SUITES_PID" || SUITE_EXIT=$?
     TG_SUITES_PID=""
+    juntar_con_lo_guardado
   else
-  ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
-      node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} ${LIGHT_ARGS[@]+"${LIGHT_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" ) || SUITE_EXIT=$?
+    # De fondo, en su grupo y con `wait`, como en el árbol armado: una señal corta la espera y el trap corta el grupo.
+    # `TYCON_GATE_PROCESS`: si a este portón lo matan sin señal que atrapar (kill -9), el corredor lo ve y se corta solo.
+    trap 'cortar_corrida 143' TERM
+    trap 'cortar_corrida 130' INT
+    trap 'cortar_corrida 129' HUP
+    set -m
+    ( cd "$REPO_RUN" && TYCON_GATE_PROCESS=$$ node "$MARKER_JS" run-check tests -- \
+        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} ${LIGHT_ARGS[@]+"${LIGHT_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" --run-check tests ) &
+    TG_SUITES_PID=$!
+    set +m
+    wait "$TG_SUITES_PID" || SUITE_EXIT=$?
+    TG_SUITES_PID=""
+    trap - TERM INT HUP
+    juntar_con_lo_guardado
   fi
 elif [[ "$RUNNER" == "jest" ]]; then
   # `--maxWorkers` capado por default: jest paraleliza en ~cores-1 y cada worker carga jsdom + el
@@ -967,6 +1357,22 @@ else
       bash -c "set -o pipefail; npx vitest run --coverage --reporter=json --outputFile $(printf %q "$RESULTS_DIR/vitest.json") 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
 fi
 
+# De 3 a 7 son salidas del propio gate («sin suite», «no sé el alcance»…): una herramienta de pruebas que sale así
+# es un rojo, y se pasa a 1 como ya hace el corredor genérico.
+if [[ "$RUNNER" =~ ^(dotnet|node-test|jest|vitest)$ && "$SUITE_EXIT" =~ ^[3-7]$ ]]; then
+  echo "[test-gate] $RUNNER salió $SUITE_EXIT: cuenta como falla (1), para no confundirlo con una salida del gate" >&2
+  SUITE_EXIT=1
+fi
+
+# 77: el corredor no arrancó porque otra sesión tiene el turno de las ejecuciones grandes de la máquina (scripts/tools/heavy-turn.js;
+# ya dijo quién). `run-check` lo anotó `sin-turno`: ni verde (un verde viejo no queda en pie) ni rojo (no hay prueba que
+# arreglar); los cierres de los pasos lo frenan pidiendo el turno. Para quien llama es un 75.
+if [[ "$SUITE_EXIT" == "77" && "$RUNNER" == "suites-json" ]]; then
+  TG_NO_COMPANIONS="otra sesión tiene el turno de las ejecuciones grandes de la máquina"
+  rm -f "$OUT_FILE"
+  echo "🟡 [test-gate] no corrí nada: otra sesión tiene el turno de las ejecuciones grandes de la máquina (arriba, quién y desde cuándo). Esperá que termine; no quedó tests-result.json." >&2
+  exit 75
+fi
 # 75: `run-check tests` no lanzó nada porque otra corrida de las pruebas está en marcha en este repo (ya dijo desde
 # cuándo y de quién). No es un rojo: no se escribe tests-result.json, no se toca el check y no se corren los hermanos.
 if [[ "$SUITE_EXIT" == "75" ]]; then
@@ -976,10 +1382,155 @@ if [[ "$SUITE_EXIT" == "75" ]]; then
   echo "🟡 [test-gate] no corrí nada: otra corrida de las pruebas está en marcha en este repo (arriba, desde cuándo y de quién). Esperá su resultado; no quedó tests-result.json." >&2
   exit 75
 fi
+# Lo que ya estaba rojo antes del cambio avisa y no frena (lib/inherited-reds.js): lo que estaba rojo en el nocturno de
+# esa mañana, con el juez de la validación de cada pedido y la foto que viaja en el árbol; y lo que la foto no perdona,
+# medido solo sobre la base en el momento. Sale del resumen antes de la lista y del informe. Lo que no se pudo medir
+# sigue rojo y dice por qué.
+rm -f "$RESULTS_DIR/suites-antes-del-perdon.json"
+_tg_perdonada=""
+if [[ "$RUNNER" == "suites-json" && "$SUITE_EXIT" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
+  # lo que guarda una completa verde es el resumen de antes del perdón: al cerrar con él, este mismo juez las vuelve a
+  # juzgar con la foto del nocturno de ese día: un perdón de ayer no vale mañana
+  cp "$RESULTS_DIR/suites.json" "$RESULTS_DIR/suites-antes-del-perdon.json" \
+    || echo "[test-gate] ⚠️  no pude copiar el resumen de antes del perdón: si esta completa sale verde por lo heredado, no la guardo" >&2
+  _tg_her=0
+  TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
+  if [[ "$_tg_her" == "0" ]]; then
+    echo "🟡 [test-gate] todo lo rojo ya estaba rojo antes del cambio, en el nocturno de esta mañana o en la base (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
+    ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo rojo ya estaba rojo antes del cambio: avisa, no frena")' ) >&2 \
+      || echo "[test-gate] ⚠️  no pude dejar en verde el check tests: queda como lo dejó la corrida" >&2
+    SUITE_EXIT=0
+    _tg_perdonada=1
+  fi
+  # 78: todo lo que quedó rojo está roto también en la punta de main, con los mismos casos (el tercer juez,
+  # lib/main-check.js): es de main, no de la historia. La corrida espera a main: la espera queda anotada (marcador,
+  # registro de main roto, nota de la sesión), nada entra en la lista de repetir primero, y no queda tests-result.json.
+  # No es verde ni rojo, y no llega a lo guardado ni a lo medido: no queda como último verde. Los repos hermanos corren
+  # igual y se combinan (correr_hermanos_al_salir): un rojo de un hermano gana sobre la espera.
+  if [[ "$_tg_her" == "78" ]]; then
+    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main set --repo "$REPO_STORY" --tree "$REPO_RUN" --summary "$RESULTS_DIR/suites.json" --run "$TYCON_TEST_GATE_RUN" ) \
+      || echo "[test-gate] ⚠️  no pude anotar la espera a main: el check tests queda como lo dejó la corrida" >&2
+    rm -f "$OUT_FILE"
+    echo "🟡 [test-gate] todo lo rojo está roto también en la punta de main, con los mismos casos: la corrida espera a main (arriba, el registro). No es un rojo de la historia: no toques esas pruebas ni el código por eso; no quedó tests-result.json." >&2
+    exit 78
+  fi
+fi
+# Lo que corrió en esta corrida (la de arriba, una parte o un hermano) sale de la espera a main, suite por suite. Roja, con
+# una suite que esperaba: si main ya pasó y esta rama no lo trae, se dice antes de pedir que se arregle.
+if [[ "$RUNNER" == "suites-json" ]]; then
+  [[ "$SUITE_EXIT" == "1" ]] && _tg_branch_check
+  _tg_borrar_espera_medida
+fi
 # La corrida completa reemplaza la lista de las que fallaron: roja, con sus fallas; verde (o sin fallas con su entrada), vacía.
 if [[ "$TG_TOP_FULL" == "1" ]]; then
-  ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed record --summary "$RESULTS_DIR/suites.json" --repo "$REPO_STORY" ) \
+  ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed record --summary "$RESULTS_DIR/suites.json" --repo "$REPO_STORY" --full-ts "$TS" ) \
     || echo "[test-gate] ⚠️  no pude anotar las suites que fallaron: la próxima corrida completa no va a pedir repetirlas primero" >&2
+fi
+if [[ -n "${TG_MEASURED:-}" ]]; then
+  _tg_anotar=record
+  [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _tg_anotar=record-tree
+  # el sexto archivo es la foto para lo guardado de la historia: la del arranque, aunque la carpeta haya cambiado
+  node "$SCRIPT_DIR/lib/after-main.js" "$_tg_anotar" "$REPO_RUN" "$RESULTS_DIR/measured-start.json" "$RESULTS_DIR/suites.json" "$SUITE_EXIT" "$TG_MEASURED" "$RESULTS_DIR/para-lo-guardado.json" \
+    || echo "[test-gate] ⚠️  no pude anotar qué midió esta corrida: si después se trae main, corre lo de siempre" >&2
+fi
+# Lo guardado de la historia, en un repo que acota el portón o en el árbol armado: una completa que midió todo lo suyo lo guarda, roja para repetir solas, verde para correr
+# después sólo lo cambiado; un cierre en verde con lo guardado guarda su resumen juntado como el nuevo verde, que es el
+# punto de partida de la próxima corrida (nunca una acotada sola: el juntado trae una suite por cada una de la completa de
+# origen). La foto es la del arranque (after-main.js, `para-lo-guardado.json`): si la carpeta cambió mientras corría, la
+# próxima corrida vuelve a correr lo que lee lo cambiado. Un cierre rojo, o uno que no se puede guardar, deja lo de antes.
+# Cada corrida terminada anota al final su modo, su motivo y si guardó (marker.js tests-failed run-end).
+if [[ "$TG_TOP_FULL" == "1" && "$RUNNER" == "suites-json" ]]; then
+  _tg_drop() { ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed "drop-$1" --repo "$REPO_STORY" ) \
+    || echo "[test-gate] ⚠️  no pude borrar lo guardado de una completa anterior ($1): la próxima corrida lo compara y, si no coincide, corre entera" >&2; }
+  _tg_guardar() { ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed "$@" --repo "$REPO_STORY" ); }
+  TG_GUARDO=no; TG_GUARDO_MOTIVO=""
+  # la foto del arranque para lo guardado, o el motivo por el que no hay
+  _TG_FOTO="$RESULTS_DIR/para-lo-guardado.json"; _TG_FOTO_NO=""; _TG_FOTO_CAMBIO=""
+  if [[ -z "${TG_MEASURED:-}" || ! -s "$_TG_FOTO" ]]; then
+    _TG_FOTO_NO="no hay foto de la carpeta al arrancar"
+  else
+    _TG_FOTO_NO="$(node -e 'try{const f=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(f.no?`la corrida no midió todo lo suyo (${f.no})`:"")}catch(e){process.stdout.write(`no pude leer la foto del arranque (${e.message})`)}' "$_TG_FOTO")"
+    _TG_FOTO_CAMBIO="$(node -e 'try{process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).cambio_durante?"1":"")}catch(e){}' "$_TG_FOTO")"
+  fi
+  _tg_antes="$RESULTS_DIR/suites.json"; _tg_perdon=()
+  [[ -s "$RESULTS_DIR/suites-antes-del-perdon.json" ]] && { _tg_antes="$RESULTS_DIR/suites-antes-del-perdon.json"; _tg_perdon=(--after-inherited "$RESULTS_DIR/suites.json"); }
+  _tg_base_args=(--measured "$_TG_FOTO" --coverage-file "$RESULTS_DIR/coverage/lcov.info" --base "$_TG_BASE" --trim "${_TG_RECORTE:-}")
+  if [[ -z "${TG_PRIVATE_TREE_DIR:-}" && -z "${TG_FULL_SUITE_BY:-}" ]]; then
+    TG_GUARDO_MOTIVO="el repo no acota el portón"
+    _tg_drop red
+    _tg_drop green
+  elif [[ "${TG_AFTER_MAIN:-}" == "1" ]]; then
+    # sólo midió lo que trajo main: lo rojo ya se usó; lo verde sigue siendo el origen de la próxima
+    TG_GUARDO_MOTIVO="corrió sólo lo que trajo main: lo guardado sigue"
+    _tg_drop red
+  elif [[ -n "${TG_CLOSE_MODE:-}" ]]; then
+    # el cierre con lo guardado: en verde, su resumen juntado (el de antes del juez de esta corrida) es el nuevo verde
+    if [[ "$SUITE_EXIT" != "0" ]]; then
+      TG_GUARDO_MOTIVO="salió en rojo: lo guardado sigue"
+    elif [[ "${_tg_perdonada:-}" == "1" && ! -s "$RESULTS_DIR/suites-antes-del-perdon.json" ]]; then
+      TG_GUARDO_MOTIVO="falta el resumen de antes del perdón"
+    elif [[ -n "$_TG_FOTO_NO" ]]; then
+      TG_GUARDO_MOTIVO="$_TG_FOTO_NO"
+    else
+      # can-save sale 0 si se puede guardar, 1 con el motivo; cualquier otra salida (se cayó) no guarda
+      _tg_no_cierre=""; _tg_can_rc=0
+      _tg_no_cierre="$(node "$SCRIPT_DIR/lib/failed-first.js" can-save "$_tg_antes")" || _tg_can_rc=$?
+      if [[ "$_tg_can_rc" != "0" ]]; then
+        TG_GUARDO_MOTIVO="${_tg_no_cierre:-no pude saber si el cierre se puede guardar (can-save salió $_tg_can_rc)}"
+      elif _tg_guardar save-green --summary "$_tg_antes" ${_tg_perdon[@]+"${_tg_perdon[@]}"} "${_tg_base_args[@]}" ${TG_RUN_ORIGEN_AT:+--origin-at "$TG_RUN_ORIGEN_AT"}; then
+        TG_GUARDO=verde
+        _tg_drop red
+        echo "[test-gate] guardé este verde (juntado con la completa de las $(node -e 'const d=new Date(process.argv[1]);process.stdout.write(Number.isNaN(d.getTime())?"??:??":`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`)' "${TG_RUN_ORIGEN_AT:-}")): la próxima corrida corre sólo lo que cambie desde acá"
+      else
+        TG_GUARDO_MOTIVO="no pude guardar este verde: queda lo guardado de antes"
+      fi
+    fi
+    [[ "$TG_GUARDO" == "no" ]] && echo "[test-gate] no guardo este cierre: $TG_GUARDO_MOTIVO; lo guardado de antes sigue"
+  elif [[ "$SUITE_EXIT" == "1" && "${TYCON_GATE_ALL_SUITES:-}" != "1" && -z "$_TG_FOTO_NO" ]]; then
+    if _tg_guardar save-red --summary "$RESULTS_DIR/suites.json" "${_tg_base_args[@]}"; then
+      TG_GUARDO=rojo
+      _tg_drop green
+    else
+      TG_GUARDO_MOTIVO="no pude guardar esta completa roja: queda lo guardado de antes"
+      echo "[test-gate] ⚠️  no pude guardar esta completa roja: repetir solas no va a cerrar «Correr las pruebas», la próxima completa corre entera" >&2
+    fi
+  elif [[ "$SUITE_EXIT" == "0" && "${_tg_perdonada:-}" == "1" && ! -s "$RESULTS_DIR/suites-antes-del-perdon.json" ]]; then
+    # verde por lo heredado sin el resumen de antes del perdón: guardarla daría por verdes mañana las rojas de hoy
+    TG_GUARDO_MOTIVO="falta el resumen de antes del perdón"
+    echo "[test-gate] ⚠️  no guardo esta completa verde: falta el resumen de antes del perdón; la próxima corrida corre la completa entera" >&2
+    _tg_drop red
+    _tg_drop green
+  elif [[ "$SUITE_EXIT" == "0" && -z "$_TG_FOTO_NO" ]]; then
+    if _tg_guardar save-green --summary "$_tg_antes" ${_tg_perdon[@]+"${_tg_perdon[@]}"} "${_tg_base_args[@]}"; then
+      TG_GUARDO=verde
+      _tg_drop red
+    else
+      TG_GUARDO_MOTIVO="no pude guardar este verde: queda lo guardado de antes"
+      echo "[test-gate] ⚠️  no pude guardar esta completa verde: la próxima corrida corre la completa entera" >&2
+    fi
+  else
+    if [[ "$SUITE_EXIT" == "1" && "${TYCON_GATE_ALL_SUITES:-}" == "1" ]]; then TG_GUARDO_MOTIVO="con TYCON_GATE_ALL_SUITES=1 una roja no se guarda"
+    elif [[ "$SUITE_EXIT" != "0" && "$SUITE_EXIT" != "1" ]]; then TG_GUARDO_MOTIVO="la corrida salió $SUITE_EXIT"
+    else TG_GUARDO_MOTIVO="${_TG_FOTO_NO:-no midió todo lo suyo}"; fi
+    _tg_drop red
+    _tg_drop green
+  fi
+  [[ "$TG_GUARDO" != "no" && "$_TG_FOTO_CAMBIO" == "1" ]] \
+    && echo "[test-gate] la carpeta cambió mientras corría: guardo con la foto del arranque; la próxima corrida vuelve a correr lo que lee lo cambiado durante la corrida"
+  # El renglón de la corrida (gates.log) y su nota en el marcador: sólo las que terminaron en verde, en rojo o «sin
+  # acotar» (7: no se supo qué se tocó y la completa no corre en la máquina). La cortada por una señal, la sin turno y la
+  # ocupada salieron antes y no llegan acá.
+  if [[ -n "$TG_RUN_MODO" && ( "$SUITE_EXIT" == "0" || "$SUITE_EXIT" == "1" || "$SUITE_EXIT" == "7" ) ]]; then
+    _tg_suites=0
+    if [[ "${TG_CLOSE_MODE:-}" == "changed" ]]; then _tg_suites_de="$RESULTS_DIR/suites-nuevas.json"
+    elif [[ "${TG_CLOSE_MODE:-}" == "same" ]]; then _tg_suites_de=""
+    else _tg_suites_de="$RESULTS_DIR/suites.json"; fi
+    [[ -n "$_tg_suites_de" ]] && _tg_suites="$(node -e 'try{const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).suites;process.stdout.write(String(Array.isArray(s)?s.length:0))}catch(e){process.stdout.write("0")}' "$_tg_suites_de")"
+    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed run-end --repo "$REPO_STORY" --mode "$TG_RUN_MODO" --reason "$TG_RUN_MOTIVO" \
+        --exit "$SUITE_EXIT" --saved "$TG_GUARDO" ${TG_GUARDO_MOTIVO:+--saved-reason "$TG_GUARDO_MOTIVO"} ${TG_RUN_ORIGEN_AT:+--origin-at "$TG_RUN_ORIGEN_AT"} \
+        --suites "$_tg_suites" --duration-ms "$(( ($(date +%s) - ${_TG_T0_S:-$(date +%s)}) * 1000 ))" ) \
+      || echo "[test-gate] ⚠️  no pude anotar esta corrida (modo y motivo) en el registro: el informe de repeticiones no la va a ver" >&2
+  fi
 fi
 
 # --- Parsear resultados + coverage (best-effort, nunca rompe) ----------------
@@ -1016,7 +1567,7 @@ if [[ -z "${BASE_JSON:-}" ]]; then
 fi
 # La sesión con la cadena canónica del arnés (lib/session-id.js: Claude, Codex, banco) — la línea de
 # gates.log no puede quedar con sesión null bajo otra herramienta (revisor de fallos silenciosos).
-_SID_ERR="$(mktemp /tmp/test-gate-sid-XXXXXX)"
+_SID_ERR="$(mktemp "$TG_TMP/test-gate-sid-XXXXXX")"
 GATE_SESSION_ID="$(node -e 'process.stdout.write(String(require(process.argv[1]).resolveSessionId()))' "$SCRIPT_DIR/lib/session-id.js" 2>"$_SID_ERR")" \
   || { echo "[test-gate] ⚠️  no pude resolver la sesión con lib/session-id.js ($(head -1 "$_SID_ERR")); el parser usa la misma cadena de variables" >&2; GATE_SESSION_ID=""; }
 rm -f "$_SID_ERR"
@@ -1029,7 +1580,7 @@ BASE_REF="$(node -e 'try{const j=JSON.parse(process.argv[1]);process.stdout.writ
 # `realpath`, que en un Git Bash pueden faltar: el informe trae su propio reemplazo de los dos.
 # El artefacto de una corrida anterior se borra antes: si el informe falla, no puede quedar un verde viejo a la vista.
 rm -f "$OUT_FILE"
-TYCON_TEST_GATE_TREE_TOUCHED="${TG_TREE_TOUCHED_FILE:-}" node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESULTS_DIR" "$OUT_FILE" "$SUITE_EXIT" "$STORY_ID" "$COV_MIN" "$TS" "$TEST_PROJECT_COUNT" "$SCOPE" "$SCOPE_SOURCE" "$DECLARED_NEW" "$CODE_STATE_JSON" "$BASE_REF" "$BASE_JSON" \
+TYCON_TEST_GATE_AFTER_MAIN="${TG_AFTER_MAIN:-}" TYCON_TEST_GATE_TREE_TOUCHED="${TG_TREE_TOUCHED_FILE:-}" node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESULTS_DIR" "$OUT_FILE" "$SUITE_EXIT" "$STORY_ID" "$COV_MIN" "$TS" "$TEST_PROJECT_COUNT" "$SCOPE" "$SCOPE_SOURCE" "$DECLARED_NEW" "$CODE_STATE_JSON" "$BASE_REF" "$BASE_JSON" \
   || echo "[test-gate] ⚠️  el informe falló (lib/test-gate-report.js): mirá el error de arriba; no quedó artefacto" >&2
 
 # 🔴 Una suite que sale 0 sin haber corrido ninguna prueba (o sin informe que lo cuente) NO es verde (story 8.17,
@@ -1060,7 +1611,7 @@ if [[ "$SUITE_EXIT" == "7" ]] && ! { [[ "$RUNNER" == "suites-json" ]] && es_sin_
 fi
 if [[ "$SUITE_EXIT" == "7" ]]; then
   ( cd "$REPO_RUN" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-scoped "$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).unscoped_reason||""))}catch(e){}' "$OUT_FILE")" ) >&2 || true
-  echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — no se corrió ninguna suite (el motivo está en $OUT_FILE). No es verde: el merge exige la CI completa en verde." >&2
+  echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — no se corrió ninguna suite (el motivo está en $OUT_FILE). No es verde: antes del merge, mirá que la CI del pedido salga verde (esta máquina no lo comprueba)." >&2
 fi
 if [[ "$SUITE_EXIT" == "0" ]]; then
   _VERDE="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(j.suite_green===true?"si":(j.totals&&j.totals.failed>0)?"falla":"no")}catch(e){process.stdout.write("no")}' "$OUT_FILE")"
@@ -1080,7 +1631,8 @@ fi
 # TYCON_GATE_ALL_SUITES=1, o sin saber qué se tocó, corrió todo y su resumen no trae `scoped`).
 if [[ -n "${TG_FULL_SUITE_BY:-}" && "$RUNNER" == "suites-json" ]] \
   && node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped ? 0 : 1)' "$RESULTS_DIR/suites.json" 2>/dev/null; then
-  echo "[test-gate] la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY): en esta máquina corrieron sólo las suites que leen lo tocado" >&2
+  _tg_tope="$(node -e 'try{const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped.capped;if(c)process.stdout.write(`, hasta el tope de ${c.max} (las ${c.deferred} menos cercanas quedan para quien corre la completa)`)}catch(e){}' "$RESULTS_DIR/suites.json" 2>/dev/null || true)"
+  echo "[test-gate] la suite completa la corre $TG_FULL_SUITE_BY: en esta máquina corrieron sólo las suites que leen lo tocado${_tg_tope}" >&2
 fi
 
 exit "$SUITE_EXIT"

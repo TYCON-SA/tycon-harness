@@ -321,7 +321,8 @@ else
 fi
 PATH_BEFORE="$PATH"; bash -c '. "$1"' _ "$HELPER"; [ "$PATH" = "$PATH_BEFORE" ] && ok "T22 cargar el ayudante no cambia el PATH" || bad "T22 cambió el PATH"
 if grep -nE "execFileSync\(\s*['\"]node['\"]" "$RAIZ/skills/tycon-pipeline/scripts/dispatch.js" "$RAIZ/skills/tycon-pipeline/scripts/pipeline.js" >/dev/null; then bad "T22 dispatch.js o pipeline.js todavía lanzan execFileSync('node', …)"; else ok "T22 dispatch.js y pipeline.js lanzan con process.execPath"; fi
-for h in safety-guard-pre.sh test-scope-guard-pre.sh harness-bootstrap-heal.sh instinct-trigger.sh engram-pre-commit.sh git-pre-commit-global.sh git-pre-push-global.sh; do
+# (instinct-trigger.sh no lanza node: sólo repara la línea de arranque, y no está en la lista)
+for h in safety-guard-pre.sh test-scope-guard-pre.sh harness-bootstrap-heal.sh engram-pre-commit.sh git-pre-commit-global.sh git-pre-push-global.sh; do
   grep -q 'harness-node.sh' "$RAIZ/scripts/hooks/$h" && ok "T22 $h carga el ayudante" || bad "T22 $h no carga scripts/lib/harness-node.sh"
 done
 grep -q 'harness-node.sh' "$RAIZ/scripts/install-tycon-hooks.sh" && ok "T22 install-tycon-hooks.sh usa el ayudante" || bad "T22 install-tycon-hooks.sh no usa el ayudante"
@@ -452,7 +453,11 @@ T15_BIN="$NDIR/current/bin/node"
 printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s \\"%s\\""}]}]}}\n' "$(nat "$T15_BIN")" "$(nat "$T15H/s.js")" > "$BASE/t15/home/.claude/settings.json"
 TYCON_PROFILE=0 TYCON_HARNESS_SHARED_DONE=1 node "$RAIZ/scripts/setup/apply-hooks.js" --settings "$BASE/t15/home/.claude/settings.json" --hooks-dir "$T15H" --skills "$BASE/t15/skills" \
   --list "$BASE/t15/list.json" --effects "$RAIZ/scripts/setup/install-effects.json" >/dev/null 2>&1
-[ "$(node -e 'const s=require(process.argv[1]);process.stdout.write(s.hooks.Stop[0].hooks.map(h=>h.command).join("|"))' "$BASE/t15/home/.claude/settings.json")" = "node \"$(nat "$RAIZ/scripts/lib/node-floor.js")\" \"$(nat "$T15H/s.js")\"" ] \
+# las rutas se comparan resueltas: en macOS la carpeta temporal es un enlace (/var → /private/var) y el aplicador escribe
+# la ruta resuelta del piso
+REAL='const fs=require("fs");const r=(p)=>{try{return fs.realpathSync(p)}catch(e){return p}};'
+[ "$(node -e "${REAL}"'const s=require(process.argv[1]);process.stdout.write(s.hooks.Stop[0].hooks.map(h=>h.command.replace(/"([^"]+)"/g,(_,p)=>`"${r(p)}"`)).join("|"))' "$BASE/t15/home/.claude/settings.json")" \
+  = "node \"$(node -e "${REAL}"'process.stdout.write(r(process.argv[1]))' "$(nat "$RAIZ/scripts/lib/node-floor.js")")\" \"$(node -e "${REAL}"'process.stdout.write(r(process.argv[1]))' "$(nat "$T15H/s.js")")\"" ] \
   && ok "T15 con current roto el aplicador vuelve el hook a node por el piso, en su lugar y sin duplicar" || bad "T15 el aplicador dejó: $(cat "$BASE/t15/home/.claude/settings.json")"
 rm -rf "$NDIR"
 

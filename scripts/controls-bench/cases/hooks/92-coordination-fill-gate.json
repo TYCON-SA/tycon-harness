@@ -1,0 +1,56 @@
+{
+  "__doc": "coordination-fill-gate.js: con lugar, memoria libre (40 % o más) y una historia lista sin sesión, la coordinadora designada no cierra su turno hasta abrir una sesión o anotar un motivo (coordination.js keep-free). El caso real: cuatro veces en dos días paró sesiones y no abrió nada, con seis historias firmadas esperando. La memoria se inyecta con --memory-pct (el registro corre el gancho sin argumentos). El tope sale de un perfil de juguete; las sesiones ocupadas usan el pid 1, que siempre está vivo; la carpeta del caso es un repo con remoto, como la de la coordinadora. Lo demás (el motivo, el tope de tres bloqueos, la lectura vencida) lo cubre scripts/tests/coordination-fill-gate.test.js.",
+  "hooks": [
+    {
+      "hook": "coordination-fill-gate.js (freno: la coordinadora no deja la máquina vacía)",
+      "script": "${TCG}/scripts/hooks/coordination-fill-gate.js",
+      "event": "Stop",
+      "matcher": "",
+      "args": ["--memory-pct", "48"],
+      "tools": ["claude"],
+      "asymmetry": "Codex no coordina (coordinate se lo dice y no sigue) y no corre este freno; la declaración está en adapters/codex/hooks.json.",
+      "cases": [
+        {
+          "id": "el-caso-real-lugar-memoria-e-historia-lista-frena",
+          "type": "must-block",
+          "__doc": "Coordinadora designada, 2 de 6 trabajando, memoria en 48 % y una historia lista del proyecto: el cierre del turno frena, nombra la historia y el comando del motivo, y no da comandos para abrir. ROJO PREVIO: sin el freno, el turno cierra y la máquina queda con lugar sin usar.",
+          "env": { "TYCON_PROFILE": "${FIXTURE}/perfil.json" },
+          "files": { "perfil.json": "{\"approvals\":{\"relay_session\":\"coordinadora\"},\"coordination\":{\"max_working\":6}}" },
+          "setup": [
+            "git init -q . && git remote add origin https://github.com/acme/repo.git",
+            "mkdir -p \"$SANDBOX_HOME/.claude/sessions\" && for i in 1 2; do printf \"{\\\"pid\\\":1,\\\"sessionId\\\":\\\"s-$i\\\",\\\"name\\\":\\\"Sesion$i\\\",\\\"nameSource\\\":\\\"user\\\",\\\"status\\\":\\\"busy\\\",\\\"statusUpdatedAt\\\":1,\\\"cwd\\\":\\\"/x\\\",\\\"kind\\\":\\\"bg\\\"}\" > \"$SANDBOX_HOME/.claude/sessions/s-$i.json\"; done && printf \"{\\\"pid\\\":1,\\\"sessionId\\\":\\\"s-coord\\\",\\\"name\\\":\\\"Coordinadora\\\",\\\"nameSource\\\":\\\"user\\\",\\\"status\\\":\\\"busy\\\",\\\"statusUpdatedAt\\\":1,\\\"cwd\\\":\\\"/x\\\",\\\"kind\\\":\\\"interactive\\\"}\" > \"$SANDBOX_HOME/.claude/sessions/s-coord.json\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d+'/office',{recursive:true});fs.appendFileSync(d+'/gates.log',JSON.stringify({ts:new Date().toISOString(),name:'relay-designation',status:'ok',sesion:'s-coord',rol:'coordinadora',quien:'el dueño',cita:'Esta sesión es la coordinadora'})+'\\n');fs.writeFileSync(d+'/office/project-stories.json',JSON.stringify({at:new Date().toISOString(),proyectos:[{nombre:'acme',traidoAt:null,deTuCopia:false,sinLeer:0,repos:['github/acme/repo'],historias:[{id:'8.232',archivo:'story-8.232.md',titulo:'La historia lista',estado:'ready-for-dev',prioridad:'P1',trabajo:null}]}],sinHistorias:[],commitsPropios:{medido:true,motivo:null}}))\""
+          ],
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "s-coord",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": ["\"decision\"\\s*:\\s*\"block\"", "2 otras trabajando de un tope de 6", "8\\.232", "keep-free"],
+            "stdout_not_re": ["respawn", "open --"]
+          }
+        },
+        {
+          "id": "una-sesion-de-trabajo-cierra-sin-ruido",
+          "type": "must-not-block",
+          "__doc": "Sin coordinadora designada, una sesión de trabajo cierra su turno y el freno calla: no escribe nada ni mide nada. Un freno que frena a quien no coordina se apaga el primer día.",
+          "env": { "TYCON_PROFILE": "${FIXTURE}/perfil.json" },
+          "files": { "perfil.json": "{\"approvals\":{\"relay_session\":\"coordinadora\"},\"coordination\":{\"max_working\":6}}" },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/sessions\" && printf \"{\\\"pid\\\":1,\\\"sessionId\\\":\\\"s-1\\\",\\\"name\\\":\\\"Sesion1\\\",\\\"nameSource\\\":\\\"user\\\",\\\"status\\\":\\\"busy\\\",\\\"statusUpdatedAt\\\":1,\\\"cwd\\\":\\\"/x\\\",\\\"kind\\\":\\\"bg\\\"}\" > \"$SANDBOX_HOME/.claude/sessions/s-1.json\""
+          ],
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "s-1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    }
+  ]
+}

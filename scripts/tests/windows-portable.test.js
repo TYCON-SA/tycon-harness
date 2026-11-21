@@ -254,7 +254,7 @@ test('Portable_ShortRows_ExpectedAgainstMeasured_VerdictRedOnlyWhenItCouldNotMea
   assert.match(find(/findGitBash\(\)` en esta máquina/).measured, /^C:\\Program Files\\Git\\bin\\bash\.exe \(de: git\) · GNU bash, version 5/);
   assert.strictEqual(find(/El banco de controles entero/).match, true, 'tres rojos y la fila coincide: no se espera todo verde, se espera que todo caso tenga veredicto');
   assert.match(find(/El banco de controles entero/).measured, /^12 en la lista · 9 corridos · 6 verdes · 3 rojos · 0 no medidos · 3 salteados con constancia · faltan 0/);
-  assert.deepStrictEqual(P.WINDOWS_SHAPES.map((s) => find(new RegExp(`forma \`${s.looks.replace(/[\\/]/g, '.')}\``)).match), [true, true, false]);
+  assert.deepStrictEqual(P.WINDOWS_SHAPES.map((s) => find(new RegExp(`forma \`${s.looks.split(/[\\/]/).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.')}\``)).match), [true, true, false]);
   assert.deepStrictEqual(rows.filter((r) => r.question === '6').map((r) => r.match), [true, true]);
   // lo que cambia una fila: un caso sin medir, un caso que falta, un «0 de 0», un bash de System32, una suite sin totales
   const change = (fn) => { const x = clone(report); fn(x); return P.shortRows(x); };

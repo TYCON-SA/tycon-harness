@@ -15,6 +15,13 @@
  *
  * LA REGLA. Todo comando que un script del arnés corra DENTRO de un sandbox va con este env: el
  * `cwd` tiene que ser la única cosa que decide sobre qué repo se opera.
+ *
+ * LA SEGUNDA REGLA. Todo git cuyo error el arnés lee por el texto va con el idioma fijo (`idiomaFijo`): git traduce sus
+ * mensajes según el idioma de la máquina, y «not a git repository» en castellano es «no es un repositorio git». Que
+ * nadie la olvide lo mide scripts/tests/git-language-inventory.js. Las dos se componen:
+ * `idiomaFijo(sinGitDelPadre(…))`.
+ *
+ * Sin dependencias: hay pruebas y laboratorios que lo copian solo a su carpeta.
  */
 
 // `GIT_PREFIX` y `GIT_PROTOCOL` no rompen nada pero tampoco significan nada fuera del repo padre.
@@ -31,4 +38,16 @@ function sinGitDelPadre(...extras) {
   return env;
 }
 
-module.exports = { sinGitDelPadre, DEL_PADRE };
+// git en inglés, en cualquier máquina: el arnés reconoce sus errores por el texto, y gettext traduce según el
+// idioma. Con LC_ALL=C gettext no traduce ni mira LANGUAGE; LANG=C cubre a quien lee LANG solo.
+const IDIOMA_DE_GIT = Object.freeze({ LC_ALL: 'C', LANG: 'C' });
+
+/** Copia de `base` (por defecto, el entorno propio) con los extras y el idioma de git fijo, que ningún extra pisa. */
+function idiomaFijo(base, ...extras) {
+  const env = Object.assign({}, base || process.env, ...extras.filter(Boolean), IDIOMA_DE_GIT);
+  delete env.LANGUAGE;
+  delete env.LC_MESSAGES;
+  return env;
+}
+
+module.exports = { sinGitDelPadre, DEL_PADRE, idiomaFijo, IDIOMA_DE_GIT };

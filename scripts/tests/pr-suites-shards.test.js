@@ -33,6 +33,8 @@ const { findGitBash } = require('../lib/git-bash.js');
 const ROOT = path.resolve(__dirname, '..', '..');
 const YAML = path.join(ROOT, 'pipelines/azure-pipelines-maintainers-pr.yml');
 const PLAN_STEP = 'Qué suites corren';
+const TIMES_STEP = 'Los tiempos medidos de Azure';
+const CAPS_STEP = 'Los topes medidos de cada suite';
 const RUN_STEP = 'Correr las suites de este trabajo';
 const JOIN_STEP = 'Juntar lo que midió cada trabajo';
 const VERDICT_STEP = 'Veredicto: ¿algún rojo NUEVO?';
@@ -41,6 +43,7 @@ const VERDICT_STEP = 'Veredicto: ¿algún rojo NUEVO?';
 const MAX_EXPR = '${{ parameters.suiteShards }}';
 const MATRIX_OUTPUT = "dependencies.Validar.outputs['suites.matrix']";
 const HAS_CODE = "eq(dependencies.Validar.outputs['change.hayCodigo'], 'si')";
+const LONG_OUTPUT = "dependencies.Validar.outputs['suites.largo']";
 
 // Los pasos que corren las suites viven en una plantilla que usan dos trabajos, el de suites y el del banco.
 // Los jobs se leen del pipeline; un paso se busca en los dos archivos, y «el código» es el de los dos.
@@ -51,6 +54,7 @@ const SNAPSHOT_TEMPLATE = path.join(ROOT, 'pipelines/templates/fetch-snapshot.ym
 const SNAPSHOT_STEP = 'La foto nocturna y lo privado de la validación';
 const SNAPSHOT_PICK_STEP = 'La foto nocturna que trajo Validar';
 const BENCH = 'bench';
+const BENCH_DECISION_STEP = '¿El banco corre en este pedido?';
 // La validación y sus plantillas son del privado: la copia pública no las trae. Ahí cada caso se
 // saltea con este motivo, en vez de abortar al cargar.
 const NO_PIPELINE = !(fs.existsSync(YAML) && fs.existsSync(TEMPLATE))
@@ -63,11 +67,22 @@ const text = NO_PIPELINE ? '' : fs.readFileSync(YAML, 'utf8');
 const lines = text.split('\n');
 const template = NO_PIPELINE ? '' : fs.readFileSync(TEMPLATE, 'utf8');
 const snapshotTemplate = fs.existsSync(SNAPSHOT_TEMPLATE) ? fs.readFileSync(SNAPSHOT_TEMPLATE, 'utf8') : '';
-const stepLines = [...lines, ...template.split('\n'), ...snapshotTemplate.split('\n')];
+// Los pasos del veredicto, en su plantilla si la validación ya la trae (la usan el último trabajo que publica y el
+// respaldo); si no, viven en el job Verdict, como antes. Los dos casos se miden: este archivo entra antes que el pipeline.
+const VERDICT_TEMPLATE = path.join(ROOT, 'pipelines/templates/verdict.yml');
+const verdictTemplate = fs.existsSync(VERDICT_TEMPLATE) ? fs.readFileSync(VERDICT_TEMPLATE, 'utf8') : '';
+const stepLines = [...lines, ...template.split('\n'), ...snapshotTemplate.split('\n'), ...verdictTemplate.split('\n')];
 const code = stepLines.filter((l) => !l.trim().startsWith('#'));
 const BASH = findGitBash();
 const NO_BASH = !BASH.path && `NO MEDIDO — no encontré bash (${BASH.reason})`;
 const slash = (p) => p.replace(/\\/g, '/');
+
+// El banco y las que corren solas tienen dos formas: Bench corre las dos cosas (10 min de banco), o el banco corre solo
+// en Bench (20 min de tope) y las que corren solas en su propio trabajo, Solas, que es el «bench» del reparto. Así el
+// banco puede tardar más sin pasar los 40 min de ningún trabajo. Se miden las dos: este archivo entra antes que el pipeline.
+const SOLAS = /^ {2}- job: Solas\s*$/m.test(text);
+// el trabajo que corre la lista «bench» del reparto (las que corren solas y lo común que le toque)
+const SUITES_BENCH_JOB = SOLAS ? 'Solas' : 'Bench';
 
 /** El texto de cada job del YAML, por nombre, en orden. */
 function jobs() {
@@ -123,13 +138,15 @@ function expand(body, values) {
   let out = values.max === undefined ? body : body.split(MAX_EXPR).join(String(values.max));
   const macros = {
     'Build.SourcesDirectory': values.sources, 'Build.ArtifactStagingDirectory': values.staging,
-    'Agent.TempDirectory': values.temp, 'Pipeline.Workspace': values.workspace, 'Build.BuildId': '4242',
+    'Agent.TempDirectory': values.temp, 'Pipeline.Workspace': values.workspace, 'Build.BuildId': '4242', 'Build.SourceBranch': values.branch,
     SUITES_SHARD: values.shard, SUITES_OF: values.of, todoElRepo: values.everything, baseDelCambio: values.base,
+    // lo que decidió «¿El banco corre en este pedido?» de Validar: «no» o «si»
+    banco: values.banco,
   };
   for (const [name, value] of Object.entries(macros)) {
     if (value !== undefined) out = out.split(`$(${name})`).join(slash(String(value)));
   }
-  const left = out.match(/\$\((?:[A-Z][A-Za-z]*\.[A-Za-z.]+|[A-Z][A-Z_]+|todoElRepo|hayCodigo|baseDelCambio)\)|\$\{\{[^}]*\}\}/g);
+  const left = out.match(/\$\((?:[A-Z][A-Za-z]*\.[A-Za-z.]+|[A-Z][A-Z_]+|todoElRepo|hayCodigo|baseDelCambio|banco)\)|\$\{\{[^}]*\}\}/g);
   assert.deepStrictEqual(left, null, `el paso usa algo de Azure que este caso no reemplaza: ${left}`);
   return out;
 }
@@ -228,6 +245,10 @@ function bash(dir, script, name, env = {}) {
       // el repo propio y el interruptor del freno los fija cada caso (esta suite corre también en
       // una corrida de Azure, que trae los suyos)
       BUILD_REPOSITORY_PROVIDER: '', HARNESS_SUITES_BLOCK: '', HARNESS_PRIVATE_REPO: '', SYSTEM_PULLREQUEST_ISFORK: '',
+      // la decisión del banco la fija cada caso: un BANCO=no heredado haría pasar un caso que exige rojo
+      BANCO: '',
+      // el plazo del trabajo de verdad, si esta suite corre dentro de uno, no es el del caso
+      SUITES_JOB_STARTED: '', SUITES_JOB_MINUTES: '', SUITES_JOB_MARGIN: '', SUITES_MIN_START: '',
       // el git de juguete del clon va primero: contesta la foto nocturna y delega el resto (ver toyGit)
       [PATH_KEY]: `${path.join(dir, 'bin')}${path.delimiter}${process.env[PATH_KEY] || ''}`,
       ...env,
@@ -244,8 +265,16 @@ const artifacts = (dir) => path.join(workspace(dir), 'artifacts');
  * también la matriz que publicó (`matrix`, el texto tal cual) y cuántos trabajos dice (`of`). Por defecto fuerza el
  * máximo (`SUITES_JOB_BUDGET=1`: cada suite de juguete pasa el presupuesto), para que estas pruebas sigan midiendo el
  * reparto entre varios trabajos; `{ SUITES_JOB_BUDGET: '' }` deja el presupuesto de verdad.
+ * `steps.fetch`: corre antes «Los tiempos medidos de Azure» con una bajada de juguete en lugar de fetch-suite-times.js
+ * (el guion de juguete que se le pase); `steps.weights`: todos los llamados al repartidor leen ese archivo de pesos;
+ * `steps.banco`: lo que decidió «¿El banco corre en este pedido?» (por defecto «si», como un cambio de código).
+ * 🔴 EL TRABAJO DEL BANCO, LLENO POR DEFECTO. El trabajo del banco también lleva suites: con la carga de verdad (600 s)
+ * las suites de juguete entran todas en él y en un solo trabajo de suites, y el presupuesto forzado ya no reparte entre
+ * varios. Para que estas pruebas sigan midiendo el reparto, el plan arranca al banco con más carga de la que entra en su
+ * plazo (FULL_BENCH_LOAD): no se lleva ninguna común, como antes. El número viaja en bench-load.txt, así que cada
+ * trabajo y el veredicto reparten igual. `steps.benchLoad: 'real'` deja la carga del paso tal cual (600, o 0 sin banco).
  */
-function runPlan(dir, max, changed = ['scripts/lab.js'], env = {}) {
+function runPlan(dir, max, changed = ['scripts/lab.js'], env = {}, steps = {}) {
   const temp = path.join(dir, 'temp-validar');
   const staging = path.join(dir, 'staging-validar');
   fs.mkdirSync(temp, { recursive: true });
@@ -261,8 +290,15 @@ function runPlan(dir, max, changed = ['scripts/lab.js'], env = {}) {
   fs.mkdirSync(path.join(temp, 'snapshot'), { recursive: true });
   if (fs.existsSync(photo)) fs.copyFileSync(photo, path.join(temp, 'snapshot', 'nightly-suites.json'));
   else fs.rmSync(path.join(temp, 'snapshot', 'nightly-suites.json'), { force: true });
-  const body = expand(stepBody(PLAN_STEP), { max, sources: path.join(dir, 'repo'), staging, temp, everything: changed ? 'no' : 'si' });
-  const r = bash(dir, body, 'plan', { SUITES_JOB_BUDGET: '1', ...env });
+  const values = { max, sources: path.join(dir, 'repo'), staging, temp, everything: changed ? 'no' : 'si', banco: steps.banco === undefined ? 'si' : steps.banco };
+  const withWeights = (body) => (steps.weights ? body.split('--weight-set pr').join(`--weight-set pr --weights "${slash(steps.weights)}"`) : body);
+  let fetched = { code: 0, out: '' };
+  if (steps.fetch) {
+    const body = expand(stepBody(TIMES_STEP), values).split('node scripts/ci/fetch-suite-times.js').join(`node "${slash(steps.fetch)}"`);
+    fetched = bash(dir, body, 'times', env);
+  }
+  const plain = bash(dir, withBenchLoad(withWeights(expand(stepBody(PLAN_STEP), values)), steps.benchLoad), 'plan', { SUITES_JOB_BUDGET: '1', ...env });
+  const r = { code: fetched.code || plain.code, out: `${fetched.out}${plain.out}` };
   const published = r.out.match(/^##vso\[task\.setvariable variable=matrix;isOutput=true\](.*)$/m);
   const matrix = published ? published[1] : null;
   let of = null;
@@ -274,6 +310,16 @@ function runPlan(dir, max, changed = ['scripts/lab.js'], env = {}) {
     fs.cpSync(plan, path.join(workspace(dir), 'suites-plan', 'suites-plan-a1'), { recursive: true });
   }
   return { ...r, plan, matrix, of };
+}
+
+const FULL_BENCH_LOAD = 100000;
+// con Solas, el trabajo «bench» del reparto no corre el banco: no arranca cargado con sus segundos
+const REAL_BENCH_LOAD = SOLAS ? 'BENCH_LOAD=0;' : 'BENCH_LOAD=600;';
+/** La carga de arranque del banco en el cuerpo de «Qué suites corren»: la del paso con 'real'; si no, FULL_BENCH_LOAD. */
+function withBenchLoad(body, load) {
+  if (load === 'real') return body;
+  assert.strictEqual(body.split(REAL_BENCH_LOAD).length, 2, `el paso «${PLAN_STEP}» fija la carga del banco una vez, con «${REAL_BENCH_LOAD}»`);
+  return body.replace(REAL_BENCH_LOAD, `BENCH_LOAD=${load === undefined ? FULL_BENCH_LOAD : load};`);
 }
 
 /** Corre el trabajo `shard` de `of` (el SUITES_OF de su pata de la matriz) y «publica» lo que dejó, como hace Azure. */
@@ -314,18 +360,42 @@ function placeSnapshot(temp, { suites = FRESH_PHOTO(), bench = TOY_BENCH() } = {
 
 /**
  * Corre los dos pasos del job Verdict, en orden, como Azure: el veredicto corre aunque el primero haya fallado. `matrix`
- * es la salida de Validar, que el job lee como variable (SUITES_MATRIX).
+ * es la salida de Validar, que el job lee como variable (SUITES_MATRIX). Antes deja en `<temp>/arbol` el árbol que armó
+ * Validar, lo que hace «El árbol que armó Validar» (ver placeTree); `opts.tree: false`, el árbol no llegó.
  */
-function runVerdict(dir, matrix, env = {}, snapshot = {}) {
+function runVerdict(dir, matrix, env = {}, snapshot = {}, opts = {}) {
   const temp = path.join(dir, 'temp-verdict');
   fs.rmSync(temp, { recursive: true, force: true });
   fs.mkdirSync(temp, { recursive: true });
   placeSnapshot(temp, snapshot);
+  if (opts.tree !== false) {
+    placeTree(dir, path.join(temp, 'arbol'));
+    // el registro de main que viaja con el árbol («El árbol que lee el veredicto» lo pide a origin/main): el del clon de
+    // juguete (main = la rama), o el error de git si el caso pide que origin/main no lo tenga
+    if (fs.existsSync(path.join(dir, 'no-main-registry'))) fs.writeFileSync(path.join(temp, 'base-suites.err'), "fatal: invalid object name 'origin/main'\n");
+    else fs.copyFileSync(path.join(dir, 'repo', 'scripts', 'tests', 'suites.json'), path.join(temp, 'base-suites.json'));
+  }
   const values = { sources: path.join(dir, 'repo'), temp, workspace: workspace(dir) };
   const join = bash(dir, expand(stepBody(JOIN_STEP), values), 'join', { SUITES_MATRIX: matrix === null ? '' : matrix, ...env });
   const verdict = bash(dir, expand(stepBody(VERDICT_STEP), values), 'verdict', env);
   const rep = path.join(temp, 'suites.json');
   return { join, verdict, report: fs.existsSync(rep) ? JSON.parse(fs.readFileSync(rep, 'utf8')) : null };
+}
+
+/**
+ * El árbol que armó Validar, como lo deja el veredicto en `<temp>/arbol`: los guiones del arnés de verdad y las suites del
+ * clon de juguete (scripts/tests, con su registro), porque en Azure el árbol ES el checkout de las suites. Las carpetas,
+ * enlazadas (el borrado de la carpeta del caso saca el enlace y no toca el arnés); los archivos sueltos, copiados (un
+ * enlace a un archivo pide permisos en Windows).
+ */
+function placeTree(dir, arbol) {
+  const link = (from, to) => (fs.statSync(from).isDirectory() ? fs.symlinkSync(from, to, 'junction') : fs.copyFileSync(from, to));
+  fs.mkdirSync(path.join(arbol, 'scripts'), { recursive: true });
+  for (const name of fs.readdirSync(ROOT)) if (name !== 'scripts') link(path.join(ROOT, name), path.join(arbol, name));
+  for (const name of fs.readdirSync(path.join(ROOT, 'scripts'))) {
+    if (name !== 'tests') link(path.join(ROOT, 'scripts', name), path.join(arbol, 'scripts', name));
+  }
+  link(path.join(dir, 'repo', 'scripts', 'tests'), path.join(arbol, 'scripts', 'tests'));
 }
 
 /** Los nombres de las suites del trabajo `shard`, preguntándole al guion con la lista que armó Validar. */
@@ -359,12 +429,15 @@ test('PrShards_MatrixAndEveryOfFromSameOutput', () => {
   assert.ok(plan.includes('echo "##vso[task.setvariable variable=matrix;isOutput=true]$MATRIX"'), 'el plan publica la matriz como salida del job');
   assert.match(plan, /node scripts\/ci\/suites-shard\.js jobs --max "\$\{\{ parameters\.suiteShards \}\}" --only "\$OUT\/run\.txt" --weight-set pr /,
     'calcula cuántos con el peso de lo que corre, los pesos de la 170 y el máximo del parámetro');
+  assert.ok(shardCall('long').includes('long --of "$OF" --minutes 40 --long-minutes 100 --only "$OUT/run.txt" --weight-set pr --exclusive-apart '),
+    `si el plan no entra en 40 min por trabajo, los largos, con los topes de los dos jobs: ${shardCall('long')}`);
+  assert.ok(plan.includes('echo "##vso[task.setvariable variable=largo;isOutput=true]$LONG"'), 'y lo publica para los dos jobs');
   assert.match(plan, /MATRIX="\$\(node scripts\/ci\/suites-shard\.js matrix --of "\$JOBS_NEEDED"\)"/, 'arma la matriz con ese número');
   assert.match(plan, /OF="\$\(node scripts\/ci\/suites-shard\.js of --matrix "\$MATRIX"\)"/, 'y su --of sale de la matriz, no del número');
 
-  assert.match(suites, new RegExp(`\\n {4}strategy:\\n {6}matrix: \\$\\[ ${MATRIX_OUTPUT.replace(/[.[\]'$]/g, (c) => `\\${c}`)} \\]\\n`),
+  assert.match(suites, new RegExp(`\\n {4}strategy:\\n {6}matrix: \\$\\[ ${MATRIX_OUTPUT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\]\\n`),
     'la matriz del job Suites es la salida de Validar');
-  assert.match(verdict, new RegExp(`\\n {4}variables:\\n {6}SUITES_MATRIX: \\$\\[ ${MATRIX_OUTPUT.replace(/[.[\]'$]/g, (c) => `\\${c}`)} \\]\\n`),
+  assert.match(verdict, new RegExp(`\\n {4}variables:\\n {6}SUITES_MATRIX: \\$\\[ ${MATRIX_OUTPUT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\]\\n`),
     'el veredicto lee la misma salida');
   assert.match(stepBody(JOIN_STEP), /OF="\$\(node scripts\/ci\/suites-shard\.js of --matrix "\$\{SUITES_MATRIX:-\}"\)"/, 'y saca su --of de ella');
 
@@ -383,13 +456,29 @@ test('PrShards_MatrixAndEveryOfFromSameOutput', () => {
 test('PrShards_PlanStep_AsksForAsManyJobsAsThePlanWeighs', { skip: NO_BASH }, () => {
   // Con el presupuesto de verdad (725 s por trabajo), seis suites de juguete de 3 s entran en uno: 1 trabajo + el banco.
   const dir = toy(SIX);
-  const r = runPlan(dir, maxShards(), ['scripts/lab.js'], { SUITES_JOB_BUDGET: '' });
+  const r = runPlan(dir, maxShards(), ['scripts/lab.js'], { SUITES_JOB_BUDGET: '' }, { benchLoad: 'real' });
   assert.strictEqual(r.code, 0, r.out);
   assert.deepStrictEqual(JSON.parse(r.matrix), { shard_1: { SUITES_SHARD: '1', SUITES_OF: '1' } }, 'un plan chico pide un solo trabajo');
   assert.match(r.out, /suites: 1 trabajo\(s\) de un máximo de 2/);
   assert.match(r.out, /repartidas en 1 trabajo\(s\)/);
-  // A mano, con un presupuesto chico, el máximo.
-  assert.strictEqual(runPlan(toy(SIX), maxShards()).of, 2);
+  // El trabajo del banco también lleva suites (--bench-load): con un presupuesto chico a mano, lo que entra en su plazo
+  // lo lleva él, y los 18 s del juguete entran: 1 trabajo de suites, no el máximo. Lo dice el registro.
+  const small = runPlan(toy(SIX), maxShards(), ['scripts/lab.js'], {}, { benchLoad: 'real' });
+  assert.strictEqual(small.code, 0, small.out);
+  assert.strictEqual(small.of, 1, `lo que entra en el trabajo del banco no pide otro trabajo de suites\n${small.out}`);
+  assert.match(small.out, /suites: 1 trabajo\(s\) de un máximo de 2 · [^\n]* · el trabajo del banco arranca con ~\d+ y lleva ~\d+ más del reparto/);
+  // Con el trabajo del banco lleno (su plazo igual a su carga de arranque), el presupuesto chico pide el máximo: la carga
+  // del banco no se come trabajos que hacen falta.
+  const set = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'suites-weights.json'), 'utf8'));
+  const full = toy(SIX);
+  set.pr.job_deadline = set.pr.bench_rate * 600;
+  const weights = path.join(full, 'weights-banco-lleno.json');
+  fs.writeFileSync(weights, JSON.stringify(set));
+  // con Solas el banco no carga el trabajo «bench» del reparto (su carga real es 0): se lo llena a mano con 600
+  const max = runPlan(full, maxShards(), ['scripts/lab.js'], {}, { weights, benchLoad: SOLAS ? 600 : 'real' });
+  assert.strictEqual(max.code, 0, max.out);
+  assert.strictEqual(max.of, 2, `con el trabajo del banco lleno, el máximo\n${max.out}`);
+  assert.match(max.out, /el trabajo del banco arranca con ~\d+ y lleva ~0 más del reparto/);
 });
 
 test('SuitesShard_JobCountUnknown_UsesMax', { skip: NO_BASH }, () => {
@@ -459,24 +548,53 @@ test('T48 PrShards_JobCountUnknownWithExclusiveSuites_CountsOnlyTheOnesTheSuites
 
 test('PrShards_Jobs_ValidateThenBenchAndSuitesThenAVerdictThatAlwaysRuns', () => {
   const all = jobs();
-  assert.deepStrictEqual(Object.keys(all), ['Validar', 'Bench', 'Suites', 'Verdict'], 'los cuatro jobs, en orden');
-  const { Validar: validate, Bench: bench, Suites: suites, Verdict: verdict } = all;
+  const NAMES = SOLAS ? ['Validar', 'Bench', 'Solas', 'Suites', 'SuitesLargo', 'Verdict'] : ['Validar', 'Bench', 'Suites', 'SuitesLargo', 'Verdict'];
+  assert.deepStrictEqual(Object.keys(all), NAMES, 'los jobs, en orden');
+  const { Validar: validate, Bench: bench, Suites: suites, SuitesLargo: longSuites, Verdict: verdict } = all;
+  const suitesBench = all[SUITES_BENCH_JOB];
+  const OTHERS = SOLAS ? ['Bench', 'Solas', 'Suites', 'SuitesLargo'] : ['Bench', 'Suites', 'SuitesLargo'];
 
   // La decisión «¿trae código?» sale del paso del cambio hacia los otros jobs.
   assert.match(validate, /\n {8}displayName: 'Qué trae este cambio'\n {8}name: change\n/, 'el paso del cambio tiene nombre: los otros jobs lo leen por él');
   assert.ok(stepBody('Qué trae este cambio').includes('echo "##vso[task.setvariable variable=hayCodigo;isOutput=true]$HAY_CODIGO"'),
     'y publica hayCodigo como salida del job');
-  for (const [name, body] of [['Bench', bench], ['Suites', suites]]) {
-    assert.match(body, /\n {4}dependsOn: Validar\n/, `${name} espera a Validar`);
-    assert.ok(body.includes(`\n    condition: and(succeeded(), ${HAS_CODE})\n`), `${name} corre sólo si el cambio trae código`);
+  for (const name of OTHERS) {
+    assert.match(all[name], /\n {4}dependsOn: Validar\n/, `${name} espera a Validar`);
   }
-  assert.match(verdict, /\n {4}dependsOn: \[Validar, Bench, Suites\]\n/, 'el veredicto espera a todos');
-  assert.ok(verdict.includes(`\n    condition: and(always(), ${HAS_CODE})\n`),
-    'y corre aunque el banco o un trabajo de suites hayan fallado o los haya cortado el tope — salvo un cambio sin código');
+  assert.ok(bench.includes(`\n    condition: and(succeeded(), ${HAS_CODE})\n`), 'Bench corre sólo si el cambio trae código');
+  if (SOLAS) assert.ok(suitesBench.includes(`\n    condition: and(succeeded(), ${HAS_CODE})\n`), 'Solas corre sólo si el cambio trae código');
+  // Suites o SuitesLargo, nunca los dos: lo decide `suites.largo`; sin esa salida, Suites
+  assert.ok(suites.includes(`\n    condition: and(succeeded(), ${HAS_CODE}, ne(${LONG_OUTPUT}, 'si'))\n`), 'Suites corre si el plan entra en 40 min');
+  assert.ok(longSuites.includes(`\n    condition: and(succeeded(), ${HAS_CODE}, eq(${LONG_OUTPUT}, 'si'))\n`), 'SuitesLargo, sólo si no entra');
+  assert.ok(verdict.includes(`\n    dependsOn: [Validar, ${OTHERS.join(', ')}]\n`), 'el veredicto espera a todos');
+  if (verdictTemplate) {
+    // De respaldo: corre aunque el banco o un trabajo de suites hayan fallado o los haya cortado el tope, salvo que el
+    // cambio no traiga código o que algún trabajo ya lo haya dado. Con más trabajos de los que nombra, corre siempre.
+    const dado = (job, leg) => `ne(dependencies.${job}.outputs['${leg ? `${leg}.` : ''}veredicto.dado'], 'si')`;
+    const patas = [dado(SUITES_BENCH_JOB), ...[1, 2, 3, 4].map((i) => dado('Suites', `shard_${i}`)), ...[1, 2, 3, 4].map((i) => dado('SuitesLargo', `shard_${i}`))];
+    const ok = (job) => `in(dependencies.${job}.result, 'Succeeded', 'Skipped')`;
+    assert.ok(verdict.includes(`\n    \${{ if le(parameters.suiteShards, 4) }}:\n      condition: and(always(), ${HAS_CODE}, or(not(and(${OTHERS.map(ok).join(', ')})), and(${patas.join(', ')})))\n`),
+      'el respaldo corre si algún trabajo no terminó bien, o si ninguno dio el veredicto: el banco y cada pata de las dos matrices');
+    assert.ok(verdict.includes(`\n    \${{ else }}:\n      condition: and(always(), ${HAS_CODE})\n`), 'con más de 4 trabajos de suites, siempre');
+    assert.ok(4 >= maxShards(), 'el máximo por defecto entra en lo que nombra la condición');
+    // los tres trabajos que publican, con el veredicto prendido en su plantilla
+    for (const [name, body] of [[SUITES_BENCH_JOB, suitesBench], ['Suites', suites], ['SuitesLargo', longSuites]]) {
+      assert.match(body, /- template: \/pipelines\/templates\/run-suites\.yml\n(?: {8}.*\n)*? {10}veredicto: true\n/, `${name} da el veredicto si publica último`);
+      for (const v of ['SUITES_MATRIX', 'BANCO']) assert.ok(body.includes(`\n      ${v}: $[ dependencies.Validar.outputs[`), `${name} trae ${v}, que leen los pasos del veredicto`);
+    }
+    assert.ok(verdict.includes('\n      - template: /pipelines/templates/verdict.yml\n'), 'el respaldo corre los pasos de la plantilla');
+  } else {
+    assert.ok(verdict.includes(`\n    condition: and(always(), ${HAS_CODE})\n`),
+      'y corre aunque el banco o un trabajo de suites hayan fallado o los haya cortado el tope — salvo un cambio sin código');
+  }
 
   // Los topes: 40 por trabajo de suites (de dónde sale el número, en T33), 10 el veredicto.
   assert.match(suites, /\n {4}timeoutInMinutes: 40\n/, 'cada trabajo de suites tiene 40 minutos de tope');
-  assert.ok(suites.endsWith(`${TEMPLATE_USE}`) || suites.includes(`${TEMPLATE_USE}\n`), 'los pasos del trabajo de suites son los de la plantilla');
+  assert.match(longSuites, /\n {4}timeoutInMinutes: 100\n/, 'el largo, 100: el tope que decidió el dueño (2026-10-30)');
+  const stepsOf = (job) => job.slice(job.indexOf('\n    strategy:\n')).split('\n').filter((l) => l.trim() && !/^\s*#/.test(l) && !/^ {4}timeoutInMinutes:/.test(l)).join('\n');
+  assert.strictEqual(stepsOf(longSuites), stepsOf(suites), 'el largo corre los mismos pasos, con la misma matriz');
+  assert.ok(suites.endsWith(`${TEMPLATE_USE}`) || suites.includes(`${TEMPLATE_USE}\n`)
+    || suites.includes(`${TEMPLATE_USE}        parameters:\n          veredicto: true\n`), 'los pasos del trabajo de suites son los de la plantilla');
   assert.match(verdict, /\n {4}timeoutInMinutes: 10\n/, 'el veredicto, 10');
 
   // Lo que viaja de un job a otro: la lista (con el intento), lo de cada trabajo (siempre, con el intento) y el banco.
@@ -485,17 +603,92 @@ test('PrShards_Jobs_ValidateThenBenchAndSuitesThenAVerdictThatAlwaysRuns', () =>
     'cada trabajo publica lo que midió aunque haya rojas o lo corten, con el intento en el nombre');
   assert.match(bench, /- publish: '\$\(Build\.ArtifactStagingDirectory\)\/bench'\n {8}artifact: 'bench-a\$\(System\.JobAttempt\)'\n {8}displayName: '[^']+'\n {8}condition: always\(\)\n/);
   assert.match(template, /itemPattern: 'suites-plan-a\*\/\*\*'\n {6}targetPath: '\$\(Pipeline\.Workspace\)\/suites-plan'\n/, 'cada trabajo baja sólo la lista');
-  assert.match(verdict, /continueOnError: true\n(?: {8}.*\n)*? {10}targetPath: '\$\(Pipeline\.Workspace\)\/artifacts'\n/, 'el veredicto baja todo');
+  if (verdictTemplate) assert.match(verdictTemplate, /continueOnError: true\n(?: {4}.*\n)*? {6}targetPath: '\$\(Pipeline\.Workspace\)\/artifacts'\n/, 'el veredicto baja todo');
+  else assert.match(verdict, /continueOnError: true\n(?: {8}.*\n)*? {10}targetPath: '\$\(Pipeline\.Workspace\)\/artifacts'\n/, 'el veredicto baja todo');
 
   // El veredicto, en modo Azure, con el modo aviso decidido por el interruptor, y el reintento
   // de una vez por roja.
   assert.match(stepBody(VERDICT_STEP), /node scripts\/ci\/pr-verdict\.js [^\n]*--ado[^\n]*; RC=\$\?/);
   assert.ok(stepBody(VERDICT_STEP).includes('node scripts/ci/suites-block.js'), 'el modo aviso lo decide el interruptor');
   assert.doesNotMatch(stepBody(VERDICT_STEP), /pr-verdict\.js [^\n]*--suites-warn/, 'nunca fijo en el llamado');
-  assert.match(verdict, new RegExp(`displayName: '${VERDICT_STEP.replace(/[?¿]/g, '.')}'\\n {8}condition: succeededOrFailed\\(\\)\\n`));
+  if (verdictTemplate) {
+    // en el respaldo, como siempre; en el último trabajo, sólo si ese trabajo se eligió
+    assert.ok(verdictTemplate.includes(`displayName: '${VERDICT_STEP}'\n    \${{ if parameters.enTrabajo }}:\n      condition: and(succeededOrFailed(), eq(variables['VEREDICTO_ACA'], 'si'))\n    \${{ else }}:\n      condition: succeededOrFailed()\n`));
+  } else assert.match(verdict, new RegExp(`displayName: '${VERDICT_STEP.replace(/[?¿]/g, '.')}'\\n {8}condition: succeededOrFailed\\(\\)\\n`));
   assert.ok(stepBody(RUN_STEP).includes('se reintenta una vez'), 'cada roja se reintenta una vez');
   assert.ok(stepBody(JOIN_STEP).includes('--retries "$MERGED/retries.json"'), 'y las dos pasadas llegan al reporte');
   assert.doesNotMatch(code.join('\n'), /^[^#]*git (commit|push|add)\b/m, 'el pipeline de los pedidos de merge nunca escribe en el repo');
+});
+
+// El veredicto, en el último trabajo que publica: el paso que lo decide, el de verdad, con un `curl` de juguete que
+// contesta la lista de artefactos de la corrida. 🔴 rojo: dar el veredicto con un trabajo sin publicar (se juntaría lo
+// de un trabajo que no terminó y saldría verde lo no medido), o con este trabajo con problemas, sin tiempo, o sin poder
+// leer la lista: en todos esos casos lo tiene que dar el respaldo, y la salida `dado` tiene que decir que no.
+const ELECTION_STEP = '¿Este trabajo da el veredicto?';
+test('PrShards_Verdict_TheLastJobThatPublishesGivesIt_OtherwiseTheFallback', { skip: (!verdictTemplate && 'NO MEDIDO — la validación todavía no trae pipelines/templates/verdict.yml') || NO_BASH }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-verdict-election-'));
+  toys.push(dir);
+  fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'home'), { recursive: true });
+  const curl = path.join(dir, 'bin', 'curl');
+  const answer = (names) => fs.writeFileSync(curl, names === null ? '#!/bin/sh\nexit 22\n'
+    : `#!/bin/sh\nprintf '%s' '${JSON.stringify({ count: names.length, value: names.map((name) => ({ name })) })}'\n`, { mode: 0o755 });
+  const body = expand(stepBody(ELECTION_STEP), {});
+  const now = Math.floor(Date.now() / 1000);
+  const base = { SUITES_OF: '2', SUITES_JOB_MINUTES: '40', SUITES_JOB_STARTED: String(now - 600), AGENT_JOBSTATUS: 'Succeeded', SYSTEM_JOBATTEMPT: '1',
+    SYSTEM_COLLECTIONURI: 'https://example.invalid/org/', SYSTEM_TEAMPROJECT: 'p', BUILD_BUILDID: '4242', SYSTEM_ACCESSTOKEN: 'x' };
+  const run = (env) => {
+    const r = bash(dir, body, 'eleccion', { ...base, ...env });
+    assert.strictEqual(r.code, 0, `el paso no frena nunca: sólo decide\n${r.out}`);
+    const aca = (r.out.match(/##vso\[task\.setvariable variable=VEREDICTO_ACA\](\w+)/) || [])[1];
+    const dado = (r.out.match(/##vso\[task\.setvariable variable=dado;isOutput=true\](\w+)/) || [])[1];
+    assert.strictEqual(aca, dado, `la variable del trabajo y la salida dicen lo mismo\n${r.out}`);
+    return { aca, out: r.out };
+  };
+  const ALL = ['verdict-kit-a1', 'suites-plan-a2', 'snapshot-a1', 'bench-a1', 'suites-shard-bench-a1', 'suites-shard-1-a1', 'suites-shard-2-a1'];
+  answer(ALL);
+  assert.strictEqual(run({}).aca, 'si', 'todos publicaron: este trabajo es el último y lo da (un reintento de Validar no importa)');
+  // 🔴 un reintento: lo publicado por el intento anterior de un trabajo que todavía corre parecería «ya publicó» y el
+  // veredicto saldría con lo viejo. Lo da el respaldo, que espera a todos
+  assert.match(run({ SYSTEM_JOBATTEMPT: '2' }).out, /es un reintento/, 'este trabajo reintentado no lo da');
+  assert.strictEqual(run({ SYSTEM_JOBATTEMPT: '' }).aca, 'no', 'sin saber el intento, no lo da');
+  for (const again of [['suites-shard-2-a2'], ['bench-a2'], ['suites-shard-bench-a10']]) {
+    answer([...ALL, ...again]);
+    const r = run({});
+    assert.strictEqual(r.aca, 'no', `${again}: otro trabajo fue reintentado, no lo da`);
+    assert.match(r.out, /hay trabajos reintentados/);
+  }
+  answer(ALL);
+  for (const missing of ['bench-a1', 'suites-shard-bench-a1', 'suites-shard-2-a1']) {
+    answer(ALL.filter((n) => n !== missing));
+    const r = run({});
+    assert.strictEqual(r.aca, 'no', `falta ${missing}: no lo da`);
+    assert.match(r.out, /todavía no publicaron:/);
+  }
+  answer([...ALL.filter((n) => n !== 'suites-shard-2-a1'), 'suites-shard-2-a1x', 'suites-shard-20-a1']);
+  assert.strictEqual(run({}).aca, 'no', 'un nombre parecido no cuenta como el trabajo 2');
+  answer(ALL);
+  for (const [env, why] of [
+    [{ AGENT_JOBSTATUS: 'SucceededWithIssues' }, 'este trabajo no terminó limpio'],
+    [{ AGENT_JOBSTATUS: 'Failed' }, 'este trabajo no terminó limpio'],
+    [{ SUITES_JOB_STARTED: String(now - 36 * 60) }, 'menos de 5 min'],
+    [{ SUITES_JOB_STARTED: '' }, 'no sé cuánto le queda'],
+    [{ SUITES_OF: '' }, 'no sé cuántos trabajos'],
+    [{ SUITES_OF: 'x' }, 'no sé cuántos trabajos'],
+  ]) {
+    const r = run(env);
+    assert.strictEqual(r.aca, 'no', `${JSON.stringify(env)}: no lo da`);
+    assert.ok(r.out.includes(why), `${JSON.stringify(env)}: dice por qué\n${r.out}`);
+  }
+  answer(null);
+  assert.match(run({}).out, /no pude leer qué publicaron los demás/, 'sin la lista, no lo da');
+  fs.writeFileSync(curl, "#!/bin/sh\nprintf 'no es json'\n", { mode: 0o755 });
+  assert.strictEqual(run({}).aca, 'no', 'una lista ilegible tampoco');
+  // y sus pasos del veredicto corren sólo si este trabajo se eligió; la foto no se baja otra vez
+  for (const step of ['Bajar lo que publicó cada trabajo', 'El árbol que armó Validar', JOIN_STEP]) {
+    assert.ok(verdictTemplate.includes(`displayName: '${step}'\n`) && new RegExp(`displayName: '${step}'\\n(?: {4}continueOnError: true\\n)? {4}\\$\\{\\{ if parameters\\.enTrabajo \\}\\}:\\n {6}condition: and\\(succeeded\\(\\), eq\\(variables\\['VEREDICTO_ACA'\\], 'si'\\)\\)\\n`).test(verdictTemplate), step);
+  }
+  assert.ok(verdictTemplate.includes('- ${{ if not(parameters.enTrabajo) }}:\n    - template: /pipelines/templates/fetch-snapshot.yml\n'), 'la foto la baja sólo el respaldo');
 });
 
 test('PrShards_DocsOnlyChange_SkipsEveryJobButValidateWithoutFailing', () => {
@@ -548,6 +741,386 @@ test('PrShards_AllShardsFinish_TheVerdictTellsFirmFromIntermittent', { skip: NO_
   assert.match(v.verdict.out, /ROJO NUEVO.*lab-red\.test\.sh.*MODO AVISO/);
   assert.doesNotMatch(v.verdict.out, /NO SE MIDIERON/);
   assert.strictEqual(v.verdict.code, 0, `en modo aviso, un rojo nuevo de suite no frena\n${v.verdict.out}`);
+});
+
+test('T5 PrShards_EachJobRecordsSuiteTimes_WithoutTheCommandSaysSo — cada trabajo deja suite-times.jsonl con sus suites (story 8.208)', { skip: NO_BASH }, () => {
+  // 🔴 mutación: no anotar los segundos de cada suite en el trabajo, anotarlos con otro origen, o romper el trabajo cuando
+  //    el árbol no trae el comando (un público de antes).
+  // 🔴 también: anotar el nombre suelto y no la ruta de suites.json, sumar la segunda pasada de una roja, o dejar en 0 la
+  //    que no está en el clon (no corrió: no va).
+  const dir = toy([['lab-green-a.test.sh', GREEN_SH], ['lab-red.test.sh', RED_SH]]);
+  const plan = runPlan(dir, 1);
+  assert.strictEqual(plan.code, 0, plan.out);
+  const sin = runShard(dir, 1, plan.of);
+  assert.match(sin.out, /el árbol no trae scripts\/tools\/suite-times\.js: no anoto los tiempos/, sin.out);
+  assert.ok(fs.existsSync(path.join(sin.artifact, 'finished')), sin.out);
+
+  const SLOW_RED = 'sleep 1\necho "MAL — lenta y roja"\nexit 1\n';
+  const con = toy([['lab-green-a.test.sh', GREEN_SH], ['lab-red.test.sh', SLOW_RED], ['lab-absent.test.sh', null]]);
+  fs.mkdirSync(path.join(con, 'repo', 'scripts', 'tools'), { recursive: true });
+  fs.symlinkSync(path.join(ROOT, 'scripts', 'tools', 'suite-times.js'), path.join(con, 'repo', 'scripts', 'tools', 'suite-times.js'));
+  const p2 = runPlan(con, 1);
+  assert.strictEqual(p2.code, 0, p2.out);
+  const r = runShard(con, 1, p2.of);
+  const f = path.join(r.artifact, 'suite-times.jsonl');
+  assert.ok(fs.existsSync(f), r.out);
+  const [e] = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.strictEqual(e.origen, 'ci-azure');
+  assert.deepStrictEqual(e.suites.map((x) => [x.s, x.exit]).sort(), [['tests/lab-green-a.test.sh', 0], ['tests/lab-red.test.sh', 1]]);
+  const red = e.suites.find((x) => x.s === 'tests/lab-red.test.sh');
+  assert.ok(red.ms >= 900 && red.ms < 1900, `la roja se reintenta: se anota sólo la primera pasada (${red.ms} ms)`);
+  assert.strictEqual(typeof e.carga, 'number');
+  // 🔴 mutación: medir la carga al terminar el trabajo (es la del propio trabajo, no la ajena): la carga que va a
+  //    `record` se toma antes de lanzar la primera suite.
+  const at = (re) => template.search(re);
+  assert.ok(at(/CARGA0="\$\(node -e/) >= 0 && at(/CARGA0="\$\(node -e/) < at(/xargs -P "\$JOBS"/), 'la carga se mide antes de la primera suite');
+  assert.match(template, /record [^\n]*\\\n[^\n]*--carga "\$CARGA0"/, 'y es la que recibe record');
+});
+
+// ── la suite que pasa su tope: se reintenta sola con el doble; y ningún pase pasa el plazo del trabajo ──────────────
+// 🔴 Estas pruebas corren la plantilla del PRIVADO (pipelines/templates/run-suites.yml), y la validación cruza el público
+// de main con el privado del pedido. Mientras el privado no traiga el reintento de la cortada (la marca `cut.txt`), se
+// saltean: el público entra primero y no puede dejar rojas las validaciones de los demás pedidos privados.
+const CUT_RETRY = template.includes('cut.txt');
+const NO_CUT_RETRY = NO_BASH || (!CUT_RETRY && 'NO MEDIDO — la plantilla del privado todavía no reintenta la cortada (pipelines/templates/run-suites.yml sin cut.txt)');
+const nowMs = 'node -e "process.stdout.write(String(Date.now()))"';
+/** Una suite de juguete que anota cuándo arranca y cuándo termina cada pasada, y duerme `seconds` (o lo de su pasada). */
+const timed = (seconds, { exit = 0, then = null } = {}) => [
+  'N=$(basename "$0"); C="@DIR@/count.$N"; n=$(cat "$C" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$C"',
+  `echo "start $N $n $(${nowMs})" >> "@DIR@/events"`,
+  then ? `if [ "$n" -ge 2 ]; then ${then}; fi` : '',
+  `sleep ${seconds}`,
+  `echo "end $N $n $(${nowMs})" >> "@DIR@/events"`,
+  `echo "pasada $n de $N"; exit ${exit}`, ''].join('\n');
+/**
+ * Un trabajo de suites de juguete con lo que `Validar` le dejó: la lista (todas las suites del juguete que tienen
+ * cuerpo) y, si se pasa, `caps.tsv`. Copia run-capped.js y el registro de tiempos al juguete, como en el árbol de verdad.
+ */
+function cutJob(suites, { caps = null, extraRegistry = [], times = false } = {}) {
+  const dir = toy([...suites, ...extraRegistry.map((n) => [n, null])]);
+  const repo = path.join(dir, 'repo');
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'ci', 'run-capped.js'), path.join(repo, 'scripts', 'ci', 'run-capped.js'));
+  if (times) {
+    fs.mkdirSync(path.join(repo, 'scripts', 'tools'), { recursive: true });
+    fs.symlinkSync(path.join(ROOT, 'scripts', 'tools', 'suite-times.js'), path.join(repo, 'scripts', 'tools', 'suite-times.js'));
+  }
+  const plan = path.join(workspace(dir), 'suites-plan', 'suites-plan-a1');
+  fs.mkdirSync(plan, { recursive: true });
+  fs.writeFileSync(path.join(plan, 'run.txt'), suites.filter(([, b]) => b !== null).map(([n]) => `${n}\n`).join(''));
+  if (caps) fs.writeFileSync(path.join(plan, 'caps.tsv'), Object.entries(caps).map(([n, s]) => `${n}\t${s}\tmedido:5\n`).join(''));
+  return dir;
+}
+/** Las variables del plazo: el trabajo arrancó hace un rato y le quedan `left` segundos (sin margen). */
+const deadline = (left, minStart = 2) => ({ SUITES_JOB_STARTED: String(Math.floor(Date.now() / 1000) - 60 + left), SUITES_JOB_MINUTES: '1', SUITES_JOB_MARGIN: '0', SUITES_MIN_START: String(minStart) });
+const events = (dir) => (fs.existsSync(path.join(dir, 'events')) ? fs.readFileSync(path.join(dir, 'events'), 'utf8') : '').split('\n').filter(Boolean)
+  .map((l) => { const [kind, name, pass, ms] = l.split(' '); return { kind, name, pass: Number(pass), ms: Number(ms) }; });
+const shardFile = (r, f) => (fs.existsSync(path.join(r.artifact, f)) ? fs.readFileSync(path.join(r.artifact, f), 'utf8') : '');
+/**
+ * Las pasadas de `name` que terminaron solas: la suite de juguete anota «end» sólo si su `sleep` llegó al final. Una
+ * pasada cortada arranca y no lo anota. No se mide con el reloj de la prueba: ese suma el arranque de bash y de node,
+ * y con la máquina cargada pasa cualquier margen.
+ */
+const finished = (dir, name) => events(dir).filter((e) => e.kind === 'end' && e.name === name).map((e) => e.pass);
+
+test('T9 RunSuites_CutSuite_RetriedAloneWithDoubleCap_Green — la cortada se reintenta al final, sola y con el doble', { skip: NO_CUT_RETRY }, () => {
+  const dir = cutJob([['lab-slow.test.sh', timed(3)], ['lab-one.test.sh', timed(1)], ['lab-two.test.sh', timed(1)]],
+    { caps: { 'lab-slow.test.sh': 2, 'lab-one.test.sh': 60, 'lab-two.test.sh': 60 } });
+  const r = runShard(dir, 1, 1);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /⏳ lab-slow\.test\.sh — pasó el tope de 2 s; se reintenta sola con 4 s/);
+  assert.match(r.out, /✅ lab-slow\.test\.sh — verde sola con 4 s/);
+  assert.ok(!shardFile(r, 'failures.txt').includes('lab-slow'), shardFile(r, 'failures.txt'));
+  assert.deepStrictEqual(JSON.parse(shardFile(r, 'retries.json')), { 'lab-slow.test.sh': { primera: 'cortada', segunda: 'verde', tope: 2 } });
+  assert.ok(fs.existsSync(path.join(r.artifact, 'finished')), r.out);
+  const ev = events(dir);
+  const retry = ev.find((e) => e.kind === 'start' && e.name === 'lab-slow.test.sh' && e.pass === 2);
+  assert.ok(retry, `hubo reintento\n${JSON.stringify(ev)}`);
+  const others = ev.filter((e) => e.name !== 'lab-slow.test.sh');
+  assert.ok(others.every((e) => e.ms <= retry.ms), 'arranca después de que terminan todas las demás');
+  assert.ok(!ev.some((e) => e.kind === 'start' && e.ms > retry.ms && e.name !== 'lab-slow.test.sh'), 'y nada más corre mientras tanto');
+  assert.ok(shardFile(r, 'done.txt').includes('lab-slow.test.sh'), 'terminó: va a done.txt');
+});
+
+test('T10 RunSuites_CutThenRed_IsRedWithRetryOutput — si sola sale roja, es roja, con la salida del reintento', { skip: NO_CUT_RETRY }, () => {
+  const dir = cutJob([['lab-cut-red.test.sh', timed(3, { then: 'echo "MAL — sola también falla"; exit 1' })], ['lab-one.test.sh', timed(0)]],
+    { caps: { 'lab-cut-red.test.sh': 2, 'lab-one.test.sh': 60 } });
+  const r = runShard(dir, 1, 1);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean), ['lab-cut-red.test.sh']);
+  assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', 'lab-cut-red.test.sh.txt'), 'utf8'), /sola también falla/, 'la salida es la del reintento');
+  assert.deepStrictEqual(JSON.parse(shardFile(r, 'retries.json')), { 'lab-cut-red.test.sh': { primera: 'cortada', segunda: 'rojo', tope: 2 } });
+  assert.strictEqual(events(dir).filter((e) => e.kind === 'start' && e.name === 'lab-cut-red.test.sh').length, 2, 'no hay tercera pasada');
+});
+
+test('T11 RunSuites_CutTwice_NotMeasured — cortada dos veces: no medida, con los dos topes', { skip: NO_CUT_RETRY }, () => {
+  const dir = cutJob([['lab-hang.test.sh', timed(10)]], { caps: { 'lab-hang.test.sh': 2 } });
+  const r = runShard(dir, 1, 1);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(events(dir).filter((e) => e.kind === 'start' && e.name === 'lab-hang.test.sh').length, 2, 'dos pasadas');
+  assert.deepStrictEqual(finished(dir, 'lab-hang.test.sh'), [], 'se corta las dos veces: ninguna pasada llega a sus 10 s');
+  assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean), ['lab-hang.test.sh(no-medida)']);
+  assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', 'lab-hang.test.sh(no-medida).txt'), 'utf8'), /pasó su tope dos veces: 2 s acompañada y 4 s sola/);
+  assert.deepStrictEqual(JSON.parse(shardFile(r, 'retries.json')), {}, 'no entra en las dos pasadas');
+});
+
+test('T12 RunSuites_NoTimeForRetry_NotMeasured — sin tiempo para el tope doble, no se reintenta', { skip: NO_CUT_RETRY }, () => {
+  // tope 3: arranca con 5 a 7 s de plazo (según lo que tardó la preparación), se corta en 3, y no quedan 6
+  const dir = cutJob([['lab-hang.test.sh', timed(10)]], { caps: { 'lab-hang.test.sh': 3 } });
+  const r = runShard(dir, 1, 1, { env: deadline(8, 1) });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(events(dir).filter((e) => e.kind === 'start').length, 1, 'una sola pasada');
+  assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean), ['lab-hang.test.sh(no-medida)']);
+  assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', 'lab-hang.test.sh(no-medida).txt'), 'utf8'),
+    /pasó su tope de 3 s y no quedaba tiempo en el trabajo para reintentarla sola con 6 s/);
+});
+
+test('T13 RunSuites_PassCappedByJobDeadline — ninguna pasada pasa el plazo del trabajo', { skip: NO_CUT_RETRY }, () => {
+  // de a una: la primera se come el plazo, y la segunda llega sin tiempo
+  const dir = cutJob([['lab-a-long.test.sh', timed(10)], ['lab-b-late.test.sh', timed(0)]], { caps: { 'lab-a-long.test.sh': 60, 'lab-b-late.test.sh': 60 } });
+  const r = runShard(dir, 1, 1, { env: { ...deadline(6), SUITES_JOBS: '1' } });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.deepStrictEqual(finished(dir, 'lab-a-long.test.sh'), [], 'la primera se corta en el plazo, no en su tope de 60 s: no llega a sus 10 s');
+  assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean).sort(), ['lab-a-long.test.sh(no-medida)', 'lab-b-late.test.sh(no-medida)']);
+  for (const n of ['lab-a-long.test.sh', 'lab-b-late.test.sh']) {
+    assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', `${n}(no-medida).txt`), 'utf8'), /sin tiempo en el trabajo/, n);
+  }
+  assert.ok(!events(dir).some((e) => e.name === 'lab-b-late.test.sh'), 'la segunda no arranca');
+  assert.ok(fs.existsSync(path.join(r.artifact, 'finished')), 'el trabajo termina y publica');
+  // Sin caps.tsv y sin poder calcularlo (el juguete no trae las suites con tope propio del juego pr): sin tope propio,
+  // la pasada queda acotada por el plazo.
+  const bare = cutJob([['lab-a-long.test.sh', timed(10)]]);
+  const rb = runShard(bare, 1, 1, { env: deadline(6) });
+  assert.strictEqual(rb.code, 0, rb.out);
+  assert.deepStrictEqual(finished(bare, 'lab-a-long.test.sh'), [], 'sin tope, el plazo la corta: no llega a sus 10 s');
+  assert.match(rb.out, /no llegaron los topes de Validar: los calculo por peso/);
+  assert.deepStrictEqual(shardFile(rb, 'failures.txt').split('\n').filter(Boolean), ['lab-a-long.test.sh(no-medida)']);
+  assert.ok(fs.existsSync(path.join(rb.artifact, 'finished')), rb.out);
+});
+
+test('T14 RunSuites_CapsFromValidar_UsedOrFallback — usa los topes de Validar; sin ellos, los de peso y lo dice', { skip: NO_CUT_RETRY }, () => {
+  // El juguete trae las dos suites con tope propio del juego pr: así el tope por peso se puede calcular.
+  const registry = ['clean-machine.test.sh', 'instinct-executor.test.sh'];
+  const withCaps = cutJob([['lab-x.test.sh', timed(3)]], { caps: { 'lab-x.test.sh': 2 }, extraRegistry: registry });
+  const r = runShard(withCaps, 1, 1);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /uso los topes de Validar/);
+  assert.match(r.out, /⏳ lab-x\.test\.sh — pasó el tope de 2 s/, 'el tope de caps.tsv, no el de su peso (180 s)');
+  assert.doesNotMatch(r.out, /no llegaron los topes de Validar/);
+  assert.doesNotMatch(r.out, /sin línea en los topes de Validar/);
+  // una suite que caps.tsv no trae corre sin tope propio, sólo con el plazo: se dice
+  const partial = cutJob([['lab-x.test.sh', timed(0)], ['lab-y.test.sh', timed(0)]], { caps: { 'lab-x.test.sh': 60 }, extraRegistry: registry });
+  const rp = runShard(partial, 1, 1);
+  assert.strictEqual(rp.code, 0, rp.out);
+  assert.match(rp.out, /##vso\[task\.logissue type=warning\]suites \(trabajo 1\): 1 suite\(s\) sin línea en los topes de Validar: corren sin tope propio, sólo con el plazo del trabajo/);
+  const without = cutJob([['lab-x.test.sh', timed(3)]], { extraRegistry: registry });
+  const r2 = runShard(without, 1, 1);
+  assert.strictEqual(r2.code, 0, r2.out);
+  assert.match(r2.out, /##vso\[task\.logissue type=warning\]suites \(trabajo 1\): no llegaron los topes de Validar: los calculo por peso/);
+  assert.match(r2.out, /^✅ lab-x\.test\.sh/m, 'con el tope de su peso (180 s) entra');
+  assert.doesNotMatch(r2.out, /⏳ lab-x/);
+});
+
+test('T19 RunSuites_DeadlineCutPass_NotInTimes — al registro de tiempos sólo va lo que midió a la suite', { skip: NO_CUT_RETRY }, () => {
+  // de a una: verde, cortada por su tope, recortada por el plazo, y una que llega sin tiempo
+  const dir = cutJob([['lab-a-green.test.sh', timed(0)], ['lab-b-cut.test.sh', timed(10)], ['lab-c-deadline.test.sh', timed(10)], ['lab-d-late.test.sh', timed(0)]],
+    { caps: { 'lab-a-green.test.sh': 60, 'lab-b-cut.test.sh': 2, 'lab-c-deadline.test.sh': 60, 'lab-d-late.test.sh': 60 }, times: true });
+  const r = runShard(dir, 1, 1, { env: { ...deadline(10), SUITES_JOBS: '1' } });
+  assert.strictEqual(r.code, 0, r.out);
+  const tsv = shardFile(r, 'times.tsv').split('\n').filter(Boolean).map((l) => l.split('\t')).map(([n, , e]) => [n, e]);
+  assert.deepStrictEqual(tsv.sort(), [['lab-a-green.test.sh', '0'], ['lab-b-cut.test.sh', '124']]);
+  const [entry] = shardFile(r, 'suite-times.jsonl').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.deepStrictEqual(entry.suites.map((x) => [x.s, x.exit]).sort(), [['tests/lab-a-green.test.sh', 0], ['tests/lab-b-cut.test.sh', 124]]);
+});
+
+test('T22 RunSuites_RedRetry_RespectsJobDeadline — la 2ª pasada de una roja tampoco pasa el plazo', { skip: NO_CUT_RETRY }, () => {
+  // Roja en la 1ª y su 2ª más larga que lo que queda: la corta el plazo y la roja queda firme con la salida de la 1ª.
+  const dir = cutJob([['lab-red-long.test.sh', timed(0, { exit: 1, then: 'sleep 10' })]], { caps: { 'lab-red-long.test.sh': 60 } });
+  const r = runShard(dir, 1, 1, { env: deadline(8) });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean), ['lab-red-long.test.sh']);
+  assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', 'lab-red-long.test.sh.txt'), 'utf8'), /pasada 1 de/, 'la salida es la de la 1ª');
+  assert.deepStrictEqual(JSON.parse(shardFile(r, 'retries.json')), { 'lab-red-long.test.sh': { primera: 'rojo', segunda: 'rojo' } });
+  // Roja que termina con menos de lo mínimo para arrancar: no se reintenta, y no entra en las dos pasadas.
+  // La suite espera hasta 1 s antes del plazo (lo lee de las variables del trabajo, que hereda) y sale roja.
+  const UNTIL_LATE = 'D=$((SUITES_JOB_STARTED + SUITES_JOB_MINUTES * 60 - 1)); while [ "$(date +%s)" -lt "$D" ]; do sleep 0.2; done\necho "MAL — tarde"; exit 1\n';
+  const late = cutJob([['lab-red-late.test.sh', UNTIL_LATE]], { caps: { 'lab-red-late.test.sh': 60 } });
+  const r2 = runShard(late, 1, 1, { env: deadline(6) });
+  assert.strictEqual(r2.code, 0, r2.out);
+  assert.match(r2.out, /lab-red-late\.test\.sh — no quedaba tiempo en el trabajo para reintentarla/);
+  assert.deepStrictEqual(shardFile(r2, 'failures.txt').split('\n').filter(Boolean), ['lab-red-late.test.sh']);
+  assert.deepStrictEqual(JSON.parse(shardFile(r2, 'retries.json')), {});
+  for (const x of [r, r2]) assert.doesNotMatch(shardFile(x, 'failures.txt'), /no-medida/, 'una roja medida nunca sale no medida');
+});
+
+// 🔴 El reparto con los tiempos medidos vive en el YAML del PRIVADO, y la validación cruza el público de main con el
+// privado del pedido. Mientras el privado no traiga el paso que baja los tiempos antes del reparto, estas pruebas se
+// saltean: el público entra primero y no puede dejar rojas las validaciones de los demás pedidos privados.
+const MEASURED_SPLIT = text.includes(`displayName: '${TIMES_STEP}'`);
+const OLD_SPLIT = 'NO MEDIDO — el privado todavía no reparte con los tiempos medidos (pipelines/azure-pipelines-maintainers-pr.yml sin el paso «Los tiempos medidos de Azure»)';
+const NO_MEASURED_SPLIT = NO_BASH || (!MEASURED_SPLIT && OLD_SPLIT);
+
+test('T17 PrShards_ValidarFetchesTimesAndPublishesCaps — Validar baja los tiempos y publica los topes; cada trabajo sabe su plazo', { skip: !CUT_RETRY && 'NO MEDIDO — la plantilla del privado todavía no reintenta la cortada (pipelines/templates/run-suites.yml sin cut.txt)' }, () => {
+  const all = jobs();
+  // La bajada vive en su propio paso, antes del reparto, o (la forma de antes) dentro de «Los topes medidos».
+  const step = stepBody(MEASURED_SPLIT ? TIMES_STEP : CAPS_STEP);
+  assert.match(step, /node scripts\/ci\/run-capped\.js --seconds 150 --mark "[^"]+" -- node scripts\/ci\/fetch-suite-times\.js --timeout 120 \$\{FETCH_ARG\[@\]\+"\$\{FETCH_ARG\[@\]\}"\} --out "\$TIMES"/,
+    'baja los tiempos con su tope de 120 s y el de afuera, más largo, de respaldo');
+  // cuántas corridas baja y cuántas mira salen de la regla del archivo de pesos, no de los números del guion
+  assert.match(step, /suite_cap\.measured/, 'lee runs y scan de pr.suite_cap.measured');
+  assert.match(step, /FETCH_ARG=\(--runs "\$_RUNS" --scan "\$_SCAN"\)/);
+  const caps = stepBody(CAPS_STEP);
+  if (MEASURED_SPLIT) {
+    assert.match(step, /; then\n\s*cp -R "\$TIMES" "\$OUT\/tiempos"/, 'los tiempos van a suites-plan sólo si la bajada salió 0');
+    assert.match(step, /##vso\[task\.logissue type=warning\]no pude bajar los tiempos medidos: el reparto y los topes salen del peso, como antes/);
+    assert.doesNotMatch(caps, /fetch-suite-times\.js/, 'los topes no bajan de nuevo');
+    assert.match(caps, /MEASURED_ARG=\(--measured "\$OUT\/tiempos"\)/, 'los topes leen la carpeta que bajó Validar');
+  } else {
+    assert.ok(step.indexOf('fetch-suite-times.js') < step.indexOf('suites-shard.js caps'), 'baja antes de calcular');
+    assert.match(step, /if node scripts\/ci\/run-capped\.js[^\n]*; then\n\s*MEASURED_ARG=\(--measured "\$TIMES"\)/, 'los tiempos sólo si la bajada salió 0');
+    assert.match(step, /##vso\[task\.logissue type=warning\]no pude bajar los tiempos medidos: los topes salen del peso, como antes/);
+  }
+  assert.match(caps, /> "\$OUT\/caps\.tsv"/, 'caps.tsv va en la carpeta de suites-plan');
+  const validar = all.Validar;
+  const fetchName = MEASURED_SPLIT ? TIMES_STEP : CAPS_STEP;
+  assert.ok(validar.indexOf(`displayName: '${CAPS_STEP}'`) < validar.indexOf("artifact: 'suites-plan-a$(System.JobAttempt)'"), 'antes de publicar suites-plan');
+  assert.match(validar, new RegExp(`displayName: '${fetchName}'\\n(?: {8}.*\\n)*? {8}env:\\n {10}SYSTEM_ACCESSTOKEN: \\$\\(System\\.AccessToken\\)\\n`), 'con el token de la corrida');
+  // con Solas, el banco solo tiene 30 min (20 de su tope más la preparación) y no corre suites
+  if (SOLAS) assert.match(all.Bench, /\n {4}timeoutInMinutes: 30\n/, 'Bench: 20 min del banco más la preparación');
+  for (const [name, minutes] of [[SUITES_BENCH_JOB, 40], ['Suites', 40], ['SuitesLargo', 100]]) {
+    const job = all[name];
+    assert.match(job, new RegExp(`\\n {4}timeoutInMinutes: ${minutes}\\n`), `${name}: su tope no cambia`);
+    assert.match(job, new RegExp(`\\n {6}SUITES_JOB_MINUTES: ${minutes}\\n`), `${name}: el plazo que ve la plantilla es su tope`);
+    const steps = job.slice(job.indexOf('\n    steps:\n')).split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    assert.match(steps, /^\n {4}steps:\n {6}- script: echo "##vso\[task\.setvariable variable=SUITES_JOB_STARTED\]\$\(date \+%s\)"\n {8}displayName: 'La hora de arranque del trabajo'\n {6}- checkout: self\n/,
+      `${name}: la hora de arranque, primero, antes del checkout, y sin correr nada del árbol`);
+  }
+});
+
+// ── el reparto con los tiempos medidos de Azure ────────────────────────────────────────────────────────────────────
+// Validar baja los tiempos una vez, antes del reparto, y todos los llamados que pesan usan esa carpeta o ninguno.
+/** Una bajada de juguete: escribe `runs` corridas de Azure con los segundos de cada suite y sale 0, o sale `exit`. */
+function fakeFetch(dir, seconds, { runs = 3, exit = 0 } = {}) {
+  const file = path.join(dir, `fake-fetch-${exit}.js`);
+  const lines = Array.from({ length: runs }, (_, i) => JSON.stringify({ v: 1, ts: `2026-11-0${i + 1}T10:00:00.000Z`, origen: 'ci-azure', repo: 'r',
+    workers: 2, nucleos: 2, carga: 1, wall_ms: 1, suites: Object.entries(seconds).map(([n, s]) => ({ s: `tests/${n}`, ms: s * 1000, exit: 0 })) }));
+  fs.writeFileSync(file, [
+    "const fs = require('fs'); const path = require('path');",
+    "const a = process.argv.slice(2); const out = a[a.indexOf('--out') + 1];",
+    exit ? `console.log('tiempos: no pude (juguete)'); process.exit(${exit});` : '',
+    "fs.mkdirSync(out, { recursive: true });",
+    `fs.writeFileSync(path.join(out, '1-suites-shard-1-a1.jsonl'), ${JSON.stringify(`${lines.join('\n')}\n`)});`,
+    "console.log('tiempos: 3 corrida(s) (juguete)');", ''].join('\n'));
+  return file;
+}
+// Por peso las cuatro pesan lo mismo y se alternan por nombre (a y c, b y d); por lo medido, a y d (100 s) abren un
+// trabajo cada una y b y c (1 s) completan: a y b, c y d.
+const FOUR = ['lab-a.test.sh', 'lab-b.test.sh', 'lab-c.test.sh', 'lab-d.test.sh'];
+const FOUR_TIMES = { 'lab-a.test.sh': 100, 'lab-b.test.sh': 1, 'lab-c.test.sh': 1, 'lab-d.test.sh': 100 };
+const fourToy = () => toy(FOUR.map((n) => [n, GREEN_SH]));
+const planTimes = (dir) => path.join(dir, 'staging-validar', 'suites-plan', 'tiempos');
+
+test('PrShards_ValidarFetchesBeforeThePlan — la bajada va antes del reparto y todos los llamados usan su carpeta', { skip: !MEASURED_SPLIT && OLD_SPLIT }, () => {
+  const validar = jobs().Validar;
+  assert.ok(validar.indexOf(`displayName: '${TIMES_STEP}'`) < validar.indexOf(`displayName: '${PLAN_STEP}'`), 'la bajada, antes de «Qué suites corren»');
+  const fetch = stepBody(TIMES_STEP);
+  assert.match(fetch, /cp -R "\$TIMES" "\$OUT\/tiempos"/, 'deja los tiempos en suites-plan, que viaja a cada trabajo y al veredicto');
+  assert.match(fetch, /rm -rf "\$OUT\/tiempos"/, 'si la bajada falla, no queda carpeta');
+  assert.match(fetch, /\bexit 0\s*$/, 'la bajada no frena Validar');
+  const guard = /MEASURED_ARG=\(\)[^\n]*\n(?:[^\n]*\n)*?[^\n]*\[ -d "(\$OUT\/|\$\{PLAN_DIR\})tiempos" \] && \[ -n "\$\(ls -A "\1tiempos"[^\n]*MEASURED_ARG=\(--measured "\1tiempos"\)/;
+  for (const name of [PLAN_STEP, CAPS_STEP, RUN_STEP, JOIN_STEP]) {
+    assert.match(stepBody(name), guard, `«${name}»: la carpeta sólo si existe y no está vacía`);
+  }
+  for (const sub of ['jobs', 'plan', 'long', 'list', 'merge']) {
+    assert.match(shardCall(sub), /\$\{MEASURED_ARG\[@\]\+"\$\{MEASURED_ARG\[@\]\}"\}/, `${sub} lleva la carpeta de tiempos`);
+  }
+  assert.doesNotMatch(stepBody(JOIN_STEP), /fetch-suite-times/, 'el veredicto no baja nada');
+  assert.doesNotMatch(stepBody(RUN_STEP), /fetch-suite-times/, 'cada trabajo, tampoco');
+});
+
+test('PrShards_ValidarSteps_MeasuredOrWeight — con la bajada en 0 el plan sale de lo medido; con 3, por peso y lo dice', { skip: NO_MEASURED_SPLIT }, () => {
+  const dir = fourToy();
+  const ok = runPlan(dir, maxShards(), ['scripts/lab.js'], {}, { fetch: fakeFetch(dir, FOUR_TIMES) });
+  assert.strictEqual(ok.code, 0, ok.out);
+  assert.ok(fs.existsSync(planTimes(dir)), `tiempos/ queda en suites-plan\n${ok.out}`);
+  assert.match(ok.out, /total: 4 suite\(s\) · ~202 s .* · 4 medidas en Azure, 0 por peso/, 'el plan sale de lo medido');
+  // (el trabajo del banco también lleva suites: el largo mira el trabajo de suites más cargado y dice lo que se lleva el banco)
+  assert.match(ok.out, /s medidos en el trabajo de suites más cargado \(el del banco se lleva ~\d+\)/, 'el trabajo largo, también');
+  assert.doesNotMatch(ok.out, /no pude (bajar|repartir)/);
+  const off = fourToy();
+  const no = runPlan(off, maxShards(), ['scripts/lab.js'], {}, { fetch: fakeFetch(off, FOUR_TIMES, { exit: 3 }) });
+  assert.strictEqual(no.code, 0, no.out);
+  assert.ok(!fs.existsSync(planTimes(off)), 'sin carpeta');
+  assert.match(no.out, /##vso\[task\.logissue type=warning\]no pude bajar los tiempos medidos: el reparto y los topes salen del peso, como antes/);
+  assert.match(no.out, /sin peso medido/, 'el plan, por peso');
+  assert.doesNotMatch(no.out, /\d+ medidas en Azure|~\d+ s medidos/);
+});
+
+test('RunSuites_ListUsesPlanTimes — cada trabajo pide su lista con los tiempos que viajan en suites-plan', { skip: NO_MEASURED_SPLIT || NO_CUT_RETRY }, () => {
+  const listOf = (withTimes) => {
+    const dir = fourToy();
+    const plan = runPlan(dir, maxShards(), ['scripts/lab.js'], {}, { fetch: fakeFetch(dir, FOUR_TIMES) });
+    assert.strictEqual(plan.code, 0, plan.out);
+    if (!withTimes) fs.rmSync(path.join(workspace(dir), 'suites-plan', 'suites-plan-a1', 'tiempos'), { recursive: true, force: true });
+    const r = runShard(dir, 1, 2);
+    assert.strictEqual(r.code, 0, r.out);
+    return shardFile(r, 'list.txt').split('\n').filter(Boolean).map((l) => path.posix.basename(slash(l)));
+  };
+  assert.deepStrictEqual(listOf(true), ['lab-a.test.sh', 'lab-b.test.sh'], 'con tiempos/: la partición medida de Validar');
+  assert.deepStrictEqual(listOf(false), ['lab-a.test.sh', 'lab-c.test.sh'], 'sin tiempos/: la de peso');
+});
+
+test('PrShards_ValidarMeasuredCallFails_AllByWeight — si un llamado del reparto falla con la carpeta, todo por peso y sin carpeta', { skip: NO_MEASURED_SPLIT }, () => {
+  const dir = fourToy();
+  // Un juego sin la regla de los tiempos medidos: con la carpeta, plan sale 2; sin ella, reparte por peso.
+  const real = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'suites-weights.json'), 'utf8'));
+  delete real.pr.suite_cap.measured;
+  const weights = path.join(dir, 'weights-sin-regla.json');
+  fs.writeFileSync(weights, JSON.stringify(real));
+  const r = runPlan(dir, maxShards(), ['scripts/lab.js'], {}, { fetch: fakeFetch(dir, FOUR_TIMES), weights });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.ok(!fs.existsSync(planTimes(dir)), 'la carpeta no se publica: ningún trabajo ni el veredicto la usan');
+  assert.match(r.out, /##vso\[task\.logissue type=warning\]no pude repartir con los tiempos medidos: el reparto y los topes salen del peso, como antes\n {3}el motivo: [^\n]*suite_cap\.measured/);
+  assert.strictEqual((r.out.match(/no pude repartir con los tiempos medidos/g) || []).length, 1, 'el aviso, una vez');
+  assert.match(r.out, /sin peso medido/, 'el plan, por peso');
+  assert.match(r.out, /s de peso en el trabajo de suites más cargado \(el del banco se lleva ~\d+\)/, 'el trabajo largo, por peso');
+  assert.doesNotMatch(r.out, /\d+ medidas en Azure|~\d+ s medidos/, 'nada del intento medido queda en el registro');
+  assert.ok(r.matrix, 'Validar publica la matriz igual');
+  // lo mismo si el que falla con la carpeta es jobs: un juego sin el número medido que necesita. Sin el plazo medido
+  // (job_deadline_measured) falla también jobs, el primero: la carga del banco (--bench-load) lo pide en cada llamado.
+  for (const [key, call] of [['job_budget_measured', 'jobs'], ['job_deadline_measured', 'jobs']]) {
+    const each = fourToy();
+    const set = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'suites-weights.json'), 'utf8'));
+    delete set.pr[key];
+    const file = path.join(each, `weights-sin-${key}.json`);
+    fs.writeFileSync(file, JSON.stringify(set));
+    // (jobs con el presupuesto de verdad: el `--budget` que fuerza el juguete no necesita el número medido)
+    const env = call === 'jobs' ? { SUITES_JOB_BUDGET: '' } : {};
+    const x = runPlan(each, maxShards(), ['scripts/lab.js'], env, { fetch: fakeFetch(each, FOUR_TIMES), weights: file });
+    assert.strictEqual(x.code, 0, x.out);
+    assert.ok(!fs.existsSync(planTimes(each)), `${call}: la carpeta no se publica`);
+    assert.match(x.out, new RegExp(`no pude repartir con los tiempos medidos: el reparto y los topes salen del peso, como antes\\n {3}el motivo: ${call}: [^\\n]*${key}`));
+    assert.match(x.out, /sin peso medido/, `${call}: el plan, por peso`);
+    assert.doesNotMatch(x.out, /\d+ medidas en Azure|~\d+ s medidos/, `${call}: nada del intento medido queda en el registro`);
+  }
+  // Y si el que falla con la carpeta es SÓLO long (jobs y plan ya repartieron con lo medido): ningún dato del juego de
+  // pesos falta sólo en long, así que un `node` de juguete, delante del de verdad, le hace fallar a long y a nadie más
+  // (como el `git` de juguete de la foto nocturna). Todo lo demás lo corre el node de verdad.
+  const longOnly = fourToy();
+  const realNode = String(spawnSync(BASH.path, ['-c', 'command -v node'], { encoding: 'utf8' }).stdout || '').trim();
+  assert.ok(realNode, 'hay un node en el PATH de bash');
+  fs.writeFileSync(path.join(longOnly, 'bin', 'node'), ['#!/usr/bin/env bash',
+    'case "$*" in',
+    '  *suites-shard.js\\ long\\ *--measured*) echo "❌ suites-shard long: de juguete, falla sólo long con la carpeta" >&2; exit 2 ;;',
+    'esac',
+    `exec "${realNode}" "$@"`, ''].join('\n'), { mode: 0o755 });
+  const y = runPlan(longOnly, maxShards(), ['scripts/lab.js'], {}, { fetch: fakeFetch(longOnly, FOUR_TIMES) });
+  assert.strictEqual(y.code, 0, y.out);
+  assert.ok(!fs.existsSync(planTimes(longOnly)), 'long: la carpeta no se publica');
+  assert.match(y.out, /no pude repartir con los tiempos medidos: el reparto y los topes salen del peso, como antes\n {3}el motivo: long: [^\n]*falla sólo long con la carpeta/);
+  assert.strictEqual((y.out.match(/no pude repartir con los tiempos medidos/g) || []).length, 1, 'long: el aviso, una vez');
+  assert.match(y.out, /sin peso medido/, 'long: el plan, por peso');
+  assert.match(y.out, /s de peso en el trabajo de suites más cargado/, 'long: el trabajo largo, por peso');
+  assert.doesNotMatch(y.out, /\d+ medidas en Azure|~\d+ s medidos/, 'long: nada del intento medido queda en el registro');
 });
 
 // Cada suite se anota como viva, espera un segundo, cuenta cuántas hay vivas en ese momento y se borra.
@@ -628,7 +1201,7 @@ test('PrShards_ShardThatPublishedNothing_TheVerdictDeclaresItsSuitesNotMeasured'
   assert.match(v.join.out, new RegExp(`##vso\\[task\\.logissue type=error\\].*trabajo ${missing} de ${shards}`), 'la ejecución lo denuncia como error');
   assert.deepStrictEqual([...v.report.unmeasured].sort(), lost.map((n) => `${n}(no-medida)`).sort());
   assert.match(v.verdict.out, new RegExp(`${lost.length} suite\\(s\\) NO SE MIDIERON`), 'el veredicto las declara no medidas');
-  for (const name of lost) assert.doesNotMatch(v.verdict.out, new RegExp(`ROJO NUEVO[^\\n]*${name.replace(/\./g, '\\.')}`), `${name} no es un rojo nuevo`);
+  for (const name of lost) assert.doesNotMatch(v.verdict.out, new RegExp(`ROJO NUEVO[^\\n]*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), `${name} no es un rojo nuevo`);
   assert.strictEqual(v.verdict.code, 2, `no medido no es verde: el veredicto sale 2\n${v.verdict.out}`);
   assert.match(v.verdict.out, /No se pudo dar el veredicto: no medido no es verde/);
 });
@@ -702,17 +1275,21 @@ test('PrShards_HeavySuites_TheStepsPassTheCriterionAndTheVerdictGetsWhatDidNotRu
   // con la lista del cambio, el de las dependencias de cada suite (scripts/ci/suite-deps.js), la
   // lista de código para elegir y la entera para la pesada que mira .md, y la foto nocturna de origin/main como red
   // (la foto, la que trajo Validar; no `git show origin/main:…` en este paso)
-  for (const piece of ['--deps', '--changed "$LISTA_CODIGO_SUITES"', '--changed-with-docs "$CAMB"', '--nightly "$FOTO"', '$(Agent.TempDirectory)/snapshot/nightly-suites.json']) {
+  for (const piece of ['--direct', '--changed "$LISTA_CODIGO_SUITES"', '--changed-with-docs "$CAMB"', '--nightly "$FOTO"', '$(Agent.TempDirectory)/snapshot/nightly-suites.json']) {
     assert.ok(stepBody(PLAN_STEP).includes(piece), `el plan pasa ${piece}`);
   }
   assert.ok(!stepBody(PLAN_STEP).includes('git show origin/main:scripts/controls-bench'), 'el plan no lee la foto por su cuenta');
   assert.ok(stepBody(JOIN_STEP).includes('--not-run "${PLAN_DIR}skip.txt"'), 'y el reporte anota las que no corrieron');
 });
 
+// Con `--direct` la red es por suite: la foto dice qué midió la noche (`ran`). La de juguete nombra sólo la pesada, así
+// las demás suites de juguete —que la noche «no midió»— corren igual y el reparto se sigue midiendo.
+const HEAVY_PHOTO = () => ({ ...FRESH_PHOTO(), ran: ['clean-machine.test.sh'] });
+
 test('PrShards_HeavySuites_ChangeThatDoesNotShip_SkipsBothAndTheVerdictSaysSo', { skip: NO_BASH }, () => {
   // (las guías y los guiones viajan en la copia y corren la copia pública de verdad; esto no viaja)
   const shards = maxShards();
-  const dir = toy(HEAVY_TOY);
+  const dir = toy(HEAVY_TOY, { photo: HEAVY_PHOTO() });
   const r = runPlan(dir, shards, ['specs/story-9.9-lab.md', 'tasks/lab.md']);
   const plan = r;
   assert.strictEqual(r.code, 0, r.out);
@@ -734,16 +1311,17 @@ test('PrShards_HeavySuites_NightlyPhotoIncompleteOldOrMissing_NothingIsSkippedAn
   // prueba rota. Acá la foto la pone el caso (toyGit), no el nocturno de anoche.
   const old = new Date(Date.now() - 40 * 3600 * 1000).toISOString();
   const cases = [
-    ['el nocturno no midió todo', { kind: 'bash-tests', ts: new Date().toISOString(), failures: ['clean-machine.test.sh(no-medida)'], complete: false }, /--deps no saltea nada[^\n]*complete: false/],
-    ['la foto es de hace 40 h', { kind: 'bash-tests', ts: old, failures: [], complete: true }, /--deps no saltea nada[^\n]*hace 40 h/],
-    ['no llegó la foto', null, /##vso\[task\.logissue type=warning\]suites: no pude leer la foto nocturna[^\n]*--deps no saltea nada/],
+    ['el nocturno no midió esa suite', { kind: 'bash-tests', ts: new Date().toISOString(), failures: ['clean-machine.test.sh(no-medida)'], unmeasured: ['clean-machine.test.sh(no-medida)'], ran: ['clean-machine.test.sh'], complete: false }, null],
+    ['la foto no dice qué corrió', { kind: 'bash-tests', ts: new Date().toISOString(), failures: [], complete: true }, /--direct no saltea nada[^\n]*\(ran\)/],
+    ['la foto es de hace 40 h', { kind: 'bash-tests', ts: old, failures: [], complete: true, ran: ['clean-machine.test.sh'] }, /--direct no saltea nada[^\n]*hace 40 h/],
+    ['no llegó la foto', null, /##vso\[task\.logissue type=warning\]suites: no pude leer la foto nocturna[^\n]*--direct no saltea nada/],
   ];
   for (const [what, photo, says] of cases) {
     const r = runPlan(toy(HEAVY_TOY, { photo }), maxShards(), ['specs/story-9.9-lab.md', 'tasks/lab.md']);
     assert.strictEqual(r.code, 0, `${what}\n${r.out}`);
     assert.deepStrictEqual(planned(r, 'skip.txt'), [], `${what}: sin red no se saltea ninguna\n${r.out}`);
     for (const heavy of ['clean-machine.test.sh']) assert.ok(planned(r, 'run.txt').includes(heavy), `${what}: ${heavy} corre\n${r.out}`);
-    assert.match(r.out, says, `${what}: el paso dice por qué no saltea`);
+    if (says) assert.match(r.out, says, `${what}: el paso dice por qué no saltea`);
   }
 });
 
@@ -760,7 +1338,7 @@ test('PrShards_ToyGit_OnlyAnswersTheNightlyPhoto', { skip: NO_BASH }, () => {
 
 test('PrShards_HeavySuites_PublishingChangeOrFailedDiff_RunsBoth', { skip: NO_BASH }, () => {
   const shards = maxShards();
-  const publishing = runPlan(toy(HEAVY_TOY), shards, ['scripts/publishing/export.js']);
+  const publishing = runPlan(toy(HEAVY_TOY, { photo: HEAVY_PHOTO() }), shards, ['scripts/publishing/export.js']);
   assert.strictEqual(publishing.code, 0, publishing.out);
   for (const name of ['clean-machine.test.sh']) assert.ok(planned(publishing, 'run.txt').includes(name), `scripts/publishing/ corre ${name}`);
   // El diff del pedido de merge falló («Qué trae este cambio» dejó todo=si): corren todas, nunca «no hace falta».
@@ -807,7 +1385,7 @@ const everyJob = (of) => [...Array(of).keys()].map((n) => n + 1);
 test('T48 PrShards_BenchJobRunsTheExclusiveSuitesAndTheVerdictJoinsThem — el trabajo del banco corre las que corren solas y el veredicto las junta', { skip: NO_BASH }, () => {
   // La forma: el trabajo del banco corre el banco, publica su reporte y DESPUÉS corre los pasos de la plantilla, con su
   // nombre de trabajo y la cuenta que publicó Validar. Un rojo del banco no las saltea.
-  const { Bench: bench, Suites: suites } = jobs();
+  const { [SUITES_BENCH_JOB]: bench, Suites: suites } = jobs();
   assert.match(bench, /\n {4}variables:\n {6}SUITES_SHARD: bench\n {6}SUITES_OF: \$\[ dependencies\.Validar\.outputs\['suites\.of'\] \]\n/, 'el trabajo del banco es el «bench» del reparto, con la cuenta de Validar');
   assert.ok(stepBody(PLAN_STEP).includes('echo "##vso[task.setvariable variable=of;isOutput=true]$OF"'), 'Validar publica la cuenta sola: el trabajo del banco no es una pata de la matriz');
   const use = `${TEMPLATE_USE}        parameters:\n          condicion: succeededOrFailed()\n`;
@@ -822,7 +1400,8 @@ test('T48 PrShards_BenchJobRunsTheExclusiveSuitesAndTheVerdictJoinsThem — el t
   // Una suite no puede dar otro resultado según en qué trabajo le tocó: los dos arrancan con los mismos pasos (el clon
   // entero con su credencial, node, los repos), sin contar los comentarios.
   const before = (job, mark) => { const own = job.slice(job.indexOf('\n    steps:\n'), job.indexOf(mark)); return own.split('\n').map((l) => l.replace(/\s+#.*$/, '')).filter((l) => l.trim() && !l.trim().startsWith('#')).join('\n'); };
-  assert.strictEqual(before(bench, '\n      - script: |'), before(suites, `\n${TEMPLATE_USE}`), 'el trabajo del banco prepara lo mismo que un trabajo de suites');
+  // con Solas, el trabajo de las que corren solas no tiene el paso del banco: prepara hasta la plantilla, como los demás
+  assert.strictEqual(before(bench, SOLAS ? `\n${TEMPLATE_USE}` : '\n      - script: |'), before(suites, `\n${TEMPLATE_USE}`), 'el trabajo del banco prepara lo mismo que un trabajo de suites');
   // Los cuatro llamados al repartidor separan las que corren solas: si uno no lo hiciera, una suite correría dos veces
   // o ninguna.
   for (const sub of ['jobs', 'plan', 'list', 'merge']) assert.ok(shardCall(sub).includes(' --exclusive-apart '), `suites-shard.js ${sub} separa las que corren solas: ${shardCall(sub)}`);
@@ -861,7 +1440,8 @@ test('T48 PrShards_BenchJobRunsTheExclusiveSuitesAndTheVerdictJoinsThem — el t
   // Un plan sin suites que corren solas: el trabajo del banco no corre ninguna, no falla, y el veredicto no lo espera.
   const plain = toy(SIX);
   const p = runPlan(plain, maxShards());
-  assert.doesNotMatch(p.out, /trabajo del banco/, 'el plan no nombra al trabajo del banco');
+  // (el trabajo del banco entra al reparto con su carga: el plan lo nombra, sin ninguna suite)
+  assert.match(p.out, /trabajo del banco: 0 suite\(s\) que corren solas y 0 del reparto/, 'el plan no le da ninguna suite al trabajo del banco');
   for (const i of everyJob(p.of)) assert.strictEqual(runShard(plain, i, p.of).code, 0);
   const none = runShard(plain, BENCH, p.of);
   assert.strictEqual(none.code, 0, none.out);
@@ -940,8 +1520,10 @@ function runBench(runner, env = {}) {
 const TOY_RUNNER = (exit) => `const fs = require('fs'); const at = process.argv.indexOf('--json');\nfs.writeFileSync(process.argv[at + 1], '{"kind":"toy"}');\nconsole.log('banco de juguete'); process.exit(${exit});\n`;
 
 test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco colgado se corta por su tope y no se lleva puestas las suites', { skip: NO_BASH }, () => {
-  const { Bench: bench } = jobs();
-  assert.match(bench, /\n {4}timeoutInMinutes: 40\n/, 'el trabajo: 10 min del banco más la suma de los topes de las suites que corren solas');
+  const { Bench: bench, [SUITES_BENCH_JOB]: alones } = jobs();
+  // con Solas, el banco va solo (30 min: 20 de su tope y la preparación) y las que corren solas en el suyo (40)
+  if (SOLAS) assert.match(bench, /\n {4}timeoutInMinutes: 30\n/, 'el banco solo: 20 min de su tope más la preparación');
+  assert.match(alones, /\n {4}timeoutInMinutes: 40\n/, SOLAS ? 'las que corren solas: la suma de sus topes' : 'el trabajo: 10 min del banco más la suma de los topes de las suites que corren solas');
   // 🔴 La cuenta, con los archivos de verdad: el tope del trabajo es su PEOR caso —el banco colgado hasta
   // su tope y cada suite que corre sola colgada hasta el suyo—. Si una suite más pasa a correr sola, la cuenta puede dejar de
   // entrar (por ejemplo 43,6 min contra 40) y esto se pone rojo: se le da
@@ -957,8 +1539,10 @@ test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco c
   assert.strictEqual(asked.status, 0, asked.stderr);
   const capOf = new Map(asked.stdout.trim().split('\n').map((l) => l.split('\t')).map(([name, seconds]) => [name, Number(seconds)]));
   for (const name of alone) assert.ok(capOf.get(name) > 0, `${name} corre sola y el repartidor le da un tope`);
-  const BENCH_CAP = 600;
-  const worst = BENCH_CAP + alone.reduce((sum, name) => sum + capOf.get(name), 0);
+  const BENCH_CAP = SOLAS ? 1200 : 600;
+  // con Solas, el banco no comparte trabajo con las que corren solas: entra en 25 de sus 30 min (5 de preparación)
+  if (SOLAS) assert.ok(BENCH_CAP <= 25 * 60, `el banco no entra en su trabajo: ${BENCH_CAP} s`);
+  const worst = (SOLAS ? 0 : BENCH_CAP) + alone.reduce((sum, name) => sum + capOf.get(name), 0);
   assert.ok(worst <= 40 * 60, `el peor caso del trabajo del banco no entra en sus 40 min: ${(worst / 60).toFixed(1)} min (${BENCH_CAP} s del banco + ${alone.map((n) => `${n} ${capOf.get(n)}`).join(' + ')})`);
   // las dos de tope propio: tardan 1 y 3 s en la validación, y 60 s les dejan margen de sobra (las dos viajan a la copia;
   // si un día alguna no viajara, acá no hay nada que fijar para ella)
@@ -967,7 +1551,7 @@ test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco c
   }
   const step = stepBody(BENCH_STEP);
   assert.match(step, /node scripts\/ci\/run-capped\.js --seconds "\$CAP" --mark "\$MARK" -- node scripts\/controls-bench\/runner\.js /, 'el runner corre con tope');
-  assert.match(step, /CAP="\$\{BENCH_CAP_SECONDS:-600\}"/, 'de 10 minutos, si nadie dice otra cosa');
+  assert.ok(step.includes(`CAP="\${BENCH_CAP_SECONDS:-${BENCH_CAP}}"`), `de ${BENCH_CAP / 60} minutos, si nadie dice otra cosa`);
 
   // colgado: se corta a los 2 s de la prueba, sale rojo y lo dice; no deja un reporte a medias
   const hung = runBench('setInterval(() => {}, 1000);\n', { BENCH_CAP_SECONDS: '2' });
@@ -991,7 +1575,7 @@ test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco c
   // un tope que no es un número de segundos: se avisa y vale el de siempre (nunca «sin tope»)
   const odd = runBench(TOY_RUNNER(0), { BENCH_CAP_SECONDS: 'mucho' });
   assert.strictEqual(odd.code, 0, odd.out);
-  assert.match(odd.out, /##vso\[task\.logissue type=warning\].*BENCH_CAP_SECONDS no es un número de segundos.*uso 600/);
+  assert.match(odd.out, new RegExp(`##vso\\[task\\.logissue type=warning\\].*BENCH_CAP_SECONDS no es un número de segundos.*uso ${BENCH_CAP}`));
 });
 
 // Los pasos de bash de los pipelines corren también en ESTA prueba, con el bash de la máquina: en la Mac, el 3.2. Ahí `$VAR`
@@ -1140,7 +1724,7 @@ const GUARD_STEP = 'El freno de publicación sobre el pedido';
 const GUARD_TERM = 'Zorblax';   // inventado
 const GUARD_LIST = `${JSON.stringify({ terminos: [{ patron: GUARD_TERM, categoria: 'cliente' }], permitidos: [] }, null, 2)}\n`;
 const GUARD_PIECES = ['scripts/hooks/public-push-guard.js', 'scripts/lib/az-pr.js', 'scripts/lib/gh-pr.js', 'scripts/lib/harness-repo.js', 'scripts/lib/legacy-names.js',
-  'scripts/lib/guard-record.js', 'scripts/publishing/detector.js', 'scripts/publishing/internal-history.js', 'scripts/setup/harness/tycon-home.js'];
+  'scripts/lib/guard-record.js', 'scripts/publishing/detector.js', 'scripts/publishing/internal-history.js', 'scripts/setup/harness/tycon-home.js', 'scripts/lib/clean-git-env.js'];
 const GUARD_WHO = { name: 'Mantenedor De Prueba', email: '4242+mantenedor@users.noreply.github.com' };
 const TEXTS_STANDIN = [
   '#!/usr/bin/env node',
@@ -1455,13 +2039,15 @@ test('T43 Validation_OneSnapshotFourReaders_EveryJobUsesWhatValidarBrought', () 
   const all = jobs();
   // la trae Validar, una vez, y la publica; los otros tres la bajan
   assert.match(all.Validar, /- template: \/pipelines\/templates\/fetch-snapshot\.yml\n\s+parameters:\n\s+step: fetch\n/, 'Validar trae la foto');
-  for (const name of ['Bench', 'Suites', 'Verdict']) {
+  for (const name of ['Bench', 'Suites', ...(verdictTemplate ? [] : ['Verdict'])]) {
     assert.match(all[name], /- template: \/pipelines\/templates\/fetch-snapshot\.yml\n\s+parameters:\n\s+step: download\n/, `${name} baja la que trajo Validar`);
   }
+  // con los pasos del veredicto en su plantilla, la baja la plantilla en el respaldo; el último trabajo ya la bajó
+  if (verdictTemplate) assert.match(verdictTemplate, /- template: \/pipelines\/templates\/fetch-snapshot\.yml\n\s+parameters:\n\s+step: download\n/, 'Verdict baja la que trajo Validar');
   assert.match(snapshotTemplate, /artifact: 'snapshot-a\$\(System\.JobAttempt\)'/, 'se publica con el intento en el nombre');
   const live = (s) => s.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
   // los cuatro lectores: ninguno lee la del checkout ni le pregunta a git
-  assert.ok(stepBody(PLAN_STEP).includes('FOTO="$(Agent.TempDirectory)/snapshot/nightly-suites.json"'), 'la red de --deps');
+  assert.ok(stepBody(PLAN_STEP).includes('FOTO="$(Agent.TempDirectory)/snapshot/nightly-suites.json"'), 'la red de --direct');
   assert.ok(live(stepBody(RUN_STEP)).includes('"$(Agent.TempDirectory)/snapshot/nightly-suites.json"'), 'las rojas de anoche que no se reintentan');
   assert.ok(stepBody(JOIN_STEP).includes('--previous "$(Agent.TempDirectory)/snapshot/nightly-suites.json"'), 'la comparación del reporte');
   for (const flag of ['--suites-snapshot "$(Agent.TempDirectory)/snapshot/nightly-suites.json"', '--bench-snapshot "$(Agent.TempDirectory)/snapshot/nightly-bench.json"']) {
@@ -1549,7 +2135,8 @@ test('T14 SuitesBlock_ValuesAndDefault_UnknownValueFailsClosed', () => {
 
 test('T11 Validation_JoinPassesBothRegistries_NotTravellingNamedInTheVerdict', { skip: NO_BASH }, () => {
   const join = stepBody(JOIN_STEP);
-  assert.ok(join.includes('REG=(--registry "$(Build.SourcesDirectory)/scripts/tests/suites.json" --registry "$BASE_REGISTRY")'), 'el registro de la rama y el de main, juntos');
+  // el de la rama, del árbol que armó Validar (el veredicto no tiene checkout)
+  assert.ok(join.includes('REG=(--registry "$ARBOL/scripts/tests/suites.json" --registry "$BASE_REGISTRY")'), 'el registro de la rama y el de main, juntos');
   // corrido: la foto nombra una suite que ningún registro trae
   const dir = toy([['lab-green-a.test.sh', GREEN_SH]]);
   const plan = runPlan(dir, maxShards());
@@ -1566,4 +2153,227 @@ test('T11 Validation_JoinPassesBothRegistries_NotTravellingNamedInTheVerdict', {
   assert.strictEqual(blind.join.code, 0, blind.join.out);
   assert.match(blind.join.out, /no pude leer el registro de suites de origin\/main: ninguna suite se da por «no viaja»/);
   assert.deepStrictEqual([blind.report.notTravelling, blind.report.disappeared], [undefined, ['lab-maintainers.test.sh']], blind.join.out);
+});
+
+// ── el banco en el pedido ────────────────────────────────────────────────────────────────────────────────────────
+// El nocturno corre el banco entero; en un pedido corre sólo si el cambio toca lo que lee, porque una validación
+// que no lo necesita no tiene que esperar sus 10 minutos. Validar lo decide (scripts/ci/bench-for-change.js) y el trabajo del banco también lleva suites: el reparto
+// lo cuenta cargado con los segundos del banco (600, o 0 si no corre), un número que viaja en suites-plan/bench-load.txt.
+// Lo que se mide acá: que `list --shard bench` y `merge` usen el MISMO número que el plan (si no, merge espera otro reparto
+// y unas suites quedan sin medir), y que el veredicto acepte un banco ausente SÓLO con las dos señales: Validar dijo «no»
+// y el trabajo del banco dejó su marca no-corre.txt. Cualquier otra combinación sin reporte del banco sigue roja.
+const PLAN_COPIES = (dir) => [path.join(artifacts(dir), 'suites-plan-a1'), path.join(workspace(dir), 'suites-plan', 'suites-plan-a1')];
+const benchLoadFile = (dir) => path.join(dir, 'staging-validar', 'suites-plan', 'bench-load.txt');
+/** Lo que publica el trabajo del banco cuando el banco no corre: su carpeta con la marca, sin banco.json. */
+function publishBenchSkipped(dir) {
+  const d = path.join(artifacts(dir), 'bench-a1');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'no-corre.txt'), 'el cambio no toca lo que el banco lee (scripts/ci/bench-for-change.js): lo corre el nocturno\n');
+}
+/** Los nombres que le tocan al trabajo `shard`, preguntándole al guion con la lista de Validar y la carga del banco dicha. */
+function namesWithLoad(dir, shard, of, load) {
+  const extra = load === null ? [] : ['--bench-load', String(load)];
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'suites-shard.js'), 'list', '--shard', String(shard), '--of', String(of),
+    '--only', path.join(dir, 'staging-validar', 'suites-plan', 'run.txt'), '--weight-set', 'pr', '--exclusive-apart', ...extra,
+    '--skills', '/S', '--scripts', path.join(dir, 'repo', 'scripts')], { encoding: 'utf8' });
+  return { code: r.status, names: r.stdout.split('\n').filter(Boolean).map((l) => path.posix.basename(slash(l))).sort(), err: r.stderr };
+}
+const ran = (r) => (r.out.match(/^(?:✅|❌|🟠) (\S+)/gm) || []).map((l) => l.split(' ')[1]).sort();
+// cuatro comunes y ninguna que corra sola: sin banco (carga 0) el trabajo del banco se lleva la mitad del reparto
+const BENCH_LOAD_TOY = () => toy(FOUR.map((n) => [n, GREEN_SH]));
+
+// El paso que decide si el banco corre (Validar): la palabra del guion se toma sólo si es exactamente «no» con salida 0;
+// ante la duda (sin lista, sin acotar, en main, un guion que falla o que dice otra cosa) el banco corre.
+test('PrShards_BenchDecisionStep_OnlyAnExactNoSkipsTheBench — el banco se saltea sólo si el guion dice exactamente «no»; ante la duda corre', { skip: NO_BASH }, () => {
+  const { Validar: validate } = jobs();
+  // el nombre del paso, literal dentro de una expresión: todo lo especial escapado, la barra invertida incluida
+  const literal = (s) => s.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+  assert.match(validate, new RegExp(`\\n {8}displayName: '${literal(BENCH_DECISION_STEP)}'\\n {8}condition: and\\(succeeded\\(\\), eq\\(variables\\['hayCodigo'\\], 'si'\\)\\)\\n {8}name: bench\\n`),
+    'tiene nombre (los otros trabajos leen bench.banco) y corre sólo con código');
+  assert.ok(validate.indexOf(`displayName: '${BENCH_DECISION_STEP}'`) < validate.indexOf(`displayName: '${PLAN_STEP}'`), 'antes del reparto, que usa su decisión');
+  const step = stepBody(BENCH_DECISION_STEP);
+  assert.ok(step.includes('echo "##vso[task.setvariable variable=banco]$BANCO"'), 'la deja para los pasos de Validar');
+  assert.ok(step.includes('echo "##vso[task.setvariable variable=banco;isOutput=true]$BANCO"'), 'y la publica para Bench y el veredicto');
+
+  // Corrido: el paso real con el guion de verdad; `says` cambia sólo la respuesta del guion por un node de juguete.
+  const realNode = String(spawnSync(BASH.path, ['-c', 'command -v node'], { encoding: 'utf8' }).stdout || '').trim();
+  const decide = (changed, { everything = 'no', branch = 'refs/heads/wt/lab', says = null } = {}) => {
+    const dir = toy([['lab-a.test.sh', GREEN_SH]]);
+    const temp = path.join(dir, 'temp-decision');
+    fs.mkdirSync(temp, { recursive: true });
+    if (changed) fs.writeFileSync(path.join(temp, 'cambiados.txt'), changed.map((l) => `${l}\n`).join(''));
+    if (says) {
+      fs.writeFileSync(path.join(dir, 'bin', 'node'), ['#!/usr/bin/env bash',
+        `case "\${1:-}" in *bench-for-change.js) printf '%s\\n' "${says.text}"; exit ${says.rc || 0} ;; esac`,
+        `exec "${realNode}" "$@"`, ''].join('\n'), { mode: 0o755 });
+    }
+    const r = bash(dir, expand(step, { temp, branch, everything }), 'decision');
+    assert.strictEqual(r.code, 0, `el paso nunca frena Validar\n${r.out}`);
+    const own = r.out.match(/^##vso\[task\.setvariable variable=banco\](.*)$/m);
+    const out = r.out.match(/^##vso\[task\.setvariable variable=banco;isOutput=true\](.*)$/m);
+    assert.ok(own && out && own[1] === out[1], `la misma decisión para Validar y para los demás\n${r.out}`);
+    return own[1];
+  };
+  assert.strictEqual(decide(['scripts/tests/lab-x.test.js', 'scripts/tests/fixtures/lab/dato.txt']), 'no', 'sólo una suite y un dato de prueba: el banco no corre');
+  assert.strictEqual(decide(['scripts/tests/lab-x.test.js', 'scripts/ci/lab.js']), 'si', 'con código que el banco lee, corre');
+  assert.strictEqual(decide(['scripts/tests/lab-x.test.js'], { everything: 'si' }), 'si', 'sin poder acotar el cambio, corre');
+  assert.strictEqual(decide(['scripts/tests/lab-x.test.js'], { everything: null }), 'si', 'sin saber si se pudo acotar (la macro literal), corre');
+  assert.strictEqual(decide(['scripts/tests/lab-x.test.js'], { branch: 'refs/heads/main' }), 'si', 'en main corre siempre');
+  assert.strictEqual(decide(null), 'si', 'sin la lista del cambio, corre');
+  // lo que el paso hace con la palabra del guion: sólo «no», exacta y con salida 0, saltea
+  assert.strictEqual(decide(['scripts/ci/lab.js'], { says: { text: 'no' } }), 'no', 'el control: el node de juguete contesta');
+  for (const [what, says] of [['un guion que falla', { text: 'no', rc: 1 }], ['«NO»', { text: 'NO' }], ['«no » con un espacio', { text: 'no ' }], ['una palabra rara', { text: 'tal vez' }], ['nada', { text: '' }]]) {
+    assert.strictEqual(decide(['scripts/tests/lab-x.test.js'], { says }), 'si', `${what}: corre`);
+  }
+});
+
+test('PrShards_BenchLoad_TheNumberTravelsWithThePlan_ListAndMergeUseIt — con bench-load.txt, list --shard bench y merge usan el número del plan', { skip: NO_BASH }, () => {
+  for (const sub of ['jobs', 'plan', 'long', 'list', 'merge']) {
+    assert.match(shardCall(sub), /\$\{BENCH_ARG\[@\]\+"\$\{BENCH_ARG\[@\]\}"\}/, `${sub} lleva la carga del banco`);
+  }
+  for (const l of code.filter((x) => /suites-shard\.js (caps|of|matrix)\b/.test(x))) {
+    assert.doesNotMatch(l, /BENCH_ARG|--bench-load/, `caps, of y matrix no la necesitan: ${l.trim()}`);
+  }
+
+  // El banco corre: 600 viaja en el archivo. Sin banco: 0. Con Solas, el trabajo «bench» del reparto no corre el banco: 0
+  // en los dos casos.
+  for (const [banco, load] of [['si', SOLAS ? '0' : '600'], ['no', '0']]) {
+    const dir = BENCH_LOAD_TOY();
+    const plan = runPlan(dir, maxShards(), ['scripts/lab.js'], { SUITES_JOB_BUDGET: '' }, { banco, benchLoad: 'real' });
+    assert.strictEqual(plan.code, 0, plan.out);
+    assert.strictEqual(fs.readFileSync(benchLoadFile(dir), 'utf8').trim(), load, `banco=${banco}: el número que viaja\n${plan.out}`);
+    for (const copy of PLAN_COPIES(dir)) assert.ok(fs.existsSync(path.join(copy, 'bench-load.txt')), `viaja en ${copy}`);
+  }
+
+  // Sin banco, el trabajo del banco arranca vacío y se lleva parte de las comunes: list --shard bench las corre con el
+  // número del plan (sin él no le tocaría ninguna), y el veredicto las junta con el mismo reparto.
+  const dir = BENCH_LOAD_TOY();
+  const plan = runPlan(dir, maxShards(), ['scripts/lab.js'], { SUITES_JOB_BUDGET: '' }, { banco: 'no', benchLoad: 'real' });
+  assert.strictEqual(plan.code, 0, plan.out);
+  const withLoad = namesWithLoad(dir, BENCH, plan.of, 0);
+  assert.strictEqual(withLoad.code, 0, withLoad.err);
+  assert.ok(withLoad.names.length > 0 && withLoad.names.length < FOUR.length, `con carga 0 el trabajo del banco lleva parte: ${withLoad.names}`);
+  assert.strictEqual(namesWithLoad(dir, BENCH, plan.of, null).code, 3, 'sin el número, al trabajo del banco no le toca ninguna: el número cambia el reparto');
+  const b = runShard(dir, BENCH, plan.of);
+  assert.strictEqual(b.code, 0, b.out);
+  assert.deepStrictEqual(ran(b), withLoad.names, 'list --shard bench usó el número del plan');
+  const shards = [];
+  for (const i of everyJob(plan.of)) { const r = runShard(dir, i, plan.of); assert.strictEqual(r.code, 0, r.out); shards.push(...ran(r)); }
+  assert.deepStrictEqual([...shards, ...ran(b)].sort(), [...FOUR].sort(), 'cada común corrió una vez, entre los trabajos de suites y el del banco');
+  publishBenchSkipped(dir);
+  const v = runVerdict(dir, plan.matrix, { BANCO: 'no' });
+  assert.strictEqual(v.join.code, 0, v.join.out);
+  assert.strictEqual(v.report.complete, true, `merge esperó el mismo reparto: nada sin medir\n${v.join.out}`);
+  assert.deepStrictEqual([v.report.failures, v.report.unmeasured || []], [[], []], v.join.out);
+  assert.strictEqual(v.verdict.code, 0, v.verdict.out);
+
+  // Un merge SIN el número, con trabajos que sí lo usaron: espera otro reparto y lo que llevó el trabajo del banco queda
+  // NO MEDIDO — nunca verde.
+  fs.rmSync(path.join(artifacts(dir), 'suites-plan-a1', 'bench-load.txt'));
+  const off = runVerdict(dir, plan.matrix, { BANCO: 'no' });
+  assert.notStrictEqual(off.verdict.code, 0, `merge sin el número de los trabajos: no es verde\n${off.join.out}\n${off.verdict.out}`);
+});
+
+test('PrShards_BenchLoad_WithoutTheFile_NoCallUsesIt — sin bench-load.txt, ni list ni merge pasan la carga: el reparto de antes', { skip: NO_BASH }, () => {
+  const dir = BENCH_LOAD_TOY();
+  const plan = runPlan(dir, maxShards(), ['scripts/lab.js'], { SUITES_JOB_BUDGET: '' }, { banco: 'no', benchLoad: 'real' });
+  assert.strictEqual(plan.code, 0, plan.out);
+  for (const copy of PLAN_COPIES(dir)) fs.rmSync(path.join(copy, 'bench-load.txt'));
+  const b = runShard(dir, BENCH, plan.of);
+  assert.strictEqual(b.code, 0, b.out);
+  assert.match(b.out, /suites \(trabajo bench\): a este trabajo no le toca ninguna suite de este plan — no corre ninguna/, 'list sin el número: el trabajo del banco sólo lleva las que corren solas');
+  const shards = [];
+  for (const i of everyJob(plan.of)) { const r = runShard(dir, i, plan.of); assert.strictEqual(r.code, 0, r.out); shards.push(...ran(r)); }
+  assert.deepStrictEqual(shards, [...FOUR].sort(), 'los trabajos de suites corren todas las comunes');
+  publishBenchSkipped(dir);
+  const v = runVerdict(dir, plan.matrix, { BANCO: 'no' });
+  assert.strictEqual(v.join.code, 0, v.join.out);
+  assert.strictEqual(v.report.complete, true, `merge sin el número, como los trabajos: el mismo reparto\n${v.join.out}`);
+  assert.strictEqual(v.verdict.code, 0, v.verdict.out);
+  // Un número roto en el archivo: list sale con error y las suites de ese trabajo NO se midieron, nunca otro reparto.
+  for (const copy of PLAN_COPIES(dir)) fs.writeFileSync(path.join(copy, 'bench-load.txt'), 'mucho\n');
+  const broken = runShard(dir, 1, plan.of);
+  assert.notStrictEqual(broken.code, 0, broken.out);
+  assert.match(broken.out, /##vso\[task\.logissue type=error\]No se pudo armar la lista del trabajo 1 de \d+: sus suites NO se midieron/);
+});
+
+test('PrShards_BenchSkipped_TheVerdictAcceptsItOnlyWithBothSignals — sin reporte del banco, sólo «no» de Validar Y la marca del trabajo no es rojo', { skip: NO_BASH }, () => {
+  const { Bench: bench, Verdict: verdict } = jobs();
+  for (const [name, body] of [['Bench', bench], ['Verdict', verdict]]) {
+    assert.match(body, /\n {6}BANCO: \$\[ dependencies\.Validar\.outputs\['bench\.banco'\] \]\n/, `${name} lee la decisión de Validar`);
+  }
+  const dir = BENCH_LOAD_TOY();
+  const plan = runPlan(dir, maxShards(), ['scripts/lab.js'], { SUITES_JOB_BUDGET: '' }, { banco: 'no', benchLoad: 'real' });
+  assert.strictEqual(plan.code, 0, plan.out);
+  for (const shard of [...everyJob(plan.of), BENCH]) assert.strictEqual(runShard(dir, shard, plan.of).code, 0);
+  const benchDir = path.join(artifacts(dir), 'bench-a1');
+  const MISSING = /##vso\[task\.logissue type=error\]El job del banco no dejó su reporte: el banco NO se midió/;
+  const verdictFor = (BANCO, mark) => {
+    fs.rmSync(benchDir, { recursive: true, force: true });
+    if (mark) publishBenchSkipped(dir);
+    else fs.mkdirSync(benchDir, { recursive: true });
+    return runVerdict(dir, plan.matrix, BANCO === undefined ? {} : { BANCO });
+  };
+
+  // Las dos señales: no es rojo por el banco, y lo dice.
+  const both = verdictFor('no', true);
+  assert.strictEqual(both.join.code, 0, both.join.out);
+  assert.doesNotMatch(both.join.out, MISSING);
+  assert.match(both.join.out, /banco: no corrió en este pedido — el cambio no toca lo que lee; lo corre el nocturno/);
+  assert.strictEqual(both.verdict.code, 0, both.verdict.out);
+
+  // Validar dijo «no» pero el trabajo no dejó la marca (no corrió, o se cortó antes): rojo.
+  const noMark = verdictFor('no', false);
+  assert.notStrictEqual(noMark.join.code, 0, `«no» sin la marca: rojo\n${noMark.join.out}`);
+  assert.match(noMark.join.out, MISSING);
+
+  // La marca sin el «no» de Validar (dijo «si», no dijo nada, o cualquier otra palabra): el banco tenía que correr. Rojo.
+  for (const BANCO of ['si', '', undefined, 'No', ' no']) {
+    const markOnly = verdictFor(BANCO, true);
+    assert.notStrictEqual(markOnly.join.code, 0, `BANCO=${JSON.stringify(BANCO)} con la marca: rojo\n${markOnly.join.out}`);
+    assert.match(markOnly.join.out, MISSING, `BANCO=${JSON.stringify(BANCO)}`);
+  }
+
+  // Sin la carpeta del trabajo del banco (no publicó nada): rojo aunque Validar haya dicho «no».
+  fs.rmSync(benchDir, { recursive: true, force: true });
+  const none = runVerdict(dir, plan.matrix, { BANCO: 'no' });
+  assert.notStrictEqual(none.join.code, 0, none.join.out);
+  assert.match(none.join.out, MISSING);
+
+  // La marca vale sólo en el ÚLTIMO intento del trabajo del banco: con la marca en el 1 y un intento 2 sin marca ni
+  // reporte, el banco no se midió. Rojo.
+  fs.rmSync(benchDir, { recursive: true, force: true });
+  publishBenchSkipped(dir);
+  fs.mkdirSync(path.join(artifacts(dir), 'bench-a2'), { recursive: true });
+  const retried = runVerdict(dir, plan.matrix, { BANCO: 'no' });
+  assert.notStrictEqual(retried.join.code, 0, `la marca de un intento viejo no cuenta\n${retried.join.out}`);
+  assert.match(retried.join.out, MISSING);
+  fs.rmSync(path.join(artifacts(dir), 'bench-a2'), { recursive: true, force: true });
+
+  // Con reporte, el reporte manda: se compara aunque Validar haya dicho «no» y esté la marca.
+  publishBenchSkipped(dir);
+  publishBench(dir);
+  const report = runVerdict(dir, plan.matrix, { BANCO: 'no' });
+  assert.strictEqual(report.join.code, 0, report.join.out);
+  assert.doesNotMatch(report.join.out, /banco: no corrió en este pedido/, 'con reporte no se da por no corrido');
+});
+
+test('PrShards_VerdictTreeMissing_NoVerdictIsGreen — sin el árbol que armó Validar, ni se junta ni se da veredicto: rojo', { skip: NO_BASH }, () => {
+  const dir = toy([['lab-green-a.test.sh', GREEN_SH]]);
+  const plan = runPlan(dir, maxShards());
+  assert.strictEqual(plan.code, 0, plan.out);
+  for (const i of everyJob(plan.of)) assert.strictEqual(runShard(dir, i, plan.of).code, 0);
+  publishBench(dir);
+  // el paso que lo trae, sin el artefacto del kit: rojo y lo dice
+  const temp = path.join(dir, 'temp-kit');
+  fs.mkdirSync(temp, { recursive: true });
+  const kit = bash(dir, expand(stepBody('El árbol que armó Validar'), { temp, workspace: workspace(dir) }), 'kit');
+  assert.notStrictEqual(kit.code, 0, kit.out);
+  assert.match(kit.out, /##vso\[task\.logissue type=error\]No llegó el árbol que armó Validar: sin él no hay veredicto \(no medido no es verde\)/);
+  // y los dos pasos del veredicto, sin árbol: ninguno sale verde
+  const v = runVerdict(dir, plan.matrix, {}, {}, { tree: false });
+  assert.notStrictEqual(v.join.code, 0, v.join.out);
+  assert.match(v.join.out, /##vso\[task\.logissue type=error\]No está el árbol que armó Validar: las suites NO se midieron/);
+  assert.strictEqual(v.verdict.code, 2, `no medido no es verde: el veredicto sale 2\n${v.verdict.out}`);
+  assert.match(v.verdict.out, /No está el árbol que armó Validar: no se pudo dar el veredicto/);
 });

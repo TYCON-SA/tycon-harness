@@ -57,6 +57,26 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
 - `project_context` = `**/project-context.md` (load if exists)
 - `default_output_file` = `{implementation_artifacts}/{{story_key}}.md`
 
+<!-- story-index:generated -->
+### Generated story index (`story_index: generated`)
+
+Before step 1, ask the harness how this repo writes its story index:
+`node ~/.tycon/harness/scripts/tools/story-index.js --repo <stories repo> --mode`. If it prints `generated`, the
+organization declared `story_index: generated` for this repo in `team-repos.json`: `specs/epics.md` and
+`specs/sprint-status.yaml` are built from each story's frontmatter by `scripts/tools/story-index.js`, and main rebuilds
+them after every merge. In that mode, for the whole workflow:
+
+- Do not read nor write `{sprint_status}` or `{epics_file}` to pick or track a story. To find the next story, read the
+  frontmatter of the stories in the specs folder: the first one with `status: backlog`, in numeric order (`8.9` before
+  `8.10`). The number of a new story still comes from `story-number.js`.
+- Every "Update {{sprint_status}}" action is skipped: the state lives only in the frontmatter, and
+  `marker.js update-story-status` writes it. Epic status checks are skipped too: a generated index has no epic status.
+- Do not regenerate the index on the branch either: the pre-commit stops an index that differs from the generated one,
+  and two branches that regenerate it would collide again.
+
+If it prints `manual` (or the key is missing), follow the workflow as written.
+<!-- /story-index:generated -->
+
 ### Input Files
 
 | Input | Description | Path Pattern(s) | Load Strategy |
@@ -73,6 +93,15 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
 <workflow>
 
 <step n="1" goal="Determine target story">
+  <critical>A NEW story number is never picked by looking at `main` alone: two sessions on the same machine can write
+    stories at the same time, and the other one's story may live only in its worktree or in a branch with no pull
+    request. Whenever the number is not given (by the person, by the coordinator, or by a `backlog` key of
+    {sprint_status}), run `node <this skill's directory>/scripts/story-number.js next --repo <stories repo> --epic <n>`. It
+    reads `origin/main`, every remote branch and every worktree of that repo on this machine (also uncommitted files)
+    and prints `next`. Exit 0: use `next`. If it exits 3 (sale 3), there is doubt (a branch names a number with no
+    story, or the branches could not be fetched): do NOT assign; show its `doubts` and ask the person (or the
+    coordinator) for the number. A number given to you is still checked against its `used` list: if it is taken, say
+    so before writing.</critical>
   <check if="{{story_path}} is provided by user or user provided the epic and story number such as 2-4 or 1.6 or epic 1 story 5">
     <action>Parse user-provided story path: extract epic_num, story_num, story_title from format like "1-2-user-auth"</action>
     <action>Set {{epic_num}}, {{story_num}}, {{story_key}} from user input</action>
@@ -321,6 +350,9 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <action>Fill the YAML frontmatter completely: epic, story, title, status, sprint, priority, approach,
   depends_on, files_to_create, files_to_modify. Add followup_of + followup_reason if the story corrects,
   recalibrates or extends another one (§1.2), and a pipelines block if it ships in batches (§1.1).
+  Before splitting into batches: if two batches touch the same files and neither is usable or deliverable alone, write
+  them as a single batch (each batch adds its own plan, reviewers, tests and signatures). If they share files and each
+  one is usable alone, give each a `delivers:` line saying what someone gets with only that batch in (§1.1, VAL-W19).
   Do NOT write work_item (tycon-story-work-item adds it; the old name ado_work_item is never written). No double quotes inside YAML comments or
   inside the title value (§1.0).</action>
   <action>Keep every Mary+GOLD section of the template. Backend stories MUST fill "Patron de referencia

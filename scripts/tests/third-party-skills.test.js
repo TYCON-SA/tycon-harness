@@ -12,11 +12,13 @@
  *     no pague nada.
  *
  * Todo con repos de juguete (git de verdad, env de scripts/lib/clean-git-env.js) y manifiestos SINTÉTICOS por
- * --manifest; nunca el real (ése lo mira third-party-real.test.sh). T22 lee la documentación real del arnés.
+ * --manifest; nunca el real (ése lo mira third-party-real.test.sh). T22 lee la documentación real del arnés, y
+ * ManifiestoDeBmad_NoCambiaCommitsNiArboles lee las entradas reales de BMAD, sin red.
  */
 
 const test = require('node:test');
 const assert = require('node:assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -324,13 +326,18 @@ test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada;
   };
   git(repo, ['add', '.githooks']);
   git(repo, ['commit', '-q', '-m', 'hook']);
+  // El tope sigue a la carga de la máquina: 1 s más cinco arranques de node medidos ahora (unos 40 ms con la máquina
+  // libre). Con la máquina cargada todo tarda más, y un tope fijo daba rojo sin que el control hubiera cambiado.
+  const arranque = () => { const t0 = Date.now(); spawnSync(process.execPath, ['-e', '0']); return Date.now() - t0; };
+  const tope = () => 1000 + 5 * Math.min(arranque(), arranque());
 
   write(repo, { 'skills/foo/SKILL.md': 'ajena copiada\n' });
   git(repo, ['add', 'skills/foo']);
   const r1 = commitWithHook('copio una ajena');
+  const tope1 = tope();
   assert.strictEqual(r1.status, 1, r1.out);
   assert.match(r1.out, /skills\/foo/);
-  assert.ok(r1.ms < 1000, `el control tardó ${r1.ms} ms`);
+  assert.ok(r1.ms < tope1, `el control tardó ${r1.ms} ms (tope ${tope1} ms)`);
   git(repo, ['reset', '-q', '--hard', 'HEAD']);
   fs.rmSync(path.join(repo, 'skills', 'foo'), { recursive: true, force: true });
 
@@ -348,8 +355,9 @@ test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada;
   write(repo, { 'notes/today.md': 'n\n' });
   git(repo, ['add', 'notes']);
   const r2 = commitWithHook('sólo notas');
+  const tope2 = tope();
   assert.strictEqual(r2.status, 0, r2.out);
-  assert.ok(r2.ms < 1000, `el commit sin rutas de skills tardó ${r2.ms} ms`);
+  assert.ok(r2.ms < tope2, `el commit sin rutas de skills tardó ${r2.ms} ms (tope ${tope2} ms)`);
 
   // si el git que pregunta «¿qué toca este commit?» falla, el control corre igual (con el manifiesto roto, frena):
   // un git de mentira que falla sólo en `diff --cached` y delega todo lo demás en el de verdad. El hook se corre
@@ -378,4 +386,17 @@ test('T22 Docs_PointToManifest — cada guía nombra el manifiesto; INSTALL ya n
   const paragraphs = bmad.split(/\n\s*\n/).filter((p) => /third-party-skills\.json/.test(p));
   for (const p of paragraphs) assert.doesNotMatch(p, /\b\d+\.\d+\.\d+\b/, `bmad-contract.md afirma una versión junto al manifiesto: ${p.slice(0, 160)}`);
   assert.match(read('guides/maintaining/publicacion-espejo.md'), /^#+ .*Las skills de terceros/m);
+});
+
+// ── las skills de BMAD quedan en su versión ───────────────────────────────────────────────────────────────────
+// Actualizar BMAD a propósito cambia esta huella: se recalcula en ese mismo cambio.
+const HUELLA_DE_BMAD = '3fe675b45b2bed3352aab6b38e45d0bdf2970366b345cdf679c1e37359029265';
+
+test('T6 ManifiestoDeBmad_NoCambiaCommitsNiArboles @story-8.305 @ac-7', () => {
+  const m = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'publishing', 'third-party-skills.json'), 'utf8'));
+  const deBmad = m.third_party.filter((e) => e.target.startsWith('skills/bmad-'));
+  assert.strictEqual(deBmad.length, 42);
+  assert.ok(deBmad.every((e) => e.publish === true), 'sin publish: true, una skill sin used_by sale de la copia pública');
+  const filas = deBmad.map((e) => [e.target, e.from, m.origins[e.from].commit, e.path, e.tree, e.publish]).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  assert.strictEqual(crypto.createHash('sha256').update(JSON.stringify(filas)).digest('hex'), HUELLA_DE_BMAD);
 });

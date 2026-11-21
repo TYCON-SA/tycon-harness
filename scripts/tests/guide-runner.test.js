@@ -178,8 +178,9 @@ test('T6 ExamenPeriodico_CorreLasGuiasDespues @story-1.25 @ac-6', () => {
   const E = require(EXAMEN);
   const llamadas = [];
   const spawn = (bin, args) => { llamadas.push(args); return { status: 0 }; };
-  const viajar = () => ({ ok: true });
-  const base = { repo: casa, spawn, viajar, log: () => {} };
+  const publicar = () => ({ ok: true });
+  // `home`: el informe se guarda en la carpeta de estado de esta casa, nunca en la de quien corre la suite
+  const base = { repo: casa, home: casa, spawn, publicar, log: () => {} };
   assert.strictEqual(E.casosDeGuia(['--dry-run'], Object.assign({ corrioElExamen: true }, base)).corrio, false);
   assert.strictEqual(E.casosDeGuia([], Object.assign({ corrioElExamen: false }, base)).corrio, false, 'sin examen no hay guías: misma cadencia');
   const viejo = process.env.TYCON_NO_NIGHTLY_EXAM;
@@ -192,13 +193,15 @@ test('T6 ExamenPeriodico_CorreLasGuiasDespues @story-1.25 @ac-6', () => {
   assert.strictEqual(llamadas.length, 1);
   assert.ok(llamadas[0].some((a) => a.endsWith('guide-runner.js')));
   const i = llamadas[0].indexOf('--json');
-  assert.strictEqual(llamadas[0][i + 1], path.join(casa, 'scripts', 'controls-bench', 'ultimo-guias.json'), 'al lado del resultado del examen');
+  // un temporal al lado del informe guardado, en la carpeta de estado
+  const guardado = require(path.join(TCG, 'scripts', 'lib', 'result-travel.js')).keptPath('guides', 'scripts/controls-bench/ultimo-guias.json', casa);
+  assert.ok(llamadas[0][i + 1].startsWith(`${guardado}.`) && llamadas[0][i + 1].endsWith('.nuevo'), `al lado del resultado guardado — ${llamadas[0][i + 1]}`);
 
   // un examen con el corredor inyectado (las pruebas del examen) nunca lanza agentes de verdad
   const viejoRunner = process.env.TYCON_EXAM_RUNNER;
   process.env.TYCON_EXAM_RUNNER = path.join(casa, 'corredor-falso.js');
   try {
-    const sinSpawn = E.casosDeGuia([], { corrioElExamen: true, repo: casa, viajar, log: () => {} });
+    const sinSpawn = E.casosDeGuia([], { corrioElExamen: true, repo: casa, home: casa, publicar, log: () => {} });
     assert.strictEqual(sinSpawn.corrio, false, 'examen de mentira: casos de guía de mentira o ninguno');
   } finally { if (viejoRunner === undefined) delete process.env.TYCON_EXAM_RUNNER; else process.env.TYCON_EXAM_RUNNER = viejoRunner; }
 });
@@ -281,8 +284,8 @@ test('T9 NoPudoMedir_NoPisaElInformeAnterior @story-1.25 @ac-4 @ac-6', () => {
   const casa = tmp('guias-casa-');
   const viajes = [];
   const avisos = [];
-  const r = E.casosDeGuia([], { corrioElExamen: true, repo: casa, spawn: () => ({ status: 3 }),
-    viajar: (...a) => { viajes.push(a); return { ok: true }; }, log: (m) => avisos.push(m) });
+  const r = E.casosDeGuia([], { corrioElExamen: true, repo: casa, home: casa, spawn: () => ({ status: 3 }),
+    publicar: (...a) => { viajes.push(a); return { ok: true }; }, log: (m) => avisos.push(m) });
   assert.strictEqual(r.corrio, true);
   assert.strictEqual(viajes.length, 0, 'sin informe no hay nada que subir');
   assert.ok(avisos.some((m) => /salieron 3/.test(m)), avisos.join(' | '));

@@ -186,6 +186,7 @@ test('treeShaDe: mismo árbol → mismo sello; árbol distinto → sello distint
   const sucio3 = R.treeShaDe(d);
 
   assert.ok(sucio1, 'con cambios tiene que dar una huella');
+  assert.match(sucio1, /^[0-9a-f]{40}$/, 'el sello completo, el mismo con que se congela la vuelta (historia 8.161)');
   assert.equal(sucio1, sucio2, 'el mismo árbol da la misma huella (si no, no sirve para auditar)');
   assert.notEqual(sucio1, sucio3, 'otro contenido, otra huella');
   assert.notEqual(sucio1, limpio, 'el árbol limpio y el revisado no pueden dar lo mismo');
@@ -265,6 +266,14 @@ test('Roster_RevisorDeLaPruebaEnVivo_Firma @story-8.63 @ac-10', () => {
     assert.equal(r.status, 0, r.stderr);
   };
   spawn('tycon-silent-failure-hunter');   // completa y sella la ronda
+  // lo que contestó el revisor, como lo anota el gancho del fin del subagente: sin su reporte, write-findings frena
+  const transcript = path.join(base, 'revisor.jsonl');
+  fs.writeFileSync(transcript, `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Sin hallazgos.\nVeredicto: limpio' }] } })}\n`);
+  const fin = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-advisor-done.js')], {
+    cwd: repo, env, encoding: 'utf8',
+    input: JSON.stringify({ hook_event_name: 'SubagentStop', session_id: sid, agent_id: 'ag-1', agent_type: 'tycon-silent-failure-hunter', agent_transcript_path: transcript }),
+  });
+  assert.equal(fin.status, 0, fin.stderr);
   spawn('tycon-dod-runtime-checker');     // el paso 7c, después del sello
   const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '1.1', false, story);
   const roster = R.read(runDir);

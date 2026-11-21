@@ -39,6 +39,7 @@
 const fs = require('fs');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta del estado, de una sola pieza
+const { homeCommand } = require('./lib/home-command.js');
 const os = require('os');
 // execFileSync (arg array, sin shell) en vez de execSync con strings
 // interpolados — evita rotura/inyección con paths que tengan metacaracteres de shell.
@@ -132,7 +133,7 @@ function parseFrontmatter(content) {
 }
 
 const { isWorkStoryId, storiesConfigForGate } = require('./lib/story-discovery.js');
-const { esEvidenciaDeCierre, ES_EVIDENCIA_ADEMAS, coberturaDeLaUnion } = require('./lib/closing-evidence.js');
+const { esEvidenciaDeCierre, ES_EVIDENCIA_ADEMAS, coberturaDeLaUnion, evidenciaDeclaraFail } = require('./lib/closing-evidence.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 
 /**
@@ -176,6 +177,35 @@ function selectStorySpecs(diffFiles, readContent, idPattern, into) {
   });
 }
 
+/**
+ * Las historias del diff que el freno no juzga por la forma de su id, y que pasan a `review` o `done` en este commit:
+ * `[{ file, id }]`. Una historia nueva en el commit, ya en `review` o `done`, cuenta como cambio, igual que para las que
+ * sí se juzgan. Sin ellas, una historia `VH-1b` que se cierra sale 0 y muda, y nadie distingue «se juzgó y pasó» de
+ * «no se miró». Un archivo que no se pudo mirar va como `{ file, error }`: callarlo se vería igual que «no había nada».
+ */
+function storiesOutsidePattern(diffFiles, readStaged, readHead, idPattern) {
+  const out = [];
+  for (const f of new Set(diffFiles)) {
+    if (!f.endsWith('.md')) continue;
+    try {
+      const staged = readStaged(f);
+      if (typeof staged !== 'string' || !staged.startsWith('---')) continue;
+      const end = staged.indexOf('\n---', 3);
+      if (end < 0) continue;
+      const fm = staged.slice(3, end);
+      if (!/^status:\s*\S/m.test(fm)) continue;
+      const id = fm.match(/^story:\s*["']?([^"'\n]+?)["']?\s*$/m);
+      if (!id || isWorkStoryId(id[1], idPattern)) continue;
+      const before = String(parseFrontmatter(readHead(f)).status || '').trim().toLowerCase();
+      const after = String(parseFrontmatter(staged).status || '').trim().toLowerCase();
+      if (isCriticalStatusTransition(before, after) || (before === 'review' && after === 'done')) out.push({ file: f, id: id[1].trim() });
+    } catch (e) {
+      out.push({ file: f, error: e.message });
+    }
+  }
+  return out;
+}
+
 function readEvent() {
   try {
     const stdin = fs.readFileSync(0, 'utf8');
@@ -186,21 +216,84 @@ function readEvent() {
   }
 }
 
+// Los archivos que cambia este commit. En un merge en curso (`MERGE_HEAD`), lo que el índice tiene igual que la rama que
+// se trae no es un cambio de este commit: ya pasó por su propio pedido, y cobrárselo frenaría el merge por historias
+// ajenas. Quedan afuera el archivo cuyo contenido en el índice es el de `MERGE_HEAD` y el borrado que tampoco existe
+// ahí. Lo que se resolvió a mano (distinto de los dos lados) sigue adentro.
+// El gancho la pide varias veces: se recuerda por carpeta y huella (lib/git-stamp.js, que lleva el índice en uso: con
+// los `add` simulados en una copia se vuelve a preguntar). Un error de git no se recuerda.
+const STAGED = new Map();
 function getStagedDiff(cwd) {
+  return require('./lib/git-stamp.js').memo(STAGED, cwd, 'staged', () => leerStagedDiff(cwd));
+}
+/** Olvida las listas recordadas (para las pruebas que cargan el gancho en su proceso). */
+function limpiarStaged() { STAGED.clear(); }
+function leerStagedDiff(cwd) {
+  let diff;
   try {
-    return execFileSync('git', ['diff', '--cached', '--name-only'], {
+    diff = execFileSync('git', ['diff', '--cached', '--name-only'], {
+      windowsHide: true,
       cwd,
       encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'ignore'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
-  } catch {
-    return '';
+  } catch (e) {
+    // fuera de un repo no hay nada que juzgar; un git que falla dentro de uno (un índice roto, un permiso) no es «nada
+    // preparado»: los frenos de este gancho no ven el commit, y se dice
+    const motivo = String((e && (e.stderr || e.message)) || e).trim();
+    let enUnRepo = false;
+    try { execFileSync('git', ['rev-parse', '--git-dir'], { windowsHide: true, cwd, stdio: 'ignore' }); enUnRepo = true; } catch (_) { enUnRepo = false; }
+    if (enUnRepo) {
+      process.stderr.write(`⚠ freno de cierre: no pude leer lo preparado para el commit (git diff --cached: ${motivo.split('\n')[0].slice(0, 200)}); los controles de este commit NO lo miraron\n`);
+    }
+    return { valor: '', recordar: false };
+  }
+  const archivos = diff.split('\n').filter(Boolean);
+  if (archivos.length === 0) return { valor: diff, recordar: true };
+  const env = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
+  const git = (args, dir = cwd) => execFileSync('git', args, {
+    windowsHide: true,
+    cwd: dir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024, env,
+  });
+  try {
+    git(['rev-parse', '-q', '--verify', 'MERGE_HEAD^{commit}']);
+  } catch (e) {
+    // sale 1: no hay merge en curso, y eso se recuerda; otro error de git se juzga igual, sin recordarlo
+    return { valor: diff, recordar: e && e.status === 1 };
+  }
+  try {
+    // Todo desde la raíz y con `-z`: las rutas del diff son de la raíz (desde una subcarpeta, `ls-files` y `ls-tree` las
+    // leerían relativas a ella) y sin `-z` git cita las que tienen caracteres no ASCII, que así no se encuentran.
+    const raiz = git(['rev-parse', '--show-toplevel']).trim();
+    const crudas = git(['diff', '--cached', '--name-only', '-z'], raiz).split('\0').filter(Boolean);
+    // Las dos listas salen en el mismo orden; se devuelve la forma de siempre, la que leen los que llaman.
+    if (crudas.length !== archivos.length) throw new Error('las dos listas del diff no coinciden');
+    // Cada registro es `<campos>\t<ruta>`: `ls-files -s` da modo, objeto y etapa; `ls-tree` da modo, tipo y objeto.
+    const objetos = (salida, campoObjeto, soloEtapa0) => {
+      const m = new Map();
+      for (const reg of salida.split('\0').filter(Boolean)) {
+        const tab = reg.indexOf('\t');
+        const campos = reg.slice(0, tab).split(' ');
+        if (soloEtapa0 && campos[2] !== '0') continue;
+        m.set(reg.slice(tab + 1), campos[campoObjeto]);
+      }
+      return m;
+    };
+    const enIndice = objetos(git(['ls-files', '-s', '-z', '--', ...crudas], raiz), 1, true);
+    const enMerge = objetos(git(['ls-tree', '-r', '-z', 'MERGE_HEAD', '--', ...crudas], raiz), 2, false);
+    const propios = archivos.filter((_, i) => enIndice.get(crudas[i]) !== enMerge.get(crudas[i]));
+    return { valor: propios.length ? propios.join('\n') + '\n' : '', recordar: true };
+  } catch (e) {
+    // sin poder comparar con MERGE_HEAD, se juzga todo como antes
+    process.stderr.write(`⚠ freno de cierre: no pude comparar el merge con MERGE_HEAD (${(e && e.message) || e}); juzgo todos los archivos del commit\n`);
+    return { valor: diff, recordar: false };
   }
 }
 
 function getStagedFileContent(cwd, file) {
   try {
     return execFileSync('git', ['show', `:${file}`], {
+      windowsHide: true,
       cwd,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
@@ -213,6 +306,7 @@ function getStagedFileContent(cwd, file) {
 function getHeadFileContent(cwd, file) {
   try {
     return execFileSync('git', ['show', `HEAD:${file}`], {
+      windowsHide: true,
       cwd,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
@@ -228,8 +322,14 @@ function getHeadFileContent(cwd, file) {
 // verifica que el primer token no-flag sea `commit`. Un regex del tipo `\bgit\s+...commit\b`
 // matchea el substring en cualquier posición → falsos positivos que dispararían toda la
 // maquinaria del gate sobre comandos que no son commits.
-function isGitCommit(command, _depth = 0) {
-  if (!command || typeof command !== 'string') return false;
+function isGitCommit(command) {
+  return argumentosDeCommit(command).length > 0;
+}
+
+// Lo que sigue a `commit` en cada `git commit` de verdad del comando, uno por commit (la misma lectura que isGitCommit).
+function argumentosDeCommit(command, _depth = 0) {
+  const commits = [];
+  if (!command || typeof command !== 'string') return commits;
   const segments = command.split(/&&|\|\||[;&|\n]/);
   for (let seg of segments) {
     seg = seg.trim();
@@ -252,7 +352,7 @@ function isGitCommit(command, _depth = 0) {
       const wrapM = seg.match(/^(?:\S*\/)?(?:ba|z|da)?sh\s+(?:-\w+\s+)*-c\s+("([^"]*)"|'([^']*)')/);
       if (wrapM) {
         const inner = wrapM[2] !== undefined ? wrapM[2] : wrapM[3];
-        if (isGitCommit(inner, 1)) return true;
+        commits.push(...argumentosDeCommit(inner, 1));
       }
     }
     const m = seg.match(/^(?:\S*\/)?git\b(.*)$/s);
@@ -265,9 +365,41 @@ function isGitCommit(command, _depth = 0) {
       if (t.startsWith('-')) { i += 1; continue; }
       break; // primer token no-flag
     }
-    if (tokens[i] === 'commit') return true;
+    if (tokens[i] === 'commit') commits.push(tokens.slice(i + 1).join(' '));
   }
-  return false;
+  return commits;
+}
+
+// Las palabras de cada `git commit` de verdad del comando, leídas como las arma el shell (las comparte el freno de guardar)
+// (se carga al usarlo: si el freno no carga, el gancho sigue y su bloque decide)
+const commitsDelShell = (command) => require('./lib/save-brake.js').commitsDelShell(command);
+
+// ¿Algún `git commit` del comando lleva `--no-verify` (o la abreviada que git acepta, `--no-veri`, `--no-verif`) como
+// argumento? Nombrarla en un mensaje, un heredoc o un grep no es usarla. El valor de `-m`/`-F` es texto, no opción; una
+// opción larga abreviada (`--mess`) se lee como la entera, igual que git.
+const CON_VALOR_CORTAS = new Set(['-m', '-F', '-C', '-c', '-t']);
+const CON_VALOR_LARGAS = ['--message', '--file', '--author', '--date', '--template', '--trailer', '--fixup', '--squash',
+  '--reuse-message', '--cleanup'];
+function llevaValor(p) {
+  if (CON_VALOR_CORTAS.has(p)) return true;
+  return p.length > 3 && !p.includes('=') && CON_VALOR_LARGAS.some((l) => l.startsWith(p));
+}
+function usaNoVerify(command) {
+  return commitsDelShell(command).some((ps) => {
+    for (let i = 0; i < ps.length; i += 1) {
+      if (/^--no-veri(?:fy?)?$/.test(ps[i])) return true;
+      // `-n` no se cuenta como salteo: con ella el control del commit corre igual. Un grupo de cortas (`-am`) termina en
+      // la que lleva valor, y lo que sigue es su valor
+      const corta = /^-([a-zA-Z]+)$/.exec(ps[i]);
+      if (corta) {
+        const k = corta[1].search(/[mFCct]/);
+        if (k === corta[1].length - 1) i += 1;
+        continue;
+      }
+      if (llevaValor(ps[i])) i += 1;
+    }
+    return false;
+  });
 }
 
 // CF-4 — gap residual conocido: `git commit <pathspec>` commitea paths del working-tree que
@@ -308,16 +440,38 @@ function storyRequiresRuntimeEvidence(specContent) {
 // en el spec; nombres declarados en .tycon/advisors.yaml → evidence.fe_paths). Nada de productos acá.
 // La pantalla de una tanda bloqueada no se pide en este commit (`screenScope`, la misma regla que marker.js), salvo
 // que el commit cambie un archivo de pantalla (`changed`, lo preparado para commitear).
-function storyIsUiStory(specContent, repoRoot, changed) {
-  return require('./lib/ui-signal.js').screenScope(specContent, repoRoot, { changed }).active;
+function storyIsUiStory(specContent, repoRoot, changed, batches) {
+  return require('./lib/ui-signal.js').screenScope(specContent, repoRoot, { changed, batches }).active;
+}
+
+// ¿Alguna evidencia de la story, posterior al último cambio de código, trae el bloque «## Playwright Run» con veredicto
+// PASS y ningún fallo? Sin la hora del código (la matriz no corrió) no se acepta nada.
+function playwrightVerdeDespuesDelCodigo(cwd, specAbs, storyId, codeMtime) {
+  // Sin hora de código (la historia no declara archivos) no hay contra qué fechar la corrida: no se acepta ninguna.
+  if (!Number.isFinite(codeMtime) || codeMtime <= 0) return false;
+  const k = require('./lib/evidence-key.js').keyOr(specAbs, storyId);
+  const prefijo = `${k.key || storyId}-`;
+  return dodEvidenceDirsFor(cwd).some((dir) => {
+    let nombres = [];
+    try { nombres = fs.readdirSync(dir); } catch { return false; }
+    return nombres.filter((f) => f.startsWith(prefijo) && f.endsWith('.md')).some((f) => {
+      try {
+        const full = path.join(dir, f);
+        if (fs.statSync(full).mtimeMs < codeMtime) return false;
+        // El veredicto y los fallidos se leen DENTRO del bloque de Playwright, hasta el próximo título `## `.
+        const bloques = fs.readFileSync(full, 'utf8').split(/^(?=##\s)/m).filter((b) => /^##\s*Playwright Run/i.test(b));
+        return bloques.some((b) => /verdict(?:=|:\s*)PASS\b/.test(b) && /failed(?:=|:\s*)0\b/.test(b));
+      } catch { return false; }
+    });
+  });
 }
 
 // La baja de pantalla se dice al cerrar: una línea por stderr y por story, sin
 // bloquear. El texto lo arma lib/ui-signal.js.
-function avisoBajaDePantalla(specContent, repoRoot, changed) {
+function avisoBajaDePantalla(specContent, repoRoot, changed, batches) {
   try {
     const ui = require('./lib/ui-signal.js');
-    return ui.proseDropNotice(ui.uiSignalDetail(specContent, repoRoot)) || ui.screenScope(specContent, repoRoot, { changed }).note;
+    return ui.proseDropNotice(ui.uiSignalDetail(specContent, repoRoot)) || ui.screenScope(specContent, repoRoot, { changed, batches }).note;
   } catch (_e) { return null; }   // el aviso nunca rompe el cierre: es informativo y el veredicto ya se decidió
 }
 
@@ -385,13 +539,14 @@ function firmantesDeFindings(runDir) {
   return [...vistos.values()];
 }
 
-function revisarRosterLocal(cwd, storyId, storyPath) {
+// `sessionId`: la del evento del commit; su marcador decide la carpeta de la corrida (lib/run-dir.js)
+function revisarRosterLocal(cwd, storyId, storyPath, sessionId) {
   let roster; let runDir; let vistos;
   try {
     const rlib = require('./lib/review-roster.js');
     const { resolveRunDir } = require('./pipeline.js');
     const { query } = require('./lib/advisor-ledger.js');
-    runDir = resolveRunDir(cwd, String(storyId), false, storyPath);   // por la clave de la story
+    runDir = resolveRunDir(cwd, String(storyId), false, storyPath, { sessionId: sessionId || undefined });   // por la clave de la story
     if (!runDir) return null; // sin run dir la regla anterior ya habló
     try { roster = rlib.read(runDir); } catch (e) { return { reason: 'roster-ilegible', runDir, detalle: String(e.message).slice(0, 160) }; }
     // 🔴 `query()` devuelve un OBJETO ({spawns, vivos, archivo, advisores…}), no una lista. Tratarlo
@@ -542,15 +697,7 @@ function findAdvisorsEvidence(cwd, storyId, opts = {}) {
 
 // Busca archivo de evidencia DoD para una storyId dada en el repo cwd.
 // Devuelve el path + content del archivo MÁS RECIENTE encontrado (por filename
-// timestamp), o null si no existe.
-// Los tres formatos con los que el pipeline escribe un veredicto: `verdict=FAIL` (gate E2E),
-// `- verdict: FAIL` / `VERDICT: **FAIL**` (narrativas) y `## Verdict global` seguido de FAIL.
-function evidenciaDeclaraFail(content) {
-  if (!content) return false;
-  if (/(^|\n)[ \t]*(?:[-*][ \t]*)?(?:\*\*)?verdict(?:[ \t]+global)?(?:\*\*)?[ \t]*[:=][ \t]*(?:\*\*)?[ \t]*FAIL\b/i.test(content)) return true;
-  if (/##[ \t]*verdict[ \t]+global[ \t]*\n+[ \t]*(?:\*\*)?FAIL\b/i.test(content)) return true;
-  return false;
-}
+// timestamp), o null si no existe. Qué evidencia declara FAIL lo decide `evidenciaDeclaraFail` de lib/closing-evidence.js.
 // `opts.storyPath`: con la ruta de la story se busca por la CLAVE de su evidencia
 // (lib/evidence-key.js) — con un número repetido en el repo, `<id>-*` es la evidencia de cualquiera de las
 // stories que lo comparten. Si la clave no se puede decidir, no hay evidencia (fail-closed): dar por buena
@@ -874,6 +1021,7 @@ function frenoSecretosEnEvidencia(event) {
   try {
     const smokeSecrets = require('./lib/smoke-secrets.js');
     const git = (args) => execFileSync('git', args, {
+      windowsHide: true,
       cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024,
     });
     let raiz;
@@ -945,7 +1093,7 @@ function prepararIndiceConLosAdd(command, cwd) {
   if (plan.estado !== 'simulable') { pedirAddAparte(plan.motivo); return; }
   let copia;
   try {
-    const git = (args, env) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: env || process.env });
+    const git = (args, env) => execFileSync('git', args, { windowsHide: true, cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: env || process.env });
     const indice = path.resolve(cwd, git(['rev-parse', '--git-path', 'index']).trim());
     copia = path.join(os.tmpdir(), `tycon-precommit-index-${process.pid}-${Date.now()}`);
     if (fs.existsSync(indice)) fs.copyFileSync(indice, copia);
@@ -959,6 +1107,18 @@ function prepararIndiceConLosAdd(command, cwd) {
   }
   process.env.GIT_INDEX_FILE = copia;
   notaAlFrenar(`\nℹ️  Evaluado sobre lo que quedaría stageado después de los \`git add\` de este mismo comando (${plan.adds.map((a) => `git add ${a.join(' ')}`).join(' · ')}).\n`);
+}
+
+/**
+ * Las dos formas de firmar la exención de la prueba en vivo sobre una historia (scripts/lib/owner-window.js, la única
+ * fuente), con la sesión del evento. Sin esa biblioteca, el renglón dice qué firma pedir sin escribir el comando.
+ */
+function formasDeFirmarLaHistoria(sesion) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).formasDeFirmar('dod_runtime_exempt', null, sesion).renglones;
+  } catch (e) {
+    return [`la firma de archivo dod_runtime_exempt sobre la historia, en la ventana de permiso (no pude armar el comando: ${e.message})`];
+  }
 }
 
 // ============================================================
@@ -977,6 +1137,47 @@ function main() {
   }
 
   const command = event.tool_input?.command || '';
+
+  // La persona aprueba el pedido, no el commit (lib/save-brake.js): en una corrida, el commit y el empuje de la rama de
+  // trabajo no preguntan; el pedido y el empuje a una rama compartida frenan si no se preparó («Preparar el pedido») o si el código
+  // cambió desde su foto, y si no, preguntan en la ventana de permiso con la evidencia. Va antes de mirar si es un
+  // commit, porque juzga también push y pedidos. La pregunta sale por la salida estándar y el gancho sigue: si otro
+  // control frena después, frena. Un aviso sale por la salida de error. En una pestaña que no pide permisos la ventana
+  // se aprobaría sola: guarda sin preguntar y lo dice, y los frenos frenan igual. Si el freno no carga o falla, un
+  // comando que parece guardar frena dentro de una corrida (o sin poder saberlo) y fuera pasa con un aviso.
+  {
+    let sid = null;
+    let freno;
+    try {
+      sid = resolveSessionId(event.session_id);
+      freno = require('./lib/save-brake.js').decidir({ command, cwd: event.cwd || process.cwd(), sid });
+    } catch (e) {
+      // sin el lector: lo que nombra git, gh o az (sus alias también), o lo que no se podría leer (una variable, un
+      // shell cualquiera, eval, source, una función o un alias del shell, un prefijo que corre otro comando, lo que el
+      // shell expande)
+      const pareceGuardar = /\b(git|gh|az|commit|push|pr|repos|eval|alias|function|source|exec|xargs|env|sudo|doas|[a-z]*sh)\b|(^|[\s;&|(])\.\s|[$`*?{<]|\w\s*\(\s*\)/i.test(command);
+      let enCorrida = true;
+      try { if (sid) enCorrida = fs.existsSync(require('./lib/open-runs.js').markerPath(sid)); } catch { /* sin saber, frena */ }
+      freno = null;
+      if (pareceGuardar && enCorrida) freno = { texto: `🔒 GUARDAR: el freno de guardar no pudo correr (${e.message}); dentro de una corrida, el comando no pasa.` };
+      else if (pareceGuardar) process.stderr.write(`⚠️  el freno de guardar no pudo correr (${e.message}): fuera de una corrida, el comando pasa.\n`);
+    }
+    if (freno && freno.texto) {
+      process.stderr.write(freno.texto + '\n');
+      process.exit(2);
+    }
+    if (freno && freno.aviso) process.stderr.write(`⚠️  ${freno.aviso}\n`);
+    if (freno && freno.pregunta) {
+      // los modos de la herramienta en los que la ventana le llega a una persona; sin el dato, se pregunta
+      const modo = event.permission_mode == null ? null : String(event.permission_mode);
+      if (modo === null || ['default', 'acceptEdits', 'plan'].includes(modo)) {
+        fs.writeSync(1, JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: freno.pregunta } }));
+      } else {
+        process.stderr.write(`⚠️  ${freno.pregunta}\n   Esta pestaña no pide permisos (${modo.slice(0, 40)}): guarda sin preguntar.\n`);
+      }
+    }
+  }
+
   // Detectar `git commit` (no amend a un commit existente, no log, no status).
   // Atrapamos: `git commit`, `git commit -m`, `git commit -F`, `git -C ... commit ...`.
   // Excluimos: `git commit --amend` (es modificación, no transición), aunque
@@ -996,7 +1197,17 @@ function main() {
       p = { caso: 'ilegible', falta: `no pude revisar las piezas de la ejecución (${e.message})`, sesion: String(sessionId) };
     }
     if (p) {
-      process.stderr.write(or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }) + '\n');
+      process.stderr.write(or.cartel(p) + '\n');
+      process.exit(2);
+    }
+    // con el plan aprobado por la coordinadora, un commit por fuera del paso de cerrar también mide el diff entero
+    let cierre = null;
+    try {
+      const mp = or.markerPath(sessionId);
+      cierre = require('./lib/batch-scope.js').frenoDelCierre({ markerPath: mp, estado: path.dirname(path.dirname(mp)), sid: sessionId });
+    } catch (e) { cierre = { texto: `🔒 cierre: no pude medir el diff entero (${e.message}); con el plan aprobado por la coordinadora, no guarda.` }; }
+    if (cierre) {
+      process.stderr.write(cierre.texto + '\n');
       process.exit(2);
     }
   }
@@ -1014,8 +1225,8 @@ function main() {
   // Escape hatch estándar de git: --no-verify saltea hooks. Si user/agente
   // lo usa explícitamente, dejamos pasar pero queda rastro DURABLE en bypass.log
   // (solo stderr efímero: imposible auditar bypasses). También su prefijo inequívoco (`--no-veri`, `--no-verif`), que
-  // git acepta igual; `--no-ver` choca con `--no-verbose` y git lo rechaza.
-  if (/--no-verify\b|--no-verif?(?=[\s;&|"')]|$)/.test(command)) {
+  // git acepta igual; uno más corto choca con `--no-verbose` y git lo rechaza.
+  if (usaNoVerify(command)) {
     console.error('⚠ tycon-dod-runtime: --no-verify detected, skipping DoD gate (had_dod_bypass=true, logueado en bypass.log)');
     try {
       const stateDir = path.join(stateDirOf(os.homedir()));
@@ -1059,7 +1270,8 @@ function main() {
 
     if (repoRoot) {
       const events = atddCommit.eventsForRepo(stateDir, sessionId, repoRoot);
-      const verdict = computeAtddOrder(events);
+      // sin story a mano: un guion de medición del repo nunca cuenta como código
+      const verdict = computeAtddOrder(events, repoRoot);
       const mode = atddCommit.resolveMode(repoRoot, process.env);
       const decision = atddCommit.computeCommitGate({ verdict, mode });
 
@@ -1305,6 +1517,22 @@ function main() {
   const stagedByFile = new Map();
   const specFiles = selectStorySpecs(diffFiles, (f) => getStagedFileContent(cwd, f), idPattern, stagedByFile);
 
+  // Lo que el freno deja fuera se dice, antes de la salida sin historias: avisa y no frena.
+  try {
+    const fuera = storiesOutsidePattern(diffFiles, (f) => stagedByFile.get(f) ?? getStagedFileContent(cwd, f),
+      (f) => getHeadFileContent(cwd, f), idPattern);
+    for (const { file, id, error } of fuera) {
+      if (error) console.error(`⚠ tycon-story-outside — ${file}: no pude leerlo (${error}): no sé si es una historia que queda fuera del freno.`);
+      else console.error(`⚠ tycon-story-outside — ${file}: la historia «${id}» pasa a review o done y no se juzgó: su id no entra en el patrón de historias.`);
+    }
+    if (fuera.some((x) => !x.error)) {
+      console.error('   Para que entre: declarar su forma en `stories.id_pattern` de `.tycon/advisors.yaml` (un regex), y commitearlo.');
+    }
+  } catch (e) {
+    // el aviso nunca rompe el commit, pero tampoco calla que no pudo mirar
+    console.error(`⚠ tycon-story-outside — no pude buscar las historias que quedan fuera del freno (${e.message}).`);
+  }
+
   if (specFiles.length === 0) {
     process.exit(0);
   }
@@ -1321,6 +1549,9 @@ function main() {
   // no el working tree — un ack agregado sin stagear no cuenta. `{ error }` si no corrió: cada chequeo decide qué
   // hacer con eso (C6 sigue fail-open logueado; el de evidencia vuelve a mirar sólo el archivo).
   const matrices = new Map();
+  // specRel → { nombres, antes }: las tandas que el commit pasa a done (sin pasar la historia a review/done) y los
+  // criterios que tenían en HEAD; la matriz mide ésas
+  const tandasQueCierran = new Map();
   const matrizDe = (specRel, staged) => {
     if (matrices.has(specRel)) return matrices.get(specRel);
     let out;
@@ -1340,7 +1571,14 @@ function main() {
         // repoRoot explícito: el cómputo corre sobre una COPIA tmp del spec (contenido staged)
         // y la discovery de repo desde /tmp no puede ver el repo real — sin esto, la matriz
         // degradaría a fail-closed (0 evidencia) con la evidencia intacta en disco.
-        out = { rm, specAbs, matrix: rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot: rm.discoverRepoRoot(specAbs) }) };
+        // Al cerrar una tanda, la lista de lo que cambia este commit y el repo que commitea: un archivo del commit atado
+        // sólo a otra tanda devuelve sus criterios. Sin cierre de tanda, la matriz se computa como siempre.
+        const repoRoot = rm.discoverRepoRoot(specAbs);
+        const cierra = tandasQueCierran.has(specRel);
+        out = { rm, specAbs, matrix: rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot,
+          closingBatches: cierra ? tandasQueCierran.get(specRel).nombres : null,
+          closingAcsBefore: cierra ? tandasQueCierran.get(specRel).antes : null,
+          ...(cierra ? { changed: diffFiles, codeRepo: repoRoot } : {}) }) };
       } finally {
         try { fs.unlinkSync(tmpSpec); } catch { /* best effort */ }
       }
@@ -1397,6 +1635,35 @@ function main() {
     const headDone = (fmBlock(head).match(/^\s+status:\s*done\b/gm) || []).length;
     const stagedDone = (fmBlock(staged).match(/^\s+status:\s*done\b/gm) || []).length;
     const pipelineTransition = stagedDone > headDone;
+    // Un commit que cierra tandas sin pasar la historia a review/done mide las tandas que cierra: salen del diff de la
+    // historia (pasan a done en lo que se commitea y no lo estaban en HEAD), nunca del marcador de la sesión. Con paso
+    // de la historia, se miden todas.
+    // Sólo cuenta una tanda que ya estaba en HEAD sin estar done: una que aparece ya hecha no se cerró, y sin HEAD
+    // legible no se sabe qué cambió. En los dos casos se miden todas, y se dice.
+    if (pipelineTransition && !statusTransition) {
+      try {
+        const { parsePipelinesBlock } = require('./lib/story-checks.js');
+        const antes = head ? parsePipelinesBlock(head) : [];
+        if (!antes.length) {
+          process.stderr.write(`[on-pre-commit] ${specRel}: no pude leer las tandas de la historia en HEAD: se miden todas las tandas.\n`);
+        } else {
+          const enHead = new Map(antes.map((t) => [t.name, t]));
+          const ahora = parsePipelinesBlock(staged);
+          const nuevas = ahora.filter((t) => String(t.status || '').toLowerCase() === 'done' && !enHead.has(t.name)).map((t) => t.name);
+          const cierran = ahora.filter((t) => String(t.status || '').toLowerCase() === 'done' && enHead.has(t.name)
+            && String(enHead.get(t.name).status || '').toLowerCase() !== 'done').map((t) => t.name);
+          if (nuevas.length) {
+            process.stderr.write(`[on-pre-commit] ${specRel}: el commit agrega la tanda ${nuevas.join(', ')} ya done: no se cerró en este commit; se miden todas las tandas.\n`);
+          } else if (cierran.length) {
+            tandasQueCierran.set(specRel, { nombres: cierran,
+              antes: cierran.flatMap((n) => [...enHead.get(n).acs, ...enHead.get(n).acsPending]) });
+            process.stderr.write(`[on-pre-commit] ${specRel}: el commit cierra la tanda ${cierran.join(', ')}: se mide esa tanda (pasar la historia a review las pide todas).\n`);
+          }
+        }
+      } catch (e) {
+        process.stderr.write(`[on-pre-commit] ${specRel}: no pude leer las tandas que cierra el commit (${e.message}): se miden todas las tandas.\n`);
+      }
+    }
 
     // Sólo aviso cuando lo ÚNICO que pasa es la transición interna: si además se cierra una tanda
     // (`pipelines.X → done`), ésa nunca se juzgó y bloquea como siempre.
@@ -1437,7 +1704,7 @@ function main() {
       // rastro): `"sin_testigo": "<motivo>"` dentro del propio roster — viaja en el diff del PR,
       // se ve, y se puede contar. Kill-switch de emergencia: TYCON_ROSTER_GATE=off.
       if (process.env.TYCON_ROSTER_GATE !== 'off') {
-        const rg = revisarRosterLocal(cwd, storyId, rutaDeSpec(specRel));
+        const rg = revisarRosterLocal(cwd, storyId, rutaDeSpec(specRel), event.session_id);
         if (rg && rg.aviso) {
           // Habla, no frena — y con el mismo nombre de regla que el portón, para que el dev pueda
           // buscar una sola cosa. Lo que no se puede es callarlo: el punto de la pieza es que esto
@@ -1464,8 +1731,10 @@ function main() {
 
     if (!statusTransition && !pipelineTransition) continue;
 
+    // Al cerrar una tanda, la pantalla mira las mismas tandas que la matriz (las que se cierran más las que volvieron)
+    const tandasDePantalla = tandasQueCierran.has(specRel) ? ((matrizDe(specRel, staged).matrix || {}).measuredBatches || null) : null;
     {
-      const baja = avisoBajaDePantalla(staged, cwd, diffFiles);
+      const baja = avisoBajaDePantalla(staged, cwd, diffFiles, tandasDePantalla);
       if (baja) process.stderr.write(`[on-pre-commit] ${specRel}: ${baja}\n`);
     }
 
@@ -1501,9 +1770,12 @@ function main() {
     // Exigir que UN archivo nombre todos los ACs hace rebotar a las stories que reparten la evidencia,
     // y la salida es que el agente redacte un `-cierre.md` con la lista — más falsificable que las tres fuentes.
     // Si la matriz no corre, se mira sólo el archivo y el mensaje lo dice.
-    const acsInSpec = parseAcsFromSpec(staged) || [];
-    const acsInEvidence = new Set(evidence.esRegistro ? [] : parseAcsFromEvidence(evidence.content));
     const calc = matrizDe(specRel, staged);
+    // Al cerrar una tanda, se piden los criterios de la que se cierra (el universo de la matriz), no todos los de la
+    // sección: los de las otras tandas se piden al pasar la historia a review.
+    const universoDeTanda = calc.matrix && calc.matrix.batch ? new Set(calc.matrix.acs) : null;
+    const acsInSpec = (parseAcsFromSpec(staged) || []).filter((ac) => !universoDeTanda || universoDeTanda.has(Number(ac.slice(1))));
+    const acsInEvidence = new Set(evidence.esRegistro ? [] : parseAcsFromEvidence(evidence.content));
     const union = calc.matrix ? coberturaDeLaUnion(calc.matrix) : { porAc: new Map(), cubiertos: new Set() };
     const missingAcs = acsInSpec.filter(ac => !acsInEvidence.has(ac) && !union.cubiertos.has(Number(ac.slice(1))));
 
@@ -1515,6 +1787,8 @@ function main() {
         evidencePath: evidence.path,
         evidenceEsRegistro: !!evidence.esRegistro,
         fuentes: fuentesBuscadas(calc),
+        // un criterio con cota fuera de la cota o sin medición sí corrió: se dice lo medido, no sólo «sin evidencia»
+        medidas: calc.matrix ? calc.rm.lineasDeMedida(calc.matrix) : [],
       });
       continue;
     }
@@ -1522,8 +1796,11 @@ function main() {
     // DODRT-C5.1 — para una story de UI, la evidencia DoD debe venir de un E2E
     // Playwright REAL (no curl/unit). Cierra el agujero de "probada en runtime" con solo curl al
     // backend (una story de UI puede declararse probada sin correr el Playwright de sus ACs).
+    // Cuenta también un bloque «## Playwright Run» en verde de CUALQUIER evidencia de la story posterior al último cambio
+    // de código: un `-cierre.md` más nuevo que el gate E2E no lo tapa.
     // La prueba con navegador que la persona dejó pendiente, con sus dos marcas (lib/browser-test.js): no frena, se dice.
-    const deudaNavegador = storyIsUiStory(staged, cwd, diffFiles) && !/playwright|tests\/e2e\/|@story-/i.test(evidence.content)
+    const deudaNavegador = storyIsUiStory(staged, cwd, diffFiles, tandasDePantalla) &&!/playwright|tests\/e2e\/|@story-/i.test(evidence.content)
+      && !playwrightVerdeDespuesDelCodigo(cwd, specAbs, storyId, (matrizDe(specRel, staged).matrix || {}).codeMtime)
       ? require('./lib/browser-test.js').debtDeclared({ stateDir: stateDirOf(os.homedir()), storyPath: path.resolve(cwd, specRel), content: staged })
       : null;
     if (deudaNavegador && deudaNavegador.declared) {
@@ -1565,6 +1842,8 @@ function main() {
           pendientes: matrix.pendientes,
           notRun: matrix.notRun || [],
           notVerifiable: matrix.notVerifiable || [],
+          // los criterios con cota fuera de la cota o sin medición, con lo medido, la cota y las tres salidas
+          medidas: rm.lineasDeMedida(matrix),
           hash: matrix.hash,
           chainOk: matrix.chainOk,
           // las firmas descartadas, y el texto con la ruta REAL (la matriz corrió sobre una copia tmp)
@@ -1645,7 +1924,7 @@ function main() {
   if (avisos.length) {
     // 🔴 La ventana de medición VENCE SOLA. Una fecha de revisión que viviera sólo en una ficha,
     // sin que nada la mirara, dejaría el aviso avisando para siempre sin que nadie lea el número
-    // que juntó — un aviso que suena y no se acciona es el que se aprende a ignorar. Mismo patrón que `pruebas-pendientes.json`: la fecha se declara
+    // que juntó — un aviso que suena y no se acciona es el que se aprende a ignorar. Mismo patrón que `pending-tests.json`: la fecha se declara
     // donde el arnés la mira, y pasado el día el propio aviso trae el número y exige la decisión.
     // `TYCON_TODAY` existe sólo para que la suite pueda pararse en «después del 20» sin esperar.
     const REVIEW_A_DONE_VENCE = '2026-09-20';
@@ -1697,7 +1976,7 @@ function main() {
       for (const viejo of (v.legacy || [])) lines.push(`       no cuenta (carpeta vieja bajo un número que comparten varias stories — no dice de cuál es; no se tocó): ${viejo}`);
       lines.push('     Salidas:');
       lines.push('       (a) Correr el pipeline sobre la story (con sus revisores):');
-      lines.push('           node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js start --story <spec> --repo <repo>');
+      lines.push(`           ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} start --story <spec> --repo <repo>`);
       lines.push('       (b) Story SIN nada que auditar (docs/config puros) — lo decide el DEV, en el frontmatter:');
       lines.push('           advisors_exempt: true');
       lines.push('           advisors_exempt_reason: "<razón concreta>"');
@@ -1747,6 +2026,7 @@ function main() {
       const fu = v.fuentes || {};
       const nada = (xs) => !xs || xs.length === 0;
       lines.push(`     Criterios sin evidencia: ${v.missingAcs.join(', ')}`);
+      for (const l of (v.medidas || [])) lines.push(`     ${l}`);
       lines.push('     Se buscaron en:');
       lines.push(`       · el informe elegido: ${v.evidencePath}${v.evidenceEsRegistro ? ' (es el registro de pruebas de humo: sus criterios se cuentan por la fuente 1, no por el texto)' : ''}`);
       if (fu.error) {
@@ -1776,6 +2056,7 @@ function main() {
         lines.push(`     🟪 imposibles-declarados (esperan waiver del USUARIO): ${v.notVerifiable.map(n => '#' + n).join(', ')}`);
         lines.push(`        node <skill>/scripts/marker.js runtime-waiver <ruta-story.md>   (requiere /dev/tty)`);
       }
+      for (const l of (v.medidas || [])) lines.push(`     ${l}`);
       for (const l of (v.avisoDescartadas || [])) lines.push(`     ${l}`);
       if (v.chainOk === false) lines.push(`     🚨 hay líneas de esta story descartadas por la cadena del registro de firmas — causa probable: una edición a mano.`);
     } else if (v.reason === 'matrix-structural') {
@@ -1809,7 +2090,8 @@ function main() {
   lines.push('      → escribir .advisors/dod-runtime/<storyId>-<timestamp>.md con');
   lines.push('      el log + screenshots/curl outputs');
   lines.push('  (c) Story sin UI/E2E (puro docs/config): eximirla de la prueba en vivo lo decide la persona,');
-  lines.push('      no el agente (lo firma con marker.js sign-file dod_runtime_exempt <historia>).');
+  lines.push('      no el agente. La firma, sobre la historia:');
+  for (const l of formasDeFirmarLaHistoria(event.session_id)) lines.push(`        · ${l}`);
   lines.push('  (d) Bypass excepcional (NO recomendado, queda flag en stderr):');
   lines.push('        git commit --no-verify');
   lines.push('');
@@ -1825,8 +2107,8 @@ function main() {
 // require() desde tests NO ejecuta main() (gate require.main).
 module.exports = {
   prepararIndiceConLosAdd,
-  isGitCommit, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
-  looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory,
+  isGitCommit, usaNoVerify, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
+  looksLikeStorySpec, selectStorySpecs, storiesOutsidePattern, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff, limpiarStaged,
 };
 
 if (require.main === module) {

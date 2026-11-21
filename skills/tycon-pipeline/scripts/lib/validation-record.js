@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { spawnSync } = require('child_process');
 const { stateDir } = require('./state-dir.js');
 const { huella } = require('./story-review-record.js');
 
@@ -19,10 +20,46 @@ function realPath(p) {
   try { return fs.realpathSync.native(p); } catch { return null; }
 }
 
+const archivoDeClave = (home, texto) => path.join(stateDir(home), RECORD_DIR, `${crypto.createHash('sha256').update(texto).digest('hex').slice(0, 32)}.json`);
+
+/** El repo de la historia: su remota `origin` normalizada o, sin `origin`, la ruta real de su raíz. null sin git. */
+function repoDe(storyReal) {
+  const git = (args) => {
+    const r = spawnSync('git', ['-C', path.dirname(storyReal), ...args], { encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    return r.status === 0 ? r.stdout.trim() : '';
+  };
+  const raiz = git(['rev-parse', '--show-toplevel']);
+  if (!raiz) return null;
+  const raizReal = realPath(raiz) || raiz;
+  let origin = git(['config', '--get', 'remote.origin.url']);
+  // una remota local («../x.git», «file://…») es una carpeta: relativa, nombra otra cosa en cada repo
+  const local = origin && !/^(?:https?|ssh|git):\/\//i.test(origin) && !/^(?:[^@/]+@)?[^/:]{2,}:(?!\/)/.test(origin);
+  if (local) origin = realPath(path.resolve(raizReal, origin.replace(/^file:\/\//i, ''))) || path.resolve(raizReal, origin.replace(/^file:\/\//i, ''));
+  const forma = origin ? require('./adhoc-base.js').formaDeLaRemota(origin) : '';
+  return { repo: forma || raizReal, rel: path.relative(raizReal, storyReal).split(path.sep).join('/') };
+}
+
+/**
+ * La clave de una historia: su repo y su ruta dentro del repo, así la constancia escrita en una copia vale en otra del
+ * mismo repo. null fuera de git. La usa también la constancia de la revisión previa (story-review-record.js).
+ */
+function claveDeHistoria(storyPath) {
+  const r = repoDe(realPath(storyPath) || path.resolve(storyPath));
+  return r ? `${r.repo}\n${r.rel}` : null;
+}
+
+/**
+ * La constancia de una historia, por su clave. Una historia fuera de git usa la clave de antes (la ruta real), la misma
+ * que `readRecord` busca después de la nueva.
+ */
 function recordFile(home, storyPath) {
-  const real = realPath(storyPath) || path.resolve(storyPath);
-  const key = crypto.createHash('sha256').update(real).digest('hex').slice(0, 32);
-  return path.join(stateDir(home), RECORD_DIR, `${key}.json`);
+  const clave = claveDeHistoria(storyPath);
+  return clave ? archivoDeClave(home, clave) : recordFileViejo(home, storyPath);
+}
+
+/** La clave de antes: la ruta real de la historia. Las constancias escritas así se siguen leyendo. */
+function recordFileViejo(home, storyPath) {
+  return archivoDeClave(home, realPath(storyPath) || path.resolve(storyPath));
 }
 
 /** Los problemas de una constancia por escribir; [] si está bien. */
@@ -55,9 +92,12 @@ function writeRecord(home, storyPath, datos) {
 
 /** La constancia y su estado: none (no hay, o ilegible: ante la duda, se valida) · stale (la historia cambió) · current. */
 function readRecord(home, storyPath) {
-  let record;
-  try { record = JSON.parse(fs.readFileSync(recordFile(home, storyPath), 'utf8')); } catch { return { estado: 'none', record: null }; }
-  if (!record || problemas(record).length) return { estado: 'none', record: null };
+  // la clave nueva primero; después la de antes, mientras quede alguna constancia escrita así
+  const leer = (f) => { try { const r = JSON.parse(fs.readFileSync(f, 'utf8')); return r && !problemas(r).length ? r : null; } catch { return null; } };
+  const nueva = recordFile(home, storyPath);
+  const vieja = recordFileViejo(home, storyPath);
+  const record = leer(nueva) || (vieja !== nueva ? leer(vieja) : null);
+  if (!record) return { estado: 'none', record: null };
   let actual = null;
   try { actual = huella(fs.readFileSync(storyPath, 'utf8')); } catch { actual = null; }
   return { estado: actual && actual === record.huella ? 'current' : 'stale', record };
@@ -84,4 +124,4 @@ function linea(leida, omitidos) {
   return `validación previa vigente: verde, ${leida.record.hora}, no se vuelve a lanzar ${omitidos.join(', ')}`;
 }
 
-module.exports = { RECORD_DIR, RESULTS, recordFile, problemas, writeRecord, readRecord, omitirVigentes, linea };
+module.exports = { RECORD_DIR, RESULTS, claveDeHistoria, recordFile, recordFileViejo, problemas, writeRecord, readRecord, omitirVigentes, linea };

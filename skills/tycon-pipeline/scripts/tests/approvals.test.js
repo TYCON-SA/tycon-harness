@@ -145,7 +145,13 @@ function markerHasta3(home, sid, repo, story, storyId = '9.91') {
   const set = markerCli(home, sid, repo, ['set', JSON.stringify({ storyId, storyPath: story, repoPath: repo })]);
   assert.equal(set.status, 0, set.stderr);
   for (const n of ['0', '1', '2']) markerCli(home, sid, repo, ['complete-step', n]);
+  // el plan escrito, con lo que muestra la pregunta de su firma: sin eso, aprobarlo se frena antes de la ventana
+  // (sin carpeta posible, como en el repo donde `.advisors` es un archivo, no hay plan que escribir)
+  let dir = null;
+  try { dir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, storyId, true, story); } catch (_) { dir = null; }
+  if (dir && !fs.existsSync(path.join(dir, 'step-02-bmad-plan.md'))) fs.writeFileSync(path.join(dir, 'step-02-bmad-plan.md'), PLAN_ESCRITO);
 }
+const PLAN_ESCRITO = '# Plan\n\n## Qué hace\n\nEl README con el título nuevo del proyecto.\n\n## Archivos\n\n- README.md\n';
 
 test('T4 Marker_AprobacionesQueYaExisten_SeAnotan @story-2.43 @ac-3', () => {
   const { repo, story } = repoConStory();
@@ -163,12 +169,17 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan @story-2.43 @ac-3', () => {
 
   markerHasta3(home, 's-auto', repo, story);
   // el plan aprobado solo se muestra igual: escrito, y en la respuesta del agente (plan-visible.test.js)
-  const planAuto = '1. El README con el título nuevo del proyecto.\n';
+  const planAuto = PLAN_ESCRITO;
   fs.writeFileSync(path.join(require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.91', true, story), 'step-02-bmad-plan.md'), planAuto);
   fs.mkdirSync(path.join(home, '.claude', 'projects', '-repo'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude', 'projects', '-repo', 's-auto.jsonl'),
     `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `El plan:\n${planAuto}` }] } })}\n`);
+  // ningún plan se aprueba solo: la regla de riesgo bajo sale 2 sin anotar nada
   r = markerCli(home, 's-auto', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /--auto-approved no aprueba/);
+  // la cita sin nombrar a nadie queda automática «sin nombrar»
+  r = markerCli(home, 's-auto', repo, ['complete-step', '3', '--approved', 'dale']);
   assert.equal(r.status, 0, r.stderr);
 
   const runDir = runDirDe();
@@ -188,7 +199,7 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan @story-2.43 @ac-3', () => {
   assert.deepEqual([deleg.que, deleg.tipo, deleg.delegacion], ['plan', 'automatica', 'ana@example.com']);
   assert.match(deleg.quien, /coordinadora/);
   assert.deepEqual([auto.que, auto.tipo], ['plan', 'automatica']);
-  assert.match(auto.quien, /^regla /);
+  assert.match(auto.quien, /sin nombrar/);
   for (const l of ls) assert.match(l.commit || '', /^[0-9a-f]{7,40}$/);
 });
 
@@ -518,7 +529,7 @@ test('Aprobar_ProyeccionFalla_AvisaYSigue @story-8.133 @ac-7', () => {
 // El cierre: un marcador en «Preparar el commit» con la corrida abierta en el repo del código. Los demás frenos del
 // cierre pueden frenar también; cada prueba mira la línea y el mensaje de éste.
 const CORRIDA = '9.95-20991231120000';
-const CORRIDA_RE = CORRIDA.replace('.', '\\.');
+const CORRIDA_RE = CORRIDA.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const SIN_DEL_ENTORNO = ['TYCON_NO_DEEP_REVIEW', 'DOD_BYPASS', 'TYCON_5B_EARLY', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'STOP_AUTONOMY'];
 function marcadorDelCierre(home, { story, codeRepo, extra = {} }) {
   const activo = path.join(home, '.claude', '.tycon-pipeline', 'active');
@@ -615,7 +626,7 @@ test('Cierre_CorridaVieja_SeProyectaONombra @story-8.133 @ac-11', () => {
   fs.writeFileSync(path.join(sola, 'review-roster.json'), '{"registro_aprobaciones":1}');
   r = cerrar(c.home, repos.codeRepo);
   assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, new RegExp(VIEJA.replace('.', '\\.')));
+  assert.match(r.stderr, new RegExp(VIEJA.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(r.stderr, new RegExp(`${CORRIDA_RE}.*sin-`), 'la abierta está al día');
   assert.equal(r.freno[0].status, 'blocked');
 });
@@ -649,7 +660,7 @@ test('Cierre_RosterIlegible_Frena @story-8.133 @ac-16', () => {
   fs.writeFileSync(path.join(vieja, 'review-roster.json'), '{ esto no es json');
   const r = cerrar(home, repos.codeRepo);
   assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, new RegExp(`${VIEJA.replace('.', '\\.')}: review-roster-ilegible`));
+  assert.match(r.stderr, new RegExp(`${VIEJA.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: review-roster-ilegible`));
   assert.equal(r.freno[0].status, 'blocked');
 });
 
@@ -802,7 +813,7 @@ test('Cierre_CorridaVieja_ArregloDeCorridaVieja @story-8.133 @ac-20', () => {
   corridaEn(repos.storyRepo, VIEJA);
   const r = cerrar(c.home, repos.codeRepo);
   assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, new RegExp(`${VIEJA.replace('.', '\\.')}: sin-registro-de-aprobaciones`));
+  assert.match(r.stderr, new RegExp(`${VIEJA.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: sin-registro-de-aprobaciones`));
   assert.match(r.stderr, /corrida vieja/);
   assert.match(r.stderr, /advisors_exempt/);
   assert.doesNotMatch(r.stderr, /complete-step approve-plan/, 'approve-plan anota en la abierta, no en la vieja');
@@ -839,6 +850,28 @@ test('Cierre_CorridaAnteriorAlControl_NoFrena', () => {
   assert.deepEqual(porton.hallazgos.map((h) => h.regla), ['sin-registro-de-aprobaciones']);
 });
 
+test('AnteriorAlControl_DentroDeUnGancho_IgualQueFuera', () => {
+  // Un gancho de git (pre-commit) exporta GIT_DIR: git toma la carpeta actual como raíz del árbol y la ruta del roster,
+  // relativa a la carpeta de la corrida, no coincide con nada. La corrida vieja tiene que seguir siendo anterior ahí.
+  const ANTES = '9.95-20261025120000';
+  const { storyRepo } = dosRepos();
+  const vieja = corridaEn(storyRepo, ANTES);
+  const git = gitEn(storyRepo);
+  git('add', '.'); git('commit', '-qm', 'corrida vieja');
+  assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), true);
+  const antes = { GIT_DIR: process.env.GIT_DIR, GIT_WORK_TREE: process.env.GIT_WORK_TREE };
+  try {
+    process.env.GIT_DIR = '.git'; // como lo exporta el gancho: relativo a la raíz del repo que commitea
+    assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), true, 'con GIT_DIR relativo exportado');
+    process.env.GIT_DIR = path.join(storyRepo, '.git');
+    assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), true, 'con GIT_DIR exportado');
+    process.env.GIT_WORK_TREE = storyRepo;
+    assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), true, 'con GIT_DIR y GIT_WORK_TREE exportados');
+  } finally {
+    for (const [k, v] of Object.entries(antes)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
 test('Cierre_NombreViejoSinRastro_Frena', () => {
   // La fecha del nombre la elige quien crea la carpeta: sin el rastro en la historia, una corrida con nombre viejo se
   // exige igual. Tampoco alcanza un roster que entró a la historia desde el día del control, ni una ref que no existe.
@@ -860,4 +893,26 @@ test('Cierre_NombreViejoSinRastro_Frena', () => {
   // una ref que no existe no la vuelve anterior
   assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'origin/main'), false);
   assert.deepEqual(cerrar('origin/main').faltas.map((f) => f.regla), ['sin-registro-de-aprobaciones']);
+});
+
+// ── La firma del plan que dio la persona misma ─────────────────────────────────────────────────────
+
+// 🔴 Falla con: el plan firmado con «firmo» en la terminal del dueño anotado como automático «sin nombrar», o una vía
+// sin persona (la ventana sin nombre, la delegación, la revisión, el arnés, una pestaña sin permisos) anotada a su nombre.
+test('FirmaDelPlan_PorTerminal_EsDelDueno — la terminal, el click y el «aprobado» son de la persona; lo demás no', () => {
+  for (const via of ['terminal', 'click', 'mensaje']) {
+    assert.deepEqual(approvals.deLaPersona(via, 'ana'), { tipo: 'manual', quien: 'ana' }, via);
+    const linea = approvals.normalizar({ que: 'plan', ...approvals.deLaPersona(via, 'ana'), via });
+    assert.equal(linea.tipo, 'manual', `${via}: queda manual en el registro`);
+  }
+  for (const via of ['ventana', 'ventana-nueva', 'delegacion', 'revision', 'avisado', 'automatica', '', undefined, null, 'TERMINAL']) {
+    assert.equal(approvals.deLaPersona(via, 'ana'), null, String(via));
+  }
+  // sin usuario de la máquina, el nombre genérico; un usuario con nombre de agente no vuelve manual la línea
+  assert.deepEqual(approvals.deLaPersona('terminal', ''), { tipo: 'manual', quien: 'persona' });
+  assert.equal(approvals.normalizar({ que: 'plan', ...approvals.deLaPersona('terminal', 'claude') }).tipo, 'automatica');
+  // el marcador la usa en la firma del plan y de la maqueta: la vía es la de la firma, no una opción del comando
+  const fuente = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+  assert.match(fuente, /const delDueno = require\('\.\/lib\/approvals\.js'\)\.deLaPersona\(firmaPlan\.via,/);
+  assert.doesNotMatch(fuente, /\['click', 'mensaje'\]\.includes\(firmaPlan\.via\)/);
 });

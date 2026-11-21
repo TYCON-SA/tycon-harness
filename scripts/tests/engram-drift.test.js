@@ -365,7 +365,7 @@ test('T28 R3_HarnessAuditAutoheal_HooksRequireLib — el aviso diario corre con 
   });
   assert.match(salida, /SIN nombre de proyecto fijado: repo-de-laboratorio/,
     `el hook no llegó a los chequeos de harness-audit (¿lo busca fuera de scripts/lib/?): ${salida}`);
-  assert.match(salida, /Detalle y score: node \S*\/scripts\/lib\/harness-audit\.js --verbose/,
+  assert.match(salida, /Detalle y score: node "\$HOME\/\S*\/scripts\/lib\/harness-audit\.js" --verbose/,
     'el comando que el aviso imprime tiene que ser la ruta nueva');
   fs.rmSync(raiz, { recursive: true, force: true });
 });
@@ -374,7 +374,7 @@ test('T28 R3_HarnessAuditAutoheal_HooksRequireLib — los comandos que imprimen 
   // El aviso del autoheal (memoria partida unificable) y el del banco (paridad en rojo) necesitan una base de engram
   // o un resultado del banco para salir; lo que se fija acá es el comando que muestran.
   const drift = fs.readFileSync(path.join(SCRIPTS, 'hooks', 'engram-drift-notice.js'), 'utf8');
-  assert.match(drift, /node ~\/\.claude\/tycon-harness\/scripts\/lib\/engram-autoheal\.js\\n/);
+  assert.match(drift, /\$\{homeCommand\('\.claude\/tycon-harness\/scripts\/lib\/engram-autoheal\.js'\)\}\\n/);
   assert.match(drift, /require\(path\.join\(__dirname, '\.\.', 'lib', 'engram-autoheal\.js'\)\)/);
   assert.match(drift, /require\(path\.join\(__dirname, '\.\.', 'lib', 'harness-audit\.js'\)\)/);
   const bench = fs.readFileSync(path.join(SCRIPTS, 'hooks', 'bench-notice.js'), 'utf8');

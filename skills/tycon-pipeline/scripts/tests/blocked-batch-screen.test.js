@@ -119,12 +119,13 @@ function marcador(r, tag, extra = {}) {
   }));
   const correr = (...args) => spawnSync(process.execPath, [MARKER, ...args],
     { env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: sid }, encoding: 'utf8', cwd: r.repo });
-  return { correr };
+  return { correr, home, sid };
 }
 
 /** La guía del tester lista, en la carpeta qa/ que busca el chequeo. */
 function guiaLista(r) {
   const qa = path.join(path.dirname(r.storyPath), 'qa');
+  escribir(path.join(qa, 'story-9.26-panel-guia-qa.html'), '<!doctype html><title>guía</title>\n');
   escribir(path.join(qa, '9.26-pasos.md'), [
     'Usuario por defecto: administrador',
     '',
@@ -400,4 +401,60 @@ test('T17 RuntimeMatrix_CommitTouchesBlockedScreen_CriteriaBack', () => {
   const r3 = repoCon({ tandas: TANDAS_126 }, 't17c', padre);
   conCommit(r3, { pantalla: false });
   assert.deepEqual(rm.compute({ storyPath: r3.storyPath }).acs, [1, 2]);
+});
+
+// Historia paraguas con la pantalla en una tanda pendiente y la corrida en la de backend (8.240).
+const TANDAS_POR_TANDA = [
+  'pipelines:',
+  '  - name: Y-backend',
+  '    status: in-progress',
+  '    acs: [1, 2]',
+  '  - name: X-frontend',
+  '    status: pending',
+  '    acs: [3]',
+].join('\n') + '\n';
+
+test('T14 ScreenScope_Batch_OtherPendingScreen_Dropped @story-8.240 @ac-9 — la pantalla de otra tanda pendiente no se pide en esta corrida', () => {
+  const r = repoCon({ tandas: TANDAS_POR_TANDA }, 't14b');
+  const backend = ['Acme/Features/Switch/SwitchEndpoints.cs'];
+  const s = ui.screenScope(r.content, r.repo, { changed: backend, batches: ['Y-backend'] });
+  assert.equal(s.story, true);
+  assert.equal(s.active, false, 'la corrida es de la tanda de backend');
+  assert.match(String(s.note), /tanda X-frontend/);
+  assert.match(String(s.note), /tanda Y-backend/);
+  // la regla de la organización ve la misma baja
+  assert.equal(ui.applyScreenRule(r.content, r.repo, 'ui', { scope: 'active', changed: backend, batches: ['Y-backend'] }).ui, false);
+  // la corrida cambia una pantalla: se pide
+  assert.equal(ui.screenScope(r.content, r.repo, { changed: [...backend, PANEL], batches: ['Y-backend'] }).active, true);
+  // la tanda de pantalla volvió a la matriz: se pide
+  assert.equal(ui.screenScope(r.content, r.repo, { changed: backend, batches: ['Y-backend', 'X-frontend'] }).active, true);
+  // sin tanda, o sin lista: como hoy
+  assert.equal(ui.screenScope(r.content, r.repo, { changed: backend }).active, true);
+  assert.equal(ui.screenScope(r.content, r.repo, { batches: ['Y-backend'] }).active, true);
+  // un criterio de pantalla en la tanda medida: se pide
+  const acs = [ACS_MARCADOS[0], '2. **Cambio**: la pantalla muestra el interruptor prendido.', ACS_MARCADOS[2]];
+  const r2 = repoCon({ tandas: TANDAS_POR_TANDA, acs }, 't14c');
+  assert.equal(ui.screenScope(r2.content, r2.repo, { changed: backend, batches: ['Y-backend'] }).active, true);
+  // un criterio de pantalla que es de la tanda medida Y de la de pantalla sigue siendo de esta corrida (pase de la 8.243)
+  const compartido = TANDAS_POR_TANDA.replace("    acs: [3]", '    acs: [2, 3]');
+  const r3 = repoCon({ tandas: compartido, acs }, 't14d');
+  assert.equal(ui.screenScope(r3.content, r3.repo, { changed: backend, batches: ['Y-backend'] }).active, true, 'el criterio 2 es de las dos tandas');
+});
+
+test('T18 QaCheck_BatchRun_OtherBatchScreen_NotReviewed — la guía de QA mide la tanda de la corrida, como el marcador', () => {
+  const r = repoCon({ tandas: TANDAS_POR_TANDA }, 't18');
+  const qa = guiaLista(r);
+  fs.appendFileSync(path.join(qa, '9.26-pasos.md'), '## AC 3\nVer el panel del interruptor.\n');
+  const baseSha = conCommit(r, { pantalla: false });
+  // sin tanda en la corrida: la pantalla se revisa, y falta su revisión
+  const sinTanda = qaCheck(r);
+  assert.equal(sinTanda.status, 2, `sin tanda, revisa la pantalla:\n${sinTanda.stdout}\n${sinTanda.stderr}`);
+  assert.match(sinTanda.stderr, /\(7\)/);
+  // la corrida es de la tanda de backend (el marcador de la sesión): la pantalla de la otra tanda no se revisa
+  const m = marcador(r, 't18', { batch: 'Y-backend', baseSha });
+  const out = spawnSync(process.execPath, [QA, '--story', r.storyPath, '--check'],
+    { encoding: 'utf8', cwd: r.repo, env: { ...process.env, ...fakeHomeEnv(m.home), CLAUDE_CODE_SESSION_ID: m.sid } });
+  assert.equal(out.status, 0, `la corrida de backend no revisa la pantalla de otra tanda:\n${out.stdout}\n${out.stderr}`);
+  assert.doesNotMatch(out.stderr, /\(7\)/);
+  assert.match(out.stdout, /pantalla sin revisar[^\n]*tanda X-frontend/);
 });

@@ -199,7 +199,8 @@ Si en una próxima poda alguna de estas parece sobrar, este es el lugar para lee
 siguientes a la poda, lo primero que se devuelve al bloque son estas frases — no la historia.
 
 **Próximo candidato — PODADO el 2026-09-06**: tras esta poda el bloque más pesado del `CLAUDE.md`
-pasó a ser el de ADO (`claude-md-blocks/ado-runs-list-lag.md`), con el mismo patrón que motivó ésta:
+pasó a ser el de ADO (entonces `claude-md-blocks/ado-runs-list-lag.md`; hoy ya no está en el `CLAUDE.md`: sus reglas
+viven en `integrations/azure-devops/rules.md` y aparecen la primera vez que se usa esa CLI), con el mismo patrón que motivó ésta:
 reglas que se acumulan por incidente, con su historia adentro. Se le aplicó la misma receta —
 la regla se queda, la historia se va a `guides/integrations/ado-cola-y-listados.md`— y bajó de **9.979 a 4.134
 bytes** sin perder una regla (verificado frase por frase contra la versión anterior). El `CLAUDE.md`

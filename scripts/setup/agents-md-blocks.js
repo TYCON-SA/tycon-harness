@@ -310,6 +310,21 @@ function blockState(b, { integrations, integrationsWhy, profile, profileWhy }) {
  * El texto con los bloques aplicados. Pura: `{ text, changed: [[nombre, qué]], notes: [líneas], present: [nombres] }`.
  * `present` = los bloques que quedan en su lugar, enteros.
  */
+/**
+ * Los bloques que el arnés retiró (`retired.json` de la carpeta de bloques), con su motivo: `{ list, problem }`. Sin el
+ * archivo, ninguno; uno que no se lee se dice (`problem`) y no se quita nada.
+ */
+function loadRetired(blocksDir) {
+  let raw;
+  try { raw = fs.readFileSync(path.join(blocksDir, 'retired.json'), 'utf8'); } catch (e) {
+    return e.code === 'ENOENT' ? { list: {}, problem: null } : { list: {}, problem: `claude-md-blocks/retired.json no se puede leer (${e.code || e.message})` };
+  }
+  let data;
+  try { data = JSON.parse(raw); } catch (e) { return { list: {}, problem: `claude-md-blocks/retired.json no es JSON válido (${e.message})` }; }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return { list: {}, problem: 'claude-md-blocks/retired.json tiene que ser un objeto { "<bloque>": "<motivo>" }' };
+  return { list: Object.fromEntries(Object.entries(data).filter(([k, v]) => !k.startsWith('_') && typeof v === 'string')), problem: null };
+}
+
 function applyBlocks(original, blocks, facts) {
   let content = original;
   const changed = []; const notes = []; const removed = {}; const unclosed = [];
@@ -389,6 +404,24 @@ function applyBlocks(original, blocks, facts) {
     if (j === -1) { notes.push(`⚠ tycon: bloque '${name}' de AGENTS.md: falta su marca de cierre — no lo toco; revisalo a mano`); unclosed.push(name); continue; }
     const pack = name.split('/')[1];
     const why = facts.packs.active.includes(pack) ? `el paquete «${pack}» ya no lo trae` : `el paquete «${pack}» no está activo`;
+    const before = content.slice(0, i).replace(/\n+$/, '');
+    let after = content.slice(j + end.length);
+    if (after.startsWith('\n')) after = after.slice(1);
+    content = before || after ? `${before}\n${after}` : '';
+    changed.push([name, `quitado (${why})`]);
+    removed[name] = why;
+  }
+  // un bloque que el arnés retiró (claude-md-blocks/retired.json) se va entre sus marcas: su archivo ya no está, y sin
+  // esto quedaría escrito para siempre; si vuelve a haber un bloque con su nombre, manda el bloque
+  if (facts.retiredWhy) notes.push(`⚠ tycon: ${facts.retiredWhy}: los bloques retirados quedan donde están`);
+  for (const [name, motivo] of Object.entries(facts.retired || {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (names.has(name)) continue;
+    const end = markerEnd(name);
+    const i = content.indexOf(startPrefix(name));
+    if (i === -1) continue;
+    const j = content.indexOf(end, i);
+    if (j === -1) { notes.push(`⚠ tycon: bloque '${name}' de AGENTS.md: falta su marca de cierre — no lo toco; revisalo a mano`); unclosed.push(name); continue; }
+    const why = `el arnés lo retiró: ${motivo}`;
     const before = content.slice(0, i).replace(/\n+$/, '');
     let after = content.slice(j + end.length);
     if (after.startsWith('\n')) after = after.slice(1);
@@ -480,7 +513,8 @@ function sync(p = {}) {
     ? { integrations: p.integrations === undefined ? null : p.integrations, integrationsWhy: p.integrationsWhy || null, profile: p.profile === undefined ? null : p.profile, profileWhy: p.profileWhy || null, response: p.response || null, responseWhy: p.responseWhy || (p.response ? null : 'no me pasaron cómo contesta el asistente'), timeTool: p.timeTool || null, integrationsDir: path.join(tree, 'integrations') }
     : machineFacts({ tree, home, env });
   const timeNotes = facts.timeToolWhy ? [`⚠ tycon: ${facts.timeToolWhy}: las filas de la herramienta de horas quedan como estaban`] : [];
-  const r = applyBlocks(original, blocks, Object.assign({}, facts, { packs, timeNotes }));
+  const retired = loadRetired(blocksDir);
+  const r = applyBlocks(original, blocks, Object.assign({}, facts, { packs, timeNotes, retired: retired.list, retiredWhy: retired.problem }));
   for (const n of r.notes) say(n);
   for (const n of [...new Set(timeNotes)]) say(n);
   const differs = r.text !== original;

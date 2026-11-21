@@ -1,0 +1,19 @@
+{
+  "agent": "llm-cost-reviewer",
+  "file": "agents/llm-cost-reviewer.md",
+  "hash": "107e6043e5d5a5af6d515a239154b768ed8f511c",
+  "passed": 3,
+  "total": 3,
+  "score": 1,
+  "baseline": {
+    "passed": 3,
+    "total": 3,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "llm-cost-reviewer::llmcost-c1-sin-max-tokens": true,
+    "llm-cost-reviewer::llmcost-c2-loop-sin-cap": true,
+    "llm-cost-reviewer::limpio-max-tokens-presente-sin-c1": true
+  }
+}

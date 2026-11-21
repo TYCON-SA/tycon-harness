@@ -126,6 +126,18 @@ curl -s -o /tmp/r -w "HTTP %{http_code}\n" \
 # Si HTTP 400: BUG → fix → re-verify → recién entonces pasar a `done`
 ```
 
+**Un criterio con un número se mide.** Si el criterio dice «responde en menos de 2 s», lleva la marca
+`@measure(duration < 2s)` (`story-format.md` §5) y su humo por `smoke-run.sh` anota cuánto tardó el comando
+(`duration_ms`). Lo que el comando mide él mismo lo imprime al final de su salida con
+`TYCON_MEASURE <nombre>=<valor><unidad>` (por ejemplo, el p95 de 100 pedidos); la matriz compara contra la cota del
+criterio, y fuera de ella el criterio no sale verde.
+
+Lo que eso promete y lo que no: es **una ejecución, en un entorno** (el de la máquina que corrió el humo, que va en su
+procedencia). No es una prueba de carga ni dice nada de producción, y el servidor de CI no la ve: el portón del
+servidor sólo mira que existan los archivos. Un valor de `TYCON_MEASURE` es lo que el comando dice: el arnés garantiza
+que no se editó después de la ejecución (lo confirma contra el espejo del home), no que el número sea una medición
+honesta. `duration_ms` sí lo toma el arnés, con el reloj de pared alrededor del comando.
+
 ### 1.bis. Smoke runtime de failure paths (obligatorio cuando la story tiene fallback/retry/circuit)
 
 **Rule 2026-05-13**: cuando la story declara comportamiento de resiliencia (fallback PDF, retry con backoff, circuit breaker, timeout handler, partial success envelope, discriminated union response con N statuses), el smoke check NO se completa con happy path solo. DEBE incluir **al menos 1 reproducción runtime de cada failure scenario declarado en ACs `### Errores` / `### Edge cases`**.
@@ -326,6 +338,17 @@ El skill `tycon-pipeline` termina en `step-11-prepare-commit` con el commit hech
 1. **Gate 1 (deferrals abiertos)** — `tycon-story-validator` rule `VAL-C5`. Step 5 del pipeline re-corre el validator post-implementación con flag de deferral check; si encuentra TODOs `Story-{N}-deferral` en archivos modificados, retorna CRITICAL y bloquea el commit prep. **Esto evita marcar review con deferrals abiertos**.
 
 2. **Gate 2 (smoke check runtime)** — manual del QA/UAT, post-pipeline. La transición `review` → `done` queda fuera del scope automático del pipeline.
+
+### La evidencia de una historia que ya entró a `main`
+
+Una historia cierra con el código con que entró a `main`, no con el `main` de hoy: si entró igual a lo que se probó, las fusiones
+de otras historias no obligan a repetir la prueba. La entrada se reconoce en la línea de primer padre de `origin/main`: lo
+probado se compara con el último commit anterior a la evidencia y, si no era igual, con el primer commit posterior que cambió el
+archivo. Lo que rompan lo avisa el nocturno, sin reabrirla. Si la propia historia cambió su
+código, sus pruebas o lo que ellas cargan después de probar, la evidencia vence. En firmas y frenos el criterio necesita además una
+prueba de noche; en lo demás, sin ella, queda el riesgo escrito en «Aceptado sin cobertura posterior». Una fusión sin historia conocida
+no vence y se nombra en el aviso. De quién es cada fusión lo dicen su rama, sus commits y `<clave>-pedidos.jsonl`, un registro
+editable. El detalle: `guides/accov-governance-protocol.md`, §7.
 
 ### El cierre recortado (2026-09-16)
 

@@ -73,6 +73,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const SRC = require('./sources.js');
+// el candado que otro pisó (`lock.js`): una grabación del estado que lo tira no es un fallo de la mudanza, se va hasta arriba
+const LOCK_LOST = 'TYCON_LOCK_LOST';
 
 const MAIN = SRC.MAIN_REF;
 const VISIBLE = Object.freeze(['agents', 'packs', 'skills']);   // lo que el clon re-apuntado muestra, además de la raíz
@@ -85,7 +87,10 @@ const UPSTREAM_REF = `${NS}/upstream`;
 const CLONE_RECORD = 'tycon-repoint.json';                       // la constancia de la mudanza, dentro del .git del clon
 const SEED_TIMEOUT_MS = 10 * 60 * 1000;
 const TREE_TIMEOUT_MS = 5 * 60 * 1000;
-const HARNESS_JS = `node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`;   // el lugar
+// el comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; desde la copia fija
+// del programa, que no trae las skills, este archivo escribe el mismo texto
+const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return fs.existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
+const HARNESS_JS = `${homeCommand(`.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`)}`;   // el lugar
 const UPDATE_CMD = `${HARNESS_JS} update`;
 const INSTALL_CMD = `${HARNESS_JS} install`;
 const OLD_URL = '<URL-del-repo-viejo>';                         // lo que la persona reemplaza en un remedio a mano
@@ -812,17 +817,19 @@ function forward(ctx, state, o) {
   const at = nowIso();
   const snap = o.backup ? o.backup('repoint', `agent_skills@${sha7(target)}`) : null;
   if (!snap) return cleanStop({ cause: 'no-backup', reason: 'no pude tomar la copia de seguridad de antes de mover', transient: true });
-  const finish = () => { if (o.finish) o.finish(snap); };
+  // `finish('failed')` en cada salida con error: la copia queda «failed» y no cierra las de un corte anterior
+  const finish = (outcome = null) => { if (o.finish) o.finish(snap, outcome ? { outcome } : {}); };
   const kept = state.repoint && state.repoint.blocked;
   state.repoint = { pending: { step: 'forward', from: fromRec, to: toRec, at } };
   try { if (o.write) o.write(); } catch (e) {
+    if (e && e.code === LOCK_LOST) throw e;
     state.repoint = kept ? { blocked: kept } : undefined; tidy(state); if (state.repoint === undefined) delete state.repoint;
-    finish();
+    finish('failed');
     return cleanStop({ cause: 'state', reason: `no pude anotar la mudanza en el estado (${e.code || e.message})`, transient: true });
   }
   const fail = (step, why) => {
     const u = undo(skills, fromRec, { env, to: target });
-    finish();
+    finish('failed');
     if (u.ok) {
       delete state.repoint;
       return stop({ cause: `failed-${step}`, reason: `${why} — el clon quedó como estaba`, transient: BUSY.test(why) });
@@ -846,7 +853,7 @@ function forward(ctx, state, o) {
 
   skills.url = harness.url; skills.commit = target; skills.previous = from;
   state.repoint = { applied: { at, from: fromRec, to: toRec } };
-  try { if (o.write) o.write(); } catch (e) { log(`repoint: el clon ya está re-apuntado y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta ejecución`); }
+  try { if (o.write) o.write(); } catch (e) { if (e && e.code === LOCK_LOST) throw e; log(`repoint: el clon ya está re-apuntado y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta ejecución`); }
   finish();
   const text = `skills re-apuntadas: ${dir} ahora sigue al repo unificado (${harness.url}) y quedó en el mismo commit que el arnés (${sha7(target)}); venía de ${oldUrl} @ ${sha7(from)}. Lo tuyo —sin versionar, ignorado, stash— no se movió. Se deshace con la llave update.skills_source en «separate»`;
   log(`repoint: ${text}`);
@@ -915,23 +922,25 @@ function back(ctx, state, o) {
 
   const snap = o.backup ? o.backup('repoint-back', `agent_skills@${sha7(from.commit)}`) : null;
   if (!snap) return stop({ cause: 'no-backup', reason: 'no pude tomar la copia de seguridad de antes de mover', transient: true });
-  const finish = () => { if (o.finish) o.finish(snap); };
+  // `finish('failed')` en cada salida con error: la copia queda «failed» y no cierra las de un corte anterior
+  const finish = (outcome = null) => { if (o.finish) o.finish(snap, outcome ? { outcome } : {}); };
   state.repoint = { applied, pending: { step: 'back', from, to: applied.to, at: nowIso() } };
   try { if (o.write) o.write(); } catch (e) {
+    if (e && e.code === LOCK_LOST) throw e;
     state.repoint = { applied };
-    finish();
+    finish('failed');
     return stop({ cause: 'state', reason: `no pude anotar la mudanza en el estado (${e.code || e.message})`, transient: true });
   }
   const u = undo(skills, from, { env });
   if (!u.ok) {
-    finish();
+    finish('failed');
     const text = `una mudanza del clon de skills (${dir}) quedó a medias (la vuelta al repo viejo: ${u.reason}): el próximo arranque lo vuelve a intentar; ya: ${UPDATE_CMD}`;
     log(`repoint: ${text}`);
     return { status: 'blocked', proceed: false, lines: [text], notice: text };
   }
   skills.url = from.url; skills.commit = from.commit; skills.previous = from.previous === undefined ? null : from.previous;
   delete state.repoint;
-  try { if (o.write) o.write(); } catch (e) { log(`repoint: el clon ya volvió y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta ejecución`); }
+  try { if (o.write) o.write(); } catch (e) { if (e && e.code === LOCK_LOST) throw e; log(`repoint: el clon ya volvió y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta ejecución`); }
   finish();
   for (const n of u.notes) log(`repoint: ${n}`);
   const text = `skills de vuelta en el repo viejo: ${dir} volvió a ${from.url} @ ${sha7(from.commit)} y muestra todo otra vez (la llave update.skills_source está en «separate»)${u.notes.length ? ` — ${u.notes.join('; ')}` : ''}`;
@@ -945,7 +954,7 @@ function back(ctx, state, o) {
  * Lo que `startup` y `update` corren ANTES de mirar si hay versión nueva. `want`: el valor de la llave (`unified` |
  * `separate`). `apply: false`: la política es `ask` y nadie dijo `--yes` → no se muda nada, se avisa. `manual`: lo corre
  * una persona (`update`): reintenta aunque la causa anotada sea la misma. `dryRun`: dice qué haría. `backup(reason, to)`
- * toma la copia de seguridad y devuelve algo, o `null`; `finish(copia)` la cierra; `write()` graba el estado.
+ * toma la copia de seguridad y devuelve algo, o `null`; `finish(copia, { outcome })` la cierra (`outcome: 'failed'` si la mudanza falló); `write()` graba el estado.
  * Cambia `state` en memoria (y lo graba con `write` en los dos puntos que importan si la sesión muere).
  * @returns {{ status: string, proceed: boolean, lines: string[], notice: string|null }}  `proceed: false` = ninguna
  *   fuente se mueve en esta corrida
@@ -1024,7 +1033,7 @@ function decide(ctx, state, o) {
     skills.url = pending.from.url; skills.commit = pending.from.commit; skills.previous = pending.from.previous === undefined ? null : pending.from.previous;
     delete state.repoint;
     for (const n of u.notes) log(`repoint: ${n}`);
-    try { if (o.write) o.write(); } catch (e) { log(`repoint: no pude grabar el estado ahora (${e.code || e.message})`); }
+    try { if (o.write) o.write(); } catch (e) { if (e && e.code === LOCK_LOST) throw e; log(`repoint: no pude grabar el estado ahora (${e.code || e.message})`); }
   }
 
   // el estado se contrasta con el clon de verdad en cada pasada: una mudanza «aplicada» cuyo clon ya no sigue al repo

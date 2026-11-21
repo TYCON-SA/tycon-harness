@@ -1,6 +1,6 @@
 # Guia del Formato Mary+GOLD para Stories
 
-Esta guia define como escribir stories para que un agente LLM pueda implementarlas sin ambiguedad, sin preguntas, y sin inventar nada.
+Esta guia define como escribir stories para que un agente LLM pueda implementarlas sin ambiguedad y sin inventar nada: lo que no se sabe se pregunta antes de escribirla, y queda en su intención.
 
 Debe usarse como referencia al escribir o validar stories en cualquier proyecto que siga este formato.
 
@@ -10,19 +10,54 @@ El formato se llama **Mary+GOLD** porque combina:
 
 ---
 
-## La story ES el intent
+## La intención
 
-El AI-Native SDLC Playbook pide un artefacto de "intent" previo al spec. En este equipo esa capa NO se agrega:
-**la story Mary+GOLD es el registro de intención Y el spec implementable a la vez** — su sección
-`## Story` (como <rol> quiero <accion> para <beneficio>) es exactamente el intent, y el resto del
-archivo es su elaboración verificable. Un artefacto separado sería una segunda fuente de verdad
-que hay que mantener sincronizada a mano, y este arnés ya midió cómo terminan las copias dobles
-(caso `~/.codex/AGENTS.md` desincronizado en 48 líneas).
+Antes de la historia va su **intención**: qué se quiere resolver y por qué, sin el cómo. Es un archivo aparte, al lado
+de la historia y con su mismo nombre (`<historia>.md` → `<historia>.intent.md`), en el formato abierto
+IntentSpec 1.2 (https://intentspec.org/spec). En el camino corto también hay intención, corta, en la carpeta de la
+corrida (`intent.md`). La plantilla es `skills/tycon-create-story/intent-template.md`.
 
-La convención que completa la decisión: **las ideas pre-story viven en engram** (`mem_save` con
-`type: idea`, project del repo). Una idea que madura se convierte en story con este formato; una
-que no, queda buscable sin ensuciar `specs/`. No se crean archivos `intent-*.md` ni carpetas de
-ideas en los repos.
+**Qué lleva.** El frontmatter de IntentSpec: `id` (el nombre del archivo sin `.intent.md`), `status`, `objective` (el
+problema y por qué importa) y `outcomes` (lo que se ve cuando está resuelto, al menos uno). Puede llevar las secciones
+que IntentSpec reconoce (`## Constraints`, `## Edge Cases`, `## Verification`). Y dos secciones propias, que IntentSpec
+no lee y por eso no la invalidan:
+
+- `## Preguntas abiertas` — lo que no se sabe. Columnas: `#` (`Q1`, `Q2`…), `Pregunta`, `Por qué importa`,
+  `Quién contesta`, `Bloquea`, `Estado`, `Respuesta`, `Fuente`.
+- `## Decisiones reservadas` — lo que decide una persona: el agente propone, no decide. Columnas: `#` (`R1`, `R2`…),
+  `Decisión`, `Por qué es de una persona`, `Quién decide`, `Propuesta del agente`, `Estado`, `Respuesta`, `Fuente`.
+
+Sin filas, la sección dice `Ninguna.` sola (en las reservadas también `Ninguna, porque <motivo>.`). Los valores son
+cerrados y no se normalizan (`Si` no es `sí`):
+
+| Columna | Valores |
+|---|---|
+| Bloquea | `sí`, `no` |
+| Estado de una pregunta | `abierta`, `supuesta`, `encontrada`, `contestada`, `descartada` |
+| Fuente de una pregunta | `persona:<nombre>`, `repo:<archivo:línea>`, `memoria:<id>`, `pedido:<número>`, `—` |
+| Estado de una decisión | `abierta`, `tomada`, `descartada` |
+| Fuente de una decisión | `persona:<nombre>`, `—` |
+
+Una pregunta `supuesta` no bloquea (se sigue con lo supuesto, marcado); una `encontrada` lleva fuente `repo:` o
+`memoria:`; una `contestada` o `descartada`, `persona:`; `pedido:` sólo informa, en una `abierta` o una `supuesta`.
+Lo que bloquea: una pregunta con `Bloquea: sí` hasta que está `encontrada` en el repo (`repo:` a un archivo y una línea
+que existen) o la contestó una persona; una decisión reservada, siempre, hasta que la toma una persona. Lo escrito puede
+contestar una pregunta, nunca tomar una decisión de una persona.
+
+**Cómo se marca lo que falta.** En el texto, `[falta: Q<n>]` o `[falta: R<n>]`, con su fila en la tabla. Una marca
+de una fila que no existe es un problema; una de una fila ya cerrada, un aviso (la marca quedó vieja).
+
+**Cuándo se aprueba y se congela.** Se aprueba (`status: approved`) cuando no le queda nada que bloquee, antes de que
+la historia pase a `ready-for-dev`. Desde ahí queda **congelada**: es la foto de lo que se sabía al empezar. Lo que se
+sepa después va a la historia.
+
+**Por qué no es una segunda fuente de verdad.** La intención no se mantiene: no se sincroniza con la historia ni se
+corrige. La verdad de hoy es la historia; la intención guarda qué se preguntó, qué se supuso y quién decidió qué. Las
+ideas de antes de la entrevista pueden seguir viviendo en la memoria; la intención nace con la entrevista.
+
+El control: el pre-commit valida cada intención contra el esquema de IntentSpec y estas reglas
+(`scripts/lib/lint-story-frontmatter.js`, con su lector `skills/tycon-pipeline/scripts/lib/intent.js`), y frena una
+intención aprobada con algo que bloquea.
 
 ---
 
@@ -89,7 +124,7 @@ work_item: 12345  # auto-poblado al crear la story (ver nota abajo); id del pedi
   la busca, y por eso el lint del frontmatter **avisa** cada número repetido con sus rutas (no
   frena: al escribir esto había 23 en un repo y 8 en otro).
 - `depends_on` lista stories que deben estar implementadas antes
-- `work_item` — id del pedido de trabajo de la story en la plataforma del equipo (un work item de Azure DevOps, un issue de GitHub). El nombre viejo, `ado_work_item`, se sigue leyendo (con los dos gana `work_item`) y nadie lo escribe; el lint de frontmatter avisa si una story nueva nace con él. **Se auto-puebla al crear la story**: el hook `on-story-create.js` de la integración de ADO (`integrations/azure-devops/scripts/`) detecta la story nueva sin este campo e invoca el skill `tycon-story-work-item`, que crea el work item en ADO (con confirmación del dev) y escribe el id acá. Lo consumen después `tycon-pipeline` step-00c (transiciona el WI a `Active` al implementar) y step-09 (postea comment de trazabilidad con commit SHAs + CI run + PR link y lo transiciona a `Closed` al cerrar). Si el repo NO trackea en ADO (sin `.tycon/ado-config.yaml` ni env vars), el campo simplemente no aparece — el skill hace silent-skip. Detalle completo del flujo y del schema de config: `guides/integrations/ado-projects.md`.
+- `work_item` — id del pedido de trabajo de la story en la plataforma del equipo (un work item de Azure DevOps, un issue de GitHub). El nombre viejo, `ado_work_item`, se sigue leyendo (con los dos gana `work_item`) y nadie lo escribe; el lint de frontmatter avisa si una story nueva nace con él. **Se auto-puebla al crear la story**: el hook `on-story-create.js` de la integración de ADO (`integrations/azure-devops/scripts/`) detecta la story nueva sin este campo e invoca el skill `tycon-story-work-item`, que crea el work item en ADO (con confirmación del dev) y escribe el id acá. Lo consumen después `tycon-pipeline` step-00c (transiciona el WI a `Active` al implementar) y step-09 (postea comment de trazabilidad con commit SHAs + CI run + PR link y lo transiciona a `Closed` al cerrar). Si el repo no tiene dónde crear el pedido (sin `.tycon/work-items.yaml`, ni el archivo de nombre viejo de Azure DevOps, ni la organización en la máquina), el campo simplemente no aparece — el skill hace silent-skip. Detalle completo del flujo y del schema de config: `guides/integrations/ado-projects.md`.
 
 #### 1.0 🔴 El frontmatter tiene que ser LEGIBLE — una story mal formada es una story invisible
 
@@ -118,6 +153,8 @@ status: done  # ver 'Preguntas abiertas'      # ✅ comillas simples en el comen
 Cuando una story es grande y se entrega en varias tandas (backend / frontend / sub-features), agregar un bloque `pipelines:` al frontmatter para que el `tycon-deferral-tracker` advisor pueda verificar que **nada quede colgando sin documentar el por qué**.
 
 Es **opcional** — si la story se entrega de una sola vez, no se necesita. Si se difiere algo, **es obligatorio** declarar la tanda diferida con su `blocked_by` y los ACs/tasks/tests que cubre.
+
+**Cuándo NO partir: si dos tandas tocan los mismos archivos y ninguna sirve sola (no se puede usar ni entregar por separado), van en una sola tanda.** Cada tanda suma su plan, sus revisores, sus pruebas y sus firmas: una historia partida en dos tandas sobre la misma pantalla costó dos planes, dos guardados y dos vueltas de revisores, y nadie podía usar la primera sin la segunda. Se parte cuando cada tanda sirve sola, o cuando algo de afuera las separa (`blocked_by`). Si dos tandas comparten archivos y cada una sirve sola, cada una lo dice en `delivers`: qué puede usar o entregar alguien con sólo esa tanda adentro. Sin eso avisa `tycon-story-validator` (**VAL-W19**).
 
 ```yaml
 ---
@@ -160,10 +197,24 @@ pipelines:
 | `acs` | int[] | cuando `status: done` o `status: in-progress` (acs efectivamente cubiertos en esa tanda). |
 | `tasks` | int[] | cuando `status: done` o `status: in-progress` (tasks cubiertos). |
 | `tasks_partial` | list de `{id, done, pending}` | si una task se cubrió parcial — declarar subtasks done vs pending. |
+| `delivers` | string no vacío | cuando la tanda comparte archivos con otra que todavía no está `done`: qué puede usar o entregar alguien con sólo esta tanda adentro (VAL-W19 si falta). |
 | `blocked_by` | string no vacío | **obligatorio cuando `status: blocked`** (regla VAL-C6 CRITICAL si falta). Describir el bloqueo concreto (story/task/file que debe completarse primero). |
 | `acs_pending` | int[] | cuando `status: blocked` o `status: pending` — ACs que NO se cubren en esa tanda. |
 | `tasks_pending` | int[] | cuando `status: blocked` o `status: pending` — tasks que NO se cubren. |
 | `tests_pending` | string[] | cuando `status: blocked` o `status: pending` — IDs de tests (`T36`, `T40`, etc.) que quedan sin cobertura. |
+| `files` | string[] | opcional. Los archivos de la parte, uno por renglón (`- ruta`) o `[a, b]`. Con ella, el riesgo del plan se mide por la parte (ver abajo). El lint frena un `files:` que no es una lista. |
+| `sensible` | como el de arriba | opcional. Marca delicada sólo esta parte. El `sensible:` de arriba de la historia marca todas y una parte no lo deshace. |
+
+**La parte que vale.** La tanda que anota `marker.js set-batch` es la parte que se hace. Vale si declara `files:` no
+vacío, cada archivo suyo está en `files_to_create` o `files_to_modify` de la historia, y ningún archivo de código suyo
+está en `files:` de otra parte abierta (una guía, `suites.json` o `sprint-status.yaml` compartidos no la invalidan). Con
+una parte que vale, el riesgo, la marca de delicada y el tamaño del plan miden la parte más lo que el cambio toca, y la
+regla «tiene tandas» no cuenta. El pase adversarial, su modelo y la revisión de la historia siguen por la historia
+entera. Sin `files:`, la parte vale con los archivos que la historia le ata a la tanda (ver «Atar un archivo a una
+tanda», abajo) más los que no ata a ninguna, que cualquier tanda puede tocar; `set-batch` imprime esa lista. Así se mide
+con y sin coordinadora. Dos tandas abiertas que comparten un archivo de código (atado a las dos, o en `files:` de las
+dos) no valen: se mide la historia entera. Una parte sin `files:` y sin ningún archivo atado, o que no vale, se mide
+como la historia entera, como antes.
 
 **Reglas de consistencia** (verificadas por `tycon-story-validator`):
 
@@ -171,6 +222,26 @@ pipelines:
 - Un AC NO puede aparecer en `acs` y `acs_pending` al mismo tiempo.
 - Pipeline con `status: blocked` requiere `blocked_by` no vacío → **VAL-C6 CRITICAL** si falta.
 - Cuando todos los pipelines tienen `status: done`, el `status` global de la story DEBE ser `done`.
+- Dos tandas sin terminar que nombran el mismo archivo tienen que decir, cada una, qué entrega sola (`delivers`); si ninguna sirve sola, se juntan en una → **VAL-W19 WARNING** si alguna no lo dice.
+
+**La tanda de la ejecución.** La ejecución que entrega una tanda arranca con `pipeline.js start --batch <name>`, o la
+anota con `marker.js set-batch <name>` (una vez, y la tanda no puede estar `done`). Desde ahí, «Preparar el commit» le
+pide la evidencia en vivo de los criterios de esa tanda (`acs` ∪ `acs_pending`) más los de ninguna tanda, no la de
+todas. Cerrar una tanda (`status: done`) pide la evidencia de la que se cierra. Pasar la historia a `review` o `done`
+pide la de todas.
+
+**Atar un archivo a una tanda.** La historia ata un archivo a una tanda de tres formas: el comentario de su renglón en
+`files_to_modify` / `files_to_create` que nombra la tanda (`# tanda <letra o nombre>`), una fila de la tabla
+de pruebas de esa tanda (`tests` / `tests_pending`) que lo nombra, o una tarea de esa tanda (`tasks` / `tasks_pending`)
+que lo nombra. Si la corrida de una tanda cambia un archivo atado SÓLO a otra tanda, los criterios de esa otra vuelven a
+la matriz: la corrida tocó lo que esa tanda entrega, y su evidencia se pide. Un archivo que nombra también la tanda de
+la corrida, o que no nombra ninguna, no devuelve nada.
+
+```yaml
+files_to_modify:
+  - src/api/orders.js        # tanda <la del backend>
+  - web/src/OrdersPanel.tsx  # tanda <la de la pantalla>
+```
 
 **Tracking cruzado por `tycon-deferral-tracker`**:
 
@@ -318,6 +389,8 @@ Además de los campos base del ejemplo de §1, las stories reales usan estos cam
 | `blocks` | string[] | opcional | Inverso de `depends_on:` — stories que no pueden arrancar hasta que esta esté done. |
 | `estimated_days` | number | opcional | Queda por compatibilidad y nadie lo lee: la estimación de la épica, del plan y de la historia vive en `.tycon/estimates.jsonl` del repo de historias, con cada versión (`guides/estimates.md`). |
 | `signed_ac_ref` | string | opcional | Referencia al AC del documento firmado con el cliente que esta story cubre (ver `guides/signed-scope-guardrails.md`). |
+| `sensible:` | string | opcional | La story es **delicada** aunque sus archivos no lo digan: `seguridad` o `produccion`. Cualquier valor no vacío cuenta igual (un error de tipeo no la deja como rutina). El plan de una story delicada lo aprueba siempre el dev, nunca la coordinadora con la revisión automática. Lo lee `pipeline.js risk-class` (campo `delicate`), que además marca delicada la story que toca rutas sensibles, la superficie compartida, producción, el portón de CI, el instalador, una migración o la constancia de controles. |
+| `riesgo_alto_por:` | lista | opcional | Lo que la máquina no puede leer en los archivos y hace de riesgo alto a la historia: uno o más de `alcance`, `seguridad`, `dependencia-nueva`, `plata`, `clientes`, `personas` (`[plata]`, el escalar `plata` o una lista en bloque; `[]` no cuenta). Con cualquier valor, `pipeline.js risk-class` da `delicate` con la regla `riesgo-alto-por`, que gana sobre las demás, y el plan lo aprueba una persona. Un valor fuera de la lista frena el lint del frontmatter. Aparte, una historia que declara un archivo de dependencias (`package.json`, `*.csproj`, `requirements*.txt`, `pyproject.toml`, `go.mod`, `Gemfile`, `pom.xml`, `build.gradle*`) da la regla `dependencias`. |
 
 **🔴 Regla anti-redundancia narrativa (`driver:` vs body):** el contexto/incidente que motiva la story vive **UNA SOLA VEZ** en el body (sección `## Origen` o equivalente); `driver:` se limita a 2-3 líneas + link a esa sección o al issue. Razón: hubo stories de 15-18K tokens que contaban el mismo incidente 3-4 veces (driver + Origen + Causa raíz + Change Log), y cada relectura por los advisors paga ese costo en cada iteración del pipeline.
 
@@ -387,6 +460,33 @@ escriben otros equipos, en un solo lugar (`skills/tycon-pipeline/scripts/lib/sto
   1, 2, 3… en el orden en que aparecen.
 - Lo que no entra en ninguna deja la story **sin criterios**: entra siempre el revisor de cobertura de criterios, y el
   commit que la pasa a `review` o `done` frena con el motivo.
+
+**Un criterio con un número lleva su cota: `@measure(...)`.** Un criterio como «responde en menos de 2 s» sale verde
+con un humo que tarda 3 s si sólo se mira el código de salida. Con la marca, la matriz de evidencia compara lo que midió
+el humo con la cota que escribe el criterio:
+
+```markdown
+1. **Given** la consulta, **When** se pide, **Then** responde en menos de 2 s. @measure(duration < 2s)
+2. **Given** 100 pedidos, **Then** el percentil 95 no pasa de 200 ms. @measure(p95 <= 200ms)
+```
+
+- `duration` es lo que tardó el comando del humo: el reloj lo toma `smoke-run.sh`. Cualquier otro nombre
+  (`[a-z][a-z0-9_.-]`, hasta 40 letras) es lo que el comando imprime con `TYCON_MEASURE <nombre>=<valor><unidad>`.
+- Operadores `<`, `<=`, `>`, `>=`. `ms`, `s` y `min` se convierten entre sí; otra unidad tiene que ser igual letra por
+  letra, y sin unidad sólo contra sin unidad. Varias marcas en un criterio: tienen que cumplir todas.
+- También se lee `@mide(duracion < 2s)`. La guía muestra `@measure`.
+- Una marca entre acentos graves, en un bloque de código o en una cita es un ejemplo, no una marca. Una marca ilegible
+  (`@measure(p95 ~ 2)`, `==`, un nombre en mayúscula) deja el criterio `SIN-MEDICION`: nunca se ignora en silencio.
+- Decide el humo más nuevo del criterio que trae la medida y corrió la app (no cuentan `node --test`, un portón de
+  compilación ni un servidor simulado). Si hace falta repetir, lo hace el comando y emite el agregado (su p95).
+- Fuera de la cota el criterio sale `FUERA-DE-COTA`; sin la medida, `SIN-MEDICION`. Los dos bloquean y tienen tres
+  salidas: se mide de nuevo, se cambia el criterio, o se declara en `runtime_not_verifiable:` con su prueba y lo firma
+  el dueño. La firma se ancla a la declaración, como la de cualquier criterio; lo medido y la cota se le muestran antes.
+
+**Lo que una medición promete y lo que no.** Vale para una corrida, en un entorno: el de la máquina que corrió el humo,
+que va en su procedencia. No es una prueba de carga ni dice nada de producción, y el servidor de CI no la ve (sólo mira
+que existan archivos). Un valor de `TYCON_MEASURE` es lo que el comando dice: el arnés garantiza que no se editó después
+de la corrida, no que el número sea una medición honesta. `duration_ms` sí lo toma el arnés.
 
 ### 6. Tests (tabla)
 
@@ -721,6 +821,21 @@ Ejemplo:
 4. **File List exhaustiva**: si olvidás un archivo, el reviewer no puede verificar que la implementacion esta completa
 5. **Completion Notes accionables**: no "se implemento la story" sino QUE se implemento y COMO
 
+### 10b. Ajustes después de la firma (opcional)
+
+Los ajustes de redacción que aparecen mientras se revisa el plan (un ejemplo, una palabra, los hallazgos de la vuelta
+anterior) no se escriben en el cuerpo hasta firmar el plan: la revisión del plan se ata a lo que define la construcción,
+y esta sección no cuenta. Cada ajuste, un renglón; se marca `- [x]` cuando ya está en el cuerpo. Los revisores del
+código y el pase adversarial la leen como parte de lo pedido, y una historia en `done` con un ajuste sin marcar no se
+commitea.
+
+```markdown
+## Ajustes después de la firma
+
+- [ ] AC 2: el ejemplo dice «tres días», va «cinco días hábiles».
+- [x] Dev Notes: «borrar» por «archivar» (ya en el cuerpo).
+```
+
 ### 11. Follow-ups y cambios post-firma (opcional, derivado de `followed_up_by:`)
 
 Para stories `done` o `review` que tuvieron follow-ups posteriores (recalibraciones, fixes, scope changes — declarados en `followed_up_by:` del frontmatter), agregar al final del cuerpo un bloque humano-amigable que resuma qué entrega *hoy* la story respecto a lo originalmente firmado.
@@ -744,6 +859,27 @@ Para auto-generar la tabla desde el frontmatter:
 node ~/.claude/tycon-harness/scripts/tools/tycon-backfill-followups.js \
   --dir specs/stories --story <N.M> --render-table
 ```
+
+### 12. Cambios de comportamiento (cuando la historia cambia lo que hace un comando que ya existía)
+
+Si la historia modifica un comando que existe en `main`, «Probar en vivo» lo corre con la versión de `main` y con el
+cambio, y compara las dos salidas (`smoke-run.sh --compare`, ver `steps/step-10-live-check.md`). Una diferencia que la
+historia no declara frena «Preparar el commit». Se declara en esta sección, un renglón por comando:
+
+```markdown
+## Cambios de comportamiento
+
+- node {raiz}/scripts/tool.js get: ahora el saludo lleva signo de exclamación
+- node {raiz}/scripts/tool.js : la ayuda nombra el subcomando nuevo
+```
+
+La regla para emparejar: un renglón declara el comando de un humo si el texto antes del «:» es ese comando (lo que va
+después de `--` en el humo, tal como lo guarda el registro, con `{raiz}` literal) o un prefijo suyo que termina en un
+espacio. Puede ir entre comillas invertidas. Declarar es papeleo: no dispara la vuelta de revisores.
+
+La exención de un comando que no se puede comparar **no va en el frontmatter**: una línea `compare_exempt:` no exime.
+Va por `marker.js compare-waiver --story <historia> --command <candidato> --reason "<por qué>"`, que pide la firma
+`compare-waiver` (nivel 1: del dueño, o de la coordinadora si el perfil del equipo la delega).
 
 ---
 

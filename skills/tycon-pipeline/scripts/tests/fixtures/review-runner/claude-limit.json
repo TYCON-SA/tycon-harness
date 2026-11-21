@@ -1,0 +1,16 @@
+{
+ "type": "result",
+ "subtype": "error_during_execution",
+ "is_error": true,
+ "result": "Claude AI usage limit reached|1793980800",
+ "structured_output": null,
+ "total_cost_usd": 0.006506700000000001,
+ "usage": {
+  "input_tokens": 2,
+  "cache_creation_input_tokens": 31155,
+  "cache_read_input_tokens": 0,
+  "output_tokens": 74
+ },
+ "stop_reason": "tool_use",
+ "num_turns": 2
+}

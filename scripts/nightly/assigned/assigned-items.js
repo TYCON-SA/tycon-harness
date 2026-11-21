@@ -23,8 +23,12 @@
  *
  * 🔴 No medido no es cero: un proyecto que no se puede medir (su consulta, su lote o las categorías de un tipo que
  *    aparece) queda en `proyectos_no_medidos` con su motivo, ninguno de sus pedidos entra y el guion sale 1; los demás
- *    proyectos quedan medidos. Si no se mide ninguno, `estado: no_medido`. En GitHub (`--provider github`) deja
- *    `no_medido` con «los pull requests y los pedidos de GitHub todavía no se leen» y sale 0, sin consultar nada.
+ *    proyectos quedan medidos. Si no se mide ninguno, `estado: no_medido`.
+ *
+ * GITHUB (`--provider github`): por cada repo activo con `github` en repos.json, los issues y los pull requests abiertos
+ * con alguien asignado, por la capa de plataforma (`assigned.list`). Una fila por persona asignada, con `proyecto` =
+ * `dueño/repo`, `dias_en_estado: null` (GitHub no da la fecha del estado) y `dependencias: false`; ordenadas por id. Un
+ * repo que no se pudo leer queda en `proyectos_no_medidos`, igual que un proyecto de Azure.
  *
  * USO
  *   node scripts/nightly/assigned/assigned-items.js --today <AAAA-MM-DD> --out <dir> [--repos <repos.json>] [--org <url>]
@@ -32,7 +36,7 @@
  *   (--repos por defecto: scripts/nightly/dependencies/repos.json del árbol; --org: `ado.org` de la configuración del
  *    arnés, o `azure.org` de repos.json)
  *
- * SALIDA: 0 escrito y medido (o GitHub declarado) · 1 no se pudo consultar (el archivo lo dice) · 2 uso
+ * SALIDA: 0 escrito y medido · 1 no se pudo consultar (el archivo lo dice) · 2 uso
  */
 const fs = require('fs');
 const os = require('os');
@@ -45,7 +49,6 @@ const LOTE = 200;
 const ABIERTAS = new Set(['Proposed', 'InProgress']);
 const CAMPOS = ['System.Id', 'System.TeamProject', 'System.WorkItemType', 'System.State', 'System.AssignedTo', 'Microsoft.VSTS.Common.StateChangeDate', 'System.Tags', 'System.Title', 'System.ChangedDate'];
 const TITULO = 120;
-const GITHUB = 'los pull requests y los pedidos de GitHub todavía no se leen';
 const DIA = 86400000;
 
 class NoSePudo extends Error {}
@@ -173,6 +176,30 @@ function consultar({ cmd, org, hoy, proyectos }) {
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
 
+/** GitHub: los issues y pull requests abiertos de cada repo activo, una fila por persona asignada; la plataforma no da la fecha del estado. */
+async function consultarGithub(repos) {
+  const P = require(path.join(__dirname, '..', '..', 'lib', 'platform', 'platform.js'));
+  const c = P.connector('github', process.env);
+  const nombres = [...new Set((repos && Array.isArray(repos.repos) ? repos.repos : [])
+    .filter((r) => r && r.activo !== false && typeof r.github === 'string').map((r) => r.github.trim()))].sort();
+  const pedidos = [];
+  const noMedidos = [];
+  for (const nombre of nombres) {
+    // un `github:` sin dueño/nombre no se descarta callado: es un repo declarado que no se midió
+    if (!/^[\w.-]+\/[\w.-]+$/.test(nombre)) { noMedidos.push({ proyecto: nombre, motivo: recortar(`${nombre}: no es dueño/nombre de un repo de GitHub (repos.json)`, 240) }); continue; }
+    const [org, repo] = nombre.split('/');
+    const l = c.problem ? { ok: false, reason: 'sin_plataforma', detail: c.problem }
+      : await P.call(c.manifest, 'assigned.list', {}, { env: process.env, repo: { platform: 'github', org, repo } });
+    if (!l.ok) { noMedidos.push({ proyecto: nombre, motivo: recortar(`${nombre}: ${l.reason} — ${l.detail}`, 240) }); continue; }
+    for (const f of l.value) {
+      const titulo = String(f.titulo || '').replace(/\s+/g, ' ').trim().slice(0, TITULO) || null;
+      pedidos.push({ id: f.id, proyecto: nombre, tipo: f.tipo, estado: f.estado, asignado: f.asignado, dias_en_estado: null, enlace: f.enlace, dependencias: false, titulo });
+    }
+  }
+  pedidos.sort((a, b) => a.id - b.id || a.proyecto.localeCompare(b.proyecto) || a.asignado.localeCompare(b.asignado));
+  return { pedidos, noMedidos, total: nombres.length };
+}
+
 function parseArgs(argv) {
   const a = { hoy: null, out: null, repos: null, org: null, provider: 'azure', error: null };
   const valor = (i) => (i < argv.length && !String(argv[i]).startsWith('--') ? argv[i] : (a.error = `falta el valor de ${argv[i - 1]}`, null));
@@ -197,21 +224,28 @@ function escribir(out, hoy, cuerpo) {
   return archivo;
 }
 
-function main(argv) {
+async function main(argv) {
   const a = parseArgs(argv);
   const uso = 'uso: assigned-items.js --today <AAAA-MM-DD> --out <dir> [--repos <repos.json>] [--org <url>] [--provider azure|github]';
   if (a.error || !esFecha(a.hoy) || !a.out || !['azure', 'github'].includes(a.provider)) { console.error(a.error || uso); return 2; }
-  if (a.provider === 'github') {
-    escribir(a.out, a.hoy, { estado: 'no_medido', motivo: GITHUB, pedidos: [] });
-    console.log(`pedidos asignados: no medido — ${GITHUB}`);
-    return 0;
-  }
   let codigo = 0;
   let cuerpo;
   try {
     const rutaRepos = a.repos || path.join(__dirname, '..', 'dependencies', 'repos.json');
     let repos;
     try { repos = JSON.parse(fs.readFileSync(rutaRepos, 'utf8')); } catch (e) { throw new NoSePudo(`no se pudo leer repos.json (${e.code || 'no es JSON'})`); }
+    if (a.provider === 'github') {
+      const { pedidos, noMedidos, total } = await consultarGithub(repos);
+      // sin repos que mirar no hay medición: una lista vacía diría que se miró y no había pendientes
+      if (!total) {
+        cuerpo = { estado: 'no_medido', motivo: 'repos.json no declara ningún repo de GitHub activo', pedidos: [], proyectos_no_medidos: [], estados_sin_categoria: [] };
+        codigo = 1;
+      } else if (noMedidos.length === total) {
+        cuerpo = { estado: 'no_medido', motivo: recortar(`no se pudo medir ningún repo: ${noMedidos[0].motivo}`, 240), pedidos: [], proyectos_no_medidos: noMedidos, estados_sin_categoria: [] };
+      } else cuerpo = { estado: 'medido', motivo: null, pedidos, proyectos_no_medidos: noMedidos, estados_sin_categoria: [] };
+      if (noMedidos.length) codigo = 1;
+      return terminar(a, cuerpo, codigo);
+    }
     let org = a.org;
     if (!org) {
       try {
@@ -234,6 +268,10 @@ function main(argv) {
     cuerpo = { estado: 'no_medido', motivo: recortar(motivo.replace(/#{2,}/g, '#'), 240), pedidos: [], proyectos_no_medidos: [], estados_sin_categoria: [] };
     codigo = 1;
   }
+  return terminar(a, cuerpo, codigo);
+}
+
+function terminar(a, cuerpo, codigo) {
   try { escribir(a.out, a.hoy, cuerpo); } catch (e) { console.error(`🔴 pedidos asignados: no se pudo escribir en ${a.out}: ${e.message}`); return 1; }
   if (cuerpo.estado !== 'medido') console.error(`🔴 pedidos asignados: no medido — ${cuerpo.motivo}`);
   else if (codigo) {
@@ -243,5 +281,5 @@ function main(argv) {
   return codigo;
 }
 
-if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { fila, proyectosDe, parseArgs, GITHUB };
+if (require.main === module) main(process.argv.slice(2)).then((code) => process.exit(code));
+module.exports = { fila, proyectosDe, parseArgs };

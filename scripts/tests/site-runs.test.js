@@ -231,7 +231,7 @@ test('T1 Cabecera_SelloYBandas_IgualQueLaVista @story-2.27 @ac-1 @ac-18', async 
     assert.match(p, /versión del sitio/, 'el sello dice la versión del sitio, no el commit');
     assert.doesNotMatch(p, /Sin registro de ejecuciones propio/, 'el sitio no tiene registro propio y no lo declara como faltante');
     assert.doesNotMatch(p, /~\/\.claude\/\.tycon-pipeline\/timing-history/, 'la nota «De dónde sale» es la del sitio');
-    assert.match(p, /del espejo del buzón de ejecuciones que el sitio baja con su identidad de sólo lectura/);
+    assert.match(p, /del espejo del depósito de ejecuciones que el sitio baja con su identidad de sólo lectura/);
     // la página vieja del tablero ya no se sirve: el eyebrow lleva a Arnés, donde están sus fichas
     assert.match(p, /href="\/arnes"/, 'el eyebrow enlaza Arnés para quien mantiene');
     assert.doesNotMatch(p, /href="\/arnes\/tablero"/, 'nada enlaza la página vieja del tablero');
@@ -297,7 +297,12 @@ test('T2 CapaEjecutiva_FiltrosYDiezFichas @story-2.27 @ac-2', async () => {
   await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
     const c = await clienteDelSitio(h, await entrar(LEAD));
     const fichas = c.nodos.fichas.innerHTML;
-    assert.strictEqual((fichas.match(/class="tile/g) || []).length, 10, 'diez fichas');
+    assert.strictEqual((fichas.match(/class="tile/g) || []).length, 11, 'once fichas');
+    // la de la revisión previa sale en el sitio por compartir el cliente; los volcados del mundo no traen el campo: gris
+    // con las corridas viejas contadas, nunca un cero
+    const rp = fichas.slice(fichas.lastIndexOf('<div class="tile', fichas.indexOf('La historia revisada antes de programar')));
+    assert.match(rp, /^<div class="tile blind"/, 'la ficha de la revisión previa sale gris sin constancias');
+    assert.match(rp, /anteriores? a la revisión previa/, 'y cuenta las viejas aparte');
     assert.match(fichas, /n=\d+ de \d+/, 'las medianas llevan n=');
     assert.match(c.pagina.texto, /id="f-maquina"/, 'el filtro por máquina para quien ve varias');
     c.nodos.fc.checked = true; c.w.__aplicar();
@@ -515,7 +520,7 @@ test('T11 PersonaSinCorridasTodavia_FichaGris_SinRolComoLa2_23 @story-2.27 @ac-1
     const l = (await h.pedir('/api/corridas', { cookie: d })).json;
     assert.deepStrictEqual(l.corridas, []);
     const c = await clienteDelSitio(h, d);
-    assert.match(sinTags(c.nodos.fichas.innerHTML), /todavía no hay ejecuciones de tus máquinas en el buzón \(maq-d\): la primera llega sola al terminar un pipeline/);
+    assert.match(sinTags(c.nodos.fichas.innerHTML), /todavía no hay ejecuciones de tus máquinas en el depósito \(maq-d\): la primera llega sola al terminar un pipeline/);
     assert.doesNotMatch(c.nodos.fichas.innerHTML, /t-val">0/);
     const sinRol = await entrar('nadie@ejemplo.test');
     assert.strictEqual((await h.pedir('/api/corridas', { cookie: sinRol })).status, 403);
@@ -566,7 +571,7 @@ test('T14 Fuga_NingunMarcadorDeOtroLlegaAlDev @story-2.27 @ac-14', async () => {
 
 // ── lo que viaja y cuándo ─────────────────────────────────────────────────────────────────────────────────────────
 
-const LISTA_BLANCA = ['id', 'story', 'producto', 'grupo', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'paso_en_curso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados', 'sin_cerrar', 'esquema'];
+const LISTA_BLANCA = ['id', 'story', 'producto', 'grupo', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'paso_en_curso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados', 'sin_cerrar', 'esquema', 'revision_previa'];
 
 test('T15 Lista_ListaBlancaExacta @story-2.27 @ac-15', () => {
   const espejo = mundo({ marcadores: false });
@@ -579,6 +584,7 @@ test('T15 Lista_ListaBlancaExacta @story-2.27 @ac-15', () => {
   assert.deepStrictEqual(Object.keys(l.tiempos).sort(), ['espera_del_hilo_ms', 'espera_humana_ms', 'trabajo_medido', 'trabajo_ms']);
   assert.deepStrictEqual(Object.keys(l.controles).sort(), ['error', 'freno', 'por_control', 'total']);
   assert.deepStrictEqual(Object.keys(l.consumo).sort().filter((k) => !['motivo'].includes(k)), ['estado', 'fuera_de_ventana', 'por_paso', 'respuestas', 'tokens']);
+  assert.deepStrictEqual(Object.keys(l.revision_previa).sort(), ['corregida', 'duracion_ms', 'estado', 'hallazgos', 'tokens'], 'de la revisión previa viajan su estado y números');
   const t = JSON.stringify(l);
   for (const k of ['_texto', '_textoGit', 'eventos', 'vueltas_ts', 'revisores', 'por_modelo', 'cambios', 'src/Pago.ts']) assert.ok(!t.includes(k), `sin «${k}»`);
 });
@@ -653,32 +659,32 @@ test('T18 Buzon_NoLeidoOParcial_BandaConMotivo @story-2.27 @ac-19', async () => 
       const l = (await h.pedir('/api/corridas', { cookie: dev })).json;
       assert.deepStrictEqual(l.buzon, { estado: 'leido', parcial: true });
       const p = (await h.pedir('/corridas', { cookie: dev })).texto;
-      assert.match(p, /puede faltar alguna ejecución tuya: el buzón no se leyó entero/);
-      assert.doesNotMatch(p, /carpeta de máquina del buzón no se pudo leer/);
+      assert.match(p, /puede faltar alguna ejecución tuya: el depósito no se leyó entero/);
+      assert.doesNotMatch(p, /carpeta de máquina del depósito no se pudo leer/);
       const pl = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
-      assert.match(pl, /1 carpeta de máquina del buzón no se pudo leer/);
+      assert.match(pl, /1 carpeta de máquina del depósito no se pudo leer/);
     });
   } finally { fs.chmodSync(mala, 0o755); }
   // el espejo no se pudo leer: la banda con su motivo para quien mantiene; al dev, que puede faltar alguna suya
   await conPestana({ fuentes: fuentesCon({ espejo: path.join(tmp('site-runs-nada-'), 'no-existe') }) }, async ({ h, entrar }) => {
     const pl = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
-    assert.match(pl, /No se leyó la carpeta bajada del buzón\.<\/b> la carpeta bajada del buzón de ejecuciones no se pudo leer \(ENOENT\)/);
+    assert.match(pl, /No se leyó la carpeta bajada del depósito\.<\/b> la carpeta bajada del depósito de ejecuciones no se pudo leer \(ENOENT\)/);
     assert.doesNotMatch(pl, /0 ejecuciones/);
     const dev = await entrar(DEV_A);
     assert.deepStrictEqual((await h.pedir('/api/corridas', { cookie: dev })).json.buzon, { estado: 'no_medido', parcial: true });
-    assert.match((await h.pedir('/corridas', { cookie: dev })).texto, /puede faltar alguna ejecución tuya: el buzón no se leyó entero/);
+    assert.match((await h.pedir('/corridas', { cookie: dev })).texto, /puede faltar alguna ejecución tuya: el depósito no se leyó entero/);
   });
-  // sin buzón configurado: gris «no medido»
+  // sin depósito configurado: gris «no medido»
   const sinBuzon = fuentesCon({ espejo: mundo(), config: { ...opsCon(), site: { maintainers: [LEAD] } } });
   await conPestana({ fuentes: sinBuzon, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
     const p = await h.pedir('/corridas', { cookie: await entrar(LEAD) });
     assert.strictEqual(p.status, 200);
-    assert.match(p.texto, /sin buzón configurado: no medido/);
+    assert.match(p.texto, /sin depósito configurado: no medido/);
     assert.doesNotMatch(p.texto, /0 ejecuciones/);
     // el detalle tampoco: «no medido», no el 404 mudo de «no es tuya»
     const d = await h.pedir('/api/corridas/0123456789abcdef', { cookie: await entrar(LEAD) });
     assert.strictEqual(d.status, 404);
-    assert.match(d.texto, /sin buzón configurado: no medido/);
+    assert.match(d.texto, /sin depósito configurado: no medido/);
   });
 });
 
@@ -800,7 +806,7 @@ test('T25 Pagina_SinScriptNiStyleEnLinea_PasaLaPoliticaDelSitio @story-2.27 @ac-
 });
 
 // La espera por fuente: el sitio ya se navega con el repo leído; sólo Corridas espera el buzón, lo dice y
-// se recarga sola. 🔴 rojo: «no medido: el buzón todavía no se pudo bajar entero» mientras la primera bajada corría
+// se recarga sola. 🔴 rojo: «no medido: el depósito todavía no se pudo bajar entero» mientras la primera bajada corría
 test('T27b CorridasCargando_LoDiceYSeRecarga @story-2.27 @ac-20', async () => {
   const fuentes = fuentesCon({ espejo: mundo({ marcadores: false }) });
   fuentes.bajada = { completo: false, generacion: 0 };
@@ -919,6 +925,34 @@ test('2.27-A2 Huella_UnionesReescritasSinCambios_NoRearma @story-2.27 @ac-20', a
   });
 });
 
+// rojo si: con la generación del espejo, la pestaña lo recorre igual (rearma por un archivo que la generación no
+// anunció) o no rearma cuando la generación sube.
+test('Generacion_SinCambiosNoRecorreElEspejo_YSubeRearma — igual generación, mismo espejo', async () => {
+  const espejo = mundo({ marcadores: false });
+  const datos = tmp('site-runs-gen-');
+  const armarReal = TAB().armarEnElHilo;
+  let armados = 0;
+  const armar = (o) => { armados += 1; return armarReal(o); };
+  let gen = 7;
+  const fuentes = fuentesCon({ espejo });
+  fuentes.espejoGeneracion = () => gen;
+  await conPestana({ fuentes, datos, opciones: { armar } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    const n0 = (await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length;
+    assert.strictEqual(armados, 1, 'el arranque arma una vez');
+    // un archivo nuevo en el espejo sin que suba la generación: la pestaña no lo mira (sólo el sitio escribe el espejo,
+    // y cuando escribe sube la generación)
+    escribir(path.join(espejo, 'maq-a'), 'a8.json', volcado('aaaaaaaa-0000-4000-8000-000000000008', '2026-08-24T09:00:00.000Z', { marker: { storyId: '3.8' } }));
+    fuentes.avisar(); await vista.listo();
+    await h.pedir('/api/corridas', { cookie: lead }); await vista.listo();
+    assert.strictEqual(armados, 1, 'misma generación: no rearma');
+    gen = 8;
+    fuentes.avisar(); await vista.listo();
+    assert.strictEqual(armados, 2, 'la generación subió: rearma');
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length, n0 + 1, 'con la corrida nueva');
+  });
+});
+
 test('2.27-A3 BajadaAMedias_NoRearma_YDiceQuePuedeFaltar @story-2.27 @ac-19 @ac-20', async () => {
   // con la última bajada a medias no se rearma (el espejo sería más nuevo que lo informado por las máquinas: una que
   // cambió de dueño mostraría corridas al anterior); se sirve el último armado entero y la respuesta lo dice
@@ -935,7 +969,7 @@ test('2.27-A3 BajadaAMedias_NoRearma_YDiceQuePuedeFaltar @story-2.27 @ac-19 @ac-
     assert.strictEqual(l.generado, antes.generado, 'el último armado entero');
     assert.strictEqual(l.corridas.length, antes.corridas.length);
     assert.strictEqual(l.buzon.parcial, true);
-    assert.match((await h.pedir('/corridas', { cookie: lead })).texto, /La última bajada del buzón no terminó entera/);
+    assert.match((await h.pedir('/corridas', { cookie: lead })).texto, /La última bajada del depósito no terminó entera/);
     const dev = await entrar(DEV_A);
     assert.strictEqual((await h.pedir('/api/corridas', { cookie: dev })).json.buzon.parcial, true);
     assert.match((await h.pedir('/corridas', { cookie: dev })).texto, /puede faltar alguna ejecución tuya/);
@@ -966,7 +1000,7 @@ test('2.27-A3 BajadaAMedias_NoRearma_YDiceQuePuedeFaltar @story-2.27 @ac-19 @ac-
   await conPestana({ fuentes: nunca, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
     const p = await h.pedir('/corridas', { cookie: await entrar(LEAD) });
     assert.strictEqual(p.status, 200);
-    assert.match(p.texto, /no medido: el buzón todavía no se pudo bajar entero \(credencial_rechazada\)/);
+    assert.match(p.texto, /no medido: el depósito todavía no se pudo bajar entero \(credencial_rechazada\)/);
   });
   // ya hubo una entera pero la pestaña no armó todavía y la última quedó a medias: tampoco «cargando» sin motivo
   const media = fuentesCon({ espejo: mundo({ marcadores: false }) });
@@ -974,7 +1008,7 @@ test('2.27-A3 BajadaAMedias_NoRearma_YDiceQuePuedeFaltar @story-2.27 @ac-19 @ac-
   await conPestana({ fuentes: media, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
     const p = await h.pedir('/corridas', { cookie: await entrar(LEAD) });
     assert.strictEqual(p.status, 200);
-    assert.match(p.texto, /no medido: el buzón todavía no se pudo bajar entero/);
+    assert.match(p.texto, /no medido: el depósito todavía no se pudo bajar entero/);
   });
 });
 
@@ -1052,6 +1086,21 @@ test('2.30-T49 Detalle_ResumidaBajaSusTextosADemanda_ConCacheConTope @story-2.30
       assert.strictEqual(caido.status, 500, caido.texto);
     });
   } finally { await buzon.cerrar(); }
+});
+
+test('Resumida_ConSoloElCambioDeVuelta_NoPierdeTituloNiEsperas — una pasada que corta entre el cambio y la conversación no cambia la ejecución', () => {
+  // la bajada trae el cambio de git antes que la conversación: con el corte en el medio, el armado veía el cambio solo y
+  // dejaba la ejecución sin título ni esperas; a la pasada siguiente volvían (los valores iban y venían entre recargas)
+  const espejo = mundo({ marcadores: false });
+  const de = (M) => M.corridas.find((c) => c.story === '3.1');
+  const antes = de(runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true }));
+  assert.strictEqual(antes.cambios.estado, 'leido');
+  assert.strictEqual(runs.resumirEspejo(espejo, { skillsDir: path.join(ROOT, 'skills') }).resumidas, 2);
+  fs.copyFileSync(path.join(mundo({ marcadores: false }), 'maq-a', 'a1.cambio.json.gz'), path.join(espejo, 'maq-a', 'a1.cambio.json.gz'));
+  const corte = de(runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true }));
+  assert.strictEqual(corte.cambios.estado, 'leido', 'con el resumen al lado, el cambio solo no deja la ejecución sin leer');
+  assert.deepStrictEqual(corte.descripcion, antes.descripcion, 'el mismo título');
+  assert.deepStrictEqual(corte.tiempos, antes.tiempos, 'el mismo trabajo y la misma espera');
 });
 
 test('2.27-A6 Arranque_BorraLosTextosDeArmadosAnteriores @story-2.27 @ac-20', () => {
@@ -1226,6 +1275,11 @@ test('2.60-T1 Corridas_ElCuerpoEnIngles @story-2.60 @ac-1 @ac-2 — la página y
     const todo = `${sinTags(pagina)}\n${sinTags(await dibujado(h, lead, dev))}`;
     assert.doesNotMatch(todo, /\d,\d\s?(?:h|M)\b/, 'ningún número con coma decimal');
     assert.match(todo, /\d\.\d\s?(?:h|M)\b/, 'los decimales llevan punto');
+    // la semana: ni «S44» en el texto, ni en los «title», ni en los rótulos del gráfico (2.79 T40, @story-2.79 @ac-34)
+    const crudo = `${pagina}\n${deDev}\n${await dibujado(h, lead, dev)}`;
+    assert.doesNotMatch(todo, /\bS\d{2}\b/, 'la semana con la letra del castellano en el texto');
+    assert.doesNotMatch(crudo, /title="[^"]*\bS\d{2}\b/, 'la semana con la letra del castellano en un title');
+    assert.doesNotMatch(crudo, /<text[^>]*>[^<]*\bS\d{2}\b/, 'la semana con la letra del castellano en el gráfico');
   });
 });
 
@@ -1307,7 +1361,7 @@ test('2.60-T12 DatosDeAfuera_NoSeTraducen @story-2.60 @ac-1 — la API traduce s
   // lo de afuera que coincide con un molde: un producto, una story, el título, los asuntos de los commits, un archivo
   const det = { story: 'Revisores', producto: 'pruebas', maquina: 'pruebas', descripcion: { texto: 'Pago confirmado', fuente: 'el título de la story' },
     cambios: { titulo: 'antes, el login fallaba', commits: [{ h: 'a', s: 'pruebas' }, { h: 'b', s: 'fix: el pedido queda confirmado' }],
-      archivos: [{ f: 'Arranque' }, { f: 'fuera del repo: x.txt' }], motivo: 'el hilo no se pudo leer (Z_DATA_ERROR)' },
+      archivos: [{ f: 'Arranque' }, { f: 'fuera del repo: x.txt' }], motivo: 'la conversación no se pudo leer (Z_DATA_ERROR)' },
     tramos: [{ nombre: 'Revisores + Hallazgos' }] };
   const en = runs.todoEnIdioma('en', det);
   assert.strictEqual(en.story, 'Revisores');
@@ -1320,7 +1374,7 @@ test('2.60-T12 DatosDeAfuera_NoSeTraducen @story-2.60 @ac-1 — la API traduce s
   // y lo de la casa sí
   assert.notStrictEqual(en.descripcion.fuente, det.descripcion.fuente);
   assert.strictEqual(en.cambios.archivos[1].f, 'outside the repo: x.txt');
-  assert.strictEqual(en.cambios.motivo, 'the thread could not be read (Z_DATA_ERROR)');
+  assert.strictEqual(en.cambios.motivo, 'the conversation could not be read (Z_DATA_ERROR)');
   assert.doesNotMatch(en.tramos[0].nombre, /Revisores|Hallazgos/, 'un paso fundido se traduce de a uno');
 });
 
@@ -1380,6 +1434,195 @@ test('2.60-T8 FrasesDelModelo_TodasCalzanConSuMolde @story-2.60 @ac-3 — si alg
     for (const c of M.corridas) { const d = runs.paraDetalle(c); recorrer(d, runs.todoEnIdioma('en', d), `D(${c.story})`); }
   }
   assert.deepStrictEqual([...sinMolde], [], `frases del modelo sin molde en texts.js (el inglés quedaría en castellano):\n${[...sinMolde].join('\n')}`);
+});
+
+/**
+ * El mundo de todas las ramas de una ejecución: los resultados del pase adversarial y sus salteos, los pasos de los dos
+ * esquemas sin el arranque de la espera, los repos sin nombre y sin historial de git, y las uniones de carpetas.
+ */
+function mundoDeTodasLasRamas() {
+  const espejo = mundo({ marcadores: false });
+  const A = path.join(espejo, 'maq-a');
+  const t0 = '2026-08-25T09:00:00.000Z';
+  const pase = (min, extra) => ({ ts: iso(t0, min), check: 'adversarial-pass', ...extra });
+  escribir(A, 'r1.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e1', t0, { gates: [
+    pase(40, { veredicto: 'no-listo', confirmados: 3, pruebas: 2, diferidos: 1 }),
+    pase(41, { veredicto: 'no-listo', confirmados: 1, pruebas: 0, diferidos: 0, propias: 1 }),
+    pase(42, { veredicto: 'no-listo', confirmados: 2 }),
+    pase(43, { veredicto: 'no-medido', lentes_sin_medir: ['a', 'b'], hallazgos_sin_veredicto: 1 }),
+    pase(44, { veredicto: 'no-medido', lentes_sin_medir: ['a'], hallazgos_sin_veredicto: 3 }),
+    pase(45, { veredicto: 'listo', confirmados: 0 }),
+    { ts: iso(t0, 46), check: 'adversarial-skip', status: 'green', forzado: true },
+    { ts: iso(t0, 47), check: 'adversarial-skip', status: 'green', abandonado: true },
+  ] }));
+  // los pasos sin la espera: por nombre (esquema 2) sin «Aprobar el plan» o sin su arranque, y por número sin el 3 y el 7
+  const m2 = (n) => iso('2026-08-26T09:00:00.000Z', n);
+  const sinLosViejos = { 0: null, 1: null, 2: null, 3: null, 4: null, 5: null, 6: null, 7: null, 8: null };
+  escribir(A, 'r2.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e2', '2026-08-26T09:00:00.000Z', { marker: { stepsCompleted: ['start', 'plan', 'implement'],
+    stepTimings: { ...sinLosViejos, start: { startedAt: m2(0), completedAt: m2(1) }, plan: { startedAt: m2(2), completedAt: m2(9) }, implement: { startedAt: m2(13), completedAt: m2(40) } } } }));
+  escribir(A, 'r4.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e7', '2026-08-26T09:00:00.000Z', { marker: { storyId: '3.11', stepsCompleted: ['start', 'plan', 'approve-plan', 'implement'],
+    stepTimings: { ...sinLosViejos, start: { startedAt: m2(0), completedAt: m2(1) }, plan: { startedAt: m2(2), completedAt: m2(9) }, 'approve-plan': { completedAt: m2(12) }, implement: { startedAt: m2(13), completedAt: m2(40) } } } }));
+  escribir(A, 'r5.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e8', '2026-08-26T09:00:00.000Z', { marker: { storyId: '3.12', stepsCompleted: [0, 1, 4],
+    stepTimings: { ...sinLosViejos, 0: { startedAt: m2(0), completedAt: m2(1) }, 1: { startedAt: m2(2), completedAt: m2(5) }, 4: { startedAt: m2(6), completedAt: m2(30) } } } }));
+  // los repos de un cambio de git: sin nombre, sin historial, con el historial ilegible, sin sesión
+  const cambio = cambioGit('2026-08-27T09:00:00.000Z', 'src/Uno.ts', ['+const uno = 1;']);
+  const sinCommits = (commits_motivo, extra = {}) => ({ principal: false, por: ['hilo'], otras_sesiones: null, sin_commitear_previo: 0, estado: 'medido', commits: null, commits_motivo, commits_de_otras_sesiones: [], sin_commitear: [], ...extra });
+  cambio.repos.push(
+    sinCommits('no se pudo ubicar el historial local de git (ENOENT)', { otras_sesiones_motivo: 'el registro no trae sesión: no se puede saber si otra sesión escribió en esta copia' }),
+    sinCommits('esta copia no tiene historial local de git (reflog): no se puede saber qué commits hizo la ejecución', { nombre: 'Beta' }),
+    sinCommits('no se pudo leer el historial local de git (EACCES)', { nombre: 'Gama' }),
+    { nombre: 'Delta', principal: false, por: ['hilo'], estado: 'no_medido', motivo: 'la carpeta del repo de la ejecución ya no existe en esta máquina', otras_sesiones: null,
+      otras_sesiones_motivo: 'no se pudo mirar este repo: no se puede saber si otra sesión escribió en él' });
+  escribir(A, 'r3.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e3', '2026-08-27T09:00:00.000Z', { marker: { storyId: '3.7' } }));
+  escribir(A, 'r3.cambio.json.gz', gz(JSON.stringify(cambio)));
+  // las carpetas viejas: una unida a maq-a, una compartida, una que siguió recibiendo
+  escribir(path.join(espejo, 'maq-v'), 'v1.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e4', '2026-08-28T09:00:00.000Z', { marker: { storyId: '3.8' } }));
+  escribir(path.join(espejo, 'maq-w'), 'w1.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e5', '2026-08-29T09:00:00.000Z', { marker: { storyId: '3.9' } }));
+  escribir(path.join(espejo, 'maq-z'), 'z1.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e6', '2026-08-30T09:00:00.000Z', { marker: { storyId: '3.10' } }));
+  escribir(espejo, '.carpetas-de-maquina.json', { schema: 1, carpetas: {
+    'maq-v': { estado: 'unida', nueva: 'maq-a', declarantes: 1, desde: '2026-08-01' },
+    'maq-w': { estado: 'compartida', declarantes: 2, desde: '2026-08-01' },
+    'maq-z': { estado: 'siguio_recibiendo', declarantes: 1, desde: '2026-08-01' } } });
+  return espejo;
+}
+
+/**
+ * Las frases en castellano de un valor ya pintado en inglés, con su ruta. Lo de afuera (lo que vino en el volcado: la
+ * story, el producto, la máquina, el mensaje de una prueba) se nombra en `deAfuera` y no cuenta, ni entero ni dentro
+ * de una frase de la casa.
+ */
+function castellanoEn(valor, raiz, deAfuera) {
+  const quedan = [];
+  const recorrer = (v, ruta) => {
+    if (typeof v === 'string') {
+      if (!/^[\w./:@-]*$/.test(v) && enCastellano([v], deAfuera).length) quedan.push(`${ruta}: «${v}»`);
+      return;
+    }
+    if (Array.isArray(v)) v.forEach((x, i) => recorrer(x, `${ruta}[${i}]`));
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (k !== '_texto' && k !== '_textoGit') recorrer(x, `${ruta}.${k}`);
+  };
+  recorrer(valor, raiz);
+  return quedan;
+}
+// una frase de cada rama de mundoDeTodasLasRamas(), tal como la escribe el tablero en castellano
+const RAMAS_260 = ['con prueba promovida', 'con prueba en la suite', 'sin constancia de sus pruebas', 'lentes sin medir', 'forzado con el interruptor', 'abandonado con el pase',
+  'Aprobar el plan no tiene arranque', 'los pasos de espera (3 y 7)', 'no tiene arranque medido', 'repo sin nombre', 'historial local de git', 'el registro no trae sesión', 'antes, maq-v', 'compartida por 2',
+  'siguió recibiendo después de la mudanza', 'ya no existe en esta máquina', 'historial local de git (EACCES)'];
+const DE_AFUERA_260 = ['sin hilo', 'zqx-prohibido-prompt aprobado', 'esperaba 2, salió 3', 'caso 3', 'feat: un commit', 'Sin Forma.local', 'otra-cosa', 'otra cosa'];
+
+test('2.60-T13 DetalleEnIngles_SinCastellanoEnNingunaRama @story-2.60 @ac-1 @ac-3 — la lista y el detalle de cada ejecución, por la API, sin una frase en castellano', async () => {
+  // La familia entera, no los casos sueltos: todo lo que la API devuelve en inglés se recorre, y cualquier frase en
+  // castellano que no sea un dato de afuera es un rojo, esté o no en un campo que hoy se traduce.
+  const espejo = mundoDeTodasLasRamas();
+  const quedan = [];
+  for (const sinHilos of [false, true]) {
+    const M = runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true, sinHilos });
+    quedan.push(...castellanoEn(runs.todoEnIdioma('en', M), `M${sinHilos ? '(sin hilos)' : ''}`, DE_AFUERA_260));
+    for (const c of M.corridas) quedan.push(...castellanoEn(runs.todoEnIdioma('en', runs.paraDetalle(c)), `D(${c.story})`, DE_AFUERA_260));
+  }
+  // la tabla de pasos que carga pero no nombra ninguno
+  const tablaSinNombres = path.join(tmp('site-runs-tabla-'), 'steps.js');
+  fs.writeFileSync(tablaSinNombres, 'module.exports = { stepName: () => null };\n');
+  const sinNombres = runs.nombresDePasos(tablaSinNombres);
+  assert.strictEqual(sinNombres.fuente, 'numeros');
+  quedan.push(...castellanoEn(runs.todoEnIdioma('en', { pasos: sinNombres }), 'pasos', DE_AFUERA_260));
+  // el mundo toca de verdad cada rama (si una deja de existir, la prueba no la está mirando)
+  const M = runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true });
+  const crudo = JSON.stringify([M, ...M.corridas.map((c) => runs.paraDetalle(c))]);
+  for (const rama of RAMAS_260) {
+    assert.ok(crudo.includes(rama), `el mundo no toca la rama «${rama}»`);
+  }
+  // y por el sitio: la lista, el detalle de cada una y la ficha gris de quien todavía no tiene ejecuciones
+  const machines = { ...MAQUINAS, 'maq-d': { person: DEV_D, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  await conPestana({ fuentes: fuentesCon({ espejo, config: opsCon(machines) }) }, async ({ h, entrar }) => {
+    const lead = `${await entrar(LEAD)}; sitio-idioma=en`;
+    const l = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    quedan.push(...castellanoEn(l, 'API', DE_AFUERA_260));
+    for (const c of l.corridas) {
+      const d = await h.pedir(`/api/corridas/${c.id}`, { cookie: lead });
+      assert.strictEqual(d.status, 200, `el detalle de ${c.id}`);
+      quedan.push(...castellanoEn(d.json, `API(${c.story})`, DE_AFUERA_260));
+    }
+    const vacia = (await h.pedir('/api/corridas', { cookie: `${await entrar(DEV_D)}; sitio-idioma=en` })).json;
+    assert.ok(vacia.vacio_motivo, 'la dev sin ejecuciones tiene su motivo');
+    quedan.push(...castellanoEn(vacia, 'API(dev-d)', DE_AFUERA_260));
+  });
+  // sin saber de quién es cada máquina: «no medido», también en inglés
+  await conPestana({ fuentes: fuentesCon({ espejo, informados: null }) }, async ({ h, entrar }) => {
+    const l = (await h.pedir('/api/corridas', { cookie: `${await entrar(DEV_A)}; sitio-idioma=en` })).json;
+    assert.ok(l.vacio_motivo, 'la dev sin medir tiene su motivo');
+    quedan.push(...castellanoEn(l, 'API(no medido)', DE_AFUERA_260));
+  });
+  assert.deepStrictEqual([...new Set(quedan)], [], `castellano en la ejecución en inglés:\n${[...new Set(quedan)].join('\n')}`);
+});
+
+test('2.60-T17 DetalleEnCastellano_CadaRamaIntacta @story-2.60 @ac-6 — en castellano, cada frase de la casa sale tal cual en la API y en lo que dibuja el cliente', async () => {
+  // La contracara de T13: sobre el mismo buzón, la pestaña en castellano no traduce nada por error. El servidor y el
+  // cliente se miran por separado, así una traducción de un lado no la tapa el otro.
+  const espejo = mundoDeTodasLasRamas();
+  const M = runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true });
+  const conEscape = (r) => r.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  const esta = (texto, r) => texto.includes(r) || texto.includes(conEscape(r));
+  const machines = { ...MAQUINAS, 'maq-d': { person: DEV_D, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  await conPestana({ fuentes: fuentesCon({ espejo, config: opsCon(machines) }) }, async ({ h, entrar }) => {
+    const es = `${await entrar(LEAD)}; sitio-idioma=es`;
+    const l = (await h.pedir('/api/corridas', { cookie: es })).json;
+    const c = await clienteDelSitio(h, es);
+    const servidor = [JSON.stringify(l)];
+    const cliente = [(await h.pedir('/corridas', { cookie: es })).texto];
+    const faltanEnElDibujo = [];
+    for (const x of l.corridas) {
+      const d = (await h.pedir(`/api/corridas/${x.id}`, { cookie: es })).json;
+      const delModelo = M.corridas.find((m) => m.id === x.id);
+      assert.ok(delModelo, `la ejecución ${x.story} está en el modelo`);
+      assert.deepStrictEqual(d, JSON.parse(JSON.stringify(runs.paraDetalle(delModelo))), `el detalle de ${x.story} en castellano es el del modelo, sin tocar`);
+      const json = JSON.stringify(d);
+      const dibujo = c.w.__detalle(d);
+      servidor.push(json);
+      cliente.push(dibujo);
+      // lo que el detalle trae del servidor, el cliente lo dibuja tal cual (el motivo de los tiempos no va en el
+      // detalle: lo dibuja la tabla, que la página ya trae)
+      const delDetalle = JSON.stringify({ ...d, tiempos: undefined });
+      for (const r of RAMAS_260) if (delDetalle.includes(r) && !esta(dibujo, r)) faltanEnElDibujo.push(`${x.story}: «${r}»`);
+    }
+    const faltan = (partes) => RAMAS_260.filter((r) => !esta(partes.join('\n'), r));
+    assert.deepStrictEqual(faltan(servidor), [], 'en castellano la API no trae tal cual estas frases');
+    assert.deepStrictEqual(faltan(cliente), [], 'en castellano la página y el detalle dibujado no traen tal cual estas frases');
+    assert.deepStrictEqual(faltanEnElDibujo, [], 'el detalle dibujado en castellano no trae lo que le dio la API');
+    const vacia = (await h.pedir('/api/corridas', { cookie: `${await entrar(DEV_D)}; sitio-idioma=es` })).json;
+    assert.match(vacia.vacio_motivo || '', /^todavía no hay ejecuciones de tus máquinas en el depósito/, 'la lista vacía, en castellano');
+  });
+});
+
+test('2.60-T14 VacioSinMaquinaConfirmada_EnIngles @story-2.60 @ac-1 — «ninguna confirmada» también se traduce', () => {
+  const frase = 'todavía no hay ejecuciones de tus máquinas en el depósito (ninguna confirmada): la primera llega sola al terminar un pipeline';
+  const en = runs.todoEnIdioma('en', { vacio_motivo: frase }).vacio_motivo;
+  assert.notStrictEqual(en, frase);
+  assert.deepStrictEqual(enCastellano([en]), [], `queda castellano: «${en}»`);
+  const conMaquinas = runs.todoEnIdioma('en', { vacio_motivo: frase.replace('ninguna confirmada', 'maq-d, maq-e') }).vacio_motivo;
+  assert.match(conMaquinas, /\(maq-d, maq-e\)/, 'las máquinas, tal cual');
+});
+
+test('2.60-T15 NombresDeMaquina_NoSeTraducen @story-2.60 @ac-1 — `nombre` es de la casa en un paso, y de afuera en la lista de máquinas', () => {
+  const frase = 'Revisores';
+  const en = runs.todoEnIdioma('en', { maquinas: { lista: [{ nombre: frase, corridas: 2 }] }, tramos: [{ nombre: frase }] });
+  assert.strictEqual(en.maquinas.lista[0].nombre, frase, 'una máquina que se llama como un paso queda igual');
+  assert.notStrictEqual(en.tramos[0].nombre, frase, 'el paso sí se traduce');
+  // un repo se traduce sólo si es el «repo sin nombre» de la casa
+  const r = runs.todoEnIdioma('en', { cambios: { repos: [{ n: 'repo sin nombre' }, { n: 'Revisores' }] } }).cambios.repos;
+  assert.notStrictEqual(r[0].n, 'repo sin nombre');
+  assert.strictEqual(r[1].n, 'Revisores');
+  // una clave de afuera que se llama como una propiedad de cualquier objeto no tumba la API ni se traduce
+  const raras = { constructor: 'Revisores', toString: 'Revisores', __proto__x: 'Revisores', por_control: { constructor: { n: 1 } } };
+  assert.deepStrictEqual(runs.todoEnIdioma('en', raras), raras);
+});
+
+test('2.60-T16 Decimal_IdiomaDesconocido_ComaComoElCastellano @story-2.60 @ac-6 — un idioma que la tabla no tiene sale entero en castellano, coma incluida', () => {
+  const M = runs.modelo(tmp('vacia-'), { buzon: mundo({ marcadores: false }), soloBuzon: true });
+  const es = runs.tabla(M, { idioma: 'es' });
+  assert.match(sinTags(es), /\d,\d\s?h\b/, 'el castellano lleva coma');
+  assert.strictEqual(runs.tabla(M, { idioma: 'fr' }), es, 'un idioma desconocido: igual al castellano');
+  assert.strictEqual(runs.cabecera(M, { idioma: 'fr' }), runs.cabecera(M, { idioma: 'es' }));
 });
 
 test('Cambios_RenglonesDelHilo_SinElTextoEntero — los renglones de la conversación salen de a uno, iguales a partir el texto', () => {
@@ -1504,7 +1747,7 @@ test('T1 2.77-Armado_GuardaLaVistaEntera @story-2.77 @ac-1 @ac-2', async () => {
     await vista.listo();
     const servida = (await h.pedir('/api/corridas', { cookie: lead })).json;
     const g = leerGuardada(datos);
-    assert.strictEqual(g.formato, 1);
+    assert.strictEqual(g.formato, TAB().FORMATO_VISTA);
     assert.strictEqual(g.generado, servida.generado, 'la fecha del armado');
     assert.strictEqual(g.ejecuciones.corridas.length, servida.corridas.length);
     assert.ok(g.informados && g.informados.maquinas && g.informados.maquinas['maq-a'], 'con lo informado de la misma bajada');
@@ -1701,7 +1944,8 @@ test('T7 2.77-Guardada_Ilegible_NoSeSirve @story-2.77 @ac-10', async () => {
   const buena = leerGuardada(datosOk);
   const casos = [
     ['json roto', (d) => fs.writeFileSync(VISTA_GUARDADA(d), '{ esto no')],
-    ['otro formato', (d) => fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify({ ...buena, formato: 2 }))],
+    // el formato de antes del vigente: una vista guardada antes de un cambio de forma (como el que sumó las firmas)
+    ['otro formato', (d) => fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify({ ...buena, formato: TAB().FORMATO_VISTA - 1 }))],
     ['sin ejecuciones', (d) => fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify({ ...buena, ejecuciones: null }))],
   ];
   if (!(process.getuid && process.getuid() === 0)) casos.push(['sin permiso de lectura', (d) => { fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify(buena)); fs.chmodSync(VISTA_GUARDADA(d), 0o000); }]);
@@ -1809,7 +2053,7 @@ test('T10 2.77-Lectura_NoFrenaHealthz @story-2.77 @ac-12', async () => {
 test('T11 2.77-Guardada_EscrituraAtomica @story-2.77 @ac-1', async () => {
   const datos = tmp('site-runs-datos-');
   const { espejo, servida } = await primerArranque(datos);
-  fs.writeFileSync(`${VISTA_GUARDADA(datos)}.tmp-12345`, '{ "formato": 1, "generado": "2099');
+  fs.writeFileSync(`${VISTA_GUARDADA(datos)}.tmp-12345`, `{ "formato": ${TAB().FORMATO_VISTA}, "generado": "2099`);
   const fuentes = fuentesCon({ espejo, informados: null });
   fuentes.bajada = { completo: false, generacion: 0 };
   await conPestana({ fuentes, datos, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
@@ -1829,7 +2073,7 @@ test('T14 2.77-Guardada_PermisosYSinRuta @story-2.77 @ac-16', async () => {
     for (const ruta of ['/runs-view.json', '/corridas/runs-view.json', '/static/runs-view.json', '/api/corridas/runs-view.json']) {
       const r = await h.pedir(ruta, { cookie: lead });
       assert.ok(r.status === 404, `${ruta}: ${r.status}`);
-      assert.doesNotMatch(r.texto || '', /"formato"\s*:\s*1/);
+      assert.doesNotMatch(r.texto || '', new RegExp(`"formato"\\s*:\\s*${TAB().FORMATO_VISTA}\\b`));
     }
   });
 });
@@ -1870,5 +2114,164 @@ test('T15 2.77-Guardada_CambioDeDueno_HastaLaBajadaEntera @story-2.77 @ac-15', a
     lento.soltar(); await vista.listo();
     assert.strictEqual(await verMaqA(h, await entrar(DEV_B)), true, 'con el armado nuevo, el dueño nuevo');
     assert.strictEqual(await verMaqA(h, await entrar(DEV_A)), false);
+  });
+});
+
+test('T1 2.79-Corridas_VistaServida_NoSeReemplazaAMedias @story-2.79 @ac-1', async () => {
+  // el caso de la Task 0.1: con la vista entera servida, una pasada con conversaciones pendientes no la reemplaza (sin
+  // la conversación, el título, los tiempos y el consumo de una ejecución van y vuelven). Se espera a la pasada entera.
+  const espejo = mundo({ marcadores: false });
+  const fuentes = fuentesCon({ espejo });
+  await conPestana({ fuentes }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    const antes = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    escribir(path.join(espejo, 'maq-a'), 'a7.json', volcado('aaaaaaaa-0000-4000-8000-000000000007', '2026-08-22T09:00:00.000Z', { marker: { storyId: '3.7' } }));
+    fuentes.bajada = { completo: false, armable: true, generacion: 2, pendientes: 3 };
+    fuentes.avisar(); await vista.listo();
+    const l = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    assert.strictEqual(l.generado, antes.generado, 'la vista entera sigue servida');
+    assert.deepStrictEqual(l.corridas.map((c) => [c.id, c.maquina, c.repo, c.story]), antes.corridas.map((c) => [c.id, c.maquina, c.repo, c.story]), 'mismos ids, máquinas y productos');
+    assert.ok(!(l.buzon && l.buzon.pendientes), 'la vista servida es entera: no dice que le faltan conversaciones');
+    assert.strictEqual(l.buzon && l.buzon.parcial, true, 'pero dice que puede faltar alguna ejecución: espera la pasada entera');
+    // la pasada entera sí la reemplaza
+    fuentes.bajada = { completo: true, armable: true, generacion: 3 };
+    fuentes.avisar(); await vista.listo();
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length, antes.corridas.length + 1);
+  });
+  // en frío, sin vista: se arma con los registros enteros y se dice cuántas faltan (2.77); la pasada entera la reemplaza
+  const espejoFrio = mundo({ marcadores: false });
+  const frio = fuentesCon({ espejo: espejoFrio });
+  frio.bajada = { completo: false, armable: true, generacion: 1, pendientes: 2 };
+  await conPestana({ fuentes: frio }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    const l = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    assert.ok(l.corridas.length > 0, 'arma en frío');
+    assert.strictEqual(l.buzon.pendientes, 2, 'y dice cuántas faltan');
+    // una pasada entera que no cambia el espejo (lo que faltaba ya no estaba en el buzón): no le falta nada
+    frio.bajada = { completo: true, armable: true, generacion: 2 };
+    frio.avisar(); await vista.listo();
+    const igual = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    assert.ok(!(igual.buzon && igual.buzon.pendientes), `la entera sin cambios no arrastra los pendientes: ${JSON.stringify(igual.buzon)}`);
+    frio.bajada = { completo: false, armable: true, generacion: 3, pendientes: 2 };
+    frio.avisar(); await vista.listo();
+    // la pasada entera trae lo que faltaba (acá, una ejecución más: cambia el espejo como cambia con las conversaciones)
+    escribir(path.join(espejoFrio, 'maq-a'), 'a8.json', volcado('aaaaaaaa-0000-4000-8000-000000000008', '2026-08-23T09:00:00.000Z', { marker: { storyId: '3.8' } }));
+    frio.bajada = { completo: true, armable: true, generacion: 2 };
+    frio.avisar(); await vista.listo();
+    const l2 = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    assert.strictEqual(l2.corridas.length, l.corridas.length + 1, 'la pasada entera reemplaza la vista armada a medias');
+    assert.ok(!(l2.buzon && l2.buzon.pendientes));
+  });
+});
+
+test('T2 2.79-Espejo_BajadaYArmado_NoSePisan (la pestaña) @story-2.79 @ac-2', async () => {
+  // con la bajada escribiendo el espejo no se arma; al terminar (el refresco avisa), sí. Y la pestaña le dice a las
+  // fuentes cuándo arma, para que la bajada espere
+  const espejo = mundo({ marcadores: false });
+  const fuentes = fuentesCon({ espejo });
+  const armandoDe = [];
+  fuentes.alArmar = (fn) => armandoDe.push(fn);
+  await conPestana({ fuentes }, async ({ h, entrar, vista }) => {
+    assert.strictEqual(armandoDe.length, 1, 'la pestaña se anota');
+    assert.strictEqual(armandoDe[0](), false, 'sin armado en curso');
+    const lead = await entrar(LEAD);
+    const antes = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    escribir(path.join(espejo, 'maq-a'), 'a7.json', volcado('aaaaaaaa-0000-4000-8000-000000000007', '2026-08-22T09:00:00.000Z', { marker: { storyId: '3.7' } }));
+    fuentes.bajada = { completo: true, armable: true, generacion: 2, bajando: true };
+    fuentes.avisar(); await vista.listo();
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length, antes.corridas.length, 'con la bajada escribiendo, no arma');
+    fuentes.bajada = { completo: true, armable: true, generacion: 2 };
+    fuentes.avisar(); await vista.listo();
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length, antes.corridas.length + 1, 'terminada la bajada, arma');
+  });
+  // un armado que falla suelta la marca: la bajada no queda esperando un armado que ya no existe
+  const fallido = fuentesCon({ espejo: mundo({ marcadores: false }) });
+  const armandoFallido = [];
+  fallido.alArmar = (fn) => armandoFallido.push(fn);
+  await conPestana({ fuentes: fallido, opciones: { armar: async () => { throw Object.assign(new Error('memoria'), { code: 'ERR_WORKER_OUT_OF_MEMORY' }); } } }, async ({ vista }) => {
+    await vista.listo();
+    assert.strictEqual(armandoFallido[0](), false, 'tras el fallo, la pestaña no dice que arma');
+  });
+});
+
+test('T8 2.79-Corridas_FichasDeLaNoche_DicenQueNoSiguenElFiltro @story-2.79 @ac-7 — las fichas de la noche dicen de cuándo son y que el filtro no las cambia', async () => {
+  const cards = require(path.join(H.SITE, 'tabs', 'cards.js'));
+  const f = fuentesCon({ espejo: mundo() });
+  f.st.modelo = { ...f.st.modelo, fichas: cards.modeloDeFichas({ local: {
+    corridas: { estado: 'medido', valor: 1.25, medidos: 5, total: 5, unidad: 'conteo', fecha: '2026-08-10' },
+  } }) };
+  await conPestana({ fuentes: f }, async ({ h, entrar }) => {
+    for (const [idioma, frase] of [['es', /son de la noche y no siguen el filtro/], ['en', /are from last night and do not follow the filter/]]) {
+      const p = (await h.pedir('/corridas?desde=2026-08-10&hasta=2026-08-10', { cookie: `${await entrar(LEAD)}; sitio-idioma=${idioma}` })).texto;
+      const grilla = p.slice(p.indexOf('id="fichas-corridas"'), p.indexOf('<table'));
+      assert.match(grilla, frase, `${idioma}: la grilla de la noche lo dice`);
+    }
+  });
+});
+
+test('T47 2.79-Corridas_CadaControlConNombreLlano @story-2.79 @ac-39 — cada control que se cuenta tiene su nombre en castellano y en inglés, y los chips van separados', () => {
+  // 🔴 rojo: un control de los que cuenta el tablero (o «ac-shown», «approval», que escribe el pipeline) sin nombre —
+  // sale su clave técnica—, un nombre sin su traducción, o los tres chips de la fila pegados («approvalac-shown»).
+  const fuentes = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'sources.json'), 'utf8'));
+  const contados = fuentes.reducer.metrics.bloqueos.values;
+  const T = require(path.join(H.SITE, 'texts.js'));
+  for (const k of [...contados, 'ac-shown', 'approval']) {
+    assert.ok(Object.prototype.hasOwnProperty.call(runs.CONTROLES, k), `«${k}» tiene nombre`);
+    const es = runs.CONTROLES[k];
+    assert.notStrictEqual(es, k, `«${k}» no se nombra con su clave`);
+    assert.strictEqual(runs.enIdioma('es', es), es);
+    const en = runs.enIdioma('en', es);
+    assert.notStrictEqual(en, es, `«${es}» tiene su inglés`);
+    assert.ok(Object.values(T.TEXTOS).some((v) => v.es === es && v.en === en), `«${es}» se traduce por un texto de la tabla`);
+  }
+  // la fila de la tabla: hasta tres chips, separados por « · »
+  const t0 = '2026-08-15T05:53:47Z';
+  const c = { controles: { por_control: { approval: { n: 2, paso: 2, error: 0, freno: 0 }, 'ac-shown': { n: 1, paso: 1, error: 0, freno: 0 }, build: { n: 1, paso: 1, error: 0, freno: 0 } } }, inicio: t0 };
+  const fila = runs.filaControles(c, 'es');
+  assert.strictEqual((fila.match(/<\/span> · <span class="f/g) || []).length, 2, `los tres chips separados: ${fila}`);
+});
+
+test('2.79-Corridas_SemanaEnElIdioma @story-2.79 @ac-34 (complemento de T40) — la semana guardada «2026-S44» se ve «W44» en inglés y «S44» en castellano', () => {
+  // 🔴 rojo: la celda o el cliente muestran la clave guardada tal cual en inglés («S44»), o la clave cambia de forma.
+  assert.strictEqual(runs.semanaVisible('2026-S44', 'en'), '2026-W44');
+  assert.strictEqual(runs.semanaVisible('2026-S44', 'es'), '2026-S44');
+  assert.strictEqual(runs.semanaVisible('basura', 'en'), '');
+  const T = require(path.join(H.SITE, 'texts.js'));
+  for (const k of ['corridas.v.letraSemana', 'corridas.c.letraSemana']) assert.deepStrictEqual([T.TEXTOS[k].es, T.TEXTOS[k].en], ['S', 'W'], k);
+  // el cliente arma lo visible con la letra del idioma, nunca con la clave guardada
+  const fuente = fs.readFileSync(RUNS, 'utf8');
+  assert.match(fuente, /var semanaVisible = function \(k\) \{ return k\.slice\(0, 5\) \+ T\('letraSemana'\)/);
+});
+
+// ── las firmas de cada ejecución, por el mismo camino que el resto del detalle ───────────────────────────────────
+// rojo si: las firmas no llegan al detalle; el detalle ajeno deja de contestar 404 sin cuerpo; la vista guardada sigue
+// con el formato de antes de las firmas.
+test('T11 2.78-Sitio_FirmasSoloDeLoTuyo @story-2.78 @ac-11', async () => {
+  const lineas = (razon) => ({ firmas: { estado: 'leido', ilegibles: 0, recortadas: 0, lineas: [
+    { cuando: '2026-08-05T09:30:00.000Z', firma: 'plan-approval', nivel: 1, via: 'click', delegada: false, quien: 'persona', pedida_por: null, razon },
+  ] } });
+  const espejo = tmp('site-runs-espejo-');
+  escribir(path.join(espejo, 'maq-a'), 'a1.json', volcado(SID.a1, '2026-08-05T09:00:00.000Z', { marker: { storyId: '3.1' }, ...lineas('firma de la máquina de A') }));
+  escribir(path.join(espejo, 'maq-b'), 'b1.json', volcado(SID.b1, '2026-08-06T09:00:00.000Z', { marker: { storyId: '4.1' }, ...lineas('firma de la máquina de B') }));
+  const datos = tmp('site-runs-datos-');
+  await conPestana({ fuentes: fuentesCon({ espejo }), datos }, async ({ h, entrar, vista }) => {
+    await vista.listo();
+    const lead = await entrar(LEAD);
+    const todas = (await h.pedir('/api/corridas', { cookie: lead })).json.corridas;
+    const idDe = (story) => todas.find((c) => c.story === story).id;
+    for (const c of todas) assert.ok(!('firmas' in c), 'la lista no lleva firmas');
+    for (const [story, razon] of [['3.1', 'firma de la máquina de A'], ['4.1', 'firma de la máquina de B']]) {
+      const det = (await h.pedir(`/api/corridas/${idDe(story)}`, { cookie: lead })).json;
+      assert.strictEqual(det.firmas.lineas[0].razon, razon, `quien mantiene ve las firmas de ${story}`);
+    }
+    const dev = await entrar(DEV_A);
+    const propia = await h.pedir(`/api/corridas/${idDe('3.1')}`, { cookie: dev });
+    assert.strictEqual(propia.status, 200);
+    assert.strictEqual(propia.json.firmas.lineas[0].razon, 'firma de la máquina de A');
+    const ajena = await h.pedir(`/api/corridas/${idDe('4.1')}`, { cookie: dev });
+    assert.strictEqual(ajena.status, 404);
+    assert.strictEqual(ajena.texto || '', '', '404 sin cuerpo');
+    assert.strictEqual(TAB().FORMATO_VISTA, 2, 'la vista guardada cambió de forma con las firmas');
+    assert.strictEqual(leerGuardada(datos).formato, 2);
   });
 });

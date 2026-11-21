@@ -1,0 +1,403 @@
+'use strict';
+/**
+ * test-run-isolation.test.js — una prueba en vivo no escribe en la máquina real (historia 8.314).
+ *
+ * Un humo comparado, y uno cuyo programa es un guion de laboratorio, corren con una casa aparte, sin las variables que
+ * apuntan a la casa de la cuenta y con la red de escritura puesta (`isolated-run.js`); el humo común sigue como hoy. Un
+ * guion de laboratorio se niega a arrancar con la casa real (`lab-home.js`). La coordinación dice si hay una designación
+ * sin confirmar, y las guías dicen la regla.
+ *
+ * Nada toca la casa real: cada caso arma con `mkdtemp` su casa y también la «casa de la cuenta», que una precarga
+ * simula reemplazando `os.userInfo` en toda la cadena de procesos (va en `NODE_OPTIONS`). La red de las pruebas
+ * (`lib/real-home-guard.js`) frena lo que se escape.
+ * Correr: node --test scripts/tests/test-run-isolation.test.js
+ */
+const GUARD = require('./lib/real-home-guard.js');   // primera línea que hace algo: frena y anota
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync, execFileSync } = require('child_process');
+
+const RAIZ = path.join(__dirname, '..', '..');
+const SK = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts');
+const SMOKE = path.join(SK, 'smoke-run.sh');
+const ISO = path.join(SK, 'lib', 'isolated-run.js');
+const LAB = path.join(RAIZ, 'scripts', 'lib', 'lab-home.js');
+const POSIX = process.platform !== 'win32';
+
+// la casa de la cuenta, simulada en cada proceso de la cadena: smoke-run.sh, isolated-run.js y el comando
+const PRECARGA = "const os = require('os'); const h = process.env.TEST_ACCOUNT_HOME; if (h) os.userInfo = () => ({ homedir: h, username: 'prueba', uid: 1, gid: 1, shell: null });\n";
+
+function carpeta(t, prefijo = 'aislada-') {
+  const b = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefijo)));
+  t.after(() => { try { fs.chmodSync(b, 0o700); } catch (_) { /* ya no está */ } fs.rmSync(b, { recursive: true, force: true }); });
+  return b;
+}
+/** Una «casa de la cuenta» de juguete, con su estado, y la precarga que la hace pasar por la real. */
+function cuenta(t) {
+  const b = carpeta(t);
+  const casa = path.join(b, 'cuenta');
+  fs.mkdirSync(path.join(casa, '.tycon', 'state'), { recursive: true });
+  const pre = path.join(b, 'precarga.js');
+  fs.writeFileSync(pre, PRECARGA);
+  return { b, casa, pre, userInfo: () => ({ homedir: casa }) };
+}
+function ambiente(c, extra = {}) {
+  const e = { ...process.env };
+  delete e.NODE_TEST_CONTEXT;
+  delete e.CLAUDE_CODE_SESSION_ID;
+  delete e.TYCON_TEST_RUN;
+  const previas = String(e.NODE_OPTIONS || '').trim();
+  return { ...e, HOME: c.casa, USERPROFILE: c.casa, TYCON_HOME: '', TEST_ACCOUNT_HOME: c.casa, CLAUDE_CODE_SESSION_ID: 'ses-8314',
+    NODE_OPTIONS: `${previas ? `${previas} ` : ''}--require "${c.pre}"`, ...extra };
+}
+// fecha fija y sin mantenimiento automático: el repo de juguete da siempre el mismo commit
+const FECHA = '2026-11-19T00:00:00Z';
+const git = (dir, ...a) => execFileSync('git', ['-C', dir, '-c', 'user.name=prueba', '-c', 'user.email=prueba@acme.test', '-c', 'commit.gpgsign=false',
+  '-c', 'core.hooksPath=/dev/null', '-c', 'maintenance.auto=false', ...a], { stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA } });
+/** Un repo de juguete con sus archivos, commiteado. */
+function repo(dir, archivos) {
+  for (const [rel, texto] of Object.entries(archivos)) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), texto);
+  }
+  git(dir, 'init', '-q');
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-q', '--no-verify', '-m', 'inicio');
+  return dir;
+}
+const humo = (smoke, ev, id, args, { cwd, env }) => spawnSync('bash', [smoke, ev, id, ...args], { cwd, env, encoding: 'utf8' });
+const salida = (r) => `${r.stdout || ''}${r.stderr || ''}`;
+
+// imprime lo que ve del ambiente y escribe en su HOME
+const GUION_AMBIENTE = [
+  "const fs = require('fs'); const path = require('path');",
+  "const o = {}; for (const k of ['HOME', 'USERPROFILE', 'TMPDIR', 'TMP', 'TEMP', 'TYCON_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'TYCON_TEST_RUN']) o[k] = process.env[k] === undefined ? null : process.env[k];",
+  "console.log('AMBIENTE ' + JSON.stringify(o));",
+  "try { fs.writeFileSync(path.join(process.env.HOME, 'escrito.txt'), 'x'); } catch (e) { console.log('no escribí: ' + e.code); }",
+  'process.exitCode = Number(process.env.TEST_EXIT || 0);',
+  '',
+].join('\n');
+function ambienteDe(texto) {
+  const l = String(texto).split('\n').find((x) => x.startsWith('AMBIENTE '));
+  return l ? JSON.parse(l.slice('AMBIENTE '.length)) : null;
+}
+const renglones = (f) => { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
+const espejo = (c) => renglones(path.join(c.casa, '.claude', '.tycon-pipeline', 'gates.log')).filter((g) => g.type === 'smoke-run');
+const iso = () => require(ISO);
+
+// ── La pasada de un humo comparado ────────────────────────────────────────────────────────────────────────────────
+
+test('T1 Compare_PrimeraPasada_CorreConCasaAparte @story-8.314 @ac-1', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), { 'tool.js': GUION_AMBIENTE });
+  const env = ambiente(c, { TYCON_HOME: path.join(c.b, 'otra-casa'), CLAUDE_CONFIG_DIR: path.join(c.b, 'cfg'), CODEX_HOME: path.join(c.b, 'codex') });
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.1', ['--compare', '--', process.execPath, '{raiz}/tool.js'], { cwd: r, env });
+  const a = ambienteDe(salida(s));
+  assert.ok(a, salida(s));
+  assert.notStrictEqual(a.HOME, c.casa);
+  assert.ok(!a.HOME.startsWith(c.casa + path.sep), `la casa aparte queda fuera de la de la cuenta: ${a.HOME}`);
+  assert.strictEqual(a.USERPROFILE, a.HOME);
+  for (const k of ['TMPDIR', 'TMP', 'TEMP']) assert.ok(a[k] && a[k].startsWith(path.dirname(a.HOME) + path.sep), `${k}=${a[k]}`);
+  for (const k of ['TYCON_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME']) assert.strictEqual(a[k], null, k);
+  assert.strictEqual(a.TYCON_TEST_RUN, '1');
+  assert.ok(!fs.existsSync(path.join(c.casa, 'escrito.txt')), 'nada escrito en la casa de la cuenta');
+  assert.ok(!fs.existsSync(path.dirname(a.HOME)), 'la carpeta aparte se borró al terminar');
+});
+
+test('T2 Compare_LaEvidenciaSigueContando @story-8.314 @ac-1 @ac-18', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), { 'tool.js': GUION_AMBIENTE });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  const s = humo(SMOKE, ev, '9.2', ['--acs', '1', '--pass-if', 'imprime su ambiente', '--compare', '--', process.execPath, '{raiz}/tool.js'], { cwd: r, env: ambiente(c) });
+  assert.strictEqual(s.status, 0, salida(s));
+  const [renglon] = renglones(path.join(ev, '9.2-smoke-ledger.jsonl'));
+  assert.ok(renglon, 'el renglón del registro');
+  assert.strictEqual(renglon.exit, 0);
+  assert.strictEqual(renglon.v, 2);
+  assert.match(renglon.cmd, /\{raiz\}\/tool\.js/);
+  const e = espejo(c).find((g) => g.ts === renglon.ts && g.story === '9.2');
+  assert.ok(e, 'el espejo en el gates.log de la casa de la cuenta');
+  assert.strictEqual(e.exit, 0);
+  assert.deepStrictEqual(e.acs, [1]);
+});
+
+test('T3 Aislada_EscribirEnLaCasaReal_NoPasa @story-8.314 @ac-2', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const destino = path.join(c.casa, '.tycon', 'state', 'gates.log');
+  fs.writeFileSync(destino, 'antes\n');
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const fs = require('fs'); const path = require('path'); const { spawnSync } = require('child_process');",
+      `const d = ${JSON.stringify(destino)};`,
+      "try { fs.appendFileSync(d, 'directo\\n'); } catch (_) { /* se traga el error */ }",
+      "spawnSync(process.execPath, [path.join(__dirname, 'hijo.js'), d], { stdio: 'inherit' });",
+      "console.log('terminé');",
+    ].join('\n'),
+    '.advisors/dod-runtime/hijo.js': "try { require('fs').appendFileSync(process.argv[2], 'hijo\\n'); } catch (_) { /* también */ }\n",
+  });
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.3', ['--', process.execPath, '.advisors/dod-runtime/g.js'], { cwd: r, env: ambiente(c) });
+  assert.notStrictEqual(s.status, 0, salida(s));
+  assert.ok(salida(s).includes(destino), `la salida nombra la ruta: ${salida(s)}`);
+  assert.strictEqual(fs.readFileSync(destino, 'utf8'), 'antes\n', 'el archivo no cambió');
+});
+
+test('T4 Aislada_RepoDentroDeLoVigilado_SeEscribe @story-8.314 @ac-2', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const r = repo(path.join(c.casa, '.claude', 'worktrees', 'r'), {
+    '.advisors/dod-runtime/g.js': "require('fs').writeFileSync(require('path').join(__dirname, '..', '..', 'escrito.txt'), 'x'); console.log('escribí');\n",
+  });
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.4', ['--', process.execPath, '.advisors/dod-runtime/g.js'], { cwd: r, env: ambiente(c) });
+  assert.strictEqual(s.status, 0, salida(s));
+  assert.ok(fs.existsSync(path.join(r, 'escrito.txt')), 'escribió en la raíz de su repo');
+});
+
+test('T5 Compare_NombraLaCasaReal_NoCorre @story-8.314 @ac-3', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), { 'tool.js': GUION_AMBIENTE });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  const registro = path.join(ev, '9.5-smoke-ledger.jsonl');
+  const testigo = path.join(c.b, 'testigo5');
+  const tocar = `require('fs').writeFileSync(${JSON.stringify(testigo)}, 'x')`;
+  for (const cmd of [[process.execPath, '-e', tocar, path.join(c.casa, 'algo.txt')], ['sudo', 'touch', testigo]]) {
+    const s = humo(SMOKE, ev, '9.5', ['--compare', '--', ...cmd], { cwd: r, env: ambiente(c) });
+    assert.strictEqual(s.status, 2, `${cmd.join(' ')}: ${salida(s)}`);
+    assert.ok(!fs.existsSync(testigo), `${cmd[0]}: no corrió`);
+    assert.ok(!fs.existsSync(registro), `${cmd[0]}: no dejó renglón`);
+    assert.match(s.stderr, /\{raiz\}/, 'dice cómo escribirlo');
+  }
+  // la raíz real cae bajo la casa, pero el comando la nombra con {raiz}: corre
+  const bajo = repo(path.join(c.casa, 'proyecto'), { 'tool.js': GUION_AMBIENTE });
+  const enCasa = humo(SMOKE, path.join(bajo, '.advisors', 'dod-runtime'), '9.5', ['--compare', '--', process.execPath, '{raiz}/tool.js'], { cwd: bajo, env: ambiente(c) });
+  assert.strictEqual(enCasa.status, 0, salida(enCasa));
+  assert.ok(ambienteDe(salida(enCasa)), salida(enCasa));
+  // el intérprete vive bajo la casa: su ruta no cuenta
+  fs.mkdirSync(path.join(c.casa, 'bin'), { recursive: true });
+  fs.symlinkSync(process.execPath, path.join(c.casa, 'bin', 'node'));
+  const interprete = humo(SMOKE, ev, '9.5', ['--compare', '--', path.join(c.casa, 'bin', 'node'), 'tool.js'], { cwd: r, env: ambiente(c) });
+  assert.strictEqual(interprete.status, 0, salida(interprete));
+  assert.ok(fs.existsSync(registro), 'éste sí deja su renglón');
+});
+
+test('T6 Aislada_SinCasaOSinRed_NoCorre @story-8.314 @ac-4', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const testigo = path.join(c.b, 'testigo6');
+  const tocar = `require('fs').writeFileSync(${JSON.stringify(testigo)}, 'x');\n`;
+  const r = repo(path.join(c.b, 'repo'), { '.advisors/dod-runtime/g.js': tocar });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  const lab = [process.execPath, '.advisors/dod-runtime/g.js'];
+  // una carpeta temporal que no se puede escribir: no hay dónde crear la casa
+  const cerrada = path.join(c.b, 'cerrada');
+  fs.mkdirSync(cerrada);
+  fs.chmodSync(cerrada, 0o500);
+  const sinCasa = humo(SMOKE, ev, '9.6', ['--', ...lab], { cwd: r, env: ambiente(c, { TMPDIR: cerrada }) });
+  fs.chmodSync(cerrada, 0o700);
+  assert.strictEqual(sinCasa.status, 2, salida(sinCasa));
+  assert.ok(!fs.existsSync(testigo), 'sin casa no corrió');
+  // un arnés sin la red de escritura
+  const copia = require('./lib/harness-copy.js').harnessCopy();
+  fs.rmSync(path.join(copia, 'scripts', 'tests', 'lib', 'real-home-guard.js'));
+  const smokeCopia = path.join(copia, 'skills', 'tycon-pipeline', 'scripts', 'smoke-run.sh');
+  for (const args of [['--', ...lab], ['--compare', '--', ...lab]]) {
+    const s = humo(smokeCopia, ev, '9.6', args, { cwd: r, env: ambiente(c) });
+    assert.strictEqual(s.status, 2, `sin la red (${args[0]}): ${salida(s)}`);
+    assert.ok(!fs.existsSync(testigo), 'sin la red no corrió');
+  }
+  // smoke-run.sh copiado sin isolated-run.js: no sabe aislar
+  const sin = path.join(c.b, 'sin-aislar');
+  fs.mkdirSync(path.join(sin, 'lib'), { recursive: true });
+  fs.copyFileSync(SMOKE, path.join(sin, 'smoke-run.sh'));
+  fs.copyFileSync(path.join(SK, 'lib', 'evidence-key.js'), path.join(sin, 'lib', 'evidence-key.js'));
+  for (const args of [['--compare', '--', process.execPath, '-e', tocar], ['--', process.execPath, path.join(ev, 'g.js')]]) {
+    const s = humo(path.join(sin, 'smoke-run.sh'), ev, '9.6', args, { cwd: r, env: ambiente(c) });
+    assert.strictEqual(s.status, 2, `sin isolated-run.js (${args[0]}): ${salida(s)}`);
+    assert.ok(!fs.existsSync(testigo), 'sin isolated-run.js no corrió');
+  }
+});
+
+// ── Los guiones de laboratorio ────────────────────────────────────────────────────────────────────────────────────
+
+test('T7 Laboratorio_CorreAislado @story-8.314 @ac-5', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), { '.advisors/dod-runtime/g.js': GUION_AMBIENTE, 'scripts/p.js': GUION_AMBIENTE });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  const conCasaAparte = (s) => { const a = ambienteDe(salida(s)); assert.ok(a, salida(s)); return a.HOME !== c.casa; };
+  assert.ok(conCasaAparte(humo(SMOKE, ev, '9.7', ['--', process.execPath, '.advisors/dod-runtime/g.js'], { cwd: r, env: ambiente(c) })), 'el de .advisors/dod-runtime');
+  // un guion suelto en la carpeta temporal: aislado, y escribe en su carpeta
+  const suelto = carpeta(t, 'lab-suelto-');
+  fs.writeFileSync(path.join(suelto, 'g.js'), `${GUION_AMBIENTE}require('fs').writeFileSync(require('path').join(__dirname, 'junto.txt'), 'x');\n`);
+  const directo = humo(SMOKE, ev, '9.7', ['--', process.execPath, path.join(suelto, 'g.js')], { cwd: r, env: ambiente(c) });
+  assert.ok(conCasaAparte(directo), 'el suelto, directo');
+  assert.ok(fs.existsSync(path.join(suelto, 'junto.txt')), 'el suelto escribe en su carpeta');
+  const conCd = humo(SMOKE, ev, '9.7', ['--', 'bash', '-c', `cd '${suelto}' && '${process.execPath}' g.js`], { cwd: r, env: ambiente(c) });
+  assert.ok(conCasaAparte(conCd), 'adentro de bash -c, después de un cd');
+  const decidir = (argv, cwd = r) => iso().decide({ argv, cwd, env: ambiente(c), userInfo: c.userInfo }).modo;
+  assert.strictEqual(decidir(['env', 'FOO=1', process.execPath, path.join(suelto, 'g.js')]), 'aislada', 'detrás de env');
+  assert.strictEqual(decidir(['timeout', '60', process.execPath, path.join(suelto, 'g.js')]), 'aislada', 'detrás de timeout');
+  assert.strictEqual(decidir(['sh', '-c', `cd '${suelto}' && node g.js`]), 'aislada', 'adentro de sh -c');
+  // un programa de un repo que está en la carpeta temporal, y un sh -c que sólo escribe en un temporal: comunes
+  assert.strictEqual(decidir([process.execPath, 'scripts/p.js']), 'comun');
+  assert.strictEqual(decidir(['sh', '-c', `echo x > '${path.join(suelto, 'f.txt')}'`]), 'comun');
+  assert.ok(!conCasaAparte(humo(SMOKE, ev, '9.7', ['--', process.execPath, 'scripts/p.js'], { cwd: r, env: ambiente(c) })), 'el de scripts/, con la casa de siempre');
+});
+
+test('T8 LabHome_ConLaCasaReal_SeNiega @story-8.314 @ac-6', (t) => {
+  const c = cuenta(t);
+  const lh = require(LAB);
+  const salio = (env) => {
+    try { lh.refuseRealHome('prueba', { env, userInfo: c.userInfo, exit: (n) => { throw Object.assign(new Error('salió'), { salida: n }); }, err: () => {} }); return null; } catch (e) { if (e.salida === undefined) throw e; return e.salida; }
+  };
+  assert.strictEqual(salio({ HOME: c.casa }), 3, 'con la casa de la cuenta');
+  assert.strictEqual(salio({ HOME: path.join(c.casa, 'sub') }), 3, 'adentro de ella');
+  assert.strictEqual(salio({ HOME: path.join(c.b, 'afuera') }), null, 'afuera sigue');
+  // el guion de verdad: sale 3 antes de escribir nada
+  const testigo = path.join(c.b, 'testigo8');
+  const guion = path.join(c.b, 'guion8.js');
+  fs.writeFileSync(guion, `require(${JSON.stringify(LAB)}).refuseRealHome('guion8');\nrequire('fs').writeFileSync(${JSON.stringify(testigo)}, 'x');\n`);
+  const conCasa = spawnSync(process.execPath, [guion], { env: ambiente(c), encoding: 'utf8' });
+  assert.strictEqual(conCasa.status, 3, salida(conCasa));
+  assert.match(conCasa.stderr, /mktemp/, 'dice cómo correrlo');
+  assert.ok(!fs.existsSync(testigo));
+  const afuera = spawnSync(process.execPath, [guion], { env: ambiente(c, { HOME: path.join(c.b, 'afuera') }), encoding: 'utf8' });
+  assert.strictEqual(afuera.status, 0, salida(afuera));
+  assert.ok(fs.existsSync(testigo));
+  const check = spawnSync(process.execPath, [LAB, 'check', 'guion-sh'], { env: ambiente(c), encoding: 'utf8' });
+  assert.strictEqual(check.status, 3, salida(check));
+});
+
+test('T9 LabHome_CreaLaCasaAfuera @story-8.314 @ac-6', (t) => {
+  const c = cuenta(t);
+  const lh = require(LAB);
+  const afuera = path.join(c.b, 'tmp-afuera');
+  fs.mkdirSync(afuera);
+  const casa = lh.labHouse('prueba', { env: { TMPDIR: afuera }, userInfo: c.userInfo });
+  assert.ok(fs.statSync(casa).isDirectory());
+  assert.ok(casa.startsWith(fs.realpathSync(afuera) + path.sep), casa);
+  assert.notStrictEqual(lh.labHouse('prueba', { env: { TMPDIR: afuera }, userInfo: c.userInfo }), casa, 'una nueva cada vez');
+  const adentro = path.join(c.casa, 'tmp');
+  fs.mkdirSync(adentro);
+  assert.throws(() => lh.labHouse('prueba', { env: { TMPDIR: adentro }, userInfo: c.userInfo }), /adentro de la casa de la cuenta/);
+});
+
+// ── No-regresión ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+test('T20 HumoComun_SigueIgual @story-8.314 @ac-14 @ac-18', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const testigo = path.join(c.b, 'testigo20');
+  const r = repo(path.join(c.b, 'repo'), { 'scripts/p.js': `${GUION_AMBIENTE}require('fs').writeFileSync(${JSON.stringify(testigo)}, 'x');\n` });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  const env = ambiente(c, { TEST_EXIT: '4' });
+  const s = humo(SMOKE, ev, '9.20', ['--', process.execPath, 'scripts/p.js'], { cwd: r, env });
+  assert.strictEqual(s.status, 4, salida(s));
+  const a = ambienteDe(salida(s));
+  assert.strictEqual(a.HOME, c.casa, 'la misma casa');
+  assert.strictEqual(a.TMPDIR, env.TMPDIR === undefined ? null : env.TMPDIR, 'el mismo TMPDIR');
+  assert.strictEqual(a.TYCON_TEST_RUN, '1', 'sólo suma la variable');
+  assert.ok(fs.existsSync(path.join(c.casa, 'escrito.txt')), 'escribe en su casa, como siempre');
+  // sin carpeta temporal, y con smoke-run.sh copiado sin isolated-run.js: el comando corre igual
+  fs.rmSync(testigo);
+  const sinTmp = humo(SMOKE, ev, '9.20', ['--', process.execPath, 'scripts/p.js'], { cwd: r, env: ambiente(c, { TEST_EXIT: '4', TMPDIR: path.join(c.b, 'no-existe') }) });
+  assert.strictEqual(sinTmp.status, 4, salida(sinTmp));
+  assert.ok(fs.existsSync(testigo), 'sin temporal corrió');
+  fs.rmSync(testigo);
+  const sin = path.join(c.b, 'sin-aislar');
+  fs.mkdirSync(path.join(sin, 'lib'), { recursive: true });
+  fs.copyFileSync(SMOKE, path.join(sin, 'smoke-run.sh'));
+  fs.copyFileSync(path.join(SK, 'lib', 'evidence-key.js'), path.join(sin, 'lib', 'evidence-key.js'));
+  const copia = humo(path.join(sin, 'smoke-run.sh'), ev, '9.20', ['--', process.execPath, 'scripts/p.js'], { cwd: r, env });
+  assert.strictEqual(copia.status, 4, salida(copia));
+  assert.ok(fs.existsSync(testigo), 'sin isolated-run.js corrió');
+});
+
+// ── Quién es la coordinadora, desde la coordinación ───────────────────────────────────────────────────────────────
+
+test('T22 Status_DiceLaPendiente @story-8.314 @ac-12', (t) => {
+  const c = cuenta(t);
+  const ds = require(path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js'));
+  const coordination = require(path.join(RAIZ, 'scripts', 'tools', 'coordination.js'));
+  const gates = path.join(c.casa, '.tycon', 'state', 'gates.log');
+  const real = { name: 'relay-designation', status: 'ok', ts: '2026-11-18T22:00:00.000Z', sesion: 'ses-real', rol: 'coordinadora', quien: 'la persona', via: 'click' };
+  fs.writeFileSync(gates, `${JSON.stringify(real)}\n${JSON.stringify(ds.confirmationRecord(real, '2026-11-18T22:00:01.000Z', { via: 'click' }))}\n`);
+  const texto = () => coordination.statusText(coordination.status({ home: c.casa, env: {}, noTranscripts: true }));
+  assert.doesNotMatch(texto(), /sin confirmar/);
+  const suelta = { name: 'relay-designation', status: 'ok', ts: '2026-11-18T22:25:00.000Z', sesion: 'ses-otra', rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' };
+  fs.appendFileSync(gates, `${JSON.stringify(suelta)}\n`);
+  const d = new Date(suelta.ts);
+  const hora = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const linea = texto().split('\n').find((l) => /sin confirmar/.test(l));
+  assert.ok(linea, texto());
+  assert.ok(linea.includes('ses-otra') && linea.includes(hora), linea);
+  assert.match(linea, /no cuenta hasta que el dueño la confirme/);
+});
+
+// ── Las guías ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+test('T23 Guias_DicenLaRegla @story-8.314 @ac-20', () => {
+  const leer = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+  const paso = leer('skills/tycon-pipeline/steps/step-10-live-check.md');
+  assert.match(paso, /casa aparte/);
+  assert.match(paso, /lab-home\.js/);
+  assert.match(paso, /refuseRealHome/);
+  for (const rel of ['guides/coordination.md', 'guides/coordination.en.md']) {
+    const g = leer(rel);
+    for (const palabra of ['board.js backups', 'board.js restore', '--allow-shrink']) assert.ok(g.includes(palabra), `${rel}: ${palabra}`);
+  }
+  assert.match(leer('guides/coordination.md'), /sin confirmar/);
+  assert.match(leer('guides/coordination.en.md'), /unconfirmed/);
+  assert.match(leer('guides/firmas-del-arnes.md'), /sin confirmar no desplaza/);
+});
+
+// ── Los hallazgos del pase adversarial (vuelta 1) ─────────────────────────────────────────────────────────────────
+
+test('Pase_LaboratorioEscondidoEnElComando_SeAisla @story-8.314 @ac-5', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const lab = carpeta(t, 'lab-pase-');
+  for (const f of ['g.js', 'pre.js', 'x.ts']) fs.writeFileSync(path.join(lab, f), "console.log('lab');\n");
+  fs.writeFileSync(path.join(lab, 'run.sh'), 'node g.js\n');
+  const otro = carpeta(t, 'no-lab-');
+  const decidir = (argv) => iso().decide({ argv, cwd: otro, env: ambiente(c), userInfo: c.userInfo }).modo;
+  const g = path.join(lab, 'g.js');
+  const casos = [
+    ['letras juntas con -o', ['bash', '-euo', 'pipefail', '-c', `node '${g}'`]],
+    ['guion de shell con -euo', ['bash', '-euo', 'pipefail', path.join(lab, 'run.sh')]],
+    ['adentro de un for', ['bash', '-c', `for i in 1; do node '${g}'; done`]],
+    ['adentro de un if', ['bash', '-c', `if true; then node '${g}'; fi`]],
+    ['detrás de !', ['bash', '-c', `! node '${g}'`]],
+    ['con la variable de la carpeta temporal', ['bash', '-c', 'node "$TMPDIR/g.js"']],
+    ['detrás de dos intérpretes', ['npx', 'tsx', path.join(lab, 'x.ts')]],
+    ['detrás de una opción con valor', [process.execPath, '-r', path.join(lab, 'pre.js'), g]],
+    ['con env -C', ['env', '-C', lab, process.execPath, 'g.js']],
+  ];
+  for (const [caso, argv] of casos) assert.strictEqual(decidir(argv), 'aislada', caso);
+  // lo que sólo escribe en un temporal sigue siendo común
+  assert.strictEqual(decidir(['sh', '-c', `echo x > '${path.join(lab, 'nuevo.txt')}'`]), 'comun');
+});
+
+test('Pase_InterpreteDetrasDeUnPrefijo_NoNombraLaCasa @story-8.314 @ac-3', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), { 'tool.js': GUION_AMBIENTE });
+  const node = path.join(c.casa, 'bin', 'node');
+  const d = iso().decide({ argv: ['env', 'FOO=1', node, 'tool.js'], compare: true, cwd: r, env: ambiente(c), userInfo: c.userInfo });
+  assert.strictEqual(d.codigo, undefined, d.motivo);
+  assert.strictEqual(d.modo, 'aislada');
+  // un prefijo que sí nombra la casa sigue frenando
+  const conCasa = iso().decide({ argv: ['env', `FOO=${path.join(c.casa, 'x')}`, node, 'tool.js'], compare: true, cwd: r, env: ambiente(c), userInfo: c.userInfo });
+  assert.strictEqual(conCasa.codigo, 2);
+});
+
+test('Pase_CasaDeLaboratorioEnWindows_NoSeNiega @story-8.314 @ac-6', (t) => {
+  const c = cuenta(t);
+  const lh = require(LAB);
+  const salio = (env) => {
+    try { lh.refuseRealHome('prueba', { env, userInfo: c.userInfo, platform: 'win32', exit: (n) => { throw Object.assign(new Error('salió'), { salida: n }); }, err: () => {} }); return null; } catch (e) { if (e.salida === undefined) throw e; return e.salida; }
+  };
+  assert.strictEqual(salio({ USERPROFILE: path.join(c.casa, 'AppData', 'Local', 'Temp', 'tycon-lab-prueba-x') }), null, 'la que da labHouse');
+  assert.strictEqual(salio({ USERPROFILE: c.casa }), 3, 'la casa de la cuenta');
+  assert.strictEqual(salio({ USERPROFILE: path.join(c.casa, 'Documents') }), 3, 'adentro, fuera del temporal');
+});
+
+test('T99 RedDeLasPruebas_NadaTocoLaCasaReal @story-8.314', () => {
+  assert.deepStrictEqual(GUARD.attempts(), [], GUARD.describe());
+});

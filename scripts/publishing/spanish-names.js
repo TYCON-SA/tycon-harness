@@ -4,11 +4,13 @@
 //
 // POR QUÉ EXISTE: el núcleo público mezcla inglés y castellano en lo que alguien de afuera tiene que ESCRIBIR para usarlo
 // —archivos, opciones, subcomandos, variables, claves de configuración—. Los renombres a inglés se hacen por tandas; sin este
-// freno, lo que una tanda renombra lo vuelve a ensuciar el commit siguiente. La prosa, los mensajes, las guías, los
-// comentarios y los ids de los casos siguen en castellano: la convención está en guides/maintaining/nombres-en-ingles.md.
+// freno, lo que una tanda renombra lo vuelve a ensuciar el commit siguiente. La prosa, los mensajes, el contenido de las
+// guías, los comentarios y los ids de los casos siguen en castellano: la convención está en
+// guides/maintaining/nombres-en-ingles.md.
 //
 // QUÉ MIRA: lo que sale en alguna copia pública (la clasificación del exportador, reusada de new-names.js) y, de eso, sólo
-// ejecutables, configuración y pruebas —nunca `.md` ni los casos del banco—. Frena un nombre en castellano que NO EXISTE en
+// ejecutables, configuración, pruebas y el nombre de archivo de las guías de `guides/` (sin el sufijo de idioma; de un `.md`
+// nunca el contenido, ni las guías de los paquetes, ni los casos del banco). El termómetro no cuenta las guías. Frena un nombre en castellano que NO EXISTE en
 // ninguna parte de lo que sale ANTES del cambio (los dos repos; en un merge, en ningún padre): una ruta, una opción `--x`,
 // un subcomando, un valor que declara el mapa de renombres, una variable de entorno leída o una clave de un archivo de
 // `schemaFiles`. Usar un nombre castellano que ya existe pasa: todavía no tiene reemplazo. Qué es castellano lo decide
@@ -213,14 +215,19 @@ function propose(name, det, words) {
 const CASES = /^scripts\/controls-bench\/cases\//;
 const TEST = /(^|\/)(tests?|__tests__|fixtures?)\//;
 const EXEC_EXT = /\.(js|mjs|cjs|sh|bash|ps1|psm1|py|command)$/;
+// las guías del arnés: de un `.md` sólo se mira su nombre de archivo, nunca su contenido (es prosa). Las de los paquetes
+// (`packs/*/guides/`) viajan en la capa del equipo, que tiene otro dueño y otro calendario: no se miran.
+const GUIDE = /^guides\/(?:[^/]+\/)*[^/]+\.md$/i;
+const isMd = (rel) => /\.md$/i.test(rel);
 function kindOf(rel, text) {
-  if (/\.md$/i.test(rel) || CASES.test(rel)) return null;
+  if (CASES.test(rel) || (isMd(rel) && !GUIDE.test(rel))) return null;
   // un reemplazo generado es un nombre VIEJO que sigue andando hasta el retiro, nunca uno nuevo: no depende de qué mapa
   // haya a mano (sin su entrada, un mapa de laboratorio lo haría ver nuevo). Sólo el idéntico a lo que escribe
   // --write-shims: la marca sola se escribe a mano. Con una biblioteca anterior a `isGeneratedShim` (una copia
   // de trabajo a medio actualizar) no hay cómo saberlo: el archivo se mira como cualquier otro, que es el lado que frena.
   const isGenerated = text && require('../lib/legacy-names.js').isGeneratedShim;
   if (typeof isGenerated === 'function' && isGenerated(rel, text)) return null;
+  if (isMd(rel)) return 'guide';
   const exec = EXEC_EXT.test(rel) || /(^|\/)\.githooks\//.test(rel) || /^#!/.test(text || '');
   const cfg = /\.json$/.test(rel);
   if (!exec && !cfg) return null;
@@ -230,10 +237,14 @@ function kindOf(rel, text) {
 const isExecutable = (rel, text) => EXEC_EXT.test(rel) || /(^|\/)\.githooks\//.test(rel) || /^#!/.test(text || '');
 const isShell = (rel, text) => /\.(sh|bash|command)$/.test(rel) || /(^|\/)\.githooks\//.test(rel) || /^#!.*\b(ba|z)?sh\b/.test((text || '').split('\n', 1)[0]);
 
-/** Los segmentos de una ruta que son nombres: las carpetas y el archivo sin su extensión (ni `.test`/`.spec`). */
+/**
+ * Los segmentos de una ruta que son nombres: las carpetas y el archivo sin su extensión (ni `.test`/`.spec`). En un `.md`,
+ * tampoco el sufijo de idioma (`organization-site.en.md`): dice en qué idioma está, no es parte del nombre.
+ */
 function pathNames(rel) {
   const segs = rel.split('/');
-  const base = segs.pop().replace(/(\.(test|spec))?\.[A-Za-z0-9]+$/, '');
+  let base = segs.pop().replace(/(\.(test|spec))?\.[A-Za-z0-9]+$/, '');
+  if (isMd(rel)) base = base.replace(/\.(es|en)$/i, '');
   return [...segs, base].filter(Boolean);
 }
 
@@ -295,22 +306,101 @@ function switchCases(code, open) {
   }
   return found;
 }
+// Una opción que va en el arreglo de argumentos de uno de estos programas es de ese programa, no del arnés: no es un
+// nombre. Un intérprete (`node`, `bash`, `python3`) no está: corre guiones que pueden ser del arnés.
+const FOREIGN_PROGRAMS = ['git', 'npm', 'gh', 'az', 'docker'];
+const FOREIGN_LITERAL = `(['"\`])(?:${FOREIGN_PROGRAMS.join('|')})\\1`;
+const FOREIGN_CALL = new RegExp(`\\b(?:spawn|spawnSync|execFile|execFileSync)\\s*\\(\\s*${FOREIGN_LITERAL}\\s*,\\s*\\[`, 'g');
+const FOREIGN_ARRAY = new RegExp(`\\[\\s*${FOREIGN_LITERAL}\\s*,`, 'g');
+
+/**
+ * El índice del `]` que cierra el `[` de `open`, o -1 si el arreglo no se lee entero. Se lee sólo un arreglo de argumentos
+ * simple: textos entre comillas (sin salto de línea; uno con `${` no), nombres, puntos, comas, `+`, llamadas y arreglos
+ * de adentro. Cualquier otra cosa (una expresión regular, una llave, un texto que no cierra, el final del archivo) da -1:
+ * sin un cierre seguro, el tramo no se esconde.
+ */
+function closingBracket(code, open) {
+  let depth = 0;
+  let parens = 0;
+  for (let i = open; i < code.length; i++) {
+    const c = code[i];
+    if (c === '"' || c === "'" || c === '`') {
+      let j = i + 1;
+      while (j < code.length && code[j] !== c) {
+        if (code[j] === '\\') j++;
+        else if (code[j] === '\n' && c !== '`') return -1;
+        else if (c === '`' && code[j] === '$' && code[j + 1] === '{') return -1;
+        j++;
+      }
+      if (j >= code.length) return -1;
+      i = j;
+      continue;
+    }
+    if (c === '[') depth++;
+    else if (c === ']') { depth--; if (depth === 0) return parens === 0 ? i : -1; }
+    else if (c === '(') parens++;
+    else if (c === ')') { parens--; if (parens < 0) return -1; }
+    else if (!/[\w$.,+\s-]/.test(c)) return -1;
+  }
+  return -1;
+}
+
+/**
+ * Las posiciones del código que están dentro de un texto entre comillas: un `['git', …` escrito dentro de un texto no es
+ * un arreglo de argumentos. Las comillas simples y dobles cierran en el salto de línea, como en `blankComments`.
+ */
+function quotedMask(code) {
+  const inside = new Uint8Array(code.length);
+  let quote = null;
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    if (quote) {
+      inside[i] = 1;
+      if (c === '\\') { inside[i + 1] = 1; i++; continue; }
+      if (c === quote || (c === '\n' && quote !== '`')) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+  }
+  return inside;
+}
+
+/**
+ * Los tramos `[desde, hasta]` de los arreglos de argumentos de un programa ajeno con nombre literal: el arreglo que sigue
+ * a `spawn('git', [`, `spawnSync`, `execFile` o `execFileSync`, y el arreglo cuyo primer elemento es el programa
+ * (`['git', …]`). Con el programa en una variable no hay tramo: no se sabe qué programa es. Tampoco lo hay si el arreglo
+ * empieza dentro de un texto o no se lee entero: ahí las opciones se miden como siempre.
+ */
+function foreignArgRanges(code) {
+  const ranges = [];
+  const inside = quotedMask(code);
+  const add = (start, open) => {
+    if (inside[start]) return;
+    const close = closingBracket(code, open);
+    if (close >= 0) ranges.push([open, close]);
+  };
+  for (const m of code.matchAll(FOREIGN_CALL)) add(m.index, m.index + m[0].length - 1);
+  for (const m of code.matchAll(FOREIGN_ARRAY)) add(m.index, m.index);
+  return ranges;
+}
 const BASH_CASE = /case\s+"?\$\{?(?:1|cmd|CMD|sub|SUB|accion|ACCION|modo|MODO|comando|COMANDO|command|COMMAND|action|ACTION)(?::-[^}"]*)?\}?"?\s+in\b/g;
 
 /** Los nombres de un archivo, por categoría: `[{ category, name, line }]`. */
 function extract(rel, text, { schemaFiles = [], renames = null } = {}) {
   const kind = kindOf(rel, text);
-  if (!kind || text === null || text === undefined) return [];
+  if (!kind || kind === 'guide' || text === null || text === undefined) return [];
   const out = [];
   const add = (category, name, index) => out.push({ category, name, line: lineAt(text, index) });
   if (isExecutable(rel, text)) {
     const shell = isShell(rel, text);
     const code = blankComments(text, /\.(js|mjs|cjs)$/.test(rel) || /^#!.*\bnode\b/.test(text.split('\n', 1)[0]) ? 'js' : 'hash');
+    const foreign = shell ? [] : foreignArgRanges(code);
     for (const m of code.matchAll(/(?:^|[\s'"`(\[|,])--([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?=[\s'"`=)\]|,;:]|$)/gm)) {
       const at = m.index + m[0].indexOf('--');
       const next = code[at + 2 + m[1].length] || '';
       // `--x;` o `((--x))` es un pre-decremento, no una opción
       if (next === ';' || (code[at - 1] === '(' && next === ')')) continue;
+      if (foreign.some(([from, to]) => at > from && at < to)) continue;
       add('option', m[1], at);
     }
     for (const re of [/process\.env(?:\?\.|\.|\[\s*['"`])([A-Za-z_][A-Za-z0-9_]*)/g, /['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s+in\s+process\.env\b/g,
@@ -408,7 +498,8 @@ function countFiles(files, words, det) {
   for (const f of files) {
     if (f.text === null || f.text === undefined || pathAllowed(words, f.rel)) continue;
     const kind = kindOf(f.rel, f.text);
-    if (!kind) continue;
+    // las guías no cuentan: las que faltan renombrar las sigue su medición, no el techo
+    if (!kind || kind === 'guide') continue;
     const names = pathNames(f.rel);
     const base = names[names.length - 1];
     if (yes(base)) {
@@ -544,7 +635,7 @@ function run(args) {
     range = { base, tip };
   } else {
     const { spawnSync } = require('child_process');
-    const head = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { cwd: repo, env: process.env, encoding: 'utf8' });
+    const head = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { windowsHide: true, cwd: repo, env: process.env, encoding: 'utf8' });
     const shas = head.status === 0 ? [head.stdout.trim()] : [null];
     const mergeAbs = path.resolve(repo, nn.hookGit(repo, ['rev-parse', '--git-path', 'MERGE_HEAD']).trim());
     if (shas[0] && fs.existsSync(mergeAbs)) shas.push(...fs.readFileSync(mergeAbs, 'utf8').split('\n').map((x) => x.trim()).filter(Boolean));
@@ -564,7 +655,7 @@ function run(args) {
   const trigger = (rel) => (source === 'arnes' && TRIGGERS.includes(rel)) || (source === 'agent-skills' && PACK.test(rel));
   // Por la ruta sola no se sabe: un `.zsh` o un `.template` con `#!` es un ejecutable (kindOf mira el texto). Acá sólo
   // se descarta lo que seguro no se mira; el resto lo decide kindOf con el contenido.
-  const maybe = (rel) => !!rel && (trigger(rel) || (!/\.md$/i.test(rel) && !CASES.test(rel)));
+  const maybe = (rel) => !!rel && (trigger(rel) || ((!isMd(rel) || GUIDE.test(rel)) && !CASES.test(rel)));
   if (!touched.some((c) => (c.status !== 'D' && maybe(c.path)) || maybe(c.oldPath))) return { outcome: 'quiet' };
 
   // 3 · el modo: el arnés del equipo tiene perfil; la copia pública, no
@@ -690,9 +781,16 @@ function run(args) {
   // 8 · ¿ya existía en lo que salía antes? (en algún padre; los dos repos)
   const findings = [];
   if (candidates.length) {
+    // un nombre que ya estaba excusa sólo a un archivo de su mismo tipo: los de las guías, a una guía (mudarla de carpeta
+    // con su nombre pasa); los del resto, al resto. Juntos, una guía castellana excusaría a un script nuevo con su nombre,
+    // y una carpeta (la de las capturas de una guía) a una guía nueva que se llame como ella
     const pathSets = beforeShips.map((b) => {
-      const s = new Set();
-      for (const f of b.values()) if (!/\.md$/i.test(f.rel) && !CASES.test(f.rel)) for (const seg of pathNames(f.rel)) s.add(seg.toLowerCase());
+      const s = { guide: new Set(), other: new Set() };
+      for (const f of b.values()) {
+        if (CASES.test(f.rel) || (isMd(f.rel) && !GUIDE.test(f.rel))) continue;
+        const into = isMd(f.rel) ? s.guide : s.other;
+        for (const seg of pathNames(f.rel)) into.add(seg.toLowerCase());
+      }
       return s;
     });
     const contentNames = candidates.filter((c) => c.category !== 'path');
@@ -712,7 +810,7 @@ function run(args) {
     const reported = new Set();
     for (const c of candidates) {
       const exists = c.category === 'path'
-        ? pathSets.some((s) => s.has(c.name.toLowerCase()))
+        ? pathSets.some((s) => s[isMd(c.rel) ? 'guide' : 'other'].has(c.name.toLowerCase()))
         : existing.some((s) => s.has(`${c.category}\0${c.name}`));
       const id = `${c.category}\0${c.name}\0${c.rel}`;
       if (exists || reported.has(id)) continue;
@@ -841,7 +939,7 @@ function count(args) {
  * `old` o un `new` repetido en el mismo kind y where, un `new` en castellano, un `new` que choca, un valor o una clave sin
  * su `where`, y un archivo que llaman de afuera sin su reemplazo. Sin mapa no hay nada que validar.
  */
-const ENTRY_KEYS = ['kind', 'old', 'new', 'where', 'batch', 'callers', 'repo', 'repeatable', 'option', 'assigned_to', 'role', 'role_waiver', 'homonyms'];
+const ENTRY_KEYS = ['kind', 'old', 'new', 'where', 'batch', 'callers', 'repo', 'repeatable', 'option', 'assigned_to', 'role', 'role_waiver', 'homonyms', 'retire_after'];
 // `homonyms` los archivos del repo de la entrada donde su nombre viejo es OTRO archivo que se llama
 // igual (el pipeline de cada producto se llama como el nocturno de métricas del arnés, que se mudó a `pipelines/`). Cada uno, un
 // glob relativo a la raíz de ese repo (`**` cruza carpetas, `*` y `?` no) y el motivo. --stale-mentions no cuenta esa
@@ -947,8 +1045,8 @@ function checkMap(args) {
   const rootOf = (e) => {
     if (e.repo !== 'agent-skills') return repo;
     if (skillsRoot === null) {
-      // en el repo unido agent-skills está en esta misma raíz, con sus rutas de siempre
-      const o = nn.unifiedCheckout(repo) ? { dir: repo } : nn.otherRepo('arnes');
+      // en el repo unido (y en el adelgazado con el público encima) agent-skills está en esta misma raíz
+      const o = bothSourcesHere(repo) ? { dir: repo } : nn.otherRepo('arnes');
       skillsRoot = !o.missing && o.dir && fs.existsSync(o.dir) ? o.dir : '';
     }
     return skillsRoot || null;
@@ -963,6 +1061,8 @@ function checkMap(args) {
     for (const k of ['old', 'new', 'batch']) if (typeof e[k] !== 'string' || !e[k]) problems.push(`${at}: falta «${k}»`);
     if (typeof e.old !== 'string' || typeof e.new !== 'string') return;
     if (e.old === e.new) problems.push(`${at}: old y new son iguales`);
+    // la fecha de retiro propia de una entrada: la que quedó con uso, o la que nació tarde
+    if (e.retire_after !== undefined && !realDate(String(e.retire_after))) problems.push(`${at}: retire_after tiene que ser una fecha AAAA-MM-DD que exista (es ${JSON.stringify(e.retire_after)})`);
     if (['option', 'subcommand', 'value', 'key'].includes(e.kind) && (typeof e.where !== 'string' || !e.where)) problems.push(`${at}: un ${e.kind} tiene que nombrar su where (el script o archivo que lo lee)`);
     if (e.repo !== undefined && !['arnes', 'agent-skills'].includes(e.repo)) problems.push(`${at}: repo es arnes o agent-skills (no «${e.repo}»)`);
     if (e.repeatable !== undefined && (e.kind !== 'option' || typeof e.repeatable !== 'boolean')) problems.push(`${at}: repeatable es true/false y sólo en una opción`);
@@ -1134,21 +1234,33 @@ function ciPairsProblems(repo, entries) {
  * sus globs, donde el nombre viejo es otro archivo que se llama igual; un glob muerto frena.
  */
 const STALE_KINDS = ['env', 'option', 'subcommand', 'value', 'folder', 'file', 'state-file', 'config-file', 'key'];
-// 🔴 Los que LEEN o PROTEGEN los dos nombres a propósito (escritura doble): el freno de producción tiene que
-// nombrar el catálogo, el índice y la memoria con su nombre de antes del renombre, porque la copia vieja de /opt los sigue
-// usando hasta que todas las máquinas autorizadas reinstalen. No hay forma de hacerlo sin escribir el nombre viejo, y en
-// una plantilla JSON no hay comentario donde declararlo. Salen de esta lista en el commit que apaga la escritura doble:
-// desde ahí, un nombre viejo en ellos vuelve a ser una mención de más.
+// 🔴 Los que todavía LEEN, PROTEGEN o LIMPIAN un nombre viejo a propósito, cada uno con su motivo. No hay forma de
+// hacerlo sin escribir el nombre viejo, y en una plantilla JSON no hay comentario donde declararlo. Cuando el motivo se
+// va, el archivo sale de la lista: desde ahí, un nombre viejo en él vuelve a ser una mención de más.
 const LEGACY_READERS = new Set([
-  'scripts/production/production-index.js', 'scripts/production/tycon-prod-sql', 'scripts/production/node-shim.sh',
-  'scripts/production/install-guard.sh', 'scripts/production/lint-production-json.js',
-  'scripts/production/managed-settings.tycon-production.json.template', 'scripts/hooks/prod-access-guard.js',
-  'scripts/hooks/production-notice.js', 'scripts/hooks/git-pre-commit-global.sh', 'scripts/lib/tycon-config.js',
+  // el catálogo de producción de los productos, con su nombre y sus claves de antes: lo siguen leyendo, protegiendo y
+  // revisando hasta que los productos lo migren (tiene su propia fecha en el mapa). production-index.js, además, pasa
+  // una sola vez la memoria y el índice de antes a los nuevos y los borra
+  'scripts/production/production-index.js', 'scripts/production/node-shim.sh', 'scripts/production/lint-production-json.js',
+  'scripts/production/managed-settings.tycon-production.json.template', 'scripts/hooks/git-pre-commit-global.sh',
+  // el catálogo de antes, y el reemplazo del aviso que el repo del equipo deja en su ruta vieja (lo reconoce como pieza
+  // propia del freno hasta que se borren los reemplazos)
+  'scripts/hooks/prod-access-guard.js',
+  // el instalador borra los estados de antes (índice, memoria, registro) y traduce sus opciones de antes
+  'scripts/production/install-guard.sh',
+  // la puerta: un campo del registro que anota conserva su nombre de antes (es el formato del registro), y sus
+  // comentarios nombran las claves del catálogo de antes, que los productos todavía usan
+  'scripts/production/tycon-prod-sql',
+  // la copia propia del freno: su vocabulario interno conserva el nombre de antes de las secciones (como la biblioteca
+  // de la que sale), aunque del archivo de la máquina lee sólo `paths` e `integrations`
+  'scripts/production/guard-libs/lib/tycon-config.js',
+  // el aviso de arranque exige la regla del catálogo de antes en la configuración administrada
+  'scripts/hooks/production-notice.js',
+  // las claves de antes del archivo de la máquina, hasta el retiro (la copia del freno, en cambio, ya no las lee)
+  'scripts/lib/tycon-config.js',
   // los controles del commit: la copia propia del repo privado busca los guiones de las skills también en la carpeta de
   // antes del renombre, para un arnés atrasado; sale con el retiro de los nombres viejos
   '.githooks/pre-commit-checks',
-  // la copia propia del freno: ocupa en /opt el lugar de scripts/lib/tycon-config.js y lee lo mismo que ella
-  'scripts/production/guard-libs/lib/tycon-config.js',
   // compara contra una base de antes del renombre y corre los archivos de esa base por el nombre que tenían
   'scripts/publishing/profile-equivalence.js',
   // el termómetro mide también los commits de la medición (T5), donde el archivo de esquema del intérprete tenía su
@@ -1203,6 +1315,8 @@ const PATH_BEFORE = /[\w.~$@+\\/-]*$/;
 function completesOtherRealPath(line, at, hit, dir, oldRel) {
   if (!dir || (line[at - 1] !== '/' && line[at - 1] !== '\\')) return false;
   const segs = line.slice(0, at - 1).match(PATH_BEFORE)[0].split(/[\\/]/);
+  // `.dashboard/` es la salida de los procesos de la noche: no está en el repo, y lo de adentro es de ahí, no una carpeta mudada
+  if (segs.filter(Boolean).pop() === '.dashboard') return true;
   const old = oldRel.replace(/\/+$/, '');
   const root = path.resolve(dir);
   let rel = hit.split('\\').join('/').replace(/\/+$/, '');
@@ -1328,6 +1442,10 @@ const SCRIPT_NAME = /[A-Za-z0-9_.-]+\.(?:sh|js|mjs|cjs|ps1|py)\b/g;
 const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^scripts\/publishing\/denylist\.json$/, /^guides\/maintaining\/incident-log\.md$/, /^guides\/maintaining\/nombres-en-ingles\.md$/, /^scripts\/tests\/legacy-names[^/]*$/,
   /^scripts\/tests\/fixtures\/product-pipeline\//, /^\.dashboard\//, /^guides\/guide-update-proposals\.md$/, /^guides\/(?:decisions\/)?revision-adversarial-[^/]*\.md$/,
   /^scripts\/publishing\/names-ceiling\.json$/,
+  // Los archivos de deuda de los productos: el lector de scripts/ci lleva los pares escritos a mano porque
+  // corre también desde el artefacto arnes-ci, sin el mapa (como legacy-options.*), y sus pruebas de compatibilidad
+  // arman productos de laboratorio con su propio pipeline. Salen con el retiro.
+  /^scripts\/ci\/legacy-files\.js$/, /^scripts\/tests\/legacy-retire[^/]*$/,
   /^skills\/[^/]+\/CHANGELOG\.md$/, /^skills\/tycon-pipeline\/HISTORIA\.md$/,
   // Más historia: la guía de prueba de cada story (qa/, como specs/) y los instintos ya archivados (viven en `inbox/`).
   // Y las traducciones a Codex de los agentes de agent-skills: son texto de agent-skills, que nombra al arnés con el
@@ -1361,6 +1479,11 @@ const ignoresOldFolder = (rel, line, e) => e.kind === 'folder' && path.posix.bas
 function thinLayout(repo) {
   try { return JSON.parse(fs.readFileSync(path.join(repo, '.tycon', 'internal-forms.json'), 'utf8')).layout === 'thin'; } catch { return false; }
 }
+/** ¿Las dos fuentes viven en esta raíz? El repo unido con el perfil del equipo, o el adelgazado con el público encima
+ * (el árbol que arma el portón), que puede venir sin el perfil. */
+function bothSourcesHere(repo) {
+  return nn.unifiedCheckout(repo) || (thinLayout(repo) && require('../lib/canonical-path.js').isSingleRepo(repo));
+}
 function staleMentions(args) {
   const legacy = require('../lib/legacy-names.js');
   const startDir = args.repo ? path.resolve(args.repo) : process.cwd();
@@ -1378,7 +1501,7 @@ function staleMentions(args) {
   // arnés, que son referencias entre fuentes — o, sin «el otro repo» a mano, no miraría.
   // El repo de mantenimiento adelgazado con el público encima (su lista de lo que repite dice `layout: "thin"`) también
   // tiene las dos fuentes en esta raíz, aunque ya no traiga el perfil del equipo: se recorre una sola vez.
-  const unified = nn.unifiedCheckout(repo) || (thinLayout(repo) && require('../lib/canonical-path.js').isSingleRepo(repo));
+  const unified = bothSourcesHere(repo);
   const other = unified ? { dir: repo } : nn.otherRepo('arnes');
   if (other.missing) throw new CouldNotLook(`no encontré agent-skills (${other.dir}): sin el otro repo no sé si quedan nombres viejos allá — seteá TYCON_SKILLS_DIR`);
   const repos = { arnes: repo, 'agent-skills': other.dir };

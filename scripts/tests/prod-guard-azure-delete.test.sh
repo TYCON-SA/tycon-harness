@@ -10,7 +10,7 @@
 #
 # Lo que prueba (los nombres de la story):
 #   T1-T12, T20 — cada fila de la tabla sale 2 («block») o 0 («pass»), con su catálogo y su herramienta
-#   T13 — el mensaje dice qué, por qué y el único camino; no nombra la puerta ni el grupo que sale de una variable
+#   T13 — el mensaje dice qué, por qué y los dos caminos (la puerta, una persona); no nombra el grupo que sale de una variable
 #   T14 — el corte deja una línea con la regla `borrado-de-azure`, sin el texto del comando
 #   T15 — el vocabulario de constancias y su copia en el freno instalado conocen la regla
 #   T16 — con el freno sin poder decidir (entrada ilegible), la familia frena y lo demás pasa
@@ -134,7 +134,7 @@ for (const [t, nombre] of Object.entries(NOMBRES)) {
     for (const f of FIX.message.never) if (err.includes(f)) mal.push(`${JSON.stringify(c.cmd)}: el mensaje nombra «${f}»`);
     for (const f of c.not_contains) if (err.includes(f)) mal.push(`${JSON.stringify(c.cmd)}: el mensaje trae «${f}», que salió de una variable`);
   }
-  if (mal.length) no(`T13 Block_MessageSaysWhyAndPathAndNoDoor:\n   ${mal.join('\n   ')}`); else ok('T13 Block_MessageSaysWhyAndPathAndNoDoor');
+  if (mal.length) no(`T13 Block_MessageSaysWhyAndBothPaths:\n   ${mal.join('\n   ')}`); else ok('T13 Block_MessageSaysWhyAndBothPaths');
 }
 
 // ── T14: la constancia, de cada miembro de la familia ────────────────────────────────────────────────────────────
@@ -197,7 +197,8 @@ const herramienta = (c) => (/^(Remove|Invoke)-/.test(c) ? 'PowerShell' : 'Bash')
 }
 
 // ── T18: el lanzador y la caída del freno dicen lo mismo ─────────────────────────────────────────────────────────
-// el lanzador, con una raíz sin intérprete, decide sólo con su criterio crudo; la caída del freno, con el suyo
+// el lanzador, con una raíz sin intérprete, decide sólo con su criterio crudo; la caída del freno, con el suyo. Los dos leen
+// el mismo JSON crudo del evento, como en la máquina: ahí un salto de línea o un tabulador llegan escritos (`\n`, `\t`)
 {
   const mal = [];
   const raiz = path.join(TMP, 'raiz-sin-node');
@@ -205,10 +206,11 @@ const herramienta = (c) => (/^(Remove|Invoke)-/.test(c) ? 'PowerShell' : 'Bash')
   mundo('prod');
   const lanzador = (texto) => spawnSync('bash', [SHIM], { input: texto, encoding: 'utf8',
     env: { ...process.env, HOME: CASA, TYCON_PROD_ROOT: raiz } }).status;
-  for (const [lista, rc] of [[FIX.family.block, 2], [FIX.family.pass, 0]]) {
+  const { edges } = FIX.family;
+  for (const [lista, rc] of [[[...FIX.family.block, ...edges.block], 2], [[...FIX.family.pass, ...edges.pass], 0]]) {
     for (const c of lista) {
       const sh = lanzador(payload(c));
-      const js = corre(`{no es json ${c}`).rc;
+      const js = corre(`{no es json ${payload(c)}`).rc;
       if (sh !== rc || js !== rc) mal.push(`${JSON.stringify(c)}: lanzador ${sh}, caída del freno ${js}, esperaba ${rc} en los dos`);
     }
   }

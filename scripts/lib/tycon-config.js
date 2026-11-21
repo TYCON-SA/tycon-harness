@@ -210,8 +210,9 @@ const VOCABULARIO = Object.freeze({
   // Cómo contesta el asistente: el idioma y el estilo del bloque de respuesta del CLAUDE.md (y del AGENTS.md),
   // y el tope de prosa que mide el medidor de estilo. Cerrados: cada estilo es un texto revisado en
   // claude-md-blocks/response-style/<estilo>.<idioma>.md, y un valor fuera de la lista es configuración ROTA (el
-  // sincronizador deja el bloque que había). Sin valor: `neutral` en `es`, y el tope del estilo (TOPE_POR_ESTILO).
-  response: Object.freeze({ language: 'opcion:es|en', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
+  // sincronizador deja el bloque que había). `auto` contesta en el idioma en que escribe la persona: su texto,
+  // <estilo>.auto.md, es el de `es` más esa regla. Sin valor: `neutral` en `auto`, y el tope del estilo (TOPE_POR_ESTILO).
+  response: Object.freeze({ language: 'opcion:es|en|auto', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
   // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
@@ -222,11 +223,23 @@ const VOCABULARIO = Object.freeze({
   // `delegated_signing` (no delega nada). Sólo del perfil: si la máquina pudiera decirlo, el agente se sacaría firmas.
   // `delegated_machines`: en qué máquinas vale esa delegación, por la huella de `machine-id.js` (16 hex) y un nombre para
   // la persona. Sin valor, en ninguna. Sólo del perfil: si la máquina pudiera decirlo, el agente se elegiría solo.
+  // `levels`: el nivel de cada firma de la tabla (`signatures.js`, LEVELS) que la organización sube, `{ id: nivel }`.
+  // Sólo sube: rige el mayor entre la tabla y el perfil, y un nivel menor que el de la tabla es la clave rota. Lo que
+  // queda en 2 o más sale de `delegated_signing`. Sólo del perfil: si la máquina pudiera decirlo, el agente se bajaría
+  // las firmas.
   approvals: Object.freeze({
     relay_session: 'texto',
     delegated_signing: 'firmas',
     delegated_machines: 'maquinas',
     owner_only: 'firmas-ids',
+    levels: 'niveles',
+    // La lista de lo que espera a la persona (signature-list.js): `on` el freno anota y al volver se las pasan de a una;
+    // `off` (o sin valor), como si no existiera. No aprueba nada, así que también vale desde la máquina.
+    signature_list: 'opcion:on|off',
+    // Cuántos minutos espera a la coordinadora una firma delegable que pidió la sesión que trabaja y el freno le desvió
+    // (delegation-routing.js): pasado el plazo, el renglón vuelve al dueño. Sin valor, 10. Sólo del perfil: si la máquina
+    // pudiera decirlo, el agente se estiraría el plazo.
+    delegation_wait_minutes: 'entero:1-60',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
@@ -244,9 +257,60 @@ const VOCABULARIO = Object.freeze({
   // la máquina, con el orden de siempre (variable › máquina › perfil): el perfil da el número de la organización y cada
   // máquina puede cambiarlo para sí, porque cuánto aguanta depende de ella. Sin valor, 3. `owner_folder`: la carpeta
   // donde la coordinadora deja un ejecutable por firma que el dueño hace en su terminal. Es de la máquina: en el perfil
-  // del equipo es un error. Sin valor, las firmas van en el aviso del chat y nada se escribe en disco.
-  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta' }),
+  // del equipo es un error. Sin valor, las firmas van en el aviso del chat y nada se escribe en disco. `session_names`:
+  // con qué nombres abre la coordinadora las sesiones nuevas (coordination.js open sin --name), el id de un tema de
+  // fábrica o una lista propia (`sessionNames`, más abajo); con el orden de siempre, así cada dev elige los suyos.
+  // Sin valor, los pone quien abre la sesión. `second_heavy_min_free_pct`: con cuánta memoria libre del sistema, en
+  // porcentaje, se da el segundo turno de ejecución grande de pruebas (scripts/tools/heavy-turn.js); con el orden de
+  // siempre, porque cuánto aguanta depende de la máquina. Sin valor, 50; con 100, la máquina queda con un turno.
+  // `max_stories_in_cycle`: cuántas historias puede tener la coordinadora en el ciclo completo a la vez (de arrancadas a
+  // entradas a main); con el tope lleno no arranca ni retoma otra hasta que una entre, y las demás quedan en fila. Con el
+  // orden de siempre. Sin valor, 4.
+  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20' }),
+  // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
+  // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
+  office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
+  // Los topes de archivos del camino corto (el arreglo rápido sin historia). `coordinator_max_files`: lo que se abre sin
+  // una persona (la coordinadora por delegación, o una pestaña sin permisos); `max_files`: hasta dónde alcanza la firma
+  // común, y más es la firma de sobre cupo. Sin valor, 5 y 8. Los rangos salen de SHORT_PATH_MAX. Valen SÓLO desde el
+  // perfil del equipo (PROFILE_ONLY): si la máquina o una variable pudieran decirlos, el agente se subiría el tope.
+  short_path: Object.freeze({ coordinator_max_files: 'entero:1-6', max_files: 'entero:1-12' }),
+  // La dirección del sitio de la organización, la que abre el comando de barra org-site. Vale SÓLO desde el perfil del
+  // equipo (PROFILE_ONLY): es una para toda la organización, y si la máquina pudiera decirla, el agente podría mandar a
+  // la persona a otra página. Sin valor, el comando dice cómo cargarla (desde el sitio o con un pedido al perfil).
+  site: Object.freeze({ url: 'url' }),
+  // `pull_requests.team_authors`: las cuentas de GitHub del equipo. Un pedido de otra cuenta (o de un bot que no está en
+  // la lista) no se encola ni se mergea sin la firma del dueño (external-pr.js, regla GIT-C7). Sin valor, es del equipo
+  // sólo la cuenta con la que el CLI de GitHub está autenticado en la máquina. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): si la máquina pudiera
+  // decirlo, el agente se sumaría a cualquiera a la lista.
+  pull_requests: Object.freeze({ team_authors: 'cuentas' }),
+  // Los interruptores de la organización (la sección «Frenos y medidores» del sitio). Hoy cada uno se cambia también por
+  // máquina con su variable (SWITCHES dice cuál), y la variable puesta sigue ganando. Los frenos (`freno`) sólo se
+  // ENCIENDEN desde acá: «on» (en cualquier mayúscula) o `true`; un valor que dice apagado se ignora y se nombra
+  // (`ignoradas`), porque apagar un freno para todas las máquinas desde un archivo aflojaría un control sin que nadie lo
+  // firme en su terminal. Los medidores y avisos no frenan: se encienden o se apagan. Sin valor, cada uno como viene de
+  // fábrica. El freno de comandos peligrosos y el de pedidos a main sin completarse solos no están: vienen siempre
+  // encendidos, y encenderlos desde acá no cambiaría nada.
+  switches: Object.freeze({
+    test_scope_guard: 'freno', session_guard: 'freno', pr_one_per_repo: 'freno',
+    response_meter: 'opcion:on|off', blocking_meter: 'opcion:on|off',
+  }),
 });
+// Cada interruptor de la organización: la variable con que cada máquina lo cambia hoy, si es un freno, y cómo viene de
+// fábrica. La variable puesta gana siempre; un freno que viene apagado se enciende con `<variable>=1`, y cualquiera se
+// apaga con `<variable>=0`.
+const SWITCHES = Object.freeze({
+  test_scope_guard: Object.freeze({ variable: 'TYCON_TEST_SCOPE_GUARD', brake: true, factory: 'on' }),
+  session_guard: Object.freeze({ variable: 'TYCON_SESSION_GUARD', brake: true, factory: 'off' }),
+  pr_one_per_repo: Object.freeze({ variable: 'TYCON_PR_ONE_PER_REPO', brake: true, factory: 'off' }),
+  response_meter: Object.freeze({ variable: 'TYCON_RESPONSE_METER', brake: false, factory: 'on' }),
+  blocking_meter: Object.freeze({ variable: 'TYCON_BLOCKING_METER', brake: false, factory: 'on' }),
+});
+// Lo que se lee como «apagado» en un freno: se ignora y se nombra, en vez de romper la configuración entera.
+const SAYS_OFF = Object.freeze(['off', 'false', '0', 'no']);
+const saysOff = (v) => v === false || v === 0 || (typeof v === 'string' && SAYS_OFF.includes(v.trim().toLowerCase()));
+// Lo que se lee como «encendido» en un freno, simétrico con lo de arriba: «on» en cualquier mayúscula, o `true`.
+const saysOn = (v) => v === true || (typeof v === 'string' && v.trim().toLowerCase() === 'on');
 // El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars`: el de `executive` es el de
 // siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
 const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral: 2000 });
@@ -258,7 +322,7 @@ const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral
 const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
   'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
-  'response.language': 'es', 'response.style': 'neutral', 'guard.update': 'password',
+  'response.language': 'auto', 'response.style': 'neutral', 'guard.update': 'password',
 });
 // Las claves en las que el PERFIL DEL EQUIPO le gana al archivo de la máquina (story 8.29, decisión del dueño del
 // 2026-10-11). Para todo lo demás el orden es el de siempre: variable › máquina › perfil. Para éstas: variable › perfil ›
@@ -278,7 +342,14 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors']);
+// Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
+// mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
+// de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en
+// los de 13 o más. Subir un máximo es un cambio de control; lo de adentro del máximo se cambia en el perfil.
+const SHORT_PATH_MAX = Object.freeze({ coordinator_max_files: 6, max_files: 12 });
+// Los topes de fábrica, cuando el perfil no los dice. Son los mismos de story-gate.js, que rigen si el lector falla.
+const SHORT_PATH_FACTORY = Object.freeze({ coordinator_max_files: 5, max_files: 8 });
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 // Los canales por los que sale un aviso; la misma lista que `CANALES` del módulo de avisos (lo fija T27).
@@ -308,6 +379,87 @@ function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('o
 /** Las opciones de un tipo `opciones:` (un valor solo, o una lista sin repetidos, de una lista cerrada). */
 function subsetOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opciones:') ? tipo.slice('opciones:'.length).split('|') : null; }
 /** El catálogo de firmas, o null si no se puede cargar: entonces una clave de firmas se lee rota, nunca abierta. */
+/*
+ * Los nombres con que la coordinadora abre las sesiones nuevas (`coordination.session_names`; coordination.js open sin
+ * --name): el id de un tema de fábrica (`animals`) o una lista propia. El tema de fábrica viaja con el arnés, que se
+ * publica: sólo temas neutros, sin personas reales ni marcas. Una lista con personas o marcas va en la configuración de
+ * la máquina de cada dev, que no se publica.
+ *
+ * Un nombre de sesión va como valor de `-n` y en `claude attach <nombre>`: empieza con letra o número (no se lee como
+ * una bandera) y sigue con letras sin acento, números, guion o guion bajo, sin espacios. Agotada la lista, sigue con
+ * número: `Tero-2`, `Hornero-2`, … y después `Tero-3`.
+ */
+const sessionNames = (() => {
+  const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+  const NAME_MAX = 40;
+  const LIST_MAX = 200;
+
+  const THEMES = Object.freeze({
+    animals: Object.freeze(['Tero', 'Hornero', 'Carpincho', 'Guanaco', 'Nutria', 'Lechuza', 'Halcon', 'Vizcacha', 'Zorzal', 'Tatu']),
+    rivers: Object.freeze(['Parana', 'Uruguay', 'Salado', 'Bermejo', 'Limay', 'Colorado', 'Atuel', 'Pilcomayo', 'Iguazu', 'Chubut']),
+    colors: Object.freeze(['Ambar', 'Cobalto', 'Celeste', 'Indigo', 'Jade', 'Lila', 'Ocre', 'Rubi', 'Salvia', 'Turquesa']),
+    trees: Object.freeze(['Nogal', 'Roble', 'Jacaranda', 'Olmo', 'Aromo', 'Alerce', 'Coihue', 'Algarrobo', 'Tipa', 'Molle']),
+  });
+
+  // el id de un tema, sin mayúsculas: «Animals» es «animals»
+  const themeId = (v) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
+  const isTheme = (v) => typeof v === 'string' && Object.prototype.hasOwnProperty.call(THEMES, themeId(v));
+
+  /** null si el valor sirve como `coordination.session_names`; si no, el motivo. */
+  function problem(value) {
+    if (typeof value === 'string') {
+      if (isTheme(value)) return null;
+      const unNombre = NAME_RE.test(value.trim()) ? ` (para un solo nombre propio, terminalo con una coma: «${value.trim()},»)` : '';
+      return `tiene que ser un tema de fábrica (${Object.keys(THEMES).join(', ')}) o una lista de nombres, no ${JSON.stringify(value)}${unNombre}`;
+    }
+    if (!Array.isArray(value) || !value.length) return `tiene que ser un tema de fábrica (${Object.keys(THEMES).join(', ')}) o una lista no vacía de nombres, no ${JSON.stringify(value)}`;
+    if (value.length > LIST_MAX) return `la lista tiene ${value.length} nombres; el máximo es ${LIST_MAX}`;
+    for (const n of value) {
+      if (typeof n !== 'string' || !NAME_RE.test(n.trim())) return `${JSON.stringify(n)} no sirve como nombre de sesión: letras sin acento, números, guion o guion bajo, sin espacios, y empieza con letra o número`;
+      if (n.trim().length > NAME_MAX) return `«${n.trim()}» es largo: un nombre de sesión va hasta ${NAME_MAX} caracteres`;
+    }
+    // una lista hecha sólo de ids de tema es, casi seguro, dos temas juntos: va uno solo
+    if (value.every((n) => isTheme(n))) return `${JSON.stringify(value)} son temas de fábrica: va uno solo, sin comas`;
+    const seen = new Set();
+    for (const n of value) {
+      const k = n.trim().toLowerCase();
+      if (seen.has(k)) return `la lista repite «${n.trim()}»`;
+      seen.add(k);
+    }
+    return null;
+  }
+
+  /** Los nombres de un valor ya validado: los del tema o los de la lista; sin valor, ninguno. */
+  function namesOf(value) {
+    if (isTheme(value)) return THEMES[themeId(value)].slice();
+    return Array.isArray(value) ? value.map((n) => String(n).trim()) : [];
+  }
+
+  /**
+   * El primer nombre de la lista que no está en `taken`; agotada, el primero con número (`Tero-2`, …, `Tero-3`). null sin
+   * nombres. `taken` se compara sin mayúsculas: «tero» ya tomado deja afuera a «Tero».
+   */
+  function nextFree(names, taken) {
+    if (!names.length) return null;
+    const used = new Set([...taken].map((n) => String(n).toLowerCase()));
+    for (let round = 1; ; round += 1) {
+      for (const n of names) {
+        const candidate = round === 1 ? n : `${n}-${round}`;
+        if (candidate.length <= NAME_MAX && !used.has(candidate.toLowerCase())) return candidate;
+      }
+      if (round > used.size + 1) return null;
+    }
+  }
+
+  return { NAME_RE, NAME_MAX, LIST_MAX, THEMES, themeId, isTheme, problem, namesOf, nextFree };
+})();
+/** Una lista separada por comas (`Tero,Hornero`) es una lista; un texto sin comas, el id de un tema. */
+function nombresDeTexto(v) {
+  const s = String(v).trim();
+  return s.includes(',') ? s.split(',').map((x) => x.trim()).filter(Boolean) : s;
+}
+/** Los temas de fábrica de los nombres de sesión (`{ id: [nombres] }`), para la pestaña del sitio. */
+function temasDeSesion() { return sessionNames.THEMES; }
 function catalogoDeFirmas() {
   try { return require('./signatures.js'); } catch (e) { fallaDelCatalogo = String((e && (e.code || e.message)) || e); return null; }
 }
@@ -415,6 +567,9 @@ const VARIABLES = Object.freeze({
   'models.provider': ['TYCON_MODEL_PROVIDER'],
   'coordination.max_working': ['TYCON_COORDINATION_MAX_WORKING'],
   'coordination.owner_folder': ['TYCON_COORDINATION_OWNER_FOLDER'],
+  'coordination.session_names': ['TYCON_COORDINATION_SESSION_NAMES'],
+  'coordination.second_heavy_min_free_pct': ['TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT'],
+  'coordination.max_stories_in_cycle': ['TYCON_COORDINATION_MAX_STORIES_IN_CYCLE'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -481,6 +636,7 @@ function resolverRutaDeArchivo(v, home) {
 function esRutaAbsoluta(v) { const s = String(v).trim(); return /^~(?=$|[\\/])/.test(s) || path.isAbsolute(s); }
 function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'secreto') return true;   // sólo «está»: el valor no sale de su archivo
+  if (tipo === 'freno') return 'on';      // validarTipo ya dejó pasar sólo lo que dice encendido
   if (tipo === 'ruta') return resolverRutaDeArchivo(valor, home);
   // una ruta o varias (la carpeta de los repos puede ser más de una): una lista se resuelve ruta por ruta
   if (tipo === 'rutas') return Array.isArray(valor) ? valor.map((v) => resolverRutaDeArchivo(v, home)) : resolverRutaDeArchivo(valor, home);
@@ -489,7 +645,10 @@ function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'llave-o-detectar' && esDetect(valor)) return DETECT;   // el valor viejo se lee como el nuevo
   if (tipo === 'paquetes' && typeof valor === 'string') return valor.trim();
   if (tipo === 'plataforma') return Object.fromEntries(Object.keys(valor).filter((k) => !esComentario(k)).map((k) => [k, String(valor[k]).trim().toLowerCase()]));
+  if (tipo === 'cuentas') return valor.map((v) => v.trim());
   if (tipo === 'maquinas') return valor.map((m) => ({ id: m.id.trim(), label: m.label.trim() }));
+  if (tipo === 'niveles') return { ...valor };
+  if (tipo === 'nombres-de-sesion') return Array.isArray(valor) ? valor.map((v) => String(v).trim()) : String(valor).trim().toLowerCase();
   // una lista de opciones sigue siendo lista y un valor solo sigue solo: quien lo lee pregunta con `delegaFirma`
   if (subsetOf(tipo) || tipo === 'firmas' || tipo === 'firmas-ids') return Array.isArray(valor) ? valor.map((v) => v.trim()) : String(valor).trim();
   if (Array.isArray(valor)) return valor.slice();
@@ -729,6 +888,7 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
   const errores = [];
   const plano = {};
   const retiradas = [];
+  const ignoradas = [];
   const { datos, vista } = seccionesDeArchivo(datos0, archivo, errores, home);
   // los errores nombran la sección como está escrita en ESE archivo (la persona busca lo que escribió)
   const comoVino = (seccion) => vista[seccion] || enArchivo(seccion);
@@ -813,16 +973,29 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
         continue;
       }
       if (tipo === 'retirada') { retiradas.push({ archivo, clave: rutaEnArchivo, motivo: RETIRADAS[ruta] || 'ya no hace nada' }); continue; }
+      if (tipo === 'freno' && saysOff(valor)) {
+        const sw = SWITCHES[clave];
+        ignoradas.push({ archivo, clave: rutaEnArchivo, motivo: `${JSON.stringify(valor)} no vale: un freno no se apaga desde la configuración y se ignora (queda como viene de fábrica); se apaga en cada máquina con ${sw ? sw.variable : 'su variable'}=0` });
+        continue;
+      }
       const err = validarTipo(tipo, valor);
       if (err) { errores.push({ archivo, clave: rutaEnArchivo,motivo: err }); continue; }
       if (esPerfil) {
         // en una lista de máquinas, el texto libre es el nombre de cada una: pasa por la misma regla
-        const forma = tipo === 'maquinas' ? valor.map((m) => formaPersonal(m.label)).find(Boolean) : formaPersonal(valor);
+        const forma = tipo === 'niveles' ? null : tipo === 'maquinas' ? valor.map((m) => formaPersonal(m.label)).find(Boolean) : formaPersonal(valor);
         if (forma) { errores.push({ archivo, clave: rutaEnArchivo,motivo: `valor personal (${forma}): va en ~/.claude/tycon.json o en su variable, nunca en un archivo versionado` }); continue; }
       }
       if (tipo === 'llave-o-detectar' && valor !== DETECT && esDetect(valor)) anotarViejo('value', valor, DETECT, home);
       plano[ruta] = normalizarValor(tipo, valor, home, ruta);
     }
+  }
+  // Los dos topes del camino corto: lo que se abre sin una persona no puede pasar de lo que alcanza la firma común. Es un
+  // error del perfil y el delegado escrito no cuenta (rige el de fábrica, recortado al máximo). Va acá y no en cargar()
+  // para que el sitio rechace el mismo perfil que las máquinas.
+  if (esPerfil && tiene(plano, 'short_path.coordinator_max_files') && tiene(plano, 'short_path.max_files')
+    && plano['short_path.coordinator_max_files'] > plano['short_path.max_files']) {
+    errores.push({ archivo, clave: `${comoVino('short_path')}.coordinator_max_files`, motivo: `${plano['short_path.coordinator_max_files']} pasa de short_path.max_files (${plano['short_path.max_files']}): lo que se abre sin una persona no puede tener más archivos que lo que alcanza la firma común` });
+    delete plano['short_path.coordinator_max_files'];
   }
   // Una firma delegada y sólo del dueño a la vez: gana el dueño. La lista de delegadas se lee rota (no delega nada) y el
   // error nombra la firma; la de sólo del dueño vale igual. Si la de sólo del dueño está rota, también: no se sabe qué
@@ -838,7 +1011,9 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       const delegadas = plano['approvals.delegated_signing'];
       const cat = catalogoDeFirmas();
       const nombradas = cat ? (Array.isArray(delegadas) ? delegadas : [delegadas]).flatMap((v) => cat.expand(v)) : [];
-      const cruce = soloDueno.filter((id) => nombradas.includes(id));
+      // owner_only se expande como la lee la delegación (`restringe`): «lost-run» cubre también su forma de rutina
+      const reservadas = cat ? [...new Set(soloDueno.flatMap((v) => cat.expand(v, { restringe: true })))] : soloDueno;
+      const cruce = reservadas.filter((id) => nombradas.includes(id));
       if (!cat) motivo = `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): no se puede saber si alguna firma es sólo del dueño`;
       else if (cruce.length) motivo = `${cruce.join(', ')} está también en approvals.owner_only: una firma no puede ser delegada y sólo del dueño a la vez — sacala de una de las dos listas`;
     }
@@ -847,7 +1022,40 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       delete plano['approvals.delegated_signing'];
     }
   }
-  return { errores, plano, retiradas };
+  if (esPerfil && tiene(plano, 'approvals.delegated_signing')) soloRutinaDelegada(plano, datos, archivo, ignoradas, comoVino('approvals'));
+  return { errores, plano, retiradas, ignoradas };
+}
+
+/**
+ * La coordinadora firma sola la rutina y las excepciones de trámite: de `delegated_signing` sale toda firma que no es
+ * delegable con lo que sube `approvals.levels` (`signatures.js`, delegable). No es un error: lo demás se sigue delegando, y la salida se
+ * dice como ignorada. Con `levels` escrito y roto no se sabe qué subió el dueño: no se delega nada (su error ya está).
+ * Un grupo de antes que trae alguna se abre en sus ids.
+ */
+function soloRutinaDelegada(plano, datos, archivo, ignoradas, seccion) {
+  const v = plano['approvals.delegated_signing'];
+  const lista = (Array.isArray(v) ? v : [v]).filter((x) => x !== 'off');
+  if (!lista.length) return;
+  const cat = catalogoDeFirmas();
+  if (!cat) return;
+  if (esObjeto(datos.approvals) && tiene(datos.approvals, 'levels') && !tiene(plano, 'approvals.levels')) {
+    plano['approvals.delegated_signing'] = 'off';
+    return;
+  }
+  const subidos = plano['approvals.levels'] || null;
+  const salen = [];
+  const quedan = [];
+  for (const valor of lista) {
+    for (const id of cat.expand(valor)) {
+      // una forma (plan-approval:delicada, save:sensible) no es una firma: su nivel es el de la tabla, o 2
+      const n = cat.delegatedLevel(id, subidos) || cat.effectiveLevel(id, subidos) || 2;
+      // una excepción se delega sólo por su nombre: un grupo de antes no la trae
+      if (!cat.delegable(id, subidos) || (n >= 2 && valor !== id)) { if (!salen.some((x) => x.id === id)) salen.push({ id, n }); } else if (!quedan.includes(id)) quedan.push(id);
+    }
+  }
+  if (!salen.length) return;
+  plano['approvals.delegated_signing'] = quedan.length ? quedan : 'off';
+  ignoradas.push({ archivo, clave: `${seccion}.delegated_signing`, motivo: `${salen.map((x) => `${x.id} (nivel ${x.n})`).join(', ')} no se delega: la coordinadora firma sola la rutina (nivel 1) y las excepciones de trámite que lista la guía; las demás excepciones y lo irreversible los firma una persona (guides/firmas-del-arnes.md)` });
 }
 
 /** null si el valor es del tipo; si no, el motivo. */
@@ -891,6 +1099,12 @@ function validarTipo(tipo, valor) {
     }
     case 'puerto':
       return (Number.isInteger(valor) && valor >= 1 && valor <= 65535) ? null : `tiene que ser un puerto (un entero de 1 a 65535), no ${JSON.stringify(valor)}`;
+    case 'cuentas': {
+      // las cuentas de GitHub: una lista no vacía de nombres de cuenta (los bots, con su sufijo, como `app/<nombre>`)
+      if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de cuentas de GitHub, no ${JSON.stringify(valor)}`;
+      const mala = valor.find((v) => typeof v !== 'string' || !/^(app\/)?[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(\[bot\])?$/.test(v.trim()));
+      return mala === undefined ? null : `${JSON.stringify(mala)} no es una cuenta de GitHub`;
+    }
     case 'maquinas': {
       // las máquinas donde vale la firma por delegación: la huella de machine-id.js y un nombre para la persona
       const forma = 'una lista no vacía de {"id": "<16 hex de machine-id.js>", "label": "<nombre>"}';
@@ -910,12 +1124,29 @@ function validarTipo(tipo, valor) {
       // las firmas del catálogo (signatures.js): `firmas` acepta además los nombres de grupo y `off`; `firmas-ids`, sólo ids
       const cat = catalogoDeFirmas();
       if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
-      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids()], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
+      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids(), ...cat.formNames()], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
       if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de ids de firma (guides/firmas-del-arnes.md), no ${JSON.stringify(valor)}`;
       const malo = valor.find((v) => typeof v !== 'string' || !cat.isId(v.trim()));
       if (malo !== undefined) return `${JSON.stringify(malo)} no es un id de firma (guides/firmas-del-arnes.md; un grupo no vale acá)`;
       return new Set(valor.map((v) => v.trim())).size === valor.length ? null : `la lista repite una firma: ${JSON.stringify(valor)}`;
     }
+    case 'niveles': {
+      // un nivel por id de la tabla de niveles (signatures.js, LEVELS), entero de 1 a 3, nunca menor que el de la tabla
+      const cat = catalogoDeFirmas();
+      if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
+      if (!esObjeto(valor) || !Object.keys(valor).length) return `tiene que ser un objeto no vacío { "<id de firma>": <nivel> } (guides/firmas-del-arnes.md, «Los niveles»), no ${JSON.stringify(valor)}`;
+      for (const [id, n] of Object.entries(valor)) {
+        const base = cat.effectiveLevel(id);
+        if (base === null) return `«${id}» no está en la tabla de niveles (guides/firmas-del-arnes.md, «Los niveles»)`;
+        if (!Number.isInteger(n) || n < 1 || n > 3) return `el nivel de «${id}» tiene que ser un entero de 1 a 3, no ${JSON.stringify(n)}`;
+        if (n < base) return `«${id}» es de nivel ${base} en la tabla: el perfil sólo puede subir un nivel, no bajarlo a ${n}`;
+      }
+      return null;
+    }
+    case 'nombres-de-sesion':
+      return sessionNames.problem(valor);
+    case 'freno':
+      return saysOn(valor) ? null : `tiene que ser "on" (o true): un freno sólo se enciende desde la configuración (sin valor, como viene de fábrica) — no ${JSON.stringify(valor)}`;
     case 'ruta-absoluta':
       if (!(typeof valor === 'string' && valor.trim())) return `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
       return esRutaAbsoluta(valor) ? null : `tiene que ser una ruta absoluta (o con ~), no ${JSON.stringify(valor)}: una relativa no se resuelve contra nada`;
@@ -982,6 +1213,11 @@ function valorDeEntorno(env, clave, tipo, home) {
       if (opciones.includes(v)) return { valor: v, variable };
       return { error: { archivo: 'entorno', clave: variable, motivo: `vale «${v}»; tiene que ser ${opciones.join(' o ')}` } };
     }
+    if (tipo === 'nombres-de-sesion') {
+      const valor = nombresDeTexto(v);
+      const motivo = validarTipo(tipo, valor);
+      return motivo ? { error: { archivo: 'entorno', clave: variable, motivo: `vale «${v}»; ${motivo}` } } : { valor: normalizarValor(tipo, valor, home, clave), variable };
+    }
     // una ruta que tiene que ser absoluta (`paths.tree`, story 8.13.1): relativa por variable también es un error
     if (tipo === 'ruta-absoluta' && !esRutaAbsoluta(v)) {
       return { error: { archivo: 'entorno', clave: variable, motivo: `vale «${v}»; tiene que ser una ruta absoluta (o con ~)` } };
@@ -1043,6 +1279,7 @@ function cargar(opts = {}) {
   const arnes = opts.arnes || RAIZ_ARNES;
   const errores = [];
   const retiradas = [];
+  const ignoradas = [];
 
   const rm = rutaMaquina(home);
   const lm = leerJson(rm);
@@ -1050,7 +1287,7 @@ function cargar(opts = {}) {
   if (lm.estado === 'roto') errores.push({ archivo: rm, clave: null, motivo: lm.motivo });
   else if (lm.estado === 'leido') {
     const v = validarArchivo(lm.datos, { archivo: rm, esPerfil: false, home });
-    errores.push(...v.errores); planoMaquina = v.plano; retiradas.push(...v.retiradas);
+    errores.push(...v.errores); planoMaquina = v.plano; retiradas.push(...v.retiradas); ignoradas.push(...v.ignoradas);
   }
 
   const rp = rutaPerfil(env, arnes, home);
@@ -1063,7 +1300,7 @@ function cargar(opts = {}) {
     else if (lp.estado === 'leido') {
       estadoPerfil = 'leido';
       const v = validarArchivo(lp.datos, { archivo: rp.ruta, esPerfil: true, home });
-      errores.push(...v.errores); planoPerfil = v.plano; retiradas.push(...v.retiradas);
+      errores.push(...v.errores); planoPerfil = v.plano; retiradas.push(...v.retiradas); ignoradas.push(...v.ignoradas);
     }
   }
 
@@ -1156,7 +1393,7 @@ function cargar(opts = {}) {
   };
 
   return {
-    valores, origenes, variables, errores, retiradas, entorno, shadowed,
+    valores, origenes, variables, errores, retiradas, ignoradas, entorno, shadowed,
     archivos: { maquina: { ruta: rm, estado: lm.estado }, perfil: { ruta: rp.ruta, estado: estadoPerfil, aviso: estadoPerfil === 'ausente' ? null : avisoNombrePerfil(rp) } },
     enlace: estadoEnlace({ home, arnes }),
     buzon: { llave: llaveBuzon, presente: hayLlaveBuzon },
@@ -1255,7 +1492,9 @@ function modelProvider(opts = {}) {
 }
 /**
  * La receta de la coordinadora, según una configuración YA cargada: `{ max_working: { value, origin }, owner_folder:
- * { value, origin } }`. Sin valor, el tope es 3 y la carpeta null, los dos con origen `sin-valor`.
+ * { value, origin }, session_names: { value, origin }, second_heavy_min_free_pct: { value, origin },
+ * max_stories_in_cycle: { value, origin } }`. Sin valor, el tope es 3, la carpeta null, los nombres null, el piso del
+ * segundo turno 50 y el tope de historias en el ciclo 4, todos con origen `sin-valor`.
  */
 function coordinacion(config) {
   const v = (config.valores && config.valores.coordination) || {};
@@ -1263,7 +1502,23 @@ function coordinacion(config) {
   const con = (clave, defecto) => (v[clave] === null || v[clave] === undefined
     ? { value: defecto, origin: 'sin-valor' }
     : { value: v[clave], origin: o[`coordination.${clave}`] });
-  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null) };
+  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50), max_stories_in_cycle: con('max_stories_in_cycle', 4) };
+}
+/**
+ * Los topes del camino corto, según una configuración YA cargada: `{ coordinator_max_files: { value, origin }, max_files:
+ * { value, origin }, delegado }`. Sin valor (o con un valor que el lector rechazó), 5 y 8 con origen `sin-valor`.
+ * `delegado` es el cupo que rige para lo que se abre sin una persona: el menor de los dos, porque un carril delegado no
+ * puede tener más que uno firmado.
+ */
+function caminoCorto(config) {
+  const v = (config && config.valores && config.valores.short_path) || {};
+  const o = (config && config.origenes) || {};
+  const con = (clave) => (Number.isInteger(v[clave])
+    ? { value: v[clave], origin: o[`short_path.${clave}`] }
+    : { value: SHORT_PATH_FACTORY[clave], origin: 'sin-valor' });
+  const coordinator_max_files = con('coordinator_max_files');
+  const max_files = con('max_files');
+  return { coordinator_max_files, max_files, delegado: Math.min(coordinator_max_files.value, max_files.value) };
 }
 function respuesta(config) {
   const r = config.valores.response;
@@ -1420,6 +1675,8 @@ function explicar(opts = {}) {
   L.push(`  models.provider = ${prov.provider ? `${prov.provider} (${prov.origin === 'derivado' ? 'derivado: sin declarar, de la herramienta de esta sesión' : prov.origin})` : `ROTO (${prov.problem})`}`);
   // las claves retiradas que un archivo todavía tiene: no hacen nada, se pueden borrar
   for (const r of c.retiradas || []) L.push(`  ${r.clave} (${r.archivo}): ${r.motivo}`);
+  // un freno que un archivo intenta apagar: no vale, se ignora y se nombra
+  for (const r of c.ignoradas || []) L.push(`  ${r.clave} (${r.archivo}): ignorado — ${r.motivo}`);
   // quién puede reenviar el ok de un dev: sólo del perfil; lo que diga la máquina se nombra y no se usa
   {
     const s = c.shadowed['approvals.relay_session'];
@@ -1463,6 +1720,35 @@ function explicar(opts = {}) {
 //     regla de `guardWarning` de scripts/setup/harness/channel.js, generalizada a cualquier sección). Medido el
 //     2026-10-04: la copia instalada no lee el perfil del equipo, sólo el archivo de la máquina.
 const GUARD_LIB = '/opt/tycon/lib/tycon-config.js';
+const GUARD_INSTALL = 'sudo bash ~/.tycon/harness/scripts/production/install-guard.sh';
+// Las claves que no se escriben si el freno instalado no las conoce: las guarda una sesión a pedido de la persona, y un
+// aviso de «configuración ROTA» en cada sesión por haber elegido nombres es un costo que no vale. Se escribe después de
+// poner al día el freno.
+const GUARD_FIRST = Object.freeze(['coordination.session_names']);
+// Lo mismo, por valor: una opción nueva de una clave que el freno instalado ya conoce. Con un freno anterior, `auto` en
+// el archivo de la máquina es una opción fuera de su lista y la configuración entera queda ROTA para él. El perfil del
+// equipo no cuenta: el freno instalado no lo lee.
+const GUARD_FIRST_VALUES = Object.freeze({ 'response.language': Object.freeze(['auto']) });
+// La sección y la clave se buscan en el texto del freno tal como se escriben: un carácter especial de una expresión
+// regular no tiene que cambiar qué encaja.
+const textoLiteral = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** ¿El lector del freno instalado acepta `valor` en `seccion.clave`? `true` (o no hay freno) · `false` · el motivo si no
+ *  se pudo leer o no se reconoce cómo declara la clave. Lee la lista de la opción tal como está escrita en el
+ *  vocabulario de esa copia. */
+function guardAccepts(guardLib, seccion, clave, valor) {
+  const sabe = guardKnows(guardLib, seccion, clave);
+  if (sabe !== true) return sabe;
+  let texto;
+  try { texto = fs.readFileSync(guardLib, 'utf8'); } catch (e) {
+    if (e && e.code === 'ENOENT') return true;
+    return `no pude leerlo (${(e && e.code) || e.message})`;
+  }
+  const cuerpo = new RegExp(`\\b${textoLiteral(seccion)}\\s*:\\s*(?:Object\\.freeze\\s*\\(\\s*)?\\{([^}]*)\\}`).exec(texto);
+  const opcion = cuerpo && new RegExp(`(?:^|[\\s,{])${textoLiteral(clave)}\\s*:\\s*'opcion:([^']*)'`).exec(cuerpo[1]);
+  // no reconocer la forma no es «no acepta»: se dice tal cual, y igual no se escribe
+  if (!opcion) return `no reconozco cómo declara «${enArchivo(seccion)}.${clave}»`;
+  return opcion[1].split('|').includes(valor);
+}
 /** ¿El lector del freno instalado conoce la sección (y, con `clave`, la clave dentro de ella)? `true` (o no hay freno) ·
  *  `false` · el motivo si no se pudo leer (no poder leerlo no es «lo conoce»: se avisa igual, con el motivo). */
 function guardKnows(guardLib, seccion, clave) {
@@ -1473,11 +1759,11 @@ function guardKnows(guardLib, seccion, clave) {
   }
   // la sección como clave de un objeto, congelado o no (`update: Object.freeze({` o `update: {`): `channel.js` miraba sólo
   // «update:», y desde la tanda D escribe por acá (AC 34: el mismo resultado que antes)
-  const cuerpo = new RegExp(`\\b${seccion}\\s*:\\s*(?:Object\\.freeze\\s*\\(\\s*)?\\{([^}]*)\\}`).exec(texto);
+  const cuerpo = new RegExp(`\\b${textoLiteral(seccion)}\\s*:\\s*(?:Object\\.freeze\\s*\\(\\s*)?\\{([^}]*)\\}`).exec(texto);
   if (!cuerpo) return false;
   // la clave adentro (story 8.13.1): un freno que ya conoce `update` pero no `update.source` rechaza la clave nueva igual
   // que una sección nueva — mirar sólo la sección dejaba escribir `source` o `tree` sin aviso
-  return !clave || new RegExp(`(?:^|[\\s,{])${clave}\\s*:`).test(cuerpo[1]);
+  return !clave || new RegExp(`(?:^|[\\s,{])${textoLiteral(clave)}\\s*:`).test(cuerpo[1]);
 }
 function escribirAtomico(file, texto) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -1542,6 +1828,14 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   const err = validarTipo(tipo, valorNuevo);
   if (err) return { ok: false, file, reason: `${enArchivo(seccion)}.${k}: ${err}` };
   const valorEscrito = typeof valorNuevo === 'string' ? valorNuevo.trim() : valorNuevo;
+  if (GUARD_FIRST.includes(`${seccion}.${k}`)) {
+    const sabe = guardKnows(guardLib, seccion, k);
+    if (sabe !== true) return { ok: false, file, reason: `no lo escribí: el freno de producción instalado (${guardLib}) ${sabe === false ? `es anterior a la clave «${enArchivo(seccion)}.${k}»` : sabe}, y con ella en ${file} diría «configuración ROTA» en cada sesión. Primero ponelo al día (pide tu contraseña): ${GUARD_INSTALL} — y después volvé a correr este comando` };
+  }
+  if ((GUARD_FIRST_VALUES[`${seccion}.${k}`] || []).includes(valorEscrito)) {
+    const acepta = guardAccepts(guardLib, seccion, k, valorEscrito);
+    if (acepta !== true) return { ok: false, file, reason: `no lo escribí: el freno de producción instalado (${guardLib}) ${acepta === false ? `no acepta «${enArchivo(seccion)}.${k}: ${valorEscrito}»` : acepta}, y con él en ${file} diría «configuración ROTA» en cada sesión. Primero ponelo al día (pide tu contraseña): ${GUARD_INSTALL} — y después volvé a correr este comando` };
+  }
   const lm = leerJson(file);
   if (lm.estado === 'roto') return { ok: false, file, reason: `${file}: ${lm.motivo} — no se escribe sobre un archivo roto; arreglalo primero (node scripts/lib/tycon-config.js validate)` };
   const datos = lm.estado === 'leido' ? lm.datos : {};
@@ -1592,8 +1886,8 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   }
   const conoce = guardKnows(guardLib, seccion, k);
   const queNoConoce = conoce === false && guardKnows(guardLib, seccion) === true ? `la clave «${enArchivo(seccion)}.${k}»` : `la sección «${enArchivo(seccion)}»`;
-  if (conoce === false) avisos.push(`ojo: el freno de producción instalado (${guardLib}) es anterior a ${queNoConoce} y va a decir «configuración ROTA» hasta reinstalarlo: sudo bash ~/.claude/tycon-claude-guides/scripts/production/install-guard.sh`);
-  else if (conoce !== true) avisos.push(`ojo: el freno de producción instalado (${guardLib}): ${conoce} — si es anterior a la sección «${enArchivo(seccion)}», va a decir «configuración ROTA» hasta reinstalarlo: sudo bash ~/.claude/tycon-claude-guides/scripts/production/install-guard.sh`);
+  if (conoce === false) avisos.push(`ojo: el freno de producción instalado (${guardLib}) es anterior a ${queNoConoce} y va a decir «configuración ROTA» hasta reinstalarlo: ${GUARD_INSTALL}`);
+  else if (conoce !== true) avisos.push(`ojo: el freno de producción instalado (${guardLib}): ${conoce} — si es anterior a la sección «${enArchivo(seccion)}», va a decir «configuración ROTA» hasta reinstalarlo: ${GUARD_INSTALL}`);
   return { ok: true, file, before, after: valorEscrito, warning: avisos.length ? avisos.join(' · ') : null };
 }
 
@@ -1606,19 +1900,72 @@ function parse(texto) {
   let datos;
   try { datos = JSON.parse(String(texto)); } catch (e) { return { ok: false, data: null, problems: [{ path: '', message: `no es JSON válido: ${String((e && e.message) || e).split('\n')[0]}` }] }; }
   if (!esObjeto(datos)) return { ok: false, data: null, problems: [{ path: '', message: 'el perfil tiene que ser un objeto JSON' }] };
-  const { errores } = sinAnotar(() => validarArchivo(datos, { archivo: NOMBRE_PERFIL, esPerfil: true, home: os.homedir() }));
-  const problems = errores.map((e) => ({ path: e.clave || '', message: e.motivo }));
+  const { errores, ignoradas } = sinAnotar(() => validarArchivo(datos, { archivo: NOMBRE_PERFIL, esPerfil: true, home: os.homedir() }));
+  // lo que una máquina ignora (un freno «apagado») el sitio no lo propone: es un problema de lo que se escribió
+  const problems = [...errores, ...ignoradas].map((e) => ({ path: e.clave || '', message: e.motivo }));
   return { ok: problems.length === 0, data: problems.length ? null : datos, problems };
 }
+// ── interruptores de la organización ─────────────────────────────────────────────────────────────
+
+/**
+ * Lo que la configuración dice de un interruptor (`switches.<nombre>`): `{ value: 'on'|'off'|null, warning }`. Nunca
+ * tira: una configuración rota da `value: null` y el aviso, y quien pregunta sigue como viene de fábrica —una clave que
+ * no se puede leer no enciende ni apaga nada en silencio—. `opts.config` evita volver a leer.
+ */
+function switchState(name, opts = {}) {
+  if (!tiene(SWITCHES, name)) return { value: null, warning: `interruptor desconocido: ${name}` };
+  let c = opts.config;
+  if (!c) {
+    const r = sinAnotar(() => leerParaHook(opts));
+    if (!r.ok) return { value: null, warning: r.aviso };
+    c = r.config;
+  }
+  const v = c && c.valores && c.valores.switches ? c.valores.switches[name] : undefined;
+  // el freno que un archivo intentó apagar queda como viene de fábrica, y se dice
+  const ign = (c && c.ignoradas || []).find((r) => String(r.clave || '').split('.').pop() === name && /^(switches|interruptores)\./.test(String(r.clave || '')));
+  return { value: v === 'on' || v === 'off' ? v : null, warning: ign ? `${ign.clave} (${ign.archivo}): ${ign.motivo}` : null };
+}
+
+/**
+ * Si el interruptor está encendido en esta máquina. Manda la variable de la máquina cuando está puesta: un freno que
+ * viene apagado se enciende sólo con `=1`; cualquier otro se apaga sólo con `=0`. Sin variable, manda la organización
+ * («on» enciende; «off» apaga un medidor y nunca un freno, que el lector ya ignoró), y si no dice nada, la fábrica. Un
+ * aviso de configuración rota va a `opts.warn` (por defecto, nada: el hook decide si lo dice).
+ */
+function switchOn(name, opts = {}) {
+  const sw = SWITCHES[name];
+  if (!sw) return false;
+  const env = opts.env || process.env;
+  const raw = env[sw.variable];
+  if (raw !== undefined && raw !== '') return sw.factory === 'off' ? raw === '1' : raw !== '0';
+  const st = switchState(name, opts);
+  if (st.warning && typeof opts.warn === 'function') opts.warn(st.warning);
+  if (st.value === 'on') return true;
+  if (st.value === 'off' && !sw.brake) return false;
+  return sw.factory === 'on';
+}
+
+/** Los frenos que la organización encendió, como variables de la máquina (`{ TYCON_SESSION_GUARD: '1' }`): el aplicador
+ *  los suma al entorno con que decide qué controles registra, sólo donde la máquina no puso la variable. */
+function brakeOptIns(config) {
+  const out = {};
+  for (const [name, sw] of Object.entries(SWITCHES)) {
+    if (!sw.brake) continue;
+    if (switchState(name, { config }).value === 'on') out[sw.variable] = '1';
+  }
+  return out;
+}
+
 /** Las secciones del perfil que este lector conoce, con su nombre en el archivo (lo mira `lectorSabe` de org-config.js). */
 const KEYS = Object.freeze(Object.keys(VOCABULARIO).map((s) => enArchivo(s)));
 
 module.exports = {
   parse, KEYS, motivoPaquetes, paquetesDeTexto, CANALES_DE_AVISO,
-  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, coordinacion, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
+  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, SHORT_PATH_MAX, SHORT_PATH_FACTORY, caminoCorto, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, coordinacion, temasDeSesion, sessionNames, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
-  esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, delegaFirma, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
+  esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, delegaFirma, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, guardKnows, guardAccepts, cli,
+  SWITCHES, switchState, switchOn, brakeOptIns,
 };
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
@@ -1629,7 +1976,7 @@ module.exports = {
  */
 function cli(argv) {
   const cmd = argv[0];
-  const usage = 'uso: tycon-config.js explain [--json] | get <clave> | validate [--hook] | key <integracion> [--hook [--switch VAR]] | integrations [--shell|--json] | response [--json] | set <clave> <valor>';
+  const usage = 'uso: tycon-config.js explain [--json] | get <clave> | validate [--hook] | key <integracion> [--hook [--switch VAR]] | integrations [--shell|--json] | switches --env | response [--json] | set <clave> <valor>';
   // `set <clave> <valor>` (story 8.16, tanda D · AC 34): lo que antes se editaba a mano en ~/.claude/tycon.json, con el
   // escritor único (`setKey`). Una llave acepta true, false, 1 o 0 (y `integrations.codex`, además, detect); una opción,
   // sus valores; un texto o una ruta, un texto no vacío. Nunca escribe sobre un archivo roto.
@@ -1655,6 +2002,8 @@ function cli(argv) {
     }
     // varias carpetas, separadas como en el PATH (`:` en Mac y Linux, `;` en Windows): se guardan como lista
     if (tipo === 'rutas') { const l = String(crudo).split(path.delimiter).map((x) => x.trim()).filter(Boolean); if (l.length > 1) valorNuevo = l; }
+    // los nombres de sesión separados por comas se guardan como lista; sin comas, es el id de un tema
+    if (tipo === 'nombres-de-sesion') valorNuevo = nombresDeTexto(crudo);
     if (rangoDe(tipo) && /^\d+$/.test(String(crudo).trim())) valorNuevo = Number(String(crudo).trim());
     const r = setKey(os.homedir(), clave, valorNuevo);
     if (!r.ok) { process.stderr.write(`tycon-config.js set: ${r.reason}\n`); process.exit(2); }
@@ -1696,6 +2045,14 @@ function cli(argv) {
     if (tool) process.stdout.write(`TYCON_TIME_TOOL=${tool}\n`);
     process.exit(0);
   }
+  // `switches --env`: los frenos que la organización encendió, una asignación `VAR=1` por línea (el aplicador las suma al
+  // entorno con que decide qué controles registra). Rota: nada por stdout y exit 2, como `integrations`.
+  if (cmd === 'switches') {
+    let c;
+    try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
+    for (const [k, v] of Object.entries(brakeOptIns(c))) process.stdout.write(`${k}=${v}\n`);
+    process.exit(0);
+  }
   // `time-tracking`: la integración de horas elegida (`none` o su nombre, con la llave vieja leída), para el instalador.
   // Rota: nada por stdout y exit 2, como `integrations`.
   if (cmd === 'time-tracking') {
@@ -1723,7 +2080,7 @@ function cli(argv) {
   }
   if (cmd === 'get') {
     const clave = argv[1];
-    if (!clave || !/^[a-z]+\.[a-z_]+$/.test(clave)) { process.stderr.write(`${usage}\n`); process.exit(2); }
+    if (!clave || !/^[a-z][a-z_]*\.[a-z_]+$/.test(clave)) { process.stderr.write(`${usage}\n`); process.exit(2); }
     let c;
     try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
     const val = valor(c, clave);
@@ -1744,6 +2101,7 @@ function cli(argv) {
     if (c.errores.length) { process.stderr.write(new ConfigError(c.errores).message + '\n'); process.exit(2); }
     process.stdout.write(`✅ configuración válida (máquina: ${c.archivos.maquina.estado} · perfil: ${c.archivos.perfil.estado})\n`);
     for (const r of c.retiradas || []) process.stdout.write(`ojo: ${r.clave} en ${r.archivo}: ${r.motivo}\n`);
+    for (const r of c.ignoradas || []) process.stdout.write(`ojo: ${r.clave} en ${r.archivo}: ${r.motivo}\n`);
     process.exit(0);
   }
   process.stderr.write(`${usage}\n`);

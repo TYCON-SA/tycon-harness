@@ -17,6 +17,7 @@
  * Uso desde un .sh (agrega las dos líneas):
  *   node smoke-ledger-line.js --dod <dir> --gates <archivo> --story N.M --acs 1 [--ts <iso>] [--exit 0]
  *        [--cmd 'curl -s http://app/x'] [--mutates] [--repo <ruta>] [--no-mirror]
+ *        [--duration-ms <n|null>] [--measures '<json>']
  *        [--pass-if <texto> [--fail-if <texto>] [--output-text <texto>]]
  */
 // stable-data: el sello por defecto es la hora real a propósito: la matriz descarta la evidencia más vieja que el código,
@@ -46,6 +47,18 @@ function lines(o) {
   if (o.repoPath) mirror.repoPath = o.repoPath;
   Object.assign(mirror, { story: o.story, acs, exit });
   if (o.mutates) { ledger.mutates = true; mirror.mutates = true; }
+  // el sello del árbol probado (historia 8.161): `{ tree }`, o `{ tree: null, tree_error }`; va a los dos lados
+  if (o.sello) {
+    ledger.tree = o.sello.tree === undefined ? null : o.sello.tree;
+    mirror.tree = ledger.tree;
+    if (o.sello.tree_error) { ledger.tree_error = o.sello.tree_error; mirror.tree_error = o.sello.tree_error; }
+  }
+  // lo que mide el humo (`duration_ms`, `measures`), igual en las dos líneas; `enRegistro` cambia sólo la del registro,
+  // para probar una medida editada después de la corrida. `env`: el entorno de la procedencia.
+  if (o.durationMs !== undefined) { ledger.duration_ms = o.durationMs; mirror.duration_ms = o.durationMs; }
+  if (o.measures !== undefined) { ledger.measures = o.measures; mirror.measures = o.measures; }
+  if (o.enRegistro) Object.assign(ledger, o.enRegistro);
+  if (o.env) { ledger.env = o.env; mirror.env = o.env; }
   if (o.v2) {
     const v = o.v2;
     ledger.v = 2; mirror.v = 2;
@@ -97,6 +110,8 @@ if (require.main === module) {
       case '--cmd': o.cmd = pide(i); i += 1; break;
       case '--repo': o.repoPath = pide(i); i += 1; break;
       case '--mutates': o.mutates = true; break;
+      case '--duration-ms': o.durationMs = pide(i) === 'null' ? null : Number(a[i + 1]); i += 1; break;
+      case '--measures': o.measures = JSON.parse(pide(i)); i += 1; break;
       case '--no-mirror': o.mirror = false; break;
       case '--pass-if': v2 = v2 || {}; v2.pasaSi = pide(i); i += 1; break;
       case '--fail-if': v2 = v2 || {}; v2.fallaSi = pide(i); i += 1; break;

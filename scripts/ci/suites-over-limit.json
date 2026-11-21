@@ -67,6 +67,13 @@
         "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (78 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
       }
     },
+    "harness-failures.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (los cortes con kill -9 a la mitad de una actualización o de una vuelta atrás, y las copias de respaldo que quedan abiertas). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: 264 s medidos en la Mac, porque entró a main sin peso medido en el agente (la medición final lo corrige). Son 126 verificaciones que instalan, cortan y vuelven a arrancar sobre el laboratorio, una de ellas con el aplicador real, y la no-regresión de cinco casos de otras suites del laboratorio; armar el laboratorio no es lo caro."
+      }
+    },
     "harness-rollback.test.sh": {
       "exception": {
         "signed_by": "el dueño del arnés",
@@ -234,6 +241,18 @@
         "why": "92 s medidos en la validación de la rama, la primera en la que corrió: sólo corre si el cambio toca los pipelines, el texto del alta o los guiones de Windows. No se perfiló en este tramo.",
         "until": "la medición final de la story 8.22 (tramo H)"
       }
+    },
+    "periodic-exam.test.js": {
+      "nightly": true,
+      "why": "Decisión del dueño del 2026-11-18. Pesa 103 s (103 pruebas, la mayor de 10 s) y mide el lanzador del examen de revisores y que un examen sin terminar no parezca verde. Sigue corriendo en cada pedido y en la cola de la CI pública, que no lee esta lista; sale sólo de la validación del privado. Costo aceptado: un cambio del privado que la rompa se ve a la noche siguiente."
+    },
+    "public-ci.test.sh": {
+      "nightly": true,
+      "why": "Decisión del dueño del 2026-11-18, que reemplaza la nota del 2026-11-09 (corría en la validación como siempre). Pesa 160 s (350 verificaciones de public-ci.sh y de las reglas de ci.yml), y partirla exige cortar por dentro su bloque más largo, de 65 s. Sigue corriendo en cada pedido y en la cola de la CI pública, que no lee esta lista; sale sólo de la validación del privado, donde se cortó por tiempo en cuatro corridas. Costo aceptado: un cambio del privado que la rompa se ve a la noche siguiente."
+    },
+    "test-gate-private-tree.test.js": {
+      "nightly": true,
+      "why": "Decisión del dueño del 2026-11-18. Pesa 150 s (51 pruebas que arman repos de juguete, la mayor de 49 s con la máquina cargada) y mide el portón sobre el árbol armado del privado. Sigue corriendo en cada pedido y en la cola de la CI pública, que no lee esta lista; sale sólo de la validación del privado. Costo aceptado: un cambio del privado que la rompa se ve a la noche siguiente."
     }
   }
 }

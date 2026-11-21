@@ -1,0 +1,289 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "anidado-sustitucion-frena",
+          "type": "must-block",
+          "_por_que": "Lo de adentro de `$(…)` corre: `echo` no es el comando que borra.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo $(rm specs/story-1.1.md)"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "anidado-comillas-invertidas-frena",
+          "type": "must-block",
+          "_por_que": "Las comillas invertidas corren su contenido como `$(…)`.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo `rm specs/story-1.1.md`"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "anidado-sh-c-frena",
+          "type": "must-block",
+          "_por_que": "El guion de un shell con `-c` corre como otro comando.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "sh -c 'rm specs/story-1.1.md'"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "anidado-editor-adentro-frena",
+          "type": "must-block",
+          "_por_que": "El editor en el lugar también corre adentro de `$(…)`.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat $(sed -i s/a/b/ specs/story-1.1.md)"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "anidado-llave-frena",
+          "type": "must-block",
+          "_por_que": "`{` abre un grupo: el comando que corre es `rm`.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "{ rm specs/story-1.1.md; }"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "anidado-control-frena",
+          "type": "must-block",
+          "_por_que": "`if`, `then`, `!` y `time` van delante del comando sin cambiar cuál corre.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "if true; then rm specs/story-1.1.md; fi"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "anidado-llaves-en-el-nombre-frena",
+          "type": "must-block",
+          "_por_que": "El shell expande `specs/{story-1.1,x}.md` y nombra la historia entera.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "sed -i s/a/b/ specs/{story-1.1,x}.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "anidado-heredoc-vacio-frena",
+          "type": "must-block",
+          "_por_que": "Con el cuerpo vacío el shell cierra en la primera marca y corre lo que sigue.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat <<'EOF'\nEOF\nrm specs/story-1.1.md\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "anidado-guion-de-shell-a-ruta-absoluta-frena",
+          "type": "must-block",
+          "_por_que": "Un guion de shell escrito en el mismo comando corre lo que dice, esté donde esté.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat <<'EOF' > ${SANDBOX_HOME}/x.sh\nrm specs/story-1.1.md\nEOF\nsh ${SANDBOX_HOME}/x.sh"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "anidado-quinto-nivel-frena",
+          "type": "must-block",
+          "_por_que": "Más allá de cuatro niveles no se lee: si nombra una historia y borra, frena.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo $(echo $(echo $(echo $(echo $(rm specs/story-1.1.md)))))"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "anidado-entre-comillas-simples-no-frena",
+          "type": "must-not-block",
+          "_por_que": "Entre comillas simples `$(…)` es texto: no corre.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo '$(rm specs/story-1.1.md)'"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "anidado-lectura-adentro-no-frena",
+          "type": "must-not-block",
+          "_por_que": "Leer la historia adentro de un grupo o de `$(…)` no la escribe.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "{ cat specs/story-1.1.md; }; echo $(cat specs/story-1.1.md)"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "anidado-mensaje-de-commit-no-frena",
+          "type": "must-not-block",
+          "_por_que": "El cuerpo de un mensaje de commit en heredoc no corre.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"$(cat <<'EOF'\nrm specs/story-1.1.md\nEOF\n)\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    }
+  ]
+}

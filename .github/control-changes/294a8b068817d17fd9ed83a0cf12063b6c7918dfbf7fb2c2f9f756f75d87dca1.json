@@ -1,0 +1,1 @@
+{"hash":"294a8b068817d17fd9ed83a0cf12063b6c7918dfbf7fb2c2f9f756f75d87dca1","rules":[{"path":"scripts/ci/check-pending-approvals.js","blob":"81849f61f82098c6d585ce6894437d8a2d05156c"},{"path":"scripts/lib/pending-approvals.js","blob":"9571cb8c7d52ad9d132708245fe12c457584db94"}],"at":"2026-10-29","by":"dueño"}

@@ -16,7 +16,7 @@ medido, con lo que cada cosa **no** cubre — que es la parte que importa.
 
 La regla que sale de acá: **una corrida real al final, para confirmar** — no diez para descubrir.
 
-## 1 · Vista previa (`scripts/ci/validate-pipeline-in-ado.sh`)
+## 1 · Vista previa (`integrations/azure-devops/scripts/validate-pipeline-in-ado.sh`)
 
 Azure acepta una "corrida en modo vista previa": toma un YAML —**incluso uno que no está
 commiteado**— lo valida y devuelve el YAML final expandido, con identificador de corrida `-1`. No

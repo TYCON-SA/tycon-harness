@@ -99,8 +99,9 @@ repos, productos y máquinas, lo que escribió cada uno) se ve como está. La ay
 
 **Lo que ves la primera vez** depende de quién sos para el sitio:
 
-- **Quien mantiene** ve las cinco pestañas, y en Inicio lo que espera una decisión de toda la organización.
-- **Una persona confirmada** ve tres pestañas (Inicio, Ejecuciones y Proyectos), con lo suyo.
+- **Quien mantiene** ve todas las pestañas (Inicio, Ejecuciones, Mantenimiento, Aprendizajes, Proyectos, Arnés, Cómo trabaja,
+  Configuración y Ayuda), y en Inicio lo que espera una decisión de toda la organización.
+- **Una persona confirmada** ve Inicio, Ejecuciones, Proyectos y Ayuda, con lo suyo.
 - **Alguien que no está en la lista** ve sólo una página que dice con qué cuenta entró, que esa cuenta no está en la
   lista, a quién pedírselo y cómo entrar con otra. No ve el menú de la izquierda ni ningún dato.
 
@@ -169,9 +170,11 @@ del tablero de la noche: la duración y los pasos de una ejecución (medianas) y
 ![Ejecuciones: el alcance, «Lo que se mira primero» y las fichas del filtro](sitio-de-la-organizacion/capturas/corridas-tabla.png)
 
 Más abajo está **«Ejecución por ejecución»**: una fila por ejecución, de la más nueva a la más vieja. La barra de cada fila
-reparte el tiempo entre los pasos del pipeline, con los colores de la leyenda: 0 Arranque, 1 Validar la historia, 2 Armar
-el plan, 3 Aprobar el plan, 4 Implementar y correr las pruebas, 5 Revisores, 6 Hallazgos: el informe, 7 Hallazgos: la
-decisión y 8 Preparar el commit. «Sin marca» es un tramo que la ejecución no anotó.
+reparte el tiempo entre los pasos del pipeline, con los colores de la leyenda: Arranque, Validar la historia, Armar el
+plan, Aprobar el plan, Implementar, Correr las pruebas, Implementar + pruebas (las ejecuciones viejas, que los tenían
+juntos), Revisores, Hallazgos y Preparar el pull request. Son los pasos de Cómo trabaja, por nombre y sin número: el Pase
+adversarial va dentro de Revisores y Probar en vivo dentro de Hallazgos. «Sin marca» es un tramo que la ejecución no
+anotó.
 
 ![La leyenda de los pasos y la tabla «Ejecución por ejecución»](sitio-de-la-organizacion/capturas/corridas-leyenda.png)
 
@@ -186,6 +189,18 @@ sólo si la organización decidió bajar las conversaciones (sección «Conversa
 
 ![El detalle de una ejecución: la línea de tiempo, los controles, los revisores y el consumo](sitio-de-la-organizacion/capturas/corridas-detalle.png)
 
+El detalle trae también la tarjeta **«Las firmas»**: qué se firmó en esa ejecución, cuándo (en UTC), quién y cómo. Las
+firmas salen del **registro común de firmas** de la máquina: las de la sesión de la ejecución, desde su arranque hasta su
+cierre. Arriba, la cuenta; después, una fila por firma, con una de cuatro marcas: **«Tuya»** (la firmaste vos, en la
+ventana, la terminal, un click o un «aprobado» escrito), **«Por delegación»** (la dio la coordinadora en tu nombre; va con
+su propio color y el glifo ⇄), **«Del arnés (trámite)»** (una firma de trámite, que el arnés da solo) o
+**«Hecha y avisada»** (una sesión sin permisos lo hizo y te avisó: no es una firma tuya).
+Una firma pedida por otra sesión lo dice, con los primeros 8 caracteres de esa sesión. Una firma anotada en el registro
+de otra carpeta (la de HOME, cuando no es la de la cuenta) lo dice también. Los textos suben saneados (sin rutas, correos
+ni credenciales), con tope de largo, sin ningún id de sesión entero y con un tope de 200 firmas por ejecución; las que
+quedan afuera se cuentan. Si la tarjeta no tiene filas, dice por qué: la ejecución es anterior a la tarjeta, la máquina
+no tenía el registro, no hubo firmas o no se pudieron leer.
+
 **Qué hacer:** una ejecución que «quedó en el 4» puede estar en curso o abandonada; su detalle dice hasta dónde llegó.
 Una persona ve sólo las ejecuciones de sus máquinas confirmadas; quien mantiene ve todas.
 
@@ -198,18 +213,30 @@ disco del sitio (`SITE_DATA_DIR`): **sin disco**, después de un reinicio la pes
 
 Sólo para **quien mantiene**: lo que encontró la noche, ordenado por quién tiene la pelota. Al lado del nombre, en el
 menú, va cuántas fichas esperan tu decisión, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. La pantalla
-tiene tres bloques:
+tiene cuatro bloques:
 
 - **Te toca decidir**: lo que encontraron el vigilante de producción y la revisión de las ejecuciones, y las
   vulnerabilidades de paquetes pendientes. Primero lo de producción, porque son clientes reales. Dentro de cada grupo,
   primero lo que el análisis recomienda arreglar, después lo que recomienda archivar y al final lo que no tiene
   análisis; los paquetes, la más grave primero.
-- **Esperando aprobación**: lo que ya enviaste y otra persona tiene que aprobar, agrupado por pedido, con su enlace.
+- **Esperando aprobación**: lo que ya enviaste y otra persona tiene que aprobar, agrupado por pedido, con su enlace
+  (con `site.auto_apply` prendida, sólo aparece si la política del repo no dejó que el sitio lo apruebe solo).
   Aprobado, se aplica esa noche. Si la plataforma no contesta, lo dice una frase y las fichas quedan para decidir,
   pero no se envía nada hasta que conteste: así no se abre un pedido repetido.
-- **En marcha** (cerrado de entrada): lo ya decidido que alguien está haciendo, con el número de su tarea y a quién
-  está asignada, y las vulnerabilidades de paquetes. Cada equipo sigue la suya en su tarea y, si no puede actualizar el
-  paquete, declara la deuda en su repo, con plazo.
+- **Arreglos en curso** (cerrado de entrada): lo ya decidido que alguien está haciendo, con el número de su tarea y a
+  quién está asignada, y las vulnerabilidades de paquetes. Cada equipo sigue la suya en su tarea y, si no puede
+  actualizar el paquete, declara la deuda en su repo, con plazo. Una ficha puede estar acá y en el historial.
+- **Historial de decisiones** (cerrado de entrada, al fondo): lo decidido en los últimos 30 días, con qué se eligió,
+  quién y el día en que se decidió. Cada fila dice su estado: la aplica la revisión de esta noche, la noche no la pudo
+  aplicar, o «aplicada, vista el» día de la foto de operaciones en que el sitio la vio aplicada, con su tarea si la
+  tiene. Una fila de antes de que el sitio anotara esa fecha dice sólo el día en que se decidió.
+
+Al enviar, el sitio dice qué sigue en una sola línea: «Tus decisiones quedaron en un pull request. Cuando alguien lo
+apruebe, se aplican en la próxima revisión de la noche, a más tardar a las 05:00, y ahí se crea la tarea.» La hora es la
+de la última revisión de la noche entre las fuentes enviadas, según el cron de su pipeline en el repo de operaciones
+(`pipelines/` o `.github/workflows/`), y sale en la hora de quien mira. Si no puede leer el cron de alguna, no dice hora.
+Con `site.auto_apply` no hay pull request que aprobar. Si una ficha no crea su tarea, un renglón más dice por qué (por
+ejemplo, que ya tiene la suya).
 
 Una vulnerabilidad de paquetes se decide con **Aceptar** o **Rechazar**. Aceptar mergea su pull request, que sube el
 paquete. Rechazar lo cierra y pide un motivo de una línea, que queda como comentario del pull request y en la ficha. Una
@@ -217,24 +244,81 @@ ficha sin pull request también se decide: Aceptar la pasa a arreglar en su tare
 noche, y sólo si el pull request sigue siendo el de la ficha. Si no lo pudo aplicar, el resumen de la mañana lo dice y
 la fila vuelve a «Te toca decidir» con el porqué. El tipo del pedido de trabajo no cambia.
 
-Cada tarjeta dice **qué pasó** con los datos de la ficha, por ejemplo «Pasó 4 veces, del 21/10 al 24/10». Si hay
-análisis, dice **por qué** pasa, qué **recomienda** y qué se haría si se arregla, y aclara si lo escribió el modelo de la
-noche o una persona. Sin análisis, dice por qué no lo tiene y los botones quedan detrás de «Decidir sin análisis».
+Cada tarjeta dice **qué pasó** en llano, con los datos de la ficha. En una de ejecuciones, por ejemplo: «Entre el 21/10 y
+el 24/10, 4 ejecuciones terminaron sin el pase adversarial, la revisión que intenta romper lo que ya se aprobó.
+Historias: 4.1, 4.3. Máquinas: mac-a, mac-b.» Si hay análisis, dice **por qué** pasa, qué **recomienda** y qué
+se haría si se arregla, y aclara si lo escribió el modelo de la noche o una persona. Sin análisis, dice por qué no lo
+tiene. Si la noche dejó una propuesta, dice que la escribió el modelo de IA que revisa cada noche, y su botón queda
+resaltado. Los botones para decidir están siempre a la vista, bajo el título **Decidir**.
 
 **Archivar** quiere decir «es normal, no hay que tocar nada». **Arreglar** quiere decir que la noche crea una tarea para
 corregirlo. Marcás una opción en cada tarjeta (o «Seguir las recomendaciones» para todas las que tienen análisis) y al
 final **Enviar para aprobar**: abre un solo pedido al repo de operaciones con todas tus elecciones. Nada cambia hasta
-que otra persona lo aprueba. Tus marcas quedan guardadas en el navegador hasta que las envíes o las borres. Cada término
+que otra persona lo aprueba. Si la organización prendió «Los cambios de un mantenedor» (`site.auto_apply`), el botón
+dice **Enviar** y lo enviado se guarda sin esperar a nadie: la revisión de esa noche lo aplica. Tus marcas quedan guardadas en el navegador hasta que las envíes o las borres. Cada término
 tiene su «?» con la explicación.
+
+### Aprendizajes
+
+**Qué contesta:** ¿qué hace el equipo una y otra vez que conviene volver regla para todos?
+
+Sólo para **quien mantiene**. Cada noche, la revisión de los instintos del equipo cuenta lo que se repite en las
+máquinas (las que tienen prendidos los aprendizajes en el perfil del equipo) y deja una propuesta por patrón en el repo
+de operaciones. Al lado del nombre, en el menú, va cuántas esperan tu decisión, por ejemplo «Aprendizajes (3)».
+
+**Qué se ve.** Arriba, la última noche: el día, si midió, qué modelo redactó, cuántas quedaron sin redactar y cuántas dejó
+afuera por ruido. Debajo, las propuestas por decidir, primero las que aparecen en más máquinas y después las que se
+repiten más. Cada tarjeta dice qué se repite (la herramienta, el patrón y el repo), en cuántas máquinas, cuántas veces y
+entre qué días, y la regla sugerida con su confianza, o «sin redacción» y por qué. También dice si la noche recomienda
+aprobarla o rechazarla y por qué, con el botón recomendado **resaltado**, igual que en Mantenimiento: el porqué sale de
+una regla fija o del modelo que revisa cada noche, y si no hay recomendación, dice el motivo. Nunca dice qué máquina ni qué persona lo hizo. Si la propuesta
+sugiere una pieza del arnés (un revisor, una skill, un gancho o una guía), la tarjeta trae **Proponer al arnés**, que
+abre un issue nuevo del repo público con el borrador escrito: lo enviás vos, con tu cuenta. Al fondo, cerrado de
+entrada, el historial de los últimos 30 días: quién decidió, cuándo, el texto aprobado o el motivo del rechazo. Cada
+aprobada dice si está **en el perfil** o si **no llegó al perfil** (por ejemplo, porque su pedido se cerró sin
+aplicar); en ese caso, **Volver a proponer al perfil** abre otra vez sólo el pedido al perfil.
+
+**Cómo se decide.** Como en Mantenimiento: marcás **Aprobar** o **Rechazar** en cada tarjeta (las marcas quedan en el
+navegador) y al final **Enviar para aprobar**. Aprobar abre la regla sugerida para que la corrijas: lo que va al equipo
+es el texto que confirmás, en una línea. Una propuesta sin redacción pide que la escribas. Rechazar pide un motivo, en
+una línea. Para decidir muchas de una vez, **Seguir las recomendaciones** marca cada tarjeta con lo que recomienda la
+noche (la aprobación con su regla y el rechazo con su porqué, los dos editables). Con la casilla **Elegir** de cada
+tarjeta, o con **Elegir todas las de** una regla, juntás varias, y **Rechazar las elegidas** las marca con un mismo
+motivo. Nada de esto envía: revisás y recién ahí **Enviar para aprobar**, hasta 200 decisiones por vez. Al enviar salen,
+como mucho, dos pedidos:
+
+1. con aprobadas, uno al repo del perfil, que agrega cada regla al bloque `team-learnings.md` de un paquete que la
+   organización ya tiene (`packs/<paquete>/claude-md-blocks/team-learnings.md`). Viene elegido el paquete que ya tiene
+   el bloque; si ninguno lo tiene, lo elegís. El bloque tiene un techo de 4.000 bytes: pasarlo frena el envío y hay que
+   sacar una regla a mano. Si la capa del perfil pide una versión del arnés anterior a los bloques de paquete, el mismo
+   pedido la sube;
+2. uno al repo de operaciones, que marca cada propuesta como aprobada o rechazada. La noche no vuelve a proponerlas.
+
+Lo aprobado llega a todas las máquinas con su próxima actualización. Mientras un pedido espera, sus propuestas dicen
+**Esperando aprobación** y no se pueden volver a enviar. Con un pedido de aprendizajes abierto en el perfil, aprobar otra
+regla espera a que se cierre (los dos cambiarían el mismo bloque); rechazar sigue andando. Si el pedido al perfil salió
+y el de operaciones falló, reenviar no abre otro pedido al perfil. Si una propuesta cambió desde que la viste, la página
+pide recargar y no pisa nada. Con `site.auto_apply`, el botón dice **Enviar** y no espera a nadie.
+
+**Qué necesita.** Las dos identidades de escritura del sitio: la de operaciones para rechazar y la del perfil para
+aprobar (cómo se configuran, en «Lo que necesita «Aprendizajes»», en la instalación). Sin alguna, la pestaña se ve
+entera, de sólo lectura, y cada botón dice qué le falta. Las propuestas viven en el repo de operaciones: ese repo tiene
+que ser de lectura sólo para quienes mantienen, no para todo el equipo.
 
 ### Proyectos
 
 **Qué contesta:** ¿cómo va cada producto?
 
-Una fila por producto: las stories en curso (y cuántas en revisión), las paradas hace más de 30 días, las bloqueadas,
-qué versión está en prueba y cuál en producción, si espera una aprobación, si el vigilante lo mira, sus vulnerabilidades
-vivas y cómo da contra los otros productos (la paridad). Abajo, el total sin contar dos veces lo compartido. Una persona
-ve los productos en los que trabaja. La **paridad** compara cada producto con los otros: lo que uno hace y los demás no.
+Una fila por producto: las stories en curso (y cuántas en revisión), las paradas, su edad en el estado («más de 30 días:
+2 · más de 60: 1»), las bloqueadas, qué versión está en prueba y cuál en producción, si espera una aprobación, si el
+vigilante lo mira, sus vulnerabilidades vivas y cómo da contra los otros productos (la paridad). Abajo, el total sin
+contar dos veces lo compartido. Una persona ve los productos en los que trabaja. La **paridad** compara cada producto
+con los otros: lo que uno hace y los demás no.
+
+Una story está **parada** cuando está en curso y lleva en su estado más del primero de los dos días de
+`params.edad_en_estado_dias` del `sources.json` (por ejemplo `[30, 60]`); la edad cuenta lo empezado, en curso y
+bloqueado, contra los dos. Es la misma cuenta que la ficha de edad del tablero de la noche. Sin esos días, las paradas
+y la edad dicen «no medido» con su motivo: el sitio no tiene un número propio.
 
 ![Proyectos: una fila por producto](sitio-de-la-organizacion/capturas/proyectos.png)
 
@@ -282,11 +366,12 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 - **Cierres que necesitaban guía para probar a mano, y la tenían** (`qa_guia`). El puente entre las pruebas automáticas y una persona que prueba.
 - **Cuánto tarda verificar: duración de la suite de pruebas** (`gates_dur`). Una suite que tarda horas no se corre antes de commitear: se saltea.
 - **Los frenos previos a la herramienta: cuántas veces frenaron y cuántas los saltearon** (`frenos`). Los dos números de la misma regla juntos: sin el primero, un freno que funcionó parece que no sirvió.
-- **Los hooks del cierre: decisiones sobre una evidencia que la rechazaron** (`evidencia_cierre`). Cuántas veces los frenos que impiden cerrar sin evidencia la rechazaron.
+- **Los controles automáticos del cierre: decisiones sobre una evidencia que la rechazaron** (`evidencia_cierre`). Cuántas veces los frenos que impiden cerrar sin evidencia la rechazaron.
 - **Escapes concentrados en una sola regla** (`escapes_regla_dominante`). Si lo que se escapa de los controles viene casi todo de una sola regla.
 - **Reglas candidatas a retiro: probadas, que nunca encontraron nada** (`reglas_candidatas`). Reglas que saben ponerse rojas y nunca encontraron nada con recorrido de sobra.
 - **Reglas que el banco de pruebas probó de verdad** (`reglas_probadas`). Una regla sin prueba que la obligue a marcar no se juzga: sale «sin probar», nunca candidata.
 - **Commits por carril: pipeline, atajo declarado o ninguno** (`carriles`). Cuántos commits pasaron por el pipeline, cuántos por un atajo declarado y cuántos por ninguno.
+- **Máquinas con una vuelta atrás vigente: no se actualizan solas** (`vueltas_atras`). Cuántas máquinas deshicieron una actualización y la retienen hasta que sale una versión posterior.
 
 **En Proyectos:**
 
@@ -301,8 +386,8 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 **En Ejecuciones:**
 
 - **Veces que un control del pipeline bloqueó una acción** (`bloqueos`). Cuántas veces un control frenó de verdad algo del trabajo.
-- **Una ejecución del pipeline, de punta a punta (mediana, horas)** (`corridas`). Cuánto dura una ejecución completa.
-- **Pasos de una ejecución del pipeline (mediana)** (`pasos`). Una ejecución consume según cuántos pasos da: la variable que explica lo que cuesta.
+- **Una ejecución del pipeline, de punta a punta (mediana, horas)**. Cuánto dura una ejecución completa.
+- **Respuestas del modelo por ejecución del pipeline (mediana)** (`pasos`). Una ejecución consume según cuántos pasos da: la variable que explica lo que cuesta.
 
 **Cómo se oculta una.** En Configuración, sección «Avisos y la noche», «Fichas que muestra el sitio» tiene una casilla
 por ficha. Destildá las que no uses y proponé el cambio: queda en `operations.json` del repo de operaciones
@@ -329,8 +414,8 @@ Si el cálculo de las fichas se cae, todas lo dicen con su propio motivo: «el c
 
 Arriba, **Tu organización**: las integraciones prendidas y apagadas (tachadas), los paquetes de revisores activos y las
 reglas (cómo se nombran las pruebas, qué pantallas piden prueba de punta a punta, en qué idioma está la aplicación).
-Debajo, los pasos del recorrido en orden, y aparte los dos que quedan fuera (otra vuelta de revisores y el cierre en
-Azure DevOps). Al elegir un paso se ve:
+Debajo, los pasos del recorrido en orden; aparte, bajo «Fuera del recorrido», «Cerrar la historia» (el cierre en Azure
+DevOps), y al final, bajo «En cualquier paso», lo que actúa en todo el recorrido. Al elegir un paso se ve:
 
 - **Guías que cita:** el archivo del paso y las guías que nombra.
 - **Según la historia:** lo que se suma sólo en algunas historias, con su condición. Por ejemplo, en una historia que
@@ -362,6 +447,35 @@ repo del perfil.
 **Qué hacer:** si una pieza no se entiende o falta algo, «Proponer una mejora». Si un paquete de tu organización dice
 que no se puede usar, se arregla a mano en el repo del perfil: hasta entonces el arnés tampoco lo carga.
 
+### Horas y tokens
+
+**Qué contesta:** ¿cuánto trabajaron las sesiones de agente de cada máquina, y cuántos tokens consumieron, día por
+día? Sólo la ve quien mantiene: una persona con rol de programador no ve la pestaña, y la dirección `/api/horas` le
+contesta que no tiene permiso.
+
+Es una tabla de los últimos 30 días, una columna por máquina y una fila de total por día. El día es el de cada máquina
+(su zona horaria), y sólo llegan días cerrados: lo de hoy se mira en la oficina. Cada celda trae:
+
+- **Horas con el arnés trabajando:** el tiempo en que hubo al menos una sesión trabajando en esa máquina. Dos sesiones a
+  la vez cuentan una vez; nunca pasa de las horas del día.
+- **Horas de sesión:** la suma del tiempo de todas las sesiones. Dos sesiones a la vez suman las dos, y puede pasar de 24.
+- **Tokens:** lectura, escritura y caché, como en la tarjeta de la oficina, de los mensajes de ese día de todas las
+  conversaciones de la máquina (Claude con sus agentes, y Codex).
+
+Una sesión trabaja desde que empieza un turno hasta que lo cierra, sin contar el tiempo en que espera a la persona (un
+permiso, una pregunta o un plan): una espera toda la noche no son horas. El total de un día suma cada hora por separado
+entre las máquinas y dice cuántas no se midieron.
+
+**«No medido».** Una máquina sin archivo de un día dice **no medido**, nunca cero: puede no tener el buzón configurado,
+estar apagada o no haber subido todavía. Si sólo una parte no se pudo leer, la celda dice «horas no medidas» o «tokens
+no medidos», con el motivo al pasar el mouse.
+
+**Apagarlo en una máquina:** `TYCON_WORKDAYS=0` en su ambiente. No anota ni sube nada, y el sitio la muestra «no
+medido».
+
+**El límite de Codex:** Codex no avisa cuando pide un permiso, así que el tiempo en que espera a la persona dentro de un
+turno cuenta como trabajo. Un turno de Codex que se corta sin terminar suma hasta su última herramienta.
+
 ### Configuración
 
 **Qué contesta:** ¿cómo está configurada la organización, y cómo se cambia? Sólo la ve quien mantiene. La parte
@@ -374,6 +488,53 @@ noche**, **Cómo trabaja el agente** e **Instalación y actualización**. Un nú
 esperan ahí.
 
 ![Configuración: las cuatro fichas de arriba y la pestaña Personas](sitio-de-la-organizacion/capturas/configuracion-personas.png)
+
+## La pestaña «Oficinas»
+
+La oficina de cada máquina del equipo, en vivo: la misma que `/office` dibuja en la máquina, con una sala por máquina.
+Tocar una la agranda y abajo salen sus sesiones, con las mismas columnas que la página local.
+
+**Quién ve qué.** Lo decide `site.offices.visibility`, en Configuración. De fábrica vale `maintainers`: quien mantiene ve
+todas las oficinas y cada dev, las de sus máquinas confirmadas, igual que en Ejecuciones. Con `everyone`, todos los que
+entran al sitio ven todas, y eso incluye la conversación entera de cada sesión de cada dev, no sólo la foto: elegilo
+sabiendo eso. Sin rol, ninguna.
+
+**Sumarse son cero pasos para el dev.** Cada máquina del equipo pide el alta sola: con la dirección del sitio en el perfil
+del equipo, al abrir una sesión, o mientras se trabaja (la capa del equipo se pone al día sola cada 30 min). La máquina
+arma su par de claves, manda al sitio sólo la pública y le muestra al dev una línea con la huella. El dev no corre nada.
+Quien mantiene la aprueba una vez, en Configuración → «Personas y máquinas»: aprobar es confirmar que la huella del pedido
+es la misma que esa máquina dejó con sus ejecuciones en el buzón. Mientras no llegó, el pedido dice «esperando que la
+máquina deje la huella» y a qué hora el sitio vuelve a leer el buzón. La clave vale mientras la máquina se conecte, y
+vence a los 30 días sin conectarse: entonces la máquina pide el alta de nuevo, sola. Dar de baja una máquina corta su
+conexión.
+
+**Qué sale de la máquina.** Lo mismo que muestra la oficina local: cada sesión con su nombre, su estado, su trabajo, su
+encargo, lo que está haciendo y su última acción; el tablero, las tablas, los tokens, los mensajes entre sesiones (los
+avioncitos), la conversación de cada sesión, que se abre con «Ver conversación», como en la máquina, y los dos números
+de los racks: el porcentaje de memoria y el de procesador en uso, enteros de 0 a 100 (ni el nombre de la máquina, ni sus
+procesos, ni totales en bytes). Cada texto sale sin
+la carpeta personal ni las claves que se reconocen. La conversación viaja aparte de la foto, sólo a un sitio que la
+entiende, y el sitio la guarda sólo en memoria: nada de la oficina queda en su disco. Así, quien mantiene ve en vivo qué
+hace cada dev; cada dev lo sabe por la línea de la huella.
+
+**Lo que decidió el dueño.**
+- **D1** — La red: cada máquina abre una conexión de salida al sitio (`wss://`, puerto 443). Nada entra a la máquina.
+- **D1b** — Una sola copia del sitio: la última foto de cada máquina vive en su memoria, y cada receta fija una réplica.
+- **D2** — El alta es automática, con la huella también por el buzón: un pedido de afuera no tiene cómo subirla.
+- **D2b** — La clave no se renueva: vence sólo tras 30 días sin conectarse, y la baja es de la máquina.
+- **D3** — Sale lo mismo que muestra la oficina local; la lista es una sola (`scripts/tools/office/fields.js`).
+- **D4** — La perilla `site.offices.visibility`, de fábrica `maintainers`.
+- **D5** — Un proceso por máquina, de fondo, que avisa cada cambio y vive mientras haya sesiones.
+- **D7** — Las rutas de la máquina, `/live/machine` y `/live/enroll`, quedan fuera del candado de la plataforma.
+
+El canal de vuelta está cerrado: el sitio no le puede mandar órdenes a la máquina. Un mensaje que no sea de los que
+espera la máquina se descarta y corta la conexión.
+
+**Un sitio ya instalado: el paso de una vez.** `/live/machine` y `/live/enroll` están en `RUTAS_SIN_SESION`, pero el
+candado de la plataforma de un sitio ya instalado no se entera solo. En Azure, se corre una vez la orden de
+`--excluded-paths` de la receta, que ya las nombra; en la receta local con túnel, se las deja libres en el candado del
+túnel. Lo comprueba la prueba sin sesión: `node scripts/site/check-deploy.js --url https://<dirección del sitio>`, que
+avisa «falta el paso de una vez» si el candado las tapa.
 
 ## Configuración, sección por sección
 
@@ -408,6 +569,31 @@ vive en tu navegador mientras la pestaña está abierta, nunca va al sitio. En u
 ventana privada, por ejemplo) la página anda igual, sin esa oferta. Las diferencias aceptadas entre productos no se
 mezclan: si su archivo cambió, piden recargar como antes.
 
+**Lo que hace cada botón.** Cada botón que le pide algo al sitio («Revisar cambios», «Confirmar y proponer», «Invitar»,
+los de las máquinas, «Ver sus pasos»…) se apaga mientras trabaja y dice qué hace: «Revisando…», «Proponiendo…»,
+«Guardando…». Un segundo toque no hace nada. Si pasan diez segundos, suma «sigue trabajando». Si falla, dice por qué al
+lado del botón, o en el lugar donde la sección dice sus errores, y el botón vuelve a quedar activo.
+
+**Lo propuesto no es lo guardado.** Mientras el pull request está abierto, la sección dice «Propuesto en el pull request
+N: todavía no entró», con el enlace, y no «sin cambios»: eso es lo que tiene main. Cuando entra, vuelve a decir «sin
+cambios». Si se cierra sin entrar, la sección lo dice, el campo vuelve a mostrar lo que tiene main y lo que escribiste
+queda para recuperarlo y volver a proponerlo.
+
+**La diferencia muestra lo que cambia de valor.** El sitio escribe cada archivo en su formato (dos espacios, un dato por
+renglón). Si el archivo de main estaba escrito de otra forma, la diferencia no llena la pantalla con eso: muestra sólo
+los renglones cuyo valor cambia, con lo cambiado marcado dentro del renglón, y una línea arriba dice «Además, el pull
+request acomoda el formato del archivo: renglones que cambian de forma, no de valor: N».
+
+**Cuando un dato nuevo necesita una versión más nueva del arnés.** Si lo que proponés en el perfil del equipo sólo lo
+lee una versión más nueva del arnés (los nombres de las sesiones, los niveles de las firmas, los canales de aviso…), el
+mismo pull request sube `requires.harness` de `team-layer.json` a esa versión, siempre que todas las **máquinas activas**
+(las que dieron noticias en los últimos 14 días) ya la tengan. Antes de confirmar, la sección lo dice: «El pull request
+también pide el arnés …, por …: las máquinas activas (N) ya lo tienen». Si alguna máquina activa está atrasada, o no se pudo leer
+su versión, no sube: frena y dice cuáles, con su persona y su versión; cuando se actualicen, proponé de nuevo. Una
+máquina sin noticias en los últimos 14 días no cuenta, y la sección dice cuáles quedaron afuera. Si no se sabe qué
+versión tienen las máquinas (ninguna activa, el buzón no se puede leer o el sitio no sabe su propia versión), tampoco
+sube. Una capa que no se puede leer no se pisa. Sin `team-layer.json`, el pull request lleva un solo archivo.
+
 **Descargar** baja el archivo cambiado, para
 cuando el sitio no puede proponer: se lo pasás a quien tiene acceso a ese repo, que lo sube con un pedido de cambio.
 
@@ -437,8 +623,10 @@ Las secciones, en el orden de la pantalla:
   Si alguien sale de la lista, en cuanto se aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos), su
   próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
   sitio; eso se cambia en la instalación. Para alguien de afuera del directorio de la organización, **Invitar** (abajo,
-  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones, el refresco y la dirección del sitio.
-  Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene. **«Cada cuánto se
+  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones y el
+  refresco. La dirección del sitio no: se escribe en un solo lugar, «La dirección del sitio en cada máquina».
+  Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene, salvo que la organización
+  haya prendido «Los cambios de un mantenedor»: entonces el sitio lo aprueba solo. **«Cada cuánto se
   actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
   vuelve a leer el repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a
   la nube, que en una instalación que cobra por uso cuestan algo más. No lo mantiene despierto: dormido no lee nada, y
@@ -463,10 +651,16 @@ Las secciones, en el orden de la pantalla:
 - **Cómo se actualiza el sitio**: si el sitio se pone al día solo con la versión nueva del arnés o sólo avisa (`site.update`
   de `operations.json`). Sin declarar, sólo aviso. «Automático» pide el nocturno de actualización y su permiso: la receta,
   en «Cómo se mantiene al día».
+- **La dirección del sitio en cada máquina**: la página que abre el comando `/org-site` en la máquina de cada persona
+  del equipo (`site.url`). Tiene que empezar con `https`. Vale sólo desde el perfil del equipo: una máquina no la puede
+  cambiar. Sin dirección, el comando explica cómo cargarla. Queda en `team-profile.json`, en el repo del perfil. Es la
+  única dirección del sitio: la leen las máquinas y también los procesos de la noche (el resumen de la mañana, el ciclo
+  de las fichas). Si sólo está en `operations.json` (donde vivía antes), la sección lo dice y muestra el valor para
+  pasarlo al perfil; mientras tanto la noche sigue leyendo el de `operations.json`, que queda de respaldo.
 - **Personas y máquinas**: de quién es cada máquina que manda ejecuciones, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
-- **A quién le llegan los avisos y los pedidos**: a quién se asigna lo que la noche encuentra (una dependencia vieja,
+- **A quién le llegan los avisos y las tareas**: a quién se asigna lo que la noche encuentra (una dependencia vieja,
   un hallazgo del vigilante). Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
 
 ![Personas y máquinas: una máquina por confirmar y las confirmadas](sitio-de-la-organizacion/capturas/configuracion-confirmar-maquina.png)
@@ -507,20 +701,25 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   ninguno); con correo, el remitente y los destinatarios. El chat, la dirección del canal o la contraseña del correo no
   van acá: son secretos de los procesos de la noche. Queda en `operations.json`, en el repo de operaciones. Lo revisa
   quien mantiene.
-- **Aviso de espera**: cuántos minutos espera una ejecución a una persona antes de avisar. Llega a todas las máquinas.
-  Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Aviso de espera**: si el aviso corre y cuántos minutos espera una ejecución a una persona antes de avisar. Llega a
+  todas las máquinas. Sin valor, corre, como de fábrica; «Apagado en todas las máquinas» lo apaga, salvo en la máquina
+  que puso `TYCON_WAIT_NOTICE` (la variable gana). Con una coordinadora designada y viva, al primer plazo la espera le
+  llega a ella, en su próximo turno, y al dueño recién al segundo: los minutos desde que empezó la espera (30 de
+  fábrica), si sigue sin resolver. Si la sesión espera a otra sesión (un turno que le pidió a la coordinadora), el dueño
+  se entera a un plazo propio (120 minutos de fábrica). Sin coordinadora, el aviso va al dueño al primer plazo. Queda en
+  `team-repos.json` → `wait_notice`, en el repo del perfil. Lo revisa quien mantiene.
 - **Umbrales: cuándo algo se pinta verde o rojo**: los límites con que el tablero colorea cada número; entre los dos,
   amarillo. Queda en `scripts/nightly/dashboard/sources.json`, en el repo de operaciones. Lo revisa quien mantiene.
 - **Fichas que muestra el sitio**: una casilla por cada ficha del tablero de la noche que el sitio muestra en Arnés,
   Proyectos y Ejecuciones. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
   Queda en `operations.json`, en el repo de operaciones (`site.hidden_cards`). Lo revisa quien mantiene.
-- **Pedidos de trabajo**: a dónde y cómo pide trabajo la noche. Arriba, la **organización** y el **proyecto** adonde van
+- **Tareas**: a dónde y cómo pide trabajo la noche. Arriba, la **organización** y el **proyecto** adonde van
   los pedidos de la revisión de las ejecuciones y del vigilante; si falta alguno, la sección dice cuál y que la noche no
   va a pedir trabajo. Después, en un recuadro, el **tipo** (vacío, cada proyecto usa su elemento de backlog) y los
   **campos fijos**. Abajo, **según la gravedad**, una tabla con una fila por campo y una columna por gravedad (crítica,
   alta, media y baja); sus valores ganan sobre los fijos si el campo coincide. Los campos fijos y la tabla valen sólo
   para las vulnerabilidades, y la sección lo dice. Con organización y proyecto, el sitio lee de ese proyecto los tipos,
-  los campos de cada tipo y sus valores permitidos; sin ellos, de los proyectos de los productos: cada campo se ve con su nombre (y su referencia, como `Microsoft.VSTS.Common.Priority`, debajo) y cada
+  los campos de cada tipo y sus valores permitidos; sin ellos, de los proyectos de los productos: cada campo se ve con su nombre (y su nombre de referencia debajo) y cada
   valor se elige de un desplegable. Los valores que traen un símbolo adelante, como un círculo de color, se ven sin él y
   se guardan tal cual los acepta Azure DevOps. Un campo sin valores fijos se escribe. Sin permiso de lectura de work
   items, o si Azure DevOps no contesta, un aviso dice por qué y todo se escribe con su referencia. La ✕ de un campo lo
@@ -529,6 +728,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   campo que el arnés fija, un valor vacío, que empieza con «@» o con un salto de línea, o una gravedad que no es una de
   las cuatro, se marcan en su campo y no se proponen. Un proyecto que no tiene el tipo elegido usa el suyo, y el resumen
   de la mañana lo dice. Queda en `operations.json`, en el repo de operaciones (`work_items`). Lo revisa quien mantiene.
+- **Aviso de contexto**: a partir de cuántos tokens una sesión le pide al agente que te recomiende limpiar la
+  conversación (`/clear`) o abrir una sesión nueva, al terminar el paso en curso; vuelve a avisar cada 100 mil más. Avisa,
+  no frena. De 100.000 a 900.000; vacío, 300.000. Una máquina puede poner su propio número con
+  `TYCON_CONTEXT_NOTICE_TOKENS` (la variable gana). Queda en `team-repos.json` → `context_notice`, en el repo del perfil.
+  Lo revisa quien mantiene.
 
 ![Pedidos de trabajo](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
 
@@ -571,7 +775,12 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Cobertura de las pruebas**: el porcentaje de líneas nuevas cubiertas por debajo del cual el control de pruebas
   avisa (avisa, no frena). Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
-- **Vueltas de revisores**: cuántas vueltas de revisores tiene una historia antes de cortar (de 1 a 6; vacío, 2). Al
+- **Revisión de la semana**: si corre la revisión que una vez por semana lee juntos los trabajos sumados y propone un control por
+  cada causa que se repite (vacío, prendida), su tope en dólares por ejecución (vacío, 5) y su tope de material en
+  caracteres (vacío, 600.000). Nunca aplica nada: las propuestas las decide una persona. Queda en `team-repos.json`, en
+  el repo del perfil. Lo revisa quien mantiene.
+- **Vueltas de revisores**: cuántas vueltas de revisores tiene una historia antes de cortar, y cuántos rechazos seguidos de su plan
+  antes de que decida el dueño (de 1 a 6; vacío, 3). Al
   tope, un crítico de seguridad o de datos lo decide una persona y lo demás queda como deuda visible. También se suman
   reglas a las que cuentan como seguridad o datos. Un repo puede ajustar el tope en su `.tycon/advisors.yaml`. Queda en
   `team-repos.json` → `review`, en el repo del perfil. Lo revisa quien mantiene.
@@ -582,15 +791,19 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   mantiene. Una herramienta que no está en la lista se pide con «Pedíselo a tu agente» (abajo, §Tu tecnología).
 - **Quién autoriza saltarse un control**: si la organización trabaja con una sesión coordinadora que le pasa el ok de un dev
   a la sesión que implementa, para eximir un crítico de los revisores o firmar un criterio que no se puede probar en
-  vivo. «No» (de fábrica): el ok lo escribe el dev en el chat de su sesión. Acá se dice sólo sí o no, y vale sólo desde
-  acá, nunca desde una máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev escribe en el chat de
-  esa sesión «Esta sesión es la coordinadora», y la sesión lo anota con
-  `marker.js designate-relay --approved-by "<el dev>" --quote "<su frase>"`. Se la reconoce por su conversación, no por
+  vivo. La pregunta es «¿Quién pasa la autorización para saltarse un control grave?»: «Cada programador (de fábrica)»
+  quiere decir que el ok lo escribe el dev en el chat de su sesión; con «Una sesión coordinadora» aparece «¿Cómo la
+  llaman?» (se guarda en `approvals.relay_session`, de fábrica «coordinadora»). Vale sólo desde acá, nunca desde una
+  máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev se lo pide a esa sesión con sus palabras,
+  la sesión corre `marker.js designate-relay` y el dev hace click en el cuadro que dice qué sesión es y en qué carpeta
+  (sin click, la frase de antes queda de respaldo). Se retira con `marker.js withdraw-relay`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
   Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/firmas-del-arnes.md`), con tres
-  opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso o firma en su terminal.
-  «Delegada a la coordinadora» (`approvals.delegated_signing`) deja que esa sesión la firme en nombre del dueño, y su
+  opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso; donde la ventana no
+  llega, aprueba con un click en el cuadro de opciones o un «aprobado» escrito; o firma en su terminal.
+  «Delegada a la coordinadora» (`approvals.delegated_signing`) la vuelve de trámite: la da el arnés solo, en cualquier
+  sesión, con o sin coordinadora (`guides/firmas-del-arnes.md`, «Las firmas de trámite las da el arnés»), y su
   frase queda registrada; lo delegado no está protegido contra un agente: si la coordinadora decide aprobarlo por su
   cuenta, el arnés no lo distingue de un ok del dueño, así que se delega sólo lo de bajo riesgo. «Sólo del dueño»
   (`approvals.owner_only`) la traba: el sitio no ofrece delegarla, y lo que no se firma desde la pestaña de otra sesión
@@ -599,16 +812,94 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   la lista de abajo (`approvals.delegated_machines`), nombradas por su huella: las que el buzón de ejecuciones vio se
   agregan con un botón, y otra escribiendo su huella. De fábrica, en ninguna. Todo vale sólo desde acá, nunca desde
   una máquina.
+  Más abajo está **el nivel de cada firma**: una fila por cada firma de la tabla de niveles (`guides/firmas-del-arnes.md`,
+  «Los niveles»), con su nivel de fábrica: 1 rutina, 2 excepción, 3 irreversible. El selector empieza en ese nivel, así
+  que la organización puede subirlo y nunca bajarlo (`approvals.levels`). Rige el mayor entre la tabla y el perfil.
+  La pantalla ofrece delegar sólo la rutina: una firma que queda en 2 o más no se ofrece para delegar (las excepciones de
+  trámite se delegan escribiendo su nombre en el perfil; `guides/firmas-del-arnes.md`, «Qué excepciones se delegan»). Si estaba
+  delegada, subirla la saca de la delegación en el mismo cambio. Si el perfil la trae delegada igual, el arnés la saca al
+  leerlo y lo avisa como ignorada; lo demás se sigue delegando. Volver al nivel de fábrica saca la firma de
+  `approvals.levels`. Proponer niveles pide que la capa del equipo exija una versión del arnés que ya sepa leerlos.
+  Quién firma cada nivel: el 1, la coordinadora si el perfil se lo delega (el plan, sólo con el veredicto aprobado de la
+  revisión automática que ella lanza), y si no el dev; el 2, siempre una persona; el 3, una persona, y la emergencia en
+  su terminal. La persona aprueba en la ventana; donde la ventana no llega (una pestaña sin permisos, una sesión de
+  fondo), con un click o un «aprobado». Sin nadie que conteste, todo lo
+  que no está delegado espera: el sistema no mira la hora, pide la firma igual y, si nadie contesta, la sesión queda
+  frenada en ese paso. Con Codex, que no tiene ventana, todo se firma en la terminal. La matriz completa
+  está en `guides/firmas-del-arnes.md`, «Quién firma cada nivel».
+
+  El commit y el empuje de la rama de trabajo los hace el agente sin preguntar: la persona aprueba el pull request, y
+  cada empuje a una rama compartida, en la ventana de permiso.
+
+  **¿Quién firma? En corto.** Para saber quién firma algo en tu máquina, se mira esto:
+
+  | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás | La revisión automática |
+  |---|---|---|---|---|---|
+  | Abrir el pull request · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
+  | Pedir otra revisión · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
+  | Aprobar el plan · 1 | la revisión de la propia sesión, si da aprobado \*\*; si no, vos | la revisión de la propia sesión, si da aprobado \*\*; si no, espera | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | obligatoria: sin su «aprobado», firma una persona |
+  | Aprobar el plan de una story delicada · 2 | vos | espera | vos | espera | ataca y avisa, nunca aprueba |
+  | Saltear un control · 2 | vos | espera | vos | espera | no aplica |
+  | Aceptar un criterio imposible de probar en vivo · 2 | vos | espera | vos | espera | no aplica |
+  | Marcar un criterio como probado a mano · 2 | vos | espera | vos | espera | no aplica |
+  | La emergencia · 3 | vos, en tu terminal | espera | vos, en tu terminal | espera | no aplica |
+
+  \* Sólo si esa firma está en «Delegada a la coordinadora» y tu máquina está en «En qué máquinas vale lo delegado»;
+  si no, es igual que sin coordinadora. \*\* La revisión automática del plan la lanza la coordinadora o, sin ella, la
+  propia sesión, y aprueba un plan de rutina sólo si dice «aprobado» (salvo que la organización pida el click: la opción
+  O4, `plan_review.routine_approval: person`); el de una story delicada lo aprueba siempre el dev. Por qué cada rutina es rutina, y las notas, en `guides/firmas-del-arnes.md`.
+
+  **Dónde se configura**, todo en esta sección:
+  - **A · si hay coordinadora**: «¿Quién pasa la autorización para saltarse un control grave?», con «¿Cómo la llaman?»
+    si es «Una sesión coordinadora».
+  - **B · en qué máquinas**: «En qué máquinas vale lo delegado», cada una por su huella.
+  - **C · quién firma cada cosa y su nivel**: «Quién firma cada cosa» (la lista la trae el arnés, igual para todos;
+    el equipo no agrega ni saca filas) y «El nivel de cada firma» (se sube, nunca se baja; sólo la rutina se delega).
+  - **En cada máquina**, la designación: el dueño se lo pide a la sesión elegida, la sesión corre
+    `marker.js designate-relay` y el dueño hace click en su cuadro; ese click la nombra y la confirma para firmar lo
+    delegado. Con la frase de respaldo, además corre `node scripts/lib/delegated-signing.js confirm-designation` y el
+    dueño lo aprueba con un click, o en su terminal (ver `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
+    conversación, sigue valiendo si se reinicia, y hay que repetirla tras un chat nuevo o un `/clear`. Si nadie la
+    designó, nadie confirmó la designación, o la sesión está cerrada, no hay coordinadora: todo le llega al dev.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
   la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra
   antes qué va a marcar, y el agente no puede marcarlo ni lo marca un reenvío. Vale sólo desde acá, nunca desde una
   máquina. Queda en `team-profile.json` → `qa.manual_check`, en el repo del perfil.
-- **Cuántas sesiones trabajan a la vez**: cuando una sesión coordina a las demás, cuántas pueden estar trabajando al
-  mismo tiempo en una máquina (de 1 a 20; sin valor, 3) antes de que la próxima espere su turno. Cada máquina puede
-  cambiarlo para sí, porque cuánto aguanta depende de ella. La carpeta donde quedan las firmas del dueño es de cada
-  máquina y no se pone acá. Queda en `team-profile.json` → `coordination.max_working`; la receta entera está en
+- **Frenos y medidores**: qué frenos y medidores corren en todas las máquinas. Los **frenos** paran un comando antes de
+  que corra: el de pruebas sin acotar, el de dos sesiones en la misma carpeta y el de un pedido a la vez por repo. Desde
+  acá sólo se encienden: «Como viene de fábrica» o «Encendido en todas las máquinas»; escrito a mano, vale «on» en
+  cualquier mayúscula o `true`. Apagar un freno no se hace desde el perfil: es de cada máquina, con su variable (por
+  ejemplo, `TYCON_SESSION_GUARD=0`), y un «off» escrito a mano en el perfil se ignora, el lector lo nombra y el sitio no
+  lo propone. El freno de comandos peligrosos y el de pedidos a main sin completarse solos no están acá: vienen siempre
+  encendidos y se apagan sólo en cada máquina. Los **medidores** (el del largo de las respuestas y el de esperas largas)
+  no frenan nada: se encienden o se apagan. En los dos casos, la máquina que puso la variable sigue con lo suyo. Sin
+  valor, cada uno como viene de fábrica. Ojo con otro valor escrito a mano (un número, un texto que no es ninguno de
+  éstos): el lector no lo entiende y da por rota la configuración entera de cada máquina, no sólo este interruptor; el
+  sitio no deja proponerlo. Queda en `team-profile.json` → `switches`, en el repo del perfil.
+- **Las sesiones de cada máquina**: cuando una sesión coordina a las demás, cuántas pueden estar trabajando al
+  mismo tiempo en una máquina (de 1 a 20; sin valor, 3) antes de que la próxima espere su turno, y con qué nombres se
+  abren las nuevas: como hoy (los pone quien abre), un tema de fábrica (animales, ríos, colores o árboles) o una
+  **Lista propia**, con un ejemplo de los nombres que salen. La lista propia se escribe acá, un nombre por renglón:
+  letras sin acento, números, guion y guion bajo, hasta 40 caracteres y 200 nombres, sin repetidos; los renglones vacíos
+  no cuentan. La revisa el mismo lector de la máquina antes de proponerla. Cada máquina puede cambiar las dos cosas para
+  sí, y su lista gana sobre la del perfil. La carpeta donde quedan las firmas del dueño es de cada máquina y no se pone acá.
+  Queda en `team-profile.json` → `coordination.max_working` y `coordination.session_names`; la receta entera está en
   `guides/coordination.md`.
+- **Los topes del camino corto**: cuántos archivos de implementación puede cambiar un arreglo rápido sin historia. Dos
+  campos: lo que se abre sin una persona, la coordinadora por delegación o una pestaña sin permisos (de 1 a 6; sin valor,
+  5), y hasta dónde alcanza la firma común (de 1 a 12; sin valor, 8): más pide el click aparte de la persona. Subir el
+  primero deja más archivos sin revisores ni pase adversarial cuando el riesgo es normal; subir el segundo saca el click
+  aparte en arreglos más grandes. Lo sensible, el riesgo alto y el aviso a la persona no cambian, y el primero no puede
+  pasar del segundo. Un campo vacío saca la clave del perfil. **Esta sección nunca se aplica sola**, aunque la
+  organización tenga prendida «Los cambios de un mantenedor»: abre el pedido y lo aprueba una persona que no sea quien lo
+  propone. Si la rama principal del repo del perfil no exige un revisor así, «Proponer» queda apagado y dice por qué.
+  Ni la máquina ni una variable cambian los topes. Queda en `team-profile.json` → `short_path.coordinator_max_files` y
+  `short_path.max_files`; quién firma qué, en `guides/firmas-del-arnes.md`.
+- **La oficina de /office**: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que la oficina diga
+  «sin novedades desde las HH:MM» (de 1 a 1440; sin valor, 15). Lo mide la página con su propio reloj, sin preguntarle
+  nada a la máquina; una sesión en un paso largo sigue viva y sólo se marca callada. Queda en `team-profile.json` →
+  `office.quiet_minutes`.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
   a cada dev y el arnés avisa si una máquina no lo tiene. Queda en `team-profile.json`, en el repo del perfil. Lo
@@ -617,15 +908,48 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   Telegram, como hasta ahora. Con el correo, el servidor y su puerto. Nunca pide una credencial: los avisos de la sesión
   de cada dev usan las suyas (`harness.js config set notify.<clave>`, en su máquina; Telegram, el bot de la máquina) y
   los de la noche, las variables secretas del servidor (`pipelines/operations/README.md`). Guardar los canales sube
-  también `requires.harness` del perfil a la primera versión que los lee.
+  también `requires.harness` del perfil a la primera versión que los lee, con la regla de «Cuando un dato nuevo necesita
+  una versión más nueva del arnés», arriba.
 - **Conversaciones de las ejecuciones**: si el sitio baja también lo que se habló en cada ejecución; con eso, el detalle de
   Ejecuciones muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
   mantiene.
 - **Estimaciones**: la unidad en que estima la organización (horas, días o puntos), las horas de un día de trabajo (de
   1 a 24; vacío, 8) y las horas que vale un punto (vacío: sin tasa, y con puntos el error no se calcula). Abajo dice la
-  unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. Queda en `team-repos.json` →
+  unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. La estimación vigente de cada
+  historia llega también a su pedido de trabajo, en Azure DevOps o GitHub. Queda en `team-repos.json` →
   `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
   mantiene.
+- **Pase adversarial**: cuándo corre el pase que ejecuta el código de una historia para buscarle defectos. Automático
+  (de fábrica): según el riesgo, y siempre que la historia toca un freno del repo, seguridad o datos. Siempre: en todas
+  las historias. No hay opción para apagarlo: saltearlo lo firma el dueño en cada historia. Un repo que pide automático en
+  su `.tycon/advisors.yaml` (`deep_review: auto`) gana sobre «siempre». Queda en `team-repos.json` → `deep_review`, en el
+  repo del perfil. Lo revisa quien mantiene.
+- **Revisión del plan** y **Con qué corre la revisión**, y las opciones nuevas de **Pase adversarial** y de **Vueltas de
+  revisores**: las revisiones automáticas, del plan y del código. Cuándo corre cada una, quién la aprueba, con qué
+  revisor y cuándo el dueño cuenta como ausente; la guía entera es `guides/automatic-reviews.md`. Quedan en
+  `team-repos.json` → `plan_review`, `review_runner`, `deep_review` y `review`, en el repo del perfil; un valor malo cae
+  al de fábrica sólo en su clave. Lo revisa quien mantiene. Las opciones:
+
+| Opción | Qué hace | Clave | Valores | De fábrica | Cuándo cambiarla |
+|---|---|---|---|---|---|
+| O1 | Revisión del plan en historias delicadas | `plan_review.delicate` | `always` · `ask` | `always` | `ask` si preferís decidir cada vez, aun en lo delicado |
+| O2 | Revisión del plan en historias de rutina | `plan_review.routine` | `always` · `ask` · `never` | `ask` | `always` para no preguntar nunca; `never` si tu equipo no la quiere |
+| O3 | Revisión del plan de rutina con el dueño ausente | `plan_review.routine_owner_away` | `review` · `wait` · `skip` | `review` | `wait` si preferís que espere; `skip` para seguir sin revisión |
+| O4 | Quién aprueba un plan de rutina revisado sin defectos: la revisión (con o sin coordinadora) o una persona | `plan_review.routine_approval` | `review` · `person` | `review` | `person` si querés firmar vos todos los planes (el nombre viejo, `plan_review.coordinator_approves: false`, vale lo mismo) |
+| O5 | Un plan rechazado le llega al dueño enseguida | `plan_review.rejected_reaches_owner` | `true` · `false` | `false` | `true` si querés ver cada rechazo, no sólo al llegar al tope |
+| O6 | Revisión del código en historias delicadas | `deep_review.delicate` | `always` · `ask` | `always` | `ask` si preferís decidir cada vez |
+| O7 | Hasta cuántos archivos de código un cambio es chico | `deep_review.small_max_files` | entero de 1 a 50 | `6` | más alto si tus historias tocan muchos archivos chicos |
+| O8 | Revisión del código, rutina y chica, con el dueño presente | `deep_review.small_routine_day` | `ask` · `run` · `skip` | `ask` | `run` para correrla siempre; `skip` para lo de antes |
+| O9 | Revisión del código, rutina y chica, con el dueño ausente | `deep_review.small_routine_owner_away` | `run` · `skip` · `wait` | `run` | `wait` si preferís que espere al dueño |
+| O10 | Revisión del código, rutina y grande | `deep_review.large_routine` | `run` · `ask` | `run` | `ask` si preferís decidir cada vez |
+| O11 | El revisor | `review_runner.order[0]` | `claude` · `codex` · `cursor` · `claude-ollama` · `custom` | `claude` | si tu equipo trabaja con otra herramienta |
+| O12 | El orden de respaldo de los revisores | `review_runner.order` | lista sin repetidos de esos valores | `["claude"]` | para tener un respaldo cuando uno llega a su tope de uso |
+| O13 | Minutos sin respuesta para contar al dueño como ausente | `plan_review.owner_away_minutes` | entero de 5 a 240 | `20` | más si el dueño suele contestar tarde |
+| O14 | El comando del revisor propio (sólo con `custom`) | `review_runner.custom_command` | texto | — | con un revisor que no es de los de fábrica |
+| O15 | El tope de vueltas, el mismo para el plan y el código | `review.max_rounds` | entero de 1 a 6 | `3` | menos para cortar antes; más si tus historias son largas |
+| O16 | Cuántos verificadores | `review_runner.verifiers` | `per_lens` · `per_finding` | `per_lens` | `per_finding` para medir uno por hallazgo |
+| O17 | Desde qué gravedad un hallazgo confirmado frena | `review.blocking_severity` | `bug` · `robustness` · `all` | `bug` | `robustness` o `all` para frenar también por lo demás |
+| O18 | Qué lentes corre la revisión del plan | `plan_review.lenses` | lista de `suposicion-falsa` · `ac-sin-cubrir` · `prueba-que-falta` · `riesgo-sin-defensa` | `["suposicion-falsa"]` | sumar lentes para una revisión más amplia, a cambio de más agentes |
 
 ![Cómo trabaja el agente](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 
@@ -684,8 +1008,10 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 
 ### Instalación y actualización
 
-- **Cómo se actualizan las computadoras del equipo**: qué versión toma cada máquina y si se actualiza sola al arrancar. Queda en
-  `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Cómo se actualizan las computadoras del equipo**: qué versión toma cada máquina y cómo se aplica. «Automática, sólo
+  avisa»: cada máquina se actualiza sola al arrancar y le avisa al dev, que no la puede saltear. «Pregunta a cada dev»
+  (la de fábrica): la máquina avisa que hay una versión nueva y cada dev decide cuándo instalarla, con
+  `npx @tyconsa/harness@latest`. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Perfil de instalación**: cuánto instala el arnés en cada máquina (mínimo o completo), con la lista de lo que trae
   cada uno. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Paquetes de la organización**: qué paquetes del arnés (los revisores y las guías de un producto o de un cliente)
@@ -705,7 +1031,7 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 
 De fábrica, las dos opciones nuevas están en lo más seguro: la firma delegada apagada y el freno con la contraseña.
 
-Debajo está **Qué versión del arnés tiene cada máquina**, la que informó cada una con su última ejecución. Es para mirar:
+Debajo está **Qué versión del arnés tiene cada máquina**, la que informó cada una en su última subida diaria, con o sin ejecuciones. Es para mirar:
 las máquinas se actualizan solas al arrancar.
 
 ![Instalación y actualización](sitio-de-la-organizacion/capturas/configuracion-instalacion.png)
@@ -720,6 +1046,8 @@ El sitio decide quién sos por tu correo, y sólo con la lista de «Quién entra
 | **Persona confirmada** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas | no | los productos en los que trabaja | no | no | no |
 | **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | no | los productos en los que trabaja | no | no | no |
 | **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no | no | no |
+
+**Aprendizajes** la ve sólo quien mantiene, como Mantenimiento: una persona confirmada no la ve en el menú.
 
 **Cómo se pasa de un rol a otro.** Lo decide quien mantiene, en Configuración, y entra cuando alguien aprueba el pedido:
 
@@ -1149,9 +1477,11 @@ Con eso la noche empuja directo, y el sitio abre su pedido, lo aprueba con su id
 «Aplicado»). Una persona no puede empujar a `main` (rebota con `TF402455`): entra por un pedido, que puede aprobar ella
 misma.
 
-**En GitHub** la noche entra sola; el sitio, todavía no: quien abre un pull request no puede aprobarlo. La regla es la de
-empuje por ruta del README de GitHub: el sitio valida y descarga `operations.json`, y quien mantiene abre el pull
-request a mano.
+**En GitHub** la noche entra sola. Quien abre un pull request no puede aprobarlo, así que el sitio no vota: une su
+pedido directo cuando su identidad puede saltear la revisión; si el repo pide la aprobación de otra persona, le prende la
+**unión automática** (*Allow auto-merge*) y entra cuando alguien lo apruebe; y si GitHub no deja la unión automática, el
+pedido queda abierto para que alguien lo apruebe y lo una a mano. Con la regla de empuje por ruta del README de GitHub,
+el sitio no propone cambios a `operations.json`: los valida y descarga, y quien mantiene abre el pull request a mano.
 
 **Lo que se resigna.** Nadie revisa esos cambios antes de que entren. Queda la constancia: cada cambio del sitio es un
 pedido con quien lo pidió, y el registro del sitio anota `cambio aplicado: <archivo>, pedido <enlace>`.
@@ -1190,13 +1520,36 @@ Con ese secreto el sitio sólo crea ramas `team-config/...` y abre pedidos. Nunc
 aunque «Los cambios de un mantenedor» esté prendida: esa opción vale para el perfil y para operaciones, no para los
 repos de producto.
 
+Una organización puede elegir no pedir ese revisor en sus repos de producto, por ejemplo porque cada dev mergea solo a
+`main`. Entonces «Proponer» queda apagado en esos repos: se revisa el cambio, se descarga y el pedido se abre a mano.
+
+### Lo que necesita «Aprendizajes»
+
+La pestaña Aprendizajes escribe en dos repos, siempre por pull request:
+
+- `SITE_OPERATIONS_WRITE_TOKEN`, la identidad de escritura de operaciones: rechazar y marcar cada propuesta (su archivo
+  en la carpeta de propuestas del repo de operaciones). Con la copia de operaciones, escribe en el clon de escritura aparte, como
+  Configuración.
+- `SITE_PROFILE_REPO` con `SITE_PROFILE_WRITE_TOKEN`, la identidad de escritura del perfil: aprobar, que agrega la regla
+  al bloque `packs/<paquete>/claude-md-blocks/team-learnings.md` de un paquete del perfil.
+
+Sin una de las dos, la pestaña se ve entera, de sólo lectura, y cada botón dice qué variable le falta. El repo de
+operaciones tiene que ser de lectura sólo para quienes mantienen: ahí viven las propuestas, que son lo que se repite en
+el trabajo de cada máquina. En Azure DevOps, el grupo de los devs con la lectura negada en ese repo; en GitHub, un repo
+privado con acceso sólo para quienes mantienen.
+
 ### Invitar a alguien
 
 Con Microsoft en «sólo la organización», alguien de afuera del directorio (una cuenta personal, alguien de otra
 empresa) entra recién cuando está en el directorio y en la lista del sitio. En Configuración → Personas, «Quién entra al
 sitio» → **Invitar a alguien**: su correo y sus productos. «Invitar» abre un pedido que lo suma a la lista como dev, con
 sus productos y una marca (`site.invitations`: quién invitó y cuándo). Cuando el pedido se aprueba y el sitio lee la
-lista nueva, el sitio le manda la invitación de Microsoft, que lo lleva al sitio. Al lado de su correo se ve el estado:
+lista nueva, el sitio le manda la invitación de Microsoft, que lo lleva al sitio. La invitación sale en el primer ciclo
+del sitio después de aprobado el pedido; si nadie lo usa, puede tardar hasta que alguien entre. Microsoft no
+reenvía el correo a una dirección invitada hace poco (medido: una segunda invitación al mismo correo, 36 minutos
+después, quedó creada y sin correo). Para ese caso, quien administra el directorio puede pedir el enlace de canje de
+la invitación y pasárselo a la persona. El correo de invitación puede caer en spam; el remitente es
+`invites@<directorio>.onmicrosoft.com`. Al lado de su correo se ve el estado:
 «invitación enviada, todavía no entró», «aceptada» (ya entró), «esperando el tope de mañana» o «no se pudo enviar» con
 el motivo; una falla se reintenta sola en el próximo refresco (si Microsoft no llegó a contestar, la persona puede
 recibir un segundo correo). Hasta 10 invitaciones por día
@@ -1279,6 +1632,18 @@ pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso
   ese candado: así se ve aunque el candado haya vencido, sin pasar antes por su inicio de sesión. El actualizador cambia
   la imagen, no la configuración del candado. Se hace una vez, a mano, con la orden de la receta de tu entorno (en su
   «Inicio de sesión»). Las instalaciones nuevas ya lo traen.
+- **El mismo paso, al pasar a una versión con las oficinas.** Las máquinas no tienen cómo pasar el candado de la
+  plataforma, así que `/live/machine` y `/live/enroll` tienen que quedar fuera. Sin eso, la prueba sin sesión avisa
+  «falta el paso de una vez», sin fallar: una organización que no usa oficinas no lo necesita. En Azure, es la misma orden de `--excluded-paths` de la receta, que ya las nombra. Hacelo
+  antes de poner `site.url` en el perfil.
+- **Y que el sitio vea la dirección de quien pide.** Detrás de un intermediario, todas las conexiones llegan desde su
+  dirección, y los topes por dirección valdrían para toda internet: dos conexiones sin firmar frenarían a cualquier
+  máquina. Las instalaciones nuevas ya lo traen. En una ya instalada, poné `SITE_TRUST_PROXY=1` en las variables del sitio
+  (la receta de tu entorno, en su «Inicio de sesión», trae la orden). Sólo si delante hay un intermediario: sin él,
+  cualquiera inventaría su dirección. Mejor que `1` es la lista de direcciones del intermediario (por ejemplo
+  `SITE_TRUST_PROXY=10.0.0.0/8`, o `127.0.0.1` con un nginx en la misma máquina): así el sitio cree la dirección que
+  trae sólo si el pedido llega de él, y quien entra directo al puerto no puede inventarse otra. Con `1` lo cree venga
+  de donde venga, y el sitio lo avisa al arrancar. El demo acepta la misma variable.
 
 ### Las dos formas de arrancarlo
 
@@ -1337,7 +1702,7 @@ quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configura
 - **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID.
   Detrás, el del sitio, que decide con su lista. `/healthz`, `/livez`, la página «Saliste» con lo que carga y `/idioma` quedan fuera del candado (sin eso, con el
   candado vencido, «Saliste» pasa antes por su inicio de sesión). Un sitio ya instalado se corrige una vez:
-  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2`. Con `microsoftAccounts`
+  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; y para que los topes por dirección valgan, `az containerapp update -g <grupo> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. Con `microsoftAccounts`
   en el archivo de configuración se elige el modo:
   - `organization` (por defecto): un solo inquilino. Si el registro tiene «asignación requerida», las personas se
     asignan una por una en el portal (asignar un grupo pide una licencia Entra ID P1/P2).

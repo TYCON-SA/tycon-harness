@@ -36,7 +36,8 @@ const TEST_GATE = path.join(SCRIPTS, 'test-gate.sh');
 // Variables del entorno de quien corre la suite que cambian un veredicto o el lugar del estado: fuera, siempre.
 const DEL_ENTORNO = ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'TYCON_NO_DEEP_REVIEW', 'DOD_BYPASS',
   'TYCON_TEST_SCOPE', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_COMPANION', 'TYCON_EVIDENCE_DIR', 'TYCON_EVIDENCE_KEY',
-  'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_COVERAGE_BASE', 'STOP_AUTONOMY', 'TYCON_SNAPSHOT_GUARD', 'TYCON_PACKS_DIR'];
+  'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_COVERAGE_BASE', 'STOP_AUTONOMY', 'TYCON_SNAPSHOT_GUARD', 'TYCON_PACKS_DIR',
+  'TYCON_GATE_ALL_SUITES'];
 
 function entorno(home, sid, extra) {
   const env = { ...process.env };
@@ -350,8 +351,15 @@ function corridaConPase(home, sid, lab) {
 function propia(home, sid, ruta, cwd) {
   // El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con su confirmado.
   const resultado = path.join(home, `resultado-${process.hrtime.bigint()}.json`);
+  // la prueba de cada lente limpia, al lado del resultado
+  const prueba = (l) => {
+    const d = path.join(home, 'step-05b-probes', `caza-${l}`);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), 'node probe.js\n→ ok\n');
+    return d;
+  };
   fs.writeFileSync(resultado, JSON.stringify({ confirmed: [{ lens: 'l', summary: 'h' }],
-    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true }));
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0, probe_dir: prueba(l) })), lentes_sin_medir: [], detalle: [], medido: true }));
   return spawnSync(process.execPath, [MARKER, 'mark-adversarial-result', '1', '--type', '5b', '--result', resultado, '--tests', '0', '--own', '1', '--in', ruta],
     { encoding: 'utf8', env: entorno(home, sid), cwd });
 }
@@ -396,7 +404,7 @@ test('una story de un solo repo da el mismo set, contexto y delta que antes', ()
   const lab = laboratorio({ declarar: false });
   const out = advisors(lab, casa(), 't15', ['src/A.cs']);
   const ctx = fs.readFileSync(out.context_file, 'utf8');
-  assert.match(ctx, /## Diff unificado \(git diff HEAD\)\n\n```diff\ndiff --git a\/src\/A\.cs b\/src\/A\.cs/);
+  assert.match(ctx, /## Diff unificado \(git diff contra [^\n]*\)\n\n```diff\ndiff --git a\/src\/A\.cs b\/src\/A\.cs/);
   assert.doesNotMatch(ctx, /repo hermano/);
   assert.match(ctx, /## Archivos del diff \(1\)\n\n- src\/A\.cs\n/);
   assert.deepEqual(out.all.filter((a) => /feature-wiring|react/.test(a)), [], 'un diff sólo .cs sin endpoints no trae ni cableado ni React');
@@ -681,7 +689,8 @@ test('T18 8.55-TestGate_Salida7DeOtroCorredor_EsRojo @story-8.55 @ac-5 @ac-7 —
   const archivoMarker = markerFalso(home, 't855f', repo, path.join(repo, 'no-hay.md'));
   const r = spawnSync('bash', [TEST_GATE, repo, '9.26'], { encoding: 'utf8', env: entorno(home, 't855f'), cwd: repo });
   assert.equal(r.status, 1, `${r.stdout}\n${r.stderr}`);
-  assert.match(r.stderr, /salió 7 y no es «sin acotar»/);
+  // la herramienta que sale 7 cuenta como falla apenas termina, antes de que nadie lo lea como «sin acotar»
+  assert.match(r.stderr, /node-test salió 7: cuenta como falla \(1\)/);
   const m = JSON.parse(fs.readFileSync(archivoMarker, 'utf8'));
   assert.match(String(m.checks.tests), /^red/, `checks.tests=${m.checks.tests}`);
 });
@@ -818,6 +827,33 @@ test('T3 HermanoPorNumero_PalabraEntera @story-7.34 @ac-3 — 1.4 no es 11-4, 1-
   assert.equal(ramaNombraLaStory('feat/1x4', '1.4'), false);
 });
 
+// Renglón 4 de la fila del 21/11 (8.274 B): el portón eligió como público el único worktree cuya rama nombra la story, y era
+// el de la tanda anterior, atrás de main: dio un rojo que main ya había arreglado. Por el número sólo se elige una copia que
+// ya trae su main; una atrás no se elige, y se dice. La de la misma rama sigue ganando, como antes.
+test('T1 HermanoPorNumero_AtrasDeMain_NoLoElige — una copia vieja de otra tanda no se elige por el número', () => {
+  const lab = laboratorioPorNumero({ id: '8.268', backRama: 'story/8.268-c', frontRamas: ['story/8.268-b-medicion'] });
+  const origen = path.join(lab.raiz, 'Front-origen.git');
+  spawnSync('git', ['init', '-q', '--bare', '-b', 'main', origen]);
+  git(lab.front, 'remote', 'add', 'origin', origen);
+  git(lab.front, 'push', '-q', 'origin', 'main');
+  // main sigue con un arreglo que la copia vieja no trae
+  escribir(lab.front, 'scripts/lib/arreglo.js', 'module.exports = 1;\n');
+  git(lab.front, 'add', '-A');
+  git(lab.front, '-c', 'user.email=lab@example.invalid', '-c', 'user.name=lab', 'commit', '-q', '-m', 'el arreglo en main');
+  git(lab.front, 'push', '-q', 'origin', 'main');
+  git(lab.front, 'fetch', '-q', 'origin');
+  const atras = hermanosConAvisos(lab.backWt, lab.story);
+  assert.deepEqual(atras.roots, [lab.front], 'ya entró y quedó atrás de main: el declarado');
+  assert.match(atras.avisos, /ya entró a main y está atrás de origin\/main/, atras.avisos);
+  // con trabajo propio, aunque esté atrás de main, es el código de la story: se elige como siempre. Sin commitear también
+  // cuenta (lo encontró el pase adversarial)
+  escribir(lab.frontWts[0], 'scripts/lib/tanda.js', 'module.exports = 2;\n');
+  assert.deepEqual(hermanosConAvisos(lab.backWt, lab.story).roots, [lab.frontWts[0]], 'trabajo sin commitear');
+  git(lab.frontWts[0], 'add', '-A');
+  git(lab.frontWts[0], '-c', 'user.email=lab@example.invalid', '-c', 'user.name=lab', 'commit', '-q', '-m', 'trabajo de la tanda');
+  assert.deepEqual(hermanosConAvisos(lab.backWt, lab.story).roots, [lab.frontWts[0]], 'trabajo commiteado');
+});
+
 test('T4 HermanoPorNumero_DosCandidatos_NoElige @story-7.34 @ac-4 — dos worktrees con el número: el declarado y se dice', () => {
   const lab = laboratorioPorNumero({ frontRamas: ['feat/conciliacion-1-4-x', 'feature/1-4-lista-negra'] });
   const { roots, avisos } = hermanosConAvisos(lab.backWt, lab.story);
@@ -917,4 +953,195 @@ test('T7.35 Sibling_NotAGitRepo_OneExactWarning @story-7.35 @ac-10 — un herman
   assert.equal(lineas.length, 1, avisos);
   assert.match(lineas[0], /no es un repo git, uso la carpeta tal cual/);
   assert.doesNotMatch(avisos, /fatal:/, 'sin el error crudo de git');
+});
+
+// ── El hermano que no está al lado se busca en la raíz de repos ──────────────────────────────
+// Desde una carpeta de `worktrees/`, `../tycon-harness` no existe aunque el hermano esté clonado en la raíz de repos.
+
+const EVIDENCE_LIB = path.join(SCRIPTS, 'lib', 'evidence-config.js');
+
+/** Un repo de historias en `<lab>/worktrees/hm-x` que declara `declarados`, y la raíz de repos `<lab>/repos`. */
+function labRaiz(declarados) {
+  const lab = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-raiz-')));
+  const yaml = `evidence:\n  companion_repos:\n${declarados.map((d) => `    - ${d}\n`).join('')}`;
+  const hm = repoGit(path.join(lab, 'worktrees', 'hm-x'), { 'specs/s.md': STORY(), '.tycon/advisors.yaml': yaml });
+  const repos = path.join(lab, 'repos');
+  fs.mkdirSync(repos, { recursive: true });
+  return { lab, hm, repos };
+}
+
+/** Corre `fn` con `TYCON_REPOS_ROOT` apuntando a `raiz`, y deja el entorno como estaba. */
+function conRaiz(raiz, fn) {
+  const antes = process.env.TYCON_REPOS_ROOT;
+  process.env.TYCON_REPOS_ROOT = raiz;
+  try { return fn(); } finally { if (antes === undefined) delete process.env.TYCON_REPOS_ROOT; else process.env.TYCON_REPOS_ROOT = antes; }
+}
+
+test('T1 8.229-Companion_RelativeMissing_FoundInReposRoot @story-8.229 @ac-1 — la ruta relativa o el nombre que no está al lado sale de la raíz de repos', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  for (const declarado of ['../tycon-harness', 'tycon-harness']) {
+    const { hm, repos } = labRaiz([declarado]);
+    const arnes = repoGit(path.join(repos, 'tycon-harness'), { 'README.md': 'x\n' });
+    const cfg = conRaiz(repos, () => parseEvidenceConfig(hm));
+    assert.deepEqual(cfg.roots, [arnes], declarado);
+    assert.deepEqual(cfg.missing, [], declarado);
+  }
+});
+
+test('T2 8.229-Companion_FoundInReposRoot_SaysSo @story-8.229 @ac-2 — el camino tomado se dice en modo normal, en modo freno y por companionRoots', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  const { companionRoots } = require(COMPANION_LIB);
+  const { hm, repos } = labRaiz(['../tycon-harness']);
+  const arnes = repoGit(path.join(repos, 'tycon-harness'), { 'README.md': 'x\n' });
+  const linea = (ws) => ws.filter((w) => w.includes('`../tycon-harness` no está al lado de') && w.includes(`lo leí de la raíz de repos (${arnes})`));
+  conRaiz(repos, () => {
+    assert.equal(linea(parseEvidenceConfig(hm).warnings).length, 1, 'modo normal');
+    assert.equal(linea(parseEvidenceConfig(hm).warnings).length, 1, 'una segunda llamada lo vuelve a decir');
+    const freno = parseEvidenceConfig(hm, { freno: true });
+    assert.deepEqual(freno.roots, [arnes], 'modo freno, desde lo commiteado');
+    assert.equal(linea(freno.warnings).length, 1, 'modo freno');
+    const avisos = [];
+    const roots = companionRoots(hm, path.join(hm, 'specs', 's.md'), { onWarning: (w) => avisos.push(w) });
+    assert.deepEqual(roots, [arnes]);
+    assert.equal(linea(avisos).length, 1, 'companionRoots por onWarning');
+  });
+});
+
+test('T3 8.229-Companion_RelativeExists_NoFallback @story-8.229 @ac-3 — la ruta que existe al lado se usa como siempre, sin aviso', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  const { lab, hm, repos } = labRaiz(['../tycon-harness']);
+  const alLado = repoGit(path.join(lab, 'worktrees', 'tycon-harness'), { 'README.md': 'al lado\n' });
+  repoGit(path.join(repos, 'tycon-harness'), { 'README.md': 'otro\n' });
+  const cfg = conRaiz(repos, () => parseEvidenceConfig(hm));
+  assert.deepEqual(cfg.roots, [alLado]);
+  assert.deepEqual(cfg.warnings, []);
+});
+
+test('T4 8.229-Companion_NotInReposRoot_StaysMissing @story-8.229 @ac-4 — sin el repo, sin .git o repetido queda faltante; a dos niveles y único, lo encuentra', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  // (a) no está en la raíz
+  let l = labRaiz(['../tycon-harness']);
+  let cfg = conRaiz(l.repos, () => parseEvidenceConfig(l.hm));
+  assert.deepEqual(cfg.missing, ['../tycon-harness']);
+  assert.ok(cfg.warnings.some((w) => w.includes(`tampoco está en la raíz de repos (${l.repos})`)), cfg.warnings.join('\n'));
+  // (b) una carpeta con ese nombre que no es un repo principal
+  l = labRaiz(['../tycon-harness']);
+  fs.mkdirSync(path.join(l.repos, 'tycon-harness'));
+  cfg = conRaiz(l.repos, () => parseEvidenceConfig(l.hm));
+  assert.deepEqual(cfg.missing, ['../tycon-harness']);
+  assert.deepEqual(cfg.roots, []);
+  // (c) dos candidatos: no elige y los nombra
+  l = labRaiz(['../tycon-harness']);
+  const a = repoGit(path.join(l.repos, 'a', 'tycon-harness'), { 'README.md': 'a\n' });
+  const b = repoGit(path.join(l.repos, 'b', 'tycon-harness'), { 'README.md': 'b\n' });
+  cfg = conRaiz(l.repos, () => parseEvidenceConfig(l.hm));
+  assert.deepEqual(cfg.missing, ['../tycon-harness']);
+  assert.ok(cfg.warnings.some((w) => w.includes(a) && w.includes(b) && w.includes('no elijo')), cfg.warnings.join('\n'));
+  // (d) a dos niveles y único
+  l = labRaiz(['../tycon-harness']);
+  const g = repoGit(path.join(l.repos, 'grupo', 'tycon-harness'), { 'README.md': 'g\n' });
+  cfg = conRaiz(l.repos, () => parseEvidenceConfig(l.hm));
+  assert.deepEqual(cfg.roots, [g]);
+  assert.deepEqual(cfg.missing, []);
+});
+
+test('T5 8.229-Companion_ReposRootUnknown_StaysMissingAndSays @story-8.229 @ac-5 — sin raíz de repos, o con un lector que tira, queda faltante y se dice', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  const { hm } = labRaiz(['../tycon-harness']);
+  const sinRaiz = parseEvidenceConfig(hm, { resolveReposRoot: () => ({ root: null, roots: [], fuente: 'sin-raiz', motivo: 'sin rutas.repos' }) });
+  assert.deepEqual(sinRaiz.missing, ['../tycon-harness']);
+  assert.ok(sinRaiz.warnings.some((w) => w.includes('no pude mirar la raíz de repos (sin rutas.repos)')), sinRaiz.warnings.join('\n'));
+  const tira = parseEvidenceConfig(hm, { resolveReposRoot: () => { throw new Error('tycon.json roto'); } });
+  assert.deepEqual(tira.missing, ['../tycon-harness']);
+  assert.ok(tira.warnings.some((w) => w.includes('no pude mirar la raíz de repos (tycon.json roto)')), tira.warnings.join('\n'));
+});
+
+test('T6 8.229-Companion_AbsoluteOrHome_NoFallback @story-8.229 @ac-6 — una absoluta o con ~/ que no existe no se busca en la raíz', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  const ausente = `no-existe-${process.pid}-${Date.now()}`;
+  const abs = path.join(os.tmpdir(), ausente, 'tycon-harness');
+  const casaRel = `~/${ausente}/tycon-harness`;
+  const { hm, repos } = labRaiz([abs, casaRel]);
+  repoGit(path.join(repos, 'tycon-harness'), { 'README.md': 'x\n' });
+  const cfg = conRaiz(repos, () => parseEvidenceConfig(hm));
+  assert.deepEqual(cfg.roots, []);
+  assert.deepEqual(cfg.missing, [abs, casaRel]);
+  assert.deepEqual(cfg.warnings, []);
+});
+
+// El checkout compartido en `main`, su `origin` y un worktree de la historia 9.1: lo que elige `enLaMismaRama` cuando la
+// historia está en la rama `main`. Corre en otro proceso: los avisos se dicen una vez por proceso.
+function laboratorioMain() {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-main-')));
+  const semilla = repoGit(path.join(raiz, 'semilla'), { 'a.js': '1\n' });
+  const origen = path.join(raiz, 'origen.git');
+  execFileSync('git', ['clone', '-q', '--bare', semilla, origen]);
+  const pub = path.join(raiz, 'pub');
+  execFileSync('git', ['clone', '-q', origen, pub]);
+  const wt = path.join(raiz, 'pub-wt');
+  git(pub, 'worktree', 'add', '-q', '-b', 'story/9.1-x', wt);
+  // la rama de la story tiene trabajo propio: no es una copia vieja que ya entró a main
+  escribir(wt, 'story.js', 'lo de la story\n');
+  git(wt, 'add', '-A');
+  git(wt, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qm', 'lo de la story');
+  return { pub: fs.realpathSync(pub), wt: fs.realpathSync(wt) };
+}
+function elegir(declarado, rama, numero) {
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).enLaMismaRama(...JSON.parse(process.argv[1]))))`,
+    JSON.stringify([declarado, rama, numero])], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return { eleccion: JSON.parse(r.stdout), avisos: r.stderr };
+}
+const NO_LO_ELIJO = /no está al día con origin\/main o tiene cambios: no lo elijo por el nombre de la rama/;
+
+test('CompanionRepos_RamaMain_NoTomaElCompartidoSinMirar @story-8.282 @ac-18', () => {
+  const casos = {
+    atras: (l) => {
+      escribir(l.pub, 'a.js', '2\n');
+      git(l.pub, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qam', 'nuevo');
+      git(l.pub, 'push', '-q', 'origin', 'main');
+      git(l.pub, 'reset', '-q', '--hard', 'HEAD~1');
+    },
+    sucio: (l) => { escribir(l.pub, 'a.js', 'a medio hacer\n'); },
+  };
+  for (const [nombre, preparar] of Object.entries(casos)) {
+    const l = laboratorioMain();
+    preparar(l);
+    const conNumero = elegir(l.pub, 'main', '9.1');
+    assert.equal(conNumero.eleccion, l.wt, `${nombre}: elige por el número`);
+    assert.match(conNumero.avisos, NO_LO_ELIJO, nombre);
+    const sinNumero = elegir(l.pub, 'main', null);
+    assert.equal(sinNumero.eleccion, l.pub, `${nombre}: sin número, el declarado`);
+    assert.match(sinNumero.avisos, NO_LO_ELIJO, nombre);
+  }
+  // al día con su origin/main local y limpio: lo usa, sin aviso
+  const l = laboratorioMain();
+  const alDia = elegir(l.pub, 'main', '9.1');
+  assert.equal(alDia.eleccion, l.pub);
+  assert.doesNotMatch(alDia.avisos, NO_LO_ELIJO);
+  // sin origin/main (un repo local, sin nada contra qué comparar): como antes, lo usa sin aviso, aunque esté sucio
+  const local = laboratorioMain();
+  git(local.pub, 'remote', 'remove', 'origin');
+  escribir(local.pub, 'a.js', 'a medio hacer\n');
+  const sinOrigin = elegir(local.pub, 'main', '9.1');
+  assert.equal(sinOrigin.eleccion, local.pub);
+  assert.doesNotMatch(sinOrigin.avisos, NO_LO_ELIJO);
+  // dentro del gancho del commit, git hereda el índice de otro repo (GIT_INDEX_FILE): no cambia lo que se ve del hermano
+  const otro = laboratorioMain();
+  const indiceAjeno = path.join(otro.pub, '..', 'indice-ajeno');
+  fs.copyFileSync(path.join(otro.pub, '.git', 'index'), indiceAjeno);
+  escribir(otro.pub, 'b.js', 'otro contenido\n');
+  git(otro.pub, 'add', 'b.js');
+  fs.copyFileSync(path.join(otro.pub, '.git', 'index'), indiceAjeno);
+  const conIndice = spawnSync(process.execPath, ['-e', `process.stdout.write(String(require(${JSON.stringify(COMPANION_LIB)}).mainAlDia(process.argv[1])))`, l.pub],
+    { encoding: 'utf8', env: { ...process.env, GIT_INDEX_FILE: indiceAjeno } });
+  assert.equal(conIndice.stdout, 'true', conIndice.stderr);
+});
+
+test('CompanionRepos_RamaDeHistoria_ComoHoy @story-8.282 @ac-19', () => {
+  const l = laboratorioMain();
+  escribir(l.pub, 'a.js', 'sucio: no importa con una rama de historia\n');
+  const r = elegir(l.pub, 'story/9.1-x', '9.1');
+  assert.equal(r.eleccion, l.wt);
+  assert.equal(r.avisos, '');
 });

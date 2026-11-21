@@ -37,11 +37,16 @@
 // throttle a propósito: mientras la condición exista, cada sesión nueva la ve — un aviso que
 // se calla es exactamente el silencio que este hook combate.
 //
-// Off: TYCON_BRANCH_GUARD=0
+// También dice si la versión de Claude de esta sesión no alcanza para que el click firme (scripts/lib/claude-versions.js).
+//
+// Off: TYCON_BRANCH_GUARD=0 (todo) · TYCON_CLAUDE_VERSION_NOTICE=0 (sólo la versión de Claude)
 // Fail-open total: cualquier error → exit 0 sin output (nunca rompe el arranque).
 
 'use strict';
 const path = require('path');
+// El comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; suelto, este
+// archivo escribe el mismo texto.
+const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return require('fs').existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
 // La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
@@ -49,12 +54,21 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'har
 const os = require('os');
 const { execFileSync } = require('child_process');
 
+// git en inglés (scripts/lib/clean-git-env.js). La biblioteca se carga SI ESTÁ: el banco copia este hook suelto. Sin
+// ella no se lanza git sin el idioma fijo: se hace lo mismo que cuando git no está (no se avisa nada de ese clon).
+const gitEnv = (() => {
+  try { return require(path.join(__dirname, '..', 'lib', 'clean-git-env.js')).idiomaFijo(); } catch (_) { return null; }
+})();
+function sinBiblioteca() { return Object.assign(new Error('scripts/lib/clean-git-env.js no carga'), { code: 'ENOENT' }); }
+
 function git(dir, args) {
+  if (!gitEnv) throw sinBiblioteca();
   return execFileSync('git', ['-C', dir, ...args], {
+    windowsHide: true,
     encoding: 'utf8',
     timeout: 5000,
     stdio: ['ignore', 'pipe', 'ignore'],
-    env: Object.assign({}, process.env, { LC_ALL: 'C' }),
+    env: gitEnv,
   }).trim();
 }
 const lines = (s) => String(s || '').split('\n').filter(Boolean);
@@ -68,11 +82,13 @@ const lines = (s) => String(s || '').split('\n').filter(Boolean);
  *  si lo cortó el tope de tiempo), `silent` si no escribió nada en stderr, `noGit` si en la máquina no hay git. */
 function gitTry(dir, args) {
   try {
+    if (!gitEnv) throw sinBiblioteca();
     const out = execFileSync('git', ['-C', dir, ...args], {
+      windowsHide: true,
       encoding: 'utf8',
       timeout: 5000,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: Object.assign({}, process.env, { LC_ALL: 'C' }),
+      env: gitEnv,
     });
     return { ok: true, out: out.trim() };
   } catch (e) {
@@ -431,6 +447,11 @@ try {
       MS.launch();
     }
   } catch (_) { /* fail-open: una pieza rota no frena el arranque */ }
+  // La versión de Claude que usa esta sesión, si no alcanza para que el click firme. También se carga SI ESTÁ.
+  try {
+    const lib = path.join(__dirname, '..', 'lib', 'claude-versions.js');
+    if (fs.existsSync(lib)) harnessLines.push(...require(lib).startupNotice());
+  } catch (_) { /* fail-open */ }
 
   const hs = harnessState();
   const legacyLine = legacyRetireLine();
@@ -440,7 +461,7 @@ try {
   if (hs.status === 'broken') {
     harnessLines.push(
       `🔔 TYCON — el estado del mecanismo de instalación (~/.claude/.tycon-pipeline/harness-state.json) ${hs.why || 'no se puede leer'}.`,
-      '   Decile a la persona; `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` lo detalla. No lo arregles sin que te lo pida.',
+      `   Decile a la persona; \`${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} doctor\` lo detalla. No lo arregles sin que te lo pida.`,
     );
   } else if (hs.status === 'ok' && hs.state.notice) {
     harnessLines.push(
@@ -458,7 +479,7 @@ try {
     const since = typeof hold.at === 'string' && hold.at ? ` desde el ${hold.at.slice(0, 16).replace('T', ' ')} (UTC)` : '';
     harnessLines.push(
       `🔔 TYCON — retención del arnés — decile a la persona: se deshizo la versión ${hold.commit || '(sin número)'}${since}; el arnés no se actualiza solo mientras siga la retención.`,
-      '   Para volver a actualizar: node ~/.claude/tycon-harness/scripts/setup/harness.js rollback --release (o update --yes). No lo hagas sin que te lo pida.',
+      `   Para volver a actualizar: ${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} rollback --release (o npx @tyconsa/harness@latest). No lo hagas sin que te lo pida.`,
     );
   }
   // ¿el atraso se grita? Sólo sin estado (lo de hoy), con estado roto, o en managed con apply: auto y sin retención
@@ -564,7 +585,7 @@ try {
       // actualización), un `checkout` de esa rama fallaría: la crea `update`
       ...offInstalled.map((o) => (o.installed
         ? `Volver: git -C ${sh(o.dir)} checkout ${o.home}`
-        : `Volver: node ~/.claude/tycon-harness/scripts/setup/harness.js update   # "${o.home}" todavía no existe: la crea la primera actualización, o dice por qué no`)),
+        : `Volver: ${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} update   # "${o.home}" todavía no existe: la crea la primera actualización, o dice por qué no`)),
     );
   }
   if (stale.length > 0) {
@@ -590,7 +611,7 @@ try {
     // una fuente que se reescribe no se arregla con un merge (su rama no desciende de la anterior): la mueve `update`
     for (const s of stale) {
       out.push(...(s.rewritten
-        ? ['node ~/.claude/tycon-harness/scripts/setup/harness.js update   # dice por qué no avanza, o avanza']
+        ? [`${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} update   # dice por qué no avanza, o avanza`]
         : manualAdvice(s.dir, s.stuck, s.unmerged, s.collide)).map((l) => `  ${l}`));
     }
     out.push('Avisale al dev en una línea.');

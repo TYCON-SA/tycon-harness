@@ -359,8 +359,8 @@ EOF
     { printf '$ErrorActionPreference = "Stop"; $Check = $false; $ClaudeDir = "%s"\n' "$H4/.claude"
       printf '%s\n' '$LegacyNames = Join-Path (Join-Path $PSScriptRoot "lib") "legacy-names.js"' \
         '$lnArgs = @("--migrate-machine", "--guides", (Split-Path -Parent $PSScriptRoot), "--skills", $AgentSkillsRepo)'
-      sed -n '/^# ── La tanda de Node (story 8.36)/,/^# ── fin de la tanda de Node/p' "$PS_I"
-      sed -n '/^# ── Los nombres viejos (story 8.9/,/^# Load settings.json/p' "$PS_I" | sed '$d'
+      sed -n '/^# ── La tanda de Node ─/,/^# ── fin de la tanda de Node/p' "$PS_I"
+      sed -n '/^# ── Los nombres viejos (espejo/,/^# Load settings.json/p' "$PS_I" | sed '$d'
     } > "$T/ps/frag.ps1"
     for caso in cae:lab-caida nota:lab-nota; do
       o="$(env PATH="$T/bin-ln:$PATH" LN_LAB="${caso%%:*}" pwsh -NoProfile -File "$T/ps/frag.ps1" 2>&1)"
@@ -399,7 +399,10 @@ elif corre T27; then
   n_faltan="$(faltan_en_copia "$RAIZ" "$SRC")"; [ "$n_faltan" = 0 ] || mal "T27: la copia del árbol al laboratorio quedó incompleta (faltan ${n_faltan:-?} archivos)"
   G0() { git -C "$1" -c core.hooksPath=/dev/null -c user.email=lab@example.com -c user.name=Lab "${@:2}"; }
   git init -q -b main "$SRC" && G0 "$SRC" add -A && G0 "$SRC" commit -q -m "antes del renombre"
-  git clone -q --bare "$SRC" "$T/remote.git"
+  # --no-local: el clon local copia los objetos sueltos uno por uno, y el commit recién hecho los puede estar
+  # empaquetando de fondo; con la máquina cargada el clon falla («hardlink different from source», «failed to copy
+  # file») y el resto de T27 cae en cadena. Por el protocolo de git no hay archivos que se muevan debajo.
+  git clone -q --no-local --bare "$SRC" "$T/remote.git"
   # 2 · el renombre de laboratorio: un hook que llama la máquina, un control del hook global de git y una lib que
   #     llama agent-skills. Cada uno con su reemplazo generado, su entrada en el mapa y sus llamadores al día.
   W="$T/work"; git clone -q "$T/remote.git" "$W"
@@ -686,7 +689,8 @@ if corre T55; then
     n_faltan="$(faltan_en_copia "$RAIZ" "$SRC")"; [ "$n_faltan" = 0 ] || mal "T55: la copia del árbol al laboratorio quedó incompleta (faltan ${n_faltan:-?} archivos)"
     G0() { git -C "$1" -c core.hooksPath=/dev/null -c user.email=lab@example.com -c user.name=Lab "${@:2}"; }
     git init -q -b main "$SRC" && G0 "$SRC" add -A && G0 "$SRC" commit -q -m "el arnés de hoy"
-    git clone -q --bare "$SRC" "$T/remote.git"
+    # --no-local, por lo mismo que en T27
+    git clone -q --no-local --bare "$SRC" "$T/remote.git"
     GH="$H/src/tycon-claude-guides"; SK="$H/src/agent-skills"
     git clone -q "$T/remote.git" "$GH"; git clone -q --local "$SKILLS_REPO" "$SK"
     ln -s "$GH" "$H/.claude/tycon-claude-guides"; ln -s "$SK" "$H/.claude/agent-skills"

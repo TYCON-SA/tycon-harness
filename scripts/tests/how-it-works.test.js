@@ -205,8 +205,15 @@ test('T8 Controles_EnSuPaso @story-2.61 @ac-6 — cada control en sus pasos; los
   const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
   const paso4 = html.slice(html.indexOf('id="paso-implement"'), html.indexOf('id="paso-run-tests"'));
   assert.ok(paso4.includes(`ct-chip frena">${TX().t('es', 'comoTrabaja.frena')}<`) && paso4.includes('on-atdd-preedit'), 'el paso Implementar muestra un control que frena');
-  const guardia = html.split('data-origin="harness"').find((x) => x.includes('session-collision-guard.js'));
-  assert.ok(guardia && guardia.includes(TX().t('es', 'comoTrabaja.opcional', { variable: 'TYCON_SESSION_GUARD' })) && !guardia.split('</li>')[0].includes('ct-chip frena'), 'opcional, apagado de fábrica');
+  // el guion tiene dos controles: el freno (PreToolUse), opcional y apagado de fábrica, y el aviso de llegada
+  // (SessionStart), que va siempre
+  const piezas = html.split('data-origin="harness"').map((x) => x.split('</li>')[0]).filter((x) => x.includes('session-collision-guard.js'));
+  const opcional = TX().t('es', 'comoTrabaja.opcional', { variable: 'TYCON_SESSION_GUARD' });
+  const guardia = piezas.find((x) => x.includes(TX().t('es', 'comoTrabaja.evento.PreToolUse')));
+  assert.ok(guardia && guardia.includes(opcional), 'el freno: opcional, apagado de fábrica');
+  // el opcional que avisa no dice que frena (hasta la 8.292 el aviso era opcional; hoy lo es sólo el freno, que sí frena)
+  const aviso = piezas.find((x) => x.includes(TX().t('es', 'comoTrabaja.evento.SessionStart')));
+  assert.ok(aviso && !aviso.includes(opcional) && !aviso.includes('ct-chip frena'), 'el aviso de llegada no es opcional ni frena');
 });
 
 // ════════════════════════════════════════ la pantalla ════════════════════════════════════════
@@ -537,14 +544,14 @@ const ESCRITURA = `w-${crypto.randomBytes(6).toString('hex')}`;
 const CAB = `Basic ${Buffer.from(`x-access-token:${ESCRITURA}`).toString('base64')}`;
 
 /** El sitio con la pestaña; `perfil` es la carpeta del clon del perfil (o null). */
-async function conSitio({ perfil = null, env = {}, opciones = {} }, fn) {
+async function conSitio({ perfil = null, env = {}, opciones = {}, site = {} }, fn) {
   let emisor = null; let h = null;
   try {
     emisor = await arrancarEmisor();
     const { validarConfiguracion } = require(path.join(H.SITE, 'server.js'));
     const envSitio = H.envBase({ SITE_OIDC_ISSUER: emisor.issuer, ...env });
     const cfg = validarConfiguracion(envSitio).cfg;
-    const fuentes = H.fuentesFijas({ config: { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, people: { machines: { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } } } } });
+    const fuentes = H.fuentesFijas({ config: { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD], ...site }, people: { machines: { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } } } } });
     fuentes.clones = () => ({ operaciones: null, perfil: perfil ? { dir: perfil } : null });
     fuentes.exclusivo = (f) => f();
     const rutasExtra = TAB().crearRutas({ cfg, fuentes, versionImagen: '2026.10.19.3', ...opciones });
@@ -555,6 +562,26 @@ async function conSitio({ perfil = null, env = {}, opciones = {} }, fn) {
     await fn({ h, entrar, token, escribir });
   } finally { await Promise.allSettled([h, emisor].filter(Boolean).map((s) => s.cerrar())); }
 }
+
+// con `site.auto_apply`, el editor no dice que otra persona aprueba: el servidor le pasa la opción con el borrador
+test('ComoTrabaja_Editor_AplicaSolo_NoHablaDeOtraPersona', async () => {
+  for (const autoApply of [true, false]) {
+    await conSitio({ perfil: carpeta(perfilCon(), { repo: true }), site: { auto_apply: autoApply } }, async ({ h, entrar }) => {
+      const lead = await entrar(LEAD);
+      const hoy = await h.pedir('/api/como-trabaja/revisor?pack=acme-pagos&agent=acme-pagos-reviewer', { cookie: lead });
+      assert.strictEqual(hoy.json.aplicaSolo, autoApply, `el revisor de hoy, auto_apply ${autoApply}`);
+      const nuevo = await h.pedir('/api/como-trabaja/revisor?pack=acme-pagos', { cookie: lead });
+      assert.strictEqual(nuevo.json.aplicaSolo, autoApply, `un revisor nuevo, auto_apply ${autoApply}`);
+    });
+  }
+  // con la opción, el editor dice que el sitio aprueba solo si la política del repo lo deja; sin ella, que aprueba otra persona
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['motivoAntesDeRevisarSolo', 'motivoRevisadoSolo']) assert.match(TX().t(idioma, `comoTrabaja.${k}`), /aprueba solo si la política del repo|approves itself if the repo's policy/, `${k} en ${idioma}`);
+    assert.doesNotMatch(TX().t(idioma, 'comoTrabaja.aplicado'), /otra persona|someone else/i, `aplicado en ${idioma}`);
+  }
+  assert.match(TX().t('es', 'comoTrabaja.motivoRevisado'), /aprueba otra persona/);
+  assert.doesNotMatch(TX().t('es', 'comoTrabaja.motivoRevisado'), /aprueba solo/);
+});
 
 test('T1 ComoTrabaja_SoloMantenedores @story-2.61 @ac-1 — el mantenedor la ve; el dev, 403 en la página y en las rutas', async () => {
   // el clon del perfil es un repo git (el editor lee de ahí las versiones de los archivos)
@@ -917,6 +944,22 @@ test('HowItWorks_TimeControls_OnlyWhenChosen @story-7.40 @ac-11 — los de horas
   assert.ok(!TAB().renderPage(sin, { idioma: 'es', publicRepo: PUBLICO, version: 'v' }).includes('ct-chip horas"'));
 }));
 
+test('HowItWorks_Strip_ChosenTimeToolNotStruck — la de horas elegida no sale tachada aunque la llave vieja diga false', () => conCasa(() => {
+  const H2 = HIW();
+  const tachada = (k) => `class="ct-ap" title="${TX().t('es', 'comoTrabaja.apagadoEnTuOrganizacion')}">${k}<`;
+  const m = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: 'clockify', clockify: false, engram: true }) });
+  assert.strictEqual(m.org.integrations.clockify, true, 'la elegida, prendida en la franja');
+  const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+  assert.ok(!html.includes(tachada('clockify')), 'no sale tachada');
+  // otra elegida: aparece con su nombre y la vieja no se muestra
+  const otra = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: 'solidtime', clockify: false, engram: true }) });
+  assert.strictEqual(otra.org.integrations.solidtime, true);
+  assert.ok(!('clockify' in otra.org.integrations), 'la llave vieja no queda en la franja');
+  // ninguna: la llave vieja apagada sigue tachada
+  const ninguna = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ clockify: false, engram: true }) });
+  assert.ok(TAB().renderPage(ninguna, { idioma: 'es', publicRepo: PUBLICO, version: 'v' }).includes(tachada('clockify')));
+}));
+
 test('T29 ComoTrabaja_SoloLoQueTuOrganizacionUsa @story-2.61.3 @ac-4 — apagada no aparece; prendida o sin perfil, «según tu organización»', () => conCasa(() => {
   const H2 = HIW();
   const marca = `ct-chip segun">${TX().t('es', 'comoTrabaja.segunTuOrganizacionMarca')}<`;
@@ -1145,7 +1188,9 @@ test('T8 RevisarYProponer_ElOrdenSeDice @story-2.63 @ac-7 — los botones numera
   const g = TAB().guion ? TAB().guion('es') : '';
   assert.ok(g, 'el guion del navegador se puede leer');
   // el guion lleva todos los textos en TXT: lo que se mira es que el editor los pida
-  for (const k of ['motivoAntesDeRevisar', 'motivoRevisado', 'motivoCambiaste']) assert.match(g, new RegExp(`T\\('comoTrabaja\\.${k}'\\)`), `el editor usa ${k}`);
+  // con la opción de que el sitio apruebe solo, el editor elige entre las dos variantes de las dos primeras
+  for (const k of ['motivoAntesDeRevisar', 'motivoRevisado', 'motivoAntesDeRevisarSolo', 'motivoRevisadoSolo']) assert.match(g, new RegExp(`'comoTrabaja\\.${k}'`), `el editor usa ${k}`);
+  assert.match(g, /T\('comoTrabaja\.motivoCambiaste'\)/, 'el editor usa motivoCambiaste');
 });
 
 test('T9 Proponer_ElRevisorEntero @story-2.63 @ac-8 — el pedido trae el pack.json y el .md armado con los campos y el cuerpo', () => {
@@ -1554,7 +1599,8 @@ test('HowItWorks_CloseChecks_ShownAsBlocks @story-8.127 @ac-9 — cada paso mues
   }
   assert.match(TX().t('es', S.STEP_CLOSE_CHECKS.find((r) => r.shownIn === 'reviewers').textKey), /conteo real de revisores/);
   const pase = S.STEP_CLOSE_CHECKS.find((r) => r.shownIn === 'adversarial-pass');
-  assert.match(TX().t('es', pase.textKey), /commit/);
+  // el pase frena el paso que prepara el pull request
+  assert.match(TX().t('es', pase.textKey), /preparar el pull request/);
   assert.match(TX().t('es', pase.textKey), /resultado/);
   // el del pase dice en qué paso se revisa
   assert.ok(itemDe(seccionDe(html, 'adversarial-pass'), TX().t('es', pase.textKey)).includes(TX().t('es', 'paso.prepare-commit')), 'dice que frena al preparar el commit');
@@ -1606,4 +1652,87 @@ test('HowItWorks_CloseChecks_BrokenRow_Said @story-8.127 @ac-9 — una fila que 
   const nula = modelo(conTabla("[null, { shownIn: 'a', checkedIn: 'a', key: 'plan', oldKeys: [], textKey: 'x' }]"));
   assert.strictEqual(delCierre(nula).length, 1, 'la fila que no es una fila se dice');
   assert.deepStrictEqual(nula.steps.find((s) => s.id === 'a').closeChecks.map((c) => c.key), ['plan'], 'las filas sanas se siguen mostrando');
+});
+
+// ════════════════════════ las mismas palabras que Configuración y que el guion ════════════════════════
+
+const franjaDe = (html) => { const i = html.indexOf('class="ct-org card"'); return html.slice(i, html.indexOf('</section>', i)); };
+
+// 🔴 Falla con: Cómo trabaja diciendo «pantallas: ui» mientras Configuración ofrece «Sin definir (todas)»: la misma
+// regla con dos palabras, y ninguna dice que es la de fábrica.
+test('T28 2.79-HowItWorks_Rules_SameWordsAsConfig @story-2.79 @ac-25 — la regla de pantallas dice lo mismo que Configuración, con «de fábrica»', () => conCasa(() => {
+  const REPOS = (rules) => ({ version: 1, public: { platform: 'github', org: 'acme', repo: 'arnes' }, profile: { platform: 'github', org: 'acme', repo: 'perfil' }, operations: { platform: 'github', org: 'acme', repo: 'operaciones' }, stack: { rules } });
+  const sinElegir = HIW().buildModel({ treeDir: ROOT, profileDir: carpeta(perfilCon({ repos: REPOS({}) })) });
+  assert.strictEqual(sinElegir.org.rules.screen_test.source, 'por_defecto');
+  const elegida = HIW().buildModel({ treeDir: ROOT, profileDir: carpeta(perfilCon({ repos: REPOS({ screen_test: 'react' }) })) });
+  // Configuración: la opción vacía del selector de pantallas es la que se ve cuando no se eligió
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8'), /reglas\.screen_test, \[\['', T\('pantalla\.tecSinDeclararTodas'\)\], \['ui', T\('pantalla\.tecTodas'\)\], \['react', T\('pantalla\.tecSoloReact'\)\], \['off', T\('pantalla\.tecNinguna'\)\]\]/);
+  for (const idioma of ['es', 'en']) {
+    const deFabrica = TX().t(idioma, 'pantalla.tecSinDeclararTodas');
+    assert.match(deFabrica, idioma === 'es' ? /de fábrica/ : /default/, `${idioma}: Configuración dice que es la de fábrica`);
+    const pagina = (m) => franjaDe(TAB().renderPage(m, { idioma, publicRepo: PUBLICO, version: 'v' }));
+    assert.ok(pagina(sinElegir).includes(TX().t(idioma, 'comoTrabaja.reglaPantallas', { valor: deFabrica })), `${idioma}: sin elegir, Cómo trabaja dice «${deFabrica}»`);
+    assert.ok(pagina(elegida).includes(TX().t(idioma, 'comoTrabaja.reglaPantallas', { valor: TX().t(idioma, 'pantalla.tecSoloReact') })), `${idioma}: elegida, la misma opción que Configuración`);
+    assert.doesNotMatch(pagina(sinElegir), /pantallas: ui|screens: ui/, `${idioma}: nunca el valor crudo`);
+  }
+}));
+
+// 🔴 Falla con: la leyenda diciendo «anota: sólo lo registra» de controles que actúan por su cuenta, y on-advisor-run
+// en «Anotan» con un texto que dice que frena, cuando su guion le muestra un aviso al asistente.
+test('T29 2.79-HowItWorks_Controles_EfectoComoElGuion @story-2.79 @ac-26 — la leyenda de «Anotan» y on-advisor-run en «Avisan»', () => {
+  const FRASE = { es: 'anota o actúa por su cuenta: no frena ni avisa al asistente', en: 'records or acts on its own: does not block or warn the assistant' };
+  for (const idioma of ['es', 'en']) assert.ok(TX().t(idioma, 'comoTrabaja.leyendaControles').includes(FRASE[idioma]), `${idioma}: la leyenda nueva`);
+  const spec = 'tycon-pipeline/scripts/on-advisor-run.js';
+  assert.match(fs.readFileSync(path.join(SCRIPTS, 'on-advisor-run.js'), 'utf8'), /systemMessage/, 'su guion le muestra un aviso al asistente');
+  const texto = TX().t('es', `control.${spec}`);
+  assert.match(texto, /^Avisa|avisa/, 'el texto dice que avisa');
+  assert.doesNotMatch(texto, /fren/i, 'el texto no dice que frena');
+  assert.doesNotMatch(TX().t('en', `control.${spec}`), /block/i, 'en: tampoco');
+  const sec = seccionDe(paginaEs(), 'reviewers');
+  const bloque = sec.slice(sec.indexOf(`<h3>${TX().t('es', 'comoTrabaja.controles')}</h3>`));
+  const avisan = bloque.indexOf(`<p class="ct-grupo">${TX().t('es', 'comoTrabaja.grupoAvisan')}</p>`);
+  assert.ok(avisan >= 0, 'el paso de los revisores tiene «Avisan»');
+  const siguiente = bloque.indexOf('<p class="ct-grupo">', avisan + 1);
+  const li = ITEMS(bloque.slice(avisan, siguiente < 0 ? undefined : siguiente)).find((x) => x.includes('on-advisor-run.js')) || '';
+  assert.ok(li && tieneChip(li, 'avisa'), 'on-advisor-run sale en «Avisan», con «avisa»');
+});
+
+// 🔴 Falla con: junto a «Editar», «(no se edita acá)»: parece que el revisor entero no se puede tocar.
+test('T30 2.79-HowItWorks_CondicionEscrita_DiceQueSiSeEdita @story-2.79 @ac-27 — junto a «Editar», la condición no se cambia acá y el resto sí', () => conCasa(() => {
+  const cuando = { any: [{ added: { pattern: ':\\s*IBackendPlugin\\b', extensions: ['.cs'] } }, { detection: 'csModified' }] };
+  const perfil = perfilDosUsos({ paquete: PAQUETE_DOS_USOS({ cuando }) });
+  const DICE = { es: [/la condición no se cambia acá/, /el resto, sí/], en: [/the condition is not changed here/, /the rest is/] };
+  for (const idioma of ['es', 'en']) {
+    const html = TAB().renderPage(HIW().buildModel({ treeDir: ROOT, profileDir: perfil }), { idioma, publicRepo: PUBLICO, version: 'v' });
+    const li = ITEMS(seccionDe(html, 'reviewers')).find((x) => x.includes('acme-hermanos-reviewer') && x.includes('data-action="edit"')) || '';
+    assert.ok(li, `${idioma}: el revisor con condición especial tiene «Editar»`);
+    for (const rx of DICE[idioma]) assert.match(li, rx, `${idioma}: ${rx}`);
+    assert.doesNotMatch(li, /no se edita acá|not edited here/, `${idioma}: no dice que no se edita`);
+  }
+}));
+
+// T74 2.79-Lector_ProblemaConEnlace @story-2.79 @ac-67
+// 🔴 Falla con: el problema del lector con la clave cruda adelante («integrations.timeTracking: …») y sin llevar a la
+//    sección de Configuración donde se corrige, o un revisor cuya condición no tiene texto mostrando su id crudo.
+test('T74 2.79-Lector_ProblemaConEnlace @story-2.79 @ac-67 — el problema en llano con su sección; una marca sin texto no muestra su id', () => {
+  const perfil = carpeta(perfilCon());
+  const m = HIW().buildModel({ treeDir: ROOT, profileDir: perfil });
+  assert.ok(m.org, 'el perfil se leyó');
+  m.org.problems = ['integrations.timeTracking: «relojito» no es una herramienta de horas de este árbol', 'algo que el lector dijo sin clave',
+    'site.claveQueNingunaTiene: no se sabe de qué sección es', 'site.auto_apply: tiene que ser sí o no'];
+  const pagos = m.steps.find((s) => s.id === 'reviewers').reviewers.packs.find((r) => r.agent === 'acme-pagos-reviewer');
+  pagos.when = { detection: 'banderaQueNoTieneTexto' };
+  for (const idioma of ['es', 'en']) {
+    const html = TAB().renderPage(m, { idioma, publicRepo: PUBLICO, version: 'v' });
+    const fila = (html.split(TX().t(idioma, 'comoTrabaja.orgProblemas'))[1] || '').split('</section>')[0];
+    assert.match(fila, /href="\/configuracion#seccion-integraciones"/, `${idioma}: lleva a la sección donde se corrige`);
+    assert.ok(fila.includes(TX().t(idioma, 'pantalla.integraciones')), `${idioma}: nombra la sección`);
+    assert.doesNotMatch(fila, /integrations\.timeTracking/, `${idioma}: sin la clave cruda`);
+    assert.match(fila, /«relojito» no es una herramienta de horas/, `${idioma}: el motivo queda`);
+    assert.match(fila, /algo que el lector dijo sin clave[\s\S]*href="\/configuracion"/, `${idioma}: el que no nombra clave lleva a Configuración`);
+    // `site` la tienen varias secciones: sin ruta propia no se elige una al azar, va a Configuración
+    assert.match(fila, /site\.claveQueNingunaTiene: no se sabe de qué sección es <a href="\/configuracion">/, `${idioma}: clave compartida, a Configuración`);
+    assert.match(fila, /tiene que ser sí o no <a href="\/configuracion#seccion-aplicar">/, `${idioma}: con ruta propia, a su sección`);
+    assert.doesNotMatch(html, /banderaQueNoTieneTexto/, `${idioma}: sin el id crudo de la marca`);
+  }
 });

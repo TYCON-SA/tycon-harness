@@ -2,7 +2,7 @@
 epic: {{epic_num}}
 story: "{{epic_num}}.{{story_num}}"
 title: "{{story_title}}"
-status: ready-for-dev
+status: draft
 sprint: {{sprint}}
 priority: "{{priority}}"
 approach: "{{approach}}"
@@ -19,11 +19,13 @@ files_to_modify: []
   Frontmatter (story-format.md §1, §1.0, §1.3):
   - priority: P0 bloqueante · P1 must · P2 should · P3 nice.
   - approach: [EXTRACT] copiar de una fuente · [ADAPT] adaptar un patrón resuelto · [CREATE] nuevo.
-  - status: vocabulario cerrado en scripts/metrics/states.json.
+  - status: vocabulario cerrado en scripts/metrics/states.json. Una historia nueva nace en draft; ready-for-dev lo
+    pone el paso 6 del workflow, después del validador y de la revisión adversarial.
   - files_to_create / files_to_modify: rutas relativas al repo; iguales a la tabla de Dev Notes.
   - work_item (antes ado_work_item): NO se escribe a mano; lo agrega tycon-story-work-item al crear la story.
   - Si la story corrige, recalibra o extiende otra: agregar followup_of y followup_reason (§1.2).
-  - Si se entrega en tandas: bloque pipelines (§1.1).
+  - Si se entrega en tandas: bloque pipelines (§1.1). Dos tandas sobre los mismos archivos que no sirven solas van en
+    una sola; si sirven solas, cada una dice qué entrega en `delivers`.
   - Nunca comillas dobles dentro de un comentario ni en el valor de title: la story se vuelve
     invisible para el arnés sin dar error (§1.0). Usar comillas simples.
   Borrar este comentario al terminar.
@@ -31,7 +33,7 @@ files_to_modify: []
 
 # Story {{epic_num}}.{{story_num}}: {{story_title}}
 
-Status: ready-for-dev
+Status: draft
 
 ## Story
 

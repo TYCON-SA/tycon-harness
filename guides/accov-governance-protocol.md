@@ -409,3 +409,92 @@ no un olvido); (b) contenido — verificar que el par no traiga datos que no deb
 `covered_by:` en un AC `runtime_not_verifiable` tiene que ser un **T-ID con tag `@ac-N`**, nunca una
 ruta de archivo: `runtime-matrix.js` degrada una ruta a NOT-RUN en vez de WAIVED-USER.
 
+## 7. Qué vence una evidencia
+
+Un portón E2E o un humo prueba el código que había cuando corrió. La matriz por AC (`runtime-matrix.js`) no se lo cree si
+el código cambió después. Para saberlo no alcanza la fecha del archivo: git la reescribe en cada cambio de rama, aunque
+el contenido quede igual. Tampoco alcanza comparar la hora de la evidencia con la del commit: la evidencia se toma antes
+del commit que guarda el código.
+
+Por cada archivo de código declarado, la primera que aplica decide (`lib/evidence-vs-commit.js`):
+
+| Caso | La evidencia |
+|---|---|
+| La fecha del archivo es anterior o igual a la hora de la evidencia | Cuenta, sin preguntarle a git |
+| El archivo tiene cambios sin commitear, también preparados; no está en git, está marcado para que git no lo mire (`assume-unchanged`, `skip-worktree`), o git no contesta | No cuenta |
+| La evidencia no está en ningún commit alcanzable desde `HEAD` | No cuenta: pudo probar el código de otra rama |
+| Mismo repo: el archivo es igual en el commit de la evidencia y en `HEAD` | Cuenta, aunque haya cambiado y vuelto |
+| Mismo repo: el archivo es distinto | No cuenta, y el aviso nombra el archivo y el commit |
+| Otro repo, evidencia con ancla: el archivo de `HEAD` es igual al del commit del ancla, o a la huella si estaba sin commitear | Cuenta |
+| Otro repo, evidencia con ancla: el archivo es distinto | No cuenta, y el aviso nombra el archivo y el commit |
+| Otro repo: el último commit del archivo es anterior o igual al de la evidencia | Cuenta |
+| Otro repo: el último commit del archivo es posterior, y una fusión de pedido de esta historia, posterior a la evidencia, trae el archivo tal como estaba su rama a la hora de la evidencia | Cuenta, y la matriz avisa: se supone que la evidencia corrió sobre esa rama |
+| Otro repo: el último commit del archivo es posterior, sin esa fusión | No cuenta: entre repos sólo se pueden comparar horas |
+| Mismo repo u otro: el archivo cambió, es una prueba y todos sus cambios posteriores son de otra historia | Cuenta, y la matriz avisa |
+
+Qué es una prueba lo dice `isTestPath` de `lib/atdd-order.js`, con los ayudantes de una carpeta de pruebas adentro y los datos
+de prueba afuera. De qué historia es un commit se lee del nombre de la rama, en el asunto de la fusión de su pedido; si no se
+sabe, vence: un commit directo, un squash, `Merged PR N: título`, una rama sin historia o con dos. Un cambio de otra historia en
+una prueba no vence por decisión del dueño, y afloja el control a propósito: una prueba que esa historia cambió puede no probar
+ya lo mismo. La misma historia que corrige su prueba después de la evidencia, sí la vence: esa prueba quizá daba verde por estar
+mal. Un cambio de código vence, aunque venga junto con una prueba, salvo por la regla de la entrada que sigue.
+
+### La historia se cierra con el código con que entró a main
+
+Si una evidencia no cuenta por lo de arriba, la matriz hace una segunda pasada. Son cinco reglas:
+
+1. Una historia queda terminada si el código con que entró a `main` es, por contenido, el que se probó. Se juzga contra el
+   commit de entrada, no contra el `main` de hoy.
+2. Si la propia historia tocó su código o su prueba después de probar, la evidencia vence.
+3. Lo que otra historia rompa después lo avisa el nocturno, como rotura nueva, sin reabrir la historia.
+4. Firmas y frenos necesitan además una prueba de noche: una suite de `diarias` o un caso de `cases/hooks` del banco, con
+   las marcas de la historia y del criterio juntas. Sensible es lo mismo que para el ok de guardar: la lista `SENSITIVE`, y el código que
+   carga un archivo de firmas o de avisos.
+5. Lo demás, sin prueba de noche, se acepta con el riesgo escrito: la matriz lo lista en «Aceptado sin cobertura posterior».
+
+**Cómo se reconoce la entrada.** En la línea de primer padre de `origin/main`, lo probado se compara con el último commit anterior
+a la evidencia: si ya era igual, el archivo «ya estaba». Si no, con el primer commit posterior que cambió el archivo: si deja otro
+contenido, no entró lo que se probó, aunque después vuelva. Hace falta código declarado, sin contar pruebas ni `.json`, que haya entrado
+después de la evidencia. Una evidencia tomada después de la entrada se juzga como hasta ahora.
+
+**Las pruebas y lo que cargan** se juzgan igual: un cambio ajeno no vence, y uno propio vence sólo los criterios de esa prueba. Con
+tandas que declaran `files`, lo que es sólo de otra tanda no cuenta.
+
+**De quién es una fusión posterior.** Es propia, y vence, si lo dice el registro de pedidos, si su rama nombra la historia o si el
+asunto de alguno de sus commits nombra su número. Una fusión sin historia conocida no vence: se nombra en el aviso, y si era de la propia
+historia la regla 2 no la ve. El registro es `<clave>-pedidos.jsonl`, en la carpeta de evidencia; se puede editar a mano, como el
+nombre de una rama, y por eso sólo se usa acá, donde únicamente puede vencer de más.
+
+El ancla la anotan el humo y el portón al correr, por cada repo hermano: su commit y la huella de hasta 50 archivos sin commitear. Vale
+la del espejo: el registro y el portón viajan con el código y se editan. Si su commit no está en el clon, o el hermano no dejó
+ancla, la evidencia se lee como una sin ancla.
+
+Un clon cortado no se compara: el aviso dice que no se pudo comparar contra git. Si la evidencia venció, se vuelve a
+correr. Lo que llega a un commit ya pasó por esta misma regla en el freno del commit, con el archivo sin commitear: por eso
+el commit de la evidencia alcanza para juzgarla después.
+
+Las demás condiciones no cambian: el espejo en `gates.log`, las pruebas apagadas, la salida sellada y la clase del comando
+del humo. Una evidencia sin espejo no cuenta aunque el archivo no haya cambiado.
+
+Los archivos declarados son los de `files_to_create` y `files_to_modify`, escritos como estén: con comillas, con comentarios
+con o sin sangría, en línea (también partida en varios renglones) o a la misma sangría que la clave. Una lista en línea sin
+su `]` se lee hasta la clave siguiente. Los frenos leen sólo la forma de siempre: leer más ahí aflojaría lo que dejan pasar. Las pruebas y los guiones de humo que la historia declara también se
+miran: vencen la evidencia como el código, salvo lo que se dijo arriba de una prueba cambiada por otra historia.
+
+La matriz busca cada archivo declarado en el repo de la historia, en la carpeta de arriba, en cada hermano declarado y en su copia de la rama de la historia, en ese orden y sin repetir. Juzga cada copia que encuentra, con el commit de su
+propio repo, y la primera que no cuenta decide. Si la misma ruta está en más de un lugar, el aviso dice en cuál.
+Un hermano con copia en la rama de la historia (o, sin rama, con su número) se juzga sólo en esa copia: el hermano
+declarado suele ser el clon compartido, en `main` y sin el código de la historia, y cuando avanza vencería la evidencia sin
+que ese código cambie. Sin copia, se juzga el declarado, y el aviso dice contra qué se comparó y qué se buscó.
+
+Un archivo de código declarado que la matriz no puede leer la deja en rojo: ninguna evidencia cuenta, aunque los criterios
+estén cubiertos por pruebas, porque no se sabe si cambió. El aviso nombra la ruta y los lugares donde la buscó. Con la
+historia abierta, la salida es corregir la ruta si el archivo se movió, crearlo o sacarlo de la lista si era para crear, o
+traer el hermano al día. En `done`, traer el hermano al día o volver a correr la evidencia: la lista no se edita para ponerla
+en verde. Un archivo que no es código no se mira, esté o no.
+
+Una historia cuyo id no entra en el patrón de historias del repo (el de fábrica es de números: `8.12`, `3-4`) no pasa por
+el freno del commit: ni la matriz ni la evidencia se miran. Cuando una así pasa a `review` o `done`, el freno avisa, nombra
+la historia y su id, y sale igual: el aviso no frena. Para que entre, el repo declara su forma en `stories.id_pattern` de
+`.tycon/advisors.yaml` y lo commitea.
+

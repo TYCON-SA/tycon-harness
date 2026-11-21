@@ -75,7 +75,7 @@ const SIN_EFECTOS = conNombresViejos({
 // Los archivos de la base donde la organización y el chat están escritos a mano.
 // La base puede ser de antes o de después de los renombres a inglés: un archivo renombrado se lee por el nombre que
 // tenga en esa base (`enLaBase`), y por eso este archivo nombra los viejos a propósito (LEGACY_READERS de spanish-names.js).
-const ARCHIVOS_ORG = [['scripts/ci/validate-pipeline-in-ado.sh', 'scripts/ci/validar-pipeline-en-ado.sh'], 'scripts/install-tycon-hooks.sh', ['scripts/lib/harness-repo.js', 'scripts/lib/repo-del-arnes.js'], 'scripts/production/install-guard.sh'];
+const ARCHIVOS_ORG = [['integrations/azure-devops/scripts/validate-pipeline-in-ado.sh', 'scripts/ci/validate-pipeline-in-ado.sh', 'scripts/ci/validar-pipeline-en-ado.sh'], 'scripts/install-tycon-hooks.sh', ['scripts/lib/harness-repo.js', 'scripts/lib/repo-del-arnes.js'], 'scripts/production/install-guard.sh'];
 /** La ruta con que existe en la base: la nueva si ya está, si no la vieja. */
 const enLaBase = (dirBase, f) => (Array.isArray(f) ? f.find((x) => fs.existsSync(path.join(dirBase, x))) || f[f.length - 1] : f);
 // El observador vive en scripts/instincts/; una base vieja lo tiene en la ruta anterior, y el reemplazo que quedó ahí no
@@ -97,7 +97,7 @@ function leer(p) { try { return fs.readFileSync(p, 'utf8'); } catch (_) { return
 // ajena, compararlos como «igual» sería verificarse a sí misma.
 const FALLOS = [];
 function correr(cmd, args, opts = {}) {
-  const r = spawnSync(cmd, args, Object.assign({ encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }, opts));
+  const r = spawnSync(cmd, args, { windowsHide: true, ...Object.assign({ encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }, opts) });
   if (r.error || r.status === null) {
     FALLOS.push(`${cmd} ${args.slice(0, 2).join(' ')}: ${r.error ? r.error.message : `sin código de salida (señal ${r.signal || '?'})`}`);
   }
@@ -235,7 +235,7 @@ function main() {
   const dirBase = tmp('equiv-perfil-base-');
   const shaBase = correr('git', ['-C', RAIZ, 'rev-parse', '--verify', `${base}^{commit}`]).stdout.trim();
   if (!shaBase) { console.error(`no encuentro el commit ${base} en ${RAIZ}`); return 2; }
-  execFileSync('sh', ['-c', `git -C "${RAIZ}" archive "${shaBase}" | tar -x -C "${dirBase}"`]);
+  execFileSync('sh', ['-c', `git -C "${RAIZ}" archive "${shaBase}" | tar -x -C "${dirBase}"`], { windowsHide: true });
   const { shaNuevo } = procedenciaDe(RAIZ);
   const items = [];
   const item = (grupo, nombre, viejo, nuevo, opts = {}) => {

@@ -68,7 +68,7 @@ function args(argv) {
 }
 
 function git(cwd, argv, extra = []) {
-  return spawnSync('git', [...extra, '-C', cwd, ...argv], { encoding: 'utf8', timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
+  return spawnSync('git', [...extra, '-C', cwd, ...argv], { windowsHide: true, encoding: 'utf8', timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
 }
 const firstLine = (t) => String(t || '').trim().split('\n').pop().slice(0, 300);
 
@@ -120,7 +120,7 @@ function obtain(repo, clones) {
     : host === 'github.com' && tokenGithub ? ['-c', `http.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${tokenGithub}`).toString('base64')}`] : [];
   const r = fs.existsSync(path.join(dir, '.git'))
     ? git(dir, ['fetch', '--quiet', 'origin', '+refs/heads/main:refs/remotes/origin/main'], auth)
-    : (fs.mkdirSync(clones, { recursive: true }), spawnSync('git', [...auth, 'clone', '--quiet', '--no-checkout', repo.fuente, dir], { encoding: 'utf8', timeout: 600000 }));
+    : (fs.mkdirSync(clones, { recursive: true }), spawnSync('git', [...auth, 'clone', '--quiet', '--no-checkout', repo.fuente, dir], { windowsHide: true, encoding: 'utf8', timeout: 600000 }));
   // sin salida de git (un corte por tiempo, una señal), el motivo es el de la falla del proceso
   const porque = firstLine(r.stderr) || (r.error && (r.error.code || r.error.message)) || (r.signal ? `señal ${r.signal}` : `git salió ${r.status}`);
   if (r.status !== 0) return { motivo: `no se pudo bajar: ${String(porque).replace(/(bearer|basic) \S+/gi, '$1 ***')}` };
@@ -180,11 +180,12 @@ function clean(t) {
 function dashboardFromGit(dir, ref) {
   // sin .dashboard/ en main no hay nada guardado (no es una falla); cualquier otra falla se dice
   if (git(dir, ['rev-parse', '--verify', '--quiet', `${ref}:.dashboard`]).status !== 0) return { records: [], motivo: null };
-  const ls = git(dir, ['ls-tree', '-r', '--name-only', ref, '--', '.dashboard']);
+  // -z: sin él git entrecomilla los nombres con acento y el filtro de .json los perdería callado
+  const ls = git(dir, ['ls-tree', '-r', '-z', '--name-only', ref, '--', '.dashboard']);
   if (ls.status !== 0) return { records: [], motivo: `no se pudo listar .dashboard/ de main: ${clean(firstLine(ls.stderr))}` };
-  const names = ls.stdout.split('\n').filter((f) => /\.json$/.test(f));
+  const names = ls.stdout.split('\0').filter((f) => /\.json$/.test(f));
   if (!names.length) return { records: [], motivo: null };
-  const cat = spawnSync('git', ['-C', dir, 'cat-file', '--batch'], { input: names.map((f) => `${ref}:${f}`).join('\n') + '\n', maxBuffer: 256 * 1024 * 1024 });
+  const cat = spawnSync('git', ['-C', dir, 'cat-file', '--batch'], { windowsHide: true, input: names.map((f) => `${ref}:${f}`).join('\n') + '\n', maxBuffer: 256 * 1024 * 1024 });
   if (cat.status !== 0) return { records: [], motivo: `no se pudo leer .dashboard/ de main: ${clean(firstLine(cat.stderr))}` };
   const buf = cat.stdout;
   const out = [];
@@ -200,7 +201,10 @@ function dashboardFromGit(dir, ref) {
     i = nl + 1 + size + 1;
     let d;
     try { d = JSON.parse(body); } catch { skipped++; continue; }
-    if (!d || typeof d !== 'object') continue;
+    // un archivo que no es un objeto tampoco se lee: callado, su merge corre otro latido sin que nadie sepa por qué
+    if (!d || typeof d !== 'object' || Array.isArray(d)) { skipped++; continue; }
+    // un latido anulado no cubre su merge (la misma regla que retro-coverage.js `metricsIn`)
+    if (d.anulado) continue;
     const repo = d.repo || d.repo_path || d.repoPath;
     const sha = String(d.merge_commit || d.mergeCommit || d.commit || '');
     if (repo && sha) out.push({ repoStr: String(repo), sha, generatedBy: typeof d.generated_by === 'string' ? d.generated_by : null });
@@ -232,7 +236,7 @@ function walk(repo, got, ctx, desde, history) {
     for (const d of ctx.dirs) for (const m of RC.metricsIn(d) || []) if (m.sha === sha && !recs.includes(m)) recs.push(m);
     for (const m of ctx.saved) if ((m.sha === sha || (RC.sameRepo(m, got.dir) && RC.sameSha(m.sha, sha))) && !recs.includes(m)) recs.push(m);
     if (recs.length) { res[recs.some((m) => RC.kindOf(m) === 'aprendizajes') ? 'aprendizajes' : 'latido']++; continue; }
-    const hb = spawnSync(process.execPath, [HEARTBEAT, '--repo', got.dir, '--merge', sha, '--out', ctx.out], { encoding: 'utf8', timeout: 120000 });
+    const hb = spawnSync(process.execPath, [HEARTBEAT, '--repo', got.dir, '--merge', sha, '--out', ctx.out], { windowsHide: true, encoding: 'utf8', timeout: 120000 });
     res.latidos_corridos++;
     if (hb.status === 0) res.latido++;
     // la fecha del merge viaja con lo que falta: la noche siguiente vuelve a barrer desde ahí (sinceFor)

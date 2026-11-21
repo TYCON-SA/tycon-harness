@@ -23,9 +23,10 @@ const { t, TEXTOS } = require('./texts.js');
 const nombreDeFuente = (id, idioma) => (Object.prototype.hasOwnProperty.call(TEXTOS, `fuente.${id}`) ? t(idioma, `fuente.${id}`) : id);
 const { IDIOMAS, POR_DEFECTO, valido } = require('./language.js');
 const { MOTIVOS: MOTIVOS_ULTIMA } = require('./latest-release.js');
+// «parada» y la edad en el estado tienen una sola definición, la del tablero nocturno, con los días de sources.json
+const { ageCounts } = require('../nightly/projects/state-age.js');
 
 const DIA = 86400000;
-const PARADA_DIAS = 30;
 
 const idiomaDe = (x) => valido(x && typeof x === 'object' ? x.idioma : x) || POR_DEFECTO;
 
@@ -34,6 +35,9 @@ function hora(marca, idioma = POR_DEFECTO) {
   const d = new Date(typeof marca === 'number' ? marca : Date.parse(marca || ''));
   return Number.isFinite(d.getTime()) ? `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC` : t(idioma, 'vista.sinHora');
 }
+
+/** «HH:MM UTC» de una marca en milisegundos. */
+const horaCorta = (ms) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
 
 /** Los códigos de estado de la lista cerrada y de los propios de una fuente: su frase vive en la tabla. */
 const CODIGOS = ['sin_red', 'sin_permiso', 'credencial_rechazada', 'parcial', 'cargando', 'fuente_vieja', 'sin_configurar', 'sin_foto', 'ilegible',
@@ -72,7 +76,8 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   // es el de las filas que hay allá
   const tPor = T('inicio.dependencias_por_decidir');
   const porDecidir = typeof esperan === 'function' ? esperan('dependencias') : null;
-  if (Number.isInteger(porDecidir) && porDecidir >= 0) filas.push(filaMedida('dependencias_por_decidir', tPor, porDecidir));
+  // la cuenta de Mantenimiento es la de ahora, no la de la noche: la ficha lo dice
+  if (Number.isInteger(porDecidir) && porDecidir >= 0) filas.push(filaMedida('dependencias_por_decidir', tPor, porDecidir, { alMomento: true }));
   else filas.push(filaNoMedida('dependencias_por_decidir', tPor, T('inicio.porDecidirSinCuenta')));
   for (const [k, clave] of [['aceptadas_sin_resolver', 'dependencias_aceptadas_sin_resolver'], ['rechazadas_sin_deuda', 'dependencias_rechazadas_sin_deuda']]) {
     const titulo = T(`inicio.${clave}`);
@@ -112,10 +117,13 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   if (!medida(dec)) filas.push(filaNoMedida('declarados_por_vencer', tDec, cf(dec)));
   else filas.push(filaMedida('declarados_por_vencer', tDec, (dec.lista || []).filter((d) => { const x = Date.parse(`${d.review_before}T00:00:00Z`); return Number.isFinite(x) && x - ahora <= 7 * DIA; }).length, { fecha: dec.fecha }));
   const tMaq = T('inicio.maquinas_sin_confirmar');
-  if (!medida(m.corridas)) filas.push(filaNoMedida('maquinas_sin_confirmar', tMaq, cf(m.corridas)));
+  // el sitio recién despierto todavía está leyendo lo que informan las máquinas: «cargando», no «no medido»
+  if (m.corridas && m.corridas.codigo === 'cargando') filas.push({ clave: 'maquinas_sin_confirmar', titulo: tMaq, estado: 'cargando', valor: null, motivo: T('vista.cargandoMaquinas') });
+  else if (!medida(m.corridas)) filas.push(filaNoMedida('maquinas_sin_confirmar', tMaq, cf(m.corridas)));
   // sin lo que informa cada máquina la cuenta no se sabe: «no medido», nunca 0
   else if (!Number.isFinite(m.maquinasSinConfirmar)) filas.push(filaNoMedida('maquinas_sin_confirmar', tMaq, T('inicio.maquinasSinInforme')));
-  else filas.push(filaMedida('maquinas_sin_confirmar', tMaq, m.maquinasSinConfirmar, { fecha: m.corridas.fecha }));
+  // la cuenta sale de lo que el sitio leyó recién (la hora del modelo), no de una foto de la noche
+  else filas.push(filaMedida('maquinas_sin_confirmar', tMaq, m.maquinasSinConfirmar, Number.isFinite(m.generado) ? { leido: m.generado } : { fecha: m.corridas.fecha }));
   // las retrospectivas viven en la máquina de quien mergeó: sólo con la foto del día (`.dashboard/retros/`) hay cuenta
   const ret = m.retros;
   if (medida(ret) && Array.isArray(ret.pendientes)) filas.push(filaMedida('retrospectivas', T('inicio.retrospectivas'), ret.pendientes.length, { fecha: ret.fecha }));
@@ -130,6 +138,8 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   for (const clave of Object.keys(LISTAS_DE_DECISION)) DONDE[clave] = `#decidir-${clave}`;
   // las dependencias se deciden en Mantenimiento: una fila por ficha, con Aceptar o Rechazar
   DONDE.dependencias_por_decidir = '/mantenimiento';
+  // una máquina se confirma en Configuración (Personas: de quién es y qué productos ve)
+  DONDE.maquinas_sin_confirmar = '/configuracion';
   void enlaceOperaciones;
   for (const f of filas) f.enlace = DONDE[f.clave] || null;
   return filas;
@@ -179,21 +189,24 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
   const vig = m.vigilante;
   const vigilados = new Set(medida(vig) || (vig && Array.isArray(vig.productos)) ? (vig.productos || []).map((x) => String(x).toLowerCase().replace(/\s+/g, '')) : []);
   const contar = (stories) => {
-    const r = { en_curso: 0, en_revision: 0, paradas: 0, sin_medir: 0, bloqueadas: 0 };
+    const r = { en_curso: 0, en_revision: 0, bloqueadas: 0 };
     for (const s of stories) {
       if (s.grupo === 'en_curso') {
         r.en_curso += 1;
         if (s.canonico === 'review') r.en_revision += 1;
-        if (s.dias_en_estado === null || s.dias_en_estado === undefined || !Number.isFinite(s.dias_en_estado)) r.sin_medir += 1;
-        else if (s.dias_en_estado > PARADA_DIAS) r.paradas += 1;
       } else if (s.grupo === 'bloqueado') r.bloqueadas += 1;
     }
-    return r;
+    // paradas, sin medir y la edad salen de ageCounts; sin días válidos, «no medido», nunca un umbral de respaldo
+    const c = ageCounts(stories, m.stateAgeDays);
+    if (c.estado !== 'medido') return { ...r, paradas: null, sin_medir: null, edad: { estado: 'no_medido', motivo: T('proyectos.sinDiasDeEdad') } };
+    const [d1, d2] = c.dias;
+    return { ...r, paradas: c.paradas, sin_medir: c.sin_medir, edad: { estado: 'medido', motivo: null, d1, d2, mas_de_d1: c[`mas_de_${d1}`], mas_de_d2: c[`mas_de_${d2}`] } };
   };
   /** La paridad de un producto: sus repos en `por_ruta`, sólo cantidades, estados y motivos de lista cerrada. */
   const par = m.paridad;
   const paridadDe = (p) => {
-    if (!medida(par)) return { estado: 'no_medido', texto: par && par.codigo === 'sin_paridad' ? fraseDeCodigo('sin_paridad', idioma) : T('vista.noMedidoCon', { motivo: fraseDe(par, idioma) }) };
+    // sin la foto de la paridad en el modelo, lo mismo que la noche sin dejarla: nunca «no medido: no medido»
+    if (!medida(par)) return { estado: 'no_medido', texto: !par || par.codigo === 'sin_paridad' || (!par.motivo && !par.codigo) ? fraseDeCodigo('sin_paridad', idioma) : T('vista.noMedidoCon', { motivo: fraseDe(par, idioma) }) };
     const rutas = new Set(p.rutas || []);
     const suyas = (par.por_ruta || []).filter((x) => rutas.has(x.ruta));
     if (!suyas.length) return { estado: 'sin_medir', texto: T('proyectos.paridadSinRepos') };
@@ -227,7 +240,9 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
           : (sinStories ? T('proyectos.sinStories') : (medida(m.proyectos) ? T('proyectos.sinFoto') : conFecha(m.proyectos, idioma)))),
       ...contar(stories),
       compartido: compartido > 1 ? compartido : null,
-      despliegues: d ? { estado: d.estado || 'medido', staging: d.staging || null, produccion: d.produccion || null, produccion_atrasada: d.produccion_atrasada ?? null, aprobacion: d.aprobacion || null, main: d.main || null, motivo: d.estado === 'no_medido' ? (fraseDeCodigo(d.motivo, idioma) || T('vista.noMedido')) : null }
+      // los números de cada proyecto, para que el filtro rehaga el total sin contar dos veces lo compartido
+      por_proyecto: Object.fromEntries((p.proyectos || []).map((k) => { const c = contar(frescasDe(k).flatMap((s) => s.stories || [])); return [k, { en_curso: c.en_curso, paradas: c.paradas, sin_medir: c.sin_medir }]; })),
+      despliegues: d ? { estado: d.estado || 'medido', staging: d.staging || null, produccion: d.produccion || null, produccion_atrasada: d.produccion_atrasada ?? null, aprobacion: d.aprobacion || null, main: d.main || null, motivo: d.estado === 'no_medido' ? motivoDeDespliegue(d.motivo, idioma) : null }
         : { estado: 'no_medido', motivo: medida(dep) ? T('proyectos.despliegueSinProducto') : conFecha(dep, idioma) },
       vigilado: medida(vig) || (vig && Array.isArray(vig.productos)) ? vigilados.has(String(p.producto).toLowerCase().replace(/\s+/g, '')) : null,
       vivas,
@@ -236,8 +251,12 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
   });
   const unicos = [...new Set(productos.flatMap((p) => p.proyectos || []))];
   const tot = contar(unicos.flatMap(frescasDe).flatMap((s) => s.stories || []));
-  return { filas, totales: { en_curso_total: tot.en_curso, paradas_total: tot.paradas, sin_medir_total: tot.sin_medir, bloqueadas_total: tot.bloqueadas } };
+  return { filas, totales: { en_curso_total: tot.en_curso, paradas_total: tot.paradas, sin_medir_total: tot.sin_medir, bloqueadas_total: tot.bloqueadas, edad: tot.edad } };
 }
+
+/** Por qué no se midió un despliegue (o su aprobación), en llano: nunca el código crudo. */
+const motivoDeDespliegue = (codigo, idioma) => (codigo === 'sin_declarar' ? t(idioma, 'proyectos.desp.sinDeclarar') : (fraseDeCodigo(codigo, idioma) || t(idioma, 'proyectos.desp.noLeido')));
+const APROBACIONES = ['pendiente', 'vencida', 'no_aprobada', 'ninguna'];
 
 /** Arnés: una línea por pieza. */
 function filasArnes(m, { ahora = Date.now(), version = null, ultima = null, idioma = POR_DEFECTO } = {}) {
@@ -247,19 +266,32 @@ function filasArnes(m, { ahora = Date.now(), version = null, ultima = null, idio
   for (const s of (m.sources && Array.isArray(m.sources.lista) ? m.sources.lista : [])) {
     lineas.push({ clave: `fuente:${s.id}`, titulo: T('arnes.fuente', { id: nombreDeFuente(s.id, idioma) }), estado: s.estado, texto: s.estado === 'medido' ? T('arnes.alDia', { fecha: s.fecha }) : cf(s) });
   }
+  // banco, suites y examen los deja el proceso de la noche del tablero: una foto vieja lo nombra
+  const sinMedir = (f) => `${cf(f)}${f && f.codigo === 'fuente_vieja' ? ` · ${T('arnes.laDejaElTablero')}` : ''}`;
   const b = m.banco;
-  lineas.push({ clave: 'banco', titulo: T('arnes.banco'), estado: medida(b) ? 'medido' : 'no_medido', texto: medida(b) ? T(Number.isFinite(b.total) ? 'arnes.bancoRojosDe' : 'arnes.bancoRojos', { n: (b.rojos || []).length, total: b.total, fecha: b.fecha }) : cf(b) });
+  lineas.push({ clave: 'banco', titulo: T('arnes.banco'), estado: medida(b) ? 'medido' : 'no_medido', texto: medida(b) ? T(Number.isFinite(b.total) ? 'arnes.bancoRojosDe' : 'arnes.bancoRojos', { n: (b.rojos || []).length, total: b.total, fecha: b.fecha }) : sinMedir(b) });
   const s = m.suites;
-  lineas.push({ clave: 'suites', titulo: T('arnes.suites'), estado: medida(s) ? 'medido' : 'no_medido', texto: medida(s) ? T('arnes.suitesRojas', { rojas: (s.rojas || []).length, sinMedir: Number(s.sin_medir) || 0, total: s.total }) : cf(s) });
+  if (medida(s)) {
+    // con la foto de ayer, las nuevas desde anoche (el mismo número que Inicio) y la lista con las nuevas marcadas
+    const rojas = Array.isArray(s.rojas) ? s.rojas : [];
+    const ayer = s.ayer && Array.isArray(s.ayer.rojas) ? new Set(s.ayer.rojas) : null;
+    const v = { rojas: rojas.length, sinMedir: Number(s.sin_medir) || 0, total: s.total };
+    lineas.push({ clave: 'suites', titulo: T('arnes.suites'), estado: 'medido', texto: ayer ? T('arnes.suitesNuevas', { ...v, nuevas: nuevos(rojas, s.ayer.rojas) }) : T('arnes.suitesRojas', v),
+      lista: rojas.map((nombre) => ({ nombre, nueva: Boolean(ayer && !ayer.has(nombre)) })) });
+  } else lineas.push({ clave: 'suites', titulo: T('arnes.suites'), estado: 'no_medido', texto: sinMedir(s) });
   const e = m.examen;
-  lineas.push({ clave: 'examen', titulo: T('arnes.examen'), estado: medida(e) ? 'medido' : 'no_medido', texto: medida(e) ? `${T('arnes.examenFallos', { fecha: e.fecha, n: Number(e.fallos) || 0 })}${e.completo === false ? T('arnes.examenIncompleto') : ''}` : cf(e) });
+  lineas.push({ clave: 'examen', titulo: T('arnes.examen'), estado: medida(e) ? 'medido' : 'no_medido', texto: medida(e) ? `${T(Number(e.fallos) === 1 ? 'arnes.examenFallos1' : 'arnes.examenFallos', { fecha: e.fecha, n: Number(e.fallos) || 0 })}${e.completo === false ? T('arnes.examenIncompleto') : ''}` : sinMedir(e) });
   const tb = m.tablero;
   const sello = medida(tb) && tb.sello ? tb.sello : null;
   lineas.push({ clave: 'sello', titulo: T('arnes.sello'), estado: sello ? 'medido' : 'no_medido', texto: sello ? `${String(sello.generado || '').slice(0, 10)} · ${T(sello.completo ? 'arnes.completa' : 'arnes.incompleta')}` : cf(tb) });
   lineas.push({ clave: 'version', titulo: T('arnes.version'), estado: version ? 'medido' : 'no_medido', texto: version || T('arnes.sinVersion') });
   // la última publicada: nunca «al día» sin haber mirado
   if (ultima) {
-    if (ultima.estado === 'medido') lineas.push({ clave: 'ultima', titulo: T('arnes.ultima'), estado: 'medido', texto: `${ultima.version}${ultima.creada ? ` ${T('vista.delParen', { fecha: String(ultima.creada).slice(0, 10) })}` : ''}` });
+    // contra qué se compara (stable) y cuándo se miró
+    if (ultima.estado === 'medido') {
+      lineas.push({ clave: 'ultima', titulo: T('arnes.ultima'), estado: 'medido', texto: T('arnes.ultimaMirada', { version: ultima.version,
+        del: ultima.creada ? ` ${T('vista.delParen', { fecha: String(ultima.creada).slice(0, 10) })}` : '', hora: Number.isFinite(ultima.mirado) ? horaCorta(ultima.mirado) : T('vista.sinHora') }) });
+    }
     else {
       // el motivo es de la lista cerrada de latest-release.js: se dice en el idioma de la página
       const i = MOTIVOS_ULTIMA.indexOf(ultima.motivo);
@@ -274,9 +306,14 @@ function filasArnes(m, { ahora = Date.now(), version = null, ultima = null, idio
 // ── HTML ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 function tile(f, idioma) {
   const T = (k, v) => t(idioma, k, v);
-  if (f.estado !== 'medido') return `<div class="tile blind">${chip('blind', T('vista.noMedido'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(T('vista.falta'))}</div><div class="t-den">${esc(f.motivo || T('vista.noMedido'))}</div></div>`;
+  // el enlace dice adónde lleva: una lista de esta página (cada renglón con su enlace), Arnés (sólo se mira) o la pestaña donde se decide
+  const pie = f.enlace ? `<div class="t-foot"><a href="${esc(f.enlace)}">${esc(T(f.enlace.startsWith('#') ? 'vista.verLaLista' : f.enlace === '/arnes' ? 'vista.verEnArnes' : 'vista.dondeSeDecide'))}</a></div>` : '';
+  if (f.estado === 'cargando') return `<div class="tile cargando">${chip('', T('vista.cargando'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-den">${esc(f.motivo)}</div>${pie}</div>`;
+  if (f.estado !== 'medido') return `<div class="tile blind">${chip('blind', T('vista.noMedido'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(T('vista.falta'))}</div><div class="t-den">${esc(f.motivo || T('vista.noMedido'))}</div>${pie}</div>`;
   const est = f.valor > 0 ? 'warn' : 'ok';
-  return `<div class="tile ${est}">${chip(est, T(f.valor > 0 ? (f.seguimiento ? 'vista.seguimiento' : 'vista.decidir') : 'vista.nada'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(f.valor)}</div>${f.fecha ? `<div class="t-den">${esc(T('vista.fuenteDel', { fecha: f.fecha }))}</div>` : ''}${f.detalle ? `<div class="t-den">${esc(f.detalle)}</div>` : ''}${f.enlace ? `<div class="t-foot"><a href="${esc(f.enlace)}">${esc(T('vista.dondeSeDecide'))}</a></div>` : ''}</div>`;
+  // de cuándo es la cuenta: al momento (la de Mantenimiento), leída recién (las máquinas) o de la noche
+  const cuando = f.alMomento ? T('vista.alMomento') : Number.isFinite(f.leido) ? T('vista.leido', { hora: horaCorta(f.leido) }) : f.fecha ? T('vista.deLaNocheDel', { fecha: f.fecha }) : null;
+  return `<div class="tile ${est}">${chip(est, T(f.valor > 0 ? (f.seguimiento ? 'vista.seguimiento' : 'vista.decidir') : 'vista.nada'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(f.valor)}</div>${cuando ? `<div class="t-den">${esc(cuando)}</div>` : ''}${f.detalle ? `<div class="t-den">${esc(f.detalle)}</div>` : ''}${pie}</div>`;
 }
 
 function banda(texto) { return `<div class="banda">${esc(texto)}</div>`; }
@@ -298,10 +335,11 @@ function cartelVersionNueva(ctx) {
   const T = (k, v) => t(idioma, k, v);
   const u = ctx.ultima;
   const que = esc(T('cartel.versionNueva', { nueva: u.version, tuya: ctx.version }));
-  if (ctx.modoActualizacion === 'auto') return `<div class="banda">${que}${esc(T('cartel.seInstalaSola'))}</div>`;
+  // es un aviso, no un error: la caja de `.banda` es la de lo que está roto
+  if (ctx.modoActualizacion === 'auto') return `<div class="aviso">${que}${esc(T('cartel.seInstalaSola'))}</div>`;
   const guia = idioma === 'en' ? 'organization-site.en.md#how-it-keeps-itself-up-to-date' : 'organization-site.md#c%C3%B3mo-se-mantiene-al-d%C3%ADa';
   const receta = u.fuente ? `<a href="${esc(`${u.fuente}/blob/main/guides/${guia}`)}">${esc(T('cartel.laReceta'))}</a>` : esc(T('cartel.laRecetaSinEnlace'));
-  return `<div class="banda">${que}${esc(T('cartel.comoSeActualiza'))}${receta}</div>`;
+  return `<div class="aviso">${que}${esc(T('cartel.comoSeActualiza'))}${receta}</div>`;
 }
 
 /** El selector de tema: lo atiende site.js (sin él, la página queda con el tema del sistema). */
@@ -347,6 +385,7 @@ function layout(ctx, titulo, cuerpo, lede = null) {
     ctx && ctx.bandaConfig ? banda(T('banda.config', { desde: hora(ctx.bandaConfig.desde, idioma), motivo: ctx.bandaConfig.motivo })) : '',
     ctx && ctx.bandaRefresco ? banda(T('banda.refresco', { desde: hora(ctx.bandaRefresco.desde, idioma), motivo: fraseDeCodigo(ctx.bandaRefresco.estado, idioma) || ctx.bandaRefresco.estado })) : '',
     ctx && ctx.avisoVariable ? banda(T('banda.variable')) : '',
+    ctx && ctx.avisoEtiqueta ? banda(T('banda.etiqueta')) : '',
     ctx && ctx.avisoSesiones ? banda(T('banda.sesiones')) : '',
     cartelVersionNueva(ctx),
   ].join('');
@@ -362,14 +401,22 @@ function layout(ctx, titulo, cuerpo, lede = null) {
 
 function seccion(titulo, html, aparte = null, id = null) { return `<section class="q"${id ? ` id="${esc(id)}"` : ''}><div class="q-head"><h2>${esc(titulo)}</h2>${aparte ? `<span class="aside">${esc(aparte)}</span>` : ''}</div>${html}</section>`; }
 
+/**
+ * Un renglón de las listas de Inicio, siempre con dos partes para que la grilla no lo corra de columna: el enlace (o un
+ * marcador vacío en su lugar) y el texto. `marca` y `texto` ya vienen escapados.
+ */
+const renglonDeLista = (marca, texto) => `<li>${marca || '<span class="li-marca"></span>'}<span>${texto}</span></li>`;
+/** «1 día» y «N días». */
+const dias = (n, idioma) => t(idioma, n === 1 ? 'vista.dia' : 'vista.dias', { n });
+
 /** La lista de los PR abiertos hace más de 2 días (y los sin fecha), a donde lleva su ficha del Inicio de quien mantiene. */
 function prsTrabados(prs, idioma) {
   const T = (k, v) => t(idioma, k, v);
   const titulo = T('inicio.prs_trabados');
   if (!medida(prs)) return seccion(titulo, `<p class="q-note">${esc(conFecha(prs, idioma))}</p>`, null, 'prs-trabados');
   const lista = (prs.lista || []).filter((p) => !Number.isFinite(p.dias) || p.dias > 2).sort((a, b) => (Number.isFinite(b.dias) ? b.dias : -1) - (Number.isFinite(a.dias) ? a.dias : -1));
-  const fila = (p) => `<li>${enlace(p.enlace) ? `<a href="${esc(p.enlace)}">#${esc(p.numero)}</a>` : `#${esc(p.numero)}`} · ${esc(p.proyecto)} / ${esc(p.repo)} · ${esc(Number.isFinite(p.dias) ? T('vista.dias', { n: p.dias }) : T('vista.sinFecha'))}</li>`;
-  return seccion(titulo, lista.length ? `<ul class="lista">${lista.map(fila).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`, T('vista.fuenteDel', { fecha: prs.fecha }), 'prs-trabados');
+  const fila = (p) => renglonDeLista(enlace(p.enlace) ? `<a href="${esc(p.enlace)}">#${esc(p.numero)}</a>` : null, `${enlace(p.enlace) ? '' : `#${esc(p.numero)} · `}${esc(p.proyecto)} / ${esc(p.repo)} · ${esc(Number.isFinite(p.dias) ? dias(p.dias, idioma) : T('vista.sinFecha'))}`);
+  return seccion(titulo, lista.length ? `<ul class="lista dos">${lista.map(fila).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`, T('vista.deLaNocheDel', { fecha: prs.fecha }), 'prs-trabados');
 }
 
 /**
@@ -382,7 +429,8 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
   const DEC = require('./decisions.js');
   const todas = DEC.decisiones(m, { operationsRepo: enlaceOperaciones, remoto: remotoOperaciones });
   const medidas = m.decisiones && m.decisiones.estado === 'medido';
-  const ul = (items) => (items.length ? `<ul class="lista">${items.join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
+  // las listas de dependencias, del vigilante y de tareas son femeninas («Ninguna.»); la de datos declarados, no
+  const ul = (items, vacia = 'vista.ninguna') => (items.length ? `<ul class="lista dos">${items.join('')}</ul>` : `<p class="q-note">${esc(T(vacia))}</p>`);
   const out = [];
   for (const [clave, def] of Object.entries(LISTAS_DE_DECISION)) {
     const titulo = T(`inicio.${clave}`);
@@ -390,20 +438,40 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
       const dec = m.declarados;
       const vencen = medida(dec) ? (dec.lista || []).filter((d) => { const x = Date.parse(`${d.review_before}T00:00:00Z`); return Number.isFinite(x) && x - ahora <= 7 * DIA; }) : [];
       const cuerpo = medida(dec)
-        ? `<p class="q-note">${esc(T('decidir.declaradosDonde'))}</p>${ul(vencen.map((d) => `<li>${esc(d.id)} · ${esc(T('decidir.vence', { fecha: d.review_before }))}</li>`))}`
+        ? `<p class="q-note">${esc(T('decidir.declaradosDonde'))}</p>${ul(vencen.map((d) => renglonDeLista(null, `${esc(d.id)} · ${esc(T('decidir.vence', { fecha: d.review_before }))}`)), 'vista.ninguno')}`
         : `<p class="q-note">${esc(conFecha(dec, idioma))}</p>`;
       out.push(seccion(titulo, cuerpo, null, `decidir-${clave}`));
       continue;
     }
     if (!medidas) { out.push(seccion(titulo, `<p class="q-note">${esc(conFecha(m.decisiones, idioma))}</p>`, null, `decidir-${clave}`)); continue; }
     const suyas = todas.filter((d) => d.fuente === def.fuente && d.rubro === def.rubro);
-    const fila = (d) => {
-      const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null].filter(Boolean).join(' · ');
-      return d.enlace && enlace(d.enlace)
-        ? `<li><a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a> · ${nombre}</li>`
-        : `<li>${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</li>`;
+    // la gravedad y las noches que lleva, para que se entienda el orden de la lista
+    const gravedadYNoches = (d) => {
+      const gravedad = DEC.gravedadNormal(d.severidad);
+      const noches = Number.isInteger(d.noches) ? (d.noches === 1 ? T('decidir.unaNoche') : T('decidir.noches', { n: d.noches })) : null;
+      return [gravedad ? T(`decidir.gravedad.${gravedad}`) : null, noches].filter(Boolean);
     };
-    out.push(seccion(titulo, ul(suyas.map(fila)), T('vista.fuenteDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
+    // una aceptada arranca por lo que importa —el paquete, su gravedad y sus noches— y sigue con su seguimiento; el id
+    // de la ficha va al final, en gris, para buscarla en el repo de operaciones
+    const filaAceptada = (d) => {
+      const queEs = [d.titulo || d.id, ...gravedadYNoches(d)].map(esc).join(' · ');
+      const seguimiento = d.enlace && enlace(d.enlace) ? `<a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a>`
+        : d.sinLugar === 'en_su_tarea' ? `<a href="/mantenimiento">${esc(T('decidir.corto.en_su_tarea'))}</a>`
+          : esc(DEC.fraseSinLugar(d.sinLugar, idioma, { n: d.pr }));
+      return `<li><span>${queEs} — ${seguimiento}</span>${d.titulo ? `<span class="muted">${esc(d.id)}</span>` : ''}</li>`;
+    };
+    const fila = (d) => {
+      const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null, ...gravedadYNoches(d).map(esc)].filter(Boolean).join(' · ');
+      return d.enlace && enlace(d.enlace)
+        ? renglonDeLista(`<a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a>`, nombre)
+        : d.sinLugar === 'en_su_tarea' ? renglonDeLista(`<a href="/mantenimiento">${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</a>`, nombre)
+          : renglonDeLista(null, `${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma, { n: d.pr }))}`);
+    };
+    if (def.rubro === 'aceptadas_sin_resolver') {
+      out.push(seccion(titulo, suyas.length ? `<ul class="lista">${suyas.map(filaAceptada).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguna'))}</p>`, T('vista.deLaNocheDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
+      continue;
+    }
+    out.push(seccion(titulo, ul(suyas.map(fila)), T('vista.deLaNocheDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
   }
   return out.join('');
 }
@@ -414,7 +482,8 @@ function paginaInicio(ctx) {
   const m = ctx.modelo || {};
   if (ctx.quien.rol === 'maintainer') {
     const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma, esperan: ctx.esperan });
-    return layout(ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
+    // mientras alguna ficha carga, la página se recarga sola
+    return layout(filas.some((f) => f.estado === 'cargando') ? { ...ctx, recargar: 10 } : ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
   }
   const d = inicioDev(m, { ahora: ctx.ahora, idioma });
   const corridasPestana = (ctx.pestanas || []).some((p) => p.id === 'corridas');
@@ -422,15 +491,16 @@ function paginaInicio(ctx) {
   const corr = d.corridas.estado === 'medido'
     ? `<div class="tile">${chip('', T('inicio.tuyas'))}<div class="t-label">${esc(T('inicio.tusCorridas'))}</div><div class="t-val">${esc(T('inicio.corridasEn7', { n: d.corridas.en7dias }))}</div><div class="t-den">${esc(d.corridas.ultima ? T('inicio.laUltima', { fecha: d.corridas.ultima }) : T('inicio.ningunaTodavia'))}</div>${corridasPestana ? `<div class="t-foot"><a href="/corridas">${esc(T('inicio.verEnCorridas'))}</a></div>` : ''}</div>`
     : filaNo(T('inicio.tusCorridas'), d.corridas.motivo);
-  const lista = (items, fmt) => (items.length ? `<ul class="lista">${items.map((x) => `<li>${fmt(x)}</li>`).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
-  const link = (u, texto) => (enlace(u) ? `<a href="${esc(u)}">${texto}</a>` : texto);
+  // cada renglón: el enlace (o el marcador vacío) y el texto; sin enlace, el número va con el texto
+  const lista = (items, fmt) => (items.length ? `<ul class="lista dos">${items.map((x) => renglonDeLista(...fmt(x))).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
+  const conNumero = (u, numero, resto) => (enlace(u) ? [`<a href="${esc(u)}">${numero}</a>`, resto] : [null, `${numero} ${resto}`]);
   const prs = d.prs.estado === 'medido'
-    ? lista(d.prs.lista, (p) => `${link(p.enlace, `#${esc(p.numero)}`)} · ${esc(p.repo)} · ${esc(T('vista.dias', { n: p.dias }))}`)
+    ? lista(d.prs.lista, (p) => conNumero(p.enlace, `#${esc(p.numero)}`, `· ${esc(p.repo)} · ${esc(dias(p.dias, idioma))}`))
     : filaNo(T('inicio.tusPrs'), d.prs.motivo);
   const ped = d.pedidos.estado === 'medido'
-    ? lista(d.pedidos.lista, (p) => `${link(p.enlace, `#${esc(p.id)}`)}${p.titulo ? ` ${esc(p.titulo)}` : ''} · ${esc(p.tipo)} · ${esc(p.estado)} · ${esc(T('vista.dias', { n: p.dias }))}${p.dependencias ? ` · <b>${esc(T('inicio.dependencias'))}</b>` : ''}`)
+    ? lista(d.pedidos.lista, (p) => conNumero(p.enlace, `#${esc(p.id)}`, `${p.titulo ? `${esc(p.titulo)} ` : ''}· ${esc(p.tipo)} · ${esc(p.estado)} · ${esc(dias(p.dias, idioma))}${p.dependencias ? ` · <b>${esc(T('inicio.dependencias'))}</b>` : ''}`))
     : filaNo(T('inicio.loAsignado'), d.pedidos.motivo);
-  const proy = d.proyectos.estado === 'medido' ? lista(d.proyectos.lista, (p) => esc(p)) : filaNo(T('inicio.tusProyectos'), d.proyectos.motivo);
+  const proy = d.proyectos.estado === 'medido' ? lista(d.proyectos.lista, (p) => [null, esc(p)]) : filaNo(T('inicio.tusProyectos'), d.proyectos.motivo);
   return layout(ctx, T('pestana.inicio'), [
     seccion(T('inicio.tusCorridas'), `<div class="grid">${corr}</div>`),
     seccion(T('inicio.tusPrs'), prs),
@@ -512,17 +582,28 @@ function paginaProyectos(ctx) {
   const noMedido = (motivo) => esc(T('vista.noMedidoCon', { motivo }));
   const celdaDep = (d) => {
     if (d.estado === 'no_medido') return `<td class="nm" colspan="3">${noMedido(d.motivo)}</td>`;
-    const fecha = (x) => (x && x.fecha ? esc(String(x.fecha).slice(0, 10)) : '—');
-    const prod = `${fecha(d.produccion)}${d.produccion_atrasada === true ? ` · <b>${esc(T('proyectos.atrasada'))}</b>` : (d.produccion_atrasada === null ? ` · ${esc(T('proyectos.atrasoSinMedir'))}` : '')}`;
-    const apr = d.aprobacion && d.aprobacion.estado ? esc(d.aprobacion.estado) : (d.aprobacion ? esc(d.aprobacion) : '—');
+    // la fecha no parte renglón: en una columna angosta se partiría en dos
+    const fecha = (x) => (x && x.fecha ? `<span class="fecha">${esc(String(x.fecha).slice(0, 10))}</span>` : '—');
+    const atraso = d.produccion ? T('proyectos.atrasoSinComparar') : T('proyectos.atrasoSinProduccion');
+    const prod = `${fecha(d.produccion)}${d.produccion_atrasada === true ? ` · <b>${esc(T('proyectos.atrasada'))}</b>` : (d.produccion_atrasada === null ? ` · ${esc(atraso)}` : '')}`;
+    const ea = d.aprobacion && typeof d.aprobacion === 'object' ? d.aprobacion.estado : d.aprobacion;
+    const apr = !ea ? '—' : esc(APROBACIONES.includes(ea) ? T(`proyectos.aprob.${ea}`) : T('proyectos.aprob.sinMedir', { motivo: motivoDeDespliegue(d.aprobacion && d.aprobacion.motivo, idioma) }));
     return `<td>${fecha(d.staging)}</td><td>${prod}</td><td>${apr}${d.main === 'roto' ? ` · <b>${esc(T('proyectos.mainRoto'))}</b>` : ''}</td>`;
   };
-  const filasHtml = filas.map((f) => `<tr><th scope="row">${esc(f.producto)}${f.compartido ? ` <span class="nota">${esc(T('proyectos.compartido', { n: f.compartido }))}</span>` : ''}</th>${f.medido
-    ? `<td>${esc(T('proyectos.enCursoCelda', { n: f.en_curso, revision: f.en_revision }))}</td><td>${esc(T('proyectos.paradasCelda', { paradas: f.paradas, sinMedir: f.sin_medir }))}</td><td>${f.bloqueadas}</td>`
-    : `<td class="nm" colspan="3">${f.sin_stories ? esc(f.motivo) : noMedido(f.motivo)}</td>`}${celdaDep(f.despliegues)}<td>${esc(f.vigilado === null ? T('vista.noMedido') : T(f.vigilado ? 'vista.si' : 'vista.no'))}</td><td>${f.vivas === null ? esc(T('vista.noMedido')) : esc(f.vivas)}</td><td${f.paridad.estado === 'no_medido' ? ' class="nm"' : ''}>${esc(f.paridad.texto)}</td></tr>`).join('');
-  const cab = ['producto', 'enCurso', 'paradas', 'bloqueadas', 'enPrueba', 'enProduccion', 'aprobacion', 'vigilado', 'vivas', 'paridad'].map((k) => `<th>${esc(T(`proyectos.col.${k}`, { dias: PARADA_DIAS }))}</th>`).join('');
+  const filasHtml = filas.map((f) => `<tr data-producto="${esc(f.producto)}" data-por-proyecto="${esc(JSON.stringify(f.por_proyecto || {}))}"><th scope="row">${esc(f.producto)}${f.compartido ? ` <span class="nota">${esc(T('proyectos.compartido', { n: f.compartido }))}</span>` : ''}</th>${f.medido
+    ? `<td>${esc(T('proyectos.enCursoCelda', { n: f.en_curso, revision: f.en_revision }))}</td>${f.edad.estado === 'medido'
+      ? `<td>${esc(T('proyectos.paradasCelda', { paradas: f.paradas, sinMedir: f.sin_medir }))}</td><td>${esc(T('proyectos.edadCelda', { d1: f.edad.d1, d2: f.edad.d2, n1: f.edad.mas_de_d1, n2: f.edad.mas_de_d2 }))}</td>`
+      : `<td class="nm" colspan="2">${noMedido(f.edad.motivo)}</td>`}<td>${f.bloqueadas}</td>`
+    : `<td class="nm" colspan="4">${f.sin_stories ? esc(f.motivo) : noMedido(f.motivo)}</td>`}${celdaDep(f.despliegues)}<td>${esc(f.vigilado === null ? T('vista.noMedido') : T(f.vigilado ? 'vista.si' : 'vista.no'))}</td><td>${f.vivas === null ? esc(T('vista.noMedido')) : esc(f.vivas)}</td><td${f.paridad.estado === 'no_medido' ? ' class="nm"' : ''}>${esc(f.paridad.texto)}</td></tr>`).join('');
+  // el encabezado nombra los días de la configuración; sin ellos, sin número
+  const d1 = totales.edad.estado === 'medido' ? totales.edad.d1 : null;
+  const cab = ['producto', 'enCurso', d1 === null ? 'paradasSinDias' : 'paradas', 'edad', 'bloqueadas', 'enPrueba', 'enProduccion', 'aprobacion', 'vigilado', 'vivas', 'paridad'].map((k) => `<th>${esc(T(`proyectos.col.${k}`, { dias: d1 }))}</th>`).join('');
   const tabla = `<label class="filtro">${esc(T('proyectos.filtrar'))} <input type="search" data-filtro="proyectos"></label><div class="card tbl-wrap"><table class="tabla" id="proyectos"><thead><tr>${cab}</tr></thead><tbody>${filasHtml}</tbody></table></div>`;
-  const pie = `<p class="q-note">${esc(T('proyectos.totales', { enCurso: totales.en_curso_total, paradas: totales.paradas_total, sinMedir: totales.sin_medir_total }))}</p>`;
+  // el total lleva la plantilla del filtrado: el navegador la llena con las filas que quedan
+  const sinDias = totales.paradas_total === null;
+  const pie = `<p class="q-note" id="proyectos-totales" data-plantilla="${esc(T(sinDias ? 'proyectos.totalesFiltradoSinDias' : 'proyectos.totalesFiltrado'))}">${esc(sinDias
+    ? T('proyectos.totalesSinDias', { enCurso: totales.en_curso_total, motivo: totales.edad.motivo })
+    : T('proyectos.totales', { enCurso: totales.en_curso_total, paradas: totales.paradas_total, sinMedir: totales.sin_medir_total }))}</p><p class="q-note">${esc(T('proyectos.vivasCuentan'))}</p>`;
   return layout(ctx, titulo, fichas + seccion(T('proyectos.comoVa'), filas.length ? tabla + pie : `<p class="q-note">${esc(T('proyectos.ninguno'))}</p>`) + seccionEstimaciones(m, idioma), T('proyectos.lede'));
 }
 
@@ -548,14 +629,14 @@ function seccionEstimaciones(m, idioma) {
   const cab = [T('proyectos.est.col.producto'), T('proyectos.est.col.repoYEpica'), T('proyectos.est.col.rango'), T('proyectos.est.col.plan'), T('proyectos.est.col.vigente'), T('proyectos.est.col.real')].map((x) => `<th>${esc(x)}</th>`).join('');
   const filas = [];
   for (const p of productos) {
-    if (p.sin_fotos) { filas.push(`<tr><th scope="row">${esc(p.producto)}</th><td class="nm" colspan="5">${esc(T('vista.noMedidoCon', { motivo: T('proyectos.sinFoto') }))}</td></tr>`); continue; }
+    if (p.sin_fotos) { filas.push(`<tr data-producto="${esc(p.producto)}"><th scope="row">${esc(p.producto)}</th><td class="nm" colspan="5">${esc(T('vista.noMedidoCon', { motivo: T('proyectos.sinFoto') }))}</td></tr>`); continue; }
     for (const r of p.repos) {
-      const ileg = r.ilegibles ? ` <span class="nota">${esc(T('proyectos.est.ilegibles', { n: r.ilegibles }))}</span>` : '';
-      if (!r.filas.length) { filas.push(`<tr><th scope="row">${esc(p.producto)}</th><td>${esc(r.repo)}</td><td${r.estado === 'no_medido' ? ' class="nm"' : ''} colspan="4">${esc(r.texto)}${ileg}</td></tr>`); continue; }
+      const ileg = r.ilegibles ? ` <span class="nota">${esc(T(r.ilegibles === 1 ? 'proyectos.est.ilegibles1' : 'proyectos.est.ilegibles', { n: r.ilegibles }))}</span>` : '';
+      if (!r.filas.length) { filas.push(`<tr data-producto="${esc(p.producto)}"><th scope="row">${esc(p.producto)}</th><td>${esc(`${p.producto} · ${r.repo}`)}</td><td${r.estado === 'no_medido' ? ' class="nm"' : ''} colspan="4">${esc(r.texto)}${ileg}</td></tr>`); continue; }
       r.filas.forEach((f, i) => {
-        const nombre = `${r.repo} · ${T('proyectos.est.epica', { id: f.epica })}${f.titulo ? ` — ${f.titulo}` : ''}`;
+        const nombre = `${p.producto} · ${r.repo} · ${T('proyectos.est.epica', { id: f.epica })}${f.titulo ? ` — ${f.titulo}` : ''}`;
         const u = f.unidad || (f.rango && f.rango.unidad);
-        filas.push(`<tr><th scope="row">${esc(p.producto)}</th><td>${esc(nombre)}${i === 0 ? ileg : ''}</td><td>${esc(f.rango ? rango(f.rango.min, f.rango.max, f.unidad ? f.unidad : f.rango.unidad) : T('proyectos.est.sinRango'))}</td><td>${esc(f.unidad ? con(f.suma_plan, u) : '—')}</td><td>${vigente(f)}</td><td>${real(f.real)}</td></tr>`);
+        filas.push(`<tr data-producto="${esc(p.producto)}"><th scope="row">${esc(p.producto)}</th><td>${esc(nombre)}${i === 0 ? ileg : ''}</td><td>${esc(f.rango ? rango(f.rango.min, f.rango.max, f.unidad ? f.unidad : f.rango.unidad) : T('proyectos.est.sinRango'))}</td><td>${esc(f.unidad ? con(f.suma_plan, u) : '—')}</td><td>${vigente(f)}</td><td>${real(f.real)}</td></tr>`);
       });
     }
     if (p.total) {
@@ -565,7 +646,7 @@ function seccionEstimaciones(m, idioma) {
       const celdas = tt.unidad
         ? `<td>${esc(marca(rango(tt.min, tt.max, tt.unidad), tt.parciales.rango))}</td><td>${esc(marca(con(tt.plan, tt.unidad), tt.parciales.plan))}</td><td>${esc(marca(con(tt.vigente, tt.unidad), tt.parciales.vigente))}</td>`
         : `<td colspan="3">${esc(marca(T('proyectos.est.porUnidad', { sumas: porUnidad(tt.por_unidad) }), tt.parciales.vigente))}</td>`;
-      filas.push(`<tr class="total"><th scope="row">${esc(p.producto)}</th><td><b>${esc(T('proyectos.est.totalDelProducto'))}</b></td>${celdas}<td>${esc(marca(tt.real === null ? '—' : con(tt.real, 'hours'), tt.parciales.real))}</td></tr>`);
+      filas.push(`<tr class="total" data-producto="${esc(p.producto)}"><th scope="row">${esc(p.producto)}</th><td><b>${esc(T('proyectos.est.totalDelProducto'))}</b></td>${celdas}<td>${esc(marca(tt.real === null ? '—' : con(tt.real, 'hours'), tt.parciales.real))}</td></tr>`);
     }
   }
   const tabla = `<div class="card tbl-wrap"><table class="tabla" id="tabla-estimaciones"><thead><tr>${cab}</tr></thead><tbody>${filas.join('')}</tbody></table></div>`;
@@ -576,7 +657,9 @@ function paginaArnes(ctx) {
   const idioma = idiomaDe(ctx);
   const T = (k, v) => t(idioma, k, v);
   const lineas = filasArnes(ctx.modelo || {}, { ahora: ctx.ahora, version: ctx.version, ultima: ctx.ultima, idioma });
-  const li = lineas.map((l) => `<li class="${l.estado === 'medido' ? '' : 'nm'}"><span class="pieza">${esc(l.titulo)}</span><span class="estado">${esc(l.texto)}</span><span class="marca">${l.estado === 'medido' ? `<span class="pill">${esc(T('vista.medido'))}</span>` : `<span class="pill nm">${esc(T('vista.noMedido'))}</span>`}</span></li>`).join('');
+  // las suites rojas, una por renglón, con las nuevas marcadas
+  const subLista = (l) => (l.lista && l.lista.length ? `<details class="sub"><summary>${esc(T('arnes.verCuales'))}</summary><ul>${l.lista.map((x) => (x.nueva ? `<li class="nueva">${esc(x.nombre)} <b>${esc(T('arnes.nueva'))}</b></li>` : `<li>${esc(x.nombre)}</li>`)).join('')}</ul></details>` : '');
+  const li = lineas.map((l) => `<li class="${l.estado === 'medido' ? '' : 'nm'}"><span class="pieza">${esc(l.titulo)}</span><span class="estado">${esc(l.texto)}${subLista(l)}</span><span class="marca">${l.estado === 'medido' ? `<span class="pill">${esc(T('vista.medido'))}</span>` : `<span class="pill nm">${esc(T('vista.noMedido'))}</span>`}</span></li>`).join('');
   // las fichas del tablero nocturno, por pregunta; sin el modelo de fichas (una prueba que no las pide) no hay nada
   const m = ctx.modelo || {};
   const porPregunta = fichasDelTablero.seccionesDe(m.fichas, 'arnes', idioma).map((s) => seccion(s.titulo, s.html)).join('');

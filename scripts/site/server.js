@@ -33,7 +33,8 @@
  *                 SITE_OPERATIONS_IDENTITY=managed (la identidad administrada de la plataforma: lo de cada nube vive en cloud/)
  *   opcionales    SITE_OIDC_EMAIL_CLAIM · PORT (8080) · SITE_MAILBOX_SAS o SITE_MAILBOX_IDENTITY=managed ·
  *                 SITE_FIRST_MAINTAINER (un correo) · SITE_AUTH_ALLOWED_DOMAINS (donde el proveedor no la exige) ·
- *                 SITE_DATA_DIR (un disco persistente; sin ella, una carpeta temporal, y se dice)
+ *                 SITE_DATA_DIR (un disco persistente; sin ella, una carpeta temporal, y se dice) · SITE_TRUST_PROXY=1 (detrás
+ *                 de un intermediario que escribe X-Forwarded-For: los topes de las oficinas cuentan la última dirección)
  *   de la pestaña Configuración (todas apagadas por defecto: sin una, su sección queda en sólo
  *   lectura o «no configurado», y el sitio arranca igual)
  *                 SITE_OPERATIONS_WRITE_TOKEN (proponer cambios al repo de operaciones: rama y pedido, nunca main) ·
@@ -81,7 +82,7 @@ const PROVEEDORES = (() => {
 })();
 const VARIABLES = ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 'SITE_OIDC_CLIENT_ID', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OIDC_ISSUER',
   'SITE_OIDC_EMAIL_CLAIM', 'SITE_AUTH_ALLOWED_DOMAINS', 'SITE_AUTH_GITHUB_ORG', 'SITE_OPERATIONS_REPO', 'SITE_OPERATIONS_TOKEN', 'SITE_OPERATIONS_IDENTITY',
-  'SITE_MAILBOX_SAS', 'SITE_MAILBOX_IDENTITY', 'SITE_FIRST_MAINTAINER', 'SITE_DATA_DIR', 'PORT',
+  'SITE_MAILBOX_SAS', 'SITE_MAILBOX_IDENTITY', 'SITE_FIRST_MAINTAINER', 'SITE_DATA_DIR', 'PORT', 'SITE_TRUST_PROXY',
   'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN', 'SITE_PRODUCTS_WRITE_TOKEN',
   'SITE_OPERATIONS_SOURCE', 'SITE_OPERATIONS_COPY', 'SITE_OPERATIONS_COPY_SAS',
   // invitar desde Personas (invitations.js): el tope por día
@@ -216,6 +217,8 @@ function validarConfiguracion(env) {
   }
   if (!cfg.port) cfg.port = 8080;
   cfg.dataDir = env.SITE_DATA_DIR || null;
+  // la lista de direcciones del intermediario (o `1`, que cree a cualquiera): ver confianzaDe en live-hub.js
+  try { cfg.trustProxy = require('./live-hub.js').confianzaDe(env.SITE_TRUST_PROXY); } catch (e) { falta('SITE_TRUST_PROXY', e.message); }
   cfg.redirectUri = cfg.publicUrl ? `${cfg.publicUrl}/auth/callback` : null;
   return { ok: problemas.length === 0, problemas, cfg };
 }
@@ -288,10 +291,11 @@ function etiquetaDe(cuerpo) {
 
 /**
  * Las rutas que contestan sin sesión y que un candado delante del sitio tiene que dejar pasar: la vida y la salud, la
- * página de salida con lo que carga (hoja de estilo, código y letra) y el selector de idioma. Rutas exactas, sin comodines.
+ * página de salida con lo que carga (hoja de estilo, código y letra), el selector de idioma y las dos rutas de la máquina,
+ * que no tiene sesión de navegador: la protege su firma (live-hub.js). Rutas exactas, sin comodines.
  */
 const SONDAS = new Set(['/livez', '/healthz', '/readyz']);
-const RUTAS_SIN_SESION = ['/healthz', '/livez', '/saliste', '/idioma', '/static/site.css', '/static/site.js', '/static/fonts/lato-400.woff2', '/static/fonts/lato-700.woff2'];
+const RUTAS_SIN_SESION = ['/healthz', '/livez', '/saliste', '/idioma', '/static/site.css', '/static/site.js', '/static/fonts/lato-400.woff2', '/static/fonts/lato-700.woff2', '/live/machine', '/live/enroll'];
 
 function leerEstatico() {
   const { CSS_BASE, CSS_CHIPS } = require('../nightly/dashboard/common.js');
@@ -323,7 +327,7 @@ function textoDeLaRaiz(nombre, anexos = []) {
  * El sitio, sin escuchar todavía. `fuentes` cumple el contrato de sources.js (estado, config, modelo, refrescar,
  * detener); `ahora` (ms) y `log` se inyectan en las pruebas; `rutasExtra` es como las pestañas Corridas y Configuración suman las suyas.
  */
-function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [], version = VERSION, vigia = null, alEntrar = null, demo = null } = {}) {
+function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [], version = VERSION, vigia = null, alEntrar = null, demo = null, llaves = null, centroOpciones = {} } = {}) {
   // el modo demo (demo.js) trae su propia configuración, sin proveedor ni credenciales
   const v = demo ? { ok: true, cfg: demo.cfg } : validarConfiguracion(env);
   if (!v.ok) throw Object.assign(new Error(v.problemas.map((p) => `${p.variable}: ${p.motivo}`).join('\n')), { problemas: v.problemas });
@@ -453,7 +457,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     // una poda que no pudo (el archivo ilegible, el disco) se vuelve a probar en el próximo pedido
     if (borradas < 0) return;
     configPodada = config;
-    if (borradas) registrar(`idioma: se borró la preferencia de ${borradas} persona(s) que salieron de la lista del sitio`);
+    if (borradas) registrar(`idioma: se borró la preferencia de ${borradas === 1 ? '1 persona que salió' : `${borradas} personas que salieron`} de la lista del sitio`);
   }
   /** El candado de origen de las escrituras: el `Origin` del sitio; sin él, un `Referer` del sitio o `Sec-Fetch-Site`. */
   function delSitio(req) {
@@ -476,6 +480,17 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const s = session.leerSesion(cookies, cfg.sessionKey, ahora(), { prov: proveedor.nombre, iss: proveedor.emisor });
     return s && !cerradas.cerrada(s) ? s : null;
   };
+  // el centro de las oficinas: sin la demo, que no recibe datos reales, y sólo con el registro de las claves
+  const centro = !demo && llaves ? require('./live-hub.js').crearCentro({ cfg, fuentes, llaves, sesionDe, ahora, log: (l) => registrar(l), firstMaintainer: cfg.firstMaintainer, ...centroOpciones }) : null;
+  // la conversación de una sesión de una oficina: vive en el centro, y la pide la pestaña al abrir «Ver conversación».
+  // A quien no ve esa máquina se le contesta igual que por una que no existe
+  if (centro) {
+    const charla = { method: 'GET', path: '/offices/conversation', needs: ['maintainer', 'person'], handler: (ctx) => {
+      const datos = centro.conversacion(ctx.quien, String(ctx.url.searchParams.get('m') || ''), String(ctx.url.searchParams.get('s') || ''));
+      return datos ? { status: 200, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(datos), extra: { 'Cache-Control': 'no-store' } } : { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: 'no existe' };
+    } };
+    rutas.push(...validarRutas([...rutas, charla]).slice(-1).map((r) => ({ ...r, coincide: patronDe(r.path) })));
+  }
   /** ¿El token del formulario es el de la sesión? Tiempo constante. */
   const mismoToken = (ses, recibido) => {
     const a = Buffer.from(typeof ses.tok === 'string' ? ses.tok : '');
@@ -484,7 +499,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   };
   async function cambiarIdioma(req, res, cookies) {
     if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'POST' } });
-    if (!delSitio(req)) { registrar('idioma: cambio rechazado, el pedido viene de otro origen'); return enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' }); }
+    if (!delSitio(req)) { registrar('idioma: cambio rechazado, la solicitud viene de otro origen'); return enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' }); }
     const form = await leerFormulario(req);
     const pedida = String(form.get('volver') || '');
     // sólo una ruta propia, en caracteres que una cabecera admite: nada de otra dirección (`//x`, `/\x`), de controles ni
@@ -563,6 +578,36 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     return enviar(res, { status: 302, cuerpo: '', extra: { Location: '/', 'Set-Cookie': [ses, borrarIntento, session.borrar(session.MARCA)] } });
   }
 
+  /** El cuerpo del pedido de alta: `{ doc }`, o `{ grande: true }` apenas pasa del tope, sin seguir guardando lo que llega. */
+  const leerAlta = (req) => new Promise((resolve) => {
+    const tope = require('./machine-keys.js').TOPES_ALTA.bytes;
+    let n = 0; const partes = [];
+    req.on('data', (c) => {
+      n += c.length;
+      if (n > tope) { partes.length = 0; resolve({ grande: true }); } else partes.push(c);
+    });
+    req.on('end', () => { try { resolve({ doc: JSON.parse(Buffer.concat(partes).toString('utf8')) }); } catch { resolve({ doc: null }); } });
+    req.on('error', () => resolve({ doc: null }));
+  });
+
+  /**
+   * Las rutas de la máquina fuera del `upgrade`: sin sesión, y siempre con el encabezado del sitio, que es como
+   * `check-deploy.js` distingue que llegó hasta acá y no se la contestó el candado de la plataforma.
+   */
+  async function rutaDeLaMaquina(req, res, ruta, st) {
+    const { SITE_HEADER } = require('../tools/office/fields.js');
+    const contestar = (status, extra = {}) => enviar(res, { status, tipo: 'text/plain; charset=utf-8', cuerpo: '', extra: { [SITE_HEADER]: '1', ...extra } });
+    if (ruta === '/live/machine') return contestar(426, { Upgrade: 'websocket' });
+    if (req.method !== 'POST') return contestar(405, { Allow: 'POST' });
+    if (st.frenado || !(st.cargado || st.navegable)) return contestar(503, { 'Retry-After': '60' });
+    const leido = await leerAlta(req);
+    if (leido.grande) return contestar(413, { Connection: 'close' });
+    if (!leido.doc || typeof leido.doc !== 'object' || Array.isArray(leido.doc)) return contestar(400);
+    const { direccionDe } = require('./live-hub.js');
+    const { status } = llaves.pedir({ publicKey: leido.doc.publicKey, fingerprint: leido.doc.fingerprint, nombre: leido.doc.nombre, direccion: direccionDe(req, cfg.trustProxy) });
+    return contestar(status);
+  }
+
   async function manejar(req, res) {
     let u;
     try { u = new URL(req.url, 'http://sitio.invalid'); } catch { return enviar(res, { status: 400, cuerpo: '' }); }
@@ -578,6 +623,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (ruta === '/healthz') return st.frenado ? json(res, 503, { ok: false, motivo: `la configuración de la organización no valida desde ${views.hora(Number.isFinite(st.frenado.fallaDesde) ? st.frenado.fallaDesde : st.frenado.desde)}` }) : json(res, 200, { ok: true });
     if (ruta === '/readyz') return st.cargado ? json(res, 200, { ok: true }) : json(res, 503, { ok: false, motivo: 'cargando' }, { 'Retry-After': '5' });
     if (estatico[ruta] && req.method === 'GET') return enviar(res, { status: 200, ...estatico[ruta] });
+    if (centro && (ruta === '/live/machine' || ruta === '/live/enroll')) return rutaDeLaMaquina(req, res, ruta, st);
 
     const cookies = session.leerCookies(req.headers.cookie);
     // el idioma antes de saber quién pide: la cookie y el navegador; con sesión, abajo, la persona primero
@@ -674,6 +720,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       bandaRefresco: st.bandaRefresco || null,
       bandaConfig: quien.rol === 'maintainer' ? (st.bandaConfig || null) : null,
       avisoVariable: quien.rol === 'maintainer' && quien.variableSobrante,
+      // la noche dijo que el sitio corre una imagen por etiqueta: no se actualiza solo hasta fijarlo por huella
+      avisoEtiqueta: quien.rol === 'maintainer' && Boolean(modelo && modelo.instalacion && modelo.instalacion.porEtiqueta),
       avisoSesiones: !demo && quien.rol === 'maintainer' && !cerradas.verificable(),
       enlaceOperaciones: quien.rol === 'maintainer' ? enlaceOperaciones : null,
       // cuántas fichas de una fuente esperan decisión, con la cuenta de la pestaña que las decide (Inicio muestra el
@@ -700,6 +748,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     });
   });
 
+  if (centro) server.on('upgrade', (req, socket, head) => { socket.on('error', () => socket.destroy()); centro.alUpgrade(req, socket, head); });
+
   async function prepararProveedor() {
     try { await proveedor.preparar(); registrar(`el proveedor de inicio de sesión (${proveedor.nombre}) está listo`); return true; } catch (e) {
       registrar(`el proveedor de inicio de sesión no respondió: ${(e && e.motivo) || (e && e.message) || e} — se reintenta en 30 s`);
@@ -708,7 +758,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   }
 
   return {
-    server, cfg, rutas,
+    server, cfg, rutas, centro,
     /** Baja el descubrimiento (si el emisor no responde, se reintenta solo cada 30 s; el sitio arranca igual). */
     async iniciar() {
       if (!(await prepararProveedor())) {
@@ -720,6 +770,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     cerrar: () => new Promise((resolve) => {
       if (reintento) clearTimeout(reintento);
       try { fuentes.detener(); } catch { /* nada */ }
+      if (centro) centro.detener();
       server.close(() => resolve());
       if (server.closeAllConnections) server.closeAllConnections();
     }),
@@ -740,6 +791,9 @@ async function main() {
   const env = process.env;
   const log = (l) => process.stdout.write(`[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] ${l}\n`);
   for (const l of lineasDeArranque(env)) log(l);
+  if (String(env.SITE_TRUST_PROXY || '').trim() === '1') {
+    log('aviso: SITE_TRUST_PROXY=1 cree la dirección que trae X-Forwarded-For venga de donde venga: si el puerto se alcanza sin pasar por el intermediario, quien entra directo se inventa la dirección y saltea los topes por dirección. Poné la lista de direcciones del intermediario (por ejemplo 10.0.0.0/8).');
+  }
   // SITE_DEMO puesta con cualquier valor pide el modo demo: sólo con «1» arranca, y nunca cae callado al sitio real
   if (env.SITE_DEMO !== undefined) return arrancarDemo(env, log);
   const v = validarConfiguracion(env);
@@ -756,23 +810,31 @@ async function main() {
   }
   let sitio;
   try {
-    const fuentes = crearFuentes({ cfg: v.cfg, dataDir, log });
+    const fuentes = crearFuentes({ cfg: v.cfg, dataDir, log, version: VERSION });
+    // las claves de las máquinas para las oficinas: en el disco del sitio; sin disco, un reinicio las pierde
+    const llaves = require('./machine-keys.js').crearLlaves({ dataDir, log });
     // invitar desde Personas (con un proveedor que sabe invitar y el disco del sitio): lo que falta enviar se recalcula
     // al terminar cada ciclo de fuentes
     const invitaciones = require('./invitations.js').crearInvitaciones({ cfg: v.cfg, env, dataDir: v.cfg.dataDir, llave: v.cfg.sessionKey, log });
     fuentes.alRefrescar(() => { invitaciones.enviarPendientes(fuentes.config()); });
     const rutasExtra = [
-      ...require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log, invitaciones }),
+      ...require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log, invitaciones, llaves }),
       // la pestaña Cómo trabaja: el recorrido de una historia, con los revisores propios editables
       ...require('./tabs/how-it-works.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
       // la pestaña Corridas: arma su vista en un hilo aparte con el espejo del buzón
       ...require('./tabs/runs.js').crearRutas({ cfg: v.cfg, fuentes, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null, log }),
       // la pestaña Mantenimiento: lo que encontró la noche, que quien mantiene decide con un clic
       ...require('./tabs/findings.js').crearRutas({ cfg: v.cfg, fuentes, log }),
+      // la pestaña Aprendizajes: lo que la noche propone que el equipo aprenda, que quien mantiene aprueba o rechaza
+      ...require('./tabs/learnings.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
+      // la pestaña Horas y tokens: los días que suben las máquinas, sólo para quien mantiene
+      ...require('./tabs/workdays.js').crearRutas({ fuentes, log }),
+      // la pestaña Oficinas: la misma página de la oficina local, con lo que llega de las máquinas
+      ...require('./tabs/offices.js').crearRutas({ log }),
       // la pestaña Ayuda: la guía del sitio que viaja en la imagen, con lo que le toca a cada rol
       ...require('./help.js').crearRutas({ log }),
     ];
-    sitio = crearSitio({ env, fuentes, log, rutasExtra, alEntrar: (correo) => invitaciones.entro(correo) });
+    sitio = crearSitio({ env, fuentes, log, rutasExtra, alEntrar: (correo) => invitaciones.entro(correo), llaves });
     await sitio.iniciar();
     fuentes.arrancar();
   } catch (e) {

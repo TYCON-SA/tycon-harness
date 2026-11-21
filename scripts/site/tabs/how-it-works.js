@@ -16,6 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const TX = require('../texts.js');
+const BUSY = require('../busy.js');
 const views = require('../views.js');
 const RP = require('../../lib/repo-proposal.js');
 const ORG = require('../../lib/org-config.js');
@@ -31,6 +32,26 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const json = (status, obj) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj) });
+
+/**
+ * Un problema del lector («integrations.timeTracking: motivo») en llano: el motivo sin la clave, con un enlace a la
+ * sección de Configuración donde se corrige. Sin clave que se reconozca, el motivo entero y el enlace a Configuración.
+ */
+function problemaConSeccion(problema, T) {
+  const texto = String(problema);
+  const m = /^([A-Za-z_][\w-]*(?:\.[\w-]+)*):\s+([\s\S]+)$/.exec(texto);
+  // por la ruta; si no, por la clave de primer nivel sólo cuando una sola sección la tiene: con varias (las de `site`)
+  // no se sabe cuál es, y el enlace va a Configuración
+  const porClave = m ? ORG.SECCIONES.filter((s) => (s.claves || []).includes(m[1].split('.')[0])) : [];
+  const seccion = (m && ORG.SECCIONES.find((s) => (s.rutas || []).some((r) => m[1] === r || m[1].startsWith(`${r}.`))))
+    || (porClave.length === 1 ? porClave[0] : null);
+  if (!seccion) return `${esc(texto)} <a href="/configuracion">${esc(T('pestana.configuracion'))}</a>`;
+  // el nombre de la sección como lo dice la pantalla; si la pantalla no tiene uno corto, el de Configuración
+  let nombre;
+  try { nombre = T(`pantalla.${seccion.id}`); } catch { nombre = null; }
+  if (!nombre || nombre.includes('?')) nombre = T('pestana.configuracion');
+  return `${esc(m[2])} <a href="/configuracion#seccion-${esc(seccion.id)}">${esc(nombre.charAt(0).toUpperCase() + nombre.slice(1))}</a>`;
+}
 
 /** La dirección del repo público del arnés (scripts/setup/public-remotes.json), sin `.git`; null si no se puede leer. */
 function publicRepoOf(tree = TREE) {
@@ -125,8 +146,11 @@ function renderPage(model, { idioma, publicRepo, version }) {
     const activos = o.packs.active && o.packs.active.length ? o.packs.active.join(', ') : T('comoTrabaja.ninguno');
     const r = o.rules || {};
     const valor = (x) => (x && x.value != null ? String(x.value) : T('comoTrabaja.ninguno'));
-    const reglas = [T('comoTrabaja.reglaNombres', { valor: valor(r.test_names) }), T('comoTrabaja.reglaPantallas', { valor: valor(r.screen_test) }), T('comoTrabaja.reglaIdioma', { valor: valor(r.ui_language) })].join(' · ');
-    const problemas = (o.problems || []).length ? `<div class="ct-fila"><b>${esc(T('comoTrabaja.orgProblemas'))}</b><span>${o.problems.map(esc).join(' · ')}</span></div>` : '';
+    // la regla de pantallas con las palabras del selector de Configuración; sin elegir, la de fábrica
+    const OPCION_PANTALLAS = { ui: 'pantalla.tecTodas', react: 'pantalla.tecSoloReact', off: 'pantalla.tecNinguna' };
+    const pantallas = (x) => (x && x.source === 'por_defecto' ? T('pantalla.tecSinDeclararTodas') : x && OPCION_PANTALLAS[x.value] ? T(OPCION_PANTALLAS[x.value]) : valor(x));
+    const reglas = [T('comoTrabaja.reglaNombres', { valor: valor(r.test_names) }), T('comoTrabaja.reglaPantallas', { valor: pantallas(r.screen_test) }), T('comoTrabaja.reglaIdioma', { valor: valor(r.ui_language) })].join(' · ');
+    const problemas = (o.problems || []).length ? `<div class="ct-fila"><b>${esc(T('comoTrabaja.orgProblemas'))}</b><span>${o.problems.map((p) => problemaConSeccion(p, T)).join(' · ')}</span></div>` : '';
     franja = `<section class="ct-org card" aria-label="${esc(T('comoTrabaja.orgTitulo'))}"><h2>${esc(T('comoTrabaja.orgTitulo'))}</h2><div class="ct-fila"><b>${esc(T('comoTrabaja.orgIntegraciones'))}</b><span>${integ} <span class="ct-nota">${esc(T('comoTrabaja.orgIntegracionesAyuda'))} ${esc(T('comoTrabaja.telegramDeCadaMaquina'))}</span></span></div><div class="ct-fila"><b>${esc(T('comoTrabaja.orgPaquetes'))}</b><span>${esc(activos)}</span></div><div class="ct-fila"><b>${esc(T('comoTrabaja.orgReglas'))}</b><span>${esc(reglas)}</span></div>${problemas}</section>`;
   } else {
     const motivo = model.profile.state === 'no_configurado' ? T('comoTrabaja.perfilNoConfigurado') : T('comoTrabaja.perfilSinLeer', { motivo: model.profile.reason || model.profile.state });
@@ -178,7 +202,9 @@ function renderPage(model, { idioma, publicRepo, version }) {
     for (const r of s.reviewers.packs) { if (!porPaquete.has(r.pack)) porPaquete.set(r.pack, []); porPaquete.get(r.pack).push(r); }
     for (const [pack, rs] of porPaquete) {
       const items2 = rs.map((r) => {
-        const cuando = r.when && typeof r.when.detection === 'string' && Object.keys(r.when).length === 1 ? (() => { try { return T(`bandera.${r.when.detection}`); } catch { return r.when.detection; } })() : (r.group === 'base' && !r.when ? T('comoTrabaja.grupoBase') : T('comoTrabaja.condicionEscrita'));
+        // una marca sin texto no muestra su id: dice que la condición está escrita, como cualquier otra
+        const condicionEscrita = () => T(r.origin === 'organization' && r.editable ? 'comoTrabaja.condicionEscritaEditable' : 'comoTrabaja.condicionEscrita');
+        const cuando = r.when && typeof r.when.detection === 'string' && Object.keys(r.when).length === 1 ? (() => { try { return T(`bandera.${r.when.detection}`); } catch { return condicionEscrita(); } })() : (r.group === 'base' && !r.when ? T('comoTrabaja.grupoBase') : condicionEscrita());
         const chips = [r.origin === 'organization' ? deLaOrg : delArnes, r.active === false ? chip('off', T('comoTrabaja.noActivo')) : ''];
         const acciones = r.origin === 'organization'
           ? (r.editable ? `<button type="button" class="btn" data-action="edit" data-pack="${esc(pack)}" data-agent="${esc(r.agent)}" data-use="${esc(r.use)}" aria-expanded="false">${esc(T('comoTrabaja.editar'))}</button>` : `<span class="ct-nota">${esc(porque(r))}</span>`)
@@ -667,8 +693,8 @@ function usoDe(r) {
 
 /** Los textos que usa el guion del navegador, en el idioma de la página. */
 function textosDelGuion(idioma) {
-  // y los nombres de los niveles de modelo, los mismos de Configuración
-  const claves = Object.keys(TX.TEXTOS).filter((k) => k.startsWith('comoTrabaja.') || k.startsWith('pantalla.nivel.'));
+  // y los nombres de los niveles de modelo, los mismos de Configuración, y lo que dicen los botones mientras trabajan
+  const claves = Object.keys(TX.TEXTOS).filter((k) => k.startsWith('comoTrabaja.') || k.startsWith('pantalla.nivel.') || BUSY.TEXTOS.includes(k));
   return Object.fromEntries(claves.map((k) => [k, TX.t(idioma, k)]));
 }
 
@@ -687,6 +713,8 @@ function T(k, v) { var s = TXT[k] || k; return s.replace(/\\{([A-Za-z][A-Za-z0-9
 function el(tag, a) { var e = document.createElement(tag); for (var k in a || {}) { if (a[k] == null) continue; if (k === 'text') e.textContent = a[k]; else if (k.slice(0, 2) === 'on') e[k] = a[k]; else e.setAttribute(k, a[k]); } for (var i = 2; i < arguments.length; i++) if (arguments[i]) e.appendChild(arguments[i]); return e; }
 var raiz = document.querySelector('.ct'); if (!raiz) return;
 var token = (document.querySelector('meta[name="site-token"]') || {}).content || '';
+${BUSY.TRABAJANDO}
+TRABAJO.sigue = T('pantalla.sigueTrabajando');
 function mostrar(id) {
   var hay = document.getElementById('paso-' + id); if (!hay) return;
   document.querySelectorAll('.ct-paso').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== id; });
@@ -734,11 +762,11 @@ function pedir(ruta, cuerpo) {
 // el editor de un revisor del perfil
 // firmadas: las versiones de los archivos cuando se abrió el editor, firmadas por el servidor ({ versions, firma }); un
 // revisor nuevo las toma de la primera revisión. No se pisan: el aviso de «otro lo cambió» se mide desde la apertura
-function editor(boton, draft, firmadas, modelos) {
+function editor(boton, draft, firmadas, modelos, aplicaSolo) {
   var versiones = firmadas && firmadas.firma ? firmadas : null;
   var cab = draft.cabecera || {};
   var estado = el('div', { class: 'ct-estado', 'aria-live': 'polite' });
-  var motivo = el('p', { class: 'ct-nota ct-motivo', 'data-motivo': 'antes', text: T('comoTrabaja.motivoAntesDeRevisar') });
+  var motivo = el('p', { class: 'ct-nota ct-motivo', 'data-motivo': 'antes', text: T(aplicaSolo ? 'comoTrabaja.motivoAntesDeRevisarSolo' : 'comoTrabaja.motivoAntesDeRevisar') });
   var proponer = el('button', { type: 'button', class: 'btn prim', disabled: 'disabled', 'data-action': 'propose', text: T('comoTrabaja.proponer') });
   var revisado = false;
   // cualquier cambio apaga «Proponer»; si ya se había revisado, la línea pide volver a revisar
@@ -850,24 +878,32 @@ function editor(boton, draft, firmadas, modelos) {
       cabecera: { nombre: agente, descripcion: descripcion.value, modelo: modelo.value, herramientas: herramientas }, cuerpo: texto.value };
   }
   var revisar = el('button', { type: 'button', class: 'btn', 'data-action': 'check', text: T('comoTrabaja.revisar'), onclick: function () {
-    pedir('/api/como-trabaja/revisar', { draft: borrador() }).then(function (r) {
-      estado.textContent = '';
-      if (r.ok) {
-        if (!versiones && r.firma) versiones = { versions: r.versions, firma: r.firma };
-        revisado = true; proponer.removeAttribute('disabled');
-        motivo.textContent = T('comoTrabaja.motivoRevisado'); motivo.setAttribute('data-motivo', 'revisado');
-        estado.appendChild(el('p', { class: 'ct-ok', text: T('comoTrabaja.seLeeBien') }));
-      } else (r.problems || [r.message]).forEach(function (p) { estado.appendChild(el('p', { class: 'ct-error', text: p })); });
-    });
+    trabajando(revisar, T('pantalla.revisando'), function () {
+      return pedir('/api/como-trabaja/revisar', { draft: borrador() }).then(function (r) {
+        estado.textContent = '';
+        if (r.ok) {
+          if (!versiones && r.firma) versiones = { versions: r.versions, firma: r.firma };
+          revisado = true; proponer.removeAttribute('disabled');
+          motivo.textContent = T(aplicaSolo ? 'comoTrabaja.motivoRevisadoSolo' : 'comoTrabaja.motivoRevisado'); motivo.setAttribute('data-motivo', 'revisado');
+          estado.appendChild(el('p', { class: 'ct-ok', text: T('comoTrabaja.seLeeBien') }));
+        } else (r.problems || [r.message]).forEach(function (p) { estado.appendChild(el('p', { class: 'ct-error', text: p })); });
+        return r;
+      });
+    }, { muestraSuError: true });
   } });
   proponer.onclick = function () {
-    proponer.setAttribute('disabled', 'disabled');
-    pedir('/api/como-trabaja/proponer', { draft: borrador(), versions: versiones ? versiones.versions : {}, firma: versiones ? versiones.firma : null }).then(function (r) {
-      estado.textContent = '';
-      // el sitio demo no abre ningún pedido: dice lo que pasaría, igual que Configuración
-      if (r.ok && r.codigo === 'demo') estado.appendChild(el('p', { class: 'ct-ok', 'data-demo': 'si', text: r.message }));
-      else if (r.ok) { var p = el('p', { class: 'ct-ok' }, document.createTextNode(T('comoTrabaja.propuesto', { enlace: '' }))); if (r.enlace) p.appendChild(el('a', { href: r.enlace, target: '_blank', rel: 'noopener', text: r.enlace })); estado.appendChild(p); }
-      else estado.appendChild(el('p', { class: 'ct-error', text: r.codigo === 'cambio' ? T('comoTrabaja.cambioEnMain') : T('comoTrabaja.noSePudo', { motivo: (r.problems || [r.message]).join(' · ') }) }));
+    trabajando(proponer, T('pantalla.proponiendoBoton'), function () {
+      return pedir('/api/como-trabaja/proponer', { draft: borrador(), versions: versiones ? versiones.versions : {}, firma: versiones ? versiones.firma : null }).then(function (r) {
+        estado.textContent = '';
+        // el sitio demo no abre ningún pedido: dice lo que pasaría, igual que Configuración
+        if (r.ok && r.codigo === 'demo') estado.appendChild(el('p', { class: 'ct-ok', 'data-demo': 'si', text: r.message }));
+        else if (r.ok) { var p = el('p', { class: 'ct-ok' }, document.createTextNode(T(r.codigo === 'aplicado' ? 'comoTrabaja.aplicado' : 'comoTrabaja.propuesto', { enlace: '' }))); if (r.enlace) p.appendChild(el('a', { href: r.enlace, target: '_blank', rel: 'noopener', text: r.enlace })); estado.appendChild(p); }
+        else estado.appendChild(el('p', { class: 'ct-error', text: r.codigo === 'cambio' ? T('comoTrabaja.cambioEnMain') : T('comoTrabaja.noSePudo', { motivo: (r.problems || [r.message]).join(' · ') }) }));
+        return r;
+      });
+    }, { muestraSuError: true }).then(function (r) {
+      // propuesto: no se propone dos veces; si falló, el ayudante ya lo dejó habilitado para volver a probar
+      if (r && r.ok) proponer.setAttribute('disabled', 'disabled');
     });
   };
   var panel = el('li', { class: 'ct-panel ct-editor' },
@@ -899,9 +935,11 @@ raiz.addEventListener('click', function (ev) {
   function noSeAbrio(motivo) { despuesDe(b, el('li', { class: 'ct-panel' }, el('p', { class: 'ct-error', text: T('comoTrabaja.noSePudo', { motivo: motivo }) }), el('div', { class: 'ct-pie' }, el('button', { type: 'button', class: 'btn', text: T('comoTrabaja.cerrar'), onclick: cerrarPaneles })))); }
   // uno nuevo pide sólo los modelos que puede elegir (sin «agent»); uno existente, su borrador y sus versiones
   var nuevo = accion === 'add';
-  fetch('/api/como-trabaja/revisor?pack=' + encodeURIComponent(b.getAttribute('data-pack')) + (nuevo ? '' : '&agent=' + encodeURIComponent(b.getAttribute('data-agent'))), { credentials: 'same-origin' })
-    .then(function (r) { return r.json().catch(function () { return { message: String(r.status) }; }); })
-    .then(function (r) { if (r && r.draft) { r.draft.avisoModelos = r.avisoModelos || null; editor(b, r.draft, nuevo ? null : { versions: r.versions, firma: r.firma }, r.modelos); } else noSeAbrio((r && r.message) || '?'); }, function (e) { noSeAbrio(String(e && e.message || e)); });
+  trabajando(b, T('pantalla.abriendo'), function () {
+    return fetch('/api/como-trabaja/revisor?pack=' + encodeURIComponent(b.getAttribute('data-pack')) + (nuevo ? '' : '&agent=' + encodeURIComponent(b.getAttribute('data-agent'))), { credentials: 'same-origin' })
+      .then(function (r) { return r.json().catch(function () { return { message: String(r.status) }; }); })
+      .then(function (r) { if (r && r.draft) { r.draft.avisoModelos = r.avisoModelos || null; editor(b, r.draft, nuevo ? null : { versions: r.versions, firma: r.firma }, r.modelos, r.aplicaSolo === true); return r; } noSeAbrio((r && r.message) || '?'); return { ok: false }; }, function (e) { noSeAbrio(String(e && e.message || e)); return { ok: false }; });
+  }, { muestraSuError: true });
 });
 })();
 `;
@@ -992,14 +1030,14 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetc
       if (!p.dir || !NAME_RE.test(pack || '')) return json(404, { ok: false, message: TX.t(idioma, 'comoTrabaja.err.sinPaquete') });
       // sin «agent»: un revisor nuevo, con los modelos que se pueden elegir y las tres herramientas de lectura
       if (!agent) return json(200, { draft: { pack, original: null, agent: '', group: 'condicional', detection: 'codeModified', paths: [], prefix: '', cuerpo: '',
-        cabecera: { nombre: '', descripcion: '', modelo: '', modeloTalCual: false, herramientas: ['Read', 'Grep', 'Glob'], otrasHerramientas: [], otras: [] } }, modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma) });
+        cabecera: { nombre: '', descripcion: '', modelo: '', modeloTalCual: false, herramientas: ['Read', 'Grep', 'Glob'], otrasHerramientas: [], otras: [] } }, modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma), aplicaSolo: aplicarSolo() });
       if (!NAME_RE.test(agent)) return json(404, { ok: false, message: TX.t(idioma, 'comoTrabaja.err.sinPaquete') });
       const d = draftOf(p.dir, pack, agent);
       if (d.error) { log(`cómo trabaja: el revisor ${pack}/${agent} no se pudo abrir (${d.error})`); return json(404, { ok: false, message: d.error }); }
       // las versiones de hoy de los dos archivos, firmadas: el aviso de «otro lo cambió» se mide desde que se abrió
       const v = await versionesDe(p.dir, [`packs/${pack}/pack.json`, d.md], oidDe);
       if (v.error) { log(`cómo trabaja: no pude leer las versiones del clon del perfil (${v.error})`); return json(404, { ok: false, message: TX.t(views.idiomaDe(ctx), 'comoTrabaja.err.clon', { motivo: v.error }) }); }
-      return json(200, { draft: d.draft, versions: v.versions, firma: firmaDe(ctx.sesion && ctx.sesion.tok, v.versions), modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma) });
+      return json(200, { draft: d.draft, versions: v.versions, firma: firmaDe(ctx.sesion && ctx.sesion.tok, v.versions), modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma), aplicaSolo: aplicarSolo() });
     } },
     { method: 'POST', path: '/api/como-trabaja/revisar', needs: solo, handler: revisar },
     { method: 'POST', path: '/api/como-trabaja/proponer', needs: solo, handler: proponer },

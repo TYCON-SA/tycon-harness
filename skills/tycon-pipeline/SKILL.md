@@ -1,11 +1,11 @@
 ---
 name: tycon-pipeline
-description: Orquesta el pipeline completo TYCON — valida la story con tycon-story-validator, invoca el skill BMAD apropiado (bmad-dev-story / bmad-agent-dev / bmad-agent-quick-flow-solo-dev) en plan mode, aprueba el plan con el usuario, ejecuta la implementación con build-gate, invoca los advisors en paralelo (set computado mecánicamente por `pipeline.js mech-check` + `pipeline.js advisors` — ver sección "Revisores: checklist" abajo), consolida los reportes, y prepara el commit sin ejecutarlo. Usar cuando el usuario pide "implementemos la story X", "implementar historia", "apply tycon pipeline" o equivalentes.
+description: Orquesta el pipeline completo TYCON — valida la story con tycon-story-validator, escribe el plan, lo aprueba con el usuario, ejecuta la implementación con build-gate, invoca los advisors en paralelo (set computado mecánicamente por `pipeline.js mech-check` + `pipeline.js advisors` — ver sección "Revisores: checklist" abajo), consolida los reportes, y prepara el commit sin ejecutarlo. Usar cuando el usuario pide "implementemos la story X", "implementar historia", "apply tycon pipeline" o equivalentes.
 ---
 
 # tycon-pipeline
 
-Orquesta el workflow TYCON completo: skills BMAD + advisors TYCON con checkpoints HITL. Este archivo tiene
+Orquesta el workflow TYCON completo: plan, código y advisors TYCON con checkpoints HITL. Este archivo tiene
 las REGLAS; el porqué de cada una (con su medición) vive en el archivo de su paso. Los guiones se corren con el comando
 entero, `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js <subcomando>` (igual `marker.js`; en
 Codex, `~/.codex/skills/…`): no se buscan.
@@ -79,10 +79,10 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **A.i**: siempre corren los advisors aplicables; no hay flag para saltear advisors individuales.
 - **H.ii — pase adversarial** (`steps/step-08-adversarial-pass.md`): reproduce-or-refute que
   EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre (de fondo, sin preguntar); LOW o
-  liviana → skip. Apagarlo lo firma el dueño (`marker.js sign-adversarial-skip`). Overrides: `deep_review: always|auto`,
-  `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable` no se ofrece ni se
-  pregunta**: sólo con `--deep-review-fable`, a pedido. UNA vez por corrida. Se lanza temprano al cerrar la implementación (`early_launch`; kill-switch `TYCON_5B_EARLY=0`)
-  y su paso es el JOIN. Los CONFIRMED se foldean a «Hallazgos» y disparan D.i. La prueba que confirmó cada hallazgo
+  liviana → skip. El portón usa el riesgo de la historia entera, no el que `risk-class` da para la parte. Apagarlo lo firma el dueño (`marker.js sign-adversarial-skip`). Overrides: `deep_review: always|auto`,
+  `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable`** sólo con
+  `--deep-review-fable`. UNA vez por corrida. Se lanza al cerrar lo implementado (`TYCON_5B_EARLY=0` lo apaga);
+  su paso es el JOIN; los CONFIRMED van a «Hallazgos». La prueba que confirmó cada hallazgo
   se promueve a la suite: `marker.js promote-probe`; `mark-adversarial-result` exige `--tests k`
   (+ `--own p --in <rutas>`, `--deferred d --reason`), k+p+d=N. El pase se cierra con constancia
   (`mark-adversarial-result` / `mark-adversarial-skipped`), nunca a mano; `prepare-commit` frena si el
@@ -123,8 +123,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   <skill>/scripts/runtime-matrix.js --story <abs spec>`; `prepare-commit` la exige verde (run-check). Cada
   AC queda RUNTIME / CODE-ONLY / SIN-EVIDENCIA. `NOT-RUN` → lo corre el agente (E2E, o smoke vía
   `scripts/smoke-run.sh`, que es lo único que cuenta como evidencia); `NOT-VERIFIABLE` (declarado en
-  `runtime_not_verifiable:` con `reason:` + `covered_by:`) → decide una persona; el agente nunca firma por su cuenta: `runtime-waiver` lo aprueba el dev en la
-  ventana de permiso, o con `--terminal`; ni cita ni reenvío. Un CRITICAL, igual: `waive-critical`. Presentar CADA NOT-VERIFIABLE en el chat, en llano,
+  `runtime_not_verifiable:` con `reason:` + `covered_by:`) → decide una persona; el agente nunca firma por su cuenta: `runtime-waiver` lo aprueba el dev: ventana de permiso,
+  click, «aprobado» o `--terminal`; ni cita ni reenvío. Un CRITICAL, igual: `waive-critical`. Presentar CADA NOT-VERIFIABLE en el chat, en llano,
   con razón y test que lo cubre, y pedir decisión AC por AC — nunca sólo el comando o un link. El checkpoint
   de «Hallazgos» lleva el resumen: «Corrido de verdad: N de T. Sin correr (bloquean, los corro yo): [lista].
   Imposibles-declarados (esperan tu decisión): [lista]». Narrar «listo / probado» con la matriz roja es la violación. Un verbo de
@@ -135,8 +135,9 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **F.iv — ADVISORS-GATE**: a `done` no se llega sin constancia de advisors en este repo (run dir con
   reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes del dev:
   `advisors_exempt: true` + `advisors_exempt_reason:`, o `TYCON_ADVISORS_GATE=off`.
-- **G.i**: al aprobar el plan, `pipeline.js risk-class --story <spec>`: LOW → auto-aprobado, con el plan en tus
-  mensajes; NORMAL → HITL. Push y scope firmado: human-gate.
+- **G.i**: un plan de rutina se aprueba con el aprobado de su revisión, con o sin
+  coordinadora; uno delicado, siempre el dev (risk-class); con `plan_review.routine_approval: person`, una persona.
+  Push, scope: human-gate.
 - **G.ii**: con `visual_plan: true` (o `--visual-plan`) y risk NORMAL, plan visual offline con
   `scripts/visual-plan.js render`. Default OFF.
 - **H.i — sesión fresca**: el pipeline corre en sesión nueva o tras `/clear`; si la conversación ya lleva
@@ -152,12 +153,12 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   el primer Edit/Write de código si no se tocó ningún test (story con tabla `### Tests`, marker activo,
   implementación abierta); `implement` bloquea si el primer test es posterior al primer código (evidencia:
   `marker.fileEvents` + `file-events/<sid>.jsonl`). Sin código → pasa; código sin tests → avisa. Escape
-  único: `marker.js set-flag atddBypass true` (auditado). Fuera del pipeline, `on-pre-commit.js` avisa
+  único: `marker.js set-flag atddBypass true --reason "<por qué>"` (auditado). Fuera del pipeline, `on-pre-commit.js` avisa
   (`.tycon/atdd-gate` con `block` para frenar). La guía de QA se pide sólo si hay superficie operable a
-  mano (`qa_guide: auto|off|always`). Un smoke corrido a mano no cuenta: va por `smoke-run.sh`.
-- **I.ii — mutantes**: `run-tests` corre `scripts/mutation-check.js` sobre los archivos que la story
-  declara; bloquea sólo si NINGÚN mutante murió; sobrevivientes → aviso. Escapes (persona):
-  `TYCON_MUTATION_CHECK=off` / `--no-mutation`. Corre sólo `node --test`.
+  mano (`qa_guide: auto|off|always`).
+- **I.ii — mutantes**: `run-tests` corre `mutation-check.js` (Jest, Vitest, .NET, pytest, `node --test`, `scoped`)
+  sobre lo declarado; frena si NINGÚN mutante murió (otra receta: avisa hasta el 2026-11-18 y frena desde ese día);
+  sobrevivientes → aviso. Saltearlo pide la firma `escape:no-mutation` (`--no-mutation --reason`; o `TYCON_MUTATION_CHECK=off`).
 - **Modo autónomo Nivel 1 (default ON)**: el Stop-hook `on-stop-dod-gate.js` no deja cerrar el turno con
   un check registrado en rojo (cap 6 iteraciones, no-progreso → escala). Opt-out `--no-autonomous` /
   `TYCON_PIPELINE_NO_AUTONOMOUS=1`; pánico `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY`. Los checks se
@@ -177,7 +178,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   anotar `pipeline.js qa-readability --story <s> --repo <r> --marks <n>`), o `<sid>-legibilidad-ui.md` (la misma
   pasada sobre los textos y capturas de la pantalla, `--ui-texts`; sus marcas se arreglan EN LA PANTALLA; `--scope ui`)
   · DODRT-C8 AC de acción ejecutado.
-  Aprobaciones viejas de la matriz (del home al repo): `scripts/migrate-waivers-to-repo.js --repos <dirs> [--apply]` — `--apply` vuelve a firmar: lo corre el DEV en su terminal (pide `/dev/tty`); el agente, sólo el dry-run.
+  Aprobaciones viejas de la matriz al repo: `scripts/migrate-waivers-to-repo.js --repos <dirs> [--apply]`; `--apply` firma: lo corre el DEV en su terminal; el agente, el dry-run.
 - **ATDD fuera del pipeline** (I.i.b · I.i.c + I.i.c.1 · I.i.d + I.i.d.1 · I.i.e): `on-pre-commit.js` avisa inversión test/código por eventos del repo
   (`TYCON_ATDD_COMMIT_GATE=block|off`); las stories se descubren por frontmatter (`lib/story-discovery.js`,
   `TYCON_STORY_SCAN_BUDGET_MS`; diagnóstico `node lib/story-discovery.js --doctor [--budget <ms>]`); aviso de guía de QA faltante o vieja; `lib/story-evidence-gate.js` avisa ACs
@@ -196,11 +197,11 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **Flags**: `--no-autonomous`/`--autonomous` · `--deep-review`/`--no-deep-review`/`--ultracode`/
   `--deep-review-fable` · `--cost-tier lean|deep` · `--visual-plan` · `--force-full-reloop` ·
   `--out-of-order` · `--relaunch` · `--no-atdd` · `--no-mutation` · `--max-mutants N` · `--evidence-dir` ·
-  `--brief` (sólo `start`: lo que el orquestador consume + la RUTA del JSON entero).
+  `--brief` (`start`: lo usado + la ruta del JSON).
 - **Env**: `TYCON_PIPELINE_NO_AUTONOMOUS` · `STOP_AUTONOMY` · `TYCON_NO_DEEP_REVIEW` · `TYCON_5B_EARLY` ·
   `TYCON_PACKS_DIR` · `TYCON_AGENTS_DIR` (paquetes de revisores y carpeta de agentes) ·
   `TYCON_READ_METER` · `TYCON_READ_MAX_CHARS` ·
-  `TYCON_STORY_GATE` · `TYCON_LANE_LLM` · `TYCON_LANE_LLM_MODEL` · `TYCON_LANE_LLM_MS` · `TYCON_ADVISORS_GATE` · `TYCON_MUTATION_CHECK` ·
+  `TYCON_STORY_GATE` · `TYCON_ADVISORS_GATE` · `TYCON_MUTATION_CHECK` ·
   `TYCON_ATDD_COMMIT_GATE` · `TYCON_ATDD_PREEDIT_GATE` · `TYCON_SPAWN_GOVERNANCE` · `TYCON_ADHOC_SPAWN_WARN` ·
   `DOD_BYPASS` (bypass logueado de gates del commit; NO abre la matriz runtime ni la guía de QA).
 
@@ -245,12 +246,12 @@ PAUSA sin mutar ante conflicto cross-sesión, rama protegida o pipeline abandona
 `pipeline.js next` da el próximo (`step_name`: su nombre llano) y su archivo: leer SOLO ése. El orden:
 
 1 Arranque (`start`; opcionales: aviso de trabajo, pedido en ADO) · 2 Validar la historia (`validate-story`) ·
-3 Armar el plan (`plan`, BMAD) · 4 Aprobar el plan (`approve-plan`) · 5 Implementar (`implement`: pruebas primero,
+3 Armar el plan (`plan`) · 4 Aprobar el plan (`approve-plan`) · 5 Implementar (`implement`: pruebas primero,
 build-gate) · 6 Correr las pruebas (`run-tests`: `test-gate.sh <repo> <story_path>` —con la RUTA— suite completa una
 vez: 0 verde · ≠0 rojo · 3 sin medir · 4 FRENO sin deducir el proyecto: `test-gate.sh <repo> <story> <subdir>` · 5 falta el
 corredor · 6 salió 0 sin correr pruebas; después `pipeline.js dep-gate`) · 7 Revisores (`reviewers`; vuelta N si hubo
 arreglos) · 8 Pase adversarial (`adversarial-pass`, join) · 9 Hallazgos (`findings`: `write-findings` + `write-followups`;
-frena con CRITICAL) · 10 Probar en vivo (`live-check`) · 11 Preparar el commit (`prepare-commit`, NO commitea) ·
+frena con CRITICAL) · 10 Probar en vivo (`live-check`) · 11 Preparar el pull request (`prepare-commit`) ·
 post-merge: `close-work-item`.
 
 ## Marker
@@ -259,15 +260,15 @@ Estado persistente por sesión en `~/.claude/.tycon-pipeline/active/<sessionId>.
 `sessionId` de `CLAUDE_CODE_SESSION_ID`; los hooks, del evento). Un marker nuevo sin «Aprobar el plan» queda en
 `bypass.log` como `MARKER_SKIPS_PLAN`.
 
-- Cerrar pasos EN ORDEN y POR NOMBRE: `marker.js complete-step <nombre>` (un número se niega: es ambiguo);
-  `approve-plan` con `--approved "<cita del user>"` o `--auto-approved "<criterios>"` (sólo LOW). Freno de orden
-  `lib/steps.js` ORDER_REQUIRES (`--out-of-order` queda logueado). `reviewers` exige `checks.advisors` verde por
-  run-check de esta vuelta. Parte del Arranque que falla: `marker.js start-warning <time-tracking|ado> "<motivo>"`.
+- Cerrar pasos EN ORDEN y POR NOMBRE: `marker.js complete-step <nombre>` (un número se niega); su `[paso]`,
+  tal cual a la persona. `approve-plan` con `--approved "<cita del user>"`. Orden:
+  `lib/steps.js` ORDER_REQUIRES (`--out-of-order`, logueado). `reviewers` exige `checks.advisors` verde por
+  run-check de esta vuelta. Arranque que falla: `marker.js start-warning <time-tracking|ado> "<motivo>"`.
 - `pipeline.js next` anota el arranque del paso: cerrar el anterior → `next` → trabajar.
 - Checks: `marker.js run-check <name> -- <cmd>` (exit code real).
 - Recovery: `marker.js adopt-session <sid-viejo>` · `list-all` · `find-by-story <id>` ·
   `clear-session <sid>` · `update-story-status <spec> <estado>`.
-- Preparar el commit: arma el mensaje (NO commitea) y termina con `marker.js clear` + `marker.js update-story-status <spec> review` (las horas NO se cierran ahí).
+- Preparar el pull request: la persona aprueba el pull request, no el commit; termina con `marker.js clear` + `marker.js update-story-status <spec> review` (las horas NO se cierran).
 
 Hooks: `on-prompt.js` (intención de story, conflicto cross-sesión, "listo" con pasos pendientes),
 `on-edit.js` (registra ediciones), `on-write-collision.js`, `on-story-gate.js` + `on-bash-write-gate.js`
@@ -275,17 +276,19 @@ Hooks: `on-prompt.js` (intención de story, conflicto cross-sesión, "listo" con
 
 ## 🔒 Portón de carril
 
-En un repo bajo el arnés, un archivo de CÓDIGO no se edita sin (a) pipeline activo o (b) carril ad-hoc
-declarado: `marker.js adhoc set '{"reason":"<fragmento LITERAL de un prompt del user>"}'` (cupo 8 archivos,
-`adhoc.log`). Con marker y el plan sin aprobar, no se edita código. Escrituras directas a
-`~/.claude/.tycon-pipeline/` se deniegan siempre. El carril lo elige el USER: si no lo dijo, preguntar.
-Citar el pedido de la story como motivo de un ad-hoc se deniega; el clasificador por modelo gana sobre la
-cita en ambas direcciones y falla hacia lo mecánico. Kill-switches del dev: `TYCON_STORY_GATE=off`,
-`.tycon/advisors.yaml → pipeline.story_gate: false` (commiteado), `TYCON_LANE_LLM=0`.
+En un repo del arnés, un archivo de CÓDIGO no se edita sin (a) pipeline activo o (b) carril ad-hoc:
+`marker.js adhoc set '{"reason":"<qué y por qué>","datos":"sin-cambio"}'` (cupo), que el dueño
+aprueba en ventana de permiso, click o «aprobado» (firma `adhoc-lane`; o `--terminal`). Más del cupo: click del dev en su
+pestaña o terminal (`adhoc-lane:sobre-cupo`). Si cambia de dónde sale un dato: historia salvo click del dueño;
+ante la duda, historia. La designada lo declara por otra pestaña con
+`--for-session <id>` si el perfil lo delega. Sin plan aprobado no se edita código. Escribir en
+`~/.claude/.tycon-pipeline/` se niega siempre. El carril lo elige el USER: si no, preguntar.
+Kill-switches del dev: `TYCON_STORY_GATE=off` (apaga la edición, no la firma),
+`.tycon/advisors.yaml → pipeline.story_gate: false`.
 
 ## Terminación y logging
 
-Termina en: CRITICAL al validar la story sin override, BMAD no puede implementar, user cancela al aprobar el
+Termina en: CRITICAL al validar la story sin override, story imposible de implementar, user cancela al aprobar el
 plan o en «Hallazgos», build roto sin continuar, o el commit preparado. Lo que no se pudo, antes `close-as-debt` («Implementar»); después, `marker.js clear`.
 
 Run dir `.advisors/pipeline-runs/<clave>-<sello>/` — lo da `pipeline.js run-dir --story <s> --repo <r> --create`,
@@ -298,8 +301,8 @@ DoD para `on-pre-commit.js`), `step-05b-adversarial.md`, `step-06-consolidated-r
 
 ## Anti-patterns
 
-Nunca `git commit`/`git push` sin aprobación explícita · no modifica skills BMAD · no saltea advisors a
+Nunca `git commit`/`git push` sin aprobación explícita · no modifica skills de terceros · no saltea advisors a
 pedido · no saltea checkpoints HITL que corresponden · no reemplaza el juicio del dev.
 
 Post-pipeline: la retro del merge la escribe `retro-heartbeat.js` en `/tycon-merge-to-main`; los aprendizajes
-van a engram al preparar el commit.
+van a engram al cerrar.

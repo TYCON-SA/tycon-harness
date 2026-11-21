@@ -1,6 +1,6 @@
 'use strict';
 // work-in-progress.test.js — the /wip table: work in progress on this machine, built from toy state folders.
-// Nothing here reads the real HOME: every folder comes in by argument.
+// Nothing here reads the real HOME: every folder comes in by argument, the HOME too.
 // stable-data: T22 and T37 read the clock only to measure how long a hung query takes, and the program's cap for reading
 // repos reads it too (T22 sets it below zero); T24's and T39's commits fix their dates and turn maintenance off; dates come in
 // by --now.
@@ -13,7 +13,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const WIP = path.join(__dirname, '..', 'tools', 'work-in-progress.js');
-const { buildWip } = require(WIP);
+const { buildWip, wipNow, createMemory, reviseHalfway, git: askGit, stepMedians } = require(WIP);
 
 const NOW = '2026-10-18T14:00:00.000Z';
 const DEAD_PID = 999999;
@@ -24,7 +24,16 @@ function toyMachine() {
   const sessions = path.join(root, 'sessions');
   for (const d of ['active', 'adhoc', 'timing-history']) fs.mkdirSync(path.join(state, d), { recursive: true });
   fs.mkdirSync(sessions, { recursive: true });
-  return { root, state, sessions };
+  // its own HOME, never the real one: Claude Code's background log of a toy machine, with a retirement idle for hours
+  // that came back up, so nothing shows as closed
+  const home = path.join(root, 'home');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  const ago = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+  fs.writeFileSync(path.join(home, '.claude', 'daemon.log'), [
+    `[${ago(90)}] [bg] bg retire ef549cad: idle-prompt, idle 2h [low memory]`,
+    `[${ago(60)}] [bg] bg claimed-spare ef549cad (fleet)`,
+  ].join('\n') + '\n');
+  return { root, state, sessions, home };
 }
 
 function story(root, id, title) {
@@ -58,7 +67,7 @@ function history(m, name, mins) {
     JSON.stringify({ archivedAt: new Date(t).toISOString(), marker: { startedAt, stepTimings } }));
 }
 
-const run = (m, extra = {}) => buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: NOW, ...extra });
+const run = (m, extra = {}) => buildWip({ home: m.home, stateDir: m.state, sessionsDir: m.sessions, now: NOW, ...extra });
 
 test('T1 Tabla_UnaFilaPorTrabajo: dos marcadores y un ad-hoc dan tres filas de cuatro columnas', () => {
   const m = toyMachine();
@@ -121,7 +130,7 @@ test('T4 Fin_SinDatos_LoDice: sin mediana del paso 8 no hay hora', () => {
   marker(m, 'eeeeeeee-5', { storyId: '9.5', storyPath: story(m.root, '9.5', 't'), stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5, 8] });
   session(m, process.pid, 'eeeeeeee-5', 'x');
   const row = run(m).rows[0];
-  assert.strictEqual(row.end, 'sin datos (Preparar el commit)');
+  assert.strictEqual(row.end, 'sin datos (Preparar el pull request)');
 });
 
 test('T5 Sesion_NombreIdCortoYMedioCamino: sólo lo vivo en la tabla; lo demás abajo, con cómo limpiarlo', () => {
@@ -184,16 +193,113 @@ test('T9 CLI_JsonYSinEstado: --json y salida 2 sin carpeta de estado', () => {
   assert.strictEqual(code, 2);
 });
 
-test('T10 Terminados_YViejos_NoCuentan: terminados y viejos no cuentan como en curso', () => {
+test('T10 Terminados_YViejos_NoCuentan: los viejos no cuentan como en curso; el terminado sin cerrar sale como tal (8.195)', () => {
   const m = toyMachine();
   marker(m, 'done0000-1', { storyId: '4.1', storyPath: story(m.root, '4.1', 't'), stepsCompleted: [0, 8], stepsPending: [], lastTouch: NOW });
   marker(m, 'old00000-2', { storyId: '4.2', storyPath: story(m.root, '4.2', 't'), stepsCompleted: [0], stepsPending: [4], lastTouch: '2026-10-16T10:00:00.000Z' });
   session(m, process.pid, 'done0000-1', 'a'); session(m, process.pid, 'old00000-2', 'b');
   const r = run(m);
-  assert.deepStrictEqual(r.rows, []);
+  // antes de la 8.195 la terminada se escondía; ahora dice que falta cerrarla, y no es «en curso»
+  assert.strictEqual(r.rows.length, 1, JSON.stringify(r.rows));
+  assert.match(r.rows[0].state, /^terminado, falta cerrar/);
+  assert.strictEqual(r.extra[0].finishedOpen, true);
+  assert.notStrictEqual(r.extra[0].kind, 'pipeline');
   assert.strictEqual(r.halfway.length, 0);
   assert.ok(r.unreadable.some((u) => /más de 24 h/.test(u)), r.unreadable.join('\n'));
   assert.ok(fs.existsSync(path.join(m.state, 'active', 'old00000-2.json')), 'sólo lee: no borra el viejo');
+});
+
+// Una ejecución con todos los pasos hechos, por nombre.
+const TODOS = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'prepare-commit'];
+const minsBeforeNow = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+const hecha = (m, id, cerro, extra = {}) => ({
+  storyId: id, storyPath: story(m.root, id, `Terminada ${id}`), stepScheme: 2, stepsCompleted: TODOS, stepsPending: [],
+  dodRuntimeChecked: true, deepReviewDone: true, lastTouch: cerro,
+  stepTimings: { reviewers: { completedAt: minsBeforeNow(24 * 60 * 3) }, findings: { completedAt: minsBeforeNow(24 * 60 * 3 - 5) }, 'prepare-commit': { completedAt: cerro } }, ...extra,
+});
+
+test('T22 Oficina_TerminadaSinCerrar_LaTarjetaLoDice @story-8.195 @ac-22 — /wip: la terminada sin cerrar sale con finishedOpen, de hace 1 h y de hace 30 h', () => {
+  const m = toyMachine();
+  marker(m, 'hora0000-1', hecha(m, '5.1', minsBeforeNow(60)));
+  marker(m, 'vieja000-2', hecha(m, '5.2', minsBeforeNow(30 * 60)));
+  // con código cambiado después de los revisores: falta revisar, no cerrar (un .js de un repo es código; uno fuera de todo
+  // repo ya no, desde la 8.270)
+  fs.mkdirSync(path.join(m.root, 'nada', '.git'), { recursive: true });
+  marker(m, 'vuelta00-3', hecha(m, '5.3', minsBeforeNow(60), { fileEvents: [{ path: path.join(m.root, 'nada', 'a.js'), ts: minsBeforeNow(30), code: true }] }));
+  for (const [sid, n] of [['hora0000-1', 'a'], ['vieja000-2', 'b'], ['vuelta00-3', 'c']]) session(m, process.pid, sid, n);
+  const r = run(m);
+  const fila = (id) => r.rows.findIndex((x) => x.work.startsWith(`${id} ·`));
+  for (const id of ['5.1', '5.2']) {
+    const i = fila(id);
+    assert.ok(i >= 0, `${id}: ${JSON.stringify(r.rows)}`);
+    assert.match(r.rows[i].state, /^terminado, falta cerrar · desde \d\d:\d\d$/);
+    assert.strictEqual(r.extra[i].finishedOpen, true);
+    assert.strictEqual(r.extra[i].kind, 'finished');
+  }
+  assert.match(r.rows[fila('5.3')].state, /^terminado, falta revisar lo cambiado/);
+  assert.ok(!r.unreadable.some((u) => /pipeline cerrado hace más de 24 h/.test(u)), 'la de 30 h no se esconde');
+  assert.ok(!r.free.includes('b'));
+});
+
+test('T23 Oficina_CaminoCortoConPedido_LaTarjetaLoDice @story-8.195 @ac-23 — /wip: el camino corto con su pedido en la foto lo dice; sin foto, como hoy', () => {
+  const m = toyMachine();
+  const repo = path.join(m.root, 'repo');
+  const env = { ...process.env, GIT_AUTHOR_DATE: '2026-10-18T10:00:00', GIT_COMMITTER_DATE: '2026-10-18T10:00:00', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const g = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, ...a], { encoding: 'utf8', env }).trim();
+  fs.mkdirSync(repo);
+  g('init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(repo, 'a.js'), '1\n');
+  g('add', '.'); g('commit', '-qm', 'inicio');
+  const sha = g('rev-parse', 'HEAD');
+  g('checkout', '-qb', 'fix/rapido');
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'carril00-1.json'), JSON.stringify({ reason: 'arreglo chico', bases: { [repo]: { sha } }, declaredAt: minsBeforeNow(30) }));
+  session(m, process.pid, 'carril00-1', 'corto');
+  const sinFoto = run(m);
+  assert.match(sinFoto.rows[0].state, /^Trabajo suelto/, 'sin foto, como hoy');
+  assert.notStrictEqual(sinFoto.extra[0].finishedOpen, true);
+  fs.writeFileSync(path.join(m.state, 'finished-open-prs.json'), JSON.stringify({ [`${repo}|fix/rapido`]: { at: Date.parse(NOW) - 60000, prs: [41] } }));
+  const conFoto = run(m);
+  assert.match(conFoto.rows[0].state, /^terminado, falta cerrar · pedido 41 abierto/);
+  assert.strictEqual(conFoto.extra[0].finishedOpen, true);
+  assert.strictEqual(conFoto.extra[0].kind, 'loose');
+  // la foto guardó una falla: la fila queda como hoy y la falla se dice al pie
+  fs.writeFileSync(path.join(m.state, 'finished-open-prs.json'), JSON.stringify({ [`${repo}|fix/rapido`]: { at: Date.parse(NOW) - 60000, error: 'sin red' } }));
+  const conFalla = run(m);
+  assert.match(conFalla.rows[0].state, /^Trabajo suelto/);
+  assert.ok(conFalla.unreadable.some((u) => /arreglo chico.*no pude ver si su pedido está abierto \(sin red\)/.test(u)), conFalla.unreadable.join(' | '));
+});
+
+test('T23d Oficina_EjecucionTerminadaYCaminoCorto_LosDos @story-8.195 @ac-22 @ac-23 — con la ejecución terminada y un camino corto con pedido en la misma sesión, la fila dice las dos cosas', () => {
+  const m = toyMachine();
+  const repo = path.join(m.root, 'repo');
+  const env = { ...process.env, GIT_AUTHOR_DATE: '2026-10-18T10:00:00', GIT_COMMITTER_DATE: '2026-10-18T10:00:00', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const g = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-C', repo, ...a], { encoding: 'utf8', env }).trim();
+  fs.mkdirSync(repo);
+  g('init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(repo, 'a.js'), '1\n');
+  g('add', '.'); g('commit', '-qm', 'inicio');
+  const sha = g('rev-parse', 'HEAD');
+  g('checkout', '-qb', 'fix/rapido');
+  marker(m, 'ambas000-1', hecha(m, '5.7', minsBeforeNow(120)));
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'ambas000-1.json'), JSON.stringify({ reason: 'arreglo chico activo', bases: { [repo]: { sha } }, declaredAt: minsBeforeNow(2), lastTouch: minsBeforeNow(2) }));
+  fs.writeFileSync(path.join(m.state, 'finished-open-prs.json'), JSON.stringify({ [`${repo}|fix/rapido`]: { at: Date.parse(NOW) - 60000, prs: [41] } }));
+  session(m, process.pid, 'ambas000-1', 'ambas');
+  const r = run(m);
+  assert.strictEqual(r.rows.length, 1, JSON.stringify(r.rows));
+  assert.match(r.rows[0].state, /^terminado, falta cerrar/);
+  assert.match(r.rows[0].meanwhile, /arreglo rápido «arreglo chico activo».*pedido 41 abierto/);
+  assert.match(r.extra[0].meanwhile, /pedido 41 abierto/);
+});
+
+test('T28 EnCurso_MitadDeCamino_SeVeComoHoy @story-8.195 @ac-28 — /wip: una ejecución a mitad de camino no lleva finishedOpen y dice su paso', () => {
+  const m = toyMachine();
+  marker(m, 'medio000-1', hecha(m, '5.9', minsBeforeNow(10), { stepsCompleted: TODOS.slice(0, 4), stepsPending: TODOS.slice(4), lastTouch: NOW }));
+  session(m, process.pid, 'medio000-1', 'medio');
+  const r = run(m);
+  assert.strictEqual(r.rows.length, 1);
+  assert.strictEqual(r.rows[0].state, 'Implementar');
+  assert.strictEqual(r.extra[0].kind, 'pipeline');
+  assert.notStrictEqual(r.extra[0].finishedOpen, true);
 });
 
 test('T11 JsonRaro_SeDice: JSON que no es objeto, sesión sin id o pid raro se dicen y no tumban', () => {
@@ -340,12 +446,13 @@ test('T20 Entrando_ConPedido_Ocupada: el 8 cerrado y un pedido abierto dan la fi
   for (const words of ['Entrando a los repos', 'GitHub', 'Azure DevOps', 'sólo lee']) assert.ok(command.includes(words), words);
 });
 
-test('T21 SinPedidosAbiertos_Terminado: sin pedidos abiertos la story terminó y la sesión está libre', () => {
+test('T21 SinPedidosAbiertos_Terminado: sin pedidos abiertos la story terminó; desde la 8.195, falta cerrarla y la sesión no está libre', () => {
   const m = toyMachine();
   entering(m, 'ent00000-2', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
   const r = run(m, { prs: () => ({ prs: [] }) });
-  assert.deepStrictEqual(r.rows, []);
-  assert.deepStrictEqual(r.free, ['ocupada']);
+  assert.strictEqual(r.rows.length, 1, JSON.stringify(r.rows));
+  assert.match(r.rows[0].state, /^terminado, falta cerrar/);
+  assert.deepStrictEqual(r.free, []);
   assert.deepStrictEqual(r.unreadable, []);
 });
 
@@ -360,38 +467,36 @@ test('T22 ConsultaFalla_SeDiceYQuedaOcupada: una consulta que falla o se pasa de
   const capped = run(m, { prs: () => ({ prs: [{ number: 7, draft: false }] }), repoBudgetMs: -1 });
   assert.strictEqual(capped.rows[0].state, 'Entrando a los repos · x #7');
   assert.ok(!capped.unreadable.some((u) => /se pasó del tope de 3 s leyendo los repos/.test(u)), capped.unreadable.join(' | '));
-  // the real query, against a gh that takes longer than its cap: it gives up instead of hanging
-  const bin = fakeBin(m.root, 'gh', 'setTimeout(() => {}, 5000);');
+  // the real query, through the platform layer, against a gh that takes longer than its cap: it gives up instead of hanging
+  const env = layer(m);
+  const q = [{ kind: 'github', slug: 'acme/x', branch: 'story/x', name: 'x', root: m.root }];
+  const withGh = (body) => { const f = path.join(fs.mkdtempSync(path.join(m.root, 'bin-')), 'gh.js'); fs.writeFileSync(f, body); return { ...env, TYCON_GH_CMD: f }; };
   const t0 = Date.now();
-  const [res] = await queryAll([{ kind: 'github', slug: 'acme/x', branch: 'story/x', name: 'x', root: m.root }], { perMs: 300, totalMs: 600, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  const [res] = await queryAll(q, { perMs: 300, totalMs: 600, env: withGh('setTimeout(() => {}, 5000);') });
   assert.ok(Date.now() - t0 < 3000, 'no espera al gh colgado');
   assert.match(res.error, /tope/);
   const { PER_QUERY_MS, ALL_QUERIES_MS } = require(WIP);
-  assert.deepStrictEqual([PER_QUERY_MS, ALL_QUERIES_MS], [5000, 6000], 'los topes de la story');
-  const q = [{ kind: 'github', slug: 'acme/x', branch: 'story/x', name: 'x', root: m.root }];
-  const withBin = (b) => ({ env: { ...process.env, PATH: b } });
-  const missing = fs.mkdtempSync(path.join(m.root, 'empty-'));
-  assert.match((await queryAll(q, withBin(missing)))[0].error, /gh: no está instalado/);
-  for (const [out, why] of [['basura', /respuesta ilegible/], ['{"number":1}', /no es una lista/], ['[{"isDraft":false}]', /sin número/]]) {
-    const b = fakeBin(m.root, 'gh', `process.stdout.write(${JSON.stringify(out)});`);
-    assert.match((await queryAll(q, { ...withBin(`${b}${path.delimiter}${process.env.PATH}`) }))[0].error, why);
+  // az tarda más de 5 s cuando renueva su permiso: con ese tope, una story entrada salía «sin poder consultar»
+  assert.deepStrictEqual([PER_QUERY_MS, ALL_QUERIES_MS], [15000, 20000], 'los topes');
+  // a gh that is not there, or that answers something that is not a list: the layer's «no», with its reason
+  assert.match((await queryAll(q, { env: { ...env, TYCON_GH_CMD: path.join(m.root, 'no-existe') } }))[0].error, /^la capa de plataforma: no_medido/);
+  for (const out of ['basura', '{"number":1}']) {
+    assert.match((await queryAll(q, { env: withGh(`process.stdout.write(${JSON.stringify(out)});`) }))[0].error, /^la capa de plataforma: no_medido/, out);
   }
-  // a gh that ignores SIGTERM and hangs: the total cap kills it with SIGKILL, which it cannot ignore, so the command
-  // can end
-  const stubborn = fakeBin(m.root, 'gh', `require('fs').writeFileSync(__dirname + '/pid', String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);`);
+  // a gh that ignores SIGTERM and hangs: the total cap kills the layer and its gh with SIGKILL, which they cannot
+  // ignore, so the command can end
+  const pidFile = path.join(fs.mkdtempSync(path.join(m.root, 'pid-')), 'pid');
   const t1 = Date.now();
-  const [hung] = await queryAll(q, { perMs: 20000, totalMs: 2000, env: { ...process.env, PATH: `${stubborn}${path.delimiter}${process.env.PATH}` } });
+  const [hung] = await queryAll(q, { perMs: 20000, totalMs: 2000, env: withGh(`require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);`) });
   assert.ok(Date.now() - t1 < 5000);
   assert.match(hung.error, /tope de 2 s para todas/);
-  const pidFile = path.join(stubborn, 'pid');
   assert.ok(fs.existsSync(pidFile), 'el gh colgado llegó a arrancar en 2 s');
   const pid = Number(fs.readFileSync(pidFile, 'utf8'));
   const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
   for (let i = 0; i < 40 && alive(); i += 1) await new Promise((r) => setTimeout(r, 50));
   assert.strictEqual(alive(), false, 'el gh colgado quedó muerto');
-  // a gh that answers with an error (no login, say): its message is the reason
-  const denied = fakeBin(m.root, 'gh', `process.stderr.write('gh auth login required'); process.exit(1);`);
-  assert.match((await queryAll(q, withBin(`${denied}${path.delimiter}${process.env.PATH}`)))[0].error, /gh: gh auth login required/);
+  // a gh that answers with an error (no login, say): the layer's reason
+  assert.match((await queryAll(q, { env: withGh(`process.stderr.write('gh: HTTP 401: Bad credentials'); process.exit(1);`) }))[0].error, /^la capa de plataforma: sin_credencial/);
 });
 
 test('T23 DosRepos_GitHubYAzure_ConBorrador: los dos repos de la story, cada uno con su pedido', () => {
@@ -418,7 +523,9 @@ test('T24 RamaPrincipal_YNoRepo_SeIgnoran: un repo en main y una carpeta que no 
   let asked = 0;
   const r = run(m, { prs: () => { asked += 1; return { prs: [] }; } });
   assert.strictEqual(asked, 0);
-  assert.deepStrictEqual(r.rows, []);
+  // nada entrando: desde la 8.195 la ejecución terminada sin cerrar no se esconde, dice que falta cerrarla
+  const soloTerminadas = (rows) => rows.every((x) => /^terminado, falta cerrar/.test(x.state));
+  assert.ok(soloTerminadas(r.rows), JSON.stringify(r.rows));
   assert.deepStrictEqual(r.unreadable, []);
   // a detached HEAD has no branch of its own: nothing to ask either
   const detached = gitRepo(m.root, 'd', 'story/x', GH);
@@ -428,7 +535,8 @@ test('T24 RamaPrincipal_YNoRepo_SeIgnoran: un repo en main y una carpeta que no 
   entering(m, 'ent00000-5', { repoPath: detached });
   const d = run(m, { prs: () => { asked += 1; return { prs: [] }; } });
   assert.strictEqual(asked, 0);
-  assert.deepStrictEqual([d.rows, d.unreadable], [[], []]);
+  assert.ok(soloTerminadas(d.rows), JSON.stringify(d.rows));
+  assert.deepStrictEqual(d.unreadable, []);
 });
 
 test('T25 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión muerta, nada cambia', () => {
@@ -445,7 +553,7 @@ test('T25 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión
   assert.deepStrictEqual(r.halfway, []);
   assert.deepStrictEqual(r.free, ['libre']);
   // a closed run untouched for two days: with its session dead it is finished and not counted; with its session
-  // alive it is counted at the foot, so it does not vanish
+  // alive, since 8.195 it is a run finished and left open (its pull requests are not asked)
   const old = toyMachine();
   const twoDaysAgo = '2026-10-16T10:00:00.000Z';
   marker(old, 'ent00000-8', { storyId: '5.4', storyPath: story(old.root, '5.4', 't'), repoPath: repo, stepsCompleted: [0, 8], stepsPending: [], lastTouch: twoDaysAgo });
@@ -454,8 +562,10 @@ test('T25 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión
   assert.deepStrictEqual([o.rows, o.unreadable, asked], [[], [], 0]);
   session(old, process.pid, 'ent00000-8', 'vieja');
   const v = run(old, { prs: () => { asked += 1; return { prs: [{ number: 1, draft: false }] }; } });
-  assert.deepStrictEqual([v.rows, v.free, asked], [[], [], 0]);
-  assert.ok(v.unreadable.some((u) => /1 story\(s\) con el pipeline cerrado hace más de 24 h y la sesión viva/.test(u)), v.unreadable.join(' | '));
+  assert.strictEqual(asked, 0, 'pasadas las 24 h no se consultan sus pedidos');
+  assert.strictEqual(v.rows.length, 1, JSON.stringify(v.rows));
+  assert.match(v.rows[0].state, /^terminado, falta cerrar/);
+  assert.deepStrictEqual(v.free, []);
 });
 
 // A fake tool in its own folder: a node script that logs its arguments next to itself.
@@ -467,35 +577,60 @@ function fakeBin(root, name, body) {
 const { queryAll } = require(WIP);
 const onWindows = process.platform === 'win32' ? 'los gh/az falsos son scripts de node con #!, que Windows no corre' : false;
 
-test('T26 ConsultaReal_GhFalso: el programa le pregunta a gh por la rama y el repo de origin', { skip: onWindows }, () => {
+// The platform layer pointed at the fake gh and az of the suites, with an empty profile and an empty home: the pull
+// requests of GitHub (`pulls` of acme/x, the shape of fake-gh.js) and of Azure DevOps (`prs`, what the project lists).
+// `calls()` gives what each fake was asked: `{ gh: [routes], az: [args joined] }`.
+const FAKE_GH = path.join(__dirname, 'lib', 'fake-gh.js');
+const FAKE_AZ = path.join(__dirname, 'lib', 'fake-az.sh');
+function layer(m, { pulls = [], prs = [] } = {}) {
+  const d = fs.mkdtempSync(path.join(m.root, 'capa-'));
+  for (const sub of ['arbol', 'casa', 'fixaz']) fs.mkdirSync(path.join(d, sub));
+  fs.writeFileSync(path.join(d, 'arbol', 'team-profile.json'), '{}');
+  fs.writeFileSync(path.join(d, 'gh.json'), JSON.stringify({ user: 'arnes-bot', now: NOW, pulls: { 'acme/x': pulls } }));
+  fs.writeFileSync(path.join(d, 'fixaz', 'prs-0.json'), JSON.stringify({ count: prs.length, value: prs }));
+  fs.copyFileSync(FAKE_AZ, path.join(d, 'az'));
+  fs.chmodSync(path.join(d, 'az'), 0o755);
+  const env = {};
+  for (const [k, v] of Object.entries(process.env)) if (!/^TYCON_|^AZURE_DEVOPS|^GH_(TOKEN|REPO|HOST)$|^FAKE_GH_|^FIXAZ$/.test(k)) env[k] = v;
+  const home = path.join(d, 'casa');
+  return Object.assign(env, { HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), TYCON_TREE: path.join(d, 'arbol'),
+    TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: path.join(d, 'gh.json'), FAKE_GH_LOG: path.join(d, 'gh.log'),
+    TYCON_ADO_CMD: path.join(d, 'az'), FIXAZ: path.join(d, 'fixaz') });
+}
+const lines = (f) => { try { return fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean); } catch { return []; } };
+const calls = (env) => ({
+  gh: lines(env.FAKE_GH_LOG).map((l) => JSON.parse(l).ruta),
+  az: lines(path.join(env.FIXAZ, 'llamadas.log')).map((l) => JSON.parse(l.split('\t')[1]).args.join(' ')),
+});
+// with auto-complete set, as a pull request that is entering; the off-queue test takes it away
+const pull = (n, o = {}) => ({ number: n, state: 'open', title: `pedido ${n}`, body: '', created_at: '2026-10-17T10:00:00Z', head: { ref: 'story/x' }, base: { ref: 'main' }, user: { login: 'ana' }, auto_merge: { merge_method: 'merge' }, ...o });
+const prAz = (n, o = {}) => ({ pullRequestId: n, status: 'active', isDraft: false, sourceRefName: 'refs/heads/story/x', targetRefName: 'refs/heads/main', mergeStatus: 'succeeded', repository: { name: 'y' }, creationDate: '2026-10-17T10:00:00Z', title: 't', autoCompleteSetBy: { id: 'acme' }, ...o });
+const wip = (m, env) => JSON.parse(execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'], { input: '', env }));
+
+test('T26 ConsultaReal_GhFalso: el programa le pregunta a la capa por la rama y el repo de origin', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'ent00000-8', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
-  const bin = fakeBin(m.root, 'gh', `process.stdout.write(JSON.stringify([{ number: 236, isDraft: false }]));`);
-  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
-  const args = JSON.parse(fs.readFileSync(path.join(bin, 'args.json'), 'utf8'));
-  for (const a of ['pr', 'list', '--head', 'story/x', '--state', 'open', '--repo', 'acme/x']) assert.ok(args.includes(a), args.join(' '));
-  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #236');
+  const env = layer(m, { pulls: [pull(236, { auto_merge: { merge_method: 'merge' } }), pull(9, { head: { ref: 'otra' } })] });
+  assert.strictEqual(wip(m, env).rows[0].state, 'Entrando a los repos · x #236');
+  const asked = calls(env).gh;
+  assert.ok(asked.some((r) => r.startsWith('repos/acme/x/pulls?')), asked.join(' | '));
+  assert.ok(asked.includes('repos/acme/x/pulls/236') && !asked.includes('repos/acme/x/pulls/9'), asked.join(' | '));
+  // y a GraphQL, que es lo único que dice si el pedido está en la cola de merge
+  assert.ok(asked.includes('graphql'), asked.join(' | '));
 });
 
-test('T27 ConsultaReal_AzFalso: el programa le pregunta a az con la organización, el proyecto y el repo', { skip: onWindows }, () => {
+test('T27 ConsultaReal_AzFalso: el programa le pregunta a la capa con la organización, el proyecto y el repo', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'ent00000-9', { repoPath: gitRepo(m.root, 'y', 'story/x', AZ) });
-  const bin = fakeBin(m.root, 'az', `process.stdout.write(JSON.stringify([{ pullRequestId: 4920, isDraft: false }]));`);
-  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
-  const args = JSON.parse(fs.readFileSync(path.join(bin, 'args.json'), 'utf8'));
-  for (const a of ['repos', 'pr', 'list', '--org', 'https://dev.azure.com/acme', '--project', 'Proyecto Uno', '--repository', 'y', '--source-branch', 'story/x', '--status', 'active']) {
-    assert.ok(args.includes(a), args.join(' '));
-  }
-  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · y !4920');
-  const { parseRemote, shellSafe } = require(WIP);
+  const env = layer(m, { prs: [prAz(4920), prAz(4921, { repository: { name: 'otro' } })] });
+  assert.strictEqual(wip(m, env).rows[0].state, 'Entrando a los repos · y !4920');
+  const [asked] = calls(env).az;
+  for (const a of ['--org https://dev.azure.com/acme', 'project=Proyecto Uno', 'searchCriteria.sourceRefName=refs/heads/story/x']) assert.ok(asked.includes(a), asked);
+  const { parseRemote } = require(WIP);
   assert.deepStrictEqual(parseRemote(`https://${at('acme', 'dev.azure.com')}/acme/Proyecto Uno/_git/y`), { kind: 'azure', org: 'acme', project: 'Proyecto Uno', repo: 'y', name: 'y' });
   assert.deepStrictEqual(parseRemote('https://acme.visualstudio.com/DefaultCollection/Proyecto/_git/y'), { kind: 'azure', org: 'acme', project: 'Proyecto', repo: 'y', name: 'y' });
   assert.strictEqual(parseRemote('https://dev.azure.com/a%2F..%2Fb/P/_git/y').kind, null, 'una organización rara no arma la dirección');
   assert.deepStrictEqual(parseRemote('git@ssh.dev.azure.com:v3/acme/Proyecto%20Uno/y'), { kind: 'azure', org: 'acme', project: 'Proyecto Uno', repo: 'y', name: 'y' });
-  assert.strictEqual(shellSafe(['Proyecto Año', 'story/x', 'https://dev.azure.com/acme']), true);
-  assert.strictEqual(shellSafe(['a" & calc']), false);
 });
 
 test('T28 ServidorDesconocido_SeDice: un origin que no es GitHub ni Azure DevOps se dice y no se consulta', () => {
@@ -659,14 +794,12 @@ test('T36 Origin_CuatroFormasNuevas: puerto, ssh.github.com, «@» en la ruta y 
 test('T37 GitFalso_SePasaDelTope: un git que no contesta no cuelga el comando; el repo se ubica igual y sus pedidos se consultan', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'ent00000-g', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
-  // git hangs (it is only used for the history of merges); gh answers one open pull request, without the network
+  // git hangs (it is only used for the history of merges); the layer answers one open pull request, without the network
   const bin = fakeBin(m.root, 'git', 'setTimeout(() => {}, 10000);');
-  fs.writeFileSync(path.join(bin, 'gh'), "#!/usr/bin/env node\nprocess.stdout.write('[{\"number\":5,\"isDraft\":false}]');\n", { mode: 0o755 });
+  const env = layer(m, { pulls: [pull(5)] });
   const start = Date.now();
-  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  const r = wip(m, { ...env, PATH: `${bin}${path.delimiter}${env.PATH}` });
   assert.ok(Date.now() - start < 9000, 'el tope cortó a git');
-  const r = JSON.parse(out);
   assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #5');
   assert.match(r.rows[0].end, /sin merges medidos/);
 });
@@ -743,9 +876,9 @@ test('T41 Fin_SumaLaEntradaALosRepos: la hora suma la mediana de entrada; la que
   entering(w, 'ent00000-9', { repoPath: mergesRepo(w.root, 'x', [20, 30, 40]), stepTimings: { 8: { startedAt: '2026-10-18T13:40:00.000Z', completedAt: '2026-10-18T13:50:00.000Z' } } });
   const rw = run(w, { prs: () => ({ prs: [{ number: 7, draft: false }] }) });
   assert.strictEqual(rw.rows[0].end, `${localHhmm(Date.parse('2026-10-18T14:20:00.000Z'))} (con la entrada a los repos)`, rw.text);
-  // past that hour it says so, with the same fixed hour
+  // past that hour it says since when it waits, with the same fixed hour
   const late = run(w, { now: '2026-10-18T15:00:00.000Z', prs: () => ({ prs: [{ number: 7, draft: false }] }) });
-  assert.strictEqual(late.rows[0].end, `atrasada (estimado ${localHhmm(Date.parse('2026-10-18T14:20:00.000Z'))})`);
+  assert.strictEqual(late.rows[0].end, `esperando entrar desde ${localHhmm(Date.parse('2026-10-18T13:50:00.000Z'))} (estimado ${localHhmm(Date.parse('2026-10-18T14:20:00.000Z'))})`);
   // a repo without measured merges: the hour leaves it out and says so
   const n = toyMachine();
   history(n, 'a', { 0: 1, 4: 20, 5: 10, 8: 4 });
@@ -900,33 +1033,26 @@ const doing = (h, sid, ...args) => execFileSync('node', [MARKER, 'doing', ...arg
   { encoding: 'utf8', input: '', env: { ...process.env, HOME: h.home, USERPROFILE: h.home, CLAUDE_CODE_SESSION_ID: sid } });
 const doingFile = (h, sid) => path.join(h.state, 'doing', `${sid}.json`);
 
-test('T1 PedidoEnConflicto_DiceChocaConMain @story-2.49.2 @ac-1: GitHub DIRTY y Azure conflicts dicen «choca con main»', { skip: onWindows }, () => {
+test('T1 PedidoEnConflicto_DiceChocaConMain @story-2.49.2 @ac-1: GitHub en conflicto y Azure conflicts dicen «choca con main»', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'cho00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
-  const gh = fakeBin(m.root, 'gh', `process.stdout.write(JSON.stringify([{ number: 236, isDraft: false, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }]));`);
-  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${gh}${path.delimiter}${process.env.PATH}` } });
-  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #236 (choca con main)');
-  const args = JSON.parse(fs.readFileSync(path.join(gh, 'args.json'), 'utf8'));
-  assert.ok(args.some((a) => /mergeStateStatus/.test(a)), args.join(' '));
+  const env = layer(m, { pulls: [pull(236, { mergeable: false })] });
+  assert.strictEqual(wip(m, env).rows[0].state, 'Entrando a los repos · x #236 (choca con main)');
+  // GitHub lo dice al leer el pedido entero: su lista no trae `mergeable`
+  assert.ok(calls(env).gh.includes('repos/acme/x/pulls/236'), calls(env).gh.join(' | '));
   const n = toyMachine();
   entering(n, 'cho00000-2', { repoPath: gitRepo(n.root, 'y', 'story/x', AZ) });
-  const az = fakeBin(n.root, 'az', `process.stdout.write(JSON.stringify([{ pullRequestId: 4920, isDraft: false, mergeStatus: 'conflicts' }]));`);
-  const outAz = execFileSync('node', [WIP, '--state-dir', n.state, '--sessions-dir', n.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${az}${path.delimiter}${process.env.PATH}` } });
-  assert.strictEqual(JSON.parse(outAz).rows[0].state, 'Entrando a los repos · y !4920 (choca con main)');
+  assert.strictEqual(wip(n, layer(n, { prs: [prAz(4920, { mergeStatus: 'conflicts' })] })).rows[0].state, 'Entrando a los repos · y !4920 (choca con main)');
 });
 
-test('T2 ConflictoYBorrador_DosMarcas_UnknownSinMarca @story-2.49.2 @ac-1 @ac-2: borrador en conflicto, UNKNOWN y sin dato', { skip: onWindows }, () => {
+test('T2 ConflictoYBorrador_DosMarcas_UnknownSinMarca @story-2.49.2 @ac-1 @ac-2: borrador en conflicto, sin calcular y sin dato', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'cho00000-3', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
-  const gh = fakeBin(m.root, 'gh', `process.stdout.write(JSON.stringify([
-    { number: 1, isDraft: true, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' },
-    { number: 2, isDraft: false, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' },
-    { number: 3, isDraft: false }]));`);
-  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${gh}${path.delimiter}${process.env.PATH}` } });
-  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #1 (borrador) (choca con main) · x #2 · x #3');
+  const env = layer(m, { pulls: [
+    pull(1, { draft: true, mergeable: false }),
+    pull(2, { mergeable: null, mergeable_state: 'unknown' }),
+    pull(3)] });
+  assert.strictEqual(wip(m, env).rows[0].state, 'Entrando a los repos · x #1 (borrador) (choca con main) · x #2 · x #3');
 });
 
 test('T3 Doing_LaFilaDiceLaNota @story-2.49.2 @ac-3: una sesión viva sin pipeline muestra lo que anotó', () => {
@@ -1465,4 +1591,538 @@ test('T23 Wip_NameFromSessionFile @story-8.122 @ac-23: cada fila lleva el name d
   db.close();
   marker(m, 'cdx00000-3333', { storyId: '6.1', storyPath: story(m.root, '6.1', 'De Codex'), stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
   assert.ok(runP(m, { home: m.root, codexHome: codex }).halfway.some((h) => h.includes('· DeCodex ·')));
+});
+
+// ── Lo que hace cada sesión ahora: el trabajo principal con su estado, y lo que hace mientras tanto ──────────────────
+
+test('wip · Entrando_PasadoElEstimado_DiceDesdeCuandoEspera: una story que espera entrar no queda «atrasada» para siempre', () => {
+  const w = toyMachine();
+  entering(w, 'esp00000-1', { repoPath: mergesRepo(w.root, 'x', [20, 30, 40]), stepTimings: { 8: { startedAt: '2026-10-18T13:40:00.000Z', completedAt: '2026-10-18T13:50:00.000Z' } } });
+  const late = run(w, { now: '2026-10-18T15:00:00.000Z', prs: () => ({ prs: [{ number: 7, draft: false }] }) });
+  assert.strictEqual(late.rows[0].end, `esperando entrar desde ${localHhmm(Date.parse('2026-10-18T13:50:00.000Z'))} (estimado ${localHhmm(Date.parse('2026-10-18T14:20:00.000Z'))})`);
+});
+
+test('wip · Principal_YMientrasTanto: la story sale con su estado; el arreglo rápido, la nota o el otro repo, como «mientras tanto»', () => {
+  const m = toyMachine();
+  entering(m, 'mie00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'mie00000-1.json'), JSON.stringify({ reason: 'el comando del sitio', declaredAt: new Date(minsBefore(5)).toISOString() }));
+  const r = run(m, { prs: () => ({ prs: [{ number: 12, draft: false }] }) });
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #12');
+  assert.strictEqual(r.rows[0].meanwhile, 'arreglo rápido «el comando del sitio»');
+  assert.match(r.text, /Entrando a los repos · x #12 · mientras tanto: arreglo rápido «el comando del sitio»/);
+  // una nota de la sesión, con una corrida en curso
+  const n = toyMachine();
+  marker(n, 'mie00000-2', { storyId: '9.1', storyPath: story(n.root, '9.1', 'Una'), stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
+  session(n, process.pid, 'mie00000-2', 'con-nota');
+  fs.mkdirSync(path.join(n.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(n.state, 'doing', 'mie00000-2.json'), JSON.stringify({ text: 'mido el disco del sitio', at: new Date(minsBefore(3)).toISOString() }));
+  const rn = run(n);
+  assert.strictEqual(rn.rows.length, 1, rn.text);
+  assert.deepStrictEqual([rn.rows[0].state, rn.rows[0].meanwhile], ['Implementar + pruebas', 'mido el disco del sitio']);
+  // lo último que tocó está en otro repo, en una rama que no es la de la story
+  const a = toyMachine();
+  const suyo = gitRepo(a.root, 'x', 'story/9.2-los-nocturnos', GH);
+  const otro = gitRepo(a.root, 'th-sitio', 'fix/el-comando', 'https://github.com/acme/th.git');
+  marker(a, 'mie00000-3', { storyId: '9.2', storyPath: story(a.root, '9.2', 'Los nocturnos'), repoPath: suyo, stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
+  session(a, process.pid, 'mie00000-3', 'sesion-a', busyAt(suyo));
+  touched(a, 'mie00000-3', [[inRepo(suyo, 'a.js'), 30], [inRepo(otro, 'scripts/b.js'), 2]]);
+  const ra = run(a);
+  assert.strictEqual(ra.rows.length, 1, ra.text);
+  assert.strictEqual(ra.rows[0].meanwhile, 'th-sitio · fix/el-comando', ra.text);
+  // lo último que tocó es de la story: no hay «mientras tanto»
+  touched(a, 'mie00000-3', [[inRepo(otro, 'scripts/b.js'), 30], [inRepo(suyo, 'a.js'), 2]]);
+  assert.strictEqual(run(a).rows[0].meanwhile, undefined);
+});
+
+test('wip · RepoDeOtraStory_NoSeLeAtribuye: un repo que tocó la corrida y hoy está en la rama de otra story no se consulta', () => {
+  const m = toyMachine();
+  const x = gitRepo(m.root, 'x', 'story/x', GH);
+  const ajeno = gitRepo(m.root, 'z', 'story/9.9-otra', 'https://github.com/acme/z.git');
+  const hermano = gitRepo(m.root, 'w', 'story/5.1-la-misma', 'https://github.com/acme/w.git');
+  entering(m, 'aje00000-1', { repoPath: x, filesTouched: [inRepo(ajeno, 'a.js'), inRepo(hermano, 'b.js')] });
+  const asked = [];
+  const r = run(m, { prs: (q) => { asked.push(q.name); return { prs: [{ number: q.name === 'z' ? 99 : 5, draft: false }] }; } });
+  assert.deepStrictEqual(asked.sort(), ['w', 'x']);
+  assert.ok(!r.rows[0].state.includes('#99'), r.text);
+});
+
+test('wip · CerradoHaceMasDe24h_NoEscondeLaSesion: un cierre viejo no la esconde: desde la 8.195 dice que falta cerrarlo', () => {
+  const m = toyMachine();
+  const wt = gitRepo(m.root, 'mi-arreglo', 'fix/el-aviso', GH);
+  marker(m, 'vie00000-1', { storyId: '5.1', storyPath: story(m.root, '5.1', 'Vieja'), stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 8], stepsPending: [], lastTouch: new Date(minsBefore(25 * 60)).toISOString() });
+  session(m, process.pid, 'vie00000-1', 'sesion-b', busyAt(wt));
+  const r = runP(m);
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].session, 'sesion-b');
+  assert.match(r.rows[0].state, /^terminado, falta cerrar/);
+  session(m, process.pid, 'vie00000-1', 'sesion-b');
+  assert.deepStrictEqual(runP(m).free, []);
+});
+
+test('wip · PasoConBandera_EsElQueSigue: con «Probar en vivo» sin hacer, el estado es ése y no «Preparar el commit»', () => {
+  const m = toyMachine();
+  const base = { storyId: '9.3', storyPath: story(m.root, '9.3', 't'), stepScheme: 2, deepReviewDone: true, lastTouch: NOW,
+    stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings'], stepsPending: ['prepare-commit'] };
+  marker(m, 'viv00000-1', base);
+  session(m, process.pid, 'viv00000-1', 'x');
+  assert.strictEqual(run(m).rows[0].state, 'Probar en vivo');
+  marker(m, 'viv00000-1', { ...base, dodRuntimeChecked: true });
+  assert.strictEqual(run(m).rows[0].state, 'Preparar el pull request');
+});
+
+test('wip · PedidoFueraDeLaCola_NoSigueEntrando: con todos los pedidos fuera de la cola o en borrador, espera que lo encolen', { skip: onWindows }, () => {
+  const m = toyMachine();
+  entering(m, 'col00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  const runGh = (pulls, extra = {}) => {
+    const env = layer(m, { pulls });
+    if (extra.queueError) fs.writeFileSync(env.FAKE_GH_STATE, JSON.stringify({ ...JSON.parse(fs.readFileSync(env.FAKE_GH_STATE, 'utf8')), queue_error: true }));
+    return wip(m, env).rows[0];
+  };
+  const sinAuto = { auto_merge: null };
+  const off = runGh([pull(842, sinAuto)]);
+  assert.strictEqual(off.state, 'Pedidos sin encolar · x #842 (fuera de la cola)');
+  assert.match(off.end, /ningún pedido está en la cola/);
+  // en la cola, o con auto-merge: sigue entrando, sin marca
+  assert.strictEqual(runGh([pull(846, { ...sinAuto, merge_queue: { state: 'AWAITING_CHECKS' } })]).state, 'Entrando a los repos · x #846');
+  assert.strictEqual(runGh([pull(847)]).state, 'Entrando a los repos · x #847');
+  // uno en camino alcanza para que esté entrando; el de afuera se marca igual
+  assert.strictEqual(runGh([pull(1, { ...sinAuto, merge_queue: { state: 'QUEUED' } }), pull(2, sinAuto)]).state, 'Entrando a los repos · x #1 · x #2 (fuera de la cola)');
+  // si GitHub no dice si está en la cola, no se marca afuera (no saber no es estar afuera), pero se dice que no se sabe;
+  // con auto-merge puesto no hace falta saberlo
+  assert.strictEqual(runGh([pull(3, sinAuto)], { queueError: true }).state, 'Entrando a los repos · x #3 (cola sin verificar)');
+  assert.strictEqual(runGh([pull(4)], { queueError: true }).state, 'Entrando a los repos · x #4');
+  // Azure: sin auto-completar está fuera de la cola; con auto-completar, no
+  const n = toyMachine();
+  entering(n, 'col00000-2', { repoPath: gitRepo(n.root, 'y', 'story/x', AZ) });
+  const runAz = (prs) => wip(n, layer(n, { prs })).rows[0].state;
+  assert.strictEqual(runAz([prAz(6008, { autoCompleteSetBy: null })]), 'Pedidos sin encolar · y !6008 (fuera de la cola)');
+  assert.strictEqual(runAz([prAz(6011)]), 'Entrando a los repos · y !6011');
+  assert.strictEqual(runAz([prAz(6012, { isDraft: true, autoCompleteSetBy: null })]), 'Entrando a los repos · y !6012 (borrador)');
+});
+
+test('wip · SinMarcador_ConArchivoReciente_NoEstaLibre: quieta, pero con un archivo tocado hace poco, trabaja sin marcador', () => {
+  const m = toyMachine();
+  const wt = gitRepo(m.root, 'th-tanda', 'story/9.4-la-tanda', GH);
+  session(m, process.pid, 'sin00000-1', 'sesion-b', { cwd: wt });
+  touched(m, 'sin00000-1', [[inRepo(wt, 'scripts/a.js'), 10]]);
+  const r = run(m);
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.match(r.rows[0].state, /^Trabajando sin marcador · story 9\.4 en preparación · última actividad \d\d:\d\d · último archivo \d\d:\d\d$/);
+  assert.deepStrictEqual(r.free, []);
+  // pasada la media hora sin tocar nada, vuelve a estar libre
+  touched(m, 'sin00000-1', [[inRepo(wt, 'scripts/a.js'), 40]]);
+  assert.deepStrictEqual(run(m).free, ['sesion-b']);
+});
+
+test('wip · MientrasTantoViejo_DiceDesdeCuando: un arreglo rápido o una nota sin tocar hace más de 1 h lo dicen', () => {
+  const m = toyMachine();
+  entering(m, 'vij00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'vij00000-1.json'), JSON.stringify({ reason: 'la roja de la noche', declaredAt: new Date(minsBefore(90)).toISOString() }));
+  const r = run(m, { prs: () => ({ prs: [{ number: 12, draft: false }] }) });
+  assert.strictEqual(r.rows[0].meanwhile, `arreglo rápido «la roja de la noche» (sin tocar desde ${localHhmm(minsBefore(90))})`);
+  fs.rmSync(path.join(m.state, 'adhoc', 'vij00000-1.json'));
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'doing', 'vij00000-1.json'), JSON.stringify({ text: 'mido el disco', at: new Date(minsBefore(70)).toISOString() }));
+  assert.strictEqual(run(m, { prs: () => ({ prs: [{ number: 12, draft: false }] }) }).rows[0].meanwhile, `mido el disco (sin tocar desde ${localHhmm(minsBefore(70))})`);
+});
+
+test('T200 EnteredMain_OnlyWithEvidence: entró si la punta de su rama es parte de la principal y no le queda nada sin commitear', () => {
+  const { enteredMain } = require(path.join(__dirname, '..', 'tools', 'work-in-progress.js'));
+  const { spawnSync } = require('child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wip-entro-')));
+  const g = (dir, ...a) => { const r = spawnSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, r.stderr); return r.stdout; };
+  const base = path.join(root, 'origen');
+  fs.mkdirSync(base);
+  g(base, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(base, 'a.txt'), 'a');
+  g(base, 'add', '.');
+  g(base, 'commit', '-qm', 'uno');
+  const repo = path.join(root, 'repo');
+  spawnSync('git', ['clone', '-q', base, repo]);
+  const ctx = () => ({ until: Date.now() + 5000, cache: new Map() });
+  const file = path.join(repo, 'a.txt');
+  assert.strictEqual(enteredMain([file], ctx()), false, 'parada en la principal no dice nada');
+  g(repo, 'checkout', '-qb', 'fix/algo');
+  fs.writeFileSync(path.join(repo, 'b.txt'), 'b');
+  assert.strictEqual(enteredMain([file], ctx()), false, 'con cambios sin commitear');
+  g(repo, 'add', '.');
+  g(repo, 'commit', '-qm', 'dos');
+  assert.strictEqual(enteredMain([file], ctx()), false, 'con un commit que la principal no tiene');
+  g(base, 'pull', '-q', repo, 'fix/algo');
+  g(repo, 'fetch', '-q', 'origin');
+  assert.strictEqual(enteredMain([file], ctx()), true, 'su punta entró');
+  assert.strictEqual(enteredMain([file, path.join(os.tmpdir(), 'suelto.js')], ctx()), true, 'lo que está fuera de un repo no cuenta');
+  assert.strictEqual(enteredMain([], ctx()), false, 'sin archivos no hay evidencia');
+  const broken = path.join(root, 'roto');
+  fs.mkdirSync(path.join(broken, '.git'), { recursive: true });
+  assert.strictEqual(enteredMain([file, path.join(broken, 'x.js')], ctx()), false, 'un repo que no se puede leer no cuenta como entrado, aunque el otro haya entrado');
+  g(repo, 'checkout', '-q', 'main');
+  g(repo, 'pull', '-q', 'origin', 'main');
+  fs.writeFileSync(file, 'cambiado');
+  g(repo, 'checkout', '-qb', 'otra');
+  g(repo, 'checkout', '-q', 'main');
+  assert.strictEqual(enteredMain([file], ctx()), false, 'parada en la principal con un archivo cambiado');
+  assert.strictEqual(enteredMain([path.join(root, 'worktrees', 'ya-no-esta', 'x.js')], ctx()), true, 'la carpeta de trabajo que se borró entró');
+});
+
+test('T201 Halfway_LiveSessionInTheFolder: lo que dejó una sesión cerrada en la carpeta de otra viva no quedó a medio camino', () => {
+  const m = toyMachine();
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wip-viva-')));
+  fs.mkdirSync(path.join(repo, '.git'));
+  fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'ref: refs/heads/fix/algo\n');
+  fs.mkdirSync(path.join(m.state, 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'cerrada-1.json'), JSON.stringify({ reason: 'lo dejado por otra', files: [path.join(repo, 'a.js')], declaredAt: NOW, lastTouch: NOW }));
+  const before = buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: NOW, home: m.root }).halfwayItems.find((h) => h.text === 'lo dejado por otra');
+  assert.ok(before && !before.entered, 'sin sesión viva queda');
+  session(m, process.pid, 'viva-1', 'Ana', { cwd: repo });
+  const after = buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: NOW, home: m.root }).halfwayItems.find((h) => h.text === 'lo dejado por otra');
+  assert.strictEqual(after.entered, true);
+});
+
+// ── What a process that builds photos often remembers between them ───────────────────────────────────────────────
+
+const commit = (dir, msg) => execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', msg]);
+const photoCtx = (memory, ms = 5000) => ({ until: Date.now() + ms, cache: new Map(), memory });
+const COUNT = ['rev-list', '--count', 'HEAD'];
+const STATUS = ['--no-optional-locks', 'status', '--porcelain', '-z'];
+
+test('T202 GitMemory_SameCommits_NotAskedAgain; NewCommit_Asked: lo que depende de los commits se recuerda hasta que cambian', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'a', 'trabajo');
+  commit(repo, 'uno');
+  const memory = createMemory();
+  const first = askGit(repo, COUNT, photoCtx(memory));
+  assert.strictEqual(first.out, '1');
+  assert.strictEqual(askGit(repo, COUNT, photoCtx(memory)), first, 'la otra foto no lanzó git: es la misma respuesta');
+  commit(repo, 'dos');
+  assert.strictEqual(askGit(repo, COUNT, photoCtx(memory)).out, '2');
+});
+
+test('T203 GitMemory_MainMoves_Asked; RefsPacked_Asked: traer main o empaquetar las puntas también cuenta como cambio', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'a', 'trabajo');
+  commit(repo, 'uno');
+  execFileSync('git', ['-C', repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD']);
+  commit(repo, 'dos');
+  const ahead = ['rev-list', '--count', 'origin/main..HEAD'];
+  const memory = createMemory();
+  const first = askGit(repo, ahead, photoCtx(memory));
+  assert.strictEqual(first.out, '1');
+  execFileSync('git', ['-C', repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD']);
+  const moved = askGit(repo, ahead, photoCtx(memory));
+  assert.strictEqual(moved.out, '0');
+  execFileSync('git', ['-C', repo, 'pack-refs', '--all']);
+  assert.notStrictEqual(askGit(repo, ahead, photoCtx(memory)), moved, 'con las puntas empaquetadas se vuelve a preguntar');
+});
+
+test('T204 GitMemory_Status_KeptOnlyAWhile: git status se recuerda un rato, y pasado ese rato ve los archivos nuevos', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'a', 'trabajo');
+  commit(repo, 'uno');
+  const kept = createMemory();
+  const first = askGit(repo, STATUS, photoCtx(kept));
+  assert.strictEqual(first.out, '');
+  fs.writeFileSync(path.join(repo, 'nuevo.txt'), 'x');
+  assert.strictEqual(askGit(repo, STATUS, photoCtx(kept)), first, 'dentro del rato no se pregunta');
+  const expired = createMemory({ statusKeepMs: 0 });
+  assert.strictEqual(askGit(repo, STATUS, photoCtx(expired)).out.includes('nuevo.txt'), true);
+});
+
+test('T205 GitMemory_OverBudget_RemembersOnlyAnswers: pasado el tope sigue contestando lo recordado, y un git sin respuesta no se recuerda', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'a', 'trabajo');
+  commit(repo, 'uno');
+  const memory = createMemory();
+  const noAnswer = askGit(repo, COUNT, photoCtx(memory, -1));
+  assert.ok(noAnswer.err, 'sin tiempo no hay respuesta');
+  const answered = askGit(repo, COUNT, photoCtx(memory));
+  assert.strictEqual(answered.out, '1', 'la falta de tiempo no quedó recordada');
+  assert.strictEqual(askGit(repo, COUNT, photoCtx(memory, -1)), answered);
+  const without = askGit(repo, COUNT, photoCtx(undefined));
+  assert.notStrictEqual(askGit(repo, COUNT, photoCtx(undefined)), without, 'sin memoria se pregunta siempre, como /wip');
+});
+
+test('T206 StepMedians_Memory_ReadOnlyWhenFolderChanges: el historial no se relee hasta que hay una ejecución archivada nueva', () => {
+  const m = toyMachine();
+  const dir = path.join(m.state, 'timing-history');
+  history(m, 'una', { 1: 10 });
+  fs.writeFileSync(path.join(dir, 'rota.json'), '{');
+  const memory = createMemory();
+  const said = [];
+  const first = stepMedians(dir, said, memory);
+  assert.strictEqual(first[1], 600000);
+  const again = [];
+  assert.strictEqual(stepMedians(dir, again, memory), first);
+  assert.strictEqual(said.length, 1);
+  assert.deepStrictEqual(again, said, 'el aviso de la rota se repite aunque no se relea');
+  history(m, 'otra', { 1: 30 });
+  const later = new Date(Date.now() + 60000);
+  fs.utimesSync(dir, later, later);
+  assert.strictEqual(stepMedians(dir, [], memory)[1], 1200000);
+  assert.notStrictEqual(stepMedians(dir, [], undefined), stepMedians(dir, [], undefined), 'sin memoria se lee siempre');
+});
+
+test('T207 WipNow_WithMemory_SameAnswer: con memoria la foto dice lo mismo que sin ella', async () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'a', 'story/1.1-x');
+  commit(repo, 'uno');
+  history(m, 'una', { 1: 10 });
+  const spec = story(m.root, '1.1', 'La historia');
+  marker(m, 'viva-1', { storyId: '1.1', storyPath: spec, repoPath: repo, stepsCompleted: [0], stepsPending: [1, 2] });
+  session(m, process.pid, 'viva-1', 'Ana', { cwd: repo });
+  const opts = { stateDir: m.state, sessionsDir: m.sessions, now: NOW, home: m.root, queryAll: async (qs) => qs.map(() => ({ prs: [] })) };
+  const plain = await wipNow(opts);
+  const memory = createMemory();
+  const first = await wipNow({ ...opts, memory });
+  const second = await wipNow({ ...opts, memory });
+  assert.ok(plain.rows.length > 0);
+  for (const key of ['rows', 'halfwayItems', 'free']) {
+    assert.deepStrictEqual(first[key], plain[key], key);
+    assert.deepStrictEqual(second[key], plain[key], key);
+  }
+  assert.ok(memory.git.size > 0, 'la foto preguntó y recordó');
+});
+
+// ── «A medio camino» is read when someone asks or a session closes, never because time passed ─────────────────────
+
+const halfwayCtx = (memory) => ({ ...photoCtx(memory), halfway: true });
+function halfwayRepo(m) {
+  const repo = gitRepo(m.root, 'a', 'trabajo');
+  commit(repo, 'uno');
+  return repo;
+}
+
+test('T208 Halfway_StatusKept_UntilRevised: el status de A medio camino no vence solo, y se relee al pedirlo', () => {
+  const m = toyMachine();
+  const repo = halfwayRepo(m);
+  const memory = createMemory({ statusKeepMs: 0 });
+  const first = askGit(repo, STATUS, halfwayCtx(memory));
+  const readAt = memory.halfwayReadAt;
+  assert.ok(readAt, 'anota a qué hora leyó');
+  fs.writeFileSync(path.join(repo, 'nuevo.txt'), 'x');
+  assert.strictEqual(askGit(repo, STATUS, halfwayCtx(memory)), first, 'pasado el rato del otro status, sigue sin preguntar');
+  reviseHalfway(memory);
+  assert.ok(askGit(repo, STATUS, halfwayCtx(memory)).out.includes('nuevo.txt'), 'al revisar ve el archivo nuevo');
+  assert.ok(memory.halfwayReadAt >= readAt);
+});
+
+test('T209 Halfway_NotMixedWithLiveCard: la tarjeta en curso no recibe el status guardado de A medio camino', () => {
+  const m = toyMachine();
+  const repo = halfwayRepo(m);
+  const memory = createMemory({ statusKeepMs: 0 });
+  const shared = photoCtx(memory);
+  assert.strictEqual(askGit(repo, STATUS, { ...shared, halfway: true }).out, '');
+  fs.writeFileSync(path.join(repo, 'nuevo.txt'), 'x');
+  assert.ok(askGit(repo, STATUS, shared).out.includes('nuevo.txt'), 'en la misma foto, la tarjeta lee lo de ahora');
+});
+
+test('T210 Halfway_SessionCloses_Revised; PageClosed_NotRevised: cerrarse una sesión pide revisar, salvo con la página cerrada', () => {
+  const m = toyMachine();
+  session(m, process.pid, 'viva-1', 'Ana');
+  const memory = createMemory();
+  run(m, { memory });
+  assert.strictEqual(memory.halfwaySince, 0, 'la primera foto no pide nada');
+  run(m, { memory });
+  assert.strictEqual(memory.halfwaySince, 0, 'sin cambios, tampoco');
+  fs.unlinkSync(path.join(m.sessions, 'viva-1.json'));
+  run(m, { memory });
+  assert.ok(memory.halfwaySince > 0, 'se cerró: hay que revisar');
+
+  const closed = createMemory();
+  session(m, process.pid, 'viva-2', 'Bea');
+  run(m, { memory: closed });
+  closed.pageOpen = false;
+  fs.unlinkSync(path.join(m.sessions, 'viva-2.json'));
+  run(m, { memory: closed });
+  assert.strictEqual(closed.halfwaySince, 0, 'con la página cerrada, nada');
+});
+
+test('T211 Halfway_ReadAt_FromMemoryOrNow: la hora es la de la última lectura; sin memoria, la de ahora', () => {
+  const m = toyMachine();
+  assert.strictEqual(run(m).halfwayReadAt, Date.parse(NOW));
+  const memory = createMemory();
+  memory.halfwayReadAt = 1234;
+  assert.strictEqual(run(m, { memory }).halfwayReadAt, 1234);
+});
+
+
+test('T212 Doing_WithOpenRun_Refused: con una historia abierta no anota texto ni hora; la espera de turno sola y clear pasan', () => {
+  const h = toyHome();
+  const sid = 'doi00000-9';
+  fs.writeFileSync(path.join(h.state, 'active', `${sid}.json`), JSON.stringify({ sessionId: sid, storyId: '8.183', startedAt: new Date().toISOString() }));
+  for (const args of [['corro la suite de la 8.183'], ['corro la suite de la 8.183', '--until', '23:30'], ['espero el turno de la suite', '--waiting-for', 'turno de la suite'], ['--until', '23:30']]) {
+    assert.throws(() => doing(h, sid, ...args), (e) => e.status === 3 && /historia 8\.183/.test(e.stderr) && /otra sesión/.test(e.stderr) && e.stderr.trim().split('\n').length === 1, args.join(' '));
+    assert.ok(!fs.existsSync(doingFile(h, sid)), args.join(' '));
+  }
+  assert.match(doing(h, sid, '--waiting-for', 'turno de la suite'), /historia 8\.183 \(espera turno de la suite\)/);
+  const note = JSON.parse(fs.readFileSync(doingFile(h, sid), 'utf8'));
+  assert.strictEqual(note.text, undefined);
+  assert.strictEqual(note.waitingFor, 'turno de la suite');
+  const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+  assert.strictEqual(require(path.join(lib, 'story-gate-io.js')).waitingTurn(h.state, sid).waitingFor, 'turno de la suite', 'las podas la siguen respetando');
+  // cerrada la historia sin `doing clear`, la espera sin texto no abre una fila «(sin texto)»
+  session(h, process.pid, sid, 'Pepe', { status: 'busy' });
+  const active = path.join(h.state, 'active', `${sid}.json`);
+  const runFile = fs.readFileSync(active, 'utf8');
+  fs.rmSync(active);
+  assert.ok(!run(h).rows.some((r) => /sin texto/.test(r.work)), run(h).text);
+  fs.writeFileSync(active, runFile);
+  doing(h, sid, 'clear');
+  assert.ok(!fs.existsSync(doingFile(h, sid)));
+  // un marcador ilegible no es «sin historia»: frena, y clear sigue andando
+  fs.writeFileSync(path.join(h.state, 'active', `${sid}.json`), '{roto');
+  assert.throws(() => doing(h, sid, 'corro la suite de la 8.183'), (e) => e.status === 2 && /no se puede leer/.test(e.stderr));
+  assert.ok(!fs.existsSync(doingFile(h, sid)));
+  doing(h, sid, 'clear');
+  // sin la historia, anota como siempre
+  fs.rmSync(path.join(h.state, 'active', `${sid}.json`));
+  assert.match(doing(h, sid, 'mido el banco de controles', '--until', '23:30'), /mido el banco/);
+  assert.strictEqual(JSON.parse(fs.readFileSync(doingFile(h, sid), 'utf8')).text, 'mido el banco de controles');
+});
+
+test('T4 Doing_EsperaALaCoordinadora_RecuerdaMandarElPedido @story-8.284 @ac-7 @ac-18: la espera que nombra a la coordinadora recuerda mandarle el pedido; la propia coordinadora y otra espera, como hoy', () => {
+  const h = toyHome();
+  const RECUERDA = /la coordinadora no lee tu pestaña: si todavía no le mandaste el pedido, mandáselo por mensaje/;
+  const abierta = (sid) => fs.writeFileSync(path.join(h.state, 'active', `${sid}.json`), JSON.stringify({ sessionId: sid, storyId: '8.284', startedAt: new Date().toISOString() }));
+  abierta('doi00000-a');
+  // execFileSync lanza si sale distinto de 0: no frena
+  const out = doing(h, 'doi00000-a', '--waiting-for', 'respuesta de la coordinadora sobre el AC 20');
+  assert.match(out, /historia 8\.284 \(espera respuesta de la coordinadora sobre el AC 20\)/);
+  assert.match(out, RECUERDA);
+  assert.strictEqual(JSON.parse(fs.readFileSync(doingFile(h, 'doi00000-a'), 'utf8')).waitingFor, 'respuesta de la coordinadora sobre el AC 20');
+  assert.match(doing(h, 'doi00000-a', '--waiting-for', 'decision of the Coordinator'), RECUERDA);
+  // otra espera: como hoy
+  assert.doesNotMatch(doing(h, 'doi00000-a', '--waiting-for', 'turno de la suite'), RECUERDA);
+  // la coordinadora designada que espera algo «de la coordinadora» no se lo recuerda a sí misma
+  abierta('doi00000-c');
+  fs.appendFileSync(path.join(h.state, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'relay-designation', status: 'ok', sesion: 'doi00000-c', rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
+  assert.doesNotMatch(doing(h, 'doi00000-c', '--waiting-for', 'respuesta de la coordinadora vieja'), RECUERDA);
+  assert.match(doing(h, 'doi00000-a', '--waiting-for', 'respuesta de la coordinadora sobre el AC 21'), RECUERDA, 'para las demás sigue saliendo');
+});
+
+test('T213 LooseNote_TaskNumber_OnlyItsOwn: el texto de la nota de un camino corto llega a la oficina sólo si es de este camino corto', () => {
+  const at = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+  const m = toyMachine();
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  for (const [sid, noteMin] of [['nueva000-1', 10], ['vieja000-2', 120]]) {
+    fs.writeFileSync(path.join(m.state, 'adhoc', `${sid}.json`), JSON.stringify({ reason: 'un arreglo sin número', declaredAt: at(30), lastTouch: at(5) }));
+    fs.writeFileSync(path.join(m.state, 'doing', `${sid}.json`), JSON.stringify({ text: 'T-50: sigo con el arreglo', at: at(noteMin) }));
+    session(m, process.pid, sid, sid.slice(0, 5), { status: 'busy' });
+  }
+  const r = run(m);
+  const extraOf = (name) => r.extra[r.rows.findIndex((x) => x.session.startsWith(name))];
+  assert.strictEqual(extraOf('nueva').noteText, 'T-50: sigo con el arreglo');
+  assert.strictEqual(extraOf('vieja').noteText, undefined, 'la nota de antes de abrir el camino corto no une su fila');
+});
+
+// La hora y la espera de una nota se pegan a un camino corto sólo si la nota es de ese camino corto: una nota escrita
+// antes de abrirlo (con `--until` o con `--waiting-for`) es de otro trabajo. Sin la hora del camino corto, como antes.
+function looseWithNote(m, sid, { laneMin, note }) {
+  const at = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'adhoc', `${sid}.json`), JSON.stringify({ reason: 'un arreglo chico', ...(laneMin == null ? {} : { declaredAt: at(laneMin) }), lastTouch: at(5) }));
+  fs.writeFileSync(path.join(m.state, 'doing', `${sid}.json`), JSON.stringify({ text: 'otro trabajo', at: at(note.min), ...(note.until ? { endAt: note.until } : {}), ...(note.waiting ? { waitingFor: note.waiting, waitingSince: at(note.min) } : {}) }));
+  // quieta: una sesión ocupada con una espera de más de 5 min la pierde por otra regla
+  session(m, process.pid, sid, sid.slice(0, 5), { status: 'idle' });
+}
+const UNTIL = new Date(Date.parse(NOW) + 60 * 60000).toISOString();
+
+test('8.281 T6 Fila_NotaViejaYCaminoCortoNuevo_SinHoraNiEspera @story-8.281 @ac-11: la nota de antes de abrir el camino corto no le da hora ni espera; sin la hora del camino corto, como hoy', () => {
+  const m = toyMachine();
+  looseWithNote(m, 'hora0000-1', { laneMin: 30, note: { min: 120, until: UNTIL } });
+  looseWithNote(m, 'esper000-2', { laneMin: 30, note: { min: 120, waiting: 'el turno de la suite' } });
+  looseWithNote(m, 'sinla000-3', { laneMin: null, note: { min: 120, until: UNTIL } });
+  const r = run(m);
+  const of = (name) => { const i = r.rows.findIndex((x) => x.session.startsWith(name)); return { row: r.rows[i], extra: r.extra[i] }; };
+  for (const name of ['hora0', 'esper']) {
+    const { row, extra } = of(name);
+    assert.ok(!Number.isFinite(extra.endAt) && !extra.waitingFor, `${name}: ${JSON.stringify(extra)}`);
+    assert.doesNotMatch(String(row.end || ''), /espera|turno/, `${name}: ${row.end}`);
+  }
+  // sin `laneAt` no se sabe cuál es más vieja: la nota se aplica como hoy
+  assert.strictEqual(of('sinla').extra.endAt, Date.parse(UNTIL), JSON.stringify(of('sinla').extra));
+});
+
+test('8.281 T7 Fila_NotaNuevaDelCaminoCorto_ComoHoy @story-8.281 @ac-12: la nota escrita después de abrir el camino corto le da su hora o su espera', () => {
+  const m = toyMachine();
+  looseWithNote(m, 'hora0000-1', { laneMin: 30, note: { min: 10, until: UNTIL } });
+  looseWithNote(m, 'esper000-2', { laneMin: 30, note: { min: 10, waiting: 'el turno de la suite' } });
+  const r = run(m);
+  const of = (name) => { const i = r.rows.findIndex((x) => x.session.startsWith(name)); return { row: r.rows[i], extra: r.extra[i] }; };
+  assert.strictEqual(of('hora0').extra.endAt, Date.parse(UNTIL), JSON.stringify(of('hora0').extra));
+  assert.strictEqual(of('esper').extra.waitingFor, 'el turno de la suite');
+  assert.match(String(of('esper').row.end), /turno de la suite/, of('esper').row.end);
+});
+
+// Una corrida suelta (`claude -p`, la de una medición) no es una sesión de trabajo aunque corra en un puesto: su
+// registro dice `entrypoint: "sdk-cli"`. Con marcador, sí trabaja y cuenta, como un agente interno con marcador.
+test('8.281 T3 Tope_SesionNoInteractiva_NoCuenta_ConMarcadorSi @story-8.281 @ac-4 @ac-5 @ac-6 @ac-22: una corrida suelta sin marcador no cuenta; con marcador y la interactiva con nombre, sí', () => {
+  const m = toyMachine();
+  // un puesto fuera de la carpeta temporal: la regla de los agentes internos de hoy no la alcanza
+  const puesto = path.join(path.sep, 'opt', 'puesto-de-prueba-8281', 'slot-1');
+  session(m, process.pid, 'medic000-1', 'slot-1-a1', { cwd: puesto, nameSource: 'derived', entrypoint: 'sdk-cli', kind: 'interactive', status: 'busy', statusUpdatedAt: Date.parse(NOW) - 60000 });
+  session(m, process.pid, 'medic000-2', 'slot-1-b2', { cwd: puesto, nameSource: 'derived', entrypoint: 'sdk-cli', kind: 'interactive', status: 'busy', statusUpdatedAt: Date.parse(NOW) - 60000 });
+  marker(m, 'medic000-2', { storyId: '9.2', storyPath: story(m.root, '9.2', 'Con marcador'), stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
+  session(m, process.pid, 'perso000-3', 'Puesto', { cwd: puesto, nameSource: 'user', entrypoint: 'cli', kind: 'interactive', status: 'busy', statusUpdatedAt: Date.parse(NOW) - 60000 });
+  const s = require(WIP).sessionsBySid(m.sessions, [], null);
+  assert.deepStrictEqual(['medic000-1', 'medic000-2', 'perso000-3'].map((sid) => s.get(sid).internal), [true, true, false]);
+  const r = run(m);
+  const names = r.rows.map((x) => x.session);
+  assert.ok(!names.includes('slot-1-a1'), `la corrida suelta sin marcador no tiene fila: ${r.text}`);
+  assert.ok(names.includes('slot-1-b2') && names.includes('Puesto'), `con marcador y la interactiva cuentan: ${r.text}`);
+  assert.match(r.text, /1 agente\(s\) interno\(s\)[^\n]*claude -p/, 'el renglón también nombra las corridas sueltas');
+});
+
+// La espera de turno que anotó una sesión cuya prueba pesada ya corre (un portón anotado o un lugar del turno): la nota y
+// el registro de turnos no coinciden, y gana el registro. La oficina toma la espera de esta tabla: deja de decir
+// «Esperando». Una espera de otra cosa (una firma) y la de quien no corre nada quedan como hoy.
+// 🔴 mutación: leer sólo la nota (como antes), o borrar también la espera de una firma.
+test('T214 Fila_EsperaDeTurnoConPruebaPesadaCorriendo_GanaElRegistro: la espera de turno de quien ya corre su prueba pesada no se muestra', () => {
+  const m = toyMachine();
+  const at = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+  const coord = path.join(m.state, 'coordination');
+  fs.mkdirSync(path.join(coord, 'gates'), { recursive: true });
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  const p = story(m.root, '9.9', 'Una historia de prueba');
+  const cases = { 'porto000-1': 'portón final de pruebas de la 9.9', 'turno000-2': 'el turno de la suite', 'firma000-3': 'la firma del dueño', 'sinre000-4': 'el turno de la suite' };
+  for (const [sid, what] of Object.entries(cases)) {
+    marker(m, sid, { storyId: '9.9', storyPath: p, stepsCompleted: [0, 1, 2, 3, 4, 5], stepsPending: [6, 7, 8] });
+    session(m, process.pid, sid, sid.slice(0, 5), { status: 'idle' });
+    fs.writeFileSync(path.join(m.state, 'doing', `${sid}.json`), JSON.stringify({ at: at(2), waitingFor: what, waitingSince: at(2) }));
+  }
+  const rec = (pid, sid) => ({ pid, sid, session: sid.slice(0, 5), what: '81 suites de repo', suites: 81, at: Date.parse(NOW) - 3 * 60000 });
+  fs.writeFileSync(path.join(coord, 'gates', `${process.pid}.json`), JSON.stringify(rec(process.pid, 'porto000-1')));
+  fs.writeFileSync(path.join(coord, 'gates', `${process.ppid}.json`), JSON.stringify(rec(process.ppid, 'firma000-3')));
+  fs.writeFileSync(path.join(coord, 'suite-turn.json'), JSON.stringify(rec(process.pid, 'turno000-2')));
+  const r = run(m);
+  const of = (name) => r.extra[r.rows.findIndex((x) => x.session.startsWith(name))] || {};
+  assert.strictEqual(of('porto').waitingFor, undefined, JSON.stringify(of('porto')));
+  assert.strictEqual(of('turno').waitingFor, undefined, JSON.stringify(of('turno')));
+  assert.strictEqual(of('firma').waitingFor, 'la firma del dueño', 'una espera de otra cosa queda');
+  assert.strictEqual(of('sinre').waitingFor, 'el turno de la suite', 'sin registro, como hoy');
+  // un portón ilegible no saca a nadie de la espera, pero se dice
+  fs.writeFileSync(path.join(coord, 'gates', '999999.json'), '{ esto no es json');
+  assert.ok(run(m).unreadable.some((u) => u.includes('999999.json')), 'el portón que no se lee se dice');
+});
+
+// 🔴 Falla con: «espera espera a main (main-1)», o la sesión que tomó el arreglo de main sin decirlo.
+test('MB5 Wip_MainWaitAndFix_Texts @story-8.294 @ac-14: la espera a main no dice «espera» dos veces, y la sesión que arregla main sale «arregla main (<id>)»', () => {
+  const m = toyMachine();
+  const at = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'esper000-1.json'), JSON.stringify({ reason: 'un arreglo chico', declaredAt: at(30), lastTouch: at(5) }));
+  fs.writeFileSync(path.join(m.state, 'doing', 'esper000-1.json'), JSON.stringify({ text: 'otro trabajo', at: at(10), waitingFor: 'espera a main (main-1)', waitingSince: at(10), waitingKind: 'main' }));
+  session(m, process.pid, 'esper000-1', 'esper', { status: 'idle' });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'arreg000-2.json'), JSON.stringify({ reason: 'el arreglo de main', declaredAt: at(30), lastTouch: at(5) }));
+  session(m, process.pid, 'arreg000-2', 'arreg', { status: 'idle' });
+  fs.mkdirSync(path.join(m.state, 'main-check'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'main-check', 'acme-1234abcd.json'), JSON.stringify({ broken: [{ id: 'main-1', suites: ['tests/a.test.sh'], waiting: [{ session: 'esper000-1' }], fix: { session: 'arreg000-2', pr: 12 }, closed: null }] }));
+  const r = run(m);
+  const of = (name) => r.rows[r.rows.findIndex((x) => x.session.startsWith(name))];
+  assert.match(String(of('esper').end), /^espera a main \(main-1\)/, JSON.stringify(of('esper')));
+  assert.match(String(of('arreg').state), /arregla main \(main-1\)/, JSON.stringify(of('arreg')));
+  // cerrado el registro, ya no lo dice
+  fs.writeFileSync(path.join(m.state, 'main-check', 'acme-1234abcd.json'), JSON.stringify({ broken: [{ id: 'main-1', suites: [], waiting: [], fix: { session: 'arreg000-2' }, closed: NOW }] }));
+  assert.doesNotMatch(String(run(m).rows.find((x) => x.session.startsWith('arreg')).state), /arregla main/);
 });

@@ -46,9 +46,19 @@
 #   T26 (8.139) BaseControls_ApproveConCita_YaNoVale — la clase de approve --base: refirma real, sin --base, otro cambio
 #   T54 BaseControls_NewFileOfLoosenedControl_EntersTheSignature — el archivo nuevo que carga un control que se afloja
 #       entra en lo que se firma, y cambiarlo después deja la firma sin valer; un control nuevo sigue sin trámite
+#   T56 BaseControls_Passes_RunInPullRequestMode — el pre-commit de las pasadas corre con TYCON_CHECKS_ON_PR aunque el
+#       ambiente no lo traiga (el freno de pendientes acepta la aprobación del commit), y un control frena igual
 #   T55 BaseControls_SignOnChangeRule_NoPassReadsIt_AsksForSignature — una regla que ninguna pasada lee (el alcance del
 #       portón) con «sign_on_change»: cambiarla es rojo sin la constancia aunque la base y el pedido pasen, verde con
 #       ella; sin la marca, el mismo cambio entraba sin constancia
+#   T57 BaseControls_JudgeFiles_SignOnEveryChange — el inventario real marca con «sign_on_change» lo que decide la
+#       revisión (el juez, el inventario, el clasificador de la refirma, las bibliotecas de la firma y su ventana en
+#       Windows), y un pedido que cambia el juez o la ventana sin poner a prueba lo que afloja es rojo sin la constancia
+#   T9 (8.152) BaseControls_BenchAgainstBase_IsARule — el inventario real tiene el guion del banco de la base como regla
+#       con «sign_on_change», y un pedido que lo cambia sin la constancia es rojo
+#   Las constancias del dueño (por nombre): borrar o reescribir una del ancestro es rojo y pide la firma, con ella pasa;
+#       en el jsonl cuenta el renglón que falta y no el agregado; mudarla tal cual no cuenta; una carpeta que no se lista
+#       es «no pude medir»; sin carpeta la firma de un renglón borrado no tiene dónde ir
 #
 # T12, T13 y T14 están en public-ci.test.sh (el workflow y el guion de la CI) y en la prueba de la 170 del repo de
 # mantenimiento (el yml que sólo existe ahí).
@@ -258,6 +268,120 @@ run "${R}" "${T}/t8c.out"
 is "T8 la constancia está anclada al cambio: otro cambio de la regla vuelve a rojo" "1" "${RC}"
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T4, T5, T6 y T10 (8.176) · el click de la persona, de punta a punta, con el comando que da `pending`
+#   T4  8.176-Click_EscribeConstancia_YLaCiLaAcepta @story-8.176 @ac-4 — `approve` corre con una ventana de prueba al lado
+#       (una copia de scripts/ donde lib/owner-window.js contesta el click): la constancia sale del dueño y sin vía, y `run`
+#       la acepta. El árbol de procesos de un click de verdad no se arma en una prueba: lo cubre T9, en vivo
+#   T5  8.176-SinConstancia_SigueEnRojo @story-8.176 @ac-5 — sin constancia, rojo, y el rojo nombra el click
+#   T6  8.176-CambioDespuesDelClick_Rojo @story-8.176 @ac-5 — el control cambia después de la constancia: rojo
+#   T10 8.176-Cuadro_RutaQueFalsea_SinCuadro @story-8.176 @ac-9 (la parte de la CI) — un --entries que deja afuera un
+#       archivo cambiado escribe una constancia que no cubre el pedido: rojo
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+V="${T}/ventana-de-prueba"; mkdir -p "${V}/scripts"; cp -R "${ROOT}/scripts/ci" "${ROOT}/scripts/lib" "${V}/scripts/"
+cat > "${V}/scripts/lib/owner-window.js" <<'JS'
+// la ventana de prueba: contesta el click de la persona y anota qué firma y qué comando le pidió el guion
+module.exports = { exigir: (o) => { require('fs').writeFileSync(process.env.TEST_WINDOW_SEEN, JSON.stringify({ firma: o.firma, argv: o.argv })); return { codigo: 0, via: 'click', registro: {} }; } };
+JS
+# aprobar_con_click <repo> <salida de pending>: corre el `approve` que dio pending, con la ventana de prueba; deja RC
+aprobar_con_click() {
+  local cmd args
+  cmd="$(sed -n 's/^la firma, desde la sesión ([^)]*): //p' "$2" | head -n 1)"
+  args="${cmd#* approve }"
+  [ -n "${cmd}" ] && [ "${args}" != "${cmd}" ] || { RC=sin-comando; return; }
+  eval "set -- ${args}"
+  TEST_WINDOW_SEEN="${T}/ventana-vista.json" bash "${V}/scripts/ci/run-base-controls.sh" approve "$@" > "${T}/click.out" 2>&1; RC=$?
+}
+R="${T}/t4c"; make_base "${R}"; pr "${R}"
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+run "${R}" "${T}/t5.out"
+is "T5 sin constancia: rojo" "1" "${RC}"
+has "T5 …dice que afloja un control sin la constancia" "${T}/t5.out" "afloja un control sin la constancia del dueño"
+has "T5 …y nombra el click" "${T}/t5.out" "con el click del dueño en el cuadro de opciones"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t4-pending.out" 2>&1
+aprobar_con_click "${R}" "${T}/t4-pending.out"
+is "T4 approve con el click: firma (exit 0)" "0" "${RC}"
+if node -e 'const v=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(v.firma==="control-change"&&v.argv.includes("--entries")?0:1)' "${T}/ventana-vista.json" 2>/dev/null; then ok "T4 …la ventana vio control-change con el --entries de pending"; else no "T4 la ventana no vio el comando de pending: $(cat "${T}/ventana-vista.json" 2>/dev/null)"; fi
+LINE="$(tail -n 1 "${R}/.tycon/control-changes.jsonl" 2>/dev/null)"
+if node -e 'const l=JSON.parse(process.argv[1]);process.exit(l.by==="dueño"&&!("via" in l)?0:1)' "${LINE}" 2>/dev/null; then ok "T4 …la constancia es del dueño y no lleva vía"; else no "T4 la constancia no es la del dueño sin vía: ${LINE}"; fi
+commit "${R}" "constancia"
+run "${R}" "${T}/t4.out"
+is "T4 con la constancia del click: verde" "0" "${RC}"
+has "T4 …y nombra el archivo aprobado" "${T}/t4.out" "cambio de control aprobado: scripts/ci/toy-rules.json"
+printf '%s\n' '{ "mode": "warn", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "otro cambio"
+run "${R}" "${T}/t6.out"
+is "T6 el control cambia después del click: rojo" "1" "${RC}"
+# T10: dos reglas cambiadas y una constancia que sólo nombra una
+R="${T}/t10c"; make_base "${R}"; pr "${R}"
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"
+printf '%s\n' '{ "names": ["uno", "dos"] }' > "${R}/scripts/ci/toy-names.json"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t10-pending.out" 2>&1
+UNA="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t10-pending.out" | head -n 1 | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const e=JSON.parse(s);process.stdout.write(e.length>1?JSON.stringify(e.filter(x=>x.path==="scripts/ci/toy-rules.json")):"")})' 2>/dev/null)"
+if [ -n "${UNA}" ]; then
+  TEST_WINDOW_SEEN="${T}/ventana-vista.json" bash "${V}/scripts/ci/run-base-controls.sh" approve --root "${R}" --base main --entries "${UNA}" > "${T}/t10-approve.out" 2>&1; RC=$?
+  # el rojo de abajo tiene que venir de una constancia que sí se escribió, no de un approve que falló
+  is "T10 approve con una sola regla firma (exit 0)" "0" "${RC}"
+  [ -s "${R}/.tycon/control-changes.jsonl" ] && ok "T10 …y escribe la constancia" || no "T10 approve no escribió la constancia: $(cat "${T}/t10-approve.out")"
+  commit "${R}" "constancia de una sola"
+  run "${R}" "${T}/t10.out"
+  is "T10 la constancia deja afuera un archivo cambiado: rojo" "1" "${RC}"
+else
+  no "T10 pending no dio las dos reglas cambiadas: $(tail -n 5 "${T}/t10-pending.out" | tr '\n' ' ')"
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T14 Vocabulario_CambiarTechoEntraSinFirma @story-8.154 @ac-14 · el control de las palabras de las guías, desde la base:
+# informa y no frena, así que subir un techo con una palabra nueva o bajarlo con la que se va entra sin constancia
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+make_vocab_base() {
+  local r="$1"
+  mkdir -p "${r}/.githooks" "${r}/scripts/ci" "${r}/.github/workflows" "${r}/guides"
+  cat > "${r}/.githooks/pre-commit-checks" <<'SH'
+#!/usr/bin/env bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+node "$REPO_ROOT/scripts/ci/vocabulary.js" --repo "$REPO_ROOT" || exit 1
+SH
+  cp "${ROOT}/scripts/ci/vocabulary.js" "${r}/scripts/ci/vocabulary.js"
+  printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 1 } }' > "${r}/scripts/ci/vocabulary.json"
+  cat > "${r}/scripts/ci/controls-from-base.json" <<'JSON'
+{
+  "hook": ".githooks/pre-commit-checks",
+  "passes": [
+    { "name": "pre-commit", "mode": "index", "cmd": ["bash", ".githooks/pre-commit-checks"] }
+  ],
+  "controls": [
+    { "name": "vocabulary", "script": "scripts/ci/vocabulary.js", "rules": ["scripts/ci/vocabulary.json"] },
+    { "name": "base-controls", "script": "scripts/ci/run-base-controls.sh", "rules": ["scripts/ci/controls-from-base.json"] }
+  ],
+  "content": [],
+  "workflows": [
+    { "path": ".github/workflows/ci.yml", "must_contain": ["run-base-controls"] }
+  ],
+  "approvals": ".tycon/control-changes.jsonl"
+}
+JSON
+  cp "${SCRIPT}" "${r}/scripts/ci/run-base-controls.sh"
+  printf '%s\n' 'name: ci' 'jobs: { ci: { steps: [ { run: "bash run-base-controls" } ] } }' > "${r}/.github/workflows/ci.yml"
+  printf '%s\n' '# Guía' '' 'El revisor, antes advisor.' > "${r}/guides/x.md"
+  ( cd "${r}" && lab_git init -q . && lab_git add -A && lab_git commit -qm base ) > /dev/null 2>&1
+}
+R="${T}/t14v-sube"; make_vocab_base "${R}"; pr "${R}"
+printf '%s\n' 'Y otro advisor más.' >> "${R}/guides/x.md"
+printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 2 } }' > "${R}/scripts/ci/vocabulary.json"
+commit "${R}"
+run "${R}" "${T}/t14v-sube.out"
+is "T14 subir el techo junto con una palabra nueva: verde, sin constancia" "0" "${RC}"
+has "T14 lo dice al subir" "${T}/t14v-sube.out" "la base y el pedido pasan: entra sin constancia"
+R="${T}/t14v-baja"; make_vocab_base "${R}"; pr "${R}"
+printf '%s\n' '# Guía' '' 'El revisor.' > "${R}/guides/x.md"
+printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 0 } }' > "${R}/scripts/ci/vocabulary.json"
+commit "${R}"
+run "${R}" "${T}/t14v-baja.out"
+is "T14 bajar el techo junto con la palabra que se va: verde, sin constancia" "0" "${RC}"
+has "T14 lo dice" "${T}/t14v-baja.out" "la base y el pedido pasan: entra sin constancia"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # T9 · la base no se lee
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 R="${T}/t9"; make_base "${R}"; pr "${R}"; printf 'limpio\n' > "${R}/docs/otro.txt"; commit "${R}"
@@ -378,7 +502,7 @@ lab_git -C "${R}" checkout -q pedido
 run "${R}" "${T}/t16a.out"
 is "T16 un pedido limpio sigue verde aunque main trajo un cambio sin firmar" "0" "${RC}"
 has "T16 avisa con el commit y el archivo" "${T}/t16a.out" "main trajo .github/workflows/ci.yml en ${SIN} sin constancia del dueño"
-has "T16 dice cómo firmarla" "${T}/t16a.out" "run-base-controls.sh approve"
+has "T16 dice cómo firmarla" "${T}/t16a.out" "approve --root"
 # firmado en main: la constancia ancla esa versión del archivo
 lab_git -C "${R}" checkout -q main
 BLOB="$(lab_git -C "${R}" rev-parse HEAD:.github/workflows/ci.yml)"
@@ -937,15 +1061,31 @@ refirma_base() {
   lab_git -C "${r}" checkout -q main
   regla "${r}" block '"docs/permitido.txt"' dos; commit "${r}" "main cambia la nota"
   lab_git -C "${r}" checkout -q pedido; lab_git -C "${r}" merge -q --no-edit main > /dev/null 2>&1
-  bash "${SCRIPT}" pending --root "${r}" --base main --range main...pedido > "${r}.p2" 2>&1
-  ENTRIES="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${r}.p2" | head -n 1)"
+  # lo traído de main ya no da un comando de firma: las entradas salen del blob de la punta
+  ENTRIES="[{\"path\":\"scripts/ci/toy-rules.json\",\"blob\":\"$(lab_git -C "${r}" rev-parse pedido:scripts/ci/toy-rules.json)\"}]"
 }
 # refirma '<entradas json>' <refirma_de> '<campos que se sacan>': la línea de la refirma, como la escribe approve
 refirma() { node -e 'const l=JSON.parse(process.argv[1]);Object.assign(l,{by:"refirma",via:"delegacion",clase:"refresh-after-main",refirma_de:process.argv[2],maquina:"a1b2c3d4e5f60718",signed_by_session:"sesion-designada"});for(const k of process.argv[3].split(",").filter(Boolean))delete l[k];console.log(JSON.stringify(l))' "$(firma "$1")" "$2" "$3"; }
 R="${T}/t36"; refirma_base "${R}"; H="$(hash_de "${ENTRIES}")"
 [ -n "${ENTRIES}" ] && [ "${H}" != "${H1}" ] && ok "T36 traer main pide firmar otra vez" || no "T36 traer main no cambió lo que se firma: ${ENTRIES}"
+# BaseControls_TraerMainSobreLoFirmado_SinFirmaNueva: lo firmado por el dueño más lo que trajo main con fusión limpia
+# 🔴 Falla con: el dueño que tiene que volver a firmar sólo porque el pedido trajo main.
 bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/t36-sin.out" 2>&1; RC=$?
-is "T36 sin la refirma: rojo" "1" "${RC}"
+is "T36 sin la refirma, lo firmado más main: verde" "0" "${RC}"
+has "T36 …y dice que no hizo falta firmar otra vez" "${T}/t36-sin.out" "más lo que trajo main: sin firma nueva"
+has "T36 …nombrando la constancia del dueño" "${T}/t36-sin.out" "${H1:0:12}"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t36-sin.p" 2>&1
+has "T36 pending: no hace falta firmar" "${T}/t36-sin.p" "no hace falta firmar"
+lacks "T36 pending: …y no da el comando" "${T}/t36-sin.p" "--entries"
+# lo que el pedido cambia a mano después de traer main sí pide la firma del dueño
+lab_git -C "${R}" checkout -q -b t36-mano pedido
+regla "${R}" block '"docs/permitido.txt", "docs/malo.txt", "docs/otro.txt"' dos; commit "${R}" "afloja más, sin firma"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-mano > "${T}/t36-mano.out" 2>&1; RC=$?
+is "T36 lo cambiado a mano después de traer main: rojo" "1" "${RC}"
+has "T36 …pide la constancia del dueño" "${T}/t36-mano.out" "sin la constancia del dueño"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...t36-mano > "${T}/t36-mano.p" 2>&1
+has "T36 pending: …y da el comando de la firma" "${T}/t36-mano.p" "--entries"
+lab_git -C "${R}" checkout -q pedido
 lab_git -C "${R}" checkout -q -b t36-ok pedido; refirma "${ENTRIES}" "${H1}" "" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma"
 bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-ok > "${T}/t36-ok.out" 2>&1; RC=$?
 is "T36 la refirma que el clasificador de la base comprueba: verde" "0" "${RC}"
@@ -960,19 +1100,28 @@ lab_git -C "${R}" checkout -q -b t36-de pedido; refirma "${ENTRIES}" "$(printf '
 bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-de > "${T}/t36-de.out" 2>&1; RC=$?
 is "T36 una refirma de una constancia que no es la del dueño: rojo" "1" "${RC}"
 has "T36 …con el motivo de la nueva" "${T}/t36-de.out" "${NUEVA}"
-# la refirma sin uno de sus campos no firma, y no lleva la frase
+# la refirma sin uno de sus campos, o con frase, no firma nada y se dice; lo aprueba la constancia del dueño, no ella
 for falta in clase refirma_de maquina signed_by_session; do
   lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b "t36-sin-${falta}"
   refirma "${ENTRIES}" "${H1}" "${falta}" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma sin ${falta}"
   bash "${SCRIPT}" run --root "${R}" --base main --range "main...t36-sin-${falta}" > "${T}/t36-${falta}.out" 2>&1; RC=$?
-  is "T36 la refirma sin ${falta}: rojo" "1" "${RC}"
+  is "T36 la refirma sin ${falta}: verde por la constancia del dueño" "0" "${RC}"
+  has "T36 la refirma sin ${falta}: no firma nada" "${T}/t36-${falta}.out" "no firma nada"
+  has "T36 la refirma sin ${falta}: …y aprueba lo que trajo main" "${T}/t36-${falta}.out" "más lo que trajo main: sin firma nueva"
 done
 has "T36 sin maquina: dice qué le falta" "${T}/t36-maquina.out" "es una refirma sin maquina"
 lab_git -C "${R}" checkout -q -b t36-quote pedido
 node -e 'const l=JSON.parse(process.argv[1]);l.quote="Firmá el cambio, lo leí";console.log(JSON.stringify(l))' "$(refirma "${ENTRIES}" "${H1}" "")" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma con frase"
 bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-quote > "${T}/t36-quote.out" 2>&1; RC=$?
-is "T36 la refirma con frase no firma (rojo)" "1" "${RC}"
-has "T36 …y lo dice" "${T}/t36-quote.out" "una refirma no lleva quote"
+is "T36 la refirma con frase: verde por la constancia del dueño" "0" "${RC}"
+has "T36 …y dice que no firma" "${T}/t36-quote.out" "una refirma no lleva quote"
+has "T36 …y aprueba lo que trajo main" "${T}/t36-quote.out" "más lo que trajo main: sin firma nueva"
+# la refirma mal armada tampoco firma lo que el pedido aflojó a mano después de traer main
+lab_git -C "${R}" checkout -q -b t36-mano-sin t36-mano
+refirma "${ENTRIES}" "${H1}" "maquina" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma sin maquina sobre lo aflojado"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-mano-sin > "${T}/t36-mano-sin.out" 2>&1; RC=$?
+is "T36 la refirma sin maquina sobre lo aflojado a mano: rojo" "1" "${RC}"
+has "T36 …y pide la constancia del dueño" "${T}/t36-mano-sin.out" "sin la constancia del dueño"
 # BaseControls_RefirmaQueNoCuadra_Rojo: el pedido cambia la regla después de traer main; la refirma la firma igual
 lab_git -C "${R}" checkout -q -b t36-cambio pedido
 regla "${R}" block '"docs/permitido.txt", "docs/malo.txt", "docs/otro.txt"' dos; commit "${R}" "afloja más"
@@ -1073,6 +1222,347 @@ R="${T}/t55c"; t55_base "${R}" 0
 run "${R}" "${T}/t55c.out"
 is "T55 sin la marca, el mismo cambio: verde" "0" "${RC}"
 has "T55 …entra sin constancia" "${T}/t55c.out" "la base y el pedido pasan: entra sin constancia"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T56 · las pasadas corren en modo pedido: el pre-commit lo sabe por TYCON_CHECKS_ON_PR, y los controles frenan igual
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# El freno de pendientes del pre-commit pide, fuera de un pedido, el renglón firmado en la máquina; en el servidor no hay
+# esa máquina y vale la aprobación del commit con su forma y su huella (pending-approvals.test.js T24). Sin el modo, todo
+# pedido que abre un pendiente aprobado frena.
+R="${T}/t56"; make_base "${R}"
+cat >> "${R}/.githooks/pre-commit-checks" <<'SH'
+[ "${TYCON_CHECKS_ON_PR:-}" = 1 ] || { echo "toy: el pre-commit no corre en modo pedido"; exit 1; }
+SH
+commit "${R}" "base que mira el modo"; pr "${R}"
+printf 'otra cosa\n' > "${R}/docs/bien.txt"; commit "${R}"
+env -u TYCON_CHECKS_ON_PR bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/t56.out" 2>&1; RC=$?
+is "T56 el pre-commit de la pasada corre en modo pedido aunque el ambiente no lo traiga: verde" "0" "${RC}"
+lacks "T56 …y no avisa que falta el modo" "${T}/t56.out" "no corre en modo pedido"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+env -u TYCON_CHECKS_ON_PR bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/t56b.out" 2>&1; RC=$?
+is "T56 en modo pedido el control frena igual: rojo" "1" "${RC}"
+has "T56 …con el motivo del control" "${T}/t56b.out" "toy: PROHIBIDO en docs/malo.txt"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T57 · lo que decide la revisión (el juez, el inventario, el clasificador de la refirma, las bibliotecas de la firma y
+#       su ventana en Windows) pide la constancia en cada cambio, aunque el pedido no ponga a prueba lo que afloja
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 mutación: sin la marca en el inventario real, el pedido que cambia el juez sale «entra sin constancia»
+JUDGE_FILES="scripts/ci/run-base-controls.sh scripts/ci/controls-from-base.json scripts/lib/refresh-after-main.js scripts/lib/owner-window.js scripts/lib/delegated-signing.js scripts/ci/run-base-controls-window.js"
+for p in ${JUDGE_FILES}; do
+  MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${p}")"
+  is "T57 el inventario real marca ${p} con «sign_on_change»" "si" "${MARKED}"
+done
+R="${T}/t57"; make_base "${R}"
+mkdir -p "${R}/scripts/lib"
+for p in refresh-after-main owner-window delegated-signing; do printf 'module.exports = {};\n' > "${R}/scripts/lib/${p}.js"; done
+printf 'module.exports = {};\n' > "${R}/scripts/ci/run-base-controls-window.js"
+printf 'module.exports = {};\n' > "${R}/scripts/ci/bench-against-base.js"
+node -e 'const fs=require("fs");const real=JSON.parse(fs.readFileSync(process.argv[1],"utf8")).controls.find(x=>x.name==="base-controls");const f=process.argv[2];const j=JSON.parse(fs.readFileSync(f,"utf8"));j.controls.find(x=>x.name==="base-controls").rules=real.rules.filter(r=>typeof r==="object"&&r.path!==".test-gate.yaml");fs.writeFileSync(f,JSON.stringify(j,null,2))' "${ROOT}/scripts/ci/controls-from-base.json" "${R}/scripts/ci/controls-from-base.json"
+commit "${R}" "el juez con las marcas del inventario real"
+pr "${R}"; printf '\n// un cambio del juez que este pedido no pone a prueba\n' >> "${R}/scripts/ci/run-base-controls.sh"; commit "${R}"
+run "${R}" "${T}/t57.out"
+is "T57 cambiar el juez sin pendiente nuevo y sin constancia: rojo" "1" "${RC}"
+has "T57 …pide la firma del dueño" "${T}/t57.out" "afloja un control sin la constancia del dueño: scripts/ci/run-base-controls.sh"
+# la ventana de la firma en Windows, la pareja de owner-window.js: cambiarla sola también pide la constancia
+lab_git -C "${R}" checkout -q -b ventana main
+printf '\n// la ventana de la firma, cambiada sin ponerla a prueba\n' >> "${R}/scripts/ci/run-base-controls-window.js"; commit "${R}"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...ventana > "${T}/t57w.out" 2>&1; RC=$?
+is "T57 cambiar la ventana de la firma sin constancia: rojo" "1" "${RC}"
+has "T57 …pide la firma del dueño" "${T}/t57w.out" "afloja un control sin la constancia del dueño: scripts/ci/run-base-controls-window.js"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T9 (8.152) · el banco de la base es una regla del inventario: cambiar su guion pide la firma del dueño
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 mutación: sin la marca, un pedido que vacía el guion del banco de la base entra sin constancia
+MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path==="scripts/ci/bench-against-base.js"&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
+is "T9 el inventario real tiene scripts/ci/bench-against-base.js como regla, con «sign_on_change»" "si" "${MARKED}"
+lab_git -C "${R}" checkout -q -b banco main
+printf '\n// el banco de la base, aflojado\n' >> "${R}/scripts/ci/bench-against-base.js"; commit "${R}"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...banco > "${T}/t9b.out" 2>&1; RC=$?
+is "T9 cambiar el guion del banco de la base sin constancia: rojo" "1" "${RC}"
+has "T9 …pide la firma del dueño" "${T}/t9b.out" "afloja un control sin la constancia del dueño: scripts/ci/bench-against-base.js"
+
+# T58 · los resultados que guarda el examen nocturno están en la lista «content» del inventario real: el público no los
+#       trae, y sin clasificar frena al repo que los lleva. Rojo: periodic-exam.js guarda uno que la lista no nombra.
+R="${T}/t58"; make_base "${R}"
+inv "${R}" "j.content=$(node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).content))' "${ROOT}/scripts/ci/controls-from-base.json")"
+GUARDA="$(grep -oE 'scripts/controls-bench/ultimo-[a-z-]+\.json' "${ROOT}/scripts/controls-bench/periodic-exam.js" | sort -u)"
+case "${GUARDA}" in *ultimo-guias.json*) ok "T58 el examen guarda el resultado de las guías" ;; *) no "T58 periodic-exam.js ya no nombra ultimo-guias.json" ;; esac
+mkdir -p "${R}/scripts/controls-bench"
+for F in ${GUARDA}; do
+  printf '{}\n' > "${R}/${F}"
+  printf '%s\n' "# lo guarda el examen: \"${F}\"" >> "${R}/scripts/ci/toy-check.sh"
+done
+commit "${R}" "lleva los resultados del examen"
+bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t58.out" 2>&1; RC=$?
+is "T58 un árbol con los resultados del examen: verde" "0" "${RC}"
+lacks "T58 …sin «sin clasificar»" "${T}/t58.out" "sin clasificar"
+
+# Lo ya firmado no se pide de nuevo. Rojo: `pending` imprime el comando de firma con la constancia del dueño de ese
+# mismo hash en la rama (la sesión que lo lee vuelve a pedir la firma), o la da por firmada con una que la revisión no
+# acepta. Las pruebas van por nombre: el archivo ya usa sus números para otras cosas.
+# firmado_base <carpeta>: el pedido afloja la regla y trae la constancia del dueño de su hash; deja E1 y H1
+firmado_base() {
+  local r="$1"; make_base "${r}"; inv "${r}" "j.approvals=[\"${CARPETA}\",\".tycon/control-changes.jsonl\"]"
+  mkdir -p "${r}/scripts/lib"; cp "${ROOT}/scripts/lib/refresh-after-main.js" "${r}/scripts/lib/refresh-after-main.js"
+  regla "${r}" block '"docs/permitido.txt"' uno; commit "${r}" "regla en líneas"
+  pr "${r}"
+  regla "${r}" block '"docs/permitido.txt", "docs/malo.txt"' uno
+  printf 'PROHIBIDO\n' > "${r}/docs/malo.txt"; commit "${r}"
+  bash "${SCRIPT}" pending --root "${r}" --base main --range main...pedido > "${r}.p0" 2>&1
+  E1="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${r}.p0" | head -n 1)"; H1="$(hash_de "${E1}")"
+}
+pendiente() { bash "${SCRIPT}" pending --root "$1" --base main --range main...pedido > "$2" 2>&1; }
+YA='no hace falta firmar: el dueño ya firmó este mismo cambio'
+
+# BaseControls_PendingSaysAlreadySigned @story-8.226 @ac-13
+R="${T}/ya-carpeta"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; firma "${E1}" > "${R}/${CARPETA}${H1}.json"; commit "${R}" "la firma del dueño"
+pendiente "${R}" "${T}/ya-carpeta.out"; RC=$?
+is "PendingSaysAlreadySigned: con la constancia en la carpeta sale 0" "0" "${RC}"
+has "PendingSaysAlreadySigned: …dice que ya está firmado" "${T}/ya-carpeta.out" "${YA}"
+has "PendingSaysAlreadySigned: …con la ruta de la constancia" "${T}/ya-carpeta.out" "${CARPETA}${H1}.json"
+lacks "PendingSaysAlreadySigned: …sin el comando de firma" "${T}/ya-carpeta.out" "approve --root"
+R="${T}/ya-jsonl"; firmado_base "${R}"
+mkdir -p "${R}/.tycon"; firma "${E1}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "la firma del dueño en el registro"
+pendiente "${R}" "${T}/ya-jsonl.out"
+has "PendingSaysAlreadySigned: en el .jsonl también vale" "${T}/ya-jsonl.out" "${YA} (.tycon/control-changes.jsonl)"
+R="${T}/ya-delegada"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; firma_delegada "${E1}" "" >"${R}/${CARPETA}${H1}.json"; commit "${R}" "una firma por delegación"
+pendiente "${R}" "${T}/ya-delegada.out"
+lacks "PendingSaysAlreadySigned: una por delegación no cuenta" "${T}/ya-delegada.out" "${YA}"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-delegada.out" "approve --root"
+has "PendingSaysAlreadySigned: …y dice por qué no contó la que está" "${T}/ya-delegada.out" "es por delegación: no cuenta como la firma del dueño"
+R="${T}/ya-otro"; firmado_base "${R}"
+OTRO="$(node -e 'const e=JSON.parse(process.argv[1]);e[0].blob="0".repeat(40);console.log(JSON.stringify(e))' "${E1}")"
+mkdir -p "${R}/${CARPETA}"; firma "${OTRO}" > "${R}/${CARPETA}$(hash_de "${OTRO}").json"; commit "${R}" "la firma de otro cambio"
+pendiente "${R}" "${T}/ya-otro.out"
+lacks "PendingSaysAlreadySigned: la de otro hash no cuenta" "${T}/ya-otro.out" "${YA}"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-otro.out" "approve --root"
+R="${T}/ya-reglas"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; node -e 'const l=JSON.parse(process.argv[1]);l.rules[0].blob="1".repeat(40);console.log(JSON.stringify(l))' "$(firma "${E1}")" > "${R}/${CARPETA}${H1}.json"; commit "${R}" "el hash de este cambio con otras reglas"
+pendiente "${R}" "${T}/ya-reglas.out"
+lacks "PendingSaysAlreadySigned: el hash correcto con otras reglas no cuenta" "${T}/ya-reglas.out" "${YA}"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-reglas.out" "approve --root"
+R="${T}/ya-rota"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; printf '{ no es json\n' > "${R}/${CARPETA}${H1}.json"; commit "${R}" "una constancia ilegible"
+pendiente "${R}" "${T}/ya-rota.out"
+lacks "PendingSaysAlreadySigned: la ilegible no cuenta" "${T}/ya-rota.out" "${YA}"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-rota.out" "approve --root"
+R="${T}/ya-disco"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; firma "${E1}" > "${R}/${CARPETA}${H1}.json"
+pendiente "${R}" "${T}/ya-disco.out"
+lacks "PendingSaysAlreadySigned: la del disco sin commitear no cuenta" "${T}/ya-disco.out" "${YA}"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-disco.out" "approve --root"
+
+# BaseControls_CatchingUpMainWithoutSignedChangeNeedsNoSignature @story-8.226 @ac-12
+R="${T}/ya-main"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; firma "${E1}" > "${R}/${CARPETA}${H1}.json"; commit "${R}" "la firma del dueño"
+lab_git -C "${R}" checkout -q main; printf 'otro\n' > "${R}/docs/otro.txt"; commit "${R}" "main cambia otro archivo"
+lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" merge -q --no-edit main > /dev/null 2>&1
+pendiente "${R}" "${T}/ya-main.out"
+has "CatchingUpMainWithoutSignedChange: traer main no cambia el hash" "${T}/ya-main.out" "hash: ${H1}"
+has "CatchingUpMainWithoutSignedChange: …y pending no pide firmar" "${T}/ya-main.out" "${YA}"
+lacks "CatchingUpMainWithoutSignedChange: …ni imprime el comando" "${T}/ya-main.out" "approve --root"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/ya-main.run" 2>&1; RC=$?
+is "CatchingUpMainWithoutSignedChange: la revisión da verde" "0" "${RC}"
+
+# BaseControls_ApproveStillSkipsWindowForSigned @story-8.226 @ac-14: el chequeo antes de la ventana se niega
+( cd "${R}" && TYCON_SIGN_PRECHECK=1 bash "${SCRIPT}" approve --root "${R}" --base main --out "${CARPETA}" --entries "${E1}" < /dev/null ) > "${T}/ya-approve.out" 2>&1; RC=$?
+is "ApproveStillSkipsWindowForSigned: el chequeo previo se niega" "1" "${RC}"
+has "ApproveStillSkipsWindowForSigned: …porque ya trae esta firma" "${T}/ya-approve.out" "ya trae esta misma firma: no hace falta firmar de nuevo"
+
+# BaseControls_MainChangedSignedFileWithCleanMerge @story-8.226 @ac-15: sigue el renglón de la refirma
+R="${T}/ya-refirma"; refirma_base "${R}"
+pendiente "${R}" "${T}/ya-refirma.out"
+has "MainChangedSignedFileWithCleanMerge: dice la refirma de siempre" "${T}/ya-refirma.out" "más lo que trajo main, con fusión limpia"
+lacks "MainChangedSignedFileWithCleanMerge: …no la de este mismo cambio" "${T}/ya-refirma.out" "${YA}"
+
+# BaseControls_BranchChangesSignedFileAgain @story-8.226 @ac-15
+R="${T}/ya-otra-vez"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; firma "${E1}" > "${R}/${CARPETA}${H1}.json"; commit "${R}" "la firma del dueño"
+regla "${R}" block '"docs/permitido.txt", "docs/malo.txt", "docs/peor.txt"' uno; commit "${R}" "afloja más"
+pendiente "${R}" "${T}/ya-otra-vez.out"
+lacks "BranchChangesSignedFileAgain: lo cambiado después no está firmado" "${T}/ya-otra-vez.out" "${YA}"
+has "BranchChangesSignedFileAgain: …y pide la firma" "${T}/ya-otra-vez.out" "approve --root"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# La firma se pide con la ruta completa del guion: el comando corre desde cualquier carpeta
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+R="${T}/ruta"; make_base "${R}"; pr "${R}"
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+# el guion, entre comillas simples como lo escribe el comando impreso
+SELF_Q="'${SCRIPT//\'/\'\\\'\'}'"
+
+# T1 BaseControls_Pending_PrintsAbsoluteScriptPath @story-8.237 @ac-1
+( cd "${T}" && bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido ) > "${T}/ruta-pending.out" 2>&1
+has "T1 Pending_PrintsAbsoluteScriptPath: el comando de la sesión lleva la ruta completa" "${T}/ruta-pending.out" "la firma, desde la sesión (el dueño la aprueba en la ventana de permiso, o, donde la ventana no llega, con su click en el cuadro de opciones o su «aprobado»): bash ${SELF_Q} approve --root"
+has "T1 …y el de la terminal también" "${T}/ruta-pending.out" "o, si prefiere, en su terminal: bash ${SELF_Q} approve --root"
+lacks "T1 …ninguno con la ruta relativa" "${T}/ruta-pending.out" "bash scripts/ci/run-base-controls.sh approve"
+
+# T2 BaseControls_PrintedCommand_RunsFromAnotherFolder @story-8.237 @ac-2: el guion en una carpeta con espacio y apóstrofo,
+# y el comando impreso corrido desde otra carpeta (con `classify`, que no firma nada)
+OBRIEN="${T}/arnés de O'Brien"; mkdir -p "${OBRIEN}/scripts/ci"; cp "${SCRIPT}" "${OBRIEN}/scripts/ci/run-base-controls.sh"
+( cd "${OBRIEN}" && bash scripts/ci/run-base-controls.sh pending --root "${R}" --base main --range main...pedido ) > "${T}/obrien-pending.out" 2>&1
+LINEA="$(sed -n 's/^la firma, desde la sesión ([^)]*): //p' "${T}/obrien-pending.out" | head -n 1)"
+case "${LINEA}" in
+  "bash '${T}/arnés de O'\\''Brien/scripts/ci/run-base-controls.sh' approve "*) ok "T2 PrintedCommand_RunsFromAnotherFolder: el comando nombra la copia, con el apóstrofo escapado" ;;
+  *) no "T2 PrintedCommand_RunsFromAnotherFolder: el comando no nombra la copia entre comillas: ${LINEA:0:200}" ;;
+esac
+OTRO="${T}/otro puesto"; mkdir -p "${OTRO}"
+( cd "${OTRO}" && eval "${LINEA/ approve / classify }" ) > "${T}/obrien-classify.out" 2>&1; RC=$?
+is "T2 …desde otra carpeta corre el mismo guion (exit)" "0" "${RC}"
+has "T2 …y contesta su JSON" "${T}/obrien-classify.out" '"clase":'
+lacks "T2 …nunca «no such file»" "${T}/obrien-classify.out" "No such file"
+
+# T3 BaseControls_ApproveWithoutApproval_TerminalCommandIsAbsolute @story-8.237 @ac-4
+ENTRIES="$(sed -n "s/^la firma, desde la sesión.* --entries '\(.*\)'\$/\1/p" "${T}/ruta-pending.out" | head -n 1)"
+( cd "${T}" && bash "${SCRIPT}" approve --root "${R}" --base main --out .tycon/control-changes.jsonl --entries "${ENTRIES}" < /dev/null ) > "${T}/ruta-approve.out" 2>&1; RC=$?
+is "T3 ApproveWithoutApproval_TerminalCommandIsAbsolute: sin el «Sí» no firma (exit)" "1" "${RC}"
+has "T3 …y el motivo trae el comando de la terminal entero" "${T}/ruta-approve.out" "bash ${SELF_Q} approve --root '${R}' --base 'main' --out '.tycon/control-changes.jsonl' --entries '${ENTRIES}' --terminal"
+lacks "T3 …no el texto fijo del catálogo" "${T}/ruta-approve.out" "O en tu terminal: run-base-controls.sh approve --terminal"
+
+# T4 BaseControls_CiRejection_KeepsRelativePath @story-8.237 @ac-5: el rojo de la CI no lleva la ruta de la máquina
+run "${R}" "${T}/ruta-run.out"
+is "T4 CiRejection_KeepsRelativePath: afloja sin constancia: rojo" "1" "${RC}"
+has "T4 …el comando sigue relativo, con --root <repo> sin comillas" "${T}/ruta-run.out" "bash scripts/ci/run-base-controls.sh approve --root <repo>"
+lacks "T4 …sin la ruta de esta máquina" "${T}/ruta-run.out" "bash ${SELF_Q} approve"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# Borrar o reescribir una constancia del dueño es un cambio de control: entra a lo que se firma
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+GH='.github/control-changes/'
+JSONL='.tycon/control-changes.jsonl'
+VIEJA='[{"path":"scripts/ci/toy-rules.json","blob":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]'; HV="$(hash_de "${VIEJA}")"
+OTRA='[{"path":"scripts/ci/toy-names.json","blob":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]'
+NUEVA='[{"path":"scripts/ci/toy-names.json","blob":"cccccccccccccccccccccccccccccccccccccccc"}]'; HN="$(hash_de "${NUEVA}")"
+# constancias_base <carpeta>: el inventario con las dos carpetas y el jsonl; en el ancestro, una constancia del dueño en la
+# carpeta, una que no se lee y un renglón en el jsonl. Abre la rama del pedido
+constancias_base() {
+  local r="$1"; make_base "${r}"; inv "${r}" "j.approvals=[\"${CARPETA}\",\"${GH}\",\"${JSONL}\"]"
+  mkdir -p "${r}/${CARPETA}"; firma "${VIEJA}" > "${r}/${CARPETA}${HV}.json"; printf '{ no es json\n' > "${r}/${CARPETA}rota.json"
+  firma "${OTRA}" > "${r}/${JSONL}"
+  commit "${r}" "constancias del dueño"; pr "${r}"
+}
+entries_de() { sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "$1" | head -n 1; }
+# cambiar_campo <archivo> <campo> <valor>: la misma constancia con un campo cambiado, en una línea
+cambiar_campo() { node -e 'const fs=require("fs");const l=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));l[process.argv[2]]=process.argv[3];fs.writeFileSync(process.argv[1],JSON.stringify(l)+"\n")' "$1" "$2" "$3"; }
+
+# DeletedApproval_IsRed @story-8.248 @ac-3
+R="${T}/c1"; constancias_base "${R}"
+lab_git -C "${R}" rm -q "${CARPETA}${HV}.json"; commit "${R}" "borra una constancia"
+run "${R}" "${T}/c1.out"
+is "DeletedApproval_IsRed: borrar una constancia del ancestro es rojo" "1" "${RC}"
+has "DeletedApproval_IsRed: …nombra la constancia" "${T}/c1.out" "${CARPETA}${HV}.json"
+has "DeletedApproval_IsRed: …y da el comando de la firma del dueño" "${T}/c1.out" "approve --root <repo>"
+pendiente "${R}" "${T}/c1.pending"; E1C="$(entries_de "${T}/c1.pending")"
+case "${E1C}" in *"{\"path\":\"${CARPETA}${HV}.json\",\"blob\":\"borrado\"}"*) ok "DeletedApproval_IsRed: …lo que se firma es la constancia, borrada";; *) no "DeletedApproval_IsRed: las entradas no traen la constancia borrada: ${E1C}";; esac
+
+# DeletedApproval_WithOwnerConstancia_Green @story-8.248 @ac-4
+firma "${E1C}" > "${R}/${CARPETA}$(hash_de "${E1C}").json"; commit "${R}" "la firma del dueño para el borrado"
+run "${R}" "${T}/c2.out"
+is "DeletedApproval_WithOwnerConstancia_Green: con la constancia del dueño, verde" "0" "${RC}"
+has "DeletedApproval_WithOwnerConstancia_Green: …como cambio de control aprobado" "${T}/c2.out" "cambio de control aprobado: "
+
+# RewrittenApproval_AsksSignature @story-8.248 @ac-5: el mismo nombre con otro contenido
+R="${T}/c3"; constancias_base "${R}"
+cambiar_campo "${R}/${CARPETA}${HV}.json" at 2026-11-08; commit "${R}" "reescribe una constancia"
+run "${R}" "${T}/c3.out"
+is "RewrittenApproval_AsksSignature: reescribir una constancia del ancestro pide la firma (rojo)" "1" "${RC}"
+has "RewrittenApproval_AsksSignature: …nombrándola" "${T}/c3.out" "${CARPETA}${HV}.json"
+has "RewrittenApproval_AsksSignature: …con el comando de la firma" "${T}/c3.out" "approve --root <repo>"
+
+# Jsonl_RemovedLine_Red_AppendedLine_Green @story-8.248 @ac-6
+R="${T}/c4a"; constancias_base "${R}"
+: > "${R}/${JSONL}"; commit "${R}" "saca un renglón del registro"
+run "${R}" "${T}/c4a.out"
+is "Jsonl_RemovedLine_Red: un renglón del ancestro que falta es rojo" "1" "${RC}"
+has "Jsonl_RemovedLine_Red: …nombra el registro" "${T}/c4a.out" "${JSONL}"
+R="${T}/c4b"; constancias_base "${R}"
+firma "${NUEVA}" >> "${R}/${JSONL}"; commit "${R}" "suma un renglón al final"
+run "${R}" "${T}/c4b.out"
+is "Jsonl_AppendedLine_Green: un renglón agregado al final pasa como hoy" "0" "${RC}"
+lacks "Jsonl_AppendedLine_Green: …sin pedir firma" "${T}/c4b.out" "approve --root"
+# sin carpeta en el inventario la firma de un renglón borrado no tiene dónde ir: se dice, y approve no la escribe en el jsonl
+R="${T}/c4c"; make_base "${R}"; mkdir -p "${R}/.tycon"; firma "${OTRA}" > "${R}/${JSONL}"; commit "${R}" "un renglón"; pr "${R}"
+: > "${R}/${JSONL}"; commit "${R}" "saca el renglón"
+run "${R}" "${T}/c4c.out"
+is "Jsonl_NoFolder: sin carpeta de constancias, rojo" "1" "${RC}"
+has "Jsonl_NoFolder: …y dice que la firma va en una carpeta" "${T}/c4c.out" "va en una carpeta de constancias"
+pendiente "${R}" "${T}/c4c.pending"
+has "Jsonl_NoFolder: pending lo dice" "${T}/c4c.pending" "va en una carpeta de constancias"
+lacks "Jsonl_NoFolder: …sin un comando de firma que no cuadraría" "${T}/c4c.pending" "approve --root"
+E4C="[{\"path\":\"${JSONL}\",\"blob\":\"$(lab_git -C "${R}" rev-parse "pedido:${JSONL}")\"}]"
+cp "${R}/${JSONL}" "${T}/c4c-antes.jsonl"
+( cd "${R}" && bash "${SCRIPT}" approve --root "${R}" --out "${JSONL}" --entries "${E4C}" < /dev/null ) > "${T}/c4c-approve.out" 2>&1; RC=$?
+is "Jsonl_NoFolder: approve al mismo jsonl no firma (exit)" "1" "${RC}"
+has "Jsonl_NoFolder: …y dice por qué" "${T}/c4c-approve.out" "va en una carpeta de constancias"
+cmp -s "${T}/c4c-antes.jsonl" "${R}/${JSONL}" && ok "Jsonl_NoFolder: …sin tocar el registro" || no "Jsonl_NoFolder: approve escribió en el registro"
+
+# OwnApprovalReplaced_Green @story-8.248 @ac-7: una constancia nueva del pedido, y su reemplazo
+R="${T}/c5"; constancias_base "${R}"
+firma "${NUEVA}" > "${R}/${CARPETA}${HN}.json"; commit "${R}" "una constancia nueva"
+run "${R}" "${T}/c5a.out"
+is "OwnApprovalReplaced_Green: agregar una constancia nueva es verde" "0" "${RC}"
+cambiar_campo "${R}/${CARPETA}${HN}.json" at 2026-11-08; commit "${R}" "la refirma de la propia"
+run "${R}" "${T}/c5b.out"
+is "OwnApprovalReplaced_Green: reemplazar una propia que no estaba en el ancestro es verde" "0" "${RC}"
+lacks "OwnApprovalReplaced_Green: …sin pedir firma" "${T}/c5b.out" "approve --root"
+
+# MovedApproval_SameBlob_NotDeleted_FieldChanged_AsksSignature @story-8.248 @ac-8 @ac-3
+R="${T}/c6a"; constancias_base "${R}"
+mkdir -p "${R}/${GH}"; lab_git -C "${R}" mv "${CARPETA}${HV}.json" "${GH}${HV}.json"; commit "${R}" "muda la constancia tal cual"
+run "${R}" "${T}/c6a.out"
+is "MovedApproval_SameBlob: mudada con el mismo contenido, verde" "0" "${RC}"
+R="${T}/c6b"; constancias_base "${R}"
+mkdir -p "${R}/${GH}"; lab_git -C "${R}" mv "${CARPETA}${HV}.json" "${GH}${HV}.json"; cambiar_campo "${R}/${GH}${HV}.json" by otro; commit "${R}" "muda y cambia"
+run "${R}" "${T}/c6b.out"
+is "MovedApproval_FieldChanged: mudada con «by» cambiado pide la firma (rojo)" "1" "${RC}"
+has "MovedApproval_FieldChanged: …nombra la de origen" "${T}/c6b.out" "${CARPETA}${HV}.json"
+R="${T}/c6c"; constancias_base "${R}"
+lab_git -C "${R}" rm -q "${CARPETA}rota.json"; commit "${R}" "borra la constancia que no se lee"
+run "${R}" "${T}/c6c.out"
+is "MovedApproval_Unreadable: borrar una constancia del ancestro que no se lee también pide la firma (rojo)" "1" "${RC}"
+has "MovedApproval_Unreadable: …y la nombra" "${T}/c6c.out" "${CARPETA}rota.json"
+
+# RewrittenInPlace_WithCopyElsewhere_AsksSignature @story-8.248 @ac-5 @ac-8 (pase adversarial, clase 6): reescribir una
+# constancia en su ruta y dejar una copia de la vieja en otra carpeta no es una mudanza
+R="${T}/c6d"; constancias_base "${R}"
+mkdir -p "${R}/${GH}"; cp "${R}/${CARPETA}${HV}.json" "${R}/${GH}${HV}.json"; cambiar_campo "${R}/${CARPETA}${HV}.json" at 2026-11-08
+commit "${R}" "reescribe y deja la vieja en otra carpeta"
+run "${R}" "${T}/c6d.out"
+is "RewrittenInPlace_WithCopyElsewhere: pide la firma (rojo)" "1" "${RC}"
+has "RewrittenInPlace_WithCopyElsewhere: …nombrando la reescrita" "${T}/c6d.out" "${CARPETA}${HV}.json"
+
+# Jsonl_InventoryWithFolderAfter_SignsInTheFolder @story-8.248 @ac-6 (pase adversarial, clases 8 y 12): con el registro
+# primero y una carpeta después en el inventario, la firma va a la carpeta, no «no se puede firmar»
+R="${T}/c4d"; make_base "${R}"; inv "${R}" "j.approvals=[\"${JSONL}\",\"${CARPETA}\"]"; mkdir -p "${R}/.tycon"; firma "${OTRA}" > "${R}/${JSONL}"
+commit "${R}" "registro primero"; pr "${R}"
+: > "${R}/${JSONL}"; commit "${R}" "saca el renglón"
+pendiente "${R}" "${T}/c4d.pending"
+has "Jsonl_InventoryWithFolderAfter: la firma va a la carpeta" "${T}/c4d.pending" "--out '${CARPETA}'"
+lacks "Jsonl_InventoryWithFolderAfter: …sin decir que no se puede firmar" "${T}/c4d.pending" "no se puede firmar"
+run "${R}" "${T}/c4d.out"
+is "Jsonl_InventoryWithFolderAfter: sin la firma, rojo" "1" "${RC}"
+has "Jsonl_InventoryWithFolderAfter: …con el comando de la firma" "${T}/c4d.out" "approve --root <repo>"
+
+# UnreadableApprovals_NotMeasured @story-8.248 @ac-10: una carpeta de constancias que git no puede listar
+R="${T}/c9"; make_base "${R}"; inv "${R}" "j.approvals=[\"../afuera/\",\"${JSONL}\"]"; commit "${R}" "una carpeta que no se lista"; pr "${R}"
+printf 'otra cosa\n' > "${R}/docs/otra.txt"; commit "${R}"
+run "${R}" "${T}/c9.out"
+[ "${RC}" -ne 0 ] && ok "UnreadableApprovals_NotMeasured: nunca verde (rc ${RC})" || no "UnreadableApprovals_NotMeasured: salió verde"
+has "UnreadableApprovals_NotMeasured: …dice que no pudo medir las constancias" "${T}/c9.out" "no pude medir las constancias"
+
+# WorkflowsAndDeletions_OtherChecksUnchanged @story-8.248 @ac-11
+R="${T}/c10"; constancias_base "${R}"
+lab_git -C "${R}" rm -q scripts/ci/toy-names.json
+printf '%s\n' 'name: ci' 'jobs: { ci: { steps: [ { run: "echo nada" } ] } }' > "${R}/.github/workflows/ci.yml"; commit "${R}" "borra una regla y saca la marca"
+run "${R}" "${T}/c10.out"
+is "WorkflowsAndDeletions_OtherChecksUnchanged: rojo, como hoy" "1" "${RC}"
+has "WorkflowsAndDeletions_OtherChecksUnchanged: …el borrado de la regla" "${T}/c10.out" "el pedido borra scripts/ci/toy-names.json, que la base tiene"
+has "WorkflowsAndDeletions_OtherChecksUnchanged: …y la marca del workflow" "${T}/c10.out" "ya no trae la base (falta «run-base-controls»)"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi

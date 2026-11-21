@@ -377,6 +377,32 @@ test('SuitesShard_JobCountFromPlanWeight', () => {
   }
 });
 
+test('SuitesShard_LongJobWhenThePlanDoesNotFit', () => {
+  // Los trabajos no suben: el tiempo sí. Con `job_deadline` 80 (lo que entra en un trabajo de 40 min), los 196 s del plan
+  // entero en 2 trabajos son 98 por trabajo: no entran, y va el trabajo largo. Lo que entra sigue en el de 40.
+  const set = { runs: [12181], default: 2, job_budget: 60, job_deadline: 80, weights: {} };
+  const dir = lab({ weights: { ...LAB_WEIGHTS, pr: set } });
+  const long = (names, of, d = dir) => run(['long', '--of', String(of), ...(names ? ['--only', onlyFile(d, names)] : []), '--weight-set', 'pr',
+    '--suites', path.join(d, 'suites.json'), '--weights', path.join(d, 'weights.json')]);
+  const big = long(null, 2);
+  assert.strictEqual(big.code, 0, big.err);
+  assert.deepStrictEqual(big.lines, ['si'], 'el plan entero no entra en 2 trabajos de 40 min');
+  assert.match(big.err, /suites: ~98 s de peso por trabajo y en uno de 40 min entran ~80: van los trabajos largos \(hacen falta ~49 min\)/, 'y dice por qué y cuánto');
+  const fits = long(['a-slow.test.sh', 'b-fast.test.js'], 2);
+  assert.deepStrictEqual(fits.lines, ['no'], 'lo que entra sigue con 40 min');
+  assert.match(fits.err, /suites: ~51 s de peso por trabajo y en uno de 40 min entran ~80: los trabajos de siempre/);
+  assert.deepStrictEqual(long(null, 3).lines, ['no'], 'con más trabajos, cada uno lleva menos');
+  // hace falta más de lo que da el largo: igual va el largo, y lo dice
+  const tiny = lab({ weights: { ...LAB_WEIGHTS, pr: { ...set, job_deadline: 20 } } });
+  assert.match(long(null, 2, tiny).err, /hacen falta ~196 min: más que los 100 del trabajo largo, lo que no entre sale no medido/);
+
+  refuses(long(null, 0), /--of/, 'una cuenta de 0 trabajos');
+  const noDeadline = lab({ weights: { ...LAB_WEIGHTS, pr: { ...set, job_deadline: undefined } } });
+  refuses(long(null, 2, noDeadline), /job_deadline/, 'sin lo que entra en 40 min: no se adivina');
+  const brokenDeadline = lab({ weights: { ...LAB_WEIGHTS, pr: { ...set, job_deadline: 'mucho' } } });
+  refuses(long(null, 2, brokenDeadline), /job_deadline/, 'un job_deadline roto frena');
+});
+
 // ── el tope de cada suite ───────────────────────────────────────────────────────────────────
 test('SuitesShard_CapsFromWeightWithFloor', () => {
   // El tope es el doble del peso del juego pedido, con un piso. a-slow pesa 100 → 200; d-medium (sólo en el nocturno,
@@ -413,7 +439,11 @@ test('SuitesWeights_NightlySetMeasuredAndCapped', () => {
   // viejo de 96 s, su tope la cortaría todas las noches). Ninguna suite lleva tope propio en el nocturno: el tope de
   // todas es el doble de su peso.
   const real = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8'));
-  assert.deepStrictEqual(real.suite_cap, { factor: 2, floor: 180 });
+  // Con su regla de los tiempos medidos: el nocturno baja lo que midieron sus últimas noches.
+  assert.deepStrictEqual(real.suite_cap, { factor: 2, floor: 180, measured: { runs: 5, scan: 14, last: 5, min: 3, max: 1500 } });
+  assert.strictEqual(real.job_warn_minutes, 50, 'el umbral del trabajo más cargado: 10 min de margen al tope de 60 de Azure');
+  assert.ok(typeof real.__job_warn_minutes === 'string' && /16213/.test(real.__job_warn_minutes), 'el umbral dice de qué medición sale');
+  assert.ok(typeof real.__suite_cap_measured === 'string' && real.__suite_cap_measured.length > 0, 'la regla medida del nocturno dice por qué');
   assert.deepStrictEqual(real.runs, [14049, 14101, 14135, 14281], 'el nocturno cita los bancos de donde salen sus pesos');
   const hu = real.weights['harness-update.test.sh'];
   assert.ok(hu >= 300 && hu <= 1200, `harness-update pesa lo medido en el nocturno (~350 s): ${hu}`);
@@ -446,8 +476,12 @@ test('SuitesWeights_NightlySetMeasuredAndCapped', () => {
 
 test('SuitesWeights_PrSetHasTheConfirmedSuiteCap', () => {
   const pr = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8')).pr;
-  const { per_suite: own, ...rule } = pr.suite_cap;
+  const { per_suite: own, measured, ...rule } = pr.suite_cap;
   assert.deepStrictEqual(rule, { factor: 2, floor: 180 }, 'la regla que confirmó el dueño: el doble del peso, con piso de 3 min');
+  // Los topes medidos: la mediana de las 5 primeras pasadas más nuevas de cada suite en Azure, de hasta 10 corridas que
+  // publicaron tiempos entre las 30 últimas; con menos de 3 mediciones, el peso. El techo, 1110 s: lo más que deja
+  // reintentar con el doble dentro de un trabajo de 40 min ((2400 − 180) / 2).
+  assert.deepStrictEqual(measured, { runs: 10, scan: 30, last: 5, min: 3, max: 1110 });
   // Los únicos topes propios de la validación: dos suites que corren solas y ahí tardan 1 y 3 s. Con el piso de 180 s
   // cada una, el trabajo del banco no entra en sus 40 min (pr-suites-shards, T48). Un tope propio más es una decisión
   // aparte, no un atajo para que una suite lenta deje de cortarse.
@@ -456,6 +490,132 @@ test('SuitesWeights_PrSetHasTheConfirmedSuiteCap', () => {
   // ~870 y ~275 s. Su tope tiene que pasar lo que tardan.
   assert.ok(pr.weights['harness-update.test.sh'] * pr.suite_cap.factor > 1373, `harness-update: ${pr.weights['harness-update.test.sh']}`);
   assert.ok(pr.weights['harness-doctor.test.sh'] * pr.suite_cap.factor > 416, `harness-doctor: ${pr.weights['harness-doctor.test.sh']}`);
+});
+
+// ── los topes medidos (`caps --measured`) ───────────────────────────────────────────────────────────────────────
+const MEASURED_RULE = { runs: 10, scan: 30, last: 5, min: 3, max: 1110 };
+const measuredLab = (capExtra = {}) => lab({ weights: { ...LAB_WEIGHTS, pr: { runs: [1], default: 2,
+  suite_cap: { factor: 2, floor: 180, measured: MEASURED_RULE, ...capExtra }, weights: { 'a-slow.test.sh': 151 } } } });
+/**
+ * Una carpeta de tiempos bajados: `files` es una lista de archivos, cada uno una lista de corridas; cada corrida es
+ * [hora, { nombre: [ms, exit] }, origen?]. Escribe cada archivo como `suite-times.jsonl`, uno debajo del otro.
+ */
+function timesDir(dir, files, extraLines = {}) {
+  const out = path.join(dir, 'times');
+  files.forEach((runs, i) => {
+    const d = path.join(out, `run-${i}`);
+    fs.mkdirSync(d, { recursive: true });
+    const lines = runs.map(([ts, suites, origen = 'ci-azure']) => JSON.stringify({ v: 1, ts, origen, repo: 'r', workers: 2, nucleos: 2, carga: 1, wall_ms: 1,
+      suites: Object.entries(suites).map(([name, [seconds, exit = 0]]) => ({ s: `tests/${name}`, ms: seconds * 1000, exit })) }));
+    fs.writeFileSync(path.join(d, 'suite-times.jsonl'), `${[...lines, ...(extraLines[i] || [])].join('\n')}\n`);
+  });
+  return out;
+}
+const capsMeasured = (dir, times, names) => run(['caps', '--only', onlyFile(dir, names), '--weight-set', 'pr', '--measured', times,
+  '--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')]);
+const at = (day) => `2026-11-${String(day).padStart(2, '0')}T10:00:00.000Z`;
+
+test('T1 Caps_Measured_MedianOfLastFiveTimesFactor — la mediana de las 5 pasadas más nuevas, por el factor', () => {
+  const dir = measuredLab();
+  // 7 mediciones en 3 archivos, desordenadas: las 2 más viejas (10 y 20 s) bajarían la mediana a 301 si contaran.
+  const times = timesDir(dir, [
+    [[at(9), { 'a-slow.test.sh': [303] }], [at(1), { 'a-slow.test.sh': [10] }]],
+    [[at(5), { 'a-slow.test.sh': [301] }], [at(2), { 'a-slow.test.sh': [20] }], [at(7), { 'a-slow.test.sh': [290] }]],
+    [[at(8), { 'a-slow.test.sh': [303] }], [at(6), { 'a-slow.test.sh': [310] }]],
+  ]);
+  const r = capsMeasured(dir, times, ['a-slow.test.sh']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.deepStrictEqual(r.lines, ['a-slow.test.sh\t606\tmedido:5'], 'mediana de 301, 303, 303, 290 y 310 = 303; por 2 = 606');
+  assert.match(r.err, /topes: 1 medido\(s\) \(de 7 registro\(s\) de Azure\), 0 por peso, 0 propio\(s\); 0 renglones ilegibles/);
+  // con 3 o 4 mediciones, la mediana de las que hay (de 4: el promedio de las dos del medio, redondeado arriba)
+  const four = timesDir(measuredLab(), [[[at(1), { 'a-slow.test.sh': [200] }], [at(2), { 'a-slow.test.sh': [201] }], [at(3), { 'a-slow.test.sh': [300] }], [at(4), { 'a-slow.test.sh': [400] }]]]);
+  assert.deepStrictEqual(capsMeasured(dir, four, ['a-slow.test.sh']).lines, ['a-slow.test.sh\t501\tmedido:4']);
+});
+
+test('T2 Caps_Measured_CutCountsWithItsTime — la pasada cortada por su tope cuenta con lo que tardó hasta el corte', () => {
+  const dir = measuredLab();
+  const times = timesDir(dir, [[
+    [at(1), { 'a-slow.test.sh': [181, 124] }], [at(2), { 'a-slow.test.sh': [181, 124] }], [at(3), { 'a-slow.test.sh': [181, 124] }],
+    [at(4), { 'a-slow.test.sh': [209] }], [at(5), { 'a-slow.test.sh': [209] }],
+  ]]);
+  const r = capsMeasured(dir, times, ['a-slow.test.sh']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.deepStrictEqual(r.lines, ['a-slow.test.sh\t362\tmedido:5'], '2 × 181: el tope sube solo hasta que la suite entra');
+});
+
+test('T3 Caps_Measured_PerSuiteWins — el tope propio gana aunque haya mediciones', () => {
+  const dir = measuredLab({ per_suite: { 'b-fast.test.js': 60 } });
+  const times = timesDir(dir, [[1, 2, 3, 4, 5].map((d) => [at(d), { 'b-fast.test.js': [3] }])]);
+  const r = capsMeasured(dir, times, ['b-fast.test.js']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.deepStrictEqual(r.lines, ['b-fast.test.js\t60\tpropio']);
+  assert.match(r.err, /0 medido\(s\) .*0 por peso, 1 propio\(s\)/);
+});
+
+test('T4 Caps_Measured_FewerThanThree_UsesWeight — con menos de 3 mediciones, el tope de siempre', () => {
+  const dir = measuredLab();
+  const times = timesDir(dir, [[[at(1), { 'a-slow.test.sh': [900] }], [at(2), { 'a-slow.test.sh': [900] }]]]);
+  const r = capsMeasured(dir, times, ['a-slow.test.sh', 'b-fast.test.js']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.deepStrictEqual(r.lines, ['a-slow.test.sh\t302\tpeso', 'b-fast.test.js\t180\tpeso'],
+    'a-slow: 2 × 151; b-fast, sin mediciones (nueva o renombrada): el piso');
+});
+
+test('T5 Caps_Measured_FloorStays — una suite rápida no baja del piso', () => {
+  const dir = measuredLab();
+  const times = timesDir(dir, [[1, 2, 3, 4, 5].map((d) => [at(d), { 'b-fast.test.js': [20] }])]);
+  assert.deepStrictEqual(capsMeasured(dir, times, ['b-fast.test.js']).lines, ['b-fast.test.js\t180\tmedido:5']);
+});
+
+test('T18 Caps_Measured_CeilingStops — una suite colgada no duplica su tope en cada corrida', () => {
+  const dir = measuredLab();
+  const times = timesDir(dir, [[1, 2, 3, 4, 5].map((d) => [at(d), { 'a-slow.test.sh': [900, 124] }])]);
+  assert.deepStrictEqual(capsMeasured(dir, times, ['a-slow.test.sh']).lines, ['a-slow.test.sh\t1110\tmedido:5']);
+});
+
+test('T6 Caps_Measured_IgnoresOtherOriginsAndBadLines — otro origen y un renglón roto no cuentan, y se dicen', () => {
+  const dir = measuredLab();
+  const times = timesDir(dir, [[
+    ...[1, 2, 3].map((d) => [at(d), { 'a-slow.test.sh': [400] }]),
+    ...[4, 5, 6].map((d) => [at(d), { 'a-slow.test.sh': [10] }, 'portable']),
+  ]], { 0: ['{"v":1,"ts":"2026-11-07T10:00:00.000Z","suites":'] });
+  const r = capsMeasured(dir, times, ['a-slow.test.sh']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.deepStrictEqual(r.lines, ['a-slow.test.sh\t800\tmedido:3'], 'las tres de la Mac (10 s) no bajan el tope del agente');
+  assert.match(r.err, /1 renglón ilegible/);
+  assert.match(r.err, /3 de otro origen/);
+});
+
+test('T7 Caps_WithoutMeasured_SameBytesAsBefore — sin --measured, la salida de siempre, en dos columnas', () => {
+  // La salida de antes, escrita a mano: el banco nocturno la usa y no cambia.
+  const plain = lab({ weights: { ...LAB_WEIGHTS, suite_cap: { factor: 2, floor: 90 }, pr: { runs: [1], default: 2, suite_cap: { factor: 2, floor: 180 }, weights: { 'a-slow.test.sh': 151 } } } });
+  const withRule = lab({ weights: { ...LAB_WEIGHTS, suite_cap: { factor: 2, floor: 90 }, pr: { runs: [1], default: 2, suite_cap: { factor: 2, floor: 180, measured: MEASURED_RULE }, weights: { 'a-slow.test.sh': 151 } } } });
+  const BEFORE_PR = 'a-slow.test.sh\t302\nb-fast.test.js\t180\nc-skill.test.js\t180\nd-medium.test.sh\t180\ne-fast.test.js\t180\nf-new-without-weight.test.js\t180\ng-weekly.test.sh\t180\n';
+  const BEFORE_NIGHTLY = 'a-slow.test.sh\t200\nb-fast.test.js\t90\nc-skill.test.js\t90\nd-medium.test.sh\t90\ne-fast.test.js\t90\nf-new-without-weight.test.js\t90\ng-weekly.test.sh\t90\n';
+  for (const dir of [plain, withRule]) {
+    const files = ['--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')];
+    const pr = run(['caps', '--weight-set', 'pr', ...files]);
+    const nightly = run(['caps', ...files]);
+    assert.strictEqual(pr.code, 0, pr.err);
+    assert.strictEqual(pr.out, BEFORE_PR, 'el juego pr, byte por byte');
+    assert.strictEqual(nightly.out, BEFORE_NIGHTLY, 'el del nocturno, byte por byte');
+    assert.strictEqual(pr.err, '', 'sin --measured no dice nada de los topes medidos');
+  }
+});
+
+test('Caps_Measured_Refusals — lo que se niega con --measured: sale 2, sin lista', () => {
+  const dir = measuredLab();
+  const files = ['--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')];
+  refuses(run(['caps', '--weight-set', 'pr', '--measured', ...files]), /--measured/, '--measured sin carpeta');
+  refuses(run(['caps', '--weight-set', 'pr', '--measured', path.join(dir, 'no-existe'), ...files]), /--measured/, 'una carpeta que no existe');
+  const noRule = lab({ weights: { ...LAB_WEIGHTS, pr: { runs: [1], default: 2, suite_cap: { factor: 2, floor: 180 }, weights: {} } } });
+  refuses(run(['caps', '--weight-set', 'pr', '--measured', timesDir(noRule, [[]]), '--suites', path.join(noRule, 'suites.json'), '--weights', path.join(noRule, 'weights.json')]),
+    /suite_cap\.measured/, 'un juego sin la regla de los topes medidos');
+  for (const [rule, why] of [[{ ...MEASURED_RULE, last: 0 }, 'last en 0'], [{ ...MEASURED_RULE, min: 6 }, 'min mayor que last'], [{ ...MEASURED_RULE, max: 'mucho' }, 'un techo que no es número'], [[5], 'una lista']]) {
+    const broken = measuredLab({ measured: rule });
+    refuses(run(['caps', '--weight-set', 'pr', '--measured', timesDir(broken, [[]]), '--suites', path.join(broken, 'suites.json'), '--weights', path.join(broken, 'weights.json')]),
+      /suite_cap\.measured/, why);
+  }
 });
 
 // ── merge: juntar lo que dejó cada trabajo ───────────────────────────────────────────────────────────────────────
@@ -973,4 +1133,383 @@ test('T47 SuitesShard_ExclusiveApart_RealList_ExportRealRunsInTheBenchJob — co
     const mine = names(run(['list', '--shard', String(i), '--of', '2', ...real, ...APART]));
     assert.ok(mine.length > 50 && !mine.some((n) => exclusive.includes(n)), `el trabajo ${i} no lleva ninguna exclusiva`);
   }
+});
+
+// ── el reparto con lo medido (`--measured` en list, plan, merge, jobs y long) ──────────────────────────────────────
+// Los pesos se escriben a mano y en el agente de Azure las suites tardan el doble: los trabajos llegaban llenos y no
+// quedaba tiempo para reintentar una cortada. Con la carpeta de tiempos, el peso de cada suite es la mediana de sus
+// últimas pasadas medidas, con la misma regla que los topes (`suite_cap.measured`).
+const SPLIT_SET = { runs: [1], default: 2, job_budget: 60, job_deadline: 80, job_budget_measured: 1450, job_deadline_measured: 2650,
+  suite_cap: { factor: 2, floor: 180, measured: MEASURED_RULE }, weights: { 'a-slow.test.sh': 151 } };
+const splitLab = (set = SPLIT_SET) => lab({ weights: { ...LAB_WEIGHTS, pr: set } });
+/** `count` pasadas de Azure, una por día, con los segundos de cada suite. */
+const passes = (count, seconds) => Array.from({ length: count }, (_, i) => [at(i + 1), Object.fromEntries(Object.entries(seconds).map(([n, s]) => [n, [s]]))]);
+const splitArgs = (dir, names, times) => [...(names ? ['--only', onlyFile(dir, names)] : []), '--weight-set', 'pr', ...(times ? ['--measured', times] : []),
+  '--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')];
+
+test('Shard_Measured_MedianIsTheWeight — el peso es la mediana de las 5 pasadas más nuevas; con menos de 3, el de siempre', () => {
+  const dir = splitLab();
+  const times = timesDir(dir, [
+    // d-medium: 7 pasadas; las dos más viejas (10 y 20 s) bajarían la mediana si contaran
+    [[at(9), { 'd-medium.test.sh': [303] }], [at(1), { 'd-medium.test.sh': [10] }], [at(5), { 'd-medium.test.sh': [301] }],
+      [at(2), { 'd-medium.test.sh': [20] }], [at(7), { 'd-medium.test.sh': [290] }], [at(8), { 'd-medium.test.sh': [303] }],
+      [at(6), { 'd-medium.test.sh': [310] }]],
+    // a-slow: 2 pasadas, no alcanzan: su peso de pr (151). b-fast: la pasada cortada (95 s, exit 124) es la mediana.
+    // c-skill: 4 pasadas, la mediana de las que hay.
+    [[at(1), { 'a-slow.test.sh': [900], 'b-fast.test.js': [40], 'c-skill.test.js': [200] }],
+      [at(2), { 'a-slow.test.sh': [900], 'b-fast.test.js': [95, 124], 'c-skill.test.js': [201] }],
+      [at(3), { 'b-fast.test.js': [100], 'c-skill.test.js': [300] }], [at(4), { 'c-skill.test.js': [400] }]],
+  ]);
+  const r = run(['plan', '--of', '1', ...splitArgs(dir, ['a-slow.test.sh', 'b-fast.test.js', 'd-medium.test.sh'], times)]);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.match(r.lines[0], /trabajo 1 de 1: 3 suite\(s\) · ~549 s/, '303 + 151 + 95');
+  const four = run(['plan', '--of', '1', ...splitArgs(dir, ['c-skill.test.js'], times)]);
+  assert.match(four.lines[0], /~251 s/, 'de 200, 201, 300 y 400: (201 + 300) / 2, redondeado');
+});
+
+test('Shard_Measured_BalancesByMeasured — el reparto pone una de 200 s medidos en cada trabajo', () => {
+  const dir = splitLab();
+  const times = timesDir(dir, [passes(3, { 'b-fast.test.js': 200, 'e-fast.test.js': 200, 'a-slow.test.sh': 100, 'c-skill.test.js': 100, 'd-medium.test.sh': 100, 'f-new-without-weight.test.js': 100 })]);
+  const names = ['a-slow.test.sh', 'b-fast.test.js', 'c-skill.test.js', 'd-medium.test.sh', 'e-fast.test.js', 'f-new-without-weight.test.js'];
+  const plan = run(['plan', '--of', '2', ...splitArgs(dir, names, times)]);
+  assert.strictEqual(plan.code, 0, plan.err);
+  assert.match(plan.lines[0], /trabajo 1 de 2: 3 suite\(s\) · ~400 s/);
+  assert.match(plan.lines[1], /trabajo 2 de 2: 3 suite\(s\) · ~400 s/);
+  for (const i of [1, 2]) {
+    const mine = expected(dir, i, 2, splitArgs(dir, names, times));
+    assert.strictEqual(mine.filter((n) => ['b-fast.test.js', 'e-fast.test.js'].includes(n)).length, 1, `trabajo ${i}: ${mine}`);
+  }
+});
+
+test('Shard_Measured_ListsAddUpToThePlan_MergeHasNoAbsent — list y merge con la misma carpeta reparten igual que plan', () => {
+  const dir = splitLab();
+  const names = ['a-slow.test.sh', 'b-fast.test.js', 'c-skill.test.js', 'd-medium.test.sh', 'e-fast.test.js', 'f-new-without-weight.test.js'];
+  const times = timesDir(dir, [passes(3, { 'b-fast.test.js': 200, 'e-fast.test.js': 200, 'a-slow.test.sh': 100, 'c-skill.test.js': 100, 'd-medium.test.sh': 100, 'f-new-without-weight.test.js': 100 })]);
+  const measured = splitArgs(dir, names, times);
+  const byWeight = splitArgs(dir, names, null);
+  // por peso, a-slow (151) va sola; por lo medido, b y e (200) abren un trabajo cada una
+  assert.deepStrictEqual(expected(dir, 1, 2, byWeight), ['a-slow.test.sh'], 'el juego reparte distinto por peso');
+  const parts = [1, 2].map((i) => expected(dir, i, 2, measured));
+  assert.deepStrictEqual(parts, [['a-slow.test.sh', 'b-fast.test.js', 'd-medium.test.sh'], ['c-skill.test.js', 'e-fast.test.js', 'f-new-without-weight.test.js']]);
+  assert.deepStrictEqual([...parts[0], ...parts[1]].sort(), [...names].sort(), 'la unión es el plan, sin repetir ni faltar');
+  for (const i of [1, 2]) artifact(dir, i, 2, { only: measured });
+  const m = merge(dir, 2, measured);
+  assert.strictEqual(m.code, 0, m.err);
+  assert.deepStrictEqual(m.failures, [], 'merge espera de cada trabajo las suites de la partición medida');
+  assert.deepStrictEqual([...m.ran].sort(), [...names].sort());
+  // con merge por peso, lo publicado no cuadra: así se ve un reparto mezclado
+  assert.notDeepStrictEqual(merge(dir, 2, byWeight).failures, [], 'mezclar peso y medido deja suites sin medir');
+});
+
+test('Shard_Measured_JobsUsesMeasuredBudget — cuántos trabajos sale de la carga medida y dice «s medidos»', () => {
+  const dir = splitLab();
+  const jobs = (seconds) => run(['jobs', '--max', '2', ...splitArgs(dir, ['a-slow.test.sh', 'd-medium.test.sh'],
+    timesDir(lab(), [passes(3, { 'a-slow.test.sh': seconds / 2, 'd-medium.test.sh': seconds / 2 })]))]);
+  const big = jobs(4000);
+  assert.strictEqual(big.code, 0, big.err);
+  assert.deepStrictEqual(big.lines, ['2']);
+  assert.match(big.err, /suites: 2 trabajo\(s\) de un máximo de 2 · ~4000 s medidos · 1450 s medidos por trabajo · 2 medidas en Azure, 0 por peso/);
+  assert.doesNotMatch(big.err, /de peso/);
+  const small = jobs(1400);
+  assert.deepStrictEqual(small.lines, ['1']);
+  assert.match(small.err, /~1400 s medidos · 1450 s medidos por trabajo/);
+});
+
+test('Shard_Measured_LongKeepsRoomForARetry — el trabajo largo, por el más cargado, con lugar para reintentar una cortada', () => {
+  const dir = splitLab();
+  const long = (heavy) => run(['long', '--of', '2', ...splitArgs(dir, ['a-slow.test.sh', 'd-medium.test.sh'],
+    timesDir(lab(), [passes(3, { 'a-slow.test.sh': heavy, 'd-medium.test.sh': 100 })]))]);
+  const big = long(4103);
+  assert.strictEqual(big.code, 0, big.err);
+  assert.deepStrictEqual(big.lines, ['si'], 'el promedio (2101) entraría; el más cargado (4103) no');
+  assert.match(big.err, /suites: ~4103 s medidos en el trabajo más cargado y en uno de 40 min entran ~2650, con lugar para reintentar sola una cortada: van los trabajos largos \(hacen falta ~62 min\)/);
+  const fits = long(2600);
+  assert.deepStrictEqual(fits.lines, ['no']);
+  assert.match(fits.err, /~2600 s medidos en el trabajo más cargado .*entran ~2650, con lugar para reintentar sola una cortada: los trabajos de siempre/);
+});
+
+test('Shard_Measured_PlanSaysMeasuredAndByWeight — el total dice cuántas salieron medidas y cuántas por peso', () => {
+  const dir = splitLab();
+  const times = timesDir(dir, [passes(3, { 'a-slow.test.sh': 10, 'b-fast.test.js': 20, 'c-skill.test.js': 30 })]);
+  const r = run(['plan', '--of', '1', ...splitArgs(dir, ['a-slow.test.sh', 'b-fast.test.js', 'c-skill.test.js', 'd-medium.test.sh'], times)]);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.match(r.out, /total: 4 suite\(s\) · ~100 s \(2 min\) · 3 medidas en Azure, 1 por peso\n$/, '10 + 20 + 30 medidas y d-medium por su peso (40)');
+});
+
+test('T9 SuitesShard_TrabajoMasCargado_ConNombreYUmbral @story-8.280 @ac-12 @ac-17', () => {
+  // El nocturno escribe, antes de correr, el trabajo más cargado con su número y sus minutos, del mismo reparto que
+  // `plan`; si pasa `job_warn_minutes` del juego, avisa. El juego `pr` no trae umbral, y su `long` no cambia.
+  const nightly = { ...LAB_WEIGHTS, job_warn_minutes: 50, suite_cap: { factor: 2, floor: 180, measured: MEASURED_RULE } };
+  const dir = lab({ weights: { ...nightly, pr: SPLIT_SET } });
+  const names = ['a-slow.test.sh', 'b-fast.test.js', 'c-skill.test.js', 'd-medium.test.sh', 'e-fast.test.js', 'f-new-without-weight.test.js', 'g-weekly.test.sh'];
+  const args = (times, extra = []) => ['--of', '4', '--only', onlyFile(dir, names), ...(times ? ['--measured', times] : []), ...extra,
+    '--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')];
+  // a-slow: 55 min medidos; las demás, 10 min cada una. Cuatro trabajos: a-slow va sola.
+  const times = timesDir(dir, [passes(3, { 'a-slow.test.sh': 3300, 'b-fast.test.js': 600, 'c-skill.test.js': 600, 'd-medium.test.sh': 600,
+    'e-fast.test.js': 600, 'f-new-without-weight.test.js': 600, 'g-weekly.test.sh': 600 })]);
+  const plan = run(['plan', ...args(times)]);
+  const heavyIndex = plan.lines.findIndex((l) => /~3300 s/.test(l)) + 1;
+  assert.ok(heavyIndex > 0, `plan pone a-slow sola: ${plan.out}`);
+  const over = run(['heaviest', ...args(times)]);
+  assert.strictEqual(over.code, 0, over.err);
+  assert.deepStrictEqual(over.lines, [`${heavyIndex}\t3300\t55\tsi`], 'el número, los segundos, los minutos y si pasa el umbral');
+  assert.match(over.err, new RegExp(`trabajo más cargado: el ${heavyIndex} de 4, ~55 min medidos: pasa el umbral de 50 min`));
+  // por peso: a-slow pesa 100 s y no pasa; la frase dice que es por peso
+  const byWeight = run(['heaviest', ...args(null)]);
+  assert.strictEqual(byWeight.code, 0, byWeight.err);
+  assert.match(byWeight.lines[0], /^\d\t\d+\t\d+\tno$/);
+  assert.match(byWeight.err, /min de peso \(por peso: el reloj suele dar más\): no pasa el umbral de 50 min/);
+  // el juego pr no trae umbral: no inventa uno
+  const pr = run(['heaviest', ...args(null, ['--weight-set', 'pr'])]);
+  assert.strictEqual(pr.code, 0, pr.err);
+  assert.match(pr.lines[0], /^\d\t\d+\t\d+\t-$/);
+  assert.match(pr.err, /el juego no trae umbral/);
+  // un umbral roto frena, como cualquier número del juego
+  const broken = lab({ weights: { ...nightly, job_warn_minutes: 'mucho' } });
+  refuses(run(['heaviest', '--of', '2', '--suites', path.join(broken, 'suites.json'), '--weights', path.join(broken, 'weights.json')]), /job_warn_minutes/, 'un umbral que no es número');
+  // AC 17: `long` del juego pr contesta igual que sin la clave nueva del nocturno
+  const plain = lab({ weights: { ...LAB_WEIGHTS, pr: SPLIT_SET } });
+  const longOf = (d) => run(['long', '--of', '2', '--weight-set', 'pr', '--suites', path.join(d, 'suites.json'), '--weights', path.join(d, 'weights.json')]);
+  const before = longOf(plain);
+  const after = longOf(dir);
+  assert.strictEqual(before.code, 0, before.err);
+  assert.deepStrictEqual([after.code, after.out, after.err], [before.code, before.out, before.err], 'long de la validación, byte por byte');
+});
+
+test('SuitesWeights_PrSetHasMeasuredJobNumbers — el juego pr trae lo medido que entra en un trabajo, y de dónde sale', () => {
+  const pr = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8')).pr;
+  assert.strictEqual(pr.job_budget_measured, 1450, 'cuántos trabajos: 725 s de peso por la razón medido/peso (~2,0)');
+  assert.strictEqual(pr.job_deadline_measured, 2650, 'el trabajo largo: (2120 − 720) × 1,9');
+  assert.match(pr.__job_measured || '', /1450/);
+  assert.match(pr.__job_measured || '', /2650/);
+  assert.match(pr.__job_measured || '', /15964/, 'la nota cita las corridas de donde salen los números');
+});
+
+test('Shard_Measured_BadFolderOrNoRule_ExitsTwo — sin carpeta, sin regla o sin los números medidos: sale 2, sin repartir por peso', () => {
+  const dir = splitLab();
+  const names = ['a-slow.test.sh', 'b-fast.test.js'];
+  const listArgs = ['--skills', '/S', '--scripts', '/R'];
+  for (const command of [['plan', '--of', '1'], ['list', '--shard', '1', '--of', '1', ...listArgs], ['jobs', '--max', '2'], ['long', '--of', '1']]) {
+    refuses(run([...command, ...splitArgs(dir, names, path.join(dir, 'no-existe'))]), /--measured/, `${command[0]}: una carpeta que no existe`);
+    refuses(run([...command, ...splitArgs(dir, names, path.join(dir, 'suites.json'))]), /--measured/, `${command[0]}: un archivo en vez de carpeta`);
+    refuses(run([...command, ...splitArgs(dir, names, null), '--measured']), /--measured/, `${command[0]}: --measured sin carpeta`);
+  }
+  const times = timesDir(dir, [passes(3, { 'a-slow.test.sh': 10 })]);
+  const { suite_cap: _cap, ...noCap } = SPLIT_SET;
+  const noRule = splitLab({ ...noCap, suite_cap: { factor: 2, floor: 180 } });
+  refuses(run(['plan', '--of', '1', ...splitArgs(noRule, names, times)]), /suite_cap\.measured/, 'un juego sin la regla de los topes medidos');
+  refuses(run(['plan', '--of', '1', ...splitArgs(splitLab(noCap), names, times)]), /suite_cap\.measured/, 'un juego sin suite_cap');
+  const { job_budget_measured: _b, job_deadline_measured: _d, ...noNumbers } = SPLIT_SET;
+  refuses(run(['jobs', '--max', '2', ...splitArgs(splitLab(noNumbers), names, times)]), /job_budget_measured/, 'jobs sin lo medido que entra en un trabajo');
+  refuses(run(['long', '--of', '1', ...splitArgs(splitLab(noNumbers), names, times)]), /job_deadline_measured/, 'long sin lo medido que entra en 40 min');
+  refuses(run(['plan', '--of', '1', ...splitArgs(splitLab({ ...SPLIT_SET, job_budget_measured: 'mucho' }), names, times)]), /job_budget_measured/, 'un número roto frena');
+  // un renglón roto y uno de otro origen no cuentan: con ellos, a-slow sigue con 2 pasadas y va por su peso. Si así
+  // ninguna suite queda medida, todo va por peso, como sin la opción, y lo dicen los tres: los presupuestos medidos no se
+  // comparan con cargas que son todas de peso.
+  const bad = timesDir(dir, [[...passes(2, { 'a-slow.test.sh': 500 }), [at(5), { 'a-slow.test.sh': [500] }, 'portable']]],
+    { 0: ['{"v":1,"ts":"2026-11-07T10:00:00.000Z","suites":'] });
+  const NONE = /con --measured, ninguna suite junta 3 pasadas medidas en Azure: todo por peso/;
+  const r = run(['plan', '--of', '1', ...splitArgs(dir, ['a-slow.test.sh'], bad)]);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.match(r.out, /total: 1 suite\(s\) · ~151 s \(3 min\) · 0 sin peso medido/, 'la línea de siempre, con su peso de pr');
+  assert.match(r.out, NONE);
+  const jobs = run(['jobs', '--max', '2', ...splitArgs(dir, ['a-slow.test.sh', 'b-fast.test.js'], bad)]);
+  assert.match(jobs.err, /~153 s de peso · 60 s por trabajo/, 'el presupuesto de peso, no el medido');
+  assert.match(jobs.err, NONE);
+  const long = run(['long', '--of', '2', ...splitArgs(dir, ['a-slow.test.sh', 'b-fast.test.js'], bad)]);
+  assert.match(long.err, /s de peso por trabajo y en uno de 40 min entran ~80/, 'el plazo de peso, no el medido');
+  assert.match(long.err, NONE);
+});
+
+test('Shard_WithoutMeasured_SameBytesAsBefore — sin --measured, list, plan, merge, jobs y long dicen lo de siempre', () => {
+  // La salida de antes, escrita a mano, con un juego que ya trae los números medidos: sin la opción no se usan.
+  const dir = splitLab();
+  const files = ['--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json'), '--weight-set', 'pr'];
+  const roots = ['--skills', '/S/skills', '--scripts', '/R/scripts'];
+  const one = run(['list', '--shard', '1', '--of', '2', ...roots, ...files]);
+  const two = run(['list', '--shard', '2', '--of', '2', ...roots, ...files]);
+  assert.strictEqual(one.out, '/R/scripts/tests/a-slow.test.sh\n');
+  assert.strictEqual(two.out, '/R/scripts/tests/b-fast.test.js\n/S/skills/tycon-pipeline/scripts/tests/c-skill.test.js\n/R/scripts/tests/d-medium.test.sh\n'
+    + '/R/scripts/tests/e-fast.test.js\n/R/scripts/tests/f-new-without-weight.test.js\n/R/scripts/tests/g-weekly.test.sh\n');
+  assert.strictEqual(run(['plan', '--of', '2', ...files]).out, 'trabajo 1 de 2: 1 suite(s) · ~151 s (3 min)\ntrabajo 2 de 2: 6 suite(s) · ~96 s (2 min)\n'
+    + 'total: 7 suite(s) · ~247 s (4 min) · 3 sin peso medido (2 s cada una por defecto)\n');
+  const jobs = run(['jobs', '--max', '3', ...files]);
+  assert.strictEqual(jobs.out, '3\n');
+  assert.strictEqual(jobs.err, 'suites: 3 trabajo(s) de un máximo de 3 · ~247 s de peso · 60 s por trabajo\n');
+  const long = run(['long', '--of', '2', ...files]);
+  assert.strictEqual(long.out, 'si\n');
+  assert.strictEqual(long.err, 'suites: ~124 s de peso por trabajo y en uno de 40 min entran ~80: van los trabajos largos (hacen falta ~62 min)\n');
+  const pr = ['--weight-set', 'pr'];
+  for (const i of [1, 2]) artifact(dir, i, 2, { only: pr });
+  const m = merge(dir, 2, pr);
+  assert.strictEqual(m.out, 'trabajo 1 de 2: terminó · 1 ejecución(es) · 0 en rojo o ausente(s)\ntrabajo 2 de 2: terminó · 6 ejecución(es) · 0 en rojo o ausente(s)\n');
+  assert.strictEqual(m.err, '');
+});
+
+// 🔴 Falla con: la suite del árbol privado cortada de noche a los 180 s cuando tarda 150 (su peso anotado era 33).
+test('SuitesShardCaps_TestGatePrivateTree_UsesMeasuredWeight @story-8.268 @ac-5', () => {
+  const name = 'test-gate-private-tree.test.js';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-shard-'));
+  labs.push(dir);
+  const caps = run(['caps', '--only', onlyFile(dir, [name]), '--suites', REAL_SUITES, '--weights', REAL_WEIGHTS]);
+  assert.strictEqual(caps.code, 0, caps.err);
+  assert.deepStrictEqual(caps.lines, [`${name}\t300`], 'el doble de lo medido (150 s), por encima del piso de 180');
+  const seen = [];
+  for (let i = 1; i <= 4; i += 1) {
+    const r = run(['list', '--shard', String(i), '--of', '4', '--skills', '/S/skills', '--scripts', '/R/scripts', '--suites', REAL_SUITES, '--weights', REAL_WEIGHTS]);
+    assert.strictEqual(r.code, 0, `trabajo ${i} de 4: ${r.err}`);
+    seen.push(...r.lines.filter((l) => l.endsWith(`/${name}`)).map(() => i));
+  }
+  assert.strictEqual(seen.length, 1, `la suite va en exactamente un trabajo del reparto de la noche: ${JSON.stringify(seen)}`);
+});
+
+// ── el trabajo del banco también lleva suites (`--bench-load`) ─────────────────────────────────────────────────────
+// Con dos carriles en la organización, el banco y dos trabajos de suites son tres pedidos y la segunda pata espera
+// carril. Con `--bench-load <segundos>` el trabajo del banco entra al reparto
+// cargado de entrada (`bench_rate` × (los segundos del banco + los topes de las exclusivas)) y nunca pasa `job_deadline`.
+// Laboratorio: exclusivas a-slow (tope propio 10) y e-fast (5): 15 s de topes; comunes d-medium 40, g-weekly 30,
+// c-skill 20, b-fast 3 y f-new 3 (96 s); bench_rate 1, job_budget 60, job_deadline 120.
+const BENCH_SET = { default: 3, job_budget: 60, job_deadline: 120, bench_rate: 1,
+  suite_cap: { factor: 1, floor: 1, per_suite: { 'a-slow.test.sh': 10, 'e-fast.test.js': 5 } } };
+const benchLab = (set = BENCH_SET, suites = EXCL_SUITES) => lab({ suites, weights: { ...LAB_WEIGHTS, pr: set } });
+const benchArgs = (dir, seconds, extra = []) => ['--weight-set', 'pr', ...APART, ...(seconds === null ? [] : ['--bench-load', String(seconds)]),
+  '--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json'), ...extra];
+const benchList = (dir, shard, of, seconds, extra = []) => run(['list', '--shard', String(shard), '--of', String(of), '--skills', '/S/skills', '--scripts', '/R/scripts', ...benchArgs(dir, seconds, extra)]);
+
+test('T49 SuitesShard_BenchLoad_BenchJobTakesSuitesExclusivesFirst — el del banco lleva comunes, la unión es la lista y ninguna corre dos veces', () => {
+  const dir = benchLab();
+  for (const seconds of [0, 30, 100]) {
+    for (const of of [1, 2]) {
+      const seen = [];
+      for (let i = 1; i <= of; i += 1) {
+        const r = benchList(dir, i, of, seconds);
+        assert.strictEqual(r.code, 0, `banco ${seconds} s, trabajo ${i} de ${of}: ${r.err}`);
+        assert.ok(r.lines.length > 0, `banco ${seconds} s, trabajo ${i} de ${of}: ningún trabajo de suites queda vacío`);
+        seen.push(...names(r));
+      }
+      const bench = benchList(dir, 'bench', of, seconds);
+      assert.strictEqual(bench.code, 0, bench.err);
+      assert.deepStrictEqual(names(bench).slice(0, 2), EXCL, 'primero las que corren solas, en el orden de suites.json');
+      assert.deepStrictEqual([...seen, ...names(bench)].sort(), [...ALL].sort(), `banco ${seconds} s, ${of} trabajo(s): la lista entera, ninguna dos veces`);
+    }
+  }
+  // banco en 0 (el cambio no lo corre): arranca con los 15 s de topes y se lleva g-weekly, b-fast y f-new (51 contra 60)
+  assert.deepStrictEqual(names(benchList(dir, 'bench', 1, 0)), [...EXCL, 'b-fast.test.js', 'f-new-without-weight.test.js', 'g-weekly.test.sh']);
+  assert.deepStrictEqual(names(benchList(dir, 1, 1, 0)), ['c-skill.test.js', 'd-medium.test.sh']);
+  // banco en 30: arranca con 45 y se lleva c-skill y las dos livianas (71 contra 70)
+  assert.deepStrictEqual(names(benchList(dir, 1, 1, 30)), ['d-medium.test.sh', 'g-weekly.test.sh']);
+  // banco en 100: arranca con 115, más que cualquier trabajo de suites: no se lleva ninguna común
+  assert.deepStrictEqual(names(benchList(dir, 'bench', 1, 100)), EXCL);
+});
+
+test('T49 SuitesShard_BenchLoad_NeverPassesItsDeadline — el trabajo del banco no pasa lo que entra en 40 min, aunque sea el más liviano', () => {
+  // d-medium pesa 200: el trabajo de suites queda muy cargado, pero el del banco (115 de entrada, plazo 120) sólo
+  // puede llevar las que entran en 5 s: b-fast y una más de 3 no (3 + 3 = 6 > 5).
+  const dir = benchLab({ ...BENCH_SET, weights: { 'd-medium.test.sh': 200 } });
+  const bench = benchList(dir, 'bench', 1, 100);
+  assert.deepStrictEqual(names(bench), [...EXCL, 'b-fast.test.js'], 'una liviana entra; c-skill (20), g-weekly (30) ni la segunda de 3 no');
+  const plan = run(['plan', '--of', '1', ...benchArgs(dir, 100)]);
+  assert.strictEqual(plan.code, 0, plan.err);
+  assert.match(plan.out, /trabajo del banco: 2 suite\(s\) que corren solas y 1 del reparto \(~3 s\) · arranca cargado con ~115 \(el banco, 100 s, y los topes de las que corren solas, 15 s\) · lleva hasta ~120/, plan.out);
+  assert.match(plan.out, /trabajo 1 de 1: 4 suite\(s\) · ~253 s/, '200 + 30 + 20 + 3');
+  // `long` mira el trabajo de suites más cargado contra el plazo: 253 > 120, van los largos
+  const long = run(['long', '--of', '1', ...benchArgs(dir, 100)]);
+  assert.strictEqual(long.out, 'si\n', long.err);
+  assert.match(long.err, /~253 s de peso en el trabajo de suites más cargado \(el del banco se lleva ~3\)/);
+});
+
+test('T49 SuitesShard_BenchLoad_JobsCountsWhatTheBenchJobCarries — pide 1 trabajo de suites donde antes pedía 2', () => {
+  const dir = benchLab();
+  const jobs = (seconds) => run(['jobs', '--max', '3', ...benchArgs(dir, seconds)]);
+  // sin la opción: 96 s de comunes / 60 → 2
+  assert.strictEqual(jobs(null).out, '2\n');
+  // banco en 0: arranca con 15 y entran 105 más en su plazo: los 96 caben, 1 trabajo de suites
+  const light = jobs(0);
+  assert.strictEqual(light.out, '1\n', light.err);
+  assert.match(light.err, /el trabajo del banco arranca con ~15 y lleva ~105 más del reparto/);
+  // banco en 100: arranca con 115, le quedan 5: los trabajos de suites llevan 91 → 2, como antes
+  assert.strictEqual(jobs(100).out, '2\n');
+  // banco más pesado que su plazo: no lleva nada, y nunca se piden MENOS trabajos que sin la opción
+  assert.strictEqual(jobs(500).out, '2\n');
+  const over = run(['long', '--of', '2', ...benchArgs(dir, 500)]);
+  assert.match(over.err, /el trabajo del banco ya arranca con ~515, más de lo que entra en él/, 'lo dice');
+});
+
+test('T49 SuitesShard_BenchLoad_MergeExpectsWhatTheBenchJobRan — el veredicto junta las comunes del banco, y sin lo suyo son no medidas', () => {
+  const dir = benchLab();
+  const opts = ['--weight-set', 'pr', ...APART, '--bench-load', '0'];
+  artifact(dir, 1, 1, { only: opts });
+  artifact(dir, 'bench', 1, { only: opts });
+  let m = merge(dir, 1, opts);
+  assert.strictEqual(m.code, 0, m.err);
+  assert.deepStrictEqual([...m.ran].sort(), [...ALL].sort(), 'corrieron todas');
+  assert.deepStrictEqual(m.failures, []);
+  assert.match(m.out, /trabajo del banco: terminó · 5 ejecución\(es\)/);
+  // el del banco no publicó: sus exclusivas Y sus comunes son no medidas, nunca verdes
+  fs.rmSync(path.join(dir, 'artifacts', 'suites-shard-bench-a1'), { recursive: true, force: true });
+  m = merge(dir, 1, opts);
+  assert.deepStrictEqual([...m.failures].sort(), [...EXCL, 'b-fast.test.js', 'f-new-without-weight.test.js', 'g-weekly.test.sh'].map((n) => `${n}(no-medida)`).sort());
+  // merge sin la opción espera otro reparto: las comunes del banco no estaban en el trabajo 1, así que no le cree
+  artifact(dir, 'bench', 1, { only: opts });
+  m = merge(dir, 1, ['--weight-set', 'pr', ...APART]);
+  assert.ok(m.failures.some((f) => f.endsWith('(no-medida)')), `con otro reparto lo publicado no cuadra: ${m.failures}`);
+});
+
+test('T49 SuitesShard_BenchLoad_NothingForTheBenchJob_Exits3 — sin exclusivas y sin comunes que le toquen, el del banco sale 3', () => {
+  const dir = benchLab(BENCH_SET, LAB_SUITES);
+  const r = benchList(dir, 'bench', 1, 500);
+  assert.strictEqual(r.code, 3, `sale 3 (salió ${r.code}) ${r.err}`);
+  assert.strictEqual(r.out, '');
+  assert.match(r.err, /ninguna común le tocó/);
+  for (const i of [1]) artifact(dir, i, 1, { only: ['--weight-set', 'pr', ...APART, '--bench-load', '500'] });
+  const m = merge(dir, 1, ['--weight-set', 'pr', ...APART, '--bench-load', '500']);
+  assert.deepStrictEqual(m.failures, [], 'el veredicto no espera nada del banco');
+  assert.doesNotMatch(m.out, /trabajo del banco/);
+});
+
+test('T49 SuitesShard_BenchLoad_Measured_UsesTheMeasuredRate — con --measured, la carga sale de bench_rate_measured y el plazo medido', () => {
+  const dir = benchLab({ ...BENCH_SET, bench_rate_measured: 2, job_budget_measured: 60, job_deadline_measured: 300,
+    suite_cap: { ...BENCH_SET.suite_cap, measured: MEASURED_RULE } });
+  const times = timesDir(dir, [passes(3, { 'd-medium.test.sh': 50, 'g-weekly.test.sh': 30 })]);
+  const plan = run(['plan', '--of', '1', ...benchArgs(dir, 10, ['--measured', times])]);
+  assert.strictEqual(plan.code, 0, plan.err);
+  assert.match(plan.out, /arranca cargado con ~50 \(el banco, 10 s, y los topes de las que corren solas, 15 s\) · lleva hasta ~300/, '2 × (10 + 15)');
+  const noRate = benchLab({ ...BENCH_SET, job_deadline_measured: 300, suite_cap: { ...BENCH_SET.suite_cap, measured: MEASURED_RULE } });
+  const t2 = timesDir(noRate, [passes(3, { 'd-medium.test.sh': 50 })]);
+  refuses(run(['plan', '--of', '1', ...benchArgs(noRate, 10, ['--measured', t2])]), /bench_rate_measured/, 'sin el número medido no se adivina');
+});
+
+test('T49 SuitesShard_BenchLoad_BadRequests_Exit2 — sin exclusive-apart, un número malo o sin los números del juego: sale 2, sin lista', () => {
+  const dir = benchLab();
+  const files = ['--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json'), '--weight-set', 'pr'];
+  refuses(run(['plan', '--of', '1', ...files, '--bench-load', '600']), /--bench-load va sólo con --exclusive-apart/, 'sin --exclusive-apart');
+  for (const bad of ['x', '-1', '1e3', '']) refuses(run(['plan', '--of', '1', ...files, ...APART, '--bench-load', bad]), /--bench-load tiene que ser/, `«${bad}»`);
+  refuses(run(['plan', '--of', '1', ...files, ...APART, '--bench-load']), /--bench-load tiene que ser/, 'sin número');
+  const { bench_rate: _r, ...noRate } = BENCH_SET;
+  refuses(run(['list', '--shard', 'bench', '--of', '1', '--skills', '/S', '--scripts', '/R', ...benchArgs(benchLab(noRate), 0)]), /bench_rate/, 'sin bench_rate');
+  const { job_deadline: _d, ...noDeadline } = BENCH_SET;
+  refuses(run(['jobs', '--max', '2', ...benchArgs(benchLab(noDeadline), 0)]), /job_deadline/, 'sin el plazo');
+  const { suite_cap: _c, ...noCap } = BENCH_SET;
+  refuses(run(['merge', '--of', '1', '--artifacts', dir, '--out', path.join(dir, 'm'), ...benchArgs(benchLab(noCap), 0)]), /suite_cap/, 'sin topes');
+  refuses(run(['plan', '--of', '1', ...benchArgs(benchLab({ ...BENCH_SET, bench_rate: 0 }), 0)]), /bench_rate/, 'bench_rate en 0');
+});
+
+test('T49 SuitesShard_BenchLoad_WithoutTheOption_SameBytes — sin la opción, el juego con bench_rate dice lo de siempre', () => {
+  const { bench_rate: _r, ...plain } = BENCH_SET;
+  const a = benchLab(); const b = benchLab(plain);
+  for (const args of [['plan', '--of', '2'], ['jobs', '--max', '3'], ['long', '--of', '2'], ['list', '--shard', 'bench', '--of', '2', '--skills', '/S', '--scripts', '/R'],
+    ['list', '--shard', '1', '--of', '2', '--skills', '/S', '--scripts', '/R']]) {
+    const x = run([...args, ...benchArgs(a, null)]); const y = run([...args, ...benchArgs(b, null)]);
+    assert.strictEqual(x.out, y.out, args.join(' '));
+    assert.strictEqual(x.err.replace(a, b), y.err, args.join(' '));
+  }
+});
+
+test('T49 SuitesWeights_PrSetHasBenchRates — el juego pr trae cuánto reparto hace un segundo de reloj, y de dónde sale; la lista real reparte con el banco', () => {
+  const pr = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8')).pr;
+  assert.ok(pr.bench_rate > 0 && pr.bench_rate_measured > 0, 'los dos números');
+  assert.match(pr.__bench_rate, /1,9/, 'con su origen');
+  const r = run(['plan', '--of', '1', '--weight-set', 'pr', ...APART, '--bench-load', '600', '--suites', REAL_SUITES, '--weights', REAL_WEIGHTS]);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.match(r.out, /trabajo del banco: \d+ suite\(s\) que corren solas y \d+ del reparto/);
 });

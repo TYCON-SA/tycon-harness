@@ -17,6 +17,10 @@
  *
  * Las raíces se fijan UNA vez, en el primer proceso, y viajan por el ambiente: un hijo con `HOME` de juguete no las
  * vuelve a calcular (frenaría su propio laboratorio).
+ *
+ * Las carpetas admitidas (`TYCON_REAL_HOME_GUARD_ALLOW`, una lista JSON) se pueden escribir aunque caigan adentro de una
+ * raíz: la raíz del repo de un humo aislado (skills/tycon-pipeline/scripts/lib/isolated-run.js), que puede vivir bajo
+ * `.claude/worktrees/`.
  */
 const fs = require('fs');
 const os = require('os');
@@ -25,6 +29,7 @@ const { fileURLToPath } = require('url');
 
 const ROOTS_VAR = 'TYCON_REAL_HOME_GUARD_ROOTS';
 const LOG_VAR = 'TYCON_REAL_HOME_GUARD_LOG';
+const ALLOW_VAR = 'TYCON_REAL_HOME_GUARD_ALLOW';
 const FOLD = process.platform === 'darwin' || process.platform === 'win32';   // discos que no distinguen mayúsculas
 const fold = (p) => (FOLD ? p.toLowerCase() : p);
 
@@ -47,6 +52,8 @@ if (OWNER) {
 }
 const ROOTS = JSON.parse(process.env[ROOTS_VAR]).map(fold);
 const LOG = process.env[LOG_VAR];
+let ALLOW = [];
+try { ALLOW = (JSON.parse(process.env[ALLOW_VAR] || '[]') || []).map(String).map(fold); } catch (_) { ALLOW = []; }
 
 const asPath = (p) => {
   if (typeof p === 'string') return p;
@@ -54,7 +61,8 @@ const asPath = (p) => {
   if (p instanceof URL) { try { return fileURLToPath(p); } catch (_) { return null; } }
   return null;   // un descriptor ya abierto: lo frenó (o no) quien lo abrió
 };
-const under = (p) => { const a = fold(p); return ROOTS.some((r) => a === r || a.startsWith(r + path.sep)); };
+const dentro = (a, r) => a === r || a.startsWith(r + path.sep);
+const under = (p) => { const a = fold(p); return !ALLOW.some((r) => dentro(a, r)) && ROOTS.some((r) => dentro(a, r)); };
 /** ¿La ruta cae en la casa real? Se mira como se escribió y por su carpeta real (un enlace en el camino). */
 function hits(p, { follow = false } = {}) {
   const s = asPath(p);
@@ -76,7 +84,11 @@ function hits(p, { follow = false } = {}) {
 }
 function refuse(fn, targets) {
   const where = (new Error().stack || '').split('\n').slice(3, 8).map((l) => l.trim());
-  try { raw.appendFileSync(LOG, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, fn, targets, argv: process.argv.slice(1, 4), stack: where })}\n`); } catch (_) { /* sin registro igual frena */ }
+  try { raw.appendFileSync(LOG, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, fn, targets, argv: process.argv.slice(1, 4), stack: where })}\n`); } catch (le) {
+    // sin registro igual frena; y como quien lo lee no se va a enterar, lo dice y este proceso no sale 0
+    try { process.stderr.write(`real-home-guard: frené ${fn} sobre ${targets.join(' → ')} y no pude anotarlo (${le.code || le.message})\n`); } catch (_) { /* sin salida de error */ }
+    process.on('exit', (code) => { if (!code) process.exitCode = 3; });
+  }
   const e = new Error(`real-home-guard: ${fn} sobre la casa real, frenado: ${targets.join(' → ')}`);
   e.code = 'EPERM';
   return e;
@@ -146,4 +158,4 @@ if (OWNER) {
   });
 }
 
-module.exports = { attempts, describe, roots: () => JSON.parse(process.env[ROOTS_VAR]), ROOTS_VAR, LOG_VAR };
+module.exports = { attempts, describe, roots: () => JSON.parse(process.env[ROOTS_VAR]), ROOTS_VAR, LOG_VAR, ALLOW_VAR };

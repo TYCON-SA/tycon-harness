@@ -181,6 +181,7 @@
         "values": [
           "FULL_SUITE_RUN",
           "SESSION_GUARD_OK",
+          "STASH_GUARD_OK",
           "GIT_NO_VERIFY",
           "DOD_EVIDENCE_MANUAL_WRITE",
           "PR_A_MANO",
@@ -200,6 +201,7 @@
           "MARKER_DROPS_PLAN",
           "MARKER_SET_CIERRE_DISCARDED",
           "MARKER_SET_FIELD_DISCARDED",
+          "MARKER_SET_STEPS_DISCARDED",
           "STORY_SKILL_BYPASS",
           "STORY_SKILL_BYPASS_USED",
           "LIVENESS_PRECOMMIT_OFF",
@@ -228,7 +230,8 @@
           "new-names",
           "spanish-names",
           "public-push-guard",
-          "internal-history"
+          "internal-history",
+          "session-cap-guard"
         ]
       },
       "frenos_escapes": {
@@ -481,12 +484,6 @@
       "bad_max": 0.5,
       "direction": "mayor_es_mejor",
       "_note": "vista de ejecuciones (2.14): qué fracción llega al paso 8"
-    },
-    "corridas_con_error": {
-      "ok_max": 0.4,
-      "bad_min": 0.8,
-      "direction": "menor_es_mejor",
-      "_note": "vista de ejecuciones (2.14): ejecuciones donde un control encontró un error — es el control funcionando, así que el rojo recién con 8 de 10"
     }
   },
   "params": {

@@ -1,6 +1,6 @@
 # Aprobar el plan
 
-**Objetivo**: pedir aprobación explícita del usuario antes de que BMAD ejecute el plan.
+**Objetivo**: pedir aprobación explícita del usuario antes de ejecutar el plan.
 
 
 > ⏱️ **Espera humana**: este paso es uno de los dos que miden cuánto se esperó a una
@@ -8,31 +8,126 @@
 > arranque de «Aprobar el plan»). Si se presenta primero y se cierra el anterior después, la espera queda
 > contada como trabajo del paso anterior.
 
-## Política Nivel 2 — auto-aprobación de planes LOW-risk
+## Quién aprueba el plan
 
-ANTES de pausar, correr:
+**Un plan de rutina se aprueba con el aprobado de su revisión, con o sin coordinadora; uno delicado, siempre el dev.**
+Sin revisión aprobada no se aprueba solo: ni el de riesgo bajo ni por la sesión que lo escribió, y la opción vieja de
+aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
 
-```bash
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class --story <story_path>
-```
+- **una persona**, en la ventana de permiso; donde la ventana no llega (una pestaña sin permisos, una sesión de fondo),
+  con un click en el cuadro de opciones o un «aprobado» escrito, según `guides/firmas-del-arnes.md`, «Aprobar sin
+  terminal»; o en su terminal (`--approved "<su respuesta>"`, o `--terminal`); o
+- **la revisión automática, en un plan de rutina** (`plan_review.routine_approval: review`, de fábrica): con
+  coordinadora, ella firma por delegación con la revisión que lanzó; sin coordinadora, `complete-step approve-plan` sin
+  `--approved` cierra con el «aprobado» de la revisión que lanzó la propia sesión. Con `plan_review.routine_approval:
+  person` (o la variable `TYCON_PLAN_ROUTINE_APPROVAL=person` en la máquina), lo aprueba siempre una persona. Una story
+  con pantalla tampoco se aprueba sin click: la maqueta la ve una persona. La revisión es el pase adversarial en **modo
+  plan**, sobre la story, el plan y el repo, nunca sobre el hilo de la sesión que planeó. De fábrica corre una sola
+  lente, «suposición falsa» (lo que el plan cree del código y no es cierto). Antes de cerrarlo, el plan ya pasó por la
+  pasada de suposiciones de quien lo escribió (`step-03-plan.md`). La organización puede sumar las otras
+  (`plan_review.lenses`). Corre con el revisor que elige la organización (`review_runner`; de fábrica, Claude) y sólo
+  un hallazgo confirmado de gravedad «defecto» la rechaza (`review.blocking_severity`); lo demás confirmado son notas
+  para implementar. La guía entera: `guides/automatic-reviews.md`.
 
-- **risk=LOW** (criterios: sin `.sql`/drizzle en scope, sin `signed_for_sprint` ni `signed_ac_ref`, ≤6 archivos en scope, sin paths auth/security/payment, sin bloque `pipelines:`) → el plan se **AUTO-APRUEBA** y continúa a «Implementar» **sin esperar respuesta**. El gate adicional de backend "patrón de referencia verificado" (abajo) aplica igual antes de auto-aprobar.
-- 📋 **El plan se muestra siempre, aunque se apruebe solo.** Es lo único que la persona ve de qué se va a hacer. Con
-  LOW, el orden es: (1) el plan escrito en `step-02-bmad-plan.md` de la carpeta de la corrida; (2) **un mensaje de texto
-  tuyo** con una línea «El plan se aprobó solo (riesgo bajo: <criterios en llano>)» y debajo ese plan tal cual, sin
-  resumirlo — la persona no ve el archivo, ni la salida de los comandos, ni tu razonamiento: sólo tus mensajes;
-  (3) recién después, `complete-step approve-plan --auto-approved`. El comando lee la conversación de la sesión y no cierra si el
-  plan no está en tus mensajes. Si no puede leer la conversación (Codex, u otra herramienta que no la guarda), falla
-  cerrado: el plan no se aprueba solo, se le muestra a la persona, se le pregunta y se cierra con `--approved`. Por
-  qué: medido en la primera historia de un dev nuevo, con riesgo bajo el plan se aprobaba y no aparecía, aunque el
-  cierre del paso lo imprimiera; el dev no veía qué se iba a hacer.
+**El flujo, paso por paso.**
+
+1. **La sesión termina el plan** y lo da por cerrado: `pipeline.js next` llega a «Aprobar el plan» y trae
+   `plan_review_action`, lo que dice la matriz de la organización (`plan_review`) para este plan: `run` (revisar),
+   `ask` (preguntarle al dueño), `wait` (esperar al dueño) o `skip` (seguir sin revisión), con el motivo y, si toca, el
+   comando. `complete-step approve-plan` lo vuelve a decir. La revisión corre sobre el plan cerrado, nunca por cada
+   edición.
+2. **Se pregunta o no.** En una delicada se revisa siempre (`plan_review.delicate: always`). En una de rutina, de
+   fábrica se le pregunta al dueño: justo antes de mostrarle el cuadro, `marker.js review-ask --kind plan`; con la
+   respuesta, `marker.js review-answer --kind plan --choice review|skip|wait` (la coordinadora, con `--for-session
+   <sesión>`). Con el dueño ausente (la marca de ausente, o la pregunta sin respuesta pasados los minutos de
+   `plan_review.owner_away_minutes`), según `plan_review.routine_owner_away`: revisar sin preguntar, esperar o seguir sin
+   revisión. Con «seguir sin revisión», el plan lo firma el dueño.
+3. **Quién lanza la revisión.** Se lanza con «Armar el plan» cerrado y sin una pregunta abierta a la persona sobre esta
+   revisión (salvo que cuente como ausente): si no, `plan-review` se niega sin lanzar nada y dice por qué.
+   - **Con coordinadora**, la lanza la coordinadora: `marker.js plan-review --for-session <sesión>` prepara la revisión y devuelve los args
+     del pase (`modo: 'plan'`, con su `pedido`, un número al azar de esta revisión) y en `comando` la línea que lo corre
+     con el revisor de la organización. Si la sesión tiene la herramienta Workflow, puede usarla con los mismos args.
+     Después: `marker.js plan-review --for-session <sesión> --result <resultado.json> --model opus`. Un resultado sin
+     ese número, o con el de otra revisión, queda sin veredicto; uno que no se puede leer, también, y el comando sale 3.
+     Sin herramienta para correrlo: `--no-tool "<motivo>"`.
+   - **Sin coordinadora**, la propia sesión: `marker.js plan-review` (sin `--for-session`) prepara la revisión de su
+     plan, con el mismo comando y la misma forma de anotar el resultado. El resultado vale sólo desde la ruta que nombró
+     la preparación (el `--out` del comando): uno de otra ruta queda sin veredicto, «el resultado no vino del corredor».
+     En una story de rutina con `plan_review.routine_approval: review` (de fábrica) su «aprobado» aprueba el plan; en
+     una delicada o con `person` es **informativa**: informa, el plan lo aprueba el dueño y su cuadro dice el resultado.
+     Lo que garantiza (y lo que no): `guides/automatic-reviews.md`, «Qué garantiza la revisión que lanza la propia
+     sesión».
+4. **Los cuatro resultados.**
+   - **4a. Aprobado** (o aprobado con notas), en una story de rutina con `plan_review.routine_approval: review`. Con
+     coordinadora y `plan-approval` delegado, ella firma `complete-step approve-plan --for-session <sesión> --approved
+     revisión` (vía `review` en el registro de firmas) y al dueño no le llega nada. El texto de la aprobación lo arma el
+     arnés con quién lanzó la revisión y su veredicto: por la revisión, cualquier otro texto en `--approved` se rechaza,
+     porque podría atribuir una firma que nadie dio. Sin coordinadora, la sesión
+     cierra con `complete-step approve-plan` sin `--approved`: el guion vuelve a comprobar la revisión (la misma corrida,
+     la misma huella del plan, de la story y de la parte) y aprueba sin click, a nombre de «revisión automática»; si el
+     plan cambió después de la revisión, frena y hay que volver a lanzarla. Con `person`, sin delegación o en una
+     delicada, le llega al dueño con «revisado, sin hallazgos» (o con sus notas).
+   - **4b. Rechazado.** `pipeline.js next` le muestra los hallazgos a la sesión (`plan_review`). La sesión corrige el
+     plan y lo vuelve a cerrar, y la revisión vuelve a correr. No llega al dueño mientras siga rechazado, salvo con
+     `plan_review.rejected_reaches_owner` en sí o al llegar al tope de rechazos seguidos (`review.max_rounds`, de
+     fábrica 3): entonces llega con los hallazgos y «rechazado N veces seguidas», y el dueño decide partir la historia o
+     firmar una vuelta extra. Un plan delicado con su revisión en rechazo no se aprueba por la delegación, por la
+     terminal ni con un «aprobado» escrito: se corrige el plan y la revisión vuelve a correr. Sólo el dueño puede
+     aprobarlo igual, con su click en el cuadro; el texto lo arma el arnés («rechazo vencido por decisión de la persona, con su click», con
+     el veredicto que se pisa).
+   - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan o la historia
+     cambiaron mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño. No se
+     relanza por cada cambio: se juntan todos, y se relanza cuando el plan y la historia quedaron como van a quedar.
+     De la historia cuenta lo que define la construcción: el registro de después («Dev Agent Record», su «Change Log»,
+     los «Follow-ups», «Ajustes después de la firma») y el `status` no la cambian; cualquier otra palabra, sí, y ante una forma que no se lee con
+     certeza (un título con sangría o subrayado, un comentario, un bloque de código sin cerrar) cuenta la historia entera.
+   - **Los ajustes de redacción mientras se revisa.** Un ejemplo, una palabra o los hallazgos de la vuelta anterior no
+     se escriben en el cuerpo mientras corre o antes de firmar: van como `- [ ] …` en «## Ajustes después de la firma»,
+     que no tira la revisión. Después de firmar el plan se pasan al cuerpo y se marcan `- [x]`. Los revisores del código y
+     el pase adversarial leen esa sección como parte de lo pedido, y una historia en `done` con un ajuste sin pasar no se
+     commitea (el control del encabezado, `lint-story-frontmatter.js`).
+   - **La cuarta vuelta.** Tres vueltas de la revisión del plan de la misma historia (por cualquier motivo: cortadas,
+     sin veredicto, rechazadas o aprobadas) se lanzan sin preguntar; la cuarta no. `plan-review` se niega hasta que la
+     persona responde «review» a su pregunta (`review-ask --kind plan` y `review-answer`), o firma la vuelta extra de esa
+     historia. Su ausencia no la destraba.
+   - **4d. Sin revisión.** Con `skip`, con `never` o eligiendo seguir sin revisión: el plan lo firma el dueño, y su
+     cuadro lo dice («sin revisión (se eligió seguir)» o «sin revisión (el perfil no revisa)»).
+
+**Un plan delicado espera al dev.** `pipeline.js risk-class --story <story_path>` dice si la story es **delicada**
+(`delicate`): rutas sensibles en la story o en el plan, la superficie compartida, producción, el portón de CI, el
+instalador, una migración, la constancia de controles, o `sensible:` en el frontmatter; en duda, delicada. Su plan es
+nivel 2: lo aprueba el dev, también de noche. La revisión corre sobre él, pero sólo ataca y avisa. La única salida sin
+el dev: el perfil del equipo delega `plan-approval:delicada`, y entonces lo aprueba la coordinadora con el «aprobado» de
+la revisión que ella lanzó sobre ese mismo plan (nunca la revisión de la propia sesión).
+
+**El cuadro de la firma dice el resultado.** La pregunta de `plan-approval` trae una línea «Revisión automática: …» con
+el resultado de la revisión de ese mismo plan, y si el plan cambió después, que la revisión es de otra versión.
+
+Al firmar, el guion vuelve a calcular la huella del plan y de la story, y si es delicada: una revisión de otro plan, de
+otra corrida o de otra sesión no cuenta.
+
+- 📋 **El plan se muestra siempre.** Es lo único que la persona ve de qué se va a hacer: (1) el plan escrito en
+  `step-02-bmad-plan.md` de la carpeta de la corrida; (2) **un mensaje de texto tuyo** con ese plan tal cual, sin
+  resumirlo — la persona no ve el archivo, ni la salida de los comandos, ni tu razonamiento: sólo tus mensajes.
 - 🗣️ **La pregunta a la persona trae el plan entero**: en tu mensaje o dentro de la pregunta con opciones (en su texto
   o en la vista previa de una opción). Nunca un «¿lo apruebo?» a secas. Cuando el comando frena, su salida normal trae
   el bloque «Mostrale esto a la persona» con el plan: copialo tal cual. Si creés que ya lo mostraste y el comando dice
   que no, no alcanza: escribilo de nuevo. Con riesgo bajo, `--approved` también comprueba que el plan se vio: si la
   conversación se lee y el plan no está en lo que la persona vio, no cierra. Por qué: medido en un laboratorio, el
   agente dijo que el plan ya estaba en sus mensajes sin haberlo mostrado, preguntó a secas y la persona aprobó sin
-  verlo.
+  verlo. **Salvo con el cuadro de la firma**: si el plan trae «## Qué hace» y «## Archivos», el cuadro muestra qué hace,
+  cuántos archivos toca y de qué zonas, y dónde está el plan completo, y el click en ese cuadro cuenta como plan visto. El plan
+  entero se le muestra si lo pide. Vale sólo el click: un «aprobado» escrito, la ventana o la terminal no muestran el
+  cuadro. Sin esas dos secciones, sigue haciendo falta el plan entero.
+- ❓ **La pregunta de la firma sale del plan, no de la cita.** El cuadro que da el freno dice, en este orden: lo que se
+  aprueba, la historia (con su título si entra) y la sesión, el «Qué hace» del plan (2 líneas de hasta 140 letras), sus
+  «Archivos» en cantidad y zonas («11 archivos: 6 de código (lib y tools), 4 pruebas, 1 historia»; las rutas no se
+  muestran), dónde está el plan completo dicho en palabras, qué pasa si sale mal y, al final, la cita que pusiste en
+  `--approved`. La cita no reemplaza nada de lo anterior. El cuadro entra en el tope de un teléfono (600 letras con su
+  sello): lo que no entra, con la ruta del plan, va al detalle que owner-next imprime debajo de la pregunta, y se
+  muestra si la persona lo pide. Si el plan no tiene `## Qué hace` y `## Archivos` (`step-03-plan.md`), la pregunta dice qué falta en lugar
+  del resumen: agregalas antes de pedir la firma. Si cambiás el plan después de mostrar el cuadro, el click ya no vale:
+  pedí el cuadro de nuevo.
 - 🖥️ **Si no lo mostraste, lo muestra el arnés.** En Claude Code, antes de que corra `complete-step approve-plan`, el arnés le
   pone en pantalla a la persona el título del plan, cuántos pasos tiene y la ruta de su archivo («El plan de la historia
   … (te lo muestra el arnés)») y lo anota; el paso lo cuenta como mostrado. No reemplaza tu mensaje: si la persona pregunta por el plan, es ése. Por
@@ -45,21 +140,21 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
     (sin página estática, `--url <dirección donde corre la app>`, que se le pregunta);
   - el no → `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/e2e-setup.js defer --repo <repo> --story <spec> --approved-by "<el dev>" --no "<su respuesta>"`:
     la historia queda con la prueba con navegador pendiente, y la próxima historia con pantalla vuelve a recibir la oferta.
-  Los dos comandos los aprueba la persona en la ventana de permiso, que le muestra el comando, o los firma en su
-  terminal con `--terminal`. Lo escrito en el chat o reenviado por otra sesión no firma; el no, además, va después de
+  Los dos comandos los aprueba la persona en la ventana de permiso, que le muestra el comando; donde la ventana no llega,
+  con un click o un «aprobado» escrito; o los firma en su terminal con `--terminal`. Lo reenviado por otra sesión no
+  firma, ni un mensaje suyo donde hay ventana; el no, además, va después de
   la oferta, con su respuesta en `--no`, que queda en la historia. Por qué: medido en un repo nuevo, el agente instaló Playwright fuera del repo sin preguntar, y sin eso
   el cierre frenaba sin salida.
-- **risk=NORMAL** → checkpoint HITL exactamente como se describe abajo.
+- **Con la persona** → checkpoint HITL exactamente como se describe abajo (con riesgo bajo o normal).
 - El user puede forzar HITL siempre con `warnings_pause: true` en `.tycon/advisors.yaml` del repo.
-- 🔴 `git push` y cambios de scope firmado NUNCA se auto-aprueban — siguen human-gate sin excepción.
-- 🖼️ **Excepción de pantalla**: si la story tiene pantalla (`risk-class` trae `mockup_required: true`),
-  con LOW se anuncia el plan auto-aprobado pero **se espera la respuesta sobre la maqueta** (§La maqueta, abajo):
-  una pantalla la ve una persona antes de construirla.
+- 🔴 `git push` y cambios de scope firmado NUNCA se aprueban solos — siguen human-gate sin excepción.
+- 🖼️ **Pantalla**: si la story tiene pantalla (`risk-class` trae `mockup_required: true`), **se espera además la
+  respuesta sobre la maqueta** (§La maqueta, abajo): una pantalla la ve una persona antes de construirla.
 
 ## Acción
 
 Presentar al usuario:
-1. El plan generado por BMAD en «Armar el plan»
+1. El plan escrito en «Armar el plan»
 2. La lista de archivos que va a modificar/crear
 3. Pregunta explícita. Aprobar un plan es una decisión importante (fija el diseño de la story), así que lleva su forma:
    «Recomiendo aprobarlo: {por qué}. {El contexto: qué hace el plan y qué deja afuera.} {Si hay caminos alternativos,
@@ -97,18 +192,19 @@ compara lo construido contra ella.
    pantalla de abajo en `over` y el texto del botón o enlace que la abre en `trigger`. Lo que dice la story manda sobre
    la convención («en la página, no modal» va en la página). La maqueta fija el contenido y los estados, no la forma de
    presentarlos: la forma sale de la story y de la guía del stack, y donde la maqueta marca una capa, se construye una
-   capa.
+   capa. Sólo la contradice una story que diga literalmente «en la página» o «no modal»; entonces se
+   corrige la maqueta y se aprueba de nuevo. Palabras como «panel» o «sección» no la contradicen: un panel puede abrirse
+   encima. La prueba en vivo lo comprueba (capa 12).
 3. **Presentarla con el plan, en el chat**: la ruta del archivo y la lista de `mockup.js texts <ruta>` por pantalla. El
    navegador puede no abrirse (sesión remota, Linux sin escritorio, la jaula de Codex) o estar en otra máquina: la lista
    en el chat es lo que se aprueba seguro.
 4. **La pregunta**: va en el mismo momento que la del plan. Con `AskUserQuestion` si está; sin ella (Codex), en texto
-   con opciones numeradas: «1. Apruebo la maqueta · 2. Cambiá esto: … · 3. Cancelar». Con LOW el plan se anuncia
-   auto-aprobado, pero la respuesta sobre la maqueta se espera igual.
+   con opciones numeradas: «1. Apruebo la maqueta · 2. Cambiá esto: … · 3. Cancelar». Aunque el riesgo sea LOW,
+   la respuesta sobre la maqueta se espera igual.
 5. **Quién la aprueba**: quien aprueba el plan. Es el dueño o, si el dueño dejó el modo autónomo, quien tenga su
    **delegación** (la coordinadora). La cita dice quién aprobó y por qué vía, por ejemplo «aprobada por la
    coordinadora, por delegación del dueño». El guion no valida quién es: la cita es la constancia.
-6. **Cierre**: `complete-step approve-plan --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"` (o
-   `--auto-approved "<criterios>" --mockup-approved "<cita>"` con LOW). Sin la maqueta, con una maqueta que no pasa
+6. **Cierre**: `complete-step approve-plan --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"`. Sin la maqueta, con una maqueta que no pasa
    `mockup.js check`, o sin `--mockup-approved`, «Aprobar el plan» no cierra. Queda la huella en el marcador y en
    `<clave>-mockup-approval.json` (sin la cita), que va en el commit con la maqueta.
 
@@ -128,12 +224,11 @@ sin mandar nada a `plan.agent-native.com` — el plan del cliente NUNCA sale de 
 
 1. **Opt-in**: el repo tiene `visual_plan: true` en `.tycon/advisors.yaml`, **o** el pipeline se
    invocó con el flag `--visual-plan`. Sin esto, presentar el plan en texto como siempre (default).
-2. **Hay pausa HITL real**: `risk-class` dio **NORMAL** (con LOW el plan se auto-aprueba por G.i/Nivel 2
-   y no hay nada que revisar visualmente → NO generar el HTML aunque el opt-in esté prendido).
+2. **Hay pausa HITL real**: el plan lo aprueba una persona (no la coordinadora con la revisión automática).
 
 **Flujo cuando aplica:**
 
-1. Construir un JSON con el contenido del plan BMAD («Armar el plan»). Schema: `node scripts/visual-plan.js schema`.
+1. Construir un JSON con el contenido del plan («Armar el plan»). Schema: `node scripts/visual-plan.js schema`.
    Mapear: `objetivo`, `fileMap` (de la lista de archivos a crear/modificar), `tasks` (de las Tasks/Subtasks
    de la story), `flow` si el plan tiene un pipeline de datos claro, `code` para 1-2 snippets clave, y
    **`questions`** con las decisiones genuinas que el plan deja abiertas (contradicciones de la story,
@@ -160,7 +255,7 @@ un reemplazo del registro textual de «Armar el plan» (que queda en `step-02-bm
 ## Decisiones del usuario
 
 - **"Sí" / "dale" / "adelante"**: proceder a «Implementar».
-- **"No" / "esperá" / "cambiá X"**: **volver a «Armar el plan»** con el feedback del usuario. BMAD re-itera el plan.
+- **"No" / "esperá" / "cambiá X"**: **volver a «Armar el plan»** con el feedback del usuario. El orquestador rehace el plan.
 - **"cancelar" / "ya no"**: terminar el pipeline limpiamente. Registrar en el log de la corrida.
 
 ## Criterio de aprobación
@@ -196,13 +291,14 @@ Antes de presentar el plan, con cualquier stack:
 ```bash
 # HITL — el user aprobó con palabras claras de proceder:
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --approved "<cita textual de la aprobación>"
-# Nivel 2 — auto-aprobación: SOLO si risk-class = LOW (se verifica en proceso; si no es LOW, bloquea):
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --auto-approved "<criterios LOW cumplidos>"
-# Story con pantalla (con cualquiera de los dos): además la aprobación de la maqueta (§La maqueta):
+# La coordinadora, para otra sesión, sólo con el «aprobado» de su revisión automática (§Quién aprueba el plan). El texto
+# de la aprobación lo arma el arnés; otro texto en --approved se rechaza:
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --for-session <sesión> --approved revisión
+# Story con pantalla: además la aprobación de la maqueta (§La maqueta):
 #   … --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"
 ```
 
-Sin `--approved`/`--auto-approved` el comando bloquea; en una story con pantalla, también sin `--mockup-approved`. Queda en `marker.planApproval` y en `gates.log`. No se codea "mientras tanto": el orden es plan aprobado → tests (4.0 ATDD) → código.
+Sin `--approved` (o `--terminal`) el comando bloquea, salvo un plan de rutina con el «aprobado» de la revisión de la propia sesión (4a); en una story con pantalla, también sin `--mockup-approved`. Queda en `marker.planApproval` y en `gates.log`. No se codea "mientras tanto": el orden es plan aprobado → tests (4.0 ATDD) → código.
 
 ### Quién aprobó: manual o automática
 
@@ -212,7 +308,8 @@ el tipo y quién. Hay dos tipos:
 - **manual**: la dio una persona con nombre. Se nombra con `--approved-by <correo o usuario>`.
 - **automática**: la dio un agente (con cuál y su modelo) o una regla. Lo que aprueba un agente **por delegación** de
   una persona es automático: se anota con `--delegated-by <persona> --agent "<nombre> (<modelo>)"`, y la línea nombra
-  de quién es la delegación. `--auto-approved` es la regla de riesgo bajo.
+  de quién es la delegación. Por la revisión automática de la coordinadora, la línea queda automática a nombre de
+  «revisión automática (<modelo>)», con la sesión de la coordinadora.
 
 ```bash
 # la aprobó el dueño:
@@ -227,7 +324,10 @@ de rol de agente, como «coordinadora» o «claude», queda automático; un corr
 
 El límite, dicho para que nadie le pida más: el registro distingue tipos, **no prueba identidad**. Un agente que escribe
 el correo de una persona en `--approved-by` queda anotado como manual. Lo único firmado de verdad por una persona es lo
-que pasa por la terminal (la firma de los AC imposibles de verificar, `runtime-waiver`). Sin `--approved-by` ni `--delegated-by`, la línea queda automática «sin nombrar». La maqueta la
+que pasa por la terminal (la firma de los AC imposibles de verificar, `runtime-waiver`). El plan y la maqueta que la
+persona firma por su cuenta (con «firmo» en su terminal, `--terminal`, con su click en el cuadro o con su «aprobado»
+escrito) quedan manuales, a nombre del usuario de la máquina; un nombre escrito en el comando no cuenta. Por las demás
+vías (la ventana de permiso), sin `--approved-by` ni `--delegated-by`, la línea queda automática «sin nombrar». La maqueta la
 aprueba quien aprobó el plan, en el mismo comando; `approve-mockup` acepta las mismas opciones. No se pide nada nuevo:
 si la línea no se puede escribir, el marcador avisa y el paso sigue. El portón de CI la exige en el merge (ver
 `guides/ci-gate.md`, «Registro de aprobaciones»). La misma forma vale para la exención de un CRITICAL al cerrar el
@@ -239,6 +339,6 @@ manuales, a nombre del usuario de la terminal.
 - `approved: true|false`
 - Feedback del usuario si pidió cambios
 - Path al plan aprobado (para referencia en «Implementar»)
-- `marker.planApproval` seteado (`complete-step approve-plan --approved|--auto-approved`) y la línea `plan` en `approvals.jsonl`
+- `marker.planApproval` seteado (`complete-step approve-plan --approved`) y la línea `plan` en `approvals.jsonl`
 
 Pasar a «Implementar» solo si `approved: true`.

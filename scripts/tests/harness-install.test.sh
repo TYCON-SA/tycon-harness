@@ -73,6 +73,14 @@
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
+# El arranque corre en el lugar: desprendido, con la máquina cargada (la puerta de pruebas corre varias suites a la vez)
+# pasa sus 20 s de espera, sale 0 y sigue aparte con el candado tomado, y el comando siguiente de la prueba sale 3
+# «otra sesión está actualizando». El arranque desprendido con su candado lo mide harness-update.test.sh (T39L).
+export TYCON_STARTUP_DETACH=0
+# El freno de sesiones lo prende la sesión del arnés que corre la prueba (TYCON_SESSION_GUARD=1). Heredado, el aplicador
+# lo registra en cada llamada y T37 no puede medir su apagado: cada laboratorio nace sin él, como nace con su propia HOME,
+# y T37 lo prende a mano donde lo necesita.
+unset TYCON_SESSION_GUARD
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 # los dos nombres del lugar del arnés, de su constante
 PLACE_NAME="$(node -e 'process.stdout.write(require(process.argv[1]).PLACE_NAME)' "$RAIZ/scripts/setup/harness/place.js")"
@@ -947,7 +955,8 @@ PY
   #    comandos destructivos en vez de al final de su bloque.
   TYCON_SESSION_GUARD=1 by_clone >/dev/null 2>&1; ORDER_REF="$(hooks_order)"
   by_clone >/dev/null 2>&1
-  [ "$(n_hooks_with session-collision-guard.js)" = 0 ] || mal "T37 la vara del orden: apagado, el freno de sesiones sigue registrado ($(n_hooks_with session-collision-guard.js))"
+  # apagado queda 1: el aviso de llegada (SessionStart) va siempre desde la story 8.292; el freno (PreToolUse) se va
+  [ "$(n_hooks_with session-collision-guard.js)" = 1 ] || mal "T37 la vara del orden: apagado, el freno de sesiones sigue registrado ($(n_hooks_with session-collision-guard.js); se espera sólo el aviso)"
   TYCON_SESSION_GUARD=1 by_link >/dev/null 2>&1
   [ "$(n_hooks_with session-collision-guard.js)" = 2 ] && [ -n "$ORDER_REF" ] && [ "$(hooks_order)" = "$ORDER_REF" ] \
     && ok "T37 un hook que entra por el enlace queda en su lugar: el mismo orden que cuando lo prende el clon" \
@@ -1033,6 +1042,9 @@ def old_startup_line(text):
     return [l.strip()[:80] for l in text.split("\n") if '"command"' in l and re.search(r"git\s+(-C\s+\S+\s+)?pull", l)]
 
 install = internal_view(read("INSTALL.md"))
+# en el repo del equipo, lo de INSTALL.md que no viaja (el clon de quien mantiene, las máquinas de dos clones) vive aparte
+TEAM_INSTALL = os.path.join("onboarding", "interno", "INSTALL.md")
+if os.path.isfile(os.path.join(root, TEAM_INSTALL)): install += "\n" + read(TEAM_INSTALL)
 papers = {"INSTALL.md": install}
 for name in ("step-0-mac.md", "step-0-windows.md", "new-dev-harness-setup.md", "datos-del-equipo.md"):
     papers["onboarding/" + name] = read(os.path.join("onboarding", name))
@@ -1182,11 +1194,11 @@ if corre S16; then
   COPIA="$(printf '%s\n' "$SALIDA" | sed -n 's/^copia de respaldo: \(.*\) · volver: .*$/\1/p' | head -1)"
   [ -n "$COPIA" ] && [ -d "$COPIA" ] && case "$COPIA" in "$LAB_HOME/.claude/.tycon-pipeline/harness/backups/"*) ok "S16-T8 dice dónde quedó la copia de respaldo, y la carpeta existe" ;; *) mal "S16-T8 la copia no está bajo backups/: $COPIA" ;; esac \
     || mal "S16-T8 no dice una carpeta de copia que exista («${COPIA}»): $SALIDA"
-  case "$SALIDA" in *"volver: node ~/.claude/$PLACE_NAME/scripts/setup/harness.js rollback --list"*) ok "S16-T8 …y cómo volver (por el lugar: story 8.19)" ;; *) mal "S16-T8 no dice cómo volver: $SALIDA" ;; esac
+  case "$SALIDA" in *"volver: node \"\$HOME/.claude/$PLACE_NAME/scripts/setup/harness.js\" rollback --list"*) ok "S16-T8 …y cómo volver (por el lugar: story 8.19)" ;; *) mal "S16-T8 no dice cómo volver: $SALIDA" ;; esac
   case "$SALIDA" in *"registro: $LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"*) ok "S16-T8 dice la ruta del registro" ;; *) mal "S16-T8 no dice la ruta del registro: $SALIDA" ;; esac
   DESPUES="$(printf '%s\n' "$SALIDA" | sed -n "$((N_SIG + 1)),\$p" | grep -c .)"
   [ "$DESPUES" = 3 ] && ok "S16-T8 «qué sigue» son tres líneas, las últimas" || mal "S16-T8 «qué sigue» tiene $DESPUES líneas: $SALIDA"
-  case "$SALIDA" in *"harness.js doctor"*) ok "S16-T8 «qué sigue» nombra doctor" ;; *) mal "S16-T8 «qué sigue» no nombra doctor" ;; esac
+  case "$SALIDA" in *"harness.js\" doctor"*) ok "S16-T8 «qué sigue» nombra doctor" ;; *) mal "S16-T8 «qué sigue» no nombra doctor" ;; esac
   # la segunda corrida
   SALIDA="$(harness install --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && case "$SALIDA" in *"sin cambios"*) ok "S16-T8 la segunda ejecución dice «sin cambios»" ;; *) mal "S16-T8 la segunda ejecución no dice «sin cambios»: $SALIDA" ;; esac || mal "S16-T8 segunda ejecución rc $RC: $SALIDA"
@@ -1246,11 +1258,11 @@ if corre S16; then
   a_medias() { # a_medias <caso>
     [ "$RC" = 1 ] && ok "S16-T10 $1: install sale 1" || mal "S16-T10 $1: rc $RC: $SALIDA"
     case "$SALIDA" in *"quedó a medias"*) ok "S16-T10 $1: dice que la instalación quedó a medias" ;; *) mal "S16-T10 $1: no dice «quedó a medias»: $SALIDA" ;; esac
-    case "$SALIDA" in *"harness.js doctor"*) ok "S16-T10 $1: manda a doctor por el detalle" ;; *) mal "S16-T10 $1: no nombra doctor: $SALIDA" ;; esac
+    case "$SALIDA" in *"harness.js\" doctor"*) ok "S16-T10 $1: manda a doctor por el detalle" ;; *) mal "S16-T10 $1: no nombra doctor: $SALIDA" ;; esac
     case "$SALIDA" in *"registro: $LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"*) ok "S16-T10 $1: dice el registro" ;; *) mal "S16-T10 $1: no dice el registro: $SALIDA" ;; esac
     local copia; copia="$(printf '%s\n' "$SALIDA" | sed -n 's/^copia de respaldo: \(.*\) · volver: .*$/\1/p' | head -1)"
     [ -n "$copia" ] && [ -d "$copia" ] && ok "S16-T10 $1: dice la copia de respaldo, y existe" || mal "S16-T10 $1: no dice una copia que exista («${copia}»): $SALIDA"
-    case "$SALIDA" in *"harness.js install"*"harness.js uninstall"*) ok "S16-T10 $1: da las dos salidas (install otra vez, o uninstall)" ;; *) mal "S16-T10 $1: no da las dos salidas: $SALIDA" ;; esac
+    case "$SALIDA" in *"harness.js\" install"*"harness.js\" uninstall"*) ok "S16-T10 $1: da las dos salidas (install otra vez, o uninstall)" ;; *) mal "S16-T10 $1: no da las dos salidas: $SALIDA" ;; esac
     case "$SALIDA" in *"qué sigue:"*) mal "S16-T10 $1: imprime «qué sigue» con la instalación a medias" ;; *) ok "S16-T10 $1: no imprime «qué sigue»" ;; esac
   }
   a_medias "el aplicador sale 1"
@@ -1551,6 +1563,25 @@ if corre HP; then
   hp_forget() { python3 -c 'import json,sys; f=sys.argv[1]; d=json.load(open(f)); d.pop("git_hooks_path", None); json.dump(d, open(f, "w"), indent=2)' "${LAB_HOME}/.claude/.tycon-pipeline/harness-state.json"; }
   hp_notice() { estado "d.get('notice') or ''"; }
   hp_forget
+  # El laboratorio «real» copia el perfil del equipo del árbol medido. Si ese perfil fija `update.apply: auto` (el del
+  # equipo lo hace), ninguna variable lo pisa y «ask» no se puede medir: para estos dos casos el árbol del laboratorio
+  # usa una copia del perfil sin esa fijación, y después vuelve el original (el caso «auto» de abajo lo mide igual)
+  hp_unpin() {
+    local f
+    for f in team-profile.json perfil-equipo.json; do
+      [ -f "${LAB_TREE}/${f}" ] || continue
+      cp "${LAB_TREE}/${f}" "${LAB}/hp-original-${f}" || return 1
+      python3 -c 'import json,sys; f=sys.argv[1]; d=json.load(open(f)); u=d.get("update"); u.pop("apply", None) if isinstance(u, dict) else None; json.dump(d, open(f, "w"), indent=2)' "${LAB_TREE}/${f}" || return 1
+    done
+  }
+  hp_repin() {
+    local f
+    for f in team-profile.json perfil-equipo.json; do
+      [ -f "${LAB}/hp-original-${f}" ] && mv "${LAB}/hp-original-${f}" "${LAB_TREE}/${f}"
+    done
+    true
+  }
+  hp_unpin || mal "HP no pude sacarle al perfil del laboratorio la actualización fijada"
   # con la política ask: el arranque no la pone, y el aviso la pide; update --yes (con terminal, como pide ask) la pone
   TYCON_UPDATE_APPLY=ask hp startup --force
   [ -z "$(hp_value)" ] && case "$(hp_notice)" in *"falta la carpeta global de hooks de git"*"update --yes la pone"*) true ;; *) false ;; esac \
@@ -1558,6 +1589,7 @@ if corre HP; then
   SALIDA="$(harness_lab_pty - env GIT_CONFIG_GLOBAL="${HP_CFG}" TYCON_UPDATE_APPLY=ask TYCON_THIRD_PARTY=0 TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1 node "${LAB_TREE}/scripts/setup/harness.js" update --yes 2>&1)"; RC=$?
   [ "$(hp_value)" = "${HP_OURS}" ] && [ "$(hp_said_set)" = 1 ] && case "$(hp_notice)" in *"falta la carpeta global"*) false ;; *) true ;; esac \
     && ok "HP con ask, update --yes la pone, lo dice, y el aviso deja de pedirla" || mal "HP ask update --yes (rc ${RC}, core.hooksPath=«$(hp_value)», aviso «$(hp_notice)»): ${SALIDA}"
+  hp_repin
   # con la política auto (la del perfil del equipo): la pone el arranque y lo dice UNA vez en el aviso
   hp_unset; hp_forget
   TYCON_UPDATE_APPLY=auto hp startup --force

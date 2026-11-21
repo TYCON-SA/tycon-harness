@@ -4,7 +4,11 @@ Esta guía documenta **qué inputs/outputs asumen los advisors TYCON** de cada s
 
 **Versión BMAD actual piñada**: `6.3.0` — es la del **fork del equipo** (`~/SourceCode/BMAD`, su `package.json`).
 
-**Lo que distribuye agent-skills es otra cosa**: cada carpeta `bmad-*` que el pipeline usa está fijada,
+**El pipeline ya no planifica ni implementa con BMAD**: esos dos pasos los hace el orquestador. De BMAD le quedan
+`bmad-code-review`, a pedido, y `bmad-agent-analyst`, que sugiere un aviso. Las demás skills siguen instaladas para quien
+las use a mano.
+
+**Lo que distribuye agent-skills es otra cosa**: cada carpeta `bmad-*` está fijada,
 una por una, por commit del repo de BMAD y por hash de árbol de git en el manifiesto de terceros del arnés,
 `scripts/publishing/third-party-skills.json` (entradas `third_party` con `from: bmad-code-org-bmad-method@…`), y
 `tycon-create-story` figura como derivada (tiene cambios del equipo). El manifiesto es la única fuente: esta guía no
@@ -59,49 +63,10 @@ Cuando salga BMAD v6.4 (o cualquier nueva versión):
 
 ---
 
-### `bmad-dev-story`
+### `bmad-dev-story`, `bmad-agent-dev` y `bmad-agent-quick-flow-solo-dev`
 
-**Usado por**: Step 2 y Step 4 del pipeline, para stories con `approach: [EXTRACT]` o `[ADAPT]`.
-
-**Inputs esperados**:
-- Path al `.md` del story.
-- Puede operar en "plan mode" (Step 2) o "execute mode" (Step 4). Hoy esto se pasa vía prompt explícito. Si BMAD v6.4 introduce un flag formal tipo `--mode=plan`, hay que actualizar Step 2 para usarlo.
-
-**Outputs que asume el pipeline**:
-- Modificaciones directas a archivos en el repo (file system changes).
-- Actualización del **Dev Agent Record** del story con:
-  - `Agent Model Used`
-  - `Debug Log References` (build results, test results)
-  - `Completion Notes List`
-  - `File List` (archivos creados/modificados)
-  - `Change Log` (fecha + autor)
-
-**Fragilidad**: si BMAD v6.4 cambia nombres de secciones del Dev Agent Record o el formato del File List (ej: pasa de bullet list a tabla), los advisors que leen ese record se rompen.
-
----
-
-### `bmad-agent-dev` (persona Amelia)
-
-**Usado por**: Step 2 y Step 4 del pipeline, para stories con `approach: [CREATE]`.
-
-**Inputs esperados**:
-- Path al story + contexto de plan/execute mode.
-
-**Outputs**: idénticos a `bmad-dev-story` (Dev Agent Record completo + archivos).
-
-**Particularidad de Amelia**: es ultra-sucinta. Reporta en file paths y AC IDs. El pipeline espera esta brevedad — si Amelia se vuelve verbose en v6.4, no rompe pero genera más noise en el consolidated report.
-
----
-
-### `bmad-agent-quick-flow-solo-dev` (persona Barry)
-
-**Usado por**: Step 2 y Step 4 para stories sin `approach` definido o marcadas como `quick-flow`.
-
-**Inputs esperados**: path al story o a una tarea informal.
-
-**Outputs**: modificaciones al filesystem + Dev Agent Record **abreviado** (Barry puede no completar todas las secciones del record canónico).
-
-**Fragilidad**: si Barry produce un File List inconsistente, los advisors post-impl pueden auditar archivos incorrectos. Mitigación: el pipeline pasa explícitamente la lista de archivos modificados (via `git diff --name-only`) a los advisors, NO confía en lo que Barry reporta.
+**Usadas por**: nadie en el pipeline. «Armar el plan» e «Implementar» traen sus reglas en `step-03-plan.md` y
+`step-05-implement.md`, y un cambio de estas skills no los afecta. Siguen instaladas para usarlas a mano.
 
 ---
 
@@ -192,7 +157,7 @@ El pipeline menciona Amelia y Barry por nombre en los steps. Si BMAD renombra pe
 
 ## Formato del Dev Agent Record
 
-El pipeline no lo modifica pero varios advisors lo leen para correlacionar warnings con cambios. Formato actual (v6.3.0):
+Lo escribe el orquestador en «Implementar», y varios advisors lo leen para correlacionar warnings con cambios. Formato actual:
 
 ```markdown
 ## Dev Agent Record
@@ -229,9 +194,20 @@ Después de un upgrade de BMAD, si ves algo de esto durante el uso del pipeline,
 - **Advisor reporta "archivo referenciado no existe"** sobre archivos que BMAD dice haber creado → File List inconsistente.
 - **Build-gate del Step 4 no encuentra comando de build** → el detector de framework puede haberse desalineado si BMAD cambió cómo inicializa proyectos.
 - **El Step 7 no pausa aunque hay warnings visibles** → el parser del consolidated report falla por cambio de formato en advisor.
-- **Step 2 falla al elegir skill** → el mapeo `approach` → skill BMAD quedó obsoleto.
 
 Cualquiera de estas señales = abrir este documento, revisar el contrato, updatear lo que rompa.
+
+---
+
+## Qué falta medir: los planes sin BMAD
+
+Dejar de pasar los planes por BMAD puede bajar su calidad, y la revisión automática sólo corre sobre el plan de una
+corrida abierta. Por eso se mide en las **tres primeras corridas reales** con el plan escrito por el orquestador: el primer
+veredicto de la revisión de cada una.
+
+La base son los 149 resultados guardados en una máquina del equipo el 18/11: 22 rechazados (15 %), 126 aprobados y
+1 sin veredicto. Con **2 o más rechazos de 3**, el caso vuelve al dueño con los hallazgos. Tres planes son una muestra
+chica: sirven para ver un problema grande, no para afirmar que la calidad es igual.
 
 ---
 

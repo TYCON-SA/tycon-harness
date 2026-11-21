@@ -56,7 +56,10 @@ const PLACE_NAME = 'tycon-harness';
 const LEGACY_PLACE_NAME = 'tycon-claude-guides';
 const LINK = path.join(HOME, '.claude', PLACE_NAME);
 const LEGACY_LINK = path.join(HOME, '.claude', LEGACY_PLACE_NAME);
-const LOCK_STALE_MS = 10 * 60 * 1000;
+// La regla del candado es la de lock.js (que esta copia no puede cargar); una prueba compara las dos y sus constantes.
+const STALE_MS = 10 * 60 * 1000;            // dueño de otra máquina o ilegible: la edad de siempre
+const HARD_STALE_MS = 2 * 60 * 60 * 1000;   // dueño que parece vivo: el tope para un pid reusado sin reinicio
+const BOOT_MARGIN_MS = 5 * 60 * 1000;       // el margen sobre la hora de arranque de la máquina
 
 function log(line) {
   try {
@@ -85,31 +88,58 @@ function writeStateAtomic(state) {
   throw last;
 }
 
+/** El dueño del candado: `{ pid, host, token }` (`host` y `token` null en los formatos viejos) o null. */
+function lockOwner() {
+  try {
+    const [p, h, t] = fs.readFileSync(path.join(LOCK_DIR, 'pid'), 'utf8').split('\n').map((s) => s.trim());
+    const pid = parseInt(p, 10);
+    return Number.isFinite(pid) ? { pid, host: h || null, token: t || null } : null;
+  } catch (_) { return null; }
+}
 /**
  * ¿El dueño del candado ya no existe? El mismo criterio que lock.js, escrito acá porque esta copia no
  * carga nada del árbol: sólo en esta máquina (el formato sin máquina es de ésta) y sólo con `ESRCH`.
  */
 function lockOwnerDead() {
-  try {
-    const [p, h] = fs.readFileSync(path.join(LOCK_DIR, 'pid'), 'utf8').split('\n').map((s) => s.trim());
-    const pid = parseInt(p, 10);
-    if (!Number.isFinite(pid) || (h && h !== os.hostname())) return false;
-    try { process.kill(pid, 0); return false; } catch (e) { return !!e && e.code === 'ESRCH'; }
-  } catch (_) { return false; }
+  const o = lockOwner();
+  if (!o || (o.host && o.host !== os.hostname())) return false;
+  try { process.kill(o.pid, 0); return false; } catch (e) { return !!e && e.code === 'ESRCH'; }
 }
 function olderThan(p, ms) { try { return Date.now() - fs.statSync(p).mtimeMs > ms; } catch (_) { return false; } }
+function mtimeOf(p) { try { return fs.statSync(p).mtimeMs; } catch (_) { return null; } }
 function mkdirExclusive(p) { try { fs.mkdirSync(p); return true; } catch (e) { if (e && e.code === 'EEXIST') return false; throw e; } }
-/** ¿El candado quedó huérfano? Viejo (> 10 min) o con su dueño muerto en esta máquina. */
-function lockOrphan() { return olderThan(LOCK_DIR, LOCK_STALE_MS) || lockOwnerDead(); }
+/**
+ * Por qué se pisa un candado cuyo dueño no murió: null, 'boot', 'hard-cap' o 'age'. La misma función que
+ * `orphanReason` de lock.js: con el dueño vivo en esta máquina la edad de 10 minutos no cuenta; lo liberan el arranque
+ * de la máquina (con su margen) o el tope de 2 h. De otra máquina o ilegible, la edad de siempre.
+ */
+function orphanReason({ owner, mtimeMs: m, now, bootMs, hostname = os.hostname(), staleMs = STALE_MS, hardStaleMs = HARD_STALE_MS }) {
+  if (m === null || m === undefined) return null;
+  const here = owner && (!owner.host || owner.host === hostname);
+  if (!here) return now - m > staleMs ? 'age' : null;
+  if (m < bootMs - BOOT_MARGIN_MS) return 'boot';
+  return now - m > hardStaleMs ? 'hard-cap' : null;
+}
+/** ¿El candado quedó huérfano? Con su dueño muerto en esta máquina, o por `orphanReason`. Devuelve el motivo o null. */
+function lockOrphan() {
+  if (lockOwnerDead()) return 'dead';
+  const now = Date.now();
+  return orphanReason({ owner: lockOwner(), mtimeMs: mtimeOf(LOCK_DIR), now, bootMs: now - os.uptime() * 1000 });
+}
 /**
  * El candado del programa, por `mkdir` (el método del aplicador): tomado y vivo → false; huérfano → se pisa con el mismo
  * mutex de takeover que lock.js, re-verificando ADENTRO: sin el mutex, dos
- * arranques que ven el mismo dueño muerto se quedarían los dos con el candado.
+ * arranques que ven el mismo dueño muerto se quedarían los dos con el candado. Cada toma lleva su token, como en
+ * lock.js: `releaseLock` no suelta un candado que otro tomó mientras éste estaba detenido.
  */
 function acquireLock() {
   if (process.env.TYCON_HARNESS_LOCK_HELD === '1') return { ok: true, held: true };
   const busy = { ok: false, reason: 'otra sesión está actualizando (harness.lock tomado)' };
-  const take = () => { try { fs.writeFileSync(path.join(LOCK_DIR, 'pid'), `${process.pid}\n${os.hostname()}\n`); } catch (_) { /* sin dueño escrito: manda la edad */ } return { ok: true, held: false }; };
+  const take = () => {
+    const token = require('crypto').randomBytes(16).toString('hex');
+    try { fs.writeFileSync(path.join(LOCK_DIR, 'pid'), `${process.pid}\n${os.hostname()}\n${token}\n`); } catch (_) { /* sin dueño escrito: manda la edad */ }
+    return { ok: true, held: false, token };
+  };
   try {
     fs.mkdirSync(HARNESS_DIR, { recursive: true });
     if (mkdirExclusive(LOCK_DIR)) return take();
@@ -122,12 +152,14 @@ function acquireLock() {
       if (!mkdirExclusive(takeover)) return busy;
     }
     try {
-      if (!lockOrphan()) return busy;   // adentro del mutex: el que llegó tarde ve el candado del que ganó
-      if (lockOwnerDead()) {
-        let pid = '?';
-        try { pid = fs.readFileSync(path.join(LOCK_DIR, 'pid'), 'utf8').split('\n')[0].trim() || '?'; } catch (_) { /* queda «?» */ }
-        log(`el candado era del pid ${pid}, que ya no existe: lo piso`);
-      }
+      const why = lockOrphan();   // adentro del mutex: el que llegó tarde ve el candado del que ganó
+      if (!why) return busy;
+      const o = lockOwner();
+      const pid = o ? o.pid : '?';
+      log(why === 'dead' ? `el candado era del pid ${pid}, que ya no existe: lo piso`
+        : why === 'boot' ? `el candado era del pid ${pid}, tomado antes del último arranque de la máquina (ese número ya es de otro proceso): lo piso`
+          : why === 'hard-cap' ? `el pid ${pid} parece vivo pero pasó el tope de 2 h: lo piso`
+            : `el candado tenía más de 10 min y su dueño no se puede consultar (${o ? `pid ${pid} de ${o.host}` : 'no se puede leer'}): lo piso`);
       try { fs.rmSync(LOCK_DIR, { recursive: true, force: true }); } catch (_) { /* se intenta el mkdir igual */ }
       return mkdirExclusive(LOCK_DIR) ? take() : busy;
     } finally {
@@ -137,7 +169,13 @@ function acquireLock() {
     return { ok: false, reason: `no pude tomar harness.lock: ${e.message}` };
   }
 }
-function releaseLock(l) { if (l && l.ok && !l.held) { try { fs.rmSync(LOCK_DIR, { recursive: true, force: true }); } catch (_) { /* nada */ } } }
+/** Suelta el candado, sólo si sigue siendo de esta toma: si otro lo pisó mientras éste estaba detenido, no lo toca. */
+function releaseLock(l) {
+  if (!l || !l.ok || l.held) return;
+  const o = lockOwner();
+  if (l.token && o && o.token && o.token !== l.token) { log('el candado ya no es mío: no lo suelto (otro lo tomó mientras éste estaba detenido)'); return; }
+  try { fs.rmSync(LOCK_DIR, { recursive: true, force: true }); } catch (_) { /* nada */ }
+}
 
 /** `developer` con el árbol borrado: vuelve a `managed` sobre `tree_before`. Devuelve { ok, reason, tree }. */
 function recoverDeveloper(state) {
@@ -265,4 +303,4 @@ if (require.main === module) {
   process.exitCode = code;
 }
 
-module.exports = { main, recoverDeveloper, NODE_FLOOR, acquireLock, releaseLock };
+module.exports = { main, recoverDeveloper, NODE_FLOOR, acquireLock, releaseLock, orphanReason, STALE_MS, HARD_STALE_MS, BOOT_MARGIN_MS };

@@ -184,7 +184,7 @@ function crearInvitaciones({ cfg, env = process.env, dataDir = null, llave, ahor
           const ahoraIso = new Date(ahora()).toISOString();
           Object.assign(d, { enviadas: {}, entraron: {}, fallas: {}, yaEstaban: {} });
           for (const correo of correos) d.enviadas[huella(correo)] = { el: ahoraIso };
-          log(`invitaciones: la llave del sitio cambió; ${correos.length} invitación(es) de la lista se dan por enviadas, sin volver a mandarlas`);
+          log(`invitaciones: la llave del sitio cambió; ${correos.length === 1 ? '1 invitación de la lista se da por enviada' : `${correos.length} invitaciones de la lista se dan por enviadas`}, sin volver a mandarlas`);
           guardar(d);
           return;
         }

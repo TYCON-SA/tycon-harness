@@ -115,6 +115,8 @@ const L = (idioma, clave, valores) => {
   if (!e) throw new Error(`runs-texts.js: no hay texto para la clave «${PREFIJO + clave}»`);
   return llenar(e.es, valores);
 };
+/** Lo mismo con {n} = 1 en singular: la clave con un 1 al final, si existe (como el navegador de la vista). */
+const Ln = (idioma, clave, valores) => L(idioma, valores && valores.n === 1 && PROPIOS[`${PREFIJO}${clave}1`] ? `${clave}1` : clave, valores);
 /** Una frase que armó el modelo (en castellano), en `idioma`: traducida si es de la casa; si no, tal cual. */
 // Sólo los moldes de las frases del modelo (`corridas.m.*`) y los nombres de los pasos (`paso.*`): nunca los textos de la
 // página, que podrían coincidir con un valor que el cliente compara (`estado: 'medido'`) y romperlo en otro idioma.
@@ -127,19 +129,32 @@ const enIdioma = (idioma, frase, moldes = MOLDES_DEL_MODELO) => {
 };
 // Las claves del modelo que llevan una frase de la casa. Todo lo demás es de afuera (la story, el producto, la máquina,
 // el título, el asunto de un commit) y pasa tal cual aunque coincida con un molde, como CLAVES_CON_MENSAJE de texts.js.
-const CLAVES_DE_LA_CASA = new Set(['motivo', 'fuente', 'nombre', 'vueltas_fuente', 'maquina_motivo', 'sin_rescate', 'sin_tiempos', 'sin_hilos', '_comentario', '_nota']);
+const CLAVES_DE_LA_CASA = new Set(['motivo', 'fuente', 'nombre', 'vueltas_fuente', 'maquina_motivo', 'maquina_nota', 'motivo_tramos', 'nota',
+  'commits_motivo', 'otras_motivo', 'sin_rescate', 'sin_tiempos', 'sin_hilos', '_comentario', '_nota']);
 // las que llevan una lista o un mapa de nombres de la casa (los pasos, los controles)
 const LISTAS_DE_LA_CASA = new Set(['nombres', 'controles_nombres']);
 // un archivo tocado es un dato; sólo sus dos frases de la casa se traducen, nunca un nombre que coincida con un molde
 const MOLDES_DE_ARCHIVO = [`${PREFIJO}m.fueraDelRepo`, `${PREFIJO}m.sinResumir`];
+// las claves que son un dato salvo por una frase de la casa, con los únicos moldes que se les prueban: el archivo
+// tocado, el nombre del repo («repo sin nombre») y el motivo de la lista vacía que arma el acceso del sitio (access.js)
+// (un Map y no un objeto: una clave de afuera que se llama `constructor` no encuentra nada)
+const MOLDES_POR_CLAVE = new Map([['f', MOLDES_DE_ARCHIVO], ['n', [`${PREFIJO}m.repoSinNombre`]], ['vacio_motivo', [`${PREFIJO}vacio`]]]);
+// las ramas de afuera dentro de una clave de la casa: `nombre` es de la casa en un paso, y en la lista de máquinas
+// (`maquinas.lista[].nombre`) es el nombre de una máquina
+const RAMAS_DE_AFUERA = new Map([['maquinas', new Set(['lista'])]]);
 /** Una respuesta entera del modelo (la lista, un detalle) con cada frase de la casa en `idioma`; lo de afuera no se toca. */
 function todoEnIdioma(idioma, valor) {
   if (!TX || !idioma || idioma === TX.POR_DEFECTO) return valor;
   const recorrer = (v, clave) => {
-    if (typeof v === 'string') return clave === 'f' ? enIdioma(idioma, v, MOLDES_DE_ARCHIVO) : CLAVES_DE_LA_CASA.has(clave) ? enIdioma(idioma, v) : v;
+    if (typeof v === 'string') return MOLDES_POR_CLAVE.has(clave) ? enIdioma(idioma, v, MOLDES_POR_CLAVE.get(clave)) : CLAVES_DE_LA_CASA.has(clave) ? enIdioma(idioma, v) : v;
     if (Array.isArray(v)) return v.map((x) => recorrer(x, LISTAS_DE_LA_CASA.has(clave) ? 'nombre' : clave));
     if (v && typeof v === 'object') {
-      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, LISTAS_DE_LA_CASA.has(clave) && typeof x === 'string' ? enIdioma(idioma, x) : recorrer(x, k)]));
+      const deAfuera = RAMAS_DE_AFUERA.get(clave);
+      const o = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deAfuera && deAfuera.has(k) ? x
+        : LISTAS_DE_LA_CASA.has(clave) && typeof x === 'string' ? enIdioma(idioma, x) : recorrer(x, k)]));
+      // una firma trae qué se firmó en los dos idiomas: el cliente no sabe en cuál está la página, así que se elige acá
+      if (typeof o.que_en === 'string' && o.que_en && Object.prototype.hasOwnProperty.call(o, 'que')) o.que = o.que_en;
+      return o;
     }
     return v;
   };
@@ -228,7 +243,13 @@ const CONTROLES = {
   'adversarial-pass': 'pase adversarial (resultado)',
   // El 5b sin pase lo anota el portón, y el paso 8 no cierra sin el pase atendido.
   'adversarial-skip': 'pase adversarial (salteado por el portón)',
-  'adversarial-result-gate': 'pase adversarial con su resultado (paso 8)',
+  'adversarial-result-gate': 'pase adversarial con su resultado (paso «Pase adversarial»)',
+  'deep-review-gate': 'si corre el pase adversarial', 'story-gate': 'la story antes de programar',
+  'story-evidence': 'la evidencia de la story', 'qa-guide': 'la guía para probar a mano',
+  'advisors-complete': 'todos los revisores corrieron', 'step-order': 'el orden de los pasos',
+  'smart-reloop': 'la vuelta de revisores recortada', 'plan-auto-approve': 'el plan aprobado solo',
+  'review-a-done': 'de revisión a terminada', 'sin-nombre': 'un control sin nombre', 'smoke-run': 'la prueba de humo',
+  RUNTIME_WAIVER: 'un criterio firmado sin correr', 'ac-shown': 'el criterio mostrado a la persona', approval: 'la aprobación',
 };
 
 // La línea `adversarial-pass` (marker.js mark-adversarial-result) no trae `status`: trae
@@ -378,7 +399,7 @@ function nombresDePasos(tabla = TABLA_DE_PASOS) {
   if (faltan.length === nombres.length) {
     return { nombres, fuente: 'numeros', motivo: 'la tabla de pasos del pipeline no trae los nombres de los pasos: van por número, sin nombre' };
   }
-  return { nombres, fuente: 'tabla', motivo: faltan.length ? `la tabla de pasos no nombra el/los paso(s) ${faltan.join(', ')}: van por número` : null };
+  return { nombres, fuente: 'tabla', motivo: !faltan.length ? null : faltan.length === 1 ? `la tabla de pasos no nombra el paso ${faltan[0]}: va por número` : `la tabla de pasos no nombra estos pasos: ${faltan.join(', ')}; van por número` };
 }
 
 /**
@@ -406,6 +427,7 @@ function limpio(txt, alternativa) {
  *    sesión, que es el que se clonó;
  *  - el sufijo de worktree o de clon (`--wt-x`, `--merge`, `--7.2`, `-wt-127`, `-wt-mant`) no es parte del nombre, y la
  *    carpeta de implementación de un commit (`c825a2c-impl`) se salta como una genérica;
+ *  - una carpeta de worktree (`…/worktrees/<nombre>`) no nombra su repo: null (el repo real del volcado, si lo trae, manda);
  *  - una carpeta genérica (`Codigo`, `src`…) no es el repo ni lo distingue: se salta;
  *  - lo que cuelga de una carpeta temporal no tiene producto adelante (`/tmp/atk-vector4/CeiboBackend` →
  *    `CeiboBackend`);
@@ -424,6 +446,8 @@ function producto(repoPath) {
     return cod || null;
   }
   const segs = ruta.split(/[\\/]/).filter(Boolean);
+  // una carpeta de worktree (`…/worktrees/<nombre>`) no dice de qué repo es: sin el repo real del volcado, no hay producto
+  if (segs.slice(0, -1).some((x) => /^\.?worktrees?$/i.test(x))) return null;
   const temporal = /^(private|tmp|var)$/.test(segs[0] || '') && (segs.includes('tmp') || (segs.includes('var') && segs.includes('folders')));
   const iHome = segs.findIndex((x, i) => i <= 1 && (x === 'Users' || x === 'home'));
   // `--wt-x`, `--merge`, `--7.2` y los worktrees numerados o con nombre (`<repo>-wt-127`, `<repo>-wt-mant`)
@@ -440,6 +464,11 @@ function producto(repoPath) {
   // El ancestro no cuenta si es el usuario, `Users`/`home`, o la carpeta de proyectos directa bajo el usuario.
   const tope = iHome >= 0 ? iHome + 2 : 0;
   return (j >= tope && j >= 0 && !(iHome >= 0 && j <= iHome + 2)) ? `${limpio(segs[j])}/${repo}` : repo;
+}
+
+/** Cómo se lee un producto en la pantalla: «producto · repo», el mismo rótulo que Proyectos y Configuración. */
+function rotuloProducto(p) {
+  return String(p).replace('/', ' · ');
 }
 
 /** Junta el mismo repo escrito distinto: mayúsculas (`MIRepo`/`MiRepo`) y el nombre
@@ -521,6 +550,16 @@ function agruparRepos(corridas, repos) {
   }
 }
 
+/**
+ * Una ejecución sin el conteo de agentes no siempre es anterior al conteo: si otra que arrancó antes ya lo trae, el
+ * conteo existía y es su registro el que no lo tiene (`c.sin_conteo`). Las de antes de la primera con conteo, no se marcan.
+ */
+function marcarSinConteo(corridas) {
+  const conConteo = corridas.filter((c) => c.costo && c.inicio).map((c) => Date.parse(c.inicio)).filter(Number.isFinite);
+  const primera = conConteo.length ? Math.min(...conConteo) : Infinity;
+  for (const c of corridas) if (!c.costo && Date.parse(c.inicio || '') > primera) c.sin_conteo = true;
+}
+
 function semanaIso(iso) {
   const d0 = new Date(iso);
   if (!Number.isFinite(d0.getTime())) return null;
@@ -530,6 +569,8 @@ function semanaIso(iso) {
   const a0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
   return `${t.getUTCFullYear()}-S${String(Math.ceil(((t - a0) / 86400000 + 1) / 7)).padStart(2, '0')}`;
 }
+/** La semana como se ve, con la letra del idioma («2026-W44»); la clave guardada («2026-S44») no cambia. */
+const semanaVisible = (s, idioma) => (typeof s === 'string' && /^\d{4}-S\d{2}$/.test(s) ? `${s.slice(0, 5)}${L(idioma, 'v.letraSemana')}${s.slice(6)}` : '');
 
 /**
  * Los rebotes IDÉNTICOS y CONSECUTIVOS se agrupan (`×5`, con el rango de minutos): el registro
@@ -567,6 +608,95 @@ function cierreDeCorrida(d) {
   // el cierre de la historia (después del merge) no cuenta como pendiente
   const pendientes = (Array.isArray(m.stepsPending) ? m.stepsPending : []).map(String).filter((p) => p !== 'close-work-item' && p !== '9');
   return { estado: d.archivedAt && pendientes.length ? 'incompleta' : 'completa', inferido: true };
+}
+
+// Los resultados de la revisión previa que cuentan como «la historia se revisó antes de programar».
+const REVISION_HECHA = new Set(['limpio', 'corregido', 'preguntado']);
+const NOTA_SIN_REVISION = 'sin revisión previa';
+
+/**
+ * La revisión de la historia antes de programar, de la constancia que el cierre copia al volcado. Sólo un estado de
+ * vocabulario cerrado y números: ni el modelo, ni las reglas, ni el texto de los hallazgos. Un volcado sin el campo es
+ * anterior a la revisión previa (`sin_campo`) y se cuenta aparte, nunca como «sin revisión». Lo no medido es null.
+ */
+function revisionPreviaDe(d) {
+  if (!d || !Object.prototype.hasOwnProperty.call(d, 'revision_previa')) return { estado: 'sin_campo' };
+  const r = d.revision_previa;
+  const vacia = { corregida: null, hallazgos: null, tokens: null, duracion_ms: null };
+  // null con otra nota es una constancia que no se pudo leer: no se sabe si hubo revisión
+  if (r === null) return { estado: d.revision_previa_nota === undefined || d.revision_previa_nota === NOTA_SIN_REVISION ? 'sin_revision' : 'no_medido', ...vacia };
+  if (!r || typeof r !== 'object') return { estado: 'no_medido', ...vacia };
+  const resultado = String(r.resultado || '');
+  if (resultado === 'saltado') return { estado: 'saltada', ...vacia };
+  if (!REVISION_HECHA.has(resultado)) return { estado: 'no_medido', ...vacia };
+  const cuenta = (x) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : null);
+  const h = r.hallazgos && typeof r.hallazgos === 'object' ? r.hallazgos : {};
+  const destinos = h.por_destino && typeof h.por_destino === 'object' ? h.por_destino : {};
+  return {
+    estado: 'revisada',
+    corregida: resultado === 'corregido' || (cuenta(destinos.corregido) || 0) > 0,
+    hallazgos: cuenta(h.total),
+    tokens: cuenta(r.tokens),
+    duracion_ms: cuenta(r.duracion_ms),
+  };
+}
+
+// Las firmas de la corrida: vienen del registro común, que la máquina ya saneó. Acá se vuelven a sanear
+// (`limpio`), porque el volcado pudo escribirlo el guion de otra máquina, y los ids de sesión se acortan ANTES: `sanear`
+// cambia todo id entero por «<sesión>». La razón va en `razon`, nunca en `motivo`, que es una clave de la casa y se
+// traduce con sus moldes (CLAVES_DE_LA_CASA).
+const FIRMA_ID = /^[\w.:-]{1,60}$/;
+const VIA_ID = /^[a-z-]{1,20}$/;
+const UUID_EN_TEXTO = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const sinIdsEnteros = (s) => String(s).replace(UUID_EN_TEXTO, (u) => u.slice(0, 8));
+// corta contando por letra: con .slice un emoji puede quedar partido
+const textoDeFirma = (v, n) => (v === null || v === undefined || v === '' ? null : Array.from(String(limpio(sinIdsEnteros(v)))).slice(0, n).join(''));
+let catalogoDeFirmas = null;
+/** Qué se firmó, en palabras del catálogo (`approves` y `approvesEn`): primero las firmas de hoy, después los niveles. */
+function queSeFirmo(id) {
+  if (!catalogoDeFirmas) {
+    catalogoDeFirmas = new Map();
+    try {
+      const s = require('../../lib/signatures.js');
+      for (const x of [...(s.LEVELS || []), ...(s.SIGNATURES || [])]) if (x && x.id && x.approves) catalogoDeFirmas.set(x.id, { es: x.approves, en: x.approvesEn || null });
+    } catch (_e) { /* sin el catálogo, la firma sale con su id */ }
+  }
+  return catalogoDeFirmas.get(id) || { es: id, en: null };
+}
+function firmasDe(d) {
+  const f = d && d.firmas;
+  if (f === undefined || f === null) {
+    const n = d && d.aprobaciones;
+    return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? { estado: 'solo_cuenta', cuenta: n } : { estado: 'sin_campo' };
+  }
+  if (typeof f !== 'object' || Array.isArray(f)) return { estado: 'no_medido', motivo: 'las firmas que subió la ejecución no se entienden' };
+  if (f.estado === 'ausente') return { estado: 'ausente' };
+  if (f.estado === 'no_medido') return { estado: 'no_medido', motivo: textoDeFirma(f.motivo, 300) || 'las firmas no se midieron' };
+  if (f.estado !== 'leido') return { estado: 'no_medido', motivo: 'las firmas que subió la ejecución traen un estado que no se conoce' };
+  // «leído» sin una lista no es «ninguna firma»: no se entiende qué subió
+  if (!Array.isArray(f.lineas)) return { estado: 'no_medido', motivo: 'las firmas que subió la ejecución no se entienden' };
+  const cuenta = (x) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
+  let ilegibles = cuenta(f.ilegibles);
+  const lineas = [];
+  for (const l of f.lineas) {
+    const t = l && typeof l === 'object' && !Array.isArray(l) ? Date.parse(l.cuando || '') : NaN;
+    // el id de la firma se acorta y se sanea como los textos, y después tiene que seguir siendo un id
+    const id = Number.isFinite(t) && typeof l.firma === 'string' && FIRMA_ID.test(l.firma) ? textoDeFirma(l.firma, 60) : null;
+    if (!id || !FIRMA_ID.test(id)) { ilegibles += 1; continue; }
+    const que = queSeFirmo(id);
+    const pide = textoDeFirma(l.pedida_por, 160);
+    const linea = {
+      cuando: new Date(t).toISOString(), firma: id, que: que.es, que_en: que.en,
+      nivel: Number.isInteger(l.nivel) ? l.nivel : null,
+      via: typeof l.via === 'string' && VIA_ID.test(l.via) ? l.via : 'desconocida',
+      delegada: l.delegada === true,
+      quien: textoDeFirma(l.quien, 160), pedida_por: pide, razon: textoDeFirma(l.razon, 300),
+    };
+    if (l.otra_casa === true) linea.otra_casa = true;
+    lineas.push(linea);
+  }
+  lineas.sort((a, b) => Date.parse(a.cuando) - Date.parse(b.cuando));
+  return { estado: 'leido', lineas, ilegibles, recortadas: cuenta(f.recortadas) };
 }
 
 function modeloDeCorrida(d, nombresPasos) {
@@ -655,6 +785,8 @@ function modeloDeCorrida(d, nombresPasos) {
       eventos.push({ t, control: k, cls, ms: Number.isFinite(g.durationMs) ? g.durationMs : null, exit: Number.isFinite(g.exit) ? g.exit : null, mensaje, mensaje_estado: mensajeEstado, nota: adv ? adv.nota : notaDelSalteo(g) });
     }
     eventos.sort((a, b) => (a.t === null) - (b.t === null) || (a.t || 0) - (b.t || 0));
+    // cero evaluaciones dentro de la ejecución no es «ningún control encontró nada»: es que no hay registro, y así se dice
+    if (!controles.total) controles = null;
   }
   const vueltas = Object.values(m.iterations || {}).map((it) => off(it && it.ts)).filter((t) => t !== null && t >= 0);
 
@@ -662,15 +794,16 @@ function modeloDeCorrida(d, nombresPasos) {
   const vueltaMedida = cuentaVueltas ? cuentaVueltas(d) : null;
   const costo = co && Number.isFinite(co.spawns)
     ? { agentes: co.spawns, vueltas: vueltaMedida ? vueltaMedida.value : null,
-        vueltas_fuente: vueltaMedida ? vueltaMedida.fuente : (motivoSinVueltas || 'el volcado no registra vueltas: sin revisores por vuelta ni fotos de iteración'),
+        vueltas_fuente: vueltaMedida ? vueltaMedida.fuente : (motivoSinVueltas || 'el registro no anota vueltas: sin revisores por vuelta ni lecturas de iteración'),
         calculos_del_set: Number.isFinite(co.iteraciones) ? co.iteraciones : null,
         por_tipo: Object.fromEntries(Object.entries(co.por_tipo || {}).filter(([, v]) => Number.isFinite(v)).map(([k, v]) => [String(k), v])) }
     : null;
 
   const c = d.consumo && typeof d.consumo === 'object' ? d.consumo : null;
   let consumo;
-  if (!c) consumo = { estado: 'no_medido', motivo: 'esta ejecución es anterior al rescate del consumo (story 2.13): no se registró' };
-  else if (c.estado !== 'medido' || !c.tokens) consumo = { estado: String(c.estado || 'no_medido'), motivo: limpio(c.motivo, 'el volcado no trae el consumo medido') };
+  if (!c) consumo = { estado: 'no_medido', motivo: 'esta ejecución es anterior al rescate del consumo: no se registró' };
+  // los volcados viejos nombran el ajuste de Claude Code que borra las conversaciones: la página dice lo que pasó, sin el nombre
+  else if (c.estado !== 'medido' || !c.tokens) consumo = { estado: String(c.estado || 'no_medido'), motivo: limpio(c.motivo, 'el registro no trae el consumo medido').replace(/ \(Claude Code las borra según cleanupPeriodDays\)/, ' (Claude Code borra las conversaciones viejas)') };
   else {
     const tk = c.tokens;
     consumo = {
@@ -718,7 +851,7 @@ function modeloDeCorrida(d, nombresPasos) {
         ? { total: rv.tokens_medidos.total, n: num(rv.tokens_medidos.n) }
         : { estado: 'no_medido', motivo: limpio(rv.tokens_medidos && rv.tokens_medidos.motivo, 'los tokens de los revisores no se midieron') },
       estimado: !est
-        ? { estado: 'no_medido', motivo: 'el volcado no trae el campo estimado' }
+        ? { estado: 'no_medido', motivo: 'el registro no trae el campo estimado' }
         : est.estado === 'estimado'
           ? { estado: 'estimado', lanzamientos_cubiertos: num(est.lanzamientos_cubiertos), tokens_min: num(est.tokens_min), tokens_max: num(est.tokens_max),
               medido_el: est.supuesto && est.supuesto.medido_el ? String(est.supuesto.medido_el) : null,
@@ -728,7 +861,7 @@ function modeloDeCorrida(d, nombresPasos) {
   }
 
   // El VALIDADOR DE STORIES por fase: sólo los conteos de las fases conocidas —lista blanca: ni
-  // el `detalle`, ni campos que el volcado traiga de más— y las decisiones de los re-loops, contadas de las
+  // el `detalle`, ni campos que el volcado traiga de más— y las decisiones de las vueltas de revisores, contadas de las
   // líneas `validador-reloop` del registro de controles. Sin veredicto medido no es «0 hallazgos»: se dice.
   const FASES_VAL = ['antes-de-implementar', 'vuelta-1', 're-loop', 'sin-vuelta', 'otra-story'];
   const ESTADOS_VAL = ['limpio', 'hallazgos', 'inconsistente', 'sin_veredicto', 'no_medido'];
@@ -747,9 +880,9 @@ function modeloDeCorrida(d, nombresPasos) {
     validador = {
       estado: 'no_medido',
       motivo: !rv
-        ? 'sin medir los revisores de esta ejecución; el veredicto del validador existe desde la story 7.3'
-        : !vr ? 'la ejecución es anterior a la story 7.3: el validador no dejaba veredicto'
-          : limpio(vr.motivo, 'el volcado no trae el veredicto del validador medido'),
+        ? 'sin medir los revisores de esta ejecución; el veredicto del validador sólo lo tienen las más nuevas'
+        : !vr ? 'la ejecución es de antes de que el validador dejara su veredicto'
+          : limpio(vr.motivo, 'el registro no trae el veredicto del validador medido'),
     };
   }
   validador.re_loops_sin_relanzar = decisiones.filter((g) => g.invoca === false).length;
@@ -791,6 +924,8 @@ function modeloDeCorrida(d, nombresPasos) {
     consumo,
     revisores,
     validador,
+    revision_previa: revisionPreviaDe(d),
+    firmas: firmasDe(d),
   };
 }
 
@@ -809,6 +944,10 @@ function aplicarEsperasDelHilo(c, marker) {
   c.tiempos.entre_pasos_ms = t.entre_pasos_ms;
   c.tiempos.espera_del_hilo_ms = t.espera_del_hilo_ms || 0;
 }
+
+/** El texto hasta `max` caracteres, y si era más largo, cortado ahí con «…». */
+// por caracteres, no por unidades de UTF-16: un emoji en el corte no se parte a la mitad
+const recortar = (s, max) => { const c = Array.from(s); return c.length > max ? `${c.slice(0, max).join('').trimEnd()}…` : s; };
 
 /**
  * De qué fue la corrida, en una frase. En orden: el título de la story (del frontmatter, cuando la corrida
@@ -927,9 +1066,12 @@ function leerResumen(volcado) {
 }
 
 /** Los cambios de una corrida: de su conversación si está en el disco; si no, de su resumen; si no, sin cambios. */
+// El cambio de git solo, sin la conversación, no alcanza para leer la corrida: la bajada trae el cambio antes que la
+// conversación, y una pasada que corta entre los dos dejaría la corrida sin título ni esperas hasta la siguiente (la
+// misma ejecución cambiaba de una recarga a otra). Con resumen, vale el resumen hasta que llegue la conversación.
 function cambiosDeLaCorrida(rutas, marker, nombresPasos, cambioDelVolcado) {
-  const hayCrudo = cambios && rutas.some((r) => fs.existsSync(cambios.rutaDeHilo(r)) || fs.existsSync(cambios.rutaDeCambio(r)));
-  if (!hayCrudo) {
+  const hayHilo = cambios && rutas.some((r) => fs.existsSync(cambios.rutaDeHilo(r)));
+  if (!hayHilo) {
     for (const r of rutas) {
       const s = leerResumen(r);
       // las esperas viajan en el resumen con su nombre de siempre: aplicarEsperasDelHilo las consume igual
@@ -1079,7 +1221,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     let entradas = [];
     // 🔴 Ordenado: «la primera copia que declara la máquina» no puede depender del orden del disco.
     try { entradas = fs.readdirSync(opts.buzon, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)); }
-    catch (e) { out.buzon = { estado: 'no_medido', motivo: `la carpeta bajada del buzón de ejecuciones no se pudo leer (${e.code || 'ilegible'})`, carpetas_ilegibles: 0 }; }
+    catch (e) { out.buzon = { estado: 'no_medido', motivo: `la carpeta bajada del depósito de ejecuciones no se pudo leer (${e.code || 'ilegible'})`, carpetas_ilegibles: 0 }; }
     // La corrida de una carpeta vieja `unida` es de su nueva («antes, <vieja>»); una `compartida` o
     // `siguio_recibiendo` queda en su carpeta, marcada. Sin el archivo del bajador no se une nada, y se dice.
     const uniones = out.buzon.estado === 'leido' ? leerUniones(opts.buzon) : null;
@@ -1096,7 +1238,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
         catch (e) { out.buzon.carpetas_ilegibles += 1; continue; }
       }
       if (esArchivo && en.name.endsWith('.json')) {
-        copias.push({ ruta, maquina: null, motivo: 'volcado suelto en la raíz de la carpeta bajada del buzón: no está bajo la carpeta de ninguna máquina' });
+        copias.push({ ruta, maquina: null, motivo: 'registro suelto en la raíz de la carpeta bajada del depósito: no está bajo la carpeta de ninguna máquina' });
       } else if (esCarpeta) {
         const declarada = FORMA_MAQUINA.test(en.name);
         let archivos;
@@ -1107,7 +1249,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
           // `origen`: la carpeta real del volcado. El sitio se la da a people.js, que vuelve a juzgar la unión (la vieja
           // que informa otro correo, o está confirmada para otra persona, no se une): `maquina` ya viene resuelta
           copias.push({ ruta: path.join(ruta, f), origen: declarada ? en.name : null, maquina: !declarada ? null : u && u.estado === 'unida' ? u.nueva : en.name,
-            motivo: declarada ? null : `la carpeta «${en.name}» del buzón no tiene la forma de un nombre de máquina (minúsculas, sin espacios ni .local)`,
+            motivo: declarada ? null : `la carpeta «${en.name}» del depósito no tiene la forma de un nombre de máquina (minúsculas, sin espacios ni .local)`,
             deVieja: Boolean(u), nota: u ? notaDeCarpeta(en.name, u) : null });
         }
       }
@@ -1243,6 +1385,7 @@ function modelo(runsDir, opts = {}) {
   // El sitio unifica los productos sobre lo que cada persona ve, nunca sobre todo
   if (!opts.sinUnificar) unificarProductos(reg.corridas);
   agruparRepos(reg.corridas, opts.repos);
+  marcarSinConteo(reg.corridas);
   // Qué máquinas cubre lo que se leyó, y cuántas corridas de cada una: el sello sale de ACÁ, no de una
   // bandera. Una sola máquina y es ésta → «esta máquina», como siempre.
   let maquinas = null;
@@ -1322,6 +1465,8 @@ function paraLista(c) {
     costo: elegir(c.costo, ['agentes', 'vueltas']),
     validador: elegir(c.validador, ['estado', 'por_fase', 're_loops_decididos', 're_loops_sin_relanzar']),
     consumo: elegir(c.consumo, ['estado', 'respuestas', 'tokens', 'por_paso', 'fuera_de_ventana']),
+    // la revisión previa: su estado y números, nunca texto de los hallazgos
+    revision_previa: elegir(c.revision_previa, ['estado', 'corregida', 'hallazgos', 'tokens', 'duracion_ms']),
   };
 }
 
@@ -1338,10 +1483,13 @@ function textosDe(c) {
 
 // ───────────────────────────── la página ─────────────────────────────
 
-// un color por fila de pasos (las diez de FILAS), del más claro al más oscuro
-const RAMPA = ['#BEE0DE', '#9CD0CE', '#79BFBE', '#57ADAE', '#3D9799', '#348C8E', '#2C8084', '#1E6A70', '#14555C', '#0D4148'];
+// un color por fila de pasos (las diez de FILAS), en cuatro familias por etapa: preparar (0-3, azul), construir (4-6,
+// verde azulado), revisar (7-8, ámbar) y cerrar (9, violeta). Dos vecinos quedan a 15 o más de distancia de color (ΔE
+// de CIELAB): con una sola tonalidad, dos pasos seguidos no se distinguían. La copia del navegador es la misma.
+const RAMPA = ['#C9D6EA', '#9DB3D6', '#6E8DBF', '#3F64A0', '#9CD0CE', '#3D9799', '#14555C', '#F2C46D', '#B07A12', '#6B4C9A'];
 // la coma decimal es del castellano: en inglés va el punto
-const decimal = (x, idioma) => (idioma && idioma !== ES ? String(Math.round(x * 10) / 10) : num1(x));
+// (sólo en un idioma que la tabla tiene: uno desconocido sale entero en castellano, y con coma)
+const decimal = (x, idioma) => (TX && TX.IDIOMAS.includes(idioma) && idioma !== ES ? String(Math.round(x * 10) / 10) : num1(x));
 const miles = (n, idioma) => n == null ? '—' : n >= 1e6 ? `${decimal(n / 1e6, idioma)} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : String(n);
 const dur = (ms, idioma) => ms == null ? '—' : ms < 90 * 60000 ? `${Math.round(ms / 60000)} min` : `${decimal(ms / 3600000, idioma)} h`;
 
@@ -1351,15 +1499,15 @@ const dur = (ms, idioma) => ms == null ? '—' : ms < 90 * 60000 ? `${Math.round
  */
 function textoSinMarca(c, nombres, idioma, prefijo) {
   const curso = Number.isInteger(c.paso_en_curso) ? c.paso_en_curso : null;
-  if (c.llego_al_final) return L(idioma, prefijo + 'pasosSinMarca', { n: c.sin_marca.length });
+  if (c.llego_al_final) return Ln(idioma, prefijo + 'pasosSinMarca', { n: c.sin_marca.length });
   // después de donde quedó, no se llegaron a correr; antes, corrieron sin su marca
   const donde = filaDondeQuedo(c);
   const despues = c.sin_marca.filter((f) => f !== curso && donde !== null && f > donde).length;
   const antes = c.sin_marca.filter((f) => f !== curso).length - despues;
   const partes = [];
   if (curso !== null) partes.push(L(idioma, prefijo + 'pasoSinTerminar', { p: enIdioma(idioma, nombres[curso] || String(curso)) }));
-  if (despues) partes.push(L(idioma, prefijo + 'pasosSinCorrer', { n: despues }));
-  if (antes) partes.push(L(idioma, prefijo + 'pasosSinMarca', { n: antes }));
+  if (despues) partes.push(Ln(idioma, prefijo + 'pasosSinCorrer', { n: despues }));
+  if (antes) partes.push(Ln(idioma, prefijo + 'pasosSinMarca', { n: antes }));
   return partes.join('; ');
 }
 /** El paso donde quedó una ejecución que no llegó al final: el que quedó a medias o, si ninguno, el último terminado. */
@@ -1371,7 +1519,7 @@ function barraTramos(c, escala, idioma, nombres) {
   const ancho = Math.max(2, Math.min(100, (total / escala) * 100));
   const segs = c.tramos.map((t) => (t.tipo === 'entre'
     ? `<i class="entre" style="width:${((t.ms / total) * 100).toFixed(2)}%" title="${esc(L(idioma, 'v.entrePasos', { dur: dur(t.ms, idioma) }))}"></i>`
-    : `<i style="width:${((t.ms / total) * 100).toFixed(2)}%;background:${RAMPA[t.pasos[0]] || RAMPA[RAMPA.length - 1]}" title="${esc(t.paso)} · ${esc(enIdioma(idioma, t.nombre))} — ${dur(t.ms, idioma)}${t.pasos.length > 1 ? ` (${esc(L(idioma, 'v.fusionados'))})` : ''}${t.medida === false ? ` (${esc(L(idioma, 'v.estimadaPorDiferencia'))})` : ''}"></i>`)).join('');
+    : `<i style="width:${((t.ms / total) * 100).toFixed(2)}%;background:${RAMPA[t.pasos[0]] || RAMPA[RAMPA.length - 1]}" title="${esc(enIdioma(idioma, t.nombre))} — ${dur(t.ms, idioma)}${t.pasos.length > 1 ? ` (${esc(L(idioma, 'v.fusionados'))})` : ''}${t.medida === false ? ` (${esc(L(idioma, 'v.estimadaPorDiferencia'))})` : ''}"></i>`)).join('');
   const faltan = c.sin_marca.length;
   return `<span class="bar" style="width:${ancho.toFixed(1)}%">${segs}${faltan ? `<i class="falta" style="width:6px" title="${esc(textoSinMarca(c, nombres || [], idioma, 'v.'))}"></i>` : ''}</span>`;
 }
@@ -1403,7 +1551,7 @@ function colArchivos(c, idioma) {
     // Un 0 con repos sin mirar es «no pude mirar» escrito como «no cambió nada».
     if (!x.git.total_archivos && sinMedir.length) {
       const cuales = sinMedir.map((r) => `${r.n} (${enIdioma(idioma, r.motivo || 'sin motivo')})`).join(' · ');
-      return `<span class="nd" title="${esc(L(idioma, 'v.reposSinMirar', { n: sinMedir.length, t: nR, cuales }))} — ${esc(noEsCero)}">—</span>`;
+      return `<span class="nd" title="${esc(L(idioma, sinMedir.length === 1 ? (nR === 1 ? 'v.reposSinMirarUnico' : 'v.reposSinMirar1') : 'v.reposSinMirar', { n: sinMedir.length, t: nR, cuales }))} — ${esc(noEsCero)}">—</span>`;
     }
     const a = x.git.total_archivos;
     const titulo = `${L(idioma, 'v.segunGit')} ${a} ${L(idioma, a === 1 ? 'v.archivo1' : 'v.archivoN')} ${L(idioma, 'v.en')} ${nR} ${L(idioma, nR === 1 ? 'v.repo1' : 'v.repoN')}${sinMedir.length ? `, ${sinMedir.length} ${L(idioma, 'v.sinPoderMirar')}` : ''} (${L(idioma, 'v.segunGitResto')})`;
@@ -1413,11 +1561,11 @@ function colArchivos(c, idioma) {
   const n = x.archivos.filter((a) => !/^script por consola/.test(a.f)).length;
   if (n) {
     const c = x.lista.length;
-    const titulo = `${c} ${L(idioma, c === 1 ? 'v.cambio1' : 'v.cambioN')} ${L(idioma, 'v.en')} ${n} ${L(idioma, n === 1 ? 'v.archivo1' : 'v.archivoN')}${x.por_consola ? L(idioma, 'v.masConsola', { n: x.por_consola }) : ''}`;
+    const titulo = `${c} ${L(idioma, c === 1 ? 'v.cambio1' : 'v.cambioN')} ${L(idioma, 'v.en')} ${n} ${L(idioma, n === 1 ? 'v.archivo1' : 'v.archivoN')}${x.por_consola ? Ln(idioma, 'v.masConsola', { n: x.por_consola }) : ''}`;
     return `<span title="${esc(titulo)}">${n}</span>`;
   }
-  if (x.en_commits) return `<span title="${esc(L(idioma, 'v.porConsolaCommits', { n: x.en_commits }))}">${x.en_commits}</span><small class="nd">${esc(L(idioma, 'v.porConsola'))}</small>`;
-  if (x.por_consola) return `<span class="nd" title="${esc(L(idioma, 'v.porConsolaSinSaber', { n: x.por_consola }))}">${esc(L(idioma, 'v.porConsola'))}</span>`;
+  if (x.en_commits) return `<span title="${esc(Ln(idioma, 'v.porConsolaCommits', { n: x.en_commits }))}">${x.en_commits}</span><small class="nd">${esc(L(idioma, 'v.porConsola'))}</small>`;
+  if (x.por_consola) return `<span class="nd" title="${esc(Ln(idioma, 'v.porConsolaSinSaber', { n: x.por_consola }))}">${esc(L(idioma, 'v.porConsola'))}</span>`;
   return `<span title="${esc(L(idioma, 'v.noEdito'))}">0</span>`;
 }
 
@@ -1429,7 +1577,7 @@ function filaControles(c, idioma) {
     const marca = v.error ? ` <b>${esc(L(idioma, 'v.conError', { n: v.error }))}</b>` : v.freno ? ` <b>${esc(L(idioma, 'v.freno', { n: v.freno }))}</b>` : (v.paso === 0 && v.sin_estado) ? ` <b>${esc(L(idioma, 'v.sinEstado'))}</b>` : '';
     const t = `${k} — ${L(idioma, v.n === 1 ? 'v.controlUnaVez' : 'v.controlVeces', { n: v.n, p: v.paso, e: v.error, f: v.freno })}${v.sin_estado ? L(idioma, 'v.controlSinEstado', { n: v.sin_estado }) : ''}`;
     return `<span class="f ${cls}" title="${esc(t)}">${esc(enIdioma(idioma, CONTROLES[k] || k))}${marca}</span>`;
-  }).join('');
+  }).join(' · ');
 }
 
 /**
@@ -1448,7 +1596,9 @@ function cabecera(M, opts = {}) {
   const conControles = C.filter((c) => c.controles).length;
   const alFinal = C.filter((c) => c.llego_al_final).length;
   const origen = sitio ? x('v.versionDelSitio') : `commit ${esc((() => { try { return execSync('git rev-parse --short HEAD', { cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (e) { return L(I, 'v.desconocido'); } })())}`;
-  const selloCorridas = Number.isFinite(M.archivos) ? x(M.duplicados === 1 ? 'v.selloArchivos1' : 'v.selloArchivos', { n: N, a: M.archivos, d: M.duplicados, i: M.ilegibles }) : String(N);
+  // cada parte del sello con su número: «1 duplicado», «1 no se pudo leer», aunque las otras sean varias
+  const selloCorridas = Number.isFinite(M.archivos) ? [x(M.archivos === 1 ? 'v.selloLeidosUno' : 'v.selloLeidos', { n: N, a: M.archivos }), x(M.duplicados === 1 ? 'v.selloDuplicadoUno' : 'v.selloDuplicados', { d: M.duplicados }),
+    x(M.ilegibles === 1 ? 'v.selloIlegibleUno' : 'v.selloIlegibles', { i: M.ilegibles })].join(' · ') : String(N);
   const eyebrow = !sitio ? `${x('v.eyebrowNoche')} <span class="mono">artifacts/tablero-del-arnes.html</span>${x('v.eyebrowNocheRepo')}`
     : sitio.rol === 'maintainer' ? `${x('v.eyebrowSitio')} <a href="/arnes">${x('v.eyebrowSitioEnlace')}</a>`
       : x('v.eyebrowDev');
@@ -1537,10 +1687,11 @@ function tabla(M, opts = {}) {
   const filas = C.map((c, idx) => {
     const tk = c.consumo.estado === 'medido'
       ? miles(c.consumo.tokens.out + c.consumo.tokens.in + c.consumo.tokens.cache_new, I)
-      : `<span class="nd" title="${esc(enIdioma(I, c.consumo.motivo))}">${x(c.consumo.estado === 'borrada' ? 'v.borrada' : 'v.noMedido')}</span>`;
+      // el motivo se ve en la celda, sin pasar el mouse; el completo queda en el título
+      : `<span class="nd" title="${esc(enIdioma(I, c.consumo.motivo))}">${x(c.consumo.estado === 'borrada' ? 'v.borrada' : 'v.noMedido')}</span><small>${c.consumo.estado === 'borrada' ? x('v.borradaMotivo') : esc(enIdioma(I, c.consumo.motivo))}</small>`;
     return `<tr data-i="${idx}" data-id="${esc(c.id || '')}" id="c-${idx}">
-      <td class="fecha">${esc((c.inicio || '').slice(0, 10) || L(I, 'v.sinFecha'))}<small>${esc(c.semana || '')}</small></td>
-      <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(c.descripcion.texto)}</span>` : ''}<small>${esc(c.producto || L(I, 'v.productoSinRegistrar'))}</small></td>${M.varias_maquinas ? `
+      <td class="fecha">${esc((c.inicio || '').slice(0, 10) || L(I, 'v.sinFecha'))}<small>${esc(semanaVisible(c.semana, I))}</small></td>
+      <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(recortar(c.descripcion.texto, 240))}</span>` : ''}<small>${esc(c.producto ? rotuloProducto(c.producto) : L(I, 'v.productoSinRegistrar'))}</small></td>${M.varias_maquinas ? `
       <td class="maq-td">${c.maquina ? `<span class="maq">${esc(c.maquina)}</span>${c.maquina_nota ? `<small>${esc(enIdioma(I, c.maquina_nota))}</small>` : ''}` : `<span class="nd" title="${esc(enIdioma(I, c.maquina_motivo || ''))}">${x('v.sinDeclarar')}</span>`}</td>` : ''}
       <td class="barra">${barraTramos(c, escala, I, M.pasos.nombres)}</td>
       <td class="dur">${dur(c.dur_ms, I)}</td>
@@ -1561,9 +1712,9 @@ function tabla(M, opts = {}) {
   <div class="q-head"><span class="q-n">02</span><h2>${x('v.porEjecucion')}</h2></div>
   <p class="note">${x('v.porEjecucionNota1')} <b>${x('v.porEjecucionNota2')}</b> ${x('v.porEjecucionNota3')}</p>
   <div class="leyenda">${leyenda}<span class="lg"><i class="falta"></i>${x('v.sinMarca')}</span></div>
-  <div class="tabla"><table>
+  <div class="tabla-caja"><div class="tabla"><table>
     <thead><tr>${th('v.thFecha', 'v.thFechaChico')}${th('v.thStory', 'v.thStoryChico')}${M.varias_maquinas ? th('v.thMaquina', 'v.thMaquinaChico') : ''}${th('v.thTiempo')}${th('v.thDuro')}${th('v.thTrabajo', 'v.thTrabajoChico')}${th('v.thEspera', 'v.thEsperaChico')}${th('v.thPasos')}${th('v.thAgentes')}${th('v.thVueltas')}${th('v.thTokens')}${th('v.thArchivos', 'v.thArchivosChico')}${th('v.thControles', 'v.thControlesChico')}</tr></thead>
-    <tbody id="cuerpo">${filas}</tbody></table></div>
+    <tbody id="cuerpo">${filas}</tbody></table></div></div>
 </section>
 `;
 }
@@ -1582,7 +1733,7 @@ function pie(M, opts = {}) {
   ${nota('v.pieHilo', x('v.pieHiloTexto'))}
   ${nota('v.pieTokens', x('v.pieTokensTexto'))}
   ${nota('v.pieRevisor', x('v.pieRevisorTexto'))}
-  ${nota('v.pieTrabajo', `${x('v.pieTrabajo1')} <b>${x('v.pieTrabajo2')}</b>${x('v.pieTrabajo3')} <b>${x('v.pieTrabajo4')}</b>${x('v.pieTrabajo5')} <b>${x('v.pieTrabajo6')}</b>${x('v.pieTrabajo7')}`)}
+  ${nota('v.pieTrabajo', `${x('v.pieTrabajo1')} <b>${x('v.pieTrabajo2')}</b>${x('v.pieTrabajo3')} ${x('c.esperaDefinicion')}; <b>${x('v.pieTrabajo4')}</b>${x('v.pieTrabajo5')} <b>${x('v.pieTrabajo6')}</b>${x('v.pieTrabajo7')}`)}
 </div></footer>`;
 }
 
@@ -1636,6 +1787,8 @@ section{margin-top:40px}h2{font-size:clamp(18px,2.3vw,24px);letter-spacing:-.018
 .lg{display:inline-flex;align-items:center;gap:5px}.lg i{width:11px;height:11px;display:inline-block;border-radius:2px}
 .lg i.falta{background:repeating-linear-gradient(135deg,var(--hatch) 0 2px,transparent 2px 4px)}
 .tabla{margin-top:12px;overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+/* entre 641 y 1439 px la tabla se desplaza de costado: la sombra del borde derecho avisa que sigue */
+.tabla-caja{position:relative}.tabla-caja::after{content:"";position:absolute;top:0;right:0;bottom:0;width:28px;pointer-events:none;background:linear-gradient(to right,transparent,color-mix(in srgb,var(--ink) 18%,transparent));opacity:0}.tabla-caja.sigue::after{opacity:1}
 table{border-collapse:collapse;width:100%;font-size:13px;min-width:940px}
 th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--line-strong);z-index:2;font-family:"IBM Plex Mono",monospace}
 .tabla th{padding:8px 7px;letter-spacing:.03em}.tabla td{padding:7px 7px}
@@ -1657,6 +1810,13 @@ tr.abierta td{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)
 .fila-det td{padding:0;background:var(--surface-2);position:relative}
 .det{position:sticky;left:0;width:min(1124px,calc(100vw - 60px));box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
 .det>*{max-width:100%}
+/* a 640 px o menos cada ejecución es una tarjeta: cada dato con su nombre de columna y Controles a la vista */
+@media (max-width:640px){.tabla{overflow-x:visible}.tabla table{display:block;min-width:0}.tabla thead{display:none}.tabla tbody{display:block}
+.tabla tbody tr[data-i]{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 12px;border-bottom:1px solid var(--line-strong)}
+.tabla tbody tr[data-i] td{display:block;border:0;padding:0;min-width:0;width:auto;text-align:left;white-space:normal}
+.tabla tbody tr[data-i] td[data-col]::before{content:attr(data-col);display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
+.tabla tbody tr[data-i] td.story,.tabla tbody tr[data-i] td.barra,.tabla tbody tr[data-i] td.frenos{grid-column:1/-1}
+.tabla .fila-det{display:block}.tabla .fila-det td{display:block}.tabla tbody tr[hidden]{display:none}.det{position:static;width:auto}.tabla-caja.sigue::after{opacity:0}}
 .det-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px}
 .det-head b{font-size:16px}.det-head .mono{font-size:12.5px;color:var(--ink-2)}.det-head .sub{color:var(--ink-3);font-size:11.5px;margin-top:3px}
 .det-chips{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
@@ -1677,6 +1837,8 @@ tr.abierta td{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)
 .np-t{font-family:"IBM Plex Mono",monospace;color:var(--ink-3)}
 .np-n{color:var(--ink-2)}.np-n b{color:var(--ink)}.np-n i{font-style:normal;font-family:"IBM Plex Mono",monospace;color:var(--ink-3);font-size:10.5px}
 .np-m{grid-column:2;color:var(--ink-2);line-height:1.35}.np-m.falta{color:var(--ink-3);font-style:italic}
+.firma-marca{font-weight:600;font-size:11px;margin-left:4px}.firma-tuya{color:var(--ink-2)}.firma-avisada{color:var(--ink-3)}
+.firma-delegada .firma-marca,b.firma-delegada{color:var(--warn)}
 .np-r{grid-column:2;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
 .np-s{grid-column:2;margin:2px 0 0;padding:6px 8px;background:var(--surface-2);border-left:2px solid var(--crit);font-family:"IBM Plex Mono",monospace;font-size:10px;line-height:1.45;color:var(--ink-2);max-height:150px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 .np-x{text-decoration:none;font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--ink);background:var(--surface-2);border:1px solid var(--line-strong);border-radius:3px;padding:0 4px}
@@ -1743,9 +1905,14 @@ const CLIENTE_FUENTE = String.raw`(function () {
     catch (e) { if (typeof console !== 'undefined') console.warn('ejecuciones: los textos de la página no se pudieron leer; quedan en castellano', e); return null; }
   })() || ES_TXT;
   // una clave que falta en el bloque de la página (una página de otra versión) sale en castellano, nunca como la clave
+  // con {n} = 1, la clave en singular (la misma con un 1 al final) si existe; y «1 ejecuciones» de cualquier texto sale en singular
   function T(k, v) {
+    var tiene = function (x) { return Object.prototype.hasOwnProperty.call(TXT, x) || Object.prototype.hasOwnProperty.call(ES_TXT, x); };
+    if (v && v.n === 1 && tiene(k + '1')) k = k + '1';
     var s = Object.prototype.hasOwnProperty.call(TXT, k) ? TXT[k] : Object.prototype.hasOwnProperty.call(ES_TXT, k) ? ES_TXT[k] : k;
-    return v ? s.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, function (m, n) { return Object.prototype.hasOwnProperty.call(v, n) ? String(v[n]) : m; }) : s;
+    if (!v) return s;
+    return s.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, function (m, n) { return Object.prototype.hasOwnProperty.call(v, n) ? String(v[n]) : m; })
+      .replace(/(^|[^0-9.,])1 ejecuciones/g, '$11 ejecución').replace(/(^|[^0-9.,])1 runs([^a-z]|$)/g, '$11 run$2');
   }
   // story 2.27: la FUENTE de los datos. Embebida en la página local (el modelo en #modelo y los textos en cz-N/cg-N,
   // sin red); por la red en la pestaña del sitio (#fuente-corridas: la lista, el detalle al abrir una corrida y los
@@ -1811,12 +1978,19 @@ const CLIENTE_FUENTE = String.raw`(function () {
     if (antes) partes.push(T('pasosSinMarca', { n: antes }));
     return partes.join('; ');
   };
-  var RAMPA = ['#BEE0DE','#9CD0CE','#79BFBE','#57ADAE','#3D9799','#348C8E','#2C8084','#1E6A70','#14555C','#0D4148'];
+  var RAMPA = ['#C9D6EA','#9DB3D6','#6E8DBF','#3F64A0','#9CD0CE','#3D9799','#14555C','#F2C46D','#B07A12','#6B4C9A'];
+  // el rótulo de cada barra, oscuro o blanco según su color: se lee sobre los diez
+  var TINTA = ['#0b0b0b','#0b0b0b','#0b0b0b','#fff','#0b0b0b','#0b0b0b','#fff','#0b0b0b','#0b0b0b','#fff'];
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+  var rotulo = function (p) { return String(p).replace('/', ' · '); };
   var n1 = function (x) { return (Math.round(x * 10) / 10).toString().replace('.', T('sepDecimal')); };
   var miles = function (n) { return n == null ? '—' : n >= 1e6 ? n1(n / 1e6) + ' M' : n >= 1e3 ? Math.round(n / 1e3) + ' k' : String(n); };
   var dt = function (min) { return min < 90 ? Math.round(min) + ' min' : n1(min / 60) + ' h'; };
   var nombreCtl = function (k) { return CTL[k] ? CTL[k] + ' (' + k + ')' : k; };
+  // La etiqueta de un carril va anclada a la derecha en una columna de ~290 px: un nombre más largo se cortaba por la
+  // izquierda. Se recorta con «…» y el nombre entero queda en su <title>.
+  var ETIQUETA_MAX = 46;
+  var recortada = function (s, max) { s = String(s); return s.length <= max ? esc(s) : '<title>' + esc(s) + '</title>' + esc(s.slice(0, max - 1)) + '…'; };
   var ctlEs = function (k) { return CTL[k] || k; };
   var ctlTec = function (k) { return CTL[k] ? k : ''; };
   var mediana = function (v) { if (!v.length) return null; var x = v.slice().sort(function (a, b) { return a - b; }); return x.length % 2 ? x[(x.length - 1) / 2] : (x[x.length / 2 - 1] + x[x.length / 2]) / 2; };
@@ -1833,12 +2007,13 @@ const CLIENTE_FUENTE = String.raw`(function () {
   function timeline(c) {
     var notas = []; c._notas = notas;
     if (c.consumo.estado === 'medido' && c.consumo.fuera_de_ventana) notas.push('+' + miles(c.consumo.fuera_de_ventana) + ' ' + T('fueraVentana1') + ' <b>' + T('fueraVentana2') + '</b> ' + T('fueraVentana3'));
-    if (c.eventos_previos) notas.push(c.eventos_previos + ' ' + T('previos1') + ' <b>' + T('previos2') + '</b> ' + T('previos3'));
+    var nPrev = { n: c.eventos_previos };
+    if (c.eventos_previos) notas.push(c.eventos_previos + ' ' + T('previos1', nPrev) + ' <b>' + T('previos2', nPrev) + '</b> ' + T('previos3', nPrev));
     var durMin = c.dur_ms ? c.dur_ms / 60000 : null;
     var finTramos = c.tramos.reduce(function (a, t) { return a + t.ms / 60000; }, 0);
     var conT = c.eventos.filter(function (e) { return e.t !== null; });
     var sinT = c.eventos.length - conT.length;
-    if (sinT) notas.push(sinT + ' ' + T('sinMinuto1') + ' <b>' + T('sinMinuto2') + '</b>' + T('sinMinuto3'));
+    if (sinT) notas.push(sinT + ' ' + T('sinMinuto1', { n: sinT }) + ' <b>' + T('sinMinuto2') + '</b>' + T('sinMinuto3', { n: sinT }));
     var eds = (c.cambios && c.cambios.estado === 'leido') ? c.cambios.lista.filter(function (e) { return e.t !== null && e.t >= 0; }) : [];
     var maxT = Math.max(durMin || 0, finTramos,
       conT.reduce(function (a, e) { return Math.max(a, e.t); }, 0),
@@ -1871,7 +2046,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     }
     lanes.forEach(function (l) {
       var f = l.ctl;
-      s += '<text x="' + (x0 - 8) + '" y="' + (ys[l.k] + l.h / 2 + (f ? 3.5 : 4)) + '" text-anchor="end" font-family="' + (f ? 'IBM Plex Mono,monospace' : 'IBM Plex Sans,sans-serif') + '" font-size="' + (f ? 10 : 11) + '" fill="var(--ink-' + (f ? '3' : '2') + ')">' + esc(f ? nombreCtl(l.t) : l.t) + '</text>';
+      s += '<text x="' + (x0 - 8) + '" y="' + (ys[l.k] + l.h / 2 + (f ? 3.5 : 4)) + '" text-anchor="end" font-family="' + (f ? 'IBM Plex Mono,monospace' : 'IBM Plex Sans,sans-serif') + '" font-size="' + (f ? 10 : 11) + '" fill="var(--ink-' + (f ? '3' : '2') + ')">' + recortada(f ? nombreCtl(l.t) : l.t, ETIQUETA_MAX) + '</text>';
       if (f) s += '<line x1="' + x0 + '" y1="' + (ys[l.k] + l.h / 2) + '" x2="' + x1 + '" y2="' + (ys[l.k] + l.h / 2) + '" stroke="var(--line)" stroke-dasharray="2 4"></line>';
     });
     // pasos (tramos)
@@ -1884,11 +2059,11 @@ const CLIENTE_FUENTE = String.raw`(function () {
         return;
       }
       if (p.ms < 60000) {
-        s += '<line x1="' + a.toFixed(1) + '" y1="' + (ys.pasos - 3) + '" x2="' + a.toFixed(1) + '" y2="' + (ys.pasos + 29) + '" stroke="var(--ink-3)" stroke-width="1.2"><title>' + T('paso') + ' ' + esc(p.paso) + ' · ' + esc(p.nombre) + ' — ' + T('marcadoJunto') + '</title></line>';
+        s += '<line x1="' + a.toFixed(1) + '" y1="' + (ys.pasos - 3) + '" x2="' + a.toFixed(1) + '" y2="' + (ys.pasos + 29) + '" stroke="var(--ink-3)" stroke-width="1.2"><title>' + esc(p.nombre) + ' — ' + T('marcadoJunto') + '</title></line>';
         return;
       }
-      s += '<rect x="' + a.toFixed(1) + '" y="' + ys.pasos + '" width="' + w.toFixed(1) + '" height="26" fill="' + (RAMPA[i] || RAMPA[RAMPA.length - 1]) + '" rx="1.5"><title>' + T('paso') + ' ' + esc(p.paso) + ' · ' + esc(p.nombre) + ' — ' + dt(p.ms / 60000) + (p.pasos.length > 1 ? ' (' + T('fusionados') + ')' : '') + (p.medida === false ? ' (' + T('estimada') + ')' : '') + '</title></rect>';
-      if (w > 26) s += '<text x="' + (a + w / 2).toFixed(1) + '" y="' + (ys.pasos + 17) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" font-weight="600" fill="' + (i > 4 ? '#fff' : '#0D4148') + '">' + esc(p.paso) + '</text>';
+      s += '<rect x="' + a.toFixed(1) + '" y="' + ys.pasos + '" width="' + w.toFixed(1) + '" height="26" fill="' + (RAMPA[i] || RAMPA[RAMPA.length - 1]) + '" rx="1.5"><title>' + esc(p.nombre) + ' — ' + dt(p.ms / 60000) + (p.pasos.length > 1 ? ' (' + T('fusionados') + ')' : '') + (p.medida === false ? ' (' + T('estimada') + ')' : '') + '</title></rect>';
+      if (w > 26) s += '<text x="' + (a + w / 2).toFixed(1) + '" y="' + (ys.pasos + 17) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" font-weight="600" fill="' + (TINTA[i] || '#fff') + '">' + esc(p.paso) + '</text>';
     });
     // La espera por una persona que salió del hilo: una banda rayada sobre los pasos, con su duración.
     ((c.cambios && c.cambios.esperas_min) || []).forEach(function (w) {
@@ -1962,7 +2137,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var f = c.controles.por_control;
     var peso = function (v) { return v.error * 1000 + v.freno * 10 + v.n / 1000; };
     var filas = Object.keys(f).sort(function (a, b) { return peso(f[b]) - peso(f[a]); }).map(function (k) {
-      return '<tr><td class="ctl"><span class="ctl-es">' + esc(ctlEs(k)) + '</span>' + (ctlTec(k) ? '<span class="ctl-tec">' + esc(ctlTec(k)) + '</span>' : '') + '</td>'
+      return '<tr><td class="ctl"><span class="ctl-es">' + esc(ctlEs(k)) + '</span>' + (ctlTec(k) ? ' <span class="ctl-tec">' + esc(ctlTec(k)) + '</span>' : '') + '</td>'
         + '<td class="num">' + f[k].n + '</td><td class="num ' + (f[k].error ? 'rojo' : '') + '">' + (f[k].error || '·') + '</td>'
         + '<td class="num">' + (f[k].freno || '·') + '</td><td class="num">' + (f[k].sin_estado || '·') + '</td>'
         + '<td class="num">' + (f[k].ms ? n1(f[k].ms / 1000) + ' s' : '—') + '</td></tr>';
@@ -2010,7 +2185,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   }
 
   // El validador de stories por fase (story 7.3): qué dijo en cada momento de la corrida, con la palabra
-  // «sin veredicto» cuando no dejó el renglón, y en cuántos re-loops el pipeline no lo relanzó.
+  // «sin veredicto» cuando no dejó el renglón, y en cuántas vueltas de revisores el pipeline no lo relanzó.
   var FASES_VAL = [['antes-de-implementar', T('faseAntes')], ['vuelta-1', T('faseVuelta1')], ['re-loop', T('faseReLoops')], ['otra-story', T('faseOtras')], ['sin-vuelta', T('faseSinVuelta')]];
   function delValidador(c) {
     var v = c.validador;
@@ -2031,7 +2206,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   }
 
   function tarjetaAgentes(c) {
-    if (!c.costo) return '<div class="mini blind"><h4>' + T('revisores') + '</h4><p>' + T('sinAgentes') + '</p>' + loQueGastaron(c) + delValidador(c) + '</div>';
+    if (!c.costo) return '<div class="mini blind"><h4>' + T('revisores') + '</h4><p>' + T(c.sin_conteo ? 'sinConteoAgentes' : 'sinAgentes') + '</p>' + loQueGastaron(c) + delValidador(c) + '</div>';
     var t = c.costo.por_tipo, ks = Object.keys(t).sort(function (a, b) { return t[b] - t[a]; });
     var mx = Math.max.apply(null, [1].concat(ks.map(function (k) { return t[k]; })));
     return '<div class="mini"><h4>' + T('revTitulo', { n: c.costo.agentes }) + (c.costo.vueltas !== null ? T('revEnVueltas', { n: c.costo.vueltas }) : '') + (c.costo.calculos_del_set !== null && c.costo.calculos_del_set !== undefined ? ' <span class="rev-nd">(' + T('revSetCalculado', { n: c.costo.calculos_del_set }) + ')</span>' : '') + '</h4>'
@@ -2052,6 +2227,47 @@ const CLIENTE_FUENTE = String.raw`(function () {
       + '<div class="bars">' + ks.map(function (i) { return '<div class="b"><span>' + esc(i) + ' ' + esc(nombrePaso(i)) + '</span><i style="width:' + ((pp[i] / mx) * 100).toFixed(0) + '%;background:' + (RAMPA[+i.split('+')[0]] || RAMPA[RAMPA.length - 1]) + '"></i><b>' + miles(pp[i]) + '</b></div>'; }).join('') + '</div>'
       + (k.fuera_de_ventana ? '<p class="kv">' + T('fueraDeTodoPaso', { n: miles(k.fuera_de_ventana) }) + '</p>' : '')
       + '</div>';
+  }
+
+  // story 2.78: las firmas de la ejecución, del registro común. Sin datos, la tarjeta dice por qué: nunca vacía.
+  function tarjetaFirmas(c) {
+    var f = c.firmas || { estado: 'sin_campo' };
+    var nota = function (frase) { return '<div class="mini blind ancha"><h4>' + T('firmasTitulo') + '</h4><p>' + frase + '</p></div>'; };
+    if (f.estado === 'sin_campo') return nota(T('firmasAnterior'));
+    if (f.estado === 'solo_cuenta') return nota(T('firmasSoloCuenta', { n: f.cuenta }));
+    if (f.estado === 'ausente') return nota(T('firmasAusente'));
+    if (f.estado !== 'leido') return nota(esc(f.motivo || T('firmasNoMedido')));
+    var ls = f.lineas || [];
+    var pie = (f.ilegibles ? '<p>' + T('firmasIlegibles', { n: f.ilegibles }) + '</p>' : '')
+      + (f.recortadas ? '<p>' + T('firmasRecortadas', { n: f.recortadas }) + '</p>' : '');
+    if (!ls.length) return '<div class="mini blind ancha"><h4>' + T('firmasTitulo') + '</h4><p>' + T('firmasNinguna') + '</p>' + pie + '</div>';
+    var clase = function (l) { return l.via === 'automatic' ? 'automatica' : l.delegada ? 'delegada' : l.via === 'notified' ? 'avisada' : ['window', 'terminal', 'click', 'message', 'command'].indexOf(l.via) >= 0 ? 'tuya' : 'otra'; };
+    var n = { tuya: 0, delegada: 0, automatica: 0, avisada: 0, otra: 0 };
+    ls.forEach(function (l) { n[clase(l)] += 1; });
+    var partes = [];
+    if (n.tuya) partes.push(T('firmasTuyas', { n: n.tuya }));
+    if (n.delegada) partes.push(T('firmasDelegadas', { n: n.delegada }));
+    if (n.automatica) partes.push(T('firmasAutomaticas', { n: n.automatica }));
+    if (n.avisada) partes.push(T('firmasAvisadas', { n: n.avisada }));
+    if (n.otra) partes.push(T('firmasOtraVia', { n: n.otra }));
+    var marca = function (l) {
+      var k = clase(l);
+      if (k === 'delegada') return '<b class="firma-marca firma-delegada">⇄ ' + T('marcaDelegada') + '</b>' + (l.via === 'review' ? ' <i>' + T('firmaConRevision') + '</i>' : '');
+      if (k === 'avisada') return '<b class="firma-marca firma-avisada">' + T('marcaAvisada') + '</b>';
+      if (k === 'automatica') return '<b class="firma-marca firma-avisada">' + T('marcaAutomatica') + '</b>';
+      if (k === 'tuya') return '<b class="firma-marca firma-tuya">' + T('marcaTuya') + '</b>';
+      return '<b class="firma-marca">' + T('marcaOtraVia', { v: esc(l.via) }) + '</b>';
+    };
+    return '<div class="mini ancha"><h4>' + T('firmasTitulo') + ' — ' + T('firmasN', { n: ls.length }) + ': ' + partes.join(', ') + '</h4>'
+      + '<ul class="nopaso firmas">' + ls.map(function (l) {
+        return '<li class="' + (clase(l) === 'delegada' ? 'firma-delegada' : '') + '"><span class="np-t">' + esc(String(l.cuando).slice(11, 16)) + ' UTC</span>'
+          + '<span class="np-n">' + esc(l.que || l.firma) + ' ' + marca(l) + '</span>'
+          + (l.quien ? '<span class="np-m">' + esc(l.quien) + '</span>' : '')
+          + (l.pedida_por ? '<span class="np-m">' + T('firmaPedidaPor', { s: esc(l.pedida_por) }) + '</span>' : '')
+          + (l.razon ? '<span class="np-m">' + esc(l.razon) + '</span>' : '')
+          + (l.otra_casa ? '<span class="np-m falta">' + T('firmaOtraCasa') + '</span>' : '')
+          + '</li>';
+      }).join('') + '</ul>' + pie + '</div>';
   }
 
   function tarjetaLoQueEncontraron(c) {
@@ -2289,10 +2505,10 @@ const CLIENTE_FUENTE = String.raw`(function () {
       + (c.controles && c.controles.error ? '<span class="chip bad"><span class="g">▲</span>' + T('conErrorN', { n: c.controles.error }) + '</span>' : '')
       + (c.controles && c.controles.freno ? '<span class="chip warn"><span class="g">◆</span>' + T('frenoN', { n: c.controles.freno }) + '</span>' : '')
       + (c.costo && c.costo.vueltas !== null ? '<span class="chip neutro"><span class="g">○</span>' + T('vueltasN', { n: c.costo.vueltas }) + '</span>' : '')
-      + (c.dod ? '<span class="chip ' + (c.dod === 'PASS' ? 'ok' : 'bad') + '"><span class="g">' + (c.dod === 'PASS' ? '●' : '▲') + '</span>DoD ' + esc(c.dod) + '</span>' : '');
+      + (c.dod ? '<span class="chip ' + (c.dod === 'PASS' ? 'ok' : 'bad') + '"><span class="g">' + (c.dod === 'PASS' ? '●' : '▲') + '</span>' + T(c.dod === 'PASS' ? 'terminadoPaso' : 'terminadoNoPaso') + '</span>' : '');
     var tl = timeline(c);
     return '<div class="det">'
-      + '<div class="det-head"><div><b>Story ' + esc(c.story || '—') + '</b> <span class="mono">' + esc(c.producto || T('productoSinRegistrar')) + '</span>'
+      + '<div class="det-head"><div><b>Story ' + esc(c.story || '—') + '</b> <span class="mono">' + esc(c.producto ? rotulo(c.producto) : T('productoSinRegistrar')) + '</span>'
       + (M.multi ? ' <span class="mono">· ' + (c.maquina ? esc(c.maquina) + (c.maquina_nota ? ' (' + esc(c.maquina_nota) + ')' : '') : T('maquinaSinDeclarar') + ' ' + esc(c.maquina_motivo || '')) + '</span>' : '')
       + (c.descripcion ? '<div class="det-desc">' + esc(c.descripcion.texto) + ' <span class="nd">— ' + esc(c.descripcion.fuente) + '</span></div>' : '<div class="det-desc nd">' + T('sinDescripcion') + '</div>')
       + '<div class="mono sub">' + esc((c.inicio || '').slice(0, 16).replace('T', ' ')) + ' UTC · ' + (c.dur_ms ? dt(c.dur_ms / 60000) : T('sinDuracion')) + '</div></div>'
@@ -2312,7 +2528,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
       + '<p class="tlnota">' + T('ejeNota1') + ' <b>' + T('ejeNota2') + '</b> ' + T('ejeNota3')
       + notaTiempos(c)
       + (c.motivo_tramos ? ' <b>' + esc(c.motivo_tramos) + '.</b>' : '') + '</p>'
-      + '<div class="minis">' + tarjetaLoQueEncontraron(c) + tarjetaControles(c) + tarjetaAgentes(c) + tarjetaConsumo(c) + '</div>'
+      + '<div class="minis">' + tarjetaLoQueEncontraron(c) + tarjetaControles(c) + tarjetaAgentes(c) + tarjetaConsumo(c) + tarjetaFirmas(c) + '</div>'
       + tarjetaCambios(c, idx) + '</div>';
   }
   if (typeof window !== 'undefined') { window.__detalle = detalle; }
@@ -2372,15 +2588,17 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var pts = ks.map(function (k) { return porMes[k] ? { k: k, v: mediana(porMes[k]), n: porMes[k].length } : { k: k, v: null, n: 0 }; });
     // El techo del eje se redondea a la centena de arriba, con aire: los números de los puntos van encima.
     var max = Math.max(100, Math.ceil(Math.max.apply(null, [1].concat(pts.map(function (p) { return p.v || 0; })).concat(LB ? [LB.mediana] : [])) * 1.2 / 100) * 100);
-    var W = 720, H = 190, x0 = 40, x1 = 706, base = 148, top = 16, paso = (x1 - x0) / ks.length;
+    // Ningún texto del gráfico mide menos de 11 px.
+    var W = 720, H = 196, x0 = 40, x1 = 706, base = 148, top = 16, paso = (x1 - x0) / ks.length;
     var Y = function (v) { return base - (v / max) * (base - top); };
     var X = function (i) { return x0 + paso * i + paso / 2; };
     var s2 = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;min-width:520px;display:block" role="img" aria-label="' + T('ariaPasos') + '">';
     [0, max / 2, max].forEach(function (t) {
-      s2 += '<line x1="' + x0 + '" y1="' + Y(t) + '" x2="' + x1 + '" y2="' + Y(t) + '" stroke="var(--line)"></line><text x="' + (x0 - 7) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink-3)">' + t + '</text>';
+      s2 += '<line x1="' + x0 + '" y1="' + Y(t) + '" x2="' + x1 + '" y2="' + Y(t) + '" stroke="var(--line)"></line><text x="' + (x0 - 7) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-family="IBM Plex Mono,monospace" font-size="11" fill="var(--ink-3)">' + t + '</text>';
     });
-    if (LB) s2 += '<line x1="' + x0 + '" y1="' + Y(LB.mediana).toFixed(1) + '" x2="' + x1 + '" y2="' + Y(LB.mediana).toFixed(1) + '" stroke="var(--ink-3)" stroke-dasharray="4 4"><title>' + T('lineaBaseDel', { f: esc(LB.fecha), m: LB.mediana }) + '</title></line>'
-      + '<text x="' + (x0 + 4) + '" y="' + (Y(LB.mediana) + 13).toFixed(1) + '" text-anchor="start" font-family="IBM Plex Mono,monospace" font-size="10" fill="var(--ink-3)">' + T('lineaBase', { m: LB.mediana, f: esc(LB.fecha) }) + '</text>';
+    // El rótulo de la línea base va en la leyenda, debajo: dentro del área se encimaba con los valores, que caen cerca
+    // de ella (es lo esperable).
+    if (LB) s2 += '<line x1="' + x0 + '" y1="' + Y(LB.mediana).toFixed(1) + '" x2="' + x1 + '" y2="' + Y(LB.mediana).toFixed(1) + '" stroke="var(--ink-3)" stroke-dasharray="4 4"><title>' + T('lineaBaseDel', { f: esc(LB.fecha), m: LB.mediana }) + '</title></line>';
     // La línea une sólo meses CONSECUTIVOS medidos: cruzar un hueco dibujaría una tendencia que nadie midió.
     pts.forEach(function (p, i) {
       if (i && p.v !== null && pts[i - 1].v !== null) s2 += '<line x1="' + X(i - 1).toFixed(1) + '" y1="' + Y(pts[i - 1].v).toFixed(1) + '" x2="' + X(i).toFixed(1) + '" y2="' + Y(p.v).toFixed(1) + '" stroke="var(--accent)" stroke-width="2"></line>';
@@ -2390,23 +2608,66 @@ const CLIENTE_FUENTE = String.raw`(function () {
       s2 += p.v === null
         ? '<rect x="' + (cx - Math.min(15, paso * 0.31)).toFixed(1) + '" y="' + top + '" width="' + Math.min(30, paso * 0.62).toFixed(1) + '" height="' + (base - top) + '" fill="var(--hatch)" opacity=".18" rx="2"><title>' + p.k + ': ' + T('sinEjecucionesMedidas') + '</title></rect>'
         : '<circle cx="' + cx.toFixed(1) + '" cy="' + Y(p.v).toFixed(1) + '" r="4.5" fill="var(--accent)"><title>' + p.k + ': ' + T('medianaN', { v: Math.round(p.v), n: p.n }) + '</title></circle>'
-          + '<text x="' + cx.toFixed(1) + '" y="' + (Y(p.v) - 9).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink)">' + Math.round(p.v) + '</text>';
-      s2 += '<text x="' + cx.toFixed(1) + '" y="164" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + p.k + '</text>'
-        + '<text x="' + cx.toFixed(1) + '" y="176" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + (p.v === null ? T('sinMedir') : 'n=' + p.n) + '</text>';
+          + '<text x="' + cx.toFixed(1) + '" y="' + (Y(p.v) - 9).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="var(--ink)">' + Math.round(p.v) + '</text>';
+      s2 += '<text x="' + cx.toFixed(1) + '" y="166" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="var(--ink-3)">' + p.k + '</text>'
+        + '<text x="' + cx.toFixed(1) + '" y="181" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="var(--ink-3)">' + (p.v === null ? T('sinMedir') : 'n=' + p.n) + '</text>';
     });
-    return s2 + '</svg>' + notas;
+    var leyenda = LB ? '<p class="tlnota leyenda"><svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--ink-3)" stroke-dasharray="4 4"></line></svg> ' + T('lineaBase', { m: LB.mediana, f: esc(LB.fecha) }) + '</p>' : '';
+    // los meses del rango sin ejecuciones medidas se nombran: el hueco con trama sólo, en un rango largo, no se ve
+    var sinMedir = pts.filter(function (p) { return p.v === null; }).map(function (p) { return p.k; });
+    var aviso = sinMedir.length ? '<p class="tlnota">' + T('mesesSinMedir', { meses: sinMedir.join(', ') }) + '</p>' : '';
+    return s2 + '</svg>' + leyenda + aviso + notas;
+  }
+
+  // La revisión de la historia antes de programar. Cuenta HISTORIAS: las corridas de una misma historia comparten su
+  // constancia, y sumarlas contaría dos veces la revisión y su costo; de cada historia vale su corrida más nueva. Una
+  // historia es su número dentro de su producto: dos productos pueden tener cada uno su «2.1». Las
+  // corridas sin el campo son anteriores a la revisión previa y van aparte; las de constancia sin medir (pendiente o
+  // ilegible) tampoco entran en el denominador. Tokens y duración sólo de las que los midieron: un null nunca es 0.
+  function revisionPrevia(F) {
+    var viejas = 0, porHistoria = {};
+    F.forEach(function (c) {
+      var r = c.revision_previa;
+      if (!r || !r.estado || r.estado === 'sin_campo') { viejas += 1; return; }
+      var k = c.story !== null && c.story !== undefined ? 'h:' + JSON.stringify([c.producto || null, c.story]) : 'c:' + c.id;
+      var antes = porHistoria[k];
+      if (!antes || String(c.inicio || '') > String(antes.inicio || '')) porHistoria[k] = { inicio: c.inicio, r: r };
+    });
+    var rs = Object.keys(porHistoria).map(function (k) { return porHistoria[k].r; });
+    var de = function (e) { return rs.filter(function (r) { return r.estado === e; }); };
+    var rev = de('revisada'), salt = de('saltada').length, sinRev = de('sin_revision').length, noMed = de('no_medido').length;
+    var conocidas = rev.length + salt + sinRev;
+    var b = function (n) { return '<b>' + n + '</b> '; };
+    var aparte = (salt ? ' · ' + b(salt) + T('rpSaltadas', { n: salt }) : '') + (sinRev ? ' · ' + b(sinRev) + T('rpSinRevision') : '')
+      + (noMed ? ' · ' + b(noMed) + T('rpNoMedidas') : '') + (viejas ? ' · ' + b(viejas) + T('rpAnteriores', { n: viejas }) : '');
+    if (!conocidas) return gris(T('rpSinDatoFiltro') + aparte.replace(/<\/?b>/g, '').replace(/^ · /, ': '));
+    var seg = function (ms) { return ms < 90000 ? Math.round(ms / 1000) + ' s' : dt(ms / 60000); };
+    var tk = rev.filter(function (r) { return num(r.tokens); }).map(function (r) { return r.tokens; });
+    var du = rev.filter(function (r) { return num(r.duracion_ms); }).map(function (r) { return r.duracion_ms; });
+    var costo = !rev.length ? T('rpSinCosto')
+      : (tk.length ? b(miles(tk.reduce(function (a, x) { return a + x; }, 0))) + T('rpTokens', { m: miles(Math.round(mediana(tk))), n: tk.length, t: rev.length }) : T('rpSinTokens'))
+        + ' · ' + (du.length ? T('rpDuracion') + ' ' + b(seg(mediana(du))).trim() + ' (n=' + du.length + ')' : T('rpSinDuracion'));
+    var corregidas = rev.filter(function (r) { return r.corregida === true; }).length;
+    return med(T('rpRevisadasDe', { n: rev.length, t: conocidas }), T('nEqDeEjecuciones', { n: F.length - viejas, t: F.length }), {
+      detalle: b(corregidas) + T('rpCorregidas', { n: corregidas }) + ' · ' + costo + aparte });
   }
 
   function resumen(F) {
     var N = F.length;
     // story 2.27 (AC 11): quien todavía no tiene corridas en el buzón no ve «0 corridas» como una medida
     if (!C.length && M.vacio_motivo) return ficha(T('todaviaNo'), gris(M.vacio_motivo));
-    if (!N) return ficha(T('filtroVacio'), gris(M.registro.estado !== 'medido' && M.registro.motivo ? M.registro.motivo : T('filtroVacioMotivo')));
+    if (!N && M.registro.estado !== 'medido' && M.registro.motivo) return ficha(T('filtroVacio'), gris(M.registro.motivo));
+    // un filtro que no deja nada es una medida —cero— y dice qué cambiar: las casillas marcadas, la máquina o el
+    // producto puestos, o el rango
+    if (!N) return ficha(T('filtroVacio'), { estado: 'medido', est: 'neutro', texto: esc(T('nEjecuciones', { n: 0 })),
+      den: T((elFc && elFc.checked) || (elFf && elFf.checked) ? 'filtroVacioCasillas' : elMaq && elMaq.value ? 'filtroVacioMaquina' : elRepo.value ? 'filtroVacioProducto' : 'filtroVacioRango') });
     var dur = F.filter(function (c) { return c.dur_ms; });
     var fin = F.filter(function (c) { return c.llego_al_final; });
     var gz = F.filter(function (c) { return c.controles; });
     var roj = gz.filter(function (c) { return c.controles.error > 0; });
-    var fre = gz.filter(function (c) { return c.controles.freno > 0; });
+    // las tres partes no se superponen: sólo con error, sólo frenadas y con las dos
+    var ambas = roj.filter(function (c) { return c.controles.freno > 0; }).length;
+    var soloFre = gz.filter(function (c) { return c.controles.freno > 0; }).length - ambas;
     var cc = F.filter(function (c) { return c.costo; });
     var ag = cc.map(function (c) { return c.costo.agentes; });
     var vu = cc.filter(function (c) { return c.costo.vueltas !== null; }).map(function (c) { return c.costo.vueltas; });
@@ -2457,33 +2718,43 @@ const CLIENTE_FUENTE = String.raw`(function () {
         detalle: FASES_VAL.filter(function (p) { return porFaseVal[p[0]].con; }).map(function (p) { return esc(p[1]) + ' ' + T('nDe', { n: porFaseVal[p[0]].hal, t: porFaseVal[p[0]].con }); }).join(' · ')
           + aparte(function (n) { return '<b>' + n + '</b>'; }) })
       : gris(T('sinVeredictoFiltro') + aparte(function (n) { return n; }).replace(/^ · /, ': '));
+    var fichaRevisionPrevia = revisionPrevia(F);
+    // «encontró un error» es el control funcionando (lo dice la misma ficha): se informa sin semáforo, que la pintaría de
+    // rojo justo cuando los controles más trabajan
     return [
       ficha(T('fAlFinal'), med(Math.round(pf * 100) + '%', T('nDeEjecuciones', { n: fin.length, t: N }), { est: juzgar('corridas_al_final', pf).est, palabra: juzgar('corridas_al_final', pf).palabra, detalle: '<b>' + (N - fin.length) + '</b> ' + T('aMitad') + (juzgar('corridas_al_final', pf).nota ? ' · <b>' + esc(juzgar('corridas_al_final', pf).nota) + '</b>' : '') })),
       ficha(T('fDuracion'), dur.length ? med(n1(mediana(dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h', T('nEqDeEjecuciones', { n: dur.length, t: N }), { detalle: T('laMasLarga', { d: n1(Math.max.apply(null, dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h' }) }) : gris(T('sinDuracionFiltro'))),
-      ficha(T('fConError'), gz.length ? med(Math.round((roj.length / gz.length) * 100) + '%', T('nDeConControles', { n: roj.length, t: gz.length }), { est: juzgar('corridas_con_error', roj.length / gz.length).est, palabra: juzgar('corridas_con_error', roj.length / gz.length).palabra, detalle: T('errorDetalle1') + ' <b>' + fre.length + '</b> ' + T('errorDetalle2') + (N - gz.length ? ' ' + T('noRegistraronControles', { n: N - gz.length }) : '') + (juzgar('corridas_con_error', roj.length / gz.length).nota ? ' <b>' + esc(juzgar('corridas_con_error', roj.length / gz.length).nota) + '</b>' : '') }) : gris(T('sinControlesFiltro'))),
+      ficha(T('fConError'), gz.length ? med(Math.round((roj.length / gz.length) * 100) + '%', T('nDeConControles', { n: roj.length, t: gz.length }), { est: 'neutro', palabra: T('medido'), detalle: T('errorDetalle', { e: '<b>' + (roj.length - ambas) + '</b>', f: '<b>' + soloFre + '</b>', k: '<b>' + ambas + '</b>' }) + (N - gz.length ? ' ' + T('noRegistraronControles', { n: N - gz.length }) : '') }) : gris(T('sinControlesFiltro'))),
       ficha(T('fAgentes'), ag.length ? med(String(mediana(ag)), T('nEqDeEjecuciones', { n: ag.length, t: N }), { detalle: T('maximo', { n: Math.max.apply(null, ag) }) + ' · ' + T('noLoRegistran', { n: N - ag.length }) }) : gris(T('sinAgentesFiltro'))),
       ficha(T('fVueltas'), vu.length ? med(String(mediana(vu)), T('nEqDeEjecuciones', { n: vu.length, t: N }), { detalle: T('maximo', { n: Math.max.apply(null, vu) }) + ' · ' + T('vueltasDetalle') }) : gris(T('sinVueltasFiltro'))),
       ficha(T('fValidador'), fichaValidador),
+      ficha(T('fRevisionPrevia'), fichaRevisionPrevia),
       ficha(T('fTrabajo'), tMed.length ? med(dt(mediana(tMed.map(function (c) { return c.tiempos.trabajo_ms; })) / 60000), T('nEqDeEjecuciones', { n: tMed.length, t: N }), { detalle: T('trabajoDetalle') + (M.sin_hilos ? ' (' + T('incluyeEsperas') + ' ' + esc(M.sin_hilos) + ')' : '') }) : gris(sinArranque + sinHilo)),
-      ficha(T('fEspera'), eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), T('nEqDeEjecuciones', { n: eMed.length, t: N }), { detalle: T('esperaDetalle') + pisoEspera }) : gris(sinArranque + pisoEspera)),
+      ficha(T('fEspera'), eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), T('nEqDeEjecuciones', { n: eMed.length, t: N }), { detalle: T('esperaDefinicion') + pisoEspera }) : gris(sinArranque + pisoEspera)),
       ficha(T('fPasos'), pa.length ? med(String(Math.round(mediana(pa))), T('nEqDeEjecuciones', { n: pa.length, t: N }), { detalle: (N - pa.length ? '<b>' + (N - pa.length) + '</b> ' + T('pasosSinMedir') + ' ' : '') + T('tokensConsecuencia') + (LB ? ' ' + T('lineaBaseDelFicha', { f: esc(LB.fecha) }) + ' <b>' + LB.mediana + '</b>' + (LB.corridas ? ' (n=' + LB.corridas + ')' : '') + '.' : ' <b>' + sinLB + '</b>.') }) : gris(T('sinPasosFiltro'))),
-      ficha(T('fTokens'), tk.length ? med(miles(Math.round(mediana(tk))), T('nEqDeEjecuciones', { n: tk.length, t: N }), { detalle: T('deOtras') + ' <b>' + (N - tk.length) + '</b> ' + T('sinConsumoDetalle') }) : gris(T('sinConsumoFiltro')))
+      ficha(T('fTokens'), tk.length ? med(miles(Math.round(mediana(tk))), T('nEqDeEjecuciones', { n: tk.length, t: N }), { detalle: N - tk.length === 0 ? '' : N - tk.length === 1 ? T('deOtra') + ' ' + T('sinConsumoDetalle') : T('deOtras') + ' <b>' + (N - tk.length) + '</b> ' + T('sinConsumoDetalle') }) : gris(T('sinConsumoFiltro')))
     ].join('');
   }
 
+  // La semana de cada ejecución sale de su día LOCAL, como el filtro: el domingo 22 h de Argentina ya es lunes en UTC, y la
+  // barra de «esta semana» tiene que dar lo mismo que el atajo. El día local se lleva a medianoche UTC para la cuenta ISO.
+  var diaComoUtc = function (iso) { var d = new Date(iso); return isNaN(d.getTime()) ? null : new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); };
+  var lunesDe = function (t) { var x = new Date(t.getTime()); var dn = x.getUTCDay() || 7; x.setUTCDate(x.getUTCDate() - dn + 1); return x; };
+  var semanaDe = function (t) { var x = new Date(t.getTime()); var dn = x.getUTCDay() || 7; x.setUTCDate(x.getUTCDate() + 4 - dn); var a0 = new Date(Date.UTC(x.getUTCFullYear(), 0, 1)); return x.getUTCFullYear() + '-S' + String(Math.ceil(((x - a0) / 86400000 + 1) / 7)).padStart(2, '0'); };
+  var semanaLocal = function (c) { var t = c.inicio ? diaComoUtc(c.inicio) : null; return t ? semanaDe(t) : null; };
+  // la semana como se ve, con la letra del idioma; la clave («2026-S44») no cambia
+  var semanaVisible = function (k) { return k.slice(0, 5) + T('letraSemana') + k.slice(6); };
   // Todas las semanas del rango, aunque valgan 0: una barra ausente y una en cero no son lo mismo.
   function semanasDelRango(F) {
-    var fechas = F.map(function (c) { return c.inicio; }).filter(Boolean).sort();
-    if (!fechas.length) return [];
-    var lunes = function (iso) { var d = new Date(iso); var t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); var dn = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() - dn + 1); return t; };
-    var semana = function (t) { var x = new Date(t.getTime()); var dn = x.getUTCDay() || 7; x.setUTCDate(x.getUTCDate() + 4 - dn); var a0 = new Date(Date.UTC(x.getUTCFullYear(), 0, 1)); return x.getUTCFullYear() + '-S' + String(Math.ceil(((x - a0) / 86400000 + 1) / 7)).padStart(2, '0'); };
-    var ks = [], t = lunes(fechas[0]), fin = lunes(fechas[fechas.length - 1]);
-    while (t <= fin && ks.length < 400) { ks.push(semana(t)); t.setUTCDate(t.getUTCDate() + 7); }
+    var dias = F.map(function (c) { return c.inicio ? diaComoUtc(c.inicio) : null; }).filter(Boolean).sort(function (a, b) { return a - b; });
+    if (!dias.length) return [];
+    var ks = [], t = lunesDe(dias[0]), fin = lunesDe(dias[dias.length - 1]);
+    while (t <= fin && ks.length < 400) { ks.push(semanaDe(t)); t.setUTCDate(t.getUTCDate() + 7); }
     return ks;
   }
   function graficoSemanas(F) {
     var porSem = {};
-    F.forEach(function (c) { if (c.semana) porSem[c.semana] = (porSem[c.semana] || 0) + 1; });
+    F.forEach(function (c) { var s = semanaLocal(c); if (s) porSem[s] = (porSem[s] || 0) + 1; });
     var ks = semanasDelRango(F);
     if (!ks.length) return '<p class="tlnota">' + T('sinEjecucionesFiltro') + '</p>';
     var max = Math.max.apply(null, [1].concat(ks.map(function (k) { return porSem[k] || 0; })));
@@ -2495,9 +2766,9 @@ const CLIENTE_FUENTE = String.raw`(function () {
     });
     ks.forEach(function (k, i) {
       var n = porSem[k] || 0, cx = x0 + paso * i + paso / 2, bw = Math.min(30, paso * 0.62);
-      s2 += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + Y(n).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, base - Y(n)).toFixed(1) + '" fill="' + (n ? 'var(--accent)' : 'var(--line-strong)') + '" rx="2"><title>' + k + ': ' + T('nEjecuciones', { n: n }) + '</title></rect>'
+      s2 += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + Y(n).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, base - Y(n)).toFixed(1) + '" fill="' + (n ? 'var(--accent)' : 'var(--line-strong)') + '" rx="2"><title>' + semanaVisible(k) + ': ' + T('nEjecuciones', { n: n }) + '</title></rect>'
         + '<text x="' + cx.toFixed(1) + '" y="' + (Y(n) - 5).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink)">' + n + '</text>'
-        + (ks.length <= 26 || i % 2 === 0 ? '<text x="' + cx.toFixed(1) + '" y="166" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + k.slice(5) + '</text>' : '');
+        + (ks.length <= 26 || i % 2 === 0 ? '<text x="' + cx.toFixed(1) + '" y="166" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + semanaVisible(k).slice(5) + '</text>' : '');
     });
     return s2 + '<text x="' + x0 + '" y="182" font-family="IBM Plex Sans,sans-serif" font-size="11" fill="var(--ink-3)">' + T('semanaIso') + ' · ' + ks[0].slice(0, 4) + ' → ' + ks[ks.length - 1].slice(0, 4) + '</text></svg>';
   }
@@ -2528,31 +2799,66 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var diaLocal = function (iso) { if (!iso) return ''; var d = new Date(iso); return isNaN(d.getTime()) ? '' : ymd(d); };
   var fechas = C.map(function (c) { return diaLocal(c.inicio); }).filter(Boolean).sort();
   var RANGO = [fechas[0] || '', fechas[fechas.length - 1] || ''];
+  // la columna de la fecha, también en la del navegador: la tabla y el filtro dicen el mismo día (llega en UTC), y con el
+  // formato del navegador, el mismo que muestran los campos de fecha del filtro
+  var diaVisible = function (iso) {
+    var d = new Date(iso); if (isNaN(d.getTime())) return '';
+    try { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch (e) { return ymd(d); }
+  };
+  for (var fi = 0; fi < cuerpo.rows.length; fi++) {
+    var fr = cuerpo.rows[fi], fk = fr.classList.contains('fila-det') ? null : enC(fr);
+    var fd = fk !== null && C[fk] && C[fk].inicio ? diaVisible(C[fk].inicio) : '', ftd = fd ? fr.querySelector('td.fecha') : null;
+    if (ftd && ftd.firstChild && ftd.firstChild.nodeType === 3) ftd.firstChild.nodeValue = fd;
+  }
   var cuentaRepo = {};
   // Los combos van en orden alfabético (sin distinguir mayúsculas): se busca un nombre, no un ranking. Lo «sin…», al final.
   var alfabetico = function (a, b) { var sa = a.charAt(0) === '(' || a.indexOf('sin ') === 0, sb = b.charAt(0) === '(' || b.indexOf('sin ') === 0; return (sa - sb) || a.localeCompare(b, 'es', { sensitivity: 'base' }); };
   // Un grupo por producto, después los repos sin producto conocido y al final el laboratorio. El valor es el repo, como
   // siempre (los enlaces guardados siguen andando); el del laboratorio lleva «laboratorio/» adelante, para no juntarse
   // con el repo de verdad del mismo nombre.
-  var nombreRepo = function (c) { return c.producto || '(' + T('sinProducto') + ')'; };
-  var claveRepo = function (c) { return (c.grupo === 'laboratorio' ? 'laboratorio/' : '') + nombreRepo(c); };
+  // Sin producto hay UNA opción, en «otros repos», venga del laboratorio o no. El mismo producto escrito con otra mayúscula
+  // es una sola opción (gana la forma más usada). Una opción del laboratorio dice que lo es: así ninguna etiqueta se repite.
+  var SIN_PRODUCTO = '(' + T('sinProducto') + ')';
+  var formaDe = {};
+  (function () {
+    var usos = {};
+    C.forEach(function (c) { if (c.producto) usos[c.producto] = (usos[c.producto] || 0) + 1; });
+    var mejor = {};
+    Object.keys(usos).forEach(function (p) { var k = p.toLowerCase(); if (!(k in mejor) || usos[p] > usos[mejor[k]] || (usos[p] === usos[mejor[k]] && p < mejor[k])) mejor[k] = p; });
+    Object.keys(usos).forEach(function (p) { formaDe[p] = mejor[p.toLowerCase()]; });
+  })();
+  var claveRepo = function (c) { return !c.producto ? SIN_PRODUCTO : (c.grupo === 'laboratorio' ? 'laboratorio/' : '') + formaDe[c.producto]; };
   var grupoRepo = {}, reposDeGrupo = {};
   C.forEach(function (c) {
-    var k = claveRepo(c), g = c.grupo || '';
+    var k = claveRepo(c), g = c.producto ? c.grupo || '' : '';
     cuentaRepo[k] = (cuentaRepo[k] || 0) + 1;
     if (!(k in grupoRepo)) { grupoRepo[k] = g; (reposDeGrupo[g] = reposDeGrupo[g] || []).push(k); }
   });
   var ordenGrupo = function (a, b) { var pa = a === 'laboratorio' ? 2 : a === '' ? 1 : 0, pb = b === 'laboratorio' ? 2 : b === '' ? 1 : 0; return (pa - pb) || alfabetico(a, b); };
-  var opcion = function (k) { var etiqueta = k.indexOf('laboratorio/') === 0 ? k.slice(12) : k; return '<option value="' + esc(k) + '">' + esc(etiqueta) + ' (' + cuentaRepo[k] + ')</option>'; };
-  elRepo.innerHTML = '<option value="">' + T('todos', { n: C.length }) + '</option>' + Object.keys(reposDeGrupo).sort(ordenGrupo).map(function (g) {
-    var etiqueta = g === 'laboratorio' ? T('laboratorio') : g === '' ? T('otrosRepos') : g;
-    return '<optgroup label="' + esc(etiqueta) + '">' + reposDeGrupo[g].sort(alfabetico).map(opcion).join('') + '</optgroup>';
-  }).join('');
   var cuentaMaq = {};
-  if (elMaq) {
-    C.forEach(function (c) { cuentaMaq[maqDe(c)] = (cuentaMaq[maqDe(c)] || 0) + 1; });
-    elMaq.innerHTML = '<option value="">' + T('todas', { n: C.length }) + '</option>' + Object.keys(cuentaMaq).sort(alfabetico).map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + ' (' + cuentaMaq[r] + ')</option>'; }).join('');
+  if (elMaq) C.forEach(function (c) { cuentaMaq[maqDe(c)] = (cuentaMaq[maqDe(c)] || 0) + 1; });
+  // Los conteos de los desplegables siguen el filtro de fechas (no el de producto ni el de máquina): «todos (N)» es lo que
+  // hay en esas fechas. Se rearman en cada aplicar(), con la elección de la persona intacta.
+  function rotularDesplegables(enFechas) {
+    var nRepo = {}, nMaq = {};
+    enFechas.forEach(function (c) { var k = claveRepo(c); nRepo[k] = (nRepo[k] || 0) + 1; if (elMaq) nMaq[maqDe(c)] = (nMaq[maqDe(c)] || 0) + 1; });
+    var opcion = function (k) {
+      var etiqueta = k === SIN_PRODUCTO ? k : k.indexOf('laboratorio/') === 0 ? rotulo(k.slice(12)) + ' (' + T('laboratorio') + ')' : rotulo(k);
+      return '<option value="' + esc(k) + '">' + esc(etiqueta) + ' (' + (nRepo[k] || 0) + ')</option>';
+    };
+    var elegido = elRepo.value;
+    elRepo.innerHTML = '<option value="">' + T('todos', { n: enFechas.length }) + '</option>' + Object.keys(reposDeGrupo).sort(ordenGrupo).map(function (g) {
+      var etiqueta = g === 'laboratorio' ? T('laboratorio') : g === '' ? T('otrosRepos') : g;
+      return '<optgroup label="' + esc(etiqueta) + '">' + reposDeGrupo[g].sort(alfabetico).map(opcion).join('') + '</optgroup>';
+    }).join('');
+    elRepo.value = elegido;
+    if (elMaq) {
+      var maq = elMaq.value;
+      elMaq.innerHTML = '<option value="">' + T('todas', { n: enFechas.length }) + '</option>' + Object.keys(cuentaMaq).sort(alfabetico).map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + ' (' + (nMaq[r] || 0) + ')</option>'; }).join('');
+      elMaq.value = maq;
+    }
   }
+  rotularDesplegables(C);
   elDesde.min = elHasta.min = RANGO[0]; elDesde.max = elHasta.max = RANGO[1]; elDesde.value = RANGO[0]; elHasta.value = RANGO[1];
 
   // '?solo=N': la ficha de UNA corrida — se esconden las otras filas y la capa ejecutiva (que con una
@@ -2587,13 +2893,18 @@ const CLIENTE_FUENTE = String.raw`(function () {
   if (esta(cuentaRepo, qRepo)) elRepo.value = qRepo;
   else if (qRepo && esta(cuentaRepo, 'laboratorio/' + qRepo)) elRepo.value = 'laboratorio/' + qRepo;
   if (elMaq && esta(cuentaMaq, qMaq)) elMaq.value = ENLACE.maquina = qMaq;
+  // las casillas «sin consumo» y «llegaron» viajan en la dirección como los demás filtros
+  if (leer('sin-consumo') === '1') elFc.checked = true;
+  if (leer('llegaron') === '1') elFf.checked = true;
   if (typeof window !== 'undefined') window.__enlace = function () { return ENLACE; };
   if (SOLO !== null && typeof document !== 'undefined' && document.body && document.body.classList) document.body.classList.add('solo');
+  function enFechas(c) {
+    var f = diaLocal(c.inicio);
+    return !(elDesde.value && f && f < elDesde.value) && !(elHasta.value && f && f > elHasta.value);
+  }
   function pasa(c) {
     if (SOLO !== null && C.indexOf(c) !== SOLO) return false;
-    var f = diaLocal(c.inicio);
-    if (elDesde.value && f && f < elDesde.value) return false;
-    if (elHasta.value && f && f > elHasta.value) return false;
+    if (!enFechas(c)) return false;
     if (elRepo.value && claveRepo(c) !== elRepo.value) return false;
     if (elMaq && elMaq.value && maqDe(c) !== elMaq.value) return false;
     if (elFc.checked && c.consumo.estado !== 'medido') return false;
@@ -2601,6 +2912,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     return true;
   }
   function aplicar() {
+    rotularDesplegables(C.filter(enFechas));
     var F = C.filter(pasa);
     $('fichas').innerHTML = resumen(F);
     $('gsem').innerHTML = graficoSemanas(F);
@@ -2617,7 +2929,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var dentro = 0, fuera = 0;
     cs.forEach(function (c) { fuera += c.consumo.fuera_de_ventana; Object.keys(c.consumo.por_paso).forEach(function (k) { dentro += c.consumo.por_paso[k]; }); });
     $('nota-tokens').innerHTML = cs.length
-      ? T('notaTokens1') + ' <b>' + cs.length + '</b> ' + T('notaTokens2') + ' <b>' + T('notaTokens3', { p: n1((fuera / Math.max(1, fuera + dentro)) * 100) }) + '</b> ' + T('notaTokens4')
+      ? T(cs.length === 1 ? 'notaTokens1Una' : 'notaTokens1') + ' <b>' + cs.length + '</b> ' + T(cs.length === 1 ? 'notaTokens2Una' : 'notaTokens2') + ' <b>' + T('notaTokens3', { p: n1((fuera / Math.max(1, fuera + dentro)) * 100) }) + '</b> ' + T('notaTokens4')
       : T('notaTokensSin1') + ' <b>' + T('notaTokensSin2') + '</b>.';
     var n = 0;
     for (var i = 0; i < cuerpo.rows.length; i++) {
@@ -2631,11 +2943,13 @@ const CLIENTE_FUENTE = String.raw`(function () {
   // Escribe en la dirección los filtros que difieren de su valor por defecto; lo demás (solo, abrir, ver, git) queda como estaba.
   function escribirDireccion() {
     if (typeof history === 'undefined' || !history || typeof history.replaceState !== 'function' || typeof location === 'undefined') return;
-    var resto = qs.replace(/^\?/, '').split('&').filter(function (x) { return x && !/^(desde|hasta|producto|maquina)=/.test(x); });
+    var resto = qs.replace(/^\?/, '').split('&').filter(function (x) { return x && !/^(desde|hasta|producto|maquina|sin-consumo|llegaron)=/.test(x); });
     if (elDesde.value && (FIJADA.desde || elDesde.value !== RANGO[0])) resto.push('desde=' + encodeURIComponent(elDesde.value));
     if (elHasta.value && (FIJADA.hasta || elHasta.value !== RANGO[1])) resto.push('hasta=' + encodeURIComponent(elHasta.value));
     if (elRepo.value) resto.push('producto=' + encodeURIComponent(elRepo.value));
     if (elMaq && elMaq.value) resto.push('maquina=' + encodeURIComponent(elMaq.value));
+    if (elFc.checked) resto.push('sin-consumo=1');
+    if (elFf.checked) resto.push('llegaron=1');
     try { history.replaceState(null, '', (location.pathname || '') + (resto.length ? '?' + resto.join('&') : '') + (location.hash || '')); } catch (e) { /* sin historial, el filtro sigue andando */ }
   }
   function alCambiar() { aplicar(); escribirDireccion(); }
@@ -2701,6 +3015,21 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var tr = ev.target.closest('tr'); if (!tr || !tr.dataset.i) return;
     abrir(tr, function (fila) { fila.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
   });
+  // la tarjeta del celular nombra cada dato con su columna; la sombra de la derecha avisa que la tabla sigue
+  var cajaTabla = document.querySelectorAll('.tabla')[0];
+  if (cajaTabla) {
+    var cabeceras = cajaTabla.querySelectorAll('thead th');
+    cajaTabla.querySelectorAll('tbody tr[data-i]').forEach(function (tr) {
+      Array.prototype.forEach.call(tr.cells, function (td, k) { if (cabeceras[k]) td.setAttribute('data-col', cabeceras[k].childNodes[0].textContent.trim()); });
+    });
+    var marcarSigue = function () { cajaTabla.parentElement.classList.toggle('sigue', cajaTabla.scrollLeft + cajaTabla.clientWidth < cajaTabla.scrollWidth - 1); };
+    marcarSigue();
+    cajaTabla.addEventListener('scroll', marcarSigue);
+    window.addEventListener('resize', marcarSigue);
+    // la tabla se ensancha después (las letras llegan tarde, el filtro muestra filas): se vuelve a mirar
+    window.addEventListener('load', marcarSigue);
+    if (typeof ResizeObserver === 'function') { var mira = new ResizeObserver(marcarSigue); mira.observe(cajaTabla); mira.observe(cajaTabla.querySelector('table')); }
+  }
   // '?abrir=<id>' abre el detalle de esa corrida al cargar: es lo que permite fotografiarlo sin un clic (con '?solo=<id>'
   // queda arriba de todo). En la página local vale también el índice de la fila.
   if (ENLACE.abrir !== null && cuerpo.rows && cuerpo.rows.length) {
@@ -2835,7 +3164,7 @@ function main(opts = {}) {
   if (M.multi) {
     log(`  máquinas: ${M.maquinas.lista.map((x) => `${x.nombre} ${x.corridas}`).join(' · ') || 'ninguna'}${M.maquinas.sin_declarar ? ` · sin declarar ${M.maquinas.sin_declarar}` : ''} (esta máquina: ${maquina || 'sin nombre'})`);
     if (M.buzon && M.buzon.estado !== 'leido') log(`  buzón NO LEÍDO: ${M.buzon.motivo}`);
-    if (M.buzon && M.buzon.carpetas_ilegibles) log(`  ${M.buzon.carpetas_ilegibles} carpeta(s) del buzón no se pudieron leer`);
+    if (M.buzon && M.buzon.carpetas_ilegibles) log(`  ${M.buzon.carpetas_ilegibles === 1 ? '1 carpeta del buzón no se pudo leer' : `${M.buzon.carpetas_ilegibles} carpetas del buzón no se pudieron leer`}`);
     if (M.buzon && M.buzon.uniones && M.buzon.uniones.estado === 'no_medidas') log(`  uniones de carpetas no medidas: ${M.buzon.uniones.motivo}`);
   }
   if (opts.json) console.log(JSON.stringify(M, (k, v) => (k === '_texto' || k === '_textoGit' ? undefined : v), 2));
@@ -2864,7 +3193,7 @@ function main(opts = {}) {
 }
 
 // `dentroDelRepoDelEquipo` también la usa dashboard.js: la página de seis preguntas tiene un solo escritor en el repo.
-module.exports = { enIdioma, todoEnIdioma, textosDelCliente, bloqueDeTextos, main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, agruparRepos, esLaboratorio, nombresDePasos, lineaBasePasos, render, CONTROLES, dentroDelRepoDelEquipo,
+module.exports = { enIdioma, todoEnIdioma, textosDelCliente, bloqueDeTextos, main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, agruparRepos, esLaboratorio, nombresDePasos, lineaBasePasos, render, CONTROLES, filaControles, semanaVisible, dentroDelRepoDelEquipo,
   // Lo que usa la pestaña Corridas del sitio
   idEstable, runKey, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
   // el sitio con las conversaciones prendidas: el resumen de cada corrida y los textos de una, a demanda

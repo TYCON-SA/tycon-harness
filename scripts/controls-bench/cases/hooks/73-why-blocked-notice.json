@@ -1,0 +1,71 @@
+{
+  "__doc": "Por qué me frenaste: cuando la persona pregunta por qué la frenó el arnés, el aviso le pasa al asistente el último freno del hilo de la sesión para que lo explique en llano. Lo que el banco fija: con la pregunta, el mensaje del freno llega (en el hilo de Claude Code y en el de Codex); sin la pregunta, silencio; y nunca frena (sale 0). La suite completa es scripts/tests/why-blocked-notice.test.js.",
+  "hooks": [
+    {
+      "hook": "why-blocked-notice.js (explica en llano el último freno)",
+      "script": "${TCG}/scripts/hooks/why-blocked-notice.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "claude-la-pregunta-trae-el-freno",
+          "type": "must-emit",
+          "__doc": "Con la pregunta, el último freno del hilo de Claude Code llega al asistente con el pedido de explicarlo en llano. ROJO PREVIO: no decir nada (el asistente contesta de memoria).",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"subí la rama\"},\"timestamp\":\"2026-11-01T03:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"b1\",\"name\":\"Bash\",\"input\":{\"command\":\"git push --force origin main\"}}]},\"timestamp\":\"2026-11-01T03:00:01.000Z\"}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"b1\",\"is_error\":true,\"content\":\"PreToolUse:Bash hook error: [bash /x/guard.sh]: ⛔ FRENADO-BANCO reescribe la historia de main\"}]},\"timestamp\":\"2026-11-01T03:00:02.000Z\"}\n"
+          },
+          "stdin": {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "bench-wb",
+            "transcript_path": "${FIXTURE}/transcript.jsonl",
+            "prompt": "¿por qué me frenaste?"
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "FRENADO-BANCO reescribe la historia de main",
+              "llano"
+            ]
+          }
+        },
+        {
+          "id": "codex-la-pregunta-trae-el-freno",
+          "type": "must-emit",
+          "__doc": "Lo mismo en el hilo de Codex, donde el freno queda en la salida de la herramienta. ROJO PREVIO: leer sólo la forma de Claude Code.",
+          "files": {
+            "transcript.jsonl": "{\"timestamp\":\"2026-11-01T03:00:01.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"custom_tool_call\",\"call_id\":\"c1\",\"name\":\"exec\",\"input\":\"git commit --no-verify\"}}\n{\"timestamp\":\"2026-11-01T03:00:02.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"custom_tool_call_output\",\"call_id\":\"c1\",\"output\":[{\"type\":\"input_text\",\"text\":\"Script error:\\nCommand blocked by PreToolUse hook: 🛑 BLOQUEO-CODEX-BANCO\"}]}}\n"
+          },
+          "stdin": {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "bench-wb",
+            "transcript_path": "${FIXTURE}/transcript.jsonl",
+            "prompt": "why did you block me?"
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "BLOQUEO-CODEX-BANCO"
+            ]
+          }
+        },
+        {
+          "id": "sin-la-pregunta-silencio",
+          "type": "must-stay-quiet",
+          "__doc": "Un prompt que no pregunta por un freno no recibe nada, aunque haya uno en el hilo. ROJO PREVIO: repetir el freno en cada turno.",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"subí la rama\"},\"timestamp\":\"2026-11-01T03:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"b1\",\"name\":\"Bash\",\"input\":{\"command\":\"git push --force origin main\"}}]},\"timestamp\":\"2026-11-01T03:00:01.000Z\"}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"b1\",\"is_error\":true,\"content\":\"PreToolUse:Bash hook error: [bash /x/guard.sh]: ⛔ FRENADO-BANCO reescribe la historia de main\"}]},\"timestamp\":\"2026-11-01T03:00:02.000Z\"}\n"
+          },
+          "stdin": {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "bench-wb",
+            "transcript_path": "${FIXTURE}/transcript.jsonl",
+            "prompt": "seguí con la tanda"
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    }
+  ]
+}

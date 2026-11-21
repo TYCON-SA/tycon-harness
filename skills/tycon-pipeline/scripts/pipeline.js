@@ -64,6 +64,7 @@ function parseCodexSession(raw) {
 const fs = require('fs');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+const { homeCommand } = require('./lib/home-command.js');
 const os = require('os');
 const honesty = require('./lib/ledger-honesty.js');
 const companionLib = require('./lib/companion-repos.js');   // el repo hermano de una story de dos repos
@@ -310,7 +311,7 @@ function gitIgnoraProbe(repo) {
   const { execFileSync } = require('child_process');
   return (rel) => {
     try {
-      execFileSync('git', ['-C', repo, 'check-ignore', '-q', '--', rel], { stdio: 'ignore' });
+      execFileSync('git', ['-C', repo, 'check-ignore', '-q', '--', rel], { windowsHide: true, stdio: 'ignore' });
       return true;
     } catch (e) {
       return e && e.status === 1 ? false : null;
@@ -357,6 +358,7 @@ function gitAddedLinesByFile(repo) {
   const result = { byFile: new Map(), untracked: new Set(), gitOk: false };
   try {
     const diff = execFileSync('git', ['-C', repo, 'diff', '-U0', 'HEAD'], {
+      windowsHide: true,
       encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
     });
     let current = null;
@@ -368,6 +370,7 @@ function gitAddedLinesByFile(repo) {
       }
     }
     const untracked = execFileSync('git', ['-C', repo, 'ls-files', '--others', '--exclude-standard'], {
+      windowsHide: true,
       encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
     });
     for (const f of untracked.split('\n').filter(Boolean)) result.untracked.add(f);
@@ -877,6 +880,7 @@ function dependenciaCambiada(repo, files) {
     let antes = null;
     try {
       antes = JSON.parse(execFileSync('git', ['-C', repo, 'show', `HEAD:${rel}`], {
+        windowsHide: true,
         encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000,
       }));
     } catch (_e) {
@@ -1428,7 +1432,7 @@ function computeValidadores({ story, repo, todos = false, deprecados = true }) {
   try { repoEsDir = fs.statSync(repo).isDirectory(); } catch (_e) { repoEsDir = false; }
   if (!repoEsDir) throw new Error(`validators: --repo no es una carpeta: ${repo}`);
   const declarados = [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')]
-    .map((f) => f.replace(/^\([^)]*\)\s*/, ''));   // "(agent-skills) ruta" → ruta
+    .map((f) => f.replace(/^\([^)]*\)\s+/, ''));   // "(agent-skills) ruta" → ruta; `(app)/page.tsx` (un grupo de rutas, sin espacio) queda entera
   const files = unique([...declarados, ...archivosDotnetDelRepo(repo)]);
   const det = detectStack(repo, files);
   const activos = paquetesActivos(repo);
@@ -1544,7 +1548,122 @@ function computeMechDiscount(allList, args) {
     kept: allList.filter((a) => !discounted.some((d) => d.name === a)),
     mech_findings: mech.findings || [],
     mech_ambiguous_count: (mech.ambiguous || []).length,
+    mech_ambiguous_rules: [...new Set((mech.ambiguous || []).map((a) => String(a.rule || '')))],
   };
+}
+
+// ── El revisor de un crítico abierto vuelve a confirmarlo ───────────────────────────────────────────────────────────
+//
+// El cruce de «Hallazgos» (lib/reported-criticals.js, su tercer control) da por bueno un crítico «arreglado» sólo con otra vuelta
+// legible del revisor que lo reportó, o con la exención del dueño. Si el descuento mecánico o el cálculo por diferencias
+// lo dejan afuera de la vuelta siguiente, la única salida es la exención: por eso vuelve, por encima de los dos. Cuenta
+// también el crítico reportado que findings.json todavía no trae (lo normal: el agente arregla y relanza antes de escribir
+// los hallazgos).
+// `{ agregar: [{ name, reason }], fuera: [texto], error }`. Sin marcador de esta historia, sin registro o sin reportes,
+// nada que confirmar. Un registro o un findings.json que no se leen dan `error`: quien llama no descuenta esa vuelta.
+// lo que dicen los textos del descuento mecánico: el revisor de un crítico abierto vuelve igual
+const MECH_NUNCA_SACA = 'El descuento nunca saca a un revisor con críticos abiertos por confirmar: ése vuelve (confirm_reviewers).';
+
+/**
+ * Los críticos que findings.json da por arreglados (o abiertos) y que no reportó ningún revisor de la corrida: salieron
+ * de mech-check, van directo al reporte y el cruce de «Hallazgos» no los mira, porque sólo mira el registro. Los vuelve a
+ * comprobar mech-check en la vuelta. `{ reglas, error }`; sin marcador de esta historia, ninguno. Un registro o un
+ * findings.json que no se leen dan `error`: no se puede saber cuáles son.
+ */
+function criticosMecanicos(args) {
+  const vacio = { reglas: [], error: null };
+  if (!args.story) return vacio;
+  const leido = readSessionMarkerStrict();
+  if (leido.estado === 'ilegible') return { ...vacio, error: `el marcador de la sesión (${leido.motivo})` };
+  const marker = leido.marcador;
+  if (!marker || !marker.storyPath) return vacio;
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const suya = path.isAbsolute(marker.storyPath) ? marker.storyPath : path.resolve(marker.repoPath || process.cwd(), marker.storyPath);
+  if (real(suya) !== real(args.story)) return vacio;
+  const rc = require('./lib/reported-criticals.js');
+  const runDir = marker.runDir ? path.resolve(marker.repoPath || args.repo || process.cwd(), marker.runDir)
+    : resolveRunDir(marker.repoPath || args.repo || process.cwd(), String(marker.storyId), false, suya, { marker });
+  const h = require('./lib/review-rounds.js').hallazgosDe(runDir);
+  if (h.error && h.existe) return { ...vacio, error: `los hallazgos de la corrida (${h.error})` };
+  const vivos = (h.lista || []).filter((f) => String(f.severity || '').toUpperCase() === 'CRITICAL'
+    && ['fixed', 'open'].includes(String(f.disposition || '').toLowerCase()) && (f.rule_id || f.rule));
+  if (!vivos.length) return vacio;
+  const all = rc.readAll(stateDirOf(os.homedir()));
+  if (all.error) return { ...vacio, error: `el registro de críticos (${all.error})` };
+  const lines = rc.linesOfRun(all.lines, { story: marker.storyId, since: marker.startedAt || null, ...rc.corridaDelMarcador(marker, runDir) });
+  const reportadas = new Set(lines.filter((l) => l.kind === 'report').flatMap((l) => (l.criticals || []).map((c) => c.rule)));
+  const reglas = [...new Set(vivos.map((f) => String(f.rule_id || f.rule)).filter((r) => !reportadas.has(r)))];
+  // por regla, cuántos tienen ya su destino (diferido, refutado, eximido): mech-check los puede seguir reportando
+  const conDestino = {};
+  for (const r of reglas) {
+    conDestino[r] = (h.lista || []).filter((f) => String(f.rule_id || f.rule) === r && String(f.severity || '').toUpperCase() === 'CRITICAL'
+      && ['deferred', 'refuted', 'waived'].includes(String(f.disposition || '').toLowerCase())).length;
+  }
+  return { ...vacio, reglas, conDestino };
+}
+
+// Las reglas que mech-check mira siempre sobre la historia, haga lo que haga el cambio: su ausencia en una vuelta quiere
+// decir que se arregló. Las demás (DEFTR mira los archivos que se le pasan, WIRING depende del paquete, las de los
+// revisores no las corre) no se pueden comprobar así.
+const REGLAS_QUE_MECH_COMPRUEBA = new Set(['ACCOV-C1', 'ACCOV-C5']);
+
+function revisoresPorConfirmar(args) {
+  const vacio = { agregar: [], fuera: [], error: null };
+  if (!args.story || (args.iter || 1) < 2) return vacio;
+  // un marcador que no se lee no es «sin corrida»: no sé qué hay por confirmar
+  const leido = readSessionMarkerStrict();
+  if (leido.estado === 'ilegible') return { ...vacio, error: `el marcador de la sesión (${leido.motivo})` };
+  const marker = leido.marcador;
+  if (!marker || !marker.storyPath) return vacio;
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const suya = path.isAbsolute(marker.storyPath) ? marker.storyPath : path.resolve(marker.repoPath || process.cwd(), marker.storyPath);
+  if (real(suya) !== real(args.story)) return vacio;
+  const rc = require('./lib/reported-criticals.js');
+  // la carpeta de la corrida que anota el marcador puede ser relativa al repo del código
+  const runDir = marker.runDir ? path.resolve(marker.repoPath || args.repo || process.cwd(), marker.runDir)
+    : resolveRunDir(marker.repoPath || args.repo || process.cwd(), String(marker.storyId), false, suya, { marker });
+  const all = rc.readAll(stateDirOf(os.homedir()));
+  if (all.error) return { ...vacio, error: `el registro de críticos (${all.error})` };
+  const lines = rc.linesOfRun(all.lines, { story: marker.storyId, since: marker.startedAt || null, ...rc.corridaDelMarcador(marker, runDir) });
+  // renglones rotos y ningún reporte legible de la corrida: el cruce lo da por «registro ilegible», no por «nada»
+  if (!lines.some((l) => l.kind === 'report')) return all.unreadable ? { ...vacio, error: `el registro de críticos (${all.unreadable} renglón(es) ilegible(s) y ningún reporte legible de esta corrida)` } : vacio;
+  const h = require('./lib/review-rounds.js').hallazgosDe(runDir);
+  if (h.error && h.existe) return { ...vacio, error: `los hallazgos de la corrida (${h.error})` };
+  // un `refuted` resta sólo con la constancia del verificador: la misma comprobación que el cruce del cierre (marker.js)
+  let roster = null;
+  try { roster = JSON.parse(fs.readFileSync(path.join(runDir, 'review-roster.json'), 'utf8')); } catch (_e) { roster = null; }
+  const refutedHolds = (f) => {
+    try { return normalizeFindingRecord(f, [], { roster, errores: [], runDir }).disposition === 'refuted'; } catch (_e) { return false; }
+  };
+  const pc = rc.porConfirmar({ lines, findings: h.lista || [], runDir, home: os.homedir(), story: marker.storyId, refutedHolds });
+  const out = { ...vacio };
+  for (const r of pc.revisores) {
+    // uno que esta sesión no puede lanzar se exigiría sin salida: no se suma, y el cierre pide la exención como hoy
+    if (!MODELOS.reviewerExists(r.name, { agentsDir: args.agentsDir })) { out.fuera.push(`${r.name} tiene un crítico abierto por confirmar (${r.rules.join(', ')}) y su agente no se puede lanzar en esta sesión: no lo sumo; el cierre pedirá la exención`); continue; }
+    out.agregar.push({ name: r.name, reason: `crítico abierto por confirmar (${r.rules.join(', ')})` });
+  }
+  return out;
+}
+
+/**
+ * Suma a `lista` los revisores por confirmar: los saca de `skipped` y de `mech_discounted` de `salida` y los nombra en
+ * `confirm_reviewers`. Devuelve la lista nueva. Los demás campos de `salida` no cambian.
+ */
+function sumarPorConfirmar(lista, salida, pc) {
+  const nueva = [...lista];
+  for (const a of pc.agregar) if (!nueva.includes(a.name)) nueva.push(a.name);
+  if (!pc.agregar.length) return nueva;
+  const nombres = new Set(pc.agregar.map((a) => a.name));
+  if (Array.isArray(salida.skipped)) {
+    salida.skipped = salida.skipped.filter((s) => !nombres.has(typeof s === 'string' ? s : s.name));
+    if (salida.skipped_count != null) salida.skipped_count = salida.skipped.length;
+  }
+  if (Array.isArray(salida.mech_discounted)) {
+    salida.mech_discounted = salida.mech_discounted.filter((d) => !nombres.has(d.name));
+    if (!salida.mech_discounted.length) delete salida.mech_discounted;
+  }
+  salida.confirm_reviewers = pc.agregar;
+  return nueva;
 }
 
 // ── El validador de stories en los re-loops ──────────────────────
@@ -1845,9 +1964,95 @@ function anotarEnMarker(campos, cambio) {
   return { ok: true, marker: m };
 }
 
+/**
+ * La política del pase adversarial de la organización (`team-repos.json → deep_review.default`, `always` o `auto`):
+ * `{ value, problem }`, con `value: null` sin política. La lee sólo la línea de comandos, como `orgModels`. Nunca tira.
+ */
+function orgDeepReview(opts = {}) {
+  const env = opts.env || process.env;
+  const nada = { value: null, problem: null };
+  try {
+    const dir = opts.tree || require('./lib/harness-path.js').rutaArnesHook({ env, home: opts.home }).dir;
+    if (!dir) return nada;
+    const lector = path.join(dir, 'scripts', 'lib', 'team-repos.js');
+    const archivo = path.join(dir, 'team-repos.json');
+    let texto;
+    // sin archivo, la organización no declaró nada; uno que está y no se puede usar se dice: la política no se pierde callada
+    try { texto = fs.readFileSync(archivo, 'utf8'); } catch (e) {
+      return e && e.code === 'ENOENT' ? nada : { value: null, problem: `no pude leer la política del pase de la organización (${archivo}: ${(e && e.code) || e}): decide el riesgo` };
+    }
+    if (!fs.existsSync(lector)) return { value: null, problem: `no pude leer la política del pase de la organización (${archivo}: el arnés no trae su lector, ${lector}): decide el riesgo` };
+    const r = require(lector).parse(String(texto).replace(/^﻿/, ''));
+    const sec = r.sectionProblems && r.sectionProblems.deep_review;
+    if (sec && sec.length) {
+      // una clave mala de la sección cae sola: la política (`default`) sigue si está bien escrita
+      let crudo = null;
+      try { crudo = JSON.parse(String(texto).replace(/^﻿/, '')); } catch (_) { crudo = null; }
+      const d = crudo && crudo.deep_review && crudo.deep_review.default;
+      const vale = d === 'always' || d === 'auto';
+      const malDefault = sec.some((p) => /deep_review(\.default)?$/.test(p.path));
+      return { value: vale && !malDefault ? d : null, problem: `la política del pase de la organización tiene un valor que no vale (${sec[0].path}: ${sec[0].message})${vale && !malDefault ? `: la política sigue (${d}) y esa clave cae a la de fábrica` : ': decide el riesgo'}` };
+    }
+    if (!r.ok) {
+      const p = (r.problems && r.problems[0]) || {};
+      return { value: null, problem: `no pude usar team-repos.json de la organización (${p.path ? `${p.path}: ` : ''}${p.message || 'no es válido'}): decide el riesgo` };
+    }
+    const v = r.data && r.data.deep_review && r.data.deep_review.default;
+    return { value: v === 'always' || v === 'auto' ? v : null, problem: null };
+  } catch (e) {
+    return { value: null, problem: `no pude leer la política del pase de la organización (${String((e && e.message) || e).split('\n')[0]}): decide el riesgo` };
+  }
+}
+
 /** Lo que la línea de comandos le pasa a las funciones que deciden: la configuración y el pedido de la corrida. */
 function conModelosDeLaCorrida(args) {
-  return { ...args, orgModels: orgModels(), modelRequests: pedidosDeModelos(readSessionMarker()) };
+  const politica = orgDeepReview();
+  return { ...args, orgModels: orgModels(), modelRequests: pedidosDeModelos(readSessionMarker()), orgDeepReview: politica.value, orgDeepReviewProblem: politica.problem,
+    ...revisionDeLaOrganizacion() };
+}
+
+/**
+ * La configuración de las revisiones de la organización (lib/review-policy.js, clave por clave) y si el dueño está
+ * ausente para la pregunta del código de esta sesión: la marca puesta, o la pregunta sin respuesta pasados los minutos.
+ * La lee sólo la línea de comandos. Nunca tira: sin leerla, los valores de fábrica y el dueño presente.
+ */
+function revisionDeLaOrganizacion() {
+  const out = { reviewConfig: null, ownerAway: false, reviewConfigProblems: [] };
+  const causa = (e) => String((e && e.message) || e).split('\n')[0];
+  let PR;
+  try {
+    PR = require('./lib/plan-review.js');
+    const c = PR.configDeLaOrganizacion();
+    out.reviewConfig = c.values;
+    out.reviewConfigProblems = [...c.problems];
+  } catch (e) {
+    out.reviewConfigProblems.push({ path: 'review', message: `no pude leer la configuración de las revisiones (${causa(e)}): uso la de fábrica` });
+    return out;
+  }
+  // la configuración ya está leída: un fallo de acá en adelante sólo deja al dueño presente, y así se dice
+  try {
+    const estado = stateDirOf(os.homedir());
+    const leida = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-away.js')).get({ estado });
+    if (leida.problem) out.reviewConfigProblems.push({ path: 'owner-away', message: `${leida.problem}: la persona cuenta como presente` });
+    const sid = sessionIdFileKey();
+    // la pregunta cuenta sólo si es sobre este mismo diff (como la del plan): una de una ejecución cerrada no vale
+    const h = PR.huellaDe({ estado, sesion: sid, kind: 'code' });
+    const sinRegistro = [];
+    const pregunta = h.codigo ? null : PR.preguntasAbiertas({ estado, problemas: sinRegistro }).find((p) => p.sesion === sid && p.kind === 'code' && p.huella === h.huella);
+    // con el registro ilegible no se sabe si se preguntó ni qué se respondió: la persona presente y sin respuesta
+    if (sinRegistro.length) {
+      out.reviewConfigProblems.push({ path: 'owner-away', message: `${sinRegistro[0]}: la persona cuenta como presente y la pregunta del código, sin respuesta` });
+      out.codeAnswer = null;
+      return out;
+    }
+    // la respuesta a la pregunta de este diff decide la celda que preguntaba o esperaba
+    if (!h.codigo) out.codeAnswer = PR.respuestaDe({ estado, sesion: sid, kind: 'code', huella: h.huella });
+    out.ownerAway = require('./lib/review-policy.js').ownerAway({ mark: leida.mark, askedAt: pregunta ? Date.parse(pregunta.ts) : null,
+      now: Date.now(), minutes: out.reviewConfig.plan_review.owner_away_minutes }).away;
+  } catch (e) {
+    out.reviewConfigProblems.push({ path: 'owner-away', message: `no pude saber si la persona está ausente (${causa(e)}): cuenta como presente` });
+  }
+  return out;
 }
 
 function modelHintsForSet({ all, tier }) {
@@ -1894,7 +2099,9 @@ function advisorAffectedByDelta(advisorName, deltaFiles) {
 function readSessionMarker() {
   const sid = sessionIdFileKey();
   const markerPath = path.join(stateDirOf(os.homedir()), 'active', `${sid}.json`);
-  try { return JSON.parse(fs.readFileSync(markerPath, 'utf8')); } catch { return null; }
+  // las rutas de la corrida, absolutas contra su repo (lib/run-dir.js): un marcador de antes con rutas relativas se lee
+  // igual desde cualquier carpeta
+  try { return require('./lib/run-dir.js').marcadorConRutas(JSON.parse(fs.readFileSync(markerPath, 'utf8'))); } catch { return null; }
 }
 
 // ── Lo que ve GIT — la 4ta fuente del delta, y la única que no depende del hook ──
@@ -1907,7 +2114,7 @@ function gitArchivosDelWorkingTree(repo) {
   const { execFileSync } = require('child_process');
   const correr = (args) => {
     try {
-      return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      return execFileSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
         .split(/\r?\n/).filter(Boolean);
     } catch { return []; }   // sin git / no es repo → fail-open: la ceguera no se puede diagnosticar
   };
@@ -2051,6 +2258,16 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     const ur = ultimoRevisorDeLaRonda(lineasRegistro || [], iter - 1);
     if (Number.isFinite(ur.ts)) ultimoRevisorMs = ur.ts;
   } catch { /* ídem */ }
+  // El PRIMER revisor de la vuelta: un arreglo hecho después de que salió el primero y antes del
+  // último quedaba adentro de la foto; cortando en el último, el delta no lo traía y la vuelta se cerraba sola con el
+  // texto de la historia. Sólo revisores (`esRevisor`): una exploración lanzada antes no mueve el corte. Qué revisores se
+  // re-corren lo sigue decidiendo la vista por revisor
+  let primerRevisorMs = null;
+  try {
+    const ls = require('./lib/late-snapshot.js');
+    const v = ls.vistaPorRevisor(lineasRegistro || [], iter - 1);
+    for (const [adv, t] of v.lanzamientos || []) if (ls.esRevisor(adv) && Number.isFinite(t) && (primerRevisorMs === null || t < primerRevisorMs)) primerRevisorMs = t;
+  } catch { /* sin registro, el corte es la foto o el último revisor, como antes */ }
   // Delta = UNIÓN de TRES fuentes (si fileEvents y mtime fueran either/or,
   // un fileEvents truncado, p.ej. por un
   // `marker.js set` mid-pipeline, o ediciones hechas SOLO por Bash
@@ -2072,7 +2289,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const fotoTardia = Number.isFinite(ultimoRevisorMs) && Number.isFinite(prevTsMs) && ultimoRevisorMs < prevTsMs;
   const horaDe = new Map();          // path → ms de la edición que lo mete en el delta
   if (prevTs) {
-    const cutoff = fotoTardia ? ultimoRevisorMs : prevTsMs;
+    const cutoff = Number.isFinite(primerRevisorMs) && Number.isFinite(prevTsMs) ? Math.min(primerRevisorMs, prevTsMs) : fotoTardia ? ultimoRevisorMs : prevTsMs;
     if (Array.isArray(marker.fileEvents) && marker.fileEvents.length) {
       deltaByEvents = delRepo(honesty.sinRuido([...new Set(
         marker.fileEvents
@@ -2103,7 +2320,8 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       } catch { /* ídem */ }
     }
     if (deltaByGit.length) sources.push('git working-tree post-snapshot');
-    if (fotoTardia) sources.push('corte movido al último revisor (la foto se fechó después)');
+    if (Number.isFinite(primerRevisorMs) && primerRevisorMs < prevTsMs) sources.push('corte en el primer revisor de la vuelta (lo editado mientras corría no se da por visto)');
+    else if (fotoTardia) sources.push('corte movido al último revisor (la foto se fechó después)');
   }
   const deltaSource = prevTs
     ? `unión(${sources.join(' ∪ ')})`
@@ -2182,6 +2400,35 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   }
   const enElDelta = new Set(delta);
   const noVistosDesde = (ms) => [...ultimaEdicion].filter(([p, t]) => t > ms && !enElDelta.has(p)).map(([p]) => p);
+
+  // ── Sin código en el cambio, la vuelta se cierra sola ─────────────────────────────────
+  // Lo que pide otra vuelta lo decide lib/reloop-code.js, igual que `next`: la historia (sus marcas, su
+  // `runtime_not_verifiable:`) y su carpeta qa no repiten revisores. Un delta vacío del todo sigue abajo: ése es
+  // una foto mal fechada. No se cierra si a algún revisor le queda código de su alcance sin ver: lo editado antes del
+  // primer lanzamiento queda afuera del corte, y el revisor que la vuelta salteó no lo vio nunca.
+  const pideVuelta = (f) => require('./lib/reloop-code.js').pideOtraVuelta(f, { storyPath: story, repoPath: repo });
+  const tieneCodigoSinVer = (adv) => {
+    const lanzado = vista.lanzamientos.get(adv);
+    return noVistosDesde(lanzado !== undefined ? lanzado : vista.inicioMs).some((f) => pideVuelta(f) && advisorAffectedByDelta(adv, [f]).affected);
+  };
+  if (delta.length && !delta.some(pideVuelta) && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
+    logGate({ repoPath: repo, name: 'smart-reloop', check: 'smart-reloop-sin-codigo', status: 'closed', iter, delta });
+    return {
+      ...fullSet,
+      iter,
+      mode: 'smart-reloop',
+      all_iter1: fullSet.all,
+      rerun_count: 0,
+      rerun: [],
+      rerun_reasons: [],
+      skipped_count: fullSet.all.length,
+      skipped: fullSet.all.map((name) => ({ name, reason: 'el cambio no trae código: la vuelta se cierra sola' })),
+      delta_files: delta,
+      delta_source: deltaSource,
+      no_code_delta: true,
+    };
+  }
+
   const noVistosPorRevisor = {};       // revisor → archivos de su alcance editados después de su lanzamiento
   const sinVista = [];                 // revisores re-corridos porque no se sabe qué versión vieron
 
@@ -2189,6 +2436,20 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const skipped = [];
   for (const adv of fullSet.all) {
     let { affected, reason } = advisorAffectedByDelta(adv, delta);
+    // con el corte en el primer revisor, el delta trae lo editado mientras corría la vuelta: el revisor que se lanzó
+    // después de la última edición de un archivo ya vio esa versión, y ese archivo no lo repite
+    const lanzadoAdv = vista.medible ? vista.lanzamientos.get(adv) : undefined;
+    if (affected && lanzadoAdv !== undefined) {
+      const sinVer = delta.filter((f) => { const t = ultimaEdicion.get(f); return !(Number.isFinite(t) && t <= lanzadoAdv); });
+      if (!advisorAffectedByDelta(adv, sinVer).affected) {
+        affected = false;
+        reason = `ya vio lo que cambió: se lanzó en la vuelta ${iter - 1} (${new Date(lanzadoAdv).toISOString()}) después de la última edición de su alcance`;
+      } else {
+        // lo de su alcance que se editó después de su lanzamiento y quedó adentro de la foto: no lo vio
+        const tapados = sinVer.filter((f) => { const t = ultimaEdicion.get(f); return Number.isFinite(t) && t <= prevTsMs && advisorAffectedByDelta(adv, [f]).affected; });
+        if (tapados.length) noVistosPorRevisor[adv] = tapados;
+      }
+    }
     if (!affected && !vista.medible) {
       affected = true;
       reason = `no se sabe qué versión del cambio vio en la vuelta ${iter - 1} (${vista.motivo}) → se re-corre por las dudas`;
@@ -2238,8 +2499,12 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // 🔴 El aviso sale TAMBIÉN por stderr: el orquestador puede filtrar este JSON con un
   // `python3 -c` que imprime sólo `correr/hints/ctx`, y entonces la advertencia existe y no la lee nadie.
   // Un aviso que vive sólo dentro de un JSON que el llamador puede filtrar no es un control.
+  // Sólo lo editado entre el último lanzamiento y la foto: lo de antes del último lanzamiento lo vio ese revisor.
+  const entreUltimoYFoto = (t) => Number.isFinite(t) && t > ultimoRevisorMs && t <= prevTsMs;
+  const eventosDe = (f) => (Array.isArray(marker.fileEvents) ? marker.fileEvents : []).filter((e) => e && e.path === f && e.ts);
   const lateSnapshotFiles = fotoTardia
-    ? delta.filter((f) => { const t = horaDe.get(f); return Number.isFinite(t) && t <= prevTsMs; })
+    ? delta.filter((f) => entreUltimoYFoto(horaDe.get(f)) || entreUltimoYFoto(ultimaEdicion.get(f))
+      || eventosDe(f).some((e) => entreUltimoYFoto(new Date(e.ts).getTime())))
     : [];
   if (lateSnapshotFiles.length) {
     process.stderr.write(
@@ -2490,7 +2755,7 @@ function computePreflightFrontmatter({ storyPath, targetStatus, targetPipelineDo
     blocking_hook: 'on-frontmatter-write.js + on-pre-commit.js + hook-pre-edit.js',
     how_to_satisfy: evidenceExists
       ? null
-      : `Correr: node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js --story ${storyPath} --scenario <scenario.json> --evidence-dir ${evidDir}  (o escribir el archivo manualmente con formato hook-compliant — ver PRE-2)`,
+      : `Correr: ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js')} --story ${storyPath} --scenario <scenario.json> --evidence-dir ${evidDir}  (o escribir el archivo manualmente con formato hook-compliant — ver PRE-2)`,
   });
 
   // Pre-condition 2: si la story declara E2E reales, el evidence debe tener
@@ -2600,20 +2865,47 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     const grupos = companionLib.groupByRepo(files, repo);
     const propios = grupos.filter((g) => g.propio).flatMap((g) => g.files.map((x) => x.original));
     const hermanos = grupos.filter((g) => !g.propio);
+    // El diff no se mide contra HEAD: lo que la story ya commiteó también lo revisa el revisor, y lo sin commitear viene
+    // encima. La base es el commit en que arrancó la corrida (`baseSha` del marcador, si es de este repo y ancestro de
+    // HEAD, y de esta story); si no, la bifurcación con la rama principal; sin ninguna de las dos, HEAD. El encabezado
+    // dice cuál fue y por qué se descartó cada una de las anteriores.
+    const { resolver, bifurcacion } = require('./lib/coverage-base.js');
+    let marcadorDeLaCorrida = null;
+    let sinMarcador = null;
+    try {
+      const lm = leerMarcadorDeLaCorrida();
+      marcadorDeLaCorrida = lm.marker;
+      sinMarcador = lm.error;
+    } catch (e) { sinMarcador = e.message; }
+    const deEstaStory = story ? deriveStoryId(story) : null;
+    if (marcadorDeLaCorrida && marcadorDeLaCorrida.baseSha && deEstaStory && String(marcadorDeLaCorrida.storyId || '') !== String(deEstaStory)) {
+      sinMarcador = `el marcador es de la story ${marcadorDeLaCorrida.storyId || '(sin id)'}, no de la ${deEstaStory}`;
+      marcadorDeLaCorrida = null;
+    }
+    const baseDe = (cwd) => {
+      const r = resolver({ repo: cwd, env: {}, marker: marcadorDeLaCorrida, markerError: sinMarcador });
+      if (r.source === 'marcador') return { ref: r.ref, nombre: `el arranque de la corrida (${r.ref.slice(0, 12)})` };
+      const porQue = [...(r.descartadas || []).map((d) => d.motivo), ...(sinMarcador && !(r.descartadas || []).length ? [sinMarcador] : [])];
+      const b = bifurcacion(cwd);
+      if (b.sha) return { ref: b.sha, nombre: `la bifurcación con ${b.rama}${porQue.length ? ` (sin el arranque de la corrida: ${porQue.join('; ')})` : ''}` };
+      return { ref: 'HEAD', nombre: `HEAD — respaldo: lo ya commiteado en la rama NO está en este diff (${[...porQue, b.motivo].join('; ')})` };
+    };
     const gitDiff = (cwd, rutas) => {
-      const r = require('child_process').spawnSync('git', ['-C', cwd, 'diff', 'HEAD', '--', ...rutas], {
+      const base = baseDe(cwd);
+      const r = require('child_process').spawnSync('git', ['-C', cwd, 'diff', base.ref, '--', ...rutas], {
+        windowsHide: true,
         encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
       });
       if (r.error || r.status !== 0) {
         const motivo = String((r.stderr || '').split('\n').find((l) => l.trim()) || (r.error && r.error.message) || `salió ${r.status}`).trim();
-        return { text: '', error: motivo };
+        return { text: '', error: motivo, base: base.nombre };
       }
-      return { text: r.stdout || '', error: null };
+      return { text: r.stdout || '', error: null, base: base.nombre };
     };
     // Con `--files` vacío el alcance es el working tree entero del repo (como siempre). Con `--files` sólo del
-    // hermano, el repo no aporta diff: un `git diff HEAD --` sin rutas traería todo el working tree, que nadie pidió.
+    // hermano, el repo no aporta diff: un `git diff <base> --` sin rutas traería todo el working tree, que nadie pidió.
     const principal = files.length && !propios.length
-      ? { text: '', error: null, sinArchivos: true }
+      ? { text: '', error: null, sinArchivos: true, base: 'HEAD' }
       : gitDiff(repo, propios.map((f) => (path.isAbsolute(f) ? f : path.join(repo, f))));
     const rawDiff = principal.text;
 
@@ -2646,7 +2938,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       if (!g.root) return { etiqueta: null, root: null, error: 'no están dentro de ningún repo git', files: g.files, diff: '' };
       const d = gitDiff(g.root, g.files.map((x) => x.abs));
       diffChunks.push(...trocear(d.text, etiqueta).map((c) => ({ ...c, grupo: i })));
-      return { etiqueta, root: g.root, error: d.error, files: g.files, diff: '' };
+      return { etiqueta, root: g.root, error: d.error, files: g.files, diff: '', base: d.base };
     });
     const truncatedFiles = [];   // recortados a PER_FILE_CAP
     const droppedFiles = [];     // no pegados por cap global
@@ -2740,7 +3032,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     // Una sección por hermano, después del diff del repo.
     const bloquesHermanos = seccionesHermanos.flatMap((s) => [
       '',
-      s.root ? `## Diff del repo hermano \`${s.etiqueta}\` (git diff HEAD en ${s.root})` : '## Archivos fuera de todo repo git',
+      s.root ? `## Diff del repo hermano \`${s.etiqueta}\` (git diff contra ${s.base} en ${s.root})` : '## Archivos fuera de todo repo git',
       '',
       '```diff',
       s.diff || (!s.root ? `(${s.files.map((x) => x.original).join(', ')}: ${s.error})`
@@ -2777,11 +3069,13 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       '',
       // los del repo que están deprecados, marcados (los de un hermano se leen con la lista de su propio repo)
       require('./lib/deprecated.js').seccionParaRevisores({ repo, files: shownFiles.filter((f) => !f.startsWith('(')) }),
+      // las pruebas viejas que estaban en rojo y se editaron, cada una con su razón (marker.js note-red-test)
+      require('./lib/red-test-edit.js').bloqueParaRevisores(marcadorDeLaCorrida),
       '## Story digest (frontmatter + ACs + Tests + Tasks + verificación)',
       '',
       digest || '(sin story)',
       '',
-      '## Diff unificado (git diff HEAD)',
+      `## Diff unificado (git diff contra ${principal.base})`,
       '',
       '```diff',
       diff || '(vacío)',
@@ -2898,7 +3192,7 @@ function notaCierre3(marker) {
   const maqueta = storyNeedsMockup(abs)
     ? ` + --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>" (story con pantalla: la maqueta la ve una persona, también con LOW — steps/${STEPS_TABLE.byId('approve-plan').file} §La maqueta)`
     : '';
-  return `marker.js complete-step approve-plan --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>")${maqueta}. Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
+  return `marker.js complete-step approve-plan --approved "<cita textual de la aprobación del user>"${maqueta}. Un plan de rutina lo aprueba el «aprobado» de su revisión automática (con o sin coordinadora); uno delicado, o con plan_review.routine_approval: person, una persona (steps/${STEPS_TABLE.byId('approve-plan').file}). Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
 }
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
@@ -2946,7 +3240,25 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
   }
   const adv = marker.adversarial && typeof marker.adversarial === 'object' ? marker.adversarial : null;
   if (adv && adv.sessionId !== sidNow) return { pending_action: reglaPaseAjeno(adv) };
-  if (adv) return {};   // lanzado por esta sesión y en vuelo: el join es el paso del pase adversarial
+  if (adv) {
+    // lanzado por esta sesión: si su Workflow ya terminó y nadie anotó el resultado, se anota antes de seguir (para las
+    // demás sesiones ya no ocupa la máquina); si sigue corriendo, el join es el paso del pase adversarial
+    let terminado = false;
+    try {
+      terminado = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js')).passFinished({ home: require('os').homedir(), sessionId: adv.sessionId, runId: adv.runId });
+    } catch (e) {
+      process.stderr.write(`next: no pude ver si terminó el pase adversarial de esta sesión (${String(e.message).split('\n')[0]})\n`);
+    }
+    if (!terminado) return {};
+    const command = `node ${path.join(__dirname, 'marker.js')} mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run ${adv.runId} --model <modelo> …`;
+    return {
+      pending_action: {
+        kind: 'anotar-resultado-del-pase',
+        message: `el pase adversarial de esta sesión terminó (runId ${adv.runId}) y falta anotar su resultado: anotalo antes de seguir — ${NOTA_CIERRE_5B}`,
+        command,
+      },
+    };
+  }
 
   if (!marker.storyPath) {
     return { adversarial_note: 'no pude leer la story: el marcador está sin ruta de story — no se pide lanzar el pase (el portón la necesita)' };
@@ -2970,7 +3282,25 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
       },
     };
   }
-  if (gate.run !== true) return {};
+  if (gate.run !== true) {
+    // «preguntar» o «esperar» al dueño no es un salteo: queda pendiente hasta que alguien conteste
+    if (gate.decision === 'ask' || gate.decision === 'wait') {
+      return { pending_action: { kind: 'preguntar-revision-del-codigo',
+        message: gate.decision === 'ask'
+          ? 'el portón pide preguntarle a la persona si revisar el código: anotá la pregunta (marker.js review-ask --kind code) y esperá la respuesta (marker.js review-answer); con «review» se lanza el pase, con «skip» se anota el salteo'
+          : 'el portón pide esperar a la persona para decidir la revisión del código: no se lanza ni se saltea hasta su respuesta (marker.js review-answer)' } };
+    }
+    return {};
+  }
+  // con otra sesión en su pase, o una ejecución grande en curso, `next` tampoco pide lanzarlo: el mismo turno que frena al portón
+  try {
+    const turno = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js')).adversarialTurn({ sessionId: sidNow });
+    if (turno && turno.waiting_turn === true) {
+      return { pending_action: { kind: 'esperar-turno-pase', message: `${turno.turn} No lo lances todavía: seguí con el paso que sigue. La coordinadora te avisa cuando se libere el lugar, y \`next\` deja de decir esto.` } };
+    }
+  } catch (e) {
+    process.stderr.write(`next: no pude ver si hay otro pase adversarial en vuelo o una ejecución grande de pruebas (${String(e.message).split('\n')[0]})\n`);
+  }
   const archivos = Array.isArray(gate.files) ? gate.files : [];
   const cuando = String(nextStep) === 'reviewers' ? 'AHORA, antes del primer revisor' : 'AHORA';
   return {
@@ -3021,9 +3351,10 @@ function computeNext() {
   });
   const warnings = STEPS_TABLE.startWarningLines(marker);
 
-  // Un arreglo después de Hallazgos (una edición posterior al último cierre de los revisores) pide otra vuelta.
-  const { isTestPath, isImplPath } = require('./lib/atdd-order.js');
-  const reloop = STEPS_TABLE.reviewersRound(marker, (p) => isImplPath(p) || isTestPath(p));
+  // Un arreglo después de Hallazgos (una edición de código posterior al último cierre de los revisores) pide otra vuelta.
+  // Si los revisores cerraron después de «Preparar el commit», lo preparado ya no es lo revisado: se prepara de nuevo.
+  const reloop = STEPS_TABLE.reviewersRound(marker);
+  const ultimoViejo = STEPS_TABLE.prepareCommitStale(marker);
 
   const stepState = [];
   let nextStep = null;
@@ -3031,18 +3362,24 @@ function computeNext() {
     let done = STEPS_TABLE.isDone(marker, s.id);
     let skip = null;
     if (s.id === 'reviewers' && reloop) done = false;
+    if (s.id === 'prepare-commit' && ultimoViejo) done = false;
     if (s.id === 'live-check' && !done && story) {
       // el único salteo que deja constancia: sin ella «Preparar el commit» no cierra (ver NOTA_CIERRE_7C)
       if (storyIsExemptCheck(story)) skip = 'dod_runtime_exempt: true en frontmatter';
       else if (!storyRequiresRuntimeEvidenceCheck(story)) skip = 'story NO declara runtime tests (sin tests_done_*, sin E2E, sin tests/e2e/)';
     }
     const round = s.id === 'reviewers' && reloop ? reloop.round : undefined;
-    const entry = { step: s.id, number: s.number, name: STEPS_TABLE.stepName(s.id, round), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}) };
+    const entry = { step: s.id, number: s.number, name: STEPS_TABLE.stepName(s.id, round), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}),
+      ...(round ? { to_review: reloop.archivos } : {}), ...(s.id === 'prepare-commit' && ultimoViejo ? { again: 'los revisores cerraron después: lo preparado ya no es lo revisado' } : {}) };
     stepState.push(entry);
     if (!nextStep && !done) nextStep = { ...entry, ...(round ? { round } : {}) };
   }
   const exempt7c = !!nextStep && nextStep.step === 'live-check' && storyIsExemptCheck(story);
   const etiqueta = nextStep ? `«${nextStep.name}» (paso ${nextStep.number} de ${STEPS_TABLE.TOTAL})` : null;
+  // lo que falta revisar, por su nombre (hasta cinco), o por qué se prepara el commit otra vez
+  const faltaRevisar = nextStep && nextStep.to_review
+    ? ` Falta revisar lo cambiado después de los revisores: ${nextStep.to_review.slice(0, 5).join(', ')}${nextStep.to_review.length > 5 ? ` y ${nextStep.to_review.length - 5} más` : ''}.`
+    : nextStep && nextStep.again ? ` Otra vez: ${nextStep.again}.` : '';
 
   // Pre-condiciones del next conocidas por el script.
   const preconditions = [];
@@ -3055,9 +3392,11 @@ function computeNext() {
       // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; se acepta diciéndolo, y el cierre
       // de la historia copia la línea (nunca un verde callado)
       const sinMedir = c === 'tests' && checks[c] === 'sin-medir';
+      // «sin-turno» (tests): el portón no corrió porque otra sesión tenía el turno; no se cumple, y se dice sin llamarlo rojo
+      const sinTurno = c === 'tests' && checks[c] === 'sin-turno';
       // «rojo-esperado» (expect-red): lo aceptan el cierre del turno y prepare-commit sólo con la deuda escrita; acá, igual
       const esperado = /^rojo-esperado/.test(String(checks[c])) && !!marker.cierre && marker.cierre.estado === 'deuda';
-      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir || esperado, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}${esperado ? ` — rojo esperado por la deuda ${marker.cierre.deuda}` : ''}` });
+      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir || esperado, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido; antes del merge hay que mirar que salga verde (esta máquina no lo comprueba)' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}${esperado ? ` — rojo esperado por la deuda ${marker.cierre.deuda}` : ''}${sinTurno ? ' — sin turno: el portón no corrió porque otra sesión tenía el turno de las ejecuciones grandes; no hay pruebas que arreglar, se corre el portón cuando la coordinadora dé el turno' : ''}` });
     }
   }
 
@@ -3069,6 +3408,9 @@ function computeNext() {
   const advIsOurs = adv ? adv.sessionId === sidNow : null;
   const pase = STEPS_TABLE.isDone(marker, 'run-tests') ? accionDelPase(marker, story, { sidNow, nextStep: nextStep ? nextStep.step : null }) : {};
   const pending = pase.pending_action || null;
+  // lo del pase que va antes del paso, en las tres formas de la instrucción: un pedido que viaja sólo en el JSON no se lee
+  const antesDelPase = pending && ['consultar-porton', 'lanzar-pase', 'esperar-turno-pase', 'anotar-resultado-del-pase'].includes(pending.kind)
+    ? `ANTES, pase adversarial: ${pending.message} ` : '';
 
   // Cómo se cierra el paso que sigue.
   const cierre = (st) => {
@@ -3127,10 +3469,10 @@ function computeNext() {
     ...(pase.adversarial_note ? { adversarial_note: pase.adversarial_note } : {}),
     ...(notaDelTamano(marker, nextStep) ? { run_size_note: notaDelTamano(marker, nextStep) } : {}),
     note: exempt7c
-      ? `${partes}Sigue ${etiqueta}. ${NOTA_7C_EXENTA}`
+      ? `${partes}${antesDelPase}Sigue ${etiqueta}. ${NOTA_7C_EXENTA}`
       : nextStep
-      ? `${partes}${pending && ['consultar-porton', 'lanzar-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue ${etiqueta}. Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
-      : `No quedan pasos pendientes — cerrá con marker.js clear (o ${STEPS_TABLE.CLOSE_STEP.file} si vas a cerrar la story en ADO: «${STEPS_TABLE.CLOSE_STEP.name}»).`,
+      ? `${partes}${antesDelPase}Sigue ${etiqueta}.${faltaRevisar} Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
+      : `${antesDelPase}No quedan pasos pendientes — cerrá con marker.js clear (o ${STEPS_TABLE.CLOSE_STEP.file} si vas a cerrar la story en ADO: «${STEPS_TABLE.CLOSE_STEP.name}»).`,
   };
 }
 
@@ -3180,10 +3522,209 @@ function computeSpecStaleness(fm, hoyMs) {
   };
 }
 
+/**
+ * Congela la vuelta de revisores (historia 8.161): sella el repo de la historia y el del código y arma la copia de sólo
+ * lectura de cada uno en la carpeta de estado (lib/frozen-tree.js). `{ repos }` o `{ error }`: sin sello o sin copia la
+ * vuelta no se lanza, nunca se revisa la carpeta viva en silencio. Una ruta fuera de todo repo de git no tiene árbol
+ * que sellar: no suma copia.
+ */
+function congelarVuelta({ story, repo, iter }) {
+  const ft = require('./lib/frozen-tree.js');
+  const { repos, error } = ft.reposDe([story, repo]);
+  if (error) return { error };
+  if (!repos.length) return { repos: [] };
+  let storyId = null;
+  try { storyId = story ? parseFrontmatterPipeline(readText(story)).story || null : null; } catch { storyId = null; }
+  return ft.sealAndFreeze({
+    stateDir: stateDirOf(os.homedir()), sid: sessionIdFileKey(), etiqueta: `rev-iter${iter || 1}`, repos, tipo: 'revisores', story: storyId,
+  });
+}
+
+/** Suma al contexto de los revisores (el compartido y los recortados) la copia y el sello de cada repo. */
+function contextoConLaCopia(ctx, repos) {
+  if (!ctx || !repos.length) return;
+  const seccion = require('./lib/frozen-tree.js').seccionDelContexto(repos);
+  for (const f of [ctx.context_file, ...Object.values(ctx.overrides || {})].filter(Boolean)) {
+    try { fs.appendFileSync(f, seccion, 'utf8'); } catch { /* el contexto es best-effort; la copia ya está y la salida la nombra */ }
+  }
+}
+
+// El marker.js que corre el arranque: el instalado, no el del repo.
+const markerInstalado = () => path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+
+/** Anota la tanda en el marcador de esta sesión con `marker.js set-batch`. `{ ok, motivo }`; nunca tira. */
+function anotarTanda(nombre) {
+  const { execFileSync } = require('child_process');
+  try {
+    execFileSync(process.execPath, [markerInstalado(), 'set-batch', nombre], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, motivo: String((e.stderr || e.message || e)).trim().split('\n')[0] };
+  }
+}
+
+/** La pausa de una tanda que no se pudo anotar: el comando a mano y lo que mide la matriz mientras tanto. */
+const pausaSinTanda = (nombre, motivo) => ({
+  id: 'PIPE-C4-batch-failed',
+  detail: `No pude anotar la tanda ${nombre} (${motivo}). Anotala a mano: node ${markerInstalado()} set-batch ${nombre}. `
+    + 'Hasta anotarla, la matriz mide todas las tandas.',
+});
+
+/**
+ * `start --batch <tanda>`, antes de tocar nada: la tanda tiene que estar en el bloque `pipelines`, sin estar hecha y sin
+ * nombres repetidos. La misma sesión con su ejecución abierta de esta historia no rearranca: con la misma tanda sale
+ * sin cambios, con otra pausa, y sin tanda anotada la anota. Devuelve `{ salida }` cuando el arranque termina acá, o
+ * `{ nombre }` para seguir.
+ */
+function tandaDelArranque(content, storyId, storyPath, nombre) {
+  const tandas = require('./lib/story-checks.js').parsePipelinesBlock(content);
+  const lista = tandas.map((t) => `${t.name} (${t.status || 'sin estado'})`).join(', ') || '(la historia no tiene bloque pipelines)';
+  const nombres = tandas.map((t) => t.name);
+  const repetidos = [...new Set(nombres.filter((n, i) => nombres.indexOf(n) !== i))];
+  const t = tandas.find((x) => x.name === nombre);
+  const motivo = !nombre ? 'falta el nombre de la tanda'
+    : repetidos.length ? `el bloque pipelines tiene nombres repetidos (${repetidos.join(', ')}): no sé cuál es la tanda ${nombre}`
+      : !t ? `la tanda «${nombre}» no está en la historia`
+        : String(t.status || '').toLowerCase() === 'done' ? `la tanda ${nombre} está done: una tanda hecha no se entrega de nuevo` : null;
+  const pausa = (id, detail) => ({ salida: { ready: false, story_id: storyId, pauses: [{ id, detail }], actions_done: [], note: 'NADA mutado. Resolvé la pausa y re-corré start.' } });
+  if (motivo) return pausa('PIPE-C0-batch', `${motivo}. Tandas: ${lista}. No arranqué nada.`);
+  const propio = readSessionMarker();
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const suya = propio && propio.storyPath
+    ? (path.isAbsolute(propio.storyPath) ? propio.storyPath : path.join(propio.repoPath || process.cwd(), propio.storyPath)) : null;
+  if (!propio || String(propio.storyId) !== String(storyId) || !suya || real(suya) !== real(storyPath)) return { nombre };
+  if (propio.batch) {
+    if (String(propio.batch) === nombre) {
+      return { salida: { ready: true, story_id: storyId, actions_done: [`TANDA: esta ejecución ya tenía anotada la tanda ${nombre}; no cambié nada.`], next: 'pipeline.js next te dice el próximo paso' } };
+    }
+    return pausa('PIPE-C0-batch-other', `Esta ejecución ya anotó la tanda ${propio.batch}; para otra tanda, marker.js clear y arrancar de nuevo. No cambié nada.`);
+  }
+  const r = anotarTanda(nombre);
+  if (!r.ok) return { salida: { ready: false, story_id: storyId, pauses: [pausaSinTanda(nombre, r.motivo)], actions_done: [] } };
+  return { salida: { ready: true, story_id: storyId, actions_done: [`TANDA: anoté la tanda ${nombre} en la ejecución abierta de esta sesión.`], next: 'pipeline.js next te dice el próximo paso' } };
+}
+
+// ── PIPE-C10: la copia propia de la historia ───────────────────────────────────────────────────────────────────────
+// Con otra sesión viva en el checkout donde corre start (scripts/lib/live-sessions.js: su transcripción, sus subagentes
+// o su corrida abierta), sin coordinadora viva y fuera del arnés y agent-skills, la historia arranca en
+// `<principal>--wt-<clave>`. La copia nace de origin/main si la historia está ahí igual; si no, de HEAD si está
+// commiteada igual; sin commitear no se crea nada (no se mueve, ni se copia, ni se guarda en un stash ningún archivo).
+// `{}` (nadie más, como siempre) · `{ warning }` · `{ pause }` · `{ copy, storyInCopy, baseLabel, because }`.
+function copiaPropiaDelArranque({ storyId, storyPath, repo }) {
+  const SCRIPTS_DIR = path.join(__dirname, '..', '..', '..', 'scripts');
+  let live, sib, coord;
+  try {
+    live = require(path.join(SCRIPTS_DIR, 'lib', 'live-sessions.js'));
+    sib = require(path.join(SCRIPTS_DIR, 'lib', 'sibling-copy.js'));
+    coord = require(path.join(SCRIPTS_DIR, 'tools', 'coordination.js'));
+  } catch (e) {
+    return { warning: `no pude mirar si hay otra sesión viva en este checkout (${String(e.message).split('\n')[0]}): sigo como siempre` };
+  }
+  const raiz = live.raizDelRepo(repo);
+  if (!raiz) return {};
+  const r = live.others({ root: raiz, selfSessionId: sessionIdFileKey(), home: os.homedir() });
+  // la otra sesión de la MISMA historia ya la juzgó PIPE-C0 (pausa, o tanda en paralelo declarada): no cuenta acá
+  r.sessions = r.sessions.filter((s) => s.story !== String(storyId));
+  if (!r.sessions.length) {
+    // con una sola fuente ilegible tampoco se puede decir que no hay nadie
+    return r.problems.length ? { warning: `no pude ver si hay otra sesión viva en este checkout (${r.problems.join('; ')}): sigo como siempre` } : {};
+  }
+  const quien = r.sessions.map((s) => `la sesión ${s.id.slice(0, 8)}${s.story ? ` (historia ${s.story})` : s.lastPrompt ? ` («${s.lastPrompt}»)` : ''}`).join(' y ');
+  if (live.noOwnCopy(raiz)) {
+    return { warning: `hay otra sesión viva en este checkout (${quien}); en ${path.basename(raiz)} una sola sesión toca git a la vez (guides/git-worktrees.md §1): coordinala o esperala` };
+  }
+  let coordinadora = null;
+  try { coordinadora = coord.liveCoordinator({ home: os.homedir(), env: process.env }, null); } catch (e) {
+    return { warning: `hay otra sesión viva en este checkout (${quien}) y no pude saber si hay coordinadora (${String(e.message).split('\n')[0]}): no creo una copia; coordinala o esperala` };
+  }
+  if (coordinadora) {
+    return { warning: `hay otra sesión viva en este checkout (${quien}); la coordinadora (${coordinadora.name}) decide dónde trabaja cada sesión: no creo una copia` };
+  }
+  const pausa = (detail) => ({ pause: { id: 'PIPE-C10-own-copy', detail } });
+  const main = sib.mainOf(raiz);
+  if (!main) return pausa(`Hay otra sesión viva en este checkout (${quien}) y no pude ver el repo ${raiz}. No creé una copia ni escribí el marcador.`);
+  const because = `hay otra sesión viva en este checkout (${quien})`;
+  const ya = copiaYaAbierta({ storyId, storyPath, raiz, main, sib });
+  if (ya && ya.copy) return { ...ya, because };
+  const avisoYa = ya && ya.warning ? { warning: ya.warning } : {};
+  // un repo sin `origin` (uno local, de juguete) no tiene una main que traer ni adonde empujar la copia: sigue como
+  // siempre, con el aviso. Un `origin` que existe y no responde sí pausa (abajo)
+  if (sib.gitIn(raiz, ['remote', 'get-url', 'origin']).code !== 0) {
+    return { warning: `hay otra sesión viva en este checkout (${quien}) y el repo no tiene origin: no creo una copia; coordinala o esperala` };
+  }
+  // de dónde nace: se trae main antes de comparar (sin red no se compara contra una punta vieja)
+  const fetched = sib.gitIn(main, ['fetch', '--quiet', '--no-tags', 'origin', 'main']);
+  if (fetched.code !== 0) return pausa(`Hay otra sesión viva en este checkout (${quien}) y no pude traer main de origin para crear la copia de la historia: ${fetched.err || `git salió con código ${fetched.code}`}. No creé una copia ni escribí el marcador.`);
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const abs = real(path.resolve(storyPath));
+  const dentro = abs.startsWith(real(raiz) + path.sep);
+  const rel = dentro ? path.relative(real(raiz), abs).split(path.sep).join('/') : null;
+  let baseLabel = 'origin/main';
+  if (dentro) {
+    const texto = fs.readFileSync(abs, 'utf8');
+    const en = (ref) => { const s = sib.gitIn(raiz, ['show', `${ref}:${rel}`]); return s.code === 0 ? s.out : null; };
+    const limpio = sib.gitIn(raiz, ['status', '--porcelain', '--', rel]);
+    const igual = (otro) => otro != null && otro === texto.trim();
+    if (igual(en('origin/main'))) baseLabel = 'origin/main';
+    else if (limpio.code === 0 && !limpio.out && igual(en('HEAD'))) baseLabel = 'HEAD';
+    else return pausa(`Hay otra sesión viva en este checkout (${quien}) y la historia ${rel} no está commiteada (o tiene cambios sin commitear): la copia propia no la tendría. Commiteá la historia primero en su rama y volvé a correr start, o trabajá coordinado con la otra sesión. No creé una copia, no moví ni guardé en un stash ningún archivo, y no escribí el marcador.`);
+  }
+  const base = sib.gitIn(raiz, ['rev-parse', '--verify', `${baseLabel}^{commit}`]);
+  if (base.code !== 0) return pausa(`Hay otra sesión viva en este checkout (${quien}) y no pude leer ${baseLabel}: ${base.err}. No creé una copia ni escribí el marcador.`);
+  const clave = String(runDirKey(storyId, storyPath).key || storyId).replace(/[^\w.-]/g, '-');
+  const libre = sib.freeName(raiz, clave);
+  if (!libre.name) return pausa(`Hay otra sesión viva en este checkout (${quien}) y no encontré un nombre libre para la copia: ${libre.problem}. No creé una copia ni escribí el marcador.`);
+  const copy = sib.siblingCopy({ repo: raiz, name: libre.name, branch: `wt/${libre.name}`, base: base.out, closing: 'no la creé' });
+  if (!copy.ok) return pausa(`Hay otra sesión viva en este checkout (${quien}). ${copy.message} No escribí el marcador.`);
+  return { copy, baseLabel, because, storyInCopy: dentro ? path.join(copy.path, rel) : abs, ...avisoYa };
+}
+
+// La copia que esta sesión ya abrió para esta historia, si `start` se repite desde el checkout (tras compactar, por
+// ejemplo): se sigue en ella. Otra copia dejaría la primera, con su corrida, sin dueño. `{ copy, … }`, null (no tenía
+// ninguna) o `{ warning }` (no se puede saber o no se puede seguir en ella: se abre otra, y queda dicho).
+function copiaYaAbierta({ storyId, storyPath, raiz, main, sib }) {
+  let m;
+  try { m = JSON.parse(fs.readFileSync(path.join(stateDirOf(os.homedir()), 'active', `${sessionIdFileKey()}.json`), 'utf8')); } catch (e) {
+    return e.code === 'ENOENT' ? null : { warning: `no pude leer el marcador de esta sesión (${e.code || e.message}): si ya tenía una copia de esta historia, queda abandonada` };
+  }
+  if (!m || String(m.storyId) !== String(storyId) || typeof m.repoPath !== 'string' || !fs.existsSync(m.repoPath)) return null;
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const dir = real(m.repoPath);
+  if (dir === real(raiz) || sib.mainOf(dir) !== main) return null;
+  const abs = real(path.resolve(storyPath));
+  const storyInCopy = abs.startsWith(real(raiz) + path.sep) ? path.join(dir, path.relative(real(raiz), abs)) : abs;
+  const rama = sib.gitIn(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  if (rama.code !== 0 || !fs.existsSync(storyInCopy)) {
+    return { warning: `no puedo seguir en la copia ${dir} (${rama.code !== 0 ? rama.err : 'no tiene la historia'}): abro otra y esa queda abandonada` };
+  }
+  return { copy: { path: dir, main, branch: rama.out, created: false }, baseLabel: 'la copia que ya tenía', storyInCopy };
+}
+
+// Lo que no viaja con una copia (el `post_checklist` de scripts/tools/tycon-worktree.sh).
+function checklistDeLaCopia(dir) {
+  const out = [];
+  if (fs.existsSync(path.join(dir, 'package.json'))) out.push('npm install (node_modules no viaja con la copia)');
+  let dotnet = false;
+  try { dotnet = fs.readdirSync(dir).some((f) => f.endsWith('.sln') || (fs.statSync(path.join(dir, f)).isDirectory() && fs.readdirSync(path.join(dir, f)).some((g) => g.endsWith('.csproj')))); } catch { /* sin listar */ }
+  if (dotnet) out.push('dotnet restore (bin/obj no viajan)');
+  out.push('.env y secretos sin trackear: copiarlos a mano si una prueba en vivo los necesita');
+  return out;
+}
+
+// ¿El marcador de esta sesión quedó apuntando a la copia? (la re-entrada pudo pausar antes o después de escribirlo)
+function marcadorEnLaCopia(dir) {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(stateDirOf(os.homedir()), 'active', `${sessionIdFileKey()}.json`), 'utf8'));
+    return Boolean(m && m.repoPath && fs.realpathSync(m.repoPath) === fs.realpathSync(dir));
+  } catch { return false; }
+}
+
 function computeStart(args) {
   const { execFileSync } = require('child_process');
   const storyPath = args.story;
-  const repo = args.repo;
+  // el único lugar donde vale la carpeta del proceso: el --repo de quien arranca, resuelto al entrar. De acá salen la
+  // carpeta, el marcador y la apertura, absolutos, y se leen igual desde cualquier carpeta (lib/run-dir.js)
+  const repo = args.repo ? path.resolve(args.repo) : args.repo;
   if (!storyPath || !fs.existsSync(storyPath)) {
     return { ready: false, error: `--story inválido o no existe: ${storyPath}` };
   }
@@ -3200,6 +3741,11 @@ function computeStart(args) {
   const storyId = fm.story;
   const pauses = [];
   const actions = [];
+
+  // `--batch`: la tanda de una historia paraguas. Se valida antes de tocar nada; la misma sesión que la vuelve a pedir
+  // no rearranca su ejecución (ver tandaDelArranque).
+  const tanda = args.batch != null ? tandaDelArranque(content, storyId, storyPath, String(args.batch)) : null;
+  if (tanda && tanda.salida) return tanda.salida;
 
   // PIPE-C0: cross-session conflict.
   // «La misma story» es el mismo número Y la misma ruta dentro de su repo: en los repos que numeran por
@@ -3231,22 +3777,84 @@ function computeStart(args) {
         if (!m || String(m.storyId) !== String(storyId)) continue;
         const suRuta = m.storyPath ? rutaEnRepo(m.storyPath, m.repoPath) : null;
         if (suRuta && miRuta && suRuta !== miRuta) continue; // otra story con el mismo número
-        others.push({ sessionId: m.sessionId, lastTouch: m.lastTouch, stepsCompleted: m.stepsCompleted });
-      } catch { /* ignore */ }
+        // con tanda, la otra sesión que entrega otra tanda de la paraguas no choca; la misma tanda, o sin tanda, sí
+        if (tanda && m.batch && String(m.batch) !== tanda.nombre) continue;
+        others.push({ sessionId: m.sessionId, lastTouch: m.lastTouch, stepsCompleted: m.stepsCompleted, repoPath: m.repoPath || null });
+      } catch (e) {
+        // un marcador que no se lee puede ser de esta misma historia: no lo veo para el choque, y se dice
+        actions.push(`PIPE-C0: no pude leer el marcador de otra sesión (${f}: ${String((e && (e.code || e.message)) || e).split('\n')[0].slice(0, 120)}): si es de la story ${storyId}, no lo veo.`);
+      }
     }
-  } catch { /* ignore */ }
+  } catch (e) {
+    actions.push(`PIPE-C0: no pude listar los marcadores de las otras sesiones (${String((e && (e.code || e.message)) || e).split('\n')[0].slice(0, 120)}): no sé si otra sesión trabaja la story ${storyId}.`);
+  }
+  // PIPE-C0 por hechos: la otra sesión de la misma story en OTRA copia del repo (otra raíz git) y en OTRA rama es otra
+  // tanda que trabaja en paralelo, no un choque: no pausa y queda dicho (`parallelWith` en el marcador). La misma copia,
+  // o la misma rama en otra copia, pausa como siempre; si no se puede leer la rama de la otra, pausa y lo dice.
+  let parallelWith = null;
+  let ramaSinLeer = null;
+  let ramaPropiaSinLeer = false;
   if (others.length) {
+    const gitDe = (dir, ...a) => {
+      try { return execFileSync('git', ['-C', dir, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch { return null; }
+    };
+    const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+    const miRaiz = gitDe(repo, 'rev-parse', '--show-toplevel');
+    const miRama = gitDe(repo, 'rev-parse', '--abbrev-ref', 'HEAD');
+    const vistas = others.map((o) => {
+      const raiz = o.repoPath && fs.existsSync(o.repoPath) ? gitDe(o.repoPath, 'rev-parse', '--show-toplevel') : null;
+      return { sessionId: o.sessionId, repoPath: o.repoPath, raiz, rama: raiz ? gitDe(o.repoPath, 'rev-parse', '--abbrev-ref', 'HEAD') : null };
+    });
+    const sinLeer = vistas.filter((v) => !v.raiz || !v.rama);
+    if (!miRaiz || !miRama) {
+      ramaSinLeer = repo;
+      ramaPropiaSinLeer = true;
+    } else if (sinLeer.length) {
+      ramaSinLeer = sinLeer.map((v) => `${v.sessionId} (${v.repoPath || 'sin repo en su marcador'})`).join(', ');
+    } else if (vistas.every((v) => real(v.raiz) !== real(miRaiz) && v.rama !== miRama)) {
+      const lista = vistas.map((v) => ({ sessionId: v.sessionId, branch: v.rama }));
+      parallelWith = lista.length === 1 ? lista[0] : lista;
+      actions.push(`PIPE-C0: la story ${storyId} también la trabaja ${lista.map((v) => `la sesión ${v.sessionId} en la rama ${v.branch}`).join(' y ')}, `
+        + 'en otra copia del repo: es otra tanda en paralelo, no un choque.');
+    }
+  }
+  if (others.length && !parallelWith) {
     pauses.push({
       id: 'PIPE-C0-cross-session',
-      detail: `Story ${storyId} YA tiene pipeline activo en otra sesión: ${JSON.stringify(others)}`,
-      options: 'retomar con `marker.js adopt-session <sid>` (copia el estado completo) / clear-session / paralelo intencional / cancelar',
+      detail: `Story ${storyId} YA tiene pipeline activo en otra sesión: ${JSON.stringify(others)}`
+        + (ramaSinLeer ? `. No pude leer la rama de ${ramaPropiaSinLeer ? 'esta sesión' : 'la otra sesión'} (${ramaSinLeer}): ante la duda, pauso.` : ''),
+      options: 'retomar con `marker.js adopt-session <sid>` (copia el estado completo) / clear-session / trabajarla en otra copia del repo y otra rama / cancelar',
     });
+  }
+
+  // PIPE-C10: otra sesión viva en este checkout (una historia distinta, otro chat) → la historia arranca en su propia
+  // copia de trabajo, antes de escribir nada acá. Se re-entra a start dentro de la copia: los chequeos de
+  // siempre, el marcador y la carpeta de la corrida quedan allá, y el checkout compartido no cambia.
+  const warnings = [];
+  if (!pauses.length && !args.inOwnCopy) {
+    const cp = copiaPropiaDelArranque({ storyId, storyPath, repo });
+    if (cp.warning) warnings.push(cp.warning);
+    if (cp.pause) {
+      return { ready: false, story_id: storyId, pauses: [cp.pause], actions_done: actions, ...(warnings.length ? { warnings } : {}), note: 'NADA mutado: no creé una copia ni escribí el marcador. Resolvé la pausa y re-corré start.' };
+    }
+    if (cp.copy) {
+      const inner = computeStart({ ...args, repo: cp.copy.path, story: cp.storyInCopy, inOwnCopy: true });
+      const workCopy = { path: cp.copy.path, branch: cp.copy.branch, base: cp.baseLabel, created: cp.copy.created, because: cp.because, checklist: checklistDeLaCopia(cp.copy.path) };
+      const linea = `PIPE-C10: ${cp.because}: la historia arranca en su propia copia de trabajo ${cp.copy.path} (rama ${cp.copy.branch}, desde ${cp.baseLabel}). Seguí desde ahí: cada comando con cd a la copia y cada archivo por su ruta en la copia (step-01-start.md).`;
+      const juntos = [...warnings, ...(inner.warnings || [])];
+      if (!inner.ready && cp.copy.created && !marcadorEnLaCopia(cp.copy.path)) {
+        // la copia no sirve sin la corrida: se saca lo que se creó, y se dice si quedó algo
+        const sacada = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'sibling-copy.js')).removeCopy({ path: cp.copy.path, main: cp.copy.main, branch: cp.copy.branch, created: cp.copy.created });
+        return { ...inner, ...(juntos.length ? { warnings: juntos } : {}), note: `${inner.note || 'No arrancó.'} ${sacada ? 'Saqué la copia que había creado.' : `No pude sacar la copia ${cp.copy.path}: queda para el barrido.`}` };
+      }
+      return { ...inner, work_copy: workCopy, actions_done: [linea, ...(inner.actions_done || [])], ...(juntos.length ? { warnings: juntos } : {}) };
+    }
   }
 
   // PIPE-C1: branch guard.
   let branch = null;
   try {
-    branch = execFileSync('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    branch = execFileSync('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch { /* repo sin git */ }
   // La historia del modo primera vez de tycon-create-story arranca sola: sin git, `git init`; en main/master (o en un repo sin
   // commits), la rama `story/<n>`. Sólo con la marca `origin: first-time` Y la constancia que deja el guion que la
@@ -3257,7 +3865,7 @@ function computeStart(args) {
   const firstTimeMark = fm.origin === 'first-time';
   const firstTimeOk = firstTimeMark && require('./lib/first-time-record.js').isRecorded(os.homedir(), storyPath, storyId);
   if (firstTimeOk) {
-    const gitOut = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const gitOut = (...a) => execFileSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const target = `story/${storyId}`;
     let hasGit = true;
     try { gitOut('rev-parse', '--git-dir'); } catch { hasGit = false; }
@@ -3284,7 +3892,7 @@ function computeStart(args) {
   // ni con la historia afuera: ahí pausa y da el comando a mano.
   if (!firstTimeGit && !firstTimeOk) {
     let hasGit = true;
-    try { execFileSync('git', ['-C', repo, 'rev-parse', '--git-dir'], { stdio: ['ignore', 'ignore', 'ignore'] }); } catch { hasGit = false; }
+    try { execFileSync('git', ['-C', repo, 'rev-parse', '--git-dir'], { windowsHide: true, stdio: ['ignore', 'ignore', 'ignore'] }); } catch { hasGit = false; }
     if (!hasGit) {
       const target = `story/${storyId}`;
       const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
@@ -3322,8 +3930,10 @@ function computeStart(args) {
     });
   }
 
-  // PIPE-C5 (lectura): pipeline abandonado.
-  if (fm.status === 'in-progress' && !others.length) {
+  // PIPE-C5 (lectura): pipeline abandonado. Una paraguas en curso con su tanda no lo es: otra tanda la arrancó antes. Y el
+  // marcador propio de esta misma story tampoco: es la corrida viva que se retoma (re-correr `start`).
+  const propioDeEstaStory = (() => { const p = readSessionMarker(); return !!p && String(p.storyId) === String(storyId); })();
+  if (fm.status === 'in-progress' && !others.length && !tanda && !propioDeEstaStory) {
     pauses.push({
       id: 'PIPE-C5-abandoned',
       detail: `La story ya está status: in-progress sin pipeline activo en otra sesión — probable pipeline abandonado (sesión que murió sin cerrar).`,
@@ -3334,7 +3944,7 @@ function computeStart(args) {
   if (firstTimeGit && !pauses.length) {
     const { init, unborn, target, sinMarca } = firstTimeGit;
     try {
-      const run = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      const run = (...a) => execFileSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
       if (init) run('init', '-q');
       // Sin commits no hay desde dónde ramificar: se nombra la rama de HEAD, y el primer commit nace en ella.
       if (init || unborn) run('symbolic-ref', 'HEAD', `refs/heads/${target}`);
@@ -3400,7 +4010,7 @@ function computeStart(args) {
   if (faltasNoMedidas.length) actions.push(`Falta antes de arrancar: no pude mirar ${faltasNoMedidas.join(' ni ')}; no es «está todo»`);
 
   if (pauses.length) {
-    return { ready: false, story_id: storyId, branch, pauses, ...faltasOut, actions_done: actions, note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
+    return { ready: false, story_id: storyId, branch, pauses, ...faltasOut, actions_done: actions, ...(warnings.length ? { warnings } : {}), note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
   }
 
   // el tamaño de la corrida y su tiempo estimado, ANTES de lanzar nada; quedan en el marcador.
@@ -3410,16 +4020,31 @@ function computeStart(args) {
   actions.push(`TAMAÑO: corrida ${runSize.size} (${runSize.reason}) · estimado ${runSize.estimate_min} min (${runSize.estimate_source})`);
 
   // PIPE-C4: marker set (vía marker.js — único owner de writes del marker).
-  const markerJs = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const markerJs = markerInstalado();
+  let tandaFallida = null;
   // Una ejecución nueva nace con los pasos por nombre (esquema 2). Retomar la misma story sobre un marcador viejo lo
   // deja viejo: no se reescribe a mitad de ejecución.
   const previo = readSessionMarker();
   const sigueVieja = !!previo && String(previo.storyId) === String(storyId) && STEPS_TABLE.schemeOf(previo) === 1;
   // La carpeta de la ejecución nace acá: guarda la copia de la apertura (lib/open-runs.js). Sin carpeta no hay apertura,
   // y una ejecución sin apertura no se vería al perder el marcador: el arranque frena.
+  // Una corrida, una carpeta: retomar la misma story reusa la de su marcador (o la de su apertura, si el marcador es de
+  // antes de anotarla); si no, la corrida nueva crea la suya, aunque la story ya tenga otras (otra tanda, o reabierta).
+  // Sin carpeta no se escribe el marcador: no arranca una corrida sin carpeta propia.
   let runDir = null;
-  try { runDir = resolveRunDir(repo, storyId, true, storyPath); } catch (e) {
-    return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude crear la carpeta de la ejecución (${e.message}); sin ella la ejecución no queda anotada como abierta` }], actions_done: actions };
+  const rdLib = require('./lib/run-dir.js');
+  if (previo && String(previo.storyId) === String(storyId)) {
+    const d = rdLib.carpetaDelMarcador(previo, storyId, repo, { create: true });
+    if (d.dir) runDir = d.dir;
+    else if (d.motivo) actions.push(`CARPETA: ${d.motivo}; abro una nueva`);
+  }
+  if (!runDir) {
+    try { runDir = rdLib.createRunDir(repo, storyId, storyPath); } catch (e) {
+      return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude crear la carpeta de la ejecución (${e.message}); sin ella la ejecución no queda anotada como abierta. No escribí el marcador.` }], actions_done: actions };
+    }
+    if (!runDir) {
+      return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude calcular la clave de la carpeta de la ejecución (${runDirKey(storyId, storyPath).error || 'sin motivo'}); sin carpeta propia la ejecución no arranca. No escribí el marcador.` }], actions_done: actions };
+    }
   }
   const esquema = sigueVieja
     ? { stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8], arranque: '0' }
@@ -3434,14 +4059,14 @@ function computeStart(args) {
       // crudo, on-advisor-run.js y marker.js lo resolverían contra repoPath — coinciden sólo si
       // cwd == --repo. Con `--repo backend --story project/specs/x.md` desde el padre, la proyección
       // del roster resolvería un path inexistente y callaría con "mismo repo". Todo lector acepta absolutos.
-      storyId, storyPath: path.resolve(storyPath), repoPath: repo, ...(runDir ? { runDir } : {}), sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
+      storyId, storyPath: path.resolve(storyPath), repoPath: repo, runDir, sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
       // Dónde nace la evidencia de cierre: el repo de la story, aunque el código
       // esté en otro. Lo leen los pasos «Probar en vivo» y «Preparar el commit» para no tener que adivinarlo.
       evidenceDir: evid.dir || null,
       // Commit de partida: la base de las «líneas tocadas» que mide test-gate.sh.
       // Sin git queda null y test-gate cae a HEAD diciéndolo.
       baseSha: (() => {
-        try { return execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || null; } catch (e) {
+        try { return execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || null; } catch (e) {
           // No frena el arranque (test-gate cae a HEAD y lo dice), pero no se calla.
           actions.push(`⚠️ BASE DE COBERTURA: no pude leer el commit de partida (${String((e.stderr || e.message || e)).trim().split('\n')[0]}); test-gate medirá contra HEAD`);
           return null;
@@ -3455,8 +4080,9 @@ function computeStart(args) {
       // sesión con su proveedor: los revisores que lanza `reviewers-run` corren con el mismo
       ...(args.sessionModel ? { sessionModel: args.sessionModel } : {}),
       ...(args.codexSession ? { codexSession: args.codexSession } : {}),
-    })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    execFileSync(process.execPath, [markerJs, 'complete-step', esquema.arranque], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      ...(parallelWith ? { parallelWith } : {}),
+    })], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(process.execPath, [markerJs, 'complete-step', esquema.arranque], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     logRunStart(storyId);
     // La apertura en el registro y su copia en la carpeta, después del marcador: con las tres piezas, si falta una, la
     // ejecución frena como perdida (lib/open-runs.js). Retomar la misma historia sobrescribe la copia.
@@ -3466,13 +4092,19 @@ function computeStart(args) {
       return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude anotar la apertura de la ejecución (${e.message}); el marcador quedó puesto, pero sin apertura no se vería al faltar` }], actions_done: actions };
     }
     actions.push(`PIPE-C4: marker seteado (Arranque cerrado${sigueVieja ? '; sigue el marcador viejo de esta ejecución' : ''})`);
+    // la tanda, después del marcador: si no se puede anotar, el marcador queda sin tanda y la salida lo pausa
+    if (tanda) {
+      const r = anotarTanda(tanda.nombre);
+      if (r.ok) actions.push(`TANDA: anotada ${tanda.nombre} (marker.js set-batch)`);
+      else tandaFallida = pausaSinTanda(tanda.nombre, r.motivo);
+    }
   } catch (e) {
     return { ready: false, story_id: storyId, pauses: [{ id: 'marker-set-failed', detail: String(e.message || e) }], actions_done: actions };
   }
 
   // PIPE-C5 (escritura): status → in-progress.
   try {
-    execFileSync(process.execPath, [markerJs, 'update-story-status', storyPath, 'in-progress'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(process.execPath, [markerJs, 'update-story-status', storyPath, 'in-progress'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     actions.push('PIPE-C5: frontmatter status → in-progress');
   } catch (e) {
     actions.push(`PIPE-C5 FALLÓ (no bloqueante): ${String(e.message || e)}`);
@@ -3480,7 +4112,7 @@ function computeStart(args) {
 
   if (args.autonomous) {
     try {
-      execFileSync(process.execPath, [markerJs, 'set-autonomous', 'true'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      execFileSync(process.execPath, [markerJs, 'set-autonomous', 'true'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
       actions.push('PIPE-C6: modo autónomo Nivel 1 ACTIVO (default ON · Stop-gate DoD). Pánico: touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY');
     } catch { /* ignore */ }
   } else {
@@ -3499,7 +4131,9 @@ function computeStart(args) {
   if (stale) actions.push(`⚠️ SPEC-STALE — ${stale.aviso}`);
 
   return {
-    ready: true,
+    // la tanda que no se pudo anotar: el arranque quedó hecho, y la salida pausa con el comando a mano
+    ready: !tandaFallida,
+    ...(tandaFallida ? { pauses: [tandaFallida] } : {}),
     story_id: storyId,
     branch,
     run_size: runSize,
@@ -3512,6 +4146,7 @@ function computeStart(args) {
     tooling: computeToolingExpected(repo),
     ...faltasOut,
     actions_done: actions,
+    ...(warnings.length ? { warnings } : {}),
     e2e_gap: e2eCfg.gap ? e2eCfg.warning : null,
     spec_stale: stale,
     next: 'pipeline.js next te dice el próximo paso (el aviso de trabajo, el pedido en ADO o validar la story)',
@@ -3554,7 +4189,6 @@ function recortarStart(result) {
   }
   if (result.risk) {
     breve.riesgo = result.risk.risk;
-    breve.auto_approve_plan = result.risk.auto_approve_plan === true;
     if (result.risk.risk === 'NORMAL') {
       breve.riesgo_por = (result.risk.criteria || []).filter((c) => !c.pass).map((c) => c.name);
     }
@@ -3587,18 +4221,18 @@ function recortarStart(result) {
   if (result.e2e_gap) breve.e2e_gap = result.e2e_gap;
   if (result.spec_stale) breve.spec_stale = result.spec_stale;
   breve.acciones = result.actions_done || [];
+  // la copia propia (PIPE-C10) y los avisos de otra sesión viva: el agente tiene que verlos sin abrir el JSON entero
+  if (result.work_copy) breve.work_copy = result.work_copy;
+  if (result.warnings && result.warnings.length) breve.warnings = result.warnings;
   breve.next = result.next || result.note || null;
   breve.completo = completo;
   return breve;
 }
 
-// ── pipeline.js risk-class — Autonomía Nivel 2 ───
-// Clasifica la story para el auto-approve CONDICIONAL del plan (paso «Aprobar el plan»):
-// LOW-risk → ese paso se auto-aprueba y el plan se muestra igual; cualquier criterio
-// fallido → NORMAL → checkpoint HITL como siempre. Reglas de oro intactas:
-// git push y cambios de scope firmado SIEMPRE human-gate (regla #0).
-// Criterios del diseño pipeline-autonomy-design.md §9 (validator verde es
-// pre-requisito del flujo — «Validar la historia» corre antes que «Aprobar el plan», no se re-evalúa acá).
+// ── pipeline.js risk-class ───
+// Clasifica la story en LOW o NORMAL: lo usan la revisión adversarial de la story y el tamaño de la corrida. Ningún
+// plan se aprueba solo por ser LOW: lo aprueba una persona, o la coordinadora con la revisión automática.
+// Además dice si la story es delicada (`computeDelicate`): el plan de una delicada lo aprueba siempre el dev.
 // ── El tamaño de la corrida: liviana (sólo documentación) o completa. Lo clasifica lib/run-size.js por
 // lo que la story DECLARA; `args.runSize` (el forzado del marcador, que sólo leen las ramas de línea de comandos)
 // manda. Sin story legible, completa. El repo aporta sus superficies del pase adversarial.
@@ -3611,13 +4245,15 @@ function computeRunSize(args) {
     if (forzado.size !== 'liviana' || args.runSize.firmado) return forzado;
     const real = computeRunSize({ ...args, runSize: null });
     if (real.size === 'liviana') return forzado;
-    return { ...real, reason: `forzada a liviana sin la firma del dueño, y el cambio toca código: no vale · ${real.reason}`, forced_ignored: true };
+    return { ...real, reason: `forzada a liviana sin la firma de una persona, y el cambio toca código: no vale · ${real.reason}`, forced_ignored: true };
   }
   const content = args.story && fs.existsSync(args.story) ? readText(args.story) : '';
   const repo = args.repo && fs.existsSync(args.repo) ? args.repo : null;
   // Lo declarado Y lo que el cambio toca de verdad (`--files`, el diff): una story que declara un .md y toca código no
   // puede salir liviana (pase adversarial). Sin story no hay tamaño: sólo con el diff no se sabe qué faltó declarar.
-  const declared = runSizeLib.declaredFiles(content);
+  // con una parte válida (sólo como argumento explícito: el plan), lo declarado es su lista
+  const parte = parteDelArg(args);
+  const declared = parte ? parte.files : runSizeLib.declaredFiles(content);
   const rel = (f) => (repo && path.isAbsolute(f) && !path.relative(repo, f).startsWith('..') ? path.relative(repo, f) : f);
   const touched = Array.isArray(args.files) ? args.files.map(rel) : [];
   if (!declared.length) return runSizeLib.classifyStory({ files: [] });
@@ -3628,6 +4264,38 @@ function computeRunSize(args) {
     deepReviewCfg: repo ? deepReviewConfig(repo) : null,
     roots: repo ? [repo] : [],
   });
+}
+
+/**
+ * La parte con la que se mide (lib/batch-scope.js), sólo si viene como argumento explícito (`args.batch`): la pasan el
+ * comando `risk-class` y la revisión del plan, nadie más. Sin ella, o con una que no vale, null: la historia entera.
+ */
+function parteDelArg(args) {
+  if (!args || !args.batch) return null;
+  return require('./lib/batch-scope.js').parteMedible(args.story, args.batch);
+}
+
+/** Las dos señales de lib/batch-scope.js, con el repo de la story y sus compañeros; lo que no se puede leer, nada. */
+function senalesDe(story, repoArg, batch) {
+  try {
+    if (!story || !fs.existsSync(story)) return [];
+    const repo = repoDeLaStory(story, repoArg && fs.existsSync(repoArg) ? repoArg : null);
+    if (!repo) return [];
+    let raices;
+    try { raices = [repo, ...companionLib.companionRoots(repo, story, { onMissing: () => {} })]; } catch (e) {
+      // sin los compañeros, «ninguna prueba lo ataja» avisaría por pruebas que viven en ellos: no se mide, y se dice
+      const sinCompaneros = require('./lib/batch-scope.js').senales({ story, repo, batch, raices: [repo] }).filter((w) => !w.startsWith('ninguna prueba lo ataja: '));
+      return [...sinCompaneros, `ninguna prueba lo ataja: no medido, no pude leer los repos compañeros (${String(e.message || e).split('\n')[0]})`];
+    }
+    return require('./lib/batch-scope.js').senales({ story, repo, batch, raices });
+  } catch (e) { return [`ninguna prueba lo ataja: no medido, las señales fallaron (${String(e.message || e).split('\n')[0]})`]; }
+}
+
+/** La parte anotada en el marcador de esta sesión, si es de la misma story; si no, undefined. La lee sólo `risk-class`. */
+function batchDelMarcador(storyPath) {
+  const m = readSessionMarker();
+  if (!m || !m.batch || !storyDelMarcador(m)) return undefined;
+  return esLaStoryDelMarcador(storyPath, m) ? m.batch : undefined;
 }
 
 /** El tamaño forzado a mano en el marcador de esta sesión, si es de la misma story: `{ size, reason }` o null. */
@@ -3641,13 +4309,17 @@ function runSizeDelMarcador(storyPath) {
 function computeRiskClass(args) {
   const storyPath = args.story;
   if (!storyPath || !fs.existsSync(storyPath)) {
-    return { risk: 'NORMAL', error: `--story inválido: ${storyPath}`, auto_approve_plan: false };
+    return { risk: 'NORMAL', error: `--story inválido: ${storyPath}`, delicate: computeDelicate(args) };
   }
   const content = readText(storyPath);
   const fm = parseFrontmatterPipeline(content);
-  const scopeFiles = args.files && args.files.length
-    ? args.files
-    : [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')];
+  // con una parte válida, su lista MÁS lo que el cambio toca (une); sin ella, `--files` reemplaza lo declarado, como siempre
+  const parte = parteDelArg(args);
+  const scopeFiles = parte
+    ? [...new Set([...parte.files, ...(args.files || [])])]
+    : args.files && args.files.length
+      ? args.files
+      : [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')];
 
   const criteria = [];
   const add = (name, pass, detail) => criteria.push({ name, pass, detail });
@@ -3667,19 +4339,236 @@ function computeRiskClass(args) {
   }
   add('sin-paths-sensibles', !scopeFiles.some((f) => /auth|security|payment|crypto|secret|credential/i.test(f)),
     'archivos de auth/seguridad/pagos siempre plan HITL');
-  add('sin-pipelines-multi-tanda', !/^pipelines:/m.test(content),
-    'stories con entregas en tandas tienen interdependencias — plan HITL');
+  if (parte) {
+    add('sin-pipelines-multi-tanda', true, `la parte ${parte.nombre} es válida: la dependencia entre partes la dice blocked_by`);
+  } else {
+    add('sin-pipelines-multi-tanda', !/^pipelines:/m.test(content),
+      'stories con entregas en tandas tienen interdependencias — plan HITL');
+  }
+  // un freno del repo (lo que nombra su manifiesto de controles) no es una historia chica; sin manifiesto, no aplica
+  const repoDeLosFrenos = args.repo && fs.existsSync(args.repo) ? args.repo : repoDeLaStory(storyPath);
+  const frenos = frenosDelManifiesto(repoDeLosFrenos);
+  if (frenos && frenos.error) {
+    add('sin-frenos', false, `no pude leer el manifiesto de controles (scripts/ci/controls-from-base.json: ${frenos.error}): en duda, la corrida es NORMAL`);
+  } else if (frenos) {
+    const tocados = [...new Set(scopeFiles.map((f) => rutaComparable(f, [repoDeLosFrenos]).rel).filter((r) => frenos.files.has(r)))];
+    add('sin-frenos', tocados.length === 0, tocados.length
+      ? `el alcance toca frenos del manifiesto de controles (${tocados.join(', ')}) — plan HITL y pase adversarial`
+      : 'ningún archivo del alcance es un freno del manifiesto de controles');
+  }
 
   const allPass = criteria.every((c) => c.pass);
   return {
     risk: allPass ? 'LOW' : 'NORMAL',
     run_size: runSize.size,
-    auto_approve_plan: allPass,
     criteria,
+    delicate: computeDelicate(args),
+    ...(args.batch ? { batch: parte ? { name: parte.nombre, valid: true } : { name: args.batch, valid: false, reason: 'la parte no vale: se mide la historia entera' } } : {}),
     note: allPass
-      ? 'LOW-risk: «Aprobar el plan» puede auto-aprobarse (Nivel 2), pero el plan se muestra siempre: primero un mensaje con el plan tal cual, después complete-step approve-plan --auto-approved (lee la conversación; sin poder leerla, se le pregunta a la persona). Push y scope firmado siguen human-gate SIEMPRE.'
-      : 'NORMAL: «Aprobar el plan» con la persona, como siempre.',
+      ? 'LOW-risk: la revisión adversarial de la story se saltea. El plan lo aprueba una persona, o la coordinadora con la revisión automática.'
+      : 'NORMAL: «Aprobar el plan» con la persona, o la coordinadora con la revisión automática si la story no es delicada.',
   };
+}
+
+/**
+ * Los frenos que nombra el manifiesto de controles de un repo (scripts/ci/controls-from-base.json): `controls[].script`,
+ * `controls[].rules` (una cadena o un objeto con `path`, también los `optional`) y `workflows[].path`. `content` no
+ * cuenta: es lo que el manifiesto declara que no es regla. Más angosto que `archivosDeControles` a propósito: esa suma
+ * el código que cargan los guiones (bibliotecas compartidas que no son frenos). `{ files: Set }`, `{ error }` si no se
+ * puede leer, o null sin manifiesto. Nunca tira.
+ */
+function frenosDelManifiesto(raiz) {
+  if (!raiz) return null;
+  const f = path.join(raiz, 'scripts', 'ci', 'controls-from-base.json');
+  let texto;
+  try { texto = fs.readFileSync(f, 'utf8'); } catch (e) { return e && e.code === 'ENOENT' ? null : { error: (e && e.code) || String(e) }; }
+  let inv;
+  try { inv = JSON.parse(texto); } catch (e) { return { error: `no es JSON válido (${String((e && e.message) || e).split('\n')[0]})` }; }
+  if (!inv || !Array.isArray(inv.controls)) return { error: 'no tiene «controls»' };
+  const ruta = (r) => (typeof r === 'string' ? r : r && typeof r.path === 'string' ? r.path : null);
+  const files = new Set([
+    ...inv.controls.flatMap((c) => (c && typeof c === 'object' ? [c.script, ...(Array.isArray(c.rules) ? c.rules.map(ruta) : [])] : [])),
+    ...(Array.isArray(inv.workflows) ? inv.workflows.map(ruta) : []),
+  ].filter((x) => typeof x === 'string' && x).map((x) => x.replace(/\\/g, '/').replace(/^\.\//, '')));
+  return { files };
+}
+
+// ── ¿La story es delicada? ──
+// Su plan es nivel 2: lo aprueba siempre el dev, nunca la coordinadora con la revisión automática. Las reglas por
+// archivo (de los archivos de la story y de las rutas que nombra el plan, `args.planText`) son las de lib/risk-paths.js,
+// las mismas del camino rápido; la historia suma las suyas: `riesgo_alto_por:` primero, `sensible:` antes de los
+// controles y los archivos de dependencias al final. La primera que se cumple da el motivo. En duda, delicada: lo que no
+// se puede leer cuenta como delicado, con «no pude saber».
+const riskPaths = require('./lib/risk-paths.js');
+// rutas que nombra un plan: absolutas o relativas, con `/` o con `\` (Windows), una carpeta, o un nombre suelto con una
+// extensión conocida
+const RE_RUTA_DEL_PLAN = /(?:[A-Za-z]:)?[\\/]?(?:[\w.@-]+[\\/])+[\w.@-]*|[\w@-]+\.(?:c?js|mjs|ts|tsx|jsx|sh|ps1|ya?ml|json|sql|cs|csproj|md|py)\b/g;
+
+function rutasDelPlan(texto) {
+  const out = new Set();
+  for (const m of String(texto || '').matchAll(RE_RUTA_DEL_PLAN)) {
+    const r = m[0].replace(/[.,;:)]+$/, '');
+    if (r.replace(/[\\/]/g, '')) out.add(r);
+  }
+  return [...out];
+}
+
+// Lo que un plan sólo corre no lo vuelve delicado. Una ruta cuenta si «## Archivos» la nombra, o si aparece fuera de
+// esa sección de cualquier forma que no sea el comando que la ejecuta: en código (entre comillas invertidas, o un
+// renglón de un bloque cercado), un comando simple, con uno de estos programas delante, y la ruta como lo que ejecuta.
+// La ruta sola entre comillas es un nombre: «Cambio `x`» y «Corro `x`» no se distinguen sin leer el verbo.
+const PROGRAMAS_QUE_CORREN = new Set(['node', 'bash', 'sh', 'zsh', 'pwsh', 'python', 'python3']);
+// un segundo comando, una tubería o una redirección pueden esconder un cambio: ese código cuenta entero
+const RE_COMANDO_COMPUESTO = /[;&|<>]|\$\(/;
+const RE_GANCHO_DE_GIT = /(^|\/)\.githooks(\/|$)/;
+
+/** El plan en piezas `{ codigo, texto }`: la prosa, cada código entre comillas invertidas y cada renglón cercado. */
+function piezasDelPlan(texto) {
+  const piezas = [];
+  let cercado = false;
+  for (const renglon of String(texto || '').split(/\r?\n/)) {
+    if (/^\s*(```|~~~)/.test(renglon)) { cercado = !cercado; continue; }
+    if (cercado) { piezas.push({ codigo: true, texto: renglon }); continue; }
+    // el código en línea va entre una o más comillas invertidas
+    const partes = renglon.split(/`+/);
+    // una comilla sin cerrar deja lo que sigue del lado de la prosa
+    const cerradas = partes.length % 2 === 1 ? partes.length : partes.length - 1;
+    partes.forEach((p, i) => piezas.push({ codigo: i % 2 === 1 && i < cerradas, texto: p }));
+  }
+  return piezas;
+}
+
+/**
+ * Las palabras de un código que el comando ejecuta: `{ palabras, corre }`, con `corre` los índices de las que ejecuta
+ * (después de `node --test`, todas las que no son opciones; si no, la primera que no es opción). null si el código no es
+ * un comando simple con un programa que ejecuta delante.
+ */
+function loQueSeCorre(codigo) {
+  if (RE_COMANDO_COMPUESTO.test(codigo)) return null;
+  const todas = codigo.trim().split(/\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
+  if (!todas.length || !PROGRAMAS_QUE_CORREN.has(todas[0])) return null;
+  const palabras = todas.slice(1);
+  const noOpciones = palabras.map((w, i) => (w.startsWith('-') ? -1 : i)).filter((i) => i >= 0);
+  const conTest = todas[0] === 'node' && palabras.includes('--test');
+  return { palabras, corre: new Set(conTest ? noOpciones : noOpciones.slice(0, 1)) };
+}
+
+/**
+ * Las rutas del plan que cuentan para la marca de delicada. Sin «## Archivos», o sin ninguna ruta en ella, todas: sin la
+ * lista de lo que se cambia no se sabe qué sólo se corre. Una ruta que sólo se corre se descuenta si, sola, no es
+ * delicada, o lo es por los controles o por el gancho de git: correr un instalador, una migración, algo de producción o
+ * de la superficie compartida escribe en lo que el plan no declaró, y cuenta.
+ */
+function rutasQueCuentanDelPlan(texto, { repo = null, raices = [] } = {}) {
+  const { seccion } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js'));
+  const archivos = texto ? seccion(texto, 'Archivos') : null;
+  const deArchivos = archivos ? rutasDelPlan(archivos.join('\n')) : [];
+  if (!deArchivos.length) return rutasDelPlan(texto);
+  const cuentan = new Set(deArchivos);
+  const seCorren = new Set();
+  for (const pieza of piezasDelPlan(texto)) {
+    const corrida = pieza.codigo ? loQueSeCorre(pieza.texto) : null;
+    if (!corrida) { for (const r of rutasDelPlan(pieza.texto)) cuentan.add(r); continue; }
+    // lo que se ejecuta es una ruta entera: código en línea (`node -e "…"`) o rutas unidas por coma la nombran y cuentan
+    corrida.palabras.forEach((w, i) => {
+      const rutas = rutasDelPlan(w);
+      const ejecuta = corrida.corre.has(i) && rutas.length === 1 && rutas[0] === w.replace(/[.,;:)]+$/, '');
+      for (const r of rutas) (ejecuta ? seCorren : cuentan).add(r);
+    });
+  }
+  const soloSeCorre = (ruta) => {
+    // relativa a la raíz que la contiene, como las demás rutas: la absoluta de un repo hermano no queda afuera
+    const r = riskPaths.riesgoDeArchivos([rutaComparable(ruta, raices)], { repo, raices, superficie: tocaSuperficieCompartida });
+    return !r.value || r.rule === 'controles' || (r.rule === 'porton-instalador-migracion' && RE_GANCHO_DE_GIT.test(r.file || ''));
+  };
+  for (const r of seCorren) if (!cuentan.has(r) && !soloSeCorre(r)) cuentan.add(r);
+  return [...cuentan];
+}
+
+/**
+ * Una ruta de la story o del plan, en la forma en que se compara: sin el comentario del renglón (`- ruta   # nota`), sin
+ * comillas, con `/`, y relativa a la raíz que la contiene cuando es absoluta. `{ rel, abs, base }`.
+ */
+function rutaComparable(f, raices) {
+  let s = String(f).replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/');
+  const absoluta = path.isAbsolute(s) || /^[A-Za-z]:\//.test(s);
+  let rel = s.replace(/^\.\//, '');
+  if (absoluta) {
+    for (const r of raices) {
+      const x = path.relative(r, s).replace(/\\/g, '/');
+      if (x && !x.startsWith('..') && !path.isAbsolute(x)) { rel = x; break; }
+    }
+  }
+  return { rel, abs: absoluta ? s : null, base: path.posix.basename(rel.replace(/\/$/, '')) };
+}
+
+/** El repo de la story: el `--repo`, o la carpeta con `.git` más cercana hacia arriba. null si no hay. */
+function repoDeLaStory(storyPath, repo) {
+  if (repo) return repo;
+  let d = path.dirname(path.resolve(storyPath));
+  for (;;) {
+    if (fs.existsSync(path.join(d, '.git'))) return d;
+    const arriba = path.dirname(d);
+    if (arriba === d) return null;
+    d = arriba;
+  }
+}
+
+function computeDelicate(args) {
+  const si = (rule, detalle) => ({ value: true, rule, reason: `${rule}: ${detalle}` });
+  const noPude = (motivo) => ({ value: true, rule: 'no-pude-saber', reason: `no pude saber: ${motivo}` });
+  const storyPath = args && args.story;
+  let content;
+  try { content = fs.readFileSync(storyPath, 'utf8'); } catch (e) { return noPude(`no pude leer la story (${storyPath}: ${e.code || e.message})`); }
+  const repo = repoDeLaStory(storyPath, args.repo);
+  let raices = repo ? [repo] : [];
+  if (repo) {
+    const faltan = [];
+    try { raices = [repo, ...companionLib.companionRoots(repo, storyPath, { onMissing: (m) => faltan.push(m) })]; } catch (e) { return noPude(`no pude leer los repos compañeros (${e.message})`); }
+    // un compañero declarado que no está en disco: sus controles no se pueden mirar
+    if (faltan.length) return noPude(`el repo declara ${faltan.join(', ')} y no está en disco`);
+  }
+  // sin parte ni --files, un plan con su «## Archivos» se mide por lo que el plan cambia, no por lo que la historia
+  // declara: un cierre en papel de una historia cuyo código ya entró no es delicado. Lo que la corrida cambie de verdad
+  // lo vuelve a medir el freno del cierre (lib/batch-scope.js frenoDelCierre) sobre el diff entero
+  const delPlan = args.planText ? rutasQueCuentanDelPlan(args.planText, { repo, raices }) : [];
+  const conLista = !!(args.planText && (require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js')).seccion(args.planText, 'Archivos') || []).some((l) => rutasDelPlan(l).length));
+  const deLaHistoria = conLista ? [] : [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')];
+  // con una parte válida (argumento explícito), su lista MÁS lo que el cambio toca; sin ella, como siempre
+  const parte = parteDelArg(args);
+  const comparables = (lista) => [...new Map(lista.map((f) => rutaComparable(f, raices)).filter((x) => x.rel).map((x) => [x.rel, x])).values()];
+  const files = comparables([
+    ...(parte ? [...parte.files, ...(args.files || [])] : args.files && args.files.length ? args.files : deLaHistoria),
+    ...delPlan,
+  ]);
+  const fmTexto = ((content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+  // la decisión escrita en la historia gana sobre las reglas por archivo: lo que la máquina no lee (plata, clientes…)
+  const porDecision = riskPaths.leerRiesgoAltoPor(fmTexto);
+  if (porDecision && porDecision.valores.length) return si('riesgo-alto-por', `la historia declara riesgo_alto_por: ${porDecision.valores.join(', ')}`);
+  // `sensible:` con cualquier valor no vacío: en el renglón, o como lista de YAML en los renglones de abajo. Va entre el
+  // portón y lo sensible del arnés, donde estuvo siempre.
+  const sensibleDeclarado = () => {
+    const decl = fmTexto.match(/^sensible[ \t]*:[ \t]*(.*)$/m);
+    if (!decl) return null;
+    const valor = decl[1].replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').trim();
+    const lista = fmTexto.slice(decl.index + decl[0].length).match(/^\r?\n[ \t]+-[ \t]*(\S.*)$/m);
+    if ((valor && valor !== '[]') || (!valor && lista)) return si('sensible', `la story declara sensible: ${valor || lista[1]}`);
+    return null;
+  };
+  // el de arriba marca todas las partes y una parte no lo deshace; sin él, el de la parte marca sólo esa
+  const sensibleDeLaParte = () => {
+    const arriba = sensibleDeclarado();
+    if (arriba || !parte) return arriba;
+    const v = require('./lib/batch-scope.js').sensibleDeclarado(parte.sensible);
+    return v ? si('sensible', `la parte ${parte.nombre} declara sensible: ${v}`) : null;
+  };
+  const r = riskPaths.riesgoDeArchivos(files, { repo, raices, superficie: tocaSuperficieCompartida, antesDeLosControles: sensibleDeLaParte });
+  if (r.value) return { value: true, rule: r.rule, reason: r.reason };
+  // un archivo de dependencias puede traer una dependencia nueva: ante la duda, riesgo alto. Es de la historia entera:
+  // con una parte, también cuentan los de las otras
+  const dep = (parte ? comparables([...deLaHistoria, ...files.map((f) => f.rel)]) : files).find((f) => riskPaths.esManifiesto(f.rel));
+  if (dep) return si('dependencias', `${dep.rel} (archivo de dependencias)`);
+  return { value: false, rule: null, reason: 'ninguna' };
 }
 
 // ── pipeline.js story-review-gate — la revisión adversarial de la historia, antes de programar ──
@@ -3705,7 +4594,18 @@ function computeStoryReviewGate({ story, env = process.env, home = os.homedir() 
     };
   }
   const rc = computeRiskClass({ story });
-  if (env.TYCON_STORY_REVIEW === '0') return { run: false, record: estado, riesgo: rc.risk, motivo: 'apagado', nota: 'TYCON_STORY_REVIEW=0' };
+  if (env.TYCON_STORY_REVIEW === '0') {
+    // el salteo lo anota el portón, no el modelo
+    // la lista se busca también con las skills en un clon aparte; sin ella no se puede anotar, y se dice
+    const ES = require('./lib/controls-off.js').listaDeInterruptores();
+    if (typeof ES.anotarEscape === 'function') ES.anotarEscape({ home, sessionId: ES.sesionDe(env), kind: 'STORY_REVIEW_OFF', variable: 'TYCON_STORY_REVIEW', story: path.resolve(story), riesgo: rc.risk });
+    else process.stderr.write('story-review-gate: TYCON_STORY_REVIEW=0, pero no encontré la lista de variables del arnés (scripts/lib/env-switches.js): el salteo no quedó anotado\n');
+    // antes de la fecha de corte de la lista única, el agente lee el aviso; desde ese día la variable pide la firma
+    if (typeof ES.antesDelCorte === 'function' && ES.antesDelCorte('TYCON_STORY_REVIEW')) {
+      process.stderr.write(`⚠️  TYCON_STORY_REVIEW=0: desde ${ES.corteDe('TYCON_STORY_REVIEW')} esto pide la firma de una persona (escape:TYCON_STORY_REVIEW); hasta entonces pasa, avisado y anotado.\n`);
+    }
+    return { run: false, record: estado, riesgo: rc.risk, motivo: 'apagado', nota: 'TYCON_STORY_REVIEW=0' };
+  }
   if (rc.risk === 'LOW') return { run: false, record: estado, riesgo: 'LOW', motivo: 'riesgo-bajo', criterios: rc.criteria };
   const warnings = [];
   const m = MODELOS.resolveStoryReview({ org: orgModels().data, requests: pedidosDeModelos(readSessionMarker()), warnings });
@@ -3852,11 +4752,10 @@ function harnessTimeTool(opts = {}) {
 
 /**
  * Lo que la ejecución va a necesitar y esta máquina no tiene, antes de arrancar: `[{ id, falta, sin_eso, como }]`, vacía
- * si está todo. Tres cosas: el programa de la plataforma del pedido de trabajo (la primera palabra de los `rawCommands`
+ * si está todo. Dos cosas: el programa de la plataforma del pedido de trabajo (la primera palabra de los `rawCommands`
  * del conector que elige la capa: el núcleo no nombra herramientas), con la misma condición con que `next` pide esa
- * parte; la configuración de BMAD del repo (`_bmad/bmm/config.yaml`, sin la que `bmad-dev-story` se frena); y el
- * servidor MCP de la herramienta de horas elegida, donde lo lee Claude Code. Un detector que no puede preguntar no
- * inventa una falta: deja su motivo en `noMedido`. Nunca frena.
+ * parte; y el servidor MCP de la herramienta de horas elegida, donde lo lee Claude Code. Un detector que no puede
+ * preguntar no inventa una falta: deja su motivo en `noMedido`. Nunca frena.
  * @param {object} o repo · fm (frontmatter de la historia) · env · home · noMedido (lista donde quedan los detectores
  *   que no pudieron mirar, con su motivo)
  */
@@ -3881,15 +4780,6 @@ function computeMissingBeforeStart({ repo, fm, env = process.env, home = os.home
       }
     }
   } catch (e) { noMedido.push(`el programa de la plataforma (${motivo(e)})`); }
-
-  if (!fs.existsSync(path.join(repo, '_bmad', 'bmm', 'config.yaml'))) {
-    out.push({
-      id: 'bmad',
-      falta: `la configuración de BMAD del repo (\`_bmad/bmm/config.yaml\` en ${repo})`,
-      sin_eso: 'el plan lo arma el orquestador, sin BMAD: el skill de BMAD se frena sin esa configuración',
-      como: 'corré el skill `bmad-init` en el repo',
-    });
-  }
 
   // En Codex los servidores viven en su propia configuración, que despliega el instalador: acá no se mira.
   const esCodex = !!env.CODEX_SESSION_ID && !env.CLAUDE_CODE_SESSION_ID;
@@ -3919,7 +4809,7 @@ function computeMissingBeforeStart({ repo, fm, env = process.env, home = os.home
       const candidatas = new Set([path.resolve(repo)]);
       try { candidatas.add(fs.realpathSync.native(repo)); } catch { /* sin ruta real: queda la resuelta */ }
       try {
-        const comun = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        const comun = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
         if (path.basename(comun) === '.git') {
           candidatas.add(path.dirname(comun));
           try { candidatas.add(fs.realpathSync.native(path.dirname(comun))); } catch { /* idem */ }
@@ -4139,8 +5029,8 @@ function computeToolingExpected(repo, opts = {}) {
 }
 
 // ── pipeline.js model-hint — sugerencia de modelo de sesión por complejidad ──
-// Los pasos de armar el plan, aprobarlo e implementar (plan BMAD + implementación) corren
-// INLINE en el main loop (tool Skill, no subagentes) → su modelo es el DE LA
+// Los pasos de armar el plan, aprobarlo e implementar corren
+// INLINE en el main loop (no en subagentes) → su modelo es el DE LA
 // SESIÓN y solo el user puede cambiarlo con /model. Este comando computa la
 // recomendación MECÁNICA para que el Arranque (preflight) la compare con el modelo
 // real de la sesión (el orquestador lo sabe por su system prompt) y sugiera el
@@ -4380,7 +5270,8 @@ function salidaGrande(texto, code) {
 }
 
 let avisosDelPorton = [];
-// El camino del pedido de saltear el pase, o null: la bandera, la variable o `deep_review: off`.
+// El camino del pedido de saltear el pase, o null: la bandera, la variable o `deep_review: off` del repo. La política de
+// la organización (`args.orgDeepReview`) nunca es un pedido: sólo puede ser always o auto.
 function pedidoDeSalteo(args) {
   if (args.noDeepReview) return args.noDeepReviewFrom || '--no-deep-review';
   return deepReviewConfig(args.repo) === 'off' ? 'deep_review: off' : null;
@@ -4410,7 +5301,7 @@ function computeDeepReviewGate(args) {
   }
   const porque = (constancia && constancia.motivo) || 'no hay constancia firmada';
   r.skip_request = { camino: pedido, firmado: false, motivo: porque };
-  r.reason = `${pedido} es un pedido de saltear sin la firma del dueño (${porque}): el pase sigue el criterio de siempre · ${r.reason}`;
+  r.reason = `${pedido} es un pedido de saltear sin la firma de una persona (${porque}): el pase sigue el criterio de siempre · ${r.reason}`;
   return r;
 }
 
@@ -4433,7 +5324,7 @@ function ejecucionDeLaCorrida(args, corrida) {
   const { carpetaReal } = require('./lib/adversarial-skip.js');
   if (!esLaStoryDelMarcador(args.story, corrida)) return null;
   const repo = corrida.repoPath || args.repo;
-  const rd = repo ? resolveRunDir(path.resolve(repo), corrida.storyId, false, storyDelMarcador(corrida) || args.story) : null;
+  const rd = repo ? resolveRunDir(path.resolve(repo), corrida.storyId, false, storyDelMarcador(corrida) || args.story, { marker: corrida }) : null;
   const carpeta = rd ? carpetaReal(rd) : null;
   return { story: String(corrida.storyId), carpeta, ejecucion: corrida.startedAt };
 }
@@ -4445,7 +5336,7 @@ function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = fa
   const ej = ejecucionDeLaCorrida(args, corrida);
   const constancia = ej ? sk.vigente({ ...ej, casa, userInfo })
     : { ok: false, motivo: 'no hay una ejecución abierta de esta story', ninguna: true };
-  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia });
+  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia, marcador: corrida || null });
   let texto = '';
   // Sin corrida no hay ejecución que firmar: la constancia nombra carpeta y comienzo, y no se ofrecen comandos.
   if (result.skip_request && mostrar && !ej) {
@@ -4460,7 +5351,17 @@ function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = fa
   return { result, texto };
 }
 
-// El criterio de siempre (riesgo, superficie compartida, tamaño, densidad), sin los pedidos de saltear.
+// Los archivos que la story declara (`files_to_create` y `files_to_modify`), el alcance de risk-class sin `--files`.
+function historiaDeclara(story) {
+  if (!story || !fs.existsSync(story)) return [];
+  const content = readText(story);
+  // un comentario al final del renglón (`- a.js   # por qué`) no es parte de la ruta
+  return [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')]
+    .map((f) => String(f).replace(/\s+#.*$/, '').trim()).filter(Boolean);
+}
+
+// El criterio de siempre (riesgo, superficie compartida, tamaño, densidad) y la matriz de la organización, sin los
+// pedidos de saltear.
 function criterioDelPase(args) {
   // Modelo — escalación mecánica por complejidad.
   // Default sonnet (recorta el $ ~5x vs Opus); story pesada (model-hint ≥2 señales)
@@ -4500,6 +5401,12 @@ function criterioDelPase(args) {
   // 2) Config por repo (`off` es un pedido: lo mira computeDeepReviewGate).
   const cfg = deepReviewConfig(args.repo);
   if (cfg === 'always') return { run: true, model, ...extras, reason: '.tycon/advisors.yaml deep_review: always' };
+  // La política de la organización (`args.orgDeepReview`, que lee la línea de comandos de team-repos.json →
+  // deep_review.default) entra en el mismo lugar que el `always` del repo; el `auto` del repo gana. No hay `off` de la
+  // organización: saltear el pase lo firma el dueño, así que cualquier otro valor no cambia nada.
+  if (args.orgDeepReview === 'always' && cfg !== 'auto') {
+    return { run: true, model, ...extras, reason: 'la organización lo pide siempre (team-repos.json → deep_review.default: always)' };
+  }
   // 3) Force-on explícito.
   if (args.deepReview) return { run: true, model, ...extras, reason: 'forzado ON (--deep-review)' };
   if (args.ultracode) return { run: true, model, ...extras, reason: 'ultracode ON → fuerza deep-review (hunters en Opus)' };
@@ -4521,7 +5428,7 @@ function criterioDelPase(args) {
   if (runSize.size === 'liviana') {
     return { run: false, risk: 'liviana', model: null, run_size: 'liviana', reason: `corrida liviana (${runSize.reason}) → sin pase adversarial; override: --deep-review o marker.js set-size completa --reason "<por qué>"` };
   }
-  // 5) Default: gate por risk-class (siempre en NORMAL).
+  // 5) La matriz de la organización (lib/review-policy.js `codeReview`): delicada o no, chica o grande.
   const rc = computeRiskClass(args);
   // `computeRiskClass` devuelve `{risk:'NORMAL', error, ...}` SIN `criteria` cuando --story es
   // inválido/inexistente. Sin este guard, el `.filter` de abajo tiraría un TypeError con stack —
@@ -4533,18 +5440,24 @@ function criterioDelPase(args) {
       reason: `risk-class no computable (${rc.error || 'sin criteria'}) → deep-review corre por default seguro (NORMAL)`,
     };
   }
-  if (rc.risk === 'NORMAL') {
-    const failed = rc.criteria.filter((c) => !c.pass).map((c) => c.name);
-    return {
-      run: true, risk: 'NORMAL', model, ...extras,
-      reason: `risk-class NORMAL → deep-review corre (criterios NORMAL: ${failed.join(', ') || 'scope no declarado'})`,
-    };
-  }
-  // 4b) Densidad: el LOW por tamaño cuenta ARCHIVOS, no lógica. Una
-  //     story de 4 archivos de código puede salir LOW y tener 6 defectos
-  //     reales en esos mismos 4 archivos. Un diff angosto pero denso —muchas líneas agregadas en
-  //     archivos de código— corre igual. Umbral: `TYCON_DEEP_REVIEW_DENSE_LINES` (default 300); la
-  //     medición viaja en el veredicto para que el skip también la muestre.
+  // NORMAL por otro criterio que el tamaño (una migración, el alcance firmado, un camino sensible, un freno): cuenta
+  // como grande. El tamaño lo cuenta la matriz por su cuenta, con `small_max_files`.
+  const porOtro = rc.criteria.filter((c) => !c.pass && c.name !== 'superficie-chica').map((c) => c.name);
+  const POLITICA = require('./lib/review-policy.js');
+  const config = args.reviewConfig || POLITICA.normalize({}).values;
+  // el tamaño se cuenta sobre el mismo alcance que risk-class: los archivos del diff o, sin ellos, los de la story. Sin
+  // alcance declarado no se sabe el tamaño: cuenta como grande, como hoy cuenta NORMAL
+  const alcance = Array.isArray(args.files) && args.files.length ? args.files : historiaDeclara(args.story);
+  const archivosDeCodigo = alcance.filter((f) => codeFiles.isCode(f, { extra: stackConfig.orgExtra() })).length;
+  const delicada = args.delicate || computeDelicate({ story: args.story, repo: args.repo, planText: '' });
+  // todo documentación según el tamaño de la corrida: sólo así una historia sin archivos de código se queda sin pase
+  const soloDocumentacion = alcance.length > 0 && alcance.every((f) => runSizeLib.classifyFile(f).kind === 'doc');
+  const celda = (dense) => POLITICA.codeReview({ delicate: !!delicada.value, codeFiles: archivosDeCodigo, onlyDocs: soloDocumentacion,
+    normalByOtherCriterion: rc.risk === 'NORMAL' && (porOtro.length > 0 || !alcance.length), dense, ownerAway: !!args.ownerAway, config });
+  const sinDensidad = celda(false);
+  // La densidad decide sólo un cambio chico que no es delicado: una delicada, o un cambio que ya es grande, no la espera.
+  const hayQueMedir = !delicada.value && sinDensidad.size === 'small';
+  // 6) Sin `--files` no hay nada que medir, y la celda depende de la medición.
   // 🔴 «No me dijiste qué mirar» NO es «no cambió nada».
   //
   // `densidadDelDiff` recorre `args.files`. Con la lista vacía el resultado es 0, y el
@@ -4564,7 +5477,7 @@ function criterioDelPase(args) {
   //
   //    Y distingue «no me pasaste `--files`» (`filesDeclarado` ausente) de «me pasaste la lista
   //    vacía a propósito», que es lo que hacen los casos del banco al probar el skip por LOW.
-  if (args.filesDeclarado === false) {
+  if (hayQueMedir && args.filesDeclarado === false) {
     return {
       run: null, risk: 'no-medible', model: null, ...extras,
       densidad_medida: false,
@@ -4572,26 +5485,24 @@ function criterioDelPase(args) {
         + 'archivos de código no hay nada que contar, y un «0 líneas» acá sería un número que nadie '
         + 'calculó — se usaría para saltear el pase adversarial sin haber mirado. Pasá los archivos '
         + 'del diff (ver la guía del pase adversarial §Lanzamiento temprano), o pedí el pase con '
-        + '`--deep-review` (saltearlo lo firma el dueño: `marker.js sign-adversarial-skip`).',
+        + '`--deep-review` (saltearlo lo firma una persona: `marker.js sign-adversarial-skip`).',
     };
   }
-  const densidad = densidadDelDiff(args.repo, args.files, { allowMissing: Boolean(args.allowMissingFiles) });
+  // Densidad: el tamaño cuenta ARCHIVOS, no lógica. Una story de 4 archivos de código puede tener 6 defectos reales en
+  // esos mismos 4 archivos: un diff angosto pero denso —muchas líneas agregadas en archivos de código— cuenta como
+  // grande. Umbral: `TYCON_DEEP_REVIEW_DENSE_LINES` (default 300); la medición viaja en el veredicto.
+  const densidad = hayQueMedir ? densidadDelDiff(args.repo, args.files, { allowMissing: Boolean(args.allowMissingFiles), marcador: args.marcador || null })
+    : { lineas: 0, umbral: 0, noMedidos: [], ausentes: [], avisosBase: [], noHaceFalta: true };
   const noMedidos = {
     ...(densidad.noMedidos.length ? { archivos_no_medidos: densidad.noMedidos } : {}),
     ...(densidad.ausentes.length ? { archivos_ausentes_permitidos: densidad.ausentes } : {}),
+    ...(densidad.avisosBase.length ? { base_descartada: densidad.avisosBase } : {}),
   };
-  if (densidad.lineas >= densidad.umbral) {
-    return {
-      run: true, risk: 'dense', model, ...extras,
-      lineas_agregadas: densidad.lineas, umbral_lineas: densidad.umbral, ...noMedidos,
-      reason: `risk-class LOW por tamaño (${Array.isArray(args.files) ? args.files.length : 0} archivos) pero el diff es DENSO: ` +
-              `${densidad.lineas} líneas agregadas en archivos de código (umbral ${densidad.umbral}) → deep-review corre`,
-    };
-  }
-  // 🔴 Un archivo que no se pudo medir no es «0 líneas». Lo medido
-  //    es un piso: si ya pasa el umbral corre arriba; si no, saltear el pase con archivos sin medir sería
-  //    decidir a ciegas, igual que sin `--files`. Se corta con las rutas y el motivo a la vista.
-  if (densidad.noMedidos.length) {
+  const denso = hayQueMedir && densidad.lineas >= densidad.umbral;
+  // 🔴 Un archivo que no se pudo medir no es «0 líneas». Lo medido es un piso: si ya pasa el umbral cuenta como denso;
+  //    si no, decidir con archivos sin medir sería decidir a ciegas, igual que sin `--files`. Se corta con las rutas y el
+  //    motivo a la vista.
+  if (hayQueMedir && !denso && densidad.noMedidos.length) {
     return {
       run: null, risk: 'no-medible', model: null, ...extras,
       densidad_medida: false,
@@ -4600,9 +5511,21 @@ function criterioDelPase(args) {
         + `(${densidad.noMedidos.map((n) => `${n.file}: ${n.motivo}`).join(' · ')}); lo medido da `
         + `${densidad.lineas} líneas agregadas (umbral ${densidad.umbral}), pero lo que no se midió no cuenta `
         + 'como 0. Pasá rutas que estén dentro de un repo git (el de la story o un companion), o pedí '
-        + 'el pase con `--deep-review` (saltearlo lo firma el dueño: `marker.js sign-adversarial-skip`).',
+        + 'el pase con `--deep-review` (saltearlo lo firma una persona: `marker.js sign-adversarial-skip`).',
     };
   }
+  const m = denso ? celda(true) : sinDensidad;
+  const medida = densidad.noHaceFalta ? {} : { lineas_agregadas: densidad.lineas, umbral_lineas: densidad.umbral, ...noMedidos };
+  const comun = { size: m.size, decision: m.decision, delicate: { value: !!delicada.value, reason: delicada.reason || null },
+    verifiers: config.review_runner.verifiers, blocking_severity: config.review.blocking_severity, ...medida };
+  const risk = delicada.value ? 'delicate' : denso && rc.risk !== 'NORMAL' ? 'dense' : rc.risk;
+  const porque = `risk-class ${rc.risk}${rc.risk === 'NORMAL' && porOtro.length ? ` (${porOtro.join(', ')})` : ''} → ${m.reason}`;
+  if (m.decision === 'run') return { run: true, risk, model, ...extras, ...comun, reason: porque };
+  // una celda que preguntaba o esperaba la decide la respuesta anotada para este mismo diff (marker.js review-answer)
+  if ((m.decision === 'ask' || m.decision === 'wait') && args.codeAnswer === 'review') {
+    return { run: true, risk, model, ...extras, ...comun, decision: 'run', reason: `${porque} → contestaron «review» (review-answer)` };
+  }
+  const contestoSkip = (m.decision === 'ask' || m.decision === 'wait') && args.codeAnswer === 'skip';
   // Constancia de que se decidió A CIEGAS.
   // La lista de superficie compartida es opt-in por repo, así que un repo que nunca la declaró NO
   // está cubierto — y sin esta línea eso se lee igual que "no hacía falta". Queda escrito en el
@@ -4611,27 +5534,31 @@ function criterioDelPase(args) {
   if (sinDeclarar) {
     logGate({
       repoPath: args.repo, name: 'deep-review-gate', check: 'shared-surface', status: 'undeclared',
-      decision: 'skip-por-LOW', files: Array.isArray(args.files) ? args.files.length : 0,
+      decision: m.decision === 'skip' ? 'skip-por-LOW' : m.decision, files: Array.isArray(args.files) ? args.files.length : 0,
     });
   }
-  return {
-    run: false, risk: 'LOW', model: null,
-    lineas_agregadas: densidad.lineas, umbral_lineas: densidad.umbral,
-    ...(sinDeclarar ? {
-      shared_surface_declared: false,
-      shared_surface_note:
-        'este repo NO declaró `deep_review_always_paths` en .tycon/advisors.yaml, así que el skip se ' +
-        'decidió SÓLO por tamaño de diff: si el cambio toca código que corre en nombre de todos los ' +
-        'plugins/clientes, este gate no lo puede saber. Declararlo es de una vez por repo.',
-    } : { shared_surface_declared: true }),
-    reason: `risk-class LOW → skip (superficie chica ≤6 files y ${densidad.lineas} líneas agregadas < ${densidad.umbral}; override: --deep-review)`,
-  };
+  const superficie = sinDeclarar ? {
+    shared_surface_declared: false,
+    shared_surface_note:
+      'este repo NO declaró `deep_review_always_paths` en .tycon/advisors.yaml, así que el skip se ' +
+      'decidió SÓLO por tamaño de diff: si el cambio toca código que corre en nombre de todos los ' +
+      'plugins/clientes, este gate no lo puede saber. Declararlo es de una vez por repo.',
+  } : { shared_surface_declared: true };
+  const lineas = densidad.noHaceFalta ? 'sin medir la densidad: no cambia la celda' : `${densidad.lineas} líneas agregadas < ${densidad.umbral}`;
+  // preguntar o esperar no es «no medible» (`run: null`, que corta con 2): el pase no corre todavía y la salida es 0
+  if (contestoSkip) return { run: false, risk, model: null, ...comun, ...superficie, decision: 'skip', reason: `${porque} → contestaron «skip» (review-answer)` };
+  if (m.decision === 'ask') {
+    return { run: false, risk, model: null, ...comun, ...superficie, question: '¿Corro el pase adversarial sobre este cambio? (antes de preguntar: marker.js review-ask --kind code)',
+      reason: `${porque} (${lineas}): se le pregunta a la persona` };
+  }
+  if (m.decision === 'wait') return { run: false, risk, model: null, ...comun, ...superficie, reason: `${porque} (${lineas}): espera a la persona` };
+  return { run: false, risk, model: null, ...comun, ...superficie, reason: `${porque} → skip (${lineas}; override: --deep-review)` };
 }
 
 /**
  * Líneas AGREGADAS en los archivos de código del diff. Cada archivo se mide en SU
  * repo git, el de su propia carpeta (`companionLib.ownerOf`, la misma pieza que usa el pipeline para leer el diff de
- * un repo hermano): tracked → `git diff --numstat HEAD` (0 si no cambió); sin
+ * un repo hermano): tracked → `git diff --numstat <base>` contra la base de la corrida (0 si no cambió); sin
  * trackear en su repo → el archivo entero (es nuevo). Sólo extensiones de código: un HTML generado o
  * un JSON de datos no es lógica que un hunter tenga que ejecutar.
  *
@@ -4641,10 +5568,24 @@ function criterioDelPase(args) {
  *    «denso». Lo que no se puede medir (fuera de todo repo git, git que no contesta, un numstat que no es
  *    un número) NO se cuenta como archivo entero ni como 0: vuelve en `noMedidos`, y el portón lo dice.
  */
-function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
+function densidadDelDiff(repo, files, { allowMissing = false, marcador = null } = {}) {
   const env = Number(process.env.TYCON_DEEP_REVIEW_DENSE_LINES);
   const umbral = Number.isFinite(env) && env > 0 ? env : 300;
   const { spawnSync: sp } = require('child_process');
+  // Lo commiteado durante la corrida también es del diff: cada repo se mide contra la base de la corrida (`baseSha` del
+  // marcador, si es de ese repo) o contra su bifurcación con la rama principal; HEAD sólo si no hay ninguna.
+  // Una base descartada (un marcador que no sirve) se dice en `avisosBase`; el marcador de otro repo no, porque es lo
+  // normal en un repo hermano.
+  const bases = new Map();
+  const avisosBase = [];
+  const baseDe = (raiz) => {
+    if (!bases.has(raiz)) {
+      const b = require('./lib/coverage-base.js').resolver({ repo: raiz, env: process.env, marker: marcador });
+      for (const d of b.descartadas) if (!/otro repo/.test(d.motivo)) avisosBase.push(`${raiz}: ${d.source}: ${d.motivo}`);
+      bases.set(raiz, b.ref || 'HEAD');
+    }
+    return bases.get(raiz);
+  };
   let lineas = 0;
   const noMedidos = [];
   const ausentes = [];   // con --allow-missing-files: ausentes y sin trackear, contados 0 a sabiendas
@@ -4658,7 +5599,7 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
       // desde la carpeta existente más cercana.
       let dir = path.dirname(abs);
       while (!fs.existsSync(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
-      const top = sp('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const top = sp('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       const raiz = top.status === 0 ? String(top.stdout || '').trim() : '';
       if (raiz) {
         o.root = raiz;
@@ -4667,17 +5608,17 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
     }
     // `ownerOf` da como raíz la carpeta de `--repo` aunque no sea un repo git: eso tampoco se puede medir
     if (!o.root || !companionLib.gitRootOf(o.root)) { noMedidos.push({ file: f, motivo: 'no está dentro de ningún repo git' }); continue; }
-    const ls = sp('git', ['-C', o.root, 'ls-files', '--error-unmatch', '--', o.rel], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const ls = sp('git', ['-C', o.root, 'ls-files', '--error-unmatch', '--', o.rel], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     if (ls.error) { noMedidos.push({ file: f, motivo: `no pude correr git (${ls.error.message})` }); continue; }
     // `ls-files --error-unmatch`: 0 = trackeado, 1 = no trackeado. Cualquier otra salida (128 por safe.directory o un repo
     // roto, una señal) es «git no pudo decir», no «no trackeado»: sumarlo entero sería un error.
     if (ls.status !== 0 && ls.status !== 1) { noMedidos.push({ file: f, motivo: `git no pudo decir si está trackeado en ${o.root} (salida ${ls.status === null ? `señal ${ls.signal}` : ls.status})` }); continue; }
     const tracked = ls.status === 0;
     if (tracked) {
-      const r = sp('git', ['-C', o.root, 'diff', '--numstat', 'HEAD', '--', o.rel], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const r = sp('git', ['-C', o.root, 'diff', '--numstat', baseDe(o.root), '--', o.rel], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       const salida = String(r.stdout || '').trim();
       if (r.status !== 0) { noMedidos.push({ file: f, motivo: `git diff falló en ${o.root}` }); continue; }
-      if (!salida) continue;   // tracked y sin cambios respecto de HEAD: 0 agregadas, medido
+      if (!salida) continue;   // tracked y sin cambios respecto de la base: 0 agregadas, medido
       const a = Number(salida.split(/\s+/)[0]);
       if (Number.isFinite(a)) lineas += a;
       else noMedidos.push({ file: f, motivo: `git diff --numstat no dio un número («${salida.split(/\s+/)[0]}»: ¿binario?)` });
@@ -4687,7 +5628,7 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
         // con `--allow-missing-files` quien llama ya dijo que puede haber archivos que no están (borrados): ausente = 0
         // borrado por el cambio (`git rm`, o el nombre viejo de un `git mv`): no está en el índice ni en el disco, pero
         // sí en HEAD. Agrega 0 líneas, medido (sin esto, cortaría stories de un solo repo).
-        if (e.code === 'ENOENT' && sp('git', ['-C', o.root, 'cat-file', '-e', `HEAD:${o.rel}`], { stdio: 'ignore' }).status === 0) continue;
+        if (e.code === 'ENOENT' && sp('git', ['-C', o.root, 'cat-file', '-e', `HEAD:${o.rel}`], { windowsHide: true, stdio: 'ignore' }).status === 0) continue;
         if (allowMissing && e.code === 'ENOENT') { ausentes.push(f); continue; }
         noMedidos.push({ file: f, motivo: `no está trackeado en ${o.root} y no lo pude leer (${e.code || e.message})` });
         continue;
@@ -4695,7 +5636,7 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
       lineas += texto.split('\n').length;
     }
   }
-  return { lineas, umbral, noMedidos, ausentes };
+  return { lineas, umbral, noMedidos, ausentes, avisosBase };
 }
 
 // ── pipeline.js timing-report — instrumentación ─
@@ -4781,7 +5722,7 @@ function detectarWordSplit(args) {
     `  partido por espacios: ${pedazos.length} paths, ${existen.length} existen en disco.\n` +
     'Causa: zsh NO word-splitea $VAR sin comillas — usá ${=VAR} o pasá los paths explícitos.\n' +
     'Por qué ABORTA y no sigue: con 1 archivo contado, risk-class da LOW y eso apaga DOS frenos\n' +
-    'a la vez — el checkpoint HITL del plan (auto_approve_plan) y el pase adversarial\n' +
+    'a la vez — la revisión adversarial de la story y el pase adversarial\n' +
     '(deep-review-gate) — sin dejar rastro de que se apagaron por un error de parseo.\n'
     );
   }
@@ -4812,12 +5753,12 @@ function archivosFantasma(args) {
     while (!exists(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
     let raiz;
     try {
-      raiz = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-      execFileSync('git', ['-C', raiz, 'rev-parse', '--verify', '--quiet', 'HEAD'], { stdio: 'ignore' });
+      raiz = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      execFileSync('git', ['-C', raiz, 'rev-parse', '--verify', '--quiet', 'HEAD'], { windowsHide: true, stdio: 'ignore' });
     } catch { return 'sin-git'; }
     const rel = path.relative(fs.realpathSync(raiz), path.join(fs.realpathSync(dir), path.relative(dir, abs))).split(path.sep).join('/');
     if (!rel || rel.startsWith('../')) return 'no';
-    try { execFileSync('git', ['-C', raiz, 'cat-file', '-e', `HEAD:${rel}`], { stdio: 'ignore' }); return 'si'; } catch { return 'no'; }
+    try { execFileSync('git', ['-C', raiz, 'cat-file', '-e', `HEAD:${rel}`], { windowsHide: true, stdio: 'ignore' }); return 'si'; } catch { return 'no'; }
   };
   const fantasmas = [];
   let sinGit = 0;
@@ -4913,7 +5854,7 @@ function computeDepGate({ repo, story }) {
   const sinMedir = [];
   const MANIFIESTOS = ['package.json', '*/package.json', '**/package.json',
     '*.csproj', '**/*.csproj', 'Directory.Packages.props', '**/Directory.Packages.props'];
-  const gitDe = (raiz, a, input) => execFileSync('git', ['-C', raiz, ...a], { encoding: 'utf8', input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] });
+  const gitDe = (raiz, a, input) => execFileSync('git', ['-C', raiz, ...a], { windowsHide: true, encoding: 'utf8', input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] });
   for (const raiz of raices) {
     try {
       // Sin commits todavía (el repo recién iniciado al arrancar) la base es el árbol vacío: todo es nuevo.
@@ -5075,7 +6016,7 @@ function computeNextStory(args) {
     warnings.push(
       `0 stories Mary+GOLD bajo ${scanRoot}. Una story es un .md cuyo frontmatter declara \`story:\` y \`status:\`, ` +
       `y cuyo id tiene forma de trabajo (${scanned.id_criterion}). Diagnóstico: ` +
-      'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-discovery.js --doctor --repo <dir>',
+      `${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-discovery.js')} --doctor --repo <dir>`,
     );
   }
 
@@ -5256,9 +6197,9 @@ function computeDodCheckerNeeded(args, deps = {}) {
     const { spawnSync } = require('child_process');
     // Todo desde la RAÍZ del repo y sin comillas: `ls-files` desde una subcarpeta sólo lista esa subcarpeta, y con
     // `core.quotePath` por defecto una ruta con tilde sale entre comillas y con escapes.
-    const t = spawnSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const t = spawnSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     const top = t.error || t.status !== 0 ? null : t.stdout.trim();
-    const git = (argv) => spawnSync('git', ['-C', top || repo, '-c', 'core.quotePath=false', ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
+    const git = (argv) => spawnSync('git', ['-C', top || repo, '-c', 'core.quotePath=false', ...argv], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
     const d = top ? git(['diff', '--name-only', '-z', base.ref]) : null;
     const u = top ? git(['ls-files', '--others', '--exclude-standard', '-z']) : null;
     const falla = [t, d, u].find((r) => !r || r.error || r.status !== 0);
@@ -5293,7 +6234,7 @@ function computeDodCheckerNeeded(args, deps = {}) {
 // { marker, error }: un marker.js que falla se DICE, no se lee como «sin corrida» (patrón de coverage-base.js).
 function leerMarcadorDeLaCorrida() {
   const { spawnSync } = require('child_process');
-  const r = spawnSync(process.execPath, [path.join(__dirname, 'marker.js'), 'get'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+  const r = spawnSync(process.execPath, [path.join(__dirname, 'marker.js'), 'get'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
   if (r.error) return { marker: null, error: `marker.js get no corrió (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { marker: null, error: `marker.js get salió ${r.status}` };
   try { return { marker: JSON.parse(r.stdout || '{}'), error: null }; } catch (e) { return { marker: null, error: `marker.js get devolvió algo ilegible (${e.message})` }; }
@@ -5430,55 +6371,15 @@ function deriveStoryId(storyPath) {
   return String(fm.story || path.basename(storyPath, '.md')).trim() || null;
 }
 
-// La clave con que se nombra la carpeta de corrida, con el MOTIVO si no se puede calcular: `resolveRunDir` devuelve
-// null en los dos casos («no hay carpeta» y «no hay clave»), y quien tiene que explicarle al dev qué pasó pregunta acá.
+// La clave y la carpeta de la corrida viven en `lib/run-dir.js` (módulos livianos las piden sin cargar el pipeline);
+// acá quedan con los mismos nombres para quien ya las usa.
 function runDirKey(storyId, storyPath) {
-  return require('./lib/evidence-key.js').keyInfoOr(storyPath, storyId);
+  return require('./lib/run-dir.js').runDirKey(storyId, storyPath);
 }
 
-// Resuelve el dir de la corrida: el más reciente `<clave>-*` (o exactamente `<clave>`, o
-// `story-<clave>-*`) bajo <repo>/.advisors/pipeline-runs/. Con create=true y ninguno → crea
-// `<clave>-<UTC-stamp>`. Sin create y ninguno → null.
-// La clave es la de la evidencia (`lib/evidence-key.js`): el número solo si es único en el repo de la
-// story, `<tema>__<número>` si se repite. Con número repetido, otra story del mismo número tiene SU carpeta y retomar
-// por el número elegiría la más nueva de las dos. Sin `storyPath` (quien sólo tiene el número) es el número.
-// Con `storyPath` y sin poder calcular la clave → null: no se elige ni se crea una carpeta a ciegas.
-function resolveRunDir(repo, storyId, create, storyPath) {
-  const runsBase = path.join(repo, '.advisors', 'pipeline-runs');
-  const { key } = runDirKey(storyId, storyPath);
-  if (!key) return null;
-  const { ownsName } = require('./lib/evidence-key.js');
-  let names = [];
-  try {
-    names = fs.readdirSync(runsBase, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name)
-      .filter((n) => ownsName(n, key, storyId));
-  } catch { names = []; }
-  if (names.length) {
-    // Puntuar por [tiene-archivos, mtime del archivo interno más reciente] — así un dir vacío/stray
-    // (ej. creado por un `mkdir` accidental con RUNDIR sin resolver) PIERDE contra el dir que tiene
-    // los reportes reales del run. Sin esto, "el dir con mtime más nuevo" elegiría la carpeta equivocada.
-    let best = null; let bestHas = -1; let bestM = -1;
-    for (const n of names) {
-      const p = path.join(runsBase, n);
-      let has = 0; let newest = 0;
-      try {
-        for (const f of fs.readdirSync(p)) {
-          has = 1;
-          try { newest = Math.max(newest, fs.statSync(path.join(p, f)).mtimeMs); } catch { /* ignore */ }
-        }
-      } catch { /* ignore */ }
-      if (!has) { try { newest = fs.statSync(p).mtimeMs; } catch { newest = 0; } }
-      if (has > bestHas || (has === bestHas && newest > bestM)) { bestHas = has; bestM = newest; best = p; }
-    }
-    return best;
-  }
-  if (!create) return null;
-  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14); // YYYYMMDDHHMMSS
-  const dir = path.join(runsBase, `${key}-${stamp}`);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+// `opts` ({ marker, sessionId }) va tal cual: es el que decide qué marcador mira la regla (lib/run-dir.js)
+function resolveRunDir(repo, storyId, create, storyPath, opts) {
+  return require('./lib/run-dir.js').resolveRunDir(repo, storyId, create, storyPath, opts);
 }
 
 // El marcador de la sesión, con su estado: `ausente` (no existe), `ilegible` (existe y no se puede leer como objeto) u `ok`.
@@ -5488,15 +6389,18 @@ function readSessionMarkerStrict() {
   if (!fs.existsSync(markerPath)) return { estado: 'ausente', marcador: null };
   try {
     const m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
-    if (m && typeof m === 'object' && !Array.isArray(m)) return { estado: 'ok', marcador: m };
+    if (m && typeof m === 'object' && !Array.isArray(m)) return { estado: 'ok', marcador: require('./lib/run-dir.js').marcadorConRutas(m) };
     return { estado: 'ilegible', marcador: null, motivo: 'no es un objeto' };
   } catch (e) { return { estado: 'ilegible', marcador: null, motivo: String(e.message).slice(0, 80) }; }
 }
 
-// La firma pedida para otra sesión (`--for-session <D>`): acá sólo la vuelta extra de revisores. Hasta la firma el guion
+// La firma pedida para otra sesión (`--for-session <D>`): acá la vuelta extra de revisores y contar los revisores sin la
+// constancia de que corrieron (`check-count --trust-ran`). Hasta la firma el guion
 // sólo lee la corrida de <D>; la firma la pide la sesión que corre el guion (PROPIA, la de antes de cambiar nada), y
 // recién después `fijarDestino` deja el proceso, y los guiones que lance, trabajando sobre <D>.
 const PROPIA = sessionIdFileKey();
+// el chequeo antes de la ventana de firma (owner-window.js): comprueba lo que la firma exige sin hacer lo que autoriza
+const PRECHEQUEO = 'TYCON_SIGN_PRECHECK';
 let paraOtra = null;   // { pedida, storyId } mientras el guion trabaja para otra sesión
 const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
 function paraOtraSesion(cmd, args, argv) {
@@ -5504,17 +6408,63 @@ function paraOtraSesion(cmd, args, argv) {
   const pedida = i >= 0 ? argv[i + 1] : null;
   if (!pedida || pedida === PROPIA) return null;
   // sin variable de sesión y sin terminal no hay quién pida la firma para otra sesión
-  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return '🛑 Sin variable de sesión, la vuelta extra para una sesión se firma en la terminal del dueño (--terminal). No escribí nada.\n';
-  if (!['smart-reloop', 'advisors'].includes(cmd) || !args.extraRound) {
-    return `🛑 --for-session con otra sesión vale acá sólo para la vuelta extra de revisores (smart-reloop --extra-round): ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.\n`;
+  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return '🛑 Sin variable de sesión, la firma para una sesión se da en la terminal de la persona (--terminal). No escribí nada.\n';
+  const contar = cmd === 'check-count';
+  if (contar && !args.trustRan) return '🛑 --for-session en check-count va sólo con --trust-ran: contar los revisores de otra sesión sin firma no es una firma. No escribí nada.\n';
+  if (!contar && (!['smart-reloop', 'advisors'].includes(cmd) || !args.extraRound)) {
+    return `🛑 --for-session con otra sesión vale acá sólo para la vuelta extra de revisores (smart-reloop --extra-round) y para check-count --trust-ran: ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.\n`;
   }
   if (!/^[\w-]+$/.test(pedida)) return '🛑 La sesión de --for-session no se puede leer. No escribí nada.\n';
+  if (pedida === '_nosession') return '🛑 «_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id. No escribí nada.\n';
   let abierta;
-  try { abierta = ownerWindow().marcadorEn(path.join(stateDirOf(os.homedir()), 'active', `${pedida}.json`)); } catch (e) { return `🛑 ${e.message}. No escribí nada.\n`; }
+  const noEncontre = (motivo) => `🛑 No encontré la corrida de la sesión ${pedida}: ${motivo}. No escribí nada.\n`;
+  try { abierta = ownerWindow().marcadorEn(path.join(stateDirOf(os.homedir()), 'active', `${pedida}.json`)); } catch (e) { return noEncontre(e.message); }
+  if (!abierta && !contar) return noEncontre('no está su marcador');
   if (!abierta || !abierta.storyId) {
-    return `🛑 La sesión ${pedida} no tiene una ejecución abierta: no hay corrida para la vuelta extra. No escribí nada.\n`;
+    return `🛑 La sesión ${pedida} no tiene una ejecución abierta: no hay corrida ${contar ? 'que contar' : 'para la vuelta extra'}. No escribí nada.\n`;
   }
   paraOtra = { pedida, storyId: String(abierta.storyId) };
+  if (contar) {
+    // la historia que se cuenta es la de la corrida de <D>; el registro de sus revisores se lee recién con la firma
+    const repoAbs = path.resolve(args.repo || '.');
+    const storyAbs = args.story ? (path.isAbsolute(args.story) ? args.story : path.join(repoAbs, args.story)) : null;
+    const nombrada = storyAbs ? deriveStoryId(storyAbs) : null;
+    if (!nombrada || String(nombrada) !== paraOtra.storyId) {
+      return `🛑 La corrida de la sesión ${pedida} es de la story ${paraOtra.storyId}, y --story ${args.story ? `nombra la ${nombrada || args.story}` : 'no está'}. No escribí nada.\n`;
+    }
+    // el mismo número no alcanza: tiene que ser el archivo de la corrida, como en runtime-waiver
+    if (!require('./lib/waiver-display.js').esLaDelMarcador(storyAbs, abierta)) {
+      return `🛑 ${path.basename(storyAbs)} no es el archivo de la historia de la corrida de la sesión ${pedida} (${abierta.storyPath || 'sin ruta en su marcador'}). No escribí nada.\n`;
+    }
+    return null;
+  }
+  // la vuelta es de la corrida de <D>, no de la carpeta desde donde se pide: sin --repo, el de su marcador; lo relativo,
+  // contra ese repo; sin --files, lo que su corrida tocó en ese repo
+  const repoDeLaCorrida = typeof abierta.repoPath === 'string' && abierta.repoPath ? abierta.repoPath : null;
+  if (!argv.includes('--repo') || !path.isAbsolute(String(args.repo))) {
+    if (!repoDeLaCorrida) return `🛑 La corrida de la sesión ${pedida} no dice su repo: pasá --repo con la ruta completa. No escribí nada.\n`;
+    args.repo = argv.includes('--repo') ? path.resolve(repoDeLaCorrida, String(args.repo)) : repoDeLaCorrida;
+  }
+  if (!args.story && typeof abierta.storyPath === 'string' && abierta.storyPath) args.story = abierta.storyPath;
+  else if (args.story && !path.isAbsolute(String(args.story))) args.story = path.resolve(args.repo, String(args.story));
+  if (!args.files.length) {
+    // lo que la corrida tocó en su repo y en sus repos hermanos (el código de una historia del privado vive en el
+    // público), sin los probes del pase, sin lo de la carpeta de la corrida y sin lo que ya no está
+    const raiz = path.resolve(args.repo);
+    const lh = require('./lib/ledger-honesty.js');
+    let hermanos = [];
+    try { hermanos = require('./lib/companion-repos.js').companionRoots(raiz, args.story || null); } catch (e) {
+      process.stderr.write(`⚠️  No pude leer los repos hermanos de ${raiz} (${e.message}): la vuelta va sólo con los archivos de ese repo.\n`);
+      hermanos = [];
+    }
+    const dentro = (f, r) => { const rel = path.relative(r, f); return rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
+    const suyos = lh.sinRuido((Array.isArray(abierta.filesTouched) ? abierta.filesTouched : []).map((f) => path.resolve(raiz, String(f))))
+      .filter((f) => exists(f) && (dentro(f, raiz) || hermanos.some((h) => dentro(f, path.resolve(h)))))
+      .map((f) => (dentro(f, raiz) ? path.relative(raiz, f) : f));
+    if (!suyos.length) return `🛑 La corrida de la sesión ${pedida} no tocó archivos en ${raiz} ni en sus repos hermanos: pasá --files con los de la vuelta. No escribí nada.\n`;
+    args.files = [...new Set(suyos)];
+    args.filesDeclarado = true;
+  }
   // hasta la firma, sólo para leer su corrida: nada se escribe antes (topeDeVueltas)
   for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) if (k === 'CLAUDE_CODE_SESSION_ID' || process.env[k]) process.env[k] = pedida;
   return null;
@@ -5527,25 +6477,23 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   const tope = rr.tope({ repo: repoAbs });
   const stateDir = stateDirOf(os.homedir());
   const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), story: storyId, iter, ...g })}\n`); };
-  const sinFirmaPendiente = `🛑 La vuelta ${iter} no necesita firma: no se pide para otra sesión (--for-session). La pide la sesión de la corrida.\n`;
+  // pedida para otra sesión sin firma que dar: se dice por qué no la necesita y quién la pide
+  const laPideLaCorrida = 'La pide la sesión de la corrida, con el set sin --extra-round ni --for-session';
   // la vuelta extra para otra sesión es de la historia de su corrida, no de la que diga --story
   if (paraOtra && paraOtra.storyId !== String(storyId)) {
     process.stderr.write(`🛑 La corrida de la sesión ${paraOtra.pedida} es de la story ${paraOtra.storyId}, y --story nombra la ${storyId}. No escribí nada.\n`);
     process.exit(2);
   }
   if (iter <= tope.value) {
-    if (paraOtra) return sinFirmaPendiente;
-    // la variable de la máquina puede subir el tope por encima del de la organización y el repo: pasa, pero queda anotado
-    if (tope.source === 'maquina') {
-      const sinMaquina = rr.tope({ repo: repoAbs, sinMaquina: true });
-      if (iter > sinMaquina.value) {
-        anotar({ name: 'review-cap-machine', status: 'ok', value: tope.value, sin_la_maquina: sinMaquina.value });
-        process.stderr.write(`⚠️  La vuelta ${iter} pasa el tope de ${sinMaquina.value} porque el ajuste de esta máquina (review-max-rounds.json) lo sube a ${tope.value}: queda anotado.\n`);
-      }
-    }
+    if (paraOtra) return `🛑 La vuelta ${iter} está dentro del tope de ${tope.value}: no necesita la vuelta extra ni la firma. ${laPideLaCorrida}.\n`;
+    if (args.extraRound) return `🛑 La vuelta ${iter} no necesita la vuelta extra ni la firma: está dentro del tope de ${tope.value}. Pedí el set sin --extra-round.\n`;
+    for (const p of tope.problems || []) process.stderr.write(`⚠️  ${p}\n`);
     return null;
   }
-  if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) return paraOtra ? sinFirmaPendiente : null;
+  if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) {
+    if (paraOtra) return `🛑 La vuelta extra ${iter} ya está autorizada. ${laPideLaCorrida}, sin otra firma.\n`;
+    return args.extraRound ? `🛑 La vuelta extra ${iter} ya está autorizada: pedí el set sin --extra-round, sin otra firma.\n` : null;
+  }
   const h = rr.hallazgosDe(runDir);
   const pre = rr.prefijos();
   const ab = rr.abiertos(h.lista, { prefijos: pre });
@@ -5563,9 +6511,18 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
     const aviso = rr.avisoDelTope({ stateDir, story: storyId, iter });
     if (!aviso || !aviso.ts) return `🛑 No se autorizó la vuelta extra ${iter}: todavía no se avisó el tope de esta vuelta. Pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale la aprobación.\n`;
     if (args.quote) return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. La aprueba la persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal).\n`;
+    // desde la tercera vuelta, la nota de repensar se pide antes de gastar la firma: sin ella el set no se sirve igual
+    const rt = require('./lib/rethink.js');
+    const antes = () => {
+      if (iter < rt.FIRST_ITER) return null;
+      const leida = rt.readNote(runDir, iter);
+      if (leida.ok) return null;
+      const why = leida.reason === 'no existe' || leida.reason === 'no hay carpeta de corrida' ? null : leida.reason;
+      return { codigo: 3, motivo: rt.blockMessage({ iter, runDir, repeated: rt.repeatedFindings(runDir), why }).trim() };
+    };
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
     const r = ow.exigir({ firma: 'extra-round', argv: process.argv.slice(1), resumen: `vuelta extra ${iter} de revisores de la story ${storyId}`,
-      propia: PROPIA, anotar: (g) => anotar(g) });
+      propia: PROPIA, anotar: (g) => anotar(g), antes });
     if (r.codigo !== 0) return `🛑 No se autorizó la vuelta extra ${iter}: ${r.motivo}.\n`;
     const f = ow.fijarDestino({ r, propia: PROPIA, necesitaMarcador: !!paraOtra, leerMarcador: (sid) => ow.marcadorEn(path.join(stateDir, 'active', `${sid}.json`)) });
     if (f.codigo !== 0) { process.stderr.write(`🛑 No se sirvió la vuelta extra ${iter}: ${f.motivo}. No escribí nada.\n`); process.exit(f.codigo); }
@@ -5603,7 +6560,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
 function emptyWorkGate(args) {
   const { spawnSync } = require('child_process');
   const repo = path.resolve(args.repo || '.');
-  const git = (a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', timeout: 10000 });
+  const git = (a) => spawnSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
   const top = git(['rev-parse', '--show-toplevel']);
   if (top.error || top.status !== 0) return null;
   const status = git(['status', '--porcelain', '--untracked-files=normal']);
@@ -5658,7 +6615,7 @@ function rethinkGate(args) {
   const storyArg = args.story || (marcador && typeof marcador.storyPath === 'string' && marcador.storyPath) || null;
   const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
   const storyId = storyAbs ? deriveStoryId(storyAbs) : null;
-  const propia = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs) : null;
+  const propia = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs, { marker: marcador || null }) : null;
   // El freno es de las corridas del pipeline: hay corrida si el marcador trae story, o si --story resuelve una carpeta de
   // corrida. Fuera de una corrida no hay vueltas que contar: --iter ausente, 1 o 2 pasa como siempre; desde la tercera (la que pide nota) frena.
   const marcadorConStory = !!(marcador && typeof marcador.storyPath === 'string' && marcador.storyPath);
@@ -5718,7 +6675,7 @@ function rethinkGate(args) {
     return `🛑 --run-dir ${ajena} no es la carpeta de corrida de esta story${storyId ? ` (${storyId})` : ''}: quitá --run-dir o pasá la carpeta de .advisors/pipeline-runs/ de esta story.\n`;
   }
   // Pasó: se anota la vuelta servida en la carpeta de la corrida (la crea si todavía no existe).
-  const donde = runDir || (storyId && !ajena ? resolveRunDir(repoAbs, storyId, true, storyAbs) : null);
+  const donde = runDir || (storyId && !ajena ? resolveRunDir(repoAbs, storyId, true, storyAbs, { marker: marcador || null }) : null);
   if (donde) {
     const anotada = rt.recordServed(donde, iter);
     if (!anotada.ok) return `🛑 No pude anotar la vuelta ${iter} en la carpeta de la corrida (${rt.servedPath(donde)}): ${anotada.reason}. Sin ese registro la próxima vuelta no se puede contar, y ante la duda no devuelvo el set.\n`;
@@ -5814,6 +6771,10 @@ function judgeRefutation({ disposition, ruleId, advisor, file, line, runDir, ros
 
 function normalizeFindingRecord(raw, warnings, ctx) {
   let severity = String(raw.severity || 'WARNING').toUpperCase().trim();
+  // Un confirmado del pase trae la gravedad del verificador (`adjusted_severity`, o `severity` en su escala): frena
+  // (CRITICAL) si está en el corte de la organización o por encima, y si no es WARNING. La misma regla que la revisión del plan.
+  const delPase = String(raw.adjusted_severity || (/^(bug|robustness|nit)$/i.test(String(raw.severity || '')) ? raw.severity : '')).toLowerCase().trim();
+  if (delPase) severity = require('./lib/review-policy.js').blocks(delPase, (ctx && ctx.corte) || 'bug') ? 'CRITICAL' : 'WARNING';
   if (!VALID_SEVERITY.has(severity)) severity = 'WARNING';
   let disposition = String(raw.disposition || 'open').toLowerCase().trim();
   // Sinónimos de «refuted»:
@@ -6067,6 +7028,18 @@ function writeFindings(args) {
   const normWarnings = [];
   // 🔴 El run dir y el roster se resuelven ANTES de normalizar: el firmante se valida contra los
   // revisores de ESTA corrida, y un finding con firmante inválido no tiene que llegar a escribirse.
+  // Sin una corrida abierta de esta story en la sesión, la carpeta que da la regla es la de OTRA corrida: su
+  // findings.json no se reemplaza sin nombrarla a propósito (`--run-dir`).
+  if (!args.runDir) {
+    const propio = readSessionMarker();
+    if (!propio || String(propio.storyId) !== String(storyId)) {
+      const ya = resolveRunDir(args.repo, storyId, false, args.story, { marker: null });
+      if (ya && exists(path.join(ya, 'findings.json'))) {
+        return { error: `sin una corrida abierta de la story ${storyId} en esta sesión no reemplazo ${path.join(ya, 'findings.json')}: `
+          + `es la constancia de otra corrida. Si es la que querés reemplazar, nombrala a propósito con --run-dir ${ya}.` };
+      }
+    }
+  }
   const runDir = args.runDir || resolveRunDir(args.repo, storyId, true, args.story);
   if (!runDir) return { error: 'no se pudo resolver/crear el run dir bajo .advisors/pipeline-runs/ (si el número de la story se repite en su repo, la carpeta lleva la clave: `pipeline.js evidence-key --story <ruta>` dice por qué no se pudo calcular)' };
   fs.mkdirSync(runDir, { recursive: true });
@@ -6091,7 +7064,13 @@ function writeFindings(args) {
     }
   }
   const errores = [];
-  const records = arr.map((r) => normalizeFindingRecord(r, normWarnings, { roster, errores, runDir }));
+  // el corte de gravedad de la organización para los confirmados del pase (review.blocking_severity)
+  let corte = 'bug';
+  try { corte = require('./lib/plan-review.js').configDeLaOrganizacion().values.review.blocking_severity; } catch (e) {
+    corte = 'bug';
+    normWarnings.push(`no pude leer review.blocking_severity de la organización (${String((e && e.message) || e).split('\n')[0]}): uso el corte de fábrica, bug`);
+  }
+  const records = arr.map((r) => normalizeFindingRecord(r, normWarnings, { roster, errores, runDir, corte }));
   if (errores.length) {
     return { error: errores.join('\n'), firmantes_invalidos: errores.length, run_dir: runDir,
       note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
@@ -6111,6 +7090,31 @@ function writeFindings(args) {
       return { error: lineas.join('\n'), criticos_sin_ok: faltan, run_dir: runDir,
         note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
     }
+  }
+  // Los críticos que reportó cada revisor los anotó el arnés (lib/reported-criticals.js): findings.json tiene que traerlos
+  // a todos, por regla y cantidad, y lo que da por cerrado tiene que tener con qué. Acá los `refuted` ya pasaron por la
+  // constancia del verificador (normalizeFindingRecord los deja `open` sin ella). Una corrida sin registro lo dice en su
+  // propio campo: no es un aviso sobre los hallazgos.
+  let reportedNote = null;
+  {
+    const rcLib = require('./lib/reported-criticals.js');
+    const marcador = readSessionMarker();
+    const deEsta = marcador && String(marcador.storyId) === String(storyId) ? marcador : null;
+    const since = deEsta ? deEsta.startedAt : null;
+    // sólo lo de esta corrida: lo que anotó otra sesión sobre la misma historia no se pide acá
+    const cruce = rcLib.checkRun({ stateDir: stateDirOf(os.homedir()), story: storyId, since, ...rcLib.corridaDelMarcador(deEsta, runDir), findings: records, runDir });
+    if (cruce.error) {
+      return { error: `no pude leer el registro de críticos reportados (${cruce.error}): no sé qué reportaron los revisores, y eso no es «nada»`,
+        run_dir: runDir, note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
+    }
+    if (cruce.problemas.length) {
+      const lineas = ['findings.json no trae lo que reportaron los revisores:', ...rcLib.renglones(cruce, { marker: path.join(__dirname, 'marker.js') })];
+      return { error: lineas.join('\n'), criticos_reportados: cruce.problemas, run_dir: runDir,
+        note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
+    }
+    if (cruce.sinRegistro) reportedNote = rcLib.NO_REGISTRY_NOTE;
+    if (cruce.unreadable) normWarnings.push(`el registro de críticos reportados tiene ${cruce.unreadable} renglón(es) ilegible(s): no cuentan`);
+    if (cruce.unreadableSpawns) normWarnings.push(`el registro de lanzamientos de revisores tiene ${cruce.unreadableSpawns} renglón(es) ilegible(s): esas salidas no se cruzaron`);
   }
   const outPath = path.join(runDir, 'findings.json');
   fs.writeFileSync(outPath, JSON.stringify(records, null, 2) + '\n', 'utf8');
@@ -6158,6 +7162,7 @@ function writeFindings(args) {
     wrote: true, path: outPath, story_id: storyId, total: records.length, counts,
     ...(rethink ? { rethink } : {}),
     ...(sinMedir.length ? { sin_medir: sinMedir } : {}),
+    ...(reportedNote ? { reported_criticals: reportedNote } : {}),
     ...(marcados.length ? { reviewers_flagged: marcados.map((t) => t.reviewer) } : {}),
     ...(proyeccion.projected ? { projected_to_story_repo: proyeccion.dest } : {}),
     ...(proyeccion.reason && proyeccion.reason.startsWith('no se pudo') ? { warnings: [...normWarnings, `proyección al repo de la story: ${proyeccion.reason}`] } : (normWarnings.length ? { warnings: normWarnings } : {})),
@@ -6358,6 +7363,7 @@ function parseArgs(argv) {
     else if (t === '--target-pipeline-done') a.targetPipelineDone = argv[++i];
     else if (t === '--cost-tier') a.costTier = argv[++i];
     else if (t === '--trust-ran') a.trustRan = true;
+    else if (t === '--adhoc') a.adhoc = true;
     else if (t === '--reopen') a.reopen = true;                      // ado-mark-active: reabrir un pedido cerrado
     else if (t === '--assign-to') a.assignTo = argv[++i];            // ado-mark-active: con auto_assign, a quién
     else if (t === '--action-done') a.actionDone = nn(argv[++i], ''); // work-signal start: el id que devolvió la herramienta
@@ -6383,6 +7389,7 @@ function parseArgs(argv) {
     else if (t === '--deep-review-fable') a.deepReviewFable = true; // hunters en Fable — SOLO con autorización explícita del user
     else if (t === '--ultracode') a.ultracode = true;             // el orquestador lo pasa si ultracode está ON
     else if (t === '--brief') a.breve = true;                      // start: salida recortada + ruta del JSON entero
+    else if (t === '--batch') a.batch = nn(argv[++i], '');         // start: la tanda de una historia paraguas
     else if (t === '--session-model') a.sessionModel = nn(argv[++i], '');   // start / model-hint: el modelo de la sesión
     else if (t === '--codex-session') a.codexSession = parseCodexSession(argv[++i]); // start: la sesión de Codex (proveedor y modelo)
     else if (t === '--run-dir') a.runDir = argv[++i];              // write-findings/findings-status: dir de la corrida (default: auto-resolve)
@@ -6422,6 +7429,102 @@ function parseArgs(argv) {
   return a;
 }
 
+// ── --adhoc: los revisores y el pase del camino rápido ──
+// Sin corrida, con el carril firmado de la sesión. `advisors` arma los archivos con los del carril y el diff de cada
+// repo contra su base, mide contra el primer repo del carril (o `--repo`), y guarda el `expected` y la hora en el
+// registro del carril. `check-count` cuenta los revisores lanzados por la sesión desde esa hora y, completo, escribe la
+// constancia de revisores con la huella del carril. `deep-review-gate` decide el pase con el criterio de siempre; un
+// pase que no corre por el portón deja su constancia de salteo. No corren las guardas de vuelta ni la marca de inicio
+// del paso de revisores, que son de una corrida.
+function cmdRevisoresDelCarril(cmd, args) {
+  const io = require('./lib/story-gate-io.js');
+  const base = require('./lib/adhoc-base.js');
+  const dir = stateDirOf(os.homedir());
+  const sid = sessionIdFileKey();
+  const salir = (texto, codigo = 2) => { process.stderr.write(`🛑 ${cmd} --adhoc: ${texto}\n`); process.exit(codigo); };
+  if (io.readMarker(dir, sid)) salir('hay una corrida abierta en esta sesión: manda la corrida. Corré el comando sin --adhoc.');
+  const a = io.adhocFirmado(dir, sid, io.readAdhoc(dir, sid));
+  if (!a) salir('esta sesión no tiene un camino rápido abierto con su firma (marker.js adhoc set).');
+  // lo que miran los revisores: la medida del carril, con las dos rutas de cada cambio, lo anotado y lo que git no sigue
+  const medida = base.medirLoPropio(a);
+  const porRepo = base.rutasDe(medida, a, { como: 'todo' });
+  for (const av of medida.avisos) process.stderr.write(`⚠️  ${av}\n`);
+  const repos = Object.keys(porRepo);
+  let repo = repos[0] || null;
+  if (process.argv.includes('--repo')) {
+    // sólo un repo del carril: con una carpeta ajena, su configuración decidiría por el carril
+    let pedido;
+    try { pedido = fs.realpathSync(path.resolve(args.repo)); } catch (e) { salir(`--repo ${args.repo}: no existe (${e.code || e.message}).`); }
+    if (!repos.includes(pedido)) salir(`--repo ${args.repo} no es un repo del camino rápido (${repos.join(', ') || 'ninguno anotado'}).`);
+    repo = pedido;
+  }
+  if (!repo) salir('el camino rápido todavía no anotó ningún archivo: no hay nada que revisar.');
+  const files = [...new Set(repos.flatMap((r) => porRepo[r].map((rel) => path.join(r, rel))))];
+  const escribir = (cambios) => io.writeAdhoc(dir, sid, { ...io.readAdhoc(dir, sid), ...cambios });
+
+  if (cmd === 'advisors') {
+    const set = computeAdvisorSet({ repo, story: null, files });
+    set.files = files;
+    set.repo = repo;
+    set.adhoc = true;
+    // la huella de lo que van a ver los revisores: si cambia antes de contarlos, lo que miraron ya no es lo que se guarda
+    escribir({ revisoresEsperados: { expected: set.all, desde: new Date().toISOString(), repo, huella: base.huellaDelCarril(io.readAdhoc(dir, sid)) } });
+    set.nota = 'camino rápido: lanzá los revisores de `all` y después `pipeline.js check-count --adhoc`.';
+    salidaGrande(JSON.stringify(set, null, 2) + '\n', 0);
+    return;
+  }
+  if (cmd === 'check-count') {
+    const esperado = a.revisoresEsperados;
+    if (!esperado || !Array.isArray(esperado.expected)) salir('el camino rápido todavía no pidió sus revisores: corré `pipeline.js advisors --adhoc` y lanzá los que devuelve.');
+    const desde = Date.parse(esperado.desde);
+    let lineas = [];
+    if (esperado.expected.length) {
+      try { lineas = fs.readFileSync(sessionLogPath(), 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch (e) {
+        salir(`no pude leer el registro de revisores de la sesión (${sessionLogPath()}: ${e.code || e.message}): no hay contra qué contar.`);
+      }
+    }
+    const ran = [...new Set(lineas.filter((e) => e.advisor && Date.parse(e.ts) >= desde).map((e) => e.advisor))];
+    const faltan = esperado.expected.filter((r) => !ran.includes(r));
+    if (faltan.length) salir(`faltan ${faltan.length} de ${esperado.expected.length} revisores lanzados desde ${esperado.desde}: ${faltan.join(', ')}`);
+    const huella = base.huellaDelCarril(io.readAdhoc(dir, sid));
+    if (!base.huellaCompleta(huella)) salir('git no contestó al medir el carril: la huella quedó incompleta y no sirve de constancia. Reintentá.');
+    if (esperado.huella && esperado.huella !== huella) salir('los archivos del carril cambiaron después de pedir los revisores: lo que revisaron no es lo que se guarda. Volvé a correr `pipeline.js advisors --adhoc` y lanzalos de nuevo.');
+    escribir({ revisores: { huella, at: new Date().toISOString(), ran, expected: esperado.expected } });
+    process.stdout.write(`${JSON.stringify({ ok: true, ran: ran.length, expected: esperado.expected.length, huella }, null, 2)}\n`);
+    return;
+  }
+  // deep-review-gate: se decide en CADA repo del carril con sus propios archivos y su configuración, y manda el más
+  // estricto (si en uno corre, corre). Sin historia, el tamaño (liviana: sólo documentación) se mide sobre esos
+  // archivos, con el mismo clasificador; el portón lo mira donde siempre, después de la configuración y la superficie.
+  const decisiones = [];
+  for (const r of repos) {
+    const deEse = porRepo[r].map((rel) => path.join(r, rel));
+    const tam = runSizeLib.classifyStory({
+      files: porRepo[r], alwaysPaths: deepReviewAlwaysPaths(r), deepReviewCfg: deepReviewConfig(r), roots: [r],
+    });
+    const runSize = { size: tam.size, reason: `archivos del camino rápido: ${tam.reason}`, firmado: true };
+    const conModelos = conModelosDeLaCorrida({ ...args, repo: r, files: deEse, story: null, runSize });
+    // lo del carril se mide desde la base de su medida en ese repo (la misma que leen los frenos), aunque ya esté
+    // commiteado. Sin base (lo anotado y el commit) no sirve, y se mide contra la bifurcación de coverage-base.
+    let salida = null;
+    const suBase = medida.porRepo[r] && medida.porRepo[r].base;
+    if (suBase && suBase.de !== 'sin-base' && suBase.sha) salida = suBase.sha;
+    else process.stderr.write(`⚠️  deep-review-gate: ${r} no tiene la base del carril medida; mido contra la bifurcación con la rama principal\n`);
+    const marcador = salida ? { baseSha: salida, repoPath: r } : null;
+    const res = computeDeepReviewGate({ ...conModelos, repo: r, files: deEse, story: null, runSize, marcador });
+    if (!res || res.run === null) salir(`${r}: ${(res && res.reason) || 'no pude decidir el pase'}`);
+    decisiones.push({ repo: r, res });
+  }
+  const corre = decisiones.find((d) => d.res.run === true);
+  const result = { ...(corre || decisiones[0]).res, repo: (corre || decisiones[0]).repo };
+  if (!corre) {
+    const huella = base.huellaDelCarril(io.readAdhoc(dir, sid));
+    if (!base.huellaCompleta(huella)) salir('git no contestó al medir el carril: la huella quedó incompleta y no sirve de constancia. Reintentá.');
+    escribir({ pase: { huella, at: new Date().toISOString(), salteado: true, motivo: decisiones.map((d) => `${d.repo}: ${d.res.reason}`).join(' · ') } });
+  }
+  process.stdout.write(`${JSON.stringify({ ...result, adhoc: true, files, por_repo: decisiones.map((d) => ({ repo: d.repo, run: d.res.run, reason: d.res.reason })) }, null, 2)}\n`);
+}
+
 function main() {
   const cmd = process.argv[2];
   const args = parseArgs(process.argv.slice(3));
@@ -6436,7 +7539,7 @@ function main() {
     const storyArg = args.story || (marcador && marcador.storyPath) || null;
     const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
     const storyId = storyAbs ? deriveStoryId(storyAbs) : null;
-    const runDir = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs) : null;
+    const runDir = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs, { marker: marcador || null }) : null;
     const tope = rr.tope({ repo: repoAbs });
     const h = rr.hallazgosDe(runDir);
     const pre = rr.prefijos();
@@ -6453,6 +7556,12 @@ function main() {
     process.exit(0);
   }
 
+  // Los revisores y el pase sobre el camino rápido de la sesión, sin corrida (lib/adhoc-base.js arma sus archivos).
+  if (args.adhoc && ['advisors', 'check-count', 'deep-review-gate'].includes(cmd)) {
+    cmdRevisoresDelCarril(cmd, args);
+    return;
+  }
+
   if (cmd === 'advisors') {
     // Files fantasma (shell quoting roto) degradarían el set
     // a onlyDocs y PERSISTIRÍAN un expected[] corrupto. Abort explícito, no fail-open.
@@ -6465,22 +7574,30 @@ function main() {
     if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
+    if (process.env[PRECHEQUEO] === '1') process.exit(0);
     const set = computeAdvisorSet(args);
     // Descuento automático de advisors cubiertos por mech-check (coherente
     // con el expected[] que se persiste abajo — check-count valida contra el set
     // YA descontado, así el orquestador no spawnea LLMs para checks que corren gratis).
-    const disc = computeMechDiscount(set.all, args);
+    // Sin poder leer los críticos de la corrida no se descuenta: no saber si hay algo por confirmar no es «nada».
+    const pc = revisoresPorConfirmar(args);
+    const disc = pc.error ? null : computeMechDiscount(set.all, args);
     if (disc && disc.discounted.length) {
       set.all = disc.kept;
       set.required_count = disc.kept.length;
       set.mech_discounted = disc.discounted;
       set.mech_findings = disc.mech_findings;
       set.mech_note = `mech-check descontó ${disc.discounted.length} advisor(s) del set/expected (checks mecánicos, 0 tokens). ` +
-        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — van DIRECTO al reporte consolidado del paso de hallazgos.` : 'Sin findings mecánicos.');
+        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — van DIRECTO al reporte consolidado del paso de hallazgos.` : 'Sin findings mecánicos.') +
+        ` ${MECH_NUNCA_SACA}`;
     } else if (disc && disc.mech_findings.length) {
       set.mech_findings = disc.mech_findings;
       set.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — van DIRECTO al reporte consolidado.`;
     }
+    // el revisor de un crítico arreglado vuelve, por encima del descuento: sin él, el cierre pide la exención del dueño
+    set.all = sumarPorConfirmar(set.all, set, pc);
+    set.required_count = set.all.length;
+    for (const l of [...(pc.error ? [`no pude leer los críticos de la corrida (${pc.error}): no descuento`] : []), ...pc.fuera]) process.stderr.write(`⚠️  ${l}\n`);
     // Enriquecer con model_hints solo si el caller pidió un tier opt-in.
     // Default (tier=null o 'standard'): output sin model_hints (zero regresión).
     const hints = modelHintsForSet({ all: set.all, tier: args.costTier });
@@ -6503,7 +7620,16 @@ function main() {
     // Contexto compartido: UN artefacto por iteración con
     // digest de story + file list + hunks. Los advisors lo reciben como input
     // primario en vez de re-leer story completa + re-correr git diff cada uno.
+    // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
+    const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
+    if (congelada.error) {
+      process.stderr.write(`🛑 pipeline.js advisors: la vuelta no se lanza — ${congelada.error}. Los revisores no leen la carpeta viva.\n`);
+      process.exitCode = 2;
+      return;
+    }
+    set.frozen = congelada.repos;
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
+    contextoConLaCopia(ctx, congelada.repos);
     // El estado de la sección «Reglas para revisores» del repo (el orquestador avisa al
     // dev en una línea si no está `presente`; nunca frena — guía del paso de revisores §Reglas del repo).
     set.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
@@ -6589,11 +7715,14 @@ function main() {
     if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
+    // el chequeo antes de la ventana termina en la firma (owner-window.js): si llegó acá sin pasar por ella, no dice que sí
+    if (process.env[PRECHEQUEO] === '1') process.exit(0);
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeSmartReloop(conModelos);
     const avisosModelos = result._avisos || [];
-    // El descuento aplica también al subset rerun del re-loop.
-    const disc = computeMechDiscount(result.rerun, args);
+    // El descuento aplica también al subset rerun del re-loop. Sin poder leer los críticos de la corrida, no se descuenta.
+    const pc = revisoresPorConfirmar(args);
+    const disc = pc.error ? null : computeMechDiscount(result.rerun, args);
     if (disc && disc.discounted.length) {
       if (result.reviewer_models) for (const d of disc.discounted) delete result.reviewer_models[d.name];
       result.rerun = disc.kept;
@@ -6601,12 +7730,64 @@ function main() {
       result.mech_discounted = disc.discounted;
       result.mech_findings = disc.mech_findings;
       result.mech_note = `mech-check descontó ${disc.discounted.length} advisor(s) del rerun/expected. ` +
-        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — al reporte del paso de hallazgos.` : 'Sin findings mecánicos.');
+        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — al reporte del paso de hallazgos.` : 'Sin findings mecánicos.') +
+        ` ${MECH_NUNCA_SACA}`;
     } else if (disc && disc.mech_findings.length) {
       result.mech_findings = disc.mech_findings;
       result.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — al reporte del paso de hallazgos.`;
     }
+    // Una vuelta sin código no se cierra sola con un crítico de mech-check dado por arreglado sin volver a comprobarlo:
+    // mech-check ya corrió arriba (el descuento); si el crítico sigue, o no se pudo mirar, la vuelta no se cierra
+    if (result.no_code_delta) {
+      const cm = criticosMecanicos(args);
+      const noSe = cm.error ? `no pude saber cuáles son (${cm.error})` : cm.reglas.length && !disc ? 'no pude volver a correr mech-check' : null;
+      if (noSe) {
+        result.no_code_delta = false;
+        result.mech_still_open = [{ rule: null, reason: noSe }];
+      } else if (cm.reglas.length) {
+        // por instancia: los que mech-check sigue reportando, menos los que ya tienen su destino en findings.json
+        const vivos = (regla) => disc.mech_findings.filter((f) => f.rule === regla && String(f.severity || '').toUpperCase() === 'CRITICAL').length;
+        const ambiguas = new Set(disc.mech_ambiguous_rules || []);
+        const abiertos = [];
+        for (const rule of cm.reglas) {
+          if (!REGLAS_QUE_MECH_COMPRUEBA.has(rule)) abiertos.push({ rule, reason: 'mech-check no la evalúa: no la puedo comprobar sin un revisor' });
+          else if (ambiguas.has(rule)) abiertos.push({ rule, reason: 'mech-check la deja ambigua: no la puedo comprobar sin un revisor' });
+          else if (vivos(rule) > (cm.conDestino[rule] || 0)) abiertos.push({ rule, reason: 'findings.json lo da por arreglado y mech-check lo sigue reportando' });
+        }
+        if (abiertos.length) {
+          result.no_code_delta = false;
+          result.mech_still_open = abiertos;
+        } else result.mech_confirmed = cm.reglas;
+      }
+      if (result.mech_still_open) {
+        result.mech_note = `${result.mech_note ? `${result.mech_note} ` : ''}🛑 La vuelta sin código no se cierra: ${result.mech_still_open.map((m) => (m.rule ? `${m.rule} (${m.reason})` : m.reason)).join('; ')}. Arreglalo y volvé a pedir la vuelta.`;
+        logGate({ repoPath: args.repo, name: 'smart-reloop', check: 'smart-reloop-sin-codigo', status: 'reopened', iter: args.iter, mech: result.mech_still_open });
+      }
+    }
+    // el revisor de un crítico arreglado vuelve aunque el descuento o el cálculo por diferencias lo dejen afuera; lleva el
+    // modelo que le da la corrida. `no_code_delta` y el aviso del registro ciego se conservan: vuelve sólo a confirmar
+    {
+      const antes = result.rerun || [];
+      result.rerun = sumarPorConfirmar(antes, result, pc);
+      result.rerun_count = result.rerun.length;
+      const nuevos = result.rerun.filter((n) => !antes.includes(n));
+      if (nuevos.length && result.reviewer_models) {
+        const suyos = {};
+        aplicarModelosDeRevisores(suyos, nuevos, conModelos);
+        Object.assign(result.reviewer_models, suyos.reviewer_models || {});
+      }
+      for (const l of [...(pc.error ? [`no pude leer los críticos de la corrida (${pc.error}): no descuento`] : []), ...pc.fuera]) process.stderr.write(`⚠️  ${l}\n`);
+    }
+    // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
+    const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
+    if (congelada.error) {
+      process.stderr.write(`🛑 pipeline.js smart-reloop: la vuelta no se lanza — ${congelada.error}. Los revisores no leen la carpeta viva.\n`);
+      process.exitCode = 2;
+      return;
+    }
+    result.frozen = congelada.repos;
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
+    contextoConLaCopia(ctx, congelada.repos);
     result.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
     if (ctx) {
       result.context_file = ctx.context_file;
@@ -6660,6 +7841,30 @@ function main() {
   }
 
   if (cmd === 'check-count') {
+    // contar sin la constancia de que corrieron lo firma el dueño, siempre y antes de contar: con la firma, el registro
+    // de revisores que se lee es el de la sesión destino (sessionLogPath lee la variable que fija fijarDestino)
+    if (args.trustRan) {
+      const ow = ownerWindow();
+      const stateDir = stateDirOf(os.homedir());
+      const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), ...g })}\n`); };
+      // lo que haría inútil la firma, antes de pedirla: sin lista no hay qué confiar, y con los revisores en el registro se
+      // cuentan esos. El registro de otra sesión se lee recién con la firma, así que para ella sólo se mira la lista
+      const antes = () => {
+        if (!args.ran.length) return { codigo: 2, motivo: '--trust-ran confía en la lista de --ran, y el comando no trae --ran: no habría nada que contar' };
+        if (paraOtra) return null;
+        const s = advisorsRunSinceStart();
+        if (s.nuevaCorrida) return { codigo: 2, motivo: 'esta ejecución todavía no lanzó revisores: corré `pipeline.js advisors` y lanzá los que devuelve' };
+        if (s.sawStart && s.ran.length) return { codigo: 2, motivo: 'el registro ya tiene los revisores lanzados: se cuentan sin --trust-ran, sin firma' };
+        return null;
+      };
+      const r = ow.exigir({ firma: 'escape:trust-ran', argv: process.argv.slice(1), propia: PROPIA, anotar, antes,
+        resumen: `contar los revisores de ${args.story ? path.basename(args.story) : 'la corrida'} sin la constancia de que corrieron` });
+      // lo firma la persona: sin su firma no se cuenta
+      const noSeConto = (motivo, codigo) => { process.stderr.write(`🛑 check-count: no se contó sin la firma de la persona — ${motivo}.\n`); process.exit(codigo); };
+      if (r.codigo !== 0) noSeConto(r.motivo, r.codigo);
+      const f = ow.fijarDestino({ r, propia: PROPIA, necesitaMarcador: !!paraOtra, leerMarcador: (sid) => ow.marcadorEn(path.join(stateDir, 'active', `${sid}.json`)) });
+      if (f.codigo !== 0) noSeConto(f.motivo, f.codigo);
+    }
     const state = advisorsRunSinceStart();
     // Una corrida nueva sin `advisors`: la ronda que hay en el registro es de la anterior. Ni se cuenta (sus
     // revisores no vieron este código) ni se acepta el `--ran` declarado: se frena, como sin ningún spawn.
@@ -6687,8 +7892,10 @@ function main() {
       // (sin esto, el fallback exigiría advisors
       // que el orquestador legítimamente no spawneó por descuento → exit 2 falso).
       const recomputed = computeAdvisorSet(args);
-      const disc = computeMechDiscount(recomputed.all, args);
-      expected = (disc && disc.discounted.length) ? disc.kept : recomputed.all;
+      const pc = revisoresPorConfirmar(args);
+      const disc = pc.error ? null : computeMechDiscount(recomputed.all, args);
+      // el revisor de un crítico arreglado: el mismo que suman advisors y smart-reloop
+      expected = sumarPorConfirmar((disc && disc.discounted.length) ? disc.kept : recomputed.all, {}, pc);
       expectedSource = 'recomputado (step5-start sin expected — corrida pre-upgrade o log ausente)' +
         ((disc && disc.discounted.length) ? ` con descuento mech aplicado (${disc.discounted.map((d) => d.name).join(', ')})` : '');
       // El mismo descuento del validador que aplicó el re-loop —sin él,
@@ -6892,7 +8099,7 @@ function main() {
     if (process.env.TYCON_5B_EARLY === '0' || process.env.TYCON_5B_EARLY === '1') {
       try {
         require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'mark-adversarial-gate',
-          JSON.stringify({ early_env: process.env.TYCON_5B_EARLY })], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 10000 });
+          JSON.stringify({ early_env: process.env.TYCON_5B_EARLY })], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], timeout: 10000 });
       } catch (e) {
         // se dice: sin la anotación, el próximo `next` sin la variable vuelve a pedir el temprano que se apagó
         const detalle = String((e && e.stderr) || (e && e.message) || '').trim().split('\n')[0];
@@ -6900,6 +8107,25 @@ function main() {
       }
     }
     const result = computeNext();
+    // La revisión automática del plan que rechazó el plan de esta corrida (la más nueva, de cualquier sesión que la haya
+    // lanzado): se muestra mientras el plan siga igual. Best-effort: leerla nunca rompe la consulta.
+    try {
+      const m = readSessionMarker();
+      const pr = require('./lib/plan-review.js');
+      const c = m && pr.ultimaDelDestino({ estado: stateDirOf(os.homedir()), destino: sessionIdFileKey() });
+      const plan = c && c.veredicto === 'rechazado' ? pr.planDe(m) : null;
+      if (plan && plan.texto && require('crypto').createHash('sha256').update(plan.texto).digest('hex') === c.huellas.plan
+        && c.corrida && c.corrida.startedAt === (m.startedAt || null)) {
+        result.plan_review = { veredicto: c.veredicto, lanzo: c.lanzo, hora: c.hora, hallazgos: c.hallazgos };
+        result.note = `${result.note ? `${result.note} ` : ''}La revisión automática rechazó el plan (${c.hallazgos.length} hallazgo(s), plan_review): corregilo antes de que lo apruebe alguien.`;
+      }
+      if (c && c.aviso) result.plan_review_aviso = c.aviso;
+      // al llegar a «Aprobar el plan» con el plan cerrado: qué toca con su revisión según la matriz de la organización
+      if (m && result.next_step === 'approve-plan') {
+        const a = pr.accionDelPlan({ estado: stateDirOf(os.homedir()), sesion: sessionIdFileKey(), marker: m, home: os.homedir() });
+        if (a && a.decision) result.plan_review_action = a;
+      }
+    } catch { /* sin la revisión, next sale igual */ }
     // Consultar `next` es el momento en que el orquestador ARRANCA ese paso — se anota la
     // hora. Lo escribe marker.js (un solo escritor del marker); él decide no mover un arranque ya
     // anotado ni arrancar un paso completo. Las partes del arranque, el pase adversarial y la prueba en vivo también: su trabajo no puede
@@ -6908,7 +8134,7 @@ function main() {
     if (!result.error && (STEPS_TABLE.byId(result.next_step) || /^(\d|0b|0c|5b|7c)$/.test(String(result.next_step || '')))) {
       try {
         require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'start-step', String(result.next_step)],
-          { stdio: 'ignore', timeout: 10000 });
+          { windowsHide: true, stdio: 'ignore', timeout: 10000 });
       } catch { /* sin arranque: la cuenta lo rotula «estimada», no lo inventa */ }
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -6947,6 +8173,29 @@ function main() {
       process.stdout.write(JSON.stringify({ marked: true, verificado: v.verificado, herramienta: nn(v.herramienta, null) }) + '\n');
       process.exit(0);
     }
+    // la entrada que cerró el agente: sus horas, leídas del resultado de la llamada, son la constancia de lo real
+    if (event === 'stop' && !isNil(args.actionDone)) {
+      const marker = args.story ? null : readSessionMarker();
+      const spec = args.story ? path.resolve(args.story)
+        : marker && marker.storyPath ? path.resolve(marker.repoPath || process.cwd(), marker.storyPath) : null;
+      if (!spec) { process.stderr.write('work-signal stop --action-done: sin marker activo en esta sesión — pasá --story <spec>\n'); process.exit(2); }
+      const v = require('./lib/external-flags.js').horasDeLaAccion({ id: args.actionDone });
+      if (!v.ok) { process.stderr.write(`work-signal stop --action-done: no anoto horas — ${v.motivo}\n`); process.exit(1); }
+      // las horas son de la historia de ese stop (la que nombró, o la del marcador si no nombró ninguna): el cierre de una no
+      // se anota en otra
+      const delMarcador = () => { const m = readSessionMarker(); return m && m.storyPath ? path.resolve(m.repoPath || process.cwd(), m.storyPath) : null; };
+      const delStop = v.storyDelStop ? path.resolve(v.storyDelStop.replace(/^~(?=$|[\\/])/, os.homedir())) : delMarcador();
+      if (!delStop || delStop !== spec) {
+        process.stderr.write(`work-signal stop --action-done: no anoto horas — el work-signal stop fue de ${delStop || 'una historia que no sé'}, no de ${spec}\n`);
+        process.exit(1);
+      }
+      try { require('./lib/real-hours.js').record(os.homedir(), spec, { seconds: v.segundos, action: true }, { herramienta: v.herramienta }); } catch (e) {
+        process.stderr.write(`work-signal stop --action-done: no pude dejar la constancia (${e.code || e.message})\n`);
+        process.exit(1);
+      }
+      process.stdout.write(JSON.stringify({ recorded: true, seconds: v.segundos, hours: Math.round(v.segundos / 36) / 100, herramienta: v.herramienta }) + '\n');
+      process.exit(0);
+    }
     let r;
     try { r = workSignalForRun(event, args.story ? { storyPath: path.resolve(args.story), repo: args.repo ? path.resolve(args.repo) : null } : {}); } catch (e) { r = { ran: false, warnings: [`aviso de trabajo: falló (${e.code || e.message}); sigo sin registrar`] }; }
     if (r.error) { process.stderr.write(`work-signal: ${r.error}\n`); process.exit(1); }
@@ -6960,11 +8209,13 @@ function main() {
         if (!m.ok) process.stderr.write(`work-signal start: el aviso salió pero no marqué la parte — ${m.motivo}\n`);
       }
     }
+    if (event === 'stop' && r.ran && r.action) process.stderr.write('work-signal stop: hacé la acción y dejá las horas con pipeline.js work-signal stop --action-done "<id de la entrada que cerraste>" (con --story si lo pasaste acá)\n');
     process.stdout.write(JSON.stringify(r) + '\n');
     process.exit(0);
   }
 
-  // El pedido de Azure DevOps de la historia, a su estado activo: el arnés lo transiciona y recién ahí marca.
+  // El pedido de Azure DevOps de la historia, a su estado activo, con la estimación vigente de la historia: el arnés lo
+  // transiciona y recién ahí marca.
   if (cmd === 'ado-mark-active') {
     const marker = readSessionMarker();
     const storyPath = args.story ? path.resolve(args.story) : (marker && marker.storyPath) || null;
@@ -6972,16 +8223,29 @@ function main() {
     // el id con el lector común (`work_item:` y su nombre viejo), y la capa de plataforma del árbol que corre
     const raiz = path.join(__dirname, '..', '..', '..');
     let wi = null;
+    let storyId = null;
+    let contenidoStory = '';
     // directo del archivo: `readText` devuelve '' cuando no puede leer, y eso se vería como «no tiene pedido»
-    try { wi = require(path.join(raiz, 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fs.readFileSync(storyPath, 'utf8')); } catch (e) {
+    try {
+      contenidoStory = fs.readFileSync(storyPath, 'utf8');
+      wi = require(path.join(raiz, 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(contenidoStory);
+    } catch (e) {
       // no poder leerlo no es «no tiene pedido»: se dice
       process.stderr.write(`ado-mark-active: no pude leer el pedido de trabajo de la historia (${(e && (e.code || e.message)) || 'error'}); si no se puede, marker.js start-warning ado "<motivo>"\n`);
       process.exit(1);
     }
+    // la estimación nunca frena el paso: sin el número de la historia, el pedido se marca igual y la línea lo dice
+    let estimateMotivo = null;
+    try {
+      storyId = require('./lib/test-scope.js').storyIdOf(contenidoStory);
+      if (!storyId) estimateMotivo = 'la historia no trae `story:` en su frontmatter';
+    } catch (e) {
+      estimateMotivo = `no pude leer el número de la historia (${(e && (e.code || e.message)) || 'error'})`;
+    }
     let repoDir = path.dirname(path.dirname(storyPath));
-    try { repoDir = require('child_process').execFileSync('git', ['-C', path.dirname(storyPath), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || repoDir; } catch (_) { /* sin git: la carpeta de arriba */ }
+    try { repoDir = require('child_process').execFileSync('git', ['-C', path.dirname(storyPath), 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || repoDir; } catch (_) { /* sin git: la carpeta de arriba */ }
     const r = require('./lib/external-flags.js').adoMarkActive({ workItem: wi, repoDir, reopen: !!args.reopen, assignTo: args.assignTo || null,
-      platformJs: path.join(raiz, 'scripts', 'lib', 'platform', 'platform.js') });
+      platformJs: path.join(raiz, 'scripts', 'lib', 'platform', 'platform.js'), storyId, estimateMotivo });
     if (r.marked) {
       const m = marcarHechoExterno('adoMarkedActive', { via: 'ado-mark-active', workItem: wi });
       if (!m.ok) { process.stderr.write(`ado-mark-active: el pedido quedó activo pero no marqué la parte — ${m.motivo}\n`); process.exit(1); }
@@ -7014,7 +8278,7 @@ function main() {
       if (ej) {
         process.stderr.write(require('./lib/adversarial-skip.js').muestra({ story: ej.story, carpeta: ej.carpeta, ejecucion: ej.ejecucion, camino: pedido }).texto);
       } else {
-        process.stderr.write(`🔒 ${pedido} es un pedido de saltear el pase adversarial, no un salteo: sin la firma del dueño el pase corre.\n`
+        process.stderr.write(`🔒 ${pedido} es un pedido de saltear el pase adversarial, no un salteo: sin la firma de una persona el pase corre.\n`
           + '   Todavía no hay una corrida abierta de esta story: la firma se pide cuando el portón del pase lo mire dentro de la corrida (pipeline.js deep-review-gate), que dice los comandos.\n');
       }
     }
@@ -7030,7 +8294,7 @@ function main() {
   }
   if (cmd === 'risk-class') {
     // Guarda de aridad/existencia: sin esto un --files mal expandido cuenta 1
-    // archivo → LOW → `auto_approve_plan: true` (se saltea el checkpoint del plan) Y skip del
+    // archivo → LOW → se saltea la revisión adversarial de la story Y skip del
     // pase adversarial, los dos en silencio. Sólo si vino --files: sin el flag, risk-class cae legítimamente
     // al frontmatter de la story (files_to_create/files_to_modify) y no hay nada que validar.
     // SÓLO la guarda de aridad, no la validación de existencia completa.
@@ -7044,12 +8308,18 @@ function main() {
     // Tampoco un archivo que no está ni en el disco ni en HEAD (la lista con comas). Un borrado pasa.
     const fantasmaErr = archivosFantasma(args);
     if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
-    const result = computeRiskClass({ ...args, runSize: runSizeDelMarcador(args.story) });
-    // Una story con pantalla pide aprobar la maqueta aunque el plan se apruebe
-    // solo. `computeRiskClass` es pura (no sabe la raíz del repo): la maqueta se suma acá, sin tocar el riesgo.
+    // la parte anotada mide el plan; sólo este comando y la revisión del plan la pasan (el pase, el modelo y la revisión
+    // de la historia siguen por la historia entera)
+    const batch = args.batch || batchDelMarcador(args.story);
+    const result = computeRiskClass({ ...args, runSize: runSizeDelMarcador(args.story), batch });
+    // las dos señales, como aviso: no cambian el riesgo ni la delicada
+    const avisos = senalesDe(args.story, args.repo, batch);
+    if (avisos.length) result.warnings = [...(result.warnings || []), ...avisos];
+    // Una story con pantalla pide aprobar la maqueta con el plan. `computeRiskClass` es pura (no sabe la raíz del
+    // repo): la maqueta se suma acá, sin tocar el riesgo.
     if (storyNeedsMockup(args.story)) {
       result.mockup_required = true;
-      if (result.risk === 'LOW') result.note = `${result.note} Story con pantalla: el plan se aprueba solo; la maqueta no (--mockup-approved, steps/${STEPS_TABLE.byId('approve-plan').file} §La maqueta).`;
+      result.note = `${result.note} Story con pantalla: la maqueta la aprueba quien aprueba el plan (--mockup-approved, steps/${STEPS_TABLE.byId('approve-plan').file} §La maqueta).`;
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);
@@ -7114,7 +8384,8 @@ function main() {
   }
   if (cmd === 'deep-review-gate') {
     // Pase adversarial: ¿corre el pase adversarial reproduce-or-refute? {run, model, reason}. Gate = risk-class
-    // NORMAL + overrides. exit 0 siempre (informativo); el orquestador lee `run`.
+    // NORMAL + overrides. Exit 0: el orquestador lee `run`. Exit 3: corre, pero otra sesión tiene su pase en vuelo y va
+    // uno por vez (`waiting_turn`): no se lanza todavía.
     // Misma guarda que risk-class: el default de este gate ES risk-class, así que
     // un --files mal expandido produce un LOW silencioso y sella el pase adversarial como hecho
     // (`deepReviewDone`). Abortar es correcto AUNQUE el comando sea informativo: un veredicto
@@ -7130,6 +8401,9 @@ function main() {
     // La constancia del salteo se lee acá, de la corrida y del registro de la cuenta; un pedido sin ella se muestra.
     const { result, texto: textoDelPedido } = deepReviewGateDeLaCorrida({ args: conModelos, corrida, mostrar: true });
     if (textoDelPedido) process.stderr.write(textoDelPedido);
+    if (conModelos.orgDeepReviewProblem) process.stderr.write(`deep-review-gate: ${conModelos.orgDeepReviewProblem}\n`);
+    for (const p of conModelos.reviewConfigProblems || []) process.stderr.write(`deep-review-gate: ${p.path}: ${p.message}\n`);
+    if (result && result.decision === 'ask' && result.question) process.stderr.write(`deep-review-gate: ${result.question}\n`);
     if (result) decirModelos(result, conModelos.orgModels, avisosDelPorton);
     if (result && result.run === null) {
       // 🔴 No se pudo medir: se dice y se CORTA. «Correr por las dudas» tampoco es gratis — una
@@ -7160,8 +8434,8 @@ function main() {
         && Array.isArray(args.files) && args.files.length && typeof result.run === 'boolean') {
       try {
         const out = require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'mark-adversarial-gate',
-          JSON.stringify({ run: result.run, files: args.files, early_env: nn(process.env.TYCON_5B_EARLY, null) })],
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+          JSON.stringify({ run: result.run, files: args.files, decision: result.decision || null, early_env: nn(process.env.TYCON_5B_EARLY, null) })],
+        { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
         const anotado = JSON.parse(out || '{}');
         if ('early_launch' in result && typeof anotado.early_launch === 'boolean' && anotado.early_launch !== result.early_launch) {
           result.early_launch = anotado.early_launch;
@@ -7171,18 +8445,28 @@ function main() {
         process.stderr.write(`deep-review-gate: no pude anotar el veredicto en la corrida (${e.message.split('\n')[0]}) — \`next\` va a pedir consultar el portón otra vez\n`);
       }
     }
-    // Con otra sesión en su pase adversarial, el turno lo da la coordinadora (guides/coordination.md). Sin coordinadora
-    // designada, o sin otro pase, el veredicto sale igual que siempre.
+    // Con otra sesión en su pase adversarial, o una ejecución grande de pruebas en curso, va una tarea pesada por vez
+    // (guides/coordination.md): sale 3 y dice quién tiene el lugar.
+    // Sin coordinadora designada, o sin ninguna de las dos, el veredicto sale igual que siempre.
     if (result && result.run === true) {
       try {
         const turno = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js'))
           .adversarialTurn({ sessionId: (corrida && corrida.sessionId) || sessionIdFileKey() });
         if (turno) Object.assign(result, turno);
       } catch (e) {
-        process.stderr.write(`deep-review-gate: no pude ver si hay otro pase adversarial en vuelo (${String(e.message).split('\n')[0]})\n`);
+        process.stderr.write(`deep-review-gate: no pude ver si hay otro pase adversarial en vuelo o una ejecución grande de pruebas (${String(e.message).split('\n')[0]})\n`);
       }
     }
+    // las dos señales, como aviso y por la historia entera: no cambian el pase
+    if (result && typeof result === 'object') {
+      const avisos = senalesDe(args.story, args.repo, undefined);
+      if (avisos.length) result.warnings = [...(result.warnings || []), ...avisos];
+    }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    if (result && result.waiting_turn === true) {
+      process.stderr.write(`deep-review-gate: ${result.turn}\n`);
+      process.exit(3);
+    }
     process.exit(0);
   }
   if (cmd === 'timing-report') {
@@ -7309,6 +8593,45 @@ function main() {
       process.stderr.write(`evidence-key: ${e.message}\n`);
       process.exit(2);
     }
+  }
+  if (cmd === 'compare-candidates') {
+    // Los comandos que la historia modifica y existen en main (historia 8.167): cada uno necesita un humo comparado que
+    // lo cubra (`smoke-run.sh --compare`) o una exención firmada (`marker.js compare-waiver`). Por candidato, su repo y
+    // los subcomandos o funciones que el cambio toca. Los repos salen de la corrida de la sesión (lib/save-ok.js); sin
+    // corrida, de `--repo a,b`, o del de la historia. `--json` da la lista entera.
+    if (!args.story) { process.stderr.write('uso: pipeline.js compare-candidates --story <spec.md> [--repo <repo>[,<repo>]] [--json]\n'); process.exit(2); }
+    const storyAbs = path.resolve(args.story);
+    let repos;
+    let m = null;
+    try {
+      m = readSessionMarker();
+      const so = require('./lib/save-ok.js');
+      if (process.argv.includes('--repo')) repos = String(args.repo).split(',').map((r) => path.resolve(r.trim())).filter(Boolean);
+      else if (args.filesDeclarado) repos = [...new Set(args.files.map((f) => so.raizDe(path.resolve(f))).filter(Boolean))];
+      else if (m && m.storyPath) {
+        const hermanos = require('./lib/companion-repos.js').companionRoots(path.resolve(m.repoPath || process.cwd()), storyAbs);
+        repos = so.reposDeLaCorrida({ marker: { ...m, storyPath: path.isAbsolute(m.storyPath) ? m.storyPath : path.resolve(m.repoPath || process.cwd(), m.storyPath) }, hermanos });
+      } else repos = [so.raizDe(storyAbs)].filter(Boolean);
+    } catch (e) { process.stderr.write(`compare-candidates: no pude calcular los repos de la corrida (${e.message})\n`); process.exit(2); }
+    // con la tanda de la corrida, los mismos candidatos que exige el freno de «Preparar»
+    const cpv = require('./lib/compare-previous.js');
+    const tanda = cpv.archivosDeLaTanda(m, storyAbs);
+    const r = cpv.candidatos({ storyPath: storyAbs, repos, files: tanda.files });
+    if (process.argv.includes('--json')) { process.stdout.write(JSON.stringify({ repos, tanda, ...r }, null, 2) + '\n'); process.exit(0); }
+    if (tanda.tanda) process.stderr.write(tanda.files ? `ℹ️  sólo la tanda ${tanda.tanda}\n` : `⚠️  sin parte medible de la tanda ${tanda.tanda}: comparo la historia entera (${tanda.motivo})\n`);
+    for (const a of r.avisos) process.stderr.write(`⚠️  ${a}\n`);
+    // lo que no se pudo mirar no es «sin candidatos»
+    for (const n of r.noMedidos || []) process.stdout.write(`· ${n.archivo} (${path.basename(n.repo)}) — no medido: ${n.motivo}\n`);
+    if (!r.candidatos.length && !r.sinRepo.length) {
+      if (!(r.noMedidos || []).length) process.stdout.write('sin candidatos: la historia no modifica comandos que existen en main. No hay nada que comparar.\n');
+      process.exit(0);
+    }
+    for (const c of r.candidatos) {
+      const que = c.sinSubcomando ? 'el cambio cae fuera de todo subcomando: cubre cualquier humo que corra el archivo' : `subcomandos o funciones que el cambio toca: ${c.subcomandos.join(', ')}`;
+      process.stdout.write(`· ${c.archivo} (${path.basename(c.repo)}) — ${que}\n`);
+    }
+    for (const s of r.sinRepo) process.stdout.write(`· ${s.archivo} — no comparado: sin repo (no está en ningún repo de la corrida): pide exención\n`);
+    process.exit(0);
   }
   if (cmd === 'run-dir') {
     // La carpeta de la corrida de ESTA story: `.advisors/pipeline-runs/<clave>-<sello>/`, la misma que
@@ -7503,7 +8826,7 @@ function main() {
       : 'Sin findings mecánicos.';
     result.note += result.ambiguous.length
       ? ` ${result.ambiguous.length} ambiguo(s) → invocar SOLO: ${result.llm_escalation.join(', ') || 'ninguno'}.`
-      : ' Sin ambiguos → en re-loops (iter≥2) ac-coverage y deferral-tracker quedan descontados del set (MECH-2); en iter 1 SÍ corren (juicio LLM completo). El revisor de cableado, si su paquete está activo, se invoca siempre (mech solo cubre WIRING-C1).';
+      : ` Sin ambiguos → en re-loops (iter≥2) ac-coverage y deferral-tracker quedan descontados del set (MECH-2); en iter 1 SÍ corren (juicio LLM completo). El revisor de cableado, si su paquete está activo, se invoca siempre (mech solo cubre WIRING-C1). ${MECH_NUNCA_SACA}`;
     if (sinEscalar.length) result.note += ` Sin escalar: ${sinEscalar.join('; ')} — el hallazgo queda en el reporte tal cual.`;
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.findings.some((f) => f.severity === 'CRITICAL') ? 2 : 0);
@@ -7520,9 +8843,9 @@ function main() {
     '  node pipeline.js next\n' +
     '       (próximo step + step_file + skips MECÁNICOS evaluados + checks del marker.\n' +
     '       El LLM sigue siendo el loop (H17): lee SOLO el step file que esto indica.)\n' +
-    '  node pipeline.js risk-class     --story <spec.md> [--files ...]\n' +
-    '       (Nivel 2 autonomía: LOW → plan auto-aprobado con anuncio; cualquier\n' +
-    '       criterio fallido → NORMAL → HITL. Push/scope firmado SIEMPRE human-gate.)\n' +
+    '  node pipeline.js risk-class     --story <spec.md> [--files ...] [--repo <dir>]\n' +
+    '       (LOW o NORMAL, y `delicate`: el plan de una story delicada lo aprueba siempre el dev.\n' +
+    '       Uno de rutina lo aprueba el «aprobado» de su revisión. Push/scope firmado SIEMPRE human-gate.)\n' +
     '  node pipeline.js tooling-expected --repo <dir>\n' +
     '       (PIPE-C9: qué tooling ESPERA el pipeline acá — codegraph si hay .codegraph/, engram,\n' +
     '       tool Workflow p/ el pase adversarial. El orquestador cruza contra su harness y AVISA al user si algo\n' +
@@ -7541,6 +8864,7 @@ function main() {
     '                                  [--iter N] [--cost-tier lean|standard|deep] [--allow-missing-files]\n' +
     '       (valida que los --files existan — abort exit 2 ante paths fantasma/vacíos; corre\n' +
     '       mech-check inline y DESCUENTA advisors cubiertos (MECH-2) del set/expected;\n' +
+    '       el descuento nunca saca a un revisor con críticos abiertos por confirmar;\n' +
     '       --iter N>1 emite reloop_model_hints (deep→sonnet). Genera context_file compartido\n' +
     '       + persiste expected[] en el log para check-count. Triggers sobre líneas AGREGADAS.)\n' +
     '  node pipeline.js check-count    [--ran a,b,c]\n' +
@@ -7597,8 +8921,14 @@ function main() {
 // más evadibles/sutiles tienen tests). require() NO ejecuta main().
 module.exports = {
   matchGlob,
+  // los revisores de un crítico arreglado sin confirmar, que vuelven a la vuelta siguiente
+  revisoresPorConfirmar,
   // La configuración `models` de la organización (la usa también on-advisor-run.js)
   orgModels,
+  orgDeepReview,
+  // la configuración de las revisiones y si el dueño está ausente: tests/plan-review.test.js la corre con su HOME
+  revisionDeLaOrganizacion,
+  frenosDelManifiesto,
   aplicarModelosDeRevisores,
   // El cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
   completedWorkHours, harnessTimeTool, gitignoreAppendText, computeMissingBeforeStart,
@@ -7608,6 +8938,11 @@ module.exports = {
   // se exporta la función en vez de duplicar el criterio de scoring, para que las dos capas no
   // puedan elegir carpetas distintas (pieza "revisor ≠ autor").
   resolveRunDir,
+  // el marcador de la sesión, con las rutas de la corrida absolutas (lib/run-dir.js)
+  readSessionMarker,
+  readSessionMarkerStrict,
+  // la clave de la carpeta sin crearla: el chequeo antes de la ventana de firma (marker.js)
+  runDirKey,
   // El portón con la constancia del salteo de la corrida: tests/adversarial-skip-signed.test.js.
   deepReviewGateDeLaCorrida,
   // PIPE-C2 — tests: tests/unit.test.js "PipeC2_*".
@@ -7643,6 +8978,8 @@ module.exports = {
   buildAdvisorContext,
   parseFrontmatterList,
   computeRiskClass,
+  computeDelicate,
+  tocaSuperficieCompartida,
   computeRunSize,
   aplicarTamanoALosRevisores,
   notaDelTamano,

@@ -153,10 +153,13 @@ function siteUrlOk(v) {
 }
 
 // ── el navegador ──────────────────────────────────────────────────────────────────────────────────────────────────
-/** El comando que abre una dirección en el navegador de cada sistema. En Windows, `start` es de cmd y su primer argumento entre comillas es el título. */
+/**
+ * El comando que abre una dirección en el navegador de cada sistema. En Windows, `rundll32` recibe la dirección como un
+ * solo argumento y sin consola: con `cmd /c start`, un `&` de la dirección correría otra orden.
+ */
 function browserCommand(platform, url) {
   if (platform === 'darwin') return ['open', [url]];
-  if (platform === 'win32') return ['cmd', ['/c', 'start', '""', url]];
+  if (platform === 'win32') return ['rundll32', ['url.dll,FileProtocolHandler', url]];
   return ['xdg-open', [url]];
 }
 
@@ -167,6 +170,19 @@ function browserCommand(platform, url) {
  * los lectores y el núcleo de las secciones, en lugar de los del árbol),
  * env, port (0 = al azar). Devuelve { url, port, token, close, done } — `done` se resuelve cuando la página se cierra.
  */
+/**
+ * La dirección del sitio que dice la página, o null: la del perfil del equipo (`site.url` de team-profile.json, la que
+ * leen todas las máquinas) y, sin ella, la de operations.json, que queda de respaldo. Una dirección que no
+ * sirve no cuenta.
+ */
+function siteOf(targets, profile) {
+  const fromProfile = profile && typeof profile === 'object' && profile.site && profile.site.url;
+  if (siteUrlOk(fromProfile)) return fromProfile;
+  const ops = targets.find((x) => x.id === 'operations');
+  const url = ops && ops.data && ops.data.site && ops.data.site.url;
+  return siteUrlOk(url) ? url : null;
+}
+
 function start(opts = {}) {
   const tree = opts.tree;
   const clones = { ...(opts.clones || {}) };
@@ -180,11 +196,14 @@ function start(opts = {}) {
     const r = readTarget(t, clones[t.id], loadReader(tree, t, opts.readers));
     return { ...r, sections: sectionsOf(t, clones[t.id], loaded.core, r.problems) };
   });
-  /** La dirección del sitio, de operations.json (`site.url`), o null; y el aviso que la página dice arriba. */
-  const siteOf = (targets) => {
-    const ops = targets.find((x) => x.id === 'operations');
-    const url = ops && ops.data && ops.data.site && ops.data.site.url;
-    return siteUrlOk(url) ? url : null;
+  /** El perfil del equipo del clon del perfil (el de team-repos.json), o null: de ahí sale la dirección del sitio. */
+  const profileOf = () => {
+    if (!clones.repos) return null;
+    for (const name of ['team-profile.json', 'perfil-equipo.json']) {
+      // con la marca de orden de bytes, como la lee la máquina
+      try { return JSON.parse(fs.readFileSync(path.join(clones.repos, name), 'utf8').replace(/^﻿/, '')); } catch { /* el otro nombre, o ninguno */ }
+    }
+    return null;
   };
   // «sin sitio» sólo si se pudo leer operations.json y no declara uno: si no se pudo leer, no se sabe y se dice
   const noticeOf = (site, targets) => {
@@ -223,7 +242,7 @@ function start(opts = {}) {
     if (req.headers['x-harness-key'] !== token) return send(res, 403, { ok: false, message: 'falta la llave de la página' });
     if (req.method === 'GET' && u.pathname === '/api/state') {
       const targets = state();
-      const site = siteOf(targets);
+      const site = siteOf(targets, profileOf());
       return send(res, 200, { ok: true, targets, site, notice: noticeOf(site, targets), coreProblem: loaded.problem, mailbox: mailboxSummary(tree, opts.mailboxFile) });
     }
     if (req.method !== 'POST') return send(res, 405, { ok: false, message: 'método no permitido' });
@@ -390,4 +409,4 @@ function declaredClones({ env = process.env } = {}) {
   return { repos: pick(p.team), operations: pick(p.operations) };
 }
 
-module.exports = { TARGETS, RETIRED, start, declaredClones, mailboxSummary, readTarget, sectionsOf, browserCommand, cloneProblem, loadReader, loadCore };
+module.exports = { TARGETS, RETIRED, start, siteOf, declaredClones, mailboxSummary, readTarget, sectionsOf, browserCommand, cloneProblem, loadReader, loadCore };

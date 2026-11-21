@@ -72,7 +72,7 @@ const SQLITE = process.env.TYCON_SQLITE_BIN || 'sqlite3';
 // "no hay nada raro".
 function consultar(db, query, timeout) {
   return execFileSync(SQLITE, ['-readonly', db, query],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: timeout || 15000 });
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: timeout || 15000 });
 }
 
 // todas las carpetas de repos de la máquina (puede haber más de una); REPOS_ROOT es la primera
@@ -623,6 +623,9 @@ function engramChunksSinIndexar(rootOverride) {
     // Si el criterio no está, se DICE y se corta: devolver la lista a medias (o vacía) se leería
     // como «miré y está todo bien», que es exactamente la mentira que no se puede publicar.
     if (!criterio) criterio = require('./manifest-engram.js');
+    // git que no contesta si el índice es local no es «versionado»: el repo queda como no medido, con el motivo
+    const modo = criterio.modoDelIndice ? criterio.modoDelIndice(dir) : { modo: null, problema: null };
+    if (modo.problema) { out.push({ repo, dir, error: modo.problema, sinIndexar: [], fantasma: [] }); continue; }
     // Sin referencia de git: el aviso diario mira el estado del checkout, no lo que rompió un commit.
     const r = criterio.cruzar(dir, { contra: null });
     if (r.estado === 'no-medido') {
@@ -647,6 +650,9 @@ function engramChunksSinIndexar(rootOverride) {
     }
     if (r.huerfanos.length || r.fantasmas.length) out.push({ repo, dir, sinIndexar: r.huerfanos, fantasma: r.fantasmas });
   }
+  // En «índice local» el índice no viaja por git y el arreglo es rehacerlo, no repararlo: la fila lo dice
+  // para que el aviso nombre el comando que corresponde.
+  for (const fila of out) if (criterio && !fila.error && criterio.indiceLocal(fila.dir)) fila.indiceLocal = true;
   return out;
 }
 
@@ -803,7 +809,7 @@ function checkMemoryPersistence() {
 function checkCatalogIntegrity() {
   const checks = [];
   try {
-    const out = execFileSync(process.execPath, [path.join(TCG_SCRIPTS, 'tools', 'rules-distill.js'), '--json'], { encoding: 'utf8' });
+    const out = execFileSync(process.execPath, [path.join(TCG_SCRIPTS, 'tools', 'rules-distill.js'), '--json'], { windowsHide: true, encoding: 'utf8' });
     const data = JSON.parse(out);
     checks.push({
       name: 'Catalog: 0 BROKEN-REFS',
@@ -969,7 +975,9 @@ function checkLearningLoop() {
 
   // (b) Si mining está prendido, debe haber observations recientes (<14d).
   if (miningRegistered && miningOn) {
-    const obsDir = path.join(HOME, '.claude/tycon-observations');
+    // donde graba la grabadora: la variable gana, como en la grabadora; si no, la carpeta de los registros sueltos
+    const sueltos = (() => { try { return require('./loose-logs.js').looseLogsDir(HOME); } catch (_) { return null; } })();
+    const obsDir = process.env.TYCON_INSTINCT_OBS_DIR || (sueltos ? path.join(sueltos, 'tycon-observations') : '');
     let fresh = false;
     try {
       fresh = fs.readdirSync(obsDir).some((f) => {
@@ -1141,7 +1149,7 @@ function render(result) {
 // Los helpers del pin del project name se exportan para que su test los ejerza sin correr
 // el scorecard entero (que mide la máquina real y por eso no es determinístico). El guard
 // `require.main` mantiene intacto el uso como CLI.
-module.exports = { scanEngramRepos, pinDe, engramDirsWithMultipleProjects, engramUnexportedByRepo, engramChunksSinIndexar, CROSS_CUTTING_PROJECTS, checkAdvisorCoverage, checkPipelineWiring };
+module.exports = { scanEngramRepos, pinDe, engramDirsWithMultipleProjects, engramUnexportedByRepo, engramChunksSinIndexar, CROSS_CUTTING_PROJECTS, checkAdvisorCoverage, checkPipelineWiring, checkLearningLoop };
 
 if (require.main === module) {
   const result = audit();

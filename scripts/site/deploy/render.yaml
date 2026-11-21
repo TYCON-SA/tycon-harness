@@ -18,12 +18,16 @@ services:
     name: sitio-de-acme
     runtime: image
     plan: free
+    # una sola copia del sitio: la última foto de cada oficina vive en su memoria, y con dos las oficinas se partirían
+    numInstances: 1
     image:
       url: ghcr.io/acme/arnes@sha256:cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe
     healthCheckPath: /livez
     envVars:
       - key: PORT
         value: "8080"
+      - key: SITE_TRUST_PROXY
+        value: "1"
       - key: SITE_AUTH_PROVIDER
         value: oidc
       - key: SITE_PUBLIC_URL

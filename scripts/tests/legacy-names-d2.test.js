@@ -276,7 +276,11 @@ test('T47e · BatchD_StateFilesMigrateOnWrite — download-runs.js: el índice d
   const seal = byNew('download-runs-no-permission.seal');
   const script = path.join(RAIZ, 'scripts', 'metrics', 'download-runs.js');
   const nueva = 'equipo-deva/2.1-2026-09-01T1000.json';
-  const srv = await mailboxServer({ [nueva]: '{"corrida":"nueva"}\n' });
+  // lo que el buzón ya no lista sale del índice: la entrada del índice viejo está en el buzón y ya bajada, así que la
+  // bajada la deja como la anotó el viejo (su etag es la prueba de que el nuevo se la llevó)
+  const anterior = 'viejo/1.1-2026-01-01T1000.json';
+  const contenido = 'abc';
+  const srv = await mailboxServer({ [nueva]: '{"corrida":"nueva"}\n', [anterior]: contenido });
   try {
     const env = (home, az) => cleanEnv({ HOME: home, TYCON_MAILBOX: '1', TYCON_ADO_ORG: 'https://dev.azure.com/prueba',
       TYCON_MAILBOX_JSON: path.join(home, 'cfg.json'), TYCON_MAILBOX_URL_BASE: srv.url, TYCON_AZ_BIN: az });
@@ -284,14 +288,19 @@ test('T47e · BatchD_StateFilesMigrateOnWrite — download-runs.js: el índice d
     const home = toyHomeW('dl');
     fs.writeFileSync(path.join(home, 'cfg.json'), MAILBOX_CFG());
     const az = fakeBin(path.join(home, 'bin'), 'az', 'echo token-bueno');
-    const viejo = `${JSON.stringify({ version: 1, destino: 'cuentadeprueba/corridas', blobs: { 'viejo/1.1-2026-01-01T1000.json': { etag: '0xviejo', size: 3, md5: 'bWQ1', mtimeMs: 1 } } }, null, 1)}\n`;
+    const md5 = require('crypto').createHash('md5').update(contenido).digest('base64');
+    const enDisco = path.join(stateOf(home, 'corridas-buzon'), anterior);
+    fs.mkdirSync(path.dirname(enDisco), { recursive: true });
+    fs.writeFileSync(enDisco, contenido);
+    const viejo = `${JSON.stringify({ version: 1, destino: 'cuentadeprueba/corridas', blobs: { [anterior]: { etag: '0xviejo', size: 3, md5, mtimeMs: fs.statSync(enDisco).mtimeMs } } }, null, 1)}\n`;
     fs.writeFileSync(stateOf(home, base(idx.old)), viejo);
     const r = await run(process.execPath, [script, '--json'], { env: env(home, az) });
     assert.strictEqual(r.status, 0, r.stderr);
     assert.ok(fs.existsSync(path.join(stateOf(home, 'corridas-buzon'), nueva)), `bajó a la carpeta de la juguete: ${r.stderr}`);
     const nuevo = JSON.parse(readOr(stateOf(home, base(idx.new))) || '{}');
-    assert.deepStrictEqual(Object.keys(nuevo.blobs || {}).sort(), [nueva, 'viejo/1.1-2026-01-01T1000.json'],
+    assert.deepStrictEqual(Object.keys(nuevo.blobs || {}).sort(), [nueva, anterior],
       `${base(idx.new)}: trae lo del viejo y lo de esta ejecución`);
+    assert.strictEqual((nuevo.blobs[anterior] || {}).etag, '0xviejo', `${base(idx.new)}: la entrada vieja es la que anotó el viejo, no una bajada nueva`);
     assert.strictEqual(readOr(stateOf(home, base(idx.old))), viejo, `${base(idx.old)}: intacto`);
     // 2 · sin permiso, con un sello viejo de otro día: el nuevo nace con lo de hoy (se reescribe entero por diseño)
     const home2 = toyHomeW('dl-sello');
@@ -639,7 +648,8 @@ test('T47n · BatchD_StateFilesMigrateOnWrite — el instalador copia los cuatro
   for (const e of logs) fs.writeFileSync(path.join(st, base(e.old)), `antes: ${base(e.new)}\n`);
   const r = spawnSync('bash', ['-c', 'source "$1"', '_', bloque], { encoding: 'utf8', timeout: 20000,
     // PROFILE_FULL: lo fija el instalador antes de este bloque (el rescate y la recolección son de full)
-    env: cleanEnv({ HOME: home, SCRIPT_DIR: sd, CHECK_ONLY: '0', TYCON_INTEG_MAILBOX: '1', PROFILE_FULL: '1', ORDER_LOG: orden }) });
+    // STATE_DIR: lo define el instalador arriba de este bloque, que crea la carpeta antes de lanzar los pasos
+    env: cleanEnv({ HOME: home, SCRIPT_DIR: sd, CHECK_ONLY: '0', TYCON_INTEG_MAILBOX: '1', PROFILE_FULL: '1', ORDER_LOG: orden, STATE_DIR: st }) });
   assert.strictEqual(r.status, 0, r.stderr);
   for (let n = 0; n < 60 && (readOr(orden) || '').split('\n').filter(Boolean).length < 4; n++) await new Promise((ok) => setTimeout(ok, 250));
   assert.strictEqual(readOr(orden), 'rescate\nrecoleccion\nsubida\nbajada\n', 'la tanda de fondo corrió los cuatro pasos, en orden');
@@ -682,8 +692,12 @@ test('T47p · BatchD_StateFilesMigrateOnWrite — un estado viejo que no se deja
   } finally { fs.chmodSync(cerrado, 0o755); }
 });
 
-/** El bloque de fondo del instalador real en un temporal, como en T47n; `prep(st)` siembra el estado antes de correrlo. */
-async function installerBlock(p, prep) {
+/**
+ * El bloque de fondo del instalador real en un temporal, como en T47n; `prep(st)` siembra el estado antes de correrlo.
+ * `extra(st)` devuelve variables que pisan el ambiente de siempre; con `esperar: false` no espera los cuatro pasos (el
+ * caso que no lanza ninguno no tiene nada que esperar).
+ */
+async function installerBlock(p, prep, { extra = () => ({}), esperar = true } = {}) {
   const src = fs.readFileSync(path.join(RAIZ, 'scripts', 'install-tycon-hooks.sh'), 'utf8');
   let i = src.indexOf('# Rescate del hilo y el consumo de las ejecuciones del pipeline');
   i = src.lastIndexOf('# ====', i);
@@ -705,8 +719,10 @@ async function installerBlock(p, prep) {
   }
   prep(st);
   const r = spawnSync('bash', ['-c', 'source "$1"', '_', bloque], { encoding: 'utf8', timeout: 20000,
-    // PROFILE_FULL: lo fija el instalador antes de este bloque (el rescate y la recolección son de full)
-    env: cleanEnv({ HOME: home, SCRIPT_DIR: sd, CHECK_ONLY: '0', TYCON_INTEG_MAILBOX: '1', PROFILE_FULL: '1', ORDER_LOG: orden }) });
+    // PROFILE_FULL: lo fija el instalador antes de este bloque (el rescate y la recolección son de full); STATE_DIR
+    // también, y el bloque crea la carpeta antes de lanzar los pasos
+    env: cleanEnv({ HOME: home, SCRIPT_DIR: sd, CHECK_ONLY: '0', TYCON_INTEG_MAILBOX: '1', PROFILE_FULL: '1', ORDER_LOG: orden, STATE_DIR: st, ...extra(st) }) });
+  if (!esperar) return { r, st, orden };
   for (let n = 0; n < 60 && (readOr(orden) || '').split('\n').filter(Boolean).length < 4; n++) await new Promise((ok) => setTimeout(ok, 250));
   await new Promise((ok) => setTimeout(ok, 300));
   return { r, st, orden };
@@ -732,6 +748,18 @@ test('T47q · BatchD_StateFilesMigrateOnWrite — si el instalador no puede llev
       assert.ok((readOr(path.join(st, nuevo)) || '').startsWith(`antes: ${nuevo}\n`), `${nuevo}: se llevó igual`);
     }
   } finally { if (st0) try { fs.chmodSync(path.join(st0, base(cerrado.old)), 0o644); } catch (_) { /* */ } }
+});
+
+// La carpeta de estado que no se puede crear: el bloque lo dice y no lanza ningún paso (los registros no tendrían dónde ir).
+test('T16 BatchD_StateDirNotCreatable_SaysSoAndLaunchesNothing @story-8.268 @ac-16', { skip: SKIP_PUBLIC }, async () => {
+  const { r, orden } = await installerBlock('inst-no-dir', () => {}, {
+    extra: (st) => { const archivo = path.join(st, 'un-archivo'); fs.writeFileSync(archivo, 'x\n'); return { STATE_DIR: path.join(archivo, 'x') }; },
+    esperar: false,
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stderr, /no se pudo crear/);
+  await new Promise((ok) => setTimeout(ok, 500));   // un paso lanzado de fondo, si lo hubiera, tendría tiempo de anotarse
+  assert.strictEqual(readOr(orden) || '', '', 'no se lanzó ningún paso');
 });
 
 // un nombre de estado viejo que quede en agent-skills también

@@ -19,6 +19,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync, execFileSync } = require('child_process');
+// --trust-ran lo firma el dueño en la ventana de permiso; acá se da por pasada
+const { conVentana } = require('../../../../scripts/tests/lib/window-passed.js');
 
 const PIPELINE = path.join(__dirname, '..', 'pipeline.js');
 const SID = 'test-check-count-docs-only';
@@ -49,7 +51,7 @@ function correr(home, repo, args) {
     cwd: repo, encoding: 'utf8', timeout: 60000,
     // ningún paquete: la casa de juguete no tiene arnés que diga cuáles activa la organización, y la prueba mide el set
     // de revisores de un diff de documentación, no los paquetes
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID, TYCON_PACKS_DEFAULT: 'none' },
+    env: (args.includes('--trust-ran') ? conVentana : (e) => e)({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID, TYCON_PACKS_DEFAULT: 'none' }),
   });
 }
 

@@ -32,7 +32,7 @@ const { matchGlob, advisorAffectedByDelta, buildStoryDigest, parseFrontmatterLis
   computeGitignoreNeeds,
   normalizeFindingRecord } = require(path.join(SCRIPTS, 'pipeline.js'));
 const checks = require(path.join(SCRIPTS, 'lib', 'story-checks.js'));
-const { fakeHomeEnv, ponerCarpetaPersonal } = require(path.join(__dirname, 'lib', 'fake-home.js'));
+const { fakeHomeEnv, ponerCarpetaPersonal, conCarpetaPersonal } = require(path.join(__dirname, 'lib', 'fake-home.js'));
 
 // ── isGitCommit — corpus de detección + evasión ──────────────────────────────
 test('isGitCommit detecta commits directos y variantes', () => {
@@ -588,6 +588,11 @@ test('parsePipelinesBlock: forma de LISTA (story-format §1.1) — antes devolv�
   assert.deepEqual(b.acsPending, [8]);
 });
 
+test('parsePipelinesBlock: el título de cada tanda, y la lista sin sangría', () => {
+  const p = checks.parsePipelinesBlock('---\nstory: "1.1"\npipelines:\n- name: A\n  title: "Con # adentro"\n  status: done\n- name: B\n  title: Sin comillas   # comentario\n  status: in-progress  # hoy\nother: x\n---\n');
+  assert.deepEqual(p.map((x) => [x.name, x.title, x.status]), [['A', 'Con # adentro', 'done'], ['B', 'Sin comillas', 'in-progress']]);
+});
+
 test('deferredAcs: AC en acs_pending de un pipeline no-done cuenta como diferido', () => {
   assert.deepEqual([...checks.deferredAcs(SAMPLE_STORY_LIST)], [8]);
   // un pipeline `done` NO difiere sus acs
@@ -675,7 +680,7 @@ test('computeRiskClass: story chica sin firmas ni SQL → LOW', () => {
   try {
     const r = computeRiskClass({ story: tmp, files: [] });
     assert.equal(r.risk, 'LOW');
-    assert.equal(r.auto_approve_plan, true);
+    assert.ok(!('auto_approve_plan' in r), 'con LOW el plan no se aprueba solo (story 1.29)');
   } finally { fs.unlinkSync(tmp); }
 });
 
@@ -819,6 +824,7 @@ test('computeDeepReviewGate: escalación por complejidad — la story pesada va 
 test('DeepReviewGate_NuncaOfreceFable — ninguna combinación del portón ofrece Fable ni manda a preguntar por él', () => {
   const heavy = path.join(os.tmpdir(), `dr-heavy-nf-${process.pid}.md`);
   const normal = path.join(os.tmpdir(), `dr-normal-nf-${process.pid}.md`);
+  const homeVacia = fs.mkdtempSync(path.join(os.tmpdir(), 'dr-home-nf-'));
   fs.writeFileSync(heavy, HEAVY_STORY);
   fs.writeFileSync(normal, '---\nstory: "1.1"\n---\n# x\n');
   const base = { repo: os.tmpdir(), files: [] };
@@ -835,13 +841,16 @@ test('DeepReviewGate_NuncaOfreceFable — ninguna combinación del portón ofrec
       assert.doesNotMatch(JSON.stringify(g), /requires_user_approval|preguntar al user/, `${donde}: no manda a preguntar por un modelo`);
     };
     for (const c of combinaciones) sinFable(computeDeepReviewGate({ ...base, ...c }), JSON.stringify(c).slice(0, 120));
-    // y por el comando real, con la story pesada
+    // y por el comando real, con la story pesada. Con una HOME vacía: el comando sale 3 si otra sesión de la máquina tiene
+    // un pase adversarial en vuelo, y eso no es lo que se prueba acá.
     const { spawnSync } = require('node:child_process');
-    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'pipeline.js'), 'deep-review-gate', '--repo', os.tmpdir(), '--story', heavy], { encoding: 'utf8' });
+    const env = { ...process.env, HOME: homeVacia, USERPROFILE: homeVacia };
+    delete env.TYCON_HOME;
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'pipeline.js'), 'deep-review-gate', '--repo', os.tmpdir(), '--story', heavy], { encoding: 'utf8', env });
     assert.equal(r.status, 0, r.stderr);
     sinFable(JSON.parse(r.stdout), 'el comando deep-review-gate');
     assert.doesNotMatch(r.stderr, /fable/i, 'el comando tampoco lo dice por la salida de error');
-  } finally { fs.unlinkSync(heavy); fs.unlinkSync(normal); }
+  } finally { fs.unlinkSync(heavy); fs.unlinkSync(normal); fs.rmSync(homeVacia, { recursive: true, force: true }); }
 });
 
 // ── computeToolingExpected — PIPE-C9 tooling esperado ────────────────────────
@@ -1172,7 +1181,7 @@ test('writeFollowups + followups-status: idempotente, preserva [x], acepta shape
   assert.equal(st.open, 2); assert.equal(st.has_section, true);
 
   // dev marca SEC-C3 resuelto a mano.
-  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').split('- [ ] **[CRITICAL]** SEC-C3').join('- [x] **[CRITICAL]** SEC-C3'));
+  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace(/- \[ \] \*\*\[CRITICAL\]\*\* SEC-C3/g, '- [x] **[CRITICAL]** SEC-C3'));
   // 2da escritura: shape Step6 (rule_id/disposition) + 1 nuevo. Debe preservar SEC-C3 [x].
   const f2 = path.join(dir, 'f2.json');
   fs.writeFileSync(f2, JSON.stringify([
@@ -1364,7 +1373,22 @@ test('resolveRunDir: prefiere dir con archivos sobre stray vacío; create cuando
   fs.rmSync(empty, { recursive: true, force: true });
 });
 
+// writeFindings cruza con los registros de la carpeta de estado de la carpeta personal: con la real, lo que lanzaron
+// otras sesiones de la máquina entra al cruce. Corre con una carpeta personal propia y sin TYCON_HOME (con ella, la
+// casa propia sale de la variable y no de la carpeta de juguete).
 test('writeFindings + findings-status: escribe validado, status pasa de missing(exit3) a present', () => {
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-home-'));
+  const tyconHome = process.env.TYCON_HOME;
+  delete process.env.TYCON_HOME;
+  try {
+    conCarpetaPersonal(casa, writeFindingsEscribeValidado);
+  } finally {
+    if (tyconHome !== undefined) process.env.TYCON_HOME = tyconHome;
+    fs.rmSync(casa, { recursive: true, force: true });
+  }
+});
+
+function writeFindingsEscribeValidado() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-'));
   const runDir = path.join(repo, '.advisors', 'pipeline-runs', '2.2-20260101');
   fs.mkdirSync(runDir, { recursive: true });
@@ -1402,7 +1426,7 @@ test('writeFindings + findings-status: escribe validado, status pasa de missing(
   assert.equal(written[1].severity, 'CRITICAL');
   assert.equal(written[1].disposition, 'fixed');
   fs.rmSync(repo, { recursive: true, force: true });
-});
+}
 
 // ── REGRESIÓN: `marker.js set` NO debe borrar los campos que no enumera ──────────────────────
 // Si el objeto que construye `cmdSet` fuera un whitelist cerrado, todo lo NO enumerado se perdería en
@@ -1663,12 +1687,19 @@ function gatesLines(fakeHome) {
   const f = path.join(fakeHome, '.claude', '.tycon-pipeline', 'gates.log');
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 }
-// El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con sus N confirmados.
+// El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con sus N confirmados y la prueba de cada lente
+// limpia guardada al lado.
 function resultadoMedido(dir, n) {
   const archivo = path.join(dir, `resultado-${n}-${process.hrtime.bigint()}.json`);
+  const prueba = (l) => {
+    const d = path.join(dir, 'step-05b-probes', `caza-${l}`);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), 'node probe.js\n→ ok\n');
+    return d;
+  };
   fs.writeFileSync(archivo, JSON.stringify({
     confirmed: Array.from({ length: n }, (_v, k) => ({ lens: 'l', summary: `h${k}` })),
-    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true,
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0, probe_dir: prueba(l) })), lentes_sin_medir: [], detalle: [], medido: true,
   }));
   return archivo;
 }
@@ -1857,7 +1888,7 @@ test('post-revision: END-TO-END — el hook de commit avisa, no frena, y lo mide
   git('init', '-q', '.');
   git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init');
   const SID = 'sess-postrev';
-  writeFakeMarker(fakeHome, SID, { repoPath: repo, storyId: '7.7', iterations: { 1: { ts: '2026-09-10T21:39:39.000Z', filesSnapshot: [] } } });
+  writeFakeMarker(fakeHome, SID, { repoPath: repo, storyPath: undefined, storyId: '7.7', iterations: { 1: { ts: '2026-09-10T21:39:39.000Z', filesSnapshot: [] } } });
   fs.writeFileSync(path.join(repo, 'database', '054_Cleanup.sql'), 'PRINT (SELECT 1);\n');
   execFileSync(process.execPath, [path.join(SCRIPTS, 'on-edit.js')], {
     input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Write', session_id: SID,
@@ -1865,6 +1896,8 @@ test('post-revision: END-TO-END — el hook de commit avisa, no frena, y lo mide
     env: { ...process.env, ...fakeHomeEnv(fakeHome) }, encoding: 'utf8', stdio: 'pipe',
   });
   git('add', 'database/054_Cleanup.sql');
+  // el commit de la corrida va con el ok de guardar
+  require('./lib/save-ok-lab.js').firmarGuardado(path.join(fakeHome, '.claude', '.tycon-pipeline', 'active', `${SID}.json`), [repo]);
   const res = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-pre-commit.js')], {
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', session_id: SID, cwd: repo,
       tool_input: { command: 'git commit -m "x"' } }),
@@ -2342,7 +2375,7 @@ test('qa-guide gate: el mensaje trae el comando exacto para generarla', () => {
     storyPath: '/r/specs/e/stories/S1.md',
     guidePath: '/r/specs/e/qa/S1-guia-qa.html',
   });
-  assert.match(msg, /qa-guide\.js --story/, 'dice CÓMO generarla, no sólo que falta');
+  assert.match(msg, /qa-guide\.js" --story/, 'dice CÓMO generarla, no sólo que falta');
   assert.match(msg, /S1\.md/);
   assert.equal(commitGate.qaGuideMessage('ok', {}), '', 'sin hallazgo, sin ruido');
 });
@@ -2916,7 +2949,7 @@ test('Docs_IncidentAndHeader — el caso, la cabecera y la ficha dicen lo mismo 
   // La cabecera no cita el caso: la guía de estilo de código saca de los comentarios las referencias internas. El
   // camino de vuelta al caso es la tabla del registro, que se mira abajo.
   assert.ok(!/case-firmas-ramas-paralelas-2026-10-07/.test(cabecera), 'sin citar el caso en el código');
-  const piezas = fs.readFileSync(path.join(raiz, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const piezas = require('../../../../scripts/tests/lib/pieces-guide.js').piecesText(raiz);
   assert.match(piezas, /runtime-waiver\.js — el registro de firmas/, 'la ficha de la pieza existe');
   // La ficha se publica: dice la regla y su porqué, sin enlazar el caso. El camino de vuelta es
   // la tabla del registro, que anota qué guía y qué sección lo citaba.
@@ -3316,9 +3349,9 @@ test('foto de iteración: la llamada manual no pisa la automática, y el re-loop
   ].join('\n') + '\n');
 
   const env = { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID };
-  // el tope de vueltas al máximo (el ajuste de la máquina): acá se mide la foto de la vuelta 12, no el tope
+  // las vueltas extra ya firmadas: acá se mide la foto de la vuelta 12, no el tope
   fs.mkdirSync(path.join(fakeHome, '.claude', '.tycon-pipeline'), { recursive: true });
-  fs.writeFileSync(path.join(fakeHome, '.claude', '.tycon-pipeline', 'review-max-rounds.json'), '{ "max_rounds": 99 }\n');
+  fs.appendFileSync(path.join(fakeHome, '.claude', '.tycon-pipeline', 'gates.log'), Array.from({ length: 30 }, (_, i) => JSON.stringify({ name: 'extra-round', status: 'ok', story: '2.5', iter: i + 1 })).join('\n') + '\n');
   const correr = (script, args, extraEnv) => cp.spawnSync(
     process.execPath, [path.join(SCRIPTS, script), ...args],
     { env: { ...env, ...(extraEnv || {}) }, cwd: repo, encoding: 'utf8' },
@@ -3884,11 +3917,13 @@ test('T18 TestGate_SuitesJson_DeferredInTestsResult — story 7.15: la diferida 
   assert.deepEqual(art2.totals.failures, ['diferible.test.sh']);
   assert.ok(fs.existsSync(path.join(b, '.advisors', 'dod-runtime', '9.2-tests-result.json')));
 
-  // 🔴 Sin marcador ni TYCON_COVERAGE_BASE la base cae a HEAD y lo commiteado
-  //    no se ve → «no sé» → corre todo, aunque la story diga que no toca publicación.
+  // 🔴 Sin marcador ni TYCON_COVERAGE_BASE la base es la bifurcación con main (gate-base-fork.test.js T9); sin rama
+  //    principal cae a HEAD y lo commiteado no se ve → «no sé» → corre todo, aunque la story diga que no toca
+  //    publicación.
   const c = armarArnes();
+  execFileSync('git', ['-C', c, 'branch', '-q', '-m', 'sin-principal'], { stdio: 'ignore' });
   const r3 = runTestGate(c, path.join(c, 'specs', 'no-toca.md'), fakeHome);
-  assert.notEqual(r3.status, 0, 'con la base por defecto (HEAD) no se difiere: la diferible corre');
+  assert.notEqual(r3.status, 0, 'sin rama principal la base cae a HEAD y no se difiere: la diferible corre');
   assert.match(r3.stdout + r3.stderr, /no pude saber qué archivos toca la story/);
 
   for (const d of [a, b, c, fakeHome]) fs.rmSync(d, { recursive: true, force: true });
@@ -5826,13 +5861,18 @@ test('ProyeccionDelRunDirAlRepoDeLaStory_SoloRosterYFindings', () => {
   assert.equal(projectRunToStoryRepo(runDir, path.join(codeRepo, 'specs-x.md')).projected, false);
   assert.equal(mismo.projected, false);
 
-  // write-findings de verdad, con la story en otro repo: proyecta y lo dice.
+  // write-findings de verdad, con la story en otro repo: proyecta y lo dice. Sin una corrida abierta, la carpeta que ya
+  // tiene su findings.json se nombra a propósito (--run-dir). Con una carpeta personal propia y sin TYCON_HOME: el cruce
+  // de write-findings lee los registros de la carpeta de estado, y la real trae lo que lanzaron otras sesiones.
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'proj-home-'));
+  const env = { ...process.env, ...fakeHomeEnv(casa) };
+  delete env.TYCON_HOME;
   const out = JSON.parse(execFileSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'write-findings',
-    '--story', story, '--repo', codeRepo, '--findings', '-'], { encoding: 'utf8', input: '[]' }));
+    '--story', story, '--repo', codeRepo, '--run-dir', runDir, '--findings', '-'], { encoding: 'utf8', input: '[]', env }));
   assert.ok(out.wrote && out.projected_to_story_repo, `write-findings proyecta al repo de la story: ${JSON.stringify(out)}`);
   assert.ok(fs.existsSync(path.join(out.projected_to_story_repo, 'findings.json')));
 
-  for (const d of [project, codeRepo]) fs.rmSync(d, { recursive: true, force: true });
+  for (const d of [project, codeRepo, casa]) fs.rmSync(d, { recursive: true, force: true });
 });
 
 // El registro de aprobaciones viaja con la misma proyección: une líneas, nunca pisa.
@@ -6701,17 +6741,20 @@ function bloque10b() {
   return s.slice(i, fin < 0 ? s.length : fin);
 }
 
-test('10b: en modo pr el latido recibe la punta de la source, no el sha del merge de Azure', () => {
-  // 🔴 Un texto que dijera «--merge <sha del merge>» sin distinguir modo hace fallar las cuatro aserciones de abajo.
+// Un pedido abierto no es una fusión. En modo pr el latido no va con la punta de la source al abrir el pedido (el
+// latido la rechaza: no está en main): se pide cuando el pedido entra, con el commit que dejó en main.
+test('10b: en modo pr el latido se pide cuando el pedido entra, con el commit que dejó en main', () => {
   const b = bloque10b();
   assert.ok(!/--merge <sha del merge>/.test(b),
-    '10b sigue mandando «--merge <sha del merge>»: en modo pr ese sha no existe todavía');
-  assert.match(b, /PUNTA DE LA SOURCE/,
-    '10b no nombra la punta de la source como el sha del modo pr');
-  assert.match(b, /el que anotó el ledger/,
-    '10b no dice que el sha que paga la deuda es el que anotó el ledger');
+    '10b sigue mandando «--merge <sha del merge>» sin distinguir modo');
+  assert.match(b, /no se corre el latido al abrir el pedido/,
+    '10b no dice que en modo pr el latido no se corre al abrir el pedido');
+  assert.match(b, /el commit que el pedido dejó en main/,
+    '10b no dice que se reclama el commit que el pedido dejó en main');
+  assert.match(b, /el que reclama el ledger/,
+    '10b no dice que el sha que paga la deuda es el que reclama el ledger');
   // El modo `push` no se toca: ahí el sha SÍ es el del merge recién pusheado.
-  assert.match(b, /En modo `push` ese sha es el del merge/,
+  assert.match(b, /En modo `push` es el del merge/,
     '10b dejó de decir qué sha va en modo push');
 });
 
@@ -6786,46 +6829,36 @@ test('10b: el comando que rescata el sha del ledger CORRE — devuelve la entrad
 // Y `org`/`proyecto`/`repo` escritos a ojo son como se termina apuntando `az` al proyecto
 // equivocado (`Acme` contra `Acme Logistica`).
 // El texto es lo único que el agente lee, así que el texto es lo que se prueba.
-const PASO_9B = path.join(__dirname, '..', '..', '..', 'tycon-merge-to-main', 'steps', 'step-09b-create-pr.md');
+const PASO_9B = path.join(__dirname, '..', '..', '..', 'tycon-merge-to-main', 'steps', 'step-09b-create-change-request.md');
 const leer9b = () => fs.readFileSync(PASO_9B, 'utf8');
 
 test('9b: la rama source efímera se borra al completar, y la lista de larga vida está en UN solo lugar', () => {
-  // 🔴 Si los tres `--delete-source-branch` dijeran `false` y no existiera ninguna lista, las cuatro aserciones fallarían.
   const s = leer9b();
-  assert.ok(!/--delete-source-branch false/.test(s),
-    '9b sigue con `--delete-source-branch false` fijo: una rama efímera queda viva después del merge');
-  assert.match(s, /RAMAS_DE_LARGA_VIDA="[^"]*\bdev\b[^"]*"/,
-    '9b no declara la lista de ramas de larga vida');
-  // Los TRES puntos donde `az` manda la opción usan la variable: si uno se olvida, el `az` que
-  // gana es el último y la rama sobrevive sin que nada avise.
-  assert.equal((s.match(/--delete-source-branch "\$BORRAR_SOURCE"/g) || []).length, 3,
-    '9b no usa $BORRAR_SOURCE en los tres --delete-source-branch (update de 9b.2, create y update de 9b.3)');
+  assert.ok(!/--delete-source-branch false|"deleteSourceBranch":\s*false/.test(s),
+    '9b fija deleteSourceBranch en false: una rama efímera queda viva después del merge');
+  assert.match(s, /`dev`, `develop`, `main` y `master`/, '9b no declara la lista de ramas de larga vida');
+  assert.match(s, /`deleteSourceBranch`: `false` si la rama de origen es de larga vida, `true` si no/,
+    '9b no dice cómo sale deleteSourceBranch de la lista');
   // Un solo lugar: la lista no puede estar también en el SKILL.md.
   const skill = fs.readFileSync(MERGE_SKILL, 'utf8');
-  assert.ok(!/RAMAS_DE_LARGA_VIDA|dev develop main/.test(skill),
+  assert.ok(!/RAMAS_DE_LARGA_VIDA|dev develop main|`dev`, `develop`, `main`/.test(skill),
     'la lista de ramas de larga vida quedó duplicada en el SKILL.md: dos copias se separan solas');
 });
 
-test('9b: org/proyecto/repo se derivan del remoto origin con identidadAzure(), no a ojo', () => {
-  // 🔴 Un step que escribe `--org <org> --project <proj>` como marcadores y sólo dice, en un edge case, que «sale de
-  // git remote get-url origin» —sin comando— no pasa.
+test('9b: el repo del pedido sale del plan, que lo deriva del remoto origin, no a ojo', () => {
   const s = leer9b();
-  assert.match(s, /identidadAzure/, '9b no usa el parser del arnés');
+  assert.match(s, /Salen del remoto `origin`,\s+nunca del nombre de la carpeta/, '9b no dice de dónde sale el repo');
   assert.ok(!/--org <org>|--project <proj>|--repository <repo-name>/.test(s),
     '9b todavía tiene org/proyecto/repo como marcadores para completar a ojo');
-  assert.match(s, /read -r ORG; read -r PROJ; read -r REPO_NAME/,
-    '9b no lee los tres valores del parser');
-  // La URL del remoto es texto de afuera: no se evalúa como comando.
-  assert.ok(!/eval "\$\(node/.test(s), '9b evalúa la salida del parser: la URL del remoto es texto de afuera');
-  assert.match(s, /exit 3/, '9b no dice qué pasa si el remoto no es de Azure DevOps');
+  for (const k of ['org', 'project', 'name', 'ghRepo']) assert.match(s, new RegExp(`\`${k}\``), `9b no nombra el campo ${k} del plan`);
 });
 
-test('9b: el PR con conflictos tiene su edge case, y se verifica leyendo mergeStatus', () => {
+test('9b: el pedido con conflictos tiene su edge case, y el skill propone cómo destrabarlo', () => {
   const s = leer9b();
-  assert.match(s, /CONFLICTOS con el target/, '9b no cubre el PR con conflictos');
-  assert.match(s, /mergeStatus/, '9b no dice cómo se detecta un PR que no puede mergear');
-  assert.match(s, /git -C <repo> merge origin\/<target>/, '9b no propone cómo destrabarlo');
-  assert.match(s, /queued/, '9b no dice cómo verificar que se destrabó (ADO recalcula la mezcla)');
+  assert.match(s, /Conflictos con la destino/, '9b no cubre el pedido con conflictos');
+  assert.match(s, /`conflict: true`/, '9b no dice cómo se detecta un pedido que no puede mergear');
+  assert.match(s, /git -C <repo> merge 'origin\/<target>'/, '9b no propone cómo destrabarlo');
+  assert.match(s, /re-encola la validación/, '9b no avisa que destrabarlo re-encola la validación');
 });
 
 // El parser que el step manda usar tiene que existir y entender las tres formas de remoto del equipo.
@@ -7587,8 +7620,9 @@ test('Step9_SumsSecondsFromStop @story-7.40 @ac-2', () => {
 function cerrarSinPasos(extra) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cierre-sin-pasos-'));
   const sid = 'sid-cierre-sin-pasos';
-  writeFakeMarker(home, sid, { storyId: 'S9', repoPath: path.join(home, 'no-existe'), stepsCompleted: [0], stepsPending: [1, 2, 3], ...extra });
-  const r = require('child_process').spawnSync(process.execPath, [MARKER, 'clear'],
+  // sin story en el disco y con cambios sin el ok de guardar: el cierre es `clear --discard`
+  writeFakeMarker(home, sid, { storyId: 'S9', storyPath: undefined, repoPath: path.join(home, 'no-existe'), stepsCompleted: [0], stepsPending: [1, 2, 3], ...extra });
+  const r = require('child_process').spawnSync(process.execPath, [MARKER, 'clear', '--discard'],
     { env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: sid, TYCON_NO_RUN_CHANGE: '1' }, encoding: 'utf8' });
   const state = path.join(home, '.claude', '.tycon-pipeline');
   let bypass = '';
@@ -7687,5 +7721,191 @@ test('CierreSinPasos_CuentaLoCambiadoEnGit @story-7.33 @ac-1 @ac-2', () => {
     assert.deepEqual([...c.lineas[0].sample].sort(), ['a.js', 'nuevo.js']);
   } finally {
     for (const d of [c.home, repo]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('T9 GuionDeMedicion_NoEsCodigo @story-1.32 @ac-8', () => {
+  const ts = (m) => `2026-10-29T12:${String(m).padStart(2, '0')}:00.000Z`;
+  // (a) el guion de medición de la carpeta de medición del repo no es el primer código
+  const a = [{ path: '/r/tasks/measurement-8.44-piezas/measure.js', ts: ts(1) },
+    { path: '/r/scripts/tests/a.test.js', ts: ts(2) }, { path: '/r/scripts/a.js', ts: ts(3) }];
+  const ra = atdd.computeAtddOrder(a, '/r', { declarados: [] });
+  assert.equal(ra.verdict, 'green', ra.reason);
+  assert.equal(ra.firstImpl, '/r/scripts/a.js');
+  // sin lista (el camino del commit, fuera del pipeline) tampoco cuenta
+  assert.equal(atdd.computeAtddOrder(a, '/r').verdict, 'green');
+  // (b) el resto de `tasks/` sigue siendo código
+  const b = [{ path: '/r/tasks/worker.py', ts: ts(1) }, { path: '/r/tests/test_worker.py', ts: ts(2) }];
+  assert.equal(atdd.computeAtddOrder(b, '/r', { declarados: [] }).verdict, 'blocked');
+  // (c) declarado en la story, es código de la story
+  const c = [{ path: '/r/tasks/measurement-x/a.js', ts: ts(1) }, { path: '/r/tests/a.test.js', ts: ts(2) }];
+  const rc = atdd.computeAtddOrder(c, '/r', { declarados: ['tasks/measurement-x/a.js'] });
+  assert.equal(rc.verdict, 'blocked');
+  assert.equal(rc.firstImpl, '/r/tasks/measurement-x/a.js');
+  // (d) una carpeta de medición que no cuelga de la raíz cuenta como código
+  const d = [{ path: '/r/otro/tasks/measurement-x/a.js', ts: ts(1) }, { path: '/r/tests/a.test.js', ts: ts(2) }];
+  assert.equal(atdd.computeAtddOrder(d, '/r', { declarados: [] }).verdict, 'blocked');
+  // el freno previo usa el mismo juicio
+  const base = { repoPath: '/r', priorPaths: [], storyHasTests: true, stepsCompleted: [], declarados: [] };
+  assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/tasks/measurement-8.44-piezas/measure.js' }).action, 'pass');
+  assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/tasks/worker.py' }).action, 'block');
+  assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/tasks/measurement-x/a.js', declarados: ['tasks/measurement-x/a.js'] }).action, 'block');
+  assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/otro/tasks/measurement-x/a.js' }).action, 'block');
+  // (e) declarado como carpeta, o entre acentos graves, también es de la story
+  for (const dec of ['tasks/measurement-x/', 'tasks/measurement-x', '`tasks/measurement-x/a.js`']) {
+    assert.equal(atdd.computeAtddOrder(c, '/r', { declarados: [dec] }).verdict, 'blocked', `declarado como ${dec}`);
+    assert.equal(atdd.esMedicionNoDeclarada('/r/tasks/measurement-x/a.js', '/r', [dec]), false, `declarado como ${dec}`);
+  }
+  // (f) una prueba de un guion de medición no declarado no cuenta como prueba previa, igual que en el cierre
+  assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/scripts/a.js',
+    priorPaths: ['/r/tasks/measurement-x/a.test.js'] }).action, 'block');
+  assert.equal(atdd.computeAtddOrder([{ path: '/r/tasks/measurement-x/a.test.js', ts: ts(1) },
+    { path: '/r/scripts/a.js', ts: ts(2) }], '/r', { declarados: [] }).verdict, 'warn-no-tests');
+  // (g) el freno previo lee la lista del frontmatter de la story del marcador
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atdd-medicion-'));
+  try {
+    const stateDir = path.join(tmp, 'state');
+    const repo = path.join(tmp, 'repo');
+    fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+    fs.mkdirSync(path.join(stateDir, 'active'), { recursive: true });
+    const storyPath = path.join(repo, 'specs', 's.md');
+    const marcador = { storyId: '9.9', storyPath, repoPath: repo, sessionId: 'S1', stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5],
+      fileEvents: [{ path: storyPath, ts: ts(1) }] };
+    fs.writeFileSync(path.join(stateDir, 'active', 'S1.json'), JSON.stringify(marcador));
+    const handler = require(path.join(SCRIPTS, 'on-atdd-preedit.js'));
+    const guion = path.join(repo, 'tasks', 'measurement-x', 'a.js');
+    const ev = { hook_event_name: 'PreToolUse', tool_name: 'Write', session_id: 'S1', tool_input: { file_path: guion } };
+    fs.writeFileSync(storyPath, '---\nstory: "9.9"\nfiles_to_modify:\n  - src/b.js\n---\n\n### Tests\n\n| T-ID | AC |\n');
+    assert.equal(handler.handle(ev, { stateDir }), null, 'no declarado: el guion de medición pasa');
+    fs.writeFileSync(storyPath, '---\nstory: "9.9"\nfiles_to_modify:\n  - tasks/measurement-x/a.js\n---\n\n### Tests\n\n| T-ID | AC |\n');
+    const r = handler.handle(ev, { stateDir });
+    assert.ok(r && r.block, 'declarado en la story: es su primer código y frena');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('T10 GuionDePruebasDeCi_EsPrueba @story-1.32 @ac-9', () => {
+  for (const p of ['/r/scripts/ci/pruebas/probar-workflow.py', '/r/scripts/ci/pruebas/y.js', '/r/scripts/ci/tests/x.sh']) {
+    assert.equal(atdd.isTestPath(p), true, `${p} es prueba`);
+    assert.equal(atdd.isImplPath(p), false, `${p} no es código`);
+  }
+  assert.equal(atdd.isImplPath('/r/scripts/ci/x.py'), true, 'un guion de CI fuera de pruebas/ sigue siendo código');
+  const r = atdd.computeAtddOrder([{ path: '/r/scripts/ci/pruebas/probar-workflow.py', ts: '2026-10-29T12:01:00.000Z' },
+    { path: '/r/scripts/a.js', ts: '2026-10-29T12:02:00.000Z' }], '/r');
+  assert.equal(r.verdict, 'green');
+  assert.equal(r.firstTest, '/r/scripts/ci/pruebas/probar-workflow.py');
+});
+
+test('T11 EscapeAtdd_PideMotivo @story-1.32 @ac-10', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atdd-motivo-'));
+  const SID = 'atdd-motivo';
+  const stateDir = path.join(home, '.claude', '.tycon-pipeline');
+  const markerPath = path.join(stateDir, 'active', `${SID}.json`);
+  const correr = (args) => require('node:child_process').spawnSync(process.execPath, [MARKER, ...args], markerEnv(SID, home));
+  const repo = path.join(home, 'repo');
+  const storyPath = path.join(repo, 'specs', 's.md');
+  fs.mkdirSync(path.dirname(storyPath), { recursive: true });
+  fs.writeFileSync(storyPath, '---\nstory: "9.9"\nfiles_to_modify:\n  - src/a.cs\n---\n\n### Tests\n\n| T-ID | AC |\n');
+  try {
+    writeFakeMarker(home, SID, { storyId: '9.9', storyPath, repoPath: repo, stepScheme: 2,
+      stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan'], stepsPending: ['implement'],
+      fileEvents: [{ path: path.join(repo, 'src', 'a.cs'), ts: '2026-10-29T12:01:00.000Z' },
+        { path: path.join(repo, 'tests', 'ATests.cs'), ts: '2026-10-29T12:02:00.000Z' }] });
+    // sin motivo, o con uno vacío: se niega, sin tocar el marcador, y dice el camino
+    for (const extra of [[], ['--reason', ''], ['--reason', '   ']]) {
+      const antes = fs.readFileSync(markerPath, 'utf8');
+      const r = correr(['set-flag', 'atddBypass', 'true', ...extra]);
+      assert.notEqual(r.status, 0, `sin motivo (${JSON.stringify(extra)}) tiene que negarse`);
+      assert.match(r.stderr, /--reason/);
+      assert.equal(fs.readFileSync(markerPath, 'utf8'), antes, 'el marcador queda igual');
+    }
+    // con motivo: se guarda, y las dos constancias lo llevan
+    const ok = correr(['set-flag', 'atddBypass', 'true', '--reason', 'migración de 21 .cs']);
+    assert.equal(ok.status, 0, ok.stderr);
+    const m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    assert.equal(m.atddBypass, true);
+    assert.equal(m.atddBypassReason, 'migración de 21 .cs');
+    const handler = require(path.join(SCRIPTS, 'on-atdd-preedit.js'));
+    const conPrevio = { ...m, fileEvents: [] };
+    fs.writeFileSync(markerPath, JSON.stringify(conPrevio));
+    const ed = handler.handle({ hook_event_name: 'PreToolUse', tool_name: 'Edit', session_id: SID,
+      tool_input: { file_path: path.join(repo, 'src', 'b.cs') } }, { stateDir });
+    assert.equal(ed, null, 'con el escape, la edición pasa');
+    fs.writeFileSync(markerPath, JSON.stringify(m));
+    const cierre = correr(['complete-step', 'implement']);
+    assert.equal(cierre.status, 0, cierre.stderr);
+    const log = fs.readFileSync(path.join(stateDir, 'bypass.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const pre = log.find((l) => l.kind === 'ATDD_PREEDIT_BYPASS');
+    const imp = log.find((l) => l.kind === 'ATDD_BYPASS');
+    assert.equal(pre && pre.reason, 'migración de 21 .cs');
+    assert.equal(imp && imp.reason, 'migración de 21 .cs');
+    // apagarlo no pide motivo y borra el que había
+    const apaga = correr(['set-flag', 'atddBypass', 'false']);
+    assert.equal(apaga.status, 0, apaga.stderr);
+    const m2 = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    assert.equal(m2.atddBypass, false);
+    assert.equal(m2.atddBypassReason, undefined);
+    // el reinicio de la corrida (otra story) borra los dos
+    correr(['set-flag', 'atddBypass', 'true', '--reason', 'otro']);
+    const set = correr(['set', JSON.stringify({ storyId: '9.10', storyPath, stepsPending: ['implement'] }), '--replace']);
+    assert.equal(set.status, 0, set.stderr);
+    const m3 = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    assert.equal(m3.atddBypass, undefined);
+    assert.equal(m3.atddBypassReason, undefined);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('T15 StoryIlegible_Avisa @story-1.32 @ac-13', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atdd-ilegible-'));
+  const SID = 'atdd-ilegible';
+  const stateDir = path.join(home, '.claude', '.tycon-pipeline');
+  const markerPath = path.join(stateDir, 'active', `${SID}.json`);
+  const correr = (args) => require('node:child_process').spawnSync(process.execPath, [MARKER, ...args], markerEnv(SID, home));
+  const repo = path.join(home, 'repo');
+  const carpeta = path.join(repo, 'specs', 'una-carpeta.md');
+  fs.mkdirSync(carpeta, { recursive: true });
+  // una story sin permiso de lectura (como root se lee igual: ahí el caso no aplica)
+  const sinPermiso = path.join(repo, 'specs', 'sin-permiso.md');
+  fs.writeFileSync(sinPermiso, '# story\n'); fs.chmodSync(sinPermiso, 0o000);
+  const conPermiso = process.getuid && process.getuid() === 0 ? [] : [sinPermiso];
+  const handler = require(path.join(SCRIPTS, 'on-atdd-preedit.js'));
+  // el freno previo corre en el mismo proceso: su stderr se junta reemplazando la escritura un momento
+  const stderrDe = (fn) => {
+    const original = process.stderr.write; let dicho = '';
+    process.stderr.write = (t) => { dicho += String(t); return true; };
+    try { return { r: fn(), dicho }; } finally { process.stderr.write = original; }
+  };
+  try {
+    for (const storyPath of [carpeta, path.join(repo, 'specs', 'no-existe.md'), ...conPermiso, undefined]) {
+      writeFakeMarker(home, SID, { storyId: '9.9', storyPath, repoPath: repo, stepScheme: 2,
+        stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan'], stepsPending: ['implement'],
+        fileEvents: [{ path: path.join(repo, 'tests', 'ATests.cs'), ts: '2026-10-30T12:01:00.000Z' },
+          { path: path.join(repo, 'src', 'a.cs'), ts: '2026-10-30T12:02:00.000Z' }] });
+      const marcador = fs.readFileSync(markerPath, 'utf8');
+      const previo = stderrDe(() => handler.handle({ hook_event_name: 'PreToolUse', tool_name: 'Edit', session_id: SID,
+        tool_input: { file_path: path.join(repo, 'src', 'b.cs') } }, { stateDir }));
+      assert.equal(previo.r, null, 'el freno previo deja pasar, como hoy');
+      fs.writeFileSync(markerPath, marcador);
+      const cierre = correr(['complete-step', 'implement']);
+      assert.equal(cierre.status, 0, cierre.stderr);
+      const avisos = cierre.stderr.split('\n').filter((l) => /no pude leer la historia/.test(l));
+      if (storyPath) {
+        assert.equal(avisos.length, 1, `complete-step avisa una vez: ${cierre.stderr}`);
+        assert.ok(avisos[0].includes(storyPath), 'el aviso nombra la ruta');
+        assert.match(avisos[0], /lista de archivos declarados/);
+        assert.match(previo.dicho, /no pude leer la historia/);
+        assert.ok(previo.dicho.includes(storyPath), 'el aviso del freno previo nombra la ruta');
+        assert.match(previo.dicho, /no juzgo esta edición/);
+      } else {
+        assert.equal(avisos.length, 0, `sin storyPath, complete-step no avisa: ${cierre.stderr}`);
+        assert.equal(previo.dicho, '', 'sin storyPath, el freno previo no avisa');
+      }
+    }
+  } finally {
+    fs.chmodSync(sinPermiso, 0o600);
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });

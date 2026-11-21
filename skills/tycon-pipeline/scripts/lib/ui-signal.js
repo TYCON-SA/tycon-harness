@@ -106,7 +106,8 @@ function noComment(t) {
   return s;
 }
 const unquote = (t) => String(t).trim().replace(/^["'`]|["'`]$/g, '').trim();
-const sinPrefijo = (t) => unquote(noComment(t)).replace(/^\([^)]*\)\s*/, '');
+// el prefijo «(Repo/Carpeta) » lleva su espacio: `(app)/page.tsx` (un grupo de rutas de Next) es parte de la ruta
+const sinPrefijo = (t) => unquote(noComment(t)).replace(/^\([^)]*\)\s+/, '');
 /** Una palabra limpia de lo que se le pega a una ruta: ancla (`#x`), número de línea (`:12`, `:L3-9`) y puntuación. */
 const cleanToken = (w) => w.replace(/#.*$/, '').replace(/:(L?\d+(-\d+)?)?$/i, '').replace(/[.:;!?]+$/, '');
 /** ¿Tiene forma de ruta? Con una `/`, o con una extensión que lleva alguna letra (`7.2` y `v2.0` no son archivos). */
@@ -122,7 +123,8 @@ function flowItems(value) {
 
 /** Las rutas de una entrada (sin el prefijo «(Repo/Carpeta) »): las palabras con forma de ruta, ya limpias. */
 function pathsOf(text) {
-  return (sinPrefijo(text).match(/[^\s"'`,()[\]{}]+/g) || []).map(cleanToken).filter(isPathToken);
+  // un grupo de rutas pegado a su barra (`(app)/`, `src/app/(auth)/x`) es parte de la palabra; otro paréntesis la corta
+  return (sinPrefijo(text).match(/(?:[^\s"'`,()[\]{}]|\([^\s()/]+\)(?=\/))+/g) || []).map(cleanToken).filter(isPathToken);
 }
 const isDocPath = (p) => DOC_FILE_RE.test(p) && !PAGE_DIR_RE.test(p);
 /**
@@ -152,7 +154,7 @@ const looksLikePath = (text) => pathsOf(text).length > 0;
 function entryLocation(text) {
   const t = unquote(noComment(text)).trim();
   if (!/\s/.test(t)) return t;
-  const prefix = (t.match(/^\([^)]*\)/) || [''])[0];
+  const prefix = (t.match(/^\([^)]*\)(?=\s)/) || [''])[0];
   return [prefix, ...pathsOf(text)].join(' ');   // `text`, no `t`: ya sin comillas, un `#` de adentro cortaría
 }
 /** Las llaves de un mapa entre llaves (`{frontend: [a.ts], backend: [b.cs]}`). */
@@ -374,19 +376,22 @@ function blockedScreenTouched(content, repoRoot, changed) {
  * Ante cualquier duda, `active` es `story`. Con `changed` (los archivos que cambió el commit o la corrida), un archivo
  * de pantalla entre ellos deja la baja sin efecto: lo declarado no alcanza si el commit cambia la pantalla.
  */
-function screenScope(content, repoRoot, { changed } = {}) {
+function screenScope(content, repoRoot, { changed, batches } = {}) {
   const story = storyTouchesUi(content, repoRoot);
   const same = { story, active: story, blocked: [], note: null };
   if (!story) return same;
   const sc = require('./story-checks.js');
   const tandas = sc.parsePipelinesBlock(content);
-  if (!tandas.some((t) => t.status === 'blocked')) return same;
+  // Con tanda (la medida más las que volvieron) y con la lista de cambios: la pantalla de otra tanda no se pide
+  const medidas = Array.isArray(batches) && batches.length && Array.isArray(changed) ? batches.map(String) : null;
+  if (!medidas && !tandas.some((t) => t.status === 'blocked')) return same;
   const f = fmOf(content);
   const segs = batchLines(f);
   if (segs.length !== tandas.length) return same;
   const hit = frontHit(f, repoRoot);
   const nombraPantalla = (seg) => batchNamesScreen(seg, hit);
   const conPantalla = tandas.map((t, i) => ({ ...t, ui: nombraPantalla(segs[i]) }));
+  if (medidas) return screenScopeDeTanda(content, { story, same, medidas, conPantalla, changed, hit, sc });
   const bloqueadas = conPantalla.filter((t) => t.status === 'blocked' && t.ui);
   if (!bloqueadas.length || conPantalla.some((t) => t.status !== 'blocked' && t.ui)) return same;
   const pendientes = new Set(tandas.filter((t) => t.status === 'blocked').flatMap((t) => t.acsPending));
@@ -412,6 +417,33 @@ function screenScope(content, repoRoot, { changed } = {}) {
   };
 }
 
+/**
+ * La baja de pantalla de una corrida por tanda: las líneas de las tandas medidas no nombran pantalla y las de otra sí,
+ * ningún criterio que mide la corrida (los de sus tandas y los de ninguna tanda) es de pantalla, y ningún archivo de la
+ * lista lo es. Si alguna condición falla, se pide como siempre (`same`).
+ */
+function screenScopeDeTanda(content, { story, same, medidas, conPantalla, changed, hit, sc }) {
+  if (medidas.some((n) => !conPantalla.some((t) => t.name === n))) return same;
+  const deLaCorrida = conPantalla.filter((t) => medidas.includes(t.name));
+  const otras = conPantalla.filter((t) => !medidas.includes(t.name) && t.ui);
+  if (!otras.length || deLaCorrida.some((t) => t.ui)) return same;
+  // los criterios de otras tandas que NO son también de las medidas: uno compartido sigue siendo de esta corrida
+  const propios = new Set(deLaCorrida.flatMap((t) => [...t.acs, ...t.acsPending]));
+  const ajenos = new Set(conPantalla.filter((t) => !medidas.includes(t.name)).flatMap((t) => [...t.acs, ...t.acsPending]).filter((n) => !propios.has(n)));
+  const universo = new Set(sc.parseAcsFromSpec(content));
+  for (const row of sc.parseTestsTable(content).rows) for (const n of row.acRefs) universo.add(n);
+  const textos = sc.acTextsFromSpec(content, { maxChars: Infinity });
+  const { esDePantalla } = require('../runtime-matrix.js');
+  if ([...universo].some((n) => !ajenos.has(n) && esDePantalla(textos[n], true))) return same;
+  if (changed.some((c) => UI_EXT_RE.test(String(c)) || hit(String(c)))) return same;
+  const nombres = otras.map((t) => t.name);
+  return {
+    story, active: false, blocked: [], otherBatches: nombres,
+    note: `ℹ️  La pantalla de la story es de la tanda ${nombres.join(', ')}; esta corrida, de la tanda ${medidas.join(', ')}, `
+      + 'no pide su prueba de navegador.',
+  };
+}
+
 const REACT_EXT_RE = /\.(tsx|jsx)\b/i;
 
 /**
@@ -428,7 +460,7 @@ const REACT_EXT_RE = /\.(tsx|jsx)\b/i;
  */
 function changedFiles(repoRoot, base) {
   const { spawnSync } = require('child_process');
-  const git = (args) => spawnSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8', timeout: 10000 });
+  const git = (args) => spawnSync('git', ['-C', repoRoot, ...args], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
   const out = [];
   for (const r of [git(['diff', '--name-only', base || 'HEAD']), git(['ls-files', '--others', '--exclude-standard'])]) {
     if (r.error || r.status !== 0) return null;
@@ -437,8 +469,8 @@ function changedFiles(repoRoot, base) {
   return out;
 }
 
-function applyScreenRule(content, repoRoot, rule = 'ui', { scope, changed } = {}) {
-  const ui = scope === 'active' ? screenScope(content, repoRoot, { changed }).active : storyTouchesUi(content, repoRoot);
+function applyScreenRule(content, repoRoot, rule = 'ui', { scope, changed, batches } = {}) {
+  const ui = scope === 'active' ? screenScope(content, repoRoot, { changed, batches }).active : storyTouchesUi(content, repoRoot);
   if (!ui || rule === 'ui') return { ui, note: null };
   if (rule === 'off') {
     return { ui: false, note: 'ℹ️  La story toca pantalla, pero la organización no exige la prueba E2E de pantalla (screen_test: off).' };
@@ -450,7 +482,17 @@ function applyScreenRule(content, repoRoot, rule = 'ui', { scope, changed } = {}
   return { ui, note: null };
 }
 
+/**
+ * ¿Un archivo suelto toca pantalla? El mismo veredicto que una story que lo declara en su lista de archivos, con la regla
+ * `screen_test`. Lo usa el camino rápido, que no tiene story. `repoName`: el nombre del repo, que en una story va como
+ * prefijo de la entrada y puede ser distinto de la carpeta (un worktree).
+ */
+function fileTouchesUi(rel, repoRoot, rule = 'ui', repoName = null) {
+  const entry = repoName ? `(${repoName}) ${rel}` : rel;
+  return applyScreenRule(`---\nfiles_to_modify:\n  - ${JSON.stringify(entry)}\n---\n`, repoRoot, rule).ui;
+}
+
 module.exports = {
-  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule, screenScope, changedFiles, blockedScreenTouched,
+  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule, screenScope, changedFiles, blockedScreenTouched, fileTouchesUi,
   UI_FM_FILES_RE, UI_FM_PATHS_RE, UI_BODY_RE,
 };

@@ -136,7 +136,7 @@ const cmd = (ev.tool_input && ev.tool_input.command) || '';
 if (!esPush(cmd)) process.exit(0);
 
 try {
-  const git = (...a) => execFileSync('git', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  const git = (...a) => execFileSync('git', a, { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   const rama = git('rev-parse', '--abbrev-ref', 'HEAD');
   // Lo que se va a subir: contra el remoto de esta rama, y si no tiene, contra el de main.
   let rango;

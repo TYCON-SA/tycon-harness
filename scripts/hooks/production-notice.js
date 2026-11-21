@@ -74,9 +74,7 @@ const SECURITY = path.join(RAIZ, 'usr', 'bin', 'security');
 const LLAVERO_PROPIO = path.join(HOME, 'Library', 'Keychains', 'tycon-prod.keychain-db');
 const INSTALADOR = path.join(ARNES, 'scripts', 'production', 'install-guard.command');
 
-const avisos = [];
-const lineas = [];
-const sha256 = (f) => { try { return crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex'); } catch { return null; } };
+const sha256 =(f) => { try { return crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex'); } catch { return null; } };
 const existe = (f) => { try { fs.statSync(f); return true; } catch { return false; } };
 
 // 🔴 El instalador se ABRE solo, en vez de ser un comando que cada dev corre en su máquina. El arnés se instala a sí mismo en cada arranque; el
@@ -94,7 +92,7 @@ function abrirInstalador() {
   const hoy = new Date().toISOString().slice(0, 10);
   try { if (fs.readFileSync(SELLO_INSTALADOR, 'utf8').trim() === hoy) return false; } catch { /* nunca se abrió */ }
   try { fs.mkdirSync(path.dirname(SELLO_INSTALADOR), { recursive: true }); fs.writeFileSync(SELLO_INSTALADOR, hoy + '\n'); } catch { return false; }
-  if (!RAIZ && existe(INSTALADOR)) spawnSync('open', [INSTALADOR], { stdio: 'ignore', timeout: 5000 });
+  if (!RAIZ && existe(INSTALADOR)) spawnSync('open', [INSTALADOR], { windowsHide: true, stdio: 'ignore', timeout: 5000 });
   return true;
 }
 // Contra qué se compara lo instalado: en un clon, el propio árbol; en una versión bajada, el
@@ -105,11 +103,11 @@ function abrirInstalador() {
 const PUBLICADO = (() => {
   try { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return fs.existsSync(lib) ? require(lib).maintainedDir(HOME, ARNES) : ARNES; } catch (_) { return ARNES; }
 })();
-const git = (args) => (PUBLICADO ? spawnSync('git', ['-C', PUBLICADO, ...args], { encoding: 'utf8', timeout: 5000 }) : { status: 1, stdout: '', stderr: 'sin clon que mantener' });
+const git = (args) => (PUBLICADO ? spawnSync('git', ['-C', PUBLICADO, ...args], { windowsHide: true, encoding: 'utf8', timeout: 5000 }) : { status: 1, stdout: '', stderr: 'sin clon que mantener' });
 
 /** Hash de blob de git de un archivo (para compararlo con lo publicado sin depender del disco del clon). */
 function blobDe(archivo) {
-  const r = spawnSync('git', ['hash-object', archivo], { encoding: 'utf8', timeout: 5000 });
+  const r = spawnSync('git', ['hash-object', archivo], { windowsHide: true, encoding: 'utf8', timeout: 5000 });
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
@@ -239,24 +237,32 @@ const BIBLIOTECAS_DEL_FRENO = [
 const TEXTO_COPIA_PROPIA = '   Esta vez es por un cambio de fondo: desde esta versión el freno lleva su propia copia de las bibliotecas que usa. Después de reinstalar, sólo te va a pedir reinstalar cuando cambie el freno, no cada vez que cambia el resto del arnés.';
 const instaladoConCopiaPropia = (dejado) => !!dejado && [...dejado.keys()].some((p) => p.startsWith(COPIA_PROPIA));
 
-function main() {
+/**
+ * El juicio del freno de esta máquina: `{ autorizada, avisos, lineas, viejo }`, o `{ autorizada: false, imprimir }` en
+ * una máquina sin producción, o `{ reindex }` con `reindex: true`. No imprime ni corta el proceso. Con `soloLeer`
+ * (el paso guiado, scripts/tools/prepare-machine.js) arma el índice sin guardarlo, no deja sellos y no abre el
+ * instalador; el aviso de arranque lo llama sin `soloLeer`.
+ */
+function juzgar({ soloLeer = false, reporte = REPORTE, reindex = false } = {}) {
+  const avisos = [];
+  const lineas = [];
+  const viejoLineas = [];
+  let viejo = false;
   // ── 1. el índice (AC 2) ──────────────────────────────────────────────────────────────────────
   let indice = null;
   try {
     const mod = require(path.join(__dirname, '..', 'production', 'production-index.js'));
-    indice = mod.guardar(mod.construir({ home: HOME }), HOME);
+    indice = soloLeer ? mod.construir({ home: HOME }) : mod.guardar(mod.construir({ home: HOME }), HOME);
     // La configuración del arnés rota viaja en el índice y es un AVISO de cada arranque, tenga o
     // no freno esta máquina: sin esto, en una máquina autorizada sin otros avisos, el error queda mudo.
     for (const e of indice.errores || []) if (/configuración del arnés ROTA/.test(e.motivo)) avisos.push(`⚠ ${e.motivo}`);
   } catch (e) {
     avisos.push(`🟠 no pude regenerar el índice de servidores de producción: ${e.message}`);
   }
-  if (ARGS.includes('--reindex')) {
-    const r = indice
+  if (reindex) {
+    return { reindex: indice
       ? { raiz: indice.raiz, fuente: indice.fuente, catalogos: indice.catalogos.length, produccion: Object.values(indice.hosts).filter((h) => h.ambiente === 'produccion').length, memoria_alterada: indice.memoria_alterada, errores: indice.errores.length }
-      : { error: 'no se pudo regenerar el índice' };
-    console.log(ARGS.includes('--json') ? JSON.stringify(r, null, 2) : r);
-    process.exit(0);
+      : { error: 'no se pudo regenerar el índice' } };
   }
 
   // ── 2. ¿es una máquina autorizada? ───────────────────────────────────────────────────────────
@@ -266,7 +272,7 @@ function main() {
   if (existe(LLAVERO_PROPIO) || RAIZ) {
     for (const ll of llaveros) {
       // Sin -w y sin -g: se pregunta si la entrada EXISTE; no se lee el secreto y no abre cuadro.
-      const r = spawnSync(existe(SECURITY) ? SECURITY : '/usr/bin/security', ['find-generic-password', '-s', ll, LLAVERO_PROPIO], { encoding: 'utf8', timeout: 4000 });
+      const r = spawnSync(existe(SECURITY) ? SECURITY : '/usr/bin/security', ['find-generic-password', '-s', ll, LLAVERO_PROPIO], { windowsHide: true, encoding: 'utf8', timeout: 4000 });
       if (r.status === 0) { tieneClave = true; break; }
       // 44 = no está. Cualquier otra cosa es «no pude preguntar», que NO es «no autorizada».
       if (r.status !== 44) llaveroIlegible = true;
@@ -292,12 +298,12 @@ function main() {
   if (!autorizada) {
     // La configuración del arnés rota se DICE aunque esta máquina no tenga producción: el resto de
     // los avisos del freno no aplican acá, éste sí — es un archivo de la máquina, no del freno.
-    for (const a of avisos.filter((a) => /configuración del arnés/.test(a))) console.log(a);
-    if (llaveroIlegible) console.log('🟠 freno de producción: no pude consultar el llavero propio para saber si esta máquina tiene la clave de producción.');
-    else if (REPORTE) console.log(sellado
+    const imprimir = avisos.filter((a) => /configuración del arnés/.test(a));
+    if (llaveroIlegible) imprimir.push('🟠 freno de producción: no pude consultar el llavero propio para saber si esta máquina tiene la clave de producción.');
+    else if (reporte) imprimir.push(sellado
       ? 'freno de producción: esta máquina no tiene el llavero de producción y el aviso de que falta el freno ya salió una vez.'
       : 'freno de producción: esta máquina no está autorizada (sin freno instalado ni clave de producción): nada que avisar.');
-    process.exit(0);                     // el resto del equipo no recibe nada (AC 25)
+    return { autorizada: false, imprimir, llaveroIlegible };   // el resto del equipo no recibe nada (AC 25)
   }
   if (llaveroIlegible) avisos.push('🟠 freno de producción: no pude consultar el llavero propio para saber si esta máquina tiene la clave de producción.');
 
@@ -360,9 +366,17 @@ function main() {
         avisos.push(`🔴 ${textoAlterada} (${alteradas.map((a) => a.nombre).join(', ')}): ${causaAlterada}.`);
         avisos.push(`   Reinstalalo desde lo publicado: open ${INSTALADOR}`);
       } else if (viejas.length) {
+        viejo = true;
+        const desde = avisos.length;
         avisos.push(`🔴 ${AVISO_VIEJO} (${viejas.map((v) => v.nombre).join(', ')}): el arnés publicó una versión nueva.`);
         if (!instaladoConCopiaPropia(blobsDe(CONSTANCIA_INSTALADO))) avisos.push(TEXTO_COPIA_PROPIA);
-        avisos.push(`   Actualizalo (pide tu contraseña del Mac): open ${INSTALADOR}`);
+        // con el permiso de actualizarse sola y la organización en «auto», el por qué del atraso:
+        // se está actualizando, falló, está trabada, u otro instalador. Sin eso, la contraseña como siempre.
+        const gun = require(path.join(__dirname, 'guard-update-notice.js'));
+        const sola = existe(path.join(OPT, 'production', 'auto-update.json')) && gun.leerEleccion(ARNES).valor === 'auto';
+        if (sola) avisos.push(`   ${gun.atraso({ prod: path.join(OPT, 'production'), arnes: BAJADA || ARNES }).texto}`);
+        else avisos.push(`   Actualizalo (pide tu contraseña del Mac): open ${INSTALADOR}`);
+        viejoLineas.push(...avisos.slice(desde));
       } else if (bibliotecasFaltan.length) {
         aMediasPorBibliotecas();
       }
@@ -390,17 +404,16 @@ function main() {
       // de la memoria deja editar en silencio los archivos con los que el freno decide qué es
       // producción, y el aviso daba «bien» igual.
       const reglas = ((m.permissions || {}).ask || []).join(' ');
-      // los dos nombres del catálogo, del índice y de la memoria. Una administrada de antes del
+      // la puerta no tiene regla: su cuadro propio es la única ventana por consulta (una administrada que la siga teniendo
+      // la trae de antes, y pide reinstalar por la huella, no por esto).
+      // el catálogo con sus dos nombres; el índice y la memoria, sólo con el nuevo. Una administrada de antes del
       // renombre no los tiene, y eso ya lo dijo «quedó viejo»: no se suma otro aviso que parezca un toqueteo.
       const exigidas = administradaVieja ? [] : [
-        ['tycon-prod-sql', 'la que abre el cuadro de aprobación de la puerta'],
         ['firewall-rule', 'la que hace aprobar una regla de firewall de producción'],
         ['.tycon/production.json', 'la que hace aprobar un cambio del catálogo de servidores'],
         ['production-index.json', 'la que hace aprobar una edición del índice de producción'],
         ['production-memory.json', 'la que hace aprobar una edición de la memoria de producción'],
         ['.tycon/produccion.json', 'la que hace aprobar un cambio del catálogo con su nombre de antes del renombre'],
-        ['produccion-indice.json', 'la que hace aprobar una edición del índice con su nombre de antes del renombre'],
-        ['produccion-memoria.json', 'la que hace aprobar una edición de la memoria con su nombre de antes del renombre'],
       ].filter(([clave]) => !reglas.includes(clave));
       if (exigidas.length) {
         avisos.push(`🔴 a la configuración administrada le faltan reglas del cuadro de aprobación: ${exigidas.map(([, q]) => q).join(' · ')}.`);
@@ -411,14 +424,26 @@ function main() {
 
   // ── 3b. si algo de arriba pide (re)instalar, la ventana del instalador se abre sola ──────────
   // Sin el llavero de producción no se abre: ese dev no toca producción, y la línea del aviso ya dice cómo instalarlo.
-  if (!soloPorRepo && avisos.some((a) => a.includes(INSTALADOR)) && abrirInstalador()) {
+  if (!soloLeer && !soloPorRepo && avisos.some((a) => a.includes(INSTALADOR)) && abrirInstalador()) {
     avisos.push('   → Te abrí la ventana del instalador: sólo pide tu contraseña del Mac. (Una vez por día; off: TYCON_PRODUCTION_AUTOINSTALL=0)');
   }
 
   // ── 4. la memoria de producción alterada (queda a la vista hasta que se revise) ──────────────
   if (indice && indice.memoria_alterada) {
     avisos.push('🔴 la memoria de producción fue tocada a mano (su huella no cierra). Mientras tanto el freno no decide nada sobre bases.');
-    avisos.push('   Revisala y volvé a sellarla: /opt/tycon/bin/tycon-prod-sql --verificar');
+    // Este aviso llega con la actualización del arnés; la puerta, recién cuando la máquina reinstala. La opción se nombra
+    // como la entiende la puerta instalada: se lee de su texto la que abre el modo de verificar (como install-guard.sh
+    // mira si conoce --close-firewall). Sin puerta legible, la de hoy.
+    let opcion = '--verify';
+    try {
+      const m = /^\s*(--[a-z-]+)\)\s+MODO=verificar\b/m.exec(fs.readFileSync(path.join(OPT, 'bin', 'tycon-prod-sql'), 'utf8'));
+      if (m) opcion = m[1];
+    } catch { /* sin puerta legible: la de hoy */ }
+    if (opcion === '--verify') {
+      avisos.push('   Si sólo se tocó lo de antes del renombre: /opt/tycon/bin/tycon-prod-sql --verify. Si no, revisala y bajá lo que corresponda con --reclassify <host>.');
+    } else {
+      avisos.push(`   Revisala y volvé a sellarla: /opt/tycon/bin/tycon-prod-sql ${opcion}`);
+    }
   }
 
   // ── 5. lo que el freno no pudo decidir (el registro que nadie más lee) ───────────────────────
@@ -432,28 +457,41 @@ function main() {
   // ── 6. el pie: qué raíz de repos se usó y cuántos catálogos entraron ────────────────────────
   if (indice) {
     const prod = Object.values(indice.hosts || {}).filter((h) => h.ambiente === 'produccion').length;
-    lineas.push(pieDeRaiz(indice, prod, process.cwd(), REPORTE));
+    lineas.push(pieDeRaiz(indice, prod, process.cwd(), reporte));
     // los errores por repo nombran rutas de la raíz: con el mismo criterio que el pie, a una sesión de afuera sólo se le cuentan
     const errores = (indice.errores || []).filter((e) => !/configuración del arnés ROTA/.test(e.motivo));   // la config rota ya está en `avisos`
-    if (REPORTE || sesionDentro(indice.raiz, process.cwd())) for (const e of errores) lineas.push(`   ⚠ ${e.repo}: ${e.motivo}`);
+    if (reporte || sesionDentro(indice.raiz, process.cwd())) for (const e of errores) lineas.push(`   ⚠ ${e.repo}: ${e.motivo}`);
     else if (errores.length) lineas.push(`   ⚠ ${errores.length} proyecto(s) con su catálogo de servidores ilegible (el detalle, con --report)`);
     // sin catálogos en una máquina autorizada, TODO host se frena: eso se dice aunque no haya otro aviso
     if (!indice.catalogos.length) avisos.push('🟠 ningún proyecto de esta máquina declara servidores: TODO host de base se va a tratar como producción (¿la raíz de repos está bien?).');
   }
 
-  if (soloPorRepo && avisos.length) {
+  if (!soloLeer && soloPorRepo && avisos.length) {
     try {
       fs.mkdirSync(path.dirname(SELLO_SIN_LLAVERO), { recursive: true });
       fs.writeFileSync(SELLO_SIN_LLAVERO, new Date().toISOString().slice(0, 10) + '\n');
       avisos.push('   Este aviso sale una sola vez: esta máquina no tiene el llavero de producción. Si te toca producción, instalá el freno con el comando de arriba.');
     } catch { /* sin sello, vuelve a salir: mejor que callarlo */ }
   }
+  return { autorizada: true, avisos, lineas, viejo, viejoLineas };
+}
 
-  if (avisos.length || REPORTE) {
+// El aviso de arranque: el juicio, impreso. Sale siempre 0.
+function main() {
+  const r = juzgar({ reindex: ARGS.includes('--reindex') });
+  if (r.reindex) {
+    console.log(ARGS.includes('--json') ? JSON.stringify(r.reindex, null, 2) : r.reindex);
+    process.exit(0);
+  }
+  if (!r.autorizada) {
+    for (const l of r.imprimir) console.log(l);
+    process.exit(0);
+  }
+  if (r.avisos.length || REPORTE) {
     console.log('');
-    if (!avisos.length) console.log('✅ freno de producción: instalado, al día y con sus huellas.');
-    for (const a of avisos) console.log(a);
-    for (const l of lineas) console.log(l);
+    if (!r.avisos.length) console.log('✅ freno de producción: instalado, al día y con sus huellas.');
+    for (const a of r.avisos) console.log(a);
+    for (const l of r.lineas) console.log(l);
   }
   process.exit(0);
 }
@@ -475,7 +513,7 @@ function pieDeRaiz(indice, prod, cwd, reporte) {
 
 if (COMO_MODULO) {
   // para las pruebas: el juicio contra lo publicado, sin correr el aviso
-  module.exports = { pieDeRaiz, sesionDentro, estadoContraPublicado, estadoContraVersionBajada, blobsDe, rutasViejas, AVISO_VIEJO, BIBLIOTECAS_DEL_FRENO, COPIA_PROPIA, TEXTO_COPIA_PROPIA, instaladoConCopiaPropia };
+  module.exports = { juzgar, pieDeRaiz, sesionDentro, estadoContraPublicado, estadoContraVersionBajada, blobsDe, rutasViejas, AVISO_VIEJO, BIBLIOTECAS_DEL_FRENO, COPIA_PROPIA, TEXTO_COPIA_PROPIA, instaladoConCopiaPropia };
 } else {
   try { main(); } catch (e) {
     // un aviso que se rompe no puede romper el arranque de la sesión

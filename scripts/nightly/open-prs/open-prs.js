@@ -27,9 +27,13 @@
  *
  * Habla con Azure sólo por `TYCON_ADO_CMD` (por defecto `az`), siempre con `--org` y `-o json`, sin
  * descartar stderr. Las suites usan `scripts/tests/lib/fake-az.sh`.
+ * Con `--provider github` lee los pedidos de cada repo de `--repos` que declara `github: dueño/nombre` (y no está
+ * `activo: false`) por la capa de plataforma (`change-request.list`). Un repo que no se pudo leer deja la sección en
+ * «no se pudo consultar», con el repo y el motivo.
  *
  * USO
  *   node scripts/nightly/open-prs/open-prs.js --today <YYYY-MM-DD> [--days 2] [--out <archivo>] [--json <archivo>] [--org <url>]
+ *     [--provider azure|github] [--repos <repos.json>]
  *   --json: además, el archivo para el sitio de la organización (`.dashboard/open-prs/open-prs-<día>.json`):
  *   número, proyecto, repo, días, autor (identidad única) y enlace de cada PR abierto; sin título ni nombre para mostrar.
  *   (--org por defecto: `azure.org` de scripts/nightly/dependencies/repos.json)
@@ -47,7 +51,7 @@ const POR_PAGINA = 100;
 const MAX_PAGINAS = 50;
 const MAX_LINEAS = 10;
 const RAMAS_DEL_ARNES = /^refs\/heads\/(vigilante|dependencias)\//;
-const GITHUB = 'los pull requests y los pedidos de GitHub todavía no se leen';
+const REPOS_POR_DEFECTO = path.join(__dirname, '..', 'dependencies', 'repos.json');
 
 const recortar = (t, n = 200) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n) || '(sin salida)';
 /**
@@ -82,6 +86,35 @@ function listarActivos(conexion) {
     if (v.length < POR_PAGINA) return todos;
   }
   throw new NoSePudo(`más de ${MAX_PAGINAS * POR_PAGINA} pull requests activos: se cortó el paginado`);
+}
+
+/**
+ * Los pedidos abiertos de los repos de GitHub de `repos.json`, por la capa, en la forma de la lista de Azure que leen la
+ * sección y el sitio. Lanza NoSePudo con el repo y el motivo si uno no se pudo leer.
+ */
+async function listarGithub(reposJson) {
+  let decl;
+  try { decl = JSON.parse(fs.readFileSync(reposJson, 'utf8')); } catch (e) { throw new NoSePudo(`no pude leer ${path.basename(reposJson)} (${e.code || e.message})`); }
+  const P = require(path.join(__dirname, '..', '..', 'lib', 'platform', 'platform.js'));
+  const c = P.connector('github', process.env);
+  if (c.problem) throw new NoSePudo(c.problem);
+  const todos = [];
+  // un repo declarado varias veces (una entrada por ecosistema, dos carpetas del mismo repo) se lee una sola vez
+  const deGithub = [...new Set((decl && Array.isArray(decl.repos) ? decl.repos : [])
+    .filter((x) => x && typeof x.github === 'string' && x.activo !== false).map((x) => x.github.trim()))].sort();
+  // sin repos que mirar no hay medición: «ninguno» diría que se miró y no había pedidos
+  if (!deGithub.length) throw new NoSePudo(`${path.basename(reposJson)} no declara ningún repo de GitHub activo`);
+  for (const nombre of deGithub) {
+    const [org, repo] = nombre.split('/');
+    const l = await P.call(c.manifest, 'change-request.list', { checks: false }, { env: process.env, repo: { platform: 'github', org, repo } });
+    if (!l.ok) throw new NoSePudo(`${nombre}: ${l.reason} — ${l.detail}`);
+    for (const p of l.value) {
+      todos.push({ pullRequestId: p.number, isDraft: p.draft, sourceRefName: `refs/heads/${p.sourceBranch}`, creationDate: p.createdAt,
+        repository: { name: repo, project: { name: org } }, createdBy: { uniqueName: p.author, displayName: p.author },
+        _enlace: `https://github.com/${org}/${repo}/pull/${p.number}` });
+    }
+  }
+  return todos;
 }
 
 function diasAbierto(pr, hoy) {
@@ -119,7 +152,7 @@ function seccion(prs, { hoy, dias }) {
  * no se mide a propósito, el motivo es uno de un vocabulario cerrado (`NO_MEDIDO`), nunca un texto libre. Los PR sin
  * fecha legible se cuentan aparte, como en la sección: no medido no es cero, tampoco en el aviso.
  */
-const NO_MEDIDO = Object.freeze({ apagado: 'Azure DevOps apagado', github: 'GitHub todavía no se lee' });
+const NO_MEDIDO = Object.freeze({ apagado: 'Azure DevOps apagado' });
 const cantidad = (dias, n) => (n === null ? `PR abiertos hace más de ${dias} días: ? (no se pudo consultar)`
   : n.noMedido ? `PR abiertos hace más de ${dias} días: ? (${NO_MEDIDO[n.noMedido]})`
     : `PR abiertos hace más de ${dias} días: ${n.viejos}${n.sinFecha ? ` (+${n.sinFecha} sin fecha legible)` : ''}`);
@@ -136,11 +169,13 @@ function contar(prs, { hoy, dias }) {
  */
 function paraElSitio(prs, { hoy, org }) {
   const base = String(org || '').replace(/\/+$/, '');
-  // el paginado sobre una lista viva puede traer el mismo PR en dos páginas: uno por número
+  // el paginado sobre una lista viva puede traer el mismo PR en dos páginas: uno por repo y número (en GitHub cada repo
+  // numera desde 1, así que el número solo taparía el pedido de otro repo)
   const vistos = new Set();
+  const clave = (p) => { const r = p.repository || {}; return `${(r.project && r.project.name) || ''}/${r.name || ''}#${Number(p.pullRequestId)}`; };
   return prs
     .filter((p) => p && !p.isDraft && !RAMAS_DEL_ARNES.test(String(p.sourceRefName || '')) && Number.isInteger(Number(p.pullRequestId)))
-    .filter((p) => { const n = Number(p.pullRequestId); if (vistos.has(n)) return false; vistos.add(n); return true; })
+    .filter((p) => { const k = clave(p); if (vistos.has(k)) return false; vistos.add(k); return true; })
     .map((p) => {
       const r = p.repository || {};
       const proyecto = (r.project && typeof r.project.name === 'string') ? r.project.name.slice(0, 120) : null;
@@ -148,13 +183,13 @@ function paraElSitio(prs, { hoy, org }) {
       const numero = Number(p.pullRequestId);
       const unico = p.createdBy && typeof p.createdBy.uniqueName === 'string' ? p.createdBy.uniqueName.trim().toLowerCase().slice(0, 200) : null;
       return { numero, proyecto, repo, dias: diasAbierto(p, hoy), autor: unico,
-        enlace: base && proyecto && repo ? `${base}/${encodeURIComponent(proyecto)}/_git/${encodeURIComponent(repo)}/pullrequest/${numero}` : null };
+        enlace: p._enlace || (base && proyecto && repo ? `${base}/${encodeURIComponent(proyecto)}/_git/${encodeURIComponent(repo)}/pullrequest/${numero}` : null) };
     })
-    .sort((a, b) => a.numero - b.numero);
+    .sort((a, b) => a.numero - b.numero || `${a.proyecto}/${a.repo}`.localeCompare(`${b.proyecto}/${b.repo}`));
 }
 
 function parseArgs(argv) {
-  const a = { hoy: null, dias: 2, out: null, json: null, provider: null, org: null, error: null, ayuda: false };
+  const a = { hoy: null, dias: 2, out: null, json: null, provider: null, org: null, repos: REPOS_POR_DEFECTO, error: null, ayuda: false };
   const valor = (i) => (i < argv.length && !String(argv[i]).startsWith('--') ? argv[i] : (a.error = `falta el valor de ${argv[i - 1]}`, null));
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -164,6 +199,7 @@ function parseArgs(argv) {
     else if (v === '--json') a.json = valor(++i);
     else if (v === '--provider') a.provider = valor(++i);
     else if (v === '--org') a.org = valor(++i);
+    else if (v === '--repos') a.repos = valor(++i);
     else if (v === '-h' || v === '--help') a.ayuda = true;
     else a.error = `opción desconocida: ${v}`;
   }
@@ -182,9 +218,9 @@ function organizacionConfigurada() {
   return { prendida: ado.prendida, apagada: ado.apagada, org: ado.prendida ? ado.config.valores.ado.org : null };
 }
 
-function main(argv) {
+async function main(argv) {
   const a = parseArgs(argv);
-  const uso = () => console.error('uso: open-prs.js --today <YYYY-MM-DD> [--days 2] [--out <archivo>] [--org <url>]');
+  const uso = () => console.error('uso: open-prs.js --today <YYYY-MM-DD> [--days 2] [--out <archivo>] [--org <url>] [--provider azure|github] [--repos <repos.json>]');
   if (a.ayuda) { uso(); return 0; }
   const dias = Number(a.dias);
   if (a.error || !esFecha(a.hoy) || !Number.isInteger(dias) || dias < 0) {
@@ -201,10 +237,10 @@ function main(argv) {
   try {
     let org = a.org;
     if (a.provider === 'github') {
-      // En GitHub los pull requests todavía no se leen; se declara, nunca «ninguno»
-      lineas = [`PR abiertos: no medido — ${GITHUB}`];
-      sitio = { estado: 'no_medido', motivo: GITHUB, prs: [] };
-      n = { noMedido: 'github' };
+      const activos = await listarGithub(a.repos);
+      lineas = seccion(activos, { hoy: a.hoy, dias });
+      n = contar(activos, { hoy: a.hoy, dias });
+      sitio = { estado: 'medido', motivo: null, prs: paraElSitio(activos, { hoy: a.hoy }) };
     }
     if (!lineas && !org) {
       const ado = organizacionConfigurada();
@@ -250,6 +286,6 @@ function main(argv) {
 if (require.main === module) {
   // Las opciones viejas en castellano siguen andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/open-prs/open-prs.js', { exitCode: 2 });
-  process.exit(main(process.argv.slice(2)));
+  main(process.argv.slice(2)).then((code) => process.exit(code));
 }
 module.exports = { seccion, contar, cantidad, diasAbierto, parseArgs, paraElSitio };

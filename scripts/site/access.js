@@ -21,6 +21,8 @@
  *     persona o una de las suyas en `people.<correo>.identities`, sin distinguir mayúsculas. Si ninguna de sus
  *     identidades aparece en la fuente y no tiene alias, la fila dice «no medido» con la frase de asociarla.
  *   · un proyecto es de la persona si «donde trabaja» lo nombra; sin esa lista, la frase de que todavía no se sabe.
+ *   · una máquina oculta (`people.hidden_machines`) no se muestra a nadie, tampoco a quien mantiene: ni sus corridas, ni
+ *     su fila en la lista de máquinas, ni su oficina. Sale de la configuración y vale sin saber quién es quién.
  *
  * LA REGLA ES LA DE scripts/lib/people.js, y no se copia acá: quién es persona (`esPersona`), el estado de cada
  * máquina (`estadoDeMaquina`, con la unión de carpetas), quién ve una corrida (`puedeVer`), las máquinas por confirmar
@@ -131,8 +133,17 @@ function crearReglas({ config, modelo, personas } = {}) {
     return d.productos.map((p) => p.producto).filter((p) => !ya.has(p)).sort();
   }
 
+  /** ¿La máquina está oculta? Sale de la configuración: vale aunque todavía no se sepa quién es quién. */
+  const oculta = (nombre) => Boolean(nombre) && people.estaOculta(nombre, c);
+
   return {
     maquina,
+    oculta,
+    /**
+     * ¿La corrida es de una máquina oculta? Se juzga por su carpeta real (la regla sigue la unión sólo si vale): la
+     * máquina a la que el bajador la unió no alcanza, porque people.js puede descartar esa unión.
+     */
+    corridaOculta: (x) => { const n = isObject(x) ? x.carpeta || x.maquina_origen || x.maquina : null; return typeof n === 'string' && oculta(n); },
     identidades,
     proyectosDe,
     sugeridosDe,
@@ -166,6 +177,19 @@ function crearReglas({ config, modelo, personas } = {}) {
   };
 }
 
+/**
+ * Qué oficinas recibe quien pide: una función de máquina a sí o no. La regla es la de las ejecuciones, con la perilla
+ * `site.offices.visibility`: con `maintainers`, quien mantiene todas y cada persona las de sus máquinas confirmadas; con
+ * `everyone`, todos los que entran. Sin rol, ninguna.
+ */
+function oficinasQueVe(quien, reglas, visibilidad) {
+  if (quien.rol !== 'maintainer' && quien.rol !== 'person') return () => false;
+  // una oculta no se ve, ni con la perilla abierta a todos
+  const visible = (maquina) => !(reglas.oculta && reglas.oculta(maquina));
+  if (quien.rol === 'maintainer' || visibilidad === 'everyone') return visible;
+  return (maquina) => visible(maquina) && reglas.puedeVer(quien.email, { maquina });
+}
+
 const copia = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
 
 /**
@@ -177,6 +201,8 @@ function filtrar(modelo, quien, reglas) {
   if (quien.rol === 'maintainer') {
     const out = copia(m);
     const lista = (m.corridas && Array.isArray(m.corridas.lista)) ? m.corridas.lista : [];
+    // las corridas de una máquina oculta no se muestran, tampoco a quien mantiene
+    if (out.corridas && Array.isArray(out.corridas.lista) && reglas.corridaOculta) out.corridas.lista = out.corridas.lista.filter((x) => !reglas.corridaOculta(x));
     out.maquinasSinConfirmar = reglas.sinConfirmar(lista);
     out.rol = 'maintainer';
     return out;
@@ -238,6 +264,7 @@ function filtrar(modelo, quien, reglas) {
     if (m.vigilante && Array.isArray(m.vigilante.productos)) out.vigilante = { estado: m.vigilante.estado, fecha: m.vigilante.fecha || null, productos: m.vigilante.productos.filter((p) => formas.has(forma(p))) };
   }
   out.umbrales = copia(m.umbrales);
+  out.stateAgeDays = copia(m.stateAgeDays) || null;
   return out;
 }
 
@@ -257,13 +284,24 @@ function filtrarCorridas(M, quien, reglas) {
   const m = M || {};
   const lista = Array.isArray(m.corridas) ? m.corridas : [];
   const mantiene = quien.rol === 'maintainer';
-  const ve = mantiene ? () => true : (c) => Boolean(c.maquina) && reglas.puedeVer(quien.email, { maquina: c.maquina, carpeta: c.maquina_origen || c.maquina });
+  const oculta = (c) => Boolean(reglas.corridaOculta) && reglas.corridaOculta(c);
+  const ve = mantiene ? (c) => !oculta(c) : (c) => Boolean(c.maquina) && !oculta(c) && reglas.puedeVer(quien.email, { maquina: c.maquina, carpeta: c.maquina_origen || c.maquina });
   const corridas = lista.filter(ve).map(copia);
   unificarProductos(corridas);
   const { corridas: _todas, archivos, duplicados, ilegibles, maquinas, buzon, ...resto } = m;
   const out = { ...copia(resto), corridas };
   if (mantiene) {
-    Object.assign(out, { archivos, duplicados, ilegibles, buzon: copia(buzon), maquinas: maquinas ? { ...copia(maquinas), local: null, solo_esta: false } : maquinas, varias_maquinas: true });
+    // la lista de máquinas se cuenta sobre las corridas que se muestran: sin las ocultas, tampoco las de una carpeta
+    // oculta unida a una nueva visible. Los conteos del buzón (archivos, ilegibles, duplicados) siguen contando sus archivos
+    const recontada = {};
+    if (maquinas && Array.isArray(maquinas.lista)) {
+      const cuenta = {};
+      let sinDeclarar = 0;
+      for (const c of corridas) { if (c.maquina) cuenta[c.maquina] = (cuenta[c.maquina] || 0) + 1; else sinDeclarar += 1; }
+      recontada.lista = Object.keys(cuenta).sort((a, b) => cuenta[b] - cuenta[a] || a.localeCompare(b)).map((n) => ({ nombre: n, corridas: cuenta[n] }));
+      if (maquinas.sin_declarar !== undefined) recontada.sin_declarar = sinDeclarar;
+    }
+    Object.assign(out, { archivos, duplicados, ilegibles, buzon: copia(buzon), maquinas: maquinas ? { ...copia(maquinas), ...recontada, local: null, solo_esta: false } : maquinas, varias_maquinas: true });
     return out;
   }
   const cuenta = {};
@@ -275,14 +313,14 @@ function filtrarCorridas(M, quien, reglas) {
   // medido». Pasa hasta la primera bajada entera del buzón, o si lo informado no se pudo leer.
   if (reglas.quienEsQuienMedido === false) {
     out.buzon = { estado: buzon ? buzon.estado : 'no_medido', parcial: true };
-    out.vacio_motivo = 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del buzón); tus ejecuciones faltan, no son cero';
+    out.vacio_motivo = 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del depósito); tus ejecuciones faltan, no son cero';
     return out;
   }
   if (!corridas.length) {
     const suyas = reglas.maquinasDe ? reglas.maquinasDe(quien.email) : [];
-    out.vacio_motivo = `todavía no hay ejecuciones de tus máquinas en el buzón (${suyas.join(', ') || 'ninguna confirmada'}): la primera llega sola al terminar un pipeline`;
+    out.vacio_motivo = `todavía no hay ejecuciones de tus máquinas en el depósito (${suyas.join(', ') || 'ninguna confirmada'}): la primera llega sola al terminar un pipeline`;
   }
   return out;
 }
 
-module.exports = { quienPide, mantenedores, listaDeAcceso, crearReglas, filtrar, filtrarCorridas, FRASE_IDENTIDAD, FRASE_PROYECTOS };
+module.exports = { quienPide, mantenedores, listaDeAcceso, crearReglas, oficinasQueVe, filtrar, filtrarCorridas, FRASE_IDENTIDAD, FRASE_PROYECTOS };

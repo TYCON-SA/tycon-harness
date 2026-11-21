@@ -44,6 +44,9 @@ const path = require('path');
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+// El comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; suelto, este
+// archivo escribe el mismo texto.
+const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return require('fs').existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
 if (process.env.TYCON_ENGRAM_DRIFT === '0' || process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
 // engram: con la integración apagada (sin perfil del equipo ni llave) no hay memoria que revisar —
@@ -104,7 +107,7 @@ try {
   const HAY_BASE = fs.existsSync(path.join(os.homedir(), '.engram', 'engram.db'));
 
   const haySqlite = (() => {
-    try { require('child_process').execFileSync(process.env.TYCON_SQLITE_BIN || 'sqlite3', ['-version'], { stdio: 'ignore' }); return true; }
+    try { require('child_process').execFileSync(process.env.TYCON_SQLITE_BIN || 'sqlite3', ['-version'], { windowsHide: true, stdio: 'ignore' }); return true; }
     catch { return false; }
   })();
   if (!haySqlite && HAY_BASE) {
@@ -125,8 +128,9 @@ try {
   // en el clon del arnés: desde cualquier otra carpeta —que es donde estás cuando leés este aviso
   // al abrir una sesión— el comando no corre. Y sin `--repo` tocaría todos los repos, no el que
   // está roto. `__dirname` lo resuelve para cualquier clon, en cualquier máquina.
-  const arregloDe = (r) => `node ${JSON.stringify(path.join(__dirname, '..', 'lib', 'manifest-engram.js'))}`
-    + ` repair --apply --repo ${JSON.stringify(r.dir || path.join(escaneo.root, r.repo))}`;   // con varias carpetas de repos, la del propio repo
+  // En índice local el arreglo es rehacer el índice: lo decide `comandoDeArreglo`.
+  const arregloDe = (r) => require(path.join(__dirname, '..', 'lib', 'manifest-engram.js'))
+    .comandoDeArreglo(r.dir || path.join(escaneo.root, r.repo));   // con varias carpetas de repos, la del propio repo
   const { unpinned } = escaneo;
   // 🔴 SIN RAÍZ DE REPOS: el arnés no sabe dónde están los repos de esta máquina. Eso deja sin correr los
   // chequeos que miran repos —y el de la memoria nunca exportada devuelve null por eso, que este aviso leería como «¿base
@@ -189,7 +193,7 @@ try {
         'Memoria partida que se puede unificar sin ambigüedad — hay que correrlo A MANO:\n' +
         conAuto.flatMap((r) => r.auto.map((a) =>
           `       · en ${r.repo}: '${a.nombre}' (${a.obs} obs) → '${r.pin}'`)).join('\n') + '\n' +
-        '     Revisá y aplicá:  node ~/.claude/tycon-harness/scripts/lib/engram-autoheal.js\n' +
+        `     Revisá y aplicá:  ${homeCommand('.claude/tycon-harness/scripts/lib/engram-autoheal.js')}\n` +
         '     (sin --apply muestra el plan · con --apply lo ejecuta)\n' +
         '     🔴 El apply automático está APAGADO a propósito: su verificación posterior no\n' +
         '     detectaba un borrado ni un destino equivocado, y el motor tiene una carrera.\n' +
@@ -260,7 +264,7 @@ try {
 
   console.log('🧠 memoria de engram — revisión diaria:');
   problemas.forEach((p, i) => console.log(`  ${i + 1}. ${p}`));
-  console.log('  Detalle y score: node ~/.claude/tycon-harness/scripts/lib/harness-audit.js --verbose');
+  console.log(`  Detalle y score: ${homeCommand('.claude/tycon-harness/scripts/lib/harness-audit.js')} --verbose`);
   console.log('  Silenciar: TYCON_ENGRAM_DRIFT=0');
 } catch (e) {
   // Fail-open absoluto — ver cabecera. Con UNA excepción que se dice: la configuración del

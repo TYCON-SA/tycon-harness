@@ -64,7 +64,7 @@ function writeFiles(dir, files) {
 // está incluida: es el archivo «que el .gitignore del árbol ignora».
 const GITIGNORE = ['.dashboard/', '!.dashboard/', '.dashboard/*', '!.dashboard/bench/', '!.dashboard/bench/*.json', '!.dashboard/bench/*.bin', '*.bak', ''].join('\n');
 const BINARY = Buffer.from([0, 1, 2, 255, 0, 10, 13, 0, 200]);
-// La guarda de la otra mitad (`overlay-harness.js --check-tree`), de mentira y en su lugar de siempre: sale lo que
+// La guarda del árbol (`harness-tree.js --check-tree`), de mentira y en su lugar de siempre: sale lo que
 // diga CHECK_TREE_EXIT (0 si no dice nada) y, si le dan dónde, deja constancia de cómo la llamaron. La de verdad
 // tiene sus casos en su propia suite; acá se prueba que el guion la llama, y que sin ella no guarda.
 const GUARD_FAKE = 'if (process.env.CHECK_TREE_LOG) require("fs").writeFileSync(process.env.CHECK_TREE_LOG, JSON.stringify({ args: process.argv.slice(2), tree: process.env.HARNESS_TREE }));\n'
@@ -76,7 +76,7 @@ const GUARD_FAKE = 'if (process.env.CHECK_TREE_LOG) require("fs").writeFileSync(
 const TREE = 'abc123';
 const SEED = {
   '.gitignore': GITIGNORE,
-  'scripts/ci/overlay-harness.js': GUARD_FAKE,
+  'scripts/ci/harness-tree.js': GUARD_FAKE,
   'scripts/run.sh': '#!/bin/sh\necho hola\n',
   'scripts/old.js': 'lo que el público borró\n',
   'scripts/ci/tool.js': 'module.exports = 1;\n',
@@ -874,14 +874,13 @@ test('T73 la guarda del árbol: se comprueba antes de guardar; si el árbol camb
   if (process.platform !== 'win32') assert.match(r.out, /--check-tree salió sin código/, 'lo dice: terminó sin código');
   assert.strictEqual(mainTip(w), beforeKilled, 'la guarda muerta: nada viaja');
 
-  // El guion de ESTA corrida. Con el arnés traído de GitHub, el checkout queda parado en el commit
-  // del que salió la copia: el `overlay-harness.js` del disco es el de ese commit, que puede no conocer `--check-tree`
-  // o calcular la huella de otro modo. La plantilla guarda antes el de la corrida —el que calculó HARNESS_TREE— en la
-  // carpeta temporal del agente, y la guarda corre ése (lo mismo que hace check-tree.yml antes de medir).
+  // El guion de ESTA corrida. Con el arnés traído de GitHub, el checkout puede quedar parado en el commit del que salió
+  // la copia, y el `harness-tree.js` del disco ser otro o no estar. La plantilla guarda antes el público de la corrida
+  // —el que calculó HARNESS_TREE— en la carpeta temporal del agente, y la guarda corre ése (como check-tree.yml).
   w = world('guard-run-script');
   log = path.join(w.base, 'check.json');
   const agentTmp = path.join(w.base, 'agent-tmp');
-  writeFiles(agentTmp, { 'arnes-guion/overlay-harness.js':
+  writeFiles(agentTmp, { 'arnes-guion/harness-tree.js':
     'require("fs").writeFileSync(process.env.CHECK_TREE_LOG, JSON.stringify({ from: "la ejecución", args: process.argv.slice(2) }));\nprocess.exit(Number(process.env.RUN_GUARD_EXIT || 0));\n' });
   writeFiles(w.job, { 'ultimo.json': '{"ts":"1"}\n' });
   // el del disco diría que el árbol cambió: si se corriera ése, saldría rojo
@@ -898,7 +897,7 @@ test('T73 la guarda del árbol: se comprueba antes de guardar; si el árbol camb
   r = save(w, ['--message', 'm', '--', 'ultimo.json'], { AGENT_TEMPDIRECTORY: agentTmp, RUN_GUARD_EXIT: '1', CHECK_TREE_EXIT: '0', CHECK_TREE_LOG: log });
   assert.strictEqual(r.code, 1, r.out);
   assert.match(r.out, /NO viajó/);
-  assert.match(r.out, /el guion de la ejecución[^\n]*--check-tree salió 1/, 'el rojo nombra el guion que corrió, no el del checkout');
+  assert.match(r.out, /el de la ejecución, arnes-guion\/harness-tree\.js --check-tree salió 1/, 'el rojo nombra el guion que corrió, no el del checkout');
   assert.strictEqual(mainTip(w), beforeRun, 'la guarda de la ejecución en rojo: nada viaja');
   // sin guion guardado (la fuente azure, o después del corte) corre el del checkout
   fs.rmSync(path.join(agentTmp, 'arnes-guion'), { recursive: true, force: true });
@@ -910,7 +909,7 @@ test('T73 la guarda del árbol: se comprueba antes de guardar; si el árbol camb
   assert.strictEqual(ran.tree, TREE);
   // y si en ese lugar hay otra cosa que un archivo (una carpeta), tampoco es el guion de la corrida: la del
   // checkout, igual que elige check-tree.yml con `[ -f ]` antes de medir
-  fs.mkdirSync(path.join(agentTmp, 'arnes-guion', 'overlay-harness.js'), { recursive: true });
+  fs.mkdirSync(path.join(agentTmp, 'arnes-guion', 'harness-tree.js'), { recursive: true });
   fs.rmSync(log, { force: true });
   writeFiles(w.job, { 'ultimo.json': '{"ts":"3"}\n' });
   r = save(w, ['--message', 'm', '--', 'ultimo.json'], { AGENT_TEMPDIRECTORY: agentTmp, CHECK_TREE_EXIT: '0', CHECK_TREE_LOG: log });
@@ -1005,10 +1004,45 @@ test('T73 lo que cambia fuera de las rutas del paso se nombra (el control de «s
   assert.deepStrictEqual(changedOutside(w.job, a, b, ['.dashboard/bench/*.json', 'inbox'], cleanEnv()), ['scripts/run.sh']);
 });
 
+test('T11 PushNightlyData_SoloHarnessTree @story-8.145 @ac-16:con o sin el guion de la superposición, en el árbol o guardado de la ejecución, la guarda corre siempre harness-tree.js y el otro no se llama', () => {
+  // el guion de la superposición, de mentira: si lo llamaran, dejaría constancia y saldría rojo
+  const DECOY = 'require("fs").writeFileSync(process.env.DECOY_LOG, "llamado");\nprocess.exit(1);\n';
+  // un árbol sin `overlay-harness.js` (el de cualquier organización)
+  let w = world('only-tree-plain');
+  let log = path.join(w.base, 'check.json');
+  let decoyLog = path.join(w.base, 'decoy.txt');
+  writeFiles(w.job, { 'ultimo.json': '{"ts":"1"}\n' });
+  let r = save(w, ['--message', 'm', '--', 'ultimo.json'], { CHECK_TREE_LOG: log, DECOY_LOG: decoyLog });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(JSON.parse(fs.readFileSync(log, 'utf8')).args[0], '--check-tree', 'corrió la guarda del árbol');
+  // un árbol CON `overlay-harness.js`, y la ejecución con los dos guiones guardados: corre el público de la ejecución
+  w = world('only-tree-overlay');
+  log = path.join(w.base, 'check.json');
+  decoyLog = path.join(w.base, 'decoy.txt');
+  writeFiles(w.job, { 'scripts/ci/overlay-harness.js': DECOY });
+  git(w.job, ['add', '-A', '-f']);
+  git(w.job, ['commit', '--quiet', '-m', 'la superposición']);
+  const agentTmp = path.join(w.base, 'agent-tmp');
+  writeFiles(agentTmp, { 'arnes-guion/overlay-harness.js': DECOY,
+    'arnes-guion/harness-tree.js': 'require("fs").writeFileSync(process.env.CHECK_TREE_LOG, JSON.stringify({ from: "la ejecución" }));\n' });
+  writeFiles(w.job, { 'ultimo.json': '{"ts":"1"}\n' });
+  r = save(w, ['--message', 'm', '--', 'ultimo.json'], { AGENT_TEMPDIRECTORY: agentTmp, CHECK_TREE_LOG: log, DECOY_LOG: decoyLog });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(JSON.parse(fs.readFileSync(log, 'utf8')).from, 'la ejecución', 'el harness-tree.js guardado de la ejecución');
+  assert.ok(!fs.existsSync(decoyLog), 'el guion de la superposición no se llama');
+  // sin el público guardado (y con el de la superposición guardado): el harness-tree.js del árbol, nunca el otro
+  fs.rmSync(path.join(agentTmp, 'arnes-guion', 'harness-tree.js'));
+  fs.rmSync(log, { force: true });
+  writeFiles(w.job, { 'ultimo.json': '{"ts":"2"}\n' });
+  r = save(w, ['--message', 'm', '--', 'ultimo.json'], { AGENT_TEMPDIRECTORY: agentTmp, CHECK_TREE_LOG: log, DECOY_LOG: decoyLog });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(JSON.parse(fs.readFileSync(log, 'utf8')).tree, TREE, 'la guarda del árbol, con la huella de la plantilla');
+  assert.ok(!fs.existsSync(decoyLog), 'tampoco ahora se llama al de la superposición');
+});
+
 test('T8 (story 8.30) PushNightlyData_PublicTree_UsesHarnessTree: un árbol sin overlay-harness.js guarda con la guarda pública, y si el checkout se movió sale rojo nombrándola', () => {
   // el árbol de un pipeline de operaciones de otra organización: el arnés público, sin la superposición del equipo
   const w = world('public-guard');
-  fs.rmSync(path.join(w.job, 'scripts', 'ci', 'overlay-harness.js'));
   fs.copyFileSync(path.join(ROOT, 'scripts', 'ci', 'harness-tree.js'), path.join(w.job, 'scripts', 'ci', 'harness-tree.js'));
   git(w.job, ['add', '-A', '-f']);
   git(w.job, ['commit', '--quiet', '-m', 'datos de operaciones [local, no se empuja]']);

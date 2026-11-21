@@ -26,7 +26,7 @@
  *   node blocking-meter.js --report --all  # detalle por turno
  *   node blocking-meter.js --selftest      # corre la medición sobre un transcript sintético
  *
- * Opt-out: TYCON_BLOCKING_METER=0
+ * Opt-out: TYCON_BLOCKING_METER=0 en la máquina, o `switches.blocking_meter: "off"` en el perfil (la variable gana).
  * Umbral:  TYCON_BLOCKING_MAX_MS (default 120000 = 2 min, el mismo corte de la regla)
  */
 
@@ -34,9 +34,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
-const STATE_DIR = path.join(os.homedir(), '.claude', 'blocking-meter');
+// la carpeta de los registros sueltos (scripts/lib/loose-logs.js): la del estado en una máquina que vive en la casa
+// propia del arnés, la de siempre en las demás. Sin ella (un árbol sin tycon-home.js) el medidor no mide: `main` sale
+// antes de usar estas rutas.
+const LOOSE_DIR = (() => { try { return require('../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();
+const STATE_DIR = path.join(LOOSE_DIR || '', 'blocking-meter');
 const LOG_PATH = path.join(STATE_DIR, 'log.jsonl');
 const PENDING_DIR = path.join(STATE_DIR, 'pending');
 const PROBE_PATH = path.join(STATE_DIR, 'input-shape.json');
@@ -251,11 +254,23 @@ function selftest() {
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
+// La organización puede apagar o encender este medidor desde el sitio (`switches.blocking_meter` del perfil); la variable
+// TYCON_BLOCKING_METER de la máquina, si está puesta, gana. Sin lector, o con la configuración rota, sigue encendido: una clave
+// que no se puede leer no lo apaga, y el aviso va a stderr.
+function orgSwitchOn(name) {
+  try {
+    const C = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
+    return C.switchOn(name, { warn: (w) => process.stderr.write(`${w}\n`) });
+  } catch { return true; }
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (args.includes('--selftest')) return selftest();
+  if (!LOOSE_DIR) { if (args.includes('--report')) console.log('No sé dónde están las mediciones: falta scripts/setup/harness/tycon-home.js en este árbol.'); return; }
   if (args.includes('--report')) return report(args.includes('--all'));
   if (process.env.TYCON_BLOCKING_METER === '0') return;
+  if (!orgSwitchOn('blocking_meter')) return;
 
   let event = {};
   try {

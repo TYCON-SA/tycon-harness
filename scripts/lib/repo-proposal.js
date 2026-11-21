@@ -42,15 +42,16 @@ const crypto = require('crypto');
 // Lo que este archivo le dice a una persona, en castellano y en inglés: la tabla de textos del sitio
 // (scripts/site/texts.js) la suma a la suya y lo traduce en el idioma de cada pedido. Acá se arma en castellano.
 const TEXTOS = {
-  'rp.sinPlataforma': { es: 'no reconozco la plataforma del remoto: abrí el pedido a mano', en: 'I do not recognize the remote\'s platform: open the request by hand' },
+  'rp.sinPlataforma': { es: 'no reconozco la plataforma del remoto: abrí el pull request a mano', en: 'I do not recognize the remote\'s platform: open the request by hand' },
   'rp.politicaIlegible': { es: 'no pude leer la política de la rama {rama} ({motivo})', en: 'I could not read the policy of the {rama} branch ({motivo})' },
   'rp.sinPolitica': { es: 'el repo no tiene una política que pida revisión en {rama}: sin ella, la identidad del sitio podría escribir {rama}', en: 'the repo has no policy that requires review on {rama}: without it, the site\'s identity could write to {rama}' },
-  'rp.autorAprueba': { es: 'la política de {rama} deja que quien crea el pedido lo apruebe, y el pedido lo crea la identidad del sitio: apagá «Allow requestors to approve their own changes» en esa política', en: "the policy of {rama} lets the request's creator approve it, and the request is created by the site's identity: turn off \"Allow requestors to approve their own changes\" in that policy" },
-  'rp.noCubre': { es: 'la política de {rama} no cubre {archivo}: su filtro de ruta no lo incluye, y sin revisión la identidad del sitio podría completar el pedido', en: 'the policy of {rama} does not cover {archivo}: its path filter does not include it, and without review the site\'s identity could complete the request' },
-  'rp.sinEvaluar': { es: 'No se pudo aplicar solo: la plataforma todavía no terminó de evaluar la revisión después del voto del sitio. El pedido queda para aprobar: {enlace}', en: "It could not be applied automatically: the platform has not finished evaluating the review after the site's vote. The request is waiting for approval: {enlace}" },
-  'rp.pideMas': { es: 'No se pudo aplicar solo: además del voto del sitio, la rama principal pide {nombres}. El pedido queda para aprobar: {enlace}', en: "It could not be applied automatically: in addition to the site's vote, the main branch requires {nombres}. The request is waiting for approval: {enlace}" },
-  'rp.aplicado': { es: 'Aplicado: el cambio entró en la rama principal. Pedido: {enlace}', en: 'Applied: the change went into the main branch. Request: {enlace}' },
-  'rp.sinCredencial': { es: 'el sitio no tiene identidad de escritura: descargá el archivo y abrí el pedido a mano', en: 'the site has no write identity: download the file and open the request by hand' },
+  'rp.autorAprueba': { es: 'la política de {rama} deja que quien crea el pull request lo apruebe, y el pull request lo crea la identidad del sitio: apagá «Allow requestors to approve their own changes» en esa política', en: "the policy of {rama} lets the request's creator approve it, and the request is created by the site's identity: turn off \"Allow requestors to approve their own changes\" in that policy" },
+  'rp.noCubre': { es: 'la política de {rama} no cubre {archivo}: su filtro de ruta no lo incluye, y sin revisión la identidad del sitio podría completar el pull request', en: 'the policy of {rama} does not cover {archivo}: its path filter does not include it, and without review the site\'s identity could complete the request' },
+  'rp.seCompletaSolo': { es: 'Aprobado por el sitio. La plataforma todavía está evaluando la revisión: el pull request se completa solo cuando termine de evaluar, sin saltear ninguna política. {enlace}', en: 'Approved by the site. The platform is still evaluating the review: the pull request completes on its own when it finishes, without bypassing any policy. {enlace}' },
+  'rp.sinEvaluar': { es: 'No se pudo aplicar solo: la plataforma todavía no terminó de evaluar la revisión después del voto del sitio. El pull request queda para aprobar: {enlace}', en: "It could not be applied automatically: the platform has not finished evaluating the review after the site's vote. The request is waiting for approval: {enlace}" },
+  'rp.pideMas': { es: 'No se pudo aplicar solo: además del voto del sitio, la rama principal pide {nombres}. El pull request queda para aprobar: {enlace}', en: "It could not be applied automatically: in addition to the site's vote, the main branch requires {nombres}. The request is waiting for approval: {enlace}" },
+  'rp.aplicado': { es: 'Aplicado: el cambio entró en la rama principal. Pull request: {enlace}', en: 'Applied: the change went into the main branch. Request: {enlace}' },
+  'rp.sinCredencial': { es: 'el sitio no tiene identidad de escritura: descargá el archivo y abrí el pull request a mano', en: 'the site has no write identity: download the file and open the request by hand' },
   'rp.sinVersion': { es: 'falta la versión del archivo que abriste: recargá', en: 'the version of the file you opened is missing: reload' },
   'rp.faltanDatos': { es: 'faltan datos de la propuesta (clon, archivo, contenido o id corto)', en: 'the proposal is missing data (clone, file, content or short id)' },
   'rp.sinOrigin': { es: 'el clon del sitio no tiene un remoto «origin»: no hay adónde mandar la propuesta', en: "the site's clone has no \"origin\" remote: there is nowhere to send the proposal" },
@@ -61,15 +62,15 @@ const TEXTOS = {
   'rp.noLeiLista': { es: 'no pude listar los archivos de la rama principal', en: 'I could not list the files of the main branch' },
   'rp.noLeiArchivo': { es: 'no pude leer {archivo} de la rama principal', en: 'I could not read {archivo} from the main branch' },
   'rp.cambio': { es: 'el archivo cambió desde que lo abriste: recargá', en: 'the file changed since you opened it: reload' },
-  'rp.noVerifique': { es: 'no pude verificar si ya hay un pedido abierto sobre este archivo ({error}): no propongo nada; probá de nuevo', en: 'I could not check whether there is already an open request on this file ({error}): nothing was proposed; try again' },
-  'rp.yaAbierto': { es: 'ya hay un pedido abierto sobre este archivo: {enlace}; esperá a que se mergee o cerralo', en: 'there is already an open request on this file: {enlace}; wait for it to merge or close it' },
+  'rp.noVerifique': { es: 'no pude verificar si ya hay un pull request abierto sobre este archivo ({error}): no propongo nada; probá de nuevo', en: 'I could not check whether there is already an open request on this file ({error}): nothing was proposed; try again' },
+  'rp.yaAbierto': { es: 'ya hay un pull request abierto sobre este archivo: {enlace}; esperá a que se mergee o cerralo', en: 'there is already an open request on this file: {enlace}; wait for it to merge or close it' },
   'rp.noGuarde': { es: 'no pude guardar el contenido en el clon ({error})', en: 'I could not save the content in the clone ({error})' },
   'rp.noCommit': { es: 'no pude armar el commit ({error})', en: 'I could not build the commit ({error})' },
   'rp.noSubi': { es: 'no pude subir la rama {rama} ({error})', en: 'I could not push the {rama} branch ({error})' },
-  'rp.noAbri': { es: 'El cambio subió a la rama {rama}, pero no pude abrir el pedido ({motivo}). Abrilo desde: {manual}', en: 'The change was pushed to the {rama} branch, but I could not open the request ({motivo}). Open it from: {manual}' },
-  'rp.abierto': { es: 'Pedido abierto: {enlace}', en: 'Request opened: {enlace}' },
-  'rp.githubNoAprueba': { es: 'No se pudo aplicar solo: el repo pide una aprobación y no deja el auto-merge ({motivo}). El pedido queda para aprobar: {enlace}', en: 'It could not be applied automatically: the repository requires an approval and does not allow auto-merge ({motivo}). The request is waiting for approval: {enlace}' },
-  'rp.githubAutoMerge': { es: 'El repo pide la aprobación de otra persona: el pedido quedó con auto-merge y entra solo en cuanto alguien lo apruebe y pasen sus chequeos: {enlace}', en: 'The repository requires someone else to approve: the request has auto-merge on and goes in as soon as someone approves it and its checks pass: {enlace}' },
+  'rp.noAbri': { es: 'El cambio subió a la rama {rama}, pero no pude abrir el pull request ({motivo}). Abrilo desde: {manual}', en: 'The change was pushed to the {rama} branch, but I could not open the request ({motivo}). Open it from: {manual}' },
+  'rp.abierto': { es: 'Pull request abierto: {enlace}', en: 'Request opened: {enlace}' },
+  'rp.githubNoAprueba': { es: 'No se pudo aplicar solo: el repo pide una aprobación y no deja el auto-merge ({motivo}). El pull request queda para aprobar: {enlace}', en: 'It could not be applied automatically: the repository requires an approval and does not allow auto-merge ({motivo}). The request is waiting for approval: {enlace}' },
+  'rp.githubAutoMerge': { es: 'El repo pide la aprobación de otra persona: el pull request quedó con auto-merge y entra solo en cuanto alguien lo apruebe y pasen sus chequeos: {enlace}', en: 'The repository requires someone else to approve: the request has auto-merge on and goes in as soon as someone approves it and its checks pass: {enlace}' },
   'rp.pipelineNoReconocido': { es: 'no reconozco el pipeline: el número de la definición en Azure DevOps (o proyecto/número si es de otro proyecto), o dueño/repo en GitHub', en: 'I do not recognize the pipeline: the definition number in Azure DevOps (or project/number if it is from another project), or owner/repo on GitHub' },
   'rp.stageAMano': { es: 'no configurado: escribí el stage a mano (el sitio no tiene SITE_PIPELINES_TOKEN)', en: 'not set up: type the stage by hand (the site has no SITE_PIPELINES_TOKEN)' },
   'rp.noEsAzure': { es: 'el repo de operaciones no es de Azure DevOps: escribí el stage a mano', en: 'the operations repo is not on Azure DevOps: type the stage by hand' },
@@ -85,12 +86,12 @@ const TEXTOS = {
   'rp.proyectoDesconocido': { es: 'Azure DevOps no conoce el proyecto {proyecto} en {org}: revisá los dos nombres', en: 'Azure DevOps does not know the project {proyecto} in {org}: check both names' },
   'rp.azureContesto': { es: 'Azure DevOps contestó {estado}: escribí el número del pipeline', en: "Azure DevOps responded with {estado}: type the pipeline's number" },
   'rp.respuestaIlegible': { es: 'la respuesta de Azure DevOps no se pudo leer: escribí el número del pipeline', en: 'the answer from Azure DevOps could not be read: type the pipeline\'s number' },  // los tipos de pedido de trabajo y sus campos: sin la lista se escribe a mano, como siempre, y lo valida el lector
-  'rp.sinPermisoPedidos': { es: 'el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo. Mientras tanto, escribí el nombre', en: 'the site cannot read the work item types: it lacks the work item read permission. Meanwhile, type the name' },
-  'rp.permisoPedidos': { es: 'el permiso del sitio no alcanza para leer los tipos de pedido de {proyecto} (necesita lectura de pedidos de trabajo): escribí el nombre', en: 'the site\'s permission is not enough to read the work item types of {proyecto} (it needs work item read): type the name' },
+  'rp.sinPermisoPedidos': { es: 'el sitio no puede leer los tipos de tarea: falta su permiso de lectura de tareas (work items). Mientras tanto, escribí el nombre', en: 'the site cannot read the work item types: it lacks the work item read permission. Meanwhile, type the name' },
+  'rp.permisoPedidos': { es: 'el permiso del sitio no alcanza para leer los tipos de tarea de {proyecto} (necesita poder leer las tareas): escribí el nombre', en: 'the site\'s permission is not enough to read the work item types of {proyecto} (it needs work item read): type the name' },
   'rp.pedidosNoContesto': { es: 'Azure DevOps no contestó: escribí el nombre', en: 'Azure DevOps did not answer: type the name' },
   'rp.pedidosContesto': { es: 'Azure DevOps contestó {estado}: escribí el nombre', en: 'Azure DevOps responded with {estado}: type the name' },
   'rp.pedidosIlegible': { es: 'la respuesta de Azure DevOps no se pudo leer: escribí el nombre', en: 'the answer from Azure DevOps could not be read: type the name' },
-  'rp.tipoDesconocido': { es: 'el proyecto {proyecto} no tiene el tipo de pedido {tipo}', en: 'the project {proyecto} has no work item type {tipo}' },
+  'rp.tipoDesconocido': { es: 'el proyecto {proyecto} no tiene el tipo de tarea {tipo}', en: 'the project {proyecto} has no work item type {tipo}' },
 };
 const M = (clave, valores = {}) => TEXTOS[clave].es.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (m, n) => (Object.prototype.hasOwnProperty.call(valores, n) ? String(valores[n]) : m));
 
@@ -272,18 +273,24 @@ function exigeRevisor(p, archivo) {
  * filtro de ruta (`filenamePatterns`) cubre `archivo` (con el filtro, «Proponer» va archivo por archivo; sin
  * `archivo`, una política con filtro no alcanza). GitHub: la protección de la rama
  * (`required_pull_request_reviews.required_approving_review_count >= 1`) o una regla `pull_request` que la pida.
+ * `lecturas` (un Map) comparte lo leído entre varios archivos de un mismo pedido: se lee una vez y se evalúa por archivo.
  */
-async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archivo = null, aplicarSolo = false }) {
+async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archivo = null, aplicarSolo = false, lecturas = null }) {
   if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { ok: false, codigo: 'plataforma_desconocida', message: M('rp.sinPlataforma') };
   const cred = credenciales(credencial);
   const secretos = secretosDe(cred);
   const base = baseDe(remote, urlBase);
+  const leer = (url) => {
+    if (!lecturas) return llamar({ url, remote, cred, fetch: f, secretos });
+    if (!lecturas.has(url)) lecturas.set(url, llamar({ url, remote, cred, fetch: f, secretos }));
+    return lecturas.get(url);
+  };
   const noLeida = (r) => ({ ok: false, codigo: 'no_se_pudo_leer', message: M('rp.politicaIlegible', { rama: RAMA_PRINCIPAL, motivo: motivoCorto(r) }) });
   const sinPolitica = { ok: false, codigo: 'sin_politica', message: M('rp.sinPolitica', { rama: RAMA_PRINCIPAL }) };
   if (remote.platform === 'azure') {
-    const repo = await llamar({ url: `${base}/git/repositories/${encodeURIComponent(remote.repo)}?${API_AZURE}`, remote, cred, fetch: f, secretos });
+    const repo = await leer(`${base}/git/repositories/${encodeURIComponent(remote.repo)}?${API_AZURE}`);
     if (repo.status !== 200 || !repo.doc || !repo.doc.id) return noLeida(repo);
-    const pol = await llamar({ url: `${base}/policy/configurations?repositoryId=${encodeURIComponent(repo.doc.id)}&refName=${encodeURIComponent(`refs/heads/${RAMA_PRINCIPAL}`)}&${API_AZURE}`, remote, cred, fetch: f, secretos });
+    const pol = await leer(`${base}/policy/configurations?repositoryId=${encodeURIComponent(repo.doc.id)}&refName=${encodeURIComponent(`refs/heads/${RAMA_PRINCIPAL}`)}&${API_AZURE}`);
     if (pol.status !== 200 || !pol.doc || !Array.isArray(pol.doc.value)) return noLeida(pol);
     const validas = pol.doc.value
       .filter((p) => p && p.isEnabled === true && p.isBlocking === true && p.type && [TIPO_REVISORES_AZURE, TIPO_REQUERIDOS_AZURE].includes(p.type.displayName) && p.settings && Number(p.settings.minimumApproverCount) >= 1)
@@ -320,7 +327,7 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archi
     const n = Math.max(...cubren.map((p) => Number(p.settings.minimumApproverCount)));
     return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}` };
   }
-  const prot = await llamar({ url: `${base}/branches/${RAMA_PRINCIPAL}/protection`, remote, cred, fetch: f, secretos });
+  const prot = await leer(`${base}/branches/${RAMA_PRINCIPAL}/protection`);
   // en GitHub quien abre un pedido no puede aprobarlo: si entra solo depende de que el repo deje mergear a la identidad del
   // sitio sin aprobación, y eso se sabe recién al intentarlo
   const enGithub = (n) => ({ ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}`, ...(aplicarSolo ? { aplicaSolo: false, motivoAplicar: SIN_APLICAR_GITHUB } : {}) });
@@ -328,7 +335,7 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archi
     const n = Number((((prot.doc || {}).required_pull_request_reviews || {}).required_approving_review_count) || 0);
     if (n >= 1) return enGithub(n);
   } else if (prot.status !== 404) return noLeida(prot);
-  const reglas = await llamar({ url: `${base}/rules/branches/${RAMA_PRINCIPAL}`, remote, cred, fetch: f, secretos });
+  const reglas = await leer(`${base}/rules/branches/${RAMA_PRINCIPAL}`);
   if (reglas.status !== 200 || !Array.isArray(reglas.doc)) return noLeida(reglas);
   const n = Math.max(0, ...reglas.doc.filter((r) => r && r.type === 'pull_request' && r.parameters).map((r) => Number(r.parameters.required_approving_review_count) || 0));
   if (n >= 1) return enGithub(n);
@@ -403,6 +410,26 @@ async function archivosDelPedido({ remote, credencial, numero, urlBase, fetch: f
   const cambios = c.doc && Array.isArray(c.doc.changeEntries) ? c.doc.changeEntries : null;
   if (c.status !== 200 || !cambios) return { error: motivoCorto(c) };
   return { archivos: cambios.map((x) => x && x.item && x.item.path).filter((x) => typeof x === 'string').map((x) => x.replace(/^\/+/, '')), cuerpo: String(p.doc.description || '') };
+}
+
+/**
+ * Cómo está un pedido, por su número: `{ estado: 'abierto' | 'aplicado' | 'cerrado' }` (`aplicado`: mergeado; `cerrado`:
+ * cerrado sin mergear), o `{ error }` si la API no contesta bien («no pude mirar» no es «se cerró»).
+ */
+async function estadoDelPedido({ remote, credencial, numero, urlBase, fetch: f }) {
+  if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { error: 'sin plataforma' };
+  if (!Number.isInteger(numero) || numero < 1) return { error: 'sin número' };
+  const cred = credenciales(credencial);
+  const base = baseDe(remote, urlBase);
+  const url = remote.platform === 'azure' ? `${base}/git/repositories/${encodeURIComponent(remote.repo)}/pullrequests/${numero}?${API_AZURE}` : `${base}/pulls/${numero}`;
+  const p = await llamar({ url, remote, cred, fetch: f, secretos: secretosDe(cred) });
+  if (p.status !== 200 || !p.doc) return { error: motivoCorto(p) };
+  if (remote.platform === 'azure') {
+    const estado = { active: 'abierto', completed: 'aplicado', abandoned: 'cerrado' }[p.doc.status];
+    return estado ? { estado } : { error: `estado desconocido: ${String(p.doc.status).slice(0, 40)}` };
+  }
+  if (p.doc.state === 'open') return { estado: 'abierto' };
+  return { estado: p.doc.merged_at || p.doc.merged === true ? 'aplicado' : 'cerrado' };
 }
 
 // Lo que sigue al `<idCorto>-` en la rama de un pedido: la marca de `stamp`. Comparar sólo el prefijo confundiría
@@ -518,8 +545,13 @@ async function aplicarPedido({ remote, cred, urlBase, fetch: f, secretos, pedido
     soloRevisores = pendientes.length > 0 && pendientes.every((e) => ['queued', 'running'].includes(e.status) && [TIPO_REVISORES_AZURE, TIPO_REQUERIDOS_AZURE].includes(((e.configuration || {}).type || {}).displayName));
     if (!soloRevisores) break;
   }
-  // la revisión todavía evaluándose no es «la rama pide algo más»: puede ser sólo lentitud
-  if (soloRevisores) return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: M('rp.sinEvaluar', { enlace }) };
+  // la revisión todavía evaluándose no es «la rama pide algo más»: puede ser sólo lentitud. El sitio deja prendido el
+  // completar automático de la plataforma, que espera a que se cumplan todas las políticas (sin saltear ninguna)
+  if (soloRevisores) {
+    const auto = await llamar({ method: 'PATCH', url: `${rutaPedido}?${API_AZURE}`, remote, cred, fetch: f, secretos, cuerpo: { autoCompleteSetBy: { id: pedido.creador }, completionOptions: { deleteSourceBranch: true, mergeCommitMessage: `${titulo} (aplicado por el sitio)` } } });
+    if (auto.status !== 200) return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: M('rp.sinEvaluar', { enlace }) };
+    return { ok: true, codigo: 'no_aplica_solo', autoCompletar: true, rama, enlace, message: M('rp.seCompletaSolo', { enlace }) };
+  }
   if (pendientes.length) {
     const nombres = [...new Set(pendientes.map((e) => ((e.configuration || {}).type || {}).displayName || 'una política sin nombre'))];
     return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: M('rp.pideMas', { nombres: nombres.map((x) => `«${x}»`).join(', '), enlace }) };
@@ -646,8 +678,9 @@ async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, 
 
     // 4. la política de la rama principal, para CADA archivo (un filtro de ruta puede no cubrir alguno)
     let politica = null;
+    const lecturas = new Map();
     for (const x of lista) {
-      politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f, archivo: x.archivo, aplicarSolo });
+      politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f, archivo: x.archivo, aplicarSolo, lecturas });
       if (!politica.ok) return { ok: false, codigo: politica.codigo, message: politica.message };
     }
 
@@ -931,4 +964,4 @@ async function camposDelTipo({ tipo, ...opts }) {
 }
 
 module.exports = {
-  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos, nombreDeOrganizacion, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, archivosDelPedido, destinoDeTareas, enlaceDeTarea, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos, nombreDeOrganizacion, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, archivosDelPedido, estadoDelPedido, destinoDeTareas, enlaceDeTarea, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };

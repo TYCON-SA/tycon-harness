@@ -48,6 +48,67 @@ const { attribution } = require('./lib/repo-attrib.js');
 // Subagents de exploración libre: no tienen contexto curado ni superficie declarada.
 const ADHOC = new Set(['general-purpose', 'Explore', 'Plan', 'claude']);
 
+// Sin corrida abierta ni ronda de revisores en el registro, la fase es la última hora.
+const NO_RUN_WINDOW_MS = 60 * 60 * 1000;
+// Una ruta dentro del pedido de un agente: absoluta, con `/` o con `\` (Windows).
+const RE_PATH = /(?:[A-Za-z]:)?[\\/][^\s'"`«»()<>]+/g;
+
+/**
+ * La lectura curada de un agente de tipo libre, o null. Un agente cuyo pedido nombra un archivo que existe y que es su
+ * lectura no sale a explorar: un `.prompt.txt` del pase (los pedidos de workflow-lite.js --agents-dir) o el archivo de
+ * contexto de los revisores que anotó la ronda (`context_file` y `context_file_overrides` de sus step5-start).
+ */
+function curatedReading(prompt, lines) {
+  const texto = String(prompt || '');
+  if (!texto) return null;
+  const contextFiles = new Set();
+  for (const l of lines) {
+    if (!l.includes('"step5-start"')) continue;
+    try {
+      const d = JSON.parse(l);
+      if (typeof d.context_file === 'string') contextFiles.add(d.context_file);
+      for (const v of Object.values(d.context_file_overrides || {})) if (typeof v === 'string') contextFiles.add(v);
+    } catch { /* línea corrupta: ignorar */ }
+  }
+  for (const m of texto.matchAll(RE_PATH)) {
+    const file = m[0].replace(/[.,;:]+$/, '');
+    // una ruta de red (`\\host\…`, `//host/…`) no se mira: en Windows abriría una conexión al equipo que nombre el pedido
+    if (/^[\\/]{2}/.test(file)) continue;
+    if (!/\.prompt\.txt$/.test(file) && !contextFiles.has(file)) continue;
+    try { if (fs.statSync(file).isFile()) return file; } catch { /* no existe: no cuenta */ }
+  }
+  return null;
+}
+
+/**
+ * Dónde empieza la fase en el registro de la sesión: `{ idx, since, lastHour, markerUnreadable }`. Cuenta lo que está
+ * después del último corte del registro (la ronda de revisores, `step5-start`, o una corrida nueva, `run-start`) y, si
+ * la sesión tiene corrida, desde el comienzo de su paso abierto: lo más nuevo de los dos. Sin ninguno, la última hora:
+ * `lastHour` dice que no hay corrida; `markerUnreadable`, que el marcador está pero no se pudo leer (también cuenta la
+ * última hora, sin afirmar que no hay corrida).
+ */
+function phaseStart(lines, sessionId, now = Date.now()) {
+  let idx = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].includes('"step5-start"') || lines[i].includes('"run-start"')) { idx = i + 1; break; }
+  }
+  let since = null;
+  let markerUnreadable = false;
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(stateDirOf(os.homedir()), 'active', `${sessionId}.json`), 'utf8'));
+    for (const t of Object.values((m && m.stepTimings) || {})) {
+      if (!t || !t.startedAt || t.completedAt) continue;
+      const x = Date.parse(t.startedAt);
+      if (Number.isNaN(x)) { markerUnreadable = true; continue; }
+      if (since === null || x > since) since = x;
+    }
+  } catch (e) {
+    if (!e || e.code !== 'ENOENT') markerUnreadable = true;
+  }
+  if (since !== null || idx > 0) return { idx, since, lastHour: false, markerUnreadable };
+  return { idx: 0, since: now - NO_RUN_WINDOW_MS, lastHour: !markerUnreadable, markerUnreadable };
+}
+
 /**
  * Escribe el registro de autoría (`review-roster.json`) en el run dir de la story.
  *
@@ -67,7 +128,8 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
     // misma ruta sirve después para proyectar la corrida al repo de la story.
     const m = require('./lib/repo-attrib.js').readMarkerFile(sessionId);
     const storyPath = m && m.storyPath ? (path.isAbsolute(m.storyPath) ? m.storyPath : path.join(m.repoPath || repo, m.storyPath)) : null;
-    const runDir = resolveRunDir(repo, String(story), true, storyPath || undefined);
+    // la carpeta de ESTA corrida: la del marcador de la sesión que lanzó al revisor (lib/run-dir.js)
+    const runDir = resolveRunDir(repo, String(story), true, storyPath || undefined, { marker: m });
     if (!runDir) {
       const k = storyPath ? require('./lib/evidence-key.js').keyInfoOr(storyPath, String(story)) : null;
       motivo = k && k.error ? `run dir no resuelto: sin clave de la story (${String(k.error).slice(0, 160)})` : 'run dir no resuelto';
@@ -77,7 +139,7 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
       let headSha = null;
       try {
         headSha = require('child_process')
-          .execFileSync('git', ['-C', repo, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8', timeout: 5000 })
+          .execFileSync('git', ['-C', repo, 'rev-parse', '--short', 'HEAD'], { windowsHide: true, encoding: 'utf8', timeout: 5000 })
           .trim() || null;
       } catch { /* repo sin commits todavía */ }
       // El sello del ÁRBOL que los revisores están mirando. `headSha` sólo dice sobre qué commit
@@ -85,7 +147,17 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
       // sirve para auditar qué se revisó (el commit base no coincide con el contenido de los
       // archivos que toca la story). Medido acá: ~130 ms por spawn en repos reales, y null
       // limpio cuando no se puede — nunca un sello inventado.
-      const treeSha = roster.treeShaDe(repo);
+      // Con la vuelta congelada (historia 8.161), el sello es el de su lanzamiento: lo que leyeron los revisores. Sin
+      // vuelta congelada (lanzada fuera de `pipeline.js advisors`), el de la carpeta, como antes.
+      let treeSha = null;
+      try {
+        const ft = require('./lib/frozen-tree.js');
+        const v = ft.ultimaVuelta(require('./lib/state-dir.js').stateDir(require('os').homedir()), String(sessionId || '').replace(/[/\\]/g, '_'), 'revisores');
+        const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+        const delRepo = v && (v.repos || []).find((r) => real(r.repo) === real(repo));
+        if (delRepo) treeSha = delRepo.tree;
+      } catch { treeSha = null; }
+      if (!treeSha) treeSha = roster.treeShaDe(repo);
       roster.write(runDir, {
         lines,
         story: String(story),
@@ -154,6 +226,24 @@ function retroTarget(prompt) {
  * @returns {{sessionId: string, cwd: string, logPath: string, repo: string|null, story: string|null, ok: boolean,
  *            error?: string}} `ok: false` si la línea del registro no se pudo escribir
  */
+/**
+ * El nombre de la carpeta de la corrida del marcador de la sesión (`lib/run-dir.js`, sin crearla), o null sin marcador de
+ * esa historia o sin carpeta. Nunca tira: sin la corrida, el renglón queda como antes.
+ */
+function runDeLaSesion(sessionId, story) {
+  try {
+    const m = require('./lib/repo-attrib.js').readMarkerFile(sessionId);
+    if (!m || !story || String(m.storyId) !== String(story) || !m.repoPath) return null;
+    const storyPath = m.storyPath ? (path.isAbsolute(m.storyPath) ? m.storyPath : path.join(m.repoPath, m.storyPath)) : undefined;
+    const dir = require('./lib/run-dir.js').resolveRunDir(m.repoPath, String(m.storyId), false, storyPath, { marker: m });
+    return dir ? path.basename(dir) : null;
+  } catch (e) {
+    // el renglón queda con `run: null` y el cruce cae a las sesiones de la corrida: se dice por qué
+    process.stderr.write(`[on-advisor-run] no pude resolver la carpeta de la corrida de ${sessionId}: ${(e && e.message) || e}\n`);
+    return null;
+  }
+}
+
 function recordLaunch(o) {
   const advisor = o.advisor;
   const model = o.model || null;
@@ -176,22 +266,81 @@ function recordLaunch(o) {
   // qué merge apunta la retrospectiva. Se estampa aparte, sin tocar `repo`/`story` — de los que
   // dependen el roster de revisores y el snapshot de iteración.
   const retro = advisor === 'tycon-retrospective-capturer' ? retroTarget(o.prompt) : null;
+  // la corrida, por el nombre de su carpeta (como la anota Codex): el cierre cruza sólo lo de su corrida, y una
+  // ayudante que comparte el marcador escribe la misma. Sin marcador o sin carpeta, null
+  const run = runDeLaSesion(sessionId, story);
+  // Un revisor sin repo o sin historia no se ata a ninguna corrida: su propio renglón dice por qué, en vez de salir callado.
+  // Va en el mismo renglón y no en uno aparte, para que el registro siga teniendo un renglón por lanzamiento
+  const { esRevisor } = require('./lib/late-snapshot.js');
+  const sinCorrida = esRevisor(advisor) && (!repo || !story)
+    ? (!repo ? 'sin repo: no hay marcador ni repo git en la carpeta' : 'sin historia: la sesión no tiene una corrida abierta')
+    : null;
   let lineError = null;
   try {
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(
       logPath,
       JSON.stringify({
-        ts: new Date().toISOString(), advisor, model, repo, story,
+        ts: new Date().toISOString(), advisor, model, repo, story, run,
         ...(o.extra || {}),
         ...(retro && retro.repo ? { retro_repo: retro.repo } : {}),
         ...(retro && retro.sha ? { retro_sha: retro.sha } : {}),
+        ...(sinCorrida ? { sin_corrida: sinCorrida } : {}),
       }) + '\n',
       'utf8',
     );
   } catch (e) {
     // best-effort — un fallo de log nunca debe romper el spawn del subagent; quien llama se entera por `ok: false`
     lineError = (e && e.message) || String(e);
+  }
+
+  // ── El lanzamiento en el registro de críticos reportados ──────────────────
+  // Un revisor del set de la ronda abierta deja su renglón `launched`: sin él, el cierre no sabría que de este revisor
+  // falta el reporte (lib/reported-criticals.js). `reviewers-run` anota el suyo al lanzar el proceso, y no pasa por acá.
+  // El set sale de la marca `step5-start` de la ronda (sólo su posición y su `expected`, no su `iter`).
+  if (!o.extra || o.extra.launcher !== 'pipeline') {
+    try {
+      const parsed = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
+      const idx = require('./lib/advisor-round.js').inicioDeLaRonda(parsed);
+      const expected = idx >= 0 && Array.isArray(parsed[idx].expected) ? parsed[idx].expected : [];
+      if (expected.includes(advisor)) {
+        require('./lib/reported-criticals.js').recordLaunched({
+          stateDir: stateDirOf(os.homedir()), sessionKey: sessionId, advisor, story, run, launcher: o.launcher || 'claude',
+          toolUseId: o.toolUseId || null,
+        });
+      }
+    } catch (e) {
+      // sin el renglón, el cierre dice «no tiene registro» o «no pude leer»: nunca «no reportó nada». Queda dicho
+      try { process.stderr.write(`on-advisor-run: no pude anotar el lanzamiento de ${advisor} en el registro de críticos (${(e && e.message) || e})\n`); } catch { /* nada */ }
+    }
+  }
+
+  // ── El lanzamiento de un revisor de la corrida anota su hora ───────────────────────────────────────────────────────
+  // El revisor que figura en el `expected` de alguna vuelta de la corrida (los `step5-start` desde el último `run-start`)
+  // anota en el marcador `ultimoRevisorTs`: «Preparar» se repite sólo si alguno se lanzó después de su cierre
+  // (lib/steps.js prepareCommitStale). Un agente que no está en ninguna vuelta (exploración, otra etapa) no la mueve.
+  // El marcador lo escriben también marker.js y otros lanzamientos: si cambió entre leerlo y reemplazarlo se lee de nuevo,
+  // para no pisar lo que anotaron. Sin la marca, «Preparar» decide como antes.
+  try {
+    if (esRevisor(advisor) && !sinCorrida) {
+      const parsed = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
+      let desde = 0;
+      parsed.forEach((d, i) => { if (d && d.event === 'run-start') desde = i + 1; });
+      const deLaCorrida = parsed.slice(desde).some((d) => d && d.event === 'step5-start' && Array.isArray(d.expected) && d.expected.includes(advisor));
+      const archivo = path.join(stateDirOf(os.homedir()), 'active', `${sessionId}.json`);
+      for (let intento = 0; deLaCorrida && intento < 3; intento++) {
+        const crudo = fs.readFileSync(archivo, 'utf8');
+        const m = JSON.parse(crudo);
+        const ahora = new Date().toISOString();
+        if (String(m.storyId) !== String(story) || Date.parse(m.ultimoRevisorTs || '') >= Date.parse(ahora)) break;
+        const tmp = `${archivo}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify({ ...m, ultimoRevisorTs: ahora }, null, 2) + '\n', 'utf8');
+        if (fs.readFileSync(archivo, 'utf8') === crudo) { fs.renameSync(tmp, archivo); break; }
+        fs.unlinkSync(tmp);
+      }
+    }
+  } catch (e) {
+    try { process.stderr.write(`on-advisor-run: no pude anotar el lanzamiento de ${advisor} para la corrida (${(e && e.message) || e})\n`); } catch { /* nada */ }
   }
 
   // ── La FOTO del estado auditado, tomada sola ──────────────────────────────
@@ -220,6 +369,7 @@ function recordLaunch(o) {
         const { execFileSync } = require('child_process');
         try {
           execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'snapshot-iter', String(r.iter)], {
+            windowsHide: true,
             stdio: 'ignore', timeout: 10000, env: { ...process.env, CLAUDE_CODE_SESSION_ID: sessionId },
           });
         } catch (e) {
@@ -307,7 +457,39 @@ function main() {
   const advisor = event.tool_name === 'collaborationspawn_agent' && !ti.agent_type ? rawName.replace(/_/g, '-') : rawName;
   const model = (event.tool_input && event.tool_input.model) || null;
 
-  const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt });
+  // ── Después del lanzamiento: el agente que le tocó a la salida ────────────
+  // La herramienta devuelve el identificador del agente (`tool_response.agentId`). Se ata a la salida del mismo
+  // `tool_use_id` (`launch-agent`): si esa salida muere al arrancar y se relanza, el reporte del relanzado va a la suya.
+  // Nada más corre en este evento: la salida ya quedó anotada antes.
+  if (event.hook_event_name === 'PostToolUse') {
+    const resp = event.tool_response;
+    const agentId = resp && typeof resp === 'object' && typeof resp.agentId === 'string' && resp.agentId ? resp.agentId : null;
+    if (!agentId || typeof event.tool_use_id !== 'string') return;
+    try {
+      require('./lib/reported-criticals.js').recordLaunchAgent({
+        stateDir: stateDirOf(os.homedir()), sessionKey: sessionIdFileKey(event.session_id), advisor, agentId, toolUseId: event.tool_use_id,
+      });
+    } catch (e) {
+      // sin el renglón, esa salida empareja como antes (la más vieja sin reporte): se dice
+      try { process.stderr.write(`on-advisor-run: no pude atar ${advisor} a su agente en el registro de críticos (${(e && e.message) || e})\n`); } catch { /* nada */ }
+    }
+    return;
+  }
+
+  // el registro de antes de este lanzamiento: dice si el pedido trae su lectura curada (y entonces no explora)
+  const fileKey = sessionIdFileKey(event.session_id);
+  let prevLines = [];
+  let logUnreadable = false;
+  try { prevLines = fs.readFileSync(path.join(stateDirOf(os.homedir()), 'advisor-runs', `${fileKey}.jsonl`), 'utf8').split('\n'); } catch (e) {
+    // sin log todavía es lo normal; otro error queda anotado: sin el registro, el archivo de contexto de la ronda no se reconoce
+    if (!e || e.code !== 'ENOENT') logUnreadable = true;
+  }
+  const curated = ADHOC.has(advisor) ? curatedReading(ti.prompt, prevLines) : null;
+  const extra = curated ? { curated: true } : (logUnreadable && ADHOC.has(advisor) ? { curated_check: 'log-unreadable' } : undefined);
+
+  const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt, extra,
+    toolUseId: typeof event.tool_use_id === 'string' ? event.tool_use_id : null,
+    launcher: event.tool_name === 'collaborationspawn_agent' ? 'codex-agent' : 'claude' });
   if (process.env.TYCON_SPAWN_GOVERNANCE === '0') return;
 
   // ── El techo de la organización ───────────────────────────────────────────
@@ -332,7 +514,7 @@ function main() {
     } catch { org = null; }
   }
 
-  if (!ADHOC.has(advisor)) {
+  if (!ADHOC.has(advisor) || curated) {
     if (notaTecho) {
       try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notaTecho}` })); } catch { /* nunca romper el spawn */ }
     }
@@ -347,20 +529,31 @@ function main() {
   try { hasCodegraph = fs.existsSync(path.join(cwd, '.codegraph')); } catch {}
 
   // ── Aviso (b) — cuántos ad-hoc van en esta fase ───────────────────────────
-  // "Fase" = desde el último step5-start (o desde el arranque de la sesión si no hubo).
-  // Es el corte de la medición de arriba: los pasos previos a la revisión vs la revisión.
+  // La fase la dice phaseStart: el paso abierto de la corrida o la ronda de revisores, lo más nuevo; sin ninguno,
+  // la última hora. Los lanzamientos con su lectura curada no cuentan: no exploran. Una línea sin fecha cuenta si está
+  // después del corte del registro (su lugar ya la ubica en la fase); sin corte no se puede ubicar, y el aviso la nombra.
   let adhocEnFase = 0;
+  let lastHour = false;
+  let markerUnreadable = false;
+  let undated = 0;
   try {
     const lines = fs.readFileSync(logPath, 'utf8').split('\n');
-    let desde = 0;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (lines[i].includes('"step5-start"')) { desde = i + 1; break; }
-    }
-    for (let i = desde; i < lines.length; i++) {
+    const phase = phaseStart(lines, fileKey);
+    lastHour = phase.lastHour;
+    markerUnreadable = phase.markerUnreadable;
+    for (let i = phase.idx; i < lines.length; i++) {
       if (!lines[i].trim()) continue;
       try {
         const d = JSON.parse(lines[i]);
-        if (d.advisor && ADHOC.has(d.advisor)) adhocEnFase++;
+        if (!d.advisor || !ADHOC.has(d.advisor) || d.curated) continue;
+        const t = Date.parse(d.ts);
+        if (Number.isNaN(t)) {
+          if (phase.idx > 0) adhocEnFase++;
+          else undated++;
+          continue;
+        }
+        if (phase.since !== null && t < phase.since) continue;
+        adhocEnFase++;
       } catch { /* línea corrupta: ignorar */ }
     }
   } catch { /* sin log todavía */ }
@@ -375,9 +568,13 @@ function main() {
     );
   }
   if (pasoUmbral) {
+    const donde = lastHour ? 'en la última hora (sin corrida abierta)'
+      : markerUnreadable ? 'en esta fase (no pude leer el marcador de la corrida: cuento desde el último corte o la última hora)'
+        : 'en esta fase';
     notes.push(
-      `van ${adhocEnFase} agentes de exploración libre en esta fase (umbral ${umbral}) — ` +
-      'cada uno cuesta ~60-100K tokens antes de leer nada',
+      `van ${adhocEnFase} agentes de exploración libre ${donde} (umbral ${umbral})` +
+      (undated ? `; ${undated} sin fecha en el registro, no contados` : '') +
+      ' — cada uno cuesta ~60-100K tokens antes de leer nada',
     );
   }
   if (!model && (hasCodegraph || pasoUmbral)) {
@@ -400,7 +597,7 @@ function main() {
   } catch { /* nunca romper el spawn */ }
 }
 
-module.exports = { recordLaunch };
+module.exports = { recordLaunch, curatedReading, phaseStart };
 
 if (require.main === module) {
   try { main(); } catch { /* fail-safe */ }

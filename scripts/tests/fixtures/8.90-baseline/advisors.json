@@ -1,0 +1,54 @@
+{
+  "base": [
+    "tycon-plugin-tests-coverage",
+    "tycon-plugin-security-basics"
+  ],
+  "completitud": [
+    "tycon-story-validator",
+    "tycon-spec-first-checker",
+    "tycon-ac-coverage-checker"
+  ],
+  "conditional": [],
+  "all": [
+    "tycon-plugin-tests-coverage",
+    "tycon-plugin-security-basics",
+    "tycon-story-validator",
+    "tycon-spec-first-checker",
+    "tycon-ac-coverage-checker"
+  ],
+  "required_count": 5,
+  "detection": {
+    "hasNext": false,
+    "hasReact": false,
+    "csModified": false,
+    "tsxModified": true,
+    "shModified": false,
+    "pyModified": false,
+    "svelteModified": false,
+    "vueModified": false,
+    "sourceModified": true,
+    "codeModified": true,
+    "pluginCfgModified": false,
+    "secretCfgModified": false,
+    "depChanged": false,
+    "onlyDocs": false
+  },
+  "completitud_motivos": [],
+  "stack_problems": [],
+  "packs": [],
+  "packs_dir": "<ROOT>/packs",
+  "packs_declarados": null,
+  "packs_nota": "ningún paquete instalado en <ROOT>/packs",
+  "story_path_para": [
+    "tycon-spec-first-checker"
+  ],
+  "reglas_revisores": {
+    "estado": "sin_claude_md"
+  },
+  "context_file": "<HOME>/.claude/.tycon-pipeline/advisor-context/baseline-8.90-iter1.md",
+  "context_file_overrides": {
+    "tycon-story-validator": "<HOME>/.claude/.tycon-pipeline/advisor-context/baseline-8.90-iter1-tycon-story-validator.md"
+  },
+  "batch_rule": "Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB). Al llegar la notificación de que uno terminó, lanzar el siguiente del set en ese turno — no esperar a que termine el grupo entero. NUNCA lanzar el set completo en un solo mensaje paralelo si supera 4. ⚠️ Si el pase adversarial fue lanzado al cerrar «Correr las pruebas» y sigue en vuelo, el cap baja a 2 — este string no conoce ese estado: manda la guía del paso de revisores §Cap reducido. Avisos al dev agrupados por hito (mitad del set y set completo), no por advisor.",
+  "run_size": "completa"
+}

@@ -1,0 +1,1 @@
+{ "id": 12, "fields": { "System.TeamProject": "Proyecto X", "System.WorkItemType": "Task", "System.State": "Closed", "System.Title": "una tarea", "System.AssignedTo": { "uniqueName": "beto@acme.example" }, "System.ChangedDate": "2026-10-26T10:00:00Z" } }

@@ -149,11 +149,16 @@ test('T4 Clone_AskedOnce_ValidatedAndSavedByTheCaller', async () => {
   });
 });
 
-test('T8 Browser_OpenOnMac_StartOnWindows_XdgOpenElsewhere', () => {
+test('T8 Browser_OpenOnMac_Rundll32OnWindows_XdgOpenElsewhere', () => {
   const u = 'http://127.0.0.1:5/?k=ab';
   assert.deepStrictEqual(TC.browserCommand('darwin', u), ['open', [u]]);
-  assert.deepStrictEqual(TC.browserCommand('win32', u), ['cmd', ['/c', 'start', '""', u]]);
+  assert.deepStrictEqual(TC.browserCommand('win32', u), ['rundll32', ['url.dll,FileProtocolHandler', u]]);
   assert.deepStrictEqual(TC.browserCommand('linux', u), ['xdg-open', [u]]);
+  // en Windows la dirección va como un solo argumento y sin consola: un `&` no corre otra orden
+  const conAmpersand = 'http://127.0.0.1:5/?k=ab&x=1 & calc';
+  const [cmd, args] = TC.browserCommand('win32', conAmpersand);
+  assert.notStrictEqual(cmd, 'cmd');
+  assert.strictEqual(args[args.length - 1], conAmpersand);
 });
 
 test('T10 Quit_ClosesThePage', async () => {

@@ -1,9 +1,9 @@
 {
   "agent": "tycon-story-validator",
   "file": "agents/tycon-story-validator.md",
-  "hash": "24723eb6bb2b661d84a49c4fa2d1dd6f6c92e9f2",
-  "passed": 13,
-  "total": 13,
+  "hash": "1f5dfe3b69fbd753f8f513ffc577147f96d13ac2",
+  "passed": 15,
+  "total": 15,
   "score": 1,
   "baseline": {
     "passed": 6,
@@ -24,6 +24,8 @@
     "tycon-story-validator::val-w9-p-numbering-sin-calificar": true,
     "tycon-story-validator::val-w10-backlink-faltante-en-la-padre": true,
     "tycon-story-validator::val-w17-la-guia-ya-dice-que-el-arnes-lo-probo": true,
-    "tycon-story-validator::limpio-criterio-nuevo-sin-w17": true
+    "tycon-story-validator::limpio-criterio-nuevo-sin-w17": true,
+    "tycon-story-validator::val-w19-dos-tandas-sobre-el-mismo-archivo": true,
+    "tycon-story-validator::limpio-tandas-dicen-que-entregan-sin-w19": true
   }
 }

@@ -43,8 +43,10 @@ Diez palabras, cada una con un solo sentido en estas páginas:
 
 - **Sin cuenta de GitHub**: este repo es público, y el arnés se baja de acá sin credencial.
 - **Tu agente de código**: Claude Code o Codex, instalado y con tu sesión iniciada.
-- **En Windows, nativo**: Node 24 (alcanza con Node 22 o posterior), PowerShell 7 y `tar` (viene con Windows 10 y posteriores). Git y Python
-  no hacen falta. Por WSL, lo mismo que en Mac y Linux, dentro de WSL.
+- **En Windows, nativo**: Node 24 (alcanza con Node 22 o posterior), PowerShell 7, `tar` (viene con Windows 10 y posteriores) y Git para
+  Windows. Git hace falta para que corran los controles que son guiones de bash, entre ellos el freno de seguridad, y para
+  firmar con un click. Sin él no se midió qué pasa con esos controles: por eso se pide. El arnés se baja igual, como
+  archivos. Python no hace falta. Por WSL, lo mismo que en Mac y Linux, dentro de WSL.
 - **En Mac y Linux**: Bash, Python 3, `tar`, `curl` y Node 24 (alcanza con Node 22 o posterior; probado en 22 y 24). Git no hace falta.
 - **Node 20**: 20 se tolera sólo para actualizar una instalación existente; no se prueba.
 - **Los revisores para tu tecnología** que trae tu equipo pueden pedir más (los de .NET, el SDK de .NET de tu plugin):
@@ -80,6 +82,7 @@ te falte, desde cualquier terminal:
 ```powershell
 winget install OpenJS.NodeJS.LTS
 winget install Microsoft.PowerShell
+winget install Git.Git
 ```
 
 Cerrá la terminal y abrí **PowerShell 7** (en el menú Inicio se llama así): todos los comandos de esta página se corren
@@ -312,8 +315,8 @@ node $HOME/.tycon/harness/scripts/setup/harness.js team-init
 ```
 
 Te pregunta lo que no le pasaste por opción: el nombre de la organización (`--name`, letras sin tilde, números, punto
-y guion), dónde vive el repo del equipo (`--platform github|azure` y `--profile-repo`, `org/repo` de GitHub o
-`https://dev.azure.com/<org>/<proyecto>/_git/<repo>`) y la carpeta donde dejar los archivos (`--dir`; por defecto
+y guion), dónde vive el repo del equipo (`--platform github|azure` y `--profile-repo`, `org/repo` de GitHub o la
+dirección del repo en Azure DevOps, con la forma de [Azure DevOps](../guides/integrations/ado-projects.md#la-url-de-un-repo)) y la carpeta donde dejar los archivos (`--dir`; por defecto
 `~/<repo>`; una carpeta con algo adentro no se toca). Baja el ejemplo publicado (`harness-team-profile-example`) y
 escribe sólo los tres archivos obligatorios:
 
@@ -342,7 +345,7 @@ volvé a instalar con `--team <dirección>`.
 Hay dos, `minimal` y `full`, y no hay una por defecto: `install` te pregunta si no elegís; sin terminal, pasá `--profile`.
 
 - **`minimal`**: las guías, las skills, los revisores, el recorrido de las historias y el aviso de versión nueva. No
-  cambia cómo contesta el asistente. Registra nueve hooks (seis que sólo anotan, el que dice los avisos de los paquetes, el freno de comandos destructivos y el de editar código sin
+  cambia cómo contesta el asistente. Registra 17 hooks (diez que sólo anotan, los cuatro que dicen avisos —los de los paquetes al arrancar, el de otra sesión viva en el mismo checkout, y los de la plataforma después de su primer comando, haya salido bien o mal—, el que tapa los secretos de la máquina, el freno de comandos destructivos y el de editar código sin
   historia ni ajuste puntual),
   más los de cada conexión opcional que prendas, y trae los enlaces, los comandos y las skills de terceros.
 - **`full`**: todo lo de `minimal`, y además los otros frenos (el mismo portón para el código que se escribe por la
@@ -393,7 +396,7 @@ el repo declara el paquete «<nombre>» en `packs:` y no está instalado en …
 ```
 
 Si lo ves, el paquete no llegó con lo de tu equipo: actualizá con
-`node ~/.claude/tycon-harness/scripts/setup/harness.js update`, y si sigue, preguntale al admin de tu equipo.
+`npx @tyconsa/harness@latest`, y si sigue, preguntale al admin de tu equipo.
 
 ## Qué es opcional
 
@@ -420,6 +423,29 @@ explain` muestra cada valor y de dónde salió.
 **Cuatro skills propietarias** (`docx`, `pdf`, `pptx`, `xlsx`) no son parte de este repo y no se bajan: vienen con el
 plugin oficial de Anthropic. Instalalo si las querés.
 
+## Antes de trabajar con una coordinadora
+
+Un paso guiado dice, de a una, qué le falta a tu máquina, cada cosa con su comando:
+
+```bash
+node ~/.tycon/harness/scripts/tools/prepare-machine.js --repo <repo> [--repo <otro repo>]
+```
+
+Mira la carpeta principal de cada repo (si Claude Code no la aprobó, o si su CLAUDE.md importa archivos de afuera sin
+aceptar), la confirmación de la coordinadora si tu organización la usa para firmar, y el freno de producción si la
+máquina lo tiene. Sólo lee: no aprueba nada ni pide tu contraseña. Cuando no falta nada, dice «lista». Con la carpeta
+principal aprobada, las sesiones que la coordinadora abre en copias del repo arrancan sin pedirte nada
+([guides/working-with-a-coordinator.md](../guides/working-with-a-coordinator.md)).
+
+Si tu organización eligió que el freno de producción se actualice solo (`guard.update: auto`), cada máquina de
+producción instala una vez, con tu contraseña, el permiso:
+
+```bash
+sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --allow-auto-update
+```
+
+Qué habilita, qué ensaya antes de reemplazar y qué no se instala solo: [guides/produccion-con-permiso.md](../guides/produccion-con-permiso.md).
+
 ## Qué escribe en tu máquina y qué hace solo
 
 Esta sección sale de una lista declarada, `scripts/setup/install-effects.json`, que una prueba cruza con el instalador.
@@ -437,7 +463,7 @@ tres bloques de reglas en `~/.claude/CLAUDE.md`, entre sus propios marcadores, y
 - `background-execution`: los pasos de más de dos minutos corren en segundo plano y se anuncian antes. Otro hook mide
   lo que dejó bloqueada la conversación (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: la tabla con el nombre exacto de cada herramienta que nombran esas reglas.
-- La línea de import carga en cada sesión el `INDEX.md` del arnés: unos 15 KB, en castellano, con el índice de las
+- La línea de import carga en cada sesión el `INDEX.md` del arnés: unos 17 KB, en castellano, con el índice de las
   guías y las reglas siempre activas.
 - Los enlaces de `~/.claude/skills` y `~/.claude/agents` dejan disponibles en todas tus sesiones las skills y los
   revisores del arnés: el nombre y la descripción de cada uno se cargan en cada sesión.
@@ -462,7 +488,7 @@ La tabla completa, con qué hace cada hook, si frena y su interruptor, está en
 
 **Qué hace solo**: al abrir una sesión, la línea de arranque mira si tu canal tiene una versión nueva, como mucho una
 vez cada 6 horas. Si la hay, avisa y espera: no la aplica sin que se lo pidas desde una terminal
-(`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`). Después corre el instalador.
+(`npx @tyconsa/harness@latest`, que pregunta antes de actualizar). Después corre el instalador.
 `TYCON_UPDATE=0` apaga la consulta; `TYCON_UPDATE_CHANNEL` y `TYCON_UPDATE_APPLY` fijan el canal y la política.
 
 - En cada arranque, de fondo: corre unas pruebas rápidas del propio arnés, y relee las conversaciones del recorrido que
@@ -470,8 +496,6 @@ vez cada 6 horas. Si la hay, avisa y espera: no la aplica sin que se lo pidas de
 - Una vez por día, de fondo: recorre el historial de git de hasta 200 repos de la carpeta madre del clon y deja un
   archivo por día en la carpeta `.dashboard/` del clon (`TYCON_STAGE_METRICS=0`); y junta en un archivo de tu máquina
   los hallazgos que los revisores dejaron en tus repos (`TYCON_NO_COLLECT_FINDINGS=1`).
-- Al declarar un carril «ad-hoc», el portón de edición lanza por su cuenta una consulta corta al modelo de tu
-  asistente, con tus últimos pedidos, para decidir si corresponde (`TYCON_LANE_LLM=0`).
 
 **Qué escribe y qué guarda en disco**:
 
@@ -618,7 +642,7 @@ bloques, tareas de fondo) y dice lo que deja: tu `~/.claude/tycon.json`, tus rep
   `update.apply` en `~/.claude/tycon.json`. Elegir `latest` junto con `auto` te pide que lo confirmes: recibís cada
   cambio que entra a `main`, en minutos, sin revisión tuya. Si el perfil de tu equipo fija `auto`, manda el perfil: ni
   la máquina, ni la variable, ni `TYCON_UPDATE=0` lo cambian, y `doctor` dice qué valor no se usó.
-- **A mano**: `harness.js update --check` dice si hay versión nueva; `harness.js update --yes` la aplica;
+- **A mano**: `harness.js update --check` dice si hay versión nueva; `npx @tyconsa/harness@latest` la aplica (pregunta antes);
   `harness.js version` muestra lo instalado; `harness.js doctor` diagnostica sin cambiar nada.
 - **Volver atrás**: `harness.js rollback --list` muestra las copias a las que se puede volver, y
   `harness.js rollback --to <copia>` vuelve a la que elijas. Después de volver atrás, el arnés deja de actualizarse

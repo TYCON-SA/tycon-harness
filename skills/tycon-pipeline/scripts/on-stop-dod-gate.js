@@ -11,7 +11,7 @@
  *
  * Frenos (sin esto = loop infinito / thrashing):
  *   - CAP de iteraciones → escala a humano.
- *   - No-progreso (mismos fallos N veces) → escala a humano.
+ *   - No-progreso (una vuelta que no resuelve ninguno de los fallos de la anterior) → escala a humano con el rojo crudo.
  *   - Hard-escape (env STOP_AUTONOMY=1 o archivo STOP_AUTONOMY) → botón de pánico.
  *
  * Scoping: SOLO actúa si `marker.autonomous === true`. Sesión normal / HITL → deja parar al
@@ -32,7 +32,7 @@ const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta 
 const { resolveSessionId } = require('./lib/session-id.js');
 
 const CAP = 6;               // máx iteraciones del loop antes de escalar
-const MAX_NO_PROGRESS = 3;   // máx vueltas consecutivas sin resolver ningún fallo
+const MAX_NO_PROGRESS = 1;   // la primera vuelta que no resuelve ningún fallo escala: repetir el mismo intento no aprende nada
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const ACTIVE_DIR = path.join(STATE_DIR, 'active');
 
@@ -51,6 +51,43 @@ function writeMarker(sessionId, m) {
     fs.writeFileSync(tmp, JSON.stringify(m, null, 2) + '\n', 'utf8');
     fs.renameSync(tmp, p);
   } catch { /* best-effort */ }
+}
+
+// El contador del freno de la ejecución perdida: un archivo por sesión con la apertura que frenó (@story-8.318). Tope 1:
+// frena el primer cierre y deja pasar el segundo seguido. `stop_hook_active` no decide nada: lo pone cualquier gancho de
+// Stop. A diferencia de coordination-fill-gate.js, un contador que no se puede leer o anotar frena (lo indecidible frena,
+// 8.121 decisión 13): el bucle vuelve, pero no se abre el freno sin saber.
+const LOST_DIR = path.join(STATE_DIR, 'lost-run-stop');
+const contadorPath = (sid) => path.join(LOST_DIR, `${String(sid || '_nosession').replace(/[^\w.-]/g, '_')}.json`);
+const aperturaDe = (p) => (p.desde ? String(p.desde) : `caso:${p.caso}`);
+function borrarContador(sid) {
+  try { fs.unlinkSync(contadorPath(sid)); } catch (e) {
+    if (e && e.code !== 'ENOENT') process.stderr.write(`[tycon-pipeline] no pude borrar el contador de la ejecución perdida (${e.code || e.message})\n`);
+  }
+}
+/** ¿Este cierre ya frenó una vez por la misma apertura? Si sí, borra el contador; si no, lo anota en 1. */
+function yaFreno(sid, p) {
+  const f = contadorPath(sid);
+  let c = null;
+  try { c = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {
+    if (e && e.code !== 'ENOENT' && !(e instanceof SyntaxError)) {
+      process.stderr.write(`[tycon-pipeline] no pude leer el contador de la ejecución perdida (${e.code || e.message}): frena\n`);
+      return false;
+    }
+  }
+  if (c && c.sesion === String(sid) && c.apertura === aperturaDe(p) && Number(c.frenos) >= 1) {
+    borrarContador(sid);
+    return true;
+  }
+  try {
+    fs.mkdirSync(LOST_DIR, { recursive: true });
+    const tmp = `${f}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ sesion: String(sid), apertura: aperturaDe(p), frenos: 1, at: new Date().toISOString() }) + '\n', 'utf8');
+    fs.renameSync(tmp, f);
+  } catch (e) {
+    process.stderr.write(`[tycon-pipeline] no pude anotar el contador de la ejecución perdida (${e.code || e.message}): frena igual\n`);
+  }
+  return false;
 }
 
 // Lo que la persona tiene que ver al cerrar (una historia que quedó en borrador sin validar): va con la salida que toque.
@@ -80,6 +117,12 @@ function blockStop(reason) {                              // Claude NO para, con
 // check-count` al momento del commit / escritura de frontmatter (la capa correcta). Separación
 // de responsabilidades: Stop hook = "no pares con algo rojo"; hooks de commit = "no cierres
 // sin evidencia completa".
+// Las esperas a main anotadas (marker.js waiting-on-main): una lista por repo; la de un marcador de antes, un objeto.
+function esperasMain(marker) {
+  const w = marker && marker.waitingOnMain;
+  if (Array.isArray(w)) return w.filter((x) => x && typeof x === 'object');
+  return w && typeof w === 'object' ? [w] : [];
+}
 function computeGate(marker) {
   const checks = marker.checks || {};
   const failures = [];
@@ -87,9 +130,14 @@ function computeGate(marker) {
     // «sin-acotar» (tests): no se corrió nada a propósito y la cubre la CI del pedido; no es un rojo que el agente arregle.
     // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; tampoco lo arregla el agente: lo dicen el
     // cierre de «Correr las pruebas» y el cierre de la historia.
+    // «sin-turno» (tests): el portón no corrió porque otra sesión tenía el turno de las ejecuciones grandes; el agente no
+    // lo arregla, espera el turno. Lo frenan los cierres de los pasos, no el del turno.
     // «rojo-esperado» (expect-red): un rojo que la historia en deuda deja a propósito; sin la deuda escrita es un rojo.
     const esperado = /^rojo-esperado/.test(String(status)) && !!marker.cierre && marker.cierre.estado === 'deuda';
-    if (status !== 'green' && !esperado && !(name === 'tests' && (status === 'sin-acotar' || status === 'sin-medir'))) failures.push(`${name} → ${status}`);
+    // «espera-main» (tests, tests-suite): el rojo del portón es de main (lib/main-check.js) y la espera está anotada en el
+    // marcador: el agente no lo arregla, espera a main. Sin la espera anotada es un rojo como cualquiera.
+    const esperaMain = (name === 'tests' || name === 'tests-suite') && status === 'espera-main' && esperasMain(marker).length > 0;
+    if (status !== 'green' && !esperado && !esperaMain && !(name === 'tests' && ['sin-acotar', 'sin-medir', 'sin-turno'].includes(status))) failures.push(`${name} → ${status}`);
   }
   // Sin checks registrados o todos verdes → green → deja parar (preserva pausas HITL).
   return { green: failures.length === 0, failures };
@@ -115,22 +163,55 @@ function pendingStepsLine(marker, event) {
     'Lo dicho en el mensaje no cierra ningún paso: cada uno se cierra con su constancia (`pipeline.js next` dice cuál sigue).';
 }
 
+// Cuántas pruebas quedaron en rojo según el resultado que escribe el portón de pruebas, o null si `tests` no está en rojo,
+// no hay repo, o el archivo no trae la cantidad (otra herramienta): null hace caer a la regla del rótulo.
+function testsFailedCount(marker) {
+  const st = marker.checks && marker.checks.tests;
+  if (!st || !/^red/.test(String(st)) || !marker.repoPath) return null;
+  try {
+    const r = JSON.parse(fs.readFileSync(path.join(marker.repoPath, '.advisors', 'tests-result.json'), 'utf8'));
+    const n = r && r.totals && r.totals.failed;
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  } catch { return null; }
+}
+
 function hardEscape() {
   if (process.env.STOP_AUTONOMY === '1') return true;
   try { return fs.existsSync(path.join(STATE_DIR, 'STOP_AUTONOMY')); } catch { return false; }
 }
 
 function escalate(sessionId, marker, reason, failures) {
+  const fallos = Array.isArray(failures) ? failures : [];
   marker.autonomous = false;       // desactiva el modo → el próximo stop se permite (no trap)
   marker.needs_human = true;
   marker.escalation_reason = reason;
+  // la detención entera, con su hora: de ahí salen el cuadro del dueño y la huella que ata su click a esta detención
+  marker.escalation = { reason, failures: fallos, iter: marker.iter || 0, at: new Date().toISOString() };
   writeMarker(sessionId, marker);
+  // La decisión de seguir le llega al dueño como un pendiente (lib/autonomy-decision.js): el renglón en su lista, con el
+  // cuadro que sale de la detención. El botón de pánico no: lo saca una persona a mano. Si la lista no se pudo escribir,
+  // el cierre se deja pasar igual, y la decisión queda en la sesión o en la terminal del dueño.
+  const ad = require('./lib/autonomy-decision.js');
+  const markerJs = path.join(__dirname, 'marker.js');
+  const terminal = ad.comandoDeLaTerminal(markerJs, sessionId);
+  let decision;
+  if (/^hard-escape/.test(String(reason))) decision = ad.textoDelPanico(ad.panico(STATE_DIR, process.env) || 'STOP_AUTONOMY');
+  else {
+    let anotado;
+    try { anotado = ad.anotar({ casa: os.homedir(), sesion: sessionId, marker, cwd: marker.repoPath || process.cwd(), markerJs }); } catch (e) { anotado = { ok: false, motivo: String((e && e.message) || e) }; }
+    if (!anotado.ok) require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: marker.repoPath || null, name: 'autonomy-decision', status: 'error', motivo: anotado.motivo });
+    decision = ad.textoDelBloqueo({ anotado, terminal });
+  }
+  // La persona ve el rojo tal como quedó registrado, sin depender de que el agente lo transcriba, y cómo sigue desde su terminal.
+  const crudo = `🛑 El modo autónomo se detuvo: ${reason}. Sigue en rojo, tal cual:\n${fallos.map((f) => `  - ${f}`).join('\n')}\n` +
+    `Para que siga en autónomo, desde tu terminal: ${terminal}`;
+  toPerson = toPerson ? `${toPerson}\n${crudo}` : crudo;
   // Un block de un solo tiro: fuerza a Claude a relayear al humano ANTES de cerrar; como
   // autonomous ya es false, el próximo intento de stop se permite.
   blockStop(
     `🛑 AUTONOMÍA DETENIDA — ${reason}. El loop NO converge.\n` +
-    `Fallos residuales:\n${failures.map((f) => `  - ${f}`).join('\n')}\n\n` +
-    `Reportá esto al humano y NO sigas iterando solo — necesita decisión humana.`,
+    `Fallos residuales:\n${fallos.map((f) => `  - ${f}`).join('\n')}\n\n` +
+    `Reportá esto al humano y NO sigas iterando solo — necesita decisión humana.\n${decision}`,
   );
 }
 
@@ -144,13 +225,26 @@ function main() {
   const sessionId = resolveSessionId(event.session_id);
 
   // Una ejecución abierta a la que le falta una pieza no deja cerrar el turno (lib/open-runs.js): la salida es del dueño.
+  // Frena una vez por turno: el segundo cierre seguido pasa, con el cartel para la persona (@story-8.318). Editar, la
+  // consola, el commit y `marker.js clear` siguen frenados hasta la firma.
   {
     const or = require('./lib/open-runs.js');
     let p;
     try { p = or.perdida({ sid: sessionId, cwd: event.cwd || process.cwd() }); } catch (e) {
       p = { caso: 'ilegible', falta: `no pude revisar las piezas de la ejecución (${e.message})`, sesion: String(sessionId) };
     }
-    if (p) return blockStop(or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }));
+    if (!p) { borrarContador(sessionId); }
+    else {
+      const texto = or.cartel(p);
+      if (yaFreno(sessionId, p)) {
+        try {
+          require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'story-gate', status: 'allowed', kind: 'ejecucion-perdida-espera', story: p.story || null, reason: `el turno se cierra a la segunda con la ejecución perdida (${p.caso}): ${p.falta}` });
+        } catch (e) { process.stderr.write(`[tycon-pipeline] no pude anotar la espera de la ejecución perdida (${e.message})\n`); }
+        toPerson = `${texto}\nEl turno se cerró a la segunda: la ejecución sigue perdida hasta que una persona firme la salida.`;
+        return allowStop();
+      }
+      return blockStop(texto);
+    }
   }
 
   // Un borrador de la sesión sin validar: la orden concreta al agente, hasta un tope; después, el aviso a la persona.
@@ -193,6 +287,17 @@ function main() {
     try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'pending-steps-line', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco traba */ }
   }
 
+  // Lo terminado sin cerrar de esta sesión (lib/finished-open.js): su ejecución con todos los pasos hechos, o su camino
+  // corto con el pedido abierto o la rama ya en main. Un aviso a la persona en cada turno, en toda sesión, autónoma o no;
+  // nunca frena ni cierra nada. No se junta con la línea de pasos pendientes: ésa sale sólo con pasos pendientes.
+  try {
+    const lines = require('./lib/finished-open.js').stopLines({ sid: sessionId, stateDir: STATE_DIR });
+    if (lines.length) toPerson = toPerson ? `${toPerson}\n${lines.join('\n')}` : lines.join('\n');
+  } catch (e) {
+    // el aviso no traba el cierre, pero su falta queda anotada (no es «nada terminado sin cerrar»)
+    try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'finished-open', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco traba */ }
+  }
+
   // Scoping: solo el modo autónomo es atrapado por el portón.
   if (!marker || marker.autonomous !== true) return allowStop();
 
@@ -217,20 +322,42 @@ function main() {
   // Botón de pánico.
   if (hardEscape()) return escalate(sessionId, marker, 'hard-escape (STOP_AUTONOMY)', ['(detenido manualmente)']);
 
-  const gate = computeGate(marker);
-  if (gate.green) return allowStop();   // objetivo cumplido → deja cerrar
-
-  // Rojo. ¿Progresó vs la vuelta anterior? (al menos un fallo previo desaparece)
   const last = Array.isArray(marker.lastFailures) ? marker.lastFailures : [];
-  const progressed = last.length > 0 && last.some((f) => !gate.failures.includes(f));
-  marker.noProgressStreak = progressed ? 0 : (marker.noProgressStreak || 0) + 1;
+  const gate = computeGate(marker);
+  if (gate.green) {                     // objetivo cumplido → deja cerrar
+    // Un verde cierra el lazo: el próximo rojo es un primer rojo, aunque repita uno de antes.
+    if (last.length || marker.noProgressStreak || 'lastTestsFailed' in marker) {
+      marker.lastFailures = []; marker.noProgressStreak = 0; delete marker.lastTestsFailed; writeMarker(sessionId, marker);
+    }
+    if ((marker.checks || {}).tests === 'sin-turno') {
+      toPerson = [toPerson, 'Las pruebas esperan el turno de la coordinadora: el portón no corrió y falta medirlas.'].filter(Boolean).join('\n');
+    }
+    const esperas = esperasMain(marker);
+    if ((marker.checks || {}).tests === 'espera-main' && esperas.length) {
+      const rutas = esperas.flatMap((w) => (Array.isArray(w.suites) ? w.suites : []));
+      const suites = rutas.length ? [...new Set(rutas.map((r) => path.basename(String(r))))].join(', ') : 'las suites del registro';
+      const ids = [...new Set(esperas.map((w) => w.id).filter(Boolean))].join(', ') || 'sin id';
+      toPerson = [toPerson, `main está roto en ${suites}: espero a main (${ids}). No es un rojo de la historia; la historia sigue cuando main pase.`].filter(Boolean).join('\n');
+    }
+    return allowStop();
+  }
+
+  // Rojo. Sin vuelta anterior no hay con qué comparar: el primer rojo es el intento, no una vuelta sin progreso.
+  // Con vuelta anterior, progresa si al menos un fallo previo desapareció, o si bajó la cantidad de pruebas en rojo
+  // (el rótulo de `tests` es sólo el código de salida: arreglar 9 de 10 no lo cambia). Sin cantidad, vale el rótulo.
+  const failedNow = testsFailedCount(marker);
+  const failedBefore = Number.isInteger(marker.lastTestsFailed) ? marker.lastTestsFailed : null;
+  const fewerTests = failedNow !== null && failedBefore !== null && failedNow < failedBefore;
+  const progressed = last.some((f) => !gate.failures.includes(f)) || fewerTests;
+  marker.noProgressStreak = (last.length === 0 || progressed) ? 0 : (marker.noProgressStreak || 0) + 1;
+  if (failedNow !== null) marker.lastTestsFailed = failedNow; else delete marker.lastTestsFailed;
   marker.iter = (marker.iter || 0) + 1;
   marker.lastFailures = gate.failures;
 
   // Frenos.
   if (marker.iter >= CAP) return escalate(sessionId, marker, `cap de ${CAP} iteraciones`, gate.failures);
   if (marker.noProgressStreak >= MAX_NO_PROGRESS) {
-    return escalate(sessionId, marker, `${MAX_NO_PROGRESS} vueltas sin resolver ningún fallo (thrashing)`, gate.failures);
+    return escalate(sessionId, marker, 'la vuelta no resolvió ninguno de los fallos de la anterior', gate.failures);
   }
 
   // Hay margen → forzar otra vuelta del loop.

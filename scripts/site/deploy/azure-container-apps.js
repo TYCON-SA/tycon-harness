@@ -365,6 +365,8 @@ function faseSitio(c, run, salida, env, sec) {
     const comunes = [['SITE_PUBLIC_URL', publica], ['SITE_AUTH_PROVIDER', 'microsoft'], ['SITE_OIDC_ISSUER', cualquiera ? COMUN : `https://login.microsoftonline.com/${tenant}/v2.0`],
       ...(cualquiera ? [['SITE_AUTH_MICROSOFT_ACCOUNTS', 'any'], ['SITE_AUTH_MICROSOFT_TENANT', tenant]] : []),
       ['SITE_OIDC_CLIENT_ID', c.oidcClientId], ['SITE_OPERATIONS_REPO', c.operationsRepo], ['SITE_MAILBOX_IDENTITY', 'managed'], ['SITE_DATA_DIR', DISCO],
+      // acá la dirección del socket es siempre la del intermediario: los topes de las oficinas cuentan la de X-Forwarded-For
+      ['SITE_TRUST_PROXY', '1'],
       ...(c.operationsIdentity === 'managed' ? [['SITE_OPERATIONS_IDENTITY', 'managed']] : []),
       ...(c.operationsIdentity === 'copy' ? [['SITE_OPERATIONS_SOURCE', 'copy'], ['SITE_OPERATIONS_COPY', `${c.operationsCopy.account}/${c.operationsCopy.container}`]] : []),
       ...(c.firstMaintainer ? [['SITE_FIRST_MAINTAINER', c.firstMaintainer]] : []),
@@ -515,7 +517,9 @@ function faseDemo(c, run, salida, ensayo) {
     const esDemo = run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', "properties.template.containers[0].env[?name=='SITE_DEMO'].value | [0]", '-o', 'tsv', ...SUB(c)], '1');
     if (esDemo !== '1') throw new Falla(`la aplicación ${c.app} ya existe y no es una instancia demo (no trae SITE_DEMO=1): no la toco; elegí otro nombre para app`);
   }
-  const variables = [['SITE_DEMO', '1'], ['SITE_PUBLIC_URL', publica]];
+  // detrás de la entrada de Azure, que agrega la dirección real al final de X-Forwarded-For: sin esto, todos los que
+  // visitan el demo compartirían el tope de la dirección de la entrada
+  const variables = [['SITE_DEMO', '1'], ['SITE_PUBLIC_URL', publica], ['SITE_TRUST_PROXY', '1']];
   const yaml = {
     location: c.location,
     properties: {

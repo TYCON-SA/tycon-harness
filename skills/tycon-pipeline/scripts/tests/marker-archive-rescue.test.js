@@ -84,7 +84,7 @@ test('T8 · el archivador NO se cae si el rescate falla, y deja el motivo adentr
   );
   marcarCorrida(raiz);
 
-  const r = correrMarker(['clear'], raiz, { TYCON_PROJECTS_DIR: path.join(raiz, 'projects') });
+  const r = correrMarker(['clear', '--discard'], raiz, { TYCON_PROJECTS_DIR: path.join(raiz, 'projects') });
   assert.strictEqual(r.status, 0, `el clear no debe fallar por el rescate: ${r.stderr}`);
 
   const vs = volcados(raiz);
@@ -103,7 +103,7 @@ test('T8b Rescue_DigestMissing_ArchivesAnyway @story-7.35 @ac-2 — con tokens-d
   // A propósito: NO se crea `guides/scripts/metrics/tokens-digest.js`.
   marcarCorrida(raiz);
 
-  const r = correrMarker(['clear'], raiz, { TYCON_PROJECTS_DIR: path.join(raiz, 'projects') });
+  const r = correrMarker(['clear', '--discard'], raiz, { TYCON_PROJECTS_DIR: path.join(raiz, 'projects') });
   assert.strictEqual(r.status, 0, `el clear no debe fallar porque falte el script: ${r.stderr}`);
 
   const vs = volcados(raiz);
@@ -138,7 +138,7 @@ fs.writeFileSync(p, JSON.stringify(d, null, 2));
   );
   marcarCorrida(raiz);
 
-  const r = correrMarker(['clear'], raiz, { TYCON_PROJECTS_DIR: path.join(raiz, 'projects') });
+  const r = correrMarker(['clear', '--discard'], raiz, { TYCON_PROJECTS_DIR: path.join(raiz, 'projects') });
   assert.strictEqual(r.status, 0, r.stderr);
 
   const d = JSON.parse(fs.readFileSync(volcados(raiz)[0], 'utf8'));

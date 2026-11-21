@@ -667,11 +667,268 @@ test('T27 ErrorPaths_LeaveTheirLine — configuración rota, edición rechazada,
   } finally { await new Promise((r) => server.close(r)); }
 });
 
+// ── La coordinadora primero, el dueño a su plazo ────────────────────────────────────────────────────────────────
+const COORDINATION = path.join(ROOT, 'scripts', 'tools', 'coordination.js');
+// La máquina con una coordinadora designada: el perfil con el rol, el renglón de la designación y su archivo de sesión,
+// viva (el pid de esta prueba) salvo `dead`. El rol sale sólo del perfil del árbol del arnés, que a un proceso hijo no se
+// le puede pasar por una variable: el proceso del plazo lo recibe con un `--require` de la prueba que le da a
+// `liveCoordinator` el árbol de juguete.
+function withCoordinator(w, sid, { dead = false, name = 'Coordinadora' } = {}) {
+  w.arnes = path.join(w.home, 'arnes');
+  fs.mkdirSync(w.arnes, { recursive: true });
+  fs.writeFileSync(path.join(w.arnes, 'perfil-equipo.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+  const preload = path.join(w.home, 'toy-tree.js');
+  fs.writeFileSync(preload, `const C = require(${JSON.stringify(COORDINATION)}); const live = C.liveCoordinator;\nC.liveCoordinator = (o, s) => live({ ...o, arnes: ${JSON.stringify(w.arnes)} }, s);\n`);
+  w.env.NODE_OPTIONS = `--require ${preload}`;
+  fs.mkdirSync(w.sd, { recursive: true });
+  fs.appendFileSync(path.join(w.sd, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'relay-designation', status: 'ok', sesion: sid, rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
+  session(w, sid, name, { pid: dead ? 2147483646 : process.pid });
+}
+function session(w, sid, name, extra = {}) {
+  const d = path.join(w.home, '.claude', 'sessions');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, `${sid}.json`), JSON.stringify({ pid: process.pid, sessionId: sid, name, nameSource: 'user', status: 'idle', statusUpdatedAt: Date.now(), cwd: w.home, ...extra }));
+}
+const coordinatorNotice = (w, sid) => require(COORDINATION).capNotice({ sessionId: sid, home: w.home, env: {}, arnes: w.arnes });
+
+test('T29 Coordinator_FirstThenOwner — con coordinadora viva: a su plazo, la línea en su turno y no Telegram; al del dueño, Telegram', async () => {
+  const tg = await fakeTelegram();
+  try {
+    const w = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_OWNER_MS: '3000' } });
+    withCoordinator(w, 'coord');
+    session(w, 'c1', 'Beto');
+    marker(w, 'c1');
+    stop(w, 'c1', transcript(w, 'c1', [userRec('implementemos'), agentRec('¿Sigo con los revisores?')]));
+    const line = await waitFor(() => logLines(w).find((l) => l.event === 'coordinator-notified'));
+    assert.ok(line, 'la espera le llega primero a la coordinadora, con su línea en el registro');
+    assert.strictEqual(line.coordinator, 'Coordinadora');
+    assert.strictEqual(tg.calls.length, 0, 'el dueño todavía no');
+    const notice = coordinatorNotice(w, 'coord');
+    assert.ok(notice, 'su próximo turno trae la espera');
+    const mine = notice.split('\n').filter((l) => /Beto/.test(l));
+    assert.strictEqual(mine.length, 1, `una línea: ${notice}`);
+    assert.match(mine[0], /¿Sigo con los revisores\?/);
+    assert.match(mine[0], /9\.9/);
+    assert.match(mine[0], /desde las \d\d:\d\d/);
+    assert.ok(!/Beto/.test(coordinatorNotice(w, 'coord') || ''), 'una vez por espera');
+    assert.strictEqual(coordinatorNotice(w, 'c1'), null, 'otra sesión no la ve');
+    const sent = await waitFor(() => tg.calls.find((c) => c.method === 'sendMessage'));
+    assert.ok(sent, 'sin resolver al plazo del dueño, Telegram');
+    assert.match(sent.text, /9\.9/);
+    const after = await waitFor(() => (waitFile(w, 'c1') || {}).notified);
+    assert.ok(after);
+  } finally { await tg.close(); }
+});
+
+test('T30 Coordinator_ResolvedBeforeOwner_NoTelegram — contestada después de la coordinadora y antes del plazo del dueño: nada al dueño', async () => {
+  const tg = await fakeTelegram();
+  try {
+    const w = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_OWNER_MS: '2500' } });
+    withCoordinator(w, 'coord');
+    marker(w, 'c2');
+    const tp = transcript(w, 'c2', [userRec('x'), agentRec('¿c2?')]);
+    stop(w, 'c2', tp);
+    assert.ok(await waitFor(() => logLines(w).find((l) => l.event === 'coordinator-notified')));
+    hook(w, { hook_event_name: 'UserPromptSubmit', session_id: 'c2', transcript_path: tp, prompt: 'dale' });
+    const closed = logLines(w).find((l) => l.session === 'c2' && l.result === 'answered');
+    assert.ok(closed && closed.coordinatorAt, 'la línea de la espera dice que pasó por la coordinadora');
+    await sleep(3500);
+    assert.strictEqual(tg.calls.length, 0, 'resuelta a tiempo: el dueño no recibe nada');
+  } finally { await tg.close(); }
+});
+
+test('T31 Coordinator_AbsentDeadOrSelf_Unchanged — sin coordinadora, con la designada cerrada o si la que espera es ella: Telegram al primer plazo', async () => {
+  const tg = await fakeTelegram();
+  try {
+    const cases = [['sin', null], ['muerta', { dead: true }], ['ella', 'self']];
+    for (const [sid, how] of cases) {
+      const w = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_OWNER_MS: '60000' } });
+      if (how === 'self') withCoordinator(w, sid);
+      else if (how) withCoordinator(w, 'coord', how);
+      marker(w, sid);
+      const before = tg.calls.length;
+      stop(w, sid, transcript(w, sid, [userRec('x'), agentRec(`¿${sid}?`)]));
+      const sent = await waitFor(() => tg.calls.length > before);
+      assert.ok(sent, `${sid}: Telegram al primer plazo, como siempre`);
+      assert.ok(!logLines(w).some((l) => l.event === 'coordinator-notified'), sid);
+    }
+  } finally { await tg.close(); }
+});
+
+test('T32 OwnerMinutes_FromTeamRepos — el plazo del dueño: owner_minutes de la organización; inválido da 30 y el problema; la variable gana', () => {
+  const { ownerThresholdMs } = require(HOOK);
+  const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+  const base = { version: 1, public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' }, operations: { platform: 'github', org: 'acme', repo: 'o' } };
+  const tree = (wn) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'wait-notice-tree-'));
+    fs.writeFileSync(path.join(d, 'team-repos.json'), JSON.stringify(wn === undefined ? base : { ...base, wait_notice: wn }));
+    return d;
+  };
+  const d = tree({ minutes: 5, owner_minutes: 45 });
+  assert.ok(TR.parse(fs.readFileSync(path.join(d, 'team-repos.json'), 'utf8')).ok);
+  assert.strictEqual(ownerThresholdMs({ env: {}, tree: d }).ms, 45 * 60000);
+  for (const malo of [{ owner_minutes: 0 }, { owner_minutes: 'x' }, { owner_minutes: 121 }, { owner_minutes: 2.5 }]) {
+    const t = tree(malo);
+    const p = TR.parse(fs.readFileSync(path.join(t, 'team-repos.json'), 'utf8'));
+    assert.ok(p.ok && p.sectionProblems && p.sectionProblems.wait_notice.some((x) => x.path === 'wait_notice.owner_minutes'), JSON.stringify(malo));
+    const r = ownerThresholdMs({ env: {}, tree: t });
+    assert.strictEqual(r.ms, 30 * 60000); assert.ok(r.problem);
+  }
+  assert.strictEqual(ownerThresholdMs({ env: {}, tree: tree(undefined) }).ms, 30 * 60000);
+  assert.strictEqual(ownerThresholdMs({ env: { TYCON_WAIT_NOTICE_OWNER_MS: '1234' }, tree: d }).ms, 1234);
+});
+
+// ── la espera de otra sesión: un turno pedido a la coordinadora ───────────────────────────────────────────
+const sendRec = (to, message) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'sm1', name: 'SendMessage', input: { to, message } }] }, timestamp: new Date().toISOString() });
+const toolResultRec = (id = 'sm1') => ({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] }, timestamp: new Date().toISOString() });
+const peerTurn = () => [userRec('implementemos'), sendRec('Coordinadora', '¿Me das turno para el banco?\nTarda unos 6 minutos.'), toolResultRec(), agentRec('Pedí turno; espero.')];
+
+test('T33 PeerWait_Detected — el turno que termina con un mensaje a otra sesión es una espera de otra sesión', () => {
+  // 🔴 rojo: tomar como espera de otra sesión un turno que siguió trabajando después del mensaje, o uno viejo.
+  const { peerWait } = require(HOOK);
+  const w = world({});
+  const p = peerWait(transcript(w, 'p0', peerTurn()));
+  assert.ok(p, 'el turno terminó esperando a la coordinadora');
+  assert.strictEqual(p.to, 'Coordinadora');
+  assert.match(p.line, /Coordinadora: ¿Me das turno para el banco\?/);
+  assert.strictEqual(peerWait(transcript(w, 'p1', [...peerTurn().slice(0, 3), agentToolRec(), agentRec('listo')])), null, 'siguió con otra herramienta');
+  assert.strictEqual(peerWait(transcript(w, 'p2', [...peerTurn(), userRec('seguí con otra cosa'), agentRec('¿Cuál?')])), null, 'el mensaje es de un turno anterior');
+  assert.strictEqual(peerWait(transcript(w, 'p3', [userRec('x'), agentRec('¿Sigo?')])), null, 'sin mensaje a otra sesión');
+});
+
+test('T34 PeerWait_CoordinatorUntilItsOwnDeadline — con coordinadora viva, la espera de otra sesión no va al dueño al plazo del dueño sino al suyo', async () => {
+  // 🔴 rojo: avisar al dueño al plazo de siempre (30 min) una espera que es de un turno.
+  const tg = await fakeTelegram();
+  try {
+    const w = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_OWNER_MS: '1500', TYCON_WAIT_NOTICE_PEER_OWNER_MS: '60000' } });
+    withCoordinator(w, 'coord');
+    session(w, 'p4', 'Beto');
+    marker(w, 'p4');
+    stop(w, 'p4', transcript(w, 'p4', peerTurn()));
+    assert.ok(await waitFor(() => logLines(w).find((l) => l.event === 'coordinator-notified')), 'le llega a la coordinadora');
+    const wf = waitFile(w, 'p4');
+    assert.strictEqual(wf.kind, 'peer');
+    assert.ok(Date.parse(wf.ownerAt) - Date.parse(wf.openedAt) >= 59000, `el plazo del dueño es el de la espera de otra sesión: ${wf.ownerAt}`);
+    const line = (coordinatorNotice(w, 'coord') || '').split('\n').find((l) => /Beto/.test(l));
+    assert.match(String(line), /Coordinadora: ¿Me das turno/);
+    await sleep(3000);
+    assert.strictEqual(tg.calls.length, 0, 'al plazo de siempre, el dueño no recibe nada');
+  } finally { await tg.close(); }
+});
+
+test('T35 PeerWait_EscalatesAtItsDeadline_NoCoordinatorUnchanged — a su plazo va al dueño; sin coordinadora, como siempre', async () => {
+  // 🔴 rojo: que la espera de otra sesión no llegue nunca al dueño, o que sin coordinadora espere de más.
+  const tg = await fakeTelegram();
+  try {
+    const w = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_OWNER_MS: '60000', TYCON_WAIT_NOTICE_PEER_OWNER_MS: '2000' } });
+    withCoordinator(w, 'coord');
+    marker(w, 'p5');
+    stop(w, 'p5', transcript(w, 'p5', peerTurn()));
+    const sent = await waitFor(() => tg.calls.find((c) => c.method === 'sendMessage'));
+    assert.ok(sent, 'sin resolver a su plazo, el dueño');
+    assert.ok(logLines(w).some((l) => l.event === 'coordinator-notified'), 'antes pasó por la coordinadora');
+
+    const w2 = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_PEER_OWNER_MS: '60000' } });
+    marker(w2, 'p6');
+    const before = tg.calls.length;
+    stop(w2, 'p6', transcript(w2, 'p6', peerTurn()));
+    assert.ok(await waitFor(() => tg.calls.length > before), 'sin coordinadora: Telegram al primer plazo');
+  } finally { await tg.close(); }
+});
+
+test('T36 PeerOwnerMinutes_FromTeamRepos — el plazo de la espera de otra sesión: peer_owner_minutes de la organización; inválido da 120 y el problema; la variable gana', () => {
+  const { peerOwnerThresholdMs } = require(HOOK);
+  const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+  const base = { version: 1, public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' }, operations: { platform: 'github', org: 'acme', repo: 'o' } };
+  const tree = (wn) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'wait-notice-tree-'));
+    fs.writeFileSync(path.join(d, 'team-repos.json'), JSON.stringify(wn === undefined ? base : { ...base, wait_notice: wn }));
+    return d;
+  };
+  const d = tree({ peer_owner_minutes: 240 });
+  assert.ok(TR.parse(fs.readFileSync(path.join(d, 'team-repos.json'), 'utf8')).ok);
+  assert.strictEqual(peerOwnerThresholdMs({ env: {}, tree: d }).ms, 240 * 60000);
+  for (const malo of [{ peer_owner_minutes: 0 }, { peer_owner_minutes: 'x' }, { peer_owner_minutes: TR.WAIT_NOTICE_PEER_MAX + 1 }, { peer_owner_minutes: 2.5 }]) {
+    const t = tree(malo);
+    const p = TR.parse(fs.readFileSync(path.join(t, 'team-repos.json'), 'utf8'));
+    assert.ok(p.ok && p.sectionProblems && p.sectionProblems.wait_notice.some((x) => x.path === 'wait_notice.peer_owner_minutes'), JSON.stringify(malo));
+    const r = peerOwnerThresholdMs({ env: {}, tree: t });
+    assert.strictEqual(r.ms, 120 * 60000); assert.ok(r.problem);
+  }
+  assert.strictEqual(peerOwnerThresholdMs({ env: {}, tree: tree(undefined) }).ms, 120 * 60000);
+  assert.strictEqual(peerOwnerThresholdMs({ env: { TYCON_WAIT_NOTICE_PEER_OWNER_MS: '1234' }, tree: d }).ms, 1234);
+});
+
 test('T25 RedactBeforeCut — una credencial partida por el corte de 200 caracteres no se escapa', () => {
   const { buildMessage } = require(HOOK);
   const tok = 'ghp_' + 'A'.repeat(36);
   const t = buildMessage([{ story: '9.9', step: '5', waiting: 'x'.repeat(185) + tok }], {});
   assert.doesNotMatch(t, /ghp_A/, 'ni el pedazo del token');
+});
+
+// ── La cabecera Authorization ──────────────────────────────────────────────────────────────────────────
+// Todos los valores son inventados y sin forma de proveedor.
+
+test('T1 Redact_AuthorizationBearer_TapaElValor @story-8.210 @ac-1', () => {
+  const { redact } = require(HOOK);
+  const casos = [
+    ['curl -H "Authorization: Bearer inventado123.ABCdef-456" https://acme.example/x', 'curl -H "Authorization: Bearer <tapado>" https://acme.example/x'],
+    ["curl -H 'Authorization: Bearer inventado123.ABCdef-456' https://acme.example/x", "curl -H 'Authorization: Bearer <tapado>' https://acme.example/x"],
+    ['curl -H Authorization: Bearer inventado123.ABCdef-456 https://acme.example/x', 'curl -H Authorization: Bearer <tapado> https://acme.example/x'],
+    ['Authorization: Bearer abc123', 'Authorization: Bearer <tapado>'],
+    ['curl -H "Authorization: Bearer \\ inventado123" https://acme.example/x', 'curl -H "Authorization: Bearer \\ <tapado>" https://acme.example/x'],
+    ['authorization:bearer inventado123', 'authorization:bearer <tapado>'],
+    ['{"Authorization": "Bearer abcdefghij"}', '{"Authorization": "Bearer <tapado>"}'],
+    ['curl -H "Authorization: \\"Bearer abcdefghij\\""', 'curl -H "Authorization: \\"Bearer <tapado>\\""'],
+    ['Authorization: Bearer abc%40def@x resto', 'Authorization: Bearer <tapado> resto'],
+  ];
+  for (const [entrada, esperado] of casos) {
+    const r = redact(entrada);
+    assert.strictEqual(r, esperado, entrada);
+    assert.doesNotMatch(r, /inventado123|abc123|abcdefghij|abc%40|def@x/);
+  }
+});
+
+test('T1b Redact_MilesDeEspacios_NoSeHaceLento @story-8.210 @ac-1', () => {
+  const { redact } = require(HOOK);
+  for (const s of [`Authorization:${' '.repeat(50000)}x`, `Bearer${' '.repeat(50000)}x`]) {
+    const t0 = Date.now();
+    redact(s);
+    assert.ok(Date.now() - t0 < 1000, `tardó ${Date.now() - t0} ms`);
+  }
+});
+
+test('T2 Redact_AuthorizationBasic_TapaElValor @story-8.210 @ac-2', () => {
+  const { redact } = require(HOOK);
+  for (const valor of ['dXNlcjpwYXNz', 'aW52ZW50YWRvOjEyMw==', 'abc']) {
+    assert.strictEqual(redact(`curl -H "Authorization: Basic ${valor}" https://acme.example/x`), 'curl -H "Authorization: Basic <tapado>" https://acme.example/x', valor);
+  }
+  assert.strictEqual(redact('curl -H "Authorization: Basic \\ dXNlcjpwYXNz" x'), 'curl -H "Authorization: Basic \\ <tapado>" x');
+});
+
+test('T3 Redact_BearerYBasicSueltos @story-8.210 @ac-3', () => {
+  const { redact } = require(HOOK);
+  assert.strictEqual(redact('bearer inventado456xyz'), 'bearer <tapado>');
+  assert.strictEqual(redact('BEARER inventado456xyz'), 'BEARER <tapado>');
+  assert.strictEqual(redact('el aviso trae Basic dXNlcjpwYXNz suelto'), 'el aviso trae Basic <tapado> suelto');
+  assert.strictEqual(redact('Basic abcdefghij'), 'Basic abcdefghij', 'sólo minúsculas, sin la cabecera');
+  assert.strictEqual(redact('Bearer abcdefghij'), 'Bearer abcdefghij', 'sólo minúsculas, sin la cabecera');
+});
+
+test('T4 Redact_ProsaYVariables_NoSeTocan @story-8.210 @ac-4', () => {
+  const { redact } = require(HOOK);
+  for (const frase of ['Bearer token', 'Bearer authentication', 'Basic configuration', 'curl -H "Authorization: Bearer $TOKEN" x', 'curl -H "Authorization: Bearer ${TOKEN}" x', 'curl -H "Authorization: Basic $AUTH" x']) {
+    assert.strictEqual(redact(frase), frase);
+  }
+});
+
+test('T5 OneLine_AuthorizationEnElCorte_NoSeEscapa @story-8.210 @ac-5', () => {
+  const { oneLine } = require(HOOK);
+  // sólo minúsculas: lo tapa la forma de la cabecera, no la suelta
+  const linea = oneLine(`${'x'.repeat(169)} Authorization: Bearer inventadoabcdefgh`);
+  assert.ok(linea.length <= 200, linea.length);
+  assert.match(linea, /Authorization: Bearer <tapado>$/);
+  assert.doesNotMatch(linea, /invent/, 'ni el pedazo del valor');
 });
 
 // ── T19 ────────────────────────────────────────────────────────────────────────────────────────────────

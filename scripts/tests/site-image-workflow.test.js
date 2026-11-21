@@ -16,9 +16,14 @@ const read = () => fs.readFileSync(ARCHIVO, 'utf8');
 /** Las líneas de código (sin vacías ni comentarios). */
 const codigo = (t) => t.split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
 // lo que copia scripts/site/Dockerfile: si cambia algo que la imagen trae, la imagen se vuelve a armar
-const RUTAS = ["'scripts/site/**'", "'scripts/lib/**'", "'scripts/metrics/**'",
+const RUTAS = ["'scripts/site/**'", "'scripts/tools/office/**'", "'scripts/lib/**'", "'scripts/metrics/**'",
   // el armado de los días de instintos: lo pide la subida, que el sitio carga
   "'scripts/instincts/instinct-upload.js'",
+  "'scripts/instincts/instinct-nightly.js'",
+  "'scripts/instincts/instinct-observer.js'",
+  "'scripts/instincts/instinct-dirs.js'",
+  "'scripts/instincts/instinct-draft.js'",
+  "'scripts/instincts/instinct-model.js'",
   "'scripts/nightly/**'", "'scripts/setup/harness/**'", "'scripts/setup/install-effects.json'",
   // las equivalencias de cada modelo en Codex: la línea chica de la sección de modelos
   "'build/equivalences.json'",

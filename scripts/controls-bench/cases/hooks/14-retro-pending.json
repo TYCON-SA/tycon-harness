@@ -205,9 +205,9 @@
           }
         },
         {
-          "id": "quiet-push-main-en-repo-del-arnes",
-          "type": "must-stay-quiet",
-          "__doc": "Desde el 2026-09-17 éste es el camino de RESPALDO: el repo no tiene `origin`, así que no hay identidad que leer y decide el nombre de la carpeta. Con `origin`, decide el remoto (los casos que siguen).",
+          "id": "registra-push-main-en-repo-del-arnes",
+          "type": "must-block",
+          "__doc": "Desde el 2026-09-17 éste es el camino de RESPALDO: el repo no tiene `origin`, así que no hay identidad que leer y decide el nombre de la carpeta. Con `origin`, decide el remoto (los casos que siguen). Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p tycon-claude-guides && cd tycon-claude-guides && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
@@ -221,15 +221,22 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/tycon-claude-guides\""
+              }
             ]
           }
         },
         {
-          "id": "quiet-push-main-en-repo-del-arnes-nombre-publico",
-          "type": "must-stay-quiet",
-          "__doc": "GEMELO con el nombre público (story 8.19, tanda E, AC 39): el mismo caso con la carpeta llamada como el lugar del arnés. Desde el 2026-09-17 éste es el camino de RESPALDO: el repo no tiene `origin`, así que no hay identidad que leer y decide el nombre de la carpeta. Con `origin`, decide el remoto (los casos que siguen).",
+          "id": "registra-push-main-en-repo-del-arnes-nombre-publico",
+          "type": "must-block",
+          "__doc": "GEMELO con el nombre público (story 8.19, tanda E, AC 39): el mismo caso con la carpeta llamada como el lugar del arnés. Desde el 2026-09-17 éste es el camino de RESPALDO: el repo no tiene `origin`, así que no hay identidad que leer y decide el nombre de la carpeta. Con `origin`, decide el remoto (los casos que siguen). Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ${PLACE_NAME} && cd ${PLACE_NAME} && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
@@ -243,15 +250,22 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/${PLACE_NAME}\""
+              }
             ]
           }
         },
         {
-          "id": "quiet-clon-del-arnes-en-carpeta-con-otro-nombre-se-reconoce-por-su-origin",
-          "type": "must-stay-quiet",
-          "__doc": "EL CASO REAL (2026-09-17, pendiente (a) del caso de la retro por push sin story, 2026-09-16): un clon descartable del arnés en `…/scratchpad/clon-arnes`, con la URL real de `git remote get-url origin` del checkout canónico. ROJO PREVIO: la exclusión miraba los segmentos de la RUTA; ninguno se llama como el arnés, así que el push quedaba anotado como merge pendiente — el mismo push que desde el checkout canónico no se anota.",
+          "id": "registra-clon-del-arnes-en-carpeta-con-otro-nombre-se-reconoce-por-su-origin",
+          "type": "must-block",
+          "__doc": "EL CASO REAL (2026-09-17, pendiente (a) del caso de la retro por push sin story, 2026-09-16): un clon descartable del arnés en `…/scratchpad/clon-arnes`, con la URL real de `git remote get-url origin` del checkout canónico. ROJO PREVIO: la exclusión miraba los segmentos de la RUTA; ninguno se llama como el arnés, así que el push quedaba anotado como merge pendiente — el mismo push que desde el checkout canónico no se anota. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p scratchpad/clon-arnes && cd scratchpad/clon-arnes && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides"
@@ -265,12 +279,19 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/scratchpad/clon-arnes\""
+              }
             ]
           },
           "env": {
-            "TYCON_HARNESS_IDENTITIES":"https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
+            "TYCON_HARNESS_IDENTITIES": "https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
           },
           "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
         },
@@ -303,7 +324,7 @@
             ]
           },
           "env": {
-            "TYCON_HARNESS_IDENTITIES":"https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
+            "TYCON_HARNESS_IDENTITIES": "https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
           },
           "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
         },
@@ -336,14 +357,14 @@
             ]
           },
           "env": {
-            "TYCON_HARNESS_IDENTITIES":"https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
+            "TYCON_HARNESS_IDENTITIES": "https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
           },
           "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
         },
         {
-          "id": "quiet-clon-de-agent-skills-por-su-url-visualstudio-y-con-otro-usuario",
-          "type": "must-stay-quiet",
-          "__doc": "El otro repo del arnés y la otra forma de URL: `org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills` (la real del checkout canónico), con OTRO usuario adelante — el usuario de la URL no es parte de la identidad. ROJO PREVIO: carpeta `as`, se anotaba.",
+          "id": "registra-clon-de-agent-skills-por-su-url-visualstudio-y-con-otro-usuario",
+          "type": "must-block",
+          "__doc": "El otro repo del arnés y la otra forma de URL: `org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills` (la real del checkout canónico), con OTRO usuario adelante — el usuario de la URL no es parte de la identidad. ROJO PREVIO: carpeta `as`, se anotaba. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p scratchpad/as && cd scratchpad/as && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://usuarioa@org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
@@ -357,19 +378,26 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/scratchpad/as\""
+              }
             ]
           },
           "env": {
-            "TYCON_HARNESS_IDENTITIES":"https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
+            "TYCON_HARNESS_IDENTITIES": "https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
           },
           "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
         },
         {
-          "id": "quiet-clon-del-arnes-por-ssh",
-          "type": "must-stay-quiet",
-          "__doc": "La forma ssh de Azure (`git@ssh.dev.azure.com:v3/<org>/<proyecto>/<repo>`) es el mismo repo. ROJO PREVIO: carpeta `por-ssh`, se anotaba.",
+          "id": "registra-clon-del-arnes-por-ssh",
+          "type": "must-block",
+          "__doc": "La forma ssh de Azure (`git@ssh.dev.azure.com:v3/<org>/<proyecto>/<repo>`) es el mismo repo. ROJO PREVIO: carpeta `por-ssh`, se anotaba. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p scratchpad/por-ssh && cd scratchpad/por-ssh && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin git@ssh.dev.azure.com:v3/org-del-equipo/tycon-claude-guides/tycon-claude-guides"
@@ -383,19 +411,26 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/scratchpad/por-ssh\""
+              }
             ]
           },
           "env": {
-            "TYCON_HARNESS_IDENTITIES":"https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
+            "TYCON_HARNESS_IDENTITIES": "https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
           },
           "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
         },
         {
-          "id": "quiet-clon-LOCAL-de-un-checkout-del-arnes-se-sigue-hasta-el-remoto-de-verdad",
-          "type": "must-stay-quiet",
-          "__doc": "Un clon hecho DESDE el checkout local (`git clone ~/SourceCode/tycon-claude-guides scratchpad/x`): su `origin` es una ruta, y el repo es lo que sea ese otro — se sigue hasta la URL de Azure. ROJO PREVIO: carpeta `clon-local`, se anotaba.",
+          "id": "registra-clon-LOCAL-de-un-checkout-del-arnes-se-sigue-hasta-el-remoto-de-verdad",
+          "type": "must-block",
+          "__doc": "Un clon hecho DESDE el checkout local (`git clone ~/SourceCode/tycon-claude-guides scratchpad/x`): su `origin` es una ruta, y el repo es lo que sea ese otro — se sigue hasta la URL de Azure. ROJO PREVIO: carpeta `clon-local`, se anotaba. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p canonico && cd canonico && git init -q -b main . && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides",
@@ -410,12 +445,19 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/scratchpad/clon-local\""
+              }
             ]
           },
           "env": {
-            "TYCON_HARNESS_IDENTITIES":"https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
+            "TYCON_HARNESS_IDENTITIES": "https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
           },
           "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
         },
@@ -1096,6 +1138,31 @@
             ]
           },
           "_por_que": "4 de los 28 avisos medidos en 60 días tienen esta forma exacta."
+        },
+        {
+          "id": "quiet-un-git-log-de-solo-lectura-en-main-no-deja-reclamo",
+          "type": "must-stay-quiet",
+          "__doc": "Un `git log`/`git reflog` de sólo lectura, con la sesión parada en main y con «push» y «main» en el comando (una ruta y una referencia), no publica nada: no deja entrada ni avisa. Caso de una entrada del 19/10 que se atribuyó a un `git log` (2026-11-03); con el código de hoy no se reproduce, y este caso fija que siga así.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git log --oneline origin/main..HEAD -- scripts/push.sh && git reflog show main | head -5"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "retro-pending"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          }
         },
         {
           "id": "registra-un-push-envuelto-en-time-sin-decir-que-no-pudo-resolverlo",
@@ -1843,10 +1910,389 @@
               }
             ]
           }
+        },
+        {
+          "id": "registra-pr-create-a-main-con-numero-queda-esperando",
+          "type": "must-block",
+          "__doc": "Story 8.205: un pedido abierto no es una fusión. Con el número en la salida de az (pullRequestId) la entrada queda esperando que entre y el aviso no pide el latido. ROJO PREVIO: se anotaba la punta de la rama y se pedía su latido.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "git checkout -q -b dev"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch dev --target-branch main"
+            },
+            "tool_response": {
+              "stdout": "{\n  \"pullRequestId\": 101,\n  \"status\": \"active\"\n}",
+              "stderr": "",
+              "interrupted": false
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "pedido 101 a main anotado",
+              "esperando que entre"
+            ],
+            "stderr_not_re": [
+              "--merge"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"pr\":101,\"plataforma\":\"azure\",\"estado\":\"esperando\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "8288-quiet-head-en-main-push-a-otra-rama",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin otra-rama"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): con HEAD en main, un empuje a otra rama no llega a main: no pide latido."
+        },
+        {
+          "id": "8288-quiet-head-en-main-push-u-a-otra-rama",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push -u origin otra-rama"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): -u no cambia el destino: va a otra-rama."
+        },
+        {
+          "id": "8288-quiet-main-a-otra",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main:otra"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): el refspec main:otra va a otra, aunque nombre main."
+        },
+        {
+          "id": "8288-quiet-main-que-sigue-a-otra",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "git remote add origin https://example.invalid/x.git && git update-ref refs/remotes/origin/otra HEAD && git branch -q -u origin/otra"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): sin refspec, una main que sigue a origin/otra no empuja a main (con simple, git lo rechaza; con upstream va a otra)."
+        },
+        {
+          "id": "8288-pide-push-solo-siguiendo-main",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "git remote add origin https://example.invalid/x.git && git update-ref refs/remotes/origin/main HEAD && git branch -q -u origin/main"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): sin refspec, la main que sigue a origin/main llega a main."
+        },
+        {
+          "id": "8288-pide-push-origin-siguiendo-main",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "git remote add origin https://example.invalid/x.git && git update-ref refs/remotes/origin/main HEAD && git branch -q -u origin/main"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): git push origin, sin refspec: la rama de seguimiento es main."
+        },
+        {
+          "id": "8288-pide-push-origin-head",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin HEAD"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): HEAD en main: llega a main."
+        },
+        {
+          "id": "8288-pide-push-origin-main",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): llega a main, como hoy."
+        },
+        {
+          "id": "8288-pide-desde-otra-rama-head-a-main",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "git checkout -q -b feat/x"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin HEAD:main"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): desde otra rama, HEAD:main llega a main."
+        },
+        {
+          "id": "8288-pide-main-sin-seguimiento",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): sin refspec ni rama de seguimiento no se sabe el destino: ante la duda, pide como hoy."
+        },
+        {
+          "id": "8288-pide-push-all",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push --all"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): --all no tiene un destino solo: pide como hoy."
+        },
+        {
+          "id": "8288-pide-push-tags",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push --tags"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): --tags: indeterminable, pide como hoy."
+        },
+        {
+          "id": "8288-pide-borrado",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin :otra"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): un refspec de borrado: indeterminable, pide como hoy."
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0"
       },
       "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     },
@@ -1861,7 +2307,8 @@
           "type": "must-block",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -1870,7 +2317,7 @@
           "expect": {
             "stdout_re": [
               "\"decision\"\\s*:\\s*\"block\"",
-              "retro-heartbeat\\.js\\S{0,3} --repo .* --merge abc123def456"
+              "retro-heartbeat\\.js\\S{0,3} --repo .* --merge 2b74cc324be9"
             ],
             "stdout_not_re": [
               "Agent\\(subagent_type"
@@ -1882,8 +2329,9 @@
           "type": "must-stay-quiet",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\"",
-            "node -e \"const fs=require('fs');fs.writeFileSync('tcg/.dashboard/metrics-2026-08-24-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'abc123def456aaaa',project:'x'}))\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
+            "node -e \"const fs=require('fs');fs.writeFileSync('tcg/.dashboard/metrics-2026-08-24-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'2b74cc324be9e3964f394c96b02ed2aae3d80fc4',project:'x'}))\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -1901,7 +2349,8 @@
           "__doc": "Antes era `deja-parar-si-el-merge-es-de-otra-sesion` (must-stay-quiet): el merge que otra sesión dejó colgado sólo lo reclamaba el aviso de arranque, que se puede ignorar — medido, uno estuvo 4 días sin retro. Decisión del dev 2026-08-31: al cerrar el turno se reclama, SÓLO en el repo del cwd.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -1920,7 +2369,8 @@
           "__doc": "Sesión paralela que acaba de mergear y todavía va a lanzar su retro: por debajo de TYCON_RETRO_GATE_FOREIGN_MIN_AGE_MIN (30 min) no se frena a nadie.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -1938,7 +2388,8 @@
           "__doc": "El alcance sigue siendo el repo/workspace del cwd: una sesión no es la mula de carga de los otros proyectos (feedback del dev 2026-08-28).",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'otra-sesion',repoPath:process.env.SANDBOX_HOME+'/repo-ajeno',sha:'abc123def456',branch:'main'})+'\\n')\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'otra-sesion',repoPath:process.env.SANDBOX_HOME+'/repo-ajeno',sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -1956,7 +2407,8 @@
           "__doc": "F5: una anotación sin `ts` reventaba al renderizar (tragado por el catch global) → no bloqueaba, no imprimía nada, y ya había gastado 1 de 3. Se apagaba el freno en silencio.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -1974,9 +2426,10 @@
           "__doc": "F4: el tope de 3 era VITALICIO por sesión — cada nudge legítimo ya cumplido gastaba presupuesto y del 4º merge en adelante la sesión no frenaba nunca más. Ahora cuenta bloqueos CONSECUTIVOS: un Stop limpio borra el contador.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/retro-gate-bench-s1.count','2')\"",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\"",
-            "node -e \"const fs=require('fs');fs.writeFileSync('tcg/.dashboard/metrics-2026-08-24-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'abc123def456aaaa',project:'x'}))\""
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
+            "node -e \"const fs=require('fs');fs.writeFileSync('tcg/.dashboard/metrics-2026-08-24-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'2b74cc324be9e3964f394c96b02ed2aae3d80fc4',project:'x'}))\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -1997,8 +2450,9 @@
           "__doc": "F6c: `belongsToCwd` subía sin tope — una sesión abierta en ~/SourceCode reclamaba los merges de TODOS los proyectos. El reclamo ajeno llega hasta el workspace que contiene al repo (Ceibo/ → CeiboBackend), no más arriba.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "mkdir -p proyecto-x/repo",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd()+'/proyecto-x/repo',sha:'abc123def456',branch:'main'})+'\\n')\""
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd()+'/proyecto-x/repo',sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -2016,7 +2470,8 @@
           "__doc": "F6b: pendientes que ninguna retro va a cubrir (un push directo a main que no es merge) cobraban 3 bloqueos por sesión, en cada sesión, para siempre. Pasados los días el respaldo es retro-staleness-notice.js, que avisa sin frenar a nadie.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-20*86400*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-20*86400*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -2034,8 +2489,9 @@
           "__doc": "Segunda mitad del bucle del 2026-09-16: `coveredByMetrics` buscaba las métricas SÓLO en el .dashboard/ del checkout donde vive el hook (el arnés canónico). Una retro corrida desde un clon descartable deja su metrics-*.json en el .dashboard/ DEL CLON, así que el control no la veía hasta que el checkout compartido bajara main — y mientras tanto bloqueaba el cierre del turno por un merge que ya tenía su retrospectiva. Ahora mira también el .dashboard/ del repo del push (entry.repoPath). ROJO PREVIO: decision:block con el metrics presente en el repo del push (acá tcg/.dashboard queda vacío a propósito).",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\"",
-            "node -e \"const fs=require('fs');fs.mkdirSync('.dashboard',{recursive:true});fs.writeFileSync('.dashboard/metrics-2026-09-16-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'abc123def456aaaa',project:'x'}))\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
+            "node -e \"const fs=require('fs');fs.mkdirSync('.dashboard',{recursive:true});fs.writeFileSync('.dashboard/metrics-2026-09-16-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'2b74cc324be9e3964f394c96b02ed2aae3d80fc4',project:'x'}))\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -2053,7 +2509,8 @@
           "__doc": "Una entrada exenta (sólo tests/docs) es constancia, no deuda: el gate no la reclama. ROJO PREVIO: el hook anterior no conocía el campo y bloqueaba el cierre del turno por ella.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-09-16T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'abc123def456',branch:'main',exento:'solo-tests-docs',archivos:['scripts/tests/x.test.sh']})+'\\n')\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-09-16T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main',exento:'solo-tests-docs',archivos:['scripts/tests/x.test.sh']})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -2071,8 +2528,9 @@
           "__doc": "Story 7.1, AC 8 (T7): un tycon-retrospective-capturer lanzado PARA ESE repo y ESE merge (retro_repo + retro_sha, la prueba más fuerte del emparejamiento viejo) ya no paga la deuda: la paga el archivo. ROJO PREVIO contra el hook de origin/main (84919d1): deja cerrar el turno, porque el spawn emparejaba.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'bench-s1',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\"",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/bench-s1.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-retrospective-capturer',model:null,repo:process.cwd(),retro_repo:process.cwd(),retro_sha:'abc123def456'})+'\\n')\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/bench-s1.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-retrospective-capturer',model:null,repo:process.cwd(),retro_repo:process.cwd(),retro_sha:'2b74cc324be9'})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -2091,9 +2549,10 @@
           "__doc": "Story 7.1, AC 9 (T7, segunda mitad): el mismo escenario del anterior, con el metrics-*.json escrito (por el latido o por el agente): cierra.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'bench-s1',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\"",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/bench-s1.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-retrospective-capturer',model:null,repo:process.cwd(),retro_repo:process.cwd(),retro_sha:'abc123def456'})+'\\n')\"",
-            "node -e \"const fs=require('fs');fs.writeFileSync('tcg/.dashboard/metrics-2026-08-24-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'abc123def456aaaa',project:'x'}))\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/bench-s1.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-retrospective-capturer',model:null,repo:process.cwd(),retro_repo:process.cwd(),retro_sha:'2b74cc324be9'})+'\\n')\"",
+            "node -e \"const fs=require('fs');fs.writeFileSync('tcg/.dashboard/metrics-2026-08-24-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'2b74cc324be9e3964f394c96b02ed2aae3d80fc4',project:'x'}))\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -2111,8 +2570,9 @@
           "__doc": "Story 7.1, AC 8 y 10: para un merge de OTRA sesión, «alguien miró ese repo después» (un spawn posterior del mismo repo) ya no lo da por cubierto. ROJO PREVIO contra origin/main: foreignUnclaimed lo daba por mirado y dejaba cerrar.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\"",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/bench-s1.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-retrospective-capturer',model:null,repo:process.cwd(),retro_repo:process.cwd(),retro_sha:'abc123def456'})+'\\n')\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/bench-s1.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-retrospective-capturer',model:null,repo:process.cwd(),retro_repo:process.cwd(),retro_sha:'2b74cc324be9'})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -2132,8 +2592,9 @@
           "__doc": "Story 7.1, AC 10: dos merges de OTRA sesión en el mismo repo, sin archivo, se reclaman como UN repo (el más viejo arriba) y cada merge trae su comando: con el latido cuesta un segundo cada uno, así que se cierran todos en la misma vuelta en vez de gastar un bloqueo por merge.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-3*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\"",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'fff999eee888',branch:'main'})+'\\n')\""
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-3*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'dc37419b0c67',branch:'main'})+'\\n')\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -2143,8 +2604,8 @@
             "stdout_re": [
               "\"decision\"\\s*:\\s*\"block\"",
               "merge\\(s\\) de OTRA sesi[oó]n sin su archivo \\(1\\)",
-              "--merge abc123def456",
-              "y 1 más en ese repo: fff999eee888 .*--merge fff999eee888"
+              "--merge 2b74cc324be9",
+              "y 1 más en ese repo: dc37419b0c67 .*--merge dc37419b0c67"
             ]
           }
         },
@@ -2172,9 +2633,9 @@
           }
         },
         {
-          "id": "bloquea-pendiente-de-un-repo-en-carpeta-temporal-que-ya-no-esta",
-          "type": "must-block",
-          "__doc": "GUARDA de no-regresión: si la carpeta del repo ya no existe no se puede juzgar si era de laboratorio, y se reclama como siempre (un clon descartable de verdad que se borró sigue debiendo su retrospectiva).",
+          "id": "avisa-sin-cortar-pendiente-propio-de-una-carpeta-que-ya-no-esta",
+          "type": "must-stay-quiet",
+          "__doc": "Un merge propio cuya carpeta ya no existe (y sin carpeta principal) no lo paga ningún latido: el latido pide el repo y el commit. Antes cortaba el turno con un comando que no podía andar; ahora se avisa, sin cortar, con el comando para corregirlo.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
             "mkdir -p repos temporal",
@@ -2185,21 +2646,157 @@
             "stop_hook_active": false
           },
           "expect": {
+            "stdout_not_re": [
+              "\"decision\""
+            ],
             "stdout_re": [
-              "\"decision\"\\s*:\\s*\"block\"",
-              "--merge abc123def456"
+              "ningún latido lo paga"
             ]
           },
           "env": {
             "TYCON_RETRO_LAB_DIRS": "${FIXTURE}/temporal",
             "TYCON_REPOS_ROOT": "${FIXTURE}/repos"
           }
+        },
+        {
+          "id": "deja-parar-con-un-pedido-que-espera-entrar",
+          "type": "must-stay-quiet",
+          "__doc": "Story 8.205 (AC 2): un pedido abierto no frena el cierre. ROJO PREVIO: el cierre frenaba por la punta de la rama del pedido.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main',pr:101,plataforma:'azure',estado:'esperando',cmd:'az repos pr create --source-branch dev --target-branch main'})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "\"decision\"\\s*:\\s*\"block\""
+            ]
+          }
+        },
+        {
+          "id": "bloquea-por-el-commit-de-main-de-un-pedido-que-entro",
+          "type": "must-block",
+          "__doc": "Story 8.205 (AC 3): cuando el pedido entró, se reclama el commit que dejó en main, no la punta de su rama.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main',pr:101,plataforma:'azure',estado:'esperando',cmd:'az repos pr create --source-branch dev --target-branch main'})+'\\n');fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T01:00:00.000Z',tipo:'pedido',entrada:{repo:process.cwd(),sha:'2b74cc324be9'},pr:101,estado:'entro',merge:'dc37419b0c67'})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "--merge dc37419b0c67"
+            ],
+            "stdout_not_re": [
+              "--merge 2b74cc324be9"
+            ]
+          }
+        },
+        {
+          "id": "deja-parar-con-un-pedido-abandonado",
+          "type": "must-stay-quiet",
+          "__doc": "Story 8.205 (AC 5): un pedido abandonado cierra su entrada y no se reclama nunca más.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main',pr:101,plataforma:'azure',estado:'esperando',cmd:'az repos pr create --source-branch dev --target-branch main'})+'\\n');fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T01:00:00.000Z',tipo:'pedido',entrada:{repo:process.cwd(),sha:'2b74cc324be9'},pr:101,estado:'abandonado',motivo:'el pedido 101 se abandonó: no hay fusión que reclamar'})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "\"decision\"\\s*:\\s*\"block\""
+            ]
+          }
+        },
+        {
+          "id": "avisa-sin-cortar-merge-ajeno-de-un-repo-del-workspace",
+          "type": "must-stay-quiet",
+          "__doc": "La sesión trabaja en el workspace que contiene el repo, no en el repo: el merge de otra sesión no lo salda ella. Antes cortaba el turno; ahora se avisa, sin cortar, con el comando para quien trabaja en ese repo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p repo && cd repo && git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd()+'/repo',sha:'2b74cc324be9',branch:'main'})+'\\\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "stdout_not_re": [
+              "\"decision\""
+            ],
+            "stdout_re": [
+              "no puede saldar",
+              "de la sesión otra-ses",
+              "retro-heartbeat\\.js"
+            ]
+          }
+        },
+        {
+          "id": "avisa-sin-cortar-merge-ajeno-que-la-copia-no-conoce",
+          "type": "must-stay-quiet",
+          "__doc": "Un merge de otra sesión en el mismo repo cuyo commit esta copia no tiene: el latido no lo puede pagar desde acá. Se avisa sin cortar.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "stdout_not_re": [
+              "\"decision\""
+            ],
+            "stdout_re": [
+              "ningún latido lo paga"
+            ]
+          }
+        },
+        {
+          "id": "corta-por-el-propio-y-avisa-el-ajeno-en-el-mismo-mensaje",
+          "type": "must-block",
+          "__doc": "Un merge propio pagable corta como siempre; el ajeno que la sesión no puede saldar va en el mismo mensaje, aparte, y no suma al corte.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "mkdir -p otro && cd otro && git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\\\n')\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd()+'/otro',sha:'dc37419b0c67',branch:'main'})+'\\\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "hay 1 merge",
+              "no puede saldar"
+            ]
+          }
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0",
+        "TYCON_RETRO_ASK_PR": "0"
       },
-      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
+      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso. Story 8.205: la consulta a la plataforma por un pedido (az repos pr show / gh pr view) se apaga en el banco con TYCON_RETRO_ASK_PR=0; sus casos la reemplazan sembrando lo que se supo del pedido en el registro."
     },
     {
       "hook": "retro-pending.js (aviso)",
@@ -2347,9 +2944,11 @@
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0",
+        "TYCON_RETRO_ASK_PR": "0"
       },
-      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
+      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso. Story 8.205: la consulta a la plataforma por un pedido (az repos pr show / gh pr view) se apaga en el banco con TYCON_RETRO_ASK_PR=0; sus casos la reemplazan sembrando lo que se supo del pedido en el registro."
     }
   ]
 }

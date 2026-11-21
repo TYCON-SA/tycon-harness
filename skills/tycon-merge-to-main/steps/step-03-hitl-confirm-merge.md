@@ -68,7 +68,9 @@ Opciones:
 3. Volver a 3.1 (re-mostrar el menú de opciones)
 
 **Si elige (d) — cancelar**:
-- Si Step 0 hizo `git stash push` → ofrecer `git stash pop` para restaurar
+- Si Step 0 hizo `git stash push` → ofrecer devolver la entrada `[sesión <id corto>] pre-merge stash`: buscarla por
+  esa marca en `git stash list` y hacer `git stash pop <su stash@{n}>` (no `stash@{0}`: otra sesión pudo guardar algo
+  después)
 - Terminar el skill con mensaje:
   ```
   ❌ Merge cancelado por el usuario. Repo en estado original (rama `<current_branch_at_start>`, sin cambios).

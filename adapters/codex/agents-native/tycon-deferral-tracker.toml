@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-deferral-tracker.md
-# source_sha256: 3d8d5dbefa711d8f36f58dc53e80df2b785532a0d6f8b517aaef9cadfbe636bc
+# source_sha256: e4573b6d5d096486e4fb5f6d510b9217cef22c6332b7730cb1c05308cd763dfd
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-deferral-tracker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-deferral-tracker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -162,6 +162,13 @@ Tu reporte final se estructura SIEMPRE así:
 3. Si tenés detalle (rule IDs, `archivo:línea`, repros, tablas): **NO lo pegues**. Cerrá con una línea:
    *\"tengo el detalle, pedímelo\"*. El orquestador te lo pide con un mensaje de seguimiento del orquestador si hace falta, y él sí puede
    escribirlo a un archivo.
+4. **El último renglón es SIEMPRE el veredicto**, solo, sin viñeta ni negrita adelante, con la regla de cada hallazgo
+   una vez por hallazgo (dos del mismo tipo, dos veces); también sin hallazgos. Es lo único con rule IDs que va en el
+   reporte, y lo lee el arnés: sin él, tu reporte queda como no leído y la historia no cierra.
+   ```text
+   Veredicto: limpio
+   Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+   ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:
 `Limpio, 0 hallazgos.` y nada más — enumerar todo lo que revisaste y salió bien es el modo más común de

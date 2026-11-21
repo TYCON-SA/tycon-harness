@@ -18,6 +18,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const RUNNER = path.join(__dirname, '..', 'lib', 'run-suites-json.js');
+// «Correr todas» heredada de quien lanza esta suite haría correr todo a cada corredor de juguete y rompería los casos
+// del recorte; los que la prueban la ponen ellos en su propio entorno.
+delete process.env.TYCON_GATE_ALL_SUITES;
 
 function armar(suites, { conSkills = true } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-json-'));
@@ -34,6 +37,19 @@ function armar(suites, { conSkills = true } = {}) {
     fs.writeFileSync(p, cuerpo);
   };
   return { root, repo, skills, escribir };
+}
+
+// Una suite de juguete que, mientras corre, copia a `visto` los portones anotados en `gates` (la coordinadora los lee
+// igual, de esa carpeta). Las dos rutas van en un .json al lado de la suite, no pegadas en su código: así el código de la
+// suite es fijo, y una ruta con comillas o `${` no lo cambia.
+const CUERPO_VIGIA = `const fs = require('fs');
+const path = require('path');
+const { gates, visto } = JSON.parse(fs.readFileSync(__filename + '.rutas.json', 'utf8'));
+let l = []; try { l = fs.readdirSync(gates).map((x) => JSON.parse(fs.readFileSync(path.join(gates, x), 'utf8'))); } catch (_) {}
+fs.writeFileSync(visto, JSON.stringify(l));`;
+function escribirVigia(f, ruta, gates, visto) {
+  f.escribir('arnes', ruta, CUERPO_VIGIA);
+  f.escribir('arnes', `${ruta}.rutas.json`, JSON.stringify({ gates, visto }));
 }
 
 function correr(repo, skills, out) {
@@ -434,11 +450,13 @@ test('T16 RunSuites_NothingLeftToRun_NotMeasured — si no queda nada para corre
 
 test('T17 RunSuites_BadWorkersEnv_FallsBack — valor inválido avisa y usa el defecto; 1 es la serie de siempre', () => {
   // 🔴 mutación: `parseInt('mucho')` → NaN → 0 procesos y el runner no corre nada (o cuelga).
-  const def = Math.max(1, Math.floor((os.availableParallelism ? os.availableParallelism() : os.cpus().length) / 2));
+  // el defecto es el de la máquina (suite-workers.test.js): con 10 núcleos y carga 1, fuera de la CI, 8
+  const def = 8;
+  const maquina = { TYCON_FAKE_MACHINE: '10/1', CI: '', TF_BUILD: '', GITHUB_ACTIONS: '' };
   for (const bad of ['0', '-2', 'mucho']) {
     const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.sh' }] });
     f.escribir('arnes', 'tests/a.test.sh', 'exit 0');
-    const r = runWith(f, { env: { TYCON_SUITES_MAX_WORKERS: bad } });
+    const r = runWith(f, { env: { TYCON_SUITES_MAX_WORKERS: bad, ...maquina } });
     assert.equal(r.status, 0);
     assert.equal(r.resumen.workers, def, `con «${bad}» usa el defecto`);
     assert.match(r.stderr, /TYCON_SUITES_MAX_WORKERS/, `con «${bad}» avisa`);
@@ -867,26 +885,39 @@ test('T29 PortonAcotadoPorElRepo_CorreSoloLoTocado — con --scoped-by-repo corr
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(r.resumen.corridas, 1, JSON.stringify(r.resumen));
   assert.match(r.resumen.deferred_suites[0].suite, /otra\.test\.js$/);
-  assert.match(r.resumen.deferred_suites[0].reason, /la suite completa la corre la CI del pedido \(la CI de GitHub del pedido\)/);
+  assert.match(r.resumen.deferred_suites[0].reason, /; la suite completa la corre la CI de GitHub del pedido$/);
   assert.deepEqual(r.resumen.scoped, { by: 'repo', full_suite_by: 'la CI de GitHub del pedido', none_touched: false });
   assert.equal(r.resumen.unscoped, undefined);
 });
 
-test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_CorreTodo — si ninguna suite lee lo tocado sale verde y lo dice; sin saber qué se tocó, corre todo', () => {
+test('T19 RunSuites_MustMeasure_NoGreenWithoutRunning @story-8.279 @ac-31 — lo tocado que hay que medir y ninguna suite lo lee: sale 7, sin decir que acotó', () => {
+  // 🔴 rojo si: la marca no frena el cierre «ninguna suite lee lo tocado» → verde sin correr nada; o si la salida 7 conserva
+  //    `scoped` → el portón dice que corrieron las suites que leen lo tocado.
+  const f = hermanoLab();
+  const conMarca = runScopedByRepo(f, { touched: { known: true, files: ['docs/nada.md'], must_measure: true } });
+  assert.equal(conMarca.status, 7, `${conMarca.stdout}\n${conMarca.stderr}`);
+  assert.equal(conMarca.resumen.corridas, 0, JSON.stringify(conMarca.resumen));
+  assert.match(conMarca.resumen.unscoped.reason, /ninguna suite lee lo que la story tocó/);
+  assert.equal(conMarca.resumen.scoped, undefined, JSON.stringify(conMarca.resumen));
+  const sinMarca = runScopedByRepo(f, { touched: { known: true, files: ['docs/nada.md'] } });
+  assert.equal(sinMarca.status, 0, `${sinMarca.stdout}\n${sinMarca.stderr}`);
+  assert.equal(sinMarca.resumen.scoped.none_touched, true);
+});
+
+test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_NoCorreNada — si ninguna suite lee lo tocado sale verde y lo dice; sin saber qué se tocó, sale 7 sin correr', () => {
   // 🔴 mutación: «ninguna lo lee» no debe salir 3 (rojo) ni 7 (el repo declaró que lo respalda la CI); «no sé» no debe
-  //    acotar: saldría 7 sin correr nada, y una suite roja pasaría.
+  //    correr todas las suites en la máquina (la completa la corre la CI del pedido) ni salir verde.
   const f = hermanoLab();
   const nadieLee = runScopedByRepo(f, { touched: { known: true, files: ['docs/nada.md'] } });
   assert.equal(nadieLee.status, 0, `${nadieLee.stdout}\n${nadieLee.stderr}`);
   assert.equal(nadieLee.resumen.corridas, 0);
   assert.equal(nadieLee.resumen.scoped.none_touched, true);
-  assert.match(nadieLee.stdout, /ninguna suite lee lo tocado; la suite completa la corre la CI del pedido/);
+  assert.match(nadieLee.stdout, /ninguna suite lee lo tocado; la suite completa la corre la CI de GitHub del pedido/);
   const sinSaber = runScopedByRepo(f, { touched: { known: false, files: [], reason: 'la base cayó a HEAD' } });
-  assert.equal(sinSaber.status, 0, sinSaber.stdout);
-  assert.equal(sinSaber.resumen.corridas, 2, JSON.stringify(sinSaber.resumen));
-  assert.equal(sinSaber.resumen.unscoped, undefined);
+  assert.equal(sinSaber.status, 7, sinSaber.stdout);
+  assert.equal(sinSaber.resumen.corridas, 0, JSON.stringify(sinSaber.resumen));
+  assert.match(sinSaber.resumen.unscoped.reason, /la base cayó a HEAD.*la cubre la CI del pedido.*TYCON_COVERAGE_BASE/);
   assert.equal(sinSaber.resumen.scoped, undefined);
-  assert.match(sinSaber.stdout, /no sé qué se tocó \(la base cayó a HEAD\): corren todas las suites/);
   // una suite roja entre las elegidas sigue siendo rojo
   f.escribir('arnes', 'tests/lee.test.js', "// lee scripts/lib/acme.js\nprocess.exit(1)\n");
   const roja = runScopedByRepo(f, { touched: { known: true, files: ['scripts/lib/acme.js'] } });
@@ -1030,4 +1061,707 @@ test('RunSuites_InstallerGroup_RunsWhenInDoubt — tocar el instalador, la suite
   }
   const broken = runWith(installerLab({ selector: false }), { touched: { known: true, files: ['guides/x.md'] } });
   assert.match(broken.stdout + broken.stderr, /no pude leer el criterio del instalador/, 'y lo dice');
+});
+
+// Una suite de juguete con el caso roto en el medio de una salida larga: queda fuera de las últimas 25 líneas.
+const SUITE_LARGA = [
+  'for (let i = 0; i < 400; i++) console.log(`ruido ${i}`);',
+  "console.log('✖ el candado choca con otra sesión (12ms)');",
+  "console.log('  otra sesión está actualizando (candado de prueba)');",
+  "console.log('not ok 3 - el segundo caso roto');",
+  'for (let i = 400; i < 800; i++) console.log(`ruido ${i}`);',
+  // sin process.exit: cortaría lo que todavía no se escribió a la tubería, y la salida llegaría sin su cola
+  'process.exitCode = 1;',
+].join('\n');
+
+test('RunSuites_RedSuite_KeepsFailedCasesAndFullOutput — el caso roto fuera de la cola queda en el resumen, con la ruta de la salida entera', () => {
+  // 🔴 mutación: guardar sólo la cola (las últimas 25 líneas) → el caso del medio se pierde y el rojo no se puede leer.
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/larga.test.js' }] }, { conSkills: false });
+  f.escribir('arnes', 'tests/larga.test.js', SUITE_LARGA);
+  const out = path.join(f.root, 'out.json');
+  const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills], { encoding: 'utf8' });
+  assert.equal(r.status, 1, r.stderr);
+  const resumen = JSON.parse(fs.readFileSync(out, 'utf8'));
+  const falla = resumen.fallas[0];
+  assert.doesNotMatch(falla.cola, /el candado choca/, 'el juguete pone el caso fuera de la cola');
+  const casos = (falla.casos || []).join('\n');
+  assert.match(casos, /✖ el candado choca con otra sesión/, 'el caso con «✖» llega al resumen');
+  assert.match(casos, /otra sesión está actualizando/, 'con el texto que lo explica');
+  assert.match(casos, /not ok 3 - el segundo caso roto/, 'y el de TAP también');
+  assert.doesNotMatch(casos, /ruido/, 'sin el ruido de alrededor');
+  assert.ok(falla.salida_completa && fs.existsSync(falla.salida_completa), `la salida entera queda en un archivo: ${falla.salida_completa}`);
+  const entera = fs.readFileSync(falla.salida_completa, 'utf8');
+  assert.match(entera, /ruido 0\n/);
+  assert.match(entera, /ruido 799\n/);
+  assert.equal(typeof falla.ms, 'number', 'con el tiempo de la suite');
+  assert.match(r.stdout, /✖ el candado choca con otra sesión/, 'el resumen de la consola nombra el caso');
+  assert.ok(r.stdout.includes(falla.salida_completa), 'y la ruta del archivo entero');
+});
+
+test('RunSuites_RedSuite_RecordsTheGateEnvironment — el resumen dice con qué marcas corrió, si fue con run-check y qué variables se quitaron', () => {
+  // 🔴 mutación: no anotar el ambiente → un rojo que sólo pasa dentro de la puerta no deja rastro de qué cambia.
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/larga.test.js' }] }, { conSkills: false });
+  f.escribir('arnes', 'tests/larga.test.js', SUITE_LARGA);
+  const out = path.join(f.root, 'out.json');
+  const env = { ...process.env, TYCON_TEST_GATE: '1', TYCON_SUITE_RUNNER: 'test-gate', TYCON_MAILBOX: '0', TYCON_TEST_SECRET: 'no-se-imprime' };
+  const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, '--run-check', 'tests-suite'], { encoding: 'utf8', env });
+  assert.equal(r.status, 1, r.stderr);
+  const amb = JSON.parse(fs.readFileSync(out, 'utf8')).ambiente || {};
+  assert.equal(amb.run_check, 'tests-suite');
+  assert.equal(amb.marks.TYCON_SUITE_RUNNER, 'test-gate');
+  assert.equal(amb.marks.TYCON_MAILBOX, '0');
+  assert.ok(amb.removed.includes('TYCON_TEST_GATE'), 'la marca que la suite no ve también se anota');
+  assert.ok(amb.other_names.includes('TYCON_TEST_SECRET'), 'de las demás variables del arnés va el nombre');
+  assert.doesNotMatch(JSON.stringify(amb) + r.stdout, /no-se-imprime/, 'pero nunca su valor');
+  assert.equal(typeof amb.workers, 'number');
+  assert.match(r.stdout, /run-check tests-suite/, 'la consola lo dice');
+  const sin = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills], { encoding: 'utf8' });
+  assert.equal(sin.status, 1);
+  assert.equal(JSON.parse(fs.readFileSync(out, 'utf8')).ambiente.run_check, null, 'sin la marca, sin run-check');
+  const sinValor = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, '--run-check'], { encoding: 'utf8' });
+  assert.equal(sinValor.status, 2, '--run-check sin nombre es un error de uso');
+});
+
+test('RunSuites_FullOutput_CappedKeepsHeadAndTail — la salida entera tiene un tope en bytes por suite y guarda el principio y el final', () => {
+  // 🔴 mutación: escribir la salida sin tope en saveFullOutput (una suite que escupe megas llena el disco), recortar sólo
+  //    por la cola, o contar caracteres en vez de bytes.
+  const { capOutput, saveFullOutput, failedCases } = require(RUNNER);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-cap-'));
+  const out = path.join(root, 'suites.json');
+  const amb = { run_check: null, workers: 1, marks: {}, removed: [], other_names: [] };
+  const r = { idx: 3, ruta: '/x/tests/larga.test.js', exit: 1, ms: 5, salida: `${'a'.repeat(5000)}MEDIO${'z'.repeat(5000)}` };
+  const g = saveFullOutput(out, r, amb, { left: 1e9 }, 1000);
+  assert.equal(g.truncated, true);
+  const texto = fs.readFileSync(g.file, 'utf8');
+  assert.ok(fs.statSync(g.file).size < 1500, `el archivo quedó de ${fs.statSync(g.file).size} bytes con tope de 1000`);
+  assert.match(texto, /a{400}/);
+  assert.match(texto, /z{400}$/);
+  assert.doesNotMatch(texto, /MEDIO/);
+  assert.match(texto, /recortad/);
+  // en bytes: 1000 «ñ» son 2000 bytes; con tope de 1000 no entran enteras
+  const multi = capOutput('ñ'.repeat(1000), 1000);
+  assert.equal(multi.truncated, true, 'el tope cuenta bytes, no caracteres');
+  assert.ok(Buffer.byteLength(multi.text) < 1200);
+  assert.deepEqual(capOutput('corto', 200), { text: 'corto', truncated: false });
+  // los formatos de falla de las suites del arnés, con colores y sin la línea de título del reportero de Node
+  const casos = failedCases(['\u001b[31m✖ uno\u001b[39m', 'ok 1 - bien', 'MAL dos', '❌ tres', 'FAIL cuatro', '✖ failing tests:', '  ✖ uno', 'bien'].join('\n'));
+  assert.deepEqual(casos, ['✖ uno', 'MAL dos', '❌ tres', 'FAIL cuatro']);
+});
+
+test('RunSuites_FullOutput_RunBudget — pasado el tope de la corrida, de las suites que siguen queda sólo el resumen de sus casos, y se dice', () => {
+  // 🔴 mutación: no descontar lo escrito del tope de la corrida → muchas suites rojas escriben cada una sus 8 MB.
+  const { saveFullOutput } = require(RUNNER);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-budget-'));
+  const out = path.join(root, 'suites.json');
+  const amb = { run_check: null, workers: 1, marks: {}, removed: [], other_names: [] };
+  const budget = { left: 3000 };
+  const una = (idx) => ({ idx, ruta: `/x/tests/s${idx}.test.js`, exit: 1, ms: 1, salida: 'x'.repeat(2500) });
+  const a = saveFullOutput(out, una(1), amb, budget, 1e6);
+  const b = saveFullOutput(out, una(2), amb, budget, 1e6);
+  const c = saveFullOutput(out, una(3), amb, budget, 1e6);
+  assert.ok(a.file && fs.existsSync(a.file), 'la primera entra entera');
+  assert.ok(b.file && b.truncated, 'la segunda entra recortada a lo que le queda a la corrida');
+  assert.equal(c.file, null, 'la tercera ya no se escribe');
+  assert.match(c.skipped, /tope .*corrida.*casos/);
+  const total = [a.file, b.file].reduce((n, f) => n + fs.statSync(f).size, 0);
+  assert.ok(total < 3000 + 600, `entre todas escribieron ${total} bytes con tope de 3000`);
+});
+
+test('TestGate_OldResultFolders_Pruned — al arrancar, la puerta borra sus carpetas de más de 7 días, sólo las suyas y sólo en el temporal', () => {
+  // 🔴 mutación: borrar por prefijo sin mirar el nombre exacto, la edad o si es un enlace; o no llamarlo desde la puerta.
+  const { pruneOldResults } = require(path.join(__dirname, '..', 'lib', 'old-gate-results.js'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-prune-'));
+  const afuera = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-prune-afuera-'));
+  const viejo = (Date.now() - 8 * 86400000) / 1000;
+  const mk = (name, old) => { const d = path.join(root, name); fs.mkdirSync(d); fs.writeFileSync(path.join(d, 'f'), 'x'); if (old) fs.utimesSync(d, viejo, viejo); return d; };
+  const vieja = mk('test-gate-Ab12Cd', true);
+  const nueva = mk('test-gate-Zz99Yy', false);
+  const otroNombre = mk('test-gate-mia-de-otro', true);
+  const ajena = mk('otra-cosa-Ab12Cd', true);
+  fs.writeFileSync(path.join(afuera, 'f'), 'x');
+  fs.symlinkSync(afuera, path.join(root, 'test-gate-Enlace'));
+  fs.lutimesSync(path.join(root, 'test-gate-Enlace'), viejo, viejo);
+  const deOtro = mk('test-gate-Otro01', true);
+  pruneOldResults(root, { uid: process.getuid() + 1, now: Date.now() });
+  assert.ok(fs.existsSync(deOtro), 'la de otro usuario no se toca');
+  const borradas = pruneOldResults(root);
+  assert.deepEqual(borradas.sort(), [deOtro, vieja].sort());
+  for (const d of [nueva, otroNombre, ajena]) assert.ok(fs.existsSync(d), `${path.basename(d)} queda`);
+  assert.ok(fs.existsSync(path.join(afuera, 'f')), 'un enlace no se sigue');
+  const gate = fs.readFileSync(path.join(__dirname, '..', 'test-gate.sh'), 'utf8');
+  const llamada = gate.indexOf('lib/old-gate-results.js" "$TG_TMP"');
+  assert.ok(llamada >= 0 && llamada < gate.indexOf('mktemp -d "$TG_TMP/test-gate-XXXXXX"'), 'la puerta limpia el mismo temporal donde crea su carpeta, antes de crearla');
+});
+
+// Una suite portable (`requiere: []`) corre en la CI con una HOME vacía, suya, con sólo los dos enlaces de instalación.
+// En la máquina corría con la HOME real: pasaba acá y fallaba allá (o al revés) por lo que hay en la carpeta personal.
+// Las que piden herramientas siguen con la real: la sesión de `az` y compañía vive ahí.
+// 🔴 mutación: lanzar todas con el ambiente de quien llama → la portable ve la HOME real.
+test('T18 RunSuites_PortableSuite_EmptyHome — la portable corre con su HOME vacía, como en la CI; la que pide herramientas, con la real', () => {
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/portable-a.test.js', requiere: [] },
+    { raiz: 'arnes', ruta: 'tests/portable-b.test.js', requiere: [] },
+    { raiz: 'arnes', ruta: 'tests/con-az.test.js', requiere: ['az'] },
+  ] });
+  const casaReal = fs.mkdtempSync(path.join(os.tmpdir(), 'casa-real-'));
+  fs.writeFileSync(path.join(casaReal, 'de-la-maquina.txt'), 'x');
+  const informe = (nombre) => `const fs=require('fs'),path=require('path');fs.writeFileSync(${JSON.stringify(path.join(f.root, nombre))},JSON.stringify({home:process.env.HOME,up:process.env.USERPROFILE,ve:fs.existsSync(path.join(process.env.HOME,'de-la-maquina.txt')),skills:fs.existsSync(path.join(process.env.HOME,'.claude','agent-skills'))?fs.realpathSync(path.join(process.env.HOME,'.claude','agent-skills')):null}));`;
+  f.escribir('arnes', 'tests/portable-a.test.js', informe('a.json'));
+  f.escribir('arnes', 'tests/portable-b.test.js', informe('b.json'));
+  f.escribir('arnes', 'tests/con-az.test.js', informe('az.json'));
+  const r = runWith(f, { env: { HOME: casaReal, USERPROFILE: casaReal } });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const leer = (n) => JSON.parse(fs.readFileSync(path.join(f.root, n), 'utf8'));
+  const a = leer('a.json'), b = leer('b.json'), az = leer('az.json');
+  assert.notStrictEqual(a.home, casaReal);
+  assert.strictEqual(a.ve, false, 'la portable no ve la carpeta personal real');
+  assert.strictEqual(a.up, a.home, 'USERPROFILE también');
+  assert.notStrictEqual(a.home, b.home, 'cada portable con la suya');
+  assert.strictEqual(a.skills, fs.realpathSync(path.dirname(f.skills)), 'con el enlace a las skills que se miden');
+  assert.strictEqual(az.home, casaReal, 'la que pide herramientas, con la real');
+  assert.ok(!fs.existsSync(a.home), 'la HOME vacía se borra al terminar');
+  assert.match(r.stdout, /2 portables con su HOME vacía/, 'la corrida lo dice');
+  assert.strictEqual(r.resumen.ambiente.empty_home, 2, 'y el resumen lo anota');
+});
+
+// Un gancho de git global de la máquina (core.hooksPath en su configuración global) que rechaza los merges sin mensaje
+// propio frena a una suite que hace `git merge --no-edit` en sus repos de juguete, y en la CI esa suite pasa.
+// La portable no ve la configuración global de git de quien corre: ni la de la HOME, ni GIT_CONFIG_GLOBAL, ni la de
+// XDG_CONFIG_HOME, ni la que viaja en variables.
+// 🔴 mutación: dejarle a la suite cualquiera de esas cuatro → el gancho rechaza el merge y la suite sale roja.
+test('T19 RunSuites_PortableSuite_NoGlobalGitConfig — un gancho global de la máquina no frena el merge de una portable', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/merge.test.js', requiere: [] }] });
+  const casaReal = fs.mkdtempSync(path.join(os.tmpdir(), 'casa-real-'));
+  const ganchos = path.join(casaReal, 'ganchos');
+  fs.mkdirSync(ganchos);
+  const rechazo = path.join(ganchos, 'commit-msg');
+  fs.writeFileSync(rechazo, '#!/bin/sh\ngrep -q "^Merge branch" "$1" && { echo "Merge commit requires a descriptive message" >&2; exit 1; }\nexit 0\n');
+  fs.chmodSync(rechazo, 0o755);
+  const conf = `[core]\n\thooksPath = ${ganchos}\n`;
+  fs.writeFileSync(path.join(casaReal, '.gitconfig'), conf);
+  const xdg = path.join(casaReal, 'xdg');
+  fs.mkdirSync(path.join(xdg, 'git'), { recursive: true });
+  fs.writeFileSync(path.join(xdg, 'git', 'config'), conf);
+  const global = path.join(casaReal, 'global.gitconfig');
+  fs.writeFileSync(global, conf);
+  f.escribir('arnes', 'tests/merge.test.js', [
+    "const { execFileSync } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path');",
+    "const d = fs.mkdtempSync(path.join(os.tmpdir(), 'juguete-'));",
+    "const fecha = { ...process.env, GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' };",
+    "const g = (...a) => execFileSync('git', ['-C', d, '-c', 'user.name=p', '-c', 'user.email=p@ejemplo.invalid', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { stdio: 'pipe', env: fecha });",
+    "g('init', '-q', '-b', 'main'); fs.writeFileSync(path.join(d, 'a'), '1'); g('add', '-A'); g('commit', '-q', '-m', 'a');",
+    "g('checkout', '-q', '-b', 'otra'); fs.writeFileSync(path.join(d, 'b'), '1'); g('add', '-A'); g('commit', '-q', '-m', 'b');",
+    "g('checkout', '-q', 'main'); fs.writeFileSync(path.join(d, 'c'), '1'); g('add', '-A'); g('commit', '-q', '-m', 'c');",
+    "g('merge', '--no-edit', 'otra'); console.log('merge ok');",
+  ].join('\n'));
+  for (const env of [
+    { HOME: casaReal },
+    { GIT_CONFIG_GLOBAL: global },
+    { XDG_CONFIG_HOME: xdg },
+    { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: ganchos },
+    { GIT_CONFIG_PARAMETERS: `'core.hooksPath'='${ganchos}'` },
+  ]) {
+    const r = runWith(f, { env: { HOME: casaReal, USERPROFILE: casaReal, ...env } });
+    assert.strictEqual(r.status, 0, `${JSON.stringify(Object.keys(env))}\n${r.stdout}${r.stderr}${JSON.stringify(r.resumen && r.resumen.fallas)}`);
+  }
+});
+
+// La portable recibe además lo que la CI le pone a cada una: sin navegador (Chrome sin perfil se cuelga), sin el perfil
+// del equipo, su propia carpeta temporal y las guías del árbol que se mide. Y si su HOME vacía no se puede armar, corre
+// con la real y lo dice: la corrida no se cae. Las carpetas que dejó una corrida muerta se borran al arrancar.
+// 🔴 mutación: no ponerle esas variables → TYCON_CHROME llega vacío; dejar que la falla al armar la HOME tumbe la corrida → exit 3.
+test('T20 RunSuites_PortableSuite_CiEnvironment — el resto del ambiente de la CI, y una HOME que no se arma no tumba la corrida', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/ambiente.test.js', requiere: [] }] });
+  f.escribir('arnes', 'tests/ambiente.test.js', `const fs=require('fs'),os=require('os'),path=require('path');fs.writeFileSync(${JSON.stringify(path.join(f.root, 'amb.json'))},JSON.stringify({home:process.env.HOME,chrome:process.env.TYCON_CHROME,profile:process.env.TYCON_PROFILE,guides:process.env.TYCON_GUIDES_DIR,tmp:os.tmpdir()}));`);
+  const muerta = path.join(f.repo, '.advisors', 'suite-homes-999999');
+  fs.mkdirSync(muerta, { recursive: true });
+  const r = runWith(f);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const a = JSON.parse(fs.readFileSync(path.join(f.root, 'amb.json'), 'utf8'));
+  assert.strictEqual(a.chrome, '0', 'sin navegador');
+  assert.strictEqual(a.profile, '0', 'sin el perfil del equipo');
+  assert.strictEqual(a.guides, path.resolve(f.repo), 'las guías del árbol que se mide');
+  assert.ok(!a.tmp.startsWith(path.resolve(f.repo)), `la carpeta temporal queda fuera del repo, como en la CI: ${a.tmp}`);
+  assert.ok(!fs.existsSync(muerta), 'la carpeta de una corrida muerta se borra');
+  // Un archivo donde tiene que ir la carpeta de las HOME: no se puede armar ninguna.
+  fs.rmSync(path.join(f.root, 'amb.json'));
+  fs.rmSync(path.join(f.repo, '.advisors'), { recursive: true, force: true });
+  fs.writeFileSync(path.join(f.repo, '.advisors'), 'x');
+  const r2 = runWith(f);
+  assert.strictEqual(r2.status, 0, r2.stdout + r2.stderr);
+  assert.match(r2.stdout, /no pude armarle la HOME vacía/, 'lo dice');
+  assert.ok(fs.existsSync(path.join(f.root, 'amb.json')), 'y la suite corrió igual');
+});
+
+// El árbol armado del privado vive en la carpeta temporal: las HOME bajo su `.advisors/` quedarían en ella, y hay suites
+// que tratan esa carpeta como «de prueba» (un destino «fuera de lo temporal» bajo la HOME dejaría de serlo). El portón
+// declara otra raíz para las HOME, fuera de la carpeta temporal; sin declararla, van bajo el repo como siempre.
+// La variable es del portón: la suite no la hereda, o un corredor que ella misma lance pondría sus HOME en la raíz ajena.
+// 🔴 mutación: ignorar TYCON_SUITE_HOMES_ROOT → la HOME de la suite queda bajo `.advisors/` del árbol.
+// 🔴 mutación: sacarla de DEL_PORTON → la suite la ve.
+test('T20e RunSuites_PortableSuite_HomesRootDeclared — la HOME vacía va bajo la raíz que declara el portón, y se borra', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/casa.test.js', requiere: [] }] });
+  f.escribir('arnes', 'tests/casa.test.js', `const fs=require('fs');fs.writeFileSync(${JSON.stringify(path.join(f.root, 'casa.txt'))},process.env.HOME);fs.writeFileSync(${JSON.stringify(path.join(f.root, 'heredada.txt'))},String('TYCON_SUITE_HOMES_ROOT' in process.env));`);
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'raiz-casas-'));
+  const r = runWith(f, { env: { TYCON_SUITE_HOMES_ROOT: raiz } });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.strictEqual(fs.readFileSync(path.join(f.root, 'heredada.txt'), 'utf8'), 'false', 'la suite no hereda la raíz del portón');
+  const casa = fs.readFileSync(path.join(f.root, 'casa.txt'), 'utf8');
+  assert.ok(casa.startsWith(path.join(raiz, 'suite-homes-')), `la HOME bajo la raíz declarada: ${casa}`);
+  assert.ok(!casa.startsWith(path.resolve(f.repo)), 'y no bajo el árbol');
+  assert.deepStrictEqual(fs.readdirSync(raiz), [], 'la carpeta de la corrida se borra al terminar');
+  // sin declararla, bajo el repo
+  const r2 = runWith(f);
+  assert.strictEqual(r2.status, 0, r2.stdout + r2.stderr);
+  assert.ok(fs.readFileSync(path.join(f.root, 'casa.txt'), 'utf8').startsWith(path.join(path.resolve(f.repo), '.advisors', 'suite-homes-')), 'sin raíz declarada, bajo .advisors del repo');
+});
+
+// «Correr todas» es una orden al corredor, no a cada suite: una suite que corre su propio portón de juguete la tomaría
+// como suya y dejaría de acotar (las rojas falsas de las completas pedidas con la variable).
+// 🔴 mutación: sacarla de DEL_PORTON → la suite la ve y el ambiente no la nombra entre las quitadas.
+test('Corredor_QuitaTodasLasSuitesALasHijas @story-8.230 @ac-17 — con TYCON_GATE_ALL_SUITES=1 el corredor corre todo, pero la suite no la recibe', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/hija.test.js', requiere: [] }] });
+  const marca = path.join(f.root, 'hija.txt');
+  f.escribir('arnes', 'tests/hija.test.js', `require('fs').writeFileSync(${JSON.stringify(marca)}, String(process.env.TYCON_GATE_ALL_SUITES));`);
+  const out = path.join(f.root, 'out.json');
+  const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills], { encoding: 'utf8', env: { ...process.env, TYCON_GATE_ALL_SUITES: '1' } });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.strictEqual(fs.readFileSync(marca, 'utf8'), 'undefined', 'la suite no la hereda');
+  const amb = JSON.parse(fs.readFileSync(out, 'utf8')).ambiente || {};
+  assert.ok((amb.removed || []).includes('TYCON_GATE_ALL_SUITES'), `el ambiente la nombra entre las quitadas: ${JSON.stringify(amb)}`);
+});
+
+// La carpeta temporal de una portable queda fuera de todo repo, como en la CI: hay suites que arman ahí un repo de
+// juguete o suponen estar «fuera de un repo git». Dentro del árbol que se mide, git contesta la raíz de ese árbol.
+// 🔴 mutación: la carpeta temporal dentro de la HOME vacía (bajo `.advisors/` del repo) → git la encuentra dentro del repo.
+test('T20b RunSuites_PortableSuite_TmpOutsideRepo — la carpeta temporal de cada portable no está dentro del repo, es suya y se borra', () => {
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/tmp-a.test.js', requiere: [] },
+    { raiz: 'arnes', ruta: 'tests/tmp-b.test.js', requiere: [] },
+  ] });
+  spawnSync('git', ['init', '-q', f.repo]);
+  const informe = (nombre) => `const os=require('os'),fs=require('fs'),{spawnSync}=require('child_process');const r=spawnSync('git',['-C',os.tmpdir(),'rev-parse','--show-toplevel'],{encoding:'utf8'});fs.writeFileSync(${JSON.stringify(path.join(f.root, nombre))},JSON.stringify({tmp:os.tmpdir(),status:r.status,top:r.stdout.trim()}));`;
+  f.escribir('arnes', 'tests/tmp-a.test.js', informe('a.json'));
+  f.escribir('arnes', 'tests/tmp-b.test.js', informe('b.json'));
+  const r = runWith(f);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const a = JSON.parse(fs.readFileSync(path.join(f.root, 'a.json'), 'utf8'));
+  const b = JSON.parse(fs.readFileSync(path.join(f.root, 'b.json'), 'utf8'));
+  assert.notStrictEqual(a.status, 0, `git no encuentra un repo desde la carpeta temporal (contestó ${a.top})`);
+  assert.ok(![os.tmpdir(), fs.realpathSync(os.tmpdir())].includes(path.resolve(a.tmp)), 'no es la carpeta temporal de la máquina entera');
+  assert.notStrictEqual(a.tmp, b.tmp, 'cada portable con la suya');
+  assert.ok(!fs.existsSync(a.tmp) && !fs.existsSync(b.tmp), 'se borran al terminar');
+});
+
+// La carpeta temporal de una corrida que murió sin limpiar (un kill -9) la barre la corrida siguiente, como las HOME.
+// 🔴 mutación: sin el barrido de `suite-tmps-<pid>-` → la carpeta del proceso muerto queda para siempre.
+test('T20c RunSuites_PortableSuite_OrphanTmpSwept — la carpeta temporal de un proceso que ya no vive se borra; la de uno vivo, no', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/nada.test.js', requiere: [] }] });
+  f.escribir('arnes', 'tests/nada.test.js', '');
+  const muerta = fs.mkdtempSync(path.join(os.tmpdir(), 'suite-tmps-999999-'));
+  const viva = fs.mkdtempSync(path.join(os.tmpdir(), `suite-tmps-${process.pid}-`));
+  try {
+    const r = runWith(f);
+    assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    assert.ok(!fs.existsSync(muerta), 'la del proceso muerto se barre');
+    assert.ok(fs.existsSync(viva), 'la de un proceso vivo queda');
+  } finally {
+    fs.rmSync(muerta, { recursive: true, force: true });
+    fs.rmSync(viva, { recursive: true, force: true });
+  }
+});
+
+// Una suite que deja, dentro de su carpeta temporal, una carpeta sin permisos (el banco de controles prueba así un
+// ~/.claude/skills al que no se puede entrar) no tumba la corrida: el borrado le devuelve los permisos y el resumen se
+// escribe igual.
+// 🔴 mutación: borrar sin devolver los permisos → ENOTEMPTY, el corredor se cae y no hay resumen.
+test('T20d RunSuites_PortableSuite_LockedTmpRemoved — una carpeta sin permisos en la temporal no tumba la corrida', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/cerrada.test.js', requiere: [] }] });
+  f.escribir('arnes', 'tests/cerrada.test.js', `const os=require('os'),fs=require('fs'),path=require('path');const d=path.join(os.tmpdir(),'sandbox','home','.claude','skills');fs.mkdirSync(d,{recursive:true});fs.chmodSync(d,0);fs.writeFileSync(${JSON.stringify(path.join(f.root, 'tmp.json'))},JSON.stringify({tmp:os.tmpdir()}));`);
+  const r = runWith(f);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.resumen, `el resumen se escribe: ${r.stderr}`);
+  assert.strictEqual(r.resumen.verdes, 1);
+  const { tmp } = JSON.parse(fs.readFileSync(path.join(f.root, 'tmp.json'), 'utf8'));
+  assert.ok(!fs.existsSync(tmp), 'la carpeta temporal se borra');
+});
+
+// El portón que acota, sin saber qué se tocó, corre todo: quien lo lanzó tiene que poder cortarlo antes de la primera suite.
+function repoQueAcota() {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.js' }, { raiz: 'arnes', ruta: 'tests/b.test.js' }] });
+  f.escribir('arnes', 'tests/a.test.js', '// lib/x.js\nprocess.exit(0)');
+  f.escribir('arnes', 'tests/b.test.js', 'process.exit(0)');
+  return f;
+}
+
+test('SinBase_RepoQueAcota_NoCorreNada_YDiceComoSeguir — la completa no corre en la máquina', () => {
+  // 🔴 mutación: sin base, correr todas las suites deja la máquina una hora ocupada con lo que corre la CI del pedido.
+  const f = repoQueAcota();
+  const r = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'o.json'), '--skills', f.skills, '--scoped-by-repo', 'la CI'], { encoding: 'utf8' });
+  assert.equal(r.status, 7, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /^ok {7}/m, 'no corre ninguna suite');
+  assert.match(r.stderr, /sin acotar — .*la cubre la CI del pedido/);
+  assert.match(r.stderr, /TYCON_COVERAGE_BASE="\$\(git merge-base origin\/main HEAD\)"/);
+});
+
+test('TopeDeLaMaquina_MasSuitesQueElTope_CorrenLasMasCercanas — las demás quedan para la CI del pedido', () => {
+  // 🔴 mutación: sin tope, tocar una pieza que nombran cientos de suites las corre todas en la máquina del dev.
+  const f = repoQueAcota();
+  const escribir = (rel, texto) => { const p = path.join(f.repo, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, texto); };
+  const lista = JSON.parse(fs.readFileSync(path.join(f.repo, 'scripts', 'tests', 'suites.json'), 'utf8'));
+  // seis suites que leen lo tocado: una se llama como el archivo, otra lo nombra por su ruta, las demás por su nombre
+  const nuevas = { 'pieza-propia.test.sh': 'pieza.js', 'por-ruta.test.sh': 'lib/pieza.js', 'n1.test.sh': 'pieza.js', 'n2.test.sh': 'pieza.js', 'n3.test.sh': 'pieza.js', 'tocada.test.sh': 'nada' };
+  for (const [nombre, lee] of Object.entries(nuevas)) {
+    escribir(`scripts/tests/${nombre}`, `#!/usr/bin/env bash\n# lee ${lee}\nexit 0\n`);
+    lista.diarias.push({ raiz: 'arnes', ruta: `tests/${nombre}` });
+  }
+  fs.writeFileSync(path.join(f.repo, 'scripts', 'tests', 'suites.json'), JSON.stringify(lista));
+  const touched = path.join(f.root, 't.json');
+  fs.writeFileSync(touched, JSON.stringify({ known: true, files: ['lib/pieza.js', 'scripts/tests/tocada.test.sh'], sources: {} }));
+  const out = path.join(f.root, 'o.json');
+  const correr3 = (extra) => spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, '--touched', touched, '--scoped-by-repo', 'la CI', ...extra], { encoding: 'utf8' });
+  const r = correr3(['--max-suites', '3']);
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const resumen = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.deepEqual(resumen.scoped.capped, { max: 3, chosen: 6, deferred: 3 });
+  const diferidas = resumen.deferred_suites.filter((d) => /pasa el tope de 3 suites de la máquina/.test(d.reason)).map((d) => path.basename(d.suite)).sort();
+  assert.deepEqual(diferidas, ['n1.test.sh', 'n2.test.sh', 'n3.test.sh'], 'quedan afuera las menos cercanas');
+  assert.match(r.stdout, /tope de la máquina: 6 suites leen lo tocado; corren las 3 más cercanas y 3 quedan fuera \(la suite completa la corre la CI\)/);
+  assert.equal(resumen.corridas, 3);
+  // la suite tocada corre siempre, aunque el tope sea menor
+  const uno = correr3(['--max-suites', '1']);
+  assert.equal(uno.status, 0, `${uno.stdout}\n${uno.stderr}`);
+  assert.doesNotMatch(JSON.stringify(JSON.parse(fs.readFileSync(out, 'utf8')).deferred_suites), /tocada\.test\.sh/);
+  // dentro del tope no se difiere nada por él
+  const todas = correr3([]);
+  assert.equal(JSON.parse(fs.readFileSync(out, 'utf8')).scoped.capped, undefined, todas.stdout);
+});
+
+test('ConBase_NoAvisa — sabiendo qué se tocó, y en un repo que no acota, no hay aviso', () => {
+  // 🔴 mutación: avisar siempre gasta el aviso: se deja de leer.
+  const f = repoQueAcota();
+  const touched = path.join(f.root, 't.json');
+  fs.writeFileSync(touched, JSON.stringify({ known: true, files: ['lib/x.js'], sources: {} }));
+  const conBase = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'o.json'), '--skills', f.skills, '--touched', touched, '--scoped-by-repo', 'la CI'], { encoding: 'utf8' });
+  assert.equal(conBase.status, 0, conBase.stderr);
+  assert.doesNotMatch(conBase.stdout, /sin base:/);
+  const sinClave = correr(f.repo, f.skills, path.join(f.root, 'o2.json'));
+  assert.equal(sinClave.status, 0, sinClave.stderr);
+  assert.doesNotMatch(sinClave.stdout, /sin base:/);
+  // quien pidió todas, o una sola, ya sabe lo que corre
+  const args = [RUNNER, f.repo, path.join(f.root, 'o3.json'), '--skills', f.skills, '--scoped-by-repo', 'la CI'];
+  const todas = spawnSync('node', args, { encoding: 'utf8', env: { ...process.env, TYCON_GATE_ALL_SUITES: '1' } });
+  assert.equal(todas.status, 0, todas.stderr);
+  assert.doesNotMatch(todas.stdout, /sin base:/);
+  const una = spawnSync('node', [...args, '--suite', 'tests/a.test.js'], { encoding: 'utf8' });
+  assert.equal(una.status, 0, una.stderr);
+  assert.doesNotMatch(una.stdout, /sin base:/);
+});
+
+test('T4 Porton_AcotadoArranca_BorraLaEspera @story-8.274 @ac-5: un portón sin turno borra la espera anotada al arrancar y se anota mientras corre', () => {
+  // 🔴 mutación: no llamar a gateStarted cuando no se toma el turno (la nota de espera sigue, y la fila no ve el portón),
+  // o no llamar a gateEnded al salir (el registro queda y la fila lo ve corriendo hasta que el proceso muera)
+  const { stateDir } = require('../lib/state-dir.js');
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.js' }] });
+  const home = path.join(f.root, 'home');
+  const doing = path.join(stateDir(home), 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  const nota = path.join(doing, 's-espera.json');
+  fs.writeFileSync(nota, JSON.stringify({ at: new Date().toISOString(), waitingFor: 'turno de la suite completa', waitingSince: new Date().toISOString() }));
+  const gates = path.join(stateDir(home), 'coordination', 'gates');
+  const visto = path.join(f.root, 'visto.json');
+  // la suite mira, mientras corre, qué portones hay anotados (la coordinadora los lee igual, de esa carpeta)
+  escribirVigia(f, 'tests/a.test.js', gates, visto);
+  assert.ok(fs.existsSync(nota), 'la nota está antes del arranque');
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-espera', TYCON_SUITE_TURN: '1', TYCON_GATE_PROCESS: String(process.pid) };
+  delete env.TYCON_HOME;
+  delete env.CODEX_SESSION_ID;
+  const r = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'out.json'), '--skills', f.skills], { encoding: 'utf8', env });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(nota), 'el portón arrancó y la espera sigue anotada');
+  const anotados = JSON.parse(fs.readFileSync(visto, 'utf8'));
+  assert.equal(anotados.length, 1, JSON.stringify(anotados));
+  assert.equal(anotados[0].sid, 's-espera');
+  assert.match(anotados[0].what, /1 suites? de /);
+  assert.deepEqual(fs.existsSync(gates) ? fs.readdirSync(gates) : [], [], 'al terminar, el registro del portón se va');
+  // una corrida que no es un portón (sin la marca de test-gate.sh) no toca la espera de nadie
+  fs.writeFileSync(nota, JSON.stringify({ at: new Date().toISOString(), waitingFor: 'turno de la suite completa', waitingSince: new Date().toISOString() }));
+  const sinMarca = { ...env };
+  delete sinMarca.TYCON_GATE_PROCESS;
+  assert.equal(spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'out2.json'), '--skills', f.skills], { encoding: 'utf8', env: sinMarca }).status, 0);
+  assert.ok(fs.existsSync(nota), 'una corrida de juguete de otra suite borró la espera de la sesión');
+
+  // no poder anotarse se dice: si no, la fila pediría el «arrancá» encima de este portón sin que nadie se entere
+  // 🔴 mutación: callar el error de gateStarted (devolver null igual que sin coordinadora)
+  fs.rmSync(gates, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(gates), { recursive: true });
+  fs.writeFileSync(gates, 'no es una carpeta');
+  const roto = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'out3.json'), '--skills', f.skills], { encoding: 'utf8', env });
+  assert.equal(roto.status, 0, `no poder anotarse no frena el portón: ${roto.stderr}`);
+  assert.match(roto.stderr, /no pude anotar el portón: la fila de la coordinadora no lo va a ver \(/, roto.stderr);
+  assert.ok(!fs.existsSync(nota), 'la espera se borra igual');
+});
+
+test('T-vigia SuiteDeJuguete_RutaConComillas_ElCodigoNoCambia: la suite que mira los portones lee sus rutas de su .json, no de su código', () => {
+  // 🔴 mutación: volver a pegar las rutas en el código de la suite (una ruta con comillas o `${` lo rompe o lo cambia)
+  const f = armar({ diarias: [] });
+  const raro = path.join(f.root, "dir 'con' \"comillas\" y ${x} `fin`");
+  const gates = path.join(raro, 'gates');
+  const visto = path.join(raro, 'visto.json');
+  fs.mkdirSync(gates, { recursive: true });
+  fs.writeFileSync(path.join(gates, 'g.json'), JSON.stringify({ sid: 's-uno' }));
+  escribirVigia(f, 'tests/v.test.js', gates, visto);
+  const suite = path.join(f.repo, 'scripts', 'tests', 'v.test.js');
+  assert.equal(fs.readFileSync(suite, 'utf8'), CUERPO_VIGIA, 'el código de la suite no depende de las rutas');
+  const r = spawnSync('node', [suite], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(visto, 'utf8')), [{ sid: 's-uno' }]);
+});
+
+// ── El portón acotado al lado del pase (8.286) ────────────────────────────────────────────────────────────────────
+
+test('T-8.286a RunSuites_Threshold_SingleSource @story-8.286 @ac-8: el corte y el piso viven en heavy-turn.js y nadie los repite', () => {
+  // 🔴 mutación: copiar el 40 en el corredor o en la coordinación deja dos cortes que se separan con el tiempo
+  const tools = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tools');
+  const HT = require(path.join(tools, 'heavy-turn.js'));
+  assert.equal(HT.BESIDE_PASS_MAX_SUITES, 40);
+  assert.equal(HT.BESIDE_PASS_MIN_FREE_PCT, 40);
+  const define = /\bBESIDE_PASS_(MAX_SUITES|MIN_FREE_PCT)\s*=/;
+  assert.match(fs.readFileSync(path.join(tools, 'heavy-turn.js'), 'utf8'), define);
+  for (const f of [RUNNER, path.join(tools, 'coordination.js')]) assert.doesNotMatch(fs.readFileSync(f, 'utf8'), define, f);
+});
+
+test('T-8.286b RunSuites_GateBesidePass_Exit77NoResult @story-8.286 @ac-1 @ac-2: con un pase en vuelo, 41 suites no corren; sin pase, 20 corren y se anotan con cuántas', () => {
+  // 🔴 mutación: no consultar el pase antes de anotarse, o no pasarle la cantidad a gateStarted
+  const { stateDir } = require('../lib/state-dir.js');
+  const rutas = (n) => Array.from({ length: n }, (_, i) => ({ raiz: 'arnes', ruta: `tests/s${i}.test.js` }));
+  const preparar = (n) => {
+    const f = armar({ diarias: rutas(n) });
+    const home = path.join(f.root, 'home');
+    const gates = path.join(stateDir(home), 'coordination', 'gates');
+    const visto = path.join(f.root, 'visto.json');
+    for (let i = 0; i < n; i += 1) {
+      if (i) f.escribir('arnes', `tests/s${i}.test.js`, 'process.exit(0)');
+      else escribirVigia(f, `tests/s${i}.test.js`, gates, visto);
+    }
+    fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true });
+    const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-uma', TYCON_SUITE_TURN: '1', TYCON_GATE_PROCESS: String(process.pid) };
+    delete env.TYCON_HOME;
+    delete env.CODEX_SESSION_ID;
+    return { f, home, visto, env };
+  };
+  // un pase de otra sesión viva, lanzado hace un minuto
+  const pase = (home) => {
+    fs.writeFileSync(path.join(home, '.claude', 'sessions', 's-ana.json'), JSON.stringify({ pid: process.pid, sessionId: 's-ana', name: 'Ana', nameSource: 'user', status: 'busy', statusUpdatedAt: Date.now() }));
+    const active = path.join(stateDir(home), 'active');
+    fs.mkdirSync(active, { recursive: true });
+    fs.writeFileSync(path.join(active, 's-ana.json'), JSON.stringify({ sessionId: 's-ana', storyId: '7.7', adversarial: { launchedAt: new Date(Date.now() - 60000).toISOString(), runId: 'wf_x' } }));
+  };
+  const grande = preparar(41);
+  pase(grande.home);
+  const out = path.join(grande.f.root, 'out.json');
+  const r = spawnSync('node', [RUNNER, grande.f.repo, out, '--skills', grande.f.skills], { encoding: 'utf8', env: grande.env });
+  assert.equal(r.status, 77, r.stderr);
+  assert.match(r.stderr, /41 suites/);
+  assert.match(JSON.parse(fs.readFileSync(out, 'utf8')).no_medido, /pase adversarial de la 7\.7/);
+  assert.ok(!fs.existsSync(grande.visto), 'no corrió ninguna suite');
+
+  const chico = preparar(20);
+  const r2 = spawnSync('node', [RUNNER, chico.f.repo, path.join(chico.f.root, 'out.json'), '--skills', chico.f.skills], { encoding: 'utf8', env: chico.env });
+  assert.equal(r2.status, 0, r2.stderr);
+  const anotados = JSON.parse(fs.readFileSync(chico.visto, 'utf8'));
+  assert.equal(anotados.length, 1, JSON.stringify(anotados));
+  assert.equal(anotados[0].suites, 20);
+});
+
+// ── 8.302: la pieza central ─────────────────────────────────────────────────────────────────────────────────────────
+// Repo git de juguete: `scripts/lib/pieza.js` en la base, `n` suites de una línea que la nombran (s1 y s2 nombran además
+// `cambiada`; la primera se llama `pieza-x`) y un cambio sin commitear: dentro de `cambiada`, o en un renglón que no
+// encierra ninguna función (`arriba`).
+const PIEZA = ['const ARRIBA = 1;', 'function cambiada(x) {', '  return x;', '}', 'function otra(y) {', '  return y;', '}', ''].join('\n');
+function gitLab(dir, ...args) {
+  const env = { ...process.env, GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' };
+  return spawnSync('git', ['-C', dir, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-c', 'core.hooksPath=/dev/null',
+    '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { encoding: 'utf8', env }).stdout.trim();
+}
+function piezaLab(n, { cambio = 'cambiada' } = {}) {
+  const rutas = Array.from({ length: n }, (_, i) => (i === 0 ? 'tests/pieza-x.test.sh' : `tests/s${i}.test.sh`));
+  const f = armar({ diarias: rutas.map((ruta) => ({ raiz: 'arnes', ruta })) });
+  rutas.forEach((ruta, i) => f.escribir('arnes', ruta, `# lee scripts/lib/pieza.js${i === 1 || i === 2 ? ' y prueba cambiada' : ''}\nexit 0\n`));
+  f.escribir('arnes', 'lib/pieza.js', PIEZA);
+  gitLab(f.repo, 'init', '-q');
+  gitLab(f.repo, 'add', '-A');
+  gitLab(f.repo, 'commit', '-qm', 'base');
+  const base = gitLab(f.repo, 'rev-parse', 'HEAD');
+  f.escribir('arnes', 'lib/pieza.js', cambio === 'arriba' ? PIEZA.replace('ARRIBA = 1', 'ARRIBA = 2') : PIEZA.replace('return x;', 'return x + 1;'));
+  return { ...f, base };
+}
+const tocada = (l, extra = {}) => ({ known: true, files: ['scripts/lib/pieza.js'], base: { ref: l.base, source: 'la prueba' }, ...extra });
+const diferidas = (r) => r.resumen.deferred_suites.map((d) => path.basename(d.suite));
+
+test('T1 ScopedByRepo_CentralPiece_RunsOnlyNear @story-8.302 @ac-1 @ac-3 @ac-4 @ac-11 — una pieza que nombran 40 suites: corren sólo las que nombran lo que cambió o llevan su nombre', () => {
+  // 🔴 mutación: sin la regla de cercanía corren las 40; sin el nombre del archivo (`pieza-x`) corren 2; sin el renglón
+  //    por pieza, quien ve el portón no sabe cuántas quedaron afuera ni cómo correrlas.
+  const l = piezaLab(40);
+  const r = runScopedByRepo(l, { touched: tocada(l) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 3, JSON.stringify(r.resumen.suites));
+  assert.equal(r.resumen.deferred_suites.length, 37);
+  for (const n of ['pieza-x.test.sh', 's1.test.sh', 's2.test.sh']) assert.ok(!diferidas(r).includes(n), `${n} corre`);
+  for (const d of r.resumen.deferred_suites) {
+    assert.match(d.reason, /^lee scripts\/lib\/pieza\.js, que nombran 40 suites, pero no nombra lo que cambió \(cambiada\); la suite completa la corre la CI de GitHub del pedido$/);
+  }
+  assert.match(r.stdout, /DIFERIDA s3\.test\.sh — lee scripts\/lib\/pieza\.js, que nombran 40 suites/);
+  assert.match(r.stdout, /scripts\/lib\/pieza\.js: corrieron 3 de las 40 suites que la nombran \(para correrlas todas: TYCON_GATE_ALL_SUITES=1\)/);
+  assert.deepEqual(r.resumen.scoped, { by: 'repo', full_suite_by: 'la CI de GitHub del pedido', none_touched: false });
+});
+
+test('T2 ScopedByRepo_BelowThreshold_AsToday @story-8.302 @ac-1 @ac-9 — con 39 suites no es pieza central: corren todas las que la nombran', () => {
+  // 🔴 mutación: tope en 39 (o `>` en vez de `>=` corrido hacia abajo) → difiere 36 de un archivo que no es central.
+  const l = piezaLab(39);
+  const r = runScopedByRepo(l, { touched: tocada(l) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 39);
+  assert.equal(r.resumen.deferred_suites.length, 0);
+  assert.doesNotMatch(r.stdout, /suites que la nombran/);
+});
+
+test('T3 ScopedByRepo_NamesUnknown_RunsAll @story-8.302 @ac-6 — sin saber qué cambió adentro corren las 40, con el motivo', () => {
+  // 🔴 mutación: tratar «no sé» como «no nombra nada» → difiere 37 (o 39) sin saber qué cambió.
+  const arriba = piezaLab(40, { cambio: 'arriba' });
+  const r = runScopedByRepo(arriba, { touched: tocada(arriba) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 40);
+  assert.match(r.stdout, /scripts\/lib\/pieza\.js: no sé qué cambió adentro \(el renglón 1 cambió y no lo encierra ninguna función ni subcomando\): corren las 40 suites que la nombran/);
+  const sinBase = piezaLab(40);
+  const r2 = runScopedByRepo(sinBase, { touched: { known: true, files: ['scripts/lib/pieza.js'] } });
+  assert.equal(r2.status, 0, `${r2.stdout}\n${r2.stderr}`);
+  assert.equal(r2.resumen.corridas, 40);
+  assert.match(r2.stdout, /scripts\/lib\/pieza\.js: no sé qué cambió adentro \(touched\.json no trae la base\): corren las 40 suites que la nombran/);
+});
+
+test('T3b ScopedByRepo_MergedTree_ReadsTheBaseOfTheRepoThatHasTheFile — en el árbol armado (`bases`, una por repo) lee el cambio contra la base del repo que tiene el archivo', () => {
+  // 🔴 mutación: leer sólo `touched.base` (lo que hacía antes) → sin base, corren las 40; tomar la primera base sin mirar
+  //    en qué repo está el archivo → «no sé» contra el repo que no lo tiene, corren las 40; aceptar el archivo en los dos
+  //    repos → se compara contra una base adivinada.
+  const l = piezaLab(40);
+  const otro = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-json-privado-'));
+  gitLab(otro, 'init', '-q');
+  fs.writeFileSync(path.join(otro, 'LEEME'), 'x\n');
+  gitLab(otro, 'add', '-A');
+  gitLab(otro, 'commit', '-qm', 'base');
+  const basePriv = { repo: otro, ref: gitLab(otro, 'rev-parse', 'HEAD'), source: 'la prueba' };
+  const basePub = { repo: l.repo, ref: l.base, source: 'la prueba' };
+  const arbol = (bases) => ({ known: true, files: ['scripts/lib/pieza.js'], bases });
+  const r = runScopedByRepo(l, { touched: arbol([basePriv, basePub]) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 3, JSON.stringify(r.resumen.suites));
+  assert.match(r.stdout, /scripts\/lib\/pieza\.js: corrieron 3 de las 40 suites que la nombran/);
+  assert.equal(r.resumen.seleccion.bases.length, 2);
+  // el archivo en los dos repos: no se adivina, corren las 40 con el motivo
+  fs.mkdirSync(path.join(otro, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(otro, 'scripts', 'lib', 'pieza.js'), PIEZA);
+  const dos = runScopedByRepo(l, { touched: arbol([basePriv, basePub]) });
+  assert.equal(dos.resumen.corridas, 40);
+  assert.match(dos.stdout, /pieza\.js está en 2 de los repos del árbol: no sé contra qué base comparar/);
+  // en ninguno: tampoco
+  fs.rmSync(path.join(otro, 'scripts'), { recursive: true, force: true });
+  const sinArchivo = runScopedByRepo(l, { touched: arbol([basePriv]) });
+  assert.equal(sinArchivo.resumen.corridas, 40);
+  assert.match(sinArchivo.stdout, /no está en ningún repo de las bases de touched\.json/);
+});
+
+test('T4 ScopedByRepo_OtherTouchedOrStorySuite_StillRuns @story-8.302 @ac-5 @ac-10 — la que nombra otro archivo tocado, la tocada y la repetida corren aunque nombren la pieza', () => {
+  // 🔴 mutación: aplicar la cercanía a toda suite que nombra la pieza → s5 (nombra otro.js), s6 (tocada) o s7 (repetida)
+  //    quedan diferidas.
+  const l = piezaLab(40);
+  l.escribir('arnes', 'tests/s5.test.sh', '# lee scripts/lib/pieza.js y scripts/lib/otro.js\nexit 0\n');
+  l.escribir('arnes', 'lib/otro.js', 'module.exports = 1;\n');
+  const r = runScopedByRepo(l, { touched: tocada(l, {
+    files: ['scripts/lib/pieza.js', 'scripts/lib/otro.js', 'scripts/tests/s6.test.sh'],
+    rerun_suites: ['tests/s7.test.sh'],
+  }) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  for (const n of ['s5.test.sh', 's6.test.sh', 's7.test.sh']) assert.ok(!diferidas(r).includes(n), `${n} corre: ${diferidas(r)}`);
+  assert.equal(r.resumen.corridas, 6, JSON.stringify(r.resumen.suites));
+  assert.match(r.stdout, /scripts\/lib\/pieza\.js: corrieron 6 de las 40 suites que la nombran/);
+});
+
+test('T8 NotScopedByRepo_NoCentralRule @story-8.302 @ac-9 — sin el portón acotado por el repo, con TYCON_GATE_ALL_SUITES=1 o con --suite, lo de hoy', () => {
+  // 🔴 mutación: aplicar la regla fuera de `byRepo` → la corrida sin acotar, la de todas o la pedida difieren suites.
+  const l = piezaLab(40);
+  const sinAcotar = runWith(l, { touched: tocada(l) });
+  assert.equal(sinAcotar.status, 0, `${sinAcotar.stdout}\n${sinAcotar.stderr}`);
+  assert.equal(sinAcotar.resumen.corridas, 40);
+  const tf = path.join(l.root, 'touched.json');
+  const args = [RUNNER, l.repo, path.join(l.root, 'o.json'), '--skills', l.skills, '--touched', tf, '--scoped-by-repo', 'la CI'];
+  const todas = spawnSync('node', args, { encoding: 'utf8', env: { ...process.env, TYCON_GATE_ALL_SUITES: '1' } });
+  assert.equal(todas.status, 0, todas.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(l.root, 'o.json'), 'utf8')).corridas, 40);
+  const una = spawnSync('node', [...args, '--suite', 'tests/s9.test.sh'], { encoding: 'utf8' });
+  assert.equal(una.status, 0, una.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(l.root, 'o.json'), 'utf8')).corridas, 1);
+  for (const out of [sinAcotar.stdout, todas.stdout, una.stdout]) assert.doesNotMatch(out, /suites que la nombran|no nombra lo que cambió/);
+});
+
+test('T4b RunSuites_CentralPiece_ReactivatedRunsAndDeferredHasEntry @story-8.299 @ac-3 @ac-4 @story-8.309 — la cercanía no difiere una suite que vuelve, y lo que difiere trae su entrada', () => {
+  // 🔴 mutación: la regla de la pieza central antes que la de las que vuelven difiere s3; sin `entrada` en su rama, lo
+  //    guardado no puede sacar de las diferidas una suite que después corrió.
+  const l = piezaLab(40);
+  const r = runScopedByRepo(l, { touched: tocada(l, { reactivated_suites: ['arnes:tests/s3.test.sh'] }) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.ok(!diferidas(r).includes('s3.test.sh'), 's3 vuelve por sus carpetas: corre');
+  assert.match(r.stdout, /VUELVE   s3\.test\.sh/);
+  assert.equal(r.resumen.deferred_suites.length, 36);
+  for (const d of r.resumen.deferred_suites) assert.deepEqual(Object.keys(d.entrada || {}).sort(), ['raiz', 'ruta'], JSON.stringify(d));
+});
+
+test('RunSuites_RerunAndReactivated_RunsOnceNotAbsent @story-8.309 @ac-6 @ac-7 — una suite repetida que además vuelve por sus carpetas corre una vez y no sale ausente', () => {
+  // 🔴 mutación: la rama de las repetidas no la anota como hallada entre las que vuelven, y la corrida sale roja por una
+  //    «ausente» que corrió en verde (también una suite en espera a main cuya carpeta se tocó).
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/g.test.js', gate_only_when_touching: ['G/**'] }] });
+  f.escribir('arnes', 'tests/g.test.js', 'process.exit(0)');
+  const tf = path.join(f.root, 'touched.json');
+  fs.writeFileSync(tf, JSON.stringify({ known: true, files: ['G/a.js'], sources: {}, rerun_suites: ['tests/g.test.js'], reactivated_suites: ['arnes:tests/g.test.js'] }));
+  const out = path.join(f.root, 'o.json');
+  const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, '--touched', tf, '--scoped-by-repo', 'la CI'], { encoding: 'utf8' });
+  const res = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.deepEqual(res.ausentes, []);
+  assert.deepEqual(res.suites.map((s) => s.entrada.ruta), ['tests/g.test.js'], 'corrió una sola vez');
+  assert.doesNotMatch(r.stdout, /AUSENTE/);
+});
+
+test('T4 RunSuites_Reactivated_PastFiltersOrAbsent @story-8.299 @ac-3 @ac-4 @ac-9 — una reactivada corre sin filtros, una que no está en la lista es ausente, con --suite no se miran, y cada diferida trae su entrada', () => {
+  // 🔴 mutación: pasar la reactivada por los filtros la vuelve a diferir (no nombra lo tocado) y lo guardado queda sin
+  // medirla; una reactivada que no está en la lista, salteada callada, dejaría verde lo que nadie corrió.
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/a.test.js' },
+    { raiz: 'arnes', ruta: 'tests/g.test.js', gate_only_when_touching: ['G/**'] },
+    { raiz: 'arnes', ruta: 'tests/h.test.js', gate_only_when_touching: ['H/**'] },
+  ] });
+  f.escribir('arnes', 'tests/a.test.js', '// lib/x.js\nprocess.exit(0)');
+  f.escribir('arnes', 'tests/g.test.js', 'process.exit(0)');
+  f.escribir('arnes', 'tests/h.test.js', 'process.exit(0)');
+  const tf = path.join(f.root, 'touched.json');
+  fs.writeFileSync(tf, JSON.stringify({ known: true, files: ['lib/x.js'], sources: {}, reactivated_suites: ['arnes:tests/g.test.js', 'arnes:tests/zz.test.js'],
+    reactivated_reasons: { 'arnes:tests/g.test.js': 'la completa la difirió y lo cambiado toca G/**' } }));
+  const base = (out) => [RUNNER, f.repo, path.join(f.root, out), '--skills', f.skills, '--touched', tf, '--scoped-by-repo', 'la CI'];
+  const leer = (out) => JSON.parse(fs.readFileSync(path.join(f.root, out), 'utf8'));
+  let r = spawnSync('node', base('o1.json'), { encoding: 'utf8' });
+  let res = leer('o1.json');
+  assert.notEqual(r.status, 0, `la ausente es rojo\n${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /^VUELVE\s+g\.test\.js — la completa la difirió y lo cambiado toca G\/\*\*$/m, r.stdout);
+  assert.ok(res.suites.some((s) => s.entrada.ruta === 'tests/g.test.js' && s.exit === 0), `g corrió aunque no nombra lo tocado\n${r.stdout}`);
+  assert.deepEqual(res.ausentes, ['arnes:tests/zz.test.js']);
+  assert.match(r.stdout, /^AUSENTE\s+arnes:tests\/zz\.test\.js — lo cambiado la vuelve a hacer correr, pero ya no está en la lista de suites$/m, r.stdout);
+  const h = res.deferred_suites.find((d) => d.suite.endsWith('/tests/h.test.js'));
+  assert.deepEqual(h && h.entrada, { raiz: 'arnes', ruta: 'tests/h.test.js' }, JSON.stringify(res.deferred_suites));
+  // con --suite de otra: sólo esa, y ninguna ausente por las reactivadas
+  r = spawnSync('node', [...base('o2.json'), '--suite', 'tests/a.test.js'], { encoding: 'utf8' });
+  res = leer('o2.json');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(res.suites.map((s) => s.entrada.ruta), ['tests/a.test.js']);
+  assert.deepEqual(res.ausentes, []);
+  assert.doesNotMatch(r.stdout, /VUELVE|zz\.test\.js/);
 });

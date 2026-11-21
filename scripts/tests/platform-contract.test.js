@@ -70,7 +70,7 @@ test('Platform_OperationsList_MatchesContract @story-8.85 @ac-1', () => {
   const ops = C().OPERATIONS;
   // el lector de configuración guarda su copia de las áreas: tienen que ser las mismas del contrato
   assert.deepStrictEqual([...require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js')).AREAS_PLATAFORMA], [...C().AREAS]);
-  assert.strictEqual(ops.length, 12, 'las doce operaciones del dominio');
+  assert.strictEqual(ops.length, 14, 'las catorce operaciones del dominio');
   for (const n of ['azure-devops', 'github']) {
     const man = JSON.parse(fs.readFileSync(path.join(ROOT, 'integrations', n, 'integration.json'), 'utf8'));
     assert.strictEqual(man.kind, 'platform', n);
@@ -334,13 +334,37 @@ test('Manifest_PlatformKind_ValidatedByReader @story-8.85 @ac-32', () => {
   assert.ok(INT.find('clockify', { kind: 'timeTracking', dir: d }), 'el de horas se lee igual que antes');
 });
 
+test('Manifest_HardSignals_ValidatedByReader @story-8.85 @ac-25', () => {
+  // las señales de una plataforma las declara su conector: una lista de patrones que compilan; lo demás es manifiesto roto
+  const ok = { name: 'buena', label: 'Buena', kind: 'platform', connector: 'scripts/connector.js', operations: ['ci.read'], hardSignals: ['\\bx\\s+pr\\b', 'api\\.x\\.example'] };
+  const d = tmp('manifiestos-');
+  const poner = (n, m) => { fs.mkdirSync(path.join(d, n), { recursive: true }); fs.writeFileSync(path.join(d, n, 'integration.json'), JSON.stringify({ ...m, name: n })); };
+  poner('buena', ok);
+  poner('nolista', { ...ok, hardSignals: 'x pr' });
+  poner('nocompila', { ...ok, hardSignals: ['(sin cerrar'] });
+  poner('vacio', { ...ok, hardSignals: [''] });
+  poner('horas', { name: 'horas', label: 'Horas', kind: 'timeTracking', hardSignals: ['x'] });
+  const r = INT.listManifests({ dir: d });
+  const de = (n) => JSON.stringify((r.problems.find((x) => x.name === n) || {}).reasons || r.problems);
+  assert.deepStrictEqual(INT.find('buena', { kind: 'platform', dir: d }).hardSignals, ok.hardSignals);
+  for (const [n, rx] of [['nolista', /«hardSignals» es una lista/], ['nocompila', /«hardSignals».*no compila/], ['vacio', /«hardSignals».*vacío/], ['horas', /«hardSignals» es sólo de un conector de plataforma/]]) {
+    assert.ok(!INT.find(n, { dir: d }), `${n} no se carga`);
+    assert.match(de(n), rx, n);
+  }
+  // los dos conectores de verdad declaran las señales del AC 25
+  const juntas = ['azure-devops', 'github'].flatMap((n) => INT.find(n, { kind: 'platform', dir: path.join(ROOT, 'integrations') }).hardSignals);
+  for (const t of ['az repos pr create', 'https://dev.azure.com/acme', '_apis/build', 'System.Title', 'Microsoft.VSTS.Scheduling', '.tycon/ado-config.yaml', 'AZURE_DEVOPS_EXT_PAT', 'SYSTEM_ACCESSTOKEN', 'gh pr view', 'gh api repos', 'https://api.github.com/x']) {
+    assert.ok(juntas.some((p) => new RegExp(p).test(t)), `ninguna señal declarada reconoce «${t}»`);
+  }
+});
+
 test('Layer_PlatformChange_RaisesRequiresHarness @story-8.85 @ac-33', () => {
   const ORG = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
   const actual = { version: 1, integrations: {} };
   const doc = { version: 1, integrations: { platform: { default: 'github' } } };
   const vieja = ORG.timeTrackingLayer({ layerText: JSON.stringify({ requires: { harness: '>= 2026.01.01.1' } }), actual, doc });
   assert.ok(vieja && vieja.archivo === 'team-layer.json', JSON.stringify(vieja));
-  assert.match(JSON.parse(vieja.contenido).requires.harness, new RegExp(`>= ${ORG.PLATFORM_SINCE.replace(/\./g, '\\.')}`));
+  assert.match(JSON.parse(vieja.contenido).requires.harness, new RegExp(`>= ${ORG.PLATFORM_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   const nueva = ORG.timeTrackingLayer({ layerText: JSON.stringify({ requires: { harness: `>= ${ORG.PLATFORM_SINCE}` } }), actual, doc });
   assert.strictEqual(nueva, null, 'la capa ya pide esa versión: no se toca');
   assert.strictEqual(ORG.timeTrackingLayer({ layerText: JSON.stringify({ requires: { harness: '>= 2026.01.01.1' } }), actual, doc: actual }), null, 'sin cambiar la plataforma, nada');
@@ -509,7 +533,7 @@ test('AdoList_MapsFields @story-8.131 @ac-12', async () => {
   assert.strictEqual(r.ok, true, JSON.stringify(r));
   assert.deepStrictEqual(r.value.map((p) => p.number), [7, 8, 9, 11], 'el pedido de otro repo del proyecto queda afuera; el nombre no distingue mayúsculas');
   const [a, b, c] = r.value;
-  assert.deepStrictEqual(a, { number: 7, draft: true, autoComplete: true, mergeState: 'conflict', sourceBranch: 'story/7', sourceCommit: '7'.padStart(40, 'a'), createdAt: '2026-10-25T10:00:00Z', title: 'pedido 7' });
+  assert.deepStrictEqual(a, { number: 7, draft: true, autoComplete: true, mergeState: 'conflict', sourceBranch: 'story/7', sourceCommit: '7'.padStart(40, 'a'), createdAt: '2026-10-25T10:00:00Z', title: 'pedido 7', author: null, ciRunning: null, autoCompleteCommand: `az repos pr update --id 7 --auto-complete true --org https://dev.azure.com/${AZ.org}` });
   assert.strictEqual(b.mergeState, 'pending');
   assert.strictEqual(b.autoComplete, false);
   assert.strictEqual(c.mergeState, 'unknown');
@@ -578,4 +602,130 @@ test('AdoList_PageCap_NoMedido @story-8.131 @ac-12', async () => {
   assert.deepStrictEqual([r.ok, r.reason], [false, 'no_medido'], JSON.stringify(r));
   assert.match(r.detail, /tope/);
   assert.strictEqual(r.value, undefined, 'nunca la lista cortada');
+});
+
+test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
+  const c = C();
+  assert.ok(c.OPERATIONS.includes('change-request.read'));
+  assert.ok(c.REPO_OPERATIONS.includes('change-request.read'), 'va por la plataforma del repo');
+  for (const plat of ['azure-devops', 'github']) {
+    const man = JSON.parse(fs.readFileSync(path.join(ROOT, 'integrations', plat, 'integration.json'), 'utf8'));
+    assert.ok(man.operations.includes('change-request.read'), `${plat} la declara`);
+  }
+  const MERGED = '2026-11-01T18:30:00Z';
+  // GitHub
+  const estado = estadoGh({
+    pulls: { 'acme/portal': [
+      { number: 11, state: 'open', title: 'abierto', head: { ref: 'a', sha: 'a1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' }, merge_queue: { state: 'QUEUED' } },
+      { number: 12, state: 'open', draft: true, title: 'borrador', head: { ref: 'b', sha: 'b1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+      { number: 13, state: 'open', title: 'fuera', head: { ref: 'c', sha: 'c1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+      { number: 14, state: 'closed', merged_at: MERGED, title: 'entró', head: { ref: 'd', sha: 'd1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+      { number: 15, state: 'closed', merged_at: null, title: 'cerrado', head: { ref: 'e', sha: 'e1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+    ] },
+  });
+  const m = mundo({ platform: { default: 'github' } });
+  const env = { ...m.env, TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: estado };
+  const gh = (number) => P().run('change-request.read', { number }, { env, repo: GH });
+  let r = await gh(11);
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.deepStrictEqual(
+    { number: r.value.number, state: r.value.state, draft: r.value.draft, inQueue: r.value.inQueue, mergedAt: r.value.mergedAt },
+    { number: 11, state: 'open', draft: false, inQueue: true, mergedAt: null },
+  );
+  r = await gh(12);
+  assert.deepStrictEqual([r.value.state, r.value.draft], ['open', true]);
+  r = await gh(13);
+  assert.deepStrictEqual([r.value.state, r.value.inQueue, r.value.autoComplete], ['open', false, false]);
+  r = await gh(14);
+  assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['merged', MERGED]);
+  r = await gh(15);
+  assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['closed', null]);
+  r = await gh(999);
+  assert.deepStrictEqual([r.ok, r.reason], [false, 'no_encontrado'], JSON.stringify(r));
+  // sin número no se pregunta
+  r = await gh('12; rm');
+  assert.deepStrictEqual([r.ok, r.reason], [false, 'rechazado'], JSON.stringify(r));
+  // Azure DevOps
+  const w = mundoAzure([[]]);
+  fs.writeFileSync(path.join(w.fix, 'repos-pr.json'), JSON.stringify([
+    prAzure(21, { autoCompleteSetBy: { id: 'quien' } }),
+    prAzure(22, { isDraft: true }),
+    prAzure(23),
+    prAzure(24, { status: 'completed', closedDate: MERGED }),
+    prAzure(25, { status: 'abandoned', closedDate: MERGED }),
+    prAzure(26, { repository: { name: 'OtroRepo', project: { name: 'Producto' } } }),
+  ]));
+  const az = (number) => P().run('change-request.read', { number }, { env: w.env, repo: AZ });
+  r = await az(21);
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.deepStrictEqual({ number: r.value.number, state: r.value.state, draft: r.value.draft, autoComplete: r.value.autoComplete, mergedAt: r.value.mergedAt }, { number: 21, state: 'open', draft: false, autoComplete: true, mergedAt: null });
+  r = await az(22);
+  assert.deepStrictEqual([r.value.state, r.value.draft], ['open', true]);
+  r = await az(23);
+  assert.deepStrictEqual([r.value.state, r.value.autoComplete], ['open', false]);
+  r = await az(24);
+  assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['merged', MERGED]);
+  r = await az(25);
+  assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['closed', null]);
+  for (const n of [999, 26]) {
+    r = await az(n);
+    assert.deepStrictEqual([r.ok, r.reason], [false, 'no_encontrado'], `${n}: ${JSON.stringify(r)}`);
+  }
+});
+
+test('T22 Conector_LeerPedido_DevuelveMergeCommit @story-8.205 @ac-3', async () => {
+  const FUSION = 'abcdef1234567890abcdef1234567890abcdef12';
+  const PRUEBA = '1111111111111111111111111111111111111111';
+  // GitHub da merge_commit_sha también con el pedido abierto (el commit de prueba): sólo cuenta con merged_at
+  const pr = (number, o) => ({ number, title: `pedido ${number}`, head: { ref: `r${number}`, sha: 'a1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' }, ...o });
+  const m = mundo({ platform: { default: 'github' } });
+  const env = { ...m.env, TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: estadoGh({ pulls: { 'acme/portal': [
+    pr(31, { state: 'open', merge_commit_sha: PRUEBA }),
+    pr(32, { state: 'closed', merged_at: '2026-11-01T18:30:00Z', merge_commit_sha: FUSION }),
+    pr(33, { state: 'closed', merged_at: null, merge_commit_sha: PRUEBA }),
+    pr(34, { state: 'closed', merged_at: '2026-11-01T18:30:00Z', merge_commit_sha: 'no es un commit' }),
+  ] } }) };
+  const gh = async (number) => { const r = await P().run('change-request.read', { number }, { env, repo: GH }); assert.strictEqual(r.ok, true, JSON.stringify(r)); return [r.value.state, r.value.mergeCommit]; };
+  assert.deepStrictEqual(await gh(31), ['open', null]);
+  assert.deepStrictEqual(await gh(32), ['merged', FUSION]);
+  assert.deepStrictEqual(await gh(33), ['closed', null]);
+  assert.deepStrictEqual(await gh(34), ['merged', null], 'un commit ilegible no se da');
+  // Azure DevOps
+  const w = mundoAzure([[]]);
+  fs.writeFileSync(path.join(w.fix, 'repos-pr.json'), JSON.stringify([
+    prAzure(41, { lastMergeCommit: { commitId: PRUEBA } }),
+    prAzure(42, { status: 'completed', closedDate: '2026-11-01T18:30:00Z', lastMergeCommit: { commitId: FUSION.toUpperCase() } }),
+    prAzure(43, { status: 'abandoned', closedDate: '2026-11-01T18:30:00Z', lastMergeCommit: { commitId: PRUEBA } }),
+    prAzure(44, { status: 'completed', closedDate: '2026-11-01T18:30:00Z' }),
+  ]));
+  const az = async (number) => { const r = await P().run('change-request.read', { number }, { env: w.env, repo: AZ }); assert.strictEqual(r.ok, true, JSON.stringify(r)); return [r.value.state, r.value.mergeCommit]; };
+  assert.deepStrictEqual(await az(41), ['open', null]);
+  assert.deepStrictEqual(await az(42), ['merged', FUSION], 'en minúsculas');
+  assert.deepStrictEqual(await az(43), ['closed', null]);
+  assert.deepStrictEqual(await az(44), ['merged', null], 'completado sin su commit');
+});
+
+test('T30 Contrato_EstimateEnCreateYUpdate @story-2.75 @ac-27', async () => {
+  const { estimateProblem, ESTIMATE_OPERATIONS } = C();
+  assert.deepStrictEqual([...ESTIMATE_OPERATIONS], ['work-item.create', 'work-item.update']);
+  assert.strictEqual(estimateProblem({ value: 16, unit: 'hours', hours: 16, level: 'historia', version: 2 }), null);
+  assert.strictEqual(estimateProblem({ value: 5, unit: 'points' }), null, 'hours, level y version son opcionales');
+  for (const malo of [{ value: 0, unit: 'hours' }, { value: 3, unit: 'weeks' }, '16 h', null, [16], { value: 2, unit: 'days', hours: -1 }, { value: 2, unit: 'days', version: 1.5 }]) {
+    assert.strictEqual(typeof estimateProblem(malo), 'string', `sin forma: ${JSON.stringify(malo)}`);
+  }
+  // la capa contesta rechazado sin llamar al conector; en una operación que no lleva estimación, la ignora
+  const m = mundo({ platform: { default: 'fake-platform' } });
+  m.env.TYCON_FAKE_PLATFORM_TOKEN = ['tok', 'falso'].join('-');
+  m.env.FAKE_PLATFORM_LOG = path.join(tmp('log-'), 'llamadas.log');
+  const r = await P().run('work-item.create', { title: 'x', estimate: { value: 0, unit: 'hours' } }, { env: m.env });
+  assert.deepStrictEqual([r.ok, r.reason], [false, 'rechazado'], JSON.stringify(r));
+  assert.match(r.detail, /estimación/);
+  const u = await P().run('work-item.update', { id: 1, estimate: { value: 3, unit: 'weeks' } }, { env: m.env });
+  assert.deepStrictEqual([u.ok, u.reason], [false, 'rechazado']);
+  assert.strictEqual(fs.existsSync(m.env.FAKE_PLATFORM_LOG), false, 'el conector no se llamó');
+  const k = await P().run('work-item.close', { id: 1, estimate: { value: 0, unit: 'weeks' } }, { env: m.env });
+  assert.strictEqual(k.ok, true, 'cerrar no lleva estimación: se ignora');
+  // el núcleo no nombra campos de ninguna herramienta
+  const texto = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'platform', 'contract.js'), 'utf8');
+  assert.doesNotMatch(texto, /Microsoft\.VSTS|OriginalEstimate|StoryPoints|ProjectV2/);
 });

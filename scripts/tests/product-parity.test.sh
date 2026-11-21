@@ -270,7 +270,7 @@ rc=$(corre "$TMP/c16b.json")
 JSON17="$LISTA_ORG"
 # Entre la ruta y la invocación van ~1000 caracteres de comentarios, como en un backend real.
 RELLENO17="$(head -c 1000 /dev/zero | tr '\0' 'x' | fold -w 90 | sed 's/^/              # /')"
-FIX17="$(printf 'GUION="$(Build.SourcesDirectory)/tycon-claude-guides/scripts/ci/audit-dependencies.js"\nif [ ! -f "$GUION" ]; then exit 1; fi\n%s\nnode "$GUION" --repo . --type nuget --project src/X.csproj --declared vulnerabilidades-pendientes.json --block\nrc=$?\n' "$RELLENO17")"
+FIX17="$(printf 'GUION="$(Build.SourcesDirectory)/tycon-claude-guides/scripts/ci/audit-dependencies.js"\nif [ ! -f "$GUION" ]; then exit 1; fi\n%s\nnode "$GUION" --repo . --type nuget --project src/X.csproj --declared pending-vulnerabilities.json --block\nrc=$?\n' "$RELLENO17")"
 FIX17_SIN_FRENO="${FIX17/ --block/}"
 if lista_real_de_productos; then
 res17=$(node -e '
@@ -348,9 +348,9 @@ fi
 # NOMBRE del guion: la raíz también lo llama, así que ese patrón probaría el bucle
 # por formulario con sólo tener el de la raíz. Este caso lee los patrones del JSON de verdad.
 JSON20="$LISTA_ORG"
-RAIZ20="$(printf 'AUD="$(Agent.TempDirectory)/arnes-ci/audit-dependencies.js"\n[ -f "$AUD" ] || exit 1\nnode "$AUD" --repo . --type npm --declared vulnerabilidades-pendientes.json --block\nRC=$?\n')"
+RAIZ20="$(printf 'AUD="$(Agent.TempDirectory)/arnes-ci/audit-dependencies.js"\n[ -f "$AUD" ] || exit 1\nnode "$AUD" --repo . --type npm --declared pending-vulnerabilities.json --block\nRC=$?\n')"
 RAIZ20_SIN_FRENO="${RAIZ20/ --block/}"
-FORM20="$(printf 'for f in $FORMS; do\n  node "$AUD" --repo "$f" --type npm --declared ../vulnerabilidades-formularios-pendientes.json --block || FALLAS=1\ndone\n')"
+FORM20="$(printf 'for f in $FORMS; do\n  node "$AUD" --repo "$f" --type npm --declared ../pending-form-vulnerabilities.json --block || FALLAS=1\ndone\n')"
 if lista_real_de_productos; then
 res20=$(node -e '
 const c=require(process.argv[1]); const [raiz, raizSinFreno, form]=process.argv.slice(2); const bad=[];

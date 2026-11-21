@@ -291,7 +291,7 @@ function answer(kind, { home, env = process.env, tree = treeOf(home), harnessJs 
       [`Anotado: sigue la instalación mínima y no te lo vuelvo a ofrecer. Si un día la querés: ${fullCommand(tree)}`]) };
   }
   if (!harnessJs) return { code: 2, lines: ['first-story: no encuentro el árbol del arnés instalado (ni al lado de este archivo ni en el estado de la instalación). No corrí nada'] };
-  const r = spawnSync(process.execPath, [harnessJs, 'install', '--profile', 'full', '--yes'], { env, stdio, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [harnessJs, 'install', '--profile', 'full', '--yes'], { windowsHide: true, env, stdio, encoding: 'utf8' });
   const code = r.status === null ? 1 : r.status;
   const out = stdio === 'pipe' ? [r.stdout, r.stderr].filter(Boolean).join('').trim() : '';
   if (code !== 0) {

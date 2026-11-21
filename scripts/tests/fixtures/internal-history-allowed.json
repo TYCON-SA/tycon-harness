@@ -143,19 +143,19 @@
       "file": "getting-started/reference.es.md",
       "form": "story-bare",
       "value": "la 5.1",
-      "reason": "la versión de un programa que trae el sistema, no el número de una story: el único falso de la forma en la muestra de la tanda G1 (tasks/measurement-8.26-tanda-g/false-positives.md). El archivo se declara con la ruta con que sale; en el repo del equipo es un papel de scripts/publishing/public-files/"
+      "reason": "la versión de un programa que trae el sistema, no el número de una story: el único falso de la forma en la muestra de la tanda G1 (tasks/measurement-8.26-tanda-g/false-positives.md)."
     },
     {
       "file": "getting-started/mac.md",
       "form": "story-bare",
       "value": "la 1.20.0",
-      "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma). El archivo se declara con la ruta con que sale; en el repo del equipo es un papel de scripts/publishing/public-files/"
+      "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma)."
     },
     {
       "file": "getting-started/linux.md",
       "form": "story-bare",
       "value": "la 1.20.0",
-      "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma). El archivo se declara con la ruta con que sale; en el repo del equipo es un papel de scripts/publishing/public-files/"
+      "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma)."
     },
     {
       "file": "guides/maintaining/publicacion-espejo.md",
@@ -233,12 +233,6 @@
       "file": "guides/maintaining/publicacion-espejo.md",
       "form": "team-path",
       "value": "scripts/nightly/dependencies/repos.json",
-      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
-    },
-    {
-      "file": "guides/maintaining/publicacion-espejo.md",
-      "form": "team-path",
-      "value": "scripts/publishing/public-files",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
@@ -416,16 +410,16 @@
       "reason": "la versión de la API de Azure (`api-version`) que el comentario nombra: es un dato del servicio, no una fecha del equipo"
     },
     {
-      "file": "scripts/install-tycon-hooks.ps1",
+      "file": "scripts/tests/fixtures/story-index/expected-sprint-status.yaml",
       "form": "story-number",
-      "value": "story 8.36",
-      "reason": "un rótulo de sección que scripts/tests/legacy-names-install.test.sh (T26) usa como ancla de `sed` para recortar el bloque del .ps1; se reescribe cuando la prueba recorte por un marcador sin historia"
+      "value": "Épica 1",
+      "reason": "la salida esperada del generador de índices, byte por byte: el comentario de cada épica es parte de lo que escribe, con el número inventado del repo de juguete"
     },
     {
-      "file": "scripts/install-tycon-hooks.ps1",
+      "file": "scripts/tests/fixtures/story-index/expected-sprint-status.yaml",
       "form": "story-number",
-      "value": "story 8.9",
-      "reason": "un rótulo de sección que scripts/tests/legacy-names-install.test.sh (T26) usa como ancla de `sed` para recortar el bloque del .ps1; se reescribe cuando la prueba recorte por un marcador sin historia"
+      "value": "Épica 2",
+      "reason": "la salida esperada del generador de índices, byte por byte: el comentario de cada épica es parte de lo que escribe, con el número inventado del repo de juguete"
     }
   ]
 }

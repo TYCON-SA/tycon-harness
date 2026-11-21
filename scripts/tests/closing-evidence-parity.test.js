@@ -60,6 +60,25 @@ test('las dos definiciones de evidencia de cierre dan el MISMO veredicto en todo
   }
 });
 
+// Los tres formatos con que el pipeline escribe un FAIL, sus bordes, y lo que no es un FAIL.
+const VEREDICTOS = [
+  'verdict=FAIL\n', 'VERDICT=fail\n', '- verdict: FAIL\n', '* VERDICT: **FAIL**\n', '**verdict**: FAIL\n',
+  '## Verdict global\n\nFAIL\n', '## verdict global\n**FAIL**\n', 'verdict global: FAIL\n', '## Verdict global\r\n\r\nFAIL\r\n',
+  'verdict=PASS\n', '', 'el humo dio FAIL en el primer intento y después pasó\n', 'hola\n',
+];
+
+test('T26 FailVerdictCopies_SameVerdict — las dos copias del lector de FAIL dan el MISMO veredicto @story-8.259 @ac-10', (t) => {
+  assert.equal(typeof gate.evidenciaDeclaraFail, 'function', 'el portón tiene que exportar su copia para poder compararla');
+  // el veredicto esperado, escrito: compararlas solas no ve un error que las dos compartan
+  assert.deepStrictEqual(VEREDICTOS.map((v) => gate.evidenciaDeclaraFail(v)),
+    [true, true, true, true, true, true, true, true, true, false, false, false, false]);
+  if (!lib) { t.skip('lib del skill ausente'); return; }
+  assert.equal(typeof lib.evidenciaDeclaraFail, 'function', 'la definición canónica vive en lib/closing-evidence.js');
+  for (const v of VEREDICTOS) {
+    assert.equal(gate.evidenciaDeclaraFail(v), lib.evidenciaDeclaraFail(v), `veredicto distinto en ${JSON.stringify(v)}`);
+  }
+});
+
 test('y los patrones de exclusión son los mismos, uno por uno', (t) => {
   if (!lib) { t.skip('lib del skill ausente'); return; }
   assert.deepEqual(

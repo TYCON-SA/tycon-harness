@@ -192,13 +192,15 @@ test('T4 SpanishNames_Detect_NoDictionaryFallsBackAndSays — sin /usr/share/dic
 });
 
 // ── el extractor: qué se mira de cada archivo ────────────────────────────────────────────────────────────────────
-test('Extractor_KindsAndCategories — ejecutables, configuración y pruebas; nunca .md ni casos del banco; las seis categorías', () => {
+test('Extractor_KindsAndCategories — ejecutables, configuración y pruebas; de los .md, sólo las guías; nunca casos del banco; las seis categorías', () => {
   assert.strictEqual(sn.kindOf('scripts/a.js', ''), 'executable');
   assert.strictEqual(sn.kindOf('scripts/sin-extension', '#!/usr/bin/env bash\n'), 'executable');
   assert.strictEqual(sn.kindOf('.githooks/pre-commit', 'x'), 'executable');
   assert.strictEqual(sn.kindOf('scripts/tests/a.test.js', ''), 'test');
   assert.strictEqual(sn.kindOf('scripts/a.json', '{}'), 'config');
-  assert.strictEqual(sn.kindOf('guides/a.md', ''), null);
+  assert.strictEqual(sn.kindOf('guides/a.md', ''), 'guide');
+  assert.strictEqual(sn.kindOf('docs/a.md', ''), null);
+  assert.strictEqual(sn.kindOf('packs/acme/guides/a.md', ''), null);
   assert.strictEqual(sn.kindOf('scripts/controls-bench/cases/hooks/a.json', '{}'), null);
 
   const opt = `--${W.sin}-${W.copia}`;
@@ -1328,9 +1330,9 @@ test('Unified_StartsShippingAndModified_PathJudged — lo que empieza a salir se
     git(dir, ['add', '-A']);
     const check = (label, h, s) => {
       assert.equal(s.status, 1, `${label}, agent-skills: ${s.out}`);
-      assert.match(s.out, new RegExp(`${inSkills.replace(/[.]/g, '\\.')}.*\\[ruta\\]`), `${label}: la ruta de skills/ se juzga`);
+      assert.match(s.out, new RegExp(`${inSkills.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*\\[ruta\\]`), `${label}: la ruta de skills/ se juzga`);
       assert.equal(h.status, 1, `${label}, arnes: ${h.out}`);
-      assert.match(h.out, new RegExp(`${inHarness.replace(/[.]/g, '\\.')}.*\\[ruta\\]`), `${label}: la ruta del arnés se juzga`);
+      assert.match(h.out, new RegExp(`${inHarness.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*\\[ruta\\]`), `${label}: la ruta del arnés se juzga`);
       assert.doesNotMatch(h.out, new RegExp(name), `${label}: cada hallazgo, de su parte (sin doble aviso)`);
     };
     check('lo stageado', part('arnes'), part('agent-skills'));
@@ -1494,8 +1496,11 @@ test('Unified_Count_SameBeforeAndAfterTheUnion — T25: el termómetro da la mis
     // 🔴 sin diccionario la prueba saldría VERDE sin comparar contra el techo: por eso es un
     // «no medido» que cuenta en el resumen (la cuenta de arriba sí se comparó; el techo lo cubre también *SpanishCeilingUnchanged*)
     if (!a.dictionary) { t.skip('NO MEDIDO: sin diccionario inglés en esta máquina — se comparó la cuenta, no las cifras del techo'); return; }
-    // y es la del techo: lo que el termómetro mide no supera lo que el techo deja
-    const ceiling = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'spanish-names-ceiling.json'), 'utf8'));
+    // y es la del techo de ese mismo commit: lo que el termómetro mide no supera lo que el techo dejaba. El techo de hoy
+    // no sirve: baja con cada renombre, y la cuenta de la unión queda fija
+    const shown = spawnSync('git', ['-C', RAIZ, 'show', `${UNION.union}:scripts/publishing/spanish-names-ceiling.json`], { encoding: 'utf8', env: cleanEnv() });
+    assert.equal(shown.status, 0, `no pude leer el techo del repo unido: ${shown.stderr}`);
+    const ceiling = JSON.parse(shown.stdout);
     for (const [pkg, nums] of Object.entries(a.packages)) {
       assert.ok(ceiling[pkg], `el techo no trae el paquete ${pkg}`);
       assert.ok(nums.total <= ceiling[pkg].total, `${pkg}: el repo unido cuenta ${nums.total} y el techo deja ${ceiling[pkg].total}`);
@@ -1731,4 +1736,205 @@ test('T43 — con el filtro, --stale-mentions sigue encontrando una ruta vieja e
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
+});
+
+test('RetireD_LegacyReadersOnlyWhatStillReadsOld @story-8.15 @ac-14 — cada lector de nombres viejos con su motivo; ninguno lee un estado viejo del freno ni nombra una opción vieja', () => {
+  const fuente = fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js'), 'utf8');
+  const bloque = fuente.slice(fuente.indexOf('const LEGACY_READERS = new Set(['), fuente.indexOf(']);', fuente.indexOf('const LEGACY_READERS = new Set([')));
+  // cada archivo de la lista, debajo de un comentario: su motivo (un renglón de archivos sigue al comentario o a otro de archivos)
+  let conMotivo = false;
+  const sinMotivo = [];
+  for (const linea of bloque.split('\n').slice(1)) {
+    if (/^\s*\/\//.test(linea)) { conMotivo = true; continue; }
+    const rutas = linea.match(/'[^']+'/g) || [];
+    if (rutas.length && !conMotivo) sinMotivo.push(...rutas);
+  }
+  assert.deepEqual(sinMotivo, [], 'archivos de LEGACY_READERS sin su motivo escrito arriba');
+  const lectores = [...require(path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js')).LEGACY_READERS];
+  // los nombres de antes, armados (como en las pruebas de nombres)
+  const P = 'produ' + 'ccion';
+  const estadosViejos = new RegExp(`${P}-ind${'ice'}\\.json|${P}-memo${'ria'}\\.json|${P}\\.log`);
+  const opcionesViejas = new RegExp(`--(?:cargar-${'clave'}|reclasi${'ficar'}|verifi${'car'}|max-${'filas'})\\b`);
+  // quienes pueden nombrar un estado viejo: el que los pasa a los nuevos y el que los borra
+  const pasanOBorran = new Set(['scripts/production/production-index.js', 'scripts/production/install-guard.sh']);
+  // ninguno nombra una opción vieja: el aviso lee de la puerta instalada la que ella entiende
+  const mal = [];
+  for (const rel of lectores) {
+    let texto;
+    try { texto = fs.readFileSync(path.join(RAIZ, rel), 'utf8'); } catch { continue; }   // un archivo del repo del equipo
+    if (!pasanOBorran.has(rel) && estadosViejos.test(texto)) mal.push(`${rel}: nombra un estado viejo del freno`);
+    if (opcionesViejas.test(texto)) mal.push(`${rel}: nombra una opción vieja del freno`);
+  }
+  assert.deepEqual(mal, []);
+  // la puerta no tiene más lectura del registro viejo
+  assert.doesNotMatch(fs.readFileSync(path.join(RAIZ, 'scripts', 'production', 'tycon-prod-sql'), 'utf8'), /REGISTRO_VIEJO/);
+});
+
+// ── las guías: su nombre de archivo va en inglés ──────────────────────────────────────────────────────────────────
+// De un `.md` el freno mira sólo el nombre de las guías de `guides/` (nunca su contenido, nunca las de los paquetes), sin
+// el sufijo de idioma. Una guía castellana que ya existe no frena hasta que se renombre, y el termómetro no las cuenta.
+const G = { piezas: 'pie' + 'zas', arnes: 'ar' + 'nes', del: 'de' + 'l', constitucion: 'constitu' + 'cion', notas: 'no' + 'tas' };
+const guiaCastellana = `${G.piezas}-${G.del}-${G.arnes}`;
+
+test('GuideNames_DetectorIgnoresLanguageSuffix @story-8.45 @ac-2 @ac-3 — las guías de guides/ se miran por su nombre, sin el sufijo de idioma', (t) => {
+  assert.strictEqual(sn.kindOf(`guides/${guiaCastellana}.md`, '# x\n'), 'guide');
+  assert.strictEqual(sn.kindOf('guides/maintaining/code-style.md', '# x\n'), 'guide');
+  assert.strictEqual(sn.kindOf('README.md', '# x\n'), null, 'un .md fuera de guides/ no se mira');
+  assert.strictEqual(sn.kindOf(`packs/acme/guides/${guiaCastellana}.md`, '# x\n'), null, 'las guías de un paquete quedan afuera');
+  assert.strictEqual(sn.kindOf('guides/a/capture.png', ''), null, 'lo que no es .md en guides/ tampoco');
+  assert.deepStrictEqual(sn.pathNames('guides/organization-site.en.md'), ['guides', 'organization-site']);
+  assert.deepStrictEqual(sn.pathNames('guides/getting-started/reference.es.md'), ['guides', 'getting-started', 'reference']);
+  assert.deepStrictEqual(sn.pathNames('scripts/lib/messages.en.json'), ['scripts', 'lib', 'messages.en'], 'el sufijo de idioma se saca sólo en un .md');
+  assert.deepStrictEqual(sn.extract(`guides/${guiaCastellana}.md`, `--${W.sin}-${W.copia} TYCON_${W.datos.toUpperCase()}\n`), [], 'el contenido de una guía es prosa');
+  const real = sn.loadWords(fs.readFileSync(WORDS, 'utf8'), 'scripts/lib/spanish-words.json');
+  const d = sn.makeDetector(real, {});
+  if (!d.dictionary) { t.skip('NO MEDIDO: sin /usr/share/dict/words'); return; }
+  for (const n of [guiaCastellana, G.constitucion]) assert.ok(d.isSpanish(n).spanish, `${n} es castellano`);
+  for (const n of ['harness-pieces', 'constitution', 'organization-site']) assert.ok(!d.isSpanish(n).spanish, `${n} es inglés`);
+});
+
+test('GuiaNuevaEnCastellano_Frena @story-8.45 @ac-3 — una guía agregada o renombrada en castellano frena, en lo stageado y por --range; lo demás pasa', () => {
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-guias-'));
+  const vieja = `${W.lista}-${W.de}-${W.datos}`;
+  const nueva = `guides/${G.notas}-${W.de}-${W.copia}.md`;
+  const nombra = (salida, rel) => assert.ok(salida.includes(rel), `el freno nombra ${rel}: ${salida}`);
+  try {
+    git(lab, ['init', '-q', '-b', 'main']);
+    write(lab, {
+      'scripts/lib/spanish-words.json': LAB_WORDS, 'scripts/x.js': '// x\n',
+      [`guides/${vieja}.md`]: '# vieja\n', 'guides/maintaining/keep.md': '# k\n',
+    });
+    git(lab, ['add', '-A']);
+    git(lab, ['commit', '-q', '-m', 'base']);
+    const base = git(lab, ['rev-parse', 'HEAD']);
+    const count = () => {
+      const c = run(['--count', '--json', '--repo', lab]);
+      assert.strictEqual(c.status, 0, `--count: ${c.stderr}`);
+      return JSON.parse(c.stdout);
+    };
+    const before = count();
+
+    // pasa: editar la castellana que ya estaba y mudarla de carpeta con su nombre, agregar una inglesa (también su par
+    // en inglés) y una de un paquete
+    write(lab, {
+      [`guides/${vieja}.md`]: '# vieja, editada\n', 'guides/release-notes.md': '# n\n',
+      'guides/release-notes.en.md': '# n\n', [`packs/acme/guides/${G.notas}-${W.de}-${W.copia}.md`]: '# p\n',
+    });
+    git(lab, ['add', '-A']);
+    git(lab, ['mv', `guides/${vieja}.md`, `guides/maintaining/${vieja}.md`]);
+    let r = run(['--repo', lab]);
+    assert.strictEqual(r.status, 0, `lo que ya existía, lo inglés y lo del paquete pasan: ${r.stderr}`);
+    git(lab, ['commit', '-q', '-m', 'pasa']);
+
+    // frena: una guía nueva en castellano, en lo stageado
+    write(lab, { [nueva]: '# nueva\n' });
+    git(lab, ['add', '-A']);
+    r = run(['--repo', lab]);
+    assert.strictEqual(r.status, 1, `la guía nueva en castellano frena: ${r.stderr}`);
+    nombra(r.stderr, nueva);
+    git(lab, ['commit', '-q', '-m', 'la nueva']);
+    // y en el pedido (--range)
+    r = run(['--range', `${base}...HEAD`, '--repo', lab]);
+    assert.strictEqual(r.status, 1, `por --range también: ${r.stderr}`);
+    nombra(r.stderr, nueva);
+    // renombrar una inglesa a un nombre castellano también frena
+    // (con palabras de la lista del laboratorio: sin diccionario inglés, como en la CI, una palabra suelta no cuenta)
+    const renombrada = `guides/maintaining/${W.copia}-${W.de}-${W.datos}.md`;
+    git(lab, ['mv', 'guides/maintaining/keep.md', renombrada]);
+    r = run(['--repo', lab]);
+    assert.strictEqual(r.status, 1, `renombrar a castellano frena: ${r.stderr}`);
+    nombra(r.stderr, renombrada);
+
+    // el termómetro no cuenta guías
+    assert.deepStrictEqual(count(), before, 'el conteo no cambia por las guías');
+  } finally { fs.rmSync(lab, { recursive: true, force: true }); }
+});
+
+// Un nombre que ya existía sólo excusa a un archivo de su mismo tipo: la guía que se edita o se muda, o el ejecutable
+// que reusa el nombre de otro ejecutable. Una guía nueva no pasa porque una carpeta se llame igual, ni un script nuevo
+// porque una guía castellana se llame igual.
+test('GuideNames_ExistingNamesDoNotCrossKinds @story-8.45 @ac-3 — el nombre de una carpeta no excusa a una guía nueva, ni el de una guía a un script nuevo', () => {
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-guias-tipos-'));
+  const guia = `${W.lista}-${W.de}-${W.datos}`;
+  const carpeta = `${G.notas}-${W.de}-${W.copia}`;
+  try {
+    git(lab, ['init', '-q', '-b', 'main']);
+    write(lab, {
+      'scripts/lib/spanish-words.json': LAB_WORDS, 'scripts/x.js': '// x\n',
+      [`guides/${guia}.md`]: '# vieja\n', [`guides/${carpeta}/captures/a.html`]: '<p>a</p>\n',
+    });
+    git(lab, ['add', '-A']);
+    git(lab, ['commit', '-q', '-m', 'base']);
+    const pruebas = [
+      ['un script nuevo con el nombre de una guía castellana', `scripts/tools/${guia}.js`, '#!/usr/bin/env node\n'],
+      ['una carpeta nueva de scripts con el nombre de una guía castellana', `scripts/${guia}/run.sh`, '#!/bin/sh\n'],
+      ['una guía nueva con el nombre de una carpeta que ya estaba', `guides/${carpeta}.md`, '# nueva\n'],
+    ];
+    for (const [que, rel, texto] of pruebas) {
+      write(lab, { [rel]: texto });
+      git(lab, ['add', '-A']);
+      const r = run(['--repo', lab]);
+      assert.strictEqual(r.status, 1, `${que} frena: ${r.stderr}`);
+      assert.ok(r.stderr.includes(rel), `${que}: el freno nombra ${rel}`);
+      git(lab, ['reset', '-q', 'HEAD', '--', rel]);
+      fs.rmSync(path.join(lab, rel));
+    }
+  } finally { fs.rmSync(lab, { recursive: true, force: true }); }
+});
+
+// ── la opción de un programa ajeno ──────────────────────────────────────────────────────────────────────────────────
+// Una opción que va en el arreglo de argumentos de git, npm, gh, az o docker es de ese programa, no del arnés: no se
+// mide. Lo demás del mismo archivo se mide como siempre.
+test('T9 SpanishNames_ForeignProgramOption_NotAName @story-8.278 @ac-13 — la opción del arreglo de argumentos de un programa ajeno no sale', () => {
+  const js = [
+    "const { spawn, spawnSync, execFile, execFileSync } = require('child_process');",
+    "spawnSync('git', ['update-index', '--" + "chmod=+x', f]);",
+    `execFileSync('npm', ['--${W.cargar}', d]);`,
+    `spawn("gh", ['pr', 'view', '--${W.motivo}']);`,
+    `execFile(\`az\`, ['boards', '--${W.bajar}'], () => {});`,
+    "const args = ['docker', 'run',",
+    `  ['--${W.datos}', 'x'],`,
+    `  '--${W.hoy}'];`,
+  ].join('\n');
+  const got = sn.extract('scripts/tests/x.test.js', js, { schemaFiles: [] });
+  assert.deepStrictEqual(got.filter((f) => f.category === 'option'), [], `ninguna opción de un programa ajeno: ${JSON.stringify(got)}`);
+});
+
+test('T10 SpanishNames_OwnOptionOrLoose_AsToday @story-8.278 @ac-14 @ac-15 @ac-20 — la opción propia, la suelta, la de un programa en una variable o de un intérprete, la variable de entorno y el subcomando salen como hoy', (t) => {
+  const js = [
+    `if (process.argv.includes('--${W.cargar}')) {}`,
+    `spawnSync('git', ['x', '--${W.cargar}']);`,
+    `const ayuda = 'usá --${W.datos} para';`,
+    `const prog = 'git'; spawnSync(prog, ['--${W.motivo}']);`,
+    `spawnSync('node', [script, '--${W.bajar}']);`,
+    `const v = process.env.TYCON_${W.hoy.toUpperCase()};`,
+    `if (cmd === '${W.limpiar}') {}`,
+  ].join('\n');
+  const got = sn.extract('scripts/tests/x.test.js', js, { schemaFiles: [] });
+  const opts = got.filter((f) => f.category === 'option');
+  assert.deepStrictEqual(opts.filter((f) => f.name === W.cargar).map((f) => f.line), [1], 'la opción propia sale por donde se lee, no dentro del arreglo de git');
+  for (const w of [W.datos, W.motivo, W.bajar]) assert.ok(opts.some((f) => f.name === w), `--${w} sale como hoy`);
+  assert.ok(got.some((f) => f.category === 'env' && f.name === `TYCON_${W.hoy.toUpperCase()}`), 'la variable de entorno sale');
+  assert.ok(got.some((f) => f.category === 'subcommand' && f.name === W.limpiar), 'el subcomando sale');
+  // un arreglo que no se puede leer entero (una expresión regular, un texto sin cerrar, un arreglo dentro de un texto) no
+  // esconde nada: la opción propia que viene después sale igual
+  const despues = `if (process.argv.includes('--${W.cargar}')) {}`;
+  const bordes = [
+    "spawnSync('git', ['log', s.replace(/'/g, '')]);",
+    "spawnSync('gh', ['x', q.split(/[\"']/)[0]]);",
+    "execFileSync('git', ['x', ref.match(/\\[(\\w+)/)[1]]);",
+    "execFileSync('git', ['x', s.replace(/[\\]]/g, ''), '--" + W.datos + "']);",
+    "const src = \"const a = ['git', 'x',\";",
+    "const src = \"spawnSync('git', [\";",
+    "const msg = \"usá ['git', '--" + W.motivo + "'] así\";",
+  ];
+  for (const antes of bordes) {
+    const sale = sn.extract('scripts/tests/x.test.js', `${antes}\n${despues}`, { schemaFiles: [] }).filter((f) => f.category === 'option');
+    assert.ok(sale.some((f) => f.name === W.cargar && f.line === 2), `después de «${antes}», --${W.cargar} sale: ${JSON.stringify(sale)}`);
+  }
+  const textoSuelto = sn.extract('scripts/tests/x.test.js', bordes[6], { schemaFiles: [] });
+  assert.ok(textoSuelto.some((f) => f.category === 'option' && f.name === W.motivo), 'un arreglo escrito dentro de un texto no es un arreglo de argumentos');
+  const d = sn.makeDetector(sn.loadWords(fs.readFileSync(WORDS, 'utf8'), 'scripts/lib/spanish-words.json'), {});
+  if (!d.dictionary) { t.skip('NO MEDIDO: sin /usr/share/dict/words'); return; }
+  assert.ok(d.isSpanish(W.cargar).spanish, 'la opción propia en castellano frena');
 });

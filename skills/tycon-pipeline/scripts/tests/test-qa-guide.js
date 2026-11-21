@@ -5,7 +5,8 @@ const path = require('path');
 const qa = require(path.join(__dirname, '..', 'qa-guide.js'));
 
 let fails = 0;
-function check(name, cond) { if (cond) console.log(`  ✓ ${name}`); else { fails++; console.error(`  ✗ ${name}`); } }
+// el detalle (lo que se obtuvo) se muestra sólo cuando la prueba falla
+function check(name, cond, detalle) { if (cond) console.log(`  ✓ ${name}`); else { fails++; console.error(`  ✗ ${name}${detalle === undefined ? '' : ` — ${detalle}`}`); } }
 
 console.log('qa-guide — casos:');
 
@@ -216,6 +217,17 @@ check('parsePasosSequence: orden respeta el archivo (3 antes que 1)', JSON.strin
   check('QaGuide_Apagada_ElArnesYaLoProbo @story-7.46 @ac-1 — de punta a punta', /^Lo probó corriendo la app, con una prueba de punta a punta\. Probarlo a mano es un segundo control\.$/.test(conE2e.como));
   check('QaGuide_Apagada_ElArnesYaLoProbo @story-7.46 @ac-1 — sólo humo', conHumo.como === 'Lo probó corriendo la app. Probarlo a mano es un segundo control.');
   const pend = ['NOT-RUN', 'RUNTIME-PARCIAL'].map((v) => qa.estadoDelArnes({ verdict: v }));
+  // Un criterio en vivo por un humo, con la prueba en vivo que la tabla le declara sin correr, es provisorio: la guía no
+  // dice «ya lo probó» ni lo cuenta como probado, y nombra lo que falta.
+  const prov = qa.estadoDelArnes({ verdict: 'RUNTIME', fuentes: { e2e: [], smoke: ['2026-10-20T10:00:00Z'] }, enVivoSinCorrer: ['T12'] });
+  check('QaGuide_CriterioProvisorio_NoDiceProbado — la insignia dice provisorio y nombra la prueba que falta',
+    prov.tier === 'pend' && /provisori/i.test(prov.badge) && /T12/.test(prov.badge) && !/ya lo probó/.test(prov.badge), JSON.stringify(prov));
+  const cuenta = qa.contarCriterios([{ n: 1 }, { n: 2 }], {
+    1: { verdict: 'RUNTIME', fuentes: { e2e: ['g.md'], smoke: [] } },
+    2: { verdict: 'RUNTIME', fuentes: { e2e: [], smoke: ['x'] }, enVivoSinCorrer: ['T12'] },
+  });
+  check('QaGuide_CriterioProvisorio_NoSeCuentaComoProbado — 1 probado y 1 para probar a mano, no 2 de 2',
+    cuenta.runtime === 1 && cuenta.pending === 1, JSON.stringify(cuenta));
   const nv = ['NOT-VERIFIABLE', 'WAIVED-USER'].map((v) => qa.estadoDelArnes({ verdict: v }));
   check('QaGuide_Apagada_PendienteYNoVerificable @story-7.46 @ac-2 — pendientes', pend.every((e) => e.tier === 'pend' && e.badge === 'El arnés no lo probó: probalo a mano' && !e.como));
   check('QaGuide_Apagada_PendienteYNoVerificable @story-7.46 @ac-2 — no verificables', nv.every((e) => e.tier === 'wv' && e.badge === 'La app no lo muestra: lo cubre una prueba del código'));

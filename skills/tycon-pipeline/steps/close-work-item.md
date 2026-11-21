@@ -50,7 +50,7 @@ Antes de postear nada en ADO, validar que se cumple TODO esto:
 4. **Merge a main hecho** (vía `/tycon-merge-to-main` o manual) — para tener el CI run definitivo y, si aplica, el PR link.
 5. **Frontmatter `status:`** debe estar en `review` (después de «Preparar el commit») o `done` (si dev ya lo movió manualmente). NO ejecutar este cierre sobre `ready-for-dev`/`in-progress` — es señal de que el flujo no completó «Preparar el commit».
 6. **Si la story NO tiene id de pedido de trabajo** → NO skipear el pedido con "N/A". Resolver en este orden (ver sección "Creación retroactiva del pedido" abajo):
-   a. Si el repo tiene la configuración del pedido de trabajo (`.tycon/work-items.yaml` o `.tycon/ado-config.yaml`) → **CREAR el pedido retroactivamente** (hijo del Epic mapeado en `epic_links`), escribir `work_item:` en el frontmatter, y continuar con el cierre normal (comment + cierre + horas). NO preguntar al dev por un ID que no existe.
+   a. Si el repo tiene la configuración del pedido de trabajo (`.tycon/work-items.yaml`, o su nombre viejo de Azure DevOps) → **CREAR el pedido retroactivamente** (hijo del Epic mapeado en `epic_links`), escribir `work_item:` en el frontmatter, y continuar con el cierre normal (comment + cierre + horas). NO preguntar al dev por un ID que no existe.
    b. Si el dev SABE que ya existe un WI (creado a mano fuera del flujo) → preguntar el ID, NO grep por título (puede haber WIs con títulos similares).
    c. Si el repo NO tiene ninguno de los dos archivos → el pedido genuinamente N/A, skip esa parte (solo entonces).
 
@@ -94,9 +94,7 @@ El CI run relevante es el **post-merge a main** (ya con todo el código integrad
 Estrategia según provider:
 
 ```bash
-# Azure DevOps Pipelines:
-az pipelines runs list --organization https://dev.azure.com/<org> --project <project> \
-  --branch main --top 5 --query "[?contains(sourceVersion, '<merge-sha>')].{id:id, status:status, result:result, web:_links.web.href}"
+# Azure DevOps Pipelines: el comando, en ~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md §«Cerrar la historia»
 
 # GitHub Actions (si aplica):
 gh run list --branch main --limit 5 --json databaseId,headSha,status,conclusion,url \
@@ -119,7 +117,10 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js work-signa
 
 1. **`hours`** (los `seconds` que informó la herramienta, en horas) → es el tiempo a sumar a `CompletedWork`.
 2. **`action`** → una herramienta que maneja el agente (con su servidor de MCP) dice qué hacer: cerrar su entrada
-   abierta y sumar las de la story, con su skill. El total que da es el tiempo a sumar.
+   abierta y sumar las de la story, con su skill. El total que da es el tiempo a sumar. Cerrada la entrada, dejar sus
+   horas como constancia de lo real: `pipeline.js work-signal stop --story <abs spec.md> --action-done "<id de la
+   entrada que cerraste>"`. El arnés las lee del resultado de esa llamada en la conversación; si no las encuentra, lo
+   dice y lo real queda sin horas. Lo real es sólo esa entrada: las de otras sesiones de la story no entran.
 3. **Ninguno de los dos** (sin herramienta elegida, o nada registrado) → no hay tiempo: el comment va sin el campo.
 
 Si vienen los dos, se suman: lo informado más lo que da la acción. Mostrarle al dev el total y lo que lo compone antes
@@ -156,8 +157,8 @@ Formato del output: `Xh YYm` (ej. `4h 32m`). Si la story tomó menos de 1h, most
 El paso no arma comandos de ninguna plataforma: le pide a la capa de plataforma
 (`node ~/.claude/tycon-harness/scripts/lib/platform/platform.js work-item create|close`). La plataforma la elige el perfil
 del equipo (`integrations.platform`); el destino (organización, proyecto o repo, tipo, estados, épicas), la
-configuración del repo: `.tycon/work-items.yaml`, o `.tycon/ado-config.yaml` (el nombre viejo, que se sigue leyendo; con
-los dos gana el nuevo). En Azure DevOps la organización es la del archivo y, si no la tiene, `ado.org` de la máquina.
+configuración del repo: `.tycon/work-items.yaml`, o el archivo de nombre viejo de Azure DevOps (que se sigue leyendo; con
+los dos gana el nuevo: `guides/integrations/ado-projects.md`). En Azure DevOps la organización es la del archivo y, si no la tiene, `ado.org` de la máquina.
 
 **Sin plataforma elegida o sin credencial** la capa contesta `ok: false` con un `summary` de una línea que dice qué falta
 y cómo ponerlo: se muestra esa línea, el pedido no se toca y el resto del cierre sigue (exit 0).
@@ -306,15 +307,20 @@ no se pregunta de nuevo. Sin ese ok, el pipeline no commitea ni empuja nada (reg
    # la story de main contra la del checkout: sólo puede cambiar el status
    git -C <carpeta-temporal> diff --no-index -U0 <ruta de la story> <story en el checkout> | grep '^[-+][^-+]'
    cp <story en el checkout> <carpeta-temporal>/<ruta de la story>
-   git -C <carpeta-temporal> add <ruta de la story>
+   # el pedido del repo de la historia queda en su registro: los de otros repos ya llegaron con la rama
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js pr <n> --merged --story <id> --repo <repo> --story-path <carpeta-temporal>/<ruta de la story>
+   git -C <carpeta-temporal> add <ruta de la story> .advisors/dod-runtime/<clave>-pedidos.jsonl
    git -C <carpeta-temporal> commit -m "docs(specs): <id> — status done"
    git -C <carpeta-temporal> push -u origin chore/<id>-done
    ```
 
-   Se copia sólo el archivo de la story. Si la comparación muestra algún renglón distinto de `status:` (o del `Status:`
-   del cuerpo), se para y se le muestra la diferencia al dev: copiar el archivo entero pisaría lo que haya en main.
+   Se copian sólo el archivo de la story y el renglón de su pedido en `<clave>-pedidos.jsonl`. Si la comparación muestra algún
+   renglón distinto de `status:` (o del `Status:` del cuerpo), se para y se le muestra la diferencia al dev: copiar el archivo
+   entero pisaría lo que haya en main. Si `marker.js pr` dice que la copia no tiene carpeta de evidencia, la historia no tiene
+   evidencia commiteada que proteger: se dice en el mensaje final, se saca ese archivo del `add` y se sigue.
 3. **El camino a main es el del repo**: el que da `merge-pr.js plan` (el mismo de `/tycon-merge-to-main`). En modo `pr`
-   sobre Azure DevOps, un pedido con `--auto-complete true --squash false`; en GitHub, un pedido a la fila; en modo
+   sobre Azure DevOps, un pedido con `--auto-complete true --squash false --delete-source-branch true` (la rama temporal
+   se borra al entrar); en GitHub, un pedido a la fila; en modo
    `push`, el empuje directo de la rama a `main`. Después, se borra la carpeta temporal y su rama local.
 4. **Sin el ok del dev**, o si algo de lo anterior falla: no se dice «status: done» como si estuviera en main. El
    mensaje final lo deja como **acción pendiente**, con los comandos de arriba ya armados para esa story.
@@ -343,6 +349,18 @@ líneas van tal cual al mensaje final, para que el dev decida. Nunca toca el che
 `TYCON_WORKTREE_SWEEP=0` no hace nada. Para lo que no pasa por el pipeline, el mismo guion corre al arrancar sesión una
 vez por día (`guides/git-worktrees.md` §7).
 
+## El pedido entró: anotarlo en la corrida
+
+El marcador ya se borró al preparar el pull request, así que el pedido mergeado se anota en el último volcado de la
+historia:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js pr <n> --merged --story <id>
+```
+
+Imprime el renglón final de la corrida («entró el pedido #<n> — 52 min de trabajo, 14 min de espera, 2 vueltas, 1 firma
+del dueño»). Repetí ese renglón final tal cual como última línea de tu mensaje al dev.
+
 ## Output
 
 Mensaje al dev al final:
@@ -358,7 +376,7 @@ Mensaje al dev al final:
 - Marker pipeline → cleared.
 - Carpetas de trabajo: <lo que dijo worktree-sweep.js — borradas, o las que quedaron y por qué>
 
-Listo.
+<el renglón final que imprimió `marker.js pr <n> --merged`, tal cual>
 ```
 
 ## Anti-patterns

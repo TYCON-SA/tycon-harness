@@ -33,14 +33,9 @@
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SRC="$RAIZ/scripts/publishing/public-files/scripts/setup/get-harness.sh"
-README_EN="$RAIZ/scripts/publishing/public-files/getting-started/reference.md"
-COPY=0
-# el guion se escribe en el público (scripts/setup/get-harness.sh): si está, es ése el que se mide, aunque
-# el árbol armado de un nocturno traiga una copia vieja del repo del equipo (que no sigue los cambios)
-if [ -f "$RAIZ/scripts/setup/get-harness.sh" ]; then
-  COPY=1; SRC="$RAIZ/scripts/setup/get-harness.sh"; README_EN="$RAIZ/getting-started/reference.md"
-fi
+# el guion y la referencia se leen en su lugar, con la dirección del repo ya puesta
+SRC="$RAIZ/scripts/setup/get-harness.sh"
+README_EN="$RAIZ/getting-started/reference.md"
 GUARD_HOOK="$RAIZ/scripts/hooks/safety-guard-pre.sh"
 
 for tool in python3 git node tar; do
@@ -67,16 +62,12 @@ harness_lab_git_witness
 export TYCON_UPDATE_APPLY=auto
 unset TYCON_GITHUB_TOKEN
 
-# ── el guion, con los marcadores puestos como los pone el exportador ─────────────────────────────────────────
+# ── el guion, con el nombre inventado en lugar del real ─────────────────────────────────────────────────────
 GH="$LAB/get-harness.sh"
-if [ "$COPY" = 0 ]; then
-  sed -e "s/{{public-org}}/$ORG/g" -e "s/{{public-repo}}/$NAME/g" "$SRC" > "$GH"
-else
-  # en la copia el nombre real sale de public-remotes.json; se cambia por el inventado
-  PUB="$(node -e 'const r=require(process.argv[1]).remotes[0];console.log(r.replace(/^https:\/\/github\.com\//,""))' "$RAIZ/scripts/setup/public-remotes.json" 2>/dev/null)"
-  [ -n "$PUB" ] || { echo "❌ get-harness: la copia no trae scripts/setup/public-remotes.json con el remoto público"; exit 1; }
-  sed -e "s#^REPO=\"${PUB//./\\.}\"\$#REPO=\"$ORG/$NAME\"#" "$SRC" > "$GH"
-fi
+# el nombre real sale de public-remotes.json; se cambia por el inventado
+PUB="$(node -e 'const r=require(process.argv[1]).remotes[0];console.log(r.replace(/^https:\/\/github\.com\//,""))' "$RAIZ/scripts/setup/public-remotes.json" 2>/dev/null)"
+[ -n "$PUB" ] || { echo "❌ get-harness: no está scripts/setup/public-remotes.json con el remoto público"; exit 1; }
+sed -e "s#^REPO=\"${PUB//./\\.}\"\$#REPO=\"$ORG/$NAME\"#" "$SRC" > "$GH"
 grep -qxF "REPO=\"$ORG/$NAME\"" "$GH" || { echo "❌ get-harness: no pude ponerle al guion el nombre inventado (¿cambió la forma de su línea REPO=?)"; exit 1; }
 
 # run_gh <opciones del guion…> — el guion contra el servidor de juguete, sin terminal
@@ -116,13 +107,8 @@ if [ -z "$FLOOR_COVERS" ]; then ok "T24 las portadas y las referencias dicen Nod
 # (y los nombres de las rutas públicas —`<repo>.git/info/refs`, `git-upload-pack`— tampoco)
 if ! grep -vE '^\s*#' "$SRC" | sed -e 's#/git/##g' -e 's#\.git/info/refs##g' -e 's#git-upload-pack##g' | grep -wE 'git|--depth' >/dev/null; then ok "T54 el guion no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
 else no "T54 el guion todavía nombra git fuera de los comentarios: $(grep -vE '^\s*#' "$SRC" | sed -e 's#/git/##g' -e 's#\.git/info/refs##g' -e 's#git-upload-pack##g' | grep -nwE 'git|--depth' | head -3 | tr '\n' ' ')"; fi
-if [ "$COPY" = 0 ]; then
-  if grep -qxF 'REPO="{{public-org}}/{{public-repo}}"' "$SRC"; then ok "T54 la dirección de fábrica del guion son los marcadores de la portada (REPO=\"{{public-org}}/{{public-repo}}\")"
-  else no "T54 la línea REPO= del guion no trae los marcadores: $(grep -E '^REPO=' "$SRC" | tr '\n' ' ')"; fi
-else
-  if grep -qxF "REPO=\"$PUB\"" "$SRC" && ! grep -q '{{public-' "$SRC" "$README_EN"; then ok "T54 (copia) la dirección de fábrica del guion es la de public-remotes.json (${PUB}) y no queda ningún marcador"
-  else no "T54 (copia) la dirección de fábrica no es la del remoto público (${PUB}): $(grep -E '^REPO=' "$SRC" | tr '\n' ' ')"; fi
-fi
+if grep -qxF "REPO=\"$PUB\"" "$SRC" && ! grep -q '{{public-' "$SRC" "$README_EN"; then ok "T54 la dirección de fábrica del guion es la de public-remotes.json (${PUB}) y no queda ningún marcador"
+else no "T54 la dirección de fábrica no es la del remoto público (${PUB}): $(grep -E '^REPO=' "$SRC" | tr '\n' ' ')"; fi
 N0="$(log_lines)"; H0="$(harness_lab_home_hash)"
 run_gh --help > "$BASE/help.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'uso: bash get-harness.sh' "$BASE/help.out" && grep -qF 'sin terminal (instalación desatendida): agregá `-- --profile minimal --yes`' "$BASE/help.out" \

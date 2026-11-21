@@ -25,8 +25,8 @@
  * exactamente el agujero de FRESNO. Sale 2 y lo dice, con el motivo.
  *
  * ── DEUDA DECLARADA ─────────────────────────────────────────────────────────────────────────────
- * Un repo puede declarar vulnerabilidades preexistentes en un `vulnerabilidades-pendientes.json`
- * (formato de `FRESNO/FRESNOBZExtForms`, el que ya existe). Lo declarado no despierta a nadie; **lo que
+ * Un repo puede declarar vulnerabilidades preexistentes en un `pending-vulnerabilities.json`
+ * (formato de `FRESNO/FRESNOBZExtForms`, el que ya existe; también con su nombre de antes, ver legacy-files.js). Lo declarado no despierta a nadie; **lo que
  * NO está declarado cuenta igual**, y una declaración VENCIDA vuelve a contar todo como nuevo. La
  * declaración registra lo que ya estaba, con nombre y fecha, para que no se vuelva permanente en
  * silencio — no apaga el control.
@@ -49,6 +49,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { resolveDebtFile, LegacyFilesError } = require('./legacy-files.js');
 // Las variables renombradas a inglés: el nombre viejo sigue valiendo hasta el retiro. Sin la biblioteca al
 // lado (una copia suelta de este archivo, como la semilla de las pruebas de la noche), paso directo con el nombre nuevo.
 const { readEnv } = (() => {
@@ -108,7 +109,7 @@ const AYUDA = `audit-dependencies.js — el criterio del análisis de dependenci
   --type npm|nuget|pip  qué gestor de paquetes (obligatorio)
   --project <rel>       nuget: el .sln/.csproj a analizar (por defecto, el .sln de la raíz);
                         pip: el archivo de requisitos fijado (por defecto, requirements.txt)
-  --declared <rel>      archivo de deuda declarada (por defecto vulnerabilidades-pendientes.json)
+  --declared <rel>      archivo de deuda declarada (por defecto pending-vulnerabilities.json)
   --json                emite el informe completo en JSON por stdout
   --block               sale 1 si hay altas/críticas NO declaradas (el modo del pull request)
 
@@ -119,11 +120,22 @@ Exit: 0 midió · 1 midió y frena · 2 NO PUDO MEDIR (nunca se confunde con "li
 /**
  * Lee la declaración de deuda. Devuelve siempre un objeto con forma conocida.
  * 🔴 Un archivo presente pero ILEGIBLE no se trata como "sin declaración": se reporta como
- * ilegible y NO ampara a nadie. Dato malo es peor que dato ausente.
+ * ilegible y NO ampara a nadie. Dato malo es peor que dato ausente. Con el nombre nuevo y el de
+ * antes de contenido distinto, `conflicto`: el informe sale «no pude medir».
  */
 function leerDeclaracion(repo, rel, hoy) {
-  const nombre = rel || 'vulnerabilidades-pendientes.json';
-  const p = path.join(repo, nombre);
+  // con el nombre nuevo o el de antes, también el que llega con --declared (el de los formularios, `../<archivo>`)
+  const pedido = rel || 'pending-vulnerabilities.json';
+  let nombre;
+  let p;
+  try {
+    const r = resolveDebtFile(repo, pedido, 'scripts/ci/audit-dependencies.js');
+    nombre = r.name;
+    p = r.abs;
+  } catch (e) {
+    if (!(e instanceof LegacyFilesError)) throw e;
+    return { existe: true, archivo: pedido, paquetes: {}, vence: null, vencida: true, ilegible: true, conflicto: true, error: e.message };
+  }
   if (!fs.existsSync(p)) return { existe: false, archivo: nombre, paquetes: {}, vence: null, vencida: false, ilegible: false };
   let j;
   try { j = JSON.parse(fs.readFileSync(p, 'utf8')); }
@@ -146,11 +158,35 @@ function esperar(ms) {
   spawnSync(process.execPath, ['-e', `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${ms})`]);
 }
 
-function correr(cmd, args, cwd, timeoutMs) {
-  const real = process.env.TYCON_DEP_CMD || cmd;
+/**
+ * npm en Windows (@story-8.319, D4): `npm.cmd` no se corre sin `shell: true` (Node 18.20 y 20.12 en adelante salen con
+ * EINVAL, el arreglo del CVE-2024-27980), y con `shell: true` los argumentos pasan por cmd. Se corre el `npm-cli.js`
+ * que está al lado del primer `npm.cmd` del PATH, con el mismo Node: `{ cli }`, o `{ motivo }` si no está. Supuesto: la
+ * instalación oficial de Node pone `npm.cmd` y `node_modules/npm` en la misma carpeta; con un atajo de otro gestor
+ * (Volta, Scoop, nvm-windows) puede no estar, y entonces no mide y lo dice.
+ */
+function npmDeWindows({ env = process.env, existe = fs.existsSync, separador = ';' } = {}) {
+  const ruta = env.PATH || env.Path || '';
+  for (const dir of String(ruta).split(separador).map((d) => d.trim().replace(/^"|"$/g, '')).filter(Boolean)) {
+    if (!existe(path.join(dir, 'npm.cmd'))) continue;
+    const cli = path.join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    return existe(cli) ? { cli } : { motivo: `hay npm.cmd en ${dir} pero no su npm-cli.js al lado (${cli}): puede ser el atajo de otro gestor de Node` };
+  }
+  return { motivo: 'no hay npm.cmd en el PATH' };
+}
+
+function correr(cmd, args, cwd, timeoutMs, { plataforma = process.platform, separador } = {}) {
+  let real = process.env.TYCON_DEP_CMD || cmd;
+  let argumentos = args;
   const opts = { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, TYCON_DEP_REAL: cmd } };
   if (timeoutMs > 0) opts.timeout = timeoutMs;
-  const r = spawnSync(real, args, opts);
+  if (cmd === 'npm' && !process.env.TYCON_DEP_CMD && plataforma === 'win32') {
+    const n = npmDeWindows({ ...(separador ? { separador } : {}) });
+    if (!n.cli) return { ok: false, motivo: `no se pudo ejecutar npm: ${n.motivo}`, salida: '' };
+    real = process.execPath;
+    argumentos = [n.cli, ...args];
+  }
+  const r = spawnSync(real, argumentos, opts);
   // 🔴 Un registro que NO CONTESTA se corta por tiempo. Si el registro de avisos se degrada, UNA
   // llamada puede tardar cientos de segundos. Sin tiempo de espera, el paso por formulario de un
   // producto del equipo (33 llamadas) se come 40 minutos contra un techo de 60 por trabajo, y el
@@ -254,6 +290,47 @@ function proyectoNuget(repo, explicito) {
   return sln.length ? sln[0] : null;
 }
 
+// Las carpetas que no son código del repo: lo restaurado, lo compilado y la historia de git.
+// `packages` sólo es la carpeta de lo restaurado al lado de un .sln: más adentro puede ser un proyecto.
+const NO_SON_PROYECTO = new Set(['.git', 'node_modules', 'bin', 'obj']);
+
+/**
+ * Los `packages.config` del repo (rutas relativas, ordenadas) y lo que no se pudo mirar: una carpeta ilegible o un
+ * enlace que sale del repo. Un proyecto que declara sus paquetes así (el formato de .NET Framework) no aparece en
+ * `dotnet list package --vulnerable`: la lista sale vacía, y vacía no es limpia. Por eso lo que no se miró tampoco
+ * cuenta como «no hay».
+ */
+function packagesConfigDe(repo) {
+  const raiz = fs.realpathSync(repo);
+  const viejos = [];
+  const sinMirar = [];
+  const pendientes = [''];
+  while (pendientes.length) {
+    const rel = pendientes.pop();
+    let es;
+    try { es = fs.readdirSync(path.join(repo, rel), { withFileTypes: true }); } catch (e) { sinMirar.push(`${rel || '.'} (${e.code || 'ilegible'})`); continue; }
+    const conSln = es.some((e) => e.name.toLowerCase().endsWith('.sln'));
+    for (const e of es) {
+      const ruta = path.join(rel, e.name);
+      const nombre = e.name.toLowerCase();
+      let dir = e.isDirectory(), archivo = e.isFile();
+      if (e.isSymbolicLink()) {
+        // un enlace adentro del repo apunta a algo que el recorrido ya mira; uno que sale, no se mira
+        let real = null;
+        try { real = fs.realpathSync(path.join(repo, ruta)); } catch (_) { real = null; }
+        if (real === null) { sinMirar.push(`${ruta} (enlace roto)`); continue; }
+        const r = path.relative(raiz, real);
+        if (r === '..' || r.startsWith(`..${path.sep}`) || path.isAbsolute(r)) { sinMirar.push(`${ruta} (enlace fuera del repo)`); continue; }
+        dir = false;
+        try { archivo = fs.statSync(real).isFile(); } catch (_) { archivo = false; }
+      }
+      if (dir && !NO_SON_PROYECTO.has(nombre) && !(conSln && nombre === 'packages')) pendientes.push(ruta);
+      else if (archivo && nombre === 'packages.config') viejos.push(ruta);
+    }
+  }
+  return { viejos: viejos.sort(), sinMirar: sinMirar.sort() };
+}
+
 /**
  * `dotnet restore` y DESPUÉS `dotnet list package --vulnerable`.
  *
@@ -267,6 +344,11 @@ function auditarNuget(repo, proyectoRel) {
   if (!proy) return { medido: false, motivo: 'no se encontró un .sln en la raíz y no se indicó --project' };
   if (!dentroDelRepo(repo, proy)) return { medido: false, motivo: `--project ${proy} sale de la carpeta del repo: sólo se mide un proyecto del repo` };
   if (!fs.existsSync(path.join(repo, proy))) return { medido: false, motivo: `no existe el proyecto ${proy}` };
+  const { viejos, sinMirar } = packagesConfigDe(repo);
+  // los nombres de carpeta son datos del repo: un carácter de control no llega al informe
+  const muestra = (l) => l.slice(0, 3).map((r) => r.replace(/[\u0000-\u001f\u007f]/g, '?')).join(', ') + (l.length > 3 ? ` y ${l.length - 3} más` : '');
+  if (viejos.length) return { medido: false, motivo: `packages.config: ${viejos.length} proyecto(s) declaran sus paquetes con packages.config (${muestra(viejos)}), y dotnet list package --vulnerable no los ve` };
+  if (sinMirar.length) return { medido: false, motivo: `no pude mirar si hay packages.config en ${muestra(sinMirar)}: dotnet list package --vulnerable no vería esos proyectos` };
 
   const rest = correr('dotnet', ['restore', proy, '--nologo'], repo);
   if (!rest.ok) return { medido: false, motivo: rest.motivo };
@@ -383,6 +465,7 @@ function auditar({ repo, tipo, proyecto, declaradas, hoy }) {
   if (!bruto.medido) return { ...base, motivo_no_medido: bruto.motivo };
 
   const decl = leerDeclaracion(repo, declaradas, hoy);
+  if (decl.conflicto) return { ...base, motivo_no_medido: decl.error };
   const hallazgos = bruto.hallazgos.map((h) => {
     const d = decl.paquetes[h.paquete.toLowerCase()];
     // Una declaración vencida (o ilegible, o sin fecha) NO ampara: vuelve a contar como nuevo.
@@ -484,4 +567,4 @@ function main() {
 // el repo sale «no devolvió JSON legible (exit 0)», o sea NO MEDIDO, con un motivo que no
 // nombra la causa real. Con `exitCode` el proceso termina solo cuando terminó de escribir.
 if (require.main === module) process.exitCode = main();
-module.exports = { auditar, leerDeclaracion, parseArgs, SEVERIDADES_GRAVES };
+module.exports = { auditar, leerDeclaracion, parseArgs, SEVERIDADES_GRAVES, correr, npmDeWindows };

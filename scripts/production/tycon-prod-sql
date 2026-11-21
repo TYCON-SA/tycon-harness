@@ -3,9 +3,13 @@
 #
 # POR QUÉ EXISTE (story 6.1 — guides/maintaining/incident-log.md#produccion-sin-permiso-2026-09-15): el 2026-09-15, en una sesión sobre un producto del equipo, una autorización puntual se
 # estiró sola a la tarea siguiente: ~9 consultas más contra producción sin pedir permiso. Acá cada
-# sentencia pasa por el cuadro de aprobación de Claude Code (la regla `ask` de la configuración
-# administrada cubre `Bash(/opt/tycon/bin/tycon-prod-sql *)`), y el freno `prod-access-guard.js`
-# prohíbe cualquier otro camino a esa base.
+# sentencia la aprueba una persona en un cuadro del sistema que abre LA PROPIA PUERTA (`aprobar`, más abajo),
+# antes de leer la clave: así la aprobación no depende de cómo se la llamó. Un guion guardado que llama a la
+# puerta no pasa por la regla `ask` de Claude Code, que mira el texto del comando; el cuadro propio sí lo ve.
+# Es la ÚNICA ventana: la configuración administrada no pregunta por la puerta, porque su permiso no agregaba control
+# (lo que corre sin el cuadro propio lo prueba tycon-prod-sql.test.sh, «sin el cuadro no se hace nada») y duplicaba
+# las ventanas. El freno `prod-access-guard.js` prohíbe cualquier otro camino a esa base. El cuadro se abre sólo en la
+# pantalla de la Mac: nunca por SSH, y ninguna aprobación a distancia lo reemplaza.
 #
 # LA CONTRASEÑA NUNCA PASA POR LA CONVERSACIÓN: vive en un llavero propio
 # (~/Library/Keychains/tycon-prod.keychain-db), la saca esta puerta y viaja al cliente de base por
@@ -19,21 +23,29 @@
 # uso real no necesita tuberías ni redirecciones, que la forma canónica prohíbe.
 #
 # Formas aceptadas:
-#   tycon-prod-sql <host> '<sentencia>' [--max-filas N]
-#   tycon-prod-sql <host> --file <ruta> --sha256 <sha256> [--max-filas N]   la consulta desde un archivo
-#   tycon-prod-sql --reclasificar <host>     baja un host a no-producción (lo aprobás en el cuadro)
-#   tycon-prod-sql --verificar                revisa la instalación y la entrada del Llavero, sin leer el secreto
-#   tycon-prod-sql --cargar-clave <host>      deja el archivo para cargar la clave, sin consultar nada
+#   tycon-prod-sql <host> '<sentencia>' [--max-rows N]
+#   tycon-prod-sql --reclassify <host>       baja un host a no-producción (lo aprobás en el cuadro)
+#   tycon-prod-sql --verify                   revisa la instalación y la entrada del Llavero, sin leer el secreto
+#   tycon-prod-sql --load-key <host>          deja el archivo para cargar la clave, sin consultar nada
 #   tycon-prod-sql --open-firewall <host>     abre la regla de firewall de esta máquina en un Azure SQL de producción
 #   tycon-prod-sql --close-firewall <host>    la cierra (el hook de fin de sesión agrega --session <id>)
 #   tycon-prod-sql --locks                    dice qué servidores de producción tienen el candado de Azure (sólo lee)
 #   tycon-prod-sql --delete-group <grupo>     borra un grupo de recursos que puede probar que no es de producción
+#   tycon-prod-sql --help                     las formas y el camino de emergencia; no toca nada
+#   tycon-prod-sql --azure <az sin «az»>      un cambio de administración de Azure (alertas, tamaño o plan), con cuadro;
+#                                             sus lecturas (list, show) sin cuadro
+#
+# `--azure` RECIBE CADA ARGUMENTO DE `az` TAL CUAL, en su lugar (nunca un texto que se parte o se evalúa), y sólo corre
+# las operaciones de la lista de abajo: lo que no está, no tiene camino aprobado y se le deja a la persona. El cuadro
+# muestra el comando entero, y un argumento con «@» (az leería un archivo que el cuadro no muestra) no pasa.
 #
 # EL FIREWALL Y SU LÍMITE, ESCRITO: abrir y cerrar llaman a `az`, que NO es un binario de root con huella (es del
 # usuario: Homebrew o el instalador de Microsoft). Rompe la regla de «sólo binarios de root» y se acepta con tres
 # condiciones: (a) `az` se busca en una lista fija de rutas absolutas, nunca en el PATH; (b) nunca recibe la clave de
-# la base ni nada del Llavero (corre con un entorno limpio); (c) sólo se le piden `account list`, `sql server list`
-# y `sql server firewall-rule show|create|update|delete`, siempre con el nombre fijo `tycon-gate-<id de la máquina>`.
+# la base ni nada del Llavero (corre con un entorno limpio); (c) sólo se le piden `account list`, `sql server list`,
+# `sql server show` y `sql server firewall-rule show|create|update|delete`, siempre con el nombre fijo `tycon-gate-<id de la máquina>`,
+# y, al cerrar una regla sin lugar anotado, la consulta de si el nombre del servidor está libre (`rest` a
+# `Microsoft.Sql/checkNameAvailability`, que sólo lee).
 # La regla es de UNA sola IP, la que el propio Azure SQL informa al rechazar la conexión (error 40615): no se llama a
 # ningún servicio externo para saberla.
 #
@@ -55,9 +67,6 @@ HUELLAS="$RAIZ/opt/tycon/huellas.json"
 # la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí; story 8.23, tanda D)
 _ESTADO="$HOME/.claude/.tycon-pipeline"; [ -d "$HOME/.tycon/state" ] && _ESTADO="$HOME/.tycon/state"
 REGISTRO="$_ESTADO/production.log"
-# el registro de antes del renombre a inglés (story 8.9, tanda P) pasa al nuevo una vez, sin tocar el viejo: la
-# historia de consultas no se pierde
-REGISTRO_VIEJO="$_ESTADO/produccion.log"
 LLAVERO_PROPIO="$HOME/Library/Keychains/tycon-prod.keychain-db"
 MAX_FILAS=50
 
@@ -124,7 +133,7 @@ quien_lee(){ # $1 = volcado de dump-keychain, $2 = nombre del servicio
     }
   '
 }
-# los servicios que hay en el llavero propio (para --verificar)
+# los servicios que hay en el llavero propio (para --verify)
 servicios_del_llavero(){ printf '%s\n' "$1" | sed -n 's/^[[:space:]]*"svce"<blob>="\(.*\)"[[:space:]]*$/\1/p' | sort -u; }
 
 HOST_VALIDO='^[A-Za-z0-9][A-Za-z0-9._-]*$'
@@ -135,22 +144,191 @@ BASE_VALIDA='^[A-Za-z0-9_][A-Za-z0-9_.-]*$'       # el mismo charset que exige l
 sin_registro(){ printf '🔴 no pude anotar esta operación en el registro de producción (%s): quedó sin constancia.\n' "$1" >&2; }
 anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaron su charset)
   mkdir -p "$(dirname "$REGISTRO")" 2>/dev/null || { sin_registro "$REGISTRO"; return 0; }
-  # a un temporal y entra con `ln`, que no pisa (otro proceso nunca ve uno a medio copiar); si la historia no se pudo
-  # pasar, se sigue anotando en el viejo: nunca un registro nuevo sin su historia (AC 18)
-  local destino="$REGISTRO"
-  if [ ! -e "$REGISTRO" ] && [ -f "$REGISTRO_VIEJO" ]; then
-    local tmp="$REGISTRO.tmp-$$"
-    if cp -p "$REGISTRO_VIEJO" "$tmp" 2>/dev/null; then ln "$tmp" "$REGISTRO" 2>/dev/null; fi
-    rm -f "$tmp" 2>/dev/null
-    [ -e "$REGISTRO" ] || destino="$REGISTRO_VIEJO"
+  printf '{"ts":"%s",%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" 2>/dev/null >> "$REGISTRO" || sin_registro "$REGISTRO"
+}
+
+# ── el cuadro propio: la aprobación de una persona, pedida por la puerta ──────────────────────
+# La consulta, `--reclassify` y `--open-firewall` lo piden antes de leer la clave, de tocar el índice o de llamar a `az`;
+# `--delete-group`, cuando ya probó que el grupo no tiene nada de producción y antes de pedir el borrado.
+# Sin respuesta, sin sesión gráfica o sin el programa del cuadro, la puerta sale 2: falla cerrada. El programa se busca
+# bajo la raíz, como `security`, y corre con un entorno limpio y un tope de tiempo propio.
+OSASCRIPT="$RAIZ/usr/bin/osascript"
+LAUNCHCTL="$RAIZ/bin/launchctl"
+CUADRO_ESPERA=120
+# Lo que el cuadro muestra entero: una sentencia más larga se rechaza antes de abrirlo, nunca se muestra cortada.
+CUADRO_MAX_CARACTERES=1200; CUADRO_MAX_RENGLONES=20; CUADRO_COLUMNAS=60
+# 🔴 El guion de AppleScript es FIJO: lo que se aprueba viaja como argumento (`argv`), nunca pegado al código. Una
+# sentencia con comillas o con `" & do shell script "…" & "` se muestra tal cual y no se ejecuta.
+CUADRO_GUION=(
+  -e 'on run argv'
+  -e 'display dialog (item 1 of argv) with title "Producción: ¿lo aprobás?" buttons {"Rechazar", "Aprobar"} default button "Rechazar" with icon caution giving up after 120'
+  -e 'end run'
+)
+# 🔴 El cliente corre lo aprobado y nada más. go-sqlcmd lee su entorno: SQLCMDINI es un archivo de SQL que ejecuta al
+# arrancar (también con -Q), y SQLCMDDBNAME o SQLCMDSERVER cambian a dónde va. Heredarlos dejaría correr algo que el
+# cuadro no mostró, así que la puerta se los saca a sí misma antes de hacer nada.
+unset SQLCMDINI SQLCMDDBNAME SQLCMDSERVER SQLCMDUSER
+for v in $(compgen -e); do case "$v" in SQLCMD*) unset "$v" ;; esac; done
+APROBACION=""   # el campo que suma el registro de lo aprobado
+
+# ── quién pide: la carpeta y la sesión, en la primera línea del cuadro ─────────────────────────
+# Con dos sesiones pidiendo a la vez, la persona tiene que saber de cuál viene cada cuadro. La carpeta es la
+# del comando (las dos últimas partes) y la sesión, la que Claude Code pone en el entorno de la consola. Un subagente no
+# llega acá: lo frena el freno (`prod-access-guard.js`), que es el único que sabe si llama un subagente, porque el
+# entorno de su consola es igual al de la sesión principal (medido en Claude Code 2.1.312).
+quien_pide(){
+  local carpeta sesion
+  # las dos últimas partes; lo que no sea una letra latina, un dígito o `._ /-` sale como «?» (un carácter invisible o
+  # de dirección haría ver otra carpeta)
+  carpeta="$(/usr/bin/perl -CSA -e '
+    my @p = grep { length } split m{/}, $ARGV[0]; my $c = join "/", @p[($#p > 0 ? $#p - 1 : 0) .. $#p];
+    $c =~ s/[^A-Za-z0-9._ \/\x{C0}-\x{17F}-]/?/g; print substr($c, 0, 60)' "$PWD" 2>/dev/null)"
+  [ -n "$carpeta" ] || carpeta="(sin carpeta)"
+  sesion="${CLAUDE_CODE_SESSION_ID:-}"
+  if [[ "$sesion" =~ $SESION_VALIDA ]]; then printf 'Pide: %s · sesión %s (principal)' "$carpeta" "${sesion:0:8}"
+  elif [ -n "${CLAUDECODE:-}" ]; then printf 'Pide: %s · una sesión de Claude Code sin identificador' "$carpeta"
+  else printf 'Pide: %s · una terminal, fuera de Claude Code' "$carpeta"; fi
+}
+
+# ── un cuadro por vez ─────────────────────────────────────────────────────────────────────────
+# Una ráfaga de consultas no apila cuadros: la persona contesta de a uno. El turno es un archivo con el número de la
+# puerta que lo tiene y quién pide: el que lo crea abre su cuadro, los demás esperan a que se conteste, hasta un tope, y
+# si se vence salen 2 diciendo quién tiene el cuadro abierto. Un turno cuyo dueño ya no corre, o más viejo que lo que
+# puede durar un cuadro, se da por abandonado y se toma.
+# 🔴 Se crea con `noclobber` (bash abre el archivo con O_EXCL: lo decide el sistema operativo), no con `mkdir`: el
+# `mkdir` de las herramientas en Rust de algunas distribuciones (uutils) no falla si la carpeta aparece entre que mira y
+# la crea, y tres puertas a la vez abrían tres cuadros (medido en la CI de Linux, Ubuntu 26.04).
+TURNO="$_ESTADO/production-dialog.turn"
+# la espera se acorta sólo en las pruebas (sin el freno instalado), como TYCON_PROD_ROOT
+TURNO_ESPERA=90
+if [ "$INSTALADO" = 0 ] && [[ "${TYCON_PROD_TEST_DIALOG_WAIT:-}" =~ ^[0-9]+$ ]]; then TURNO_ESPERA="$TYCON_PROD_TEST_DIALOG_WAIT"; fi
+TENGO_TURNO=0
+# crea el archivo $1 con $2 adentro sólo si no existía: sale 0 si lo creó esta puerta
+crear_solo_si_no_existe(){ ( set -o noclobber; printf '%s' "$2" > "$1" ) 2>/dev/null; }
+pid_del_turno(){ head -n 1 "$TURNO" 2>/dev/null; }
+soltar_turno(){ [ "$TENGO_TURNO" = 1 ] && [ "$(pid_del_turno)" = "$$" ] && rm -f "$TURNO" 2>/dev/null; TENGO_TURNO=0; return 0; }
+trap soltar_turno EXIT
+# una puerta terminada por señal también suelta su turno: sin esto bash sale sin correr el trap de EXIT
+trap 'exit 143' TERM; trap 'exit 130' INT; trap 'exit 129' HUP
+# cuándo se tocó una carpeta, en segundos; si no se puede leer, ahora. Primero `stat -c %Y` (Linux: GNU y uutils), que en
+# macOS sale con error y sin nada en la salida; después `stat -f %m` (macOS). Al revés no: en Linux `stat -f` habla del
+# sistema de archivos, y lo que imprime puede ser un número que no es la fecha. Y una fecha sin sentido (antes de 2001 o
+# en el futuro) cuenta como ahora: con una fecha vieja de mentira, un turno vivo se daba por abandonado y se lo robaban
+segundos_de(){
+  local s ahora
+  ahora="$(date +%s)"
+  s="$(stat -c %Y "$1" 2>/dev/null)"; [[ "$s" =~ ^[0-9]+$ ]] || s="$(stat -f %m "$1" 2>/dev/null)"
+  if ! [[ "$s" =~ ^[0-9]+$ ]] || [ "$s" -lt 1000000000 ] || [ "$s" -gt $(( ahora + 60 )) ]; then s="$ahora"; fi
+  printf '%s' "$s"
+}
+turno_abandonado(){
+  local pid edad
+  pid="$(pid_del_turno)"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && ! kill -0 "$pid" 2>/dev/null; then return 0; fi
+  edad=$(( $(date +%s) - $(segundos_de "$TURNO") ))
+  # sin pid escrito todavía: recién creado; se da por abandonado sólo si pasó lo que dura un cuadro
+  [ "$edad" -gt $((CUADRO_ESPERA + 30)) ]
+}
+tomar_turno(){ # $1 = lo que dice quién pide (para el que espera)
+  mkdir -p "$(dirname "$TURNO")" 2>/dev/null
+  local desde; desde=$(date +%s)
+  while :; do
+    # el número y quién pide van en la misma escritura que crea el archivo
+    if crear_solo_si_no_existe "$TURNO" "$$
+$1"; then TENGO_TURNO=1; return 0; fi
+    # el turno no se puede crear: la carpeta del estado no se escribe, o en su lugar hay algo que no es un archivo. No se
+    # mira si el turno existe: la puerta que lo tenía puede soltarlo entre la creación y esta línea
+    if [ ! -w "$(dirname "$TURNO")" ] || { [ -e "$TURNO" ] && [ ! -f "$TURNO" ]; }; then muere "no pude crear el turno del cuadro en $(dirname "$TURNO"): sin turno no abro el cuadro ni leo la clave. Revisá que esa carpeta se pueda escribir."; fi
+    # 🔴 Tomar un turno abandonado va de a una puerta, y se vuelve a mirar adentro: dos que vieron el mismo turno muerto,
+    # sin esto, se llevaban también el turno vivo que la primera acababa de crear, y quedaban dos cuadros abiertos.
+    if turno_abandonado && crear_solo_si_no_existe "$TURNO.rescate" "$$"; then
+      turno_abandonado && rm -f "$TURNO"
+      rm -f "$TURNO.rescate" 2>/dev/null
+      continue
+    fi
+    # el candado del rescate se tiene unos milisegundos: uno más viejo que 10 s es de una puerta que murió adentro
+    if [ -f "$TURNO.rescate" ] && [ $(( $(date +%s) - $(segundos_de "$TURNO.rescate") )) -gt 10 ]; then
+      rm -f "$TURNO.rescate" 2>/dev/null
+    fi
+    if [ $(( $(date +%s) - desde )) -ge "$TURNO_ESPERA" ]; then
+      # lo escribió otra puerta con quien_pide(), ya saneado: acá sólo se le sacan los caracteres de control
+      local otro; otro="$(tail -n +2 "$TURNO" 2>/dev/null | tr -d '\000-\037\177' | head -c 200)"
+      anotar "\"host\":\"$HOST\",\"accion\":\"sin-turno\",\"exit\":2"
+      muere "ya hay un cuadro de producción abierto esperando respuesta${otro:+ ($otro)} y la puerta abre uno por vez. Esperé ${TURNO_ESPERA} s y no se contestó: no abrí otro ni leí la clave. Que la persona conteste ese cuadro, y después volvé a intentar, de a una consulta por vez."
+    fi
+    sleep 1
+  done
+}
+
+aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasificar | open-firewall | borrar-grupo)
+  # SSH: el cuadro se abriría en la pantalla de la Mac, donde quizá no hay nadie, o no se abriría
+  if [ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ] || [ "$("$LAUNCHCTL" managername 2>/dev/null)" != Aqua ]; then
+    muere "el cuadro de producción necesita la sesión de la Mac: abrí la terminal en la Mac, no por SSH"
   fi
-  printf '{"ts":"%s",%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" 2>/dev/null >> "$destino" || sin_registro "$destino"
+  [ -x "$OSASCRIPT" ] || muere "no encuentro el programa del cuadro de aprobación ($OSASCRIPT): sin cuadro no se aprueba nada, así que no sigo."
+  local respuesta pide
+  pide="$(quien_pide)"
+  tomar_turno "$pide"
+  respuesta="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=en_US.UTF-8 \
+    /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$((CUADRO_ESPERA + 10))" "$OSASCRIPT" "${CUADRO_GUION[@]}" "$pide
+
+$1" 2>/dev/null)" || respuesta=""
+  soltar_turno
+  # 🔴 Al vencer, `osascript` sale 0 con «gave up:true»: la salida 0 sola no es una aprobación. Vale sólo esta respuesta exacta.
+  if [ "$respuesta" != "button returned:Aprobar, gave up:false" ]; then
+    anotar "\"host\":\"$HOST\",\"accion\":\"rechazada\",\"forma\":\"$2\",\"exit\":2"
+    muere "la persona no aprobó esta $([ "$2" = consulta ] && echo sentencia || echo operación) (rechazó el cuadro, se venció a los ${CUADRO_ESPERA} s o el cuadro no se pudo abrir): no se leyó la clave ni se cambió nada."
+  fi
+  APROBACION=',"aprobacion":"cuadro-propio"'
+}
+
+# ── la ayuda ───────────────────────────────────────────────────────────────────────────────────
+# Sin ella no había forma de descubrir las opciones: en un incidente con producción caída, el asistente no encontró
+# `--open-firewall` y mandó a la persona al portal. No lee la clave, no consulta y no llama a `az`.
+ayuda(){
+  cat <<'AYUDA'
+tycon-prod-sql — la única forma de consultar o cambiar una base de producción. Cada sentencia la aprueba una
+persona en un cuadro de esta Mac; la contraseña no pasa por la conversación. Siempre con la ruta absoluta.
+
+  /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]
+        una sentencia, con cuadro: un select, o un cambio (alter database …, update …). Una por vez, sin GO.
+  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>
+        habilita la IP de esta máquina en el firewall de un Azure SQL de producción, con cuadro. La regla se
+        cierra sola al terminar la sesión.
+  /opt/tycon/bin/tycon-prod-sql --close-firewall <host>     la cierra ya
+  /opt/tycon/bin/tycon-prod-sql --verify                    revisa la instalación y la clave, sin leerla
+  /opt/tycon/bin/tycon-prod-sql --load-key <host>           deja en el Escritorio el archivo para cargar la clave
+  /opt/tycon/bin/tycon-prod-sql --reclassify <host>         baja un host a no producción, con cuadro
+  /opt/tycon/bin/tycon-prod-sql --locks                     qué servidores de producción tienen el candado de Azure
+  /opt/tycon/bin/tycon-prod-sql --delete-group <grupo>      borra un grupo que se prueba que no es de producción
+  /opt/tycon/bin/tycon-prod-sql --azure <comando de az sin «az»>
+        un cambio de administración de un recurso de producción en Azure, con cuadro: alertas
+        (monitor metrics alert create|update|delete) y tamaño o plan (sql db update, sql elastic-pool update).
+        Sus lecturas (list y show, y monitor metrics list) corren sin cuadro. Lo demás no tiene camino aprobado:
+        se le deja el comando a la persona para que lo corra en su terminal.
+
+Emergencia, con producción caída (por ejemplo, la base llegó a su tope y no escribe):
+  1. Probá la conexión: /opt/tycon/bin/tycon-prod-sql <host> 'select 1'
+  2. Si la rechaza el firewall (40615): /opt/tycon/bin/tycon-prod-sql --open-firewall <host>
+  3. Mirá el estado: /opt/tycon/bin/tycon-prod-sql <host> 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'
+     (mide la base a la que entra la puerta: la «base» del servidor en su catálogo; si no la declara, master)
+  4. Mitigá con una sentencia, que la persona aprueba en el cuadro, por ejemplo:
+     /opt/tycon/bin/tycon-prod-sql <host> 'alter database [<base>] modify (maxsize = 250 GB)'
+  5. Contale a la persona qué cambió. La regla del firewall se cierra sola.
+  Detalle: guides/produccion-con-permiso.md § «Emergencia: producción caída».
+AYUDA
 }
 
 # ── argumentos ────────────────────────────────────────────────────────────────────────────────
-[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N]  ·  --cargar-clave <host>  ·  --reclasificar <host>  ·  --verificar  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks  ·  --delete-group <grupo>"
+[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-rows N]  ·  --load-key <host>  ·  --reclassify <host>  ·  --verify  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks  ·  --delete-group <grupo>  ·  --help"
+case "$1" in (--help|-h) [ $# -eq 1 ] || muere "uso: tycon-prod-sql --help  (sola)"; ayuda; exit 0 ;; esac
 
-MODO=consulta; HOST=""; SENTENCIA=""; SESION_CIERRE=""; ARCHIVO=""; ORIGEN=""
+MODO=consulta; HOST=""; SENTENCIA=""; SESION_CIERRE=""
+# La consulta desde un archivo no se acepta: el cuadro de aprobación muestra el comando, no lo que trae el archivo.
+# Se mira cada argumento, en cualquier posición.
+for arg in "$@"; do
+  case "$arg" in (--file|--file=*) muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-rows N] — la consulta va en línea: el cuadro no muestra el contenido de un archivo";; esac
+done
 SESION_VALIDA='^[A-Za-z0-9-]{8,64}$'
 case "${1:-}" in
   # Las formas del firewall aceptan SÓLO el host: ni un rango, ni una IP, ni un nombre de regla, ni una suscripción.
@@ -159,8 +337,8 @@ case "${1:-}" in
   --close-firewall) MODO=close-firewall; HOST="${2:-}"
                     if [ $# -eq 4 ] && [ "$3" = "--session" ] && [[ "$4" =~ $SESION_VALIDA ]]; then SESION_CIERRE="$4"
                     elif [ $# -ne 2 ] || [ -z "$HOST" ]; then muere "uso: tycon-prod-sql --close-firewall <host>  (sólo el host: cierra la regla de esta máquina y ninguna otra)"; fi ;;
-  --reclasificar) MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --reclasificar <host>" ;;
-  --verificar)    MODO=verificar; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --verificar" ;;
+  --reclassify)   MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] && [ -n "$HOST" ] || muere "uso: tycon-prod-sql --reclassify <host>" ;;
+  --verify)       MODO=verificar; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --verify" ;;
   # los candados: sola, sin host ni nada más (mira todos los servidores de producción declarados)
   --locks)        MODO=locks; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --locks  (sola: dice qué servidores de producción tienen el candado de Azure)" ;;
   # borrar un grupo: sólo el nombre; la suscripción, la confirmación y la espera las fija la puerta
@@ -170,26 +348,16 @@ case "${1:-}" in
   # 🔴 Cargar la clave SIN tener que fallar una consulta primero (2026-09-15, pedido del dev: el
   # disparador era «corré algo que falle», que es un rodeo). La clave la sigue tipeando la persona en
   # el archivo que deja la puerta: nunca pasa por la conversación ni la escribe el asistente.
-  --cargar-clave) MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --cargar-clave <host>" ;;
-  -*)             muere "primer argumento inválido: sólo <host>, --cargar-clave, --reclasificar, --verificar, --open-firewall, --close-firewall, --locks o --delete-group" ;;
+  --azure)        MODO=azure; shift
+                  [ $# -ge 1 ] || muere "uso: tycon-prod-sql --azure <el comando de az, sin «az»>  (cada argumento en su lugar)"
+                  AZ_ARGS=("$@") ;;
+  --load-key)     MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --load-key <host>" ;;
+  -*)             muere "primer argumento inválido: sólo <host>, --load-key, --reclassify, --verify, --open-firewall, --close-firewall, --locks, --delete-group o --azure (todas, con su explicación: tycon-prod-sql --help)" ;;
   *)              HOST="$1"; SENTENCIA="${2:-}"
                   [ $# -ge 2 ] || muere "falta la sentencia: tycon-prod-sql <host> 'select …'"
-                  if [ "${2:-}" = "--file" ]; then
-                    # `<host> --file <ruta> --sha256 <sha256> [--max-filas N]`: la consulta desde un archivo
-                    ARCHIVO="${3:-}"; HUELLA_PEDIDA=""
-                    [ $# -ge 5 ] && [ "${4:-}" = "--sha256" ] || muere "uso: tycon-prod-sql <host> --file <ruta> --sha256 <sha256> [--max-filas N]"
-                    HUELLA_PEDIDA="$5"
-                    case "$ARCHIVO" in (-*|'') muere "la ruta del archivo no puede empezar con «-»";; esac
-                    [[ "$HUELLA_PEDIDA" =~ ^[0-9a-f]{64}$ ]] || muere "la huella tiene que ser un sha256 (64 caracteres hexadecimales)"
-                    if [ $# -gt 5 ]; then
-                      [ $# -eq 7 ] && [ "$6" = "--max-filas" ] || muere "uso: tycon-prod-sql <host> --file <ruta> --sha256 <sha256> [--max-filas N]"
-                      case "$7" in (*[!0-9]*|'') muere "--max-filas necesita un número";; esac
-                      MAX_FILAS="$7"
-                    fi
-                    SENTENCIA=""; ORIGEN=archivo
-                  elif [ $# -gt 2 ]; then
-                    [ $# -eq 4 ] && [ "$3" = "--max-filas" ] || muere "sólo se acepta la sentencia en línea y, opcionalmente, --max-filas N (llegaron $# argumentos)"
-                    case "$4" in (*[!0-9]*|'') muere "--max-filas necesita un número";; esac
+                  if [ $# -gt 2 ]; then
+                    [ $# -eq 4 ] && [ "$3" = "--max-rows" ] || muere "sólo se acepta la sentencia en línea y, opcionalmente, --max-rows N (llegaron $# argumentos)"
+                    case "$4" in (*[!0-9]*|'') muere "--max-rows necesita un número";; esac
                     MAX_FILAS="$4"
                   fi ;;
 esac
@@ -199,8 +367,8 @@ if [ -n "$HOST" ] && ! [[ "$HOST" =~ $HOST_VALIDO ]]; then
 fi
 
 # ── la sentencia: en línea, un solo lote, sin argumentos de sqlcmd ────────────────────────────
-# (la de un archivo se lee más abajo, con el intérprete de root ya verificado, y pasa por estas mismas reglas)
 validar_sentencia(){
+  [ -n "${SENTENCIA//[[:space:]]/}" ] || muere "la sentencia está vacía: no hay nada para mostrar en el cuadro"
   case "$SENTENCIA" in
     -*) muere "la sentencia no puede empezar con «-»: no se aceptan argumentos de sqlcmd (ni -i, ni -Q, ni -v)" ;;
   esac
@@ -217,46 +385,80 @@ validar_sentencia(){
     muere "la sentencia tiene un comando del cliente (una línea que empieza con «:» o «!!»): eso lee archivos o abre un shell, no consulta la base"
   fi
 }
-[ "$MODO" = consulta ] && [ -z "$ORIGEN" ] && validar_sentencia
+[ "$MODO" = consulta ] && validar_sentencia
+
+# ── Azure: qué operación es, si tiene camino y cómo se ve en el cuadro ────────────────────────────────────────────
+# La operación son las palabras antes de la primera opción. Los cambios piden el cuadro; las lecturas no cambian nada y
+# corren sin él (quedan anotadas igual). El firewall tiene su forma propia, y lo demás no tiene camino aprobado.
+validar_azure(){
+  local a op="" en_op=1 texto="az"
+  for a in "${AZ_ARGS[@]}"; do
+    case "$a" in
+      # 🔴 az lee un archivo con «@» al principio Y con «@» después del primer «=» (`--name=@ruta`, `--set clave=@ruta`;
+      # «@-» lee la entrada estándar). Mirar sólo el principio dejaba que una lectura sin cuadro trajera a la conversación
+      # cualquier archivo, también la credencial de Azure (pase adversarial del pedido).
+      @*|*=@*) muere "un argumento trae «@» al principio o después de un «=» (${a}): az leería el contenido de un archivo, y ni el cuadro ni la persona lo ven. Escribí el valor en línea." ;;
+      *"'"*) muere "un argumento tiene una comilla simple: el cuadro no lo podría mostrar tal cual. Escribilo sin ella." ;;
+      # el detalle de az imprime los pedidos HTTP con sus encabezados: la credencial de la sesión llegaría a la conversación
+      --debug|--verbose) muere "${a} no pasa por la puerta: az imprimiría los pedidos con sus encabezados, y la credencial de Azure llegaría a la conversación." ;;
+    esac
+    if [ "$en_op" = 1 ]; then case "$a" in (-*) en_op=0 ;; (*) op="${op:+$op }$a" ;; esac; fi
+    if [[ "$a" =~ ^[A-Za-z0-9._:/=,+%-]+$ ]]; then texto="$texto $a"; else texto="$texto '$a'"; fi
+  done
+  op="$(printf '%s' "$op" | tr '[:upper:]' '[:lower:]')"
+  case "$op" in
+    "monitor metrics alert create"|"monitor metrics alert update"|"monitor metrics alert delete"|"sql db update"|"sql elastic-pool update")
+      AZ_LECTURA=0 ;;
+    "monitor metrics alert show"|"monitor metrics alert list"|"monitor metrics list"|"monitor metrics list-definitions"|"sql db show"|"sql db list"|"sql db list-usages"|"sql db list-editions"|"sql server show"|"sql server list"|"sql elastic-pool show"|"sql elastic-pool list")
+      AZ_LECTURA=1 ;;
+    "sql server firewall-rule"*)
+      muere "la regla de firewall no va por --azure: la IP de esta máquina se habilita con /opt/tycon/bin/tycon-prod-sql --open-firewall <host> (con cuadro, y se cierra sola). Otra regla no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal." ;;
+    *)
+      muere "«${op:-esa operación}» no tiene camino aprobado por la puerta: dejale el comando a la persona para que lo corra en su terminal, y decile qué hace." ;;
+  esac
+  AZ_OP="$op"; SENTENCIA="$texto"
+}
+[ "$MODO" = azure ] && validar_azure
 
 # ── el intérprete (instalada: el de root, verificado) y el índice ─────────────────────────────
 [ -n "$NODE" ] && [ -x "$NODE" ] || muere "no encuentro el intérprete para leer el índice de servidores"
 [ "$INSTALADO" = 1 ] && verificar_binario "$NODE" "/opt/tycon/bin/node" "el intérprete"
 [ -f "$INDICE_JS" ] || muere "no encuentro el índice de servidores ($INDICE_JS)"
 
-# ── la consulta desde un archivo: se lee UNA vez y se corren esos mismos bytes ───────────────────
-# El freno mostró el archivo y su huella antes del cuadro. Acá se lee una sola vez a memoria y se recalcula la huella
-# sobre esos bytes: si el archivo cambió después del cuadro, no coincide y no se conecta; y como no se vuelve a leer,
-# cambiarlo después tampoco cambia lo que corre. Las mismas condiciones que mira el freno (archivo común, 64 KB, UTF-8).
-if [ "$ORIGEN" = archivo ]; then
-  # el error del intérprete va a un temporal propio (nombre al azar, no uno predecible en la carpeta del estado)
-  ERR_ARCHIVO="$(mktemp "${TMPDIR:-/tmp}/tycon-archivo.XXXXXX")" || muere "no pude crear un temporal para leer el archivo"
-  # `--` antes de los argumentos: una ruta que empezara con «-» sería una opción del intérprete (cargaría otro código)
-  SENTENCIA="$("$NODE" -e '
-    const fs = require("fs"), path = require("path"), crypto = require("crypto");
-    const [ruta, pedida] = process.argv.slice(1);
-    const fuera = (m) => { console.error(m); process.exit(2); };
-    let st; try { st = fs.lstatSync(ruta); } catch (e) { fuera(`no encuentro el archivo (${e.code || e.message})`); }
-    if (st.isSymbolicLink() || !st.isFile()) fuera("no es un archivo común (ni un enlace ni una carpeta)");
-    if (st.size > 64 * 1024) fuera("mide más de 64 KB");
-    const base = path.basename(ruta);
-    if (/^(?:production|produccion)(?:\.json|\.log|-(?:index|memory|firewall)\.json|-(?:indice|memoria)\.json)$/.test(base)) fuera("es un archivo protegido por el freno, no una consulta");
-    const buf = fs.readFileSync(ruta);
-    const sha = crypto.createHash("sha256").update(buf).digest("hex");
-    if (sha !== pedida) fuera(`la huella no coincide: el archivo cambió después del cuadro (ahora es ${sha})`);
-    let texto; try { texto = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (_) { fuera("no es texto UTF-8"); }
-    if (/[\x00-\x08\x0b-\x1f\x7f]/.test(texto)) fuera("tiene caracteres de control: en pantalla se habría visto otra cosa que lo que corre");
-    if (/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u2028\u2029]/.test(texto)) fuera("tiene caracteres invisibles o de dirección");
-    process.stdout.write(texto);
-  ' -- "$ARCHIVO" "$HUELLA_PEDIDA" 2>"$ERR_ARCHIVO")" || {
-    motivo="$(cat "$ERR_ARCHIVO" 2>/dev/null)"; rm -f "$ERR_ARCHIVO"
-    muere "no corro la consulta del archivo: ${motivo:-no pude leerlo}"
-  }
-  rm -f "$ERR_ARCHIVO"
-  validar_sentencia
+# ── la sentencia: lo que engañaría en el cuadro ──────────────────────────────────────────────────
+# La misma lista que el freno, mirada por el intérprete ya verificado y no por grep: grep depende de la configuración
+# regional, y con LC_ALL=C no reconoce un carácter de varios bytes. Si la revisión no se puede hacer, no se conecta.
+if [ "$MODO" = consulta ] || [ "$MODO" = azure ]; then
+  motivo="$(printf '%s' "$SENTENCIA" | "$NODE" -e '
+    const fuera = (m) => { process.stdout.write(m); process.exit(2); };
+    let t; try { t = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(require("fs").readFileSync(0)); } catch (_) { fuera("no es texto UTF-8 válido"); }
+    if (t.includes("\u{fffd}")) fuera("no es texto UTF-8 válido");
+    if (/[\x00-\x08\x0b-\x1f\x7f-\x9f]/u.test(t)) fuera("tiene caracteres de control: en el cuadro se habría visto otra cosa que lo que corre");
+    if (/[\u{ad}\u{34f}\u{61c}\u{115f}\u{1160}\u{17b4}\u{17b5}\u{180b}-\u{180e}\u{200b}-\u{200f}\u{202a}-\u{202e}\u{2028}\u{2029}\u{2060}-\u{206f}\u{2800}\u{3164}\u{fe00}-\u{fe0f}\u{feff}\u{ffa0}\u{fff9}-\u{fffc}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u.test(t)) fuera("tiene caracteres invisibles o de dirección: en el cuadro se habría leído otra cosa que lo que corre");
+  ')" || muere "la sentencia ${motivo:-no se pudo revisar}: mandala sin esos caracteres"
+  # lo que el cuadro no muestra entero no se manda a aprobar: cada renglón cuenta como los que ocupa al cortarse, con el
+  # ancho que ocupa en pantalla (un tabulador llega al múltiplo de 8 y un carácter ancho vale 2), como cuenta el freno.
+  # Una lectura de --azure no abre cuadro: no tiene tope.
+  { [ "$MODO" = azure ] && [ "$AZ_LECTURA" = 1 ]; } || printf '%s' "$SENTENCIA" | "$NODE" -e '
+    const t = require("fs").readFileSync(0, "utf8"); const [max, maxR, cols] = process.argv.slice(1).map(Number);
+    const doble = /[\u{1100}-\u{10ffff}]|\p{Extended_Pictographic}/u;
+    let renglones = 0;
+    for (const l of t.split("\n")) {
+      let filas = 1, col = 0;
+      for (const c of l) {
+        const ancho = c === "\t" ? 8 - (col % 8) : doble.test(c) ? 2 : 1;
+        if (col + ancho > cols) { filas++; col = 0; }
+        col += c === "\t" ? 8 - (col % 8) : ancho;
+      }
+      renglones += filas;
+    }
+    process.exit([...t].length > max || renglones > maxR ? 2 : 0);
+  ' "$CUADRO_MAX_CARACTERES" "$CUADRO_MAX_RENGLONES" "$CUADRO_COLUMNAS" \
+    || muere "la sentencia es demasiado larga para que el cuadro la muestre entera: partila (el cuadro muestra hasta $CUADRO_MAX_CARACTERES caracteres en $CUADRO_MAX_RENGLONES renglones de $CUADRO_COLUMNAS)."
 fi
 
 if [ "$MODO" = reclasificar ]; then
+  aprobar "Bajar $HOST a no producción en esta máquina: el freno deja de frenarlo y la puerta deja de atenderlo." reclasificar
   "$NODE" -e '
     const m = require(process.argv[1]);
     const host = m.normalizar(process.argv[2]);
@@ -269,7 +471,7 @@ if [ "$MODO" = reclasificar ]; then
     console.log(`«${host}» ya no se trata como producción en esta máquina.`);
     console.log("Si algún proyecto lo sigue declarando así en su .tycon/production.json, volverá a frenarse.");
   ' "$INDICE_JS" "$HOST" || muere "no pude reclasificar «${HOST}»"
-  anotar "\"host\":\"$HOST\",\"accion\":\"reclasificar\",\"exit\":0"
+  anotar "\"host\":\"$HOST\",\"accion\":\"reclasificar\"$APROBACION,\"exit\":0"
   exit 0
 fi
 
@@ -327,13 +529,20 @@ if [ "$MODO" = verificar ]; then
       process.exitCode = 7;
     }
   ' "$INDICE_JS" || MAL=1
-  # la memoria de producción: si la tocaron a mano, acá se vuelve a sellar (lo aprobaste en el cuadro)
-  "$NODE" -e '
-    const m = require(process.argv[1]);
-    const i = m.construir({ home: process.env.HOME });
-    if (i.memoria_alterada) { i.memoria_alterada = false; m.guardar(i, process.env.HOME, { resellar: true }); console.log("memoria de producción: estaba alterada — revisada y vuelta a sellar."); }
-    else console.log("memoria de producción: sana.");
-  ' "$INDICE_JS" || { echo "memoria de producción: 🔴 no pude revisarla"; MAL=1; }
+  # La memoria tocada sólo en lo de antes del renombre (la memoria o el índice con su nombre viejo): lo legible se suma a
+  # la nueva, se sella y lo viejo se borra. Sumar nunca baja un servidor. Con la memoria nueva tocada no se sella nada:
+  # eso lo decide una persona con --reclassify, y acá no se sella por ningún otro camino.
+  if memoria="$("$NODE" -e '
+    const r = require(process.argv[1]).resolverViejos({ home: process.env.HOME });
+    if (r.sellado && r.resuelto) console.log("memoria de producción: lo de antes del renombre pasó a la nueva y se borró ✓");
+    else if (r.resuelto) console.log("memoria de producción: sana.");
+    if (!r.resuelto) { console.log(`memoria de producción: 🔴 ${r.motivo}`); process.exitCode = 7; }
+  ' "$INDICE_JS")"; then
+    echo "$memoria"
+    case "$memoria" in *"se borró"*) anotar "\"accion\":\"verify-memory\",\"exit\":0" ;; esac
+  else
+    echo "${memoria:-memoria de producción: 🔴 no pude revisarla}"; MAL=1
+  fi
   # 🔴 Sale ≠ 0 cuando algo está mal. Salir siempre 0 hacía que «lo revisé y está todo bien» y
   # «lo revisé y está roto» fueran el mismo veredicto para quien lo llama desde un script
   # (revisores del Step 5, 2026-09-15).
@@ -353,8 +562,11 @@ SUBS_ACTIVAS="[?state=='Enabled' || state=='Warned' || state=='PastDue'].id"
 correr_az(){ env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$AZ_TOPE" "$AZ" "$@"; }
 # Deja SUB y RG del servidor CORTO. Ante una falla llama a $FALLA_AZ con el motivo y devuelve 1: el firewall sale ahí
 # (fallo_fw); los candados anotan «no sé» y siguen con el próximo servidor. $TOPE_DICE completa el motivo del tope.
+# Con `cero-vale`, un servidor que no aparece en ninguna suscripción devuelve 2 sin llamar a $FALLA_AZ, pero sólo si az
+# pudo listar todas: una suscripción que no contestó puede ser justo la que lo tiene. Deja en SUB_LISTADA la primera
+# suscripción con forma válida (vacía si no hubo ninguna): la consulta del nombre se hace contra una de la cuenta.
 ubicar_servidor(){
-  local subs salida rc s rg encontrados=0; SUB=""; RG=""
+  local subs salida rc s rg encontrados=0 fallidas=0; SUB=""; RG=""; SUB_LISTADA=""
   # las suscripciones activas: Enabled, y también Warned y PastDue, que siguen operando y tienen recursos
   subs="$(correr_az account list --query "$SUBS_ACTIVAS" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
   salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
@@ -362,13 +574,40 @@ ubicar_servidor(){
   [ "$rc" = 0 ] || { "$FALLA_AZ" "az no pudo listar las suscripciones (código $rc): $(printf '%s' "$salida" | head -1). Si no iniciaste sesión: az login"; return 1; }
   for s in $subs; do
     printf '%s' "$s" | grep -qE '^[A-Za-z0-9-]+$' || continue
+    [ -n "$SUB_LISTADA" ] || SUB_LISTADA="$s"
     rg="$(correr_az sql server list --subscription "$s" --query "[?name=='$CORTO'].resourceGroup" -o tsv 2>/dev/null)"; rc=$?
     [ "$rc" = 142 ] && { "$FALLA_AZ" "az no contestó en ${AZ_TOPE} s (tope) al buscar el servidor. Reintentá."; return 1; }
+    [ "$rc" = 0 ] || fallidas=$((fallidas+1))
     for g in $rg; do encontrados=$((encontrados+1)); SUB="$s"; RG="$g"; done
   done
+  if [ "$encontrados" = 0 ] && [ "${1:-}" = cero-vale ]; then
+    [ "$fallidas" = 0 ] && return 2
+    "$FALLA_AZ" "el servidor «${CORTO}» no aparece, pero az no pudo listar $fallidas suscripción(es): no sé si sigue existiendo."; return 1
+  fi
   [ "$encontrados" = 1 ] || { "$FALLA_AZ" "el servidor «${CORTO}» aparece en $encontrados lugar(es) entre tus suscripciones: necesito exactamente uno, no elijo a ciegas."; return 1; }
   printf '%s' "$RG" | grep -qE '^[A-Za-z0-9._()-]+$' || { "$FALLA_AZ" "el grupo de recursos que devolvió az («${RG}») no tiene forma de nombre."; return 1; }
 }
+
+# ── Azure: el cambio de administración, con cuadro; la lectura, sin él ───────────────────────────────────────────
+# az corre con el entorno limpio de `correr_az`: nunca ve la clave de la base ni nada del Llavero. Cada argumento llega en
+# su lugar, sin pasar por un shell.
+if [ "$MODO" = azure ]; then
+  [ -n "$AZ" ] || muere "no encuentro az en sus rutas fijas (/opt/homebrew/bin, /usr/local/bin, /usr/bin): la puerta no usa el del PATH."
+  if [ "$AZ_LECTURA" = 1 ]; then
+    APROBACION=',"aprobacion":"lectura-sin-cuadro"'; ACCION=azure-lectura
+  else
+    aprobar "Cambio de administración en Azure (producción):
+
+$SENTENCIA" azure
+    ACCION=azure
+  fi
+  SALIDA="$(correr_az "${AZ_ARGS[@]}" 2>&1)"; RC=$?
+  printf '%s\n' "$SALIDA"
+  [ "$RC" = 142 ] && printf 'az no contestó en %s s (tope): no sé si el cambio quedó. Miralo con la lectura (list o show) antes de repetirlo.\n' "$AZ_TOPE"
+  printf 'rc=%s\n' "$RC"
+  anotar "\"accion\":\"$ACCION\",\"operacion\":\"$AZ_OP\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\"$APROBACION,\"exit\":$RC"
+  exit "$RC"
+fi
 
 # ── los candados: qué servidores de producción declarados tienen el candado de Azure ───────────────────────────
 # Sólo lee: `account list`, `sql server list` y `lock list`. Cuenta un candado CanNotDelete o ReadOnly sobre el servidor
@@ -526,6 +765,15 @@ EOF
     esac
   done
 
+  # 🔴 Probado que no tiene nada de producción, el borrado lo aprueba una persona en el cuadro de la puerta: no tiene vuelta
+  # atrás, y es la única aprobación que tiene (la configuración administrada no pregunta por la puerta)
+  # lo que no tiene vuelta atrás va primero, y la lista con tope: el cuadro no puede cortar justo la advertencia
+  # shellcheck disable=SC2206 # los nombres ya pasaron su charset (HOST_VALIDO): sin espacios ni comodines
+  _servs=($LISTA_S)
+  LISTA_C=" ${_servs[*]:0:5}"; [ "${#_servs[@]}" -gt 5 ] && LISTA_C="$LISTA_C y $(( ${#_servs[@]} - 5 )) más"
+  [ "${#_servs[@]}" -gt 0 ] || LISTA_C=""
+  aprobar "No tiene vuelta atrás: borrar el grupo de recursos ${GRUPO_B} (suscripción ${SUB}), con ${RECURSOS_N} recurso(s) y ${SERVIDORES_N} servidor(es) SQL, ninguno declarado como producción${LISTA_C:+:${LISTA_C}}." borrar-grupo
+
   # el pedido de borrado
   salida="$(correr_az group delete -n "$GRUPO_B" --subscription "$SUB" --yes --no-wait 2>&1)"; rc=$?
   [ "$rc" = 142 ] && fallo_grupo "az no contestó en ${AZ_TOPE} s (tope) al pedir el borrado: no sé si el pedido salió. Mirá: az group exists -n $GRUPO_B --subscription $SUB"
@@ -560,13 +808,13 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
   HOST="$("$NODE" -e 'const m = require(process.argv[1]); process.stdout.write(m.normalizar(process.argv[2]) || "")' "$INDICE_JS" "$HOST" 2>/dev/null)"
   [[ "$HOST" =~ $HOST_VALIDO ]] || muere "el host no tiene forma de nombre de host."
 
-  # El estado de las reglas abiertas: host, regla, IP, desde cuándo, qué sesiones la usan y una versión (`rev`) que
-  # sube con cada apertura. Lo escriben sólo la puerta y su hook, de a uno (un candado): dos puertas a la vez se
+  # El estado de las reglas abiertas: host, regla, IP, suscripción del servidor, desde cuándo, qué sesiones la usan y
+  # una versión (`rev`) que sube con cada apertura. Lo escriben sólo la puerta y su hook, de a uno (un candado): dos puertas a la vez se
   # pisaban la lista de sesiones. Ilegible es «no sé» (sale 3) y no se pisa.
   estado_fw(){ # $1 = operación, resto = argumentos
     TYCON_FW_LOG="$REGISTRO" "$NODE" -e '
       const fs = require("fs"), path = require("path");
-      const [archivo, op, host, a, b, c] = process.argv.slice(1);
+      const [archivo, op, host, a, b, c, d, g] = process.argv.slice(1);
       const candado = `${archivo}.lock`;
       const dormir = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
       fs.mkdirSync(path.dirname(archivo), { recursive: true });
@@ -598,9 +846,16 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
       const r = e.reglas.find((x) => x.host === host);
       if (op === "has") process.exit(r || abiertaEnElRegistro() ? 0 : 1);
       if (op === "rev") { process.stdout.write(String(r ? r.rev || 0 : "")); process.exit(0); }
-      if (op === "open") { // a = regla, b = ip, c = sesión. Se escribe ANTES de pedirle la regla a Azure: un tope deja rastro
-        if (r) { r.regla = a; r.ip = b; r.rev = (r.rev || 0) + 1; if (c && !r.sesiones.includes(c)) r.sesiones.push(c); }
-        else e.reglas.push({ host, regla: a, ip: b, abierta: new Date().toISOString(), sesiones: c ? [c] : [], rev: 1 });
+      if (op === "location") { // «suscripción|grupo» donde se abrió: los del estado o, sin estado, los de la última apertura del registro
+        let l0 = r && r.sub && r.rg ? r : null;
+        if (!l0) try { for (const l of fs.readFileSync(process.env.TYCON_FW_LOG, "utf8").split("\n")) { let j; try { j = JSON.parse(l); } catch (_) { continue; }
+          if (j && j.host === host && j.accion === "open-firewall") l0 = j; } } catch (_) {}
+        const ok = l0 && typeof l0.sub === "string" && typeof l0.rg === "string" && l0.sub && l0.rg;
+        process.stdout.write(ok ? `${l0.sub}|${l0.rg}` : ""); process.exit(0);
+      }
+      if (op === "open") { // a = regla, b = ip, c = sesión, d = suscripción, g = grupo. Se escribe ANTES de pedirle la regla a Azure: un tope deja rastro
+        if (r) { r.regla = a; r.ip = b; if (d && g) { r.sub = d; r.rg = g; } r.rev = (r.rev || 0) + 1; if (c && !r.sesiones.includes(c)) r.sesiones.push(c); }
+        else e.reglas.push({ host, regla: a, ip: b, sub: d || undefined, rg: g || undefined, abierta: new Date().toISOString(), sesiones: c ? [c] : [], rev: 1 });
         guardar();
       } else if (op === "use") { if (r && a && !r.sesiones.includes(a)) { r.sesiones.push(a); guardar(); } }
       else if (op === "release") { // saca la sesión; imprime «sesiones vivas que siguen|versión»
@@ -615,7 +870,7 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
   }
   ACCION="$MODO"; POR=""; [ -n "$SESION_CIERRE" ] && POR=',"por":"fin-de-sesion"'
   fallo_fw(){ # $1 = motivo · anota el intento y sale 2
-    anotar "\"host\":\"$HOST\",\"accion\":\"$ACCION\",\"regla\":\"${REGLA:-}\",\"sesion\":\"$SESION\"$POR,\"exit\":2"
+    anotar "\"host\":\"$HOST\",\"accion\":\"$ACCION\",\"regla\":\"${REGLA:-}\",\"sesion\":\"$SESION\"$POR$APROBACION,\"exit\":2"
     muere "$1"
   }
 
@@ -634,6 +889,8 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
     *) muere "«${HOST}» no es un Azure SQL (*.database.windows.net): la puerta sólo maneja el firewall de Azure SQL." ;;
   esac
   [[ "$CORTO" =~ ^[a-z0-9][a-z0-9-]*$ ]] || muere "el nombre corto del servidor («${CORTO}») no tiene forma de nombre de Azure SQL."
+  # abrir lo aprueba una persona antes de hacer nada; cerrar es la dirección segura y no pide cuadro (también al terminar la sesión)
+  [ "$MODO" = open-firewall ] && aprobar "Abrir el firewall de $HOST para esta máquina (se cierra solo al terminar la sesión)." open-firewall
 
   # el nombre de la regla: fijo por máquina, sin el nombre del equipo ni de la persona
   UUID="$("$RAIZ/usr/sbin/ioreg" -rd1 -c IOPlatformExpertDevice 2>/dev/null | sed -n 's/.*"IOPlatformUUID" = "\([^"]*\)".*/\1/p' | head -1)"
@@ -656,7 +913,58 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
     else
       REV="$(estado_fw rev "$HOST" 2>/dev/null)" || REV=""
     fi
-    ubicar_servidor
+    # Un servidor borrado se lleva sus reglas. Eso se da por cerrado sólo con el lugar anotado al abrir (suscripción y
+    # grupo): az pregunta por ese servidor puntual y tiene que contestar «no existe». Un listado vacío no alcanza: Azure
+    # no muestra lo que la cuenta ya no puede ver, y un permiso vencido se leería como un servidor borrado. Si dice que
+    # no existe, se busca en las demás suscripciones por si se movió. Sin lugar anotado (una regla abierta antes de
+    # anotarlo), un servidor que no aparece en ninguna suscripción se da por cerrado sólo si Azure dice que su nombre
+    # está libre: el nombre forma el punto de conexión público, así que no lo puede tener ningún servidor, tampoco uno
+    # que la cuenta no ve. Cualquier otra respuesta es «no sé».
+    LUGAR="$(estado_fw location "$HOST" 2>/dev/null)" || LUGAR=""
+    SUB_ANOTADA="${LUGAR%%|*}"; RG_ANOTADO="${LUGAR#*|}"
+    [[ "$SUB_ANOTADA" =~ ^[A-Za-z0-9-]+$ ]] && [[ "$RG_ANOTADO" =~ ^[A-Za-z0-9._()-]+$ ]] || { SUB_ANOTADA=""; RG_ANOTADO=""; }
+    BORRADO=0; UBICADO=0
+    if [ -n "$SUB_ANOTADA" ]; then
+      salida="$(correr_az sql server show --subscription "$SUB_ANOTADA" -g "$RG_ANOTADO" -n "$CORTO" --query name -o tsv 2>&1)"; rc=$?
+      [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): la regla queda anotada como abierta. Reintentá: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
+      if [ "$rc" = 0 ]; then SUB="$SUB_ANOTADA"; RG="$RG_ANOTADO"; UBICADO=1
+      elif printf '%s' "$salida" | grep -qE '\((ResourceNotFound|ResourceGroupNotFound)\)'; then
+        ubicar_servidor cero-vale; rc=$?; [ "$rc" = 2 ] && BORRADO=1; [ "$rc" = 0 ] && UBICADO=1
+      else
+        fallo_fw "az no pudo mirar el servidor donde se abrió la regla (${SUB_ANOTADA}/${RG_ANOTADO}, código $rc): $(printf '%s' "$salida" | head -1). Queda anotada como abierta. Reintentá: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
+      fi
+    fi
+    if [ "$BORRADO" = 1 ]; then
+      echo "el servidor $CORTO ya no existe donde se abrió la regla (${SUB_ANOTADA}/${RG_ANOTADO}) y no lo encuentro en tus suscripciones: la doy por cerrada (la regla $REGLA se borra con el servidor)"
+      estado_fw remove "$HOST" "$REV" >/dev/null || true
+      anotar "\"host\":\"$HOST\",\"accion\":\"close-firewall\",\"regla\":\"$REGLA\",\"sesion\":\"$SESION\"$POR,\"servidor\":\"borrado\",\"exit\":0"
+      exit 0
+    fi
+    if [ "$UBICADO" != 1 ]; then
+      ubicar_servidor cero-vale; rc=$?
+      if [ "$rc" = 2 ]; then
+        NO_APARECE="el servidor «${CORTO}» aparece en 0 lugar(es) entre tus suscripciones"
+        [ -n "$SUB_LISTADA" ] || fallo_fw "${NO_APARECE}, y tu cuenta no tiene ninguna suscripción válida donde mirarlo: no sé si sigue existiendo."
+        # stdout y stderr aparte: una advertencia de az en stderr no puede cambiar la respuesta
+        NOMBRE="$(correr_az rest --method post \
+          --uri "https://management.azure.com/subscriptions/$SUB_LISTADA/providers/Microsoft.Sql/checkNameAvailability?api-version=2023-08-01" \
+          --headers Content-Type=application/json \
+          --body "{\"name\":\"$CORTO\",\"type\":\"Microsoft.Sql/servers\"}" \
+          --query available -o json 2>"$_ESTADO/.az-err-$$")"; rc=$?
+        salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
+        [ "$rc" = 142 ] && fallo_fw "${NO_APARECE} y az no contestó en ${AZ_TOPE} s (tope) si su nombre está libre: no sé si sigue existiendo. Queda anotada como abierta."
+        [ "$rc" = 0 ] || fallo_fw "${NO_APARECE} y az no pudo consultar si su nombre está libre (código $rc): $(printf '%s' "$salida" | head -1). No sé si sigue existiendo: queda anotada como abierta."
+        [ "$NOMBRE" = false ] && fallo_fw "${NO_APARECE}, pero Azure dice que su nombre está en uso: el servidor existe en un lugar que tu cuenta no ve. Queda anotada como abierta."
+        [ "$NOMBRE" = true ] || fallo_fw "${NO_APARECE} y la consulta del nombre trajo una respuesta que no entiendo: no sé si sigue existiendo. Queda anotada como abierta."
+        # con la prueba: se saca del estado sólo si nadie la volvió a abrir mientras se preguntaba (sin entrada, una
+        # que haya aparecido tampoco coincide), y el cierre se anota sólo si el estado se pudo escribir
+        sacada="$(estado_fw remove "$HOST" "${REV:-sin-entrada}")" || fallo_fw "no pude sacar la regla del estado del firewall: no la doy por cerrada. Queda anotada como abierta."
+        [ "$sacada" = reabierta ] && fallo_fw "la regla $REGLA se volvió a abrir mientras preguntaba si el servidor existe: no la doy por cerrada."
+        echo "el servidor $CORTO ya no existe: no aparece en ninguna de tus suscripciones y Azure dice que su nombre está libre. Doy por cerrada la regla $REGLA (se borró con el servidor)"
+        anotar "\"host\":\"$HOST\",\"accion\":\"close-firewall\",\"regla\":\"$REGLA\",\"sesion\":\"$SESION\"$POR,\"servidor\":\"borrado\",\"prueba\":\"nombre-libre\",\"exit\":0"
+        exit 0
+      fi
+    fi
     salida="$(regla_az show 2>&1)"; rc=$?
     [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): la regla queda anotada como abierta. Reintentá: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
     if [ "$rc" = 0 ]; then
@@ -707,11 +1015,11 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
   if [ "$rc" = 0 ]; then OP=update; else OP=create; fi
   # 🔴 Se anota ANTES de pedirla: si az llega al tope o falla después de crearla, la regla puede existir en Azure, y
   # el fin de sesión o el barrido la tienen que encontrar. Sin poder anotarla, no se abre.
-  estado_fw open "$HOST" "$REGLA" "$IP" "$SESION" || fallo_fw "no pude anotar la regla en el estado del firewall: no la abro sin poder cerrarla después."
+  estado_fw open "$HOST" "$REGLA" "$IP" "$SESION" "$SUB" "$RG" || fallo_fw "no pude anotar la regla en el estado del firewall: no la abro sin poder cerrarla después."
   salida="$(regla_az "$OP" --start-ip-address "$IP" --end-ip-address "$IP" 2>&1)"; rc=$?
   [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): no sé si la regla quedó. Queda anotada: se cierra al terminar la sesión, o ya: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
   [ "$rc" = 0 ] || fallo_fw "az no pudo $([ "$OP" = create ] && echo crear || echo actualizar) la regla (código $rc): $(printf '%s' "$salida" | head -1). Queda anotada por si quedó a medias: se cierra al terminar la sesión."
-  anotar "\"host\":\"$HOST\",\"accion\":\"open-firewall\",\"regla\":\"$REGLA\",\"ip\":\"$IP\",\"sesion\":\"$SESION\",\"exit\":0"
+  anotar "\"host\":\"$HOST\",\"accion\":\"open-firewall\",\"regla\":\"$REGLA\",\"ip\":\"$IP\",\"sub\":\"$SUB\",\"rg\":\"$RG\",\"sesion\":\"$SESION\"$APROBACION,\"exit\":0"
   echo "regla $REGLA abierta para $IP en $CORTO — se cierra sola al terminar esta sesión"
   exit 0
 fi
@@ -751,7 +1059,7 @@ dejar_command(){
    No pasan por la conversación, y el archivo se borra solo al terminar." 3
 }
 
-# `--cargar-clave <host>`: deja el archivo y lo abre, sin consultar nada. El host ya se validó arriba
+# `--load-key <host>`: deja el archivo y lo abre, sin consultar nada. El host ya se validó arriba
 # (tiene que estar declarado como producción y traer su «llavero»), así que acá sólo queda escribirlo.
 if [ "$MODO" = cargar-clave ]; then
   [ -f "$PLANTILLA" ] || muere "falta la plantilla para cargar la clave ($PLANTILLA). Reinstalá el freno."
@@ -768,6 +1076,12 @@ if [ "$MODO" = cargar-clave ]; then
 fi
 
 [ -f "$LLAVERO_PROPIO" ] || [ -n "$RAIZ" ] || dejar_command
+
+# 🔴 La persona aprueba ANTES de cualquier llamada a `security`: rechazado, la clave no se lee ni se mira su entrada.
+aprobar "Servidor: $HOST
+
+Sentencia:
+$SENTENCIA" consulta
 
 # (AC 21) la entrada tiene que confiar SÓLO en la herramienta del sistema. Si no se puede mirar, NO se
 # lee: «no pude verificar» no es «está bien» (revisores del Step 5, 2026-09-15).
@@ -802,7 +1116,7 @@ USUARIO="$(printf '%s' "$atributos" | sed -n 's/.*"acct"<blob>="\([^"]*\)".*/\1/
 # clave, cargala», y el que llama mandaba a cargar de nuevo una clave que ya está (Step 5).
 CLAVE="$("$SECURITY" find-generic-password -s "$LLAVERO" -w "$LLAVERO_PROPIO" 2>/dev/null)" || CLAVE=""
 [ -n "$CLAVE" ] || muere "la entrada «${LLAVERO}» está en el Llavero pero no pude leer su contraseña
-   (¿el llavero quedó bloqueado, o le cambiaron el permiso?). Revisalo con: tycon-prod-sql --verificar"
+   (¿el llavero quedó bloqueado, o le cambiaron el permiso?). Revisalo con: tycon-prod-sql --verify"
 
 # ── la consulta ───────────────────────────────────────────────────────────────────────────────
 # -x: sin sustitución de variables — una sentencia con `$(SQLCMDPASSWORD)` devolvería la clave.
@@ -855,12 +1169,18 @@ RC=$?
 CLAVE=""
 FILAS="$(printf '%s\n' "$SALIDA" | wc -l | tr -d ' ')"
 printf '%s\n' "$SALIDA" | head -n "$MAX_FILAS"
-[ "$FILAS" -gt "$MAX_FILAS" ] && printf '… (cortado en %s de %s líneas; pedí más con --max-filas N)\n' "$MAX_FILAS" "$FILAS"
+[ "$FILAS" -gt "$MAX_FILAS" ] && printf '… (cortado en %s de %s líneas; pedí más con --max-rows N)\n' "$MAX_FILAS" "$FILAS"
 printf 'rc=%s\n' "$RC"
-# desde un archivo, la huella es la del archivo (la que se vio en el cuadro) y se anota el origen; nunca la ruta ni el contenido
-if [ "$ORIGEN" = archivo ]; then
-  anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$HUELLA_PEDIDA\",\"origen\":\"archivo\",\"exit\":$RC,\"filas\":$FILAS"
-else
-  anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\",\"exit\":$RC,\"filas\":$FILAS"
+# El rechazo del firewall nombra el paso siguiente: sin esto, el asistente veía el error de Azure («use the Azure
+# Management Portal») y mandaba a la persona al portal, con producción caída.
+# Se reconoce por el texto del rechazo, no por el número suelto: un «40615» en los datos o en otro error no es el
+# firewall. Y sólo en un Azure SQL, que es lo único que `--open-firewall` atiende.
+if [ "$RC" != 0 ] && [[ "$HOST" == *.database.windows.net ]] \
+   && printf '%s' "$SALIDA" | grep -iE "Client with IP address '[^']*' is not allowed to access the server" >/dev/null; then
+  printf '\n🔥 La conexión la rechazó el firewall de Azure: la IP de esta máquina no está habilitada en «%s».\n' "$HOST"
+  printf '   Paso siguiente (con cuadro; la regla se cierra sola al terminar la sesión):\n'
+  printf '     /opt/tycon/bin/tycon-prod-sql --open-firewall %s\n' "$HOST"
+  printf '   y después volvé a correr esta misma sentencia. No hace falta el portal.\n'
 fi
+anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\"$APROBACION,\"exit\":$RC,\"filas\":$FILAS"
 exit "$RC"

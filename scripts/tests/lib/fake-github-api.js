@@ -25,6 +25,55 @@ function leerCuerpo(req) {
   });
 }
 
+/*
+ * El modo de VARIOS repos (el inventario de adopción del portón): actúa sólo con `st.repos` cargado; sin él, el servidor
+ * es el de un repo de siempre. Cada repo: `{ name, archived, default_branch, size, sinRama, flujos: { 'ci.yml': texto },
+ * reglas: [], proteccion (null = 404), proteccion403, reglas500, fallarFlujos, cortarCuerpo }` (`cortarCuerpo`: la lista de
+ * flujos llega cortada a la mitad). `st.reposPorPagina` parte la lista
+ * con el encabezado `Link`; `st.fallarListaRepos` (código) la hace fallar entera y `st.fallarPaginaRepos` (número de
+ * página) sólo esa. Devuelve true si contestó.
+ */
+function variosRepos(st, owner, u, ruta, res, host) {
+  const json = (status, doc, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json', ...headers }); res.end(JSON.stringify(doc)); return true; };
+  if (ruta === `/orgs/${owner}/repos`) {
+    if (st.fallarListaRepos) return json(st.fallarListaRepos, { message: 'lista de repos caída' });
+    const tam = Number(st.reposPorPagina || u.searchParams.get('per_page') || 30);
+    const pagina = Number(u.searchParams.get('page') || 1);
+    if (st.fallarPaginaRepos === pagina) return json(500, { message: `página ${pagina} caída` });
+    const lista = st.repos.slice((pagina - 1) * tam, pagina * tam).map((r) => ({ name: r.name, full_name: `${owner}/${r.name}`, archived: !!r.archived, size: r.size === undefined ? 100 : r.size, default_branch: r.default_branch === undefined ? 'main' : r.default_branch }));
+    const sig = new URL(`${u.pathname}${u.search}`, `http://${host}`); sig.searchParams.set('page', String(pagina + 1));
+    const link = pagina * tam < st.repos.length ? { link: `<${sig.href}>; rel="next"` } : {};
+    return json(200, lista, link);
+  }
+  const m = new RegExp(`^/repos/${owner}/([^/]+)/(.+)$`).exec(ruta);
+  if (!m) return false;
+  const r = st.repos.find((x) => x.name === m[1]);
+  if (!r) return json(404, { message: 'Not Found' });
+  const resto = m[2];
+  const rama = r.default_branch === undefined ? 'main' : r.default_branch;
+  if (resto === `branches/${rama}`) return r.sinRama ? json(404, { message: 'Branch not found' }) : json(200, { name: rama, commit: { sha: 'c'.repeat(40) } });
+  if (resto === 'contents/.github/workflows') {
+    if (r.fallarFlujos) return json(r.fallarFlujos, { message: 'flujos ilegibles' });
+    // la respuesta se corta a la mitad: llegan las cabeceras y parte del cuerpo, y la conexión se cae
+    if (r.cortarCuerpo) { res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': '500' }); res.write('[{"name":'); res.destroy(); return true; }
+    const nombres = Object.keys(r.flujos || {});
+    if (!nombres.length) return json(404, { message: 'Not Found' });
+    return json(200, nombres.map((n) => ({ name: n, path: `.github/workflows/${n}`, type: 'file' })));
+  }
+  const a = /^contents\/\.github\/workflows\/(.+)$/.exec(resto);
+  if (a) {
+    if (r.fallarArchivo) return json(r.fallarArchivo, { message: 'archivo ilegible' });
+    const txt = (r.flujos || {})[a[1]];
+    return txt === undefined ? json(404, { message: 'Not Found' }) : json(200, { name: a[1], encoding: 'base64', content: Buffer.from(txt).toString('base64') });
+  }
+  if (resto === `rules/branches/${rama}`) return r.reglas500 ? json(500, { message: 'reglas caídas' }) : json(200, r.reglas || []);
+  if (resto === `branches/${rama}/protection`) {
+    if (r.proteccion403) return json(403, { message: 'Resource not accessible by integration' });
+    return r.proteccion ? json(200, r.proteccion) : json(404, { message: 'Branch not protected' });
+  }
+  return false;
+}
+
 async function arrancarGithubFalso({ owner = 'acme', repo = 'ops', token } = {}) {
   const llamadas = [];
   const st = {
@@ -51,6 +100,7 @@ async function arrancarGithubFalso({ owner = 'acme', repo = 'ops', token } = {})
       }
       return json(200, { data: {} });
     }
+    if (st.repos && req.method === 'GET' && variosRepos(st, owner, u, ruta, res, req.headers.host)) return;
     if (!ruta.startsWith(prefijo)) return json(404, { message: 'Not Found' });
     const resto = ruta.slice(prefijo.length);
     let m;

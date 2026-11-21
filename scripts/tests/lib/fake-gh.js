@@ -26,11 +26,23 @@
 //   "reviews":  { "<o>/<r>#<n>": [ { state, body, submitted_at, user:{login,type} } ] }   (GET pulls/N/reviews)
 //   "review_comments": { "<o>/<r>#<n>": [ { body, created_at, user:{login,type} } ] }   (GET pulls/N/comments: comentarios sobre una línea del diff)
 //   "no_pr_create": true   POST pulls responde el 403 «GitHub Actions is not permitted to create or approve pull requests»
+//   "pr_create_raw": "<texto>"   POST pulls crea el pedido y contesta ese texto, que no es JSON
 //   "remotes": { "<o>/<r>": "<ruta del repo bare>" }   POST pulls exige que la rama `head` exista allá (422 si no), como GitHub
+//   "projects": { "<dueño>#<número>": { id, fields: [ { id, name, dataType } ], items: { "<nodo del issue>": { id, values: { <id del campo>: n } } } } }
+//   "graphql_error": { type, message }   toda consulta GraphQL contesta ese error (un token sin permiso de proyectos)
+// GET repos/o/r/code-scanning/…: 404 «no analysis found», como un repo sin análisis de seguridad (para eso, `fail`).
+// POST graphql (Projects v2): la consulta del proyecto de un dueño (organización o usuario) con sus campos, agregar un
+// issue (idempotente, como GitHub) y cargar el número de un campo. Un proyecto que no existe contesta NOT_FOUND.
+// Los issues traen `node_id` (`I_<o>/<r>#<n>`), el nodo con que GraphQL los nombra.
 // GET pulls?head=<dueño>:<rama>&state=&per_page=&page= filtra y pagina de verdad (state por defecto: open). GET pulls/N sobre un
-// número que es un issue da 404. PATCH pulls/N cambia `state` (uno mergeado no se puede reabrir). POST pulls/N/requested_reviewers
+// número que es un issue da 404. PATCH pulls/N cambia `state`, `title` y `body` (uno mergeado no se puede reabrir). POST pulls/N/requested_reviewers
 // pide revisores (422 si el repo declara `collaborators` y alguno no está). PUT pulls/N/merge junta la rama en la base del
 // repo bare de `remotes` con un solo commit (405 si no está abierto, 409 si `sha` no es la punta de la rama).
+// Para los pedidos de cambio por la capa: "allow_auto_merge": { "<o>/<r>": true } (GET repos/o/r lo trae), los pulls con
+// `node_id` (`PR_<o>/<r>#<n>`), `mergeable` (false = en conflicto), `auto_merge`, `draft`, `assignees` y `merge_queue`
+// (`{ state }` si está en la cola de merge: sólo lo ve GraphQL, como en GitHub); "shas":
+// { "<rama>": "<sha>" } es la punta de cada rama; "checks", "autoMerge", "merge_falla", "merge_sin_git" e
+// "issuesConPulls" se explican donde se usan. Un fallo `{ "red": true }` es la red caída (sin cuerpo, sale 1).
 const fs = require('fs');
 
 const argv = process.argv.slice(2);
@@ -38,14 +50,18 @@ if (argv[0] === '--version') { console.log('gh version 0.0.0 (de mentira)'); pro
 const stateFile = process.env.FAKE_GH_STATE;
 const st = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
 let method = 'GET', ruta = null, input = null;
+// `-f clave=valor` (como gh): pasa a POST y, en `graphql`, `query` es la consulta y el resto sus variables
+const campos = {};
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i];
-  if (a === '--method' || a === '-X') method = argv[++i];
+  if (a === '-f' || a === '--raw-field') { const [k, ...v] = String(argv[++i]).split('='); campos[k] = v.join('='); if (method === 'GET') method = 'POST'; }
+  else if (a === '--method' || a === '-X') method = argv[++i];
   else if (a === '-H') i++;
   else if (a === '--input') input = argv[++i];
   else if (!a.startsWith('-') && ruta === null) ruta = a.replace(/^\//, '');
 }
-const cuerpo = input ? JSON.parse(fs.readFileSync(input, 'utf8')) : null;
+const { query: consulta, ...variables } = campos;
+const cuerpo = input ? JSON.parse(fs.readFileSync(input, 'utf8')) : consulta !== undefined ? { query: consulta, variables } : null;
 if (process.env.FAKE_GH_LOG) fs.appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify({ method, ruta, cuerpo })}\n`);
 const save = () => fs.writeFileSync(stateFile, JSON.stringify(st, null, 2));
 const out = (v) => { process.stdout.write(`${JSON.stringify(v)}\n`); process.exit(0); };
@@ -56,8 +72,13 @@ const err = (status, message) => {
 };
 for (const [k, v] of Object.entries(st.fail || {})) {
   const [m, pre] = k.split(' ');
-  if (m === method && ruta.startsWith(pre)) {
+  // un prefijo que termina en `$` es la ruta exacta (sin la consulta): `GET repos/o/r$` falla la lectura del repo y no
+  // la de sus pull requests
+  const tocada = pre.endsWith('$') ? ruta.split('?')[0] === pre.slice(0, -1) : ruta.startsWith(pre);
+  if (m === method && tocada) {
     if (v.raw !== undefined) { process.stdout.write(`${v.raw}\n`); process.exit(0); }   // sale bien con algo que no es JSON
+    // la red caída: gh no llega a GitHub y no hay cuerpo de error
+    if (v.red) { process.stderr.write('error connecting to api.github.com\n'); process.exit(1); }
     err(v.status || 500, v.message || 'falla de prueba');
   }
 }
@@ -66,7 +87,7 @@ const q = Object.fromEntries(qs.split('&').filter(Boolean).map((x) => x.split('=
 const page = Number(q.page || 1), per = Number(q.per_page || 30);
 const pag = (arr) => arr.slice((page - 1) * per, page * per);
 const issueApi = (repo, i) => ({
-  ...i, repository_url: `https://api.github.com/repos/${(st.moved || {})[`${repo}#${i.number}`] || repo}`,
+  ...i, node_id: i.node_id || `I_${repo}#${i.number}`, repository_url: `https://api.github.com/repos/${(st.moved || {})[`${repo}#${i.number}`] || repo}`,
   labels: (i.labels || []).map((name) => ({ name })), assignees: (i.assignees || []).map((login) => ({ login })),
   user: { login: i.user || st.user, type: /\[bot\]$/.test(i.user || '') ? 'Bot' : 'User' },
   closed_by: i.closed_by ? { login: i.closed_by } : null,
@@ -120,7 +141,28 @@ if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/runs$/
 }
 if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)$/))) {
   const db = (st.default_branch || {})[m[1]];
-  if (db) out({ full_name: m[1], default_branch: db });
+  const am = (st.allow_auto_merge || {})[m[1]];
+  if (db || am !== undefined) out({ full_name: m[1], default_branch: db || 'main', allow_auto_merge: am === true });
+}
+// Los controles de un commit: "checks": { "<sha>": [ { name, status, conclusion } ] }, o { "fotos": [ [ … ], [ … ] ] }:
+// cada lectura de la primera página toma la foto siguiente (la última se repite), para un control que pasa de en curso
+// a terminado. Pagina con per_page y page, como GitHub.
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/commits\/([^/]+)\/check-runs$/))) {
+  const c = (st.checks || {})[m[2]];
+  let l = Array.isArray(c) ? c : [];
+  if (c && Array.isArray(c.fotos)) {
+    st.checks_leidas = st.checks_leidas || {};
+    const i = st.checks_leidas[m[2]] || 0;
+    l = c.fotos[Math.min(i, c.fotos.length - 1)] || [];
+    // la foto avanza con la primera página: las demás páginas de la misma lectura son de la misma foto
+    if (page === 1) { st.checks_leidas[m[2]] = i + 1; save(); } else l = c.fotos[Math.min(Math.max(i - 1, 0), c.fotos.length - 1)] || [];
+  }
+  out({ total_count: l.length, check_runs: pag(l) });
+}
+// Los estados de un commit (la API vieja de controles): "statuses": { "<sha>": [ { context, state } ] }, el más nuevo
+// primero, como GitHub. Pagina igual.
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/commits\/([^/]+)\/statuses$/))) {
+  out(pag(((st.statuses || {})[m[2]]) || []));
 }
 // ── Pull requests ──
 const pullsOf = (repo) => { st.pulls = st.pulls || {}; st.pulls[repo] = st.pulls[repo] || []; return st.pulls[repo]; };
@@ -128,7 +170,10 @@ const nextNumber = (repo) => Math.max(0, ...((st.issues || {})[repo] || []).map(
 const persona = (u) => { const login = (u && u.login) || st.user; return { login, type: (u && u.type) || (/\[bot\]$/.test(login) ? 'Bot' : 'User') }; };
 const pullApi = (repo, p) => ({
   ...p, merged: !!p.merged_at, merged_at: p.merged_at || null, closed_at: p.closed_at || null,
-  head: { ref: p.head.ref, sha: p.head.sha || '0'.repeat(40) },
+  node_id: p.node_id || `PR_${repo}#${p.number}`, draft: p.draft === true, auto_merge: p.auto_merge || null,
+  mergeable: p.mergeable === undefined ? true : p.mergeable, mergeable_state: p.mergeable_state || (p.mergeable === false ? 'dirty' : 'clean'),
+  html_url: `https://github.com/${repo}/pull/${p.number}`, assignees: (p.assignees || []).map((login) => ({ login })),
+  head: { ref: p.head.ref, sha: p.head.sha || (st.shas || {})[p.head.ref] || '0'.repeat(40) },
   base: { ref: (p.base && p.base.ref) || 'main', repo: { full_name: (p.base && p.base.repo && p.base.repo.full_name) || repo } },
   user: persona(p.user), requested_reviewers: (p.requested_reviewers || []).map((r) => (typeof r === 'string' ? { login: r } : r)),
 });
@@ -137,6 +182,7 @@ if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/pulls$/))) {
   if (method === 'GET') {
     let l = pullsOf(repo);
     if (q.head) { const ref = q.head.includes(':') ? q.head.split(':').slice(1).join(':') : q.head; l = l.filter((p) => p.leak === true || p.leak === ref || p.head.ref === ref); }
+    if (q.base) l = l.filter((p) => ((p.base && p.base.ref) || 'main') === q.base);
     const est = q.state || 'open';
     if (est !== 'all') l = l.filter((p) => p.state === est);
     out(pag(l.map((p) => pullApi(repo, p))));
@@ -153,7 +199,9 @@ if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/pulls$/))) {
     if (pullsOf(repo).some((p) => p.state === 'open' && p.head.ref === head)) err(422, `A pull request already exists for ${repo.split('/')[0]}:${head}.`);
     const p = { number: nextNumber(repo), state: 'open', merged_at: null, created_at: st.now, closed_at: null, title: cuerpo.title, body: cuerpo.body || '',
       head: { ref: head }, base: { ref: cuerpo.base, repo: { full_name: repo } }, user: { login: st.user, type: /\[bot\]$/.test(st.user) ? 'Bot' : 'User' }, requested_reviewers: [] };
-    pullsOf(repo).push(p); save(); out(pullApi(repo, p));
+    pullsOf(repo).push(p); save();
+    if (st.pr_create_raw !== undefined) { process.stdout.write(`${st.pr_create_raw}\n`); process.exit(0); }
+    out(pullApi(repo, p));
   }
 }
 if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/pulls\/(\d+)(\/reviews|\/requested_reviewers|\/comments)?$/))) {
@@ -170,6 +218,8 @@ if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/pulls\/(\d+)(\/reviews|\/requested_
   }
   if (!m[3] && method === 'GET') out(pullApi(repo, p));
   if (!m[3] && method === 'PATCH') {
+    if (cuerpo.title !== undefined) p.title = cuerpo.title;
+    if (cuerpo.body !== undefined) p.body = cuerpo.body;
     if (cuerpo.state === 'closed') Object.assign(p, { state: 'closed', closed_at: st.now });
     if (cuerpo.state === 'open') {
       if (p.merged_at) err(422, 'Validation Failed: el pull request ya está mergeado');
@@ -183,7 +233,15 @@ if (method === 'PUT' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/m
   const p = pullsOf(repo).find((x) => x.number === n);
   if (!p) err(404, 'Not Found');
   if (p.state !== 'open') err(405, 'Pull Request is not mergeable');
+  // "merge_falla": { "<o>/<r>#<n>": { status, message } } — el merge que GitHub rechaza (405 sin poder, 409 punta movida)
+  const falla = (st.merge_falla || {})[`${repo}#${n}`];
+  if (falla) err(falla.status, falla.message || 'Pull Request is not mergeable');
   const remoto = (st.remotes || {})[repo];
+  // "merge_sin_git": true — el merge se da por hecho sin un repo bare (para lo que mira las llamadas y no las ramas)
+  if (!remoto && st.merge_sin_git) {
+    Object.assign(p, { state: 'closed', merged_at: st.now, closed_at: st.now });
+    save(); out({ sha: 'f'.repeat(40), merged: true, message: 'Pull Request successfully merged' });
+  }
   if (!remoto) err(405, 'Pull Request is not mergeable');
   const git = (...a) => {
     // identidad y fecha fijas y sin mantenimiento automático: el commit del merge sale igual en cada corrida, también en
@@ -215,7 +273,11 @@ if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/issues$/))) {
     // como GitHub: el filtro por etiqueta no distingue mayúsculas
     if (q.labels) l = l.filter((i) => (i.labels || []).some((x) => x.toLowerCase() === q.labels.toLowerCase()));
     if (q.state && q.state !== 'all') l = l.filter((i) => i.state === q.state);
-    out(pag(l.map((i) => issueApi(repo, i))));
+    const issues = l.map((i) => ({ ...issueApi(repo, i), html_url: `https://github.com/${repo}/issues/${i.number}` }));
+    // "issuesConPulls": true — como GitHub, la lista de issues trae también los pull requests, con `pull_request`
+    const pulls = st.issuesConPulls ? pullsOf(repo).filter((p) => !q.state || q.state === 'all' || p.state === q.state)
+      .map((p) => ({ ...pullApi(repo, p), pull_request: { url: `https://api.github.com/repos/${repo}/pulls/${p.number}` } })) : [];
+    out(pag([...issues, ...pulls].sort((a, b) => a.number - b.number)));
   }
   if (method === 'POST') {
     const number = nextNumber(repo);
@@ -253,4 +315,99 @@ if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/issues\/(\d+)(\/comments|\/timeline
     save(); out(issueApi(repo, i));
   }
 }
+// ── GraphQL de proyectos ──
+if (method === 'POST' && base === 'graphql') {
+  const qy = String((cuerpo || {}).query || '');
+  const vars = (cuerpo || {}).variables || {};
+  const gqlErr = (type, message) => {
+    process.stdout.write(`${JSON.stringify({ data: null, errors: [{ type, message }] })}\n`);
+    process.stderr.write(`gh: ${message}\n`);
+    process.exit(1);
+  };
+  if (st.graphql_error) gqlErr(st.graphql_error.type, st.graphql_error.message);
+  // auto-merge de un pull request: "autoMerge": "funciona" (lo deja puesto) | "sin-efecto" (contesta bien y no lo pone,
+  // como un repo sin reglas de protección) | "error" (contesta el error de GitHub)
+  if (/enablePullRequestAutoMerge/.test(qy)) {
+    if (st.autoMerge === 'error') gqlErr('UNPROCESSABLE', 'Pull request Auto merge is not allowed for this repository');
+    const todos = Object.entries(st.pulls || {}).flatMap(([repo, l]) => l.map((p) => ({ repo, p })));
+    const x = todos.find(({ repo, p }) => (p.node_id || `PR_${repo}#${p.number}`) === vars.pullRequestId);
+    if (!x) gqlErr('NOT_FOUND', `Could not resolve to a node with the global id of '${vars.pullRequestId}'`);
+    if (st.autoMerge === 'funciona') { x.p.auto_merge = { merge_method: String(vars.mergeMethod || '').toLowerCase(), enabled_by: { login: st.user } }; save(); }
+    out({ data: { enablePullRequestAutoMerge: { pullRequest: { number: x.p.number } } } });
+  }
+  // encolar un pull request (`enqueuePullRequest`): lo pone en la cola y cuenta las veces en `enqueue_calls`;
+  // "enqueue": "error" contesta el error de GitHub
+  if (/enqueuePullRequest/.test(qy)) {
+    st.enqueue_calls = (st.enqueue_calls || 0) + 1;
+    if (st.enqueue === 'error') { save(); gqlErr('UNPROCESSABLE', 'Pull request is not mergeable'); }
+    const todos = Object.entries(st.pulls || {}).flatMap(([repo, l]) => l.map((p) => ({ repo, p })));
+    const x = todos.find(({ repo, p }) => (p.node_id || `PR_${repo}#${p.number}`) === vars.id);
+    if (!x) { save(); gqlErr('NOT_FOUND', `Could not resolve to a node with the global id of '${vars.id}'`); }
+    x.p.merge_queue = { state: 'QUEUED' };
+    save();
+    out({ data: { enqueuePullRequest: { mergeQueueEntry: { state: 'QUEUED' } } } });
+  }
+  // los abiertos de un repo de una sola vez (`pullRequests(states:OPEN`), con su lugar en la cola y su última caída:
+  // `queue_drop` (`{ kind: 'removed' | 'auto_merge_disabled', reason, at }`) es el último evento de GitHub que lo sacó
+  // de la cola o le apagó el auto-merge. `mergeable` sin decir sale UNKNOWN, como GitHub antes de calcularlo
+  if (/pullRequests\(states:OPEN/.test(qy)) {
+    if (st.queue_error) gqlErr('FORBIDDEN', 'Resource not accessible by integration');
+    const repo = `${vars.owner}/${vars.name}`;
+    const nodes = (st.pulls && st.pulls[repo] || []).filter((p) => (p.state || 'open') === 'open').map((p) => {
+      const d = p.queue_drop;
+      const evento = !d ? [] : [d.kind === 'auto_merge_disabled'
+        ? { __typename: 'AutoMergeDisabledEvent', reason: d.reason, reasonCode: d.reason, createdAt: d.at }
+        : { __typename: 'RemovedFromMergeQueueEvent', reason: d.reason, createdAt: d.at, beforeCommit: d.before_sha ? { oid: d.before_sha } : null }];
+      return {
+        number: p.number, isDraft: p.draft === true,
+        mergeable: p.mergeable === false ? 'CONFLICTING' : p.mergeable === true ? 'MERGEABLE' : 'UNKNOWN',
+        mergeStateStatus: String(p.mergeable_state || 'unknown').toUpperCase(),
+        headRefName: p.head && p.head.ref, headRefOid: p.head && p.head.sha, createdAt: p.created_at, title: p.title,
+        author: p.user ? { login: p.user.login } : null,
+        autoMergeRequest: p.auto_merge ? { enabledAt: p.auto_merge.enabled_at || null } : null,
+        mergeQueueEntry: p.merge_queue || null,
+        timelineItems: { nodes: evento },
+        // `review_decision`, `committed_at` y `ci_state`: la aprobación, cuándo se hizo la punta y sus comprobaciones
+        id: p.node_id || `PR_${repo}#${p.number}`, reviewDecision: p.review_decision || null,
+        empujes: { nodes: p.force_pushed_at ? [{ createdAt: p.force_pushed_at }] : [] },
+        commits: { nodes: [{ commit: { committedDate: p.committed_at || null, statusCheckRollup: p.ci_state ? { state: p.ci_state } : null } }] },
+      };
+    });
+    out({ data: { repository: { pullRequests: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } } });
+  }
+  // si cada pull request está en la cola de merge: `nodes(ids:)` con su `merge_queue` (`{ state }` o nada); "queue_error":
+  // true contesta el error de GitHub
+  if (/nodes\(ids:/.test(qy) && /mergeQueueEntry/.test(qy)) {
+    if (st.queue_error) gqlErr('FORBIDDEN', 'Resource not accessible by integration');
+    const todos = Object.entries(st.pulls || {}).flatMap(([repo, l]) => l.map((p) => ({ id: p.node_id || `PR_${repo}#${p.number}`, p })));
+    out({ data: { nodes: (vars.ids || []).map((id) => { const x = todos.find((t) => t.id === id); return x ? { id, mergeQueueEntry: x.p.merge_queue || null } : null; }) } });
+  }
+  const projs = st.projects || {};
+  const porId = (pid) => Object.values(projs).find((x) => x.id === pid);
+  if (/projectV2\(number/.test(qy)) {
+    const p = projs[`${vars.owner}#${vars.number}`];
+    if (!p) {
+      if (!Object.keys(projs).some((k) => k.startsWith(`${vars.owner}#`))) out({ data: { repositoryOwner: null } });
+      gqlErr('NOT_FOUND', `Could not resolve to a ProjectV2 with the number ${vars.number}.`);
+    }
+    out({ data: { repositoryOwner: { projectV2: { id: p.id, fields: { nodes: p.fields || [] } } } } });
+  }
+  if (/addProjectV2ItemById/.test(qy)) {
+    const p = porId(vars.project);
+    if (!p) gqlErr('NOT_FOUND', `Could not resolve to a node with the global id of '${vars.project}'`);
+    p.items = p.items || {};
+    if (!p.items[vars.content]) p.items[vars.content] = { id: `PVTI_${Object.keys(p.items).length + 1}`, values: {} };
+    save(); out({ data: { addProjectV2ItemById: { item: { id: p.items[vars.content].id } } } });
+  }
+  if (/updateProjectV2ItemFieldValue/.test(qy)) {
+    const p = porId(vars.project);
+    const item = p && Object.values(p.items || {}).find((x) => x.id === vars.item);
+    if (!item) gqlErr('NOT_FOUND', 'Could not resolve the item');
+    item.values[vars.field] = vars.value;
+    save(); out({ data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: item.id } } } });
+  }
+  gqlErr('UNKNOWN', 'consulta GraphQL de prueba desconocida');
+}
+// el análisis de seguridad: el repo de prueba no tiene, como contesta GitHub («no analysis found»)
+if (method === 'GET' && /^repos\/[^/]+\/[^/]+\/code-scanning\//.test(ruta)) err(404, 'no analysis found');
 err(404, `ruta de prueba desconocida: ${method} ${ruta}`);

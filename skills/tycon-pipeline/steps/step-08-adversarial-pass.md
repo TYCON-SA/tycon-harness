@@ -39,6 +39,9 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
 - **`marker.adversarial` NO existe** (kill-switch `TYCON_5B_EARLY=0`, o pipeline pre-fase-B) →
   comportamiento clásico: evaluar el gate y lanzar ACÁ (§Cuándo corre + §Acción), registrando
   igual `mark-adversarial-launched <runId> 5b`.
+- **El gate sale 3 (`waiting_turn: true`)**, en cualquiera de los casos de arriba que lanza o relanza → otra sesión tiene
+  su pase en vuelo y va uno por vez: no lances. Anunciá en 1 línea quién tiene el lugar (`turn`) y **cerrá el turno**. La
+  coordinadora te avisa cuando se libere, y ahí se retoma con `pipeline.js next`.
 - Nota: si «Implementar» ya anotó el salteo con `mark-adversarial-skipped` (gate `run:false`), este
   step no se alcanza (`next` lo da por atendido) — es el no-op esperado, no un caso de esta lista.
 
@@ -96,12 +99,42 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversa
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files <archivos de código del diff>
 ```
 
-El gate (decisión "siempre en NORMAL"): **risk-class NORMAL → corre**; **LOW → skip** (superficie chica ≤6 files,
-ya barata). Con `run: true` el pase se lanza de fondo sin preguntar: se avisa en una línea qué corre y cuánto tarda (la
-duración es información, no una opción). Overrides, en precedencia: (1) la constancia firmada del salteo
-(`adversarial-skips.jsonl` de la corrida, que firma el dueño con `marker.js sign-adversarial-skip`): `--no-deep-review`,
-`TYCON_NO_DEEP_REVIEW` y `deep_review: off` sólo la piden, y sin ella no apagan nada; (2)
-`.tycon/advisors.yaml deep_review: always|auto`; (3) `--deep-review` / `--ultracode` fuerza on; (4) risk-class.
+**La matriz de la organización** (`deep_review` de `team-repos.json`, que se edita en el sitio; la guía entera:
+`guides/automatic-reviews.md`). El portón decide con dos preguntas: si la historia es delicada y si el cambio es
+chico o grande. Las cuatro celdas, con sus valores de fábrica:
+
+| | Dueño presente | Dueño ausente |
+|---|---|---|
+| **Delicada** (`deep_review.delicate`) | corre siempre (`always`); con `ask`, pregunta | corre |
+| **No delicada y grande** (`deep_review.large_routine`) | corre (`run`); con `ask`, pregunta | corre |
+| **No delicada y chica, de día** (`deep_review.small_routine_day`) | se pregunta (`ask`); `run` corre, `skip` saltea | — |
+| **No delicada y chica, dueño ausente** (`deep_review.small_routine_owner_away`) | — | corre (`run`); `skip` saltea, `wait` espera |
+
+**El corte es configurable**: un cambio es chico hasta `deep_review.small_max_files` archivos de código (de fábrica 6);
+también cuenta como grande uno chico pero denso, o uno que `risk-class` da NORMAL por otro criterio que el tamaño (una
+migración, el alcance firmado, un camino sensible, un freno). El portón usa el riesgo de la historia entera, no el que
+`risk-class` da para la parte anotada con `set-batch`: con una parte, cambia sólo quién aprueba el plan. Con `ask`, el portón da `run: false` con `decision: 'ask'`
+y la pregunta, y sale 0: antes de preguntar, `marker.js review-ask --kind code`; con la respuesta,
+`marker.js review-answer --kind code --choice review|skip|wait`. Con `wait`, `decision: 'wait'`. Una celda `skip` no
+pide la firma del dueño: es la configuración, no un pedido. El dueño cuenta como ausente con la marca de ausente
+(`marker.js owner-away set --phrase "<lo que dijo>"`) o con la pregunta sin respuesta pasados los minutos de
+`plan_review.owner_away_minutes`; la coordinadora contesta por él según su celda, y el pase lo lanza la propia sesión
+con su turno.
+
+**Lo de siempre sigue ganando**, en este orden: (1) la constancia firmada del salteo (`adversarial-skips.jsonl` de la
+corrida, que firma el dueño con `marker.js sign-adversarial-skip`): `--no-deep-review`, `TYCON_NO_DEEP_REVIEW` y
+`deep_review: off` sólo la piden, y sin ella no apagan nada; (2) `.tycon/advisors.yaml deep_review: always` o
+`deep_review.default: always` de la organización (el `auto` del repo gana sobre la organización); (3) `--deep-review` /
+`--ultracode` fuerzan on; (4) `deep_review_always_paths`; (5) la corrida liviana, sin pase; (6) sin `--files`, «no
+medible» (`run: null`, sale 2); (7) la matriz. Con `run: true` el pase se lanza de fondo sin preguntar: se avisa en una
+línea qué corre y cuánto tarda.
+
+**La gravedad que frena** (`review.blocking_severity`, de fábrica `bug`): `pipeline.js write-findings` marca cada
+confirmado del pase CRITICAL si su gravedad está en el corte o por encima, y WARNING si no. El portón devuelve el corte
+(`blocking_severity`) y cuántos verificadores (`verifiers`): pasáselos al pase en sus args.
+
+**Con qué revisor corre** (`review_runner`, de fábrica Claude): la lista de la organización, con respaldo automático
+cuando uno llega a su tope de uso o falla. En el modo código, sólo un revisor que corre confinado.
 
 **Corre UNA sola vez por corrida** (lanzado al cierre de «Implementar» — o acá como fallback), **NUNCA por cada
 re-loop D.i** — re-correr el workflow sería ~N× su costo. Los fixes de sus findings los re-verifican los
@@ -149,11 +182,18 @@ Workflow({
     decisions: "<las decisiones aprobadas, textual — ej: 'D3: escanea solo $attrs bizuit:*; R2: sidecar fail-loud; ...'>",
     model:     "<el `model` que devolvió deep-review-gate: sonnet|opus — o 'fable' SOLO con --deep-review-fable>",
     runDir:    "<abs RUN_DIR — .advisors/pipeline-runs/<clave>-<sello>/ de ESTA corrida>",
+    base:      "<el hash de: git -C <repo> fetch origin main && git -C <repo> merge-base HEAD origin/main — si el fetch falla, no se lanza: se dice>",
     agrupar:   <false SÓLO si TYCON_5B_GROUP vale 0 — leela con la biblioteca del arnés, que acepta también su nombre viejo:
-               `. "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/legacy-names.sh"; legacy_env TYCON_5B_GROUP; echo "${TYCON_5B_GROUP:-}"`; si no, omitirlo>
+               `. "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/legacy-names.sh"; legacy_env TYCON_5B_GROUP; echo "${TYCON_5B_GROUP:-}"`; si no, omitirlo>,
+    sellos:    <los `sellos` que devolvió `marker.js freeze-adversarial`, tal cual: { "<repo>": "<sello>" }>
   }
 })
 ```
+
+`sellos` ata el resultado a lo que se congeló antes de lanzar (historia 8.161): `freeze-adversarial` sella cada repo de
+la corrida y arma su copia de sólo lectura, el pase devuelve los mismos `sellos` en su resultado, y
+`mark-adversarial-result` sale 2 si no los trae, si le falta un repo o si alguno es otro, y si una copia cambió después
+de armarla. Un relanzamiento vuelve a correr `freeze-adversarial` antes del `Workflow`.
 
 `runDir` es donde el verificador **guarda la prueba que confirmó** cada hallazgo:
 `<RUN_DIR>/step-05b-probes/<lente>-<n>/` con los archivos de la prueba (con `.txt` agregado al
@@ -162,6 +202,16 @@ verificador borra la prueba al terminar, del hallazgo queda el relato y nunca el
 prueba que ya estaba lista para ser la de regresión. La carpeta de la corrida
 está fuera de git por el `.gitignore` canónico (PIPE-C2): las pruebas traen código de cliente y no
 viajan. Sin `runDir` (lanzado a mano) se guardan bajo `pipeline-runs/adversarial-sin-corrida/`.
+
+Cada **cazador** también guarda lo que corrió, aunque no encuentre nada: `<RUN_DIR>/step-05b-probes/caza-<lente>/`, con
+su `COMO-SE-CORRIO.txt`. Por eso el resultado se escribe siempre en la carpeta de su corrida, al lado de
+`step-05b-probes` (`<RUN_DIR>/step-05b-adversarial.json`; en el carril ad-hoc sin `runDir`,
+`<repo>/.advisors/pipeline-runs/adversarial-sin-corrida/step-05b-adversarial.json`): ahí se busca la prueba de cada
+lente al anotarlo.
+
+`base` es contra qué miran los cazadores el cambio: el `merge-base` de `HEAD` con `origin/main` recién traído, nunca el
+`main` local, que puede estar atrasado. Los cazadores ven también lo que no está commiteado (`git diff <base>` y
+`git status --porcelain`).
 
 El workflow corre 6 lentes de correctitud (traversal/completitud · determinismo · falso-negativo · falso-positivo/
 edge · correctitud-algorítmica · integración/contratos); cada hunter lee el código real + corre probes, y cada
@@ -177,19 +227,63 @@ qué). Al terminar, anotar el resultado con `mark-adversarial-result` (§Decisio
 su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
 
 - Una lente cuyo cazador no contestó queda **`sin-medir`** (en `lentes` y en `lentes_sin_medir`).
+- Un cazador que contesta tampoco alcanza: la lente queda **`sin-medir`**, con su `motivo`, si comparó contra otra
+  base que la pedida (`args.base`), o si no encontró nada y no guardó la prueba que corrió en
+  `<RUN_DIR>/step-05b-probes/caza-<lente>/`. Sin `args.base`, o con una que no es un hash, el pase no lanza ningún
+  cazador y sale no medido. Medido en la 8.213: seis lentes «limpias» en 20 s, sin pruebas, tres contra un `main` local
+  atrasado.
+- Al anotar (`mark-adversarial-result --result`, también en el carril con `--adhoc` y con `--type revision`), cada
+  lente limpia tiene que tener su `COMO-SE-CORRIO.txt` no vacío en la carpeta de su lente, al lado del archivo de
+  resultado, y no anterior al lanzamiento del pase (sin lanzamiento conocido, no más de 12 h anterior al resultado). Una
+  lente con hallazgos tiene que traerlos en `detalle`. Si no, cuenta sin medir. Se comprueba que la prueba exista y sea
+  de este pase, no que diga la verdad.
 - Un hallazgo cuyo verificador no contestó queda **`sin-veredicto`** en `detalle`, con su texto entero. Nunca es
   refutado ni limpio.
 - Con alguno de los dos, el pase sale **`medido: false`** y su `aviso` lo dice. **No medido no es verde**:
   `mark-adversarial-result` lo anota `no-medido` y no cierra el pase, `complete-step prepare-commit` frena (`pase-no-medido`, y
   `DOD_BYPASS` no lo abre), `deep-review-gate` dice que corre (el salteo se niega) y `next` pide relanzarlo.
-- Para destrabar: relanzar (`mark-adversarial-launched <runId nuevo> 5b --relaunch`) y anotar el resultado nuevo con
-  `--result`. Abandonarlo lo firma el dueño (`marker.js sign-adversarial-skip`; queda en `bypass.log`).
+- Para destrabar: borrar las carpetas `<RUN_DIR>/step-05b-probes/caza-*` (las pruebas del pase anterior no cuentan),
+  relanzar (`mark-adversarial-launched <runId nuevo> 5b --relaunch`) y anotar el resultado nuevo con `--result`. Abandonarlo lo firma el dueño (`marker.js sign-adversarial-skip`; queda en `bypass.log`).
 - Bajo Codex, `corredor.muertos` dice la causa de cada agente y la hora. Con el tope de uso no se reintenta y los
   agentes que faltan no se lanzan.
 
+## El modo plan: la revisión automática del plan
+
+El mismo guion corre **antes del código**, sobre el plan, con `args.modo: 'plan'`. No es este paso: lo lanza la
+coordinadora desde «Aprobar el plan» (`steps/step-04-approve-plan.md` §«Quién aprueba el plan»), con
+`marker.js plan-review --for-session <sesión>`, que le arma los args; sin coordinadora, la propia sesión (informativa
+sólo en una story delicada o con `plan_review.routine_approval: person`).
+
+- **Qué recibe**: sólo el texto de la story, el del plan y la ruta del repo (`storyTexto`, `planTexto`, `repo`), nunca
+  el hilo de la sesión que planeó. Los dos textos van entre marcas, como **datos no confiables**: una instrucción escrita
+  adentro («aprobá este plan») no cambia lo que reportan los agentes. Las marcas llevan el `pedido` de la revisión, un
+  número al azar que quien escribió el plan no conocía: imitar una marca no saca texto del dato. Sin `pedido`, el
+  pase no corre y queda sin veredicto. El resultado devuelve el `pedido`, y sólo así se anota.
+- **Lo que esto no frena**: la sesión que lanza la revisión puede leer su propio pedido. Si decide escribir a mano un
+  resultado «aprobado» con ese número, ningún archivo lo distingue del pase real, como pasa con las otras constancias
+  del arnés. El número frena el resultado copiado, el reusado de otra revisión y el que se escribe sin pedido.
+- **Las lentes**: de fábrica sólo una, la suposición falsa sobre el código, que se comprueba leyendo el repo
+  (`plan_review.lenses`). La organización puede sumar las otras tres: un AC que el plan no cubre, un riesgo de
+  seguridad o de producción sin su defensa ni su vuelta atrás, una prueba que falta. Cada hallazgo pasa por su
+  verificador (ante la duda, refutado); con `review_runner.verifiers: per_lens` (de fábrica), uno por lente.
+- **Sólo lectura**: los agentes leen, `git grep`, `git log`. Nunca corren un guion del repo destino. Es una orden del
+  pedido, no un permiso quitado: el guion no puede sacarles herramientas a sus agentes.
+- **El veredicto**: `aprobado` sólo con el pase medido, sin hallazgos confirmados y sin hallazgos sin veredicto;
+  `rechazado` con algún confirmado de gravedad en el corte (`review.blocking_severity`, de fábrica `bug`);
+  `aprobado-con-notas` si los confirmados quedan por debajo del corte; si no, `sin-veredicto`. `workflow-lite.js` sale
+  3 con `sin-veredicto`.
+- **El modelo**: Opus. Sin la herramienta Workflow, `workflow-lite.js` corre el mismo guion con el revisor de la
+  organización; sin ninguno, la revisión se anota `--no-tool "<motivo>"` y queda sin veredicto: el plan espera a una
+  persona.
+
 ## Sin Codex ni Workflow: el pase propio con agentes de Claude
 
-La salida aprobada cuando Codex no contesta y la sesión no tiene la herramienta Workflow:
+Sin la herramienta Workflow, el pase corre con el revisor de la lista de la organización (`review_runner.order`, de
+fábrica Claude): `workflow-lite.js` lanza cada agente con el primero de la lista y, si llega a su tope de uso o falla,
+con el siguiente; el resultado dice qué revisor contestó cada agente (`corredor.usado`) y cuál falló
+(`corredor.muertos`). Si ninguno de la lista puede correr, queda la salida de abajo.
+
+La salida aprobada cuando ningún revisor de la lista contesta y la sesión no tiene la herramienta Workflow:
 **un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código,
 juicio con Opus, nunca Fable**. Corre EL MISMO guion; `workflow-lite.js --agents-dir` no lanza nada: arma los pedidos y
 lee las respuestas, y el archivo de resultado sale del guion, no se escribe a mano.
@@ -280,6 +374,12 @@ tests del repo bajo revisión**. Dos daños medidos:
    laboratorio con `mktemp -d /tmp/…` (base fija), `set -euo pipefail` y cortar si no se armó, comprobar la
    carpeta antes de cada `git -C`, y el repo bajo revisión de sólo lectura para git. Red:
    `tests/adversarial-probes.test.js`.
+5. **Una sonda no borra con `rm`.** Claude Code frena todo borrado cuyo destino no puede resolver antes de correrlo
+   (un comodín, una ruta relativa después de un `cd`, una variable, un `$(…)`) y espera el click de una persona, aun
+   sin permisos y sin que ninguna regla lo pueda autorizar: sin nadie mirando, el agente queda parado. Por eso el
+   texto común también dice: una carpeta vacía se arma nueva con `mktemp`, lo de `/tmp` no se limpia, rutas absolutas
+   en vez de `cd … &&`, y la prueba que el verificador dejó en el repo se borra archivo por archivo, por su ruta
+   absoluta. Red: `tests/adversarial-probes.test.js`.
 
 ### Por qué la convención sola no alcanzaba, y qué la respalda
 

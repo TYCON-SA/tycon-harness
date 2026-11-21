@@ -30,6 +30,9 @@ function arbol(paquetes) {
   const d = tmp('ppr-arbol-');
   fs.cpSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts'), path.join(d, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: (s) => !s.includes(`${path.sep}tests${path.sep}`) });
   fs.cpSync(path.join(ROOT, 'agents'), path.join(d, 'agents'), { recursive: true });
+  // la vuelta de revisores sella y congela lo que revisa (lib/frozen-tree.js), que llama a git con el entorno limpio de
+  // scripts/lib: sin esa carpeta, `pipeline.js advisors` de la copia no arranca
+  fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(d, 'scripts', 'lib'), { recursive: true });
   for (const [nombre, revisores] of Object.entries(paquetes)) {
     for (const a of revisores) W(path.join(d, 'packs', nombre, 'agents', `${a}.md`), `# ${a}\n`);
     W(path.join(d, 'packs', nombre, 'pack.json'), JSON.stringify({

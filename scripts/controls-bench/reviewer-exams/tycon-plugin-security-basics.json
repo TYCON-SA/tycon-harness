@@ -1,0 +1,26 @@
+{
+  "agent": "tycon-plugin-security-basics",
+  "file": "agents/tycon-plugin-security-basics.md",
+  "hash": "12fbcf1defeacd61adba974d003f82cb0f469346",
+  "passed": 10,
+  "total": 10,
+  "score": 1,
+  "baseline": {
+    "passed": 4,
+    "total": 4,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-plugin-security-basics::sec-c2-secreto-hardcoded": true,
+    "tycon-plugin-security-basics::sec-c9-fallback-silencioso": true,
+    "tycon-plugin-security-basics::sec-c6-random-para-token": true,
+    "tycon-plugin-security-basics::limpio-failfast-sin-c9": true,
+    "tycon-plugin-security-basics::sec-c10-rol-de-todos-en-la-lista": true,
+    "tycon-plugin-security-basics::limpio-c10-lista-sin-rol-de-todos": true,
+    "tycon-plugin-security-basics::sec-c11-cuerpo-sin-tope-que-crece": true,
+    "tycon-plugin-security-basics::limpio-c11-tope-y-una-fila": true,
+    "tycon-plugin-security-basics::sec-c12-token-crudo-en-el-get": true,
+    "tycon-plugin-security-basics::limpio-c12-solo-si-existe-y-ultimos-4": true
+  }
+}

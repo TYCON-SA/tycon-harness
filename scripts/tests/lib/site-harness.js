@@ -48,6 +48,7 @@ function fuentesFijas({ config = { version: 1, owners: { default: 'lead@acme.exa
     config: () => st.config,
     modelo: () => st.modelo,
     personas: () => st.personas,
+    huellas: () => st.huellas || { medido: false, carpetas: {} },
     refrescar: async () => { st.refrescos += 1; },
     detener: () => {},
   };

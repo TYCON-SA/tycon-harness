@@ -39,6 +39,19 @@ const casa = (name) => {
   if (d.startsWith(ROOT) || /agent-skills|\.claude\/|\.tycon\//.test(d)) throw new Error(`el laboratorio cayó en ${d}`);
   return d;
 };
+// Un manifiesto con las claves de antes anota su uso en el registro de la HOME (lo que decide el retiro de los nombres
+// viejos): se lee con una HOME de laboratorio, nunca la de la máquina. Devuelve lo que dio `fn` y esa HOME.
+const enCasaDeLaboratorio = (fn) => {
+  const home = casa('home');
+  const prev = { HOME: process.env.HOME, TYCON_HOME: process.env.TYCON_HOME };
+  process.env.HOME = home;
+  delete process.env.TYCON_HOME;
+  try {
+    return { r: fn(), home };
+  } finally {
+    for (const [k, v] of Object.entries(prev)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+};
 const SHA = (n) => String(n).padStart(40, '0');
 const blob = (p, size = 10, mode = '100644') => ({ path: p, mode, type: 'blob', sha: SHA(p.length), size });
 const dir = (p) => ({ path: p, mode: '040000', type: 'tree', sha: SHA(1) });
@@ -72,7 +85,8 @@ test('T1 Cli_TeamOption_InstallAndMigrate_ClosedTable_EnglishNames_NoRealNames',
   const tableEnd = src.indexOf('\n};', tableStart);
   const table = src.slice(tableStart, tableEnd);
   const names = [...table.matchAll(/^\s{2}([a-z]+):\s+\{/gm)].map((m) => m[1]);
-  assert.deepEqual(names.sort(), ['apply', 'channel', 'config', 'doctor', 'install', 'layer', 'link', 'migrate', 'npx', 'relocate', 'rollback', 'startup', 'uninstall', 'update', 'version'].sort(), 'la tabla de subcomandos no gana ninguno más que npx (que no declara --team: lo valida install)');
+  // `sign` (etapa D de las firmas) firma en la terminal: no instala nada ni declara --team
+  assert.deepEqual(names.sort(), ['apply', 'channel', 'config', 'doctor', 'install', 'layer', 'link', 'migrate', 'npx', 'relocate', 'rollback', 'sign', 'startup', 'uninstall', 'update', 'version'].sort(), 'la tabla de subcomandos no gana ninguno más que npx (que no declara --team: lo valida install) y sign');
   const optsOf = (cmd) => { const m = new RegExp(`^\\s{2}${cmd}:\\s+\\{ opts: \\{([^}]*)\\}`, 'm').exec(table); return m ? m[1] : ''; };
   assert.match(optsOf('install'), /'--team': 'value'/, 'install --team <org>/<repo>');
   assert.match(optsOf('migrate'), /'--team': 'value'/, 'migrate --team <org>/<repo>');
@@ -758,11 +772,190 @@ test('A2c Review_UnreadableIsSaid_KeptStraysNoLinksUserOnlyBudget_CompareFailure
         assert.ok(!r.lines.some((l) => /es distinta/.test(l)), JSON.stringify(r.lines));
       } finally { fs.chmodSync(dest, 0o600); }
     }
-    // (5) la casa resuelta se dice con `warn`, nunca `fail`
+    // (5) la casa resuelta, con su archivo, se dice con `warn`, nunca `fail` (el archivo se crea acá: el bloque de
+    // arriba sólo corre sin root)
+    const dh = TEAM.dataHomeOf(E, { home, env });
+    put(dh.file, 'environments: {}\n'); fs.chmodSync(dh.file, 0o600);
     const doc = TEAM.skillDataDoctor({ home, env, tree });
     assert.ok(doc.items.some((i) => i.level === 'warn' && /la casa de sus datos es/.test(i.text)), JSON.stringify(doc.items));
     assert.ok(doc.items.every((i) => i.level !== 'fail'));
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
+});
+
+// la línea de la casa dice qué hacer en cada caso: sin conexión, con conexión y con la variable mal puesta
+test('T-235 HomeLine_SaysWhatToDo_MissingExistingAndRelativeVariable', () => {
+  const E = EXTRAS.entries[0];
+  const lab = casa('t235-casa');
+  const home = path.join(lab, 'home');
+  const env = { TYCON_HOME: path.join(home, '.tycon') };
+  const tree = path.join(home, '.tycon', 'harness');
+  const skillMdTxt = '---\nname: bizuit-sdd\ndescription: de juguete\n---\n';
+  fs.mkdirSync(path.join(tree, E.skill), { recursive: true });
+  fs.writeFileSync(path.join(tree, E.skill, 'SKILL.md'), skillMdTxt);
+  fs.writeFileSync(path.join(tree, TEAM.MANIFEST_NAME), JSON.stringify({ schema: 1, repo: 'acme/equipo', commit: SHA(7), files: [
+    { path: `${E.skill}/SKILL.md`, mode: '100644', blob: TEAM.blobOf(Buffer.from(skillMdTxt)) }] }));
+  const line = (e, level = 'warn') => {
+    const its = TEAM.skillDataDoctor({ home, env: e, tree }).items.filter((i) => /la casa de sus datos (es|sería)/.test(i.text));
+    assert.equal(its.length, 1, JSON.stringify(its));
+    assert.equal(its[0].level, level);
+    return its[0].text;
+  };
+  try {
+    // sin conexión, sin variable y sin mudanza no hay nada que hacer: se dice como `ok` (8.233)
+    assert.match(line(env, 'ok'), /la casa de sus datos sería .* \(todavía no la usaste\)$/);
+    assert.match(line({ ...env, [E.dataHome.env]: 'relativa' }), /no es una ruta absoluta: se ignora; poné una ruta absoluta o sacala/);
+    const dh = TEAM.dataHomeOf(E, { home, env });
+    fs.mkdirSync(dh.dir, { recursive: true }); fs.writeFileSync(dh.file, 'active: dev\n');
+    assert.match(line(env), new RegExp(`\\(existe\\) — no hay nada que hacer; si la skill usa otra conexión, mirá ${E.dataHome.env}`));
+  } finally { fs.rmSync(lab, { recursive: true, force: true }); }
+});
+
+// ── 8.233: quien no usó la skill no recibe un aviso por la casa de sus datos ─────────────────
+// Una máquina de juguete con la skill de la lista en la capa; `home(st)` devuelve el renglón de la casa.
+const skillLab = (name) => {
+  const E = EXTRAS.entries[0];
+  const SUB = E.skill.slice('skills/'.length);
+  const lab = casa(name);
+  const home = path.join(lab, 'home');
+  const env = { TYCON_HOME: path.join(home, '.tycon') };
+  const tree = path.join(home, '.tycon', 'harness');
+  const skillMdTxt = '---\nname: bizuit-sdd\ndescription: de juguete\n---\n';
+  fs.mkdirSync(path.join(tree, E.skill), { recursive: true });
+  fs.writeFileSync(path.join(tree, E.skill, 'SKILL.md'), skillMdTxt);
+  fs.writeFileSync(path.join(tree, TEAM.MANIFEST_NAME), JSON.stringify({ schema: 1, repo: 'acme/equipo', commit: SHA(7), files: [
+    { path: `${E.skill}/SKILL.md`, mode: '100644', blob: TEAM.blobOf(Buffer.from(skillMdTxt)) }] }));
+  const homeItems = (items) => items.filter((i) => /la casa de sus datos (es|sería)|apunta a .*, y ahí falta/.test(i.text));
+  const homeLine = ({ e = env, team = null } = {}) => {
+    const its = homeItems(TEAM.skillDataDoctor({ home, env: e, tree, team }).items);
+    assert.equal(its.length, 1, JSON.stringify(its));
+    return its[0];
+  };
+  const put = (f, txt) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, txt); return f; };
+  const done = () => fs.rmSync(lab, { recursive: true, force: true });
+  return { E, SUB, lab, home, env, tree, homeItems, homeLine, put, done };
+};
+
+test('8.233 T1 SkillDataDoctor_SinCasaNiVariable_RenglonOk', () => {
+  const L = skillLab('8233-t1');
+  try {
+    const file = TEAM.dataHomeOf(L.E, { home: L.home, env: L.env }).file;
+    const okLine = `${L.SUB}: la casa de sus datos sería ${file} (todavía no la usaste)`;
+    // sin archivo, sin variable y sin mudanza
+    assert.deepEqual(L.homeLine(), { level: 'ok', text: okLine });
+    // una variable vacía o en blanco cuenta como «sin variable»
+    for (const v of ['', '   ']) assert.deepEqual(L.homeLine({ e: { ...L.env, [L.E.dataHome.env]: v } }), { level: 'ok', text: okLine });
+    // una mudanza registrada cuyo original ya no existe cuenta como «sin conexión vieja»
+    const team = { data_moved: { [L.SUB]: { at: 'x', from: path.join(L.lab, 'ya-no-esta', 'config.yaml') } } };
+    const doc = TEAM.skillDataDoctor({ home: L.home, env: L.env, tree: L.tree, team });
+    assert.deepEqual(L.homeItems(doc.items), [{ level: 'ok', text: okLine }]);
+    assert.ok(!doc.items.some((i) => i.level === 'warn' && /casa de sus datos|conexión vieja/.test(i.text)), JSON.stringify(doc.items));
+  } finally { L.done(); }
+});
+
+test('8.233 T2 SkillDataDoctor_VariableSinArchivoEIgnorada_DiceQueHacer', () => {
+  const L = skillLab('8233-t2');
+  try {
+    const dir = path.join(L.lab, 'mi-casa');
+    fs.mkdirSync(dir, { recursive: true });
+    const vacia = L.homeLine({ e: { ...L.env, [L.E.dataHome.env]: dir } });
+    assert.equal(vacia.level, 'warn');
+    assert.equal(vacia.text, `${L.SUB}: ${L.E.dataHome.env} apunta a ${dir}, y ahí falta ${L.E.dataHome.file}: corré la skill una vez para crearlo, o sacá la variable`);
+    // la variable que no es una ruta absoluta se ignora y se dice, como antes
+    const relativa = L.homeLine({ e: { ...L.env, [L.E.dataHome.env]: 'relativa' } });
+    assert.equal(relativa.level, 'warn');
+    assert.match(relativa.text, /la casa de sus datos es .*no es una ruta absoluta: se ignora; poné una ruta absoluta o sacala/);
+  } finally { L.done(); }
+});
+
+test('8.233 T3 SkillDataDoctor_CasaQueExiste_ComoHoy', () => {
+  const L = skillLab('8233-t3');
+  try {
+    const dh = TEAM.dataHomeOf(L.E, { home: L.home, env: L.env });
+    L.put(dh.file, 'active: dev\n');
+    const it = L.homeLine();
+    assert.equal(it.level, 'warn');
+    assert.equal(it.text, `${L.SUB}: la casa de sus datos es ${dh.file} (existe) — no hay nada que hacer; si la skill usa otra conexión, mirá ${L.E.dataHome.env} en esa sesión`);
+    // con la variable a una carpeta que sí trae el archivo, también como antes
+    const dir = path.join(L.lab, 'otra-casa');
+    L.put(path.join(dir, L.E.dataHome.file), 'active: dev\n');
+    const conVar = L.homeLine({ e: { ...L.env, [L.E.dataHome.env]: dir } });
+    assert.equal(conVar.level, 'warn');
+    assert.match(conVar.text, new RegExp(`\\(existe, por ${L.E.dataHome.env}\\)`));
+  } finally { L.done(); }
+});
+
+test('8.233 T4 SkillDataDoctor_ConexionViejaPorMudar_ComoHoy', () => {
+  const L = skillLab('8233-t4');
+  try {
+    const old = L.put(path.join(L.home, '.claude', 'skills', L.SUB, L.E.legacyData[0]), 'environments: {}\n');
+    const team = { data_moved: { [L.SUB]: { at: 'x', from: old } } };
+    const doc = TEAM.skillDataDoctor({ home: L.home, env: L.env, tree: L.tree, team });
+    assert.ok(doc.items.some((i) => i.level === 'warn' && i.text.includes(`su conexión vieja sigue en ${old}`)), JSON.stringify(doc.items));
+    const casaDice = L.homeItems(doc.items);
+    assert.equal(casaDice.length, 1, JSON.stringify(casaDice));
+    assert.equal(casaDice[0].level, 'warn');
+    assert.match(casaDice[0].text, /la casa de sus datos es .* \(todavía no existe\) — no hay nada que hacer: la skill te pide la conexión/);
+  } finally { L.done(); }
+});
+
+// la casa que no se pudo mirar no es «todavía no la usaste»: se dice con `warn` (el pase adversarial lo reprodujo con
+// la carpeta en 000 y el archivo adentro)
+test('8.233 T6 SkillDataDoctor_CasaQueNoSePuedeMirar_NoBajaAOk', { skip: (process.platform === 'win32' || (process.getuid && process.getuid() === 0)) && 'los permisos que se niegan a leer se miden en posix y sin root' }, () => {
+  const L = skillLab('8233-ilegible');
+  const dh = TEAM.dataHomeOf(L.E, { home: L.home, env: L.env });
+  L.put(dh.file, 'active: dev\n');
+  fs.chmodSync(dh.dir, 0o000);
+  try {
+    const it = L.homeLine();
+    assert.equal(it.level, 'warn');
+    assert.match(it.text, new RegExp(`la casa de sus datos es ${dh.file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} y no la pude mirar \\(EACCES\\)`));
+    assert.doesNotMatch(it.text, /todavía no la usaste/);
+  } finally { fs.chmodSync(dh.dir, 0o755); L.done(); }
+});
+
+// …y lo mismo con la conexión vieja por mudar: si no se pudo mirar, se dice, y la casa no baja a `ok`
+test('8.233 T7 SkillDataDoctor_ConexionViejaQueNoSePuedeMirar_NoBajaAOk', { skip: (process.platform === 'win32' || (process.getuid && process.getuid() === 0)) && 'los permisos que se niegan a leer se miden en posix y sin root' }, () => {
+  const L = skillLab('8233-vieja-ilegible');
+  const old = L.put(path.join(L.home, '.claude', 'skills', L.SUB, L.E.legacyData[0]), 'environments: {}\n');
+  fs.chmodSync(path.dirname(old), 0o000);
+  try {
+    const doc = TEAM.skillDataDoctor({ home: L.home, env: L.env, tree: L.tree, team: { data_moved: { [L.SUB]: { at: 'x', from: old } } } });
+    assert.ok(doc.items.some((i) => i.level === 'warn' && i.text.includes(`su conexión vieja estaba en ${old} y no la pude mirar (EACCES)`)), JSON.stringify(doc.items));
+    const casaDice = L.homeItems(doc.items);
+    assert.equal(casaDice.length, 1, JSON.stringify(casaDice));
+    assert.equal(casaDice[0].level, 'warn');
+    assert.doesNotMatch(casaDice[0].text, /todavía no la usaste/);
+  } finally { fs.chmodSync(path.dirname(old), 0o755); L.done(); }
+});
+
+test('8.233 T5 SkillDataDoctor_NivelDeLaCasa_LlegaIgualADoctor', () => {
+  const R = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'release.js'));
+  const L = skillLab('8233-t5');
+  // un estado de versión bajada mínimo: doctor mira la capa del árbol de `own.harness` (el `tree` del laboratorio)
+  const state = (team = {}) => ({ schema: 1, mode: 'managed', channel: 'stable', team,
+    sources: [{ kind: 'release', version: '2026.11.01.1', ref: 'v2026.11.01.1', commit: SHA(1), url: 'https://example.invalid/acme', tree: SHA(2) }] });
+  const doctor = ({ e = L.env, team = {} } = {}) => {
+    const items = R.doctorItems({ home: L.home, env: e, opts: {} }, state(team));
+    const casaDice = L.homeItems(items);
+    assert.equal(casaDice.length, 1, JSON.stringify(items));
+    return { level: casaDice[0].level, warns: items.filter((i) => i.level === 'warn').length };
+  };
+  try {
+    const t1 = doctor();
+    assert.equal(t1.level, 'ok');
+    const dir = path.join(L.lab, 'mi-casa');
+    fs.mkdirSync(dir, { recursive: true });
+    assert.equal(doctor({ e: { ...L.env, [L.E.dataHome.env]: dir } }).level, 'warn');
+    assert.equal(doctor({ e: { ...L.env, [L.E.dataHome.env]: 'relativa' } }).level, 'warn');
+    const old = L.put(path.join(L.home, '.claude', 'skills', L.SUB, L.E.legacyData[0]), 'environments: {}\n');
+    assert.equal(doctor({ team: { data_moved: { [L.SUB]: { at: 'x', from: old } } } }).level, 'warn');
+    fs.rmSync(path.join(L.home, '.claude'), { recursive: true });
+    // con todo lo demás igual, el caso de T1 cuenta un aviso menos que el de T3 (la casa con su archivo)
+    L.put(TEAM.dataHomeOf(L.E, { home: L.home, env: L.env }).file, 'active: dev\n');
+    const t3 = doctor();
+    assert.equal(t3.level, 'warn');
+    assert.equal(t3.warns, t1.warns + 1, `T1 ${t1.warns} avisos, T3 ${t3.warns}`);
+  } finally { L.done(); }
 });
 
 // ── casos de regresión: cada uno con la prueba que lo reproduce ─────────────────────
@@ -1039,7 +1232,7 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   // (a verificar aparte) un manifiesto de paquete con su clave vieja `nombre` vale, como lo acepta el cargador
   fs.mkdirSync(path.join(lab, 'packs', 'viejo'), { recursive: true });
   fs.writeFileSync(path.join(lab, 'packs', 'viejo', 'pack.json'), JSON.stringify({ nombre: 'viejo', descripcion: 'x', revisores: [] }));
-  assert.deepEqual(TEAM.contentProblems(lab, [{ path: 'packs/viejo/pack.json' }]), []);
+  assert.deepEqual(enCasaDeLaboratorio(() => TEAM.contentProblems(lab, [{ path: 'packs/viejo/pack.json' }])).r, []);
   // el revisor del paquete y su agente con distinta caja: rechazado igual en cualquier disco
   const vv = toyVersion(path.join(lab, 'vv'), { agents: ['tycon-core'] });
   fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
@@ -1056,7 +1249,7 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   fs.writeFileSync(path.join(vOld, '.tycon-release.json'), JSON.stringify(relmOld));
   fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
   const saneL = toyLayer(lab, [['packs/eq/pack.json', packJson('eq', [['rev-a', 'base']])], ['packs/eq/agents/rev-a.md', agentMd('rev-a')]]);
-  const ro = TEAM.checkAgainstVersion(saneL.dir, saneL.files, vOld, { env: {} });
+  const ro = enCasaDeLaboratorio(() => TEAM.checkAgainstVersion(saneL.dir, saneL.files, vOld, { env: {} })).r;
   assert.equal(ro.ok, true, `un paquete público con claves viejas no vuelve núcleo a su agente: ${JSON.stringify(ro.problems)}`);
   // un tramo con punto final o un nombre reservado de Windows pisaría otro archivo en ese disco
   for (const p of ['packs/clients./pack.json', 'agents/con.md', 'skills/aux/SKILL.md', 'skills/x./SKILL.md']) assert.notEqual(TEAM.layerPathProblem(p), null, `${p} no entra`);

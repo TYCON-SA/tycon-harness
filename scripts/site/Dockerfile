@@ -33,6 +33,8 @@ COPY version.json* .tycon-release.json* ./
 # la licencia y los créditos: el pie de cada página los abre (/licencia, /creditos)
 COPY LICENSE* NOTICE* ./
 COPY scripts/site/ scripts/site/
+# el centro de las oficinas carga de acá la librería de WebSocket y la lista de campos de la foto (live-hub.js)
+COPY scripts/tools/office/ scripts/tools/office/
 # la guía del sitio y sus capturas: la pestaña Ayuda la arma de acá, con lo que le toca a cada rol (help.js). Con el
 # comodín, un árbol sin guides/ (el de la noche) arma la imagen igual, y la ayuda dice que esta versión no la trae
 COPY guide[s]/organization-site.md* guides/
@@ -42,6 +44,9 @@ COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/
 # el armado de los días de instintos: lo pide la subida (scripts/metrics/upload-runs.js), que el sitio carga
 COPY scripts/instincts/instinct-upload.js scripts/instincts/
+# la pestaña Aprendizajes: escribe la decisión con la función de la noche (que carga el observador y sus carpetas) y arma
+# el borrador para el arnés
+COPY scripts/instincts/instinct-nightly.js scripts/instincts/instinct-observer.js scripts/instincts/instinct-dirs.js scripts/instincts/instinct-draft.js scripts/instincts/instinct-model.js scripts/instincts/
 COPY scripts/nightly/dashboard/ scripts/nightly/dashboard/
 COPY scripts/nightly/projects/state-age.js scripts/nightly/projects/
 # las fichas de la noche: la sección «Lo que encontró la noche» las lee con la vista común

@@ -49,8 +49,9 @@ const NO_HOOKS = path.join(os.tmpdir(), 'windows-guided-no-git-hooks');
 const SKIP = (process.platform === 'win32' && 'el recorrido de juguete es del modo de laboratorio: en Windows corre el ensayo de verdad')
   || (!has('git') && 'NO MEDIDO — sin git')
   || (!has('pwsh') && 'NO MEDIDO — sin pwsh: la página pide PowerShell 7')
-  || (!require(path.join(DIR, 'npx-probe.js')).npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado: sin npm no se arma el paquete que corre la línea npx`)
-  || (!fs.existsSync(path.join(ROOT, 'getting-started', 'windows.md')) && !fs.existsSync(path.join(ROOT, 'scripts', 'publishing', 'public-files', 'getting-started', 'windows.md')) && 'NO MEDIDO — este árbol no trae la página pública de instalación');
+  || (!require(path.join(DIR, 'npx-probe.js')).npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado: sin npm no se arma el paquete que corre la línea npx`);
+// la página vive en su lugar: si falta, la suite falla nombrándola, no se saltea
+if (!fs.existsSync(path.join(ROOT, 'getting-started', 'windows.md'))) throw new Error('falta la página pública de instalación: getting-started/windows.md');
 const git = (args, cwd) => spawnSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', '-c', `core.hooksPath=${NO_HOOKS}`, ...args], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 const node = (args, opts = {}) => spawnSync(process.execPath, args, Object.assign({ encoding: 'utf8', timeout: 20 * 60 * 1000, maxBuffer: 64 * 1024 * 1024 }, opts));
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -85,25 +86,19 @@ function toyPublishedTree(base) {
     copied++;
   }
   assert.ok(copied > 1000, `sólo ${copied} archivos copiados: el árbol de juguete no es el arnés`);
-  // la página y el guion de entrada: en su lugar (el repo público, o el árbol del equipo con lo público encima) traen el
+  // la página y el guion de entrada, en su lugar (el repo público, o el árbol del equipo con lo público encima), traen el
   // nombre público puesto, «<organización>/<repo>» como lo dice scripts/setup/public-remotes.json, y se cambia por el de
-  // juguete; los papeles viejos del exportador (scripts/publishing/public-files/) traían en su lugar dos marcadores, y se
-  // leen sólo si la página no está en su lugar
-  const placed = fs.existsSync(path.join(ROOT, 'getting-started', 'windows.md'));
-  const source = placed ? ROOT : path.join(ROOT, 'scripts', 'publishing', 'public-files');
-  let named = (text) => text.split('{{public-org}}').join(TOY.org).split('{{public-repo}}').join(TOY.repo);
-  if (placed) {
-    const real = G.namesOf(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'public-remotes.json'), 'utf8'));
-    assert.strictEqual(real.problem, undefined, `scripts/setup/public-remotes.json: ${real.problem}`);
-    const from = `${real.org}/${real.repo}`;
-    named = (text) => { assert.ok(text.includes(from), `el nombre público (${from}) no está donde se lo busca`); return text.split(from).join(`${TOY.org}/${TOY.repo}`); };
-  }
+  // juguete
+  const real = G.namesOf(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'public-remotes.json'), 'utf8'));
+  assert.strictEqual(real.problem, undefined, `scripts/setup/public-remotes.json: ${real.problem}`);
+  const from = `${real.org}/${real.repo}`;
+  const named = (text) => { assert.ok(text.includes(from), `el nombre público (${from}) no está donde se lo busca`); return text.split(from).join(`${TOY.org}/${TOY.repo}`); };
   const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(tree, rel)), { recursive: true }); fs.writeFileSync(path.join(tree, rel), text); };
   put('version.json', `{ "version": "${TOY.version}" }\n`);
-  put('getting-started/windows.md', named(fs.readFileSync(path.join(source, 'getting-started', 'windows.md'), 'utf8')));
-  put('scripts/setup/get-harness.ps1', named(fs.readFileSync(path.join(source, 'scripts', 'setup', 'get-harness.ps1'), 'utf8')));
+  put('getting-started/windows.md', named(fs.readFileSync(path.join(ROOT, 'getting-started', 'windows.md'), 'utf8')));
+  put('scripts/setup/get-harness.ps1', named(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'get-harness.ps1'), 'utf8')));
   // el instalador del paquete trae el repo público de fábrica: en el árbol de juguete, el de juguete
-  if (placed) put('scripts/setup/npm/index.js', named(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'npm', 'index.js'), 'utf8')));
+  put('scripts/setup/npm/index.js', named(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'npm', 'index.js'), 'utf8')));
   put('scripts/setup/public-remotes.json', `{ "remotes": ["https://github.com/${TOY.org}/${TOY.repo}"] }\n`);
   assert.strictEqual(git(['init', '-q', '-b', 'main'], tree).status, 0);
   assert.strictEqual(git(['add', '-A'], tree).status, 0);
@@ -249,7 +244,7 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   const md = fs.readFileSync(path.join(onboarding.out, 'windows-report.md'), 'utf8');
   // la respuesta de la persona, dicha en una línea: no se lee como un verde total (pedido de la coordinadora, pedido 3)
   assert.match(md, /- la respuesta de la persona: en el paso install se sumó `--yes`/);
-  for (const said of [/## El alta, siguiendo la página pública/, /\| Paso \| Quién \| Comando \| Salió \| Esperado contra medido \|/, /\| install \| la máquina \| .*npx @tyconsa\/harness@latest.* \| 0 \|/, /\*\*La capa del equipo\*\*/, /Cómo quedó la máquina con la capa puesta: \d+ hook\(s\)/, /## Lo que el laboratorio cambió/, /- onboarding · guided: carpeta de usuario /, /## No ensayado/, new RegExp(`\\| una copia publicada del arnés \\| .* \\| ${TOY.version.replace(/\./g, '\\.')} \\|`)]) assert.match(md, said);
+  for (const said of [/## El alta, siguiendo la página pública/, /\| Paso \| Quién \| Comando \| Salió \| Esperado contra medido \|/, /\| install \| la máquina \| .*npx @tyconsa\/harness@latest.* \| 0 \|/, /\*\*La capa del equipo\*\*/, /Cómo quedó la máquina con la capa puesta: \d+ hook\(s\)/, /## Lo que el laboratorio cambió/, /- onboarding · guided: carpeta de usuario /, /## No ensayado/, new RegExp(`\\| una copia publicada del arnés \\| .* \\| ${TOY.version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\|`)]) assert.match(md, said);
   assert.ok(!md.includes(config.azure.token));
   assert.match(md, /- TYCON_GITHUB_TOKEN: no se pone en ningún paso/, 'el reporte dice que ningún paso llevó un permiso de GitHub');
 });
@@ -437,7 +432,7 @@ test('GuidedUpdate_LabRun_Auto_ReachesTheNewVersionByItself', { skip: SKIP }, ()
   const finished = node([path.join(DIR, 'rehearse.js'), 'finish', '--out', update.out]);
   assert.strictEqual(finished.status, 0, finished.stderr || finished.stdout);
   const md = fs.readFileSync(path.join(update.out, 'windows-report.md'), 'utf8');
-  const rx = (number) => number.replace(/\./g, '\\.');
+  const rx = (number) => number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   for (const said of [
     /## La actualización, sobre una máquina instalada con la página/,
     new RegExp(`\\| auto — .* \\| ${rx(before)} \\| ${rx(published)} \\| ${rx(published)} \\| sí \\|`),
@@ -449,4 +444,43 @@ test('GuidedUpdate_LabRun_Auto_ReachesTheNewVersionByItself', { skip: SKIP }, ()
     /- update · auto: carpeta de usuario /, /- update · ask: carpeta de usuario /, /## No ensayado/,
   ]) assert.match(md, said);
   assert.doesNotMatch(md, /no se midió|NO SE PUDO ENSAYAR/, 'nada de lo que esta ejecución midió sale como «no se midió»');
+});
+
+// ═══ T17 · el GitHub de juguete sirve entero lo grande ═══════════════════════════════════════════════════════
+// El árbol de juguete que arma la noche (lo privado con el público encima) pasa de 256 MB sin comprimir: el servidor no
+// puede cortar lo que le lee a git. Un archivo de más de 1 MB (el tope de Node cuando nadie pone otro) alcanza para
+// verlo sin armar un repo de cientos de MB.
+const getBuffer = (url) => new Promise((resolve, reject) => {
+  require('http').get(url, (res) => { const parts = []; res.on('data', (c) => parts.push(c)); res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(parts) })); }).on('error', reject);
+});
+
+test('T17 ToyGitHub_FileOverOneMegabyte_ServedWholeByRawAndCodeload @story-8.268 @ac-13', { skip: SKIP }, async () => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'toy-github-big-'));
+  let gh = null;
+  try {
+    // 2 MB que no se comprimen, siempre los mismos: un generador con semilla fija
+    const big = Buffer.alloc(2 * 1024 * 1024);
+    for (let i = 0, x = 0x2545f491; i < big.length; i++) { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; big[i] = x & 0xff; }
+    const work = path.join(dir, 'work');
+    fs.mkdirSync(work);
+    // con la rama nombrada: raw pide `main`, y un 404 por la rama no sería el del tope
+    assert.strictEqual(git(['init', '-q', '-b', 'main'], work).status, 0);
+    fs.writeFileSync(path.join(work, 'big.bin'), big);
+    assert.strictEqual(git(['add', 'big.bin'], work).status, 0);
+    assert.strictEqual(git(['commit', '-q', '-m', 'big file'], work).status, 0);
+    const sha = git(['rev-parse', 'HEAD'], work).stdout.trim();
+    const bare = path.join(dir, 'big.git');
+    assert.strictEqual(git(['clone', '-q', '--bare', work, bare], dir).status, 0);
+    gh = TL.startGitHub({ dir: path.join(dir, 'server'), bare, org: TOY.org, name: TOY.repo, env: process.env });
+    assert.ok(!gh.problem, gh.problem);
+    const raw = await getBuffer(`${gh.raw}/${TOY.org}/${TOY.repo}/main/big.bin`);
+    assert.strictEqual(raw.status, 200, `raw contestó ${raw.status}: ${raw.body.toString('utf8', 0, 200)}`);
+    assert.ok(raw.body.equals(big), `raw sirvió ${raw.body.length} bytes de ${big.length}`);
+    const tgz = await getBuffer(`${gh.archive}/${TOY.org}/${TOY.repo}/tar.gz/${sha}`);
+    assert.strictEqual(tgz.status, 200, `codeload contestó ${tgz.status}`);
+    assert.ok(require('zlib').gunzipSync(tgz.body).includes(big), 'el comprimido trae el archivo entero');
+  } finally {
+    if (gh && gh.stop) gh.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

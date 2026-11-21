@@ -39,7 +39,7 @@ function corral(marcador, frenos = []) {
 }
 
 function cerrar({ raiz, estado }) {
-  const r = spawnSync(process.execPath, [MARKER, 'clear'], {
+  const r = spawnSync(process.execPath, [MARKER, 'clear', '--discard'], {
     encoding: 'utf8',
     env: { ...process.env, HOME: path.join(raiz, 'home'), USERPROFILE: path.join(raiz, 'home'), CLAUDE_CODE_SESSION_ID: SID, TYCON_LANE_LLM: '0' },
   });
@@ -171,8 +171,11 @@ test('T1b RunCloseGate_DeudaYaNoCubrePasarARevision @story-8.139 @ac-29 — con 
   }
 });
 
+// la forma canónica de force-manual y trust-ran la firma su guion en la ventana: acá, la que el freno sigue frenando
+const FUERA_DE_FORMA = 'cd /tmp &&';
+
 test('T2 RunCloseGate_TrustRanYaNoCubreForceManual @story-8.140 @ac-2 @story-8.139 @ac-29 — con trust-ran ya autorizado, force-manual del control de revisores pide su propia ventana', () => {
-  const cmd = `${MK} set-check advisors green --force-manual`;
+  const cmd = `${FUERA_DE_FORMA} ${MK} set-check advisors green --force-manual`;
   for (const frenos of [[], [trustRan(3)]]) {
     const v = lector(corral(VERDE, frenos), cmd);
     assert.deepStrictEqual([v.frena.map((f) => f[0]), v.cubre.length], [['force-manual'], 0], JSON.stringify(frenos));
@@ -182,13 +185,13 @@ test('T2 RunCloseGate_TrustRanYaNoCubreForceManual @story-8.140 @ac-2 @story-8.1
 test('T3 RunCloseGate_AlReves_Frena @story-8.140 @ac-4 — la segunda frase no cubre la primera', () => {
   const a = lector(corral(ROJO, [escape(5)]), `${MK} close-as-debt --reason "x" --debt DEF-9.9-x`);
   assert.deepStrictEqual([a.frena.map((f) => f[0]), a.cubre.length], [['cerrar como deuda'], 0]);
-  const b = lector(corral(VERDE, [escape(5, { escape: 'force-manual' })]), `${PL} check-count --story s --trust-ran`);
+  const b = lector(corral(VERDE, [escape(5, { escape: 'force-manual' })]), `${FUERA_DE_FORMA} ${PL} check-count --story s --trust-ran`);
   assert.deepStrictEqual([b.frena.map((f) => f[0]), b.cubre.length], [['trust-ran'], 0]);
 });
 
 test('T4 RunCloseGate_ForceManualDeOtroControl_Frena @story-8.140 @ac-4 — trust-ran no cubre force-manual de otro control ni de uno que no se lee', () => {
   for (const control of ['tests', 'dod', 'acmatrix', '"advisors"x', '"$C"']) {
-    const v = lector(corral(VERDE, [trustRan(3)]), `${MK} set-check ${control} green --force-manual`);
+    const v = lector(corral(VERDE, [trustRan(3)]), `${FUERA_DE_FORMA} ${MK} set-check ${control} green --force-manual`);
     assert.deepStrictEqual([v.frena.map((f) => f[0]), v.cubre.length], [['force-manual'], 0], control);
   }
 });
@@ -210,4 +213,26 @@ test('T6 RunCloseGate_OtraSesionOtraEjecucionOtraVia_Frena @story-8.140 @ac-4 �
   // sin un arranque legible no hay desde cuándo medir: no cubre
   const v = lector(corral({ ...ROJO, startedAt: 'no-es-una-fecha' }, [deuda(5)]), `${MK} clear`);
   assert.deepStrictEqual([v.frena.map((f) => f[0]), v.cubre.length], [['cerrar la ejecución'], 0]);
+});
+
+// ───────────── Una corrida sin turno no cuenta como prueba roja ─────────────
+
+// con todos los pasos hechos: lo único que podría dejarla abierta son las pruebas
+const TODO_HECHO = { checks: { tests: 'green', advisors: 'green' }, stepsPending: [],
+  stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check', 'prepare-commit'] };
+const SIN_TURNO = { ...TODO_HECHO, checks: { tests: 'sin-turno', advisors: 'green' } };
+
+test('T11 8.215-RunClose_SinTurno_AbiertaNoRoja @story-8.215 @ac-11', () => {
+  const rc = require(RUN_CLOSE);
+  assert.strictEqual(rc.abierta(rc.estado(TODO_HECHO)), false, 'el caso de control: con las pruebas en verde, cerrada');
+  const e = rc.estado(SIN_TURNO);
+  assert.deepStrictEqual(e.rojos, [], 'no la cuenta entre los rojos');
+  assert.strictEqual(rc.abierta(e), true, 'queda abierta: las pruebas no se midieron');
+  assert.match(rc.motivoDe(e), /sin turno/);
+});
+
+test('T25 8.215-CerrarLaEjecucion_SinTurno_PideFrase @story-8.215 @ac-11', () => {
+  assert.deepStrictEqual(lector(corral(TODO_HECHO, []), `${MK} clear`).frena, [], 'el caso de control: con las pruebas en verde, no frena');
+  const v = lector(corral(SIN_TURNO, []), `${MK} clear`);
+  assert.deepStrictEqual(v.frena.map((f) => f[0]), ['cerrar la ejecución'], 'cerrar con las pruebas sin medir pide la frase, como con un rojo');
 });

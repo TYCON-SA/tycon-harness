@@ -349,12 +349,34 @@ function mdInline(s) {
 // corriendo la app (de punta a punta, o con un humo).
 function estadoDelArnes(pa) {
   const v = (pa && pa.verdict) || 'NOT-RUN';
+  // un criterio con cota: el arnés lo corrió y lo midió, así que «no lo probó» sería falso
+  const m = pa && pa.medida;
+  if (m) {
+    const medido = m.medidoTexto ? `medido ${m.medidoTexto}` : 'sin medición';
+    if (v === 'FUERA-DE-COTA') return { tier: 'pend', badge: `El arnés lo midió y quedó fuera de la cota: ${medido}; la cota es ${m.cota}`, como: null };
+    if (v === 'SIN-MEDICION') return { tier: 'pend', badge: `El arnés lo corrió pero falta la medida: ${m.motivo || 'sin medición'}`, como: null };
+    if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') {
+      return { tier: 'wv', badge: `Se firmó sin medirlo dentro de la cota (${medido}${m.cota ? `; la cota es ${m.cota}` : ''})`, como: null };
+    }
+  }
   if (v === 'RUNTIME') {
+    // en vivo por otra vía, con la prueba en vivo que la tabla le declara sin correr: lo probado es parte de lo pedido
+    const faltan = Array.isArray(pa.enVivoSinCorrer) ? pa.enVivoSinCorrer : [];
+    if (faltan.length) {
+      return { tier: 'pend', badge: `Provisorio: el arnés lo probó en parte; ${faltan.join(', ')} no corrió. Probalo a mano`, como: null };
+    }
     const e2e = pa.fuentes && Array.isArray(pa.fuentes.e2e) && pa.fuentes.e2e.length > 0;
     return { tier: 'run', badge: '✓ el arnés ya lo probó', como: `Lo probó corriendo la app${e2e ? ', con una prueba de punta a punta' : ''}. Probarlo a mano es un segundo control.` };
   }
   if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') return { tier: 'wv', badge: 'La app no lo muestra: lo cubre una prueba del código', como: null };
   return { tier: 'pend', badge: 'El arnés no lo probó: probalo a mano', como: null };
+}
+
+// Cuántos criterios probó el arnés y cuántos quedan para probar a mano, con la misma insignia que ve quien prueba: un
+// criterio provisorio no se cuenta como probado.
+function contarCriterios(acs, perAc) {
+  const tiers = acs.map((a) => estadoDelArnes((perAc || {})[a.n]).tier);
+  return { runtime: tiers.filter((t) => t === 'run').length, pending: tiers.filter((t) => t === 'pend').length };
 }
 
 // «el 20/10 a las 10:31», en la hora de la máquina que genera la guía
@@ -587,7 +609,7 @@ function screenSearch(repoRoot, notes, storyPath) {
   // El repo de git de una carpeta (el mismo para el checkout principal y todos sus worktrees), o null.
   const repoGit = (dir) => {
     const r = require('child_process').spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
     return r.status === 0 ? lib.real(String(r.stdout || '').trim()) : null;
   };
   const propio = repoGit(repoRoot);
@@ -644,6 +666,44 @@ function screenRoots(repoRoot, notes, storyPath) {
   return [repoRoot, path.dirname(repoRoot), ...companions];
 }
 
+// La tanda que mide esta corrida: la del marcador de esta sesión, si es de esta historia (la misma lectura que la matriz
+// por línea de comando y que el marcador al cerrar). `{ batches, changed }`, o null sin sesión, sin marcador, sin tanda o
+// si algo no se pudo leer: entonces la pantalla se mira por la historia entera, como sin tandas.
+function tandasDeLaCorrida(abs) {
+  try {
+    const sid = require(path.join(__dirname, 'lib', 'session-id.js')).sessionIdFileKey();
+    if (sid === '_nosession') return null;
+    const dir = require(path.join(__dirname, 'lib', 'state-dir.js')).stateDir(require('os').homedir());
+    const marker = JSON.parse(fs.readFileSync(path.join(dir, 'active', `${sid}.json`), 'utf8'));
+    const rmx = require(path.join(__dirname, 'runtime-matrix.js'));
+    const op = rmx.opcionesDeTandaDelMarcador(marker, abs);
+    if (!op.batch || !Array.isArray(op.changed)) return null;
+    const medidas = rmx.compute({ storyPath: abs, ...op }).measuredBatches;
+    return Array.isArray(medidas) && medidas.length ? { batches: medidas, changed: op.changed } : null;
+  } catch { return null; }
+}
+
+// Una pantalla que falta y nombra a un repo hermano puede haber entrado a main del hermano sin que su copia la bajara:
+// sacarla de la lista sería borrar una pantalla que existe. Se dice, por hermano. Sin red: el arnés no trae el hermano.
+function hermanoAtrasado(missing, companions) {
+  if (!companions.length) return '';
+  const lib = require(path.join(__dirname, 'lib', 'companion-repos.js'));
+  const porHermano = new Map();
+  for (const entrada of missing) {
+    const d = String(entrada || '').replace(/\\/g, '/').replace(/^\.\//, '').trim();
+    const pref = lib.parseRepoPrefixed(d);
+    const c = companions.find((x) => {
+      const n = lib.label(x);
+      return pref ? path.basename(pref.ref) === n : d.startsWith(`${n}/`) || d.startsWith(`../${n}/`);
+    });
+    if (c) porHermano.set(c, [...(porHermano.get(c) || []), entrada]);
+  }
+  return [...porHermano].map(([c, lista]) => {
+    const n = lib.label(c);
+    return ` · ${lista.join(', ')} ${lista.length > 1 ? 'son' : 'es'} de ${n}: la copia de ${n} puede estar atrasada (no bajó lo que entró a main). Traela al día (git pull en ${n}) antes de sacarla de la lista.`;
+  }).join('');
+}
+
 // Un campo del archivo de legibilidad de la pantalla: `clave: a, b` en la línea, o `clave:` y debajo `- a` / `- b`.
 function readListField(md, key) {
   const lines = md.split('\n');
@@ -673,7 +733,7 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
   const { found, missing } = ui.screenFiles(fm, body, busqueda.roots, busqueda.resolve);
   // Una pantalla declarada que no está no se puede revisar: frena. Callada, una story cuyas
   // pantallas no se encuentran pasaría el candado sin que nadie mirara nada.
-  if (missing.length) problems.push(`(7) Pantallas declaradas por la story que no están en el disco (no se pueden revisar): ${missing.join(', ')} — si la story ya no las toca, sacalas de la lista; si viven en otro repo, declaralo en .tycon/advisors.yaml → evidence.companion_repos`);
+  if (missing.length) problems.push(`(7) Pantallas declaradas por la story que no están en el disco (no se pueden revisar): ${missing.join(', ')} — si la story ya no las toca, sacalas de la lista; si viven en otro repo, declaralo en .tycon/advisors.yaml → evidence.companion_repos${hermanoAtrasado(missing, busqueda.roots.slice(2))}`);
   // Una pantalla que está pero no se lee tampoco se puede revisar, haya o no marcas citadas.
   for (const s of found) {
     try { fs.accessSync(s.abs, fs.constants.R_OK); } catch (e) { problems.push(`(7) No pude leer la pantalla ${s.rel} (${e.code || e.message}): no se puede revisar lo que no se ve.`); }
@@ -759,7 +819,7 @@ function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   }
   const hoy = mk.mockupHash(html);
   if (hoy !== ap.data.sha256) {
-    problems.push(`(9) la maqueta cambió después de aprobada (aprobada ${h12(ap.data.sha256)}, hoy ${h12(hoy)}): mostrásela al dueño y aprobala de nuevo: marker.js approve-mockup --approved "<cita>"`);
+    problems.push(`(9) la maqueta cambió después de aprobada (aprobada ${h12(ap.data.sha256)}, hoy ${h12(hoy)}): mostrásela a la persona que aprueba y aprobala de nuevo: marker.js approve-mockup --approved "<cita>"`);
     return { problems, notes };
   }
   const v = mk.validateMockupHtml(html);
@@ -795,6 +855,45 @@ function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   for (const d of cmp.declared) notes.push(`diferencia declarada con la maqueta: «${d.text}» — differs: ${d.motivo}`);
   for (const x of cmp.extras) notes.push(`en la pantalla y no en la maqueta: «${x.text}» (${x.rel}:${x.line})`);
   return { problems, notes };
+}
+
+// ── Capa 12 de la PANTALLA ──────────────────────────────────────────────────────────────────────────────
+// Una pantalla que la maqueta aprobada marca como capa (`presentation: "layer"`) se abre ENCIMA de la suya. Construida en
+// la página pasa la capa 10, porque los textos están, y se ve distinta de lo aprobado. La prueba es la línea
+// `layer-check` de lib/layer-probe.js en la salida de un humo de smoke-run.sh, la misma evidencia que cuenta en la matriz:
+// con su espejo, salida sin cambiar y exit 0. Sin maqueta aprobada e intacta no se mira acá: la capa 9 ya lo dice.
+function layerEvidence({ qaDir, qk, evidenceDirs, key }) {
+  const mk = require(path.join(__dirname, 'mockup.js'));
+  const lp = require(path.join(__dirname, 'lib', 'layer-probe.js'));
+  const problems = [];
+  const ap = mk.readApproval(path.join(qaDir, `${qk}-mockup-approval.json`));
+  if (ap.state === 'absent' || ap.state === 'bad') return { problems };
+  let html;
+  try { html = fs.readFileSync(path.join(qaDir, `${qk}-mockup.html`), 'utf8'); } catch { return { problems }; }
+  if (mk.mockupHash(html) !== ap.data.sha256) return { problems };
+  const capas = mk.mockupLayers(html) || [];
+  if (!capas.length) return { problems };
+  const rm = require(path.join(__dirname, 'runtime-matrix.js'));
+  const lecturas = [];
+  for (const e of rm.readSmokeLedger(evidenceDirs, key, rm.defaultGatesLog())) {
+    if (!e.mirrored || !e.v2 || e.salidaProblema || e.exit !== 0 || typeof e.output !== 'string') continue;
+    try { lecturas.push(...lp.leer(fs.readFileSync(path.join(path.dirname(e.path), e.output), 'utf8'))); } catch { /* salida que no se lee: no cuenta */ }
+  }
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const lpRel = path.join(__dirname, 'lib', 'layer-probe.js');
+  for (const c of capas) {
+    const mias = lecturas.filter((l) => norm(l.screen) === norm(c.name));
+    const encima = mias.filter((l) => l.dialog);
+    if (!mias.length) {
+      problems.push(`(12) la maqueta marca «${c.name}» como capa sobre «${c.over}» y ninguna prueba en vivo muestra que se abra encima. Con navegador: un humo que toque «${c.trigger}» con probeLayer(page, { screen: '${c.name}', trigger: '${c.trigger}', texts }) de ${lpRel} y escriba su línea layer-check. Sin navegador (sin Playwright, o si el humo no puede tocar el botón): la prueba de componente (jsdom o testing-library) toca «${c.trigger}» y escribe la misma línea con probeDocument(document, …). Las dos van con smoke-run.sh <evidence-dir> <story> --acs <N> --pass-if 'la capa se abre encima' -- <comando>.`);
+    } else if (!encima.length) {
+      problems.push(`(12) «${c.name}» se abrió en la página, no encima de «${c.over}»: la maqueta aprobada la marca como capa (una ventana con role="dialog" o aria-modal="true"). Construila como capa; sólo una story que diga «en la página» o «no modal» la contradice, y entonces se cambia la maqueta y se aprueba de nuevo.`);
+    } else {
+      const mejor = encima.map((l) => ({ l, faltan: c.texts.filter((t) => !l.texts.some((x) => norm(x) === norm(t))) })).sort((a, b) => a.faltan.length - b.faltan.length)[0];
+      if (mejor.faltan.length) problems.push(`(12) la capa «${c.name}» se abrió encima, pero sin ${mejor.faltan.map((t) => `«${t}»`).join(', ')} adentro: lo que la maqueta pone en la ventana va dentro de la ventana.`);
+    }
+  }
+  return { problems };
 }
 
 function main() {
@@ -976,15 +1075,22 @@ function main() {
       }
       if (!openApp) problems.push(`(7) Modo primera vez: falta la línea «Abrir la app: <dónde se levanta> · <qué dirección se abre>» al tope de ${pasosPath || pasosEsperado}. La persona trabaja sola: la guía le dice cómo abrir la app.`);
     }
+    // (11) la guía HTML que abre el tester: el chequeo no la genera, dice con qué comando se genera
+    const guiaHtml = opt('--out') || path.join(qaDirStory, path.basename(abs, '.md') + '-guia-qa.html');
+    if (!isFile(guiaHtml)) problems.push(`(11) Falta la guía HTML del tester: ${guiaHtml}. Se genera con: node ${__filename} --story ${abs}`);
     if (sinRol.length) problems.push(`(5) ACs verificados corriendo SIN usuario de prueba declarado — agregá 'Usuario: <rol>' en el bloque del AC de ${pasosEsperado}, o un 'Usuario por defecto: <rol>' al tope del archivo: ${sinRol.map((n) => '#' + n).join(', ')}`);
     // La pantalla de una tanda bloqueada no se revisa en esta corrida: puede estar a medias en el disco, y su
     // maqueta es de esa tanda. La guía de los criterios de backend, sí. Si lo que cambió en el repo toca pantalla, se
     // revisa igual.
     const uiSignal = require(path.join(__dirname, 'lib', 'ui-signal.js'));
-    const alcance = uiSignal.screenScope(content, matrix.repoRoot, { changed: uiSignal.changedFiles(matrix.repoRoot) });
-    if (alcance.note && !alcance.blocked.length) console.log(`   · ${alcance.note}`);
+    // Con una corrida por tanda, la pantalla de OTRA tanda tampoco se revisa en ésta (la misma regla que el marcador).
+    const tanda = tandasDeLaCorrida(abs);
+    const alcance = uiSignal.screenScope(content, matrix.repoRoot, tanda || { changed: uiSignal.changedFiles(matrix.repoRoot) });
+    const deOtraTanda = alcance.blocked.length ? alcance.blocked : (!alcance.active && alcance.otherBatches) || [];
+    const cuyaTanda = alcance.blocked.length ? `la tanda bloqueada ${deOtraTanda.join(', ')}` : `la tanda ${deOtraTanda.join(', ')}`;
+    if (alcance.note && !deOtraTanda.length) console.log(`   · ${alcance.note}`);
     let pantalla = { problems: [], notes: [], screens: [] };
-    const deTandaBloqueada = alcance.blocked.length > 0;
+    const deTandaBloqueada = deOtraTanda.length > 0;
     if (!deTandaBloqueada) {
       pantalla = uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot: matrix.repoRoot, storyPath: abs });
       problems.push(...pantalla.problems);
@@ -992,10 +1098,12 @@ function main() {
       const maqueta = mockupLayers({ qaDir, qk, mockupSha: opt('--mockup-sha'), screens: pantalla.screens });
       problems.push(...maqueta.problems);
       for (const nota of maqueta.notes) console.log(`   · ${nota}`);
+      problems.push(...layerEvidence({ qaDir, qk, evidenceDirs, key: matrix.key || sid }).problems);
     } else {
-      if (alcance.note) console.log(`   · ${alcance.note}`);
+      // la baja por tanda de la corrida ya la dice quien mide la tanda (el marcador); la línea final la repite corta
+      if (alcance.note && alcance.blocked.length) console.log(`   · ${alcance.note}`);
       if (opt('--mockup-sha') || isFile(path.join(qaDir, `${qk}-mockup-approval.json`))) {
-        console.log(`   · la maqueta aprobada es de la tanda bloqueada ${alcance.blocked.join(', ')}: se compara cuando la tanda deje de estar bloqueada.`);
+        console.log(`   · la maqueta aprobada es de ${cuyaTanda}: se compara en la corrida que mida esa tanda.`);
       }
     }
     if (problems.length) {
@@ -1004,7 +1112,7 @@ function main() {
       for (const v of qaViejos) console.error(`   · ${v} no cuenta: el número ${sid} lo comparten varias stories de este repo y ese archivo no dice de cuál es (no se tocó). La guía de esta story va en ${qk}-….`);
       process.exit(2);
     }
-    console.log(`✅ qa-guide --check OK (story ${sid}): pasos-tester presentes, cubren los ${runtimeAcs.length} ACs corridos, sin jerga, legibilidad OK, usuario de prueba declarado, los ${acs.length} ACs con titular legible, y ${!deTandaBloqueada ? `la pantalla revisada (${pantalla.screens.length} archivo/s)` : `la pantalla sin revisar: es de la tanda bloqueada ${alcance.blocked.join(', ')}`}.`);
+    console.log(`✅ qa-guide --check OK (story ${sid}): pasos-tester presentes, cubren los ${runtimeAcs.length} ACs corridos, sin jerga, legibilidad OK, usuario de prueba declarado, los ${acs.length} ACs con titular legible, y ${!deTandaBloqueada ? `la pantalla revisada (${pantalla.screens.length} archivo/s)` : `la pantalla sin revisar: es de ${cuyaTanda}`}.`);
     process.exit(0);
   }
 
@@ -1053,10 +1161,9 @@ function main() {
 
   const stats = {
     total: matrix.stats.total,
-    runtime: matrix.stats.runtime,
+    ...contarCriterios(acs, matrix.perAc),
     waived: matrix.stats.waived,
     notVerifiable: matrix.stats.notVerifiable,
-    pending: acs.filter((a) => estadoDelArnes(matrix.perAc[a.n]).tier === 'pend').length,
   };
 
   // Con la opción de la organización prendida, quién marcó cada criterio a mano y qué falta.
@@ -1114,23 +1221,14 @@ function main() {
   // SOLO con el flag explícito, nunca por default: qa-guide corre también desde hooks
   // (on-pre-commit --check no pasa por acá, pero cualquier automatización futura que
   // genere no debe abrir ventanas sin pedirlo). Cross-platform, fail-open (best-effort).
+  // el mismo abridor que el plan: en Windows, sin consola, así un `&` de la ruta no corre otra orden
   if (process.argv.includes('--open')) {
-    try {
-      const { spawn } = require('child_process');
-      const cmd = process.platform === 'darwin' ? 'open'
-        : process.platform === 'win32' ? 'cmd'
-        : 'xdg-open';
-      const args = process.platform === 'win32' ? ['/c', 'start', '', out] : [out];
-      spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
-      console.log('   🌐 Guía abierta en el navegador (--open)');
-    } catch (e) {
-      console.log(`   ⚠ No pude abrir la guía en el navegador (${e.message}) — abrila a mano: ${out}`);
-    }
+    if (require(path.join(__dirname, 'visual-plan.js')).openInBrowser(out, 'la guía')) console.log('   🌐 Guía enviada al navegador (--open)');
   }
   process.exit(0);
 }
 
-module.exports = { estadoDelArnes, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
+module.exports = { estadoDelArnes, contarCriterios, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
 if (require.main === module) {
   // La opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');

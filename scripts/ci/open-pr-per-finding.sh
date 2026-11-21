@@ -138,12 +138,17 @@ fi
 # En GitHub el pull request se pregunta siempre dentro de un repo (`<dueño>/<repo>`), y sólo la cola de dependencias
 # sabe anotar de qué repo es (`note --pr-repo`): el vigilante comparte el guion y no lo tiene.
 if [ "$PLATAFORMA" = github ]; then
-  if ! [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+  # la forma del conector (esRepoGithub de gh-api.js): el dueño sin puntos ni «-» al comienzo; el nombre, ni `.` ni `..`
+  # (irían a parar a otra ruta de la API)
+  if ! [[ "$REPO" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*/[A-Za-z0-9_.][A-Za-z0-9_.-]*$ ]] || [[ "$REPO" =~ /\.{1,2}$ ]]; then
     echo "error: en GitHub --repo es <dueño>/<repo> (es «${REPO}»)" >&2; exit 2
   fi
   case "$COLA" in
     */dependencies|dependencies) ;;
-    *) echo "error: --platform github sólo con la cola de dependencias (la cola es «${COLA}»): sólo ella anota de qué repo es su pull request" >&2; exit 2 ;;
+    # el vigilante en GitHub: no_soportado, que frena (sale 2) salvo que quien llama lo pida con TYCON_ALLOW_UNSUPPORTED=1
+    *) echo "no_soportado: open-pr-per-finding.sh: --platform github sólo con la cola de dependencias (la cola es «${COLA}», la del vigilante u otra): sólo ella anota de qué repo es su pull request" >&2
+       [ "${TYCON_ALLOW_UNSUPPORTED:-}" = "1" ] && exit 0
+       exit 2 ;;
   esac
 fi
 [ -n "$HOY" ] || HOY=$(date -u +%Y-%m-%d)
@@ -822,7 +827,10 @@ if [ -z "$SOLO_REGISTRAR$SIN_GUARDAR" ]; then
   if [ ! -f "$CICLO" ]; then
     aviso "no está cycle.js junto al guion: no se pudo preguntar si el sitio decide — se abren pedidos como sin sitio"
   else
-    SITIO_MOTIVO=$(node "$CICLO" site-decides --operations operations.json 2>&1); SITIO_RC=$?
+    # la dirección del sitio vale la del perfil del equipo (TEAM_PROFILE, la que ya trae el pipeline); sin él, la de
+    # operations.json, como antes (Casos: scripts/tests/site-config-defects.test.js)
+    PERFIL_SITIO=(); [ -n "${TEAM_PROFILE:-}" ] && [ -f "$TEAM_PROFILE" ] && PERFIL_SITIO=(--profile "$TEAM_PROFILE")
+    SITIO_MOTIVO=$(node "$CICLO" site-decides --operations operations.json ${PERFIL_SITIO[@]+"${PERFIL_SITIO[@]}"} 2>&1); SITIO_RC=$?
     case "$SITIO_RC" in
       0) SITIO_DECIDE=1; echo "$SITIO_MOTIVO" ;;
       1) ;;

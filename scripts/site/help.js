@@ -51,6 +51,8 @@ const SECCIONES = Object.freeze({
     'Qué es y para qué sirve': TODOS,
     'El primer ingreso': TODOS,
     'Las pestañas': TODOS,
+    // cada dev ve las oficinas de sus máquinas: la sección le explica qué sale de la suya
+    'La pestaña «Oficinas»': TODOS,
     'Configuración, sección por sección': MANTIENE,
     'Qué ve cada rol': TODOS,
     'Problemas comunes': TODOS,
@@ -65,6 +67,7 @@ const SECCIONES = Object.freeze({
     'What it is and what it is for': TODOS,
     'Signing in for the first time': TODOS,
     'The tabs': TODOS,
+    'The «Offices» tab': TODOS,
     'Configuration, section by section': MANTIENE,
     'What each role sees': TODOS,
     'Common problems': TODOS,
@@ -299,7 +302,7 @@ function crearRutas({ raiz = path.join(__dirname, '..', '..'), log = () => {} } 
         if (desconocidas.length) log(`ayuda: la guía trae secciones que la tabla no conoce y no se muestran: ${desconocidas.join(' · ')}`);
         const rechazos = [];
         const cuerpo = aHtml(partes.map((p) => p.texto).join('\n'), { alRechazar: (m) => rechazos.push(m) });
-        if (rechazos.length) log(`ayuda: ${rechazos.length} enlace(s) o imagen(es) de la guía no se muestran: ${[...new Set(rechazos)].slice(0, 5).join(' · ')}`);
+        if (rechazos.length) log(`ayuda: ${rechazos.length === 1 ? '1 enlace o imagen de la guía no se muestra' : `${rechazos.length} enlaces o imágenes de la guía no se muestran`}: ${[...new Set(rechazos)].slice(0, 5).join(' · ')}`);
         const aviso = g.otroIdioma ? `<div class="banda">${esc(TEXTOS.otroIdioma(idioma, TEXTOS.idioma(idioma, idioma), TEXTOS.idioma(idioma, g.idioma)))}</div>` : '';
         return html(views.layout(ctx, titulo, `${aviso}<article class="ayuda" lang="${esc(g.idioma)}">${cuerpo}</article>`, rol === 'maintainer' ? TEXTOS.ledeMantiene(idioma) : TEXTOS.ledePersona(idioma)));
       },

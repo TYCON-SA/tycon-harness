@@ -1,6 +1,6 @@
 # controls-bench — Banco de pruebas de controles del arnés
 
-**Qué es**: la red que verifica que los controles del arnés (hoy: los ~20 hooks; en Etapa D: los
+**Qué es**: la red que verifica que los controles del arnés (hoy: los hooks; en Etapa D: los
 28 advisors) hacen lo que dicen — en Claude Code Y en Codex — antes de que una regresión llegue a
 producción. Nace con el plan de llevar el arnés a Codex; su primera
 función es proteger **a los dos lados**: toda pieza que la migración reescribe debe seguir verde en

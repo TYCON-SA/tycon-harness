@@ -23,6 +23,14 @@ set -uo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 
+# sólo lectura: el chequeo antes de la firma del ok de guardar, que corre este gancho con su índice propio. Ahí no se
+# escribe, no se gasta la emergencia y los avisos que nunca rechazan no corren. En un commit de verdad (el índice del
+# repo o su .lock) la variable no apaga nada
+SOLO_LECTURA=0
+if [ "${TYCON_PRECOMMIT_READ_ONLY:-}" = 1 ]; then
+  case "${GIT_INDEX_FILE:-}" in */save-ok-controls-*|save-ok-controls-*) SOLO_LECTURA=1 ;; esac
+fi
+
 # El pre-commit global que el dev ya tenía sigue corriendo: el instalador lo conserva como
 # `pre-commit.local` al lado de éste, se invoca PRIMERO, y si rechaza, el commit se rechaza.
 # Mandarlo a un .bak lo dejaría de correr sin aviso.
@@ -117,7 +125,19 @@ harness_dir() {
   done
   printf '%s' "${HOME:-}/.claude/tycon-harness"
 }
+# Una máquina sin Claude Code tiene el arnés en su casa propia: <TYCON_HOME>/harness (la variable, si es una ruta
+# absoluta) o ~/.tycon/harness. Se mira DESPUÉS de los dos nombres de siempre, a propósito: donde están, siguen mandando.
+# Va aparte de `harness_dir`, que es la misma función, letra por letra, que la de .githooks/pre-commit-checks.
+harness_own_home() {
+  _ho="$(printf '%s' "${TYCON_HOME:-}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  case "$_ho" in /*) ;; *) _ho="${HOME:-}/.tycon" ;; esac
+  if [ -d "$_ho/harness/scripts" ]; then printf '%s' "$_ho/harness"; fi
+}
 _TCG_DIR="$(harness_dir)"
+if [ -z "${TYCON_GUIDES_DIR:-}" ] && [ ! -d "$_TCG_DIR/scripts" ]; then
+  _ho_dir="$(harness_own_home)"
+  [ -n "$_ho_dir" ] && _TCG_DIR="$_ho_dir"
+fi
 # el Node del arnés: el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH ni exporta
 # nada: el .githooks/pre-commit del repo del dev sigue corriendo con su Node
 # con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
@@ -131,7 +151,7 @@ if [ -f "$_LEGACY_SH" ] && . "$_LEGACY_SH" 2>/dev/null && command -v legacy_env 
   legacy_env TYCON_REVIEWER_RULES
 fi
 SQL_COMPILA="$_TCG_DIR/scripts/ci/sql-compile.js"
-if [ "${TYCON_SQL_COMPILE:-1}" != "0" ] && [ -f "$SQL_COMPILA" ] && command -v "$HNODE" >/dev/null 2>&1; then
+if [ "$SOLO_LECTURA" = 0 ] && [ "${TYCON_SQL_COMPILE:-1}" != "0" ] && [ -f "$SQL_COMPILA" ] && command -v "$HNODE" >/dev/null 2>&1; then
   "$HNODE" "$SQL_COMPILA" --staged --repo "$REPO_ROOT" || true
 fi
 # ── 1b'. Reglas del CLAUDE.md fuera de «Reglas para revisores»: AVISAR ──
@@ -140,7 +160,7 @@ fi
 # lo dice al commitear. Con TYPESAFE_API_KEY filtra por probabilidad (tachando antes de mandar);
 # sin llave avisa toda línea nueva fuera de la sección. Nunca rechaza. Off: TYCON_REVIEWER_RULES=0.
 REGLAS_REV="$_TCG_DIR/scripts/ci/reviewer-rules.js"
-if [ "${TYCON_REVIEWER_RULES:-1}" != "0" ] && [ -f "$REGLAS_REV" ] && command -v "$HNODE" >/dev/null 2>&1; then
+if [ "$SOLO_LECTURA" = 0 ] && [ "${TYCON_REVIEWER_RULES:-1}" != "0" ] && [ -f "$REGLAS_REV" ] && command -v "$HNODE" >/dev/null 2>&1; then
   "$HNODE" "$REGLAS_REV" --staged --repo "$REPO_ROOT" || true
 fi
 # ── 1c. El catálogo de producción: forma verificada, y RECHAZA ───────
@@ -149,17 +169,36 @@ fi
 # usuario de la base NO va (vive junto a la contraseña, en el Llavero). A diferencia del bloque
 # 1b, acá el veredicto MANDA: una declaración mal formada deja el freno decidiendo con basura.
 # Con su nombre anterior (`.tycon/produccion.json`) también, hasta que los productos migren.
+# La única salida es la emergencia del próximo commit que la persona firmó en su terminal en este repo
+# (`harness.js sign emergency --commit`, lib/harness-sign.js): se gasta sólo si el catálogo rechaza. `TYCON_PROD_LINT=0` ya no apaga nada; se dice.
 LINT_PROD="$_TCG_DIR/scripts/production/lint-production-json.js"
-if [ "${TYCON_PROD_LINT:-1}" != "0" ]; then
-  if [ -f "$LINT_PROD" ] && command -v "$HNODE" >/dev/null 2>&1; then
-    if ! "$HNODE" "$LINT_PROD" --staged --repo "$REPO_ROOT"; then
+SIGN_LIB="$_TCG_DIR/scripts/lib/harness-sign.js"
+if [ "${TYCON_PROD_LINT:-1}" = "0" ]; then
+  echo "ℹ TYCON_PROD_LINT=0 ya no apaga la revisión del catálogo de producción: la salida es la emergencia (harness.js sign emergency)" >&2
+fi
+if [ -f "$LINT_PROD" ] && command -v "$HNODE" >/dev/null 2>&1; then
+  if ! "$HNODE" "$LINT_PROD" --staged --repo "$REPO_ROOT"; then
+    # en el chequeo de sólo lectura la emergencia se mira sin gastarla: la necesita el commit que viene después
+    if [ "$SOLO_LECTURA" = 1 ]; then
+      if [ -f "$SIGN_LIB" ] && "$HNODE" "$SIGN_LIB" has-commit --repo "$REPO_ROOT" 2>/dev/null; then
+        echo "⚠ el catálogo de producción rechaza el commit; hay una emergencia firmada, y se gasta al commitear" >&2
+      else
+        echo "⛔ el catálogo de producción rechazaría el commit (.tycon/production.json): arreglalo, o que la persona firme la emergencia del commit" >&2
+        exit 1
+      fi
+    elif [ -f "$SIGN_LIB" ] && _emerg="$("$HNODE" "$SIGN_LIB" consume-commit --repo "$REPO_ROOT" 2>/dev/null)"; then
+      echo "⚠ el catálogo de producción rechazó el commit y pasa por la emergencia firmada: ${_emerg}" >&2
+    else
       echo "⛔ el catálogo de producción rechazó el commit (.tycon/production.json)" >&2
+      echo "   Arreglá el catálogo. Si hay que commitear igual, lo decide la persona: firma en su terminal, en este repo," >&2
+      echo "   node \"$_TCG_DIR/scripts/setup/harness.js\" sign emergency --reason \"<por qué>\" --commit" >&2
+      echo "   (vale para el próximo commit de este repo, por 30 minutos)" >&2
       exit 1
     fi
-  elif git -C "$REPO_ROOT" diff --cached --name-only 2>/dev/null | grep -E '\.tycon/(production|produccion)\.json$' >/dev/null; then
-    # sin el lint o sin node NO se saltea en silencio cuando el commit toca el catálogo: se dice
-    echo "⚠ el commit toca el catálogo de producción (.tycon/production.json) y no pude verificarlo (falta $LINT_PROD o node)" >&2
   fi
+elif git -C "$REPO_ROOT" diff --cached --name-only 2>/dev/null | grep -E '\.tycon/(production|produccion)\.json$' >/dev/null; then
+  # sin el lint o sin node NO se saltea en silencio cuando el commit toca el catálogo: se dice
+  echo "⚠ el commit toca el catálogo de producción (.tycon/production.json) y no pude verificarlo (falta $LINT_PROD o node)" >&2
 fi
 
 # ── 2. Sync de engram ──────────────────────────────────────────────────────────────────────────
@@ -192,6 +231,8 @@ revisar_memoria() {
 }
 revisar_memoria
 
+# en sólo lectura no se exporta la memoria: escribe en el repo, y corre al commitear
+[ "$SOLO_LECTURA" = 1 ] && exit 0
 [ -d "$REPO_ROOT/.engram" ] || exit 0
 [ -f "$REPO_ROOT/.engram-project" ] || exit 0
 

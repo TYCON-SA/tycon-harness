@@ -100,7 +100,9 @@ if [ "$AUTO" = 1 ] && { [ -n "$PERMISO" ] || [ "$CON_FROM" = 1 ] || [ "$CAMBIAR_
   echo "--auto-update no va con --from, --change-origin ni las opciones del permiso" >&2; exit 2
 fi
 
-muere(){ printf '⛔ %s\n' "$1" >&2; [ "$SIN_SUDO" = 0 ] && sudo -K 2>/dev/null; exit "${2:-1}"; }
+# el último motivo de `muere`: en el modo --auto-update, la trampa de salida lo anota en el registro
+MOTIVO_FALLA=""; NO_ANOTAR=0
+muere(){ MOTIVO_FALLA="$1"; printf '⛔ %s\n' "$1" >&2; [ "$SIN_SUDO" = 0 ] && sudo -K 2>/dev/null; exit "${2:-1}"; }
 ok(){ printf '   %s\n' "$1"; }
 # 🔴 desde /, y python con -I: sudo conserva la carpeta desde donde se lo llama, y
 # python pone esa carpeta en sys.path, así que un json.py plantado ahí corría como root. Con la actualización sin
@@ -147,9 +149,37 @@ HOME_LEIDA="${HOME_USUARIO:-${HOME:-}}"; CLAUDE_LEIDA="$HOME_LEIDA/.claude"
 DESTINO="$RAIZ/opt/tycon"
 SUDOERS_D="$RAIZ/etc/sudoers.d"; REGLA="$SUDOERS_D/tycon-guard"; MARCA="$DESTINO/production/auto-update.json"
 REGISTRO_AUTO="$DESTINO/production/update-log.jsonl"; INSTALADA="$DESTINO/production/installed-release.json"
-CANDADO="$DESTINO/production/update.lock"; CANDADO_MIO=0; COPIA_AUTO=""; ORIGEN=""
-limpiar(){ [ -n "$ORIGEN" ] && rm -rf "$ORIGEN"; [ -n "$COPIA_AUTO" ] && rm -rf "$COPIA_AUTO"; [ "$CANDADO_MIO" = 1 ] && rm -rf "$CANDADO"; return 0; }
-trap limpiar EXIT
+CANDADO="$DESTINO/production/update.lock"; CANDADO_MIO=0; COPIA_AUTO=""; ORIGEN=""; ENSAYO=""; VERSION_INTENTO=""; ARNES_BAJADO=""
+limpiar(){ [ -n "$ORIGEN" ] && rm -rf "$ORIGEN"; [ -n "$COPIA_AUTO" ] && rm -rf "$COPIA_AUTO"; [ -n "$ENSAYO" ] && rm -rf "$ENSAYO"; [ "$CANDADO_MIO" = 1 ] && rm -rf "$CANDADO"; return 0; }
+# En el modo --auto-update, una salida con error, por cualquier camino (también uno que no pasa por `muere`, como una
+# variable sin valor con set -u), deja un renglón `failed` en el registro, sin `to_version`: el aviso de arranque lo
+# muestra y el gancho de arranque no reintenta la misma versión. La misma versión con el mismo motivo no agrega otro
+# renglón. Si no se puede escribir, lo dice por su salida (queda en el registro del gancho). Un corte duro no deja nada.
+anotar_falla(){ # $1 = código de salida
+  [ "$AUTO" = 1 ] && [ "$1" != 0 ] && [ "$NO_ANOTAR" = 0 ] && [ -d "$DESTINO/production" ] || return 0
+  local motivo="${MOTIVO_FALLA:-salió con código $1 sin decir por qué}"
+  # el motivo sin las carpetas temporales de esta corrida: dos fallas iguales tienen que leerse iguales
+  if ! /usr/bin/python3 -I -c 'import json, os, re, sys, datetime
+reg, version, motivo, copia, bajada = sys.argv[1], sys.argv[2] or None, sys.argv[3], sys.argv[4], sys.argv[5]
+if copia: motivo = motivo.replace(copia + "/harness", bajada or "~/.tycon/harness").replace(copia, "<temporal>")
+motivo = re.sub(r"(/private)?/tmp/tycon-ensayo\.[A-Za-z0-9]+", "<ensayo>", motivo)
+try:
+    if os.path.exists(reg):
+        for l in open(reg, encoding="utf-8", errors="replace"):
+            try: r = json.loads(l)
+            except Exception: continue
+            if isinstance(r, dict) and r.get("status") == "failed" and r.get("attempted_version") == version and r.get("reason") == motivo: sys.exit(0)
+    r = {"status": "failed", "attempted_version": version, "reason": motivo, "at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    with open(reg, "a", encoding="utf-8") as f: f.write(json.dumps(r, ensure_ascii=False) + "\n")
+except OSError as e:
+    sys.stderr.write("(%s)\n" % (e.strerror or e)); sys.exit(1)' "$REGISTRO_AUTO" "${VERSION_BAJADA:-$VERSION_INTENTO}" "$motivo" "$COPIA_AUTO" "$ARNES_BAJADO"; then
+    printf '⛔ además, no pude anotar la falla en %s\n' "$REGISTRO_AUTO" >&2; return 0
+  fi
+  chmod 644 "$REGISTRO_AUTO" 2>/dev/null
+  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$REGISTRO_AUTO" 2>/dev/null || printf '⛔ además, no pude dejar %s como root:wheel\n' "$REGISTRO_AUTO" >&2; fi
+  return 0
+}
+trap 'rc=$?; limpiar; anotar_falla "$rc"' EXIT
 # lo que eligió la organización (guard.update del perfil del equipo), leído con python y sin cargar código del árbol, como
 # ado.org → «auto», «password», «missing-key», «roto <motivo>», «ilegible <motivo>» o «ausente»
 leer_guard_update(){ # $1 = carpeta del arnés
@@ -203,9 +233,10 @@ if [ "$AUTO" = 1 ]; then
   [ -d "$DESTINO/production" ] || muere "esta máquina no tiene el freno instalado: la primera instalación pide contraseña (sudo bash install-guard.sh)"
   if ! mkdir "$CANDADO" 2>/dev/null; then
     OTRO="$(cat "$CANDADO/pid" 2>/dev/null || true)"
-    if [[ "$OTRO" =~ ^[0-9]+$ ]] && kill -0 "$OTRO" 2>/dev/null; then muere "ya hay una actualización corriendo (proceso $OTRO): no hago nada"; fi
+    # otra corrida viva no es un intento fallido: no se anota (el gancho reintentaría la versión que ésa está instalando)
+    if [[ "$OTRO" =~ ^[0-9]+$ ]] && kill -0 "$OTRO" 2>/dev/null; then NO_ANOTAR=1; muere "ya hay una actualización corriendo (proceso $OTRO): no hago nada"; fi
     # sin pid puede ser otra corrida que acaba de tomarlo y todavía no lo escribió: vale como viva hasta que pase un minuto
-    if [ -z "$OTRO" ] && [ -z "$(/usr/bin/find "$CANDADO" -maxdepth 0 -mmin +1 -print 2>/dev/null)" ]; then muere "ya hay una actualización corriendo (el candado se acaba de tomar): no hago nada"; fi
+    if [ -z "$OTRO" ] && [ -z "$(/usr/bin/find "$CANDADO" -maxdepth 0 -mmin +1 -print 2>/dev/null)" ]; then NO_ANOTAR=1; muere "ya hay una actualización corriendo (el candado se acaba de tomar): no hago nada"; fi
     rm -rf "$CANDADO" && mkdir "$CANDADO" 2>/dev/null || muere "no pude tomar el candado $CANDADO"
     ok "candado de una actualización que ya no corre (proceso ${OTRO:-?}): liberado"
   fi
@@ -230,7 +261,9 @@ if [ "$AUTO" = 1 ]; then
     if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then ESTADO_AUTO="$HOME_LEIDA/.tycon/state/harness-state.json"; else ESTADO_AUTO="$CLAUDE_LEIDA/.tycon-pipeline/harness-state.json"; fi
   fi
   /bin/cp "$ESTADO_AUTO" "$COPIA_AUTO/harness-state.json" 2>/dev/null || muere "no pude copiar el estado del arnés ($ESTADO_AUTO): sin él no sé de qué repo se bajó la versión"
-  ARNES="$COPIA_AUTO/harness"; ESTADO_AUTO="$COPIA_AUTO/harness-state.json"
+  ARNES_BAJADO="$ARNES"; ARNES="$COPIA_AUTO/harness"; ESTADO_AUTO="$COPIA_AUTO/harness-state.json"
+  # la versión que se intenta, del manifiesto (sin verificar todavía): sólo para el renglón de una falla temprana
+  VERSION_INTENTO="$(/usr/bin/python3 -I -c 'import json,sys; v=json.load(open(sys.argv[1])).get("version"); print(v if isinstance(v,str) and len(v)<80 else "")' "$ARNES/.tycon-release.json" 2>/dev/null || true)"
   ELECCION="$(leer_guard_update "$ARNES")"
   [ "$ELECCION" = auto ] || muere "$(motivo_eleccion "$ELECCION"): no actualizo sin contraseña — $COMO_CAMBIARLO"
 fi
@@ -720,6 +753,66 @@ else
   for f in "${ARCHIVOS[@]}" $(extras_del_equipo) $(extras_de_setup); do [ -f "$ORIGEN/$f" ] || muere "lo publicado (origin/main $REF) no tiene $f: ¿el freno ya está mergeado a main?"; done
   ok "arnés: origin/main ${REF:0:10} (traído recién, exportado con git archive)"
 fi
+# ── el ensayo antes de reemplazar ────────────────────────────────────────────────────────────────────────────────
+# En una carpeta temporal de root se arma la disposición de /opt/tycon con el freno nuevo y sus bibliotecas, desde la copia
+# verificada, y se lo corre directo con el intérprete de root que ya está, como la persona de la máquina (SUDO_USER), con
+# el entorno vacío y la casa y la carpeta de trabajo en el temporal, sin catálogos. Dos comandos fijos: `ls` tiene que
+# salir 0 y `sqlcmd -S ensayo.invalid -Q "select 1"` tiene que salir 2. Un freno que no arranca, no contesta en 30 s,
+# frena el común o deja pasar el de base no se instala: no se toca /opt y la falla queda anotada. El temporal se borra
+# siempre. No prueba un lanzador ni una puerta nuevos (ver PIEZAS_FIJAS).
+ensayar_freno_nuevo(){
+  local nodo="$DESTINO/bin/node" tope=30 opt f
+  [ -x "$nodo" ] || muere "falta el intérprete de root ($nodo): sin él no puedo ensayar el freno nuevo — reinstalá con sudo bash install-guard.sh"
+  # sólo en pruebas (--no-sudo, que nunca corre como root): la copia de un node con bibliotecas propias no corre suelta,
+  # así que el ensayo usa el original del que se copió
+  if [ "$SIN_SUDO" = 1 ] && [ "${TYCON_PROD_NODE_LOCAL:-}" = "1" ]; then
+    nodo="$(/usr/bin/python3 -I -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$(PATH="${TYCON_PROD_TEST_PATH:-/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin}" command -v node || true)")"
+  fi
+  [ "$SIN_SUDO" = 1 ] && [[ "${TYCON_PROD_REHEARSAL_TIMEOUT:-}" =~ ^[0-9]+$ ]] && tope="$TYCON_PROD_REHEARSAL_TIMEOUT"
+  ENSAYO="$(/usr/bin/mktemp -d /tmp/tycon-ensayo.XXXXXX)" || muere "no pude crear la carpeta del ensayo del freno nuevo"
+  opt="$ENSAYO/opt/tycon"
+  /bin/mkdir -p "$opt/hooks" "$opt/lib" "$opt/production" "$opt/setup/harness" "$ENSAYO/casa" "$ENSAYO/aca" || muere "no pude armar la carpeta del ensayo"
+  /bin/cp "$ORIGEN/scripts/hooks/prod-access-guard.js" "$opt/hooks/" || muere "no pude copiar el freno nuevo al ensayo"
+  for f in shell-parse repos-root tycon-config skills-dir guard-record legacy-names; do
+    /bin/cp "$ORIGEN/scripts/production/guard-libs/lib/$f.js" "$opt/lib/" || muere "no pude copiar $f.js al ensayo"
+  done
+  /bin/cp "$ORIGEN/scripts/production/guard-libs/setup/harness/tycon-home.js" "$opt/setup/harness/" || muere "no pude copiar tycon-home.js al ensayo"
+  /bin/cp "$ORIGEN/scripts/production/production-index.js" "$opt/production/" || muere "no pude copiar production-index.js al ensayo"
+  if [ "$CON_MAPA" = 1 ]; then /bin/cp "$ORIGEN/$MAPA_NOMBRES" "$opt/lib/renames.json" || muere "no pude copiar el mapa de nombres al ensayo"; fi
+  /bin/chmod -R a+rX "$ENSAYO" || muere "no pude dar permiso de lectura a la carpeta del ensayo"
+  if [ "$SIN_SUDO" = 0 ]; then /usr/sbin/chown "$USUARIO" "$ENSAYO/casa" "$ENSAYO/aca" || muere "no pude preparar la casa del ensayo para $USUARIO"; fi
+  local veredicto
+  veredicto="$(/usr/bin/python3 -I - "$nodo" "$opt/hooks/prod-access-guard.js" "$ENSAYO/casa" "$ENSAYO/aca" "$tope" "${USUARIO:-}" <<'PY'
+import json, os, subprocess, sys
+nodo, freno, casa, aca, tope, usuario = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]), sys.argv[6]
+def como_la_persona():
+    if os.getuid() == 0:
+        import pwd
+        pw = pwd.getpwnam(usuario)
+        os.setgroups([]); os.setgid(pw.pw_gid); os.setuid(pw.pw_uid)
+for cmd, espera, que in (("ls", 0, "el comando común ls"), ('sqlcmd -S ensayo.invalid -Q "select 1"', 2, "el comando de base sqlcmd")):
+    ev = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": cmd}, "session_id": "ensayo", "cwd": aca})
+    try:
+        r = subprocess.run(["/usr/bin/env", "-i", "HOME=" + casa, "PATH=/usr/bin:/bin", nodo, freno], input=ev.encode(), cwd=aca,
+                           capture_output=True, timeout=tope, preexec_fn=como_la_persona)
+    except subprocess.TimeoutExpired:
+        print("el ensayo del freno nuevo no contestó en %d s con %s" % (tope, que)); sys.exit(0)
+    except Exception as e:
+        print("el ensayo del freno nuevo no pudo correr (%s)" % e); sys.exit(0)
+    if r.returncode != espera:
+        error = (r.stderr.decode("utf-8", "replace").strip().splitlines() or [""])[0][:160]
+        if r.returncode not in (0, 2): print("el ensayo del freno nuevo no arrancó: con %s salió %d%s" % (que, r.returncode, (" (%s)" % error) if error else ""))
+        elif espera == 0: print("el ensayo del freno nuevo frenó %s (salió %d, esperaba 0)" % (que, r.returncode))
+        else: print("el ensayo del freno nuevo dejó pasar %s (salió %d, esperaba 2)" % (que, r.returncode))
+        sys.exit(0)
+print("ok")
+PY
+)" || muere "no pude correr el ensayo del freno nuevo"
+  rm -rf "$ENSAYO"; ENSAYO=""
+  [ "$veredicto" = ok ] || muere "$veredicto: no toqué /opt. Si el ensayo frenó de más, ponelo al día con tu contraseña: sudo bash ~/.tycon/harness/scripts/production/install-guard.sh"
+  ok "ensayo del freno nuevo: deja pasar el común y frena el de base"
+}
+
 # el modo del guion corre la copia de root del instalador, que trae su propia lista de lo que se instala: una versión con
 # otro instalador (o con otro guion) no se instala sola — con la lista vieja quedaría a medias diciendo «se actualizó»
 if [ "$AUTO" = 1 ]; then
@@ -727,6 +820,24 @@ if [ "$AUTO" = 1 ]; then
     cmp -s "$AQUI_GUION/${par%%:*}" "$ORIGEN/${par#*:}" \
       || muere "la versión nueva trae otro ${par%%:*}: esta actualización pide contraseña (sudo bash ~/.tycon/harness/scripts/production/install-guard.sh)"
   done
+  # 🔴 El ensayo de abajo corre el freno nuevo con el intérprete de root que ya está, y no corre el lanzador ni la
+  # puerta: en una máquina con /opt/tycon los dos van por ruta fija a lo instalado. Una versión que cambia el
+  # intérprete, el lanzador o la puerta no se instala sola: el ensayo nunca da por buena una pieza que no corrió. Se
+  # compara contra la constancia de lo que dejó la instalación anterior; sin ella no se sabe, y tampoco.
+  PIEZAS_FIJAS="$(/usr/bin/python3 -I -c 'import hashlib, json, os, sys
+origen, constancia = sys.argv[1], sys.argv[2]
+try: dejado = {f["path"]: f["blob"] for f in json.load(open(constancia))["files"]}
+except Exception: print("CONSTANCIA"); sys.exit(0)
+for rel, nombre in (("scripts/production/node-official.json", "intérprete (node-official.json)"), ("scripts/production/node-shim.sh", "lanzador (node-shim.sh)"), ("scripts/production/tycon-prod-sql", "puerta (tycon-prod-sql)")):
+    data = open(os.path.join(origen, rel), "rb").read()
+    if dejado.get(rel) != hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest(): print(nombre)' "$ORIGEN" "$DESTINO/production/installed-files.json" 2>&1)" \
+    || muere "no pude comparar el intérprete, el lanzador y la puerta con lo instalado: esta actualización pide contraseña (sudo bash ~/.tycon/harness/scripts/production/install-guard.sh)"
+  if [ "$PIEZAS_FIJAS" = CONSTANCIA ]; then
+    muere "no pude leer la constancia de lo instalado ($DESTINO/production/installed-files.json): sin ella no sé si cambian el intérprete, el lanzador o la puerta — esta actualización pide contraseña (sudo bash ~/.tycon/harness/scripts/production/install-guard.sh)"
+  elif [ -n "$PIEZAS_FIJAS" ]; then
+    muere "la versión nueva trae otro $(printf '%s' "$PIEZAS_FIJAS" | paste -sd ',' - | sed 's/,/, otro /g'): el ensayo no lo puede probar, así que esta actualización pide contraseña (sudo bash ~/.tycon/harness/scripts/production/install-guard.sh)"
+  fi
+  ensayar_freno_nuevo
 fi
 
 # ── 1. las carpetas de root: se crean o se exigen de root ────────────────────────────────────
@@ -800,6 +911,115 @@ for h in dict.fromkeys(hosts + list(abiertas)): print(h)' "$d/production-firewal
   done
 }
 cerrar_reglas_abiertas
+
+# Los estados del freno con su nombre de antes del renombre (el índice, la memoria y el registro): el freno ya no los
+# escribe ni los lee. Se borran sólo si lo suyo ya está en lo nuevo, mirado por contenido y nunca por fechas: la memoria
+# y el índice, con cada servidor suyo ya en la memoria nueva (y el índice nuevo presente); el registro, después de pasar
+# su historia al nuevo. Si no, quedan y se dice: el freno los pasa a lo nuevo al regenerar, o la puerta con --verify. Recorrido propio, en cada carpeta de estado: el de las reglas de firewall saltea las que no
+# tienen estado nuevo, y ahí también puede quedar algo viejo.
+retirar_estados_viejos(){
+  # Con sudo, la casa del usuario que lanzó. En el modo de pruebas (--no-sudo) sólo una casa de laboratorio explícita:
+  # esto BORRA, y las pruebas que corren el instalador no apuntan HOME a una carpeta propia.
+  local casa="${HOME_USUARIO:-${TYCON_PROD_TEST_HOME:-}}" d salida linea como=()
+  [ -n "$casa" ] || return 0
+  # 🔴 La casa es del usuario: se limpia con SUS permisos, nunca como administrador. Como administrador, un enlace que el
+  # usuario ponga entre el chequeo y el uso desviaría el borrado o la escritura a cualquier carpeta; con sus permisos,
+  # lo peor es tocar sus propios archivos. Lo que sea de root queda, y se dice.
+  if [ "$(id -u)" = 0 ]; then
+    if [ -z "${USUARIO:-}" ] || [ "$USUARIO" = root ]; then
+      printf '   ⚠ no limpio los estados de antes del renombre: no sé qué usuario lanzó la instalación, y como administrador no los toco.\n'
+      return 0
+    fi
+    como=(/usr/bin/sudo -n -u "$USUARIO" --)
+  fi
+  # la carpeta de Claude Code con el nombre escrito una sola vez, arriba (CLAUDE_LEIDA)
+  for d in "$casa/.tycon/state" "$casa/${CLAUDE_LEIDA##*/}/.tycon-pipeline"; do
+    [ -d "$d" ] || continue
+    if ! salida="$(${como[@]+"${como[@]}"} /usr/bin/python3 -I -c 'import json,sys,os,stat
+d, casa = sys.argv[1], sys.argv[2]
+if os.geteuid() == 0:
+    print("KEEP %s no la limpio como administrador: la casa se limpia sólo con los permisos de su dueño" % d); sys.exit(0)
+def ruta(n): return os.path.join(d, n)
+# Corre con los permisos del dueño de la casa, y además nada se sigue por un enlace. Cada tramo desde la casa es una carpeta
+# común del dueño de la casa, y cada archivo, un archivo común suyo; si no, no se lee, no se escribe y no se borra.
+dueno = os.stat(casa).st_uid
+tramo = casa
+for parte in os.path.relpath(d, casa).split(os.sep):
+    tramo = os.path.join(tramo, parte); s = os.lstat(tramo)
+    if stat.S_ISLNK(s.st_mode) or not stat.S_ISDIR(s.st_mode) or s.st_uid != dueno:
+        print("KEEP %s no es una carpeta común del dueño de la casa: no toco nada adentro" % tramo); sys.exit(0)
+def comun(n):
+    try: s = os.lstat(ruta(n))
+    except FileNotFoundError: return None
+    return stat.S_ISREG(s.st_mode) and s.st_uid == dueno
+def lineas(n):
+    with os.fdopen(os.open(ruta(n), os.O_RDONLY | os.O_NOFOLLOW), encoding="utf-8") as f: return f.read().splitlines()
+def leer(n):
+    c = comun(n)
+    if c is None: return False, None
+    if not c: return True, "NO-COMUN"
+    try: return True, json.loads("\n".join(lineas(n)))
+    except Exception: return True, "ILEGIBLE"
+def borrar(n):
+    try: os.unlink(ruta(n)); print("DEL %s" % n)
+    except Exception as e: print("KEEP %s no pude borrarlo (%s): queda" % (n, e))
+_, mem = leer("production-memory.json")
+nueva = set(h for h in (mem.get("produccion", []) if isinstance(mem, dict) else []) if isinstance(h, str))
+existe, vieja = leer("produccion-memoria.json")
+if existe:
+    hosts = vieja.get("produccion", []) if isinstance(vieja, dict) else None
+    if vieja == "NO-COMUN": print("KEEP produccion-memoria.json no es un archivo común del dueño de la casa: no lo leo ni lo borro")
+    elif not isinstance(hosts, list): print("KEEP produccion-memoria.json no se puede leer: queda, y la puerta la resuelve con --verify")
+    elif not set(h for h in hosts if isinstance(h, str)) <= nueva: print("KEEP produccion-memoria.json tiene servidores que la memoria nueva todavía no tiene: queda hasta que el freno la pase")
+    else: borrar("produccion-memoria.json")
+existe, viejo = leer("produccion-indice.json")
+if existe:
+    hosts = viejo.get("memoria", []) if isinstance(viejo, dict) else None
+    if viejo == "NO-COMUN": print("KEEP produccion-indice.json no es un archivo común del dueño de la casa: no lo leo ni lo borro")
+    elif not isinstance(hosts, list): print("KEEP produccion-indice.json no se puede leer: queda, y la puerta lo resuelve con --verify")
+    elif not comun("production-index.json"): print("KEEP produccion-indice.json queda: falta production-index.json")
+    elif not set(h for h in hosts if isinstance(h, str)) <= nueva: print("KEEP produccion-indice.json guarda servidores que la memoria nueva todavía no tiene: queda hasta que el freno los pase")
+    else: borrar("produccion-indice.json")
+# El registro de antes: su historia pasa al nuevo (adelante, es más vieja) antes de borrarlo. El freno de antes la copiaba
+# una vez y éste ya no: sin pasarla acá, una máquina que nunca escribió el nuevo la perdería. El nuevo se escribe por un
+# temporal con el dueño y los permisos del que había, y se renombra: un corte no lo deja a medias.
+viejo_log, nuevo_log = comun("produccion.log"), comun("production.log")
+if viejo_log is False: print("KEEP produccion.log no es un archivo común del dueño de la casa: no lo leo ni lo borro")
+elif viejo_log and nuevo_log is False: print("KEEP produccion.log queda: production.log no es un archivo común del dueño de la casa")
+elif viejo_log:
+    try:
+        if nuevo_log is None:
+            os.rename(ruta("produccion.log"), ruta("production.log")); print("MOVED produccion.log")
+        else:
+            nuevas = lineas("production.log")
+            faltan = [l for l in lineas("produccion.log") if l.strip() and l not in set(nuevas)]
+            if faltan:
+                s = os.lstat(ruta("production.log")); tmp = ruta(".production.log.instalador")
+                try: os.unlink(tmp)
+                except FileNotFoundError: pass
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write("\n".join(faltan + nuevas) + "\n"); f.flush(); os.fchown(f.fileno(), s.st_uid, s.st_gid); os.fchmod(f.fileno(), stat.S_IMODE(s.st_mode))
+                os.rename(tmp, ruta("production.log"))
+            borrar("produccion.log")
+    except Exception as e: print("KEEP produccion.log no pude pasar su historia a production.log (%s): queda" % e)
+' "$d" "$casa")"; then
+      # lo que alcanzó a hacer antes de cortarse se dice igual: «quedan como están» sería falso si ya borró algo
+      while IFS= read -r linea; do
+        case "$linea" in DEL\ *|MOVED\ *) printf '   · en %s alcancé a: %s\n' "$d" "$linea" ;; esac
+      done <<< "${salida:-}"
+      printf '   🔴 no pude terminar de revisar los estados de antes del renombre en %s: lo que no dice arriba quedó como estaba.\n' "$d"; continue
+    fi
+    while IFS= read -r linea; do
+      case "$linea" in
+        DEL\ *) ok "borré $d/${linea#DEL } (su nombre de antes del renombre; lo suyo ya está en el nuevo)" ;;
+        MOVED\ *) ok "renombré $d/${linea#MOVED } a su nombre nuevo, con su historia" ;;
+        KEEP\ *) printf '   ⚠ en %s: %s\n' "$d" "${linea#KEEP }" ;;
+      esac
+    done <<< "$salida"
+  done
+}
+retirar_estados_viejos
 
 instalar scripts/hooks/prod-access-guard.js       "$DESTINO/hooks/prod-access-guard.js" 644
 # el hook que cierra las reglas de firewall de la puerta, en el fin de sesión y en el barrido de arranque

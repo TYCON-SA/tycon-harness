@@ -1,0 +1,4 @@
+{
+  "_why": "Los bloques que el arnés sacó de claude-md-blocks/. Borrar el archivo de un bloque no lo saca de las máquinas que ya lo tienen escrito: quedaría para siempre entre sus marcadores. Los tres sincronizadores (sync-claude-md-blocks.sh, su par de Windows y agents-md-blocks.js para el AGENTS.md de Codex) leen esta lista y quitan cada bloque nombrado entre sus marcadores, sin tocar lo que la persona escribió alrededor; con --check sólo avisan que sobra. Si un bloque vuelve (hay otra vez un archivo con su nombre), manda el archivo. Cada entrada lleva su motivo, que la máquina muestra al quitarlo.",
+  "ado-runs-list-lag": "la regla de los listados de Azure DevOps viaja con su conector (integrations/azure-devops/rules.md) y aparece después del primer comando de esa plataforma"
+}

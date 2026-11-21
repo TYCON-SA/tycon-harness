@@ -10,7 +10,7 @@
 # Windows Defender los marca como falso positivo, así que se compila local.
 #
 # ✅ VENTAJA SOBRE MAC: `go install ...@v1.12.0` instala la versión EXACTA. El
-# `brew upgrade --cask` de Mac instala la ÚLTIMA del cask, así que si el equipo eligiera
+# `brew upgrade` de la fórmula en Mac instala la ÚLTIMA que tenga, así que si el equipo eligiera
 # a propósito una versión anterior a la última, en Mac no se le puede acertar y en
 # Windows sí. Windows quedó con el camino más preciso de los dos.
 #

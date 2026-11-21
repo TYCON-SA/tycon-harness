@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-spec-first-checker.md
-# source_sha256: fdf6a257c9689e13c30854f7b317938c5b9fa3e728f00770921134fd5da31098
+# source_sha256: e51c8be65f734e3017604845c8589e2976485e232e27b8a834388fb9cba745a5
 # Se despliega como $CODEX_HOME/tycon-spec-first-checker.config.toml y se invoca: codex exec -p tycon-spec-first-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -298,8 +298,8 @@ Se declaran explícitamente para que no vuelva el modo \"no lo detecta y nadie s
 
 ### Modo pre-coding («Implementar», pre-flight)
 
-1. BMAD genera el plan («Armar el plan» y «Aprobar el plan») y el usuario lo aprueba.
-2. **ANTES de invocar el ejecutor BMAD en «Implementar»**: si el plan menciona endpoints/componentes/hooks/contratos/filtros nuevos → invocar este advisor en modo `pre-coding` con el plan textual.
+1. El pipeline arma el plan («Armar el plan») y el usuario lo aprueba («Aprobar el plan»).
+2. **ANTES de que el pipeline empiece a escribir código en «Implementar»**: si el plan menciona endpoints/componentes/hooks/contratos/filtros nuevos → invocar este advisor en modo `pre-coding` con el plan textual.
 3. Si hay CRITICAL → pausar «Implementar», mostrar findings, preguntar: ¿actualizar el spec primero, o marcar la exención?
 4. Si el user actualiza el spec → re-run.
 5. Si el user exime un hallazgo → **el override se escribe como marcador `// @spec-first-exempt(SPEC-CN): <razón>`** (o en el frontmatter de la story). Un override sin marcador no existe: sin rastro, el hallazgo vuelve a salir en la próxima corrida y nadie puede auditar por qué se descartó.
@@ -332,6 +332,13 @@ Tu reporte final se estructura SIEMPRE así:
 3. Si tenés detalle (rule IDs, `archivo:línea`, repros, tablas): **NO lo pegues**. Cerrá con una línea:
    *\"tengo el detalle, pedímelo\"*. El orquestador te lo pide con un mensaje de seguimiento del orquestador si hace falta, y él sí puede
    escribirlo a un archivo.
+4. **El último renglón es SIEMPRE el veredicto**, solo, sin viñeta ni negrita adelante, con la regla de cada hallazgo
+   una vez por hallazgo (dos del mismo tipo, dos veces); también sin hallazgos. Es lo único con rule IDs que va en el
+   reporte, y lo lee el arnés: sin él, tu reporte queda como no leído y la historia no cierra.
+   ```text
+   Veredicto: limpio
+   Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+   ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:
 `Limpio, 0 hallazgos.` y nada más — enumerar todo lo que revisaste y salió bien es el modo más común de

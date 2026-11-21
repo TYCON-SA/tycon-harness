@@ -112,6 +112,7 @@ Por spec (y, cuando aplica, por `test()` block). **Se cuentan también los helpe
 2. **NO matchea** ninguna exclusión. Exclusiones canónicas, por **segmento** de path: `auth`, `login`, `logout`, `token`, `refresh`, `session`, `me`, `health`, `healthz`, `ping`, `ready`, `metrics`, `telemetry`, `analytics`. Más, por **prefijo**: `/assets/`, `/static/`, `/_next/`. Más, por **extensión**: imágenes, fuentes, `.css`, `.map`. El repo puede sumar exclusiones con `.tycon/advisors.yaml → e2e_realness.business_endpoint_excludes`; **no puede quitarlas**.
 3. **Orden declarado**: exclusión gana sobre inclusión. `/api/` a secas matchea todo, incluidas las exclusiones — por eso el orden no es opcional: sin él, Claude y Codex pueden leerlo distinto y las dos corridas pasan el banco.
 4. Una intercepción excluida sigue necesitando su comentario inline diciendo por qué ese path no es de negocio (ej. `// auth refresh only`, `// static asset`) — sin el comentario, se reporta como `REAL-W3` (exención sin razón auditable), no como CRITICAL.
+5. **La lista entera**, con su copia exacta en `skills/tycon-pipeline/scripts/lib/simulated-server.js` (la matriz de verificación la usa y una prueba compara las dos): segmentos `auth` `login` `logout` `token` `refresh` `session` `me` `health` `healthz` `ping` `ready` `metrics` `telemetry` `analytics`; prefijos `/assets/` `/static/` `/_next/`; extensiones `.png` `.jpg` `.jpeg` `.gif` `.svg` `.webp` `.ico` `.avif` `.woff` `.woff2` `.ttf` `.otf` `.eot` `.css` `.map`; inclusión `/(api|graphql|rpc)/`.
 
 ### `REAL-C3` — por qué es PROJECT-gated
 
@@ -289,6 +290,14 @@ Tu reporte final se estructura SIEMPRE así:
 3. Si tenés detalle (rule IDs, `archivo:línea`, repros, tablas): **NO lo pegues**. Cerrá con una línea:
    *"tengo el detalle, pedímelo"*. El orquestador te lo pide con SendMessage si hace falta, y él sí puede
    escribirlo a un archivo.
+4. **El último renglón es SIEMPRE el veredicto**, solo, sin viñeta ni negrita adelante, con la regla de cada hallazgo
+   una vez por hallazgo (dos del mismo tipo, dos veces); también sin hallazgos. Es lo único con rule IDs que va en el
+   reporte, y lo lee el arnés: sin él, tu reporte queda como no leído y la historia no cierra. Tu estado propio
+   (`**Veredicto**: GREEN …`) no lo reemplaza: este renglón va además, al final.
+   ```text
+   Veredicto: limpio
+   Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+   ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:
 `Limpio, 0 hallazgos.` y nada más — enumerar todo lo que revisaste y salió bien es el modo más común de

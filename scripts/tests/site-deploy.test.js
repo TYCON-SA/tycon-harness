@@ -188,12 +188,15 @@ test('T23 Candado_DejaLibreLaPaginaDeSalida @story-2.46 @ac-18', async () => {
   const H = require('./lib/site-harness.js');
   const { arrancarEmisor } = require('./lib/fake-oidc.js');
   const emisor = await arrancarEmisor();
-  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({}) });
+  const dirLlaves = fs.mkdtempSync(path.join(os.tmpdir(), 'llaves-'));
+  const llaves = require('../site/machine-keys.js').crearLlaves({ dataDir: dirLlaves });
+  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({}), llaves });
   try {
     for (const r of rutas) {
       const res = await h.pedir(r);
       assert.ok(!res.headers.location, `${r} no redirige (${res.status} → ${res.headers.location})`);
-      if (r === '/idioma') assert.strictEqual(res.status, 405, '/idioma acepta sólo POST sin sesión');
+      if (r === '/idioma' || r === '/live/enroll') assert.strictEqual(res.status, 405, `${r} acepta sólo POST sin sesión`);
+      else if (r === '/live/machine') assert.strictEqual(res.status, 426, '/live/machine pide la conexión de la máquina');
       else assert.strictEqual(res.status, 200, `${r} contesta sin sesión`);
     }
   } finally { await h.cerrar(); await emisor.cerrar(); }
@@ -202,7 +205,7 @@ test('T23 Candado_DejaLibreLaPaginaDeSalida @story-2.46 @ac-18', async () => {
 test('PruebaSinSesion_SalidaDetrasDelCandado_AvisaSinFallar @story-2.48 @ac-7 @story-2.51 @ac-8', async () => {
   const http = require('http');
   const CHECK = require(path.join(ROOT, 'scripts', 'site', 'check-deploy.js'));
-  assert.ok(Array.isArray(CHECK.AVISOS) && CHECK.AVISOS.length === 1, 'el aviso es un vocabulario cerrado exportado');
+  assert.ok(Array.isArray(CHECK.AVISOS) && CHECK.AVISOS.length === 2, 'el aviso es un vocabulario cerrado exportado');
   const AVISO = CHECK.AVISOS[0];
   // tras «Salir» el sitio no vuelve a entrar solo: el aviso dice lo que sí pasa, y las guías también
   assert.doesNotMatch(AVISO, /se vuelve a entrar/, 'el aviso no dice que se vuelve a entrar');
@@ -734,7 +737,7 @@ test('T42 Guia_InstalacionCompletaYEnIngles @story-2.30 @ac-7', () => {
 test('T33 Registro_SuitesPiezasYReadmes @story-2.30 @ac-24', () => {
   const suites = fs.readFileSync(path.join(ROOT, 'scripts', 'tests', 'suites.json'), 'utf8');
   for (const s of ['site-image-workflow.test.js', 'site-check-deploy.test.js', 'site-deploy.test.js', 'notify.test.js']) assert.ok(suites.includes(`"tests/${s}"`), `suites.json no registra ${s}`);
-  const piezas = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const piezas = require('./lib/pieces-guide.js').piecesText(ROOT);
   for (const p of ['scripts/lib/notify.js', 'scripts/site/check-deploy.js', 'scripts/site/deploy/', '.github/workflows/site-image.yml', 'guides/organization-site.md']) assert.ok(piezas.includes(p), `piezas-del-arnes.md no nombra ${p}`);
   const ficha = seccion(piezas, 'scripts/site/ — el sitio de la organización');
   assert.ok(ficha && ficha.split('\n').length <= 25, `la ficha del sitio es corta (${ficha && ficha.split('\n').length} líneas)`);
@@ -904,7 +907,9 @@ test('2.76-Instalador_FaseDemo_DryRunYApply', () => {
   assert.ok(crea && crea.args.includes('--yaml'), 'crea la aplicación con su archivo');
   const y = JSON.parse(Object.values(crea.archivos)[0]);
   const cont = y.properties.template.containers[0];
-  assert.deepStrictEqual(cont.env.map((e) => [e.name, e.value !== undefined]), [['SITE_DEMO', true], ['SITE_PUBLIC_URL', true]], 'sólo SITE_DEMO y la dirección pública');
+  assert.deepStrictEqual(cont.env.map((e) => [e.name, e.value !== undefined]), [['SITE_DEMO', true], ['SITE_PUBLIC_URL', true], ['SITE_TRUST_PROXY', true]],
+    'sólo SITE_DEMO, la dirección pública y la confianza en la entrada de Azure');
+  assert.strictEqual(cont.env.find((e) => e.name === 'SITE_TRUST_PROXY').value, '1', 'detrás de la entrada de Azure: si no, todos comparten un tope');
   assert.strictEqual(cont.env.find((e) => e.name === 'SITE_DEMO').value, '1');
   assert.strictEqual(cont.env.find((e) => e.name === 'SITE_PUBLIC_URL').value, 'https://demo-acme.cielo-verde-1a2b3c4d.eastus2.azurecontainerapps.io');
   assert.strictEqual(cont.image, CONFIG_DEMO().image);

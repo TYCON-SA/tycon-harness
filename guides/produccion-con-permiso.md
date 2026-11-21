@@ -19,16 +19,71 @@ Dos causas, y las dos se arreglan con lo mismo:
 
 ## Cómo funciona, en una línea cada cosa
 
-- **Una sola puerta**: `/opt/tycon/bin/tycon-prod-sql <host> 'select …'`. Es lo único que consulta
-  producción, y **abre el cuadro de aprobación**: vos leés la sentencia antes de que corra.
+- **Una sola puerta**: `/opt/tycon/bin/tycon-prod-sql <host> '<sentencia>'`. Es lo único que consulta
+  o cambia producción —un `select`, o un cambio como `alter database …`—, y **la propia puerta abre un cuadro del sistema** con el servidor y la sentencia: vos la
+  leés y la aprobás antes de que se lea la clave. Ese cuadro sale aunque a la puerta la llame un guion,
+  porque lo pide ella y no el asistente. Es la única ventana: Claude Code no pregunta además por la puerta.
 - **Un freno** prohíbe todo otro camino a esa base: `sqlcmd` directo, `az sql`, una cadena de
   conexión, leer la clave del Llavero, escribir el catálogo, o invocar la puerta de cualquier forma
-  que no sea la canónica.
+  que no sea la canónica. También mira adentro de los guiones que el comando corre, aunque ya
+  estuvieran en el disco, y de lo que corren `npm run` y `make`.
 - **Un catálogo por proyecto** (`<repo>/.tycon/production.json`) dice qué servidores son de
   producción. **Lo que nadie declaró se trata como producción**, así que un servidor nuevo se frena
   hasta que alguien lo declare.
 - **El freno vive en la configuración administrada de root**, que es lo único que resiste a
   `disableAllHooks`, a otra sesión y a la herramienta Monitor. No tiene variable que lo apague.
+
+## Emergencia: producción caída
+
+Cuando producción está caída (por ejemplo, la base llegó a su tope y dejó de escribir), el camino es la misma puerta.
+No hace falta el portal de Azure ni que alguien te dicte los comandos. Cada paso que toca producción abre el cuadro, y
+lo aprueba **la persona frente a la Mac**, que tiene que poder autorizar ese cambio en esa base.
+
+1. **Probá la conexión**: `/opt/tycon/bin/tycon-prod-sql <host> 'select 1'`.
+2. **Si la rechaza el firewall** (error 40615, «is not allowed to access the server»), la puerta lo dice y da el
+   comando: `/opt/tycon/bin/tycon-prod-sql --open-firewall <host>`. Abre la regla de esta máquina, con cuadro, y la
+   regla se cierra sola al terminar la sesión.
+3. **Mirá el estado** por la puerta, no por `az`: el tamaño y el tope con
+   `'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`, y la edición y el nivel con
+   `'select edition, service_objective from sys.database_service_objectives'`. Miden la base a la que entra la
+   puerta: la `base` del servidor en su catálogo; si el catálogo no la declara, la puerta entra a `master` y lo que
+   ves es `master`.
+4. **Mitigá con una sentencia**, que la persona aprueba en el cuadro. Por ejemplo, subir el tope:
+   `/opt/tycon/bin/tycon-prod-sql <host> 'alter database [<base>] modify (maxsize = 250 GB)'`. El nivel de servicio
+   también se cambia así (`modify (service_objective = '…')`, con la comilla escapada como en el shell).
+5. **Contale a la persona qué cambió** y anotalo en el incidente. La regla del firewall se cierra sola; si querés
+   cerrarla ya: `--close-firewall <host>`.
+
+## Cambios de administración en Azure: alertas, tamaño o plan
+
+Lo que cambia un recurso de producción en Azure sin conectarse a la base —una alerta de espacio, el tamaño o el plan
+de la base— también va por la puerta, con el mismo cuadro y anotado en `production.log`. Es **el mismo comando de
+`az`, sin la palabra `az`**, con cada argumento como una palabra simple o entre comillas simples:
+
+```bash
+# una alerta de espacio al 80 % (el cuadro muestra el comando entero; la persona lo aprueba)
+/opt/tycon/bin/tycon-prod-sql --azure monitor metrics alert create -n espacio-80 -g <grupo> --scopes <id del recurso de la base> --condition 'avg storage_percent > 80'
+
+# las lecturas no cambian nada: corren sin cuadro, y quedan anotadas igual
+/opt/tycon/bin/tycon-prod-sql --azure monitor metrics alert list -g <grupo>
+```
+
+- **Con cuadro**: `monitor metrics alert create|update|delete`, `sql db update` y `sql elastic-pool update`.
+- **Sin cuadro, sólo lectura**: `monitor metrics alert list|show`, `monitor metrics list|list-definitions`,
+  `sql db list|show|list-usages|list-editions`, `sql server list|show` y `sql elastic-pool list|show`.
+- **La regla de firewall** no va por acá: la de esta máquina es `--open-firewall <host>`.
+- **Lo demás no tiene camino aprobado** (borrar una base o un servidor, cambiar un candado, otra regla de firewall):
+  el freno lo dice, y el asistente le deja el comando a la persona para que lo corra en su terminal, diciéndole qué
+  hace. No se disfraza ni se parte para que pase.
+- **Un argumento con `@` al principio o después de un `=`** (`@ruta`, `--name=@ruta`, `--set clave=@ruta`) no pasa:
+  `az` leería el contenido de un archivo, y ni el cuadro ni la persona lo ven. Tampoco
+  `--debug` ni `--verbose`: `az` imprimiría los pedidos con sus encabezados, y la credencial llegaría a la conversación.
+
+Cuando el freno corta un comando de `az` con camino, el mensaje trae el mismo comando por la puerta, listo para correr.
+
+Lo que se frena igual, aun en una emergencia: `sqlcmd` directo, `az sql …` contra un servidor de producción (también
+las lecturas, como `az sql db list`; el freno dice qué consulta usar en su lugar) y la regla de firewall creada con
+`az`. Todas las formas de la puerta, sin tocar producción: `/opt/tycon/bin/tycon-prod-sql --help`.
 
 ## Instalarlo (una vez por máquina, sólo quien toca producción)
 
@@ -60,6 +115,35 @@ piden tu contraseña. Cada actualización queda en
 permiso, o si el perfil del equipo de tu máquina dice «con la contraseña»: tocar ese perfil sólo puede apagarlo, nunca
 prenderlo.
 
+**Quién la lanza.** Al abrir una sesión, un gancho de arranque mira si hay una versión publicada más nueva que la
+instalada. Si la hay, y la máquina tiene el permiso y la organización eligió «solo», lanza `sudo -n
+/opt/tycon/setup/update-guard.sh` como proceso aparte: no lo espera ni traba el arranque. No lo vuelve a lanzar para una
+versión que ya falló, hasta que se publique otra.
+
+**Antes de reemplazar nada, ensaya el freno nuevo.** El instalador arma en una carpeta temporal la misma disposición de
+`/opt/tycon`, desde la copia verificada, y corre ahí el freno nuevo con tu usuario, sin tus variables ni tus catálogos:
+un comando común (`ls`) tiene que pasar y uno de base (`sqlcmd`) tiene que frenar. Si no, no toca `/opt/tycon` y anota
+por qué. El temporal se borra siempre. Lo que el ensayo no prueba: el lanzador del freno (`node-shim.sh`), la puerta
+(`tycon-prod-sql`) y el intérprete (`node-official.json`), que van por rutas fijas de `/opt/tycon`. Por eso una versión
+que cambia cualquiera de ellos, o el instalador, no se instala sola: anota la falla y pide tu contraseña.
+
+**Si falla, sigue andando el de antes.** Cada intento que sale con error, por el camino que sea, deja en
+`/opt/tycon/production/update-log.jsonl` un renglón con la versión que intentó, el motivo y la hora. El aviso de arranque
+dice qué versión sigue andando, cuál falló y por qué, y trae el comando con tu contraseña:
+
+```bash
+sudo bash ~/.tycon/harness/scripts/production/install-guard.sh
+```
+
+Es la salida también si el ensayo frenó de más. Mientras tanto el freno viejo decide como antes. Si el freno quedó viejo
+y no hay falla anotada, el aviso dice si se está actualizando (otra actualización en curso, o una versión publicada hace
+menos de un día) o da el comando.
+
+**Cómo se enciende en una organización.** Primero, un pedido al repo del perfil del equipo con `guard.update: auto`,
+que aprueba el dueño. Después, cada máquina de producción corre una vez, con su contraseña, el
+`install-guard.sh --allow-auto-update` de arriba. Para saber qué le falta a tu máquina,
+`node ~/.tycon/harness/scripts/tools/prepare-machine.js` lo dice, con el comando, y no lo corre.
+
 Lo que cuesta, dicho antes:
 
 - **Cualquier programa que corra con tu usuario puede pedir esa actualización.** `sudo` no distingue una sesión de
@@ -89,22 +173,22 @@ valores en inglés no reconoce `production` ni `non-production`: trata ese servi
 lo deja pasar). Para un repo que comparten máquinas que todavía no se actualizaron, conviene seguir con los de antes.
 
 Lo que corre de verdad es la copia de `/opt/tycon`, y ésa cambia sólo cuando cada persona **reinstala con su
-contraseña**. Hasta que reinstalen todas las máquinas autorizadas:
+contraseña**. Lo que hace el freno con los nombres de antes:
 
-- el arnés **escribe** el índice y la memoria con los dos nombres, y **lee** el catálogo y `~/.claude/tycon.json`
-  (`paths` e `integrations`, o sus nombres en castellano) con los dos: la copia vieja sigue frenando igual, también un
-  servidor declarado después del renombre;
-- el freno protege los dos nombres de cada archivo, y el cuadro de aprobación los pide a los dos;
-- **reclasificá (`--reclasificar`) o volvé a sellar la memoria (`--verificar`) recién después de reinstalar**: la puerta
-  vieja sólo toca la memoria con el nombre viejo, y el arnés nuevo junta las dos, así que el servidor vuelve a quedar
-  como producción en la sesión siguiente (el lado seguro: nunca baja producción sin querer);
-- el aviso de arranque dice **«el freno quedó viejo: reinstalalo»** en cada máquina que todavía no lo hizo (nunca
-  «alguien lo cambió»). Al reinstalar, el instalador trae solo el origen que ya habías aceptado y saca el archivo
-  administrado viejo (queda un respaldo al lado).
-
-Un catálogo nuevo conviene escribirlo con el nombre nuevo; los de los repos de producto se pasan con el
-retiro de los nombres viejos. Tener los dos catálogos en el mismo repo es un error: el commit no se crea. La escritura doble se apaga en un
-commit aparte, recién con todas las máquinas «al día».
+- **el catálogo** se sigue leyendo y protegiendo con sus dos nombres y sus claves de antes, hasta que los productos lo
+  migren. Un catálogo nuevo conviene escribirlo con el nombre nuevo. Tener los dos catálogos en el mismo repo es un
+  error: el commit no se crea;
+- **el índice, la memoria y el registro** se escriben y se protegen sólo con el nombre nuevo. La memoria y el índice de
+  antes se pasan **una vez** a los nuevos al regenerar (sumar sólo agrega servidores de producción) y se borran; desde
+  ahí, un servidor bajado con `--reclassify` no vuelve. Si la memoria de antes está tocada o no se lee, queda, y el
+  freno no decide nada sobre bases hasta que la resolvés: `--verify` si sólo se tocó la de antes, `--reclassify <host>`
+  si no. Al reinstalar, el instalador borra lo de antes que ya está en lo nuevo, y lo que no, lo deja y lo dice;
+- **la configuración de la máquina**: el freno lee sólo `paths` e `integrations` de `~/.claude/tycon.json`. Con sus
+  nombres en castellano, los ignora y lo dice: el índice se arma sin esa configuración, y lo que no encuentra lo frena;
+- las opciones de la puerta son `--load-key`, `--reclassify`, `--verify` y `--max-rows`. Hasta reinstalar, la puerta
+  instalada entiende sólo las de antes; el aviso de arranque te nombra la que entiende tu puerta, y dice **«el freno
+  quedó viejo: reinstalalo»** (nunca «alguien lo cambió»). Al reinstalar, el instalador trae solo el origen que ya
+  habías aceptado y saca el archivo administrado viejo (queda un respaldo al lado).
 
 ## Cargar la clave (la primera vez)
 
@@ -112,7 +196,7 @@ No la tipeés en el chat, ni se la pases al asistente. Un comando te deja en el 
 `cargar-clave-<entrada>.command` y lo abre:
 
 ```bash
-/opt/tycon/bin/tycon-prod-sql --cargar-clave <host>
+/opt/tycon/bin/tycon-prod-sql --load-key <host>
 ```
 
 Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda en un llavero propio
@@ -125,31 +209,63 @@ Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda
 # consultar producción (se abre el cuadro: leelo antes de aprobar)
 /opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select top 10 * from Articulos'
 
-# más filas de las 50 por defecto
-/opt/tycon/bin/tycon-prod-sql <host> 'select …' --max-filas 200
+# un cambio va por el mismo camino, con el mismo cuadro
+/opt/tycon/bin/tycon-prod-sql <host> 'alter database [acme] modify (maxsize = 250 GB)'
 
-# una consulta larga, desde un archivo (la huella es el sha256 del archivo: shasum -a 256 <ruta>)
-/opt/tycon/bin/tycon-prod-sql <host> --file consulta.sql --sha256 <sha256>
+# todas las formas (no toca producción)
+/opt/tycon/bin/tycon-prod-sql --help
+
+# más filas de las 50 por defecto
+/opt/tycon/bin/tycon-prod-sql <host> 'select …' --max-rows 200
 
 # revisar que la entrada del Llavero siga sana (no lee la contraseña)
-/opt/tycon/bin/tycon-prod-sql --verificar
+/opt/tycon/bin/tycon-prod-sql --verify
 
 # un host que ya NO es producción (queda en el registro, y lo aprobás en el cuadro)
-/opt/tycon/bin/tycon-prod-sql --reclasificar <host>
+/opt/tycon/bin/tycon-prod-sql --reclassify <host>
 ```
 
-🔴 **En el cuadro: «Permitir», nunca «Permitir siempre».** El punto entero de esto es que cada
-sentencia se mire. Y si te aparece un cuadro del Llavero **sin que vos hayas aprobado una sentencia
-antes**, denegá: algo está leyendo la clave por otro camino.
+🔴 **El punto entero de esto es que cada sentencia se mire.** Y si te aparece un cuadro del Llavero **sin que vos
+hayas aprobado una sentencia antes**, denegá: algo está leyendo la clave por otro camino.
 
-**Una consulta larga va en un archivo.** En una sola línea, con cada comilla escapada, no se puede leer en
-el cuadro. Con `--file <ruta> --sha256 <sha256>`, el freno lee el archivo antes del cuadro y te muestra
-en pantalla el host, la huella y la consulta tal cual, con sus saltos de línea. Sin la huella, o con una que
-no coincide (el archivo cambió después de que lo leíste), no hay cuadro: el mensaje trae la huella actual y
-el comando listo. La puerta lee el archivo una sola vez y corre esos mismos bytes: cambiarlo después del
-cuadro no cambia lo que corre. El archivo tiene que ser común (no un enlace ni una carpeta), de 64 KB o menos
-y en UTF-8, y valen las mismas reglas que en línea (sin `GO`, sin comandos del cliente). El registro anota la
-huella y que vino de un archivo, nunca la ruta ni el contenido.
+**Una sola ventana por sentencia: la de la puerta.** Es un cuadro del sistema titulado «Producción: ¿lo aprobás?», con
+quién pide, el servidor y la sentencia, y «Rechazar» marcado por defecto. Recién con «Aprobar» la puerta lee la clave y
+consulta. Si no contestás en 2 minutos, se da por rechazada. Claude Code ya no abre además su permiso: no agregaba
+control, porque sin el cuadro de la puerta no se consulta nada (lo prueba la suite de la puerta), y duplicaba las
+ventanas. Lo mismo pasa al bajar un servidor a no producción (`--reclassify`), al abrir el firewall (`--open-firewall`)
+y al borrar un grupo de recursos (`--delete-group`); cerrar el firewall, `--verify`, `--locks` y `--load-key` no piden
+cuadro: no consultan ni cambian nada que no se deshaga. **Producción se aprueba sólo frente a la Mac**: ninguna
+aprobación a distancia, ni un click ni un «aprobado» escrito, reemplaza a este cuadro. **El cuadro necesita la sesión de la Mac**: por
+SSH, o desde una sesión sin pantalla, la puerta no consulta (falla cerrada, a propósito). Y la sentencia tiene que
+entrar entera en el cuadro: hasta 1.200 caracteres en 20 renglones de 60; una más larga se rechaza antes de abrirlo,
+para que nunca apruebes una sentencia cortada.
+
+**El cuadro dice quién pide.** Su primera línea es la carpeta del proyecto y la sesión: «Pide: Cliente/Codigo · sesión
+0123abcd (principal)». Desde una terminal, fuera de Claude Code, dice eso. Si no reconocés la sesión, rechazá.
+
+**Un cuadro por vez.** Si llega un pedido mientras hay un cuadro abierto, espera a que contestes ése; no se apilan. Si
+en 90 segundos no se contesta, el pedido que esperaba sale sin abrir su cuadro ni leer la clave, y dice qué sesión tiene
+el cuadro abierto. Quien pide lo vuelve a intentar después, de a una consulta por vez.
+
+**Un subagente no usa la puerta.** El freno lo frena con cualquier forma de la puerta: el cuadro lo contesta una
+persona que mira la sesión principal, y un subagente, sobre todo uno en segundo plano, le apila cuadros de algo que no
+está siguiendo (pasó: diecinueve consultas en 26 segundos). El subagente devuelve las sentencias y la sesión principal
+las corre de a una. Claude Code avisa al freno cuando llama un subagente, pero no si es de fondo: por eso se frenan
+todos.
+
+**La consulta va siempre en línea.** El cuadro muestra el comando y nada más: lo que trae un archivo no se ve
+antes de aprobar, así que la puerta no acepta archivos. Una consulta puede ocupar varios renglones dentro de
+las comillas simples. Si le pedís a la puerta un archivo, el freno no deja pasar el comando y, cuando el archivo
+se puede pasar a una consulta en línea, te da ese comando listo para correr.
+
+**Tope: unos 20 renglones de pantalla de 60 columnas y hasta 1200 caracteres**, el mismo que pone la puerta. El
+cuadro muestra eso y corta el principio sin aviso, así que un comando más largo no pasa: el freno dice cuánto
+ocupa y hay que partir la consulta en consultas más cortas. Un renglón de más de 60 columnas cuenta como varios,
+y un tabulador o un carácter ancho ocupan más de una columna.
+
+**Sin caracteres que engañen.** Ni caracteres de control (un retorno de carro, una secuencia de la terminal) ni
+invisibles o de dirección: harían ver en el cuadro otra cosa que lo que corre. Los frena el freno y, otra vez,
+la puerta.
 
 La puerta trae **formato fijo** a propósito (junta el error con la salida, corta filas, imprime el
 código de salida): así no hace falta agregarle `| head` ni `2>&1`, que la forma canónica no acepta.
@@ -195,7 +311,7 @@ un número entero en rango.
 
 **Producción es pegajosa**: un host que alguna vez se vio como producción no vuelve a
 no-producción por reescribir un archivo ni por borrar el índice. Lo único que lo baja es
-`--reclasificar`, que pasa por el cuadro.
+`--reclassify`, que pasa por el cuadro.
 
 ## El firewall: la IP de tu máquina, por la puerta
 
@@ -219,6 +335,18 @@ el comando de Azure que crearía la regla, aunque lo autorices en el chat. El ca
   administrada (`prod-firewall-close.js`) la cierra, salvo que otra sesión viva la siga usando. Si el
   fin de sesión no corrió (ventana cerrada de golpe, sesión caída), el mismo hook la cierra al arrancar
   la próxima sesión y lo dice en una línea. Cerrar no pide cuadro.
+- **Si el servidor se borró** con la regla abierta, la regla se fue con él. Al abrir, la puerta anota la
+  suscripción y el grupo del servidor. Al cerrar, pregunta por ese servidor ahí: si Azure contesta que
+  no existe, y tampoco está en otra suscripción, lo da por cerrado y lo dice. Si se movió, la cierra
+  donde está. Un «sin permiso» no cuenta como borrado (Azure esconde lo que tu cuenta ya no ve).
+- **Si la regla es de antes de anotar el lugar**, la puerta busca el servidor en todas tus suscripciones.
+  Si no aparece en ninguna, le pregunta a Azure si su nombre está libre (`checkNameAvailability`). Sólo con
+  el nombre libre lo da por cerrado: el nombre forma la dirección pública del servidor, así que ningún
+  servidor lo tiene, tampoco uno que tu cuenta no ve. Si el nombre está en uso, si una suscripción no
+  contestó, si tu cuenta no tiene ninguna suscripción válida, o si la respuesta no es clara, la regla sigue
+  anotada como abierta y el aviso sigue: «no sé» no cuenta como cerrada.
+- **El caso que queda**: un servidor movido a una suscripción que tu cuenta no puede leer se da por cerrado,
+  aunque la regla viajó con él; tu cuenta tampoco podría cerrarla.
 - **Qué quedó abierto** vive en `production-firewall.json` (en la carpeta del estado, al lado de
   `production.log`), protegido como la memoria de producción; cada apertura y cada cierre quedan en
   `production.log`.
@@ -251,19 +379,21 @@ Un grupo que **no** es de producción (uno de prueba) lo puede borrar el asisten
 aprobación:
 
 ```bash
-/opt/tycon/bin/tycon-prod-sql --delete-group <grupo>     # sólo el nombre; abre el cuadro
+/opt/tycon/bin/tycon-prod-sql --delete-group <grupo>     # sólo el nombre; antes de borrar, abre el cuadro
 ```
 
 La puerta le pregunta a Azure qué hay en el grupo y lo borra sólo si puede probar que es seguro: el grupo está en una
 sola suscripción, todos sus servidores SQL están declarados no-producción, no tiene una base de un tipo que el catálogo
 no cubre (Postgres, MySQL, MariaDB, una instancia administrada, Cosmos, Synapse) y los listados coinciden. Si no, sale 2
 sin borrar y dice por qué: un servidor de producción, uno sin declarar, un listado cortado o `az` que no contestó. El
-borrado sale con `--no-wait`: la puerta dice que Azure **aceptó el pedido**, no que el grupo ya no está, y da el comando
+borrado lo aprobás en el cuadro de la puerta, que dice el grupo, la suscripción, cuántos recursos y qué servidores
+tiene. Sale con `--no-wait`: la puerta dice que Azure **aceptó el pedido**, no que el grupo ya no está, y da el comando
 para confirmarlo (`az group exists`). Un grupo con candado lo rechaza Azure, y la puerta lo dice.
 
 Un grupo con algo de producción, o que la puerta no puede probar seguro, lo borra
 **una persona, en su propia terminal**, fuera del asistente, después de mirar qué contiene. El mensaje del freno ante un `az group delete` directo
-no nombra la puerta, a propósito. El corte queda anotado con la regla `borrado-de-azure`.
+nombra los dos caminos: la puerta (`--delete-group <grupo>`, que pide la aprobación del dueño en el cuadro) para un grupo
+que no es de producción, y una persona para lo demás. El corte queda anotado con la regla `borrado-de-azure`.
 
 El límite: el freno cubre los comandos del asistente en esta máquina. **No** cubre el portal de Azure, Terraform, un
 despliegue con `az deployment group create --mode Complete` (borra lo que la plantilla no nombra), los SDK ni a otra
@@ -299,8 +429,11 @@ servidor. Un candado tarda unos segundos en irse: borrar el grupo justo después
 que hay que esperar o reintentar. Los límites: un candado lo puede quitar cualquiera con permiso de locks (el asistente
 no, porque el freno corta `az lock delete`); la puerta no ve los candados de suscripción, y un servidor con uno de esos
 puede salir `sin candado`. Sale 2 si algún servidor quedó en `no sé`.
-Todavía no está medido si un candado sobre el servidor impide cerrar la regla de firewall de la puerta: hasta medirlo,
-poné el candado primero en un servidor de prueba y no en uno real.
+Medido en Azure con un servidor de prueba: con el candado `CanNotDelete` sobre el servidor, `--locks` dice
+`con candado`, el borrado del servidor lo rechaza Azure con `ScopeLocked`, y **`--close-firewall` también falla con
+`ScopeLocked`**: la regla de firewall es un recurso hijo del servidor y el candado la alcanza, así que la regla que abrió
+la puerta queda abierta. Por eso no pongas el candado sobre un servidor real al que la puerta le abre el firewall: el
+cierre seguro deja de funcionar. Cómo combinar los dos lo decide el dueño.
 
 ## Los límites, dichos antes
 
@@ -312,7 +445,8 @@ poné el candado primero en un servidor de prueba y no en uno real.
 - **`az` es del usuario** (Homebrew o el instalador de Microsoft), no un binario de root con huella:
   rompe la regla de la puerta y se acepta con tres condiciones: se busca en rutas fijas, nunca en el
   `PATH`; nunca recibe la clave de la base ni nada del Llavero; y sólo se le piden `account list`,
-  `sql server list` y `sql server firewall-rule show|create|update|delete` sobre `tycon-gate-<id>`. Un
+  `sql server list`, `sql server show` y `sql server firewall-rule show|create|update|delete` sobre `tycon-gate-<id>`,
+  y la consulta de si el nombre de un servidor está libre (sólo lee). Un
   `az` reemplazado en una de esas rutas no ve la clave, pero sí puede crear otra regla con tu cuenta:
   tu cuenta de Azure ya podía hacerlo a mano.
 - **El fin de sesión puede no correr** (ventana cerrada de golpe, sesión caída): la regla queda abierta
@@ -324,9 +458,28 @@ poné el candado primero en un servidor de prueba y no en uno real.
   sesión.
 - **La contraseña de producción vive también en otras casas** que esto no toca: la configuración del
   App Service, `dotnet user-secrets`, y un `appsettings.Production.json` si alguien lo baja.
-- **Un programa que se conecta por dentro** (Python con `pyodbc`, un `node` propio) no nombra el
-  servidor: el freno no lo ve. La barrera ahí es que no tiene la clave.
-- **Un hook propio del dev** corre como el usuario y puede llamar la puerta sin el cuadro.
+- 🔴 **Cualquier programa de tu cuenta puede leer la clave** con `/usr/bin/security`, sin cuadro: la
+  entrada del Llavero confía en esa herramienta, y el llavero no se bloquea solo. Un programa que se
+  conecta por dentro (Python con `pyodbc`, un `node` propio) no nombra el servidor y el freno no lo ve.
+  Lo que lo frena es otra cosa: el freno mira adentro de los guiones que el comando corre y frena si
+  nombran el llavero o un servidor declarados. Cerrar esto del todo (que sólo la puerta pueda leer la
+  clave, con Touch ID) es el paso que sigue, todavía sin hacer.
+- **El freno lee texto.** Un nombre partido en pedazos que se arma al correr, un intérprete que recibe
+  el programa con `-e` o `-c` y lo arma por dentro (`node -e`, `python3 -c` con una lista de
+  argumentos), o un archivo cuyo nombre llega recién al correr (`find … -exec bash {} \;`,
+  `echo x | xargs bash`) no se ven. Tampoco las recetas de `make -n` que se ejecutan igual (las que
+  empiezan con `+` o llaman a `$(MAKE)`): con `-n` el freno no mira las recetas. Por eso la aprobación ya no depende del freno: la pide la puerta, aunque la
+  llame un guion o un hook propio.
+- **El cuadro de la puerta lo puede apretar una aplicación con permiso de Accesibilidad** (la terminal o
+  el editor donde corre el asistente, si se lo diste). El freno frena los comandos que ve que lo intentan
+  (`osascript` con System Events y un clic o una tecla, `cliclick`), pero eso es otra vez texto. Touch ID,
+  cuando llegue, no lo puede contestar ningún programa.
+- **El modo sin permisos de Claude Code** (`--permission-mode bypassPermissions`) respeta las reglas que
+  preguntan, según su documentación y según la prueba en vivo con una regla de juguete. Igual, el cuadro
+  de la puerta no depende de ese modo: lo pide la puerta.
+- **Un guion más grande que 64 KB, o que no se puede leer, no se mira.** Tampoco un `npm run` sin ese
+  script en el `package.json`, ni una receta de `make` que no se encuentra. El freno deja pasar (no frena
+  trabajo normal por no poder leer) y lo anota en el registro de producción como «no mirado».
 - **Sin snapshot de shell, el freno le pregunta al shell de login en vivo** qué es cada nombre que
   podría quedarse con la puerta (desde el 2026-09-16: Claude Code 2.1.272 ya no escribe snapshot y
   corre cada comando como `zsh -c -l`). Un archivo de arranque que le mienta a esa pregunta
@@ -366,9 +519,16 @@ Y cinco más, propios de leer los nombres como el shell:
   eso el lanzador no lo ve. El lanzador tiene un reloj de 7 s para todo su trabajo, y el hook tiene un
   tope de 30 s en la configuración administrada: más del doble, para que el lanzador siempre conteste
   antes.
-- 🔴 **El límite que el arnés no puede cerrar: si la máquina está tan cargada que el lanzador ni llega a
-  su reloj en 30 s, Claude Code lo corta y el comando corre igual.** El corte lo decide Claude Code, no
-  el freno. Queda contado: la revisión nocturna de las ejecuciones cuenta cada hook que se pasó de tiempo.
+- 🔴 **Si el lanzador no contesta en 30 s, lo matan o no arranca, el comando no corre.** Vale desde
+  Claude Code 2.1.295: el gancho de consola lleva `"onFailure": "block"` en la configuración administrada.
+  Con una versión anterior la opción no hace nada: Claude Code corta al lanzador y el comando corre igual.
+  Codex no la tiene. Cada corte queda contado: la revisión nocturna de las ejecuciones cuenta cada hook
+  que se pasó de tiempo.
+- **Si falta el lanzador, ningún comando de consola del agente corre, y el agente no lo puede arreglar.**
+  Sale una persona, desde su terminal y con `sudo`: reinstala el freno
+  (`sudo bash ~/.tycon/harness/scripts/production/install-guard.sh`) o saca el archivo administrado
+  (`sudo rm "/Library/Application Support/ClaudeCode/managed-settings.d/tycon-production.json"`), que deja
+  la máquina sin este freno hasta reinstalarlo.
 
 ## Antes de instalar en una máquina: medir cuánto frenaría
 
@@ -393,7 +553,7 @@ El mensaje dice el motivo y el camino correcto. Los dos casos normales:
 - **«no está declarado»** → es un servidor de prueba: declaralo en el `.tycon/production.json` del
   repo que lo usa.
 - **«está declarado como producción»** → usá la puerta. Si de verdad dejó de serlo,
-  `--reclasificar`.
+  `--reclassify`.
 - **«no encontré el snapshot de shell de esta sesión»** → esa máquina tiene el freno de antes del
   2026-09-16 instalado. Claude Code 2.1.272 (la extensión de VS Code) ya no escribe ese snapshot, y
   el freno de ahora, sin snapshot, le pregunta al shell de login en vivo. Corré el instalador
@@ -539,7 +699,7 @@ comandos reales.
 La carga la hace el `.command` que deja la puerta en el Escritorio, y eso está bien. Si alguien
 carga la entrada **a mano con `-A`**, cualquier programa del usuario puede leer la contraseña sin
 cuadro — y la puerta **se niega a usarla** y te dice que la borres y la vuelvas a cargar. Para
-revisarlo: `tycon-prod-sql --verificar` dice, clave por clave, quién puede leerla (y ahora **sale
+revisarlo: `tycon-prod-sql --verify` dice, clave por clave, quién puede leerla (y ahora **sale
 ≠ 0** si algo está mal, así que se puede llamar desde un guion).
 
 La contraseña nunca viaja por los argumentos de un comando: iría a la lista de procesos, visible
@@ -556,9 +716,9 @@ Se midió con un **servidor SQL de mentira** en la propia máquina que decodific
 clave del paquete de login (`scripts/tests/lib/tds-spy.py`): con la config presente el cliente
 mandó la clave vieja; sin ella, la de la variable; con `-P`, la del argumento. Por eso la
 puerta corre el cliente con `HOME` en una carpeta vacía —no ve ninguna config del usuario— y
-`--verificar` dice si esa config existe. Caso T32 de `scripts/tests/tycon-prod-sql.test.sh`, con
+`--verify` dice si esa config existe. Caso T32 de `scripts/tests/tycon-prod-sql.test.sh`, con
 el cliente real y su control.
 
-La regla: **un «Login failed» con `--verificar` en verde NO es una clave mal cargada.**
+La regla: **un «Login failed» con `--verify` en verde NO es una clave mal cargada.**
 Antes de pedirle a alguien que borre y recargue la entrada, hay que saber qué clave viajó de
 verdad.

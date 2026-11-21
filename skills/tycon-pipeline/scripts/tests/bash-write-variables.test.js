@@ -281,7 +281,10 @@ test('T32 BashWrite_SinResolverQueNoEsCodigoYConstancia', () => {
   const { estado: e2, repo: r2 } = corral();
   fs.rmSync(path.join(e2, 'active', `${SID}.json`));
   const io = require(path.join(SCRIPTS, 'lib', 'story-gate-io.js'));
-  io.writeAdhoc(e2, SID, { reason: 'prueba', files: [], startedAt: new Date().toISOString() });
+  // la declaración como la deja `marker.js adhoc set`: con la hora de la firma y su renglón en gates.log
+  const firma = new Date(Date.now() - 1000);
+  fs.appendFileSync(path.join(e2, 'gates.log'), `${JSON.stringify({ ts: firma.toISOString(), name: 'adhoc-lane-signed', status: 'ok', via: 'ventana', sesion: SID, destino: SID })}\n`);
+  io.writeAdhoc(e2, SID, { reason: 'prueba', files: [], startedAt: new Date().toISOString(), firmadaEn: new Date(firma.getTime() + 500).toISOString() });
   conEnv(ENV, () => {
     assert.equal(bash.handle(ev('cat > $F <<EOF\nx\nEOF', r2), { stateDir: e2 }), null, 'sin corrida, pasa');
   });
@@ -459,8 +462,9 @@ test('T34 GuionPorEntradaQueEscribeSusArgumentos_Frena', () => {
 // T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena
 // `python3 p.py`, `node p.js <historia>`: el programa no está en el comando, está en un archivo. El freno lo lee y mira
 // lo que escribe, como si llegara por la entrada. `ruby -e` es un guion en línea más.
-// 🔴 Falla con: mirar sólo el texto del comando, contar como destino todo texto entre comillas del guion (un guion que
-//    sólo lee la historia frenaría), o eximir un guion por el nombre de su carpeta en vez de por la instalación real.
+// Una historia entre los argumentos cuenta como escrita aunque el guion sólo la lea (T1 de bash-write-interpreter-args).
+// 🔴 Falla con: mirar sólo el texto del comando, contar como destino todo texto entre comillas del guion (uno que sólo
+//    lee una historia que nombra frenaría), o eximir un guion por el nombre de su carpeta en vez de por la instalación.
 test('T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena', () => {
   const { estado, repo, raiz } = corralConHistorias();
   conEnv(ENV, () => {
@@ -491,6 +495,7 @@ test('T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena', () => {
       'node skills/tycon-pipeline/scripts/marker.js',
       `cat > nuevo.py <<'EOF'\nopen('specs/story-x.md', 'w').write('x')\nEOF\npython3 nuevo.py`,
       `cd specs && python3 ../arg.py story-x.md`,
+      'python3 lee.py specs/story-x.md',
     ]) assert.equal(freno(c), HISTORIA, c);
     for (const c of [
       'python3 c.py',
@@ -498,7 +503,7 @@ test('T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena', () => {
       `ruby -e "File.write('.github/control-changes/abc.json', '{}')"`,
     ]) assert.match(freno(c), CONSTANCIA, c);
     for (const c of [
-      'python3 lee.py specs/story-x.md',
+      'python3 lee.py',
       'node lee.js',
       'python3 arg.py out/r.md',
       'python3 no-existe.py specs/story-x.md',
@@ -546,11 +551,19 @@ test('T36 GuionEnArchivoDetrasDeEnvoltoriosOpcionesYEnlaces_Frena', () => {
     ]) assert.notEqual(freno(c), '', c);
     assert.equal(freno('python3 M/../evil2.py', [instalado]), HISTORIA, 'el enlace no exime lo que corre afuera de la instalación');
     assert.equal(freno('node evil2.py', [instalado]), '', 'el enlace a la instalación, sin `..`, sí');
-    for (const c of ['node lee.js specs/story-x.md', 'python3 -m json.tool specs/story-x.md', 'python3 -I -E lee.py']) assert.equal(freno(c), '', c);
+    for (const c of ['node lee.js out/r.md', 'python3 -m json.tool specs/story-x.md', 'python3 -I -E lee.py']) assert.equal(freno(c), '', c);
+    assert.equal(freno('node lee.js specs/story-x.md'), HISTORIA, 'con la historia de argumento cuenta como escrita');
     guion('lento.js', 'fs.writeFileSync('.repeat(8000) + '\n');
-    const t0 = Date.now();
-    freno('node lento.js specs/story-x.md');
-    assert.ok(Date.now() - t0 < 5000, `miles de llamadas sin cerrar: ${Date.now() - t0} ms`);
+    // el tiempo se mide en un proceso sin el medidor de cobertura: bajo el medidor (el portón de pruebas lo pasa a la
+    // suite) el mismo juicio tarda veinte veces más, y lo que se mide es el freno, no el medidor. Vacía y no borrada: si
+    // falta, Node la vuelve a copiar al proceso hijo
+    const sinMedidor = { ...process.env, NODE_V8_COVERAGE: '' };
+    const medir = `const b = require(${JSON.stringify(path.join(SCRIPTS, 'on-bash-write-gate.js'))}); const t0 = Date.now();`
+      + ` b.handle(${JSON.stringify(ev('node lento.js specs/story-x.md', repo))}, { stateDir: ${JSON.stringify(estado)}, installedRoots: [] });`
+      + ' process.stdout.write(String(Date.now() - t0));';
+    const r = require('child_process').spawnSync(process.execPath, ['-e', medir], { encoding: 'utf8', env: sinMedidor });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.ok(Number(r.stdout) < 5000, `miles de llamadas sin cerrar: ${r.stdout} ms`);
   });
 });
 
@@ -603,6 +616,187 @@ test('T37 GuionDelArbolPropio_SoloLoVersionadoSinCambios_Pasa', () => {
     assert.equal(freno(clon, 'orq-x.js'), HISTORIA, 'ni uno commiteado sólo en este clon');
     assert.equal(freno(bajada, 'orq-x.js'), '', 'sin git, el árbol es el arnés');
   });
+});
+
+// T37b GuionDelArbolPropio_CommitLocalDeOtroArchivo_Pasa
+// Un commit que sólo está en el clon cuenta para los guiones que toca: el que no tocó sigue siendo el del servidor, y lo
+// que importa un guion se mira igual.
+// 🔴 Falla con: mirar los commits locales del clon entero (cualquier commit sin empujar frena a todos los guiones), o
+//    no mirarlos (un guion commiteado sólo en el clon escribe cualquier historia).
+test('T37b GuionDelArbolPropio_CommitLocalDeOtroArchivo_Pasa', () => {
+  const { estado, repo, raiz } = corralConHistorias();
+  const ORIGEN = path.join(SCRIPTS, '..', '..', '..');
+  const clon = path.join(raiz, 'clon');
+  fs.cpSync(SCRIPTS, path.join(clon, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: (s) => !/[\\/](?:tests|node_modules)$/.test(s) });
+  fs.cpSync(path.join(ORIGEN, 'scripts', 'lib'), path.join(clon, 'scripts', 'lib'), { recursive: true });
+  const ESCRIBE = `require('fs').writeFileSync(${JSON.stringify(path.join(repo, 'specs', 'story-x.md'))}, 'x');\n`;
+  const guiones = path.join(clon, 'skills', 'tycon-pipeline', 'scripts');
+  fs.writeFileSync(path.join(guiones, 'orq-x.js'), ESCRIBE);
+  fs.writeFileSync(path.join(guiones, 'orq-y.js'), "require('./mod-y');\n");
+  fs.writeFileSync(path.join(guiones, 'mod-y.js'), ESCRIBE);
+  fs.writeFileSync(path.join(clon, 'LEAME.md'), 'a\n');
+  const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'b', GIT_AUTHOR_EMAIL: 'b@acme.test', GIT_COMMITTER_NAME: 'b', GIT_COMMITTER_EMAIL: 'b@acme.test' };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete GIT_ENV[k];
+  const git = (...a) => require('child_process').execFileSync('git', ['-C', clon, '-c', 'commit.gpgsign=false', ...a], { stdio: 'ignore', env: GIT_ENV });
+  git('init', '-q', '.'); git('add', '-A'); git('commit', '-q', '-m', 'base');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  conEnv(ENV, () => {
+    const freno = (archivo) => tituloDe(require(path.join(guiones, 'on-bash-write-gate.js'))
+      .handle(ev(`node ${path.join(guiones, archivo)}`, repo), { stateDir: estado, installedRoots: [] }));
+    fs.appendFileSync(path.join(clon, 'LEAME.md'), 'b\n');
+    git('commit', '-q', '-am', 'otro archivo');
+    assert.equal(freno('orq-x.js'), '', 'un commit sin empujar de otro archivo no lo toca');
+    assert.equal(freno('orq-y.js'), '', 'ni a lo que importa');
+    fs.appendFileSync(path.join(guiones, 'mod-y.js'), '// local\n');
+    git('commit', '-q', '-am', 'el módulo');
+    assert.equal(freno('orq-y.js'), HISTORIA, 'el módulo que importa, commiteado sólo acá, frena');
+    assert.equal(freno('orq-x.js'), '', 'y al otro guion no');
+    fs.appendFileSync(path.join(guiones, 'orq-x.js'), '// local\n');
+    git('commit', '-q', '-am', 'el guion');
+    assert.equal(freno('orq-x.js'), HISTORIA, 'el guion commiteado sólo en este clon frena');
+  });
+});
+
+// T37c GuionDelArbolPropio_CommitLocalIgualAMain_Pasa
+// Un guion que un commit local dejó igual a la punta de main del servidor es el publicado. Igual a la punta de otra rama
+// del servidor, a una versión vieja, o distinto de main, sigue frenando: otra rama la empuja quien llama.
+// 🔴 Falla con: mirar sólo si un commit local lo tocó (un guion vuelto a la versión de main frena), comparar contra
+//    cualquier versión de la historia del servidor (vuelve una versión vieja del guion), o contra la punta de cualquier
+//    rama del servidor (un agente empuja su propia rama con el guion reescrito).
+test('T37c GuionDelArbolPropio_CommitLocalIgualAMain_Pasa', () => {
+  const { estado, repo, raiz } = corralConHistorias();
+  const ORIGEN = path.join(SCRIPTS, '..', '..', '..');
+  const clon = path.join(raiz, 'clon');
+  fs.cpSync(SCRIPTS, path.join(clon, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: (s) => !/[\\/](?:tests|node_modules)$/.test(s) });
+  fs.cpSync(path.join(ORIGEN, 'scripts', 'lib'), path.join(clon, 'scripts', 'lib'), { recursive: true });
+  const ESCRIBE = `require('fs').writeFileSync(${JSON.stringify(path.join(repo, 'specs', 'story-x.md'))}, 'x');\n`;
+  const guiones = path.join(clon, 'skills', 'tycon-pipeline', 'scripts');
+  const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'b', GIT_AUTHOR_EMAIL: 'b@acme.test', GIT_COMMITTER_NAME: 'b', GIT_COMMITTER_EMAIL: 'b@acme.test' };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete GIT_ENV[k];
+  const git = (...a) => require('child_process').execFileSync('git', ['-C', clon, '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: GIT_ENV }).trim();
+  // main del servidor: la vieja trae una versión anterior del guion, la punta el guion
+  fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// vieja\n`);
+  git('init', '-q', '.'); git('add', '-A'); git('commit', '-q', '-m', 'main vieja');
+  fs.writeFileSync(path.join(guiones, 'orq-x.js'), ESCRIBE);
+  git('add', '-A'); git('commit', '-q', '-m', 'main punta');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  // otra rama del servidor, con el guion reescrito en su punta
+  git('checkout', '-q', '-b', 'otra');
+  fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// de la otra rama\n`);
+  git('commit', '-q', '-am', 'otra rama');
+  git('update-ref', 'refs/remotes/origin/story/otra', 'HEAD');
+  git('update-ref', 'refs/remotes/publico/punta', 'HEAD');
+  git('checkout', '-q', '-b', 'trabajo', 'refs/remotes/origin/main');
+  conEnv(ENV, () => {
+    const freno = (archivo) => tituloDe(require(path.join(guiones, 'on-bash-write-gate.js'))
+      .handle(ev(`node ${path.join(guiones, archivo)}`, repo), { stateDir: estado, installedRoots: [] }));
+    fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// local\n`);
+    git('commit', '-q', '-am', 'cambiado');
+    assert.equal(freno('orq-x.js'), HISTORIA, 'distinto de main: frena');
+    fs.writeFileSync(path.join(guiones, 'orq-x.js'), ESCRIBE);
+    git('commit', '-q', '-am', 'de vuelta');
+    assert.equal(freno('orq-x.js'), '', 'un commit local que lo deja igual a la punta de main: es el publicado');
+    fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// vieja\n`);
+    git('commit', '-q', '-am', 'la vieja');
+    assert.equal(freno('orq-x.js'), HISTORIA, 'igual a una versión vieja de main: frena');
+    fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// de la otra rama\n`);
+    git('commit', '-q', '-am', 'como la otra rama');
+    assert.equal(freno('orq-x.js'), HISTORIA, 'igual a la punta de otra rama del servidor: frena');
+  });
+});
+
+// T37d GuionDelArbolPropio_EnUnaRamaDelServidorQueNoEsMain_Frena
+// Caso: un agente reescribe un guion del arnés en el clon de quien lo mantiene, lo commitea y empuja su propia rama. El
+// commit queda en una rama del servidor, pero no en main: nadie lo revisó. Recién cuando entra a main es del arnés. Un
+// clon cuya rama principal se llama master se mira contra master.
+// 🔴 Falla con: eximir el commit que está en cualquier rama del servidor (`--not --remotes`), o en una rama que declara
+//    el árbol armado del portón: esa rama es la del pedido, y la controla quien llama.
+test('T37d GuionDelArbolPropio_EnUnaRamaDelServidorQueNoEsMain_Frena', () => {
+  const { estado, repo, raiz } = corralConHistorias();
+  const ORIGEN = path.join(SCRIPTS, '..', '..', '..');
+  const ESCRIBE = `require('fs').writeFileSync(${JSON.stringify(path.join(repo, 'specs', 'story-x.md'))}, 'x');\n`;
+  const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'b', GIT_AUTHOR_EMAIL: 'b@acme.test', GIT_COMMITTER_NAME: 'b', GIT_COMMITTER_EMAIL: 'b@acme.test' };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete GIT_ENV[k];
+  const armar = (nombre, principal) => {
+    const clon = path.join(raiz, nombre);
+    fs.cpSync(SCRIPTS, path.join(clon, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: (s) => !/[\\/](?:tests|node_modules)$/.test(s) });
+    fs.cpSync(path.join(ORIGEN, 'scripts', 'lib'), path.join(clon, 'scripts', 'lib'), { recursive: true });
+    const guiones = path.join(clon, 'skills', 'tycon-pipeline', 'scripts');
+    fs.writeFileSync(path.join(guiones, 'orq-x.js'), ESCRIBE);
+    const git = (...a) => require('child_process').execFileSync('git', ['-C', clon, '-c', 'commit.gpgsign=false', ...a], { stdio: 'ignore', env: GIT_ENV });
+    git('init', '-q', '.'); git('add', '-A'); git('commit', '-q', '-m', 'base');
+    git('update-ref', `refs/remotes/origin/${principal}`, 'HEAD');
+    const freno = () => tituloDe(require(path.join(guiones, 'on-bash-write-gate.js'))
+      .handle(ev(`node ${path.join(guiones, 'orq-x.js')}`, repo), { stateDir: estado, installedRoots: [] }));
+    return { guiones, git, freno };
+  };
+  conEnv(ENV, () => {
+    const c = armar('clon', 'main');
+    assert.equal(c.freno(), '', 'el de main: es el orquestador');
+    fs.appendFileSync(path.join(c.guiones, 'orq-x.js'), '// reescrito\n');
+    c.git('commit', '-q', '-am', 'reescrito');
+    c.git('update-ref', 'refs/remotes/origin/story/propia', 'HEAD');
+    assert.equal(c.freno(), HISTORIA, 'empujado a una rama propia del servidor: frena');
+    c.git('update-ref', 'refs/remotes/publico/punta', 'HEAD');
+    assert.equal(c.freno(), HISTORIA, 'declarado como punta de otro remoto: frena');
+    c.git('update-ref', 'refs/remotes/otro/main', 'HEAD');
+    assert.equal(c.freno(), HISTORIA, 'en el main de otro remoto: frena');
+    c.git('replace', 'refs/remotes/origin/main', 'HEAD');
+    assert.equal(c.freno(), HISTORIA, 'con un reemplazo de objetos que hace pasar su commit por la punta de main: frena');
+    c.git('replace', '-d', 'refs/remotes/origin/main');
+    c.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    assert.equal(c.freno(), '', 'cuando entra a main: es del arnés');
+
+    const m = armar('clon-master', 'master');
+    fs.appendFileSync(path.join(m.guiones, 'orq-x.js'), '// reescrito\n');
+    m.git('commit', '-q', '-am', 'reescrito');
+    m.git('update-ref', 'refs/remotes/origin/story/propia', 'HEAD');
+    assert.equal(m.freno(), HISTORIA, 'con master como principal, una rama propia: frena');
+    m.git('update-ref', 'refs/remotes/origin/master', 'HEAD');
+    assert.equal(m.freno(), '', 'cuando entra a master: es del arnés');
+  });
+});
+
+// T37e GuionDelArbolPropio_UnaConsultaPorArchivo
+// Un guion del arnés importa módulos que se importan entre sí: el freno pregunta a git UNA vez por archivo en cada
+// llamada, y sin commits propios en el clon no pregunta archivo por archivo cuáles los tocan. El veredicto es el mismo.
+// Caso: `critical-shown` hacía ~1100 llamadas a git por llamada del freno (75 archivos), 94 s con la máquina cargada.
+// 🔴 Falla con: preguntar por un módulo cada vez que otro lo importa, buscar la rama principal por archivo, o recordar
+//    la respuesta entre dos llamadas (un guion cambiado después de la primera pasaría).
+test('T37e GuionDelArbolPropio_UnaConsultaPorArchivo', () => {
+  const { estado, repo, raiz } = corralConHistorias();
+  const ORIGEN = path.join(SCRIPTS, '..', '..', '..');
+  const clon = path.join(raiz, 'clon');
+  fs.cpSync(SCRIPTS, path.join(clon, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: (s) => !/[\\/](?:tests|node_modules)$/.test(s) });
+  fs.cpSync(path.join(ORIGEN, 'scripts', 'lib'), path.join(clon, 'scripts', 'lib'), { recursive: true });
+  const ESCRIBE = `require('fs').writeFileSync(${JSON.stringify(path.join(repo, 'specs', 'story-x.md'))}, 'x');\n`;
+  const guiones = path.join(clon, 'skills', 'tycon-pipeline', 'scripts');
+  // orq-z importa a mod-a y mod-b; los dos importan a comun: comun aparece tres veces como importado
+  fs.writeFileSync(path.join(guiones, 'orq-z.js'), "require('./mod-a');\nrequire('./mod-b');\nrequire('./comun');\n");
+  fs.writeFileSync(path.join(guiones, 'mod-a.js'), "require('./comun');\n");
+  fs.writeFileSync(path.join(guiones, 'mod-b.js'), "require('./comun');\n");
+  fs.writeFileSync(path.join(guiones, 'comun.js'), ESCRIBE);
+  const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'b', GIT_AUTHOR_EMAIL: 'b@acme.test', GIT_COMMITTER_NAME: 'b', GIT_COMMITTER_EMAIL: 'b@acme.test' };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete GIT_ENV[k];
+  const git = (...a) => require('child_process').execFileSync('git', ['-C', clon, '-c', 'commit.gpgsign=false', ...a], { stdio: 'ignore', env: GIT_ENV });
+  git('init', '-q', '.'); git('add', '-A'); git('commit', '-q', '-m', 'base');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const traza = path.join(raiz, 'git-trace.log');
+  const freno = () => {
+    fs.rmSync(traza, { force: true });
+    return conEnv({ ...ENV, GIT_TRACE: traza }, () => tituloDe(require(path.join(guiones, 'on-bash-write-gate.js'))
+      .handle(ev(`node ${path.join(guiones, 'orq-z.js')}`, repo), { stateDir: estado, installedRoots: [] })));
+  };
+  const llamadas = (re) => (fs.existsSync(traza) ? fs.readFileSync(traza, 'utf8').split('\n').filter((l) => /trace: built-in: git /.test(l) && re.test(l)).length : 0);
+  assert.equal(freno(), '', 'todo versionado, sin cambios y en main: es el orquestador');
+  assert.equal(llamadas(/ ls-files .*comun\.js/), 1, 'comun.js se pregunta una vez, aunque lo importen tres');
+  assert.equal(llamadas(/ rev-parse --verify -q '?refs\/remotes\/origin\/main\^\{commit\}/), 1, 'la rama principal se busca una vez');
+  assert.equal(llamadas(/ rev-list .* -- /), 0, 'sin commits propios no pregunta archivo por archivo');
+  // un commit propio de comun.js: frena, y la memoria de la llamada anterior no lo esconde
+  fs.appendFileSync(path.join(guiones, 'comun.js'), '// local\n');
+  git('commit', '-q', '-am', 'comun local');
+  assert.equal(freno(), HISTORIA, 'el módulo commiteado sólo en el clon frena, también después de una llamada que pasó');
+  assert.equal(llamadas(/ rev-list .* -- .*comun\.js/), 1, 'con commits propios, comun.js se pregunta una vez');
 });
 
 // T38 HeredocQueElShellNoAbre_NoEscondeLoQueSigue

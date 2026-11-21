@@ -56,7 +56,7 @@ const SAFE_REL = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 const inside = (p) => typeof p === 'string' && SAFE_REL.test(p) && !p.split('/').some((s) => s === '..' || s === '.');
 // el vocabulario de un hook, el mismo que valida la lista del aplicador (scripts/setup/apply-hooks.js): un hook que el
 // aplicador rechazaría deja al manifiesto roto, con su motivo, en vez de frenar la instalación de todo lo demás
-const EVENTS = Object.freeze(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd']);
+const EVENTS = Object.freeze(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest', 'SubagentStop']);
 const STEP_RE = /^(all|[a-z][a-z0-9-]*)$/;
 const EFFECTS = Object.freeze(['blocks', 'warns', 'records']);
 
@@ -162,6 +162,18 @@ function problemsOf(m, folder) {
     if (m.capabilities !== undefined && !isObject(m.capabilities)) out.push('«capabilities» es un objeto');
     if (m.rawCommands !== undefined && !(Array.isArray(m.rawCommands) && m.rawCommands.every((c) => typeof c === 'string' && c.trim()))) out.push('«rawCommands» es una lista de textos');
   }
+  // `hardSignals`: los patrones de un comando o una dirección de su plataforma que el núcleo no puede sumar (los cuenta el
+  // candado, scripts/ci/check-core-neutrality.js): así el núcleo no escribe ninguno
+  if (m.hardSignals !== undefined) {
+    if (m.kind !== 'platform') out.push('«hardSignals» es sólo de un conector de plataforma (kind platform)');
+    else if (!Array.isArray(m.hardSignals)) out.push('«hardSignals» es una lista de patrones');
+    else {
+      for (const s of m.hardSignals) {
+        if (typeof s !== 'string' || !s.trim()) { out.push('«hardSignals»: un patrón vacío contaría cualquier línea'); continue; }
+        try { new RegExp(s); } catch (e) { out.push(`«hardSignals»: el patrón ${JSON.stringify(s)} no compila (${e.message})`); }
+      }
+    }
+  }
   for (const d of Array.isArray(m.dispatch) ? m.dispatch : []) {
     if (!d || typeof d !== 'object' || !inside(d.script) || !/\.js$/.test(d.script)) { out.push('una entrada del despachador: «script» es un .js dentro de la carpeta'); continue; }
     if (!DISPATCH_ON.includes(d.on)) out.push(`${d.script}: «on» es ${DISPATCH_ON.join(' o ')}`);
@@ -230,7 +242,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       hooks: Array.isArray(m.hooks) ? m.hooks : [], dispatch: Array.isArray(m.dispatch) ? m.dispatch : [],
       skills: Array.isArray(m.skills) ? m.skills : [], settings: Array.isArray(m.settings) ? m.settings : [],
       mcp: m.mcp ? { server: m.mcp.server, machine: m.mcp.machine === true } : null,
-      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [] } : {}),
+      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
       offer: m.offer ? { does: m.offer.does, needs: m.offer.needs } : null,
     });
   }

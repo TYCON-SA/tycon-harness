@@ -175,7 +175,7 @@ function getSync(url, opts = {}) {
   const req = Object.assign({}, opts, { url, env: opts.env || process.env });
   if (req.tls && req.tls.ca) req.tls = { ca: Buffer.from(req.tls.ca).toString('base64'), caBase64: true };
   const total = (opts.timeoutMs || DEFAULT_TIMEOUT_MS) * ((opts.maxRedirects === undefined ? DEFAULT_MAX_REDIRECTS : opts.maxRedirects) + 1) + 5000;
-  const r = spawnSync(process.execPath, [__filename, '--json'], { input: JSON.stringify(req), encoding: 'utf8', maxBuffer: (opts.maxBytes || DEFAULT_MAX_BYTES) * 2 + 1024 * 1024, timeout: opts.deadlineAt ? Math.max(1000, opts.deadlineAt - Date.now() + 2000) : total, env: process.env });
+  const r = spawnSync(process.execPath, [__filename, '--json'], { windowsHide: true, input: JSON.stringify(req), encoding: 'utf8', maxBuffer: (opts.maxBytes || DEFAULT_MAX_BYTES) * 2 + 1024 * 1024, timeout: opts.deadlineAt ? Math.max(1000, opts.deadlineAt - Date.now() + 2000) : total, env: process.env });
   if (r.error) return { ok: false, kind: r.error.code === 'ETIMEDOUT' ? 'timeout' : 'network', code: r.error.code, message: `no pude correr el pedido: ${r.error.message}` };
   // cortado por una señal (sin el tope: ése es r.error): la causa es la señal, no una respuesta ilegible
   if (r.signal) return { ok: false, kind: 'network', code: r.signal, message: `el pedido se cortó con la señal ${r.signal}` };

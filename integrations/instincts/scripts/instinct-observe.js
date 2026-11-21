@@ -4,7 +4,8 @@
  * instinct-observe.js — gancho `PostToolUse`: graba una línea saneada por cada herramienta que usa la sesión, para que
  * el que propone instintos encuentre después los patrones que se repiten.
  *
- * Graba en `~/.claude/tycon-observations/<AAAA-MM>.jsonl`, una línea por herramienta: `ts`, `session_id` (8
+ * Graba en `tycon-observations/<AAAA-MM>.jsonl` de la carpeta de los registros sueltos (scripts/lib/loose-logs.js: la del
+ * estado en una máquina que vive en la casa propia del arnés, la de Claude Code en las demás), una línea por herramienta: `ts`, `session_id` (8
  * caracteres), `tool`, `project`, `summary` (lo que la herramienta recibió, saneado), `status`, y además `repo` (la
  * carpeta raíz del repo, relativa a la raíz de repos o al home) y `origin` (el host y la organización del remoto, sin el
  * repo y sin credenciales). Sólo con la integración `instincts` prendida; apagada no escribe nada ni crea la carpeta.
@@ -200,9 +201,19 @@ function run(input, ctx) {
   return 0;
 }
 
+/** `tycon-observations` en la carpeta de los registros sueltos de `home`, o null si no se puede saber. */
+function defaultObsDir(home) {
+  try {
+    const dir = require('../../../scripts/lib/loose-logs.js').looseLogsDir(home);
+    return dir ? path.join(dir, 'tycon-observations') : null;
+  } catch (_) { return null; }
+}
+
 /** Lo que el gancho necesita de la configuración, sin tirar nunca: integración apagada o rota es «no grabar». */
 function contextFromConfig(env, home) {
-  const ctx = { home, reposRoot: null, obsDir: env.TYCON_INSTINCT_OBS_DIR || path.join(home, '.claude', 'tycon-observations'), enabled: false };
+  const ctx = { home, reposRoot: null, obsDir: env.TYCON_INSTINCT_OBS_DIR || defaultObsDir(home), enabled: false };
+  // sin dónde grabar (un árbol sin tycon-home.js) no graba
+  if (!ctx.obsDir) return ctx;
   try {
     const cfg = require('../../../scripts/lib/tycon-config.js');
     const r = cfg.integracionParaHook('instincts', { env, home });

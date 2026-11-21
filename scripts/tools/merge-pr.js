@@ -151,7 +151,7 @@ function realGh(args, { cwd, env, timeoutMs } = {}) {
   const viaNode = /\.[cm]?js$/i.test(bin);
   const opts = { encoding: 'utf8', cwd, env: env || process.env, windowsHide: true, maxBuffer: 64 * 1024 * 1024 };
   if (timeoutMs) Object.assign(opts, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'] });
-  return spawned(spawnSync(viaNode ? process.execPath : bin, viaNode ? [bin, ...args] : args, opts));
+  return spawned(spawnSync(viaNode ? process.execPath : bin, viaNode ? [bin, ...args] : args, { windowsHide: true, ...opts }));
 }
 
 /**

@@ -49,6 +49,7 @@ const pedido = process.argv[process.argv.length - 1];
 const archivo = (pedido.match(/touch (\\S+)/) || [])[1];
 const S = '\\x1b[8G';
 process.stdin.setRawMode(true);
+process.stdout.write('\\x1b[?1000h\\x1b[?1006h');
 process.stdout.write(' No, exit\\r\\n Yes,' + S + 'I' + S + 'trust' + S + 'this' + S + 'folder\\r\\n Enter to confirm\\r\\n\\x1b[c');
 let leido = '', estado = 'quien';
 process.stdin.on('data', (d) => {
@@ -91,4 +92,69 @@ test('AskWindowProbe_ClaudeQuePreguntaALaTerminal_Verde @story-8.139 @ac-31 — 
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /VERDE/);
+  assertTerminalRestaurada(r.stdout);
+});
+
+// Lo que `claude` escribe pasa a la terminal de quien corre la sonda: si prende el seguimiento del mouse y la sesión se
+// corta antes de que lo apague, cada movimiento escribe secuencias en el prompt. Después del último encendido tienen que
+// venir los apagados de los modos del mouse y del pegado entre corchetes, y el cursor visible.
+function assertTerminalRestaurada(salida) {
+  const desde = salida.lastIndexOf('\x1b[?1000h');
+  assert.ok(desde >= 0, 'el claude de juguete no prendió el mouse: la prueba no mide nada');
+  const despues = salida.slice(desde);
+  for (const modo of ['1000', '1002', '1003', '1006', '1015', '2004']) assert.ok(despues.includes(`\x1b[?${modo}l`), `falta apagar el modo ${modo} al salir`);
+  assert.ok(despues.includes('\x1b[?25h'), 'falta volver a mostrar el cursor al salir');
+}
+
+// Un `claude` que prende el mouse y después sale enseguida («exit») o se queda colgado sin mostrar nada («hang»).
+const CLAUDE_QUE_PRENDE_EL_MOUSE = `#!${process.execPath}
+process.stdout.write('\\x1b[?1000h\\x1b[?1003h\\x1b[?1006h');
+if (process.env.FAKE_CLAUDE_MODE === 'exit') process.exit(0);
+setInterval(() => {}, 1000);
+`;
+
+function binConClaude(expect, fuente) {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'awp-bin-'));
+  fs.symlinkSync(expect, path.join(bin, 'expect'));
+  fs.writeFileSync(path.join(bin, 'claude'), fuente, { mode: 0o755 });
+  return bin;
+}
+
+// AskWindowProbe_RestauraLaTerminal_AlSalirConFalla
+// 🔴 Falla con: una sonda que restaura el modo de la terminal sólo cuando termina en verde: la que sale por «NO MEDIDO»
+//    deja el mouse prendido en la terminal de la persona.
+test('AskWindowProbe_RestauraLaTerminal_AlSalirConFalla — «NO MEDIDO» también apaga el seguimiento del mouse', (t) => {
+  if (process.platform === 'win32') { t.skip('la sonda corre con sh y expect: no en Windows'); return; }
+  const expect = spawnSync('/bin/sh', ['-c', 'command -v expect'], { encoding: 'utf8' }).stdout.trim();
+  if (!expect) { t.diagnostic('esta máquina no tiene expect: el caso se mide donde lo haya'); return; }
+  const r = spawnSync('/bin/sh', [SONDA], {
+    env: { HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'awp-home-')), PATH: `${binConClaude(expect, CLAUDE_QUE_PRENDE_EL_MOUSE)}:/usr/bin:/bin`, USER: 'prueba', FAKE_CLAUDE_MODE: 'exit' },
+    encoding: 'utf8', timeout: 60000,
+  });
+  assert.equal(r.status, 3, r.stdout + r.stderr);
+  assert.match(r.stdout, /NO MEDIDO/);
+  assertTerminalRestaurada(r.stdout);
+});
+
+// AskWindowProbe_RestauraLaTerminal_AlCortarla
+// 🔴 Falla con: una sonda que, cortada con una señal (la persona la interrumpe, o la terminal se cierra), sale sin
+//    pasar por la restauración.
+test('AskWindowProbe_RestauraLaTerminal_AlCortarla — cortada con una señal, también apaga el seguimiento del mouse', async (t) => {
+  if (process.platform === 'win32') { t.skip('la sonda corre con sh y expect: no en Windows'); return; }
+  const expect = spawnSync('/bin/sh', ['-c', 'command -v expect'], { encoding: 'utf8' }).stdout.trim();
+  if (!expect) { t.diagnostic('esta máquina no tiene expect: el caso se mide donde lo haya'); return; }
+  const { spawn } = require('child_process');
+  const p = spawn('/bin/sh', [SONDA], {
+    env: { HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'awp-home-')), PATH: `${binConClaude(expect, CLAUDE_QUE_PRENDE_EL_MOUSE)}:/usr/bin:/bin`, USER: 'prueba', FAKE_CLAUDE_MODE: 'hang' },
+  });
+  let salida = '';
+  const fin = new Promise((resolve) => p.on('close', resolve));
+  p.stdout.on('data', (d) => {
+    salida += d.toString('latin1');
+    if (salida.includes('\x1b[?1000h')) p.kill('SIGTERM');
+  });
+  const corte = setTimeout(() => p.kill('SIGKILL'), 30000);
+  await fin;
+  clearTimeout(corte);
+  assertTerminalRestaurada(salida);
 });

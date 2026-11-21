@@ -6,7 +6,13 @@ Guía única para commits, merges y push en todos los repos TYCON (FRESNO, Ebano
 
 ## Regla #0 — Autorización explícita (NO COMMIT / NO PUSH sin consentimiento)
 
-**POR NINGÚN MOTIVO ejecutar `git commit` o `git push` sin consentimiento explícito del usuario.**
+**En una ejecución del pipeline o en un camino rápido firmado, la persona aprueba el pull request, no el commit.** El
+agente commitea y empuja su rama de trabajo sin preguntar, después de cerrar «Preparar el pull request»; el gancho lo
+deja en `gates.log`. Abrir o mergear un pull request, y empujar a una rama compartida (`main`, `master`, `dev`,
+`release/*`), pregunta en la ventana de permiso, con la evidencia de la ejecución, y frena si el pull request no está
+preparado o si el código cambió desde entonces.
+
+**Fuera de eso, POR NINGÚN MOTIVO ejecutar `git commit` o `git push` sin consentimiento explícito del usuario.**
 
 - NUNCA ejecutar `git commit` automáticamente al terminar de implementar.
 - NUNCA ejecutar `git push` sin que el usuario lo pida con esas palabras.
@@ -68,7 +74,7 @@ MAL:  update readme
 BIEN: docs(readme): agregar sección de setup local con connection strings de ejemplo
 
 MAL:  trigger rebuild
-BIEN: chore(ci): re-trigger pipeline tras rotación de AZURE_DEVOPS_PAT en Key Vault
+BIEN: chore(ci): re-trigger pipeline tras rotación del permiso de la CI en Key Vault
 ```
 
 ---
@@ -126,6 +132,18 @@ Agente:  git merge dev -m "merge dev to main"    ← igual de inútil
 - La skill corre `git log origin/main..dev --oneline` primero y agrupa los cambios por story/scope.
 - Un pipeline que publica notas de versión extrae el **mensaje del merge commit**. Un `--no-edit` o un mensaje genérico deja a los clientes sin visibilidad de qué cambió.
 - Siempre `--no-ff` (merge commit explícito) — no fast-forward.
+
+### La rama se borra al entrar
+
+Una rama que no se borra cuando su pedido entra queda viva para siempre: el 2026-11-01 había 1.019 ramas remotas ya
+entradas a `main` entre los dos repos del arnés.
+
+- **Azure DevOps**: un pedido a `main` armado a mano con auto-completar dice explícito si borra la rama; las banderas
+  y el caso del borrador están en `guides/integrations/ado-en-el-nucleo.md`, §«Las convenciones de git». El freno de
+  pedidos lo exige; el skill de merge ya lo hace solo.
+- **GitHub** (tarea humana, una vez por repo, la hace quien administra el repo): prender
+  **«Automatically delete head branches»** en **Settings → General → Pull Requests**. Ahí no hay bandera que el arnés
+  pueda pedir: lo borra la plataforma.
 
 ---
 
@@ -191,6 +209,20 @@ pide al agente que lo ofrezca. **Sin un sí de la persona no se hace.** Con el s
 el archivo de versión. Ese merge ya no vuelve a versionar los formularios: el detector de cambios no cuenta los merges
 (`scripts/ci/forms-to-version.sh`). Poner `dev` al día **no** lleva a `main` el trabajo trabado en `dev`: eso es un
 merge a `main` con `/tycon-merge-to-main`, y el aviso lo ofrece aparte.
+
+## Un pedido en choque sólo por los índices o las firmas
+
+Dos historias en paralelo suman cada una su renglón en `specs/epics.md` y `specs/sprint-status.yaml`, y su firma en
+`.tycon/runtime-waivers.jsonl`. La que entra segunda choca en esos tres archivos, y el servidor de pedidos no aplica la
+unión de `.gitattributes`. Para eso está `node scripts/tools/catch-up-main.js --repo <dir> [--push]`:
+
+- trae `origin/main` con un merge y junta los dos lados de esos tres archivos. En los índices queda un renglón por
+  historia (el de la rama, si la rama lo cambió); en las firmas, todas, una vez y en orden de hora;
+- commitea el merge con un commit normal, con todos los controles. Con `--push` empuja sin forzar;
+- si choca en cualquier otro archivo, o un control rechaza el commit, deshace el merge y deja la rama como estaba.
+
+El freno de cierre no le cobra a ese merge las historias que trae `main`: lo que el índice tiene igual que la rama que
+se trae ya pasó por su propio pedido. Lo que se resolvió a mano sí se juzga.
 
 ## Lo que NO hay que hacer — nunca, bajo ninguna circunstancia
 

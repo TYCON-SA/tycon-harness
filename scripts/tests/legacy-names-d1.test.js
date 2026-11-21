@@ -34,7 +34,8 @@ const WORDS = path.join(RAIZ, 'scripts', 'lib', 'spanish-words.json');
 // Lo esperado de la medición: ocho archivos renombrados y el recuento de claves
 // distintas por archivo.
 const EXPECTED_RENAMED_FILES = 8;
-const EXPECTED_COUNT = { key: 118, comment: 26, 'value-vocabulary': 38, path: 1 };
+// value-vocabulary: un umbral retirado del tablero sale de la clasificación (lo guardado en su historia queda)
+const EXPECTED_COUNT = { key: 118, comment: 26, 'value-vocabulary': 37, path: 1 };
 // Claves opcionales que hoy ninguna entrada usa: `archivo\tclave` →
 // quién la lee. La clave no se puede buscar en el archivo; se busca, con su nombre nuevo, en su lector.
 const UNUSED_TODAY = new Map([['scripts/publishing/allowlist.json\tuntil', 'scripts/publishing/export.js']]);

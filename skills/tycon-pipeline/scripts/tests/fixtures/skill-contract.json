@@ -1,7 +1,7 @@
 {
  "_por_que": "Contrato del SKILL.md de tycon-pipeline (story 7.7 del arnés, 2026-09-19): lo que el SKILL.md grande nombraba y el recortado no puede perder. Se genera con `node test-skill-contract.js --generate` desde el SKILL.md del commit `base` más los step files; `historicos` se conserva entre regeneraciones y cada entrada lleva su motivo.",
  "base": "c5c919cc3024c7f435a3e4172f90746be4da6731",
- "frontmatter": "---\nname: tycon-pipeline\ndescription: Orquesta el pipeline completo TYCON — valida la story con tycon-story-validator, invoca el skill BMAD apropiado (bmad-dev-story / bmad-agent-dev / bmad-agent-quick-flow-solo-dev) en plan mode, aprueba el plan con el usuario, ejecuta la implementación con build-gate, invoca los advisors en paralelo (set computado mecánicamente por `pipeline.js mech-check` + `pipeline.js advisors` — ver sección \"Revisores: checklist\" abajo), consolida los reportes, y prepara el commit sin ejecutarlo. Usar cuando el usuario pide \"implementemos la story X\", \"implementar historia\", \"apply tycon pipeline\" o equivalentes.\n---\n",
+ "frontmatter": "---\nname: tycon-pipeline\ndescription: Orquesta el pipeline completo TYCON — valida la story con tycon-story-validator, escribe el plan, lo aprueba con el usuario, ejecuta la implementación con build-gate, invoca los advisors en paralelo (set computado mecánicamente por `pipeline.js mech-check` + `pipeline.js advisors` — ver sección \"Revisores: checklist\" abajo), consolida los reportes, y prepara el commit sin ejecutarlo. Usar cuando el usuario pide \"implementemos la story X\", \"implementar historia\", \"apply tycon pipeline\" o equivalentes.\n---\n",
  "entradas": {
   "regla": [
    "A-2",
@@ -296,6 +296,38 @@
  },
  "historicos": [
   {
+   "id": "--organization",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--output",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--project",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--query",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--top",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--wiql",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "AZURE_DEVOPS_EXT_PAT",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--auto-approved",
+   "motivo": "story 1.29 (2026-10-30): ningún plan se aprueba solo. La regla de riesgo bajo (`complete-step approve-plan --auto-approved`) salió: el comando sale 2 sin aprobar, y el plan lo aprueba una persona o la coordinadora con la revisión automática (step-04-approve-plan.md §«Quién aprueba el plan»)."
+  },
+  {
    "id": "DOTNET-W3",
    "motivo": "story 8.2 (2026-09-26): era el ejemplo del findings.json del step-06 y nombraba al revisor de convenciones .NET, que desde la 8.2 vive en el paquete bizuit (packs/), no en el núcleo. El ejemplo pasó a SEC-W1 (revisor del núcleo). La regla sigue en el catálogo y en su agente."
   },
@@ -438,6 +470,18 @@
   {
    "id": "--title",
    "motivo": "story 8.85 tanda B1 (2026-10-22): crear el pedido va por `platform.js work-item create` con el título en sus argumentos; las opciones de `az` viven en el conector."
+  },
+  {
+   "id": "TYCON_LANE_LLM",
+   "motivo": "story 8.141 (2026-10-28): el clasificador por modelo del arreglo rápido (lib/lane-classifier.js) se sacó con sus variables; el arreglo rápido es la firma adhoc-lane en la ventana de permiso, y nada del chat lo abre."
+  },
+  {
+   "id": "TYCON_LANE_LLM_MODEL",
+   "motivo": "story 8.141 (2026-10-28): el clasificador por modelo del arreglo rápido (lib/lane-classifier.js) se sacó con sus variables; el arreglo rápido es la firma adhoc-lane en la ventana de permiso, y nada del chat lo abre."
+  },
+  {
+   "id": "TYCON_LANE_LLM_MS",
+   "motivo": "story 8.141 (2026-10-28): el clasificador por modelo del arreglo rápido (lib/lane-classifier.js) se sacó con sus variables; el arreglo rápido es la firma adhoc-lane en la ventana de permiso, y nada del chat lo abre."
   }
  ],
  "parrafos": [

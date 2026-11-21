@@ -1,0 +1,24 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "guion-grande-que-dice-historial-en-un-repo-sin-historias-pasa",
+          "type": "must-not-block",
+          "_por_que": "El gemelo de los casos de 70-guion-grande: un guion de análisis de más de 256 KB que escribe y dice «historial» de commits, en un repo sin historias, no frena. Sin esto el freno volvería a frenar de más (caso de un repo de una materia, 30/10).",
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts",
+            "{ printf \"# el historial de commits de cada alumno, y la historia de cada comision\\nopen('salida.csv', 'w').write('x')\\n\"; yes '# xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/barrido.py",
+            "test \"$(wc -c < scripts/barrido.py)\" -gt 262144"
+          ],
+          "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "python3 scripts/barrido.py datos.csv" } },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}

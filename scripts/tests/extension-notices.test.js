@@ -298,3 +298,39 @@ test('Gancho_FueraDeUnRepo_ConRepoFilesCalla', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(!r.out.includes('REGLA-DE-LA-URL'));
 });
+
+// El gancho corre después de cada comando. La raíz del repo (un git) sólo hace falta para un aviso de paquete o uno con
+// `repo_files`: un aviso de plataforma, uno ya dicho o un conector roto no la piden.
+test('T12 · ExtensionNotices_RootOnlyWhenNeeded_NoGit @story-8.266 @ac-7', () => {
+  const tree = tmp('arbol-'); const home = tmp('casa-'); const ints = tmp('integraciones-'); const repo = tmp('repo-');
+  fs.writeFileSync(path.join(tree, 'team-profile.json'), JSON.stringify({ integrations: { platform: 'github' } }));
+  for (const c of ['azure-devops', 'github']) fs.cpSync(path.join(ROOT, 'integrations', c), path.join(ints, c), { recursive: true });
+  // el conector de Azure DevOps, roto: su aviso dispara con `az repos`, y su manifiesto no se lee
+  fs.writeFileSync(path.join(ints, 'azure-devops', 'integration.json'), '{ roto');
+  execFileSync('git', ['init', '-q', repo]);
+  const packs = tmp('paquetes-');
+  extension(path.join(packs, 'producto'), { notices: [aviso({ id: 'tras-el-comando', when: 'after-command', commands: ['make deploy'] })] },
+    { 'pack.json': JSON.stringify({ name: 'producto', description: 'de prueba' }), 'notices/url.md': 'REGLA-DEL-DEPLOY\n' });
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_TREE: tree, TYCON_HOME: path.join(home, '.tycon'), TYCON_INTEGRATIONS_DIR: ints, TYCON_PACKS_DIR: packs, TYCON_PACKS_DEFAULT: 'all' };
+  for (const k of Object.keys(env)) if (/^TYCON_(ADO_ORG|ADO_PROJECT|PLATFORM|PROFILE|EXTENSION_NOTICES)$|^ADO_ORG$/.test(k)) delete env[k];
+  let n = 0;
+  const after = (command) => {
+    const trace = path.join(home, `trace-${n++}.json`);
+    const r = spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify({ cwd: repo, session_id: 'sesion-git', hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command } }),
+      env: { ...env, GIT_TRACE2_EVENT: trace }, encoding: 'utf8',
+    });
+    const gits = fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').split('\n').filter(Boolean).filter((l) => JSON.parse(l).event === 'start').length : 0;
+    return { code: r.status, out: r.stdout, gits };
+  };
+  const first = after('gh pr list');
+  assert.strictEqual(first.code, 0);
+  assert.ok(first.out.includes('hookSpecificOutput'), `la primera vez dice las reglas: ${first.out}`);
+  assert.strictEqual(first.gits, 0, 'un aviso de plataforma no necesita la raíz del repo');
+  assert.strictEqual(after('gh pr list').gits, 0, 'ya dicho: ningún git');
+  assert.strictEqual(after('az repos list').gits, 0, 'un conector roto no necesita la raíz del repo');
+  const pack = after('make deploy');
+  assert.ok(pack.out.includes('REGLA-DEL-DEPLOY'), pack.out);
+  assert.ok(pack.gits >= 1, 'un aviso de paquete pide la raíz para saber si el paquete está activo en el repo');
+  assert.strictEqual(after('make deploy').gits, 0, 'el de paquete ya dicho: ningún git');
+});

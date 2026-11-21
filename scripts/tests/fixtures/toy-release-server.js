@@ -85,7 +85,9 @@ if (!REPO || !PORT_FILE) { process.stderr.write('uso: toy-release-server.js --re
 
 let remaining = 5000;
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
-const git = (args, opts = {}, bare = REPO) => spawnSync(GIT, ['-C', bare, ...args], Object.assign({ encoding: 'utf8' }, opts));
+// sin tope de salida: lo que se sirve (un archivo de más de 1 MB, el comprimido de un árbol de cientos de MB) no se corta;
+// con el tope de Node, git termina con ENOBUFS y el pedido contesta 404
+const git = (args, opts = {}, bare = REPO) => spawnSync(GIT, ['-C', bare, ...args], Object.assign({ encoding: 'utf8', maxBuffer: Infinity }, opts));
 const control = () => { try { return JSON.parse(fs.readFileSync(CONTROL, 'utf8')); } catch (_) { return { auth: 'none' }; } };
 const log = (o) => { if (LOG) { try { fs.appendFileSync(LOG, `${JSON.stringify(o)}\n`); } catch (_) { /* nada */ } } };
 const keyOf = (r) => `${r.org}/${r.name}`;
@@ -254,7 +256,7 @@ function codeload(req, res) {
 /** El tar.gz de un commit, como el de GitHub, con `tamper` / `truncate` del control. */
 function tarball(res, c, repo, sha) {
   const prefix = `${repo.org}-${repo.name}-${sha.slice(0, 7)}/`;
-  const tar = git(['archive', '--format=tar', `--prefix=${prefix}`, sha], { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 }, repo.bare);
+  const tar = git(['archive', '--format=tar', `--prefix=${prefix}`, sha], { encoding: 'buffer' }, repo.bare);
   if (tar.status !== 0) return notFound(res);
   let raw = tar.stdout;
   // `tamper` / `truncate` valen para todos los repos, o sólo para los nombrados en `tamper_repos` / `truncate_repos` (así una
@@ -309,7 +311,7 @@ function gitHost(req, res) {
   if (c.git_garbage) { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<html>esto no es git</html>'); }
   if (!repo || u.searchParams.get('service') !== 'git-upload-pack' || modeFor(c, repo) !== 'none') { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="GitHub"' }); return res.end(); }
   // las refs del bare en pkt-line, como las anuncia GitHub: la primera línea con las capacidades después de un byte nulo
-  const list = spawnSync(GIT, ['-C', repo.bare, 'for-each-ref', '--format=%(objectname) %(refname)'], { encoding: 'utf8' });
+  const list = git(['for-each-ref', '--format=%(objectname) %(refname)'], {}, repo.bare);
   if (list.status !== 0) { res.writeHead(500); return res.end(); }
   let refsText = list.stdout.split('\n').filter(Boolean).map((l, i) => `${l}${i === 0 ? '\0multi_ack thin-pack side-band agent=toy' : ''}\n`);
   // `ref_moved_to`: main dice OTRO commit (el mismo largo: las líneas siguen valiendo), como en la API

@@ -42,15 +42,25 @@ corre al terminar el mismo gate sobre ese hermano, con el alcance deducido de es
 hermano rojo (un repo sin pruebas con el hermano verde sale `0`), y un total rojo deja el check `tests` en rojo. La
 copia sellada de evidencia es sólo la del repo de la story.
 
-**Repos con `scripts/tests/suites.json` (el arnés):** las suites corren en paralelo (la mitad de los núcleos;
+**Repos con `scripts/tests/suites.json` (el arnés):** las suites corren en paralelo (núcleos menos dos, o menos si
+la máquina está cargada, y esperan si la carga pasa el doble de los núcleos; en la CI, la mitad;
 `TYCON_SUITES_MAX_WORKERS=N` lo cambia, `=1` es la serie de antes), las `exclusive` corren solas al final, y las que
 declaran `gate_only_when_touching` se DIFIEREN si la story no toca esas carpetas (hoy export-real: sólo corre si la
 story toca `scripts/publishing/**`). Lo diferido queda en `tests-result.json` → `totals.deferred_suites`, con el motivo.
 Si el repo declara `test_gate` en `.test-gate.yaml`, en su raíz (commiteado), corren sólo las suites que leen lo tocado y la
-completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Si el gate no puede saber qué toca la story,
-corre todo, también con esa clave (sólo la corrida del repo hermano sale 7 sin correr nada; en el árbol armado del
-privado lo tocado sale de los dos repos y, si no se puede saber, también sale 7).
-`TYCON_GATE_ALL_SUITES=1` corre todo como antes. El nocturno y el control del PR no cambian.
+completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Si lo tocado incluye una pieza central (un
+archivo de código que nombran 40 suites o más), de las que la nombran corren sólo las que nombran la función o el
+subcomando que cambió, o se llaman como ella; las demás quedan diferidas para la CI del pedido, y la salida dice
+«<pieza>: corrieron k de las N suites que la nombran (para correrlas todas: TYCON_GATE_ALL_SUITES=1)». Si no se sabe qué
+cambió adentro, corren todas las que la nombran, hasta el tope de la máquina.
+**La suite completa no corre en la máquina del dev.** Con esa clave corren como mucho 60 suites (el repo lo cambia con
+`test_gate.max_local_suites`): si las que leen lo tocado son más (un archivo de control, una pieza central), corren las
+más cercanas al cambio y las demás quedan diferidas para la CI del pedido; la salida dice «tope de la máquina: N suites
+leen lo tocado; corren las 60 más cercanas y K quedan para la CI del pedido», y el cierre repite que la completa la
+corre esa CI. Las suites tocadas y las repetidas que quedaron viejas corren siempre. «Correr las pruebas» cierra con
+eso. Si el gate no puede saber qué toca la story, no corre nada y sale 7, también con esa clave (como la corrida del
+repo hermano y el árbol armado del privado), y dice cómo dar la base (`TYCON_COVERAGE_BASE`).
+`TYCON_GATE_ALL_SUITES=1` corre todo: sólo a pedido de una persona. El nocturno y el control del PR no cambian.
 
 ### 🔴 El verde de `tests` tiene que venir de ACÁ, y de la suite COMPLETA
 
@@ -77,12 +87,67 @@ story causó en otro lado. Cuesta ~2 min; aparecer todas juntas recién en el me
 | `4` | **FRENO**: el repo tiene más de un proyecto testeable y no se pudo deducir cuál | pasar el alcance a mano: `test-gate.sh <repo> <story> <subdir>` |
 | `5` | **no pude correr las pruebas**: falta el corredor (`npx`, `dotnet`, `npm`), o el shell lo ve pero no se puede lanzar. No se corrió nada (`halted: true`, `missing_tool`) | NO tocar las pruebas: instalar la herramienta o abrir la sesión con un PATH que la vea, y re-correr el gate |
 | `6` | la suite salió 0 pero **no corrió ninguna prueba** (o no dejó un resumen que las cuente): no es verde | mirar `no_tests_run` en `tests-result.json`: alcance vacío, todas saltadas o `todo`, o un resumen ilegible; corregir eso y re-correr |
-| `7` | **sin acotar**: la corrida del repo hermano no pudo acotarse a lo tocado (no se supo qué se tocó, o ninguna suite lo lee) y no corrió nada. El portón acotado por el repo (`test_gate`) no sale 7: sin saber qué se tocó corre todo, y si ninguna suite lee lo tocado sale 0. No es verde ni rojo (`unscoped: true` con el motivo, `merge_requires_ci: true`; el check `tests` queda `sin-acotar`) | seguir anunciándolo: la cubre la CI del pedido, y el merge exige la CI completa en verde. No forzar la completa en la máquina (`TYCON_GATE_ALL_SUITES=1`) salvo pedido del dev |
-| `75` | **no corrió nada**: otra corrida de las pruebas ya está en marcha en este repo (`run-check tests` lo dice con la hora de inicio, su pid y su sesión). No es verde ni rojo: no escribe `tests-result.json` ni corre los repos hermanos | esperar el resultado de esa corrida, no relanzar. Si quedó colgada, la negativa nombra la carpeta del candado para sacarlo a mano |
-| `76` | **no corrió nada**: en la última corrida completa fallaron suites que todavía no salieron verdes solas (la lista vive en el marcador, `testsFailed`). No escribe `tests-result.json` ni toca el check `tests` | después de un rojo, repetir primero la suite que falló: `bash …/test-gate.sh <repo> <story> --suite <ruta>` (la negativa da el comando de cada una). En verde sale de la lista; con la lista vacía, la completa arranca. Una suite sola nunca cierra este paso |
+| `7` | **sin acotar**: la corrida del repo hermano no pudo acotarse a lo tocado (no se supo qué se tocó, o ninguna suite lo lee) y no corrió nada. El portón acotado por el repo (`test_gate`) sale 7 sólo si no se supo qué se tocó (la completa no corre en la máquina); si ninguna suite lee lo tocado sale 0. No es verde ni rojo (`unscoped: true` con el motivo, `merge_requires_ci: true`; el check `tests` queda `sin-acotar`) | seguir anunciándolo: la cubre la CI del pedido, y antes del merge hay que mirar que salga verde. Nada en la máquina lo comprueba: `merge_requires_ci` es un dato del informe, no un freno. No forzar la completa en la máquina (`TYCON_GATE_ALL_SUITES=1`) salvo pedido del dev |
+| `75` | **no corrió nada**: otra corrida de las pruebas ya está en marcha en este repo (`run-check tests` lo dice con la hora de inicio, su pid y su sesión), o no hay lugar en el turno de las ejecuciones grandes de la máquina, que se pide desde 100 suites por correr: ya corren dos, o corre una y la memoria no alcanza para la segunda (debajo del piso, 50 % si nadie lo cambia, o sin poder medirla; la negativa dice quién corre, la memoria y el piso; o hay un pase adversarial en vuelo y el portón no puede ir a su lado: corre más de 40 suites, ya hay otro portón al lado del pase, o la memoria libre está debajo del 40 %; el check `tests` queda `sin-turno`, ni verde ni rojo, para que un verde viejo no valga: los cierres de los pasos frenan pidiendo el turno, y el cierre del turno deja parar). No es verde ni rojo: no escribe `tests-result.json` ni corre los repos hermanos | esperar el resultado de esa corrida, no relanzar. Si quedó colgada, la negativa dice cómo destrabarla |
+| `77` | no sale del portón: es lo que sale el corredor de las suites con el turno de las ejecuciones grandes en manos de otra sesión, y el portón lo da como `75` | lo mismo que `75` |
+| `76` | **no corrió nada**: en la última corrida completa fallaron suites que todavía no salieron verdes solas (la lista vive en el marcador, `testsFailed`). No escribe `tests-result.json` ni toca el check `tests` | después de un rojo, repetir primero la suite que falló: `bash …/test-gate.sh <repo> <story> --suite <ruta>` (la negativa da el comando de cada una). En verde sale de la lista; con la lista vacía, se corre otra vez el portón completo. En un repo que acota el portón (`test_gate` en `.test-gate.yaml`) o en el árbol armado del privado (ahí se compara cada repo), ese portón no siempre corre todo: si la carpeta no cambió desde la completa roja ni desde cada repetición, cierra con lo guardado sin correr ninguna suite; si cambió desde la completa (también por traer main), corren sólo las suites que leen lo cambiado, y cada repetida cuya carpeta cambió después de repetirla vuelve a correr; si cambió el recorte o la lista de suites, o lo cambiado toca un control, el instalador o lo compartido, corre la completa como siempre. Una suite sola, por sí misma, no cierra este paso, salvo en una corrida acotada (la cruzada, el árbol armado del privado o el repo que acota) sin lo guardado de la completa roja: cuando la repetición saca la última roja y la constancia queda en verde, el portón deja `tests` en verde, porque la completa la corre la CI del pedido. Si queda otra roja, una ausente, una sin medir o un repo hermano rojo, sigue en rojo |
+| `78` | **espera a main**: lo que quedó rojo está roto también en la última versión de `main`, con los mismos casos (el tercer juez, `lib/main-check.js`, lo midió en una copia de main que se reusa, o reusó lo que otra sesión ya midió). No es un rojo de la historia ni es verde: el check `tests` queda `espera-main`, la espera queda anotada en el marcador (`waitingOnMain`) y en el registro de main roto del repo (`main-<n>`, con las sesiones que esperan; `main-check.js status --repo <r>` lo muestra), y no escribe `tests-result.json`. En la mezcla (alguna de main y alguna de la historia) sale rojo como siempre, con las de main nombradas aparte y marcadas en la lista de la 76 (no hay que repetirlas): la historia arregla las suyas y, cuando sólo quedan las de main, la corrida siguiente sale 78 | **NO** tocar esas pruebas ni el código por ese rojo; **NO** pedir una vuelta extra ni preguntarle al dueño: no es un hallazgo de la historia ni una vuelta. Decirle a la persona en una línea «main está roto en <suites>: espero a main (<id>)» y cerrar el turno: el cierre del turno deja parar con la espera anotada. La historia no avanza («Correr las pruebas», «Preparar el pull request», `review` y `done` se frenan) hasta que main pase y su portón salga verde. En Claude Code, dejar de fondo `node …/skills/tycon-pipeline/scripts/lib/main-check.js wait --repo <r> --id <id>`: mira `origin/main` cada 5 minutos, mide las suites del registro sólo con una punta nueva y la memoria sobre el piso, y sale 0 con «main pasó: <sha>; traé main y repetí el portón» (entonces traer `main` a la rama y volver a correr el portón) o 3 a las 8 horas («main sigue roto hace 8 h (<id>)», en una línea a la persona, y volver a dejarla). En Codex (sin ejecución de fondo con aviso), al empezar cada turno correr `node …/skills/tycon-pipeline/scripts/lib/main-check.js status --repo <r>`: si dice que el registro se cerró (main pasó), traer `main` y volver a correr el portón. Con repos hermanos, la espera es una por repo y un rojo de cualquier repo gana sobre ella. Si el portón dice «main ya pasó (<sha>) y esta rama no lo trae», traer `main` antes de tocar la suite. Quien toma el arreglo de main lo anota con `main-check.js fix --repo <r> --id <id> --session <sesión> [--pr <n>]`: es uno solo para todas las que esperan |
 | `129` | la corrida se cortó (la terminal se cerró) mientras medía el repo privado adelgazado: la carpeta del árbol armado se borró y la corrida de las suites se cortó. No es verde | re-correr el gate |
 | `130` | la corrida se cortó con Ctrl-C mientras medía el repo privado adelgazado; lo mismo que el `129` | re-correr el gate |
 | `143` | la corrida se cortó con una señal de terminación mientras medía el repo privado adelgazado; lo mismo que el `129` | re-correr el gate |
+
+**Después de un verde, el portón corre sólo lo que cambió desde el último verde de la historia.** En un repo que acota
+el portón (`test_gate` en `.test-gate.yaml`) o en el árbol armado del privado, una completa verde que midió todo lo suyo
+queda guardada, y un cierre en verde con lo guardado (también desde una roja con sus rojas repetidas solas) guarda su
+resumen juntado como el nuevo verde: «guardé este verde (juntado con la completa de las HH:MM): la próxima corrida corre
+sólo lo que cambie desde acá». Nunca queda como punto de partida una acotada sola: el juntado trae una suite por cada una
+de la completa de origen. Un cierre rojo deja lo guardado como estaba; uno en verde que no se puede guardar (una ausente,
+una sin medir, una roja perdonada en lo guardado sin el resumen de antes del perdón, un guardado que falla) también, y
+lo dice en «no guardo este cierre: …». Si la carpeta cambió mientras corría, guarda igual con la foto del arranque («la
+carpeta cambió mientras corría: guardo con la foto del arranque…»): la próxima corrida vuelve a correr lo que lee lo
+cambiado durante la corrida. Esa foto no sirve para acotar por lo que trajo main, que sigue pidiendo la carpeta quieta.
+La corrida siguiente compara la carpeta con la del último verde:
+- Si no cambió nada, cierra con lo guardado sin correr ninguna suite («cierra con la completa de las HH:MM: la carpeta
+  no cambió»).
+- Si cambió algo, corren sólo las suites que leen lo cambiado y se juntan con lo guardado («la completa de las HH:MM
+  más N suites por lo cambiado (…)»).
+- Si lo cambiado toca la carpeta de una suite de carpeta (`gate_only_when_touching`), o el instalador con lo guardado
+  rojo, esa suite también corre, sin pasar por los filtros, aunque la completa la haya diferido o ya medido («… y las que
+  vuelven por sus carpetas (…)», con el renglón «VUELVE» del corredor); una que ya no está en la lista cuenta como
+  ausente. Lo guardado deja de tenerla como diferida cuando corrió.
+- Corre de nuevo todo lo que lee lo tocado (la «completa» de esta sección, siempre dentro del tope de la máquina), y
+  la línea dice por qué, si cambió un control (`scripts/ci/controls-from-base.json`),
+  el instalador o algo compartido (`scripts/ci/heavy-suites.json`), la lista de suites, la base o el recorte; en el
+  privado, algo bajo `pipelines/`, `scripts/ci/`, `scripts/hooks/` o `.githooks/`; si lo guardado es de otra historia
+  o está tocado; o si algo no se pudo comparar.
+
+`tests-result.json` dice `suite_green_by: "completa-guardada"`, la hora de esa completa (`completa_at`) y lo cambiado
+(`changed_since_full`). Para forzar la completa: `TYCON_GATE_ALL_SUITES=1`. La completa la sigue corriendo la CI del
+pedido y la cola de main.
+
+**Cada corrida dice por qué corre lo que corre.** El portón de arriba imprime un solo renglón «modo <primera | entera |
+acotada | sin correr> · <motivo>». Sin nada guardado lo dice («no hay un verde guardado de esta historia en esta
+sesión»), con el motivo de la última corrida que no guardó si la hubo. Cada corrida terminada en verde o en rojo anota su
+nota en el marcador (`testsSavedNote`, una por repo, con la historia) y un renglón `test-gate-run` en `gates.log`; la
+cortada, la sin turno y la ocupada no anotan. Las horas de repetición por día, con las enteras agrupadas por motivo:
+`node {raiz}/scripts/tools/suite-times.js repeats [--since <fecha u hora>] [--until <fecha u hora>] [--json]` (los días
+de antes del renglón se clasifican por el comando, «sin motivo: de antes del registro»; sale 3 si no hay corridas).
+
+Una suite roja que ya estaba roja en el nocturno de esa mañana avisa y no frena, con la misma regla que la validación
+de cada pedido: el portón pasa su resumen por el juez de los pedidos con la foto nocturna que viaja en el árbol armado
+(`lib/inherited-reds.js`). Lo heredado sale de la lista de «repetir primero» y queda escrito en `inherited`; lo nuevo
+frena como siempre. Lo mismo al repetir una sola con `--suite`: si ya estaba roja en la foto, sale de la lista y deja
+en verde `tests-suite`. Sin foto (el repo público solo), o si la foto no sirve (vieja, tocada o ilegible), lo rojo se
+mide en la base, en el momento: cada roja corre sola sobre la bifurcación con `origin/main`, sin el cambio. Roja también
+ahí, es heredada (`measured_on: "base"`); verde ahí, el rojo es del cambio y frena; sin poder medirla (sin
+`origin/main`, la suite no está en la base, pasó el tope, el árbol armado del privado), sigue roja y dice «no medido» y
+por qué. Queda escrito en `base_check`. Topes: `TYCON_INHERITED_BASE_MAX` suites (3; 0 la apaga) y
+`TYCON_INHERITED_BASE_TIMEOUT_S` segundos por suite (600).
+
+Una repetición sola que sale verde también saca su falla de la constancia de la completa (`tests-result.json`, la que
+lee el revisor de pruebas, y su copia que viaja), si es de esa misma completa: cuando no queda ninguna otra causa de
+rojo, la constancia queda en verde con `suite_green_by: "repeticiones"`. Si la constancia es de otra corrida, de antes
+de este cambio o no está, no se toca y la salida dice por qué.
 
 El `4`, el `5` y el `6` dejan además el check `tests` del marcador en **rojo** con su código: un verde de una corrida
 anterior no queda en pie cuando esta corrida no pudo correr o no contó nada.
@@ -161,7 +226,8 @@ de 3, candado anti-suite-completa en los cazadores). Kill-switch: `export TYCON_
 > lanzar, puntos 3 y 4), ANTES del primer revisor. El portón deja su veredicto anotado en la ejecución
 > (`adversarialGate`), y el apagado visto una vez vale para toda la ejecución (un `TYCON_5B_EARLY=0` en un comando suelto
 > alcanza; `=1` explícito lo vuelve a prender). Medido antes: 52 de 208 ejecuciones con pase lo lanzaron más de 2 min
-> después del primer revisor. Lo que sigue es el detalle de qué hacer en cada caso. 🔴 **La primera ejecución NORMAL con
+> después del primer revisor. Si el pase ya salió en este turno y falta anotarlo, se anota con
+> `mark-adversarial-launched` y no se relanza. Lo que sigue es el detalle de qué hacer en cada caso. 🔴 **La primera ejecución NORMAL con
 > esto activo ES la de medición**: contar procesos pesados simultáneos (no solo cronometrar) y con eso ajustar el tope 2
 > de «Revisores»; si la máquina sufre, `TYCON_5B_EARLY=0` y se recalibra.
 
@@ -178,15 +244,24 @@ resueltos, lanzar.**
    línea `adversarial-skip` en `gates.log`). Dejar además el `reason` en `<RUN_DIR>/step-05b-adversarial.md` (el paso
    `step-08-adversarial-pass.md` no se alcanza: `next` lo da por atendido; es el no-op esperado). 🔴 La bandera del
    pase no se escribe a mano, y `complete-step adversarial-pass` frena sin esta constancia. **`run: true` +
-   `early_launch: true`** → seguir.
+   `early_launch: true`** → seguir. **Sale 3 (`waiting_turn: true`)** → otra sesión tiene su pase en vuelo y va uno por
+   vez: no lances. El texto (`turn`) dice quién tiene el lugar. Seguí con los revisores. La coordinadora te avisa cuando
+   se libera, y `pipeline.js next` deja de pedir esperar (`esperar-turno-pase`): ahí lanzá.
 2. Lanzar con el `model` que devuelve el gate: no se pregunta por otro modelo.
 3. 🔴 **Validar `files` NO vacío y de CÓDIGO antes de invocar**: si la lista quedó vacía o mal armada, el workflow
    retorna un no-op instantáneo y el lanzamiento se quema (el guard bloquea relanzar sin `--relaunch`). La lista debe
    ser **EXACTAMENTE la misma que después se pasa a `pipeline.js advisors` en «Revisores»**: si divergen, el pase
    audita otro diff que los revisores, en silencio.
-4. Invocar la tool `Workflow` (args idénticos a `step-08-adversarial-pass.md` §Acción, incluido `runDir`, el RUN_DIR de
-   esta ejecución: sin él las pruebas que confirman los hallazgos caen en una carpeta genérica) e **INMEDIATAMENTE
-   después (mismo turno)** registrar el estado con el runId que devolvió la tool:
+4. Congelar lo que va a mirar el pase, y pasarle sus sellos:
+   ```bash
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial
+   ```
+   Sella cada repo de la corrida y arma su copia de sólo lectura en la carpeta de estado; devuelve `{ sellos, copias }`.
+   Sale 2 si no puede sellar o copiar: el pase no se lanza sobre la carpeta viva. Invocar la tool `Workflow` (args
+   idénticos a `step-08-adversarial-pass.md` §Acción, incluido `runDir`, el RUN_DIR de esta ejecución, y los `sellos`
+   de arriba: sin `runDir` las pruebas que confirman los hallazgos caen en una carpeta genérica, y sin `sellos` su
+   resultado no se anota) e **INMEDIATAMENTE después (mismo turno)** registrar el estado con el runId que devolvió la
+   tool:
    ```bash
    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId> 4
    ```

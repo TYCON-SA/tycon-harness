@@ -109,6 +109,19 @@ t('repo relativo se rechaza (contrato con retro-pending)', () => {
   assert.ok(v.errors.some((e) => e.includes('ABSOLUTO')));
 });
 
+t('repo absoluto de Windows pasa en cualquier sistema; uno relativo de Windows no', () => {
+  for (const repo of ['C:/Users/dev/acme/Backend', 'D:\\workspace\\acme', '\\\\servidor\\compartido\\acme']) {
+    const d = base();
+    d.repo = repo;
+    assert.ok(!validate(d).errors.some((e) => e.includes('ABSOLUTO')), repo);
+  }
+  for (const repo of ['C:acme', 'acme\\Backend']) {
+    const d = base();
+    d.repo = repo;
+    assert.ok(validate(d).errors.some((e) => e.includes('ABSOLUTO')), repo);
+  }
+});
+
 t('métrica faltante se rechaza en modo estricto y pasa en laxo', () => {
   const d = base();
   delete d.metrics.advisor_rerun_loop_iterations;
@@ -505,6 +518,17 @@ t('ReposListMissing_CardsSayItIsMissing: sin repos.json, o con uno ilegible, las
   assert.match(m.bus, /scripts\/nightly\/dependencies\/repos\.json no se lee/);
   assert.match(m.sinProd, /scripts\/nightly\/dependencies\/repos\.json no se lee/);
   fs.rmSync(dash, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true });
+});
+
+// Sin línea de base el banco no comparó: la ficha de regresiones dice «no medido», no un valor vacío.
+t('BenchWithoutBaseline_RegressionsCardIsNotMeasured: baselineRegressions null no es una medida', () => {
+  const D = require(path.join(RAIZ, 'scripts', 'nightly', 'dashboard', 'dashboard.js'));
+  const banco = (doc) => ({ banco: { leida: true, vigente: true, doc } });
+  const sin = D.encuentra(banco({ ran: 10, failed: 0, skipped: 0, nomedido: 0, parityBreaks: 0, baselineRegressions: null, sinLineaDeBase: 'no se pudo leer x.json' })).banco_regresiones;
+  assert.notStrictEqual(sin.estado, 'medido');
+  assert.match(sin.motivo, /línea de base: no se pudo leer x\.json/);
+  const con = D.encuentra(banco({ ran: 10, failed: 0, skipped: 0, nomedido: 0, parityBreaks: 0, baselineRegressions: 0 })).banco_regresiones;
+  assert.strictEqual(con.estado, 'medido');
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

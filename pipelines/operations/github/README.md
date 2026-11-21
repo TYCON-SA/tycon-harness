@@ -172,8 +172,12 @@ sesión, el enlace al sitio.
 **La protección de `operations.json` y de los workflows.** La regla de la organización es **«todo automático»**: lo que
 guarda la noche y lo que propone el sitio entra a `main` sin que lo apruebe una persona. Es la misma que dicen la guía
 del sitio (`guides/organization-site.md`, «La política de rama del repo de operaciones») y el README de Azure DevOps.
-En GitHub se cumple a medias: **la noche entra sola; el sitio, todavía no**, porque quien abre un pull request no puede
-aprobarlo y el sitio no completa pedidos en GitHub. Ponela **antes** de publicar el sitio de la organización: sin
+En GitHub **la noche entra sola**. Lo que propone el sitio entra solo si el repo lo deja, porque quien abre un pull
+request no puede aprobarlo: el sitio une su pedido directo cuando su identidad puede saltear la revisión; si el repo
+pide la aprobación de otra persona, le prende la **unión automática** y entra cuando alguien lo apruebe; y si GitHub no
+deja la unión automática, el pedido queda abierto para que alguien lo apruebe y lo una a mano. Para el segundo camino,
+prendé *Allow auto-merge* en *Settings → General*. Ninguno saltea una regla del repo. Ponela **antes** de publicar el
+sitio de la organización: sin
 ella, cualquiera que pueda empujar a `main` se hace mantenedor del sitio o cambia un workflow y se lleva sus secretos. En
 *Settings → Rules → Rulesets → New push ruleset* (repos privados o internos), la regla **Restrict file paths** sobre
 `operations.json` y `.github/workflows/**`, con el equipo de quienes mantienen como única excepción (*Bypass list*). Los
@@ -188,8 +192,8 @@ los nocturnos; ponerle de excepción a GitHub Actions dejaría a cualquiera con 
 `operations.json` y los workflows sin que otro lo mire. Queda la constancia: cada cambio es un commit con su autor.
 **Volver a pedir aprobación:** cambiar la regla por ruta por un *branch ruleset* sobre `main` con *Require a pull
 request before merging* y una aprobación. Como frena también los guardados de la noche, lleva a GitHub Actions en su
-*Bypass list*, con el riesgo del paréntesis de arriba. Con esa regla el sitio propone, y el pull request queda para que
-lo apruebe otra persona.
+*Bypass list*, con el riesgo del paréntesis de arriba. Con esa regla el sitio propone y le prende la unión automática
+al pull request, que entra cuando lo apruebe otra persona.
 
 Y en *Settings → Actions → General*: *Workflow permissions* puede quedar en «Read repository contents»; cada workflow
 pide para sí `contents: write` (para guardar en este repo) y nada más. Si `main` del repo de operaciones tiene reglas de
@@ -212,7 +216,7 @@ revisión en Azure DevOps.
 - **Cerrarlo sin mergear** quiere decir «no aplica», y **el último comentario o la última revisión de una persona es el
   motivo**. La noche siguiente lo anota en la ficha (`rechazado:` y `motivo_rechazo:`); sin texto de una persona, anota
   «sin motivo escrito». La ficha sigue viva: rechazar el aviso no saca la vulnerabilidad de `main`. La salida sin
-  arreglo es declarar la deuda en el `vulnerabilidades-pendientes.json` del repo.
+  arreglo es declarar la deuda en el `pending-vulnerabilities.json` del repo.
 - **Reabrirlo** borra el rechazo, igual que reactivarlo en Azure.
 
 **Un solo pull request por hallazgo.** La ficha recuerda su número (`pr:`) y el repo donde vive (`pr_repo:`). Si el
@@ -315,7 +319,7 @@ que esperaba.
   administra la noche, y el issue del producto sigue lo que se decida.
 - **Los issues** de la revisión de dependencias, en cada repo de producto, con la etiqueta `arnes-hallazgo`. Ahí el
   equipo del producto ve el aviso y decide: **arreglarlo** (subir el paquete: cuando la noche deja de verlo en `main`, cierra el issue sola), **declararlo
-  como deuda** (en el `vulnerabilidades-pendientes.json` del repo; el issue queda abierto), o **cerrarlo como «not
+  como deuda** (en el `pending-vulnerabilities.json` del repo; el issue queda abierto), o **cerrarlo como «not
   planned»** si no aplica (la noche lo va a decir una vez mientras la vulnerabilidad siga en `main`: la salida sin
   arreglo es declarar la deuda). La noche reabre un issue que cerró ella si la vulnerabilidad vuelve; uno que cerró una
   persona, no.

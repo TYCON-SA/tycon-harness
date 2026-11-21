@@ -1,0 +1,22 @@
+# La configuración de gitleaks de los pipelines que escanea el arnés: las reglas de fábrica y una sola excepción.
+#
+# La evidencia del arnés (.advisors/, por ejemplo el registro de los humos y el informe del portón de pruebas) guarda la
+# huella git de cada archivo, 40 hex, con su ruta como clave: "scripts/api/cliente.js":"<40 hex>". La regla
+# generic-api-key la toma por una clave cuando la ruta dice «api», «credentials», «token» o «key».
+#
+# La excepción deja pasar SÓLO eso: un 40 hex en minúsculas cuya clave termina en un archivo con extensión conocida, y
+# sólo bajo .advisors/. Mira el tramo que encontró la regla (`match`), nunca el renglón entero: un secreto de verdad en el
+# mismo renglón se sigue frenando. Un 40 hex con una clave que no es un archivo («api_key», «token») frena igual.
+#
+# Las plantillas de pipelines copian el bloque [[allowlists]] tal cual (la prueba secret-scan-evidence-hashes.test.js lo
+# compara) y, si el repo trae su propio .gitleaks.toml, extienden ése en lugar de las reglas de fábrica.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "huellas git de la evidencia del arnés: ruta de archivo como clave y 40 hex como valor, sólo bajo .advisors/"
+condition = "AND"
+regexTarget = "match"
+paths = ['''(^|/)\.advisors/''']
+regexes = ['''^[\w.-]*\.(js|mjs|cjs|ts|tsx|jsx|json|jsonl|md|cs|csproj|sln|sh|ps1|py|yml|yaml|sql|txt|html|css|scss|xml|toml|config|lock|svg|png)"\s*:\s*"[0-9a-f]{40}"$''']

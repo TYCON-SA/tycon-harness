@@ -79,7 +79,7 @@ function repo(archivos, tocar = []) {
 function entorno(home, sid, bin, extra = {}) {
   const env = { ...process.env };
   for (const k of DEL_ENTORNO) delete env[k];
-  return { ...env, HOME: home, CLAUDE_CODE_SESSION_ID: sid, PATH: `${bin}:${process.env.PATH}`, ...extra };
+  return { ...env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, PATH: `${bin}:${process.env.PATH}`, ...extra };
 }
 const casa = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tgs-home-')));
 
@@ -146,6 +146,8 @@ test('T4 Chapter4Shape_BothParts @story-7.45 @ac-4 — back pytest y front Playw
   const r = correr(d, { bin, story: path.join(d, 'specs', 's.md'), extra: { FAKE_CASES: '3' } });
   assert.equal(r.status, 0, r.out);
   assert.deepEqual(r.art.parts.map((p) => `${p.scope}:${p.runner}`).sort(), ['backend:pytest', 'frontend:playwright']);
+  // el artefacto de cada parte, en la forma de ruta que lee node (en Windows, no la del bash de Git)
+  for (const p of r.art.parts) assert.ok(fs.existsSync(p.artifact), p.artifact);
   assert.equal(r.art.totals.total, 6);
   assert.equal(r.art.suite_green, true);
 });

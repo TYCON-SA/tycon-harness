@@ -15,7 +15,7 @@
 //     pruebas, datos y YAML no son de este control: ahí sigue valiendo scripts/tests/internal-history.test.js (sin
 //     números de pull request en nada de lo publicado).
 //   · Qué se publica: en el repo del equipo (trae `team-profile.json`, o `perfil-equipo.json`) lo dice el exportador (`whatShips`, como el freno
-//     de nombres) y se lee el texto COMO SALE —sin los bloques internos, un papel de public-files/ con la ruta de su
+//     de nombres) y se lee el texto COMO SALE —sin los bloques internos, el origen de un sintético con la ruta de su
 //     destino, y también lo que un paquete deja pendiente para la copia que une los paquetes—; en el repo público, todo
 //     lo versionado. Con el perfil y sin la tabla privada es «no pude mirar»: un clon del equipo incompleto no es el
 //     repo público.
@@ -170,21 +170,23 @@ const REGEX_AFTER_WORD = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 
 const regexAllowed = (prev) => prev === '' || /^[(,=:[!&|?{};+\-*%<>~^]$/.test(prev) || REGEX_AFTER_WORD.has(prev);
 
 /** JavaScript y TypeScript: `//`, `/* … *\/` en cualquier lugar; fuera de cadenas, plantillas y expresiones regulares. */
-function jsComments(src, out, cut = null) {
+function jsComments(src, out, cut = null, data = null) {
   let i = 0;
   let line = 0;
   let prev = '';
   const stack = [];   // 'brace' por cada `{` abierto; 'tpl' por cada `${` de una plantilla
   const n = src.length;
   const skipLine = () => { while (i < n && src[i] !== '\n') i++; };
+  // una línea que empieza adentro de una cadena o una plantilla es dato: sus blancos cuentan
+  const dataLine = () => { line++; if (data) data[line] = true; };
   // una barra seguida de salto de línea sigue la cadena en la línea siguiente: la línea se cuenta igual
-  const escape = () => { if (src[i + 1] === '\n') line++; i += 2; };
+  const escape = () => { if (src[i + 1] === '\n') dataLine(); i += 2; };
   const string = (q) => { i++; while (i < n && src[i] !== q && src[i] !== '\n') { if (src[i] === '\\') escape(); else i++; } if (src[i] === q) i++; };
   const template = () => {   // desde adentro de una plantilla hasta su cierre, o hasta un `${`
     while (i < n) {
       const c = src[i];
-      if (c === '\\') { if (src[i + 1] === '\n') line++; i += 2; continue; }
-      if (c === '\n') { line++; i++; continue; }
+      if (c === '\\') { if (src[i + 1] === '\n') dataLine(); i += 2; continue; }
+      if (c === '\n') { dataLine(); i++; continue; }
       if (c === '`') { i++; return; }
       if (c === '$' && src[i + 1] === '{') { i += 2; stack.push('tpl'); prev = '{'; return; }
       i++;
@@ -259,7 +261,7 @@ function jsComments(src, out, cut = null) {
  * heredoc que no cierran en el resto del archivo no abren nada: una comilla suelta o un `<<` aritmético no apagan la
  * lectura de lo que sigue.
  */
-function shComments(lines, out, cut = null) {
+function shComments(lines, out, cut = null, data = null) {
   let quote = null;   // "'" · '"' · '$' (la de `$'…'`, con escapes)
   const heredocs = [];
   let body = null;
@@ -275,6 +277,8 @@ function shComments(lines, out, cut = null) {
   });
   const heredocCloses = (h, ln) => (closers.get(h.word) || []).some((c) => c.k > ln && (h.strip || !c.tabs));
   lines.forEach((l, ln) => {
+    // el cuerpo de un heredoc y una línea que empieza adentro de comillas son dato: sus blancos cuentan
+    if (data && (body || quote)) data[ln] = true;
     if (body) {
       if ((body.strip ? l.replace(/^\t+/, '') : l) === body.word) body = heredocs.shift() || null;
       return;
@@ -333,9 +337,10 @@ function psComments(lines, out) {
 }
 
 /** Python y TOML: `#` fuera de cadenas, también de las de triple comilla. */
-function pyComments(lines, out, cut = null) {
+function pyComments(lines, out, cut = null, data = null) {
   let triple = null;
   lines.forEach((l, ln) => {
+    if (data && triple) data[ln] = true;   // adentro de una cadena de tres comillas
     if (ln === 0 && l.startsWith('#!')) return;
     for (let i = 0; i < l.length; i++) {
       if (triple) { if (l.startsWith(triple, i)) { triple = null; i += 2; } continue; }
@@ -411,6 +416,90 @@ function codeOf(text, rel) {
     for (const [ln, col] of cut) kept[ln] = kept[ln].slice(0, col);
   } else return null;
   return kept.map((l) => l.replace(/\s+$/, '')).filter((l) => l !== '').join('\n');
+}
+
+// Comentarios que cambian lo que hace el archivo: directivas del intérprete, del compilador o de una herramienta.
+const DIRECTIVE = /^(?:#\s*(?:escape|syntax|check)\s*=|#.*-\*-.*coding|#\s*(?:shellcheck|noqa|type:|pragma|pylint|fmt:)|\/[/*]\s*(?:@ts-|eslint|prettier-ignore|#\s*source(?:Mapping)?URL)|\/\/\/\s*<reference)/i;
+
+// Las líneas adentro de un bloque `|` o `>` de YAML: son dato (un `#` ahí es texto del guion, no un comentario).
+function yamlBlockLines(lines) {
+  const data = lines.map(() => false);
+  let blockIndent = -1;
+  lines.forEach((l, ln) => {
+    const indent = l.search(/\S/);
+    if (blockIndent >= 0) {
+      if (indent === -1 || indent > blockIndent) { data[ln] = true; return; }
+      blockIndent = -1;
+    }
+    if (/(?::|^\s*-)\s*[|>][-+0-9]*\s*(?:#.*)?$/.test(l)) blockIndent = indent === -1 ? 0 : indent;
+  });
+  return data;
+}
+
+/**
+ * El código de un archivo sin sus comentarios, para decir si un cambio toca SÓLO comentarios (comment-only-diff.js).
+ * Más estricto que `codeOf`, que sirve para buscar formas en los comentarios: acá un falso «igual» deja pasar código sin
+ * revisión, y ante la duda el archivo cuenta como distinto. Por eso:
+ *   · los blancos de una línea que es dato (un heredoc, una cadena o plantilla de varias líneas, un bloque de YAML)
+ *     cuentan, y también los espacios al final de una línea de código;
+ *   · un comentario entre código deja un espacio, o sus saltos de línea: no puede pegar ni separar lo que lo rodea;
+ *   · las directivas (`# escape=`, `coding`, `@ts-…`, `shellcheck`…) son código;
+ *   · JSX no se compara (un `//` en su texto no es un comentario), y el fin de línea (CRLF o LF) cuenta.
+ * Devuelve `null` si el archivo no es código que sepa leer.
+ */
+function codeOfStrict(text, rel) {
+  if (/\.[jt]sx$/i.test(String(rel))) return null;
+  const style = commentStyle(rel);
+  if (!['js', 'sh', 'py', 'yaml', 'docker'].includes(style)) return null;
+  const raw = String(text);
+  const crs = (raw.match(/\r/g) || []).length;
+  const src = raw.replace(/\r\n?/g, '\n');
+  const lines = src.split('\n');
+  const data = lines.map(() => false);
+  const hadCut = lines.map(() => false);
+  let kept;
+  if (style === 'js') {
+    const cut = [];
+    jsComments(src, lines.map(() => ''), cut, data);
+    let from = 0;
+    let line = 0;
+    let s = '';
+    for (const [a, b] of cut) {
+      const body = src.slice(a, b);
+      line += (src.slice(from, a).match(/\n/g) || []).length;
+      if (DIRECTIVE.test(body)) continue;
+      s += src.slice(from, a);
+      const nl = (body.match(/\n/g) || []).length;
+      for (let k = line; k <= line + nl; k++) hadCut[k] = true;
+      s += nl ? '\n'.repeat(nl) : ' ';
+      line += nl;
+      from = b;
+    }
+    kept = (s + src.slice(from)).split('\n');
+  } else {
+    const cut = [];
+    if (style === 'sh') shComments(lines, lines.map(() => ''), cut, data);
+    else if (style === 'py') pyComments(lines, lines.map(() => ''), cut, data);
+    else if (style === 'yaml') {
+      yamlComments(lines, lines.map(() => ''), cut);
+      yamlBlockLines(lines).forEach((d, ln) => { if (d) data[ln] = true; });
+    } else lines.forEach((l, ln) => { const m = /^\s*#/.exec(l); if (m) cut.push([ln, m.index]); });
+    kept = lines.slice();
+    for (const [ln, col] of cut) {
+      if (data[ln] || DIRECTIVE.test(lines[ln].slice(col))) continue;
+      kept[ln] = kept[ln].slice(0, col);
+      hadCut[ln] = true;
+    }
+  }
+  const res = [];
+  kept.forEach((l, k) => {
+    if (data[k]) { res.push(l); return; }
+    const x = hadCut[k] ? l.replace(/[ \t]+$/, '') : l;
+    // una línea en blanco de código no cambia nada, salvo que corte una continuación con barra
+    if (x.trim() === '') { if (!hadCut[k] && res.length && /\\$/.test(res[res.length - 1])) res.push(x); return; }
+    res.push(x);
+  });
+  return (crs ? `\u0000cr=${crs}\n` : '') + res.join('\n');
 }
 
 /**
@@ -518,6 +607,7 @@ function publicLookup(repo, remote = null) {
     }
     if (target.startsWith('-')) { answer = { problem: 'la dirección del repo público no es válida' }; return answer; }
     const r = spawnSync('git', ['ls-remote', target], {
+      windowsHide: true,
       cwd: repo, encoding: 'utf8', timeout: LOOKUP_MS, maxBuffer: 256 * 1024 * 1024,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
     });
@@ -552,12 +642,12 @@ function publicLookup(repo, remote = null) {
       if (r.status === 0) {
         if (!localTips) {
           // las puntas del público que este clon tiene (una que no trajo no sirve para llegar a nada)
-          const c = spawnSync('git', ['cat-file', '--batch-check'], { cwd: repo, encoding: 'utf8', input: `${a.tips.join('\n')}\n` });
+          const c = spawnSync('git', ['cat-file', '--batch-check'], { windowsHide: true, cwd: repo, encoding: 'utf8', input: `${a.tips.join('\n')}\n` });
           localTips = c.status === 0 ? c.stdout.split('\n').filter((l) => / commit /.test(l)).map((l) => l.split(' ')[0]) : [];
         }
         if (localTips.length) {
           // vacío = se llega al commit desde alguna de esas puntas
-          const l = spawnSync('git', ['rev-list', '-n', '1', '--stdin'], { cwd: repo, encoding: 'utf8', input: `${r.stdout.trim()}\n${localTips.map((t) => `^${t}`).join('\n')}\n` });
+          const l = spawnSync('git', ['rev-list', '-n', '1', '--stdin'], { windowsHide: true, cwd: repo, encoding: 'utf8', input: `${r.stdout.trim()}\n${localTips.map((t) => `^${t}`).join('\n')}\n` });
           yes = l.status === 0 && l.stdout.trim() === '';
         }
       }
@@ -639,7 +729,7 @@ const zoneConfig = (config, zone) => (config && config.zones && config.zones[zon
 
 // ── git: el del hook (con el índice del commit en curso) ─────────────────────────────────────────────────────────
 function git(cwd, args, { tolerate = false, buffer = false } = {}) {
-  const r = spawnSync('git', args, { cwd, env: process.env, encoding: buffer ? 'buffer' : 'utf8', maxBuffer: 1024 * 1024 * 1024 });
+  const r = spawnSync('git', args, { windowsHide: true, cwd, env: process.env, encoding: buffer ? 'buffer' : 'utf8', maxBuffer: 1024 * 1024 * 1024 });
   if (r.error) throw new CouldNot(`no pude correr git ${args[0]} (${r.error.code || r.error.message})`);
   if (r.status !== 0 && !tolerate) throw new CouldNot(`git ${args[0]} falló en ${shown(cwd)}: ${shown(String(r.stderr).trim().split('\n')[0]) || `salió ${r.status}`}`);
   return r;
@@ -894,11 +984,22 @@ function loadConfig(args) {
  * publica nada: lo que sale es lo que trae el público, que en un árbol armado (el privado con el público encima, como
  * lo arma `overlay-harness.js --after-cut`) está mezclado con lo privado.
  */
+function thinList(repo) {
+  // sin la lista, no es el adelgazado. Rota no es lo mismo: leída como vacía, lo propio contaría como lo que viaja
+  let text;
+  try { text = fs.readFileSync(path.join(repo, THIN_LIST_PATH), 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw new CouldNot(`no pude leer ${THIN_LIST_PATH} (${e.code || 'no se pudo leer'})`);
+  }
+  return parseJson(text, THIN_LIST_PATH);
+}
 function thinOwnPaths(repo) {
-  try { return new Set(Object.keys(JSON.parse(fs.readFileSync(path.join(repo, THIN_LIST_PATH), 'utf8')).own || {})); } catch { return new Set(); }
+  const list = thinList(repo);
+  return new Set(Object.keys((list && list.own) || {}));
 }
 function isThin(repo) {
-  try { return JSON.parse(fs.readFileSync(path.join(repo, THIN_LIST_PATH), 'utf8')).layout === 'thin'; } catch { return false; }
+  const list = thinList(repo);
+  return !!list && list.layout === 'thin';
 }
 /**
  * ¿Es el repo del equipo, el público, o el adelgazado? Las señales: la lista del adelgazado y el perfil, leídos en el
@@ -921,7 +1022,9 @@ function teamOrPublic(repo, ref = 'HEAD') {
  */
 function publishedThin(repo, tree, config) {
   const brought = broughtByOverlay(repo) || new Set();
-  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && brought.has(e.ruta)), config);
+  // la capa del equipo (`--team-from`) también la trae la superposición, pero no viaja al público: contada como
+  // publicada, una guía que nombra `onboarding/` dejaría de ver esa ruta del equipo
+  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && brought.has(e.ruta) && !TEAM_LAYER(e.ruta)), config);
 }
 /**
  * Los registros que la superposición calcula con lo público y lo privado juntos (sus `REGISTRIES`): en el árbol armado
@@ -939,8 +1042,11 @@ function broughtByOverlay(repo) {
   const subject = git(repo, ['log', '-1', '--format=%s', head]).stdout;
   if (!subject.includes(OVERLAY_MARK)) return null;
   const brought = new Set();
+  // una versión propia («own») no es de lo traído aunque cambie: la superposición puede componerla con la del público, y
+  // entonces lleva lo del privado. Lo que viaja es la del público, que se mide en su CI
+  const own = thinOwnPaths(repo);
   const privateBlobs = new Map(treeOf(repo, commitOf(repo, `${head}^`)).filter((e) => e.tipo === 'blob').map((e) => [e.ruta, e.obj]));
-  for (const e of treeOf(repo, head)) if (e.tipo === 'blob' && privateBlobs.get(e.ruta) !== e.obj) brought.add(e.ruta);
+  for (const e of treeOf(repo, head)) if (e.tipo === 'blob' && !own.has(e.ruta) && privateBlobs.get(e.ruta) !== e.obj) brought.add(e.ruta);
   return brought;
 }
 /**
@@ -954,8 +1060,8 @@ const TEAM_LAYER = (f) => f === 'perfil-equipo.json' || /^onboarding\/[^/]+\.md$
  * repo, como las de juguete de una prueba), todo. Una superposición que no trajo nada es un árbol mal armado: rojo.
  */
 function travels(repo) {
-  // con LC_ALL=C el mensaje de git sale en inglés, que es el que se reconoce abajo
-  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: repo, env: { ...process.env, LC_ALL: 'C' }, encoding: 'utf8' });
+  // el mensaje de git en inglés, que es el que se reconoce abajo
+  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { windowsHide: true, cwd: repo, env: require('../lib/clean-git-env.js').idiomaFijo(), encoding: 'utf8' });
   if (top.error) throw new CouldNot(`no pude correr git rev-parse (${top.error.code || top.error.message})`);
   // una carpeta fuera de todo repo no tiene superposición; cualquier otra falla de git no se toma por «no la hay»
   if (top.status !== 0 && !/not a git repository/i.test(String(top.stderr))) throw new CouldNot(`no pude saber si ${shown(repo)} es un árbol armado: git rev-parse falló (${shown(String(top.stderr).trim().split('\n')[0]) || `salió ${top.status}`})`);
@@ -1420,7 +1526,7 @@ function main() {
   return blocks ? 1 : 0;
 }
 
-module.exports = { scan, commentsOf, codeOf, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot, broughtByOverlay, travels, travelling, TEAM_LAYER, OVERLAY_MARK, OVERLAY_COMPUTED };
+module.exports = { scan, commentsOf, codeOf, codeOfStrict, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot, broughtByOverlay, travels, travelling, TEAM_LAYER, OVERLAY_MARK, OVERLAY_COMPUTED };
 
 // el código de salida se deja anotado y el proceso termina solo: `process.exit` corta la salida a medio escribir cuando
 // va por un tubo (la cuenta en JSON de `--all` son miles de renglones)

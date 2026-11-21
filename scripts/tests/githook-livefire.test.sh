@@ -64,6 +64,15 @@ lib_shims() {
     for (const e of es) if (e && e.kind === "file" && String(e.new).startsWith("scripts/lib/") && fs.existsSync(path.join(raiz, e.old))) console.log(e.old);' \
     "$RAIZ" "$RAIZ/scripts/lib/renames.json"
 }
+# El destino de cada reemplazo que el laboratorio ya trae y cuyo destino quedó fuera de lo copiado (un guion mudado a
+# un conector, en integrations/), una ruta por línea: sin él, el validador del mapa ve un reemplazo que no apunta a nada.
+shim_targets() {   # $1 = el repo del laboratorio
+  node -e 'const fs = require("fs"), path = require("path"); const [raiz, mapa, lab] = process.argv.slice(1);
+    let es = []; try { es = JSON.parse(fs.readFileSync(mapa, "utf8")).entries || []; } catch (_) { /* sin mapa: nada */ }
+    for (const e of es) if (e && e.kind === "file" && fs.existsSync(path.join(lab, e.old)) && !fs.existsSync(path.join(lab, e.new))
+      && fs.existsSync(path.join(raiz, e.new))) console.log(e.new);' \
+    "$RAIZ" "$RAIZ/scripts/lib/renames.json" "$1"
+}
 
 # ── El laboratorio: la MISMA cadena que en la máquina del dev ─────────────────────────────────
 #   core.hooksPath global → pre-commit global (el delegador) → .githooks/pre-commit del repo
@@ -75,10 +84,16 @@ montar() {
   cp "$HOOK_REPO" "$T/repo/.githooks/pre-commit"; chmod +x "$T/repo/.githooks/pre-commit"
   # el lint de stories vive en scripts/lib/: viaja con la carpeta
   cp -R "$RAIZ/scripts/lib" "$RAIZ/scripts/metrics" "$RAIZ/scripts/ci" "$T/repo/scripts/" 2>/dev/null
+  # sin la lista del candado de plataforma: el laboratorio no trae los conectores (integrations/), y una lista sin sus
+  # manifiestos frena el commit por no poder contar. Sin los dos, el candado dice que no hay nada que contar
+  rm -f "$T/repo/scripts/ci/neutrality-allowlist.json"
   # y los reemplazos de lo mudado a scripts/lib/, como en el arnés (rutas del mapa, nunca escritas acá): sin ellos el mapa
   # del laboratorio (C-25) nombraría archivos mudados sin su reemplazo. Sin mapa (la copia pública) no hay nada que copiar.
   local vieja
   for vieja in $(lib_shims); do mkdir -p "$T/repo/$(dirname "$vieja")"; cp "$RAIZ/$vieja" "$T/repo/$vieja"; done
+  # y el destino de los reemplazos de scripts/ci/ cuyo guion se mudó a un conector (sólo el guion, sin el manifiesto)
+  local destino
+  for destino in $(shim_targets "$T/repo"); do mkdir -p "$T/repo/$(dirname "$destino")"; cp "$RAIZ/$destino" "$T/repo/$destino"; done
   git init -q -b main "$T/repo"
   # la base lleva TODO lo copiado (hooks apagados): el árbol arranca limpio y «quedó afuera» mide sólo lo del caso
   ( cd "$T/repo" && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m base )
@@ -578,7 +593,7 @@ printf 'const quiere = process.argv.includes("--pa""quete");\n' | sed 's/""//' >
 ANTES=$(cuantos "$T")
 mkdir -p "$T/repo/scripts/tests"
 printf 'const r = run(["--pa""quete", "nucleo"]);\n' | sed 's/""//' > "$T/repo/scripts/tests/lab.test.js"
-printf '# Guía nueva\n\n`TYCON_NO_UPLOAD_RUNS=1` lo apaga.\n' > "$T/repo/guides/nueva.md"
+printf '# Guía nueva\n\n`TYCON_NO_UPLOAD_RUNS=1` lo apaga.\n' > "$T/repo/guides/new-guide.md"
 # (el commit trae una guía: el control de historia interna, que no es lo que este caso mide, va apagado — el repo del
 # laboratorio no tiene la forma del repo unido y ahí el control, con razón, no sabe qué sale)
 ( cd "$T/repo" && git add -A ); RC=$(TYCON_INTERNAL_HISTORY=0 commitear_nombres "$T" "nombres que ya existen")
@@ -590,9 +605,10 @@ fi
 rm -rf "$T"
 
 # C-18 · T8 SpanishNames_ShellLocalAndMdAndCases_Silent — una variable local de shell, un .md y un caso del banco
+# (el .md va fuera de guides/: el nombre de una guía sí se mira, y una guía nueva en castellano frena)
 T=$(mktemp -d); montar_castellano "$T"; ANTES=$(cuantos "$T")
 printf '#!/usr/bin/env bash\necho "${SAL""IDA:-}"\n' | sed 's/""//' > "$T/repo/scripts/english-tool.sh"
-printf '# x\n' > "$T/repo/guides/guias-nue""vas.md"
+printf '# x\n' > "$T/repo/scripts/guias-nue""vas.md"
 ( cd "$T/repo" && git add -A ); RC=$(TYCON_INTERNAL_HISTORY=0 commitear_nombres "$T" "lo que no se mira")   # ídem: trae un .md
 if [ "$RC" = "0" ] && [ "$(cuantos "$T")" = "$((ANTES + 1))" ] && ! hablo_el_freno "$T/out.txt"; then
   ok "C-18 T8 SpanishNames_ShellLocalAndMdAndCases_Silent: una variable local de shell y un .md nuevo entran callados"
@@ -866,6 +882,31 @@ else
   mal "C-27 un cambio sano del mapa fue frenado (exit $RC, commits ${ANTES}→$DESPUES)"; sed -n '1,12p' "$T/out.txt"
 fi
 rm -rf "$T"
+# C-27b · en sólo lectura (el chequeo antes de una firma) la pública vieja frena y dice cómo regenerarla, sin escribirla
+T=$(mktemp -d); montar "$T"; mapa_lab "$T"
+printf '\n<!-- cambio de prueba -->\n' >> "$T/repo/artifacts/mapa-arnes.html"
+( cd "$T/repo" && git add artifacts/mapa-arnes.html )
+PUB_ANTES=$(git -C "$T/repo" hash-object onboarding/mini-class/mapa-del-arnes.html)
+IDX="$T/repo/.git/save-ok-controls-1"; cp "$T/repo/.git/index" "$IDX"
+( fake_home_create "$T/casa" && cd "$T/repo" \
+    && GIT_INDEX_FILE="$IDX" TYCON_PRECOMMIT_READ_ONLY=1 git -c core.hooksPath="$T/hooks-globales" hook run pre-commit ) > "$T/out.txt" 2>&1; RC=$?
+if [ "$RC" != 0 ] && grep -q "Regenerala antes" "$T/out.txt" \
+   && [ "$(git -C "$T/repo" hash-object onboarding/mini-class/mapa-del-arnes.html)" = "$PUB_ANTES" ] \
+   && ! GIT_INDEX_FILE="$IDX" git -C "$T/repo" diff --cached --name-only | grep mapa-del-arnes >/dev/null; then
+  ok "C-27b en sólo lectura la pública vieja frena con el comando y no se escribe (exit $RC)"
+else
+  mal "C-27b en sólo lectura la pública se regeneró o no frenó (exit $RC)"; sed -n '1,12p' "$T/out.txt"
+fi
+# C-27c · el espejo: en un commit de verdad la variable no vale, y la pública se regenera y entra como en C-27
+ANTES=$(cuantos "$T")
+( fake_home_create "$T/casa" && cd "$T/repo" && TYCON_PRECOMMIT_READ_ONLY=1 \
+    git -c core.hooksPath="$T/hooks-globales" -c user.email=b@b -c user.name=b commit -q -m "mapa con la variable" ) > "$T/out.txt" 2>&1; RC=$?
+if [ "$RC" = 0 ] && [ "$(cuantos "$T")" = "$((ANTES + 1))" ] && grep -q "no vale en un commit" "$T/out.txt"; then
+  ok "C-27c en un commit de verdad la variable de sólo lectura no apaga nada (exit 0, la pública entra)"
+else
+  mal "C-27c con la variable puesta, un commit de verdad se salteó controles o frenó (exit $RC)"; sed -n '1,12p' "$T/out.txt"
+fi
+rm -rf "$T"
 fi
 
 # ── C-28 · T26 R3_DashboardSeries_PipelinesAndCapturerShim ──────────────
@@ -1016,38 +1057,38 @@ else
 fi
 
 # ── C-30 · T16 GithookLivefire_PapelesPasanLosFrenos ──────────────────────────────────────────
-# Los papeles de la copia pública viven en scripts/publishing/public-files/, que queda afuera por un «out», y llegan a su
-# destino por un sintético. Para los dos frenos, el `from` de un sintético sale (whatShips lo cuenta): un nombre real en un
-# papel, o un ejecutable con nombre en castellano que un sintético publica, NO entran. Rojo si el `from` no cuenta
+# En el laboratorio, los papeles viven en una carpeta que queda afuera por un «out» y llegan a su destino por un
+# sintético. Para los dos frenos, el `from` de un sintético sale (whatShips lo cuenta): un nombre real en un papel, o un
+# ejecutable con nombre en castellano que un sintético publica, NO entran. Rojo si el `from` no cuenta
 # como algo que sale: los dos commits se crean.
 papeles_lista() {   # $1=T $2=lista JSON de sintéticos — la lista blanca del laboratorio con los papeles afuera
-  printf '%s\n' "{\"packages\":{\"core\":{\"arnes\":{\"in\":[\"guides/**\",\"scripts/**\",\".githooks/**\"],\"out\":[{\"glob\":\"scripts/publishing/public-files/**\",\"reason\":\"prueba: llegan por un sintético\"}]},\"agent-skills\":{\"in\":[\"skills/tycon-*/**\"],\"out\":[{\"glob\":\"packs/**\",\"reason\":\"prueba\"}]}}},\"synthetic\":$2}" \
+  printf '%s\n' "{\"packages\":{\"core\":{\"arnes\":{\"in\":[\"guides/**\",\"scripts/**\",\".githooks/**\"],\"out\":[{\"glob\":\"scripts/publishing/sample-papers/**\",\"reason\":\"prueba: llegan por un sintético\"}]},\"agent-skills\":{\"in\":[\"skills/tycon-*/**\"],\"out\":[{\"glob\":\"packs/**\",\"reason\":\"prueba\"}]}}},\"synthetic\":$2}" \
     > "$1/repo/scripts/publishing/allowlist.json"
 }
-PAPEL='{"target":".github/SECURITY.md","from":"scripts/publishing/public-files/.github/SECURITY.md","packages":["core"],"reason":"prueba"}'
+PAPEL='{"target":".github/SECURITY.md","from":"scripts/publishing/sample-papers/.github/SECURITY.md","packages":["core"],"reason":"prueba"}'
 T=$(mktemp -d); montar_castellano "$T"
-mkdir -p "$T/repo/scripts/publishing/public-files/.github" "$T/repo/scripts/publishing/public-files/scripts"
-printf '# Security\n\nReport privately.\n' > "$T/repo/scripts/publishing/public-files/.github/SECURITY.md"
+mkdir -p "$T/repo/scripts/publishing/sample-papers/.github" "$T/repo/scripts/publishing/sample-papers/scripts"
+printf '# Security\n\nReport privately.\n' > "$T/repo/scripts/publishing/sample-papers/.github/SECURITY.md"
 papeles_lista "$T" "[${PAPEL}]"
 ( cd "$T/repo" && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "los papeles del laboratorio" )
 ANTES=$(cuantos "$T")
-printf '# Security\n\nReport privately.\nAsk AcmeCorp first.\n' > "$T/repo/scripts/publishing/public-files/.github/SECURITY.md"
+printf '# Security\n\nReport privately.\nAsk AcmeCorp first.\n' > "$T/repo/scripts/publishing/sample-papers/.github/SECURITY.md"
 ( cd "$T/repo" && git add -A )
 RC=$(commitear_nombres "$T" "un nombre real en un papel")
-if [ "$RC" != "0" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -q 'public-files/.github/SECURITY.md' "$T/out.txt" && grep -q '«Ceibo»' "$T/out.txt"; then
-  ok "C-30 T16 GithookLivefire_PapelesPasanLosFrenos: un nombre real en un papel de public-files/, el freno de nombres NO deja crear el commit y dice dónde"
+if [ "$RC" != "0" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -q 'sample-papers/.github/SECURITY.md' "$T/out.txt" && grep -q '«Ceibo»' "$T/out.txt"; then
+  ok "C-30 T16 GithookLivefire_PapelesPasanLosFrenos: un nombre real en un papel de sample-papers/, el freno de nombres NO deja crear el commit y dice dónde"
 else
   mal "C-30 T16 nombre real en un papel: exit $RC · commits ${ANTES}→$(cuantos "$T") — el commit entró o no dijo dónde"; sed -n '1,12p' "$T/out.txt"
 fi
 ( cd "$T/repo" && git reset -q --hard HEAD && git clean -qfd )
 ANTES=$(cuantos "$T")
-mkdir -p "$T/repo/scripts/publishing/public-files/scripts"   # el `git clean` de arriba se lleva la carpeta vacía
-printf '#!/usr/bin/env bash\necho ok\n' > "$T/repo/scripts/publishing/public-files/scripts/${C_FILE}.sh"
-chmod +x "$T/repo/scripts/publishing/public-files/scripts/${C_FILE}.sh"
-papeles_lista "$T" "[${PAPEL},{\"target\":\"scripts/load-data.sh\",\"from\":\"scripts/publishing/public-files/scripts/${C_FILE}.sh\",\"packages\":[\"core\"],\"reason\":\"prueba\"}]"
+mkdir -p "$T/repo/scripts/publishing/sample-papers/scripts"   # el `git clean` de arriba se lleva la carpeta vacía
+printf '#!/usr/bin/env bash\necho ok\n' > "$T/repo/scripts/publishing/sample-papers/scripts/${C_FILE}.sh"
+chmod +x "$T/repo/scripts/publishing/sample-papers/scripts/${C_FILE}.sh"
+papeles_lista "$T" "[${PAPEL},{\"target\":\"scripts/load-data.sh\",\"from\":\"scripts/publishing/sample-papers/scripts/${C_FILE}.sh\",\"packages\":[\"core\"],\"reason\":\"prueba\"}]"
 ( cd "$T/repo" && git add -A )
 RC=$(commitear_nombres "$T" "un ejecutable en castellano en los papeles")
-if [ "$RC" != "0" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -q "public-files/scripts/${C_FILE}.sh" "$T/out.txt" && grep -q 'en castellano' "$T/out.txt"; then
+if [ "$RC" != "0" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -q "sample-papers/scripts/${C_FILE}.sh" "$T/out.txt" && grep -q 'en castellano' "$T/out.txt"; then
   ok "C-30 T16 un ejecutable con nombre en castellano que un sintético publica: el freno de castellano NO deja crear el commit y dice dónde"
 else
   mal "C-30 T16 ejecutable en castellano en los papeles: exit $RC · commits ${ANTES}→$(cuantos "$T") — el commit entró o no dijo dónde"; sed -n '1,14p' "$T/out.txt"

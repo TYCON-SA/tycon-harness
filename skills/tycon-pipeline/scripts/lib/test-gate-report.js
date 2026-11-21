@@ -110,19 +110,39 @@ const OBS_HASTA = '2026-10-06';
 const COVERAGE_DEFAULT = 75;
 
 /**
- * El umbral de cobertura y de dónde salió: `TYCON_COVERAGE_MIN` de la máquina (test-gate.sh lo
- * pasa como <cov_min>) > `coverage.min_touched_lines_pct` de la organización (team-repos.json del árbol del arnés,
- * leído con scripts/lib/team-repos.js) > 75. Un valor que no sirve no se usa: se pasa al siguiente y el motivo queda en
- * `problems`. `{ threshold, source: 'maquina' | 'organizacion' | 'por_defecto', problems }`.
+ * El umbral de cobertura y de dónde salió. El piso es `coverage.min_touched_lines_pct` de la organización
+ * (team-repos.json del árbol del arnés, leído con scripts/lib/team-repos.js), o 75 sin él. `TYCON_COVERAGE_MIN` de la
+ * máquina (test-gate.sh lo pasa como <cov_min>) sólo lo sube: uno menor, desde la fecha de corte de la lista única de
+ * interruptores, no se usa; antes, se usa con aviso y un renglón COVERAGE_BELOW_FLOOR por sesión y día. Un valor que no
+ * sirve no se usa, y el motivo queda en `problems`. `opciones.today`: la fecha de hoy, para las pruebas.
+ * `{ threshold, source: 'maquina' | 'organizacion' | 'por_defecto', problems }`.
  */
-function resolverUmbral(covMinTxt, env = process.env, homeDir = os.homedir()) {
+function resolverUmbral(covMinTxt, env = process.env, homeDir = os.homedir(), { today = new Date() } = {}) {
   const problems = [];
+  const piso = umbralDeLaOrganizacion(env, homeDir, problems);
   const crudo = covMinTxt === undefined || covMinTxt === null ? '' : String(covMinTxt).trim();
-  if (crudo) {
-    const n = Number(crudo);
-    if (Number.isFinite(n) && n > 0 && n <= 100) return { threshold: n, source: 'maquina', problems };
+  if (!crudo) return { ...piso, problems };
+  const n = Number(crudo);
+  if (!(Number.isFinite(n) && n > 0 && n <= 100)) {
     problems.push(`TYCON_COVERAGE_MIN: tiene que ser un porcentaje de 1 a 100 (es ${JSON.stringify(crudo).slice(0, 40)}); no se usa`);
+    return { ...piso, problems };
   }
+  if (n >= piso.threshold) return { threshold: n, source: 'maquina', problems };
+  const de = piso.source === 'organizacion' ? 'el de la organización' : 'el de fábrica';
+  const debajoDe = piso.source === 'organizacion' ? 'del de la organización' : 'del de fábrica';
+  const ES = require('./controls-off.js').listaDeInterruptores();
+  if (ES.antesDelCorte('TYCON_COVERAGE_MIN', today)) {
+    problems.push(`TYCON_COVERAGE_MIN=${n} baja el umbral por debajo ${debajoDe} (${piso.threshold}): desde ${ES.corteDe('TYCON_COVERAGE_MIN')} la máquina no baja el umbral y se usa ${piso.threshold}`);
+    ES.anotarEscape({ home: homeDir, sessionId: ES.sesionDe(env), kind: 'COVERAGE_BELOW_FLOOR', variable: 'TYCON_COVERAGE_MIN', unaVez: 'TYCON_COVERAGE_MIN',
+      ahora: today instanceof Date ? today : new Date(today), valor: n, piso: piso.threshold });
+    return { threshold: n, source: 'maquina', problems };
+  }
+  problems.push(`TYCON_COVERAGE_MIN=${n} es menor que ${de} (${piso.threshold}): la máquina sólo sube el umbral; no se usa`);
+  return { ...piso, problems };
+}
+
+/** El umbral de la organización, o el de fábrica: `{ threshold, source }`. Lo que no se pudo leer va a `problems`. */
+function umbralDeLaOrganizacion(env, homeDir, problems) {
   try {
     const tree = require('./harness-path.js').rutaArnesHook({ env, home: homeDir }).dir;
     const file = tree ? path.join(tree, 'team-repos.json') : null;
@@ -133,13 +153,13 @@ function resolverUmbral(covMinTxt, env = process.env, homeDir = os.homedir()) {
       if (!r.ok) problems.push(`${file}: no se pudo usar (${r.problems.map((p) => `${p.path || '(archivo)'}: ${p.message}`).join('; ').slice(0, 200)})`);
       else if (sec && sec.length) problems.push(`${sec[0].path}: ${sec[0].message}; no se usa`);
       else if (r.data && r.data.coverage && Number.isInteger(r.data.coverage.min_touched_lines_pct)) {
-        return { threshold: r.data.coverage.min_touched_lines_pct, source: 'organizacion', problems };
+        return { threshold: r.data.coverage.min_touched_lines_pct, source: 'organizacion' };
       }
     }
   } catch (e) {
     problems.push(`no pude leer el umbral de la organización (${e && e.message ? e.message : e})`);
   }
-  return { threshold: COVERAGE_DEFAULT, source: 'por_defecto', problems };
+  return { threshold: COVERAGE_DEFAULT, source: 'por_defecto' };
 }
 
 // ── utilidades con la semántica de Python ────────────────────────────────────────────────────────────────────
@@ -399,7 +419,7 @@ const atributo = (el, k, def) => (Object.prototype.hasOwnProperty.call(el.attrs,
 // ── git, con su propio tiempo máximo (spawnSync, no el comando `timeout`) ───────────────────────────────────────
 
 function correrGit(args, timeoutMs) {
-  const r = spawnSync('git', args, { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync('git', args, { windowsHide: true, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024 * 1024 });
   if (r.error) {
     if (r.error.code === 'ETIMEDOUT') throw new Error(`Command '${['git', ...args].join(' ')}' timed out after ${timeoutMs / 1000} seconds`);
     throw r.error;
@@ -539,6 +559,9 @@ function informe(argv) {
       meets_threshold: null,
     },
     provenance: 'test-gate.sh (run real, exit code capturado por marker.js run-check)',
+    // la procedencia de la corrida (historia 8.161): corrida, sello del árbol probado, commit, entorno y quién
+    cmd: runner, exit: suiteExit,
+    ...require('./frozen-tree.js').procedencia(repoRun || repo, { proceso: 'test-gate.sh' }),
     // Huella del código medido — la lee `suite-freshness.js check` («Revisores, otra vuelta») para saber si este verde sigue
     // describiendo el working tree o quedó viejo tras iteraciones de fix.
     code_state: codeState,
@@ -627,7 +650,8 @@ function informe(argv) {
       if (existe(sj)) {
         const r = leerJson(sj);
         // «Sin acotar» (salida 7): la corrida del repo hermano no pudo acotarse a lo tocado y no corrió nada. No es verde
-        // (suite_green ya es false) ni un rojo de pruebas: la cubre la CI del pedido, y el merge la exige en verde.
+        // (suite_green ya es false) ni un rojo de pruebas: la cubre la CI del pedido. `merge_requires_ci` lo deja dicho
+        // en el informe; ningún guion de la máquina lo hace cumplir.
         const sinAcotar = get(r, 'unscoped', null);
         if (suiteExit === 7 && sinAcotar) {
           result.unscoped = true;
@@ -635,7 +659,7 @@ function informe(argv) {
           result.merge_requires_ci = true;
         }
         // Acotada por el repo (`test_gate` de .test-gate.yaml): en la máquina corrió sólo lo que lee lo tocado; la
-        // suite completa la corre la CI que el repo declaró, y el merge la exige en verde.
+        // suite completa la corre la CI que el repo declaró (dicho, no comprobado, en `merge_requires_ci`).
         const acotada = get(r, 'scoped', null);
         if (acotada && get(acotada, 'by', null) === 'repo') {
           result.scoped_by_repo = { full_suite_by: get(acotada, 'full_suite_by', null), none_touched: get(acotada, 'none_touched', false) === true };
@@ -649,13 +673,30 @@ function informe(argv) {
             suites: get(r, 'corridas', 0), passed: get(r, 'verdes', 0),
             failed: pyLen(fallas), missing: pyLen(get(r, 'ausentes', [])),
             failures: fallas.map((f) => path.basename(f.ruta)),
+            // La entrada de suites.json de cada falla, la que recibe `--suite`: la repetición verde busca por ella, no
+            // por el nombre corto, que dos suites de carpetas distintas pueden compartir (lib/failed-first.js).
+            failure_entries: fallas.filter((f) => f && f.entrada && typeof f.entrada.ruta === 'string')
+              .map((f) => ({ raiz: f.entrada.raiz || null, ruta: f.entrada.ruta })),
             missing_paths: get(r, 'ausentes', []),
             // Lo que NO corrió a propósito (con el motivo), y cómo corrió el resto.
             deferred: pyLen(get(r, 'deferred_suites', [])),
             deferred_suites: get(r, 'deferred_suites', []),
             workers: get(r, 'workers', null),
             wall_ms: get(r, 'wall_ms', null),
+            // qué eligió el corredor y desde qué base (run-suites-json.js)
+            ...(get(r, 'seleccion', null) ? { seleccion: r.seleccion } : {}),
           };
+          // Lo que ya estaba rojo en el nocturno salió de las fallas: acá queda cuáles, para que la cuenta cierre.
+          const heredadas = get(get(r, 'inherited', {}) || {}, 'suites', []);
+          if (pyLen(heredadas)) {
+            result.totals.inherited = pyLen(heredadas);
+            result.totals.inherited_suites = heredadas.map((s) => path.basename(s.ruta));
+            result.totals.inherited_snapshot_ts = get(r.inherited, 'snapshot_ts', null);
+            // las que salieron rojas también en la base, sin el cambio (lib/inherited-reds.js)
+            if (get(r.inherited, 'base', null)) result.totals.inherited_base = r.inherited.base;
+          }
+          // lo que se midió en la base, con el veredicto y el motivo de cada suite
+          if (get(r, 'base_check', null)) result.totals.base_check = r.base_check;
           // Las no medidas ya cuentan como ausentes; acá va su motivo (sólo si hay alguna: el informe de siempre no cambia).
           const noMedidas = get(r, 'unmeasured_suites', []);
           if (pyLen(noMedidas)) Object.assign(result.totals, { unmeasured: pyLen(noMedidas), unmeasured_suites: noMedidas });
@@ -719,7 +760,7 @@ function informe(argv) {
   // el hijo hereda NODE_TEST_CONTEXT, la suite escribe en el formato
   // interno de Node, no se cuenta nada… y quedaría `suite_green: true`. La salida real de la suite se conserva.
   // La excepción: acotada por el repo y ninguna suite lee lo tocado. No corrió nada a propósito y lo respalda la CI
-  // del pedido, que el repo declaró y que el merge exige en verde.
+  // del pedido, que el repo declaró (que salga verde antes del merge lo mira quien mergea, no esta máquina).
   const nadaQueLea = Boolean(result.scoped_by_repo && result.scoped_by_repo.none_touched && runner === 'suites-json');
   if (result.suite_green && !nadaQueLea) {
     const corridas = pruebasCorridas(runner, result.totals, todo);
@@ -779,6 +820,16 @@ function informe(argv) {
     const rel = (p) => (typeof p === 'string' && p ? path.relative(rutaReal(repoRun), rutaReal(p)).split('\\').join('/') : null);
     const resumenSuites = (() => { try { return leerJson(path.join(resultsDir, 'suites.json')); } catch (_) { return null; } })();
     const sc = resumenSuites && esObjeto(resumenSuites.coverage) ? resumenSuites.coverage : null;
+    // cerrada con lo guardado de una completa roja (lib/failed-first.js): la cobertura no es de una sola corrida, y se dice
+    if (sc && typeof sc.juntada === 'string' && sc.juntada) result.coverage.joined = sc.juntada;
+    // cerrada con lo guardado de una completa verde: de qué hora es esa completa y qué cambió después, para
+    // que nadie tome la acotada por una completa nueva
+    const cerrada = resumenSuites && esObjeto(resumenSuites.cerrada) ? resumenSuites.cerrada : null;
+    if (cerrada && cerrada.origen === 'verde') {
+      result.completa_at = cerrada.completa || null;
+      result.changed_since_full = Array.isArray(cerrada.cambiados) ? cerrada.cambiados : [];
+      if (result.suite_green) result.suite_green_by = 'completa-guardada';
+    }
     if (sc) {
       result.coverage.suites_without_coverage = {
         without_data: (Array.isArray(sc.without_data) ? sc.without_data : []).map(rel),
@@ -856,7 +907,7 @@ function informe(argv) {
       const objetivo = rutaReal(path.join(repoRun, base)).split('\\').join('/');
       if (perFile.has(objetivo)) hit = perFile.get(objetivo);
     } else {
-      for (const [f, pct] of perFile) { if (f.endsWith(base) || base.endsWith(f)) { hit = pct; break; } }
+      for (const [f, pct] of perFile) { if (calzaPorTerminacion(f, base)) { hit = pct; break; } }
     }
     matched[nf] = hit !== null ? redondear1(hit) : null;
   }
@@ -874,7 +925,8 @@ function informe(argv) {
   } else if (!newFiles.length) {
     result.coverage.no_cross_check = 'sin cruce de cobertura: git no reporta archivos nuevos'
       + (declaredNew.length ? ' y la story no declara `files_to_create` existentes'
-        : ' y no se pasó la ruta de la story (\\$2) para caer a `files_to_create`');
+        : storyId && storyId !== 'unknown' ? ' y la story no declara `files_to_create`'
+          : ' y no se pasó la ruta de la story (\\$2) para caer a `files_to_create`');
   } else {
     result.coverage.no_cross_check = 'sin cruce de cobertura: hay archivos nuevos pero ninguno aparece en el reporte de cobertura';
   }
@@ -928,8 +980,9 @@ function informe(argv) {
     let r = git(repoDir, ['rev-parse', '--show-toplevel']);
     if (r.returncode !== 0) throw new Error('la carpeta medida no es un repo git');
     const top = pyStrip(r.stdout);
-    // Con detección de renombres (-M): un archivo movido aporta sólo lo que cambió.
-    r = git(top, ['diff', '--no-color', '--no-ext-diff', '-M', '-U0', ref, '--']);
+    // Con detección de renombres (-M): un archivo movido aporta sólo lo que cambió. Los prefijos `a/` y `b/` de siempre,
+    // aunque la máquina diga otra cosa (`diff.noprefix`, `diff.mnemonicPrefix`).
+    r = git(top, ['-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false', 'diff', '--no-color', '--no-ext-diff', '-M', '-U0', ref, '--']);
     if (r.returncode !== 0) throw new Error(`git diff contra ${ref.slice(0, 12)} falló: ${pyStrip(r.stderr || '').slice(0, 200)}`);
     const out = new Map();
     let actual = null;
@@ -1115,6 +1168,12 @@ function informe(argv) {
     }
   }
 
+  // las suites de la historia no corrieron: el código de la historia saldría de la cuenta y el porcentaje mentiría
+  if (process.env.TYCON_TEST_GATE_AFTER_MAIN === '1') {
+    cov.touched_lines = null;
+    cov.touched_lines_pct = null;
+    touchedMotivo = 'sin cruce de líneas tocadas: esta corrida eligió sólo lo que trajo main; la cobertura de la historia la midió la corrida anterior';
+  }
   if (touchedMotivo) cov.touched_no_cross_check = touchedMotivo;
   if (cov.touched_lines_pct !== null) {
     cov.threshold_basis = 'touched_lines';
@@ -1196,7 +1255,12 @@ function informe(argv) {
 }
 
 // OBS_HASTA sale de acá y de ningún otro lado: el tablero la importa para decir si la observación venció.
-module.exports = { informe, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, OBS_HASTA, isCodeFile };
+/** Una ruta termina en la otra en un límite de carpeta: `web/src/a.js` calza con `src/a.js`, `mysrc/a.js` no. */
+function calzaPorTerminacion(a, b) {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
+module.exports = { informe, calzaPorTerminacion, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, OBS_HASTA, isCodeFile, resolverUmbral };
 
 if (require.main === module) {
   try {

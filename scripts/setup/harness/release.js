@@ -54,7 +54,7 @@
 // ── QUÉ RECIBE DE harness.js ─────────────────────────────────────────────────────────────────────────────────────
 // Las piezas que ya existen y no saben de git: `H = { takeSnapshot, finishSnapshot, runApplier, runHealth, recordPieces,
 // ensureLink, linkResolvesTo, ensureImport, copyBootstrap, settingsPath, policyOf, applyPolicy, installQuestions,
-// writeAnswers, profileOf, machineProfile, applyHint }`. Lo que acá se evita a propósito: `sources.js` (todo git),
+// writeAnswers, profileOf, machineProfile, applyHint, releaseApplyHint }`. Lo que acá se evita a propósito: `sources.js` (todo git),
 // `report.derive` (pregunta a git), `currentSources` sobre fuentes con `dir`.
 //
 // Sólo `require` dentro de scripts/setup/harness/ al cargar; el lector de comprimidos y el cliente HTTP se cargan al
@@ -808,7 +808,7 @@ function restoreThirdParty(ctx, c, incomingDir, { log = null, only = null } = {}
     } catch (err) { notes.push(`skills de terceros: ${e.target}: ${err.message}; queda para el aplicador`); }
   }
   // un mismo motivo (el origen no se ve, sin red) se dice UNA vez con cuántas skills alcanza, no setenta veces
-  for (const [why, targets] of byFailure) notes.push(`skills de terceros: ${targets.length} skill(s) no se pudieron bajar (${targets.slice(0, 3).join(', ')}${targets.length > 3 ? ', …' : ''}): ${why}; las repone harness.js update cuando haya red`);
+  for (const [why, targets] of byFailure) notes.push(`skills de terceros: ${targets.length} skill(s) no se pudieron bajar (${targets.slice(0, 3).join(', ')}${targets.length > 3 ? ', …' : ''}): ${why}; las repone npx @tyconsa/harness@latest cuando haya red`);
   return { notes: [...notes0, ...notes] };
 }
 
@@ -1550,7 +1550,7 @@ function cmdInstall(ctx, H) {
     const snap = H.takeSnapshot(ctx, tree, { reason: 'install', from: existing && existing.version ? existing.version.number : null, log, state: existing });
     // 4. el cambio: la versión bajada pasa a ser harness/
     const sw = swap(ctx, { incomingDir: d.dir, version: target.version, log });
-    if (!sw.ok) { H.finishSnapshot(ctx, snap, log); undoOwnHome(); return { code: 1, lines: [`harness.js install: ${sw.reason}`] }; }
+    if (!sw.ok) { H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); undoOwnHome(); return { code: 1, lines: [`harness.js install: ${sw.reason}`] }; }
     notes.push(...(sw.kept || []));
     pieces.push('tree');
     // 5. los enlaces de hoy, al árbol nuevo: el lugar y agent-skills. Son enchufes de Claude Code (viven en su carpeta):
@@ -1558,7 +1558,7 @@ function cmdInstall(ctx, H) {
     if (withClaude) {
       // el lugar apunta a ~/.tycon/harness aunque hoy apunte a otro clon válido: `link` lo fuerza (como `install --local`)
       const l = H.ensureLink(ctx, tree, { link: tree, prefer: tree });
-      if (!l.ok) return { code: 2, lines: [`harness.js install: no pude asegurar el enlace: ${l.out || l.err}`] };
+      if (!l.ok) { H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); return { code: 2, lines: [`harness.js install: no pude asegurar el enlace: ${l.out || l.err}`] }; }
       pieces.push('link');
       const skillsLink = TH.installedSkillsDir(ctx.home);
       try {
@@ -1608,13 +1608,13 @@ function cmdInstall(ctx, H) {
     if (ctx.opts.profile && H.machineProfile(ctx) !== ctx.opts.profile) {
       let sk;
       try { sk = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js')).setKey(ctx.home, PR.KEY, ctx.opts.profile, { env: ctx.env }); } catch (e) { sk = { ok: false, reason: e.message }; }
-      if (!sk || !sk.ok) { S.write(ctx.home, state); return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ${TH.configFile(ctx.home)}: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] }; }
+      if (!sk || !sk.ok) { S.write(ctx.home, state); H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ${TH.configFile(ctx.home)}: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] }; }
       if (sk.warning) notes.push(sk.warning);
       pieces.push('profile');
     }
     if (asked.writes && asked.writes.length) {
       const wa = H.writeAnswers(ctx, tree, asked.writes);
-      if (!wa.ok) { S.write(ctx.home, state); return { code: 2, lines: [`harness.js install: no pude escribir tus respuestas: ${wa.reason}. No corrí el aplicador`] }; }
+      if (!wa.ok) { S.write(ctx.home, state); H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); return { code: 2, lines: [`harness.js install: no pude escribir tus respuestas: ${wa.reason}. No corrí el aplicador`] }; }
       notes.push(...wa.warnings);
       pieces.push('config');
     }
@@ -1625,7 +1625,7 @@ function cmdInstall(ctx, H) {
       state.last_health = null;
       state.failed = { commit: target.version, sources: { harness: target.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason: 'applier', stage: 'install' };
       S.write(ctx.home, state);
-      H.finishSnapshot(ctx, snap, log);
+      H.finishSnapshot(ctx, snap, log, { outcome: 'failed' });
       return { code: 1, lines: [`harness.js install: ${withClaude ? 'el aplicador' : 'el enchufe de Codex'} falló (${a.reason}) — detalle en ${S.paths(ctx.home).log}`, ...notes] };
     }
     if (withClaude) pieces.push('applier');
@@ -1650,7 +1650,7 @@ function cmdInstall(ctx, H) {
       state.failed = { commit: target.version, sources: { harness: target.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason: 'health', stage: 'install' };
       state.last_health = null;
       S.write(ctx.home, state);
-      H.finishSnapshot(ctx, snap, log);
+      H.finishSnapshot(ctx, snap, log, { outcome: 'failed' });
       return { code: 1, lines: [`harness.js install: la comprobación de salud no pasó: ${h.failures.join(' · ')} — detalle en ${S.paths(ctx.home).log}`, ...notes] };
     }
     state.failed = null;
@@ -1660,7 +1660,9 @@ function cmdInstall(ctx, H) {
     const moved = TEAM.moveSkillData({ home: ctx.home, env: ctx.env, team: state.team, harnessDir: tree, migrateHome: existing && existing.migrate_home, previousDir: TH.ownPathsOf(ctx).previous });
     for (const l of moved.lines) { notes.push(l); log(l); }
     S.write(ctx.home, state);
-    H.finishSnapshot(ctx, snap, log);
+    // reescribió todo (aplicador y salud en verde): cierra también las copias abiertas de un corte anterior, y con otra
+    // versión, las vueltas atrás cortadas que ya no tienen sentido
+    H.finishSnapshot(ctx, snap, log, { rewroteAll: true, supersede: Boolean(existing && existing.version && existing.version.number !== target.version) });
     // una instalación que salió bien deja la máquina al día: el aviso «no se pudo actualizar desde …» de antes ya no vale
     R.clearUpdateFailure(ctx.home);
     // las carpetas que Claude Code lee sin preguntar, con la misma línea que el resumen de la instalación desde un clon
@@ -1888,7 +1890,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   }
   if (state.hold && !holdLines.length && !yes && mode !== 'dry-run') return withTeam({ status: 'held', code: 0, lines: [`hay versión nueva (${what}), pero ${H.holdText(state)}`] });
   if (state.failed && state.failed.reason !== 'interrupted' && !yes && mode !== 'dry-run' && state.failed.sources && state.failed.sources.harness === t.commit) {
-    return withTeam({ status: 'skipped', code: 0, lines: [`la versión ${state.failed.commit} ya falló (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}): no se reintenta sola hasta que cambie la punta (o ${H.applyHint})`] });
+    return withTeam({ status: 'skipped', code: 0, lines: [`la versión ${state.failed.commit} ya falló (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}): no se reintenta sola hasta que cambie la punta (o ${H.releaseApplyHint})`] });
   }
   // `availableText` de harness.js lee `label` y `changes`: la misma forma que la de un clon
   if (mode === 'check') return withTeam(Object.assign(c0, { lines: [...(c0.lines || []), ...holdLines], available: { label: `${t.version} (${t.ref} ${sha7(t.commit)})`, changes: '', version: t.version, commit: t.commit, ref: t.ref } }));
@@ -1961,13 +1963,13 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
       fs.rmSync(d.dir, { recursive: true, force: true });
       state.failed = { commit: t.version, sources: { harness: t.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason: 'team-invalid', team_commit: teamCommit };
       if (log) log(`update: ${st.reason}`);
-      return withTeam({ status: 'blocked', code: 2, lines: [`harness.js update: ${st.reason}; esa versión no se reintenta sola hasta que cambie la punta (o ${H.applyHint})`] });
+      return withTeam({ status: 'blocked', code: 2, lines: [`harness.js update: ${st.reason}; esa versión no se reintenta sola hasta que cambie la punta (o ${H.releaseApplyHint})`] });
     }
     if (st.collision) {
       fs.rmSync(d.dir, { recursive: true, force: true });
       state.failed = { commit: t.version, sources: { harness: t.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason: 'team-collision', team_commit: teamCommit };
       if (log) log(`update: ${st.reason}`);
-      return withTeam({ status: 'blocked', code: 2, lines: [`harness.js update: ${st.reason}; esa versión no se reintenta sola hasta que cambie la punta (o ${H.applyHint})`] });
+      return withTeam({ status: 'blocked', code: 2, lines: [`harness.js update: ${st.reason}; esa versión no se reintenta sola hasta que cambie la punta (o ${H.releaseApplyHint})`] });
     }
     if (!st.ok) { fs.rmSync(d.dir, { recursive: true, force: true }); if (log) log(`update: ${st.reason}`); return withTeam({ status: 'blocked', code: 2, lines: [`harness.js update: ${st.reason}`] }); }
     teamManifest = st.manifest;
@@ -1977,7 +1979,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   const snap = snapshot && snapshot.created ? snapshot : H.takeSnapshot(ctx, own.harness, { reason: 'update', from: before, to: `harness@${sha7(t.commit)}`, log, force: true, state });
   const sw = swap(ctx, { incomingDir: d.dir, version: t.version, log });
   if (!sw.ok) {
-    H.finishSnapshot(ctx, snap, log);
+    H.finishSnapshot(ctx, snap, log, { outcome: 'failed' });
     if (sw.waiting && sw.convert) {
       // la conversión a la forma con enlaces trabada: la versión quedó en versions/, la máquina en la de antes
       const own0 = TH.ownPathsOf(ctx);
@@ -2010,23 +2012,32 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
     state.version.number = previousSrc.version;
     state.failed = { commit: t.version, sources: { harness: t.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason };
     const text = back.ok ? `volvió sola a ${previousSrc.version}` : `NO pudo volver sola (${back.reason}): harness.js rollback`;
-    R.setNotice(state, `la actualización ${before} → ${t.version} no quedó sana (${failures[0]}): ${text}; esa versión no se reintenta sola (cuando cambie la punta, o con ${H.applyHint}) — detalle en ${S.paths(ctx.home).log}`);
+    R.setNotice(state, `la actualización ${before} → ${t.version} no quedó sana (${failures[0]}): ${text}; esa versión no se reintenta sola (cuando cambie la punta, o con ${H.releaseApplyHint}) — detalle en ${S.paths(ctx.home).log}`);
     if (log) log(`update: ${reason}: ${failures.join(' · ')} · ${back.ok ? 'vuelta hecha' : back.reason}`);
-    H.finishSnapshot(ctx, snap, log);
-    if (back.ok) H.runApplier(ctx, own.harness, { log, snapshotDir: snap && snap.dir });   // los enchufes de la versión que quedó
+    H.finishSnapshot(ctx, snap, log, { outcome: 'failed' });
+    if (back.ok) {
+      // los enchufes de la versión que quedó; lo que agregó la que falló (un gancho que ya no tiene su archivo) se va
+      const again = H.runApplier(ctx, own.harness, { log, snapshotDir: snap && snap.dir });
+      // el informe deja afuera los hooks que el juez no entiende: se quita sólo lo que el aplicador declaró informar
+      const declared = typeof H.applierReportEnv === 'function' ? H.applierReportEnv(log) : null;
+      const q = again && again.ok ? require('./rollback.js').dropUnreported(state, again, { home: ctx.home, env: ctx.env, tree: own.harness, log, version: previousSrc.version, declared }) : null;
+      if (log && !q) log(`update: el aplicador de ${previousSrc.version} no salió bien en la vuelta: no quité lo que agregó ${t.version}`);
+      if (log && q && !q.ok) log(`update: la vuelta no pudo quitar lo que agregó ${t.version}: ${q.lines.join(' · ')}`);
+    }
     return { status: 'failed', code: 1, lines: [`harness.js update: la versión ${t.version} no quedó sana (${failures.join(' · ')}) — ${text}`] };
   };
   if (!a.ok) return fail([a.reason], 'applier');
   H.recordPieces(ctx, state, a.report, a.shared);
   state.failed = { commit: t.version, sources: { harness: t.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason: 'interrupted', pending: 'health' };
-  try { S.write(ctx.home, state); } catch (e) { if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
+  try { S.write(ctx.home, state); } catch (e) { if (e && e.code === 'TYCON_LOCK_LOST') throw e; if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
   const h = H.runHealth(ctx, state, { report: a.report, applierOut: a.out, log });
   if (!h.ok) return fail(h.failures.length ? h.failures : ['la salud no pasó'], 'health');
   state.failed = null;
   state.version.installed_at = nowIso();
   markHealth(state);
   H.copyBootstrap(ctx, own.harness, state, { version: t.version });
-  H.finishSnapshot(ctx, snap, log);
+  // reescribió todo y cambió de versión: cierra las copias abiertas de un corte anterior y las vueltas atrás cortadas
+  H.finishSnapshot(ctx, snap, log, { rewroteAll: true, supersede: true });
   // la conexión vieja de una skill de la lista: después del cambio sano (previous/ sigue ahí), una vez por skill
   const moved = require('./team.js').moveSkillData({ home: ctx.home, env: ctx.env, team: state.team, harnessDir: own.harness, migrateHome: state.migrate_home, previousDir: own.previous });
   for (const l of moved.lines) if (log) log(`update: ${l}`);
@@ -2050,7 +2061,7 @@ function rollback(ctx, state, H, { log = null } = {}) {
   const undone = src.version;
   const snap = H.takeSnapshot(ctx, own.harness, { reason: 'before-rollback', from: undone, to: prevManifest ? prevManifest.version : null, log, force: true, state });
   const back = swapBack(ctx, { log, reason: 'rollback' });
-  if (!back.ok) { H.finishSnapshot(ctx, snap, log); return { ok: false, lines: [`harness.js rollback: ${back.reason}`] }; }
+  if (!back.ok) { H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); return { ok: false, lines: [`harness.js rollback: ${back.reason}`] }; }
   const m = readManifest(own.harness);
   if (m) Object.assign(src, { ref: m.ref || src.ref, commit: m.commit, tree: m.tree, version: m.version, previous: null });
   state.version.number = m ? m.version : (prevManifest ? prevManifest.version : state.version.number);
@@ -2063,13 +2074,17 @@ function rollback(ctx, state, H, { log = null } = {}) {
   state.last_apply = nowIso();
   const lines = [`vuelta atrás a ${state.version.number} (lo deshecho, ${undone}, queda en previous/: otro rollback lo vuelve a poner)`];
   if (teamSyncProblem) lines.push(`capa del equipo: ${teamSyncProblem}`);
+  let healthy = false;
   if (!a.ok) lines.push(`el aplicador falló (${a.reason}): harness.js doctor lo detalla`);
   else {
     H.recordPieces(ctx, state, a.report, a.shared);
     const h = H.runHealth(ctx, state, { report: a.report, applierOut: a.out, log });
-    if (h.ok) markHealth(state); else lines.push(`la comprobación de salud no pasó (${h.failures[0]}): harness.js doctor lo detalla`);
+    if (h.ok) { markHealth(state); healthy = true; } else lines.push(`la comprobación de salud no pasó (${h.failures[0]}): harness.js doctor lo detalla`);
   }
-  H.finishSnapshot(ctx, snap, log);
+  // los árboles volvieron igual (devuelve ok), pero con el aplicador en error o la salud en rojo la vuelta atrás falló:
+  // su copia queda «failed» y no cierra las de un corte anterior. Sana, cierra la suya, las vueltas atrás cortadas y,
+  // como reescribió todo, las demás abiertas más viejas
+  H.finishSnapshot(ctx, snap, log, healthy ? { closedBy: 'rollback', rewroteAll: true } : { outcome: 'failed' });
   return { ok: true, lines, undone, snap };
 }
 
@@ -2127,7 +2142,7 @@ const FETCH_RETRY_MS = 10 * 60 * 1000;
  * cambio a medias, mira según la política (con sus ventanas), aplica si corresponde, corre el aplicador SIEMPRE, limpia
  * lo diferido y deja el aviso. Devuelve `{ code: 0, lines }` (el arranque sale 0 siempre).
  */
-function startup(ctx, state, H, { log, snapshot = null }) {
+function startup(ctx, state, H, { log, snapshot = null, cutNotice = null }) {
   const own = TH.ownPathsOf(ctx);
   let line = null;
   let notice = null;
@@ -2136,7 +2151,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   // un cambio que quedó a medias y no se pudo reparar: el arranque no toca más nada y lo dice
   if (exists(own.journal) || exists(own.linkJournal)) {
     const text = `el cambio de versión quedó a medias y no se pudo reparar (${rep.lines[0] || 'ver el diario'}): detalle en ${S.paths(ctx.home).log}`;
-    R.setNotice(state, text); S.write(ctx.home, state);
+    R.setNotice(state, cutNotice ? `${text} · ${cutNotice}` : text); S.write(ctx.home, state);
     return { code: 0, lines: [text] };
   }
   // la conversión a la forma con enlaces: se intenta en silencio en cada
@@ -2167,7 +2182,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     state.version.number = onDisk.version;
     // …y la capa del equipo es la del árbol que quedó
     if (require('./team.js').syncStateWithTree(state, own.harness)) log('startup: la capa del equipo del estado pasó a ser la del árbol que quedó');
-    notice = `la versión ${state.failed.commit} no arrancaba y el respaldo volvió a ${onDisk.version}; esa versión no se reintenta sola (cuando cambie la punta, o con ${H.applyHint}) — harness.js doctor lo detalla`;
+    notice = `la versión ${state.failed.commit} no arrancaba y el respaldo volvió a ${onDisk.version}; esa versión no se reintenta sola (cuando cambie la punta, o con ${H.releaseApplyHint}) — harness.js doctor lo detalla`;
   }
   // `state.team` refleja SIEMPRE la capa que hay en harness/, sin red y antes de mirar: un arranque que
   // murió entre refrescar la capa y grabar el estado no deja el estado en otro commit para siempre
@@ -2263,6 +2278,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   if (sw.notice) notice = notice || sw.notice;
   const a = H.runApplier(ctx, applierTree, { log, snapshotDir: ((sw.snap || snap) && (sw.snap || snap).dir) || null });
   state.last_apply = nowIso();
+  let healthRed = false;
   if (!a.ok) { const text = `el aplicador falló (${a.reason}): detalle en ${S.paths(ctx.home).log}`; notice = notice || text; log(`startup: ${text}`); line = line || text; }
   else {
     const dropped = sw.switching ? H.dropForProfile(ctx, state, applierTree, a, (l) => log(`startup: ${l}`), sw.profile.value) : true;
@@ -2275,8 +2291,13 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     const sh = startupHealth(ctx, state, H, a, { log, force: Boolean(ctx.opts && ctx.opts.force) });
     // un fallo de salud no se pierde detrás de otro aviso del arranque: se suma
     if (sh.line) { notice = notice ? `${notice} · ${sh.line}` : sh.line; line = line ? `${line} · ${sh.line}` : sh.line; }
+    healthRed = sh.ran && !sh.ok;
   }
-  H.finishSnapshot(ctx, sw.snap, log);
+  // el arranque corre el aplicador completo: sano, reescribió todo y cierra las copias de un corte anterior; con el
+  // aplicador en error o la salud en rojo, sus copias quedan «failed» y el aviso del corte sigue
+  const closing = !a.ok || healthRed ? { outcome: 'failed' } : { rewroteAll: true };
+  H.finishSnapshot(ctx, sw.snap, log, closing);
+  H.finishSnapshot(ctx, snap, log, closing);
   // la limpieza diferida: sólo con la salud en verde después del último cambio
   const cl = cleanupDeferred(ctx, state, { log });
   for (const l of cl.lines) log(`startup: limpieza: ${l}`);
@@ -2284,7 +2305,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   if (cl.oldHeld && cl.oldHeld.length) { const t = oldHeldText(cl.oldHeld); line = line ? `${line} · ${t}` : t; log(`startup: ${t}`); }
   if (!notice && state.hold) notice = H.holdText(state);
   if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): harness.js install --version latest otra vez la retoma — harness.js doctor lo detalla`;
-  if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y volvió sola a ${state.version && state.version.number}; no se reintenta sola hasta que cambie la punta (o ${H.applyHint}) — harness.js doctor lo detalla`;
+  if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y volvió sola a ${state.version && state.version.number}; no se reintenta sola hasta que cambie la punta (o ${H.releaseApplyHint}) — harness.js doctor lo detalla`;
   if (!notice && keepFromLastLook && !fetched && policy.enabled) notice = state.notice;
   // el aviso de la capa del equipo se suma, no reemplaza
   if (teamNotice && !(notice || '').includes(teamNotice)) notice = notice ? `${notice} · ${teamNotice}` : teamNotice;
@@ -2297,10 +2318,14 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   }
   // el Node del arnés: mientras no lo pudo bajar, se dice en cada arranque, sin pisar otro aviso
   if (typeof H.harnessNodeNotice === 'function') notice = H.harnessNodeNotice(notice, a);
+  // el aviso de una copia abierta (un cambio que se cortó) es de ESTE arranque: lo calculó harness.js antes de tomar
+  // ninguna copia y se dice una vez aunque este arranque la cierre; el de un arranque anterior, arrastrado con el aviso
+  // viejo, no sigue
+  notice = require('./snapshot.js').stripCutNotice(notice);
+  if (cutNotice) notice = notice ? `${notice} · ${cutNotice}` : cutNotice;
   if (notice) R.setNotice(state, notice); else R.clearNotice(state);
   S.write(ctx.home, state);
   R.clearUpdateFailure(ctx.home, { kind: 'busy' });
-  H.finishSnapshot(ctx, snap, log);
   return { code: 0, lines: line ? [line] : [] };
 }
 
@@ -2365,11 +2390,38 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
   if (tokenExpired(ctx.env)) { u.lines = [...(u.lines || []), EXPIRED_TOKEN_TEXT]; log(`update: ${EXPIRED_TOKEN_TEXT}`); if (!state.token_expired_notice) state.token_expired_notice = nowIso(); }
   else if (['new', 'applied', 'up_to_date', 'older'].includes(u.status)) state.token_expired_notice = null;
   S.write(ctx.home, state);
-  if (mode === 'check' && u.status === 'new' && !ctx.opts.check) return { code: 3, lines: [...u.lines, `la política es «ask»: aplicá con ${H.applyHint}`] };
+  if (mode === 'check' && u.status === 'new' && !ctx.opts.check) return { code: 3, lines: [...u.lines, `la política es «ask»: aplicá con ${H.releaseApplyHint}`] };
   // el sitio de prueba local: después de aplicar una versión nueva, si corre el contenedor que lanzó el
   // arnés (`tycon.site=local`), se pone al día con `stable`. Nunca cambia el código de salida de `update`
   if (u.status === 'applied' || (mode === 'dry-run' && u.status === 'new')) u.lines = [...(u.lines || []), ...sitioDePruebaLineas(own.harness, mode === 'dry-run', ctx.home)];
   return { code: u.code, lines: u.lines };
+}
+
+/**
+ * `team-refresh`, YA con el candado tomado: la capa del equipo sola (`refreshTeam`, la misma de `update`), sin mirar la
+ * versión pública ni correr el aplicador. Con el perfil cambiado relee la política, como el arranque; el aplicador lo corre
+ * el arranque de la próxima sesión. Un fallo queda en `state.team.last_error` y sale 0: la próxima vuelta lo reintenta.
+ * Devuelve `{ code, status, lines, profileChanged }`.
+ */
+function cmdTeamRefresh(ctx, state, H, { log }) {
+  const own = TH.ownPathsOf(ctx);
+  const policy = H.policyOf(ctx, own.harness);
+  // lo que no mira también queda en el registro de arranque: una política rota o un cambio a medias se repiten cada 30 min
+  const skip = (line) => { log(`none: ${line}`); return { code: 0, status: 'none', lines: [line] }; };
+  if (policy.errors.length) return skip(`la política de actualización está mal escrita (${policy.errors[0]}): la capa no se mira`);
+  if (!policy.enabled) return skip('TYCON_UPDATE=0: la capa del equipo no se mira');
+  // un cambio de versión a medias lo repara el arranque; mientras tanto la capa no se toca
+  if (exists(own.journal) || exists(own.linkJournal)) return skip('hay un cambio de versión a medias: la capa la mira el próximo arranque');
+  const t = refreshTeam(ctx, state, { log, publicRepo: repo(S.releaseSource(state)) });
+  if (t.profileChanged) {
+    const p2 = H.policyOf(ctx, own.harness);
+    if (!p2.errors.length) { state.policy = { channel: p2.channel, apply: p2.apply, enabled: p2.enabled }; H.applyPolicy(ctx, state, p2); }
+  }
+  if (t.notice && !(state.notice || '').includes(t.notice)) R.setNotice(state, state.notice ? `${state.notice} · ${t.notice}` : t.notice);
+  S.write(ctx.home, state);
+  const lines = t.lines.length ? t.lines : [t.status === 'none' ? 'esta instalación no tiene capa del equipo' : 'la capa del equipo ya estaba al día'];
+  log(`${t.status}: ${lines.join(' · ')}`);
+  return { code: 0, status: t.status, lines, profileChanged: Boolean(t.profileChanged) };
 }
 
 /** Las líneas del sitio de prueba local, con el actualizador de la versión que quedó en el disco (en un proceso aparte). */
@@ -2397,7 +2449,7 @@ function teamDoctorItems(ctx, state, tree) {
   const st = TEAM.teamStatus(tree);
   if (st.error) out.push({ level: 'warn', text: `capa del equipo: no pude revisarla (${st.error})` });
   if (!st.present) {
-    if (declared) out.push({ level: 'warn', text: `capa del equipo (${declared}) no está en esta versión${st.broken ? ` (su ${TEAM.MANIFEST_NAME} no se puede leer)` : ''}: el próximo arranque fuera de la ventana de red, o harness.js update, la trae` });
+    if (declared) out.push({ level: 'warn', text: `capa del equipo (${declared}) no está en esta versión${st.broken ? ` (su ${TEAM.MANIFEST_NAME} no se puede leer)` : ''}: el próximo arranque fuera de la ventana de red, o npx @tyconsa/harness@latest, la trae` });
   } else {
     const m = st.manifest;
     const whole = !st.edited.length && !st.missing.length && !st.halfDone.length && !st.pendingCorrupt;
@@ -2405,7 +2457,7 @@ function teamDoctorItems(ctx, state, tree) {
     for (const p of st.edited) out.push({ level: 'warn', text: `capa del equipo: ${p} editado a mano — el refresco de la capa no lo pisa; se pierde con la próxima versión pública (queda en previous/)` });
     if (st.pendingCorrupt) out.push({ level: 'warn', text: `capa del equipo: el registro de un refresco a medias (${TEAM.PENDING_NAME}) no se puede leer — un archivo «editado» puede ser del arnés; el próximo refresco lo resuelve` });
     for (const p of st.halfDone) out.push({ level: 'warn', text: `capa del equipo: ${p} quedó a medio refrescar (ya es del commit ${sha7(st.pendingCommit)}; el manifiesto todavía dice ${sha7(m.commit)}) — el próximo refresco lo completa` });
-    for (const p of st.missing) out.push({ level: 'warn', text: `capa del equipo: ${p} falta — el próximo arranque fuera de la ventana de red (o harness.js update) lo repone desde la caché o del repo del equipo` });
+    for (const p of st.missing) out.push({ level: 'warn', text: `capa del equipo: ${p} falta — el próximo arranque fuera de la ventana de red (o npx @tyconsa/harness@latest) lo repone desde la caché o del repo del equipo` });
     for (const p of st.kept) out.push({ level: 'warn', text: `capa del equipo: ${p} editado a mano y ya no viene en la capa (${sha7(m.commit)}): se conservó; borralo a mano si no lo querés` });
     // el paquete de revisores del equipo (D-1, hasta la A2): con alguna integración del perfil de la capa prendida
     let integrationsOn = false;
@@ -2459,8 +2511,8 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
   const prev = readManifest(own.previous);
   if (exists(own.previous)) add('ok', `versión anterior en ${own.previous}${prev ? ` (${prev.version})` : ''}: harness.js rollback vuelve a ella sin red`);
   else add('ok', `sin versión anterior (${own.previous}): para volver a un número publicado, harness.js install --version <n>`);
-  if (exists(own.journal)) add('fail', `hay un cambio de versión a medias (${own.journal}): el próximo arranque lo repara; harness.js update también`);
-  if (exists(own.linkJournal)) add('fail', `hay un cambio de versión a medias (${own.linkJournal}): el próximo arranque lo repara; harness.js update también`);
+  if (exists(own.journal)) add('fail', `hay un cambio de versión a medias (${own.journal}): el próximo arranque lo repara; npx @tyconsa/harness@latest también`);
+  if (exists(own.linkJournal)) add('fail', `hay un cambio de versión a medias (${own.linkJournal}): el próximo arranque lo repara; npx @tyconsa/harness@latest también`);
   // ~/.claude/skills y ~/.claude/agents son carpetas del dev; un enlace a la carpeta ENTERA del arnés es la
   // forma vieja: lo que el dev o Claude Code ponen ahí cae adentro del arnés y se pierde con una actualización
   // (los dos enchufes de Claude Code, cada uno escrito entero: así el techo de la carpeta de Claude Code los reconoce)
@@ -2546,7 +2598,7 @@ function versionJson(state, { channel = null } = {}) {
 }
 
 module.exports = {
-  startup, cmdUpdate, doctorItems, markHealth, healthDueAtStartup, startupHealth, versionLine, versionJson, FETCH_WINDOW_MS,
+  startup, cmdUpdate, cmdTeamRefresh, doctorItems, markHealth, healthDueAtStartup, startupHealth, versionLine, versionJson, FETCH_WINDOW_MS,
   MANIFEST_NAME, MAIN_REF, SYNC_REF, API_DEFAULT,
   githubRepoOf, repoOf, apiBase, client, explainFailure, tokenExpired, EXPIRED_TOKEN_TEXT, refCommit, versionAt, resolveChannel, check, locateVersion,
   resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk,

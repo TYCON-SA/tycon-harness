@@ -98,7 +98,7 @@ function decidir(primera, confirmacion) {
 
 /** Corre el motor y devuelve {code, rojos[], infra}. `infra` ≠ null ⇒ no se pudo medir. */
 function correr(args) {
-  const r = spawnSync(process.execPath, [RUNNER, ...args], { encoding: 'utf8', timeout: 8 * 60 * 1000 });
+  const r = spawnSync(process.execPath, [RUNNER, ...args], { windowsHide: true, encoding: 'utf8', timeout: 8 * 60 * 1000 });
   if (r.error) return { code: -1, rojos: [], infra: r.error.message, salida: '' };
   const salida = `${r.stdout || ''}\n${r.stderr || ''}`;
   // Sin sesión / sin binario / sin red: el motor no falla "por criterio", falla por plomería.
@@ -183,9 +183,19 @@ function main(argv) {
   const conCanario = advisors.filter((a) => canariosDe(a));
   if (!conCanario.length) return 0;                       // sin canario: ya lo denuncia `--liveness`
   // `ci`: los guiones del arnés que repiten el pre-commit sobre un rango (public-ci.sh, run-base-controls.sh) lo apagan
-  // a propósito; no es una decisión de la sesión que los corre y no se anota.
-  const valor = readEnv('TYCON_NO_LIVENESS_PRECOMMIT', { where: WHERE });
-  if (valor === 'ci') return 0;
+  // a propósito. Dentro de la CI no es una decisión de nadie y no se anota; esos guiones también corren en una máquina,
+  // y ahí queda un renglón con su propio nombre, que la noche no cuenta como escape.
+  // Sin distinguir mayúsculas, como la lista única, el freno de la configuración y la revisión de la noche. Sin recortar
+  // espacios: el freno del archivo de arranque no toma `" ci"`, así que tampoco apaga.
+  const valor = String(readEnv('TYCON_NO_LIVENESS_PRECOMMIT', { where: WHERE }) || '').toLowerCase();
+  if (valor === 'ci') {
+    const ES = require(path.join(__dirname, '..', 'lib', 'env-switches.js'));
+    const sessionId = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID;
+    if (!ES.esCI() && sessionId) {
+      ES.anotarEscape({ sessionId, kind: 'LIVENESS_PRECOMMIT_CI_LOCAL', variable: 'TYCON_NO_LIVENESS_PRECOMMIT', advisors: conCanario, cwd: process.cwd() });
+    }
+    return 0;
+  }
   const apagado = valor === '1';
 
   if (conCanario.length > TOPE_REVISORES) {

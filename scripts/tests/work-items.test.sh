@@ -653,7 +653,7 @@ snapshot $HOY "[$(p1 abc12345 browserslist A/A B/B)]"
 rc=$(correr)
 { [ "$rc" -eq 0 ] \
   && llamada crear 0 'arg("--title") === "Dependencia vulnerable: browserslist (high) en A/A"' \
-  && llamada crear 0 'b.includes("A/A") && !b.includes("B/B") && b.includes("GHSA-73wf-abc12345") && /4 noche/.test(b) && b.includes("vulnerabilidades-pendientes.json")' \
+  && llamada crear 0 'b.includes("A/A") && !b.includes("B/B") && b.includes("GHSA-73wf-abc12345") && /4 noche/.test(b) && b.includes("pending-vulnerabilities.json")' \
   && llamada crear 0 'a.some((x) => /^System\.Tags=arnes-hallazgo; ?arnes:abc12345; arnes-gravedad:high$/.test(x))' \
   && llamada crear 1 'b.includes("B/B") && !b.includes("A/A")' \
   && llamada comentario 0 'b.includes(`data-vss-mention="version:2.0,${process.env.BACKUP_OWNER_ID}"`) && b.includes("@Respaldo Prueba")'; } \
@@ -1346,7 +1346,7 @@ Detectado hace 3 noche(s) seguida(s).
 **Qué decidir acá**
 - **Mergear** = es trabajo real: hay que subir el paquete. El borrador pasa a `promoted/`.
 - **Rechazar** = no aplica, y el comentario es el motivo. Si la razón es que no viaja al
-  navegador ni al servidor, lo correcto es **declararlo** en el `vulnerabilidades-pendientes.json`
+  navegador ni al servidor, lo correcto es **declararlo** en el `pending-vulnerabilities.json`
   del repo, con motivo y fecha de revisión — así deja de despertar a nadie sin volverse
   permanente en silencio.
 

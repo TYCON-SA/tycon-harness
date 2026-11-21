@@ -31,17 +31,30 @@ const { stateDir } = require('./state-dir.js');
 // Lo que el portón guarda como captura o grabación: las imágenes de Playwright y su video.
 const CAPTURE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'webm'];
 
-/** Títulos de los tests que PASARON en un reporter JSON de Playwright. */
+// Las marcas que atan una prueba a su historia y a sus criterios. `@mutates` no está: la acción la declara la prueba.
+const MARCA_DE_CRITERIO_RE = /@(?:story|ac)-[\w.-]*\w/g;
+
+/**
+ * Títulos de los tests que PASARON en un reporter JSON de Playwright. Al título de cada prueba se le suman las marcas
+ * `@story-…` y `@ac-N` de los `describe` que la contienen y de su opción `tag`, que no están en su título: la matriz
+ * ata la prueba a su criterio por esas marcas.
+ */
 function passedTitles(reportJson) {
   const out = [];
-  const walk = (suites) => (suites || []).forEach((s) => {
+  const walk = (suites, heredadas) => (suites || []).forEach((s) => {
+    const marcas = [...heredadas, ...(String(s.title || '').match(MARCA_DE_CRITERIO_RE) || [])];
     (s.specs || []).forEach((sp) => (sp.tests || []).forEach((t) => {
       const st = (t.results || []).length ? t.results[t.results.length - 1].status : 'failed';
-      if (st === 'passed') out.push(sp.title || '');
+      if (st !== 'passed') return;
+      const titulo = sp.title || '';
+      const propias = new Set(titulo.match(MARCA_DE_CRITERIO_RE) || []);
+      const deLaOpcion = (Array.isArray(sp.tags) ? sp.tags : []).map(String).flatMap((x) => x.match(MARCA_DE_CRITERIO_RE) || []);
+      const suman = [...new Set([...marcas, ...deLaOpcion])].filter((m) => !propias.has(m));
+      out.push(suman.length ? `${titulo} ${suman.join(' ')}` : titulo);
     }));
-    walk(s.suites);
+    walk(s.suites, marcas);
   });
-  try { walk(reportJson.suites); } catch { /* json roto → sin títulos */ }
+  try { walk(reportJson.suites, []); } catch { /* json roto → sin títulos */ }
   return out;
 }
 

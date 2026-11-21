@@ -288,7 +288,7 @@ exec /usr/bin/git "$@"
 GIT
 chmod +x "${BASE}/bin/git"
 env PATH="${BASE}/bin:${PATH}" "${NODE}" "${GUION}" --dump "${BASE}/t19.json" --state "${BASE}/estado" > "${BASE}/out" 2> "${BASE}/err"; rc=$?
-G="$(leer "${BASE}/t19.cambio.json.gz" 'const r=c.repos[0]; [c.estado, r.estado, /name-status|git/.test(r.motivo||""), !("sin_commitear" in r), /ninguno/.test(c.motivo||"")].join("|")')"
+G="$(leer "${BASE}/t19.cambio.json.gz" 'const r=c.repos[0]; [c.estado, r.estado, /name-status|git/.test(r.motivo||""), !("sin_commitear" in r), /no se pudo mirar el repo de la ejecución/.test(c.motivo||"")].join("|")')"
 [ "${rc}" = 0 ] && [ "${G}" = "no_medido|no_medido|true|true|true" ] && ok "T19 el error de --name-status deja ESE repo no_medido con motivo; sin ningún repo medido, la corrida entera es no_medido" || mal "T19 (rc=${rc}) salió: ${G}"
 
 # ── T20 · el motivo de un repo sin historial sale saneado ─────────────────────────────────────────────

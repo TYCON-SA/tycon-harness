@@ -23,8 +23,10 @@ pr: none
 # no necesita lectura sobre ningún repo del arnés ni autorizar un recurso.
 
 variables:
-  # De dónde se baja el arnés: su repo público y la rama. Un fork propio del arnés se apunta acá;
-  # el resto del pipeline no cambia.
+  # De dónde se baja el arnés: su repo público y la versión. Un fork propio del arnés se apunta acá;
+  # el resto del pipeline no cambia. `harnessRef` es `main` por defecto: cada arreglo del portón llega
+  # esa misma noche. Para fijarla, una rama, una etiqueta o un commit; fijada, el repo queda atrás en
+  # los arreglos hasta que la sube. El commit que se usó queda impreso en cada corrida.
   harnessRepoUrl: 'https://github.com/TYCON-SA/tycon-harness.git'
   harnessRef: 'main'
 
@@ -53,8 +55,11 @@ stages:
               set -euo pipefail
               DEST="$(Agent.BuildDirectory)/tcg"
               rm -rf "$DEST"
-              git clone --quiet --depth 1 --single-branch --branch "$(harnessRef)" --no-tags "$(harnessRepoUrl)" "$DEST"
-              echo "Arnés público en $(git -C "$DEST" rev-parse --short HEAD)"
+              # `clone --branch` no acepta un commit: se baja la versión con fetch y se pasa a ella con checkout
+              git init --quiet "$DEST"
+              git -C "$DEST" fetch --quiet --depth 1 "$(harnessRepoUrl)" "$(harnessRef)"
+              git -C "$DEST" checkout --quiet FETCH_HEAD
+              echo "Arnés público en $(git -C "$DEST" rev-parse HEAD) ($(harnessRef))"
             displayName: 'Fetch harness (public GitHub, no credentials)'
           - task: NodeTool@0
             inputs:
@@ -123,11 +128,23 @@ stages:
                 return 1
               }
               bajar zricethezav/gitleaks:v8.30.1 || exit 1
+              # La configuración: las reglas de fábrica (o el .gitleaks.toml del repo, si trae uno) más la excepción de las huellas
+              # de la evidencia del arnés, copiada tal cual de scripts/ci/secret-scan/evidence-hashes.toml del arnés
+              CFG="$(Agent.TempDirectory)/gitleaks-evidencia.toml"
+              if [ -f "$REPO/.gitleaks.toml" ]; then printf '[extend]\npath = "/repo/.gitleaks.toml"\n\n' > "$CFG"; else printf '[extend]\nuseDefault = true\n\n' > "$CFG"; fi
+              cat >> "$CFG" <<'GITLEAKS_HUELLAS'
+              [[allowlists]]
+              description = "huellas git de la evidencia del arnés: ruta de archivo como clave y 40 hex como valor, sólo bajo .advisors/"
+              condition = "AND"
+              regexTarget = "match"
+              paths = ['''(^|/)\.advisors/''']
+              regexes = ['''^[\w.-]*\.(js|mjs|cjs|ts|tsx|jsx|json|jsonl|md|cs|csproj|sln|sh|ps1|py|yml|yaml|sql|txt|html|css|scss|xml|toml|config|lock|svg|png)"\s*:\s*"[0-9a-f]{40}"$''']
+              GITLEAKS_HUELLAS
               ESPERADOS=$(git -C "$REPO" rev-list --count --no-merges "origin/$TARGET..HEAD")
               echo "🔍 Secretos en los $ESPERADOS commit(s) que trae el PR (origin/$TARGET..HEAD)"
-              SALIDA=$(docker run --rm -v "$REPO":/repo \
+              SALIDA=$(docker run --rm -v "$REPO":/repo -v "$CFG":/cfg/gitleaks.toml:ro \
                 -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
-                zricethezav/gitleaks:v8.30.1 detect --source /repo --log-opts="--no-merges origin/$TARGET..HEAD" \
+                zricethezav/gitleaks:v8.30.1 detect --source /repo --config /cfg/gitleaks.toml --log-opts="--no-merges origin/$TARGET..HEAD" \
                 --redact --verbose --no-banner --no-color 2>&1)
               RC=$?
               printf '%s\n' "$SALIDA"

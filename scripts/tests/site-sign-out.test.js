@@ -7,7 +7,7 @@
  * T5 Salir_ElBoton_MandaElToken                    T8 Salir_DiscoQueFalla_AvisaQueNoSeInvalido
  * T9 Cerradas_DosCierresALaVez_NingunoSePierde      T10 Cerradas_ArchivoIlegible_SigueCerrada
  * T11 Salir_SinDisco_Avisa                          T12 Salir403_TraeSalirConElTokenVigente
- * T13 Cerradas_ConsultaNoRecorreLaLista
+ * T13 Cerradas_ConsultaNoRecorreLaLista              T14 Cerradas_CarpetaIlegible_AvisaAQuienMantiene
  *
  * El sitio corre en este proceso contra un emisor OIDC local; el disco es una carpeta temporal.
  */

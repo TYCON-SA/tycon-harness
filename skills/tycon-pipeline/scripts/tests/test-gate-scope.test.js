@@ -27,6 +27,16 @@ test('T1 TestGateScope_Parse — touched con quién corre la completa acota; sin
   assert.deepStrictEqual(parseScope('test_gate:\n  scope: touched\nfull_suite_by: afuera\n').scope, 'full');
 });
 
+test('TestGateScope_TopeDeLaMaquina — max_local_suites es opcional; mal escrito, rige el de fábrica y se dice', () => {
+  const con = (v) => parseScope(`test_gate:\n  scope: touched\n  full_suite_by: "la CI"\n  max_local_suites: ${v}\n`);
+  assert.deepStrictEqual(con('40'), { scope: 'touched', fullSuiteBy: 'la CI', maxLocalSuites: 40 });
+  for (const malo of ['0', '-3', 'muchas', '1.5']) {
+    const r = con(malo);
+    assert.deepStrictEqual([r.scope, r.fullSuiteBy, r.maxLocalSuites], ['touched', 'la CI', undefined], malo);
+    assert.match(r.problem, /max_local_suites tiene que ser un entero/, malo);
+  }
+});
+
 test('T2 TestGateScope_SoloLoCommiteado — la clave escrita en la carpeta sin commitear no acota', () => {
   // 🔴 mutación: leer la carpeta de trabajo dejaría a un agente acotar el portón con un Write sin rastro en el diff.
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-scope-'));

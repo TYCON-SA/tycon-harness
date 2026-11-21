@@ -741,10 +741,13 @@ test('T14 Resumen_AceptadasNoSeRepiten', () => {
 // 🔴 Falla con: cambiar una letra de la tabla al mudarla (la huella es la de la tabla de antes), que el resumen use otra
 //    copia, o un nombre de más de 120 caracteres o con un salto de renglón. La huella cambió una vez a propósito, cuando
 //    el freno de stories ganó su nombre (T101), y otra cuando los apagados del chequeo de vida, del de mutantes y del
-//    portón de carril ganaron los suyos, y otra cuando las categorías que se cuentan aparte ganaron los suyos (M6).
+//    portón de carril ganaron los suyos, y otra cuando las categorías que se cuentan aparte ganaron los suyos (M6), y otra
+//    cuando las escotillas de la matriz, la revisión de la historia y pruebas primero apagado ganaron los suyos, y otra
+//    cuando la salida del freno del stash ajeno ganó el suyo, y otra cuando el aviso antes de la fecha de corte y el
+//    umbral de cobertura bajado en la máquina ganaron los suyos.
 test('T15 Nombres_MudanzaSinCambiarTexto', () => {
   const crypto = require('crypto');
-  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), 'fad1881298d5d95d3ced3ab8bf8f65e4e58cdc67');
+  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), 'dc7a2e7a1376c280c7ac78840842b0ba9865b53f');
   assert.strictEqual(DS.NOMBRES_CAUSA, NOMBRES.NOMBRES_CAUSA, 'el resumen usa la misma tabla');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-HOOK', categoria: 'Stop/tiempo' }), 'aviso automático que se pasó de tiempo');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-ESCAPE', categoria: 'ZZDESCONOCIDA' }), 'otro freno salteado');
@@ -1349,7 +1352,14 @@ test('T54 Pedido_SinResponsable_SinAsignadoConMotivo', async () => {
   otra('RR-C', { veredicto: 'arreglo', pedido_motivo: 'plataforma-caida' });
   otra('RR-D', { veredicto: 'arreglo', pedido_motivo: 'sin-confirmar' });
   otra('RR-E', { veredicto: 'arreglo', pedido_motivo: 'sin-configurar' });
-  assert.match(DS.lineaFichas('ejecuciones', path.join(sin.base, 'inbox', 'runs-review'), '2026-10-25'), / · sin asignado 1 · pedido sin crear 3$/);
+  // y el pedido sin crear dice el motivo de cada uno, no sólo cuántos
+  const conMotivo = DS.lineaFichas('ejecuciones', path.join(sin.base, 'inbox', 'runs-review'), '2026-10-25');
+  assert.match(conMotivo, / · sin asignado 1 · pedido sin crear 3 \(rechazado por la plataforma 1, sin confirmar 1, sin configurar 1\)$/, conMotivo);
+  // la constancia acepta el renglón nuevo y el de una noche de antes, sin el paréntesis
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: [conMotivo] }), [conMotivo]);
+  const deAntes = 'fichas de ejecuciones: vivas 4 · nuevas 0 · reaparecidas 0 · resueltas 0 · pedido sin crear 3';
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: [deAntes] }), [deAntes]);
+  assert.strictEqual(DS.fichasDeLaConstancia({ fichas: [`${deAntes} (otro motivo 3)`] }), null);
   // y el del vigilante, con su formato
   const vig = opsConArreglos({ owners: { owners: { default: '<x>@acme.example' } } });
   await cycle.pedirTrabajo({ base: vig.base, fuente: 'vigilante', operations: vig.operations, run: plataforma(() => ({ ok: true, value: { id: 79 } })).run });
@@ -1945,12 +1955,15 @@ test('T102 VistaComun_AnalisisHechosYTareas', () => {
   // dependencias: todas las tareas, con el nombre de quien la tiene (nunca un correo) y el motivo de las que faltan
   const dep = ['id: dep-uno', 'detectado: 2026-09-09', 'veredicto: util', 'paquete: next', 'severidad: critical', 'noches: 3',
     'pedido_motivo: tope', 'repos:', '  - Producto X/FrontEnd', '  - Producto Y/Forms', 'pedidos:', '  - Producto X: 5467', '  - Producto Y: 5445',
-    '  - Producto Z: 5446', 'asignados:', '  - "5467: Ana Pérez"', '  - "5445: ana@acme.example"', '  - "5446: <nadie>"', ''].join('\n');
+    '  - Producto Z: 5446', '  - Producto W: 5447', 'asignados:', '  - "5467: Ana Pérez"', '  - "5445: ana@acme.example"', '  - "5446: <nadie>"', '  - "5447: <alguien>"', ''].join('\n');
   const d = sources.comoFicha('dependencias', dep);
-  // «<nadie>» es la tarea que la noche leyó sin nadie; la que no se midió (o con un correo) no dice ninguna de las dos
-  assert.deepStrictEqual(d.pedidos, [{ proyecto: 'Producto X', id: '5467', asignado: 'Ana Pérez', sin_asignar: false },
-    { proyecto: 'Producto Y', id: '5445', asignado: null, sin_asignar: false }, { proyecto: 'Producto Z', id: '5446', asignado: null, sin_asignar: true }]);
-  assert.deepStrictEqual(d.pedido, { id: '5446', enlace: null }, 'el último sigue siendo el vigente');
+  // «<nadie>» es la tarea que la noche leyó sin nadie; «<alguien>», la que tiene a alguien sin un nombre que mostrar; la que
+  // no se midió (o con un correo escrito tal cual) no dice ninguna
+  assert.deepStrictEqual(d.pedidos, [{ proyecto: 'Producto X', id: '5467', asignado: 'Ana Pérez', sin_asignar: false, asignada_sin_nombre: false },
+    { proyecto: 'Producto Y', id: '5445', asignado: null, sin_asignar: false, asignada_sin_nombre: false },
+    { proyecto: 'Producto Z', id: '5446', asignado: null, sin_asignar: true, asignada_sin_nombre: false },
+    { proyecto: 'Producto W', id: '5447', asignado: null, sin_asignar: false, asignada_sin_nombre: true }]);
+  assert.deepStrictEqual(d.pedido, { id: '5447', enlace: null }, 'el último sigue siendo el vigente');
   assert.strictEqual(d.pedido_motivo, 'tope');
   assert.strictEqual(d.repos, 2);
   assert.strictEqual(d.severidad, 'critical');

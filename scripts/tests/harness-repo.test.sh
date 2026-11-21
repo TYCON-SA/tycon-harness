@@ -599,7 +599,7 @@ printf '%s' "$out78" | grep -q 'git no contest' && ! printf '%s' "$out78" | grep
 # preguntándole al reconocedor (si alguno pasa a decidir por su cuenta, esto avisa), y (2) la respuesta que reciben para
 # un archivo de ese clon, con la pregunta que cada uno hace (por repo o por ruta).
 for caller in \
-  "scripts/hooks/retro-pending.js:esRepoDelArnes(root)" \
+  "scripts/hooks/retro-pending.js:juzgarRepo(root)" \
   "scripts/hooks/unpushed-work-notice.js:esRepoDelArnes(root)" \
   "skills/tycon-pipeline/scripts/lib/story-gate-io.js:esRutaDelArnes(filePath)"; do
   f78="${caller%%:*}"; q78="${caller#*:}"

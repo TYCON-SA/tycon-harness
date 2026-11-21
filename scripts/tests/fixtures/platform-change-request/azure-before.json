@@ -1,0 +1,59 @@
+{
+ "__doc": "La salida de open-prs.js y assigned-items.js en Azure DevOps con las fixtures de azure/, grabada antes de que GitHub pasara por la capa de plataforma. La prueba compara la salida de ahora contra ésta (sin la hora de generado).",
+ "openPrs": {
+  "status": 0,
+  "stdout": "PR abiertos hace más de 2 días: 1\n#41 Proyecto X/Back — Ana — 10 días\n",
+  "stderr": "",
+  "out": "PR abiertos hace más de 2 días: 1\n",
+  "json": {
+   "v": 1,
+   "fecha": "2026-10-30",
+   "estado": "medido",
+   "motivo": null,
+   "prs": [
+    {
+     "numero": 41,
+     "proyecto": "Proyecto X",
+     "repo": "Back",
+     "dias": 10,
+     "autor": "ana.dev@acme.example",
+     "enlace": "https://dev.azure.com/acme/Proyecto%20X/_git/Back/pullrequest/41"
+    },
+    {
+     "numero": 43,
+     "proyecto": "Proyecto X",
+     "repo": "Back",
+     "dias": 1,
+     "autor": "beto@acme.example",
+     "enlace": "https://dev.azure.com/acme/Proyecto%20X/_git/Back/pullrequest/43"
+    }
+   ]
+  }
+ },
+ "assigned": {
+  "status": 0,
+  "stdout": "pedidos asignados: 1 pedido(s) abiertos con alguien asignado\n",
+  "stderr": "",
+  "json": {
+   "v": 1,
+   "fecha": "2026-10-30",
+   "estado": "medido",
+   "motivo": null,
+   "pedidos": [
+    {
+     "id": 11,
+     "proyecto": "Proyecto X",
+     "tipo": "Bug",
+     "estado": "Active",
+     "asignado": "ana.dev@acme.example",
+     "dias_en_estado": 3,
+     "enlace": "https://dev.azure.com/acme/Proyecto%20X/_workitems/edit/11",
+     "dependencias": false,
+     "titulo": "un bug"
+    }
+   ],
+   "proyectos_no_medidos": [],
+   "estados_sin_categoria": []
+  }
+ }
+}

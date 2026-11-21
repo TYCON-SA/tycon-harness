@@ -78,6 +78,10 @@ head_de() { harness_lab_git "$1" rev-parse HEAD; }
 corridas_aplicador() { grep -c '^run check=0' "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log" 2>/dev/null || echo 0; }
 LOG() { printf '%s' "$LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"; }
 export TYCON_UPDATE_APPLY=auto   # la política del equipo, sin perfil en el laboratorio
+# El arranque corre en el lugar: desprendido, con la máquina cargada (la puerta de pruebas corre varias suites a la vez)
+# pasa sus 20 s de espera, sale 0 y sigue aparte con el candado tomado, y el comando siguiente de la prueba sale 3
+# «otra sesión está actualizando». El arranque desprendido con su candado lo mide T39L, que lo prende.
+export TYCON_STARTUP_DETACH=0
 ORIG_PATH="$PATH"
 
 # ═══ T3 · Harness_Lock_TwoStartupsWithNewVersion_OneAppliesNoFailed ══════════════════════════════════════════════════
@@ -166,6 +170,62 @@ if corre T6; then
   estado_set "import datetime; d['last_fetch']=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=11)).isoformat()"
   harness startup >/dev/null 2>&1
   [ "$(head_de "$LAB_TREE")" = "$(head_de "$LAB_AUTHOR_TREE")" ] && ok "T6 con last_fetch viejo sale a la red y aplica la versión nueva" || mal "T6 no aplicó: $(head_de "$LAB_TREE") vs $(head_de "$LAB_AUTHOR_TREE")"
+  export PATH="$ORIG_PATH"
+fi
+
+# ═══ T131 · el índice local de memoria se rehace antes de importar ═══════════════════════════════════════════════
+# En un repo en «índice local» (`.engram/manifest.json` ignorado y fuera de git), el arranque rehace el índice desde los
+# chunks ANTES de `engram sync --import`: el importador lee el índice, y un chunk sin entrada no existe para él. Un engram
+# de mentira anota cuántas entradas tiene el índice cuando lo llaman.
+if corre T131; then
+  harness_lab_create "$BASE/t131" >/dev/null
+  printf '#!/bin/sh\nn=$(node -e '"'"'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(".engram/manifest.json","utf8")).chunks.length))}catch(e){process.stdout.write("sin-indice")}'"'"')\necho "$* entradas=$n" >> "%s/engram-calls.log"\nexit 0\n' "$LAB" > "$LAB_BIN/engram"; chmod +x "$LAB_BIN/engram"
+  export PATH="$LAB_BIN:$PATH"
+  harness install --yes >/dev/null 2>&1 || mal "T131 install previo falló"
+  chunk131(){  # $1 repo · $2 id · el chunk como lo escribe engram
+    node -e 'process.stdout.write(JSON.stringify({sessions:null,observations:[{sync_id:"obs-"+process.argv[1],updated_at:"2026-10-01 00:00:00"}],prompts:null})+"\n")' "$2" | gzip -c > "$1/.engram/chunks/$2.jsonl.gz"
+  }
+  repo131(){  # $1 carpeta · $2 local|versionado · ids…
+    local d="$1" modo="$2"; shift 2
+    mkdir -p "$d/.engram/chunks"; git -C "$d" init -q; git -C "$d" checkout -q -b main
+    for c in "$@"; do chunk131 "$d" "$c"; done
+    if [ "$modo" = local ]; then printf '.engram/manifest.json\n' > "$d/.gitignore"
+    else printf '{\n  "version": 1,\n  "chunks": []\n}' > "$d/.engram/manifest.json"; fi
+    git -C "$d" add -A && git -C "$d" commit -qm base
+  }
+  # T14 · Startup_LocalIndex_RebuildsBeforeImport
+  repo131 "$LAB/r-local" local a1 a2 a3
+  rm -f "$LAB/engram-calls.log"
+  (cd "$LAB/r-local" && TYCON_ENGRAM=1 harness startup >/dev/null 2>&1)
+  grep -q 'sync --import entradas=3' "$LAB/engram-calls.log" 2>/dev/null \
+    && [ -z "$(git -C "$LAB/r-local" status --porcelain)" ] \
+    && ok "T14 Startup_LocalIndex_RebuildsBeforeImport: el importador ve las 3 entradas y el repo queda limpio" \
+    || mal "T14 Startup_LocalIndex_RebuildsBeforeImport: $(cat "$LAB/engram-calls.log" 2>&1) · status=[$(git -C "$LAB/r-local" status --porcelain)]"
+  # T15 · Startup_TrackedIndex_Untouched
+  repo131 "$LAB/r-versionado" versionado b1 b2
+  SUMA15="$(cksum < "$LAB/r-versionado/.engram/manifest.json")"
+  rm -f "$LAB/engram-calls.log"
+  (cd "$LAB/r-versionado" && TYCON_ENGRAM=1 harness startup >/dev/null 2>&1)
+  grep -q 'sync --import entradas=0' "$LAB/engram-calls.log" 2>/dev/null && [ "$(cksum < "$LAB/r-versionado/.engram/manifest.json")" = "$SUMA15" ] \
+    && ok "T15 Startup_TrackedIndex_Untouched: con el índice versionado no se toca, byte a byte, y la importación corre" \
+    || mal "T15 Startup_TrackedIndex_Untouched: $(cat "$LAB/engram-calls.log" 2>&1) · índice cambiado=$([ "$(cksum < "$LAB/r-versionado/.engram/manifest.json")" = "$SUMA15" ] && echo no || echo sí)"
+  # T16 · Startup_RebuildFails_ImportsAndSays
+  repo131 "$LAB/r-roto" local c1
+  printf 'esto no es gzip' > "$LAB/r-roto/.engram/chunks/roto.jsonl.gz"
+  rm -f "$LAB/engram-calls.log"
+  SALIDA16="$(cd "$LAB/r-roto" && TYCON_ENGRAM=1 harness startup 2>&1)"; RC16=$?
+  [ "$RC16" = 0 ] && grep -q 'sync --import' "$LAB/engram-calls.log" 2>/dev/null \
+    && printf '%s' "$SALIDA16" | grep 'no pude rehacer el índice de memoria' >/dev/null && grep -q 'no pude rehacer el índice de memoria' "$(LOG)" \
+    && ok "T16 Startup_RebuildFails_ImportsAndSays: con un chunk roto la importación corre igual, y la línea y el registro lo dicen" \
+    || mal "T16 Startup_RebuildFails_ImportsAndSays: rc=$RC16 · llamadas=[$(cat "$LAB/engram-calls.log" 2>&1)] · salida=[$SALIDA16] · registro=[$(tail -2 "$(LOG)" 2>&1)]"
+  # T16b · Startup_RebuildWarns_SaysIt: lo que la reconstrucción avisa (un chunk sin fecha) sale aunque termine bien
+  repo131 "$LAB/r-sinfecha" local d1
+  node -e 'process.stdout.write(JSON.stringify({sessions:null,observations:[{sync_id:"obs-sin"}],prompts:null})+"\n")' | gzip -c > "$LAB/r-sinfecha/.engram/chunks/sinfecha.jsonl.gz"
+  git -C "$LAB/r-sinfecha" add -A && git -C "$LAB/r-sinfecha" commit -qm sinfecha
+  SALIDA16B="$(cd "$LAB/r-sinfecha" && TYCON_ENGRAM=1 harness startup 2>&1)"
+  printf '%s' "$SALIDA16B" | grep 'sin una fecha legible' >/dev/null && grep 'sin una fecha legible' "$(LOG)" >/dev/null \
+    && ok "T16b Startup_RebuildWarns_SaysIt: el aviso de la reconstrucción sale en la línea y en el registro" \
+    || mal "T16b Startup_RebuildWarns_SaysIt: salida=[$SALIDA16B] · registro=[$(tail -2 "$(LOG)" 2>&1)]"
   export PATH="$ORIG_PATH"
 fi
 
@@ -540,7 +600,7 @@ if corre T32; then
   SALIDA="$(ask startup 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(head_de "$LAB_TREE")" = "$ANTES" ] && ok "T32 ask con versión nueva: startup no aplica" || mal "T32 ask aplicó o falló: rc $RC HEAD $(head_de "$LAB_TREE"): $SALIDA"
   N="$(estado "d.get('notice') or ''")"
-  case "$N" in "arnés "*"+${NUEVO:0:7} disponible (instalada "*"+${ANTES:0:7}, canal stable) · aplicar: node "*"harness.js update --yes · cambios: "*) ok "T32 el aviso: número de la nueva con su sha, la instalada, el canal y el comando" ;; *) mal "T32 aviso: $N" ;; esac
+  case "$N" in "arnés "*"+${NUEVO:0:7} disponible (instalada "*"+${ANTES:0:7}, canal stable) · aplicar: node \"\$HOME/"*"harness.js\" update --yes · cambios: "*) ok "T32 el aviso: número de la nueva con su sha, la instalada, el canal y el comando" ;; *) mal "T32 aviso: $N" ;; esac
   case "$N" in *"cambios: git -C $(cd "$LAB_TREE" && pwd -P) log ${ANTES:0:7}..${NUEVO:0:7}") ok "T32 remoto interno: «cambios» es el git log a..b para pegar" ;; *) mal "T32 cambios (interno): $N" ;; esac
   case "$N" in *"/compare/"*) mal "T32 remoto interno con un enlace de comparación: $N" ;; *) ok "T32 …y sin enlace" ;; esac
   # dos pasos: lo que escribió ESTE arranque lo imprime el hook síncrono de la sesión siguiente, dirigido a la persona
@@ -700,7 +760,7 @@ if corre T32; then
   SALIDA="$(ask update 2>&1)"; RC=$?
   [ "$RC" = 3 ] && [ "$(head_de "$LAB_TREE")" = "$ANTES" ] || mal "T32 (h) update en ask sin --yes: rc $RC HEAD $(head_de "$LAB_TREE"): $SALIDA"
   N="$(estado "d.get('notice') or ''")"
-  case "$N" in "arnés "*"+${NUEVO:0:7} disponible (instalada "*"+${ANTES:0:7}, canal stable) · aplicar: node "*"harness.js update --yes · cambios: git -C "*" log ${ANTES:0:7}..${NUEVO:0:7}") ok "T32 update sin --yes en ask deja el aviso de la versión nueva" ;; *) mal "T32 (h) update sin --yes no dejó el aviso: «${N}»" ;; esac
+  case "$N" in "arnés "*"+${NUEVO:0:7} disponible (instalada "*"+${ANTES:0:7}, canal stable) · aplicar: node \"\$HOME/"*"harness.js\" update --yes · cambios: git -C "*" log ${ANTES:0:7}..${NUEVO:0:7}") ok "T32 update sin --yes en ask deja el aviso de la versión nueva" ;; *) mal "T32 (h) update sin --yes no dejó el aviso: «${N}»" ;; esac
   SALIDA="$(TYCON_UPDATE_APPLY=ask node "$HOOK_DIR/branch-guard-notice.js" 2>&1)"; RC=$?
   [ "$RC" = 0 ] && case "$SALIDA" in *"decile a la persona: arnés "*" disponible"*"update --yes"*) true ;; *) false ;; esac && ok "T32 …y el hook síncrono de la sesión siguiente lo muestra" || mal "T32 (h) hook síncrono (rc $RC): $SALIDA"
   rm -f "$LAB_TREE/.git/FETCH_HEAD"
@@ -828,7 +888,7 @@ if corre S16; then
   [ -n "$COPIA" ] && [ -d "$COPIA" ] && case "$COPIA" in "$LAB_HOME/.claude/.tycon-pipeline/harness/backups/"*) ok "S16-T9 dice la carpeta de la copia de antes, y existe" ;; *) mal "S16-T9 la copia no está bajo backups/: $COPIA" ;; esac \
     || mal "S16-T9 no dice una copia de antes que exista («${COPIA}»): $SALIDA"
   [ -n "$COPIA" ] && [ "$(j "$COPIA/manifest.json" "d['reason']")" = update ] && ok "S16-T9 …y es la copia que tomó ese update" || mal "S16-T9 la copia nombrada no es la del update: $(cat "$COPIA/manifest.json" 2>&1 | head -3)"
-  case "$SALIDA" in *"volver: node ~/.claude/tycon-harness/scripts/setup/harness.js rollback"*) ok "S16-T9 …y cómo volver (por el lugar: story 8.19)" ;; *) mal "S16-T9 no dice cómo volver: $SALIDA" ;; esac
+  case "$SALIDA" in *"volver: node \"\$HOME/.claude/tycon-harness/scripts/setup/harness.js\" rollback"*) ok "S16-T9 …y cómo volver (por el lugar: story 8.19)" ;; *) mal "S16-T9 no dice cómo volver: $SALIDA" ;; esac
   # sin nada que aplicar no promete una copia
   SALIDA="$(TYCON_UPDATE_APPLY=auto harness update 2>&1)"; RC=$?
   [ "$RC" = 0 ] && case "$SALIDA" in *"copia de antes en"*) mal "S16-T9 al día y nombra una copia: $SALIDA" ;; *) ok "S16-T9 al día: no nombra ninguna copia" ;; esac || mal "S16-T9 al día: rc $RC: $SALIDA"
@@ -904,7 +964,7 @@ fi
 # escribe en ningún repo es el hash: de los dos bare y del .git del clon de la persona, antes y después de cada comando.
 # (El `pre-receive` sólo es la red de seguridad: `sources.js` corre git con core.hooksPath=/dev/null, que le llega también
 # a un receive-pack local.)
-arbol_hash() { ( cd "$1" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do printf '%s ' "$f"; shasum -a 256 < "$f"; done ) | shasum -a 256 | cut -d' ' -f1; }
+arbol_hash() { ( cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | tree_file_sums ) | shasum -a 256 | cut -d' ' -f1; }
 version_publica() { # version_publica <número> <piso>  — el version.json de la copia, con su lista de transformados
   printf '{ "version": "%s", "source": { "harness": "%s" }, "transformed": [ { "path": "guides/public.md", "transform": "toy-trim" } ] }\n' "$1" "$2"
 }
@@ -1074,7 +1134,7 @@ SH
   chmod +x "$BASE/t39l/bin/git"
   : > "$LENTO"
   T0=$(date +%s)
-  PATH="$BASE/t39l/bin:$PATH" TYCON_STARTUP_WAIT_MS=1500 harness startup > "$BASE/t39l/s1.out" 2>&1; RC=$?
+  PATH="$BASE/t39l/bin:$PATH" TYCON_STARTUP_DETACH= TYCON_STARTUP_WAIT_MS=1500 harness startup > "$BASE/t39l/s1.out" 2>&1; RC=$?
   DUR=$(( $(date +%s) - T0 ))
   [ "$RC" = 0 ] && [ "$DUR" -lt 15 ] && ok "T39L con la actualización lenta, el hook vuelve a tiempo (${DUR} s) y sale 0" || mal "T39L hook: rc $RC en ${DUR} s: $(cat "$BASE/t39l/s1.out")"
   HIJO="$(sed -n 's/.*sigue aparte del hook (pid \([0-9]*\)).*/\1/p' "$(LOG)" | tail -1)"
@@ -1086,13 +1146,44 @@ SH
   [ -n "$HIJO" ] && kill -9 "$HIJO" 2>/dev/null; [ -s "$BASE/t39l/git-lento.pid" ] && kill -9 "$(cat "$BASE/t39l/git-lento.pid")" 2>/dev/null; sleep 0.5
   [ -d "$LAB_HOME/.claude/.tycon-pipeline/harness/harness.lock" ] && ok "T39L cortada a mitad, quedó el candado del muerto (el caso de la máquina trabada)" || mal "T39L el corte no dejó el candado: la prueba no reproduce el caso"
   rm -f "$LENTO"
-  PATH="$BASE/t39l/bin:$PATH" TYCON_STARTUP_WAIT_MS=60000 harness startup > "$BASE/t39l/s2.out" 2>&1; RC=$?
+  PATH="$BASE/t39l/bin:$PATH" TYCON_STARTUP_DETACH= TYCON_STARTUP_WAIT_MS=60000 harness startup > "$BASE/t39l/s2.out" 2>&1; RC=$?
   [ "$RC" = 0 ] && [ "$(head_de "$LAB_TREE")" = "$NUEVO" ] && ok "T39L el arranque siguiente actualiza enseguida (no espera los 10 minutos)" || mal "T39L no actualizó: rc $RC, $(head_de "$LAB_TREE") vs $NUEVO: $(tail -4 "$(LOG)")"
   grep -q "era del pid $HIJO, que ya no existe" "$(LOG)" && ok "T39L el registro dice que pisó el candado del pid $HIJO" || mal "T39L el registro no dice qué candado pisó: $(tail -4 "$(LOG)")"
   [ ! -d "$LAB_HOME/.claude/.tycon-pipeline/harness/harness.lock" ] && ok "T39L y lo soltó al terminar" || mal "T39L quedó el candado"
   # nunca un login: toda salida a la red del arranque corrió sin poder preguntar nada
   if [ -s "$TESTIGO" ] && ! grep -v -q '^GCM_INTERACTIVE=never GIT_TERMINAL_PROMPT=0$' "$TESTIGO"; then ok "T39L las $(wc -l < "$TESTIGO" | tr -d ' ') salidas a la red corrieron con GCM_INTERACTIVE=never y GIT_TERMINAL_PROMPT=0"
   else mal "T39L una salida a la red pudo preguntar: $(sort -u "$TESTIGO" 2>/dev/null | head -3)"; fi
+fi
+
+# ═══ T10L · Lock_DisplacedOwner_ReleaseKeepsNewLock_WriteAborts (la parte integrada) ═════════════════════════════════
+# Una actualización detenida a mitad de camino (el aplicador de juguete duerme adentro del candado) a la que otro le
+# pisa el candado: al seguir, se va sin grabar el estado y no suelta el candado del otro.
+if corre T10L; then
+  harness_lab_create "$BASE/t10l" >/dev/null
+  harness install --yes >/dev/null 2>&1 || mal "T10L install previo falló"
+  harness_lab_publish tree "v2" VERSION 2; harness_lab_publish skills "v2" VERSION 2
+  CANDADO="$LAB_HOME/.claude/.tycon-pipeline/harness/harness.lock"
+  ESTADO_F="$LAB_HOME/.claude/.tycon-pipeline/harness-state.json"
+  CORRIDAS="$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log"
+  ANTES_N="$(cat "$CORRIDAS" 2>/dev/null | wc -l | tr -d ' ')"
+  LAB_APPLIER_SLEEP=6 harness update > "$BASE/t10l/u.out" 2>&1 & PU=$!
+  # el aplicador anota su corrida antes de dormir: recién ahí la actualización está adentro del candado, a mitad
+  n=0; while [ "$(cat "$CORRIDAS" 2>/dev/null | wc -l | tr -d ' ')" -le "$ANTES_N" ] && [ "$n" -lt 150 ]; do sleep 0.2; n=$((n + 1)); done
+  if [ -d "$CANDADO" ] && kill -0 "$PU" 2>/dev/null; then
+    # otro pisa el candado: el mismo dueño escrito, otro token
+    DUENO="$(head -2 "$CANDADO/pid")"
+    printf '%s\notro-token-de-laboratorio\n' "$DUENO" > "$CANDADO/pid"
+    ANTES="$(cksum < "$ESTADO_F")"
+    wait "$PU"; RC=$?
+    [ "$RC" = 3 ] && grep -q "otro proceso tomó el candado mientras éste estaba detenido" "$BASE/t10l/u.out" \
+      && ok "T10L la actualización desplazada se va con su motivo (rc $RC)" || mal "T10L rc $RC: $(tail -3 "$BASE/t10l/u.out")"
+    [ "$(cksum < "$ESTADO_F")" = "$ANTES" ] && ok "T10L …sin grabar el estado" || mal "T10L la desplazada grabó el estado"
+    grep -q "otro-token-de-laboratorio" "$CANDADO/pid" 2>/dev/null && ok "T10L …y no soltó el candado del otro" || mal "T10L soltó el candado que ya no era suyo"
+    grep -q "no lo suelto" "$(LOG)" && ok "T10L el registro dice que no lo soltó" || mal "T10L el registro no lo dice: $(tail -3 "$(LOG)" 2>&1)"
+    rm -rf "$CANDADO"
+  else
+    mal "T10L la actualización no llegó al aplicador con el candado tomado: $(cat "$BASE/t10l/u.out")"; wait "$PU" 2>/dev/null
+  fi
 fi
 
 if [ "$FALLOS" = 0 ]; then echo "✅ harness-update: todo verde"; exit 0; fi

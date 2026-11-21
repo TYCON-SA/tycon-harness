@@ -1,0 +1,44 @@
+{
+  "hooks": [
+    {
+      "hook": "finished-open-notice.js (al arrancar, lo terminado sin cerrar de la máquina: la ejecución con todos sus pasos hechos que sigue abierta; nada se cierra solo)",
+      "script": "${TCG}/scripts/hooks/finished-open-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "env": {
+        "TYCON_FINISHED_OPEN_NOW": "2026-10-15T12:00:00Z",
+        "TYCON_UNSAVED_FOLDERS": "0"
+      },
+      "cases": [
+        {
+          "id": "grita-ejecucion-terminada-sin-cerrar",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/active\" && printf '%s' '{\"sessionId\":\"bench-terminada\",\"storyId\":\"9.9\",\"stepScheme\":2,\"stepsCompleted\":[\"start\",\"validate-story\",\"plan\",\"approve-plan\",\"implement\",\"run-tests\",\"reviewers\",\"adversarial-pass\",\"findings\",\"prepare-commit\"],\"stepsPending\":[],\"dodRuntimeChecked\":true,\"deepReviewDone\":true,\"stepTimings\":{\"reviewers\":{\"completedAt\":\"2026-10-15T10:00:00Z\"},\"findings\":{\"completedAt\":\"2026-10-15T10:10:00Z\"},\"prepare-commit\":{\"completedAt\":\"2026-10-15T10:30:00Z\"}},\"lastTouch\":\"2026-10-15T10:30:00Z\"}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/active/bench-terminada.json\""
+          ],
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench"
+          },
+          "expect": {
+            "stdout_re": [
+              "terminado sin cerrar en esta máquina",
+              "story 9\\.9 \\(sesión bench-te\\): terminó hace 1 h 30 min y sigue abierta"
+            ]
+          }
+        },
+        {
+          "id": "quiet-ejecucion-a-mitad-de-camino",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/active\" && printf '%s' '{\"sessionId\":\"bench-encurso\",\"storyId\":\"9.8\",\"stepScheme\":2,\"stepsCompleted\":[\"start\"],\"stepsPending\":[\"implement\",\"prepare-commit\"],\"lastTouch\":\"2026-10-15T10:30:00Z\"}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/active/bench-encurso.json\""
+          ],
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench"
+          }
+        }
+      ]
+    }
+  ]
+}

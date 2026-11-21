@@ -198,7 +198,8 @@ function crearVigia({ imagen, dataDir = null, ahora = Date.now, urlBase = null, 
       if (!enCurso) enCurso = mirarAhora().catch((e) => { log(`la última publicada: falla inesperada (${e && e.message})`); }).finally(() => { enCurso = null; });
       return enCurso;
     },
-    estado: () => (ultimo ? (({ mirado, ...resto }) => (resto.estado === 'no_pudo' ? { estado: resto.estado, motivo: resto.motivo } : resto))(ultimo) : { estado: 'sin_mirar' }),
+    // lo medido lleva cuándo se miró (Arnés lo dice); un «no pudo», sólo el motivo
+    estado: () => (ultimo ? (ultimo.estado === 'no_pudo' ? { estado: ultimo.estado, motivo: ultimo.motivo } : { ...ultimo }) : { estado: 'sin_mirar' }),
   };
 }
 

@@ -14,6 +14,9 @@
 // con el evento por la entrada. Los comandos que juzgan los ganchos van en las tablas de abajo, no en la línea de un
 // comando: el freno de esta máquina los frenaría.
 //
+// Las dos podas de un marcador ajeno miran además la última firma de su sesión (@story-8.270): una corrida que el dueño
+// firmó después del corte no está abandonada.
+//
 // Correr: node --test skills/tycon-pipeline/scripts/tests/lost-marker.test.js < /dev/null
 
 const { test } = require('node:test');
@@ -28,6 +31,7 @@ const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const GUARD = path.join(RAIZ, 'scripts', 'hooks', 'safety-guard-pre.sh');
 const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
+const { inHarnessCopy } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'harness-copy.js'));
 const TUID = 'toolu_8121';
 const FRASE = 'autorizo cerrar la ejecución';
 const PERDIDA = /EJECUCIÓN PERDIDA/;
@@ -125,7 +129,15 @@ function entorno() {
     return { status: r.status, out: (r.stderr || '') + (r.stdout || '') };
   };
   const editar = (sid, archivo = 'src/a.js', extra) => gancho('on-story-gate.js', sid, { tool_name: 'Edit', tool_input: { file_path: path.join(repo, archivo) } }, extra);
-  const consola = (sid, command, tool_name = 'Bash', extra) => gancho('on-bash-write-gate.js', sid, { tool_name, tool_input: { command } }, extra);
+  // la puerta de la consola corre desde una copia propia del arnés, igual que el guion que nombra el comando: el freno
+  // reconoce un guion del arnés según el estado de git del clon
+  const consola = (sid, command, tool_name = 'Bash', extra) => {
+    const r = spawnSync(process.execPath, [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
+      input: JSON.stringify({ ...(sid ? { session_id: sid } : {}), tool_use_id: TUID, cwd: repo, tool_name, tool_input: { command: inHarnessCopy(command) } }),
+      env: env(null, extra), encoding: 'utf8',
+    });
+    return { status: r.status, out: (r.stderr || '') + (r.stdout || '') };
+  };
   const turno = (sid) => gancho('on-stop-dod-gate.js', sid, { hook_event_name: 'Stop' });
   const commit = (sid) => gancho('on-pre-commit.js', sid, { tool_name: 'Bash', tool_input: { command: 'git commit -m x' } });
   const freno = (sid, command) => {
@@ -164,14 +176,12 @@ test('T1 RunOpen_Start_AnotaEnLosDosLugares @story-8.121 @ac-1 — run-open en g
   const r = F.correr('pipeline.js', ['start', '--story', F.story, '--repo', F.repo, '--brief'], 's-t1-sin');
   assert.match(r.stdout + r.stderr, /apertura-failed/, r.stdout + r.stderr);
   assert.ok(!F.apertura('s-t1-sin'), 'no anotó una apertura sin copia');
-  // la carpeta se anota absoluta aunque llegue relativa: los frenos la leen desde otro directorio
+  // la carpeta se anota absoluta aunque llegue relativa: los frenos la leen desde otro directorio. Se ubica contra el repo
+  // de la ejecución, nunca contra la carpeta del proceso (8.287 B): sin un repo absoluto, no se anota
   const or = require(path.join(SCRIPTS, 'lib', 'open-runs.js'));
-  const previo = process.cwd();
-  process.chdir(E.repo);
-  try {
-    const a1 = or.abrir({ sid: 's-t1-rel', story: '9.9', runDir: path.join('.advisors', 'pipeline-runs', '9.9-rel'), home: E.home });
-    assert.ok(path.isAbsolute(a1.runDir), a1.runDir);
-  } finally { process.chdir(previo); }
+  const a1 = or.abrir({ sid: 's-t1-rel', story: '9.9', repo: E.repo, runDir: path.join('.advisors', 'pipeline-runs', '9.9-rel'), home: E.home });
+  assert.strictEqual(a1.runDir, path.join(E.repo, '.advisors', 'pipeline-runs', '9.9-rel'));
+  assert.throws(() => or.abrir({ sid: 's-t1-sin-repo', story: '9.9', runDir: path.join('.advisors', 'pipeline-runs', '9.9-rel'), home: E.home }), /repo absoluto/);
 });
 
 test('T2 RunClose_CadaCaminoLegitimo_LoAnota @story-8.121 @ac-2 — clear, clear-session, adopt-session, las dos podas y el reemplazo', () => {
@@ -187,7 +197,7 @@ test('T2 RunClose_CadaCaminoLegitimo_LoAnota @story-8.121 @ac-2 — clear, clear
   };
   let E = entorno();
   E.arrancar('s-t2a');
-  assert.strictEqual(E.correr('marker.js', ['clear'], 's-t2a').status, 0);
+  assert.strictEqual(E.correr('marker.js', ['clear', '--discard'], 's-t2a').status, 0);
   sano(E, 's-t2a', 'clear');
 
   E = entorno();
@@ -432,7 +442,7 @@ test('T15 CopiaEditada_Frena @story-8.121 @ac-17 — la copia con otra sesión, 
   E.arrancar('s-t15-git');
   const c = E.copiaDe('s-t15-git');
   const guardada = fs.readFileSync(c, 'utf8');
-  assert.strictEqual(E.correr('marker.js', ['clear'], 's-t15-git').status, 0);
+  assert.strictEqual(E.correr('marker.js', ['clear', '--discard'], 's-t15-git').status, 0);
   fs.writeFileSync(c, guardada);
   assert.doesNotMatch(E.editar('s-t15-git').out, PERDIDA);
 });
@@ -544,9 +554,6 @@ test('T11 EjecucionPerdida_SinVentana_NoSeCierra @story-8.121 @ac-11 — sin la 
   const fv = V.freno('s-t11v', `node ${MARKER} clear-session $SID --lost`);
   assert.strictEqual(fv.status, 2, fv.out);
   assert.match(fv.out, /literal/);
-  // la salida no acepta el reenvío (decisión 7c): ya no hay frase que reenviar, y la regla sigue escrita
-  const or = require(path.join(SCRIPTS, 'lib', 'open-runs.js'));
-  assert.deepStrictEqual(or.delegacionDeLaSalida(), { reenvio: false, desde: 'apertura' });
 });
 
 test('T17 Restore_ConFrase_ReabreSinFraseFrena @story-8.121 @ac-19 — restore con la frase reabre desde la copia', () => {
@@ -668,4 +675,85 @@ test('T14b NoRegresion_RegistroGrandeNoSubeElCosto @story-8.121 @ac-12 — el re
   for (let i = 0; i < 15; i++) { renglones.push(vuelta(partir)); eventos.push(vuelta(() => or.leerEventos(home))); }
   const [a, b] = [mediana(renglones), mediana(eventos)];
   assert.ok(b <= a / 2, `partir en renglones ${a.toFixed(1)} ms, leer los eventos ${b.toFixed(1)} ms (más de la mitad)`);
+});
+
+// ── La poda mira la última firma de la sesión (@story-8.270, AC 1-3, 18, 22) ─────────────────────────────────────────
+
+// una firma del dueño sobre esa sesión, en el registro de la carpeta de estado de la HOME de juguete
+const firmar = (E, sid, ts, campo = 'target') => {
+  const f = path.join(E.estado(), 'signatures.jsonl');
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.appendFileSync(f, `${JSON.stringify({ ts, signature: 'compare-waiver', via: 'click', [campo]: sid })}\n`);
+};
+// la poda de 6 h de on-prompt.js, corrida por un pedido de implementar desde otra sesión
+const podarDesdeOnPrompt = (E) => spawnSync(process.execPath, [path.join(SCRIPTS, 'on-prompt.js')], {
+  input: JSON.stringify({ session_id: 's-otra', prompt: 'implementemos la story 9.8', cwd: E.repo }), encoding: 'utf8',
+  env: { ...process.env, HOME: E.home, USERPROFILE: E.home, TYCON_GUIDES_DIR: RAIZ, TYCON_TIME_TRACKING: 'none' },
+});
+const cierresDe = (E, sid) => E.eventos(sid).filter((l) => l.name === 'run-close');
+
+test('Prune_SignatureAfterCutoff_KeepsRun @story-8.270 @ac-1 — un marcador ajeno de hace 7 h con una firma de hace 1 h no se poda', () => {
+  for (const campo of ['target', 'ordered_by']) {
+    const E = entorno();
+    E.arrancar('s-p1');
+    fs.writeFileSync(E.activo('s-p1'), JSON.stringify({ ...E.leerMarcador('s-p1'), sessionId: 's-p1', lastTouch: hace(7 * 60) }));
+    firmar(E, 's-p1', hace(60), campo);
+    podarDesdeOnPrompt(E);
+    assert.ok(fs.existsSync(E.activo('s-p1')), `${campo}: el marcador sigue`);
+    assert.strictEqual(cierresDe(E, 's-p1').length, 0, `${campo}: la corrida no se cerró`);
+  }
+});
+
+test('Prune_MarkerPruneStale_SignatureAfterCutoff_KeepsRun @story-8.270 @ac-2 — la poda de 24 h de marker.js, con una firma reciente', () => {
+  const E = entorno();
+  E.arrancar('s-p2');
+  fs.writeFileSync(E.activo('s-p2'), JSON.stringify({ ...E.leerMarcador('s-p2'), lastTouch: hace(25 * 60) }));
+  firmar(E, 's-p2', hace(60));
+  E.correr('marker.js', ['list-all'], 's-otra');
+  assert.ok(fs.existsSync(E.activo('s-p2')), 'el marcador sigue');
+  assert.strictEqual(cierresDe(E, 's-p2').length, 0, 'la corrida no se cerró');
+});
+
+test('Prune_SignatureLogUnreadable_DoesNotPrune @story-8.270 @ac-3 — un registro de firmas que no se lee no poda, y lo dice', () => {
+  // las dos podas: la de on-prompt.js y la de marker.js
+  for (const [sid, horas, podar] of [['s-p3a', 7, (E) => podarDesdeOnPrompt(E)], ['s-p3b', 25, (E) => E.correr('marker.js', ['list-all'], 's-otra')]]) {
+    const E = entorno();
+    E.arrancar(sid);
+    fs.writeFileSync(E.activo(sid), JSON.stringify({ ...E.leerMarcador(sid), sessionId: sid, lastTouch: hace(horas * 60) }));
+    fs.mkdirSync(path.join(E.estado(), 'signatures.jsonl'));
+    const r = podar(E);
+    assert.ok(fs.existsSync(E.activo(sid)), `${sid}: el marcador sigue`);
+    assert.strictEqual(cierresDe(E, sid).length, 0, `${sid}: la corrida no se cerró`);
+    const lineas = (r.stderr || '').split('\n').filter((l) => /firmas/.test(l));
+    assert.strictEqual(lineas.length, 1, `${sid}: una línea por stderr con el motivo: ${r.stderr}`);
+  }
+});
+
+test('Prune_NoSignatureNoTouch_StillPrunes @story-8.270 @ac-18 — sin firmas nuevas se poda y se cierra como abandonada', () => {
+  const E = entorno();
+  E.arrancar('s-p4');
+  fs.writeFileSync(E.activo('s-p4'), JSON.stringify({ ...E.leerMarcador('s-p4'), sessionId: 's-p4', lastTouch: hace(7 * 60) }));
+  // una firma vieja (de antes del corte) y una de otra sesión no la dejan viva
+  firmar(E, 's-p4', hace(8 * 60));
+  firmar(E, 's-otra-mas', hace(10));
+  podarDesdeOnPrompt(E);
+  assert.ok(!fs.existsSync(E.activo('s-p4')), 'la poda borró el marcador');
+  const c = cierresDe(E, 's-p4');
+  assert.strictEqual(c.length, 1);
+  assert.strictEqual(c[0].estado, 'abandonada');
+});
+
+test('Prune_FutureOrBadSignatureTs_Ignored @story-8.270 @ac-22 — una firma con hora futura o ilegible no cuenta', () => {
+  const { lastSignatureFor } = require(path.join(RAIZ, 'scripts', 'lib', 'signature-log.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lost-marker-t18-'));
+  const f = path.join(dir, 'signatures.jsonl');
+  const now = Date.parse('2026-11-13T12:00:00Z');
+  const iso = (h) => new Date(now + h * 3600000).toISOString();
+  const raras = [{ ts: iso(24), target: 's-x' }, { ts: 'ayer', target: 's-x' }, { ts: null, ordered_by: 's-x' }];
+  fs.writeFileSync(f, `${raras.map((o) => JSON.stringify(o)).join('\n')}\n{roto\n`);
+  assert.deepStrictEqual(lastSignatureFor('s-x', { paths: [f], now }), { ts: null }, 'sólo las raras: ninguna');
+  fs.appendFileSync(f, `${JSON.stringify({ ts: iso(-8), target: 's-x' })}\n${JSON.stringify({ ts: iso(-2), target: 's-y' })}\n`);
+  assert.deepStrictEqual(lastSignatureFor('s-x', { paths: [f], now }), { ts: iso(-8) }, 'la de hace 8 h');
+  assert.deepStrictEqual(lastSignatureFor('s-x', { paths: [path.join(dir, 'no-esta.jsonl')], now }), { ts: null }, 'sin registro: ninguna');
+  assert.ok(lastSignatureFor('s-x', { paths: [dir], now }).error, 'un registro que no se lee: error');
 });

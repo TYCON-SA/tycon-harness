@@ -3,12 +3,14 @@
  * pending-approvals.js — un pendiente nuevo en la lista de pendientes lleva una aprobación firmada.
  *
  * La lista (`tasks/todo.md`) tiene un renglón `- [ ] [CÓDIGO] …` por pendiente abierto, al principio de la línea. Un
- * pendiente abierto vale sólo si su código está en el registro de aprobaciones (`tasks/pending-approvals.jsonl`), y un
- * código va abierto una sola vez. Las líneas son de dos clases:
+ * pendiente abierto vale sólo si su código está en el registro de aprobaciones, y un código va abierto una sola vez. El
+ * registro es `tasks/pending-approvals.jsonl` (la base y las aprobaciones de antes) más un archivo por aprobación nueva en
+ * `tasks/pending-approvals/` (`<CÓDIGO>.<huella>.json`), leídos juntos. Las líneas son de dos clases:
  *   · de base (`via: "base"`): los pendientes que ya estaban abiertos cuando nació el registro. La base sólo se achica:
  *     el commit frena una línea de base nueva, salvo en el commit que crea el registro, y ahí sólo para un pendiente
- *     que ya estaba abierto antes de ese commit.
- *   · firmadas: las escribe `marker.js approve-pending --id <CÓDIGO>` después de la firma `pending-approval` (la
+ *     que ya estaba abierto antes de ese commit. La base la arma `check-pending-approvals.js --create-base`.
+ *   · firmadas: las escribe `marker.js approve-pending --id <CÓDIGO>`, cada una en su archivo de la carpeta, después de
+ *     la firma `pending-approval` (la
  *     coordinadora por la delegación del perfil, o la persona en la ventana de permiso o en su terminal). La huella de
  *     la línea va en el renglón `pending-approval-signed` del registro del arnés de la cuenta.
  * Un renglón abierto sin código no tiene cómo aprobarse: se le pone uno. Los cuatro sin código que ya estaban entran a
@@ -29,12 +31,21 @@
  * `open()` desde un intérprete, no.
  */
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const TODO = 'tasks/todo.md';
 const RECORD = 'tasks/pending-approvals.jsonl';
+// cada aprobación firmada nueva va en su propio archivo de esta carpeta: dos ramas que aprueban a la vez no tocan el
+// mismo archivo, y el merge no choca. El registro es el archivo de antes más los de la carpeta, leídos juntos
+const RECORD_DIR = 'tasks/pending-approvals';
+const ARCHIVO = /^[A-Za-z0-9._-]+\.json$/;
 const FIRMA = 'pending-approval';
 const FIRMADA = `${FIRMA}-signed`;
-const VIAS = ['delegacion', 'ventana', 'terminal'];
+// `click` y `mensaje`: la aprobación explícita de la persona en una pestaña sin permisos, un click en el cuadro de
+// opciones o su «aprobado» escrito (owner-approvals.js). `avisado`: la rutina de una pestaña sin permisos, hecha sin firma
+// y avisada a la persona (owner-window.js `RUTINA_SIN_PERMISOS`)
+const VIAS = ['delegacion', 'ventana', 'terminal', 'click', 'mensaje', 'avisado'];
 // el código de un pendiente: lo que va entre corchetes al principio del renglón
 const CODIGO = /^[A-Za-z0-9._-]+$/;
 // una casilla abierta de primer nivel, con cualquiera de las tres viñetas de markdown; con dos espacios o más adelante es
@@ -79,6 +90,33 @@ function lineaNueva({ id, maquina = null, ahora = Date.now() }) {
   const l = { id: String(id), ts: new Date(ahora).toISOString(), maquina: maquina || null };
   l.huella = huella(l);
   return l;
+}
+
+/** El archivo de la carpeta de una línea firmada: el código y la huella, que no se repiten. */
+const archivoDe = (l) => `${RECORD_DIR}/${l.id}.${l.huella}.json`;
+
+/** ¿La ruta (relativa al repo) es un archivo de aprobación de la carpeta? */
+const esArchivoDeLaCarpeta = (rel) => {
+  const r = String(rel || '').replace(/\\/g, '/');
+  return r.startsWith(`${RECORD_DIR}/`) && ARCHIVO.test(r.slice(RECORD_DIR.length + 1));
+};
+
+/** El registro entero en un solo texto: el archivo de antes y los de la carpeta, en el orden de sus nombres. */
+function unirRegistro(viejo, archivos = []) {
+  const partes = [String(viejo || '').replace(/\n*$/, '')];
+  for (const t of archivos) partes.push(String(t || '').replace(/\n*$/, ''));
+  const texto = partes.filter(Boolean).join('\n');
+  return texto ? `${texto}\n` : '';
+}
+
+/** El registro del disco del repo, unido; null si no hay ni el archivo de antes ni la carpeta. Lanza si no puede leer. */
+function registroDelDisco(repo) {
+  let viejo = null;
+  try { viejo = fs.readFileSync(path.join(repo, RECORD), 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  let nombres = null;
+  try { nombres = fs.readdirSync(path.join(repo, RECORD_DIR)).filter((n) => ARCHIVO.test(n)).sort(); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  if (viejo == null && nombres == null) return null;
+  return unirRegistro(viejo, (nombres || []).map((n) => fs.readFileSync(path.join(repo, RECORD_DIR, n), 'utf8')));
 }
 
 /** Por qué una línea del registro no vale, o null. */
@@ -134,12 +172,24 @@ function renglonesDeFirma(texto) {
  * Lo que trae un commit que no vale: `[{ id, motivo }]`. `antes`/`despues` son el registro en el último commit y en el
  * que se arma; `todoAntes`/`todoDespues`, la lista. Una línea nueva del registro vale firmada con su renglón en
  * `renglones`, o de base sólo en el commit que crea el registro y para un pendiente abierto en `todoAntes`. Cada
- * pendiente que se abre en el commit necesita una línea firmada nueva, válida, con su código.
+ * pendiente que se abre en el commit necesita una línea firmada nueva, válida, con su código. Con `sinFirmaLocal` (la
+ * validación de pedidos del servidor, que no tiene el registro del arnés de la máquina que firmó) la línea firmada vale
+ * con su forma y su huella, sin buscar su renglón: lo demás se mira igual.
+ *
+ * `otrosPadres` (`[{ registro, todo }]`) son los otros padres de un commit de merge: lo que ya estaba en ellos se
+ * revisó en su rama, así que no es nuevo. Una línea del registro que ya estaba en otro padre no se mira, y un pendiente
+ * abierto allí con su línea en ese mismo registro cuenta como abierto antes.
  */
-function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues = '' }) {
+function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues = '', sinFirmaLocal = false, otrosPadres = [] }) {
   const previas = new Set(leerRegistro(antes).lineas.map((x) => x.texto));
   const nacimiento = !leerRegistro(antes).lineas.length;
   const abiertosAntes = new Set(pendientesAbiertos(todoAntes).map((p) => p.clave));
+  for (const o of otrosPadres) {
+    const lineas = leerRegistro(o.registro || '').lineas;
+    for (const x of lineas) previas.add(x.texto);
+    const aprobados = new Set(lineas.filter((x) => !motivoDe(x.valor)).map((x) => x.valor.id));
+    for (const p of pendientesAbiertos(o.todo || '')) if (aprobados.has(p.clave)) abiertosAntes.add(p.clave);
+  }
   const malas = [];
   const firmadasNuevas = new Set();
   for (const x of leerRegistro(despues).lineas) {
@@ -151,7 +201,7 @@ function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues 
     else if (l.via === 'base') {
       if (!nacimiento) malas.push({ id, motivo: 'es una línea de base nueva, y la base sólo se achica' });
       else if (!abiertosAntes.has(id)) malas.push({ id, motivo: 'es una línea de base para un pendiente que no estaba abierto antes de este commit' });
-    } else if (!firmadaEnElRegistro(l, renglones)) malas.push({ id, motivo: `no tiene su renglón ${FIRMADA} en el registro del arnés de esta cuenta (no se firmó en esta máquina)` });
+    } else if (!sinFirmaLocal && !firmadaEnElRegistro(l, renglones)) malas.push({ id, motivo: `no tiene su renglón ${FIRMADA} en el registro del arnés de esta cuenta (no se firmó en esta máquina)` });
     else firmadasNuevas.add(id);
   }
   for (const p of pendientesAbiertos(todoDespues)) {
@@ -162,13 +212,31 @@ function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues 
   return malas;
 }
 
-/** Los comandos que piden la firma de un pendiente: el de la coordinadora (delegación) o la ventana, y el de la terminal. */
-function comandos(id, repo, sesion) {
+/**
+ * El registro con el que nace: una línea de base por cada pendiente abierto en `todoAntes` (la lista del último commit),
+ * más las líneas firmadas que `registro` ya traía para los pendientes que se abrieron después. Lo demás se descarta: la
+ * base vieja (una de un pendiente que ya se cerró el pre-commit la frena), la firma de un pendiente que ya va de base, y
+ * una línea que no vale. `{ texto, base, firmadas, descartadas }`, o `{ error }` si el registro ya nació en `antes` (el
+ * último commit) o tiene renglones que no se leen.
+ */
+function registroDelNacimiento({ antes = '', registro = '', todoAntes = '' }) {
+  if (leerRegistro(antes).lineas.length) return { error: 'el registro ya nació en el último commit: la base sólo se achica, no se rehace' };
+  const r = leerRegistro(registro);
+  if (r.ilegibles.length) return { error: `el registro tiene renglones que no se leen (${r.ilegibles.join(', ')})` };
+  const ids = [];
+  for (const p of pendientesAbiertos(todoAntes)) if (!ids.includes(p.clave)) ids.push(p.clave);
+  const firmadas = r.lineas.filter((x) => !motivoDe(x.valor) && x.valor.via !== 'base' && !ids.includes(x.valor.id));
+  const lineas = [...ids.map((id) => JSON.stringify({ id, via: 'base' })), ...firmadas.map((x) => x.texto)];
+  return { texto: lineas.length ? `${lineas.join('\n')}\n` : '', base: ids.length, firmadas: firmadas.length, descartadas: r.lineas.length - firmadas.length };
+}
+
+/** Los comandos que piden la firma de un pendiente: el de la coordinadora desde su pestaña (o la ventana), y el de la terminal. */
+function comandos(id, repo) {
   const base = `marker.js approve-pending --id ${id}${repo ? ` --repo ${repo}` : ''}`;
-  return [`${base} --for-session ${sesion || '<tu sesión>'}`, `${base} --terminal`];
+  return [base, `${base} --terminal`];
 }
 
 module.exports = {
-  TODO, RECORD, FIRMA, FIRMADA, VIAS, claveSinCodigo, pendientesAbiertos, leerRegistro, huella, lineaNueva, motivoDe,
-  revisar, revisarNuevas, renglonesDeFirma, firmadaEnElRegistro, comandos,
+  TODO, RECORD, RECORD_DIR, FIRMA, FIRMADA, VIAS, archivoDe, esArchivoDeLaCarpeta, unirRegistro, registroDelDisco, claveSinCodigo, pendientesAbiertos, leerRegistro, huella, lineaNueva, motivoDe,
+  revisar, revisarNuevas, renglonesDeFirma, firmadaEnElRegistro, registroDelNacimiento, comandos,
 };

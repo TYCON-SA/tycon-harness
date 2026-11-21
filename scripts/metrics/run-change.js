@@ -98,7 +98,7 @@ try { ({ nombreDeRepo: nombreDeRepoAzure, resolverRemoto } = require('../lib/har
 function git(dir, args, ok) {
   // `--literal-pathspecs`: una ruta con `[`, `*` o `?` (las rutas dinámicas de Next.js, por ejemplo) es un
   // NOMBRE, no un patrón — sin esto, el parche de un archivo se traería el de otros.
-  const r = spawnSync('git', ['-C', dir, '--literal-pathspecs', ...args], { encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
+  const r = spawnSync('git', ['-C', dir, '--literal-pathspecs', ...args], { windowsHide: true, encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
   if (r.error) return { error: r.error.code === 'ENOENT' ? 'git no está instalado en esta máquina' : `git no se pudo ejecutar (${r.error.code || r.error.message})` };
   if (r.status !== 0 && !(ok || []).includes(r.status)) return { error: `git ${args[0]} salió ${r.status}: ${String(r.stderr || '').trim().split('\n')[0] || 'sin detalle'}`, status: r.status };
   return { out: r.stdout, status: r.status };
@@ -324,7 +324,7 @@ function commitsDeLaCorrida(top, v) {
   }
   const commits = [];
   for (const h of shas) {
-    const anc = spawnSync('git', ['-C', top, 'merge-base', '--is-ancestor', h, 'HEAD'], { stdio: 'ignore' });
+    const anc = spawnSync('git', ['-C', top, 'merge-base', '--is-ancestor', h, 'HEAD'], { windowsHide: true, stdio: 'ignore' });
     let alcanzable = anc.status === 0;
     // Cualquier otro final (error del binario, objeto ilegible) también pregunta por las ramas: dar por
     // «no alcanzable» un fallo de git sería perder un commit de la corrida sin decirlo.
@@ -458,20 +458,20 @@ function noMedido(motivo, extra) {
 function armar({ volcado, estado }) {
   let d;
   try { d = JSON.parse(fs.readFileSync(volcado, 'utf8')); } catch (e) {
-    return noMedido(`el volcado de la ejecución no se pudo leer (${e.code || 'no es JSON'}): no se sabe qué repo mirar`);
+    return noMedido(`el registro de la ejecución no se pudo leer (${e.code || 'no es JSON'}): no se sabe qué repo mirar`);
   }
   const m = (d && d.marker) || {};
   if (!sanear) return { version: VERSION, estado: 'no_publicado', motivo: motivoSinSaneado, medido_en: new Date().toISOString() };
-  if (!m.repoPath) return noMedido('el volcado no dice en qué repo corrió (sin repoPath): no se sabe qué mirar');
+  if (!m.repoPath) return noMedido('el registro no dice en qué repo corrió (sin repoPath): no se sabe qué mirar');
   // Una ruta relativa se resolvería contra el cwd de ESTE proceso y se mediría otro repo, publicándolo como el
   // de la corrida. No se adivina.
-  if (!path.isAbsolute(String(m.repoPath))) return noMedido(`el volcado trae una ruta relativa del repo («${sanear(String(m.repoPath))}»): resolverla contra otra carpeta mediría un repo que no es el de la ejecución`);
+  if (!path.isAbsolute(String(m.repoPath))) return noMedido(`el registro trae una ruta relativa del repo («${sanear(String(m.repoPath))}»): resolverla contra otra carpeta mediría un repo que no es el de la ejecución`);
   const ini = Date.parse(m.startedAt || '');
-  if (!Number.isFinite(ini)) return noMedido('el volcado no dice cuándo arrancó la ejecución (sin startedAt): no se puede saber qué commits son suyos');
+  if (!Number.isFinite(ini)) return noMedido('el registro no dice cuándo arrancó la ejecución (sin startedAt): no se puede saber qué commits son suyos');
   const finRaw = Date.parse(d.archivedAt || '');
   const v = { desde: ini - MARGEN_MS, hasta: (Number.isFinite(finRaw) ? finRaw : Date.now()) + MARGEN_MS };
   const ventana = { desde: new Date(v.desde).toISOString(), hasta: new Date(v.hasta).toISOString() };
-  const hayGit = spawnSync('git', ['--version'], { stdio: 'ignore' });
+  const hayGit = spawnSync('git', ['--version'], { windowsHide: true, stdio: 'ignore' });
   if (hayGit.error) return noMedido(`git no está en esta máquina (${hayGit.error.code || hayGit.error.message}): no se puede mirar el cambio`, { ventana });
 
   const cache = new Map();
@@ -498,7 +498,7 @@ function armar({ volcado, estado }) {
   // Otras sesiones que escribieron en estas copias dentro de la ventana. Sin sesión propia no se puede
   // distinguir la de la corrida de las demás: se declara y no se cuenta (contarlas daría un aviso falso).
   const otras = new Map();
-  const otrasMotivo = sid ? null : 'el volcado no trae sesión: no se puede saber si otra sesión escribió en esta copia';
+  const otrasMotivo = sid ? null : 'el registro no trae sesión: no se puede saber si otra sesión escribió en esta copia';
   for (const dirs of [[path.join(estadoDir, 'file-events')], consola]) {
     const fs2 = new Set();
     for (const dir of dirs) {
@@ -575,7 +575,7 @@ function armar({ volcado, estado }) {
   if (salida.length && !medidos.length) {
     return {
       version: VERSION, estado: 'no_medido',
-      motivo: `no se pudo mirar ninguno de los ${salida.length} repo(s) de la ejecución: ${salida.map((r) => `${r.nombre} (${r.motivo || 'sin motivo'})`).join(' · ')}`,
+      motivo: `${salida.length === 1 ? 'no se pudo mirar el repo de la ejecución' : `no se pudo mirar ninguno de los ${salida.length} repos de la ejecución`}: ${salida.map((r) => `${r.nombre} (${r.motivo || 'sin motivo'})`).join(' · ')}`,
       medido_en: new Date().toISOString(), ventana, repos: salida,
     };
   }

@@ -168,10 +168,103 @@ test('@story-waiver-windows vencido el plazo se cierra la ventana (su pid) y no 
     const comillas = W.abrirVentana({ script: 'C:\\a"b\\m.js', spawn: () => { throw new Error('no se tenía que lanzar'); } });
     assert.equal(comillas.estado, 'no-abrio');
     assert.match(comillas.motivo, /no deja pasar entre comillas/);
-    // una barra al final escapa la comilla de cierre y junta dos argumentos: el de adentro recibiría otro comando
-    const barra = W.abrirVentana({ script: 'm.js', args: ['--file', 'C:\\repo\\'], spawn: () => { throw new Error('no se tenía que lanzar'); } });
+    // una barra al final escapa la comilla de cierre y junta dos argumentos: en una ruta, no se lanza
+    const barra = W.abrirVentana({ script: 'C:\\arnes\\', spawn: () => { throw new Error('no se tenía que lanzar'); } });
     assert.equal(barra.estado, 'no-abrio');
   });
+});
+
+/** Lo que `abrirVentana` le pasa a la consola, con una ventana de mentira que llega a arrancar. */
+function abrirConArgs(W, args, opciones = {}) {
+  let visto = null;
+  const r = W.abrirVentana({ script: 'C:\\arnes\\marker.js', args, env: {}, ...opciones, spawn: (cmd, a, o) => {
+    visto = { linea: a.join(' '), env: o.env };
+    fs.writeFileSync(o.env.TYCON_WAIVER_WINDOW_PROCESS_FILE, '4242');
+    return { status: 0 };
+  } });
+  return { r, visto };
+}
+
+test('@story-waiver-windows un argumento con comillas, %, salto de línea o barra final va por el ambiente, nunca por la línea de cmd', () => {
+  conAmbiente(WIN, (W) => {
+    for (const dificil of ['{"reason":"arreglo chico","maxFiles":10}', 'subir al 50%', 'dos\nrenglones', 'C:\\repo\\']) {
+      const { r, visto } = abrirConArgs(W, ['adhoc', 'set', dificil, '--terminal']);
+      assert.deepEqual(r, { estado: 'cerrada', codigo: 0 }, dificil);
+      assert.ok(!visto.linea.includes(dificil), `${dificil}: no pasa por cmd`);
+      assert.ok(!visto.linea.includes('--terminal'), `${dificil}: ningún argumento queda en la línea, para no partir el comando en dos`);
+      assert.match(visto.linea, /start "Firma del waiver" \/wait ".*" "-r" ".*window-args\.js" "C:\\arnes\\marker\.js""?$/);
+      assert.deepEqual(JSON.parse(visto.env.TYCON_WAIVER_WINDOW_ARGS), ['adhoc', 'set', dificil, '--terminal']);
+      assert.equal(visto.env.TYCON_WAIVER_IN_WINDOW, '1');
+    }
+  });
+});
+
+test('@story-waiver-windows sin caracteres difíciles la línea es la de siempre y no hay variable', () => {
+  conAmbiente(WIN, (W) => {
+    const { r, visto } = abrirConArgs(W, ['adhoc', 'set', '--reason', 'con espacios y ñ & ^', '--terminal']);
+    assert.deepEqual(r, { estado: 'cerrada', codigo: 0 });
+    assert.match(visto.linea, /"C:\\arnes\\marker\.js" "adhoc" "set" "--reason" "con espacios y ñ & \^" "--terminal"/);
+    assert.ok(!visto.linea.includes('window-args'));
+    assert.equal(visto.env.TYCON_WAIVER_WINDOW_ARGS, undefined);
+  });
+});
+
+test('@story-waiver-windows lo que no se puede pasar por el ambiente no abre: una ruta, otro programa, demasiado largo', () => {
+  const nunca = () => { throw new Error('no se tenía que lanzar'); };
+  conAmbiente(WIN, (W) => {
+    const ruta = W.abrirVentana({ script: 'C:\\a%b\\m.js', args: ['{"x":1}'], env: {}, spawn: nunca });
+    assert.equal(ruta.estado, 'no-abrio', 'la ruta del guion sigue pasando por la consola');
+    assert.match(ruta.motivo, /no deja pasar entre comillas/);
+    const otro = W.abrirVentana({ programa: 'bash', script: 'm.sh', args: ['{"x":1}'], env: {}, spawn: nunca });
+    assert.equal(otro.estado, 'no-abrio', 'bash no carga window-args.js');
+    assert.match(otro.motivo, /no lo puede leer del ambiente/);
+    const largo = W.abrirVentana({ script: 'm.js', args: [`"${'x'.repeat(33000)}`], env: {}, spawn: nunca });
+    assert.equal(largo.estado, 'no-abrio');
+    assert.match(largo.motivo, /demasiado largos/);
+    assert.equal(W.abrirVentana({ programa: 'C:\\Program Files\\nodejs\\node.exe', script: 'm.js', args: ['{"x":1}'], env: {}, spawn: () => ({ status: 1 }) }).motivo, 'la ventana no llegó a arrancar el comando', 'con la ruta de node sí se intenta');
+  });
+});
+
+/** Corre un guion que imprime lo que recibió, cargado como lo carga la ventana. */
+function conCargador(args, env) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'window-args-'));
+  const guion = path.join(dir, 'guion.js');
+  fs.writeFileSync(guion, "console.log(JSON.stringify({ argv: process.argv.slice(1), variable: process.env.TYCON_WAIVER_WINDOW_ARGS === undefined ? null : process.env.TYCON_WAIVER_WINDOW_ARGS, principal: require.main === module }));\n");
+  const limpio = { ...process.env };
+  delete limpio.TYCON_WAIVER_IN_WINDOW;
+  delete limpio.TYCON_WAIVER_WINDOW_ARGS;
+  const r = spawnSync(process.execPath, ['-r', path.join(SCRIPTS, 'lib', 'window-args.js'), guion, ...args], { encoding: 'utf8', env: { ...limpio, ...env } });
+  return { r, guion, dir };
+}
+
+test('@story-waiver-windows dentro de la ventana el guion recibe los argumentos intactos, como si vinieran en la línea', () => {
+  const dificiles = ['adhoc', 'set', '{"reason":"50% de \\"todo\\" & ^ ñ","maxFiles":10}', 'dos\nrenglones', 'C:\\repo\\', '--terminal'];
+  const { r, guion, dir } = conCargador([], { TYCON_WAIVER_IN_WINDOW: '1', TYCON_WAIVER_WINDOW_ARGS: JSON.stringify(dificiles) });
+  assert.equal(r.status, 0, r.stderr);
+  const o = JSON.parse(r.stdout);
+  assert.deepEqual(o.argv, [guion, ...dificiles]);
+  assert.equal(o.variable, null, 'un proceso hijo no la hereda');
+  assert.equal(o.principal, true, 'el guion sigue siendo el programa principal');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('@story-waiver-windows sin la marca de la ventana la variable no agrega nada, y se borra igual', () => {
+  const { r, guion, dir } = conCargador(['propio'], { TYCON_WAIVER_WINDOW_ARGS: JSON.stringify(['otro']) });
+  assert.equal(r.status, 0, r.stderr);
+  const o = JSON.parse(r.stdout);
+  assert.deepEqual(o.argv, [guion, 'propio']);
+  assert.equal(o.variable, null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('@story-waiver-windows unos argumentos que no se pueden leer cortan: el guion no corre con otro comando', () => {
+  for (const malo of ['{roto', '{"no":"lista"}', '[1,2]']) {
+    const { r, dir } = conCargador([], { TYCON_WAIVER_IN_WINDOW: '1', TYCON_WAIVER_WINDOW_ARGS: malo });
+    assert.equal(r.status, 2, `${malo}: ${r.stdout}`);
+    assert.equal(r.stdout, '', `${malo}: el guion no llegó a correr`);
+    assert.match(r.stderr, /no se firmó nada/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('@story-waiver-windows los programas del sistema salen de su ruta fija, no de SystemRoot', () => {

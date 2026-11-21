@@ -265,39 +265,30 @@ correr
 [ "$(etiquetas)" = "PR-72 " ] && ok "sin commit de versión del bot: cae a HEAD~1 (sólo PR-72)…" || no "sin commit del bot: [$(etiquetas)]"
 printf '%s\n' "$ERR" | grep "HEAD~1" >/dev/null && ok "…y lo dice" || no "no dijo que cayó a HEAD~1: $ERR"
 
-# ---------------------------------------------------------------- T20. el skill fija el mensaje de merge
-SKILLS="${TYCON_SKILLS_DIR:-$HOME/.claude/agent-skills/skills}"
-PASO="$SKILLS/tycon-merge-to-main/steps/step-09b-create-pr.md"
+# ---------------------------------------------------------------- T20. el conector de Azure fija el mensaje de merge
+# El paso del merge abre el pedido por la capa de plataforma; la secuencia de `az repos pr` vive en el conector de Azure
+# DevOps. Su comportamiento lo prueba scripts/tests/platform-change-request.test.js; acá, que la capa 1 siga escrita ahí.
+PASO="$AQUI/integrations/azure-devops/scripts/change-requests.js"
 if [ ! -f "$PASO" ]; then
-  no "NO MEDIDO: no encontré $PASO (TYCON_SKILLS_DIR) — sin el skill no se puede verificar la capa 1"
+  no "NO MEDIDO: no encontré $PASO — sin el conector no se puede verificar la capa 1"
 else
-  PISTA="el skill no tiene el update de la story 2.17 con sus cuatro opciones: mergeá agent-skills ANTES que el arnés, o corré esta suite con TYCON_SKILLS_DIR apuntando al clon donde está el cambio"
-  # 🔴 `--delete-source-branch` se verifica PRESENTE, no fijo en `false`. El valor sale de `$BORRAR_SOURCE`, que es
-  # `false` para dev↔main y `true` para una rama de un solo uso. Anclar el literal dejaría la suite roja
-  # ante un cambio legítimo del skill; lo que importa es que la opción VIAJE en el update (el `--squash false` del
-  # create no llega, medido con un pull request de prueba), no su valor.
-  DSB='--delete-source-branch ("?\$BORRAR_SOURCE"?|false|true)'
-  S93=$(awk '/^### 9b\.3/{f=1} /^### 9b\.4/{f=0} f' "$PASO")
-  S92=$(awk '/^### 9b\.2/{f=1} /^### 9b\.3/{f=0} f' "$PASO")
-  UPD93=$(printf '%s\n' "$S93" | awk '/az repos pr update/{f=1} f{print} f&&!/\\$/{f=0}')
-  { printf '%s' "$UPD93" | grep -- "--merge-commit-message" >/dev/null && printf '%s' "$UPD93" | grep -- "--auto-complete true" >/dev/null \
-    && printf '%s' "$UPD93" | grep -- "--squash false" >/dev/null && printf '%s' "$UPD93" | grep -E -- "$DSB" >/dev/null; } \
-    && ok "skill 9b.3: después de crear, un update fija el mensaje con las cuatro opciones juntas" \
-    || no "skill 9b.3 sin el update con --merge-commit-message y las cuatro opciones — $PISTA"
-  UPD92=$(printf '%s\n' "$S92" | awk '/az repos pr update/{f=1} f{print} f&&!/\\$/{f=0}')
-  { printf '%s' "$UPD92" | grep -- "--title" >/dev/null && printf '%s' "$UPD92" | grep -- "--merge-commit-message" >/dev/null \
-    && printf '%s' "$UPD92" | grep -E -- "$DSB" >/dev/null; } \
-    && ok "skill 9b.2: el update del PR reusado alinea título, descripción y mensaje" \
-    || no "skill 9b.2 sin --title / --merge-commit-message / --delete-source-branch — $PISTA"
-  { grep -q "Merged PR" "$PASO" && grep -q 'merge: <source> -> <target>' "$PASO" && grep -qF '[skip ci]' "$PASO" && grep -qF '***NO_CI***' "$PASO"; } \
-    && ok "skill: arma «Merged PR <id>: <asunto>» sin el prefijo del Step 2 y sin marcadores de salteo de CI" \
-    || no "skill: falta el armado del mensaje (prefijo o marcadores de salteo) — $PISTA"
-  { grep -q "sin mensaje de merge" "$PASO" && grep -q "completionOptions" "$PASO"; } \
-    && ok "skill: la falla del update no aborta y se verifica antes de reportar" \
-    || no "skill: falta la rama de falla o la verificación con completionOptions — $PISTA"
-  { grep -q "completionOptions: null" "$PASO" && grep -qi "no viajaba\|no llega\|no llegaba" "$PASO"; } \
-    && ok "skill: documenta la prueba (completionOptions: null) y que el --squash false del create no viajaba" \
-    || no "skill: no documenta la evidencia (completionOptions: null / --squash false del create) — $PISTA"
+  UPD=$(grep -n -- "'--merge-commit-message'" "$PASO")
+  { printf '%s' "$UPD" | grep -F -- "'--auto-complete', 'true'" >/dev/null && printf '%s' "$UPD" | grep -F -- "'--squash', 'false'" >/dev/null \
+    && printf '%s' "$UPD" | grep -F -- "'--delete-source-branch'" >/dev/null; } \
+    && ok "conector: el update fija el mensaje con las cuatro opciones juntas" \
+    || no "conector sin el update con --merge-commit-message y las cuatro opciones"
+  grep -F -- "'--title'" "$PASO" >/dev/null \
+    && ok "conector: el update del pedido reusado alinea título y texto" \
+    || no "conector: el update del pedido reusado no lleva --title"
+  { grep -q 'Merged PR \${id}: \${asunto(texto)}' "$PASO" && grep -q 'merge: ' "$PASO" && grep -qF 'skip ci' "$PASO" && grep -qF 'NO_CI' "$PASO"; } \
+    && ok "conector: arma «Merged PR <id>: <asunto>» sin el prefijo del Step 2 y sin marcadores de salteo de CI" \
+    || no "conector: falta el armado del mensaje (prefijo o marcadores de salteo)"
+  { grep -q "completionOptions" "$PASO" && grep -q "sin auto-completar" "$PASO"; } \
+    && ok "conector: verifica el auto-completar releyendo el pedido antes de dar el resultado" \
+    || no "conector: falta la verificación con completionOptions"
+  { grep -q "completionOptions: null" "$PASO" && grep -q "no viaja" "$PASO"; } \
+    && ok "conector: documenta la prueba (completionOptions: null) y que el --squash false del create no viaja" \
+    || no "conector: no documenta la evidencia (completionOptions: null / --squash false del create)"
 fi
 
 # ---------------------------------------------------------------- T22. registro

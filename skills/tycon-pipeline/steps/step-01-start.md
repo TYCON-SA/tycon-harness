@@ -28,16 +28,41 @@ horas. Mostrar la alerta (sesión, fecha de arranque, último toque, repo, pasos
   (`mem_search project="<proyecto>" query="Story X.Y.Z session_summary"`), mirar `git status`, adoptar el marcador con
   `marker.js adopt-session <sessionId>` (copia completa) y seguir desde el primer paso pendiente.
 - **(b) Limpiar** (la otra sesión murió): `marker.js clear-session <sessionId>` y arrancar de nuevo.
-- **(c) Paralelo intencional** (raro; implica ramas distintas): dejarlo escrito en engram, poner `notes='paralelo
-  intencional con <sessionId>'` en el marcador y seguir.
+- **(c) Trabajarla en paralelo**: en otra copia del repo (otro clon o worktree) y en otra rama. Desde ahí, `start` no
+  pausa: mira la raíz y la rama de la otra sesión, y si las dos son distintas sigue, lo dice en `actions_done` y anota
+  `parallelWith` (la sesión y la rama de la otra) en el marcador. La misma copia, o la misma rama en otra copia, pausa
+  como siempre; si no puede leer la rama de la otra sesión (su copia ya no está, o no tiene git), pausa y lo dice.
 - **Cancelar**: terminar el pipeline.
+
+**Una corrida, una carpeta**: `start` crea la carpeta de la corrida (`.advisors/pipeline-runs/<clave>-<sello>/`) aunque
+la story ya tenga otras (otra tanda, o la story reabierta), y la anota en el marcador (`runDir`). Lo que pide la carpeta
+de esa story (`write-findings`, `run-dir`, el registro de revisores, el cruce del commit, `marker.js clear`) recibe la del
+marcador, y la constancia de una corrida anterior no se pisa. Re-correr `start` sobre la misma story en la misma sesión
+reusa su carpeta y no pausa por PIPE-C5. Si no puede crear la carpeta (sin clave calculable o sin permiso de escritura),
+pausa sin escribir el marcador.
 
 **Stories DISTINTAS en paralelo sobre el mismo repo**: PIPE-C0 no las detecta (compara por id de story) y el árbol
 compartido las contamina: un solo HEAD, el `git diff HEAD` arma mal el set de revisores y `.advisors/tests-result.json`
-es único por repo. Regla del equipo: **un worktree por story**. Si `marker.js list-all` muestra otro pipeline activo
-sobre este `repoPath`, crear el worktree (`~/.claude/tycon-harness/scripts/tools/tycon-worktree.sh new <slug>`) y correr
-el pipeline DESDE ahí. Los recursos suman por máquina: una suite completa a la vez y el segundo pipeline con
-`TYCON_5B_EARLY=0` (`step-06-run-tests.md` §Riesgo multi-sesión). Detalle: `~/.claude/tycon-harness/guides/git-worktrees.md`.
+es único por repo. Por eso **`start` lo resuelve solo (PIPE-C10)**: si hay otra sesión viva en este
+checkout (su transcripción, un subagente suyo o su corrida abierta), no hay coordinadora viva y el repo no es el arnés
+ni `agent-skills`, crea la copia de trabajo de la historia (`<principal>--wt-<clave>`, rama `wt/<clave>`, desde
+`origin/main` o desde `HEAD`) y deja el marcador y la carpeta de la corrida allá. La salida trae `work_copy`
+(`path`, `branch`, `base`, `because`, `checklist`). Cuando la trae:
+
+1. Pasá la sesión a la copia: cada comando con `cd <copia> && …` y cada archivo por su ruta absoluta en la copia. No
+   uses `EnterWorktree`: sólo entra a `.claude/worktrees/` del mismo repo, y la copia es hermana, afuera. Nunca vuelvas
+   a escribir en el checkout compartido.
+2. Decíselo a la persona en una línea, con la ruta y la rama de la copia.
+3. Hacé lo del `checklist` (instalar dependencias, los `.env` sin trackear) y seguí el pipeline desde ahí.
+
+Con la historia sin commitear, `start` pausa con `PIPE-C10-own-copy` sin tocar nada: commiteala en su rama y volvé a
+correr `start`, o coordiná con la otra sesión. La misma pausa sale si traer main o crear la copia falla (con el primer
+renglón del error). Si `start` se repite desde el checkout, sigue en la copia que la sesión ya abrió para esa historia
+(`work_copy.created: false`). En el arnés y en `agent-skills` no crea copia: `warnings` dice que una sola sesión toca
+git a la vez; con coordinadora viva tampoco, porque ella decide dónde trabaja cada sesión, y en un repo sin `origin`
+tampoco, porque no hay main que traer. Los recursos suman por máquina: una
+suite completa a la vez y el segundo pipeline con `TYCON_5B_EARLY=0` (`step-06-run-tests.md` §Riesgo multi-sesión).
+Detalle: `~/.claude/tycon-harness/guides/git-worktrees.md`.
 
 ### PIPE-C1 — rama protegida (CRITICAL, bloquea)
 
@@ -77,8 +102,8 @@ frontmatter (`git log`) y ofrecer: **retomar** (resumen de engram, `git status`,
   vigente, sólo se pierde la detección entre sesiones.
 - **PIPE-C6 — modo autónomo** (viene PRENDIDO; se apaga con `--no-autonomous` o `TYCON_PIPELINE_NO_AUTONOMOUS=1`, que
   gana sobre cualquier flag): el Stop-hook no deja terminar el turno con un control mecánico registrado en rojo
-  (build, tests, revisores, DoD), lo que fuerza el ciclo prueba-arreglo-prueba. Frenos: 6 iteraciones y 3 vueltas sin
-  avance escalan a la persona; pánico: `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY` (o `STOP_AUTONOMY=1`). NO
+  (build, tests, revisores, DoD), lo que fuerza el ciclo prueba-arreglo-prueba. Frenos: 6 iteraciones, o la primera
+  vuelta que no resuelve ninguno de los fallos de la anterior, escalan a la persona con el rojo tal cual; pánico: `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY` (o `STOP_AUTONOMY=1`). NO
   automatiza lo que decide una persona: aprobar el plan, aprobar o eximir hallazgos, `git commit`, `git push` ni un
   cambio de alcance firmado. Si `marker.js set-autonomous true` falla, avisar y seguir en modo con persona.
 - **Tamaño de la ejecución**: `start --brief` trae `tamano`, `tamano_por`, `estimado_min` y `estimado_de` (liviana =
@@ -124,10 +149,9 @@ de razonamiento (un renombre de 20 archivos es grande pero mecánico): si el hin
 ## Lo que falta antes de arrancar: AVISAR
 
 Si la salida de `start` trae `missing_before_start`, se le dice a la persona antes de seguir, una línea por cosa: qué
-falta (`falta`), qué hace el pipeline sin eso (`sin_eso`) y cómo se instala (`como`). Son tres: el programa de la
-plataforma del pedido de trabajo, la configuración de BMAD del repo y el servidor MCP de la herramienta de horas. No
-frena: la parte que no puede correr se declara con `start-warning` cuando le toca, y el plan sin BMAD lo arma el
-orquestador. Sin la clave, no se dice nada.
+falta (`falta`), qué hace el pipeline sin eso (`sin_eso`) y cómo se instala (`como`). Son dos: el programa de la
+plataforma del pedido de trabajo y el servidor MCP de la herramienta de horas. No frena: la parte que no puede correr se
+declara con `start-warning` cuando le toca. Sin la clave, no se dice nada.
 
 ## PIPE-C9 — tooling esperado no disponible: AVISAR
 
@@ -158,6 +182,28 @@ El resultado de los chequeos (`branch`, `branch_guard_passed`, `cross_session_pa
 `had_main_override`, `status_set_to_in_progress`, `other_active_sessions`, `autonomous`) es sólo eso: lo que sigue es
 parte de este paso. Se pasa a «Validar la historia» sólo con `branch_guard_passed: true` (o `had_main_override: true`
 con confirmación explícita) Y `cross_session_passed: true` (o la opción b/c de PIPE-C0).
+
+**En una historia paraguas** (varias tandas en `pipelines`), la ejecución que entrega UNA tanda arranca con ella:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js start --story <abs story.md> --repo <repo> --batch <nombre de la tanda> --brief
+```
+
+`start --batch` valida la tanda antes de tocar nada (que exista, que no esté `done`, sin nombres repetidos) y la anota
+después del marcador. Una paraguas `in-progress` no pausa como abandonada: otra tanda la arrancó antes. Otra sesión
+sobre la misma historia sólo choca si entrega la misma tanda, o si no anotó ninguna. La misma sesión que lo corre otra
+vez: con la misma tanda no cambia nada, con otra pausa, y sin tanda anotada la anota. Si la tanda no se pudo anotar,
+`start` sale 1 con el comando a mano; hasta anotarla, la matriz mide todas las tandas.
+
+Desde ahí «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. Una ejecución que arrancó sin
+`--batch` la anota a mano, una vez:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-batch <nombre de la tanda>
+```
+
+El mismo nombre otra vez no cambia nada, y otro nombre o `--clear` se niegan. Una tanda mal anotada se arregla con otra
+ejecución (`marker.js clear` y arrancar de nuevo). Una tanda `done` no se anota. `marker.js set` no escribe la tanda.
 
 ## 🔀 Las partes opcionales corren MIENTRAS el validador ya está en vuelo
 
@@ -224,8 +270,8 @@ plataforma (`scripts/lib/platform/platform.js`), y la plataforma la elige el per
 **El id**, con el lector común (lee `work_item:` y su nombre viejo `ado_work_item:`, que se sigue leyendo):
 `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js get <story_path>` (sale 3 si no tiene).
 
-**Dónde vive**: `.tycon/work-items.yaml` del repo (o `.tycon/ado-config.yaml`, el nombre viejo, que se sigue leyendo;
-con los dos gana el nuevo); si no, `ado.org` de la configuración del arnés (lee `TYCON_ADO_ORG`, `~/.claude/tycon.json`
+**Dónde vive**: `.tycon/work-items.yaml` del repo (o el archivo de nombre viejo de Azure DevOps, que se sigue leyendo:
+`guides/integrations/ado-projects.md`; con los dos gana el nuevo); si no, `ado.org` de la configuración del arnés (lee `TYCON_ADO_ORG`, `~/.claude/tycon.json`
 y el perfil del equipo, en ese orden; exit 2 = configuración rota, que se dice con archivo, clave y motivo) y el
 proyecto de `TYCON_ADO_PROJECT`. Overrides en ese archivo: `state_active`, `state_closed` (lo usa `close-work-item.md`)
 y `auto_assign: true`.
@@ -247,10 +293,7 @@ lo resuelve `close-work-item.md` al cerrar. Nunca en silencio: una línea que di
    ```
    Otro `connector`, u `ok: false` → una línea («la historia no tiene pedido de trabajo (`work_item:`); se crea con la
    skill de creación o al cerrar», o el `detail`) y seguir. Con `azure-devops`:
-   ```bash
-   az boards query --organization <ado_org> --project <ado_project> --output json \
-     --wiql "SELECT [System.Id], [System.Title], [System.State] FROM workitems WHERE [System.TeamProject] = '<ado_project>' AND [System.Title] CONTAINS '<story_id>'"
-   ```
+   la búsqueda por título de `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`, §«El Arranque».
    Un match único → proponer «Encontré el pedido #{id} '{title}' que parece corresponder a esta story. ¿Agrego
    `work_item: {id}` al frontmatter y lo paso a activo?»; si confirma, escribirlo con
    `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js set <story_path> {id}` y seguir. Varios →
@@ -270,7 +313,7 @@ lo resuelve `close-work-item.md` al cerrar. Nunca en silencio: una línea que di
    (`pedido de trabajo #{id} en <plataforma>: {previo} → {estado}`). Si se salteó: una línea contextual o nada.
 
 **Si falla** (`ok: false`: sin plataforma elegida, sin credencial —con Azure DevOps, la sesión de `az` venció: `az
-login` o renovar `AZURE_DEVOPS_EXT_PAT`—, pedido no encontrado, la plataforma lo rechazó):
+login` o renovar el permiso de su CLI—, pedido no encontrado, la plataforma lo rechazó):
 mostrar el `summary` en UNA línea (dice qué falta y cómo ponerlo),
 `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js start-warning ado "<motivo>"` y seguir. No frena el
 pipeline: la implementación no depende de la plataforma (a diferencia del build gate de `step-05-implement.md`).

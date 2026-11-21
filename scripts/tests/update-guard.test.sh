@@ -43,7 +43,8 @@ TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 # los permisos de un archivo, en macOS (stat -f) y en Linux (stat -c), donde corre la CI pública
 #   (primero la de Linux: en macOS falla sin imprimir nada; al revés, en Linux `stat -f` imprime aunque falle)
 modo(){ [ "$1" = -- ] && shift; stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null; }
-foto(){ ( cd "$1" 2>/dev/null && find . \( -type f -o -type l \) -print0 | sort -z | xargs -0 shasum 2>/dev/null; find . -print | sort ) | shasum | cut -d' ' -f1; }
+# sin el registro de actualizaciones: cada intento fallido deja su renglón ahí
+foto(){ ( cd "$1" 2>/dev/null && find . \( -type f -o -type l \) ! -name update-log.jsonl -print0 | sort -z | xargs -0 shasum 2>/dev/null; find . ! -name update-log.jsonl -print | sort ) | shasum | cut -d' ' -f1; }
 
 # ── la versión bajada: un repo que sirve el «GitHub» de juguete y una ~/.tycon/harness con su manifiesto ────────────────
 CASA="$TMP/casa"; ARNES="$CASA/.tycon/harness"; ESTADO="$CASA/.tycon/state/harness-state.json"
@@ -381,6 +382,173 @@ perfil auto
 if [ -f "$PLANTILLA" ] && grep -q '^__USER__ ALL=(root) NOPASSWD: /opt/tycon/setup/update-guard.sh ""$' "$PLANTILLA" && ! grep -v '^#' "$PLANTILLA" | grep '\*' >/dev/null; then
   ok "T37b · la plantilla deja correr sólo /opt/tycon/setup/update-guard.sh, sin argumentos ni comodines"
 else no "T37b · la plantilla no es la esperada: $(cat "$PLANTILLA" 2>&1 | tr '\n' ' ')"; fi
+
+# ── el ensayo antes de reemplazar y un renglón por cada falla ────────────────────────────────────────────────────────
+# Cada versión rota se publica, se baja y se intenta instalar sin contraseña. «/opt igual» = la misma foto de la raíz
+# falsa sin el registro de actualizaciones, que es justo lo que la falla escribe.
+REGISTRO="$SYS/opt/tycon/production/update-log.jsonl"
+foto_sin_registro(){ ( cd "$1" 2>/dev/null && find . \( -type f -o -type l \) ! -name update-log.jsonl -print0 | sort -z | xargs -0 shasum 2>/dev/null; find . ! -name update-log.jsonl -print | sort ) | shasum | cut -d' ' -f1; }
+ultimo(){ python3 -c 'import json,sys
+l=[x for x in open(sys.argv[1]).read().splitlines() if x.strip()]
+r=json.loads(l[-1]) if l else {}
+print(sys.argv[2] in r and str(r[sys.argv[2]]) or "")' "$REGISTRO" "$1" 2>/dev/null; }
+renglones(){ [ -f "$REGISTRO" ] && grep -c . "$REGISTRO" || echo 0; }
+# el instalador de root de la raíz falsa en su modo --auto-update, como lo corre update-guard.sh, con el tope del
+# ensayo corto (sólo en pruebas: con sudo el entorno viene vacío)
+auto(){
+  /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$CASA" TYCON_PROD_ROOT="$SYS" TYCON_PROD_HARNESS="$ARNES" TYCON_PROD_STATE="$ESTADO" \
+    TYCON_RELEASE_API="$API" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_TEST_PATH="$TEST_PATH" TYCON_PROD_REHEARSAL_TIMEOUT="${TIMEOUT_ENSAYO:-30}" \
+    /bin/bash -p "$SETUP/install-guard.sh" --no-sudo --auto-update >"$TMP/upd.out" 2>&1
+}
+FRENO_BUENO="$TMP/freno-bueno.js"; cp "$AQUI/scripts/hooks/prod-access-guard.js" "$FRENO_BUENO"
+# publica una versión con el freno de la forma pedida: $1 = syntax (no compila) | library (le falta una biblioteca) |
+# timeout (no contesta) | allow-all (deja pasar todo) | block-ls (frena todo) | good (sano)
+freno_que(){
+  case "$1" in
+    syntax)    { cat "$FRENO_BUENO"; printf '\n)(\n'; } > "$SRC/scripts/hooks/prod-access-guard.js" ;;
+    library)   { head -1 "$FRENO_BUENO"; printf "require('../lib/no-esta.js');\n"; tail -n +2 "$FRENO_BUENO"; } > "$SRC/scripts/hooks/prod-access-guard.js" ;;
+    timeout)   { head -1 "$FRENO_BUENO"; printf 'setInterval(() => {}, 1000); return;\n'; tail -n +2 "$FRENO_BUENO"; } > "$SRC/scripts/hooks/prod-access-guard.js" ;;
+    allow-all) { head -1 "$FRENO_BUENO"; printf 'process.exit(0);\n'; tail -n +2 "$FRENO_BUENO"; } > "$SRC/scripts/hooks/prod-access-guard.js" ;;
+    block-ls)  { head -1 "$FRENO_BUENO"; printf 'process.exit(2);\n'; tail -n +2 "$FRENO_BUENO"; } > "$SRC/scripts/hooks/prod-access-guard.js" ;;
+    good)      { cat "$FRENO_BUENO"; printf '\n// versión %s\n' "$RANDOM"; } > "$SRC/scripts/hooks/prod-access-guard.js" ;;
+  esac
+  G add -A >/dev/null; G commit -q -m "freno $1" >/dev/null; git -C "$SRC" push -q "$BARE" main 2>/dev/null; bajar
+}
+# la máquina de partida: el permiso y la versión de hoy, instalados con contraseña
+rm -rf "$SYS"; perfil auto; freno_que good
+inst --allow-auto-update || no "8.187 · no pude preparar la raíz falsa: $(grep '⛔' "$TMP/inst.out" | head -1)"
+NODO_REAL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$(PATH="$TEST_PATH" command -v node)")"
+corre_freno(){ # $1 = carpeta de /opt/tycon, $2 = comando → el código con que sale el freno instalado ahí
+  local ev; ev="$(python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":sys.argv[1]},"session_id":"prueba","cwd":sys.argv[2]}))' "$2" "$TMP")"
+  mkdir -p "$TMP/casa-vacia"
+  printf '%s' "$ev" | ( cd "$TMP" && /usr/bin/env -i HOME="$TMP/casa-vacia" PATH=/usr/bin:/bin "$NODO_REAL" "$1/hooks/prod-access-guard.js" >/dev/null 2>&1 ); echo $?
+}
+
+# ── T22 · AutoUpdate_Ensayo_FrenoRoto_NoTocaOpt ──────────────────────────────────────────────────────────────────────
+for roto in syntax library timeout; do
+  freno_que "$roto"; F1="$(foto_sin_registro "$SYS")"
+  TIMEOUT_ENSAYO=3 auto; rc=$?
+  if [ "$rc" != 0 ] && [ "$(foto_sin_registro "$SYS")" = "$F1" ] && [ "$(ultimo status)" = failed ] && ultimo reason | grep -i "ensayo" >/dev/null; then
+    ok "T22 · un freno con $roto no se instala: /opt igual y el motivo anotado ($(ultimo reason | cut -c1-90))"
+  else no "T22 · freno con $roto: rc=$rc, último renglón «$(tail -1 "$REGISTRO" 2>/dev/null | cut -c1-200)» — $(salida)"; fi
+done
+
+# ── T23 · AutoUpdate_Ensayo_DejaPasarTodo_NoTocaOpt ──────────────────────────────────────────────────────────────────
+freno_que allow-all; F1="$(foto_sin_registro "$SYS")"
+auto; rc=$?
+if [ "$rc" != 0 ] && [ "$(foto_sin_registro "$SYS")" = "$F1" ] && ultimo reason | grep "sqlcmd" >/dev/null; then ok "T23 · un freno que deja pasar todo no se instala: el comando de base no frenó"
+else no "T23 · freno que deja pasar todo: rc=$rc — $(salida)"; fi
+
+# ── T30 · AutoUpdate_Ensayo_FrenaElComun_NoInstala_DaSalida ──────────────────────────────────────────────────────────
+freno_que block-ls; F1="$(foto_sin_registro "$SYS")"
+auto; rc=$?
+aviso30="$(TYCON_PROD_ROOT="$SYS" TYCON_GUIDES_DIR="$ARNES" node -e 'const a = require(process.argv[1]).avisos({ raiz: process.argv[2], arnes: process.argv[3] }); process.stdout.write(a.join("\n"))' "$AVISO" "$SYS" "$ARNES" 2>&1)"
+if [ "$rc" != 0 ] && [ "$(foto_sin_registro "$SYS")" = "$F1" ] && ultimo reason | grep " ls" >/dev/null && printf '%s' "$aviso30" | grep "sudo bash" >/dev/null; then
+  ok "T30 · un freno que frena el comando común no se instala, y el aviso trae el comando con contraseña"
+else no "T30 · freno que frena ls: rc=$rc, aviso «${aviso30}» — $(salida)"; fi
+
+# ── T24 · AutoUpdate_CadaFalla_DejaSuRenglon ─────────────────────────────────────────────────────────────────────────
+sin_to(){ python3 -c 'import json,sys
+r=json.loads([x for x in open(sys.argv[1]).read().splitlines() if x.strip()][-1])
+sys.exit(0 if r.get("status")=="failed" and "to_version" not in r and r.get("reason") and r.get("at") and "attempted_version" in r else 1)' "$REGISTRO"; }
+freno_que good
+API_BIEN="$API"; API="http://127.0.0.1:9"; auto; rc=$?; API="$API_BIEN"
+[ "$rc" != 0 ] && sin_to && ok "T24 · sin red: un renglón failed sin to_version" || no "T24 · sin red: rc=$rc, «$(tail -1 "$REGISTRO" | cut -c1-200)»"
+# el registro no se puede escribir (una carpeta en su lugar): sale con error y lo dice por su salida
+cp "$REGISTRO" "$TMP/registro24.jsonl"; rm -f "$REGISTRO"; mkdir "$REGISTRO"
+API_BIEN="$API"; API="http://127.0.0.1:9"; auto; rc=$?; API="$API_BIEN"
+rmdir "$REGISTRO"; cp "$TMP/registro24.jsonl" "$REGISTRO"
+[ "$rc" != 0 ] && grep "no pude anotar la falla" "$TMP/upd.out" >/dev/null && ! grep "Traceback" "$TMP/upd.out" >/dev/null && ok "T24 · sin poder escribir el registro: sale con error y lo dice, sin una traza" || no "T24 · registro no escribible: rc=$rc — $(tail -3 "$TMP/upd.out" | tr '\n' ' ')"
+cp "$ARNES/scripts/hooks/prod-access-guard.js" "$TMP/guarda24.js"; printf 'X' >> "$ARNES/scripts/hooks/prod-access-guard.js"
+auto; rc=$?
+[ "$rc" != 0 ] && sin_to && ultimo reason | grep "publicada" >/dev/null && ok "T24 · byte cambiado: su renglón" || no "T24 · byte cambiado: rc=$rc, «$(tail -1 "$REGISTRO" | cut -c1-200)»"
+antes="$(renglones)"; auto
+[ "$(renglones)" = "$antes" ] && ok "T24 · la misma versión con el mismo motivo no agrega otro renglón" || no "T24 · el repetido agregó un renglón ($antes → $(renglones))"
+cp "$TMP/guarda24.js" "$ARNES/scripts/hooks/prod-access-guard.js"
+cp "$SRC/scripts/production/install-guard.sh" "$TMP/instalador24.sh"; printf '\n# otro instalador\n' >> "$SRC/scripts/production/install-guard.sh"
+G add -A >/dev/null; G commit -q -m "otro instalador" >/dev/null; git -C "$SRC" push -q "$BARE" main 2>/dev/null; bajar
+auto; rc=$?
+[ "$rc" != 0 ] && sin_to && ultimo reason | grep "otro install-guard.sh" >/dev/null && ok "T24 · otro instalador: su renglón" || no "T24 · otro instalador: rc=$rc, «$(tail -1 "$REGISTRO" | cut -c1-200)»"
+cp "$TMP/instalador24.sh" "$SRC/scripts/production/install-guard.sh"; G add -A >/dev/null; G commit -q -m "instalador de vuelta" >/dev/null; git -C "$SRC" push -q "$BARE" main 2>/dev/null; bajar
+# un error que no pasa por `muere`: una variable sin valor con set -u, en la copia de root del instalador
+cp "$SETUP/install-guard.sh" "$TMP/root-instalador.sh"
+python3 - "$SETUP/install-guard.sh" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+s = s.replace('  [ -f "$MARCA" ] || muere "esta máquina no tiene el permiso', '  : "$VARIABLE_QUE_NO_EXISTE"\n  [ -f "$MARCA" ] || muere "esta máquina no tiene el permiso', 1)
+open(p, "w").write(s)
+PY
+auto; rc=$?; cp "$TMP/root-instalador.sh" "$SETUP/install-guard.sh"
+[ "$rc" != 0 ] && sin_to && ultimo reason | grep "código" >/dev/null && ok "T24 · un error de set -u también deja su renglón" || no "T24 · set -u: rc=$rc, «$(tail -1 "$REGISTRO" 2>/dev/null | cut -c1-200)»"
+# ultimaActualizacion no lee una falla como una actualización: una buena, después una que falla
+freno_que good; auto || no "T24 · la versión buena no se instaló: $(salida)"
+buena="$(ultimo to_version)"
+API_BIEN="$API"; API="http://127.0.0.1:9"; freno_que good; auto; API="$API_BIEN"
+leida="$(node -e 'const a = require(process.argv[1]).avisos({ raiz: process.argv[2], arnes: process.argv[3] }); process.stdout.write(a.join("\n"))' "$AVISO" "$SYS" "$ARNES" 2>&1)"
+if [ -n "$buena" ] && printf '%s' "$leida" | grep -F "$buena" >/dev/null && printf '%s' "$leida" | grep "falló" >/dev/null && ! printf '%s' "$leida" | grep -F "se actualizó solo a $(ultimo attempted_version)" >/dev/null; then
+  ok "T24 · el aviso no toma la falla por una actualización: nombra la que sigue andando ($buena) y la que falló"
+else no "T24 · el aviso dice «${leida}»"; fi
+
+# ── T27 · AutoUpdate_FallaDeVerdad_FrenoViejoSigueFrenando ───────────────────────────────────────────────────────────
+freno_que allow-all; F1="$(foto_sin_registro "$SYS")"; auto
+c_ls="$(corre_freno "$SYS/opt/tycon" ls)"; c_db="$(corre_freno "$SYS/opt/tycon" 'sqlcmd -S base.invalid -Q "select 1"')"
+if [ "$(foto_sin_registro "$SYS")" = "$F1" ] && [ "$c_ls" = 0 ] && [ "$c_db" = 2 ]; then ok "T27 · tras el intento fallido el freno que quedó deja pasar el común (0) y frena el de base (2)"
+else no "T27 · freno que quedó: ls=$c_ls base=$c_db"; fi
+
+# ── T32 · AutoUpdate_OtroInterprete_PideContrasena (y el lanzador y la puerta: el ensayo no los corre) ────────────────
+for pieza in scripts/production/node-official.json scripts/production/node-shim.sh scripts/production/tycon-prod-sql; do
+  freno_que good
+  cp "$SRC/$pieza" "$TMP/pieza.bak"
+  case "$pieza" in *.json) python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["__doc_prueba"]="otra"; json.dump(d, open(sys.argv[1],"w"), indent=1)' "$SRC/$pieza" ;; *) printf '\n# otra versión\n' >> "$SRC/$pieza" ;; esac
+  G add -A >/dev/null; G commit -q -m "otra $pieza" >/dev/null; git -C "$SRC" push -q "$BARE" main 2>/dev/null; bajar
+  F1="$(foto_sin_registro "$SYS")"; auto; rc=$?
+  if [ "$rc" != 0 ] && [ "$(foto_sin_registro "$SYS")" = "$F1" ] && sin_to && ultimo reason | grep "contraseña" >/dev/null; then ok "T32 · $(basename "$pieza") distinto: no se instala solo, anota la falla y pide la contraseña"
+  else no "T32 · $(basename "$pieza"): rc=$rc — $(salida)"; fi
+  cp "$TMP/pieza.bak" "$SRC/$pieza"; G add -A >/dev/null; G commit -q -m "de vuelta" >/dev/null; git -C "$SRC" push -q "$BARE" main 2>/dev/null; bajar
+done
+
+# ── T31 · AutoUpdate_Ensayo_FrenoSano_SinRootSinEntornoNiResto ───────────────────────────────────────────────────────
+# el freno real de la versión, con una primera línea que anota con qué usuario y qué entorno corrió el ensayo
+# (__CF_USER_TEXT_ENCODING lo pone macOS en todo proceso: no viene del entorno de quien instala)
+SONDA="$TMP/sonda31.json"; rm -f "$SONDA"
+{ head -1 "$FRENO_BUENO"; printf "try { require('fs').appendFileSync(%s, JSON.stringify({ uid: process.getuid(), env: Object.keys(process.env).sort(), cwd: process.cwd(), home: process.env.HOME || '', catalogo: require('fs').existsSync(require('path').join(process.cwd(), '.tycon')) || require('fs').existsSync(require('path').join(process.env.HOME || '/', '.tycon')), dir: __dirname }) + '\\\\n'); } catch (_) {}\n" "'$SONDA'"; tail -n +2 "$FRENO_BUENO"; } > "$SRC/scripts/hooks/prod-access-guard.js"
+G add -A >/dev/null; G commit -q -m "freno con sonda" >/dev/null; git -C "$SRC" push -q "$BARE" main 2>/dev/null; bajar
+ensayos(){ find /tmp/ /private/tmp/ -maxdepth 1 -name 'tycon-ensayo.*' 2>/dev/null | sort -u | wc -l | tr -d ' '; }
+antes31="$(ensayos)"
+auto; rc=$?
+quedan=$(( $(ensayos) - antes31 ))
+sondeo="$(python3 -c 'import json,sys
+rs=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+ok = len(rs) == 2 and all(r["uid"] == int(sys.argv[2]) and set(r["env"]) <= {"HOME","PATH","PWD","SHLVL","_","OLDPWD","__CF_USER_TEXT_ENCODING"} and "tycon-ensayo" in r["dir"] and "tycon-ensayo" in r["cwd"] and "tycon-ensayo" in r["home"] and r["catalogo"] is False for r in rs)
+print("ok" if ok else json.dumps(rs)[:300])' "$SONDA" "$(id -u)" 2>&1)"
+if [ "$rc" = 0 ] && [ "$sondeo" = ok ] && [ "$quedan" = 0 ] && cmp -s "$SRC/scripts/hooks/prod-access-guard.js" "$SYS/opt/tycon/hooks/prod-access-guard.js"; then
+  ok "T31 · el freno sano pasa el ensayo e instala; corrió con el usuario de la persona, sin variables, con casa y carpeta temporales sin catálogos, y el temporal no quedó"
+else no "T31 · rc=$rc sondeo=«${sondeo}» temporales=$quedan — $(salida)"; fi
+
+# ── T29 · AutoUpdate_FrenoRotoInstalado_LaNuevaLoArregla ─────────────────────────────────────────────────────────────
+# el freno instalado frena todo; se publica uno arreglado (sólo prod-access-guard.js) y el gancho de arranque lo instala:
+# corre fuera de la terminal de la sesión, así que el freno roto no lo frena. El sudo de mentira corre el guion de la
+# raíz falsa con el entorno del laboratorio.
+GANCHO="$AQUI/scripts/hooks/guard-auto-update.js"
+{ head -1 "$FRENO_BUENO"; printf 'process.exit(2);\n'; tail -n +2 "$FRENO_BUENO"; } > "$SYS/opt/tycon/hooks/prod-access-guard.js"
+[ "$(corre_freno "$SYS/opt/tycon" ls)" = 2 ] || no "T29 · el freno roto de la prueba no frena el común"
+freno_que good
+SUDO29="$TMP/sudo29"
+cat > "$SUDO29" <<EOF
+#!/bin/sh
+[ "\$1" = -n ] && shift
+exec /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$CASA" TYCON_PROD_ROOT="$SYS" TYCON_PROD_HARNESS="$ARNES" TYCON_PROD_STATE="$ESTADO" \
+  TYCON_RELEASE_API="$API" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_TEST_PATH="$TEST_PATH" /bin/bash "\$1"
+EOF
+chmod +x "$SUDO29"
+# el freno instalado quedó viejo contra el publicado: el juicio del aviso de arranque se inyecta, porque en una máquina
+# con /opt/tycon el aviso lee la raíz real y no la falsa
+node -e 'require(process.argv[1]).run({ root: process.argv[2], home: process.argv[3], arnes: process.argv[4], env: {}, sudo: process.argv[5], logDir: process.argv[6], isStale: () => true })' \
+  "$GANCHO" "$SYS" "$CASA" "$ARNES" "$SUDO29" "$TMP/ga29" >/dev/null 2>&1
+for i in $(seq 1 120); do cmp -s "$SRC/scripts/hooks/prod-access-guard.js" "$SYS/opt/tycon/hooks/prod-access-guard.js" && break; sleep 0.5; done
+if cmp -s "$SRC/scripts/hooks/prod-access-guard.js" "$SYS/opt/tycon/hooks/prod-access-guard.js" && [ "$(corre_freno "$SYS/opt/tycon" ls)" = 0 ]; then
+  ok "T29 · con el freno instalado roto, el gancho instala la versión arreglada y el común vuelve a pasar"
+else no "T29 · no se instaló la arreglada: $(cat "$TMP"/ga29/* 2>/dev/null | tr '\n' ' ' | cut -c1-300)"; fi
 
 # ── T43 · Guide_ProduccionConPermiso_NamesTheRisk ─────────────────────────────────────────────────────────────────────
 for frase in "--allow-auto-update" "cualquier programa que corra con tu usuario" "sin una persona" "--remove-auto-update"; do

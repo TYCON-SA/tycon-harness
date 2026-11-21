@@ -205,9 +205,8 @@ Scripts afectados: `pipeline.js`, `marker.js`, `adversarial-verify.workflow.js`,
 | `tycon-skill-scout`, `tycon-story-followup-link`, `tycon-new-migration`, `check-story-drift` | 1-6 rutas cada una | ② |
 | `tycon-story-work-item` | ninguna | ① |
 
-**Skills BMAD que el pipeline invoca** (las únicas que hay que verificar explícitamente, no las ~100):
-`bmad-dev-story`, `bmad-agent-dev`, `bmad-agent-quick-flow-solo-dev`, `bmad-code-review`,
-`bmad-testarch-atdd`, `bmad-plan`.
+**Skills BMAD que el pipeline nombra** (las únicas que hay que verificar explícitamente, no las ~100; ninguna está en el
+camino de una historia): `bmad-code-review`, `bmad-agent-analyst`, `bmad-testarch-atdd`, `bmad-plan`.
 
 ---
 
@@ -305,8 +304,8 @@ se consulta producción desde Codex». Caso del banco: `codex-frena-tambien-la-p
 Además del cuadro, le falta un evento de fin de sesión (sus hooks son PreToolUse, PostToolUse,
 SessionStart, Stop y UserPromptSubmit, y `Stop` es fin de turno, no de sesión), así que nadie cerraría la
 regla. El freno corta la forma como a toda invocación de la puerta. Caso del banco:
-`codex-frena-abrir-firewall` (`40-prod-access-guard.json`). La consulta desde un archivo (`--file`) tampoco: sin el
-cuadro no hay quién mire lo que el freno muestra en pantalla. Caso: `codex-frena-archivo`.
+`codex-frena-abrir-firewall` (`40-prod-access-guard.json`). La consulta desde un archivo (`--file`) no pasa en
+ninguna herramienta; en Codex se corta como toda invocación de la puerta. Caso: `codex-frena-archivo`.
 
 **Windows**: el binario lee `%PROGRAMDATA%\ClaudeCode\managed-settings.json`; el aviso de arranque
 (`production-notice.js`) se registra por el `.ps1`, pero el `.ps1` **no instala hooks de git**, así
@@ -319,7 +318,7 @@ de Windows, no nueva de este freno.
 (`agents/*.md`): al lanzarse como subagente no cargan el `CLAUDE.md` global, el README del arnés
 importado ni el `CLAUDE.md` del repo. Las reglas propias del repo les llegan por otro lado: la
 sección `## Reglas para revisores` de ese `CLAUDE.md`, que `pipeline.js` recorta y pega al principio
-del `context_file` como «reglas a verificar» (`guides/reglas-para-revisores.md`).
+del `context_file` como «reglas a verificar» (`guides/reviewer-rules.md`).
 `tycon-retrospective-capturer` y `tycon-dod-runtime-checker` quedan sin el campo a propósito.
 
 **Codex**: no hay equivalente de `omitClaudeMd`. El generador ignora la clave (parser plano de
@@ -420,3 +419,19 @@ Codex y Ollama.
 
 **Lo que Codex NO cubre con esos modelos, dicho y no prometido**: los revisores que usan servidores MCP (el índice de
 código, la memoria) trabajan sin ellos. Caso: `scripts/tests/ollama-tools-probe.test.js`.
+
+## La ventana del pull request — ③ asimetría DECLARADA (2026-11-10)
+
+**Claude Code**: la persona aprueba el pull request, no el commit (`lib/save-brake.js`). El commit y el empuje de la
+rama de trabajo no preguntan. El pull request y el empuje a una rama compartida frenan sin «Preparar el pull request» o
+con el código cambiado desde su foto, y si no, abren la ventana de permiso (`permissionDecision: 'ask'`) con la
+evidencia.
+
+**Codex**: registra el mismo `on-pre-commit.js` (`adapters/codex/hooks.json`), y los frenos (salida 2) valen igual: un
+pull request sin preparar o con el código cambiado no sale. La pregunta no: Codex no tiene reglas `ask` equivalentes (ver
+«Freno de producción»), y el banco de controles no puede medir qué hace Codex con esa salida, porque sólo mira la del
+gancho. Es el mismo hueco que ya tenía el «¿guardo?» del commit.
+
+**Lo que Codex NO cubre, dicho y no prometido**: que una persona diga que sí antes de que el pull request preparado
+salga. Casos: T18 de `skills/tycon-pipeline/scripts/tests/save-brake.test.js` (el gancho registrado en Codex frena un
+pull request sin preparar). Qué hace Codex con `ask` queda por medir en una sesión de Codex.

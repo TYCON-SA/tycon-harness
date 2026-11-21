@@ -149,8 +149,12 @@ function noSeLeyo(ilegibles) {
   if (d) throw new Error(`la carpeta ${path.relative(AMB.dashboard, d.dir) || '.'} no se puede leer (${d.code})`);
 }
 
+// El instante de la pasada: `--now` si vino, si no el reloj. Toda edad del modelo se mide contra él, para que dos
+// pasadas con el mismo `--now` den el mismo modelo aunque el reloj avance entre una y otra.
+const ahoraMs = () => (Number.isFinite(AMB.ahora) ? AMB.ahora : Date.now());
+
 function colectarAhora() {
-  const hoy = Number.isFinite(AMB.ahora) ? AMB.ahora : Date.now();
+  const hoy = ahoraMs();
   const cfg = JSON.parse(fs.readFileSync(AMB.config, 'utf8'));
   // Las fuentes `local: true` son de la vista de corridas: viven fuera de .dashboard y
   // las lee runs.js. Acá se saltean; si no, la de seis preguntas las listaría como «no leída».
@@ -202,7 +206,10 @@ function desde(f, fn) {
 function encuentra(por) {
   const m = {};
   m.banco_rojos = desde(por.banco, (d) => medida(d.failed, d.ran, d.ran, { unidad: 'conteo', den_etiqueta: 'casos', detalle: `${d.skipped} salteados · ${d.nomedido} no medidos` }));
-  m.banco_regresiones = desde(por.banco, (d) => medida(d.baselineRegressions, d.ran, d.ran, { unidad: 'conteo', den_etiqueta: 'casos' }));
+  // sin línea de base el banco no comparó: la cuenta no existe, no es cero
+  m.banco_regresiones = desde(por.banco, (d) => (d.baselineRegressions == null
+    ? noMedida(`el banco no comparó contra la línea de base${d.sinLineaDeBase ? `: ${d.sinLineaDeBase}` : ''}`)
+    : medida(d.baselineRegressions, d.ran, d.ran, { unidad: 'conteo', den_etiqueta: 'casos' })));
   m.banco_paridad = desde(por.banco, (d) => medida(d.parityBreaks, d.ran, d.ran, { unidad: 'conteo', den_etiqueta: 'casos' }));
   m.suites = desde(por.suites, (d) => {
     // Las rojas se cuentan aunque falte alguna, y la ficha dice cuáles faltan. Una
@@ -278,8 +285,10 @@ function mejora(por) {
   // nocturno baja del buzón a merges/, con un registro por merge (el mismo merge en las dos cuenta una vez).
   try {
     const dm = require(path.join(RAIZ, 'scripts', 'lib', 'dashboard-metrics.js'));
-    const { records, counts, unreadableDirs } = dm.loadPorMerge([AMB.dashboard]);
+    const { records: todos, counts, unreadableDirs } = dm.loadPorMerge([AMB.dashboard]);
     noSeLeyo(unreadableDirs);
+    // un latido anulado no es una fusión: no entra en ningún denominador
+    const records = todos.filter((x) => x.status !== 'anulado');
     m._capturer_cobertura = counts;
     m._capturer_fechas = records.filter((x) => x.date).length;
     m.revisores = {};
@@ -343,7 +352,10 @@ const noLeido = (buzon) => noMedida(`el nocturno no pudo leer el buzón (${buzon
 //    para este lector — una lista negra fallaría con el primer campo que nadie previó.
 // 🔴 Y se rotula SIEMPRE como "en esta máquina": presentarlo como el equipo sería la mentira de
 //    la máquina que no reportó leída como cero.
-const HOME_TYCON = path.join(require('os').homedir(), '.claude');
+// Los registros sueltos de los hooks (el del freno, los medidores) viven en la carpeta que dice scripts/lib/loose-logs.js:
+// la del estado en una máquina que vive en la casa propia del arnés, la de siempre en las demás. Sin ella, null: lo que
+// se lee de ahí sale como «falta».
+const HOME_TYCON = (() => { try { return require('../../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();
 
 // Contador explícito. El idioma habitual para acumular usa el mismo atajo que convierte un dato
 // ausente en un cero, y un chequeo textual no puede distinguirlos. Un control que hay que aflojar
@@ -379,11 +391,22 @@ function leerCorridas(archivos, opts = {}) {
   try { tiempos = require('../../metrics/step-times.js'); }
   // el código o la clase del error, nunca su mensaje: trae rutas del disco y la página del nocturno se commitea
   catch (e) { sinTiempos = `scripts/metrics/step-times.js no se pudo cargar (${e.code || e.name || 'error'}): trabajo y espera no se miden`; }
+  // Se cuentan EJECUCIONES, no archivos, con la clave de la tabla de Ejecuciones (sesión + arranque): de dos copias de la
+  // misma ejecución (la carpeta vieja y la nueva de una máquina) queda la archivada más tarde. Sin sesión, cada archivo es una.
+  const porEjecucion = new Map();
+  const { runKey } = require('./runs');
   for (const a of archivos) {
     const ruta = typeof a === 'string' ? a : a.ruta;
     let o; try { o = JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch (e) { total += 1; ilegibles += 1; if (a.grupo) grupos.add(a.grupo); continue; }
     if (!o || typeof o !== 'object' || !o.marker || typeof o.marker !== 'object') continue;
-    total += 1; if (a.grupo) grupos.add(a.grupo);
+    if (a.grupo) grupos.add(a.grupo);
+    const sid = typeof o.marker.sessionId === 'string' && o.marker.sessionId ? o.marker.sessionId : null;
+    const clave = sid ? runKey(sid, o.marker) : `archivo\n${ruta}`;
+    const prev = porEjecucion.get(clave);
+    if (!prev || String(o.archivedAt || '') > String(prev.archivedAt || '')) porEjecucion.set(clave, o);
+  }
+  for (const o of porEjecucion.values()) {
+    total += 1;
     const mk = o.marker, co = o.costo || {};
     if (typeof o.archivedAt === 'string' && (!ultima || o.archivedAt > ultima)) ultima = o.archivedAt;
     const ini = Date.parse(mk.startedAt || ''), fin = Date.parse(mk.lastTouch || '');
@@ -399,7 +422,7 @@ function leerCorridas(archivos, opts = {}) {
   if (!total) { const n = noMedida(opts.vacio || 'no hay ninguna ejecución'); return { corridas: n, agentes: n, vueltas: n, trabajo_espera: n, maquinas: 0 }; }
   const den = etiqueta(grupos.size);
   const rotos = ilegibles ? ` · ${ilegibles} volcado(s) no se pudieron leer (¿subida cortada?): cuentan en el total, no en la mediana` : '';
-  const edad = edadDias(ultima, Date.now());
+  const edad = edadDias(ultima, ahoraMs());
   const nota = edad !== null && edad > 2 ? ` · la última ejecución es de ${edadTexto(edad)}` : '';
   return {
     maquinas: grupos.size,
@@ -497,8 +520,8 @@ function local(buzon = { estado: 'no_aplica' }) {
   }
 
   // 3 · Freno de mano: bloqueos por regla (texto plano, se extrae SÓLO el identificador de regla).
-  const sg = path.join(HOME_TYCON, 'safety-guard.log');
-  m.freno = !fs.existsSync(sg) ? falta('el registro del freno de mano') : (() => {
+  const sg = HOME_TYCON ? path.join(HOME_TYCON, 'safety-guard.log') : null;
+  m.freno = !sg || !fs.existsSync(sg) ? falta('el registro del freno de mano') : (() => {
     try {
       const txt = fs.readFileSync(sg, 'utf8');
       const reglas = {};
@@ -526,8 +549,8 @@ function local(buzon = { estado: 'no_aplica' }) {
 
   // 5 · Los dos medidores de conducta.
   const medidor = (rel, campo, etiqueta) => {
-    const r = path.join(HOME_TYCON, rel);
-    if (!fs.existsSync(r)) return falta(`el medidor de ${etiqueta}`);
+    const r = HOME_TYCON ? path.join(HOME_TYCON, rel) : null;
+    if (!r || !fs.existsSync(r)) return falta(`el medidor de ${etiqueta}`);
     try {
       const ls = leerJsonl(r).filter(Boolean);
       if (!ls.length) return noMedida(`el medidor de ${etiqueta} no tiene ninguna medición`);
@@ -550,7 +573,7 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
   // en el nocturno, sin el buzón entero no hay fichas del equipo — nunca «ninguna máquina reportó».
   if (AMB.nocturno && buzon.estado !== 'leido') {
     const n = noLeido(buzon);
-    return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, cobertura_maquinas: n.motivo, maquinas_equipo: null };
+    return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, vueltas_atras: n, cobertura_maquinas: n.motivo, maquinas_equipo: null };
   }
   const reductor = require('./reducer');
   let j;
@@ -566,7 +589,7 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
     j = { estado: 'no_medido', motivo: `la cuenta de los registros falló (${e.code || e.name || 'error'})` };
   }
   const cobertura_maquinas = reductor.textoCobertura(j);
-  if (j.estado !== 'medido') { const n = noMedida(j.motivo); return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, cobertura_maquinas, maquinas_equipo: null }; }
+  if (j.estado !== 'medido') { const n = noMedida(j.motivo); return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, vueltas_atras: n, cobertura_maquinas, maquinas_equipo: null }; }
   // Cuántas máquinas entraron a la cuenta (las esperadas que reportaron y las no declaradas): lo lleva el sello.
   const maquinas_equipo = j.cobertura.reportaron + j.cobertura.sin_declarar.length;
   const piso = j.piso;
@@ -778,7 +801,25 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
       detalle: `${ventana} · máximo ${num1(maximo / 60)} minutos · midieron ${sd.midieron} de ${sd.maquinas} máquina${sd.maquinas === 1 ? '' : 's'}`,
     });
   }
-  return { bloqueos, escapes, escapes_dom, frenos, evidencia_cierre, carriles, cobertura_tocada, mutacion, qa_guia, suite_duracion, cobertura_maquinas, maquinas_equipo };
+  const vueltas_atras = fichaVueltasAtras(j.retenciones);
+  return { bloqueos, escapes, escapes_dom, frenos, evidencia_cierre, carriles, cobertura_tocada, mutacion, qa_guia, suite_duracion, vueltas_atras, cobertura_maquinas, maquinas_equipo };
+}
+
+/**
+ * Las máquinas con una vuelta atrás vigente: con la actualización fijada por el equipo, `harness.js rollback` deja
+ * retenida la actualización de ESA máquina hasta que sale una versión posterior a la deshecha. El número es cuántas la
+ * tienen, sobre las que la declararon; el detalle, cuáles, qué versión deshicieron y desde cuándo, o «ninguna». Las que
+ * no la declararon (un arnés anterior, o un estado ilegible) se nombran aparte: no son «sin retención».
+ */
+function fichaVueltasAtras(r) {
+  if (!r) return noMedida('la cuenta de los registros no trae las retenciones');
+  const medidas = r.vigentes.length + r.sin_retencion;
+  const sinMedir = r.no_medidas.length ? `sin medir: ${r.no_medidas.join(', ')}` : null;
+  if (!medidas) return noMedida(r.no_medidas.length ? `ninguna máquina declaró si tiene una vuelta atrás (las que suben con un arnés anterior no lo dicen) · ${sinMedir}` : 'ninguna máquina reportó sus registros');
+  const momento = (iso) => (iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : 'momento sin forma');
+  const lista = r.vigentes.map((v) => `${v.alias}: deshizo ${v.deshizo || 'una versión sin forma'}, desde ${momento(v.desde)}`);
+  const detalle = [lista.length ? lista.join(' · ') : 'ninguna', sinMedir].filter(Boolean).join(' · ');
+  return medida(r.vigentes.length, medidas, medidas + r.no_medidas.length, { unidad: 'conteo', den_etiqueta: 'máquinas que lo declararon', detalle });
 }
 
 // ─────────────── el criterio de poda: hallazgos por regla, con su denominador ───────────────
@@ -823,10 +864,10 @@ function pasosPorCorrida(cfg, buzon = { estado: 'no_aplica' }, opts = {}) {
   // Un volcado cortado puede ser una corrida: se queda en el denominador, como las sin medir.
   const N = r.corridas + r.sin_medir + r.ilegibles;
   if (!N) return noMedida('el buzón de ejecuciones está vacío: no hay ninguna ejecución que contar');
-  if (!r.corridas) return noMedida(`ninguna de las ${N} ejecución(es) del buzón tiene su consumo medido: los pasos no se estiman`);
+  if (!r.corridas) return noMedida(N === 1 ? 'la única ejecución del buzón no tiene su consumo medido: sus pasos no se estiman' : `ninguna de las ${N} ejecuciones del buzón tiene su consumo medido: los pasos no se estiman`);
   // La fecha del número es la de la corrida MEDIDA más nueva (`filas` viene ordenada por inicio).
   const fecha = r.filas[r.filas.length - 1].inicio || null;
-  const edad = edadDias(fecha, opts.hoy || Date.now());
+  const edad = edadDias(fecha, opts.hoy || ahoraMs());
   if (edad === null || edad > fuente.max_age_days) {
     return noMedida(fecha
       ? `sin ejecuciones medidas desde ${fecha} (${edadTexto(edad)}): pasados ${fuente.max_age_days} días el número se calla`
@@ -856,9 +897,9 @@ function denominadorPoda(c) {
   const sinMedir = c.hallazgos.maquinas_sin_medir || [];
   return `hallazgos y oportunidades de ${c.hallazgos.maquinas} máquina(s) con los hallazgos medidos; `
     + `el denominador sale de ${c.corridas.con_denominador} de ${c.corridas.total} ejecuciones`
-    + (c.corridas.no_leidas ? ` (${c.corridas.no_leidas} ejecución(es) más no cuentan: el recolector no pudo leer sus hallazgos)` : '')
+    + (c.corridas.no_leidas ? (c.corridas.no_leidas === 1 ? ' (1 ejecución más no cuenta: el recolector no pudo leer sus hallazgos)' : ` (${c.corridas.no_leidas} ejecuciones más no cuentan: el recolector no pudo leer sus hallazgos)`) : '')
     + (sinMedir.length ? `; sin medir: ${sinMedir.map((m) => `${m.alias} (${m.motivo})`).join(' · ')}` : '')
-    + (c.corridas.descartadas_sin_hallazgos ? `; ${c.corridas.descartadas_sin_hallazgos} ejecución(es) de las máquinas sin medir no se cuentan` : '');
+    + (c.corridas.descartadas_sin_hallazgos ? (c.corridas.descartadas_sin_hallazgos === 1 ? '; 1 ejecución de las máquinas sin medir no se cuenta' : `; ${c.corridas.descartadas_sin_hallazgos} ejecuciones de las máquinas sin medir no se cuentan`) : '');
 }
 function podaPanel(buzon = { estado: 'no_aplica' }) {
   if (AMB.nocturno && buzon.estado !== 'leido') {
@@ -936,7 +977,10 @@ function contexto() {
   const reposMotivo = rj === null
     ? (fs.existsSync(path.join(AMB.raiz, ...REPOS_JSON.split('/'))) ? `${REPOS_JSON} no se lee (no es JSON)` : `falta ${REPOS_JSON}: la organización no declaró sus productos (la lista de productos del equipo no viene con la copia pública; la trae el repo de operaciones)`)
     : (repos.length ? null : `${REPOS_JSON} no declara ningún repo`);
-  return { repos, productos, debt, declarados: (declarados && declarados.declared) || [], reposMotivo };
+  // los despliegues que la organización declaró en Configuración: dicen qué productos tienen producción
+  const ops = datoDelArbol('operations.json');
+  const despliegues = ops && ops.deployments && ops.deployments.products && typeof ops.deployments.products === 'object' ? ops.deployments.products : null;
+  return { repos, productos, debt, declarados: (declarados && declarados.declared) || [], reposMotivo, despliegues };
 }
 
 /**
@@ -1050,7 +1094,7 @@ function detalleSinHistoria(m) {
 
 function extra(por, ctx, cfg) {
   const m = {};
-  m.despliegues = desde(por.deployments, (d) => fichaDespliegues(d, new Date().toISOString()));
+  m.despliegues = desde(por.deployments, (d) => fichaDespliegues(d, new Date(ahoraMs()).toISOString()));
   m.edad_estado = fichaEdad(cfg, ctx);
   m.sin_historia = fichaSinHistoria(por['story-reference']);
   const sdlc = por['sdlc-stage'];
@@ -1277,7 +1321,21 @@ function extra(por, ctx, cfg) {
   });
 
   m.sin_prod = (() => {
-    if (!ctx.debt || !Array.isArray(ctx.debt.debt)) return noMedida('no se pudo leer la deuda declarada de pipelines');
+    if (!ctx.debt || !Array.isArray(ctx.debt.debt)) {
+      // sin la deuda, los despliegues declarados ya dicen qué productos no tienen producción (o no declararon ninguno)
+      if (ctx.despliegues && ctx.productos.length) {
+        const declarados = new Map(Object.entries(ctx.despliegues).map(([k, v]) => [k.toLowerCase(), v]));
+        // dos casos distintos, que cuentan los dos y se nombran aparte: el declarado sin producción y el que no se declaró
+        const sinDeclarar = ctx.productos.filter((p) => !declarados.has(String(p).toLowerCase()));
+        const sinProd = ctx.productos.filter((p) => { const d = declarados.get(String(p).toLowerCase()); return d && (!Array.isArray(d.production) || !d.production.length); });
+        const partes = [sinProd.length ? `sin producción: ${sinProd.join(' · ')}` : '', sinDeclarar.length ? `sin declarar en Despliegues: ${sinDeclarar.join(' · ')}` : ''].filter(Boolean);
+        return medida(sinProd.length + sinDeclarar.length, ctx.productos.length, ctx.productos.length, { unidad: 'conteo', den_etiqueta: 'productos declarados',
+          detalle: `${partes.join(' — ')} · de los despliegues declarados en Configuración` });
+      }
+      // con despliegues declarados, lo que falta es la lista de productos
+      if (ctx.despliegues) return noMedida(sinProductos(ctx));
+      return noMedida('falta scripts/ci/pipeline-debt.json (la deuda declarada de pipelines) y no hay despliegues declarados en Configuración → Despliegues');
+    }
     if (!ctx.productos.length) return noMedida(sinProductos(ctx));
     const abiertas = ctx.debt.debt.filter((x) => /^PROD-PIPELINE-/.test(String(x.id)));
     const nombres = abiertas.map((x) => String(x.id).replace(/^PROD-PIPELINE-/, '').replace(/-\d+$/, '').toLowerCase());
@@ -1290,9 +1348,12 @@ function extra(por, ctx, cfg) {
   // un registro por merge.
   try {
     const dm = require(path.join(RAIZ, 'scripts', 'lib', 'dashboard-metrics.js'));
-    const { records, counts, unreadableDirs } = dm.loadPorMerge([AMB.dashboard]);
+    const { records: todos, counts, unreadableDirs } = dm.loadPorMerge([AMB.dashboard]);
     noSeLeyo(unreadableDirs);
-    m.contrato_v2 = counts.total ? { ...ratio(counts.v2ok, counts.total), den_etiqueta: 'registros' } : noMedida('no hay registros del capturador');
+    const records = todos.filter((x) => x.status !== 'anulado');
+    // los latidos anulados no son fusiones: no entran en la cuenta y se nombran aparte, para ver si alguien anula de más
+    const anulados = dm.lineaDeAnulados(counts);
+    m.contrato_v2 = counts.total ? { ...ratio(counts.v2ok, counts.total), den_etiqueta: 'registros', ...(anulados ? { detalle: `${anulados}: no cuentan` } : {}) } : noMedida(anulados ? `no hay registros del capturador (${anulados})` : 'no hay registros del capturador');
     const fuentes = {};
     for (const r of records) inc(fuentes, r.date_source || 'ninguna');
     const declaradas = records.filter((r) => r.date_source && r.date_source !== 'filename').length;
@@ -1303,7 +1364,7 @@ function extra(por, ctx, cfg) {
 
   // Declarados: los escribió una persona. Se muestran con marca propia y vencen.
   m.declarados = {};
-  const hoyISO = new Date().toISOString().slice(0, 10);
+  const hoyISO = new Date(ahoraMs()).toISOString().slice(0, 10);
   for (const dcl of ctx.declarados) {
     if (!dcl.review_before) { m.declarados[dcl.id] = noMedida('declaración sin fecha de revisión: no ampara'); continue; }
     if (dcl.review_before < hoyISO) { m.declarados[dcl.id] = noMedida(`declaración vencida el ${dcl.review_before} (fuente: ${dcl.source})`); continue; }
@@ -1403,7 +1464,7 @@ function filaFuente(f) {
 }
 
 function grafico(lm) {
-  if (!lm || lm.estado !== 'medido') return `<div class="tile blind">${chip('blind', 'no medido')}<div class="t-label">Vida de una story por mes de cierre</div><div class="t-val">falta</div><div class="t-den">${esc((lm && lm.motivo) || '')}</div></div>`;
+  if (!lm || lm.estado !== 'medido') return `<div class="tile blind">${chip('blind', 'no medido')}<div class="t-label">Vida de una story por mes de cierre</div><div class="t-val">sin dato</div><div class="t-den">${esc((lm && lm.motivo) || '')}</div></div>`;
   const meses = lm.meses.slice(-8);
   // el mes UTC de hoy todavía no cerró. Se dibuja, con la palabra «en curso»; la nota habla del último
   // mes ANTERIOR. Llamarlo cerrado con quince días de datos era lo que engañaba.
@@ -1449,7 +1510,7 @@ function tablaPoda(P) {
     .sort((a, b) => orden.indexOf(a.estado) - orden.indexOf(b.estado) || (a.dueno < b.dueno ? -1 : a.dueno > b.dueno ? 1 : (a.regla < b.regla ? -1 : 1)));
   const c = P.cobertura;
   const colision = (P.colisiones || []).length
-    ? ` <b>${P.colisiones.length} identificador(es) tienen dos dueños</b> (${P.colisiones.map((x) => esc(x.regla)).join(', ')}): la tabla cuenta por (dueño, regla), no por identificador.`
+    ? ` <b>${P.colisiones.length === 1 ? '1 identificador tiene' : `${P.colisiones.length} identificadores tienen`} dos dueños</b> (${P.colisiones.map((x) => esc(x.regla)).join(', ')}): la tabla cuenta por (dueño, regla), no por identificador.`
     : '';
   return `<details><summary>Hallazgos por regla, con su denominador — ${P.total} reglas, del ${esc(P.ventana.desde)} al ${esc(P.ventana.hasta)}</summary>
     <table><tr><th>Estado</th><th>Reglas</th></tr>
@@ -1655,8 +1716,9 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
     ${F('', 'Reglas candidatas a retiro: probadas, que nunca encontraron nada con recorrido de sobra', P.candidatas, entero, {}, 'Cada una <b>sabe ponerse roja</b>: retirarla pierde disuasión. <b>La tabla marca; decide una persona.</b>')}
     ${F('', 'Reglas que el banco de pruebas probó de verdad', P.probadas, pct, {}, 'Una regla sin prueba que la obligue a marcar <b>no se juzga</b>: sale «sin probar», nunca candidata.')}
     ${F('', 'Una ejecución del pipeline, de punta a punta (mediana, horas)', L.corridas, num1, {}, [L.vueltas && L.vueltas.estado === 'medido' ? `<b>${L.vueltas.valor} vueltas de revisión de mediana</b>${L.agentes && L.agentes.estado === 'medido' ? ` y ${L.agentes.valor} agentes por ejecución` : ''}: si los revisores piden en la vuelta 2 y 3 algo que se sabía antes, eso se mueve a la spec.` : null, pieTiempos].filter(Boolean).join(' ') || null)}
-    ${F('', 'Pasos de una ejecución del pipeline (mediana): la variable que explica lo que consume', L.pasos, redondo, {}, 'Una ejecución consume según cuántos pasos da, porque en cada paso el modelo relee todo lo anterior: <b>los tokens son la consecuencia, esto es la palanca</b>. Sale de las ejecuciones de todas las máquinas que las suben. <b>No tiene tope ni color a propósito</b>: primero la serie, y recién si alguna palanca la mueve se discute un umbral.')}
+    ${F('', 'Respuestas del modelo por ejecución del pipeline (mediana): la variable que explica lo que consume', L.pasos, redondo, {}, 'Una ejecución consume según cuántos pasos da, porque en cada paso el modelo relee todo lo anterior: <b>los tokens son la consecuencia, esto es la palanca</b>. Sale de las ejecuciones de todas las máquinas que las suben. <b>No tiene tope ni color a propósito</b>: primero la serie, y recién si alguna palanca la mueve se discute un umbral.')}
     ${F('', 'Commits por carril: pipeline, atajo declarado o ninguno', L.carriles, entero, {}, 'Sale del hook que ya registra cada commit de una sesión. <b>Los commits hechos fuera de una sesión no se ven</b> (desde la terminal o el editor), ni los que toman el mensaje de un archivo o de una variable: no están en este número, y eso es «no medido», no cero. Un commit hasta 3 h después de cerrar una ejecución cuenta como de esa ejecución; un atajo vencido no es un carril.')}
+    ${F('', 'Máquinas con una vuelta atrás vigente: no se actualizan solas', L.vueltas_atras, entero, {}, 'Con la actualización fijada por el equipo, <code>harness.js rollback</code> deja retenida la actualización de <b>esa</b> máquina hasta que sale una versión posterior a la que deshizo. El detalle dice cuál, qué versión deshizo y desde cuándo. Cada máquina lo declara una vez por día, con sus registros; la que sube con un arnés anterior sale «sin medir».')}
     ${F('', 'Despliegues: productos con producción al día', E.despliegues, entero, {}, 'Sale de la foto de despliegues de cada noche, leída del <b>stage</b> de cada ejecución: una ejecución «succeeded» con la aprobación vencida no cuenta como desplegada. Sobre los productos medidos; el detalle dice cuáles tienen producción atrasada y cuántas aprobaciones vencieron. Duración, cola y frecuencia de despliegues: story 2.11.')}
   </div>
   ${tablaPoda(P)}
@@ -1765,4 +1827,5 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { colectar, render, equipo, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues };
+module.exports = { colectar, encuentra, render, equipo, local, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues, fichaVueltasAtras,
+  DENOMINADORES: require('./common').DENOMINADORES };

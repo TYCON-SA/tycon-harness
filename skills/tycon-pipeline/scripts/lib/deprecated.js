@@ -47,7 +47,7 @@ const MARCA = /^\s*(?:\/\/+|#+|--|<!--|\/\*+|\*|;+)\s*harness-deprecated:\s*(fro
 
 function git(repo, args) {
   // un diff grande o un repo de miles de archivos pasa el 1 MiB por omisión: sin esto, «no pude mirar»
-  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 64 * 1024 * 1024 });
+  return execFileSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 64 * 1024 * 1024 });
 }
 
 function anotar(opts, obj) {
@@ -316,7 +316,8 @@ function entradasDelFrontmatter(texto, clave) {
   const out = [];
   const agregar = (crudo) => {
     let t = limpiar(crudo);
-    const pre = t.match(/^\(([^)]*)\)\s*(.*)$/);
+    // el prefijo lleva su espacio: `(app)/page.tsx` es un grupo de rutas, no el repo «app»
+    const pre = t.match(/^\(([^)]*)\)\s+(.*)$/);
     const repo = pre ? pre[1].trim() : null;
     if (pre) t = pre[2].trim();
     t = t.replace(/^(['"])(.*)\1$/, '$2').replace(/\\/g, '/').replace(/^\.\//, '');

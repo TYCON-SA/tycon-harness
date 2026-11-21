@@ -24,7 +24,8 @@
  * mirar, lo dice.
  *
  * Salida: exit 2 bloquea (el comando no corre) · exit 0 deja pasar.
- * Encender (para una tanda de cambios en varios repos): TYCON_PR_ONE_PER_REPO=1
+ * Encender (para una tanda de cambios en varios repos): TYCON_PR_ONE_PER_REPO=1 en una máquina, o
+ * `switches.pr_one_per_repo: "on"` en el perfil del equipo para todas (la variable puesta gana).
  * Por default está APAGADO: en el día a día de un dev no tiene que estorbar.
  */
 const { execFileSync } = require('child_process');
@@ -42,9 +43,21 @@ let payload; try { payload = fs.readFileSync(0, 'utf8'); } catch { process.exit(
 // toca los cinco productos, una tanda de arreglos de CI— donde abrir tandas encima de tandas llena
 // la cola de Azure de la organización entera.
 //
-// Entonces: se enciende a propósito para ese tipo de trabajo, con TYCON_PR_ONE_PER_REPO=1, y para
-// todos los demás no existe. Prendido por defecto bloquearía ante CUALQUIER pull request abierto.
-if (require('../lib/legacy-names.js').readEnv('TYCON_PR_ONE_PER_REPO', { where: 'scripts/hooks/pr-one-per-repo-guard.js' }) !== '1') process.exit(0);
+// Entonces: se enciende a propósito para ese tipo de trabajo, con TYCON_PR_ONE_PER_REPO=1 en una máquina,
+// o para toda la organización mientras dure esa tanda (`switches.pr_one_per_repo: "on"` del perfil, desde
+// el sitio). Para todos los demás no existe. Prendido por defecto bloquearía ante CUALQUIER pull request.
+// La variable de la máquina, puesta con cualquier valor, gana: `1` lo enciende y otro valor lo apaga en esa
+// máquina. Sin variable, manda el perfil; con la configuración rota, queda apagado como de fábrica y se avisa.
+const varOnePerRepo = require('../lib/legacy-names.js').readEnv('TYCON_PR_ONE_PER_REPO', { where: 'scripts/hooks/pr-one-per-repo-guard.js' });
+let encendidoPorLaOrganizacion = false;
+if (varOnePerRepo === undefined || varOnePerRepo === '') {
+  try {
+    const st = require('../lib/tycon-config.js').switchState('pr_one_per_repo');
+    if (st.warning) process.stderr.write(`${st.warning}\n`);
+    encendidoPorLaOrganizacion = st.value === 'on';
+  } catch { encendidoPorLaOrganizacion = false; }
+}
+if (varOnePerRepo !== '1' && !encendidoPorLaOrganizacion) process.exit(0);
 let cmd = '';
 try { cmd = ((JSON.parse(payload || '{}').tool_input) || {}).command || ''; } catch { process.exit(0); }
 
@@ -55,6 +68,120 @@ try { cmd = ((JSON.parse(payload || '{}').tool_input) || {}).command || ''; } ca
 // porque un regex de una línea falla con facilidad.
 const az = require('../lib/az-pr.js');
 const constancia = require('../lib/guard-record.js');
+let cwdDelEvento = ''; try { cwdDelEvento = String(JSON.parse(payload || '{}').cwd || ''); } catch { /* sin cwd */ }
+
+// Un `gh pr create`, o la capa de plataforma abriendo un pedido (`platform.js change-request open`). En GitHub la lista
+// de pedidos del repo la pide la capa, que dice de cada uno si la validación de su punta está corriendo; un pedido de
+// Azure abierto por la capa se mira con `az`, como un `az repos pr create`. Los `az repos pr create` de la misma línea
+// se revisan después, igual que sin los otros.
+const pedidosGh = pedidosDeGitHub(cmd, cwdDelEvento);
+if (pedidosGh.length) revisarGitHub(pedidosGh).then(() => revisarAzure(), (e) => {
+  console.error(`[pr-uno-por-repo] no pude mirar los pedidos de GitHub (${String((e && e.message) || e).slice(0, 80)}). No bloqueo, pero NO verifiqué.`);
+  revisarAzure();
+});
+else revisarAzure();
+
+/** Los pedidos que el comando abre en GitHub: `[{ repo, rama, donde }]` (repo null si no se sabe a qué repo va). */
+function pedidosDeGitHub(comando, cwd) {
+  const out = [];
+  if (/\bgh\b/.test(comando)) {
+    let lista = [];
+    try { lista = require('../lib/gh-pr.js').comandosGh(comando, 0, {}); } catch (e) {
+      // no se pudo leer el `gh`: el pedido va sin repo, y la revisión dice que no verificó
+      if (/\bpr\s+create\b/.test(comando)) out.push({ repo: null, rama: null, donde: `un gh pr create que no pude leer (${String((e && e.message) || e).slice(0, 60)})` });
+    }
+    for (const c of lista) {
+      if (c.grupo !== 'pr' || c.verbo !== 'create') continue;
+      let repo = c.repo && !c.repoDesconocido ? c.repo : null;
+      if (!repo && !c.repoDesconocido && !c.cwdDesconocido) repo = repoDeLaCarpeta(c.cds.length ? require('path').resolve(cwd || process.cwd(), ...c.cds) : (cwd || process.cwd()));
+      const [org, nombre] = repo ? repo.split('/') : [];
+      out.push({ repo: repo ? { platform: 'github', org, repo: nombre } : null, rama: c.head || null, donde: repo || '(el repo de la carpeta)' });
+    }
+  }
+  if (/platform\.js/.test(comando)) {
+    for (const seg of az.segmentos(comando)) {
+      const t = seg.map((x) => x.texto);
+      const i = t.findIndex((x) => /(^|[\\/])platform\.js$/.test(x));
+      if (i < 0 || !(t[i + 1] === 'change-request.open' || (t[i + 1] === 'change-request' && t[i + 2] === 'open'))) continue;
+      const valor = (n) => { const k = t.indexOf(n, i); return k >= 0 ? t[k + 1] : undefined; };
+      let repo = null;
+      const crudo = valor('--repo');
+      try { repo = crudo && crudo.trim().startsWith('{') ? JSON.parse(crudo) : (crudo ? { org: crudo.split('/')[0], repo: crudo.split('/')[1] } : null); } catch { repo = null; }
+      let args = {};
+      const a = valor('--args');
+      try { args = a ? JSON.parse(a.startsWith('@') ? fs.readFileSync(require('path').resolve(cwd || process.cwd(), a.slice(1)), 'utf8') : a) : {}; } catch {
+        // sin los argumentos no se sabe la rama propia: cualquier pedido abierto contaría como otro
+        args = null;
+      }
+      const donde = repo && repo.org && repo.repo ? `${repo.org}/${repo.repo}` : '(un repo que no pude leer)';
+      if (!args) out.push({ repo: null, rama: null, donde: `${donde}, cuyos argumentos (${String(a).slice(0, 80)}) no pude leer` });
+      else out.push({ repo, rama: args.sourceBranch || null, donde });
+    }
+  }
+  return out;
+}
+
+/** `dueño/nombre` de GitHub del origin de una carpeta, o null. */
+function repoDeLaCarpeta(dir) {
+  try {
+    const url = execFileSync('git', ['-C', dir, 'remote', 'get-url', 'origin'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }).trim();
+    const m = url.match(/github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+    return m ? `${m[1]}/${m[2]}` : null;
+  } catch { return null; }
+}
+
+async function revisarGitHub(pedidos) {
+  const platform = require('../lib/platform/platform.js');
+  let noPudeMirar = false;
+  const bloqueos = [];
+  for (const p of pedidos) {
+    if (!p.repo) {
+      console.error(`[pr-uno-por-repo] no sé a qué repo va el pedido de ${p.donde}: no bloqueo, pero NO verifiqué que no haya otro construyendo.`);
+      noPudeMirar = true;
+      continue;
+    }
+    if (p.repo.platform === 'azure') {
+      // un pedido de Azure abierto por la capa se mira como un `az repos pr create`: la lista de la capa no dice si la
+      // validación de un pedido de Azure está corriendo, y las políticas del pedido sí
+      const nombre = (x) => typeof x === 'string' && x.trim() && !x.startsWith('-');
+      if (!(typeof p.repo.org === 'string' && /^[\w.-]+$/.test(p.repo.org) && !p.repo.org.startsWith('-') && nombre(p.repo.project) && nombre(p.repo.repo))) {
+        console.error(`[pr-uno-por-repo] el repo de Azure de ${p.donde} no trae org, proyecto y repo legibles: no bloqueo, pero NO verifiqué.`);
+        noPudeMirar = true;
+        continue;
+      }
+      const org = `https://dev.azure.com/${p.repo.org}`;
+      let abiertos;
+      try {
+        abiertos = JSON.parse(execFileSync('az', ['repos', 'pr', 'list', '--status', 'active', '-o', 'json', '--org', org, '--project', p.repo.project, '--repository', p.repo.repo], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }) || '[]');
+      } catch (e) {
+        console.error(`[pr-uno-por-repo] no pude consultar los pull requests de ${p.donde} (${String((e && e.message) || e).slice(0, 80)}). No bloqueo, pero NO verifiqué.`);
+        noPudeMirar = true;
+        continue;
+      }
+      const enCurso = revisar(abiertos, org, p.rama);
+      if (enCurso.length) bloqueos.push({ donde: p.donde, enCurso });
+      continue;
+    }
+    const r = await platform.run('change-request.list', {}, { env: process.env, repo: p.repo });
+    if (!r.ok) {
+      console.error(`[pr-uno-por-repo] no pude consultar los pedidos de ${p.donde} (${String(r.detail).slice(0, 80)}). No bloqueo, pero NO verifiqué.`);
+      noPudeMirar = true;
+      continue;
+    }
+    const otros = r.value.filter((x) => !p.rama || x.sourceBranch !== p.rama);
+    for (const x of otros.filter((o) => o.ciRunning === null)) {
+      console.error(`[pr-uno-por-repo] no pude ver los controles del PR ${x.number} de ${p.donde}: no sé si construye, no lo cuento.`);
+      noPudeMirar = true;
+    }
+    const enCurso = otros.filter((x) => x.ciRunning === true).map((x) => ({ pullRequestId: x.number, title: x.title, sourceRefName: `refs/heads/${x.sourceBranch}` }));
+    if (enCurso.length) bloqueos.push({ donde: p.donde, enCurso });
+  }
+  if (bloqueos.length) bloquear(bloqueos);
+  if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd });
+  return 0;
+}
+
+function revisarAzure() {
 if (!az.pareceAzPr(cmd)) process.exit(0);
 // 🔴 TODOS los `pr create` de la cadena, no el primero: con
 // `az … create -r R1 … && az … create -r R2 …` sólo se miraría R1. Es el patrón que ya usa
@@ -83,7 +210,7 @@ for (const segCreate of creates) {
 
   let abiertos;
   try {
-    const salida = execFileSync('az', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000, cwd: evCwd || process.cwd() });
+    const salida = execFileSync('az', args, { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000, cwd: evCwd || process.cwd() });
     abiertos = JSON.parse(salida || '[]');
   } catch (e) {
     // No pudo preguntar: NO bloquea, pero lo dice — "no miré" no puede parecer "está bien".
@@ -102,6 +229,7 @@ if (!bloqueos.length) {
   process.exit(0);
 }
 bloquear(bloqueos);
+}
 
 function revisar(abiertos, org, rama) {
 
@@ -123,7 +251,7 @@ for (const pr of otros) {
   try {
     ev = JSON.parse(execFileSync('az', [
       'repos', 'pr', 'policy', 'list', '--org', org, '--id', String(pr.pullRequestId), '-o', 'json',
-    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }) || '[]');
+    ], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }) || '[]');
   } catch (e) {
     // No pudo mirar ESTE: no se cuenta como en curso, y se dice. Falla hacia dejar trabajar.
     console.error(`[pr-uno-por-repo] no pude ver el estado del PR ${pr.pullRequestId}: no lo cuento.`);
@@ -152,8 +280,13 @@ de Azure — pasó cuatro veces el 2026-09-03. Dos salidas:
 Este freno NO te impide tener dos pull requests abiertos en el mismo repo — eso es normal y no
 molesta a nadie. Sólo evita disparar dos construcciones del mismo pipeline al mismo tiempo.
 
-Este freno está encendido porque alguien puso TYCON_PR_ONE_PER_REPO=1 para una tanda de cambios en
-varios repos. Para saltearlo en un caso puntual, corré el comando sin esa variable.`);
+${encendidoPorLaOrganizacion
+    ? `Este freno está encendido para toda la organización (perfil del equipo, switches.pr_one_per_repo) por una
+tanda de cambios en varios repos. Para apagarlo en esta máquina, poné TYCON_PR_ONE_PER_REPO=0 en su entorno
+ANTES de abrir la sesión: pegada al comando no sirve, porque el freno lee el entorno de la sesión.`
+    : `Este freno está encendido porque esta máquina tiene TYCON_PR_ONE_PER_REPO=1 para una tanda de cambios en
+varios repos. Para apagarlo, sacá esa variable del entorno (o ponela en 0) ANTES de abrir la sesión: pegada al
+comando no sirve, porque el freno lee el entorno de la sesión.`}`);
 constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'bloqueo', cmd });
 process.exit(2);
 }

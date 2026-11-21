@@ -23,13 +23,20 @@ const { execFileSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const rlib = require(path.join(SCRIPTS, 'lib', 'review-roster.js'));
+const { fakeHomeEnv } = require('./lib/fake-home.js');
 
 const STORY_ID = '7.13';
 const RUN = `${STORY_ID}-20260922120000`;
 
-/** Laboratorio: repo con su story y un run dir con el roster que se le pase. */
+/**
+ * Laboratorio: repo con su story, un run dir con el roster que se le pase y su propia carpeta personal (dentro del
+ * laboratorio, así `limpiar` la borra): el cruce de write-findings lee los registros de la carpeta de estado, y la real
+ * trae lo que lanzaron otras sesiones de la máquina.
+ */
 function lab(roster) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'firmante-'));
+  const home = path.join(d, 'home');
+  fs.mkdirSync(home);
   const spec = path.join(d, `story-${STORY_ID}-x.md`);
   fs.writeFileSync(spec, ['---', `story: "${STORY_ID}"`, 'title: "t"', 'status: in-progress', '---', '',
     '# Story', '', '## Acceptance Criteria', '', '1. algo', ''].join('\n'));
@@ -39,7 +46,7 @@ function lab(roster) {
     fs.writeFileSync(path.join(runDir, 'review-roster.json'),
       typeof roster === 'string' ? roster : `${JSON.stringify(roster, null, 2)}\n`);
   }
-  return { d, spec, runDir, findings: path.join(runDir, 'findings.json') };
+  return { d, home, spec, runDir, findings: path.join(runDir, 'findings.json') };
 }
 
 const rev = (agent) => ({ agent, kind: 'subagente', model: null, model_source: 'heredado', ts: null, iter: 1 });
@@ -53,9 +60,12 @@ const rosterCon = (...agentes) => ({
 /** Corre el comando de verdad. Devuelve {exit, out} — el exit code REAL, leído antes de cualquier pipe. */
 function escribir(L, findings) {
   const entrada = JSON.stringify(findings);
+  // sin TYCON_HOME: con ella, la casa propia del hijo sale de la variable y no de la carpeta del laboratorio
+  const env = { ...process.env, ...fakeHomeEnv(L.home) };
+  delete env.TYCON_HOME;
   try {
     const out = execFileSync('node', [PIPELINE, 'write-findings', '--repo', L.d, '--story', L.spec, '--findings', '-'],
-      { encoding: 'utf8', input: entrada });
+      { encoding: 'utf8', input: entrada, env });
     return { exit: 0, out };
   } catch (e) {
     return { exit: e.status === undefined ? -1 : e.status, out: `${e.stdout || ''}${e.stderr || ''}` };

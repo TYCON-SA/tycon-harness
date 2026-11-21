@@ -2,8 +2,8 @@
 'use strict';
 // preflight-missing.test.js — el arranque del pipeline (`pipeline.js start`) agrega sus líneas al .gitignore con el fin
 // de línea del archivo, y avisa en un bloque «Falta antes de arrancar» lo que la ejecución va a necesitar y esta máquina
-// no tiene: el programa de la plataforma del pedido de trabajo, la configuración de BMAD del repo y el servidor MCP de
-// la herramienta de horas. El bloque no frena.
+// no tiene: el programa de la plataforma del pedido de trabajo y el servidor MCP de la herramienta de horas. El bloque
+// no frena.
 //
 // Corre `pipeline.js` real con un HOME temporal, un repo de juguete y el id de sesión fijado en el proceso hijo.
 //
@@ -22,7 +22,7 @@ const P = () => require(path.join(SCRIPTS, 'pipeline.js'));
 const WIN = process.platform === 'win32';
 const PROG = JSON.parse(fs.readFileSync(path.join(RAIZ, 'integrations', 'azure-devops', 'integration.json'), 'utf8')).rawCommands[0].split(/\s+/)[0];
 
-function entorno({ gitignore = null, autocrlf = null, workItem = false, bmad = false } = {}) {
+function entorno({ gitignore = null, autocrlf = null, workItem = false } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'preflight-missing-'));
   const home = path.join(base, 'home');
   const repo = path.join(base, 'repo');
@@ -39,10 +39,6 @@ function entorno({ gitignore = null, autocrlf = null, workItem = false, bmad = f
   git('config', 'user.name', 't');
   if (autocrlf !== null) git('config', 'core.autocrlf', autocrlf);
   if (gitignore !== null) fs.writeFileSync(path.join(repo, '.gitignore'), gitignore);
-  if (bmad) {
-    fs.mkdirSync(path.join(repo, '_bmad', 'bmm'), { recursive: true });
-    fs.writeFileSync(path.join(repo, '_bmad', 'bmm', 'config.yaml'), 'user_name: t\n');
-  }
   const story = path.join(repo, 'specs', 'story-9.9-preflight.md');
   fs.writeFileSync(story, ['---', 'story: "9.9"', 'title: "preflight"', 'status: ready-for-dev', ...(workItem ? ['ado_work_item: 123'] : []), '---',
     '# Story 9.9', '', '### Tests', '', '| # | Test |', '|---|---|', '| T1 | a |', ''].join('\n'));
@@ -129,20 +125,18 @@ test('T37 Gitignore_CRLF_SoloAgrega @story-8.93 @ac-19 — las líneas nuevas co
   }
 });
 
-test('T39 Start_AvisaLoQueFalta @story-8.93 @ac-20 — sin el programa de la plataforma, sin BMAD y sin el MCP de horas: tres líneas y no frena', () => {
+test('T39 Start_AvisaLoQueFalta @story-8.93 @ac-20 — sin el programa de la plataforma y sin el MCP de horas: dos líneas y no frena', () => {
   const E = entorno({ gitignore: '', workItem: true });
   const r = correr(E, { PATH: pathSin(E.base, PROG), TYCON_PLATFORM: 'azure-devops', TYCON_TIME_TRACKING: 'clockify' }, 's-t39');
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   assert.strictEqual(r.out.ready, true);
   const faltas = r.out.missing_before_start;
   assert.ok(Array.isArray(faltas), `trae missing_before_start: ${r.stdout}`);
-  assert.strictEqual(faltas.length, 3, JSON.stringify(faltas));
+  assert.strictEqual(faltas.length, 2, JSON.stringify(faltas));
   for (const f of faltas) for (const k of ['falta', 'sin_eso', 'como']) assert.ok(String(f[k] || '').trim(), `${k} en ${JSON.stringify(f)}`);
-  const [plataforma, bmad, horas] = ['plataforma', 'bmad', 'horas'].map((id) => faltas.find((f) => f.id === id));
+  const [plataforma, horas] = ['plataforma', 'horas'].map((id) => faltas.find((f) => f.id === id));
   assert.match(plataforma.falta, new RegExp(`\\b${PROG}\\b`));
   assert.match(plataforma.sin_eso, /start-warning ado/);
-  assert.match(bmad.falta, /_bmad\/bmm\/config\.yaml/);
-  assert.match(bmad.sin_eso, /sin BMAD/);
   assert.match(horas.falta, /clockify/i);
   assert.match(horas.sin_eso, /start-warning time-tracking/);
   const linea = r.out.acciones.find((a) => a.startsWith('Falta antes de arrancar:'));
@@ -153,7 +147,7 @@ test('T39 Start_AvisaLoQueFalta @story-8.93 @ac-20 — sin el programa de la pla
   Ep.git('checkout', '-q', '-b', 'main');
   const rp = correr(Ep, { PATH: pathSin(Ep.base, PROG), TYCON_PLATFORM: 'azure-devops', TYCON_TIME_TRACKING: 'clockify' }, 's-t39-pausa');
   assert.strictEqual(rp.out.ready, false);
-  assert.strictEqual((rp.out.missing_before_start || []).length, 3, rp.stdout);
+  assert.strictEqual((rp.out.missing_before_start || []).length, 2, rp.stdout);
 
   // un detector que no puede mirar no inventa una falta: deja su motivo
   const noMedido = [];
@@ -163,15 +157,15 @@ test('T39 Start_AvisaLoQueFalta @story-8.93 @ac-20 — sin el programa de la pla
   assert.ok(noMedido.some((m) => /plataforma \(frontmatter ilegible\)/.test(m)), JSON.stringify(noMedido));
 });
 
-test('T40 Start_TodoPresente_SinBloque @story-8.93 @ac-20 — programa presente, BMAD configurado y horas apagadas: sin el bloque', () => {
-  const E = entorno({ gitignore: '', workItem: true, bmad: true });
+test('T40 Start_TodoPresente_SinBloque @story-8.93 @ac-20 — programa presente y horas apagadas: sin el bloque', () => {
+  const E = entorno({ gitignore: '', workItem: true });
   const r = correr(E, { PATH: pathCon(E.base, PROG), TYCON_PLATFORM: 'azure-devops', TYCON_TIME_TRACKING: 'none' }, 's-t40');
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   assert.ok(!('missing_before_start' in r.out), r.stdout);
   assert.ok(!r.out.acciones.some((a) => a.startsWith('Falta antes de arrancar:')), JSON.stringify(r.out.acciones));
 
   // el MCP de horas declarado en ~/.claude.json: tampoco sale
-  const Em = entorno({ gitignore: '', bmad: true });
+  const Em = entorno({ gitignore: '' });
   fs.writeFileSync(path.join(Em.home, '.claude.json'), JSON.stringify({ mcpServers: { clockify: { command: 'x' } } }));
   const rm = correr(Em, { TYCON_TIME_TRACKING: 'clockify' }, 's-t40-mcp');
   assert.ok(!('missing_before_start' in rm.out), rm.stdout);
@@ -181,7 +175,7 @@ test('T40 Start_TodoPresente_SinBloque @story-8.93 @ac-20 — programa presente,
   const { computeMissingBeforeStart } = P();
   const horas = (repo, home, noMedido = []) => computeMissingBeforeStart({ repo, fm: {}, env: { TYCON_TIME_TRACKING: 'clockify' }, home, noMedido }).filter((f) => f.id === 'horas');
   const delProyecto = (home, clave) => fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ projects: { [clave]: { mcpServers: { clockify: { command: 'x' } } } } }));
-  const Er = entorno({ bmad: true });
+  const Er = entorno();
   const real = fs.realpathSync.native(Er.repo);
   const enlace = path.join(Er.base, 'enlace');
   fs.symlinkSync(Er.repo, enlace, WIN ? 'junction' : 'dir');

@@ -39,6 +39,8 @@ Para cada story en `drift_confirmed`:
        (cambia el frontmatter y la línea Status juntos). El estado de una historia no se escribe con Edit: el arnés lo frena
      - `<specs_dir>/<file>`: sección Change Log con entry "DoD gates GREEN + drift closure" (con Edit)
      - `<specs_dir>/../planning-artifacts/sprint-status.yaml`: actualizar entry de la story a `done`
+       (en un repo con `story_index: generated` —lo dice `node ~/.tycon/harness/scripts/tools/story-index.js --repo <repo> --mode`—
+       el índice no se edita: alcanza con el frontmatter, que ya cambió `marker.js`, y main lo regenera después del merge)
 
 3. **Si alguno CRITICAL**:
    - NO cerrar esa story. Reportar al user: "Story X.Y tiene findings CRITICAL en advisors — no se puede cerrar a done sin resolver. ¿Querés que profundice o saltamos?"

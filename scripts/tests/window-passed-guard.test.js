@@ -16,6 +16,11 @@ const AYUDANTE = path.join(__dirname, 'lib', 'window-passed.js');
 const CODIGO = /\.(c?js|mjs|sh|ps1|py)$/;
 // una carpeta de pruebas en cualquier nivel del camino
 const DE_PRUEBAS = /(^|\/)(tests?|__tests__)\//;
+// la evidencia de las corridas (`.advisors/`): sus guiones de humo y en vivo cargan el ayudante a propósito, para
+// ejercer la ventana como una prueba; no corren fuera de su corrida
+const EVIDENCIA = /(^|\/)\.advisors\//;
+/** Si el barrido mira esta ruta: código que no es de pruebas ni de la evidencia de las corridas. */
+const seBarre = (rel) => CODIGO.test(rel) && !DE_PRUEBAS.test(rel) && !EVIDENCIA.test(rel);
 
 function archivosDelRepo() {
   const r = spawnSync('git', ['-C', RAIZ, 'ls-files', '-co', '--exclude-standard'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
@@ -24,7 +29,7 @@ function archivosDelRepo() {
 }
 
 test('WindowPassed_SoloLoNombranLasPruebas — ningún guion fuera de una carpeta de pruebas nombra el ayudante', () => {
-  const fuera = archivosDelRepo().filter((f) => CODIGO.test(f) && !DE_PRUEBAS.test(f));
+  const fuera = archivosDelRepo().filter(seBarre);
   assert.ok(fuera.length > 50, `muy pocos guiones para revisar (${fuera.length}): la lista no es la del repo`);
   const lo = fuera.filter((f) => {
     let txt = '';
@@ -32,6 +37,14 @@ test('WindowPassed_SoloLoNombranLasPruebas — ningún guion fuera de una carpet
     return /window-passed/.test(txt) || /conVentana\s*\(/.test(txt);
   });
   assert.deepStrictEqual(lo, [], `estos guiones nombran el ayudante de pruebas: ${lo.join(', ')}`);
+});
+
+test('T4 WindowPassed_EvidenceFolderOutsideOthersStillStop @story-8.268 @ac-3', () => {
+  for (const rel of ['.advisors/dod-runtime/x.js', 'scripts/tests/lib/x.js', 'skills/x/__tests__/y.js']) {
+    assert.strictEqual(seBarre(rel), false, `${rel}: no se barre`);
+  }
+  assert.strictEqual(seBarre('scripts/x.js'), true, 'un guion fuera de las pruebas y de la evidencia se barre');
+  assert.strictEqual(seBarre('scripts/x.md'), false, 'lo que no es código no se barre');
 });
 
 test('WindowPassed_ElAyudanteViveEnPruebas — el ayudante está en una carpeta de pruebas', () => {

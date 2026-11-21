@@ -19,7 +19,7 @@ const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const TEXTO = 'el aviso queda registrado en el servicio externo del cliente';
 const RAZON = 'el servicio externo no tiene ambiente de prueba';
-const VENTANA = /aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No»\. Una respuesta en el chat no lo firma\./;
+const VENTANA = /aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No»\. Lo firma esa aprobación, no otra respuesta en el chat\./;
 // stable-data: las horas de la conversación van después de la muestra, que se anota con el reloj real
 const T = (seg) => new Date(Date.now() + 60000 + seg * 1000).toISOString();
 const GIT_ENV = { ...process.env, GIT_AUTHOR_DATE: '2026-10-20T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-20T12:00:00Z' };
@@ -63,10 +63,13 @@ const delDev = (texto, ts = T(1)) => ({ type: 'user', timestamp: ts, message: { 
 const delAgente = (texto, ts = T(0)) => ({ type: 'assistant', timestamp: ts, message: { role: 'assistant', content: [{ type: 'text', text: texto }] } });
 
 const pedirFirma = (lab) => `node ${MARKER} runtime-waiver ${lab.story} --acs 1`;
+// la puerta corre desde una copia propia del arnés, igual que el guion que nombra el comando: el freno reconoce un guion
+// del arnés según el estado de git del clon
 function puertaBash(lab, command) {
-  return spawnSync('node', [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+  const { inHarnessCopy } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js'));
+  return spawnSync('node', [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
     cwd: lab.repo, encoding: 'utf8', env: lab.env,
-    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command } }),
+    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: inHarnessCopy(command) } }),
   });
 }
 function despachar(lab, file_path, content) {
@@ -200,4 +203,71 @@ test('WaiverShown_AvisoCorto: un renglón por criterio, más el encabezado y dó
   for (const t of ['historia 9.94', 'servicio externo del cliente', 'no tiene ambiente de prueba', 'T1', 'ventana de permiso', 'cuenta como probado']) {
     assert.ok(msg.includes(t), `falta «${t}»:\n${msg}`);
   }
+});
+
+test('CriteriosDe_ConLaMatrizYaCalculada_NoLaVuelveACalcular', () => {
+  // el freno ya calculó la matriz: con ella en la mano, la lista sale sin leer la historia (la ruta ni existe)
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  const matrix = { notVerifiable: [1], perAc: { 1: { text: 'a', declReason: 'r', coveredBy: 'T1' }, 2: { text: 'b' } } };
+  const c = wd.criteriosDe(path.join(os.tmpdir(), 'no-existe', 'story-9.99.md'), [1, 2], matrix);
+  assert.equal(c.matrix, matrix);
+  assert.deepEqual(c.lista.map((x) => x.ac), [1]);
+});
+
+test('WaiverDisplay_UsesMarkerBatchMatrix @story-8.240 @ac-11 — la ventana muestra el criterio de la tanda con la matriz del marcador', () => {
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  const base = tmp('wd-tanda-');
+  const repo = path.join(base, 'repo');
+  const stateDir = path.join(base, 'state');
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  const git = (...a) => execFileSync('git', ['-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { encoding: 'utf8', env: GIT_ENV });
+  git('init', '-q');
+  const story = path.join(repo, 'specs', 'story-9.95-paraguas.md');
+  fs.writeFileSync(story, ['---', 'story: "9.95"', 'title: "paraguas"', 'status: in-progress', 'runtime_not_verifiable:', '  - ac: 1',
+    `    reason: "${RAZON}"`, '    covered_by: T1', 'pipelines:', '  - name: A-la-primera', '    status: pending', '    acs: [1]',
+    '  - name: B-la-segunda', '    status: pending', '    acs: [2]', '---', '', '# Story 9.95', '', '## Acceptance Criteria', '',
+    `1. **Given** un pedido **Then** ${TEXTO}.`, '2. **Given** otro pedido **Then** otro resultado.', '', '### Tests', '',
+    '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
+    '| T1 | `Aviso_QuedaRegistrado` | 1 | unit | x | y |', '| T2 | `Otro_Resultado` | 2 | unit | x | y |', ''].join('\n'));
+  git('add', '.');
+  git('commit', '-qm', 'base');
+  const marker = { storyId: '9.95', storyPath: story, repoPath: repo, batch: 'A-la-primera', baseSha: git('rev-parse', 'HEAD').trim() };
+  fs.mkdirSync(path.join(repo, '.advisors'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.advisors', 'tests-result.json'), JSON.stringify({ ts: new Date().toISOString(), story_id: '9.95', suite_green: true }));
+  fs.writeFileSync(path.join(repo, '.gitignore'), '.advisors/\n');
+  git('add', '.gitignore');
+  git('commit', '-qm', 'ignora .advisors');
+  marker.baseSha = git('rev-parse', 'HEAD').trim();
+  fs.mkdirSync(path.join(stateDir, 'active'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'active', 's-wdt.json'), JSON.stringify(marker));
+  // la matriz de la firma es la de la tanda: el criterio de la otra no entra
+  const m = wd.matrixForSignature(story, marker);
+  assert.equal(m.batch, 'A-la-primera', JSON.stringify(m.warnings));
+  assert.ok(!m.acs.includes(2), `la otra tanda queda afuera: ${m.acs}`);
+  // la ventana muestra el criterio de la tanda con su razón
+  const muestra = wd.preparar({ sessionId: 's-wdt', stateDir, storyPath: story, acs: [1] });
+  assert.ok(muestra && muestra.systemMessage, `muestra el criterio: ${JSON.stringify(muestra)}`);
+  assert.match(muestra.systemMessage, new RegExp(RAZON));
+  // con el marcador de otra historia, la firma mide todas
+  assert.equal(wd.matrixForSignature(story, { ...marker, storyPath: path.join(repo, 'specs', 'otra.md') }).batch, null);
+});
+
+test('WaiverDisplay_MeasuredAc_ShowsMeasuredAndBound @story-8.260 @ac-25', () => {
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  const fuera = { nombre: 'duration', medido: 3010, medidoTexto: '3010 ms', unidad: 'ms', cota: '< 2000 ms', estado: 'fuera' };
+  const matriz = (medido) => ({ notVerifiable: [1, 2, 3], perAc: {
+    1: { verdict: 'NOT-VERIFIABLE', text: 'responde en menos de 2 s', declReason: 'r', coveredBy: 'T1', medida: { ...fuera, medido, medidoTexto: `${medido} ms` } },
+    2: { verdict: 'NOT-VERIFIABLE', text: 'p95 bajo', declReason: 'r', coveredBy: 'T2', medida: { nombre: 'p95', medido: null, cota: '<= 200 ms', estado: 'sin-medicion', motivo: 'ningún humo fresco del criterio trae la medida p95' } },
+    3: { verdict: 'NOT-VERIFIABLE', text: TEXTO, declReason: RAZON, coveredBy: 'T1' },
+  } });
+  const a = wd.criteriosDe('/x.md', [1, 2, 3], matriz(3010));
+  const b = wd.criteriosDe('/x.md', [1, 2, 3], matriz(4500));
+  const msg = wd.bloque({ storyId: '9.94', criterios: a.lista });
+  assert.match(msg, /AC 1: [^\n]*Lo medido: medido 3010 ms; la cota es < 2000 ms/);
+  assert.match(msg, /AC 2: [^\n]*Lo medido: sin medición/);
+  assert.doesNotMatch(msg.split('\n').find((l) => l.startsWith('AC 3:')), /Lo medido/);
+  // la huella cambia con lo medido; la del criterio sin marca es la de siempre
+  assert.notStrictEqual(a.lista[0].sha, b.lista[0].sha);
+  assert.strictEqual(a.lista[2].sha, wd.huella(TEXTO, RAZON, 'T1'));
+  assert.strictEqual(a.lista[2].medida, undefined);
 });

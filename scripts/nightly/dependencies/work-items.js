@@ -1223,7 +1223,9 @@ function nombreDeAsignado(asg) {
  * tarea no espera ninguna decisión: pasa a promoted/ con `veredicto: util`. Sin el sitio, se anota y no se mueve.
  */
 function anotarSeguimiento(ctx, res, rutaOperations) {
-  const conSitio = sitioDecide(rutaOperations).codigo === 0;
+  // la dirección del sitio vale la del perfil del equipo (TEAM_PROFILE, la que ya trae el pipeline), con operations.json
+  // de respaldo: lo mismo que pregunta open-pr-per-finding.sh
+  const conSitio = sitioDecide(rutaOperations, { perfil: process.env.TEAM_PROFILE || null }).codigo === 0;
   const postergadas = new Set(res.postergados.map((x) => x.ficha));
   const volcados = (ctx.volcado && ctx.volcado.pedidos) || {};
   for (const f of ctx.fichas.filter((x) => x.estado !== 'archived')) {
@@ -1235,6 +1237,8 @@ function anotarSeguimiento(ctx, res, rutaOperations) {
         const nombre = v && typeof v.asignado === 'string' ? nombreDeAsignado(v.asignado) : null;
         // leída y sin nadie: se anota, para que el sitio diga «sin asignar» sólo cuando se midió
         if (!nombre && v && v.leido === true && v.sin_asignar === true) return `${id}: ${fuentes.SIN_ASIGNAR}`;
+        // leída, con alguien que no tiene un nombre que se pueda mostrar (un correo): tiene dueño, no «no se sabe»
+        if (!nombre && v && v.leido === true && v.sin_asignar === false) return `${id}: ${fuentes.ASIGNADA_SIN_NOMBRE}`;
         return nombre ? `${id}: ${nombre}` : null;
       }).filter(Boolean);
       const falta = res.sin_pedido.find((x) => x.ficha === f.idFicha);
@@ -1270,10 +1274,10 @@ function textoCerradoVivo(x, paquete, respaldo, hoy) {
   const L = [`<p>${mencionesDelArnes(respaldo)} — revisión nocturna de dependencias del arnés (ficha <code>arnes:${escHtml(x.ficha)}</code>).</p>`];
   if (x.clase === 'no-aplica') {
     L.push(`<p>Este pedido está cerrado como no aplica (${est}, ${mot}) desde el ${desde}, y la vulnerabilidad ${escHtml(paquete)} sigue apareciendo en ${repos}, medido el ${escHtml(hoy)}.</p>`,
-      '<p>No lo reabro: decidilo vos. La única salida sin arreglo es declarar la deuda en <code>vulnerabilidades-pendientes.json</code>, con motivo y fecha de revisión: si no, va a seguir apareciendo todas las noches.</p>');
+      '<p>No lo reabro: decidilo vos. La única salida sin arreglo es declarar la deuda en <code>pending-vulnerabilities.json</code>, con motivo y fecha de revisión: si no, va a seguir apareciendo todas las noches.</p>');
   } else {
     L.push(`<p>Este pedido está cerrado como ${est} (${mot}) desde el ${desde}, y la vulnerabilidad ${escHtml(paquete)} sigue apareciendo en ${repos}, medido el ${escHtml(hoy)}.</p>`,
-      '<p>No lo reabro: decidilo vos — se arregla (subir el paquete) o se declara la deuda en <code>vulnerabilidades-pendientes.json</code>, con motivo y fecha de revisión.</p>');
+      '<p>No lo reabro: decidilo vos — se arregla (subir el paquete) o se declara la deuda en <code>pending-vulnerabilities.json</code>, con motivo y fecha de revisión.</p>');
   }
   return L.join('\n');
 }

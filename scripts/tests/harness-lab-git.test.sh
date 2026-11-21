@@ -15,6 +15,10 @@
 #   · el control: el MISMO git, con el mismo ambiente y sin pasar por la función, sí lo lanza. Si un git nuevo dejara
 #     de lanzarlo, este guion lo dice en rojo en vez de quedar verde sin medir nada.
 #
+# LabTreeList: `tree_list` y `tree_file_sums`, la huella con UN shasum, dan las mismas líneas que el
+# lazo de un shasum por archivo (enlaces, carpetas, nombres con espacios o con barra invertida, un archivo vacío), y un archivo cambiado cambia
+# la lista. 🔴 Falla con: otro orden, otra forma de línea o perder los enlaces o las carpetas.
+#
 # 🔴 Sin las opciones de harness_lab_git, los dos comandos lanzan
 #    `git maintenance run --auto --quiet --detach`.
 #
@@ -96,6 +100,29 @@ echo "LabMachine · el git del código bajo prueba, con el entorno de la máquin
   GIT_TRACE2_EVENT="$BASE/machine-fetch.json" plain_git "$B2" fetch -q "$R2" +refs/heads/main:refs/heads/main >/dev/null 2>&1; RC=$?
   N="$(launched "$BASE/machine-fetch.json")"
   [ "$RC" = 0 ] && [ -s "$BASE/machine-fetch.json" ] && [ "$N" = 0 ] && echo "  ok   — un fetch con un git a secas, en la máquina de juguete, no lanza mantenimiento" || { echo "  MAL  — fetch en la máquina de juguete: rc ${RC}, ${N} proceso(s) de mantenimiento"; F=1; }
+  exit "$F"
+) || FALLOS=$((FALLOS+1))
+
+echo "LabTreeList · la huella con un solo shasum da las mismas líneas que un shasum por archivo"
+(
+  F=0
+  D="$BASE/tree"; mkdir -p "$D/sub dir/hondo" "$D/vacia"
+  printf 'uno\n' > "$D/a.txt"; printf 'dos\n' > "$D/sub dir/b c.txt"; : > "$D/sub dir/hondo/vacío"
+  printf 'tres\n' > "$D/sub dir/hondo/d.json"; ln -s a.txt "$D/enlace"; ln -s "sub dir" "$D/a-la-carpeta"
+  printf 'cuatro\n' > "$D/con\\barra.txt"   # shasum escapa este nombre: tiene que salir igual
+  # el lazo de antes, archivo por archivo: la referencia
+  vieja_lista() { ( cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r f; do
+      if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"; elif [ -f "$f" ]; then printf '%s ' "$f"; shasum -a 256 < "$f"; else printf '%s/\n' "$f"; fi
+    done ); }
+  vieja_sumas() { ( cd "$1" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do printf '%s ' "$f"; shasum -a 256 < "$f"; done ); }
+  nueva_sumas() { ( cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | tree_file_sums ); }
+  [ "$(tree_list "$D")" = "$(vieja_lista "$D")" ] && [ -n "$(vieja_lista "$D")" ] \
+    && echo "  ok   — tree_list: las mismas líneas que el lazo de un shasum por archivo (enlaces, carpetas, espacios, vacío)" \
+    || { echo "  MAL  — tree_list difiere: $(diff <(tree_list "$D") <(vieja_lista "$D") | head -4 | tr '\n' ' ')"; F=1; }
+  [ "$(nueva_sumas "$D")" = "$(vieja_sumas "$D")" ] \
+    && echo "  ok   — tree_file_sums: las mismas líneas, en el mismo orden" || { echo "  MAL  — tree_file_sums difiere: $(nueva_sumas "$D" | head -2)"; F=1; }
+  ANTES="$(tree_list "$D")"; printf 'cambiado\n' > "$D/sub dir/hondo/d.json"
+  [ "$(tree_list "$D")" != "$ANTES" ] && echo "  ok   — un archivo cambiado cambia la lista" || { echo "  MAL  — un archivo cambiado no cambia la lista"; F=1; }
   exit "$F"
 ) || FALLOS=$((FALLOS+1))
 

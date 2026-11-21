@@ -3,7 +3,7 @@
  * tool-names.test.js — el control de los nombres de las herramientas de horas fuera de su lugar (scripts/ci/tool-names.js).
  * stable-data: los commits de los repos de juguete van con fecha fija y sin mantenimiento.
  *
- * POR QUÉ. El núcleo del arnés no nombra herramientas (guides/constitucion.md): lo propio de cada una vive en su
+ * POR QUÉ. El núcleo del arnés no nombra herramientas (guides/constitution.md): lo propio de cada una vive en su
  * integración. Sin un control que cuente, un nombre vuelve a entrar con el próximo arreglo apurado y nadie lo ve.
  *
  * QUÉ MIDE. Que sólo cuenta lo del núcleo (no las zonas permitidas ni las rutas que apuntan a una integración) y que un
@@ -206,8 +206,8 @@ test('T64 ToolNames_RealTree_UnderCeiling @story-7.40 @ac-28 @ac-30', (t) => {
   assert.ok(base.controls.some((c) => c.script === 'scripts/ci/tool-names.js' && c.rules.includes('scripts/ci/tool-names.json')), 'en el inventario de controles desde la base, con su regla');
   // lo liviano (E1) ya no nombra la herramienta: las guías del núcleo y los textos que ve el agente (las capturas del
   // sitio sacan los nombres de lo que lee el núcleo, y se limpian con él en la E2)
-  const light = ['INDEX.md', 'guides/constitucion.md', 'guides/workflow-orchestration.md', 'guides/git-worktrees.md',
-    'guides/harness-cost-tiering.md', 'guides/piezas-del-arnes.md', 'guides/maintaining/piezas-en-detalle.md',
+  const light = ['INDEX.md', 'guides/constitution.md', 'guides/workflow-orchestration.md', 'guides/git-worktrees.md',
+    'guides/harness-cost-tiering.md', ...require('./lib/pieces-guide.js').piecesFiles(ROOT), 'guides/maintaining/piezas-en-detalle.md',
     'skills/tycon-pipeline/scripts/on-prompt.js', 'skills/tycon-pipeline/steps/step-00-preflight.md'];
   for (const f of light) assert.ok(!r.perFile[f], `${f} todavía nombra la herramienta (${r.perFile[f]})`);
   assert.ok(fs.existsSync(path.join(ROOT, 'integrations', 'clockify', 'scripts', 'install-mcp.sh')), 'el instalador del MCP vive en su integración');

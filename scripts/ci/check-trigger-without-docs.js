@@ -86,7 +86,7 @@ const { aliasLegacyOptions, LegacyOptionsError } = (() => {
  * toca un commit de documentación en un sitio o en un repo sin pipeline TYCON. Cada entrada es algo
  * que el arnés o una persona ESCRIBE sin cambiar una línea de lo que se construye.
  *
- * 🔴 Lo que NO está, y por qué: `pruebas-pendientes.json` y las declaraciones de vulnerabilidades no
+ * 🔴 Lo que NO está, y por qué: `pending-tests.json` y las declaraciones de vulnerabilidades no
  * cambian el paquete, pero SÍ el veredicto (borrar una deuda tiene que volver a juzgar), así que un merge que las toca DEBE construir. Y `azure-pipelines*.yml`
  * tampoco: un cambio al pipeline tiene que disparar una corrida.
  */

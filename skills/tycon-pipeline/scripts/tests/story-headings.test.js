@@ -396,7 +396,9 @@ test('T16 PreCommit_LibMissing_FailsClosed', (t) => {
 // ── Que no vuelva ─────────────────────────────────────────────────────────────
 
 // Las expresiones que delatan un lector propio: títulos de criterios o de pruebas de la story, o formas de criterio.
-const SENALES = [/acceptance criteria/i, /criterios de aceptaci/i, /(\\s|\[ \\t\]|#)\+?\s?Tests\\b/, /### Tests/, /\\\*\\\*AC/, /\bGIVEN\b/, /\\\*\\\*Dado/];
+// Los títulos de las dos secciones de la intención también: su único lector es lib/intent.js, con TITLE_WORDS.
+const SENALES = [/acceptance criteria/i, /criterios de aceptaci/i, /(\\s|\[ \\t\]|#)\+?\s?Tests\\b/, /### Tests/, /\\\*\\\*AC/, /\bGIVEN\b/, /\\\*\\\*Dado/,
+  /preguntas abiertas/i, /decisiones reservadas/i];
 const CONTEXTO_REGEX = /(\.test\(|\.match\(|\.matchAll\(|\.exec\(|\.split\(\/|\.replace\(\/|new RegExp\(|_RE\s*=\s*\/)/;
 
 function lectoresPropios(raiz, rel = '') {
@@ -426,6 +428,17 @@ test('T17 Guard_NoOwnHeadingOrFormRegex', (t) => {
   fs.mkdirSync(path.join(plantado, 'scripts'));
   fs.writeFileSync(path.join(plantado, 'scripts', 'lector.js'), "const ok = /^##\\s+Acceptance Criteria/m.test(s);\n");
   assert.deepEqual(lectoresPropios(plantado, 'scripts'), [path.join('scripts', 'lector.js') + ':1']);
+});
+
+test('T10 StoryHeadings_IntentTitles_OnlyInIntentJs @story-8.258 @ac-1', (t) => {
+  assert.strictEqual(typeof sc.TITLE_WORDS.questions, 'string');
+  assert.strictEqual(typeof sc.TITLE_WORDS.reserved, 'string');
+  assert.match('## Preguntas abiertas', new RegExp(sc.TITLE_WORDS.questions, 'i'));
+  assert.match('## Decisiones reservadas', new RegExp(sc.TITLE_WORDS.reserved, 'i'));
+  const plantado = tmp(t, 'tycon-intent-guard-');
+  fs.mkdirSync(path.join(plantado, 'scripts'));
+  fs.writeFileSync(path.join(plantado, 'scripts', 'lector.js'), "const ok = /^##\\s+Preguntas abiertas/m.test(s);\n");
+  assert.deepStrictEqual(lectoresPropios(plantado, 'scripts'), [path.join('scripts', 'lector.js') + ':1']);
 });
 
 test('T18 Guard_AcForms_SevenWithCases', () => {

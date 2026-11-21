@@ -263,6 +263,62 @@ más**: un `project: "TotoraBackend"` explícito hoy re-fragmenta la memoria que
 juntar — con el pin puesto, lo correcto es no pasar override o pasar `totora`.
 
 
+## Índice local: el índice de memoria no viaja por git
+
+**Qué es.** La memoria viaja en dos piezas: los chunks (`.engram/chunks/<id>.jsonl.gz`, los datos) y el índice
+(`.engram/manifest.json`, la lista de cuáles existen). Cada pedido que suma memoria agrega una línea al final del
+índice, y dos pedidos así chocan por esas mismas líneas. En un repo en **índice local** el índice no se commitea: los
+chunks siguen en git y cada clon arma su índice desde ellos. Dos pedidos que suman chunks distintos se unen solos.
+
+**Quién lo rehace.** El arnés, sin que nadie lo pida: al abrir la sesión (antes de `engram sync --import`) y en el
+chequeo previo al commit (antes de exportar). Agrega una entrada por cada chunk que falta y no borra ninguna. Cada
+entrada va por la fecha más nueva que trae su chunk adentro: el importador aplica los chunks en el orden del índice y
+gana la última escritura. Un chunk sin fecha va al final y se avisa; uno ilegible queda afuera con su motivo. A mano:
+
+```bash
+node <arnés>/scripts/lib/manifest-engram.js rebuild --repo <repo>      # 0 sano · 1 algo quedó afuera · 3 no aplica
+```
+
+**Cómo se pasa un repo.** Un comando, en una rama nueva desde `main`. Agrega la línea al `.gitignore`, saca el índice
+de git sin borrar el archivo local y lo deja declarando todos los chunks. Deja los dos cambios preparados; el commit y
+el pedido son tuyos:
+
+```bash
+node <arnés>/scripts/lib/manifest-engram.js adopt --repo <repo>           # en seco: dice qué haría (sale 1)
+node <arnés>/scripts/lib/manifest-engram.js adopt --repo <repo> --apply   # 0 hecho o ya estaba · 3 no pudo, y dice por qué
+git commit -m "chore(engram): el índice de memoria no viaja por git"
+```
+
+Es el cambio de dos líneas (`.engram/manifest.json` al `.gitignore` y `git rm --cached .engram/manifest.json`), con
+dos cuidados: no repite la regla si ya estaba, y no saca el índice de git si otra regla lo sigue incluyendo. Fuera de
+git y sin ignorar, el próximo `git add -A` lo devolvería.
+
+**Por qué ésta y no otra salida.** Unir el JSON al mergear no sirve en un pedido: `merge=union` junta líneas y puede
+dejar el JSON inválido, y Azure DevOps y GitHub no corren controladores de merge propios del lado del servidor. Con el
+índice en git, todo pedido que suma memoria choca con el que entró antes que él. Resolverlo obliga a empujar de nuevo,
+y eso borra la aprobación.
+
+Un repo está en índice local cuando `git check-ignore -q .engram/manifest.json` sale 0 y el índice no está en
+`git ls-files`. El chequeo previo al commit, el portón de CI y la auditoría lo detectan solos: no cruzan entradas
+perdidas y dicen «índice local: no viaja por git». La maniobra de abajo (conflicto en el índice) sigue valiendo para
+los repos con el índice versionado.
+
+**La transición.** Los pedidos abiertos cuando entra el cambio chocan UNA última vez: su rama modifica el índice y
+`main` lo borró. Se resuelve en la rama:
+
+```bash
+git merge origin/main
+git rm --cached .engram/manifest.json      # el choque «modificado contra borrado» se resuelve borrándolo de git
+git commit
+```
+
+Para saber cuáles van a chocar antes de mergear el cambio, por cada pedido abierto:
+
+```bash
+git merge-tree --write-tree origin/main origin/<rama-del-pedido>   # sale ≠ 0 si choca, y nombra el archivo
+```
+
+
 ## Conflicto en `.engram/manifest.json` — la maniobra correcta (ENGRAM-MANIFEST-1, 2026-08-22)
 
 El manifest es una lista donde cada rama/sesión que sincroniza agrega su entrada al final — dos

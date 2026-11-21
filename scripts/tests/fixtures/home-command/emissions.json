@@ -1,0 +1,276 @@
+{
+  "__doc": "Las 45 líneas que imprimían «node ~/» sobre origin/main cabe6551 (story 8.218). archivo; linea en ese commit (sólo de guía: se corre al editar); viejo: el texto entero desde «node ~/» hasta el fin de su texto, con la ruta y los argumentos, tal como estaba escrito en el código; forma: home = node \"$HOME/<resto>\", firma = node \"<carpeta absoluta>/<resto>\" (Decisión 4). La lee scripts/tests/home-command.test.js (T1).",
+  "base": "cabe6551",
+  "emisiones": [
+    {
+      "archivo": "scripts/hooks/branch-guard-notice.js",
+      "linea": 459,
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js doctor",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/hooks/branch-guard-notice.js",
+      "linea": 477,
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js rollback --release (o npx @tyconsa/harness@latest). No lo hagas sin que te lo pida.",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/hooks/branch-guard-notice.js",
+      "linea": 583,
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js update   #",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/hooks/branch-guard-notice.js",
+      "linea": 609,
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js update   # dice por qué no avanza, o avanza",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/hooks/engram-drift-notice.js",
+      "linea": 193,
+      "viejo": "node ~/.claude/tycon-harness/scripts/lib/engram-autoheal.js",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/hooks/engram-drift-notice.js",
+      "linea": 264,
+      "viejo": "node ~/.claude/tycon-harness/scripts/lib/harness-audit.js --verbose",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/hooks/safety-guard-pre.sh",
+      "linea": 607,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona, en la ventana de permiso.",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/harness.js",
+      "linea": 1231,
+      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js set",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/harness.js",
+      "linea": 1383,
+      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js validate",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/harness.js",
+      "linea": 1538,
+      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js update --yes",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/harness.js",
+      "linea": 1991,
+      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js set",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/harness.js",
+      "linea": 3255,
+      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install otra vez la retoma — harness.js doctor lo detalla",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/harness.js",
+      "linea": 4070,
+      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install otra vez la retoma, o harness.js uninstall la saca",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/harness.js",
+      "linea": 4088,
+      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install --profile minimal|full",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/harness/questions.js",
+      "linea": 201,
+      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install --profile minimal|full --integrations <lista|none> --packs all|none|<a,b> (o tycon-config.js set <clave> <valor>)",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/harness/repoint.js",
+      "linea": 88,
+      "viejo": "node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/harness/report.js",
+      "linea": 163,
+      "viejo": "node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/install-effects.json",
+      "linea": 146,
+      "viejo": "node ~/.claude/tycon-claude-guides/scripts/lib/tycon-config.js set ado.org <url>",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/setup/install-effects.json",
+      "linea": 147,
+      "viejo": "node ~/.claude/tycon-claude-guides/scripts/lib/tycon-config.js set telegram.chat_id <chat>",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/tools/context-budget.js",
+      "linea": 744,
+      "viejo": "node ~/.claude/tycon-harness/scripts/tools/context-budget.js",
+      "forma": "home"
+    },
+    {
+      "archivo": "scripts/tools/rules-distill.js",
+      "linea": 513,
+      "viejo": "node ~/.claude/tycon-harness/scripts/tools/rules-distill.js",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/lib/atdd-commit-gate.js",
+      "linea": 280,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js --story ${storyPath}",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/lib/atdd-preedit.js",
+      "linea": 152,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-flag atddBypass true --reason",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/lib/harness-freshness.js",
+      "linea": 38,
+      "viejo": "node ~/.tycon/harness/scripts/setup/harness.js install»; después, volvé a correr next.",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/lib/harness-freshness.js",
+      "linea": 53,
+      "viejo": "node ~/.tycon/harness/scripts/setup/harness.js doctor» lo detalla.",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/lib/post-revision.js",
+      "linea": 60,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js smart-reloop --iter ${iter + 1} --repo . --story <story>",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/lib/rethink.js",
+      "linea": 210,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js rethink --iter ${iter} --repeated",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/marker.js",
+      "linea": 994,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run ${v.runId ||",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/marker.js",
+      "linea": 995,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files <archivos de código del diff>",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/marker.js",
+      "linea": 1024,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId nuevo> 5b --relaunch",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/marker.js",
+      "linea": 1025,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/marker.js",
+      "linea": 1462,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js check-count \\",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/marker.js",
+      "linea": 1790,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-findings --story ${storyPathF} --findings -",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/marker.js",
+      "linea": 1927,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js runtime-waiver ${storyPath}",
+      "forma": "firma"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/on-config-lint.js",
+      "linea": 55,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js lint-config --repo ${raiz}",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/on-dod-evidence-guard.js",
+      "linea": 96,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js --story <id> --scenario <s.json> --evidence-dir <dir>",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/on-edit.js",
+      "linea": 209,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js --story <story.md>",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/on-frontmatter-write.js",
+      "linea": 622,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/tmp-path.js e2ecfg <repo>)",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/on-frontmatter-write.js",
+      "linea": 623,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js e2e-config --repo <repo> >",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/on-frontmatter-write.js",
+      "linea": 628,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js evidence-dir --story <spec> --repo <repo> --plain)   # el repo de la STORY",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "linea": 1845,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js start --story <spec> --repo <repo>",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/on-prompt.js",
+      "linea": 341,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/on-prompt.js",
+      "linea": 344,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear-session <sessionId>",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/pipeline.js",
+      "linea": 2548,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js --story ${storyPath} --scenario <scenario.json> --evidence-dir ${evidDir}  (o escribir el archivo manualmente con formato hook-compliant — ver PRE-2)",
+      "forma": "home"
+    },
+    {
+      "archivo": "skills/tycon-pipeline/scripts/pipeline.js",
+      "linea": 5300,
+      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-discovery.js --doctor --repo <dir>",
+      "forma": "home"
+    }
+  ]
+}

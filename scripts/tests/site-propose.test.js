@@ -480,7 +480,7 @@ test('T7 Proponiendo_TodoApagado_YVuelve @story-2.46 @ac-6', async () => {
   for (const n of controles()) assert.strictEqual(n.attrs.disabled, 'disabled', `${n.tag} «${n.textContent || n.attrs['data-path'] || ''}» apagado mientras propone`);
   const envio = p.llamadas.find((c) => c.ruta === '/api/config/proponer');
   assert.match(envio.cuerpo.marca, MARCA_RX, 'la marca viaja: 32 hex en minúscula');
-  soltarProponer({ status: 200, json: () => Promise.resolve({ ok: true, message: `Pedido abierto: ${enlace}`, enlace }) });
+  soltarProponer({ status: 200, json: () => Promise.resolve({ ok: true, message: `Pull request abierto: ${enlace}`, enlace }) });
   await p.soltar();
   const campos = controles().filter((n) => n.tag !== 'button' || n.textContent === 'Revisar cambios');
   assert.ok(campos.length >= 2);
@@ -493,20 +493,20 @@ test('T9 SegundaRespuesta_NoPisaElExito @story-2.46 @ac-7', async () => {
   let n = 0;
   const p = await pantallaViva({
     'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR,
-    'POST /api/config/proponer': () => { n++; return { status: n === 1 ? 200 : 409, json: () => Promise.resolve(n === 1 ? { ok: true, message: `Pedido abierto: ${enlace}`, enlace } : { ok: false, message: 'ya hay un pedido abierto sobre este archivo: x; esperá' }) }; },
+    'POST /api/config/proponer': () => { n++; return { status: n === 1 ? 200 : 409, json: () => Promise.resolve(n === 1 ? { ok: true, message: `Pull request abierto: ${enlace}`, enlace } : { ok: false, message: 'ya hay un pull request abierto sobre este archivo: x; esperá' }) }; },
   });
   await p.clic('Revisar cambios'); await p.clic('Proponer el cambio');
   const confirmar = p.boton('Confirmar y proponer');
   confirmar.on.click(); confirmar.on.click(); // el doble clic: el segundo no manda nada
   await p.soltar();
   assert.strictEqual(p.llamadas.filter((c) => c.ruta === '/api/config/proponer').length, 1, 'un solo envío');
-  assert.ok(p.textoDe(p.seccion()).includes('Pedido abierto'));
+  assert.ok(p.textoDe(p.seccion()).includes('Pull request abierto'));
   // un envío tardío con la misma marca (un botón viejo): su rechazo habla del pedido de esta misma propuesta y se descarta
   confirmar.on.click(); await p.soltar();
   assert.strictEqual(p.llamadas.filter((c) => c.ruta === '/api/config/proponer').length, 2, 'el tardío sí salió');
   const ahora = p.textoDe(p.seccion());
-  assert.ok(ahora.includes('Pedido abierto'), 'sigue «Pedido abierto»');
-  assert.ok(!ahora.includes('ya hay un pedido abierto'), 'sin el error que lo pisa');
+  assert.ok(ahora.includes('Pull request abierto'), 'sigue «Pull request abierto»');
+  assert.ok(!ahora.includes('ya hay un pull request abierto'), 'sin el error que lo pisa');
   assert.ok(p.todos(p.seccion()).some((x) => x.tag === 'a' && x.attrs.href === enlace), 'con su enlace');
 });
 
@@ -543,7 +543,7 @@ test('T10 RespuestaCortada_ConsultaYMuestraElEnlace @story-2.46 @ac-8', async ()
   const marca = p.llamadas.find((c) => c.ruta === '/api/config/proponer').cuerpo.marca;
   assert.ok(consultas.length >= 2 && consultas.every((c) => c === `/api/config/propuesta?seccion=canal&marca=${marca}`), consultas.join(' '));
   const texto = p.textoDe(p.seccion());
-  assert.ok(texto.includes('Pedido abierto'), texto);
+  assert.ok(texto.includes('Pull request abierto'), texto);
   assert.ok(!/contestó con un error/.test(texto), 'no se ve el error');
   assert.ok(p.todos(p.seccion()).some((x) => x.tag === 'a' && x.attrs.href === enlace), 'con el enlace');
   // un rechazo con el mensaje del sitio NO consulta
@@ -585,7 +585,7 @@ test('SinRespuestaNiPedido_DiceQueHacer @story-2.68 @ac-3', async () => {
   for (let i = 0; i < 10; i++) { await new Promise((r) => setTimeout(r, 10)); await p.soltar(); }
   const texto = p.textoDe(p.seccion());
   assert.ok(!texto.includes('proponiendo…'), texto);
-  assert.match(texto, /recargá y mirá si el pedido se abrió/, texto);
+  assert.match(texto, /recargá y mirá si el pull request se abrió/, texto);
 });
 
 test('RespuestaTardia_NoPisaLaConsulta @story-2.68 @ac-4', async () => {
@@ -597,12 +597,12 @@ test('RespuestaTardia_NoPisaLaConsulta @story-2.68 @ac-4', async () => {
   }, [1, 1, 1], { esperaRespuesta: 5 });
   await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
   for (let i = 0; i < 5; i++) { await new Promise((r) => setTimeout(r, 10)); await p.soltar(); }
-  assert.ok(p.textoDe(p.seccion()).includes('Pedido abierto'), p.textoDe(p.seccion()));
+  assert.ok(p.textoDe(p.seccion()).includes('Pull request abierto'), p.textoDe(p.seccion()));
   // la respuesta del POST llega tarde, con un error: la propuesta ya quedó contestada por la consulta
   contestar({ status: 500, json: () => Promise.resolve({ ok: false, message: 'el sitio se reinició' }) });
   await p.soltar();
   const texto = p.textoDe(p.seccion());
-  assert.ok(texto.includes('Pedido abierto'), texto);
+  assert.ok(texto.includes('Pull request abierto'), texto);
   assert.ok(!texto.includes('el sitio se reinició'), texto);
   // ni una tardía con éxito: la primera respuesta buena manda
   let contestar2;
@@ -635,8 +635,8 @@ test('T11 RespuestaCortada_NoHayPedido_ElErrorDeSiempre @story-2.46 @ac-8', asyn
     await p.soltar();
     assert.strictEqual(consultas.length, 3, `${nombre}: tres consultas, ni más`);
     assert.strictEqual(p.llamadas.filter((c) => c.ruta === '/api/config/proponer').length, 1, `${nombre}: nunca reintenta /proponer`);
-    assert.match(p.textoDe(p.seccion()), /recargá y mirá si el pedido se abrió/, nombre);
-    assert.ok(!p.textoDe(p.seccion()).includes('Pedido abierto'), nombre);
+    assert.match(p.textoDe(p.seccion()), /recargá y mirá si el pull request se abrió/, nombre);
+    assert.ok(!p.textoDe(p.seccion()).includes('Pull request abierto'), nombre);
   }
 });
 
@@ -646,7 +646,7 @@ test('T14 Textos_RefreshMinutes_YGuia @story-2.46 @ac-11 @ac-12', () => {
   assert.strictEqual(defecto, 15);
   assert.strictEqual(TX.t('es', 'pantalla.cadaCuantoSeActualizaEl'), 'Cada cuánto el sitio relee sus datos');
   assert.strictEqual(TX.t('en', 'pantalla.cadaCuantoSeActualizaEl'), 'How often the site rereads its data');
-  for (const [idioma, rx] of [['es', /configuración.*buzón de ejecuciones.*perfil del equipo.*no instala versiones.*Cómo se actualiza el sitio/is], ['en', /configuration.*runs mailbox.*team profile.*does not install versions.*How the site updates/is]]) {
+  for (const [idioma, rx] of [['es', /configuración.*depósito de ejecuciones.*perfil del equipo.*no instala versiones.*Cómo se actualiza el sitio/is], ['en', /configuration.*run storage.*team profile.*does not install versions.*How the site updates/is]]) {
     assert.match(TX.t(idioma, 'pantalla.queReleeElSitio'), rx, idioma);
   }
   assert.strictEqual(TX.t('es', 'pantalla.siNoLoDeclarasQuinceMinutos'), `Si no lo declarás: ${defecto} minutos`);
@@ -910,7 +910,7 @@ test('T15b TrasElMerge_LaPaginaConsultaYRelee_PestanaOculta @story-2.46 @ac-13',
   let estado = 'abierto';
   const p = await pantallaViva({
     'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR,
-    'POST /api/config/proponer': json({ ok: true, message: `Pedido abierto: ${enlace}`, enlace }),
+    'POST /api/config/proponer': json({ ok: true, message: `Pull request abierto: ${enlace}`, enlace }),
     'GET /api/config/propuesta': () => ({ status: 200, json: () => Promise.resolve({ ok: true, estado, enlace }) }),
   }, [1, 1, 1], { seguimiento: { cada: 1, vueltas: 50 } });
   await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
@@ -1024,7 +1024,7 @@ test('T16c Reaplicado_EnLaPantalla_MuestraLaDiferenciaYConfirma @story-2.46 @ac-
   const BASE_NUEVA = '{\n  "notify": "x",\n  "owners": 1\n}\n';
   const reaplicado = { ok: false, codigo: 'reaplicado', message: 'El archivo cambió afuera en otra parte: sumé tu cambio', texto: '{\n  "notify": "y",\n  "owners": 1\n}\n', diferencia: DIFERENCIA, resumen: RESUMEN, borrador: { notify: 'y' }, seccion: { texto: BASE_NUEVA, oid: 'oid-2', borrador: { notify: 'x' } } };
   let n = 0;
-  const p = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': () => { n += 1; return n === 1 ? { status: 200, json: () => Promise.resolve(reaplicado) } : { status: 200, json: () => Promise.resolve({ ok: true, message: 'Pedido abierto', enlace: 'https://git.acme.example/p/2' }) }; } });
+  const p = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': () => { n += 1; return n === 1 ? { status: 200, json: () => Promise.resolve(reaplicado) } : { status: 200, json: () => Promise.resolve({ ok: true, message: 'Pull request abierto', enlace: 'https://git.acme.example/p/2' }) }; } });
   await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
   const t = p.textoDe(p.seccion());
   assert.ok(t.includes('sumé tu cambio'), t);
@@ -1037,11 +1037,11 @@ test('T16c Reaplicado_EnLaPantalla_MuestraLaDiferenciaYConfirma @story-2.46 @ac-
   assert.strictEqual(envios.length, 2);
   assert.notStrictEqual(envios[1].cuerpo.marca, envios[0].cuerpo.marca, 'una marca nueva');
   assert.strictEqual(envios[1].cuerpo.oid, 'oid-2'); assert.strictEqual(envios[1].cuerpo.texto, reaplicado.texto);
-  assert.ok(p.textoDe(p.seccion()).includes('Pedido abierto'));
+  assert.ok(p.textoDe(p.seccion()).includes('Pull request abierto'));
   // lo que el sitio arma siempre sobre su versión de hoy («Confirmar máquina»): «Revisar» dice cuál, y «Proponer»
   // compara contra ésa y no contra la vieja de la página
   const conVersion = json({ ok: true, texto: TEXTO_DESPUES, borrador: { notify: 'y' }, diferencia: DIFERENCIA, resumen: RESUMEN, version: { texto: BASE_NUEVA, oid: 'oid-9' } });
-  const q = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': conVersion, 'POST /api/config/proponer': json({ ok: true, message: 'Pedido abierto', enlace: 'https://git.acme.example/p/9' }) });
+  const q = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': conVersion, 'POST /api/config/proponer': json({ ok: true, message: 'Pull request abierto', enlace: 'https://git.acme.example/p/9' }) });
   await q.clic('Revisar cambios'); await q.clic('Proponer el cambio'); await q.clic('Confirmar y proponer');
   const envio = q.llamadas.find((c) => c.ruta === '/api/config/proponer').cuerpo;
   assert.deepStrictEqual([envio.oid, envio.base], ['oid-9', BASE_NUEVA]);
@@ -1050,12 +1050,12 @@ test('T16c Reaplicado_EnLaPantalla_MuestraLaDiferenciaYConfirma @story-2.46 @ac-
 test('T19 SinSessionStorage_AndaIgual @story-2.46 @ac-17', async () => {
   const tira = { getItem() { throw new Error('SecurityError'); }, setItem() { throw new Error('QuotaExceededError'); }, removeItem() { throw new Error('SecurityError'); } };
   for (const [nombre, almacen] of [['que tira', tira], ['que no existe', undefined]]) {
-    const p = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': json({ ok: true, message: 'Pedido abierto', enlace: 'https://git.acme.example/p/3' }) }, [1, 1, 1], { sessionStorage: almacen });
+    const p = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': json({ ok: true, message: 'Pull request abierto', enlace: 'https://git.acme.example/p/3' }) }, [1, 1, 1], { sessionStorage: almacen });
     assert.ok(p.seccion(), `${nombre}: la pantalla cargó`);
     escribirEnCanal(p, '"y"'); await p.soltar();
     await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
     const t = p.textoDe(p.app);
-    assert.ok(t.includes('Pedido abierto'), `${nombre}: ${t}`);
+    assert.ok(t.includes('Pull request abierto'), `${nombre}: ${t}`);
     assert.ok(!/SecurityError|QuotaExceeded|Recuperar lo que estabas/.test(t), `${nombre}: sin error a la vista`);
   }
 });
@@ -1198,7 +1198,7 @@ test('Confirmar_UnPaso_AlLadoDelRenglon_ConElPedido — revisa, ofrece «Confirm
   const p = await pantallaViva({
     'GET /api/config': CONFIG_PERSONAS(),
     'POST /api/config/revisar': json({ ok: true, texto: TEXTO_CONFIRMADO, borrador: { people: { machines: { 'maq-c': { person: 'c@acme.example' } } } }, diferencia: DIFERENCIA, resumen: [] }),
-    'POST /api/config/proponer': json({ ok: true, message: `Pedido abierto: ${enlace}`, enlace }),
+    'POST /api/config/proponer': json({ ok: true, message: `Pull request abierto: ${enlace}`, enlace }),
     'GET /api/config/propuesta': json({ ok: true, estado: 'abierto', enlace }),
   });
   const confirmar = p.todos(renglonDe(p, 'maq-c')).find((n) => n.tag === 'button' && n.textContent === 'Confirmar');
@@ -1206,16 +1206,16 @@ test('Confirmar_UnPaso_AlLadoDelRenglon_ConElPedido — revisa, ofrece «Confirm
   const revisar = p.llamadas.find((c) => c.ruta === '/api/config/revisar');
   assert.deepStrictEqual({ accion: revisar.cuerpo.borrador.accion, maquina: revisar.cuerpo.borrador.maquina, person: revisar.cuerpo.borrador.person }, { accion: 'confirm', maquina: 'maq-c', person: 'c@acme.example' });
   const fila = renglonDe(p, 'maq-c');
-  assert.ok(p.textoDe(fila).includes('Esto abre un pedido para confirmar que la máquina maq-c es de c@acme.example'), p.textoDe(fila));
+  assert.ok(p.textoDe(fila).includes('Esto abre un pull request para confirmar que la máquina maq-c es de c@acme.example'), p.textoDe(fila));
   const proponer = p.todos(fila).find((n) => n.tag === 'button' && n.textContent === 'Confirmar y proponer');
   assert.ok(proponer, 'el botón va en el renglón');
   assert.ok(!fueraDeLosRenglones(p).some((n) => n.textContent === 'Confirmar y proponer' || /\bmsg\b/.test(n.attrs.class || '')), 'nada al pie de la sección');
-  assert.ok(!p.textoDe(renglonDe(p, 'maq-d')).includes('Esto abre un pedido'), 'el otro renglón queda como estaba');
+  assert.ok(!p.textoDe(renglonDe(p, 'maq-d')).includes('Esto abre un pull request'), 'el otro renglón queda como estaba');
   proponer.on.click(); await p.soltar();
   const envio = p.llamadas.find((c) => c.ruta === '/api/config/proponer');
   assert.strictEqual(envio.cuerpo.texto, TEXTO_CONFIRMADO, 'propone lo revisado');
   const despues = renglonDe(p, 'maq-c');
-  assert.ok(p.textoDe(despues).includes('Pedido abierto'), p.textoDe(despues));
+  assert.ok(p.textoDe(despues).includes('Pull request abierto'), p.textoDe(despues));
   assert.ok(p.todos(despues).some((n) => n.tag === 'a' && n.attrs.href === enlace), 'el enlace al pedido, en el renglón');
   assert.ok(!fueraDeLosRenglones(p).some((n) => n.tag === 'a' && n.attrs.href === enlace), 'el enlace no se repite al pie');
 });
@@ -1261,11 +1261,11 @@ test('Confirmar_EnElNavegador_RecorridoCompleto — Confirmar, la confirmación 
       await page.goto(`${h.base}/configuracion`);
       const fila = page.locator('#seccion-personas li', { has: page.locator('.quien', { hasText: 'maq-c' }) });
       await fila.getByRole('button', { name: 'Confirmar', exact: true }).click();      // si no aparece, el renglón dice por qué: la falla lo lleva
-      await fila.getByText('Esto abre un pedido para confirmar que la máquina maq-c es de c@acme.example').waitFor({ timeout: 10000 })
+      await fila.getByText('Esto abre un pull request para confirmar que la máquina maq-c es de c@acme.example').waitFor({ timeout: 10000 })
         .catch(async (e) => { throw new Error(`${e.message}\nel renglón dice: ${await fila.innerText()}`); });
       assert.strictEqual(await page.locator('#seccion-personas > .msg').count(), 0, 'nada al pie de la sección');
       await fila.getByRole('button', { name: 'Confirmar y proponer' }).click();
-      const enlace = fila.getByRole('link', { name: /pedido/i });
+      const enlace = fila.getByRole('link', { name: /pull request/i });
       await enlace.waitFor({ timeout: 20000 });
       assert.strictEqual(pedidos().length, 1, 'se abrió un pedido');
       assert.ok(await enlace.getAttribute('href'), 'con su dirección');
@@ -1317,7 +1317,7 @@ test('E1 Sitio_EnPantalla_AgregaYPropone — abre el repo, agrega una fila, ve e
         await clave.getByRole('button', { name: 'Revisar cambios' }).click();
         await clave.locator('.dif-entra', { hasText: 'src/v1/**' }).waitFor({ timeout: 10000 });
         await clave.getByRole('button', { name: 'Proponer el cambio' }).click();
-        await clave.getByRole('link', { name: 'Ver el pedido de cambio' }).waitFor({ timeout: 20000 })
+        await clave.getByRole('link', { name: 'Ver el pull request' }).waitFor({ timeout: 20000 })
           .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await clave.innerText()}`); });
         assert.strictEqual(gh.st.pedidos.length, 1, 'se abrió un pedido');
         const rama = r.empujes.at(-1).ref.replace('refs/heads/', '');

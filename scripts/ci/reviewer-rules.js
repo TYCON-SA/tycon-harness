@@ -8,7 +8,7 @@
  * contexto. Una regla escrita en otra parte del archivo el revisor no la ve. Nadie tiene que acordarse
  * de mantener un archivo aparte —la sección vive en el mismo `CLAUDE.md`—, pero sí de escribir la regla
  * en el lugar correcto: este aviso es el que se acuerda.
- * Convención y cómo se escribe una regla verificable: guides/reglas-para-revisores.md
+ * Convención y cómo se escribe una regla verificable: guides/reviewer-rules.md
  *
  * Qué mira: sólo las líneas AGREGADAS (`git diff --cached -U0`) de `CLAUDE.md` o `.claude/CLAUDE.md`
  * en la raíz del repo, fuera de la sección, que no sean vacías ni un título.
@@ -273,7 +273,7 @@ async function correr({ repo, env = process.env, fetchImpl = globalThis.fetch, e
     const { tieneSeccion, lineas } = candidatas(md, diff);
     if (!tieneSeccion) {
       escribir(`ℹ️  reglas-revisores: ${rel} no tiene «## Reglas para revisores»: los revisores del pipeline no ven`
-        + ' ninguna regla propia de este repo (guides/reglas-para-revisores.md).\n');
+        + ' ninguna regla propia de este repo (guides/reviewer-rules.md).\n');
     }
     porArchivo.push({ rel, tieneSeccion, lineas });
   }

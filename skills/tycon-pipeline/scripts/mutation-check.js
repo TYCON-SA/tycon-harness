@@ -22,15 +22,24 @@
  *     mutaría archivos ajenos al scope y seguiría symlinks
  *     fuera del repo). `--files` queda
  *     como override explícito. Las LÍNEAS a mutar sí salen del delta: diff
- *     contra HEAD para tracked, archivo entero para los nuevos.
+ *     contra la base de la corrida para tracked (lib/coverage-base.js: el
+ *     `baseSha` del marcador, la bifurcación con la rama principal o HEAD),
+ *     archivo entero para los nuevos.
  *   - Todo target (declarado o de --files) tiene que resolver DENTRO del repo
  *     tras symlinks (fs.realpathSync + prefijo con separador) → si no, exit 2
  *     SIN escribir nada. Un declarado que no existe en disco → `skipped` con
  *     su razón, nunca un crash.
  *   - Tests a correr: los que la story declara cuyo path parezca de test. Si no
- *     declara ninguno → exit 2 con el motivo. Sólo se sabe correr `node --test`
- *     (.js/.mjs/.cjs) — la señal es la EXTENSIÓN (estructura), jamás escanear
- *     el repo buscando nombres de herramientas.
+ *     declara ninguno → exit 2 con el motivo. Los corre la receta de pruebas del
+ *     paquete o proyecto más cercano (lib/test-runners.js, scopedRecipe: Jest,
+ *     Vitest, .NET, pytest, `node --test` o la de la organización que declara
+ *     `scoped`), acotada a esos archivos — nunca la suite entera. La receta se
+ *     elige por estructura, jamás leyendo una prueba. Muta JS/TS, C# y Python.
+ *   - Topes por receta (BUDGETS): .NET 8 min en total y 3 por corrida; las demás
+ *     3 y 2. Con el tiempo de cada suite medido en la máquina (lib/suite-times.js), lo medido
+ *     más la mitad por corrida y eso por (1 + mutantes) en total, con BUDGETS de piso y 10/20 min
+ *     de techo. Cada corrida, además, nunca pasa lo que queda del total.
+ *   - Suites en bash (`*.test.sh`): su propia receta, `bash <suite>`; no muta bash.
  *   - --max-mutants default 20 (los excedentes quedan en `skipped`).
  *
  * Exit codes:
@@ -58,34 +67,114 @@ const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
-const { generateMutants, applyMutant } = require(path.join(__dirname, 'lib', 'mutation-mutants.js'));
+const mutantesJs = require(path.join(__dirname, 'lib', 'mutation-mutants.js'));
+const mutantesCs = require(path.join(__dirname, 'lib', 'mutation-mutants-cs.js'));
+const mutantesPy = require(path.join(__dirname, 'lib', 'mutation-mutants-py.js'));
+const { applyMutant } = mutantesJs;
 const { parseDeclaredFiles } = require(path.join(__dirname, 'lib', 'test-scope.js'));
+const { scopedRecipe } = require(path.join(__dirname, 'lib', 'test-runners.js'));
+const { resolver: resolverBase, leerMarcador } = require(path.join(__dirname, 'lib', 'coverage-base.js'));
+const suiteTimes = require(path.join(__dirname, 'lib', 'suite-times.js'));
+const { stateDir } = require(path.join(__dirname, 'lib', 'state-dir.js'));
 
-// Extensiones que este runner sabe mutar (JS/TS — los tests corren con node --test).
-const CODE_EXT_RE = /\.(js|jsx|ts|tsx|mjs|cjs)$/i;
+// Extensiones que este runner sabe mutar: JS/TS, C# y Python, cada una con su catálogo.
+const CODE_EXT_RE = /\.(js|jsx|ts|tsx|mjs|cjs|cs|py)$/i;
 
-// Tope por CORRIDA de suite (base o mutante): pasado esto, el hijo muere con
+// Tope por CORRIDA de `node --test` cuando nadie pasa otro: pasado esto, el hijo muere con
 // SIGKILL y `timedOut: true` — el dato se propaga, no se disfraza de "falló".
 const RUN_CAP_MS = 120000;
 
+// Topes por receta, que cierran entre sí: el total del chequeo (base incluida) y el de cada corrida, que además nunca
+// pasa lo que queda del total. En un producto .NET la base tarda unos 25 s y cada mutante de 12 a 37 s (recompila):
+// entre 3 y 8 min para 12 mutantes; un archivo de Jest o Vitest, de 1 a 5 s.
+const BUDGETS = Object.freeze({
+  dotnet: Object.freeze({ totalMs: 480000, perRunMs: 180000 }),
+  default: Object.freeze({ totalMs: 180000, perRunMs: 120000 }),
+});
+
+// Con el tiempo de la suite medido en esta máquina, los topes salen de ese tiempo: una historia con muchas pruebas
+// lentas no queda «sin medir» por un tope fijo. Por corrida, lo medido más la mitad; en total, eso por (1 + mutantes).
+// Los de BUDGETS son el piso y estos, el techo. La red del portón (HARD_TIMEOUT_MS de lib/mutation-gate.js) sale del
+// techo del total: subir uno sin el otro deja al portón matando un chequeo que todavía estaba dentro de su tope.
+const MEASURED_RUN_CEIL_MS = 600000;
+const MEASURED_TOTAL_CEIL_MS = 1200000;
+
+/** La mediana medida de una suite declarada (ruta del repo) en el registro de tiempos, o null si no tiene medida. */
+function medidaDeLaSuite(declarada, runs) {
+  const rel = String(declarada).replace(/\\/g, '/');
+  // el registro guarda la ruta relativa a la raíz de su lista de suites: se toma la clave más larga que la termina
+  // (límite: dos suites homónimas en dos raíces distintas comparten la medida)
+  const claves = new Set();
+  for (const r of runs || []) for (const x of (r && r.suites) || []) {
+    if (x && typeof x.s === 'string' && (rel === x.s || rel.endsWith(`/${x.s}`))) claves.add(x.s);
+  }
+  if (!claves.size) return null;
+  const clave = [...claves].sort((a, b) => b.length - a.length)[0];
+  const est = suiteTimes.estimateMs({ rutas: [clave], workers: 1, runs, defaultMs: 0 });
+  return est.medidas === 1 && est.ms > 0 ? est.ms : null;
+}
+
+/**
+ * Los topes medidos `{ perRunMs, totalMs, medidoMs }` para las suites declaradas, o null si alguna no tiene medida
+ * (entonces van los de la receta, como siempre). `presupuesto` es el de la receta: el piso.
+ */
+function topesMedidos({ suites, mutantes, runs, presupuesto }) {
+  if (!suites.length) return null;
+  const medidas = suites.map((s) => medidaDeLaSuite(s, runs));
+  if (medidas.some((m) => m == null)) return null;
+  const medidoMs = Math.max(...medidas);
+  const perRunMs = Math.min(MEASURED_RUN_CEIL_MS, Math.max(presupuesto.perRunMs, Math.round(medidoMs * 1.5)));
+  const totalMs = Math.min(MEASURED_TOTAL_CEIL_MS, Math.max(presupuesto.totalMs, perRunMs * (1 + mutantes)));
+  return { perRunMs, totalMs, medidoMs };
+}
+
+/** Lo que el registro de tiempos de la máquina tiene; [] si no hay o no se deja leer. */
+function leerTiempos(log = () => {}) {
+  const ruta = path.join(stateDir(), 'suite-times.jsonl');
+  try {
+    const leido = suiteTimes.readSources([ruta]);
+    // sin registro, los topes de hoy sin decir nada; con renglones que no se dejan leer, se dice
+    if (leido.unreadable) log(`⚠️  mutation-check: ${leido.unreadable} renglón(es) del registro de tiempos no se dejan leer (${ruta}): esas medidas no cuentan`);
+    return suiteTimes.filterRuns(leido.runs);
+  } catch (e) {
+    log(`⚠️  mutation-check: no pude leer el registro de tiempos (${e && e.message}): van los topes de la receta`);
+    return [];
+  }
+}
+
 // ── ¿El path parece un archivo de test? ─────────────────────────────────────
-// Estructura, no vocabulario suelto: sufijo .test./.spec. o directorio de tests
-// canónico, siempre con extensión de código ejecutable.
+// Estructura, no vocabulario suelto: el nombre del archivo o la carpeta de pruebas, con una extensión que el chequeo
+// sabe mutar. JS/TS: sufijo .test./.spec. o carpeta de tests. C#: `*Test(s).cs` o un proyecto `*.Tests`. Python:
+// `test_*.py`, `*_test.py` o lo que está en `tests/`. Qué RECETA las corre se decide también por estructura
+// (lib/test-runners.js, scopedRecipe), JAMÁS leyendo una prueba: un comentario que diga «vitest» no cambia nada.
 function looksLikeTestPath(p) {
   const f = String(p || '').replace(/\\/g, '/');
   if (!CODE_EXT_RE.test(f)) return false;
+  // `Tests?` con mayúscula, como se nombra una clase de prueba: `Latest.cs` o `Contest.cs` son código
+  if (/\.cs$/i.test(f)) return /Tests?\.cs$/.test(f) || /(^|\/)[^/]*\.Tests?\//i.test(f) || /(^|\/)tests?\//i.test(f);
+  if (/\.py$/i.test(f)) return /(^|\/)test_[^/]*\.py$/i.test(f) || /_test\.py$/i.test(f) || /(^|\/)tests?\//i.test(f);
   if (/\.(test|spec)\.(m|c)?[tj]sx?$/i.test(f)) return true;
   if (/(^|\/)(tests?|__tests__)\//i.test(f)) return true;
   return false;
 }
 
-// Este chequeo SÓLO sabe
-// correr `node --test`, y qué sabe correr se decide por ESTRUCTURA — la
-// extensión del test declarado — JAMÁS escaneando contenido en busca de
-// palabras como «vitest» (un comentario que diga
-// vitest no puede apagar un control, y la herramienta número once lo rompe
-// igual). .js/.mjs/.cjs → corrible; todo lo demás → exit 2 estructural honesto.
-const NODE_RUNNABLE_RE = /\.(js|mjs|cjs)$/i;
+// Los archivos de Python que viven entre las pruebas pero no son una prueba que se le pasa a pytest.
+const PY_NO_PRUEBA = /(^|\/)(conftest|__init__)\.py$/i;
+
+/** Los mutantes de un archivo, con el catálogo de su lenguaje. */
+function mutantesDe(entry) {
+  if (/\.cs$/i.test(entry.file)) return mutantesCs.mutantsForFile(entry);
+  if (/\.py$/i.test(entry.file)) return mutantesPy.mutantsForFile(entry);
+  return mutantesJs.mutantsForFile(entry);
+}
+
+/** Orden estable: archivo (alfabético), línea, operador — el mismo de cada catálogo. */
+function generateMutants(entries) {
+  const sorted = entries.slice().sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+  const out = [];
+  for (const e of sorted) out.push(...mutantesDe(e));
+  return out;
+}
 
 // ── Diff parsing ─────────────────────────────────────────────────────────────
 // Números de línea AGREGADOS (1-based, lado nuevo) de un diff unificado -U0.
@@ -103,24 +192,59 @@ function parseAddedLines(diffText) {
 
 // ── git helpers ──────────────────────────────────────────────────────────────
 function git(repo, args) {
-  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8' });
   if (r.error || r.status !== 0) return null;
   return r.stdout;
 }
 
-// Líneas a mutar de UN target ya validado: delta contra HEAD si está tracked,
+// Líneas a mutar de UN target ya validado: delta contra la base de la corrida
+// (`base`, lo commiteado durante la corrida también es nuevo) si está tracked,
 // archivo entero si es nuevo (la story lo CREA — todas sus líneas son nuevas,
 // esté o no en `.gitignore`: si la story lo declara, está en scope).
-function addedLinesOf(repo, relFile) {
+function addedLinesOf(repo, relFile, base = 'HEAD') {
   const tracked = git(repo, ['ls-files', '--', relFile]);
   if (tracked && tracked.trim() !== '') {
-    const diff = git(repo, ['diff', '-U0', 'HEAD', '--', relFile]);
-    return parseAddedLines(diff || '');
+    const diff = git(repo, ['diff', '-U0', base, '--', relFile]);
+    // un diff que falla no es «nada agregado»: el que llama lo anota como no medido
+    if (diff === null) return null;
+    return parseAddedLines(diff);
   }
   let src = '';
-  try { src = fs.readFileSync(path.join(repo, relFile), 'utf8'); } catch { return []; }
+  // un archivo nuevo que no se puede leer no es «nada agregado»: el que llama lo anota como no medido, con el motivo
+  try { src = fs.readFileSync(path.join(repo, relFile), 'utf8'); } catch (e) { return { error: `no pude leer el archivo nuevo (${e.code || e.message})` }; }
   return src.split('\n').map((_l, i) => i + 1);
 }
+
+// ── La salida de error de una corrida ───────────────────────────────────────
+// Va a un archivo temporal, no a un tubo: un proceso que la receta deja vivo (un servidor de compilación) heredaría el
+// tubo y la corrida no terminaría hasta que muera. Con la base en rojo, sus últimas líneas van al motivo: sin ellas no
+// se sabe si faltó el SDK, la configuración o una prueba.
+function salidaDeError() {
+  let dir = null;
+  let fd = 'ignore';
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutation-stderr-'));
+    fd = fs.openSync(path.join(dir, 'stderr.txt'), 'w');
+  } catch { /* sin archivo: la corrida sigue sin su salida de error */ }
+  return {
+    fd,
+    cola() {
+      if (!dir) return '';
+      let texto = '';
+      try { if (typeof fd === 'number') fs.closeSync(fd); } catch { /* ya cerrado */ }
+      try { texto = fs.readFileSync(path.join(dir, 'stderr.txt'), 'utf8'); } catch { /* sin salida */ }
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* lo borra el sistema */ }
+      return colaDeError(texto);
+    },
+  };
+}
+
+/** Las últimas líneas no vacías de una salida de error, en una sola línea («a | b | c»), o '' si no hay. */
+function colaDeError(texto, n = 5) {
+  const lineas = String(texto || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(-n);
+  return lineas.length ? lineas.join(' | ').slice(-500) : '';
+}
+const conError = (corrida) => (corrida && corrida.errorTail ? `; últimas líneas de error: «${corrida.errorTail}»` : '');
 
 // ── Runner de tests por default (inyectable en los tests de esta herramienta) ─
 // Recibe { repo, testFiles, mutant } — mutant es null en la corrida BASE.
@@ -135,7 +259,7 @@ function addedLinesOf(repo, relFile) {
 // runner NO PUEDEN correr — un SIGTERM en medio de un mutante quedaría diferido
 // hasta el final y el proceso ni restauraría ni saldría 2 (saldría 0 ignorando
 // la señal). Con await, el loop queda libre y el handler restaura al instante.
-function defaultRunTests({ repo, testFiles }) {
+function defaultRunTests({ repo, testFiles, capMs = RUN_CAP_MS, nameFilter = null }) {
   // 🔴 NODE_TEST_CONTEXT se hereda cuando ESTE proceso corre bajo `node --test`
   // (p.ej. desde la propia suite del harness) y hace que el `node --test` hijo
   // salga SIEMPRE 0 — aunque los tests fallen. Con eso heredado, TODO mutante
@@ -143,42 +267,217 @@ function defaultRunTests({ repo, testFiles }) {
   // Por eso se limpia del entorno del hijo.
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
+  const err = salidaDeError();
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--test', ...testFiles], {
-      cwd: repo, env, stdio: ['ignore', 'ignore', 'ignore'],
+    // El reportero TAP a la salida dice cuántas pruebas corrieron (`# pass` y `# fail`): con el filtro de la historia,
+    // una corrida sin ninguna no prueba nada.
+    const args = ['--test', '--test-reporter=tap', ...(nameFilter ? [`--test-name-pattern=${nameFilter}`] : []), ...testFiles];
+    const child = spawn(process.execPath, args, {
+      windowsHide: true,
+      cwd: repo, env, stdio: ['ignore', 'pipe', err.fd],
+    });
+    // el resumen va al final; los renglones de nivel 0 (uno por archivo sin pruebas corridas) se cuentan al pasar
+    let salida = '';
+    let resto = '';
+    let deArchivo = 0;
+    const archivos = new Set(testFiles.map(String));
+    child.stdout.on('data', (b) => {
+      const lineas = (resto + b.toString('utf8')).split('\n');
+      resto = lineas.pop();
+      for (const l of lineas) {
+        // el reportero TAP escapa «\» y «#» en el nombre (en Windows, toda ruta lleva «\»)
+        const m = /^(?:not )?ok \d+ - ((?:[^#\\]|\\.)+?)(?: # .*)?$/.exec(l);
+        if (m && archivos.has(m[1].replace(/\\(.)/g, '$1'))) deArchivo += 1;
+      }
+      salida = (salida + lineas.join('\n') + '\n').slice(-4096);
     });
     let timedOut = false;
     const t = setTimeout(() => {
       timedOut = true;
       try { child.kill('SIGKILL'); } catch { /* ya murió */ }
-    }, RUN_CAP_MS);
-    child.on('error', (e) => { clearTimeout(t); reject(e); });
+    }, capMs);
+    child.on('error', (e) => { clearTimeout(t); err.cola(); reject(e); });
     child.on('close', (code) => {
       clearTimeout(t);
-      resolve({ code: code === null || code === undefined ? 1 : code, timedOut });
+      resolve({ code: code === null || code === undefined ? 1 : code, timedOut, tests: pruebasDelTap(`${salida}${resto}`, deArchivo), errorTail: err.cola() });
     });
   });
 }
 
+/**
+ * Cuántas pruebas corrieron según el resumen TAP de `node --test` (pasadas + falladas), o null si no lo trae. Un archivo
+ * en el que no corrió ninguna (el filtro no tomó nada) se reporta él mismo como una prueba: `deArchivo` las descuenta.
+ */
+function pruebasDelTap(texto, deArchivo = 0) {
+  const pass = /^# pass (\d+)$/m.exec(texto);
+  const fail = /^# fail (\d+)$/m.exec(texto);
+  return pass && fail ? Math.max(0, Number(pass[1]) + Number(fail[1]) - deArchivo) : null;
+}
+
+// ── Sólo las pruebas de la historia ──────────────────────────────────────────
+// Con `node --test`, las pruebas del arnés llevan la marca `@story-<id>` en el nombre. Cada mutante corre sólo las de
+// la historia: el resto del archivo es de otras historias y sólo suma tiempo. El id se ancla al final: `@story-8.27`
+// no toma `@story-8.279` ni `@story-8.27.1`.
+const escaparRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function storyNamePattern(id) {
+  return `@story-${escaparRe(id)}(?![0-9A-Za-z]|\\.[0-9])`;
+}
+
+/** El `story:` del frontmatter de la historia, o null. */
+function storyIdDe(texto) {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(String(texto || ''));
+  const m = fm && /^story:\s*["']?([^"'\r\n]+?)["']?\s*$/m.exec(fm[1]);
+  return m ? m[1].trim() : null;
+}
+
+// ── Cuántas pruebas corrieron, según el resultado de la receta ───────────────
+// null = no se pudo leer. Con cero pruebas una base «verde» no prueba nada: todo mutante sobreviviría.
+function countTests(format, text) {
+  const s = String(text == null ? '' : text);
+  if (format === 'jest-json') {
+    try { const j = JSON.parse(s); return Number.isInteger(j.numTotalTests) ? j.numTotalTests : null; } catch { return null; }
+  }
+  if (format === 'trx') {
+    const m = s.match(/<Counters\b[^>]*\btotal="(\d+)"/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+  if (format === 'junit') {
+    // `errors` son las que no llegaron a correr (pytest anota así un import roto o una colección fallida): no cuentan
+    const corridas = (tag) => {
+      const tests = tag.match(/\btests="(\d+)"/);
+      const errors = tag.match(/\berrors="(\d+)"/);
+      return tests ? Math.max(0, parseInt(tests[1], 10) - (errors ? parseInt(errors[1], 10) : 0)) : null;
+    };
+    const raiz = s.match(/<testsuites\b[^>]*>/);
+    if (raiz && corridas(raiz[0]) != null) return corridas(raiz[0]);
+    const suites = [...s.matchAll(/<testsuite\b[^>]*>/g)].map((m) => corridas(m[0])).filter((n) => n != null);
+    return suites.length ? suites.reduce((n, x) => n + x, 0) : null;
+  }
+  return null;
+}
+
+/** Todas las carpetas debajo de `d`, ella incluida (para `**`). */
+function carpetasDebajo(d) {
+  const out = [d];
+  let nombres = [];
+  try { nombres = fs.readdirSync(d, { withFileTypes: true }); } catch { nombres = []; }
+  for (const n of nombres) if (n.isDirectory()) out.push(...carpetasDebajo(path.join(d, n.name)));
+  return out;
+}
+
+/**
+ * Los archivos que coinciden con `patron` —`*` dentro de un segmento, `**` cualquier cantidad de carpetas, como en las
+ * recetas del portón—, contados desde `base` si el patrón es relativo.
+ */
+function buscarArchivos(base, patron) {
+  const absoluto = path.isAbsolute(patron);
+  const partes = patron.split(/[\\/]/).filter(Boolean);
+  let actuales = [absoluto ? path.parse(patron).root : base];
+  for (const p of partes) {
+    if (absoluto && actuales.length === 1 && actuales[0] === path.parse(patron).root && /^[A-Za-z]:$/.test(p)) continue;
+    if (p === '**') { actuales = [...new Set(actuales.flatMap(carpetasDebajo))]; continue; }
+    const re = new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').split('*').join('.*')}$`);
+    const sig = [];
+    for (const d of actuales) {
+      if (!p.includes('*')) { sig.push(path.join(d, p)); continue; }
+      let nombres = [];
+      try { nombres = fs.readdirSync(d); } catch { nombres = []; }
+      for (const n of nombres) if (re.test(n)) sig.push(path.join(d, n));
+    }
+    actuales = sig;
+  }
+  return actuales.filter((f) => { try { return fs.statSync(f).isFile(); } catch { return false; } });
+}
+
+/** Cuántas pruebas dice el resultado de la corrida (null si no hay ninguno legible). */
+function leerResultado(results, resultsDir, cwd) {
+  const ruta = String(results.path).split('{results}').join(resultsDir);
+  const archivos = buscarArchivos(cwd, ruta);
+  if (!archivos.length) return null;
+  let total = 0;
+  for (const f of archivos) {
+    let n = null;
+    try { n = countTests(results.format, fs.readFileSync(f, 'utf8')); } catch { n = null; }
+    if (n == null) return null;
+    total += n;
+  }
+  return total;
+}
+
+// ── Corredor de una receta (todas menos `node --test`) ───────────────────────
+// Corre el comando acotado con bash, en la carpeta del paquete dentro de la copia, con su propia carpeta de
+// resultados. Pasado `capMs`, muere el grupo de procesos entero con SIGKILL (dotnet o jest lanzan hijos) y queda
+// `timedOut: true`. Devuelve también cuántas pruebas corrieron (`tests`), leídas del resultado de la receta.
+function runRecipe({ recipe, capMs = RUN_CAP_MS }) {
+  const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutation-resultados-'));
+  const command = String(recipe.command).split('{results}').join(resultsDir.split(path.sep).join('/'));
+  // sin .pyc: uno escrito en una corrida podría servirle el código a la siguiente (mismo segundo, mismo tamaño)
+  const env = { ...process.env, PYTHONDONTWRITEBYTECODE: '1' };
+  delete env.NODE_TEST_CONTEXT;
+  const grupo = process.platform !== 'win32';
+  const limpiar = () => { try { fs.rmSync(resultsDir, { recursive: true, force: true }); } catch { /* nada */ } };
+  const err = salidaDeError();
+  return new Promise((resolve, reject) => {
+    const child = spawn('bash', ['-c', command], { windowsHide: true, cwd: recipe.cwd, env, stdio: ['ignore', 'ignore', err.fd], detached: grupo });
+    let timedOut = false;
+    const t = setTimeout(() => {
+      timedOut = true;
+      try { if (grupo) process.kill(-child.pid, 'SIGKILL'); else child.kill('SIGKILL'); } catch {
+        try { child.kill('SIGKILL'); } catch { /* ya murió */ }
+      }
+    }, capMs);
+    child.on('error', (e) => { clearTimeout(t); limpiar(); err.cola(); reject(e); });
+    child.on('close', (code) => {
+      clearTimeout(t);
+      const tests = recipe.results ? leerResultado(recipe.results, resultsDir, recipe.cwd) : undefined;
+      limpiar();
+      resolve({ code: code === null || code === undefined ? 1 : code, timedOut, tests, errorTail: err.cola() });
+    });
+  });
+}
+
+// ── La receta de bash ────────────────────────────────────────────────────────
+// Las suites `*.test.sh` del arnés ejercen código que el chequeo ya sabe mutar (JS, Python): la receta corre cada suite
+// con bash, una tras otra, en la copia; distinto de 0 es un mutante cazado. No lee resultados (bash no los deja) y no
+// muta bash: un `.sh` declarado como código queda en `skipped`. Vive acá y no en lib/test-runners.js porque el portón
+// de pruebas ya corre las suites en bash con su corredor de suites.
+const BASH_SUITE_RE = /\.test\.sh$/i;
+const comillaBash = (s) => `'${String(s).split("'").join("'\\''")}'`;
+
+/** La receta de bash para esas suites (rutas relativas a `repo`). */
+function bashRecipe(repo, suites) {
+  return { name: 'bash', source: 'chequeo', cwd: repo, results: null, command: suites.map((s) => `bash ${comillaBash(s)}`).join(' && ') };
+}
+
+/** El corredor por defecto: `node --test` como siempre, y las demás recetas con su comando acotado. */
+function defaultRun({ repo, testFiles, recipe, capMs, nameFilter = null }) {
+  if (!recipe || recipe.name === 'node-test') return defaultRunTests({ repo, testFiles, capMs, nameFilter });
+  return runRecipe({ recipe, capMs });
+}
+
 // ── El chequeo ───────────────────────────────────────────────────────────────
 /**
- * Arma la copia descartable sobre la que se mutan y se corren los tests. Devuelve { dir } o
- * { dir: null, motivo }. Nunca escribe en `repo`.
+ * Arma la copia descartable sobre la que se mutan y se corren los tests. Devuelve { dir, noCopiados } o
+ * { dir: null, motivo }. `noCopiados`: los archivos nuevos que no se pudieron copiar, con el motivo (un Map de la ruta
+ * relativa): en la copia faltan, y eso no es «no existe». Nunca escribe en `repo`.
  */
 function crearCopiaDeTrabajo(repo, log) {
   const { execFileSync } = require('child_process');
-  const g = (cwd, args, opts) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...(opts || {}) });
+  const g = (cwd, args, opts) => execFileSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...(opts || {}) });
   let dir = null;
   try {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutation-copia-'));
+    // Por su ruta real: en macOS la carpeta temporal es un enlace (/var → /private/var), y .NET restaura los paquetes con
+    // una ruta y compila con la otra, y no los encuentra (la base sale en rojo con la suite verde).
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutation-copia-')));
     const head = g(repo, ['rev-parse', 'HEAD']).trim();
-    execFileSync('git', ['clone', '-q', '--shared', '--no-checkout', repo, dir], { stdio: 'ignore' });
+    execFileSync('git', ['clone', '-q', '--shared', '--no-checkout', repo, dir], { windowsHide: true, stdio: 'ignore' });
     g(dir, ['checkout', '-q', head]);
     // lo que la story cambió y todavía no commiteó (trackeado)
     const patch = g(repo, ['diff', 'HEAD', '--binary'], { maxBuffer: 256 * 1024 * 1024 });
     if (patch.trim()) g(dir, ['apply', '--whitespace=nowarn', '-'], { input: patch });
     // y lo untracked (archivos nuevos que la story creó), respetando .gitignore
     const nuevos = g(repo, ['ls-files', '--others', '--exclude-standard']).split('\n').filter(Boolean);
+    const noCopiados = new Map();
     for (const rel of nuevos) {
       const src = path.join(repo, rel); const dst = path.join(dir, rel);
       try {
@@ -189,14 +488,14 @@ function crearCopiaDeTrabajo(repo, log) {
         const st = fs.lstatSync(src);
         if (st.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(src), dst);
         else fs.copyFileSync(src, dst);
-      } catch { /* un untracked ilegible no frena la copia */ }
+      } catch (e) { noCopiados.set(rel, e.code || e.message); }   // un untracked ilegible no frena la copia, pero se anota
     }
     // 🔴 Y lo que git IGNORA también tiene que estar. Enlazar sólo `<repo>/node_modules` no alcanza: con las
     // dependencias en una subcarpeta, un `.env`, un `local.json` o un `dist/` que la suite lee, la BASE
     // fallaría en la copia con la suite VERDE en el original, el motivo acusaría a la suite, y el gate lo
     // trataría como «no aplicable — sigue sin frenar»: el control se apagaría solo, en silencio, en cada
     // corrida. Lo ignorado se ENLAZA si es un
-    // directorio (node_modules, dist, bin/obj: no se copia nada pesado) y se COPIA si es un archivo
+    // directorio (node_modules, dist: no se copia nada pesado; `bin/` y `obj/` no, ver abajo) y se COPIA si es un archivo
     // suelto. Un mutante que escriba en un directorio ignorado enlazado escribe en el original —
     // es material que git no cuida, y es el precio de que la suite encuentre sus dependencias.
     let ignorados = [];
@@ -206,6 +505,11 @@ function crearCopiaDeTrabajo(repo, log) {
     } catch { /* sin lista de ignorados se sigue sin ellos */ }
     for (const rel of ignorados) {
       const src = path.join(repo, rel); const dst = path.join(dir, rel.replace(/\/$/, ''));
+      // `bin/` y `obj/` no se enlazan, en ninguna carpeta: una compilación de .NET en la copia escribiría a través del
+      // enlace en el repo del dev. Se compila en la copia, desde cero.
+      // Tampoco `__pycache__/`: un .pyc viejo del original puede servir un mutante anterior (Python sólo compara el
+      // segundo y el tamaño del fuente, y `==`/`!=` no cambian el tamaño).
+      if (rel.endsWith('/') && /^(bin|obj|__pycache__)$/i.test(path.basename(rel.replace(/\/$/, '')))) continue;
       try {
         if (fs.existsSync(dst)) continue;
         fs.mkdirSync(path.dirname(dst), { recursive: true });
@@ -233,7 +537,7 @@ function crearCopiaDeTrabajo(repo, log) {
       } catch { /* un submódulo ilegible no frena la copia */ }
     }
     if (log) log(`mutation-check: corriendo sobre una copia descartable (${dir}), no sobre ${repo}`);
-    return { dir };
+    return { dir, noCopiados };
   } catch (e) {
     if (dir) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* nada */ } }
     return { dir: null, motivo: String((e && e.message) || e).slice(0, 200) };
@@ -246,11 +550,27 @@ async function runMutationCheck({
   files = null,
   maxMutants = 20,
   deadlineMs = null,
-  runTests = defaultRunTests,
+  runTests = defaultRun,
   fsOps = null,
   log = (...a) => console.error(...a),
+  // la configuración de la organización (sus recetas en stack.test_runners); sin pasarla, se lee del árbol del arnés
+  stack = undefined,
+  // opciones de scopedRecipe (`which`: si un programa está en el PATH)
+  recipeOpts = {},
+  // reloj de pared, sólo para los topes (nunca decide el orden de los mutantes)
+  now = Date.now,
+  // el marcador de la corrida (su `baseSha`); sin él, la base es la bifurcación con la rama principal. `markerError`:
+  // por qué no se pudo leer
+  marker = null,
+  markerError = null,
+  // el registro de tiempos de las suites (los de lib/suite-times.js); sin pasarlo, el de esta máquina
+  suiteRuns = undefined,
 }) {
   let repo = repoOriginal;
+  // La base se resuelve en el repo original: la copia de trabajo tiene otras ramas remotas. Una base descartada se dice.
+  const resuelta = resolverBase({ repo: repoOriginal, env: process.env, marker, markerError });
+  const base = resuelta.ref || 'HEAD';
+  for (const d of resuelta.descartadas) log(`⚠️  mutation-check: base descartada (${d.source}): ${d.motivo}`);
   // Seam inyectable de fs para la sección SAGRADA del restore (DI con defaults
   // reales — en producción es fs puro, cero cambio de comportamiento). Existe
   // porque la verificación byte a byte del restore, sin un seam, no se puede cubrir con un test
@@ -262,9 +582,11 @@ async function runMutationCheck({
     unlinkSync: fs.unlinkSync.bind(fs),
     ...(fsOps || {}),
   };
+  // lo que se sabe del chequeo hasta acá (la receta, cuántos mutantes, el tope) viaja también en una salida estructural
+  const ctx = { base: resuelta.ref ? { ref: resuelta.ref, fuente: resuelta.source } : { ref: 'HEAD', fuente: 'sin-base' } };
   const fail2 = (motivo) => {
     log(`🔴 mutation-check: ${motivo}`);
-    return { exitCode: 2, result: { motivo } };
+    return { exitCode: 2, result: { motivo, ...ctx } };
   };
 
   // 1. Repo válido (fail-closed).
@@ -305,36 +627,91 @@ async function runMutationCheck({
   let storyText = null;
   try { storyText = fs.readFileSync(storyPath, 'utf8'); } catch { /* cae abajo */ }
   if (storyText == null) return fail2(`no pude leer la story: ${storyPath}`);
-  const declared = parseDeclaredFiles(storyText);
-  // Separar «declara tests» de «los sé correr» — por ESTRUCTURA (la
-  // extensión), jamás leyendo contenido en busca de nombres de herramientas.
-  // Una story .NET declara `FooTests.cs`: decirle "no declarás tests" es FALSO;
-  // la verdad honesta es que este chequeo no sabe correr esa suite. Y ante la
-  // DUDA (mezcla de corribles y no corribles) → exit 2 estructural: un
-  // veredicto parcial que excluye tests declarados en silencio produce
-  // sobrevivientes espurios.
+  // 🔴 Sólo lo que la story declara en ESTE repo: una story que toca dos repos (el backend y su frontend) declara
+  // archivos de los dos. Con la lista entera, cada repo buscaba las pruebas del otro, salía «NO existen» y no medía
+  // nada. El repo de la story sale de su ruta; sin hermanos, la lista es la misma de siempre
+  let declared;
+  try {
+    const cr = require(path.join(__dirname, 'lib', 'companion-repos.js'));
+    const repoDeLaStory = cr.gitRootOf(storyPath);
+    declared = repoDeLaStory ? cr.declaredFor(repoDeLaStory, storyPath, repoOriginal) : parseDeclaredFiles(storyText);
+  } catch (e) {
+    return fail2(`no pude ver qué archivos de la story son de ${repoOriginal}: ${(e && e.message) || e}`);
+  }
+  // Separar «declara tests» de «los sé correr» — por ESTRUCTURA (el nombre del
+  // archivo), jamás leyendo contenido en busca de nombres de herramientas.
+  // Una story .NET declara `FooTests.cs`: decirle "no declarás tests" es FALSO.
+  // `FooTests.<ext>` con mayúscula (una clase de prueba de otro lenguaje), no `latest.ts`
   const declaredTests = declared.filter(
-    (f) => looksLikeTestPath(f) || /Tests?\.[a-z]+$|\.(test|spec)\.[a-z]+$/i.test(String(f)),
+    (f) => looksLikeTestPath(f) || /Tests?\.[a-z]+$/.test(String(f)) || /\.(test|spec)\.[a-z]+$/i.test(String(f)),
   );
   if (!declaredTests.length) {
+    // las pruebas existen, pero en otro repo de la story: se dice así, no «no declara ninguna»
+    const todas = parseDeclaredFiles(storyText).filter((f) => looksLikeTestPath(f) || /Tests?\.[a-z]+$/.test(String(f)) || /\.(test|spec)\.[a-z]+$/i.test(String(f)));
+    if (todas.length) {
+      return fail2(`las pruebas que la story declara son de otro repo (${todas.slice(0, 3).join(', ')}${todas.length > 3 ? ', …' : ''}), ` +
+        `no de ${repoOriginal}: acá no hay con qué matar los mutantes`);
+    }
     return fail2(
       'la story no declara ningún archivo de test en files_to_create/files_to_modify — ' +
       'sin tests declarados no se puede chequear que los mutantes mueran'
     );
   }
-  const noCorribles = declaredTests.filter((f) => !NODE_RUNNABLE_RE.test(String(f)));
-  if (noCorribles.length) {
-    return fail2(
-      `este chequeo hoy sólo sabe correr \`node --test\` (.js/.mjs/.cjs); la story declara ` +
-      `tests que no puedo correr: ${noCorribles.join(', ')}. No se afirma nada sobre esa ` +
-      `suite (puede estar perfectamente verde con su runner real).`
-    );
+  const absDe = (f) => (path.isAbsolute(f) ? f : path.join(repo, f));
+  // Una prueba que todavía no existe porque es de una tanda estacionada (`blocked`) no se corre ni frena: la historia la
+  // ata a esa tanda (lib/batch-scope.js, la misma regla de la matriz). Atada también a otra tanda, o a ninguna, frena.
+  const { tandasQueNombran } = require(path.join(__dirname, 'lib', 'batch-scope.js'));
+  const deTandaBloqueada = [];
+  const faltantes = [];
+  for (const f of declaredTests.filter((t) => !fs.existsSync(absDe(t)))) {
+    const atadas = tandasQueNombran(storyText, f);
+    if (atadas.length && atadas.every((t) => t.status === 'blocked')) deTandaBloqueada.push({ file: f, tandas: atadas.map((t) => t.name) });
+    else faltantes.push(absDe(f));
   }
-  const absTests = declaredTests.map((f) => (path.isAbsolute(f) ? f : path.join(repo, f)));
-  const faltantes = absTests.filter((f) => !fs.existsSync(f));
   if (faltantes.length) {
     return fail2(`la story declara tests que NO existen en disco: ${faltantes.join(', ')}`);
   }
+  const absTests = declaredTests.filter((f) => !deTandaBloqueada.some((d) => d.file === f)).map(absDe);
+  if (deTandaBloqueada.length) {
+    ctx.testsDeTandaBloqueada = deTandaBloqueada;
+    log(`mutation-check: no corro ${deTandaBloqueada.map((d) => `${d.file} (tanda ${d.tandas.join(', ')})`).join(', ')}: es de una tanda estacionada y todavía no existe`);
+  }
+  if (!absTests.length) {
+    return fail2('todas las pruebas que la story declara son de tandas estacionadas y todavía no existen: no hay con qué matar los mutantes');
+  }
+  // La receta que corre esas pruebas: la del paquete o proyecto más cercano (lib/test-runners.js, scopedRecipe), con
+  // su comando acotado a esos archivos. Ante la DUDA —dos recetas, dos paquetes, una receta que no sabe acotar, el
+  // binario sin instalar— exit 2 estructural: un veredicto que deja pruebas afuera en silencio da sobrevivientes falsos.
+  let stackOrg = stack;
+  if (stackOrg === undefined) {
+    try { stackOrg = require(path.join(__dirname, 'lib', 'stack-config.js')).readStack().stack; } catch { stackOrg = undefined; }
+  }
+  const aCorrerComoPrueba = absTests.map((f) => path.relative(repo, f).split(path.sep).join('/')).filter((f) => !PY_NO_PRUEBA.test(f));
+  // Suites en bash: su propia receta, sólo si TODAS las pruebas declaradas lo son (mezcladas, dos recetas: no se elige).
+  const enBash = aCorrerComoPrueba.filter((f) => BASH_SUITE_RE.test(f));
+  if (enBash.length && enBash.length < aCorrerComoPrueba.length) {
+    return fail2(`la historia mezcla suites en bash (${enBash.join(', ')}) con pruebas de otra receta: no elijo una a ciegas`);
+  }
+  const recipe = enBash.length ? bashRecipe(repo, enBash) : scopedRecipe({ repo, testFiles: aCorrerComoPrueba, stack: stackOrg, ...recipeOpts });
+  if (recipe.problem) {
+    return fail2(`${recipe.problem}. No se afirma nada sobre esa suite (puede estar perfectamente verde con su runner real).`);
+  }
+  for (const w of recipe.warnings || []) log(`⚠️  mutation-check: ${w}`);
+  ctx.runner = recipe.name;
+  // El filtro de la historia: sólo con `node --test` y sólo si cada archivo de prueba trae la marca (si uno no, el
+  // filtro lo dejaría sin pruebas: va el archivo entero, como siempre, y se dice).
+  let nameFilter = null;
+  const idHistoria = storyIdDe(storyText);
+  if (recipe.name === 'node-test' && idHistoria) {
+    const patron = storyNamePattern(idHistoria);
+    const re = new RegExp(patron);
+    const sinMarca = absTests.filter((f) => { try { return !re.test(fs.readFileSync(f, 'utf8')); } catch { return true; } });
+    if (!sinMarca.length) nameFilter = patron;
+    else log(`mutation-check: ninguna prueba con la marca @story-${idHistoria} en ${sinMarca.map((f) => path.relative(repo, f)).join(', ')}: corre el archivo entero`);
+  }
+  ctx.nameFilter = nameFilter;
+  const presupuesto = BUDGETS[recipe.name] || BUDGETS.default;
+  const nombreDelCorredor = recipe.name === 'node-test' ? '`node --test`' : `\`${recipe.name}\``;
 
   // 3. Archivos target: --files (override explícito), o ÚNICAMENTE los NO-test
   // que la story declara. NADA de descubrir targets mirando el diff del repo:
@@ -348,9 +725,12 @@ async function runMutationCheck({
     // contra la copia: contra la copia se resolvería «fuera del repo» y saldría 2.
     ? files.map((f) => (path.isAbsolute(f) ? path.relative(repoOriginal, f) : f))
     : declared;
-  const targets = [...new Set(rawTargets.map((f) => String(f).replace(/\\/g, '/')))]
-    .filter((f) => CODE_EXT_RE.test(f) && !looksLikeTestPath(f))
-    .sort();
+  const normalizados = [...new Set(rawTargets.map((f) => String(f).replace(/\\/g, '/')))];
+  const targets = normalizados.filter((f) => CODE_EXT_RE.test(f) && !looksLikeTestPath(f)).sort();
+
+  const skipped = [];
+  // Un archivo de bash declarado como código no se muta (no hay catálogo de bash): se dice, no se calla.
+  for (const f of normalizados) if (/\.sh$/i.test(f) && !BASH_SUITE_RE.test(f)) skipped.push({ file: f, reason: 'no sé mutar bash: el chequeo muta JS/TS, C# y Python' });
 
   // 4. Validar cada target y generar mutantes sobre las líneas agregadas.
   //   - Declarado que no existe en disco → `skipped` con su razón (una story
@@ -362,11 +742,15 @@ async function runMutationCheck({
   try { realRepo = fs.realpathSync(repo); } catch (e) {
     return fail2(`no pude resolver el path real del repo ${repo}: ${e && e.message}`);
   }
-  const skipped = [];
   const entries = [];
   for (const rel of targets) {
     const abs = path.resolve(repo, rel);
     if (!fs.existsSync(abs)) {
+      const noCopiado = copia.noCopiados && copia.noCopiados.get(rel.split(path.sep).join('/'));
+      if (noCopiado) {
+        skipped.push({ file: rel, reason: `no pude leer el archivo nuevo para la copia de trabajo (${noCopiado}): sus líneas no se midieron`, unread: true });
+        continue;
+      }
       if (overrideExplicito) return fail2(`--files incluye un archivo inexistente: ${rel}`);
       skipped.push({ file: rel, reason: 'declarado por la story pero no existe en disco — nada que mutar' });
       continue;
@@ -381,24 +765,42 @@ async function runMutationCheck({
         `no se escribe nada fuera de ${realRepo}; no se mutó ningún archivo`
       );
     }
-    const addedLines = addedLinesOf(repo, rel);
+    const addedLines = addedLinesOf(repo, rel, base);
+    if (addedLines === null || !Array.isArray(addedLines)) {
+      const porque = addedLines && addedLines.error ? addedLines.error : `git diff contra la base ${base} falló`;
+      skipped.push({ file: rel, reason: `${porque}: sus líneas no se midieron`, unread: true });
+      continue;
+    }
     if (!addedLines.length) continue;
     entries.push({ file: rel, source: fs.readFileSync(abs, 'utf8'), addedLines });
   }
   const todos = generateMutants(entries);
   if (!todos.length) {
     const result = {
-      total: 0, killed: 0, survived: [], skipped,
+      total: 0, killed: 0, survived: [], skipped, ...ctx, mutants: 0,
       verdict: 'SIN_MUTANTES',
-      motivo: targets.length
-        ? 'ningún operador aplica sobre las líneas agregadas de los archivos que la story declara'
-        : 'la story no declara archivos de código NO-test en files_to_create/files_to_modify',
+      motivo: skipped.some((x) => x.unread)
+        // lo que no se pudo leer no es «ningún operador aplica»: se nombra
+        ? `no pude leer las líneas agregadas de ${skipped.filter((x) => x.unread).map((x) => `${x.file} (${x.reason})`).join('; ')}`
+        : targets.length
+          ? 'ningún operador aplica sobre las líneas agregadas de los archivos que la story declara'
+          : 'la story no declara archivos de código NO-test en files_to_create/files_to_modify',
     };
     log(`⚠️ mutation-check: ${result.motivo} — no se verificó nada.`);
     return { exitCode: 0, result };
   }
   const aCorrer = todos.slice(0, maxMutants);
   skipped.push(...todos.slice(maxMutants).map((m) => ({ ...m, reason: `excede --max-mutants (${maxMutants})` })));
+  ctx.mutants = aCorrer.length;
+  // Los topes: los medidos si cada suite declarada tiene su tiempo en esta máquina, si no los de la receta.
+  const medidos = topesMedidos({
+    suites: absTests.map((f) => path.relative(repo, f).split(path.sep).join('/')), mutantes: aCorrer.length,
+    runs: suiteRuns === undefined ? leerTiempos(log) : suiteRuns, presupuesto,
+  });
+  const perRunMs = medidos ? medidos.perRunMs : presupuesto.perRunMs;
+  const totalMs = deadlineMs || (medidos ? medidos.totalMs : presupuesto.totalMs);
+  ctx.budgetMs = totalMs;
+  if (medidos) ctx.measuredMs = medidos.medidoMs;
 
   // 5+6. Corrida BASE + loop de mutantes, con estos blindajes:
   //   - Handlers de señal (SIGINT/SIGTERM/SIGHUP) mientras el tramo corre: el
@@ -438,50 +840,78 @@ async function runMutationCheck({
   const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
   for (const s of SIGNALS) process.on(s, onSignal);
   try {
-    const inicio = Date.now(); // presupuesto de pared — control de ejecución, no de orden
+    const inicio = now(); // presupuesto de pared — control de ejecución, no de orden
+    // El tope de cada corrida: el de la receta, sin pasar lo que queda del total (así el chequeo entero no pasa el total
+    // más lo que tarda en restaurar).
+    const topeDeLaCorrida = () => Math.max(1, Math.min(perRunMs, totalMs - (now() - inicio)));
+
+    // El aviso, antes de la base: cuánto puede tardar. El portón deja pasar esta línea en el momento.
+    log(`Chequeo de mutantes: ${aCorrer.length} mutantes en ${recipe.name}; puede tardar hasta ${Math.ceil(totalMs / 60000)} min`);
 
     // Corrida BASE sin mutar: si la suite ya está en rojo, TODO mutante "muere"
     // gratis y el chequeo parece perfecto — el falso verde exacto que esta
     // herramienta existe para cazar, un nivel más arriba. Fail-closed.
     let base;
+    const capBase = topeDeLaCorrida();
+    const inicioBase = now();
     try {
-      base = await runTests({ repo, testFiles: absTests, mutant: null });
+      base = await runTests({ repo, testFiles: absTests, mutant: null, recipe, capMs: capBase, nameFilter });
     } catch (e) {
       return fail2(`el comando de test explotó en la corrida BASE (sin mutar nada): ${e && e.message}`);
     }
     if (!base || base.code !== 0) {
       // Decir la VERDAD y nada más. Un exit != 0 acá puede ser (a) la
-      // suite realmente rota, (b) tests que node --test no sabe cargar (vitest
-      // con globals, etc.), o (c) — si timedOut — una suite lenta VERDE que
+      // suite realmente rota, (b) tests que la receta no sabe cargar (vitest
+      // con globals, dependencias, la compilación), o (c) — si timedOut — una suite lenta VERDE que
       // matamos nosotros. Nunca afirmar «está en rojo» sin saber cuál es.
       if (base && base.timedOut) {
+        const minutos = Number((capBase / 60000).toFixed(1));
         return fail2(
-          `la corrida BASE superó el tope de ${RUN_CAP_MS}ms por corrida y la maté yo — ` +
-          'la suite es demasiado lenta para este chequeo; no afirmo nada sobre su estado'
+          `no medido: la corrida base tardó más que el tope de ${minutos} min (medido: ${Math.round((now() - inicioBase) / 1000)} s) ` +
+          'y la corté yo — no afirmo nada sobre el estado de la suite'
         );
       }
       // ¿Es la suite, o es la COPIA? Si en el original la misma corrida está verde, la copia no
-      // tiene algo que la suite necesita — y eso se dice, en vez de acusar a la suite.
-      if (copia.dir) {
+      // tiene algo que la suite necesita — y eso se dice, en vez de acusar a la suite. Sólo con `node --test`: las
+      // demás recetas compilan o escriben resultados, y correrlas en el original escribiría en el repo del dev.
+      if (copia.dir && recipe.name === 'node-test') {
         let enOriginal = null;
         try {
-          enOriginal = await runTests({ repo: repoOriginal, testFiles: absTests.map((t) => path.join(repoOriginal, path.relative(repo, t))), mutant: null });
+          enOriginal = await runTests({ repo: repoOriginal, testFiles: absTests.map((t) => path.join(repoOriginal, path.relative(repo, t))), mutant: null, recipe, capMs: capBase, nameFilter });
         } catch { /* no se pudo comparar */ }
         if (enOriginal && enOriginal.code === 0) {
           return fail2(
             `la corrida BASE con \`node --test\` salió en rojo en la COPIA descartable (exit ${base ? base.code : '?'}) ` +
             'pero en VERDE en el repo original: la copia no tiene algo que la suite necesita (un archivo ' +
             'ignorado por git fuera de los que se copian, un submódulo, algo generado por el build). ' +
-            'La suite no está rota; el chequeo no pudo correr sobre la copia.'
+            `La suite no está rota; el chequeo no pudo correr sobre la copia${conError(base)}.`
           );
         }
       }
+      // una suite en bash no tiene otro corredor con que verificarla: sale distinto de 0 sin mutar nada
+      if (recipe.name === 'bash') {
+        return fail2(`no medido: la base ya falla — la suite en bash salió ${base ? base.code : '?'} sin mutar nada; no juzgo mutantes${conError(base)}`);
+      }
       return fail2(
-        `la corrida BASE con \`node --test\` no salió en verde (exit ${base ? base.code : '?'}) — ` +
-        'o la suite está realmente rota, o estos tests no corren con `node --test` (lo único que ' +
-        'este chequeo sabe correr). Un veredicto de mutantes sin base verde no significa nada; ' +
-        'verificá la suite con su runner real.'
+        `la corrida BASE con ${nombreDelCorredor} no salió en verde (exit ${base ? base.code : '?'}) — ` +
+        `o la suite está realmente rota, o estos tests no corren con ${nombreDelCorredor} en la copia (la receta ` +
+        'elegida, las dependencias o la compilación). Un veredicto de mutantes sin base verde no significa nada; ' +
+        `verificá la suite con su runner real${conError(base)}.`
       );
+    }
+    // Una base «verde» que no corrió ninguna prueba no prueba nada: todo mutante sobreviviría. Las recetas que dejan
+    // su resultado dicen cuántas corrieron (`node --test` no deja ninguno).
+    if (Number.isInteger(base.tests)) ctx.baseTests = base.tests;
+    if (nameFilter && base.tests === 0) {
+      return fail2(`no medido: el filtro de la marca @story-${idHistoria} no dejó ninguna prueba en la base — no sigo con los mutantes`);
+    }
+    // con el filtro, una base que no dice cuántas corrieron puede no haber corrido ninguna: no es verde
+    if (nameFilter && !Number.isInteger(base.tests)) {
+      return fail2(`no medido: con el filtro de la marca @story-${idHistoria}, el resultado de la base no dice cuántas pruebas corrieron — no sigo con los mutantes`);
+    }
+    if (recipe.results) {
+      if (base.tests == null) return fail2('no pude leer el resultado de la base: no sé cuántas pruebas corrieron, y no sigo con los mutantes');
+      if (base.tests === 0) return fail2('el filtro no coincidió con ninguna prueba: la base corrió cero pruebas, y no sigo con los mutantes');
     }
 
     // Loop de mutantes. El restore es SAGRADO: bytes exactos, try/finally,
@@ -492,9 +922,9 @@ async function runMutationCheck({
     const survived = [];
     for (let i = 0; i < aCorrer.length; i++) {
       // El corte de presupuesto se decide ENTRE mutantes, nunca adentro de uno.
-      if (deadlineMs && Date.now() - inicio > deadlineMs) {
+      if (now() - inicio >= totalMs) {
         for (let j = i; j < aCorrer.length; j++) {
-          skipped.push({ ...aCorrer[j], reason: `deadline de ${deadlineMs}ms alcanzado — no llegó a correr` });
+          skipped.push({ ...aCorrer[j], reason: `deadline de ${totalMs}ms alcanzado — no llegó a correr` });
         }
         deadlineHit = true;
         break;
@@ -519,7 +949,7 @@ async function runMutationCheck({
         // como exit 1 (eso acusaría a los tests del dev por un problema nuestro).
         try { fso.writeFileSync(abs, mutado, 'utf8'); } catch (e) { mutError = e; }
         if (!mutError) {
-          try { outcome = await runTests({ repo, testFiles: absTests, mutant: m }); } catch (e) { runError = e; }
+          try { outcome = await runTests({ repo, testFiles: absTests, mutant: m, recipe, capMs: topeDeLaCorrida(), nameFilter }); } catch (e) { runError = e; }
         }
       } finally {
         // Restaurar SIEMPRE y verificar byte a byte. La VERIFICACIÓN manda: si
@@ -546,6 +976,30 @@ async function runMutationCheck({
           `${runError.message}. El archivo fue restaurado byte a byte.`
         );
       }
+      // Una corrida que pasó su tope no es «cazado» ni «sobrevivió»: no se midió.
+      if (outcome && outcome.timedOut) {
+        skipped.push({ ...m, reason: 'la corrida pasó su tope y la maté yo: no cuenta como cazado' });
+        deadlineHit = true;
+        continue;
+      }
+      // Una receta que deja resultado y no lo dejó (o dice cero pruebas) no midió nada. En rojo, el mutante no compila
+      // o no carga (dotnet sale 1 en la compilación): contarlo como cazado inflaría `killed`. En verde, el resultado no
+      // se pudo leer: contarlo como sobreviviente acusaría a pruebas que nadie vio correr.
+      if (recipe.results && outcome && !outcome.tests) {
+        skipped.push({
+          ...m,
+          reason: outcome.code !== 0
+            ? 'la corrida no llegó a correr pruebas (el mutante no compila o no carga): no cuenta como cazado'
+            : 'la corrida salió bien pero su resultado no dice qué pruebas corrieron: no cuenta como sobreviviente',
+        });
+        continue;
+      }
+      // Sin pruebas corridas y en verde, el filtro no tomó nada: no cuenta. En rojo, el mutante rompió la carga del archivo
+      // (la base, con las mismas pruebas, estaba verde): es cazado, como sin el filtro.
+      if (nameFilter && outcome && outcome.tests === 0 && outcome.code === 0) {
+        skipped.push({ ...m, reason: 'la corrida filtrada por la historia no corrió ninguna prueba: no cuenta' });
+        continue;
+      }
       ejecutados += 1;
       // Exit code REAL: != 0 → el mutante MURIÓ (algún test lo cazó). 0 → SOBREVIVIÓ.
       if (outcome && outcome.code !== 0) killed += 1;
@@ -554,10 +1008,12 @@ async function runMutationCheck({
 
     const total = ejecutados;
     let verdict;
-    if (total === 0) verdict = deadlineHit ? 'DEADLINE_SIN_CORRER' : 'SIN_MUTANTES';
+    // Cero medidos con mutantes generados no es «no había nada que mutar»: se intentó y no se pudo medir ninguno.
+    if (total === 0) verdict = deadlineHit ? 'DEADLINE_SIN_CORRER' : (skipped.length ? 'SIN_MEDIR' : 'SIN_MUTANTES');
     else if (killed === 0) verdict = 'TESTS_NO_EJERCEN_EL_CODIGO';
     else verdict = survived.length ? 'AVISO_SOBREVIVIENTES' : 'OK';
-    const result = { total, killed, survived, skipped, verdict, repoDeTrabajo: copia.dir };
+    if (total < aCorrer.length) log(`mutation-check: midió ${total} de ${aCorrer.length} mutantes (el resto, por tope: ver skipped)`);
+    const result = { total, killed, survived, skipped, verdict, ...ctx, repoDeTrabajo: copia.dir };
     return { exitCode: killed === 0 && total > 0 ? 1 : 0, result };
   } catch (e) {
     // NUNCA dejar escapar una excepción — Node saldría con exit 1, que el
@@ -607,6 +1063,7 @@ if (require.main === module) {
         files: args.files,
         maxMutants: args.maxMutants,
         deadlineMs: Number.isInteger(args.deadlineMs) && args.deadlineMs > 0 ? args.deadlineMs : null,
+        ...(({ marker, error }) => ({ marker, markerError: error }))(leerMarcador()),
       });
     } catch (e) {
       // Cinturón extra — una excepción acá saldría con exit 1 de Node, que es
@@ -632,4 +1089,8 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { looksLikeTestPath, parseAddedLines, runMutationCheck, parseArgs, defaultRunTests };
+module.exports = {
+  looksLikeTestPath, parseAddedLines, addedLinesOf, runMutationCheck, parseArgs, defaultRunTests, runRecipe, countTests,
+  crearCopiaDeTrabajo, buscarArchivos, BUDGETS, defaultRun, bashRecipe, topesMedidos, MEASURED_RUN_CEIL_MS,
+  MEASURED_TOTAL_CEIL_MS, storyNamePattern, storyIdDe,
+};

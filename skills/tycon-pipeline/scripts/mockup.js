@@ -525,6 +525,22 @@ function mockupTexts(html) {
 }
 
 /**
+ * Las capas de una maqueta armada por este guion: `[{ screen, name, trigger, over, texts }]`, o null si el archivo no es
+ * de mockup.js. `texts` son los de la ventana; los de la pantalla de abajo, dibujada detrás, no cuentan.
+ */
+function mockupLayers(html) {
+  const s = String(html);
+  const textos = mockupTexts(s);
+  if (!textos) return null;
+  const out = [];
+  for (const m of s.matchAll(/<section class="screen layer" data-screen-index="(\d+)" data-screen-name="([^"]*)" data-presentation="layer">[\s\S]*?<p class="layer-how">Se abre al tocar «([^»]*)» en «([^»]*)»\.<\/p>/g)) {
+    const screen = Number(m[1]);
+    out.push({ screen, name: decode(m[2]), trigger: decode(m[3]), over: decode(m[4]), texts: textos.filter((t) => t.screen === screen).map((t) => t.text) });
+  }
+  return out;
+}
+
+/**
  * ¿La story tiene pantalla? Con la MISMA detección que la guía de QA (`qa-guide.js#isUiStory` con la raíz del
  * repo de la STORY), no la de `markerStoryIsUi` (raíz del repo del código). Una story ilegible TIRA: «no pude mirar»
  * nunca es «no hay pantalla».
@@ -671,7 +687,7 @@ function mockupStep8(marker, storyPath) {
   try { screenNow = screenStory(storyPath).screen; } catch (e) { screenNow = null; leerError = e.code || e.message; }
   let block = null;
   if (!ap && dec && dec.screen === false && screenNow === true) {
-    block = `la story ganó una pantalla después de aprobar el plan: armá la maqueta (\`mockup.js render --story ${storyPath}\`), mostrásela al dueño (o a quien tenga su delegación) y \`marker.js approve-mockup --approved "<cita>"\``;
+    block = `la story ganó una pantalla después de aprobar el plan: armá la maqueta (\`mockup.js render --story ${storyPath}\`), mostrásela a la persona que aprueba (o a quien tenga su delegación) y \`marker.js approve-mockup --approved "<cita>"\``;
   } else if (!ap && dec && dec.screen === false && screenNow === null) {
     // «no pude mirar» nunca es «no hay»: sin leer la story no se sabe si ganó una pantalla
     block = `no pude leer la story (${storyPath || '(sin ruta en el marcador)'}: ${leerError}): no sé si ganó una pantalla después de aprobar el plan. Arreglá la ruta (\`marker.js set\` con \`storyPath\`) y volvé a cerrar.`;
@@ -720,7 +736,7 @@ const DEMO = {
       ],
     },
   ],
-  notes: 'para el dueño; no se compara',
+  notes: 'para quien aprueba; no se compara',
 };
 
 const SCHEMA = `La forma del modelo de la maqueta (JSON). Los ejemplos son inventados.
@@ -873,7 +889,7 @@ function main() {
 }
 
 module.exports = {
-  renderMockup, mockupEsc, validateMockupHtml, mockupTexts, mockupHash, mockupPaths, screenStory, readApproval,
+  renderMockup, mockupEsc, validateMockupHtml, mockupTexts, mockupLayers, mockupHash, mockupPaths, screenStory, readApproval,
   writeApproval, compareWithScreens, qaGuideCheckArgs, mockupStep8, validateModel, modelWarnings, declaredDiffs, GENERATOR, CSP,
 };
 

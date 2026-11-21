@@ -67,15 +67,16 @@ queda afuera dentro de ella:
 | arnes | `.advisors/` `.dashboard/` `.engram/` `_bmad/` `inbox/` _(del repo del equipo; no está en esta copia)_ `qa/` `specs/` `tasks/` | fija (ver abajo) |
 | arnes | `pipelines/` | entra (núcleo): `pipelines/operations/**` (los pipelines que corre el repo de operaciones de cada organización); el resto de la carpeta, fija (ver abajo): la validación de cada pedido y sus plantillas son del repo privado |
 | arnes | `perfil-equipo.json` _(del repo del equipo; no está en esta copia)_ | fija (ver abajo) |
-| arnes | `README.md` `README.es.md` `INDEX.md` `INSTALL.md` `story-format.md` `engram-version` `.gitignore` `.gitattributes` `.githooks/` `adapters/` `build/` `claude-md-blocks/` `commands/` `integrations/` `mods/` `examples/` | entra (núcleo) |
-| arnes | `getting-started/` | entra (núcleo): `getting-started/reference.md` `getting-started/reference.es.md` (la referencia de la instalación, en los dos idiomas); las guías de cada sistema llegan como papeles |
-| arnes | `scripts/` | entra (núcleo), menos `scripts/tools/harness-map/*.json` _(del repo del equipo; no está en esta copia)_ (las exclusiones del mapa y la configuración de su versión pública: datos del mapa interno, que queda afuera; el código de la carpeta sí sale) `scripts/tests/fixtures/legacy-names-d1/` _(del repo del equipo; no está en esta copia)_ (nombra a propósito los nombres viejos), `scripts/tests/fixtures/legacy-names-f/` _(del repo del equipo; no está en esta copia)_ (la clasificación de los nombres viejos: su prueba se saltea sin el mapa del equipo), `scripts/publishing/public-files/` _(del repo del equipo; no está en esta copia)_ (los papeles: llegan a su destino por un sintético), `scripts/publishing/public-repos.json` _(del repo del equipo; no está en esta copia)_ (lo leen el exportador, la sincronización y el reconocedor de repos del arnés, en el interno), `scripts/publishing/split.json` _(del repo del equipo; no está en esta copia)_ y `scripts/publishing/split.js` _(del repo del equipo; no está en esta copia)_ (el reparto del corte a GitHub: nombra las carpetas privadas y corre una vez, en el interno), `scripts/publishing/team-repo.js` _(del repo del equipo; no está en esta copia)_ y `scripts/publishing/team-layer.json` _(del repo del equipo; no está en esta copia)_ (publican la capa del equipo al repo privado del equipo: los corre el dueño), `scripts/ci/overlay-harness.js` _(del repo del equipo; no está en esta copia)_ (pone la copia de GitHub encima del checkout de Azure en los nocturnos del equipo, que quedan afuera, y usa el reparto), `scripts/controls-bench/evidence/` _(del repo del equipo; no está en esta copia)_ (salida cruda de corridas reales; las conclusiones están en las guías) `scripts/tests/fixtures/product-pipeline/` _(del repo del equipo; no está en esta copia)_ (los pipelines de un producto del equipo; sólo los usa una prueba que no viaja) y `scripts/nightly/dashboard/declared.json` (datos operativos del equipo: la copia lleva un sintético) |
+| arnes | `README.md` `README.es.md` `INDEX.md` `INSTALL.md` `story-format.md` `engram-version` `.gitignore` `.gitattributes` `.test-gate.yaml` _(del repo del equipo; no está en esta copia)_ `.githooks/` `adapters/` `build/` `claude-md-blocks/` `commands/` `integrations/` `mods/` `examples/` | entra (núcleo) |
+| arnes | `getting-started/` | entra (núcleo): `getting-started/reference.md` `getting-started/reference.es.md` (la referencia de la instalación, en los dos idiomas) y `getting-started/one-minute.md` `getting-started/one-minute.es.md` (el arnés en un minuto) y `getting-started/mac.md` `getting-started/windows.md` `getting-started/linux.md` (las guías de cada sistema) |
+| arnes | `scripts/` | entra (núcleo), menos `scripts/tools/harness-map/*.json` _(del repo del equipo; no está en esta copia)_ (las exclusiones del mapa y la configuración de su versión pública: datos del mapa interno, que queda afuera; el código de la carpeta sí sale) `scripts/tests/fixtures/legacy-names-d1/` _(del repo del equipo; no está en esta copia)_ (nombra a propósito los nombres viejos), `scripts/tests/fixtures/legacy-names-f/` _(del repo del equipo; no está en esta copia)_ (la clasificación de los nombres viejos: su prueba se saltea sin el mapa del equipo), `scripts/publishing/public-repos.json` _(del repo del equipo; no está en esta copia)_ (lo leen el exportador, la sincronización y el reconocedor de repos del arnés, en el interno), `scripts/publishing/split.json` _(del repo del equipo; no está en esta copia)_ y `scripts/publishing/split.js` _(del repo del equipo; no está en esta copia)_ (el reparto del corte a GitHub: nombra las carpetas privadas y corre una vez, en el interno), `scripts/publishing/team-repo.js` _(del repo del equipo; no está en esta copia)_ y `scripts/publishing/team-layer.json` _(del repo del equipo; no está en esta copia)_ (publican la capa del equipo al repo privado del equipo: los corre el dueño), `scripts/ci/overlay-harness.js` _(del repo del equipo; no está en esta copia)_ (pone la copia de GitHub encima del checkout de Azure en los nocturnos del equipo, que quedan afuera, y usa el reparto), `scripts/controls-bench/evidence/` _(del repo del equipo; no está en esta copia)_ (salida cruda de corridas reales; las conclusiones están en las guías) `scripts/tests/fixtures/product-pipeline/` _(del repo del equipo; no está en esta copia)_ (los pipelines de un producto del equipo; sólo los usa una prueba que no viaja) y `scripts/nightly/dashboard/declared.json` (datos operativos del equipo: la copia lleva un sintético) |
 | arnes | `guides/` | entra (núcleo), menos `guides/decisions/vuelta-atras-2026-08-31.md` _(del repo del equipo; no está en esta copia)_ (inventario de riesgo de la producción de un cliente) y `guides/decisions/revision-adversarial-engram-2026-08-25-codex.md` _(del repo del equipo; no está en esta copia)_ (fechado, y nada de lo que sale lo nombra) |
 | arnes | `.engram-project` | afuera: prende la memoria del equipo; sin él, apagada es el default documentado |
 | arnes | `.tycon/` | afuera: la configuración del equipo para este repo (revisores, portones, servidores de producción) |
 | arnes | `CLAUDE.md` _(del repo del equipo; no está en esta copia)_ | afuera: la portada interna del repo del equipo; el público no la trae |
 | arnes | `AGENTS.md` | afuera: el puntero a `CLAUDE.md` para las otras herramientas; el público no la trae |
-| arnes | `.github/` | entra (núcleo): `.github/control-changes.jsonl` `.github/control-changes/**` (el registro de cambios de controles) `.github/ISSUE_TEMPLATE/**` `.github/pull_request_template.md` (los formularios de GitHub); la comunidad y los flujos de GitHub llegan como papeles |
+| arnes | `.github/` | entra (núcleo): `.github/control-changes.jsonl` `.github/control-changes/**` (el registro de cambios de controles) `.github/ISSUE_TEMPLATE/**` `.github/pull_request_template.md` (los formularios de GitHub), `.github/CODE_OF_CONDUCT.md` `.github/CONTRIBUTING.md` `.github/SECURITY.md` (la comunidad) y `.github/workflows/**` (los flujos de GitHub) |
+| arnes | `LICENSE` `NOTICE` | entra (núcleo): la licencia y los avisos de titularidad y de atribución |
 | arnes | `artifacts/` _(del repo del equipo; no está en esta copia)_ `onboarding/` _(del repo del equipo; no está en esta copia)_ | afuera: páginas, charlas y onboarding del equipo |
 | agent-skills | `agents/` | entra: en el núcleo `agents/*.md` (los revisores de un stack viven en su paquete, que llega con la capa del equipo) |
 | agent-skills | `skills/` | entra: en el núcleo `skills/tycon-*/`, `skills/check-story-drift/` y `skills/tycon-create-story/` (las de un stack viven en su paquete, que llega con la capa del equipo). Afuera: `skills/bizuit-sdd/` _(del repo del equipo; no está en esta copia)_ (deprecada, no se publica), `skills/core/signalr-realtime/` _(del repo del equipo; no está en esta copia)_ (describe el producto de un cliente; sólo serviría reescrita) y `skills/tycon-pipeline/HISTORIA.md` _(del repo del equipo; no está en esta copia)_ (la historia de la skill, con casos del equipo) |
@@ -345,19 +346,14 @@ La copia lleva en su raíz lo que un repo público necesita, y los repos interno
 - `.github/workflows/ci.yml`: la CI del repo público (ver «La CI pública»).
 - `scripts/setup/public-remotes.json`: la lista de remotos públicos, `{ "remotes": ["https://github.com/<organización>/<repo>"] }`,
   con el nombre ya puesto. Con ella el programa de instalación reconoce un clon del público y sabe
-  de qué repo baja la versión publicada (`install --version`, la mudanza, la portada sin git). En los repos internos ese
-  archivo no existe en `scripts/setup/` —sólo su plantilla, entre los papeles—: un clon interno nunca cuenta como público.
+  de qué repo baja la versión publicada (`install --version`, la mudanza, la portada sin git).
 - `scripts/setup/get-harness.sh` y `scripts/setup/get-harness.ps1`: los guiones de entrada de la
-  portada (el bloque `install:script`), con la dirección del repo público ya puesta. Como la lista de remotos, en los
-  repos internos sólo existen sus plantillas, entre los papeles. `--explain --json` lista cada sintético en `synthetic`
-  (destino, origen, paquetes y motivo).
+  portada (el bloque `install:script`), con la dirección del repo público ya puesta.
 
-Viven en la carpeta de papeles de `scripts/publishing/`, con la ruta de su destino adentro; esa carpeta queda afuera y cada papel
-llega a su lugar por un sintético con `packages` (el sintético aplica en esas exportaciones aunque ningún «in» cubra su
-destino). El nombre público vive en un solo archivo, `public-repos.json`, que no viaja: los papeles
-escriben `{{public-org}}` y `{{public-repo}}` y el exportador los reemplaza al ponerlos (un marcador desconocido sale
-2; una URL del repo público escrita a mano es un hallazgo). El lector es `readPublicRepo()` de `export.js`. Los dos frenos
-de nombres miran los papeles como a cualquier archivo que sale: `whatShips` cuenta el `from` de cada sintético.
+Viven en su lugar en el repo público, con el nombre ya puesto, y la lista blanca toma cada uno con un «in» del núcleo
+(los de `scripts/setup/`, con el de `scripts/**`). Los dos frenos de nombres los miran como a cualquier archivo que
+sale. El mecanismo de los sintéticos sigue para lo que el exportador agrega sólo a la copia desde otro archivo
+(`--explain --json` lista cada uno en `synthetic`, con destino, origen, paquetes y motivo).
 
 ## El repo único
 
@@ -687,12 +683,15 @@ Los pasos, en orden y con una línea cada uno: `node --check` de cada `.js` vers
 disco) · `build/check.js` · `build/generate.js --check` · `suites-coverage.test.js` · `portable-suites.test.sh` · las
 suites de `suites.json` que piden exactamente `["agent-skills"]` (de a cuatro, cada una en su HOME vacía y sin las
 herramientas del vocabulario en el PATH, como las portables) · el banco de controles (`--tool both --baseline check`,
-como el nocturno) · con `--range`, `spanish-names.js --range` · con `--clean-machine`, `clean-machine.test.sh` en su
+como el nocturno) · el tamaño de los controles (`control-size.js`, con `--range` si lo hay: cada aviso sube como aviso
+del pedido) · con `--range`, `spanish-names.js --range` · con `--clean-machine`, `clean-machine.test.sh` en su
 modo público (`TYCON_CLEAN_MACHINE=1` y `TYCON_CLEAN_MACHINE_SOURCE=<raíz>`: pedida de forma explícita y sobre ese repo).
 
 - **No corta en el primer rojo**: corre todos y sale 1 si alguno no quedó verde; 0 sólo con todos verdes.
 - **Un paso que no pudo correr es rojo**, con «no pude correr» y el motivo —falta su archivo o su herramienta, la
-  historia no alcanza para `--range`, no hay ninguna suite que correr—. Nunca un salto.
+  historia no alcanza para `--range`, no hay ninguna suite que correr—. Nunca un salto. La excepción declarada es el
+  tamaño de los controles: es un aviso y nunca frena, así que si no puede medir lo dice como aviso («no pude medir») y
+  sigue verde.
 - **No corre el detector** (necesita la lista privada, que no viaja) y no lee ningún secreto.
 - **Sirve en los dos layouts**: en el repo único las skills son `<raíz>/skills`; en el repo del equipo se ubican con
   `scripts/lib/skills-dir.js`. En los dos exporta `TYCON_GUIDES_DIR` y `TYCON_SKILLS_DIR` para toda la corrida.
@@ -792,8 +791,9 @@ medida: [piezas-del-arnes.md](../piezas-del-arnes.md) §`scripts/tests/clean-mac
 esa integración prendida: afuera, nadie recibe una regla sobre un servicio que no usa. El comentario nunca llega al
 `CLAUDE.md` ni al espejo; al apagar la integración el bloque se quita solo en la corrida siguiente; y si no se puede
 saber (configuración rota, sin `node`, integración que el lector no conoce, o un marcador casi bien escrito) no se agrega ni se quita nada, y el sync lo
-dice. Sólo `ado-runs-list-lag` lleva el marcador: es una regla sobre cómo operar Azure DevOps y, sin ese servicio, no
-tiene a qué aplicarse. `tool-names` y `background-execution` no lo llevan aunque nombran integraciones que se pueden
+dice. Hoy ningún bloque lo lleva: el último, el de las reglas de Azure DevOps, salió del `CLAUDE.md` y viaja con su
+conector (`integrations/azure-devops/rules.md`), que lo muestra la primera vez que el agente usa esa CLI en la sesión
+(`claude-md-blocks/retired.json` lo saca de las máquinas que lo tenían). `tool-names` y `background-execution` no lo llevan aunque nombran integraciones que se pueden
 apagar, porque no dependen de ninguna. El primero es una tabla de nombres: dice cómo se llama cada herramienta si está,
 y la fila de una que no está no manda a hacer nada. El segundo ofrece avisar por Telegram como una opción dentro de una
 regla —correr en segundo plano lo que tarda— que vale igual sin él. Partirlos por integración sería cambiarles el
@@ -1403,7 +1403,7 @@ bash scripts/tests/mirror-pipeline.test.sh
 node scripts/ci/check-tolerant-steps.js pipelines/azure-pipelines-public-leak-check.yml
 node scripts/ci/check-stage-dependencies.js pipelines/azure-pipelines-public-leak-check.yml
 # contra Azure, sin ejecutar ni hacer cola
-bash scripts/ci/validate-pipeline-in-ado.sh --project tycon-claude-guides --pipeline <id> \
+bash integrations/azure-devops/scripts/validate-pipeline-in-ado.sh --project tycon-claude-guides --pipeline <id> \
   --yaml pipelines/azure-pipelines-public-leak-check.yml
 ```
 
@@ -1693,9 +1693,16 @@ ya está publicado. Borrar una ref remota no publica nada y pasa.
 máquina (`harness.js config set paths.maintainers <carpeta>`) · el clon que la máquina mantiene (`paths.maintained`) ·
 el arnés desde el que corre el freno. **Nunca el árbol que se empuja** (tampoco si la máquina declara ese árbol como su
 clon): la rama elegiría con qué lista se la mira. Los dos primeros son una declaración: declarados y sin
-lista es «no pude mirar», aunque más abajo haya otra. En una máquina **con el perfil del equipo** la lista es
-obligatoria: sin lista, no sale. Sin perfil y sin lista —alguien de afuera con su copia— corre lo que no necesita
-lista, y lo dice en una línea.
+lista es «no pude mirar», aunque más abajo haya otra. En una máquina **con el perfil del equipo que mantiene el
+arnés** la lista es obligatoria: sin lista, no sale. Sin perfil y sin lista —alguien de afuera con su copia— corre lo
+que no necesita lista, y lo dice en una línea. Lo mismo con el perfil de **otra organización**: la lista privada no se
+le da a nadie de afuera, y exigírsela lo dejaría sin poder empujar nunca.
+
+Al equipo dueño lo reconoce el `team-repos.json` del perfil **instalado** (al lado de `team-profile.json`, en el arnés
+que corre el freno) cuando declara `maintainers`, el repo de mantenimiento donde vive la lista. Nunca el del árbol
+que se empuja: un árbol que trae un perfil no cambia de qué organización es la máquina. Ante la duda es el equipo
+dueño y la lista es obligatoria: sin `team-repos.json` (un perfil local, una instalación a medias), ilegible, de una
+forma que el freno no conoce, o con el arnés que corre el freno adentro del árbol que se empuja.
 
 **Casi nunca hace falta declarar nada.** En la máquina de quien mantiene, el clon interno ya está declarado como el
 que la máquina mantiene (`paths.maintained`) y el freno encuentra la lista ahí. `paths.maintainers` es para cuando

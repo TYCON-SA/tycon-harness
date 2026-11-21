@@ -24,6 +24,8 @@ const io = require('./story-gate-io.js');
 
 const DEFAULT_STATE_DIR = io.DEFAULT_STATE_DIR;
 const MARKS_DIR = 'skill-marks';
+// los resultados de la revisión adversaria que la dan por hecha (`pendiente` espera una respuesta; `no-medido` no cuenta)
+const REVISADA = new Set(['limpio', 'corregido', 'preguntado', 'saltado']);
 const MARK_PURGE_MS = 24 * 3600 * 1000; // marcas de más de un día se borran al escribir una nueva
 
 function safeSid(sessionId) {
@@ -155,7 +157,19 @@ function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, ev
   }
 
   const isCodex = isCodexEvent(event);
-  const args = { filePath: abs, existsOnDisk, prevStatus, status, isStoryCandidate, isHarness, repoUnderHarness, idIsWork, gateEnabled, isCodex };
+  // La revisión adversaria de la historia: vigente (el mismo texto) y terminada. Una que espera respuesta no cuenta.
+  // Un revisor que se cayó (`no-medido`) cuenta como intento: la skill sigue y el primer paso del pipeline la relanza.
+  // El modo primera vez no corre la revisión (8.84): una historia con su constancia de primera vez no la pide.
+  let review = false;
+  if (existsOnDisk) {
+    try {
+      const casaReal = casa || os.homedir();
+      const leida = require('./story-review-record.js').readRecord(casaReal, abs);
+      review = (leida.estado === 'current' && REVISADA.has(leida.record.resultado)) || leida.estado === 'unmeasured'
+        || (!!declaredId && require('./first-time-record.js').isRecorded(casaReal, abs, declaredId));
+    } catch { review = false; }
+  }
+  const args = { filePath: abs, existsOnDisk, prevStatus, status, isStoryCandidate, isHarness, repoUnderHarness, idIsWork, gateEnabled, isCodex, review };
   let verdict = gate.computeStorySkillGate(args);
   // La constancia del validador se busca sólo cuando hace falta: leer la conversación cuesta.
   let recordNote = null;
@@ -177,12 +191,21 @@ function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, ev
   let firma = null;
   if (verdict.action === 'block' && !isCodex) {
     const porEdicion = !!event && ['Edit', 'Write', 'MultiEdit'].includes(event.tool_name);
-    try {
-      const ow = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-      firma = porEdicion ? ow.consumirArchivo({ firma: 'story-skill-bypass', sesion: event.session_id, archivo: abs, cwd: event.cwd, casa })
-        : { ok: false, motivo: 'por la consola no vale: escribila con Edit o Write' };
-      firma.comando = ow.comoSeFirma('story-skill-bypass', abs);
-    } catch (e) { firma = { ok: false, motivo: `no pude consultar la ventana (${e.message})`, comando: `marker.js sign-file story-skill-bypass ${abs}` }; }
+    // las dos formas salen de owner-window.js, con la sesión del evento: story-skill-gate.js sólo las imprime
+    const sesionDelEvento = (event && event.session_id) || sessionId;
+    let ow = null;
+    try { ow = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js')); } catch (e) {
+      firma = { ok: false, motivo: `no pude consultar la ventana (${e.message})`, comando: null, comandoTerminal: null,
+        renglones: [`la firma de archivo story-skill-bypass sobre ${abs}, en la ventana de permiso (no pude armar el comando: ${e.message})`] };
+    }
+    if (ow) {
+      const formas = ow.formasDeFirmar('story-skill-bypass', abs, sesionDelEvento);
+      try {
+        firma = porEdicion ? ow.consumirArchivo({ firma: 'story-skill-bypass', sesion: event.session_id, archivo: abs, cwd: event.cwd, casa })
+          : { ok: false, motivo: 'por la consola no vale: escribila con Edit o Write' };
+      } catch (e) { firma = { ok: false, motivo: `no pude consultar la ventana (${e.message})` }; }
+      Object.assign(firma, { comando: formas.ventana, comandoTerminal: formas.terminal, renglones: formas.renglones });
+    }
     if (firma.ok) {
       io.appendLog(stateDir, 'bypass.log', sessionId, { repoPath: repo.repoRoot || null, kind: 'STORY_SKILL_BYPASS_USED', file: abs, via: firma.constancia.via });
       return { verdict: { action: 'pass', kind: 'persona', reason: `la persona la firmó sin la skill (${firma.constancia.via})` }, message: null };

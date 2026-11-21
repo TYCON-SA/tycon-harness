@@ -19,10 +19,11 @@ const { execFileSync, spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
+const { inHarnessCopy } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js'));
 const REGLA = 'TEST-C1';
 const ARCHIVO = '.advisors/tests-result.json';
 const MOTIVO = 'test-gate.sh no reconoce pytest; la suite se corrió a mano: 12 pasaron';
-const VENTANA = /aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No»\. Una respuesta en el chat no lo exime\./;
+const VENTANA = /aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No»\. Lo exime esa aprobación, no otra respuesta en el chat\./;
 
 function tmp(prefijo) { return fs.mkdtempSync(path.join(os.tmpdir(), prefijo)); }
 const GIT_ENV = { ...process.env, GIT_AUTHOR_DATE: '2026-10-20T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-20T12:00:00Z' };
@@ -53,11 +54,14 @@ function laboratorio({ sid = 's-cs', criticos = [{ rule_id: REGLA, file: ARCHIVO
 const sh = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 const comando = (rule = REGLA, file = ARCHIVO, reason = MOTIVO, extra = '') => `node ${MARKER} waive-critical --rule ${rule} --file ${sh(file)} --reason ${sh(reason)}${extra}`;
 
-/** La puerta Bash del portón de carril, como la corre Claude Code antes de un comando. */
+/**
+ * La puerta Bash del portón de carril, como la corre Claude Code antes de un comando. Corre desde una copia propia del
+ * arnés, igual que el guion que nombra el comando: el freno reconoce un guion del arnés según el estado de git del clon.
+ */
 function puertaBash(lab, command) {
-  return spawnSync('node', [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+  return spawnSync('node', [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
     cwd: lab.repo, encoding: 'utf8',
-    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command } }),
+    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: inHarnessCopy(command) } }),
     env: lab.env,
   });
 }
@@ -243,7 +247,7 @@ test('CriticalShown_8_94_TodosLosCriticosJuntos @story-8.94 @ac-2', () => {
   assert.ok(aviso.includes(LARGO), aviso);
   assert.ok(aviso.includes('ningún criterio lo pide'), 'con el motivo del hallazgo');
   assert.doesNotMatch(aviso, /SEC-C2/);
-  assert.match(aviso, /Son 2 críticos: se aprueban en la ventana de permiso, no en el chat\./);
+  assert.match(aviso, /Son 2 críticos: se aprueban de a uno, en la ventana de permiso o en el cuadro de opciones\./);
   assert.deepEqual(muestras(lab).map((g) => g.rule).sort(), [LARGO, REGLA].sort(), 'una constancia por cada crítico mostrado');
 });
 

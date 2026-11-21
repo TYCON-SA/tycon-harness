@@ -1839,9 +1839,9 @@ test('Config_ModelQuestion_Retirada_ValidaConAviso — la pregunta de Fable ya n
 test('Response_ClosedVocabulary_IntegerRange_DefaultsByStyle @story-2.31 @ac-1 @ac-4 @ac-6 — cómo contesta el asistente: vocabulario cerrado, largo acotado y el tope del estilo', () => {
   const C = lib();
   const con = (perfil, env = {}) => cargar({ home: casa(), arnes: arnesCon(perfil), env });
-  // sin valor: neutral, es, y el tope del estilo
+  // sin valor: neutral, el idioma de la persona y el tope del estilo
   let c = con({});
-  assert.deepEqual(C.respuesta(c), { language: 'es', style: 'neutral', max_chars: C.TOPE_POR_ESTILO.neutral, origen: { language: 'default', style: 'default', max_chars: 'estilo' } });
+  assert.deepEqual(C.respuesta(c), { language: 'auto', style: 'neutral', max_chars: C.TOPE_POR_ESTILO.neutral, origen: { language: 'default', style: 'default', max_chars: 'estilo' } });
   assert.deepEqual(C.TOPE_POR_ESTILO, { executive: 1300, detailed: 3000, neutral: 2000 });
   // el perfil de TYCON
   c = con({ response: { language: 'es', style: 'executive', max_chars: 1300 } });
@@ -1864,10 +1864,36 @@ test('Response_ClosedVocabulary_IntegerRange_DefaultsByStyle @story-2.31 @ac-1 @
   fs.writeFileSync(p, JSON.stringify({ response: { style: 'executive' } }));
   const ok = cli(['response', '--json'], { home, env: { TYCON_PROFILE: p } });
   assert.equal(ok.status, 0, ok.stderr);
-  assert.deepEqual(JSON.parse(ok.stdout), { language: 'es', style: 'executive', max_chars: 1300, origen: { language: 'default', style: 'perfil', max_chars: 'estilo' } });
+  assert.deepEqual(JSON.parse(ok.stdout), { language: 'auto', style: 'executive', max_chars: 1300, origen: { language: 'default', style: 'perfil', max_chars: 'estilo' } });
   fs.writeFileSync(p, JSON.stringify({ response: { style: 'fancy' } }));
   const rota = cli(['response', '--json'], { home, env: { TYCON_PROFILE: p } });
   assert.equal(rota.status, 2); assert.equal(rota.stdout, '');
+});
+
+test('T1 ResponseLanguage_AceptaAuto @story-8.149 @ac-1 — response.language acepta es, en y auto; otro valor es configuración rota', () => {
+  const C = lib();
+  const con = (perfil, env = {}) => cargar({ home: casa(), arnes: arnesCon(perfil), env });
+  for (const v of ['es', 'en', 'auto']) {
+    const c = con({ response: { language: v } });
+    assert.deepEqual(c.errores, [], `${v} vale`);
+    assert.equal(C.respuesta(c).language, v);
+    assert.equal(C.respuesta(c).origen.language, 'perfil');
+    assert.deepEqual(con({}, { TYCON_RESPONSE_LANGUAGE: v }).errores, [], `${v} por variable vale`);
+  }
+  assert.ok(con({ response: { language: 'fr' } }).errores.some((e) => /response\.language/.test(e.clave)), 'fr es configuración rota');
+  assert.ok(con({}, { TYCON_RESPONSE_LANGUAGE: 'fr' }).errores.some((e) => e.clave === 'TYCON_RESPONSE_LANGUAGE'), 'fr por variable, rota');
+});
+
+test('T3 ResponseLanguage_FabricaEsAuto @story-8.149 @ac-2 — sin valor declarado, response.language es auto, con el origen de fábrica', () => {
+  const C = lib();
+  const c = cargar({ home: casa(), arnes: arnesCon({}), env: {} });
+  assert.equal(C.DEFAULTS['response.language'], 'auto');
+  assert.deepEqual([C.respuesta(c).language, C.respuesta(c).origen.language], ['auto', 'default']);
+  // `response --json`, lo que leen los sincronizadores
+  const home = casa();
+  const r = cli(['response', '--json'], { home, env: { TYCON_PROFILE: '0' } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual([JSON.parse(r.stdout).language, JSON.parse(r.stdout).origen.language], ['auto', 'default']);
 });
 
 
@@ -1904,7 +1930,7 @@ test('8.63 · RelaySession_SoloDesdeElPerfil @story-8.63 @ac-11', () => {
   const r = cli(['set', 'approvals.relay_session', 'yo-mismo'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors']);
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ──────────────────────────────
@@ -1936,6 +1962,31 @@ test('7.46 · Config_QaManualCheck_SoloPerfil @story-7.46 @ac-6', () => {
   c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes: arnesCon({ qa: { manual_check: 'required' } }) });
   assert.equal(c.valores.qa.manual_check, 'required', 'el del árbol, no el de la variable');
   const r = cli(['set', 'qa.manual_check', 'off'], { home: casa() });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /sólo desde el perfil del equipo/);
+});
+
+// ── La dirección del sitio de la organización (site.url), la que abre el comando de barra org-site ──────────────
+// Una dirección https (o http://localhost para probar) y sólo desde el perfil: si la máquina o una variable pudieran
+// decirla, el agente podría mandar a la persona a otra página.
+test('org-site · Config_SiteUrl_ValoresYSoloPerfil', () => {
+  let c = cargar({ home: casa(), arnes: arnesCon(null) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.site.url, c.origenes['site.url']], [null, 'sin-valor'], 'sin valor: el comando dice cómo cargarla');
+  c = cargar({ home: casa(), arnes: arnesCon({ site: { url: 'https://sitio.acme.example' } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.site.url, c.origenes['site.url']], ['https://sitio.acme.example', 'perfil']);
+  for (const malo of ['http://sitio.acme.example', 'sitio.acme.example', 'javascript:alert(1)', '']) {
+    c = cargar({ home: casa(), arnes: arnesCon({ site: { url: malo } }) });
+    assert.ok(c.errores.some((e) => e.clave === 'site.url'), `${malo}: ${JSON.stringify(c.errores)}`);
+  }
+  const home = casa();
+  maquina(home, { site: { url: 'https://otra.example' } });
+  c = cargar({ home, arnes: arnesCon(null) });
+  assert.equal(c.valores.site.url, null);
+  assert.deepEqual(c.shadowed['site.url'], { value: 'https://otra.example', origin: 'maquina', by: 'solo-perfil' });
+  assert.equal(lib().VARIABLES['site.url'], undefined);
+  const r = cli(['set', 'site.url', 'https://otra.example'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
 });
@@ -1996,12 +2047,12 @@ test('8.88 T47 · Config_DelegatedSigning_MachineFileSetAndExplain @story-8.88 @
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
   assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /approvals\.delegated_signing = (off|sin valor).*vale sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors']);
 });
 
 // ── Qué firmas se delegan y en qué máquinas (approvals.delegated_signing en lista, approvals.delegated_machines) ──────
 const FIRMAS = ['refresh-after-main', 'adversarial-skip', 'critical-waiver', 'escape-phrases', 'plan-approval', 'browser-test',
-  'runtime-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run'];
+  'runtime-waiver', 'compare-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run'];
 const MAQUINAS = [{ id: '0123456789abcdef', label: 'Mac de ejemplo' }, { id: 'fedcba9876543210', label: 'Portátil de ejemplo' }];
 
 // T27 TyconConfig_DelegatedMachines_SoloDelPerfil @story-8.116 @ac-25
@@ -2041,11 +2092,11 @@ test('8.116 T28 TyconConfig_DelegatedSigning_ListaYCompatible', () => {
   assert.equal(c.valores.approvals.delegated_signing, 'refresh-after-main', 'el suelto sigue suelto');
   assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), true);
   assert.equal(lib().delegaFirma(c.valores, 'adversarial-skip'), false);
-  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'adversarial-skip'] } }) });
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'extra-round'] } }) });
   assert.deepEqual(c.errores, []);
-  assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip']);
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'extra-round']);
   assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), true);
-  assert.equal(lib().delegaFirma(c.valores, 'adversarial-skip'), true);
+  assert.equal(lib().delegaFirma(c.valores, 'extra-round'), true);
   assert.equal(lib().delegaFirma(c.valores, 'lost-run'), false);
   c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'inventado'] } }) });
   assert.ok(c.errores.some((e) => e.clave === 'approvals.delegated_signing'), 'un valor fuera del vocabulario rompe la clave');
@@ -2056,8 +2107,8 @@ test('8.116 T28 TyconConfig_DelegatedSigning_ListaYCompatible', () => {
     c = cargar({ home: casa(), arnes: arnesCon({ approvals: v === undefined ? {} : { delegated_signing: v } }) });
     assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), false, `${v}: no delega`);
   }
-  assert.match(lib().explicar({ env: {}, home: casa(), arnes: arnesCon({ approvals: { delegated_signing: ['refresh-after-main', 'adversarial-skip'] } }) }),
-    /approvals\.delegated_signing = refresh-after-main, adversarial-skip/);
+  assert.match(lib().explicar({ env: {}, home: casa(), arnes: arnesCon({ approvals: { delegated_signing: ['refresh-after-main', 'extra-round'] } }) }),
+    /approvals\.delegated_signing = refresh-after-main, extra-round/);
 });
 
 // T43 TyconConfig_DelegatedSigning_VocabularioEntero @story-8.116 @ac-42
@@ -2081,16 +2132,16 @@ test('8.116 T43 TyconConfig_DelegatedSigning_VocabularioEntero', () => {
 // T46 TyconConfig_ListaTapadaSeComparaPorValor @story-8.116 @ac-46
 // 🔴 Falla con: dos listas iguales comparadas por referencia, que marcan tapado lo que no lo está.
 test('8.116 T46 TyconConfig_ListaTapadaSeComparaPorValor', () => {
-  const arnes = arnesCon({ approvals: { delegated_signing: ['refresh-after-main', 'adversarial-skip'], delegated_machines: MAQUINAS } });
+  const arnes = arnesCon({ approvals: { delegated_signing: ['refresh-after-main', 'extra-round'], delegated_machines: MAQUINAS } });
   const otro = path.join(tmp('tcfg-otro-'), 'team-profile.json');
-  fs.writeFileSync(otro, JSON.stringify({ approvals: { delegated_signing: ['refresh-after-main', 'adversarial-skip'], delegated_machines: MAQUINAS } }));
+  fs.writeFileSync(otro, JSON.stringify({ approvals: { delegated_signing: ['refresh-after-main', 'extra-round'], delegated_machines: MAQUINAS } }));
   let c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes });
   assert.equal(c.shadowed['approvals.delegated_signing'], undefined);
   assert.equal(c.shadowed['approvals.delegated_machines'], undefined);
-  fs.writeFileSync(otro, JSON.stringify({ approvals: { delegated_signing: ['lost-run'] } }));
+  fs.writeFileSync(otro, JSON.stringify({ approvals: { delegated_signing: ['plan-approval'] } }));
   c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes });
-  assert.deepEqual(c.shadowed['approvals.delegated_signing'], { value: ['lost-run'], origin: 'TYCON_PROFILE', by: 'solo-perfil' });
-  assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip'], 'gana el del árbol');
+  assert.deepEqual(c.shadowed['approvals.delegated_signing'], { value: ['plan-approval'], origin: 'TYCON_PROFILE', by: 'solo-perfil' });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'extra-round'], 'gana el del árbol');
 });
 
 // ── Qué firmas son sólo del dueño (approvals.owner_only) y con qué ids se delega (@story-8.139) ─────────────────────
@@ -2138,7 +2189,7 @@ test('8.139 T4 TyconConfig_DelegatedSigning_IdsYGrupos', () => {
     const c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: [v] } }) });
     assert.deepEqual(c.errores, [], v);
   }
-  assert.deepEqual([...catalogo().groupNames()].sort(), [...FIRMAS].sort(), 'los grupos son los 11 de la 8.116');
+  assert.deepEqual([...catalogo().groupNames()].sort(), [...FIRMAS].sort(), 'los grupos son los 11 de la 8.116 y compare-waiver (8.167)');
   let c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: 'escape:force-manual' } }) });
   assert.deepEqual(c.errores, [], 'un id suelto vale');
   c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: ['plan-approval', 'escape:trust-ran', 'escape-phrases'] } }) });
@@ -2153,7 +2204,12 @@ test('8.139 T4 TyconConfig_DelegatedSigning_IdsYGrupos', () => {
     assert.equal(c.valores.approvals.relay_session, 'coordinadora');
   }
   // la tabla de equivalencias: escape-phrases son todos los escapes; los demás grupos, su propia firma
-  assert.deepEqual(catalogo().expand('escape-phrases'), catalogo().ids().filter((id) => id.startsWith('escape:')));
+  // escape-phrases son los escapes que se piden con la frase: los que tienen su guion se delegan sólo nombrándolos
+  // (y mergear salteando la CI, encolar un pedido de afuera, o editar la prueba en rojo de un control, no entran al
+  // grupo: nunca se delegan)
+  const porSuGuion = ['escape:force-manual', 'escape:trust-ran', 'escape:no-mutation'];
+  const nuncaDelegable = ['escape:merge-bypass', 'escape:external-pr', 'escape:red-control-test-edit'];
+  assert.deepEqual(catalogo().expand('escape-phrases'), catalogo().ids().filter((id) => id.startsWith('escape:') && !porSuGuion.includes(id) && !nuncaDelegable.includes(id)));
   assert.deepEqual(catalogo().expand('lost-run'), ['lost-run']);
   assert.deepEqual(catalogo().expand('escape:trust-ran'), ['escape:trust-ran']);
   assert.deepEqual(catalogo().expand('off'), []);
@@ -2165,7 +2221,8 @@ test('8.139 T4 TyconConfig_DelegatedSigning_IdsYGrupos', () => {
 test('8.139 T5 TyconConfig_FirmaEnLasDosListas_EsError', () => {
   const casos = [
     [['control-change'], ['control-change', 'plan-approval'], 'control-change'],
-    [['escape:trust-ran'], ['escape-phrases'], 'escape:trust-ran'],
+    [['escape:TYCON_TEST_GATE'], ['escape-phrases'], 'escape:TYCON_TEST_GATE'],
+    [['escape:trust-ran'], ['escape:trust-ran', 'escape-phrases'], 'escape:trust-ran'],
     [['plan-approval'], 'plan-approval', 'plan-approval'],
   ];
   for (const [soloDueno, delegada, id] of casos) {
@@ -2188,7 +2245,7 @@ test('8.139 T5 TyconConfig_FirmaEnLasDosListas_EsError', () => {
   }
   // 🔴 el lector del sitio (parse) aplica la misma regla: si no, el sitio propone un perfil que todas las máquinas leen roto
   for (const approvals of [{ owner_only: ['control-change'], delegated_signing: ['control-change'] },
-    { owner_only: ['escape:trust-ran'], delegated_signing: ['escape-phrases'] },
+    { owner_only: ['escape:TYCON_TEST_GATE'], delegated_signing: ['escape-phrases'] },
     { owner_only: ['critcal-waiver'], delegated_signing: ['plan-approval'] }]) {
     const p = lib().parse(JSON.stringify({ approvals }));
     assert.equal(p.ok, false, JSON.stringify(approvals));
@@ -2328,6 +2385,66 @@ test('T9 Config_CapMachineWins_FolderMachineOnly @story-8.122 @ac-9: el tope de 
   assert.match(err.motivo, /es de la máquina/);
 });
 
+test('Config_SessionNames_ThemeOrList — coordination.session_names: a factory theme or a list, the machine wins, a bad value is broken', () => {
+  // a factory theme in the profile and a list in the machine file: the machine wins
+  const home = casa();
+  maquina(home, { coordination: { session_names: [' Norte ', 'Sur'] } });
+  const c = cargar({ home, arnes: arnesCon({ coordination: { session_names: 'animals' } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual(lib().coordinacion(c).session_names, { value: ['Norte', 'Sur'], origin: 'maquina' });
+  const p = cargar({ home: casa(), arnes: arnesCon({ coordination: { session_names: 'rivers' } }) });
+  assert.deepEqual(lib().coordinacion(p).session_names, { value: 'rivers', origin: 'perfil' });
+  // the variable: a theme, or a comma-separated list
+  const v = cargar({ home, arnes: arnesCon({}), env: { TYCON_COORDINATION_SESSION_NAMES: 'Uno, Dos' } });
+  assert.deepEqual(lib().coordinacion(v).session_names, { value: ['Uno', 'Dos'], origin: 'env' });
+  const vt = cargar({ home: casa(), arnes: arnesCon({}), env: { TYCON_COORDINATION_SESSION_NAMES: 'trees' } });
+  assert.deepEqual(lib().coordinacion(vt).session_names, { value: 'trees', origin: 'env' });
+  // nowhere: null, with no origin
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: arnesCon({}) })).session_names, { value: null, origin: 'sin-valor' });
+  // broken: an unknown theme, an empty list, a name with a space or an accent, a repeated name
+  for (const malo of ['dinosaurios', [], ['con espacio'], ['Río'], ['-x'], ['Uno', 'uno'], [3]]) {
+    const r = cargar({ home: casa(), arnes: arnesCon({ coordination: { session_names: malo } }) });
+    assert.ok(r.errores.some((e) => e.clave === 'coordination.session_names'), `${JSON.stringify(malo)}: ${JSON.stringify(r.errores)}`);
+  }
+  const ve = cargar({ home: casa(), arnes: arnesCon({}), env: { TYCON_COORDINATION_SESSION_NAMES: 'Uno,con espacio' } });
+  assert.ok(ve.errores.some((e) => e.clave === 'TYCON_COORDINATION_SESSION_NAMES'), JSON.stringify(ve.errores));
+});
+
+test('Config_SessionNames_SetFromTheCommandLine — set takes a theme id, or a comma-separated list that is saved as a list', () => {
+  const home = casa();
+  const env = { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(tmp('tcfg-set-nom-'), 'no-esta.js') };
+  const leido = () => JSON.parse(fs.readFileSync(path.join(home, '.claude', 'tycon.json'), 'utf8')).coordination.session_names;
+  let out = cli(['set', 'coordination.session_names', 'colors'], { home, env });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(leido(), 'colors');
+  out = cli(['set', 'coordination.session_names', 'Norte,Sur,Este'], { home, env });
+  assert.equal(out.status, 0, out.stderr);
+  assert.deepEqual(leido(), ['Norte', 'Sur', 'Este']);
+  assert.equal(cli(['set', 'coordination.session_names', 'Norte,con espacio'], { home, env }).status, 2, 'un nombre que no sirve no se escribe');
+  assert.deepEqual(leido(), ['Norte', 'Sur', 'Este']);
+});
+
+test('Config_SessionNames_NotWrittenWithAnOldGuard — with an installed production guard that does not know the key, set writes nothing and says how to update it', () => {
+  const home = casa();
+  const dir = tmp('tcfg-set-guard-');
+  const nuevo = fs.readFileSync(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js'), 'utf8');
+  const viejo = nuevo.replace(", session_names: 'aceptada'", '');
+  assert.notStrictEqual(viejo, nuevo, 'la copia del freno conoce la clave');
+  fs.writeFileSync(path.join(dir, 'viejo.js'), viejo);
+  fs.writeFileSync(path.join(dir, 'nuevo.js'), nuevo);
+  const file = path.join(home, '.claude', 'tycon.json');
+  let out = cli(['set', 'coordination.session_names', 'Norte,Sur'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'viejo.js') } });
+  assert.equal(out.status, 2, out.stdout);
+  assert.match(out.stderr, /no lo escribí.*coordination\.session_names.*install-guard\.sh/s);
+  assert.ok(!fs.existsSync(file), 'no escribió nada');
+  // another key is still written with an old guard, with the usual warning after writing
+  out = cli(['set', 'coordination.max_working', '4'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'viejo.js') } });
+  assert.equal(out.status, 0, out.stderr);
+  out = cli(['set', 'coordination.session_names', 'Norte,Sur'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'nuevo.js') } });
+  assert.equal(out.status, 0, out.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).coordination, { max_working: 4, session_names: ['Norte', 'Sur'] });
+});
+
 test('Config_PersonalData_NotShown — explain shows the chat cut short, and the hook answer carries no configuration', () => {
   const home = casa();
   const arnes = arnesCon(null);
@@ -2343,4 +2460,300 @@ test('Config_PersonalData_NotShown — explain shows the chat cut short, and the
   const impreso = JSON.stringify(r);
   assert.doesNotMatch(impreso, /987654321012/);
   assert.ok(!impreso.includes(home), impreso);
+});
+
+// ── El nivel de cada firma que sube el perfil (approvals.levels) y la delegación que queda en rutina ─────────────────
+// niveles T6 TyconConfig_Levels_SoloSubeYSoloDelPerfil
+// 🔴 Falla con: un nivel que baja el de la tabla aceptado, un id que no está en la tabla, la clave leída de la máquina (el
+// agente se bajaría las firmas), o una forma que no es un nivel entero de 1 a 3.
+test('niveles T6 TyconConfig_Levels_SoloSubeYSoloDelPerfil', () => {
+  let c = cargar({ home: casa(), arnes: arnesCon({ approvals: { levels: { 'plan-approval': 2, 'extra-round': 3, 'control-change': 3 } } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.approvals.levels, c.origenes['approvals.levels']], [{ 'plan-approval': 2, 'extra-round': 3, 'control-change': 3 }, 'perfil']);
+  const home = casa();
+  maquina(home, { approvals: { levels: { 'plan-approval': 2 } } });
+  c = cargar({ home, arnes: arnesCon(null) });
+  assert.equal(c.valores.approvals.levels, null, 'desde la máquina no vale');
+  assert.deepEqual(c.shadowed['approvals.levels'], { value: { 'plan-approval': 2 }, origin: 'maquina', by: 'solo-perfil' });
+  for (const malo of [{ 'control-change': 1 }, { 'critical-waiver': 1 }, { 'inventado': 2 }, { 'plan-approval': 4 }, { 'plan-approval': 0 },
+    { 'plan-approval': '2' }, { 'plan-approval': 1.5 }, ['plan-approval'], 'plan-approval', {}]) {
+    c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', levels: malo } }) });
+    assert.deepEqual(c.errores.map((e) => e.clave), ['approvals.levels'], `${JSON.stringify(malo)} no vale y rompe sólo esa clave`);
+    assert.equal(c.valores.approvals.relay_session, 'coordinadora');
+  }
+  assert.match(cargar({ home: casa(), arnes: arnesCon({ approvals: { levels: { 'control-change': 1 } } }) }).errores[0].motivo, /sólo puede subir un nivel/);
+  const r = cli(['set', 'approvals.levels', '{"plan-approval":2}'], { home: casa() });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /sólo desde el perfil del equipo/);
+});
+
+// niveles T7 TyconConfig_Delegacion_SoloRutina
+// 🔴 Falla con: una firma de nivel 2 o más (de la tabla o subida por el perfil) que sigue delegada, un grupo que la trae
+// sin abrirse, o una delegación que se rompe entera (y deja a la coordinadora sin la rutina) por una firma de más.
+test('niveles T7 TyconConfig_Delegacion_SoloRutina', () => {
+  const con = (approvals) => cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', ...approvals } }) });
+  let c = con({ delegated_signing: ['plan-approval', 'extra-round'] });
+  assert.deepEqual([c.errores, c.ignoradas], [[], []], 'la rutina se delega como siempre');
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['plan-approval', 'extra-round']);
+  c = con({ delegated_signing: ['plan-approval', 'extra-round'], levels: { 'plan-approval': 2 } });
+  assert.deepEqual(c.errores, [], 'no es un error: el resto se sigue delegando');
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round']);
+  assert.equal(lib().delegaFirma(c.valores, 'plan-approval'), false);
+  assert.deepEqual(c.ignoradas.map((x) => x.clave), ['approvals.delegated_signing']);
+  assert.match(c.ignoradas[0].motivo, /plan-approval \(nivel 2\)/);
+  c = con({ delegated_signing: ['extra-round', 'control-change', 'adversarial-skip'] });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round'], 'las de la tabla en 2 o 3 también salen');
+  assert.match(c.ignoradas[0].motivo, /control-change \(nivel 3\).*adversarial-skip \(nivel 2\)/);
+  // las excepciones de trámite se delegan por su nombre, con las dos formas (el plan delicado y el guardado sensible)
+  c = con({ delegated_signing: ['extra-round', 'runtime-waiver', 'lost-run', 'escape:set-autonomous', 'plan-approval:delicada', 'save:sensible'] });
+  assert.deepEqual([c.errores, c.ignoradas], [[], []]);
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round', 'runtime-waiver', 'lost-run', 'escape:set-autonomous', 'plan-approval:delicada', 'save:sensible']);
+  // lo que el perfil sube a 3 vuelve al dueño
+  c = con({ delegated_signing: ['extra-round', 'runtime-waiver'], levels: { 'runtime-waiver': 3 } });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round']);
+  c = con({ delegated_signing: 'control-change' });
+  assert.equal(c.valores.approvals.delegated_signing, 'off', 'si no queda ninguna, ninguna');
+  c = con({ delegated_signing: ['extra-round', 'escape-phrases'] });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round'], 'el grupo de antes se abre y sale lo que no es rutina');
+  // un nivel roto no deja adivinar: se delega sólo lo que la tabla sola deja, y el error lo dice
+  c = con({ delegated_signing: ['plan-approval'], levels: { 'plan-approval': 'alto' } });
+  assert.deepEqual(c.errores.map((e) => e.clave), ['approvals.levels']);
+  assert.deepEqual(c.valores.approvals.delegated_signing, 'off', 'con los niveles rotos no se delega nada: no se sabe qué subió el dueño');
+});
+
+test('Llave_SignatureList_ValidaOnYOff (T16) — @story-8.153 @ac-16', () => {
+  const { cargar } = require(LIB);
+  const arnes = tmp('tcfg-lista-');
+  const leer = (valor) => {
+    const home = casa();
+    if (valor !== undefined) fs.writeFileSync(path.join(home, '.claude', 'tycon.json'), JSON.stringify({ approvals: { signature_list: valor } }));
+    return cargar({ home, arnes, env: {} });
+  };
+  assert.strictEqual(leer('on').valores.approvals.signature_list, 'on');
+  assert.strictEqual(leer('off').valores.approvals.signature_list, 'off');
+  assert.ok(!leer(undefined).valores.approvals.signature_list, 'sin valor, apagada');
+  const mala = leer('quizas');
+  assert.deepEqual(mala.errores.map((e) => e.clave), ['approvals.signature_list']);
+  assert.notStrictEqual(mala.valores.approvals.signature_list, 'on');
+  // también desde el perfil
+  fs.writeFileSync(path.join(arnes, 'perfil-equipo.json'), JSON.stringify({ approvals: { signature_list: 'on' } }));
+  assert.strictEqual(cargar({ home: casa(), arnes, env: {} }).valores.approvals.signature_list, 'on');
+  // la copia del freno de producción la acepta: si no, leería como roto un perfil que la trae
+  assert.deepEqual(require(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js')).cargar({ home: casa(), arnes, env: {} }).errores, []);
+});
+
+// ── Los topes del camino corto (short_path) se configuran en el perfil del equipo (@story-8.182) ─────────────────────
+// El de la coordinadora (`coordinator_max_files`, de 1 a 6, de fábrica 5) y el de una persona (`max_files`, de 1 a 12, de
+// fábrica 8). Valen sólo desde el perfil: si la máquina o una variable pudieran decirlos, el agente se subiría el tope.
+
+test('T1 Config_SinShortPath_DaCincoYOcho @story-8.182 @ac-1 @ac-21 — sin la sección, 5 y 8 con origen sin-valor', () => {
+  const c = cargar({ home: casa(), arnes: arnesCon({ coordination: { max_working: 4 } }) });
+  assert.deepEqual(c.errores, []);
+  const t = lib().caminoCorto(c);
+  assert.deepEqual(t.coordinator_max_files, { value: 5, origin: 'sin-valor' });
+  assert.deepEqual(t.max_files, { value: 8, origin: 'sin-valor' });
+  assert.equal(t.delegado, 5, 'el cupo delegado que rige');
+  // sin perfil del todo, lo mismo
+  const nada = lib().caminoCorto(cargar({ home: casa(), arnes: arnesCon(null) }));
+  assert.equal(nada.delegado, 5);
+  assert.equal(nada.max_files.value, 8);
+});
+
+test('T2 Config_ShortPathValido_DaLoDelPerfil @story-8.182 @ac-2 — 3 y 10 en el perfil son los topes de la organización', () => {
+  const c = cargar({ home: casa(), arnes: arnesCon({ short_path: { coordinator_max_files: 3, max_files: 10 } }) });
+  assert.deepEqual(c.errores, []);
+  const t = lib().caminoCorto(c);
+  assert.deepEqual(t.coordinator_max_files, { value: 3, origin: 'perfil' });
+  assert.deepEqual(t.max_files, { value: 10, origin: 'perfil' });
+  assert.equal(t.delegado, 3);
+  // los máximos son los que decidió el dueño (D1 y D2), y salen de una constante
+  assert.deepEqual(lib().SHORT_PATH_MAX, { coordinator_max_files: 6, max_files: 12 });
+  // los dos máximos justos valen
+  const tope = lib().caminoCorto(cargar({ home: casa(), arnes: arnesCon({ short_path: { coordinator_max_files: 6, max_files: 12 } }) }));
+  assert.equal(tope.delegado, 6);
+  assert.equal(tope.max_files.value, 12);
+});
+
+// 🔴 Falla con: `get` que rechaza una clave cuya sección lleva guion bajo (short_path) con el texto de uso.
+test('T2b Config_GetDeLaConsola_LeeLosTopes @story-8.182 @ac-2 — `tycon-config.js get short_path.max_files` desde un arnés con su perfil da 10', (t) => {
+  const { copiaConPerfil } = require('./lib/profile-harness-copy.js');
+  const arbol = copiaConPerfil(t, { short_path: { coordinator_max_files: 3, max_files: 10 } });
+  const home = casa();
+  const get = (clave) => spawnSync(process.execPath, [path.join(arbol.raiz, 'scripts', 'lib', 'tycon-config.js'), 'get', clave],
+    { encoding: 'utf8', cwd: os.tmpdir(), env: Object.assign({}, ENV_LIMPIO, { HOME: home, USERPROFILE: home }) });
+  const max = get('short_path.max_files');
+  assert.equal(max.status, 0, max.stderr);
+  assert.equal(max.stdout.trim(), '10');
+  assert.equal(get('short_path.coordinator_max_files').stdout.trim(), '3');
+});
+
+test('T3 Config_DelegadoFueraDeRango_ProblemaYCinco @story-8.182 @ac-3 — 0, 7 o un texto: problema con la ruta de la clave y rige 5', () => {
+  for (const malo of [0, 7, 'cinco']) {
+    const c = cargar({ home: casa(), arnes: arnesCon({ short_path: { coordinator_max_files: malo, max_files: 10 } }) });
+    assert.deepEqual(c.errores.map((e) => e.clave), ['short_path.coordinator_max_files'], `con ${JSON.stringify(malo)}`);
+    const t = lib().caminoCorto(c);
+    assert.deepEqual(t.coordinator_max_files, { value: 5, origin: 'sin-valor' }, `con ${JSON.stringify(malo)}`);
+    assert.equal(t.max_files.value, 10, 'la otra clave sana sigue valiendo');
+  }
+});
+
+test('T4 Config_MaximoFueraDeRango_ProblemaYOcho @story-8.182 @ac-4 — 0, 13 o un texto: problema con la ruta de la clave y rige 8', () => {
+  for (const malo of [0, 13, 'doce']) {
+    const c = cargar({ home: casa(), arnes: arnesCon({ short_path: { max_files: malo } }) });
+    assert.deepEqual(c.errores.map((e) => e.clave), ['short_path.max_files'], `con ${JSON.stringify(malo)}`);
+    assert.deepEqual(lib().caminoCorto(c).max_files, { value: 8, origin: 'sin-valor' }, `con ${JSON.stringify(malo)}`);
+  }
+});
+
+test('T5 Config_DelegadoMayorQueMaximo_ProblemaYMenorRige @story-8.182 @ac-5 — 6 con 4 es un problema y el 6 no cuenta; sólo max_files 3 deja el cupo delegado en 3', () => {
+  const c = cargar({ home: casa(), arnes: arnesCon({ short_path: { coordinator_max_files: 6, max_files: 4 } }) });
+  assert.deepEqual(c.errores.map((e) => e.clave), ['short_path.coordinator_max_files']);
+  assert.match(c.errores[0].motivo, /max_files/);
+  const t = lib().caminoCorto(c);
+  assert.deepEqual(t.coordinator_max_files, { value: 5, origin: 'sin-valor' }, 'el 6 no cuenta: rige el de fábrica');
+  assert.equal(t.max_files.value, 4);
+  assert.equal(t.delegado, 4, 'el de fábrica pasa del máximo: rige el menor de los dos');
+  // sólo max_files, más chico que el 5 de fábrica: no es un problema, y el cupo delegado es el menor
+  const s = cargar({ home: casa(), arnes: arnesCon({ short_path: { max_files: 3 } }) });
+  assert.deepEqual(s.errores, []);
+  assert.equal(lib().caminoCorto(s).delegado, 3);
+});
+
+test('T6 Config_MaquinaYVariable_NoCuentan @story-8.182 @ac-6 — la clave en la máquina o en el ambiente no cuenta, y set se niega', () => {
+  const home = casa();
+  maquina(home, { short_path: { coordinator_max_files: 6, max_files: 12 } });
+  const env = { TYCON_SHORT_PATH_MAX_FILES: '12', TYCON_SHORT_PATH_DELEGATED_MAX_FILES: '6' };
+  const c = cargar({ home, env, arnes: arnesCon({ short_path: { coordinator_max_files: 2, max_files: 7 } }) });
+  assert.deepEqual(c.errores, []);
+  const t = lib().caminoCorto(c);
+  assert.deepEqual(t.coordinator_max_files, { value: 2, origin: 'perfil' });
+  assert.deepEqual(t.max_files, { value: 7, origin: 'perfil' });
+  assert.equal(c.shadowed['short_path.max_files'].by, 'solo-perfil', 'lo de la máquina queda tapado y explain lo dice');
+  // sin perfil, la máquina tampoco da nada: rige la fábrica
+  const sinPerfil = lib().caminoCorto(cargar({ home, env, arnes: arnesCon(null) }));
+  assert.equal(sinPerfil.max_files.value, 8);
+  assert.equal(sinPerfil.delegado, 5);
+  // TYCON_PROFILE tampoco: las claves sólo del perfil salen del perfil del árbol
+  const otro = arnesCon({ short_path: { max_files: 12 } });
+  const conVariable = cargar({ home: casa(), env: { TYCON_PROFILE: path.join(otro, 'perfil-equipo.json') }, arnes: arnesCon({ short_path: { max_files: 6 } }) });
+  assert.equal(lib().caminoCorto(conVariable).max_files.value, 6);
+  // set se niega para las dos claves
+  for (const clave of ['short_path.max_files', 'short_path.coordinator_max_files']) {
+    const out = cli(['set', clave, '3'], { home: casa(), env: { TYCON_PROFILE: '0' } });
+    assert.notEqual(out.status, 0, clave);
+    assert.match(out.stderr + out.stdout, /sólo desde el perfil del equipo/, clave);
+  }
+});
+
+test('T25 CopiaDelFreno_AceptaLasClaves @story-8.182 @ac-11 — un perfil con short_path, leído con la copia del freno, no se invalida', () => {
+  const arnes = arnesCon({ short_path: { coordinator_max_files: 4, max_files: 10 } });
+  const copia = require(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js'));
+  assert.deepEqual(copia.cargar({ home: casa(), arnes, env: {} }).errores, []);
+  // y la máquina con la clave tampoco la rompe para el freno (allí no se usa, pero no se lee como rota)
+  const home = casa();
+  maquina(home, { short_path: { max_files: 10 } });
+  assert.deepEqual(copia.cargar({ home, arnes: arnesCon(null), env: {} }).errores, []);
+});
+
+test('RetireD_GuardConfigCopyOnlyNewKeys @story-8.15 @ac-14 — la copia del freno lee paths e ignora rutas diciéndolo; la del arnés lee los dos', () => {
+  const copia = require(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js'));
+  const reposCopia = require(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'repos-root.js'));
+  const viejo = 'ru' + 'tas';   // el nombre de antes de la sección, armado (como en las pruebas de nombres)
+  const raiz = tmp('tcfg-repos-');
+  // sólo con el nombre de antes: la copia lo ignora y lo dice; el arnés lo sigue leyendo
+  const conViejo = casa();
+  maquina(conViejo, { [viejo]: { repos: raiz } });
+  const errCopia = copia.cargar({ home: conViejo, arnes: arnesCon(null), env: {} }).errores;
+  assert.ok(errCopia.some((e) => e.clave === viejo && /ya no lo lee/.test(e.motivo)), JSON.stringify(errCopia));
+  assert.deepEqual(cargar({ home: conViejo, arnes: arnesCon(null) }).errores, []);
+  assert.equal(lib().valor(cargar({ home: conViejo, arnes: arnesCon(null) }), 'paths.repos'), raiz);
+  // con eso, la raíz de repos del freno no sale de esa configuración (la lee rota): sin raíz o la de siempre, nunca la vieja.
+  // El lado seguro: un repo que el freno no encuentra deja sus servidores desconocidos, y lo desconocido se frena.
+  assert.throws(() => reposCopia.resolveReposRoot('', { home: conViejo, env: {} }), (e) => e && e.name === 'ConfigError');
+  // sólo con el de hoy: la copia lo lee
+  const conNuevo = casa();
+  maquina(conNuevo, { paths: { repos: raiz } });
+  const cNuevo = copia.cargar({ home: conNuevo, arnes: arnesCon(null), env: {} });
+  assert.deepEqual(cNuevo.errores, []);
+  assert.equal(copia.valor(cNuevo, 'paths.repos'), raiz);
+  // con los dos: vale el de hoy, sin error
+  const conLosDos = casa();
+  maquina(conLosDos, { paths: { repos: raiz }, [viejo]: { repos: '/otra/carpeta' } });
+  const cDos = copia.cargar({ home: conLosDos, arnes: arnesCon(null), env: {} });
+  assert.deepEqual(cDos.errores, []);
+  assert.equal(copia.valor(cDos, 'paths.repos'), raiz);
+});
+
+// ── El tope de historias en el ciclo completo: coordination.max_stories_in_cycle ─────────────────────────────────────
+
+// 🔴 Falla con: la clave sin el orden variable › máquina › perfil, otro número de fábrica que 4, o un valor fuera de
+// rango que el lector acepta.
+test('Config_MaxStoriesInCycle_OrderAndRange — variable, máquina, perfil, 4 de fábrica; 0 y 21 son errores', () => {
+  const home = casa();
+  maquina(home, { coordination: { max_stories_in_cycle: 6 } });
+  const perfil = arnesCon({ coordination: { max_stories_in_cycle: 5 } });
+  const v = cargar({ home, arnes: perfil, env: { TYCON_COORDINATION_MAX_STORIES_IN_CYCLE: '2' } });
+  assert.deepEqual(v.errores, []);
+  assert.deepEqual(lib().coordinacion(v).max_stories_in_cycle, { value: 2, origin: 'env' });
+  assert.deepEqual(lib().coordinacion(cargar({ home, arnes: perfil })).max_stories_in_cycle, { value: 6, origin: 'maquina' });
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: perfil })).max_stories_in_cycle, { value: 5, origin: 'perfil' });
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: arnesCon({}) })).max_stories_in_cycle, { value: 4, origin: 'sin-valor' });
+  for (const malo of [0, 21]) {
+    const roto = cargar({ home: casa(), arnes: arnesCon({ coordination: { max_stories_in_cycle: malo } }) });
+    assert.ok(roto.errores.some((e) => e.clave === 'coordination.max_stories_in_cycle'), `${malo}: ${JSON.stringify(roto.errores.map((e) => e.clave))}`);
+  }
+});
+
+// ── El piso del segundo turno de ejecución grande (@story-8.291): coordination.second_heavy_min_free_pct ─────────────
+
+// 🔴 Falla con: la clave sin el orden variable › máquina › perfil, otro número de fábrica que 50, o un valor fuera de
+// rango que el lector acepta.
+test('T-8.291a Config_SecondHeavyFloor_OrderAndRange @story-8.291 @ac-10 — variable, máquina, perfil, 50 de fábrica; 0 y 101 son errores', () => {
+  const home = casa();
+  maquina(home, { coordination: { second_heavy_min_free_pct: 65 } });
+  const perfil = arnesCon({ coordination: { second_heavy_min_free_pct: 55 } });
+  const v = cargar({ home, arnes: perfil, env: { TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT: '45' } });
+  assert.deepEqual(v.errores, []);
+  assert.deepEqual(lib().coordinacion(v).second_heavy_min_free_pct, { value: 45, origin: 'env' });
+  assert.deepEqual(lib().coordinacion(cargar({ home, arnes: perfil })).second_heavy_min_free_pct, { value: 65, origin: 'maquina' });
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: perfil })).second_heavy_min_free_pct, { value: 55, origin: 'perfil' });
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: arnesCon({}) })).second_heavy_min_free_pct, { value: 50, origin: 'sin-valor' });
+  for (const malo of [0, 101]) {
+    const roto = cargar({ home: casa(), arnes: arnesCon({ coordination: { second_heavy_min_free_pct: malo } }) });
+    assert.ok(roto.errores.some((e) => e.clave === 'coordination.second_heavy_min_free_pct'), `${malo}: ${JSON.stringify(roto.errores.map((e) => e.clave))}`);
+  }
+});
+
+// ── Cuánto espera a la coordinadora una firma desviada (approvals.delegation_wait_minutes, @story-8.295) ─────────────
+// Entero de 1 a 60, 10 por defecto, sólo del perfil: si la máquina pudiera decirlo, el agente se estiraría el plazo.
+
+test('Config_DelegationWaitMinutes_SoloDelPerfilYDe1a60 (T22) — @story-8.295 @ac-9 @ac-20', () => {
+  const DR = require(path.join(SCRIPTS, 'lib', 'delegation-routing.js'));
+  const { cargar } = require(LIB);
+  // del perfil vale
+  let home = casa();
+  const conPerfil = arnesCon({ approvals: { delegation_wait_minutes: 20 } });
+  let c = cargar({ home, env: {}, arnes: conPerfil });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.valores.approvals.delegation_wait_minutes, 20);
+  assert.equal(DR.plazoMs({ casa: home, arnes: conPerfil, env: {} }), 20 * 60000);
+  // sin nadie que lo diga, 10
+  assert.equal(DR.plazoMs({ casa: casa(), arnes: arnesCon(null), env: {} }), 10 * 60000);
+  // de la máquina no
+  home = casa();
+  maquina(home, { approvals: { delegation_wait_minutes: 45 } });
+  c = cargar({ home, env: {}, arnes: arnesCon(null) });
+  assert.notEqual(c.valores.approvals.delegation_wait_minutes, 45);
+  assert.equal(DR.plazoMs({ casa: home, arnes: arnesCon(null), env: {} }), 10 * 60000);
+  assert.ok(lib().PROFILE_ONLY.includes('approvals.delegation_wait_minutes'));
+  // fuera de rango: la clave rota
+  for (const malo of [0, 61]) {
+    const roto = cargar({ home: casa(), env: {}, arnes: arnesCon({ approvals: { delegation_wait_minutes: malo } }) });
+    assert.ok(roto.errores.some((e) => e.clave === 'approvals.delegation_wait_minutes'), `${malo}: ${JSON.stringify(roto.errores.map((e) => e.clave))}`);
+  }
+  // con la lista de firmas apagada no hay a dónde desviar: el desvío calla y todo sigue como hoy
+  home = casa();
+  maquina(home, { approvals: { signature_list: 'off' } });
+  const d = DR.delegable({ firma: 'extra-round', destino: 'ses-a', casa: home, palabras: ['/h/pipeline.js', 'smart-reloop', '--iter', '3', '--extra-round'], cwd: home, arnes: arnesCon(null), env: {}, delegacion: () => ({ ok: true }) });
+  assert.deepEqual([d.ok, d.callar], [false, true]);
 });

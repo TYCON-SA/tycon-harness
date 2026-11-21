@@ -171,7 +171,7 @@ test('start --brief: devuelve sólo lo que el orquestador usa y la ruta del JSON
   assert.equal(breve.story_id, '9.9', 'el modo breve perdió `story_id`');
   assert.equal(breve.branch, 'feat/salida-breve', 'el modo breve perdió `branch`');
   assert.ok(typeof breve.riesgo === 'string' && breve.riesgo.length, 'el modo breve perdió la clase de riesgo');
-  assert.equal(typeof breve.auto_approve_plan, 'boolean', 'el modo breve perdió `auto_approve_plan`');
+  assert.ok(!('auto_approve_plan' in breve), 'ningún plan se aprueba solo (story 1.29): el modo breve no lo ofrece');
   assert.ok(typeof breve.modelo === 'string' && breve.modelo.length, 'el modo breve perdió el modelo recomendado');
   assert.ok(Array.isArray(breve.acciones), 'el modo breve perdió las acciones del preflight');
   assert.ok(typeof breve.next === 'string' && breve.next.length, 'el modo breve perdió `next`');

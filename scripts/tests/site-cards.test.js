@@ -102,7 +102,7 @@ test('2.36-Lista_ConSuIdentificador: cada ficha tiene identificador fijo, pregun
     assert.ok(f.titulo && f.paraQue && Array.isArray(f.de) && f.de.length === 2, `${f.id}: título, para qué y de dónde`);
     assert.ok(['pct', 'num1', 'entero', 'redondo'].includes(f.formato), `${f.id}: formato`);
   }
-  assert.strictEqual(fichas.FICHAS.length, 26);
+  assert.strictEqual(fichas.FICHAS.length, 27);
 });
 
 test('2.36-Lista_IgualAlTablero: cada ficha del tablero está en la lista o declarada «ya estaba», y al revés', () => {
@@ -122,14 +122,15 @@ test('2.36-ListaBlanca_SoloCamposPermitidos: del modelo del tablero llegan el n�
   const medida = { estado: 'medido', valor: 7, medidos: 7, total: 9, unidad: 'conteo', den_etiqueta: 'stories', fecha: '2026-10-17T05:00:00Z',
     detalle: 'repo-del-cliente-secreto/story-9', titulo: `Diagnóstico con ${casa}/proyecto`, motivo: null, extra: { repos: ['cliente-x'] } };
   const p = fichas.proyectar(def, medida, {});
-  assert.deepStrictEqual(Object.keys(p).sort(), ['den_etiqueta', 'estado', 'fecha', 'formato', 'id', 'medidos', 'motivo', 'nivel', 'pestana', 'pregunta', 'total', 'unidad', 'valor'].sort());
+  assert.deepStrictEqual(Object.keys(p).sort(), ['den', 'estado', 'fecha', 'formato', 'id', 'medidos', 'motivo', 'nivel', 'pestana', 'pregunta', 'total', 'unidad', 'valor'].sort());
   assert.ok(!/cliente|Users|Diagn/.test(JSON.stringify(p)), 'un texto de la fuente llegó al modelo');
   assert.strictEqual(p.valor, 7);
   const n = fichas.proyectar(def, { estado: 'no_medido', valor: null, motivo: `no se pudo leer la carpeta de la fuente «x» (${casa}/dash): no existe`, fecha: null }, {});
   assert.ok(fichas.MOTIVOS.includes(n.motivo), `motivo fuera de la lista cerrada: ${n.motivo}`);
   assert.ok(!JSON.stringify(n).includes(casa));
-  // un denominador con forma de texto libre no pasa
-  assert.strictEqual(fichas.proyectar(def, { ...medida, den_etiqueta: '<script>alert(1)</script>' }, {}).den_etiqueta, null);
+  // el denominador viaja como su código; uno con forma de texto libre no pasa
+  assert.strictEqual(p.den, 'stories');
+  assert.strictEqual(fichas.proyectar(def, { ...medida, den_etiqueta: '<script>alert(1)</script>' }, {}).den, null);
 });
 
 test('2.36-NoMedido_SinFotoOVieja: sin la foto, o con una más vieja que su antigüedad máxima, la ficha sale no medida con su motivo (nunca cero)', () => {
@@ -186,15 +187,15 @@ test('2.36-UnaSolaCuenta_TableroYSitio: sobre la misma foto, cada ficha da en el
 test('2.36-Oculta_NoSeCalculaNiLlega: una ficha oculta no entra al modelo, y el modelo dice cuántas hay ocultas', () => {
   const paneles = { extra: { backlog: { estado: 'medido', valor: 3, medidos: 3, total: 3 }, estados_sin_diccionario: { estado: 'medido', valor: 1, medidos: 1, total: 1 } }, local: {}, mejora: {}, poda: {} };
   const todas = fichas.modeloDeFichas(paneles, {});
-  assert.strictEqual(todas.lista.length, 26);
+  assert.strictEqual(todas.lista.length, 27);
   assert.strictEqual(todas.ocultas, 0);
   const algunas = fichas.modeloDeFichas(paneles, { ocultas: ['backlog', 'estados_sin_diccionario'] });
-  assert.strictEqual(algunas.lista.length, 24);
+  assert.strictEqual(algunas.lista.length, 25);
   assert.strictEqual(algunas.ocultas, 2);
   assert.ok(!algunas.lista.some((f) => f.id === 'backlog' || f.id === 'estados_sin_diccionario'));
   assert.ok(!/backlog|estados_sin_diccionario/.test(JSON.stringify(algunas)), 'el nombre de una ficha oculta viajó al modelo');
   // sin la clave se muestran todas, también con algo que no es una lista
-  assert.strictEqual(fichas.modeloDeFichas(paneles, { ocultas: 'backlog' }).lista.length, 26);
+  assert.strictEqual(fichas.modeloDeFichas(paneles, { ocultas: 'backlog' }).lista.length, 27);
 });
 
 // ── el sitio: Arnés con sus fichas ───────────────────────────────────────────────────────────────────────────
@@ -309,7 +310,7 @@ test('2.36-Proyectos_GrillaArribaDeLaTabla: quien mantiene ve las siete fichas d
     const desde = html.indexOf(`data-ficha="${f.id}"`);
     const trozo = html.slice(html.lastIndexOf('<div class="tile', desde), desde + 600);
     if (f.estado === 'no_medido') { assert.match(trozo, /^<div class="tile blind"/, `${f.id} no medida`); assert.doesNotMatch(trozo.split('</div></div>')[0], /t-val">0</); }
-    else assert.ok(trozo.includes(`t-val">${fichas.formatear(f)}<`), `${f.id} con su número`);
+    else assert.ok(trozo.includes(`t-val">${fichas.formatear(f)}<`) || trozo.includes(`t-val">${fichas.formatear(f)} `), `${f.id} con su número`);
   }
   // una persona ve su Proyectos sin las fichas de la organización
   const persona = access.filtrar(m, { rol: 'person', email: PERSONA }, access.crearReglas({}));
@@ -358,7 +359,7 @@ test('2.36-Oculta_NoSeCalculaNiLlega (sitio): las ocultas por site.hidden_cards 
   assert.doesNotMatch(views.paginaArnes({ modelo: todas, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: 0 }), /fichas? ocultas?/);
   // el cálculo roto no tira el sitio: cada ficha sale no medida
   const sinClon = fichas.fichasDelClon({ clon: path.join(clon, 'no-existe'), ahora: AHORA, ocultas: [] });
-  assert.strictEqual(sinClon.lista.length, 26);
+  assert.strictEqual(sinClon.lista.length, 27);
   assert.ok(sinClon.lista.every((f) => f.estado === 'no_medido'));
 });
 
@@ -450,7 +451,7 @@ test('2.36-Sello_CompletoComoElAviso: el sello de Arnés dice «completa» con l
 test('2.36-Guia_ListaYComoOcultar: la guía, en los dos idiomas, trae las 26 con su para qué, cómo se oculta una y lo que todavía no se mide', () => {
   const { t } = require(path.join(H.SITE, 'texts.js'));
   const guias = { es: fs.readFileSync(path.join(RAIZ, 'guides', 'organization-site.md'), 'utf8'), en: fs.readFileSync(path.join(RAIZ, 'guides', 'organization-site.en.md'), 'utf8') };
-  assert.strictEqual(fichas.FICHAS.length, 26);
+  assert.strictEqual(fichas.FICHAS.length, 27);
   for (const [idioma, guia] of Object.entries(guias)) {
     for (const f of fichas.FICHAS) {
       assert.ok(guia.includes(t(idioma, `ficha.${f.id}.titulo`)), `${idioma}: falta el título de ${f.id}`);
@@ -525,6 +526,90 @@ test('8.101-Poda_SinExamenComoHoy_ConExamenSeVe', () => {
     for (const id of ['reglas_candidatas', 'reglas_probadas']) {
       assert.strictEqual(sin[id].estado, 'no_medido', `${id} sin examen`);
       assert.strictEqual(sin[id].valor, null);
+      // 2.79 AC 32: el motivo dice que falta un examen del banco que se pueda usar, no «la fuente no trae este dato»
+      assert.strictEqual(sin[id].motivo, 'examen_inutilizable', `${id}: el motivo del examen`);
     }
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+// T22 2.79-SinProd_MotivoNombraLaFuente @story-2.79 @ac-19
+// 🔴 Falla con: la ficha «Productos sin pipeline de producción» diciendo «la fuente no trae este dato» cuando falta
+//    pipeline-debt.json, sin llevar a Configuración → Despliegues, o sin contar con los despliegues que ya dicen qué
+//    productos no tienen producción.
+test('T22 2.79-SinProd_MotivoNombraLaFuente @story-2.79 @ac-19 — sin la deuda, el motivo nombra el archivo y lleva a Despliegues; con despliegues, cuenta', () => {
+  const D = require(TABLERO);
+  const dash = tmp('sinprod-dash-');
+  const raiz = tmp('sinprod-raiz-');
+  try {
+    fs.mkdirSync(path.join(raiz, 'scripts', 'nightly', 'dependencies'), { recursive: true });
+    fs.writeFileSync(path.join(raiz, 'scripts', 'nightly', 'dependencies', 'repos.json'), JSON.stringify({ repos: [
+      { producto: 'Alfa', ado: 'Alfa/Back' }, { producto: 'Beta', ado: 'Beta/Back' }, { producto: 'Gama', ado: 'Gama/Back' }] }));
+    const def = fichas.FICHAS.find((x) => x.id === 'sin_pipeline_de_prod');
+    const ficha = () => fichas.proyectar(def, D.colectar({ dir: dash, raiz }).paneles.extra.sin_prod, {});
+    // sin pipeline-debt.json ni despliegues declarados: el motivo dice qué archivo falta y adónde ir
+    let f = ficha();
+    assert.strictEqual(f.estado, 'no_medido');
+    assert.strictEqual(f.motivo, 'sin_deuda_pipelines');
+    const html = fichas.tile(f);
+    assert.match(html, /pipeline-debt\.json/, 'nombra el archivo que falta');
+    assert.match(html, /href="\/configuracion#seccion-despliegues"/, 'lleva a Configuración → Despliegues');
+    assert.doesNotMatch(html, /la fuente no trae este dato/);
+    // con despliegues en operations.json: Beta sin producción y Gama sin declarar cuentan; Alfa tiene la suya
+    fs.writeFileSync(path.join(raiz, 'operations.json'), JSON.stringify({ deployments: { provider: 'azure', products: {
+      alfa: { staging: [{ pipeline: 'Alfa/CD', stages: ['stg'] }], production: [{ pipeline: 'Alfa/CD', stages: ['prod'] }] },
+      Beta: { staging: [{ pipeline: 'Beta/CD', stages: ['stg'] }] } } } }));
+    f = ficha();
+    assert.strictEqual(f.estado, 'medido', JSON.stringify(f));
+    assert.strictEqual(f.valor, 2, 'Beta sin producción y Gama sin despliegues declarados');
+    assert.strictEqual(f.total, 3);
+    const det = D.colectar({ dir: dash, raiz }).paneles.extra.sin_prod.detalle;
+    assert.match(det, /sin producción: Beta/, 'el declarado sin producción, nombrado aparte');
+    assert.match(det, /sin declarar en Despliegues: Gama/, 'el que no se declaró, nombrado aparte');
+    // con despliegues declarados pero sin la lista de productos, lo que falta es la lista, no los despliegues
+    fs.writeFileSync(path.join(raiz, 'scripts', 'nightly', 'dependencies', 'repos.json'), JSON.stringify({ repos: [{ ruta: 'a' }] }));
+    const sinLista = D.colectar({ dir: dash, raiz }).paneles.extra.sin_prod;
+    assert.strictEqual(sinLista.estado, 'no_medido');
+    assert.doesNotMatch(sinLista.motivo, /no hay despliegues declarados|pipeline-debt/, sinLista.motivo);
+    assert.match(sinLista.motivo, /producto/, 'nombra la lista de productos que falta');
+  } finally { fs.rmSync(dash, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+// T69 2.79-Fichas_ConUnidadYDesglose @story-2.79 @ac-62
+// 🔴 Falla con: «Tiempo por etapa» o «Cuánto tarda verificar» con un número sin unidad, «Stories empezadas…» sin decir
+//    de cuántos días habla, o «Por qué volvió» con el total sin la cuenta de cada causa.
+test('T69 2.79-Fichas_ConUnidadYDesglose @story-2.79 @ac-62 — días o segundos en tres fichas, y la cuenta de cada causa', () => {
+  const def = (id) => fichas.FICHAS.find((x) => x.id === id);
+  const texto = (id, m, idioma) => fichas.tile(fichas.proyectar(def(id), { estado: 'medido', fecha: HOY, ...m }, {}), idioma).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const etapa = { valor: 6.4, medidos: 402, total: 402, unidad: 'dias', den_etiqueta: 'stories que pasaron por review' };
+  assert.match(texto('tiempo_por_etapa', etapa, 'es'), /6,4 días/);
+  assert.match(texto('tiempo_por_etapa', etapa, 'en'), /6\.4 days/);
+  const suite = { valor: 12.3, medidos: 40, total: 40 };
+  assert.match(texto('gates_dur', suite, 'es'), /12,3 segundos/);
+  assert.match(texto('gates_dur', suite, 'en'), /12\.3 seconds/);
+  // pase adversarial: el singular sale del número que se muestra, no del crudo (0,96 se ve «1»)
+  for (const [valor, es, en] of [[0.96, /\b1 segundo\b/, /\b1 second\b/], [1.04, /\b1 segundo\b/, /\b1 second\b/], [1, /\b1 segundo\b/, /\b1 second\b/], [1.2, /1,2 segundos/, /1\.2 seconds/]]) {
+    assert.match(texto('gates_dur', { ...suite, valor }, 'es'), es, `es ${valor}`);
+    assert.match(texto('gates_dur', { ...suite, valor }, 'en'), en, `en ${valor}`);
+  }
+  const edad = { valor: 3, medidos: 20, total: 22, edad: { dias: [30, 60] } };
+  assert.match(texto('edad_estado', edad, 'es'), /más de 30 días/);
+  assert.match(texto('edad_estado', edad, 'en'), /more than 30 days/);
+  const causas = { valor: 9, medidos: 9, total: 9, unidad: 'conteo', barras: [{ clave: 'defecto-propio', n: 3 }, { clave: 'cambio-de-requisito', n: 2 }, { clave: 'sin-declarar', n: 4 }] };
+  // cada causa con su nombre en el idioma de la página, nunca con la clave interna
+  const porIdioma = {
+    es: [['defecto propio', 3], ['cambio de requisito', 2], ['sin declarar', 4]],
+    en: [['own defect', 3], ['requirement change', 2], ['not declared', 4]],
+  };
+  for (const idioma of ['es', 'en']) {
+    const c = texto('rework_por_causa', causas, idioma);
+    for (const [k, n] of porIdioma[idioma]) assert.match(c, new RegExp(`${k} ${n}\\b`), `${idioma}: «Por qué volvió» muestra ${k} ${n}: ${c}`);
+    assert.doesNotMatch(c, /defecto-propio|cambio-de-requisito|sin-declarar/, `${idioma}: sin la clave interna: ${c}`);
+  }
+  const rara = texto('rework_por_causa', { ...causas, barras: [{ clave: 'causa-nueva', n: 1 }] }, 'es');
+  assert.match(rara, /fuera del vocabulario 1\b/, `una causa que no está en la lista no muestra su clave: ${rara}`);
+  assert.doesNotMatch(rara, /causa-nueva/, rara);
+  // pase adversarial: las causas que el tablero cuenta aparte, fuera del vocabulario, también suman (sin su clave)
+  const fuera = texto('rework_por_causa', { ...causas, fuera_de_vocabulario: [['bug-raro', 2], ['otra-cosa', 1]] }, 'es');
+  assert.match(fuera, /fuera del vocabulario 3\b/, `las que quedaron fuera del vocabulario se cuentan: ${fuera}`);
+  assert.doesNotMatch(fuera, /bug-raro|otra-cosa/, fuera);
 });

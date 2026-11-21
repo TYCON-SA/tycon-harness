@@ -925,8 +925,8 @@ test('T63 PrefijoDeMasYHechoUnaVez @story-4.10 @ac-30', () => {
   const P = 'TYCON_PR_BY_HAND=1 az repos pr';
   const comandos = [
     `${P} create --source-branch x --target-branch main --draft true --title t`,
-    `${P} create --source-branch x --target-branch main --auto-complete true --squash false --title t`,
-    `${P} update --id 5 --draft false --auto-complete true --squash false`,
+    `${P} create --source-branch x --target-branch main --auto-complete true --squash false --delete-source-branch true --title t`,
+    `${P} update --id 5 --draft false --auto-complete true --squash false --delete-source-branch false`,
     `${P} create --source-branch x --target-branch main --title t`,
   ];
   const lineas = comandos.map((command) => ({ ts: ts(), type: 'PR_A_MANO', command }));
@@ -956,12 +956,12 @@ test('T63 PrefijoDeMasYHechoUnaVez @story-4.10 @ac-30', () => {
   assert.deepStrictEqual(cats(rv({ hilo: dos, bypass: [lineas[1]] }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:1', 'PR_A_MANO/sobra:1']);
   const suiteDos = [...cmd('TYCON_FULL_SUITE=1 npm test'), ...cmd('TYCON_FULL_SUITE=1 npm test')];
   assert.deepStrictEqual(cats(rv({ hilo: suiteDos, bypass: [{ ts: ts(), type: 'FULL_SUITE_RUN' }] }), 'RR-ESCAPE'), ['FULL_SUITE_RUN:1', 'TYCON_FULL_SUITE:1']);
-  const largo = `${P} create --source-branch x --target-branch main --description "${'d'.repeat(600)}" --auto-complete true --squash false`;
+  const largo = `${P} create --source-branch x --target-branch main --description "${'d'.repeat(600)}" --auto-complete true --squash false --delete-source-branch true`;
   const cortada = { ts: ts(), type: 'PR_A_MANO', command: largo.slice(0, 500) };
   assert.deepStrictEqual(cats(rv({ hilo: cmd(largo), bypass: [cortada] }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:1']);
   assert.deepStrictEqual(cats(rv({ hilo: null, bypass: [cortada] }), 'RR-ESCAPE'), ['PR_A_MANO:1'], 'sin la conversación, un texto cortado no da el pedido por bueno');
   // una línea tapa su comando igual, no uno parecido con más banderas
-  const parecido = `${comandos[1]} --delete-source-branch true`;
+  const parecido = `${comandos[1]} -o json`;
   // una línea que es el comienzo de un pedido más largo se empareja con él (los frenos cortan el texto): cuenta una vez,
   // por el registro (trae `con_motivo`, la de la conversación no)
   const p = regla(rv({ hilo: cmd(parecido), bypass: [lineas[1]] }), 'RR-ESCAPE');
@@ -1143,19 +1143,51 @@ test('T3 ValorYFormaDeLaVariable @story-4.12 @ac-3', () => {
 // T4 TextoFielDelPedido @story-4.12 @ac-4
 // 🔴 Falla con: un texto del pedido que, partido de nuevo, muestra como banderas lo que era el texto de una opción
 //    (sin la conversación, el pedido malo salía «sobra» y el bueno, falla).
+test('8.164-NocturnaJuzgaComoElFreno @story-8.164 @ac-1', () => {
+  // Para cada pedido con el escape, la noche dice «sobraba» exactamente cuando el freno lo dejaría pasar sin él: los
+  // dos leen la regla de `faltasDe`, y esto lo mide corriendo el freno de verdad.
+  const { spawnSync } = require('child_process');
+  const FRENO = path.join(ROOT, 'scripts', 'hooks', 'pr-auto-complete-guard.js');
+  // 0 es «pasa» y 2 es «frena»; cualquier otra salida es un freno roto, no un freno que frenó.
+  const pasa = (c) => {
+    const r = spawnSync(process.execPath, [FRENO], { input: JSON.stringify({ tool_input: { command: c } }), encoding: 'utf8' });
+    assert.ok(r.status === 0 || r.status === 2, `el freno salió ${r.status} (no es ni pasa ni frena): ${c}\n${r.stderr}`);
+    return r.status === 0;
+  };
+  const AZM = 'az repos pr create --org https://x --project P --repository R --target-branch main --title t --auto-complete true --squash false';
+  const pedidos = [
+    `${AZM} --source-branch story/x --delete-source-branch true`,
+    `${AZM} --source-branch dev --delete-source-branch true`,
+    `${AZM} --delete-source-branch true`,
+    `${AZM} -sdev --delete-source-branch true`,
+    `${AZM} -s "$BRANCH" --delete-source-branch true`,
+    `${AZM} --source-branch dev --delete-source-branch false`,
+    'az repos pr update --id 7 --draft false --auto-complete true --squash false --delete-source-branch true',
+    'az repos pr update --id 7 --draft false --auto-complete true --squash false --delete-source-branch false',
+  ];
+  for (const c of pedidos) {
+    const esperada = pasa(c) ? 'PR_A_MANO/sobra:1' : 'TYCON_PR_BY_HAND:1';
+    assert.deepStrictEqual(cats(rv({ hilo: cmd(`TYCON_PR_BY_HAND=1 ${c}`) }), 'RR-ESCAPE'), [esperada], `la noche no juzga como el freno: ${c}`);
+  }
+  // y los dos casos de la historia, por si el freno cambiara a la vez que la noche
+  assert.strictEqual(pasa(pedidos[6]), false, 'un update con true frena: el update no dice la rama');
+  assert.strictEqual(pasa(pedidos[7]), true, 'publicar con false pasa');
+});
+
 test('T4 TextoFielDelPedido @story-4.12 @ac-4', () => {
   const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
-  const P = 'TYCON_PR_BY_HAND=1 az repos pr create --target-branch main';
+  // Con la rama escrita: con `--delete-source-branch true` y sin `--source-branch`, el pedido no sobra (8.164).
+  const P = 'TYCON_PR_BY_HAND=1 az repos pr create --target-branch main --source-branch story/x';
   const casos = [
     [`${P} --title t --description 'x " --auto-complete true --squash false "'`, 'PR_A_MANO:1'],
     [`${P} --title fix\\ --auto-complete\\ true\\ --squash\\ false`, 'PR_A_MANO:1'],
-    [`${P} --auto-complete true --squash false --description 'x " --squash true "'`, 'PR_A_MANO/sobra:1'],
-    [`${P} --title 'a\\b' --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
+    [`${P} --auto-complete true --squash false --delete-source-branch true --description 'x " --squash true "'`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title 'a\\b' --auto-complete true --squash false --delete-source-branch true`, 'PR_A_MANO/sobra:1'],
     // el pase adversarial: una ficha que expande con comillas adentro, y una libre que sigue entre comillas con un
     // salto de línea
-    [`${P} --title "$T"'x"y' --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
-    [`${P} --title a"b\nc" --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
-    [`${P} --title "it's" --description '$HOME y \`x\`' --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title "$T"'x"y' --auto-complete true --squash false --delete-source-branch true`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title a"b\nc" --auto-complete true --squash false --delete-source-branch true`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title "it's" --description '$HOME y \`x\`' --auto-complete true --squash false --delete-source-branch true`, 'PR_A_MANO/sobra:1'],
   ];
   for (const [c, esperada] of casos) {
     const seg = AZ.segmentos(c)[0];
@@ -1442,6 +1474,7 @@ test('T47 Escape_AutorizadoNoCreaFicha @story-4.11 @ac-38', async () => {
   assert.deepStrictEqual(revisar(cmd(NO_DEEP), { registros: conFrenos([freno('no-deep-review')]) }).reglas, [], 'el nombre de la bandera también autoriza');
   // el Sí del dueño en la ventana de permiso también autoriza
   assert.deepStrictEqual(revisar(cmd(NO_DEEP), { registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW', { via: 'ventana' })]) }).reglas, [], 'la vía ventana autoriza');
+  for (const via of ['click', 'mensaje']) assert.deepStrictEqual(revisar(cmd(NO_DEEP), { registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW', { via })]) }).reglas, [], `la vía ${via} autoriza`);
   // el salteo autorizado con la variable en línea: el freno deja UNA línea y marker.js una en bypass.log
   const salteo = cmd(`TYCON_NO_DEEP_REVIEW=1 node ${MARKER} mark-adversarial-skipped --files a.js`);
   const lineaSalteo = [{ ts: `${HOY}T15:00:01.000Z`, kind: 'ADVERSARIAL_SKIP_FORZADO', sessionId: 's' }];
@@ -1750,4 +1783,108 @@ test('P1 Escape_LosNombresSePidenUnaVez_NoPorComando', () => {
     }
     assert.ok(llamadas <= 1, `el mapa se consultó ${llamadas} veces para 4000 pedidos`);
   } finally { LN.envNames = original; }
+});
+
+// T17 RunsReview_SinPedidos_NoLlamaALaPlataforma @story-8.145 @ac-21
+// 🔴 Falla con: que el ensayo de la noche (efectos: false) cree un pedido o comente en uno. El paso corre con `az`
+//    conectado con la cuenta del buzón: sin el token, `az boards` usaría esa cuenta, así que el corte va en la revisión.
+test('T17 RunsReview_SinPedidos_NoLlamaALaPlataforma @story-8.145 @ac-21', async () => {
+  const lineas = [];
+  const escribir = process.stderr.write;
+  const correrCallado = async (...a) => {
+    process.stderr.write = (t) => { lineas.push(String(t)); return true; };
+    try { return await correr(...a); } finally { process.stderr.write = escribir; }
+  };
+  // un arreglo decidido sin pedido: sin el corte, la noche lo pide (el control de que el caso ejerce la plataforma)
+  for (const sinPedidos of [false, true]) {
+    const { mb } = buzonDeUnaCausa();
+    const op = opsConPedidos();
+    await correrCallado(mb, op, { today: '2026-10-19' });
+    moverFicha(op, { veredicto: 'arreglo' }, 'promoted');
+    const p = plataformaFalsa();
+    const r = await correrCallado(mb, op, { today: '2026-10-20', plataforma: p.run, noWorkItems: sinPedidos });
+    assert.strictEqual(r.codigo, 0);
+    if (sinPedidos) assert.deepStrictEqual(p.llamados, [], 'con el corte, ni un llamado');
+    else assert.deepStrictEqual(p.llamados.map((x) => x.op), ['work-item.create'], 'sin el corte, pide');
+  }
+  // una que volvió con pedido, y una con su pedido cerrado y la falla viva: ni el comentario ni la lectura
+  for (const [cambio, carpeta, dias] of [
+    [{ estado: 'resuelta', resuelta_el: '2026-10-20', veredicto: 'arreglo', pedido: 901 }, 'archived', ['2026-10-21']],
+    [{ veredicto: 'arreglo', pedido: 901 }, 'pending', ['2026-10-20', '2026-10-21']],
+  ]) {
+    const { mb } = buzonDeUnaCausa();
+    const op = opsConPedidos();
+    await correrCallado(mb, op, { today: '2026-10-19' });
+    moverFicha(op, cambio, carpeta);
+    const p = plataformaFalsa((o, args) => (o === 'work-item.read' ? { ok: true, value: { id: args.id, estado: 'Closed', cerrado: true } } : { ok: true, value: { id: args.id, changed: false, commented: true } }));
+    for (const [i, dia] of dias.entries()) {
+      otraEjecucion(mb, dia, i + 2);
+      await correrCallado(mb, op, { today: dia, plataforma: p.run, noWorkItems: true });
+    }
+    assert.deepStrictEqual(p.llamados, [], `${carpeta}: ni un llamado`);
+  }
+  assert.ok(lineas.some((l) => /^pedidos de ejecuciones: ensayo sin efectos, no se pidió ni se avisó en ningún pedido$/m.test(l)), 'lo dice en una línea');
+  // por la línea de comandos, como la llama la noche: `run --no-work-items` llega a la revisión (sin él, pide)
+  const reales = { pedirTrabajo: CYCLE.pedirTrabajo, avisarQueVolvio: CYCLE.avisarQueVolvio, avisarCerradoConFallaViva: CYCLE.avisarCerradoConFallaViva };
+  const salida = process.stdout.write;
+  try {
+    for (const flag of [[], ['--no-work-items']]) {
+      const { mb } = buzonDeUnaCausa();
+      const op = opsConPedidos();
+      await correrCallado(mb, op, { today: '2026-10-19', plataforma: plataformaFalsa().run });
+      moverFicha(op, { veredicto: 'arreglo' }, 'promoted');
+      const pedidos = [];
+      for (const k of Object.keys(reales)) CYCLE[k] = async () => { pedidos.push(k); return { creados: [], avisados: [], warnings: [] }; };
+      process.stdout.write = () => true;
+      try {
+        await (async () => { process.stderr.write = (t) => { lineas.push(String(t)); return true; }; try { return await RR.main(['run', '--mailbox', mb, '--operations', op, '--today', '2026-10-20', '--no-download', ...flag]); } finally { process.stderr.write = escribir; } })();
+      } finally { process.stdout.write = salida; }
+      if (flag.length) assert.deepStrictEqual(pedidos, [], 'con --no-work-items, ni un pedido ni un aviso');
+      else assert.ok(pedidos.includes('pedirTrabajo'), 'sin la opción, pide');
+    }
+  } finally { Object.assign(CYCLE, reales); }
+});
+
+// 8.256-T3 RunsReview_EscapesFromTheList @story-8.256 @ac-4 @ac-6 @ac-27
+// 🔴 Falla con: `ESCAPES` armada a mano y no de la lista única, una escotilla nueva que la noche no cuenta, el renglón
+//    de su lector contado dos veces con su comando, o el renglón del chequeo de vida fuera de la CI contado como escape.
+test('8.256-T3 RunsReview_EscapesFromTheList @story-8.256 @ac-4 @ac-6 @ac-27', () => {
+  const ES = require(path.join(ROOT, 'scripts', 'lib', 'env-switches.js'));
+  assert.deepStrictEqual([...RULES.ESCAPES].sort(), ES.escapesDeLaNoche().map((e) => e.nombre).sort());
+  for (const v of ['TYCON_NO_LIVENESS_PRECOMMIT', 'TYCON_MUTATION_CHECK', 'TYCON_STORY_GATE', 'STOP_AUTONOMY', 'TYCON_SAFETY_OFF']) assert.ok(RULES.ESCAPES.includes(v), v);
+  assert.strictEqual(RULES.VALOR_QUE_APAGA.TYCON_MUTATION_CHECK, 'off');
+  assert.strictEqual(RULES.VALOR_QUE_APAGA.TYCON_STORY_GATE, 'off');
+  // los comandos: tres nuevos y dos de siempre
+  const r = revisar([
+    ...cmd(`TYCON_RUNTIME_MATRIX_LEGACY=1 ${MARKER} complete-step live-check`),
+    ...cmd(`TYCON_STORY_REVIEW=0 ${PIPE} validators --repo /r --story /r/s.md`),
+    ...cmd('TYCON_NO_LIVENESS_PRECOMMIT=ci git commit -m x'),
+    ...cmd(`TYCON_MUTATION_CHECK=off ${MARKER} complete-step run-tests`),
+    ...cmd('TYCON_NO_LIVENESS_PRECOMMIT=1 git commit -m y'),
+    // el subcomando viejo corre la misma revisión de la historia
+    ...cmd(`TYCON_STORY_REVIEW=0 ${PIPE} validadores --repo /r --story /r/s.md`),
+    // fuera del comando que la toma, o con un valor que no apaga, no cuenta
+    ...cmd('TYCON_STORY_REVIEW=0 ls'),
+    ...cmd(`TYCON_STORY_REVIEW=1 ${PIPE} validators --repo /r --story /r/s.md`),
+    ...cmd('TYCON_NO_LIVENESS_PRECOMMIT=ci git status'),
+  ]);
+  const escapes = regla(r, 'RR-ESCAPE');
+  assert.strictEqual(escapes.reduce((n, x) => n + x.cuenta, 0), 6, JSON.stringify(escapes));
+  assert.deepStrictEqual(escapes.map((x) => `${x.categoria}:${x.cuenta}`).sort(),
+    ['TYCON_MUTATION_CHECK:1', 'TYCON_NO_LIVENESS_PRECOMMIT:2', 'TYCON_RUNTIME_MATRIX_LEGACY:1', 'TYCON_STORY_REVIEW:2']);
+  // los renglones nuevos del registro, solos: cuatro cuentan una vez cada uno, el del chequeo de vida local no
+  const solos = { bypass: ['RUNTIME_MATRIX_LEGACY', 'RUNTIME_MATRIX_NO_MUTATION_CHECK', 'STORY_REVIEW_OFF', 'ATDD_PREEDIT_GATE_OFF', 'LIVENESS_PRECOMMIT_CI_LOCAL']
+    .map((kind) => ({ ts: ts(), sessionId: 's', kind, story: '1.1' })), cobertura: { fuentes: { bypass: { estado: 'medido' } } } };
+  const s = RULES.revisar({ volcado: volcado({ sid: 's' }), lineasHilo: [], registros: solos });
+  assert.deepStrictEqual(regla(s, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`).sort(),
+    ['ATDD_PREEDIT_GATE_OFF:1', 'RUNTIME_MATRIX_LEGACY:1', 'RUNTIME_MATRIX_NO_MUTATION_CHECK:1', 'STORY_REVIEW_OFF:1']);
+  // junto al comando que los dejó: una vez, por el registro
+  const juntos = RULES.revisar({ volcado: volcado({ sid: 's' }), lineasHilo: [
+    ...cmd(`TYCON_RUNTIME_MATRIX_LEGACY=1 ${MARKER} complete-step live-check`),
+    ...cmd(`TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK=1 ${MARKER} complete-step live-check`),
+    ...cmd(`TYCON_STORY_REVIEW=0 ${PIPE} validators --repo /r --story /r/s.md`),
+  ], registros: { bypass: ['RUNTIME_MATRIX_LEGACY', 'RUNTIME_MATRIX_NO_MUTATION_CHECK', 'STORY_REVIEW_OFF']
+    .map((kind) => ({ ts: ts(), sessionId: 's', kind, story: '1.1' })), cobertura: { fuentes: { bypass: { estado: 'medido' } } } } });
+  assert.deepStrictEqual(regla(juntos, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`).sort(),
+    ['RUNTIME_MATRIX_LEGACY:1', 'RUNTIME_MATRIX_NO_MUTATION_CHECK:1', 'STORY_REVIEW_OFF:1']);
 });

@@ -158,6 +158,9 @@ test('T1 Gate_AnnotatesVerdictInItsOwnField — el veredicto va a adversarialGat
 
   // «No corre» → el salteo se acepta (con el veredicto adentro de `adversarial` se negaba: «ya se lanzó»).
   fs.writeFileSync(path.join(repo.dir, '.tycon', 'advisors.yaml'), 'deep_review: off\n');
+  // de fábrica, un cambio chico de día pregunta: el salteo vale recién con la respuesta «skip» para este diff
+  const ra = mark(home, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
+  assert.strictEqual(ra.status, 0, ra.stderr);
   const s = mark(home, ['mark-adversarial-skipped', '--files', 'scripts/x1.js']);
   assert.strictEqual(s.status, 0, `el salteo se negó: ${s.stderr}`);
   m = leerMarker(home);
@@ -498,10 +501,23 @@ const CASOS_FOTO = [
   { nombre: 'pesada-interruptor', repo: { pesada: true }, files: 'todos', env: { TYCON_NO_DEEP_REVIEW: '1' } },
 ];
 
+/**
+ * Las dos señales del riesgo por parte salen en `warnings` como aviso y no cambian nada más: la foto se compara sin ellas,
+ * y cada aviso tiene que ser una de las dos.
+ */
+function sinSenales(salida) {
+  if (!salida || !Array.isArray(salida.warnings)) return salida;
+  for (const w of salida.warnings) {
+    assert.match(w, /^(ninguna prueba lo ataja|concurrencia): /, `un aviso que no es una señal: ${w}`);
+  }
+  const { warnings, ...resto } = salida;
+  return resto;
+}
+
 function correrFoto(home, c) {
   const repo = mkRepo(c.repo);
   const r = pipe(home, ['deep-review-gate', '--repo', repo.dir, '--story', repo.story, '--files', ...repo.rutas, ...(c.flags || [])], c.env);
-  return { status: r.status, salida: r.status === 0 ? JSON.parse(r.stdout) : null, stderr: r.stderr };
+  return { status: r.status, salida: r.status === 0 ? sinSenales(JSON.parse(r.stdout)) : null, stderr: r.stderr };
 }
 
 if (process.env.TYCON_GATE_SNAPSHOT === 'escribir') {
@@ -544,6 +560,9 @@ test('T16 Verifiers_WindowUnderLiteRunner — el guion real con 7 clases nunca p
   fs.writeFileSync(stub, `
 const fs = require('fs'); const path = require('path');
 const prompt = process.env.TYCON_WFLITE_PROMPT || '';
+// (8.215) un cazador devuelve la base pedida y, limpio, la carpeta de su prueba: las dos se las nombra el pedido
+{ const base = (prompt.match(/Devolvé base = "([^"]+)"/) || [])[1]; const carpeta = (prompt.match(/Creá la carpeta (\\S+)/) || [])[1] || '';
+  if (base) { const log = console.log; console.log = (s) => { try { const o = JSON.parse(s); if (Array.isArray(o.findings)) s = JSON.stringify({ ...o, base, probe_dir: o.findings.length ? '' : carpeta }); } catch (_) { /* no es JSON */ } log(s); }; } }
 const vivos = ${JSON.stringify(vivos)}; const picos = ${JSON.stringify(path.join(tmp, 'picos.txt'))};
 const dormir = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 if (/REFUTAR/i.test(prompt)) {
@@ -562,7 +581,8 @@ if (/REFUTAR/i.test(prompt)) {
 }
 `);
   const out = path.join(tmp, 'out.json');
-  const args = { repo: tmp, files: ['src/f1.js'], runDir: path.join(tmp, 'run') };
+  // un verificador por clase: la ventana se mide con siete (la fábrica es uno por lente, desde la 8.282)
+  const args = { repo: tmp, files: ['src/f1.js'], runDir: path.join(tmp, 'run'), base: '0123456789abcdef0123456789abcdef01234567', verifiers: 'per_finding' };
   const env = { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}`, TYCON_WFLITE_JOBS: '8' };
   delete env.NODE_TEST_CONTEXT;
   const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify(args), '--out', out], { encoding: 'utf8', env });
@@ -589,7 +609,7 @@ if (/REFUTAR/i.test(prompt)) {
 test('T9 Skill_NoOfreceSaltearElPase @story-8.104 @ac-1', () => {
   const skill = fs.readFileSync(path.join(SCRIPTS, '..', 'SKILL.md'), 'utf8');
   const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-08-adversarial-pass.md'), 'utf8');
-  const regla = (id) => { const m = new RegExp(`^- \\*\\*${id.replace(/\./g, '\\.')}[^\\n]*(?:\\n  [^\\n]*)*`, 'm').exec(skill); return m ? m[0] : ''; };
+  const regla = (id) => { const m = new RegExp(`^- \\*\\*${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\n]*(?:\\n  [^\\n]*)*`, 'm').exec(skill); return m ? m[0] : ''; };
   const comm = regla('COMM.iii');
   const hii = regla('H.ii');
   const tooli = regla('TOOL.i');
@@ -606,4 +626,70 @@ test('T9 Skill_NoOfreceSaltearElPase @story-8.104 @ac-1', () => {
     assert.match(t, /sign-adversarial-skip/, `${nombre}: apagarlo lo firma el dueño`);
   }
   assert.match(tooli, /salida aprobada/, 'TOOL.i: sin Workflow, la salida aprobada');
+});
+
+// ------------------------------------------------------------------ el corredor de cada agente y la política del guion
+
+/** Corre un guion bajo workflow-lite con el corredor de prueba, que contesta lo que imprime `stub`. */
+function correrGuion(tmp, guion, args, stub) {
+  const stubJs = path.join(tmp, 'stub.js');
+  fs.writeFileSync(stubJs, stub);
+  const out = path.join(tmp, 'out.json');
+  const env = { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stubJs}` };
+  delete env.NODE_TEST_CONTEXT;
+  const r = spawnSync(process.execPath, [WFLITE, guion, '--args', JSON.stringify(args), '--out', out], { encoding: 'utf8', env });
+  assert.ok(fs.existsSync(out), `el guion no devolvió salida: ${r.stderr}`);
+  return JSON.parse(fs.readFileSync(out, 'utf8'));
+}
+
+test('WorkflowLite_MismaEtiqueta_NoSePisan (T7) @story-8.282 @ac-7', () => {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'etiquetas-')));
+  const guion = path.join(tmp, 'toy.workflow.js');
+  fs.writeFileSync(guion, `
+const a = await agent('uno', { label: 'x' })
+const b = await agent('dos', { label: 'x' })
+const c = await agent('tres', { label: 'y' })
+return { a, b, c }
+`);
+  const salida = correrGuion(tmp, guion, {}, "console.log('ok');");
+  assert.deepStrictEqual(salida.corredor.usado, { x: 'stub', 'x #2': 'stub', y: 'stub' }, 'los dos agentes con la misma etiqueta quedan anotados');
+  // con etiquetas únicas, la forma de siempre
+  fs.writeFileSync(guion, "const a = await agent('uno', { label: 'x' })\nreturn { a }\n");
+  assert.deepStrictEqual(correrGuion(tmp, guion, {}, "console.log('ok');").corredor.usado, { x: 'stub' });
+});
+
+test('AdversarialVerify_PorDefectoIgualALaFabrica (T8) @story-8.282 @ac-8 @ac-9', () => {
+  const { DEFAULTS } = require(path.join(SCRIPTS, 'lib', 'review-policy.js'));
+  // el valor por defecto escrito en el guion (que corre sin require) es el de la fábrica
+  const wf = fs.readFileSync(WORKFLOW, 'utf8');
+  const m = /^const VERIFIERS = .*: '(\w+)'$/m.exec(wf);
+  assert.ok(m, 'el guion declara su política por defecto');
+  assert.strictEqual(m[1], DEFAULTS.review_runner.verifiers, 'el guion y review-policy.js se separaron');
+  assert.strictEqual(DEFAULTS.review_runner.verifiers, 'per_lens');
+  // el guion de verdad: sin el argumento usa la fábrica; con uno explícito, ése
+  // la salida dice la política sólo si hubo algo que verificar: la lente de completitud reporta un hallazgo (con la base
+  // pedida, como el cazador de T16), las demás limpias, y el verificador no contesta nada útil (queda sin veredicto)
+  const limpio = `
+const prompt = process.env.TYCON_WFLITE_PROMPT || '';
+if (/REFUTAR/i.test(prompt)) { console.log('{}'); process.exit(0); }
+const base = (prompt.match(/Devolvé base = "([^"]+)"/) || [])[1] || '';
+const carpeta = (prompt.match(/Creá la carpeta (\\S+)/) || [])[1] || '';
+const uno = /LENTE: completitud/.test(prompt)
+  ? [{ severity: 'bug', file: 'src/f1.js', line: 10, summary: 'un defecto', repro: 'r', confidence: 'high' }] : [];
+console.log(JSON.stringify({ lens: 'x', findings: uno, base, probe_dir: uno.length ? '' : carpeta }));
+`;
+  const args = (extra) => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'politica-')));
+    return [tmp, { repo: tmp, files: ['src/f1.js'], runDir: path.join(tmp, 'run'), base: '0123456789abcdef0123456789abcdef01234567', ...extra }];
+  };
+  const [t1, a1] = args({});
+  assert.strictEqual(correrGuion(t1, WORKFLOW, a1, limpio).verificadores, 'per_lens');
+  const [t2, a2] = args({ verifiers: 'per_finding' });
+  assert.strictEqual(correrGuion(t2, WORKFLOW, a2, limpio).verificadores, 'per_finding');
+  // el pipeline sin review_runner en la configuración le pasa la de fábrica
+  // el portón decide con la configuración (sin forzarlo): ahí pasa la política
+  const sinConfig = CASOS_FOTO.find((c) => c.nombre === 'pesada-sin-config');
+  const r = correrFoto(casa(), sinConfig);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.salida.verifiers, 'per_lens');
 });

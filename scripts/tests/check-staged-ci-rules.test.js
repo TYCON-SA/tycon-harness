@@ -184,6 +184,29 @@ test('StagedCiRules_Catalog_ThinRepo — un repo sin los .toml cuenta con el pad
   assert.match(mal.out, /conteo del catálogo de reglas: filas=\d+, esperaba \d+/);
 });
 
+test('StagedCiRules_Catalog_ComposedInThinRepo — el catálogo que el adelgazado compone se cuenta compuesto con el del arnés', () => {
+  const d = lab();
+  const pack = path.join(RAIZ, 'packs', 'clients', 'pack.json');
+  if (fs.existsSync(pack)) put(d, 'packs/clients/pack.json', fs.readFileSync(pack, 'utf8'));
+  const forms = { layout: 'thin', own: { 'guides/advisor-rules-catalog.md': { reason: 'registro', merge: 'sections' } } };
+  stage(d, '.tycon/internal-forms.json', `${JSON.stringify(forms, null, 2)}\n`);
+  // la copia del adelgazado trae sólo su sección propia, sin filas de reglas
+  stage(d, 'guides/advisor-rules-catalog.md', '## Lo propio del equipo\n\nUna sección que el público no trae.\n');
+  const r = run(d);
+  assert.strictEqual(r.rc, 0, r.out);
+  assert.doesNotMatch(r.out, /no pude mirar|saltado/);
+  assert.match(r.out, /el catálogo se compone: el del arnés que corre más las secciones propias de este repo/);
+  // compuesto, una fila de más en la sección propia sigue frenando
+  stage(d, 'guides/advisor-rules-catalog.md', '## Lo propio del equipo\n\n| **ZZZQ-C1** | de más | nada |\n');
+  const mal = run(d);
+  assert.strictEqual(mal.rc, 1, mal.out);
+  assert.match(mal.out, /conteo del catálogo de reglas: filas=\d+, esperaba \d+/);
+  // sin la declaración, la copia sola se cuenta como antes: no se compone por su cuenta
+  stage(d, '.tycon/internal-forms.json', '{}\n');
+  stage(d, 'guides/advisor-rules-catalog.md', '## Lo propio del equipo\n\nUna sección que el público no trae.\n');
+  assert.strictEqual(run(d).rc, 2);
+});
+
 test('StagedCiRules_CouldNotLook_IsTwo — fuera de un repo no es verde', () => {
   const d = tmpdir('staged-ci-rules-sin-git-');
   const r = spawnSync(process.execPath, [FRENO, '--repo', d], { env: { ...ENV, GIT_CEILING_DIRECTORIES: path.dirname(d) }, encoding: 'utf8' });
@@ -206,4 +229,76 @@ test('StagedCiRules_OneLogic — las pruebas usan el módulo del freno y el hook
   const call = hook.indexOf('node "$CI_RULES" --repo "$REPO_ROOT"');
   assert.ok(call > 0, 'el hook llama al freno');
   assert.ok(call < hook.indexOf('if ! grep -qE "$RELEVANTES"'), 'antes del filtro RELEVANTES, que saltea casi todos los commits');
+});
+
+// ── El commit con el mensaje por la entrada no cuelga el paso del inventario ─────────────────────────────────────────
+// Con el pre-commit real y un cambio al inventario preparado, `git commit -F -` termina. Las dos son de no-regresión:
+// si un `git` de este paso vuelve a leer la entrada heredada, se cuelgan y el tope las corta.
+
+const PI = require(path.join(RAIZ, 'scripts', 'lib', 'private-inventory.js'));
+const INVENTARIO_DE_JUGUETE = JSON.stringify({
+  hook: '.githooks/pre-commit-checks',
+  passes: [{ name: 'pre-commit', mode: 'index', cmd: ['bash', '.githooks/pre-commit-checks'] }],
+  controls: [{ name: 'toy', script: 'scripts/ci/toy.js', rules: [] }],
+  content: [], workflows: [], approvals: [],
+}, null, 2);
+
+/** Un público de juguete con su inventario, un privado declarado en la casa del arnés y el inventario cambiado y preparado. */
+function conInventario() {
+  const pub = lab();
+  put(pub, 'scripts/ci/run-base-controls.sh', fs.readFileSync(path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh'), 'utf8'));
+  put(pub, 'scripts/ci/toy.js', "'use strict';\nprocess.exit(0);\n");
+  put(pub, '.githooks/pre-commit-checks', '#!/usr/bin/env bash\nnode "$REPO_ROOT/scripts/ci/toy.js"\n');
+  put(pub, PI.INVENTORY, INVENTARIO_DE_JUGUETE);
+  git(pub, 'add', '-A');
+  git(pub, 'commit', '-q', '-m', 'inventario');
+  const origen = tmpdir('staged-inv-origen-');
+  git(origen, 'init', '-q', '-b', 'main');
+  put(origen, '.githooks/pre-commit-checks', '#!/usr/bin/env bash\nnode "$REPO_ROOT/scripts/ci/toy.js"\n');
+  put(origen, '.tycon/internal-forms.json', JSON.stringify({ layout: 'thin', own: { '.githooks/pre-commit-checks': 'el suyo' }, mirror: {} }));
+  git(origen, 'add', '-A');
+  git(origen, 'commit', '-q', '-m', 'privado');
+  const clon = path.join(tmpdir('staged-inv-priv-'), 'clon');
+  assert.strictEqual(spawnSync('git', ['clone', '-q', origen, clon], { env: ENV, encoding: 'utf8' }).status, 0);
+  const casa = tmpdir('staged-inv-casa-');
+  fs.writeFileSync(path.join(casa, 'config.json'), JSON.stringify({ paths: { maintainers: clon } }));
+  // el cambio al inventario, preparado
+  stage(pub, PI.INVENTORY, `${INVENTARIO_DE_JUGUETE}\n`);
+  return { pub, env: { ...ENV, TYCON_HOME: casa } };
+}
+
+/** Corre `args` con la entrada abierta (`cerrar: false`) o con `texto` y cerrada; corta a los `topeMs`. */
+function conTope(cmd, args, { cwd, env, texto = '', cerrar = true, topeMs = 60000 }) {
+  return new Promise((resolve) => {
+    const p = require('child_process').spawn(cmd, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    p.stdout.on('data', (d) => { out += d; });
+    p.stderr.on('data', (d) => { out += d; });
+    if (texto) p.stdin.write(texto);
+    if (cerrar) p.stdin.end();
+    const t = setTimeout(() => { p.kill('SIGKILL'); resolve({ colgado: true, out }); }, topeMs);
+    p.on('close', (rc) => { clearTimeout(t); if (!cerrar) p.stdin.destroy(); resolve({ colgado: false, rc, out }); });
+  });
+}
+
+// T9 CiRules_CommitMessageOnStdin_DoesNotHang — @story-8.288 @ac-11 (no-regresión: el cuelgue no se reprodujo)
+// 🔴 Falla con: que el paso del inventario vuelva a esperar la entrada en un `git commit -F -`.
+test('T9 CiRules_CommitMessageOnStdin_DoesNotHang (no-regresión) @story-8.288 @ac-11', async () => {
+  const { pub, env } = conInventario();
+  put(pub, '.githooks/pre-commit', `#!/usr/bin/env bash\nexec node ${JSON.stringify(FRENO)} --repo "$(git rev-parse --show-toplevel)"\n`);
+  fs.chmodSync(path.join(pub, '.githooks', 'pre-commit'), 0o755);
+  const r = await conTope('git', ['-C', pub, '-c', 'core.hooksPath=.githooks', 'commit', '-F', '-'], { env, texto: 'prueba: el inventario\n' });
+  assert.strictEqual(r.colgado, false, `el commit con el mensaje por la entrada se colgó:\n${r.out}`);
+  assert.strictEqual(r.rc, 0, r.out);
+  assert.match(r.out, /el inventario de los controles contra el pre-commit del privado/, 'el paso del inventario corrió');
+});
+
+// T10 CiRules_RealCause_Reproduced — @story-8.288 @ac-12 (no-regresión: los `git` de los dos guiones no leen la entrada)
+// 🔴 Falla con: un `git` de check-staged-ci-rules.js o de private-inventory.js que herede la entrada del proceso.
+test('T10 CiRules_RealCause_Reproduced (no-regresión) @story-8.288 @ac-12', async () => {
+  const { pub, env } = conInventario();
+  const r = await conTope(process.execPath, [FRENO, '--repo', pub], { env, cerrar: false, topeMs: 30000 });
+  assert.strictEqual(r.colgado, false, `con la entrada abierta, el freno se colgó:\n${r.out}`);
+  assert.strictEqual(r.rc, 0, r.out);
+  assert.match(r.out, /el inventario de los controles contra el pre-commit del privado/);
 });

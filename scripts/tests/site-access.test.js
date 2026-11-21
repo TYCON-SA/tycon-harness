@@ -504,3 +504,72 @@ test('T4 Inicio_LoPersonal_SinCambios', () => {
   assert.strictEqual(mA.corridas.lista.length, 1, 'su ejecución');
   assert.strictEqual(views.inicioDev(mA).corridas.en7dias, 1);
 });
+
+test('T23 SiteAccess_Confirmada_SeOcultaYSeMuestra @story-8.234 @ac-23 — el sitio: ni el Inicio, ni Corridas (con su lista de máquinas), ni las oficinas muestran una oculta, tampoco a quien administra', () => {
+  const conf = (person) => ({ person, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-15' });
+  const hidden = { 'maq-lab': { reason: 'hidden', hidden_by: LEAD, hidden_on: '2026-11-08' }, ajena: { reason: 'not_team', hidden_by: LEAD, hidden_on: '2026-11-08' } };
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [A] }] }, people: { machines: { 'maq-a': conf(A), 'maq-lab': conf(A) }, hidden_machines: hidden } });
+  const modelo = { corridas: { estado: 'medido', fecha: '2026-11-08', lista: [
+    { maquina: 'maq-a', inicio: '2026-11-08T10:00:00Z' }, { maquina: 'maq-lab', inicio: '2026-11-08T11:00:00Z' }, { maquina: 'ajena', inicio: '2026-11-08T12:00:00Z' },
+  ] } };
+  const personas = { informados: H.informados({ 'maq-a': null, 'maq-lab': null, ajena: 'alguien@otro.example' }), repos: null };
+  const reglas = access.crearReglas({ config, modelo, personas });
+  const lead = access.quienPide(persona(LEAD), { config });
+  const dev = access.quienPide(persona(A), { config });
+  // el Inicio
+  assert.deepStrictEqual(access.filtrar(modelo, lead, reglas).corridas.lista.map((c) => c.maquina), ['maq-a']);
+  assert.deepStrictEqual(access.filtrar(modelo, dev, reglas).corridas.lista.map((c) => c.maquina), ['maq-a']);
+  assert.strictEqual(access.filtrar(modelo, lead, reglas).maquinasSinConfirmar, 0, 'la descartada no cuenta por confirmar');
+  // la pestaña Corridas, con la lista de máquinas y su cuenta
+  const M = { corridas: modelo.corridas.lista, maquinas: { local: null, solo_esta: false, lista: [{ nombre: 'ajena', corridas: 1 }, { nombre: 'maq-a', corridas: 1 }, { nombre: 'maq-lab', corridas: 1 }] }, archivos: 3, duplicados: 0, ilegibles: 0, buzon: { estado: 'leido' } };
+  const r = access.filtrarCorridas(M, lead, reglas);
+  assert.deepStrictEqual(r.corridas.map((c) => c.maquina), ['maq-a']);
+  assert.deepStrictEqual(r.maquinas.lista.map((x) => x.nombre), ['maq-a']);
+  assert.strictEqual(r.archivos, 3, 'los conteos del buzón siguen contando sus archivos');
+  assert.deepStrictEqual(access.filtrarCorridas(M, dev, reglas).corridas.map((c) => c.maquina), ['maq-a']);
+  // las oficinas: ni quien administra, ni con la perilla abierta a todos
+  for (const vis of ['maintainers', 'everyone']) {
+    const ve = access.oficinasQueVe(lead, reglas, vis);
+    assert.deepStrictEqual(['maq-a', 'maq-lab', 'ajena'].filter(ve), ['maq-a'], vis);
+  }
+  assert.deepStrictEqual(reglas.maquinasDe(A), ['maq-a']);
+  // sin lo informado (un sitio recién arrancado), la oculta se sabe igual: sale de la configuración
+  const sinInformados = access.crearReglas({ config, modelo, personas: null });
+  assert.strictEqual(sinInformados.oculta('maq-lab'), true);
+  assert.strictEqual(sinInformados.oculta('maq-a'), false);
+});
+
+test('Regresion_OcultaUnidaAUnaVisible_NoCuentaEnLaListaDeMaquinas @story-8.234 @ac-23 — una carpeta vieja oculta, unida a una nueva visible: sus corridas tampoco cuentan en la fila de la nueva', () => {
+  const conf = (person) => ({ person, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-15' });
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [A] }] }, people: { machines: { 'maq-old': conf(A), 'maq-new': conf(A) }, hidden_machines: { 'maq-old': { reason: 'hidden', hidden_by: LEAD, hidden_on: '2026-11-08' } } } });
+  const personas = { informados: H.informados({ 'maq-old': null, 'maq-new': null }, { 'maq-old': { estado: 'unida', nueva: 'maq-new', declarantes: 1, desde: '2026-10-10' } }), repos: null };
+  const reglas = access.crearReglas({ config, modelo: {}, personas });
+  const corridas = [{ maquina: 'maq-new', maquina_origen: 'maq-old' }, { maquina: 'maq-new', maquina_origen: 'maq-old' }, { maquina: 'maq-new', maquina_origen: 'maq-new' }, { maquina: null }];
+  const M = { corridas, maquinas: { local: null, solo_esta: false, lista: [{ nombre: 'maq-new', corridas: 3 }], sin_declarar: 1 }, archivos: 4, duplicados: 0, ilegibles: 0, buzon: { estado: 'leido' } };
+  const r = access.filtrarCorridas(M, access.quienPide(persona(LEAD), { config }), reglas);
+  assert.strictEqual(r.corridas.length, 2, 'la de maq-new y la sin máquina');
+  assert.deepStrictEqual(r.maquinas.lista, [{ nombre: 'maq-new', corridas: 1 }], 'la cuenta sale de lo que se muestra');
+  assert.strictEqual(r.maquinas.sin_declarar, 1);
+  assert.strictEqual(r.archivos, 4, 'los conteos del buzón siguen contando sus archivos');
+});
+
+test('Regresion_UnionRechazada_NoHeredaLaOculta @story-8.234 @ac-23 — una carpeta vieja cuya unión se descarta (compartida) es otra máquina: no hereda la oculta de la nueva, ni en la regla ni en el sitio', () => {
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [A] }] }, people: { machines: {}, hidden_machines: { 'maq-new': { reason: 'not_team', hidden_by: LEAD, hidden_on: '2026-11-08' } } } });
+  // la vieja informa un correo y la nueva ninguno: la unión se descarta (people.js, tercera vuelta de seguridad)
+  const personas = { informados: H.informados({ 'maq-old': A, 'maq-new': null }, { 'maq-old': { estado: 'unida', nueva: 'maq-new', declarantes: 1, desde: '2026-10-10' } }), repos: null };
+  const c = people.contexto({ operations: config, informados: personas.informados });
+  assert.strictEqual(people.estadoDeMaquina('maq-old', c).estado, 'compartida');
+  assert.strictEqual(people.estaOculta('maq-old', c), false, 'la regla y el estado dicen lo mismo');
+  assert.strictEqual(people.estaOculta('maq-new', c), true);
+  const reglas = access.crearReglas({ config, modelo: {}, personas });
+  assert.strictEqual(reglas.oculta('maq-old'), false);
+  // la corrida de la carpeta vieja se juzga por su carpeta real, no por la nueva a la que el bajador la unió
+  assert.strictEqual(reglas.corridaOculta({ maquina: 'maq-new', carpeta: 'maq-old' }), false);
+  assert.strictEqual(reglas.corridaOculta({ maquina: 'maq-new', maquina_origen: 'maq-old' }), false);
+  assert.strictEqual(reglas.corridaOculta({ maquina: 'maq-new', maquina_origen: 'maq-new' }), true);
+  // y con la unión válida (la nueva informa el mismo correo), la vieja sí hereda la oculta
+  const validas = { informados: H.informados({ 'maq-old': A, 'maq-new': A }, { 'maq-old': { estado: 'unida', nueva: 'maq-new', declarantes: 1, desde: '2026-10-10' } }), repos: null };
+  const r2 = access.crearReglas({ config, modelo: {}, personas: validas });
+  assert.strictEqual(r2.oculta('maq-old'), true);
+  assert.strictEqual(r2.corridaOculta({ maquina: 'maq-new', carpeta: 'maq-old' }), true);
+});

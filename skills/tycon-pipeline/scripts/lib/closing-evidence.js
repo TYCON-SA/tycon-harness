@@ -46,6 +46,18 @@ function esEvidenciaDeCierre(nombre) {
   return f.endsWith('.md') && !NO_ES_EVIDENCIA_DE_CIERRE.some((re) => re.test(f));
 }
 
+/**
+ * ¿La evidencia declara FAIL? Los tres formatos con los que el pipeline escribe un veredicto: `verdict=FAIL` (gate E2E),
+ * `- verdict: FAIL` / `VERDICT: **FAIL**` (narrativas) y `## Verdict global` seguido de FAIL. Un FAIL en prosa no cuenta.
+ * El portón de CI lleva una copia, que `closing-evidence-parity.test.js` compara con ésta.
+ */
+function evidenciaDeclaraFail(content) {
+  if (!content) return false;
+  if (/(^|\n)[ \t]*(?:[-*][ \t]*)?(?:\*\*)?verdict(?:[ \t]+global)?(?:\*\*)?[ \t]*[:=][ \t]*(?:\*\*)?[ \t]*FAIL\b/i.test(content)) return true;
+  if (/##[ \t]*verdict[ \t]+global[ \t]*(?:\r?\n)+[ \t]*(?:\*\*)?FAIL\b/i.test(content)) return true;
+  return false;
+}
+
 /*
  * ── La unión de las tres fuentes, por AC ───────────────────────────────────────
  * Elegir UN archivo de evidencia (el que nombra más criterios) y exigirle que nombre TODOS no sirve: las
@@ -68,12 +80,15 @@ function coberturaDeLaUnion(matriz) {
   if (!matriz || matriz.structuralError || matriz.exempt || !matriz.perAc) return { porAc, cubiertos: new Set() };
   for (const [k, v] of Object.entries(matriz.perAc)) {
     const f = [];
-    if (v && v.fuentes && v.fuentes.smoke && v.fuentes.smoke.length) f.push('smoke');
-    if (v && v.fuentes && v.fuentes.e2e && v.fuentes.e2e.length) f.push('e2e');
+    // un criterio con cota (`medida`) cuenta por la corrida sólo si quedó medido dentro de ella (RUNTIME): fuera de la
+    // cota o sin su medida, el humo y el E2E corrieron pero no lo cubren
+    const enVivo = !(v && v.medida) || v.verdict === 'RUNTIME';
+    if (enVivo && v && v.fuentes && v.fuentes.smoke && v.fuentes.smoke.length) f.push('smoke');
+    if (enVivo && v && v.fuentes && v.fuentes.e2e && v.fuentes.e2e.length) f.push('e2e');
     if (v && v.verdict === 'WAIVED-USER') f.push('firma');
     if (f.length) porAc.set(Number(k), f);
   }
   return { porAc, cubiertos: new Set(porAc.keys()) };
 }
 
-module.exports = { NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, esEvidenciaDeCierre, coberturaDeLaUnion };
+module.exports = { NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, esEvidenciaDeCierre, evidenciaDeclaraFail, coberturaDeLaUnion };

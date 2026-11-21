@@ -3,7 +3,6 @@
   "schema": 1,
   "page": {
     "published": "getting-started/windows.md",
-    "source": "scripts/publishing/public-files/getting-started/windows.md",
     "mark": "guided:base",
     "fence": "text"
   },

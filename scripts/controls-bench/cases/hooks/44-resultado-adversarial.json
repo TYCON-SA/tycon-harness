@@ -99,7 +99,7 @@
     {
      "id": "pase-adversarial-salteo-low-lo-anota-el-porton",
      "type": "must-run",
-     "__nota": "Un diff de 1 archivo chico: el portón (pipeline.js deep-review-gate, como proceso) dice LOW → run:false, y el comando anota el salteo y cierra el 5b en una sola escritura.",
+     "__nota": "Un diff de 1 archivo chico: el portón (pipeline.js deep-review-gate, como proceso) dice LOW → run:false, y el comando anota el salteo y cierra el 5b en una sola escritura. De fábrica la chica de día pregunta: el salteo vale con la respuesta «skip» anotada para ese diff (marker.js review-answer).",
      "files": {
       "correr.sh": "#!/bin/sh\nexit 0\n",
       "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
@@ -113,6 +113,7 @@
       "git init -q .",
       "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
       "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b3.json",
+      "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js review-answer --kind code --choice skip --reason 'la persona eligió no revisarlo' > ra.out 2> ra.err",
       "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files scripts/x.js > sk.out 2> sk.err; echo \"rc=$?\" > rc.txt"
      ],
      "stdin": {
@@ -237,6 +238,52 @@
      }
     },
     {
+     "id": "adversarial-skip-bandera-escondida-sin-firma-no-saltea",
+     "type": "must-run",
+     "__nota": "El freno de consola no lee el código de `node -e`: la bandera y el guion escondidos en sus argumentos llegan igual a marker.js. Sin la constancia firmada por el dueño, el salteo no se anota, se escriba como se escriba.",
+     "files": {
+      "correr.sh": "#!/bin/sh\nexit 0\n",
+      ".tycon/advisors.yaml": "deep_review: always\n",
+      "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
+      "scripts/x.js": "module.exports = 1;\n",
+      "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-s5\",\n  \"startedAt\": \"2026-10-27T12:00:00.000Z\",\n  \"lastTouch\": \"2026-10-27T12:00:00.000Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5, 6, 7, 8],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {}\n}\n"
+     },
+     "env": {
+      "CLAUDE_CODE_SESSION_ID": "adv-s5"
+     },
+     "setup": [
+      "git init -q .",
+      "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
+      "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-s5.json",
+      "node -e 'process.exit(require(\"child_process\").spawnSync(process.execPath,[process.argv[1],\"mark-adversarial-skipped\",process.argv[2],\"--files\",\"scripts/x.js\"],{stdio:\"inherit\"}).status)' ${SKILLS}/skills/tycon-pipeline/scripts/marker.js --no-deep-review > sk.out 2> sk.err; echo \"rc=$?\" > rc.txt"
+     ],
+     "stdin": {
+      "session_id": "adv-s5",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo"
+      }
+     },
+     "expect": {
+      "file_contains": [
+       {
+        "path": "${FIXTURE}/rc.txt",
+        "re": "rc=2"
+       },
+       {
+        "path": "${FIXTURE}/sk.err",
+        "re": "sign-adversarial-skip"
+       }
+      ],
+      "file_not_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-s5.json",
+        "re": "\"adversarialSkip\""
+       }
+      ]
+     }
+    },
+    {
      "id": "adversarial-skip-pase-lanzado-sin-firma-no-se-abandona",
      "type": "must-run",
      "__nota": "Story 8.116 (T32): un pase lanzado se abandona sólo con la constancia firmada; con el pedido de la configuración (`deep_review: off`) y sin ella, sale 2 y no anota nada.",
@@ -290,7 +337,8 @@
       "correr.sh": "#!/bin/sh\nexit 0\n",
       "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
       "scripts/x.js": "module.exports = 1;\n",
-      "resultado.json": "{\"confirmed\": [], \"lentes\": [{\"lens\": \"a\", \"estado\": \"medida\", \"count\": 0}], \"lentes_sin_medir\": [], \"detalle\": [], \"medido\": true}\n",
+      "resultado.json": "{\"confirmed\": [], \"lentes\": [{\"lens\": \"a\", \"estado\": \"medida\", \"count\": 0, \"probe_dir\": \"${FIXTURE}/step-05b-probes/caza-a\"}], \"lentes_sin_medir\": [], \"detalle\": [], \"medido\": true}\n",
+          "step-05b-probes/caza-a/COMO-SE-CORRIO.txt": "node probe.js\n→ ok\n",
       "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-b4\",\n  \"lastTouch\": \"2026-09-18T04:00:00.000Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4, 5, 6, 7],\n  \"stepsPending\": [8],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {},\n  \"dodRuntimeChecked\": true,\n  \"adversarial\": { \"launchedAtStep\": 4, \"runId\": \"wf_B4\", \"sessionId\": \"adv-b4\", \"launchedAt\": \"2026-09-18T00:51:35.760Z\" }\n}\n"
      },
      "env": {

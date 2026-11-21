@@ -173,14 +173,74 @@ if corre T32; then
   applier "$H" "$TREE" "$T/t32/install.out"
   [ "$RC" = 0 ] || mal "T32 el aplicador en minimal salió ${RC}: $(tail -n 3 "$T/t32/install.out" | tr '\n' ' ')"
   harness_hooks "$H" "$TREE" > "$T/t32/hooks.txt"; minimal_hooks > "$T/t32/want.txt"
-  # nueve: seis que anotan, el que dice los avisos de los paquetes, el freno de comandos y el portón de edición
-  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 9 ] && ok "T32 la lista de efectos marca nueve hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no nueve"
-  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los nueve hooks de minimal" \
+  # diecisiete: diez que anotan (uno ata cada revisor a su agente después de lanzarlo), los tres registros del que dice
+  # los avisos (al arrancar, los de los paquetes; después de un comando, los de la plataforma, y después de uno que
+  # falló, porque Claude Code lo avisa con otro evento), el que tapa los secretos, el freno de comandos, el portón de
+  # edición y el aviso de llegada de otra sesión en el mismo checkout (va siempre)
+  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 17 ] && ok "T32 la lista de efectos marca diecisiete hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no diecisiete"
+  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los diecisiete hooks de minimal" \
     || mal "T32 hooks registrados distintos de los de minimal: $(diff "$T/t32/want.txt" "$T/t32/hooks.txt" | grep '^[<>]' | head -6 | tr '\n' ' ')"
   # el freno de comandos destructivos y el portón de edición están en los dos perfiles (sin el portón, el agente puede
   # implementar una historia sin recorrido y nadie se entera); los demás, sólo en full
   grep -qx 'PreToolUse:@tcg:safety-guard-pre.sh' "$T/t32/hooks.txt" && ok "T32 el freno de comandos destructivos, registrado" || mal "T32 minimal sin el freno de comandos destructivos"
   grep -qx 'PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js' "$T/t32/hooks.txt" && ok "T32 el portón de edición, registrado" || mal "T32 minimal sin el portón de edición"
+  # Si el freno de comandos da un cuadro, tiene que poder aceptarse: una mínima recién instalada firma con el click.
+  # 🔴 Falla con: el gancho que anota el click sólo en full, que en Windows deja al dev sin firmar.
+  cat > "$T/t32/click.js" <<'JS'
+// La mínima recién instalada firma con el click: el gancho sale de la configuración que dejó la instalación, y el freno
+// valida el click contra esa misma configuración y una transcripción con la forma medida en la extensión de Windows.
+const fs = require('fs');
+const path = require('path');
+const [casa, raiz] = process.argv.slice(2);
+const ow = require(path.join(raiz, 'scripts', 'lib', 'owner-window.js'));
+const oa = require(path.join(raiz, 'scripts', 'lib', 'owner-approvals.js'));
+const { APPROVERS } = require(path.join(raiz, 'scripts', 'lib', 'approver.js'));
+const no = (m) => { console.log(m); process.exit(1); };
+const hooks = JSON.parse(fs.readFileSync(path.join(casa, '.claude', 'settings.json'), 'utf8')).hooks || {};
+const comando = (hooks.PostToolUse || []).filter((g) => oa.alcanzaAlCuadro(g.matcher)).flatMap((g) => g.hooks || []).map((h) => h.command).find((c) => /owner-approval-record\.js/.test(c));
+if (!comando) no('la configuración no trae el gancho del cuadro');
+const ruta = /"([^"]*owner-approval-record\.js)"/.exec(comando)[1];
+if (!fs.existsSync(ruta)) no(`el gancho registrado no existe: ${ruta}`);
+const { registroDe } = require(path.join(raiz, 'scripts', 'hooks', 'owner-approval-record.js'));
+
+const SESION = 'ses-minima';
+const MARKER = path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+const CMD = `node ${MARKER} adhoc set '{"reason":"prueba del click, ñandú y corrección","maxFiles":1}'`;
+const ahora = Date.now();
+const hora = (m) => new Date(ahora - (60 - m) * 60000).toISOString().replace(/\.\d+Z$/, '.0000000Z');
+const BIN = 'C:\\Program Files\\Git\\bin\\bash.exe';
+const USR = 'C:\\Program Files\\Git\\bin\\..\\usr\\bin\\bash.exe';
+const NODE = 'C:\\Program Files\\nodejs\\node.exe';
+const CLAUDE = 'C:\\x\\native-binary\\claude.exe';
+const TOOL = { pid: 100, ppid: 40, inicio: hora(0), ejecutable: CLAUDE, comando: `${CLAUDE} --output-format stream-json --verbose` };
+const arbol = [{ pid: 40, ppid: 30, inicio: hora(-5), ejecutable: 'C:\\Code\\Code.exe', comando: '"C:\\Code\\Code.exe" --type=utility' }, TOOL,
+  { pid: 200, ppid: 100, inicio: hora(5), ejecutable: BIN, comando: `"${BIN}" -c "bash /c/h/safety-guard-pre.sh"` },
+  { pid: 201, ppid: 200, inicio: hora(6), ejecutable: USR, comando: `"${USR}" -c "bash /c/h/safety-guard-pre.sh"` },
+  { pid: 202, ppid: 201, inicio: hora(7), ejecutable: NODE, comando: `"${NODE}" /c/h/owner-window.js gate` }];
+const pedir = () => ow.decidir({ plataforma: 'win32', evento: { session_id: SESION, tool_use_id: 'toolu_02', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: CMD } },
+  escapes: [], arbol, pid: 202, casa, ahora: Date.now(), clasificar: () => null, comprobar: () => null, aprobador: () => APPROVERS.maintainers, gitBash: () => ({ path: BIN }) });
+
+const sin = pedir();
+if (sin.decision !== 'deny' || !sin.cuadro) no(`sin click: ${sin.decision}, sin cuadro: ${sin.texto}`);
+const pregunta = sin.cuadro.pregunta;
+const respuesta = { questions: [{ question: pregunta, header: 'Firma', options: sin.cuadro.opciones.map((label) => ({ label, description: label })), multiSelect: false }], answers: { [pregunta]: oa.APRUEBA } };
+const reg = registroDe({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', session_id: SESION, tool_use_id: 'toolu_01', tool_response: respuesta }, { ahora });
+if (!reg) no('el gancho no anotó la respuesta del cuadro');
+oa.anotar(casa, { ...reg, herramienta: { pid: TOOL.pid, inicio: TOOL.inicio } });
+const carpeta = path.join(casa, '.claude', 'projects', 'c--Users-Public-proyecto');
+fs.mkdirSync(carpeta, { recursive: true });
+fs.writeFileSync(path.join(carpeta, `${SESION}.jsonl`), [
+  { type: 'assistant', timestamp: new Date(ahora - 30000).toISOString(), message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_01', name: 'AskUserQuestion', input: { questions: respuesta.questions } }] } },
+  { type: 'user', timestamp: new Date(ahora).toISOString(), entrypoint: 'claude-vscode', version: '2.1.314', userType: 'external', sessionId: SESION,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_01', content: 'Your questions have been answered' }] },
+    toolUseResult: respuesta, permissionDecision: { decision: 'accept', source: 'user_temporary', grantScope: 'once', reasonCode: 'unknown' } },
+].map((r) => JSON.stringify(r)).join('\n') + '\n');
+const con = pedir();
+if (con.decision !== 'allow' || con.via !== 'click') no(`con click: ${con.decision}: ${con.texto}`);
+if (pedir().decision !== 'deny') no('el click sirvió dos veces');
+console.log('firmó con el click');
+JS
+  if R="$("$REAL_NODE" "$T/t32/click.js" "$H" "$RAIZ" 2>&1)"; then ok "T32 la mínima recién instalada firma con el click"; else mal "T32 la mínima no firma con el click: ${R}"; fi
   python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if any("hook-pre-edit.js" in h.get("command","") and "Edit" in (g.get("matcher") or "") for g in d.get("hooks",{}).get("PreToolUse",[]) for h in g.get("hooks",[])) else 1)' "$H/.claude/settings.json" \
     && ok "T32 el portón de edición corre antes de Edit|Write" || mal "T32 el portón de edición no está antes de Edit|Write"
   grep -Eq 'test-scope-guard-pre|on-pre-commit|on-bash-write-gate' "$T/t32/hooks.txt" && mal "T32 hay otro freno registrado en minimal" || ok "T32 ningún otro freno"
@@ -281,11 +341,75 @@ if corre T40; then
       [ "$RC" = 0 ] || mal "T40 el aplicador ($side) salió ${RC}: $(tail -n 3 "$T/t40/$side.out" | tr '\n' ' ')"
     done
     # los dos settings.json nombran árboles distintos: se comparan por hooks del arnés con la ruta pasada a la de uno
-    python3 - "$T/t40/old/.claude/settings.json" "$OLD" "$TREE" "$T/t40/old-as-new.json" <<'PY'
-import sys
+    # Los hooks que el arnés CAMBIÓ después de ${BASE_REF}, declarados acá y pasados del lado de antes a su forma de hoy:
+    # T40 mide el perfil, no un renombre ni un matcher más ancho. Cada cambio tiene que estar del lado de antes (uno que
+    # ya no aparece sale, como en T40_ADDED).
+    #   production-notice.js — el aviso del freno, que pasó a su nombre en inglés
+    #   safety-guard-pre.sh mira también Monitor — el freno de comandos cubre los comandos que vigilan
+    #   on-advisor-run.js también en PostToolUse — anota los críticos del revisor cuando termina
+    # «ruta-vieja>ruta-nueva»: el hook renombrado · «ruta@matcher»: el matcher de hoy de ese hook · «ruta+Evento@matcher»:
+    # el hook se registra también en ese evento, y al settings viejo le suma esa entrada.
+    # El nombre viejo se arma en dos partes: escrito entero, el control de nombres viejos lo cuenta como una mención.
+    OLD_NOTICE="scripts/hooks/produc""cion-notice.js"
+    T40_CHANGED=("${OLD_NOTICE}>scripts/hooks/production-notice.js"
+      "scripts/hooks/safety-guard-pre.sh@Bash|PowerShell|Monitor"
+      "tycon-pipeline/scripts/on-advisor-run.js+PostToolUse@Task|Agent")
+    t40_changed() { # t40_changed <salida> <faltantes> <cambios...> → el settings de antes con los cambios declarados
+      local out="$1" faltan="$2"; shift 2
+      python3 - "$T/t40/old/.claude/settings.json" "$OLD" "$TREE" "$out" "$faltan" "$@" <<'PY'
+import json, sys
 t = open(sys.argv[1], encoding="utf-8").read().replace(sys.argv[2], sys.argv[3]).replace(sys.argv[1].rsplit("/.claude/", 1)[0], "@HOME@")
-open(sys.argv[4], "w", encoding="utf-8").write(t)
+data, missing = json.loads(t), []
+def hit(h, ruta):
+    return ("/" + ruta + '"') in str(h.get("command", "")) or str(h.get("command", "")).endswith("/" + ruta)
+for change in sys.argv[6:]:
+    if ">" in change:
+        old, new = change.split(">", 1)
+        found = False
+        for groups in data["hooks"].values():
+            for group in groups:
+                for h in group.get("hooks") or []:
+                    cmd = str(h.get("command", ""))
+                    if ("/" + old + '"') in cmd or cmd.endswith("/" + old):
+                        h["command"] = cmd.replace("/" + old, "/" + new); found = True
+    elif "+" in change:
+        # el hook ya registrado en otro evento: se le suma, en un grupo propio, la entrada en el evento de hoy
+        ruta, rest = change.split("+", 1)
+        event, matcher = rest.split("@", 1)
+        found = False
+        if not any(hit(h, ruta) for g in data["hooks"].get(event, []) for h in g.get("hooks") or []):
+            mine = [h for groups in data["hooks"].values() for g in groups for h in g.get("hooks") or [] if hit(h, ruta)]
+            if mine:
+                data["hooks"].setdefault(event, []).append({"matcher": matcher, "hooks": [dict(mine[0])]}); found = True
+    else:
+        # sólo ese hook pasa al matcher de hoy, en un grupo propio: los demás de su grupo quedan donde estaban
+        ruta, matcher = change.split("@", 1)
+        found = False
+        for event, groups in data["hooks"].items():
+            moved = []
+            for group in groups:
+                if group.get("matcher") == matcher:
+                    continue
+                mine = [h for h in group.get("hooks") or [] if hit(h, ruta)]
+                if mine:
+                    group["hooks"] = [h for h in group["hooks"] if not hit(h, ruta)]
+                    moved.append({**group, "matcher": matcher, "hooks": mine}); found = True
+            data["hooks"][event] = [g for g in groups if g.get("hooks")] + moved
+    if not found:
+        missing.append(change)
+json.dump(data, open(sys.argv[4], "w", encoding="utf-8"), indent=2)
+open(sys.argv[5], "w", encoding="utf-8").write("\n".join(missing))
 PY
+    }
+    t40_changed "$T/t40/old-as-new.json" "$T/t40/changed.out" "${T40_CHANGED[@]}"
+    # un registro de más declarado sobre un hook que no está del lado de antes, o que ya estaba en ese evento, no se
+    # inventa: sale como cambio que ya no está
+    t40_changed "$T/t40/plus-check.json" "$T/t40/plus-check.out" "scripts/hooks/no-existe.js+PostToolUse@Task" \
+      "tycon-pipeline/scripts/on-advisor-run.js+PreToolUse@Task|Agent"
+    if [ "$(sort "$T/t40/plus-check.out" | tr '\n' ' ')" = "scripts/hooks/no-existe.js+PostToolUse@Task tycon-pipeline/scripts/on-advisor-run.js+PreToolUse@Task|Agent " ]; then
+      ok "T40 un registro de más sobre un hook que no estaba, o en un evento donde ya estaba, sale como cambio que ya no está"
+    else mal "T40 el registro de más inventó un hook: $(tr '\n' ' ' < "$T/t40/plus-check.out")"; fi
+    [ -s "$T/t40/changed.out" ] && mal "T40 cambios declarados que ya no están del lado de ${BASE_REF}: $(tr '\n' ' ' < "$T/t40/changed.out")"
     sed "s#$T/t40/new#@HOME@#g" "$T/t40/new/.claude/settings.json" > "$T/t40/new-floor.json"
     # El aplicador de hoy registra cada hook `.js` por el piso de Node: `node "<árbol>/scripts/lib/node-floor.js"
     # [--gate] "<hook>"`; el de ${BASE_REF}, con `node "<hook>"`. Para comparar se saca el envoltorio y queda el hook; que
@@ -313,18 +437,45 @@ PY
     #   scripts/hooks/owner-email-notice.js — tu correo de git, dicho una vez, con el buzón prendido
     #   scripts/hooks/wait-notice.js — el aviso de que una corrida espera a una persona, en sus seis eventos
     #   scripts/hooks/worktree-sweep.js — el barrido diario de las carpetas de trabajo ya mergeadas
+    #   scripts/hooks/temp-sweep.js — el barrido diario de las carpetas temporales viejas
     #   scripts/hooks/unclosed-runs-notice.js — las corridas que quedaron sin cerrar, dicho una vez por día
     #   scripts/hooks/deprecated-read-notice.js — avisa cuando se lee un archivo que el repo declara deprecado
     #   scripts/hooks/deprecated-session-notice.js — los archivos deprecados del repo, dichos al arrancar
-    #   scripts/hooks/extension-notices.js — los avisos de las extensiones instaladas, al arrancar
+    #   scripts/hooks/extension-notices.js — los avisos de las extensiones instaladas: al arrancar, después de un comando
+    #     y después de uno que falló (tres)
     #   scripts/hooks/guard-update-notice.js — el freno de producción quedó viejo y hay que reinstalarlo
     #   scripts/hooks/dev-behind-main-notice.js — la rama dev atrasada frente a main
     #   scripts/hooks/stuck-pr-notice.js — los pedidos trabados en choque o sin entrar
+    #   scripts/hooks/coordination-notice.js — el tope de sesiones, sólo para la coordinadora designada
+    #   scripts/hooks/why-blocked-notice.js — el último freno de la sesión, cuando la persona pregunta por qué la frenó
+    #   scripts/hooks/session-state.js — el estado real de cada sesión, en cada evento que lo cambia (con el pedido de
+    #     permiso, ocho)
+    #   scripts/hooks/owner-approval-record.js — anota el click o el «aprobado» de la persona
+    #   scripts/hooks/context-size-notice.js — avisa cuando la sesión lleva demasiado contexto
+    #   scripts/hooks/session-cap-guard.js — frena abrir sesiones de más
+    #   scripts/hooks/coordination-fill-gate.js — la coordinadora no deja la máquina vacía al cerrar su turno
+    #   scripts/hooks/office-link-start.js — el proceso que le manda la oficina de la máquina al sitio de la organización
+    #     (al arrancar la sesión y al escribir un pedido: dos veces)
+    #   scripts/hooks/cover-secrets.js — tapa los secretos de la máquina en lo que devuelven los comandos y las lecturas
+    #   scripts/hooks/background-question-guard.js — la pregunta de una sesión que abrió la coordinadora va a la coordinadora
+    #   scripts/hooks/finished-open-notice.js — lo terminado sin cerrar de la máquina, dicho al arrancar
+    #   scripts/hooks/hook-failures-notice.js — las fallas de los controles de las últimas 24 horas, dichas al arrancar
+    #   scripts/hooks/guard-auto-update.js — la actualización del freno de producción sin contraseña, al arrancar
+    #   tycon-pipeline/scripts/on-advisor-done.js — anota los críticos de un revisor apenas termina
+    #   scripts/hooks/session-collision-guard.js — el aviso de llegada de otra sesión viva, que ahora va siempre
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
+      scripts/hooks/session-collision-guard.js
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
-      scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js scripts/hooks/guard-update-notice.js
-      scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js)
+      scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js=3 scripts/hooks/guard-update-notice.js
+      scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2
+      scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=9 scripts/hooks/owner-approval-record.js=2
+      scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/coordination-fill-gate.js scripts/hooks/office-link-start.js=2
+      scripts/hooks/cover-secrets.js
+      scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2
+      scripts/hooks/background-question-guard.js=2 scripts/hooks/finished-open-notice.js scripts/hooks/guard-auto-update.js
+      scripts/hooks/hook-failures-notice.js tycon-pipeline/scripts/on-advisor-done.js
+      scripts/hooks/temp-sweep.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"
       python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'
@@ -482,9 +633,7 @@ fi
 # ══ La parte del programa (T35 a T37): harness.js de verdad, con el aplicador real ═════════════════════════════════════
 # shellcheck source=lib/harness-lab.sh
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"   # sólo por harness_lab_pty (la terminal de juguete)
-home_hash() { ( cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r f; do
-    if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"; elif [ -f "$f" ]; then printf '%s ' "$f"; shasum -a 256 < "$f"; else printf '%s/\n' "$f"; fi
-  done ) | shasum -a 256 | cut -d' ' -f1; }
+home_hash() { tree_list "$1" | shasum -a 256 | cut -d' ' -f1; }
 # ══ HASH · HomeHash_SeesAStrayFile: la foto ve lo que aparece en la carpeta de inicio ═════════════════════════════════
 # (python ya no escribe su caché durante la prueba; la foto no se achica para eso y tiene que seguir viendo lo demás)
 if corre HASH; then

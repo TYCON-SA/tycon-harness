@@ -26,10 +26,12 @@
  * merges que estén entre los leídos; y cumplir la regla de patrón: 3 o más merges de 2 o más stories distintas, contadas
  * acá (no las que dice el agente). La que no, se descarta y queda en el informe con el motivo.
  *
- * NUNCA APLICA NADA. Escribe dos archivos en el clon de mantenimiento (`--out`): las propuestas, al final de
- * `guides/guide-update-proposals.md`, y el informe, en `.dashboard/weekly-review/latest.json`. Viajan con un commit de
- * esas dos rutas y push con reintento (el camino del resultado del examen, periodic-exam.js). El resumen de la mañana
- * siguiente lee el informe (daily-summary.js --weekly).
+ * NUNCA APLICA NADA. Escribe dos archivos: las propuestas, al final de `guides/guide-update-proposals.md`, y el informe,
+ * en `.dashboard/weekly-review/latest.json`. Con publicación, trabaja en la carpeta de estado (`<estado>/result-travel/
+ * weekly/`), sobre la lista de `origin/main` del clon de mantenimiento (`--out`) recién traída, y publica el informe y
+ * sólo las secciones nuevas como una entrada de la rama de resultados (scripts/lib/result-travel.js), que un nocturno lleva
+ * a main. El clon no se toca. Con `--no-push`, escribe en `--out`. El resumen de la mañana siguiente lee el informe
+ * (daily-summary.js --weekly).
  *
  * CUÁNDO. La llama periodic-exam.js, el disparador del examen en la máquina designada (martes y viernes 02:00), con
  * `--if-due`: corre si pasaron 6 días desde la última corrida completa (el sello se escribe al terminar; con 7, el martes
@@ -39,7 +41,7 @@
  *   node weekly-review.js --out <clon de mantenimiento> [--team-repos <team-repos.json>] [--repo <nombre>=<carpeta|url>]…
  *        [--org-config <team-repos.json>] [--clone-dir <dir>] [--max-chars N] [--budget <dólares>] [--model <modelo>]
  *        [--if-due] [--stamp <archivo>] [--no-push]
- *   --no-push escribe los dos archivos y no commitea ni empuja (la prueba en vivo). stdout: qué hizo.
+ *   --no-push escribe los dos archivos en --out y no publica (la prueba en vivo). stdout: qué hizo.
  *   Salida: 0 hecho (con o sin propuestas, o sin retros, o no le tocaba) · 2 uso, o un repo que no se pudo mirar ·
  *   3 sin agente o con una respuesta que no se pudo leer · 5 no viajó.
  * Ambiente: TYCON_TODAY (la fecha, para pruebas) · TYCON_WEEKLY_REVIEW_NOW (la hora, para --if-due) ·
@@ -175,6 +177,8 @@ function retrosDe(dir, ref, into, ilegibles) {
     try { d = JSON.parse(body); } catch { rotas++; continue; }
     const sha = d && String(d.merge_commit || d.mergeCommit || d.commit || '');
     if (!/^[0-9a-f]{40}$/.test(sha)) continue;
+    // un latido anulado (`retro-heartbeat.js --annul`) no es la retro de nada
+    if (d.anulado) continue;
     const tipo = RC.kindOf({ generatedBy: typeof d.generated_by === 'string' ? d.generated_by : null });
     const prev = into.get(sha);
     // una retro con aprendizajes gana sobre un latido del mismo merge; entre latidos, el de merges/
@@ -437,7 +441,10 @@ function main() {
   const hoy = readEnv('TYCON_TODAY', { where: 'scripts/nightly/weekly-review/weekly-review.js' }) || iso(ahora);
   const desde = iso(Date.parse(`${hoy}T12:00:00Z`) - 7 * DAY);
   const hasta = iso(Date.parse(`${hoy}T12:00:00Z`) - DAY);
-  const out = path.resolve(a.out);
+  // con publicación se trabaja en la carpeta de estado, sobre la lista de main; el clon sólo da su origin/main y su remoto
+  const RT = a.push ? require(path.join(ROOT, 'scripts', 'lib', 'result-travel.js')) : null;
+  const clon = path.resolve(a.out);
+  const out = RT ? path.join(RT.rootDir(), 'weekly') : clon;
   const informe = { schema: 1, hecho: new Date(ahora).toISOString(), desde, hasta, estado: null, motivo: null, modelo: conf.model,
     tope: { max_chars: conf.maxChars, material_chars: 0, budget_usd: conf.budget, costo_usd: null },
     repos: [], repos_sin_mirar: 0, retros_ilegibles: [], merges_salteados: {}, merges_leidos: [], merges_no_leidos: [],
@@ -465,6 +472,10 @@ function main() {
   if (salteados.length) log(`${salteados.reduce((n, [, c]) => n + c, 0)} merges salteados, no piden retro (${salteados.map(([k, c]) => `${k}: ${c}`).join(' · ')}): no cuentan contra el tope`);
   for (const x of informe.retros_ilegibles) log(`retros que no se pudieron leer — ${x}`);
 
+  // lo que se agregó a la lista en esta corrida: es lo único de la lista que viaja
+  let nuevasSecciones = '';
+  // con publicación, por qué no se pudo traer main: el informe queda en la carpeta de estado y no se publica
+  let sinMain = null;
   // `corto` es la causa en una palabra, para el resumen de la mañana (que no copia el motivo: puede nombrar algo)
   const terminar = (estado, motivo, code, sellar, corto = null) => {
     informe.estado = estado;
@@ -472,9 +483,11 @@ function main() {
     informe.motivo_corto = corto;
     escribirAtomico(path.join(out, INFORME), `${JSON.stringify(informe, null, 2)}\n`);
     if (motivo) log(motivo);
-    if (a.push) {
-      const v = require(path.join(ROOT, 'scripts', 'controls-bench', 'periodic-exam.js')).viajar(out, log, [GUIA, INFORME],
-        `chore(revision-semanal): propuestas de la semana del ${desde} al ${hasta}`);
+    if (RT && sinMain) { RT.recordFailure('weekly', sinMain); log(`NO VIAJÓ: ${sinMain}`); return 5; }
+    if (RT) {
+      const files = [{ path: RT.PATHS.report, mode: 'replace', source: path.join(out, INFORME) }];
+      if (nuevasSecciones) files.push({ path: RT.PATHS.proposals, mode: 'append', text: nuevasSecciones });
+      const v = RT.publish({ repo: clon, piece: 'weekly', files, message: `chore(revision-semanal): propuestas de la semana del ${desde} al ${hasta}`, log });
       if (!v.ok) { log(`NO VIAJÓ: ${v.motivo}`); return 5; }
     }
     // una semana leída a medias (un repo sin mirar, retros ilegibles) no se sella: la próxima vuelta del disparador la reintenta
@@ -486,13 +499,17 @@ function main() {
   };
 
   const guia = path.join(out, GUIA);
-  if (!fs.existsSync(guia)) return terminar('no_pudo', `no está la lista de propuestas (${GUIA}) en ${path.basename(out)}`, 2, false, 'sin_lista');
-  if (a.push) {
-    // la lista se edita sobre la punta de main, y nunca encima de cambios sin commitear de una persona
-    if (git(out, ['diff', '--quiet', 'HEAD', '--', GUIA]).status !== 0) return terminar('no_pudo', 'la lista de propuestas tiene cambios sin commitear en el clon: no la toco', 5, false, 'lista_sucia');
-    const p = spawnSync('git', ['-C', out, 'pull', '--ff-only', '--quiet'], { encoding: 'utf8', timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
-    if (p.status !== 0) log(`no pude poner al día el clon (${SWEEP.clean(String(p.stderr).trim().split('\n').pop())}): sigo con lo que tiene`);
+  if (RT) {
+    // la lista se lee de la punta de main, recién traída: la del clon puede estar atrasada o tener cambios de una persona
+    const fm = RT.fetchMain(clon);
+    const lista = fm.ok ? RT.readMain(clon, RT.PATHS.proposals) : null;
+    if (!fm.ok) sinMain = fm.motivo;
+    else if (lista.state === 'error') sinMain = lista.motivo;
+    else if (lista.state === 'ok') escribirAtomico(guia, lista.text);
+    else fs.rmSync(guia, { force: true });
+    if (sinMain) return terminar('no_pudo', `no pude leer la lista de propuestas de main (${sinMain})`, 5, false);
   }
+  if (!fs.existsSync(guia)) return terminar('no_pudo', `no está la lista de propuestas (${GUIA}) en ${RT ? 'main' : path.basename(out)}`, 2, false, 'sin_lista');
 
   if (!merges.some((m) => m.retro)) {
     // sin ninguna retro legible: si hubo retros que no se pudieron leer, es «no pude leer», no «no hay»
@@ -528,6 +545,7 @@ function main() {
   if (v.propuestas.length && !lista.includes(`<!-- revision-semanal:${hoy}:`)) {
     const nuevas = v.propuestas.map((p, i) => seccion(p, hoy, desde, hasta, i + 1)).join('\n');
     escribirAtomico(guia, `${lista.replace(/\s*$/, '\n')}\n${nuevas}`);
+    nuevasSecciones = nuevas;
   } else if (v.propuestas.length) log(`las propuestas del ${hoy} ya estaban en la lista`);
   for (const d of v.descartadas) log(`descartada: ${recortar(d.patron || '(sin nombre)', 80)} — ${d.motivo}`);
   log(`${leidos.length} merges leídos · ${v.propuestas.length} propuesta(s) · ${v.descartadas.length} descartada(s)${informe.tope.costo_usd !== null ? ` · US$${informe.tope.costo_usd}` : ''}`);

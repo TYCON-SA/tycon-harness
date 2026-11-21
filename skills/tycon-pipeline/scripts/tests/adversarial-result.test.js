@@ -51,6 +51,14 @@ function entorno(home, sid, extra) {
   return { ...env, HOME: home, CLAUDE_CODE_SESSION_ID: sid, ...(extra || {}) };
 }
 
+// La prueba guardada de una lente limpia, al lado del resultado.
+function pruebaDeLente(dir, l) {
+  const d = path.join(dir, 'step-05b-probes', `caza-${l}`);
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), 'node probe.js\n→ ok\n');
+  return d;
+}
+
 // El 5b se anota con `--result <archivo>` (el JSON del pase). Estas pruebas miden otras cosas: a
 // una anotación 5b sin el archivo se le pasa uno medido con sus N confirmados. La exigencia en sí la fija
 // tests/adversarial-unmeasured.test.js (T10).
@@ -63,7 +71,7 @@ function conResultado(home, args) {
   fs.mkdirSync(home, { recursive: true });
   fs.writeFileSync(archivo, JSON.stringify({
     confirmed: Array.from({ length: n }, (_v, k) => ({ lens: 'l', summary: `h${k}` })),
-    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true,
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0, probe_dir: pruebaDeLente(home, l) })), lentes_sin_medir: [], detalle: [], medido: true,
   }));
   return [...args, '--result', archivo];
 }
@@ -160,7 +168,8 @@ test('T2 SetFlag_OtrasBanderas_SiguenAndando @story-1.8 @ac-2', () => {
   const home = casa(); const SID = 't2';
   writeFakeMarker(home, SID);
   for (const f of ['atddBypass', 'waitingForHuman']) {
-    const r = correr(home, SID, ['set-flag', f, 'true']);
+    // el escape del freno de pruebas primero pide su motivo
+    const r = correr(home, SID, ['set-flag', f, 'true', ...(f === 'atddBypass' ? ['--reason', 'refactor sobre red existente'] : [])]);
     assert.equal(r.status, 0, `${f}: ${r.stderr}`);
     assert.equal(r.stdout.trim(), `${f}: true`);
     assert.equal(leerMarker(home, SID)[f], true);
@@ -187,6 +196,9 @@ test('T4 Skipped_PortonLow_AnotaSalteoYCierra5b @story-1.8 @ac-4', () => {
   // Sin el comando, marker.js responde «comando desconocido» (exit 2).
   const home = casa(); const SID = 't4'; const repo = mkRepo();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
+  // de fábrica, un cambio chico de día pregunta: el salteo vale recién con la respuesta «skip» para este diff
+  const ra = correr(home, SID, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
+  assert.equal(ra.status, 0, ra.stderr);
   const r = correr(home, SID, ['mark-adversarial-skipped', '--files', 'scripts/x.js']);
   assert.equal(r.status, 0, r.stderr);
   const m = leerMarker(home, SID);
@@ -518,10 +530,16 @@ test('T27 Paso8_NiLanzadoNiSalteado_Bloquea @story-1.8 @ac-20', () => {
 test('T28 Paso8_DodBypass_NoAbreEsteFreno @story-1.8 @ac-21', () => {
   // Fixture: sin storyPath (el freno del findings.json queda en «no pude mirar», que no bloquea), story no-UI y
   // `dodRuntimeChecked: false` → el único otro freno es el de DoD no-UI, que DOD_BYPASS=1 abre. Lo único que
-  // decide el exit es ESTE freno.
+  // decide el exit es ESTE freno. El repo tiene un commit: el cierre del paso toma la foto del pull request, y sin un
+  // repo que medir no cierra.
   const home = casa(); const SID = 't28';
+  const repo = mkRepo();
+  spawnSync('git', ['-C', repo, 'add', '-A']);
+  spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, '-c', 'user.name=p', '-c', 'user.email=p@p', 'commit', '-qm', 'base'], {
+    env: { ...process.env, GIT_AUTHOR_DATE: '2026-01-01T10:00:00', GIT_COMMITTER_DATE: '2026-01-01T10:00:00' },
+  });
   writeFakeMarker(home, SID, {
-    repoPath: os.tmpdir(), storyPath: null, stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7], stepsPending: [8],
+    repoPath: repo, storyPath: null, stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7], stepsPending: [8],
     dodRuntimeChecked: false, adversarial: lanzamiento('wf_BYP'),
   });
   const r = correr(home, SID, ['complete-step', '8'], { env: { DOD_BYPASS: '1' } });
@@ -773,6 +791,8 @@ test('T52 Skipped_ArchivosCuentaComoElPorton @story-1.8 @ac-41', () => {
   for (const [args, n] of casos) {
     const home = casa(); const repo = mkRepo({ codigo: 2 });
     writeFakeMarker(home, 't52', { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
+    const ra = correr(home, 't52', ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
+    assert.equal(ra.status, 0, ra.stderr);
     const r = correr(home, 't52', ['mark-adversarial-skipped', ...args]);
     assert.equal(r.status, 0, r.stderr);
     assert.equal(leerMarker(home, 't52').adversarialSkip.archivos, n, JSON.stringify(args));

@@ -1,8 +1,9 @@
 # Nombres en inglés — lo que ejecuta la máquina se nombra en inglés; lo que lee una persona, en castellano
 
 Convención del arnés desde 2026-09-29. Alguien de afuera tiene que poder **usar** el núcleo sin leer
-castellano: lo que escribe en una terminal o en un archivo de configuración va en inglés. Lo que **lee** —la prosa, los
-mensajes, las guías— sigue en castellano, que es como trabaja el equipo.
+castellano: lo que escribe en una terminal o en un archivo de configuración va en inglés, y también el nombre de archivo
+de cada guía, que es lo que busca para encontrarla. Lo que **lee** —la prosa, los mensajes, el contenido de las guías—
+sigue en castellano, que es como trabaja el equipo.
 
 La cuida un freno al commitear (`scripts/publishing/spanish-names.js`, en el pre-commit del repo, una vez por fuente, y
 en el pull request del arnés): no deja entrar un nombre **nuevo** en castellano en lo que se publica. Un nombre castellano que ya
@@ -17,15 +18,20 @@ Todo lo que la máquina ejecuta o lee como nombre, en lo que sale en la copia p�
 - opciones y subcomandos de línea de comandos, y sus valores fijos;
 - variables de entorno;
 - claves de los archivos de configuración (las de `schemaFiles` en `scripts/lib/spanish-words.json`);
-- nombres de los archivos de estado.
+- nombres de los archivos de estado;
+- el nombre de archivo de las guías de `guides/`. Su contenido sigue en castellano (y en inglés donde ya hay versión),
+  y el sufijo de idioma (`.es`, `.en`) dice en qué idioma está, no es parte del nombre. Las guías de los paquetes
+  (`packs/*/guides/`) viajan en la capa del equipo y no entran en esta regla.
 
 Ejemplo: `--sin-sudo` pasa a `--without-sudo`; `instalar-freno.sh` a `install-guard.sh`; `TYCON_NO_SUBIR_CORRIDAS` a
-`TYCON_NO_UPLOAD_RUNS`; la clave `motivo` de un archivo de esquema, a `reason`.
+`TYCON_NO_UPLOAD_RUNS`; la clave `motivo` de un archivo de esquema, a `reason`; la guía `sitio-de-la-organizacion.md`, a
+`organization-site.md` (y su par `organization-site.en.md`).
 
 ## Qué sigue en castellano
 
 - La prosa, los comentarios y los mensajes que imprimen los scripts.
-- Las guías, con su nombre de archivo (esta misma).
+- El contenido de las guías. Las que todavía tienen nombre de archivo en castellano (esta misma, entre otras) se
+  renombran por tandas con el mapa de abajo; mientras tanto, siguen andando con el nombre que tienen.
 - Las descripciones de las pruebas y los ids y archivos de los casos del banco de controles.
 - Los campos y valores de los registros (`frenos.jsonl` y compañía) y de las salidas `--json`: tienen historia en el
   buzón y en el tablero.
@@ -195,12 +201,14 @@ El plural simple (`-s`, `-es`) se normaliza, y para decidir «es inglés» se pr
 `-ies`, `-ly`: el diccionario de macOS es de 1934 y no trae `navigated` ni `email`. Sin diccionario en la máquina
 (Windows, un contenedor mínimo) el freno usa sólo `words` y lo dice.
 
-Qué mira: lo que sale en alguna copia pública y, de eso, ejecutables, configuración y pruebas; nunca `.md` ni los casos
-del banco. Frena un nombre en castellano que **no existe en ninguna parte de lo que salía antes** del commit (en los dos
+Qué mira: lo que sale en alguna copia pública y, de eso, ejecutables, configuración y pruebas, y de los `.md` sólo el
+nombre de archivo de las guías de `guides/`, sin el sufijo de idioma (nunca su contenido, ni las guías de los paquetes,
+ni los casos del banco). Frena un nombre en castellano que **no existe en ninguna parte de lo que salía antes** del commit (en los dos
 repos; en un merge, en ningún padre): una ruta nueva o un `git mv`, una opción `--x`, un subcomando del despacho, un
 valor que el mapa de renombres declara, una variable de entorno leída (en shell, sólo `TYCON_*` o exportadas) o una
 clave de `schemaFiles`. Renombrar de castellano a inglés pasa; de inglés a castellano, o de castellano a castellano,
-frena.
+frena. Una guía con nombre castellano que ya estaba no frena al editarla ni al mudarla de carpeta con su nombre; una
+guía nueva o renombrada, sí. El termómetro no cuenta las guías: las que faltan renombrar las sigue su propia medición.
 
 ## Cuando frena
 

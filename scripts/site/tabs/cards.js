@@ -13,13 +13,15 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { juzgar, esc, chip } = require('../../nightly/dashboard/common.js');
+const { juzgar, esc, chip, DENOMINADORES } = require('../../nightly/dashboard/common.js');
 const { t } = require('../texts.js');
 
 /** Las seis preguntas del tablero; la ficha dice a cuál pertenece por su posición. */
 const PREGUNTAS = Object.freeze([0, 1, 2, 3, 4, 5].map((n) => t('es', `ficha.pregunta${n}`)));
 
 const PESTANAS = Object.freeze(['arnes', 'proyectos', 'corridas']);
+// las causas con nombre propio en «por qué volvió» (scripts/metrics/rework-causes.json, más la que no declaró)
+const CAUSAS = Object.freeze(['defecto-propio', 'cambio-de-requisito', 'deuda-declarada', 'descubrimiento', 'sin-declarar']);
 
 /**
  * `id` fijo (es lo que `site.hidden_cards` nombra: no se renombra), `pregunta` (posición en PREGUNTAS), `pestana`, `titulo` y
@@ -31,7 +33,7 @@ const DEFINICIONES = [
   { id: 'fechas_declaradas', pregunta: 0, pestana: 'arnes', de: ['extra', 'fechas_declaradas'], formato: 'pct', clave: '' },
   { id: 'backlog', pregunta: 1, pestana: 'proyectos', de: ['extra', 'backlog'], formato: 'entero', clave: '' },
   { id: 'estados_sin_diccionario', pregunta: 1, pestana: 'proyectos', de: ['extra', 'estados_sin_diccionario'], formato: 'entero', clave: '' },
-  { id: 'tiempo_por_etapa', pregunta: 1, pestana: 'proyectos', de: ['extra', 'tiempo_por_etapa'], formato: 'num1', clave: '' },
+  { id: 'tiempo_por_etapa', pregunta: 1, pestana: 'proyectos', de: ['extra', 'tiempo_por_etapa'], formato: 'num1', clave: '', unidadDelValor: 'dias' },
   { id: 'edad_estado', pregunta: 1, pestana: 'proyectos', de: ['extra', 'edad_estado'], formato: 'entero', clave: '' },
   { id: 'sin_historia', pregunta: 1, pestana: 'proyectos', de: ['extra', 'sin_historia'], formato: 'pct', clave: '' },
   { id: 'dod', pregunta: 2, pestana: 'arnes', de: ['mejora', 'dod'], formato: 'pct', clave: 'dod' },
@@ -41,7 +43,7 @@ const DEFINICIONES = [
   { id: 'mutacion', pregunta: 3, pestana: 'arnes', de: ['local', 'mutacion'], formato: 'pct', clave: 'mutacion' },
   { id: 'cobertura_tocada_evaluo', pregunta: 3, pestana: 'arnes', de: ['local', 'cobertura_tocada'], formato: 'pct', clave: 'cobertura_tocada_evaluo' },
   { id: 'qa_guia', pregunta: 3, pestana: 'arnes', de: ['local', 'qa_guia'], formato: 'pct', clave: 'qa_guia' },
-  { id: 'gates_dur', pregunta: 3, pestana: 'arnes', de: ['local', 'gates_dur'], formato: 'num1', clave: '' },
+  { id: 'gates_dur', pregunta: 3, pestana: 'arnes', de: ['local', 'gates_dur'], formato: 'num1', clave: '', unidadDelValor: 'segundos' },
   { id: 'bloqueos', pregunta: 4, pestana: 'corridas', de: ['local', 'bloqueos'], formato: 'entero', clave: '' },
   { id: 'frenos', pregunta: 4, pestana: 'arnes', de: ['local', 'frenos'], formato: 'entero', clave: '' },
   { id: 'evidencia_cierre', pregunta: 4, pestana: 'arnes', de: ['local', 'evidencia_cierre'], formato: 'pct', clave: '' },
@@ -51,6 +53,7 @@ const DEFINICIONES = [
   { id: 'corridas', pregunta: 4, pestana: 'corridas', de: ['local', 'corridas'], formato: 'num1', clave: '' },
   { id: 'pasos', pregunta: 4, pestana: 'corridas', de: ['local', 'pasos'], formato: 'redondo', clave: '' },
   { id: 'carriles', pregunta: 4, pestana: 'arnes', de: ['local', 'carriles'], formato: 'entero', clave: '' },
+  { id: 'vueltas_atras', pregunta: 4, pestana: 'arnes', de: ['local', 'vueltas_atras'], formato: 'entero', clave: '' },
   { id: 'bus_factor', pregunta: 5, pestana: 'proyectos', de: ['local', 'bus_factor'], formato: 'entero', clave: 'bus_factor_productos_en_riesgo' },
   { id: 'sin_pipeline_de_prod', pregunta: 5, pestana: 'proyectos', de: ['extra', 'sin_prod'], formato: 'entero', clave: '' },
 ];
@@ -74,35 +77,43 @@ function exprDelTablero(def) {
 }
 
 // `calculo_caido`: el cálculo común del tablero tiró, y ninguna ficha se pudo saber (no es una foto ilegible)
-const MOTIVOS = Object.freeze(['sin_foto', 'vieja', 'sin_buzon', 'solo_en_la_maquina', 'ilegible', 'sin_datos', 'calculo_caido']);
+// `examen_inutilizable`: el examen del banco no se puede usar; `sin_deuda_pipelines`: falta la deuda declarada de
+// pipelines y no hay despliegues declarados; `sin_declarar`: la organización no declaró de dónde sale el dato
+const MOTIVOS = Object.freeze(['sin_foto', 'vieja', 'sin_buzon', 'solo_en_la_maquina', 'ilegible', 'sin_datos', 'calculo_caido', 'examen_inutilizable', 'sin_deuda_pipelines', 'sin_declarar']);
+// el motivo que se arregla en Configuración lleva ahí
+const ENLACE_MOTIVO = Object.freeze({ sin_deuda_pipelines: '/configuracion#seccion-despliegues' });
 
 /** El motivo del tablero es texto libre; el sitio manda sólo uno de la lista cerrada. */
 function motivoCerrado(texto) {
   const t = String(texto || '');
   if (MOTIVOS.includes(t)) return t;
   if (/sin medición desde/i.test(t)) return 'vieja';
+  if (/examen del banco/i.test(t)) return 'examen_inutilizable';
+  if (/deuda declarada de pipelines|pipeline-debt/i.test(t)) return 'sin_deuda_pipelines';
   if (/no hay ningún archivo|no se pudo leer la carpeta|no está la carpeta|no está declarada|sin_foto/i.test(t)) return 'sin_foto';
   if (/disco de cada máquina|no aplica en el nocturno|esta máquina/i.test(t)) return 'solo_en_la_maquina';
-  if (/buzón/i.test(t)) return 'sin_buzon';
+  if (/buzón|depósito/i.test(t)) return 'sin_buzon';
   if (/ilegible|no tiene la forma|no se pudo cargar|no pudo cargar/i.test(t)) return 'ilegible';
   return 'sin_datos';
 }
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const fechaCorta = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null);
-const etiqueta = (v) => (typeof v === 'string' && /^[a-záéíóúñ ]{1,30}$/i.test(v) ? v : null);
+// el denominador viaja como su código (`den.<código>` en la tabla de textos); uno que el tablero no lista, no viaja
+const CODIGO_DEN = new Map(Object.entries(DENOMINADORES).map(([k, v]) => [v, k]));
+const codigoDen = (v) => (typeof v === 'string' && CODIGO_DEN.has(v) ? CODIGO_DEN.get(v) : null);
 
 /**
  * Una ficha para el sitio: sólo lo de la lista blanca. `m` es la métrica del tablero (medida / noMedida).
  * `nivel` es el color que le da sources.json (ok / warn / bad), o '' si no tiene juicio.
  */
 function proyectar(def, m, cfg) {
-  const base = { id: def.id, pregunta: def.pregunta, pestana: def.pestana, formato: def.formato };
+  const base = { id: def.id, pregunta: def.pregunta, pestana: def.pestana, formato: def.formato, ...(def.unidadDelValor ? { unidadDelValor: def.unidadDelValor } : {}) };
   if (!m || typeof m !== 'object' || m.estado !== 'medido') {
-    return { ...base, estado: 'no_medido', nivel: '', valor: null, medidos: null, total: null, den_etiqueta: null, fecha: fechaCorta(m && m.fecha), motivo: motivoCerrado(m && m.motivo) };
+    return { ...base, estado: 'no_medido', nivel: '', valor: null, medidos: null, total: null, den: null, fecha: fechaCorta(m && m.fecha), motivo: motivoCerrado(m && m.motivo) };
   }
   if (num(m.valor) === null) {
-    return { ...base, estado: 'no_medido', nivel: '', valor: null, medidos: null, total: null, den_etiqueta: null, fecha: fechaCorta(m.fecha), motivo: 'sin_datos' };
+    return { ...base, estado: 'no_medido', nivel: '', valor: null, medidos: null, total: null, den: null, fecha: fechaCorta(m.fecha), motivo: 'sin_datos' };
   }
   const nivel = juzgar(cfg || {}, def.clave, m);
   return {
@@ -110,9 +121,23 @@ function proyectar(def, m, cfg) {
     estado: m.prov === 'declarada' ? 'declarado' : 'medido',
     nivel: nivel === 'ok' || nivel === 'warn' || nivel === 'bad' ? nivel : '',
     valor: num(m.valor), medidos: num(m.medidos), total: num(m.total),
-    den_etiqueta: etiqueta(m.den_etiqueta), unidad: m.unidad === 'ratio' ? 'ratio' : 'conteo',
+    den: codigoDen(m.den_etiqueta), unidad: m.unidad === 'ratio' ? 'ratio' : 'conteo',
     fecha: fechaCorta(m.fecha), motivo: null,
+    // de cuántos días habla «empezadas que llevan más de N días», y la cuenta de cada causa de «Por qué volvió»: sólo
+    // números y las claves del vocabulario cerrado de causas
+    ...(def.id === 'edad_estado' && m.edad && Array.isArray(m.edad.dias) && num(m.edad.dias[0]) !== null ? { umbralDias: num(m.edad.dias[0]) } : {}),
+    ...(def.id === 'rework_por_causa' && Array.isArray(m.barras)
+      ? { causas: m.barras.filter((b) => b && typeof b.clave === 'string' && /^[a-z][a-z-]{0,39}$/.test(b.clave) && num(b.n) !== null).slice(0, 12).map((b) => ({ clave: b.clave, n: num(b.n) }))
+        // las que el tablero cuenta aparte, fuera del vocabulario: una sola cuenta, sin sus claves
+        .concat(fueraDelVocabulario(m.fuera_de_vocabulario)) }
+      : {}),
   };
+}
+
+/** La suma de las causas fuera del vocabulario (`[[clave, n], …]` del tablero) como una causa más, o ninguna. */
+function fueraDelVocabulario(lista) {
+  const n = (Array.isArray(lista) ? lista : []).reduce((a, x) => a + (Array.isArray(x) && num(x[1]) !== null ? num(x[1]) : 0), 0);
+  return n > 0 ? [{ clave: 'fuera-del-vocabulario', n }] : [];
 }
 
 /** Lo de `de` dentro de los paneles del tablero, sin romper si el panel falta. */
@@ -185,7 +210,7 @@ function fichasDelClon({ clon, dirBuzon = null, buzonLeido = false, ocultas = []
       examen: delBanco('ultimo-examen.json', false), casos: delBanco(path.join('cases', 'advisors'), true),
       hoy: new Date(ahora).toISOString().slice(0, 10),
       mailbox: dirBuzon || undefined,
-      estadoBuzon: buzonLeido && dirBuzon ? { estado: 'leido' } : { estado: 'no_leido', motivo: 'el sitio no tiene el buzón de ejecuciones' },
+      estadoBuzon: buzonLeido && dirBuzon ? { estado: 'leido' } : { estado: 'no_leido', motivo: 'el sitio no tiene el depósito de ejecuciones' },
     });
     return modeloDeFichas(d.paneles, { cfg: d.cfg, ocultas });
   } catch (e) {
@@ -208,14 +233,19 @@ function tile(f, idioma = 'es') {
   const titulo = tituloDe(f.id, idioma);
   if (f.estado === 'no_medido') {
     const motivo = T(`ficha.motivo.${MOTIVOS.includes(f.motivo) ? f.motivo : 'sin_datos'}`);
-    return `<div class="tile blind" data-ficha="${esc(f.id)}">${chip('blind', T('fichas.noMedido'))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(T('fichas.falta'))}</div><div class="t-den">${esc(motivo)}${f.fecha ? ` ${esc(T('fichas.fuenteDelParen', { fecha: f.fecha }))}` : ''}</div></div>`;
+    return `<div class="tile blind" data-ficha="${esc(f.id)}">${chip('blind', T('fichas.noMedido'))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(T('fichas.falta'))}</div><div class="t-den">${esc(motivo)}${f.fecha ? ` ${esc(T('fichas.fuenteDelParen', { fecha: f.fecha }))}` : ''}</div>${ENLACE_MOTIVO[f.motivo] ? `<a class="t-link" href="${ENLACE_MOTIVO[f.motivo]}">${esc(T('ficha.motivo.irAConfiguracion'))}</a>` : ''}</div>`;
   }
   const est = f.estado === 'declarado' ? 'decl' : f.nivel;
-  // la etiqueta del denominador sale del tablero de la noche: va tal cual
-  const etiq = f.den_etiqueta ? ` ${esc(f.den_etiqueta)}` : '';
+  // el denominador llega como su código y sale en el idioma de la página
+  const etiq = f.den ? ` ${esc(T(`den.${f.den}`))}` : '';
   const de = (a, b) => esc(T('fichas.de', { medidos: a, total: b }));
   const den = f.unidad === 'ratio' ? `${de(f.medidos, f.total)}${etiq}` : `n=${f.total && f.total !== f.medidos ? de(f.medidos, f.total) : esc(f.medidos)}${etiq}`;
-  return `<div class="tile ${est}" data-ficha="${esc(f.id)}">${chip(est, T(f.estado === 'declarado' ? 'fichas.declarado' : `fichas.${PALABRA[f.nivel] || 'medido'}`))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(formatear(f, idioma))}</div><div class="t-den">${den}</div>${f.fecha ? `<div class="t-den">${esc(T('fichas.fuenteDel', { fecha: f.fecha }))}</div>` : ''}</div>`;
+  // el número con su unidad («6,4 días», «1 segundo»); el singular sale del número que se muestra, ya redondeado
+  const valor = formatear(f, idioma);
+  const unidad = f.unidadDelValor ? ` ${T(`fichas.unidad.${f.unidadDelValor}${valor === '1' ? '1' : ''}`)}` : '';
+  const extra = (Number.isFinite(f.umbralDias) ? `<div class="t-den">${esc(T(f.umbralDias === 1 ? 'fichas.masDeUnDia' : 'fichas.masDeDias', { d: f.umbralDias }))}</div>` : '')
+    + (Array.isArray(f.causas) && f.causas.length ? `<div class="t-den">${esc(f.causas.map((c) => `${T(CAUSAS.includes(c.clave) ? `fichas.causa.${c.clave}` : 'fichas.causa.otra')} ${c.n}`).join(' · '))}</div>` : '');
+  return `<div class="tile ${est}" data-ficha="${esc(f.id)}">${chip(est, T(f.estado === 'declarado' ? 'fichas.declarado' : `fichas.${PALABRA[f.nivel] || 'medido'}`))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(valor + unidad)}</div><div class="t-den">${den}</div>${extra}${f.fecha ? `<div class="t-den">${esc(T('fichas.fuenteDel', { fecha: f.fecha }))}</div>` : ''}</div>`;
 }
 
 /** Las fichas de una pestaña, en una grilla por pregunta (o en una sola, sin título, si `sinPreguntas`). */

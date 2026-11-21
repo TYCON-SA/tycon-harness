@@ -48,7 +48,9 @@ function skillTexts() {
   // el cierre (`tycon-merge-to-main`) corre el mismo portón E2E con el mismo archivo: la misma regla
   const merge = path.join(SKILL, '..', 'tycon-merge-to-main', 'SKILL.md');
   if (fs.existsSync(merge)) out.push(merge);
-  return out.map((f) => ({ file: path.relative(SKILL, f), text: fs.readFileSync(f, 'utf8') }));
+  // un guion arma el comando con el ayudante (`${homeCommand('<ruta>')}`): se lee como el texto que imprime
+  return out.map((f) => ({ file: path.relative(SKILL, f),
+    text: fs.readFileSync(f, 'utf8').replace(/\$\{homeCommand\((['"`])(.*?)\1\)\}/g, (_, _q, r) => `node "$HOME/${r}"`) }));
 }
 
 test('TmpPath_OneWriterOneReader_NoFixedTmpInSteps_NoOpen', async (t) => {
@@ -154,12 +156,13 @@ test('TmpPath_OneWriterOneReader_NoFixedTmpInSteps_NoOpen', async (t) => {
     assert.ok(users.some((x) => x.file === path.join('steps', 'step-10-live-check.md')), 'el paso 7c usa la configuración de E2E');
     assert.ok(users.some((x) => x.file === path.join('scripts', 'on-frontmatter-write.js')), 'on-frontmatter-write.js la sugiere');
     for (const x of users.filter((u) => u.file !== path.join('scripts', 'lib', 'tmp-path.js'))) {
-      assert.match(x.text, /E2ECFG=\$\(node [^\n)]*\/scripts\/lib\/tmp-path\.js e2ecfg <repo>\)/, `${x.file}: la ruta sale de tmp-path.js`);
+      // el guion con «~» (los pasos) o entre comillas con `$HOME` (lo que imprime el código)
+      assert.match(x.text, /E2ECFG=\$\(node [^\n)]*\/scripts\/lib\/tmp-path\.js"? e2ecfg <repo>\)/, `${x.file}: la ruta sale de tmp-path.js`);
       // la ruta depende del repo: cada llamada se lo pasa, ninguna lo omite
-      const sinRepo = x.text.split('\n').filter((l) => /tmp-path\.js e2ecfg/.test(l) && !/tmp-path\.js e2ecfg <repo>\)/.test(l));
+      const sinRepo = x.text.split('\n').filter((l) => /tmp-path\.js"? e2ecfg/.test(l) && !/tmp-path\.js"? e2ecfg <repo>\)/.test(l));
       assert.deepStrictEqual(sinRepo.map((l) => l.trim()), [], `${x.file}: arma la ruta sin pasarle el repo`);
       // quien escribe: la salida de `pipeline.js e2e-config` va a "$E2ECFG" (también con la línea partida con «\»)
-      const writes = [...x.text.replace(/\\\n\s*/g, ' ').matchAll(/pipeline\.js e2e-config[^\n]*/g)].map((m) => m[0]);
+      const writes = [...x.text.replace(/\\\n\s*/g, ' ').matchAll(/pipeline\.js"? e2e-config[^\n]*/g)].map((m) => m[0]);
       assert.ok(writes.length > 0, `${x.file}: no encontré quién escribe la configuración`);
       for (const w of writes) assert.match(w, />\s*"\$E2ECFG"/, `${x.file}: escribe en otra ruta: ${w}`);
       // quien lee: cada `require(` de la configuración recibe la ruta por argumento, con "$E2ECFG"

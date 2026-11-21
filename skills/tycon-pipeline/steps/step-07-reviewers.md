@@ -4,7 +4,7 @@
 
 ## Inputs
 
-- `modified_files`: lista de archivos modificados por BMAD (del paso Implementar)
+- `modified_files`: lista de archivos modificados (del paso Implementar)
 - `repo_path`: path del repo
 
 ## Forma canónica (H17 §4) — `pipeline.js`, NO inferir a mano
@@ -34,6 +34,11 @@ El script además:
 - **`context_file`**: digest de story + file list + diff con hunks, generado en
   `~/.claude/.tycon-pipeline/advisor-context/<sid>-iter<N>.md`. Es el **INPUT PRIMARIO**
   de cada advisor — pasalo en el prompt en vez de hacer que cada subagente re-lea todo.
+- **`frozen`**: lo que se revisa, congelado (historia 8.161). Al lanzar la vuelta, `advisors` y `smart-reloop` sellan el
+  repo de la historia y el del código y arman una copia de sólo lectura de cada uno en la carpeta de estado del
+  pipeline: `[{ repo, tree, copy }]`. El `context_file` nombra cada copia y su sello: **los revisores leen la copia, no
+  la carpeta viva**. Si no se puede sellar o copiar, la vuelta no se lanza (sale 2 con el motivo). La foto de la vuelta
+  (`snapshot-iter`) guarda ese sello, y «Preparar el commit» compara lo que se guarda contra él.
   Los que necesitan la story completa (`story_path_para` de la salida: el spec-first del núcleo
   y los revisores de paquetes con `needsStory`) reciben **además** `story_path`.
 - **`context_file_overrides`** (2026-07-28): mapa `{advisor: path}`. **Si un advisor figura
@@ -53,7 +58,7 @@ El script además:
   revisores no ven sus reglas propias»* (con `no_medido`, agregá el `motivo`). Nunca frena. Por
   qué pegadas y no leídas del `CLAUDE.md`: con el archivo entero cargado el revisor detectó 10 de
   20 violaciones plantadas; con la sección pegada, 17 de 20 y la mitad de tokens. Cómo se
-  escribe la sección: `~/.claude/tycon-harness/guides/reglas-para-revisores.md`.
+  escribe la sección: `~/.claude/tycon-harness/guides/reviewer-rules.md`.
 - **`batch_rule`** (ventana deslizante, 2026-07-30): **MÁXIMO 4 subagentes VIVOS a la
   vez** (máquina dev 8c/16GB — regla explícita acá, no solo en CLAUDE.md global). El cap
   es de CONCURRENCIA, no de orden: al llegar la notificación de que un advisor terminó,
@@ -304,7 +309,7 @@ mitad y UNO al completarse (2 por iteración, fijos). Nunca un mensaje por advis
 
 **Opt-in `bmad-code-review` (2026-07-30)**: si el dev pidió code-review para esta story, sus
 3 reviewers entran al MISMO pool de slots (≤4 vivos) como si fueran advisors del set — el
-permiso de correrlo en paralelo con los advisors TYCON está en `bmad-contract.md` L99.
+permiso de correrlo en paralelo con los advisors TYCON está en `bmad-contract.md`, en su sección.
 
 El set lo devuelve el script. Los cuatro de abajo son el **set de completitud** que arma
 `pipeline.js advisors`, y no entran los cuatro siempre: `tycon-story-validator` y
@@ -348,23 +353,31 @@ eso lo decide la persona. Volver a correr `check-count` no cambia nada.
 
 El usuario VE el bloque que devuelve cada subagente. Sin esta instrucción, seis advisors devuelven seis
 reportes de 30+ renglones con rule IDs y `archivo:línea`, uno detrás de otro: un muro. **Todo `Agent(...)`
-de este step cierra con este párrafo, con la ruta ya resuelta** (un subagente no puede inventar dónde
-escribir; si no le das destino, el detalle vuelve al chat):
+de este step cierra con este párrafo**:
 
 ```
-Formato de tu final report — el mensaje que devolvés, NO el archivo:
+Formato de tu final report — el mensaje que devolvés:
 arrancá con 1-3 bullets en castellano llano: qué encontraste y si bloquea. Sin rule IDs, sin
-archivo:línea, sin nombres de regla. Después, la acción, si la hay, en una línea. El DETALLE
-COMPLETO (rule IDs, archivo:línea, tablas, repros) NO va en el reporte: escribilo a
-`<RUN_DIR>/step-05-advisor-reports/<advisor>.md` y cerrá con "detalle completo en <esa ruta>". Tu reporte
-entero tiene que entrar en menos de 1000 caracteres de prosa. Si no hay hallazgos, "limpio,
-0 hallazgos" alcanza y no hace falta escribir archivo — no enumeres lo que revisaste y salió bien.
+archivo:línea, sin nombres de regla en los bullets. Después, la acción, si la hay, en una línea. El
+DETALLE (archivo:línea, tablas, repros) no va en el reporte ni a un archivo: si lo tenés, decí "tengo
+el detalle, pedímelo". Tu reporte entero tiene que entrar en menos de 1000 caracteres de prosa; no
+enumeres lo que revisaste y salió bien. El ÚLTIMO renglón es SIEMPRE el veredicto, solo, sin viñeta
+ni negrita adelante, con la regla de cada hallazgo UNA VEZ POR HALLAZGO (dos del mismo tipo, dos veces):
+Veredicto: limpio
+Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
 ```
 
-`<RUN_DIR>` es `.advisors/pipeline-runs/<clave>-<sello>/`, la ruta que imprime
+**El renglón de veredicto lo lee el arnés** (`lib/reported-criticals.js`): al terminar cada revisor, el gancho del fin
+del subagente (`on-advisor-done.js`) lee sus palabras de su propia transcripción y anota cada regla crítica con cuántas
+veces la reportó. `write-findings` y el cierre de «Hallazgos» frenan si `findings.json` no las trae. Un revisor que no
+cierra con ese renglón queda «no pude leer lo que reportó», y el cierre no pasa hasta que vuelva a correr o una persona
+lo exima. Si el detalle hace falta, se le pide al revisor con un mensaje: su respuesta también se lee y se suma. El
+orquestador deja lo que devolvió cada revisor (y el detalle, si lo pidió) en
+`<RUN_DIR>/step-05-advisor-reports/<advisor>.md`: es la constancia que mira el pre-commit, y el arnés no la usa para el
+cruce. `<RUN_DIR>` es `.advisors/pipeline-runs/<clave>-<sello>/`, la ruta que imprime
 `pipeline.js run-dir --story <s> --repo <r> --create` (con un número repetido en el repo la clave es
-`<tema>__<número>`; armarla a mano parte la corrida en dos carpetas). La regla completa y por qué se endureció
-está en el bloque `TYCON_BLOCK:response-style` de `~/.claude/CLAUDE.md` §"Lo que devuelve un SUBAGENTE".
+`<tema>__<número>`; armarla a mano parte la corrida en dos carpetas). La regla completa del formato y por qué se
+endureció está en el bloque `TYCON_BLOCK:response-style` de `~/.claude/CLAUDE.md` §"Lo que devuelve un SUBAGENTE".
 
 ⚠️ **Es la 3ra vez que este problema se da por arreglado** (feedback del dev 2026-07-25, 2026-07-27 y
 2026-07-27 otra vez). Las dos veces anteriores la regla vivía SOLO en el `CLAUDE.md` y dependía de que el
@@ -527,7 +540,13 @@ Pasar a «Hallazgos» (`step-09-findings.md`) para consolidar. Si después de «
 
 ## Otra vuelta (vuelta 2 en adelante)
 
-Es la vuelta N de este mismo paso. `pipeline.js next` la pide («Revisores, vuelta N») sólo cuando hay ediciones de código posteriores al último cierre de los revisores con «Hallazgos» ya cerrado. Cada vuelta cierra igual: `marker.js run-check advisors -- pipeline.js check-count …` y `marker.js complete-step reviewers` (el marcador cuenta las vueltas).
+Es la vuelta N de este mismo paso. `pipeline.js next` la pide («Revisores, vuelta N») sólo cuando hay ediciones de código posteriores al último cierre de los revisores con «Hallazgos» ya cerrado, y nombra esos archivos («Falta revisar lo cambiado después de los revisores: …»). Cada vuelta cierra igual: `marker.js run-check advisors -- pipeline.js check-count …` y `marker.js complete-step reviewers` (el marcador cuenta las vueltas).
+
+Un `.js`, `.cjs` o `.mjs` que quedó igual a lo revisado, salvo el lugar de sus comentarios, no pide otra vuelta (lo decide `lib/comment-only.js` contra el sello de la última vuelta cerrada); un texto de comentario cambiado, una directiva movida o cualquier duda la piden.
+
+Una prueba o un texto no piden otra vuelta: lo decide `lib/reloop-code.js`. Una prueba es lo que `isTestPath` (`lib/atdd-order.js`) reconoce en la ruta desde la raíz de su repo (la carpeta con `.git` más cercana): `*.test.ts`, `*.spec.ts`, `test_*.py`, `*Tests.cs`, el código dentro de una carpeta de pruebas. Un texto es lo que no es código (un `.md`, un `.json`). Un archivo sin raíz de repo cuenta como código: ante la duda, se revisa. Con un arreglo de código y uno de prueba, la vuelta mira el de código. El re-loop reducido (`smart-reloop`) usa la misma regla: un delta de sólo pruebas no repite revisores.
+
+La decisión queda escrita en el marcador (`otraVuelta`: la vuelta, los archivos y desde cuándo) en cada cambio y cada cierre de paso, y el cartel la lee: dice «falta revisar lo cambiado después de los revisores (vuelta N, M archivos)» y cuenta los minutos desde el primer cambio sin revisar.
 
 **Objetivo**: cerrar el loop posterior a «Hallazgos» — si la decisión del usuario (o el auto-flow)
 resultó en **fixes de código aplicados**, el diff que los advisors auditaron ya no es el
@@ -555,9 +574,9 @@ si NO hubo cambios de código:
 **Condición de exit del loop**: cero fixes nuevos en la iteración, O CRITICAL residuales
 waiveados explícitamente por el user (con razón registrada — `had_override: true`), O el tope de vueltas.
 
-**El tope de vueltas** (`review.max_rounds`: 2 de fábrica; la organización lo cambia en el sitio, en Configuración; el
-repo, en `.tycon/advisors.yaml` commiteado; la máquina, con `review-max-rounds.json` en la carpeta de estado del arnés, que pone una persona y queda dicho en el
-cierre). Una vuelta es un número de
+**El tope de vueltas** (`review.max_rounds`: 3 de fábrica, el mismo para la revisión del plan y la del código; la
+organización lo cambia en el sitio, en Configuración; el repo, en `.tycon/advisors.yaml` commiteado; no hay ajuste por
+máquina: un `review-max-rounds.json` viejo se ignora y se dice una vez). Una vuelta es un número de
 iteración que llegó a lanzar revisores: pedir dos veces el set de la misma vuelta, sin lanzarla, no suma. Más allá del
 tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
 - **un crítico de seguridad o de datos** (reglas SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE, y las que

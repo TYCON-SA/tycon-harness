@@ -15,6 +15,7 @@
  *   T7  sin los días en params: «no medido», nada escrito en el código
  *   T8  ni ids ni títulos ni rutas en el resultado
  *   T11 paradas y compartidos
+ *   ageCounts: la cuenta sin disco que usan stateAge y el sitio de la organización
  *
  * Los ejemplos son inventados (Acme, Otro, Comun). Correr: node --test scripts/tests/state-age.test.js < /dev/null
  */
@@ -26,7 +27,7 @@ const os = require('os');
 const path = require('path');
 
 const RAIZ = path.join(__dirname, '..', '..');
-const { stateAge } = require(path.join(RAIZ, 'scripts', 'nightly', 'projects', 'state-age.js'));
+const { stateAge, ageCounts } = require(path.join(RAIZ, 'scripts', 'nightly', 'projects', 'state-age.js'));
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'state-age-'));
 process.on('exit', () => { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* nada */ } });
@@ -216,4 +217,27 @@ test('2.26-adv CarpetaIlegible_NoEsNoHayFotos', (t) => {
     assert.strictEqual(r.estado, 'no_medido');
     assert.match(r.motivo, /no pude leer la carpeta de fotos \(EACCES\)/);
   } finally { fs.chmodSync(dir, 0o755); }
+});
+
+test('2.26-ageCounts LaMismaCuentaSinDisco', () => {
+  const lista = [enCurso(45), st('en_curso', 'review', 10), enCurso(null), enCurso(61), st('bloqueado', 'blocked', 70), st('backlog', 'backlog', 90),
+    st('cerrado', 'done', 99), st('desconocido', 'raro', 80), st('en_curso', null, 80)];
+  const c = ageCounts(lista, DIAS);
+  assert.strictEqual(c.estado, 'medido');
+  assert.deepStrictEqual([c.paradas, c.sin_medir], [2, 1], 'en curso: 45 y 61 paradas; la de null, sin medir; las sin estado canónico no cuentan');
+  // los «más de» suman lo empezado (en curso y bloqueado), como el titular de stateAge
+  assert.deepStrictEqual([c.mas_de_30, c.mas_de_60, c.con_dato, c.sin_dato], [3, 2, 4, 1]);
+  assert.strictEqual(c.desconocido, 2);
+  assert.deepStrictEqual(c.por_estado.backlog, { total: 1, mas_de_30: 1, mas_de_60: 1, sin_dato: 0 });
+  assert.ok(!('done' in c.por_estado), 'lo cerrado no cuenta');
+  // los umbrales salen de los días que se le pasan
+  const otros = ageCounts([enCurso(45), enCurso(55)], [50, 100]);
+  assert.deepStrictEqual([otros.paradas, otros.mas_de_50, otros.mas_de_100], [1, 1, 0]);
+  // sin días válidos: «no medido» con su motivo, nunca una cuenta con un umbral de respaldo
+  for (const dias of [undefined, null, [30], [60, 30], [0, 30], [30.5, 60]]) {
+    const r = ageCounts([enCurso(45)], dias);
+    assert.strictEqual(r.estado, 'no_medido', JSON.stringify(dias));
+    assert.strictEqual(r.paradas, undefined);
+    assert.match(r.motivo, /edad_en_estado_dias/);
+  }
 });

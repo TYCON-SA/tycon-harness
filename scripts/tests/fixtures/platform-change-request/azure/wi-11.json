@@ -1,0 +1,1 @@
+{ "id": 11, "fields": { "System.TeamProject": "Proyecto X", "System.WorkItemType": "Bug", "System.State": "Active", "System.Title": "un bug", "System.AssignedTo": { "uniqueName": "Ana.Dev@Acme.Example" }, "Microsoft.VSTS.Common.StateChangeDate": "2026-10-27T10:00:00Z", "System.ChangedDate": "2026-10-28T10:00:00Z" } }

@@ -25,9 +25,10 @@
 #       informativo: alguien tiene que probarla y decidir. Sin ese límite sale en cada
 #       arranque de sesión y se vuelve ruido que se ignora, que es como mueren los avisos.
 #
-# 🔴 El comando de update lleva `--cask`. El que imprime el propio engram
-# (`brew upgrade engram`) resuelve a la FÓRMULA, que es otro paquete y suele estar sin
-# instalar — no hace lo que parece. El binario se distribuye como CASK.
+# 🔴 En Homebrew, engram se actualiza por la FÓRMULA del tap del autor
+# (`brew upgrade gentleman-programming/tap/engram`). El cask quedó abandonado en la v1.0.0:
+# `brew upgrade --cask engram` no falla y nunca sube de versión. Si lo que hay es el cask,
+# este script lo migra a la fórmula (ver el método más abajo).
 #
 # Fail-open total: cualquier problema → exit 0 en silencio. Nunca rompe una sesión.
 # Opt-outs: `TYCON_NO_ENGRAM_VERSION_CHECK=1` (apaga todo) ·
@@ -171,7 +172,8 @@ PYEOF
 #
 # Precondiciones — si falla cualquiera, cae al aviso manual (no rompe nada):
 #   - `TYCON_ENGRAM_AUTO_UPGRADE` != 0 (default: ON)
-#   - Homebrew presente Y engram instalado COMO CASK. Si el dev lo instaló de otra forma
+#   - Go con engram en su carpeta de binarios, o Homebrew con engram instalado por la fórmula
+#     (si es el cask viejo, se migra a la fórmula). Si el dev lo instaló de otra forma
 #     (binario suelto, scoop, otro gestor), `brew upgrade` haría algo distinto de lo
 #     esperado o nada — mejor decirle y que decida.
 #
@@ -187,8 +189,8 @@ FAILED_STAMP="$HOME/.claude/.tycon-engram-upgrade-failed"
 # Método de instalación → cómo se actualiza. Se elige por lo que HAY en la máquina, no
 # por el sistema operativo: un dev de Mac puede haberlo puesto con `go install` igual.
 #
-# `go install ...@vX.Y.Z` instala la versión EXACTA. `brew upgrade --cask` instala la
-# ÚLTIMA que tenga el cask, que puede no ser la del equipo (ver la advertencia de
+# `go install ...@vX.Y.Z` instala la versión EXACTA. `brew upgrade` de la fórmula instala la
+# ÚLTIMA que tenga, que puede no ser la del equipo (ver la advertencia de
 # sobre-disparo abajo). Por eso, si hay Go, se prefiere Go.
 if command -v go >/dev/null 2>&1 && go env GOPATH >/dev/null 2>&1 \
    && [[ "$(command -v engram)" == "$(go env GOPATH)/bin/engram" ]]; then
@@ -321,14 +323,14 @@ if [[ "$UNTRUSTED_TAP" == "1" ]]; then
   # Caso esperado la PRIMERA vez en cada Mac. No es un error del harness ni de engram.
   echo "   ⚠ Homebrew no instala desde el repo de engram hasta que lo autorices (es de terceros)."
   echo "   Corré esto UNA vez y listo — es el mismo repo del que ya lo tenías instalado:"
-  echo "       brew trust gentleman-programming/tap && brew upgrade --cask engram"
+  echo "       brew trust gentleman-programming/tap && brew upgrade gentleman-programming/tap/engram"
   echo "   Después se actualiza sola de nuevo."
   exit 0
 elif [[ "$UPGRADE_OK" != "1" ]]; then
   echo "   ⚠ No se pudo actualizar sola."
 elif [[ "$METHOD" == "brew" ]]; then
-  # Sobre-disparo: `brew upgrade --cask` no sabe de la versión del equipo, instala la
-  # última del cask. Si el equipo eligió a propósito una versión ANTERIOR a la última,
+  # Sobre-disparo: `brew upgrade` de la fórmula no sabe de la versión del equipo, instala la
+  # última que tenga. Si el equipo eligió a propósito una versión ANTERIOR a la última,
   # este camino no puede acertarle. Con Go sí (`@vX.Y.Z` es exacto).
   echo "   ⚠ Homebrew instaló la ${NEW:-desconocida}, no la $TARGET (brew siempre pone la última)."
   echo "   Para la versión exacta: go install $GOPKG@v$TARGET"

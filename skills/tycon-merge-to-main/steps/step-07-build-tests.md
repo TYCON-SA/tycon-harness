@@ -97,7 +97,7 @@ o, con `suites: "server"`, por `Tests: build OK; suites completas: las corre el 
 
 🔴 **En modo `pr` nunca hay `--amend`**: no existe un merge commit local, y enmendar el HEAD sería
 enmendar la punta de la source, que ya está empujada. La línea `Tests:` va sólo al mensaje aprobado
-(la descripción del pedido del 9b, o el `bodyFile` del 9c).
+(el `text` de los argumentos del pedido del 9b).
 
 En modo `push`, para amendar el merge commit:
 

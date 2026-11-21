@@ -46,6 +46,7 @@ lee el arnés (los ejemplos están en `pipelines/operations/examples/` del arné
 | `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`ado`: `<proyecto>/<repo>`; `tipo`: `npm`, `nuget` o `pip`). En un repo cuya raíz es `npm`, la noche mira también cada carpeta con `package-lock.json` (un formulario, por ejemplo); para no mirar una, `exclude: [{ "path": "<carpeta>", "reason": "<motivo>" }]` en esa entrada, y sin `reason` la noche sale con error | Sí, para la revisión de dependencias |
 | `team-repos.json` | Opcional. Dónde vive cada repo del arnés de tu organización (forma: `scripts/lib/team-repos.js`). Si está, tiene que validar: con `operations.platform: github` los avisos de dependencias son issues de GitHub, no pedidos de trabajo; y si tu organización tiene copias del repo del arnés con stories, van en `harness_copies` (las métricas no las miden, salvo la de `maintainers` si está en la lista) | No |
 | `scripts/nightly/dashboard/sources.json` | Qué fuentes espera el tablero. Usá el ejemplo: el del arnés espera fuentes que tu organización no tiene | Sí, para el tablero |
+| `scripts/nightly/watcher/hosts.json` | Opcional. Qué hosts mira el vigilante de producción (punto 8). Sin él, el vigilante no tiene qué mirar | Sí, para el vigilante |
 | `scripts/ci/product-parity.json` | Opcional. Los productos que tienen que hacer lo mismo en su pipeline, qué se compara y las diferencias declaradas (ejemplo: `pipelines/operations/examples/product-parity.json`). Un repo que la revisión de dependencias no clona lleva `ado: "<proyecto>/<repo>"`. Sin el archivo, la paridad sale «sin productos» | No |
 | `pipelines/stage-metrics.yml`, `pipelines/dependency-audit.yml`, `pipelines/team-dashboard.yml` | Copias de los tres modelos de esta carpeta | Sí |
 
@@ -109,8 +110,9 @@ Los pipelines corren con la identidad de compilación del proyecto, `<proyecto> 
   guardar y abrir pull requests salen en rojo.
 - **Sobre los repos que se miden**: *Read*. Si están en otros proyectos, también ahí.
 - **Sobre el repo del perfil del equipo** (el que declara `team-repos.json → profile`): *Read*. De ahí saca la noche los
-  canales del aviso que eligió la organización (`integrations.notify.channels`). Sin ese permiso el resumen sale igual,
-  por el canal de `operations.json → notify.channel`, y dice «no se pudo leer el perfil del equipo».
+  canales del aviso que eligió la organización (`integrations.notify.channels`) y la unidad de las estimaciones que mide
+  la foto por proyecto. Sin ese permiso el resumen sale igual, por el canal de `operations.json → notify.channel`, y dice
+  «no se pudo leer el perfil del equipo»; la foto usa la unidad del `team-repos.json` del árbol.
 
 Y en *Project settings → Pipelines → Settings* del proyecto donde corren los pipelines:
 
@@ -209,17 +211,38 @@ definición de `stage-metrics` todavía tiene `HARNESS_COPIES` o `HARNESS_MEASUR
 sale en rojo mientras `team-repos.json` no declare las copias.
 
 El tablero tiene un parámetro opcional, `mailboxConnection`: la conexión de servicio de Azure con lectura sobre un buzón
-de ejecuciones, si tu organización junta los registros de las máquinas. Sin buzón, las fichas del equipo salen «no leído».
+de ejecuciones, si tu organización junta los registros de las máquinas. Dónde está el buzón lo dice `operations.json →
+site.mailbox` (la cuenta y el contenedor, lo mismo que lee el sitio; nunca una llave): la credencial es la de la conexión,
+y el tenant también sale de ella. Sin buzón, las fichas del equipo salen «no leído»; con la conexión y sin `site.mailbox`,
+la ejecución avisa «el buzón no está declarado».
+
+**El perfil y `team-repos.json`, en dos lados.** La noche lee `team-repos.json` del repo de operaciones; las máquinas del
+equipo, el del perfil. Si tu organización tiene perfil, el archivo va en los dos, igual. La revisión de dependencias, el
+vigilante y las métricas bajan el perfil (los dos primeros, para los canales del aviso; las métricas, para la unidad de
+las estimaciones, que el sitio edita en el del perfil) y los comparan: si difieren, la ejecución queda naranja nombrando
+las claves que difieren, sin sus valores; si no pudo leer el perfil, lo dice, y el aviso sale por el canal de
+`operations.json → notify`.
 
 Los pedidos de trabajo (un Bug por proyecto con hallazgos) se prenden en `repos.json`, `azure.pedidos_activos: true`.
 Antes, la identidad necesita en esos proyectos permiso para crear y comentar work items y para leer grupos. Apagados, los
 dos pasos que hablan con Azure Boards no corren.
 
-## 5. La primera ejecución: sin efectos
+## 5. La primera ejecución: sin efectos (el ensayo)
 
-Corré cada pipeline a mano con el parámetro **efectos** destildado (*Run pipeline → efectos*). Mide y escribe en el
-disco del agente, pero no guarda nada ni abre pull requests. La primera vez Azure pide permiso para usar el repo del
-arnés (*This pipeline needs permission to access a resource*): *Permit*.
+Es el primer paso con cada pipeline nuevo, y también antes de cambiar uno que ya corre de noche. Corré cada pipeline a
+mano con el parámetro **efectos** destildado (*Run pipeline → efectos*, o `az pipelines run --id <N> --branch <rama>
+--parameters efectos=false`). Mide y escribe en el disco del agente, pero no guarda nada, no abre pull requests, no
+crea pedidos de trabajo ni comenta en ellos, y no manda avisos. La primera vez Azure pide permiso para usar el repo del arnés (*This pipeline needs permission to access a
+resource*): *Permit*.
+
+**El ensayo deja a la vista lo que habría guardado**: la ejecución publica el artefacto `ensayo-datos` (*la ejecución →
+Related → Published*). Trae `index.json` —los archivos que la noche escribió en las rutas de su guardado, cada uno con su
+tamaño; los que quedaron vacíos, los que habría borrado y los `.gitkeep` de las carpetas que crea la primera noche,
+aparte—, una copia de cada archivo en `files/` y, si la hay, la salida de la ejecución en `summary/`. Son los mismos
+archivos que va a guardar la noche de verdad, contados desde la misma base que el guardado: un archivo vacío, o uno que
+falta, es lo que hay que mirar antes de dejarla correr sola; si no aparece ninguno, la ejecución lo avisa (puede ser una
+ruta mal escrita). Nada de lo que guarda la noche lleva credenciales; la salida de `summary/` es la misma que muestra el
+registro de la ejecución, con el mismo acceso. Con efectos, el artefacto no se publica.
 
 Mirá que termine en verde. Si sale «NO MEDIDO» o «Repos NO medidos», es un permiso de lectura que falta (punto 3).
 
@@ -259,14 +282,20 @@ El cuarto nocturno, `scripts/nightly/watcher/vigilante.js`, mira la API de admin
 Extensions de la organización, agrupa lo que huele mal por debajo de las alertas de la nube y deja un borrador por
 hallazgo en `inbox/watcher/pending/` para que una persona decida (`/tycon-vigilante`). **No toca nada.**
 
-Viene apagado: sin configuración no mira nada, lo dice en una línea y sale 0. Para prenderlo:
+Viene apagado: sin configuración no mira nada. Para prenderlo:
 
-- copiá `examples/hosts.json` a `scripts/nightly/watcher/hosts.json` del repo de operaciones, con un producto por host
-  (`env_user`/`env_pass` NOMBRAN las variables de entorno con las credenciales; nunca las traen);
-- en el pipeline que lo corra, pasale `--config` con esa ruta, `--out .dashboard/vigilante` y
-  `--pending inbox/watcher`, y las credenciales como variables secretas.
-
-El modelo de ese pipeline todavía no está en esta carpeta: es lo siguiente.
+1. Copiá `examples/hosts.json` a `scripts/nightly/watcher/hosts.json` del repo de operaciones, con un producto por host
+   (`env_user`/`env_pass` NOMBRAN las variables de entorno con las credenciales; nunca las traen). La rampa se maneja
+   con `activo` por producto: prendé uno, mirá unas noches los borradores y recién después sumá los demás.
+2. Las credenciales, en un grupo de variables del proyecto (*Pipelines → Library*), marcadas como secretas.
+3. Copiá `production-watch.yml` a `pipelines/` del repo de operaciones, cambiá la línea marcada y poné como valor por
+   defecto de dos parámetros el nombre del grupo (`hostsVariableGroup`) y la lista de nombres de las variables que nombra
+   `hosts.json` (`hostsSecrets`). Azure no le pasa una variable secreta a un paso si no se la nombra: sin la lista, el
+   vigilante no ve las credenciales. Sin grupo, el vigilante mira sólo los hosts que no las piden, y lo avisa. Un nombre
+   de la lista que no está en el grupo no se usa como credencial: la ejecución avisa cuál falta y su host sale «no medido».
+4. Dalo de alta como los demás (nombre sugerido: `production-watch`), con su ensayo primero (punto 5). Corre a las 08:00
+   UTC. Quiénes revisan sus pull requests: `operations.json → reviewers.watcher`. El aviso por hallazgo viene apagado
+   (`quiet`): el pull request alcanza; el resumen del día lleva su sección igual.
 
 ## 9. La copia para el sitio de la organización (opcional)
 
@@ -282,6 +311,9 @@ cada una: la guía del sitio (`guides/organization-site.md`, «De dónde lee ope
 3. **El pipeline**: copiá `site-copy.yml` a `pipelines/` del repo de operaciones, cambiá las dos líneas marcadas (el
    recurso `harness` y `azureSubscription` con el nombre de la conexión) y cargá las variables `SITE_COPY_ACCOUNT` y
    `SITE_COPY_CONTAINER`. Corre en cada push a `main` (también el que hacen los nocturnos al guardar) y una vez por día.
+   Optativa, `SITE_URL` con la dirección del sitio: si el cambio trae otro `operations.json` (un pedido de Configuración
+   aprobado, como una invitación de Personas), el trabajo despierta al sitio para que lo lea en el momento. Sin ella, un
+   sitio que escala a cero lo lee recién cuando alguien entra.
 4. **La primera ejecución** tiene que salir verde y decir «subida la foto de <commit>». Recién entonces el sitio pasa a
    `SITE_OPERATIONS_SOURCE=copy`.
 
@@ -326,3 +358,63 @@ Para prenderla:
    deja a éste en rojo. Sin buzón, la ejecución sale en rojo: no hay qué revisar.
 3. Nada más: desde que existe `inbox/runs-review/`, el resumen de la mañana (`dependency-audit.yml`, 04:00) suma la línea
    de las ejecuciones, agrupada por causa. Si una noche la revisión no corrió, el resumen lo dice en vez de «0 con fallas».
+
+## 12. La noche que propone aprendizajes (opcional)
+
+Si tu organización prende la grabadora de instintos (`integrations.instincts: true` en el perfil del equipo), cada máquina
+sube al buzón lo que hace el agente, un día por vez. `instinct-proposals.yml` lo baja cada noche a las 02:00 UTC, cuenta
+sin modelo lo que se repite en el equipo, deja afuera el ruido y le pide al modelo de la noche que escriba cada propuesta
+(como mucho 20 por noche; las demás esperan a otra noche). Deja un archivo por propuesta en `inbox/instincts/propuestas/`
+y, en `.dashboard/instincts/`, el informe de la noche y lo que recomienda hacer con cada pendiente; las propuestas se
+deciden en la pestaña Aprendizajes del sitio.
+
+Para prenderla:
+
+1. Copiá `instinct-proposals.yml` a `pipelines/` del repo de operaciones y cambiá la línea marcada, como los otros.
+2. Dalo de alta como los demás (nombre sugerido: `instinct-proposals`) y pasale el parámetro `mailboxConnection`: la
+   misma conexión de sólo lectura sobre el buzón que usa el tablero, autorizada también para este pipeline. Sin buzón,
+   la noche sale «no medido».
+3. El modelo de la noche se elige en el sitio (la fila «El proceso de la noche»). La llave sale del grupo de variables
+   que comparte con la revisión de dependencias: [el punto 13](#13-la-llave-del-modelo-de-la-noche-un-grupo-compartido).
+   Sin modelo o sin llave, las propuestas nuevas esperan a otra noche y el resumen lo dice.
+4. Nada más: desde que existe `.dashboard/instincts/`, el resumen de la mañana (`dependency-audit.yml`, 04:00) suma la
+   línea «aprendizajes: …». Si una noche no dejó su informe, el resumen lo dice en vez de «sin propuestas nuevas».
+
+El modelo es sólo para Azure DevOps: una organización en GitHub todavía no tiene la variante de esta noche.
+
+## 13. La llave del modelo de la noche: un grupo compartido
+
+Los dos nocturnos que llaman al modelo de la noche, `dependency-audit` (la propuesta por ficha) e `instinct-proposals`
+(los aprendizajes), leen la llave de un mismo grupo de variables, `harness-nightly-model`, que nombra su parámetro
+`modelVariableGroup`. Se carga y se cambia en un solo lugar. Sin el grupo, o sin la llave del proveedor elegido, la noche sale igual, sin modelo, y el resumen lo dice:
+nunca en rojo. Es sólo para Azure DevOps.
+
+Cada nocturno, apenas arranca, dice en su registro `OLLAMA_API_KEY: llegó` o `no llegó`, y lo mismo con
+`ANTHROPIC_API_KEY`. Nunca muestra el valor ni su largo.
+
+Los pasos van en este orden. Un YAML que enlaza un grupo que no existe, o que esa definición no tiene autorizado, no
+arranca o se queda esperando permiso: esa noche no corre.
+
+1. Creá el grupo `harness-nightly-model` en *Pipelines → Library → + Variable group*, con dos variables:
+   `OLLAMA_API_KEY` (con Ollama) y `ANTHROPIC_API_KEY` (con Anthropic). Cargá sólo la del proveedor que elegiste en el
+   sitio, o las dos. Marcá cada una como **secreta** (el candado). El valor se escribe sólo en esa pantalla; nunca en
+   una línea de comandos (queda en el historial de la consola) ni en un archivo.
+2. Autorizá el grupo sólo para esas dos definiciones, por nombre: en el grupo, *Pipeline permissions → +* y elegí
+   `dependency-audit` y `instinct-proposals`. Nunca con *Open access* («permitir el acceso a todas las pipelines»):
+   cualquier pipeline del proyecto podría leer la llave.
+3. Abrí el pedido que pone `harness-nightly-model` como valor por defecto del parámetro `modelVariableGroup` en tus
+   copias de los dos YAML (las de `pipelines/` del repo de operaciones): así lo usa también la noche por horario. El
+   modelo lo trae vacío porque un grupo que no existe no deja arrancar el pipeline. Todavía no lo completes.
+4. Lanzá a mano cada definición una vez, sobre la rama del pedido y sin efectos:
+   `az pipelines run --id <id de dependency-audit> --branch <rama del pedido> --parameters efectos=false --project my-project`
+   y lo mismo con `--id <id de instinct-proposals>`. Mirá que las dos arranquen sin pedir permiso y que el paso «Ver si
+   llegó la llave del modelo de la noche» diga «llegó» en la llave del proveedor elegido. Sin efectos no se crean
+   pedidos de trabajo, no se guardan propuestas ni sale otro resumen del día.
+5. Completá (merge) el pedido. Desde la noche siguiente, la llave sale del grupo.
+6. Al final, sacá la variable vieja de cada definición (*Edit → Variables*), si la tenía. La variable del YAML, y un
+   grupo enlazado ahí, pisa a la que se carga en la pantalla de la definición: desde el paso 5 manda el grupo, y sacar
+   la vieja es limpieza, para no dejar una copia que nadie mira. Si en tu organización la de la definición ganara (el
+   paso 4 diría «llegó» aunque el grupo esté vacío), sacala justo antes del paso 4 y hacé el 5 enseguida: una noche que
+   caiga en el medio sale sin modelo, nunca en rojo.
+
+Para cambiar la llave después, se cambia sólo en el grupo (paso 1). La usa la noche siguiente.

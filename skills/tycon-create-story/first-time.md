@@ -17,6 +17,11 @@ Hacelas **una por vez**: esperá cada respuesta antes de la siguiente. Si la per
    algo falta. Ejemplo: «con dos productos y envío de 500, el total es la suma más 500; con el carrito vacío, cero».
 3. **¿Qué no tiene que tocar?** Lo que tiene que quedar como está. Se puede contestar «nada».
 
+Las tres respuestas van también a la **intención** de la historia, un archivo al lado que dice qué se quiere resolver y
+por qué, sin el cómo (`story-format.md`, «La intención»): la respuesta 1 es el problema (`problem`) y la 2, lo que
+tiene que pasar (`outcome`). Lo que no quedó claro no lo completes suponiendo: va como pregunta (`questions`), con por
+qué importa, quién la sabe y si frena el trabajo hasta tener la respuesta (`blocks`).
+
 ## 2. De las respuestas a criterios y pruebas
 
 - Cada cosa que la persona mira en la respuesta 2 es un **criterio**: dado (el estado de partida), cuando (lo que
@@ -32,7 +37,8 @@ Hacelas **una por vez**: esperá cada respuesta antes de la siguiente. Si la per
 
 ## 3. Mostrar y esperar el «sí»
 
-Mostrá en llano el título, los criterios, las pruebas y **con qué comando se corren** (lo que va en `verify`, o
+Mostrá en llano el título, el problema y lo que tiene que pasar, las preguntas que quedaron abiertas (si hay), los
+criterios, las pruebas y **con qué comando se corren** (lo que va en `verify`, o
 `npm test` si lo pone el guion), en una lista corta. El comando queda escrito en la historia y lo corre después el
 recorrido: la persona lo ve antes de aprobarlo. Preguntá «¿La escribo así?» y esperá el «sí» antes de escribir nada.
 Si pide cambios, ajustá y volvé a mostrar.
@@ -50,6 +56,11 @@ Forma del JSON:
 ```json
 {
   "title": "El total del carrito suma el envío",
+  "problem": "el total del carrito no muestra el envío y la persona se entera al pagar",
+  "outcome": "el total que ve antes de pagar ya incluye el envío",
+  "questions": [
+    { "question": "¿El envío gratis cuenta como cero?", "why": "cambia el total", "who": "quien vende", "blocks": true }
+  ],
   "asA": "quien compra en la tienda",
   "iWant": "ver el total con el envío incluido",
   "soThat": "no llevarme una sorpresa al pagar",
@@ -68,7 +79,8 @@ Forma del JSON:
 }
 ```
 
-- **Sale 0**: el guion escribió la historia y devolvió su ruta.
+- **Sale 0**: el guion escribió la historia y su intención al lado (en borrador, con las preguntas como filas
+  abiertas, o `Ninguna.` sin `questions`) y devolvió las dos rutas (`path` e `intent`).
 - **Sale 2**: dice en llano qué falta o qué sobra y no escribió nada. Arreglá el JSON (o preguntale a la persona lo que
   falta) y volvé a correrlo. Nunca escribas la historia a mano: la marca de primera vez sólo vale si la escribe el guion.
 

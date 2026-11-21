@@ -1,37 +1,47 @@
 {
   "hooks": [
     {
-      "hook": "lane-llm-notice.js (medidor del desempate por modelo del portón de carril)",
+      "hook": "lane-llm-notice.js (aviso de arranque de los arreglos rápidos)",
       "script": "${FIXTURE}/tcg/scripts/hooks/lane-llm-notice.js",
       "event": "SessionStart",
       "matcher": "*",
       "cases": [
         {
-          "id": "grita-cuando-el-modelo-abrio-lo-que-el-freno-cerro",
+          "id": "cuenta-los-arreglos-rapidos-nuevos-por-como-se-firmaron",
           "type": "must-emit",
           "setup": [
             "mkdir -p tcg/scripts/hooks state && cp $TCG/scripts/hooks/lane-llm-notice.js tcg/scripts/hooks/",
-            "node -e \"require('fs').writeFileSync('state/adhoc.log', JSON.stringify({ts:new Date().toISOString(),kind:'ADHOC_LLM_OVERRIDE_LANE',reason:'actualiza el sp de desduplicacion',lanePrompt:'implementemos la story 2.3',via:'llm',cwd:'/repo'})+'\\n')\""
+            "node -e \"var l=[{ts:new Date().toISOString(),kind:'ADHOC_SET',via:'ventana',reason:'el boton de guardar'},{ts:new Date().toISOString(),kind:'ADHOC_SET',via:'delegacion',by:'ses-coord',reason:'el sp de deudas'}].map(function(o){return JSON.stringify(o)}).join('\\n'); require('fs').writeFileSync('state/adhoc.log', l+'\\n')\""
           ],
-          "env": { "TYCON_PIPELINE_STATE_DIR": "${FIXTURE}/state" },
-          "stdin": { "source": "startup" },
+          "env": {
+            "TYCON_PIPELINE_STATE_DIR": "${FIXTURE}/state"
+          },
+          "stdin": {
+            "source": "startup"
+          },
           "expect": {
             "stdout_re": [
-              "desempate por modelo",
-              "abrió 1 permiso",
-              "Apagar el desempate: TYCON_LANE_LLM=0"
+              "arreglos rápidos en 7 días: 2 \\(en la ventana: 1, en la terminal: 0, por la coordinadora: 1\\)"
+            ],
+            "stdout_not_re": [
+              "desempate",
+              "modelo"
             ]
           }
         },
         {
-          "id": "quiet-consultas-sin-override",
+          "id": "quiet-los-eventos-de-los-jueces-viejos-no-cuentan",
           "type": "must-stay-quiet",
           "setup": [
             "mkdir -p tcg/scripts/hooks state && cp $TCG/scripts/hooks/lane-llm-notice.js tcg/scripts/hooks/",
-            "node -e \"var l=[{ts:new Date().toISOString(),kind:'ADHOC_DENIED_REASON',reason:'parafrasis del agente',via:'llm-sin-veredicto',cwd:'/repo'},{ts:new Date().toISOString(),kind:'ADHOC_SET',reason:'cita literal del user',cwd:'/repo'}].map(function(o){return JSON.stringify(o)}).join('\\n'); require('fs').writeFileSync('state/adhoc.log', l+'\\n')\""
+            "node -e \"var l=[{ts:new Date().toISOString(),kind:'ADHOC_LLM_OVERRIDE_LANE',reason:'juez viejo',lanePrompt:'x',via:'llm',cwd:'/repo'},{ts:new Date().toISOString(),kind:'ADHOC_DENIED_REASON',reason:'parafrasis',via:'llm',cwd:'/repo'}].map(function(o){return JSON.stringify(o)}).join('\\n'); require('fs').writeFileSync('state/adhoc.log', l+'\\n')\""
           ],
-          "env": { "TYCON_PIPELINE_STATE_DIR": "${FIXTURE}/state" },
-          "stdin": { "source": "startup" },
+          "env": {
+            "TYCON_PIPELINE_STATE_DIR": "${FIXTURE}/state"
+          },
+          "stdin": {
+            "source": "startup"
+          },
           "expect": {}
         },
         {
@@ -41,51 +51,44 @@
             "mkdir -p tcg/scripts/hooks state && cp $TCG/scripts/hooks/lane-llm-notice.js tcg/scripts/hooks/",
             "printf 'no soy json\\n{roto\\n' > state/adhoc.log"
           ],
-          "env": { "TYCON_PIPELINE_STATE_DIR": "${FIXTURE}/state" },
-          "stdin": { "source": "startup" },
+          "env": {
+            "TYCON_PIPELINE_STATE_DIR": "${FIXTURE}/state"
+          },
+          "stdin": {
+            "source": "startup"
+          },
           "expect": {}
         },
         {
-          "id": "quiet-el-override-ya-avisado-no-se-repite",
+          "id": "quiet-lo-ya-avisado-no-se-repite",
           "type": "must-stay-quiet",
           "setup": [
             "mkdir -p tcg/scripts/hooks state && cp $TCG/scripts/hooks/lane-llm-notice.js tcg/scripts/hooks/",
-            "node -e \"require('fs').writeFileSync('state/adhoc.log', JSON.stringify({ts:'2026-08-27T10:00:00.000Z',kind:'ADHOC_LLM_OVERRIDE_LANE',reason:'ya avisado',lanePrompt:'x',via:'llm',cwd:'/repo'})+'\\n')\"",
-            "node -e \"require('fs').writeFileSync('state/lane-llm-notice-seen.json', JSON.stringify({lastTs:'2026-08-27T10:00:00.000Z'}))\""
+            "node -e \"var l=[{ts:'2026-10-27T10:00:00.000Z',kind:'ADHOC_SET',via:'ventana',reason:'ya avisado'}].map(function(o){return JSON.stringify(o)}).join('\\n'); require('fs').writeFileSync('state/adhoc.log', l+'\\n')\"",
+            "node -e \"require('fs').writeFileSync('state/lane-llm-notice-seen.json', JSON.stringify({lastTs:'2026-10-27T10:00:00.000Z'}))\""
           ],
-          "env": { "TYCON_PIPELINE_STATE_DIR": "${FIXTURE}/state" },
-          "stdin": { "source": "startup" },
+          "env": {
+            "TYCON_PIPELINE_STATE_DIR": "${FIXTURE}/state"
+          },
+          "stdin": {
+            "source": "startup"
+          },
           "expect": {}
-        },
-        {
-          "id": "grita-override-nuevo-aunque-haya-uno-viejo-ya-avisado",
-          "type": "must-emit",
-          "setup": [
-            "mkdir -p tcg/scripts/hooks state && cp $TCG/scripts/hooks/lane-llm-notice.js tcg/scripts/hooks/",
-            "node -e \"var l=[{ts:'2026-08-27T10:00:00.000Z',kind:'ADHOC_LLM_OVERRIDE_LANE',reason:'ya avisado',lanePrompt:'x',via:'llm',cwd:'/repo'},{ts:new Date().toISOString(),kind:'ADHOC_LLM_OVERRIDE_LANE',reason:'este es nuevo',lanePrompt:'y',via:'llm',cwd:'/repo'}].map(function(o){return JSON.stringify(o)}).join('\\n'); require('fs').writeFileSync('state/adhoc.log', l+'\\n')\"",
-            "node -e \"require('fs').writeFileSync('state/lane-llm-notice-seen.json', JSON.stringify({lastTs:'2026-08-27T10:00:00.000Z'}))\""
-          ],
-          "env": { "TYCON_PIPELINE_STATE_DIR": "${FIXTURE}/state" },
-          "stdin": { "source": "startup" },
-          "expect": {
-            "stdout_re": [
-              "abrió 1 permiso",
-              "este es nuevo"
-            ]
-          }
         },
         {
           "id": "kill-switch-apaga-el-aviso",
           "type": "must-stay-quiet",
           "setup": [
             "mkdir -p tcg/scripts/hooks state && cp $TCG/scripts/hooks/lane-llm-notice.js tcg/scripts/hooks/",
-            "node -e \"require('fs').writeFileSync('state/adhoc.log', JSON.stringify({ts:new Date().toISOString(),kind:'ADHOC_LLM_OVERRIDE_LANE',reason:'apagado',lanePrompt:'x',via:'llm',cwd:'/repo'})+'\\n')\""
+            "node -e \"var l=[{ts:new Date().toISOString(),kind:'ADHOC_SET',via:'ventana',reason:'apagado'}].map(function(o){return JSON.stringify(o)}).join('\\n'); require('fs').writeFileSync('state/adhoc.log', l+'\\n')\""
           ],
           "env": {
             "TYCON_PIPELINE_STATE_DIR": "${FIXTURE}/state",
             "TYCON_LANE_LLM_NOTICE": "0"
           },
-          "stdin": { "source": "startup" },
+          "stdin": {
+            "source": "startup"
+          },
           "expect": {}
         }
       ]

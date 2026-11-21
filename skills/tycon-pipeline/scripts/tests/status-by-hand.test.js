@@ -24,6 +24,7 @@ const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 const PUERTA = path.join(SCRIPTS, 'on-bash-write-gate.js');
 const ENCABEZADO = path.join(SCRIPTS, 'on-frontmatter-write.js');
 const PRE_EDIT = path.join(SCRIPTS, 'hook-pre-edit.js');
+const { plantilla } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'template-dir.js'));
 const SID = 's-8109';
 const TUID = 'toolu_8109';
 const HISTORIA = 'specs/story-9.9-algo.md';
@@ -36,15 +37,22 @@ const deLaPersona = (texto, min = 2) => ({ type: 'user', timestamp: hace(min), m
  * Una HOME con un repo, una historia en `status`, el marcador abierto de la sesión y la conversación (null = sin
  * registro, como Codex) con el pedido que se juzga al final.
  */
-function nuevaHome({ status = 'in-progress', conversacion = [deLaPersona('seguí')], herramienta = 'Bash', extra = '' } = {}) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'status-by-hand-'));
+// Lo fijo de la HOME (el repo inicializado y los dos .md que no son la historia) se arma una vez por proceso
+// (scripts/tests/lib/template-dir.js); la historia, el marcador y la conversación se escriben en cada copia.
+const PLANTILLA_HOME = plantilla('status-by-hand-plantilla-', (home) => {
   const repo = path.join(home, 'repo');
   fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
   spawnSync('git', ['init', '-q', repo]);
-  const historia = path.join(repo, HISTORIA);
-  fs.writeFileSync(historia, `---\nepic: 9\nstory: "9.9"\ntitle: "Algo"\nstatus: ${status}\n${extra}qa_guide: off\n---\n\n# Story 9.9\n\nStatus: ${status}\n\n## Story\n\nTexto.\n`);
   fs.writeFileSync(path.join(repo, 'specs', 'otra.md'), '# otra\n');
   fs.writeFileSync(path.join(repo, 'notas.md'), '# notas\n');
+});
+
+function nuevaHome({ status = 'in-progress', conversacion = [deLaPersona('seguí')], herramienta = 'Bash', extra = '' } = {}) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'status-by-hand-'));
+  PLANTILLA_HOME.copiar(home);
+  const repo = path.join(home, 'repo');
+  const historia = path.join(repo, HISTORIA);
+  fs.writeFileSync(historia, `---\nepic: 9\nstory: "9.9"\ntitle: "Algo"\nstatus: ${status}\n${extra}qa_guide: off\n---\n\n# Story 9.9\n\nStatus: ${status}\n\n## Story\n\nTexto.\n`);
   const activos = path.join(home, '.claude', '.tycon-pipeline', 'active');
   fs.mkdirSync(activos, { recursive: true });
   const marcador = { storyId: '9.9', storyPath: historia, repoPath: repo, startedAt: hace(60),
@@ -63,6 +71,27 @@ function nuevaHome({ status = 'in-progress', conversacion = [deLaPersona('seguí
   return { home, repo, historia, estado: path.join(home, '.claude', '.tycon-pipeline') };
 }
 
+test('T23 Plantilla_SuitesDelPipeline_UnRepoBasePorProceso — la HOME con su repo se arma una vez; la historia y el marcador, por caso y con las rutas de la copia @story-8.230 @ac-7', () => {
+  const homes = [nuevaHome(), nuevaHome({ status: 'review', extra: 'sprint: 3\n' }), nuevaHome({ conversacion: null })];
+  assert.strictEqual(PLANTILLA_HOME.armados, 1, 'la HOME base se armó más de una vez');
+  assert.strictEqual(new Set(homes.map((h) => h.home)).size, 3, 'dos llamadas recibieron la misma HOME');
+  for (const h of homes) {
+    const top = spawnSync('git', ['-C', h.repo, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout.trim();
+    assert.strictEqual(fs.realpathSync(top), fs.realpathSync(h.repo), 'el repo no es el de su copia');
+    const m = JSON.parse(fs.readFileSync(path.join(h.estado, 'active', `${SID}.json`), 'utf8'));
+    assert.strictEqual(m.storyPath, h.historia, 'el marcador apunta a otra historia');
+    assert.strictEqual(m.repoPath, h.repo, 'el marcador apunta a otro repo');
+    assert.ok(m.storyPath.startsWith(h.home + path.sep), `el marcador no apunta a su copia: ${m.storyPath}`);
+  }
+  // lo de cada caso: el estado y el extra son de su copia
+  assert.match(fs.readFileSync(homes[0].historia, 'utf8'), /^status: in-progress$/m);
+  assert.match(fs.readFileSync(homes[1].historia, 'utf8'), /^status: review$/m);
+  assert.match(fs.readFileSync(homes[1].historia, 'utf8'), /^sprint: 3$/m);
+  assert.doesNotMatch(fs.readFileSync(homes[0].historia, 'utf8'), /^sprint: 3$/m);
+  assert.ok(fs.existsSync(path.join(homes[0].home, '.claude', 'projects', '-repo')));
+  assert.ok(!fs.existsSync(path.join(homes[2].home, '.claude', 'projects', '-repo')), 'la conversación de un caso apareció en otro');
+});
+
 function correr(gancho, h, evento, env = {}) {
   const e = { ...process.env, HOME: h.home, USERPROFILE: h.home };
   for (const k of Object.keys(e)) if (/^TYCON_|^CLAUDE_CODE_SESSION_ID$/.test(k)) delete e[k];
@@ -74,7 +103,12 @@ function correr(gancho, h, evento, env = {}) {
   });
   return { status: r.status, stderr: r.stderr || '' };
 }
-const consola = (h, command, tool_name = 'Bash', env) => correr(PUERTA, h, { tool_name, tool_input: { command } }, env);
+// la puerta de la consola corre desde una copia propia del arnés, igual que el guion que nombra el comando: el freno
+// reconoce un guion del arnés según el estado de git del clon
+const consola = (h, command, tool_name = 'Bash', env) => {
+  const { inHarnessCopy } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'harness-copy.js'));
+  return correr(inHarnessCopy(PUERTA), h, { tool_name, tool_input: { command: inHarnessCopy(command) } }, env);
+};
 const POR_CONSOLA = /se edita con la herramienta de edición/;
 const BORRADO = /BORRADO DEL ESTADO DEL PIPELINE/;
 const A_MANO = /update-story-status/;
@@ -179,7 +213,7 @@ test('T5 EdicionAMano_ConFrase_YaNoPasa @story-8.109 @ac-4 @story-8.139 @ac-43 �
     const h = nuevaHome({ herramienta: 'Edit', conversacion: [deLaPersona(frase)] });
     const r = correr(ENCABEZADO, h, editar(h, 'status: in-progress\nqa', 'status: done\nqa'));
     assert.strictEqual(r.status, 2, `${frase}: ${r.stderr}`);
-    assert.match(r.stderr, /marker\.js sign-file cambiar-el-estado/, frase);
+    assert.match(r.stderr, /marker\.js"? sign-file cambiar-el-estado/, frase);
   }
   for (const [que, conversacion] of [['de hace 31 minutos', [deLaPersona('autorizo cambiar el estado', 31)]], ['sin conversación', null]]) {
     const h = nuevaHome({ herramienta: 'Edit', conversacion });
@@ -230,7 +264,7 @@ test('T7 CasoKimi_BorrarEstado_Frena @story-8.109 @ac-5 — rm, comodín, mv, la
     const r = consola(h, c, herramienta);
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
     assert.match(r.stderr, BORRADO, c);
-    assert.match(r.stderr, /marker\.js clear/, `${c}: el cartel dice qué comando usar`);
+    assert.match(r.stderr, /marker\.js" clear/, `${c}: el cartel dice qué comando usar`);
   }
 });
 
@@ -696,6 +730,32 @@ test('BorrarEstado_PalabraSuelta_NoAbreLaRegla', () => {
   }
 });
 
+// BorrarRegistroDeAprobaciones_SuCartel_ElEstadoEnteroElDelEstado
+// El registro de las aprobaciones de la persona (`owner-approvals/`) vive adentro del estado. Borrarlo, vaciarlo o
+// moverlo frena con su cartel; borrar el estado entero se lo lleva junto con los marcadores, y ahí el cartel es el del
+// estado, que dice cómo se cierra una ejecución (`marker.js clear`).
+// 🔴 Falla con: el freno del registro mirado antes que el del estado, que le quita a `rm -rf <estado>` su cartel de siempre.
+test('BorrarRegistroDeAprobaciones_SuCartel_ElEstadoEnteroElDelEstado', () => {
+  const h = nuevaHomeDeEstado();
+  const E = h.estado;
+  fs.mkdirSync(path.join(E, 'owner-approvals', 'usadas'), { recursive: true });
+  fs.writeFileSync(path.join(E, 'owner-approvals', 'usadas', 'abc'), '{}');
+  const REGISTRO = /registro de las aprobaciones de la persona no se toca a mano/;
+  for (const c of [`rm -rf ${E}/owner-approvals`, `rm ${E}/owner-approvals/usadas/abc`, `mv ${E}/owner-approvals ${h.home}/guardado`,
+    `cd ${E} && rm -rf owner-approvals/usadas`, `rm -rf ${E}/active ${E}/owner-approvals`]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, REGISTRO, c);
+    assert.doesNotMatch(r.stderr, BORRADO, c);
+  }
+  for (const c of [`rm -rf ${E}`, 'rm -rf ~/.tycon/state', `mv ${E} ${h.home}/guardado`]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, BORRADO, c);
+    assert.match(r.stderr, /marker\.js" clear/, c);
+  }
+});
+
 // TextoCitado_NoEsComando
 // Dos frenos falsos del mismo día: un `grep` de sólo lectura cuyo patrón citaba un `sed` que edita en el lugar frenó
 // «HISTORIA ESCRITA POR CONSOLA», y la descripción de un pedido que contaba en prosa cómo se borraba la carpeta del estado
@@ -794,5 +854,135 @@ test('EdicionSinFormaConocida_PalabraQueNoEsArchivo', () => {
   ]) {
     const r = consola(h, c);
     assert.strictEqual(r.status, 2, `${JSON.stringify(c.slice(0, 120))}: ${r.stderr}`);
+  }
+});
+
+// CopiaConOpcionDeValor_ElValorNoEsDestino
+// `rsync a b --exclude x`: el valor de una opción que lo lleva aparte (`--exclude`, `-e`, `scp -P`, `install -m`) se
+// tomaba como el destino de la copia, y un patrón que nombraba una historia frenaba como si se la escribiera.
+// 🔴 Falla con: el valor de la opción leído como la última palabra suelta, o el destino real perdido al saltearlo.
+test('CopiaConOpcionDeValor_ElValorNoEsDestino', () => {
+  const h = nuevaHome();
+  const fuera = fs.mkdtempSync(path.join(os.tmpdir(), 'copia-'));
+  for (const c of [
+    `rsync -a notas.md ${fuera}/ --exclude ${HISTORIA}`,
+    // a una carpeta que todavía no existe: tampoco es la copia de una constancia
+    `rsync -a notas.md ${fuera}/nueva/ --exclude ${HISTORIA}`,
+    `rsync -a notas.md ${fuera}/ --include ${HISTORIA} --exclude '*'`,
+    `rsync -a notas.md ${fuera}/ --exclude-from ${HISTORIA}`,
+    `rsync -a notas.md ${fuera}/ -f '- x' --filter ${HISTORIA}`,
+    `rsync -av notas.md ${fuera}/ -e ${HISTORIA}`,
+    `scp notas.md ${fuera}/ -P ${HISTORIA}`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+  // el destino sigue siendo la última palabra suelta, con la opción antes, después o con `--`
+  for (const c of [
+    `rsync -a notas.md ${HISTORIA} --exclude x`,
+    `rsync --exclude x -e ssh notas.md ${HISTORIA}`,
+    `rsync -a --exclude=x notas.md ${HISTORIA}`,
+    `rsync -a -- --exclude ${HISTORIA}`,
+    `install -m 644 /tmp/s.txt ${HISTORIA}`,
+    'install -t specs /tmp/story-9.9-algo.md',
+    // `-t` dentro de un grupo de cortas, la forma de GNU de siempre (8.316, pase adversarial)
+    'install -Dt specs /tmp/story-9.9-algo.md',
+    'install -vt specs /tmp/story-9.9-algo.md',
+    'install -Dvtspecs /tmp/story-9.9-algo.md',
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /HISTORIA ESCRITA POR CONSOLA/, c);
+  }
+});
+
+// SedConComodin_CarpetaGrande_MiraLoQueNombra
+// Un `sed -i` con un comodín, después de un `cd` a una carpeta con más de 500 `.md`, frenaba por la carpeta entera («no
+// la recorro»), aunque el comodín nombrara pocos archivos y ninguno fuera una historia. Un comodín simple cuenta por lo
+// que expande, como un nombre tal cual; lo que no se sabe expandir igual que el shell sigue mirando la carpeta.
+// 🔴 Falla con: recorrer la carpeta del `cd` cuando el `sed` nombra sus archivos, o dejar pasar lo que el comodín no ve.
+test('SedConComodin_CarpetaGrande_MiraLoQueNombra', () => {
+  const h = nuevaHome();
+  const docs = path.join(h.repo, 'docs');
+  fs.mkdirSync(path.join(docs, 'g'), { recursive: true });
+  for (let i = 0; i < 510; i++) fs.writeFileSync(path.join(docs, 'g', `n${i}.md`), '# n\n');
+  fs.writeFileSync(path.join(docs, 'guia-a.md'), '# a\n');
+  fs.writeFileSync(path.join(docs, 'guia-b.md'), '# b\n');
+  for (const c of [
+    "cd docs; sed -i.bak 's/a/b/' guia-*.md",
+    "cd docs && sed -i.bak 's/a/b/' guia-?.md g/n1.md && git diff",
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+  for (const c of [
+    // la carpeta, cuando los archivos salen de otro comando o de un comodín que zsh expande distinto
+    "cd docs; grep -l a guia-*.md | xargs sed -i.bak 's/a/b/'",
+    "cd docs; sed -i.bak 's/a/b/' **/*.md",
+    // un comodín que expande a más de lo que se revisa
+    "cd docs; sed -i.bak 's/a/b/' g/*.md",
+    // la historia que el comodín nombra
+    "cd specs; sed -i.bak 's/^status: .*/status: done/' story-*.md",
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /HISTORIA ESCRITA POR CONSOLA/, c);
+  }
+});
+
+// ── El sed que cambia lo que el encabezado cuida, más allá del estado de arriba ───────────────────────────────────────
+// Un `sed` que nombra su historia se ensaya sobre una copia y pasa si no la cierra. Medía sólo los `status:` de arriba:
+// una tanda del bloque `pipelines` pasada a `done`, o el número de la historia cambiado, pasaban por consola y frenaban
+// con la herramienta de edición. Ahora el `sed` pasa sólo si la herramienta de edición también dejaría pasar el cambio.
+// Los casos van en una tabla: el comando, el texto de antes y el de después (lo que el `sed` dejaría).
+const TANDA_BLOQUEADA = 'pipelines:\n  front:\n    status: blocked\n';
+const CASOS_SED = {
+  tanda: { extra: TANDA_BLOQUEADA, sed: "s/^    status: blocked$/    status: done/", antes: '    status: blocked\n', despues: '    status: done\n' },
+  id: { sed: 's/^story: "9.9"$/story: "9.2"/', antes: 'story: "9.9"', despues: 'story: "9.2"' },
+  repetido: { sed: 's/^qa_guide: off$/status: draft/', antes: 'qa_guide: off', despues: 'status: draft' },
+  cuerpo: { sed: 's/^Texto\\.$/Texto nuevo./', antes: 'Texto.', despues: 'Texto nuevo.' },
+};
+const porSed = (caso) => {
+  const h = nuevaHome({ extra: caso.extra || '' });
+  return consola(h, `sed -i -e '${caso.sed}' ${HISTORIA}`);
+};
+const porEdicion = (caso) => {
+  const h = nuevaHome({ herramienta: 'Edit', extra: caso.extra || '' });
+  return correr(ENCABEZADO, h, editar(h, caso.antes, caso.despues));
+};
+
+// 🔴 Falla con: comparar sólo los `status:` de arriba (la tanda pasa a `done` por consola sin firma).
+test('SedPipelinesTandaADone_Frena — una tanda de blocked a done, con el estado de arriba igual', () => {
+  const r = porSed(CASOS_SED.tanda);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, POR_CONSOLA);
+});
+
+// 🔴 Falla con: no mirar el `story:` (la historia cambia de número por consola).
+test('SedCambiaElId_Frena — el número de la historia cambiado', () => {
+  const r = porSed(CASOS_SED.id);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, POR_CONSOLA);
+});
+
+// 🔴 Falla con: dejar pasar un segundo `status:` (cada lector puede quedarse con uno distinto).
+test('SedEstadoRepetido_Frena — un segundo status: en el encabezado', () => {
+  const r = porSed(CASOS_SED.repetido);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, POR_CONSOLA);
+});
+
+// 🔴 Falla con: frenar un `sed` que sólo cambia el cuerpo (el caso del 31/10, que pasa a propósito).
+test('SedSoloCuerpo_Pasa — un renglón del cuerpo, con el encabezado igual', () => {
+  const r = porSed(CASOS_SED.cuerpo);
+  assert.strictEqual(r.status, 0, r.stderr);
+});
+
+// 🔴 Falla con: que la consola y la herramienta de edición juzguen distinto el mismo cambio al encabezado.
+test('SedYEdicionDicenLoMismo — los cuatro casos, por consola y por la herramienta de edición', () => {
+  for (const [que, caso] of Object.entries(CASOS_SED)) {
+    const consolaFrena = porSed(caso).status === 2;
+    const edicionFrena = porEdicion(caso).status === 2;
+    assert.strictEqual(consolaFrena, edicionFrena, `${que}: consola ${consolaFrena ? 'frena' : 'pasa'}, edición ${edicionFrena ? 'frena' : 'pasa'}`);
   }
 });

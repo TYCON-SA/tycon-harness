@@ -43,16 +43,33 @@ function mostrado({ stateDir, sessionId, storyId, ac, sha }) {
  * La huella de lo que se le mostró a la persona: el texto del criterio, por qué no se puede probar en vivo y qué lo
  * cubre. Si cambia cualquiera de los tres, la muestra ya no vale para la firma.
  */
-function huella(text, reason, coveredBy) {
-  return require('crypto').createHash('sha256').update(JSON.stringify([String(text ?? '').trim(), String(reason ?? '').trim(), String(coveredBy ?? '').trim()])).digest('hex').slice(0, 16);
+// Con un criterio con cota, lo medido entra como cuarto dato: si cambia la medición, el aviso se vuelve a mostrar. Sin
+// cota no entra, y la huella de un criterio sin marca es la de siempre.
+function huella(text, reason, coveredBy, medida) {
+  const datos = [String(text ?? '').trim(), String(reason ?? '').trim(), String(coveredBy ?? '').trim()];
+  if (medida) datos.push(String(medida).trim());
+  return require('crypto').createHash('sha256').update(JSON.stringify(datos)).digest('hex').slice(0, 16);
+}
+
+/**
+ * La pregunta por criterio de `marker.js runtime-waiver` en la terminal: el texto del criterio primero (es lo que se
+ * aprueba saltear), la razón, la prueba que lo cubre y, en uno con cota, lo medido y la cota.
+ */
+function preguntaDeTerminal({ ac, texto, reason, cov, medida }) {
+  return `\n──────── AC #${ac} ────────\n` +
+    `QUÉ DICE EL AC:\n  ${texto ? texto : '(no se pudo citar del spec — abrí la story antes de aprobar)'}\n\n` +
+    `Por qué NO se puede verificar corriendo la app:\n  ${reason}\n` +
+    `Cubierto por (test que ya corrió): ${cov}\n` +
+    (medida ? `Lo medido: ${medida}\n` : '') + '\n' +
+    `¿Aprobás saltar la verificación POR-LA-APP de AC#${ac}? (si / no) > `;
 }
 
 function bloque({ storyId, criterios }) {
   // un renglón por criterio, más el encabezado y dónde se aprueba: Claude Code antepone su rótulo a cada renglón del aviso
   return [
     `Te piden firmar ${criterios.length === 1 ? 'un criterio' : `${criterios.length} criterios`} de la historia ${storyId} que no se ${criterios.length === 1 ? 'puede' : 'pueden'} probar en vivo (te lo muestra el arnés). Un criterio firmado cuenta como probado sin haberlo corrido contra la aplicación.`,
-    ...criterios.map((c) => `AC ${c.ac}: ${c.text || '(sin texto en la historia)'} · Por qué no se puede probar en vivo: ${c.reason || '(sin razón declarada)'} · Qué lo cubre: ${c.coveredBy || '(ninguna prueba declarada)'}`),
-    'Si estás de acuerdo, aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No». Una respuesta en el chat no lo firma.',
+    ...criterios.map((c) => `AC ${c.ac}: ${c.text || '(sin texto en la historia)'} · Por qué no se puede probar en vivo: ${c.reason || '(sin razón declarada)'} · Qué lo cubre: ${c.coveredBy || '(ninguna prueba declarada)'}${c.medida ? ` · Lo medido: ${c.medida}` : ''}`),
+    'Si estás de acuerdo, aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No». Lo firma esa aprobación, no otra respuesta en el chat.',
   ].join('\n');
 }
 
@@ -62,17 +79,54 @@ function leerMarcador(stateDir, sessionId) {
   return JSON.parse(txt);
 }
 
-/** Los datos de cada criterio pedido que está pendiente de firma (declarado imposible), con la huella de su declaración. */
-function criteriosDe(storyPath, acs) {
+/**
+ * La matriz de una firma: la de «Preparar el commit» (la tanda, la lista de cambios y el repo del código del marcador),
+ * para que los criterios sin correr de las otras tandas no nieguen la firma de uno de la tanda. La tanda vale sólo si el
+ * marcador es de esa misma historia; con el de otra, o sin marcador, mide todas.
+ */
+function matrixForSignature(storyPath, marker) {
   const rm = require('../runtime-matrix.js');
-  const matrix = rm.compute({ storyPath });
+  const delMarcador = marker && marker.storyPath
+    ? { ...marker, storyPath: path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(marker.repoPath || process.cwd(), marker.storyPath) }
+    : null;
+  const op = rm.opcionesDeTandaDelMarcador(delMarcador, storyPath);
+  return rm.compute({ storyPath, ...(op.batch ? op : {}) });
+}
+
+/**
+ * La pista para firmar por terminal la historia de una corrida con tanda: `--for-session` con la sesión de cada marcador
+ * abierto de esa historia que tiene tanda, o el lugar de la sesión si no hay ninguno. null si la historia no tiene tandas.
+ */
+function pistaDeSesion({ stateDir, storyPath }) {
+  let tandas = [];
+  try { tandas = require('./story-checks.js').parsePipelinesBlock(fs.readFileSync(storyPath, 'utf8')); } catch (_) { tandas = []; }
+  if (!tandas.length) return null;
+  const sesiones = [];
+  let nombres = [];
+  try { nombres = fs.readdirSync(path.join(stateDir, 'active')).filter((f) => f.endsWith('.json')); } catch (_) { nombres = []; }
+  for (const f of nombres) {
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(stateDir, 'active', f), 'utf8'));
+      if (m && m.batch && esLaDelMarcador(storyPath, m)) sesiones.push(String(m.sessionId || f.replace(/\.json$/, '')));
+    } catch (_) { /* un marcador ilegible no da pista */ }
+  }
+  const quien = sesiones.length ? sesiones.join(' o ') : '<la sesión de la corrida>';
+  return `Si la corrida es de una tanda, la firma por terminal mide esa tanda con --for-session ${quien}.`;
+}
+
+/** Los datos de cada criterio pedido que está pendiente de firma (declarado imposible), con la huella de su declaración. */
+function criteriosDe(storyPath, acs, calculada = null) {
+  const matrix = calculada || require('../runtime-matrix.js').compute({ storyPath });
   if (matrix.structuralError) return { error: matrix.structuralError };
   const pend = new Set(matrix.notVerifiable || []);
   const lista = [];
   for (const n of acs) {
     const a = matrix.perAc && matrix.perAc[n];
     if (!a || !pend.has(n)) continue;
-    lista.push({ ac: n, text: a.text, reason: a.declReason, coveredBy: a.coveredBy, sha: huella(a.text, a.declReason, a.coveredBy) });
+    // en un criterio con cota, lo medido y la cota: la persona sabe qué está perdonando (null sin marca)
+    const medida = require('../runtime-matrix.js').textoDeMedida(a);
+    lista.push({ ac: n, text: a.text, reason: a.declReason, coveredBy: a.coveredBy, ...(medida ? { medida } : {}),
+      sha: huella(a.text, a.declReason, a.coveredBy, medida) });
   }
   return { matrix, lista };
 }
@@ -96,7 +150,7 @@ function preparar({ sessionId, stateDir, storyPath, acs }) {
   if (!marker || !marker.storyId) return null;
   const abs = path.isAbsolute(storyPath) ? storyPath : path.join(marker.repoPath || process.cwd(), storyPath);
   if (!fs.existsSync(abs) || !esLaDelMarcador(abs, marker)) return null;
-  const c = criteriosDe(abs, acs);
+  const c = criteriosDe(abs, acs, matrixForSignature(abs, marker));
   if (c.error) return { reminder: `no pude armar los criterios para mostrarlos (la matriz no computa: ${c.error}): así no se pueden firmar hasta arreglarlo.` };
   const storyId = String(c.matrix.sid || marker.storyId);
   const faltan = c.lista.filter((x) => { const v = mostrado({ stateDir, sessionId, storyId, ac: x.ac, sha: x.sha }); return !v || v.error; });
@@ -128,13 +182,17 @@ function pedidosDelComando(command) {
     const acsTxt = k >= 0 ? String(args[k + 1] || '') : '';
     if (!storyPath || !acsTxt || /[$`]/.test(storyPath + acsTxt)) continue;
     const acs = [...new Set(acsTxt.split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))];
-    if (acs.length) out.push({ storyPath, acs });
+    // pedida para otra sesión, la muestra es la de esa sesión: su marcador y su constancia
+    const f = args.indexOf('--for-session');
+    const paraSesion = f >= 0 ? String(args[f + 1] || '') : null;
+    if (paraSesion !== null && !/^[\w-]+$/.test(paraSesion)) continue;
+    if (acs.length) out.push({ storyPath, acs, ...(paraSesion ? { paraSesion } : {}) });
   }
   return out;
 }
 
 function paraMostrar({ command, sessionId, stateDir, home = os.homedir() }) {
-  const listos = pedidosDelComando(command).map((p) => preparar({ sessionId, stateDir, home, ...p })).filter((r) => r && r.systemMessage);
+  const listos = pedidosDelComando(command).map(({ paraSesion, ...p }) => preparar({ sessionId: paraSesion || sessionId, stateDir, home, ...p })).filter((r) => r && r.systemMessage);
   if (!listos.length) return null;
   return { systemMessage: listos.map((r) => r.systemMessage).join('\n'), anotar: () => { for (const r of listos) r.anotar(); } };
 }
@@ -154,7 +212,7 @@ function handle(event, opts = {}) {
   if (!marker.storyPath) return { reminder: `el marcador de la corrida no trae la ruta de la historia: no puedo mostrar los criterios de ${PEDIDO}.` };
   const repo = marker.repoPath || process.cwd();
   const story = path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(repo, marker.storyPath);
-  const runDir = require('../pipeline.js').resolveRunDir(repo, String(marker.storyId), false, fs.existsSync(story) ? story : undefined);
+  const runDir = require('../pipeline.js').resolveRunDir(repo, String(marker.storyId), false, fs.existsSync(story) ? story : undefined, { marker });
   if (!runDir || !mismaRuta(archivo, path.join(runDir, PEDIDO))) return null;
   let p;
   try { p = JSON.parse(fs.readFileSync(path.join(runDir, PEDIDO), 'utf8')); } catch (e) {
@@ -167,4 +225,4 @@ function handle(event, opts = {}) {
   return r ? { systemMessage: r.systemMessage, alMostrar: r.anotar } : null;
 }
 
-module.exports = { PEDIDO, mostrado, huella, bloque, criteriosDe, esLaDelMarcador, pedidosDelComando, paraMostrar, handle };
+module.exports = { PEDIDO, mostrado, huella, bloque, preguntaDeTerminal, criteriosDe, matrixForSignature, pistaDeSesion, preparar, esLaDelMarcador, pedidosDelComando, paraMostrar, handle };

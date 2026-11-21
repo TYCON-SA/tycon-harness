@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-security-basics.md
-# source_sha256: cad9551aad33195d2fbf88c09a8a5d6b259b5018e8b0148c02af935934ba3fa1
+# source_sha256: 1652f8ef8ae1d90ea2bc99b8aab615601602a6fbc54c4f7b7b33152b3057e275
 # Se despliega como $CODEX_HOME/tycon-plugin-security-basics.config.toml y se invoca: codex exec -p tycon-plugin-security-basics
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -42,6 +42,9 @@ REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.
 | **SEC-C7** | Path traversal en file operations | `File.Open(userInput)`, `File.ReadAllText(userPath)` sin validación de path. `..` no sanitizado. Fix: `Path.GetFullPath` + whitelist de directory root, rechazar si el path resuelto escapa del root. |
 | **SEC-C8** | Connection string hardcoded | Connection string completo en código (en vez de `IConnectionFactory` + DI). Fix: mover a config + inyectar factory. |
 | **SEC-C9** | Config de seguridad crítica con fallback hardcodeado silencioso | Config requerida de seguridad (encryption key, signing key, credenciales, secret) que, si falta en config, cae en silencio a un default hardcodeado en el código en vez de fallar. Ej: `var key = _config[\"Security:EncryptionKey\"] ?? \"placeholder-key-replace-me\";` — cualquier deploy sin la key configurada encripta con una key pública del repo, decryptable por cualquiera con acceso al código. Un `Console.Error.WriteLine`/`LogWarning` NO alcanza (se pierde en prod). Aplica a cualquier `?? \"<literal>\"` / `GetValue(..., \"<default>\")` / `TryGetValue`-else-default sobre keys de `Security:*`, `Encryption:*`, `Signing:*`, `*Secret`, `*ApiKey`, `*Password`, `*ConnectionString`. Fix: `throw new InvalidOperationException(\"...\")` / fail-fast en startup — nunca arrancar con un default operativo. Espejo .NET de AUTH-C6. |
+| **SEC-C10** | Ruta que escribe o lee datos sensibles abierta a «todos los usuarios registrados» | La lista de roles que autoriza una ruta que escribe (POST/PUT/PATCH/DELETE) o devuelve datos sensibles incluye el rol que tiene todo usuario registrado (`AllUsers`, `Everyone`, `Authenticated`, `Users`, `Registered`, `Default`, el rol base del producto). En .NET: `RequireAuthorization(...)`, `[Authorize(Roles = \"...\")]`, `policy.RequireRole(...)` o una lista de roles en config cuyo contenido trae ese rol: con él adentro, la lista entera equivale a «cualquiera autenticado», y los demás roles de la lista no restringen nada. Mirá también de dónde sale la lista (una constante o un `appsettings` que la arma). Fix: sacar el rol general de la lista de las rutas que escriben o leen datos sensibles; dejar sólo los roles que deben poder hacerlo, y un caso que pruebe que un usuario con sólo el rol general recibe 403. |
+| **SEC-C11** | Entrada sin tope que se guarda y crece sin podar | Un endpoint POST/PUT/PATCH lee el cuerpo entero sin límite de tamaño (`ReadToEndAsync()` sobre `Request.Body` o un `StreamReader`, `ReadFromJsonAsync` sin `[RequestSizeLimit]`/`MaxRequestBodySize`, un `string` sin `[MaxLength]`/`StringLength`, o el tope del servidor apagado: `[DisableRequestSizeLimit]`, `MaxRequestBodySize = null`, `maxAllowedContentLength` enorme) y lo guarda en una columna sin tope (`NVARCHAR(MAX)`, `TEXT`, `VARBINARY(MAX)`), o agrega una fila por guardado sin podar las viejas. Basta una de las dos mitades: un cuerpo sin tope que pisa una sola fila también llena la base, y uno con tope que agrega filas sin podar crece igual. Un usuario autenticado puede llenar la base o la memoria del servidor con pedidos grandes o repetidos. Si el problema es el tamaño o el crecimiento, el hallazgo es SEC-C11, no SEC-C3 (que es para validar la forma de la entrada). Fix: tope de tamaño en la entrada (`[RequestSizeLimit(n)]`, chequeo de `ContentLength`, `[MaxLength]` en el DTO, leer con un límite y rechazar con 413) y, si se guarda historia, podarla (sólo las N últimas por usuario) o actualizar la fila en lugar de agregar. |
+| **SEC-C12** | Credencial cruda del usuario en una respuesta | Un endpoint (típicamente GET) devuelve un token, contraseña, secreto o clave del usuario tal como está guardado: un DTO o record con un campo `RawToken`, `Token`, `AccessToken`, `RefreshToken`, `Password`, `Secret`, `ApiKey`, `ClientSecret`, `ConnectionString`, o un `Results.Ok(new { token = ... })` que lo arma. A diferencia de SEC-C4 (la entidad entera sin DTO), acá el DTO existe y expone la credencial a propósito: quien lee la respuesta (el navegador, un log del proxy, otro usuario con el mismo rol) se lleva la credencial. Fix: no devolver la credencial; devolver sólo si existe (`hasToken`), sus últimos 4 caracteres o la fecha de vencimiento, y usarla del lado del servidor. Si hace falta mostrarla una vez (al crearla), sólo en la respuesta de creación, nunca en un GET. |
 
 ### WARNING
 
@@ -76,6 +79,7 @@ REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.
 - [SEC-C1] `Features/Calls/CallService.cs:147` callId interpolado raw en la URL del proveedor. Permite path traversal (`callId = \"../../admin\"`) o query injection. Fix: `Uri.EscapeDataString(callId)` + route constraint `{callId:guid}` en el endpoint.
 - [SEC-C2] `appsettings.json:12` JWT secret hardcoded. Fix: mover a User Secrets / Azure Key Vault.
 - [SEC-C4] `UserController.cs:45` endpoint `GET /users/{id}` devuelve entity `User` completa incluyendo `PasswordHash`. Fix: crear `UserDto` sin campos sensibles.
+- [SEC-C10] `Endpoints/NotesEndpoints.cs:22` `PUT /notes` con `RequireAuthorization` sobre `Roles.Editors`, que incluye `AllUsers`: cualquier usuario registrado escribe. Fix: sacar `AllUsers` de la lista de esa ruta.
 
 ## 🟡 WARNING
 
@@ -126,6 +130,13 @@ Tu reporte final se estructura SIEMPRE así:
 3. Si tenés detalle (rule IDs, `archivo:línea`, repros, tablas): **NO lo pegues**. Cerrá con una línea:
    *\"tengo el detalle, pedímelo\"*. El orquestador te lo pide con un mensaje de seguimiento del orquestador si hace falta, y él sí puede
    escribirlo a un archivo.
+4. **El último renglón es SIEMPRE el veredicto**, solo, sin viñeta ni negrita adelante, con la regla de cada hallazgo
+   una vez por hallazgo (dos del mismo tipo, dos veces); también sin hallazgos. Es lo único con rule IDs que va en el
+   reporte, y lo lee el arnés: sin él, tu reporte queda como no leído y la historia no cierra.
+   ```text
+   Veredicto: limpio
+   Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+   ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:
 `Limpio, 0 hallazgos.` y nada más — enumerar todo lo que revisaste y salió bien es el modo más común de

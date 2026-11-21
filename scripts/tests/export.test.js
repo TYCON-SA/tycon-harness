@@ -358,16 +358,6 @@ const MARCA = {
   PS: '<!-- ' + 'tycon:public-only',
   PE: '-' + '->',
 };
-const PAPELES = 'scripts/publishing/public-files';
-// EL REPO PRIVADO ADELGAZADO. Ahí las pruebas corren sobre el árbol armado: lo público
-// llega encima, y con él los guiones de entrada y la lista de remotos en scripts/setup/. «En el interno no existe» no se
-// puede cumplir, así que esas dos afirmaciones no se exigen cuando la lista del privado (.tycon/internal-forms.json) dice
-// `layout: thin`; lo demás de cada caso (la plantilla, su declaración en la lista blanca) sí. Sin esa lista —el público,
-// o un privado completo— no cambia nada.
-const THIN_PRIVATE = (() => {
-  try { return JSON.parse(fs.readFileSync(path.join(RAIZ, '.tycon', 'internal-forms.json'), 'utf8')).layout === 'thin'; } catch (_) { return false; }
-})();
-
 // ── T9 — el nombre público, en un solo lugar ─────────────────────────────────────────────────────────
 // La clasificación de cada commit (whatShips, la que usan los frenos) lee el nombre público del MISMO commit: un
 // archivo roto es «no pude mirar» (tira), nunca «sin nombre público»; ausente (la copia pública no lo trae), sigue sin él.
@@ -473,25 +463,22 @@ test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — los
 });
 
 // ── el archivo que dice cuál es el remoto público ───────────────────────────────────
-// La copia lleva `scripts/setup/public-remotes.json` con el nombre público ya puesto: con él, el programa de instalación
-// reconoce un clon del público. Es un papel más (vive en public-files/ con los marcadores y llega por un sintético); en
-// el interno ese archivo no existe en `scripts/setup/`, así que un clon interno nunca es «público».
+// `scripts/setup/public-remotes.json` vive en su lugar con el nombre público ya puesto: con él, el programa de
+// instalación reconoce un clon del público. Sale como cualquier archivo de la lista blanca (lo toma `scripts/**`), no por
+// un sintético.
 const REMOTOS = 'scripts/setup/public-remotes.json';
-const PLANTILLA_REMOTOS = '{ "remotes": ["https://github.com/{{public-org}}/{{public-repo}}"] }\n';
 
-test('Export_PublicRemotes_ShipsWithThePublicName — la plantilla real y su declaración en la lista blanca',
-  { skip: !fs.existsSync(path.join(RAIZ, 'perfil-equipo.json')) && 'copia pública: ahí el archivo ya está en su destino y la plantilla no viaja' }, () => {
-    // 🔴 Falla con: ENOENT de scripts/publishing/public-files/scripts/setup/public-remotes.json
-    const plantilla = fs.readFileSync(path.join(RAIZ, PAPELES, REMOTOS), 'utf8');
-    assert.strictEqual(plantilla, PLANTILLA_REMOTOS, 'el contrato con el programa de instalación: una lista «remotes» con la URL por marcadores');
-    assert.deepStrictEqual(JSON.parse(plantilla), { remotes: ['https://github.com/{{public-org}}/{{public-repo}}'] });
-    if (!THIN_PRIVATE) assert.ok(!fs.existsSync(path.join(RAIZ, REMOTOS)), 'en el interno no existe en scripts/setup/: un clon interno nunca es «público»');
+test('Export_PublicRemotes_ShipsWithThePublicName — el archivo en su lugar y la lista blanca que lo toma',
+  () => {
+    assert.ok(fs.existsSync(path.join(RAIZ, REMOTOS)), `falta ${REMOTOS}: el papel vive en su lugar`);
+    const datos = JSON.parse(fs.readFileSync(path.join(RAIZ, REMOTOS), 'utf8'));
+    assert.ok(Array.isArray(datos.remotes) && datos.remotes.length === 1, 'el contrato con el programa de instalación: una lista «remotes» con UN remoto');
+    assert.match(datos.remotes[0], /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'el remoto es una URL de GitHub con el nombre puesto');
+    assert.doesNotMatch(datos.remotes[0], /\{\{public-/, 'sin marcadores');
     const real = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'allowlist.json'), 'utf8'));
-    const sintetico = (real.synthetic || []).find((x) => x.target === REMOTOS);
-    assert.ok(sintetico, `la lista blanca declara el sintético de ${REMOTOS}`);
-    assert.strictEqual(sintetico.from, `${PAPELES}/${REMOTOS}`);
-    assert.deepStrictEqual(sintetico.packages, ['core']);
-    assert.ok(String(sintetico.reason || '').trim(), 'con su motivo');
+    const { coincide } = require(EXPORTAR);
+    assert.ok(real.packages.core.arnes.in.some((g) => coincide(g, REMOTOS)), `un «in» del núcleo toma ${REMOTOS}`);
+    assert.ok(!(real.synthetic || []).some((x) => x.target === REMOTOS), `${REMOTOS} no llega por un sintético: sale desde su lugar`);
     // y el generado de la versión, declarado con motivo
     const generado = (real.generated || []).find((x) => x.target === 'version.json');
     assert.ok(generado && String(generado.reason || '').trim(), 'la lista blanca declara version.json en «generated», con motivo');
@@ -567,30 +554,26 @@ test.after(() => {
 });
 
 // ── T58 — los dos guiones de entrada de la portada ────────────────────────────────────
-// `get-harness.sh` y `get-harness.ps1` son papeles: viven en public-files/ con los marcadores y llegan a
-// `scripts/setup/` de la copia por un sintético, con la dirección del repo público ya puesta. `--explain --json` lista
-// los sintéticos (con su origen y su motivo), como lista los generados. En el interno no existen en scripts/setup/.
+// `get-harness.sh` y `get-harness.ps1` viven en `scripts/setup/`, con la dirección del repo público ya puesta (la misma
+// que declara `scripts/setup/public-remotes.json`). Salen como cualquier archivo de la lista blanca, no por un sintético.
 const ENTRY_SCRIPTS = ['scripts/setup/get-harness.sh', 'scripts/setup/get-harness.ps1'];
 const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
-test('Export_GetHarness_ByPlaceholder_InternalNeverNamesPublicRepo — la declaración real y el interno sin el nombre',
-  { skip: !fs.existsSync(path.join(RAIZ, 'perfil-equipo.json')) && 'copia pública: ahí los guiones ya están en su destino y las plantillas no viajan' }, () => {
+test('Export_GetHarness_InPlace_WithThePublicName — los dos guiones en su lugar, con el nombre declarado y sin sintético',
+  () => {
+    assert.ok(fs.existsSync(path.join(RAIZ, REMOTOS)), `falta ${REMOTOS}: el papel vive en su lugar`);
     const real = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'allowlist.json'), 'utf8'));
-    const pr = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'public-repos.json'), 'utf8'));
+    const { coincide } = require(EXPORTAR);
+    const publico = JSON.parse(fs.readFileSync(path.join(RAIZ, REMOTOS), 'utf8')).remotes[0].replace(/^https:\/\/github\.com\//, '');
     for (const g of ENTRY_SCRIPTS) {
-      const entry = (real.synthetic || []).find((x) => x.target === g);
-      assert.ok(entry, `la lista blanca declara el sintético de ${g}`);
-      assert.strictEqual(entry.from, `${PAPELES}/${g}`);
-      assert.deepStrictEqual(entry.packages, ['core']);
-      assert.ok(String(entry.reason || '').trim(), `${g}: con su motivo`);
-      if (!THIN_PRIVATE) assert.ok(!fs.existsSync(path.join(RAIZ, g)), `en el interno ${g} no existe en scripts/setup/: sólo su plantilla, entre los papeles`);
-      const text = fs.readFileSync(path.join(RAIZ, PAPELES, g), 'utf8');
-      assert.ok(text.includes('{{public-org}}/{{public-repo}}'), `${g}: la dirección va por marcadores`);
-      for (const name of [pr.repo, `${pr.org}/${pr.repo}`]) {
-        assert.ok(!text.toLowerCase().includes(String(name).toLowerCase()), `${g}: no escribe el nombre del repo público («${name}»)`);
-      }
+      assert.ok(fs.existsSync(path.join(RAIZ, g)), `${g} existe en su lugar`);
+      assert.ok(real.packages.core.arnes.in.some((x) => coincide(x, g)), `un «in» del núcleo toma ${g}`);
+      assert.ok(!(real.synthetic || []).some((x) => x.target === g), `${g} no llega por un sintético`);
+      const text = fs.readFileSync(path.join(RAIZ, g), 'utf8');
+      assert.ok(text.includes(publico), `${g}: trae la dirección declarada (${publico})`);
+      assert.doesNotMatch(text, /\{\{public-/, `${g}: sin marcadores`);
     }
-    assert.ok(fs.readFileSync(path.join(RAIZ, PAPELES, ENTRY_SCRIPTS[1])).subarray(0, 3).equals(BOM), 'get-harness.ps1: con BOM UTF-8');
+    assert.ok(fs.readFileSync(path.join(RAIZ, ENTRY_SCRIPTS[1])).subarray(0, 3).equals(BOM), 'get-harness.ps1: con BOM UTF-8');
     assert.doesNotThrow(() => require(EXPORTAR).validarLista(real, 'allowlist.json'));
   });
 
@@ -726,6 +709,42 @@ test('T45 Export_PairShortcut_ComputedOncePerPair — el atajo de los reemplazos
   assert.strictEqual(exp.parPuedeEstar(par, 'hay primero acá'), true);
   par.formas[0].texto = 'Otro';
   assert.strictEqual(exp.parPuedeEstar(par, 'hay primero acá'), true, 'lo que busca el atajo se calcula una vez por par');
+});
+
+// La historia entera de un repo no entra en el búfer de una sola salida de git: leerObjetos lee por tandas, y cada objeto
+// sale igual que leído de una vez: también el vacío, el binario y el que solo ya pasa el tope.
+test('Export_ReadObjects_InBatchesUnderTheCap', () => {
+  const exp = require(EXPORTAR);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'export-tandas-'));
+  try {
+    const g = (...args) => spawnSync('git', ['-C', dir, '-c', 'user.name=Prueba', '-c', 'user.email=prueba@example.com', ...args], { encoding: 'utf8' });
+    assert.strictEqual(g('init', '-q').status, 0);
+    const files = {
+      'vacio.txt': Buffer.alloc(0),
+      'corto.txt': Buffer.from('hola\n'),
+      'binario.bin': Buffer.from([0, 10, 255, 10, 0]),
+      'grande.txt': Buffer.from('x'.repeat(40)),
+      'otro.txt': Buffer.from('chau\nchau\n'),
+    };
+    for (const [name, data] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), data);
+    assert.strictEqual(g('add', '.').status, 0);
+    assert.strictEqual(g('commit', '-q', '-m', 'archivos').status, 0);
+    const objs = Object.fromEntries(g('ls-tree', 'HEAD').stdout.trim().split('\n').map((l) => [l.split('\t')[1], l.split(' ')[2].split('\t')[0]]));
+    const read = exp.leerObjetos({ dir }, Object.values(objs), { tope: 12 });
+    for (const [name, data] of Object.entries(files)) assert.ok(Buffer.from(read.get(objs[name])).equals(data), name);
+    assert.throws(() => exp.leerObjetos({ dir }, ['0'.repeat(40)], { tope: 12 }), /no devolvió el objeto/, 'un objeto que no está no se da por leído');
+    // lo ya leído no se vuelve a pedir: sin el repo, la segunda lectura sale igual
+    fs.rmSync(path.join(dir, '.git'), { recursive: true, force: true });
+    const again = exp.leerObjetos({ dir }, Object.values(objs), { tope: 12 });
+    for (const [name, data] of Object.entries(files)) assert.ok(Buffer.from(again.get(objs[name])).equals(data), `${name}, de lo ya leído`);
+    // las tandas: en orden, ninguna pasa el tope salvo la de un objeto solo, y ninguna vacía
+    assert.deepStrictEqual(exp.partirEnTandas(['a', 'b', 'c', 'd', 'e'], [5, 0, 5, 40, 10], 12), [['a', 'b', 'c'], ['d'], ['e']]);
+    assert.deepStrictEqual(exp.partirEnTandas(['a', 'b'], [40, 1], 12), [['a'], ['b']], 'el grande primero va solo');
+    assert.deepStrictEqual(exp.partirEnTandas(['a', 'b'], [6, 6], 12), [['a', 'b']], 'justo el tope entra');
+    assert.deepStrictEqual(exp.partirEnTandas([], [], 12), []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // Con una marca de orden de bytes (BOM) delante del `#!`, node no carga el archivo

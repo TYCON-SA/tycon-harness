@@ -68,7 +68,8 @@ reporter JSON de Playwright). Sin esa sección la matriz no puede distinguir mir
 **Calibración** (los verbos se eligieron midiendo sobre stories reales): sólo formas verbales,
 nunca sustantivos derivados — "sin importar su asignación" o "el cierre de ruta" describen
 un criterio de lectura y no deben disparar la regla. Escotilla con rastro:
-`TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK=1`.
+`TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK=1`, que se retira el 2026-12-01; la salida normal es ejecutar la acción en
+la prueba o, si el verbo no es una acción, declararlo con `@runtime-exempt(DODRT-C8)`.
 
 **Al escribir un E2E**: si el AC dice que el usuario puede hacer algo, el test lo hace —
 aprieta el botón y verifica qué pasó de verdad. Un `expect(boton).toBeVisible()` no cubre
@@ -96,6 +97,28 @@ una grabación** (`.png` o `.webm`) del navegador real, atada a ese AC. Si corri
 - **Siempre del sitio de laboratorio o de prueba**, con datos inventados: nunca una pantalla con datos reales de un cliente.
 - **Las stories que ya estaban en curso** cuando se publicó la regla (por la fecha de arranque de su marcador, o el
   `created:` de la story) no se frenan por esto: la matriz les muestra un aviso con cómo sacar la captura.
+
+## Un humo que mide: el criterio con cota
+
+Un criterio con un número lleva su cota en el texto: `@measure(duration < 2s)` o `@measure(p95 <= 200ms)`
+(`story-format.md` §5). Su humo es el de siempre, por `smoke-run.sh`; el envoltorio anota solo lo que tardó el comando
+(`duration_ms`, en el registro y en el espejo). Si el criterio pide otra medida, el comando la imprime **al final** de su
+salida, un renglón por medida:
+
+```bash
+smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs 4 --pass-if 'el p95 de 100 pedidos no pasa de 200 ms' -- \
+  node .advisors/9.9-p95.js     # mide 100 pedidos e imprime al final: TYCON_MEASURE p95=180ms
+```
+
+- Al final, porque la salida guardada se recorta a 8 KB (el principio y el final): si la salida pasa ese tope y trajo
+  medidas, el humo lo avisa. El valor se guarda igual, en el renglón del registro.
+- Un renglón `TYCON_MEASURE` mal formado o con el nombre reservado `duration` no se guarda (`measures_rejected`, con su
+  número de renglón en el aviso). Hasta 20 nombres; un nombre repetido: gana el último.
+- Si hace falta repetir para tener un percentil, lo repite el comando y emite el agregado: el arnés no repite corridas ni
+  elige umbrales. Decide el humo más nuevo; los otros salen en la matriz con cuántos quedaron fuera de la cota.
+- Fuera de la cota el criterio queda `FUERA-DE-COTA`; sin la medida, `SIN-MEDICION`. Se mide de nuevo, se cambia el
+  criterio, o se declara imposible y lo firma el dueño. La medición vale para esa corrida en esa máquina: no es una
+  prueba de carga ni dice nada de producción.
 
 ## Por qué este step existe
 
@@ -360,6 +383,15 @@ considera ejecutado**. El hook `on-pre-commit.js` se puede extender en futura
 iteración para parsear la evidencia y verificar este checklist programáticamente
 (TODO en este step file).
 
+**La prueba de navegador simulada tampoco cuenta.**
+Una prueba de navegador con el servidor simulado no cierra «Probar en vivo» sin la firma de la persona. La matriz (`runtime-matrix.js`, parte 6) lo mide sola: un spec del portón E2E o un
+guion de humo que contesta, corta o reescribe un endpoint de negocio (`route.fulfill`, `routeFromHAR`, `msw`, `nock`…,
+las vías de `REAL-C2`/`REAL-C7`) no cuenta como prueba en vivo, ni por la acción ni por la imagen, y la matriz lo
+nombra en «Probados con servidor simulado» con el archivo y la línea. Se cierra probándolo contra el servidor real, o
+declarándolo en `runtime_not_verifiable:` y que la persona firme `marker.js runtime-waiver`. Si le ofreciste opciones a
+la persona para cerrar este paso y contestó otra cosa, la pregunta sigue abierta: no elijas por ella. Decile que sigue
+pendiente y esperá su respuesta.
+
 ### 🔴 Parte 3 — EJECUTAR EL GATE PLAYWRIGHT SCOPED (gate duro vía script, two-tier)
 
 **MANDATORY si la story toca frontend (`.tsx`/`.vue`/`.razor`) o tiene specs en
@@ -460,8 +492,8 @@ El gate del proyecto (el script que el repo declaró en `e2e.gate`) hace, por co
 
 Si el repo no tenía cómo probar en un navegador y la persona contestó que no a la oferta (en «Aprobar el plan»), la historia lleva
 `browser_test: deferred` y `browser_test_reason: "<fecha> — la persona: «<su respuesta>»"`, y `gates.log` la constancia
-`browser-test-deferred` que escribió `e2e-setup.js defer`, después de la firma de la persona en la ventana de permiso o
-en su terminal (`browser-test-signed`). `complete-step prepare-commit`, el commit y el paso a `review` vuelven a buscar
+`browser-test-deferred` que escribió `e2e-setup.js defer`, después de la firma de la persona en la ventana de permiso, con
+un click o un «aprobado», o en su terminal (`browser-test-signed`). `complete-step prepare-commit`, el commit y el paso a `review` vuelven a buscar
 esa firma, posterior a la oferta: si la encuentran, el gate no corre (la historia se prueba con la guía para probarla a
 mano) y dicen en una línea «Prueba con navegador pendiente en la historia …», que queda anotada (`browser-test-debt`).
 Si falta la marca, la constancia, la oferta o la firma, o si el repo ya tiene prueba con navegador (ahí se corre),
@@ -517,6 +549,69 @@ anti-pattern de la parte 2.1 / abajo).
 de TODOS los casos como si se hubieran verificado, y racionalizar el gate Playwright con
 "E2E diferido al merge gate" deja la verificación driven sin correr hasta que alguien la exige.
 
+### Parte 3, comparación — Comparar con la versión de main los comandos que la historia modifica
+
+**Cuándo hay que comparar.** `pipeline.js compare-candidates --story <spec.md>` lista los candidatos: los archivos de
+`files_to_modify` que son un comando (`require.main === module` o cabecera `#!`), existen en `main` y la historia
+cambió. Las pruebas no son candidatos (lo de una carpeta `tests/` o terminado en `.test.js`). Por candidato dice su repo
+(sale de la corrida) y los subcomandos o funciones que el cambio toca. Sin candidatos, no se compara nada. Con
+candidatos, cada uno necesita un humo comparado que lo cubra, o una exención firmada; si no, «Preparar el commit» frena.
+Un archivo que no se pudo mirar (su versión de `main`, su diff o el archivo de ahora no se leen) sale «no medido» con
+su motivo: no frena, y no es «sin candidatos».
+
+```bash
+bash <skill>/scripts/smoke-run.sh <dir> <spec.md> --compare -- node {raiz}/<archivo> <subcomando> …
+```
+
+`--compare` corre el comando dos veces, con la versión de `main` y con el cambio, cada una en su propio clon local, y
+compara el código de salida y la salida. El resultado queda en `compare-previous.json` de la corrida: «igual»,
+«distinto» (con los dos códigos de salida y las primeras 20 líneas que difieren), «nuevo, no se compara» o «no
+comparado» con su causa. Sólo cumplen «igual» y «distinto»; un «distinto» hay que declararlo (ver
+`step-11-prepare-commit.md`). «No comparado», por la causa que sea, cuenta como si no hubiera humo. Un humo comparado
+cuenta sólo para la versión del código sobre la que corrió: si después cambia algo que no es papeleo, hay que volver a
+correrlo.
+
+- **El humo comparado corre el guion por la ruta del clon, no por el arnés instalado bajo `$HOME`.** Escribí `{raiz}`
+  en el comando: cada corrida lo cambia por la raíz de su clon, y el humo de siempre por la raíz real del repo.
+- **Un humo cubre un candidato** si corre su archivo y nombra, por palabra completa, uno de los subcomandos que el
+  cambio toca (`get` no se encuentra dentro de `forget`). Si el cambio cae fuera de todo subcomando, alcanza con correr
+  el archivo. Límite: una función que nadie llama por su nombre (o que se llama de forma dinámica) cuenta como fuera de
+  todo subcomando. Un guion de laboratorio que llama a los comandos por dentro los declara con
+  `--covers <archivo>[:<subcomando>]` (sólo con `{raiz}` en el comando y si están en la lista); quedan «cubierto por
+  declaración», y «Preparar el commit» lo avisa como a una exención.
+- **Topes**: hasta 10 humos comparados por corrida (`TYCON_COMPARE_MAX`; cuentan los que compararon contra el código
+  de ahora: un «no comparado» o un humo de un código que ya cambió no gastan el tope), 60 segundos por cada una de las dos corridas
+  (`TYCON_COMPARE_TIMEOUT_MS`; después `SIGTERM` y a los 5 segundos `SIGKILL`) y 5 minutos en total
+  (`TYCON_COMPARE_TOTAL_MS`). Pasado cualquiera: «no comparado: tope». De la salida de cada lado se compara hasta 1 MB:
+  si alguna pasa y lo comparado da igual, el resultado es «no comparado» (la diferencia podría estar después del corte). Los dos clones de cada repo se reusan entre los
+  humos de la corrida y se borran al cerrarla.
+- **Lo que se niega a comparar**, sin correrlo: un comando que nombra la raíz del repo real o la casa real por ruta
+  absoluta (también el arnés instalado), o que empieza con `sudo`. Da «no comparado: toca lo real».
+- **La red, cortada**: `git push`, `fetch`, `pull`, `clone`, `ls-remote`, `remote` y `submodule`, y `gh`, `az`, `curl`,
+  `wget` y `ssh`, no salen; tampoco la red de Node. Un humo que lo intenta da «no comparado: usa la red».
+- **Lo que sigue sin aislar**: las corridas ejecutan código fuera de los ganchos de seguridad, y el freno de mano no las
+  ve. Sin el encierro del sistema, un programa que abre la red sin Node, sin el proxy ni los reemplazos llega a la red,
+  y uno que escribe por ruta absoluta fuera de los clones y las casas escribe. Con `sandbox-exec` (macOS) esa escritura
+  se corta; con `unshare` (Linux) o sin encierro, no. El informe dice qué encierro hubo. Tampoco se cuidan la CPU ni la
+  memoria más allá del tiempo.
+- **La casa aparte** (historia 8.314): un humo comparado, y todo humo cuyo programa es un guion de laboratorio (en
+  `.advisors/dod-runtime/`, o suelto en una carpeta temporal fuera de todo repo), corre con una casa aparte: `HOME` es una
+  carpeta nueva de `mktemp`, no llegan `TYCON_HOME`, `CLAUDE_CONFIG_DIR` ni `CODEX_HOME`, y una red de escritura frena
+  todo `node` que escriba en `~/.tycon`, `~/.claude` o `~/.codex` de la casa de la cuenta (el humo falla y nombra la
+  ruta, aunque el guion se trague el error). Sólo se puede escribir en la raíz del repo del comando y en la carpeta de un
+  guion suelto. En macOS, además, el encierro del sistema, con la red abierta (los guiones hablan con `localhost`); si la
+  sesión ya corre encerrada no se puede abrir otro, y el humo lo dice. Sin casa o sin la red de escritura, no corre. El
+  humo común sigue como siempre, con la marca `TYCON_TEST_RUN=1`, con la que el tablero y la designación de la
+  coordinadora se niegan a escribir el estado real.
+- **Un guion de laboratorio arranca negándose a la casa real**: su primera línea es
+  `require('<arnés>/scripts/lib/lab-home.js').refuseRealHome('<nombre>')` (sale 3 si `HOME` es la casa de la cuenta o
+  está adentro), y arma su casa de juguete con `labHouse('<nombre>')`, nunca en `process.env.HOME`. En un guion de
+  consola: `node <arnés>/scripts/lib/lab-home.js check <nombre> || exit 3`.
+- **La exención**, cuando un candidato no se puede comparar (por ejemplo, porque usa la red y nunca da «igual»):
+  `node <skill>/scripts/marker.js compare-waiver --story <spec.md> --command <candidato> --reason "<por qué>"`. Pide la
+  firma `compare-waiver` (nivel 1) en la ventana del dueño, o la de la coordinadora si el perfil del equipo la suma a
+  `approvals.delegated_signing`. No va en el frontmatter: una línea `compare_exempt:` no exime.
+
 ### Parte 4 — Persistir evidencia
 
 **🔒 NOTA de provenance (hook `on-dod-evidence-guard.js`)**: la evidencia de **run real**
@@ -525,18 +620,22 @@ de TODOS los casos como si se hubieran verificado, y racionalizar el gate Playwr
 agente sobre esos `.advisors/dod-runtime/*.md`; la escriben SOLO los scripts (el gate E2E del
 proyecto / `step-7c-macro.js`). **EXCEPCIÓN PERMANENTE: el self-audit (`*-self-audit*.md`, ACCOV-C8) SÍ lo
 escribe el agente** — es su auto-revisión estructurada (no un verdict de test fakeable), su
-honestidad la cierra la convergencia C10 (el meta-audit C9 se retiró el 2026-09-16). NO requiere `touch` (fix
-2026-06-14). El permiso de una escritura a mano de evidencia de run (el archivo `ALLOW_DOD_EVIDENCE_WRITE`,
-consumido + logueado en `bypass.log`) queda SOLO para el caso raro (ej: evidencia vacua de E2E diferidos a un
-pipeline pending) y lo decide la persona: lo crea ella y lo dice en su mensaje («autorizo
-ALLOW_DOD_EVIDENCE_WRITE»). Sin esa autorización el guardián no lo consume.
+honestidad la cierra la convergencia C10 (el meta-audit C9 se retiró el 2026-09-16).
+
+**No hace falta un resumen de cierre escrito a mano** (un `<storyId>-cierre.md` que nombre cada AC): el commit cuenta
+los criterios con la unión de lo que escribe la máquina —el registro de `smoke-run.sh`, los gates E2E sellados y las
+firmas del dev—. Escribir a mano un archivo de evidencia de run queda SOLO para el caso raro (ej: evidencia vacua de
+E2E diferidos a un pipeline pending) y lo decide la persona con la firma por archivo, en la ventana de permiso:
+`marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <ruta absoluta del archivo>` (vale para ese archivo y una sola
+escritura, y queda en `bypass.log`). Nada de `touch` ni de «autorizo» en el chat: el guardián no los lee. Con una
+consola de fondo viva la ventana no se abre: cerrá antes los procesos de fondo propios.
 
 **⏱ Freshness**: evidencia Playwright verde con mtime ANTERIOR al último cambio de
 código de la corrida = **STALE** → el hook `on-frontmatter-write.js` la rechaza.
 Tras aplicar fixes, re-correr el gate — la evidencia vieja no satisface.
 
-El archivo `<evidence-dir>/<storyId>-<UTC-timestamp>.md` (generado
-por los scripts) contiene:
+El archivo `<evidence-dir>/<storyId>-<UTC-timestamp>.md` lo **generan los scripts** (no se copia esta forma a
+mano); contiene:
 
 ```markdown
 # DoD Runtime Evidence — Story <id>
@@ -583,7 +682,9 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js \
 ```
 
 Esto setea `marker.dodRuntimeChecked = true` y registra la evidencia. «Preparar el commit»
-chequea este flag antes de proceder.
+chequea este flag antes de proceder. El `evidencePath` es la ruta de una evidencia que ya escribió un script: el
+`<storyId>-e2e-gate-*.md` del gate E2E o el `<storyId>-smoke-ledger.jsonl` de `smoke-run.sh` (con una story exenta,
+`"exenta: <la razón del frontmatter>"`). No hace falta escribir un archivo nuevo para dárselo.
 
 **Registrar el check `dod` — SIEMPRE, independientemente del modo autónomo**: es lo que
 `complete-step prepare-commit` exige para toda story de UI (el candado mira `checks.dod` verde con
@@ -640,6 +741,20 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/runtime-matrix.js --story <abs spec.md>
 ```
 
+**En una historia paraguas** (varias tandas en `pipelines`), si la ejecución anotó su tanda (`start --batch` o
+`marker.js set-batch`, ver «Arranque»), el comando de arriba la lee solo del marcador de la sesión: no hace falta
+copiarla. La primera línea dice qué tanda mide. La matriz mide los criterios de esa tanda más los de ninguna tanda, y
+dice cuáles quedaron afuera («fuera de esta tanda: …»). Si la corrida cambió un archivo que la historia ata sólo a otra
+tanda, los criterios de esa tanda vuelven a la matriz y se dice por qué archivo («vuelven a la matriz: …»). «Preparar
+el commit» mide lo mismo. Pasar la historia a review las pide todas.
+
+Sin marcador (otra sesión, la terminal), `--batch <tanda> --code-repo <repo del código> [--base <sha>]` da la tanda y
+la lista de cambios; `--batch` solo, sin lista, mide todas las tandas y lo dice. `--all-batches` mide todas aunque el
+marcador tenga tanda.
+
+Un criterio de la propia tanda declarado imposible de probar se firma como cualquier otro: la firma mide la misma
+tanda que «Preparar el commit». Por terminal, con `--for-session <la sesión de la corrida>`.
+
 - **VERDE** → todos los ACs tienen evidencia runtime (gate E2E / smokes vía
   `smoke-run.sh`) o son imposibles-declarados con la firma del dev vigente → avanzar.
 - **ROJO** → el artefacto `<sid>-runtime-matrix.md` lista los ACs `CODE-ONLY` /
@@ -650,13 +765,18 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
     `runtime_not_verifiable:` (`reason:` + `covered_by:`), se le presenta al dev **uno por
     uno en el chat** con el resumen llano ("probado corriendo: N de T; solo tests de
     código: M; sin evidencia: K"), y decide una persona. **El agente nunca firma por su
-    cuenta.** Dos caminos:
+    cuenta.** Tres caminos:
     1. **La ventana de permiso** (el principal). Corré
        `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --acs <n,m> --approved-by "<el dev>"`, sin
        `--quote`: la herramienta le abre al dev la ventana de permiso con el comando, y lo aprueba ahí. Lo que escriba
-       en el chat ya no firma, y el ok reenviado por otra sesión (`--relayed-by`) no se acepta: lo firma la persona que
-       vio el criterio.
-    2. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --terminal`
+       en el chat ahí no firma, y el ok reenviado por otra sesión (`--relayed-by`) no se acepta: lo firma la persona que
+       vio el criterio. Con una consola de fondo viva (un `Bash` en segundo plano que sigue corriendo) la ventana no
+       se abre y el freno pide cerrarla o firmar desde la terminal: cerrá antes los procesos de fondo propios.
+    2. **Un click o un «aprobado»**, donde la ventana no llega (una pestaña sin permisos, una sesión de fondo). El mismo
+       comando se niega y dice cómo pedirlo. Mostrale el criterio y, en el cuadro de opciones o en el texto, «firma
+       runtime-waiver». Con el click o el «aprobado» de la persona, repetí el comando. Cada aprobación sirve para un
+       solo pedido.
+    3. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --terminal`
        (pide confirmación criterio por criterio; en Windows abre una ventana para firmar).
 
     Después, re-correr el `run-check acmatrix` (ahora verde).
@@ -677,6 +797,13 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
   la imprime). Con el número a mano, en un repo que numera por tema la evidencia queda **huérfana**:
   la matriz la nombra y no la cuenta.
 
+**Una prueba que la historia corrige después de grabar la evidencia vence sólo sus criterios.** Si la misma historia
+cambia una prueba que nombra `@story-<historia> @ac-2 @ac-3` (sin commitear en su rama, o con un commit propio), vence
+la evidencia de los criterios 2 y 3, y la de los demás sigue contando. El renglón de cada criterio vencido dice
+«venció por <archivo>, que prueba los criterios 2 y 3»: se re-corren sólo esos. Vence toda la evidencia, como siempre,
+si cambió un archivo de código, si la prueba no nombra criterios de la historia o no se deja leer, o si no se sabe
+quién la cambió (un commit sin historia que ya está en main, o la resolución de una fusión).
+
 `complete-step prepare-commit` exige `checks.acmatrix=green` (provenance run-check) — sin este
 sub-step el pipeline NO llega a commit prep. `on-pre-commit.js` además RE-COMPUTA
 la matriz en las transiciones a review/done (el .md escrito no se confía).
@@ -686,13 +813,15 @@ declarado imposible → **el agente DEBE correrlo**, no waiveable) de `NOT-VERIF
 en el frontmatter `runtime_not_verifiable:` con `reason:`+`covered_by:` → imposible de ejercer
 corriendo la app → lo decide el usuario). El agente presenta CADA `NOT-VERIFIABLE` en la
 conversación (razón + test que lo cubre) y el usuario decide AC por AC: lo aprueba en la ventana de permiso
-(`runtime-waiver <historia> --acs N --approved-by "<quién>"`, sin `--quote`) o desde su terminal (`--terminal`). Lo que
-escriba en el chat ya no firma. Ver SKILL.md F.ii.
+(`runtime-waiver <historia> --acs N --approved-by "<quién>"`, sin `--quote`); donde la ventana no llega, con un click o
+un «aprobado» escrito; o desde su terminal (`--terminal`). Donde hay ventana, lo que escriba en el chat no firma. Ver
+SKILL.md F.ii.
 
 **Un crítico de este paso también lo decide una persona**. Si el revisor de la prueba en vivo marca un
 CRITICAL que el dev decide no arreglar, el agente nunca se exime solo: corre
 `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" --approved-by "<el dev>"` y el dev lo
-aprueba en la ventana de permiso (o lo corre desde su terminal con `--terminal`). La cita o el reenvío ya no eximen.
+aprueba en la ventana de permiso; donde la ventana no llega, con un click o un «aprobado» escrito (o lo corre desde su
+terminal con `--terminal`). La cita o el reenvío ya no eximen.
 Recién ahí el hallazgo se anota `waived`.
 
 #### Una función sin pantalla ni servidor
@@ -716,7 +845,7 @@ Sembrar las precondiciones de un AC (el «Given»: el paciente, el pedido de ori
 que la app produce y después verificarlo no prueba nada: la prueba encuentra lo que el propio flujo escribió, y el
 revisor de cierre lo marca como resultado fabricado (DODRT-C10, crítico). Si la acción de la app no se puede ejercer,
 el AC no se «arregla» con un `INSERT`: va a `runtime_not_verifiable:` con su `reason:` y su `covered_by:`, y lo
-firma el dev desde su terminal. Cada humo con `--acs` escribe antes de correr qué tiene que pasar (`--pass-if`, que
+firma el dev (`runtime-waiver`). Cada humo con `--acs` escribe antes de correr qué tiene que pasar (`--pass-if`, que
 hable del «Then» del AC, no «ok» ni «funciona»); su salida queda guardada y sellada, y el revisor la lee contra esa
 frase (DODRT-W4).
 
@@ -746,8 +875,9 @@ Configuración del sitio): `complete-step prepare-commit` frena hasta que una pe
 mano. Se pide así, nunca se pone por la persona:
 1. La persona prueba con la guía y te dice qué criterios probó.
 2. Corré `node <skill>/scripts/marker.js mark-tested --acs 1,2 --approved-by "<quién>"`, sin `--quote`: la persona lo
-   aprueba en la ventana de permiso, que le muestra los criterios. Lo que escriba en el chat ya no marca.
-3. O la persona lo firma en su terminal: `marker.js mark-tested --acs 1,2 --terminal`.
+   aprueba en la ventana de permiso, que le muestra los criterios. Donde hay ventana, lo que escriba en el chat no marca.
+3. Donde la ventana no llega, el comando se niega y dice cómo pedir el click o el «aprobado»; con eso, se repite.
+4. O la persona lo firma en su terminal: `marker.js mark-tested --acs 1,2 --terminal`.
 Un reenvío de la sesión coordinadora no marca: la marca es de quien probó. Las marcas quedan en
 `<carpeta de la corrida>/manual-checks.jsonl`, cada una con su par en el registro del arnés.
 
@@ -862,6 +992,14 @@ si falla, sin bypass por env var — igual que la matriz):
    como palabra entera entre los textos visibles). Lo que falta frena, salvo `differs: <por qué>` en su línea (se
    imprime siempre); lo que sobra en la pantalla se nombra sin frenar. Sin pantallas comparables en el disco, frena
    hasta `mockup-compare: no — <motivo>` (se imprime siempre).
+12. **Cada capa de la maqueta se abre encima**: por cada pantalla con `presentation: "layer"` en la maqueta aprobada,
+   un humo de `smoke-run.sh` tiene que escribir en su salida la línea `layer-check` de `scripts/lib/layer-probe.js`.
+   La línea dice que tocar su botón abrió una ventana con `role="dialog"` o `aria-modal="true"`, con los textos de la
+   capa adentro. Con navegador, `probeLayer(page, { screen, trigger, texts })` toca el botón. Sin navegador (un proyecto
+   sin Playwright, o un humo que no puede tocar el botón), la prueba de componente con jsdom o testing-library toca el
+   botón y escribe la misma línea con `probeDocument(document, …)`. Cuenta como la evidencia de la matriz: con su
+   espejo, la salida sin cambiar y exit 0. Construida en la página, sin evidencia, o con un texto afuera, frena y dice
+   qué hacer. Lo arregla el asistente; no es una pregunta para el dev.
 
 ## Output del step
 

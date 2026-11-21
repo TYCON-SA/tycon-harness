@@ -40,22 +40,26 @@ function esLaboratorio(dir) {
   if (laboratorio === null) laboratorio = require('../dashboard/runs.js').esLaboratorio;
   return Boolean(dir) && laboratorio(dir);
 }
-// Las variables de escape de los frenos. Dónde las lee el arnés: la tabla «Interruptor» de INSTALL.md
-// (TYCON_PR_BY_HAND, TYCON_SAFETY_OFF, TYCON_FULL_SUITE), scripts/setup/hooks-list.json (TYCON_SESSION_GUARD_OK),
-// scripts/hooks/engram-pre-commit.sh (TYCON_ENGRAM_MANIFEST_OK), steps/step-08-adversarial-pass.md
-// (TYCON_NO_DEEP_REVIEW), scripts/controls-bench/live-fire-stop.js (STOP_AUTONOMY) y
-// skills/tycon-pipeline/scripts/runtime-matrix.js (TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK),
-// scripts/hooks/advisor-liveness-on-change.js (TYCON_NO_LIVENESS_PRECOMMIT), skills/tycon-pipeline/scripts/lib/mutation-gate.js
-// (TYCON_MUTATION_CHECK) y skills/tycon-pipeline/scripts/marker.js `adhoc set` (TYCON_STORY_GATE).
-const ESCAPES = ['TYCON_SAFETY_OFF', 'TYCON_PR_BY_HAND', 'TYCON_FULL_SUITE', 'TYCON_SESSION_GUARD_OK', 'TYCON_ENGRAM_MANIFEST_OK',
-  'TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', 'TYCON_NO_DEEP_REVIEW', 'STOP_AUTONOMY', 'TYCON_NO_LIVENESS_PRECOMMIT', 'TYCON_MUTATION_CHECK',
-  'TYCON_STORY_GATE'];
+// Las variables de escape de los frenos: las entradas con `noche: true` de la lista única (scripts/lib/env-switches.json,
+// que dice quién lee cada una y con qué valores se apaga). Sin la lista no hay escapes que contar: la fila sale «no
+// medido» (`revisar`).
+const LISTA = require(path.join(__dirname, '..', '..', 'lib', 'env-switches.js'));
+const LISTA_OK = LISTA.leer().ok;
+const DE_LA_NOCHE = LISTA.escapesDeLaNoche();
+const ESCAPES = DE_LA_NOCHE.map((e) => e.nombre);
+// Los valores con que cada freno se apaga de verdad (los que toma su lector).
+const VALORES_QUE_APAGAN = Object.fromEntries(DE_LA_NOCHE.map((e) => [e.nombre, e.apagan.map((v) => String(v).toLowerCase())]));
 // El valor con que cada freno se apaga, cuando no es `1`.
-const VALOR_QUE_APAGA = { TYCON_MUTATION_CHECK: 'off', TYCON_STORY_GATE: 'off' };
+const VALOR_QUE_APAGA = Object.fromEntries(DE_LA_NOCHE.filter((e) => !e.apagan.includes('1') && e.apagan.length).map((e) => [e.nombre, e.apagan[0]]));
 // Una línea de bypass.log y el comando que la dejó son el mismo escape: cuenta la del registro, que trae el motivo.
 const EQUIVALENTES = { GIT_NO_VERIFY: '--no-verify', ATDD_BYPASS: 'atddBypass', PR_A_MANO: 'TYCON_PR_BY_HAND', FULL_SUITE_RUN: 'TYCON_FULL_SUITE',
   ADVERSARIAL_SKIP_FORZADO: 'TYCON_NO_DEEP_REVIEW', LIVENESS_PRECOMMIT_OFF: 'TYCON_NO_LIVENESS_PRECOMMIT', MUTATION_CHECK_OFF: 'TYCON_MUTATION_CHECK',
-  STORY_GATE_OFF_ADHOC: 'TYCON_STORY_GATE' };
+  STORY_GATE_OFF_ADHOC: 'TYCON_STORY_GATE', RUNTIME_MATRIX_LEGACY: 'TYCON_RUNTIME_MATRIX_LEGACY',
+  RUNTIME_MATRIX_NO_MUTATION_CHECK: 'TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', STORY_REVIEW_OFF: 'TYCON_STORY_REVIEW' };
+// Los renglones del registro que no son escapes: el chequeo de vida con `ci` fuera de la CI (los guiones del arnés que
+// lo ponen también corren en una máquina), y el aviso del freno antes de la fecha de corte de un escape (el comando y el
+// renglón de su lector ya cuentan ese escape).
+const NO_CUENTAN = ['LIVENESS_PRECOMMIT_CI_LOCAL', 'ESCAPE_NOTICE_PERIOD'];
 // Los valores con que marker.js prende una bandera (cmdSetFlag) y deja prendido el modo automático (cmdSetAutonomous):
 // cualquier otro valor de set-autonomous lo apaga.
 const PRENDE_BANDERA = ['true', '1'];
@@ -268,10 +272,10 @@ function saltearOpciones(p, i, conValor) {
   }
   return { i, opciones, cadena };
 }
-/** ¿El segmento activa el escape? Cada freno lo toma sólo con `1`, o con su `VALOR_QUE_APAGA`. Casos: T3 y M4 de
- * scripts/tests/runs-review.test.js. */
+/** ¿El segmento activa el escape? Cada freno lo toma sólo con los valores que apagan su entrada de la lista (los que
+ * toma su lector; `1` si la lista no la trae). Casos: T3 y M4 de scripts/tests/runs-review.test.js. */
 const activa = (s, nombre) => s.asignaciones.includes(nombre)
-  && (VALOR_QUE_APAGA[nombre] ? String(s.valor[nombre] || '').toLowerCase() === VALOR_QUE_APAGA[nombre] : s.valor[nombre] === '1');
+  && (VALORES_QUE_APAGAN[nombre] || ['1']).includes(String(s.valor[nombre] || '').toLowerCase());
 
 /** Lo que sigue a `<guion>` en cada segmento que lo corre (por `node` o el guion mismo): una lista por segmento. */
 function argsDe(command, guion) {
@@ -290,6 +294,8 @@ const CON_EFECTO = {
   TYCON_NO_LIVENESS_PRECOMMIT: (command) => segmentos(command).some((s) => s.programa === 'git' && s.args.includes('commit')),
   TYCON_MUTATION_CHECK: (command) => argsDe(command, 'marker.js').some((r) => r[0] === 'complete-step' && (r[1] === 'run-tests' || r[1] === '4')),
   TYCON_STORY_GATE: (command) => corre(command, 'marker.js', ['adhoc', 'set']),
+  // el portón de la revisión de la historia lo consultan `validators` y `story-review-gate`
+  TYCON_STORY_REVIEW: (command) => argsDe(command, 'pipeline.js').some((r) => ['validators', 'validadores', 'story-review-gate'].includes(r[0])),
 };
 
 // Programas que corren otro programa: lo que corre de verdad viene después, y dónde corre ya no es seguro.
@@ -536,9 +542,9 @@ const AUTORIZABLES = Object.freeze({
   DOD_BYPASS_ACMATRIX: ['DOD_BYPASS'],
   'RR-APAGO': ['set-autonomous'],
 });
-// las vías con el permiso de una persona: la ventana de permiso, y las de antes (su frase en la conversación, o la que
-// reenvió la sesión relevo), que siguen en las líneas viejas
-const VIAS_QUE_AUTORIZAN = ['ventana', 'persona', 'reenvio'];
+// las vías con el permiso de una persona: la ventana de permiso, su click o su «aprobado», y las de antes (su frase en la
+// conversación, o la que reenvió la sesión relevo), que siguen en las líneas viejas
+const VIAS_QUE_AUTORIZAN = ['ventana', 'click', 'mensaje', 'persona', 'reenvio'];
 
 /**
  * Las autorizaciones de una ejecución, de las líneas de frenos.jsonl de su máquina (`null`: el registro no se midió y
@@ -657,7 +663,8 @@ const INTERPRETE = /(?:^|[\s;&|(/\\])(?:ba|z|k|da)?sh(?:\.exe)?\s+(?:-\w+\s+)*-\
 // Cómo se llama en el registro el escape que se ve en un comando: la categoría de una línea emparejada.
 const DEL_REGISTRO = { '--no-verify': 'GIT_NO_VERIFY', TYCON_FULL_SUITE: 'FULL_SUITE_RUN', TYCON_PR_BY_HAND: 'PR_A_MANO', atddBypass: 'ATDD_BYPASS',
   TYCON_NO_DEEP_REVIEW: 'ADVERSARIAL_SKIP_FORZADO', TYCON_NO_LIVENESS_PRECOMMIT: 'LIVENESS_PRECOMMIT_OFF', TYCON_MUTATION_CHECK: 'MUTATION_CHECK_OFF',
-  TYCON_STORY_GATE: 'STORY_GATE_OFF_ADHOC' };
+  TYCON_STORY_GATE: 'STORY_GATE_OFF_ADHOC', TYCON_RUNTIME_MATRIX_LEGACY: 'RUNTIME_MATRIX_LEGACY',
+  TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK: 'RUNTIME_MATRIX_NO_MUTATION_CHECK', TYCON_STORY_REVIEW: 'STORY_REVIEW_OFF' };
 
 /**
  * Dónde cuenta una línea de `bypass.log` que no se emparejó con un comando de la conversación, o `null` si no cuenta:
@@ -667,6 +674,7 @@ const DEL_REGISTRO = { '--no-verify': 'GIT_NO_VERIFY', TYCON_FULL_SUITE: 'FULL_S
  */
 function categoriaDeLinea(l, repoPath) {
   const tipo = tipoDeEscape(l.type || l.kind);
+  if (NO_CUENTAN.includes(tipo)) return null;
   const command = typeof l.command === 'string' && l.command.trim() ? l.command : null;
   const cwdLab = carpetaCierta(l.cwd) ? esLaboratorio(l.cwd) : false;
   if (tipo === 'GIT_NO_VERIFY') {
@@ -780,7 +788,8 @@ function revisar({ volcado, lineasHilo, registros }) {
   if (!sinHilo) { const r = reglasDelHilo(lineasHilo, volcado, out, aut); hiloSinHooks = r.hilo_sin_hooks; cs = r.comandos; }
   reglaDeCierre(volcado, out);
   const fuente = registros && registros.cobertura && registros.cobertura.fuentes && registros.cobertura.fuentes.bypass;
-  const medido = Boolean(fuente && fuente.estado === 'medido' && Array.isArray(registros.bypass));
+  // sin la lista única no se sabe qué renglón es un escape: la fila no se mide, no da cero
+  const medido = LISTA_OK && Boolean(fuente && fuente.estado === 'medido' && Array.isArray(registros.bypass));
   const repoPath = volcado && volcado.marker ? volcado.marker.repoPath : null;
   const propias = medido ? delRegistro(registros.bypass, volcado, sinHilo ? null : cs) : [];
   // El mismo hecho en el registro y en la conversación cuenta una vez, por el registro, y uno a uno: cada línea se
@@ -801,4 +810,4 @@ function revisar({ volcado, lineasHilo, registros }) {
 }
 
 module.exports = { CODIGOS, ESCAPES, VALOR_QUE_APAGA, EQUIVALENTES, ACCIONES_DE_PARTE, RUTAS_DEL_ARNES, RUTAS_INSTALADAS, CIERRE_DESDE, APARTE,
-  banderasDePartes, segmentos, argsDe, corre, comandos, revisar, claseDeError, horasSinMedir, HORAS_SIN_MEDIR };
+  banderasDePartes, segmentos, argsDe, corre, comandos, revisar, claseDeError, horasSinMedir, HORAS_SIN_MEDIR, categoriaDeLinea };

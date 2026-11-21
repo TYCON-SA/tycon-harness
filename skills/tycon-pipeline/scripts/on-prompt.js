@@ -25,6 +25,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+const { homeCommand } = require('./lib/home-command.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 const { stepNames } = require('./lib/steps.js');   // al dueño, los pasos por su nombre llano
 
@@ -39,6 +40,13 @@ const LEGACY_MARKER_PATH = path.join(STATE_DIR, 'active.json');
 // 6h cubre el caso típico (dejaste la ventana abierta toda la jornada) sin romper
 // paralelismo intencional (sesiones reales tocan lastTouch con cada Edit via on-edit.js).
 const STALE_HOURS = 6;
+
+// ¿la sesión tiene una firma más nueva que el corte? `{ viva }` o `{ error }` (scripts/lib/signature-log.js)
+function firmadaDespuesDe(sesion, cutoff) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-log.js')).signedSince(sesion, path.dirname(ACTIVE_DIR), cutoff);
+  } catch (e) { return { error: `no pude mirar el registro de firmas (${(e && e.message) || e})` }; }
+}
 
 function markerFilePath(sessionId) {
   const safe = String(sessionId || '_nosession').replace(/[/\\]/g, '_');
@@ -74,6 +82,16 @@ function listAllMarkers(currentSessionId) {
         try { perdida = !!require('./lib/open-runs.js').perdida({ sid: m.sessionId || f.replace(/\.json$/, ''), cwd: m.repoPath || process.cwd() }); } catch { /* queda perdida */ }
         // no se poda, y sigue a la vista en la lista (las demás sesiones la ven como ocupada)
         if (perdida) { markers.push(m); continue; }
+        // una que espera su turno con la espera anotada no está abandonada: sigue, y cuenta como ocupada
+        const io = require('./lib/story-gate-io.js');
+        const podada = m.sessionId || f.replace(/\.json$/, '');
+        if (io.waitingTurn(path.dirname(ACTIVE_DIR), podada)) { markers.push(m); continue; }
+        // una que el dueño firmó después del corte tampoco: la firma va a su registro y no toca el marcador
+        const firma = firmadaDespuesDe(podada, cutoff);
+        if (firma.error) process.stderr.write(`[on-prompt] no podé el marcador de ${podada}: ${firma.error}; sin saber si la firmaron, no se poda.\n`);
+        if (firma.error || firma.viva) { markers.push(m); continue; }
+        // sin su copia no se poda: `marker.js restore` la rearma desde ahí
+        if (!io.savePruned(path.dirname(ACTIVE_DIR), podada, m)) { markers.push(m); continue; }
         try { fs.unlinkSync(full); } catch { /* best-effort */ }
         // el cierre de la sesión podada: sin él, su apertura sin marcador frenaría como perdida (lib/open-runs.js)
         try {
@@ -225,21 +243,34 @@ function matches(prompt, patterns) {
 const NON_HUMAN_RE = /<task-notification>|<local-command-stdout>|<command-name>|SYSTEM NOTIFICATION - NOT USER INPUT|<system-reminder>/;
 const { prompt, sessionId, transcriptPath } = readEvent();
 if (!prompt) process.exit(0);
+
+// Una ejecución detenida por el control de cierre (`needs_human`) que despierta con un mensaje que no tipeó la persona:
+// el recordatorio de que la decisión es del dueño (lib/autonomy-decision.js). Va antes del corte de abajo porque un aviso
+// de tarea también la despierta. Fail-open: un error acá no frena el gancho.
+try {
+  // el marcador tal como está: una detención puede ser de un marcador sin historia, que readMarker no devuelve
+  const own = markerFilePath(sessionId);
+  const detenido = fs.existsSync(own) ? JSON.parse(fs.readFileSync(own, 'utf8')) : null;
+  if (detenido && detenido.needs_human === true) {
+    const sl = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-list.js'));
+    // sin archivo de sesión (Codex no lo escribe) se toma como interactiva: lo envuelto sigue sin ser de la persona, y
+    // la conversación todavía puede decir que el mensaje lo puso un programa
+    const s = sl.sesiones(os.homedir()).mapa.get(sessionId);
+    if (!sl.esDeLaPersona({ prompt, kind: s ? s.kind || 'interactive' : 'interactive', transcript: transcriptPath })) {
+      emit(require('./lib/autonomy-decision.js').recordatorio({ casa: os.homedir(), sesion: sessionId, marker: detenido }));
+    }
+  }
+} catch (e) {
+  // fail-open: no frena el gancho, pero queda anotado (no es «no había detención»)
+  try { require('./lib/story-gate-io.js').appendLog(require('./lib/state-dir.js').stateDir(os.homedir()), 'gates.log', sessionId, { repoPath: null, name: 'autonomy-reminder', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco frena */ }
+}
+
 if (NON_HUMAN_RE.test(prompt)) process.exit(0);
 
 // El self-upgrade del SessionStart hook no vive acá: reescribiría
 // ~/.claude/settings.json en CADA prompt (read+parse siempre, write condicional) — foot-gun
 // de config global + race cross-sesión. El bootstrap del SessionStart lo hace SOLO
 // install-tycon-hooks.sh|.ps1 en SessionStart (one-time), no per-prompt.
-
-// Ring de prompts del user (evidencia para reasonInPrompts y lane-classifier). Se registra en
-// CADA prompt humano, antes de cualquier salida temprana. NO fija carril: no hay
-// detección por regex — ver el comentario grande en lib/story-gate.js.
-// Fail-open: si el registro falla, el hook sigue igual.
-try {
-  const io = require('./lib/story-gate-io.js');
-  io.recordPrompt(STATE_DIR, sessionId, prompt);
-} catch { /* fail-open */ }
 
 // Constancia del skill creador de stories cuando el USER lo invoca por SLASH (freno de story-a-mano):
 // `/tycon-create-story <id>` tipeado por el dev
@@ -341,10 +372,10 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
           `→ leé el último summary.\n` +
           `       2. \`git status\` en el/los repo/s — verificá archivos pending.\n` +
           `       3. Setear MARKER en TU sessionId con el state heredado:\n` +
-          `          node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set '{...}'.\n` +
+          `          ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} set '{...}'.\n` +
           `       4. Arrancar desde el primer paso pendiente (NO desde «Arranque»).\n\n` +
           `   (b) Si la otra sesión está MUERTA (Claude crasheó / dev cerró ventana): \n` +
-          `       node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear-session <sessionId>\n` +
+          `       ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} clear-session <sessionId>\n` +
           `       después podés arrancar fresh.\n\n` +
           `   (c) Si efectivamente querés DOS sesiones en paralelo sobre la misma story \n` +
           `       (uso muy raro — implica branches Git distintas): documentar ` +
@@ -383,11 +414,10 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
       `🔒 Portón de carril (2026-08-19): en un repo bajo el arnés, el primer Edit/Write de CÓDIGO sin marker ` +
       `(ni ad-hoc declarado) se DENIEGA — y con marker, se deniega hasta que «Aprobar el plan» esté cerrado. ` +
       `No es un aviso: es un portón.\n\n` +
-      `🔒 Este prompt es un pedido de STORY (2026-08-27): declarar un ad-hoc CITÁNDOLO se deniega ` +
-      `(veto mecánico ADHOC_DENIED_STORY_QUOTE — citar el pedido de la story como autorización del atajo es el ` +
-      `anti-pattern del 2026-08-24), y con modelo disponible el juez lee los prompts reales. Las instrucciones ` +
-      `operativas del pedido (tasks en orden, tests scoped) NO son un procedimiento manual: se pasan al pipeline ` +
-      `como restricciones. El atajo sólo lo habilita el USER pidiéndolo en un prompt propio.\n\n` +
+      `🔒 Este prompt es un pedido de STORY: no lo conviertas en un ad-hoc (el anti-pattern del 2026-08-24). ` +
+      `Las instrucciones operativas del pedido (tasks en orden, tests scoped) NO son un procedimiento manual: se ` +
+      `pasan al pipeline como restricciones. El atajo (\`marker.js adhoc set\`) lo aprueba una persona en la ventana ` +
+      `de permiso, y sólo si él lo pide.\n\n` +
       `Ver SKILL.md sección "ANTI-PATTERN — NO bypass del orchestrator".` +
       freshSessionBlock,
   );

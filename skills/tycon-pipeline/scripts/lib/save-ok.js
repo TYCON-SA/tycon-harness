@@ -1,0 +1,732 @@
+'use strict';
+/**
+ * save-ok.js — el ok de guardar una story (commit, push y los pedidos): la firma `save` y su constancia (@story-8.143).
+ *
+ * `marker.js approve-save` lo firma y deja `saveOk` en el marcador de la corrida; `marker.js save-check` dice si
+ * sigue valiendo. Acá vive todo lo que eso mide, sin depender de marker.js:
+ *   · reposDeLaCorrida  el repo de la story más todo repo con cambios reales (los de `fileEvents` y los hermanos);
+ *   · huellas           por repo, la rama, la base (`origin/main`) y el árbol que produciría su cambio, armado con un
+ *                       índice temporal: entran los archivos sin seguimiento y el índice de la persona no se toca;
+ *   · vigente           si cada repo sigue en la rama y con el árbol de la huella (o ya commiteado);
+ *   · controlesDelCommit el gancho pre-commit de cada repo sobre lo que guardaría el commit, en sólo lectura: lo que lo
+ *                       frenaría después del ok se ve antes de firmar;
+ *   · antesDeFirmar     en toda vía, los controles del commit; por delegación, además, si la corrida terminó limpia, si
+ *                       el cambio no toca nada sensible y el aviso al dueño; corre con el pedido de la ventana sin gastar
+ *                       (owner-window.js `exigir({ antes })`);
+ *   · constancia        el `saveOk` que se escribe después de la firma.
+ *
+ * Todo lo de afuera (los canales, el envío del aviso, los hallazgos, las firmas de la corrida) entra por parámetro.
+ */
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const RAIZ = path.join(__dirname, '..', '..', '..', '..');
+const catalogo = () => require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
+// git en inglés: `raizDe` reconoce «fuera de un repo» por el texto del error, que git traduce
+const entornoDeGit = () => require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js'));
+
+const BASE = 'origin/main';
+// la evidencia que escribe el pipeline (hallazgos, aprobaciones, la ronda de revisores): no es código de la story. Sólo
+// sus datos y sus informes; cualquier otro archivo bajo `.advisors/` es código, y además sensible (ver `sensibles`)
+const EVIDENCIA = '.advisors';
+const PATRONES_EVIDENCIA = [`${EVIDENCIA}/**/*.json`, `${EVIDENCIA}/**/*.jsonl`, `${EVIDENCIA}/**/*.md`];
+const esEvidencia = (rel) => rel.startsWith(`${EVIDENCIA}/`) && /\.(json|jsonl|md)$/i.test(rel);
+
+/**
+ * ¿`rel` es una salida o una captura de una prueba en vivo que su registro nombra con la misma huella? La deja
+ * smoke-run.sh en `<carpeta>/<clave>-smoke-outputs/` o `-smoke-captures/`, y el registro `<carpeta>/<clave>-smoke-ledger.jsonl`
+ * anota su ruta y su sha256. Una suelta, o una que cambió después de sellarla, no.
+ */
+function esEvidenciaEnVivo(repo, rel) {
+  const m = /^(.*)\/([^/]+)-smoke-(outputs|captures)\/([^/]+)$/.exec(String(rel));
+  if (!m || !m[1].startsWith(EVIDENCIA)) return false;
+  const [, carpeta, clave, tipo, nombre] = m;
+  const sub = `${clave}-smoke-${tipo}/${nombre}`;
+  const [campo, huellaCampo] = tipo === 'outputs' ? ['output', 'output_sha'] : ['capture', 'capture_sha'];
+  let lineas;
+  try { lineas = fs.readFileSync(path.join(repo, carpeta, `${clave}-smoke-ledger.jsonl`), 'utf8').split('\n').filter(Boolean); } catch (_) { return false; }
+  let sha;
+  try { sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(repo, rel))).digest('hex'); } catch (_) { return false; }
+  return lineas.some((l) => { try { const o = JSON.parse(l); return o[campo] === sub && o[huellaCampo] === sha; } catch (_) { return false; } });
+}
+/**
+ * ¿`rel` es el guion de la prueba en vivo de una historia (`<carpeta de .advisors>/<clave>-*.js`) que el registro de
+ * humos de esa carpeta (`<clave>-smoke-ledger.jsonl`) nombra con su sha256 de ahora? Lo deja smoke-run.sh en `script` y
+ * `script_sha` cuando el comando nombra el guion. Un guion que ningún renglón nombra, o que cambió después de correrlo,
+ * no: cualquier otro `.js` de `.advisors` sigue siendo código.
+ */
+function esGuionEnVivo(repo, rel) {
+  const m = /^(.*)\/([^/]+)$/.exec(String(rel));
+  if (!m || !m[1].startsWith(`${EVIDENCIA}/`) || !/\.js$/.test(m[2])) return false;
+  const [, carpeta, nombre] = m;
+  let lineas;
+  try { lineas = fs.readdirSync(path.join(repo, carpeta)).filter((f) => f.endsWith('-smoke-ledger.jsonl') && nombre.startsWith(`${f.slice(0, -'-smoke-ledger.jsonl'.length)}-`)); } catch (_) { return false; }
+  let sha;
+  try { sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(repo, rel))).digest('hex'); } catch (_) { return false; }
+  return lineas.some((ledger) => {
+    let texto;
+    try { texto = fs.readFileSync(path.join(repo, carpeta, ledger), 'utf8'); } catch (_) { return false; }
+    return texto.split('\n').some((l) => { try { const o = JSON.parse(l); return o && o.script === rel && o.script_sha === sha; } catch (_) { return false; } });
+  });
+}
+// el papeleo que no vence el ok de guardar: la evidencia, más las stories y su estado (`specs/`, con su
+// `sprint-status.yaml`) y las tareas (`tasks/`), sólo en sus datos y sus informes. Nunca una carpeta oculta, un enlace, lo de la lista sensible ni la configuración de
+// una herramienta (`package.json`, `tsconfig.json`): ésos cargan o deciden algo, y cambiarlos pide otro ok
+const PAPELEO_DE_LA_HUELLA = ['specs', 'tasks'];
+// los trozos de memoria que exporta el cierre antes del commit, después del ok: sólo los comprimidos, sin subcarpetas,
+// y el índice que los lista (el exportador lo reescribe con cada trozo)
+const MEMORIA = '.engram/chunks';
+const INDICE_DE_MEMORIA = '.engram/manifest.json';
+const esTrozoDeMemoria = (rel) => rel === INDICE_DE_MEMORIA || new RegExp(`^${MEMORIA.replace('.', '\\.')}/[^/]+\\.jsonl\\.gz$`).test(rel);
+// el registro de las exenciones de runtime del repo (runtime-waiver.js): la exención se firma en la ventana y se anota
+// después de la última vuelta, así que es papeleo como la evidencia. Sólo esa ruta exacta: el resto de `.tycon/` (la
+// configuración del repo) y las demás carpetas ocultas siguen pidiendo otro ok
+const EXENCIONES_DE_RUNTIME = '.tycon/runtime-waivers.jsonl';
+const CONFIGURACION = /^(package(-lock)?|npm-shrinkwrap|tsconfig[\w.-]*|jsconfig)\.json$/;
+// un informe de la carpeta qa/: un `.md` hijo directo de una carpeta `qa`, en cualquier nivel
+const ES_INFORME_DE_QA = /(^|\/)qa\/[^/]+\.md$/;
+const INFORMES_DE_QA = ':(glob)**/qa/*.md';
+function esPapeleoDeLaHuella(rel, modo) {
+  if (modo === '120000') return false;
+  if (rel.startsWith(`${EVIDENCIA}/`)) return /\.(json|jsonl|md)$/.test(rel);
+  if (rel.startsWith(`${MEMORIA}/`) || rel === INDICE_DE_MEMORIA) return esTrozoDeMemoria(rel);
+  if (rel === EXENCIONES_DE_RUNTIME) return true;
+  // el estado del sprint es papeleo como la story: cambiarlo después de preparar el pedido no es cambiar el código
+  const estadoDelSprint = rel.startsWith('specs/') && path.posix.basename(rel) === 'sprint-status.yaml';
+  // la carpeta qa/ de una historia puede vivir al lado de specs/ (qa-dir.js): sus informes son papeleo como la story
+  const informeDeQa = ES_INFORME_DE_QA.test(rel);
+  if (!informeDeQa && (!PAPELEO_DE_LA_HUELLA.some((d) => rel.startsWith(`${d}/`)) || (!/\.(json|jsonl|md)$/.test(rel) && !estadoDelSprint))) return false;
+  if (rel.split('/').some((p) => p.startsWith('.')) || CONFIGURACION.test(path.posix.basename(rel))) return false;
+  const pats = catalogo().SENSITIVE.map(patron);
+  return !pats.some((re) => re.test(rel.toLowerCase()));
+}
+// las firmas que eximen algo en la corrida: con una de ellas la story no terminó limpia
+const EXIMEN = ['critical-waiver', 'runtime-waiver', 'escape:force-manual'];
+
+function git(repo, args, env, input) {
+  const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', input, env: entornoDeGit().idiomaFijo(process.env, env), maxBuffer: 64 * 1024 * 1024 });
+  // `crudo` sin recortar: en `status --porcelain` el primer espacio es parte de la columna del estado
+  // `status`: con `--verify --quiet`, 1 es «no existe» y cualquier otro fallo es «no pude preguntar»
+  return { ok: r.status === 0, status: r.status, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String(r.stderr || '').trim() };
+}
+const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+// las carpetas temporales de la máquina: la del sistema y las de siempre de Unix
+const CARPETAS_TEMPORALES = [os.tmpdir(), '/tmp', '/var/tmp'];
+
+/**
+ * La raíz del repo de git que contiene `p` (un archivo que puede no existir, o una carpeta), o null si no está en
+ * ningún repo. Cualquier otro fallo de git tira: no poder preguntar no es «no hay repo».
+ */
+function raizDe(p) {
+  let d = path.resolve(String(p));
+  for (;;) {
+    try { if (fs.statSync(d).isDirectory()) break; } catch (_) { /* subo */ }
+    const arriba = path.dirname(d);
+    if (arriba === d) return null;
+    d = arriba;
+  }
+  const r = git(d, ['rev-parse', '--show-toplevel']);
+  if (r.ok && r.out) return real(r.out);
+  if (/not a git repository/i.test(r.err)) return null;
+  throw new Error(`no pude preguntarle a git por ${d} (${r.err || 'sin salida'})`);
+}
+
+/** ¿El repo tiene cambios: algo en `git status`, o commits propios contra su base? */
+function tieneCambios(repo) {
+  const st = git(repo, ['status', '--porcelain']);
+  if (!st.ok || st.out) return true;   // «no pude mirar» cuenta como cambio: el repo entra y su huella dice qué hay
+  const d = git(repo, ['diff', '--name-only', `${BASE}...HEAD`]);
+  return !d.ok || !!d.out;
+}
+
+/**
+ * Las rutas absolutas (o desde `~/`) que la story declara en `files_to_modify` y `files_to_create`: nombran archivos de
+ * otro repo. Lee la lista con o sin sangría, y la lista en línea (`[a, b]`); una ruta entre comillas puede tener
+ * espacios. Una story que no se puede leer, o que no está en el disco, tira: sin ella no se sabe qué repos declara.
+ */
+function rutasDeclaradas(storyPath) {
+  if (!storyPath) return [];
+  const texto = fs.readFileSync(storyPath, 'utf8');
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(texto);
+  if (!fm) return [];
+  const crudas = [];
+  let enLista = false;
+  for (const l of fm[1].split(/\r?\n/)) {
+    const clave = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(l);
+    if (clave) {
+      enLista = /^files_to_(modify|create)$/.test(clave[1]);
+      const enLinea = enLista && /^\[(.*)\]/.exec(clave[2].trim());
+      if (enLinea) crudas.push(...enLinea[1].split(','));
+      continue;
+    }
+    const item = enLista && /^\s*-\s+(.*)$/.exec(l);
+    if (item) crudas.push(item[1]);
+  }
+  const out = [];
+  for (const c of crudas) {
+    const s = c.trim();
+    const q = /^(['"])(.*?)\1/.exec(s);
+    const ruta = q ? q[2] : s.replace(/\s+#.*$/, '').trim();
+    if (!ruta) continue;
+    if (ruta.startsWith('~/')) out.push(path.join(os.homedir(), ruta.slice(2)));
+    else if (path.isAbsolute(ruta)) out.push(ruta);
+  }
+  return out;
+}
+
+/**
+ * Los repos de la corrida: el de la story y el del código siempre; los de `fileEvents`, los `hermanos` (de
+ * `evidence.companion_repos`) y los que nombra la story en `files_to_modify`, sólo con cambios reales. `fileEvents`
+ * suma, nunca define: un cambio hecho por consola entra por el repo que lo tiene.
+ */
+function reposDeLaCorrida({ marker = {}, hermanos = [] } = {}) {
+  const fijos = [];
+  for (const p of [marker.storyPath, marker.repoPath].filter(Boolean)) {
+    const r = raizDe(p);
+    if (!r) throw new Error(`${p} no está en un repo de git`);
+    fijos.push(r);
+  }
+  // un evento o un hermano fuera de todo repo no tiene qué guardar. Un repo que entra sólo por una edición, vive en una
+  // carpeta temporal y no tiene `origin` (el `git init` de juguete con que la corrida midió algo) tampoco: el ok no lo
+  // cubre, y un commit o un push ahí pide su propio ok (`vigente`). Un clon o un worktree de un repo real (con `origin`)
+  // entra aunque esté ahí, y los hermanos y lo que declara la story, siempre. «Sin origin» es la salida 2 de git (no existe
+  // el remoto): si git no pudo contestar, no se sabe, y el repo entra
+  const temporales = CARPETAS_TEMPORALES.map(real);
+  const enTemporal = (r) => temporales.some((d) => r === d || r.startsWith(`${d}${path.sep}`));
+  const deJuguete = (r) => enTemporal(r) && git(r, ['remote', 'get-url', 'origin']).status === 2;
+  const posibles = [
+    ...(Array.isArray(marker.fileEvents) ? marker.fileEvents : []).map((e) => e && e.path).filter(Boolean).map(raizDe)
+      .filter((r) => r && !deJuguete(r)),
+    ...hermanos.map(raizDe),
+    ...rutasDeclaradas(marker.storyPath).map(raizDe),
+  ].filter(Boolean);
+  const out = [...new Set(fijos)];
+  for (const r of new Set(posibles)) if (!out.includes(r) && tieneCambios(r)) out.push(r);
+  return out;
+}
+
+/** La huella de un repo: `{ repo, rama, base, arbol }` (`base` null si `origin/main` no se resuelve; `error` si no se pudo). */
+function huella(repo) {
+  const rama = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const base = git(repo, ['rev-parse', '--verify', '--quiet', `${BASE}^{commit}`]);
+  const gitDir = git(repo, ['rev-parse', '--absolute-git-dir']);
+  if (!rama.ok || !gitDir.ok) return { repo, rama: null, base: null, arbol: null, error: rama.err || gitDir.err || 'no es un repo de git' };
+  // el árbol que produciría el commit de todo: un índice aparte, desde HEAD, con todo lo del disco (respeta .gitignore).
+  // Sin el papeleo (esPapeleoDeLaHuella): approve-save escribe su propia aprobación en la evidencia después de tomar la
+  // huella, y la story cambia de estado después del ok
+  const indice = path.join(gitDir.out, `save-ok-index-${process.pid}-${Date.now()}`);
+  try {
+    const env = { GIT_INDEX_FILE: indice };
+    const falla = (p, r) => ({ repo, rama: rama.out, base: base.ok ? base.out : null, arbol: null, error: `git ${p}: ${r.err}` });
+    // `cabeza`: el commit en que estaba la rama al tomar la foto. Empujarlo es empujar lo de antes de preparar. Sin
+    // commits no hay; si git no pudo decirlo, no hay foto
+    const head = git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+    if (!head.ok && head.status !== 1) return falla('rev-parse HEAD', head);
+    const tieneHead = head.ok && !!head.out;
+    for (const p of [tieneHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], ['add', '-A']]) {
+      const r = git(repo, p, env);
+      if (!r.ok) return falla(p[0], r);
+    }
+    const arbol = arbolSinPapeleo(repo, env);
+    if (arbol.error) return falla(arbol.paso, arbol);
+    return { repo, rama: rama.out, base: base.ok && base.out ? base.out : null, arbol: arbol.out, cabeza: tieneHead ? head.out : null };
+  } finally {
+    try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
+  }
+}
+function huellas(repos) { return repos.map(huella); }
+
+// El árbol del índice aparte `env`, sin el papeleo: `{ out }` o `{ error, paso, err }`.
+function arbolSinPapeleo(repo, env) {
+  const ls = git(repo, ['ls-files', '-s', '-z', '--', EVIDENCIA, MEMORIA, INDICE_DE_MEMORIA, EXENCIONES_DE_RUNTIME, ...PAPELEO_DE_LA_HUELLA, INFORMES_DE_QA], env);
+  if (!ls.ok) return { error: true, paso: 'ls-files', err: ls.err };
+  // cada entrada: «<modo> <blob> <etapa>\t<ruta>»
+  const fuera = ls.crudo.split('\0').filter(Boolean).map((e) => { const t = e.indexOf('\t'); return [e.slice(0, 6), e.slice(t + 1)]; })
+    .filter(([modo, rel]) => esPapeleoDeLaHuella(rel, modo)).map(([, rel]) => rel);
+  if (fuera.length) {
+    const rm = git(repo, ['update-index', '--force-remove', '-z', '--stdin'], env, fuera.map((f) => `${f}\0`).join(''));
+    if (!rm.ok) return { error: true, paso: 'update-index', err: rm.err };
+  }
+  const arbol = git(repo, ['write-tree'], env);
+  return arbol.ok ? { out: arbol.out } : { error: true, paso: 'write-tree', err: arbol.err };
+}
+
+/**
+ * El árbol de un commit (una rama, `HEAD` o un hash), sin el papeleo, comparable con el de la huella: lo que manda un
+ * empuje de ese commit. `{ commit, arbol }` o `{ error }`.
+ */
+function arbolDelCommit(repo, ref) {
+  const commit = git(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
+  // `falta`: el repo no lo tiene (salida 1), y un empuje de algo que no existe no manda nada (git lo rechaza). Cualquier
+  // otro fallo es no haber podido preguntar
+  if (commit.status === 1) return { error: `no encuentro lo que se empuja en ${repo}`, falta: true };
+  if (!commit.ok || !commit.out) return { error: `git rev-parse: ${commit.err || 'sin respuesta'}` };
+  const gitDir = git(repo, ['rev-parse', '--absolute-git-dir']);
+  if (!gitDir.ok) return { error: gitDir.err || 'no es un repo de git' };
+  const indice = path.join(gitDir.out, `save-ok-commit-${process.pid}-${Date.now()}`);
+  try {
+    const env = { GIT_INDEX_FILE: indice };
+    const r = git(repo, ['read-tree', commit.out], env);
+    if (!r.ok) return { error: `git read-tree: ${r.err}` };
+    const arbol = arbolSinPapeleo(repo, env);
+    return arbol.error ? { error: `git ${arbol.paso}: ${arbol.err}` } : { commit: commit.out, arbol: arbol.out };
+  } finally {
+    try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
+  }
+}
+
+// lo que pueden tardar los controles del commit de todos los repos antes de darlos por colgados: los del arnés, ~30 s; con
+// un revisor tocado, su chequeo de vida suma ~40 s, y hasta ~2 min si confirma un rojo. Debajo del plazo con que la
+// ventana espera al chequeo (owner-window.js, 240 s)
+/**
+ * El público de la historia para los controles del privado adelgazado, o null. Su gancho toma los guiones del arnés
+ * (`harness_dir()`, que lee `TYCON_GUIDES_DIR`); con el arnés instalado no encuentra el guion nuevo que trae el pedido
+ * público hasta que entra. Es la misma regla que `private-tree.js findPublic` para el público de la historia (el hermano
+ * declarado con `version.json` y `scripts/`, en una rama que no es `main` y que es la del privado o nombra la historia),
+ * sin lo demás: esa función, con un público en otra rama, trae `origin/main` de la red, y estos controles son de sólo
+ * lectura y con plazo. Sin la historia, vale sólo la rama del privado. Ante cualquier duda, null: el arnés instalado.
+ */
+function publicoDeLaHistoria(repo, story) {
+  try {
+    if (!require('./thin-private.js').isThinPrivate(repo)) return null;
+    const cr = require('./companion-repos.js');
+    const faltan = [];
+    const base = cr.companionRoots(repo, story || null, { onMissing: (nombre) => faltan.push(nombre), onWarning: () => {} })
+      .find((r) => fs.existsSync(path.join(r, 'version.json')) && fs.existsSync(path.join(r, 'scripts')));
+    if (faltan.length) process.stderr.write(`save-ok: el hermano declarado ${faltan.join(', ')} no está en disco: los controles de ${path.basename(repo)} corren con el arnés instalado\n`);
+    if (!base) return null;
+    const rama = git(base, ['symbolic-ref', '-q', '--short', 'HEAD']);
+    const suya = rama.ok ? rama.out : '';
+    if (!suya || suya === 'main') return null;
+    return suya === cr.ramaDe(repo) || (story && cr.ramaNombraLaStory(suya, cr.numeroDeLaStory(story))) ? base : null;
+  } catch (e) {
+    // no poder buscarlo no es «no hay»: los controles corren como siempre, pero se dice
+    process.stderr.write(`save-ok: no pude buscar el público de la historia para ${path.basename(repo)} (${String((e && e.message) || e).split('\n')[0]}): sus controles corren con el arnés instalado\n`);
+    return null;
+  }
+}
+
+const CONTROLES_MS = 210000;
+const ultimas = (texto, max = 1200) => {
+  const l = String(texto || '').split('\n').map((x) => x.trim()).filter(Boolean);
+  const frenos = l.filter((x) => /^(⛔|🔴|✖)/.test(x));
+  const s = (frenos.length ? frenos : l.slice(-12)).join(' · ');
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+};
+
+/**
+ * Los controles del commit de cada repo (el gancho pre-commit que git correría) sobre lo que guardaría el commit de todo:
+ * un índice aparte desde HEAD con todo lo del disco, como la huella; el índice de la persona no se toca. Corren con
+ * `TYCON_PRECOMMIT_READ_ONLY=1`: un control que escribe (regenerar un archivo, exportar la memoria) no escribe y frena si
+ * hacía falta. Si el árbol cambió igual, el ok nacería vencido y no se firma. Colgados o sin poder correrlos, tampoco:
+ * no poder mirar no es verde. `{ codigo: 0 }` o `{ codigo: 2, motivo }`. `para`: 'firma' (el ok de guardar) o 'pedido'
+ * (el cierre de «Preparar el pull request», que toma la foto del pedido): cambia sólo lo que el motivo dice que hay que hacer.
+ */
+function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS, para = 'firma', story = null }) {
+  const pedido = para === 'pedido';
+  const volver = pedido ? 'commiteá lo regenerado y volvé a cerrar «Preparar el pull request»' : 'volvé a pedir la firma';
+  const vencido = pedido ? 'la foto del pull request nacería vieja' : 'el ok nacería vencido';
+  const limite = Date.now() + timeoutMs;
+  for (const repo of repos) {
+    const nombre = path.basename(repo);
+    const no = (m) => ({ codigo: 2, motivo: `${nombre}: ${m}` });
+    // el privado adelgazado corre sus controles con el arnés del público de la historia; los demás repos, como siempre
+    const publico = publicoDeLaHistoria(repo, story);
+    const gitDir = git(repo, ['rev-parse', '--absolute-git-dir']);
+    if (!gitDir.ok) return no(`no pude correr los controles del commit (${gitDir.err || 'no es un repo de git'})`);
+    const antes = huella(repo);
+    if (antes.error) return no(`no pude medirlo antes de los controles del commit (${antes.error})`);
+    // un chequeo cortado de afuera (el plazo de la ventana) deja su índice: los de más de una hora se borran acá
+    try {
+      for (const f of fs.readdirSync(gitDir.out)) {
+        const p = path.join(gitDir.out, f);
+        if (f.startsWith('save-ok-controls-') && Date.now() - fs.statSync(p).mtimeMs > 3600000) fs.rmSync(p, { force: true });
+      }
+    } catch (_) { /* barrer es de cortesía: no cambia el veredicto */ }
+    const indice = path.join(gitDir.out, `save-ok-controls-${process.pid}-${Date.now()}`);
+    // con algo preparado, lo que guardaría el próximo commit es lo preparado: los controles miran una copia del índice
+    // de la persona (un cambio que entra en dos commits se firma sin sacar del disco el resto). Sin nada preparado, el
+    // commit de todo, como siempre
+    let preparado = false;
+    try {
+      const env = { GIT_INDEX_FILE: indice, TYCON_PRECOMMIT_READ_ONLY: '1' };
+      const head = git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+      // sin commits se mira el árbol vacío; si git no pudo decirlo, no se mira nada
+      if (!head.ok && head.status !== 1) return no(`no pude leer HEAD (${head.err || 'sin respuesta'})`);
+      const tieneHead = head.ok;
+      const delIndice = git(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'index']);
+      // la foto del pull request mide todo el disco, así que sus controles también: el cierre del paso prepara la memoria
+      // antes, y mirar sólo eso dejaría afuera el código que el commit va a guardar
+      const hayPreparado = !pedido && tieneHead && delIndice.ok && spawnSync('git', ['-C', repo, 'diff', '--cached', '--quiet'], { windowsHide: true, encoding: 'utf8' }).status === 1;
+      if (hayPreparado) {
+        try { fs.copyFileSync(delIndice.out, indice); preparado = true; } catch (e) { return no(`no pude copiar lo preparado (${e.code || e.message})`); }
+      } else {
+        for (const p of [tieneHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], ['add', '-A']]) {
+          const r = git(repo, p, env);
+          if (!r.ok) return no(`no pude armar lo que guardaría el commit (git ${p[0]}: ${r.err})`);
+        }
+      }
+      const queda = limite - Date.now();
+      const r = queda <= 0 ? { error: { code: 'ETIMEDOUT' }, status: null } : spawnSync('git', ['-C', repo, 'hook', 'run', '--ignore-missing', 'pre-commit'], {
+        windowsHide: true,
+        cwd: repo, encoding: 'utf8', timeout: queda, env: { ...process.env, ...env, ...(publico ? { TYCON_GUIDES_DIR: publico } : {}) }, maxBuffer: 16 * 1024 * 1024,
+      });
+      if (r.error || r.status === null) {
+        const sinSaber = pedido ? 'sin saber si el commit pasa no hay foto del pull request' : 'no se firma sin saber si el commit pasa';
+        return no(`los controles del commit no terminaron en ${Math.round(timeoutMs / 1000)} s (${r.error ? r.error.code || r.error.message : r.signal}): ${sinSaber}. Probá \`git hook run pre-commit\` en ${repo} y ${pedido ? 'volvé a cerrar «Preparar el pull request»' : volver}`);
+      }
+      if (r.status !== 0) {
+        const sobre = preparado ? 'los controles del commit, sobre lo preparado,' : 'los controles del commit, sobre todo lo del disco (no hay nada preparado),';
+        const despues = pedido ? 'y el pull request frenaría después del commit' : 'y arreglarlo después vencería el ok';
+        return no(`${sobre} lo frenarían, ${despues}. Lo que dijeron: ${ultimas(`${r.stderr}\n${r.stdout}`)}. ${pedido ? `Arreglá eso (si es un archivo que hay que regenerar, regeneralo), ${volver}` : `Arreglá eso y ${volver}`}`);
+      }
+    } finally {
+      try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
+    }
+    const despues = huella(repo);
+    if (despues.error || despues.arbol !== antes.arbol) {
+      const cambios = despues.error ? despues.error : git(repo, ['diff-tree', '-r', '--name-only', antes.arbol, despues.arbol]).out.split('\n').filter(Boolean).join(', ');
+      return no(`los controles del commit cambiaron el repo (${cambios || 'no sé qué'}), y ${vencido}. ${pedido ? `Si es un archivo regenerado, ${volver}; si no, descartalo y volvé a cerrar «Preparar el pull request»` : `Commiteá o descartá eso y ${volver}`}`);
+    }
+  }
+  return { codigo: 0 };
+}
+
+/**
+ * ¿El ok sigue valiendo? `{ ok, motivo }`. Cada repo de la huella, en su rama y con su árbol (sin commitear, o ya
+ * commiteado igual). Con `push` (`{ remoto, rama }`), la rama de destino es la de la huella del repo de `repoActual`, y
+ * nunca `main`.
+ */
+function vigente({ saveOk, push = null, repoActual = null } = {}) {
+  const no = (motivo) => ({ ok: false, motivo });
+  if (!saveOk || !Array.isArray(saveOk.huellas) || !saveOk.huellas.length) return no('la corrida no tiene un ok de guardar (saveOk): hay que pedirlo');
+  for (const h of saveOk.huellas) {
+    const ahora = huella(h.repo);
+    if (ahora.error) return no(`${h.repo}: no pude medirlo (${ahora.error})`);
+    if (ahora.rama !== h.rama) return no(`${h.repo}: está en la rama ${ahora.rama}, y el ok es de ${h.rama}: hay que pedir otro ok`);
+    // el árbol del disco (HEAD más todo lo que no está commiteado): commitear lo mismo no lo cambia, tocar algo sí
+    if (ahora.arbol !== h.arbol) return no(`${h.repo}: cambió después del ok: hay que pedir otro ok`);
+  }
+  if (repoActual && !push) {
+    let raiz;
+    try { raiz = raizDe(repoActual); } catch (e) { return no(e.message); }
+    if (!raiz) return no(`${repoActual} no está en un repo de git: no sé qué repo guarda`);
+    if (!saveOk.huellas.some((x) => x.repo === raiz)) return no(`${raiz} no está en el ok de guardar`);
+  }
+  if (push) {
+    if (push.rama === 'main' || push.rama === 'master') return no(`el ok no cubre empujar a ${push.rama}`);
+    let raiz = null;
+    try { raiz = repoActual ? raizDe(repoActual) : null; } catch (e) { return no(e.message); }
+    const h = saveOk.huellas.find((x) => x.repo === raiz);
+    if (!h) return no(`${repoActual || 'este repo'} no está en el ok de guardar`);
+    if (push.rama !== h.rama) return no(`el ok es para la rama ${h.rama}, no para ${push.rama}`);
+  }
+  return { ok: true, motivo: null };
+}
+
+// ── lo sensible ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Un patrón de SENSITIVE como expresión: `**` cualquier cosa, `*` un tramo sin `/`. */
+function patron(p) {
+  const re = String(p).toLowerCase().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*\*\//g, '\u0001').replace(/\*\*/g, '\u0002').replace(/\*/g, '[^/]*')
+    .replace(/\u0001/g, '(?:.*/)?').replace(/\u0002/g, '.*');
+  return new RegExp(`^${re}$`);
+}
+
+/**
+ * Los archivos que cambia un repo: el diff contra el punto donde la rama salió de su base (lo que `main` hizo después
+ * no es de la story), sin renombres (origen y destino), y los sin seguimiento. Con `-z`: una ruta con acentos llega
+ * tal cual, no entre comillas.
+ */
+function cambiados(repo) {
+  const out = new Set();
+  const mb = git(repo, ['merge-base', BASE, 'HEAD']);
+  if (!mb.ok || !mb.out) return { error: `no pude ubicar dónde salió la rama de ${BASE} (${mb.err || 'sin salida'})` };
+  const d = git(repo, ['diff', '--name-only', '-z', '--no-renames', mb.out]);
+  if (!d.ok) return { error: `no pude leer el cambio contra ${BASE} (${d.err})` };
+  for (const f of d.crudo.split('\0').filter(Boolean)) out.add(f);
+  const sin = git(repo, ['ls-files', '-z', '--others', '--exclude-standard']);
+  if (!sin.ok) return { error: `no pude listar los archivos sin seguimiento (${sin.err})` };
+  for (const f of sin.crudo.split('\0').filter(Boolean)) out.add(f);
+  return { archivos: [...out] };
+}
+
+/**
+ * ¿El texto hace `require` (o `import … from`) literal de uno de los archivos que definen firmas o avisos, con o sin
+ * `.js`? Cada nombre entra a la expresión con todos sus caracteres especiales escapados.
+ */
+function requiereSensible(texto, lista = catalogo().REQUIERE_SENSIBLE) {
+  const nombres = lista.map((n) => n.replace(/\.js$/, '').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('|');
+  return new RegExp(`(?:require\\s*\\(\\s*|from\\s+)['"\`](?:[^'"\`]*/)?(?:${nombres})(?:\\.js)?['"\`]`, 'i').test(texto);
+}
+
+/**
+ * Lo sensible que toca el cambio: `[{ repo, archivo, motivo }]`. Cada repo contra `origin/main`; las rutas sin
+ * mayúsculas, también la ruta real del archivo (un enlace a un sensible cuenta), y la clausura de un nivel por `require`.
+ */
+/** ¿La ruta (relativa al repo) está en la lista de lo sensible del catálogo? Sin distinguir mayúsculas. */
+function esSensible(rel) {
+  return catalogo().SENSITIVE.map(patron).some((re) => re.test(String(rel).replace(/\\/g, '/').toLowerCase()));
+}
+
+function sensibles({ repos = [] } = {}) {
+  const es = esSensible;
+  const out = [];
+  for (const repo of repos) {
+    const c = cambiados(repo);
+    if (c.error) { out.push({ repo, archivo: '(el cambio)', motivo: `${repo}: ${c.error}` }); continue; }
+    const raizReal = real(repo);
+    for (const rel of c.archivos) {
+      const abs = path.join(repo, rel);
+      const relReal = path.relative(raizReal, real(abs));
+      if (es(rel) || (!relReal.startsWith('..') && es(relReal))) { out.push({ repo, archivo: rel, motivo: 'está en la lista de lo sensible' }); continue; }
+      // la huella y «el último cambio» no miran la evidencia: lo que no es evidencia ahí adentro no pasa sin verse. Las
+      // salidas y capturas de una prueba en vivo que su registro nombra con la misma huella sí son evidencia
+      if (rel.startsWith(`${EVIDENCIA}/`) && !esEvidencia(rel) && !esEvidenciaEnVivo(repo, rel)) { out.push({ repo, archivo: rel, motivo: 'no es evidencia y está en la carpeta de la evidencia' }); continue; }
+      let texto = null;
+      try { texto = fs.readFileSync(abs, 'utf8'); } catch (e) {
+        // borrado: no carga nada; no poder leerlo (permisos, una carpeta, un submódulo) no prueba que no cargue nada
+        if (e.code !== 'ENOENT') { out.push({ repo, archivo: rel, motivo: `no pude leerlo (${e.code || e.message}): no sé qué carga` }); continue; }
+      }
+      if (texto && requiereSensible(texto)) out.push({ repo, archivo: rel, motivo: 'carga un archivo de firmas o de avisos' });
+    }
+  }
+  return out;
+}
+
+// ── la story limpia ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+const ms = (t) => { const n = Date.parse(t); return Number.isFinite(n) ? n : NaN; };
+
+/**
+ * Lo que en `repo` es papeleo del pipeline y no código: la evidencia (`esEvidencia`), la story y, en el repo de la
+ * story cuando el código vive en otro (los dos declarados), sus `.md` y el estado del sprint. `rutas` para `git`;
+ * `es(rel)` para un archivo. Un `.yaml` de CI o de configuración no es papeleo.
+ */
+function papeleo(marker, repo) {
+  const story = marker.storyPath ? raizDe(marker.storyPath) : null;
+  const codigo = marker.repoPath ? raizDe(marker.repoPath) : null;
+  const relStory = story === repo ? path.relative(repo, real(marker.storyPath)).split(path.sep).join('/') : null;
+  const soloPapeles = !!story && !!codigo && story === repo && codigo !== repo;
+  const es = (rel) => esEvidencia(rel) || rel === relStory
+    || (soloPapeles && (/\.md$/i.test(rel) || path.posix.basename(rel) === 'sprint-status.yaml'));
+  const rutas = [...PATRONES_EVIDENCIA.map((g) => `:(exclude,glob)${g}`), ...(relStory ? [`:(exclude,literal)${relStory}`] : []),
+    ...(soloPapeles ? [':(exclude,glob)**/*.md', ':(exclude,glob)**/sprint-status.yaml'] : [])];
+  return { es, rutas };
+}
+
+/**
+ * La hora del último cambio de código: el último `fileEvent` de código, el último commit propio de cada repo y los
+ * archivos que `git status` ve cambiados, uno por uno; sin el papeleo del pipeline. Lo que no se puede fechar (un git
+ * que falla, un borrado, un renombre o un archivo sacado del índice, que conservan la hora vieja del disco) cuenta como
+ * recién cambiado.
+ */
+function ultimoCambio(marker, repos) {
+  let max = 0;
+  for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {
+    if (!e || e.code === false) continue;
+    const t = ms(e.ts); if (t > max) max = t;
+  }
+  for (const repo of repos) {
+    const p = papeleo(marker, repo);
+    // un cambio por consola ya commiteado no deja archivo cambiado: lo fecha su commit
+    const mb = git(repo, ['merge-base', BASE, 'HEAD']);
+    if (!mb.ok || !mb.out) return Infinity;
+    const c = git(repo, ['log', '-1', '--format=%ct', `${mb.out}..HEAD`, '--', '.', ...p.rutas]);
+    if (!c.ok) return Infinity;
+    if (c.out && Number(c.out) * 1000 > max) max = Number(c.out) * 1000;
+    const st = git(repo, ['status', '--porcelain', '-z', '--untracked-files=all']);
+    if (!st.ok) return Infinity;
+    const ents = st.crudo.split('\0').filter(Boolean);
+    for (let i = 0; i < ents.length; i++) {
+      const x = ents[i][0];
+      const rel = ents[i].slice(3);
+      if (/[RC]/.test(x)) i++;   // un renombre trae después su ruta de origen
+      if (p.es(rel)) continue;
+      if (/[RCD]/.test(x)) return Infinity;
+      try { const t = fs.statSync(path.join(repo, rel)).mtimeMs; if (t > max) max = t; } catch (_) { return Infinity; }
+    }
+  }
+  return max;
+}
+
+/**
+ * De los renglones `-signed` del registro, los de esta corrida: firmados para su sesión, para la que adoptó
+ * (`adoptedFrom`, después de un /clear), o para su story. La hora la mira `limpia`.
+ */
+function exencionesDeLaCorrida(lineas, marker = {}) {
+  const sesiones = new Set([marker.sessionId, marker.adoptedFrom].filter(Boolean));
+  const story = marker.storyPath ? path.resolve(marker.storyPath) : null;
+  // un renglón sin destino no se sabe de quién es: cuenta
+  return (lineas || []).filter((g) => g && (!g.destino || sesiones.has(g.destino) || (story && g.storyPath && path.resolve(g.storyPath) === story)));
+}
+
+/** Lo que le falta a la corrida para estar limpia (AC 4), o null; con el resumen para el aviso. */
+function limpia({ marker, repos, ahora: hs, findings = [], firmasDeLaCorrida = [] }) {
+  const falta = (m) => ({ falta: m });
+  const pasos = Array.isArray(marker.stepsCompleted) ? marker.stepsCompleted : [];
+  if (!pasos.includes('prepare-commit') || !Array.isArray(marker.prepareCommitHuellas)) return falta('la preparación del commit no está cerrada (complete-step prepare-commit)');
+  const sinBase = hs.find((h) => !h.base);
+  if (sinBase) return falta(`${sinBase.repo}: su base (${BASE}) no se puede resolver`);
+  const medida = hs.find((h) => h.error);
+  if (medida) return falta(`${medida.repo}: no pude medirlo (${medida.error})`);
+  const prev = new Map(marker.prepareCommitHuellas.map((h) => [h.repo, h]));
+  const otra = hs.find((h) => { const p = prev.get(h.repo); return !p || p.rama !== h.rama || p.arbol !== h.arbol; });
+  if (otra || prev.size !== hs.length) return falta(`${otra ? otra.repo : 'la corrida'}: cambió después de preparar el commit`);
+  const ultimo = ultimoCambio(marker, repos);
+  const checks = marker.checks || {};
+  const prov = (marker.checksProvenance || {}).tests;
+  if (checks.tests !== 'green' || prov !== 'test-gate') return falta(`las pruebas no están en verde por la suite completa (test-gate): ${checks.tests || 'sin correr'}, ${prov || 'sin procedencia'}`);
+  if (!(ms((marker.checksAt || {}).tests) >= ultimo)) return falta('las pruebas son anteriores al último cambio de código');
+  // el pase: cerrado con su resultado, o salteado por la regla del portón; nunca con firma ni abandonado
+  const sk = marker.adversarialSkip && typeof marker.adversarialSkip === 'object' ? marker.adversarialSkip : null;
+  let pase;
+  if (sk && (sk.firmado || sk.forzado)) return falta('el pase adversarial se salteó con una firma');
+  if (sk && sk.abandonado) return falta('el pase adversarial se abandonó');
+  const del5b = (Array.isArray(marker.adversarialPasses) ? marker.adversarialPasses : []).filter((p) => p && p.tipo === '5b');
+  if (marker.adversarial) {
+    const desde = ms(marker.adversarial.launchedAt);
+    const vig = del5b.filter((p) => ms(p.ts) >= desde);
+    const ult = vig[vig.length - 1];
+    if (!ult) return falta('el pase adversarial se lanzó y no tiene resultado');
+    if (ult.veredicto === 'no-medido') return falta('el pase adversarial no midió todo');
+    if (!(ms(ult.ts) >= ultimo)) return falta('el pase adversarial es anterior al último cambio de código');
+    pase = `el pase cerrado con ${Number(ult.confirmados) || 0} confirmados`;
+  } else if (sk) {
+    if (!(ms(sk.at) >= ultimo)) return falta('el salteo del pase es anterior al último cambio de código');
+    pase = `el pase salteado por la regla: ${/livian/i.test(String(sk.motivo || '')) || sk.sizeForced ? 'corrida liviana' : 'riesgo bajo'}`;
+  } else return falta('el pase adversarial no corrió ni se salteó');
+  const criticos = findings.filter((f) => f && String(f.severity).toUpperCase() === 'CRITICAL');
+  if (criticos.length) return falta(`${criticos.length} hallazgo(s) CRITICAL en la corrida (${criticos.map((f) => f.rule_id).join(', ')}), aunque estén eximidos`);
+  const desde = ms(marker.startedAt);
+  const exime = firmasDeLaCorrida.find((g) => g && EXIMEN.some((f) => g.name === `${f}-signed`) && !(ms(g.ts) < desde));
+  if (exime) return falta(`la corrida tiene una firma que exime algo (${exime.name.replace(/-signed$/, '')})`);
+  return { falta: null, resumen: { criticos: 0, pase } };
+}
+
+// ── el aviso al dueño ───────────────────────────────────────────────────────────────────────────────────────────────
+
+function lineaDelAviso({ marker, repos, resumen }) {
+  const nombres = repos.map((r) => path.basename(r)).join(', ');
+  return `Ok de guardar: la coordinadora dio el ok de la story ${marker.storyId} (${nombres}). `
+    + `Comprobada limpia: ${resumen.criticos} críticos, ${resumen.pase}, las pruebas en verde.`;
+}
+
+/**
+ * El aviso por los mismos canales que el resto del arnés: la lista del perfil o, sin lista, el de siempre (Telegram):
+ * `{ ok, canales, motivo }`. Lo que protege es la entrega: vale sólo con una entrega real de al menos un canal, y la
+ * lista vacía no avisa. `canales()`: notify.canalesDeLaSesion; `mandar(o)`: notify.avisar.
+ */
+function avisar({ texto, canales, mandar }) {
+  const no = (motivo) => ({ ok: false, motivo });
+  let c;
+  try { c = canales(); } catch (e) { return no(`no pude leer los canales de aviso (${e.message})`); }
+  if (!c || c.problema) return no(`los canales de aviso no se pudieron leer${c && c.problema ? ` (${c.problema})` : ''}`);
+  if (!Array.isArray(c.canales) || !c.canales.length) return no('la lista de canales de aviso del perfil está vacía');
+  let r;
+  try { r = mandar({ canales: c.canales, texto, lado: 'sesion', mail: c.mail || null, chat: c.chat || null }); } catch (e) { return no(`el aviso falló (${e.message})`); }
+  const entregados = ((r && r.resultados) || []).filter((x) => x && x.entregado === true && x.canal);
+  if (!entregados.length) return no(`el aviso no llegó por ningún canal${((r && r.resultados) || []).map((x) => (x && x.motivo ? ` (${x.canal}: ${x.motivo})` : '')).join('')}`);
+  return { ok: true, canales: entregados.map((x) => x.canal) };
+}
+
+// ── antes de la firma y la constancia ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Lo que corre con el pedido a la vista y sin gastarlo: `{ codigo: 0, huellas, canales? }`, o `{ codigo, motivo }` sin
+ * avisar ni escribir. Por delegación: limpia (2), nada sensible salvo con `save:sensible` delegado (2) y el aviso entregado (1). Por la ventana o la
+ * terminal, sólo las huellas: el dueño decide.
+ */
+function antesDeFirmar({ via, marker, repos, findings = [], firmasDeLaCorrida = [], canales, mandar, controles = controlesDelCommit, sensibleDelegado = false }) {
+  const hs = huellas(repos);
+  // en toda vía: un ok con un repo que no se puede medir no valida nunca después (`vigente` no lo puede comparar)
+  const sinMedir = hs.find((h) => h.error);
+  if (sinMedir) return { codigo: 2, motivo: `${sinMedir.repo}: no pude medirlo (${sinMedir.error}): no se firma un ok que después no se puede comprobar` };
+  // en toda vía: un control del commit que lo frenaría vence el ok al arreglarlo (el examen de un revisor tocado, los
+  // datos estables, la versión pública del mapa): se ve antes de firmar
+  const c = controles({ repos, story: (marker && marker.storyPath) || null });
+  if (c.codigo) return c;
+  if (via !== 'delegacion') return { codigo: 0, huellas: hs };
+  // lo sensible primero: el motivo nombra el archivo aunque además falte algo para estar limpia
+  // con `save:sensible` delegado en el perfil (`sensibleDelegado`), la coordinadora firma también lo sensible
+  const s = sensibleDelegado ? [] : sensibles({ repos });
+  if (s.length) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: el cambio toca ${s.map((x) => `${x.archivo} (${path.basename(x.repo)}: ${x.motivo})`).join(', ')}. Lo firma una persona: ni el agente ni la coordinadora` };
+  const l = limpia({ marker, repos, ahora: hs, findings, firmasDeLaCorrida });
+  if (l.falta) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: ${l.falta}. Lo firma una persona: ni el agente ni la coordinadora` };
+  const a = avisar({ texto: lineaDelAviso({ marker, repos, resumen: l.resumen }), canales, mandar });
+  if (!a.ok) return { codigo: 1, motivo: `sin aviso a la persona no hay ok: ${a.motivo}` };
+  return { codigo: 0, huellas: hs, canales: a.canales };
+}
+
+/** El `saveOk` que queda en el marcador de la corrida (y en el renglón `save-signed`). */
+function constancia({ marker, via, por = null, previo, ahora }) {
+  return {
+    via, ...(por ? { por } : {}), ts: ahora, storyId: marker.storyId || null, startedAt: marker.startedAt || null,
+    huellas: previo.huellas, ...(previo.canales ? { canales: previo.canales } : {}),
+  };
+}
+
+// ── la foto y la evidencia del pedido ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * La foto que toma el cierre de «Preparar el pull request» (`prepareCommitHuellas`): `{ huellas }` o `{ codigo: 2, motivo }`.
+ * Antes de la foto corren los controles del commit en sólo lectura: un pre-commit que regeneraría un archivo y lo sumaría
+ * al commit vencería la foto después del commit, sin que nadie tocara nada.
+ */
+function fotoDelPedido({ repos, timeoutMs = CONTROLES_MS, story = null }) {
+  const c = controlesDelCommit({ repos, timeoutMs, para: 'pedido', story });
+  if (c.codigo) return c;
+  const hs = huellas(repos);
+  const sin = hs.find((h) => h.error);
+  if (sin) return { codigo: 2, motivo: `${sin.repo}: no pude medirlo (${sin.error}): sin la foto el pull request no sale. Volvé a cerrar «Preparar el pull request»` };
+  return { huellas: hs };
+}
+
+const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+/**
+ * La evidencia de la ventana del pedido, en un renglón y en este orden: pruebas, revisores, pase y hallazgos. Sale de lo
+ * que la corrida ya midió (el marcador y `findings.json`, como lista o como `{ findings }`); lo que no está, o no se
+ * puede leer, dice «no medido». Nunca inventa un número.
+ */
+function evidenciaDelPedido({ marker = {}, findings = null } = {}) {
+  const m = marker && typeof marker === 'object' ? marker : {};
+  const checks = m.checks || {};
+  const prov = (m.checksProvenance || {}).tests;
+  let pruebas = 'no medido';
+  if (checks.tests === 'green') pruebas = `en verde${prov ? ` (${prov})` : ''}`;
+  else if (checks.tests) pruebas = String(checks.tests).slice(0, 40);
+  const pasos = (Array.isArray(m.stepsCompleted) ? m.stepsCompleted : []).map(String);
+  const vueltas = m.iterations && typeof m.iterations === 'object' ? Object.keys(m.iterations).length : 0;
+  const cierre = ((m.stepTimings || {}).reviewers || {});
+  const cerrada = cierre.lastCompletedAt || cierre.completedAt;
+  let revisores = 'no medido';
+  if (pasos.includes('reviewers') && vueltas) revisores = `${plural(vueltas, 'vuelta', 'vueltas')}${cerrada ? `, la última cerrada ${String(cerrada).slice(11, 16)} UTC` : ''}`;
+  else if (pasos.includes('reviewers')) revisores = 'vuelta cerrada';
+  let pase = 'no medido';
+  const del5b = (Array.isArray(m.adversarialPasses) ? m.adversarialPasses : []).filter((p) => p && p.tipo === '5b');
+  const sk = m.adversarialSkip && typeof m.adversarialSkip === 'object' ? m.adversarialSkip : null;
+  if (m.adversarial && del5b.length) {
+    const ult = del5b[del5b.length - 1];
+    const n = ult.confirmados === undefined || ult.confirmados === null || ult.confirmados === '' ? NaN : Number(ult.confirmados);
+    if (ult.veredicto === 'no-medido') pase = 'no midió todo';
+    else pase = Number.isFinite(n) ? `cerrado con ${plural(n, 'confirmado', 'confirmados')}` : 'cerrado, sin el número de confirmados';
+  } else if (m.adversarial) pase = 'lanzado, sin resultado';
+  else if (sk) pase = sk.firmado || sk.forzado ? 'salteado con una firma' : 'salteado por la regla';
+  let hallazgos = 'no medido';
+  const lista = Array.isArray(findings) ? findings : findings && Array.isArray(findings.findings) ? findings.findings : null;
+  if (lista) {
+    const sev = (f) => String((f && f.severity) || '').trim().toUpperCase();
+    const criticos = lista.filter((f) => sev(f) === 'CRITICAL').length;
+    const avisos = lista.filter((f) => sev(f) === 'WARNING').length;
+    const eximidos = lista.filter((f) => f && String(f.disposition || '').toLowerCase() === 'waived').length;
+    // una severidad que no es de las tres no desaparece: se cuenta aparte
+    const sinClasificar = lista.filter((f) => !['CRITICAL', 'WARNING', 'INFO'].includes(sev(f))).length;
+    hallazgos = `${plural(criticos, 'crítico', 'críticos')}, ${plural(avisos, 'aviso', 'avisos')}${sinClasificar ? `, ${sinClasificar} sin clasificar` : ''}${eximidos ? `; eximidos: ${eximidos}` : ''}`;
+  }
+  return `Pruebas: ${pruebas} · Revisores: ${revisores} · Pase: ${pase} · Hallazgos: ${hallazgos}`;
+}
+
+module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, arbolDelCommit, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia, fotoDelPedido, evidenciaDelPedido };

@@ -154,7 +154,7 @@ function cargaDelSitio() {
 test('T6b Imagen_TodoLoQueCargaElSitioEstaAdentro — cada archivo que el sitio carga lo copia el Dockerfile y lo deja pasar su lista', () => {
   const df = fs.readFileSync(path.join(SITE, 'Dockerfile'), 'utf8');
   const ign = fs.readFileSync(path.join(SITE, 'Dockerfile.dockerignore'), 'utf8');
-  const aRegex = (pat) => new RegExp(`^${pat.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\u0000/g, '.*')}${pat.endsWith('/') ? '' : '$'}`);
+  const aRegex = (pat) => new RegExp(`^${pat.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '.*')}${pat.endsWith('/') ? '' : '$'}`);
   const copias = df.split('\n').filter((l) => /^COPY\s/.test(l)).flatMap((l) => l.trim().split(/\s+/).slice(1, -1)).filter((x) => !x.startsWith('--')).map(aRegex);
   const pasan = ign.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('!')).map((l) => aRegex(l.slice(1)));
   const archivos = cargaDelSitio();

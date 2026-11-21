@@ -201,14 +201,15 @@ const VOCABULARIO = Object.freeze({
   // Cómo contesta el asistente: el idioma y el estilo del bloque de respuesta del CLAUDE.md (y del AGENTS.md),
   // y el tope de prosa que mide el medidor de estilo. Cerrados: cada estilo es un texto revisado en
   // claude-md-blocks/response-style/<estilo>.<idioma>.md, y un valor fuera de la lista es configuración ROTA (el
-  // sincronizador deja el bloque que había). Sin valor: `neutral` en `es`, y el tope del estilo (TOPE_POR_ESTILO).
-  response: Object.freeze({ language: 'opcion:es|en', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
+  // sincronizador deja el bloque que había). `auto` contesta en el idioma en que escribe la persona: su texto,
+  // <estilo>.auto.md, es el de `es` más esa regla. Sin valor: `neutral` en `auto`, y el tope del estilo (TOPE_POR_ESTILO).
+  response: Object.freeze({ language: 'opcion:es|en|auto', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
   // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
-  // `delegated_signing`, `delegated_machines` y `owner_only` (firmas por delegación y sólo del dueño): el freno no las
-  // usa, pero las acepta para no leer como ROTO un perfil que las trae.
-  approvals: Object.freeze({ relay_session: 'texto', delegated_signing: 'aceptada', delegated_machines: 'aceptada', owner_only: 'aceptada' }),
+  // `delegated_signing`, `delegated_machines`, `owner_only`, `levels` (firmas por delegación, sólo del dueño y el nivel
+  // que sube el equipo) y `signature_list`: el freno no las usa, pero las acepta para no leer como ROTO un perfil que las trae.
+  approvals: Object.freeze({ relay_session: 'texto', delegated_signing: 'aceptada', delegated_machines: 'aceptada', owner_only: 'aceptada', levels: 'aceptada', signature_list: 'aceptada', delegation_wait_minutes: 'aceptada' }),
   // Si, además del arnés, una persona tiene que marcar cada criterio de la guía del tester como probado a mano antes de
   // cerrar la historia: `off` (o sin valor) = no; `required` = el cierre frena sin esa marca. Cerrada, para sumar un
   // valor sin romper archivos. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): el agente podría apagarse el freno.
@@ -216,9 +217,22 @@ const VOCABULARIO = Object.freeze({
   // cómo se actualiza el freno y el proveedor de modelos: el freno no los usa, pero los acepta para no leer como ROTA una
   // configuración que los trae
   guard: Object.freeze({ update: 'aceptada' }),
+  pull_requests: Object.freeze({ team_authors: 'aceptada' }),
   models: Object.freeze({ provider: 'aceptada' }),
-  // la receta de la coordinadora (el tope de sesiones y la carpeta de firmas): el freno no las usa, pero las acepta
-  coordination: Object.freeze({ max_working: 'aceptada', owner_folder: 'aceptada' }),
+  // la receta de la coordinadora (el tope de sesiones, la carpeta de firmas y el piso del segundo turno de ejecución
+  // grande): el freno no las usa, pero las acepta
+  coordination: Object.freeze({ max_working: 'aceptada', owner_folder: 'aceptada', session_names: 'aceptada', second_heavy_min_free_pct: 'aceptada', max_stories_in_cycle: 'aceptada' }),
+  // la dirección del sitio de la organización (la abre el comando de barra org-site): el freno no la usa, pero la acepta
+  site: Object.freeze({ url: 'aceptada' }),
+  // el umbral de la sesión callada de la oficina de /office: el freno no lo usa, pero lo acepta
+  office: Object.freeze({ quiet_minutes: 'aceptada' }),
+  // los topes de archivos del camino corto (sólo del perfil del equipo): el freno no los usa, pero los acepta
+  short_path: Object.freeze({ coordinator_max_files: 'aceptada', max_files: 'aceptada' }),
+  // los interruptores que la organización enciende desde el sitio: el freno no los usa, pero los acepta
+  switches: Object.freeze({
+    test_scope_guard: 'aceptada', session_guard: 'aceptada', pr_one_per_repo: 'aceptada',
+    response_meter: 'aceptada', blocking_meter: 'aceptada',
+  }),
 });
 // El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars`: el de `executive` es el de
 // siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
@@ -232,7 +246,7 @@ const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
   'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
   'adversarial.model_question': 'ask',
-  'response.language': 'es', 'response.style': 'neutral',
+  'response.language': 'auto', 'response.style': 'neutral',
 });
 // Las claves en las que el PERFIL DEL EQUIPO le gana al archivo de la máquina (story 8.29, decisión del dueño del
 // 2026-10-11). Para todo lo demás el orden es el de siempre: variable › máquina › perfil. Para éstas: variable › perfil ›
@@ -275,10 +289,11 @@ function paquetesDeTexto(texto) {
 function rangoDe(tipo) { const m = typeof tipo === 'string' ? /^entero:(\d+)-(\d+)$/.exec(tipo) : null; return m ? [Number(m[1]), Number(m[2])] : null; }
 /** Las opciones de un tipo `opcion:a|b`, o null si no es de ese tipo. */
 function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opcion:') ? tipo.slice('opcion:'.length).split('|') : null; }
-// Las secciones se ESCRIBEN en inglés en los archivos (story 8.9, tanda P · 2026-09-30): `paths` e `integrations`. El
-// nombre de antes del renombre (`rutas`, `integraciones`) se sigue leyendo hasta el retiro —también en la copia de este
-// archivo que vive en /opt con el freno de producción—; los dos juntos con valores distintos son un error del archivo. Por
-// dentro (valores, orígenes, variables) las secciones conservan su nombre de siempre: nada de lo que las consume cambia.
+// Las secciones se ESCRIBEN en inglés en los archivos: `paths` e `integrations`. Esta copia, la que vive en /opt con el
+// freno de producción, lee sólo ese nombre: el de antes del renombre (`rutas`, `integraciones`) lo ignora y lo dice
+// (`seccionesDeArchivo`). La biblioteca del arnés de la que sale lo sigue leyendo hasta el retiro: esa diferencia está
+// decidida con `guard-libs-check.js keep`. Por dentro (valores, orígenes, variables) las secciones conservan su nombre de
+// siempre: es el vocabulario interno de los dos lectores, y nada de lo que las consume cambia.
 const SECCION_EN_ARCHIVO = Object.freeze({ rutas: 'paths', integraciones: 'integrations' });
 const SECCION_DE_ARCHIVO = Object.freeze({ paths: 'rutas', integrations: 'integraciones' });
 const enArchivo = (seccion) => SECCION_EN_ARCHIVO[seccion] || seccion;
@@ -593,49 +608,28 @@ function mismoValor(a, b) {
   return ka.length === Object.keys(b).length && ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && mismoValor(a[k], b[k]));
 }
 
-/**
- * El cuerpo de una sección con sus claves en el nombre de hoy, para comparar las dos formas de la sección: `{mailbox: true}`
- * y `{<su nombre viejo>: true}` dicen lo mismo. Si dos claves caen en el mismo nombre de hoy, el cuerpo queda como vino:
- * ese choque lo nombra después la validación de las claves.
- */
-function cuerpoDeHoy(seccion, cuerpo) {
-  if (!esObjeto(cuerpo)) return cuerpo;
-  const out = {};
-  for (const k of Object.keys(cuerpo)) {
-    const hoy = claveDeHoy(seccion, k);
-    if (tiene(out, hoy)) return cuerpo;
-    out[hoy] = cuerpo[k];
-  }
-  return out;
-}
-
-function seccionesDeArchivo(datos, archivo, errores, home) {
+function seccionesDeArchivo(datos, archivo, errores) {
   const out = {};
   const vista = {};   // sección de adentro → nombre con que vino
-  const viejas = [];  // los nombres viejos de sección que trae el archivo, vengan primero o después
   for (const clave of Object.keys(datos)) {
     const seccion = SECCION_DE_ARCHIVO[clave] || clave;
-    if (clave !== enArchivo(seccion)) viejas.push([clave, seccion]);
-    if (!Object.prototype.hasOwnProperty.call(out, seccion)) { out[seccion] = datos[clave]; vista[seccion] = clave; continue; }
-    if (!mismoValor(cuerpoDeHoy(seccion, out[seccion]), cuerpoDeHoy(seccion, datos[clave]))) {
-      errores.push({ archivo, clave: enArchivo(seccion), motivo: `«${enArchivo(seccion)}» y su nombre viejo «${seccion}» están los dos con valores distintos — dejá sólo «${enArchivo(seccion)}»` });
-      out[seccion] = undefined;
+    // Esta copia vive en /opt con el freno de producción y lee sólo el nombre de hoy de cada sección. Con sólo el de
+    // antes, la ignora y lo dice: el error deja el índice armado sin la configuración de la máquina, que es el lado
+    // seguro (un repo que no se encuentra deja sus servidores desconocidos, y lo desconocido se frena). Con los dos,
+    // vale el de hoy.
+    if (clave !== enArchivo(seccion)) {
+      if (!tiene(datos, enArchivo(seccion))) errores.push({ archivo, clave, motivo: `«${clave}» es el nombre de antes de «${enArchivo(seccion)}»: el freno de producción ya no lo lee — renombralo a «${enArchivo(seccion)}»` });
+      continue;
     }
+    out[seccion] = datos[clave]; vista[seccion] = clave;
   }
-  // el nombre viejo de una sección se sigue leyendo en silencio; se anota el uso para saber cuándo retirarlo, también si
-  // viene junto al nuevo (en cualquier orden: antes sólo se anotaba si venía primero). Adentro de `sinAnotar`, no
-  for (const [vino, seccion] of viejas) {
-    if (legacy && !sinAnotarNivel) {
-      try { legacy.recordUse({ kind: 'key', old: vino, new: enArchivo(seccion), script: 'scripts/lib/tycon-config.js' }, { home }); } catch (_) { /* anotar nunca rompe */ }
-    }
-  }
-  return { datos: Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined)), vista };
+  return { datos: out, vista };
 }
 
 function validarArchivo(datos0, { archivo, esPerfil, home }) {
   const errores = [];
   const plano = {};
-  const { datos, vista } = seccionesDeArchivo(datos0, archivo, errores, home);
+  const { datos, vista } = seccionesDeArchivo(datos0, archivo, errores);
   // los errores nombran la sección como está escrita en ESE archivo (la persona busca lo que escribió)
   const comoVino = (seccion) => vista[seccion] || enArchivo(seccion);
   for (const seccion of Object.keys(datos)) {
@@ -1398,7 +1392,7 @@ function cli(argv) {
   }
   if (cmd === 'get') {
     const clave = argv[1];
-    if (!clave || !/^[a-z]+\.[a-z_]+$/.test(clave)) { process.stderr.write(`${usage}\n`); process.exit(2); }
+    if (!clave || !/^[a-z][a-z_]*\.[a-z_]+$/.test(clave)) { process.stderr.write(`${usage}\n`); process.exit(2); }
     let c;
     try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
     const val = valor(c, clave);

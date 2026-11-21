@@ -1,0 +1,94 @@
+{
+  "__doc": "La coordinadora no cambia archivos de los repos (scripts/lib/coordination-writes.js). La sesión designada (la última designación `ok` del registro, sin retirada) no escribe ni borra archivos de una carpeta con `.git` por Edit, Write o la consola: el freno le dice que lo encargue a una sesión. Pasa su memoria y lo de fuera de los repos; en la carpeta del estado frena el portón de carril, con su mensaje, como a toda sesión. Las demás sesiones, y todas sin designación, no notan nada.",
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js → on-coordination-write (la coordinadora no edita archivos de los repos)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "coordinadora-edita-un-archivo-del-repo-se-niega",
+          "type": "must-block",
+          "_por_que": "la sesión designada edita una guía de un repo: el freno la niega y le dice que lo encargue.",
+          "setup": [
+            "git init -q -b main . && mkdir -p guias && echo a > guias/x.md",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S\"; printf '{\"ts\":\"2026-11-04T20:00:00.000Z\",\"name\":\"relay-designation\",\"status\":\"ok\",\"sesion\":\"bench-coord1\",\"rol\":\"coordinadora\",\"quien\":\"el dev\",\"cita\":\"Esta sesión es la coordinadora\"}\\n' >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-coord1", "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/guias/x.md", "old_string": "a", "new_string": "b" } },
+          "expect": { "exit": 2, "stderr_re": ["Sos la coordinadora", "Encargáselo a una sesión"] }
+        },
+        {
+          "id": "coordinadora-escribe-su-memoria-pasa",
+          "type": "must-not-block",
+          "_por_que": "la memoria de la herramienta es de la coordinadora: no es un repo y pasa.",
+          "setup": [
+            "git init -q -b main .",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S\" \"$HOME/.claude/projects/p/memory\"; printf '{\"ts\":\"2026-11-04T20:00:00.000Z\",\"name\":\"relay-designation\",\"status\":\"ok\",\"sesion\":\"bench-coord2\",\"rol\":\"coordinadora\",\"quien\":\"el dev\",\"cita\":\"Esta sesión es la coordinadora\"}\\n' >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-coord2", "tool_name": "Write", "tool_input": { "file_path": "${SANDBOX_HOME}/.claude/projects/p/memory/m.md", "content": "una nota" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "coordinadora-en-la-carpeta-del-estado-frena-el-porton-no-el-freno-nuevo",
+          "type": "must-block",
+          "_por_que": "la carpeta del estado la niega el portón de carril a toda sesión; el freno nuevo no agrega su negativa ahí.",
+          "setup": [
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/coordination\"; printf '{\"ts\":\"2026-11-04T20:00:00.000Z\",\"name\":\"relay-designation\",\"status\":\"ok\",\"sesion\":\"bench-coord3\",\"rol\":\"coordinadora\",\"quien\":\"el dev\",\"cita\":\"Esta sesión es la coordinadora\"}\\n' >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-coord3", "tool_name": "Write", "tool_input": { "file_path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/coordination/tablero.json", "content": "{}" } },
+          "expect": { "exit": 2, "stderr_not_re": ["Sos la coordinadora"] }
+        },
+        {
+          "id": "otra-sesion-edita-el-repo-pasa",
+          "type": "must-not-block",
+          "_por_que": "con una coordinadora designada, otra sesión edita el mismo archivo: el freno nuevo no hace nada.",
+          "setup": [
+            "git init -q -b main . && mkdir -p guias && echo a > guias/x.md",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S\"; printf '{\"ts\":\"2026-11-04T20:00:00.000Z\",\"name\":\"relay-designation\",\"status\":\"ok\",\"sesion\":\"bench-coord4\",\"rol\":\"coordinadora\",\"quien\":\"el dev\",\"cita\":\"Esta sesión es la coordinadora\"}\\n' >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-otra4", "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/guias/x.md", "old_string": "a", "new_string": "b" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "sin-designacion-nadie-es-coordinadora",
+          "type": "must-not-block",
+          "_por_que": "sin designación en el registro, el freno no frena a nadie.",
+          "setup": ["git init -q -b main . && mkdir -p guias && echo a > guias/x.md"],
+          "stdin": { "session_id": "bench-coord5", "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/guias/x.md", "old_string": "a", "new_string": "b" } },
+          "expect": { "exit": 0 }
+        }
+      ]
+    },
+    {
+      "hook": "on-bash-write-gate.js (la coordinadora no escribe archivos de los repos por la consola)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "coordinadora-escribe-el-repo-por-consola-se-niega",
+          "type": "must-block",
+          "_por_que": "la sesión designada escribe un archivo del repo con una redirección: el mismo freno, por la consola.",
+          "setup": [
+            "git init -q -b main . && mkdir -p guias",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S\"; printf '{\"ts\":\"2026-11-04T20:00:00.000Z\",\"name\":\"relay-designation\",\"status\":\"ok\",\"sesion\":\"bench-coord6\",\"rol\":\"coordinadora\",\"quien\":\"el dev\",\"cita\":\"Esta sesión es la coordinadora\"}\\n' >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-coord6", "tool_name": "Bash", "tool_input": { "command": "echo x > guias/y.md" } },
+          "expect": { "exit": 2, "stderr_re": ["Sos la coordinadora"] }
+        },
+        {
+          "id": "coordinadora-comando-que-no-escribe-pasa",
+          "type": "must-not-block",
+          "_por_que": "mirar el estado del repo no escribe nada: pasa.",
+          "setup": [
+            "git init -q -b main .",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S\"; printf '{\"ts\":\"2026-11-04T20:00:00.000Z\",\"name\":\"relay-designation\",\"status\":\"ok\",\"sesion\":\"bench-coord7\",\"rol\":\"coordinadora\",\"quien\":\"el dev\",\"cita\":\"Esta sesión es la coordinadora\"}\\n' >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-coord7", "tool_name": "Bash", "tool_input": { "command": "git status" } },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}

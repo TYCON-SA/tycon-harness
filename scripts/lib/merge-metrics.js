@@ -64,7 +64,7 @@ function paraSubir(dir, opts = {}) {
 }
 
 function gitPorDefecto(cwd, args) {
-  const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8' });
   return { status: r.error ? -1 : r.status, stdout: r.stdout || '', stderr: r.error ? r.error.message : (r.stderr || '') };
 }
 
@@ -144,6 +144,9 @@ const momento = (d) => {
   return Number.isFinite(t) ? t : 0;
 };
 const mejor = (x, y) => {
+  // un latido anulado (`retro-heartbeat.js --annul`) gana siempre: es la última palabra sobre ese merge, y conserva el
+  // `ts` y las vueltas del original, así que por esos dos empataría y quedaría la copia sin anular
+  if (Boolean(x && x.anulado) !== Boolean(y && y.anulado)) return Boolean(x && x.anulado);
   if (conVueltas(x) !== conVueltas(y)) return conVueltas(x);
   return momento(x) >= momento(y);
 };

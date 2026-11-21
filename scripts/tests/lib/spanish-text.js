@@ -15,6 +15,8 @@ const PALABRAS = new Set(('el la los las del que con para una uno unos unas por 
   'versión nueva nuevo nuevos abiertos abiertas cerrados vencen vence decidir asignado asignada bloqueadas paradas curso ' +
   'aprobación vigilado vulnerabilidades vivas paridad orden filtrar compartido licencia créditos componentes terceros ' +
   'todavía cargando frenado ' +
+  // las once sin tilde que se escapaban en los denominadores y en Mantenimiento
+  'registros chequeos entradas veces decisiones salteadas aceptada vencida pendiente tarea semana ' +
   // los ids en castellano de las fuentes de la noche, que una página en inglés no puede mostrar («Source …»)
   'dependencias vigilante banco concentracion').split(/\s+/).filter(Boolean));
 const ACENTO = /[áéíóúñ¿¡]/i;

@@ -53,22 +53,9 @@ const VERSION = 1;
  * que la ausencia de sello, porque la ausencia se ve.
  */
 function treeShaDe(repo) {
-  const { execFileSync } = require('child_process');
-  let tmpIndex = null;
-  try {
-    const gitDir = execFileSync('git', ['-C', repo, 'rev-parse', '--absolute-git-dir'],
-      { encoding: 'utf8', timeout: 5000 }).trim();
-    tmpIndex = path.join(os.tmpdir(), `tycon-roster-index-${process.pid}-${VERSION}`);
-    try { fs.copyFileSync(path.join(gitDir, 'index'), tmpIndex); } catch { /* repo sin índice: se arma de cero */ }
-    const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
-    execFileSync('git', ['-C', repo, 'add', '-A'], { env, timeout: 20000, stdio: 'ignore' });
-    const tree = execFileSync('git', ['-C', repo, 'write-tree'], { env, encoding: 'utf8', timeout: 20000 }).trim();
-    return /^[0-9a-f]{40}$/.test(tree) ? tree.slice(0, 12) : null;
-  } catch {
-    return null;
-  } finally {
-    if (tmpIndex) { try { fs.unlinkSync(tmpIndex); } catch { /* ya no está */ } }
-  }
+  // el sello de lib/frozen-tree.js, completo: el mismo con que se congela lo que se revisa y se compara al guardar
+  const s = require('./frozen-tree.js').seal(repo);
+  return s.tree || null;
 }
 
 /**

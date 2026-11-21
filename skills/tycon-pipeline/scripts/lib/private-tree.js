@@ -11,11 +11,16 @@
  *
  * Cómo se arma, en una carpeta que da quien llama (y que borra él, también si la corrida se corta):
  *   1. El público: el repo hermano declarado en `.tycon/advisors.yaml → evidence.companion_repos`, en el worktree de la
- *      rama de la story si existe (el criterio de lib/companion-repos.js), que traiga `version.json` y `scripts/`.
+ *      rama de la story si existe (el criterio de lib/companion-repos.js), que traiga `version.json` y `scripts/`. Si la
+ *      carpeta encontrada no está en la rama de la story (la que está al lado: el main local de un clon que nadie pone al
+ *      día, la rama de otra sesión), debajo va la versión del servidor, su `origin/main`, sin su disco, y la story no
+ *      tocó nada del público (`source: server`). Si la story declara archivos del público, la versión del servidor no
+ *      trae esos cambios: no se arma y sale 4. Sin `origin/main` en esa carpeta, lo que hay (`source: disk`).
  *   2. Cada repo se clona ahí (`git clone --shared`, con su historia: varias suites comparan contra commits viejos) en su
  *      HEAD, y lo que su disco tiene sin commitear (cambiado, nuevo sin ignorar, borrado) se copia encima y queda en un
  *      commit local: el portón corre antes del commit, y desde HEAD mediría lo viejo. Nunca se superpone sobre el
  *      checkout de la story: el guion de superposición deja un commit en el repo que recibe.
+ *      Su `origin/*` es el `origin/*` del repo de origen, si lo tiene: el de lo que está en el servidor.
  *   3. `scripts/ci/overlay-harness.js --after-cut --stale warn [--team-from <clon del perfil>]` del privado pone el
  *      público encima del clon del privado. El clon del perfil del equipo es `HARNESS_TEAM_DIR` si está; si no, el que
  *      la máquina declara en `paths.team` de su configuración (`harness.js config set paths.team`), si es un clon del
@@ -26,7 +31,7 @@
  *                                                              lista no se deja leer o le falta el guion (el motivo)
  *   node private-tree.js build <repo> <story|-> <carpeta>    → imprime el JSON del árbol; sale 4 sin público (no se
  *                                                              corre nada), 1 si no se pudo armar (el motivo en stderr)
- *   node private-tree.js touched <repo> <público> <story|-> <salida.json>
+ *   node private-tree.js touched <repo> <público|-> <story|-> <salida.json>   (`-`: debajo fue la versión del servidor)
  *        → lo tocado en los dos repos, en las rutas del árbol (el formato de touched-files.js, más `bases`: la base de
  *          cada repo para contar las líneas tocadas); siempre sale 0
  */
@@ -34,8 +39,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const FORMS = path.join('.tycon', 'internal-forms.json');
-const OVERLAY = path.join('scripts', 'ci', 'overlay-harness.js');
+const { OVERLAY, detectThin, isThinPrivate } = require('./thin-private.js');
 
 class NoPublic extends Error {}
 // La salida de `detect` cuando el repo NO es el privado adelgazado. No es 1: es lo que da node al caerse.
@@ -50,7 +54,7 @@ const SIN_GIT_DEL_LLAMADOR = (() => {
 })();
 
 function git(cwd, args, env) {
-  const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: env || SIN_GIT_DEL_LLAMADOR,
+  const r = spawnSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: env || SIN_GIT_DEL_LLAMADOR,
     maxBuffer: 256 * 1024 * 1024 });
   if (r.error) throw new Error(`git ${args[0]} no se pudo ejecutar en ${cwd} (${r.error.code || r.error.message})`);
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} en ${cwd}: ${(r.stderr || '').trim().split('\n')[0] || `salió ${r.status}`}`);
@@ -58,26 +62,47 @@ function git(cwd, args, env) {
 }
 const lista0 = (s) => s.split('\0').filter(Boolean);
 
+const comillas = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
 /**
- * ¿Es el privado adelgazado? → { thin, problem }. Lo es con la lista en `layout: thin` y el guion que pone el público
- * encima. Una lista que no se deja leer, o que dice `thin` sin el guion, no es «no lo es»: medir solo ese repo leería el
- * arnés instalado (el defecto que este guion corrige), así que vuelve el motivo y el portón frena. Sin lista, o con la lista
- * de formas de antes (sin `layout`), es otro repo.
+ * El comando de la corrida cruzada, listo para copiar. El público es la carpeta de al lado en la misma rama que el
+ * privado (fuera de main): con una sola, va su ruta; con ninguna o varias, el hueco a llenar, porque elegir a ciegas
+ * mediría otra rama.
  */
-function detectThin(repo) {
-  const lista = path.join(repo, FORMS);
-  if (!fs.existsSync(lista)) return { thin: false, problem: null };
-  let layout;
-  try { layout = JSON.parse(fs.readFileSync(lista, 'utf8')).layout; } catch (e) {
-    return { thin: false, problem: `no pude leer ${FORMS} (${e.message}): no sé si es el privado adelgazado, y medirlo solo leería el arnés instalado` };
+function corridaCruzada(repo, story) {
+  const { ramaDe } = require('./companion-repos.js');
+  const rama = ramaDe(repo);
+  let publico = null;
+  if (rama && rama !== 'main') {
+    const padre = path.dirname(repo);
+    let hermanos = [];
+    try { hermanos = fs.readdirSync(padre, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path.join(padre, d.name)); } catch (_e) { hermanos = []; }
+    const deLaRama = hermanos.filter((h) => h !== repo && fs.existsSync(path.join(h, '.git'))
+      && fs.existsSync(path.join(h, 'version.json')) && fs.existsSync(path.join(h, 'scripts')) && ramaDe(h) === rama);
+    if (deLaRama.length === 1) publico = deLaRama[0];
   }
-  if (layout !== 'thin') return { thin: false, problem: null };
-  if (!fs.existsSync(path.join(repo, OVERLAY))) {
-    return { thin: false, problem: `${FORMS} dice que es el privado adelgazado pero falta ${OVERLAY}: no puedo poner el público debajo, y medirlo solo leería el arnés instalado` };
-  }
-  return { thin: true, problem: null };
+  return `bash ${comillas(path.join(__dirname, '..', 'test-gate.sh'))} ${comillas(publico || '<clon o worktree del público>')} ${comillas(story || '<story del privado>')}`;
 }
-const isThinPrivate = (repo) => detectThin(repo).thin;
+
+/**
+ * Si la story declara algún archivo del público `base`: uno que existe en esa carpeta, o uno nuevo cuya ruta nombra el
+ * público (`<nombre>/…` o `../<nombre>/…`).
+ */
+function declaraDelPublico(repo, story, base) {
+  const { resolveDeclared, label, real } = require('./companion-repos.js');
+  const { parseDeclaredFiles } = require('./test-scope.js');
+  const raiz = real(base);
+  const nombre = label(base);
+  const dentro = (p) => { const rel = path.relative(raiz, p); return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
+  for (const decl of parseDeclaredFiles(fs.readFileSync(story, 'utf8'))) {
+    const r = resolveDeclared(decl, repo, [base]);
+    if (r.where === 'companion' && r.root === raiz) return true;
+    if (r.where === 'repo') continue;
+    const d = String(decl).replace(/\\/g, '/').replace(/^\.\//, '');
+    if (d.startsWith(`${nombre}/`) || dentro(path.resolve(repo, d))) return true;
+  }
+  return false;
+}
 
 /** El público que va debajo: el primer hermano declarado (en la rama de la story) que trae version.json y scripts/. */
 function findPublic(repo, story) {
@@ -87,18 +112,53 @@ function findPublic(repo, story) {
   const base = roots.find((r) => fs.existsSync(path.join(r, 'version.json')) && fs.existsSync(path.join(r, 'scripts')));
   if (!base) {
     const visto = roots.length ? `los hermanos declarados (${roots.join(', ')}) no traen version.json y scripts/` : 'no hay un repo hermano declarado';
-    throw new NoPublic(`no encontré el público para poner debajo del privado adelgazado: ${visto}${faltan.length ? `; declarados y no en disco: ${faltan.join(', ')}` : ''} (.tycon/advisors.yaml → evidence.companion_repos). Sin él, medir el privado solo da ausentes y lee el arnés instalado: no corro nada`);
+    throw new NoPublic(`no encontré el público para poner debajo del privado adelgazado: ${visto}${faltan.length ? `; declarados y no en disco: ${faltan.join(', ')}` : ''} (.tycon/advisors.yaml → evidence.companion_repos). Sin él, medir el privado solo da ausentes y lee el arnés instalado: no corro nada. Desde un worktree del privado, la salida es la corrida cruzada, el portón sobre el público con esta story: ${corridaCruzada(repo, story)}`);
   }
   let rama = null;
   try { rama = git(base, ['symbolic-ref', '-q', '--short', 'HEAD']).trim() || null; } catch (_e) { rama = null; }
-  return { root: base, branch: rama, commit: git(base, ['rev-parse', 'HEAD']).trim() };
+  // Del público vale la rama de la story; si no la tiene, lo que está en el servidor, no la carpeta que haya al lado.
+  const { ramaDe, ramaNombraLaStory, numeroDeLaStory } = require('./companion-repos.js');
+  const ramaPrivada = ramaDe(repo);
+  const deLaStory = !!rama && rama !== 'main' && (rama === ramaPrivada || ramaNombraLaStory(rama, numeroDeLaStory(story || null)));
+  let servidor = null;
+  if (!deLaStory) {
+    const leer = () => { try { return git(base, ['rev-parse', '-q', '--verify', 'refs/remotes/origin/main^{commit}']).trim() || null; } catch (_e) { return null; } };
+    // El origin/main de un clon que nadie pone al día está tan atrás como su main: se trae antes, con un tope y sin
+    // pedir credenciales. Sin red, el que había (el renglón del portón dice su fecha).
+    if (leer()) {
+      spawnSync('git', ['-C', base, 'fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main'], { windowsHide: true, stdio: 'ignore',
+        timeout: 30000, env: { ...SIN_GIT_DEL_LLAMADOR, GIT_TERMINAL_PROMPT: '0' } });
+    }
+    servidor = leer();
+  }
+  if (servidor) {
+    // La versión del servidor no trae lo que la story cambia en el público: medirla daría un verde que no dice nada.
+    if (story && declaraDelPublico(repo, story, base)) {
+      throw new NoPublic(`la story declara archivos del público y ${base} está en ${rama || 'un commit suelto'}, que no es la rama del privado ni nombra la story: la versión del servidor no trae esos cambios, y no corro nada. Poné esa carpeta (o un worktree del público) en la rama de la story, o corré el portón sobre el público con esta story: ${corridaCruzada(repo, story)}`);
+    }
+    let fecha = null;
+    try { fecha = git(base, ['log', '-1', '--format=%cI', servidor]).trim() || null; } catch (_e) { fecha = null; }
+    return { root: base, branch: rama, commit: servidor, date: fecha, source: 'server' };
+  }
+  return { root: base, branch: rama, commit: git(base, ['rev-parse', 'HEAD']).trim(), source: deLaStory ? 'story' : 'disk' };
 }
 
-/** Clona `src` en `dest` en su HEAD y le pone encima lo que su disco tiene sin commitear (en un commit local). */
-function cloneWithDisk(src, dest) {
-  const head = git(src, ['rev-parse', 'HEAD']).trim();
+/**
+ * Clona `src` en `dest` en su HEAD y le pone encima lo que su disco tiene sin commitear (en un commit local). Con `at`,
+ * en ese commit y sin el disco: la versión del servidor.
+ */
+function cloneWithDisk(src, dest, { at = null } = {}) {
+  const head = at || git(src, ['rev-parse', 'HEAD']).trim();
   git(path.dirname(dest), ['clone', '-q', '--shared', '--no-checkout', src, dest]);
   git(dest, ['checkout', '-q', '--detach', head]);
+  // El origin/main del clon sería la rama main local del repo de origen, que puede estar atrás del servidor: las suites
+  // que cortan «lo propio de la rama» en `merge-base origin/main HEAD` verían como propio lo que ya entró a main. Con
+  // --prune salen antes las ramas locales copiadas: una `story` local chocaría con una `story/x` del servidor.
+  if (git(src, ['for-each-ref', '--format=%(refname)', 'refs/remotes/origin/']).trim()) {
+    git(dest, ['fetch', '-q', '--prune', src, '+refs/remotes/origin/*:refs/remotes/origin/*']);
+  }
+  const huella = () => git(dest, ['rev-parse', 'HEAD^{tree}']).trim();
+  if (at) return { head, uncommitted: false, tree: huella() };
   // modificados y borrados respecto de HEAD (índice o disco), y lo nuevo que el .gitignore no ignora
   const cambiados = lista0(git(src, ['diff', '--name-only', '--no-renames', '-z', 'HEAD', '--']));
   const nuevos = lista0(git(src, ['ls-files', '--others', '--exclude-standard', '-z']));
@@ -128,7 +188,7 @@ function cloneWithDisk(src, dest) {
       'los cambios sin commit de la rama (foto del portón de pruebas; no se empuja)']);
   }
   for (const rel of omitidos) process.stderr.write(`[test-gate] ⚠️  ${path.basename(src)}: ${rel} es una carpeta con su propio git (un submódulo o un repo anidado): sus cambios no entran al árbol que se mide\n`);
-  return { head, uncommitted: sucio };
+  return { head, uncommitted: sucio, tree: huella() };
 }
 
 /** El lstat, o null si NO EXISTE. Otro error (permisos, disco) sube: leerlo como «borrado» sacaría el archivo del árbol callado. */
@@ -205,13 +265,13 @@ function build(repo, story, dir) {
   const arbol = path.join(dir, 'arbol');
   const publico = path.join(dir, 'publico');
   const priv = cloneWithDisk(repo, arbol);
-  const pubFoto = cloneWithDisk(pub.root, publico);
+  const pubFoto = cloneWithDisk(pub.root, publico, { at: pub.source === 'server' ? pub.commit : null });
   const layer = teamLayer();
   const team = layer.dir || '';
   const report = path.join(dir, 'superpuesto.json');
   const args = [path.join(arbol, OVERLAY), '--after-cut', '--stale', 'warn', ...(team ? ['--team-from', team] : []),
     '--repo', arbol, '--from', publico, '--report', report];
-  const r = spawnSync(process.execPath, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: SIN_GIT_DEL_LLAMADOR,
+  const r = spawnSync(process.execPath, args, { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: SIN_GIT_DEL_LLAMADOR,
     maxBuffer: 64 * 1024 * 1024 });
   if (r.error || r.status !== 0) {
     const motivo = r.error ? r.error.message : `${(r.stderr || r.stdout || '').trim().split('\n').pop() || `salió ${r.status}`}`;
@@ -221,6 +281,8 @@ function build(repo, story, dir) {
     tree: arbol, skills: path.join(arbol, 'skills'),
     base: { ...pub, uncommitted: pubFoto.uncommitted },
     private: { root: repo, commit: priv.head, uncommitted: priv.uncommitted },
+    // la huella de lo que se clonó de cada repo, antes de superponer: lo que este árbol mide de verdad (lib/after-main.js)
+    measured: { private: require('./after-main.js').sinLaConstancia(arbol, priv.tree), public: require('./after-main.js').sinLaConstancia(publico, pubFoto.tree) },
     team: team || null, teamSource: layer.source, teamProblem: layer.problem, seconds: Math.round((Date.now() - t0) / 100) / 10,
     overlay: (r.stdout || '').trim().split('\n').pop() || '',
   };
@@ -229,7 +291,7 @@ function build(repo, story, dir) {
 /** Lo tocado en un repo: la base de coverage-base.js (con la bifurcación si no hay marcador de este repo) y touched-files. */
 function touchedIn(repo, story) {
   const base = spawnSync(process.execPath, [path.join(__dirname, 'coverage-base.js'), repo],
-    { encoding: 'utf8', env: { ...process.env, TYCON_TEST_GATE_CROSS_REPO: '1' }, cwd: repo });
+    { windowsHide: true, encoding: 'utf8', env: { ...process.env, TYCON_TEST_GATE_CROSS_REPO: '1' }, cwd: repo });
   let ref = null, source = null, sinBase = null;
   try { const j = JSON.parse(base.stdout); ref = j.ref; source = j.source; } catch (e) {
     // sin base, touched-files contesta «no sé» (se corre sin acotar); el motivo viaja en `reason`
@@ -238,7 +300,7 @@ function touchedIn(repo, story) {
   const { touchedFiles } = require('./touched-files.js');
   let r;
   try {
-    r = touchedFiles({ repo, storyPath: story || '', baseRef: ref, baseSource: source });
+    r = touchedFiles({ repo, storyPath: story || '', baseRef: ref, baseSource: source, onlyCommitsBeforeBase: true });
   } catch (e) {
     r = { known: false, files: [], sources: {}, reason: `touched-files falló en ${repo}: ${e.message}` };
   }
@@ -248,13 +310,14 @@ function touchedIn(repo, story) {
 
 function touchedBoth(repo, pub, story) {
   const a = touchedIn(repo, story);
-  const b = touchedIn(pub, story);
+  // `pub` nulo: debajo fue la versión del servidor, y la story no tocó nada del público
+  const b = pub ? touchedIn(pub, story) : { known: true, files: [], sources: {}, base: null };
   const known = a.known && b.known;
   const reason = known ? null : [!a.known && `en el privado: ${a.reason}`, !b.known && `en el público: ${b.reason}`].filter(Boolean).join('; ');
   // `bases`: contra qué commit de cada repo se cuentan las líneas tocadas (test-gate-report.js): en el árbol armado, la
   // base del privado sola contaba todo el público como tocado
   return { known, files: [...new Set([...(a.files || []), ...(b.files || [])])], sources: { private: a.sources, public: b.sources },
-    bases: [a.base, b.base], reason };
+    bases: [a.base, b.base].filter(Boolean), reason, ...(a.must_measure || b.must_measure ? { must_measure: true } : {}) };
 }
 
 module.exports = { isThinPrivate, detectThin, findPublic, cloneWithDisk, teamLayer, build, touchedBoth, NoPublic };
@@ -274,10 +337,10 @@ if (require.main === module) {
       process.exit(0);
     }
     if (cmd === 'touched' && rest.length === 4) {
-      fs.writeFileSync(rest[3], `${JSON.stringify(touchedBoth(path.resolve(rest[0]), path.resolve(rest[1]), sinStory(rest[2])))}\n`);
+      fs.writeFileSync(rest[3], `${JSON.stringify(touchedBoth(path.resolve(rest[0]), rest[1] === '-' ? null : path.resolve(rest[1]), sinStory(rest[2])))}\n`);
       process.exit(0);
     }
-    process.stderr.write('uso: private-tree.js detect <repo> · build <repo> <story|-> <carpeta> · touched <repo> <público> <story|-> <salida.json>\n');
+    process.stderr.write('uso: private-tree.js detect <repo> · build <repo> <story|-> <carpeta> · touched <repo> <público|-> <story|-> <salida.json>\n');
     process.exit(2);
   } catch (e) {
     process.stderr.write(`[test-gate] 🔴 ${e.message}\n`);

@@ -47,7 +47,7 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'har
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { loadManifest, DEFAULT_MANIFEST } = require('./third-party-coverage.js');
-const { sinGitDelPadre } = require('../lib/clean-git-env.js');
+const { sinGitDelPadre, idiomaFijo } = require('../lib/clean-git-env.js');
 
 const TAG = 'skills de terceros';
 const TMP_MARK = '.tycon-tmp';
@@ -67,9 +67,10 @@ const { blobSha, treeSha } = require('../lib/git-tree-hash.js');
 // ── git ────────────────────────────────────────────────────────────────────────────────────────────────────────
 function git(cwd, args, { input, timeout, binary = false } = {}) {
   const r = spawnSync('git', ['-C', cwd, ...args], {
+    windowsHide: true,
     input, timeout, encoding: binary ? undefined : 'utf8', maxBuffer: 1024 * 1024 * 1024,
     // mensajes de git en inglés siempre: la clasificación de fallas (no-network / no-origin / missing-commit) los lee
-    env: sinGitDelPadre({ GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', LANG: 'C', LANGUAGE: '' }),
+    env: idiomaFijo(sinGitDelPadre({ GIT_TERMINAL_PROMPT: '0' })),
   });
   const timedOut = !!(r.error && r.error.code === 'ETIMEDOUT');
   const stderr = Buffer.isBuffer(r.stderr) ? r.stderr.toString('utf8') : (r.stderr || '');
@@ -271,7 +272,7 @@ function checkReleaseTree(repo, manifest, { home = os.homedir(), env = process.e
     if (!variants.some((v) => treeSha(v) === e.tree)) problems.push(`${e.target} (su contenido no da el árbol declarado)`);
   }
   if (!problems.length) return;
-  say(`⚠ ${TAG}: en la versión bajada ${repo} ${plural(problems.length, 'skill de terceros no está como la declara su manifiesto', 'skills de terceros no están como las declara su manifiesto')}: ${problems.slice(0, 5).join(', ')}${problems.length > 5 ? ` y ${problems.length - 5} más` : ''} — las repone harness.js update (si la versión ya está al día, igual vuelve a restituir lo que falta); este paso no escribe en una versión bajada`);
+  say(`⚠ ${TAG}: en la versión bajada ${repo} ${plural(problems.length, 'skill de terceros no está como la declara su manifiesto', 'skills de terceros no están como las declara su manifiesto')}: ${problems.slice(0, 5).join(', ')}${problems.length > 5 ? ` y ${problems.length - 5} más` : ''} — las repone npx @tyconsa/harness@latest (si la versión ya está al día, igual vuelve a restituir lo que falta); este paso no escribe en una versión bajada`);
 }
 
 // ── el paso ────────────────────────────────────────────────────────────────────────────────────────────────────

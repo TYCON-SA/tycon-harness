@@ -43,6 +43,10 @@
  *   6. El nombre del campo del pedido de trabajo: una story que NACE con `ado_work_item:` (el nombre viejo) y sin
  *      `work_item:` recibe un aviso; no frena, y a las que ya existían no se les dice nada (el viejo se sigue leyendo,
  *      scripts/lib/platform/work-item-field.js).
+ *   9. Las INTENCIONES (`*.intent.md`, y el `intent.md` de una carpeta de corrida si se lo pasan: git ignora esas
+ *      carpetas): las lee `lib/intent.js` del pipeline. Cada problema frena, nueva o vieja, con la fila y la columna, y
+ *      una intención en `approved` con algo que bloquea también. Sin el lector la regla no corre y se avisa; con el
+ *      lector roto, frena.
  *
  * IMPORTANTE: el chequeo naive `awk '/^---$/'` NO alcanza — cualquier regla
  * horizontal del cuerpo lo satisface. Por eso acá se replica el parser real.
@@ -100,6 +104,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { sinGitDelPadre } = require('./clean-git-env.js');
 
 const REQUIRED = ['story', 'epic', 'status'];
 
@@ -157,6 +162,84 @@ const SKILLS_DIR = require('./skills-dir.js').resolveSkillsDirs().skills;
 const DISCOVERY_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js');
 let siblingsOf = null;   // los repos del mismo producto (de la skill del pipeline); sin ella, las rutas no se juzgan
 try { siblingsOf = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'product-siblings.js')).productSiblingsInfo; } catch { siblingsOf = null; }
+// los valores de `riesgo_alto_por:` viven con la regla de riesgo (lib/risk-paths.js); sin ella, la regla no corre y se dice
+let riskPaths;
+try { riskPaths = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'risk-paths.js')); } catch { riskPaths = null; }
+// las intenciones las lee lib/intent.js y nadie más. Sin el archivo (un arnés viejo), la regla no corre y se dice a los
+// gritos; con el archivo y sin poder cargarlo, frena: un lector roto no se toma por «sin lector».
+const INTENT_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'intent.js');
+let intentLib = null;
+let intentLoadError = null;
+if (fs.existsSync(INTENT_PATH)) {
+  try { intentLib = require(INTENT_PATH); } catch (e) { intentLoadError = e; }
+}
+/** ¿Es una intención? Con el lector, lo dice él; sin él, por el nombre, sólo para avisar que no se miró. */
+const esIntencion = (f) => (intentLib ? intentLib.isIntentFile(f)
+  : f.endsWith('.intent.md') || (path.basename(f) === 'intent.md' && f.split(path.sep).includes('pipeline-runs')));
+
+/**
+ * La raíz contra la que se miran las fuentes `repo:` de una intención: el repo donde vive el archivo, no la carpeta
+ * desde donde se corre el lint (el mismo archivo tiene que dar el mismo veredicto desde cualquier lado). Fuera de git,
+ * la raíz del lint.
+ */
+function intentRoot(abs) {
+  try {
+    return execFileSync('git', ['-C', path.dirname(abs), 'rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: sinGitDelPadre(), windowsHide: true }).trim() || REPO_ROOT;
+  } catch { return REPO_ROOT; }
+}
+
+/**
+ * Los errores de una intención: uno por problema, con la fila y la columna; y una aprobada con algo que bloquea.
+ * El lint no pasa la consulta de la constancia de la persona: una fila cerrada por `persona:` vale acá por su forma
+ * (la intención aprobada en una máquina no vuelve a bloquear en otra ni en la CI). La constancia la miran quien aprueba
+ * y los frenos de la máquina.
+ */
+function checkIntent(abs, rel) {
+  if (intentLoadError) {
+    return [{ rel, problema: `no pude cargar el lector de intenciones (${INTENT_PATH}): ${intentLoadError.message}`,
+      efecto: 'la intención no se revisó', arreglo: 'actualizar el arnés (harness.js update; en un clon, git pull)' }];
+  }
+  let r;
+  try { r = intentLib.readIntent(fs.readFileSync(abs, 'utf8'), { raiz: intentRoot(abs) }); } catch (e) {
+    return [{ rel, problema: `no pude leer la intención: ${e.message}`, efecto: 'la intención no se revisó', arreglo: 'revisar el archivo; si está bien, avisar: el lector falló' }];
+  }
+  const errores = r.problemas.map((x) => ({
+    rel,
+    problema: `${x.fila ? `fila ${x.fila}` : 'la intención'}${x.columna ? `, columna ${x.columna}` : ''}${x.linea ? ` (renglón ${x.linea})` : ''}: ${x.mensaje}`,
+    efecto: 'la intención no se lee igual en todas partes, y lo que no se puede leer bloquea',
+    arreglo: 'story-format.md, sección «La intención»: las columnas, los valores que valen y «Ninguna.»',
+  }));
+  if (r.frontmatter.status === 'approved' && r.bloqueantes.length) {
+    errores.push({
+      rel,
+      problema: `la intención está en \`approved\` y tiene filas que bloquean: ${r.bloqueantes.map((b) => `${b.id} (${b.motivo})`).join('; ')}`,
+      efecto: 'se programaría con una pregunta o una decisión sin respuesta',
+      arreglo: 'contestar lo que bloquea con la persona; una intención se aprueba recién sin nada que bloquee',
+    });
+  }
+  return errores;
+}
+
+/**
+ * El error de un valor de `riesgo_alto_por:` fuera de la lista, en los dos perfiles: en un repo de producto lo lee el
+ * dev («vos») y no nombra las piezas de la capa de mantenimiento; en el arnés, sí.
+ */
+function errorRiesgoAltoPor({ harness, rel, invalidos }) {
+  const lista = riskPaths ? riskPaths.VALORES_RIESGO_ALTO_POR.join(' · ') : 'alcance · seguridad · dependencia-nueva · plata · clientes · personas';
+  return {
+    rel,
+    problema: `\`riesgo_alto_por:\` trae valores fuera de la lista: ${invalidos.join(', ')}`,
+    efecto: harness
+      ? 'la decisión del dueño queda escrita con un nombre que nadie lee igual; el plan igual cuenta como riesgo alto y no lo aprueba la coordinadora'
+      : 'el riesgo alto queda escrito con un nombre que nadie lee igual; el plan igual cuenta como riesgo alto y lo aprobás vos',
+    arreglo: `usar EXACTAMENTE uno o más de: ${lista}`,
+  };
+}
+const mensajeRiesgoAltoPor = (o) => { const e = errorRiesgoAltoPor(o); return `${e.rel}: ${e.problema}\n  efecto: ${e.efecto}\n  arreglo: ${e.arreglo}`; };
+function esDelArnes(abs) {
+  try { return !!require('./harness-repo.js').esRutaDelArnes(abs); } catch { return false; }
+}
 let discovery = null;
 try {
   discovery = require(DISCOVERY_PATH);
@@ -264,6 +347,7 @@ function resolveDirs() {
   }
   try {
     const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      windowsHide: true,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
@@ -297,13 +381,14 @@ function scalar(fm, key) {
 
 function yamlChecker() {
   try {
-    execFileSync('python3', ['-c', 'import yaml'], { stdio: 'ignore' });
+    execFileSync('python3', ['-c', 'import yaml'], { windowsHide: true, stdio: 'ignore' });
   } catch {
     return null; // fail-open: sin PyYAML no bloqueamos a nadie
   }
   return (fmText) => {
     try {
       execFileSync('python3', ['-c', 'import sys,yaml; yaml.safe_load(sys.stdin.read())'], {
+        windowsHide: true,
         input: fmText,
         stdio: ['pipe', 'ignore', 'pipe'],
       });
@@ -433,22 +518,107 @@ function rootsOf(storyFile) {
 /**
  * ¿La ruta existe en la rama principal del remoto de ese repo (`origin/HEAD`, o `origin/main`)? 'yes' · 'no' ·
  * 'unknown'. Un clon sin esa rama (sin remoto, o un `.git` que git no lee) no puede estar atrasado: 'no'. Con la rama y
- * sin poder listarla (un error, el tiempo agotado), 'unknown': no se da por inventada.
+ * sin poder listarla (un error, el tiempo agotado), 'unknown': no se da por inventada. Dentro de un commit git deja
+ * `GIT_DIR` y compañía en el entorno, y le ganan a `-C`: sin sacarlas, contestaría el repo del commit.
  */
 function inRemoteMain(root, p) {
   if (!fs.existsSync(path.join(root, '.git'))) return 'no';
+  const env = sinGitDelPadre();
   let ref = null;
   for (const r of ['origin/HEAD', 'origin/main']) {
-    try { execFileSync('git', ['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { stdio: 'ignore', timeout: 5000 }); ref = r; break; } catch { /* la siguiente */ }
+    try { execFileSync('git', ['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { windowsHide: true, stdio: 'ignore', timeout: 5000, env }); ref = r; break; } catch { /* la siguiente */ }
   }
   if (!ref) return 'no';
   try {
-    const out = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', ref, '--', p], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    const out = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', ref, '--', p], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, env });
     return out.trim() ? 'yes' : 'no';
   } catch { return 'unknown'; }
 }
 
+/**
+ * Las partes del bloque `pipelines:` cuyo `files:` no es una lista: un valor suelto en el renglón (`files: src/a.js`), o
+ * una clave vacía sin ítems debajo. `files: [a, b]` y la lista con `- ruta` valen. Devuelve los nombres de las partes.
+ */
+function filesDeParteMalos(fm) {
+  const lineas = String(fm || '').split(/\r?\n/);
+  const inicio = lineas.findIndex((l) => /^pipelines\s*:\s*$/.test(l));
+  if (inicio < 0) return [];
+  const malas = [];
+  let parte = null;
+  for (let i = inicio + 1; i < lineas.length; i++) {
+    const l = lineas[i];
+    if (!l.trim()) continue;
+    if (/^\S/.test(l) && !/^-\s/.test(l)) break;
+    const nombre = l.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
+    if (nombre) { parte = nombre[1]; continue; }
+    const f = l.match(/^(\s+)files\s*:\s*(.*?)\s*$/);
+    if (!f) continue;
+    // el `\s*` de la clave ya se comió el espacio: un `#` al principio del valor es un comentario, no un valor
+    const v = f[2].replace(/(^|\s+)#.*$/, '').trim();
+    if (v) { if (!/^\[.*\]$/.test(v)) malas.push(parte || '(sin nombre)'); continue; }
+    // como el lector del bloque: un comentario o un renglón en blanco entre `files:` y sus ítems no corta la lista
+    const sig = lineas.slice(i + 1).find((x) => x.trim() && !/^\s*#/.test(x));
+    if (!sig || !new RegExp(`^\\s{${f[1].length},}-\\s*\\S`).test(sig) || /^\s*-\s*name\s*:/.test(sig)) malas.push(parte || '(sin nombre)');
+  }
+  return malas;
+}
+
 /** `{ missing, unsure }` de una story: las rutas que no existen y las que no se pueden juzgar. */
+/**
+ * Los renglones de «Ajustes después de la firma» que no están marcados como pasados al cuerpo. Un ajuste pasado es un
+ * renglón `- [x] …` (o `* [x]`, con o sin sangría), con los renglones de texto que le siguen sin cortar y con sangría;
+ * cualquier otro renglón con texto cuenta como pendiente: una casilla sin marcar (también anidada), un renglón suelto,
+ * un subtítulo o lo que hay en un bloque de código. La sección, de nivel 2 o 3 y fuera de un bloque de código, termina en
+ * el próximo título de su nivel o uno mayor.
+ */
+function ajustesSinPasar(content) {
+  const lineas = String(content).replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n');
+  const pendientes = [];
+  let nivel = 0;
+  let enPasado = false;
+  let cerco = null;
+  for (const l of lineas) {
+    if (cerco) {
+      const cierre = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(l);
+      if (cierre && cierre[1][0] === cerco[0] && cierre[1].length >= cerco.length) cerco = null;
+      if (nivel && l.trim()) pendientes.push(l.trim());
+      continue;
+    }
+    const apertura = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(l);
+    if (apertura && !(apertura[1][0] === '`' && apertura[2].includes('`'))) {
+      cerco = apertura[1];
+      enPasado = false;
+      if (nivel) pendientes.push(l.trim());
+      continue;
+    }
+    const t = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(l);
+    if (t) {
+      const nombre = t[2].replace(/[*_`]/g, '').trim().toLowerCase();
+      enPasado = false;
+      if (nivel && t[1].length <= nivel) nivel = 0;
+      if (!nivel && nombre === 'ajustes después de la firma') { nivel = t[1].length; continue; }
+      // un subtítulo dentro de la sección también es texto sin pasar
+      if (nivel) pendientes.push(l.trim());
+      continue;
+    }
+    if (!nivel) continue;
+    // un renglón vacío corta la continuación de un ajuste pasado
+    if (!l.trim()) { enPasado = false; continue; }
+    if (/^\s*[-*+]\s+\[[xX]\]\s/.test(l)) { enPasado = true; continue; }
+    const item = /^\s*([-*+]|\d+[.)])\s/.test(l);
+    if (enPasado && !item && /^\s{2,}\S/.test(l)) continue;
+    enPasado = false;
+    pendientes.push(l.trim());
+  }
+  return pendientes;
+}
+
+/** El estado de una historia como lo leen los guiones del arnés: sin comillas, sin comentario y en minúsculas. */
+function estadoDe(fm) {
+  const m = /^status\s*:\s*(.*)$/m.exec(fm);
+  return m ? m[1].replace(/\s+#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2').trim().toLowerCase() : '';
+}
+
 function checkStory(storyFile, content) {
   const text = (content === undefined ? fs.readFileSync(storyFile, 'utf8') : content).replace(/^﻿/, '');
   if (!text.startsWith('---')) return { missing: [], unsure: [] };
@@ -493,13 +663,15 @@ function main() {
   const aviso = [];
 
   let files;
+  // Las intenciones no declaran `story:`: se apartan antes del filtro de historias.
+  let intents = [];
   if (args.length > 0) {
+    const pedidos = args.map((f) => path.resolve(f)).filter((f) => f.endsWith('.md') && fs.existsSync(f));
+    intents = pedidos.filter(esIntencion);
     // El hook del repo puede pasarle TODOS los `.md` del commit: el filtro lo hace el lint, que es
     // el que sabe qué es una story. Con un grep del hook (`^specs/stories/`) como filtro, un repo con otro
     // layout no lintearía nada.
-    files = args
-      .map((f) => path.resolve(f))
-      .filter((f) => f.endsWith('.md') && fs.existsSync(f) && looksLikeStory(f, dirSet, aviso));
+    files = pedidos.filter((f) => !esIntencion(f) && looksLikeStory(f, dirSet, aviso));
   } else {
     if (dirs.length === 0) {
       console.error('No encontré ninguna story en este repo (busqué .md con `story:` y `status:` en el');
@@ -520,7 +692,8 @@ function main() {
         // `frontmatterZone`, que se agranda justo cuando el frontmatter está roto.
         if (!f.endsWith('.md') || f === 'INDEX.md') continue;
         const cand = path.join(dir, f);
-        if (looksLikeStory(cand, dirSet, aviso)) files.push(cand);
+        if (esIntencion(cand)) intents.push(cand);
+        else if (looksLikeStory(cand, dirSet, aviso)) files.push(cand);
       }
     }
   }
@@ -593,6 +766,44 @@ function main() {
     //    existía con el nombre viejo no se le dice nada
     if (/^ado_work_item:/m.test(parsed.fm) && !/^work_item:/m.test(parsed.fm) && naceAhora(abs, scalar(parsed.fm, 'story'))) campoViejo.push(rel);
 
+    // 7. `riesgo_alto_por:` con los valores de la lista (story-format.md). Frena siempre: el campo es nuevo.
+    if (riskPaths) {
+      const decl = riskPaths.leerRiesgoAltoPor(parsed.fm);
+      if (decl && decl.invalidos.length) {
+        errors.push(errorRiesgoAltoPor({ harness: esDelArnes(abs), rel, invalidos: decl.invalidos }));
+        continue;
+      }
+    } else if (/^riesgo_alto_por\s*:/m.test(parsed.fm)) {
+      console.error(`⚠️  ${rel}: no encontré la regla de riesgo (lib/risk-paths.js del skill tycon-pipeline): \`riesgo_alto_por:\` no se revisó.`);
+    }
+
+    // 10. Una historia terminada no guarda ajustes sin pasar al cuerpo: «Ajustes después de la firma» es el lugar de los
+    //     ajustes de redacción mientras se revisa el plan (la revisión no se ata a esa sección), y se vacía antes de `done`
+    if (estadoDe(parsed.fm) === 'done') {
+      const pendientes = ajustesSinPasar(content);
+      if (pendientes.length) {
+        errors.push({
+          rel,
+          problema: `está en \`done\` con ${pendientes.length} ajuste(s) de «Ajustes después de la firma» sin pasar al cuerpo: ${pendientes.slice(0, 3).map((l) => `«${l.slice(0, 60)}»`).join(', ')}`,
+          efecto: 'lo que se construyó no es lo que dice la historia: el ajuste quedó fuera del cuerpo que leen los demás',
+          arreglo: 'pasar cada ajuste al cuerpo de la historia y marcarlo `- [x]` en esa sección',
+        });
+        continue;
+      }
+    }
+
+    // 8. `files:` y `sensible:` de una parte (story-format.md §1.1): `files:` es una lista de rutas. Uno que no se puede
+    //    leer como lista frena: la parte se mediría por la historia entera sin que nadie lo sepa.
+    const malas = filesDeParteMalos(parsed.fm);
+    if (malas.length) {
+      errors.push({
+        rel, problema: `\`files:\` de la parte ${malas.join(', ')} no es una lista de rutas`,
+        efecto: 'la parte no vale y su riesgo se mide por la historia entera',
+        arreglo: '`files:` con un renglón `- ruta` por archivo, o `files: [a, b]`',
+      });
+      continue;
+    }
+
     // 4. La causa del reproceso. El por qué de cada rama, en la cabecera del archivo.
     if (!vocab.motivo) {
       const lista = vocab.causas.join(' · ');
@@ -653,7 +864,18 @@ function main() {
     }
   }
 
-  console.log(`Lint frontmatter de stories — ${checked} revisadas` +
+  // 9. Las intenciones: cada problema frena, nueva o vieja (story-format.md, «La intención»).
+  if (intents.length && !intentLib && !intentLoadError) {
+    console.error(`⚠️  no encontré el lector de intenciones (${INTENT_PATH}): ${intents.length} intención(es) sin revisar. ` +
+      'Es un hueco declarado, no un OK: actualizá el arnés.');
+  } else {
+    for (const abs of intents) {
+      const relRaw = path.relative(REPO_ROOT, abs);
+      errors.push(...checkIntent(abs, relRaw.startsWith('..') ? abs : relRaw));
+    }
+  }
+
+  console.log(`Lint frontmatter de stories — ${checked} revisadas` + (intents.length ? ` · ${intents.length} intención(es)` : '') +
     (skippedNoFm ? ` (${skippedNoFm} sin frontmatter, legado — no se chequean)` : '') +
     (checkYaml ? '' : ' · aviso: sin PyYAML, se saltea el parse YAML'));
 
@@ -713,7 +935,7 @@ function main() {
 // Exportado para que OTROS controles usen EL MISMO criterio de "esto es una story" en vez de
 // escribir el suyo (dos detectores del mismo concepto terminan divergiendo: uno aparte podría tomar por story rota
 // un reporte de medición que declara `story:` en el cuerpo, sin frontmatter).
-module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED };
+module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED, errorRiesgoAltoPor, mensajeRiesgoAltoPor, filesDeParteMalos, ajustesSinPasar };
 
 // 🔴 `process.exitCode`, NO `process.exit()`: en Node las escrituras a una tubería son
 // ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con

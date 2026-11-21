@@ -198,7 +198,7 @@ const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 // el AISLADO del exportador (sin ningún `GIT_*`), para leer objetos por sha. El aislado no sirve para el índice: borra
 // `GIT_INDEX_FILE` y con `git commit -a` no vería nada.
 function hookGit(dir, args) {
-  const r = spawnSync('git', args, { cwd: dir, env: process.env, encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 });
+  const r = spawnSync('git', args, { windowsHide: true, cwd: dir, env: process.env, encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 });
   if (r.error) throw new CouldNotLook(`no pude correr git ${args[0]} (${r.error.code || r.error.message})`);
   if (r.status !== 0) throw new CouldNotLook(`git ${args.join(' ')} falló en ${dir}: ${String(r.stderr).trim() || `salió ${r.status}`}`);
   return r.stdout;
@@ -991,7 +991,7 @@ function run(args) {
     afterTree = () => commitTree(repo, tip);
     range = { base, tip };
   } else {
-    const head = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { cwd: repo, env: process.env, encoding: 'utf8' });
+    const head = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { windowsHide: true, cwd: repo, env: process.env, encoding: 'utf8' });
     const shas = head.status === 0 ? [head.stdout.trim()] : [null];
     const mergeFile = hookGit(repo, ['rev-parse', '--git-path', 'MERGE_HEAD']).trim();
     const mergeAbs = path.resolve(repo, mergeFile);

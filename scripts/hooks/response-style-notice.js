@@ -9,16 +9,17 @@
  * Consume el pending (lo borra al emitirlo) → un aviso por infracción, nunca repetido.
  * Fail-open total: cualquier error → exit 0 sin output.
  *
- * Opt-out: TYCON_RESPONSE_METER=0
+ * Opt-out: TYCON_RESPONSE_METER=0 en la máquina, o `switches.response_meter: "off"` en el perfil (la variable gana).
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
-const PENDING_DIR = path.join(os.homedir(), '.claude', 'response-style', 'pending');
+// donde lo deja response-style-meter.js: la carpeta de los registros sueltos (scripts/lib/loose-logs.js); sin ella, null
+const LOOSE_DIR = (() => { try { return require('../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();
+const PENDING_DIR = LOOSE_DIR ? path.join(LOOSE_DIR, 'response-style', 'pending') : null;
 
 function emitReminder(text) {
   process.stdout.write(`<system-reminder>\n${text.trim()}\n</system-reminder>\n`);
@@ -30,8 +31,19 @@ function emitReminder(text) {
 // El arnés setea TYCON_EVAL_SANDBOX=1 al spawnear; acá nos callamos.
 if (process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
+// La organización puede apagar o encender este medidor desde el sitio (`switches.response_meter` del perfil); la variable
+// TYCON_RESPONSE_METER de la máquina, si está puesta, gana. Sin lector, o con la configuración rota, sigue encendido: una clave
+// que no se puede leer no lo apaga, y el aviso va a stderr.
+function orgSwitchOn(name) {
+  try {
+    const C = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
+    return C.switchOn(name, { warn: (w) => process.stderr.write(`${w}\n`) });
+  } catch { return true; }
+}
+
 function main() {
   if (process.env.TYCON_RESPONSE_METER === '0') return;
+  if (!orgSwitchOn('response_meter')) return;
 
   let event = {};
   try {
@@ -40,6 +52,7 @@ function main() {
   } catch { return; }
 
   const sessionId = event.session_id || event.sessionId || '_nosession';
+  if (!PENDING_DIR) return;
   const file = path.join(PENDING_DIR, `${sessionId}.json`);
   if (!fs.existsSync(file)) return;
 

@@ -1,13 +1,12 @@
 # Implementar
 
-**Objetivo**: el skill BMAD elegido en «Armar el plan» ejecuta el plan aprobado en «Aprobar el plan». Después se corre el
-build para verificar que el código compila. Cierra con `marker.js complete-step implement`, que aplica el freno ATDD
+**Objetivo**: el orquestador ejecuta el plan aprobado en «Aprobar el plan». Después se corre el build para verificar que
+el código compila. Cierra con `marker.js complete-step implement`, que aplica el freno ATDD
 (pruebas antes que código). Las pruebas y el resto del cierre siguen en `step-06-run-tests.md`.
 
 ## Inputs
 
 - `approved_plan` de «Aprobar el plan»
-- `bmad_skill_name` de «Armar el plan»
 
 > 💡 **Herramientas de código (2026-07-06)**: durante TODA la implementación, para buscar símbolos, llamadores e
 > impacto usá las tools de code-intel disponibles (`mcp__codegraph__*`, `mcp__codebase_memory__*`; o sus CLIs vía Bash
@@ -17,7 +16,7 @@ build para verificar que el código compila. Cierra con `marker.js complete-step
 
 ## 🔴 PRE-IMPLEMENTATION GATE (Spec-First Enforcement)
 
-**OBLIGATORIO antes de invocar BMAD execute o cualquier sesión de código de una fase posterior (L, M, N, etc.)**.
+**OBLIGATORIO antes de escribir código, también en una fase posterior (L, M, N, etc.)**.
 
 Disparador del gate: cualquier momento en que el dev decida implementar un cambio que no se discutió al aprobar el plan
 (típicamente «fase L de cableado», «fase M de arreglos», «fase N de agregados» descubiertos durante el humo en
@@ -64,8 +63,7 @@ Si **CUALQUIER** respuesta es «sí, pero…», «está implícito» o «es obvi
 
 ### Invocación automática del revisor — `tycon-spec-first-checker`
 
-A partir de 2026-05-13 el gate **NO es solo manual**. Antes de invocar el ejecutor BMAD, correr el revisor sobre el plan
-aprobado.
+A partir de 2026-05-13 el gate **NO es solo manual**. Antes de escribir código, correr el revisor sobre el plan aprobado.
 
 **Condición de salteo mecánica (verificable, NO inferencia)**: el chequeo previo al código se SALTEA si se cumplen LAS
 DOS:
@@ -142,13 +140,16 @@ Si la fase de código pasó sin chequeo previo (por ejemplo un spike o un arregl
 > de test: la edición no ocurre, sin importar qué skill esté ejecutando. Por qué: con las tareas ya implementadas antes
 > de ningún test, el gate del cierre avisa cuando el trabajo ya está hecho. (El clasificador no cuenta la story `.md`
 > bajo `specs/` como «test»: contarla dejaba el gate del cierre verde en todas las ejecuciones.) Escape consciente para
-> refactors sobre red preexistente: `marker.js set-flag atddBypass true` (queda en `bypass.log`).
+> refactors sobre red preexistente: `marker.js set-flag atddBypass true --reason "<por qué>"` (sin motivo se niega; el
+> motivo queda en `bypass.log`). Un guion de medición de `tasks/measurement-<algo>/` que la story no declara no cuenta
+> como código, y uno de `scripts/ci/pruebas/` o `scripts/ci/tests/` cuenta como prueba.
 >
 > **Qué NO bloquea** (calibrado para no dar falsos positivos): una story sin código (docs/specs) pasa; un refactor que
 > toca código y ningún test **avisa pero pasa** (la red son los tests preexistentes); un marcador sin `fileEvents`
 > avisa `unknown` y pasa. Los tres casos quedan medidos en `gates.log`.
 >
-> **Escape consciente**: `marker.js complete-step implement --no-atdd` — queda en `bypass.log` con el detalle.
+> **Escape consciente**: `marker.js complete-step implement --no-atdd --reason "<por qué>"` — queda en `bypass.log` con
+> el detalle y el motivo.
 >
 > **Por qué existe**: el ATDD era la ÚNICA regla del pipeline sin gate mecánico, y por eso era la que se salteaba. Sin
 > gate, escribir código y después test, tarea por tarea, sólo lo detecta una persona leyendo el transcript. Y un test
@@ -195,25 +196,60 @@ ese caso: `step-06-run-tests.md`.
 
 ## Acción — ejecución
 
-Invocar el skill BMAD nuevamente, esta vez en modo ejecución (no plan):
+La implementación la hace el orquestador en esta misma sesión, con Claude Code y con Codex: no se invoca ninguna skill.
+Ejecuta el plan aprobado sobre la historia, con estas reglas.
 
-```
-Skill(
-  skill: "<bmad_skill_name>",
-  args: "Ejecutar el plan aprobado sobre story {story_path}. PROCEDER con la implementación. Modificar archivos según el plan. Iterar con los tests SCOPED (los scaffolds de las pruebas primero) hasta verde y reportar resultado — la suite completa la corre el orquestador UNA vez, en «Correr las pruebas» (test-gate.sh). Criterio de diseño: el cambio más chico que cumple la story, sin fusionar bloques parecidos que cambian por razones distintas. Nada que la story no declare — ni excepciones, campos de respuesta, filtros ni servicios nuevos; si hace falta uno, frená y proponelo al usuario para sumarlo a la story (gate de «Implementar»): no lo agregues vos. Excepción: un filtro de seguridad que falte entra igual, con entrada en el Change Log. Ningún refactor más allá del que el cambio necesita; lo demás va a tasks/todo.md con formato DEF."
-)
-```
+**Antes de escribir.** Lee la historia entera y, si el repo lo tiene, `project-context.md`.
 
-El skill BMAD se encarga de:
-- Escribir/modificar archivos
-- Ejecutar tests unitarios que correspondan
-- Actualizar el Dev Agent Record del story con file list, completion notes, debug log
+**El estado.** Vive en el encabezado de la historia y lo escribe el pipeline. `sprint-status.yaml` es un índice aparte, y
+se toca sólo si hay uno manual:
+
+1. Se busca en la carpeta que dice `implementation_artifacts` en `_bmad/bmm/config.yaml` (`{project-root}` es la raíz del
+   repo) o, sin esa clave, junto a la historia.
+2. `node ~/.claude/tycon-harness/scripts/tools/story-index.js --repo <repo> --mode` dice de qué tipo es. Con `manual` y sin
+   aviso, el renglón de la historia pasa a `in-progress`, sin tocar los demás.
+3. Con `generated` no se edita: sale de los encabezados, y el control del commit frena lo que difiera. Si el comando
+   imprime un aviso, falla o no está, no se sabe de qué tipo es y no se edita: se dice en una línea y se sigue.
+4. Si no se encuentra, se dice en una línea y se sigue.
+
+**Los seguimientos, primero.** Si la historia trae abiertos en `## Review Follow-ups (Advisors)`, en «(AI)» o en «Senior
+Developer Review (AI)», los resuelve antes que las tareas. Al resolver uno lo tilda y lo anota en `Completion Notes List`
+y `Change Log`.
+
+**Las tareas.** Las ejecuta en orden, con las pruebas primero, sin pausar hasta terminarlas o hasta un motivo para frenar.
+No agrega nada que no esté en una tarea.
+
+**El alcance.** Hace el cambio más chico que cumple la historia, sin fusionar bloques parecidos que cambian por razones
+distintas. Ningún refactor más allá del que el cambio necesita: lo demás va a `tasks/todo.md` con formato DEF. Nada que la
+historia no declare: ni excepciones, campos de respuesta, filtros ni servicios nuevos. Si hace falta uno, frena y lo
+propone para sumarlo a la historia (el portón de arriba). Un filtro de seguridad que falte entra igual, con su línea en
+`Change Log`.
+
+**Las pruebas.** Marca una tarea sólo con sus pruebas escritas y en verde. Itera con pruebas acotadas y corre el lint o los
+controles que el repo tenga configurados. La suite completa la corre el orquestador una vez, en «Correr las pruebas»
+(`test-gate.sh`).
+
+Una prueba que ya existía y estaba en rojo no se edita para que pase: se para y se dice por qué. Si lo que está mal es
+la prueba (no el código), la razón se anota con `marker.js note-red-test --test <ruta> --reason "<motivo>"` y llega a los
+revisores y al mensaje del commit; si es la prueba de un control, la edición la firma el dueño
+(`red-control-test-edit`). El freno `on-red-test-edit.js` lo pide en cualquier paso de la corrida.
+
+**Cuándo frena y consulta.** Si una tarea es ambigua, si hace falta una dependencia que ni la historia ni
+`project-context.md` declaran, si falta una configuración necesaria, tras tres fallas seguidas o si una validación falla y
+no la puede arreglar.
+
+**Cuándo no termina.** No da por terminada la implementación con tareas incompletas, regresiones o la `File List`
+incompleta.
+
+**La historia.** Sólo cambia las tildes, el `Dev Agent Record`, la `File List` y el `Change Log`, salvo lo que apruebe el
+portón de arriba. Actualiza `Agent Model Used`, `Debug Log References`, `Completion Notes List`, `File List` y `Change Log`.
 
 **Con una maqueta aprobada** (story con pantalla, «Aprobar el plan»): la maqueta fija el contenido y los estados, no la
 forma de presentarlos. La forma sale de la story y de la guía del stack del producto. Donde la maqueta marca una capa
-(`presentation: "layer"`, «Se abre encima de … con …»), se construye una capa que se abre con ese botón o enlace;
-donde no marca nada, la story y la guía dicen si va en la página o encima. Agregá esto a los `args` del skill cuando la
-story tiene maqueta.
+(`presentation: "layer"`, «Se abre encima de … con …»), se construye una capa, que se abre con ese botón o enlace y
+tiene `role="dialog"` o `aria-modal="true"`. Sólo la contradice una story que diga literalmente
+«en la página» o «no modal», y entonces la maqueta se corrige y se aprueba de nuevo antes de construir. Palabras como
+«panel» o «sección» no la contradicen. Donde no marca nada, la story y la guía dicen si va en la página o encima.
 
 ## Si la historia termina por su salida prevista
 
@@ -235,7 +271,7 @@ Apagar el modo autónomo o cerrar la ejecución no es una salida: deja la histor
 
 ## Acción — build gate
 
-Después de que BMAD termina la implementación, **antes de invocar a los revisores**, verificar que el código compila.
+Al terminar la implementación, **antes de invocar a los revisores**, verificar que el código compila.
 
 Detectar framework:
 
@@ -262,10 +298,9 @@ no se saltea (detalle en `step-06-run-tests.md` §«Modo autónomo»).
 - **Si el build pasa OK**: cerrar el paso (abajo) y seguir con «Correr las pruebas» (`step-06-run-tests.md`).
 
 - **Si el build falla**:
-  - **Pausar el pipeline**. Mostrar el error a la persona.
-  - Preguntar: «El build falló. ¿Querés que vuelva al skill BMAD para que corrija, o revisamos manualmente?»
-  - Si pide corregir → volver a invocar el skill BMAD con el error como contexto.
-  - Si revisa manualmente → pausar el pipeline hasta que diga «re-run build» o similar.
+  - Primero, la corrige el orquestador con el error a la vista, y vuelve a correr el build.
+  - Si no la puede arreglar, **pausar el pipeline**, mostrar el error a la persona y esperar a que diga «re-run build» o
+    similar.
   - **No seguir con el build roto**. Los revisores de calidad de código corren sobre código muerto y generan ruido.
 
 - **Si el build se saltea** (no hay configuración): cerrar el paso con una nota en el log.
@@ -282,6 +317,6 @@ Aplica el freno ATDD (ver 4.0). Para el escape consciente, `--no-atdd`.
 
 - `build_status: ok | failed | skipped`
 - Log del build (si corrió)
-- Lista de archivos modificados por BMAD (diff git)
+- Lista de archivos modificados (diff git)
 
 Seguir con «Correr las pruebas» (`step-06-run-tests.md`) si `build_status != failed`.

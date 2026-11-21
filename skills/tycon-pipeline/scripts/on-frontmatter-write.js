@@ -42,6 +42,7 @@
 const fs = require('fs');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+const { homeCommand, homePath } = require('./lib/home-command.js');
 const os = require('os');
 const { sessionIdFileKey } = require('./lib/session-id.js');
 
@@ -92,7 +93,8 @@ function storyIsExempt(content) {
 // runtime-matrix, pipeline.js): en cualquier renglón del archivo, con sangría, con o sin comillas y con lo que siga
 // (un comentario). Si este control mirara menos que ellos, una forma que no ve pasaría sin la frase y valdría igual.
 const EXENTA = /^\s*dod_runtime_exempt:\s*["']?true\b/m;
-const EN_IMPLEMENTACION = new Set(['in-progress', 'review', 'done']);
+// la regla del cambio de estado a mano es la misma para la herramienta de edición y para la consola
+const { transicionAMano, isCriticalStatus, EN_IMPLEMENTACION } = require('./lib/story-transition.js');
 // El estado del encabezado, con fines de renglón de Windows y comillas simples o dobles.
 const estadoDe = (c) => { const m = /^status:\s*["']?([\w-]+)/m.exec(fmBlock(c)); return m ? m[1].toLowerCase() : ''; };
 // Una historia: un encabezado con `story:` o `status:`. Una guía que nombra la exención no lo tiene.
@@ -103,11 +105,24 @@ const esHistoria = (c) => /^(?:story|status):/m.test(fmBlock(c));
  * `{ ok: true, constancia }` la consume; `{ ok: false, motivo }` si no la hay. `casa`: la de las pruebas.
  */
 function firmaDeLaVentana(firma, event, filePath, casa) {
+  const renglones = comoSeFirmaAca(firma, filePath, event.session_id);
   try {
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-    return { ...ow.consumirArchivo({ firma, sesion: event.session_id, archivo: filePath, cwd: event.cwd, casa }), comando: ow.comoSeFirma(firma, filePath) };
+    return { ...ow.consumirArchivo({ firma, sesion: event.session_id, archivo: filePath, cwd: event.cwd, casa }), renglones };
   } catch (e) {
-    return { ok: false, motivo: `no pude consultar la ventana (${e.message})`, comando: `marker.js sign-file ${firma} ${filePath}` };
+    return { ok: false, motivo: `no pude consultar la ventana (${e.message})`, renglones };
+  }
+}
+
+/**
+ * Cómo se firma `firma` sobre `filePath`: las dos formas, cada una dicha para quién es, de la misma fuente que los demás
+ * frenos (scripts/lib/owner-window.js). Si esa biblioteca no carga, el cartel dice qué firma pedir sin escribir el comando.
+ */
+function comoSeFirmaAca(firma, filePath, sesion) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).formasDeFirmar(firma, filePath, sesion).renglones;
+  } catch (e) {
+    return [`la firma de archivo ${firma} sobre ${filePath}, en la ventana de permiso (no pude armar el comando: ${e.message})`];
   }
 }
 
@@ -138,7 +153,8 @@ function exencionNueva(event, oldContent, newContent, casa) {
       titulo,
       '',
       'Eximir una historia lo decide la persona, no el agente, también mientras se escribe. Si la persona quiere,',
-      `la firma en la ventana de permiso: corré ${r.comando} y, con su «Sí», repetí esta escritura.`,
+      'la firma, y con su «Sí» se repite esta escritura:',
+      ...r.renglones.map((l) => `  · ${l}`),
       'El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda',
       '(marker.js close-as-debt).',
       `(No hay firma: ${r.motivo}.)`,
@@ -340,10 +356,6 @@ function findRepoRoots(filePath) {
   return ec.productEvidenceRoots(repo, { freno: true });
 }
 
-function isCriticalStatus(s) {
-  return s === 'review' || s === 'done';
-}
-
 /**
  * El archivo como queda después del `apply_patch` de Codex (`scripts/lib/hook-io.js` lo pasa como un Edit por archivo,
  * con el parche entero en `tool_input`): cada tramo `@@` reemplaza sus renglones ` `/`-` por los ` `/`+`, en orden. Si un
@@ -389,90 +401,6 @@ function contenidoPorParche(event, filePath, oldContent) {
 }
 
 /**
- * El estado de una historia como lo lee una persona: sin la marca de orden de bytes, con fines de renglón de Windows,
- * con el valor entre comillas simples o dobles y con un comentario al final. `{ story, status, tandas }`, con `tandas` el
- * estado de cada tanda del bloque `pipelines` (por su nombre). null si no hay encabezado.
- */
-function estadosDe(content) {
-  const texto = String(content || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-  const m = /^---\n([\s\S]*?)\n---/.exec(texto);
-  if (!m) return null;
-  const crudo = (v) => String(v || '').replace(/\s+#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
-  const valor = (v) => crudo(v).toLowerCase();
-  // el primer `status:` es el que leen marker.js y el freno del commit; uno repetido queda anotado (`estados`)
-  const out = { story: null, status: '', estados: [], tandas: new Map() };
-  let enPipelines = false;
-  let tanda = null;
-  let sangriaTanda = null;
-  for (const renglon of m[1].split('\n')) {
-    // la clave con o sin comillas y con espacios antes de los dos puntos (`status : done`, `"status": done`)
-    const tope = /^(["']?)([A-Za-z_][\w-]*)\1\s*:\s*(.*)$/.exec(renglon);
-    if (tope) {
-      enPipelines = tope[2] === 'pipelines';
-      tanda = null; sangriaTanda = null;
-      // el id con sus mayúsculas: el patrón de ids del repo las distingue
-      if (tope[2] === 'story' && out.story === null) out.story = crudo(tope[3]) || null;
-      if (tope[2] === 'status') { out.estados.push(valor(tope[3])); if (out.estados.length === 1) out.status = out.estados[0]; }
-      continue;
-    }
-    if (!enPipelines) continue;
-    const anidado = /^(\s+)-?\s*(["']?)([\w.-]+)\2\s*:\s*(.*)$/.exec(renglon);
-    if (!anidado) continue;
-    const sangria = anidado[1].length;
-    if (anidado[3] === 'status' && tanda !== null && sangria > sangriaTanda) { out.tandas.set(tanda, valor(anidado[4])); continue; }
-    if (sangriaTanda === null || sangria <= sangriaTanda) { tanda = anidado[3]; sangriaTanda = sangria; }
-  }
-  return out;
-}
-
-/**
- * ¿La escritura cambia a mano el estado de una historia? `{ storyId, estado }` o null. Cuenta:
- * - su `status:` pasa a `review` o `done`, o una tanda del bloque `pipelines` queda en `done` sin haberlo estado;
- * - una historia en implementación (`in-progress`, `review`, `done`) cambia a otro estado (volver a `draft` y después
- *   escribirla por consola sería el mismo cierre en dos pasos);
- * - una historia pierde su encabezado o su `story:`, o le cambia el id (sacarlo o cambiarlo a uno que no es de trabajo y
- *   reponerlo después sería el mismo cierre en dos pasos).
- * Es una historia si el id de antes o el de después es de trabajo. Si no se puede leer y el texto nuevo dice `review` o
- * `done`, o el de antes estaba en implementación, cuenta.
- */
-function transicionAMano(filePath, oldContent, newContent) {
-  try {
-    const antes = estadosDe(oldContent);
-    const despues = estadosDe(newContent);
-    const { isWorkStoryId, storiesConfigForGate, findRepoRoot } = require('./lib/story-discovery.js');
-    const patron = storiesConfigForGate(findRepoRoot(filePath)).idPattern;
-    const deTrabajo = (s) => !!s && isWorkStoryId(s, patron);
-    const idAntes = antes && antes.story;
-    const idDespues = despues && despues.story;
-    if (!deTrabajo(idAntes) && !deTrabajo(idDespues)) return null;
-    const id = deTrabajo(idAntes) ? idAntes : idDespues;
-    if (deTrabajo(idAntes) && (!despues || idDespues !== idAntes)) return { storyId: id, estado: idDespues ? `otro id (${idDespues})` : 'sin encabezado' };
-    const viejo = antes || { status: '', estados: [], tandas: new Map() };
-    // un `status:` repetido que no estaba: cada lector puede quedarse con uno distinto
-    const distintos = (e) => new Set(e.estados).size;
-    if (distintos(despues) > 1 && distintos(despues) > distintos(viejo)) return { storyId: id, estado: `estado repetido (${despues.estados.join(', ')})` };
-    if (isCriticalStatus(despues.status) && despues.status !== viejo.status) return { storyId: id, estado: despues.status };
-    if (EN_IMPLEMENTACION.has(viejo.status) && despues.status !== viejo.status) return { storyId: id, estado: despues.status || 'sin estado' };
-    for (const [nombre, estado] of despues.tandas) {
-      if (estado === 'done' && viejo.tandas.get(nombre) !== 'done') return { storyId: id, estado: `pipelines.${nombre}` };
-    }
-    return null;
-  } catch (e) {
-    // del lado que frena: un error al leer no deja pasar un `review`/`done` escrito, y queda en hook-errors.log
-    try {
-      fs.mkdirSync(stateDirOf(os.homedir()), { recursive: true });
-      fs.appendFileSync(path.join(stateDirOf(os.homedir()), 'hook-errors.log'),
-        `[${new Date().toISOString()}] on-frontmatter-write transicionAMano: ${(e && e.stack) || e}\n\n`, 'utf8');
-    } catch { /* el registro no cambia la decisión */ }
-    const estadoEnTexto = (t) => (/^\s*["']?status["']?\s*:\s*["']?([\w-]+)/m.exec(String(t || '')) || [])[1] || '';
-    const nuevo = estadoEnTexto(newContent).toLowerCase();
-    const viejo = estadoEnTexto(oldContent).toLowerCase();
-    return isCriticalStatus(nuevo) || (EN_IMPLEMENTACION.has(viejo) && nuevo !== viejo)
-      ? { storyId: '?', estado: `${nuevo || 'sin estado'} (no se pudo leer la historia)` } : null;
-  }
-}
-
-/**
  * Una historia cuyo estado cambia con la herramienta de edición (ver `transicionAMano`). El estado lo cambia el
  * orquestador, que corre los controles del cierre: `marker.js update-story-status`, `update-pipeline-status` o
  * `/tycon-pipeline close`. A mano lo decide la persona, con su firma en la ventana sobre esta historia
@@ -511,7 +439,7 @@ function estadoAMano(event, filePath, oldContent, newContent, casa) {
     } catch { /* ayuda, no evidencia */ }
   }
   if (ok) return null;
-  const marker = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+  const marker = homePath('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js');
   const destino = isCriticalStatus(t.estado) || !/^pipelines\./.test(t.estado) ? t.estado : `done en ${t.estado}`;
   const titulo = `🚨 BLOQUEADO — la story ${t.storyId} pasa a ${destino} escribiendo el archivo a mano.`;
   return {
@@ -524,8 +452,8 @@ function estadoAMano(event, filePath, oldContent, newContent, casa) {
       '  · /tycon-pipeline close <id> para pasarla a done después del merge',
       'Si el comando frena porque la ejecución está en rojo, cerrarla igual lo decide la persona; si la historia no',
       'se puede terminar, la salida es dejarla como deuda (marker.js close-as-debt).',
-      `Escribirla a mano lo decide la persona: la firma en la ventana de permiso con ${r.comando},`,
-      'y con su «Sí» se repite esta escritura.',
+      'Escribirla a mano lo decide la persona: la firma, y con su «Sí» se repite esta escritura:',
+      ...r.renglones.map((l) => `  · ${l}`),
     ].join('\n') + '\n',
   };
 }
@@ -706,20 +634,21 @@ function handle(event, { casa } = {}) {
       pl.push('');
       // La ruta del archivo sale de tmp-path.js: con una ruta fija bajo /tmp, en Windows bash escribiría
       // en la carpeta temporal del usuario y Node leería C:\tmp — quien escribe y quien lee usan "$E2ECFG".
-      pl.push('  E2ECFG=$(node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/tmp-path.js e2ecfg <repo>)');
-      pl.push('  node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js e2e-config --repo <repo> > "$E2ECFG"');
+      pl.push(`  E2ECFG=$(${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/lib/tmp-path.js')} e2ecfg <repo>)`);
+      pl.push(`  ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} e2e-config --repo <repo> > "$E2ECFG"`);
       pl.push('  GATE=$(node -e \'process.stdout.write(require(process.argv[1]).gate||"")\' "$E2ECFG")');
       pl.push('  FE=$(node -e \'process.stdout.write(require(process.argv[1]).frontend_dir||"")\' "$E2ECFG")');
       // En un monorepo `APPS` puede traer MÁS DE UNA app: el gate va una vez por app tocada.
       // Sugerir el comando de una sola app dejaría sin gate a las demás.
-      pl.push(`  EVID=$(node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js evidence-dir --story <spec> --repo <repo> --plain)   # el repo de la STORY`);
+      pl.push(`  EVID=$(${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} evidence-dir --story <spec> --repo <repo> --plain)   # el repo de la STORY`);
       pl.push(`  echo "$APPS" | while read -r FE; do [ -n "$FE" ] || continue; \\`);
       pl.push(`    bash "$GATE" "$FE" ${storyId} "$EVID" || exit 1; done   # [spec-filter...] = scoped`);
       pl.push('');
       pl.push('Por default corre los specs SCOPED a la story (two-tier 2026-06-09); la suite');
       pl.push('COMPLETA corre 1 vez en /tycon-merge-to-main. Exit !=0 si hay rojos → fix antes de done.');
       pl.push('');
-      pl.push('Única salida sin correrla: eximir la story (sólo si NO tiene UI/E2E reales), que lo decide la persona: lo firma con marker.js sign-file dod_runtime_exempt <historia>.');
+      pl.push('Única salida sin correrla: eximir la story (sólo si NO tiene UI/E2E reales), que lo decide la persona y lo firma:');
+      for (const l of comoSeFirmaAca('dod_runtime_exempt', filePath, event.session_id)) pl.push(`  · ${l}`);
       pl.push('');
       pl.push('Caso disparador: Ceibo Stories 4.2 + 4.3.1 (2026-05-20) — E2E declarados "PASS"');
       pl.push('sin correrse / con mocks. Freshness agregada 2026-06-09 (evidencia vieja');
@@ -752,7 +681,8 @@ function handle(event, { casa } = {}) {
   lines.push('  (a) Invocar tycon-dod-runtime-checker advisor (auto-captura evidencia).');
   lines.push('  (b) Ejecutar E2E specs + capturar log → escribir manualmente el archivo.');
   lines.push('  (c) Si la story NO tiene UI/E2E reales: eximirla de la prueba en vivo lo decide la persona,');
-  lines.push('      no el agente (lo firma con marker.js sign-file dod_runtime_exempt <historia>).');
+  lines.push('      no el agente. Lo firma:');
+  for (const l of comoSeFirmaAca('dod_runtime_exempt', filePath, event.session_id)) lines.push(`      · ${l}`);
   lines.push('');
   lines.push('Caso disparador: Ceibo Story 4.2 2026-05-20 — Claude marcó done sin');
   lines.push('ejecutar E2E. Este hook es la infra que lo enforce. Docs:');

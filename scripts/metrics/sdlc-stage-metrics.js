@@ -238,7 +238,7 @@ function discoverStoryFiles(repo, budgetMs = 15000) {
 function git(repo, args, timeoutMs = 15000) {
   try {
     return execFileSync('git', ['-C', repo, ...args],
-      { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024 * 1024 }).trim();
+      { windowsHide: true, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024 * 1024 }).trim();
   } catch { return null; }
 }
 
@@ -595,6 +595,7 @@ function leerBlobs(repo, oids) {
   let buf;
   try {
     buf = execFileSync('git', ['-C', repo, 'cat-file', '--batch'], {
+      windowsHide: true,
       input: `${oids.join('\n')}\n`, timeout: 120000, maxBuffer: 512 * 1024 * 1024,
     });
   } catch {
@@ -726,7 +727,10 @@ function derivarTransiciones(repo, stories, opts = {}) {
   //         ENTRE lotes: así un repo enorme se corta con la mitad hecha en vez de colgar el paso.
   const oids = [...new Set(entradas.map((e) => e.oid))];
   const parcial = esClonParcial(repo);
-  const textos = new Map();
+  // 🔴 De cada versión se guarda sólo lo que se usa (`story:` y `status:` del frontmatter, o null si no tiene), nunca
+  //    su texto: guardar el texto de TODAS las versiones de todos los `.md` del historial dejó al nocturno sin memoria
+  //    (2 GB) en tres noches seguidas, cuando el historial de los repos creció. Así la memoria la acota un lote.
+  const encabezados = new Map();
   const faltantes = new Set();
   let agotado = null;
   for (let i = 0; i < oids.length; i += lote) {
@@ -734,7 +738,10 @@ function derivarTransiciones(repo, stories, opts = {}) {
     const chunk = oids.slice(i, i + lote);
     if (parcial) traerBlobs(repo, chunk);
     const { textos: t, faltantes: f } = leerBlobs(repo, chunk);
-    for (const [k, v] of t) textos.set(k, v);
+    for (const [k, v] of t) {
+      const fm = parseFrontmatter(v);
+      encabezados.set(k, fm ? { id: fm.id, status: fm.status } : null);
+    }
     for (const x of f) faltantes.add(x);
   }
   if (agotado) for (const o of oids.slice(agotado.blobs)) faltantes.add(o);
@@ -767,8 +774,8 @@ function derivarTransiciones(repo, stories, opts = {}) {
   let versionesHuerfanas = 0;
   let versionesIlegibles = 0;
   for (const e of entradas) {
-    const txt = textos.get(e.oid);
-    const fm = txt === undefined ? null : parseFrontmatter(txt);
+    const leida = encabezados.has(e.oid);
+    const fm = leida ? encabezados.get(e.oid) : null;
     const declarado = fm && fm.id ? fm.id : null;
     const porRuta = rutaAId.get(e.ruta) || rutaAId.get(rutaActual(e.ruta)) || null;
     // La identidad declarada manda (así sobrevive un renombre de ruta). Pero si esa
@@ -787,7 +794,7 @@ function derivarTransiciones(repo, stories, opts = {}) {
     // que no es una story. Contarlo daría 683 en un repo real — un número siempre grande enseña a
     // ignorar el aviso, que es la forma más barata de romper un control.
     if (!id) { if (declarado) versionesHuerfanas++; continue; }
-    if (txt === undefined) { storiesConFalta.add(id); continue; }
+    if (!leida) { storiesConFalta.add(id); continue; }
     if (!porId.has(id)) porId.set(id, []);
     porId.get(id).push({ fecha: e.fecha, sha: e.sha, orden: e.orden, crudo: fm ? fm.status : null });
   }

@@ -427,6 +427,33 @@ test('T12 SuiteDeps_RunsOnlyWhatTheChangeTouches — lo que carga, lo que nombra
   assert.strictEqual(depsPlan(dir, ['scripts/lib/util.js'], { deps: false }).run.length, 5, 'sin --deps, como siempre: corren todas');
 });
 
+// Un pedazo suelto de un `path.join` (`'ci'` en `path.join(__dirname, '..', 'ci', 'x.sh')`) o un valor de una palabra
+// (`'ci'` como nombre de modo) no nombra una carpeta: sólo la encuentra el intento con `scripts/` o `skills/` delante.
+// Contarlo hacía depender a la suite de toda esa carpeta: cualquier cambio en scripts/ci/ corría las del instalador.
+// Lo que sí se nombra, la ruta armada entera y la carpeta escrita como ruta, sigue contando.
+// 🔴 mutación: contar la palabra suelta como carpeta → el cambio en scripts/ci/otro.js la toca.
+test('T12b SuiteDeps_LoosePathPiece_NotTheWholeFolder — la palabra suelta que sólo es carpeta con scripts/ delante no cuenta como carpeta', () => {
+  const { suiteDeps, touchedBy } = require(path.join(path.dirname(SCRIPT), 'suite-deps.js'));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'suite-deps-suelta-')));
+  clones.push(dir);
+  const put = (rel, body) => { const f = path.join(dir, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body); };
+  put('scripts/ci/run.sh', 'echo corre\n');
+  put('scripts/ci/otro.js', 'module.exports = 1;\n');
+  put('guides/g.md', '# g\n');
+  put('scripts/lib/w.js', "const s = path.join(__dirname, '..', 'ci', 'run.sh'); const modo = 'ci';\n");
+  put('scripts/tests/s.test.js', "require('../lib/w.js');\n");
+  const d = suiteDeps(dir, 'scripts/tests/s.test.js');
+  assert.ok(d.files.has('scripts/ci/run.sh'), 'la ruta armada entera cuenta como el archivo que nombra');
+  assert.ok(!d.dirs.has('scripts/ci'), `la palabra suelta no cuenta como la carpeta (${[...d.dirs]})`);
+  assert.strictEqual(touchedBy(d, ['scripts/ci/otro.js']), false, 'otro archivo de esa carpeta no la toca');
+  assert.strictEqual(touchedBy(d, ['scripts/ci/run.sh']), true, 'el archivo que usa sí');
+  // la carpeta nombrada como ruta, entera o armada, sigue contando; y la palabra que es carpeta tal como está escrita
+  put('scripts/lib/w.js', "const a = path.join(ROOT, 'scripts', 'ci'); const b = 'guides';\n");
+  const d2 = suiteDeps(dir, 'scripts/tests/s.test.js');
+  assert.ok(d2.dirs.has('scripts/ci'), 'la carpeta armada con path.join cuenta');
+  assert.ok(d2.dirs.has('guides'), 'la palabra que es carpeta desde la raíz cuenta');
+});
+
 test('T13 SuiteDeps_WhenInDoubtRuns — cómo se elige, un borrado, una suite ausente, la que lista el repo, sin lista y sin ninguna', { skip: NO_RULE }, () => {
   const dir = depsRepo();
   const all = ['a.test.js', 'b.test.sh', 'c.test.js', 'd.test.js'];
@@ -485,7 +512,7 @@ test('T15 SuiteDeps_OwnGateRulesOverDeps — una suite con gate_only_when_touchi
 
 test('T11 SuitesForChange_MdDoesNotChoose_ExceptHeavyThatReadsMd — un README de la copia no arrastra las pesadas del instalador', { skip: NO_RULE }, () => {
   const dir = depsRepo({ heavy: true });
-  const p = depsPlan(dir, ['scripts/ci/x.js'], { docs: ['scripts/ci/x.js', 'scripts/publishing/public-files/README.md', 'guides/nueva.md'] });
+  const p = depsPlan(dir, ['scripts/ci/x.js'], { docs: ['scripts/ci/x.js', 'scripts/publishing/sample-papers/README.md', 'guides/nueva.md'] });
   assert.ok(p.run.includes('export-real.test.sh'), `la copia pública mira los .md que viajan: corre\n${p.err}`);
   assert.ok(p.skip.some((s) => s.startsWith('SKIP\tharness-install.test.sh\t')), `la del instalador no corre por un README ni por una guía\n${p.skip.join('\n')}\n${p.err}`);
   // la copia corre por el .md aunque la lista de código no le toque nada
@@ -1038,11 +1065,12 @@ function groupRepo() {
   }));
   return dir;
 }
-function groupPlan(dir, changed, { alone = true } = {}) {
+function groupPlan(dir, changed, { alone = true, direct = false } = {}) {
   const args = [path.join(dir, 'scripts', 'ci', 'suites-for-change.js'), '--suites', path.join(dir, 'scripts', 'tests', 'suites.json'),
     '--scripts', path.join(dir, 'scripts'), '--skills', SKILLS, '--heavy', path.join(dir, 'scripts', 'ci', 'heavy-suites.json')];
   if (changed) { fs.writeFileSync(path.join(dir, 'changed.txt'), `${changed.join('\n')}\n`); args.push('--changed', path.join(dir, 'changed.txt')); }
   if (alone) args.push('--groups-alone');
+  if (direct) args.push('--direct', '--changed-with-docs', path.join(dir, 'changed.txt'));
   const r = spawnSync(process.execPath, args, { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stderr);
   const lines = r.stdout.split('\n');
@@ -1067,4 +1095,212 @@ test('SuitesForChange_GroupsAlone_WhenInDoubtRuns — sin la opción, sin lista 
     const p = groupPlan(dir, ['guides/x.md', f]);
     assert.ok(p.run.includes('inst.test.sh'), `tocar ${f} corre el grupo\n${p.skip.join('\n')}`);
   }
+});
+
+// ── `--direct`: cada pedido corre sólo las suites que NOMBRAN lo que tocó (su propio código lo menciona, o es la suite
+// misma); la noche corre todas y es la red, suite por suite. La foto entera ya
+// no tiene que estar completa —una suite que la noche no midió corre en el pedido—; sin foto de las últimas 36 h, o si el
+// cambio toca cómo se elige, el pipeline, el instalador, el portón o los ganchos de git, corre todo.
+const DIRECT_SKIP = /^SKIP\t[^\t]+\tsu código no nombra nada de lo que tocó el cambio: la corre el banco nocturno$/;
+function nightlyRan(dir, { ran, unmeasured = [], ageHours = 10, complete = false }) {
+  fs.writeFileSync(path.join(dir, 'nightly.json'), JSON.stringify({ kind: 'bash-tests', ts: new Date(Date.now() - ageHours * HOUR).toISOString(),
+    complete, failures: unmeasured.map((n) => `${n}(no-medida)`), unmeasured: unmeasured.map((n) => `${n}(no-medida)`), ran }));
+}
+// `addedRemoved`: lo que el cambio agrega o borra; null = la validación no pudo calcularlo (no pasa la lista).
+function directPlan(dir, changed, { photo = true, addedRemoved = [] } = {}) {
+  fs.writeFileSync(path.join(dir, 'changed.txt'), `${changed.join('\n')}\n`);
+  const args = [path.join(dir, 'scripts', 'ci', 'suites-for-change.js'), '--suites', path.join(dir, 'scripts', 'tests', 'suites.json'),
+    '--scripts', path.join(dir, 'scripts'), '--skills', SKILLS, '--heavy', path.join(dir, 'scripts', 'ci', 'heavy-suites.json'),
+    '--changed', path.join(dir, 'changed.txt'), '--direct'];
+  if (photo) args.push('--nightly', path.join(dir, 'nightly.json'));
+  if (addedRemoved) {
+    fs.writeFileSync(path.join(dir, 'added-removed.txt'), addedRemoved.length ? `${addedRemoved.join('\n')}\n` : '');
+    args.push('--added-removed', path.join(dir, 'added-removed.txt'));
+  }
+  const r = spawnSync(process.execPath, args, { encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const lines = r.stdout.split('\n');
+  return { run: lines.filter((l) => l.startsWith('RUN\t')).map((l) => path.basename(l.slice(4))), skip: lines.filter((l) => l.startsWith('SKIP\t')), err: r.stderr };
+}
+const ALL4 = ['a.test.js', 'b.test.sh', 'c.test.js', 'd.test.js'];
+
+test('Direct_RunsOnlyTheSuitesThatNameTheChange — lo que nombra su código, no lo que carga de segunda mano ni la que lista el repo', { skip: NO_RULE }, () => {
+  const dir = depsRepo();
+  nightlyRan(dir, { ran: ALL4, complete: true });
+  const cases = [
+    [['scripts/lib/util.js'], ['a.test.js'], 'la suite que lo carga por su nombre'],
+    [['scripts/hooks/guard-lib.js', 'scripts/lib/util.js'], ['a.test.js'], 'lo que carga un guion que la suite nombra: de segunda mano, no corre'],
+    [['scripts/publishing/export.js'], ['d.test.js'], 'una ruta armada con path.join nombra el archivo'],
+    [['scripts/tests/b.test.sh'], ['b.test.sh'], 'la suite misma'],
+    [['scripts/old/gone.js'], ['b.test.sh', 'c.test.js'], 'un archivo borrado: corre la que lo nombra, y la que lista el repo', ['scripts/old/gone.js']],
+  ];
+  for (const [changed, want, why, addedRemoved] of cases) {
+    const p = directPlan(dir, changed, { addedRemoved: addedRemoved || [] });
+    assert.deepStrictEqual(p.run.sort(), want.sort(), `${why} (${changed})\n${p.err}`);
+    for (const s of p.skip) assert.match(s, DIRECT_SKIP, `el motivo exacto (${why})`);
+  }
+});
+
+test('Direct_ShortName_OnlyWithItsExtensionOrPath — un nombre de menos de 4 letras no se busca suelto', { skip: NO_RULE }, () => {
+  const dir = depsRepo();
+  fs.writeFileSync(path.join(dir, 'scripts', 'lib', 'w.js'), 'module.exports = 9;\n');
+  fs.writeFileSync(path.join(dir, 'scripts', 'tests', 'a.test.js'), "require('../lib/util.js'); const w = 1; // w suelta\n");
+  nightlyRan(dir, { ran: ALL4, complete: true });
+  assert.deepStrictEqual(directPlan(dir, ['scripts/lib/w.js', 'scripts/lib/util.js']).run, ['a.test.js'], 'la letra suelta no nombra el archivo');
+  fs.writeFileSync(path.join(dir, 'scripts', 'tests', 'd.test.js'), "require('../lib/w.js');\n");
+  assert.deepStrictEqual(directPlan(dir, ['scripts/lib/w.js', 'scripts/lib/util.js']).run.sort(), ['a.test.js', 'd.test.js'], 'con su extensión sí');
+});
+
+test('Direct_NameInsideAnotherWord_DoesNotName — el nombre pegado a otra palabra no nombra el archivo; suelto, en su ruta o con comillas sí', { skip: NO_RULE }, () => {
+  // 🔴 mutación: volver a buscar el nombre como pedazo de texto (lo de antes) → DATABASE, BASE_URL y estate.js hacen
+  //    correr b, c y d; pedir la palabra entera también en el resto del renglón → $BASE o 'BASE' dejan
+  //    de nombrar el archivo y la suite que lo lee de verdad se saltea.
+  const dir = depsRepo();
+  fs.mkdirSync(path.join(dir, 'scripts', 'tests', 'fixtures', 'lab'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'scripts', 'tests', 'fixtures', 'lab', 'BASE'), 'x\n');
+  fs.writeFileSync(path.join(dir, 'scripts', 'lib', 'state.js'), 'module.exports = 1;\n');
+  const put = (n, t) => fs.writeFileSync(path.join(dir, 'scripts', 'tests', n), t);
+  put('a.test.js', "require('../lib/util.js');\n");
+  put('b.test.sh', 'DATABASE=1; echo "$BASE_URL"\n');
+  put('c.test.js', "const e = 'lib/estate.js'; const f = 'statement.js';\n");
+  put('d.test.js', "const db = 'MY_DATABASE';\n");
+  nightlyRan(dir, { ran: ALL4, complete: true });
+  // con util.js tocado, a.test.js corre (un plan vacío correría todo): las otras tres no nombran nada de lo tocado
+  const lejos = directPlan(dir, ['scripts/tests/fixtures/lab/BASE', 'scripts/lib/state.js', 'scripts/lib/util.js']);
+  assert.deepStrictEqual(lejos.run, ['a.test.js'], `sólo a.test.js nombra lo tocado\n${lejos.err}`);
+  // la palabra entera, como la escribe una suite de verdad
+  put('a.test.js', "const p = path.join(dir, 'BASE');\n");
+  put('b.test.sh', 'cat "$LAB/fixtures/lab/BASE"\n');
+  put('c.test.js', "require('../lib/state.js');\n");
+  put('d.test.js', "const { x } = require('../lib/state');\n");
+  const cerca = directPlan(dir, ['scripts/tests/fixtures/lab/BASE', 'scripts/lib/state.js']);
+  assert.deepStrictEqual(cerca.run.sort(), ALL4, `las cuatro nombran lo tocado\n${cerca.err}`);
+  // un archivo que de verdad se llama DATABASE lo nombra quien dice DATABASE
+  fs.writeFileSync(path.join(dir, 'scripts', 'tests', 'fixtures', 'lab', 'DATABASE'), 'x\n');
+  put('b.test.sh', 'DATABASE=1\n');
+  assert.ok(directPlan(dir, ['scripts/tests/fixtures/lab/DATABASE']).run.includes('b.test.sh'), 'DATABASE nombra a DATABASE');
+});
+
+test('Direct_NothingNamesTheChange_RunsEverything — un plan vacío la validación lo cuenta como «no se midió»: corre todo', { skip: NO_RULE }, () => {
+  const dir = depsRepo();
+  nightlyRan(dir, { ran: ALL4, complete: true });
+  const p = directPlan(dir, ['scripts/hooks/guard-lib.js']);
+  assert.deepStrictEqual(p.run.sort(), ALL4, p.err);
+  assert.match(p.err, /con --direct no quedaba ninguna suite: corre todo/);
+});
+
+test('Direct_IncompleteNight_SkipsAnyway_ButRunsWhatTheNightDidNotMeasure — la red es por suite', { skip: NO_RULE }, () => {
+  const dir = depsRepo();
+  nightlyRan(dir, { ran: ALL4, unmeasured: ['b.test.sh'] });
+  assert.deepStrictEqual(directPlan(dir, ['scripts/lib/util.js']).run.sort(), ['a.test.js', 'b.test.sh'], 'la que la noche no midió corre en el pedido');
+  nightlyRan(dir, { ran: ['a.test.js', 'b.test.sh', 'c.test.js'] });
+  assert.ok(directPlan(dir, ['scripts/lib/util.js']).run.includes('d.test.js'), 'la que la noche no corrió tampoco se saltea');
+});
+
+test('Direct_WhenInDoubt_RunsEverything — sin foto, foto vieja, foto sin la lista de lo que corrió, o tocar cómo se elige', { skip: NO_RULE }, () => {
+  const dir = depsRepo();
+  nightlyRan(dir, { ran: ALL4, ageHours: 40 });
+  let p = directPlan(dir, ['scripts/lib/util.js']);
+  assert.deepStrictEqual(p.run.sort(), ALL4, `foto de hace 40 h\n${p.err}`);
+  assert.match(p.err, /--direct no saltea nada/);
+  assert.deepStrictEqual(directPlan(dir, ['scripts/lib/util.js'], { photo: false }).run.sort(), ALL4, 'sin foto');
+  fs.writeFileSync(path.join(dir, 'nightly.json'), JSON.stringify({ kind: 'bash-tests', ts: new Date().toISOString(), complete: true, failures: [] }));
+  assert.deepStrictEqual(directPlan(dir, ['scripts/lib/util.js']).run.sort(), ALL4, 'una foto que no dice qué corrió no es red por suite');
+  nightlyRan(dir, { ran: ALL4, complete: true });
+  for (const f of ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-deps.js', 'pipelines/azure-pipelines-maintainers-pr.yml',
+    'pipelines/templates/run-suites.yml', 'scripts/setup/install.sh', 'install-tycon-hooks.sh', 'scripts/ci/tycon-ci-gate.js', '.githooks/pre-commit',
+    'scripts/production/install-guard.sh', 'skills/tycon-pipeline/scripts/lib/touched-files.js']) {
+    p = directPlan(dir, [f]);
+    assert.deepStrictEqual(p.run.sort(), ALL4, `tocar ${f} corre todo\n${p.err}`);
+    assert.match(p.err, /corre todo/, f);
+  }
+});
+
+test('Direct_NightlyPipeline_RunsItsOwnSuites — un YAML nocturno o a mano no cambia qué corre un pedido; el del pedido, el pre-commit y las plantillas sí', { skip: NO_RULE }, () => {
+  // 🔴 rojo: tocar el YAML del banco nocturno (o uno de operaciones) hacía correr todas las suites del pedido
+  const dir = depsRepo();
+  nightlyRan(dir, { ran: ALL4, complete: true });
+  const nocturnos = ['pipelines/azure-pipelines-banco.yml', 'pipelines/azure-pipelines-tablero.yml', 'pipelines/azure-pipelines-windows.yml',
+    'pipelines/azure-pipelines.yml', 'pipelines/operations/team-dashboard.yml', 'pipelines/operations/github/site-update.yml'];
+  fs.writeFileSync(path.join(dir, 'scripts', 'tests', 'a.test.js'), `require('../lib/util.js'); const y = [${nocturnos.map((n) => `'${n}'`).join(', ')}];\n`);
+  // d recorre la carpeta sin nombrar ningún YAML (arma los nombres por partes): también los prueba, y corre
+  fs.writeFileSync(path.join(dir, 'scripts', 'tests', 'd.test.js'), "const e = path.join(ROOT, 'scripts', 'publishing', 'export.js'); const dir = path.join(ROOT, 'pipelines'); const n = ['', '-x'].map((s) => `azure${s}.yml`);\n");
+  for (const f of nocturnos) {
+    const p = directPlan(dir, [f]);
+    assert.deepStrictEqual(p.run.sort(), ['a.test.js', 'd.test.js'], `${f}: corren la suite que lo nombra y la que recorre la carpeta\n${p.err}`);
+    assert.doesNotMatch(p.err, /cómo se eligen o corren las pruebas/, f);
+  }
+  // la que recorre la carpeta no corre por un cambio que no es de un YAML
+  assert.deepStrictEqual(directPlan(dir, ['scripts/lib/util.js']).run, ['a.test.js'], 'un cambio que no toca pipelines/');
+  // los que eligen o corren las pruebas de un pedido, o lo dejan pasar, siguen corriendo todo; también un YAML que no
+  // está en la lista de los que no (ante la duda, corre)
+  for (const f of ['pipelines/azure-pipelines-maintainers-pr.yml', 'pipelines/azure-pipelines-precommit-pr.yml', 'pipelines/templates/run-suites.yml',
+    'pipelines/templates/fetch-repos.yml', 'pipelines/templates/nueva.yml', 'pipelines/azure-pipelines-nuevo.yml', '.github/workflows/ci.yml']) {
+    const p = directPlan(dir, [f]);
+    assert.deepStrictEqual(p.run.sort(), ALL4, `${f}: corre todo\n${p.err}`);
+    assert.match(p.err, /cómo se eligen o corren las pruebas/, f);
+  }
+});
+
+test('Direct_WithoutTheFlag_DepsAsBefore — --deps no cambia', { skip: NO_RULE }, () => {
+  const dir = depsRepo();
+  assert.deepStrictEqual(depsPlan(dir, ['scripts/hooks/guard-lib.js']).run.sort(), ['a.test.js', 'c.test.js'], 'por dependencias, la de segunda mano sigue corriendo');
+});
+
+test('Direct_HeavyChosenByItsPatterns_RunsWhenTheNightDidNotMeasureIt — la red por suite vale también para las pesadas', { skip: NO_RULE }, () => {
+  const dir = depsRepo({ heavyDeps: true });
+  const heavyNames = ['export-real.test.sh', 'harness-plan.test.sh', 'clean-machine.test.sh', 'harness-profile.test.sh', 'harness-channel.test.sh', 'prod-access-guard.test.sh'];
+  nightlyRan(dir, { ran: [...ALL4, ...heavyNames] });
+  assert.ok(!directPlan(dir, ['scripts/lib/util.js']).run.includes('clean-machine.test.sh'), 'medida anoche y sin tocar sus patrones: se saltea');
+  nightlyRan(dir, { ran: [...ALL4, ...heavyNames], unmeasured: ['clean-machine.test.sh'] });
+  assert.ok(directPlan(dir, ['scripts/lib/util.js']).run.includes('clean-machine.test.sh'), 'sin medir anoche: corre en el pedido');
+});
+
+test('Direct_AddedOrRemoved_RunsTheSuitesThatListTheRepo — un archivo nuevo o borrado cambia lo que ve un recorrido del repo', { skip: NO_RULE }, () => {
+  const dir = depsRepo();
+  nightlyRan(dir, { ran: ALL4, complete: true });
+  fs.writeFileSync(path.join(dir, 'scripts', 'lib', 'nuevo.js'), 'module.exports = 1;\n');
+  assert.deepStrictEqual(directPlan(dir, ['scripts/lib/util.js']).run, ['a.test.js'], 'sólo se modificó: la que lista el repo no corre');
+  const added = directPlan(dir, ['scripts/lib/util.js', 'scripts/lib/nuevo.js'], { addedRemoved: ['scripts/lib/nuevo.js'] });
+  assert.deepStrictEqual(added.run.sort(), ['a.test.js', 'c.test.js'], `se agregó un archivo: corre la que lista el repo\n${added.err}`);
+  assert.match(added.err, /el cambio agrega o borra archivos: corren las suites que recorren el repo/);
+  const unknown = directPlan(dir, ['scripts/lib/util.js'], { addedRemoved: null });
+  assert.deepStrictEqual(unknown.run.sort(), ['a.test.js', 'c.test.js'], 'sin la lista de altas y bajas: ante la duda, corre');
+  assert.match(unknown.err, /no sé si el cambio agrega o borra archivos/);
+});
+
+test('T11 GroupCriterion_Incluye @story-8.299 @ac-2 — incluye dice si una suite es del grupo; skips no cambia', () => {
+  // 🔴 mutación: un incluye que devuelva siempre false deja a las suites del grupo sin volver por sus carpetas; skips
+  // devuelve false para una suite de afuera, y eso no dice si es del grupo.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-for-change-group-'));
+  const heavy = path.join(dir, 'heavy-suites.json');
+  fs.writeFileSync(heavy, JSON.stringify({ groups: { installer: { patterns: ['installer/**'] } },
+    suites: { 'i.test.sh': { group: 'installer', patterns: ['scripts/tests/i.test.sh'] }, 'other.test.sh': { patterns: ['lib/**'] } } }));
+  const crit = require(SCRIPT).groupCriterion(heavy, 'installer');
+  assert.equal(crit.problem, undefined, String(crit.problem));
+  assert.equal(typeof crit.incluye, 'function', 'groupCriterion trae incluye');
+  assert.equal(crit.incluye('i.test.sh'), true);
+  assert.equal(crit.incluye('other.test.sh'), false);
+  assert.equal(crit.incluye('no-esta.test.sh'), false);
+  assert.equal(crit.skips('other.test.sh', ['lib/x.js']), false, 'fuera del grupo nunca se difiere por el grupo');
+  assert.equal(crit.skips('i.test.sh', ['lib/x.js']), true, 'del grupo y sin tocar el instalador: se difiere');
+  assert.equal(crit.skips('i.test.sh', ['installer/x.sh']), false, 'del grupo y con el instalador tocado: corre');
+});
+
+// 🔴 Falla con: un cambio en el pipeline o en cómo corren las pruebas (el «corre todo» de --direct) que arrastra a las
+//    suites del laboratorio del instalador aunque no toque el instalador: ~115 de los 325 minutos de la validación 170.
+//    El grupo se elige por sus patrones; sólo tocar su propio criterio (heavy-suites.json o este selector) lo corre.
+test('SuitesForChange_Direct_CorreTodo_ElGrupoDelInstaladorSoloSiLoToca', { skip: NO_RULE }, () => {
+  const dir = groupRepo();
+  const plan = (changed) => groupPlan(dir, changed, { alone: false, direct: true });
+  for (const f of ['pipelines/templates/run-suites.yml', 'pipelines/azure-pipelines-maintainers-pr.yml', '.githooks/pre-commit']) {
+    const p = plan([f]);
+    assert.match(p.err, /corre todo/, `${f} sigue corriendo todo lo demás`);
+    assert.ok(p.run.includes('fast.test.js') && p.run.includes('pub.test.sh'), `${f}: lo demás corre\n${p.skip.join('\n')}`);
+    assert.match(p.skip.join('\n'), /^SKIP\tinst\.test\.sh\t/m, `${f}: el grupo del instalador va a la noche\n${p.err}`);
+  }
+  for (const f of ['scripts/setup/a.sh', 'scripts/tests/inst.test.sh', 'scripts/ci/heavy-suites.json', 'scripts/ci/suites-for-change.js']) {
+    assert.ok(plan(['pipelines/templates/run-suites.yml', f]).run.includes('inst.test.sh'), `tocar ${f} corre el grupo`);
+  }
+  assert.ok(groupPlan(dir, null, { alone: false, direct: true }).run.includes('inst.test.sh'), 'sin lista de cambios, corre');
 });

@@ -6,6 +6,8 @@
  *
  * Corre pipeline.js y marker.js de verdad sobre una corrida de juguete, con HOME temporal. 0 deps (node:test).
  */
+// sin el perfil del equipo: la prueba fija su ambiente (scripts/tests/lib/without-team-profile.js)
+require('../../../../scripts/tests/lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -26,8 +28,11 @@ const FECHA = { GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '20
 // stable-data: la conversación va después del arranque de la corrida, que se anota con el reloj real
 const T = (seg) => new Date(Date.now() + 60000 + seg * 1000).toISOString();
 
-/** Un repo con una story, la carpeta de la corrida y su marcador en una HOME propia. */
-function laboratorio({ findings = null, fotos = [], servidas = [], advisorsYaml = null, org = null } = {}) {
+// El tope de estas pruebas: 2 vueltas, puesto por el repo (commiteado). El de fábrica (3) lo mide Cap_Default_Three.
+const TOPE_DOS = 'review:\n  max_rounds: 2\n';
+
+/** Un repo con una story, la carpeta de la corrida y su marcador en una HOME propia. `advisorsYaml: null`: sin el archivo. */
+function laboratorio({ findings = null, fotos = [], servidas = [], advisorsYaml = TOPE_DOS, org = null } = {}) {
   const repo = tmp('rr-repo-');
   const home = tmp('rr-home-');
   const git = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, ...a], { stdio: 'ignore', env: { ...process.env, ...FECHA } });
@@ -67,7 +72,7 @@ function laboratorio({ findings = null, fotos = [], servidas = [], advisorsYaml 
     { encoding: 'utf8', env: ventana ? conVentana({ ...env, ...envExtra }) : { ...env, ...envExtra } });
   lab.cmd = (bin, args, envExtra = {}) => spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8', cwd: repo, env: { ...env, ...envExtra } });
   lab.foto = (n) => { const m = JSON.parse(fs.readFileSync(markerFile, 'utf8')); m.iterations[n] = { ts: new Date().toISOString(), files: {} }; fs.writeFileSync(markerFile, JSON.stringify(m)); };
-  // el ajuste de la máquina: un archivo en la carpeta de estado, donde el agente no escribe
+  // el ajuste viejo de la máquina: un archivo en la carpeta de estado, que ya no sube el tope
   lab.maquina = (n) => fs.writeFileSync(path.join(state, 'review-max-rounds.json'), JSON.stringify({ max_rounds: n }));
   lab.servidas = () => { try { return JSON.parse(fs.readFileSync(path.join(run, 'rethink', 'served.json'), 'utf8')).served; } catch (_) { return []; } };
   lab.conversar = (regs) => {
@@ -89,17 +94,26 @@ test('Rounds_SameRoundTwice_DoesNotCount @story-7.37 @ac-1', () => {
   const b = lab.reloop(2);
   assert.equal(b.status, 0, `la misma vuelta pedida dos veces no es otra: ${b.stderr}`);
   assert.deepEqual(lab.servidas(), [1, 2]);
-  // con los revisores de la 2 lanzados, el pedido siguiente es la 3, como siempre (con el tope alto, pide la nota)
+  // con los revisores de la 2 lanzados, el pedido siguiente es la 3, como siempre: al tope de 2, lo dice
   lab.foto(2);
-  lab.maquina(6);
   const c = lab.reloop(2);
   assert.equal(c.status, 3, c.stderr);
   assert.match(c.stderr, /vuelta 3/i);
-  // subir el tope con el ajuste de la máquina pasa, pero queda anotado y se dice
-  assert.match(c.stderr, /el ajuste de esta máquina.*lo sube a 6: queda anotado/);
-  assert.ok(gates(lab).some((g) => g.name === 'review-cap-machine' && g.iter === 3));
-  const linea = lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo]);
-  assert.match(linea.stdout, /tope 6, puesto por el ajuste de esta máquina/);
+});
+
+test('Cap_MachineFile_IgnoredAndSaidOnce (T58) @story-8.221 @ac-46', () => {
+  // el ajuste por máquina ya no existe: el archivo viejo no sube el tope, y se dice una sola vez
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
+  lab.maquina(6);
+  const rr = () => JSON.parse(lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo, '--json']).stdout);
+  const a = rr();
+  assert.deepEqual([a.tope, a.tope_de], [2, 'repo']);
+  assert.match(a.problemas.join(' '), /review-max-rounds\.json.*ya no existe y se ignora/);
+  assert.doesNotMatch(rr().problemas.join(' '), /review-max-rounds/, 'una sola vez');
+  assert.equal(gates(lab).filter((g) => g.name === 'review-cap-machine-ignored').length, 1);
+  const r = lab.reloop(3);
+  assert.equal(r.status, 3, 'el archivo no sube el tope');
+  assert.match(r.stderr, /tope de 2 vueltas/);
 });
 
 test('Rounds_RunCost_CountsRoundsWithReviewers @story-7.37 @ac-2', () => {
@@ -113,10 +127,11 @@ test('Rounds_RunCost_CountsRoundsWithReviewers @story-7.37 @ac-2', () => {
   const rr = lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo, '--json']);
   assert.equal(rr.status, 0, rr.stderr);
   assert.equal(JSON.parse(rr.stdout).vueltas, 2);
-  const c = lab.cmd(MARKER, ['clear']);
+  const c = lab.cmd(MARKER, ['clear', '--discard']);
   assert.match(c.stdout + c.stderr, /en 2 iteración/, 'el costo del run cuenta las vueltas con revisores');
 });
 
+// El laboratorio tiene cambios sin el ok de guardar: el cierre es `clear --discard`, que vuelca el costo igual.
 // El costo del cierre cuenta sólo esta corrida: desde que arrancó y, si la línea nombra una story, la de esta.
 function costoDelVolcado(lab) {
   const dir = path.join(lab.state, 'timing-history');
@@ -141,7 +156,7 @@ test('RunCost_OnlyThisStory @story-7.49 @ac-1', () => {
     // otra story que corrió en la misma sesión, después del arranque de ésta, tampoco es de esta corrida
     { ts: despues(), advisor: 'tycon-plugin-tests-coverage', story: '9.6' },
   ]);
-  const c = lab.cmd(MARKER, ['clear']);
+  const c = lab.cmd(MARKER, ['clear', '--discard']);
   assert.match(c.stdout + c.stderr, /costo del run: 2 agentes/, c.stderr);
   assert.equal(costoDelVolcado(lab).spawns, 2);
 });
@@ -149,7 +164,7 @@ test('RunCost_OnlyThisStory @story-7.49 @ac-1', () => {
 test('RunCost_AdhocAfterStart_Counts @story-7.49 @ac-2', () => {
   const lab = laboratorio({ fotos: [1] });
   registro(lab, [{ ts: antes(), advisor: 'Explore' }, { ts: despues(), advisor: 'Explore' }, { ts: despues(), advisor: 'tycon-story-validator', story: '9.8' }]);
-  lab.cmd(MARKER, ['clear']);
+  lab.cmd(MARKER, ['clear', '--discard']);
   const costo = costoDelVolcado(lab);
   assert.deepEqual([costo.spawns, costo.adhoc], [2, 1]);
 });
@@ -160,7 +175,7 @@ test('RunCost_NoTimestamp_Said @story-7.49 @ac-3', () => {
     // sin hora pero de otra story: no es de esta corrida, ni para contarla como «sin hora»
     { advisor: 'tycon-story-validator', story: '9.7' }, '{ esto no es JSON',
     { ts: despues(), advisor: 'tycon-story-validator', story: '9.8' }]);
-  lab.cmd(MARKER, ['clear']);
+  lab.cmd(MARKER, ['clear', '--discard']);
   const costo = costoDelVolcado(lab);
   assert.equal(costo.spawns, 1);
   assert.equal(costo.sin_hora, 3);
@@ -172,27 +187,45 @@ test('RunCost_NoStart_OnlyThisStorySaid @story-7.49 @ac-1 @ac-3', () => {
   const lab = laboratorio({ fotos: [1] });
   const m = JSON.parse(fs.readFileSync(lab.markerFile, 'utf8')); delete m.startedAt; fs.writeFileSync(lab.markerFile, JSON.stringify(m));
   registro(lab, [{ ts: antes(), advisor: 'Explore' }, { ts: antes(), advisor: 'tycon-story-validator', story: '9.7' }, { ts: despues(), advisor: 'tycon-story-validator', story: '9.8' }]);
-  lab.cmd(MARKER, ['clear']);
+  lab.cmd(MARKER, ['clear', '--discard']);
   const costo = costoDelVolcado(lab);
   assert.equal(costo.spawns, 1);
   assert.equal(costo.sin_arranque, true);
 });
 
-test('Cap_Default_Two @story-7.37 @ac-3', () => {
-  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
-  const r = lab.reloop(3);
+test('Cap_OrgBadPrefixElement_DropsTheList (T58) @story-8.221 @ac-46 — un elemento malo de blocking_prefixes no queda contando', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'rounds-prefijos-')));
+  try {
+    const arbol = path.join(base, 'arbol');
+    fs.mkdirSync(arbol); fs.mkdirSync(path.join(base, 'home'));
+    const acme = (repo) => ({ platform: 'github', org: 'acme', repo });
+    fs.writeFileSync(path.join(arbol, 'team-repos.json'), JSON.stringify({ version: 1, public: acme('harness'), profile: acme('team-profile'), operations: acme('team-operations'),
+      review: { max_rounds: 2, blocking_prefixes: ['PAGOS', 'datos'] } }));
+    fs.symlinkSync(path.join(SCRIPTS, '..', '..', '..', 'scripts'), path.join(arbol, 'scripts'));
+    const RR = require(path.join(SCRIPTS, 'lib', 'review-rounds.js'));
+    const p = RR.prefijos({ env: { ...process.env, TYCON_GUIDES_DIR: arbol }, home: path.join(base, 'home') });
+    assert.match(p.problems.join(' '), /blocking_prefixes\.1/);
+    // la lista con un elemento malo cae entera: «datos» (DATOS-C1) no frena como seguridad, y PAGOS tampoco queda
+    assert.equal(RR.clase('DATOS-C1', { prefijos: p }), null);
+    assert.ok(!p.seguridad.includes('PAGOS'), JSON.stringify(p.seguridad));
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('Cap_Default_Three @story-7.37 @ac-3 @story-8.221 @ac-46', () => {
+  const lab = laboratorio({ fotos: [1, 2, 3], servidas: [1, 2, 3], advisorsYaml: null });
+  const r = lab.reloop(4);
   assert.equal(r.status, 3, r.stderr);
-  assert.match(r.stderr, /tope de 2 vueltas/);
+  assert.match(r.stderr, /tope de 3 vueltas/);
   assert.match(r.stderr, /no quedó nada abierto|quedó abierto/i);
   // una variable de ambiente antepuesta al comando (la podría poner el propio agente) no sube el tope
-  const v = lab.reloop(3, [], { TYCON_REVIEW_MAX_ROUNDS: '99' });
+  const v = lab.reloop(4, [], { TYCON_REVIEW_MAX_ROUNDS: '99' });
   assert.equal(v.status, 3);
-  assert.match(v.stderr, /tope de 2 vueltas/);
+  assert.match(v.stderr, /tope de 3 vueltas/);
 });
 
 test('Cap_OrgAndRepo_RepoWins_BadValueSaid @story-7.37 @ac-4', () => {
   const rr = (lab) => JSON.parse(lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo, '--json']).stdout);
-  const org = laboratorio({ org: { max_rounds: 3 } });
+  const org = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: null });
   assert.deepEqual([rr(org).tope, rr(org).tope_de], [3, 'organizacion']);
   const repo = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: 'review:\n  max_rounds: 4\n' });
   assert.deepEqual([rr(repo).tope, rr(repo).tope_de], [4, 'repo']);
@@ -318,8 +351,8 @@ function vueltaParaOtra(lab, iter, extra, { pedir = true, sesion = COORD } = {})
   const args = [PIPELINE, 'smart-reloop', '--iter', String(iter), '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js', ...extra];
   const cmd = `node ${args.join(' ')}`;
   if (pedir) {
-    const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
-      escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
+    const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
+      escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null, comprobar: () => null });
     assert.equal(p.decision, 'ask', p.texto);
   }
   return spawnSync(process.execPath, args, { encoding: 'utf8',
@@ -356,7 +389,7 @@ test('VueltaExtra_ForSession_SinFirmaPendiente_NoSirve @story-8.142 @ac-2', () =
   const lab = laboratorio({ fotos: [1], servidas: [1] });
   const r = vueltaParaOtra(lab, 2, ['--extra-round', '--for-session', SID]);
   assert.notEqual(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stderr, /no necesita firma/);
+  assert.match(r.stderr, /La vuelta 2 está dentro del tope de 2/);
   assert.deepEqual(lab.servidas(), [1], 'no anotó una vuelta servida');
   assert.equal(vigentes(lab).length, 1, 'el pedido sigue sin gastar');
   // una sesión sin marcador abierto: sale 2 antes de la firma
@@ -381,4 +414,214 @@ test('VueltaExtra_ForSession_SinFirmaPendiente_NoSirve @story-8.142 @ac-2', () =
   assert.match(ajena.stderr, /7\.7/);
   assert.equal(vigentes(tope).length, 2, 'ningún pedido gastado');
   assert.ok(!gates(tope).some((g) => g.name === 'extra-round'));
+});
+
+// ── El chequeo antes de la ventana ────────────────────────────────────────────────────────────────────────────────────
+//
+// El freno corre el guion en modo de chequeo antes de abrir la ventana: si se negaría, no la abre. Cada requisito de la
+// vuelta extra con su prueba: dentro del tope, ya autorizada y, desde la tercera, sin su nota de repensar.
+
+/** El pedido de la ventana de la sesión de la corrida, con el chequeo de verdad en la HOME del laboratorio. */
+function pedirConChequeo(lab, iter, extra = []) {
+  const cmd = `node ${[PIPELINE, 'smart-reloop', '--iter', String(iter), '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js', '--extra-round', ...extra].join(' ')}`;
+  return ow.decidir({ evento: { session_id: SID, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd }, cwd: lab.repo },
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null,
+    comprobar: (o) => ow.comprobarConElGuion({ ...o, env: lab.env }) });
+}
+const NOTA = ['--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
+  '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base'];
+
+// 🔴 Falla con: la ventana para una vuelta que no necesita firma (dentro del tope), o el guion que la sirve igual.
+test('Precheck_VueltaExtraDentroDelTope_NoAbreLaVentana', () => {
+  const lab = laboratorio({ fotos: [1], servidas: [1] });
+  const p = pedirConChequeo(lab, 2);
+  assert.equal(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /No abrí la ventana/);
+  assert.match(p.texto, /no necesita la vuelta extra/);
+  assert.equal(vigentes(lab).length, 0, 'sin pedido');
+  // el guion solo, aunque llegue la firma, tampoco la gasta
+  const r = lab.reloop(2, ['--extra-round'], {}, { ventana: true });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /no necesita la vuelta extra/);
+  assert.deepEqual(lab.servidas(), [1]);
+  assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)), 'sin firma ni vuelta anotada');
+});
+
+// 🔴 Falla con: la ventana de la tercera vuelta abierta sin su nota de repensar (el guion la rechazaba después del «Sí»).
+test('Precheck_TerceraVueltaSinNota_NoAbreLaVentana', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
+  assert.equal(lab.reloop(3).status, 3, 'el aviso del tope');
+  const p = pedirConChequeo(lab, 3);
+  assert.equal(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /No abrí la ventana/);
+  assert.match(p.texto, /rethink/);
+  assert.equal(vigentes(lab).length, 0, 'sin pedido');
+  // con la ventana aprobada igual, la nota se pide antes de gastar la firma
+  const r = lab.reloop(3, ['--extra-round'], {}, { ventana: true });
+  assert.equal(r.status, 3, r.stdout + r.stderr);
+  assert.match(r.stderr, /rethink/);
+  assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)), 'la firma no se usó');
+  // con la nota, el chequeo pasa: la ventana se abre, y el chequeo no firmó ni sirvió nada
+  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', ...NOTA, '--repo', lab.repo, '--story', lab.story]).status, 0);
+  const ok = pedirConChequeo(lab, 3);
+  assert.equal(ok.decision, 'ask', ok.texto);
+  assert.equal(vigentes(lab).length, 1);
+  assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)), 'el chequeo no firmó');
+  assert.deepEqual(lab.servidas(), [1, 2], 'el chequeo no sirvió la vuelta');
+});
+
+// 🔴 Falla con: otra firma pedida para una vuelta extra que ya está autorizada.
+test('Precheck_VueltaExtraYaAutorizada_NoAbreLaVentana', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
+  assert.equal(lab.reloop(3).status, 3);
+  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', ...NOTA, '--repo', lab.repo, '--story', lab.story]).status, 0);
+  const primera = lab.reloop(3, ['--extra-round'], {}, { ventana: true });
+  assert.equal(primera.status, 0, primera.stderr);
+  const p = pedirConChequeo(lab, 3);
+  assert.equal(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /ya está autorizada/);
+  // sin --extra-round, la vuelta autorizada se sirve sin otra firma
+  const sin = lab.reloop(3);
+  assert.equal(sin.status, 0, sin.stderr);
+});
+
+// ── La vuelta dentro del tope pedida para otra sesión dice el tope (8.271) ────────────────────────────────────────────
+//
+// «No se pide para otra sesión» se leía como «--for-session está prohibido». Lo que pasa es que la vuelta no necesita
+// firma: está dentro del tope, o la vuelta extra ya está autorizada. El mensaje lo dice y dice quién la pide.
+
+test('VueltaExtra_ForSession_DentroDelTope_DiceElTope @story-8.271 @ac-4', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], advisorsYaml: 'review:\n  max_rounds: 3\n' });
+  const r = vueltaParaOtra(lab, 3, ['--extra-round', '--for-session', SID]);
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /La vuelta 3 está dentro del tope de 3: no necesita la vuelta extra ni la firma/);
+  assert.match(r.stderr, /la sesión de la corrida, con el set sin --extra-round ni --for-session/);
+  assert.doesNotMatch(r.stderr, /no se pide para otra sesión/);
+  assert.deepEqual(lab.servidas(), [1, 2], 'no sirvió el set');
+  assert.equal(vigentes(lab).length, 1, 'el pedido sigue sin gastar');
+});
+
+test('VueltaExtra_ForSession_YaAutorizada_LoDice @story-8.271 @ac-5', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
+  fs.appendFileSync(path.join(lab.state, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'extra-round', story: '9.8', iter: 3 })}\n`);
+  const r = vueltaParaOtra(lab, 3, ['--extra-round', '--for-session', SID]);
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /La vuelta extra 3 ya está autorizada/);
+  assert.match(r.stderr, /sin --extra-round ni --for-session, sin otra firma/);
+  assert.deepEqual(lab.servidas(), [1, 2], 'no sirvió el set');
+});
+
+// ── La vuelta extra para otra sesión sale de la corrida de esa sesión (8.272) ────────────────────────────────────────
+//
+// La coordinadora corre el comando desde su propia carpeta: el repo, la historia y los archivos salen del marcador de la
+// sesión destino, no del directorio de trabajo. Sin esa corrida, o sin lo que hace falta de ella, sale 2 sin armar nada.
+
+/** La vuelta `iter` pedida desde `cwd` (la carpeta de la coordinadora), sólo con los argumentos de `extra`. */
+function vueltaDesdeOtraCarpeta(lab, cwd, iter, extra, { pedir = true, delegada = false } = {}) {
+  const args = [PIPELINE, 'smart-reloop', '--iter', String(iter), ...extra];
+  const cmd = `node ${args.join(' ')}`;
+  if (pedir) {
+    const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd }, cwd },
+      escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, clasificar: () => null, comprobar: () => null,
+      delegacion: () => (delegada ? { ok: true, maquina: 'm-prueba' } : { ok: false, motivo: 'sin delegación en la prueba' }) });
+    assert.deepEqual([p.decision, p.via], delegada ? ['allow', 'delegacion'] : ['ask', undefined], p.texto);
+  }
+  return spawnSync(process.execPath, args, { encoding: 'utf8', cwd,
+    env: conVentana({ ...lab.env, CLAUDE_CODE_SESSION_ID: COORD }, delegada ? { delegadaPor: COORD } : { arbol: { arbol: arbolDelGuion(lab.home, cmd), pid: 301, ahora: AHORA + 60000 } }) });
+}
+/** El laboratorio al tope, con la nota de la tercera vuelta y lo que tocó la corrida (uno en el repo, uno fuera). */
+function alTopeConNota({ marcador = {} } = {}) {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
+  assert.equal(lab.reloop(3).status, 3);
+  const nota = lab.cmd(MARKER, ['rethink', '--iter', '3', '--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
+    '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base', '--repo', lab.repo, '--story', lab.story]);
+  assert.equal(nota.status, 0, nota.stderr);
+  const m = JSON.parse(fs.readFileSync(lab.markerFile, 'utf8'));
+  Object.assign(m, { filesTouched: [path.join(lab.repo, 'src', 'a.js'), path.join(os.tmpdir(), 'fuera-del-repo.js')] }, marcador);
+  for (const [k, v] of Object.entries(marcador)) if (v === undefined) delete m[k];
+  fs.writeFileSync(lab.markerFile, JSON.stringify(m));
+  return lab;
+}
+
+test('T15 ExtraRound_ForSession_FilesFromTheirMarker @story-8.272 @ac-17', () => {
+  // desde la carpeta de la coordinadora, sin --repo, --story ni --files: todo sale de la corrida de la sesión destino
+  const lab = alTopeConNota();
+  const coord = tmp('rr-coord-');
+  const r = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--extra-round', '--for-session', SID]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(r.stdout).iter, 3);
+  assert.ok(gates(lab).some((g) => g.name === 'extra-round' && g.story === '9.8' && g.iter === 3), 'la vuelta extra es de la corrida destino');
+  assert.deepEqual(lab.servidas(), [1, 2, 3], 'se sirvió la vuelta en la corrida destino');
+  assert.equal(vigentes(lab).length, 0, 'el pedido se gastó');
+  // un --repo y unos --files relativos se leen contra el repo de la corrida destino, no contra la carpeta de la coordinadora
+  const lab2 = alTopeConNota();
+  const r2 = vueltaDesdeOtraCarpeta(lab2, coord, 3, ['--repo', '.', '--files', 'src/a.js', '--extra-round', '--for-session', SID]);
+  assert.equal(r2.status, 0, r2.stdout + r2.stderr);
+  assert.deepEqual(lab2.servidas(), [1, 2, 3]);
+  // la firma por delegación del perfil, desde la carpeta de la coordinadora y sin `cd … &&`
+  const lab3 = alTopeConNota();
+  const r3 = vueltaDesdeOtraCarpeta(lab3, coord, 3, ['--extra-round', '--for-session', SID], { delegada: true });
+  assert.equal(r3.status, 0, r3.stdout + r3.stderr);
+  assert.ok(gates(lab3).some((g) => g.name === 'extra-round' && g.iter === 3 && g.via === 'delegacion'), JSON.stringify(gates(lab3).filter((g) => g.name === 'extra-round')));
+  assert.deepEqual(lab3.servidas(), [1, 2, 3]);
+});
+
+test('T16 ExtraRound_ForSessionWithoutMarker_Exit2 @story-8.272 @ac-17 @ac-18', () => {
+  const coord = tmp('rr-coord-');
+  const lab = alTopeConNota();
+  // sin marcador: «no encontré la corrida» con el motivo, salida 2, sin servir nada
+  const sin = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--extra-round', '--for-session', 'ses-z'], { pedir: false });
+  assert.equal(sin.status, 2, sin.stdout + sin.stderr);
+  assert.match(sin.stderr, /no encontré la corrida de la sesión ses-z/i);
+  assert.match(sin.stderr, /no está su marcador/);
+  // marcador ilegible: lo mismo, con su motivo
+  fs.writeFileSync(path.join(lab.state, 'active', 'ses-rota.json'), '{ no es json');
+  const rota = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--extra-round', '--for-session', 'ses-rota'], { pedir: false });
+  assert.equal(rota.status, 2, rota.stdout + rota.stderr);
+  assert.match(rota.stderr, /no encontré la corrida de la sesión ses-rota/i);
+  assert.match(rota.stderr, /no pude leer/);
+  // la corrida no dice su repo y no vino --repo: sale 2 diciendo qué falta
+  const sinRepo = alTopeConNota({ marcador: { repoPath: undefined } });
+  const r3 = vueltaDesdeOtraCarpeta(sinRepo, coord, 3, ['--extra-round', '--for-session', SID], { pedir: false });
+  assert.equal(r3.status, 2, r3.stdout + r3.stderr);
+  assert.match(r3.stderr, /no dice su repo.*--repo/);
+  // la corrida no tocó archivos en ese repo y no vino --files: sale 2 diciendo qué falta
+  const sinArchivos = alTopeConNota({ marcador: { filesTouched: [path.join(os.tmpdir(), 'fuera-del-repo.js')] } });
+  const r4 = vueltaDesdeOtraCarpeta(sinArchivos, coord, 3, ['--extra-round', '--for-session', SID], { pedir: false });
+  assert.equal(r4.status, 2, r4.stdout + r4.stderr);
+  assert.match(r4.stderr, /no tocó archivos en .*--files/);
+  for (const l of [lab, sinRepo, sinArchivos]) assert.deepEqual(l.servidas(), [1, 2], 'ninguna vuelta armada');
+  // un marcador legible sin historia: el texto de hoy, también con salida 2
+  fs.writeFileSync(path.join(lab.state, 'active', 'ses-sin.json'), JSON.stringify({ sessionId: 'ses-sin', startedAt: new Date().toISOString() }));
+  const sinHistoria = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--extra-round', '--for-session', 'ses-sin'], { pedir: false });
+  assert.equal(sinHistoria.status, 2, sinHistoria.stdout + sinHistoria.stderr);
+  assert.match(sinHistoria.stderr, /no tiene una ejecución abierta/);
+});
+
+// Regresión del pase adversarial de la 8.272 B: el código de la corrida vive en el repo hermano de la historia, una
+// --story relativa se lee contra el repo de la corrida, y lo que la corrida tocó y ya no está (un probe del pase, un
+// archivo borrado) no tumba la vuelta
+test('Regresion_ExtraRound_ForSession_SiblingCodeRelativeStoryGoneFiles @story-8.272 @ac-17', () => {
+  const sib = tmp('rr-sib-');
+  fs.mkdirSync(path.join(sib, 'src'));
+  fs.writeFileSync(path.join(sib, 'src', 'codigo.js'), '// el código de la corrida\n');
+  execFileSync('git', ['-C', sib, 'init', '-q']);
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')],
+    advisorsYaml: `${TOPE_DOS}evidence:\n  companion_repos:\n    - ${path.basename(sib)}\n` });
+  assert.equal(lab.reloop(3).status, 3);
+  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', '--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
+    '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base', '--repo', lab.repo, '--story', lab.story]).status, 0);
+  const m = JSON.parse(fs.readFileSync(lab.markerFile, 'utf8'));
+  m.filesTouched = [lab.story, path.join(sib, 'src', 'codigo.js'), path.join(lab.repo, 'src', '__probe_x.js'), path.join(lab.repo, 'src', 'borrado.js')];
+  fs.writeFileSync(lab.markerFile, JSON.stringify(m));
+  // la carpeta de la coordinadora tiene su propia story.md: la relativa es la de la corrida
+  const coord = tmp('rr-coord-');
+  fs.writeFileSync(path.join(coord, 'story.md'), '---\nstory: 7.1\n---\n\n## Acceptance Criteria\n- AC1: OTRA\n');
+  const r = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--story', 'story.md', '--extra-round', '--for-session', SID]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const ctx = fs.readFileSync(JSON.parse(r.stdout).context_file, 'utf8');
+  assert.match(ctx, /codigo\.js/, 'el código del repo hermano entra a la vuelta');
+  assert.match(ctx, /AC1: x/);
+  assert.doesNotMatch(ctx, /OTRA/, 'no la historia de la carpeta de la coordinadora');
+  assert.deepEqual(lab.servidas(), [1, 2, 3]);
 });

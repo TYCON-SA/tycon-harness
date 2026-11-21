@@ -27,7 +27,7 @@ mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 
 TERMINO="Zorblax"   # inventado
 QUIEN=(-c user.name="Mantenedor De Prueba" -c user.email="4242+mantenedor@users.noreply.github.com" -c commit.gpgsign=false -c tag.gpgsign=false)
-PIEZAS="scripts/hooks/public-push-guard.js scripts/hooks/pre-push-repo-rules.js scripts/lib/az-pr.js scripts/lib/gh-pr.js scripts/lib/harness-repo.js scripts/lib/legacy-names.js scripts/lib/guard-record.js scripts/publishing/detector.js scripts/setup/harness/tycon-home.js"
+PIEZAS="scripts/hooks/public-push-guard.js scripts/hooks/pre-push-repo-rules.js scripts/lib/az-pr.js scripts/lib/gh-pr.js scripts/lib/harness-repo.js scripts/lib/legacy-names.js scripts/lib/guard-record.js scripts/publishing/detector.js scripts/setup/harness/tycon-home.js scripts/lib/clean-git-env.js"
 
 # El git del laboratorio no hereda el de la máquina (ni su carpeta global de hooks, ni su identidad).
 g() { GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git "$@"; }

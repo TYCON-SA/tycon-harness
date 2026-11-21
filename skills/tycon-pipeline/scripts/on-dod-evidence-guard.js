@@ -22,6 +22,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { homeCommand } = require('./lib/home-command.js');
 
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta del estado, de una sola pieza
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
@@ -93,11 +94,11 @@ function handle(event, { casa } = {}) {
       'el commit. Los escriben los SCRIPTS que corren los tests de verdad:',
       '',
       '  - Suite Playwright:  gate E2E del proyecto (.tycon/advisors.yaml → e2e.gate); resolver: pipeline.js e2e-config --repo <repo> --changed <archivos-de-la-story...> → correr `bash <gate> <app> <storyId> <evidence-dir>` UNA VEZ POR APP (<evidence-dir> = `pipeline.js evidence-dir --story <spec> --repo <repo> --plain`: el repo de la STORY) de frontend_dirs_selected (en un monorepo puede ser más de una)',
-      '  - Smoke backend:     node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js --story <id> --scenario <s.json> --evidence-dir <dir>',
+      `  - Smoke backend:     ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js')} --story <id> --scenario <s.json> --evidence-dir <dir>`,
       '',
       'Escribirla a mano (caso excepcional, p.ej. evidencia vacua de E2E diferidos a un pipeline pending)',
-      'lo decide la persona, no el agente: la firma en la ventana de permiso, para este archivo, con',
-      `  ${firma.comando}`,
+      'lo decide la persona, no el agente: la firma para este archivo,',
+      ...firma.renglones.map((l) => `  · ${l}`),
       'y con su «Sí» se repite esta escritura. La firma vale una vez y queda en bypass.log.',
       `(No hay firma: ${firma.motivo}.)`,
     ].join('\n') + '\n',
@@ -106,14 +107,19 @@ function handle(event, { casa } = {}) {
 
 /**
  * La firma de la ventana sobre este archivo: `{ ok: true, constancia }` la consume; `{ ok: false, motivo }` si no la hay.
- * Siempre con `comando`, el que la pide. `casa`: la de las pruebas.
+ * Siempre con `renglones`: las dos formas de pedirla, cada una dicha para quién es. `casa`: la de las pruebas.
  */
 function firmaDeLaVentana(event, filePath, casa) {
+  let ow = null;
+  try { ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')); } catch (e) {
+    return { ok: false, motivo: `no pude consultar la ventana (${e.message})`,
+      renglones: [`la firma de archivo ALLOW_DOD_EVIDENCE_WRITE sobre ${filePath}, en la ventana de permiso (no pude armar el comando: ${e.message})`] };
+  }
+  const renglones = ow.formasDeFirmar('ALLOW_DOD_EVIDENCE_WRITE', filePath, event.session_id).renglones;
   try {
-    const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-    return { ...ow.consumirArchivo({ firma: 'ALLOW_DOD_EVIDENCE_WRITE', sesion: event.session_id, archivo: filePath, cwd: event.cwd, casa }), comando: ow.comoSeFirma('ALLOW_DOD_EVIDENCE_WRITE', filePath) };
+    return { ...ow.consumirArchivo({ firma: 'ALLOW_DOD_EVIDENCE_WRITE', sesion: event.session_id, archivo: filePath, cwd: event.cwd, casa }), renglones };
   } catch (e) {
-    return { ok: false, motivo: `no pude consultar la ventana (${e.message})`, comando: `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE ${filePath}` };
+    return { ok: false, motivo: `no pude consultar la ventana (${e.message})`, renglones };
   }
 }
 

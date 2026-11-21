@@ -37,6 +37,7 @@ const os = require('os');
 const path = require('path');
 
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+const { homeCommand } = require('./lib/home-command.js');
 // Multi-sesión sin race: marker per-session en active/<sessionId>.json.
 // on-edit.js de dos sesiones concurrentes escribe archivos distintos → sin race.
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
@@ -94,6 +95,59 @@ function writeMarker(sessionId, marker) {
 
 
 /**
+ * ¿Es una sonda del pase adversarial? La escribe un subagente (el evento trae `agent_id`) en su laboratorio, fuera de
+ * los repos que el carril ya mide, o en la carpeta donde queda la prueba de un hallazgo
+ * (`<raíz del repo>/.advisors/pipeline-runs/<corrida>/step-05b-probes/`). No es
+ * trabajo del carril: anotarla sumaba repos y archivos que cambiaban la huella de las constancias de revisores y pase.
+ * Lo demás que escribe un subagente se anota como siempre, y también cuando el carril todavía no mide ningún repo o
+ * no se puede saber: ante la duda, se anota.
+ */
+function esSondaDeSubagente(event, filePath, sessionId, stateDir = STATE_DIR) {
+  if (!event || !event.agent_id) return false;
+  // un `..` después de un enlace lleva a otra carpeta que la que se ve al normalizar: no se puede saber dónde cae
+  if (String(filePath).split(/[\\/]/).includes('..')) return false;
+  try {
+    const base = require('./lib/adhoc-base.js');
+    // por la consola el archivo, y a veces sus carpetas, todavía no existen: se resuelve la carpeta más cercana que sí
+    // existe y se le cuelga el resto, así un enlace en el camino (como /tmp en mac) no cambia la ruta
+    const real = (p) => {
+      let cerca = path.resolve(p);
+      const resto = [];
+      for (;;) {
+        try { return path.join(fs.realpathSync(cerca), ...resto); } catch { /* sube una carpeta */ }
+        const arriba = path.dirname(cerca);
+        if (arriba === cerca) return path.resolve(p);
+        resto.unshift(path.basename(cerca));
+        cerca = arriba;
+      }
+    };
+    // la ruta real, sin `..` ni enlaces: lo que se mide es dónde quedó el archivo, no cómo se lo nombró
+    const archivo = real(filePath);
+    // git que no contesta no prueba que el archivo esté fuera: se anota
+    const donde = base.ubicar(archivo);
+    if (donde.raiz) {
+      const partes = path.relative(real(donde.raiz), archivo).split(path.sep);
+      if (partes.length > 4 && partes[0] === '.advisors' && partes[1] === 'pipeline-runs' && partes[3] === 'step-05b-probes') return true;
+    }
+    const adhoc = require('./lib/story-gate-io.js').readAdhoc(stateDir, sessionId);
+    if (!adhoc) return false;
+    // una ruta del carril cuyo repo git no ubicó deja la lista incompleta: no prueba que el archivo esté fuera
+    const repos = new Set(Object.keys(adhoc.bases || {}).map(real));
+    for (const f of [...(adhoc.rutas || []), ...(adhoc.files || [])]) {
+      const u = base.ubicar(f);
+      if (u.falla) return false;
+      if (u.raiz) repos.add(real(u.raiz));
+    }
+    if (!repos.size) return false;
+    if (donde.fuera) return true;
+    if (!donde.raiz) return false;
+    return !repos.has(real(donde.raiz));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Handler dispatchable. Recibe el evento RAW y devuelve:
  *   null               → nada (exit 0)
  *   { reminder: text } → advisory (el caller envuelve en <system-reminder>)
@@ -139,23 +193,37 @@ function handle(event) {
     // Sin estos eventos, todo marker llega sin fileEvents, smart-reloop degrada a names-only, pierde los
     // fixes sobre archivos existentes, y el orquestador cae al set COMPLETO de advisors en cada re-loop.
     if (!Array.isArray(marker.fileEvents)) marker.fileEvents = []; // marker corrupto → normalizar (no romper el "exit 0 siempre")
-    // `code`: si es código o prueba. Lo leen `next` y el cartel para decidir lo mismo si una edición pide otra vuelta de
-    // revisores (el cartel corre sin el clasificador del arnés)
+    // `code`: si la edición pide otra vuelta de revisores (lib/reloop-code.js). Lo leen `next` y el cartel para decidir
+    // lo mismo (el cartel corre sin el clasificador del arnés). Si la regla falla, pide: ante la duda, se revisa
     let code;
-    try { const { isImplPath, isTestPath } = require('./lib/atdd-order.js'); code = isImplPath(filePath) || isTestPath(filePath); } catch (_) { code = undefined; }
-    marker.fileEvents.push({ path: filePath, ts: new Date().toISOString(), ...(typeof code === 'boolean' ? { code } : {}) });
+    try { code = require('./lib/reloop-code.js').pideOtraVuelta(filePath, { storyPath: marker.storyPath, repoPath: marker.repoPath }); } catch (_) { code = true; }
+    marker.fileEvents.push({ path: filePath, ts: new Date().toISOString(), code });
     if (marker.fileEvents.length > 500) {
       marker.fileEvents = marker.fileEvents.slice(-500);
+    }
+    // `otraVuelta`: la decisión de `next` sobre la otra vuelta, escrita para el cartel (lib/steps.js `otraVueltaDe`)
+    try {
+      const v = require('./lib/steps.js').otraVueltaDe(marker);
+      if (v === undefined) delete marker.otraVuelta;
+      else marker.otraVuelta = v;
+    } catch (e) {
+      // sin el campo, el cartel usa su regla de antes; `next` y el último paso deciden igual. El campo viejo se borra (el
+      // cartel leería una decisión vieja) y queda el rastro
+      delete marker.otraVuelta;
+      try { fs.appendFileSync(path.join(STATE_DIR, 'hook-errors.log'), `[${new Date().toISOString()}] on-edit otraVuelta: ${(e && e.stack) || e}\n\n`, 'utf8'); } catch { /* noop */ }
     }
     marker.lastTouch = new Date().toISOString();
     try {
       writeMarker(sessionId, marker);
-    } catch {
-      // No bloquear — el marker es advisory, no critical.
+    } catch (e) {
+      // No bloquear, pero tampoco perder el evento sin rastro: el freno de código sin revisar no lo va a ver
+      try { fs.appendFileSync(path.join(STATE_DIR, 'hook-errors.log'), `[${new Date().toISOString()}] on-edit FAILED OPEN: no pude anotar la edición de ${filePath} en el marcador de ${sessionId}: ${(e && e.stack) || e}\n\n`, 'utf8'); } catch { /* noop */ }
     }
     return null;
   }
 
+  // La sonda de un agente del pase no es del carril: no se anota ni suma al cupo
+  if (esSondaDeSubagente(event, filePath, sessionId)) return null;
   // Sin marker pero con carril AD-HOC declarado: registrar el archivo de implementación bajo el ad-hoc.
   // El cupo del portón de carril se cuenta acá, en PostToolUse, sobre ediciones que EFECTIVAMENTE
   // ocurrieron. No en el PreToolUse, donde un Edit fallido o denegado por otro handler también contaría.
@@ -163,10 +231,21 @@ function handle(event) {
     const { isImplPath } = require('./lib/atdd-order.js');
     const sg = require('./lib/story-gate.js');
     const io = require('./lib/story-gate-io.js');
-    if (isImplPath(filePath) && sg.isCodeFile(filePath) && !io.isHarnessRepo(filePath)) {
+    if (isImplPath(filePath) && sg.isCodeFile(filePath)) {
       io.recordAdhocFile(STATE_DIR, sessionId, filePath);
     }
   } catch { /* best-effort */ }
+  // Cada ruta que escribe el carril, en cualquier repo: su base al primer toque y la marca de riesgo alto, que piden
+  // los revisores y el pase antes de guardar (lib/save-brake.js).
+  let avisosDelCarril = [];
+  try {
+    const r = require('./lib/story-gate-io.js').anotarRutaDelCarril(STATE_DIR, sessionId, filePath);
+    if (r) avisosDelCarril = r.avisos;
+  } catch (e) {
+    // sin anotar, el carril puede quedar sin su marca de riesgo alto: se dice y queda en gates.log
+    avisosDelCarril = [`camino rápido: no pude anotar ${filePath} en el carril (${(e && e.message) || e}): su riesgo no se midió`];
+    try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { name: 'adhoc-base', status: 'unknown', file: filePath, reason: avisosDelCarril[0] }); } catch { /* el aviso igual sale */ }
+  }
 
   // Caso 2: sin marker — chequear si el archivo está referenciado por una story.
   const story = findStoryReferencing(filePath);
@@ -184,7 +263,7 @@ function handle(event) {
         `   • Escribir los tests ANTES del código (pruebas primero, en «Implementar y correr las pruebas»). El gate del commit avisa igual,\n` +
         `     pero recién cuando ya está escrito al revés.\n` +
         `   • Generar la guía de prueba manual derivada de los ACs:\n` +
-        `     node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js --story <story.md>\n` +
+        `     ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js')} --story <story.md>\n` +
         `     (NO la escribas a mano — sale de los ACs, no de la memoria.)\n` +
         `   • La matriz de DoD por AC (qué se verificó corriendo y qué no).\n\n` +
         `Acción recomendada — arrancar el pipeline de verdad (setea el marker y recorre los steps en orden):\n` +
@@ -196,10 +275,10 @@ function handle(event) {
     };
   }
 
-  return null;
+  return avisosDelCarril.length ? { reminder: avisosDelCarril.join('\n') } : null;
 }
 
-module.exports = { handle };
+module.exports = { handle, esSondaDeSubagente };
 
 // ── CLI shim (standalone) ──
 if (require.main === module) {

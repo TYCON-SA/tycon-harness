@@ -24,18 +24,19 @@ git checkout <current_branch_at_start>
 Si Step 0 hizo `had_stash: true`:
 
 ```bash
-git stash list | head -1
+git stash list | grep -F "[sesión <id corto>] pre-merge stash"
 ```
 
-Si hay un stash con el message "pre-merge stash" → preguntar al usuario:
+Si hay una entrada con la marca `[sesión <id corto>] pre-merge stash` (la de Step 0) → preguntar al usuario:
 ```
 Tenés un stash de pre-merge:
-<output del git stash list -1>
+<la línea de esa entrada>
 
-¿Restaurarlo ahora con `git stash pop`? (a) sí (b) no, lo manejo manual
+¿Restaurarlo ahora? (a) sí (b) no, lo manejo manual
 ```
 
-Si elige (a) → ejecutar `git stash pop`. Si pop falla por conflict → avisar y dejarlo así (el usuario maneja).
+Si elige (a) → `git stash pop <su stash@{n}>`, el de esa línea: no `stash@{0}`, que puede ser de otra sesión que guardó
+algo después. Si pop falla por conflict → avisar y dejarlo así (el usuario maneja).
 
 ### 10.3 — Generar summary final
 
@@ -64,7 +65,7 @@ Volviste a `<current_branch_at_start>`.
 ```
 
 La línea de las suites completas repite el `suitesReason` del último plan (el del Step 0.7, o el de
-8/9b/9c si bajó a `machine`): sin ella nadie sabe si las suites se corrieron, ni dónde.
+8/9b si bajó a `machine`): sin ella nadie sabe si las suites se corrieron, ni dónde.
 Si el plan trajo `legacyNote`, va como una línea de aviso al final.
 
 Si hubo race retry en Step 9, agregar nota:

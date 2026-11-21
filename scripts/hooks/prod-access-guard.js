@@ -85,10 +85,9 @@ const CRUDO = new RegExp('(' + [
   // es una variable de shell cualquiera y no nombra ninguna base (caso T4h de la suite).
   '(?<![A-Za-z0-9_])Server\\s*=', 'Data\\s+Source\\s*=', '\\bAddr(?:ess)?\\s*=', 'Network\\s+Address\\s*=',
   '\\baz\\s+sql\\b', 'Microsoft\\.Sql\\/servers', '(?:jdbc:)?(?:sqlserver|mssql|tds):\\/\\/',
-  // los dos nombres del catálogo, del índice y de la memoria (story 8.9, tanda P: escritura doble hasta que todas las
-  // máquinas autorizadas reinstalen)
+  // el catálogo con sus dos nombres (los productos lo migran aparte); el índice y la memoria, sólo con el nuevo
   'tycon-prod-sql', '\\.tycon\\/production\\.json', 'production-(?:index|memory)\\.json',
-  '\\.tycon\\/produccion\\.json', 'produccion-indice\\.json', 'produccion-memoria\\.json',
+  '\\.tycon\\/produccion\\.json',
   'security\\s+(?:-i\\b|find-|dump-keychain|export|[a-z-]*generic-password)',
 ].join('|') + ')', 'i');
 
@@ -108,11 +107,11 @@ function nombraBorradoAzure(texto) {
     if (REMOVE_AZ_RE.test(tramo) || INVOKE_REST_RE.test(tramo)) return true;
     const pal = tramo.split(/(?:\s|\\t)+/).map((x) => x.replace(/^[\\"'`({$]+|[\\"'`)}]+$/g, '').toLowerCase()).filter(Boolean);
     for (let k = 0; k < pal.length; k++) {
-      if (/(?:^|[\\/:])azd(?:\.exe)?$/.test(pal[k]) && pal[k + 1] === 'down') return true;
+      if (/(?:^|[\\/:"'`({])azd(?:\.exe)?$/.test(pal[k]) && pal[k + 1] === 'down') return true;
       if (!esPalabraAz(pal[k])) continue;
       const resto = pal.slice(k + 1);
       for (const g of ['group', 'lock', 'resource']) { const x = resto.indexOf(g); if (x >= 0 && resto.indexOf('delete', x + 1) > x) return true; }
-      if (resto.includes('rest') && /(?:^|\s)(?:--m[a-z]*|-m)(?:[\s=]+)?\\?["']?delete(?![A-Za-z0-9_-])/i.test(tramo)) return true;
+      if (resto.includes('rest') && /(?:^|\s|\\t)(?:--m[a-z]*|-m)(?:\s|\\t|=)*[\\"'$]*delete(?![A-Za-z0-9_-])/i.test(tramo)) return true;
     }
   }
   return false;
@@ -195,12 +194,24 @@ function mensaje(motivo, detalle = []) {
     `Motivo: ${motivo}`,
     ...(detalle.length ? [''].concat(detalle.map((d) => `   ${d}`)) : []),
     '',
-    '   Para consultar una base de producción hay UNA sola forma, y abre un cuadro de aprobación:',
-    "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-filas N]",
-    '   Detalle y cómo declarar un servidor: guides/produccion-con-permiso.md',
+    ...CAMINO_DE_LA_PUERTA,
     '',
   ].join('\n');
 }
+
+// Lo que dice todo mensaje que frena algo de producción: la puerta consulta Y cambia (con el cuadro), el firewall se
+// abre por la puerta, y el camino de emergencia está escrito. Sin esto, un incidente con producción caída se demoró:
+// el asistente vio sólo «select …», no encontró cómo abrir el firewall y mandó a la persona al portal.
+const CAMINO_DE_LA_PUERTA = [
+  '   Para consultar O CAMBIAR una base de producción hay UNA sola forma, y cada sentencia abre un cuadro de aprobación:',
+  "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]   (un select, o un cambio como alter database …)",
+  '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), se abre por la puerta, con su',
+  '   cuadro, y la regla se cierra sola al terminar la sesión: /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
+  '   Un cambio de administración de Azure (alertas, tamaño o plan) va por la puerta, con el mismo cuadro:',
+  '     /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>   (las lecturas, list y show, sin cuadro)',
+  '   Todas las formas, sin tocar producción: /opt/tycon/bin/tycon-prod-sql --help',
+  '   Producción caída: guides/produccion-con-permiso.md § «Emergencia: producción caída» (firewall, diagnóstico, cambio).',
+];
 
 // El mensaje de un borrado en Azure: la puerta no borra nada, así que no se la nombra ni se sugiere un rodeo.
 function mensajeSinPuerta(motivo, detalle = []) {
@@ -231,7 +242,8 @@ function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
   const regla = reglaFija || reglaDelMotivo(motivo);
   try { registrar(ctx, { bloqueo: true, motivo }); } catch { /* el registro es ayuda, no evidencia */ }
   // la línea canónica que lee la cuenta del tablero (story 2.6): sin host, sin sentencia
-  recordDecision({ freno: 'prod-access-guard', regla, veredicto: 'bloqueo', cmd: ctx && ctx.cmd });
+  // `causa`: el motivo de un bloqueo de `produccion`, que frena por causas distintas (lista de guard-record.js)
+  recordDecision({ freno: 'prod-access-guard', regla, veredicto: 'bloqueo', cmd: ctx && ctx.cmd, motivo: (ctx && ctx.causa) || undefined });
   // lo que se frena por NO PODER MIRAR (snapshot, índice, reloj) va también a hook-errors.log, que es lo
   // que el aviso de arranque cuenta — si no, esas fallas no las veía nadie (revisores)
   if (regla === 'no-pude-mirar' && /no pude|no encontré|sin tiempo|no parece/.test(motivo)) {
@@ -258,21 +270,7 @@ function registrar(ctx, extra) {
     sha256: ctx && ctx.cmd ? crypto.createHash('sha256').update(ctx.cmd).digest('hex') : null,
     ...extra,
   };
-  // El registro de antes del renombre a inglés (story 8.9, tanda P) pasa al nuevo una vez, sin tocar el viejo. La copia va
-  // a un temporal y entra con `link`, que no pisa: otro freno en paralelo nunca ve un registro nuevo a medio copiar. Si
-  // la historia no se puede pasar, se sigue anotando en el viejo: un registro nuevo sin su historia la perdería (AC 18).
-  const nuevo = path.join(dir, 'production.log');
-  const viejo = path.join(dir, 'produccion.log');
-  let destino = nuevo;
-  if (!fs.existsSync(nuevo) && fs.existsSync(viejo)) {
-    const tmp = `${nuevo}.tmp-${process.pid}`;
-    try {
-      fs.copyFileSync(viejo, tmp);
-      try { fs.linkSync(tmp, nuevo); } catch (e) { if (!e || e.code !== 'EEXIST') throw e; }   // EEXIST: otro proceso ya lo pasó
-    } catch { destino = viejo; }
-    try { fs.unlinkSync(tmp); } catch { /* no se llegó a crear */ }
-  }
-  fs.appendFileSync(destino, JSON.stringify(linea) + '\n', 'utf8');
+  fs.appendFileSync(path.join(dir, 'production.log'), JSON.stringify(linea) + '\n', 'utf8');
 }
 
 // ── la puerta ─────────────────────────────────────────────────────────────────────────────────
@@ -299,43 +297,140 @@ const HOST_CANONICO = '[A-Za-z0-9][A-Za-z0-9._:,\\-]*';
 // expresar por ninguna vía, y una puerta que no sirve para el trabajo real es una puerta que se rodea.
 const SENTENCIA = `(?:'(?:[^']|'\\\\'')*'|"[^"$\`\\\\]*")`;
 const RUTA_PUERTA = PUERTA.replace(/\//g, '\\/');
-const CANONICA = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) ${SENTENCIA}(?: --max-filas \\d+)?$`);
-const CANONICA_RECLAS = new RegExp(`^${RUTA_PUERTA} --reclasificar (${HOST_CANONICO})$`);
-const CANONICA_VERIF = new RegExp(`^${RUTA_PUERTA} --verificar$`);
-// `--cargar-clave <host>`: deja en el Escritorio el archivo con el que la PERSONA carga usuario y
+const CANONICA = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) ${SENTENCIA}(?: --max-rows \\d+)?$`);
+const CANONICA_RECLAS = new RegExp(`^${RUTA_PUERTA} --reclassify (${HOST_CANONICO})$`);
+const CANONICA_VERIF = new RegExp(`^${RUTA_PUERTA} --verify$`);
+// `--load-key <host>`: deja en el Escritorio el archivo con el que la PERSONA carga usuario y
 // contraseña. No lee nada del Llavero ni consulta ninguna base; el disparador antes era «corré una
 // consulta que falle», que es un rodeo (2026-09-15).
-const CANONICA_CARGA = new RegExp(`^${RUTA_PUERTA} --cargar-clave (${HOST_CANONICO})$`);
+const CANONICA_CARGA = new RegExp(`^${RUTA_PUERTA} --load-key (${HOST_CANONICO})$`);
 // `--open-firewall <host>` y `--close-firewall <host>`: la regla de firewall de ESTA máquina, con el mismo cuadro. Sólo
 // el host: `--session <id>` lo pasa el hook de fin de sesión, que no pasa por acá, y cualquier otro argumento (un
 // rango, una IP, un nombre de regla) no es canónico.
 const CANONICA_FIREWALL = new RegExp(`^${RUTA_PUERTA} --(?:open|close)-firewall (${HOST_CANONICO})$`);
 // `--locks`, sola: dice qué servidores de producción tienen el candado de Azure (sólo lee)
 const CANONICA_CANDADOS = new RegExp(`^${RUTA_PUERTA} --locks$`);
+// `--azure <az sin «az»>`: un cambio de administración de un recurso de producción en Azure (alertas, tamaño o plan), con
+// el cuadro; las lecturas, sin cuadro. Cada argumento, una palabra sin nada que el shell expanda o un texto entre
+// comillas simples (sin una comilla adentro). La lista de lo que tiene camino es la misma que aplica la puerta, que es la
+// que manda: el freno la repite para que el mensaje diga qué hacer con lo que no lo tiene.
+const PALABRA_AZ = "(?:[A-Za-z0-9._:/=,+%-]+|'[^']*')";
+const CANONICA_AZURE = new RegExp(`^${RUTA_PUERTA} --azure((?: ${PALABRA_AZ})+)$`);
+const AZURE_CAMBIOS = new Set(['monitor metrics alert create', 'monitor metrics alert update', 'monitor metrics alert delete',
+  'sql db update', 'sql elastic-pool update']);
+const AZURE_LECTURAS = new Set(['monitor metrics alert show', 'monitor metrics alert list', 'monitor metrics list',
+  'monitor metrics list-definitions', 'sql db show', 'sql db list', 'sql db list-usages', 'sql db list-editions',
+  'sql server show', 'sql server list', 'sql elastic-pool show', 'sql elastic-pool list']);
+/** La operación de `az` (las palabras antes de la primera opción), o null si no se puede leer. */
+function operacionAz(palabras) {
+  const op = [];
+  for (const w of palabras) { if (w.startsWith('-') || w.startsWith("'")) break; op.push(w.toLowerCase()); }
+  return op.length ? op.join(' ') : null;
+}
+/**
+ * Por qué `--azure` no acepta estas palabras, o null: `{ motivo, detalle }`. Lo usan el corte (paso 3) y el mensaje que
+ * arma el comando por la puerta (paso 4), para que el freno nunca sugiera algo que después frena.
+ * 🔴 `az` lee un archivo cuando un argumento empieza con «@» Y cuando lo que sigue a su primer «=» empieza con «@»
+ * (`--name=@ruta`, `--set clave=@ruta`; con «@-», la entrada estándar). Mirar sólo el principio dejaba que una lectura
+ * sin cuadro trajera a la conversación cualquier archivo, también la credencial de Azure (pase adversarial del pedido).
+ */
+function rechazoAzure(palabras, op) {
+  const crudas = palabras.map((w) => w.replace(/^'|'$/g, ''));
+  if (crudas.some((w) => /(?:^|=)@/.test(w))) {
+    return { motivo: 'un argumento de --azure trae «@» al principio o después de un «=»: az leería el contenido de un archivo, y ni el cuadro ni la persona lo ven.',
+      detalle: ['Escribí el valor en línea, entre comillas simples.'] };
+  }
+  if (crudas.some((w) => w === '--debug' || w === '--verbose')) {
+    return { motivo: '--debug y --verbose no pasan por --azure: az imprimiría los pedidos con sus encabezados, y la credencial de Azure llegaría a la conversación.',
+      detalle: ['Corré el mismo comando sin esa opción.'] };
+  }
+  if (op && /^sql server firewall-rule\b/.test(op)) {
+    return { motivo: 'la regla de firewall no va por --azure.', detalle: [
+      'La IP de esta máquina se habilita por la puerta, con su cuadro, y la regla se cierra sola al terminar la sesión:',
+      '  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
+      'Otra regla (otra IP, un rango) no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal.',
+    ] };
+  }
+  if (!op || (!AZURE_CAMBIOS.has(op) && !AZURE_LECTURAS.has(op))) {
+    return { motivo: `«${op || 'esa operación'}» no tiene camino aprobado por la puerta.`, detalle: [
+      'Por --azure pasan los cambios de alertas (monitor metrics alert create|update|delete) y de tamaño o plan',
+      '(sql db update, sql elastic-pool update), y sus lecturas (list y show).',
+      'Para esta operación, dejale el comando a la persona para que lo corra en su terminal, y decile qué hace.',
+    ] };
+  }
+  return null;
+}
+// `--help` (o `-h`), sola: imprime las formas y el camino de emergencia; no lee la clave, no consulta y no llama a `az`
+const CANONICA_AYUDA = new RegExp(`^${RUTA_PUERTA} (?:--help|-h)$`);
 // `--delete-group <grupo>`, sólo el nombre: la puerta comprueba que el grupo no es de producción antes de pedir el borrado.
 // El corte de `az group delete` directo (paso 3b) no cambia.
 // Un nombre con paréntesis (Azure los permite) va entre comillas simples: sin ellas el shell los lee como sintaxis.
 const CANONICA_BORRAR_GRUPO = new RegExp(`^${RUTA_PUERTA} --delete-group (?:[A-Za-z0-9._][A-Za-z0-9._-]{0,89}|'[A-Za-z0-9._()][A-Za-z0-9._()-]{0,89}')$`);
-// `<host> --file <ruta> --sha256 <sha256>`: la consulta desde un archivo. Una consulta larga en una línea, con cada
-// comilla escapada, no se puede leer en el cuadro; desde un archivo, el freno la muestra entera antes del cuadro y la
-// huella ata lo que la persona vio a lo que corre la puerta. La ruta sin comillas, espacios ni nada que el shell expanda.
-// sin «-» al principio: en la puerta, una ruta así se tomaría como una opción del intérprete
+// `<host> --file <ruta>`: la consulta desde un archivo no pasa, porque el cuadro de aprobación muestra el comando y no el
+// contenido del archivo. Cuando el archivo se puede pasar a una consulta en línea, el freno da ese comando listo. La ruta
+// sin comillas, espacios ni nada que el shell expanda, y sin «-» al principio.
 const RUTA_ARCHIVO = '[A-Za-z0-9._/~@+][A-Za-z0-9._/~@+-]*';
-// lo que haría ver en pantalla otra cosa que los bytes que corren: controles (salvo salto de línea y tabulador) y
-// caracteres invisibles o de dirección. Los mismos que rechaza la puerta.
-const CONTROL_ARCHIVO = /[\x00-\x08\x0b-\x1f\x7f]/;
-const INVISIBLE_ARCHIVO = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u2028\u2029]/;
-const CANONICA_ARCHIVO = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) --file (${RUTA_ARCHIVO}) --sha256 ([0-9a-f]{64})(?: --max-filas \\d+)?$`);
-// la misma forma con la huella ausente o mal escrita: no es canónica, pero merece un mensaje con la huella actual
-const FORMA_ARCHIVO = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) --file (${RUTA_ARCHIVO})(?: --sha256 (\\S*))?(?: --max-filas \\d+)?$`);
+const FORMA_ARCHIVO = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) --file (${RUTA_ARCHIVO})(?: --sha256 (\\S*))?(?: --max-rows (\\d+))?$`);
 const TOPE_ARCHIVO = 64 * 1024;
 
+// lo que haría ver en el cuadro otra cosa que los bytes que corren: controles C0 (salvo salto de línea y tabulador), DEL
+// y C1; invisibles, rellenos y marcas de dirección; selectores de variación y caracteres de etiqueta. La lista es cerrada
+// a propósito: lo que no está pasa, y lo cuenta el tope de renglones. La misma lista en la puerta.
+const CONTROL_QUE_ENGANA = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/u;
+const INVISIBLE_QUE_ENGANA = /[\u{ad}\u{34f}\u{61c}\u{115f}\u{1160}\u{17b4}\u{17b5}\u{180b}-\u{180e}\u{200b}-\u{200f}\u{202a}-\u{202e}\u{2028}\u{2029}\u{2060}-\u{206f}\u{2800}\u{3164}\u{fe00}-\u{fe0f}\u{feff}\u{ffa0}\u{fff9}-\u{fffc}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u;
+/** El motivo por el que el texto engañaría en el cuadro, o null. Un carácter de reemplazo es lo que llega de bytes que
+ * no son UTF-8: la entrada del freno ya viene decodificada. */
+function caracterQueEngana(texto) {
+  if (!texto.isWellFormed() || texto.includes('\u{fffd}')) return 'no es texto UTF-8 válido';
+  if (CONTROL_QUE_ENGANA.test(texto)) return 'tiene caracteres de control (como un retorno de carro o una secuencia de la terminal): en el cuadro se vería otra cosa que lo que corre';
+  if (INVISIBLE_QUE_ENGANA.test(texto)) return 'tiene caracteres invisibles o de dirección: en el cuadro se leería otra cosa que lo que corre';
+  return null;
+}
+
+// el cuadro corta el principio sin aviso: el tope es el de la puerta (tycon-prod-sql), 20 renglones de 60 columnas y
+// hasta 1200 caracteres
+const TOPE_RENGLONES = 20;
+const COLUMNAS_CUADRO = 60;
+const TOPE_CARACTERES = 1200;
+// Todo lo que está desde U+1100 (donde empiezan los anchos) cuenta 2, y un emoji también: así no hace falta la tabla
+// entera de anchos de Unicode, y lo que en verdad es angosto se cuenta de más, nunca de menos.
+const ANCHO_DOBLE = /[\u{1100}-\u{10ffff}]|\p{Extended_Pictographic}/u;
+/** Cuántos renglones de pantalla ocupa el texto: un tabulador avanza a la siguiente columna múltiplo de 8, un carácter
+ * ancho o un emoji cuenta 2 y todo lo demás 1 (un combinante también: el conteo nunca queda por debajo de lo que se ve).
+ * Lo que no entra en lo que queda del renglón baja entero al siguiente, como lo corta la pantalla. */
+function renglonesDePantalla(texto) {
+  let total = 0;
+  for (const renglon of texto.split('\n')) {
+    let filas = 1; let col = 0;
+    for (const c of renglon) {
+      const ancho = c === '\t' ? 8 - (col % 8) : ANCHO_DOBLE.test(c) ? 2 : 1;
+      if (col + ancho > COLUMNAS_CUADRO) { filas++; col = 0; }
+      col += c === '\t' ? 8 - (col % 8) : ancho;
+    }
+    total += filas;
+  }
+  return total;
+}
+
+/** Las reglas de la sentencia de la puerta (`validar_sentencia`), renglón por renglón como su grep: el motivo por el que
+ * la rechazaría, o null. */
+function sentenciaQueLaPuertaRechaza(texto) {
+  const renglones = texto.split('\n');
+  if (!texto.trim()) return 'la consulta está vacía';
+  if (texto.startsWith('-')) return 'la consulta empieza con «-»: la puerta la tomaría como una opción';
+  if (renglones.some((r) => /(?:^|\s)go(?:\s*$|\s*;)/i.test(r))) return 'la consulta tiene un separador de lote (GO)';
+  if (renglones.some((r) => /^\s*(?::|!!)/.test(r))) return 'la consulta tiene un renglón que el cliente toma como un comando del cliente («:» o «!!»)';
+  return null;
+}
+
 /**
- * El archivo de una consulta: común (no un enlace, una carpeta ni un dispositivo), de 64 KB o menos, texto UTF-8 y no
- * un archivo protegido por el freno. Devuelve `{ sha, texto }` o `{ error }`.
+ * El archivo de una consulta: común (no un enlace, una carpeta ni un dispositivo), de 64 KB o menos, texto UTF-8, no
+ * protegido por el freno, terminado en `.sql` y fuera de una carpeta oculta. Lo que el freno lee le llega al asistente en
+ * el mensaje, así que no lee otra cosa que una consulta: una credencial o un `.env` no se vuelven texto de la
+ * conversación. Devuelve `{ texto }` o `{ error }`.
  */
 function leerArchivoDeConsulta(ruta) {
-  const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
+  const fs = require('fs'); const path = require('path');
   const casa = process.env.HOME || require('os').homedir();
   const abs = ruta.startsWith('~/') ? path.join(casa, ruta.slice(2)) : path.resolve(carpetaDelComando || process.cwd(), ruta);
   let st;
@@ -344,16 +439,20 @@ function leerArchivoDeConsulta(ruta) {
   if (!st.isFile()) return { error: `${ruta} no es un archivo común` };
   if (st.size > TOPE_ARCHIVO) return { error: `${ruta} mide ${st.size} bytes: el tope es ${TOPE_ARCHIVO} (más que eso no se lee entero en pantalla)` };
   const base = path.basename(abs);
-  if (NOMBRES_PROTEGIDOS.includes(base) || /^(?:production|produccion)\.log$/.test(base)) {
+  if (NOMBRES_PROTEGIDOS.includes(base) || base === 'production.log') {
     return { error: `${ruta} es un archivo protegido por el freno, no una consulta` };
+  }
+  if (!/\.sql$/i.test(base)) return { error: `${ruta} no termina en .sql: el freno sólo lee consultas` };
+  if (abs.split(path.sep).some((p) => p.startsWith('.') && p !== '.' && p !== '..')) {
+    return { error: `${ruta} está dentro de una carpeta oculta: el freno sólo lee consultas, no lo que vive ahí` };
   }
   let buf;
   try { buf = fs.readFileSync(abs); } catch (e) { return { error: `no pude leer ${ruta} (${e.code || e.message})` }; }
   let texto;
   try { texto = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (_) { return { error: `${ruta} no es texto UTF-8` }; }
-  if (CONTROL_ARCHIVO.test(texto)) return { error: `${ruta} tiene caracteres de control (como un retorno de carro o una secuencia de la terminal): en pantalla se vería otra cosa que lo que corre` };
-  if (INVISIBLE_ARCHIVO.test(texto)) return { error: `${ruta} tiene caracteres invisibles o de dirección: en pantalla se leería otra cosa que lo que corre` };
-  return { sha: crypto.createHash('sha256').update(buf).digest('hex'), texto };
+  const engano = caracterQueEngana(texto);
+  if (engano) return { error: `${ruta} ${engano}` };
+  return { texto };
 }
 
 function decidir(entrada) {
@@ -392,7 +491,7 @@ function decidir(entrada) {
   // contraseña de producción del Llavero sin que nada frenara (revisores, 2026-09-15).
   const escondidos = textosEscondidos(cmd, partes, tokens, PREFIJOS, vars, expandir);
   const textos = [{ texto: cmd, partes, shell: true },
-    ...escondidos.map((t) => ({ texto: t.texto, partes: segmentos(t.texto), shell: t.shell, contenido: t.contenido, ps: t.ps, codigo: t.codigo }))];
+    ...escondidos.map((t) => ({ texto: t.texto, partes: segmentos(t.texto), shell: t.shell, contenido: t.contenido, ps: t.ps, codigo: t.codigo, osascript: t.osascript }))];
   // lo que se juzga como algo que corre: el contenido de un archivo que el comando no ejecuta queda afuera
   const ejecutados = textos.filter((x) => !x.contenido);
 
@@ -407,8 +506,60 @@ function decidir(entrada) {
       if (veredicto) frenar(veredicto, [
         'La contraseña de producción vive en el Llavero y NO pasa por la conversación.',
         'Si necesitás cargarla o cambiarla, la puerta deja un `.command` en el Escritorio y lo abrís vos.',
-      ], { cmd }, 'produccion');                        // el motivo cita el servicio tal como lo escribió el comando
+      ], { cmd, causa: 'llavero' }, 'produccion');      // el motivo cita el servicio tal como lo escribió el comando
     }
+  }
+
+  // ── 1b. apretar el cuadro por programa ──────────────────────────────────────────────────────
+  // La puerta pide su aprobación en un cuadro del sistema; un `osascript` con System Events o `cliclick` lo podría
+  // contestar sin nadie delante. Esto frena lo que se ve: una aplicación con permiso de Accesibilidad que no pase por
+  // acá queda como límite escrito de la guía.
+  const guardados = escondidos.guardados || [];
+  if (automatizaLaPantalla([...ejecutados, ...guardados], tokens, PREFIJOS, segmentos)) {
+    frenar('ese comando aprieta botones o teclas de la pantalla (osascript con System Events, o cliclick): el cuadro de producción lo contesta una persona, no un programa.', [
+      'En una máquina con el freno de producción no se automatiza la pantalla desde el asistente.',
+      'Si lo necesitás para otra cosa, corrélo vos en tu terminal, fuera del asistente.',
+    ], { cmd }, 'produccion', { sinPuerta: true });
+  }
+
+  // ── 1c. los guiones guardados, `npm run` y `make` ─────────────────────────────────────────────
+  // Lo que el comando corre y ya vivía en el disco se mira sólo por lo DECLARADO en el índice de esta máquina (llaveros y
+  // hosts de producción) y por la puerta en posición de programa. Lo que no se pudo leer deja pasar y queda anotado.
+  const anotarNoMirado = (ruta, motivo) => {
+    try { registrar({ cmd }, { tipo: 'no-mirado', motivo, ruta }); } catch { /* el registro es ayuda, no evidencia */ }
+  };
+  for (const nm of escondidos.noMirados || []) anotarNoMirado(nm.ruta, nm.motivo);
+  const moduloIndice = () => require(require('path').join(__dirname, '..', 'production', 'production-index.js'));
+  const { substitutions, heredocs } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
+  const malo = guardadoQueFrena(guardados, { segmentos, tokens, PREFIJOS, substitutions, heredocs }, {
+    anotar: anotarNoMirado,
+    // los hosts de producción del índice ya guardado, viejo o no: sólo deciden si vale la pena consultar el índice.
+    // `{ hosts }`, o `{ hosts: [], falta: motivo }` sin índice, o `{ hosts: null, ilegible: motivo }` si no se lee
+    recordados: () => {
+      let texto;
+      try { texto = require('fs').readFileSync(moduloIndice().rutaIndice(process.env.HOME), 'utf8'); } catch (e) {
+        return e && e.code === 'ENOENT' ? { hosts: [], falta: 'no hay índice de servidores guardado' } : { hosts: null, ilegible: `no pude leer el índice de servidores (${(e && e.code) || e})` };
+      }
+      try {
+        const doc = JSON.parse(texto);
+        return { hosts: [...Object.entries(doc.hosts || {}).filter(([, h]) => h && h.ambiente === 'produccion').map(([h]) => h), ...(doc.memoria || [])] };
+      } catch (e) { return { hosts: null, ilegible: `el índice de servidores no es JSON (${e.message})` }; }
+    },
+    leerIndice: () => {
+      if (vencido()) frenar('el freno se quedó sin tiempo mirando lo que corre este comando, y eso nombra algo de bases.', [], { cmd });
+      let ind;
+      try { ind = moduloIndice().leer({ home: process.env.HOME }); } catch (e) {
+        frenar(`no pude leer el índice de servidores (${e.message}), y lo que corre este comando nombra algo de bases.`, [], { cmd });
+      }
+      if (ind.memoria_alterada) frenar('la memoria de producción fue tocada a mano (su huella no cierra), y lo que corre este comando nombra algo de bases.', [], { cmd });
+      return ind;
+    },
+  });
+  if (malo) {
+    frenar(`${malo.ruta} ${malo.que}, y este comando lo corre.`, [
+      'Un guion, un script de npm o una receta de make que toca producción no se corre desde el asistente:',
+      'la consulta va por la puerta, de a una sentencia, y la aprobás en el cuadro.',
+    ], { cmd, causa: malo.causa }, 'produccion');
   }
 
   // ── 2. escrituras al catálogo o al índice (AC 9; story 8.14: leídas como las lee el shell) ────
@@ -426,7 +577,8 @@ function decidir(entrada) {
     ] : [
       'El catálogo se edita con el editor (y eso abre un cuadro de aprobación); el índice lo regenera el arnés.',
       'Reescribir el catálogo o borrar el índice NO destraba un host de producción: la memoria es pegajosa.',
-    ], { cmd }, destino.indecidible ? 'nombre-indecidible' : 'produccion');
+    ], { cmd, causa: destino.indecidible ? undefined : (/sale de la variable|arma una sustituci/.test(destino.motivo) ? 'nombre-armado' : 'escritura-protegida') },
+    destino.indecidible ? 'nombre-indecidible' : 'produccion');
   }
 
   // ── 3. la puerta, sólo en su forma canónica (AC 11 y 12) ────────────────────────────────────
@@ -449,29 +601,54 @@ function decidir(entrada) {
     return !LECTORES_DE_TEXTO.has(prog);
   });
   if (invocaLaPuerta) {
+    // 🔴 Un subagente no usa la puerta, con ninguna forma: la persona que contesta el cuadro mira la sesión principal, y
+    // un subagente de fondo puede lanzar decenas de consultas en segundos y apilarle cuadros de algo que no sigue.
+    // Claude Code pone `agent_id` en el evento sólo cuando llama un subagente, y no dice si es de fondo: el entorno de su
+    // consola es igual al de la sesión principal, así que la puerta sola no lo distingue. Se frenan todos.
+    if (typeof payload.agent_id === 'string' && payload.agent_id) {
+      frenar('un subagente no puede usar la puerta de producción.', [
+        'Cada consulta la aprueba una persona en un cuadro, y esa persona mira la sesión principal, no la de un subagente:',
+        'un subagente (más aún uno en segundo plano) le apila cuadros de algo que no está siguiendo.',
+        'Qué hacer: que el subagente devuelva las sentencias que necesita, y que la sesión principal las corra por la',
+        'puerta de a una, esperando cada respuesta.',
+      ], { cmd }, 'puerta-subagente');
+    }
     const limpio = cmd.trim();
     // 🔴 UN SOLO segmento: el host de la forma canónica era `\S+` y aceptaba `;`, `&&`, `|`, `$(…)`
     // y `` ` `` — el shell parte ahí y la segunda mitad corría SIN pasar por la puerta (ejecución
     // arbitraria aprobada por el freno; pase adversarial 2026-09-15, el hallazgo más grave).
     const unSoloSegmento = partes.length === 1;
-    // La consulta desde un archivo: antes del cuadro se lee el archivo y se compara su huella. Sin huella, o con una que
-    // no coincide, no hay cuadro: nunca se aprueba algo que la persona no vio en pantalla. En Codex se corta abajo.
-    const fa = unSoloSegmento && !esCodex ? FORMA_ARCHIVO.exec(limpio) : null;
-    let mensajeArchivo = null;
-    if (fa) {
+    // La consulta desde un archivo no pasa: el cuadro muestra el comando, no lo que trae el archivo. Si el archivo se puede
+    // pasar a una consulta en línea, el mensaje trae ese comando listo para pegar. En Codex no: ahí la puerta no se acepta.
+    const pideArchivo = partes.some(({ texto }) => tokensDeSegmento(texto, tokens, PREFIJOS).some((x) => x === '--file' || x.startsWith('--file=')));
+    if (pideArchivo) {
+      const motivo = 'el cuadro de aprobación no muestra el contenido de un archivo: la consulta va en línea.';
+      const enLinea = `Escribí la consulta entre comillas simples, en el mismo comando: ${PUERTA} <host> 'select …'`;
+      if (esCodex) frenar(motivo, ['Y en Codex la puerta no puede abrir el cuadro: pasale la sentencia al dev para que la corra él por la puerta.'], { cmd }, 'puerta-no-canonica');
+      const fa = unSoloSegmento ? FORMA_ARCHIVO.exec(limpio) : null;
+      if (!fa) frenar(motivo, [enLinea], { cmd }, 'puerta-no-canonica');
       const v = leerArchivoDeConsulta(fa[2]);
-      if (v.error) frenar(`la consulta desde un archivo no se puede mostrar: ${v.error}.`, [
-        'El archivo tiene que ser un archivo común (no un enlace ni una carpeta), de 64 KB o menos, en UTF-8,',
-        'y no un archivo protegido por el freno.',
-      ], { cmd });
-      if (fa[3] !== v.sha) frenar(fa[3] ? 'la huella no coincide con el archivo: cambió después de que lo leíste.' : 'falta la huella del archivo (--sha256).', [
-        `La huella actual de ${fa[2]} es: ${v.sha}`,
-        'Leé el archivo de nuevo y, si es lo que querés correr, reintentá con:',
-        `  ${PUERTA} ${fa[1]} --file ${fa[2]} --sha256 ${v.sha}`,
-      ], { cmd });
-      mensajeArchivo = `Consulta a ${fa[1]} desde ${fa[2]} (huella ${v.sha}):\n${v.texto}`;
+      const listo = v.error ? null : `${PUERTA} ${fa[1]} '${v.texto.replace(/'/g, "'\\''")}'${fa[4] ? ` --max-rows ${fa[4]}` : ''}`;
+      const renglones = listo ? renglonesDePantalla(listo) : 0;
+      const caracteres = listo ? [...listo].length : 0;
+      const problema = v.error || sentenciaQueLaPuertaRechaza(v.texto)
+        || (renglones > TOPE_RENGLONES ? `la consulta ocupa ${renglones} renglones de pantalla y el cuadro muestra unos ${TOPE_RENGLONES}: partila en consultas más cortas` : null)
+        || (caracteres > TOPE_CARACTERES ? `la consulta tiene ${caracteres} caracteres y el cuadro muestra hasta ${TOPE_CARACTERES}: partila en consultas más cortas` : null);
+      if (problema) frenar(motivo, [`Y ${fa[2]} no se puede pasar a una consulta en línea: ${problema}.`, enLinea], { cmd }, 'puerta-no-canonica');
+      frenar(motivo, ['El comando con la consulta del archivo en línea, listo para correr:', listo], { cmd }, 'puerta-no-canonica');
     }
-    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_CANDADOS.test(limpio) || CANONICA_BORRAR_GRUPO.test(limpio) || CANONICA_ARCHIVO.test(limpio));
+    // lo que engañaría en el cuadro, en cualquier parte del comando: también en las puntas, que trim() recortaría
+    const engano = caracterQueEngana(cmd);
+    if (engano) frenar(`el comando ${engano}.`, ['Escribí la consulta sin esos caracteres y volvé a intentar.'], { cmd }, 'puerta-no-canonica');
+    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_CANDADOS.test(limpio) || CANONICA_BORRAR_GRUPO.test(limpio) || CANONICA_AYUDA.test(limpio) || CANONICA_AZURE.test(limpio));
+    // el cuadro corta sin aviso el principio de un comando largo: la consulta en línea tiene un tope de renglones
+    if (canonica && CANONICA.test(limpio)) {
+      const n = renglonesDePantalla(cmd);   // el cuadro recibe también lo que el shell ignora al final
+      const c = [...cmd].length;
+      if (n > TOPE_RENGLONES || c > TOPE_CARACTERES) frenar(`el cuadro muestra unos ${TOPE_RENGLONES} renglones de ${COLUMNAS_CUADRO} columnas y hasta ${TOPE_CARACTERES} caracteres; este comando ocupa ${n} renglones y ${c} caracteres: partí la consulta en consultas más cortas.`, [
+        'Lo que no entra se corta por arriba, sin aviso: aprobarías un comando sin haber visto su principio.',
+      ], { cmd }, 'puerta-no-canonica');
+    }
     if (!canonica) {
       frenar('la puerta se invocó de una forma que no es la canónica.', [
         'Sólo se acepta la ruta absoluta, sin nada antes ni después, y la sentencia en UN argumento',
@@ -479,7 +656,19 @@ function decidir(entrada) {
         'Sin tuberías, sin redirecciones, sin $( ), sin encadenados, sin bash -c: la puerta ya corta',
         'filas y junta la salida, así que no necesita nada de eso.',
         "Si la sentencia lleva una comilla simple, escapala como en el shell: 'lo de '\\''adentro'\\'' así'.",
+        'Las formas que acepta, cada una sola y con la ruta absoluta:',
+        "  /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]   consulta o cambio, con cuadro",
+        '  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>    la IP de esta máquina en el firewall, con cuadro',
+        '  /opt/tycon/bin/tycon-prod-sql --close-firewall <host>   la cierra (también se cierra sola)',
+        '  /opt/tycon/bin/tycon-prod-sql --help                    estas formas y el camino de emergencia',
+        '  --verify · --locks · --load-key <host> · --reclassify <host> · --delete-group <grupo>',
       ], { cmd });
+    }
+    const az = CANONICA_AZURE.exec(limpio);
+    if (canonica && az) {
+      const palabras = az[1].trim().match(new RegExp(PALABRA_AZ, 'g')) || [];
+      const rechazo = rechazoAzure(palabras, operacionAz(palabras));
+      if (rechazo) frenar(rechazo.motivo, rechazo.detalle, { cmd }, 'puerta-no-canonica');
     }
     if (esCodex) {
       frenar('en Codex la puerta no puede abrir el cuadro de aprobación de Claude Code.', [
@@ -494,9 +683,6 @@ function decidir(entrada) {
       'Sacalo de tu configuración del shell (o de este comando) y volvé a intentar.',
     ], { cmd });
     recordDecision({ freno: 'prod-access-guard', regla: 'puerta-no-canonica', veredicto: 'paso', cmd });
-    // la consulta del archivo, tal cual y con sus saltos de línea, en la pantalla de la persona antes del cuadro. Se sale
-    // recién cuando terminó de escribirse: por una tubería, salir enseguida cortaba el mensaje (y el cuadro aparecía igual)
-    if (mensajeArchivo) { process.stdout.write(JSON.stringify({ systemMessage: mensajeArchivo }), () => process.exit(0)); return; }
     process.exit(0);                                    // forma canónica y limpia: que decida el cuadro
   }
 
@@ -529,8 +715,10 @@ function decidir(entrada) {
       frenar(`ese comando borra ${borrado.que} en Azure, y eso puede llevarse un servidor de producción con sus bases: no puedo saber qué contiene.`, [
         'El freno no le pregunta a Azure qué hay adentro: frena todo borrado de grupo, de candado y de recurso del que no',
         'pueda probar que no es una base de datos.',
-        'Si de verdad hay que borrarlo, lo corre una persona en su propia terminal, fuera del asistente, después de mirar',
-        'qué contiene. Detalle: guides/produccion-con-permiso.md',
+        'Un grupo de recursos que no es de producción se pide por la puerta, que pide la aprobación del dueño en el cuadro',
+        'y comprueba en Azure qué contiene antes de borrar: /opt/tycon/bin/tycon-prod-sql --delete-group <grupo>',
+        'Lo demás (un grupo con algo de producción, un candado, otro recurso) lo corre una persona en su propia terminal,',
+        'fuera del asistente, después de mirar qué contiene. Detalle: guides/produccion-con-permiso.md',
       ], { cmd }, 'borrado-de-azure', { sinPuerta: true });
     }
   }
@@ -568,7 +756,7 @@ function decidir(entrada) {
     var clasificar = mod.clasificar;                                              // eslint-disable-line no-var
     if (indice.memoria_alterada) {
       frenar('la memoria de producción fue tocada a mano (su huella no cierra).', [
-        'Mientras tanto no se decide nada sobre bases: verificá con `/opt/tycon/bin/tycon-prod-sql --verificar`.',
+        'Mientras tanto no se decide nada sobre bases. Si sólo se tocó lo de antes del renombre, resolvelo con `/opt/tycon/bin/tycon-prod-sql --verify`; si no, revisala y bajá lo que corresponda con `--reclassify <host>`.',
       ], { cmd });
     }
   } catch (e) {
@@ -578,15 +766,55 @@ function decidir(entrada) {
 
   // El comando directo de Azure para el firewall sigue frenado; el mensaje dice el único camino: la puerta.
   const esFirewall = /\baz\s+sql\s+server\s+firewall-rule\b/.test(cmd);
-  const caminoFirewall = (h) => (esFirewall
-    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta (con su cuadro, y la regla se cierra sola): /opt/tycon/bin/tycon-prod-sql --open-firewall ${h && h.includes('.') ? h : `${h || '<host>'}.database.windows.net`}`]
-    : []);
+  // Una lectura de Azure (`az sql db list`, `show`, `list-usages`…) sobre un servidor de producción también se frena: el
+  // catálogo declara servidores y el freno no distingue qué subcomando de `az` sólo lee. El mensaje dice qué usar en su
+  // lugar, por la puerta, para que «no puedo mirar» no termine en «andá al portal». Cuenta como lectura sólo si TODA
+  // operación `az sql …` del comando (las palabras antes de la primera opción) termina en list, show o list-usages: un
+  // `-n list` o un `&& az sql db delete` no la vuelven lectura.
+  const opsAzSql = [...cmd.matchAll(/\baz\s+sql((?:\s+[a-z][a-z-]*)+)/g)].map((m) => m[1].trim().split(/\s+/).pop());
+  const esLecturaAz = !esFirewall && opsAzSql.length > 0 && opsAzSql.every((v) => ['list', 'show', 'list-usages'].includes(v));
+  // Un comando de `az` que no es del firewall: si su operación tiene camino, el MISMO comando por la puerta (`--azure`,
+  // sin disfrazarlo); si no, que lo corra la persona en su terminal. El comando se arma sólo si es un único `az …` que la
+  // forma canónica acepta: si no, se describe.
+  const soloAz = partes.length === 1 && /^az\s/.test(cmd.trim());
+  const restoAz = soloAz ? cmd.trim().replace(/^az\s+/, '') : null;
+  const palabrasAz = restoAz ? restoAz.match(new RegExp(PALABRA_AZ, 'g')) || [] : [];
+  const opAz = restoAz ? operacionAz(palabrasAz) : null;
+  const tieneCamino = opAz && (AZURE_CAMBIOS.has(opAz) || AZURE_LECTURAS.has(opAz));
+  // el comando listo sólo si el propio freno lo dejaría pasar: con «=@», --debug o --verbose, se describe
+  const listoAz = tieneCamino && CANONICA_AZURE.test(`${PUERTA} --azure ${restoAz}`) && !rechazoAzure(palabrasAz, opAz)
+    ? `${PUERTA} --azure ${restoAz}` : null;
+  const caminoAzure = () => {
+    if (esFirewall || !/(?:^|[\s;&|(])az\s/.test(cmd)) return [];
+    if (listoAz) {
+      return [AZURE_LECTURAS.has(opAz)
+        ? 'Esa lectura de Azure va por la puerta, sin cuadro (no cambia nada), y queda anotada:'
+        : 'Ese cambio de Azure va por la puerta: la persona lo aprueba en el cuadro, que muestra el comando entero, y queda anotado:',
+      `  ${listoAz}`];
+    }
+    if (tieneCamino) return ['Esa operación de Azure va por la puerta: /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>,',
+      'con cada argumento como una palabra simple o entre comillas simples, sin --debug ni --verbose, y sin «@» (ni al',
+      'principio ni después de un «=»): los valores van en línea.'];
+    return ['Esa operación de Azure no tiene camino aprobado por la puerta: dejale el comando a la persona para que lo corra en su terminal,',
+      'y decile qué hace. No la disfraces ni la partas para que pase.'];
+  };
+  const hostAzure = (h) => (h && h.includes('.') ? h : `${h || '<host>'}.database.windows.net`);
+  // `declarado`: la puerta sólo atiende hosts declarados como producción; a uno sin declarar no se le sugieren consultas
+  const caminoFirewall = (h, declarado) => (esFirewall
+    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta (con su cuadro, y la regla se cierra sola): /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
+    : esLecturaAz && declarado
+      ? ['Las lecturas de Azure sobre un servidor de producción también se frenan. En su lugar, la puerta (con su cuadro):',
+        `  el tamaño y el tope: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`,
+        `  la edición y el nivel: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select edition, service_objective from sys.database_service_objectives'`,
+        '  (miden la base a la que entra la puerta: la «base» del servidor en su catálogo; si el catálogo no la declara, master)',
+        `  si la conexión la rechaza el firewall: /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
+      : []);
   for (const n of nombrados) {
     if (n.host === null) {
       frenar(`ese comando nombra un servidor de base que no es un literal (${n.crudo}).`, [
         'Un valor que sale de una variable no se puede clasificar: se trata como producción.',
         'Escribí el host tal cual, o declaralo en el .tycon/production.json del repo de ese proyecto.',
-      ], { cmd, crudo: n.crudo }, 'produccion');       // el motivo cita el texto del comando
+      ], { cmd, crudo: n.crudo, causa: 'servidor-no-literal' }, 'produccion');   // el motivo cita el texto del comando
     }
     const c = clasificar(n.host, indice);
     // 🔴 story 2.6 · ESTO es un `paso` y hay que anotarlo: se miró un servidor y NO era producción.
@@ -599,14 +827,16 @@ function decidir(entrada) {
         c.desde === 'memoria'
           ? 'Ese host ya se vio como producción antes; el catálogo de ahora dice otra cosa y no alcanza.'
           : 'Toda consulta a producción pasa por la puerta y la aprobás vos, sentencia por sentencia.',
-        `Si de verdad ya no es producción: /opt/tycon/bin/tycon-prod-sql --reclasificar ${n.host}`,
-        ...caminoFirewall(n.host),
-      ], { cmd, host: n.host, repos: c.repos }, 'produccion');
+        ...caminoAzure(),
+        `Si de verdad ya no es producción: /opt/tycon/bin/tycon-prod-sql --reclassify ${n.host}`,
+        ...caminoFirewall(n.host, true),
+      ], { cmd, host: n.host, repos: c.repos, causa: 'base-de-produccion' }, 'produccion');
     }
     // desconocido
     frenar(`«${n.host}» no está declarado en ningún proyecto de esta máquina.`, [
       'Lo que no está declarado se trata como producción.',
-      ...caminoFirewall(n.host),
+      ...caminoAzure(),
+      ...caminoFirewall(n.host, false),
       `Si es de un ambiente de prueba, declaralo en <repo>/.tycon/production.json:`,
       `  {"servers":[{"host":"${n.host}","environment":"non-production"}]}`,
       indice.catalogos.length
@@ -700,18 +930,34 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
     const progH = tl.length ? basename(tl[0]).toLowerCase().replace(/\.exe$/, '') : '';
     agregar(h.cuerpo, shell, !shell && heredocSoloAArchivo(cmd, h.indice, partes, tokens, PREFIJOS, vars, expandir), false,
       !shell && (Boolean(INTERPRETES[progH]) || CORRE_ARCHIVO.has(progH)));
+    if (progH === 'osascript') { const e = out.find((y) => y.texto === h.cuerpo); if (e) e.osascript = true; }
   }
 
+  // La carpeta en que corre cada tramo: la del evento, movida por los `cd`/`pushd` del mismo comando. Un `cd` a algo
+  // que no se puede leer (una variable) la deja en null.
+  const pathM = require('path');
+  let carpeta = carpetaDelComando || process.cwd();
   for (const { texto } of partes) {
     const t = tokensDeSegmento(texto, tokens, PREFIJOS);
     if (!t.length) continue;
     const prog = basename(t[0]);
+    if (CAMBIAN_CARPETA.has(prog)) {
+      const destino = t.slice(1).find((x) => !x.startsWith('-'));
+      if (prog === 'popd') carpeta = null;
+      else if (destino === undefined) carpeta = process.env.HOME || null;
+      else if (NO_LITERAL.test(destino) || /[*?[\]{}]/.test(destino)) carpeta = null;
+      else {
+        const d = desescapar(sinComillas(destino)).replace(/^~(?=\/|$)/, process.env.HOME || '~');
+        carpeta = pathM.isAbsolute(d) ? d : (carpeta === null ? null : pathM.resolve(carpeta, d));
+      }
+      continue;
+    }
     // (b) `eval …`: todo lo que sigue es un comando
     if (prog === 'eval') { agregar(t.slice(1).join(' '), true); continue; }
     // (c) el argumento del intérprete (`bash -c '…'`, `python3 -c '…'`, `node -e '…'`)
     // en Windows el intérprete lleva `.exe` (`pwsh.exe`, `powershell.exe`), y PowerShell no distingue mayúsculas en sus
     // banderas (`-command`)
-    const progN = prog.toLowerCase().replace(/\.exe$/, '');
+    const progN = nombreDePrograma(t[0]);
     const esPs = progN === 'pwsh' || progN === 'powershell';
     const banderas = INTERPRETES[progN];
     if (banderas) {
@@ -724,7 +970,10 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
       }
     }
     // (d) el CONTENIDO del script que este comando ejecuta (el camino fácil: escribirlo y correrlo)
-    if (CORRE_ARCHIVO.has(progN) || /^\.?\//.test(t[0])) {
+    // el shell busca por ruta todo programa cuyo nombre lleva una barra (`scripts/x.sh`, `../x.sh`, `/abs/x.sh`) o empieza
+    // con `~/`: todos esos corren un archivo, no sólo los que empiezan con `./`
+    const porRuta = t[0].includes('/') || /^~\//.test(t[0]);
+    if (CORRE_ARCHIVO.has(progN) || porRuta) {
       for (let i = CORRE_ARCHIVO.has(progN) ? 1 : 0; i < t.length; i++) {
         const a = t[i];
         if (!a || a.startsWith('-')) continue;
@@ -736,44 +985,624 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
         // instalación, `node scripts/hooks/prod-access-guard.js` (probar el propio hook) se frenaba a
         // sí mismo, porque su código fuente habla del Llavero (2026-09-15, en vivo).
         const esc = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const abs = require('path').resolve(ruta);          // un `bash leer.sh` también cuenta
+        // contra la carpeta del tramo (la del evento y sus `cd`), no contra la del proceso del freno
+        if (carpeta === null && !pathM.isAbsolute(ruta)) break;
+        const abs = pathM.resolve(carpeta || '/', ruta);   // un `bash leer.sh` también cuenta
         // Las piezas del propio freno NO son texto escondido: su código fuente habla del Llavero y de
         // los clientes de base porque ESO es lo que vigilan. Leerlas como si fueran un guion ajeno
         // hace que el freno se frene a sí mismo (2026-09-15).
-        // (con el nombre de antes del renombre a inglés también: su reemplazo sigue en la carpeta vieja)
+        // `produccion-notice.js` es el reemplazo del aviso que el repo del equipo deja en su ruta de antes del renombre;
+        // sale de esta lista cuando se borran los reemplazos.
         // Se reconocen por el nombre Y por dónde viven (la instalación en /opt o el arnés de este mismo freno): un guion
         // recién hecho en otra carpeta con el nombre de una pieza se lee igual que cualquiera.
-        const raizDelFreno = require('path').resolve(__dirname, '..', '..') + require('path').sep;
-        const esDelFreno = /(?:tycon-prod-sql|prod-access-guard\.js|node-shim\.sh|production-index\.js|indice-produccion\.js|production-notice\.js|produccion-notice\.js)$/.test(abs)
-          && (abs.startsWith('/opt/tycon/') || abs.startsWith(raizDelFreno));
+        const esDelFreno = esPiezaDelFreno(abs);
         const esTemporal = !esDelFreno && (
              /^(?:\/tmp\/|\/private\/tmp\/|\/var\/folders\/|\/private\/var\/folders\/)/.test(abs)
           || (process.env.TMPDIR && abs.startsWith(require('path').resolve(process.env.TMPDIR)))
           || /\/scratchpad\//.test(abs));
         const loEscribeEsteComando = new RegExp(`>\\s*['"]?${esc}`).test(cmd)
           || new RegExp(`(?:tee|cp|mv|install)\\b[^\\n]*${esc}`).test(cmd);
+        // el guion lo corre un shell (`bash x.sh`, `./x.sh`) o un intérprete: el paso del borrado en Azure lo lee como
+        // comandos en el primer caso y como código en el segundo
+        const porShell = ES_SHELL.has(prog) || prog === 'source' || prog === '.' || (porRuta && !CORRE_ARCHIVO.has(progN));
+        if (esDelFreno) break;
+        // Un guion que ya vivía en el disco se mira aparte (`crearMirador`) y sólo por lo DECLARADO en el índice de la
+        // máquina: con el análisis de siempre, un guion cualquiera que nombra un servidor de prueba frenaría el trabajo normal.
+        if (!esTemporal && !loEscribeEsteComando) break;
         try {
-          if (esDelFreno || (!esTemporal && !loEscribeEsteComando)) break;   // ya vivía en el disco: no se mira adentro
-          const st = fs.statSync(ruta);
+          const st = fs.statSync(abs);
           // `shell: false` a propósito: el CONTENIDO se mira por si nombra un servidor o el Llavero,
           // pero sus escrituras son suyas, no de este comando.
-          // el guion lo corre un shell (`bash x.sh`, `./x.sh`) o un intérprete: el paso del borrado en Azure lo lee como
-          // comandos en el primer caso y como código en el segundo
-          const porShell = ES_SHELL.has(prog) || prog === 'source' || prog === '.' || /^\.?\//.test(t[0]);
           if (st.isFile() && st.size <= MAX_ESCONDIDO) {
-            const texto = fs.readFileSync(ruta, 'utf8');
+            const texto = fs.readFileSync(abs, 'utf8');
             agregar(texto, false, false, false, !porShell);
             const e = out.find((y) => y.texto === texto);
             if (e && porShell) e.guion = true;
           }
           else if (st.isFile()) opaco = true;
-        } catch { /* no existe o no se puede leer: no es un script que vayamos a ver */ }
+        } catch { /* no existe, o no se puede leer: eso último lo anota `crearMirador`, que lee este mismo archivo */ }
         break;                                   // sólo el primer argumento no-bandera: el script
       }
     }
   }
+  // (e) lo que el comando corre y ya vivía en el disco: guiones, `npm run`, `make`; también desde `bash -c`, `eval` o un
+  // heredoc que alimenta un shell
+  const mirador = crearMirador();
+  const carpetas = mirador.texto(cmd, [carpetaDelComando || process.cwd()], true);
+  for (const x of out) if (x.shell) mirador.texto(x.texto, carpetas, true);
   out.opaco = opaco;
+  out.guardados = mirador.guardados;
+  out.noMirados = mirador.noMirados;
   return out;
+}
+
+// ── los guiones guardados ─────────────────────────────────────────────────────────────────────
+// Lo que un comando corre y ya vivía en el disco se lee y se juzga sólo por lo DECLARADO. El análisis es de texto: lo que
+// no se alcanza a leer deja pasar y queda anotado («no-mirado»), nunca frena trabajo normal.
+const TOPE_GUARDADOS = 24;                  // archivos distintos por comando: a 64 KB cada uno entran holgados en el reloj
+const ASIGNACION = /^[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=/;
+const CODIGO_COMPILADO = new Set(['7f454c46', 'feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe']);
+const VERBOS_RUN = new Set(['run', 'run-script', 'rum', 'urn']);
+const VERBOS_INSTALA = new Set(['install', 'i', 'ci', 'clean-install', 'add']);
+const SCRIPTS_DE_INSTALAR = ['preinstall', 'install', 'postinstall', 'preprepare', 'prepare', 'postprepare'];
+const OTRO_PAQUETE = /^(?:-w|--workspace|-F|--filter)$/;
+const OTRO_PAQUETE_SOLO = /^(?:--workspace=.*|--filter=.*|--workspaces|-ws|-r|--recursive)$/;
+const MAKE_CON_VALOR = /^(?:-[IoW]|--(?:include-dir|old-file|new-file|assume-old|assume-new|what-if))$/;
+const MAKE_CON_NUMERO = /^(?:-[jl]|--(?:jobs|load-average|max-load))$/;
+const MAKE_LARGA_CONOCIDA = /^--(?:include-dir|old-file|new-file|assume-old|assume-new|what-if|jobs|load-average|max-load|debug|output-sync)=/;
+const MAKE_NO_EJECUTA = /^(?:-[a-zA-Z]*n[a-zA-Z]*|--just-print|--dry-run|--recon)$/;
+const MAX_SHELL_DE_MAKE = 16;               // `$(shell …)` fuera de las recetas que se miran por Makefile
+// `$(shell …)`, `$(call shell,…)`, o una función cuyo nombre sale de una variable (`$($(S) …)`), que puede ser la misma
+const TIENE_SHELL = /\$[({](?:shell\s|call\s+shell\b|call\s+\$[({]|[^\s(){}]*\$[({])/;
+const NOMBRE_CALCULADO = /\$[({](?:call\s+)?[^\s(){}]*\$[({]/;
+const MAX_INCLUDES_DE_MAKE = 256;           // nombres distintos de `include` que se miran por Makefile
+
+/** El nombre con que se reconoce un programa: sin ruta ni `.exe`, y sin la versión de `python3.12` o `node22`. */
+const nombreDePrograma = (tok) => basename(sinComillas(tok)).toLowerCase().replace(/\.exe$/, '')
+  .replace(/^python[\d.]*$/, 'python3').replace(/^(ruby|perl|php|node)[\d.]+$/, '$1');
+
+/** Las palabras desde el programa de verdad: saltea asignaciones y envoltorios (`/usr/bin/env`, `caffeinate -i`, `xargs`). */
+function sinEnvoltorios(palabras) {
+  let t = palabras.slice();
+  for (let vuelta = 0; vuelta < 8 && t.length; vuelta++) {
+    while (t.length && ASIGNACION.test(t[0])) t.shift();
+    if (!t.length) break;
+    const b = basename(t[0]);
+    let i = 1;
+    if (b === 'xargs') {
+      while (i < t.length && /^-/.test(t[i])) i += XARGS_CON_ARGUMENTO.test(t[i]) ? 2 : 1;
+      t = t.slice(i); continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(PREFIJOS_DE_PROGRAMA, b)) break;
+    const conArg = PREFIJOS_DE_PROGRAMA[b];
+    while (i < t.length) {
+      const a = t[i];
+      if (a === '--') { i++; break; }
+      if (b === 'env' && ASIGNACION.test(a)) { i++; continue; }
+      if (!/^-./.test(a)) break;
+      i += conArg && conArg.test(a) ? 2 : 1;
+    }
+    if (b === 'timeout' && i < t.length) i++;                       // la duración
+    t = t.slice(i);
+  }
+  return t;
+}
+
+/** Las carpetas en que puede correr lo que sigue a un `cd`: el `cd` pudo fallar o vivir en una subshell, así que se suma. */
+function carpetasTrasCd(carpetas, prog, t) {
+  const path = require('path');
+  const out = [...carpetas];
+  const destino = t.slice(1).find((x) => x === '-' || !x.startsWith('-'));
+  if (prog === 'popd' || destino === '-') out.push(null);
+  else if (destino === undefined) out.push(process.env.HOME || null);
+  else if (NO_LITERAL.test(destino) || /[*?[\]{}]/.test(destino)) out.push(null);
+  else {
+    const d = desescapar(sinComillas(destino)).replace(/^~(?=\/|$)/, process.env.HOME || '~');
+    if (path.isAbsolute(d)) out.push(d);
+    else for (const c of carpetas) if (c !== null) out.push(path.resolve(c, d));
+  }
+  return [...new Set(out)].slice(0, 12);
+}
+
+/**
+ * Los archivos que corren estas palabras (`node scripts/x.js`, `bash y.sh`, `scripts/z.sh`). Una palabra que sigue a una
+ * bandera puede ser su valor, así que no cierra la búsqueda; la primera que no sigue a una bandera es el guion.
+ */
+function archivosDePalabras(t) {
+  const prog = nombreDePrograma(t[0]);
+  if (!CORRE_ARCHIVO.has(prog) && prog !== 'bun') return t[0].includes('/') || /^~\//.test(t[0]) ? [{ ruta: t[0], prog: 'ruta' }] : [];
+  const conTexto = INTERPRETES[prog] || [];
+  const out = [];
+  const esShell = ES_SHELL.has(prog) || prog === 'source' || prog === '.';
+  let trasBandera = false;
+  for (let i = 1; i < t.length; i++) {
+    let a = t[i];
+    if (conTexto.includes(a)) { i++; trasBandera = false; continue; }   // el programa va en línea: lo mira el análisis de siempre
+    if (prog === 'python3' && a === '-m' && t[i + 1] !== undefined) { out.push({ ruta: t[i + 1].replace(/\./g, '/'), prog: 'python-m' }); break; }
+    if (a === '<' || a === '--') continue;
+    if (/^\d*>{1,2}&?$/.test(a)) { i++; continue; }
+    if (/^\d*[<>]/.test(a)) { const m = /^<([^<(].*)$/.exec(a); if (!m) continue; a = m[1]; }
+    if (a.startsWith('-')) { trasBandera = true; continue; }
+    if (out.length === 0 || /[./]/.test(a)) out.push({ ruta: a, prog, porShell: esShell && out.length === 0 });
+    if (!trasBandera) break;
+    trasBandera = false;
+  }
+  return out;
+}
+
+/** ¿El archivo es una pieza del propio freno? Su código habla del Llavero porque eso es lo que vigila. */
+function esPiezaDelFreno(abs) {
+  const path = require('path');
+  return /(?:tycon-prod-sql|prod-access-guard\.js|node-shim\.sh|production-index\.js|production-notice\.js|produccion-notice\.js)$/.test(abs)
+    && (abs.startsWith('/opt/tycon/') || abs.startsWith(path.resolve(__dirname, '..', '..') + path.sep));
+}
+
+/** Las rutas que prueba el intérprete para lo que le pasaron: node completa la extensión y entra a carpetas, python también. */
+function comoLoResuelve(base, prog) {
+  const path = require('path');
+  if (prog === 'python-m') return [`${base}.py`, path.join(base, '__main__.py')];
+  if (prog === 'python3') return [base, path.join(base, '__main__.py')];
+  if (prog !== 'node' && prog !== 'bun') return [base];
+  const out = [base, `${base}.js`, `${base}.mjs`, `${base}.cjs`];
+  try {
+    // por `leerGuardado`: sólo un archivo común y hasta el tope (un FIFO con ese nombre colgaría al freno)
+    const main = JSON.parse(leerGuardado(path.join(base, 'package.json')).texto || '{}').main;
+    if (typeof main === 'string') out.push(path.resolve(base, main));
+  } catch { /* un package.json roto: queda el index */ }
+  out.push(path.join(base, 'index.js'));
+  return out;
+}
+
+/** ¿Lo corre un shell? Un archivo corrido por su ruta lo decide su primera línea; sin `#!` lo corre el shell. */
+function loCorreUnShell(texto) {
+  const m = /^#!\s*(\S+)(?:\s+(\S+))?/.exec(texto);
+  if (!m) return true;
+  const p = basename(m[1]);
+  return ES_SHELL.has(p === 'env' && m[2] ? basename(m[2]) : p);
+}
+
+/** Un programa compilado no es un guion: lo dice su número mágico, o un NUL en la primera línea (la regla de bash). */
+function esCompilado(buf) {
+  if (CODIGO_COMPILADO.has(buf.subarray(0, 4).toString('hex'))) return true;
+  const fin = buf.indexOf(10);
+  return buf.subarray(0, fin < 0 ? 4096 : Math.min(fin, 4096)).includes(0);
+}
+
+/** Lee un guion que ya vivía en el disco; lo que no se puede leer va a `noMirados`, nunca frena. */
+function leerGuardado(ruta, carpeta) {
+  const fs = require('fs'); const path = require('path');
+  const abs = path.resolve(carpeta || carpetaDelComando || process.cwd(), ruta.replace(/^~(?=\/)/, process.env.HOME || ''));
+  let st;
+  try { st = fs.statSync(abs); } catch (e) {
+    if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) return {};   // no existe: no corre nada
+    return { noMirado: { ruta: abs, motivo: e && e.code === 'EACCES' ? 'sin permiso de lectura' : `ilegible (${(e && e.code) || e})` } };
+  }
+  if (!st.isFile()) return {};
+  try {
+    if (st.size > MAX_ESCONDIDO) {
+      const fd = fs.openSync(abs, 'r'); const cab = Buffer.alloc(4096);
+      try { fs.readSync(fd, cab, 0, 4096, 0); } finally { fs.closeSync(fd); }
+      return esCompilado(cab) ? {} : { noMirado: { ruta: abs, motivo: `más grande que el tope de lectura (${MAX_ESCONDIDO / 1024} KB)` } };
+    }
+    const buf = fs.readFileSync(abs);
+    return esCompilado(buf) ? {} : { ruta: abs, texto: buf.toString('utf8') };
+  } catch (e) {
+    return { noMirado: { ruta: abs, motivo: e && e.code === 'EACCES' ? 'sin permiso de lectura' : `ilegible (${(e && e.code) || e})` } };
+  }
+}
+
+/**
+ * Junta lo que corre un texto de shell y ya vivía en el disco: los archivos, y el texto de `npm run` o de `make` con los
+ * archivos que ése corre (un nivel). → `{ texto(s, carpetas, conGestor) → carpetas, guardados, noMirados }`.
+ */
+function crearMirador() {
+  const path = require('path');
+  const { segmentos, tokens, PREFIJOS, substitutions } = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
+  const guardados = []; const noMirados = []; const leidos = new Map();
+  let corto = false;
+  const anotar = (ruta, motivo) => { if (!noMirados.some((n) => n.ruta === ruta && n.motivo === motivo)) noMirados.push({ ruta, motivo }); };
+  // la mitad del reloj: lo que queda es para juzgar lo leído y consultar el índice
+  const sinLugar = () => {
+    if (!corto && (leidos.size >= TOPE_GUARDADOS || Date.now() - t0 > RELOJ_MS / 2)) {
+      corto = true; anotar('(este comando)', `corre más guiones de los que alcanzo a leer (miré ${leidos.size})`);
+    }
+    return corto;
+  };
+  const palabras = (s) => sinEnvoltorios(tokensDeSegmento(s, tokens, PREFIJOS));
+
+  function archivo({ ruta, prog, porShell }, carpetas) {
+    const r = desescapar(ruta).replace(/^~(?=\/|$)/, process.env.HOME || '~').replace(/^\$(?:PWD|\{PWD\}|\(pwd\))(?=\/)/, '.');
+    if (NO_LITERAL.test(r) || /[*?[\]{}]/.test(r)) { anotar(r, 'la ruta lleva una variable o un comodín'); return; }
+    const absoluta = path.isAbsolute(r);
+    let hallado = false;
+    for (const base of absoluta ? [r] : carpetas.filter((c) => c !== null).map((c) => path.resolve(c, r))) {
+      for (const candidato of comoLoResuelve(base, prog)) {
+        if (esPiezaDelFreno(candidato)) { hallado = true; break; }
+        const previo = leidos.get(candidato);
+        if (previo) { previo.shell = previo.shell || Boolean(porShell); previo.osascript = previo.osascript || prog === 'osascript'; hallado = true; break; }
+        if (sinLugar()) return;
+        const l = leerGuardado(candidato);
+        if (l.noMirado) { anotar(l.noMirado.ruta, l.noMirado.motivo); hallado = true; break; }
+        if (l.texto === undefined) continue;
+        const entrada = { ruta: l.ruta, texto: l.texto, shell: prog === 'ruta' ? loCorreUnShell(l.texto) : Boolean(porShell), osascript: prog === 'osascript' };
+        leidos.set(candidato, entrada); guardados.push(entrada); hallado = true;
+        break;
+      }
+    }
+    if (!hallado && !absoluta && carpetas.includes(null)) anotar(r, 'la carpeta del comando no se puede saber (un cd que no se puede leer)');
+  }
+
+  function texto(s, carpetasIniciales, conGestor, prof = 0) {
+    let carpetas = carpetasIniciales;
+    let partes;
+    try { partes = segmentos(s); } catch { anotar('(texto del comando)', 'no se pudo partir en comandos'); return carpetas; }
+    partes.forEach((p, i) => {
+      const t = palabras(p.texto);
+      if (t.length) {
+        const b = basename(t[0]);
+        if (CAMBIAN_CARPETA.has(b)) { carpetas = carpetasTrasCd(carpetas, b, t); return; }
+        const prog = nombreDePrograma(t[0]);
+        for (const a of archivosDePalabras(t)) archivo(a, carpetas);
+        // `cat x | bash`, y `bash <(cat x)` o `eval "$(cat x)"`: el archivo llega por otro lado, pero está nombrado acá
+        const delCat = (ws, quien) => {
+          if (ws.length && basename(ws[0]) === 'cat') for (const a of ws.slice(1)) if (!a.startsWith('-')) archivo({ ruta: a, prog: quien, porShell: ES_SHELL.has(quien) }, carpetas);
+        };
+        const siguiente = p.sep === '|' && partes[i + 1] ? palabras(partes[i + 1].texto) : [];
+        if (siguiente.length && CORRE_ARCHIVO.has(nombreDePrograma(siguiente[0]))) delCat(t, nombreDePrograma(siguiente[0]));
+        if (ES_SHELL.has(prog) || prog === 'source' || prog === '.') {
+          for (const sub of substitutions(p.texto)) delCat(palabras(sub), 'bash');
+          if (p.sep === '(' && /[<$]\s*$/.test(p.texto) && partes[i + 1]) delCat(palabras(partes[i + 1].texto), 'bash');   // el lector corta en el `(`
+        }
+        if (conGestor) {
+          const g = textoDeGestor(t, prog, carpetas);
+          if (g && g.noMirado) anotar(g.noMirado.ruta, g.noMirado.motivo);
+          for (const x of g ? g.textos : []) {
+            guardados.push({ ruta: x.ruta, texto: x.texto, shell: true });
+            texto(x.texto, [x.carpeta], false, prof + 1);                // un nivel más: lo que ese texto corre, y no lo que ése corra
+          }
+        }
+      }
+      if (prof < 3) for (const sub of substitutions(p.texto)) texto(sub, carpetas, conGestor, prof + 1);
+    });
+    return carpetas;
+  }
+  return { texto, guardados, noMirados };
+}
+
+const GESTORES = new Set(['npm', 'yarn', 'pnpm', 'bun']);
+/** ¿Existe un archivo con ESE nombre exacto? (en macOS `makefile` encuentra `Makefile`: el disco no distingue mayúsculas) */
+function existeExacto(ruta) {
+  const path = require('path');
+  try { return require('fs').readdirSync(path.dirname(ruta)).includes(path.basename(ruta)); } catch { return false; }
+}
+const NPM_ATAJOS = { test: 'test', t: 'test', tst: 'test', start: 'start', stop: 'stop', restart: 'restart' };
+const CON_CARPETA = new Set(['--prefix', '-C', '--dir', '--cwd']);
+const CARPETA_DESCONOCIDA = 'la carpeta del comando no se puede saber (un cd que no se puede leer)';
+
+/**
+ * El texto que corre `npm|yarn|pnpm|bun run <s>` (con sus `pre`/`post`, o los de instalar) o `make [objetivo…]`, leído de
+ * `package.json` o del `Makefile` de alguna carpeta posible del comando, empezando por la última.
+ * → `{ textos: [{ruta, texto, carpeta}], noMirado? }`, o null si no es eso.
+ */
+function textoDeGestor(t, prog, carpetas) {
+  const esMake = prog === 'make' || prog === 'gmake';
+  if (!GESTORES.has(prog) && !esMake) return null;
+  const conocidas = carpetas.filter((c) => c !== null);
+  if (!conocidas.length) return { textos: [], noMirado: { ruta: prog, motivo: CARPETA_DESCONOCIDA } };
+  let primero = null;
+  for (const base of [...conocidas].reverse()) {
+    const r = esMake ? recetasDelComando(t, base) : scriptsDelComando(t, prog, base);
+    if (r && r.textos.length) return r;
+    if (r && !primero) primero = r;
+  }
+  return primero;
+}
+
+function scriptsDelComando(t, prog, base) {
+  const path = require('path');
+  let carpeta = base; let otroPaquete = false;
+  const resto = [];                                                 // las palabras sueltas, y si siguen a una bandera
+  let trasBandera = false;
+  for (let i = 1; i < t.length; i++) {
+    const x = t[i];
+    if (CON_CARPETA.has(x) && t[i + 1] !== undefined) { carpeta = path.resolve(base, t[++i]); continue; }
+    const pegada = /^--(?:prefix|dir|cwd)=(.+)$/.exec(x);
+    if (pegada) { carpeta = path.resolve(base, pegada[1]); continue; }
+    if (OTRO_PAQUETE.test(x)) { otroPaquete = true; i++; continue; }
+    if (OTRO_PAQUETE_SOLO.test(x)) { otroPaquete = true; continue; }
+    if (x === '--') continue;
+    if (x.startsWith('-')) { trasBandera = true; continue; }
+    resto.push({ x, trasBandera }); trasBandera = false;
+  }
+  if (prog === 'yarn' && resto[0] && resto[0].x === 'workspace') { otroPaquete = true; resto.splice(0, 2); }
+  // como npm: el package.json más cercano, subiendo desde la carpeta
+  let dir = carpeta;
+  while (!existeExacto(path.join(dir, 'package.json')) && path.dirname(dir) !== dir) dir = path.dirname(dir);
+  if (existeExacto(path.join(dir, 'package.json'))) carpeta = dir;
+  const archivo = path.join(carpeta, 'package.json');
+  const leido = leerGuardado(archivo);
+  let scripts = null;
+  if (leido.texto !== undefined) { try { scripts = JSON.parse(leido.texto).scripts || {}; } catch { scripts = null; } }
+  const tiene = (n) => Boolean(scripts) && Object.prototype.hasOwnProperty.call(scripts, n);
+  let nombre = null; let instala = prog === 'yarn' && !resto.length;
+  for (let k = 0; k < resto.length && !nombre && !instala; k++) {
+    const { x, trasBandera: dudosa } = resto[k];
+    if (VERBOS_RUN.has(x)) { nombre = resto[k + 1] ? resto[k + 1].x : null; break; }
+    if (VERBOS_INSTALA.has(x)) instala = true;
+    else if (prog === 'npm' && NPM_ATAJOS[x]) nombre = NPM_ATAJOS[x];
+    else if (prog !== 'npm' && tiene(x)) nombre = x;                // `yarn leer`, `pnpm leer`
+    else if (!dudosa) break;                                        // otro subcomando; tras una bandera puede ser su valor
+  }
+  if (!nombre && !instala) return otroPaquete && resto.length ? { textos: [], noMirado: { ruta: archivo, motivo: 'corre un script de otro paquete del espacio de trabajo' } } : null;
+  if (leido.noMirado) return { textos: [], noMirado: { ...leido.noMirado, motivo: `package.json ${leido.noMirado.motivo}` } };
+  if (leido.texto === undefined) return instala ? null : { textos: [], noMirado: { ruta: archivo, motivo: 'no hay package.json' } };
+  if (!scripts) return { textos: [], noMirado: { ruta: archivo, motivo: 'package.json ilegible' } };
+  const aviso = otroPaquete ? { ruta: archivo, motivo: 'corre en otro paquete del espacio de trabajo: miré sólo este package.json' } : undefined;
+  const deScript = (n) => ({ ruta: `${archivo} (script «${n}»)`, texto: scripts[n], carpeta });
+  if (instala) return { textos: SCRIPTS_DE_INSTALAR.filter((n) => typeof scripts[n] === 'string').map(deScript), noMirado: aviso };
+  if (NO_LITERAL.test(nombre)) return { textos: [], noMirado: { ruta: archivo, motivo: 'el nombre del script lleva una variable' } };
+  if (typeof scripts[nombre] !== 'string') return { textos: [], noMirado: aviso || { ruta: archivo, motivo: `package.json no tiene el script «${nombre}»` } };
+  return { textos: [`pre${nombre}`, nombre, `post${nombre}`].filter((n) => typeof scripts[n] === 'string').map(deScript), noMirado: aviso };
+}
+
+function recetasDelComando(t, base) {
+  const path = require('path');
+  let carpeta = base; let opcionRara = null; let noEjecuta = false;
+  const archivos = []; const objetivos = [];
+  for (let i = 1; i < t.length; i++) {
+    const x = t[i];
+    if ((x === '-C' || x === '--directory') && t[i + 1] !== undefined) { carpeta = path.resolve(carpeta, t[++i]); continue; }
+    if (/^-C./.test(x)) { carpeta = path.resolve(carpeta, x.slice(2)); continue; }
+    if (x.startsWith('--directory=')) { carpeta = path.resolve(carpeta, x.slice('--directory='.length)); continue; }
+    if ((x === '-f' || x === '--file') && t[i + 1] !== undefined) { archivos.push(t[++i]); continue; }
+    const f = /^(?:-f(.+)|--file=(.+))$/.exec(x);
+    if (f) { archivos.push(f[1] || f[2]); continue; }
+    if (MAKE_CON_VALOR.test(x) && t[i + 1] !== undefined) { i++; continue; }
+    if (MAKE_CON_NUMERO.test(x)) { if (/^\d+(?:\.\d+)?$/.test(t[i + 1] || '')) i++; continue; }
+    if (/^-[IoWjl]./.test(x) || MAKE_LARGA_CONOCIDA.test(x)) continue;
+    // una opción larga con valor que no se conoce puede nombrar otro archivo de recetas: lo mirado quizá no es lo que corre
+    if (/^--[^=]+=/.test(x)) { opcionRara = x.slice(0, x.indexOf('=')); continue; }
+    if (MAKE_NO_EJECUTA.test(x)) { noEjecuta = true; continue; }
+    if (x.startsWith('-') || x.includes('=')) continue;
+    objetivos.push(x);
+  }
+  const candidatos = ['GNUmakefile', 'makefile', 'Makefile'].map((n) => path.join(carpeta, n));
+  const rutas = archivos.length ? archivos.map((a) => path.resolve(carpeta, a)) : [candidatos.find(existeExacto) || candidatos[candidatos.length - 1]];
+  const ruta = rutas.join(' + ');
+  let fuente = '';
+  for (const r of rutas) {
+    const leido = leerGuardado(r);
+    if (leido.noMirado) return { textos: [], noMirado: leido.noMirado };
+    if (leido.texto === undefined) return { textos: [], noMirado: { ruta: r, motivo: 'no hay Makefile' } };
+    fuente += `${leido.texto}\n`;
+  }
+  const motivos = [];
+  let mk = leerMakefile(fuente);
+  // un archivo incluido puede incluir otros: se sigue hasta agotarlos o llegar al tope, y cada archivo se lee una vez
+  const incluidos = new Set();
+  for (let nuevos = mk.incluidos.filter((i) => !incluidos.has(i)); nuevos.length; nuevos = mk.incluidos.filter((i) => !incluidos.has(i))) {
+    for (const inc of new Set(nuevos)) {
+      incluidos.add(inc);
+      if (incluidos.size > 8) { motivos.push('incluye más archivos de los que alcanzo a leer'); continue; }
+      if (NO_LITERAL.test(inc) || /[*?[\]{}]/.test(inc)) { motivos.push(`incluye «${inc}», que no se puede leer`); continue; }
+      const l = leerGuardado(inc, carpeta);
+      if (l.noMirado) motivos.push(`incluye «${inc}»: ${l.noMirado.motivo}`);
+      else if (l.texto !== undefined && fuente.length + l.texto.length <= MAX_ESCONDIDO * 4) fuente += `${l.texto}\n`;
+      else if (l.texto !== undefined) motivos.push('incluye más texto del que alcanzo a leer');
+    }
+    mk = leerMakefile(fuente);
+  }
+  motivos.push(...mk.sinMirar());
+  const textos = mk.alLeerlo.map((texto) => ({ ruta: `${ruta} (al leerlo)`, texto, carpeta }));
+  // `make -n` muestra las recetas sin correrlas, pero lee el archivo: lo de `$(shell …)` corre igual, y también la regla
+  // que rehace el Makefile o un archivo incluido, que make corre antes de empezar
+  const pedidos = noEjecuta ? [] : (objetivos.length ? objetivos : (mk.primero ? [mk.primero] : []));
+  const seRehacen = [...incluidos, ...(archivos.length ? archivos : [path.basename(rutas[0])])].filter((o) => mk.tiene(o));
+  const faltan = [];
+  // make corre antes los prerrequisitos, y `$(MAKE) otro` corre otro objetivo: todo eso es lo que corre este comando
+  const vistos = new Set(); const cola = [...seRehacen, ...pedidos];
+  let leido = 0;                                                    // lo que después hay que analizar también cuesta reloj
+  while (cola.length && vistos.size < 200 && leido <= MAX_ESCONDIDO * 4) {
+    const o = cola.shift();
+    if (vistos.has(o)) continue;
+    vistos.add(o);
+    if (!mk.tiene(o)) { if (pedidos.includes(o)) faltan.push(o); continue; }   // un prerrequisito sin regla es un archivo
+    const receta = mk.receta(o);
+    leido += receta.length;
+    if (receta) textos.push({ ruta: `${ruta} (objetivo «${o}»)`, texto: receta, carpeta });
+    cola.push(...mk.deps(o), ...objetivosDeSubMake(receta));
+  }
+  if (cola.some((o) => !vistos.has(o))) motivos.push('tiene más objetivos de los que alcanzo a seguir');
+  if (mk.recortado()) motivos.push('tiene variables más largas de las que alcanzo a expandir');
+  if (faltan.length) motivos.push(`el Makefile no tiene receta para «${faltan.join('», «')}»`);
+  if (opcionRara) motivos.push(`make trae una opción que no sé leer («${opcionRara}»)`);
+  return { textos, noMirado: motivos.length ? { ruta, motivo: [...new Set(motivos)].join(' · ') } : undefined };
+}
+
+/** Los objetivos de los `$(MAKE) x` de una receta (los que van a otra carpeta no son de este Makefile). */
+function objetivosDeSubMake(receta) {
+  const out = [];
+  for (const m of String(receta).matchAll(/(?:\$\(MAKE\)|\$\{MAKE\}|(?:^|[\s;&|])g?make)((?:[ \t]+[^\s;&|]+)*)/gm)) {
+    const ps = m[1].trim().split(/\s+/).filter(Boolean);
+    if (ps.some((p) => p === '-C' || p.startsWith('-C') || p.startsWith('--directory') || p === '-f')) continue;
+    out.push(...ps.filter((p) => !p.startsWith('-') && !p.includes('=')));
+  }
+  return out;
+}
+
+/**
+ * Un Makefile como lo lee make, en lo que cambia qué corre: condicionales, `define`, variables, `.DEFAULT_GOAL`,
+ * `.RECIPEPREFIX` y `$(shell …)` fuera de las recetas. Las dos ramas de un condicional cuentan: cuál corre no se sabe.
+ * → `{ tiene(o), receta(o), deps(o), primero, alLeerlo: [textos que corren al leer el archivo], incluidos, recortado(),
+ * sinMirar(): [lo que quedó afuera de sus topes] }`.
+ */
+function leerMakefile(texto) {
+  const crudo = new Map(); const deps = new Map(); const vars = new Map();
+  const conShell = []; const incluidos = [];
+  let primero = null; let defecto = null; let actuales = null; let enDefine = null; let prefijo = '\t';
+  const sumar = (l) => { const r = l.replace(/^\s*[@+-]+\s*/, ''); for (const o of actuales) crudo.set(o, (crudo.get(o) ? `${crudo.get(o)}\n` : '') + r); };
+  for (const l of texto.replace(/\\\r?\n[ \t]*/g, ' ').split(/\r?\n/)) {
+    // `$(shell …)` corre al leer el archivo en cualquier renglón que no sea una receta: se mira sin importar dónde esté
+    if (enDefine) {
+      if (/^\s*endef\b/.test(l)) enDefine = null;
+      else { vars.set(enDefine, `${vars.get(enDefine) || ''}${l}\n`); if (TIENE_SHELL.test(l)) conShell.push(l); }
+      continue;
+    }
+    if (l.startsWith(prefijo) && actuales) { sumar(l.slice(prefijo.length)); continue; }
+    const s = l.trim();
+    if (!s || s.startsWith('#')) continue;
+    if (TIENE_SHELL.test(s)) conShell.push(s);
+    if (/^(?:ifeq|ifneq|ifdef|ifndef|else|endif)\b/.test(s)) continue;
+    const def = /^(?:(?:override|export)\s+)*define\s+(\S+)/.exec(s);
+    if (def) { enDefine = def[1]; vars.set(enDefine, ''); continue; }
+    const inc = /^-?s?include\s+(.+)$/.exec(s);
+    if (inc) { incluidos.push(...inc[1].trim().split(/\s+/)); continue; }
+    const asig = /^(?:(?:override|export)\s+)*([^\s:#=+?!]+)\s*(::?:?|\+|\?|!)?=\s*(.*)$/.exec(s);
+    if (asig) {
+      const [, n, op, v] = asig;
+      vars.set(n, op === '+' && vars.has(n) ? `${vars.get(n)} ${v}` : v);
+      if (n === '.DEFAULT_GOAL') defecto = v.trim();
+      if (n === '.RECIPEPREFIX' && v) prefijo = v[0];
+      if (op === '!') conShell.push(v);                             // `X != comando` también corre al leer el archivo
+      continue;
+    }
+    const m = /^([^\s:#=][^:=]*?)\s*::?(?!=)([^;#]*)(?:;([^#]*))?/.exec(s);
+    if (!m) continue;
+    if (/^\s*[^\s=]+\s*[:+?]?=/.test(m[2])) continue;               // una variable de objetivo no es una regla
+    actuales = m[1].trim().split(/\s+/);
+    const prev = m[2].replace(/\|/g, ' ').trim().split(/\s+/).filter(Boolean);
+    for (const o of actuales) { if (!crudo.has(o)) crudo.set(o, ''); deps.set(o, [...(deps.get(o) || []), ...prev]); }
+    if (!primero) primero = actuales.find((o) => !o.startsWith('.') && !o.includes('%')) || null;
+    if (m[3] !== undefined && m[3].trim()) sumar(m[3]);
+  }
+  // con tope también dentro de cada pasada: miles de referencias a una variable larga no pueden llenar la memoria. Lo que
+  // no entra queda sin expandir y se avisa: ahí puede esconderse un comando
+  let recortado = false;
+  const expandir = (s) => {
+    let a = s;
+    for (let i = 0; i < 6; i++) {
+      let tam = a.length;
+      const poner = (x, n) => {
+        if (!vars.has(n)) return x;
+        if (tam + vars.get(n).length > MAX_ESCONDIDO) { recortado = true; return x; }
+        tam += vars.get(n).length;
+        return vars.get(n);
+      };
+      const b = a.replace(/\$[({]([A-Za-z_.][\w.-]*)[)}]/g, poner).replace(/\$\(call\s+([\w.-]+)[^)]*\)/g, poner);
+      if (b === a) return a;
+      a = b;
+    }
+    recortado = true;                                               // seis pasadas y todavía cambia
+    return a;
+  };
+  const comoShell = (s) => expandir(s).replace(/\$\{(?:shell\s+|call\s+shell\s*,\s*)([^{}]*)\}/g, '$($1)')
+    .replace(/\$\((?:shell\s+|call\s+shell\s*,\s*)/g, '$(').replace(/\$\$/g, '$');
+  return {
+    tiene: (o) => crudo.has(o),
+    receta: (o) => comoShell(crudo.get(o) || ''),                   // se expande sólo lo que corre
+    deps: (o) => (deps.get(o) || []).flatMap((x) => expandir(x).trim().split(/\s+/)).filter(Boolean),
+    primero: defecto ? expandir(defecto) : primero,
+    alLeerlo: conShell.slice(0, MAX_SHELL_DE_MAKE).map(comoShell),
+    incluidos: [...new Set(incluidos)].slice(0, MAX_INCLUDES_DE_MAKE).map(expandir),
+    recortado: () => recortado,
+    sinMirar: () => [
+      ...(conShell.length > MAX_SHELL_DE_MAKE ? ['tiene más `$(shell …)` de los que alcanzo a mirar'] : []),
+      ...(conShell.some((s) => /\$\{shell\s/.test(comoShell(s))) ? ['tiene un `${shell …}` que no alcanzo a leer'] : []),
+      ...(conShell.some((s) => NOMBRE_CALCULADO.test(comoShell(s))) ? ['tiene una función de nombre calculado que no alcanzo a leer'] : []),
+      ...(new Set(incluidos).size > MAX_INCLUDES_DE_MAKE ? ['incluye más archivos de los que alcanzo a leer'] : []),
+    ],
+  };
+}
+
+/** ¿El texto de shell llama a la puerta? Mira también adentro de `$(…)`, de `eval` y de `bash -c`, y detrás de envoltorios. */
+function llamaALaPuerta(texto, sp, anotar, prof = 0) {
+  if (prof > 3) return false;
+  // un patrón de `case` y los elementos de un arreglo están en renglón de comando sin ser comandos
+  const sinCase = String(texto).replace(/^[ \t]*[^\s()=]+\)(?=\s|$)/gm, '');
+  // sólo hasta el último `)`: sin un cierre por delante, cada `x=(` recorrería todo el resto del texto
+  const fin = sinCase.lastIndexOf(')') + 1;
+  const limpio = sinCase.slice(0, fin).replace(/(^|[\s;])[A-Za-z_]\w*\+?=\([^)]*\)/g, '$1') + sinCase.slice(fin);
+  let partes;
+  try { partes = sp.segmentos(limpio); } catch { anotar('no se pudo partir en comandos'); return false; }
+  const adentro = (s) => llamaALaPuerta(s, sp, anotar, prof + 1);
+  // el cuerpo de un heredoc que alimenta un shell son comandos
+  for (const h of sp.heredocs(limpio)) {
+    const fin = limpio.indexOf('\n', h.indice);
+    const linea = limpio.slice(limpio.lastIndexOf('\n', h.indice) + 1, fin < 0 ? limpio.length : fin);
+    if (/(?:^|[\s|])(?:ba|z|k|da)?sh(?:\s|$)/.test(linea) && adentro(h.cuerpo)) return true;
+  }
+  return partes.some(({ texto: s }) => {
+    const t = sinEnvoltorios(tokensDeSegmento(s, sp.tokens, sp.PREFIJOS));
+    if (t.length) {
+      const b = basename(t[0]);
+      if (t[0] === PUERTA || b === NOMBRE_PUERTA) return true;
+      if (b === 'eval' && adentro(t.slice(1).join(' '))) return true;
+      const c = SHELLS.has(b) ? t.indexOf('-c') : -1;
+      if (c > 0 && t[c + 1] !== undefined && adentro(t[c + 1])) return true;
+    }
+    return sp.substitutions(s).some(adentro);
+  });
+}
+
+/**
+ * El juicio de los guiones guardados: frena si alguno nombra un llavero declarado, un host declarado como producción, o
+ * (en un texto de shell) la puerta en posición de programa. Sólo consulta el índice si algún texto nombra algo de bases
+ * o un host que el índice guardado recuerda: consultarlo puede reconstruirlo, y eso no se paga por cada guion.
+ * → `{ ruta, que, causa }` del primero que frena, o null.
+ */
+function guardadoQueFrena(guardados, sp, { leerIndice, recordados, anotar }) {
+  const conTexto = guardados.filter((g) => typeof g.texto === 'string' && g.texto);
+  if (!conTexto.length) return null;
+  for (const g of conTexto) {
+    if (g.shell && llamaALaPuerta(g.texto, sp, (motivo) => anotar(g.ruta, motivo))) return { ruta: g.ruta, que: 'llama a la puerta de producción', causa: 'base-de-produccion' };
+  }
+  const rec = recordados();
+  const conocidos = (rec.hosts || []).map((h) => String(h).toLowerCase());
+  const conSenal = (g) => /tycon-prod-/i.test(g.texto) || CRUDO.test(g.texto) || /\.database\.windows\.net/i.test(g.texto);
+  // con el índice ilegible no se sabe qué hosts recordar: todo guion es candidato (consultar el índice lo rearma)
+  const candidatos = rec.hosts === null ? conTexto : conTexto.filter((g) => {
+    if (conSenal(g)) return true;
+    const bajo = g.texto.toLowerCase();
+    return conocidos.some((h) => bajo.includes(h));
+  });
+  // sin índice guardado, lo que no tiene otra señal no se mira: se dice, para que no parezca mirado
+  if (rec.falta) for (const g of conTexto) if (!candidatos.includes(g)) anotar(g.ruta, `${rec.falta}: un host de producción que nombre no se buscó`);
+  if (rec.ilegible) anotar(conTexto[0].ruta, `${rec.ilegible}: se miran todos los guiones contra el índice rearmado`);
+  if (!candidatos.length) return null;
+  const indice = leerIndice();
+  if ((indice.errores || []).length) anotar(candidatos[0].ruta, 'hay catálogos de producción que no se pudieron leer: lo que declaran no se miró');
+  const prod = Object.entries(indice.hosts || {}).filter(([, h]) => h && h.ambiente === 'produccion');
+  const llaveros = [...new Set(prod.map(([, h]) => h.llavero).filter(Boolean))];
+  // el nombre suelto, o pegado a su bandera (`-s<llavero>`, `-S<host>`)
+  const inicio = (seguro) => `(?:(?<!${seguro})|(?<=(?:^|\\s)-[A-Za-z]))`;
+  for (const g of candidatos) {
+    for (const l of llaveros) if (new RegExp(`${inicio('[\\w.-]')}${escRe(l)}(?![\\w.-])`).test(g.texto)) return { ruta: g.ruta, que: `nombra el llavero de producción «${l}»`, causa: 'llavero' };
+    for (const [h] of prod) if (new RegExp(`${inicio('[\\w-]')}${escRe(h)}(?![\\w-])`, 'i').test(g.texto)) return { ruta: g.ruta, que: `nombra el servidor de producción «${h}»`, causa: 'base-de-produccion' };
+  }
+  return null;
+}
+
+// ── automatizar la pantalla: el cuadro de producción lo contesta una persona ────────────────────
+const NOMBRA_SYSTEM_EVENTS = /System\s+Events|com\.apple\.systemevents/i;
+const ACCION_DE_PANTALLA = /\b(?:click|keystroke|key\s+(?:code|down|up)|key(?:Code|Down|Up)|perform\s+action|performAction|AXPress|AXConfirm)\b/i;
+const apretaLaPantalla = (codigo) => NOMBRA_SYSTEM_EVENTS.test(codigo) && ACCION_DE_PANTALLA.test(codigo);
+/** ¿Algún texto que corre aprieta botones de la pantalla? (`cliclick`, o el código que recibe `osascript`) */
+function automatizaLaPantalla(textos, tokens, PREFIJOS, segmentos) {
+  for (const x of textos) {
+    if (x.osascript && apretaLaPantalla(x.texto)) return true;
+    if (!(x.shell || x === textos[0])) continue;
+    let partes = [];
+    try { partes = segmentos(x.texto); } catch { continue; }         // lo anota el mirador, que parte los mismos textos
+    for (const { texto: s } of partes) {
+      const t = sinEnvoltorios(tokensDeSegmento(s, tokens, PREFIJOS));
+      const p = t.length ? basename(t[0]).toLowerCase() : '';
+      if (p === 'cliclick') return true;
+      if (p !== 'osascript') continue;
+      const codigo = t.filter((_, i) => i > 0 && t[i - 1] === '-e');   // varios `-e` son un solo programa
+      if (apretaLaPantalla(codigo.join('\n'))) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -1019,7 +1848,7 @@ function juzgarSecurity(t0) {
 // vieja usa para decidir. Los viejos salen de acá en el commit que apaga la escritura doble (AC 49).
 const CATALOGOS = ['production.json', 'produccion.json'];
 // `production-firewall.json`: las reglas de firewall que abrió la puerta. Borrarlo a mano escondería una regla viva.
-const ESTADOS = ['production-index.json', 'production-memory.json', 'production-firewall.json', 'produccion-indice.json', 'produccion-memoria.json'];
+const ESTADOS = ['production-index.json', 'production-memory.json', 'production-firewall.json'];
 const NOMBRES_PROTEGIDOS = [...CATALOGOS, ...ESTADOS];
 const CARPETAS_PROTEGIDAS = ['.tycon', '.tycon-pipeline'];
 // la carpeta del estado dentro de `.tycon`: cuenta como protegida sólo ahí, no cualquier `state`
@@ -1030,7 +1859,7 @@ const NOMBRA_PRODUCCION = /^(?:production|produccion)/i;
 // La mención ENTERA de un nombre protegido dentro de un argumento que no es una ruta: el programa de `python3 -c`,
 // `node -e`, `perl -e` (`os.remove('…/production-memory.json')`). Era la red del texto crudo sobre el segmento entero;
 // ahora es por palabra y con borde de nombre: `production-index.json0` (L3) es OTRO archivo y no se frena.
-const MENCION_PROTEGIDA = /(?<![\w-])(?:\.tycon\/(?:production|produccion)\.json|production-(?:index|memory|firewall)\.json|produccion-(?:indice|memoria)\.json)(?![\w.-])/i;
+const MENCION_PROTEGIDA = /(?<![\w-])(?:\.tycon\/(?:production|produccion)\.json|production-(?:index|memory|firewall)\.json)(?![\w.-])/i;
 
 // 🔴 Lista blanca de LECTORES, no lista negra de escritores (pase adversarial 2026-09-15). Y sin
 // `sort` (`-o` escribe), `uniq` (`uniq a b` escribe en b) ni `find` (`-delete`, `-exec`): esos tres
@@ -1219,7 +2048,21 @@ function escrituraProtegida(cmd, payload) {
     if (hit) return { tipo: 'archivo', ruta: mostrar(i.dir ? `${i.dir === '/' ? '' : i.dir}/${escPatron(hit)}` : escPatron(hit)), alcance, literal, desde: ruta };
     if (i.enRaizTycon && re.test(CARPETA_DE_ESTADO)) return { tipo: 'carpeta', ruta, alcance, literal, estado: true };
     // sin dotglob, sólo un comodín que empieza con punto puede ser `.tycon`/`.tycon-pipeline` (`.tyc*` sí, `*-*` no)
-    if (/[^*?]/.test(baseTxt) && puedeSerOculto(i.base) && CARPETAS_PROTEGIDAS.some((c) => re.test(c))) return { tipo: 'carpeta', ruta, alcance, literal };
+    if (/[^*?]/.test(baseTxt) && puedeSerOculto(i.base) && CARPETAS_PROTEGIDAS.some((c) => re.test(c))) {
+      // El comodín casa con nombres que ya están en la carpeta. Si la carpeta está escrita entera, se deja leer y no tiene
+      // adentro ninguna de las dos carpetas protegidas, el comodín no puede alcanzarlas: vaciar `~/Library/Caches/x/.[!.]*`
+      // no toca el catálogo. Una carpeta que no existe no tiene nada que casar (como en `alcanceDeFind`). Una carpeta con
+      // comodines, desconocida o que no se deja leer sigue frenando.
+      if (i.dir && i.dir.startsWith('/') && sp.patternIsLiteral(i.dir)) {
+        const dir = sp.patternToLiteral(i.dir);
+        let nombres = null;
+        try { nombres = fs.readdirSync(dir).map((x) => x.toLowerCase()); } catch (e) {
+          nombres = e && (e.code === 'ENOENT' || e.code === 'ENOTDIR') ? [] : null;
+        }
+        if (nombres && !CARPETAS_PROTEGIDAS.some((c) => nombres.includes(c))) return { tipo: null, ruta, alcance, literal };
+      }
+      return { tipo: 'carpeta', ruta, alcance, literal };
+    }
     return { tipo: null, ruta, alcance, literal };
   };
 
@@ -1814,12 +2657,18 @@ function escrituraProtegida(cmd, payload) {
       const nombre = pal(args[0]);
       const valores = [];
       const subs = [];
+      let todoLeido = args.length > 2;
       for (const raw of args.slice(2)) {
         const r = expandir(raw);
+        if (r.unknown || r.undecidable) todoLeido = false;
         valores.push(...r.patterns.filter((p) => !(r.unknown && p === '*')));
         subs.push(...sp.substitutions(raw), ...variablesUsedIn(raw).flatMap((n) => ctx.substitutionsOf[n] || []));
       }
       ctx.vars[nombre] = [...new Set([...[].concat(ctx.vars[nombre] || []), ...valores])];
+      // Con todas las palabras leídas, la variable del bucle vale esas palabras y nada más. shell-parse la marca además
+      // como desconocida al aplicar las asignaciones del segmento; esto lo deshace después de ese paso. Con una palabra
+      // que no se lee (`$(ls)`, una variable sin valor), sigue desconocida y frena como antes.
+      ctx.forLeido = todoLeido && valores.length && !subs.length ? { nombre, valores: [...new Set(valores)] } : null;
       if (subs.length) ctx.substitutionsOf[nombre] = [...new Set([...(ctx.substitutionsOf[nombre] || []), ...subs])].slice(0, 16);
       return null;
     }
@@ -1894,7 +2743,7 @@ function escrituraProtegida(cmd, payload) {
         if (h && h.shell) { const v = adentro(h.cuerpo, carpetaDeSegmento(prog, args, cwd)); if (v) return { veredicto: v }; }
       }
       if (CAMBIAN_CARPETA.has(prog)) cwd = nuevaCarpeta(prog, args, cwd);
-      else { const v = segmento(pp, i0, prog, args, cwd, tuberia, prof); if (v) return { veredicto: v }; }
+      else { ctx.forLeido = null; const v = segmento(pp, i0, prog, args, cwd, tuberia, prof); if (v) return { veredicto: v }; }
       // de qué sustituciones sale cada variable (#5): las suyas y las de las variables que copia, leídas antes de asignar
       const subsDe = pp.assignments.map((a) => [...sp.substitutions(a.raw), ...variablesUsedIn(a.raw).flatMap((n) => ctx.substitutionsOf[n] || [])]);
       // una variable de sólo lectura no se reasigna: la asignación falla y el comando sigue
@@ -1908,6 +2757,8 @@ function escrituraProtegida(cmd, payload) {
       // las asignaciones, DESPUÉS de las palabras: `X=a cmd $X` usa la X de antes. Detrás de `;` (o al principio) y fuera
       // de ramas, una reasignación REEMPLAZA el valor, como el shell; detrás de `&&`, `|`… la unión (#28, contrato del carril G)
       sp.applyAssignments(ctx, pp, { previousSep: k ? segs[k - 1].sep : '' });
+      // un `for` con todas sus palabras leídas: su variable vale esas palabras (lo dejó juzgado judgeProgram)
+      if (ctx.forLeido) { ctx.vars[ctx.forLeido.nombre] = ctx.forLeido.valores; ctx.forLeido = null; }
       // lo que el shell pisó seguro olvida también de qué sustitución salía (`F=$(…); F=/tmp/a; rm $F`); si no, la unión
       pp.assignments.forEach((a, j) => {
         const olvida = pisaSeguro && ctx.replaced.has(a.name) && a.op !== '+=' && !a.element && !a.array
@@ -2487,6 +3338,7 @@ function secuestroEnShellDeLogin() {
   const restante = RELOJ_MS - (Date.now() - t0) - 300;   // y que quede reloj para lo que sigue
   if (restante < 500) return 'sin tiempo para preguntarle al shell de login qué define.';
   const r = spawnSync(shell, ['-l', '-c', script, 'tycon-prod-guard', ...nombres], {
+    windowsHide: true,
     encoding: 'utf8', timeout: Math.min(restante, 3000), stdio: ['ignore', 'pipe', 'pipe'], env: process.env,
   });
   if (r.error || r.status === null) return `no pude preguntarle al shell de login (${shell}) qué define: ${r.error ? r.error.message : 'no contestó a tiempo'}.`;
@@ -2516,13 +3368,13 @@ function arranqueDeLaSesion() {
   let pid = process.ppid;
   for (let i = 0; i < 6 && pid && pid > 1; i++) {
     if (vencido()) return null;                       // «no pude mirar» → el llamador frena
-    const r = spawnSync('ps', ['-o', 'ppid=,command=', '-p', String(pid)], { encoding: 'utf8', timeout: 1500 });
+    const r = spawnSync('ps', ['-o', 'ppid=,command=', '-p', String(pid)], { windowsHide: true, encoding: 'utf8', timeout: 1500 });
     if (r.status !== 0 || !r.stdout) break;
     const m = /^\s*(\d+)\s+(.*)$/.exec(r.stdout.trim());
     if (!m) break;
     const comando = m[2];
     if (/(^|\/)claude(\s|$)/.test(comando) || comando.includes('native-binary/claude')) {
-      const l = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', timeout: 1500 });
+      const l = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { windowsHide: true, encoding: 'utf8', timeout: 1500 });
       const t = l.status === 0 ? Date.parse(l.stdout.trim()) : NaN;
       if (!Number.isNaN(t)) return t;
       break;

@@ -25,6 +25,11 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
 //   `full_tests_pipeline` es «el pipeline de pruebas completas» del repo: en Azure, por nombre o por id; en GitHub, el
 //   nombre del control obligatorio. Lo usa el skill de merge (scripts/tools/merge-pr.js); sin la clave, el skill lee
 //   `merge.mode` del repo. La clave es opcional: no sube la versión del archivo.
+//     "story_index": {                  opcional — cómo se escriben los índices de historias de cada repo
+//       "repos": [ { "repo": <repo>, "mode": «generated» | «manual» } ] }
+//                                       «generated»: specs/epics.md y specs/sprint-status.yaml los arma
+//                                       scripts/tools/story-index.js desde el frontmatter, y nadie los edita a mano. Un
+//                                       repo sin entrada, o con otro valor, es «manual» (como siempre).
 //     "models": {                       opcional — el modelo de cada trabajo del pipeline
 //       "mandatory_ceiling"?: <bool>, "ceiling"?: <modelo>,   techo obligatorio (paga la organización): van juntos
 //       "reviewers"?: <modelo>, "reviewer"?: { "<revisor>": <modelo> }, "reviewers_reloop"?: <modelo>,
@@ -76,7 +81,22 @@ const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github' });
 function connectorOf(platform) { return Object.prototype.hasOwnProperty.call(CONNECTORS, platform) ? CONNECTORS[platform] : null; }
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'story_index', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review', 'plan_review', 'review_runner'];
+// El umbral del aviso de contexto: tokens enteros de 100.000 a 900.000. Lo lee scripts/hooks/context-size-notice.js,
+// después de TYCON_CONTEXT_NOTICE_TOKENS de la máquina y antes de los 300.000 de fábrica.
+const CONTEXT_NOTICE_KEYS = ['tokens'];
+const CONTEXT_NOTICE_RANGE = [100000, 900000];
+// La política del pase adversarial de la organización: `always` o `auto` (de fábrica, `auto`). Sólo puede subir: no hay
+// `off`, porque saltear el pase lo firma el dueño (`marker.js sign-adversarial-skip`). La lee skills/tycon-pipeline/scripts/pipeline.js.
+// Las demás claves de `deep_review` son la matriz de la revisión del código, y `plan_review` la de la revisión del plan:
+// sus valores y rangos son los de skills/tycon-pipeline/scripts/lib/review-policy.js, que las lee clave por clave.
+const DEEP_REVIEW_KEYS = ['default', 'delicate', 'small_max_files', 'small_routine_day', 'small_routine_owner_away', 'large_routine'];
+// Con qué corre la revisión: el orden de los corredores (los de integrations/review-runner/integration.json), el comando
+// propio (obligatorio con `custom`) y cuántos verificadores (uno por clase o uno por hallazgo).
+const REVIEW_RUNNER_KEYS = ['order', 'custom_command', 'verifiers'];
+const REVIEW_RUNNERS = ['claude', 'codex', 'cursor', 'claude-ollama', 'custom'];
+const politica = () => require('../../skills/tycon-pipeline/scripts/lib/review-policy.js');
+const DEEP_REVIEW_VALUES = ['always', 'auto'];
 // La revisión de la semana: prendida o no, el tope en dólares de su única corrida del agente y el tope de material en
 // caracteres. Lo lee scripts/nightly/weekly-review/weekly-review.js; sin la clave, prendida, 5 y 600.000: con 600.000
 // entra casi toda una semana de mucho movimiento por menos de la mitad del tope en dólares.
@@ -92,16 +112,22 @@ const ESTIMATES_UNITS = ['hours', 'days', 'points'];
 // un día de trabajo tiene entre 1 y 24 horas: fuera de eso, pasar días a horas da un total que no es de nadie
 const ESTIMATES_HOURS_PER_DAY = [1, 24];
 // El plazo del aviso de espera: minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
-const WAIT_NOTICE_KEYS = ['minutes'];
+// `minutes`: el plazo; `enabled`: si el aviso de espera corre en las máquinas de la organización (sin valor, sí; la
+// variable TYCON_WAIT_NOTICE de una máquina, si está puesta, gana).
+const WAIT_NOTICE_KEYS = ['minutes', 'owner_minutes', 'peer_owner_minutes', 'enabled'];
 const WAIT_NOTICE_MAX = 120;
+// la espera de otra sesión (un turno pedido a la coordinadora) llega al dueño mucho más tarde: hasta un día de trabajo
+const WAIT_NOTICE_PEER_MAX = 480;
 // El umbral de cobertura de las líneas tocadas: un entero de 1 a 100. Lo lee
 // skills/tycon-pipeline/scripts/lib/test-gate-report.js, después de TYCON_COVERAGE_MIN de la máquina y antes del 75.
 const COVERAGE_KEYS = ['min_touched_lines_pct'];
-// Las vueltas de revisores de una story: `max_rounds` = el tope, un entero de 1 a 6 (de fábrica 2);
+// Las vueltas de revisores de una story: `max_rounds` = el tope, un entero de 1 a 6 (de fábrica 3), el mismo para la
+// revisión del plan y la del código; `blocking_severity` = desde qué gravedad un hallazgo confirmado frena (bug,
+// robustness o all; de fábrica bug);
 // `blocking_prefixes` = prefijos de reglas que la organización suma a los de fábrica como «seguridad o datos»
 // (SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE no se configuran, sólo se suman). Cada prefijo: mayúsculas,
 // dígitos y guiones, y puede terminar en -C o -W.
-const REVIEW_KEYS = ['max_rounds', 'blocking_prefixes'];
+const REVIEW_KEYS = ['max_rounds', 'blocking_prefixes', 'blocking_severity'];
 const REVIEW_PREFIX_RE = /^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$/;
 // La tecnología de la organización: `code_extensions` = terminaciones que también son código, además de las
 // del núcleo (skills/tycon-pipeline/scripts/lib/code-files.js, que la lee con lib/stack-config.js). Misma forma que
@@ -138,6 +164,10 @@ function runnersProblems(value) {
     }
     if (r.coverage !== undefined && (!isObject(r.coverage) || !RUNNER_COVERAGE_FORMATS.includes(r.coverage.format) || typeof r.coverage.path !== 'string')) {
       out.push({ path: `${p}.coverage.format`, message: `la cobertura tiene que ser ${RUNNER_COVERAGE_FORMATS.join(', ')}, con su path` });
+    }
+    // el comando que corre sólo algunas pruebas (el chequeo de mutantes): lleva {files} o {classes}
+    if (r.scoped !== undefined && !(typeof r.scoped === 'string' && (r.scoped.includes('{files}') || r.scoped.includes('{classes}')))) {
+      out.push({ path: `${p}.scoped`, message: 'el comando para correr sólo algunas pruebas tiene que llevar {files} o {classes}' });
     }
     out.push(...runnerDetailProblems(r, p));
     if (typeof r.name === 'string') nombres.add(r.name);
@@ -308,6 +338,45 @@ function mergeSuitesFor(data, identity) {
   if (entry && entry.rule !== undefined) return { declared: true, rule: entry.rule, ruleFrom: 'repo', pipeline };
   if (ms.default !== undefined) return { declared: true, rule: ms.default, ruleFrom: 'organization', pipeline };
   return { declared: true, rule: 'automatico', ruleFrom: 'default', pipeline };
+}
+
+const STORY_INDEX_MODES = ['generated', 'manual'];
+
+/** Los problemas de `story_index`; `[]` si está bien. */
+function storyIndexProblems(value) {
+  if (!isObject(value)) return [{ path: 'story_index', message: 'tiene que ser un objeto con repos' }];
+  const out = [];
+  for (const k of Object.keys(value)) {
+    if (!fieldComment(k, value[k]) && k !== 'repos') out.push({ path: `story_index.${k}`, message: 'clave desconocida' });
+  }
+  if (value.repos === undefined) return out;
+  if (!Array.isArray(value.repos)) return [...out, { path: 'story_index.repos', message: 'tiene que ser una lista de entradas { repo, mode }' }];
+  const seen = new Set();
+  value.repos.forEach((e, i) => {
+    const at = `story_index.repos.${i}`;
+    if (!isObject(e)) { out.push({ path: at, message: 'tiene que ser un objeto { repo, mode }' }); return; }
+    for (const k of Object.keys(e)) if (!fieldComment(k, e[k]) && k !== 'repo' && k !== 'mode') out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
+    if (!STORY_INDEX_MODES.includes(e.mode)) out.push({ path: `${at}.mode`, message: `tiene que ser ${STORY_INDEX_MODES.map((m) => `«${m}»`).join(' o ')} (es ${JSON.stringify(e.mode)})` });
+    const repoErrs = e.repo === undefined ? [{ path: `${at}.repo`, message: 'falta' }] : repoProblems(e.repo, `${at}.repo`);
+    out.push(...repoErrs);
+    if (!repoErrs.length) {
+      const key = identityKey(e.repo);
+      if (seen.has(key)) out.push({ path: `${at}.repo`, message: 'este repo ya tiene una entrada en story_index.repos' });
+      seen.add(key);
+    }
+  });
+  return out;
+}
+
+/**
+ * Cómo se escriben los índices de historias de un repo: `{ mode, declared }`. `mode` es «generated» sólo si su entrada lo
+ * dice con un valor válido; cualquier otra cosa (sin clave, sin entrada, otro valor) es «manual».
+ */
+function storyIndexFor(data, identity) {
+  const si = isObject(data) && isObject(data.story_index) ? data.story_index : null;
+  const want = identityKey(identity);
+  const entry = si && Array.isArray(si.repos) ? si.repos.find((e) => isObject(e) && want !== null && identityKey(e.repo) === want) : null;
+  return { mode: entry && entry.mode === 'generated' ? 'generated' : 'manual', declared: !!entry };
 }
 
 const modelProblem = (v, at) => (modelRank(v) >= 0 ? [] : [{ path: at, message: `tiene que ser ${MODEL_LEVELS.map((m) => `«${m}»`).join(', ')} (es ${JSON.stringify(v)})` }]);
@@ -510,11 +579,113 @@ function waitNoticeProblems(value) {
   if (!isObject(value)) return [{ path: 'wait_notice', message: 'tiene que ser un objeto (el plazo del aviso de espera)' }];
   const out = [];
   for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !WAIT_NOTICE_KEYS.includes(k)) out.push({ path: `wait_notice.${k}`, message: 'clave desconocida' });
-  const m = value.minutes;
-  if (m !== undefined && !(Number.isInteger(m) && m >= 1 && m <= WAIT_NOTICE_MAX)) {
-    out.push({ path: 'wait_notice.minutes', message: `tiene que ser un número entero de minutos, de 1 a ${WAIT_NOTICE_MAX} (es ${JSON.stringify(m)})` });
+  // `minutes`: el plazo del primer aviso; `owner_minutes`: el del dueño cuando hay coordinadora, contado desde la apertura
+  for (const k of ['minutes', 'owner_minutes']) {
+    const m = value[k];
+    if (m !== undefined && !(Number.isInteger(m) && m >= 1 && m <= WAIT_NOTICE_MAX)) {
+      out.push({ path: `wait_notice.${k}`, message: `tiene que ser un número entero de minutos, de 1 a ${WAIT_NOTICE_MAX} (es ${JSON.stringify(m)})` });
+    }
+  }
+  // `peer_owner_minutes`: el del dueño cuando la sesión espera a otra sesión (un turno) y hay coordinadora
+  const peer = value.peer_owner_minutes;
+  if (peer !== undefined && !(Number.isInteger(peer) && peer >= 1 && peer <= WAIT_NOTICE_PEER_MAX)) {
+    out.push({ path: 'wait_notice.peer_owner_minutes', message: `tiene que ser un número entero de minutos, de 1 a ${WAIT_NOTICE_PEER_MAX} (es ${JSON.stringify(peer)})` });
+  }
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
+    out.push({ path: 'wait_notice.enabled', message: `tiene que ser true o false (es ${JSON.stringify(value.enabled)})` });
   }
   return out;
+}
+
+/** Los problemas de `context_notice`; `[]` si está bien. */
+function contextNoticeProblems(value) {
+  if (!isObject(value)) return [{ path: 'context_notice', message: 'tiene que ser un objeto (el umbral del aviso de contexto)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !CONTEXT_NOTICE_KEYS.includes(k)) out.push({ path: `context_notice.${k}`, message: 'clave desconocida' });
+  const t = value.tokens;
+  const [desde, hasta] = CONTEXT_NOTICE_RANGE;
+  if (t !== undefined && !(Number.isInteger(t) && t >= desde && t <= hasta)) {
+    out.push({ path: 'context_notice.tokens', message: `tiene que ser un número entero de tokens, de 100.000 a 900.000 (es ${JSON.stringify(t)})` });
+  }
+  return out;
+}
+
+/** Los problemas de `deep_review`; `[]` si está bien. */
+function deepReviewProblems(value) {
+  if (!isObject(value)) return [{ path: 'deep_review', message: 'tiene que ser un objeto (la política del pase adversarial)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !DEEP_REVIEW_KEYS.includes(k)) out.push({ path: `deep_review.${k}`, message: 'clave desconocida' });
+  const d = value.default;
+  if (d === 'off') {
+    out.push({ path: 'deep_review.default', message: 'la organización no puede apagar el pase adversarial: saltearlo lo firma el dueño en cada ejecución (marker.js sign-adversarial-skip). Vale always o auto' });
+  } else if (d !== undefined && !DEEP_REVIEW_VALUES.includes(d)) {
+    out.push({ path: 'deep_review.default', message: `tiene que ser always o auto (es ${JSON.stringify(d)})` });
+  }
+  out.push(...matrizProblems('deep_review', value));
+  return out;
+}
+
+/**
+ * Los problemas de las claves de una sección que valida review-policy.js (`normalize`), con su ruta. Sólo se carga si la
+ * sección trae alguna de esas claves; un árbol sin el skill lo dice como problema de la sección, sin tirar.
+ */
+function matrizProblems(seccion, value) {
+  const crudo = {};
+  for (const [k, v] of Object.entries(value)) if (!fieldComment(k, v) && !(seccion === 'deep_review' && k === 'default')) crudo[k] = v;
+  if (!Object.keys(crudo).length) return [];
+  let pol;
+  try { pol = politica(); } catch (e) { return [{ path: seccion, message: `no pude validar la sección: falta su lector (${(e && e.code) || e})` }]; }
+  return pol.normalize({ [seccion]: crudo }).problems.filter((p) => p.path.startsWith(`${seccion}.`));
+}
+
+/** Los problemas de `plan_review` (la revisión del plan); `[]` si está bien. */
+function planReviewProblems(value) {
+  if (!isObject(value)) return [{ path: 'plan_review', message: 'tiene que ser un objeto (la revisión del plan)' }];
+  let claves;
+  try { claves = Object.keys(politica().DEFAULTS.plan_review); } catch (e) { return [{ path: 'plan_review', message: `no pude validar la sección: falta su lector (${(e && e.code) || e})` }]; }
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !claves.includes(k)) out.push({ path: `plan_review.${k}`, message: 'clave desconocida' });
+  out.push(...matrizProblems('plan_review', value));
+  return out;
+}
+
+/** Los problemas de `review_runner` (con qué corre la revisión); `[]` si está bien. */
+function reviewRunnerProblems(value) {
+  if (!isObject(value)) return [{ path: 'review_runner', message: 'tiene que ser un objeto (con qué corre la revisión)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !REVIEW_RUNNER_KEYS.includes(k)) out.push({ path: `review_runner.${k}`, message: 'clave desconocida' });
+  const o = value.order;
+  let ordenBueno = Array.isArray(o) ? o : null;
+  if (o !== undefined) {
+    let motivo = null;
+    if (!Array.isArray(o) || !o.length) motivo = 'tiene que ser una lista no vacía de revisores';
+    else if (new Set(o).size !== o.length) motivo = 'tiene revisores repetidos';
+    else {
+      const malo = o.find((x) => !REVIEW_RUNNERS.includes(x));
+      if (malo !== undefined) motivo = `«${malo}» no es un revisor (vale ${REVIEW_RUNNERS.join(' · ')})`;
+    }
+    if (motivo) { out.push({ path: 'review_runner.order', message: `${motivo}: uso el de fábrica, ["claude"]` }); ordenBueno = null; }
+  }
+  const c = value.custom_command;
+  if (c !== undefined && !(typeof c === 'string' && c.trim())) out.push({ path: 'review_runner.custom_command', message: 'tiene que ser el comando del revisor propio, un texto no vacío' });
+  else if (ordenBueno && ordenBueno.includes('custom') && c === undefined) out.push({ path: 'review_runner.custom_command', message: 'con «custom» en la lista hace falta el comando del revisor propio' });
+  const vf = value.verifiers;
+  if (vf !== undefined && !['per_lens', 'per_finding'].includes(vf)) {
+    out.push({ path: 'review_runner.verifiers', message: `tiene que ser per_lens o per_finding (es ${JSON.stringify(vf)}): uso el de fábrica, per_lens` });
+  }
+  return out;
+}
+
+/**
+ * Una sección sin las claves que tienen problemas: cada clave mala cae sola a su valor de fábrica, y las demás siguen.
+ * Si el problema es de la sección entera, o no queda ninguna clave, null.
+ */
+function seccionSinProblemas(seccion, value, problemas) {
+  if (!isObject(value) || problemas.some((p) => p.path === seccion)) return null;
+  const malas = new Set(problemas.map((p) => p.path.split('.')[1]).filter(Boolean));
+  const out = {};
+  for (const [k, v] of Object.entries(value)) if (!malas.has(k)) out[k] = v;
+  return Object.keys(out).some((k) => !fieldComment(k, out[k])) ? out : null;
 }
 
 /** Los problemas de `weekly_review`; `[]` si está bien. Casos: scripts/tests/weekly-review.test.js T12. */
@@ -549,6 +720,9 @@ function coverageProblems(value) {
 /** Los problemas de `review`; `[]` si está bien. */
 function reviewProblems(value) {
   if (!isObject(value)) return [{ path: 'review', message: 'tiene que ser un objeto (las vueltas de revisores de una story)' }];
+  const sev = value.blocking_severity;
+  const sevProblema = sev !== undefined && !['bug', 'robustness', 'all'].includes(sev)
+    ? [{ path: 'review.blocking_severity', message: `tiene que ser bug, robustness o all (es ${JSON.stringify(sev)}): uso el de fábrica, bug` }] : [];
   const out = [];
   for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !REVIEW_KEYS.includes(k)) out.push({ path: `review.${k}`, message: 'clave desconocida' });
   const n = value.max_rounds;
@@ -568,7 +742,7 @@ function reviewProblems(value) {
       });
     }
   }
-  return out;
+  return [...out, ...sevProblema];
 }
 
 /** Los problemas de `stack`, con la ruta de cada clave; `[]` si está bien. */
@@ -673,15 +847,30 @@ function parse(text) {
   const sectionWeekly = isObject(doc) && doc.weekly_review !== undefined ? weeklyReviewProblems(doc.weekly_review) : [];
   // y con `estimates`: una unidad mal escrita no deja sin el archivo; quien estima lo dice y no escribe
   const sectionEstimates = isObject(doc) && doc.estimates !== undefined ? estimatesProblems(doc.estimates) : [];
+  // y con `context_notice` y `deep_review`: un valor malo cae al de fábrica, no deja sin el archivo
+  const sectionContext = isObject(doc) && doc.context_notice !== undefined ? contextNoticeProblems(doc.context_notice) : [];
+  const sectionDeep = isObject(doc) && doc.deep_review !== undefined ? deepReviewProblems(doc.deep_review) : [];
+  // y con `plan_review` y `review_runner`: cada clave mala cae sola
+  const sectionPlan = isObject(doc) && doc.plan_review !== undefined ? planReviewProblems(doc.plan_review) : [];
+  const sectionRunner = isObject(doc) && doc.review_runner !== undefined ? reviewRunnerProblems(doc.review_runner) : [];
+  // y con `story_index`: un modo mal escrito deja los índices a mano, como siempre, y lo dice
+  const sectionStoryIndex = isObject(doc) && doc.story_index !== undefined ? storyIndexProblems(doc.story_index) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length)) {
+  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length || sectionContext.length || sectionDeep.length || sectionPlan.length || sectionRunner.length || sectionStoryIndex.length)) {
     data = { ...doc };
+    if (sectionStoryIndex.length) delete data.story_index;
+    if (sectionContext.length) delete data.context_notice;
+    // las secciones de las revisiones pierden sólo la clave mala: una política bien escrita no cae por un corte mal escrito
+    for (const [k, probs] of [['deep_review', sectionDeep], ['review', sectionReview], ['plan_review', sectionPlan], ['review_runner', sectionRunner]]) {
+      if (!probs.length) continue;
+      const queda = seccionSinProblemas(k, doc[k], probs);
+      if (queda) data[k] = queda; else delete data[k];
+    }
     if (sectionModels.length) delete data.models;
     if (sectionWait.length) delete data.wait_notice;
     if (sectionWeekly.length) delete data.weekly_review;
     if (sectionEstimates.length) delete data.estimates;
     if (sectionCoverage.length) delete data.coverage;
-    if (sectionReview.length) delete data.review;
     if (sectionStack.length) {
       if (isObject(doc.stack)) data.stack = stackSinProblemas(doc.stack, sectionStack);
       else delete data.stack;
@@ -695,6 +884,11 @@ function parse(text) {
     ...(sectionStack.length ? { stack: sectionStack } : {}),
     ...(sectionWeekly.length ? { weekly_review: sectionWeekly } : {}),
     ...(sectionEstimates.length ? { estimates: sectionEstimates } : {}),
+    ...(sectionContext.length ? { context_notice: sectionContext } : {}),
+    ...(sectionDeep.length ? { deep_review: sectionDeep } : {}),
+    ...(sectionPlan.length ? { plan_review: sectionPlan } : {}),
+    ...(sectionRunner.length ? { review_runner: sectionRunner } : {}),
+    ...(sectionStoryIndex.length ? { story_index: sectionStoryIndex } : {}),
   };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
@@ -742,7 +936,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

@@ -110,7 +110,7 @@ test('T48 Sitio_ConConversacionesNuncaPasaDelTope @story-2.30 @ac-25', { skip: S
     assert.deepStrictEqual(conversacionesEn(path.join(datos, 'buzon')), [], 'ninguna conversación quedó en el disco');
     const resumenes = fs.readdirSync(path.join(datos, 'buzon', 'maq-a')).filter((f) => f.endsWith(runs.RESUMEN.sufijo));
     assert.strictEqual(resumenes.length, N, 'cada ejecución, con su resumen');
-    assert.ok(registro.some((l) => /ejecución\(es\) resumida\(s\)/.test(l)), 'el registro dice que resumió');
+    assert.ok(registro.some((l) => /(1 ejecución resumida|\d+ ejecuciones resumidas)/.test(l)), 'el registro dice que resumió');
     // y con el disco del tamaño de hoy: el espejo entero (volcados y resúmenes) es chico
     // el espejo entero: los volcados, los resúmenes (unos kilos cada uno) y lo chico de la bajada; nunca una conversación
     const volcados = Object.entries(blobs).filter(([n]) => n.endsWith('.json')).reduce((t, [, b]) => t + Buffer.from(b).length, 0);
@@ -439,4 +439,66 @@ test('T56 Sitio_ConversacionesPendientes_LaVistaSeArmaYLoDice', { skip: SIN_BACK
   M.multi = true;
   M.buzon = { estado: 'leido', pendientes: 3 };
   assert.match(runs.cabecera(M, { sitio: { rol: 'maintainer' } }), /3 archivo/, 'la banda nombra lo que falta');
+});
+
+// rojo si: confiando en el índice la bajada mira el disco igual (re-baja lo que el índice da por bajado), o sin
+// confiar no repone lo que falta en el disco.
+test('Bajada_ConfiandoEnElIndice_NoMiraElDisco_YSinConfiarRepone', async () => {
+  const buzon = await H.arrancarBuzon({ blobs: blobsDe(2) });
+  try {
+    const dir = path.join(tmp('mbx-confiar-'), 'buzon');
+    const r = await bajada(buzon, dir);
+    assert.strictEqual(r.codigo, 0, JSON.stringify(r.res));
+    const pedidas = () => buzon.pedidos.filter((p) => !p.query.includes('comp=list')).length;
+    fs.rmSync(path.join(dir, 'maq-a', 'r1.json'));
+    const antes = pedidas();
+    const r2 = await bajada(buzon, dir, { confiarIndice: true });
+    assert.strictEqual(r2.codigo, 0, JSON.stringify(r2.res));
+    assert.strictEqual(pedidas(), antes, 'confiando en el índice no pide nada: el buzón no cambió');
+    assert.ok(!fs.existsSync(path.join(dir, 'maq-a', 'r1.json')), 'y no miró el disco');
+    const r3 = await bajada(buzon, dir);
+    assert.strictEqual(r3.codigo, 0, JSON.stringify(r3.res));
+    assert.ok(fs.existsSync(path.join(dir, 'maq-a', 'r1.json')), 'sin confiar, lo que faltaba en el disco vuelve');
+  } finally { await buzon.cerrar(); }
+});
+
+test('T2 2.79-Espejo_BajadaYArmado_NoSePisan @story-2.79 @ac-2', { skip: SIN_BACKEND }, async () => {
+  // el armado lee el espejo: la bajada no lo escribe mientras se arma. Con un armado en curso, la bajada espera; vencida
+  // la espera, no baja (se sirve la vista que hay) y lo registra. La marca de la bajada se suelta también si falla
+  const buzon = await H.arrancarBuzon({ blobs: blobsDe(2) });
+  const raiz = tmp('mbx-pisan-');
+  const ops = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs', threads: true } } };
+  repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: ops }), path.join(raiz, 'trabajo'));
+  const git = await arrancarRepoHttp({ raiz, cabecera: CABECERA });
+  const datos = tmp('mbx-pisan-datos-');
+  const env = H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: TOKEN, SITE_MAILBOX_SAS: H.sas(), SITE_DATA_DIR: datos });
+  const v = validarConfiguracion(env);
+  assert.ok(v.ok, JSON.stringify(v.problemas));
+  const registro = [];
+  const pedidas = () => buzon.pedidos.length;
+  let armando = true;
+  let vioBajando = false;
+  const fuentes = crearFuentes({ cfg: v.cfg, dataDir: datos, log: (l) => registro.push(l), urlBuzon: buzon.base, esperaArmadoMs: 300 });
+  try {
+    fuentes.alArmar(() => { if (fuentes.buzonEstado().bajando) vioBajando = true; return armando; });
+    // con el armado colgado, la bajada espera y, vencida la espera, no baja
+    await fuentes.refrescar();
+    assert.strictEqual(pedidas(), 0, 'con un armado en curso no se baja nada');
+    assert.strictEqual(fuentes.buzonEstado().generacion, 0);
+    assert.ok(registro.some((l) => /armado .*en curso/.test(l)), `registra el motivo: ${registro.slice(-3).join(' | ')}`);
+    assert.strictEqual(fuentes.buzonEstado().bajando, false, 'la marca no queda puesta');
+    // el armado termina durante la espera: la bajada sigue
+    setTimeout(() => { armando = false; }, 100);
+    await fuentes.refrescar();
+    assert.ok(pedidas() > 0, 'terminado el armado, baja');
+    assert.ok(fuentes.buzonEstado().generacion > 0);
+    assert.strictEqual(fuentes.buzonEstado().bajando, false, 'y suelta la marca al terminar');
+    assert.strictEqual(vioBajando, false, 'nadie vio la marca de la bajada mientras se esperaba al armado');
+  } finally { fuentes.detener(); await buzon.cerrar(); }
+  // una bajada que falla (el buzón no contesta) también suelta la marca
+  const caida = crearFuentes({ cfg: v.cfg, dataDir: tmp('mbx-pisan-caida-'), log: () => {}, urlBuzon: buzon.base, esperaArmadoMs: 300 });
+  try {
+    await caida.refrescar();
+    assert.strictEqual(caida.buzonEstado().bajando, false, 'la marca se suelta tras el fallo');
+  } finally { caida.detener(); await git.cerrar(); }
 });

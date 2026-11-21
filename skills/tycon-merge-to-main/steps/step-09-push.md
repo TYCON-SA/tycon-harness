@@ -66,7 +66,7 @@ Pasar al Step 10.
 
 - **Push falla por branch protection** (el target exige PR): **NO abortar** (desde 2026-08-30 el
   skill sí sabe abrir PRs). Es la señal de que ese repo debería estar en modo `pr` y nadie lo
-  declaró. Ofrecer al dev pasar a **step-09b-create-pr.md** con el mensaje ya aprobado, y sugerir
+  declaró. Ofrecer al dev pasar a **step-09b-create-change-request.md** con el mensaje ya aprobado, y sugerir
   que el admin de la organización declare el repo en la configuración de la organización
   (`team-repos.json → merge_suites`, con su pipeline de pruebas completas): con eso el plan del
   paso 0 ve que la rama exige ese pipeline y arranca directo por el pedido. (`merge.mode: pr` en el

@@ -155,6 +155,9 @@ function namedStores(file) {
   const names = new Set();
   for (const m of text.matchAll(/homedir\(\),\s*'\.claude',\s*'([^']+)'/g)) names.add(m[1]);
   for (const m of text.matchAll(/HOME\/\.claude\/([A-Za-z0-9._-]+)/g)) names.add(m[1]);
+  // la carpeta pedida a scripts/lib/loose-logs.js: la de siempre, ~/.claude/<nombre>, en una máquina
+  // que no vive en la casa propia
+  for (const m of text.matchAll(/path\.join\(\s*LOOSE_DIR(?:\s*\|\|\s*'')?\s*,\s*'([^']+)'/g)) names.add(m[1]);
   return [...names].filter((n) => !NOT_A_STORE.includes(n));
 }
 
@@ -420,17 +423,31 @@ test('Effects_WindowsFlag_MatchesPs1Lists', () => {
 // La clasificación de perfiles: `minimal` trae lo que hace falta para las guías, las skills, los
 // revisores, el pipeline como skill y el aviso de versión nueva. Sólo en `full`: lo que puede frenar, lo que cambia cómo
 // contesta el asistente, lo que toca git fuera del clon y lo que corre solo de fondo sin ser de una integración. Lo de
-// una integración va en los dos (lo trae su llave). Los seis hooks de `minimal` se nombran acá: sumar uno es una decisión.
+// una integración va en los dos (lo trae su llave). Los hooks de `minimal` se nombran acá: sumar uno es una decisión.
 const MINIMAL_HOOKS = [
   'UserPromptSubmit:tycon-pipeline/scripts/on-prompt.js', 'PostToolUse:tycon-pipeline/scripts/hook-post-edit.js',
   'PostToolUse:tycon-pipeline/scripts/on-skill-invoke.js', 'PreToolUse:tycon-pipeline/scripts/on-advisor-run.js',
   'SessionStart:@tcg:harness-bootstrap-heal.sh', 'SessionStart:@tcg:branch-guard-notice.js',
+  // el aviso de llegada de otra sesión en el mismo checkout va siempre; su freno de git, no
+  'SessionStart:@tcg:session-collision-guard.js',
   // el freno de comandos destructivos y el portón de edición están en los dos perfiles: sin el
   // portón, en la mínima el agente implementa una historia sin recorrido y nadie se entera
   'PreToolUse:@tcg:safety-guard-pre.sh', 'PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js',
+  // quien instala la mínima también merece no imprimir los secretos de su máquina
+  'PostToolUse:@tcg:cover-secrets.js',
   // los avisos de los paquetes reemplazan reglas que los paquetes escribían en el CLAUDE.md de los dos perfiles: sólo en
   // full, la mínima las perdería
   'SessionStart:@tcg:extension-notices.js',
+  // las reglas de la plataforma después de su primer comando reemplazan el bloque de Azure DevOps, que llegaba a los dos
+  // perfiles: sólo en full, la mínima las perdería
+  'PostToolUse:@tcg:extension-notices.js', 'PostToolUseFailure:@tcg:extension-notices.js',
+  // el freno de comandos da un cuadro de firma: sin el gancho que anota el click, en la mínima ese cuadro nunca vale
+  'UserPromptSubmit:@tcg:owner-approval-record.js', 'PostToolUse:@tcg:owner-approval-record.js',
+  // on-advisor-run.js anota cada revisor que sale; sin el que anota lo que reportó, en la mínima cada revisor quedaría
+  // sin reporte y el cierre de «Hallazgos» frenaría siempre
+  'SubagentStop:tycon-pipeline/scripts/on-advisor-done.js',
+  // y el que ata cada salida a su agente: sin él, en la mínima un revisor caído y relanzado pediría exenciones
+  'PostToolUse:tycon-pipeline/scripts/on-advisor-run.js',
 ];
 /** Las filas de «Los hooks que instala»: `{ hook, event, profile }` (la columna «Perfil» tal cual), o null sin la columna. */
 function installTableRows(text) {
@@ -514,7 +531,7 @@ test('8.16 D · Effects_Integrations_OfferedAreTheFourWithASwitch_AllEightNamed'
   const timeNames = INT.listManifests({ dir: path.join(ROOT, 'integrations') }).manifests.filter((m) => m.kind === 'timeTracking').map((m) => m.name);
   assert.deepStrictEqual(list.map((x) => x.key).sort(), config.LAS_OCHO.filter((k) => !timeNames.includes(k)).sort(), 'las llaves de la configuración, una vez cada una');
   assert.deepStrictEqual(list.filter((x) => x.offered).map((x) => x.key), ['engram', 'codegraph', 'codex']);
-  for (const k of ['ado', 'telegram']) assert.match(list.find((x) => x.key === k).how || '', new RegExp(`tycon-config\\.js set ${k === 'ado' ? 'ado\\.org' : 'telegram\\.chat_id'}`), `${k}: cómo se prende`);
+  for (const k of ['ado', 'telegram']) assert.match(list.find((x) => x.key === k).how || '', new RegExp(`tycon-config\\.js" set ${k === 'ado' ? 'ado\\.org' : 'telegram\\.chat_id'}`), `${k}: cómo se prende`);
   for (const k of ['mailbox', 'nightly']) assert.match(list.find((x) => x.key === k).why, /del equipo/, `${k}: es del equipo`);
   assert.match(list.find((x) => x.key === 'instincts').why, /perfil del equipo/, 'instincts: la prende el perfil del equipo, no la pregunta de install');
   // las ofrecidas se prenden con una llave (no piden un dato)

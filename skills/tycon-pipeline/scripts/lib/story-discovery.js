@@ -267,6 +267,29 @@ function fmScalar(fm, key) {
 }
 
 /**
+ * El título, que puede venir en bloque (`title: |` o `title: >`, con `-`/`+`, la sangría explícita o un comentario):
+ * el texto de los renglones con sangría que siguen, con los renglones vacíos de adentro. `|` conserva los saltos; `>`
+ * une cada párrafo con espacios y separa los párrafos con un salto. Sin renglones con texto, null. Entre comillas, `|`
+ * es el texto. Sólo el título: las demás claves se leen con `fmScalar`, igual que en los otros lectores del arnés.
+ */
+function fmTitle(fm) {
+  const m = /^title:[ \t]*(.*)$/m.exec(fm);
+  const bloque = m && /^([|>])[-+]?\d?[-+]?(?:[ \t]+#.*)?$/.exec(m[1].trim());
+  if (!bloque) return fmScalar(fm, 'title');
+  const lineas = [];
+  for (const l of fm.slice(m.index + m[0].length).split(/\r?\n/).slice(1)) {
+    if (!l.trim()) { lineas.push(''); continue; }
+    if (!/^[ \t]/.test(l)) break;
+    lineas.push(l.trim());
+  }
+  while (lineas.length && !lineas[0]) lineas.shift();
+  while (lineas.length && !lineas[lineas.length - 1]) lineas.pop();
+  if (!lineas.length) return null;
+  if (bloque[1] === '|') return lineas.join('\n');
+  return lineas.join('\n').split(/\n{2,}/).map((p) => p.split('\n').join(' ')).join('\n');
+}
+
+/**
  * ¿Este TEXTO (contenido completo de un `.md`) declara identidad de story — `story:` en su
  * frontmatter cerrado? Es el lado-CONTENIDO del criterio que decide todo el arnés desde
  * lint-story-frontmatter.js `DECLARES_STORY`: **la identidad la declara el
@@ -322,7 +345,7 @@ function probeStoryFile(absPath) {
     const status = fmScalar(fm, 'status');
     if (!id || !status) return null;
     return {
-      id, status, epic: fmScalar(fm, 'epic'), title: fmScalar(fm, 'title'), sprint: fmScalar(fm, 'sprint'),
+      id, status, epic: fmScalar(fm, 'epic'), title: fmTitle(fm), sprint: fmScalar(fm, 'sprint'),
     };
   } catch {
     return null;

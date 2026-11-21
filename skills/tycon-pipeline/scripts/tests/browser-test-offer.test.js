@@ -33,6 +33,7 @@ const STEPS = path.join(SCRIPTS, '..', 'steps');
 const HARNESS = path.join(SCRIPTS, '..', '..', '..');
 const bt = require(path.join(SCRIPTS, 'lib', 'browser-test.js'));
 const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
+const { inHarnessCopy } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js'));
 
 const tmp = (prefijo) => fs.mkdtempSync(path.join(os.tmpdir(), prefijo));
 const GIT_ENV = { ...process.env, GIT_AUTHOR_DATE: '2026-10-19T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-19T12:00:00Z' };
@@ -89,11 +90,14 @@ function conversacion(home, sid, { persona = [], agente = ['Sigo.'], otra = [], 
   fs.writeFileSync(path.join(dir, `${sid}.jsonl`), `${r.map((x) => JSON.stringify(x)).join('\n')}\n`);
 }
 
-/** La puerta Bash del portón de carril, como la corre Claude Code antes de un comando. */
+/**
+ * La puerta Bash del portón de carril, como la corre Claude Code antes de un comando. Corre desde una copia propia del
+ * arnés, igual que el guion que nombra el comando: el freno reconoce un guion del arnés según el estado de git del clon.
+ */
 function puertaBash(home, sid, repo, command) {
-  return spawnSync('node', [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+  return spawnSync('node', [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
     cwd: repo, encoding: 'utf8',
-    input: JSON.stringify({ session_id: sid, tool_name: 'Bash', cwd: repo, tool_input: { command } }),
+    input: JSON.stringify({ session_id: sid, tool_name: 'Bash', cwd: repo, tool_input: { command: inHarnessCopy(command) } }),
     env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' },
   });
 }
@@ -386,7 +390,8 @@ test('Defer_FirmadoEnLaTerminalSinSesion_QuedaDeclarado (pase adversarial)', (t)
     '    if not respondido and "«firmo»".encode() in buf:', '        os.write(fd, b"firmo\\n")', '        respondido = True',
     '_, st = os.waitpid(pid, 0)', 'sys.stdout.write(buf.decode("utf8", "replace"))', 'sys.exit(os.WEXITSTATUS(st))'].join('\n'));
   const env = { ...process.env, HOME: home, USERPROFILE: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
-  for (const v of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[v];
+  // la firma por la terminal se niega dentro de la CI: la terminal simulada no hereda sus variables
+  for (const v of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'CI', 'TF_BUILD', 'GITHUB_ACTIONS']) delete env[v];
   for (const extra of [[], ['--for-session', 's-term']]) {
     fs.writeFileSync(c.story, fs.readFileSync(c.story, 'utf8').replace(/^browser_test(_reason)?:.*\n/gm, ''));
     const r = spawnSync('python3', ['-I', guion, process.execPath, path.join(SCRIPTS, 'e2e-setup.js'), 'defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', ...extra, '--terminal'],
@@ -413,7 +418,7 @@ test('Defer_ForSession_SeAnotaParaLaSesionDestino @story-8.142 @ac-2 @ac-3', () 
     const argv = [path.join(SCRIPTS, 'e2e-setup.js'), ...args];
     const cmd = `node ${argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`;
     if (pedir) {
-      const p = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+      const p = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
         escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
       assert.equal(p.decision, 'ask', p.texto);
     }
@@ -435,12 +440,19 @@ test('Defer_ForSession_SeAnotaParaLaSesionDestino @story-8.142 @ac-2 @ac-3', () 
   // en la terminal del dueño, --for-session nombra la sesión de su agente: no se le exige una ejecución abierta
   const enTerminal = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--terminal', '--for-session', 's-z'], { pedir: false, sesion: '' });
   assert.doesNotMatch(enTerminal.stderr, /no tiene una ejecución abierta/);
-  // la corrida de la sesión destino es de otra historia: sale 2 sin gastar el registro
+  // la corrida de la sesión destino es de otra historia: la ventana no se abre, y el guion sale 2 igual
   fs.writeFileSync(path.join(stateOf(home), 'active', 's-otra.json'), JSON.stringify({ storyId: '7.7', sessionId: 's-otra', startedAt: new Date(ahora).toISOString() }));
-  const ajena = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-otra']);
+  const argvAjena = ['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-otra'];
+  const cmdAjena = `node ${[path.join(SCRIPTS, 'e2e-setup.js'), ...argvAjena].map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`;
+  const negada = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmdAjena }, cwd: c.repo },
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
+  assert.equal(negada.decision, 'deny', negada.texto);
+  assert.match(negada.texto, /7\.7/);
+  const pedidos = fs.existsSync(ow.carpeta(home)) ? fs.readdirSync(ow.carpeta(home)).filter((f) => f.endsWith('.json')) : [];
+  assert.deepEqual(pedidos, [], 'la ventana no dejó registro');
+  const ajena = pedirYCorrer(argvAjena, { pedir: false });
   assert.equal(ajena.status, 2, ajena.stdout + ajena.stderr);
   assert.match(ajena.stderr, /7\.7/);
-  assert.equal(fs.readdirSync(ow.carpeta(home)).filter((f) => f.endsWith('.json')).length, 1, 'el registro sigue sin gastar');
   // un marcador que no se puede leer no es «sin ejecución abierta»
   fs.writeFileSync(path.join(stateOf(home), 'active', 's-rota.json'), '{ no es json');
   const rota = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-rota'], { pedir: false });
@@ -564,6 +576,12 @@ test('Cierre_SinElOkDeLaPersona_Frena @story-8.67 @ac-7', () => {
   assert.equal(ofertaYNo(home, 's-otra-maquina', bin, d).status, 0);
   fs.rmSync(path.join(home, '.claude', 'projects', '-tienda', 's-otra-maquina.jsonl'));
   assert.equal(bt.debtDeclared({ stateDir, storyPath: d.story, home }).declared, true);
+  // firmado con el click o el «aprobado» de la persona, donde la ventana no llega: vale igual
+  const g = tienda();
+  assert.equal(ofertaYNo(home, 's-mensaje', bin, g).status, 0);
+  fs.writeFileSync(log, fs.readFileSync(log, 'utf8').split('\n').map((l) => (/"s-mensaje"/.test(l) ? l.replace('"via":"ventana"', '"via":"mensaje"') : l)).join('\n'));
+  assert.ok(fs.readFileSync(log, 'utf8').includes('"via":"mensaje"'), 'la prueba cambió la vía de la constancia');
+  assert.equal(bt.debtDeclared({ stateDir, storyPath: g.story, home }).declared, true);
   // la marca con otra cita que la de la constancia: no vale
   const e = tienda();
   assert.equal(ofertaYNo(home, 's-cita', bin, e).status, 0);

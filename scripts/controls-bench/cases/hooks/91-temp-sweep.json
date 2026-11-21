@@ -1,0 +1,73 @@
+{
+  "__doc": "Temporales viejos: las pruebas y las sesiones dejan carpetas en la carpeta temporal del usuario, y el sistema las vacía al arrancar la máquina. Al arrancar sesión, una vez por día, temp-sweep.js borra del primer nivel de las carpetas temporales las entradas con sufijo al azar que nadie usa hace más del plazo, y no toca las demás. Sobre una carpeta de la fixture que hace de carpeta temporal (TYCON_TEMP_SWEEP_ROOTS), con la fecha contra la que se mide el plazo corrida al futuro (TYCON_TEMP_SWEEP_NOW), para que lo recién creado ya cuente como viejo. Las carpetas van con el permiso que deja mkdtemp: sólo el dueño.",
+  "hooks": [
+    {
+      "hook": "temp-sweep.js (las carpetas temporales viejas se borran solas)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/temp-sweep.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "borra-la-vieja-con-sufijo-al-azar-y-deja-las-demas",
+          "type": "must-emit",
+          "__doc": "La carpeta con sufijo al azar se borra; la de nombre común y la de las sesiones del asistente quedan. ROJO PREVIO: borrar una carpeta que no es un temporal de mkdtemp (se pierde trabajo de otro), o no borrar nada (se juntan de a miles y el arranque de la máquina tarda minutos).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/setup/harness && cp $TCG/scripts/hooks/temp-sweep.js tcg/scripts/hooks/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "mkdir -p temporales/coord-aB3dEf/a temporales/mi-server temporales/claude-aB3dEf && echo dato > temporales/coord-aB3dEf/a/dato.txt && echo dato > temporales/mi-server/dato.txt && echo dato > temporales/claude-aB3dEf/dato.txt && chmod 700 temporales temporales/coord-aB3dEf temporales/mi-server temporales/claude-aB3dEf"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_TEMP_SWEEP_ROOTS": "${FIXTURE}/temporales",
+            "TYCON_TEMP_SWEEP_NOW": "2099-01-01T00:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "temporales viejos: borré 1 que nadie usa"
+            ],
+            "file_absent": [
+              "${FIXTURE}/temporales/coord-aB3dEf/a/dato.txt"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/temporales/mi-server/dato.txt",
+                "re": "dato"
+              },
+              {
+                "path": "${FIXTURE}/temporales/claude-aB3dEf/dato.txt",
+                "re": "dato"
+              }
+            ]
+          }
+        },
+        {
+          "id": "apagado-por-variable-calla-y-no-borra",
+          "type": "must-stay-quiet",
+          "__doc": "TYCON_TEMP_SWEEP=0: no mira ni borra nada. ROJO PREVIO: un interruptor que no apaga.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/setup/harness && cp $TCG/scripts/hooks/temp-sweep.js tcg/scripts/hooks/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "mkdir -p temporales/coord-aB3dEf/a && echo dato > temporales/coord-aB3dEf/a/dato.txt && chmod 700 temporales temporales/coord-aB3dEf"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_TEMP_SWEEP_ROOTS": "${FIXTURE}/temporales",
+            "TYCON_TEMP_SWEEP_NOW": "2099-01-01T00:00:00Z",
+            "TYCON_TEMP_SWEEP": "0"
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/temporales/coord-aB3dEf/a/dato.txt",
+                "re": "dato"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

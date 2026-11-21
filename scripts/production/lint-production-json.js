@@ -132,7 +132,7 @@ function declaraProduccion(doc) {
 
 /** Los `.tycon/production.json` (o con su nombre viejo) STAGEADOS del repo, con su contenido del índice (no el del disco). */
 function stageados(repo) {
-  const git = (args) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+  const git = (args) => spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
   const lista = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
   if (lista.status !== 0) return { error: `no pude preguntarle a git qué hay stageado en ${repo}` };
   const rutas = lista.stdout.split('\n').map((s) => s.trim()).filter((s) => RUTA.test(s));

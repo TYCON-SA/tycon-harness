@@ -1,0 +1,86 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "guion-grande-que-nombra-la-ruta-de-una-historia-frena",
+          "type": "must-block",
+          "_por_que": "Un guion de más de 256 KB no se lee entero: si escribe y nombra la ruta de una historia, frena, también en un repo que no tiene historias (la ruta puede ser de otro repo).",
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts",
+            "{ printf \"open('salida.csv', 'w').write('x')\\np = '/otro/repo/specs/story-1.1.md'\\n\"; yes '# xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/barrido.py",
+            "test \"$(wc -c < scripts/barrido.py)\" -gt 262144"
+          ],
+          "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "python3 scripts/barrido.py datos.csv" } },
+          "expect": { "exit": 2, "stderr_re": ["GUION QUE NO SE PUEDE LEER ENTERO", "barrido\\.py"] }
+        },
+        {
+          "id": "guion-grande-en-un-repo-con-spec-stories-que-nombra-la-historia-frena",
+          "type": "must-block",
+          "_por_que": "En un repo de producto con sus historias en spec/stories/ (la carpeta la encuentra el descubridor del arnés, no una lista), un guion grande que escribe y dice «historia» frena.",
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts spec/stories",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > spec/stories/story-1.1.md",
+            "{ printf \"# cambia el estado de la historia\\nopen('salida.csv', 'w').write('x')\\n\"; yes '# xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/barrido.py",
+            "test \"$(wc -c < scripts/barrido.py)\" -gt 262144"
+          ],
+          "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "python3 scripts/barrido.py datos.csv" } },
+          "expect": { "exit": 2, "stderr_re": ["GUION QUE NO SE PUEDE LEER ENTERO"] }
+        },
+        {
+          "id": "guion-grande-que-un-programa-solo-lee-no-frena",
+          "type": "must-not-block",
+          "_por_que": "Nombrar un guion no es correrlo: `sed -n`, `grep node`, `ls` o `git log` de un `marker.js` de otro clon, grande y ejecutable, sólo lo leen.",
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts specs .tycon",
+            "{ printf '#!/usr/bin/env node\\n// cambia el estado de la story\\nrequire(\"fs\").writeFileSync(process.argv[2], \"x\");\\n'; yes '// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/marker.js && chmod +x scripts/marker.js",
+            "test \"$(wc -c < scripts/marker.js)\" -gt 262144"
+          ],
+          "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "sed -n 1,2p scripts/marker.js; grep -n node scripts/marker.js | head -2; ls -la scripts/marker.js; git log -1 -- scripts/marker.js" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "guion-grande-que-corre-detras-de-un-programa-que-lee-frena",
+          "type": "must-block",
+          "_por_que": "Leerlo no exime lo que sigue en el comando: el `&` suelto empieza otro tramo, que sí lo corre.",
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts specs .tycon",
+            "{ printf '#!/usr/bin/env node\\n// cambia el estado de la story\\nrequire(\"fs\").writeFileSync(process.argv[2], \"x\");\\n'; yes '// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/marker.js && chmod +x scripts/marker.js",
+            "test \"$(wc -c < scripts/marker.js)\" -gt 262144"
+          ],
+          "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "cat scripts/marker.js & ./scripts/marker.js specs/x.md" } },
+          "expect": { "exit": 2, "stderr_re": ["GUION QUE NO SE PUEDE LEER ENTERO", "marker\\.js"] }
+        },
+        {
+          "id": "guion-grande-con-una-envoltura-que-el-freno-no-conoce-frena",
+          "type": "must-block",
+          "_por_que": "Lo que no está en la lista de lo que sólo lee cuenta como que corre: una envoltura desconocida (`stdbuf`, `flock`) no lo esconde.",
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts specs .tycon",
+            "{ printf '#!/usr/bin/env node\\n// cambia el estado de la story\\nrequire(\"fs\").writeFileSync(process.argv[2], \"x\");\\n'; yes '// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/marker.js && chmod +x scripts/marker.js",
+            "test \"$(wc -c < scripts/marker.js)\" -gt 262144"
+          ],
+          "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "stdbuf -o0 ./scripts/marker.js specs/x.md" } },
+          "expect": { "exit": 2, "stderr_re": ["GUION QUE NO SE PUEDE LEER ENTERO", "marker\\.js"] }
+        },
+        {
+          "id": "lista-de-archivos-en-un-pipeline-plantado-frena",
+          "type": "must-block",
+          "_por_que": "Vale el `pipeline.js` de la instalación, no el nombre: uno plantado en el repo puede correr lo que recibe en su lista.",
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts specs planta .tycon",
+            "{ printf '#!/usr/bin/env node\\n// cambia el estado de la story\\nrequire(\"fs\").writeFileSync(process.argv[2], \"x\");\\n'; yes '// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/marker.js && chmod +x scripts/marker.js",
+            "printf 'process.exit(0);\\n' > planta/pipeline.js",
+            "test \"$(wc -c < scripts/marker.js)\" -gt 262144"
+          ],
+          "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "node planta/pipeline.js advisors --files scripts/marker.js" } },
+          "expect": { "exit": 2, "stderr_re": ["GUION QUE NO SE PUEDE LEER ENTERO", "marker\\.js"] }
+        }
+      ]
+    }
+  ]
+}

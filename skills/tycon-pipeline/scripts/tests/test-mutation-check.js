@@ -29,7 +29,7 @@ const FIXTURES = path.join(__dirname, 'fixtures', 'mutation');
 
 const mutants = require(path.join(SCRIPTS, 'lib', 'mutation-mutants.js'));
 const checker = require(path.join(SCRIPTS, 'mutation-check.js'));
-const { runMutationGate } = require(path.join(SCRIPTS, 'lib', 'mutation-gate.js'));
+const { runMutationGate, destinosDeLaStory } = require(path.join(SCRIPTS, 'lib', 'mutation-gate.js'));
 
 // ── Helpers de fixture: mini-repo git en tmpdir ──────────────────────────────
 // Las fuentes estáticas viven en fixtures/mutation/; el repo git se arma en un
@@ -612,12 +612,118 @@ test('gate: exit 2 (estructural, ej. story sin tests) → AVISA, no bloquea, y q
   assert.equal(g[0].status, 'structural');
 });
 
+// Dos repos de juguete: `Specs` con la story y `Code`, su hermano declarado, con el código y la prueba que declara
+function storyEnOtroRepo({ codigoAca = false } = {}) {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mut-hermano-')));
+  const repo = (dir, archivos) => {
+    for (const [rel, texto] of Object.entries(archivos)) {
+      fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, rel), texto);
+    }
+    const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+    g('init', '-q', '-b', 'main'); g('add', '-A'); g('-c', 'user.email=l@l', '-c', 'user.name=l', 'commit', '-q', '-m', 'base');
+    return dir;
+  };
+  const crear = ['src/calc.js', 'tests/calc.test.js', ...(codigoAca ? ['lib/propio.js'] : [])];
+  const story = ['---', 'story: "9.1"', 'files_to_create:', ...crear.map((f) => `  - ${f}`), '---', '', '# Story 9.1', ''].join('\n');
+  const specs = repo(path.join(raiz, 'Specs'), { 'specs/s.md': story, '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../Code\n',
+    ...(codigoAca ? { 'lib/propio.js': 'module.exports = 1;\n' } : {}) });
+  const code = repo(path.join(raiz, 'Code'), { 'src/calc.js': 'module.exports = (a) => a === 1;\n', 'tests/calc.test.js': 'require("../src/calc.js");\n' });
+  return { specs, code, story: path.join(specs, 'specs', 's.md') };
+}
+
+test('gate: la story en un repo y el código en su hermano → mide en el hermano, no en el de la story', async () => {
+  const lab = storyEnOtroRepo();
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, () => {}).map((d) => fs.realpathSync(d)), [lab.code]);
+  const h = gateHarness();
+  const repos = [];
+  const r = runMutationGate({
+    marker: { storyId: '9.1', repoPath: lab.specs, storyPath: lab.story }, opts: [], env: {},
+    appendLog: h.appendLog, log: h.log,
+    invokeCheck: ({ repo }) => { repos.push(fs.realpathSync(repo)); return { code: 0, result: { total: 3, killed: 3, survived: [], skipped: [], verdict: 'OK' } }; },
+  });
+  assert.equal(r.block, false);
+  assert.deepEqual(repos, [lab.code], 'el chequeo corre en el repo del código');
+  const g = h.entries['gates.log'];
+  assert.equal(g.length, 1);
+  assert.equal(fs.realpathSync(g[0].repo), lab.code, 'el veredicto dice en qué repo se midió');
+  // la story que además declara código propio se mide en los dos; frena si frena cualquiera
+  const lab2 = storyEnOtroRepo({ codigoAca: true });
+  assert.deepEqual(destinosDeLaStory(lab2.specs, lab2.story, () => {}).map((d) => fs.realpathSync(d)), [lab2.specs, lab2.code]);
+  const h2 = gateHarness();
+  const r2 = runMutationGate({
+    marker: { storyId: '9.1', repoPath: lab2.specs, storyPath: lab2.story }, opts: [], env: {},
+    appendLog: h2.appendLog, log: h2.log,
+    invokeCheck: ({ repo }) => (fs.realpathSync(repo) === lab2.code
+      ? { code: 1, result: { total: 2, killed: 0, survived: SOBREVIVIENTES, skipped: [], verdict: 'TESTS_NO_EJERCEN_EL_CODIGO' } }
+      : { code: 0, result: { total: 1, killed: 1, survived: [], skipped: [], verdict: 'OK' } }),
+  });
+  assert.equal(r2.block, true, 'cero muertos en el hermano frena aunque el de la story pase');
+  assert.deepEqual(h2.entries['gates.log'].map((e) => e.status), ['pass', 'blocked']);
+});
+
+test('gate: sin hermanos, con un hermano que no existe o sin poder leerlos → mide el de la story y lo dice', async () => {
+  const lab = storyEnOtroRepo();
+  const avisos = [];
+  // sin hermanos declarados: el de la story
+  fs.rmSync(path.join(lab.specs, '.tycon'), { recursive: true });
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, (t) => avisos.push(t)), [lab.specs]);
+  assert.deepEqual(avisos, []);
+  // un hermano declarado que no está en disco: se dice
+  fs.mkdirSync(path.join(lab.specs, '.tycon'));
+  fs.writeFileSync(path.join(lab.specs, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - ../NoExiste\n');
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, (t) => avisos.push(t)), [lab.specs]);
+  assert.match(avisos.join('\n'), /NO MEDIDO en .*NoExiste/);
+  // la story ilegible con hermanos declarados: avisa y mide el de la story
+  avisos.length = 0;
+  fs.writeFileSync(path.join(lab.specs, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - ../Code\n');
+  assert.deepEqual(destinosDeLaStory(lab.specs, path.join(lab.specs, 'specs', 'no-existe.md'), (t) => avisos.push(t)), [lab.specs]);
+  assert.match(avisos.join('\n'), /no pude leer los repos hermanos/);
+});
+
+test('gate: el hermano se mide en el worktree donde la sesión escribió, no en el checkout en main', async () => {
+  const lab = storyEnOtroRepo();
+  // el puesto: un worktree del hermano en una rama que no nombra la story, con el código nuevo de la story
+  const puesto = path.join(path.dirname(lab.code), 'Code--puesto');
+  spawnSync('git', ['-C', lab.code, 'worktree', 'add', '-q', '-b', 'wt/otra', puesto], { encoding: 'utf8' });
+  fs.writeFileSync(path.join(puesto, 'src', 'nuevo.js'), 'module.exports = 2;\n');
+  const tocados = [path.join(puesto, 'src', 'nuevo.js'), path.join(lab.specs, 'specs', 's.md'), '/tmp/una-prueba-suelta.js'];
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, () => {}, tocados), [fs.realpathSync(puesto)]);
+  // sin archivos tocados, el que elige companion-repos
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, () => {}, []).map((d) => fs.realpathSync(d)), [lab.code]);
+  // un archivo declarado que no existe en ningún lado no vuelve «de acá» al repo de la story
+  fs.writeFileSync(lab.story, fs.readFileSync(lab.story, 'utf8').replace('files_to_create:\n', 'files_to_create:\n  - lib/todavia-no.js\n'));
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, () => {}, tocados), [fs.realpathSync(puesto)]);
+});
+
+test('gate: con varios repos, un «no medido» en uno no queda tapado por el que pasó', async () => {
+  const h = gateHarness();
+  const r = runMutationGate({
+    marker: MARKER_FAKE, opts: [], env: {}, appendLog: h.appendLog, log: h.log,
+    destinosDe: () => ['/tmp/uno', '/tmp/dos'],
+    invokeCheck: ({ repo }) => (repo === '/tmp/uno'
+      ? { code: 0, result: { total: 1, killed: 1, survived: [], skipped: [], verdict: 'OK' } }
+      : { code: 2, result: { motivo: 'la story declara tests que NO existen en disco' } }),
+  });
+  assert.deepEqual([r.block, r.reason], [false, 'estructural']);
+  assert.deepEqual(h.entries['gates.log'].map((e) => [e.repo, e.status]), [['/tmp/uno', 'pass'], ['/tmp/dos', 'structural']]);
+});
+
+test('gate: lo que no se pudo medir lo dice como «NO MEDIDO», con el repo', async () => {
+  const h = gateHarness();
+  runMutationGate({
+    marker: MARKER_FAKE, opts: [], env: {}, appendLog: h.appendLog, log: h.log,
+    invokeCheck: () => ({ code: 2, result: { motivo: 'la story declara tests que NO existen en disco' } }),
+  });
+  assert.match(h.lines.join('\n'), /NO MEDIDO en \/tmp\/fake-repo/);
+});
+
 test('gate: TYCON_MUTATION_CHECK=off → ni se invoca, y el apagado queda en bypass.log', async () => {
   const h = gateHarness();
   let llamadas = 0;
   const r = runMutationGate({
     marker: MARKER_FAKE, opts: [], env: { TYCON_MUTATION_CHECK: 'off' },
-    appendLog: h.appendLog, log: h.log,
+    appendLog: h.appendLog, log: h.log, today: new Date('2099-01-01T00:00:00Z'),
     invokeCheck: () => { llamadas += 1; return { code: 0, result: {} }; },
   });
   assert.equal(llamadas, 0, 'apagado global: el chequeo NI se invoca');
@@ -625,7 +731,13 @@ test('gate: TYCON_MUTATION_CHECK=off → ni se invoca, y el apagado queda en byp
   assert.equal(h.entries['gates.log'].length, 0);
   assert.equal(h.entries['bypass.log'].length, 1, 'el apagado no es silencioso: la noche lo cuenta');
   assert.equal(h.entries['bypass.log'][0].kind, 'MUTATION_CHECK_OFF');
-  assert.equal(h.lines.length, 0, 'y no suma un aviso en la consola');
+  assert.equal(h.lines.length, 0, 'desde la fecha de corte no suma un aviso en la consola (lo pide el freno con la firma)');
+  // antes de la fecha de corte de la lista única de interruptores: el agente lee el aviso, una sola línea, con la fecha
+  const h2 = gateHarness();
+  runMutationGate({ marker: MARKER_FAKE, opts: [], env: { TYCON_MUTATION_CHECK: 'off' }, appendLog: h2.appendLog, log: h2.log,
+    today: new Date('2026-11-01T00:00:00Z'), invokeCheck: () => ({ code: 0, result: {} }) });
+  assert.equal(h2.lines.length, 1);
+  assert.match(h2.lines[0], /esto pide la firma de una persona/);
 });
 
 test('gate: TYCON_MUTATION_CHECK=OFF (mayúsculas) apaga igual, como lo cuenta la noche', async () => {
@@ -849,7 +961,9 @@ test('H3: archivos nuevos declarados por la story (untracked, sin `git add`) gen
 // Qué runner sabe correr el chequeo se decide por ESTRUCTURA (extensión
 // ejecutable por `node --test`), JAMÁS escaneando el repo en busca de palabras
 // como «vitest» (ningún control decide buscando frases).
-test('N3a: test declarado .ts → exit 2 estructural honesto («sólo sé correr node --test»), sin correr nada', async () => {
+// El chequeo elige la receta del paquete (casos: test-mutation-runners.js). Un `.ts` sin Jest ni Vitest
+// no tiene receta: sigue siendo exit 2 estructural honesto, y el motivo dice que no encontró receta.
+test('N3a: test declarado .ts sin receta → exit 2 estructural honesto («no encontré una receta»), sin correr nada', async () => {
   const repo = mkRepo();
   fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'tests', 'calc.test.ts'), 'export {};\n');
@@ -873,7 +987,7 @@ test('N3a: test declarado .ts → exit 2 estructural honesto («sólo sé correr
     log: () => {},
   });
   assert.equal(r.exitCode, 2);
-  assert.match(r.result.motivo || '', /node --test/, 'el motivo dice qué sabe correr el chequeo');
+  assert.match(r.result.motivo || '', /no encontré una receta de pruebas/, 'el motivo dice que no hay receta para esa prueba');
   assert.match(r.result.motivo || '', /calc\.test\.ts/, 'y cita el test que no puede correr');
   assert.ok(!/ROJO/i.test(r.result.motivo || ''), 'nunca afirmar que la suite está rota cuando no la sabemos correr');
 });
@@ -911,6 +1025,9 @@ test('H4b: tests .NET declarados (FooTests.cs) → exit 2 honesto, no «la story
     '# Story fixture .NET',
     '',
   ].join('\n'));
+  // .NET tiene receta sólo con un `.csproj` de pruebas: sin él, el motivo dice que no hay receta.
+  fs.mkdirSync(path.join(repo, 'apinetcore', 'Api.Tests'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'apinetcore', 'Api.Tests', 'CalcTests.cs'), 'public class CalcTests {}\n');
   const r = await checker.runMutationCheck({
     repo,
     storyPath: path.join(repo, 'story-dotnet.md'),
@@ -918,7 +1035,7 @@ test('H4b: tests .NET declarados (FooTests.cs) → exit 2 honesto, no «la story
     log: () => {},
   });
   assert.equal(r.exitCode, 2);
-  assert.match(r.result.motivo || '', /node --test/, 'dice qué sabe correr');
+  assert.match(r.result.motivo || '', /no encontré una receta de pruebas para apinetcore\/Api\.Tests\/CalcTests\.cs/, 'dice que no hay receta, y para cuál');
   assert.ok(!/no declara ning/i.test(r.result.motivo || ''), 'la story SÍ declara tests — decir lo contrario es falso');
 });
 
@@ -1098,4 +1215,421 @@ test('la copia refleja lo que hay en el working tree (cambios sin commitear incl
   assert.ok([0, 1].includes(r.exitCode));
   assert.ok(r.result.survived.some((m) => m.before.includes('a >= b')),
     'el mutante de la línea sin commitear existe: la copia tenía el cambio del working tree');
+});
+
+// ── Lo commiteado durante la corrida también se muta ───────────────────────────────────────────────
+// Las líneas a mutar salían de `git diff HEAD`: con la implementación ya commiteada no quedaba ninguna, y el chequeo
+// decía «no se verificó nada». Se miden contra la base de la corrida (lib/coverage-base.js).
+
+function repoCommiteado() {
+  const repo = mkRepo();
+  const base = sh('git', ['rev-parse', 'HEAD'], repo).trim();
+  sh('git', ['add', '.'], repo);
+  sh('git', ['commit', '-q', '-m', 'trabajo de la corrida'], repo);
+  return { repo, base };
+}
+
+// Una historia de dos tandas con una prueba que todavía no existe porque es de la segunda; `estado` es el de esa tanda.
+function storyConTandaB(repo, estado) {
+  const p = path.join(repo, `story-tanda-${estado}.md`);
+  fs.writeFileSync(p, [
+    '---', 'story: "MUT-2"', 'epic: fixtures', 'status: in-progress',
+    'files_to_create:', '  - "calc.js"', '  - "calc.test.js"', '  - "split.test.js"  # tanda B',
+    'pipelines:', '  - name: A-calc', '    status: in-progress', '    acs: [1]',
+    '  - name: B-split', `    status: ${estado}`, '    acs_pending: [2]',
+    '---', '', '# Story fixture — una prueba de una tanda estacionada', '',
+  ].join('\n'));
+  return p;
+}
+
+test('una prueba declarada de una tanda estacionada que todavía no existe no deja sin medir a las otras', async () => {
+  // 🔴 mutación: sin mirar las tandas (lo de antes) → «declara tests que NO existen» y sale 2; aceptar una tanda que no
+  //    está estacionada → la prueba que falta de verdad deja de frenar.
+  const repo = mkRepo();
+  const corridos = [];
+  const r = await checker.runMutationCheck({
+    repo, storyPath: storyConTandaB(repo, 'blocked'),
+    runTests: ({ mutant, testFiles }) => { corridos.push(...(testFiles || [])); return { code: mutant ? 1 : 0 }; }, log: () => {},
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.deepEqual(r.result.testsDeTandaBloqueada, [{ file: 'split.test.js', tandas: ['B-split'] }]);
+  assert.ok(r.result.total >= 1, `muta lo de la tanda que se entrega (total=${r.result.total})`);
+  assert.ok(!corridos.some((f) => /split\.test\.js/.test(f)), `no corre la que no existe: ${corridos}`);
+  const activa = await checker.runMutationCheck({
+    repo, storyPath: storyConTandaB(repo, 'in-progress'), runTests: () => ({ code: 0 }), log: () => {},
+  });
+  assert.equal(activa.exitCode, 2);
+  assert.match(activa.result.motivo, /declara tests que NO existen en disco: .*split\.test\.js/);
+});
+
+test('con el trabajo commiteado, muta contra la base del marcador, no contra HEAD', async () => {
+  const { repo, base } = repoCommiteado();
+  const r = await checker.runMutationCheck({
+    repo, storyPath: path.join(repo, 'story-con-tests.md'),
+    marker: { baseSha: base, repoPath: repo },
+    runTests: ({ mutant }) => ({ code: mutant ? 1 : 0 }), log: () => {},
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.ok(r.result.total >= 1, `con la base de la corrida hay líneas que mutar (total=${r.result.total})`);
+});
+
+test('con el trabajo commiteado y sin marcador, muta lo posterior a la bifurcación con la rama principal', async () => {
+  const { repo, base } = repoCommiteado();
+  sh('git', ['update-ref', 'refs/remotes/origin/main', base], repo);
+  const r = await checker.runMutationCheck({
+    repo, storyPath: path.join(repo, 'story-con-tests.md'),
+    runTests: ({ mutant }) => ({ code: mutant ? 1 : 0 }), log: () => {},
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.ok(r.result.total >= 1, `lo de la rama se muta (total=${r.result.total})`);
+});
+
+test('un marcador que no se pudo leer se dice en el registro y la base queda en el resultado', async () => {
+  const { repo, base } = repoCommiteado();
+  sh('git', ['update-ref', 'refs/remotes/origin/main', base], repo);
+  const lineas = [];
+  const r = await checker.runMutationCheck({
+    repo, storyPath: path.join(repo, 'story-con-tests.md'), markerError: 'marker.js get salió 1',
+    runTests: ({ mutant }) => ({ code: mutant ? 1 : 0 }), log: (...a) => lineas.push(a.join(' ')),
+  });
+  assert.ok(lineas.some((l) => /base descartada \(marcador\).*marker\.js get salió 1/.test(l)), lineas.join('\n'));
+  assert.equal(r.result.base.fuente, 'bifurcacion');
+  assert.equal(r.result.base.ref, base);
+});
+
+// ── Topes medidos ────────────────────────────────────────────────────────────
+// Un registro de tiempos de juguete: la suite `tests/lenta.test.js` tardó `ms` en cada corrida.
+const corridas = (ms, s = 'tests/lenta.test.js') => [1, 2, 3].map((i) => ({ ts: `2026-11-1${i}T00:00:00Z`, suites: [{ s, ms }] }));
+const MIN = 60000;
+
+test('@story-8.279 @ac-12 T8 Mutation_CapsFromMeasuredTime', () => {
+  const suite = ['skills/x/scripts/tests/lenta.test.js'];
+  // 5 min medidos y 12 mutantes: 7,5 por corrida; el total (7,5 × 13) topa en 20
+  const a = checker.topesMedidos({ suites: suite, mutantes: 12, runs: corridas(5 * MIN), presupuesto: checker.BUDGETS.default });
+  assert.deepEqual(a, { perRunMs: 7.5 * MIN, totalMs: 20 * MIN, medidoMs: 5 * MIN });
+  // 40 s y 2 mutantes: 60 s por corrida sube al piso de 2 min; el total, 2 × 3 = 6 min
+  const b = checker.topesMedidos({ suites: suite, mutantes: 2, runs: corridas(40000), presupuesto: checker.BUDGETS.default });
+  assert.deepEqual(b, { perRunMs: 2 * MIN, totalMs: 6 * MIN, medidoMs: 40000 });
+  // 30 min medidos: el tope por corrida topa en 10
+  assert.equal(checker.topesMedidos({ suites: suite, mutantes: 1, runs: corridas(30 * MIN), presupuesto: checker.BUDGETS.default }).perRunMs, 10 * MIN);
+  // con varias suites, la más lenta
+  const dos = [...corridas(MIN, 'tests/rapida.test.js'), ...corridas(3 * MIN)];
+  assert.equal(checker.topesMedidos({ suites: ['a/tests/rapida.test.js', ...suite], mutantes: 1, runs: dos, presupuesto: checker.BUDGETS.default }).medidoMs, 3 * MIN);
+  // la red del portón queda arriba del total más largo posible, con margen: si alguien sube un techo sin la red, salta
+  const gate = require(path.join(SCRIPTS, 'lib', 'mutation-gate.js'));
+  const mayor = Math.max(checker.MEASURED_TOTAL_CEIL_MS, ...Object.values(checker.BUDGETS).map((b2) => b2.totalMs));
+  assert.ok(gate.HARD_TIMEOUT_MS >= mayor + MIN, `HARD_TIMEOUT_MS=${gate.HARD_TIMEOUT_MS} y el total más largo es ${mayor}`);
+});
+
+test('@story-8.279 @ac-13 @ac-14 T8 Mutation_NoMeasure_CapsAsToday', async () => {
+  const suite = ['skills/x/scripts/tests/lenta.test.js'];
+  assert.equal(checker.topesMedidos({ suites: suite, mutantes: 12, runs: [], presupuesto: checker.BUDGETS.default }), null, 'sin registro, los de hoy');
+  assert.equal(checker.topesMedidos({ suites: [...suite, 'b/tests/sin-medida.test.js'], mutantes: 12, runs: corridas(5 * MIN), presupuesto: checker.BUDGETS.default }), null,
+    'una suite sin medida: los de hoy');
+  // los topes de hoy, de punta a punta: lo que recibe la corrida base
+  const repo = mkRepo();
+  const topes = [];
+  await checker.runMutationCheck({
+    repo, storyPath: path.join(repo, 'story-con-tests.md'), suiteRuns: [], log: () => {},
+    runTests: ({ mutant, capMs }) => { if (!mutant) topes.push(capMs); return { code: mutant ? 1 : 0 }; },
+  });
+  assert.equal(topes[0], checker.BUDGETS.default.perRunMs);
+  // la base que pasa del tope: «no medido» con el tope en minutos y el tiempo medido
+  const lento = mkRepo();
+  let t = 0;
+  const r = await checker.runMutationCheck({
+    repo: lento, storyPath: path.join(lento, 'story-con-tests.md'), suiteRuns: [], log: () => {}, now: () => t,
+    runTests: ({ capMs }) => { t += capMs; return { code: 1, timedOut: true }; },
+  });
+  assert.equal(r.exitCode, 2);
+  assert.match(r.result.motivo, /^no medido: la corrida base tardó más que el tope de 2 min \(medido: 120 s\)/);
+});
+
+// ── Sólo las pruebas de la historia ──────────────────────────────────────────
+const CALC_MARCAS = "'use strict';\nfunction esPar(n) { return n % 2 === 0; }\nmodule.exports = { esPar };\n";
+/** Un repo con calc.js nuevo, su prueba (`prueba`) y una historia 9.1 que los declara. */
+function repoConMarcas(prueba) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutmarca-'));
+  sh('git', ['init', '-q'], dir);
+  sh('git', ['config', 'user.email', 'test@tycon.local'], dir);
+  sh('git', ['config', 'user.name', 'tycon-test'], dir);
+  sh('git', ['config', 'commit.gpgsign', 'false'], dir);
+  fs.writeFileSync(path.join(dir, 'calc.js'), "'use strict';\n");
+  sh('git', ['add', '.'], dir);
+  sh('git', ['commit', '-q', '-m', 'base'], dir);
+  fs.writeFileSync(path.join(dir, 'calc.js'), CALC_MARCAS);
+  fs.writeFileSync(path.join(dir, 'calc.test.js'), prueba);
+  fs.writeFileSync(path.join(dir, 'story.md'), '---\nstory: "9.1"\nfiles_to_modify:\n  - calc.js\n  - calc.test.js\n---\n# fixture\n');
+  return dir;
+}
+const prueba = (nombre, cuerpo = 'assert.equal(esPar(2), true);') => `test(${JSON.stringify(nombre)}, () => { ${cuerpo} });\n`;
+const CABECERA = "'use strict';\nconst { test } = require('node:test');\nconst assert = require('node:assert');\nconst { esPar } = require('./calc.js');\n";
+
+test('@story-8.279 @ac-15 T9 Mutation_NodeTest_OnlyStoryTests', async () => {
+  const dir = repoConMarcas(CABECERA
+    + prueba('T1 par @story-9.1 @ac-1') + prueba('T2 impar @story-9.1', 'assert.equal(esPar(3), false);')
+    + prueba('T3 de la 9.12 @story-9.12', 'assert.ok(true);')
+    + prueba('otra historia @story-4.2', 'assert.ok(true);') + prueba('sin marca', 'assert.ok(true);'));
+  const filtros = [];
+  const r = await checker.runMutationCheck({
+    repo: dir, storyPath: path.join(dir, 'story.md'), suiteRuns: [], log: () => {},
+    runTests: (o) => { filtros.push(o.nameFilter); return checker.defaultRun(o); },
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.ok(filtros.length >= 2 && filtros.every((f) => f === filtros[0] && /^@story-9\\\.1/.test(f)), `cada corrida con el filtro: ${filtros}`);
+  assert.equal(r.result.baseTests, 2, 'corren sólo las dos de la 9.1: la de 9.12 no');
+  assert.ok(r.result.killed >= 1);
+  // el filtro anclado, solo: 9.1 no toma 9.12 ni 9.1.3, y sí la marca al final o antes de otra
+  const re = new RegExp(checker.storyNamePattern('9.1'));
+  for (const n of ['x @story-9.1', 'x @story-9.1 @ac-2', 'x @story-9.1, y']) assert.ok(re.test(n), n);
+  for (const n of ['x @story-9.12', 'x @story-9.1.3', 'x @story-9a1']) assert.ok(!re.test(n), n);
+});
+
+test('@story-8.279 @ac-16 T9 Mutation_NoStoryTag_WholeFileAsToday', async () => {
+  const dir = repoConMarcas(CABECERA + prueba('par') + prueba('impar', 'assert.equal(esPar(3), false);'));
+  const filtros = [];
+  const lineas = [];
+  const r = await checker.runMutationCheck({
+    repo: dir, storyPath: path.join(dir, 'story.md'), suiteRuns: [], log: (...a) => lineas.push(a.join(' ')),
+    runTests: (o) => { filtros.push(o.nameFilter); return checker.defaultRun(o); },
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.ok(filtros.every((f) => !f), 'sin marcas, el archivo entero');
+  assert.equal(r.result.baseTests, 2);
+  assert.ok(lineas.some((l) => /ninguna prueba con la marca @story-9\.1.*archivo entero/.test(l)), lineas.join('\n'));
+});
+
+test('@story-8.279 @ac-17 T10 Mutation_FilterLeavesNoTests_NotGreen', async () => {
+  // la marca sólo en un comentario: el filtro aplica y no deja ninguna prueba
+  const dir = repoConMarcas(`${CABECERA}// las pruebas de la @story-9.1 viven en otro archivo\n${prueba('par')}`);
+  let mutantes = 0;
+  const r = await checker.runMutationCheck({
+    repo: dir, storyPath: path.join(dir, 'story.md'), suiteRuns: [], log: () => {},
+    runTests: (o) => { if (o.mutant) mutantes += 1; return checker.defaultRun(o); },
+  });
+  assert.equal(r.exitCode, 2);
+  assert.match(r.result.motivo, /^no medido: .*@story-9\.1.*ninguna prueba/);
+  assert.equal(mutantes, 0);
+});
+
+test('@story-8.279 @ac-12 T8 Mutation_CapsFromMeasuredTime — de punta a punta: la base recibe el tope medido', async () => {
+  const repo = mkRepo();
+  const topes = [];
+  const r = await checker.runMutationCheck({
+    repo, storyPath: path.join(repo, 'story-con-tests.md'), log: () => {},
+    // la suite declarada `calc.test.js` medida en 3 min: 4,5 por corrida
+    suiteRuns: corridas(3 * MIN, 'calc.test.js'),
+    runTests: ({ mutant, capMs }) => { if (!mutant) topes.push(capMs); return { code: mutant ? 1 : 0 }; },
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.equal(topes[0], 4.5 * MIN, 'la base corre con el tope medido');
+  assert.equal(r.result.measuredMs, 3 * MIN);
+  // y la base que pasa ese tope dice el tope medido
+  const lento = mkRepo();
+  let t = 0;
+  const rl = await checker.runMutationCheck({
+    repo: lento, storyPath: path.join(lento, 'story-con-tests.md'), log: () => {}, now: () => t,
+    suiteRuns: corridas(3 * MIN, 'calc.test.js'), runTests: ({ capMs }) => { t += capMs; return { code: 1, timedOut: true }; },
+  });
+  assert.match(rl.result.motivo, /tope de 4\.5 min \(medido: 270 s\)/);
+});
+
+test('@story-8.279 @ac-12 T8 Mutation_CapsFromMeasuredTime — lee el registro de tiempos de la máquina', async () => {
+  // sin `suiteRuns`, el chequeo lee <estado>/suite-times.jsonl de la HOME: una HOME de juguete con la suite medida
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mut-home-'));
+  const antes = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const { stateDir } = require(path.join(SCRIPTS, 'lib', 'state-dir.js'));
+    fs.mkdirSync(stateDir(), { recursive: true });
+    fs.writeFileSync(path.join(stateDir(), 'suite-times.jsonl'), `${corridas(3 * MIN, 'calc.test.js').map((r) => JSON.stringify({ v: 1, origen: 'gate', ...r })).join('\n')}\n{ roto\n`);
+    const repo = mkRepo();
+    const topes = [];
+    const lineas = [];
+    await checker.runMutationCheck({
+      repo, storyPath: path.join(repo, 'story-con-tests.md'), log: (...a) => lineas.push(a.join(' ')),
+      runTests: ({ mutant, capMs }) => { if (!mutant) topes.push(capMs); return { code: mutant ? 1 : 0 }; },
+    });
+    assert.equal(topes[0], 4.5 * MIN, 'la base corre con el tope medido del registro');
+    assert.ok(lineas.some((l) => /renglón\(es\) del registro de tiempos no se dejan leer/.test(l)), lineas.join('\n'));
+  } finally {
+    process.env.HOME = antes;
+  }
+});
+
+test('@story-8.279 @ac-15 T9 Mutation_NodeTest_OnlyStoryTests — la base roja se compara con el original con el mismo filtro', async () => {
+  const dir = repoConMarcas(CABECERA + prueba('T1 par @story-9.1'));
+  const llamadas = [];
+  await checker.runMutationCheck({
+    repo: dir, storyPath: path.join(dir, 'story.md'), suiteRuns: [], log: () => {},
+    runTests: (o) => { llamadas.push({ repo: o.repo, nameFilter: o.nameFilter }); return { code: 1, tests: 1 }; },
+  });
+  assert.equal(llamadas.length, 2, 'la base en la copia y la misma corrida en el original');
+  assert.ok(llamadas.every((l) => l.nameFilter && l.nameFilter === llamadas[0].nameFilter), JSON.stringify(llamadas));
+});
+
+test('@story-8.279 @ac-15 T9 Mutation_NodeTest_OnlyStoryTests — el mutante que rompe la carga del archivo es cazado, con el filtro', async () => {
+  // el código nuevo tira al cargar si el mutante da vuelta la condición: el archivo de prueba no llega a correr ninguna
+  const dir = repoConMarcas(CABECERA + prueba('T1 par @story-9.1'));
+  fs.writeFileSync(path.join(dir, 'calc.js'), `${CALC_MARCAS}const LIMITE = 10;\nif (LIMITE === 3) throw new Error('límite');\n`);
+  const r = await checker.runMutationCheck({ repo: dir, storyPath: path.join(dir, 'story.md'), suiteRuns: [], log: () => {} });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.ok(r.result.killed >= 2, `el que rompe la carga cuenta como cazado: ${JSON.stringify(r.result)}`);
+  assert.ok(!r.result.skipped.some((s) => /no corrió ninguna prueba/.test(s.reason || '')), JSON.stringify(r.result.skipped));
+});
+
+test('@story-8.279 @ac-17 T10 Mutation_FilterLeavesNoTests_NotGreen — también con «#» en la ruta y con el resultado ilegible', async () => {
+  // el reportero TAP escapa «#» y «\» en el nombre del archivo: el renglón del archivo sin pruebas se descuenta igual
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mut#marca-'));
+  const dir = path.join(base, 'repo#1');
+  fs.mkdirSync(dir);
+  const t = path.join(dir, 'c.test.js');
+  fs.writeFileSync(t, `${CABECERA}// la marca @story-9.1 sólo en un comentario\n${prueba('par')}`);
+  fs.writeFileSync(path.join(dir, 'calc.js'), CALC_MARCAS);
+  const corrida = await checker.defaultRunTests({ repo: dir, testFiles: [t], nameFilter: checker.storyNamePattern('9.1') });
+  assert.equal(corrida.tests, 0, 'el renglón escapado del archivo no cuenta como prueba');
+  // con el filtro, una base cuyo resultado no dice cuántas corrieron tampoco es verde
+  const d2 = repoConMarcas(CABECERA + prueba('T1 par @story-9.1'));
+  let mutantes = 0;
+  const r = await checker.runMutationCheck({
+    repo: d2, storyPath: path.join(d2, 'story.md'), suiteRuns: [], log: () => {},
+    runTests: ({ mutant }) => { if (mutant) mutantes += 1; return { code: 0, tests: null }; },
+  });
+  assert.equal(r.exitCode, 2);
+  assert.match(r.result.motivo, /^no medido: .*no dice cuántas pruebas corrieron/);
+  assert.equal(mutantes, 0);
+});
+
+test('un git diff que falla contra la base no se lee como «nada agregado»: devuelve null, no []', () => {
+  const { repo, base } = repoCommiteado();
+  assert.equal(checker.addedLinesOf(repo, 'calc.js', 'f'.repeat(40)), null);
+  assert.ok(checker.addedLinesOf(repo, 'calc.js', base).length > 0);
+  assert.deepEqual(checker.addedLinesOf(repo, 'calc.js', 'HEAD'), []);
+});
+
+// 🔴 El caso (un producto .NET con su frontend, 13 y 16/11): la historia vive en el backend y declara código y pruebas
+// de los dos repos. El chequeo le pasaba a cada repo la lista entera: en el backend buscaba las pruebas del frontend,
+// no las encontraba y salía «la story declara tests que NO existen» sin mutar nada; en el frontend, al revés. El
+// control no medía en ninguno, y el motivo acusaba a la historia. Ahora cada repo toma sólo lo suyo.
+function historiaEnDosRepos() {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mut-dos-repos-')));
+  const repo = (dir, base, nuevos) => {
+    const escribir = (archivos) => {
+      for (const [rel, texto] of Object.entries(archivos)) {
+        fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+        fs.writeFileSync(path.join(dir, rel), texto);
+      }
+    };
+    escribir(base);
+    const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+    g('init', '-q', '-b', 'main'); g('add', '-A'); g('-c', 'user.email=l@l', '-c', 'user.name=l', 'commit', '-q', '-m', 'base');
+    escribir(nuevos);
+    return dir;
+  };
+  const prueba = (modulo, fn) => [
+    "'use strict';", "const { test } = require('node:test');", "const assert = require('node:assert');",
+    `const { ${fn} } = require('${modulo}');`,
+    `test('${fn}', () => { assert.equal(${fn}(100), true); assert.equal(${fn}(101), false); });`, '',
+  ].join('\n');
+  const declarados = ['src/limite.js', 'tests/limite.test.js', 'web/tope.js', 'web/__tests__/tope.test.js'];
+  const historia = ['---', 'story: "9.2"', 'files_to_create:', ...declarados.map((f) => `  - "${f}"`), '---', '', '# Story 9.2', ''].join('\n');
+  const back = repo(path.join(raiz, 'Back'), { '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../Front\n', 'specs/s.md': historia }, {
+    'src/limite.js': 'exports.permitido = (m) => m <= 100;\n', 'tests/limite.test.js': prueba('../src/limite.js', 'permitido'),
+  });
+  const front = repo(path.join(raiz, 'Front'), { 'web/.keep': '' }, {
+    'web/tope.js': 'exports.dentro = (m) => m <= 100;\n', 'web/__tests__/tope.test.js': prueba('../tope.js', 'dentro'),
+  });
+  return { back, front, story: path.join(back, 'specs', 's.md') };
+}
+
+test('dos repos: cada uno se mide con lo suyo, y en los dos mueren los mutantes', () => {
+  const lab = historiaEnDosRepos();
+  for (const [quien, repo] of [['el de la historia', lab.back], ['el hermano', lab.front]]) {
+    const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'mutation-check.js'), '--repo', repo, '--story', lab.story, '--json'], { encoding: 'utf8' });
+    let j = null;
+    try { j = JSON.parse(r.stdout); } catch { j = null; }
+    assert.equal(r.status, 0, `${quien}: ${(j && j.motivo) || r.stderr}`);
+    assert.ok(j.total > 0 && j.killed === j.total, `${quien}: midió y mató sus mutantes (${JSON.stringify(j && { total: j.total, killed: j.killed })})`);
+  }
+});
+
+test('dos repos: una prueba del hermano que todavía no existe no se le pide al repo de la historia', () => {
+  const lab = historiaEnDosRepos();
+  fs.rmSync(path.join(lab.front, 'web', '__tests__', 'tope.test.js'));
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'mutation-check.js'), '--repo', lab.back, '--story', lab.story, '--json'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const { declaredFor } = require(path.join(SCRIPTS, 'lib', 'companion-repos.js'));
+  // la del hermano que falta se ubica por su carpeta, que sí existe allá
+  assert.deepEqual(declaredFor(lab.back, lab.story, lab.front), ['web/tope.js', 'web/__tests__/tope.test.js']);
+  assert.deepEqual(declaredFor(lab.back, lab.story, lab.back), ['src/limite.js', 'tests/limite.test.js']);
+});
+
+// Cero mutantes no es un verde: el portón lo anotaba como «pass» y no decía nada.
+test('gate: SIN_MUTANTES avisa «NO MEDIDO» con el motivo y deja pasar', () => {
+  const h = gateHarness();
+  const r = runMutationGate({
+    marker: MARKER_FAKE, opts: [], env: {},
+    appendLog: h.appendLog, log: h.log,
+    invokeCheck: () => ({ code: 0, result: { total: 0, killed: 0, survived: [], skipped: [], verdict: 'SIN_MUTANTES', runner: 'dotnet',
+      motivo: 'ningún operador aplica sobre las líneas agregadas de los archivos que la story declara' } }),
+  });
+  assert.equal(r.block, false);
+  assert.match(h.lines.join('\n'), /NO MEDIDO .*ningún operador aplica/);
+  assert.deepEqual(h.entries['gates.log'].map((e) => e.status), ['warn-no-mutants']);
+});
+
+// Lo encontró el pase adversarial: formas de dos y tres repos en que todavía no medía, y un motivo engañoso.
+const correrChequeo = (repo, story) => {
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'mutation-check.js'), '--repo', repo, '--story', story, '--json'], { encoding: 'utf8' });
+  let j = null;
+  try { j = JSON.parse(r.stdout); } catch { j = null; }
+  return { status: r.status, j, salida: `${(j && j.motivo) || ''} ${r.stderr}` };
+};
+
+test('dos repos: el hermano medido desde otra copia suya (un worktree) se mide con lo suyo', () => {
+  const lab = historiaEnDosRepos();
+  const otra = path.join(path.dirname(lab.front), 'Front--puesto');
+  spawnSync('git', ['-C', lab.front, 'worktree', 'add', '-q', '-b', 'wt/otra', otra], { encoding: 'utf8' });
+  for (const rel of ['web/tope.js', 'web/__tests__/tope.test.js']) {
+    fs.mkdirSync(path.dirname(path.join(otra, rel)), { recursive: true });
+    fs.copyFileSync(path.join(lab.front, rel), path.join(otra, rel));
+  }
+  const r = correrChequeo(otra, lab.story);
+  assert.equal(r.status, 0, r.salida);
+  assert.ok(r.j.total > 0 && r.j.killed === r.j.total);
+});
+
+test('tres repos: la story en un repo de historias sin hermanos, y el backend declara el frontend', () => {
+  const lab = historiaEnDosRepos();
+  // la story se muda a un tercer repo que no declara hermanos; los archivos llevan el nombre del repo adelante
+  const specs = path.join(path.dirname(lab.back), 'Specs');
+  fs.mkdirSync(path.join(specs, 'specs'), { recursive: true });
+  const texto = fs.readFileSync(lab.story, 'utf8').replace(/"src\//g, '"Back/src/').replace(/"tests\//g, '"Back/tests/').replace(/"web\//g, '"Front/web/');
+  fs.writeFileSync(path.join(specs, 'specs', 's.md'), texto);
+  spawnSync('git', ['-C', specs, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+  spawnSync('git', ['-C', specs, 'add', '-A'], { encoding: 'utf8' });
+  spawnSync('git', ['-C', specs, '-c', 'user.email=l@l', '-c', 'user.name=l', 'commit', '-q', '-m', 'b'], { encoding: 'utf8' });
+  for (const repo of [lab.back, lab.front]) {
+    const r = correrChequeo(repo, path.join(specs, 'specs', 's.md'));
+    assert.equal(r.status, 0, `${path.basename(repo)}: ${r.salida}`);
+    assert.ok(r.j.total > 0 && r.j.killed === r.j.total);
+  }
+});
+
+test('dos repos: la forma «(<repo>) <ruta>» se lee como del repo que nombra', () => {
+  const lab = historiaEnDosRepos();
+  fs.writeFileSync(lab.story, fs.readFileSync(lab.story, 'utf8').replace(/"web\//g, '"(Front) web/'));
+  const { declaredFor } = require(path.join(SCRIPTS, 'lib', 'companion-repos.js'));
+  assert.deepEqual(declaredFor(lab.back, lab.story, lab.front), ['web/tope.js', 'web/__tests__/tope.test.js']);
+  assert.deepEqual(declaredFor(lab.back, lab.story, lab.back), ['src/limite.js', 'tests/limite.test.js']);
+});
+
+test('dos repos: un repo sin pruebas propias dice que son de otro repo, no que no hay', () => {
+  const lab = historiaEnDosRepos();
+  // el frontend queda sólo con código: sus pruebas se declaran en el backend
+  fs.writeFileSync(lab.story, fs.readFileSync(lab.story, 'utf8').replace('  - "web/__tests__/tope.test.js"\n', ''));
+  const r = correrChequeo(lab.front, lab.story);
+  assert.equal(r.status, 2);
+  assert.match(r.salida, /las pruebas que la story declara son de otro repo/);
+  assert.doesNotMatch(r.salida, /no declara ningún archivo de test/);
 });

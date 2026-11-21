@@ -10,12 +10,20 @@
  * Lo que ya estaba cambiado o sin rastrear antes de arrancar (su fecha es anterior al arranque) no es de la ejecución:
  * sale como aviso. Las líneas que el propio arranque agrega al `.gitignore` (las de `.advisors`) tampoco cuentan.
  * Lo borrado por la terminal que el freno deja pasar (node_modules) no aparece en git: sale de `console-writes`, como aviso.
+ * La memoria que exporta el cierre antes del commit (los trozos de `.engram/chunks/` y su índice) tampoco cuenta: es la
+ * misma regla que la huella de guardar (`save-ok.js esPapeleoDeLaHuella`), y sale como aviso con la cuenta.
  * Sin commit de arranque o sin git, no se mide y se dice: «no pude mirar» no es «no sobra nada».
  */
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseDeclaredFiles } = require('./test-scope.js');
+const { esPapeleoDeLaHuella } = require('./save-ok.js');
+
+// el modo de git de un archivo de la carpeta: un enlace no es papeleo; uno borrado no tiene qué mirar
+function modoDe(abs) {
+  try { return fs.lstatSync(abs).isSymbolicLink() ? '120000' : '100644'; } catch (_) { return '100644'; }
+}
 
 // lock → los manifiestos que lo producen, en la misma carpeta
 const LOCK_OF = {
@@ -65,7 +73,7 @@ function lockDeclarado(rel, declarados) {
 }
 
 function git(repo, args) {
-  const r = spawnSync('git', ['-C', repo, '-c', 'core.quotePath=false', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 });
+  const r = spawnSync('git', ['-C', repo, '-c', 'core.quotePath=false', ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 });
   if (r.error) return { error: `git no se pudo ejecutar (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { error: `git ${args[0]} salió ${r.status}: ${(r.stderr || '').trim().split('\n')[0]}` };
   return { out: r.stdout };
@@ -131,7 +139,10 @@ function computeUndeclared({ repo, baseSha, storyPath, startedAt = null, registr
     if (!Number.isFinite(desde)) return false;
     try { return fs.statSync(path.join(repoReal, f)).mtimeMs < desde; } catch (_) { return false; }
   };
-  const sinDeclarar = cambiados.filter((f) => !f.split('/').includes('.advisors') && f !== historiaRel
+  // la memoria que exporta el cierre antes del commit: la misma regla que la huella de guardar, con el modo del archivo
+  const memoria = cambiados.filter((f) => f.startsWith('.engram/') && esPapeleoDeLaHuella(f, modoDe(path.join(repoReal, f))));
+  if (memoria.length) avisos.push(`memoria exportada (no cuenta): ${memoria.length} archivo(s)`);
+  const sinDeclarar = cambiados.filter((f) => !f.split('/').includes('.advisors') && f !== historiaRel && !memoria.includes(f)
     && !declarados.has(f) && !lockDeclarado(f, declarados) && !(path.posix.basename(f) === '.gitignore' && gitignoreDelArranque(repo, baseSha)));
   const previos = sinDeclarar.filter(previo).sort();
   if (previos.length) avisos.push(`ya estaba(n) cambiado(s) antes de arrancar (no cuenta(n) como de esta ejecución): ${previos.join(', ')}`);
@@ -158,17 +169,44 @@ function entradosPorMain(repo, baseSha, candidatos) {
   if (d.error) return [];
   const enMain = new Set(lineas(d.out).map(toPosix));
   const repoReal = real(repo);
-  return candidatos.filter((f) => {
-    if (!enMain.has(f)) return false;
-    // borrado en la carpeta y también en main: el mismo estado que main (git tiene que contestar que no está)
-    if (!fs.existsSync(path.join(repoReal, f))) {
-      const t = git(repo, ['ls-tree', '--name-only', MAIN, '--', f]);
+  // Lo que la rama ya trajo de main después del arranque: lo que main cambió entre el punto en común del arranque y el
+  // de ahora. Un archivo de esa lista igual a lo traído sigue siendo de main aunque main lo vuelva a cambiar, lo revierta
+  // o lo borre después (el sello de lo revisado compara igual, con el punto en común). Sin traer nada, la lista es vacía.
+  const mb = git(repo, ['merge-base', 'HEAD', MAIN]);
+  const mb0 = git(repo, ['merge-base', baseSha, MAIN]);
+  // el punto de ahora tiene que venir después del del arranque: si la rama volvió a un main anterior, no trajo nada
+  const avanza = !mb.error && !mb0.error && mb.out.trim() && mb.out.trim() !== mb0.out.trim()
+    && !git(repo, ['merge-base', '--is-ancestor', mb0.out.trim(), mb.out.trim()]).error;
+  const punto = avanza ? mb.out.trim() : null;
+  let traido = new Set();
+  if (punto) {
+    const t = git(repo, ['diff', '--name-only', '--no-renames', '--relative', mb0.out.trim(), punto, '--']);
+    if (!t.error) traido = new Set(lineas(t.out).map(toPosix));
+  }
+  // el blob del archivo como lo guardaría git: un enlace simbólico es el texto de su destino, no el archivo al que apunta
+  const blobLocal = (f) => {
+    const abs = path.join(repoReal, f);
+    let st;
+    try { st = fs.lstatSync(abs); } catch (_) { return null; }
+    if (!st.isSymbolicLink()) { const h = git(repo, ['hash-object', '--', f]); return h.error ? null : h.out.trim() || null; }
+    let destino;
+    try { destino = fs.readlinkSync(abs); } catch (_) { return null; }
+    const r = spawnSync('git', ['-C', repo, 'hash-object', '--stdin'], { windowsHide: true, encoding: 'utf8', input: destino, timeout: 30000 });
+    return !r.error && r.status === 0 ? r.stdout.trim() || null : null;
+  };
+  // igual a la versión de `ref`: el mismo blob, o borrado en los dos (git tiene que contestar que no está)
+  const igualA = (f, ref) => {
+    let existe = true;
+    try { fs.lstatSync(path.join(repoReal, f)); } catch (_) { existe = false; }
+    if (!existe) {
+      const t = git(repo, ['ls-tree', '--name-only', ref, '--', f]);
       return !t.error && lineas(t.out).length === 0;
     }
-    const remoto = git(repo, ['rev-parse', '--verify', '--quiet', `${MAIN}:./${f}`]);
-    const local = git(repo, ['hash-object', '--', f]);
-    return !local.error && !remoto.error && local.out.trim() !== '' && local.out.trim() === remoto.out.trim();
-  }).sort();
+    const local = blobLocal(f);
+    const remoto = git(repo, ['rev-parse', '--verify', '--quiet', `${ref}:./${f}`]);
+    return !!local && !remoto.error && local === remoto.out.trim();
+  };
+  return candidatos.filter((f) => (enMain.has(f) && igualA(f, MAIN)) || (traido.has(f) && igualA(f, punto))).sort();
 }
 
 /**

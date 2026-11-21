@@ -109,6 +109,7 @@ test('T2 CorridaNueva_ValidadorDelPaso1_NoTomaLaFoto: start de otra story y el v
   const answers = path.join(tmp('respuestas'), 'answers.json');
   fs.writeFileSync(answers, JSON.stringify({
     title: 'El total suma el envío', asA: 'quien compra', iWant: 'ver el total con envío', soThat: 'no tener sorpresas',
+    problem: 'el total no muestra el envío', outcome: 'el total incluye el envío',   // la intención: sin ellas no escribe
     criteria: [{ given: 'un carrito con envío', when: 'abro el resumen', then: 'el total incluye el envío' }],
     tests: [{ name: 'Total_ConEnvio', criterion: 1, level: 'unit', scenario: 'envío de 500', expected: 'total + 500' }],
     verify: ['npm test'],
@@ -137,6 +138,7 @@ test('T3 Start_MismaStory_NoHeredaVueltas: la misma story corrida otra vez en la
   const answers = path.join(tmp('respuestas'), 'answers.json');
   fs.writeFileSync(answers, JSON.stringify({
     title: 'El total suma el envío', asA: 'quien compra', iWant: 'ver el total', soThat: 'no tener sorpresas',
+    problem: 'el total no muestra el envío', outcome: 'el total incluye el envío',
     criteria: [{ given: 'un carrito', when: 'abro el resumen', then: 'veo el total' }],
     tests: [{ name: 'Total', criterion: 1, level: 'unit', scenario: 'x', expected: 'y' }],
     verify: ['npm test'],

@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-retrospective-capturer.md
-# source_sha256: 795d06589c2620f221a55901cb9b469586c557242481c69cdb649632a04d4216
+# source_sha256: e947603a53f6a06030d50ed89c84f3d3803ca76d0722baa3cfd0e9fd350a334b
 # Se despliega como $CODEX_HOME/tycon-retrospective-capturer.config.toml y se invoca: codex exec -p tycon-retrospective-capturer
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -149,7 +149,7 @@ content: \"Story <N.M>: implementación usó read-modify-write para metadata en 
    - un commit que toca **el mismo archivo** que un finding con `disposition: fixed` de una story
      cerrada en la ventana (el arreglo del arreglo: la señal más fuerte y la que no depende de cómo
      alguien redactó el mensaje).
-   - si el repo expone el estado de su CI (`az pipelines runs list`, `gh run list`): un run **failed**
+   - si el repo expone el estado de su CI (`platform.js ci read`, o el comando de su plataforma; el de Azure DevOps, en `guides/integrations/ado-en-el-nucleo.md`): un run **failed**
      sobre la rama de integración dentro de la ventana. 🔴 La ausencia de un run en el LISTADO no es
      evidencia de que no existió (el listado laguea minutos) — ver la regla ADO del `CLAUDE.md`.
 

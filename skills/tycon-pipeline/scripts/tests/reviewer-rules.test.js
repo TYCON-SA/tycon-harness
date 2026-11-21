@@ -361,3 +361,29 @@ test('T11 ReglasRevisores_NoRealHome — advisor-context y advisor-runs en la HO
   const r = spawnSync('git', ['-C', repo, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' });
   assert.equal((r.stdout || '').trim(), '', `git ve un core.hooksPath (${(r.stdout || '').trim()}): los commits de juguete corren ganchos del dev`);
 });
+
+test('T12 Contexto_DiffContraLaBifurcacion — lo commiteado en la rama llega al revisor, con lo sin commitear', () => {
+  const repo = repoDeJuguete({ conCambio: false });
+  git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  git(repo, 'checkout', '-q', '-b', 'story/x');
+  fs.writeFileSync(path.join(repo, 'app.js'), 'module.exports = 2; // commiteado en la rama\n');
+  git(repo, 'commit', '-q', '-am', 'cambio de la rama');
+  const commiteado = fs.readFileSync(contexto(repo, 52).context_file, 'utf8');
+  assert.ok(commiteado.includes('+module.exports = 2; // commiteado en la rama'),
+    'el diff del contexto trae lo commiteado en la rama, no sale vacío');
+  assert.ok(!/## Diff unificado[^\n]*\n```diff\n\(vacío\)/.test(commiteado), 'el diff no dice «(vacío)»');
+
+  fs.writeFileSync(path.join(repo, 'app.js'), 'module.exports = 3; // sin commitear\n');
+  const ambos = fs.readFileSync(contexto(repo, 53).context_file, 'utf8');
+  assert.ok(ambos.includes('+module.exports = 3; // sin commitear'), 'lo sin commitear también llega');
+  assert.ok(ambos.includes('origin/main'), 'el contexto dice contra qué rama se midió');
+
+  // sin rama principal a la vista, la base es HEAD y el encabezado lo dice como respaldo
+  const solo = repoDeJuguete({ conCambio: false });
+  git(solo, 'branch', '-M', 'base-local');
+  git(solo, 'checkout', '-q', '-b', 'story/y');
+  fs.writeFileSync(path.join(solo, 'app.js'), 'module.exports = 4;\n');
+  git(solo, 'commit', '-q', '-am', 'sin remoto');
+  const respaldo = fs.readFileSync(contexto(solo, 54).context_file, 'utf8');
+  assert.match(respaldo, /## Diff unificado \(git diff contra HEAD — respaldo: lo ya commiteado en la rama NO está en este diff/);
+});

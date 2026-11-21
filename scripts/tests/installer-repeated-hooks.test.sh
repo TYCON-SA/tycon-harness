@@ -36,6 +36,9 @@
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
+# El freno de sesiones lo prende la sesión del arnés que corre la prueba (TYCON_SESSION_GUARD=1). Heredado, el aplicador
+# lo registra y cambia la cuenta de hooks: cada laboratorio nace sin él, como nace con su propia HOME.
+unset TYCON_SESSION_GUARD
 ONLY=""
 [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 case "$ONLY" in ""|CASE|HOOKSPATH) ;; *) echo "❌ installer-repeated-hooks: --only CASE|HOOKSPATH («${ONLY}» no existe)"; exit 2 ;; esac
@@ -57,7 +60,8 @@ applier_by() { local root="$1"; shift; harness_lab_isolated bash "$root/scripts/
 #   total     cuántos hooks hay
 #   repeated  cuántos están de más: mismo evento, mismo matcher (en cualquier orden) y el MISMO archivo por dispositivo e inodo
 #   order     «evento|matcher|archivo», uno por línea y en el orden del archivo (sin la carpeta: por dónde se llegó no cuenta)
-#   naming    cuántos comandos traen ese texto
+#   naming    cuántos comandos traen ese texto (con un evento después del texto, sólo los de ese evento: un guion puede
+#             estar registrado en dos, como session-collision-guard.js con su aviso siempre y su freno opcional)
 cat > "$BASE/census.py" <<'PY'
 import collections, json, os, re, sys
 path, mode = sys.argv[1], sys.argv[2]
@@ -74,7 +78,7 @@ for ev, bucket in (s.get("hooks") or {}).items():
             else:
                 seen[(ev, matcher, cmd)] += 1
             order.append("%s|%s|%s" % (ev, matcher, os.path.basename(q.group(1)) if q else cmd))
-            if mode == "naming" and sys.argv[3] in cmd:
+            if mode == "naming" and sys.argv[3] in cmd and (len(sys.argv) < 5 or ev == sys.argv[4]):
                 naming += 1
 if mode == "total": print(total)
 elif mode == "repeated": print(sum(v - 1 for v in seen.values() if v > 1))
@@ -132,13 +136,14 @@ if runs CASE; then
     || bad "CASE el hook que vuelve (rc $RC): $(census naming '/safety-guard-pre.sh"') vez/veces, $(census total) hooks, $(census repeated) repetidos; orden: $(diff <(printf '%s\n' "$ORDER_BEFORE") <(census order) | head -4 | tr '\n' ' ')"
   cp "$BASE/case-before.json" "$TYCON_SETTINGS_PATH"
 
-  # un hook apagado (el freno de dos sesiones nace apagado) que quedó registrado por la otra caja: se saca igual
+  # un hook apagado (el freno de dos sesiones nace apagado) que quedó registrado por la otra caja: se saca igual. Se cuenta
+  # sólo el PreToolUse: el aviso de llegada del mismo guion (SessionStart) va siempre y se queda
   add_hook PreToolUse Bash "node \"$OTHER/scripts/hooks/session-collision-guard.js\""
-  [ -f "$LAB_TREE/scripts/hooks/session-collision-guard.js" ] && [ "$(census naming '/session-collision-guard.js"')" = 1 ] || bad "CASE no pude sembrar el hook apagado por la otra caja"
+  [ -f "$LAB_TREE/scripts/hooks/session-collision-guard.js" ] && [ "$(census naming '/session-collision-guard.js"' PreToolUse)" = 1 ] || bad "CASE no pude sembrar el hook apagado por la otra caja"
   applier_by "$LAB_TREE" >/dev/null 2>&1; RC=$?
-  [ "$RC" = 0 ] && [ "$(census naming '/session-collision-guard.js"')" = 0 ] && [ "$(census total)" = "$N" ] \
+  [ "$RC" = 0 ] && [ "$(census naming '/session-collision-guard.js"' PreToolUse)" = 0 ] && [ "$(census total)" = "$N" ] \
     && ok "CASE un hook apagado que estaba registrado por la otra caja se saca (el archivo está: se compara qué archivo es)" \
-    || bad "CASE el hook apagado por la otra caja (rc $RC) sigue $(census naming '/session-collision-guard.js"') vez/veces"
+    || bad "CASE el hook apagado por la otra caja (rc $RC) sigue $(census naming '/session-collision-guard.js"' PreToolUse) vez/veces"
   cp "$BASE/case-before.json" "$TYCON_SETTINGS_PATH"
   # …y uno cuyo archivo ya NO está en el disco (sin archivo no hay identidad: vale la ruta, con la caja que diga el disco)
   add_hook SessionStart "" "bash \"$OTHER/scripts/hooks/telegram-zombie-sweep.sh\""

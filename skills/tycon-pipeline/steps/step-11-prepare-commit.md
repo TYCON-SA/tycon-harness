@@ -1,6 +1,8 @@
-# Preparar el commit
+# Preparar el pull request
 
-**Objetivo**: armar un mensaje de commit bien formado según las convenciones TYCON. **NO ejecuta `git commit`**. Deja el mensaje listo para que el dev lo revise y commitee manualmente.
+**Objetivo**: armar el commit y el pull request según las convenciones TYCON, y tomar la foto del código que va a
+salir. El commit y el empuje de la rama de trabajo los hace el agente sin preguntar; la persona aprueba el pull
+request, en la ventana de permiso y con la evidencia adelante.
 
 ## Inputs
 
@@ -17,17 +19,58 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-ste
 
 El comando frena en código lo siguiente (no hace falta repetir la verificación a mano; sí leer su mensaje y arreglar):
 
+- **Código sin revisar** (`unreviewed-code`, no se abre con `--out-of-order`): un cambio de código posterior al último
+  cierre de los revisores, con la misma regla que `pipeline.js next` (una prueba o un texto no cuentan; ver
+  `step-07-reviewers.md` §«Otra vuelta»). Sale 2 y dice «cambió código después de los revisores: <hasta cinco rutas, y
+  «y N más»>. Corré los revisores sobre lo cambiado (`pipeline.js next` dice cómo) y volvé a cerrar». Si los revisores
+  vuelven a cerrar después de este paso, `next` lo pide otra vez («lo preparado ya no es lo revisado»), y cerrarlo de
+  nuevo retoma la foto del código. Recién entonces `next` dice que se cierre la ejecución.
+- **Lo que se guarda no es lo revisado** (`reviewed-tree-mismatch`, después del anterior; no se abre con
+  `--out-of-order`): sella cada repo de la última vuelta de revisores (nunca el del pase) y lo compara con el sello de
+  esa vuelta. Cualquier archivo distinto frena, también una prueba o un texto, salvo el papeleo: el que no cuenta para
+  el ok de guardar, `tasks/todo.md`, y de la historia de la corrida su estado, sus tildes, su Change Log, su Dev Agent
+  Record y sus «Cambios de comportamiento». Sale 2, nombra cada archivo y el `smart-reloop` de la vuelta siguiente (con `--files` del diff completo, como
+  siempre). Igual sin cambios: «lo que se guarda es lo revisado (<sellos>)». Antes comprueba que la copia de la vuelta
+  siga siendo la de su sello. Una vuelta sin sello (de una corrida anterior) no se compara: lo dice y queda en
+  `gates.log` como no medido. El ok de guardar hace la misma comparación antes de la firma.
 - **Cambios sin declarar** (`undeclared-changes`, va primero y no se abre con `DOD_BYPASS`): lo que cambió en el repo
   contra el commit de arranque (más lo no rastreado) y no pasó por Edit/Write ni está en `files_to_create`,
   `files_to_modify` o el File List del Dev Agent Record. Un lock cuenta si su manifiesto está declarado. La salida es
   nombrarlo en el File List o revertirlo. Lo borrado por la terminal (node_modules) sale como aviso; sin git o sin
   commit de arranque dice «no medido» y no frena.
+- **La comparación con main** (`compare-previous-gate`, después de los cambios sin declarar; sale 1): sólo si la
+  historia tiene candidatos (`pipeline.js compare-candidates`, ver `step-10-live-check.md`). Frena por dos cosas:
+  un candidato sin humo comparado que lo cubra ni exención firmada (también si su único humo dio «no comparado»), y una
+  diferencia con main que la historia no declara (el comando, los dos códigos de salida y las líneas que difieren).
+  Una diferencia se resuelve de una de dos formas: declarándola en la sección `## Cambios de comportamiento` de la
+  historia, con un renglón `<comando>: qué cambia` (el comando del humo, o un prefijo suyo que termina en espacio,
+  seguido de «:»), o arreglando el código. Declarar es papeleo: no dispara la vuelta de revisores. Arreglar el código
+  sí, como todo arreglo después de «Hallazgos». Un candidato sin humo se resuelve con un humo que lo cubra o con la
+  exención (`marker.js compare-waiver`); una línea `compare_exempt:` en el frontmatter no exime. Cada exención y cada
+  candidato «cubierto por declaración» sale como aviso (el candidato, el motivo y quién firmó; o el humo y su
+  `--covers`), y queda en `compare-avisos.md` de la corrida para el texto del pedido.
 - **Un control en rojo** (`red-check`, y `expected-red` para el rojo esperado): sin la ejecución en deuda frena. Las
   salidas son arreglarlo y volver a correr el control, o `marker.js close-as-debt` con el permiso de la persona; en deuda
   pasa y lo dice.
 - **Matriz de verificación en ejecución** (`checks.acmatrix`, DODRT-C6): tiene que estar en verde con `provenance:
   run-check` (`marker.js run-check acmatrix -- node <skill>/scripts/runtime-matrix.js --story <abs spec.md>`, que se
-  puebla en `step-10-live-check.md`).
+  puebla en `step-10-live-check.md`). Con una tanda anotada (`marker.js set-batch`), el freno mide sólo esa tanda y
+  dice qué tanda midió y qué dejó afuera; las tandas cuyos archivos cambió la corrida vuelven a la matriz. La prueba
+  con navegador también mira esas tandas: si la pantalla es de otra tanda, no se pide y se dice en una línea. Un
+  criterio de la tanda declarado imposible de probar se firma con la misma matriz: el comando que muestra el freno
+  lleva `--for-session <la sesión>`, para que la firma por terminal mida la misma tanda. Un criterio de otra tanda no
+  se firma en esta corrida.
+  **En deuda, el rojo esperado de la matriz.** Una ejecución cerrada en deuda (`close-as-debt`) por criterios que se
+  pueden probar en vivo pero no ahora llega al commit con `marker.js expect-red acmatrix --tests <T1,T2> --until
+  <AAAA-MM-DD>`, que firma la persona en su propia ventana (criterios, pruebas y fecha a la vista; tope de 14 días desde
+  el cierre en deuda; el mismo comando renueva la fecha dentro del tope). El freno sigue calculando la matriz: acepta
+  sólo los criterios sin correr que la lista cubre (al menos una prueba de la tabla los nombra y todas las que los
+  nombran están en la lista) y nada más pendiente. Un criterio sin correr fuera de la lista, uno imposible sin su
+  firma, una acción no ejercida, una pantalla sin imagen, código que la matriz no pudo leer o la fecha vencida frenan
+  como siempre. Aceptado, anota `acmatrix-debt` en `gates.log` e imprime la línea `Sin evidencia en vivo: AC … —
+  deuda <id>, vence <fecha>` que lleva el mensaje de commit, debajo de `Deuda:`. Volver a medir la matriz en rojo la
+  deja en rojo: para seguir en deuda, la persona vuelve a firmar el rojo esperado. No es un camino sin evidencia: el paso a `review`/`done` sigue pidiendo la matriz en verde,
+  y vencida la fecha el arranque de sesión lo avisa hasta que esos criterios tengan su evidencia.
 - **`findings.json` presente** (insumo del `tycon-retrospective-capturer`): si el run dir existe y el archivo falta o no
   es un array, bloquea. Se escribe con `pipeline.js write-findings` y después `write-followups`
   (`step-09-findings.md`); verlo antes: `pipeline.js findings-status --story <story_path> --repo <repo>` (exit 3 = falta).
@@ -45,16 +88,17 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
 
 Lo que decide el agente, porque el comando no lo ve o no lo frena:
 
-- **Cambios después de la última vuelta de revisores**: si el diff actual difiere del que auditaron los revisores,
-  NO seguir: avisar «Detecté cambios al código desde la última corrida de revisores. Antes de armar el commit, vuelvo a
+- **Cambios después de la última vuelta de revisores que el registro no vio** (el comando frena los que vio): si el diff
+  actual difiere del que auditaron los revisores, NO seguir: avisar «Detecté cambios al código desde la última corrida de revisores. Antes de armar el commit, vuelvo a
   «Revisores» para re-auditar el diff actualizado.» y volver a `step-07-reviewers.md` (iteración N+1). Excepción:
   cambios sólo fuera del diff (`tasks/lessons.md`, `tasks/todo.md`, el Change Log de la spec), documentada en
   la pre-condición de este paso.
 - **Checks con `provenance: manual`**: no bloquean, pero se anuncian en el commit prep como `⚠ check '<name>' no
   verificado mecánicamente (provenance=manual — ver gates.log)`.
 - **Matriz en rojo**: los ACs `SIN CORRER` los corre el agente (no se eximen); los imposibles declarados se le presentan
-  al dev con la lista y el resumen llano. Esa eximición la firma **el dev desde su terminal** (`marker.js
-  runtime-waiver <abs spec.md>`, TTY-only), vive en `.tycon/runtime-waivers.jsonl` del repo de la story (no en el
+  al dev con la lista y el resumen llano. Esa eximición la firma **el dev** en la ventana de permiso, con un click o un
+  «aprobado» donde la ventana no llega, o en su terminal (`marker.js runtime-waiver <abs spec.md>`; ver
+  `step-10-live-check.md`), vive en `.tycon/runtime-waivers.jsonl` del repo de la story (no en el
   frontmatter) y se vence sola si alguien reescribe la justificación. El mensaje de commit DEBE listar los ACs
   diferidos a prueba manual: no desaparecen, viajan con el commit.
 - **Protocolo de cierre ACCOV-C7..C10**: leer `~/.claude/tycon-harness/guides/accov-governance-protocol.md` si no se
@@ -101,6 +145,8 @@ Incluir:
 - Si «Hallazgos» auto-fluyó con warnings (`auto_flowed_with_warnings: true`): sección **"Warnings auto-waived"** listando cada warning (rule ID + archivo + razón del waive: `auto_waive` list / fuera del diff). Visibilidad sin fricción.
 - Si la ejecución quedó en deuda (`close-as-debt`): la línea `Deuda: <DEF-id> — <motivo>`, tal como la imprime
   `complete-step prepare-commit` (📌), y los controles en rojo esperado con sus pruebas.
+- Si se editó una prueba vieja que estaba en rojo (`marker.js note-red-test`): un renglón por prueba, con su razón, tal
+  como lo imprime `complete-step prepare-commit` (📌 «Prueba en rojo editada: …»).
 
 ### Trailers
 
@@ -128,24 +174,69 @@ Co-Authored-By: <modelo exacto de la sesión> <noreply@anthropic.com>
    (story con maqueta aprobada: van también `<carpeta qa>/<clave>-mockup.html` y
    `<clave>-mockup-approval.json`; tienen que viajar con la story para que la revisión de la pantalla los encuentre)
 
-   Para commitear, correr:
-   git add {archivos}
-   git commit -m "$(cat <<'EOF'
-   {mensaje completo}
-   EOF
-   )"
-
-   O pedíme a mí que lo ejecute (requiere tu confirmación explícita según `guides/git-commit-conventions.md`).
+   Lo commiteo y empujo a la rama de trabajo; el pull request sale con tu sí, en la ventana de permiso.
    ```
 
-3. **NO ejecutar `git commit` ni `git push` automático.** Esperar instrucción explícita del usuario.
+3. **El pull request y el empuje a una rama compartida (`main`, `master`, `dev`, `release/*`) no salen sin el sí de la
+   persona.** El commit y el empuje de la rama de trabajo no lo piden.
+
+4. Si la corrida tiene `compare-avisos.md` (exenciones de la comparación con main o candidatos cubiertos por
+   declaración), su texto va entero en la descripción del pedido: el revisor del pedido y el dueño tienen que verlo.
+
+## La persona aprueba el pull request, en la ventana de permiso
+
+Autorización siempre, firma nunca, y donde tiene consecuencias: la persona aprueba el pull request, no cada commit. El
+commit y el empuje de la rama de trabajo los hace el agente sin preguntar (quedan en `gates.log`); se deshacen sin que
+nadie más los vea. Abrir cada pull request, o empujar a una rama compartida (`main`, `master`, `dev`, `release/*`), pregunta en la
+ventana de permiso de siempre, con la evidencia de la corrida en un renglón: las pruebas, los revisores, el pase y los
+hallazgos («no medido» donde falta). No hay comando de terminal, constancia ni coordinadora en el medio. Una frase en
+el chat o un mensaje de otra sesión no saltean la ventana.
+
+Antes de preguntar, el freno mira que el pull request sea lo preparado:
+
+- **Sin este paso cerrado**, el pull request y el empuje a una rama compartida frenan: «el pull request sale después de
+  preparar».
+- **Con el código cambiado desde la foto** (la que toma el cierre de este paso, en cada repo de la corrida), frenan:
+  hay que volver a correr los revisores de lo que cambió y cerrar este paso otra vez. El papeleo (la historia, su
+  `sprint-status.yaml`, la evidencia, la memoria) no vence la foto. Traer `main` sí la vence: `main` se trae antes de
+  los revisores.
+- **Si no pudo comprobarlo**, frena y lo dice: no poder mirar no es verde.
+
+El cierre de este paso, antes de la foto, corre los controles del commit de cada repo en sólo lectura: si uno frenaría
+el commit o regeneraría un archivo, el paso no cierra y dice cuál; se commitea lo regenerado y se vuelve a cerrar.
+
+En una pestaña que no pide permisos (la ventana se aprobaría sola), el gancho abre el pull request sin preguntar y lo dice
+en pantalla, con la misma evidencia.
+
+Lo delicado sigue con su firma: un pull request que cambia un freno, una firma, un control o algo de producción lleva la
+firma de control del dueño, que no cambia.
+
+### El orden del cierre
+
+1. Primero, **exportar la memoria** del proyecto (y sumarla al stage), si el proyecto la usa.
+2. **Cerrar este paso** (`marker.js complete-step prepare-commit`): corre los controles del commit y toma la foto.
+3. **commitear** con el mensaje: no pregunta.
+4. Después, **empujar** la rama de trabajo: tampoco pregunta.
+5. Recién ahí, **abrir los pull requests**: la ventana de permiso pregunta, con la evidencia. Antes de pedir la
+   aprobación, mostrale a la persona los renglones de la corrida, uno por paso con su motivo
+   (`node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/run-lines.js --story <ruta de la story>`), tal cual.
+   Abrí primero el pedido de cada repo que no es el de la historia, y anotalo con `marker.js pr <número> --repo <carpeta>`:
+   deja un renglón en `<clave>-pedidos.jsonl`, en la carpeta de evidencia. Commiteá y empujá ese archivo en la rama de la
+   historia antes de abrir su pedido. Al final, con el pedido del repo de la historia abierto,
+   `marker.js pr <número> --repo <carpeta del repo de la historia>`: ése queda sólo en la corrida, y su renglón lo escribe el
+   cierre. Sin `--repo` el número también queda sólo en la corrida, sin saber de qué repo es. Así se sabe de qué historia es cada fusión aunque su rama
+   sea `wt/<sesión>`.
+6. Al final, **`marker.js clear`**, después del último push y del último pull request. Imprime los renglones y el
+   renglón final («pedido #12 abierto, espera la cola — 52 min de trabajo, …») y manda un aviso por los canales de la
+   sesión; repetí el renglón final al cerrar tu mensaje. Cerrá la ejecución antes de borrar o mover su carpeta de
+   trabajo (`git worktree remove`, `rm -rf`, `mv`): la copia de la apertura vive ahí, y sin ella la ejecución queda
+   perdida. La consola frena ese borrado con «cerrá la ejecución antes» (`guides/safety-guard.md`, «La ejecución perdida»).
 
 ## Decisiones
 
-- **Si el usuario dice "commiteá"**: ejecutar `git commit` con el mensaje. No `git push` (eso es separado).
-- **Si el usuario dice "push"**: ejecutar después del commit.
-- **Si el usuario dice "no, cambiá X del mensaje"**: editar y re-mostrar.
-- **Si el usuario no responde**: esperar. No hacer nada proactivo.
+- **Commit y empuje de la rama de trabajo**: los hace el agente, en el orden de arriba.
+- **Si el usuario pide cambiar el mensaje**: editar y re-mostrar.
+- **El pull request sin el sí**: esperar. No hacer nada proactivo.
 
 ## Post-commit
 
@@ -185,14 +276,14 @@ con las tres el step está cerrado.
 
 ## 🚨 CRITICAL — NO cerrar el registro de horas
 
-**El pipeline NO cierra el registro de horas al finalizar «Preparar el commit».** Este es un error
+**El pipeline NO cierra el registro de horas al finalizar «Preparar el pull request».** Este es un error
 recurrente que rompe el tracking de horas reales.
 
 **Reglas explícitas (NO violar):**
 
 1. **NO emitir** `work-signal stop` ni cerrar la entrada a mano con la herramienta de horas al final del pipeline. El
    registro queda **abierto**.
-2. **NO borrar** el estado local de la integración de horas al terminar «Preparar el commit»: refleja que sigue abierto.
+2. **NO borrar** el estado local de la integración de horas al terminar «Preparar el pull request»: refleja que sigue abierto.
 3. El registro **solo se cierra** en estas 4 condiciones, en este orden de precedencia:
    - **(a)** El usuario lo cierra explícitamente con lo que su integración le da (su skill o su comando).
    - **(b)** El usuario arranca otra tarea o invoca otra story con `tycon-pipeline` → el `start` del nuevo flujo
@@ -225,7 +316,7 @@ idénticos en cada corrida y enterraban el resumen real (feedback del dev 2026-0
 - {qué quedó pendiente o diferido, si hay algo}
 - Advisors: {🟢 limpio | 🟡 N warnings, ninguno bloqueante}
 
-Está listo para commitear — decime y lo hago.
+Está listo para commitear: la ventana de permiso te pregunta antes de guardar.
 
 Pendiente tuyo: antes de darla por terminada, probala andando (que compile y pasen las pruebas no alcanza){ · el reloj de horas sigue abierto}{ · el pedido de Azure DevOps se cierra después de mergear}.
 Detalle técnico (findings, archivos, mensaje de commit completo) — pedímelo y te lo pego.
@@ -272,13 +363,16 @@ queda la ruta para copiar—, y debajo la línea
 
 ## 🟢 Limpieza del marker file (MANDATORY post-2026-05-15)
 
-Una vez que el commit message fue presentado al user y aprobado (`marker.js complete-step prepare-commit` ya quedó marcado), **limpiar el marker del pipeline** para que los hooks dejen de emitir reminders sobre esta story:
+Con `marker.js complete-step prepare-commit` ya marcado, **limpiar el marker del pipeline** para que los hooks dejen de
+emitir reminders sobre esta story. Corré `marker.js clear` después del último push y del último pedido, no al aprobar
+el mensaje: mientras la corrida está abierta, el gancho pregunta en la ventana antes de guardar. Si la persona decide no
+guardar, se cierra igual al final.
 
 ```bash
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear
 ```
 
-Si el flujo sigue sin pausa a «Cerrar la historia» (`close-work-item.md`), el clear ocurre allá. Si el flujo termina en «Preparar el commit» (el dev decide commitear o no manualmente), clear acá.
+Si el flujo sigue sin pausa a «Cerrar la historia» (`close-work-item.md`), el clear ocurre allá. Si el flujo termina en «Preparar el pull request» (el agente commitea y empuja a su rama, y la persona aprueba el pull request), clear acá, después de abrirlo.
 
 ### Si el cierre ofreció la instalación completa
 
@@ -310,8 +404,14 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story
   "$STORY_PATH" "review"
 ```
 
-**Por qué**: si el flujo termina en «Preparar el commit» (no llega a «Cerrar la historia»), la story queda lista para review pero el `status:` previo (`in-progress`) reflejaría mal el estado real. Otra sesión que abra `tycon-pipeline` sobre esta story va a leer `review` y NO va a re-arrancar el Arranque (PIPE-C5 lo detecta).
+**Por qué**: si el flujo termina en «Preparar el pull request» (no llega a «Cerrar la historia»), la story queda lista para review pero el `status:` previo (`in-progress`) reflejaría mal el estado real. Otra sesión que abra `tycon-pipeline` sobre esta story va a leer `review` y NO va a re-arrancar el Arranque (PIPE-C5 lo detecta).
 
 **Si «Cerrar la historia» sigue inmediatamente** después de este paso: el `status: review` se sobreescribe a `done` allá. NO es opcional saltearlo — siempre mutá `review` acá aunque vayas a «Cerrar la historia» después; el costo del double-write es trivial y deja el log de mutación más auditable.
 
 **Si el update falla** (frontmatter sin línea `status:` por algún motivo raro): WARNING al usuario pero NO bloquear el commit prep — el dev puede setearlo manualmente.
+
+**El índice `sprint-status.yaml`** se toca sólo si hay uno manual, como en «Implementar». Se busca en la carpeta que dice
+`implementation_artifacts` en `_bmad/bmm/config.yaml` o, sin esa clave, junto a la historia, y
+`node ~/.claude/tycon-harness/scripts/tools/story-index.js --repo <repo> --mode` dice de qué tipo es. Con `manual` y sin
+aviso, el renglón de la historia pasa a `review`, sin tocar los demás. Con `generated` no se edita. Si el comando imprime
+un aviso, falla o no está, tampoco: se dice en una línea y se sigue. Si no se encuentra, se dice en una línea y se sigue.

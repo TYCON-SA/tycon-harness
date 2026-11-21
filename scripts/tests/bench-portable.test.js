@@ -732,6 +732,32 @@ test('T19i LiveFire_SessionThatDidNotWork_IsUnmeasuredNotSixReds — una sesión
     'si el agente llegó a correr un comando, la sesión trabajó: lo que falte es del arnés');
 });
 
+// 🔴 Falla con: la carpeta del caso que queda en el disco porque su preparación le sacó los permisos a una carpeta de
+// adentro (`chmod 000`, como el caso de 01-frenos-duros), o un borrado que falla y el banco se lo calla.
+test('Bench_SandboxCleanup_RestoresPermissions — el banco devuelve los permisos y borra la carpeta del caso', { skip: ON_WINDOWS ? 'sin chmod en Windows' : (process.getuid && process.getuid() === 0 ? 'root entra igual' : false) }, () => {
+  const root = tempDir('tycon-bench-root-');
+  const hooks = hookFiles();
+  const r = runner.runCase('claude', { hook: 'probe', script: hooks.probe, event: 'PreToolUse' }, {
+    id: 'locked-folder', type: 'must-emit',
+    setup: ['mkdir -p "$SANDBOX_HOME/.claude/skills/adentro" && chmod 000 "$SANDBOX_HOME/.claude/skills/adentro" "$SANDBOX_HOME/.claude/skills"'],
+    stdin: { tool_name: 'Bash', tool_input: { command: 'echo hola' } },
+    expect: { stdout_re: ['^HOME-IS-LAB$'] },
+  }, { tmpdir: root });
+  assert.deepStrictEqual(r.failures, [], 'el caso pasa');
+  assert.deepStrictEqual(fs.readdirSync(root), [], 'la carpeta del caso no queda');
+  // si el borrado igual falla, el caso lo dice: no se calla
+  const prev = fs.rmSync;
+  fs.rmSync = () => { throw Object.assign(new Error('EBUSY: algo la tiene abierta'), { code: 'EBUSY' }); };
+  let r2;
+  try {
+    r2 = runner.runCase('claude', { hook: 'probe', script: hooks.probe, event: 'PreToolUse' }, {
+      id: 'cleanup-fails', type: 'must-emit', stdin: {}, expect: { stdout_re: ['^HOME-IS-LAB$'] },
+    }, { tmpdir: root });
+  } finally { fs.rmSync = prev; }
+  assert.strictEqual(r2.pass, false);
+  assert.ok(r2.failures.some((f) => /no pude borrar la carpeta del caso.*EBUSY/.test(f)), JSON.stringify(r2.failures));
+});
+
 test.after(() => {
   for (const d of temporaries) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) { /* un temporal que no se pudo borrar no cambia el veredicto */ } }
 });

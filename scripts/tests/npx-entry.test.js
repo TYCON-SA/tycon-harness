@@ -45,7 +45,9 @@ const DRIVER = [
   "'use strict';",
   'const N = require(process.argv[2]); const spec = JSON.parse(process.argv[3]); const launches = [];',
   'const io = { tty: Boolean(spec.tty), line: () => (spec.answer === undefined ? "" : spec.answer), secret: () => spec.secret || "",',
-  '  launch: (what, args) => { launches.push({ what, args }); return spec.status === undefined ? 0 : spec.status; } };',
+  '  launch: (what, args) => { launches.push({ what, args });',
+  '    if (spec.installs) { const fs = require("fs"); fs.mkdirSync(require("path").dirname(spec.installs.file), { recursive: true }); fs.writeFileSync(spec.installs.file, spec.installs.body); }',
+  '    return spec.status === undefined ? 0 : spec.status; } };',
   'if (spec.tools) io.tools = (n) => `/x/bin/${n}`;',
   'const r = N.run({ env: process.env, home: process.env.HOME, argv: spec.argv }, io);',
   'process.stdout.write(JSON.stringify({ code: r.code, launches }));', ''].join('\n');
@@ -177,10 +179,20 @@ test('T7 NpxEntry_ParaQuienYEquipo @story-8.80 @ac-5 @ac-6', async () => {
     r = await drive(box, { argv: ['--audience', 'team', '--tool', 'codex'] });
     assert.strictEqual(r.code, 2, r.out); assert.match(r.out, /--audience team pide --team/);
     // el repo del perfil que no vale (y uno de esta máquina, que `parseTeam` acepta pero acá no): 2 sin instalar
-    for (const bad of ['acme/..', 'acme', 'https://gitlab.com/acme/perfil', '/tmp/un-perfil-local']) {
+    for (const bad of ['acme/..', 'acme', 'https://gitlab.com/acme/perfil']) {
       r = await drive(box, { argv: ['--team', bad, '--yes'] });
       assert.strictEqual(r.code, 2, `${bad}: ${r.out}`); assert.match(r.out, /el repo del perfil tiene que ser/); assert.deepStrictEqual(r.launches, [], bad);
     }
+    // el perfil de esta máquina (team-init --local): tampoco instala, y dice cómo sumarlo después desde el arnés
+    r = await drive(box, { argv: ['--team', '/tmp/un-perfil-local', '--yes'] });
+    assert.strictEqual(r.code, 2, r.out); assert.deepStrictEqual(r.launches, []);
+    assert.match(r.out, /es una carpeta de esta máquina/);
+    // el arnés donde lo va a dejar la instalación (la casa propia de esta HOME), y las mismas herramientas
+    assert.ok(r.out.includes(`${path.join('.tycon', 'harness', 'scripts', 'setup', 'harness.js')} install --team /tmp/un-perfil-local`), r.out);
+    r = await drive(box, { argv: ['--team', '/tmp/un-perfil-local', '--tool', 'codex', '--yes'] });
+    assert.strictEqual(r.code, 2, r.out); assert.deepStrictEqual(r.launches, []);
+    assert.ok(r.out.includes('npx @tyconsa/harness@latest --tool codex)'), r.out);
+    assert.ok(r.out.includes('install --team /tmp/un-perfil-local --tool codex.'), r.out);
     // el agente: sin Claude Code ni Codex sale 1 con las órdenes de tools.js
     r = await drive(box, { argv: ['--yes'] }, { agent: false, env: { TYCON_TOOLS_DETECT_PATH: '' } });
     assert.strictEqual(r.code, 1, r.out); assert.deepStrictEqual(r.launches, []);
@@ -498,5 +510,48 @@ test('8.46 T44 NpxEntry_AgentHelp_SameAsTools', async () => {
       assert.strictEqual(r.code, found ? 0 : 1, `${name}: ${r.out}`);
       if (!found) assert.ok(r.out.includes(TL.agentLines(process.platform)[1]), `${name}: las órdenes de tools.js`);
     }
+  } finally { fs.rmSync(box, { recursive: true, force: true }); }
+});
+
+test('complejidad NpxEntry_ProximoPaso: una instalación nueva para mí termina diciendo el próximo paso', async () => {
+  const box = tmp('npx-proximo-');
+  try {
+    // lo que el install de juguete deja: el estado de un arnés instalado, escrito recién al lanzarlo
+    const fresh = () => {
+      const home = fs.mkdtempSync(path.join(box, 'home-'));
+      const scratch = fs.mkdtempSync(path.join(box, 'molde-'));
+      const tree = installedAt(scratch);
+      const file = path.join(scratch, '.tycon', 'state', 'harness-state.json');
+      const body = read(file).split(scratch).join(home);
+      fs.mkdirSync(path.join(home, '.tycon', 'harness', 'scripts', 'setup'), { recursive: true });
+      fs.copyFileSync(path.join(tree, 'scripts', 'setup', 'harness.js'), path.join(home, '.tycon', 'harness', 'scripts', 'setup', 'harness.js'));
+      return { home, installs: { file: path.join(home, '.tycon', 'state', 'harness-state.json'), body } };
+    };
+    let f = fresh();
+    let r = await drive(box, { argv: ['--yes'], installs: f.installs }, { home: f.home });
+    assert.strictEqual(r.code, 0, r.out);
+    assert.match(r.out, /El próximo paso/, r.out);
+    assert.match(r.out, /abrí tu agente de código en la carpeta de tu repo/);
+    assert.match(r.out, /«creá una historia para …»/);
+    assert.match(r.out, /«implementemos la story»/);
+    assert.ok(r.out.includes(path.join(f.home, '.tycon', 'harness', 'getting-started', 'one-minute.es.md')), `señala la página de un minuto del árbol instalado: ${r.out}`);
+    assert.doesNotMatch(r.out, /en Codex: abrí codex/, 'sin Codex enchufado no nombra sus hooks');
+    // con Codex enchufado, el paso de sus hooks va antes del 1: sin él, los controles no corren en Codex
+    f = fresh();
+    const withCodex = JSON.stringify({ ...JSON.parse(f.installs.body), tools: ['claude', 'codex'] });
+    r = await drive(box, { argv: ['--yes'], installs: { ...f.installs, body: withCodex } }, { home: f.home });
+    assert.strictEqual(r.code, 0, r.out);
+    const hooks = r.out.indexOf('0. en Codex: abrí codex, corré /hooks');
+    assert.ok(hooks > 0 && hooks < r.out.indexOf('1. abrí tu agente'), `el paso de Codex va primero: ${r.out}`);
+    // un install que sale 0 sin instalar (el «no» al plan): sin próximo paso
+    f = fresh();
+    r = await drive(box, { argv: ['--yes'] }, { home: f.home });
+    assert.strictEqual(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /El próximo paso/, 'sin arnés instalado no hay próximo paso');
+    // un install que falla: tampoco
+    f = fresh();
+    r = await drive(box, { argv: ['--yes'], installs: f.installs, status: 3 }, { home: f.home });
+    assert.strictEqual(r.code, 3, r.out);
+    assert.doesNotMatch(r.out, /El próximo paso/);
   } finally { fs.rmSync(box, { recursive: true, force: true }); }
 });

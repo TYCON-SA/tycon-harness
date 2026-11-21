@@ -52,7 +52,8 @@ const BUDGET = `${DIR}/budget.json`;
 // El tope de prosa más largo que acepta el lector (`response.max_chars`, scripts/lib/tycon-config.js): una variante de
 // estilo se mide con él puesto en `{{max_chars}}`.
 const TOPE_MAXIMO = 4000;
-const VARIANTE_DE_ESTILO = /^[a-z]+\.[a-z]{2}\.md$/;
+// `<estilo>.<idioma>.md`: un idioma de dos letras, o `auto` (contesta en el idioma de la persona)
+const VARIANTE_DE_ESTILO = /^[a-z]+\.(?:[a-z]{2}|auto)\.md$/;
 
 // ── Los títulos sin fecha ni historia ────────────────────────────────────────
 // El título de un bloque es la línea que sigue a un `# ====` de su cabecera. Viaja a cada sesión de cada organización:
@@ -119,7 +120,7 @@ const slug = (h) => h.trim().toLowerCase().replace(/[^\p{L}\p{N} _-]/gu, '').rep
 const entradasDe = (texto) => String(texto).split('\n').filter((l) => /^- \*\*/.test(l));
 
 // Una entrada COMPLETA, con sus líneas de continuación. En markdown una viñeta sigue en las líneas
-// indentadas que le siguen, y el README tiene una ficha así (`guides/que-hace-el-arnes.md`, 12
+// indentadas que le siguen, y el README tiene una ficha así (`guides/what-the-harness-does.md`, 12
 // líneas de continuación). 🔴 `entradasDe` devuelve sólo el PRIMER renglón —que es lo que hace falta
 // para medir el tope por entrada— y con eso una mudanza perdería el resto EN SILENCIO, sin que lo
 // vea un verificador que compara el mismo texto truncado en los dos lados. Quien mueva texto usa

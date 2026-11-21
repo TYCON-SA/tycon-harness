@@ -20,7 +20,8 @@
 // al día»), sin hacerlo hasta que la persona diga que sí; si hay trabajo trabado, también llevarlo a `main`. La oferta
 // sale una vez por estado (repo + punta de `main` + punta de `dev`); la línea, en cada sesión mientras siga el atraso.
 //
-// Nunca rompe el arranque: sale 0 siempre. Cada `git` lleva tope de 3 s.
+// Nunca rompe el arranque: sale 0 siempre. Cada `git` lleva tope de 3 s, y la corrida entera, de 5 s: un repo que
+// contesta lento en cada llamada no demora el arranque más que eso. Pasado el tope, si el repo aplica, dice «no medido».
 // Variables: TYCON_DEV_BEHIND_STUCK_DAYS (7) · TYCON_DEV_BEHIND_STALE_HOURS (24). Off: TYCON_DEV_BEHIND_NOTICE=0.
 const fs = require('fs');
 const os = require('os');
@@ -29,6 +30,9 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const GIT_TIMEOUT_MS = 3000;
+const TOTAL_MS = 5000;
+const INICIO = Date.now();
+const restante = () => TOTAL_MS - (Date.now() - INICIO);
 const BOT_SUBJECTS = ['chore: bump version', 'chore: update form versions', 'chore: update versions'];
 const DAY_MS = 86400000;
 // La carpeta del estado la sabe scripts/setup/harness/tycon-home.js, si está al lado (el banco copia este hook suelto).
@@ -41,13 +45,25 @@ const readVar = (() => {
 })();
 
 // git sin las variables que deja un hook de git, sin preguntar nada por la terminal y con mensajes en inglés
-const GIT_ENV = (() => {
-  const e = { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' };
-  for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']) delete e[k];
-  return e;
-})();
+// (scripts/lib/clean-git-env.js). Se arma una vez, al primer git, y SI ESTÁ la biblioteca: sin ella no se lanza git sin
+// el idioma fijo, y se hace lo mismo que cuando git no contesta (no se avisa nada).
+let gitEnv;
+function entornoDeGit() {
+  if (gitEnv === undefined) {
+    try {
+      const e = require(path.join(__dirname, '..', 'lib', 'clean-git-env.js')).idiomaFijo(process.env, { GIT_TERMINAL_PROMPT: '0' });
+      for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']) delete e[k];
+      gitEnv = e;
+    } catch (_) { gitEnv = null; }
+  }
+  if (!gitEnv) throw new Error('scripts/lib/clean-git-env.js no carga');
+  return gitEnv;
+}
+/** Cada `git` tiene su tope y descuenta lo ya gastado: con la corrida vencida no se lanza, y tira como un tope vencido. */
 function git(cwd, args) {
-  return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: GIT_TIMEOUT_MS, env: GIT_ENV }).trim();
+  const queda = restante();
+  if (queda <= 0) throw Object.assign(new Error('tope del aviso'), { code: 'ETIMEDOUT' });
+  return execFileSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: Math.min(GIT_TIMEOUT_MS, queda), env: entornoDeGit() }).trim();
 }
 function gitOr(cwd, args, fallback = '') { try { return git(cwd, args); } catch { return fallback; } }
 const hasRef = (root, ref) => gitOr(root, ['rev-parse', '-q', '--verify', `${ref}^{commit}`]) !== '';
@@ -65,8 +81,10 @@ function configLines(root, key) {
     throw e;
   }
 }
-const motivoDe = (e) => (e && (e.signal || e.code === 'ETIMEDOUT') ? `git tardó más de ${GIT_TIMEOUT_MS / 1000} s`
+const motivoDe = (e) => (e && (e.signal || e.code === 'ETIMEDOUT')
+  ? (restante() <= 0 ? `mirar tardó más de ${TOTAL_MS / 1000} s, el tope del aviso` : `git tardó más de ${GIT_TIMEOUT_MS / 1000} s`)
   : String((e && (e.stderr || e.message)) || 'git falló').trim().split('\n')[0]);
+const noPudeMirar = (e) => `dev: no pude mirar si está al día (${motivoDe(e)}) — no medido`;
 
 const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
 function edad(ms) {
@@ -175,7 +193,7 @@ function main() {
     devSha = git(root, ['rev-parse', 'refs/remotes/origin/dev']);
     fetchMs = edadDelFetch(root);
   } catch (e) {
-    console.log(`dev: no pude mirar si está al día (${motivoDe(e)})`);
+    console.log(noPudeMirar(e));
     return;
   }
   const delBot = atraso.filter((c) => BOT_SUBJECTS.some((b) => c.asunto.startsWith(b))).length;
@@ -220,6 +238,6 @@ function main() {
 // Si algo falla después de saber que el repo aplica, se dice; antes, se calla. El arranque nunca se rompe.
 let aplica = false;
 try { main(); } catch (e) {
-  if (aplica) { try { console.log(`dev: no pude mirar si está al día (${motivoDe(e)})`); } catch { /* nada más que hacer */ } }
+  if (aplica) { try { console.log(noPudeMirar(e)); } catch { /* nada más que hacer */ } }
 }
 process.exit(0);

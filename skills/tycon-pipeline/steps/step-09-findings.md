@@ -11,8 +11,10 @@
 - `advisor_reports[]`: lista de reportes individuales de «Revisores»
 - `adversarial_confirmed[]` (si «Pase adversarial» corrió): los findings CONFIRMED del pase reproduce-or-refute. Se
   foldean al reporte como una "fuente" más: cada uno se cita `[adversarial-verify:<lens>]` con `file:line` +
-  `summary` + el `repro` observado. `severity: bug` → cuenta como **CRITICAL de correctitud**; `robustness` →
-  WARNING. Disparan el re-loop D.i igual que un finding de advisor (pero el pase adversarial NO se re-corre — ver `step-08-adversarial-pass.md`).
+  `summary` + el `repro` observado. La gravedad del verificador decide con el corte de la organización
+  (`review.blocking_severity`, de fábrica `bug`): en el corte o por encima cuenta como **CRITICAL de correctitud**, por
+  debajo es WARNING. De fábrica, `bug` es CRITICAL y `robustness` o `nit`, WARNING. No lo decidas a mano: escribí el
+  confirmado con su `adjusted_severity` y `pipeline.js write-findings` lo marca con el corte. Disparan el re-loop D.i igual que un finding de advisor (pero el pase adversarial NO se re-corre — ver `step-08-adversarial-pass.md`).
 
 ## Lógica de consolidación
 
@@ -158,6 +160,10 @@ valida el schema y resuelve/crea el run dir solo:
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-findings \
   --story <story_path> --repo <repo> --findings <array.json | ->
 ```
+
+La carpeta es la de la corrida: la que anotó `start` en el marcador (`runDir`), no «la más nueva de la story». Sin una
+corrida abierta de esa story en la sesión, `write-findings` no reemplaza un `findings.json` que ya existe: se niega y
+dice qué carpeta iba a reemplazar; para reemplazarlo a propósito, se la nombra con `--run-dir <carpeta>`.
 
 `write-findings` también copia al informe las notas de «repensar el enfoque» de la corrida (`rethink`, ya saneadas) y la cantidad de vueltas de revisores (`rethink.rounds`); una nota ilegible o incompleta sale en `warnings` y no cuenta.
 

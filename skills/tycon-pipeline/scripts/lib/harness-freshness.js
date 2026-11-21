@@ -14,6 +14,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { homeCommand } = require('./home-command.js');
 
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 const mismo = (a, b) => {
@@ -35,7 +36,7 @@ function revisar({ stepsDir, nextFile, scriptDir, home = os.homedir(), leerEstad
   const st = leerEstado(scriptDir, home);
   const administrada = st && st.status === 'ok' && st.state && st.state.mode === 'managed' && typeof st.state.tree === 'string';
   const delArbol = administrada ? path.join(st.state.tree, 'skills', 'tycon-pipeline', 'steps') : null;
-  const arreglo = 'El enlace ~/.claude/agent-skills tiene que llevar al arnés instalado: pedile a la persona que saque la copia vieja y corra «node ~/.tycon/harness/scripts/setup/harness.js install»; después, volvé a correr next.';
+  const arreglo = `El enlace ~/.claude/agent-skills tiene que llevar al arnés instalado: pedile a la persona que saque la copia vieja y corra «${homeCommand('.tycon/harness/scripts/setup/harness.js')} install»; después, volvé a correr next.`;
   if (!mismo(stepsDir, propios) || (delArbol && !mismo(stepsDir, delArbol))) {
     const esperada = real(delArbol || propios) || delArbol || propios;
     out.error = `arnés viejo: los pasos salen de ${real(stepsDir) || stepsDir}, y el arnés que corre los tiene en ${esperada}. ${arreglo}`;
@@ -50,7 +51,7 @@ function revisar({ stepsDir, nextFile, scriptDir, home = os.homedir(), leerEstad
   if (!st || st.status === 'missing') return out;
   if (st.status !== 'ok') out.sinEstado = `arnés: no sé si está al día (${st.reason || st.status}).`;
   else if (st.state && typeof st.state.notice === 'string' && st.state.notice.trim()) {
-    out.aviso = `arnés: ${st.state.notice.trim()} — «node ~/.tycon/harness/scripts/setup/harness.js doctor» lo detalla.`;
+    out.aviso = `arnés: ${st.state.notice.trim()} — «${homeCommand('.tycon/harness/scripts/setup/harness.js')} doctor» lo detalla.`;
   }
   return out;
 }

@@ -474,9 +474,8 @@ lea entero, y corre con el bash 3.2 de una Mac. El de PowerShell lleva BOM UTF-8
 no lea antes del chequeo de versión: corrido con `powershell`, dice que pide PowerShell 7 en vez de cortar con un error
 de sintaxis.
 
-En el repo del equipo viven aparte, con la dirección por marcadores (`{{public-org}}` y
-`{{public-repo}}`) y llegan a `scripts/setup/` de la copia por dos sintéticos de `allowlist.json`; en los repos internos
-no existen ahí, y ningún archivo interno escribe el nombre del repo público. El guion se baja sin credencial (el repo es
+Viven en `scripts/setup/` del repo público, con la dirección del repo ya puesta (la misma que declara
+`scripts/setup/public-remotes.json`), y la lista blanca los toma como a cualquier archivo de `scripts/`. El guion se baja sin credencial (el repo es
 público) de `raw.githubusercontent.com/<org>/<repo>/main/scripts/setup/`, no de la API: es la primera línea de la
 portada, nunca lleva la cabecera del permiso y no gasta del tope de 60 consultas por hora de la API sin credencial, que
 antes dejaba a una máquina nueva sin poder empezar. La dirección por rama queda hasta 5 minutos en caché: justo después
@@ -637,8 +636,9 @@ Una máquina que instala o se muda a la versión bajada quedaba de fábrica: int
 máquina: esos archivos viven en **un segundo repo privado de GitHub, chico**, y el programa los baja con el mismo
 permiso que el arnés y los apila sobre la versión pública.
 
-**Cómo se declara.** Por URL, con una de dos fuentes: `--team https://dev.azure.com/<org>/<proyecto>/_git/<repo>` (Azure
-DevOps) o `--team https://github.com/<org>/<repo>` (GitHub; también la forma corta `org/nombre`), en `install --version` y
+**Cómo se declara.** Por URL, con una de dos fuentes: `--team <la dirección del repo>` (Azure DevOps; su forma, en
+[`guides/integrations/ado-projects.md`](../integrations/ado-projects.md#la-url-de-un-repo)) o
+`--team https://github.com/<org>/<repo>` (GitHub; también la forma corta `org/nombre`), en `install --version` y
 en `migrate --to-home`. Sin la opción, el estado (`team`, si la máquina ya la registró) y, sólo en la mudanza, la clave
 `team` del `public-repos.json` del clon que la máquina deja (ese archivo no viaja en la copia). Cada empresa declara la
 suya; lo que la capa es y cómo se apila es el mismo código para las dos. El nombre del repo del equipo **no está escrito
@@ -799,7 +799,8 @@ registro ni al estado**; una clave sensible se avisa sin su valor. Lo que no se 
 la lista y no es de la versión ni de la capa (la conexión, con «su lugar es…»; lo demás, «se pierde con la próxima versión»),
 en lugar de la línea «de más»; una carpeta propia que tapa la de la capa en `~/.claude/skills/<s>` (y en `~/.codex/skills/<s>`
 con Codex), con las dos versiones y lo que trae que no es de la skill —sacarla es del dev—; el original que ya se copió; y la
-casa resuelta. Antes de mandar `previous/` a `trash/` y antes de quitar un árbol en `uninstall`, lo ajeno de esas carpetas se
+casa resuelta. La casa sale siempre, pero sin aviso (como `ok`, «todavía no la usaste») cuando no hay nada que diferir: sin
+el archivo de datos, sin la variable de la casa y sin conexión vieja por mudar. Antes de mandar `previous/` a `trash/` y antes de quitar un árbol en `uninstall`, lo ajeno de esas carpetas se
 guarda en `~/.tycon/team/kept-<fecha>/<árbol>/<ruta>` y la salida lo nombra.
 
 **Azure no pide dos veces lo que ya tiene.** Un archivo cuyo blob ya está en `harness/` o en otra caché

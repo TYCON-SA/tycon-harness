@@ -59,9 +59,12 @@ function stripFrontmatter(s) {
 // El título se reconoce sin importar mayúsculas y con `##` o `###`; también en castellano. Las palabras de cada
 // título viven en TITLE_WORDS para quien necesita el texto del título (el resumen de la story para los revisores).
 // `tests-result` y los títulos `Tests corridos` de la evidencia no son la tabla de la story.
+// `questions` y `reserved` son las dos secciones propias de una intención: su único lector es lib/intent.js.
 const TITLE_WORDS = {
   criteria: 'acceptance criteria|criterios de aceptaci[oó]n',
   tests: 'tests(?![\\w-])(?![ \\t]+corridos)',
+  questions: 'preguntas abiertas',
+  reserved: 'decisiones reservadas',
 };
 const HEADING_LINE = /^(#{1,6})[ \t]/;
 const FENCE_LINE = /^[ \t]*(```|~~~)/;
@@ -241,11 +244,13 @@ function criteriaOf(specContent) {
 // por diseño: si un AC no se puede aislar, se omite del mapa y el llamador cae a su texto de siempre
 // (nunca rompe el waiver por no poder citar). Cubre los tres estilos que `parseAcsFromSpec` reconoce:
 // heading (`### AC-1`), lista numerada (`1. **Given** …`) y bullet (`- **AC1**`).
-function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
+// `crudo: true` devuelve el texto entero de cada criterio (`textosCrudos`): lo usa la matriz para leer las marcas de cota.
+function acTextsFromSpec(specContent, { maxChars = 600, crudo = false } = {}) {
   const out = {};
   if (!specContent) return out;
   const section = acSectionOf(specContent);
   if (section == null) return out;
+  if (crudo) return textosCrudos(section);
   const lines = section.split('\n');
   // Marcadores de arranque de AC, en el mismo orden de preferencia que parseAcsFromSpec: las formas viejas y, si no
   // hay ninguna, la otra forma que use la story. El Gherkin vive dentro de los bloques ```: en esa
@@ -293,6 +298,96 @@ function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
     if (cur !== null) buf.push(raw);
   }
   flush();
+  return out;
+}
+
+// Un título de escenario y una etiqueta de Gherkin (o de su forma en castellano): abren el escenario que sigue.
+const ESCENARIO_RE = /^[ \t]*(?:scenario(?: outline)?|escenario|esquema del escenario|feature|caracter[ií]stica)[ \t]*:/i;
+const ETIQUETA_RE = /^[ \t]*@\S/;
+
+/**
+ * El texto entero de cada criterio, renglones tal cual, sin limpiar ni cortar: `{ [n]: texto }`. Una marca de cota vale
+ * para el criterio donde está escrita, así que los límites son los de la forma en que la historia escribe sus
+ * criterios, la misma que elige `parseAcsFromSpec`:
+ *   · `### AC-N`: una lista numerada y un subtítulo más profundo son de ese criterio; lo cierra un título de su nivel.
+ *   · lista numerada: arrancan los renglones de la sangría menor; un sub-item con más sangría es del criterio que lo abre.
+ *   · Gherkin y «Dado»: un bloque con algún arranque es del criterio, y el título del escenario y sus etiquetas van con
+ *     el `Given` que sigue, aunque estén antes. Un bloque sin arranque es un ejemplo y no se lee.
+ * Con un número repetido (listas que reinician) los textos se suman: una marca nunca se pierde por eso.
+ */
+function textosCrudos(section) {
+  const lines = section.split('\n');
+  const numeros = (form) => [...section.matchAll(new RegExp(FORM[form].re.source, 'gm'))].map((m) => parseInt(m[1], 10));
+  const titulos = numeros('titulo-ac');
+  const numerados = numeros('numerada');
+  const corrida = numerados.length > 0 && numerados.every((x, i) => i === 0 || x > numerados[i - 1]);
+  const porTitulo = titulos.length > 0 && !(corrida && Math.max(...numerados) > Math.max(...titulos));
+  const forma = porTitulo ? 'titulo-ac' : numerados.length ? 'numerada' : numeros('vineta-ac').length ? 'vineta-ac' : null;
+  const nueva = forma ? null : newFormStarts(section);
+  const porLinea = new Map(nueva ? nueva.starts.map((s) => [s.line, s.n]) : []);
+  const conEscenarios = !!nueva && (nueva.form === 'gherkin' || nueva.form === 'dado');
+  // qué renglones están en un bloque ``` y si ese bloque trae el arranque de un criterio
+  const bloque = new Array(lines.length).fill(null);
+  for (let i = 0, abierto = null; i < lines.length; i++) {
+    if (/^[ \t]*```/.test(lines[i])) { abierto = abierto ? null : { propio: false }; bloque[i] = 'cerco'; continue; }
+    if (!abierto) continue;
+    bloque[i] = abierto;
+    if (porLinea.has(i)) abierto.propio = true;
+  }
+  const sangria = (l) => /^[ \t]*/.exec(l)[0].replace(/\t/g, '    ').length;
+  const deLaLista = lines.filter((l, i) => !bloque[i] && FORM.numerada.re.test(l)).map(sangria);
+  const base = deLaLista.length ? Math.min(...deLaLista) : 0;
+  const arranque = (l, i) => {
+    if (nueva) return porLinea.has(i) ? porLinea.get(i) : null;
+    if (bloque[i]) return null;
+    const m = FORM[forma].re.exec(l);
+    if (!m || (forma === 'numerada' && sangria(l) > base)) return null;
+    return parseInt(m[1], 10);
+  };
+  const nivelDe = (l) => { const m = /^(#{2,4})[ \t]+\S/.test(l) ? /^#+/.exec(l) : null; return m ? m[0].length : 0; };
+  const out = {};
+  let cur = null;
+  let nivelCur = 0;
+  let buf = [];
+  let antes = [];   // lo que va con el próximo arranque: el escenario, sus etiquetas, el principio del bloque
+  const cerrar = () => {
+    if (cur !== null) out[cur] = out[cur] === undefined ? buf.join('\n') : `${out[cur]}\n${buf.join('\n')}`;
+    cur = null;
+    buf = [];
+  };
+  // una etiqueta es del escenario que viene si lo que sigue, salteando blancos y otras etiquetas, es un escenario
+  const anunciaEscenario = (i) => {
+    for (let k = i + 1; k < lines.length; k++) {
+      if (!lines[k].trim() || ETIQUETA_RE.test(lines[k])) continue;
+      return ESCENARIO_RE.test(lines[k]);
+    }
+    return false;
+  };
+  for (const [i, raw] of lines.entries()) {
+    const b = bloque[i];
+    if (b === 'cerco') { antes = []; continue; }
+    if (b && !b.propio) continue;
+    const n = arranque(raw, i);
+    if (n !== null) {
+      cerrar();
+      cur = n;
+      nivelCur = forma === 'titulo-ac' ? nivelDe(raw) : 0;
+      buf = [...antes, raw];
+      antes = [];
+      continue;
+    }
+    const nivel = b ? 0 : nivelDe(raw);
+    if (nivel && (!nivelCur || nivel <= nivelCur)) { cerrar(); antes = []; continue; }
+    if (/^[ \t]*>/.test(raw)) continue;
+    if (conEscenarios && (ESCENARIO_RE.test(raw) || (ETIQUETA_RE.test(raw) && anunciaEscenario(i)))) {
+      cerrar();
+      antes.push(raw);
+      continue;
+    }
+    if (cur !== null) buf.push(raw);
+    else if (conEscenarios && (b || ETIQUETA_RE.test(raw))) antes.push(raw);
+  }
+  cerrar();
   return out;
 }
 
@@ -393,7 +488,8 @@ function parseTestsTable(specContent) {
       }
     }
     if (tid || name) {
-      rows.push({ tid, name, acRefs: [...acRefs], nivel: idx.nivel !== -1 ? (cells[idx.nivel] || '') : null, raw: line.trim() });
+      // `acCell`: la celda AC tal cual, para quien necesita leer también los rangos («1-3»); null sin columna AC
+      rows.push({ tid, name, acRefs: [...acRefs], acCell: idx.ac !== -1 ? (cells[idx.ac] || '') : null, nivel: idx.nivel !== -1 ? (cells[idx.nivel] || '') : null, raw: line.trim() });
     }
   }
   if (!rows.length) {
@@ -428,21 +524,54 @@ function parsePipelinesBlock(specContent) {
     (raw.match(/-?\d+/g) || []).map(Number); // "[0, 1, 2]" → [0,1,2]; tolera comentario inline
   const out = [];
   let current = null;
+  // la lista que se está leyendo de la entrada (`files:` o `sensible:` sin valor en el renglón): sus ítems no son pendientes
+  let lista = null;
+  const limpio = (s) => String(s).replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
+  const enLinea = (v) => v.replace(/^\[|\]$/g, '').split(',').map(limpio).filter(Boolean);
   for (let i = start + 1; i < lines.length; i++) {
     const line = lines[i];
     if (line.trim() === '') continue;
     const indent = line.length - line.trimStart().length;
-    if (indent === 0) break; // fin del bloque pipelines
+    if (indent === 0 && !/^-\s/.test(line)) break; // fin del bloque pipelines (una lista sin sangría sigue siendo suya)
     // (a) LISTA: `  - name: X` abre una entrada. Se chequea ANTES que el pendingItem genérico
     // (`- texto`) para no tragarse el `- name:` como un ítem pendiente.
     const listNameM = line.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
-    if (listNameM) { current = { name: listNameM[1], status: null, blockedBy: null, acs: [], acsPending: [], pendingItems: [] }; out.push(current); continue; }
+    const nueva = (name) => ({ name, status: null, blockedBy: null, acs: [], acsPending: [], tasks: [], tasksPending: [], tests: [], testsPending: [], pendingItems: [] });
+    if (listNameM) { current = nueva(listNameM[1]); out.push(current); lista = null; continue; }
     // (b) MAPA: `  X:` (indent 2, valor vacío) abre una entrada.
     const mapNameM = line.match(/^\s{2}([\w-]+)\s*:\s*$/);
-    if (mapNameM && indent === 2) { current = { name: mapNameM[1], status: null, blockedBy: null, acs: [], acsPending: [], pendingItems: [] }; out.push(current); continue; }
+    if (mapNameM && indent === 2) { current = nueva(mapNameM[1]); out.push(current); lista = null; continue; }
     if (!current) continue;
+    // `files:` y `sensible:` de la parte (8.168): en el renglón (`[a, b]` o un valor) o como lista debajo
+    const parteM = line.match(/^(\s+)(files|sensible)\s*:\s*(.*?)\s*$/);
+    if (parteM) {
+      // el `\s*` de la clave ya se comió el espacio: un `#` al principio del valor es un comentario, no un valor
+      const v = parteM[3].replace(/(^|\s+)#.*$/, '').trim();
+      const campo = parteM[2];
+      if (!v) { current[campo] = []; lista = { campo, indent: parteM[1].length }; } else {
+        current[campo] = v.startsWith('[') ? enLinea(v) : (campo === 'files' ? [limpio(v)] : limpio(v));
+        // una lista que abre `[` y no cierra en el renglón se leería a medias: queda dicho, y la parte no vale
+        if (v.startsWith('[') && !v.endsWith(']')) (current.problemas = current.problemas || []).push(`${campo}: la lista abre «[» y no cierra en el mismo renglón`);
+        lista = null;
+      }
+      continue;
+    }
+    if (lista) {
+      // un comentario o un renglón en blanco entre los ítems no corta la lista
+      if (/^\s*(#.*)?$/.test(line)) continue;
+      const it = line.match(/^(\s*)-\s*(.+?)\s*$/);
+      if (it && it[1].length >= lista.indent) { current[lista.campo].push(limpio(it[2])); continue; }
+      lista = null;
+    }
     const statusM = line.match(/^\s+status\s*:\s*["']?([\w-]+)/);
     if (statusM) { current.status = statusM[1]; continue; }
+    // `title`: el nombre de la tanda que dice /office. Entre comillas se toma entero; sin comillas, sin el comentario.
+    const titleM = line.match(/^\s+title\s*:\s*(.*?)\s*$/);
+    if (titleM) {
+      const q = /^(["'])(.*)\1$/.exec(titleM[1].replace(/\s+#[^"']*$/, ''));
+      current.title = q ? q[2] : titleM[1].replace(/\s+#.*$/, '');
+      continue;
+    }
     // `blocked_by`: lo lee VAL-C6 sin modelo. Sin comillas ni comentario inline; vacío → ''.
     const blockedM = line.match(/^\s+blocked_by\s*:\s*(.*?)\s*$/);
     if (blockedM) { current.blockedBy = blockedM[1].replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim(); continue; }
@@ -450,6 +579,14 @@ function parsePipelinesBlock(specContent) {
     if (acsM) { current.acs = parseIntArray(acsM[1]); continue; }
     const acsPendM = line.match(/^\s+acs_pending\s*:\s*(\[.*\])/);
     if (acsPendM) { current.acsPending = parseIntArray(acsPendM[1]); continue; }
+    // las tareas son números; las pruebas, texto: `["T36", "T40b"]` da `T36` y `T40b`, no `36`
+    const tareasM = line.match(/^\s+(tasks|tasks_pending)\s*:\s*(\[.*\])/);
+    if (tareasM) { current[tareasM[1] === 'tasks' ? 'tasks' : 'tasksPending'] = parseIntArray(tareasM[2].replace(/\s+#.*$/, '')); continue; }
+    const pruebasM = line.match(/^\s+(tests|tests_pending)\s*:\s*\[(.*)\]/);
+    if (pruebasM) {
+      current[pruebasM[1] === 'tests' ? 'tests' : 'testsPending'] = pruebasM[2].split(',').map((s) => s.replace(/["'\s]/g, '')).filter(Boolean);
+      continue;
+    }
     const itemM = line.match(/^\s+-\s*(.+?)\s*$/);
     if (itemM) current.pendingItems.push(itemM[1].replace(/^["']|["']$/g, ''));
   }
@@ -486,11 +623,27 @@ const CODE_EXT_RE = { test: (f) => isCodeFile(f) };
 
 // Walk recursivo acotado (skip node_modules/bin/obj/.git). Cap de archivos para
 // repos gigantes — los checks son sobre el delta de la story, no un sweep total.
-/** Raíces de los repos compañeros declarados (absolutas, existentes). Fail-open: sin config, []. */
-function companionRoots(repo) {
+/**
+ * Raíces de los repos compañeros (absolutas, existentes). Con la story en un repo git, la búsqueda de la evidencia
+ * (lib/companion-repos.js): el worktree del compañero en la rama de la story, y si no hay, el declarado con su aviso.
+ * Desde un worktree, la ruta declarada puede caer en un checkout de otra tarea y el control leería sus pruebas. Con la
+ * story fuera de un repo git, los declarados tal cual: esa búsqueda tomaría la rama de `--repo`. Un declarado que no
+ * está en disco se avisa: si no, el crítico por la prueba que no encuentra parece real. Fail-open: sin config, o con la
+ * config rota, [].
+ */
+function companionRoots(repo, storyPath) {
   try {
-    const ev = require('./evidence-config.js').parseEvidenceConfig(repo);
-    return (ev && Array.isArray(ev.roots)) ? ev.roots.filter((r) => path.resolve(r) !== path.resolve(repo)) : [];
+    const faltante = (nombre, quien) => process.stderr.write(
+      `[hermanos] el repo hermano «${nombre}» que declara ${quien}/.tycon/advisors.yaml no está en disco: sus pruebas NO se leen\n`);
+    let roots;
+    if (storyPath && repoDeLaStory(storyPath)) {
+      roots = require('./companion-repos.js').companionRoots(repo, storyPath, { onMissing: faltante });
+    } else {
+      const ev = require('./evidence-config.js').parseEvidenceConfig(repo);
+      for (const m of ev.missing || []) faltante(m, repo);
+      roots = ev.roots;
+    }
+    return Array.isArray(roots) ? roots.filter((r) => path.resolve(r) !== path.resolve(repo)) : [];
   } catch { return []; }
 }
 
@@ -607,7 +760,8 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
   // la ruta relativa a la raíz: `tests/api/helpers.py` es prueba de pytest por la carpeta, no por el nombre
   const esPrueba = (raiz) => (n, abs) => TEST_FILE_RE.test(abs ? path.relative(raiz, abs) : n);
   const testFiles = walkFiles(repo, esPrueba(repo));
-  for (const raiz of companionRoots(repo)) {
+  const companeros = companionRoots(repo, storyPath);
+  for (const raiz of companeros) {
     for (const f of walkFiles(raiz, esPrueba(raiz))) if (!testFiles.includes(f)) testFiles.push(f);
   }
   const contentsCache = new Map();
@@ -770,6 +924,7 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
       table_rows: table.rows.length,
       table_has_ac_column: table.hasAcColumn,
       test_files_scanned: testFiles.length,
+      companion_roots: companeros,
       story_id: fmStoryId,
     },
   };

@@ -67,10 +67,13 @@ function makeResolver(repoRoot) {
     const c = raw.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
     if (!c || c.length > 300 || /^[a-z]+:\/\//i.test(c) || c.startsWith('/')) return null;
     const tries = [path.posix.join(fromDir, c), c, `scripts/${c}`, `skills/${c}`];
-    for (const t of tries) {
+    for (const [i, t] of tries.entries()) {
       const rel = path.posix.normalize(t);
       if (rel.startsWith('..') || rel === '.' || rel === '') continue;
       const k = statOf(rel);
+      // una palabra suelta (`'ci'`, el pedazo de un path.join o un valor cualquiera) que sólo es carpeta con `scripts/`
+      // o `skills/` delante no la nombra: la ruta armada entera ya cuenta por su lado
+      if (k === 'dir' && i >= 2 && !c.includes('/')) continue;
       if (k) return { rel, kind: k };
     }
     return null;

@@ -10,11 +10,11 @@
  * (`baseSha`). Orden:
  *   1. `TYCON_COVERAGE_BASE` (el que llama manda)
  *   2. `baseSha` del marcador, si el marcador es del MISMO repo git y el commit es ancestro de HEAD
- *   3. en una corrida cruzada (`TYCON_TEST_GATE_CROSS_REPO=1`: la del repo hermano, o un repo con la story de otro) con
- *      el marcador de otro repo, o sin marcador: la bifurcación con su rama principal (`merge-base HEAD origin/HEAD` ›
- *      `origin/main` › `main`). El marcador es del repo de la story; en el repo de código, lo que la story cambió es lo
- *      posterior a la bifurcación, más lo sin commitear.
- *   4. `HEAD` (sólo lo no commiteado)
+ *   3. sin una base del marcador que sirva (el portón corrido a mano, una corrida cruzada con el marcador de otro repo, o
+ *      un `baseSha` que no existe o no es ancestro): la bifurcación con su rama principal (`merge-base HEAD origin/HEAD` › `origin/main` › `main`). Lo que la rama cambió
+ *      es lo posterior a la bifurcación, más lo sin commitear. En un repo que trabaja en `dev` trae también lo de otros:
+ *      elige de más, nunca de menos.
+ *   4. `HEAD` (sólo lo no commiteado), si no hay rama principal
  * Una base que no sirve NO se usa en silencio: queda en `descartadas` con su motivo, y se cae a la
  * siguiente. Fuera de git no hay base (`ref: null`) y el parser lo dice.
  *
@@ -28,7 +28,7 @@ const { spawnSync } = require('child_process');
 // Devuelve { out } o { error } con el detalle de git: un git que FALLA (binario ausente, carpeta que no
 // existe, permisos) no puede leerse como «ref inválida» o «no es un repo» sin decir por qué.
 function git(cwd, args) {
-  const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.error) return { error: `git no se pudo ejecutar (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { error: (r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}` };
   return { out: r.stdout.trim() };
@@ -42,7 +42,7 @@ function verificar(top, ref) {
   const r = git(top, ['rev-parse', '--verify', `${ref}^{commit}`]);
   if (r.error) return { motivo: `«${ref}» no es un commit de este repo (${r.error})` };
   const sha = r.out;
-  const anc = spawnSync('git', ['-C', top, 'merge-base', '--is-ancestor', sha, 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
+  const anc = spawnSync('git', ['-C', top, 'merge-base', '--is-ancestor', sha, 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
   if (anc.error) return { motivo: `no se pudo verificar si ${sha.slice(0, 12)} es ancestro de HEAD (${anc.error.code || anc.error.message})` };
   if (anc.status === 1) return { motivo: `${sha.slice(0, 12)} no es ancestro de HEAD (otra rama o historia reescrita)` };
   if (anc.status !== 0) return { motivo: `no se pudo verificar si ${sha.slice(0, 12)} es ancestro de HEAD (${(anc.stderr || '').trim().split('\n')[0] || `git salió ${anc.status}`})` };
@@ -91,19 +91,19 @@ function resolver({ repo, env = process.env, marker = null, markerError = null }
     }
   }
 
-  const delOtro = !marker || !marker.baseSha || descartadas.some((d) => d.source === 'marcador' && /otro repo/.test(d.motivo));
-  if (env && env.TYCON_TEST_GATE_CROSS_REPO === '1' && delOtro) {
-    const b = bifurcacion(top);
-    if (b.sha) return { ref: b.sha, source: 'bifurcacion', rama: b.rama, descartadas };
-    descartadas.push({ source: 'bifurcacion', motivo: b.motivo });
-  }
+  // Sin una base del marcador que sirva (el portón corrido a mano, la corrida cruzada, o un `baseSha` perdido o que no es
+  // ancestro) lo de la rama es lo posterior a la bifurcación con main. HEAD solo no ve lo commiteado: el portón del pase
+  // contaría 0 líneas y el de pruebas terminaría corriendo todas las suites.
+  const b = bifurcacion(top);
+  if (b.sha) return { ref: b.sha, source: 'bifurcacion', rama: b.rama, descartadas };
+  descartadas.push({ source: 'bifurcacion', motivo: b.motivo });
 
   const h = git(top, ['rev-parse', '--verify', 'HEAD^{commit}']);
   if (h.error) {
     // Un repo sin commits todavía (el que inicia el arranque) se mide contra el árbol vacío: todo es línea tocada.
     // Casos: skills/tycon-pipeline/scripts/tests/start-no-git.test.js
     const sinCommits = git(top, ['symbolic-ref', '-q', 'HEAD']);
-    const vacio = sinCommits.out ? spawnSync('git', ['-C', top, 'hash-object', '-t', 'tree', '--stdin'], { input: '', encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }) : null;
+    const vacio = sinCommits.out ? spawnSync('git', ['-C', top, 'hash-object', '-t', 'tree', '--stdin'], { windowsHide: true, input: '', encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }) : null;
     if (vacio && vacio.status === 0 && vacio.stdout.trim()) return { ref: vacio.stdout.trim(), source: 'arbol-vacio', descartadas };
     descartadas.push({ source: 'HEAD', motivo: `no hay un HEAD utilizable (${h.error})` });
     return { ref: null, source: null, descartadas };
@@ -114,7 +114,7 @@ function resolver({ repo, env = process.env, marker = null, markerError = null }
 // { marker, error }: un marker.js que falla se DICE (queda en descartadas), no se lee como «sin corrida».
 function leerMarcador() {
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'marker.js'), 'get'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
   if (r.error) return { marker: null, error: `marker.js get no corrió (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { marker: null, error: `marker.js get salió ${r.status}: ${(r.stderr || '').trim().split('\n')[0]}` };
   try { return { marker: JSON.parse(r.stdout || '{}'), error: null }; } catch (e) { return { marker: null, error: `marker.js get devolvió algo ilegible (${e.message})` }; }
@@ -132,4 +132,4 @@ if (require.main === module) {
   process.stdout.write(JSON.stringify(out) + '\n');
 }
 
-module.exports = { resolver };
+module.exports = { resolver, bifurcacion, leerMarcador };

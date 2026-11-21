@@ -11,6 +11,15 @@
  * vuelve. Si en el plazo (5 minutos; `wait_notice.minutes` de team-repos.json; `TYCON_WAIT_NOTICE_MS` en la máquina)
  * nadie se movió, manda UN mensaje por cada canal con el id de la story, el paso por su nombre llano y qué se espera.
  * Los canales los elige la organización en el perfil (`integrations.notify.channels`); sin la lista, Telegram.
+ * Con una coordinadora designada y viva (y que no sea la sesión que espera), al plazo la espera le llega a ella, una
+ * línea en su próximo turno (scripts/hooks/coordination-notice.js), y a los canales recién al plazo del dueño
+ * (30 minutos desde la apertura; `wait_notice.owner_minutes`; `TYCON_WAIT_NOTICE_OWNER_MS`), si sigue sin resolver.
+ * Si el turno terminó con un mensaje a otra sesión (un turno pedido a la coordinadora), la espera es de esa sesión y no
+ * de la persona: con coordinadora viva, al dueño recién a su propio plazo (120 minutos; `wait_notice.peer_owner_minutes`;
+ * `TYCON_WAIT_NOTICE_PEER_OWNER_MS`). Sin coordinadora, como cualquier otra espera. Lo mismo si la sesión anotó qué espera
+ * (`marker.js doing --waiting-for`, un turno): esa nota es la línea, también sobre la razón del freno del cierre.
+ * Con coordinadora confirmada, la espera de un permiso no le llega a ella por acá: se la avisa al instante
+ * `coordination.js owner-wait`.
  *
  *   Stop (también con stop_hook_active) · PreToolUse de las tres herramientas que esperan a la persona ·
  *   Notification con permission_prompt                                        → abre la espera
@@ -42,14 +51,32 @@ const ROOT = path.join(__dirname, '..', '..');
 const SKILL_LIB = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const NOTIFY = path.join(ROOT, 'scripts', 'lib', 'notify.js');
 const DEFAULT_MINUTES = 5;
+const DEFAULT_OWNER_MINUTES = 30;
+const DEFAULT_PEER_OWNER_MINUTES = 120;
 const STALE_MS = 12 * 3600 * 1000;
 const ALIVE_MARGIN_MS = 2 * 60 * 1000;
 const LINE_MAX = 200;
 // Copia de ESPERAN_AL_DEV de scripts/hooks/blocking-meter.js, que no se puede importar (no exporta y corre al
 // cargarse): T16 compara las dos listas.
 const WAIT_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode', 'mcp__spokenly__ask_user_dictation']);
-// Las formas de una credencial, copiadas de FORMAS_EN_COMENTARIO de scripts/lib/tycon-config.js (no se exportan).
+// La cabecera `Authorization: Bearer|Basic <valor>`: se tapa el valor y quedan la cabecera y la palabra. Con la cabecera
+// (también en JSON o con la comilla escapada), el valor hasta el primer espacio, comilla o barra invertida, salvo que
+// empiece con `$`: una variable no se tapa. Sueltas, sólo un valor de 8 o más caracteres de token con un dígito, un
+// símbolo entre caracteres o una mayúscula después del primero, para no tapar prosa («Bearer authentication»). La palabra
+// suelta se escribe letra por letra y no con /i, que haría pasar por mayúscula a cualquier letra. La barra junto a
+// espacios es la continuación de línea de un comando juntado en una línea. Los espacios entre las partes tienen tope: sin
+// él, una mirada hacia atrás sobre miles de espacios tarda segundos.
+const TOKEN_CHARS = 'A-Za-z0-9._~+\\/-';
+const AUTH_GAP = '\\s{1,8}(?:\\\\\\s{1,8})?';
+const AUTH_HEADER = new RegExp(`(?<=\\bAuthorization\\\\?["']?\\s{0,8}:\\s{0,8}\\\\?["']?\\s{0,8}(?:Bearer|Basic)${AUTH_GAP})(?!\\$)[^\\s"'\`\\\\]+`, 'gi');
+const AUTH_LOOSE = new RegExp(`(?<=(?<![A-Za-z0-9])(?:[Bb][Ee][Aa][Rr][Ee][Rr]|[Bb][Aa][Ss][Ii][Cc])${AUTH_GAP})`
+  + `(?=[${TOKEN_CHARS}]{8})(?=[${TOKEN_CHARS}]*?(?:[0-9]|[._~+\\/=-](?=[${TOKEN_CHARS}=])|(?<=[${TOKEN_CHARS}])[A-Z]))`
+  + `[${TOKEN_CHARS}]+=*`, 'g');
+// Las formas de una credencial: la cabecera, propia del aviso, y las de FORMAS_EN_COMENTARIO de scripts/lib/tycon-config.js
+// (no se exportan). La cabecera va primero: tapa el valor y deja la palabra, también delante de un JWT.
 const SECRET_SHAPES = [
+  AUTH_HEADER,
+  AUTH_LOOSE,
   /\d{6,}:[A-Za-z0-9_-]{30,}/g,
   /eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g,
   /(?:AKIA|ASIA)[0-9A-Z]{16}/g,
@@ -63,8 +90,8 @@ const SECRET_SHAPES = [
 // la carpeta del estado la sabe tycon-home.js; si este archivo viaja suelto (al banco, a un laboratorio), la ruta de siempre
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const home = () => os.homedir();
-const dirs = () => {
-  const sd = stateDirOf(home());
+const dirs = (h) => {
+  const sd = stateDirOf(h || home());
   const base = path.join(sd, 'wait-notice');
   return { active: path.join(sd, 'active'), base, waits: path.join(base, 'waits'), log: path.join(base, 'log.jsonl'), shared: path.join(base, 'last-message.json') };
 };
@@ -195,7 +222,47 @@ function backgroundPending(tp) {
   return [...launched].some((id) => !done.has(id));
 }
 
+/**
+ * `{ to, line }` si el turno terminó esperando a otra sesión: la última herramienta del agente desde el último prompt
+ * de la persona es un mensaje a otra sesión. Si después usó otra herramienta, siguió trabajando; null.
+ */
+function peerWait(tp) {
+  const recs = readRecords(tp);
+  let last = null;
+  for (let i = recs.length - 1; i >= 0; i--) {
+    if (isGenuineUserPrompt(recs[i])) break;
+    const msg = recs[i].message || recs[i];
+    if ((msg.role || recs[i].type) !== 'assistant' || !Array.isArray(msg.content)) continue;
+    const uses = msg.content.filter((b) => b && b.type === 'tool_use');
+    if (uses.length) { last = uses[uses.length - 1]; break; }
+  }
+  if (!last || last.name !== 'SendMessage' || !last.input || !String(last.input.to || '').trim()) return null;
+  const to = String(last.input.to).trim();
+  const first = usefulLines(last.input.message)[0];
+  return { to, line: `la respuesta de ${to}${first ? `: ${first}` : ''}` };
+}
+
 // ── el plazo ─────────────────────────────────────────────────────────────────────────────────────────────────────
+/** `{ data, problem }`: la sección `wait_notice` de `team-repos.json` de la organización, o `data: null` si no hay. Un
+ *  problema de la sección se devuelve con `data: null`: quien pregunta sigue con lo de fábrica, y lo dice. */
+function orgWaitNotice({ env = process.env, tree, homeDir } = {}) {
+  const none = { data: null, problem: null };
+  try {
+    let dir = tree;
+    if (!dir) {
+      const hp = path.join(SKILL_LIB, 'harness-path.js');
+      dir = fs.existsSync(hp) ? require(hp).rutaArnesHook({ env, home: homeDir || home() }).dir : null;
+    }
+    if (!dir) return none;
+    let text;
+    try { text = fs.readFileSync(path.join(dir, 'team-repos.json'), 'utf8'); } catch { return none; }
+    const r = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js')).parse(String(text).replace(/^\uFEFF/, ''));
+    const sec = r.sectionProblems && r.sectionProblems.wait_notice;
+    if (sec && sec.length) return { data: null, problem: `${sec[0].path}: ${sec[0].message}` };
+    return { data: (r.ok && r.data && r.data.wait_notice) || null, problem: null };
+  } catch { return none; }
+}
+
 /** `{ ms, problem }`: la variable de la máquina, si no `wait_notice.minutes` de la organización, si no 5 minutos. */
 function thresholdMs({ env = process.env, tree, homeDir } = {}) {
   const def = { ms: DEFAULT_MINUTES * 60000, problem: null };
@@ -203,21 +270,46 @@ function thresholdMs({ env = process.env, tree, homeDir } = {}) {
   if (v !== undefined && /^\d+$/.test(String(v)) && Number(v) > 0) return { ms: Number(v), problem: null };
   const envProblem = v !== undefined && String(v) !== '' ? `TYCON_WAIT_NOTICE_MS: tiene que ser un número de milisegundos (es ${JSON.stringify(String(v)).slice(0, 40)})` : null;
   if (envProblem) return { ms: def.ms, problem: envProblem };
-  try {
-    let dir = tree;
-    if (!dir) {
-      const hp = path.join(SKILL_LIB, 'harness-path.js');
-      dir = fs.existsSync(hp) ? require(hp).rutaArnesHook({ env, home: homeDir || home() }).dir : null;
-    }
-    if (!dir) return def;
-    let text;
-    try { text = fs.readFileSync(path.join(dir, 'team-repos.json'), 'utf8'); } catch { return def; }
-    const r = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js')).parse(String(text).replace(/^﻿/, ''));
-    const sec = r.sectionProblems && r.sectionProblems.wait_notice;
-    if (sec && sec.length) return { ms: def.ms, problem: `${sec[0].path}: ${sec[0].message}` };
-    const m = r.ok && r.data && r.data.wait_notice && r.data.wait_notice.minutes;
-    return Number.isInteger(m) ? { ms: m * 60000, problem: null } : def;
-  } catch { return def; }
+  const org = orgWaitNotice({ env, tree, homeDir });
+  if (org.problem) return { ms: def.ms, problem: org.problem };
+  const m = org.data && org.data.minutes;
+  return Number.isInteger(m) ? { ms: m * 60000, problem: null } : def;
+}
+
+/** `{ ms, problem }`: un plazo del dueño desde la apertura: la variable de la máquina, si no la clave de la organización,
+ *  si no los minutos de fábrica. */
+function ownerDeadlineMs({ env, tree, homeDir, variable, key, minutes }) {
+  const def = { ms: minutes * 60000, problem: null };
+  const v = env[variable];
+  if (v !== undefined && /^\d+$/.test(String(v)) && Number(v) > 0) return { ms: Number(v), problem: null };
+  if (v !== undefined && String(v) !== '') return { ms: def.ms, problem: `${variable}: tiene que ser un número de milisegundos (es ${JSON.stringify(String(v)).slice(0, 40)})` };
+  const org = orgWaitNotice({ env, tree, homeDir });
+  if (org.problem) return { ms: def.ms, problem: org.problem };
+  const m = org.data && org.data[key];
+  return Number.isInteger(m) ? { ms: m * 60000, problem: null } : def;
+}
+
+/** `{ ms, problem }`: el plazo del dueño cuando la espera ya le llegó a la coordinadora, contado desde la apertura. La
+ *  variable de la máquina, si no `wait_notice.owner_minutes` de la organización, si no 30 minutos. */
+function ownerThresholdMs({ env = process.env, tree, homeDir } = {}) {
+  return ownerDeadlineMs({ env, tree, homeDir, variable: 'TYCON_WAIT_NOTICE_OWNER_MS', key: 'owner_minutes', minutes: DEFAULT_OWNER_MINUTES });
+}
+
+/** `{ ms, problem }`: lo mismo cuando la sesión espera a otra sesión: `TYCON_WAIT_NOTICE_PEER_OWNER_MS`, si no
+ *  `wait_notice.peer_owner_minutes`, si no 120 minutos. */
+function peerOwnerThresholdMs({ env = process.env, tree, homeDir } = {}) {
+  return ownerDeadlineMs({ env, tree, homeDir, variable: 'TYCON_WAIT_NOTICE_PEER_OWNER_MS', key: 'peer_owner_minutes', minutes: DEFAULT_PEER_OWNER_MINUTES });
+}
+
+/** `{ on, problem }`: si el aviso corre en esta máquina. La variable TYCON_WAIT_NOTICE, si está puesta, gana (`0` lo
+ *  apaga, otro valor lo deja); si no, `wait_notice.enabled` de la organización; si no, encendido. Una sección que no se
+ *  puede leer no lo apaga: queda encendido y se dice. */
+function noticeEnabled({ env = process.env, tree, homeDir } = {}) {
+  const v = env.TYCON_WAIT_NOTICE;
+  if (v !== undefined && v !== '') return { on: v !== '0', problem: null };
+  const org = orgWaitNotice({ env, tree, homeDir });
+  if (org.problem) return { on: true, problem: org.problem };
+  return { on: !(org.data && org.data.enabled === false), problem: null };
 }
 
 // ── el mensaje ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -301,7 +393,8 @@ function closeWait(sid, result, extra = {}) {
   try {
     logLine({
       session: sid, story: w.story, step: w.stepName, startedAt: w.openedAt, notified: !!w.notified,
-      ...(w.notifiedAt ? { notifiedAt: w.notifiedAt } : {}), result,
+      ...(w.notifiedAt ? { notifiedAt: w.notifiedAt } : {}),
+      ...(w.coordinatorAt ? { coordinator: w.coordinator, coordinatorAt: w.coordinatorAt } : {}), result,
       ...(result === 'answered' ? { returnedAt: new Date().toISOString() } : {}), ...extra,
     });
   } catch { /* el registro no se pudo escribir: se sigue */ }
@@ -327,8 +420,33 @@ function timerSpawnOptions({ env = process.env } = {}) {
   return { detached: true, stdio: 'ignore', env, windowsHide: true };
 }
 
+/**
+ * De qué es la espera y qué línea lleva: `{ kind, line }`. Al cerrar el turno (`stop` o `peer`), si la sesión anotó qué
+ * espera (`marker.js doing --waiting-for`), es una espera de turno (`turn`): espera a otra sesión, no a la persona, y su
+ * nota gana también sobre la razón del freno del cierre. Si no, la razón del freno, si escaló, o la línea de siempre.
+ */
+function waitOf({ sid, marker, last, home: h }) {
+  if (last.kind === 'stop' || last.kind === 'peer') {
+    // el mismo lector que las podas, con su tope de 24 h: una nota de espera olvidada no apaga el aviso al dueño
+    let turn = null;
+    try { turn = require(path.join(SKILL_LIB, 'story-gate-io.js')).waitingTurn(stateDirOf(h || home()), sid); } catch (e) {
+      // sin el lector, la espera sigue como siempre (al dueño a los 30 min), y queda en el registro
+      turn = null;
+      try { logLine({ session: sid, event: 'turn-wait-unreadable', reason: String((e && e.message) || e).slice(0, 200) }); } catch { /* sin registro */ }
+    }
+    if (turn) return { kind: 'turn', line: `espera ${turn.waitingFor.replace(/\s+/g, ' ')}` };
+  }
+  const line = marker && marker.needs_human && marker.escalation_reason ? String(marker.escalation_reason) : last.line;
+  return { kind: last.kind, line };
+}
+
+/** El plazo del dueño según la espera: la de otra sesión (un mensaje o un turno) tiene el suyo, más largo. */
+function ownerDeadlineFor(kind, opts = {}) {
+  return kind === 'peer' || kind === 'turn' ? peerOwnerThresholdMs(opts) : ownerThresholdMs(opts);
+}
+
 /** Abre (o reemplaza) la espera de la sesión y lanza su proceso del plazo. */
-function openWait(sid, tp, kind, waiting) {
+function openWait(sid, tp, kindIn, waiting) {
   const marker = readMarker(sid);
   if (!marker || !marker.storyId) return;
   const step = currentStep(marker);
@@ -338,14 +456,14 @@ function openWait(sid, tp, kind, waiting) {
   if (step.unknown) logLine({ session: sid, event: 'unknown-step', step: step.id });
   const plazo = thresholdMs({});
   if (plazo.problem) logLine({ session: sid, event: 'config-problem', problem: plazo.problem });   // usa 5 min, y lo dice
-  const linea = marker.needs_human && marker.escalation_reason ? String(marker.escalation_reason) : waiting;
+  const { kind, line: linea } = waitOf({ sid, marker, last: { kind: kindIn, line: waiting } });
   const { records, prompts } = countRecords(tp);
   const wait = {
     session: sid, story: String(marker.storyId), step: step.id, stepName: step.name, kind, waiting: String(linea || '').slice(0, 2000),
     openedAt: new Date().toISOString(), records, prompts, transcript: tp || null, pid: null, notified: false,
   };
   writeJsonAtomic(waitPath(sid), wait);
-  const child = spawn(process.execPath, [__filename, '--timer', sid, wait.openedAt], timerSpawnOptions({}));
+  const child = spawn(process.execPath, [__filename, '--timer', sid, wait.openedAt], { windowsHide: true, ...timerSpawnOptions({}) });
   child.unref();
   writeJsonAtomic(waitPath(sid), { ...wait, pid: child.pid });
 }
@@ -366,19 +484,80 @@ function channels() {
   return { ok: true, channels: s.canales, mail: s.mail, chat: s.chat };
 }
 
-/** El proceso del plazo: duerme, mira si la espera sigue igual y, si corresponde, avisa. */
-function timer(sid, openedAt) {
-  const { ms } = thresholdMs({});
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** La espera, si sigue igual a los `elapsedMs` de abierta; si no, la cierra con lo que pasó y devuelve null. */
+function stillWaiting(sid, openedAt, elapsedMs) {
   const w = readWait(sid);
-  if (!w || w.openedAt !== openedAt) return;          // ya se cerró o la reemplazó otra
+  if (!w || w.openedAt !== openedAt) return null;     // ya se cerró o la reemplazó otra
   const now = countRecords(w.transcript);
-  if (now.prompts > w.prompts) { closeWait(sid, 'answered'); return; }
-  if (now.records > w.records) { closeWait(sid, 'kept-working'); return; }
+  if (now.prompts > w.prompts) { closeWait(sid, 'answered'); return null; }
+  if (now.records > w.records) { closeWait(sid, 'kept-working'); return null; }
   let mtime = 0;
   try { mtime = fs.statSync(w.transcript).mtimeMs; } catch { mtime = 0; }
-  if (!mtime || Date.now() - mtime > ms + ALIVE_MARGIN_MS) { closeWait(sid, 'session-ended'); return; }
-  if (backgroundPending(w.transcript)) { closeWait(sid, 'kept-working', { reason: 'background-task' }); return; }
+  if (!mtime || Date.now() - mtime > elapsedMs + ALIVE_MARGIN_MS) { closeWait(sid, 'session-ended'); return null; }
+  if (backgroundPending(w.transcript)) { closeWait(sid, 'kept-working', { reason: 'background-task' }); return null; }
+  return w;
+}
+
+/** La coordinadora designada y viva que recibe primero la espera de otra sesión, o null (scripts/tools/coordination.js). */
+function coordinatorFor(sid) {
+  try { return require(path.join(ROOT, 'scripts', 'tools', 'coordination.js')).liveCoordinator({}, sid); } catch { return null; }
+}
+
+/**
+ * Las esperas que le tocan a la coordinadora y todavía no vio: una línea por espera (qué sesión, qué espera, desde qué
+ * hora y cuándo pasa al dueño). Cada una sale una sola vez: queda marcada como vista.
+ */
+function coordinatorLines({ home: h, coordinatorSid } = {}) {
+  const d = dirs(h);
+  let names = [];
+  try { names = fs.readdirSync(d.waits).filter((n) => n.endsWith('.json')); } catch { return []; }
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
+  // con coordinadora confirmada, un permiso se lo avisa al instante `coordination.js owner-wait`: acá saldría dos veces
+  let confirmed = null;
+  try { confirmed = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js')).coordinadoraConfirmada(h || home()); } catch { confirmed = null; }
+  const out = [];
+  for (const n of names) {
+    const p = path.join(d.waits, n);
+    const w = readJson(p);
+    if (!w || !coordinatorSid || w.coordinatorSid !== coordinatorSid || w.coordinatorShownAt || w.notified) continue;
+    if (w.kind === 'permission' && confirmed) continue;
+    out.push(`Espera: ${w.waitingName || w.session} espera ${oneLine(w.waiting, botToken) || 'una respuesta'} (la ${w.story}, ${stepLabel(w.step).name}) desde las ${clock(w.openedAt)}; si sigue a las ${clock(w.ownerAt)}, el aviso va al dueño.`);
+    try { writeJsonAtomic(p, { ...w, coordinatorShownAt: new Date().toISOString() }); } catch { /* sale de nuevo en el turno siguiente */ }
+  }
+  return out;
+}
+const clock = (iso) => { const t = new Date(iso); return Number.isNaN(t.getTime()) ? '?' : `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
+
+/**
+ * El proceso del plazo: duerme, mira si la espera sigue igual y, si corresponde, avisa. Con una coordinadora designada y
+ * viva (y que no sea la sesión que espera), al primer plazo la espera le llega a ella y al dueño recién a su plazo,
+ * si sigue sin resolver. Sin coordinadora, al dueño al primer plazo.
+ */
+function timer(sid, openedAt) {
+  const { ms } = thresholdMs({});
+  sleepMs(ms);
+  let w = stillWaiting(sid, openedAt, ms);
+  if (!w) return;
+  const coord = coordinatorFor(sid);
+  if (coord) {
+    const owner = ownerDeadlineFor(w.kind);
+    if (owner.problem) logLine({ session: sid, event: 'config-problem', problem: owner.problem });   // usa el de fábrica, y lo dice
+    const opened = Date.parse(openedAt);
+    const coordinatorAt = new Date().toISOString();
+    const cur = readWait(sid);
+    if (!cur || cur.openedAt !== openedAt) return;
+    writeJsonAtomic(waitPath(sid), {
+      ...cur, coordinator: coord.name, coordinatorSid: coord.sid, waitingName: coord.waitingName, coordinatorAt,
+      ownerAt: new Date((Number.isFinite(opened) ? opened : Date.now()) + owner.ms).toISOString(),
+    });
+    logLine({ session: sid, story: w.story, step: w.stepName, event: 'coordinator-notified', coordinator: coord.name, coordinatorAt });
+    const left = (Number.isFinite(opened) ? opened : Date.now()) + owner.ms - Date.now();
+    if (left > 0) sleepMs(left);
+    w = stillWaiting(sid, openedAt, Math.max(ms, owner.ms));
+    if (!w) return;
+  }
 
   const via = channels();
   if (!via.ok) { closeWait(sid, 'config-error'); return; }
@@ -452,7 +631,10 @@ function handle(d) {
   if (!sid) return;
   const ev = d.hook_event_name;
   const tp = d.transcript_path;
-  if (ev === 'Stop') return openWait(sid, tp, 'stop', lastAgentLine(tp));
+  if (ev === 'Stop') {
+    const peer = peerWait(tp);
+    return peer ? openWait(sid, tp, 'peer', peer.line) : openWait(sid, tp, 'stop', lastAgentLine(tp));
+  }
   if (ev === 'PreToolUse' && WAIT_TOOLS.has(d.tool_name)) return openWait(sid, tp, 'question', questionLine(d.tool_name, d.tool_input || {}));
   if (ev === 'Notification') {
     if (d.notification_type && d.notification_type !== 'permission_prompt') return;
@@ -491,7 +673,7 @@ function noteFindingsWait(sid, which = 'noteFindingsWait') {
   return true;
 }
 
-module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
+module.exports = { WAIT_TOOLS, SECRET_SHAPES, redact, oneLine, waitOf, ownerDeadlineFor, stepLabel, currentStep, buildMessage, thresholdMs, ownerThresholdMs, peerOwnerThresholdMs, peerWait, coordinatorLines, noticeEnabled, orgWaitNotice, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
 
 if (require.main === module) {
   try {
@@ -510,6 +692,9 @@ if (require.main === module) {
       }
     }
     if (process.env.TYCON_WAIT_NOTICE === '0') process.exit(0);
+    // la organización lo puede apagar desde el sitio (`wait_notice.enabled: false`); la variable de la máquina gana
+    const enabled = noticeEnabled({});
+    if (!enabled.on) process.exit(0);
     // sin ningún canal por donde avisar, nada: ni archivos ni procesos
     const tg = channels();
     if (args[0] === '--timer') {

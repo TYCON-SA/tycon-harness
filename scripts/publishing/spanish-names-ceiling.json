@@ -1,15 +1,15 @@
 {
   "__doc": "El techo del termómetro de nombres en castellano (story 8.9, AC 12): lo que el exportador cuenta por paquete con el extractor del freno (spanishNames del --json), sobre la copia con la tabla vacía. export-real.test.sh sale rojo si la copia lo supera y verde con «bajó a N» si baja. Cada tanda de la 8.9 lo baja en su pull request; sube sólo en el commit que suma palabras a scripts/lib/spanish-words.json → words (el freno frena el resto). Es un techo aparte del de nombres reales (names-ceiling.json, story 8.10).",
-  "__last_change": "2026-10-28 — el aviso del freno de producción pasa a production-notice.js, junto con el cambio del freno que pide reinstalar: archivos 1 → 0, total 12 → 11. Quedan las cuatro opciones de la puerta tycon-prod-sql y las siete variables de la tabla de alias de agent-skills, que saca la story 8.15.",
+  "__last_change": "2026-11-12 — las cuatro opciones de la puerta tycon-prod-sql pasan a inglés, junto con el cambio del freno que pide reinstalar: opciones 4 → 0, total 11 → 7. Quedan las siete variables de la tabla de alias de agent-skills, que saca la story 8.15.",
   "core": {
     "files": 0,
     "folders": 0,
-    "options": 4,
+    "options": 0,
     "subcommands": 0,
     "values": 0,
     "env": 7,
     "keys": 0,
-    "total": 11
+    "total": 7
   },
   "bizuit": {
     "files": 0,

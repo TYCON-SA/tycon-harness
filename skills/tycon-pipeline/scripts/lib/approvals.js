@@ -75,6 +75,20 @@ function lineasDeFirmaPorTerminal(acs, firmante) {
   return (acs || []).map((n) => ({ que: `AC ${n} imposible de verificar en vivo`, via: 'runtime-waiver (terminal)', tipo: 'manual', quien: firmante }));
 }
 
+// Las vías de una firma que dio la persona misma: su click en el cuadro, su «aprobado» escrito, o «firmo» en su terminal.
+const VIAS_DE_LA_PERSONA = new Set(['click', 'mensaje', 'terminal']);
+
+/**
+ * La aprobación que dio la persona misma, por la vía de su firma (scripts/lib/owner-window.js `exigir`): manual, a nombre
+ * del usuario de la máquina. Un nombre escrito en el comando no cuenta, porque el comando no lo vio. Cualquier otra vía
+ * (la ventana de permiso, la delegación, la revisión, el arnés, una pestaña sin permisos) devuelve null: el quién sale de
+ * las opciones del comando.
+ */
+function deLaPersona(via, persona) {
+  if (!VIAS_DE_LA_PERSONA.has(via)) return null;
+  return { tipo: 'manual', quien: texto(persona) || 'persona' };
+}
+
 /** El tipo, el quién y la delegación a partir de las opciones del marcador (`--approved-by`, `--delegated-by`, `--agent`). */
 function quienDesdeOpciones({ approvedBy, delegatedBy, agent, regla } = {}) {
   const deleg = texto(delegatedBy);
@@ -187,10 +201,15 @@ function selloDeCorrida(nombre) {
 function anteriorAlControl(dir, nombre, ref = 'origin/main') {
   const sello = selloDeCorrida(nombre);
   if (!sello || sello >= DESDE_EN_LA_STORY || !ref) return false;
+  // Dentro de un gancho de git llegan GIT_DIR, GIT_WORK_TREE y compañía del repo que commitea: con ellos `-C` no elige
+  // el repo y la ruta del roster no coincide con nada. Se sacan (la misma lista que private-tree.js) para que git
+  // encuentre el repo desde la carpeta de la corrida.
+  const env = { ...process.env };
+  for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_PREFIX']) delete env[k];
   let salida;
   try {
     salida = require('child_process').execFileSync('git', ['-C', dir, 'log', ref, '--diff-filter=A', '--format=%cs', '--', 'review-roster.json'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env });
   } catch (_e) { return false; }
   const fechas = salida.split('\n').map((l) => l.trim().replace(/-/g, '')).filter((l) => /^\d{8}$/.test(l));
   return fechas.length > 0 && fechas[fechas.length - 1] < DESDE_EN_LA_STORY;
@@ -304,6 +323,6 @@ function unir(origenDir, destinoDir) {
 }
 
 module.exports = {
-  FILE, SIN_NOMBRAR, esAgente, lineasDeFirmaPorTerminal, quienDesdeOpciones, normalizar, validar, anotar, leer, resumir,
+  FILE, SIN_NOMBRAR, esAgente, lineasDeFirmaPorTerminal, deLaPersona, quienDesdeOpciones, normalizar, validar, anotar, leer, resumir,
   problemasDelRegistro, faltaElPlan, faltaLaMaqueta, unir, carpetasDeCorrida, POR_FALTA, DESDE_EN_LA_STORY, selloDeCorrida, anteriorAlControl,
 };

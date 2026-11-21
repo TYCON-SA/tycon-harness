@@ -31,6 +31,7 @@ const NOMBRADOR = path.join(TCG, 'scripts', 'controls-bench', 'report-name.js');
 
 const E = require(EXAMEN);
 const N = require(NOMBRADOR);
+const RT = require(path.join(TCG, 'scripts', 'lib', 'result-travel.js'));
 
 // El estado renombrado a inglés: el nombre viejo sale del mapa (no se escribe literal).
 // En la copia pública el mapa no viaja: esos casos se saltean con motivo (sin nombre viejo no hay nada que migrar).
@@ -116,6 +117,16 @@ function banco(opts = {}) {
     `const {rubrosNoMedidos}=require(${JSON.stringify(path.join(TCG, 'scripts', 'controls-bench', 'unmeasured-categories.js'))});`,
     'const noMedido=(tool,runs)=>{const nm=rubrosNoMedidos({tool,runs});const o={};if(nm.inestables)o.inestables=nm.inestables;if(nm.paridad)o.paridad=nm.paridad;return Object.keys(o).length?{no_medido:o}:{};};',
     'if(modo==="empty"){if(i>=0)fs.writeFileSync(process.argv[i+1],JSON.stringify({ts:new Date().toISOString(),tool:"claude",runs:1,failed:0,criterio:0,inestables:null,erroresDeCorrida:0,fugas:0,artefactos:0,parityBreaks:null,paridadReal:null,baselineRegressions:0,results:{},...noMedido("claude",1)}));process.exit(0);}',
+    // un rojo de criterio en la primera ejecución; al repetirlo (`--only`), `flaky` acierta y `steady` vuelve a fallar
+    'if(modo==="flaky"||modo==="steady"){',
+    `  fs.appendFileSync(${JSON.stringify(bitacora)}+".llamadas", JSON.stringify(process.argv.slice(2))+"\\n");`,
+    '  const pasa=modo==="flaky"&&process.argv.includes("--only");',
+    '  const v=pasa?{pass:true,clase:"ok"}:{pass:false,clase:"criterio",failures:["no marcó la regla"]};',
+    '  const res={"adv::caso-1":{type:"must-flag",tools:{claude:v}}};',
+    '  if(!process.argv.includes("--only")) res["adv::caso-2"]={type:"must-pass",tools:{claude:{pass:true,clase:"ok"}}};',
+    '  const c={ts:new Date().toISOString(),tool:"claude",runs:1,failed:pasa?0:1,criterio:pasa?0:1,inestables:null,erroresDeCorrida:0,fugas:0,artefactos:0,varianzaDeclarada:0,parityBreaks:null,paridadReal:null,paridadPorInestabilidad:null,baselineRegressions:0,skippedMcp:0,alcance:"vida",results:res,...noMedido("claude",1)};',
+    '  if(i>=0)fs.writeFileSync(process.argv[i+1],JSON.stringify(c));process.exit(pasa?0:1);',
+    '}',
     'const casos={"a|claude":{},"b|claude":{},"c|claude":{}};',
     // 🔴 `--tool both` = DOS ranuras por caso (una por herramienta). Con 3 casos hay 6 ranuras:
     // 3 errores = UNA herramienta entera caída (la otra midió) · 6 = las dos.
@@ -141,7 +152,8 @@ function banco(opts = {}) {
   fs.chmodSync(rutaSonda, 0o755);
 
   return { raiz, casa, repo, remoto, rutaCfg, rutaRunner, rutaSonda, bitacora, git, reporteSuites, reporteBanco,
-    reporteQueViaja: path.join(repo, E.RUTA_REPORTE_QUE_VIAJA),
+    // el reporte se guarda en la carpeta de estado de la casa y viaja desde ahí: el clon no se toca
+    reporteQueViaja: RT.keptPath('exam', E.RUTA_REPORTE_QUE_VIAJA, casa),
     intento: path.join(repo, 'scripts', 'controls-bench', '.bench', 'examen-intento.json'),
     sello: path.join(casa, '.claude', '.tycon-pipeline', 'periodic-exam-last-run'),
     lock: path.join(repo, 'scripts', 'controls-bench', '.bench', 'examen.lock') };
@@ -775,7 +787,7 @@ test('T39 el candado se toma ANTES de la sonda: dos ejecuciones simultáneas, un
 });
 
 test('T40 si el resultado no llegó a viajar, la propia máquina se entera', () => {
-  // Con el push rechazado, el sello y el reporte local quedan
+  // Con el push rechazado, el sello y el reporte guardado quedan
   // frescos, así que en la máquina designada —la única que puede arreglarlo— no se notaría nada.
   // La denuncia tiene que salir por el aviso, no sólo por el log de launchd: un canal invisible.
   const b = banco();
@@ -785,11 +797,10 @@ test('T40 si el resultado no llegó a viajar, la propia máquina se entera', () 
   fs.chmodSync(hook, 0o755);
 
   const r = correr(b);
-  assert.notStrictEqual(r.status, 0);
-  const intento = JSON.parse(fs.readFileSync(b.intento, 'utf8'));
-  assert.strictEqual(intento.estado, 'no-viajo', 'queda registrado que midió pero no llegó a nadie');
+  assert.strictEqual(r.status, 5, r.stdout + r.stderr);
+  assert.strictEqual(RT.readStatus(b.casa).pieces.exam.ok, false, 'queda registrado que midió pero no llegó a nadie (story 8.312)');
   const a = avisar(b);
-  assert.match(a.stdout, /no viaj|no lleg/i, 'y el aviso de ESTA máquina lo dice');
+  assert.match(a.stdout, /no se pudo publicar/i, 'y el aviso de ESTA máquina lo dice');
 });
 
 test('T45 la sonda prueba LAS DOS sesiones con una consulta real, no sólo la versión', () => {
@@ -854,17 +865,25 @@ test('T28 dry_run_dice_que_haria_sin_gastar_nada', () => {
 // T9 / T10 — el resultado viaja
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-test('T9 staging_selectivo: con el árbol sucio, sólo entra el reporte', () => {
+// Lo que hay en la rama de resultados del remoto: las rutas de sus archivos (vacío si no existe).
+const enLaRama = (b) => {
+  const r = spawnSync('git', ['-C', b.remoto, 'ls-tree', '-r', '--name-only', RT.BRANCH], { encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.split('\n').filter(Boolean) : [];
+};
+
+test('T9 staging_selectivo: con el árbol sucio, el clon no se toca y viaja sólo el reporte', () => {
   const b = banco();
   fs.writeFileSync(path.join(b.repo, 'no-mio.txt'), 'cambio del dev, no es del examen\n');
   fs.writeFileSync(path.join(b.repo, 'README.md'), 'editado por el dev\n');
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: b.repo, encoding: 'utf8' });
 
   const r = correr(b);
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
 
-  const tocados = execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: b.repo, encoding: 'utf8' })
-    .split('\n').map((x) => x.trim()).filter(Boolean);
-  assert.deepStrictEqual(tocados, [E.RUTA_REPORTE_QUE_VIAJA], 'sólo el reporte, nunca git add -A');
+  // el resultado viaja como entrada de la rama de resultados, nunca como commit del clon
+  assert.strictEqual(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: b.repo, encoding: 'utf8' }), head, 'el clon no suma commits');
+  const viajo = enLaRama(b).filter((f) => f.includes('/files/'));
+  assert.ok(viajo.length === 1 && viajo[0].endsWith(`/files/${E.RUTA_REPORTE_QUE_VIAJA}`), `sólo el reporte, nunca git add -A — ${viajo}`);
 
   const sucio = execFileSync('git', ['status', '--porcelain'], { cwd: b.repo, encoding: 'utf8' });
   assert.match(sucio, /no-mio\.txt/, 'el trabajo del dev queda intacto y sin commitear');
@@ -873,9 +892,7 @@ test('T9 staging_selectivo: con el árbol sucio, sólo entra el reporte', () => 
 
 test('T9b staging_selectivo: lo que el dev YA tenía en el stage tampoco se lo lleva puesto', () => {
   // El caso que T9 no cubre: el dev dejó algo preparado en el stage y se fue a dormir. A las
-  // 2 de la mañana el examen commitea su reporte — y si el commit usara el índice tal como está,
-  // se llevaría ese trabajo ajeno adentro, con un mensaje que habla de otra cosa. `git add` de
-  // una sola ruta NO alcanza: lo que decide qué entra al commit es el índice ENTERO.
+  // 2 de la mañana el examen publica su reporte — y nada de lo que el dev dejó puede viajar ni cambiar.
   const b = banco();
   fs.writeFileSync(path.join(b.repo, 'del-dev.txt'), 'a medio terminar\n');
   b.git('add', '--', 'del-dev.txt');
@@ -883,24 +900,20 @@ test('T9b staging_selectivo: lo que el dev YA tenía en el stage tampoco se lo l
   const r = correr(b);
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
 
-  const tocados = execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: b.repo, encoding: 'utf8' })
-    .split('\n').map((x) => x.trim()).filter(Boolean);
-  assert.deepStrictEqual(tocados, [E.RUTA_REPORTE_QUE_VIAJA], '🔴 el trabajo del dev NO entra al commit del examen');
+  assert.ok(!enLaRama(b).some((f) => f.endsWith('del-dev.txt')), '🔴 el trabajo del dev NO viaja con el examen');
   assert.match(execFileSync('git', ['status', '--porcelain'], { cwd: b.repo, encoding: 'utf8' }),
     /^A {2}del-dev\.txt$/m, 'y le queda tal cual lo había dejado: preparado, sin commitear');
 });
 
-test('T10b el push usa la rama actual, no la rama por defecto del remoto', () => {
-  // `git push origin HEAD` funciona, pero `git pull --rebase origin HEAD` resuelve la rama por
-  // DEFECTO del remoto. En un repo cuya rama de trabajo no es la default, el reintento traería la
-  // rama equivocada — y el reintento existe justamente para el caso en que alguien más movió la rama.
+test('T10b con el clon en otra rama, viaja a la rama de resultados y la rama del clon no se empuja', () => {
+  // El reporte va siempre a la rama de resultados, y la rama en la que trabaja la persona no se toca.
   const b = banco();
   b.git('checkout', '-q', '-b', 'rama-de-trabajo');
-  b.git('push', '-q', '-u', 'origin', 'rama-de-trabajo');
   const r = correr(b);
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
-  const remoto = execFileSync('git', ['-C', b.remoto, 'log', '-1', '--name-only', '--format=', 'rama-de-trabajo'], { encoding: 'utf8' });
-  assert.match(remoto, /ultimo-examen\.json/, 'el reporte llegó a la rama en la que se estaba trabajando');
+  assert.ok(enLaRama(b).some((f) => f.endsWith(`/files/${E.RUTA_REPORTE_QUE_VIAJA}`)), 'el reporte llegó a la rama de resultados');
+  assert.notStrictEqual(spawnSync('git', ['-C', b.remoto, 'rev-parse', '--verify', '--quiet', 'refs/heads/rama-de-trabajo']).status, 0,
+    'la rama del clon no se empujó');
 });
 
 test('T10 push_fallido_conserva_el_resultado: el reporte sobrevive en disco y el log lo dice', () => {
@@ -913,7 +926,7 @@ test('T10 push_fallido_conserva_el_resultado: el reporte sobrevive en disco y el
 
   const r = correr(b);
   assert.notStrictEqual(r.status, 0, 'el resultado no llegó a nadie: eso necesita un humano');
-  assert.match(r.stdout + r.stderr, /push/i, 'lo dice en el log');
+  assert.match(r.stdout + r.stderr, /empuj/i, 'lo dice en el log');
   assert.match(r.stdout + r.stderr, /3|reintent/i, 'reintentó');
   assert.ok(fs.existsSync(b.reporteQueViaja), '🔴 el resultado NO se borra');
   const rep = JSON.parse(fs.readFileSync(b.reporteQueViaja, 'utf8'));
@@ -1803,7 +1816,7 @@ test('T73 exam_reads_maintainers_clone: en la versión bajada, --dry-run lee la 
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /máquina designada: Devas-Mac-mini/, `la máquina designada sale del clon — «${r.stdout}»`);
   assert.match(r.stdout, /HOY LE TOCA/, 'y le toca correr');
-  assert.ok(r.stdout.includes(path.join(b.repo, E.RUTA_REPORTE_QUE_VIAJA)), `el reporte que viaja va al clon — «${r.stdout}»`);
+  assert.ok(r.stdout.includes(`publica desde:     ${b.repo}`), `el reporte viaja desde el clon (story 8.312) — «${r.stdout}»`);
   assert.match(r.stdout, /del clon de mantenimiento/, 'y lo dice');
 });
 
@@ -1872,7 +1885,8 @@ test('T76 exam_own_config_wins: un árbol que designa máquina (un clon completo
     { encoding: 'utf8', env: ambienteDeLaMaquina(b, { TYCON_EXAM_MACHINE: 'Devas-Mac-mini' }) });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /máquina designada: Otra-Mac/, `manda la configuración propia — «${r.stdout}»`);
-  assert.ok(r.stdout.includes(path.join(b.arbol, E.RUTA_REPORTE_QUE_VIAJA)), 'y el reporte queda en el árbol propio');
+  // el árbol propio se nombra por su ruta real (en macOS, /var es /private/var)
+  assert.ok(r.stdout.includes(`publica desde:     ${fs.realpathSync(b.arbol)}`), `y el reporte viaja desde el árbol propio — «${r.stdout}»`);
   // y una máquina que no usa la versión bajada tampoco mira el clon de mantenimiento
   const c = maquinaConClonDeMantenimiento({ release: false });
   const r2 = spawnSync(process.execPath, [path.join(c.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'],
@@ -2277,4 +2291,123 @@ test('T78 ToolsPath_ShellQueryBranches_SayTheirCause', () => {
   });
   assert.strictEqual(r.ok, false);
   assert.match(String(r.causa), /no se pudo anotar la carpeta/, JSON.stringify(r));
+});
+
+/**
+ * El clon de mantenimiento ya no trae su copia de `scripts/controls-bench/exam-config.json`: trae SÓLO la clave del
+ * equipo, `designated_machine`, en `.tycon/exam-config.json`. La frecuencia sigue saliendo del árbol instalado.
+ */
+function maquinaConClaveDelEquipo() {
+  const b = banco();
+  escribir(path.join(b.repo, '.tycon', 'exam-config.json'), { designated_machine: 'Devas-Mac-mini' });
+  b.git('add', '-f', '--', '.tycon/exam-config.json');
+  b.git('commit', '-q', '-m', 'la clave del equipo');
+  b.git('push', '-q', 'origin', 'main');
+  const tycon = path.join(b.casa, '.tycon');
+  escribir(path.join(tycon, 'state', 'harness-state.json'), { schema: 1, sources: [{ kind: 'release', version: '0.0.0' }] });
+  escribir(path.join(tycon, 'config.json'), { paths: { maintainers: b.repo } });
+  b.arbol = arbolInstalado(b.raiz);
+  return b;
+}
+
+test('T79 exam_reads_team_key_from_maintainers_clone: la máquina designada sale de .tycon/exam-config.json del clon; la frecuencia, del árbol instalado', () => {
+  const b = maquinaConClaveDelEquipo();
+  // el árbol instalado declara su frecuencia: tiene que seguir mandando sobre ella
+  fs.writeFileSync(path.join(b.arbol, 'scripts', 'controls-bench', 'exam-config.json'),
+    JSON.stringify({ designated_machine: '', days_between_runs: 2, scheduled_days: ['monday', 'thursday'], hour: '03:00' }));
+  const r = spawnSync(process.execPath, [path.join(b.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'],
+    { encoding: 'utf8', env: ambienteDeLaMaquina(b, { TYCON_EXAM_MACHINE: 'Devas-Mac-mini' }) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /máquina designada: Devas-Mac-mini/, `la máquina designada sale del clon — «${r.stdout}»`);
+  assert.match(r.stdout, /HOY LE TOCA/, 'y le toca correr');
+  assert.match(r.stdout, /monday, thursday 03:00/, `la frecuencia sale del árbol instalado — «${r.stdout}»`);
+  assert.ok(r.stdout.includes(path.join(b.repo, '.tycon', 'exam-config.json')), `y dice de dónde salió la máquina — «${r.stdout}»`);
+  assert.ok(r.stdout.includes(`publica desde:     ${b.repo}`), 'el reporte viaja desde el clon');
+  // control: sin la clave del equipo en el clon, nadie designado
+  fs.rmSync(path.join(b.repo, '.tycon', 'exam-config.json'));
+  const sin = spawnSync(process.execPath, [path.join(b.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'],
+    { encoding: 'utf8', env: ambienteDeLaMaquina(b, { TYCON_EXAM_MACHINE: 'Devas-Mac-mini' }) });
+  assert.strictEqual(sin.status, 0, sin.stderr);
+  assert.match(sin.stdout, /máquina designada: \(ninguna/, `control: sin la clave, nadie corre — «${sin.stdout}»`);
+});
+
+test('T80 notice_reads_team_key_from_maintainers_clone: con la máquina designada en el clon, el aviso no calla sobre un examen que no corrió', () => {
+  const b = maquinaConClaveDelEquipo();
+  const r = spawnSync(process.execPath, [path.join(b.arbol, 'scripts', 'hooks', 'bench-notice.js')], {
+    encoding: 'utf8', input: '{"source":"startup"}',
+    env: ambienteDeLaMaquina(b, {
+      TYCON_BENCH_DIR: path.join(b.repo, 'scripts', 'controls-bench', '.bench'),
+      TYCON_SUITES_REPORT: b.reporteSuites, TYCON_BENCH_REPORT: b.reporteBanco, TYCON_EVAL_SANDBOX: '',
+    }),
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /examen de los revisores NO ESTÁ CORRIENDO/, `el aviso denuncia el examen que falta — «${r.stdout}»`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Los rojos de criterio se repiten una vez: el que acierta al repetirse es INESTABLE, no criterio
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+test('Repeticion_RojoQueAcierta_PasaAInestable — se repite sólo el que falló, y el aviso lo cuenta como inestable', () => {
+  // 🔴 rojo: con una ejecución por caso, un error esporádico del modelo sale como «1 de criterio (el revisor razona mal)»
+  const b = banco({ modoRunner: 'flaky' });
+  const r = correr(b);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const llamadas = fs.readFileSync(`${b.bitacora}.llamadas`, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.strictEqual(llamadas.length, 2, 'la primera ejecución y UNA repetición');
+  assert.ok(!llamadas[0].includes('--only'), 'la primera es el chequeo entero');
+  const k = llamadas[1].indexOf('--only');
+  assert.deepStrictEqual(llamadas[1].slice(k, k + 2), ['--only', 'adv::caso-1'], 'se repite sólo el que falló');
+  const rep = JSON.parse(fs.readFileSync(b.reporteQueViaja, 'utf8'));
+  assert.strictEqual(rep.criterio, 0);
+  assert.strictEqual(rep.inestables, 1);
+  assert.deepStrictEqual(rep.repeticion, { repetidos: 1, inestables: 1, siguen: 0, sin_repetir: 0 });
+  assert.strictEqual(rep.results['adv::caso-1'].tools.claude.clase, 'inestable');
+  const a = avisar(b);
+  assert.match(a.stdout, /0 de criterio/, a.stdout);
+  assert.match(a.stdout, /1 inestables de 1 que fallaron y se repitieron/, a.stdout);
+});
+
+test('Repeticion_RojoQueVuelveAFallar_SigueDeCriterio — dos veces rojo es el revisor razonando mal', () => {
+  const b = banco({ modoRunner: 'steady' });
+  const r = correr(b);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const rep = JSON.parse(fs.readFileSync(b.reporteQueViaja, 'utf8'));
+  assert.strictEqual(rep.criterio, 1);
+  assert.strictEqual(rep.inestables, 0);
+  assert.deepStrictEqual(rep.repeticion, { repetidos: 1, inestables: 0, siguen: 1, sin_repetir: 0 });
+  const a = avisar(b);
+  assert.match(a.stdout, /1 de criterio/, a.stdout);
+});
+
+test('Repeticion_SinReporte_NoCambiaNada — una repetición que no midió no convierte un rojo en inestable', () => {
+  // 🔴 rojo: «no pude repetir» leído como «acertó» borraría un rojo de criterio sin haberlo medido
+  const primera = { criterio: 1, inestables: null, results: { 'adv::c': { tools: { claude: { pass: false, clase: 'criterio', failures: ['x'] } } } } };
+  assert.deepStrictEqual(E.casosParaRepetir(primera), ['adv::c']);
+  const u = E.unirRepeticion(primera, null, ['adv::c'], 'la repetición terminó (exit 1) sin dejar reporte');
+  assert.strictEqual(u.criterio, 1);
+  assert.strictEqual(u.inestables, null, 'sin ningún caso repetido, la inestabilidad sigue «no medida»: nunca un 0');
+  assert.strictEqual(u.repeticion.sin_repetir, 1);
+  assert.match(u.results['adv::c'].tools.claude.repeticion, /no se pudo repetir: la repetición terminó/);
+  // lo que no es criterio no se repite: un error de ejecución, una fuga o un verde
+  assert.deepStrictEqual(E.casosParaRepetir({ results: { e: { tools: { claude: { pass: false, clase: 'error' } } }, v: { tools: { claude: { pass: true } } } } }), []);
+  // una repetición que trae el caso en error tampoco lo vuelve inestable
+  const conError = E.unirRepeticion(primera, { results: { 'adv::c': { tools: { claude: { pass: false, clase: 'error' } } } } }, ['adv::c']);
+  assert.strictEqual(conError.criterio, 1);
+  assert.match(conError.results['adv::c'].tools.claude.repeticion, /no se pudo repetir: salió error/);
+});
+
+test('Repeticion_AvisoLeeLaRepeticion — sin repetición medida no hay «0 inestables», y un recuento no lo calla', () => {
+  // 🔴 rojo: el aviso afirma un 0 medido cuando ningún rojo se pudo repetir; o, tras un recuento a mano que vuelve
+  // `inestables` a null, el rojo que pasó a inestable deja de contar y el aviso se calla
+  const b = banco();
+  const base = { kind: 'examen-periodico', estado: 'completo', alcance: 'completo', ts: new Date().toISOString(), maquina: 'mini',
+    tool: 'claude', runs: 1, criterio: 0, paridadReal: null, baselineRegressions: 0, erroresDeCorrida: 0, fugas: 0 };
+  escribir(b.reporteQueViaja, { ...base, criterio: 1, inestables: null, repeticion: { repetidos: 1, inestables: 0, siguen: 0, sin_repetir: 1 } });
+  let a = avisar(b);
+  assert.doesNotMatch(a.stdout, /0 inestables de/, a.stdout);
+  assert.match(a.stdout, /inestables NO MEDIDOS.*1 rojo\(s\) no se pudieron repetir/, a.stdout);
+  escribir(b.reporteQueViaja, { ...base, inestables: null, repeticion: { repetidos: 1, inestables: 1, siguen: 0, sin_repetir: 0 } });
+  a = avisar(b);
+  assert.match(a.stdout, /1 inestables de 1 que fallaron y se repitieron/, `el recuento no calla al inestable: «${a.stdout}»`);
 });

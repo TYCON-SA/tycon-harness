@@ -18,8 +18,11 @@
  * código adentro, una copia con otro nombre, y un programa de texto que además ejecuta (`awk` con `system`).
  *
  * Uso: llamadas(comando, { shell: 'bash' | 'powershell' }) → [{ guion, sub, args: [{ texto, literal }], dudosa, asig }]
- *      escapeDe(llamada, sid) → 'set-autonomous' | 'cerrar la ejecución' | 'cerrar como deuda' | 'force-manual' |
- *      'trust-ran' | 'no-deep-review' | null
+ *      escapeDe(llamada, sid, comando?) → 'set-autonomous' | 'cerrar la ejecución' | 'cerrar como deuda' |
+ *      'rojo esperado de la matriz' | 'force-manual' | 'trust-ran' | 'no-deep-review' | null. Con `comando`, el
+ *      comando entero en la forma canónica de la firma de force-manual o trust-ran no es un escape: lo firma su guion en
+ *      la ventana.
+ *      detalleDeLaLlamada(llamada) → la huella de la lista y la fecha de un `expect-red`, o null.
  */
 
 const PREFIJOS = new Set(['sudo', 'env', 'exec', 'command', 'nohup', 'time', 'nice', 'timeout', 'xargs', 'builtin',
@@ -75,12 +78,18 @@ function tramos(cmd, shell) {
   let tramo = { palabras: [], heredocs: [] };
   let palabra = null;
   let abierta = false;
+  let separador = null;
+  let conParentesis = false;
   const pendientes = []; // heredocs que empiezan al terminar el renglón: { fin, tabs, citado, tramo }
   const empezar = () => { if (!palabra) palabra = { texto: '', literal: true }; };
   const cerrarPalabra = () => { if (palabra) tramo.palabras.push(palabra); palabra = null; };
   const cerrarTramo = () => {
     cerrarPalabra();
-    if (tramo.palabras.length || tramo.heredocs.length) salida.push(tramo);
+    if (tramo.palabras.length || tramo.heredocs.length) {
+      tramo.tras = separador;
+      separador = null;
+      salida.push(tramo);
+    }
     tramo = { palabras: [], heredocs: [] };
   };
   // `$(…)` o `<(…)` que abre en `i`: su comando va a `subs`, la palabra deja de ser literal; devuelve dónde cierra
@@ -153,7 +162,10 @@ function tramos(cmd, shell) {
       const actual = tramo;
       cerrarTramo();
       // un heredoc pendiente sigue perteneciendo a su tramo aunque el renglón siga (`cat <<EOF | bash`)
-      if (c === '|') tramo.desde = actual;
+      // un `||` queda como una tubería a propósito: el atajo de los lectores lo mira como una sola cadena y frena de más
+      // (`ls <historia> || rsync …` frena; casos: skills/tycon-pipeline/scripts/tests/bash-write-read-only.test.js)
+      if (c === '|') { tramo.desde = actual; separador = '|'; }
+      if (c === '(' || c === ')') conParentesis = true;
       continue;
     }
     if (c === '\\' && !ps) {
@@ -205,7 +217,62 @@ function tramos(cmd, shell) {
     palabra.texto += c;
   }
   cerrarTramo();
-  return { tramos: salida, subs, abierta };
+  return { tramos: salida, subs, abierta, conParentesis };
+}
+
+// Los subcomandos de `pipeline.js` que sólo leen, y los que además reciben una lista de archivos sin correrlos
+const PIPELINE_LEE = new Set(['risk-class', 'followups-status']);
+const PIPELINE_LISTA = new Set(['advisors', 'check-count', 'smart-reloop', 'deep-review-gate', 'mech-check', 'risk-class', 'model-hint']);
+const BIBLIOTECA_DE_FIRMA = ['harness', 'sign'].join('-');
+const LEEN_LO_QUE_NOMBRAN = new Set(['grep', 'echo', 'cat', 'head', 'tail', 'wc', 'ls']);
+const GIT_QUE_SOLO_LEE = new Set(['log', 'show', 'diff', 'status']);
+
+function esElPipelineInstalado(ruta) {
+  const fs = require('fs');
+  const path = require('path');
+  try {
+    const dada = path.resolve(ruta.replace(/^~(?=\/)/, require('os').homedir()));
+    return fs.realpathSync(dada) === fs.realpathSync(path.join(__dirname, '..', 'pipeline.js'));
+  } catch { return false; }
+}
+
+function tramoQueLeeLaFirma(w) {
+  if (!w.length) return false;
+  if (w.some((p) => p.startsWith('-') && (p.includes(BIBLIOTECA_DE_FIRMA) || p === '--output' || p.startsWith('--output=')))) return false;
+  if (LEEN_LO_QUE_NOMBRAN.has(w[0])) return true;
+  if (w[0] === 'git') return GIT_QUE_SOLO_LEE.has(w[1]);
+  if (w[0] !== 'node' || !w[1] || !PIPELINE_LISTA.has(w[2]) || !esElPipelineInstalado(w[1])) return false;
+  return w.every((p, k) => !p.includes(BIBLIOTECA_DE_FIRMA) || w[k - 1] === '--files');
+}
+
+/**
+ * Qué hace con la biblioteca de firma un comando que la nombra: `'lee'`, `'corre'` (cualquier forma que no sea leer) o
+ * `'ilegible'`. Va carácter por carácter y sin expresiones: lo que no está en la lista de lo que sólo lee no se analiza.
+ */
+function leerFirma(cmd) {
+  const lista = [[]];
+  let palabra = null;
+  let comilla = null;
+  let fueraDeLaForma = false;
+  const cerrar = () => { if (palabra !== null) lista[lista.length - 1].push(palabra); palabra = null; };
+  for (const c of String(cmd)) {
+    if (c === '\r') return 'ilegible';
+    const permitido = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || '_./:,@%+-'.includes(c);
+    if (comilla) {
+      if (c === comilla) comilla = null;
+      else if (permitido || c === ' ' || c === '|' || c === "'" || c === '"') palabra += c;
+      else fueraDeLaForma = true;
+    } else if (c === "'" || c === '"') {
+      comilla = c;
+      if (palabra === null) palabra = '';
+    } else if (c === ' ') cerrar();
+    else if (c === '|') { cerrar(); lista.push([]); }
+    else if (permitido) palabra = (palabra || '') + c;
+    else fueraDeLaForma = true;
+  }
+  if (comilla) return 'ilegible';
+  cerrar();
+  return !fueraDeLaForma && lista.every(tramoQueLeeLaFirma) ? 'lee' : 'corre';
 }
 
 const base = (t) => t.replace(/\{[^}]*\}/g, '').split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, '');
@@ -216,17 +283,10 @@ const CORRE_NODE = /(^|[\s;&|(]|\/)(node|nodejs|bun)(\.exe)?\s/i;
 const NODES = new Set(['node', 'nodejs', 'bun']);
 // las opciones de `node` que llevan su valor en la palabra siguiente: ese valor no es el guion
 const NODE_CON_VALOR = new Set(['-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions']);
-// las opciones de `node` cuyo valor es el código que corre: ese código se lee como el guion. Puede correr lo que
-// recibe en sus argumentos (`node -e 'spawnSync(process.argv[1],…)' "$S" start --no-deep-review`), y distinguirlo del
-// de una sonda pide leer JavaScript: con llaves o comodines, se lee como un guion escondido (freno aceptado por duda)
-const NODE_CODIGO = new Set(['-e', '-p', '--eval', '--print']);
-// apagar el pase adversarial, escrito en el comando: con el pipeline o el marcador nombrados en el mismo comando que
-// corre node, cuenta aunque el lector no vea cómo los une el código (un `node -e` que los recibe por el ambiente)
-// con o sin `.js`: `node pipeline` corre `pipeline.js`
-const NOMBRA_GUION_JS = /(^|[^\w.-])(marker|pipeline)(\.js)?(?![\w.-])/i;
-// node en cualquier lugar del comando, también al final o pegado a `<<<` (no sólo con un espacio después)
-const CORRE_NODE_SUELTO = /(^|[\s;&|(]|\/)(node|nodejs|bun)(\.exe)?(?![\w.-])/i;
-const APAGA_EL_PASE = /(^|[^\w-])--no-deep-review(?![\w-])/;
+// las opciones de `node` cuyo valor es el código que corre: con ellas no hay guion, y lo que sigue son argumentos del
+// código. Un `marker.js` o `pipeline.js` escrito entre ellos se lee igual, palabra por palabra. Lo que el código arme
+// por su cuenta no se lee: apagar el pase pide la constancia firmada por el dueño, y esconder la bandera no lo apaga
+const NODE_INLINE_CODE = new Set(['-e', '-p', '-pe', '--eval', '--print']);
 
 /** El programa del tramo: saltea asignaciones, redirecciones y prefijos (`sudo`, `xargs`) con sus opciones. */
 function programa(palabras) {
@@ -255,11 +315,6 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
   // armado por el shell (`pipelin?.js`, `mar$'k'er.js`)
   const plano = String(cmd).replace(/\\\r?\n/g, '').replace(/["'\\`]/g, '');
   if (hondo > 4 || !(NOMBRA_GUION.test(plano) || CORRE_NODE.test(plano))) return fuera;
-  // en todo el comando, también en el cuerpo de cualquier heredoc: uno que se escribe en un archivo puede correrse
-  // después (`./a.sh`, `make`), y distinguirlo pide leer shell. Las notas con ese texto se escriben con Edit/Write
-  if (CORRE_NODE_SUELTO.test(plano) && NOMBRA_GUION_JS.test(plano) && APAGA_EL_PASE.test(plano)) {
-    fuera.push({ guion: 'pipeline', sub: 'start', args: [{ texto: '--no-deep-review', literal: true }], dudosa: false, asig: {}, envFile: false, porXargs: false });
-  }
   const { tramos: lista, subs, abierta } = tramos(cmd, shell);
   for (const interno of subs) fuera.push(...llamadas(interno, { shell }, hondo + 1));
   // las variables asignadas con un valor literal en este comando (`F=--trust-ran; …`): escapeDe las lee por su valor.
@@ -301,11 +356,13 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
     // el guion que corre `node`: la primera palabra después que no es una opción, ni el valor de una opción que lo
     // lleva aparte (`-r x`), ni el `run` de `bun run`
     let posGuion = -1;
+    // con código en línea, la palabra del código: lo que sigue son sus argumentos
+    let posCodigo = -1;
     if (NODES.has(p.nombre)) {
       for (let k = p.i + 1; k < pal.length; k++) {
         const x = pal[k].texto;
-        // un código que empieza con `-` se saltea como una opción, igual que antes: el guion es lo que sigue
-        if (NODE_CODIGO.has(x)) { if (k + 1 < pal.length && !/^-/.test(pal[k + 1].texto)) { posGuion = k + 1; break; } continue; }
+        if (NODE_INLINE_CODE.has(x)) { posCodigo = k + 1; break; }
+        if (/^--(eval|print)=/.test(x)) { posCodigo = k; break; }
         if (NODE_CON_VALOR.has(x)) { k++; continue; }
         if (/^-/.test(x) || (p.nombre === 'bun' && x === 'run' && k === p.i + 1)) continue;
         posGuion = k;
@@ -323,14 +380,19 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
         .some((v) => asig[v[1]] === null || (typeof asig[v[1]] === 'string' && /\s/.test(asig[v[1]])));
       const nombreFijo = ultimo !== w.texto && /^[^$*?[{`'"]+$/.test(ultimo) && !/[$`*?[{]/.test(sinVariables)
         && !(w.partida && partible);
-      const escondido = m === posGuion && !guionDe(w.texto) && !nombreFijo && (!w.literal || /[*?[{]/.test(w.texto));
+      const armado = !guionDe(w.texto) && !nombreFijo && (!w.literal || /[*?[{]/.test(w.texto));
+      // un argumento del código en línea que el shell arma con el nombre a la vista (`pipelin?.js`, `$(echo marker.js)`):
+      // se lee como un guion escondido, igual que sin el código. De una sustitución el lector guarda sólo `$(…)`: cuenta
+      // si el comando nombra alguno de los dos guiones
+      const armadoTrasCodigo = posCodigo >= 0 && m > posCodigo && armado
+        && (NOMBRA_GUION.test(w.texto.replace(/["'\\`]/g, '')) || /[*?[][^/]*\.js$/i.test(w.texto)
+          || (/\$\(…\)|`…`/.test(w.texto) && NOMBRA_GUION.test(plano)));
+      const escondido = (m === posGuion && armado) || armadoTrasCodigo;
       const guiones = guionDe(w.texto) ? [guionDe(w.texto)] : escondido ? ['pipeline', 'marker'] : [];
       const guion = guiones[0];
       if (guion) {
         if (deTexto && m !== p.i) continue;
         let args = pal.slice(m + 1);
-        // después del código de `node -e`, node descarta un `--`: no es el subcomando
-        if (m === posGuion && m > 0 && NODE_CODIGO.has(pal[m - 1].texto) && args.length && args[0].literal && args[0].texto === '--') args = args.slice(1);
         // `marker.js{,} clear` se expande a dos `marker.js`: la segunda no es el subcomando
         while (args.length && guionDe(args[0].texto) === guion) { args = args.slice(1); m++; }
         // el subcomando en una variable asignada en el mismo comando (`S=start; pipeline.js $S`) se lee por su valor,
@@ -369,7 +431,7 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
 
 /**
  * Lo que la llamada pide decidir a la persona: 'set-autonomous', 'cerrar la ejecución', 'force-manual', 'trust-ran',
- * 'no-deep-review' o null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
+ * 'no-deep-review', la variable que un `--env-file` puede traer ('TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW') o null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
  */
 // Las opciones que llevan valor, por guion: lo que va después de una de ellas es su valor (`--repo $PWD`). Las de
 // `pipeline.js` se leen de su propio lector de opciones (las que consumen `argv[++i]`), así una opción nueva no queda
@@ -379,7 +441,7 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
 const CON_VALOR_MARKER = ['--files', '--reason', '--run', '--result', '--model', '--classes', '--tests', '--own', '--in',
   '--deferred', '--type', '--approved', '--approved-by', '--delegated-by', '--agent', '--relayed-by', '--quote', '--debt',
   '--rule', '--file', '--iter', '--story', '--repo', '--mockup-approved', '--evidence-dir', '--max-mutants', '--cost-tier',
-  '--session-model', '-r'];
+  '--session-model', '--for-session', '-r'];
 const conValorCache = {};
 function opcionesConValor(guion) {
   if (guion !== 'pipeline') return conValorCache.marker || (conValorCache.marker = new Set(CON_VALOR_MARKER));
@@ -458,22 +520,49 @@ function lectorDeBanderas(llamada) {
   return pide;
 }
 
-function escapeDe(llamada, sid) {
+/** El id de la firma `guion` del comando entero en su forma canónica, o null (owner-window.js, que lee este archivo). */
+function canonicaDe(comando) {
+  let ow;
+  try {
+    ow = require(require('path').join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  } catch (e) {
+    // sin la ventana, la forma canónica se trata como escape y el freno la niega; el motivo queda en el registro
+    try {
+      const path = require('path');
+      const dir = require('./state-dir.js').stateDir();
+      require('fs').mkdirSync(dir, { recursive: true });
+      require('fs').appendFileSync(path.join(dir, 'hook-errors.log'),
+        `[${new Date().toISOString()}] marker-command: no cargó owner-window.js (${e && e.message}); la forma canónica se lee como escape\n`);
+    } catch (_) { /* el registro es ayuda: el freno sigue negando igual */ }
+    return null;
+  }
+  const c = ow.canonicaDe(String(comando));
+  return c ? c.id : null;
+}
+
+function escapeDe(llamada, sid, comando = null) {
   const { sub, args } = llamada;
   const lit = (a) => a && a.literal;
   const pide = lectorDeBanderas(llamada);
+  // el comando entero en la forma canónica de la firma la pide su guion en la ventana: no es un escape del freno
+  const porSuGuion = (esc) => comando != null && canonicaDe(comando) === `escape:${esc}`;
   if (llamada.guion === 'pipeline') {
     // `check-count --trust-ran`: la lista de revisores la da el agente y el arnés no la vio correr
-    if (sub === 'check-count') return pide('--trust-ran') ? 'trust-ran' : null;
+    if (sub === 'check-count') return pide('--trust-ran') && !porSuGuion('trust-ran') ? 'trust-ran' : null;
     // apagar el pase adversarial al arrancar la historia o al consultar el portón; un `--env-file` delante del guion
     // puede traer `TYCON_NO_DEEP_REVIEW` sin que el comando la muestre
     if (sub === 'start' || sub === 'deep-review-gate') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
+    // la revisión de la historia (`validators`, su nombre viejo y su portón): el archivo puede traer TYCON_STORY_REVIEW
+    if (llamada.envFile && ['validators', 'validadores', 'story-review-gate', null].includes(sub)) return 'TYCON_STORY_REVIEW';
     // sin subcomando a la vista: puede ser cualquiera de los dos
     if (sub === null && llamada.dudosa) return pide('--trust-ran') ? 'trust-ran' : pide('--no-deep-review') ? 'no-deep-review' : null;
     return null;
   }
+  // cerrar las pruebas (por su nombre, el del marcador viejo o en una variable): el archivo puede traer TYCON_MUTATION_CHECK.
+  // El nombre se compara sin los espacios de los costados, como lo lee marker.js
+  if (sub === 'complete-step' && llamada.envFile && (!args[0] || !lit(args[0]) || ['run-tests', 'implement', '4'].includes(args[0].texto.trim()))) return 'TYCON_MUTATION_CHECK';
   // `set-check <nombre> <estado> --force-manual`: un control declarado a mano, en cualquier estado
-  if (sub === 'set-check') return pide('--force-manual') ? 'force-manual' : null;
+  if (sub === 'set-check') return pide('--force-manual') && !porSuGuion('force-manual') ? 'force-manual' : null;
   // `mark-adversarial-skipped --no-deep-review`: abandonar el pase aunque el portón diga que corre
   if (sub === 'mark-adversarial-skipped') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
   // sin subcomando a la vista (por `xargs`, en una variable, tras una comilla sin cerrar): puede ser `clear`
@@ -484,8 +573,11 @@ function escapeDe(llamada, sid) {
     return lit(v) && ['true', '1', 'on'].includes(v.texto) ? null : 'set-autonomous';
   }
   if (sub === 'clear') return 'cerrar la ejecución';
-  // cerrar la historia como deuda, o registrar un control en rojo como esperado: siempre lo decide la persona
-  if (sub === 'close-as-debt' || sub === 'expect-red') return 'cerrar como deuda';
+  // cerrar la historia como deuda, o registrar un control en rojo como esperado: siempre lo decide la persona. El rojo
+  // esperado de la matriz tiene su propia firma, que muestra los criterios y la fecha; un control que no se ve
+  // (`expect-red "$C"`) puede ser la matriz
+  if (sub === 'close-as-debt') return 'cerrar como deuda';
+  if (sub === 'expect-red') return !args[0] || !lit(args[0]) || args[0].texto === 'acmatrix' ? 'rojo esperado de la matriz' : 'cerrar como deuda';
   if (sub === 'clear-session') {
     const v = args[0];
     if (!v || !lit(v)) return 'cerrar la ejecución';
@@ -503,15 +595,54 @@ function escapeDe(llamada, sid) {
 /**
  * La salida de una ejecución perdida (lib/open-runs.js): `marker.js clear-session <sesión> --lost` o `marker.js restore
  * <sesión>`. Pide la frase del dueño siempre, también sin marcador y para otra sesión. Un argumento que no se ve después
- * de la sesión puede ser `--lost`. Devuelve `{ sesion }` (null si la sesión no se ve) o null.
+ * de la sesión puede ser `--lost`. Devuelve `{ sesion }` (null si la sesión no se ve) o null; `restore` suma `destino`, la
+ * sesión de `--for-session` si se ve: es la que el restore escribe.
  */
 function salidaPerdida(llamada) {
   if (!llamada || llamada.guion !== 'marker') return null;
   const a = llamada.args || [];
   const sesion = a[0] && a[0].literal ? a[0].texto : null;
-  if (llamada.sub === 'restore') return { sesion };
+  if (llamada.sub === 'restore') {
+    const i = a.findIndex((x) => x.literal && x.texto === '--for-session');
+    return { sesion, ...(i >= 0 && a[i + 1] && a[i + 1].literal ? { destino: a[i + 1].texto } : {}) };
+  }
   if (llamada.sub === 'clear-session' && (llamada.porXargs || a.slice(1).some((x) => !x.literal || x.texto === '--lost'))) return { sesion };
   return null;
 }
 
-module.exports = { llamadas, escapeDe, lectorDeBanderas, salidaPerdida, tramos };
+/**
+ * La huella de un rojo esperado: el control, sus pruebas (ordenadas, sin repetir) y la fecha de vencimiento. La anota el
+ * freno con la constancia de la firma y la compara `marker.js expect-red`: así la firma vale para la lista y la fecha que
+ * mostró la ventana, no para otras.
+ */
+function detalleDelRojoEsperado(control, pruebas, fecha) {
+  const lista = [...new Set((pruebas || []).map((t) => String(t).trim()).filter(Boolean))].sort();
+  // la fecha se recorta acá, del lado del freno y del de marker.js: con espacios alrededor es la misma firma
+  const dia = String(fecha == null ? '' : fecha).trim();
+  return require('crypto').createHash('sha256').update(`${control}|${lista.join(',')}|${dia}`).digest('hex');
+}
+
+/**
+ * La huella de una llamada `expect-red`, leída de sus argumentos (`<control> --tests <lista> --until <fecha>`), o null si
+ * alguno no está escrito tal cual: sin la huella, `marker.js` no acepta la constancia.
+ */
+function detalleDeLaLlamada(llamada) {
+  if (!llamada || llamada.sub !== 'expect-red') return null;
+  const a = llamada.args || [];
+  if (a.some((x) => !x.literal)) return null;
+  const valor = (n) => { const i = a.findIndex((x) => x.texto === n); return i >= 0 && a[i + 1] ? a[i + 1].texto : null; };
+  const control = a[0] ? a[0].texto : null;
+  const pruebas = valor('--tests');
+  const fecha = valor('--until');
+  if (!control || !pruebas || !fecha) return null;
+  return detalleDelRojoEsperado(control, pruebas.split(','), fecha);
+}
+
+module.exports = { llamadas, escapeDe, lectorDeBanderas, salidaPerdida, tramos, detalleDelRojoEsperado, detalleDeLaLlamada, leerFirma, PIPELINE_LEE, PIPELINE_LISTA };
+
+// El freno de seguridad pregunta por acá, con el comando en la entrada. Sin respuesta clara, ese freno frena.
+if (require.main === module && process.argv[2] === '--sign-gate') {
+  let respuesta = '?';
+  try { respuesta = { lee: '0', corre: '1', ilegible: '?' }[leerFirma(require('fs').readFileSync(0, 'utf8'))]; } catch { /* queda «no se sabe» */ }
+  process.stdout.write(`firma=${respuesta}\n`);
+}

@@ -18,7 +18,7 @@
  *   node response-style-meter.js --report        # estadística de cumplimiento
  *   node response-style-meter.js --report --all  # incluye el detalle por turno
  *
- * Opt-out: TYCON_RESPONSE_METER=0
+ * Opt-out: TYCON_RESPONSE_METER=0 en la máquina, o `switches.response_meter: "off"` en el perfil (la variable gana).
  * Umbrales:  TYCON_RESPONSE_MAX_PROSE_CHARS (el que importa; sin la variable, `response.max_chars` de la configuración
  *            o el tope del estilo elegido, y 1300 si no se pudo leer) · TYCON_RESPONSE_MAX_LINES (15)
  *            · TYCON_RESPONSE_MAX_HEADERS (1) · TYCON_RESPONSE_MAX_SENTENCE_WORDS (35)
@@ -28,9 +28,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
-const STATE_DIR = path.join(os.homedir(), '.claude', 'response-style');
+// la carpeta de los registros sueltos (scripts/lib/loose-logs.js): la del estado en una máquina que vive en la casa
+// propia del arnés, la de siempre en las demás. Sin ella (un árbol sin tycon-home.js) el medidor no mide: `main` sale
+// antes de usar estas rutas.
+const LOOSE_DIR = (() => { try { return require('../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();
+const STATE_DIR = path.join(LOOSE_DIR || '', 'response-style');
 const LOG_PATH = path.join(STATE_DIR, 'log.jsonl');
 const PENDING_DIR = path.join(STATE_DIR, 'pending');
 const LONG_DIR = path.join(STATE_DIR, 'long');
@@ -266,11 +269,23 @@ function report(showAll) {
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
+// La organización puede apagar o encender este medidor desde el sitio (`switches.response_meter` del perfil); la variable
+// TYCON_RESPONSE_METER de la máquina, si está puesta, gana. Sin lector, o con la configuración rota, sigue encendido: una clave
+// que no se puede leer no lo apaga, y el aviso va a stderr.
+function orgSwitchOn(name) {
+  try {
+    const C = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
+    return C.switchOn(name, { warn: (w) => process.stderr.write(`${w}\n`) });
+  } catch { return true; }
+}
+
 function main() {
   const args = process.argv.slice(2);
+  if (!LOOSE_DIR) { if (args.includes('--report')) console.log('No sé dónde están las mediciones: falta scripts/setup/harness/tycon-home.js en este árbol.'); return; }
   if (args.includes('--report')) { resolverTope(); return report(args.includes('--all')); }
 
   if (process.env.TYCON_RESPONSE_METER === '0') return;
+  if (!orgSwitchOn('response_meter')) return;
   resolverTope();
 
   let event = {};

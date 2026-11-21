@@ -12,11 +12,22 @@ cuando se corre una story a la vez, que es el caso del 95% del tiempo.
 
 ---
 
-> 🔴 **Esto se enforzó con un hook, hoy retirado**: `scripts/hooks/session-collision-guard.js`
-> frena `commit`/`checkout`/`switch`/`rebase`/`stash`/`reset`/`merge`/`pull` cuando OTRA sesión tuvo
-> actividad en el mismo checkout en los últimos 3 minutos, y avisa al abrir una sesión donde ya hay
-> otra viva. Por qué: con dos sesiones sobre el mismo checkout, un commit puede arrastrar una deleción ajena
-> del índice y otro caer en la rama de la otra sesión.
+> 🔴 **Dos sesiones sobre el mismo checkout**: lo que el arnés hace solo, sin depender de que el agente
+> se acuerde de una regla:
+>
+> - **El arranque de una historia crea su copia** cuando hay otra sesión viva en el checkout (su transcripción, un
+>   subagente suyo o su ejecución abierta), sin coordinadora viva y fuera del arnés y `agent-skills`: `pipeline.js start`
+>   la lleva a `<principal>--wt-<clave>` (PIPE-C10, `steps/step-01-start.md`).
+> - **El aviso de llegada sale siempre** (`scripts/hooks/session-collision-guard.js`, al abrir la sesión): nombra a la
+>   otra y le pide al agente que se lo diga a la persona.
+> - **Un stash que se llevaría archivos de otra sesión está frenado**, igual que el `drop`, `pop` o `clear` de lo que
+>   guardó otra (la pila de stash es común a todas las copias del repo). La salida es de la persona:
+>   `TYCON_STASH_GUARD_OK=1` pegado al comando, con constancia.
+>
+> El **freno de git** del mismo guion sigue opcional (`TYCON_SESSION_GUARD=1`): frena
+> `commit`/`checkout`/`switch`/`rebase`/`stash`/`reset`/`merge`/`pull` cuando OTRA sesión tuvo
+> actividad en el mismo checkout en los últimos 3 minutos. Por qué: con dos sesiones sobre el mismo checkout, un
+> commit puede arrastrar una deleción ajena del índice y otro caer en la rama de la otra sesión.
 > En los dos repos donde el worktree está prohibido (éste y `agent-skills`) el consejo es coordinar,
 > no abrir un worktree. Si la persona decide seguir igual porque está coordinado, el comando lleva
 > `TYCON_SESSION_GUARD_OK=1` pegado adelante: pasa y queda constancia, que la revisión de la noche
@@ -36,7 +47,7 @@ cuando se corre una story a la vez, que es el caso del 95% del tiempo.
 
 | Caso | Veredicto | Por qué |
 |---|---|---|
-| **2 pipelines de stories distintas, mismo repo, en paralelo** | ✅ un worktree por story (§3) | Compartiendo working tree hay un solo HEAD, el `git diff HEAD` repo-wide contamina cruzado el set de advisors y el coverage, y `.advisors/tests-result.json` es un único archivo que la 2da corrida pisa. PIPE-C0 ni siquiera lo detecta (matchea por storyId). |
+| **2 pipelines de stories distintas, mismo repo, en paralelo** | ✅ una copia por historia, que crea `start` sola con otra sesión viva (PIPE-C10; §3 para hacerla a mano) | Compartiendo working tree hay un solo HEAD, el `git diff HEAD` repo-wide contamina cruzado el set de advisors y el coverage, y `.advisors/tests-result.json` es un único archivo que la 2da corrida pisa. PIPE-C0 no lo detecta (matchea por storyId): lo ve PIPE-C10, por las sesiones vivas del checkout. |
 | **`/tycon-merge-to-main` sin congelar el working tree del dev** | ✅ worktree persistente `--merge` (§4) | El merge hoy checkoutea `<target>` EN TU working tree, corre build+tests ahí, y recién al final te devuelve la branch. Con working tree sucio directamente aborta o stashea. |
 | **Fan-outs (tool `Workflow` / `Agent`) con agentes que ESCRIBEN en paralelo** | ✅ `isolation: 'worktree'` (§5) | Aísla las escrituras de cada agente; el worktree se auto-limpia si el agente no cambió nada. |
 | Advisors del Step 5 del pipeline | ❌ | Son read-only por frontmatter (`Read, Grep, Glob`; ninguno tiene `Write`/`Edit` salvo `tycon-retrospective-capturer`). No hay nada que aislar. |
@@ -159,6 +170,42 @@ HEAD **ya en origin/main**, con `git worktree remove` sin `--force` y `git branc
 
 Nunca toca el checkout principal, uno bloqueado (`git worktree lock`) ni el de la sesión. Apagar:
 `TYCON_WORKTREE_SWEEP=0`. Ver qué haría: `--force --dry-run`.
+
+---
+
+## 8. Puestos fijos: la opción `--slot`
+
+La coordinadora abre cada sesión de fondo en una copia hermana del repo (`<repo>--wt-<nombre>`, desde `origin/main`):
+Claude Code la acepta si la carpeta principal ya está aprobada (`guides/coordination.md`, «Abrir y nombrar las
+sesiones»). Los **puestos** quedan como opción, con `coordination.js open --repo <repo> --slot`, para una versión de
+Claude Code que pida aprobar cada copia: son worktrees que no se borran, siempre las mismas carpetas, aprobadas una vez,
+y cada trabajo cambia de rama adentro. Nada crea puestos si no se piden.
+
+```
+<parent>/<RepoName>--slot-<n>      # n de 1 al tope de sesiones (coordination.max_working; 3 sin valor)
+```
+
+- Están **bloqueados** (`git worktree lock`): el barrido del §7 no los toca.
+- Uno está **libre** si está sin rama, sobre main, y sin cambios sin commitear. Uno con rama, o con cambios, lo está
+  usando un trabajo.
+- Si el tope sube, se crean los que faltan. Si baja, no se borra ninguno.
+- El clon de `agent-skills` no lleva puestos: su freno de staging mira la ruta literal.
+
+El guion es `scripts/tools/work-slots.js` (node: anda igual en Windows); `tycon-worktree.sh slot …` es un atajo.
+
+```bash
+node scripts/tools/work-slots.js take --branch <rama>   # toma el primero libre y cambia ahí a la rama; imprime su cd
+node scripts/tools/work-slots.js release                # desde el puesto: lo deja sobre main, libre; la rama queda
+node scripts/tools/work-slots.js list                   # libres y ocupados, cada uno con su cd
+node scripts/tools/work-slots.js pending-trust          # los que Claude Code todavía no aprobó, con su cd
+```
+
+`take` crea la rama desde origin/main si no existe; `release` se niega si quedan cambios sin commitear. La coordinadora
+abre una sesión de fondo en un puesto con `coordination.js open --repo <repo> --slot` (`guides/coordination.md`).
+
+Para aprobarlos de una tanda, el dueño corre cada línea que imprime `pending-trust` (`cd "<puesto>" && claude`) y
+acepta la pregunta de Claude Code. Es una vez por puesto; la aprobación la da una persona, el guion no la escribe. Un
+puesto de un repo con la carpeta principal aprobada no sale en la lista.
 
 ---
 

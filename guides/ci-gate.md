@@ -1,6 +1,13 @@
 # El portón de CI — lo que igual se verifica cuando el commit ya llegó al servidor
 
-> ## ✅ Estado: ADOPTADO Y **BLOQUEANTE** en el piloto (frontend y backend de un producto del equipo, 2026-08-30)
+**Qué significa su visto bueno: hay archivos con el nombre correcto y lo que el servidor verificó él mismo; el servidor no re-ejecuta nada.**
+Cada chequeo dice su nivel en la salida y en `--json` (`verificacion`): «verificado por el servidor», «archivo
+presente», «ejecución registrada» o «no medido». Un ✅ no quiere decir «se probó».
+
+> **Adopción, medido el 2026-08-31** (el piloto de un producto del equipo es del 2026-08-30): 13 repos de cuatro
+> productos, código y especificaciones, y el portón vigilaba 470 de 470 historias (33 antes de corregir **dónde**
+> estaba instalado: la trampa (c), más abajo). Es una medición de esa fecha, no el estado de hoy: el de hoy lo
+> dice cada noche el inventario de adopción (§«Dónde no está: el inventario de cada noche»).
 >
 > Con "un solo dev, siempre en la misma máquina, con el arnés puesto", un control cuyo caso no
 > existe es ceremonia. El portón se adopta porque **el equipo son varias personas, a veces sobre
@@ -8,15 +15,58 @@
 >
 > **Bloqueante desde el primer día**, no en modo aviso: en modo aviso, si el portón no puede ni
 > arrancar (un permiso), el merge pasa igual, con apariencia de control instalado. "No pude ni
-> arrancar" y "corrí y avisé" son resultados distintos, y el aviso no los distingue.
->
-> ## ✅ Rollout COMPLETO en los cuatro productos (2026-08-31) — **13 repos**
->
-> Totora, Ceibo, URUTAU y Lapacho, código **y especificaciones**. Cobertura medida:
-> **33 de 470 stories → 470 de 470**.
->
-> 🔴 Ese salto no es del rollout: es de haber corregido **dónde** estaba instalado. Ver la
-> trampa (c) más abajo — el portón llevaba un día instalado y vigilaba el 7% de las stories.
+> arrancar" y "corrí y avisé" son resultados distintos, y el aviso no los distingue. Frena sólo donde la rama
+> principal exige su compilación (la política de rama en Azure, el control requerido en GitHub).
+
+## Lo que el portón NO resuelve
+
+- **No re-ejecuta nada**: no compila, no corre pruebas, no levanta la app. Lo que corrió, corrió en la máquina del dev.
+- **De lo que dice la evidencia de cierre sólo lee si declara FAIL**: una evidencia que dice «hola» pasa (nivel
+  «ejecución registrada: no declara FAIL»), aunque la corrida no haya probado nada.
+- **Lo escrito en la máquina del dev no tiene procedencia**: el registro de autoría y el de aprobaciones son «ejecución
+  registrada»: tienen forma válida, no prueban quién los escribió.
+- **La exención no se firma en el servidor**: se exige y se muestra su razón (`<campo>_reason`), no quién la autorizó.
+  Una exención sin razón avisa hasta el 2026-12-03 y frena desde ese día (`exencion-sin-razon`).
+- **Es opt-in por repo**: un repo sin el pipeline, o sin la política que lo exige, no tiene red del servidor y no da
+  error. Lo cuenta el inventario de cada noche.
+- **Sólo mira historias que pasan a `review`/`done`**: un cambio de código que no toca una historia pasa (§«Lo que este
+  control NO cubre»).
+
+## Dónde no está: el inventario de cada noche
+
+`scripts/nightly/gate-adoption/gate-adoption.js` lee por la API de Azure DevOps (los proyectos de la organización) o
+de GitHub (la organización), sin clonar, y da un estado por repo:
+
+| Estado | Qué quiere decir |
+|---|---|
+| `requerido` | la rama principal exige una compilación cuyo YAML nombra `tycon-ci-gate.js` |
+| `requerido-con-escape` | lo mismo, y ese YAML trae `continueOnError: true`, `continue-on-error: true` o `\|\| true` en una línea que no es comentario (en cualquier paso: el guion no separa pasos) |
+| `pipeline-sin-política` | hay una compilación cuyo YAML lo nombra y la rama no la exige |
+| `sin-portón` | ningún YAML lo nombra |
+| `no-aplica` | repo vacío, archivado o sin rama principal |
+| `no-medido` | la API no contestó, contestó un error o un 403, o el YAML no se pudo leer. Nunca `sin-portón` |
+
+`requerido` no prueba que el portón corra de verdad: dice que la rama exige una compilación cuyo YAML lo nombra. No
+mira si la definición de la compilación está habilitada ni si el paso que lo nombra se ejecuta.
+
+Además, la cuenta es la de los repos que la credencial ve. Sin credencial no se mide nada y la línea sale `?` (GitHub
+listaría sólo los repos públicos); una credencial sin alcance sobre los repos privados los deja afuera sin error, y eso
+no se puede detectar desde la API.
+
+El detalle por repo queda en el registro del pipeline; al resumen diario llega una sola línea, sólo con números:
+`Portón de CI (repos): requerido N · con escape N · pipeline sin política N · sin portón N · no aplica N · no medido N`
+(`?` si la lista de repos no se pudo leer entera). Mide la rama principal de cada repo. Con Azure y GitHub a la vez, la
+línea es la suma de las dos; si a una le falta la suya, sale `?`. Lo corre la revisión nocturna (`production-watch.yml`) cuando la
+organización carga sus parámetros: `gateAdoptionAzureProjects` (proyectos separados por coma) o
+`gateAdoptionGithubOrg`. Con GitHub, la compilación nocturna necesita además la variable secreta `GH_TOKEN`, con lectura
+sobre los repos privados de la organización.
+
+## La versión del portón que baja cada organización
+
+Las dos plantillas del repo de historias (`stories-gate.yml`, Azure y GitHub) bajan el arnés de `main` por defecto e
+imprimen el commit que usaron, para poder reproducir un veredicto viejo. Para fijarla, una variable: `harnessRef` en
+Azure, la variable del repo `TYCON_HARNESS_REF` en GitHub (rama, etiqueta o commit). Quien la fija queda atrás en los
+arreglos hasta que la sube.
 
 ## Qué chequea — y por qué sólo esto
 
@@ -28,7 +78,7 @@ sería peor que no tenerlo.
 | Chequeo | Qué atrapa |
 |---|---|
 | **Frontmatter legible** | Una story cuyo frontmatter no cierra. Las tools del arnés no dan error con eso: la **saltean en silencio** (medido en un producto del equipo: 4 stories invisibles durante 2 meses, una tapando una deuda de evidencia). |
-| **Evidencia de cierre** | Una story que pasa a `review`/`done` sin su `.advisors/dod-runtime/<id>-*.md` **en el repo** (un `.md` real: la matriz por AC, el self-audit y el plan manual no cuentan — 2026-09-05). Es la mitad del gate local que no depende de la sesión. Si el código vive en otro repo, la evidencia igual nace acá: ver §"Stories en un repo, código en otro". Escape declarado: `dod_runtime_exempt: true` + razón, que lo decide la persona (el arnés le pide la firma `marker.js sign-file dod_runtime_exempt <historia>` en cualquier estado, también al crear la story). |
+| **Evidencia de cierre** | Una story que pasa a `review`/`done` sin su `.advisors/dod-runtime/<id>-*.md` **en el repo** (un `.md` real: la matriz por AC, el self-audit y el plan manual no cuentan — 2026-09-05). Es la mitad del gate local que no depende de la sesión. Si el código vive en otro repo, la evidencia igual nace acá: ver §"Stories en un repo, código en otro". Escape declarado: `dod_runtime_exempt: true` + razón, que lo decide la persona (el arnés le pide la firma `marker.js sign-file dod_runtime_exempt <historia>` en cualquier estado, también al crear la story). La evidencia se busca en git (en el índice con `--staged`), y de lo que dice sólo se lee si declara FAIL (§«Límite conocido»). |
 | **Constancia de revisores** | Una story que pasa a `done` sin una corrida del pipeline en el repo (`.advisors/pipeline-runs/<id>-…`). Es el ADVISORS-GATE del pre-commit en su mitad verificable desde el servidor (la otra mitad vive en el `gates.log` local). Escape: `advisors_exempt: true` + razón. |
 
 | **Índice de memoria** (2026-09-17) | Un cambio que deja la memoria de engram a medio declarar: entradas que la rama base declara y este cambio ya no, o archivos de memoria nuevos sin entrada. `engram sync --import` lee el ÍNDICE, no la carpeta, así que un archivo sin entrada **no existe para las demás máquinas y no da error**; y una entrada perdida no vuelve sola. Mismo criterio que el freno del commit (`scripts/lib/manifest-engram.js`) y misma asimetría: lo que este cambio ROMPE frena, lo heredado y lo no comparable avisan. Sólo lee algo si el diff toca `.engram/`. **Acá importa especialmente**: es lo único que ve los commits hechos fuera del asistente — la web de Azure, otra máquina, un hook salteado. |
@@ -179,41 +229,8 @@ política de rama, si no el cambio entra por push directo y no pasa por nada.
 
 ## 🔴 Los DOS permisos que hay que dar en Azure DevOps — y el segundo NO da error claro
 
-Copiar el YAML
-no alcanza: el pipeline necesita **dos** permisos distintos sobre el arnés, y
-si falta cualquiera de los dos el run se cae de una manera que no dice qué le falta.
-
-**(1) Autorizar el RECURSO para ese pipeline.** Sin esto el run queda con un `Checkpoint` en
-`inProgress` y **ninguna etapa arranca** — el tablero muestra todo en `pending` sin un solo
-mensaje de error. Se guarda en el proyecto que CONSUME (no en el del arnés):
-
-```
-PATCH /{proyecto-que-consume}/_apis/pipelines/pipelinePermissions/repository/{projIdArnes}.{repoIdArnes}?api-version=7.1-preview.1
-{"pipelines":[{"id":<id del pipeline>,"authorized":true}]}
-```
-
-**(2) Dar LECTURA del repo del arnés a la identidad de compilación del proyecto.** Éste es el que
-sorprende: con el (1) puesto, el checkpoint pasa y el run arranca… y muere en
-`Checkout tycon-claude-guides@main to tcg` con `Git fetch failed with exit code 128`. Ese 128 no
-dice "te falta un permiso": parece un problema de red o de rama.
-
-La identidad es una por proyecto y su descriptor se arma solo:
-`Microsoft.TeamFoundation.ServiceIdentity;<collectionId>:Build:<projectId>`. Se le da el bit
-`2` (GenericRead) sobre `repoV2/{projIdArnes}/{repoIdArnes}` en el espacio de nombres
-`2e9eb7ed-3c0a-47d4-87c1-0ffdd275fd87` (Git Repositories), vía
-`POST /_apis/accesscontrolentries/{ns}`.
-
-Para verificar de antemano: listar quién tiene lectura sobre ese token y contar. Al 2026-09-01 son
-**siete** identidades de compilación, una por producto que consume el arnés. Si el proyecto nuevo
-no está en esa lista, va a fallar — antes de correr nada.
-
-### El permiso del BUMP, que es otro y va ANTES de la política
-
-Los pipelines que suben el número de versión pushean a `main`. Al poner la política de rama, ese
-push queda bloqueado y **todos los builds de main se ponen rojos**. La salida es darle a esa misma
-identidad de compilación el bit `128` (*saltear políticas al pushear*) sobre el repo de código.
-Verificación: sobre cada repo tiene que haber **exactamente una** identidad con ese bit.
-Hacerlo **antes** de crear la política, no después.
+Los dos permisos (y el del bump, que es otro y va antes de la política), con las llamadas a la API, están en
+`guides/integrations/ado-en-el-nucleo.md`, §«El portón de la CI: los dos permisos».
 
 ## El snippet (Azure DevOps)
 
@@ -290,37 +307,8 @@ Ceibo, Lapacho): el stage de `Build` colgaba de `SecurityScan`, y al volver ése
 
 ## Permisos cross-project — con el scope de jobs CERRADO (medido en un producto del equipo, 2026-08-31)
 
-El portón clona el repo de guías, que vive en **otro proyecto** de ADO. Hay dos caminos para que el
-job pueda hacerlo, y el equipo eligió el cerrado:
-
-| | Scope abierto (`enforceJobAuthScope: false`) | **Scope cerrado (`true`) — el elegido** |
-|---|---|---|
-| Identidad del job | `Project Collection Build Service` (toda la org) | `<Proyecto> Build Service (org-del-equipo)` (solo el proyecto) |
-| Clonar el repo de guías | anda solo | Read (bit 2) sobre el repo **+ membresía en `[tycon-claude-guides]\Readers`** — el Read solo da `TF401019 … does not exist or you do not have permissions` |
-| Push del bump a `main` (bypass de políticas) | `PolicyExempt` (128) en `refs/heads/main` alcanza | `PolicyExempt` (128) **a nivel repo** (`repoV2/<proj>/<repo>`) — el de rama solo NO alcanza: da `TF402455`, y verde a los minutos del grant de repo |
-| Feed de Pacara | reader | reader a la identidad de proyecto (ya estaba) |
-
-Cómo se aplica (namespace `Git Repositories` = `2e9eb7ed-3c0a-47d4-87c1-0ffdd275fd87`; el `Content-Length: 0`
-es obligatorio en el PUT de membresía — sin él, 411):
-
-```bash
-SUBJ="Microsoft.TeamFoundation.ServiceIdentity;c0000000-0000-4000-8000-00000000000c:Build:<projectId>"
-# 1) Readers del proyecto de guías (Graph API; descriptor svc.* del Build Service vía graph/subjectquery)
-curl -u ":$PAT" -X PUT -H "Content-Length: 0" \
-  "https://vssps.dev.azure.com/org-del-equipo/_apis/graph/memberships/<svc.descriptor>/<vssgp.Readers de tycon-claude-guides>?api-version=7.1-preview.1"
-# 2) Read sobre el repo de guías + PolicyExempt a nivel repo en el propio proyecto
-curl -u ":$PAT" -X POST -H "Content-Type: application/json" \
-  "https://dev.azure.com/org-del-equipo/_apis/accesscontrolentries/2e9eb7ed-3c0a-47d4-87c1-0ffdd275fd87?api-version=7.1" \
-  -d '{"token":"repoV2/<projId>/<repoId>","merge":true,"accessControlEntries":[{"descriptor":"'"$SUBJ"'","allow":128,"deny":0}]}'
-# 3) Cerrar el scope
-curl -u ":$PAT" -X PATCH -H "Content-Type: application/json" \
-  "https://dev.azure.com/org-del-equipo/<Proyecto>/_apis/build/generalsettings?api-version=7.1" -d '{"enforceJobAuthScope": true}'
-```
-
-Verificación: `GET _apis/accesscontrollists/<ns>?token=…&includeExtendedInfo=true` (el `effectiveAllow` de la
-identidad tiene que incluir el 128), y un run de `main` que pushee el bump. 🔴 Para re-probar el bump NO
-sirve reintentar el stage Build de un run que ya publicó artefacto ("Artifact … already exists for build N"):
-encolar un run nuevo.
+Con Azure DevOps, los tres permisos y su verificación (con las llamadas a la API) están en
+`guides/integrations/ado-en-el-nucleo.md`, §«El portón de la CI: permisos entre proyectos».
 
 ## El mismo control, ANTES del commit (`--staged`, 2026-09-04)
 
@@ -357,6 +345,7 @@ recién al pull request, después del push. Con el freno en git, ese commit no s
 | lo nuevo | el commit (`HEAD`) | el índice (`git show :ruta`) |
 | lo de antes | la rama destino del pull request | el último commit (`HEAD`) |
 | alcance | todo lo que el pull request agrega | sólo lo que este commit agrega |
+| dónde busca la evidencia | lo que trae el commit | el índice: lo que el commit va a llevar |
 
 Lo ya commiteado **no se vuelve a reclamar**: si mordiera en cada commit por una story cerrada hace
 semanas, el freno se apagaría en una semana. Y `--staged` **ignora `--base`** a propósito: en un
@@ -368,7 +357,7 @@ pre-commit lo de antes es siempre el último commit, no una rama remota.
 node scripts/ci/tycon-ci-gate.js --repo ~/SourceCode/MiRepo --base origin/main
 node scripts/ci/tycon-ci-gate.js --repo ~/SourceCode/MiRepo --base origin/main --json
 node scripts/ci/tycon-ci-gate.js --repo ~/SourceCode/MiRepo --staged   # lo que estás por commitear
-node scripts/ci/tycon-ci-gate.js --selftest      # 22 casos, sin tocar nada
+node scripts/ci/tycon-ci-gate.js --selftest      # el autotest, sin tocar nada
 ```
 
 Exit 0 = al día · exit 1 = hay stories que no deberían haber llegado al servidor, **o no se pudo
@@ -376,40 +365,27 @@ comparar** (no poder mirar nunca se reporta como limpio).
 
 ### Validar una rama del arnés en Azure (2026-10-05)
 
-```bash
-node scripts/ci/queue-validation.js              # la rama actual, pipeline 170
-node scripts/ci/queue-validation.js --dry-run    # qué cortaría y qué encolaría, sin tocar nada
-```
+Con Azure DevOps, cómo se encola la validación de una rama sin dejar validaciones viejas de la misma rama en la cola:
+`guides/integrations/ado-en-el-nucleo.md`, §«El portón de la CI: validar una rama del arnés».
 
-En lugar de `az pipelines run --id 170 --branch <rama>`: antes de encolar, corta las validaciones de **esa misma
-rama** que todavía no terminaron (la nueva prueba lo mismo y más) y borra sus pedidos que esperan carril. Las de otras
-ramas no las toca. Si no puede leer la lista, no corta ni encola nada (sale 2). Por qué: con 4 carriles para toda
-la organización, varias sesiones validando a la vez traban la fila de Azure.
+## Límite conocido: de lo que dice la evidencia, el portón sólo lee si declara FAIL
 
-En esa validación, las suites largas (`scripts/ci/heavy-suites.json`: la copia pública de verdad, la máquina limpia y
-las ~18 del instalador) corren sólo si el cambio toca lo que miden; el banco nocturno las corre siempre.
+El portón lee el veredicto con la misma regla que el freno local (`evidenciaDeclaraFail`, en
+`lib/closing-evidence.js`; el portón lleva una copia comparada por `closing-evidence-parity.test.js`): un FAIL en
+cualquiera de los tres formatos que escribe el pipeline (`verdict=FAIL`, `- verdict: FAIL`, `## Verdict global` + FAIL).
+Si toda la evidencia de cierre de la historia declara FAIL, sale `evidencia-de-cierre-falla`. El registro de humos
+(`-smoke-ledger.jsonl`) no se lee como texto: cuenta como «no FAIL» si tiene al menos una línea con salida 0. Un archivo
+que no es texto, o que git no devuelve, no deja pasar: `veredicto-no-leido`.
 
----
+La evidencia se busca en git: en lo que trae el commit, o en el índice con `--staged`. La que está en el disco y no en
+git sale `sin-evidencia-de-cierre`, y el mensaje nombra el `.gitignore` como causa posible. La carpeta de corrida, igual,
+y su registro de autoría se exige por la fecha en que la carpeta entró en git, no por la fecha del nombre, que elige
+quien crea la carpeta.
 
+**Entra avisando.** Todo esto avisa hasta el 2026-12-07 y frena desde ese día. Lo que ya frenaba antes (sin evidencia
+ni en git ni en el disco) sigue frenando.
 
-## Límite conocido: el portón mira que la evidencia EXISTA, no lo que dice adentro (2026-09-06)
-
-Un `<id>-dod-runtime-checker.md` que dice literalmente «🔴 1 CRITICAL (bloquea `review`)» cuenta
-para el portón como evidencia válida: sólo mira el **nombre** del archivo. No es una regresión —siempre fue
-así—, pero con el criterio de nombres endurecido (matriz, self-audit y plan manual ya no cuentan), el
-de contenido es el agujero que queda.
-
-**Se declara, no se cierra todavía.** Para leer el veredicto hace
-falta que todos los generadores lo escriban igual, y hoy conviven dos formatos de tags de AC
-(`AC #N` y `@ac-N`). Un lector de contenido sobre formatos
-que divergen sería un tercer lector parcial: más deuda, no menos. Primero un formato de veredicto
-ÚNICO, después el chequeo.
-
-Mientras tanto, la división de trabajo es ésta: el portón verifica que la evidencia **existe** en el
-repo de la story. El freno local (`on-pre-commit.js`) sí lee el contenido, y
-lo hace en dos partes: `evidenciaDeclaraFail` descarta una corrida que
-declara **FAIL** en cualquiera de los tres formatos que escribe el pipeline (`verdict=FAIL`,
-`- verdict: FAIL`, `## Verdict global` + FAIL) — si es la única, bloquea diciéndolo—, y
-`parseAcsFromEvidence` cuenta qué ACs **menciona** (no si cada mención es un ✅:
-`AC #1 ❌` cuenta como mención). Quien lea un ✅ del portón tiene que
-saber que es «hay evidencia», no «la evidencia aprobó».
+**Lo que sigue sin mirar.** Una evidencia que dice «hola» sigue pasando: no declara FAIL. El portón no cuenta qué
+criterios menciona la evidencia ni si cada mención es un ✅; eso lo hace el freno local (`parseAcsFromEvidence`, y la
+matriz por criterio). Quien lea un ✅ del portón tiene que saber que es «hay evidencia y no declara FAIL», no «la
+evidencia aprobó».

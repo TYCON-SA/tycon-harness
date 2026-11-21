@@ -1004,8 +1004,32 @@
   ],
   "allowed": [
     {
+      "words": ["reedit", "pathspec", "textconv", "forc", "int", "inc", "onl", "patc"],
+      "reason": "opciones de git (--reedit-message, --pathspec-from-file, --no-textconv) y abreviaturas de opciones de git (--forc, --int, --inc, --onl, --patc) que el freno del guardado ajeno reconoce y que sus pruebas escriben a propósito: son de git, no se traducen; decidido por el dueño el 2026-11-09"
+    },
+    {
+      "words": ["arreglar"],
+      "reason": "valor de la acción «Arreglar» guardado en las decisiones del repo de operaciones, que lee la noche: no se puede renombrar; decidido por el dueño el 2026-11-01"
+    },
+    {
       "words": ["pythondontwritebytecode"],
       "reason": "variable de entorno del propio Python (PYTHONDONTWRITEBYTECODE): no se puede renombrar; decidido por el dueño el 2026-10-28"
+    },
+    {
+      "words": ["pct"],
+      "reason": "abreviatura técnica en inglés de percent, usada en las claves de memoria del turno (8.286, 8.291: TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT); decidido por el dueño el 2026-11-16"
+    },
+    {
+      "words": ["attr"],
+      "reason": "parte de la opción --attr-source de git: no se puede renombrar; decidido por la coordinadora el 2026-10-31"
+    },
+    {
+      "words": ["pathext"],
+      "reason": "variable de entorno de Windows (PATHEXT) con las extensiones de los programas: no se puede renombrar; decidido por la coordinadora el 2026-10-31"
+    },
+    {
+      "words": ["perl"],
+      "reason": "nombre del programa perl: no se puede renombrar; decidido por la coordinadora el 2026-10-31"
     },
     {
       "words": [
@@ -1571,6 +1595,10 @@
       "reason": "de git, no un nombre del arnés: la opción `--ignore-submodules=none` de `git diff-tree`. Sin ella git obedece el `ignore` del `.gitmodules` del árbol y saltea el submódulo, y el freno antes de publicar (scripts/hooks/public-push-guard.js) lo daba por limpio (story 8.26, tanda F2, pase adversarial). Sumada el 2026-10-10 con el plan de la tanda aprobado, a confirmar por el dueño; precedentes iguales del 2026-10-03 y de la tanda F1."
     },
     {
+      "words": ["hardlinks", "submodule"],
+      "reason": "de git, no nombres del arnés: la opción `git clone --no-hardlinks`, que separa el clon de la comparación con main del repo real (lib/compare-previous.js), y el subcomando `git submodule`, que el reemplazo de git corta en las corridas sin red (lib/compare-shims/git). Historia 8.167, paquete 8.243. Aprobadas por el dueño el 2026-11-09."
+    },
+    {
       "words": ["cov", "junit", "junitfile", "junitxml"],
       "reason": "nombres de herramientas de prueba ajenas: el formato de reporte JUnit, las opciones `--junitxml` y `--cov` de pytest (pytest-cov) y `--junitfile` de gotestsum. Aprobadas por el dueño el 2026-10-19 (story 8.48, tanda B1)."
     },
@@ -1621,6 +1649,10 @@
     {
       "words": ["refmap", "mainline"],
       "reason": "nombres de opciones de git (`git pull --refmap`, `git cherry-pick --mainline`) que el freno de constancias reconoce para saber qué trae el comando: son de git, no se traducen. Aprobada por la coordinadora, por autorización del dueño, el 2026-10-28."
+    },
+    {
+      "words": ["websocket", "subprotocol", "permessage", "util", "utf"],
+      "reason": "nombres propios de la librería ws 8.22.0 copiada sin cambios en scripts/tools/office/vendor/ws/ (story 2.81, tanda B): sus archivos (websocket.js, websocket-server.js, subprotocol.js, permessage-deflate.js, buffer-util.js) y sus variables de entorno (WS_NO_BUFFER_UTIL, WS_NO_UTF_8_VALIDATE). Son términos del protocolo y de la librería en inglés técnico; renombrarlos rompería la copia tal cual y su huella. Decidido por el dueño el 2026-11-01."
     }
   ],
   "schemaFiles": [

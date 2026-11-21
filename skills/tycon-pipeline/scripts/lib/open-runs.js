@@ -18,9 +18,10 @@
  *   - ilegible: el registro existe y no se puede leer, con un marcador o una copia de la sesión a la vista.
  * Sin ninguna de las tres piezas de la sesión, no hay ejecución y nada cambia.
  *
- * La salida es del dueño: `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, firmados en la
- * ventana de permiso o en su terminal. `delegacionDeLaSalida` es el único lugar que decide si la salida admite
- * reenvío por la sesión designada.
+ * La salida es del dueño: `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, la firma `lost-run`
+ * en la ventana de permiso o en su terminal. El cartel da las dos formas con la ruta estable (`formasDeSalida`), y
+ * `abiertasDentro` dice qué ejecución abierta se perdería al borrar o mover una carpeta (@story-8.318). Desde la sesión designada, para otra sesión (`--for-session <sesión>`),
+ * corre sin ventana si el perfil la delega: lo decide la ventana con `approvals.delegated_signing`.
  */
 const fs = require('fs');
 const os = require('os');
@@ -51,9 +52,9 @@ function mismaRuta(a, b, platform = process.platform) {
  * registro o `{ ok: false, error }` si existe y no se puede leer. Sólo se parsean los renglones que nombran un evento de
  * ejecución: el registro tiene megas de otros controles.
  */
-function leerEventos(home) {
+function leerEventos(home, { archivo } = {}) {
   let raw;
-  try { raw = fs.readFileSync(gatesPath(home)); } catch (e) {
+  try { raw = fs.readFileSync(archivo || gatesPath(home)); } catch (e) {
     return e && e.code === 'ENOENT' ? { ok: false, ausente: true } : { ok: false, error: (e && (e.code || e.message)) || 'error' };
   }
   // corre en cada comando de consola: se buscan los dos nombres en los bytes y se parsea sólo su renglón, porque partir
@@ -88,8 +89,13 @@ function anotar(home, linea) {
 /** Anota la apertura en el registro y escribe su copia en la carpeta de la ejecución (retomar la sobrescribe). */
 function abrir({ sid, story, storyPath, repo, runDir, motivo, home, ahora = new Date().toISOString() } = {}) {
   if (!sid || !runDir) throw new Error('abrir: faltan la sesión o la carpeta de la ejecución');
-  // absoluta: los frenos leen la copia desde otro directorio de trabajo
-  runDir = path.resolve(runDir);
+  // absolutas contra el repo de la ejecución, nunca contra la carpeta del proceso (lib/run-dir.js): los frenos leen la
+  // copia desde otro directorio de trabajo. Una carpeta relativa sin un repo absoluto no se anota.
+  const r = require('./run-dir.js').rutasDeLaCorrida({ repoPath: repo, runDir, storyPath });
+  if (!path.isAbsolute(r.runDir)) throw new Error(`abrir: no anoté la apertura: ${r.motivo}`);
+  runDir = r.runDir;
+  storyPath = r.storyPath;
+  repo = r.repoPath && path.isAbsolute(r.repoPath) ? r.repoPath : null;
   const apertura = { sesion: String(sid), story: String(story), ...(storyPath ? { storyPath } : {}), ...(repo ? { repo } : {}), runDir, ts: ahora };
   anotar(home, { ts: ahora, sessionId: String(sid), name: 'run-open', ...apertura, ...(motivo ? { motivo } : {}) });
   fs.mkdirSync(runDir, { recursive: true });
@@ -108,11 +114,16 @@ function cerrar({ sid, sesion, runDir, story, estado, motivo, via, cita, home, e
   const quien = String(sesion || sid);
   const ult = vigente(quien, { home });
   if (soloAbierta && !(ult && ult.name === 'run-open')) return false;
-  const carpeta = runDir || (ult && ult.name === 'run-open' ? ult.runDir : null);
+  // una carpeta relativa se ubica contra el repo que trae el cierre (`extra.repoPath`), nunca contra la carpeta del
+  // proceso; sin él se anota tal cual y no se busca su copia
+  const pedida = runDir ? require('./run-dir.js').rutasDeLaCorrida({ repoPath: extra && extra.repoPath, runDir }).runDir : null;
+  const carpeta = pedida || (ult && ult.name === 'run-open' ? ult.runDir : null);
   const historia = story != null ? String(story) : ult && ult.story != null ? String(ult.story) : null;
+  // una carpeta que no se pudo ubicar queda dicha en el cierre: su copia no se buscó y la pregunta la va a ver
+  const sinUbicar = !!carpeta && !path.isAbsolute(carpeta);
   anotar(home, { ts: ahora, sessionId: String(sid || quien), ...extra, name: 'run-close', sesion: quien, story: historia, runDir: carpeta || null,
-    estado: estado || null, motivo: motivo || null, via: via || null, ...(cita ? { cita } : {}) });
-  if (carpeta) {
+    estado: estado || null, motivo: motivo || null, via: via || null, ...(cita ? { cita } : {}), ...(sinUbicar ? { carpetaSinUbicar: true } : {}) });
+  if (carpeta && path.isAbsolute(carpeta)) {
     try {
       const c = JSON.parse(fs.readFileSync(copiaPath(carpeta), 'utf8'));
       if (c && c.sesion === quien) fs.unlinkSync(copiaPath(carpeta));
@@ -215,6 +226,58 @@ function perdida({ sid, cwd, home, platform = process.platform } = {}) {
   return null;
 }
 
+/**
+ * La apertura de la ejecución de `sesion` para su salida perdida (`restore` o `clear-session --lost`), o null. Una sola
+ * regla para el freno (run-close.js), la pregunta del cuadro (signature-sources.js) y marker.js. Con `modo: 'restore'`
+ * manda primero lo que dice el marcador de `propia`, la sesión que el restore escribe, si tiene `restoredFrom` igual a la
+ * sesión: con pasos en `restorePendiente` es un restore a medias (`a-medias`), y sin pasos, con su apertura nueva vigente
+ * y la copia de esa apertura en su carpeta, uno terminado (`terminado`), que no se repite. Después, la apertura vigente
+ * del registro; si no, la última copia del repo de `cwd`; y sólo al restaurar, la copia podada por vieja. Todo se lee de
+ * una misma carpeta de estado: `estado`, o la de `home`. Devuelve los campos de la apertura más `ts` (su hora), `antes`
+ * (la hora es el último toque de la podada, no su arranque) y `deDonde`.
+ */
+function aperturaParaSalida(sesion, { modo = 'lost', cwd, home, estado, propia } = {}) {
+  if (!sesion) return null;
+  const s = String(sesion);
+  const dir = estado || stateDir(home || os.homedir());
+  const reg = leerEventos(home, { archivo: path.join(dir, 'gates.log') });
+  const eventos = reg.ok ? reg.eventos : [];
+  if (modo === 'restore' && propia) {
+    let m = null;
+    try { m = JSON.parse(fs.readFileSync(path.join(dir, 'active', `${sessionIdFileKey(propia)}.json`), 'utf8')); } catch { m = null; }
+    if (m && String(m.restoredFrom) === s) {
+      const campos = { sesion: s, storyPath: m.storyPath || null, repo: m.repoPath || null, runDir: m.runDir || null };
+      const r = m.restorePendiente;
+      if (r && Array.isArray(r.pasos) && r.pasos.length) {
+        return { ...campos, name: 'restore-a-medias', story: String(r.story != null ? r.story : m.storyId), ts: r.ts || null, antes: !!r.antes, deDonde: 'a-medias' };
+      }
+      const nueva = vigente(propia, { eventos });
+      let copia = null;
+      try { copia = m.runDir ? JSON.parse(fs.readFileSync(copiaPath(m.runDir), 'utf8')) : null; } catch { copia = null; }
+      if (nueva && nueva.name === 'run-open' && String(nueva.story) === String(m.storyId) && mismaRuta(nueva.runDir, m.runDir)
+        && copia && copia.sesion === String(propia) && copia.ts === nueva.ts) {
+        return { ...campos, name: 'restore-terminado', story: String(m.storyId), ts: m.restoredAt || nueva.ts, antes: false, deDonde: 'terminado' };
+      }
+    }
+  }
+  const ult = vigente(s, { eventos });
+  if (ult && ult.name === 'run-open') return { ...ult, antes: false, deDonde: 'registro' };
+  const raiz = raizDeGit(cwd);
+  const copias = raiz ? copiasDe(raiz, s) : [];
+  if (copias.length) return { ...copias[copias.length - 1].copia, antes: false, deDonde: 'copia' };
+  if (modo !== 'restore') return null;
+  // se lee acá y no con story-gate-io.js: esa pieza traería marker.js a todo lo que carga este módulo, también al sitio
+  let p = null;
+  try { p = JSON.parse(fs.readFileSync(path.join(dir, 'pruned', `${sessionIdFileKey(s)}.json`), 'utf8')); } catch { p = null; }
+  if (p && p.storyId) {
+    // la podada no siempre trae su carpeta: la da su última apertura del registro
+    const abierta = p.runDir ? null : [...eventos].reverse().find((e) => e.sesion === s && e.name === 'run-open');
+    return { name: 'pruned', sesion: s, story: String(p.storyId), storyPath: p.storyPath || null, repo: p.repoPath || null,
+      runDir: p.runDir || (abierta && abierta.runDir) || null, ts: p.startedAt || p.lastTouch || null, antes: !p.startedAt, deDonde: 'podada' };
+  }
+  return null;
+}
+
 const FALTA = {
   marcador: 'falta su marcador (el archivo de la sesión en la carpeta del estado): se borró o se movió',
   registro: 'falta el registro de aperturas (gates.log): se borró o se movió, y la copia de la apertura sigue en el repo',
@@ -226,23 +289,181 @@ const FALTA = {
   'registro-ilegible': 'el registro de aperturas (gates.log) existe y no se puede leer',
 };
 
-/** El cartel del freno: qué pieza falta, de qué historia, desde cuándo y la salida. */
-function cartel(r, { markerJs = 'marker.js' } = {}) {
+// la ruta estable de marker.js bajo la carpeta de la persona: no cambia al actualizar (la carpeta numerada de la versión
+// sí, y en Windows es la que ve `__dirname`) y no lleva `~`, que PowerShell no expande (@story-8.318). La carpeta de las
+// skills instaladas la sabe tycon-home.js; sin él (este archivo viaja suelto), marker.js de al lado
+const TYCON_HOME_LIB = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js');
+function markerRel(home) {
+  if (!fs.existsSync(TYCON_HOME_LIB)) return null;
+  const dir = require(TYCON_HOME_LIB).installedSkillsDir(home);
+  return path.relative(home, path.join(dir, 'skills', 'tycon-pipeline', 'scripts', 'marker.js')).split(path.sep).join('/');
+}
+
+/**
+ * El comando `node "<ruta estable>/marker.js" <resto>` y las dos formas de lanzarlo: `{ ventana, terminal, sinCitar }`.
+ * `ventana` lo corre el agente por la consola Bash y la persona lo aprueba en el cuadro; `terminal` lo pega la persona,
+ * con `--terminal --for-session <sesión>` (null sin una sesión conocida). Con una carpeta personal que no se puede citar,
+ * `signatureCommand` lo da con `$HOME`, que no es una firma: `sinCitar` y sólo vale la terminal.
+ */
+/**
+ * `node "<carpeta personal>/<skills instaladas>/…/marker.js"`: el comando de marker.js por la ruta estable, el mismo para
+ * todos los carteles y firmas que lo imprimen (@story-8.318, 8.319). Con una carpeta que no se puede citar, con `$HOME`.
+ */
+function markerEstable(home) {
+  const { signatureCommand } = require('./home-command.js');
+  const casa = home || os.homedir();
+  const rel = markerRel(casa);
+  // sin tycon-home.js, la ruta de al lado: se imprime, no se carga
+  return rel ? signatureCommand(rel, casa) : `node "${path.resolve(__dirname, '..', 'marker.js')}"`;
+}
+
+function formaDeMarker(resto, sesion, { home } = {}) {
+  const { enLaTerminal } = require('./home-command.js');
+  const base = markerEstable(home);
+  const comando = `${base} ${resto}`;
+  return { ventana: comando, terminal: enLaTerminal(comando, sesion), sinCitar: base.includes('$HOME') };
+}
+
+/**
+ * La salida de una ejecución perdida, con sus dos formas: `{ salidas: [{ ventana, terminal, que }], renglones }`. Una sola
+ * función para los seis lugares que la imprimen (el cierre de turno, la consola, editar, el commit, marker.js y el aviso
+ * del arranque): ninguno arma la ruta a mano.
+ */
+function formasDeSalida(r, { home } = {}) {
+  const s = String(r.sesion);
+  const salidas = [
+    { ...formaDeMarker(`clear-session ${s} --lost`, s, { home }), que: 'la cierra como perdida' },
+    { ...formaDeMarker(`restore ${s}`, s, { home }), que: 'la reabre desde la copia de la apertura' },
+  ];
+  const { SIN_SESION_TERMINAL } = require('./home-command.js');
+  const sinCitar = salidas[0].sinCitar;
+  const renglones = [];
+  if (!sinCitar) {
+    renglones.push('En la ventana de permiso: el agente la lanza por la consola Bash y la persona la aprueba en el cuadro.');
+    for (const x of salidas) renglones.push(`  ${x.ventana}   (${x.que})`);
+  } else {
+    renglones.push('Tu carpeta personal tiene un carácter que no se puede citar: el comando sale con $HOME, que no es una firma de la ventana, y va en la terminal.');
+  }
+  renglones.push('En la terminal de la persona: con la consola PowerShell de la herramienta o en Codex no hay cuadro, y va ésta.');
+  for (const x of salidas) renglones.push(x.terminal ? `  ${x.terminal}   (${x.que})` : `  ${SIN_SESION_TERMINAL}`);
+  return { salidas, renglones };
+}
+
+/** El cartel del freno: qué pieza falta, de qué historia, desde cuándo y la salida, con sus dos formas. */
+function cartel(r, { home } = {}) {
   return [
     `🔴 EJECUCIÓN PERDIDA — la ejecución de la story ${r.story || '?'} (sesión ${r.sesion}), abierta ${r.desde || 'en una hora que no se pudo leer'}: ${FALTA[r.falta] || r.falta}.`,
-    'Hasta resolverla no se edita, no se escribe por consola, no se cierra el turno ni se commitea. Leer sí: cat, ls, grep, head, tail, git status/diff/log, marker.js get.',
-    'La salida la decide el dueño: la firma en la ventana de permiso o en su terminal (--terminal), con uno de estos comandos:',
-    `  node ${markerJs} clear-session ${r.sesion} --lost   (la cierra como perdida)`,
-    `  node ${markerJs} restore ${r.sesion}                (la reabre desde la copia de la apertura)`,
+    'Hasta resolverla no se edita, no se escribe por consola ni se commitea, y el turno se cierra a la segunda. Leer sí: cat, ls, grep, head, tail, git status/diff/log, marker.js get.',
+    'La salida la firma una persona, con uno de estos comandos:',
+    ...formasDeSalida(r, { home }).renglones,
   ].join('\n');
 }
 
 /**
- * Si la salida admite reenvío por la sesión designada, y desde cuándo vale. Es el único punto de decisión: sin
- * reenvío y desde la apertura. La firma delegada de `lost-run` la resuelve `approvals.delegated_signing`, no este punto.
+ * Las ejecuciones abiertas cuya carpeta (`runDir`) está dentro de `carpeta`, o es ella: `{ ok: true, abiertas }` o
+ * `{ ok: false, error }` si el registro existe y no se puede leer. «Abierta» se lee en gates.log: una sesión cuyo último
+ * evento es `run-open` (decisión 4 de la 8.318). La copia del disco no decide: una vieja sin apertura vigente no deja la
+ * carpeta pegada. `carpeta` puede ser una lista; cada abierta trae en `en` la carpeta que la contiene.
  */
-function delegacionDeLaSalida() {
-  return { reenvio: false, desde: 'apertura' };
+function abiertasDentro(carpeta, { home, eventos, platform = process.platform, comodines = [] } = {}) {
+  const carpetas = [].concat(carpeta || []).filter(Boolean);
+  if (!carpetas.length && !comodines.length) return { ok: true, abiertas: [] };
+  let ev = eventos;
+  if (!ev) {
+    const r = leerEventos(home);
+    if (!r.ok && !r.ausente) return { ok: false, error: r.error };
+    ev = r.ok ? r.eventos : [];
+  }
+  const ultimo = new Map();
+  for (const e of ev) ultimo.set(e.sesion, e);
+  const abiertas = [];
+  for (const e of ultimo.values()) {
+    if (e.name !== 'run-open' || !e.runDir) continue;
+    const en = carpetas.find((c) => dentroDe(e.runDir, c, platform)) || comodines.find((g) => casaConComodin(e.runDir, g, platform));
+    if (en) abiertas.push({ sesion: e.sesion, story: e.story != null ? String(e.story) : null, runDir: e.runDir, ts: e.ts || null, en });
+  }
+  return { ok: true, abiertas };
 }
 
-module.exports = { CAMPOS_DE_CIERRE, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, cartel, delegacionDeLaSalida, gatesPath, markerPath };
+/**
+ * ¿`ruta` o una carpeta de arriba casa con el comodín `patron` (`*`, `?`, `[…]` del shell, cada uno dentro de un tramo)?
+ * Así un `rm -rf wt-*` se compara con cada ejecución abierta sin expandir la lista en el disco.
+ */
+function casaConComodin(ruta, patron, platform = process.platform) {
+  const n = (p) => (platform === 'win32' ? String(p).replace(/\\/g, '/').toLowerCase() : String(p)).replace(/\/+$/, '');
+  // la parte fija de adelante, con los enlaces resueltos: `/var/…` y `/private/var/…` en macOS son la misma
+  const t0 = n(patron);
+  const corte = t0.search(/[*?[]/);
+  const fija = corte < 0 ? t0 : t0.slice(0, t0.lastIndexOf('/', corte) + 1);
+  // con muchos comodines la comparación puede volverse lenta (cada `*` multiplica los intentos): con más de seis, vale la
+  // carpeta fija de adelante, que es más de lo que borra (frena de más, nunca de menos ni colgado)
+  if ((t0.match(/[*?[]/g) || []).length > 6) return dentroDe(ruta, fija || '/', platform);
+  const patrones = [t0];
+  try { const r = n(fs.realpathSync.native(fija || '/')); if (r && r + '/' !== fija && r !== fija) patrones.push(`${r}/${t0.slice(fija.length)}`); } catch { /* no existe: vale el patrón dicho */ }
+  const compilar = (t) => {
+    let re = '';
+    for (let i = 0; i < t.length; i++) {
+      const c = t[i];
+      // como el shell: un comodín al empezar el tramo no casa con un nombre que empieza con punto
+      const alEmpezar = i === 0 || t[i - 1] === '/';
+      if (c === '*') re += alEmpezar ? '(?!\\.)[^/]*' : '[^/]*';
+      else if (c === '?') re += alEmpezar ? '[^/.]' : '[^/]';
+      else if (c === '[') {
+        const f = t.indexOf(']', i + 1);
+        if (f > i) {
+          const dentro = t.slice(i + 1, f);
+          const niega = /^[!^]/.test(dentro);
+          const cuerpo = dentro.replace(/^[!^]/, '').replace(/[\\\]]/g, '\\$&');
+          // la clase nunca cruza de un tramo a otro
+          re += `${alEmpezar ? '(?!\\.)' : ''}[${niega ? '^/' : ''}${cuerpo}]`;
+          i = f;
+        } else re += '\\[';
+      } else re += c.replace(/[.+^${}()|\\]/g, '\\$&');
+    }
+    return new RegExp(`^${re}(?:/|$)`, platform === 'win32' ? 'i' : '');
+  };
+  const rxs = patrones.map(compilar);
+  const hijos = [n(ruta)];
+  try { hijos.push(n(fs.realpathSync.native(ruta))); } catch { /* ya no existe */ }
+  return rxs.some((rx) => hijos.some((h) => rx.test(h)));
+}
+
+/** Cuántas ejecuciones abiertas hay en la máquina (en cualquier carpeta o unidad): `{ ok, n }` o `{ ok: false, error }`. */
+function hayAbiertas({ home } = {}) {
+  const r = leerEventos(home);
+  if (!r.ok && !r.ausente) return { ok: false, error: r.error };
+  const ultimo = new Map();
+  for (const e of r.ok ? r.eventos : []) ultimo.set(e.sesion, e);
+  return { ok: true, n: [...ultimo.values()].filter((e) => e.name === 'run-open').length };
+}
+
+/** ¿`hijo` es `padre` o está adentro? Como el sistema: en Windows sin distinguir barras ni mayúsculas; con los enlaces resueltos. */
+function dentroDe(hijo, padre, platform = process.platform) {
+  // con los enlaces resueltos aunque la ruta ya no exista (una carpeta podada): se resuelve la carpeta de arriba que
+  // existe y se le suma el resto (`/var/…` y `/private/var/…` en macOS son la misma)
+  const real = (p) => {
+    let d = String(p);
+    const resto = [];
+    for (let i = 0; i < 64; i++) {
+      try { return path.join(fs.realpathSync.native(d), ...[...resto].reverse()); } catch { /* sube */ }
+      const arriba = path.dirname(d);
+      if (arriba === d) return null;
+      resto.push(path.basename(d));
+      d = arriba;
+    }
+    return null;
+  };
+  const formas = (p) => {
+    const out = [String(p)];
+    const r = platform === process.platform ? real(p) : null;
+    if (r) out.push(r);
+    return out.map((x) => (platform === 'win32' ? x.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() : path.resolve(x)));
+  };
+  const sep = platform === 'win32' ? '/' : path.sep;
+  for (const h of formas(hijo)) for (const q of formas(padre)) {
+    if (h === q || h.startsWith(q.endsWith(sep) ? q : q + sep)) return true;
+  }
+  return false;
+}
+
+module.exports = { CAMPOS_DE_CIERRE, markerRel, markerEstable, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, hayAbiertas, dentroDe, casaConComodin, gatesPath, markerPath };

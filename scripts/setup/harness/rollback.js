@@ -6,7 +6,12 @@
 // que se tomó antes de mover los árboles—; las copias de `startup`/`apply` posteriores, de la misma versión, no cuentan. Así
 // un segundo `rollback` vuelve a la copia `before-rollback` del primero: un rollback se deshace con otro. Basta con que
 // difiera UNA fuente: un hook nuevo de agent-skills no cambia el número de versión (sale del arnés) y también se deshace.
-// Si ninguna copia tiene `sources` (sin ese dato), la más nueva y sólo archivos, y se dice.
+// Si ninguna copia tiene `sources` (sin ese dato), la más nueva y sólo archivos, y se dice. Sin `--to` no elige nunca una
+// copia abierta (`open: true`: la de un cambio que se cortó, o la que la operación en curso acaba de tomar), salvo una
+// excepción: si hay una `before-rollback` abierta, es una vuelta atrás que se cortó, y se retoma yendo a su `rollback_to`
+// (la más nueva, si hay varias), sin mirar los `sources` y aunque ese destino esté abierto. Con `--to` acepta cualquiera,
+// abierta o no: es el comando que da el aviso de un corte. `openToo` (la salud pendiente del arranque) elige como antes
+// de la marca: la copia que necesita es justo la abierta de la actualización que se cortó.
 //
 // La restauración (`restore`), en este orden:
 //   (1) cada archivo de la copia cuyo hash actual es su `sha256_after` (nadie lo tocó desde el cambio) vuelve ENTERO a como
@@ -52,6 +57,8 @@ const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
 const pieceKey = (p) => `${p.kind}\u0000${p.where}\u0000${p.id}`;
 const seqOf = (c) => (c && c.manifest && Number.isInteger(c.manifest.seq) && c.manifest.seq > 0 ? c.manifest.seq : null);
 const hasSources = (c) => Boolean(c && c.manifest && isObject(c.manifest.sources) && Object.keys(c.manifest.sources).length);
+/** Abierta: su operación no la cerró (la marca de snapshot.js; sin el campo cuenta cerrada). */
+const isOpen = (c) => Boolean(c && c.manifest && c.manifest.open === true);
 
 /** Más nueva primero por `seq`; las que no lo tienen (sin ese dato) van debajo, en el orden en que vinieron. */
 function newestFirst(copies) {
@@ -72,20 +79,37 @@ function differs(copySources, current) {
 
 /**
  * A qué copia vuelve `rollback`. `copies` es `snapshot.list()` (`[{ dir, name, manifest }]`, en cualquier orden);
- * `to` = el nombre de la carpeta, su `seq` o su ruta; `currentSources` = `{ <fuente>: <HEAD> }`.
+ * `to` = el nombre de la carpeta, su `seq` o su ruta; `currentSources` = `{ <fuente>: <HEAD> }`; `openToo` = elegir también
+ * entre las abiertas y no retomar una vuelta atrás cortada (la salud pendiente del arranque).
  * @returns {{ copy: object|null, filesOnly: boolean, reason: string }}  `copy: null` = nada que hacer (y `reason` dice por qué)
  */
-function pickTarget(copies, { to = null, currentSources = {} } = {}) {
+function pickTarget(copies, { to = null, currentSources = {}, openToo = false } = {}) {
   const list = newestFirst((Array.isArray(copies) ? copies : []).filter((c) => c && isObject(c.manifest)));
+  const named = (hit, why) => {
+    if (!hasSources(hit)) return { copy: hit, filesOnly: true, reason: `la copia ${hit.name} no tiene sources (es anterior a la tanda C): sólo restauro archivos, los árboles no se mueven` };
+    return { copy: hit, filesOnly: false, reason: `la copia ${hit.name} (seq ${seqOf(hit) || '—'}, ${hit.manifest.reason || 'sin motivo'})${why}` };
+  };
   if (to !== null && to !== undefined && String(to) !== '') {
     const want = String(to);
     const hit = list.find((c) => c.name === want)
       || list.find((c) => String(seqOf(c)) === want)
       || list.find((c) => c.dir && path.resolve(c.dir) === path.resolve(want));
     if (!hit) return { copy: null, filesOnly: false, reason: `no hay una copia «${want}» (harness.js rollback --list las muestra)` };
-    if (!hasSources(hit)) return { copy: hit, filesOnly: true, reason: `la copia ${hit.name} no tiene sources (es anterior a la tanda C): sólo restauro archivos, los árboles no se mueven` };
-    return { copy: hit, filesOnly: false, reason: `la copia ${hit.name} (seq ${seqOf(hit) || '—'}, ${hit.manifest.reason || 'sin motivo'})` };
+    return named(hit, '');
   }
+  if (openToo) return pickClosed(list, currentSources);
+  // una vuelta atrás que se cortó: se termina yendo a donde iba, aunque los árboles ya hayan vuelto
+  const cut = list.find((c) => isOpen(c) && c.manifest.reason === 'before-rollback' && typeof c.manifest.rollback_to === 'string' && c.manifest.rollback_to);
+  if (cut) {
+    const dest = list.find((c) => c.name === cut.manifest.rollback_to);
+    if (!dest) return { copy: null, filesOnly: false, reason: `la vuelta atrás cortada iba a ${cut.manifest.rollback_to}, que ya no está: harness.js rollback --list muestra a dónde volver` };
+    return named(dest, `: retomo la vuelta atrás que se cortó (copia ${cut.name})`);
+  }
+  return pickClosed(list.filter((c) => !isOpen(c)), currentSources);
+}
+
+/** Sin `--to`: la más nueva de `list` cuyos `sources` difieren de los instalados (o la más nueva, sin ese dato). */
+function pickClosed(list, currentSources) {
   if (!list.length) return { copy: null, filesOnly: false, reason: 'no hay copias de seguridad: no hay a qué volver' };
   if (!list.some(hasSources)) {
     const c = list[0];
@@ -343,7 +367,10 @@ function restore(ctx, state, copy, { why = 'rollback', runApplier = null, log = 
   // (3) el aplicador de ese árbol, con el reporte de lo que dejó
   if (typeof runApplier !== 'function') { result.ok = false; say('sin aplicador para correr: no quito piezas ni toco el registro'); return result; }
   let a;
-  try { a = runApplier(ctx, tree, { log, snapshotDir }); } catch (e) { a = { ok: false, report: null, reason: e.message }; }
+  try { a = runApplier(ctx, tree, { log, snapshotDir }); } catch (e) {
+    if (e && e.code === 'TYCON_LOCK_LOST') throw e;   // otro proceso tiene el candado: no es un fallo del aplicador
+    a = { ok: false, report: null, reason: e.message };
+  }
   if (!a || !a.ok) {
     result.ok = false;
     say(`el aplicador de ${tree} falló (${(a && a.reason) || 'sin motivo'}): no quito piezas ni toco el registro`);
@@ -408,4 +435,57 @@ function restore(ctx, state, copy, { why = 'rollback', runApplier = null, log = 
   return result;
 }
 
-module.exports = { pickTarget, restore, newestFirst, defaultIsOwnPiece };
+/**
+ * La vuelta sola de una versión bajada que no quedó sana (release.js): los árboles ya volvieron y el aplicador de la
+ * versión que quedó ya corrió (`applied`, su `{ report, shared }`). Quita lo registrado que ese reporte ya no trae —lo
+ * que agregó la versión que falló, como un gancho cuyo archivo ya no está—, salvo lo propio de harness.js, y el registro
+ * sale de ese reporte. Sin reporte no se sabe qué es de quién: no quita nada. `{ ok, lines, removed, kept }`; muta
+ * `state.managed`.
+ *
+ * El aplicador deja afuera del reporte los hooks cuyo evento o prefijo no declara quien lo lanza (`declared`, el
+ * `{ TYCON_REPORT_HOOK_EVENTS, TYCON_REPORT_HOOK_PREFIXES }` con que corrió): que no viajen no quiere decir que la versión
+ * ya no los traiga. Un hook se quita sólo si su evento y su prefijo están declarados; sin `declared`, ninguno.
+ */
+function dropUnreported(state, applied, { home = os.homedir(), env = process.env, tree = null, log = null, version = null, isOwnPiece = null, declared = null } = {}) {
+  const result = { ok: true, lines: [], removed: [], kept: [] };
+  const say = (l) => { result.lines.push(l); try { if (log) log(`vuelta: ${l}`); } catch (_) { /* el registro nunca frena */ } };
+  const rep = applied && Array.isArray(applied.report) ? shared.union(applied.report, applied.shared) : null;
+  if (!rep) { result.ok = false; say('el aplicador no devolvió el reporte de piezas: no quito nada y el registro queda como estaba'); return result; }
+  const own = typeof isOwnPiece === 'function' ? isOwnPiece : defaultIsOwnPiece(home);
+  const opts = { home, env, isStartupLine: startupLine.isNew };
+  const reported = new Set(rep.map(pieceKey));
+  const prev = (Array.isArray(state.managed) ? state.managed : []).filter((p) => isObject(p) && p.kind && p.where && p.id);
+  const lista = (k) => String((declared && declared[k]) || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const eventos = lista('TYCON_REPORT_HOOK_EVENTS');
+  const prefijos = ['@tcg:', ...lista('TYCON_REPORT_HOOK_PREFIXES')];
+  const viaja = (p) => {
+    if (p.kind !== 'hook') return true;
+    const h = managed.hookId(String(p.id));
+    const pre = /^(@[a-z0-9-]+:)/.exec(h.relpath);
+    return h.event !== null && eventos.includes(h.event) && (!pre || prefijos.includes(pre[1]));
+  };
+  const gone = prev.filter((p) => !reported.has(pieceKey(p)) && !own(p) && viaja(p) && managed.present(p, opts) !== false);
+  const removedKeys = new Set();
+  if (gone.length) {
+    const R = loadRemove();
+    if (!R || typeof R.removePieces !== 'function') {
+      result.ok = false;
+      say(`no puedo quitar ${gone.length} pieza(s) que esta versión ya no trae (falta remove.js): ${gone.map(describe).join(', ')}`);
+    } else {
+      let res;
+      try { res = R.removePieces(gone, { home, env, tree, log }); } catch (e) { res = { removed: [], kept: gone.map((p) => ({ piece: p, why: `no pude quitarla (${e.message})`, error: true })) }; }
+      result.removed = Array.isArray(res && res.removed) ? res.removed : [];
+      result.kept = Array.isArray(res && res.kept) ? res.kept : [];
+      for (const p of result.removed) { if (isObject(p)) removedKeys.add(pieceKey(p)); say(`quitada (esta versión ya no la trae): ${describe(p)}`); }
+      for (const k of result.kept) say(`quedó: ${describe(k)}`);
+      if (result.kept.some((k) => isObject(k) && k.error === true)) result.ok = false;
+    }
+  }
+  state.managed = managed.merge(prev.filter((p) => !removedKeys.has(pieceKey(p))), rep, {
+    version,
+    present: (p) => (own(p) ? true : managed.present(p, opts)),
+  });
+  return result;
+}
+
+module.exports = { pickTarget, restore, dropUnreported, newestFirst, defaultIsOwnPiece };

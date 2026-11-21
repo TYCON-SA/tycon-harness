@@ -36,6 +36,8 @@ set -uo pipefail
 # el Python de Xcode guarda su caché en ~/Library/Caches de la HOME de prueba: T15 compara la HOME antes y después
 export PYTHONDONTWRITEBYTECODE=1
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=lib/tree-sums.sh
+source "$RAIZ/scripts/tests/lib/tree-sums.sh"   # la huella del HOME, antes de armar el laboratorio
 FIX="$RAIZ/scripts/tests/fixtures/harness-managed-pieces.json"
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
@@ -97,13 +99,7 @@ base() { # base <home> → el ambiente aislado (en el arreglo RUN_ENV)
        GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0)
   mkdir -p "$T/tmp"
 }
-home_list() { # todo el HOME, una línea por ruta (enlace, archivo con su suma, carpeta)
-  ( cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r f; do
-      if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"
-      elif [ -f "$f" ]; then printf '%s ' "$f"; shasum -a 256 < "$f"
-      else printf '%s/\n' "$f"; fi
-    done )
-}
+home_list() { tree_list "$1"; }   # todo el HOME, una línea por ruta (enlace, archivo con su suma, carpeta)
 home_hash() { home_list "$1" | shasum -a 256 | cut -d' ' -f1; }   # un hash de todo el HOME: «no tocó nada»
 # home_changed <antes.txt> <home> → las rutas que cambiaron (para que un «la HOME cambió» diga QUÉ cambió)
 home_changed() { home_list "$2" > "$1.despues"; diff "$1" "$1.despues" | grep '^[<>]' | sed 's/ [0-9a-f]\{64\}  *-$//' | head -6 | tr '\n' ' '; }

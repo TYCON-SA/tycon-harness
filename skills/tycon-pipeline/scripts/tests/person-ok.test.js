@@ -90,9 +90,7 @@ test('PlanEnLaConversacion_SigueDesdeLaBiblioteca @story-8.63 @ac-2', () => {
 // 🔴 Falla con: una firma que vuelve a salir de la conversación (una cita, un reenvío, la sesión designada): la
 //    biblioteca vuelve a exportar un juez, o la importa un guion de firma.
 test('T30 PersonOk_SoloLoQueNoEsFirma @story-8.139 @ac-29 @ac-30 — exporta sólo la lectura, la cadena y el plan; la importan sólo los que no firman', () => {
-  // `mensajesConOrigen` no firma nada: dice de quién es cada mensaje (la marca de Claude Code), para que la cita del
-  // arreglo rápido (`marker.js adhoc set`) lea sólo lo que escribió el dueño
-  assert.deepEqual(Object.keys(ok).sort(), ['enLaCadena', 'leerConversacion', 'mensajesConOrigen', 'planEnLaConversacion']);
+  assert.deepEqual(Object.keys(ok).sort(), ['enLaCadena', 'leerConversacion', 'planEnLaConversacion']);
   const importan = [];
   const recorrer = (dir) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -103,11 +101,74 @@ test('T30 PersonOk_SoloLoQueNoEsFirma @story-8.139 @ac-29 @ac-30 — exporta só
     }
   };
   for (const d of ['skills', 'scripts']) recorrer(path.join(RAIZ, d));
+  // delegation-routing.js lee la conversación sólo para saber si el pedido existe antes de darle el comando a la
+  // coordinadora: la firma sale igual del freno, por la delegación
   assert.deepEqual(importan.sort(), [
+    'scripts/lib/delegation-routing.js',
+    'scripts/lib/signature-list.js',
     'skills/tycon-pipeline/scripts/lib/external-flags.js',
     'skills/tycon-pipeline/scripts/lib/plan-display.js',
     'skills/tycon-pipeline/scripts/lib/story-claim-check.js',
     'skills/tycon-pipeline/scripts/lib/validator-record.js',
     'skills/tycon-pipeline/scripts/marker.js',
   ]);
+});
+
+// 8.141 T15 ElChatSale_SinLectoresDelCarril @story-8.141 @ac-5
+// 🔴 Falla con: algo que vuelve a leer la conversación o el registro de mensajes para el arreglo rápido (el origen de cada
+//    mensaje, el clasificador, la cita), o `on-prompt.js` que vuelve a guardar el texto de cada mensaje.
+test('8.141 T15 ElChatSale_SinLectoresDelCarril', () => {
+  const LIB = path.join(__dirname, '..', 'lib');
+  assert.equal(fs.existsSync(path.join(LIB, 'lane-classifier.js')), false, 'el clasificador no existe');
+  const io = require(path.join(LIB, 'story-gate-io.js'));
+  assert.equal(io.recordPrompt, undefined, 'no hay registro de mensajes');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pok-'));
+  const sid = 'sess-t15';
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'on-prompt.js')], {
+    encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'arreglo rápido: el botón de guardar', session_id: sid }),
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const carril = path.join(home, '.claude', '.tycon-pipeline', 'lane', `${sid}.json`);
+  const lane = fs.existsSync(carril) ? JSON.parse(fs.readFileSync(carril, 'utf8')) : {};
+  assert.equal(lane.recentPrompts, undefined, 'el archivo de carril no guarda los mensajes');
+  for (const f of ['marker.js', path.join('lib', 'story-gate.js'), path.join('lib', 'story-gate-io.js'), path.join('lib', 'person-ok.js'), 'on-prompt.js']) {
+    const t = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+    for (const re of [/mensajesConOrigen/, /classifyLane/, /\bTYCON_LANE_LLM\b/, /recentPrompts/, /reasonInPrompts/, /quotedPromptAsksStory/, /soloDelDueno/]) {
+      assert.doesNotMatch(t, re, `${f} nombra ${re.source}`);
+    }
+  }
+});
+
+test('PersonOk_LongConversation_ReadByLines (T6) @story-8.287 @ac-7', (t) => {
+  const lineas = require(path.join(__dirname, '..', 'lib', 'jsonl-lines.js'));
+  const antes = { ...lineas.LIMITE };
+  t.after(() => Object.assign(lineas.LIMITE, antes));
+  // trozos de 7 bytes: un renglón (y una letra con tilde) queda partido entre dos lecturas
+  lineas.LIMITE.trozo = 7;
+  const c = conversacion([delDev('hola'), delAgente('con tildes: áéíóú ñ'), delDev('chau')]);
+  const archivo = ok.leerConversacion(c).archivo;
+  // el último, a medio escribir: se descarta, como hoy
+  fs.appendFileSync(archivo, '{"type":"user","mess');
+  const conv = ok.leerConversacion(c);
+  assert.equal(conv.legible, true);
+  assert.deepEqual(conv.registros.map((r) => r.message.content), ['hola', [{ type: 'text', text: 'con tildes: áéíóú ñ' }], 'chau']);
+  // una tubería no es un registro: es un error, sin esperar
+  if (process.platform !== 'win32') {
+    const fifo = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pok-fifo-')), 'tubo.jsonl');
+    assert.equal(spawnSync('mkfifo', [fifo]).status, 0);
+    // stable-data: mide que no espera (una duración), no una fecha
+    const t0 = Date.now();
+    assert.throws(() => lineas.leerRenglones(fifo), { code: 'ENOTREG' });
+    const enCasa = path.join(c.home, '.claude', 'projects', '-repo', 's-2.jsonl');
+    assert.equal(spawnSync('mkfifo', [enCasa]).status, 0);
+    assert.equal(ok.leerConversacion({ home: c.home, env: {}, sesion: 's-2' }).legible, false);
+    assert.ok(Date.now() - t0 < 1000, 'esperó a la tubería');
+  }
+  // una conversación que pasa del tope no se lee, y no tira
+  lineas.LIMITE.bytes = 10;
+  const grande = ok.leerConversacion(c);
+  assert.equal(grande.legible, false);
+  assert.match(grande.motivo, /^la conversación pasa de 10 bytes$/);
+  assert.deepEqual(ok.planEnLaConversacion('1. un plan con un renglón bastante largo.\n', c), { legible: false, motivo: grande.motivo });
 });

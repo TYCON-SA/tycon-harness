@@ -19,10 +19,15 @@
  *
  * QUÉ HACE. Para cada `az repos pr create` del comando —cada uno con SUS banderas, aunque vengan
  * varios encadenados— exige `--auto-complete true` y `--squash false` explícitos (sin el segundo la
- * estrategia la decide la política de la rama). Cierra además las otras dos puertas al mismo
- * resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el squash, y el que
- * PUBLIQUE un borrador (`--draft false`) sin llevar las dos banderas. Mira sólo el texto del
- * comando —nada de red— con el lector de scripts/lib/az-pr.js.
+ * estrategia la decide la política de la rama), y `--delete-source-branch` explícito: `true` desde una rama efímera
+ * que se vea en `--source-branch`, o `false` sólo desde una de larga vida (sin borrarla, la rama queda viva después
+ * del merge; con `true` desde `dev`, la plataforma la borraría; la lista es la de §9b.4 del paso de merge). Cierra
+ * además las otras dos puertas al mismo resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el
+ * squash, y el que PUBLIQUE un borrador (`--draft false`) sin llevar las tres banderas. El `update` no dice la rama de
+ * origen: con `--delete-source-branch true` frena siempre, y para publicar va `false`. Un `update` común sin la
+ * bandera no se juzga por ella: az conserva la que el pedido ya tenía. Lo que no puede leer (un valor que arma la
+ * terminal, un comodín, un `@archivo`) es una falta. Mira sólo el texto del comando —nada de red— con el lector de
+ * scripts/lib/az-pr.js (`faltasDe`).
  *
  * QUÉ NO HACE. Un borrador recién creado no se toca (no se completa solo por definición) y lo dice.
  * `--help`, listar, mostrar y abandonar tampoco. Salida para el caso puntual —incluido el legítimo
@@ -54,13 +59,90 @@ if (require('../lib/legacy-names.js').readEnv('TYCON_PR_AUTO_COMPLETE_GUARD', { 
 
 let cmd = '';
 try {
-  cmd = ((JSON.parse(payload || '{}').tool_input) || {}).command || '';
+  const evento = JSON.parse(payload || '{}');
+  cmd = (evento.tool_input || {}).command || '';
 } catch {
   // No pudo leer: no frena —un freno que rompe la sesión por un bug propio se apaga— pero lo dice.
   console.error(`${TAG} no pude leer la entrada del hook: no freno, pero tampoco miré.`);
   process.exit(0);
 }
-if (typeof cmd !== 'string' || !az.pareceAzPr(cmd)) process.exit(0);
+// Azure DevOps: crear o actualizar un pedido. GitHub: un `gh pr merge` que aplasta, reordena o saca la entrada
+// automática (el pedido de GitHub entra con un commit de merge, como el de Azure).
+const esAz = typeof cmd === 'string' && az.pareceAzPr(cmd);
+const esGh = typeof cmd === 'string' && /\bgh\b/.test(cmd);
+if (!esAz && !esGh) process.exit(0);
+
+// Las opciones de `gh pr merge` que rompen la regla, y las que llevan un valor (lo que sigue es su valor, no una opción).
+const GH_ROMPE = new Map([['--squash', 'aplasta los commits'], ['--rebase', 'reordena los commits'], ['--disable-auto', 'saca la entrada automática']]);
+const GH_CORTAS = new Map([['s', '--squash'], ['r', '--rebase']]);
+const GH_CON_VALOR = new Set(['--subject', '--body', '--body-file', '--author-email', '--match-head-commit', '--repo']);
+const GH_CORTAS_CON_VALOR = new Set(['t', 'b', 'F', 'A', 'R']);
+// programas que sólo escriben su texto: un `gh` entre sus argumentos no corre
+const SOLO_ESCRIBEN = new Set(['echo', 'printf']);
+const esGhBin = (t) => path.basename(String(t).replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '') === 'gh';
+const faltaGh = (larga) => `${larga} ${GH_ROMPE.get(larga)}: el pedido entra con un commit de merge (\`--merge\`), o solo con su entrada automática`;
+
+/**
+ * Las faltas de los `gh pr merge` de un tramo: [] si no hay o si están bien armados. Como `verboDePr` del lado de Azure
+ * DevOps, el `gh` se busca en cualquier lugar del tramo (detrás de `sudo`, `time`, `nohup`, `env`, `xargs`…), salvo
+ * que el programa sólo escriba texto (`echo`). Las opciones se leen como las recibe `gh`: sin comillas, con las cortas
+ * juntas desarmadas (`-sd` es `-s -d`) y salteando el valor de las que llevan uno.
+ */
+function faltasGh(seg) {
+  const programa = seg.find((f) => !(f.esBandera && /^[A-Za-z_][A-Za-z0-9_]*=/.test(f.texto)));
+  if (programa && SOLO_ESCRIBEN.has(programa.texto)) return [];
+  const faltas = [];
+  for (let i = 0; i < seg.length; i++) {
+    if (!esGhBin(seg[i].texto)) continue;
+    // las dos primeras palabras que no son opciones (después de `-R dueño/repo`, si viene antes)
+    const palabras = [];
+    let j = i + 1;
+    for (; j < seg.length && palabras.length < 2; j++) {
+      const t = seg[j].texto;
+      if (t === '-R' || t === '--repo') { j++; continue; }
+      if (t.startsWith('-')) continue;
+      palabras.push(t);
+    }
+    if (palabras.join(' ') !== 'pr merge') continue;
+    let elegido = false;   // el primer argumento suelto es el pedido (`$N` vale); otra expansión puede ser una opción
+    for (let k = j; k < seg.length; k++) {
+      const f = seg[k];
+      const t = String(f.texto);
+      if (f.expande) {
+        if (!elegido && !t.startsWith('-')) { elegido = true; continue; }
+        faltas.push(`\`${t}\` lo reemplaza la terminal antes de correr: no puedo leer qué opción llega — y lo que no pude mirar no está aprobado`);
+        continue;
+      }
+      if (t.startsWith('--')) {
+        const [nombre, valor] = t.split(/=(.*)/s);
+        if (GH_ROMPE.has(nombre) && !(valor !== undefined && /^false$/i.test(valor))) faltas.push(faltaGh(nombre));
+        else if (GH_CON_VALOR.has(nombre) && valor === undefined) k++;
+        continue;
+      }
+      if (/^-[A-Za-z]/.test(t)) {
+        // un grupo de cortas: cada letra es una opción; la que lleva valor se queda con el resto (o con la ficha siguiente)
+        for (let c = 1; c < t.length; c++) {
+          if (GH_CORTAS.has(t[c])) faltas.push(faltaGh(GH_CORTAS.get(t[c])));
+          else if (GH_CORTAS_CON_VALOR.has(t[c])) { if (c === t.length - 1) k++; break; }
+        }
+        continue;
+      }
+      elegido = true;
+    }
+  }
+  return faltas;
+}
+
+/** ¿El comando corre un `gh pr merge` que no se puede leer (adentro de otro intérprete, o el programa en una variable)? */
+function ghMergeIlegible(comando) {
+  if (!/\bmerge\b/.test(comando)) return null;
+  let lista;
+  try { lista = require('../lib/gh-pr.js').comandosGh(comando, 0, {}); } catch (e) {
+    return `no pude leer el comando (${String((e && e.message) || e).slice(0, 60)})`;
+  }
+  const oculto = lista.find((c) => !c.grupo && c.ilegible.length);
+  return oculto && /\bgh\b[\s\S]*\bpr\b[\s\S]*\bmerge\b/.test(comando.replace(/["'\\]/g, '')) ? oculto.ilegible[0] : null;
+}
 
 function constancia(tipo, texto, comando) {
   console.error(`${TAG} ${texto}`);
@@ -78,8 +160,25 @@ let huboEscape = false;   // ¿ya se anotó el escape de este comando?
 // denominador comandos que nunca juzga.
 let huboJuicio = false;
 const problemas = [];
+const problemasGh = [];
 for (const seg of az.segmentos(cmd)) {
   if (az.pideAyuda(seg)) continue;
+
+  if (esGh) {
+    const ilegible = ghMergeIlegible(az.textoDe(seg));
+    const faltas = ilegible
+      ? [`el \`gh pr merge\` no se deja leer desde acá (${ilegible}): otro intérprete o una variable lo corre, así que no puedo leer sus banderas — y lo que no pude mirar no está aprobado`]
+      : faltasGh(seg);
+    if (faltas.length) {
+      huboJuicio = true;
+      if (az.tieneEscape(seg)) {
+        constancia('PR_A_MANO', 'TYCON_PR_BY_HAND=1: dejo mergear el pedido a mano. Queda dicho.', az.textoDe(seg));
+        huboEscape = true;
+      } else problemasGh.push({ seg, faltas });
+      continue;
+    }
+  }
+  if (!esAz) continue;
 
   // Código adentro de una cadena que va a un intérprete: no se puede juzgar lo que se ejecuta.
   if (az.pasaCodigoAUnInterprete(seg)) {
@@ -107,7 +206,7 @@ for (const seg of az.segmentos(cmd)) {
   // Una línea por tramo: un borrador con el prefijo dice las dos cosas en la misma línea.
   const SOBRA = 'TYCON_PR_BY_HAND=1: el prefijo sobra, este pedido pasa igual sin él; no lo anoto como salteo.';
   if (borrador) {
-    console.error(`${TAG} ${sobra ? SOBRA + ' ' : ''}borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true y --squash false.`);
+    console.error(`${TAG} ${sobra ? SOBRA + ' ' : ''}borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true --squash false --delete-source-branch <true|false>.`);
     continue;
   }
   if (sobra) console.error(`${TAG} ${SOBRA}`);
@@ -127,10 +226,23 @@ for (const seg of az.segmentos(cmd)) {
 if (huboJuicio || huboEscape) {
   constanciaFreno.anotar({
     freno: 'pr-sin-auto-complete', regla: 'sin-auto-complete',
-    veredicto: problemas.length ? 'bloqueo' : (huboEscape ? 'escape' : 'paso'), cmd,
+    veredicto: problemas.length || problemasGh.length ? 'bloqueo' : (huboEscape ? 'escape' : 'paso'), cmd,
   });
 }
-if (!problemas.length) process.exit(0);
+if (problemasGh.length) {
+  const detalleGh = problemasGh.map((p) => `  ${az.textoDe(p.seg).replace(/\s+/g, ' ').slice(0, 110)}\n${p.faltas.map((f) => `    · ${f}`).join('\n')}`).join('\n');
+  console.error(`🔴 Este gh pr merge rompe cómo entra el pedido:
+${detalleGh}
+
+Un pedido entra con un commit de merge: los commits individuales quedan en la rama, y el tablero, los latidos de
+retrospectiva y las notas de versión los identifican uno por uno. Lo abre y lo hace entrar el skill de merge:
+
+  Skill(skill="tycon-merge-to-main", args="source=<rama> target=main")
+
+A mano: \`gh pr merge <n> --merge\` (o \`--merge --auto\`). Para saltear este freno una sola vez, a propósito, el
+prefijo va PEGADO al comando: TYCON_PR_BY_HAND=1 gh pr merge …`);
+}
+if (!problemas.length) process.exit(problemasGh.length ? 2 : 0);
 
 const rama = problemas.map((p) => (p.verbo === 'create' ? az.flagDe(p.seg, 'source-branch', 's') : null)).find(Boolean) || '<rama>';
 const detalle = problemas.map((p) => {
@@ -145,7 +257,7 @@ const soloUpdates = problemas.every((p) => p.verbo === 'update');
 const esperaAprobacion = problemas.some((p) => p.verbo === 'create' && !az.esCierto(az.flagDe(p.seg, 'auto-complete')));
 const retiene = problemas.some((p) => p.verbo === 'update' && az.esFalso(az.flagDe(p.seg, 'auto-complete')));
 const formas = [
-  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false`.' : null,
+  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false --delete-source-branch false` (el `update` no dice la rama, así que con `true` frena; la rama se borra a mano o con el skill de merge).' : null,
   retiene ? 'Para retener una entrega ya encolada (apagar la entrada automática), el prefijo es la salida: `TYCON_PR_BY_HAND=1` pegado a ese mismo `update`.' : null,
 ].filter(Boolean);
 console.error(`🔴 Este pull request se está armando A MANO y no va a quedar bien${soloUpdates ? '' : ' (va a main)'}:
@@ -156,9 +268,11 @@ el gate de build y tests y arma el mensaje que queda como descripción:
 
   Skill(skill="tycon-merge-to-main", args="source=${rama} target=main")
 
-Si de verdad tiene que ir a mano, el comando lleva las dos banderas, explícitas:
+Si de verdad tiene que ir a mano, el comando lleva las tres banderas, explícitas:
 
-  az repos pr create ... --auto-complete true --squash false
+  az repos pr create ... --source-branch <rama> --auto-complete true --squash false --delete-source-branch true
+
+(\`--delete-source-branch false\` sólo desde dev, develop, main o master: las demás ramas se borran al entrar.)
 ${formas.length ? `\n${formas.join('\n')}\n` : ''}
 Un borrador recién creado no se toca (sí al publicarlo). Para saltear este freno una sola vez, a
 propósito —por ejemplo para retener una entrega apagando el auto-complete—, el prefijo va PEGADO al

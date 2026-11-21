@@ -69,7 +69,7 @@ rc=$(corre --type npm)
 # nombre ampararía el paquete entero para todo aviso futuro. El caso de abajo, con los avisos
 # puestos, es la conducta correcta; el caso "sin avisos no ampara" está más abajo.
 repo; echo "$conAltas" > "$TMP/npm.json"
-cat > "$TMP/repo/vulnerabilidades-pendientes.json" <<'D'
+cat > "$TMP/repo/pending-vulnerabilities.json" <<'D'
 { "revision": "2026-12-31", "paquetes": [ {"paquete":"browserslist","advisories":["GHSA-73wf"]}, {"paquete":"handlebars","advisories":["GHSA-2qvq"]} ] }
 D
 rc=$(corre --type npm --block)
@@ -79,7 +79,7 @@ rc=$(corre --type npm --block)
 # Sin esto, declarar la deuda una vez la volvería permanente en silencio — que es exactamente lo
 # que el archivo de deuda existe para impedir.
 repo; echo "$conAltas" > "$TMP/npm.json"
-cat > "$TMP/repo/vulnerabilidades-pendientes.json" <<'D'
+cat > "$TMP/repo/pending-vulnerabilities.json" <<'D'
 { "revision": "2026-01-01", "paquetes": [ {"paquete":"browserslist"}, {"paquete":"handlebars"} ] }
 D
 rc=$(corre --type npm --block)
@@ -88,13 +88,13 @@ rc=$(corre --type npm --block)
 
 # ── 7. 🔴 una declaración SIN FECHA no vale ──────────────────────────────────────────────────
 repo; echo "$conAltas" > "$TMP/npm.json"
-echo '{ "paquetes": [ {"paquete":"browserslist"}, {"paquete":"handlebars"} ] }' > "$TMP/repo/vulnerabilidades-pendientes.json"
+echo '{ "paquetes": [ {"paquete":"browserslist"}, {"paquete":"handlebars"} ] }' > "$TMP/repo/pending-vulnerabilities.json"
 rc=$(corre --type npm --block)
 [ "$rc" -eq 1 ] && ok "una deuda sin fecha de revisión no ampara (sería permanente)" || no "deuda sin fecha salió $rc"
 
 # ── 8. 🔴 una declaración ILEGIBLE no ampara: dato malo es peor que dato ausente ─────────────
 repo; echo "$conAltas" > "$TMP/npm.json"
-echo '{ esto no es json' > "$TMP/repo/vulnerabilidades-pendientes.json"
+echo '{ esto no es json' > "$TMP/repo/pending-vulnerabilities.json"
 rc=$(corre --type npm --block)
 { [ "$rc" -eq 1 ] && grep -qi "ilegible" "$TMP/out.txt"; } \
   && ok "una deuda ilegible no ampara, y se dice" || no "deuda ilegible salió $rc: $(cat "$TMP/out.txt")"
@@ -136,6 +136,76 @@ n=$(grep -c '"paquete": "SSH.NET"' "$TMP/out.txt")
   && ok "el mismo paquete en 3 proyectos es 1 hallazgo, con la severidad más grave" \
   || no "agrupación NuGet: salió $rc con $n entradas"
 
+# ── 12b. 🔴 un proyecto con packages.config no sale en `dotnet list`: la lista vacía no es limpia ─────
+# Reproduce los repos de .NET Framework: restore y list salen 0 y la lista viene vacía, así que el informe decía
+# «limpio» sin haber mirado los paquetes de esos proyectos.
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/Api" "$TMP/repo/Web"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/repo/Api/packages.config"; echo '<packages />' > "$TMP/repo/Web/packages.config"
+echo '{"projects":[]}' > "$TMP/nuget.json"
+rc=$(corre --type nuget --block)
+{ [ "$rc" -eq 2 ] && grep -q "NO MEDIDO" "$TMP/out.txt" && grep -q "packages.config: 2 proyecto" "$TMP/out.txt" && grep -q "Api/packages.config" "$TMP/out.txt"; } \
+  && ok "con packages.config sale 2 y lo nombra, aunque la lista de dotnet venga vacía" || no "packages.config salió $rc: $(cat "$TMP/out.txt")"
+# un nombre de carpeta con un carácter de control no llega al informe tal cual
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/$(printf 'Ra\033[31mro')"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/repo/$(printf 'Ra\033[31mro')/packages.config"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q 'Ra?\[31mro/packages.config' "$TMP/out.txt" && ! grep -q "$(printf '\033')" "$TMP/out.txt"; } \
+  && ok "una ruta con un carácter de control sale saneada en el motivo" || no "ruta con control salió $rc: $(cat -v "$TMP/out.txt")"
+# lo que está en lo restaurado o lo compilado no es un proyecto del repo
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/packages/Algo.1.0" "$TMP/repo/Api/bin" "$TMP/repo/Api/obj" "$TMP/repo/node_modules/x"; : > "$TMP/repo/x.sln"
+for d in packages/Algo.1.0 Api/bin Api/obj node_modules/x; do echo '<packages />' > "$TMP/repo/$d/packages.config"; done
+rc=$(corre --type nuget --block)
+[ "$rc" -eq 0 ] && ok "un packages.config en packages, bin, obj o node_modules no frena la medición" || no "packages.config fuera de los proyectos salió $rc: $(cat "$TMP/out.txt")"
+# `packages` sin un .sln al lado es un proyecto como cualquier otro
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/src/packages/Foo"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/repo/src/packages/Foo/packages.config"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "src/packages/Foo/packages.config" "$TMP/out.txt"; } \
+  && ok "un proyecto dentro de una carpeta packages sin .sln al lado se mira" || no "packages anidado salió $rc: $(cat "$TMP/out.txt")"
+# un packages.config que llega por un enlace dentro del repo cuenta
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/Api" "$TMP/repo/comun"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/repo/comun/paquetes.xml"; ln -s ../comun/paquetes.xml "$TMP/repo/Api/packages.config"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "Api/packages.config" "$TMP/out.txt"; } \
+  && ok "un packages.config enlazado se detecta" || no "packages.config enlazado salió $rc: $(cat "$TMP/out.txt")"
+# lo que no se pudo mirar no es «no hay»: un enlace que sale del repo y una carpeta ilegible
+rm -rf "$TMP/repo" "$TMP/afuera"; mkdir -p "$TMP/repo" "$TMP/afuera/Lib"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/afuera/Lib/packages.config"; ln -s "$TMP/afuera/Lib" "$TMP/repo/Lib"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "Lib (enlace fuera del repo)" "$TMP/out.txt"; } \
+  && ok "un enlace a una carpeta fuera del repo sale no medido y lo nombra" || no "enlace fuera del repo salió $rc: $(cat "$TMP/out.txt")"
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; : > "$TMP/repo/x.sln"; ln -s no-existe "$TMP/repo/Rota"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "Rota (enlace roto)" "$TMP/out.txt"; } \
+  && ok "un enlace roto sale no medido y dice que está roto" || no "enlace roto salió $rc: $(cat "$TMP/out.txt")"
+# un enlace a una carpeta del repo no se recorre dos veces: lo mira el recorrido de la carpeta real
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/Real"; : > "$TMP/repo/x.sln"; ln -s Real "$TMP/repo/Atajo"
+echo '{"projects":[]}' > "$TMP/nuget.json"
+rc=$(corre --type nuget)
+[ "$rc" -eq 0 ] && ok "un enlace a una carpeta del repo no deja la revisión sin medir" || no "enlace interno salió $rc: $(cat "$TMP/out.txt")"
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/..a" "$TMP/repo/x"; : > "$TMP/repo/x.sln"; ln -s ../..a "$TMP/repo/x/lnk"
+rc=$(corre --type nuget)
+[ "$rc" -eq 0 ] && ok "un enlace a una carpeta del repo que empieza con «..» sigue siendo del repo" || no "enlace a ..a salió $rc: $(cat "$TMP/out.txt")"
+# mayúsculas: Packages.Config cuenta, y BIN y una carpeta Packages al lado del .sln se saltean
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/BIN" "$TMP/repo/Packages/Algo" "$TMP/repo/Api"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/repo/BIN/packages.config"; echo '<packages />' > "$TMP/repo/Packages/Algo/packages.config"
+echo '<packages />' > "$TMP/repo/Api/Packages.Config"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "packages.config: 1 proyecto" "$TMP/out.txt" && grep -q "Api/Packages.Config" "$TMP/out.txt"; } \
+  && ok "los nombres se comparan sin mayúsculas" || no "mayúsculas salió $rc: $(cat "$TMP/out.txt")"
+# con más de tres, el motivo nombra tres y cuenta el resto
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; : > "$TMP/repo/x.sln"
+for p in A B C D E; do mkdir -p "$TMP/repo/$p"; echo '<packages />' > "$TMP/repo/$p/packages.config"; done
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "packages.config: 5 proyecto" "$TMP/out.txt" && grep -q "y 2 más" "$TMP/out.txt"; } \
+  && ok "con más de tres rutas el motivo nombra tres y cuenta el resto" || no "recorte salió $rc: $(cat "$TMP/out.txt")"
+if [ "$(id -u)" -ne 0 ]; then
+  rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/Cerrada"; : > "$TMP/repo/x.sln"; chmod 000 "$TMP/repo/Cerrada"
+  rc=$(corre --type nuget); chmod 755 "$TMP/repo/Cerrada"
+  { [ "$rc" -eq 2 ] && grep -q "Cerrada (EACCES)" "$TMP/out.txt"; } \
+    && ok "una carpeta ilegible sale no medido y la nombra" || no "carpeta ilegible salió $rc: $(cat "$TMP/out.txt")"
+fi
+
 # ── 13. un repo que no existe no se lee como limpio ──────────────────────────────────────────
 rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/doble.sh" node "$GUION" --repo "$TMP/no-existe" --type npm >"$TMP/out.txt" 2>&1; echo $?)
 [ "$rc" -eq 2 ] && ok "un repo inexistente sale 2" || no "repo inexistente salió $rc"
@@ -149,7 +219,7 @@ echo
 # Si bastara con que el NOMBRE del paquete figurara, eso ampararía el paquete entero, en todo el
 # repo y para todo aviso FUTURO. Un formulario nuevo que agregara un paquete ya declarado pasaría sin
 # que nadie lo mirara, y un aviso nuevo sobre un paquete declarado no despertaría a nadie.
-decl(){ printf '%s' "$1" > "$TMP/repo/vulnerabilidades-pendientes.json"; }
+decl(){ printf '%s' "$1" > "$TMP/repo/pending-vulnerabilities.json"; }
 
 repo; echo "$conAltas" > "$TMP/npm.json"
 decl '{"revision":"2026-12-31","paquetes":[{"paquete":"browserslist","advisories":["GHSA-73wf"]},{"paquete":"handlebars","advisories":["GHSA-2qvq"]}]}'
@@ -264,22 +334,22 @@ rc=$(FIX="$TMP" FALLAR_HASTA=99 TYCON_DEP_CMD="$TMP/npm-flaky.sh" TYCON_DEP_TODA
 
 # ── la declaración se lee RELATIVA a --repo: una subcarpeta trae la suya, no la de la raíz ──────
 # El nocturno audita subcarpetas (`subruta`: el gateway de mensajería de un producto del equipo,
-# tools/chat-gateway, con su propio lockfile y su propio vulnerabilidades-pendientes.json). Este
+# tools/chat-gateway, con su propio lockfile y su propio pending-vulnerabilities.json). Este
 # guion resuelve la declaración relativa a --repo: el caso es la red
 # que impide que alguien "arregle" la lectura anclándola a la raíz del repo git, que dejaría al
 # gateway sin su deuda declarada y despertando a todo el mundo la primera noche.
 rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/sub"; : > "$TMP/repo/sub/package-lock.json"; : > "$TMP/repo/package-lock.json"
 echo "$conAltas" > "$TMP/npm.json"
-cat > "$TMP/repo/sub/vulnerabilidades-pendientes.json" <<'D'
+cat > "$TMP/repo/sub/pending-vulnerabilities.json" <<'D'
 { "revision": "2026-12-31", "paquetes": [ {"paquete":"browserslist","advisories":["GHSA-73wf"]}, {"paquete":"handlebars","advisories":["GHSA-2qvq"]} ] }
 D
 ( cd "$TMP/repo" && git init -q . && git add -A >/dev/null 2>&1 && git -c user.email=t@t -c user.name=t commit -qm x ) >/dev/null 2>&1   # la raíz ES un repo git: la declaración igual se busca en --repo
 rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/doble.sh" TYCON_DEP_TODAY=2026-09-01 node "$GUION" --repo "$TMP/repo/sub" --type npm --block >"$TMP/out.txt" 2>&1; echo $?)
 [ "$rc" -eq 0 ] && ok "con --repo en una subcarpeta la deuda declarada se lee AHÍ (el gateway entra en silencio)" \
   || no "subcarpeta: no leyó la declaración de la subcarpeta — rc=$rc: $(head -3 "$TMP/out.txt" | tr '\n' ' ')"
-rm -f "$TMP/repo/sub/vulnerabilidades-pendientes.json"
+rm -f "$TMP/repo/sub/pending-vulnerabilities.json"
 cp "$TMP/repo/sub/../package-lock.json" /dev/null 2>&1 || true
-cat > "$TMP/repo/vulnerabilidades-pendientes.json" <<'D'
+cat > "$TMP/repo/pending-vulnerabilities.json" <<'D'
 { "revision": "2026-12-31", "paquetes": [ {"paquete":"browserslist","advisories":["GHSA-73wf"]}, {"paquete":"handlebars","advisories":["GHSA-2qvq"]} ] }
 D
 rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/doble.sh" TYCON_DEP_TODAY=2026-09-01 node "$GUION" --repo "$TMP/repo/sub" --type npm --block >"$TMP/out.txt" 2>&1; echo $?)
@@ -444,5 +514,32 @@ echo '{"projects":[{"frameworks":[{"topLevelPackages":[{"id":"Acme.Doble","vulne
 corre --type nuget --json >/dev/null
 v=$(node -e 'const h = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).hallazgos[0]; console.log([h.severidad, !!h.gravedad_sin_dato, h.advisories.length].join(" "));' "$TMP/out.txt" 2>&1)
 [ "$v" = "high false 2" ] && ok "T10 8.55 nuget: con empate, la gravedad informada gana a la sin dato" || no "T10 8.55 empate nuget: $v"
+
+# ── npm en Windows (@story-8.319, D4): el npm-cli.js al lado del npm.cmd del PATH, con el mismo Node, sin shell ────────
+# Windows se simula con `plataforma: 'win32'` y el separador del PATH de esta máquina; el npm-cli.js de juguete dice con
+# qué lo corrieron.
+W="$TMP/win"; mkdir -p "$W/con/node_modules/npm/bin" "$W/solo" "$W/vacio"
+: > "$W/con/npm.cmd"; : > "$W/solo/npm.cmd"
+cat > "$W/con/node_modules/npm/bin/npm-cli.js" <<'CLI'
+console.log(JSON.stringify({ argv: process.argv.slice(2), node: process.execPath }));
+CLI
+NODE_BIN="$(command -v node)"
+corre_win(){ ( unset TYCON_DEP_CMD; PATH="$1" "$NODE_BIN" -e '
+  const a = require(process.argv[1]);
+  const r = a.correr("npm", ["audit", "--json"], process.cwd(), 0, { plataforma: process.argv[2], separador: require("path").delimiter });
+  console.log(JSON.stringify(r));' "$GUION" "${2:-win32}" ); }
+v=$(corre_win "$W/vacio$(node -p 'require("path").delimiter')$W/con")
+node -e 'const r = JSON.parse(process.argv[1]); const o = JSON.parse(r.stdout); process.exit(r.ok && o.argv.join(" ") === "audit --json" && o.node === process.execPath ? 0 : 1)' "$v" \
+  && ok "T13 8.319 Windows: corre el npm-cli.js de al lado del npm.cmd con el mismo Node" || no "T13 8.319 npm en Windows: $v"
+grep -Eq "shell:[[:space:]]*true[[:space:]]*[,}]" "$GUION" && no "T13 8.319 audit-dependencies.js usa shell: true" || ok "T13 8.319 sin shell: true"
+v=$(corre_win "$W/vacio")
+case "$v" in *'"ok":false'*'no se pudo ejecutar npm: no hay npm.cmd en el PATH'*) ok "T14 8.319 Windows sin npm.cmd: no mide y lo dice" ;; *) no "T14 8.319 sin npm.cmd: $v" ;; esac
+v=$(corre_win "$W/solo")
+case "$v" in *'"ok":false'*'no se pudo ejecutar npm: hay npm.cmd en'*'npm-cli.js'*) ok "T14 8.319 Windows con npm.cmd sin npm-cli.js: no mide y lo dice" ;; *) no "T14 8.319 sin npm-cli.js: $v" ;; esac
+v=$(corre_win "$W/solo" darwin)
+case "$v" in *'npm-cli.js'*) no "T14 8.319 fuera de Windows buscó npm-cli.js: $v" ;; *) ok "T14 8.319 fuera de Windows, npm como hoy" ;; esac
+v=$( TYCON_DEP_CMD="$TMP/doble.sh" PATH="$W/vacio:$PATH" node -e '
+  const a = require(process.argv[1]); console.log(JSON.stringify(a.correr("npm", ["--version"], process.cwd(), 0, { plataforma: "win32" })));' "$GUION" )
+case "$v" in *'no hay npm.cmd'*) no "T14 8.319 con TYCON_DEP_CMD igual buscó npm.cmd: $v" ;; *) ok "T14 8.319 con TYCON_DEP_CMD, como hoy" ;; esac
 
 [ "$fallos" -eq 0 ] && { echo "✅ auditar-dependencias: todo verde ($casos casos)"; exit 0; } || { echo "❌ auditar-dependencias: $fallos fallo(s)"; exit 1; }

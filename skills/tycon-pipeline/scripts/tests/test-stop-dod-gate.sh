@@ -50,9 +50,81 @@ run | grep -q '"decision":"block"' && grep -q '"iter": 1' "$MK" && echo "✓ C r
 echo '{"storyId":"X","autonomous":true,"iter":5,"checks":{"tests":"red:x"}}' > "$MK"
 run | grep -q 'AUTONOMÍA DETENIDA' && grep -q '"autonomous": false' "$MK" && echo "✓ D cap → escala" || { echo "✗ D"; fail=1; }
 
-# E) no-progreso (mismos fallos, streak 2→3) → escala
-echo '{"storyId":"X","autonomous":true,"iter":1,"noProgressStreak":2,"lastFailures":["tests → red:x"],"checks":{"tests":"red:x"}}' > "$MK"
-run | grep -q 'thrashing' && grep -q '"autonomous": false' "$MK" && echo "✓ E no-progreso → escala" || { echo "✗ E"; fail=1; }
+# E) la primera vuelta sin progreso (los mismos fallos que la anterior) → escala. Tres intentos iguales no aprenden nada.
+# 🔴 rojo: con el freno en tres vueltas, este caso sigue iterando.
+echo '{"storyId":"X","autonomous":true,"iter":1,"noProgressStreak":0,"lastFailures":["tests → red:x"],"checks":{"tests":"red:x"}}' > "$MK"
+run | grep -q 'ninguno de los fallos' && grep -q '"autonomous": false' "$MK" && echo "✓ E primera vuelta sin progreso → escala" || { echo "✗ E"; fail=1; }
+
+# E1) el primer rojo NO es una vuelta sin progreso: no hay vuelta anterior con qué comparar → block, sin escalar.
+# 🔴 rojo: contar el primer rojo como «sin progreso» escala antes de que el agente intente nada.
+echo '{"storyId":"X","autonomous":true,"iter":0,"lastFailures":[],"checks":{"tests":"red:x"}}' > "$MK"
+OUTE1="$(run)"
+if printf '%s' "$OUTE1" | grep -q 'AUTONOMÍA DETENIDA'; then
+  echo "✗ E1 — escaló en el primer rojo, sin dejar intentar"; fail=1
+elif printf '%s' "$OUTE1" | grep -q '"decision":"block"' && grep -q '"noProgressStreak": 0' "$MK" && grep -q '"autonomous": true' "$MK"; then
+  echo "✓ E1 primer rojo → block, sigue la autonomía"
+else
+  echo "✗ E1"; fail=1
+fi
+
+# E2) al escalar, la persona ve el rojo crudo (systemMessage), no sólo el agente.
+# 🔴 rojo: sin systemMessage, el rojo llega a la persona sólo si el agente lo transcribe.
+echo '{"storyId":"X","autonomous":true,"iter":1,"lastFailures":["tests → red:exit=1 suite foo.test.js"],"checks":{"tests":"red:exit=1 suite foo.test.js"}}' > "$MK"
+run_strict
+if printf '%s' "$OUT" | node -e '
+  const o = JSON.parse(require("fs").readFileSync(0, "utf8").trim());
+  if (o.decision !== "block") process.exit(3);
+  if (!/tests → red:exit=1 suite foo\.test\.js/.test(o.systemMessage || "")) process.exit(4);
+' 2>/dev/null; then
+  echo "✓ E2 escalada → la persona ve el rojo tal cual (systemMessage)"
+else
+  echo "✗ E2 — la escalada no le muestra el rojo a la persona (OUT=$OUT)"; fail=1
+fi
+
+# P) el rótulo de las pruebas no dice cuántas fallan: que BAJE la cantidad en rojo (la escribe el portón en
+# .advisors/tests-result.json del repo) también es avance. Sin la cantidad, vale la regla del rótulo.
+REPO_P="$(mktemp -d)"; mkdir -p "$REPO_P/.advisors"
+tr_p() { printf '{"suite_green":false,"totals":{"total":20,"passed":%s,"failed":%s}}' "$((20-$1))" "$1" > "$REPO_P/.advisors/tests-result.json"; }
+mk_p() { printf '{"storyId":"X","repoPath":"%s","autonomous":true,"iter":1,"lastFailures":["tests → red:exit=1"],%s"checks":{"tests":"red:exit=1"}}' "$REPO_P" "$1" > "$MK"; }
+
+# P1) de 10 pruebas en rojo a 1, mismo rótulo → avance: block, sin escalar, y anota la cantidad nueva.
+# 🔴 rojo: comparando sólo el rótulo, arreglar 9 de 10 escala como «sin avance».
+tr_p 1; mk_p '"lastTestsFailed":10,'
+OUTP1="$(run)"
+if ! printf '%s' "$OUTP1" | grep -q 'AUTONOMÍA DETENIDA' && printf '%s' "$OUTP1" | grep -q '"decision":"block"' && grep -q '"lastTestsFailed": 1' "$MK"; then
+  echo "✓ P1 baja la cantidad de pruebas en rojo → avance"
+else
+  echo "✗ P1 — arreglar 9 de 10 pruebas contó como sin avance"; fail=1
+fi
+
+# P2) la misma cantidad y el mismo rótulo → sin avance: escala.
+tr_p 10; mk_p '"lastTestsFailed":10,'
+run | grep -q 'AUTONOMÍA DETENIDA' && echo "✓ P2 misma cantidad en rojo → escala" || { echo "✗ P2 — no escaló con la misma cantidad"; fail=1; }
+
+# P3) el archivo no trae la cantidad (otra herramienta) → cae a la regla del rótulo, que con el mismo rótulo escala.
+# 🔴 rojo: tomar la falta de cantidad como cero (o como avance) dejaría iterar sin fin.
+printf '{"suite_green":false}' > "$REPO_P/.advisors/tests-result.json"; mk_p '"lastTestsFailed":10,'
+run | grep -q 'AUTONOMÍA DETENIDA' && echo "✓ P3 sin cantidad → regla del rótulo" || { echo "✗ P3 — sin cantidad no cayó a la regla del rótulo"; fail=1; }
+
+# P4) sin cantidad, pero el rótulo cambió → avance por el rótulo.
+mk_p '"lastTestsFailed":10,'
+node -e 'const fs=require("fs"),f=process.argv[1];const m=JSON.parse(fs.readFileSync(f,"utf8"));m.checks={tests:"red:exit=4"};fs.writeFileSync(f,JSON.stringify(m))' "$MK"
+OUTP4="$(run)"
+! printf '%s' "$OUTP4" | grep -q 'AUTONOMÍA DETENIDA' && printf '%s' "$OUTP4" | grep -q '"decision":"block"' \
+  && echo "✓ P4 sin cantidad y rótulo distinto → avance" || { echo "✗ P4"; fail=1; }
+rm -rf "$REPO_P"
+
+# E3) un verde en el medio olvida los fallos de antes: el rojo siguiente es un primer rojo, aunque sea el mismo.
+# 🔴 rojo: con lastFailures viejos, volver a romper la misma prueba más tarde escalaría sin dejar intentar.
+echo '{"storyId":"X","autonomous":true,"iter":1,"lastFailures":["tests → red:x"],"checks":{"tests":"green"}}' > "$MK"
+run >/dev/null
+node -e 'const fs=require("fs"),f=process.argv[1];const m=JSON.parse(fs.readFileSync(f,"utf8"));m.checks={tests:"red:x"};fs.writeFileSync(f,JSON.stringify(m))' "$MK"
+OUTE3="$(run)"
+if printf '%s' "$OUTE3" | grep -q '"decision":"block"' && ! printf '%s' "$OUTE3" | grep -q 'AUTONOMÍA DETENIDA'; then
+  echo "✓ E3 verde en el medio → el rojo siguiente no escala"
+else
+  echo "✗ E3 — escaló con fallos de antes de un verde"; fail=1
+fi
 
 # F) hard-escape (variable de entorno) → escala
 echo '{"storyId":"X","autonomous":true,"checks":{"tests":"red:x"}}' > "$MK"
@@ -91,9 +163,15 @@ touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY
 run | grep -q 'hard-escape' && echo "✓ H hard-escape (archivo) → escala" || { echo "✗ H"; fail=1; }
 rm -f ~/.claude/.tycon-pipeline/STOP_AUTONOMY
 
-# I) marker CORRUPTO → fail-open (allow, sin output). Un bug NO debe trabar a Claude.
+# I) marker CORRUPTO → fail-open (allow: sin decision). Un bug NO debe trabar a Claude. Desde la 8.195 (T26) el
+# aviso a la persona nombra el marcador que no pudo leer: no es «nada abierto».
 printf '{ no-es-json ' > "$MK"
-[ -z "$(run)" ] && echo "✓ I marker corrupto → allow (fail-open)" || { echo "✗ I — NO fail-open ante marker corrupto (foot-gun)"; fail=1; }
+run_strict
+if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -q '"decision"' && printf '%s' "$OUT" | grep -q 'no pude leer la ejecución de la sesión stoptest'; then
+  echo "✓ I marker corrupto → allow (fail-open) · T26 Avisos_MarcadorIlegible_LoNombran"
+else
+  echo "✗ I — NO fail-open ante marker corrupto (foot-gun), o no lo nombra: «${OUT}»"; fail=1
+fi
 
 # J) SIN marker → allow (sesión normal, no autónoma)
 rm -f "$MK"
@@ -103,7 +181,7 @@ rm -f "$MK"
 #    si queda 1 (resolvió uno) → progressed → noProgressStreak vuelve a 0, sigue iterando.
 echo '{"storyId":"X","autonomous":true,"iter":1,"noProgressStreak":2,"lastFailures":["tests → red:x","build → red:y"],"checks":{"tests":"red:x"}}' > "$MK"
 OUT="$(run)"
-if printf '%s' "$OUT" | grep -q 'thrashing'; then
+if printf '%s' "$OUT" | grep -q 'AUTONOMÍA DETENIDA'; then
   echo "✗ K — escaló pese a haber PROGRESO (escalado prematuro)"; fail=1
 elif printf '%s' "$OUT" | grep -q '"decision":"block"' && grep -q '"noProgressStreak": 0' "$MK"; then
   echo "✓ K progreso → streak reset (0), sigue iterando sin escalar"
@@ -178,13 +256,15 @@ else
 fi
 
 # T8) tests «sin-acotar» (el repo hermano no se pudo acotar: la cubre la CI del pedido) → no frena el cierre del
-# turno, y complete-step 4 lo deja pasar avisando que el merge exige la CI completa en verde, con constancia en gates.log.
+# turno, y complete-step 4 lo deja pasar avisando que la CI del pedido tiene que salir verde antes del merge, y que
+# esta máquina no lo comprueba (no promete un freno que no existe), con constancia en gates.log.
 # 🔴 rojo: si el hook frenara todo lo que no es 'green', el agente quedaría en un lazo sin salida (la única sería la suite completa).
 echo '{"storyId":"X","autonomous":true,"iter":0,"checks":{"build":"green","tests":"sin-acotar"}}' > "$MK"
 [ -z "$(run)" ] && echo "✓ T8 sin-acotar → deja cerrar el turno" || { echo "✗ T8 — sin-acotar frenó el cierre del turno"; fail=1; }
 echo '{"storyId":"X","storyPath":"","autonomous":false,"stepsCompleted":[0,1,2,3],"stepsPending":[4,5,6,7,8],"checks":{"tests":"sin-acotar"},"checksProvenance":{"tests":"test-gate"}}' > "$MK"
 OUT8=$(CLAUDE_CODE_SESSION_ID=$SID TYCON_MUTATION_CHECK=off node marker.js complete-step 4 --no-atdd 2>&1); RC8=$?
-if [ "$RC8" -eq 0 ] && echo "$OUT8" | grep -q 'el merge exige la CI completa en verde' \
+if [ "$RC8" -eq 0 ] && echo "$OUT8" | grep -q 'antes del merge, mirá que salga verde (esta máquina no lo comprueba)' \
+  && ! echo "$OUT8" | grep -q 'el merge exige' \
   && grep -q '"name":"tests-unscoped"' ~/.claude/.tycon-pipeline/gates.log; then
   echo "✓ T8 complete-step 4 con sin-acotar → pasa, avisa y lo anota"
 else
@@ -206,6 +286,59 @@ if [ "$RA" -eq 2 ] && [ "$RB" -eq 2 ] && [ "$KB" -eq 0 ] && [ "$RC9" -eq 2 ] && 
   echo "✓ T19 mark-tests-not-scoped: sin el portón, con otro rojo o con otra procedencia, no cambia nada; con la salida 7 del portón, sí"
 else
   echo "✗ T19 mark-tests-not-scoped: sin portón=$RA otro rojo=$RB(intacto=$KB) otra procedencia=$RC9 el bueno=$RD"; fail=1
+fi
+
+# Lo terminado sin cerrar: el cierre de turno avisa a la persona, en toda sesión, sin frenar.
+TERM_H='"stepScheme":2,"stepsCompleted":["start","validate-story","plan","approve-plan","implement","run-tests","reviewers","adversarial-pass","findings","prepare-commit"],"stepsPending":[],"dodRuntimeChecked":true,"deepReviewDone":true,"stepTimings":{"reviewers":{"completedAt":"2026-10-15T10:00:00Z"},"findings":{"completedAt":"2026-10-15T10:10:00Z"},"prepare-commit":{"completedAt":"2026-10-15T10:30:00Z"}}'
+# solo stdout, con el JSON entero: sin decision (no frena) y con la línea en systemMessage
+mensaje() { printf '%s' "$OUT" | node -e 'const t=require("fs").readFileSync(0,"utf8").trim(); if(!t){process.exit(5)} const o=JSON.parse(t); if(o.decision) process.exit(6); process.stdout.write(o.systemMessage||"")'; }
+
+# T16) CierreDeTurno_TerminadaSinCerrar_Avisa: no autónoma y autónoma en verde, la misma línea; el turno cierra.
+echo "{\"storyId\":\"7.7\",\"autonomous\":false,$TERM_H}" > "$MK"
+run_strict; M16a=$(mensaje); R16a=$?
+echo "{\"storyId\":\"7.7\",\"autonomous\":true,\"checks\":{\"tests\":\"green\"},$TERM_H}" > "$MK"
+run_strict; M16b=$(mensaje); R16b=$?
+if [ "$RC" -eq 0 ] && [ "$R16a" -eq 0 ] && [ "$R16b" -eq 0 ] \
+  && printf '%s' "$M16a" | grep -q 'la ejecución de la story 7.7 terminó hace .* y sigue abierta: cerrala con `marker.js clear` después del último push y del último pedido' \
+  && [ "$M16a" = "$M16b" ]; then
+  echo "✓ T16 CierreDeTurno_TerminadaSinCerrar_Avisa: la línea en systemMessage, en toda sesión, y el turno cierra"
+else
+  echo "✗ T16 CierreDeTurno_TerminadaSinCerrar_Avisa: rc=$RC a=$R16a b=$R16b «${M16a}» «${M16b}»"; fail=1
+fi
+
+# T17) CierreDeTurno_ConOtraVuelta_DiceQueFaltaRevisar: un .js cambiado después de los revisores, dentro de un repo (código).
+# Fuera de todo repo ya no cuenta (8.270): el archivo va en una carpeta con `.git`.
+mkdir -p "$HOME/con-repo/.git"
+echo "{\"storyId\":\"7.7\",\"autonomous\":false,$TERM_H,\"fileEvents\":[{\"path\":\"$HOME/con-repo/src/a.js\",\"ts\":\"2026-10-15T10:20:00Z\",\"code\":true}]}" > "$MK"
+run_strict; M17=$(mensaje)
+if printf '%s' "$M17" | grep -q 'tiene código cambiado después de los revisores' && ! printf '%s' "$M17" | grep -q 'marker.js clear'; then
+  echo "✓ T17 CierreDeTurno_ConOtraVuelta_DiceQueFaltaRevisar"
+else
+  echo "✗ T17 CierreDeTurno_ConOtraVuelta_DiceQueFaltaRevisar: «${M17}»"; fail=1
+fi
+
+# T27) CierreDeTurno_AvisoQueFalla_NoFrena: la biblioteca del aviso lanza; el turno cierra y la falla queda en gates.log.
+PRE="$HOME/rompe-finished-open.js"
+echo "require('$PWD/lib/finished-open.js').stopLines = () => { throw new Error('aviso roto t27'); };" > "$PRE"
+echo "{\"storyId\":\"7.7\",\"autonomous\":false,$TERM_H}" > "$MK"
+OUT27=$(printf '%s' "$EV" | node --require "$PRE" "$HOOK" 2>/dev/null); R27=$?
+if [ "$R27" -eq 0 ] && ! printf '%s' "$OUT27" | grep -q '"decision"' && grep -q 'aviso roto t27' ~/.claude/.tycon-pipeline/gates.log; then
+  echo "✓ T27 CierreDeTurno_AvisoQueFalla_NoFrena"
+else
+  echo "✗ T27 CierreDeTurno_AvisoQueFalla_NoFrena: rc=$R27 «${OUT27}»"; fail=1
+fi
+
+# T28) EnCurso_MitadDeCamino_SeVeComoHoy: una ejecución a mitad de camino no suma la línea nueva (la de pasos pendientes
+# sale como hoy), y un rojo autónomo frena igual.
+echo '{"storyId":"7.7","stepScheme":2,"autonomous":false,"stepsCompleted":["start"],"stepsPending":["implement"]}' > "$MK"
+run_strict; OUT28a="$OUT"
+echo '{"storyId":"7.7","stepScheme":2,"autonomous":true,"iter":0,"stepsCompleted":["start"],"stepsPending":["implement"],"checks":{"tests":"red:x"}}' > "$MK"
+run_strict; OUT28b="$OUT"
+if ! printf '%s' "$OUT28a" | grep -q '"decision"' && ! printf '%s%s' "$OUT28a" "$OUT28b" | grep -q 'sigue abierta\|terminó hace' \
+  && printf '%s' "$OUT28b" | grep -q '"decision":"block"'; then
+  echo "✓ T28 EnCurso_MitadDeCamino_SeVeComoHoy (cierre de turno)"
+else
+  echo "✗ T28 EnCurso_MitadDeCamino_SeVeComoHoy: «${OUT28a}» «${OUT28b}»"; fail=1
 fi
 
 rm -f ~/.claude/.tycon-pipeline/STOP_AUTONOMY

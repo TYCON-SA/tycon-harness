@@ -3,6 +3,10 @@
  * guides-heal.js — repara el CLON ATRASADO (o TRABADO) del arnés desde un hook que ya
  * está enchufado en todas las máquinas (on-prompt.js, UserPromptSubmit).
  *
+ * Pieza en retiro. En una máquina con estado del mecanismo de instalación (`harness-state.json`)
+ * no hace nada: el arranque lo hacen `harness.js` y su copia fija, que vive fuera del árbol que
+ * actualiza (`delegated`, más abajo). Se borra junto con la limpieza de los nombres viejos.
+ *
  * El problema que resuelve:
  *
  *   La línea de arranque de cada sesión hace `git pull` del arnés y después corre el
@@ -80,10 +84,11 @@ function lines(s) { return String(s || '').split('\n').filter(Boolean); }
 function makeGit(env) {
   return function git(dir, args, opts = {}) {
     return execFileSync('git', ['-C', dir, ...args], {
+      windowsHide: true,
       encoding: 'utf8',
       timeout: opts.timeout || 8000,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: Object.assign({}, env, { GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' }),
+      env: require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo(env, { GIT_TERMINAL_PROMPT: '0' }),
     }).trim();
   };
 }
@@ -351,7 +356,7 @@ function bringsSkills(git, dir, rev) {
 
 function hasCmd(name) {
   try {
-    execFileSync(process.platform === 'win32' ? 'where' : 'which', [name], { stdio: 'ignore', timeout: 3000 });
+    execFileSync(process.platform === 'win32' ? 'where' : 'which', [name], { windowsHide: true, stdio: 'ignore', timeout: 3000 });
     return true;
   } catch {
     return false;

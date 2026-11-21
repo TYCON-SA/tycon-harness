@@ -22,6 +22,11 @@
 # Variables de la definición (se cargan en Azure, en «Variables» del pipeline):
 #   SITE_COPY_ACCOUNT    — la cuenta de almacenamiento de la copia
 #   SITE_COPY_CONTAINER  — su contenedor
+#   SITE_URL             — optativa: la dirección del sitio. Con ella, si la foto nueva trae otro operations.json (un
+#                          pedido de Configuración aprobado, por ejemplo una invitación de Personas), el trabajo le pide
+#                          /livez al sitio: un sitio que escala a cero no lee operaciones hasta que alguien entra, y así
+#                          las lee en el momento (de la copia o del repo, como esté configurado). Los guardados de los nocturnos no lo despiertan. Si no contesta, la corrida
+#                          no falla. Sin la variable, no se despierta.
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 trigger:
@@ -81,5 +86,7 @@ jobs:
           scriptLocation: inlineScript
           inlineScript: |
             set -euo pipefail
+            WAKE=()
+            if [ -n "${SITE_URL:-}" ]; then WAKE=(--wake "$SITE_URL"); fi
             node "$(Build.SourcesDirectory)/scripts/site/operations-copy.js" subir \
-              --repo "$(Pipeline.Workspace)/ops" --account "$(SITE_COPY_ACCOUNT)" --container "$(SITE_COPY_CONTAINER)"
+              --repo "$(Pipeline.Workspace)/ops" --account "$(SITE_COPY_ACCOUNT)" --container "$(SITE_COPY_CONTAINER)" "${WAKE[@]}"

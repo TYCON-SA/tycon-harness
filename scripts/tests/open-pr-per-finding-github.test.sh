@@ -25,7 +25,7 @@ SHOP="acme-org/acme-shop"
 HOY="2026-10-14"
 SCRIPT_DEPS="scripts/nightly/dependencies/nightly-dependencies.js"
 
-# Lo que la plantilla deja en el entorno de todo paso que guarda; la guarda del árbol va de mentira (overlay-harness.js).
+# Lo que la plantilla deja en el entorno de todo paso que guarda; la guarda del árbol va de mentira (harness-tree.js).
 export HARNESS_TREE=arbol-de-prueba
 unset AGENT_TEMPDIRECTORY GUARD_EXIT GIT_LS_REMOTE_FAILS
 # Los ganchos globales del dev (core.hooksPath) no corren en los repos de prueba.
@@ -105,7 +105,7 @@ armar_arbol() { # el árbol de una noche: como prepare-tree.sh (datos de main + 
   cp "$RAIZ/scripts/ci/open-pr-per-finding.sh" "$RAIZ/scripts/ci/legacy-options.sh" "$RAIZ/scripts/ci/push-nightly-data.js" "$J/scripts/ci/"
   cp -R "$RAIZ/scripts/nightly/dependencies" "$RAIZ/scripts/nightly/findings" "$J/scripts/nightly/"
   cp -R "$RAIZ/scripts/lib" "$J/scripts/lib"
-  echo 'process.exit(Number(process.env.GUARD_EXIT || 0));' > "$J/scripts/ci/overlay-harness.js"
+  echo 'process.exit(Number(process.env.GUARD_EXIT || 0));' > "$J/scripts/ci/harness-tree.js"
   # repos.json: por defecto declara SHOP; REPOS_JSON=none lo deja sin repos.json; otro valor se escribe tal cual (para probar uno ilegible).
   # La copia de `dependencies` trae el repos.json real donde exista (el árbol del nocturno lo tiene): «none» lo borra.
   if [ "${REPOS_JSON:-}" = none ]; then

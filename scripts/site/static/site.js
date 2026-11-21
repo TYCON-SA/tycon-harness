@@ -29,7 +29,41 @@
         tabla.querySelectorAll('tbody tr').forEach(function (tr) {
           tr.hidden = q !== '' && tr.textContent.toLowerCase().indexOf(q) === -1;
         });
+        if (tabla.id === 'proyectos') alFiltrarProyectos(tabla, q);
       });
     });
   });
+  // Proyectos filtrado: Estimaciones muestra sólo los productos que quedan y el total se rehace con sus números, cada
+  // proyecto una vez (dos productos pueden compartirlo); sin filtro, vuelve el texto que mandó el servidor
+  var totalOriginal = null;
+  function alFiltrarProyectos(tabla, q) {
+    var visibles = {};
+    var porProyecto = {};
+    tabla.querySelectorAll('tbody tr[data-producto]').forEach(function (tr) {
+      if (tr.hidden) return;
+      visibles[tr.getAttribute('data-producto')] = true;
+      try {
+        var pp = JSON.parse(tr.getAttribute('data-por-proyecto') || '{}');
+        Object.keys(pp).forEach(function (k) { porProyecto[k] = pp[k]; });
+      } catch (e) {
+        // el servidor escribe el atributo con JSON.stringify: una fila ilegible es un error del sitio, no un dato; no suma y queda dicho
+        if (window.console) console.warn('Proyectos: fila con números ilegibles, no se suma al total filtrado:', tr.getAttribute('data-producto'));
+      }
+    });
+    document.querySelectorAll('#tabla-estimaciones tbody tr[data-producto]').forEach(function (tr) {
+      tr.hidden = q !== '' && !visibles[tr.getAttribute('data-producto')];
+    });
+    var total = document.getElementById('proyectos-totales');
+    if (!total) return;
+    if (totalOriginal === null) totalOriginal = total.textContent;
+    if (q === '') { total.textContent = totalOriginal; return; }
+    var suma = { enCurso: 0, paradas: 0, sinMedir: 0 };
+    Object.keys(porProyecto).forEach(function (k) {
+      var c = porProyecto[k] || {};
+      suma.enCurso += Number(c.en_curso) || 0;
+      suma.paradas += Number(c.paradas) || 0;
+      suma.sinMedir += Number(c.sin_medir) || 0;
+    });
+    total.textContent = (total.getAttribute('data-plantilla') || '').replace(/\{(enCurso|paradas|sinMedir)\}/g, function (_, k) { return String(suma[k]); });
+  }
 })();

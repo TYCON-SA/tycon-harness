@@ -7,7 +7,7 @@
 # sin error.
 #
 # Todo pasa en carpetas temporales salvo el caso 4, que necesita un destino FUERA de ellas para probar
-# el freno: usa una carpeta propia bajo ~/.cache y la borra al terminar.
+# el freno: usa una carpeta propia bajo ~/.cache y la borra al terminar (con la HOME temporal, el caso 4 no se mide).
 # DEPLOY_HOOKS_JS apunta a otra versión del despliegue (para verificar que la prueba falla contra la versión anterior).
 set -uo pipefail
 
@@ -50,8 +50,11 @@ desplegar "$T/a" "$T/h4"
 grep -q "/home/dev/scripts/hooks/mio.sh" "$T/h4/hooks.json" && ok "C-03 el hook propio del dev se conserva" || mal "C-03 se borró el hook propio del dev"
 
 # C-04 · desde una copia temporal no se toca un Codex que no es temporal (el de la máquina).
-desplegar "$T/a" "$FUERA"
-if [ ! -e "$FUERA/hooks.json" ] && grep -q "copia temporal" "$T/out"; then
+# Con la HOME en una carpeta temporal (las suites portables, el portón local) ~/.cache también lo es, y el despliegue
+# escribe ahí con razón: el caso no se puede medir y lo dice, sin contar como verde ni como rojo.
+if node -e 'process.exit(require(process.argv[1]).enCarpetaTemporal(process.argv[2]) ? 0 : 1)' "$RAIZ/build/deploy-codex-hooks.js" "$FUERA"; then
+  echo "  ⚠️ C-04 NO MEDIDO: la HOME ($HOME) vive en una carpeta temporal, y no hay un destino fuera de ellas para probar el freno"
+elif desplegar "$T/a" "$FUERA"; [ ! -e "$FUERA/hooks.json" ] && grep -q "copia temporal" "$T/out"; then
   ok "C-04 desde una copia temporal no se toca el Codex de la máquina, y lo dice"
 else
   mal "C-04 una copia temporal escribió en un Codex que no es temporal"; cat "$T/out"

@@ -1005,6 +1005,44 @@ python3 -c "import json,sys; e,b,ct=[json.loads(x) for x in sys.argv[1:4]]; asse
   && ok "C-36 escapes de 1 de 2 máquinas dicen «midieron 1 de 2» (los bloqueos, medidos por las dos, no); y la línea ilegible se dice en la cobertura" || mal "C-36 escapes=$E bloqueos=$B cobertura=$CT"
 rm -rf "$T"
 
+# ── C-37 · las vueltas atrás vigentes, en la página del equipo ────────────────────────────────────
+# 🔴 rojo previo: sin la ficha, una máquina retenida por `harness.js rollback` se ve sólo en su `doctor`; y una máquina
+#    que no lo declaró (arnés anterior) no puede publicarse como «ninguna».
+T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/local" "$T/remota"
+reg_gates "$T/remota/gates.log" "$AYER25" tests 4 1
+maq_buzon "$T/buzon" maq-retenida "$AYER25" "$T/remota"; maq_buzon "$T/buzon" maq-al-dia "$AYER25" "$T/remota"; maq_buzon "$T/buzon" maq-anterior "$AYER25" "$T/remota"
+python3 - "$T/buzon" <<'PY'
+import json, sys, os
+for maq, hold in (("maq-retenida", {"undone": "2026.10.27.3", "since": "2026-10-27T14:05:09.123Z"}), ("maq-al-dia", None)):
+    f = os.path.join(sys.argv[1], maq, "registros", "cobertura.json")
+    c = json.load(open(f)); c["hold"] = hold; json.dump(c, open(f, "w"))
+PY
+TYCON_MACHINE=maquina-c37 node "$TABLERO" --dir "$T" --logs "$T/sin-local" --mailbox "$T/buzon" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+V="$(json_local "$T/j.out" vueltas_atras)"
+A_RET="$(node "$REDUCTOR" --alias-of maq-retenida)"; A_ANT="$(node "$REDUCTOR" --alias-of maq-anterior)"
+python3 -c "
+import json, sys
+v = json.loads(sys.argv[1]); ret, ant = sys.argv[2:4]
+assert v['estado'] == 'medido' and v['valor'] == 1 and v['medidos'] == 2 and v['total'] == 3, v
+assert f'{ret}: deshizo 2026.10.27.3, desde 2026-10-27 14:05 UTC' in v['detalle'], v
+assert f'sin medir: {ant}' in v['detalle'], v
+" "$V" "$A_RET" "$A_ANT" 2>/dev/null && grep -q 'Máquinas con una vuelta atrás vigente' "$T/o.html" && grep -q "deshizo 2026.10.27.3" "$T/o.html" \
+  && ok "C-37 la ficha dice cuántas máquinas tienen una vuelta atrás vigente, cuál, qué deshizo y desde cuándo; la que no lo declaró sale «sin medir»" || mal "C-37 vueltas_atras=$V"
+mkdir -p "$T/casa-vacia"
+HOME="$T/casa-vacia" node -e '
+const t = require(process.argv[1]);
+const ninguna = t.fichaVueltasAtras({ vigentes: [], sin_retencion: 2, no_medidas: [] });
+const nadie = t.fichaVueltasAtras({ vigentes: [], sin_retencion: 0, no_medidas: ["maq-aaaaaa"] });
+console.log(JSON.stringify({ ninguna, nadie }));
+' "$TABLERO" > "$T/f.json" 2> "$T/f.err"
+python3 - "$T/f.json" <<'PY' && ok "C-37 sin retenciones dice «ninguna» con su denominador; si ninguna máquina lo declaró, no medido (nunca «ninguna»)" || mal "C-37 fichaVueltasAtras: $(cat "$T/f.json" "$T/f.err" | head -c 400)"
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["ninguna"]["estado"] == "medido" and d["ninguna"]["valor"] == 0 and d["ninguna"]["detalle"] == "ninguna" and d["ninguna"]["medidos"] == 2, d["ninguna"]
+assert d["nadie"]["estado"] == "no_medido" and "maq-aaaaaa" in d["nadie"]["motivo"], d["nadie"]
+PY
+rm -rf "$T"
+
 # ── C-27 · esta suite NO toca el entregable commiteado (2026-09-06) ───────────────────────────
 # 🔴 rojo previo: devolverle a C-11 el `--output "$RAIZ/artifacts/tablero-del-arnes.html"` que
 #    tenía. Verificado: con esa línea el caso se pone rojo y `git status` muestra la M.
@@ -1442,7 +1480,7 @@ PY2
 # 🔴 rojo previo: no conectar el medidor → la ficha no existe; o conectarlo sin denominador ni fecha.
 T=$(mktemp -d); montar_sano "$T"; buzon_de_mentira "$T/buzon"
 node "$TABLERO" --dir "$T" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 2>&1
-F="$(ficha_html "$T/o.html" 'Pasos de una ejecución')"
+F="$(ficha_html "$T/o.html" 'Respuestas del modelo por ejecución')"
 [ -n "$F" ] && ok "C-59 la ficha de pasos por ejecución existe" || mal "C-59 la ficha de pasos por ejecución no está en la página"
 echo "$F" | grep '<div class="t-val">400</div>' >/dev/null && ok "C-59 con la mediana de las medidas (400)" || mal "C-59 la mediana no es 400: ${F:0:200}"
 echo "$F" | grep 'n=4 de 5 ejecuciones' >/dev/null && ok "C-59 con su denominador al lado (n=4 de 5: la sin medir sigue contando)" || mal "C-59 falta el denominador n=4 de 5"
@@ -1452,7 +1490,7 @@ echo "$F" | grep '1 sin consumo medido' >/dev/null && ok "C-59 y dice la que que
 python3 - "$T/o.html" <<'PY2' && ok "C-59 la ficha vive en la pregunta 4, pegada a la duración de una ejecución" || mal "C-59 la ficha no está al lado de «Una ejecución del pipeline, de punta a punta»"
 import sys
 t = open(sys.argv[1], encoding='utf8').read().split('<div class="tile ')[1:]
-i = [k for k, x in enumerate(t) if 'Pasos de una ejecución' in x[:600]]
+i = [k for k, x in enumerate(t) if 'Respuestas del modelo por ejecución' in x[:600]]
 j = [k for k, x in enumerate(t) if 'Una ejecución del pipeline, de punta a punta' in x[:600]]
 assert i and j and abs(i[0] - j[0]) == 1, (i, j)
 PY2
@@ -1463,8 +1501,8 @@ rm -rf "$T"
 T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/buzon"
 node "$TABLERO" --dir "$T" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 2>&1; RC=$?
 [ "$RC" -eq 0 ] && ok "C-59b con el buzón vacío el tablero mide igual (exit 0): la fuente no es obligatoria" || mal "C-59b el buzón vacío rompió el tablero (exit $RC)"
-[ "$(ficha_estado "$T/o.html" 'Pasos de una ejecución')" = "blind" ] && ok "C-59b buzón vacío → la ficha sale con trama" || mal "C-59b buzón vacío y la ficha no salió «no medido»"
-F="$(ficha_html "$T/o.html" 'Pasos de una ejecución')"
+[ "$(ficha_estado "$T/o.html" 'Respuestas del modelo por ejecución')" = "blind" ] && ok "C-59b buzón vacío → la ficha sale con trama" || mal "C-59b buzón vacío y la ficha no salió «no medido»"
+F="$(ficha_html "$T/o.html" 'Respuestas del modelo por ejecución')"
 echo "$F" | grep 'buzón' >/dev/null && ok "C-59b con su motivo" || mal "C-59b sin motivo: ${F:0:200}"
 echo "$F" | grep '<div class="t-val">0' >/dev/null && mal "C-59b publicó un cero" || ok "C-59b ningún cero publicado"
 rm -rf "$T"
@@ -2058,6 +2096,30 @@ print(d['mejora']['revisores'].get('_error',{}).get('motivo'), '|', d['extra']['
 else
   echo "  ⚠️   — T42b NO MEDIDO: como root, chmod 000 no impide leer. No es un verde."
 fi
+
+# ── 2.79-T7 · 2.79-Fichas_CorridasDelBuzon_CuentaEjecucionesNoArchivos @story-2.79 @ac-7 ──
+# 🔴 rojo previo: la ficha contaba archivos: la misma ejecución en dos carpetas (la vieja y la nueva) contaba dos veces.
+T=$(mktemp -d); montar_sano "$T"; bajada_ok "$T/bajada.json"
+volcado "$T/buzon" maq-uno 1 2026-10-01T10:00:00Z 2026-10-01T12:00:00Z 10 2
+volcado "$T/buzon" maq-uno 2 2026-10-02T10:00:00Z 2026-10-02T14:00:00Z 20 3
+python3 - "$T/buzon" <<'PY'
+import json, os, sys, glob
+b = sys.argv[1]
+for i, f in enumerate(sorted(glob.glob(os.path.join(b, 'maq-uno', '*.json')))):
+    d = json.load(open(f)); d['marker']['sessionId'] = 'sesion-%d' % i; json.dump(d, open(f, 'w'))
+    if i == 0:
+        # la copia vieja de la misma ejecución, en otra carpeta: archivada antes y con otra duración
+        v = json.loads(json.dumps(d)); v['archivedAt'] = '2026-10-01T11:00:00Z'; v['marker']['lastTouch'] = '2026-10-01T20:00:00Z'
+        os.makedirs(os.path.join(b, 'maq-vieja'), exist_ok=True); json.dump(v, open(os.path.join(b, 'maq-vieja', os.path.basename(f)), 'w'))
+PY
+node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 - "$(jpanel "$T/j.out" local corridas)" <<'PY' && ok "2.79-T7 la misma ejecución en dos carpetas cuenta una, con la copia más nueva" || mal "2.79-T7 $(jpanel "$T/j.out" local corridas)"
+import json, sys
+c = json.loads(sys.argv[1])
+assert c['estado'] == 'medido' and c['total'] == 2 and c['medidos'] == 2, c
+assert c['valor'] == 3, c   # mediana de 2 h (la copia nueva) y 4 h; con la vieja (10 h) sería otra
+PY
+rm -rf "$T"
 
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "FALLARON $FALLOS chequeo(s)"; exit 1; fi

@@ -88,6 +88,9 @@ const { spawnSync } = require('child_process');
 const TREE = path.resolve(__dirname, '..', '..');   // el clon donde vive este archivo
 // el lugar del arnés y el nombre viejo: una sola definición, en harness/place.js (viaja con la copia fija)
 const PLACE = require('./harness/place.js');
+// el comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; desde la copia fija
+// (rollback, uninstall), que no trae las skills, este archivo escribe el mismo texto
+const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return fs.existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
 const LINK_NAME = PLACE.PLACE_NAME;
 // Cada cuánto sale `startup` a la red, según la política: en `auto` una sesión que arranca < 10 min
 // después de otra no vuelve a salir; en `ask` como mucho una vez cada 6 horas (lo que encontró queda en `notice`). Un
@@ -113,6 +116,7 @@ const COMMANDS = {
   config:    { opts: {}, positional: ['set', 'unset', 'show', 'github.token', 'azure.token', 'paths.maintained', 'paths.maintainers', 'paths.team', 'paths.operations'], extraPositional: (a) => { try { return require('../lib/integrations.js').isSecretKey(a); } catch (_) { return false; } }, freeAfter: 2, help: 'la configuración propia del arnés en ~/.tycon/config.json (story 8.23, tanda B): `config set <clave> [<valor>]` guarda el valor (por argumento, por stdin, o pedido en la terminal); `config set github.token` lee el permiso de sólo lectura de GitHub por stdin o lo pide en la terminal SIN eco —nunca por argumento, nunca lo imprime— y lo guarda sólo para tu usuario; `config set azure.token` hace lo mismo con el PAT de Azure DevOps del repo del equipo (story 8.25); `config unset <clave>` lo saca; `config show` dice qué claves hay (sin valores)' },
   startup:   { opts: { '--force': 'flag' }, help: 'lo que corre la línea de arranque de cada sesión (sale 0 siempre)' },
   update:    { opts: { '--check': 'flag', '--dry-run': 'flag', '--yes': 'flag' }, help: 'trae la punta del canal de cada fuente y, si hay versión nueva, la aplica (0 al día · 3 hay nueva · 2 no pude mirar, con --check)' },
+  'team-refresh': { opts: { '--json': 'flag' }, help: 'pone al día sólo la capa del equipo, con el candado del arnés: no instala versión ni corre el aplicador (lo lanza el gancho de la oficina cada 30 min mientras se trabaja). 0 hecho o sin nada que hacer · 3 otra sesión tiene el candado; --json, el resultado en una línea' },
   apply:     { opts: { '--dry-run': 'flag' }, help: 'corre el aplicador (install-tycon-hooks.sh / .ps1); --dry-run muestra lo que cambiaría, sin escribir' },
   version:   { opts: { '--json': 'flag' }, help: 'versión instalada, canal, modo, fuentes y shas' },
   doctor:    { opts: { '--json': 'flag', '--fetch': 'flag' }, help: 'diagnóstico de sólo lectura (--fetch es la única excepción: escribe FETCH_HEAD; además le pregunta al remoto del clon de la lista del freno antes de publicar si está al día, sin escribir nada)' },
@@ -129,12 +133,14 @@ const COMMANDS = {
   // pasa a `install` tal cual, que es quien las valida (`passthrough`: `parse` entrega los argumentos sin mirarlos)
   npx:       { opts: {}, passthrough: true, help: 'lo que sigue a la bajada de `npx @tyconsa/harness@latest` (el paquete baja este árbol y lo corre con el commit en TYCON_NPX_COMMIT): revisa los requisitos (Node, tar; bash y python3, o pwsh 7 en Windows) y que haya Claude Code o Codex, y dice lo que falta sin instalar nada; sin preguntas, es para mí (--team <repo> para sumarte a un equipo, --audience team|org para elegir, org da de alta tu organización), con la instalación mínima, ninguna conexión opcional y sin paquete; después corre install --version latest --defaults de este árbol: muestra un plan de cinco renglones y pregunta una sola vez «¿Instalo? [s/N]». Con el arnés ya instalado no lo reinstala: dice si está al día, o pregunta «¿Actualizo? [s/N]» y corre el update de este árbol. Sin nadie delante, --yes acepta el plan. Sale 0 bien o nada que hacer, 1 si falta algo, 2 por un uso mal hecho o una confirmación pendiente' },
   layer:     { opts: { '--check': 'flag', '--list': 'flag', '--json': 'flag', '--public': 'value', '--harness-clone': 'value' }, help: 'la capa privada, sólo leyendo: qué agregó, qué pisó, qué está editado a mano (--check sale 0 si está entera, 1 si falta o sobra algo, 3 si no hay capa; --list nombra cada archivo; --public <copia> y --harness-clone <clon> calculan contra esa copia y ese clon sin tocar el estado)' },
+  // `extraPositional`: el id de la firma lo valida el catálogo, no la tabla
+  sign:      { opts: { '--reason': 'value', '--request': 'value', '--commit': 'flag', '--target': 'value', '--ordered-by': 'value', '--session': 'value', '--seal': 'text', '--text': 'text' }, extraPositional: () => true, help: 'firma un id del catálogo (guides/firmas-del-arnes.md) en tu terminal y lo anota en el registro común de firmas; una excepción (nivel 2) o más pide --reason, y el nivel es el mayor entre el catálogo y lo que sube el perfil del equipo (approvals.levels). La emergencia, la única salida de un freno: `sign emergency --reason "<por qué>" --request <número>` deja pasar una vez el comando que frenó el freno con ese número (la terminal lo muestra antes de firmar); `--commit` en vez de --request deja pasar el próximo commit de este repo. Los dos valen 30 minutos y una sola vez. --target dice sobre qué, --ordered-by quién la pidió. La constancia de Codex: `sign acknowledge --session <sesión> --seal <sello> --text <texto>` contesta en tu terminal lo que te mostró esa sesión de Codex y la anota en el registro de aprobaciones (no en el común); vale 30 minutos y una sola vez. Sale 0 firmó, 1 no firmó o el registro no escribió, 2 uso mal hecho o sin terminal' },
 };
 
 function usage() {
   const L = ['uso: node scripts/setup/harness.js <subcomando> [opciones]', ''];
   for (const [name, c] of Object.entries(COMMANDS)) {
-    const opts = Object.entries(c.opts).map(([o, k]) => (k === 'value' || k === 'list' ? `${o} <valor>` : o));
+    const opts = Object.entries(c.opts).map(([o, k]) => (k === 'value' || k === 'list' || k === 'text' ? `${o} <valor>` : o));
     const pos = c.positional ? [`[${c.positional.join('|')}]`] : [];
     L.push(`  ${[name, ...pos, ...opts].join(' ')}`);
     L.push(`      ${c.help}`);
@@ -160,9 +166,10 @@ function parse(argv) {
       // en `config`, lo que empieza con guion puede ser un secreto pegado en el lugar equivocado: no se repite
       if (!kind && cmd === 'config') return { error: 'opción desconocida para config (no se muestra: config no lleva opciones)' };
       if (!kind) return { error: `opción desconocida «${a}» para ${cmd}. Opciones: ${Object.keys(spec.opts).join(', ') || '(ninguna)'}` };
-      if (kind === 'value' || kind === 'list') {
+      // `text`: un texto libre (el sello o la respuesta de una constancia), que puede empezar con guion
+      if (kind === 'value' || kind === 'list' || kind === 'text') {
         const v = argv[i + 1];
-        if (v === undefined || v.startsWith('-')) return { error: `${a} necesita un valor` };
+        if (v === undefined || (kind !== 'text' && v.startsWith('-'))) return { error: `${a} necesita un valor` };
         // `list`: la opción es repetible y junta sus valores (`--tool claude --tool codex`)
         if (kind === 'list') (opts[a.slice(2)] = opts[a.slice(2)] || []).push(v); else opts[a.slice(2)] = v;
         i++;
@@ -319,14 +326,18 @@ function separateSkills(ctx, tree) {
   try { return fs.statSync(out).isDirectory() ? out : null; } catch (_) { return null; }
 }
 
-/** Lo que el aplicador tiene que saber del juez que va a leer su informe: los prefijos de hook que entiende. */
+/** Lo que el aplicador tiene que saber del juez que va a leer su informe: los prefijos y los eventos de hook que entiende. */
 function applierReportEnv(log = null) {
   let prefixes = [];
   try { prefixes = mod('health').HOOK_PREFIXES || []; } catch (e) {
     // sin salud el aplicador informa sólo lo que entiende cualquier juez; se dice, porque entonces nadie revisa los demás
     if (log) log(`aplicador: no pude leer qué prefijos de hook entiende la salud (${e.code || e.message}): el informe va sin ellos`);
   }
-  return { TYCON_REPORT_HOOK_PREFIXES: prefixes.join(',') };
+  let events = [];
+  try { events = mod('managed').EVENTS || []; } catch (e) {
+    if (log) log(`aplicador: no pude leer qué eventos de hook entiende la salud (${e.code || e.message}): el informe va sin los nuevos`);
+  }
+  return { TYCON_REPORT_HOOK_PREFIXES: prefixes.join(','), TYCON_REPORT_HOOK_EVENTS: events.join(',') };
 }
 
 /** ¿El aplicador del árbol conoce `--report-json`? Uno viejo, que no la trae, no se rompe por la opción. */
@@ -448,7 +459,11 @@ function normalizeTreeEol(ctx, tree, log = null) {
  * Codex, que no lo despliegue (`off`).
  */
 function runApplier(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false, hooksPath = false } = {}) {
+  // el candado tiene que seguir siendo de esta toma antes de escribir, y otra vez al volver: el aplicador puede tardar
+  // (o la máquina dormirse) y otro haberlo pisado por el tope
+  mod('lock').assertStillMine(ctx.home);
   const a = runApplierOnly(ctx, tree, { log, snapshotDir, tools, force });
+  mod('lock').assertStillMine(ctx.home);
   // la carpeta global de hooks de git: sólo en lo que pide una persona (`install`, `apply`, la mudanza), nunca
   // en el arranque. El aplicador sólo avisa que git no tiene ninguna; acá se pone, si corresponde (git-hooks-path.js)
   if (hooksPath && a.ok) {
@@ -559,7 +574,9 @@ function harnessNodeNotice(notice, a) {
   return add ? (clean ? `${clean} · ${add}` : add) : clean;
 }
 
-function runApplierOnly(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false } = {}) {
+function runApplierOnly(ctx, treeGiven, { log, snapshotDir = null, tools = undefined, force = false } = {}) {
+  // lo que escriben el aplicador y el enchufe de Codex nombra el enlace, no la carpeta numerada que resolvió Node
+  const tree = mod('tools').throughLink(treeGiven, ctx.home, ctx.env);
   const T = mod('tools');
   if (tools === undefined) {
     const st = loadState(ctx);
@@ -568,8 +585,12 @@ function runApplierOnly(ctx, tree, { log, snapshotDir = null, tools = undefined,
   const hn = ensureHarnessNode(ctx, tree, log);
   const withClaude = !tools || tools.includes('claude');
   const withCodex = Boolean(tools && tools.includes('codex'));
-  const a = withClaude
-    ? runClaudeApplier(ctx, tree, { log, snapshotDir, codex: tools ? (withCodex ? 'done' : 'off') : null, env: hn.env })
+  // sin Claude Code el aplicador corre en su modo sin Claude Code (lo de fondo: los hooks de git, el buzón, la
+  // recolección; nada en la carpeta de Claude Code). No corre, como antes, en Windows (el .ps1 todavía no tiene ese modo)
+  // ni con un árbol cuyo aplicador no lo conoce (una vuelta atrás, `install --version` de una anterior): ése instalaría
+  // todo Claude Code
+  const a = withClaude || (!isWin(ctx) && applierKnowsClaudeOff(applierPath(ctx, tree)))
+    ? runClaudeApplier(ctx, tree, { log, snapshotDir, codex: tools ? (withCodex ? 'done' : 'off') : null, env: hn.env, claude: withClaude })
     : { ok: true, status: 0, out: '', report: [], shared: [], warnings: [], reason: null };
   a.harnessNode = hn.result;
   if (!a.ok || !withCodex) return a;
@@ -582,7 +603,17 @@ function runApplierOnly(ctx, tree, { log, snapshotDir = null, tools = undefined,
   return a;
 }
 
-function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, env: baseEnv = ctx.env }) {
+/** Variable con que se le dice al aplicador que la máquina no tiene Claude Code: `off` (lo de fondo, y nada en la carpeta de Claude Code). */
+const CLAUDE_BY_HARNESS_ENV = 'TYCON_HARNESS_CLAUDE';
+/** ¿El aplicador del árbol conoce el modo sin Claude Code? Uno anterior no nombra la variable y la ignoraría. */
+function applierKnowsClaudeOff(script) {
+  try { return fs.readFileSync(script, 'utf8').includes(CLAUDE_BY_HARNESS_ENV); } catch (_) { return false; }
+}
+/**
+ * `claude: false` corre el aplicador en su modo sin Claude Code: sin piezas compartidas ni reglas de lectura (son de
+ * settings.json) y con `TYCON_HARNESS_SHARED_DONE=1`, para que él tampoco las haga.
+ */
+function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, env: baseEnv = ctx.env, claude = true }) {
   const script = applierPath(ctx, tree);
   if (!fs.existsSync(script)) return { ok: false, status: null, out: '', report: null, shared: [], reason: `sin aplicador en ${script}` };
   // Un clon de Windows anterior a `.gitattributes` conserva `\r\n` en lo que el pull no toca, y un
@@ -610,7 +641,9 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, en
   // lo de Codex: `done` = lo enchufa este programa, salteá tu bloque; `off` = esta máquina no lo
   // enchufa. Nunca se hereda de quien nos lanzó: sin lista de herramientas escrita, el aplicador decide como siempre
   if (codex) env[CODEX_BY_HARNESS_ENV] = codex; else delete env[CODEX_BY_HARNESS_ENV];
-  const settingsThere = fs.existsSync(settingsPath(ctx));
+  // el modo sin Claude Code tampoco se hereda: sólo lo pone quien sabe que la máquina no lo tiene
+  if (claude) delete env[CLAUDE_BY_HARNESS_ENV]; else { env[CLAUDE_BY_HARNESS_ENV] = 'off'; env[SHARED_DONE_ENV] = '1'; }
+  const settingsThere = claude && fs.existsSync(settingsPath(ctx));
   // las reglas de lectura van después del aplicador (crea los enlaces que cubren): acá, sin ellas
   let shared = settingsThere ? sharedPieces(ctx, tree, { log, snapshotDir, reads: false }) : null;
   if (shared) env[SHARED_DONE_ENV] = '1';
@@ -640,9 +673,9 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, en
     } else if (ok && log) log('aplicador: salió 0 sin escribir el reporte de piezas (el registro queda como estaba)');
     try { fs.rmSync(reportDir, { recursive: true, force: true }); } catch (_) { /* el temporal ya no está */ }
   }
-  if (!settingsThere && ok) shared = sharedPieces(ctx, tree, { log, snapshotDir, reads: false });
+  if (claude && !settingsThere && ok) shared = sharedPieces(ctx, tree, { log, snapshotDir, reads: false });
   // las reglas de lectura del arnés, con los enlaces ya hechos; van con las compartidas al registro
-  const reads = ok ? readPieces(ctx, tree, { log, snapshotDir }) : { pieces: [], notes: [] };
+  const reads = ok && claude ? readPieces(ctx, tree, { log, snapshotDir }) : { pieces: [], notes: [] };
   if (ok) shared = [...(shared || []), ...reads.pieces];
   // los avisos del aplicador para la persona: el registro se queda con las últimas tres líneas, y un
   // aviso de más arriba se perdería; `install` los repite tal cual
@@ -681,14 +714,21 @@ function applierKnowsPlan(script) {
  */
 function applierPlan(ctx, tree) {
   if (ctx.env.TYCON_NO_AUTOINSTALL === '1') return { ok: true, known: true, pieces: [], off: true };
-  // una máquina que no enchufa a Claude Code no corre el aplicador, tampoco para preguntarle su plan
+  // una máquina que no enchufa a Claude Code pregunta el plan del modo sin Claude Code (los hooks de git); en Windows
+  // ese modo no existe todavía y el aplicador no corre, tampoco para preguntarle su plan
+  let claudeOff = false;
   {
     const st = loadState(ctx);
     const T = mod('tools');
-    if (st.state && T.recorded(st.state) && !T.plugged(st.state, { home: ctx.home, env: ctx.env }).includes('claude')) return { ok: true, known: true, pieces: [] };
+    if (st.state && T.recorded(st.state) && !T.plugged(st.state, { home: ctx.home, env: ctx.env }).includes('claude')) {
+      if (isWin(ctx)) return { ok: true, known: true, pieces: [] };
+      claudeOff = true;
+    }
   }
   const script = applierPath(ctx, tree);
   if (!fs.existsSync(script)) return { ok: false, reason: `sin aplicador en ${script}` };
+  // un aplicador que no conoce el modo sin Claude Code no corre en una máquina sin Claude Code: su plan es vacío
+  if (claudeOff && !applierKnowsClaudeOff(script)) return { ok: true, known: true, pieces: [] };
   if (!applierKnowsPlan(script)) return { ok: true, known: false, pieces: [] };
   // el mismo paso que antes de aplicar: un aplicador con `\r\n` (un clon de Windows viejo) no corre ni para dar su plan
   normalizeTreeEol(ctx, tree);
@@ -697,7 +737,8 @@ function applierPlan(ctx, tree) {
   const file = path.join(dir, 'plan.json');
   // el plan es el de una corrida suelta: nada de lo que un padre le pasaría a una instalación de verdad
   const env = Object.assign({}, ctx.env);
-  for (const k of ['TYCON_HARNESS_LOCK_HELD', 'TYCON_HARNESS_SNAPSHOT_DIR', SHARED_DONE_ENV, CODEX_BY_HARNESS_ENV, 'TYCON_REPORT_PIECES', 'TYCON_PLAN_PIECES']) delete env[k];
+  for (const k of ['TYCON_HARNESS_LOCK_HELD', 'TYCON_HARNESS_SNAPSHOT_DIR', SHARED_DONE_ENV, CODEX_BY_HARNESS_ENV, CLAUDE_BY_HARNESS_ENV, 'TYCON_REPORT_PIECES', 'TYCON_PLAN_PIECES']) delete env[k];
+  if (claudeOff) env[CLAUDE_BY_HARNESS_ENV] = 'off';
   const [bin, args] = isWin(ctx)
     ? ['pwsh', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Check', '-PlanJson', file]]
     : ['bash', [script, '--check', '--plan-json', file]];
@@ -1223,7 +1264,7 @@ function writeAnswers(ctx, tree, writes) {
 function askLaterNote(asked) {
   if (!asked || !asked.guided || !asked.config) return [];
   const v = asked.config.valores || {};
-  const cmd = `node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js set`;
+  const cmd = `${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js`)} set`;
   const off = [];
   if (!(v.ado && v.ado.org)) off.push(`Azure DevOps: ${cmd} ado.org <url>`);
   if (!(v.telegram && v.telegram.chat_id)) off.push(`Telegram: ${cmd} telegram.chat_id <chat>`);
@@ -1256,12 +1297,13 @@ function planHead(existing, tree, notes = [], profileLine = null) {
  * La copia ANTES de un cambio: `{ dir, created }` o `null`. Si no se pudo, se anota y el cambio sigue SIN la variable,
  * así el aplicador hace sus `.bak` de siempre: nunca un cambio sin ninguna copia.
  */
-function takeSnapshot(ctx, tree, { reason, from = null, to = null, log = null, force = false, state = null, protect = [] }) {
+function takeSnapshot(ctx, tree, { reason, from = null, to = null, log = null, force = false, state = null, protect = [], rollbackTo = null }) {
   try {
     // Los commits de cada fuente van al manifiesto (a dónde rollback lleva los árboles), y `force` (al mover
-    // árboles, en rollback y en uninstall) crea una copia nueva aunque el conjunto sea el mismo (decisiones 1 y 2)
+    // árboles, en rollback y en uninstall) crea una copia nueva aunque el conjunto sea el mismo (decisiones 1 y 2).
+    // `rollbackTo`: la copia a la que vuelve una `before-rollback` (el aviso de una vuelta atrás cortada la termina)
     const sources = state ? currentSources(ctx, state) : null;
-    const snap = mod('snapshot').take({ home: ctx.home, env: ctx.env, tree, reason, from, to, force, sources, protect });   // ya aplica la retención
+    const snap = mod('snapshot').take({ home: ctx.home, env: ctx.env, tree, reason, from, to, force, sources, protect, rollbackTo });   // ya aplica la retención
     return snap && snap.dir ? snap : null;
   } catch (e) {
     if (log) log(`copia de seguridad (${reason}): no se pudo (${e.message}) — el aplicador hace sus .bak de siempre`);
@@ -1279,13 +1321,36 @@ function currentSources(ctx, state) {
   return Object.keys(out).length ? out : null;
 }
 /**
- * Después del cambio: el `sha256_after` de cada archivo de la copia. Sólo en una copia recién creada: una reutilizada
- * (mismo conjunto que la anterior) ya tiene el «después» de SU cambio, que la vuelta atrás compara (y por eso, al mover
- * árboles, la copia es siempre nueva). Nunca tira.
+ * Después del cambio: cierra la copia (`open: false`). En una recién creada anota además el `sha256_after` de cada
+ * archivo; una reutilizada (mismo conjunto que la anterior) ya tiene el «después» de SU cambio, que la vuelta atrás
+ * compara, y sólo se cierra (por eso, al mover árboles, la copia es siempre nueva). Si ya la cerró otra operación (la
+ * actualización adentro del arranque), el primer cierre manda.
+ * - `outcome: 'failed'` (la operación falló con el proceso vivo): `closed_by: "failed"`, y no cierra las abiertas más
+ *   viejas: un fallo no repara lo que dejó un corte anterior.
+ * - `rewroteAll`: la operación corrió el aplicador completo, sin error y con la salud en verde; sólo así cierra también
+ *   las abiertas más viejas (las de un corte). Las `before-rollback` abiertas, además, sólo con `closedBy: 'rollback'`
+ *   (la vuelta atrás que terminó) o `supersede` (un cambio de versión: `closed_by: "superseded"`).
+ * Nunca tira.
  */
-function finishSnapshot(ctx, snap, log = null) {
-  if (!snap || !snap.created) return;
-  try { mod('snapshot').finish(snap.dir, { home: ctx.home, env: ctx.env }); } catch (e) { if (log) log(`copia de seguridad: no pude anotar el después (${e.message})`); }
+function finishSnapshot(ctx, snap, log = null, { outcome = null, closedBy = null, rewroteAll = false, supersede = false, spare = null } = {}) {
+  // la copia abierta de la operación que lanzó a ésta (el arranque), reusada: la cierra la que la tomó
+  if (!snap || !snap.dir || snap.nested) return;
+  const SN = mod('snapshot');
+  const failed = outcome === 'failed';
+  const by = failed ? 'failed' : closedBy;
+  const older = !failed && Boolean(rewroteAll);
+  const beforeRollback = !older ? null : (by === 'rollback' ? 'rollback' : (supersede ? 'superseded' : null));
+  // `spare`: la copia de la operación que lanzó a ésta (el arranque que muda la máquina), que sigue en curso y se cierra sola
+  try {
+    if (snap.created) SN.finish(snap.dir, { home: ctx.home, env: ctx.env, closedBy: by, older, beforeRollback, spare, log });
+    else SN.close(snap.dir, { closedBy: by || 'reused', home: ctx.home, older, beforeRollback, spare, log });
+  } catch (e) { if (log) log(`copia de seguridad: no pude cerrarla (${e.message})`); }
+}
+
+/** La vuelta atrás terminó: la copia a la que volvió, si estaba abierta (la de un corte), queda cerrada. Nunca tira. */
+function closeRollbackTarget(ctx, target, log = null) {
+  if (!target || !target.dir || !mod('snapshot').isOpen(target.manifest)) return;
+  try { mod('snapshot').close(target.dir, { closedBy: 'rollback', log }); } catch (e) { if (log) log(`copia de seguridad: no pude cerrar la de destino (${e.message})`); }
 }
 
 /** Los archivos de la copia fija que registra el estado (los de su `bootstrap.sha256`), o los tres de arranque. */
@@ -1375,7 +1440,7 @@ function dropForProfile(ctx, state, tree, applied, log, profileValue) {
  */
 function profileSwitch(ctx, state, tree, log) {
   const profile = profileOf(ctx, tree);
-  if (!profile.ok) return { profile, switching: false, snap: null, notice: `el perfil de instalación no se pudo leer (${profile.reason}): lo del perfil queda como está — node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js validate` };
+  if (!profile.ok) return { profile, switching: false, snap: null, notice: `el perfil de instalación no se pudo leer (${profile.reason}): lo del perfil queda como está — ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js`)} validate` };
   const was = mod('profile').installedValue(state);
   if (was === profile.value) return { profile, switching: false, snap: null, notice: null };
   const snap = takeSnapshot(ctx, tree, { reason: 'profile', from: state.version && state.version.number, log, force: true, state });
@@ -1512,7 +1577,28 @@ function engramOn(ctx, tree) {
   } catch (_) { return false; }
 }
 
-const applyHint = `node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js update --yes`;
+/**
+ * Antes de cada `engram sync --import`: en un repo en «índice local» el índice no viaja por git y el
+ * importador lee el índice, no la carpeta. Se rehace desde los chunks (`manifest-engram.js`). Nunca frena la
+ * importación: lo que no se pudo vuelve como texto para el registro y la línea de la sesión; null si quedó entero o no
+ * aplica.
+ */
+function rebuildLocalEngramIndex(cwd) {
+  try {
+    const r = require(path.join(__dirname, '..', 'lib', 'manifest-engram.js')).rehacerSiLocal(cwd);
+    if (!r.aplica) return null;
+    if (r.problema) return `no pude rehacer el índice de memoria: ${r.problema}`;
+    // lo que la reconstrucción avisa (un chunk sin fecha, un índice ilegible rehecho entero) también se dice
+    return (r.avisos || []).length ? `índice de memoria rehecho, con avisos: ${r.avisos.join(' · ')}` : null;
+  } catch (e) {
+    return `no pude rehacer el índice de memoria: ${String((e && e.message) || e).split('\n')[0]}`;
+  }
+}
+
+const applyHint = `${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} update --yes`;
+// una versión bajada se actualiza con la línea de npx; un clon, no (npx sólo le dice que use harness.js)
+const releaseApplyHint = `npx @tyconsa/harness@latest`;
+const applyHintFor = (state) => (mod('state').isRelease(state) ? releaseApplyHint : applyHint);
 const isTemporary = (ctx, dir) => {
   const d = real(dir) || path.resolve(dir);
   const roots = ['/tmp', '/private/tmp', ctx.env.TMPDIR, ctx.env.TEMP, ctx.env.TMP].filter(Boolean).map((r) => real(r) || path.resolve(r));
@@ -1572,10 +1658,12 @@ function runRepoint(ctx, state, policy, { log = null, manual = false, apply = tr
         try { const last = mod('snapshot').list(ctx.home)[0]; again = Boolean(last && last.manifest && last.manifest.reason === reason && last.manifest.to === to); } catch (_) { again = false; }
         return takeSnapshot(ctx, state.tree, { reason, from: state.version && state.version.number, to, log, force: !again, state });
       },
-      finish: (snap) => finishSnapshot(ctx, snap, log),
+      // repoint no corre el aplicador: cierra sólo la suya, y con `outcome: 'failed'` si la mudanza falló
+      finish: (snap, o = {}) => finishSnapshot(ctx, snap, log, { outcome: o.outcome || null }),
       write: () => mod('state').write(ctx.home, state),
     }) || none;
   } catch (e) {
+    if (e && e.code === mod('lock').LOCK_LOST) throw e;   // el candado perdido no es una falla de la mudanza: se va hasta main
     // nunca una pila, y nunca un arranque caído por la llave: se dice, y no se mueve ninguna fuente en esta corrida
     const text = `una mudanza del clon de skills no se pudo mirar (falla interna: ${e && e.message ? e.message : e}): no se mueve ninguna fuente; harness.js doctor lo detalla`;
     if (log) log(`repoint: ${text}${e && e.stack ? ` ${e.stack}` : ''}`);
@@ -1668,7 +1756,7 @@ const REEVALUATED_NOTICE = /^(el aplicador falló|la instalación quedó a media
  *  deja `startup` y también un `update` sin `--yes` en `ask` (el hook síncrono lo imprime en la sesión siguiente). */
 function availableText(state, policy, u) {
   const a = u.available || { label: u.lines[0].replace(/^hay versión nueva: /, ''), changes: '' };
-  return `arnés ${a.label} disponible (instalada ${state.version.number}, canal ${policy.channel}) · aplicar: ${applyHint}${a.changes ? ` · cambios: ${a.changes}` : ''}`;
+  return `arnés ${a.label} disponible (instalada ${state.version.number}, canal ${policy.channel}) · aplicar: ${applyHintFor(state)}${a.changes ? ` · cambios: ${a.changes}` : ''}`;
 }
 
 /** «instalada X, estable Y: no se baja; para volver, rollback»: lo traído es más viejo que lo instalado. */
@@ -1799,12 +1887,14 @@ function redetectSources(state, detected, tree, notes, blind = []) {
 function releaseHelpers(ctx) {
   const S = mod('state');
   return {
-    takeSnapshot, finishSnapshot, runApplier, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
+    takeSnapshot, finishSnapshot, runApplier, applierReportEnv, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
     settingsPath, policyOf, fixedLine, applyPolicy, installQuestions, codegraphInstall, writeAnswers, profileOf, machineProfile, holdText, availableText,
-    applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, installNodeProblem, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
+    applyHint, releaseApplyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, installNodeProblem, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
     harnessNodeNotice, packRetiredLine,
     engramSync: (c) => {
       if (!findInPath('engram', c.env)) return;
+      const rehecho = rebuildLocalEngramIndex(process.cwd());
+      if (rehecho) mod('report').log(c.home, `startup: ${rehecho}`);
       const e = spawnSync('engram', ['sync', '--import'], { windowsHide: true, encoding: 'utf8', env: c.env, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
       if (e.status !== 0) mod('report').log(c.home, `startup: engram sync --import salió ${e.status === null ? 'matado' : e.status}`);
     },
@@ -1960,7 +2050,7 @@ function cmdInstall(ctx) {
   // las preguntas, y las opciones que las contestan, ANTES del plan: lo contestado
   // viaja como si hubiera venido por opción (el plan lo muestra) y se escribe recién después de la conformidad
   let asked = { writes: [], over: {}, head: [], guided: false, eof: false };
-  if (fromExisting && (ctx.opts.integrations !== undefined || ctx.opts.packs !== undefined)) return { code: 2, lines: [`harness.js install: --integrations y --packs no van con --from-existing (esa ejecución no aplica nada): se contestan con install, o con node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js set`] };
+  if (fromExisting && (ctx.opts.integrations !== undefined || ctx.opts.packs !== undefined)) return { code: 2, lines: [`harness.js install: --integrations y --packs no van con --from-existing (esa ejecución no aplica nada): se contestan con install, o con ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js`)} set`] };
   if (!fromExisting) {
     asked = installQuestions(ctx, tree, read.status === 'ok' ? read.state : null);
     if (asked.code !== undefined) return { code: asked.code, lines: asked.lines };
@@ -2063,7 +2153,7 @@ function cmdInstall(ctx) {
       // sin el interno, el motivo es de install, no «la actualización pública espera» de update
       const pick = pickLayerCommit(ctx, src, { publicDir: tree, publicCommit: 'HEAD', waiting: null });
       if (pick.status !== 'ok') {
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         const again = layerWanted.implicit ? 'harness.js install' : `harness.js install --harness-clone ${layerWanted.reference}`;
         return { code: 1, lines: [`harness.js install: la capa privada no se pudo preparar — ${pick.reason}. No instalé nada: la máquina sigue como estaba; cuando ${pick.status === 'unknown' ? 'haya acceso al repo interno' : 'haya un commit de la capa compatible'}, ${again}`] };
       }
@@ -2076,7 +2166,10 @@ function cmdInstall(ctx) {
       // del estado; la protección contra un clon descartable vale para el aplicador suelto. Un nombre
       // viejo que apunta a un clon válido sigue ganando: la regla de nacimiento no cambia
       const l = ensureLink(ctx, tree, { link: ctx.opts.local ? tree : null, prefer: tree });
-      if (!l.ok) return { code: 2, lines: [`harness.js install: no pude asegurar el enlace: ${l.out || l.err}`] };
+      if (!l.ok) {
+        finishSnapshot(ctx, snap, (x) => R0.log(ctx.home, `install: ${x}`), { outcome: 'failed' });
+        return { code: 2, lines: [`harness.js install: no pude asegurar el enlace: ${l.out || l.err}`] };
+      }
       if (/cre|repar|re-apunt/i.test(l.out)) pieces.push('link');
       if (!linkResolvesTo(ctx, tree)) notes.push(`el enlace ${linkPath(ctx.home)} apunta a otro clon: ${l.out}`);
     }
@@ -2088,7 +2181,10 @@ function cmdInstall(ctx) {
     // verdad), que puede no ser el pedido si una variable le gana — y se dice
     if (ctx.opts.channel && policy.channel !== ctx.opts.channel) {
       const set = mod('channel').set(ctx.home, ctx.opts.channel);
-      if (!set.ok) return { code: 2, lines: [`harness.js install: ${set.reason}`] };
+      if (!set.ok) {
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
+        return { code: 2, lines: [`harness.js install: ${set.reason}`] };
+      }
       if (set.warning) notes.push(set.warning);
       pieces.push('channel');
       policy = policyOf(ctx, tree);
@@ -2133,7 +2229,7 @@ function cmdInstall(ctx) {
       state.sources = state.sources.filter((s) => SS.kindOf(s) !== 'layer').concat([layerPrep.src]);
       const st = stackLayer(ctx, state, layerPrep.src, layerPrep.pick.result);
       if (!st.ok) {
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         return { code: 1, lines: [`harness.js install: ${st.reason}. No corrí el aplicador`] };
       }
       recordLayer(ctx, state, layerPrep.src, layerPrep.pick, st.manifest);
@@ -2170,7 +2266,7 @@ function cmdInstall(ctx) {
       let sk;
       try { sk = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js')).setKey(ctx.home, PR.KEY, ctx.opts.profile, { env: ctx.env }); } catch (e) { sk = { ok: false, reason: e.message }; }
       if (!sk || !sk.ok) {
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ${machineConfigName(ctx.home)}: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] };
       }
       if (sk.warning) notes.push(sk.warning);
@@ -2183,7 +2279,7 @@ function cmdInstall(ctx) {
     if (asked.writes.length) {
       const wa = writeAnswers(ctx, tree, asked.writes);
       if (!wa.ok) {
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         return { code: 2, lines: [`harness.js install: no pude escribir tus respuestas en ${machineConfigName(ctx.home)}: ${wa.reason}. No corrí el aplicador`] };
       }
       notes.push(...wa.warnings);
@@ -2203,7 +2299,7 @@ function cmdInstall(ctx) {
         // `doctor` corrido después, en otra sesión, tiene que verlo (lo saca la corrida de `install` que termine bien)
         state.failed = { commit: state.version.number, sources: currentSources(ctx, state), at: nowIso(), log: S.paths(ctx.home).log, reason: 'applier', stage: 'install' };
         S.write(ctx.home, state);
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         // quedó a medias: qué falló, el registro, la copia y las dos salidas; y las notas
         // (la causa puede ser una de ellas, «no pude mirar la fuente…»)
         return { code: 1, lines: [...R.installFailure({ what: a.reason, log: S.paths(ctx.home).log, backup: snap && snap.dir, warnings: a.warnings }), ...notes] };
@@ -2230,7 +2326,7 @@ function cmdInstall(ctx) {
         state.failed = { commit: state.version.number, sources: currentSources(ctx, state), at: nowIso(), log: S.paths(ctx.home).log, reason: 'health', stage: 'install' };
         state.last_health = null;   // a medias: `install` otra vez la retoma en vez de decir «sin cambios»
         S.write(ctx.home, state);
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         // las notas van igual: la causa de la salud que no pasó puede ser justo una de ellas («no pude mirar la fuente…»)
         return { code: 1, lines: [...R.installFailure({ what: `la comprobación de salud no pasó: ${h.failures.join(' · ')}`, log: S.paths(ctx.home).log, backup: snap && snap.dir, warnings: a.warnings }), ...notes] };
       }
@@ -2247,7 +2343,10 @@ function cmdInstall(ctx) {
     // una instalación que salió bien deja la máquina al día: el aviso «no se pudo actualizar desde …» de antes ya no vale
     // (con una fuente que no se pudo mirar la instalación sale 1, y el aviso queda)
     if (!blind.length) mod('report').clearUpdateFailure(ctx.home);
-    finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+    // el aplicador completo corrió con la salud en verde (no en --from-existing, donde lo corre su padre): reescribió
+    // todo y cierra las copias abiertas de un corte anterior; con otra versión, también las vueltas atrás cortadas
+    const otherVersion = Boolean(existing && existing.version && state.version && existing.version.number !== state.version.number);
+    finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { rewroteAll: Boolean(applied && applied.ok), supersede: otherVersion });
     const head = `arnés ${existing && !pieces.length ? 'ya instalado' : 'instalado'} en modo ${state.mode} · ${tree}`;
     // lo demás quedó hecho, pero hay una fuente que no se pudo mirar: sale 1 (la nota de arriba dice cuál y por qué)
     const blindLine = blind.length ? `harness.js install: sale 1 — no pude mirar ${blind.length === 1 ? 'la fuente' : 'las fuentes'} ${blind.join(', ')}; corré install otra vez cuando se pueda mirar` : null;
@@ -2281,10 +2380,27 @@ function cmdInstall(ctx) {
 
 // ── la salud, la vuelta atrás automática, la retención y el intento fallido ─────────────────────────────────
 
+/**
+ * El aviso guardado tal como lo muestra el doctor, o null si no queda nada que mostrar. El tramo de una copia a medias
+ * lo calculó un arranque anterior: se vuelve a mirar si hay una copia abierta. Si no la hay, sale sin ese tramo; si no
+ * se pudo leer todo, sale entero y dice que no se pudo confirmar. Sin ese tramo, el aviso tal cual. No escribe nada.
+ */
+function pendingNotice(ctx, notice) {
+  if (!notice) return null;
+  const SN = mod('snapshot');
+  if (!String(notice).split(' · ').some((part) => part.startsWith(SN.CUT_NOTICE_PREFIX))) return notice;
+  const problems = [];
+  let open = false;
+  try { open = Boolean(SN.openCopyNotice(SN.list(ctx.home, { problems }), { cmd: 'harness.js' })); } catch (e) { problems.push(e.message); }
+  if (open) return notice;
+  if (problems.length) return `${notice} (no pude confirmar si la copia sigue abierta: ${problems.join('; ')})`;
+  return SN.stripCutNotice(notice);
+}
+
 /** El texto de la retención que dejó un `rollback` (el aviso de cada arranque y lo que dice `update`). */
 function holdText(state) {
   const h = state.hold || {};
-  return `retención: deshiciste la versión ${h.commit || '—'} (${h.at || '—'}); el arnés no se actualiza solo hasta levantarla: harness.js rollback --release (o ${applyHint})`;
+  return `retención: deshiciste la versión ${h.commit || '—'} (${h.at || '—'}); el arnés no se actualiza solo hasta levantarla: harness.js rollback --release (o ${releaseApplyHint})`;
 }
 /** El nombre de una versión para los mensajes, `failed` y `hold`: el número (que sale del arnés) más el agent-skills,
  *  así una actualización sólo de agent-skills no se lee «X → X». */
@@ -2371,7 +2487,8 @@ function rollbackOutcome(restored, number, copyError) {
  */
 function failUpdate(ctx, state, { snap, rec, before, after, tips, failures, reason, log }) {
   const S = mod('state'), R = mod('report'), SN = mod('snapshot');
-  if (snap) { try { SN.finish(snap.dir, { home: ctx.home, env: ctx.env }); } catch (e) { if (log) log(`update: no pude anotar el después de la copia (${e.message})`); } }
+  // la actualización falló con el proceso vivo: su copia queda «failed» y no cierra las de un corte anterior
+  if (snap) { try { SN.finish(snap.dir, { home: ctx.home, env: ctx.env, closedBy: 'failed', older: false }); } catch (e) { if (log) log(`update: no pude anotar el después de la copia (${e.message})`); } }
   let restored = { ok: false, lines: ['sin copia de la actualización: no hubo vuelta atrás automática'] };
   const copy = snap ? SN.list(ctx.home).find((c) => c.dir === snap.dir) : null;
   const RB = rec && rec.rollback;
@@ -2391,7 +2508,10 @@ function failUpdate(ctx, state, { snap, rec, before, after, tips, failures, reas
       restored = RB.restore(Object.assign({}, ctx, { tree: state.tree }), state, copy, Object.assign({
         why: reason, runApplier, log, snapshotDir: snap.dir, isOwnPiece: (p) => isOwnPiece(ctx, p),
       }, layerHooks(ctx, state, log))) || restored;
-    } catch (e) { restored = { ok: false, lines: [`la vuelta atrás automática falló: ${e.message}`] }; }
+    } catch (e) {
+      if (e && e.code === mod('lock').LOCK_LOST) throw e;   // otro tiene el candado: la vuelta atrás no sigue
+      restored = { ok: false, lines: [`la vuelta atrás automática falló: ${e.message}`] };
+    }
   } else if (!RB) {
     restored = { ok: false, lines: ['sin rollback.js en esta versión: no hubo vuelta atrás automática'] };
   }
@@ -2902,6 +3022,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
   const moved = [];
   for (const { src, p } of plans) {
     if (p.upToDate) continue;
+    mod('lock').assertStillMine(ctx.home);   // antes de mover un árbol: el candado sigue siendo de esta toma
     const a = SRC.advance(src, { env, home: ctx.home });
     if (!a.ok) {
       // un reset/merge a medias (Windows: «unable to unlink») deja ESTA fuente a mitad de camino: también
@@ -2917,9 +3038,10 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
         if (!rv.ok || rv.kept) kept.push(rv.reason);
       }
       kept.push(...restackBack());
+      // la actualización no llegó: su copia queda «failed» en las tres salidas (nunca abierta: sería un corte falso)
+      finishSnapshot(ctx, ownSnap, log, { outcome: 'failed' });
       if (/index\.lock/i.test(a.reason || '')) return { status: 'busy', code: 3, lines: [`harness.js update: otra sesión está usando el clon de ${src.name} (index.lock) — no se movió nada`, ...kept] };
       if (interrupted) {
-        finishSnapshot(ctx, ownSnap, log);
         state.failed = { commit: fresh.map((x) => `${x.src.name}@${sha7(x.c.to)}`).join(' '), sources: tips, at: nowIso(), log: S.paths(ctx.home).log, reason: 'interrupted' };
         R.setNotice(state, `la actualización quedó a medias (${a.reason}): las fuentes volvieron a ${before}; se reintenta en la próxima sesión`);
         if (log) log(`update: interrupted: ${a.reason}`);
@@ -2944,7 +3066,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
       }
       // la capa vuelve a donde estaba (un apilado que se cortó a mitad pudo dejar parte escrita)
       kept.push(...layers.map((src) => restackLayerAt(ctx, state, src, src.commit)).filter((r) => !r.ok).map((r) => `la capa no se pudo volver a apilar en ${sha7(r.to)}: ${r.reason}`));
-      finishSnapshot(ctx, ownSnap, log);
+      finishSnapshot(ctx, ownSnap, log, { outcome: 'failed' });
       return { status: 'blocked', code: 2, lines: [`harness.js update: ${st.reason} — no se mueve ninguna fuente${moved.length ? ` (${moved.map((m) => m.src.name).join(', ')} volvió a su versión)` : ''}`, ...kept.filter(Boolean)] };
     }
     recordLayer(ctx, state, x.src, x.p, st.manifest);
@@ -2962,7 +3084,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
   // el `doctor` del árbol nuevo (parte de la salud) lee el estado del disco: se graba antes, con la constancia de que la
   // salud quedó PENDIENTE — si la sesión muere en el medio, el arranque siguiente la corre
   state.failed = pendingHealth(ctx, { commit: after, sources: tips, applierOut: applier.out });
-  try { S.write(ctx.home, state); } catch (e) { if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
+  try { S.write(ctx.home, state); } catch (e) { if (e && e.code === mod('lock').LOCK_LOST) throw e; if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
   const done = finishHealth(ctx, state, { snap, ownSnap, rec, before, after, tips, report: applier.report, applierOut: applier.out, log, moved });
   if (done.status === 'applied' && layerMoves.length) done.lines = [done.lines[0], ...layerLines, ...layerNotes, ...done.lines.slice(1)];
   if (done.status === 'applied') { const pl = packRetiredLine(applier); if (pl) { done.lines.push(pl); if (log) log(`update: ${pl}`); } }
@@ -2993,8 +3115,10 @@ function finishHealth(ctx, state, { snap, ownSnap = null, rec, before, after, ti
   // y el estado se graba YA: un corte entre la copia nueva y el S.write de cierre (un reinicio de Windows en medio del
   // aplicador) dejaría la copia fija de la versión nueva con el estado de la vieja, y el arranque siguiente lo
   // leería como «alguien la tocó», daría la salud por roja y volvería atrás
-  try { mod('state').write(ctx.home, state); } catch (e) { if (log) log(`update: no pude grabar el estado tras refrescar la copia fija (${e.message})`); }
-  finishSnapshot(ctx, ownSnap, log);
+  try { mod('state').write(ctx.home, state); } catch (e) { if (e && e.code === mod('lock').LOCK_LOST) throw e; if (log) log(`update: no pude grabar el estado tras refrescar la copia fija (${e.message})`); }
+  // aplicador y salud en verde sobre la versión nueva: reescribió todo, cierra las copias de un corte anterior y las
+  // vueltas atrás cortadas (la máquina pasó a otra versión a conciencia)
+  finishSnapshot(ctx, ownSnap, log, { rewroteAll: true, supersede: true });
   const stashNotes = moved.filter((m) => m.a && m.a.kept).map((m) => `${m.src.name}: lo local no se pudo reaplicar y quedó en git stash list`);
   return { status: 'applied', code: 0, lines: [`arnés ${before} → ${after}`, ...stashNotes], from: before, to: after, backup: snap && snap.dir ? snap.dir : null };
 }
@@ -3050,14 +3174,19 @@ function cmdStartup(ctx) {
     try {
       const rep = mod('move-home').repair(ctx, migrateHelpers(ctx), { log });
       if (rep.repaired) log(`startup: ${rep.lines.join(' · ')}`);
-    } catch (e) { log(`startup: la reparación de la mudanza falló: ${e.message}`); }
+    } catch (e) { if (e && e.code === L.LOCK_LOST) throw e; log(`startup: la reparación de la mudanza falló: ${e.message}`); }
     const r = loadState(ctx);
     if (r.status !== 'ok') { log(`startup: ${S.fail(r, { home: ctx.home }).line}`); return say(); }
     const state = r.state;
+    // un cambio que se cortó a la mitad dejó su copia abierta: se mira ANTES de tomar ninguna copia de este arranque, y
+    // antes de la salida a la versión bajada. Con el candado en la mano nadie más está escribiendo: abierta es cortada
+    let cutNotice = null;
+    try { cutNotice = mod('snapshot').cutNoticeOf(ctx.home, { cmd: 'harness.js' }); } catch (e) { log(`startup: no pude mirar las copias abiertas (${e.message})`); }
+    if (cutNotice) log(`startup: ${cutNotice}`);
     // la versión bajada: su arranque no hace git; vive en release.js
     // el aviso de una herramienta sin enchufar se recalcula en cada arranque: el de antes no se arrastra
     if (state.notice && mod('tools').NOTICE_TAIL.test(state.notice)) state.notice = state.notice.replace(mod('tools').NOTICE_TAIL, '') || null;
-    if (S.isRelease(state)) return mod('release').startup(ctx, state, releaseHelpers(ctx), { log });
+    if (S.isRelease(state)) return mod('release').startup(ctx, state, releaseHelpers(ctx), { log, cutNotice });
     if (state.notice && EOL_NOTICE_TAIL.test(state.notice)) state.notice = state.notice.replace(EOL_NOTICE_TAIL, '') || null;
     const tree = state.tree;
     let line = null;
@@ -3097,7 +3226,8 @@ function cmdStartup(ctx) {
       const f = state.failed;
       log(`startup: la comprobación de salud de ${f.commit} quedó pendiente: la corro ahora`);
       const rec = preloadRecovery(log);
-      const pick = rec.rollback ? rec.rollback.pickTarget(mod('snapshot').list(ctx.home), { currentSources: currentSources(ctx, state) || {} }) : null;
+      // `openToo`: la copia que necesita es justo la abierta de la actualización que se cortó (y no retoma una vuelta atrás)
+      const pick = rec.rollback ? rec.rollback.pickTarget(mod('snapshot').list(ctx.home), { currentSources: currentSources(ctx, state) || {}, openToo: true }) : null;
       const copy = pick && pick.copy && !pick.filesOnly ? pick.copy : null;
       const u = finishHealth(ctx, state, { snap: copy ? { dir: copy.dir } : null, rec, before: copy ? copy.manifest.from : '—', after: f.commit, tips: f.sources, report: Array.isArray(state.managed) ? state.managed : [], applierOut: (Array.isArray(f.applier_failed) ? f.applier_failed : []).join('\n'), log });
       if (u.status === 'failed') { notice = state.notice; line = u.lines[0]; }
@@ -3106,6 +3236,8 @@ function cmdStartup(ctx) {
 
     // 1. engram, sólo con la integración prendida
     if (engramOn(ctx, tree) && findInPath('engram', ctx.env)) {
+      const rehecho = rebuildLocalEngramIndex(process.cwd());
+      if (rehecho) { log(`startup: ${rehecho}`); line = line ? `${line} · ${rehecho}` : rehecho; }
       const e = spawnSync('engram', ['sync', '--import'], { windowsHide: true, encoding: 'utf8', env: ctx.env, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
       if (e.status !== 0) log(`startup: engram sync --import salió ${e.status === null ? 'matado' : e.status}`);
     }
@@ -3128,11 +3260,18 @@ function cmdStartup(ctx) {
       const MH = mod('move-home');
       const want = MH.homeKey(ctx, tree, { log: (l) => log(`startup: ${l}`) });
       if (want === 'tycon') {
-        const m = MH.migrate(ctx, migrateHelpers(ctx), { log: (l) => log(`startup: ${l}`), auto: true, state });
+        // la mudanza, al terminar sana, cierra las copias de un corte anterior, pero no la de este arranque (sigue en curso)
+        const mh = migrateHelpers(ctx);
+        const spareMine = snap && snap.dir ? Object.assign({}, mh, { finishSnapshot: (c, s, l, o = {}) => mh.finishSnapshot(c, s, l, Object.assign({}, o, { spare: snap.dir })) }) : mh;
+        const m = MH.migrate(ctx, spareMine, { log: (l) => log(`startup: ${l}`), auto: true, state });
         if (m.migrated) {
-          // la máquina ya es una versión bajada y el estado lo escribió la mudanza: este arranque termina acá
+          // la máquina ya es una versión bajada y el estado lo escribió la mudanza: este arranque termina acá y cierra
+          // sólo la suya (las de un corte las cerró la mudanza, que reescribió todo)
           log(`startup: ${m.lines.join(' · ')}`);
-          finishSnapshot(ctx, snap, log);
+          // la mudanza llevó las copias a la carpeta nueva: la de este arranque se busca por su nombre
+          let moved = snap;
+          try { const hit = snap && mod('snapshot').list(ctx.home).find((c) => c.name === path.basename(snap.dir)); if (hit) moved = Object.assign({}, snap, { dir: hit.dir }); } catch (e) { log(`startup: no pude buscar la copia del arranque después de la mudanza (${e.message})`); }
+          finishSnapshot(ctx, moved, log);
           return say(m.lines[0]);
         }
         if (m.precondition) notice = notice || `mudanza a ~/.tycon pendiente (install.home: tycon): ${m.lines[0].replace(/^harness\.js migrate: /, '')}`;
@@ -3193,6 +3332,7 @@ function cmdStartup(ctx) {
     // 3. el aplicador, SIEMPRE (idempotente; de él cuelgan las tareas diarias), y el registro de lo que dejó
     const a = runApplier(ctx, tree, { log, snapshotDir: (sw.snap || snap) && (sw.snap || snap).dir });
     state.last_apply = nowIso();
+    let healthRed = false;
     if (!a.ok) {
       const text = `el aplicador falló (${a.reason}): detalle en ${S.paths(ctx.home).log}`;
       notice = notice || text; log(`startup: ${text}`); line = line || text;
@@ -3212,7 +3352,7 @@ function cmdStartup(ctx) {
         // hay versión nueva que deshacer: `rollback` es de la persona)
         const h = runHealth(ctx, state, { report: a.report, applierOut: a.out, log });
         if (h.ok) state.last_health = nowIso();
-        else { const text = `la comprobación de salud no pasó (${h.failures[0]}): harness.js doctor lo detalla; para volver a la versión anterior, harness.js rollback`; notice = notice || text; line = line || text; log(`startup: ${h.failures.join(' · ')}`); }
+        else { healthRed = true; const text = `la comprobación de salud no pasó (${h.failures[0]}): harness.js doctor lo detalla; para volver a la versión anterior, harness.js rollback`; notice = notice || text; line = line || text; log(`startup: ${h.failures.join(' · ')}`); }
       } else if (mod('sources').head(tree, { env: ctx.env }) !== treeBefore) {
         // el árbol cambió por otro camino que update (que ya corrió su salud): la salud mínima, el aplicador salió 0
         state.last_health = nowIso();
@@ -3222,7 +3362,7 @@ function cmdStartup(ctx) {
     if (!notice && state.hold) notice = holdText(state);
     // una falla de `install` no es una actualización que volvió atrás: no se movió nada, y lo que la
     // retoma es `install` otra vez
-    if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install otra vez la retoma — harness.js doctor lo detalla`;
+    if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install otra vez la retoma — harness.js doctor lo detalla`;
     if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y ${state.failed.fixed_copy ? rollbackOutcome({ ok: true }, state.version && state.version.number, state.failed.fixed_copy) : `volvió sola a ${state.version && state.version.number}`}; ${state.failed.reason === 'interrupted' ? 'se reintenta en el próximo arranque' : `no se reintenta sola hasta que cambie la punta (o ${applyHint})`} — harness.js doctor lo detalla`;
     if (!notice && keepFromLastLook && !fetched && policy.enabled && state.mode !== 'developer') notice = state.notice;
     // una herramienta instalada y sin enchufar: se dice en cada arranque, sin pisar otro
@@ -3236,13 +3376,21 @@ function cmdStartup(ctx) {
     // aviso la pide. Sólo con el aplicador sano (el pre-push tiene que estar en su lugar)
     if (a.ok) notice = hooksPathUnattended(ctx, state, tree, policy, { mode: 'startup', log: (l) => log(`startup: ${l}`), notice }).notice;
     else notice = mod('git-hooks-path').stripNotices(notice);
+    // el arranque corre el aplicador SIEMPRE: sano (y la salud, si corrió, en verde) reescribió todo y cierra las copias
+    // de un corte anterior; con el aplicador en error o la salud en rojo, sus dos copias quedan «failed» y el aviso sigue.
+    // Si la actualización de adentro ya cerró la copia (falló), el primer cierre manda
+    const closing = !a.ok || healthRed ? { outcome: 'failed' } : { rewroteAll: true };
+    finishSnapshot(ctx, snap, log, closing);
+    finishSnapshot(ctx, sw.snap, log, closing);
+    // el aviso de la copia abierta es de ESTE arranque (lo que vio al empezar): se dice una vez aunque este mismo arranque
+    // la cierre, y el de un arranque anterior (arrastrado con el aviso viejo) no sigue: cerrada, no vuelve
+    notice = mod('snapshot').stripCutNotice(notice);
+    if (cutNotice) notice = notice ? `${notice} · ${cutNotice}` : cutNotice;
     if (notice) R.setNotice(state, notice); else R.clearNotice(state);
     S.write(ctx.home, state);
     // este arranque tuvo el candado y llegó al final: lo anotado por «candado ocupado» ya no vale (lo de la red
     // lo borra sólo una mirada sana, más arriba)
     R.clearUpdateFailure(ctx.home, { kind: 'busy' });
-    finishSnapshot(ctx, snap, log);
-    finishSnapshot(ctx, sw.snap, log);
     return say(line);
   }, { env: ctx.env, onBusy: (lock) => {
     log(`startup: ${lock.reason} — me voy`);
@@ -3251,6 +3399,26 @@ function cmdStartup(ctx) {
     if (R.busyIsFailure(lock)) R.recordUpdateFailure(ctx.home, `${lock.reason} hace ${Math.round(lock.ageMs / 60000)} min`, { kind: 'busy' });
     return say();
   } });
+}
+
+/**
+ * La capa del equipo sola, sin versión nueva ni aplicador: la lanza el gancho de la oficina, aparte y cada 30 min, para que
+ * un perfil nuevo llegue a una máquina que trabaja sin abrir sesión. Lo que hace queda en el registro de arranque. Con un
+ * clon, o en modo desarrollador, no hay capa que refrescar.
+ */
+function cmdTeamRefresh(ctx) {
+  const S = mod('state'), L = mod('lock'), R = mod('report');
+  const log = (l) => R.log(ctx.home, `team-refresh: ${l}`);
+  const out = (r) => (ctx.opts.json ? { code: r.code, lines: [JSON.stringify({ status: r.status, profileChanged: Boolean(r.profileChanged), lines: r.lines })] } : { code: r.code, lines: r.lines });
+  const need = needState(ctx);
+  if (need.fail) return out({ code: need.fail.code, status: 'failed', lines: [need.fail.line] });
+  // `off`, no `none`: el gancho anota cada `none`, y una instalación sin capa no tiene nada que anotar cada 30 min
+  if (need.state.mode === 'developer' || !S.isRelease(need.state)) return out({ code: 0, status: 'off', lines: ['sin capa que refrescar en esta instalación'] });
+  return L.withLock(ctx.home, () => {
+    const r = loadState(ctx);
+    if (r.status !== 'ok') { const f = S.fail(r, { home: ctx.home }); return out({ code: f.code, status: 'failed', lines: [f.line] }); }
+    return out(mod('release').cmdTeamRefresh(ctx, r.state, releaseHelpers(ctx), { log }));
+  }, { env: ctx.env, onBusy: (lock) => { log(lock.reason || 'otra sesión está actualizando'); return out({ code: 3, status: 'busy', lines: [`harness.js: ${lock.reason || 'otra sesión está actualizando'}`] }); } });
 }
 
 function cmdUpdate(ctx) {
@@ -3440,7 +3608,8 @@ function cmdApply(ctx) {
       if (sw.profile && sw.profile.ok && dropped !== null) r.state.profile = { value: sw.profile.value, origin: sw.profile.origin };
     }
     S.write(ctx.home, r.state);
-    finishSnapshot(ctx, snap, log);
+    // `apply` corre el aplicador completo (sin salud): sano, reescribió todo y cierra las copias de un corte anterior
+    finishSnapshot(ctx, snap, log, a.ok ? { rewroteAll: true } : { outcome: 'failed' });
     if (a.ok && (sw.switching || sw.notice)) return { code: 0, lines: [`aplicador corrido desde ${r.state.tree}`, ...(sw.switching ? [`perfil de instalación: ${sw.profile.value} (copia de antes en ${snap ? snap.dir : '—'})`] : []), ...(sw.notice ? [sw.notice] : []), ...extra] };
     return { code: a.ok ? 0 : 1, lines: a.ok ? [`aplicador corrido desde ${r.state.tree}`, ...extra] : [`harness.js apply: ${a.reason}`, ...(a.out ? a.out.split('\n').slice(-5) : [])] };
   }, { env: ctx.env, onBusy: busy });
@@ -3740,6 +3909,8 @@ function cmdDoctor(ctx) {
   // actualización sana ni hacerla volver atrás. Corrido por una persona, es rojo.
   const requirementLevel = ctx.env.TYCON_HARNESS_HEALTH === '1' ? 'warn' : 'fail';
   const requirementItems = () => { for (const r of requirementChecks(ctx, { release: read.status === 'ok' && S.isRelease(read.state) })) add(r.problem ? requirementLevel : 'ok', r.problem || `requisito ${r.name}: ${r.version} (${r.path})`); };
+  // en Windows sin Git es un aviso: no impide instalar ni pone rojo el diagnóstico
+  const windowsGitItem = () => { try { const n = require(path.join(__dirname, '..', 'lib', 'git-bash.js')).windowsGitNotice({ platform: ctx.platform, env: ctx.env }); if (n) add(n.level, n.text); } catch (e) { add('warn', `Git para Windows: no pude mirarlo (${e.message})`); } };
   // la línea de arranque en su forma VIEJA: doctor daría «nada en rojo» en una máquina que no se actualiza
   // sola —en Windows esa línea ni corre: Claude Code lanza los hooks por Git Bash—. `startup` la migra.
   const startupLineItem = () => {
@@ -3753,6 +3924,7 @@ function cmdDoctor(ctx) {
   };
   if (read.status === 'missing') {
     requirementItems();
+    windowsGitItem();
     startupLineItem();
     facts = placeFacts(ctx, ctx.tree);
     placeItems(ctx, facts, add);
@@ -3772,7 +3944,7 @@ function cmdDoctor(ctx) {
   const withClaude = plugged.includes('claude');
   // Node y los demás requisitos del aplicador
   add('ok', `Node ${process.versions.node} (piso ${NODE_FLOOR})`);
-  if (withClaude) requirementItems();
+  if (withClaude) { requirementItems(); windowsGitItem(); }
   if (TOOLS.recorded(state)) add('ok', `herramientas enchufadas: ${TOOLS.names(plugged)}`);
   // una herramienta instalada y sin enchufar: se enchufa en la próxima instalación, no sola; se dice antes
   { const tn = toolNotice(ctx, tree, state); if (tn) add('ok', tn); }
@@ -3823,9 +3995,12 @@ function cmdDoctor(ctx) {
     doctorPublishGuardItems(ctx, tree, prof, add, extra);
     // los repos que declara la organización, contra este disco: dato o aviso, nunca rojo
     doctorDeclaredReposItems(ctx, tree, add, extra);
+    // la regla de aprobación de main en esos repos (con --fetch: le pregunta a la plataforma): dato o aviso, nunca rojo
+    doctorBranchApprovalItems(ctx, tree, add, extra);
     // el Node propio del arnés: dato o aviso, nunca rojo
     doctorHarnessNodeItems(ctx, tree, add, extra);
-    if (state.notice) add('warn', `aviso pendiente: ${state.notice}`);
+    doctorClaudeVersionItems(ctx, add);
+    { const n = pendingNotice(ctx, state.notice); if (n) add('warn', `aviso pendiente: ${n}`); }
     if (state.hold) add('warn', `${holdText(state)}`);
     if (state.failed) {
       const f = state.failed;
@@ -3937,10 +4112,14 @@ function cmdDoctor(ctx) {
   // los controles ESPERADOS contra la máquina: la lista del aplicador de esta plataforma para esta
   // configuración. Lo que el aplicador nunca registró no está en `managed`, y lo de arriba no lo ve. Siempre un AVISO,
   // nunca un rojo: la comprobación de salud llama a doctor, y un rojo acá haría volver atrás una actualización sana
+  // los frenos que la organización encendió (`switches` del perfil) cuentan como si la máquina hubiera puesto su
+  // variable: el aplicador los registra así, y doctor espera lo mismo. Con la configuración rota, ninguno
+  let orgBrakes = {};
   const integrations = (() => {
     try {
       const cfg = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js'));
       const c = cfg.leer({ env, home: ctx.home, arnes: tree });
+      if (typeof cfg.brakeOptIns === 'function') orgBrakes = cfg.brakeOptIns(c);
       // con la integración de horas elegida (los hooks `time:<integración>`), si el lector la conoce
       return Object.assign(cfg.integraciones(c), typeof cfg.timeTracking === 'function' ? { timeTracking: cfg.timeTracking(c).value } : {});
     } catch (_) { return null; }
@@ -3955,9 +4134,14 @@ function cmdDoctor(ctx) {
   doctorPublishGuardItems(ctx, tree, prof, add, extra);
   // los repos que declara la organización, contra este disco: dato o aviso, nunca rojo
   doctorDeclaredReposItems(ctx, tree, add, extra);
+  // la regla de aprobación de main en esos repos (con --fetch: le pregunta a la plataforma): dato o aviso, nunca rojo
+  doctorBranchApprovalItems(ctx, tree, add, extra);
   // el Node propio del arnés: dato o aviso, nunca rojo
   doctorHarnessNodeItems(ctx, tree, add, extra);
-  const controls = M.expectedControls({ platform: ctx.platform, tree, integrations, env, home: ctx.home, profile: prof.ok ? prof.value : null });
+  doctorClaudeVersionItems(ctx, add);
+  const controlsEnv = Object.assign({}, env);
+  for (const [k, v] of Object.entries(orgBrakes)) if (controlsEnv[k] === undefined || controlsEnv[k] === '') controlsEnv[k] = v;
+  const controls = M.expectedControls({ platform: ctx.platform, tree, integrations, env: controlsEnv, home: ctx.home, profile: prof.ok ? prof.value : null });
   for (const t of controls.problems) add('warn', `controles esperados: ${t}`);
   for (const x of controls.excluded) add('ok', `fuera en Windows: ${x.id} — ${x.reason}`);
   if (controls.missing.length) add('warn', `${controls.missing.length === 1 ? 'falta' : 'faltan'} ${controls.missing.length} de ${controls.expected.length} controles esperados en ${settingsPath(ctx)} (la lista de scripts/${controls.source}): ${controls.missing.map((c) => c.label || `${c.event} ${c.relpath}`).join(', ')} — harness.js apply los registra; si alguno sigue faltando, la salida del aplicador dice por qué${controls.caveat ? ` · ${controls.caveat}` : ''}`);
@@ -3965,8 +4149,11 @@ function cmdDoctor(ctx) {
   // las copias de seguridad del mecanismo, y los .bak sueltos que NO gestiona
   try {
     const SN = mod('snapshot');
-    const copies = typeof SN.list === 'function' ? SN.list(ctx.home) : [];
+    const unreadable = [];
+    const copies = typeof SN.list === 'function' ? SN.list(ctx.home, { problems: unreadable }) : [];
     add('ok', `copias de seguridad del mecanismo: ${copies.length}${copies.length ? ` (la más reciente: ${path.basename(copies[0].dir || String(copies[0]))})` : ''}`);
+    // la cuenta es de las que se pudieron leer: lo que no, se dice
+    if (unreadable.length) add('warn', `copias de seguridad: no pude leer todo (${unreadable.join('; ')}); la cuenta es de las legibles`);
     const bak = typeof SN.countBak === 'function' ? SN.countBak({ home: ctx.home, env, tree }) : 0;
     if (bak) add('ok', `${bak} copia(s) .bak sueltas al lado de tus archivos: el mecanismo no las gestiona (no las toca ni las borra)`);
   } catch (e) { add('warn', `copias de seguridad: no pude mirarlas (${e.message})`); }
@@ -3999,14 +4186,14 @@ function cmdDoctor(ctx) {
     if (publicCopy && policy.channel === 'latest' && policy.apply === 'auto') add('warn', `${LATEST_AUTO_REMINDER} (para revisar cada versión antes: update.apply «ask» en ${machineConfigName(ctx.home)}, o harness.js channel stable)`);
   }
   if (state.mode === 'developer') add('warn', `modo desarrollador sobre ${tree}: update no toca su git; la versión es la del clon`);
-  if (state.notice) add('warn', `aviso pendiente: ${state.notice}`);
+  { const n = pendingNotice(ctx, state.notice); if (n) add('warn', `aviso pendiente: ${n}`); }
   if (state.hold) add('warn', `${holdText(state)}`);
   if (state.failed) {
     const f = state.failed;
     // bajo la comprobación de salud (TYCON_HARNESS_HEALTH=1) un intento registrado es historia, no la salud de este árbol
     const level = env.TYCON_HARNESS_HEALTH === '1' ? 'warn' : 'fail';
     if (f.pending === 'health') add(level, `la comprobación de salud de ${f.commit || '—'} quedó pendiente (la sesión se cortó en el medio, ${f.at || '—'}): el próximo arranque la corre; ya: harness.js startup --force`);
-    else if (f.stage === 'install') add(level, `la instalación quedó a medias: ${f.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'} (${f.at || '—'}; detalle en ${f.log || S.paths(ctx.home).log}) — node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install otra vez la retoma, o harness.js uninstall la saca`);
+    else if (f.stage === 'install') add(level, `la instalación quedó a medias: ${f.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'} (${f.at || '—'}; detalle en ${f.log || S.paths(ctx.home).log}) — ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install otra vez la retoma, o harness.js uninstall la saca`);
     else add(level, `última actualización fallida: ${f.commit || '—'} (${f.reason || 'salud'}, ${f.at || '—'}; detalle en ${f.log || S.paths(ctx.home).log}) — ${f.reason === 'interrupted' ? 'se reintenta sola en el próximo arranque' : 'no se reintenta sola hasta que cambie la punta'}; reintentar ya: ${applyHint}`);
   }
   const vsn = R.derive(state, { env });
@@ -4024,7 +4211,7 @@ function cmdDoctor(ctx) {
 function doctorConfigItems(ctx, tree, state, prof, add, extra) {
   if (prof.ok) {
     extra.profile = { value: prof.value, origin: prof.origin, chosen: Boolean(prof.chosen) };
-    if (!prof.chosen) add('warn', `perfil sin elegir: esta instalación se comporta como full — elegí con node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install --profile minimal|full`);
+    if (!prof.chosen) add('warn', `perfil sin elegir: esta instalación se comporta como full — elegí con ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install --profile minimal|full`);
   }
   try {
     const C = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js'));
@@ -4224,6 +4411,41 @@ function doctorDeclaredReposItems(ctx, tree, add, extra) {
 }
 
 /**
+ * La regla de aprobación de main en los repos que declara la organización (`merge_suites.repos` de team-repos.json).
+ * Los pedidos a main se abren para entrar solos con el control en verde: sin una regla de aprobación mínima, entran sin
+ * que nadie los apruebe. Preguntarle a la plataforma es salir a la red, así que sólo con `--fetch`; sin él, una línea
+ * que dice que no se miró y cómo mirarlo. Lo pregunta `scripts/tools/branch-approval.js check-declared` del árbol, con
+ * un tope por repo y uno total (120 s): un repo que no se pudo medir es un aviso con su motivo, nunca «la tiene».
+ * 🔴 NUNCA en rojo (la comprobación de salud corre `doctor --json`), y bajo la salud no corre: `branch_approval` en null.
+ * Un árbol que no trae el comando —una versión anterior— no dice nada. Nunca tira.
+ */
+function doctorBranchApprovalItems(ctx, tree, add, extra) {
+  if (ctx.env.TYCON_HARNESS_HEALTH === '1') { extra.branch_approval = null; return; }
+  const tool = path.join(tree, 'scripts', 'tools', 'branch-approval.js');
+  if (!fs.existsSync(tool)) return;
+  if (!ctx.opts.fetch) {
+    extra.branch_approval = { measured: false, reason: 'sin --fetch: preguntarle a la plataforma es salir a la red' };
+    add('ok', 'regla de aprobación de main: no se miró (le pregunta a la plataforma) — harness.js doctor --fetch la mira en los repos que declara la organización');
+    return;
+  }
+  const sinMedir = (t) => { extra.branch_approval = { measured: false, reason: t }; add('warn', `regla de aprobación de main: no medido — ${t}`); };
+  try {
+    const r = spawnSync(process.execPath, [tool, 'check-declared', '--json', '--budget-ms', '120000'], { windowsHide: true, encoding: 'utf8', env: ctx.env, timeout: 130000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024 });
+    if (r.error) return sinMedir(r.error.code === 'ETIMEDOUT' ? 'tope: la pregunta tardó más de 130 s' : `el comando no corrió (${r.error.code || r.error.message})`);
+    let j;
+    try { j = JSON.parse(String(r.stdout || '').trim().split('\n').pop()); } catch (_) { return sinMedir(`el comando no contestó JSON (salió ${r.status})`); }
+    if (!j || !Array.isArray(j.repos)) return sinMedir(String((j && j.reason) || `salió ${r.status} sin la lista`));
+    extra.branch_approval = { measured: true, repos: j.repos.map((x) => ({ repo: x.repo, branch: x.branch, result: x.result, faults: x.faults, detail: x.detail })) };
+    const conRegla = j.repos.filter((x) => x.result === 'sirve').length;
+    for (const x of j.repos) {
+      if (x.result === 'no_medido') add('warn', `regla de aprobación de main: ${x.repo}: no medido — ${x.detail}`);
+      else if (x.result !== 'sirve') add('warn', `regla de aprobación de main: ${x.repo}${x.branch ? ` · ${x.branch}` : ''}: ${(x.faults || []).join('; ')} — un pedido a main puede entrar sin que nadie lo apruebe`);
+    }
+    add(conRegla === j.repos.length ? 'ok' : 'warn', `regla de aprobación de main: ${conRegla} de ${j.repos.length} repo(s) declarado(s) la tienen`);
+  } catch (e) { sinMedir(`no pude preguntar (${(e && (e.code || e.message)) || 'error'})`); }
+}
+
+/**
  * Lo que `doctor` dice del freno antes de publicar, sin escribir nada. Es lo único que
  * hay entre un nombre real y el repo público. Cinco cosas, en las dos formas de máquina (con
  * un clon, y con una versión bajada):
@@ -4261,6 +4483,14 @@ function doctorHarnessNodeItems(ctx, tree, add, extra) {
   }
   extra.harness_node = f.json;
   add(f.level === 'warn' ? 'warn' : 'ok', f.line);
+}
+
+/** Qué versión de Claude usa esta sesión: dato o aviso, nunca rojo. La comprobación de salud juzga el árbol, no esto. */
+function doctorClaudeVersionItems(ctx, add) {
+  if (ctx.env.TYCON_HARNESS_HEALTH === '1') return;
+  try {
+    for (const it of require(path.join(__dirname, '..', 'lib', 'claude-versions.js')).doctorItems({ env: ctx.env, platform: ctx.platform })) add(it.level, it.text);
+  } catch (e) { add('warn', `Claude — no sé qué versión usás: no se pudo mirar (${e.message})`); }
 }
 
 function doctorPublishGuardItems(ctx, tree, prof, add, extra) {
@@ -4585,8 +4815,11 @@ function cmdRollback(ctx) {
     const undone = versionLabel(ctx, state);
     // la copia de ANTES de volver, siempre nueva: con ella un rollback se deshace con otro. Su retención no
     // puede borrar la copia destino
-    const before = takeSnapshot(ctx, state.tree, { reason: 'before-rollback', from: state.version && state.version.number, to: pick.copy.manifest.from || null, log, force: true, state, protect: [pick.copy.dir] });
-    // con capa: el público vuelve con su reset y la capa se re-apila desde el commit anterior
+    // nace abierta y anota a dónde vuelve: si esta vuelta atrás se corta, el arranque siguiente da el comando que la termina
+    const before = takeSnapshot(ctx, state.tree, { reason: 'before-rollback', from: state.version && state.version.number, to: pick.copy.manifest.from || null, log, force: true, state, protect: [pick.copy.dir], rollbackTo: pick.copy.name });
+    // con capa: el público vuelve con su reset y la capa se re-apila desde el commit anterior. Antes de mover los
+    // árboles, el candado sigue siendo de esta toma
+    mod('lock').assertStillMine(ctx.home);
     const res = RB.restore(Object.assign({}, ctx, { tree: state.tree }), state, pick.copy, Object.assign({
       why: 'rollback', runApplier, log, filesOnly: pick.filesOnly, snapshotDir: before && before.dir, isOwnPiece: (p) => isOwnPiece(ctx, p),
     }, layerHooks(ctx, state, log)));
@@ -4622,7 +4855,12 @@ function cmdRollback(ctx) {
       lines.push(pick.filesOnly ? 'los árboles no se movieron (la copia no sabe a qué commits)' : `los árboles quedaron en ${state.version.number}`);
     }
     S.write(ctx.home, state);
-    finishSnapshot(ctx, before, log);
+    if (res.ok) {
+      // terminó (su aplicador corrió completo): la copia destino, abierta si era la de un corte, queda cerrada; la suya y
+      // las `before-rollback` de una vuelta atrás que se cortó antes, con «rollback»; y las demás abiertas más viejas
+      closeRollbackTarget(ctx, pick.copy, log);
+      finishSnapshot(ctx, before, log, { closedBy: 'rollback', rewroteAll: true });
+    } else finishSnapshot(ctx, before, log, { outcome: 'failed' });
     log(`${undone} → ${state.version.number} · ${(res.lines || []).join(' · ')}`);
     return { code: res.ok ? 0 : 1, lines: [...lines, ...(res.lines || [])] };
   }, { env: ctx.env, onBusy: busy });
@@ -4678,7 +4916,8 @@ function cmdUninstall(ctx) {
     // U.run quita sus módulos y después ya no se podría cargar (harness-team.test.sh, «uninstall por la copia fija»)
     const GHP = mod('git-hooks-path');
     const res = U.run(Object.assign({}, uctx, { snapshotDir: snap && snap.dir }), state, { log });
-    finishSnapshot(ctx, snap, log);
+    // `uninstall` no reescribe: cierra sólo la suya, «failed» si quedó a medias
+    finishSnapshot(ctx, snap, log, res && res.ok ? {} : { outcome: 'failed' });
     const lines = [...head, ...(res.lines || [])];
     // la carpeta global de hooks de git que puso el arnés: con los hooks quitados, si quedara git no correría
     // ni los del arnés ni el .git/hooks/ de cada repo. Sólo si sigue siendo la que se puso
@@ -4713,7 +4952,9 @@ function cmdUninstall(ctx) {
           lines.push(`quitado: ${own.versions}`);
         }
       } catch (e) { lines.push(`no pude quitar todo ${own.versions} (${e.code || e.message}): si un programa tiene abierta una versión, cerralo y borrala a mano`); }
-      for (const l of [linkPath(ctx.home), mod('tycon-home').installedSkillsDir(ctx.home)]) {
+      // también el enlace de la carpeta del estado de siempre al estado propio, el que deja sumar Claude Code a una máquina
+      // en la casa propia: con el estado propio quitado, quedaría colgado
+      for (const l of [linkPath(ctx.home), mod('tycon-home').installedSkillsDir(ctx.home), mod('tycon-home').legacyStateDir(ctx.home)]) {
         try {
           const st = fs.lstatSync(l);
           // a dónde APUNTA (readlink), no a dónde resuelve: con harness/ ya quitada el enlace cuelga y realpath no contesta
@@ -5002,11 +5243,39 @@ function cmdTeamInit(ctx) {
 /** `npx`: lo que sigue a la bajada del paquete de npm (scripts/setup/harness/npx.js), siempre con el código de ESTE árbol. */
 function cmdNpx(ctx) { return mod('npx').run(ctx); }
 
+/** `sign <firma>`: la firma en la terminal y su renglón en el registro común (lib/harness-sign.js). */
+function cmdSign(ctx) {
+  const [id, ...sobra] = ctx.args;
+  if (!id) return { code: 2, lines: ['harness.js sign: falta el id de la firma (guides/firmas-del-arnes.md)'] };
+  if (sobra.length) return { code: 2, lines: [`harness.js sign: una firma por vez (sobra «${sobra[0]}»)`] };
+  const deLaConstancia = ['session', 'seal', 'text'];
+  // la constancia de Codex no es una firma del catálogo: se enruta antes de buscar el id
+  if (id === 'acknowledge') {
+    const otra = Object.keys(ctx.opts).find((o) => !deLaConstancia.includes(o));
+    if (otra) return { code: 2, lines: [`harness.js sign acknowledge: lleva sólo --session, --seal y --text (sobra --${otra})`] };
+    return require('../lib/harness-sign.js').acknowledge({ session: ctx.opts.session, seal: ctx.opts.seal, text: ctx.opts.text });
+  }
+  const suelta = deLaConstancia.find((o) => ctx.opts[o] !== undefined);
+  if (suelta) return { code: 2, lines: [`harness.js sign: --${suelta} es de \`sign acknowledge\` (la constancia de Codex), no de una firma del catálogo`] };
+  // lo que sube la organización; sin poder leerlo, null: se pide motivo también para la rutina
+  let levels = null;
+  try {
+    const r = require('../lib/tycon-config.js').cargar({ env: ctx.env, home: ctx.home });
+    const roto = (r.errores || []).some((e) => e.clave == null || /^approvals(\.|$)/.test(String(e.clave)));
+    if (!roto) levels = (r.valores && r.valores.approvals && r.valores.approvals.levels) || {};
+  } catch (_) { levels = null; }
+  return require('../lib/harness-sign.js').sign({
+    id, reason: ctx.opts.reason, request: ctx.opts.request, commit: ctx.opts.commit === true, target: ctx.opts.target, orderedBy: ctx.opts['ordered-by'], levels,
+  });
+}
+
 const HANDLERS = {
+  sign: cmdSign,
   install: cmdInstall,
   startup: cmdStartup,
   config: cmdConfig,
   update: cmdUpdate,
+  'team-refresh': cmdTeamRefresh,
   apply: cmdApply,
   version: cmdVersion,
   doctor: cmdDoctor,
@@ -5034,7 +5303,16 @@ function main(argv) {
   try {
     r = HANDLERS[p.cmd](ctx) || { code: 0 };
   } catch (e) {
-    // nunca una pila: una línea con el motivo (startup sale 0 igual: una sesión no se frena por el arnés)
+    // nunca una pila: una línea con el motivo (startup sale 0 igual: una sesión no se frena por el arnés). El candado
+    // que otro pisó mientras éste estaba detenido no es una falla interna: sale 3, como «otra sesión está actualizando»
+    if (e && e.code === mod('lock').LOCK_LOST) {
+      const lost = `harness.js ${p.cmd}: ${e.message}`;
+      try { mod('report').log(ctx.home, lost); } catch (_) { /* sin registro */ }
+      r = { code: p.cmd === 'startup' ? 0 : 3, lines: [lost] };
+      if (detachedRun) mod('detach').writeResult(r.code, r.lines);
+      for (const l of r.lines) (r.code === 0 ? process.stdout : process.stderr).write(l + '\n');
+      return r.code;
+    }
     const line = `harness.js ${p.cmd}: falla interna: ${e && e.message ? e.message : e}`;
     try { mod('report').log(ctx.home, `${line}\n${e && e.stack ? e.stack : ''}`); } catch (_) { /* sin registro */ }
     r = { code: p.cmd === 'startup' ? 0 : 2, lines: [line] };
@@ -5049,4 +5327,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff, ensureImport, restoreFixedCopy, rollbackOutcome };
+module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, doctorBranchApprovalItems, dropForProfile, behaviorDiff, ensureImport, restoreFixedCopy, rollbackOutcome };

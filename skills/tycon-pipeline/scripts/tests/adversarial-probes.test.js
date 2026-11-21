@@ -39,10 +39,15 @@ fs.writeFileSync(path.join(dir, 'prompt-' + process.pid + '-' + Date.now() + '.t
 if (/Un hunter \\(lente/.test(prompt)) {
   const m = prompt.match(/Cre\\u00e1 la carpeta (\\S+)/) || prompt.match(/Creá la carpeta (\\S+)/);
   console.log(JSON.stringify({ verdict: 'CONFIRMED', reasoning: 'reproducido', adjusted_severity: 'bug', probe_dir: m ? m[1] : '', todos_el_mismo_defecto: true }));
-} else if (/LENTE: determinismo/.test(prompt)) {
-  console.log(JSON.stringify({ lens: 'determinism-ordering', findings: [{ severity: 'bug', file: 'src/a.js', line: 3, summary: 'orden no estable', repro: 'x', confidence: 'high' }] }));
 } else {
-  console.log(JSON.stringify({ lens: 'otra', findings: [] }));
+  // un cazador: devuelve la base pedida y, limpio, la carpeta de su prueba que le nombra el pedido
+  const base = (prompt.match(/Devolvé base = "([^"]+)"/) || [])[1] || '';
+  const carpeta = (prompt.match(/Creá la carpeta (\\S+)/) || [])[1] || '';
+  if (/LENTE: determinismo/.test(prompt)) {
+    console.log(JSON.stringify({ lens: 'determinism-ordering', base, probe_dir: '', findings: [{ severity: 'bug', file: 'src/a.js', line: 3, summary: 'orden no estable', repro: 'x', confidence: 'high' }] }));
+  } else {
+    console.log(JSON.stringify({ lens: 'otra', base, probe_dir: carpeta, findings: [] }));
+  }
 }
 `);
   return stub;
@@ -54,7 +59,8 @@ function correr(args) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'adv-probes-'));
   const stub = mkStub(tmp);
   const out = path.join(tmp, 'out.json');
-  args = { repo: tmp, ...args };
+  // un verificador por hallazgo, como al escribirse esta suite (la fábrica es uno por lente desde la 8.282)
+  args = { repo: tmp, base: '0123456789abcdef0123456789abcdef01234567', verifiers: 'per_finding', ...args };
   const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify(args), '--out', out], {
     encoding: 'utf8',
     env: { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}` },
@@ -80,6 +86,23 @@ test('todo agente del pase recibe dónde pararse, dónde armar el laboratorio y 
     assert.match(p, /set -euo pipefail/, `${quien}: el guion corta si el laboratorio no se armó`);
     assert.match(p, /SÓLO LECTURA/, `${quien}: el repo bajo revisión no se escribe con git`);
   }
+});
+
+// Claude Code frena, aun sin permisos, todo `rm` cuyo destino no puede resolver (un comodín, una ruta relativa después
+// de un `cd`, una variable) y espera el click de una persona: sin nadie mirando, el agente del pase queda parado.
+test('todo agente del pase recibe que no borra con rm y que una carpeta vacía se arma nueva con mktemp', () => {
+  const { prompts, skeptics } = correr({ files: ['src/a.js'], runDir: '/repo/.advisors/pipeline-runs/9.9-20261107-1000' });
+  assert.ok(prompts.length >= 7, `las seis lentes y su verificador (${prompts.length} agentes)`);
+  for (const p of prompts) {
+    const quien = /Un hunter \(lente/.test(p) ? 'el verificador' : `la lente «${(p.match(/LENTE: ([^\n.]+)/) || [])[1] || '?'}»`;
+    assert.match(p, /NUNCA BORRES CON rm/, `${quien}: trae la regla`);
+    assert.match(p, /comodines/, `${quien}: nombra el comodín`);
+    assert.match(p, /rutas relativas después de un\s+`cd`/, `${quien}: nombra la ruta relativa después de un cd`);
+    assert.match(p, /armá OTRA con `mktemp -d \/tmp\/probe\.XXXXXX`/, `${quien}: la carpeta vacía se arma nueva`);
+    assert.match(p, /no se limpia/, `${quien}: lo de /tmp se deja`);
+  }
+  assert.match(skeptics[0], /cada archivo por su ruta absoluta, sin comodines ni -r/, 'la prueba del repo se borra archivo por archivo');
+  assert.doesNotMatch(skeptics[0], /borrá la prueba del repo \(/, 'ya no dice sólo «borrá la prueba» sin cómo');
 });
 
 test('el verificador recibe la orden de guardar la prueba en <runDir>/step-05b-probes/<lente>-<n>', () => {
@@ -109,12 +132,19 @@ test('sin runDir (lanzado a mano) igual guarda, bajo pipeline-runs/adversarial-s
   assert.ok(skeptics[0].includes(`${tmp}/.advisors/pipeline-runs/adversarial-sin-corrida/step-05b-probes/determinism-ordering-1`));
 });
 
-test('el hunter NO recibe la orden de guardar: guarda sólo quien confirma', () => {
-  const { tmp } = correr({ files: ['src/a.js'], runDir: '/repo/.advisors/pipeline-runs/x' });
+// El cazador también guarda lo que corrió, aunque no encuentre nada: sin eso una lente «limpia» no prueba
+// que se haya mirado el cambio. Lo guarda en su carpeta (`caza-<lente>`), no en la del verificador, y no recibe el texto
+// del verificador.
+test('el hunter guarda su prueba en caza-<lente>, no en la carpeta ni con el texto del verificador', () => {
+  const runDir = '/repo/.advisors/pipeline-runs/x';
+  const { tmp } = correr({ files: ['src/a.js'], runDir });
   const hunters = fs.readdirSync(tmp).filter((f) => f.startsWith('prompt-'))
     .map((f) => fs.readFileSync(path.join(tmp, f), 'utf8')).filter((p) => /^\s*Repo:/.test(p) && !/Un hunter \(lente/.test(p));
   assert.ok(hunters.length >= 6, `6 lentes → 6 hunters (hubo ${hunters.length})`);
-  for (const h of hunters) assert.doesNotMatch(h, /GUARDÁ LA PRUEBA/);
+  for (const h of hunters) {
+    assert.doesNotMatch(h, /GUARDÁ LA PRUEBA ANTES DE BORRARLA/);
+    assert.match(h, new RegExp(`${runDir}/step-05b-probes/caza-[a-z-]+`));
+  }
 });
 
 test('la carpeta de la corrida queda fuera de git: el .gitignore canónico ignora todo salvo roster y findings', () => {

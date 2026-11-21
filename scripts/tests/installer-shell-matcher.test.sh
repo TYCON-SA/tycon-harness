@@ -98,6 +98,8 @@ make_old() {
   node -e '
     const fs = require("fs"); const [src, dst] = process.argv.slice(1);
     const s = JSON.parse(fs.readFileSync(src, "utf8"));
+    // antes no había hooks después de una herramienta que falló: ese evento lo suma la instalación nueva
+    delete s.hooks.PostToolUseFailure;
     // antes había un solo bloque `Bash`: el del freno (que hoy suma Monitor) se junta con el resto
     for (const ev of ["PreToolUse", "PostToolUse"]) {
       const shell = (s.hooks[ev] || []).filter((e) => /^Bash\|PowerShell(\|Monitor)?$/.test(e.matcher));

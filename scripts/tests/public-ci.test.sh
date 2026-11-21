@@ -8,9 +8,8 @@
 #         versionado (un `.js` roto sin versionar no lo rompe; versionado, sí). No corta en el primer rojo. Las suites
 #         que piden agent-skills corren cada una en su HOME vacía, sin las herramientas del vocabulario en el PATH, y su
 #         veredicto queda en `agent-skills-suites.tsv`. Sirve en los dos layouts: repo único y dos repos.
-#   T22 · PublicCi_Workflow_Seguro — `scripts/ci/check-public-workflow.js` deja pasar el `ci.yml` real (adentro
-#         vive en `scripts/publishing/public-files/.github/workflows/`; en la copia pública, en `.github/workflows/`) y
-#         da rojo, nombrando la regla, con cada copia alterada: una alteración por regla, y una por cada forma de
+#   T22 · PublicCi_Workflow_Seguro — `scripts/ci/check-public-workflow.js` deja pasar el `ci.yml` real (en
+#         `.github/workflows/`) y da rojo, nombrando la regla, con cada copia alterada: una alteración por regla, y una por cada forma de
 #         escribir lo prohibido que las reglas con nombre no ven (ahí la roja es `shape`, la forma exacta del archivo).
 #         Entre ellas, la regla `after-queue`: cada job se saltea en el push a main de la cola de merge y
 #         sólo en ése; una condición que saltea de más, o un job sin ella, es rojo.
@@ -23,6 +22,10 @@
 #         con su parte (TYCON_PORTABLE_SHARD=<i>/<n>); un valor que no es una parte sale 2 sin correr nada. Y
 #         portable-suites.test.sh, sobre un repo de mentira: las <n> partes juntas son todas las portables, ninguna en dos,
 #         cada parte con alguna, las más pesadas primero; una parte mal escrita o un reparto imposible es rojo.
+#   T10 (8.152) · PublicCi_ControlsBenchBase — la parte controls-bench-base corre sólo el banco de la base con el guion
+#         DE LA BASE (`git show`), sobre la punta del rango; sin --base, o con una base que todavía no trae el guion, dice
+#         que no aplica y no corre nada; checks y controls-bench no lo corren. Y en `ci.yml` la parte está en la matriz,
+#         corre en cada pedido y tiene su guarda para una base que no la conoce (T22).
 #   T25 · PublicCi_InstallerSuites_OnlyWhenTheChangeTouchesThem — con --range, las portables del grupo `installer` de
 #         heavy-suites.json que el cambio no toca se pasan a portable-suites.test.sh para saltear (TYCON_PORTABLE_SKIP),
 #         con el mismo criterio que la validación de Azure (suites-for-change.js --groups-alone). Si el cambio toca el
@@ -82,6 +85,9 @@ is() { if [ "$2" = "$3" ]; then ok "$1"; else no "$1 — esperaba «${2}» y dio
 # has <etiqueta> <archivo> <texto literal> · lacks: lo contrario
 has() { if grep -qF -- "$3" "$2" 2>/dev/null; then ok "$1"; else no "$1 — no aparece «${3}» en ${2#${T}/}: $(tail -n 6 "$2" 2>/dev/null | tr '\n' ' ')"; fi; }
 lacks() { if grep -qF -- "$3" "$2" 2>/dev/null; then no "$1 — aparece «${3}» en ${2#${T}/}"; else ok "$1"; fi; }
+# ninguna suite anotó su renglón: mira el comienzo de cada renglón, no las rutas de los otros (la carpeta temporal del
+# portón se llama suite-tmps-…, y aparece adentro de los renglones de las portables)
+no_suite_ran() { if grep -qE '^suite-' "$2" 2>/dev/null; then no "$1 — una suite anotó su renglón en ${2#${T}/}: $(grep -E '^suite-' "$2" | head -n 1)"; else ok "$1"; fi; }
 # los pasos, en el orden en que salieron (sólo las líneas de veredicto: «✅ public-ci: <paso> …» / «❌ public-ci: <paso> …»)
 steps_of() { sed -n 's/^[^ ][^ ]* public-ci: \([a-z][a-z-]*\) .*$/\1/p' "$1" | tr '\n' ' ' | sed 's/ $//'; }
 # las llamadas que anotaron los guiones de mentira, sin las de las suites (que corren a la vez y no tienen orden)
@@ -184,19 +190,20 @@ run_ci() { # PATH_PREFIX (opcional): entradas que van ADELANTE en el PATH, con s
       bash "${SCRIPT}" --root "${R}" "$@" ) > "${R}.out" 2>&1
   RC=$?
 }
-SEVEN="node-check build-check build-generate suites-coverage portable-suites agent-skills-suites controls-bench"
+# los pasos sin rango, en orden (el nombre de la variable viene de cuando eran siete)
+SEVEN="node-check build-check build-generate suites-coverage portable-suites agent-skills-suites controls-bench control-size"
 
 make_repo "${T}/base"
 is "T21 armar los repos de mentira no toca el repo de quien llama (GIT_DIR y compañía puestos)" "${OUTER_BEFORE}" "$(outer_state)"
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# T21 (d) · todo verde, sin opciones: 0, los siete pasos en orden, sin el detector, sólo lo versionado
+# T21 (d) · todo verde, sin opciones: 0, los ocho pasos en orden, sin el detector, sólo lo versionado
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 variant green; SKILLS_ENV=""; run_ci
 is "T21 (d) todo verde sale 0" 0 "${RC}"
-is "T21 (d) los siete pasos, en orden" "${SEVEN}" "$(steps_of "${R}.out")"
-is "T21 (d) una línea «✅ public-ci: <paso> (Ns)» por paso" 7 "$(grep -cE '^✅ public-ci: [a-z-]+ \([0-9]+s\)$' "${R}.out")"
-is "T21 (d) la última línea es el resumen" "✅ public-ci: 7 pasos verdes" "$(tail -n 1 "${R}.out")"
+is "T21 (d) los ocho pasos, en orden" "${SEVEN}" "$(steps_of "${R}.out")"
+is "T21 (d) una línea «✅ public-ci: <paso> (Ns)» por paso" 8 "$(grep -cE '^✅ public-ci: [a-z-]+ \([0-9]+s\)$' "${R}.out")"
+is "T21 (d) la última línea es el resumen" "✅ public-ci: 8 pasos verdes" "$(tail -n 1 "${R}.out")"
 printf '%s\n' "build-check " "build-generate --check" "suites-coverage " "portable-suites skills=${R}/skills guides=${R} git=${R} shard=" \
   "controls-bench --tool both --baseline check --json ${R}.ci/bench.json" > "${R}.expected"
 if calls_of "${R}" | cmp -s - "${R}.expected"; then ok "T21 (d) cada paso se llamó una vez, en orden, con sus argumentos, desde la raíz y con git mirando el repo de --root"
@@ -227,29 +234,29 @@ if cmp -s "${R}.ci/agent-skills-suites.tsv" "${R}.tsv"; then ok "T21 (d) agent-s
 else no "T21 (d) agent-skills-suites.tsv no es el esperado: $(tr '\n\t' '| ' < "${R}.ci/agent-skills-suites.tsv" 2>/dev/null)"; fi
 MISSING=""
 for f in 1-node-check.log 2-build-check.log 3-build-generate.log 4-suites-coverage.log 5-portable-suites.log 6-agent-skills-suites.log \
-  7-controls-bench.log bench.json agent-skills-suites/arnes__tests__alpha.test.js.log agent-skills-suites/arnes__tests__weekly.test.sh.log \
+  7-controls-bench.log 8-control-size.log bench.json agent-skills-suites/arnes__tests__alpha.test.js.log agent-skills-suites/arnes__tests__weekly.test.sh.log \
   agent-skills-suites/agent-skills__tycon-pipeline__scripts__tests__beta.test.sh.log; do
   [ -f "${R}.ci/${f}" ] || MISSING="${MISSING} ${f}"
 done
 is "T21 (d) la salida de cada paso, la de cada suite y el reporte del banco quedan en TYCON_PUBLIC_CI_OUT" "" "${MISSING}"
 has "T21 (d) el archivo de cada suite trae SU salida" "${R}.ci/agent-skills-suites/arnes__tests__alpha.test.js.log" "alpha: salida de la suite"
 
-# con --range y --clean-machine: los once pasos; sin TYCON_PUBLIC_CI_OUT, la carpeta temporal se nombra y existe
+# con --range y --clean-machine: los doce pasos; sin TYCON_PUBLIC_CI_OUT, la carpeta temporal se nombra y existe
 variant green9
 ( cd "${T}/elsewhere" && TYCON_SKILLS_DIR="${T}/no-skills" bash "${SCRIPT}" --root "${R}" --range 'HEAD~1...HEAD' --clean-machine ) > "${R}.out" 2>&1; RC=$?
 is "T21 (d) todo verde con --range y --clean-machine sale 0" 0 "${RC}"
-is "T21 (d) los once pasos, en orden" "${SEVEN} spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
-is "T21 (d) el resumen cuenta los once" "✅ public-ci: 11 pasos verdes" "$(tail -n 1 "${R}.out")"
+is "T21 (d) los doce pasos, en orden" "${SEVEN} spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
+is "T21 (d) el resumen cuenta los doce" "✅ public-ci: 12 pasos verdes" "$(tail -n 1 "${R}.out")"
 is "T21 (d) el freno de nombres recibe el rango, el pre-commit ve lo que trae el rango sobre la base, y la máquina limpia va al final" \
   "spanish-names --range HEAD~1...HEAD|repo-lint head=base staged=build/check.js version.json |clean-machine |" \
   "$(calls_of "${R}" | tail -n 3 | tr '\n' '|')"
 is "T21 (d) la copia de trabajo del pre-commit no queda" "" "$(git -C "${R}" worktree list | sed -n 2p)"
 lacks "T21 (d) tampoco con todas las opciones corre el detector" "${R}/.calls" "detector"
 OUT_DIR="$(sed -n 's/^public-ci: la salida de cada paso quedó en \(.*\)$/\1/p' "${R}.out")"
-if [ -n "${OUT_DIR}" ] && [ -f "${OUT_DIR}/11-clean-machine.log" ]; then
+if [ -n "${OUT_DIR}" ] && [ -f "${OUT_DIR}/12-clean-machine.log" ]; then
   ok "T21 (d) sin TYCON_PUBLIC_CI_OUT la salida va a una carpeta temporal que el resumen nombra"
   # la máquina limpia corre en su modo PÚBLICO: pedida de forma explícita y sobre el repo de --root
-  has "T21 (d) la máquina limpia recibe TYCON_CLEAN_MACHINE=1 y TYCON_CLEAN_MACHINE_SOURCE=<raíz>" "${OUT_DIR}/11-clean-machine.log" \
+  has "T21 (d) la máquina limpia recibe TYCON_CLEAN_MACHINE=1 y TYCON_CLEAN_MACHINE_SOURCE=<raíz>" "${OUT_DIR}/12-clean-machine.log" \
     "TYCON_CLEAN_MACHINE=1 TYCON_CLEAN_MACHINE_SOURCE=${R}"
   rm -rf "${OUT_DIR}"
 else no "T21 (d) el resumen no nombra una carpeta con la salida de cada paso («${OUT_DIR}»): $(tail -n 3 "${R}.out" | tr '\n' ' ')"; fi
@@ -268,7 +275,9 @@ run_ci --range 'HEAD~1...HEAD'
 has "T21 (e) la cola del paso rojo se muestra" "${R}.out" ": :error: :forjado"
 lacks "T21 (e) …sin un «::» entero (GitHub)" "${R}.out" "::error::"
 lacks "T21 (e) …ni un «##» entero (Azure)" "${R}.out" "##vso"
-if grep -E '::|##' "${R}.out" >/dev/null; then no "T21 (e) un «:::», «###» o un retorno de carro dejó un par entero"; else ok "T21 (e) …tampoco de a tres ni detrás de un retorno de carro"; fi
+# el único «::» permitido es el prefijo que pone el propio guion a los avisos del tamaño, al principio del renglón; el
+# texto que le sigue también va neutralizado
+if sed 's/^::warning::⚠️ control-size: /⚠️ control-size: /' "${R}.out" | grep -E '::|##' >/dev/null; then no "T21 (e) un «:::», «###» o un retorno de carro dejó un par entero"; else ok "T21 (e) …tampoco de a tres ni detrás de un retorno de carro"; fi
 # el nombre del registro de una suite sale de suites.json del pedido: no arma una línea ni un comando de la CI
 variant weirdsuite; SKILLS_ENV=""
 node -e 'const f=process.argv[1];const j=JSON.parse(require("fs").readFileSync(f,"utf8"));j.diarias.push({raiz:"arnes",ruta:"tests/x\n::warning::y.test.sh",requiere:["agent-skills"]});require("fs").writeFileSync(f,JSON.stringify(j,null,2))' "${R}/scripts/tests/suites.json"
@@ -312,7 +321,8 @@ commit_all "la base con su inventario"; lab_git -C "${R}" tag base-ref
 ( cd "${R}" && printf 'un documento\n' > leeme.txt && printf '{ "version": "2026.01.01.3" }\n' > version.json ) ; commit_all "el pedido"
 run_ci --range 'base-ref...HEAD' --base base-ref
 is "T14 con --base, un pedido que no toca controles: el mismo veredicto" 0 "${RC}"
-is "T14 con --base, los mismos pasos" "${NOBASE_STEPS}" "$(steps_of "${R}.out")"
+# con --base se suma el banco con los casos de la base (8.152), después del banco: acá la base no trae su guion y no aplica
+is "T14 con --base, los mismos pasos y el banco de la base" "${NOBASE_STEPS/controls-bench /controls-bench controls-bench-base }" "$(steps_of "${R}.out")"
 LINT_LOG="$(ls "${R}.ci"/*-repo-lint.log | head -n 1)"
 has "T14 con --base el repo-lint dice de dónde salen los controles" "${LINT_LOG}" "los controles y su regla salen de la base base-ref"
 has "T14 con --base corrió la revisión desde la base, en verde" "${LINT_LOG}" "✅ base-controls: verde"
@@ -343,7 +353,7 @@ variant tracked; ( cd "${R}" && lab_git add scratch/broken.js && lab_git commit 
 is "T21 (d) un .js versionado que no compila sale 1" 1 "${RC}"
 has "T21 (d) …con node-check en rojo" "${R}.out" "❌ public-ci: node-check — rojo (exit 1)"
 has "T21 (d) …nombrando el archivo" "${R}.out" "scratch/broken.js"
-is "T21 (d) …y el resumen nombra el paso" "❌ public-ci: 1 de 7 pasos en rojo: node-check" "$(tail -n 1 "${R}.out")"
+is "T21 (d) …y el resumen nombra el paso" "❌ public-ci: 1 de 8 pasos en rojo: node-check" "$(tail -n 1 "${R}.out")"
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # T21 (a) · falta el archivo de un paso: rojo «no pude correr», nunca un salto (y los demás corren igual)
@@ -354,7 +364,7 @@ has "T21 (a) el paso es rojo con «no pude correr» y el archivo" "${R}.out" "�
 has "T21 (a) --clean-machine sin su prueba (antes de la tanda C) es rojo «no pude correr»" "${R}.out" "❌ public-ci: clean-machine — no pude correr: falta scripts/tests/clean-machine.test.sh"
 is "T21 (a) el paso que no corrió figura en su lugar: no se saltea" "${SEVEN} clean-machine" "$(steps_of "${R}.out")"
 is "T21 (a) los demás pasos corren igual" "build-check|suites-coverage|portable-suites|controls-bench|" "$(calls_of "${R}" | cut -d' ' -f1 | tr '\n' '|')"
-is "T21 (a) el resumen nombra los pasos en rojo" "❌ public-ci: 2 de 8 pasos en rojo: build-generate, clean-machine" "$(tail -n 1 "${R}.out")"
+is "T21 (a) el resumen nombra los pasos en rojo" "❌ public-ci: 2 de 9 pasos en rojo: build-generate, clean-machine" "$(tail -n 1 "${R}.out")"
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # T21 (b) · un paso sale distinto de 0, y una suite de las que piden agent-skills da rojo: no corta en el primero
@@ -367,9 +377,9 @@ is "T21 (b) con un paso que sale distinto de 0 sale 1" 1 "${RC}"
 has "T21 (b) el paso es rojo con su exit" "${R}.out" "❌ public-ci: suites-coverage — rojo (exit 3)"
 has "T21 (b) el paso de las suites es rojo" "${R}.out" "❌ public-ci: agent-skills-suites — rojo (exit 1)"
 has "T21 (b) …y nombra la suite roja" "${R}.out" "❌ arnes/tests/alpha.test.js"
-is "T21 (b) no corta en el primer rojo: salen los siete pasos" "${SEVEN}" "$(steps_of "${R}.out")"
+is "T21 (b) no corta en el primer rojo: salen los ocho pasos" "${SEVEN}" "$(steps_of "${R}.out")"
 is "T21 (b) …y los pasos de después se corrieron" "build-check|build-generate|suites-coverage|portable-suites|controls-bench|" "$(calls_of "${R}" | cut -d' ' -f1 | tr '\n' '|')"
-is "T21 (b) el resumen nombra los dos" "❌ public-ci: 2 de 7 pasos en rojo: suites-coverage, agent-skills-suites" "$(tail -n 1 "${R}.out")"
+is "T21 (b) el resumen nombra los dos" "❌ public-ci: 2 de 8 pasos en rojo: suites-coverage, agent-skills-suites" "$(tail -n 1 "${R}.out")"
 { printf '✅\t%s\n' "agent-skills/tycon-pipeline/scripts/tests/beta.test.sh"; printf '❌\t%s\n' "arnes/tests/alpha.test.js"; printf '✅\t%s\n' "arnes/tests/weekly.test.sh"; } > "${R}.tsv"
 if cmp -s "${R}.ci/agent-skills-suites.tsv" "${R}.tsv"; then ok "T21 (b) agent-skills-suites.tsv trae la verde y la roja"
 else no "T21 (b) agent-skills-suites.tsv no es el esperado: $(tr '\n\t' '| ' < "${R}.ci/agent-skills-suites.tsv" 2>/dev/null)"; fi
@@ -386,7 +396,7 @@ lacks "T21 (c) el freno de nombres no se llama con un rango que no resuelve" "${
 has "T21 (c) el pre-commit del rango tampoco corre: «no pude correr»" "${R}.out" "❌ public-ci: repo-lint — no pude correr: "
 has "T21 (c) ni la versión: «no pude correr»" "${R}.out" "❌ public-ci: version — no pude correr: "
 lacks "T21 (c) el pre-commit no se llama con un rango que no resuelve" "${R}/.calls" "repo-lint"
-is "T21 (c) el resumen nombra los tres pasos del rango" "❌ public-ci: 3 de 10 pasos en rojo: spanish-names, repo-lint, version" "$(tail -n 1 "${R}.out")"
+is "T21 (c) el resumen nombra los tres pasos del rango" "❌ public-ci: 3 de 11 pasos en rojo: spanish-names, repo-lint, version" "$(tail -n 1 "${R}.out")"
 variant badrange; run_ci --range 'HEAD'
 has "T21 (c) un rango que no es <base>...<punta> también es «no pude correr»" "${R}.out" "❌ public-ci: spanish-names — no pude correr: "
 
@@ -408,7 +418,7 @@ is "T21 sin skills a la vista sale 1" 1 "${RC}"
 has "T21 sin skills a la vista las suites son «no pude correr»" "${R}.out" "❌ public-ci: agent-skills-suites — no pude correr: "
 has "T21 sin skills a la vista el motivo es que no están (la biblioteca contestó, y ahí no hay skills)" "${R}.out" "no pude correr: no encuentro las skills"
 lacks "T21 sin skills a la vista no se dice «no pude resolver»: eso es otra cosa" "${R}.out" "no pude resolver la carpeta de skills"
-lacks "T21 sin skills a la vista no corre ninguna suite" "${R}/.calls" "suite-"
+no_suite_ran "T21 sin skills a la vista no corre ninguna suite" "${R}/.calls"
 if [ -f "${R}.ci/agent-skills-suites.tsv" ]; then no "T21 sin skills a la vista quedó un agent-skills-suites.tsv (de la corrida anterior): un veredicto viejo no es un veredicto"
 else ok "T21 una ejecución no deja en pie el .tsv de la anterior"; fi
 # la biblioteca que ubica las skills NO PUDO contestar (su vecina está y rompe al cargarse): no es «no hay skills». El
@@ -424,8 +434,8 @@ is "T21 con la biblioteca de las skills rota sale 1" 1 "${RC}"
 has "T21 con la biblioteca rota el guion dice que no pudo resolver, con la causa" "${R}.out" "public-ci: no pude resolver la carpeta de skills: biblioteca rota a propósito"
 has "T21 con la biblioteca rota las suites son «no pude correr» por esa causa" "${R}.out" "❌ public-ci: agent-skills-suites — no pude correr: no pude resolver la carpeta de skills: biblioteca rota a propósito"
 lacks "T21 con la biblioteca rota no se dice «no encuentro las skills»: no es que no estén" "${R}.out" "no encuentro las skills"
-lacks "T21 con la biblioteca rota no corre ninguna suite" "${R}/.calls" "suite-"
-is "T21 con la biblioteca rota los siete pasos figuran igual (no corta, no saltea)" "${SEVEN}" "$(steps_of "${R}.out")"
+no_suite_ran "T21 con la biblioteca rota no corre ninguna suite" "${R}/.calls"
+is "T21 con la biblioteca rota los ocho pasos figuran igual (no corta, no saltea)" "${SEVEN}" "$(steps_of "${R}.out")"
 # cero suites que pidan exactamente agent-skills: cero no es verde
 variant nosuites; printf '%s\n' '{ "diarias": [ { "raiz": "arnes", "ruta": "tests/portable.test.js", "requiere": [] } ], "semanales": [] }' > "${R}/scripts/tests/suites.json"
 commit_all "sin suites"; run_ci
@@ -483,16 +493,35 @@ printf '✅\t%s\n' "agent-skills/tycon-pipeline/scripts/tests/beta.test.sh" "arn
 if cmp -s "${R}.ci/agent-skills-suites.tsv" "${R}.tsv"; then ok "T21 con una entrada relativa en el PATH las suites en bash corren (el enlace no queda roto)"
 else no "T21 con una entrada relativa en el PATH las suites no corrieron: $(grep -F 'no pude lanzarla' "${R}.out" | head -n 2 | tr '\n' ' ')"; fi
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# T2 (8.163) · control-size: el tamaño de los controles avisa en el pedido y nunca frena
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# sin el guion en el repo (el repo de mentira de siempre): lo dice como aviso y el paso sigue verde
+has "T2 control-size sin su guion lo dice como aviso" "${T}/green.out" "::warning::⚠️ control-size: no pude medir: falta scripts/ci/control-size.js"
+has "T2 control-size sin su guion sigue verde" "${T}/green.out" "✅ public-ci: control-size ("
+# con el guion de verdad y un control por encima del tope, cuyo nombre trae «::»: el aviso sube neutralizado y el pedido no frena
+variant csizewarn; cp "${ROOT}/scripts/ci/control-size.js" "${R}/scripts/ci/control-size.js"
+node -e 'process.stdout.write("//\n" + "/".repeat(94997))' > "${R}/scripts/ci/en::orme.js"; commit_all "un control enorme"; run_ci
+is "T2 un control por encima del tope no frena: sale 0" 0 "${RC}"
+has "T2 …el paso queda verde" "${R}.out" "✅ public-ci: control-size ("
+has "T2 …y el aviso sube como aviso del pedido, con el nombre neutralizado" "${R}.out" "::warning::⚠️ control-size: scripts/ci/en: :orme.js tiene 95.000 letras; el tope es 90.000"
+lacks "T2 …el «::» del nombre no llega crudo" "${R}.out" "en::orme.js tiene"
+is "T2 …y el resumen sigue verde" "✅ public-ci: 8 pasos verdes" "$(tail -n 1 "${R}.out")"
+# con el guion roto: «no pude medir» como aviso, el paso sigue verde
+variant csizebroken; printf '%s\n' 'throw new Error("roto a propósito")' > "${R}/scripts/ci/control-size.js"; commit_all "el guion roto"; run_ci
+is "T2 con control-size roto sale 0" 0 "${RC}"
+has "T2 …lo dice como aviso" "${R}.out" "::warning::⚠️ control-size: no pude medir: el guion salió 1"
+has "T2 …y el paso sigue verde" "${R}.out" "✅ public-ci: control-size ("
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # T24 (a) · la corrida partida (TYCON_PUBLIC_CI_PART): checks + el banco + las partes de las suites = la corrida entera
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ELEVEN="${SEVEN} spanish-names repo-lint version clean-machine"
 variant partchecks; export TYCON_PUBLIC_CI_PART=checks; run_ci --range 'HEAD~1...HEAD' --clean-machine; unset TYCON_PUBLIC_CI_PART
 is "T24 (a) la parte checks, todo verde, sale 0" 0 "${RC}"
-is "T24 (a) la parte checks corre todos los pasos menos las portables y el banco, en orden" "node-check build-check build-generate suites-coverage agent-skills-suites spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
+is "T24 (a) la parte checks corre todos los pasos menos las portables y el banco, en orden" "node-check build-check build-generate suites-coverage agent-skills-suites control-size spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
 lacks "T24 (a) …y no llama a las portables" "${R}/.calls" "portable-suites"
 lacks "T24 (a) …ni al banco" "${R}/.calls" "controls-bench"
 has "T24 (a) …y lo dice al arrancar" "${R}.out" "public-ci: parte checks — todos los pasos menos portable-suites y controls-bench"
-is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 9 pasos verdes (sólo la parte checks)" "$(tail -n 1 "${R}.out")"
+is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 10 pasos verdes (sólo la parte checks)" "$(tail -n 1 "${R}.out")"
 STEPS_CHECKS="$(steps_of "${R}.out")"
 variant partbench; export TYCON_PUBLIC_CI_PART=controls-bench; run_ci --range 'HEAD~1...HEAD' --clean-machine; unset TYCON_PUBLIC_CI_PART
 is "T24 (a) la parte del banco, todo verde, sale 0" 0 "${RC}"
@@ -505,10 +534,10 @@ variant partsuites; export TYCON_PUBLIC_CI_PART=suites-2-of-3; run_ci --range 'H
 is "T24 (a) una parte de las suites, todo verde, sale 0" 0 "${RC}"
 is "T24 (a) la parte suites-2-of-3 corre sólo las portables" "portable-suites" "$(steps_of "${R}.out")"
 is "T24 (a) …con su parte: TYCON_PORTABLE_SHARD=2/3, y nada más" "portable-suites skills=${R}/skills guides=${R} git=${R} shard=2/3" "$(calls_of "${R}" | tr '\n' '|' | sed 's/|$//')"
-lacks "T24 (a) …sin las suites que piden agent-skills (van en checks)" "${R}/.calls" "suite-"
+no_suite_ran "T24 (a) …sin las suites que piden agent-skills (van en checks)" "${R}/.calls"
 is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 1 pasos verdes (sólo la parte suites-2-of-3)" "$(tail -n 1 "${R}.out")"
 # shellcheck disable=SC2086
-is "T24 (a) checks, el banco y una parte de las suites son los once pasos de la corrida entera, ninguno dos veces" \
+is "T24 (a) checks, el banco y una parte de las suites son los doce pasos de la corrida entera, ninguno dos veces" \
   "$(printf '%s\n' ${ELEVEN} | LC_ALL=C sort | tr '\n' ' ')" "$(printf '%s\n' ${STEPS_CHECKS} ${STEPS_BENCH} $(steps_of "${R}.out") | LC_ALL=C sort | tr '\n' ' ')"
 variant partred; echo 'exit 4' >> "${R}/scripts/tests/portable-suites.test.sh"; commit_all "portables en rojo"
 export TYCON_PUBLIC_CI_PART=suites-1-of-1; run_ci; unset TYCON_PUBLIC_CI_PART
@@ -516,7 +545,7 @@ is "T24 (a) una parte con su paso en rojo sale 1" 1 "${RC}"
 is "T24 (a) …y el resumen nombra el paso y la parte" "❌ public-ci: 1 de 1 pasos en rojo (sólo la parte suites-1-of-1): portable-suites" "$(tail -n 1 "${R}.out")"
 # sin parte, la corrida entera corre TODAS las portables aunque quien llama tenga puesta una parte de las portables
 variant partnone; export TYCON_PORTABLE_SHARD=1/3; run_ci; unset TYCON_PORTABLE_SHARD
-is "T24 (a) sin TYCON_PUBLIC_CI_PART corre los siete pasos" "${SEVEN}" "$(steps_of "${R}.out")"
+is "T24 (a) sin TYCON_PUBLIC_CI_PART corre los ocho pasos" "${SEVEN}" "$(steps_of "${R}.out")"
 if grep -qE "^portable-suites .* shard=$" "${R}/.calls"; then ok "T24 (a) …y las portables van enteras (la parte llega vacía) aunque quien llama tenga TYCON_PORTABLE_SHARD puesta"
 else no "T24 (a) la parte de las portables no llegó vacía: $(grep '^portable-suites' "${R}/.calls")"; fi
 for bad in suites-0-of-3 suites-4-of-3 suites-1-of-2-of-3 suites-1-of-3x all Checks; do
@@ -524,6 +553,39 @@ for bad in suites-0-of-3 suites-4-of-3 suites-1-of-2-of-3 suites-1-of-3x all Che
   if [ "${RC}" -eq 2 ] && grep -qF "uso: bash scripts/ci/public-ci.sh" "${R}.out" && grep -qF "no es una parte" "${R}.out" && [ ! -f "${R}/.calls" ]; then ok "T24 (a) TYCON_PUBLIC_CI_PART=${bad} sale 2 con el uso y no corre nada"
   else no "T24 (a) TYCON_PUBLIC_CI_PART=${bad} esperaba exit 2 con el uso y sin correr nada, y dio exit ${RC}: $(tail -n 2 "${R}.out" | tr '\n' ' ')"; fi
 done
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# T10 (8.152) · la parte controls-bench-base: el banco de la base, con el guion DE LA BASE, sólo con --base
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# el guion de la base, de mentira: anota su llamada (relativa a la raíz) y sale verde
+bab_variant() { # <nombre>
+  variant "$1"; fake_js "${R}/scripts/ci/bench-against-base.js" bench-against-base; commit_all "el banco de la base"
+  echo "// el pedido" >> "${R}/build/check.js"; commit_all "el pedido"
+}
+bab_variant partbab; export TYCON_PUBLIC_CI_PART=controls-bench-base; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+is "T10 la parte controls-bench-base, verde, sale 0" 0 "${RC}"
+is "T10 la parte controls-bench-base corre sólo el banco de la base" "controls-bench-base" "$(steps_of "${R}.out")"
+is "T10 …con el guion de la base, sobre la punta del rango y con su salida" "bench-against-base --root ${R} --base HEAD~1 --tip HEAD --out ${R}.ci/bench-base" "$(calls_of "${R}" | tr '\n' '|' | sed 's/|$//')"
+has "T10 …y lo dice al arrancar" "${R}.out" "public-ci: parte controls-bench-base — sólo el banco con los casos de la base"
+variant partbab-pr; fake_js "${R}/scripts/ci/bench-against-base.js" bench-against-base; commit_all "el guion llega con el pedido"
+export TYCON_PUBLIC_CI_PART=controls-bench-base; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+is "T10 una base sin el guion (el pedido que lo trae): verde" 0 "${RC}"
+has "T10 …y dice que no aplica" "${R}.out" "la base HEAD~1 todavía no trae scripts/ci/bench-against-base.js: no aplica"
+lacks "T10 …sin correr el guion del pedido" "${R}/.calls" "bench-against-base"
+bab_variant partbab-nobase; export TYCON_PUBLIC_CI_PART=controls-bench-base; run_ci --range 'HEAD~1...HEAD'; unset TYCON_PUBLIC_CI_PART
+is "T10 sin --base la parte sale 0" 0 "${RC}"
+has "T10 …y dice que no aplica" "${R}.out" "controls-bench-base: sin --base no aplica"
+lacks "T10 …sin correr el guion" "${R}/.calls" "bench-against-base"
+bab_variant partbab-checks; export TYCON_PUBLIC_CI_PART=checks; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+lacks "T10 la parte checks, con --base, no corre el banco de la base" "${R}/.calls" "bench-against-base"
+bab_variant partbab-bench; export TYCON_PUBLIC_CI_PART=controls-bench; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+lacks "T10 la parte controls-bench, con --base, no corre el banco de la base" "${R}/.calls" "bench-against-base"
+variant partbab-red; mkdir -p "${R}/scripts/ci"
+printf '%s\n' "require('fs').appendFileSync('.calls', 'bench-against-base\\n'); process.exitCode = 1;" > "${R}/scripts/ci/bench-against-base.js"
+commit_all "el banco de la base en rojo"; echo "// el pedido" >> "${R}/build/check.js"; commit_all "el pedido"
+export TYCON_PUBLIC_CI_PART=controls-bench-base; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+is "T10 el banco de la base en rojo: la parte sale 1" 1 "${RC}"
+is "T10 …y el resumen nombra el paso" "❌ public-ci: 1 de 1 pasos en rojo (sólo la parte controls-bench-base): controls-bench-base" "$(tail -n 1 "${R}.out")"
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # T25 (a) · con --range, las portables del instalador que el cambio no toca se pasan para saltear
@@ -645,17 +707,13 @@ is "T21 el repo de quien llama queda idéntico después de toda la suite (mismo 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # T22 · PublicCi_Workflow_Seguro — el `ci.yml` real pasa el control; cada copia alterada es roja nombrando su regla
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
-CI_YML=""; FOUND=0
-for f in "${ROOT}/scripts/publishing/public-files/.github/workflows/ci.yml" "${ROOT}/.github/workflows/ci.yml"; do
-  [ -f "${f}" ] || continue
-  FOUND=$((FOUND + 1)); [ -n "${CI_YML}" ] || CI_YML="${f}"
-  node "${CHECK}" "${f}" > "${T}/check.out" 2>&1; RC=$?
-  if [ "${RC}" -eq 0 ]; then ok "T22 el ci.yml real pasa el control (${f#${ROOT}/})"
-  else no "T22 el ci.yml real NO pasa el control (${f#${ROOT}/}, exit ${RC}): $(tr '\n' ' ' < "${T}/check.out")"; fi
-done
-if [ "${FOUND}" -eq 0 ]; then
-  no "T22 no hay ci.yml: ni en scripts/publishing/public-files/.github/workflows/ (el repo del equipo) ni en .github/workflows/ (la copia pública)"
+CI_YML="${ROOT}/.github/workflows/ci.yml"
+if [ ! -f "${CI_YML}" ]; then
+  no "T22 no hay ci.yml: falta .github/workflows/ci.yml"
 else
+  node "${CHECK}" "${CI_YML}" > "${T}/check.out" 2>&1; RC=$?
+  if [ "${RC}" -eq 0 ]; then ok "T22 el ci.yml real pasa el control (.github/workflows/ci.yml)"
+  else no "T22 el ci.yml real NO pasa el control (.github/workflows/ci.yml, exit ${RC}): $(tr '\n' ' ' < "${T}/check.out")"; fi
   mkdir -p "${T}/alt"
   # altered <nombre> <reglas CON NOMBRE esperadas, separadas por espacio> <cuerpo JS: recibe `t` (el texto) y devuelve el alterado>
   #   Toda alteración del código rompe además `shape` (la forma exacta del archivo): se espera siempre, sin escribirla.
@@ -714,6 +772,9 @@ else
   altered "el ensayo de Windows sin un escenario" "windows" 'return t.replace("scenario: [all, waiver, old-node, npx]", "scenario: [all, waiver, old-node]");'
   altered "el ensayo de Windows en otra máquina" "windows" 'return t.replace("runs-on: windows-latest", "runs-on: ubuntu-latest");'
   altered "el ensayo de Windows que no corre el guion" "windows" 'return t.replace(/node scripts\/ci\/windows-rehearsal\.js /, "node scripts/tests/windows/rehearse.js ");'
+  # los comandos de la ejecución perdida en las tres consolas (8.318, AC 12): el paso existe y sale con el código de la prueba
+  altered "sin el paso de las tres consolas de Windows" "windows" 'return t.replace(/ *node --test --test-name-pattern "T13 " skills\/tycon-pipeline\/scripts\/tests\/lost-run-loop\.test\.js\n/, "");'
+  altered "el paso de las tres consolas no sale con el código de la prueba" "windows" 'return t.replace(/(lost-run-loop\.test\.js\n) *exit \$LASTEXITCODE\n/, "$1");'
   altered "el chequeo final no espera al ensayo de Windows" "aggregate-job" 'return t.replace("needs: [checks, installer-floor, windows]", "needs: [checks, installer-floor]");'
   altered "una parte fija fuera del piso del instalador" "parts" 'return t.replace(/TYCON_PUBLIC_CI_PART: \$\{\{ matrix\.part \}\}/, "TYCON_PUBLIC_CI_PART: installer-floor");'
   altered "con un Node fijo" "node-matrix" 'return t.replace(/node-version: .*$/m, "node-version: 22");'
@@ -790,16 +851,19 @@ else
   altered "con la parte fija en vez de la de la matriz" "parts" 'return t.replace("TYCON_PUBLIC_CI_PART: ${{ matrix.part }}", "TYCON_PUBLIC_CI_PART: checks");'
   altered "sin pasarle la parte al guion" "parts" 'return t.replace(/^          TYCON_PUBLIC_CI_PART: .*\n/m, "");'
   # otra cuenta de partes, completa, cumple la regla con nombre: la frena sólo la forma exacta (cambiarla es cambiar SHAPE)
-  altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, controls-bench, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]", "part: [checks, controls-bench, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
-  # en un pedido corre sólo `checks` y la corrida entera va en la cola: cada una de estas falla si un ci.yml vuelve a
-  # pagar las suites en el pedido, o si deja el pedido sin `checks`
-  altered "en un pedido corren también las suites" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \] && \[ "\$\{TYCON_PUBLIC_CI_PART\}" != "checks" \].*; then\n.*\n *exit 0\n *fi\n/m, "");'
-  altered "en un pedido se saltea también checks" "=shape" 'return t.replace(" && [ \"${TYCON_PUBLIC_CI_PART}\" != \"checks\" ]", "");'
-  altered "en un pedido se saltea también el banco" "=shape" 'return t.replace(" && [ \"${TYCON_PUBLIC_CI_PART}\" != \"controls-bench\" ]", "");'
+  altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, controls-bench, controls-bench-base, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]", "part: [checks, controls-bench, controls-bench-base, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
+  # T10 (8.152) · la parte del banco de la base: en la matriz, en cada pedido y con su guarda para una base que no la conoce
+  altered "sin la parte del banco de la base" "parts" 'return t.replace("controls-bench, controls-bench-base, ", "controls-bench, ");'
+  altered "con el banco de la base antes del banco" "parts" 'return t.replace("controls-bench, controls-bench-base, ", "controls-bench-base, controls-bench, ");'
+  altered "el banco de la base sale verde aunque la base lo conozca" "=shape" 'return t.replace(" && ! grep -q -- \x27controls-bench-base)\x27 \"${RUNNER_TEMP}/public-ci-base.sh\"", "");'
+  # en un pedido corren todas las partes y el ensayo de Windows, como en la cola: cada una de estas falla si un ci.yml
+  # vuelve a dejar para la cola las suites o el ensayo, y el error de un pedido se ve recién ahí
+  altered "en un pedido vuelven a saltearse las suites" "=shape" 'return t.replace(/^( *)# en un pedido BASE_REF/m, (m, s) => `${s}if [ "\${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "\${TYCON_PUBLIC_CI_PART}" != "checks" ]; then\n${s}  exit 0\n${s}fi\n${m}`);'
+  altered "en un pedido vuelve a saltearse el ensayo de Windows" "=shape" 'return t.replace(/^( *)node scripts\/ci\/windows-rehearsal\.js /m, (m, s) => `${s}if ($env:GITHUB_EVENT_NAME -eq \x27pull_request\x27) { exit 0 }\n${m}`);'
   # una base que no conoce la parte del banco lo corre dentro de checks: la salida verde de esa parte vale sólo para ella
   altered "el banco sale verde aunque la base lo conozca" "=shape" 'return t.replace(" && ! grep -q -- \x27|controls-bench)\x27 \"${RUNNER_TEMP}/public-ci-base.sh\"", "");'
   altered "en main un push corta la corrida del anterior" "=shape" 'return t.replace("cancel-in-progress: ${{ github.ref != \x27refs/heads/main\x27 }}", "cancel-in-progress: true");'
-  altered "en un pedido corre también el piso del instalador" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \]; then\n *echo "en un pedido corren sólo las partes checks y controls-bench: installer-floor.*\n *exit 0\n *fi\n/m, "");'
+  altered "en un pedido corre también el piso del instalador" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \]; then\n *echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: installer-floor.*\n *exit 0\n *fi\n/m, "");'
   # el push a main que hace la cola al entrar un pedido no corre nada (la cola ya probó ese commit), y sólo
   # ése: cualquier otro push a main —el merge directo de un administrador— corre entero, y un pedido o la cola, igual
   altered "sin la condición de la cola en el job de la matriz" "after-queue" 'return t.replace(/^    if: github\.event_name .*\n/m, "");'
@@ -815,6 +879,8 @@ else
   # guion deja de tenerlo, la parte del banco sale verde sin correrlo y checks tampoco lo corre
   if grep -qF -- "grep -q -- '|controls-bench)'" "${CI_YML}" && grep -qF -- '|controls-bench)' "${SCRIPT}"; then ok "T24 el texto con el que la CI reconoce la parte del banco está en public-ci.sh"
   else no "T24 la CI busca «|controls-bench)» en el guion de la base y public-ci.sh no lo tiene: la parte del banco saldría verde sin correrlo"; fi
+  if grep -qF -- "grep -q -- 'controls-bench-base)'" "${CI_YML}" && grep -qF -- 'controls-bench-base)' "${SCRIPT}"; then ok "T10 el texto con el que la CI reconoce la parte del banco de la base está en public-ci.sh"
+  else no "T10 la CI busca «controls-bench-base)» en el guion de la base y public-ci.sh no lo tiene: la parte saldría verde sin correrlo"; fi
   case "${BASE_CALL}" in *'--base "${BASE}"'*) ok "T12 en un pedido y en la cola corre el public-ci.sh de la base, con --base" ;;
     *) no "T12 no hay una llamada al public-ci.sh de la base con --base: «${BASE_CALL}»" ;; esac
   grep -qF 'git show "${BASE}:scripts/ci/public-ci.sh"' "${CI_YML}" && ok "T12 el guion que corre sale de la base (git show), no del checkout del pedido" \
@@ -887,12 +953,11 @@ else
   RC="$(cat "${T}/wf-no-base-ci.rc")"
   if [ "${RC}" != 0 ] && [ ! -s "${T}/wf-no-base-ci/marks/ran" ]; then ok "T1 base con el guion y sin public-ci.sh: rojo (exit ${RC}) sin correr el del pedido"
   else no "T1 base sin public-ci.sh: esperaba rojo sin correr nada y dio exit ${RC}: $(tr '\n' ' ' < "${T}/wf-no-base-ci/marks/ran")"; fi
-  # en un pedido una parte de las suites sale verde sin correr nada y lo dice; en la cola la misma parte corre la base
+  # una parte de las suites corre el public-ci.sh de la base en un pedido y en la cola, igual
   wf_case pr-suites 1 pull_request 1 suites-2-of-5
-  RC="$(cat "${T}/wf-pr-suites.rc")"
-  if [ "${RC}" = 0 ] && [ ! -s "${T}/wf-pr-suites/marks/ran" ] && grep -qF "corre en la cola de merge" "${T}/wf-pr-suites.out"; then
-    ok "T1 en un pedido la parte suites-2-of-5 sale 0 sin correr nada y dice que corre en la cola"
-  else no "T1 en un pedido la parte suites-2-of-5 esperaba 0 sin correr nada, y dio exit ${RC}: $(tr '\n' ' ' < "${T}/wf-pr-suites/marks/ran")"; fi
+  if [ "$(cat "${T}/wf-pr-suites.rc")" = 0 ] && grep -q '^base .*--base ' "${T}/wf-pr-suites/marks/ran"; then
+    ok "T1 en un pedido la parte suites-2-of-5 corre el public-ci.sh de la base"
+  else no "T1 en un pedido la parte suites-2-of-5 no corrió la base: $(tr '\n' ' ' < "${T}/wf-pr-suites/marks/ran")"; fi
   wf_case queue-suites 1 merge_group 1 suites-2-of-5
   if [ "$(cat "${T}/wf-queue-suites.rc")" = 0 ] && grep -q '^base .*--base ' "${T}/wf-queue-suites/marks/ran"; then
     ok "T1 en la cola la parte suites-2-of-5 corre el public-ci.sh de la base"

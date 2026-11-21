@@ -33,6 +33,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { homeCommand } = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'));
 
 const HOME = os.homedir();
 const JSON_OUT = process.argv.includes('--json');
@@ -510,7 +511,7 @@ function render(result) {
   lines.push('    cuenta como cita. Filtrá manualmente si el orphan es claramente meta.');
   lines.push('  - Retired IDs (~~SEC-W4~~) NO se reportan como zombies — están retirados a propósito.');
   lines.push('  - Multi-owner es WARNING informativo, no error. Vale la pena si la regla es compartida.');
-  lines.push('  - Re-correr post-cambio: node ~/.claude/tycon-harness/scripts/tools/rules-distill.js');
+  lines.push(`  - Re-correr post-cambio: ${homeCommand('.claude/tycon-harness/scripts/tools/rules-distill.js')}`);
   lines.push('');
 
   return lines.join('\n');

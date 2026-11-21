@@ -1,0 +1,34 @@
+{
+  "__doc": "Las suites de Node de esta carpeta partidas sin mover sus pruebas, con la misma regla y la misma biblioteca que las de scripts/tests (lib/suite-parts.js de esta carpeta es la de scripts/tests/lib): por archivo entero, en cuántas partes va (`parts`) y cuánto tarda cada prueba (`seconds`, por nombre). Los segundos se midieron en la Mac con la máquina cargada: sólo deciden el reparto, que es proporcional. El archivo entero no va en suites.json: van sus partes, `<suite>.p<k>.test.js`. Cuándo tocarlo: al partir una suite, y cuando una parte vuelve a pasar de 45 s (se re-miden sus pruebas o se suma una parte).",
+  "suites": {
+    "adhoc-foreign-save.test.js": {
+      "parts": 4,
+      "seconds": {
+        "T1 GuardadoAjeno_FrenaYAnotaElPedido @story-8.236 @ac-1": 6.9,
+        "T2 AllowForeignSave_CuadroMuestraLoQueGuarda @story-8.236 @ac-2": 12.0,
+        "T3 AllowForeignSave_SoloLaPersona @story-8.236 @ac-3": 13.4,
+        "T4 Permiso_UnaVezYParaLoQueSeVio @story-8.236 @ac-4": 56.4,
+        "T5 NoAjeno_FrenaComoHoy @story-8.236 @ac-5": 75.2,
+        "T5c Pase_AbreviadasGpgYUrls_FrenanComoHoy @story-8.236 @ac-5": 17.9,
+        "T10 Push_TodasLasUrlsDelRemoto @story-8.236 @ac-5": 8.9,
+        "T11 Push_ConfiguracionQueEligeElDestino @story-8.236 @ac-5": 13.3,
+        "T12 Push_ARepoDeEstaMaquina_NoSeOfrece @story-8.236 @ac-5": 9.3,
+        "T12c Cuadro_LoQueNoSeVeONoEntra_NoSeOfrece @story-8.236 @ac-2": 7.0,
+        "T12b Cuadro_MuestraTodoLoQueHace @story-8.236 @ac-2": 4.7,
+        "T13 Abreviaturas_CommitAddYPush @story-8.236 @ac-5": 14.8,
+        "T14 Commit_LargasAbreviadas_PuedenSumar @story-8.236 @ac-2": 2.0,
+        "T15 Push_UrlsViejasDeAzure_SonDelCarril @story-8.236 @ac-5": 9.4,
+        "T16 Push_UrlRelativaDesdeUnaSubcarpeta @story-8.236 @ac-5": 5.0,
+        "T17 Commit_RenombreEnElArbol_MuestraLosDosNombres @story-8.236 @ac-2": 0.2,
+        "T18 Comando_ConUnCaracterQueNoSeVe @story-8.236 @ac-5": 2.9,
+        "T18b Comando_UsoPrivadoYMarcaSuelta_NoSeVen_TildeSi @story-8.282 @ac-20 @ac-21": 0.1,
+        "T2b ConfiguracionComun_UnRenglonPorClave_SeOfreceElClick @story-8.236 @ac-2": 3.7,
+        "T5b ConfiguracionDeLaMaquina_SeMuestraYEntraEnLaHuella @story-8.236 @ac-5": 11.9,
+        "T6 ComandosDescartados_NingunoPasaSinClick @story-8.236 @ac-6": 18.9,
+        "T7 ConConstanciasOSinMarca_PasaComoHoy @story-8.236 @ac-7": 3.6,
+        "T8 ChequeoEnSeco_NoTraeLaBase @story-8.236 @ac-8": 6.3,
+        "T9 GuardadoAjeno_DosPerfiles @story-8.236 @ac-9": 0.1
+      }
+    }
+  }
+}

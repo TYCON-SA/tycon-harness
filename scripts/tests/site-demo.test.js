@@ -147,28 +147,90 @@ const puertoLibre = () => new Promise((resolve, reject) => {
 
 /** Arranca `node server.js` con ese entorno: { codigo, salida, error } cuando termina, o { proceso } si sigue vivo tras `espera`. */
 function correrServidor(env, { espera = 0 } = {}) {
-  return new Promise((resolve) => {
+  let proceso;
+  const termina = new Promise((resolve) => {
     const limpio = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(SITE_|IDENTITY_|MSI_|AZURE_)/.test(k)));
     const p = spawn(process.execPath, [SERVER_JS], { env: { ...limpio, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    proceso = p;
     let salida = ''; let error = '';
     p.stdout.on('data', (c) => { salida += c; });
     p.stderr.on('data', (c) => { error += c; });
     p.once('close', (codigo) => resolve({ codigo, salida, error }));
     if (espera) setTimeout(() => resolve({ proceso: p, salida: () => salida, error: () => error }), espera);
   });
+  // sin `espera` se espera que el servidor salga solo: con tope, y si no sale se lo mata
+  return espera ? termina : conTope(termina, 'que el servidor salga solo', () => { proceso.kill('SIGKILL'); });
 }
 // stable-data: el reloj sólo mide cuánto se espera a que el proceso conteste; ninguna fecha de los datos sale de acá
 const esperarA = async (cond, ms = 15000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (cond()) return true; await new Promise((r) => setTimeout(r, 100)); } return false; };
+
+// Toda espera de estas pruebas tiene tope propio: una colgada sale roja diciendo qué esperaba y corta lo que esperaba
+// (el hilo, el proceso hijo, las conexiones), en vez de dejar viva la suite hasta el tope de la CI (15 min) sin decir
+// dónde. Los topes suman menos de 2 minutos por prueba.
+const TOPE_HILO_MS = 60000;
+const TOPE_PEDIDO_MS = 30000;
+const TOPE_CIERRE_MS = 15000;
+const conTope = (promesa, que, alCortar, ms = TOPE_HILO_MS) => {
+  let corte;
+  const tope = new Promise((_, reject) => {
+    corte = setTimeout(() => {
+      // un corte que falla no puede dejar la espera sin su rojo: el motivo es lo que se colgó, no el corte
+      try { if (alCortar) alCortar(); } catch (e) { console.error(`el corte de ${que} falló: ${e.message}`); }
+      reject(new Error(`se colgó esperando ${que} (${ms / 1000} s)`));
+    }, ms);
+  });
+  return Promise.race([promesa, tope]).finally(() => clearTimeout(corte));
+};
+// Un cierre colgado dentro de un `finally` no tira: taparía la aserción que falló en el `try`. Se anota (y se dice en la
+// salida de error), y la última prueba de la suite sale roja con lo que quedó colgado.
+const cierresColgados = [];
+const anotarSiSeCuelga = (promesa) => promesa.catch((e) => { cierresColgados.push(e.message); console.error(e.message); });
+// cerrar el sitio al cortar una espera: si el cierre también falla, ya se dijo lo que se colgó
+const cerrarAlCortar = (sitio) => () => { Promise.resolve(sitio.cerrar()).catch((e) => { console.error(`el cierre del sitio al cortar falló: ${e.message}`); }); };
+/**
+ * Termina un proceso hijo y espera que cierre, con tope: si no sale con SIGTERM, se lo mata y la espera sale roja. Un
+ * hijo que ya había salido (se cayó antes, por ejemplo porque otro tomó su puerto) no se espera: su cierre ya pasó y
+ * escucharlo ahora no llega nunca.
+ */
+function esperarCierre(proceso, que, ms = TOPE_CIERRE_MS) {
+  if (proceso.exitCode !== null || proceso.signalCode !== null) return Promise.resolve();
+  const cerrado = new Promise((r) => proceso.once('close', r));
+  proceso.kill('SIGTERM');
+  return conTope(cerrado, que, () => { proceso.kill('SIGKILL'); }, ms);
+}
+/**
+ * Corta las conexiones de este proceso hacia `base` (los pedidos de H.pedirA van por el agente de siempre de http): un
+ * pedido que vence su tope no queda con su conexión abierta.
+ */
+function cortarConexiones(base) {
+  const puerto = Number(new URL(base).port);
+  const agente = require('http').globalAgent;
+  for (const lista of [...Object.values(agente.sockets), ...Object.values(agente.freeSockets)]) {
+    for (const s of lista) if (s.remotePort === puerto) s.destroy();
+  }
+}
+/** El sitio con tope en cada pedido y en el cierre: un pedido sin respuesta o un cierre trabado salen rojos. */
+function conTopes(h, nombre) {
+  const pedir = h.pedir;
+  const cerrar = h.cerrar;
+  return {
+    ...h,
+    pedir: (ruta, o) => conTope(pedir(ruta, o), `la respuesta de ${ruta} en ${nombre}`, () => { cortarConexiones(h.base); }, TOPE_PEDIDO_MS),
+    cerrar: () => anotarSiSeCuelga(conTope(cerrar(), `el cierre de ${nombre}`, () => { if (h.sitio && h.sitio.server.closeAllConnections) h.sitio.server.closeAllConnections(); }, TOPE_CIERRE_MS)),
+  };
+}
+/** Un pedido HTTP a un proceso del sitio, con tope: si vence, la conexión se corta. */
+const pedirConTope = (base, ruta, o, ms = TOPE_PEDIDO_MS) => conTope(H.pedirA(base, ruta, o), `la respuesta de ${ruta} en ${base}`, () => { cortarConexiones(base); }, ms);
 
 /** El sitio demo en este proceso, en un puerto libre. `extra`: variables de más (las que el modo acepta). */
 async function arrancarDemo(extra = {}, opciones = {}) {
   const dir = tmp('demo-sitio-');
   const registro = [];
   const sitio = SERVER().crearSitioDemo({ env: { SITE_DEMO: '1', ...extra }, dir, log: (l) => registro.push(l), ...opciones });
-  await sitio.iniciar();
-  await new Promise((r) => sitio.server.listen(0, '127.0.0.1', r));
+  await conTope(sitio.iniciar(), 'el arranque del sitio demo', cerrarAlCortar(sitio));
+  await conTope(new Promise((r) => sitio.server.listen(0, '127.0.0.1', r)), 'que el sitio demo escuche', cerrarAlCortar(sitio), TOPE_CIERRE_MS);
   const base = `http://127.0.0.1:${sitio.server.address().port}`;
-  return { sitio, base, dir, registro, pedir: (ruta, o) => H.pedirA(base, ruta, o), cerrar: () => sitio.cerrar() };
+  return conTopes({ sitio, base, dir, registro, pedir: (ruta, o) => H.pedirA(base, ruta, o), cerrar: () => sitio.cerrar() }, 'el sitio demo');
 }
 /** Pide hasta que deje de contestar 503 (la vista de ejecuciones se arma en un hilo aparte al arrancar). */
 async function pedirListo(h, ruta, o, ms = 30000) {
@@ -182,7 +244,10 @@ const FORM = { 'content-type': 'application/x-www-form-urlencoded' };
 
 test('2.76-Demo_ConCredencial_NoArranca', async () => {
   const { validarDemo, VARIABLES_DEL_MODO } = DEMO();
-  assert.deepStrictEqual([...VARIABLES_DEL_MODO].sort(), ['PORT', 'SITE_DEMO', 'SITE_PUBLIC_URL']);
+  assert.deepStrictEqual([...VARIABLES_DEL_MODO].sort(), ['PORT', 'SITE_DEMO', 'SITE_PUBLIC_URL', 'SITE_TRUST_PROXY']);
+  // detrás de un intermediario: su lista o 1; un valor que no es una dirección ni una red no arranca
+  assert.strictEqual(validarDemo({ SITE_DEMO: '1', SITE_TRUST_PROXY: '10.0.0.0/8,127.0.0.1' }).ok, true);
+  assert.deepStrictEqual(validarDemo({ SITE_DEMO: '1', SITE_TRUST_PROXY: 'todos' }).problemas.map((p) => p.variable), ['SITE_TRUST_PROXY']);
   assert.strictEqual(validarDemo({ SITE_DEMO: '1' }).ok, true);
   assert.strictEqual(validarDemo({ SITE_DEMO: '1', PORT: '8080', SITE_PUBLIC_URL: 'https://demo.acme.example' }).ok, true);
   // cada variable de credencial o de identidad, una por vez: no arranca y dice cuál (sin repetir su valor)
@@ -224,11 +289,11 @@ test('2.76-Demo_ArrancaSinProveedor_EntraSinCuenta', async () => {
     assert.match(p.salida(), /demo: true/);
     assert.match(p.salida(), /sitio demo: datos de ejemplo/);
     assert.doesNotMatch(p.salida() + p.error(), /freno:/, 'el arranque no tocó nada de lo que el freno veda');
-    const r = await H.pedirA(`http://127.0.0.1:${puerto}`, '/');
+    const r = await pedirConTope(`http://127.0.0.1:${puerto}`, '/');
     assert.strictEqual(r.status, 200);
     assert.match(r.texto, /Qué decidir hoy/);
-    assert.deepStrictEqual((await H.pedirA(`http://127.0.0.1:${puerto}`, '/livez')).json, { ok: true, demo: true });
-  } finally { p.proceso.kill('SIGTERM'); await new Promise((r) => p.proceso.once('close', r)); }
+    assert.deepStrictEqual((await pedirConTope(`http://127.0.0.1:${puerto}`, '/livez')).json, { ok: true, demo: true });
+  } finally { await anotarSiSeCuelga(esperarCierre(p.proceso, 'el cierre del servidor demo')); }
   // en este proceso: sin cookie entra como quien mantiene, sin cuenta ni proveedor
   const h = await arrancarDemo();
   try {
@@ -296,7 +361,7 @@ test('2.76-SinDemo_ComoHoy', async () => {
   assert.ok(S.lineasDeArranque({}).includes('demo: false'));
   assert.ok(S.lineasDeArranque({ SITE_DEMO: '1' }).includes('demo: true'));
   // el sitio real: /livez dice demo: false, y sin sesión la API sigue dando 401
-  const h = await H.arrancarSitio({ env: H.envBase(), fuentes: H.fuentesFijas() });
+  const h = conTopes(await conTope(H.arrancarSitio({ env: H.envBase(), fuentes: H.fuentesFijas() }), 'el arranque del sitio', null, TOPE_CIERRE_MS), 'el sitio');
   try {
     const lz = await h.pedir('/livez');
     assert.deepStrictEqual([lz.status, lz.json], [200, { ok: true, demo: false }]);
@@ -618,7 +683,7 @@ test("2.76-Demo_RutaNueva_EntraEnElRecorrido", async () => {
   const completo = rutasParaRecorrer(modo.rutas);
   assert.strictEqual(completo.length, modo.rutas.length * 2);
   for (const r of modo.rutas) assert.ok(completo.some((x) => x.ruta === r.path), `${r.path} entra al recorrido`);
-  await modo.cerrar();
+  await conTope(modo.cerrar(), 'el cierre del sitio demo armado para leer su tabla', null, TOPE_CIERRE_MS);
 });
 
 test('2.76-Demo_RecorridoDeRutas_NiEscribeNiSale', async () => {
@@ -637,16 +702,17 @@ test('2.76-Demo_RecorridoDeRutas_NiEscribeNiSale', async () => {
   const propias = [{ path: '/livez' }, { path: '/healthz' }, { path: '/readyz' }, { path: '/idioma' }, { path: '/demo/ver-como' }, { path: '/auth/login' }, { path: '/auth/callback' }, { path: '/auth/logout' }, { path: '/saliste' },
     { path: '/licencia' }, { path: '/creditos' }, { path: '/marca/logo' }, { path: '/static/site.css' }, { path: '/static/site.js' }, { path: '/static/long-text-editor.js' }, { path: '/no-existe' }, { path: '/api/no-existe' }];
   const recorrido = rutasParaRecorrer(tabla.rutas, propias);
-  await tabla.cerrar();
+  await conTope(tabla.cerrar(), 'el cierre del sitio demo armado para leer su tabla', null, TOPE_CIERRE_MS);
   const puerto = await puertoLibre();
   const base = `http://127.0.0.1:${puerto}`;
   // la carpeta temporal del proceso queda adentro de la de la prueba: al salir, el proceso la borra
   const raiz = tmp('demo-barrido-');
-  const p = await correrServidor({ SITE_DEMO: '1', PORT: String(puerto), SITE_PUBLIC_URL: base, TMPDIR: raiz }, { espera: 1 });
+  // detrás de su intermediario (la propia máquina): cada pedido trae su dirección en X-Forwarded-For
+  const p = await correrServidor({ SITE_DEMO: '1', PORT: String(puerto), SITE_PUBLIC_URL: base, SITE_TRUST_PROXY: '127.0.0.1', TMPDIR: raiz }, { espera: 1 });
   const fallas = [];
   try {
     assert.ok(await esperarA(() => /escuchando en el puerto/.test(p.salida())), `no escuchó: ${p.salida()} ${p.error()}`);
-    const h = { pedir: (ruta, o) => H.pedirA(base, ruta, o) };
+    const h = { pedir: (ruta, o) => pedirConTope(base, ruta, o) };
     // la vista de ejecuciones se arma en un hilo aparte: se espera a que esté
     assert.strictEqual((await pedirListo(h, '/api/corridas', undefined, 60000)).status, 200);
     const meta = /<meta name="site-token" content="([^"]+)"/.exec((await h.pedir('/configuracion')).texto);
@@ -672,7 +738,7 @@ test('2.76-Demo_RecorridoDeRutas_NiEscribeNiSale', async () => {
     // los botones que cambian algo, en serio y con el token: contestan «lo que pasaría» y no tocan nada
     const fin = p.salida() + p.error();
     assert.doesNotMatch(fin, /freno:/, `el recorrido entero no tocó nada de lo que el freno veda:\n${fin.split('\n').filter((l) => /freno:/.test(l)).slice(0, 5).join('\n')}`);
-  } finally { p.proceso.kill('SIGTERM'); await new Promise((r) => p.proceso.once('close', r)); }
+  } finally { await anotarSiSeCuelga(esperarCierre(p.proceso, 'el cierre del servidor demo')); }
   assert.deepStrictEqual(fs.readdirSync(raiz), [], 'la carpeta temporal propia se borra al salir');
 });
 
@@ -709,12 +775,12 @@ async function conProcesoDemo(fn) {
   const p = await correrServidor({ SITE_DEMO: '1', PORT: String(puerto), SITE_PUBLIC_URL: base, TMPDIR: raiz }, { espera: 1 });
   try {
     assert.ok(await esperarA(() => /escuchando en el puerto/.test(p.salida())), `no escuchó: ${p.salida()} ${p.error()}`);
-    const h = { pedir: (ruta, o) => H.pedirA(base, ruta, o) };
+    const h = { pedir: (ruta, o) => pedirConTope(base, ruta, o) };
     const meta = /<meta name="site-token" content="([^"]+)"/.exec((await h.pedir('/configuracion')).texto);
     assert.ok(meta, 'la página de Configuración trae el token de la sesión');
     const escribir = (ruta, cuerpo, extra = {}) => h.pedir(ruta, { method: 'POST', headers: { ...JSON_H, origin: base, 'x-site-token': meta[1], ...extra }, body: JSON.stringify(cuerpo) });
     await fn({ base, pedir: h.pedir, escribir, token: meta[1], vistas: () => (p.salida() + p.error()).split('\n').filter((l) => /freno:/.test(l)) });
-  } finally { p.proceso.kill('SIGTERM'); await new Promise((r) => p.proceso.once('close', r)); }
+  } finally { await anotarSiSeCuelga(esperarCierre(p.proceso, 'el cierre del servidor demo')); }
 }
 
 test('2.76-Demo_CadaPestanaConDatos', async () => {
@@ -869,15 +935,15 @@ test('2.76-Demo_Proponer_MuestraYNoEscribe', async () => {
     // clase 14: «Cómo trabaja» muestra la respuesta del modo demo (no «Pedido abierto…»)
     const pagina = (await pedir('/static/como-trabaja.js?l=es')).texto;
     const iDemo = pagina.indexOf("r.codigo === 'demo'");
-    assert.ok(iDemo > 0 && iDemo < pagina.indexOf("T('comoTrabaja.propuesto'") && /r\.codigo === 'demo'\) estado\.appendChild\(el\('p', \{[^}]*text: r\.message/.test(pagina), 'el navegador escribe el mensaje del servidor con codigo demo');
+    assert.ok(iDemo > 0 && iDemo < pagina.indexOf("'comoTrabaja.propuesto'") && /r\.codigo === 'demo'\) estado\.appendChild\(el\('p', \{[^}]*text: r\.message/.test(pagina), 'el navegador escribe el mensaje del servidor con codigo demo');
     // y nada intentó salir ni escribir: el freno no anotó un solo intento
     assert.deepStrictEqual(vistas(), []);
   });
   // pase adversarial, clase 1: «Proponer» contesta en cada sección que se puede revisar (el piso de versión de la capa del
   // equipo de los datos de ejemplo cubre lo que sus claves piden: `stack`, aprobaciones…). En el mismo proceso: el tope de
   // pedidos por minuto del sitio cuenta por dirección: cada sección pide desde la suya, así el recorrido no depende de
-  // cuántas secciones haya
-  const h = await arrancarDemo();
+  // cuántas secciones haya (detrás de su intermediario, la propia máquina: la dirección es la de X-Forwarded-For)
+  const h = await arrancarDemo({ SITE_TRUST_PROXY: '127.0.0.1' });
   try {
     const token = /<meta name="site-token" content="([^"]+)"/.exec((await h.pedir('/configuracion')).texto)[1];
     let direccion = '';
@@ -901,7 +967,8 @@ test('2.76-Demo_Proponer_MuestraYNoEscribe', async () => {
 });
 
 test('2.76-Demo_SitioPublico_NoindexYTope', async () => {
-  const h = await arrancarDemo();
+  // detrás de su intermediario (acá, la propia máquina): la dirección es la que él agrega al final
+  const h = await arrancarDemo({ SITE_TRUST_PROXY: '127.0.0.1' });
   try {
     for (const ruta of ['/', '/livez', '/api/inicio', '/no-existe', '/static/site.css', '/licencia', '/auth/login']) {
       const r = await h.pedir(ruta);
@@ -947,16 +1014,21 @@ test('2.76-Demo_SitioPublico_NoindexYTope', async () => {
   assert.strictEqual(tope(req).ok, true);
 });
 
-// los hilos aparte de estas pruebas tienen tope propio: uno colgado sale rojo diciendo qué esperaba y se termina,
-// en vez de dejar viva la suite hasta el tope de la CI (15 min) sin decir dónde
-const TOPE_HILO_MS = 60000;
-const conTope = (promesa, que, alCortar, ms = TOPE_HILO_MS) => {
-  let corte;
-  const tope = new Promise((_, reject) => {
-    corte = setTimeout(() => { if (alCortar) alCortar(); reject(new Error(`se colgó esperando ${que} (${ms / 1000} s)`)); }, ms);
-  });
-  return Promise.race([promesa, tope]).finally(() => clearTimeout(corte));
-};
+// 🔴 El caso (riesgo 42): el demo creía siempre la dirección de X-Forwarded-For. Levantado sin intermediario (en una
+// máquina, con el puerto abierto), quien inventaba una dirección distinta en cada pedido salteaba el tope de 60 por
+// minuto. Ahora la cree sólo con SITE_TRUST_PROXY, como el sitio real.
+test('Demo_SinIntermediario_LaDireccionInventadaNoSacaElTope', async () => {
+  const h = await arrancarDemo();
+  try {
+    const estados = [];
+    for (let i = 0; i < 61; i++) estados.push((await h.pedir('/api/inicio', { headers: { 'x-forwarded-for': `198.51.100.${i}` } })).status);
+    assert.deepStrictEqual([estados.filter((s) => s === 200).length, estados[60]], [60, 429], 'cuenta la dirección del socket, no la inventada');
+  } finally { await h.cerrar(); }
+  const { crearTope } = DEMO();
+  const tope = crearTope({ ahora: () => 1000, porMinuto: 2 });
+  const de = (xff) => ({ headers: { 'x-forwarded-for': xff }, socket: { remoteAddress: '203.0.113.5' } });
+  assert.deepStrictEqual([tope(de('1.1.1.1')).ok, tope(de('2.2.2.2')).ok, tope(de('3.3.3.3')).ok], [true, true, false]);
+});
 
 test('2.76-Demo_HiloColgado_SaleRojoYSeTermina', async () => {
   // un hilo que nunca contesta ni termina: la espera sale roja diciendo qué esperaba, y el hilo queda terminado
@@ -1074,7 +1146,7 @@ function huecosDelJson(v, ruta = '$', out = []) {
 test('8.101-Demo_Recorrido_SinHuecos', async () => {
   // el detector mismo: la página de Arnés con una fuente vieja y sin versión tiene líneas no medidas, y las ve
   const conHuecos = require(path.join(SITE, 'views.js')).paginaArnes({ quien: { rol: 'maintainer', nombre: 'x' }, modelo: { sources: { lista: [{ id: 'sdlc-stage', estado: 'viejo', fecha: '2026-10-20', motivo: 'la foto es de hace 3 días' }] } }, version: null, ahora: AHORA_FIJO, idioma: 'es' });
-  assert.ok(huecosDelHtml(conHuecos, 'es').some((x) => /línea no medida: Fuente sdlc-stage/.test(x)), 'el detector ve las líneas no medidas de Arnés');
+  assert.ok(huecosDelHtml(conHuecos, 'es').some((x) => /línea no medida: Fuente etapas de la entrega/.test(x)), 'el detector ve las líneas no medidas de Arnés');
   const h = await arrancarDemo();
   const huecos = [];
   try {
@@ -1186,7 +1258,7 @@ test('8.101-Demo_Configuracion_TodoConDato', async () => {
       assert.strictEqual(cfg.proponer.perfil.habilitado, true, '«Proponer» del perfil sigue habilitado');
       // «Versión del sitio» en Arnés: la de la imagen, o la de ejemplo sin ella (la misma contra la que se comparan las máquinas)
       const propia = version || DATOS().VERSION_DE_EJEMPLO;
-      assert.match((await h.pedir('/arnes')).texto, new RegExp(`${propia.replace(/\./g, '\\.')}`), `versión ${version}: Arnés dice ${propia}`);
+      assert.match((await h.pedir('/arnes')).texto, new RegExp(`${propia.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), `versión ${version}: Arnés dice ${propia}`);
     } finally { await h.cerrar(); }
   }
 });
@@ -1219,4 +1291,54 @@ test('8.101-Demo_ConfigDeCadaRepo_SeLeeYProponerMuestra', async () => {
     assert.ok(prop.loQuePasaria.diferencia.length > 0, 'muestra el cambio');
     assert.deepStrictEqual(vistas(), [], 'ni clonó ni escribió: el freno no anotó intentos');
   });
+});
+
+test('8.273-Demo_EsperaColgada_SaleRojaConMotivo', { timeout: 120000 }, async () => {
+  // un hijo que no sale con SIGTERM: la espera de su cierre sale roja diciendo qué esperaba, y el hijo queda muerto
+  const terco = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); process.stdout.write('listo\\n'); setInterval(() => {}, 1000)"], { stdio: ['ignore', 'pipe', 'ignore'] });
+  await conTope(new Promise((r) => terco.stdout.once('data', r)), 'que el hijo de prueba arranque', () => { terco.kill('SIGKILL'); }, 10000);
+  const t0 = Date.now();
+  await assert.rejects(esperarCierre(terco, 'el cierre del hijo que ignora SIGTERM', 500), /se colgó esperando el cierre del hijo que ignora SIGTERM \(0\.5 s\)/);
+  assert.ok(Date.now() - t0 < 120000, 'sale rojo antes de los 2 minutos');
+  await conTope(new Promise((r) => (terco.exitCode !== null || terco.signalCode !== null ? r() : terco.once('close', r))), 'el fin del hijo matado', null, 5000);
+  assert.strictEqual(terco.signalCode, 'SIGKILL', 'el hijo quedó muerto');
+  // un hijo que ya salió solo: su cierre ya pasó, y la espera no se queda escuchándolo
+  const caido = spawn(process.execPath, ['-e', 'process.exit(1)'], { stdio: 'ignore' });
+  await conTope(new Promise((r) => caido.once('close', r)), 'que el hijo de prueba salga solo', () => { caido.kill('SIGKILL'); }, 10000);
+  await conTope(esperarCierre(caido, 'el cierre del hijo ya caído'), 'que la espera de un hijo ya caído termine', null, 2000);
+  // un cierre colgado en un `finally` no tapa el rojo del `try`: queda anotado para la última prueba
+  const antes = cierresColgados.length;
+  await assert.rejects((async () => {
+    try { throw new Error('la aserción que falló de verdad'); } finally {
+      await anotarSiSeCuelga(conTope(new Promise(() => {}), 'un cierre de prueba que no termina', () => { throw new Error('el corte también falla'); }, 200));
+    }
+  })(), /la aserción que falló de verdad/);
+  assert.deepStrictEqual(cierresColgados.slice(antes), ['se colgó esperando un cierre de prueba que no termina (0.2 s)'], 'el cierre colgado quedó anotado, y el corte que falla no lo dejó sin su rojo');
+  cierresColgados.splice(antes);   // el anotado a propósito no cuenta para la última prueba
+  // un pedido que nunca recibe respuesta sale rojo con la ruta y el tope, y su conexión queda cortada
+  const conexiones = [];
+  // lee lo que llega (sin leer, el fin de la conexión no se emite) y nunca contesta
+  const mudo = net.createServer((s) => { conexiones.push(s); s.resume(); s.on('error', () => {}); s.on('close', () => { s.cerrada = true; }); });
+  await new Promise((r) => mudo.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${mudo.address().port}`;
+  try {
+    await assert.rejects(pedirConTope(base, '/livez', undefined, 300), /se colgó esperando la respuesta de \/livez/);
+    assert.ok(await esperarA(() => conexiones.length === 1 && conexiones[0].cerrada, 2000), 'la conexión del pedido colgado quedó cortada del lado del cliente');
+  } finally {
+    // un servidor TCP espera a sus conexiones para cerrar: se cortan antes
+    for (const s of conexiones) s.destroy();
+    await conTope(new Promise((r) => mudo.close(r)), 'el cierre del servidor que no contesta', null, 5000);
+  }
+});
+
+// la última prueba de la suite: las de arriba no dejan servidores escuchando ni procesos hijos vivos, así que el proceso
+// de la suite sale solo al terminar, sin que lo corte el tope de la CI
+test('8.273-Demo_TerminaSinServidoresVivos', { timeout: 120000 }, async () => {
+  // un servidor o un hijo ya cerrados terminan de soltarse unos turnos después: se les da hasta 2 s
+  const vivosAhora = () => process.getActiveResourcesInfo().filter((x) => x === 'TCPServerWrap' || x === 'ProcessWrap');
+  await esperarA(() => vivosAhora().length === 0, 2000);
+  const vivos = vivosAhora();
+  assert.deepStrictEqual(vivos, [], `quedaron vivos: ${vivos.join(', ')}`);
+  // y ningún cierre de las pruebas de arriba se colgó (se anotan en vez de tapar el rojo de su prueba)
+  assert.deepStrictEqual(cierresColgados, [], `cierres colgados: ${cierresColgados.join(' · ')}`);
 });

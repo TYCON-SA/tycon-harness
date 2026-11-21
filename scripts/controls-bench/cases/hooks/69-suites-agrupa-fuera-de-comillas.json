@@ -1,0 +1,81 @@
+{
+  "_por_que": "El freno de suites perdía la carpeta del proyecto por un paréntesis, una llave o una palabra como `done` que estaban dentro de comillas, de un comentario o de un argumento (`npm test && echo done`), y contaba como salida del proyecto el `..` de la ruta de un reporte (`--outputFile=../r.xml`). Cada freno de más le enseña al agente a poner el escape. Cada caso que pasa va con su gemelo, que tiene que seguir frenando: la raíz, una agrupación de verdad con el `cd` al proyecto adentro, y un `cd ..` en el script `test`.",
+  "hooks": [
+    {
+      "hook": "test-scope-guard-pre.sh (el alcance de un proyecto, sin frenar de más)",
+      "script": "${TCG}/scripts/hooks/test-scope-guard-pre.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "suites-agrupa-echo-done-en-el-proyecto-pasa",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p .git forms/Baja && printf '{\"name\":\"baja\",\"scripts\":{\"test\":\"vitest run\"}}' > forms/Baja/package.json && printf '{\"name\":\"raiz\",\"scripts\":{\"test\":\"vitest run\"}}' > package.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": { "command": "npm test && echo done" },
+            "cwd": "${FIXTURE}/forms/Baja"
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "suites-agrupa-echo-done-en-la-raiz-frena",
+          "_por_que": "El gemelo: el mismo comando en la raíz del repo corre la suite completa.",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p .git forms/Baja && printf '{\"name\":\"baja\",\"scripts\":{\"test\":\"vitest run\"}}' > forms/Baja/package.json && printf '{\"name\":\"raiz\",\"scripts\":{\"test\":\"vitest run\"}}' > package.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": { "command": "npm test && echo done" },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": { "exit": 2 }
+        },
+        {
+          "id": "suites-agrupa-subshell-desde-la-raiz-frena",
+          "_por_que": "Una agrupación de verdad: el `cd` adentro de la subshell no cambia la carpeta del `npm test`, que corre en la raíz.",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p .git forms/Baja && printf '{\"name\":\"baja\",\"scripts\":{\"test\":\"vitest run\"}}' > forms/Baja/package.json && printf '{\"name\":\"raiz\",\"scripts\":{\"test\":\"vitest run\"}}' > package.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": { "command": "(cd forms/Baja) && npm test" },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": { "exit": 2 }
+        },
+        {
+          "id": "suites-agrupa-reporte-con-punto-punto-pasa",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p .git forms/Alta && printf '{\"name\":\"alta\",\"scripts\":{\"test\":\"vitest run --outputFile=../reports/alta.xml\"}}' > forms/Alta/package.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": { "command": "npm test" },
+            "cwd": "${FIXTURE}/forms/Alta"
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "suites-agrupa-cd-punto-punto-en-el-script-frena",
+          "_por_que": "El gemelo: un `cd ..` en el script `test` sale de verdad del proyecto.",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p .git forms/Sale && printf '{\"name\":\"sale\",\"scripts\":{\"test\":\"cd .. && vitest run\"}}' > forms/Sale/package.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": { "command": "npm test" },
+            "cwd": "${FIXTURE}/forms/Sale"
+          },
+          "expect": { "exit": 2 }
+        }
+      ]
+    }
+  ]
+}

@@ -12,8 +12,8 @@
 //   · en los dos con otro blob y en ninguna de las dos → «capa de otra versión»: rojo, y la lista no se usa;
 //   · sólo en el público: aceptada si está en «sólo afuera»; si no, un hallazgo. «Sólo afuera» es la lista a mano
 //     (fixtures/layer-public-only.json) MÁS lo que el exportador agrega sólo a la copia según la lista blanca de ESE
-//     commit interno: los destinos `synthetic` (los papeles de public-files/), los `generated` (version.json) y la
-//     carpeta nueva de cada `skillRenames` (`outsideMatcher`). Un papel nuevo en la lista blanca se reconoce solo;
+//     commit interno: los destinos `synthetic`, los `generated` (version.json) y la carpeta nueva de cada
+//     `skillRenames` (`outsideMatcher`). Un sintético nuevo en la lista blanca se reconoce solo;
 //     si la lista blanca no se puede leer, se dice por qué y lo de sólo afuera sigue como hallazgo;
 //   · y la otra mitad de la compatibilidad: un `add` que ese commit interno PUBLICA (un archivo nuevo en una
 //     carpeta pública, que la copia todavía no trae) también es «capa de otra versión». Qué publica el commit lo dice la
@@ -166,8 +166,8 @@ function loadPatterns(file) {
 // ── calcular ─────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Lo que el exportador agrega SÓLO a la copia, según una lista blanca ya leída: los destinos `synthetic` (los papeles
- * de public-files/ y los sintéticos), los `generated` (version.json) y la carpeta nueva de cada `skillRenames`. Como
+ * Lo que el exportador agrega SÓLO a la copia, según una lista blanca ya leída: los destinos `synthetic`, los
+ * `generated` (version.json) y la carpeta nueva de cada `skillRenames`. Como
  * patrones de «sólo afuera». Los que reemplazan un archivo interno no molestan: «sólo afuera» mira sólo las rutas que
  * el interno no tiene.
  */
