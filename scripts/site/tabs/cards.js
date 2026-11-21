@@ -146,7 +146,9 @@ function mesesDelSitio(filas) {
     .map((f) => ({
       mes: f.mes, en_curso: f.en_curso === true, entregadas: num(f.entregadas),
       causas: (Array.isArray(f.causas) ? f.causas : []).filter((c) => c && typeof c.clave === 'string' && /^[a-z][a-z-]{0,39}$/.test(c.clave) && num(c.n) !== null)
-        .slice(0, 12).map((c) => ({ clave: c.clave, n: num(c.n) })),
+        .slice(0, 12).map((c) => ({ clave: c.clave, n: num(c.n) }))
+        // las de una causa fuera del vocabulario (un número en el tablero) van como una causa más, como en rework_por_causa
+        .concat(num(f.fuera_de_vocabulario) > 0 ? [{ clave: 'fuera-del-vocabulario', n: num(f.fuera_de_vocabulario) }] : []),
       sin_declarar: num(f.sin_declarar),
     }));
 }

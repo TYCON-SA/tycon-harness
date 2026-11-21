@@ -677,6 +677,10 @@ test('8.327-Sitio_FichaMesPorMes: mismo número y filas que el tablero, título 
   assert.match(texto('es'), /defecto propio 2\b/, texto('es'));
   assert.match(texto('en'), /own defect 2\b/, texto('en'));
   assert.doesNotMatch(texto('es'), /defecto-propio/, 'sin la clave interna');
+  // las rehechas de una causa fuera del vocabulario viajan en la línea del mes, como en rework_por_causa
+  const conOtra = fichas.proyectar(def, { ...medida, filas: [fila('2026-10', { fuera_de_vocabulario: 2 })] }, {});
+  assert.deepStrictEqual(conOtra.meses[0].causas, [{ clave: 'defecto-propio', n: 2 }, { clave: 'fuera-del-vocabulario', n: 2 }]);
+  assert.match(fichas.tile(conOtra, 'es').replace(/<[^>]+>/g, ' '), /fuera del vocabulario 2\b/);
 });
 
 // 8.327-Guia_FichaMesPorMes_EnLasDosGuias
