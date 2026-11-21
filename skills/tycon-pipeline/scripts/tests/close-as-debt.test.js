@@ -470,11 +470,13 @@ test('T13 BorradoPorConsola_Y_AppendFile_LlevanLaMarca @story-8.195 @ac-13 — e
   assert.match(fs.readFileSync(path.join(E.dir(), 'hook-errors.log'), 'utf8'), /on-edit otraVuelta: Error: vuelta rota/);
   E.escribir(sid, { ...E.leer(sid), otraVuelta: vieja });
   const pasos = require(path.join(SCRIPTS, 'lib', 'steps.js'));
-  const original = pasos.otraVueltaDe;
+  const [original, home] = [pasos.otraVueltaDe, process.env.HOME];
   pasos.otraVueltaDe = () => { throw new Error('vuelta rota'); };
+  // el freno escribe su registro en la carpeta de estado de la persona: la de la casa de prueba
+  process.env.HOME = E.home;
   try {
     require(path.join(SCRIPTS, 'on-bash-write-gate.js')).anotarBorradosDeLaStory({ stateDir: E.dir(), sessionId: sid, marker: E.leer(sid), rutas: [path.join(E.repo, 'src', 'f.js')], via: 'git rm' });
-  } finally { pasos.otraVueltaDe = original; }
+  } finally { [pasos.otraVueltaDe, process.env.HOME] = [original, home]; }
   assert.strictEqual('otraVuelta' in E.leer(sid), false, 'el borrado por consola: el campo viejo se borra');
 });
 
