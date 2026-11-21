@@ -662,6 +662,12 @@
       "requiere": []
     },
     {
+      "__nota": "cada revisión automática del plan deja su resultado con fecha, sin pisar la anterior, y su constancia guarda el consumo por agente y por tipo de token.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review-history.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "lo que se firma sin persona pasa el control previo de su guion: la maqueta (nunca la de la propia sesión), el pendiente (la coordinadora confirmada, sobre un repo de la sesión destino) y lo de rutina que el perfil delega (sólo con una historia de rutina). Los guiones de verdad en una casa de juguete; unos veinte segundos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/approve-without-person.test.js",
