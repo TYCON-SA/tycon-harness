@@ -1420,3 +1420,47 @@ test('T47 Office_LaMarcaDeAusenteSeVe @story-8.221 @ac-36: con la marca puesta, 
   const html = fs.readFileSync(path.join(ROOT, 'scripts', 'tools', 'office', 'page.html'), 'utf8');
   assert.match(html, /id="ausente"/, 'la página tiene dónde mostrarla');
 });
+
+test('T16 Servidor_ControlaCadaMinutoSoloConAlguienMirando @story-8.313 @ac-8 @ac-10 @ac-15: el control lanza --refresh-if-moved sólo con una página, sin superponerse, y una caída se dice una vez', async () => {
+  // un lector de juguete que tarda: anota cuándo empieza y cuándo termina cada corrida
+  const slowReader = (m, { code = 0 } = {}) => {
+    const script = path.join(m.home, 'control-lento.js');
+    fs.writeFileSync(script, `const fs = require('fs');
+const log = ${JSON.stringify(`${script}.log`)};
+fs.appendFileSync(log, 'inicio ' + process.argv[2] + '\\n');
+Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 700);
+fs.appendFileSync(log, 'fin\\n');
+process.exit(${code});`);
+    return { script, lines: () => { try { return fs.readFileSync(`${script}.log`, 'utf8').trim().split('\n').filter(Boolean); } catch { return []; } } };
+  };
+  const fresh = (m) => {
+    // una lectura recién hecha: la de cada media hora no corre, sólo el control
+    fs.mkdirSync(path.join(m.sdir, 'office'), { recursive: true });
+    fs.writeFileSync(path.join(m.sdir, 'office', 'project-stories.json'), JSON.stringify({ at: new Date().toISOString(), proyectos: [], sinHistorias: [] }));
+  };
+  const m = toy();
+  fresh(m);
+  const f = slowReader(m);
+  openSync(m, { TYCON_OFFICE_PROJECTS_READ: f.script, TYCON_OFFICE_PROJECTS_MS: '3600000', TYCON_OFFICE_PROJECTS_CHECK_MS: '200' });
+  await sleep(800);
+  assert.deepStrictEqual(f.lines(), [], 'sin páginas no controla');
+  const p = page(readLock(m));
+  await p.next();
+  assert.ok(await until(() => f.lines().filter((l) => l === 'fin').length >= 2, PLAZO), `con una página controla (${f.lines().join(' | ')})`);
+  p.close();
+  const lines = f.lines();
+  assert.ok(lines.filter((l) => l.startsWith('inicio')).every((l) => l === 'inicio --refresh-if-moved'), 'lanza el control, no la lectura entera');
+  // nunca dos a la vez: cada inicio va seguido de su fin
+  for (let i = 0; i < lines.length; i += 1) if (lines[i].startsWith('inicio') && i + 1 < lines.length) assert.strictEqual(lines[i + 1], 'fin', `sin superponerse: ${lines.join(' | ')}`);
+  // un control que se cae: la oficina lo dice una vez
+  const n = toy();
+  fresh(n);
+  const g = slowReader(n, { code: 3 });
+  openSync(n, { TYCON_OFFICE_PROJECTS_READ: g.script, TYCON_OFFICE_PROJECTS_MS: '3600000', TYCON_OFFICE_PROJECTS_CHECK_MS: '200' });
+  const q = page(readLock(n));
+  await q.next();
+  const dicho = () => q.fotos.filter((x) => x.data).map((x) => (x.data.unreadable || []).filter((u) => /las historias de tus proyectos no se pudieron leer: .*3/.test(u)).length);
+  assert.ok(await until(() => dicho().some((k) => k > 0), PLAZO), 'llega el aviso');
+  assert.ok(dicho().every((k) => k <= 1), 'una vez por foto, no una por control');
+  q.close();
+});

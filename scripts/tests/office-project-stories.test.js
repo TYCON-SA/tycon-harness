@@ -322,7 +322,8 @@ test('T26 Read_FromMainBranch_NotTheCopy @story-8.185 @ac-2 @ac-16 — la rama t
   git(r, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
   git(r, 'reset', '-q', '--hard', 'HEAD~1');
   const p = PS.collect(base({ home: casa([{ cwd: r }]) }));
-  assert.deepStrictEqual(p.proyectos, [], 'terminada en origin/main: no entra aunque la copia la diga lista');
+  // desde la 8.313 el proyecto leído sigue en la lectura (su número de abiertas es 0); la historia no entra
+  assert.deepStrictEqual(p.proyectos.map((x) => [x.historias, x.abiertas]), [[[], []]], 'terminada en origin/main: no entra aunque la copia la diga lista');
   const m = repo(raiz, 'm', { remoto: 'https://github.com/acme/m.git', archivos: { 'specs/a.md': historia('26.2', 'review') }, traida: false });
   git(m, 'update-ref', 'refs/remotes/origin/master', 'HEAD');
   const pm = PS.collect(base({ home: casa([{ cwd: m }]) })).proyectos[0];
@@ -489,8 +490,8 @@ test('T24 Tables_StoryCardsNotClassified @story-8.185 @ac-14 — las tarjetas de
   const deTema = t.filas.filter((f) => !f.seccion);
   assert.ok(deTema.length, 'hay filas de tema');
   assert.ok(!JSON.stringify(deTema).includes('La historia 7.'), 'las líneas de tema no las nombran');
-  // «En el kanban, de a uno» cuenta la columna entera, como la ve la persona (Dev Notes de la 8.185)
-  assert.match(t.cruce, /\b3 sin sesión\b/, 'la línea del kanban sí cuenta la columna entera');
+  // «En el kanban, de a uno» cuenta las tarjetas que no son historias plegadas: ésas tienen su propio número (8.313, AC 7)
+  assert.match(t.cruce, /\b1 sin sesión\b/, 'la línea del kanban no cuenta las plegadas');
   assert.deepStrictEqual(OFFICE_MOD.workCards(data.kanban).map((c) => c.titulo), ['Algo sin historia'], 'al modelo no van');
 });
 
@@ -636,4 +637,175 @@ test('T13 ProjectStories_PendientesYRepos @story-8.307 @ac-6 @ac-7 @ac-19 — pe
   assert.strictEqual(typeof PS.remoteKey, 'function');
   assert.strictEqual(typeof PS.inOrder, 'function');
   assert.strictEqual(PS.READY, 'ready-for-dev');
+});
+
+// ---------- 8.313: las historias abiertas en main, el commit leído y la relectura cuando main se mueve ----------
+
+const STATES_8313 = require(path.join(ROOT, 'scripts', 'metrics', 'states.json'));
+const SD_8313 = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+const READER_8313 = path.join(ROOT, 'scripts', 'tools', 'office', 'project-stories.js');
+const snapFile8313 = (estado) => path.join(estado, 'office', 'project-stories.json');
+/** La lectura de un proyecto con su lugar y su commit, como la deja `collect` (`repoDir`, una carpeta de mentira para el git inyectado). */
+const leido8313 = (nombre, repoDir, commit, extra = {}) => ({ nombre, traidoAt: null, deTuCopia: false, sinLeer: 0, repos: [`github/acme/${nombre}`], remoto: `github/acme/${nombre}`, lugar: { repo: repoDir, ref: 'origin/main', common: path.join(repoDir, '.git') }, commit, historias: [], abiertas: [], ...extra });
+const guardar8313 = (estado, proyectos) => {
+  fs.mkdirSync(path.join(estado, 'office'), { recursive: true });
+  fs.writeFileSync(snapFile8313(estado), `${JSON.stringify(lectura(proyectos, { at: Date.now() }), null, 2)}\n`);
+};
+
+test('T1 Abiertas_CuentaLosEstadosDeMain @story-8.313 @ac-1 @ac-20 — los grupos abiertos según origin/main, el alias por su canónico y el desconocido sin leer', () => {
+  const raiz = tmp('raiz');
+  const archivos = {};
+  STATES_8313.canonical.forEach((e, i) => { archivos[`specs/story-1.${i + 1}.md`] = historia(`1.${i + 1}`, e); });
+  archivos['specs/story-1.20.md'] = historia('1.20', 'pending');
+  archivos['specs/story-1.21.md'] = historia('1.21', 'rarisimo');
+  const r = repo(raiz, 'r', { remoto: 'https://github.com/acme/r.git', archivos });
+  // la copia de trabajo dice otra cosa que main: manda main
+  fs.writeFileSync(path.join(r, 'specs', 'story-1.7.md'), historia('1.7', 'in-progress'));
+  fs.writeFileSync(path.join(r, 'specs', 'story-1.1.md'), historia('1.1', 'done'));
+  const antes = git(r, 'status', '--porcelain');
+  const p = PS.collect(base({ home: casa([{ cwd: r }]) })).proyectos[0];
+  const abiertas = Object.fromEntries(p.abiertas.map((a) => [a.id, a.estado]));
+  assert.deepStrictEqual(abiertas, { '1.1': 'draft', '1.2': 'backlog', '1.3': 'ready-for-dev', '1.4': 'in-progress', '1.5': 'review', '1.6': 'blocked', '1.20': 'backlog' });
+  assert.ok(p.abiertas.every((a) => a.archivo && a.archivo.startsWith('story-1.')), 'cada una con su archivo');
+  assert.strictEqual(p.sinLeer, 1, 'el estado desconocido va a sinLeer');
+  assert.deepStrictEqual(p.historias.map((h) => h.id).sort(), ['1.3', '1.4', '1.5'], 'las tarjetas siguen siendo las de antes');
+  assert.strictEqual(p.commit, git(r, 'rev-parse', 'origin/main'), 'el commit leído');
+  assert.strictEqual(git(r, 'status', '--porcelain'), antes, 'el clon quedó igual');
+});
+
+test('T2 Abiertas_SoloBorradores_ElProyectoAparece @story-8.313 @ac-1 — un proyecto con sólo draft y backlog está, con abiertas y sin tarjetas', () => {
+  const raiz = tmp('raiz');
+  const r = repo(raiz, 'r', { remoto: 'https://github.com/acme/r.git', archivos: { 'specs/a.md': historia('2.1', 'draft'), 'specs/b.md': historia('2.2', 'backlog') } });
+  const out = PS.collect(base({ home: casa([{ cwd: r }]) }));
+  assert.strictEqual(out.proyectos.length, 1, 'el proyecto aparece');
+  assert.deepStrictEqual(out.proyectos[0].abiertas.map((a) => a.id).sort(), ['2.1', '2.2']);
+  assert.deepStrictEqual(out.proyectos[0].historias, []);
+  assert.deepStrictEqual(PS.view({ snap: out, now: Date.now() }).cards, [], 'sin tarjetas');
+});
+
+test('T9 RefreshSiSeMovio_ReleeYDejaDeContarLaCerrada @story-8.313 @ac-8 — main avanza con una historia cerrada: se relee y deja de contarse', () => {
+  const raiz = tmp('raiz');
+  const r = repo(raiz, 'r', { remoto: 'https://github.com/acme/r.git', archivos: { 'specs/a.md': historia('9.1', 'in-progress'), 'specs/b.md': historia('9.2', 'ready-for-dev') } });
+  const h = casa([{ cwd: r }]);
+  const estado = tmp('estado');
+  const read = () => PS.collect(base({ home: h }));
+  assert.strictEqual(PS.refresh({ stateDir: estado, read }).ran, true);
+  const antes = JSON.parse(fs.readFileSync(snapFile8313(estado), 'utf8')).proyectos[0];
+  assert.deepStrictEqual(antes.abiertas.map((a) => a.id).sort(), ['9.1', '9.2']);
+  fs.writeFileSync(path.join(r, 'specs', 'a.md'), historia('9.1', 'done'));
+  git(r, 'commit', '-qam', 'cierra la 9.1');
+  git(r, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const res = PS.refreshIfMoved({ stateDir: estado, read });
+  assert.strictEqual(res.ran, true, JSON.stringify(res));
+  const despues = JSON.parse(fs.readFileSync(snapFile8313(estado), 'utf8')).proyectos[0];
+  assert.notStrictEqual(despues.commit, antes.commit);
+  assert.strictEqual(despues.commit, git(r, 'rev-parse', 'origin/main'));
+  assert.deepStrictEqual(despues.abiertas.map((a) => a.id), ['9.2'], 'la cerrada ya no cuenta');
+});
+
+test('T10 RefreshSiSeMovio_SinCambio_NoEscribe @story-8.313 @ac-9 @ac-12 — sin mover main no lee ni escribe y sale 0; una lectura de antes del cambio se relee', () => {
+  const raiz = tmp('raiz');
+  const r = repo(raiz, 'r', { remoto: 'https://github.com/acme/r.git', archivos: { 'specs/a.md': historia('10.1', 'review') } });
+  const h = casa([{ cwd: r }]);
+  // la carpeta de estado de la casa de juguete: la misma que lee la línea de comandos con esa HOME
+  const estado = SD_8313.stateDir(h);
+  assert.strictEqual(PS.refresh({ stateDir: estado, read: () => PS.collect(base({ home: h })) }).ran, true);
+  const bytes = fs.readFileSync(snapFile8313(estado));
+  const viejo = (Date.now() - 3600e3) / 1000;
+  fs.utimesSync(snapFile8313(estado), viejo, viejo);
+  const hora = fs.statSync(snapFile8313(estado)).mtimeMs;
+  let leidas = 0;
+  for (let i = 0; i < 2; i += 1) {
+    const res = PS.refreshIfMoved({ stateDir: estado, read: () => { leidas += 1; return PS.collect(base({ home: h })); } });
+    assert.strictEqual(res.ran, false, JSON.stringify(res));
+  }
+  assert.strictEqual(leidas, 0, 'el lector no corrió');
+  const cli = spawnSync(process.execPath, [READER_8313, '--refresh-if-moved'], { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h, TYCON_HOME: '' } });
+  assert.strictEqual(cli.status, 0, cli.stderr);
+  assert.ok(fs.readFileSync(snapFile8313(estado)).equals(bytes), 'los bytes no cambian');
+  assert.strictEqual(fs.statSync(snapFile8313(estado)).mtimeMs, hora, 'la hora del archivo no cambia');
+  // una lectura de antes del cambio: sin commit ni lugar, cuenta como movida
+  const vieja = JSON.parse(bytes.toString());
+  for (const p of vieja.proyectos) { delete p.commit; delete p.lugar; delete p.abiertas; }
+  fs.writeFileSync(snapFile8313(estado), JSON.stringify(vieja));
+  const res = PS.refreshIfMoved({ stateDir: estado, read: () => { leidas += 1; return PS.collect(base({ home: h })); } });
+  assert.strictEqual(res.ran, true);
+  assert.strictEqual(leidas, 1, 'la releyó');
+  assert.ok(Array.isArray(JSON.parse(fs.readFileSync(snapFile8313(estado), 'utf8')).proyectos[0].abiertas));
+});
+
+test('T14 Proyecto_NoLeidasYDeTuCopia_SeDicen @story-8.313 @ac-14 — la ilegible va a sinLeer fuera del total; sin rama traída, de tu copia', () => {
+  const raiz = tmp('raiz');
+  const roto = '---\nstory: "14.9"\nstatus: rarisimo\n---\n# con un estado que no existe\n';
+  const r = repo(raiz, 'r', { remoto: 'https://github.com/acme/r.git', archivos: { 'specs/a.md': historia('14.1', 'review'), 'specs/b.md': roto } });
+  const p = PS.collect(base({ home: casa([{ cwd: r }]) })).proyectos[0];
+  assert.strictEqual(p.sinLeer, 1);
+  assert.deepStrictEqual(p.abiertas.map((a) => a.id), ['14.1'], 'la no leída no entra en las abiertas');
+  const c = repo(raiz, 'c', { remoto: 'https://github.com/acme/c.git', traida: false, archivos: { 'specs/a.md': historia('14.2', 'draft') } });
+  const pc = PS.collect(base({ home: casa([{ cwd: c }]) })).proyectos[0];
+  assert.strictEqual(pc.deTuCopia, true);
+  assert.strictEqual(pc.commit, null, 'leída de la copia: sin commit con qué comparar');
+  assert.strictEqual(pc.lugar.ref, null);
+  assert.deepStrictEqual(pc.abiertas.map((a) => a.id), ['14.2']);
+});
+
+test('T15 RefreshSiSeMovio_RepoQueNoContesta @story-8.313 @ac-15 — un repo que no contesta cuenta como no movido; una lectura que se cae deja el archivo anterior', () => {
+  const estado = tmp('estado');
+  const copia = leido8313('copia', '/repos/copia', null, { deTuCopia: true, lugar: { repo: '/repos/copia', ref: null, common: '/repos/copia/.git' } });
+  guardar8313(estado, [leido8313('uno', '/repos/uno', 'a'.repeat(40)), leido8313('dos', '/repos/dos', 'b'.repeat(40)), copia]);
+  const pedidos = [];
+  const git8313 = (cwd, args) => {
+    pedidos.push([cwd, ...args].join(' '));
+    if (cwd === '/repos/uno') return { ok: false, out: '', err: 'no contesta', timedOut: true };
+    return { ok: true, out: `${'c'.repeat(40)}\n`, err: '' };
+  };
+  // sólo «dos» se movió: el que no contesta no frena la comparación de los demás
+  let leidas = 0;
+  const res = PS.refreshIfMoved({ stateDir: estado, git: git8313, read: () => { leidas += 1; return lectura([]); } });
+  assert.strictEqual(res.ran, true);
+  assert.strictEqual(leidas, 1);
+  assert.ok(!pedidos.some((x) => x.startsWith('/repos/copia')), 'la leída de la copia no se compara');
+  // nada se movió salvo el que no contesta: no relee
+  guardar8313(estado, [leido8313('uno', '/repos/uno', 'a'.repeat(40)), leido8313('dos', '/repos/dos', 'c'.repeat(40))]);
+  assert.strictEqual(PS.refreshIfMoved({ stateDir: estado, git: git8313, read: () => { leidas += 1; return lectura([]); } }).ran, false);
+  assert.strictEqual(leidas, 1);
+  // la lectura nueva se cae: queda el archivo anterior y el error sube (la línea de comandos sale distinta de 0)
+  guardar8313(estado, [leido8313('dos', '/repos/dos', 'b'.repeat(40))]);
+  const bytes = fs.readFileSync(snapFile8313(estado));
+  assert.throws(() => PS.refreshIfMoved({ stateDir: estado, git: git8313, read: () => { throw new Error('se cayó'); } }), /se cayó/);
+  assert.ok(fs.readFileSync(snapFile8313(estado)).equals(bytes), 'el archivo anterior intacto');
+  assert.ok(!fs.existsSync(path.join(estado, 'office', 'project-stories.lock')), 'sin candado colgado');
+});
+
+test('Regresion_TodasCerradas_ElProyectoSigueConCero @story-8.313 @ac-2 @ac-13 — un proyecto con todo cerrado en main sigue en la lectura: su número es 0, no «sin proyecto principal»', () => {
+  const raiz = tmp('raiz');
+  const r = repo(raiz, 'r', { remoto: 'https://github.com/acme/r.git', archivos: { 'specs/a.md': historia('1.1', 'done'), 'specs/b.md': historia('1.2', 'cancelled') } });
+  const out = PS.collect(base({ home: casa([{ cwd: r }]) }));
+  assert.strictEqual(out.proyectos.length, 1, 'el proyecto leído no desaparece');
+  assert.deepStrictEqual(out.proyectos[0].abiertas, []);
+  const a = OFFICE_MOD.openStories({ snap: out, coordinator: { sid: 'coord', cwd: r, remote: out.proyectos[0].remoto }, nowMs: Date.now() });
+  assert.ok(a.principal, JSON.stringify(a));
+  assert.strictEqual(a.linea, 'Abiertas: 0 · 0 en curso · 0 en espera · 0 sin comenzar');
+  assert.deepStrictEqual(PS.view({ snap: out, now: Date.now() }).rows, [], 'la tabla no suma una fila vacía');
+});
+
+test('T19 Lectura_SoloComandosDeLectura @story-8.313 @ac-20 — collect y --refresh-if-moved sólo piden rev-parse, log, ls-tree y cat-file', () => {
+  const raiz = tmp('raiz');
+  const r = repo(raiz, 'r', { remoto: 'https://github.com/acme/r.git', archivos: { 'specs/a.md': historia('19.1', 'review') } });
+  const c = repo(raiz, 'c', { remoto: 'https://github.com/acme/c.git', traida: false, archivos: { 'specs/a.md': historia('19.2', 'draft') } });
+  const h = casa([{ cwd: r }, { cwd: c }]);
+  const pedidos = [];
+  const real = PS.gitRunner();
+  const espia = (cwd, args, o) => { pedidos.push(args.join(' ')); return real(cwd, args, o); };
+  const estado = tmp('estado');
+  const read = () => PS.collect(base({ home: h, git: espia }));
+  PS.refresh({ stateDir: estado, read });
+  PS.refreshIfMoved({ stateDir: estado, git: espia, read });
+  git(r, 'commit', '-q', '--allow-empty', '-m', 'otra');
+  git(r, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  assert.strictEqual(PS.refreshIfMoved({ stateDir: estado, git: espia, read }).ran, true);
+  assert.ok(pedidos.length > 0);
+  const otros = pedidos.filter((x) => !/^(rev-parse|log|ls-tree|cat-file)\b/.test(x));
+  assert.deepStrictEqual(otros, [], `sólo lecturas: ${pedidos.join(' | ')}`);
+  assert.ok(!pedidos.some((x) => /^fetch\b/.test(x)), 'ningún fetch');
 });

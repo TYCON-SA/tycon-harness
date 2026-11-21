@@ -31,8 +31,11 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
   if(!k)return;
   // la línea de arriba se arma sola de las tarjetas; el tablero viejo sólo suma si quedó viejo
   const top=el("p","sum");top.textContent=(k.linea||k.escrito||"")+(t&&/\(vieja\)$/.test(k.escrito||"")?" (vieja)":"");if(top.textContent)body.appendChild(top);
+  // las historias abiertas en main del proyecto de la coordinadora, con su proyecto y de cuándo es el dato
+  const A=k.abiertas;if(A&&A.linea){body.appendChild(el("p","sum abiertas",(A.principal?A.principal.nombre+" · ":"")+A.linea));if(A.hora)body.appendChild(el("p","none",A.hora));}
   const cols=el("div","cols");
-  (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro).length));
+  // «Sin sesión» no cuenta las historias plegadas: tienen su propio número en su línea
+  (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro&&i.local!==true).length));
     if(c.nota)col.appendChild(el("p","none",c.nota));
     // si las historias de tus proyectos no se pudieron leer, o la lectura es vieja, «Sin sesión» lo dice
     const notaHistorias=c.id==="sinEmpezar"&&DATA.kanban.historias?DATA.kanban.historias.nota:"";if(notaHistorias)col.appendChild(el("p","none",notaHistorias));
@@ -435,15 +438,20 @@ const texPanel=canvasTex(768,640,()=>{});
 const KCOL={firma:"#ffb04d",curso:"#6cb6ff",entrando:"#c4bdf0",sinEmpezar:"#9aa3a0",hechos:"#3ddc84"},HALF="#ff6b80";
 const stampOf=(k,meta)=>k&&k.escrito||"Al día a las "+meta.actualizado;
 // El orden del panel de la pared y de su detalle: primero lo que se está trabajando.
-function paredEnOrden(K){const cols=(K&&K.columnas)||[];return ["firma","curso","entrando","medio","sinEmpezar","hechos"].map(id=>{if(id==="medio")return {id,nombre:"A medio camino",tarjetas:(K&&K.medioCamino)||[],color:HALF};const c=cols.find(x=>x.id===id);return c&&{id,nombre:c.nombre,tarjetas:c.tarjetas||[],color:KCOL[id]||"#9aa3a0"};}).filter(Boolean);}
+function paredEnOrden(K){const cols=(K&&K.columnas)||[];return ["firma","curso","entrando","medio","sinEmpezar","hechos"].map(id=>{if(id==="medio")return {id,nombre:"A medio camino",tarjetas:(K&&K.medioCamino)||[],color:HALF};const c=cols.find(x=>x.id===id);return c&&{id,nombre:c.nombre,tarjetas:(c.tarjetas||[]).filter(t=>t.local!==true),color:KCOL[id]||"#9aa3a0"};}).filter(Boolean);}
 function drawPanel(){const {g}=texPanel.userData,w=768,h=640,k=T.kanban(),meta=T.meta();g.clearRect(0,0,w,h);g.fillStyle="#0e1220";g.beginPath();g.roundRect(4,4,w-8,h-8,26);g.fill();g.strokeStyle="#4a5a8a";g.lineWidth=8;g.stroke();
   g.fillStyle="#ffffff";g.font="800 64px "+FONT;g.fillText("Pendientes",36,76);
   const toca=(meta&&meta.teToca)||[];g.fillStyle="#ffb04d";g.font="800 46px "+FONT;g.textAlign="right";g.fillText("Te toca: "+toca.length,w-36,72);g.textAlign="left";
   const stats=paredEnOrden(k).map(c=>[c.nombre,c.tarjetas.length,c.color]);
   stats.forEach(([l,n,c],i)=>{const x=36+(i%2)*356,y=96+Math.floor(i/2)*156;g.fillStyle="#1b2236";g.beginPath();g.roundRect(x,y,340,128,18);g.fill();g.fillStyle=c;g.fillRect(x,y,12,128);
     g.font="800 84px "+FONT;g.fillText(String(n),x+30,y+82);g.fillStyle="#ffffff";g.font="700 32px "+FONT;g.fillText(l,x+30,y+116);});
-  g.fillStyle="#dfe6ff";g.font="600 26px "+FONT;g.textAlign="right";g.fillText("tocá para ver el detalle",w-36,612);g.textAlign="left";
-  if(meta&&meta.actualizado){g.fillStyle="#9fb0d8";g.font="600 26px "+FONT;g.fillText(stampOf(k,meta),36,612);}texPanel.needsUpdate=true;}
+  // debajo de los cuadros, las historias abiertas en main y de cuándo es el dato (los otros proyectos van sólo al detalle)
+  // la línea que no entra en el ancho (el motivo de «Sin proyecto principal») va en dos renglones, cortada por palabras
+  const A=k&&k.abiertas;if(A&&A.linea){g.fillStyle="#ffffff";g.font="700 23px "+FONT;const ancho=t=>{const m=g.measureText&&g.measureText(t);return (m&&m.width)||0},cabe=w-72,pal=A.linea.split(" ");let uno=A.linea,dos="";
+    if(ancho(A.linea)>cabe){uno="";for(let i=0;i<pal.length;i++){const p=uno?uno+" "+pal[i]:pal[i];if(uno&&ancho(p)>cabe){dos=pal.slice(i).join(" ");break}uno=p}}
+    g.fillText(uno,36,dos?552:562);if(dos)g.fillText(dos,36,580);if(A.hora){g.fillStyle="#9fb0d8";g.font="600 20px "+FONT;g.fillText(A.hora,36,dos?604:588);}}
+  g.fillStyle="#dfe6ff";g.font="600 26px "+FONT;g.textAlign="right";g.fillText("tocá para ver el detalle",w-36,622);g.textAlign="left";
+  if(meta&&meta.actualizado){g.fillStyle="#9fb0d8";g.font="600 26px "+FONT;g.fillText(stampOf(k,meta),36,622);}texPanel.needsUpdate=true;}
 
 // ---------- habitación ----------
 const S=10,WH=4.2;
@@ -737,6 +745,9 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{}
   const cl=mk("button","close","×");cl.type="button";cl.setAttribute("aria-label","Cerrar");cl.onclick=()=>T.cerrarPanel();panel.append(cl,mk("h3",null,"Pendientes"));
   const orden=paredEnOrden(K);panel.abiertos=panel.abiertos||new Set();
   const ct=mk("div","counts");orden.forEach(c=>{const k=mk("div","cnt");k.style.setProperty("--k",c.color);k.append(mk("b",null,String(c.tarjetas.length)),mk("span",null,c.nombre));ct.append(k);});panel.append(ct);
+  // las historias abiertas en main: el proyecto de la coordinadora con su hora, y los otros proyectos, uno por renglón
+  const A=K.abiertas;if(A&&A.linea){if(A.principal)panel.append(mk("h4",null,A.principal.nombre));panel.append(mk("p","m",A.principal?A.principal.detalle:A.linea));if(A.hora)panel.append(mk("p","m",A.hora));if(!A.principal&&A.nota&&A.nota!==A.linea)panel.append(mk("p","m",A.nota));
+    if((A.otros||[]).length){panel.append(mk("h4",null,"Otros proyectos"));const ul=mk("ul","list");A.otros.forEach(p=>ul.append(mk("li",null,p.renglon)));panel.append(ul);}}
   const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul);}
   // lo que no se está trabajando no estira el detalle: con muchas, se abre a pedido, y sigue abierto cuando llega otra foto
   orden.forEach(c=>{const rows=c.tarjetas;if(!rows.length)return;const h=mk("h4",null,c.nombre+" · "+rows.length);h.style.color=c.color;panel.append(h);
