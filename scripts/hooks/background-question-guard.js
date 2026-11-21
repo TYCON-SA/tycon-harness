@@ -39,7 +39,7 @@ const QUESTION_TOOLS = new Set(['AskUserQuestion', 'mcp__spokenly__ask_user_dict
 const MESSAGE_TOOL = 'SendMessage';
 // un destino que no es otra sesión: la conversación principal o un ayudante de la propia sesión (su id)
 const NOT_A_SESSION = /^(main|a[0-9a-f]{16})$/;
-const SELLO = /\bfirma ([\w:.-]+) · sesi[oó]n [\w-]+ · c[oó]digo [\w-]+/;
+const SELLO = /\bfirma ([\w:.-]+) · sesi[oó]n ([\w-]+) · c[oó]digo [\w-]+/;
 const NOMBRE = 'background-question-guard';
 
 const stateDirOf = (home) => require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(home);
@@ -74,7 +74,7 @@ function textoDeLaNegativa({ nombre, sid, firma = null, soloClick = false, duda 
       : `Esta sesión la abrió la coordinadora: no le preguntes a la persona. Mandale a «${nombre}» (${sid}) por SendMessage la pregunta tal cual,`,
     'lo que se decide en tres renglones (el plan, si es un plan) y la ruta del archivo. Esperá su aviso.',
   ];
-  if (firma && soloClick) partes.push('Es una firma que sólo aprueba un click en la pestaña que trabaja: no se aprueba desde la pestaña de la coordinadora. Queda la terminal del dueño, y eso es lo que le pasás.');
+  if (firma && soloClick) partes.push('Es una firma que sólo aprueba un click en la pestaña que trabaja, y su sello nombra otra sesión: se muestra en la pestaña de esa sesión, o queda la terminal del dueño.');
   else if (firma) partes.push('Es una pregunta de firma: va tal cual, sin cambiarle una letra; la coordinadora la muestra en su pestaña, y con el click repetís el comando acá.');
   return partes.join(' ');
 }
@@ -285,7 +285,11 @@ function decidir(evento, { home = os.homedir(), env = process.env, arnes } = {})
   if (!c) return null;
   const m = SELLO.exec(textoDe(d.tool_input));
   const firma = m ? m[1] : null;
-  return { decision: 'deny', reason: textoDeLaNegativa({ nombre: c.name, sid: c.sid, firma, soloClick: firma ? esSoloClick(home, firma) : false, duda: c.duda }) };
+  const soloClick = firma ? esSoloClick(home, firma) : false;
+  // la firma de sólo click de esta misma sesión (nombrar o retirar la coordinadora) vale sólo en esta pestaña: el cuadro
+  // se muestra acá, y el dueño lo contesta en ella o por control remoto; mandarlo a la coordinadora dejaba sólo la terminal
+  if (soloClick && m[2] === String(sid)) return null;
+  return { decision: 'deny', reason: textoDeLaNegativa({ nombre: c.name, sid: c.sid, firma, soloClick, duda: c.duda }) };
 }
 
 module.exports = { QUESTION_TOOLS, MESSAGE_TOOL, decidir, textoDeLaNegativa, textoDeLaNegativaDelMensaje, coordinadoraDeLaLanzada, esDeFondo };
