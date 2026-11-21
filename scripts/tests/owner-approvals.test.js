@@ -407,6 +407,28 @@ test('Click_OpcionesQueNoSonLasDelGuion_NoVale', (t) => {
   assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
 });
 
+// La exención de comparación con main (Producto A, 20/11): la sesión mostró el cuadro con la pregunta y las etiquetas del
+// guion, pero con descripciones propias en cada opción. Sólo un cuadro de sólo click fija sus descripciones; éste no.
+test('T2 CompareWaiver_OwnDescriptions_ClickStillCounts — ni las descripciones propias ni dos preguntas en un cuadro invalidan el click', (t) => {
+  const casa = casaNueva(t);
+  const c = require('../lib/owner-window.js').cuadroPara({ firma: 'compare-waiver', palabras: ['marker.js', 'compare-waiver', '--story', '/r/stories/story-9.99.md',
+    '--command', 'ProdForms/build-form.js', '--reason', 'usa la red'], destino: 'ses-a', casa, sesion: 'ses-a' });
+  assert.ok(!c.error, c.error);
+  assert.strictEqual(c.descripciones, undefined, 'la exención no es de sólo click: no fija descripciones');
+  const conDescripciones = (preguntas) => ({ ...respuesta('toolu_1', { pregunta: c.pregunta, opciones: c.opciones }),
+    toolUseResult: { questions: preguntas, answers: { [c.pregunta]: 'Sí, aprobar' } } });
+  const mostrada = { question: c.pregunta, options: [{ label: c.opciones[0], description: 'Exime build-form.js de la comparación con main.' },
+    { label: c.opciones[1], description: 'No se exime; el commit queda frenado.' }] };
+  const unClick = { ...click(), pregunta: c.pregunta };
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones([mostrada])]);
+  const ctx = { pregunta: c.pregunta, opciones: c.opciones, descripciones: c.descripciones, sello: c.sello, casa };
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), unClick, ctx), { ok: true });
+  // las dos exenciones en un mismo cuadro: la respuesta va atada a su pregunta, así que el «Sí» a ésta cuenta
+  const otra = { ...mostrada, question: c.pregunta.replace('build-form.js', 'jest.config.cjs') };
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones([mostrada, otra])]);
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), unClick, ctx), { ok: true });
+});
+
 // La negativa por pregunta distinta deja dónde difería: sin eso, el click se pierde y nadie sabe por qué
 const OTRA_EN_57 = (p) => `${p.slice(0, 57)}${p[57] === 'X' ? 'Y' : 'X'}${p.slice(58)}`;
 const registroDeErrores = (casa) => path.join(require('../../skills/tycon-pipeline/scripts/lib/state-dir.js').stateDir(casa), 'hook-errors.log');
