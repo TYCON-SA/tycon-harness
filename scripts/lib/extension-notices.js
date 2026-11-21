@@ -192,7 +192,14 @@ function applicable({ cwd, when }) {
 }
 
 // lo que puede ir delante del comando en su tramo sin ser el comando: palabras de la terminal y envoltorios
-const DELANTE = new Set(['do', 'then', 'else', 'if', 'elif', 'while', 'until', '!', 'time', 'nohup', 'exec', 'command', 'env']);
+const DELANTE = new Set(['do', 'then', 'else', 'if', 'elif', 'while', 'until', '!', 'time', 'nohup', 'exec', 'command', 'env', '{']);
+// los envoltorios que llevan opciones antes del comando, con las opciones que toman un valor aparte
+const ENVOLTORIOS = {
+  sudo: new Set(['-u', '-g', '-C', '-h', '-p', '-U', '-r', '-t', '-D', '-R', '-T']),
+  xargs: new Set(['-n', '-I', '-L', '-P', '-d', '-E', '-s', '-a', '--max-args', '--replace', '--max-lines', '--max-procs', '--delimiter', '--max-chars', '--arg-file']),
+};
+// `timeout`: sus opciones con valor aparte, y después la duración
+const TIMEOUT_CON_VALOR = new Set(['-k', '-s', '--kill-after', '--signal']);
 
 /**
  * Si el comando de la sesión dispara el comando declarado (`<cli> [palabra]`): algún tramo (los parte el segmentador de
@@ -210,11 +217,20 @@ function matchesCommand(command, declared, { powershell = false } = {}) {
       const f = seg[i];
       if (!f || !f.esBandera) break;
       if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(f.texto) || DELANTE.has(f.texto)) { i++; continue; }
-      if (f.texto === 'timeout') { i++; while (seg[i] && seg[i].texto.startsWith('-')) i++; i++; continue; }
+      // en PowerShell, la asignación del resultado: `$x = az …`
+      if (powershell && /^\$[\w:]+$/.test(f.texto) && seg[i + 1] && seg[i + 1].texto === '=') { i += 2; continue; }
+      const opciones = f.texto === 'timeout' ? TIMEOUT_CON_VALOR : ENVOLTORIOS[f.texto];
+      if (opciones) {
+        i++;
+        while (seg[i] && seg[i].texto.startsWith('-')) i += opciones.has(seg[i].texto) ? 2 : 1;
+        if (f.texto === 'timeout') i++;
+        continue;
+      }
       break;
     }
     const f = seg[i];
-    if (!f || !f.esBandera || path.basename(f.texto.replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '') !== cli) continue;
+    // en PowerShell, el comando entre comillas (`& "C:\…\az.cmd" …`): el `&` lo saca el segmentador
+    if (!f || (!f.esBandera && !(powershell && i === 0)) || path.basename(f.texto.replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '') !== cli) continue;
     if (!word || seg.slice(i + 1).map((x) => x.texto).filter((x) => !x.startsWith('-')).slice(0, 2).includes(word)) return true;
   }
   return false;
@@ -273,22 +289,29 @@ function afterCommand({ cwd, command, powershell = false, yaDichos = [] }) {
     const why = e && Array.isArray(e.errores) ? e.errores.map((x) => x.motivo).join('; ') : (e && e.message) || String(e);
     errors.push(`no se pudo saber qué paquetes hay (${why})`);
   }
+  // un notices.json roto se dice sólo si su extensión cuenta: un paquete activo en el repo o un conector elegido
+  const rotosDe = [];
   for (const ext of [...conectores.extensions, ...paquetes]) {
     const r = readNotices(ext.dir);
-    for (const e of r.errors) errors.push(`${ext.kind === 'pack' ? 'paquete' : 'integración'} ${ext.name}: ${e}`);
+    // lo ya dicho en la sesión no se vuelve a mirar (la clave es la del gancho): así no se le pregunta a git cada vez
+    const sinDecir = r.errors.map((e) => `${ext.kind === 'pack' ? 'paquete' : 'integración'} ${ext.name}: ${e}`).filter((t) => !dicho.has(`aviso-roto:${t}`));
+    if (sinDecir.length) rotosDe.push({ ext, errors: sinDecir });
     for (const n of r.notices) if (dispara(n) && !dicho.has(`${ext.kind}:${ext.name}/${n.id}`)) candidatos.push({ ext, n });
   }
   // un conector con el manifiesto roto cuyo aviso dispara este comando: sus reglas no salen, y eso se dice si es elegido
   const rotos = conectores.broken.filter((b) => readNotices(b.dir).notices.some(dispara));
-  if (!candidatos.length && !rotos.length) return { notices: [], errors };
+  if (!candidatos.length && !rotos.length && !rotosDe.length) return { notices: [], errors };
   let root = null;
-  if (candidatos.some((c) => c.ext.kind === 'pack' || c.n.repoFiles)) {
+  // sin poder abrir el repo no se sabe qué paquetes están activos ni qué archivos sigue: esos avisos no se evalúan, y
+  // se dice; los de plataforma no dependen del repo y salen igual
+  let sinRepo = null;
+  if (candidatos.some((c) => c.ext.kind === 'pack' || c.n.repoFiles) || rotosDe.some((x) => x.ext.kind === 'pack')) {
     const where = repoRoot(cwd);
-    if (where.error) return { notices: [], errors: errors.concat(`${where.error}: los avisos de las extensiones no se evaluaron`) };
-    root = where.root;
+    if (where.error) sinRepo = where.error; else root = where.root;
   }
+  if (sinRepo && candidatos.some((c) => c.ext.kind === 'pack' || c.n.repoFiles)) errors.push(`${sinRepo}: los avisos de los paquetes y los que dependen del repo no se evaluaron`);
   let elegidas = null;
-  if (rotos.length || candidatos.some((c) => c.ext.kind === 'integration')) {
+  if (rotos.length || candidatos.some((c) => c.ext.kind === 'integration') || rotosDe.some((x) => x.ext.kind === 'integration')) {
     const ch = chosenPlatforms();
     if (ch.problem) errors.push(ch.problem); else elegidas = ch.names;
   }
@@ -296,10 +319,15 @@ function afterCommand({ cwd, command, powershell = false, yaDichos = [] }) {
     if (!elegidas || elegidas.includes(b.name)) errors.push(`integración ${b.name}: su integration.json no es válido (${b.reasons.join('; ')}): sus reglas no se muestran`);
   }
   let activos = null;
-  if (candidatos.some((c) => c.ext.kind === 'pack')) {
+  if (!sinRepo && (candidatos.some((c) => c.ext.kind === 'pack') || rotosDe.some((x) => x.ext.kind === 'pack'))) {
     const act = activeExtensions({ root });
     errors.push(...act.errors);
     activos = act.extensions.map((x) => x.name);
+  }
+  // sin saber si cuenta (no se pudo leer la configuración o el repo), un roto se dice: no saber no es «no cuenta»
+  for (const { ext, errors: es } of rotosDe) {
+    const cuenta = ext.kind === 'pack' ? (activos ? activos.includes(ext.name) : true) : (elegidas ? elegidas.includes(ext.name) : true);
+    if (cuenta) errors.push(...es);
   }
   let files;
   const out = [];

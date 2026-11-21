@@ -265,7 +265,14 @@ test('Gancho_CarpetaQueNoExisteOEventoIlegible_LoDice', () => {
   const r = spawnSync(process.execPath, [HOOK], { input: '{ roto', encoding: 'utf8', cwd: l.repo,
     env: { PATH: process.env.PATH, HOME: l.home, TYCON_HOME: path.join(l.home, '.tycon'), TYCON_PACKS_DIR: l.packs, TYCON_PACKS_DEFAULT: 'all', TYCON_INTEGRATIONS_DIR: path.join(l.base, 'sin') } });
   assert.strictEqual(r.status, 0);
-  assert.ok(/el evento de arranque no se pudo leer/.test(r.stdout), r.stdout);
+  assert.ok(/el evento no se pudo leer .*: no dije ningún aviso/.test(r.stdout), r.stdout);
+  // ilegible no es «el arranque»: no dice los avisos de arranque ni los marca como dichos
+  assert.ok(!r.stdout.includes('REGLA-DE-LA-URL'), r.stdout);
+  assert.strictEqual(fs.existsSync(path.join(l.home, '.tycon', 'state', 'extension-notices', '_nosession.json')), false);
+  // uno de después de un comando, ilegible: el problema sale por el canal del comando
+  const c = spawnSync(process.execPath, [HOOK], { input: '{"hook_event_name":"PostToolUse", roto', encoding: 'utf8', cwd: l.repo,
+    env: { PATH: process.env.PATH, HOME: l.home, TYCON_HOME: path.join(l.home, '.tycon'), TYCON_PACKS_DIR: l.packs, TYCON_PACKS_DEFAULT: 'all', TYCON_INTEGRATIONS_DIR: path.join(l.base, 'sin') } });
+  assert.match(JSON.parse(c.stdout).hookSpecificOutput.additionalContext, /el evento no se pudo leer/);
 });
 
 test('Gancho_AvisoVacio_LoDice', () => {
@@ -333,4 +340,32 @@ test('T12 · ExtensionNotices_RootOnlyWhenNeeded_NoGit @story-8.266 @ac-7', () =
   assert.ok(pack.out.includes('REGLA-DEL-DEPLOY'), pack.out);
   assert.ok(pack.gits >= 1, 'un aviso de paquete pide la raíz para saber si el paquete está activo en el repo');
   assert.strictEqual(after('make deploy').gits, 0, 'el de paquete ya dicho: ningún git');
+});
+
+// 🔴 Falla con: un comando envuelto (`timeout -k`, `{ …; }`, `sudo`, `xargs`) o una forma de PowerShell que no dispara
+//    la regla de su CLI.
+test('Reconoce_EnvoltoriosYPowerShell', () => {
+  const m = N().matchesCommand;
+  for (const c of ['timeout -k 5 10 gh pr checks 1', 'timeout --signal KILL 10 gh pr checks 1', '{ gh pr checks 1; }', 'sudo gh pr checks 1', 'sudo -u x gh pr checks 1',
+    'echo 1 | xargs gh pr checks', 'echo 1 | xargs -n 1 gh pr checks']) assert.ok(m(c, 'gh pr'), c);
+  for (const c of ['$x = az repos pr list', '$x = (az repos pr list)', '& az repos pr list', '& "C:\\Program Files\\az.cmd" repos pr list']) assert.ok(m(c, 'az repos', { powershell: true }), c);
+  // lo que no es el CLI sigue sin disparar
+  for (const c of ['echo "gh pr checks"', 'sudo -u gh ls pr', 'xargs -I gh echo pr', 'timeout 10 ls gh pr']) assert.ok(!m(c, 'gh pr'), c);
+  assert.ok(!m('"az" repos pr list', 'az repos'), 'en bash, el comando entre comillas como texto suelto no es la forma de PowerShell');
+});
+
+// 🔴 Falla con: después de cada comando, el error del notices.json de un paquete que el repo no usa.
+test('DespuesDelComando_PaqueteRotoNoActivo_Calla', () => {
+  const l = hookLab({ packsYaml: 'packs: [producto]\n', notices: { notices: [aviso({ id: 'tras', when: 'after-command', commands: ['gh pr'] })] }, extraPacks: { roto: '{ no es json' } });
+  const correr = (s) => spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ session_id: s, cwd: l.repo, hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr checks 1' } }), encoding: 'utf8',
+    env: { PATH: process.env.PATH, HOME: l.home, TYCON_HOME: path.join(l.home, '.tycon'), TYCON_PACKS_DIR: l.packs, TYCON_PACKS_DEFAULT: 'all', TYCON_INTEGRATIONS_DIR: path.join(l.base, 'sin') } }).stdout;
+  const r = correr('s-roto');
+  assert.ok(r.includes('REGLA-DE-LA-URL'), r);
+  assert.ok(!r.includes('paquete roto'), `el roto no está activo en el repo: ${r}`);
+  // activo (sin la lista del repo): se dice una vez
+  fs.rmSync(path.join(l.repo, '.tycon'), { recursive: true });
+  const activo = correr('s-activo');
+  assert.ok(activo.includes('paquete roto'), activo);
+  assert.ok(!correr('s-activo').includes('paquete roto'), 'una vez por sesión');
 });

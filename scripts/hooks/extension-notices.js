@@ -33,8 +33,36 @@ function readStdin() {
   try { raw = fs.readFileSync(0, 'utf8'); } catch (_) { return { input: {}, problem: null }; }
   if (!raw.trim()) return { input: {}, problem: null };
   try { return { input: JSON.parse(raw), problem: null }; } catch (e) {
-    return { input: {}, problem: `el evento de arranque no se pudo leer (${e.message}); se usó la carpeta actual` };
+    // sin leerlo no se sabe si es el arranque o después de un comando: el texto crudo lo dice, si se ve
+    return { input: {}, problem: `el evento no se pudo leer (${e.message}): no dije ningún aviso`, crudoDeComando: /"PostToolUse(?:Failure)?"/.test(raw) ? (raw.match(/"(PostToolUse(?:Failure)?)"/) || [])[1] : null };
   }
+}
+
+/**
+ * Suma `nuevos` a lo mostrado en `file`, con un candado (una carpeta `<file>.lock`) y escritura atómica: dos comandos a
+ * la vez no pierden una marca. Lee lo que haya en el momento de escribir y lo une. Sin candado a tiempo, escribe igual
+ * uniendo con lo leído: a lo sumo un aviso se repite.
+ */
+function sumarMostrados(file, nuevos, { base = null } = {}) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const lock = `${file}.lock`;
+  let tengo = false;
+  const espera = new Int32Array(new SharedArrayBuffer(4));
+  for (let i = 0; i < 40 && !tengo; i++) {
+    try { fs.mkdirSync(lock); tengo = true; } catch (e) {
+      if (e.code !== 'EEXIST') break;
+      // un candado de más de 5 s es de un proceso que murió
+      try { if (Date.now() - fs.statSync(lock).mtimeMs > 5000) fs.rmdirSync(lock); } catch (_) { /* otro lo sacó */ }
+      Atomics.wait(espera, 0, 0, 25);
+    }
+  }
+  try {
+    let actual = [];
+    if (base === null) { try { actual = JSON.parse(fs.readFileSync(file, 'utf8')); if (!Array.isArray(actual)) actual = []; } catch (_) { actual = []; } } else actual = base;
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify([...new Set(actual.concat(nuevos))]));
+    fs.renameSync(tmp, file);
+  } finally { if (tengo) { try { fs.rmdirSync(lock); } catch (_) { /* nada */ } } }
 }
 
 // si el gancho falla, el aviso de la falla tiene que salir por el canal del momento en que corrió
@@ -64,10 +92,20 @@ function porDecir(notices, shown, errors) {
 
 function main() {
   if (process.env.TYCON_EXTENSION_NOTICES === '0') return;
-  const { input, problem } = readStdin();
+  const { input, problem, crudoDeComando } = readStdin();
+  // un evento que no se lee no se toma por el arranque: no se dice ningún aviso ni se marca nada, sólo el problema
+  if (problem) {
+    if (crudoDeComando) { enComando = true; eventoDeComando = crudoDeComando; }
+    const texto = `⚠️ avisos de extensiones: ${problem}`;
+    process.stdout.write(enComando ? despuesDelComando(texto) : `${texto}\n`);
+    return;
+  }
   const cwd = input.cwd || process.cwd();
   const conSesion = Boolean(input.session_id);
-  const sid = String(input.session_id || '_nosession').replace(/[/\\]/g, '_');
+  // un subagente comparte el session_id de la sesión madre: lo que se le dice a él lleva su propia lista, así la madre
+  // también lo ve
+  const agente = input.agent_id ? `.agent-${String(input.agent_id).replace(/[^\w-]/g, '_')}` : '';
+  const sid = `${String(input.session_id || '_nosession').replace(/[/\\]/g, '_')}${agente}`;
   const lib = require(path.join(__dirname, '..', 'lib', 'extension-notices.js'));
   const comando = EVENTOS_DE_COMANDO.includes(input.hook_event_name);
   enComando = comando;
@@ -82,12 +120,10 @@ function main() {
   if (!contextoNuevo && !(comando && !conSesion)) {
     try { shown = JSON.parse(fs.readFileSync(stateFile, 'utf8')); if (!Array.isArray(shown)) shown = []; } catch (_) { shown = []; }
   }
-  const guardar = (lista) => {
+  // `reemplaza`: tras compactar o limpiar, la lista empieza de nuevo; si no, se suma a lo que haya en el archivo
+  const guardar = (nuevos, { reemplaza = false } = {}) => {
     if (comando && !conSesion) return;
-    try {
-      fs.mkdirSync(path.dirname(stateFile), { recursive: true });
-      fs.writeFileSync(stateFile, JSON.stringify(lista));
-    } catch (_) { /* sin estado, el aviso puede repetirse en la sesión: mejor que no decirlo */ }
+    try { sumarMostrados(stateFile, nuevos, { base: reemplaza ? [] : null }); } catch (_) { /* sin estado, el aviso puede repetirse en la sesión: mejor que no decirlo */ }
   };
 
   if (comando) {
@@ -95,21 +131,19 @@ function main() {
     if (!command.trim()) return;
     // lo ya dicho en la sesión no se vuelve a mirar: así no se le pregunta a git por un aviso que no va a salir
     const { notices, errors } = lib.afterCommand({ cwd, command, powershell: input.tool_name === 'PowerShell', yaDichos: shown });
-    if (problem) errors.unshift(problem);
     const { out, nuevos } = porDecir(notices, shown, errors);
     // un problema se dice una vez por sesión: este gancho corre después de cada comando
     for (const e of errors) { const key = `aviso-roto:${e}`; if (!shown.includes(key)) { out.push(`⚠️ avisos de extensiones: ${e}`); nuevos.push(key); } }
     if (out.length) process.stdout.write(despuesDelComando(out.join('\n\n')));
-    if (nuevos.length) guardar(shown.concat(nuevos));
+    if (nuevos.length) guardar(nuevos);
     return;
   }
 
   const { notices, errors } = lib.applicable({ cwd, when: 'session-start' });
-  if (problem) errors.unshift(problem);
   const { out, nuevos } = porDecir(notices, shown, errors);
   for (const e of errors) out.push(`⚠️ avisos de extensiones: ${e}`);
   if (out.length) process.stdout.write(out.join('\n\n') + '\n');
-  if (nuevos.length || contextoNuevo) guardar(shown.concat(nuevos));
+  if (nuevos.length || contextoNuevo) guardar(contextoNuevo ? shown.concat(nuevos) : nuevos, { reemplaza: contextoNuevo });
 }
 
 try { main(); } catch (e) {

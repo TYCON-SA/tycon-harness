@@ -240,3 +240,48 @@ test('Rules_OtherPlatformNeverShown @story-8.85 @ac-35', () => {
   const post = (codex.hooks || codex).PostToolUse || [];
   assert.ok(post.some((e) => e.matcher === 'Bash' && e.hooks.some((h) => /scripts\/hooks\/extension-notices\.js/.test(h.command))), 'Codex: después de Bash');
 });
+
+// ── los arreglos del aviso de después del comando ────────────────────────────────────────────────────────────────────
+const enParalelo = (o, eventos) => Promise.all(eventos.map((e) => new Promise((ok) => {
+  const p = require('child_process').spawn(process.execPath, [HOOK], { env: o.env });
+  let out = '';
+  p.stdout.on('data', (d) => { out += d; });
+  p.on('close', () => ok(out));
+  p.stdin.end(JSON.stringify({ cwd: o.repo, ...e }));
+})));
+
+// 🔴 Falla con: sin git, también se pierden las reglas de la plataforma, que no dependen del repo.
+test('AfterCommand_GitMissing_PlatformRulesStillShown @story-8.85 @ac-35', () => {
+  const o = org({ platform: { default: 'azure-devops' } });
+  // un paquete con un aviso del mismo comando: para él hace falta el repo (git), y sin git no se evalúa
+  const pack = path.join(o.env.TYCON_PACKS_DIR, 'producto');
+  fs.mkdirSync(path.join(pack, 'notices'), { recursive: true });
+  fs.writeFileSync(path.join(pack, 'pack.json'), JSON.stringify({ name: 'producto', description: 'de prueba' }));
+  fs.writeFileSync(path.join(pack, 'notices.json'), JSON.stringify({ notices: [{ id: 'del-paquete', text: 'notices/x.md', when: 'after-command', commands: ['az repos'] }] }));
+  fs.writeFileSync(path.join(pack, 'notices', 'x.md'), 'REGLA-DEL-PAQUETE\n');
+  o.env.TYCON_PACKS_DEFAULT = 'all';
+  o.env.PATH = path.dirname(process.execPath);
+  const r = gancho(o, bash('s-sin-git', 'az repos pr list'));
+  assert.ok(dijoAdo(r), `la regla de la plataforma sale sin git: ${r.ctx}`);
+  assert.match(r.ctx, /los avisos de los paquetes y los que dependen del repo no se evaluaron/);
+  assert.ok(!r.ctx.includes('REGLA-DEL-PAQUETE'));
+});
+
+// 🔴 Falla con: un subagente que corre el CLI primero deja la regla como dicha para la sesión madre, que nunca la ve.
+test('AfterCommand_Subagent_OwnList @story-8.85 @ac-35', () => {
+  const o = org({ platform: { default: 'azure-devops' } });
+  assert.ok(dijoAdo(gancho(o, bash('s-madre', 'az repos pr list', { agent_id: 'sub-1' }))), 'el subagente la ve');
+  assert.ok(dijoAdo(gancho(o, bash('s-madre', 'az repos pr list'))), 'la sesión madre también');
+  assert.ok(!dijoAdo(gancho(o, bash('s-madre', 'az repos pr list'))), 'una vez por cada uno');
+  assert.ok(!dijoAdo(gancho(o, bash('s-madre', 'az repos pr list', { agent_id: 'sub-1' }))));
+});
+
+// 🔴 Falla con: dos comandos a la vez en la misma sesión pierden la marca de uno (la regla se repite).
+test('AfterCommand_Parallel_NoMarkLost @story-8.85 @ac-35', async () => {
+  const o = org({ platform: { default: 'github', workItems: 'azure-devops' } });
+  for (let i = 0; i < 4; i++) {
+    const s = `s-paralelo-${i}`;
+    await enParalelo(o, [bash(s, 'az repos pr list'), bash(s, 'gh pr checks 1')]);
+    assert.ok(!dijoAdo(gancho(o, bash(s, 'az repos pr list'))) && !dijoGh(gancho(o, bash(s, 'gh pr checks 1'))), `vuelta ${i}: se perdió una marca`);
+  }
+});
