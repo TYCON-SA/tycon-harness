@@ -81,6 +81,9 @@ function recorrer(texto, base) {
   let actual = base;                                    // el cwd "corriente" a lo largo de la cadena
   for (let st of String(texto).split(SEPARADOR)) {
     st = st.replace(/^[\s(]+/, '');                     // `(cd X && git …)`: el subshell se sigue igual
+    // `bash -c '… && git push …'`: el corte por `&&` deja el `bash -c '` pegado a la primera sentencia, que así no
+    // empieza con `git` ni con `cd` y no se veía. Se saca, como el paréntesis del subshell
+    st = st.replace(/^(?:\S*\/)?(?:ba|z|da)?sh\s+(?:-\w+\s+)*-[a-z]*c\s+['"]\s*/, '');
     const cd = st.match(/^cd(?:\s+("[^"]+"|'[^']+'|[^\s;&|)]+))?\s*$/);
     if (cd) {
       const d = cd[1] ? expandir(cd[1], vars) : os.homedir();

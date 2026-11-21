@@ -5019,6 +5019,12 @@
       "requiere": []
     },
     {
+      "__nota": "los git dentro de un `bash -c '…'` se ven todos, cada uno con su carpeta (scripts/lib/git-target.js: lo usan el reclamo de la retrospectiva, el freno de sesiones y el de producción).",
+      "raiz": "arnes",
+      "ruta": "tests/git-target-shell-c.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un latido de retrospectiva es sólo de un commit que entró a main, y uno falso se anula sin borrarlo: el pedido abierto que espera, entra o se abandona (scripts/hooks/retro-pending.js), la línea de main y --annul (scripts/metrics/retro-heartbeat.js) y lo que no cuenta (retro-coverage.js, weekly-review.js, dashboard-metrics.js, sdlc-stage-metrics.js). Repos de juguete con git de verdad, az y gh de mentira en el PATH y un buzón de mentira en el mismo proceso. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-heartbeat-main.test.js",
