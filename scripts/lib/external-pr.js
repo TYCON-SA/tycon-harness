@@ -39,6 +39,8 @@ const DIRECCION = /^https?:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)\/?$/
 // la red gruesa: un texto que nombra una forma, aunque el lector no la encuentre entera
 const EN_TEXTO = /merge|enqueuePullRequest/i;
 const ESCRIBE = /^(put|post|patch|delete)$/i;
+// los verbos de pedidos que sólo leen: la red gruesa no cuenta la palabra «merge» de su --json o su --jq
+const VERBOS_QUE_LEEN = new Set(['view', 'list', 'status', 'checks', 'diff']);
 const MERGE_CON_VALOR = new Set(['--subject', '-t', '--body', '-b', '--body-file', '-F', '--match-head-commit', '--author-email', '-A', '--repo', '-R']);
 const API_CAMPO = new Set(['-f', '--raw-field', '-F', '--field']);
 const TIEMPO_GH_MS = 6000;
@@ -163,7 +165,18 @@ function leer(comando) {
   }
   // la forma está en el texto y el lector no la encontró: no se sabe qué pedido es
   if (!out.length && !/^\s*(echo|printf|grep|rg|git)\b/.test(cmd)) {
-    const nombra = gh.comandosGh(cmd, 0, {}).some((c) => c.grupo === null || c.enSustitucion || (c.porOtroPrograma && !SOLO_NOMBRA.has(nombreDe(c.lanzadoPor))));
+    // un comando de pedidos con un verbo de lectura escrito tal cual (el número puede ir en una variable) ya se leyó: la
+    // palabra «merge» en su --json o su --jq es un campo, no un merge. Sólo por lista y sólo esos verbos: una consulta a
+    // la API acepta opciones pegadas (`-iX PUT`) que no se leen con certeza, y sigue en la red. Nunca cuenta lo lanzado
+    // por otro programa (`xargs -I{}`, `timeout`), una palabra con un `{}` que se llena al correr, ni un comando cuya
+    // salida corre otra terminal (`| bash`).
+    const correLaSalida = /\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|source|eval|\.)(?:\s|$|\))/.test(cmd);
+    const yaLeido = (c) => {
+      const ps = c.palabras || [];
+      if (correLaSalida || c.grupo !== 'pr' || c.porOtroPrograma || c.loLanzaOtro || ps.some((p) => /\{\}/.test(p.texto))) return false;
+      return !!(ps[1] && ps[1].literal) && VERBOS_QUE_LEEN.has(c.verbo || c.verboTrasOpciones);
+    };
+    const nombra = gh.comandosGh(cmd, 0, {}).some((c) => !yaLeido(c) && (c.grupo === null || c.enSustitucion || (c.porOtroPrograma && !SOLO_NOMBRA.has(nombreDe(c.lanzadoPor)))));
     if (nombra) out.push({ ilegible: 'el comando nombra un merge que este freno no lee entero: escribilo en su forma exacta, solo' });
   }
   return out;
