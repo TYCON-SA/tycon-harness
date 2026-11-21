@@ -2385,6 +2385,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-board-forecast.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/test-run-isolation.test.js",
       "requiere": []
     },

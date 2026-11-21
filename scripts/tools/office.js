@@ -2335,10 +2335,13 @@ function closedSessionLastAt(home, name) {
 }
 
 /** Mueve el tablero con los hechos de la foto. La foto sale igual si falla: el motivo va una vez a lo que no se pudo leer. */
-function syncBoardFromPhoto(sdir, facts, complete, problems, { now, home, sync = boardTool.sync } = {}) {
+function syncBoardFromPhoto(sdir, facts, complete, problems, { now, home, sync = boardTool.sync, photo = sync === boardTool.sync ? boardTool.photo : null } = {}) {
   try {
     const r = sync(sdir, facts, { complete, now, home });
     if (r && r.aviso) problems.push(r.aviso);
+    // la foto del día de cuántas quedan, también en un día sin cambios en el tablero
+    const p = photo ? photo(sdir, { now }) : null;
+    if (p && p.aviso) problems.push(p.aviso);
     return r;
   } catch (e) {
     problems.push(`el tablero no se movió solo: ${e.message}`);
