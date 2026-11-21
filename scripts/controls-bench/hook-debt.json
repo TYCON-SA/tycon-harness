@@ -35,6 +35,11 @@
       "script": "advisor-liveness-on-change.js",
       "date": "2026-09-01",
       "reason": "No es un hook de la herramienta: es un ayudante del pre-commit de git del repo de los advisors, y el banco alimenta hooks por STDIN con el payload de un evento — a éste hay que pasarle rutas por ARGUMENTOS, cosa que runner.js no sabe hacer. Su tabla de decisión (la parte que puede romperse en silencio: qué frena, qué avisa, qué deja pasar) SÍ está cubierta, por su propio --selftest con 12 casos, incluidos los dos que garantizan que la plomería y una confirmación mixta NO frenan un commit. Se salda cuando runner.js sepa pasar argv, o escribiéndole al script una entrada por stdin sólo para el banco — lo segundo sería inventar una superficie que nadie usa, así que la deuda es a propósito."
+    },
+    {
+      "script": "node-missing-launcher.sh",
+      "date": "2026-11-21",
+      "reason": "Es el lanzador del freno de publicación, no un freno propio: con Node le pasa el control sin tocar nada, y sin Node decide por el terreno del freno. Sus casos corren en hook-failure-critical.test.js (T14, T15) con el lanzador real y un PATH sin Node; los del banco son los de los frenos ante fallos (frenos-ante-fallos), con los otros frenos críticos."
     }
   ]
 }
