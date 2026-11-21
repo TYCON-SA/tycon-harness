@@ -65,14 +65,30 @@ function borrarContador(sid) {
     if (e && e.code !== 'ENOENT') process.stderr.write(`[tycon-pipeline] no pude borrar el contador de la ejecución perdida (${e.code || e.message})\n`);
   }
 }
+// El tope de cierres seguidos cuando el contador propio no se lee ni se anota (scripts/lib/stop-cap.js): sin él, el
+// cierre retendría siempre. Sin la biblioteca, retiene como siempre.
+function topeSinContador(sid, stopHookActive) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'stop-cap.js')).otraVuelta({ freno: 'on-stop-dod-gate', sesion: sid, stopHookActive });
+  } catch (_) { return { retener: true, vuelta: null }; }
+}
+/** Sin contador: `true` (deja cerrar) pasado el tope, `false` (frena) si no. Lo dice por la salida de errores. */
+function sinContador(sid, stopHookActive, que) {
+  const v = topeSinContador(sid, stopHookActive);
+  if (!v.retener) {
+    process.stderr.write(`[tycon-pipeline] ${que}, y ${v.motivo}: deja cerrar\n`);
+    return true;
+  }
+  process.stderr.write(`[tycon-pipeline] ${que}: frena${v.vuelta ? ` (cierre ${v.vuelta} seguido)` : ''}\n`);
+  return false;
+}
 /** ¿Este cierre ya frenó una vez por la misma apertura? Si sí, borra el contador; si no, lo anota en 1. */
-function yaFreno(sid, p) {
+function yaFreno(sid, p, stopHookActive = false) {
   const f = contadorPath(sid);
   let c = null;
   try { c = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {
     if (e && e.code !== 'ENOENT' && !(e instanceof SyntaxError)) {
-      process.stderr.write(`[tycon-pipeline] no pude leer el contador de la ejecución perdida (${e.code || e.message}): frena\n`);
-      return false;
+      return sinContador(sid, stopHookActive, `no pude leer el contador de la ejecución perdida (${e.code || e.message})`);
     }
   }
   if (c && c.sesion === String(sid) && c.apertura === aperturaDe(p) && Number(c.frenos) >= 1) {
@@ -85,7 +101,7 @@ function yaFreno(sid, p) {
     fs.writeFileSync(tmp, JSON.stringify({ sesion: String(sid), apertura: aperturaDe(p), frenos: 1, at: new Date().toISOString() }) + '\n', 'utf8');
     fs.renameSync(tmp, f);
   } catch (e) {
-    process.stderr.write(`[tycon-pipeline] no pude anotar el contador de la ejecución perdida (${e.code || e.message}): frena igual\n`);
+    return sinContador(sid, stopHookActive, `no pude anotar el contador de la ejecución perdida (${e.code || e.message})`);
   }
   return false;
 }
@@ -236,7 +252,7 @@ function main() {
     if (!p) { borrarContador(sessionId); }
     else {
       const texto = or.cartel(p);
-      if (yaFreno(sessionId, p)) {
+      if (yaFreno(sessionId, p, event.stop_hook_active === true)) {
         try {
           require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'story-gate', status: 'allowed', kind: 'ejecucion-perdida-espera', story: p.story || null, reason: `el turno se cierra a la segunda con la ejecución perdida (${p.caso}): ${p.falta}` });
         } catch (e) { process.stderr.write(`[tycon-pipeline] no pude anotar la espera de la ejecución perdida (${e.message})\n`); }

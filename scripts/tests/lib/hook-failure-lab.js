@@ -33,7 +33,8 @@ function lab(t) {
   const estado = path.join(casa, '.claude', '.tycon-pipeline');
   fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
   const env = (extra = {}) => {
-    const e = { ...process.env, HOME: casa, USERPROFILE: casa, TYCON_GUIDES_HEAL: '0', ...extra };
+    // la cuenta de cierres seguidos de los frenos del cierre (lib/stop-cap.js) también vive en el laboratorio
+    const e = { ...process.env, HOME: casa, USERPROFILE: casa, TYCON_GUIDES_HEAL: '0', TYCON_STOP_CAP_DIR: path.join(dir, 'stop-cap'), ...extra };
     for (const k of ['TYCON_HOME', 'CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) if (!(k in extra)) delete e[k];
     return e;
   };

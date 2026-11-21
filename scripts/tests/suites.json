@@ -4899,6 +4899,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/stop-cap.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/public-push-guard-commit.test.js",
       "requiere": []
     },

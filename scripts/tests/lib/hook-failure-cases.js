@@ -76,7 +76,7 @@ const CASOS = {
     'borra-carpeta-sin-leer-aperturas': (L) => {
       registroIlegible(L);
       const carpeta = path.join(L.dir, 'algo');
-      fs.mkdirSync(carpeta);
+      fs.mkdirSync(carpeta, { recursive: true });
       return L.correr(BASH_WRITE, bash(`rm -rf ${carpeta}`, L.dir));
     },
   },
@@ -104,25 +104,25 @@ const CASOS = {
     },
     'carpeta-no-es-repo-se-reclama': (L) => {
       const dir = path.join(L.dir, 'no-es-repo');
-      fs.mkdirSync(dir);
+      fs.mkdirSync(dir, { recursive: true });
       // stable-data: el merge propio tiene que ser reciente para que el freno lo reclame; la hora no se compara
       fs.writeFileSync(path.join(L.estado, 'retro-pending.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: SID, repoPath: dir, sha: 'a'.repeat(40), branch: 'main' })}\n`);
       return L.correr(RETRO, stop({ cwd: dir }), { cwd: dir, extra: { TYCON_RETRO_ASK_PR: '0' } });
     },
-    'contador-de-bloqueos-ilegible-frena-sin-tope': (L) => {
+    'contador-de-bloqueos-ilegible': (L) => {
       const dir = path.join(L.dir, 'no-es-repo');
-      fs.mkdirSync(dir);
+      fs.mkdirSync(dir, { recursive: true });
       // stable-data: el merge propio tiene que ser reciente para que el freno lo reclame; la hora no se compara
       fs.writeFileSync(path.join(L.estado, 'retro-pending.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: SID, repoPath: dir, sha: 'a'.repeat(40), branch: 'main' })}\n`);
-      fs.mkdirSync(path.join(L.estado, `retro-gate-${SID}.count`));
-      // pasa el tope de tres bloqueos seguidos: sin contador, retiene igual
-      return [1, 2, 3, 4].map(() => L.correr(RETRO, stop({ cwd: dir }), { cwd: dir, extra: { TYCON_RETRO_ASK_PR: '0' } }));
+      fs.mkdirSync(path.join(L.estado, `retro-gate-${SID}.count`), { recursive: true });
+      // sin contador retiene, hasta el tope de la carpeta temporal (stop-cap.test.js)
+      return L.correr(RETRO, stop({ cwd: dir }), { cwd: dir, extra: { TYCON_RETRO_ASK_PR: '0' } });
     },
   },
   'unpushed-work-notice.js': {
     'repo-no-escaneado-retiene': (L) => {
       const dir = path.join(L.dir, 'no-es-repo');
-      fs.mkdirSync(dir);
+      fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(L.estado, `unpushed-commits-${SID}.jsonl`), `${JSON.stringify({ kind: 'commit', repo: dir, sha: 'a'.repeat(40) })}\n`);
       return [L.correr(UNPUSHED, stop()), L.correr(UNPUSHED, stop())];
     },
@@ -138,7 +138,7 @@ const CASOS = {
       r.git('commit', '-q', '-m', 'sin subir');
       const sha = r.git('rev-parse', 'HEAD').stdout.trim();
       fs.writeFileSync(path.join(L.estado, `unpushed-commits-${SID}.jsonl`), `${JSON.stringify({ kind: 'commit', repo: r.dir, sha })}\n`);
-      fs.mkdirSync(path.join(L.estado, 'unpushed-notice.json'));
+      fs.mkdirSync(path.join(L.estado, "unpushed-notice.json"), { recursive: true });
       return [L.correr(UNPUSHED, stop()), L.correr(UNPUSHED, stop())];
     },
     'carpeta-borrada-sin-poder-mirarla': (L) => {
@@ -195,7 +195,7 @@ const CONTROLES = {
     'ejecucion-perdida-sin-poder-revisar': (L) => L.correr(BASH_WRITE, bash('touch x', L.dir)),
     'borra-carpeta-sin-leer-aperturas': (L) => {
       const carpeta = path.join(L.dir, 'algo');
-      fs.mkdirSync(carpeta);
+      fs.mkdirSync(carpeta, { recursive: true });
       return L.correr(BASH_WRITE, bash(`rm -rf ${carpeta}`, L.dir));
     },
   },
@@ -225,13 +225,14 @@ const CONTROLES = {
       fs.writeFileSync(path.join(L.estado, 'retro-pending.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: SID, repoPath: dir, sha: 'a'.repeat(40), branch: 'main' })}\n`);
       return L.correr(RETRO, stop({ cwd: L.dir }), { cwd: L.dir, extra: { TYCON_RETRO_ASK_PR: '0' } });
     },
-    // con el contador legible, el cuarto cierre seguido deja cerrar (el tope es tres)
-    'contador-de-bloqueos-ilegible-frena-sin-tope': (L) => {
+    // con el contador legible y en su tope de tres, el cierre deja pasar
+    'contador-de-bloqueos-ilegible': (L) => {
       const dir = path.join(L.dir, 'no-es-repo');
-      fs.mkdirSync(dir);
+      fs.mkdirSync(dir, { recursive: true });
       // stable-data: el merge propio tiene que ser reciente para que el freno lo reclame; la hora no se compara
       fs.writeFileSync(path.join(L.estado, 'retro-pending.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: SID, repoPath: dir, sha: 'a'.repeat(40), branch: 'main' })}\n`);
-      return [1, 2, 3, 4].map(() => L.correr(RETRO, stop({ cwd: dir }), { cwd: dir, extra: { TYCON_RETRO_ASK_PR: '0' } })).pop();
+      fs.writeFileSync(path.join(L.estado, `retro-gate-${SID}.count`), '3');
+      return L.correr(RETRO, stop({ cwd: dir }), { cwd: dir, extra: { TYCON_RETRO_ASK_PR: '0' } });
     },
   },
   'unpushed-work-notice.js': {

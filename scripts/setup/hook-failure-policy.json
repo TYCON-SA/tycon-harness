@@ -410,7 +410,7 @@
         },
         {
           "camino": "contador-de-frenos-ilegible-retiene",
-          "dispara": "el contador de veces que retuvo no se puede leer ni anotar: retiene en cada cierre, sin tope"
+          "dispara": "el contador de veces que retuvo no se puede leer ni anotar: retiene, hasta tres cierres seguidos (el tope de lib/stop-cap.js)"
         }
       ],
       "fail_closed_new": [],
@@ -551,8 +551,8 @@
           "dispara": "la carpeta del merge existe y no es un repo, o git no contesta sobre main: se reclama"
         },
         {
-          "camino": "contador-de-bloqueos-ilegible-frena-sin-tope",
-          "dispara": "el contador de bloqueos no se puede leer ni escribir: retiene en cada cierre, sin tope"
+          "camino": "contador-de-bloqueos-ilegible",
+          "dispara": "el contador de bloqueos no se puede leer ni escribir: retiene, hasta tres cierres seguidos (el tope de lib/stop-cap.js)"
         }
       ],
       "fail_closed_new": [],
@@ -632,11 +632,11 @@
       "fail_closed_today": [
         {
           "camino": "repo-no-escaneado-retiene",
-          "dispara": "git no contesta sobre un repo del registro: retiene en cada cierre, sin memoria ni tope"
+          "dispara": "git no contesta sobre un repo del registro: retiene, hasta tres cierres seguidos (el tope de lib/stop-cap.js)"
         },
         {
           "camino": "estado-de-avisados-no-anotable-retiene",
-          "dispara": "el archivo de lo ya avisado no se puede escribir: el mismo trabajo retiene en cada cierre"
+          "dispara": "el archivo de lo ya avisado no se puede escribir: el mismo trabajo retiene, hasta tres cierres seguidos (el tope de lib/stop-cap.js)"
         },
         {
           "camino": "carpeta-borrada-sin-poder-mirarla",

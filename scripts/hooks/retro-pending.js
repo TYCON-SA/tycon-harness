@@ -154,6 +154,7 @@ const GIT_PUSH = destinoGit.regexDeGit(destinoGit.VERBOS_QUE_PUBLICAN);
 // Quién es un repo DEL arnés: lo dice el remoto `origin`, no la carpeta. Criterio ÚNICO,
 // compartido con unpushed-work-notice.js y con el portón de carril de agent-skills. Se copia al sandbox del banco junto con el hook (setups).
 const { juzgarRepo, identidadRemoto, resolverRemoto, mismaIdentidad } = require(path.join(__dirname, '..', 'lib', 'harness-repo.js'));
+const tope = require(path.join(__dirname, '..', 'lib', 'stop-cap.js'));
 // El cuerpo de un heredoc que NO va a un shell es TEXTO, no comandos. Caso: un `node - <<'EOF'` cuyo cuerpo trae, dentro de un
 // string, `cd ${dir} && … && git push -q origin main`. El recorrido por sentencias corta por `&&` sin mirar dónde
 // está, así que vería un `cd` a una variable que nadie define seguido de un `git push … main`: aviso de «no pude
@@ -1519,7 +1520,7 @@ function gate(event) {
   // El tope de bloqueos cuenta CONSECUTIVOS: un cierre limpio lo resetea. Vitalicio, cada nudge
   // legítimo ya cumplido gastaría presupuesto y del 4º merge en adelante la sesión no frenaría nunca
   // más — justo las sesiones largas, que son las que mergean varias veces.
-  const limpio = () => { try { fs.unlinkSync(stateFile); } catch { /* no existía */ } };
+  const limpio = () => { try { fs.unlinkSync(stateFile); } catch { /* no existía */ } tope.soltar({ freno: 'retro-pending', sesion: sid }); };
   resolverPedidos();
   const pend = pendingEntries();
   const mine = pend.filter((e) => e.sessionId === sid);
@@ -1549,7 +1550,7 @@ function gate(event) {
   const mineCorta = mine.filter(pagable);
   const foreignCorta = foreign.filter((e) => pagable(e) && trabajaEnElRepo(e, cwd));
   if (!mineCorta.length && !foreignCorta.length) { limpio(); avisarSinCortar(avisos, sid, safe); return; }
-  return cortar(mineCorta, foreignCorta, avisos, { sid, safe, stateFile });
+  return cortar(mineCorta, foreignCorta, avisos, { sid, safe, stateFile, stopHookActive: event.stop_hook_active === true });
 }
 
 // ¿El latido puede pagar la entrada? No, sólo cuando se sabe: su carpeta ya no existe, o es un repo que no conoce el
@@ -1583,9 +1584,11 @@ function avisarSinCortar(avisos, sid, safe) {
   }) + '\n');
   try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.writeFileSync(marca, clave); } catch { /* sin marca, se vuelve a avisar */ }
 }
-function cortar(mine, foreign, avisos, { sid, safe, stateFile }) {
+function cortar(mine, foreign, avisos, { sid, safe, stateFile, stopHookActive = false }) {
   let blocks = 0;
-  try { blocks = Number(fs.readFileSync(stateFile, 'utf8')) || 0; } catch { blocks = 0; }
+  // un contador que existe y no se lee no cuenta: sin el tope de abajo, retendría en cada cierre
+  let sinContador = false;
+  try { blocks = Number(fs.readFileSync(stateFile, 'utf8')) || 0; } catch (e) { blocks = 0; if (!e || e.code !== 'ENOENT') sinContador = true; }
   if (blocks >= MAX_BLOCKS) {
     process.stderr.write(`⚠ retro-pending: ${mine.length + foreign.length} merge(s) a main siguen sin su archivo de retrospectiva tras ${MAX_BLOCKS} bloqueos seguidos — se deja cerrar; el aviso de arranque lo va a seguir reclamando.\n`);
     avisarSinCortar(avisos, sid, safe);
@@ -1612,7 +1615,16 @@ function cortar(mine, foreign, avisos, { sid, safe, stateFile }) {
     lines.push(`  Además, ${avisos.length} que esta sesión no puede saldar (no cortan; los paga quien trabaja en ese repo):`);
     for (const e of avisos) lines.push(`    · ${carpetaVigente(e)} @ ${e.sha} (${deQuien(e, sid)})`);
   }
-  try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.writeFileSync(stateFile, String(blocks + 1)); } catch { /* fail-open */ }
+  try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.writeFileSync(stateFile, String(blocks + 1)); } catch { sinContador = true; }
+  // sin su contador, el tope lo lleva la carpeta temporal del sistema (lib/stop-cap.js)
+  if (sinContador) {
+    const v = tope.otraVuelta({ freno: 'retro-pending', sesion: sid, stopHookActive });
+    if (!v.retener) {
+      process.stderr.write(`⚠ retro-pending: ${mine.length + foreign.length} merge(s) a main siguen sin su archivo de retrospectiva y no pude leer ni anotar el contador de bloqueos (${stateFile}): ${v.motivo} — se deja cerrar; el aviso de arranque lo va a seguir reclamando.\n`);
+      avisarSinCortar(avisos, sid, safe);
+      return;
+    }
+  }
   process.stdout.write(JSON.stringify({
     decision: 'block',
     reason: `⛔ retro-pending: hay ${mine.length + foreign.length} merge(s) a main sin su archivo de retrospectiva. Corré el latido (un segundo, sin modelo) por cada uno antes de cerrar el turno y commiteá su salida con \`chore(retro …)\` — paso 10b de /tycon-merge-to-main:\n${lines.join('\n')}\n  Lo que salda cada pendiente es el archivo que escribe el latido; el tycon-retrospective-capturer se usa sólo si el dev pide «retro con modelo» (y en ese caso escribe él el archivo: no hace falta además el latido).\nBloqueo ${blocks + 1}/${MAX_BLOCKS}.`,

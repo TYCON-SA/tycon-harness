@@ -77,6 +77,7 @@ const { execFileSync } = require('child_process');
 // Criterio ÚNICO de "repo del arnés", compartido con retro-pending.js y el portón de carril.
 // Copiado al sandbox del banco junto con el hook (setups).
 const { esRepoDelArnes } = require(path.join(__dirname, '..', 'lib', 'harness-repo.js'));
+const tope = require(path.join(__dirname, '..', 'lib', 'stop-cap.js'));
 
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const STATE_FILE = path.join(STATE_DIR, 'unpushed-notice.json');
@@ -108,8 +109,9 @@ function underArnes(root) {
 function loadState() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) || {}; } catch { return {}; }
 }
+/** Guarda lo ya avisado; `false` si no pudo (el mismo aviso volvería en cada cierre). */
 function saveState(s) {
-  try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.writeFileSync(STATE_FILE, JSON.stringify(s)); } catch { /* fail-open */ }
+  try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.writeFileSync(STATE_FILE, JSON.stringify(s)); return true; } catch { return false; }
 }
 const FORMA_STORY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,24}$/;
 // Vencimientos: los MISMOS que usa el portón de carril (story-gate-io.js → STALE_HOURS) y la purga de
@@ -550,14 +552,23 @@ function stop(event) {
     }
   }
   state.stopSeen = prune(seen);
-  saveState(state);
-  if (!own.length && !foreign.length && !unknown.length && !problems.length && !gone.length) return;
+  const guardado = saveState(state);
+  if (!own.length && !foreign.length && !unknown.length && !problems.length && !gone.length) { tope.soltar({ freno: 'unpushed-work-notice', sesion: sid }); return; }
   const parts = [];
   if (own.length) parts.push(`⛔ trabajo sin subir: esta sesión commiteó y quedaron commits que NO están en el remoto:\n${own.join('\n')}\nSi es WIP a propósito, decíselo al dev en una línea y cerrá (este aviso no se repite para la misma rama). Si es una entrega, falta el push: decíselo al dev y pusheá sólo con su OK — caso FRESNO Story 1.1 (2026-08-25): el backend quedó solo local y el front se promovió igual.`);
   if (foreign.length) parts.push(`⚠️ hay commits sin subir que esta sesión NO hizo (otra sesión de Claude/Codex, el dev desde la terminal, o commits anteriores a este registro):\n${foreign.join('\n')}\n🔴 NO los revertas, NO los pushees ni los toques: no son tuyos. Decíselo al dev en una línea y cerrá — si SABÉS que los hiciste vos (p. ej. con sha reescrito), decíselo igual y que decida él; no decidas solo. Caso 2026-08-31: un agente revirtió y pusheó el commit de prueba de otra sesión porque este aviso lo llamaba suyo.`);
   if (unknown.length) parts.push(`⚠️ commits sin subir cuya autoría no se pudo determinar (git no respondió a tiempo):\n${unknown.join('\n')}\nNo los toques; decíselo al dev y que decida.`);
   if (problems.length) parts.push(`⚠️ repos que no se pudieron escanear (esto NO es verde):\n${problems.join('\n')}`);
   if (gone.length) parts.push(`⚠️ carpetas de trabajo que ya no existen (este aviso sale una sola vez por carpeta):\n${gone.join('\n')}\nSi esos commits ya entraron por otra rama, no hace falta nada; si no, decíselo al dev en una línea.`);
+  // un repo que no se pudo mirar no queda en la memoria de lo avisado, y sin poder guardarla nada queda: los dos
+  // volverían en cada cierre. El tope de cierres seguidos (lib/stop-cap.js) deja cerrar pasada la tercera, con el aviso
+  if (problems.length || !guardado) {
+    const v = tope.otraVuelta({ freno: 'unpushed-work-notice', sesion: sid, stopHookActive: event.stop_hook_active === true });
+    if (!v.retener) {
+      process.stdout.write(JSON.stringify({ systemMessage: `${parts.join('\n\n')}\n\n(No retengo más el cierre: ${v.motivo}${guardado ? '' : `; no pude guardar lo ya avisado en ${STATE_FILE}`}.)` }) + '\n');
+      return;
+    }
+  }
   process.stdout.write(JSON.stringify({ decision: 'block', reason: parts.join('\n\n') }) + '\n');
 }
 
