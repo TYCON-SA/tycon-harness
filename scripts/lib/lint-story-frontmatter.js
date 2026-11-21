@@ -536,6 +536,23 @@ function inRemoteMain(root, p) {
 }
 
 /**
+ * Dónde preguntarle a git por una ruta de la historia: cada raíz con la ruta tal cual y, si la ruta empieza con el
+ * nombre de un repo («Backend/src/…»), ese repo con el resto. Dentro del repo hermano la ruta con su nombre adelante no
+ * existe: sin quitárselo, un clon atrasado da por inventado un archivo que ya está en su rama principal.
+ */
+function lugaresEnElRemoto(roots, p) {
+  const [top, ...resto] = p.split('/');
+  const lugares = roots.map((r) => [r, p]);
+  if (!resto.length) return lugares;
+  const rest = resto.join('/');
+  for (const r of roots) {
+    if (path.basename(r) === top) lugares.push([r, rest]);
+    else if (fs.existsSync(path.join(r, top, '.git'))) lugares.push([path.join(r, top), rest]);
+  }
+  return lugares;
+}
+
+/**
  * Las partes del bloque `pipelines:` cuyo `files:` no es una lista: un valor suelto en el renglón (`files: src/a.js`), o
  * una clave vacía sin ítems debajo. `files: [a, b]` y la lista con `- ruta` valen. Devuelve los nombres de las partes.
  */
@@ -640,7 +657,7 @@ function checkStory(storyFile, content) {
     const top = p.split('/')[0];
     if (!(p.includes('/') && roots.some((r) => probe(path.join(r, top)) === 'yes'))) { unsure.push(p); continue; }
     // antes de darla por inventada: un clon atrasado no tiene un archivo que ya está en la rama principal de su remoto
-    (roots.some((r) => inRemoteMain(r, p) !== 'no') ? unsure : missing).push(p);
+    (lugaresEnElRemoto(roots, p).some(([r, q]) => inRemoteMain(r, q) !== 'no') ? unsure : missing).push(p);
   }
   return { missing, unsure };
 }
