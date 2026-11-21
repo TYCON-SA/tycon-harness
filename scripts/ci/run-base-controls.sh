@@ -826,11 +826,18 @@ function cmdRun() {
     console.log(`base-controls: base ${short(a.base)} · ancestro ${short(a.mb)} · punta ${short(a.tip)}${a.prHead ? ` (merge; el pedido es ${short(a.prHead)})` : ''} · los controles y su regla salen de la base`);
     // el inventario: el de la base contra la base (sus guiones están), y el del pedido contra el pedido (sus controles nuevos tienen entrada)
     const baseProblems = inventoryProblems(a.root, a.base, a.inv);
-    for (const p of baseProblems) console.log(`❌ base-controls: inventario de la base — ${p}`);
-    if (baseProblems.length) reasons.push('el inventario de la base no cuadra');
     const tipRead = readInventory(a.root, a.tip);
+    const tipProblems = tipRead.inv ? inventoryProblems(a.root, a.tip, tipRead.inv) : null;
+    // el inventario de la base roto frena, salvo que lo único roto sea un control inventariado que nada corre todavía y el
+    // pedido lo deje cuadrando: un control nuevo que main inventarió antes que su llamada trabaría todo pedido, también el
+    // que lo arregla, y un control de más no afloja nada. Cualquier otro problema de main (un control sin inventariar, un
+    // dato sin clasificar) deja una regla sin proteger en la pasada de la base: sigue en rojo
+    const notRunYet = (p) => p.startsWith('ningún paso corre ');
+    const fixedByPr = baseProblems.length > 0 && baseProblems.every(notRunYet) && Array.isArray(tipProblems) && tipProblems.length === 0;
+    for (const p of baseProblems) console.log(`${fixedByPr ? '⚠️' : '❌'} base-controls: inventario de la base — ${p}`);
+    if (fixedByPr) console.log('⚠️ base-controls: el inventario de la base no cuadra y el del pedido sí: este pedido lo arregla, no frena por eso');
+    else if (baseProblems.length) reasons.push('el inventario de la base no cuadra');
     if (tipRead.inv) {
-      const tipProblems = inventoryProblems(a.root, a.tip, tipRead.inv);
       // los nombres y rutas salen del inventario del pedido: un salto de línea no arma una línea propia
       for (const p of tipProblems) console.log(`❌ base-controls: inventario del pedido — ${safe(p)}`);
       if (tipProblems.length) reasons.push('el inventario del pedido no cuadra');
