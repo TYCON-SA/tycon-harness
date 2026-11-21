@@ -192,6 +192,22 @@ test('Rules_OnDemand_FirstCliUse_OncePerSession @story-8.85 @ac-35', () => {
   assert.ok(!/integración github/.test(gancho(om, bash('ses-m2', 'gh pr view 3')).ctx));
 });
 
+test('Rules_TimeoutConOpciones_YSubagenteAparte', () => {
+  const N = require(path.join(ROOT, 'scripts', 'lib', 'extension-notices.js'));
+  // `-k 5` y `-s KILL` llevan su valor aparte: la duración es la palabra que sigue
+  assert.ok(N.matchesCommand('timeout -k 5 10 az pipelines runs list', 'az pipelines'));
+  assert.ok(N.matchesCommand('timeout -s KILL 10 gh pr checks 7', 'gh pr'));
+  assert.ok(N.matchesCommand('timeout --kill-after=5 --foreground 10 gh pr checks 7', 'gh pr'));
+  assert.ok(!N.matchesCommand('timeout -k 5 10 gh repo view pr', 'gh pr'));
+  // un subagente comparte la sesión con su madre: lo que se le dijo a él, a ella se le dice igual
+  const o = org({ platform: { default: 'azure-devops' } });
+  const hijo = gancho(o, bash('ses-s', 'az pipelines runs list', { agent_id: 'agente-1' }));
+  sinDecision(hijo);
+  assert.ok(dijoAdo(hijo), hijo.raw);
+  assert.ok(!dijoAdo(gancho(o, bash('ses-s', 'az pipelines runs list', { agent_id: 'agente-1' }))), 'al mismo subagente, una vez');
+  assert.ok(dijoAdo(gancho(o, bash('ses-s', 'az pipelines runs list'))), 'a la madre, aunque ya se lo dijo a su subagente');
+});
+
 test('Rules_OtherPlatformNeverShown @story-8.85 @ac-35', () => {
   const chosen = (o) => {
     const r = spawnSync(process.execPath, [PLATFORM, 'chosen'], { env: o.env, encoding: 'utf8' });
