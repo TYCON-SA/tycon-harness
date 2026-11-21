@@ -149,14 +149,23 @@ CLAUDE_OFF=0; [[ "${TYCON_HARNESS_CLAUDE:-}" == "off" ]] && CLAUDE_OFF=1
 # Con el mantenimiento corriendo desde el arranque de LAS DOS herramientas, abrir Claude Code y Codex juntos lanza
 # dos instaladores a la vez: uno sincroniza el espejo AGENTS.md mientras el otro ya está midiendo la paridad → rojo
 # transitorio "agents-md" en cada reinicio. Un solo instalador por máquina a la vez; el segundo se va en silencio (el
-# que corre hace el mismo trabajo). --check no toma el lock: no escribe. Lock por mkdir (atómico) + mtime: uno viejo
-# (>10 min: crash/kill) se pisa.
+# que corre hace el mismo trabajo). --check no toma el lock: no escribe. Lock por mkdir (atómico) + mtime + pid: uno
+# viejo (>10 min) con su dueño muerto (crash/kill) se pisa; con el dueño vivo, a la hora.
 # Lanzado por `scripts/setup/harness.js` el candado ya lo tiene el padre (TYCON_HARNESS_LOCK_HELD=1) y acá no se toma
 # otro; corrido suelto lo toma.
 if [[ "$CHECK_ONLY" != "1" && "${TYCON_HARNESS_LOCK_HELD:-0}" != "1" ]]; then
   INSTALL_LOCK="$STATE_DIR/install-tycon-hooks.lock"
   mkdir -p "$(dirname "$INSTALL_LOCK")" 2>/dev/null || true
-  _lock_stale() { [[ -n "$(find "$INSTALL_LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]]; }
+  # viejo es más de 10 min con su dueño (el pid anotado) muerto; con el dueño vivo, recién a la hora: un instalador
+  # colgado no frena a los demás para siempre
+  _lock_stale() {
+    [[ -n "$(find "$INSTALL_LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]] || return 1
+    [[ -n "$(find "$INSTALL_LOCK" -maxdepth 0 -mmin +60 2>/dev/null)" ]] && return 0
+    local _dueno
+    _dueno="$(cat "$INSTALL_LOCK/pid" 2>/dev/null)"
+    [[ "$_dueno" =~ ^[0-9]+$ ]] && kill -0 "$_dueno" 2>/dev/null && return 1
+    return 0
+  }
   if ! mkdir "$INSTALL_LOCK" 2>/dev/null; then
     # Otro instalador lo tiene. Si es FRESCO, está corriendo ahora mismo: me voy, el trabajo lo
     # hace ése. Si es VIEJO (>10 min: crash/SIGKILL sin trap), hay que tomarlo — y tomarlo es
