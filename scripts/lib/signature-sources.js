@@ -681,7 +681,9 @@ function loQueManda(manda, cwd) {
 function deSaltearLaCola(comando, cwd) {
   if (comando == null) return null;
   let hs;
-  try { hs = require('./ci-bypass.js').leer(String(comando)).filter((h) => h.legible); } catch (_) { return null; }
+  try { hs = require('./ci-bypass.js').leer(String(comando)); } catch (_) { return null; }
+  // una parte que el lector no lee entera puede ser un merge: el cuadro de siempre, con la alarma
+  if (hs.some((h) => !h.legible)) return null;
   const conjuntos = hs.filter((h) => h.conjunto);
   if (!conjuntos.length) return null;
   const queHace = [];

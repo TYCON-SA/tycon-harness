@@ -553,3 +553,14 @@ test('T18 CuadroDelConjunto_LeeElCuerpoSinColgarseNiMentir', (t) => {
   const dos = partes('gh api -X PUT repos/o/r/rulesets/12 -f name=a; gh api -X PUT repos/o/r/rulesets/13 --input b.json').queHace.join('|');
   assert.match(dos, /lo que manda: al 12: name; al 13: rules\[deletion\]/);
 });
+
+// Un comando con un conjunto de reglas a la vista y otra parte que el lector no lee entera (puede ser un merge con
+// --admin): el cuadro de siempre, con la alarma, no el texto suave del conjunto de reglas.
+test('T19 ConjuntoDeReglasConUnaParteEscondida_ElCuadroDeSiempre', () => {
+  const fuentes = require(path.join(RAIZ, 'scripts', 'lib', 'signature-sources.js'));
+  for (const comando of ['gh api -X PUT repos/o/r/rulesets/1 -f a=b && gh pr merge 5 $FLAG',
+    'gh api -X PUT repos/o/r/rulesets/1 -f a=b && az repos pr update --id 5 --bypass-policy $X']) {
+    assert.ok(leer(comando).some((h) => !h.legible), `${comando}: el lector no vio la parte escondida`);
+    assert.strictEqual(fuentes.partesDe({ firma: FIRMA, comando, cwd: os.tmpdir() }), null, comando);
+  }
+});
