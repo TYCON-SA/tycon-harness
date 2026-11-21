@@ -296,9 +296,11 @@ test('T11 BigScript_VariableAsArgument_NotAnInterpreter', () => {
   for (const command of [
     'git diff $(git merge-base HEAD origin/main) -- scripts/grande.test.js',
     'F=$(mktemp); wc -l $F scripts/grande.test.js',
-    'npx eslint $FLAGS scripts/grande.test.js',
+    'eslint $FLAGS scripts/grande.test.js',
     'echo $X scripts/grande.test.js',
   ]) assert.strictEqual(correr(command), '', command);
+  // con un programa que puede correr sus argumentos (`npx`), lo que no se lee es el peor caso
+  assert.strictEqual(correr('npx eslint $FLAGS scripts/grande.test.js'), FRENO, 'npx con una variable');
   // detrás de un lanzador, la variable sigue siendo el programa
   assert.strictEqual(correr('N=$(command -v node); timeout 200 $N scripts/grande.test.js'), FRENO, 'detrás de timeout');
 });
