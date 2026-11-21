@@ -1,0 +1,78 @@
+{
+  "__doc": "Con la marca del dueño ausente puesta (scripts/lib/owner-away.js, `owner-away.json` en la carpeta del estado): no se edita a mano la carpeta de Claude Code, que pide una confirmación que nadie da (on-owner-away-claude-dir.js, en el despachador de ediciones), salvo jobs/ y projects/; y el cuadro de opciones se niega en cualquier sesión, con qué hacer (background-question-guard.js). Sin marca, nada cambia. La marca se pone con la hora de ahora: una de más de 24 h vence sola.",
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js → on-owner-away-claude-dir (con el dueño ausente, no se edita la carpeta de Claude Code)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "ausente-escribe-una-skill-de-claude-se-niega",
+          "type": "must-block",
+          "_por_que": "con la marca puesta, escribir en la carpeta de Claude Code pide una confirmación que nadie da: el freno la niega antes y dice qué hacer.",
+          "setup": [
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S\" \"$HOME/.claude/skills/x\"; printf '{\"setAt\":\"%s\",\"quien\":\"bench\",\"frase\":\"me voy\"}\\n' \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\" > \"$S/owner-away.json\""
+          ],
+          "stdin": { "session_id": "bench-away1", "tool_name": "Write", "tool_input": { "file_path": "${SANDBOX_HOME}/.claude/skills/x/SKILL.md", "content": "una skill" } },
+          "expect": { "exit": 2, "stderr_re": ["dueño está ausente", "carpeta de Claude Code"] }
+        },
+        {
+          "id": "ausente-escribe-su-memoria-pasa",
+          "type": "must-not-block",
+          "_por_que": "las memorias (projects/) Claude Code las deja escribir sin preguntar: con la marca puesta, pasan.",
+          "setup": [
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S\" \"$HOME/.claude/projects/p/memory\"; printf '{\"setAt\":\"%s\",\"quien\":\"bench\",\"frase\":\"me voy\"}\\n' \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\" > \"$S/owner-away.json\""
+          ],
+          "stdin": { "session_id": "bench-away2", "tool_name": "Write", "tool_input": { "file_path": "${SANDBOX_HOME}/.claude/projects/p/memory/m.md", "content": "una nota" } },
+          "expect": { "exit": 0, "stderr_not_re": ["dueño está ausente"] }
+        },
+        {
+          "id": "presente-escribe-una-skill-de-claude-pasa",
+          "type": "must-not-block",
+          "_por_que": "sin marca el dueño está: la confirmación de Claude Code la da él, y el freno no aparece.",
+          "setup": [
+            "mkdir -p \"$HOME/.claude/skills/x\""
+          ],
+          "stdin": { "session_id": "bench-away3", "tool_name": "Write", "tool_input": { "file_path": "${SANDBOX_HOME}/.claude/skills/x/SKILL.md", "content": "una skill" } },
+          "expect": { "exit": 0, "stderr_not_re": ["dueño está ausente"] }
+        }
+      ]
+    },
+    {
+      "hook": "background-question-guard.js (con el dueño ausente, el cuadro se niega en cualquier sesión)",
+      "script": "${TCG}/scripts/hooks/background-question-guard.js",
+      "event": "PreToolUse",
+      "matcher": "AskUserQuestion|mcp__spokenly__ask_user_dictation|SendMessage",
+      "cases": [
+        {
+          "id": "ausente-pregunta-con-el-cuadro-se-niega",
+          "type": "must-block",
+          "_por_que": "una pregunta con el cuadro deja la sesión esperando hasta que el dueño vuelve: se niega y se dice que deje la decisión escrita y siga.",
+          "setup": [
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S\"; printf '{\"setAt\":\"%s\",\"quien\":\"bench\",\"frase\":\"hasta mañana\"}\\n' \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\" > \"$S/owner-away.json\""
+          ],
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-away4",
+            "tool_name": "AskUserQuestion",
+            "tool_input": { "questions": [{ "question": "¿Seguimos?", "header": "Seguir", "multiSelect": false, "options": [{ "label": "Sí", "description": "a" }, { "label": "No", "description": "b" }] }] }
+          },
+          "expect": { "exit": 0, "stdout_re": ["\"permissionDecision\":\"deny\"", "dueño está ausente", "Dejá la decisión escrita"] }
+        },
+        {
+          "id": "presente-pregunta-con-el-cuadro-pasa",
+          "type": "must-not-block",
+          "_por_que": "sin marca, la sesión pregunta como siempre.",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-away5",
+            "tool_name": "AskUserQuestion",
+            "tool_input": { "questions": [{ "question": "¿Seguimos?", "header": "Seguir", "multiSelect": false, "options": [{ "label": "Sí", "description": "a" }, { "label": "No", "description": "b" }] }] }
+          },
+          "expect": { "exit": 0, "stdout_not_re": ["permissionDecision"] }
+        }
+      ]
+    }
+  ]
+}

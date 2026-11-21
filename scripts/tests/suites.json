@@ -492,6 +492,12 @@
       "requiere": []
     },
     {
+      "__nota": "con el dueño ausente, no se edita a mano la carpeta de Claude Code (on-owner-away-claude-dir.js): Claude Code pide una confirmación que nadie da.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/owner-away-claude-dir.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la lista única de lo que es código, de lo que es prueba y de las marcas de prueba salteada.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/code-files.test.js",

@@ -142,7 +142,7 @@ function recipe({ home, arnes, env }) {
     // el piso del segundo turno, de la constante de heavy-turn.js: el número vive en un solo lugar
     let floor = null;
     try { floor = require('./heavy-turn.js').SECOND_HEAVY_MIN_FREE_PCT; } catch { /* sin el módulo del turno no hay piso que decir */ }
-    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, second_heavy_min_free_pct: { value: floor, origin: 'sin-valor' }, max_stories_in_cycle: { value: 4, origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
+    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, second_heavy_min_free_pct: { value: floor, origin: 'sin-valor' }, max_stories_in_cycle: { value: 4, origin: 'sin-valor' }, away_signatures: { value: 'on-return', origin: 'sin-valor' }, away_notify: { value: 'never', origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
   }
 }
 
@@ -1288,6 +1288,36 @@ function capChanged(opts, sid, count, cap, problems) {
 }
 
 const askingNoticeFile = (home, sid) => path.join(coordinationDir(home), `asking-notice-${sid}.json`);
+const awayNoticeFile = (home, sid) => path.join(coordinationDir(home), `away-notice-${sid}.json`);
+
+/**
+ * La línea del dueño ausente: sale una vez por cada marca (lib/owner-away.js), con lo que dicen las preferencias de la
+ * organización (`coordination.away_signatures` y `away_notify`). null sin marca o si esta marca ya se anunció.
+ */
+function awayLine(opts, sid, problems) {
+  const home = opts.home || require('os').homedir();
+  let marca = null;
+  try {
+    const g = require(path.join(__dirname, '..', 'lib', 'owner-away.js')).get({ estado: stateDir(home), ahora: opts.now == null ? Date.now() : Number(opts.now) });
+    if (g.problem) problems.push(`la marca de ausente (${g.problem}): cuento al dueño como presente`);
+    marca = g.mark || null;
+  } catch (e) { problems.push(`la marca de ausente (${e.code || e.message}): cuento al dueño como presente`); }
+  if (!marca) return null;
+  if (sid && SAFE_SID.test(String(sid))) {
+    const file = awayNoticeFile(home, sid);
+    let prev = null;
+    try { prev = readJson(file, null); } catch (_) { prev = null; }
+    if (prev && prev.setAt === marca.setAt) return null;
+    try { writeJson(file, { setAt: marca.setAt }); } catch (e) { problems.push(`no pude anotar el aviso del dueño ausente: ${e.code || e.message}`); }
+  }
+  const r = recipe({ home, arnes: opts.arnes, env: opts.env || process.env });
+  const firmas = (r.away_signatures || {}).value === 'hourly'
+    ? 'en la tanda de cada hora'
+    : 'juntas para cuando vuelva, en una sola tanda (por click, de a una; las que tocan los mismos archivos, en un solo pedido)';
+  const avisos = (r.away_notify || {}).value === 'broken-only' ? 'sólo si algo se rompe de verdad' : 'ninguno';
+  const hora = String(marca.setAt).slice(11, 16);
+  return `Coordinación: el dueño está ausente desde las ${hora} UTC. Sin cuadros de opciones (se niegan solos); las firmas que salgan, ${firmas}; avisos por mensajería: ${avisos} (coordination.away_signatures y away_notify).`;
+}
 
 /**
  * Las preguntas directas que esta coordinadora todavía no anunció: una línea por sesión que espera una respuesta de la
@@ -1705,6 +1735,8 @@ function capNotice(opts = {}) {
       lines.push(`Coordinación: la máquina pasó el tope por ${working.length - cap} (${working.length} de ${cap} trabajando: ${names})${newest ? `; la que trabaja hace menos: ${newest.session}` : ''}.`);
     }
   }
+  const ausente = awayLine(opts, sid, problems);
+  if (ausente) lines.push(ausente);
   for (const q of s.quiet.filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${q.session} está quieta hace ${q.minutes} min: cerrala o dale trabajo.`);
   // nada la despierta sola: quien tiene que avisarle cuando se libera el lugar es la coordinadora. Con el mismo criterio
   // que el portón: el pase de una sesión cerrada, o de más de una hora, no ocupa el lugar.

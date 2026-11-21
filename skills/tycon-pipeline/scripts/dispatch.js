@@ -199,6 +199,9 @@ const CHAINS = {
     // Antes del portón de carril, así ve su mensaje. Ver scripts/lib/coordination-writes.js; la consola la mira
     // on-bash-write-gate.js.
     { name: 'on-coordination-write', path: path.join(PIPELINE_SCRIPTS, 'on-coordination-write.js'), steps: ['all'], effect: 'blocks', failMode: 'closed' },
+    // Con el dueño ausente, no se edita a mano la carpeta de Claude Code: pide una confirmación que nadie da. Ver
+    // on-owner-away-claude-dir.js. Si no corre, la edición pasa: el peor caso es la confirmación de siempre.
+    { name: 'on-owner-away-claude-dir', path: path.join(PIPELINE_SCRIPTS, 'on-owner-away-claude-dir.js'), steps: ['all'], effect: 'blocks', failMode: 'open' },
     // Portón de CARRIL: deniega código sin pipeline/ad-hoc, código antes del plan aprobado,
     // y escrituras directas al estado del pipeline. Va PRIMERO: es el más amplio. Ver lib/story-gate.js.
     // `steps` (los pasos del pipeline donde actúa, o 'all') y `effect` (blocks · warns · records) no los usa el

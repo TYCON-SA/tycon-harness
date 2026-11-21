@@ -551,3 +551,29 @@ test('T26 BgGuard_LoQueQuedabaDeLaVuelta2 @story-8.232 @ac-9 @ac-12', (t) => {
   SL.sesiones = () => { throw new Error('sin sesiones'); };
   assert.strictEqual(decidir(maquinaConOtra(t), mensaje(OTRA)), null);
 });
+
+// Caso: con el dueño ausente, una pregunta con el cuadro trabó una sesión 5 h de noche. Con la marca puesta, el cuadro se
+// niega en cualquier sesión (de fondo o no, con coordinadora o sin ella), y la negativa dice qué hacer.
+test('T30 DuenoAusente_CuadroSeNiegaEnCualquierSesion_ConQueHacer — sin marca pasa; ilegible, pasa y se anota', (t) => {
+  // 🔴 mutación: sacar el chequeo de la marca en decidir (entonces la sesión sin coordinadora pregunta y esto falla).
+  const MA = require('../lib/owner-away.js');
+  const toy = casaNueva(t);
+  sesion(toy, 'ses-sola', { nombre: 'Sola', kind: 'interactive' });
+  const ahora = AT + 60000;
+  const dec = (ev) => G.decidir(ev, { home: toy.casa, env: {}, arnes: toy.arnes, ahora });
+  assert.strictEqual(dec(evento('ses-sola')), null, 'sin marca, la sesión pregunta como siempre');
+  assert.strictEqual(MA.set({ home: toy.casa, quien: COORD, frase: 'me voy, seguí en autónomo', ahora: AT }).codigo, 0);
+  const r = dec(evento('ses-sola'));
+  assert.ok(r && r.decision === 'deny', JSON.stringify(r));
+  assert.match(r.reason, /dueño está ausente[\s\S]*Dejá la decisión escrita, con tu recomendación[\s\S]*seguí con lo demás/);
+  assert.ok(dec(evento('ses-sola', 'mcp__spokenly__ask_user_dictation', { question: '¿Sigo?' })), 'el dictado también');
+  assert.ok(dec(evento('ses-sola', 'AskUserQuestion', pregunta('Firma: ¿aprobás? firma plan-approval · sesión ses-sola · código ab12'))), 'un cuadro de firma también');
+  assert.strictEqual(dec(evento('ses-sola', 'ExitPlanMode', {})), null, 'salir del modo plan pasa');
+  // el dueño volvió: la marca se borra y el cuadro pasa
+  MA.clear({ home: toy.casa, motivo: 'volvió', ahora: AT + 120000 });
+  assert.strictEqual(dec(evento('ses-sola')), null);
+  // una marca ilegible: el dueño cuenta como presente, y se anota
+  fs.writeFileSync(path.join(stateDir(toy.casa), MA.ARCHIVO), '{ roto');
+  assert.strictEqual(dec(evento('ses-sola')), null);
+  assert.match(fs.readFileSync(path.join(stateDir(toy.casa), 'hook-errors.log'), 'utf8'), /marca de ausente[\s\S]*cuenta como presente/);
+});

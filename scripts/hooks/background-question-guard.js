@@ -25,6 +25,12 @@
  *           una falla niega. A una sesión con persona delante se le escribe como siempre. Corre en la máquina de quien
  *           manda: un mensaje desde otra máquina no lo ve.
  *
+ * Claude: PreToolUse de AskUserQuestion y del dictado, en CUALQUIER sesión: con la marca del dueño ausente puesta
+ *           (lib/owner-away.js), niega la pregunta. Un cuadro deja la sesión entera esperando hasta que el dueño vuelve (una
+ *           pregunta trabó una sesión 5 h de noche); la negativa dice que deje la decisión escrita, con su recomendación, y
+ *           siga con lo demás. Un cuadro de firma tampoco pasa: con la marca puesta, el dueño no está para darle el click.
+ *           Sin poder leer la marca, el dueño cuenta como presente (lo decide owner-away) y queda anotado.
+ *
  * Toda pregunta, no sólo la de firma: una pregunta libre de la sesión también le llegaba a la persona por una pestaña que
  * no mira. ExitPlanMode no: es la salida del modo plan, y negarla dejaría a la sesión encerrada ahí.
  *
@@ -266,6 +272,28 @@ function decidirBash(d, { home, env }) {
   return { decision: 'deny', forma: forma.forma, reason: require('../lib/bg-permission-shapes.js').textoDeLaNegativa(forma) };
 }
 
+/** La negativa con el dueño ausente: qué hacer en lugar de preguntar. */
+function textoDeLaNegativaAusente(marca) {
+  const hora = typeof marca.setAt === 'string' ? `${marca.setAt.slice(11, 16)} UTC` : 'hace un rato';
+  return [
+    `El dueño está ausente (la marca se puso a las ${hora}): un cuadro deja esta sesión esperando hasta que vuelva.`,
+    'Dejá la decisión escrita, con tu recomendación y lo que se decide en tres renglones (en un archivo, y si hay',
+    'coordinadora, mandale la ruta por SendMessage), y seguí con lo demás. Si es una firma, va a la tanda de cuando vuelva.',
+  ].join(' ');
+}
+
+/** La marca del dueño ausente, o null: sin poder leerla, el dueño cuenta como presente y queda anotado. */
+function marcaDeAusente(home, ahora) {
+  try {
+    const g = require('../lib/owner-away.js').get({ home, ahora });
+    if (g.problem) logError(home, `la marca de ausente (${g.problem}): el dueño cuenta como presente`);
+    return g.mark || null;
+  } catch (e) {
+    logError(home, `la marca de ausente (${(e && e.message) || e}): el dueño cuenta como presente`);
+    return null;
+  }
+}
+
 /**
  * Lo que decide el freno: null (pasa) o `{ decision: 'deny', reason }`. `home`, `env` y `arnes` (el árbol con el perfil del equipo) se pasan en las pruebas.
  */
@@ -281,6 +309,9 @@ function decidir(evento, { home = os.homedir(), env = process.env, arnes, ahora 
     return decidirMensaje({ home, sid, to, env, arnes });
   }
   if (!QUESTION_TOOLS.has(d.tool_name)) return null;
+  // con el dueño ausente nadie contesta el cuadro, en ninguna sesión
+  const ausente = marcaDeAusente(home, ahora);
+  if (ausente) return { decision: 'deny', reason: textoDeLaNegativaAusente(ausente) };
   const sid = d.session_id;
   if (!sid || !/^[\w-]+$/.test(String(sid))) return null;
   const c = coordinadoraDeLaLanzada({ home, sid, env, arnes });
@@ -300,7 +331,7 @@ function decidir(evento, { home = os.homedir(), env = process.env, arnes, ahora 
   return { decision: 'deny', reason: `${base}${plazo}` };
 }
 
-module.exports = { QUESTION_TOOLS, MESSAGE_TOOL, decidir, textoDeLaNegativa, textoDeLaNegativaDelMensaje, coordinadoraDeLaLanzada, esDeFondo };
+module.exports = { QUESTION_TOOLS, MESSAGE_TOOL, decidir, textoDeLaNegativa, textoDeLaNegativaAusente, textoDeLaNegativaDelMensaje, coordinadoraDeLaLanzada, esDeFondo };
 
 if (require.main === module) {
   if (process.env.TYCON_BG_QUESTION_GUARD === '0') process.exit(0);
