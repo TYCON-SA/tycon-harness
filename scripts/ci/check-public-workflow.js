@@ -14,7 +14,8 @@
  * decir lo mismo sale roja, a propósito.
  *
  * LAS REGLAS (un id por regla; una línea por regla rota). Las trece primeras dicen POR QUÉ algo está mal:
- *   triggers             corre en `pull_request`, en `merge_group` (la cola de merge) y en `push` a `main`, y en nada más
+ *   triggers             corre en `pull_request`, en `merge_group` (la cola de merge) y en `push` a `main`, y en nada más;
+ *                        el pedido, también al salir del borrador (`ready_for_review`)
  *   pull-request-target  `pull_request_target` no aparece en ninguna parte (ni en un comentario)
  *   secrets              no lee ningún secreto: ni el contexto de secretos ni el token por otro camino (ni en un comentario)
  *   uses-by-sha          cada `uses:` va fijado por el sha completo (40 hex) de su commit, con el tag como comentario
@@ -36,7 +37,9 @@
  *   after-queue          cada job se saltea en el push a main que hace la cola de merge, y SÓLO en ése: la cola ya probó
  *                        ese commit. La condición es exacta: una que saltea más (todo push, o un pedido) deja
  *                        sin correr un merge directo de un administrador —la salida de urgencia—; el job `public-ci` la
- *                        suma detrás de `always()`, que en los demás eventos sigue mandando
+ *                        suma detrás de `always()`, que en los demás eventos sigue mandando. Los demás jobs además no
+ *                        corren en un pedido en borrador (`github.event.pull_request.draft != true`, que fuera de un
+ *                        pedido es verdadera: la cola nunca se saltea); `public-ci` sí corre ahí, y sale rojo
  * …y la decimocuarta es la red:
  *   shape                las líneas de código del archivo son EXACTAMENTE las de `SHAPE` (abajo), en ese orden
  *
@@ -82,6 +85,15 @@ const INVOCATION = /\bbash\s+(?:scripts\/ci\/public-ci\.sh\b|"\$\{RUNNER_TEMP\}\
  * (quien empuja es su bot). Ese commit ya lo probó la cola; cualquier otro push a main corre entero.
  */
 const AFTER_QUEUE = "github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'";
+/**
+ * La condición de cada job que trabaja (todos menos `public-ci`): la de la cola, y además no corre en un pedido en
+ * borrador. Fuera de un pedido (`push`, `merge_group`) no hay pedido y la primera mitad es verdadera: la cola nunca se
+ * saltea. `public-ci` no la lleva: en un borrador corre y sale rojo, porque un chequeo salteado cuenta como aprobado.
+ */
+const NOT_DRAFT = 'github.event.pull_request.draft != true';
+const JOB_IF = `${NOT_DRAFT} && (${AFTER_QUEUE})`;
+/** El disparador de un pedido: los de siempre más `ready_for_review`, que corre todo al sacarlo del borrador. */
+const PR_TYPES = ['opened', 'synchronize', 'reopened', 'ready_for_review'];
 
 /**
  * El freno de un pedido sin el guion de la revisión en la base: rojo «no pude correr», nunca los controles del pedido.
@@ -109,6 +121,7 @@ const SHAPE = [
   'name: public-ci',
   'on:',
   '  pull_request:',
+  `    types: [${PR_TYPES.join(', ')}]`,
   '  push:',
   '    branches: [main]',
   '  merge_group:',
@@ -120,7 +133,7 @@ const SHAPE = [
   'jobs:',
   '  checks:',
   '    name: Node ${{ matrix.node }} · ${{ matrix.part }}',
-  `    if: ${AFTER_QUEUE}`,
+  `    if: ${JOB_IF}`,
   '    runs-on: ubuntu-latest',
   '    timeout-minutes: 90',
   '    strategy:',
@@ -177,7 +190,7 @@ const SHAPE = [
   '          done',
   '  installer-floor:',
   '    name: Node 22 · installer-floor',
-  `    if: ${AFTER_QUEUE}`,
+  `    if: ${JOB_IF}`,
   '    runs-on: ubuntu-latest',
   '    timeout-minutes: 60',
   '    steps:',
@@ -211,7 +224,7 @@ const SHAPE = [
   '          done',
   '  windows:',
   '    name: Windows · ${{ matrix.scenario }}',
-  `    if: ${AFTER_QUEUE}`,
+  `    if: ${JOB_IF}`,
   '    runs-on: windows-latest',
   '    timeout-minutes: 150',
   '    strategy:',
@@ -245,7 +258,9 @@ const SHAPE = [
   '      - name: Todos los jobs terminaron bien',
   '        env:',
   "          RESULTS: ${{ join(needs.*.result, ' ') }}",
+  '          DRAFT: ${{ github.event.pull_request.draft == true }}',
   '        run: |',
+  '          if [ "${DRAFT}" = "true" ]; then echo "::error::pedido en borrador: la CI no corrió; corre entera al sacarlo del borrador"; exit 1; fi',
   '          echo "resultados: ${RESULTS}"',
   '          [ -n "${RESULTS}" ] || exit 1',
   '          for r in ${RESULTS}; do',
@@ -512,6 +527,12 @@ const RULES = [
       const kids = childrenOf(blockOf(lines, i));
       const names = kids.map((l) => l.body.replace(/\s*:.*$/, '')).sort();
       if (names.join(',') !== 'merge_group,pull_request,push') return `los disparadores son pull_request, merge_group y push, y hay: ${names.join(', ') || 'ninguno'}`;
+      // el pedido, con `ready_for_review`: sin él, sacar un pedido del borrador no corre nada y queda con el rojo del borrador
+      const pr = lines.indexOf(kids.find((l) => l.body.startsWith('pull_request')));
+      const inPr = childrenOf(blockOf(lines, pr));
+      if (inPr.map((l) => l.body.replace(/\s*:.*$/, '')).join(',') !== 'types') return `\`pull_request\` lleva sólo \`types: [${PR_TYPES.join(', ')}]\` (línea ${lines[pr].n})`;
+      const types = listAt(lines, lines.indexOf(inPr[0]));
+      if (types.join(',') !== PR_TYPES.join(',')) return `\`pull_request\` corre en ${PR_TYPES.join(', ')}, y dice: ${types.join(', ') || 'nada'} (línea ${inPr[0].n})`;
       const push = lines.indexOf(kids.find((l) => l.body.startsWith('push')));
       const inPush = childrenOf(blockOf(lines, push));
       const keys = inPush.map((l) => l.body.replace(/\s*:.*$/, ''));
@@ -710,10 +731,10 @@ const RULES = [
       const bad = jobs.filter((job) => {
         const id = unquote(job.body.replace(/\s*:.*$/, ''));
         const cond = childrenOf(blockOf(lines, lines.indexOf(job))).find((l) => /^if\s*:/.test(l.body));
-        const want = id === 'public-ci' ? `always() && (${AFTER_QUEUE})` : AFTER_QUEUE;
+        const want = id === 'public-ci' ? `always() && (${AFTER_QUEUE})` : JOB_IF;
         return !cond || valueOf(cond.body) !== want;
       });
-      return bad.length ? `el job ${bad.map((l) => `\`${unquote(l.body.replace(/\s*:.*$/, ''))}\``).join(', ')} no lleva \`if: ${AFTER_QUEUE}\` (en \`public-ci\`, detrás de \`always() && \`): se saltea sólo el push a main de la cola, que ya probó ese commit (línea ${at(bad)})` : null;
+      return bad.length ? `el job ${bad.map((l) => `\`${unquote(l.body.replace(/\s*:.*$/, ''))}\``).join(', ')} no lleva \`if: ${JOB_IF}\` (\`public-ci\`, \`if: always() && (${AFTER_QUEUE})\`): se saltea sólo el push a main de la cola, que ya probó ese commit, y un pedido en borrador; \`public-ci\` corre siempre (línea ${at(bad)})` : null;
     },
   },
   {
