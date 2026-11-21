@@ -317,6 +317,82 @@ function designadaDeVerdad(estado) {
   return d ? d.sesion : null;
 }
 
+// El pedido a la coordinadora de revisar un plan: lo anota el arnés la primera vez que le toca a ella, y desde ahí se
+// cuentan los minutos que tiene para tomarlo (lanzar la revisión).
+const PEDIDO = 'plan-review-request';
+
+/** El id de la última revisión terminada que lanzó `a` sobre `destino` en esta corrida, o null. */
+function ultimaTerminada({ estado, a, destino, corrida }) {
+  const r = leerConstancia({ estado, lanza: a, destino });
+  return r.ok && mismaCorrida(r.constancia.corrida, corrida) ? r.constancia.id : null;
+}
+
+/** ¿`a` tiene preparada, y todavía sin resultado, una revisión de ESTE plan de `destino` en esta corrida? */
+function revisionEnCurso({ estado, a, destino, huellaPlan, corrida }) {
+  let p = null;
+  try { p = JSON.parse(fs.readFileSync(rutaPedido(estado, a, destino), 'utf8')); } catch (_) { return false; }
+  return !!p && !!p.huellas && p.huellas.plan === huellaPlan && mismaCorrida(p.corrida, corrida);
+}
+
+/** Los pedidos de revisión que el arnés le anotó a la coordinadora `a`: el último por destino. */
+function pedidosA({ estado, a }) {
+  const ultimos = new Map();
+  for (const j of renglones(estado)) if (j.name === PEDIDO && j.a === a) ultimos.set(j.destino, j);
+  return [...ultimos.values()];
+}
+
+/**
+ * En qué está un pedido a la coordinadora: `{ estado: 'tomado' }` (tiene la revisión de este plan en curso), `'resuelto'`
+ * (terminó una revisión suya después del pedido: lo que sigue lo dice la constancia), `'esperando'` (con `quedan`
+ * minutos) o `'vencido'` (con `vencio`, la hora en que se cumplió el plazo).
+ */
+function estadoDelPedido({ estado, pedido, minutos, ahora = Date.now() }) {
+  const base = { estado, a: pedido.a, destino: pedido.destino, huellaPlan: pedido.huellaPlan, corrida: pedido.corrida };
+  if (revisionEnCurso(base)) return { estado: 'tomado' };
+  if (ultimaTerminada(base) !== (pedido.tras || null)) return { estado: 'resuelto' };
+  const desde = Date.parse(pedido.ts);
+  if (!Number.isFinite(desde)) return { estado: 'esperando', quedan: minutos };
+  if (ahora - desde < minutos * 60000) return { estado: 'esperando', quedan: Math.max(1, Math.ceil(minutos - (ahora - desde) / 60000)) };
+  return { estado: 'vencido', vencio: desde + minutos * 60000 };
+}
+
+/**
+ * La coordinadora que atiende la revisión del plan de `sesion`: `{ coordinadora, motivo, pedido, tras }`, con
+ * `coordinadora` null si la sesión sigue sola. Lo decide el arnés, nunca la sesión:
+ *   · sin designada, o la designada es la propia sesión → sola;
+ *   · la designada no vive (Claude Code borra su archivo de sesión al cerrarla, o su proceso ya no está) → sola;
+ *   · no se sabe si vive (la carpeta de sesiones no se lee) → la espera, y la rescata el tope de minutos;
+ *   · tiene en curso la revisión de este plan → la espera, aunque la haya lanzado antes del pedido;
+ *   · el pedido de este plan (después de su última revisión terminada) lleva `minutos` sin que ella lo tome → sola.
+ * `pedido`: si ya está anotado; `tras`: la última revisión terminada de ella, a la que se ata un pedido nuevo (así un
+ * relanzamiento del mismo plan tiene su propio plazo). Lo anota `anotarPedido` cuando a ella le toca lanzar, no antes.
+ */
+function coordinadoraQueAtiende({ estado, home, sesion, huellaPlan, corrida, minutos, ahora = Date.now(), avisos = [] }) {
+  let d = null;
+  try { d = designadaDeVerdad(estado); } catch (e) { avisos.push(`no pude leer la designación de la coordinadora (${e.message}): cuenta como que no hay`); }
+  if (!d || d === sesion) return { coordinadora: null, motivo: null };
+  let vive = null;
+  try {
+    const sl = require(path.join(RAIZ, 'scripts', 'lib', 'signature-list.js'));
+    vive = sl.vive(sl.sesiones(home), d);
+  } catch (e) { vive = null; }
+  if (vive === false) return { coordinadora: null, motivo: `la coordinadora designada (${d}) no está viva: la revisión la lanza esta sesión` };
+  if (vive === null) avisos.push(`no pude saber si la coordinadora (${d}) está viva: la espera, hasta ${minutos} min (plan_review.coordinator_wait_minutes)`);
+  const base = { estado, a: d, destino: sesion, huellaPlan, corrida };
+  if (revisionEnCurso(base)) return { coordinadora: d, motivo: null, pedido: true };
+  const tras = ultimaTerminada(base);
+  const pedido = renglones(estado).filter((j) => j.name === PEDIDO && j.destino === sesion && j.a === d && j.huellaPlan === huellaPlan
+    && mismaCorrida(j.corrida, corrida) && (j.tras || null) === tras).pop();
+  if (!pedido) return { coordinadora: d, motivo: null, pedido: false, tras };
+  const e = estadoDelPedido({ estado, pedido, minutos, ahora });
+  if (e.estado !== 'vencido') return { coordinadora: d, motivo: null, pedido: true, tras };
+  return { coordinadora: null, motivo: `la coordinadora (${d}) no tomó el pedido en ${minutos} min (plan_review.coordinator_wait_minutes): la revisión la lanza esta sesión`, pedido: true, tras };
+}
+/** Anota el pedido a la coordinadora `a` de revisar el plan de `destino`: desde acá corren sus minutos. */
+function anotarPedido({ estado, a, destino, huellaPlan, corrida, tras = null, ahora = Date.now() }) {
+  anotarRenglon(estado, { name: PEDIDO, status: 'ok', a, destino, huellaPlan, corrida, tras }, ahora);
+}
+
 /**
  * Los renglones de gates.log, ya leídos (los renglones rotos no cuentan). Sin el archivo, ninguno. Si existe y no se
  * puede leer, también ninguno, y el motivo va a `problemas` cuando quien llama lo pide: un registro ilegible no es uno
@@ -867,9 +943,9 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   const delicate = pipeline().computeDelicate({ story: storyDe(marker), repo: marker.repoPath, planText: plan.texto, batch: batchDe(parteDe(marker, storyTexto)) });
   // lo que no se pudo leer se decide del lado conservador (sin coordinadora, dueño presente) y se dice en el motivo
   const avisos = [];
-  let coordinadora = null;
-  try { coordinadora = designadaDeVerdad(estado); } catch (e) { avisos.push(`no pude leer la designación de la coordinadora (${e.message}): cuenta como que no hay`); }
-  const hayCoordinadora = !!coordinadora && coordinadora !== sesion;
+  // la coordinadora cuenta sólo si atiende: viva y tomando el pedido a tiempo (si no, la sesión no queda esperándola)
+  const atiende = coordinadoraQueAtiende({ estado, home, sesion, huellaPlan, corrida: corridaDe(marker), minutos: cfg.plan_review.coordinator_wait_minutes, ahora, avisos });
+  const hayCoordinadora = !!atiende.coordinadora;
   let marca = null;
   try {
     const leida = require(path.join(RAIZ, 'scripts', 'lib', 'owner-away.js')).get({ estado, home, ahora });
@@ -881,6 +957,7 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   const away = P.ownerAway({ mark: marca, askedAt: pregunta ? Date.parse(pregunta.ts) : null, now: ahora, minutes: cfg.plan_review.owner_away_minutes });
   const r = P.planReview({ delicate: delicate.value, coordinator: hayCoordinadora, ownerAway: away.away, config: cfg });
   const out = { ...r, delicate: delicate.value, ownerAway: away, huellaPlan };
+  if (atiende.motivo) { out.reason = `${out.reason}; ${atiende.motivo}`; out.sinCoordinadora = atiende.motivo; }
   if (sinRegistro.length) avisos.push(sinRegistro[0]);
   if (avisos.length) { out.reason = `${out.reason} (${avisos.join('; ')})`; out.problems = avisos; }
   // sin el registro no se sabe si se eligió seguir ni se cuentan los rechazos o los cambios del plan, que son los topes
@@ -918,6 +995,12 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     if (cambios >= 2) return { ...out, alDueno: { llega: true, motivo: `no se pudo revisar: ${deCambio[deCambio.length - 1].motivo}, dos veces` } };
     out.comando = hayCoordinadora ? `marker.js plan-review --for-session ${sesion}` : 'marker.js plan-review';
     out.lanza = hayCoordinadora ? 'coordinator' : 'session';
+    // le toca lanzar a la coordinadora: desde ahora corren sus minutos para tomarlo
+    if (hayCoordinadora && !atiende.pedido) {
+      try { anotarPedido({ estado, a: atiende.coordinadora, destino: sesion, huellaPlan, corrida: corridaDe(marker), tras: atiende.tras || null, ahora }); } catch (e) {
+        out.problems = [...(out.problems || []), `no pude anotar el pedido a la coordinadora (${e.code || e.message}): si no lo toma, la sesión sigue esperándola`];
+      }
+    }
     if (cambios === 1) out.reintento = true;
     const v = cuartaVuelta({ estado, destino: sesion, marker });
     if (v.falta) {
@@ -937,6 +1020,6 @@ const rutaResultado = (estado, lanza, destino) => path.join(carpetaDe(estado, la
 module.exports = {
   rutaResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
-  eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, huellaDe, designadaDeVerdad, sha,
+  eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };
