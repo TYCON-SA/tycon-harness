@@ -6735,7 +6735,11 @@ test('RevisionSemanal_ValorFueraDeRango_NoSePropone @story-2.58 @ac-2 — un val
   const fuente = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
   const desde = fuente.indexOf('var PALABRAS = {');
   const tabla = fuente.slice(desde, fuente.indexOf('\n  };', desde));
-  const claves = [...tabla.matchAll(/(?:^|[{,\s])'?([A-Za-z_][\w.]*)'?\s*:\s*T\(/g)].map((m) => m[1]);
+  const clavesDe = (t) => [...t.replace(/\/\/[^\n]*/g, '').matchAll(/(?:^|[{,\s])'?([A-Za-z_][\w.]*)'?\s*:\s*(?:T\(|'|")/g)].map((m) => m[1]);
+  // también la de texto fijo (`ado: 'Azure DevOps'`): una repetida así pisaba igual y la prueba no la veía
+  const conFijo = clavesDe("{ ado: 'Azure DevOps', site: T('pantalla.elSitio'), ado: T('pantalla.otra') }");
+  assert.deepStrictEqual(conFijo.filter((k, i) => conFijo.indexOf(k) !== i), ['ado'], `la lectura ve las claves de texto fijo: ${conFijo}`);
+  const claves = clavesDe(tabla);
   assert.ok(claves.length > 50, `la tabla de nombres se leyó entera (${claves.length})`);
   assert.deepStrictEqual(claves.filter((k, i) => claves.indexOf(k) !== i), [], 'sin claves repetidas en la tabla de nombres');
 });
