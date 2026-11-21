@@ -492,6 +492,15 @@ else
   no "T15 bloqueo con vía: reg=[$(cat "$(REG)" 2>/dev/null)]"
 fi
 
+# ── T19 (8.326) — el freno de sesiones anota «revision-llena», de su lista cerrada ─────────────────────
+mundo
+printf '%s' 'claude --bg' | HOME="$CASA" node "$LIB" --guard session-cap-guard --rule tope --verdict bloqueo --reason revision-llena --cmd-stdin
+if [ "$(lineas)" = "1" ] && grep '"motivo":"revision-llena"' "$(REG)" >/dev/null; then
+  ok "T19 GuardRecord_MotivoRevisionLlena @story-8.326 @ac-6: el renglón sale con su motivo"
+else
+  no "T19 GuardRecord_MotivoRevisionLlena: reg=[$(cat "$(REG)" 2>/dev/null)]"
+fi
+
 echo "─────────────────────────────"
 echo "constancia-freno: $pasaron ok · $fallos fallos"
 [ "$fallos" = "0" ] || exit 1

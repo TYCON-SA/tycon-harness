@@ -79,6 +79,8 @@ const tyconConfig = require(path.join(__dirname, '..', 'lib', 'tycon-config.js')
 const workSlots = require('./work-slots.js');
 const signatureList = require(path.join(__dirname, '..', 'lib', 'signature-list.js'));
 const delegationRouting = require(path.join(__dirname, '..', 'lib', 'delegation-routing.js'));
+// lo que espera la revisión de la persona: el segundo tope (8.326)
+const RL = require(path.join(__dirname, '..', 'lib', 'review-load.js'));
 const { sessionNames } = tyconConfig;
 
 const CODEX_WINDOW_MS = 5 * 60000;
@@ -142,7 +144,7 @@ function recipe({ home, arnes, env }) {
     // el piso del segundo turno, de la constante de heavy-turn.js: el número vive en un solo lugar
     let floor = null;
     try { floor = require('./heavy-turn.js').SECOND_HEAVY_MIN_FREE_PCT; } catch { /* sin el módulo del turno no hay piso que decir */ }
-    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, second_heavy_min_free_pct: { value: floor, origin: 'sin-valor' }, max_stories_in_cycle: { value: 4, origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
+    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, second_heavy_min_free_pct: { value: floor, origin: 'sin-valor' }, max_stories_in_cycle: { value: 4, origin: 'sin-valor' }, max_awaiting_review: { value: 8, origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
   }
 }
 
@@ -599,6 +601,8 @@ function status(opts = {}) {
   else if (vigente && vigente.pendiente) pendingDesignation = { sesion: vigente.pendiente.sesion, ts: vigente.pendiente.ts };
   return {
     now, working, waiting, quiet, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
+    // lo que espera revisión, de la foto del arranque: para mostrar, nunca para decidir
+    review: RL.leerFoto(stateDir(home), now), reviewCap: r.max_awaiting_review,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
     suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
     signatures, pendingDesignation,
@@ -614,6 +618,9 @@ function statusText(s) {
   for (const w of s.working) lines.push(`  · ${w.session} — ${w.why}`);
   // el tope de historias en el ciclo completo: la regla de la coordinadora (guides/coordination.md); acá va el número
   if (s.storiesCap && s.storiesCap.value) lines.push(`Historias en el ciclo completo: hasta ${s.storiesCap.value} (tope ${ORIGIN[s.storiesCap.origin] || s.storiesCap.origin}); las demás, en fila`);
+  // lo que espera revisión, de la foto del arranque, con su edad
+  if (s.review) lines.push(`Lo que espera tu revisión: ${RL.lineaDeRevision(s.review.cuenta, { origen: ORIGIN[s.review.cuenta.tope.origin] || s.review.cuenta.tope.origin })} (foto ${edadDeFoto(s.review.edadMs)})`);
+  else if (s.reviewCap) lines.push(`Lo que espera tu revisión: sin foto todavía (la deja el arranque de una sesión); tope ${s.reviewCap.value}`);
   if (s.stalled && s.stalled.length) lines.push(`Trabadas: ${s.stalled.map((x) => `${x.session}: esperando un permiso${x.tool ? ` (${permissionText(x)})` : ''}, hace ${Math.max(0, Math.floor((s.now - x.since) / 60000))} min`).join(' · ')}`);
   lines.push(`Esperando: ${s.waiting.length}`);
   for (const w of s.waiting) lines.push(`  · ${w.session} — ${w.why}`);
@@ -1689,6 +1696,26 @@ function longQueueLines(opts, sid, s, queue, working, cap, getBoard, problems) {
   return noteSaid(opts, sid, 'gate', JSON.stringify([stop, ...key]), problems) ? [line] : [];
 }
 
+/**
+ * ¿Sale la línea de lo que espera revisión en este turno? Con la foto en el tope, una vez por cada cambio de la cuenta o del
+ * tope, con la misma memoria por sesión que el tope de sesiones (`capChanged`).
+ */
+const reviewNoticeFile = (home, sid) => path.join(coordinationDir(home), `review-notice-${sid}.json`);
+function reviewChanged(opts, sid, cuenta, problems) {
+  const at = RL.enElTope(cuenta);
+  if (!sid || !SAFE_SID.test(String(sid))) return at;
+  const home = opts.home || require('os').homedir();
+  const file = reviewNoticeFile(home, sid);
+  const now = at ? { total: cuenta.total, tope: cuenta.tope.value, partes: cuenta.partes } : { below: true };
+  let prev = null;
+  try { prev = readJson(file, null); } catch (e) { if (at) problems.push(`el archivo del aviso de la revisión (${e.message}): lo cuento como no avisado`); }
+  if (prev && JSON.stringify(prev) === JSON.stringify(now)) return false;
+  try { writeJson(file, now); } catch (e) { if (at) problems.push(`no pude anotar el aviso de la revisión: ${e.code || e.message}`); }
+  return at;
+}
+/** La edad de la foto, en palabras. */
+const edadDeFoto = (ms) => (ms < 90000 ? 'hace un momento' : ms < 5400000 ? `hace ${Math.round(ms / 60000)} min` : `hace ${Math.round(ms / 3600000)} h`);
+
 function capNotice(opts = {}) {
   const sid = sessionOf(opts);
   const who = coordinatorRole(opts, sid);
@@ -1706,6 +1733,12 @@ function capNotice(opts = {}) {
       const newest = working.filter((w) => Number.isFinite(w.since)).sort((a, b) => b.since - a.since)[0];
       lines.push(`Coordinación: la máquina pasó el tope por ${working.length - cap} (${working.length} de ${cap} trabajando: ${names})${newest ? `; la que trabaja hace menos: ${newest.session}` : ''}.`);
     }
+  }
+  // lo que espera revisión, de la foto del arranque (el aviso tiene 300 ms: no cuenta de nuevo)
+  if (s.review && reviewChanged(opts, sid, s.review.cuenta, problems)) {
+    const c = s.review.cuenta;
+    const n = (k) => (c.partes[k] === null ? '?' : c.partes[k]);
+    lines.push(`Coordinación: ${c.total} cosas esperan revisión de la persona (tope ${c.tope.value}): ${n('firmas')} firmas, ${n('terminados')} terminados, ${n('carpetas')} carpetas, ${n('pedidos')} pedidos (foto ${edadDeFoto(s.review.edadMs)}). Antes de abrir otra, cerrá o guardá algo.`);
   }
   for (const q of s.quiet.filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${q.session} está quieta hace ${q.minutes} min: cerrala o dale trabajo.`);
   // nada la despierta sola: quien tiene que avisarle cuando se libera el lugar es la coordinadora. Con el mismo criterio
@@ -1895,6 +1928,10 @@ function fillCheck(opts = {}) {
   out.memoryPct = m.pct;
   if (m.pct == null) out.problems.push(`la memoria libre (${label(m.why || 'sin motivo', 120)})`);
   if (m.pct == null || m.pct < PROPOSE_MIN_FREE_PCT) return { ...out, why: 'memoria' };
+  // con lo que espera revisión en el tope no se empuja a abrir: se cuenta de nuevo (nunca la foto), y sólo acá, cuando iba
+  // a frenar. Una cuenta que falla y no llega al tope frena como siempre: lo no medido no afloja el freno
+  const review = opts.reviewLoad ? opts.reviewLoad() : RL.reviewLoadSync({ home, env: opts.env || process.env });
+  if (RL.enElTope(review)) return { ...out, why: 'revision-llena', review };
   out.block = true;
   out.reason = fillReason(out);
   return out;
@@ -2252,7 +2289,32 @@ function callerPermissionMode({ home, env }) {
  */
 function capCheck(opts = {}) {
   const s = status(opts);
-  return { atCap: s.working.length >= s.cap.value, working: s.working, cap: s.cap, problems: s.problems };
+  const atCap = s.working.length >= s.cap.value;
+  const out = { atCap, working: s.working, cap: s.cap, problems: s.problems, review: null, atReviewCap: false };
+  // la cuenta de lo que espera revisión, de nuevo (nunca la foto) y sólo si el tope de sesiones deja abrir. Sus problemas
+  // quedan en `review.problems`: no poder contarla nunca impide abrir
+  if (s.problems.length || atCap) return out;
+  out.review = opts.reviewLoad ? opts.reviewLoad() : RL.reviewLoadSync({ home: opts.home, env: opts.env || process.env });
+  out.atReviewCap = RL.enElTope(out.review);
+  return out;
+}
+
+/**
+ * Qué hace `open` (y el freno de sesiones) con la cuenta de lo que espera revisión: `{ niega, nota }`. En el tope, en
+ * freno niega con la línea; en aviso abre, con la línea y su renglón en `gates.log`. Debajo del tope, en freno, la nota
+ * dice lo que no se pudo mirar: lo no medido no frena.
+ */
+function reviewVerdict(c, { home, donde }) {
+  const r = c && c.review;
+  if (!r) return { niega: null, nota: null };
+  const linea = RL.lineaDeRevision(r, { origen: ORIGIN[r.tope.origin] || r.tope.origin });
+  if (c.atReviewCap) {
+    if (RL.MODO_TOPE_DE_REVISION === 'block') return { niega: `${linea}: no la abrí. Antes de abrir otra, cerrá o guardá algo`, nota: null };
+    try { RL.anotarAviso(stateDir(home), r, donde); } catch (_) { /* el renglón es para medir: sin él, la sesión se abre igual */ }
+    return { niega: null, nota: `Aviso: ${linea}; antes de abrir otra, cerrá o guardá algo.` };
+  }
+  const falta = RL.noMedidoEnPalabras(r);
+  return { niega: null, nota: falta && RL.MODO_TOPE_DE_REVISION === 'block' ? `Lo que espera revisión no llega al tope con lo contado (${falta}).` : null };
 }
 
 /** Anota una sesión recién abierta en `opened.json`, para que cuente hasta que escriba su archivo. Tira si no puede. */
@@ -2518,6 +2580,9 @@ function openNow(opts) {
   if (taken.has(name) || taken.has(listedName(name))) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
   if (!oneLine(task)) return no('Falta el encargo de la sesión: no la abrí.');
   if (s.atCap) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
+  const rev = reviewVerdict(s, { home, donde: 'open' });
+  if (rev.niega) return no(rev.niega);
+  const conNota = (r) => (rev.nota ? { ...r, message: `${r.message} ${rev.nota}` } : r);
   if (cwd && opts.repo) return no('Va o la carpeta o el repo, no los dos: no la abrí.');
   if (opts.slot && !opts.repo) return no('--slot va con --repo (toma un puesto de ese repo): no la abrí.');
   // La sesión nueva arranca en el modo de la que la abre: en otro modo se traba en permisos que nadie ve y no recibe
@@ -2593,16 +2658,16 @@ function openNow(opts) {
   }
   if (unlaunched) {
     try { noteOpened({ home, now, name, cwd: where }); } catch (e) {
-      return { ok: true, message: oneLine(`${opened}. Pero no la pude anotar (${e.code || e.message}): hasta que escriba su archivo de sesión no cuenta para el tope.${unlaunched}`) };
+      return conNota({ ok: true, message: oneLine(`${opened}. Pero no la pude anotar (${e.code || e.message}): hasta que escriba su archivo de sesión no cuenta para el tope.${unlaunched}`) });
     }
-    return { ok: true, message: oneLine(`${opened}.${unlaunched}`) };
+    return conNota({ ok: true, message: oneLine(`${opened}.${unlaunched}`) });
   }
   try {
     noteOpened({ home, now, name, cwd: where });
   } catch (e) {
-    return { ok: true, message: oneLine(`${opened}. Pero no la pude anotar (${e.code || e.message}): hasta que escriba su archivo de sesión no cuenta para el tope.`) };
+    return conNota({ ok: true, message: oneLine(`${opened}. Pero no la pude anotar (${e.code || e.message}): hasta que escriba su archivo de sesión no cuenta para el tope.`) });
   }
-  return { ok: true, message: opened };
+  return conNota({ ok: true, message: opened });
 }
 
 // ── Cerrar una sesión ──
@@ -3150,6 +3215,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN,
+module.exports = { LAUNCH_TIMEOUT_MS, reviewVerdict, flags, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN,
   // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
   stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };

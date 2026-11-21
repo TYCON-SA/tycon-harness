@@ -265,8 +265,10 @@ const VOCABULARIO = Object.freeze({
   // siempre, porque cuánto aguanta depende de la máquina. Sin valor, 50; con 100, la máquina queda con un turno.
   // `max_stories_in_cycle`: cuántas historias puede tener la coordinadora en el ciclo completo a la vez (de arrancadas a
   // entradas a main); con el tope lleno no arranca ni retoma otra hasta que una entre, y las demás quedan en fila. Con el
-  // orden de siempre. Sin valor, 4.
-  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20' }),
+  // orden de siempre. Sin valor, 4. `max_awaiting_review`: cuántas cosas pueden esperar la revisión de la persona (firmas,
+  // terminados sin cerrar, carpetas sin guardar, pedidos trabados) antes de que la coordinadora deje de abrir sesiones
+  // (scripts/lib/review-load.js). Con el orden de siempre. Sin valor, 8.
+  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20', max_awaiting_review: 'entero:1-50' }),
   // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
   // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
   office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
@@ -570,6 +572,7 @@ const VARIABLES = Object.freeze({
   'coordination.session_names': ['TYCON_COORDINATION_SESSION_NAMES'],
   'coordination.second_heavy_min_free_pct': ['TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT'],
   'coordination.max_stories_in_cycle': ['TYCON_COORDINATION_MAX_STORIES_IN_CYCLE'],
+  'coordination.max_awaiting_review': ['TYCON_COORDINATION_MAX_AWAITING_REVIEW'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -1502,7 +1505,8 @@ function coordinacion(config) {
   const con = (clave, defecto) => (v[clave] === null || v[clave] === undefined
     ? { value: defecto, origin: 'sin-valor' }
     : { value: v[clave], origin: o[`coordination.${clave}`] });
-  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50), max_stories_in_cycle: con('max_stories_in_cycle', 4) };
+  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50), max_stories_in_cycle: con('max_stories_in_cycle', 4),
+    max_awaiting_review: con('max_awaiting_review', 8) };
 }
 /**
  * Los topes del camino corto, según una configuración YA cargada: `{ coordinator_max_files: { value, origin }, max_files:

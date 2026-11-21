@@ -106,6 +106,7 @@ const MEASURES = {
   'La coordinadora cierra los detalles con la opción más segura': 'nadie',
   'Cada sesión con un nombre puesto por una persona': 'aviso',
   'No más sesiones trabajando que el tope': 'freno',
+  'No abrir más cuando lo que espera la revisión de la persona llega a su tope': 'aviso',
   'Con la fila de la suite larga no se abren sesiones para programar': 'nadie',
   'Una suite completa por vez': 'freno',
   'Pases adversariales de a uno': 'freno',
@@ -2948,4 +2949,116 @@ test('T49 Status_EsperaVieja_GanaElRegistroDeTurnos: con su portón o su lugar d
   waits('s-bea', 'el turno de la suite');
   const s2 = C.status(opts(62));
   assert.deepStrictEqual(s2.suiteWaiting.map((x) => x.session), ['Bea'], JSON.stringify(s2.suiteWaiting));
+});
+
+// ── 8.326: el tope de lo que espera la revisión de la persona ────────────────────────────────────────────────────────
+const RLIB = require(path.join(ROOT, 'scripts', 'lib', 'review-load.js'));
+const cuentaDe = (total, partes = null, extra = {}) => ({ total, partes: partes || { firmas: total, terminados: 0, carpetas: 0, pedidos: 0 },
+  noMedido: { terminados: 0, carpetas: 0 }, tope: { value: 8, origin: 'sin-valor' }, problems: [], ...extra });
+function conModoRevision(modo, fn) {
+  const antes = RLIB.MODO_TOPE_DE_REVISION;
+  RLIB.MODO_TOPE_DE_REVISION = modo;
+  try { return fn(); } finally { RLIB.MODO_TOPE_DE_REVISION = antes; }
+}
+const renglonesRevision = (t) => { try { return fs.readFileSync(path.join(t.state, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((x) => x.name === 'review-cap'); } catch { return []; } };
+
+test('T6 Coordinacion_ClaveMaxAwaitingReview @story-8.326 @ac-4', () => {
+  const tc = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'));
+  assert.deepStrictEqual(tc.coordinacion(tc.cargar(toy().opts)).max_awaiting_review, { value: 8, origin: 'sin-valor' });
+  const m = toy({ machine: { coordination: { max_awaiting_review: 12 } } });
+  const v = tc.coordinacion(tc.cargar(m.opts)).max_awaiting_review;
+  assert.strictEqual(v.value, 12);
+  assert.notStrictEqual(v.origin, 'sin-valor');
+  for (const malo of [0, 51]) {
+    const t = toy({ machine: { coordination: { max_awaiting_review: malo } } });
+    const cfg = tc.cargar(t.opts);
+    assert.strictEqual(tc.coordinacion(cfg).max_awaiting_review.value, 8, `${malo}`);
+    assert.ok(cfg.errores.some((e) => /max_awaiting_review/.test(e.clave || '')), `${malo}: ${JSON.stringify(cfg.errores)}`);
+  }
+  // el freno de producción la acepta, como las otras de coordination
+  const prod = fs.readFileSync(path.join(ROOT, 'scripts', 'production', 'guard-libs', 'lib', 'tycon-config.js'), 'utf8');
+  assert.match(prod, /max_awaiting_review: 'aceptada'/);
+});
+
+test('T7 Open_RevisionLlena_Freno_NoAbre @story-8.326 @ac-5', () => {
+  const t = toy();
+  const r = conModoRevision('block', () => open(t, { name: 'n1', task: 'algo', launcher: launcher(t), reviewLoad: () => cuentaDe(8, { firmas: 1, terminados: 2, carpetas: 3, pedidos: 2 }) }));
+  assert.strictEqual(r.ok, false, r.message);
+  assert.match(r.message, /8 cosas esperan revisión de la persona \(tope 8/);
+  assert.match(r.message, /1 firmas, 2 terminados, 3 carpetas, 2 pedidos/);
+  assert.match(r.message, /\/wip/);
+  assert.doesNotMatch(r.message, /sub[ií] el tope/i);
+  assert.strictEqual(launched(t), null, 'no llamó al lanzador');
+});
+
+test('T8 Open_RevisionLlena_Aviso_AbreYAnota @story-8.326 @ac-7', () => {
+  const t = toy();
+  const r = open(t, { name: 'n1', task: 'algo', launcher: launcher(t), reviewLoad: () => cuentaDe(9) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.match(r.message, /Aviso: 9 cosas esperan revisión de la persona/);
+  const rr = renglonesRevision(t);
+  assert.strictEqual(rr.length, 1);
+  assert.deepStrictEqual([rr[0].status, rr[0].total, rr[0].tope, rr[0].donde], ['warn', 9, 8, 'open']);
+  assert.doesNotMatch(JSON.stringify(rr[0]), new RegExp(t.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'el renglón no lleva rutas');
+});
+
+test('T10 Open_DebajoDelTope_ComoHoy @story-8.326 @ac-8 @ac-13', () => {
+  const t = toy();
+  const r = open(t, { name: 'n1', task: 'algo', launcher: launcher(t), reviewLoad: () => cuentaDe(3) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.doesNotMatch(r.message, /revisión/);
+  assert.strictEqual(renglonesRevision(t).length, 0);
+  // con el tope de sesiones lleno manda ese, con su mensaje de siempre, y la cuenta de revisión ni se pide
+  const u = toy({ machine: { coordination: { max_working: 1 } } });
+  session(u, 'sid-a', 'Ana', { status: 'busy', statusUpdatedAt: mins(1) });
+  let pidio = false;
+  const c = conModoRevision('block', () => open(u, { name: 'n2', task: 'algo', launcher: launcher(u), reviewLoad: () => { pidio = true; return cuentaDe(0); } }));
+  assert.strictEqual(c.ok, false);
+  assert.match(c.message, /Ya hay 1 trabajando y el tope es 1/);
+  assert.strictEqual(pidio, false);
+});
+
+test('T11 Open_NoMedidoNoFrena @story-8.326 @ac-9', () => {
+  conModoRevision('block', () => {
+    const t = toy();
+    const r = open(t, { name: 'n1', task: 'algo', launcher: launcher(t), reviewLoad: () => cuentaDe(2, null, { noMedido: { terminados: 0, carpetas: 248 } }) });
+    assert.strictEqual(r.ok, true, r.message);
+    assert.match(r.message, /no pude mirar: 248 carpetas/);
+    const u = toy();
+    const n = open(u, { name: 'n1', task: 'algo', launcher: launcher(u), reviewLoad: () => cuentaDe(8, { firmas: 8, terminados: null, carpetas: 0, pedidos: 0 }) });
+    assert.strictEqual(n.ok, false, n.message);
+    assert.match(n.message, /\? terminados/);
+  });
+});
+
+test('T15 CapNotice_LineaUnaVezPorCambio @story-8.326 @ac-11', () => {
+  const t = toy();
+  session(t, 's-coord', 'Coord');
+  designate(t, 's-coord');
+  const turno = () => C.capNotice({ ...t.opts, env: { CLAUDE_CODE_SESSION_ID: 's-coord' } }) || '';
+  RLIB.escribirFoto(t.state, cuentaDe(8, { firmas: 1, terminados: 2, carpetas: 3, pedidos: 2 }), NOW - 3 * 60000);
+  assert.match(turno(), /Coordinación: 8 cosas esperan revisión de la persona \(tope 8\): 1 firmas, 2 terminados, 3 carpetas, 2 pedidos \(foto hace 3 min\)\. Antes de abrir otra, cerrá o guardá algo\./);
+  assert.doesNotMatch(turno(), /esperan revisión/, 'igual: no se repite');
+  RLIB.escribirFoto(t.state, cuentaDe(9, { firmas: 1, terminados: 2, carpetas: 4, pedidos: 2 }), NOW - 60000);
+  assert.match(turno(), /9 cosas esperan revisión/, 'con una carpeta más, sale de nuevo');
+  // status y su texto la muestran al pie, con la edad
+  assert.match(C.statusText(C.status(t.opts)), /Lo que espera tu revisión: 9 cosas esperan revisión de la persona \(tope 8, .*\(foto hace un momento\)/);
+});
+
+test('T18 Open_TopeDeDecisionAgotado_Abre @story-8.326 @ac-3 @ac-9', () => {
+  // la cuenta de verdad, con un hijo que no contesta: vuelve en el tope más un segundo, suelta el candado y abre
+  const lab = toy();
+  const lento = path.join(lab.root, 'lento.js');
+  fs.writeFileSync(lento, 'setTimeout(() => {}, 60000)');
+  for (const modo of ['warn', 'block']) {
+    const t = toy();
+    // stable-data: mide cuánto tarda la cuenta con su tope, no es una fecha que la prueba compare
+    const desde = Date.now();
+    const r = conModoRevision(modo, () => open(t, { name: 'n1', task: 'algo', launcher: launcher(t), reviewLoad: () => RLIB.reviewLoadSync({ home: t.home, env: {}, topeMs: 300, script: lento }) }));
+    assert.ok(Date.now() - desde < 5000, `${modo}: tardó ${Date.now() - desde} ms`);
+    assert.strictEqual(r.ok, true, `${modo}: ${r.message}`);
+    if (modo === 'block') assert.match(r.message, /no pude mirar: firmas, terminados, carpetas, pedidos/);
+    // el candado quedó suelto: otra apertura entra enseguida
+    assert.strictEqual(open(t, { name: 'n2', task: 'algo', launcher: launcher(t), reviewLoad: () => cuentaDe(0) }).ok, true, modo);
+  }
 });

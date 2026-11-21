@@ -557,3 +557,30 @@ test('T17 FillGate_Registrado @story-8.307 @ac-17: el gancho está en cada lista
   assert.strictEqual(measured.ran, 2, benchRun.stdout);
   assert.strictEqual(Object.keys(measured.failed || {}).length, 0, benchRun.stdout);
 });
+
+// 🔴 Falla con: el freno de la coordinadora empuja a abrir lo que nadie va a revisar, o una foto escrita a mano lo afloja.
+test('T12 FillCheck_RevisionLlena_NoFrena @story-8.326 @ac-12', () => {
+  const RLIB = require(path.join(ROOT, 'scripts', 'lib', 'review-load.js'));
+  const llena = () => ({ total: 8, partes: { firmas: 8, terminados: 0, carpetas: 0, pedidos: 0 }, noMedido: { terminados: 0, carpetas: 0 }, tope: { value: 8, origin: 'sin-valor' }, problems: [] });
+  const vacia = () => ({ ...llena(), total: 0, partes: { firmas: 0, terminados: 0, carpetas: 0, pedidos: 0 } });
+  for (const modo of ['warn', 'block']) {
+    const antes = RLIB.MODO_TOPE_DE_REVISION;
+    RLIB.MODO_TOPE_DE_REVISION = modo;
+    try {
+      const t = toy();
+      snapshot(t, [proyecto([story('8.232')])]);
+      const r = C.fillCheck(opts(t, { readMemory: mem(80), reviewLoad: llena }));
+      assert.deepStrictEqual([r.block, r.why], [false, 'revision-llena'], `${modo}: ${JSON.stringify(r)}`);
+    } finally { RLIB.MODO_TOPE_DE_REVISION = antes; }
+  }
+  // una foto escrita a mano con el tope lleno no afloja: fillCheck cuenta de nuevo
+  const t = toy();
+  snapshot(t, [proyecto([story('8.232')])]);
+  RLIB.escribirFoto(require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(t.home), llena(), t.nowMs);
+  const f = C.fillCheck(opts(t, { readMemory: mem(80), reviewLoad: vacia }));
+  assert.strictEqual(f.block, true, JSON.stringify(f));
+  // y la cuenta se pide sólo cuando iba a frenar
+  let pidio = 0;
+  C.fillCheck(opts(t, { readMemory: mem(10), reviewLoad: () => { pidio += 1; return llena(); } }));
+  assert.strictEqual(pidio, 0, 'con la memoria baja no se cuenta');
+});
