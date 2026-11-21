@@ -123,9 +123,10 @@ test('T66 Page_DrawFails_Said: si una foto nueva no se puede dibujar, la página
   const ovl = { textContent: '', hidden: true };
   let breakIt = true;
   const errors = [];
-  const run = new Function('document', 'window', 'setData', 'renderTop', 'renderCrew', 'console', 'relojTick', 'agents', 'meta', 'BORRADO', `return (${handler});`);
+  // el aviso se compara traducido (office-page-english.test.js): en castellano, la traducción lo deja igual
+  const run = new Function('document', 'window', 'setData', 'renderTop', 'renderCrew', 'console', 'relojTick', 'agents', 'meta', 'BORRADO', 'traducir', `return (${handler});`);
   const onmessage = run({ getElementById: (id) => (id === 'ovl' ? ovl : null) }, { tablero: {} },
-    () => { if (breakIt) throw new Error('dibujo roto'); }, () => {}, () => {}, { error: (e) => errors.push(e) }, () => {}, [], null);
+    () => { if (breakIt) throw new Error('dibujo roto'); }, () => {}, () => {}, { error: (e) => errors.push(e) }, () => {}, [], null, undefined, (t) => t);
   onmessage({ data: JSON.stringify({ type: 'foto', data: {} }) });
   assert.strictEqual(ovl.hidden, false);
   assert.match(ovl.textContent, /No pude dibujar la última novedad/);

@@ -2370,6 +2370,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-page-english.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-conversation.test.js",
       "requiere": []
     },
