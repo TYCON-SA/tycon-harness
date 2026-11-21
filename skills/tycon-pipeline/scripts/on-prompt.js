@@ -78,8 +78,13 @@ function listAllMarkers(currentSessionId) {
         // Auto-cleanup: skip nuestra propia sesión (safety) y borrar el resto.
         if (currentSessionId && m.sessionId === currentSessionId) continue;
         // una ejecución perdida no se poda: sale sólo por la salida del dueño (no poder preguntar tampoco la poda)
+        // las rutas del marcador, absolutas contra su repo (lib/run-dir.js): sin repo no se puede mirar su copia en el repo,
+        // y ante la duda no se poda (nunca la carpeta de esta sesión, que es de otro repo)
+        const rutas = require('./lib/run-dir.js').rutasDeLaCorrida(m);
+        const repoM = typeof rutas.repoPath === 'string' && path.isAbsolute(rutas.repoPath) ? rutas.repoPath : null;
+        const runDirM = typeof rutas.runDir === 'string' && path.isAbsolute(rutas.runDir) ? rutas.runDir : null;
         let perdida = true;
-        try { perdida = !!require('./lib/open-runs.js').perdida({ sid: m.sessionId || f.replace(/\.json$/, ''), cwd: m.repoPath || process.cwd() }); } catch { /* queda perdida */ }
+        try { perdida = !repoM || !!require('./lib/open-runs.js').perdida({ sid: m.sessionId || f.replace(/\.json$/, ''), cwd: repoM }); } catch { /* queda perdida */ }
         // no se poda, y sigue a la vista en la lista (las demás sesiones la ven como ocupada)
         if (perdida) { markers.push(m); continue; }
         // una que espera su turno con la espera anotada no está abandonada: sigue, y cuenta como ocupada
@@ -95,8 +100,8 @@ function listAllMarkers(currentSessionId) {
         try { fs.unlinkSync(full); } catch { /* best-effort */ }
         // el cierre de la sesión podada: sin él, su apertura sin marcador frenaría como perdida (lib/open-runs.js)
         try {
-          require('./lib/open-runs.js').cerrar({ sid: currentSessionId, sesion: m.sessionId || f.replace(/\.json$/, ''), runDir: m.runDir || null,
-            story: String(m.storyId), estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, extra: { repoPath: m.repoPath || null }, soloAbierta: true });
+          require('./lib/open-runs.js').cerrar({ sid: currentSessionId, sesion: m.sessionId || f.replace(/\.json$/, ''), runDir: runDirM,
+            story: String(m.storyId), estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, extra: { repoPath: repoM }, soloAbierta: true });
         } catch { /* best-effort: la pregunta lo verá */ }
         continue;
       }

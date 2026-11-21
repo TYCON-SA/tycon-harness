@@ -527,11 +527,16 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
   }
   // la carpeta de la corrida: la que guarda el marcador, o la que calcula el pipeline para su historia
   if (marcador) {
-    run = marcador.runDir || null;
-    if (!run && marcador.storyId) {
+    // las rutas del marcador, absolutas contra su repo (lib/run-dir.js); nunca contra la carpeta del proceso
+    const r = require('./run-dir.js').rutasDeLaCorrida(marcador);
+    const abs = (p) => (typeof p === 'string' && path.isAbsolute(p) ? p : null);
+    run = abs(r.runDir);
+    if (!run && marcador.runDir) runError = `no pude ubicar la carpeta de la corrida del marcador (${r.motivo || marcador.runDir})`;
+    else if (!run && marcador.storyId && !abs(r.repoPath)) runError = `el marcador no dice su repo (${r.motivo || 'sin repoPath ni historia absoluta'})`;
+    else if (!run && marcador.storyId) {
       try {
-        const repoM = marcador.repoPath || process.cwd();
-        const story = marcador.storyPath ? (path.isAbsolute(marcador.storyPath) ? marcador.storyPath : path.resolve(repoM, marcador.storyPath)) : undefined;
+        const repoM = abs(r.repoPath);
+        const story = abs(r.storyPath) || undefined;
         // de `run-dir.js`, no de `pipeline.js`: el tablero del sitio carga esto y su imagen no lleva el pipeline entero
         run = require('./run-dir.js').resolveRunDir(repoM, String(marcador.storyId), false, story, { marker: marcador }) || null;
         if (!run) runError = 'la historia del marcador todavía no tiene carpeta de corrida';

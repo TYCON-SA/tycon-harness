@@ -53,9 +53,21 @@ function leer(ruta) {
 }
 const porQueNo = (ruta) => (ruta && sinLeer.has(ruta) ? ` (no pude leerlo: ${sinLeer.get(ruta)})` : '');
 
+/**
+ * El repo de la corrida: el del marcador o, en un marcador viejo sin él, la raíz de git de su historia absoluta. Nunca la
+ * carpeta desde donde corre el proceso: la pregunta de firma no puede cambiar según dónde se lanzó. Sin ninguno, null.
+ */
+function repoDelMarcador(m) {
+  if (!m) return null;
+  const r = require(path.join(PIPELINE, '..', 'lib', 'run-dir.js')).rutasDeLaCorrida(m);
+  return r && typeof r.repoPath === 'string' && path.isAbsolute(r.repoPath) ? r.repoPath : null;
+}
+
 function rutaDeLaHistoria(m) {
   if (!m || !m.storyPath) return null;
-  return path.isAbsolute(m.storyPath) ? m.storyPath : path.join(m.repoPath || process.cwd(), m.storyPath);
+  if (path.isAbsolute(m.storyPath)) return m.storyPath;
+  const repo = repoDelMarcador(m);
+  return repo ? path.join(repo, m.storyPath) : null;
 }
 
 /** La historia de la corrida con su título (`title:` del frontmatter), o null sin corrida. */
@@ -71,7 +83,12 @@ function historiaDe(m) {
 /** La carpeta de la corrida de la sesión del marcador, sin crearla; null sin corrida o sin clave. */
 function carpetaDeLaCorrida(m) {
   if (!m || !m.storyId) return null;
-  try { return require(PIPELINE).resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), false, rutaDeLaHistoria(m) || undefined, { marker: m }); } catch (e) {
+  const repo = repoDelMarcador(m);
+  if (!repo) {
+    process.stderr.write(`⚠️  el marcador de la historia ${m.storyId} no dice su repo ni trae su historia con ruta absoluta: sus firmas no entran en la lista.\n`);
+    return null;
+  }
+  try { return require(PIPELINE).resolveRunDir(repo, String(m.storyId), false, rutaDeLaHistoria(m) || undefined, { marker: m }); } catch (e) {
     // sin carpeta, las firmas de esa corrida no se listan: se dice, para que la lista corta no parezca completa
     process.stderr.write(`⚠️  no pude calcular la carpeta de la ejecución de la historia ${m.storyId} (${e.message}): sus firmas no entran en la lista.\n`);
     return null;

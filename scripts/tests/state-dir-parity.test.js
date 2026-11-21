@@ -104,6 +104,24 @@ const CASES = [
     want: (h) => [path.join(h, CLAUDE, '.tycon-pipeline'), path.join(h, CLAUDE)],
   },
   {
+    name: 'TYCON_HOME con «..» que pasa por una carpeta que no existe: se resuelve por el texto, como JS',
+    setup: (h) => { fs.mkdirSync(path.join(h, 'casa', 'state'), { recursive: true }); },
+    tyconHome: (h) => `${h}/no-existe/../casa`,
+    want: (h) => [path.join(h, 'casa', 'state'), path.join(h, 'casa', 'state')],
+  },
+  {
+    name: 'TYCON_HOME con blancos que no son ASCII en los bordes (BOM, NBSP): se recortan, como trim() en JS',
+    setup: (h) => { fs.mkdirSync(path.join(h, 'casa', 'state'), { recursive: true }); },
+    tyconHome: (h) => `﻿ ${path.join(h, 'casa')} 　`,
+    want: (h) => [path.join(h, 'casa', 'state'), path.join(h, 'casa', 'state')],
+  },
+  {
+    name: 'TYCON_HOME con un salto de línea al principio: se recorta',
+    setup: (h) => { fs.mkdirSync(path.join(h, 'casa', 'state'), { recursive: true }); },
+    tyconHome: (h) => `\n${path.join(h, 'casa')}`,
+    want: (h) => [path.join(h, 'casa', 'state'), path.join(h, 'casa', 'state')],
+  },
+  {
     name: 'TYCON_HOME vacía: como sin la variable',
     setup: (h) => { fs.mkdirSync(path.join(h, '.tycon', 'state'), { recursive: true }); },
     tyconHome: () => '   ',
@@ -124,6 +142,23 @@ test('T1 Paridad_ShellYTyconHome @story-8.150 @ac-1 — state-dir.sh y tycon-hom
     } finally {
       fs.rmSync(h, { recursive: true, force: true });
     }
+  }
+});
+
+test('T2 PreCommit_OwnHome_TrimsLikeJs — la casa propia del pre-commit recorta TYCON_HOME como trim() de JS', () => {
+  // stable-data: lee el texto del gancho para sacar una función; no crea ningún commit
+  const hook = fs.readFileSync(path.join(ROOT, 'scripts', 'hooks', 'git-pre-commit-global.sh'), 'utf8');
+  const fn = (hook.match(/^harness_own_home\(\) \{[\s\S]*?^\}$/m) || [])[0];
+  assert.ok(fn, 'el pre-commit tiene harness_own_home');
+  const h = lab();
+  try {
+    fs.mkdirSync(path.join(h, 'casa', 'harness', 'scripts'), { recursive: true });
+    for (const v of [`\n${path.join(h, 'casa')}`, `  ${path.join(h, 'casa')}\n`, `﻿${path.join(h, 'casa')} `]) {
+      const r = spawnSync('bash', ['-c', 'eval "$FN"; harness_own_home'], { env: { ...cleanEnv(h, v), FN: fn }, encoding: 'utf8' });
+      assert.strictEqual(r.stdout, path.join(h, 'casa', 'harness'), `TYCON_HOME=${JSON.stringify(v)}: ${JSON.stringify(r.stdout)} ${r.stderr}`);
+    }
+  } finally {
+    fs.rmSync(h, { recursive: true, force: true });
   }
 });
 
