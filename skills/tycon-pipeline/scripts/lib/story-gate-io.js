@@ -382,6 +382,70 @@ function appendLog(stateDir, fileName, sessionId, obj) {
   } catch { /* logging nunca rompe el gate */ }
 }
 
+// ── el grupo de la historia ──────────────────────────────────────────────────────────────────────
+
+/** La raíz del repo de git de una carpeta (`git rev-parse --show-toplevel`), o null. */
+function raizDeGit(dir) {
+  try {
+    return execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim() || null;
+  } catch { return null; }
+}
+const realOMisma = (p) => { try { return fs.realpathSync.native(p); } catch (_) { return p; } };
+
+/**
+ * ¿El archivo (de código, fuera del repo de la corrida) está en el grupo de la historia abierta? `{ estado, repoDelArchivo,
+ * motivo }`, con `estado` 'adentro' (el repo de la historia o un hermano declarado), 'fuera', 'no-pude-saber' o
+ * 'no-aplica' (un repo del arnés, fuera de git o que no trabaja con el arnés). El grupo lo lee el lector de
+ * `repo-group.js`, de la rama principal del remoto y en los dos sentidos, una vez por edición y sin caché en archivo: una
+ * caché que el agente pudiera escribir abriría el freno. `deps` reemplaza las lecturas en las pruebas.
+ */
+function grupoDelArchivo({ abs, real, marker, deps = {} }) {
+  const esDelArnes = deps.esDelArnes || isHarnessRepo;
+  const contexto = deps.repoContext || repoContext;
+  const raiz = deps.raizDeGit || raizDeGit;
+  const noSe = (motivo, repoDelArchivo = null) => ({ estado: 'no-pude-saber', repoDelArchivo, motivo });
+  if (esDelArnes(abs)) return { estado: 'no-aplica' };
+  // el repo donde vive el archivo de la historia cuenta como adentro: con el plan pendiente frena por el plan
+  if (marker.storyPath) {
+    const historia = path.isAbsolute(String(marker.storyPath)) ? String(marker.storyPath) : path.resolve(marker.repoPath, String(marker.storyPath));
+    const delaHistoria = raiz(path.dirname(historia));
+    if (!delaHistoria) return noSe(`no pude leer el repo de la historia (${historia})`);
+    if (isInside(delaHistoria, abs) || isInside(delaHistoria, real)) return { estado: 'adentro', repoDelArchivo: delaHistoria };
+  }
+  // el repo del archivo, sin el envoltorio que descarta el fallo
+  let ctx;
+  try { ctx = contexto(abs); } catch (e) { return noSe(`no pude buscar el repo del archivo (${motivoDe(e)})`); }
+  if (ctx.fallo) return noSe(ctx.fallo, ctx.repoRoot || null);
+  if (ctx.discoveryPartial) return noSe('la búsqueda de historias del repo se cortó por tiempo: no sé si trabaja con el arnés', ctx.repoRoot || null);
+  if (!ctx.repoRoot || (!ctx.repoHasTycon && !ctx.repoHasStories)) return { estado: 'no-aplica', repoDelArchivo: ctx.repoRoot || null };
+  let lector;
+  try { lector = deps.lector || require('./repo-group.js'); } catch (e) { return noSe(`no pude cargar el lector del grupo (${motivoDe(e)})`, ctx.repoRoot); }
+  try {
+    // el checkout principal del repo del archivo: un worktree de un hermano cuenta como el hermano
+    const principal = lector.checkoutPrincipal(ctx.repoRoot);
+    if (!principal) return noSe(`no encuentro el checkout principal de ${ctx.repoRoot}`, ctx.repoRoot);
+    const h = lector.hermanoDeEdicion(marker.repoPath, path.basename(principal));
+    if (!h || h.problema) {
+      const motivo = (h && h.problema) || 'el lector del grupo no contestó';
+      // no estar en el grupo, o estar de un solo lado, es fuera; lo demás (sin rama, sin repo, sin tiempo), no se sabe
+      const fuera = !!(h && (h.fueraDelGrupo || /no declara|no hay \.tycon\//.test(h.problema)));
+      return fuera ? { estado: 'fuera', repoDelArchivo: ctx.repoRoot, motivo } : noSe(motivo, ctx.repoRoot);
+    }
+    if (gate.sameFile(realOMisma(h.raiz), realOMisma(principal))) return { estado: 'adentro', repoDelArchivo: ctx.repoRoot };
+    return { estado: 'fuera', repoDelArchivo: ctx.repoRoot, motivo: `${path.basename(principal)} no es el hermano declarado (${h.nombre})` };
+  } catch (e) { return noSe(`el lector del grupo falló (${motivoDe(e)})`, ctx.repoRoot); }
+}
+
+/** El renglón de una decisión de la regla del grupo (warn, blocked o unknown); si no se puede escribir, lo dice. */
+function anotarFueraDelGrupo(stateDir, sessionId, renglon) {
+  try {
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.appendFileSync(path.join(stateDir, 'gates.log'), JSON.stringify({ ts: new Date().toISOString(), sessionId, name: 'story-gate', kind: 'story-out-of-group', ...renglon }) + '\n', 'utf8');
+  } catch (e) {
+    process.stderr.write(`tycon: no pude anotar en gates.log la edición fuera del grupo de la historia (${e.code || e.message}); la edición sigue\n`);
+  }
+}
+
 // ── evaluate ─────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -491,7 +555,7 @@ function listaDelPlanDelegado(stateDir, sessionId, marker) {
   return { parte: c.parte.nombre, lista: c.parte.files.map((f) => path.resolve(raiz || process.cwd(), f)), repoRoot: raiz };
 }
 
-function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR, installedRoots }) {
+function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR, installedRoots, grupoDeps }) {
   const abs = path.isAbsolute(String(filePath)) ? String(filePath) : path.resolve(cwd || process.cwd(), String(filePath));
   // Una ejecución abierta a la que le falta una pieza frena antes que nada: ni el carril, ni un ad-hoc, ni
   // `story_gate: false` la apagan (lib/open-runs.js). No poder preguntar no es estar sana: frena con el motivo.
@@ -558,9 +622,19 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   }
   // con el plan de una parte aprobado por delegación, la lista congelada al aprobar (de la constancia, no del marcador)
   const batchList = listaDelPlanDelegado(stateDir, sessionId, marker);
+  // con una historia abierta, el grupo se mira sólo para el código que no está en el repo de la corrida: adentro no corre
+  // ningún git de más. Sin el repo de la corrida en el marcador, la regla no aplica y queda anotado
+  let grupo = null;
+  const conHistoria = marker && marker.storyId && gate.isCodeFile(abs);
+  if (conHistoria && !marker.repoPath) {
+    anotarFueraDelGrupo(stateDir, sessionId, { status: 'unknown', story: marker.storyId, repoPath: null, file: abs, repoDelArchivo: null,
+      modo: gate.MODO_FUERA_DEL_GRUPO, motivo: 'el marcador no dice el repo de la corrida' });
+  } else if (conHistoria && !isInside(marker.repoPath, abs) && !isInside(marker.repoPath, realFilePath)) {
+    grupo = grupoDelArchivo({ abs, real: realFilePath, marker, deps: grupoDeps || {} });
+  }
   const hipotetico = (isHarness) => gate.computeStoryGate({
     filePath: abs, stateDir, homeDir: os.homedir(), repoRoot: '/__unknown__', repoHasTycon: true, repoHasStories: true,
-    marker, adhoc, isHarness, realFilePath, installedRoots: roots, realStateDir, adhocRepoRoot, riesgoAlto, listGateEnabled, batchList,
+    marker, adhoc, isHarness, realFilePath, installedRoots: roots, realStateDir, adhocRepoRoot, riesgoAlto, listGateEnabled, batchList, grupo,
   });
   let pre = hipotetico(false);
   let esDelArnes = false;
@@ -574,13 +648,19 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     // el tope en un repo del arnés se reevalúa como tal: con `isHarness: false`, un clon sin `.tycon/` dejaría pasar
     verdict = gate.computeStoryGate({
       filePath: abs, stateDir, homeDir: os.homedir(), ...repo, marker, adhoc, isHarness: esDelArnes,
-      realFilePath, installedRoots: roots, realStateDir, adhocRepoRoot, listGateEnabled, batchList,
+      realFilePath, installedRoots: roots, realStateDir, adhocRepoRoot, listGateEnabled, batchList, grupo,
       gateEnabled: gateEnabledForRepo(repo.repoRoot),
     });
   }
 
   anotarFallos();
   const ctx = { filePath: abs, marker, adhoc, repo, via };
+  // la regla del grupo deja su renglón en aviso y en freno: con eso se decide cuándo pasa a frenar
+  const delGrupo = verdict.aviso || (verdict.kind === 'story-out-of-group' ? verdict : null);
+  if (delGrupo) {
+    anotarFueraDelGrupo(stateDir, sessionId, { status: verdict.action === 'block' ? 'blocked' : 'warn', story: marker.storyId, repoPath: marker.repoPath,
+      file: abs, via: via || null, repoDelArchivo: delGrupo.repoDelArchivo || null, modo: verdict.action === 'block' ? 'freno' : 'aviso', motivo: delGrupo.motivo || null });
+  }
   if (verdict.action !== 'block') {
     // Pasó porque el repo "no trabaja con el arnés" pero el escaneo fue PARCIAL (sin .tycon/, bajo carga):
     // que no sea silencioso — queda medido en gates.log como `unknown`.
@@ -592,8 +672,8 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
 
   const noLeidos = [];
   const otherMarkers = verdict.kind === 'no-lane' ? listOtherMarkers(stateDir, sessionId, abs, noLeidos) : [];
-  // repoPath: namespace por repo — misma key que marker.js.
-  appendLog(stateDir, 'gates.log', sessionId, {
+  // repoPath: namespace por repo — misma key que marker.js. La regla del grupo ya dejó su renglón
+  if (verdict.kind !== 'story-out-of-group') appendLog(stateDir, 'gates.log', sessionId, {
     repoPath: repo.repoRoot || null,
     name: 'story-gate', status: 'blocked', kind: verdict.kind, file: abs, via: via || null,
     story: marker ? marker.storyId : null, reason: verdict.reason, ...(adhocSinFirma ? { adhocSinFirma } : {}),
@@ -616,6 +696,6 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
 module.exports = {
   DEFAULT_STATE_DIR, STALE_HOURS, WAIT_TURN_MAX_MS,
   waitingTurn, savePruned, readPruned, readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, archivosQueSuman, adhocPath, listOtherMarkers,
-  repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots, topesDelCaminoCorto,
+  repoContext, gateEnabledForRepo, appendLog, evaluate, grupoDelArchivo, isHarnessRepo, defaultInstalledRoots, topesDelCaminoCorto,
   listaDelPlanDelegado,
 };

@@ -1226,3 +1226,127 @@ test('PlanReview_ForgedResult_ThreeWays_Blocked (T28, el freno) @story-8.267 @ac
     assert.equal(bash.handle(ev(`node /tmp/build.js --out "$OUT/dist.json"`), { stateDir, installedRoots: [arnes] }), null);
   });
 });
+
+// ── 8.317: con una historia abierta, el código fuera del grupo de la historia ─────────────────────────────────────────
+
+const OTRO = '/w/Otro';
+const APROBADO = { storyId: '8.9', repoPath: REPO, stepsPending: [4, 5] };
+const PENDIENTE = { storyId: '8.9', repoPath: REPO, stepsPending: [3, 4, 5] };
+const FUERA = { estado: 'fuera', repoDelArchivo: OTRO, motivo: 'Otro no está en repo_group de MiRepo (origin/main)' };
+const EN_OTRO = { ...BASE, filePath: `${OTRO}/src/a.cs`, repoRoot: OTRO };
+/** Corre `fn` con el modo puesto en los exports del módulo, y lo restaura. */
+function conModo(modo, fn) {
+  const antes = gate.MODO_FUERA_DEL_GRUPO;
+  gate.MODO_FUERA_DEL_GRUPO = modo;
+  try { return fn(); } finally { gate.MODO_FUERA_DEL_GRUPO = antes; }
+}
+
+// 🔴 Falla con: el carril de historia deja pasar el código de cualquier repo que no es el de la corrida, aun con el plan pendiente.
+test('T1 StoryGate_FueraDelGrupo_Freno_Frena @story-8.317 @ac-1', () => {
+  conModo('freno', () => {
+    for (const marker of [APROBADO, PENDIENTE]) {
+      const r = gate.computeStoryGate({ ...EN_OTRO, marker, grupo: FUERA });
+      assert.equal(r.action, 'block', JSON.stringify(marker));
+      assert.equal(r.kind, 'story-out-of-group');
+    }
+  });
+});
+
+test('T2 StoryGate_HermanoDeclarado_Pasa @story-8.317 @ac-2', () => {
+  conModo('freno', () => {
+    const r = gate.computeStoryGate({ ...EN_OTRO, marker: APROBADO, grupo: { estado: 'adentro', repoDelArchivo: OTRO } });
+    assert.equal(r.action, 'pass');
+    assert.equal(r.aviso, undefined);
+  });
+});
+
+// 🔴 Falla con: el freno del plan mira sólo el repo de la corrida, y en un hermano se codea antes de aprobar el plan.
+test('T5 StoryGate_PlanPendiente_EnHermano_Frena @story-8.317 @ac-4', () => {
+  for (const modo of ['aviso', 'freno']) {
+    conModo(modo, () => {
+      const r = gate.computeStoryGate({ ...EN_OTRO, marker: PENDIENTE, grupo: { estado: 'adentro', repoDelArchivo: OTRO } });
+      assert.equal(r.action, 'block', modo);
+      assert.equal(r.kind, 'plan', modo);
+    });
+  }
+});
+
+test('T7 StoryGate_ModoNoLoCambiaElAmbiente @story-8.317 @ac-5', () => {
+  const guardado = { ...process.env };
+  try {
+    Object.assign(process.env, { TYCON_STORY_OUT_OF_GROUP: 'freno', TYCON_STORY_GATE_MODE: 'block' });
+    assert.equal(gate.MODO_FUERA_DEL_GRUPO, 'aviso');
+    const r = gate.computeStoryGate({ ...EN_OTRO, marker: APROBADO, grupo: FUERA });
+    assert.equal(r.action, 'pass');
+    assert.equal(r.aviso.modo, 'aviso');
+  } finally {
+    for (const k of Object.keys(process.env)) if (!(k in guardado)) delete process.env[k];
+  }
+});
+
+test('T8 StoryGate_LectorFalla_NoPudeSaber @story-8.317 @ac-6', () => {
+  const noSe = { estado: 'no-pude-saber', repoDelArchivo: OTRO, motivo: 'no contestó a tiempo' };
+  // aviso: pasa con el motivo, también con el plan pendiente
+  for (const marker of [APROBADO, PENDIENTE]) {
+    const r = gate.computeStoryGate({ ...EN_OTRO, marker, grupo: noSe });
+    assert.equal(r.action, 'pass');
+    assert.equal(r.aviso.motivo, 'no contestó a tiempo');
+    assert.equal(r.aviso.estado, 'no-pude-saber');
+  }
+  // freno: frena con el motivo
+  conModo('freno', () => {
+    const r = gate.computeStoryGate({ ...EN_OTRO, marker: APROBADO, grupo: noSe });
+    assert.equal(r.kind, 'story-out-of-group');
+    assert.match(r.reason, /no contestó a tiempo/);
+  });
+  // no-aplica (un archivo fuera de git, un repo sin arnés): como hoy
+  assert.equal(gate.computeStoryGate({ ...EN_OTRO, marker: APROBADO, grupo: { estado: 'no-aplica' } }).aviso, undefined);
+});
+
+test('T10 StoryGate_Mensaje_NombraReposYSalidas @story-8.317 @ac-7', () => {
+  conModo('freno', () => {
+    for (const motivo of ['Otro no está en repo_group de MiRepo (origin/main)', 'Otro no declara a MiRepo en repo_group de origin/main: el grupo va en los dos sentidos']) {
+      const r = gate.computeStoryGate({ ...EN_OTRO, marker: APROBADO, grupo: { ...FUERA, motivo } });
+      const m = gate.blockMessage(r, { filePath: EN_OTRO.filePath, marker: APROBADO });
+      assert.match(m, /\/w\/MiRepo/);
+      assert.match(m, /\/w\/Otro/);
+      assert.ok(m.includes(motivo), m);
+      assert.match(m, /repo_group/);
+      assert.match(m, /los DOS repos/);
+      assert.match(m, /su propio carril en ese repo/);
+      assert.doesNotMatch(m, /story_gate: false/);
+    }
+  });
+});
+
+test('T11 StoryGate_LoDeHoySigueIgual @story-8.317 @ac-9', () => {
+  conModo('freno', () => {
+    // sin el dato del grupo, el carril de historia sigue como hoy
+    assert.equal(gate.computeStoryGate({ ...EN_OTRO, marker: APROBADO }).action, 'pass');
+    assert.equal(gate.computeStoryGate({ ...EN_OTRO, marker: PENDIENTE }).action, 'pass');
+    // lo que no es código, la carpeta de estado y el árbol instalado, aun fuera del grupo
+    assert.equal(gate.computeStoryGate({ ...EN_OTRO, filePath: `${OTRO}/docs/a.md`, marker: APROBADO, grupo: FUERA }).action, 'pass');
+    assert.equal(gate.computeStoryGate({ ...EN_OTRO, filePath: `${BASE.stateDir}/active/s.json`, marker: APROBADO, grupo: FUERA }).kind, 'state-dir');
+    assert.equal(gate.computeStoryGate({ ...EN_OTRO, installedRoots: [OTRO], marker: APROBADO, grupo: FUERA }).kind, 'installed-tree');
+    // el arreglo rápido, sin historia, no mira el grupo
+    const adhoc = { reason: 'hotfix', maxFiles: 8, files: [] };
+    assert.equal(gate.computeStoryGate({ ...EN_OTRO, adhoc, grupo: FUERA }).action, 'pass');
+  });
+});
+
+test('T13 StoryGate_ArnesFueraDelRepo_SigueIgual @story-8.317 @ac-9', () => {
+  conModo('freno', () => {
+    const r = gate.computeStoryGate({ ...EN_OTRO, marker: APROBADO, isHarness: true, grupo: FUERA });
+    assert.equal(r.action, 'pass');
+    assert.match(r.reason, /harness/);
+  });
+});
+
+test('T15 Guia_PortonDeCarril_DiceLaRegla @story-8.317 @ac-12', () => {
+  const guia = fs.readFileSync(path.join(SCRIPTS, '..', '..', '..', 'guides', 'what-the-harness-does.md'), 'utf8');
+  const fila = guia.split('\n').find((l) => l.startsWith('| **el portón de carril**'));
+  assert.ok(fila, 'no está la fila del portón de carril');
+  assert.match(fila, /repo de la historia/);
+  assert.match(fila, /hermanos/);
+  assert.match(fila, /repo_group/);
+});
