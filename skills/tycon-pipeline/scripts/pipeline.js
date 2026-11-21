@@ -2184,14 +2184,18 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   }
 
   const marker = readSessionMarker();
-  const prevSnapshot = at(at(at(marker, 'iterations'), String(iter - 1)), 'filesSnapshot');
+  // la foto de la vuelta anterior: la de siempre, o la que guardó al lanzarse si su ronda no se completó
+  const fotoPrevia = [at(at(marker, 'iterations'), String(iter - 1)), at(at(marker, 'fotosAlLanzar'), String(iter - 1))]
+    .find((f) => f && Array.isArray(f.filesSnapshot)) || null;
+  const prevSnapshot = fotoPrevia && fotoPrevia.filesSnapshot;
   if (!prevSnapshot) {
     const out = {
       ...fullSet,
       iter,
       mode: 'no-prev-snapshot-fallback',
-      warning: `no hay marker.iterations[${iter - 1}].filesSnapshot — fallback a set completo. ` +
-               `Llamá 'marker.js snapshot-iter ${iter - 1}' después de invocar advisors de esa iter.`,
+      // sin la foto de la vuelta anterior, el set completo; tomarla ahora sellaría como revisado lo que cambió después
+      warning: `no hay foto de la vuelta ${iter - 1} (marker.iterations[${iter - 1}].filesSnapshot): se re-corre el set completo. ` +
+               'No la tomes ahora con snapshot-iter: quedaría como revisado lo que cambió después de esa vuelta.',
       rerun: fullSet.all,
       skipped: [],
       delta_files: [],
@@ -2237,7 +2241,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // reportó el finding NUNCA re-auditaría su propio fix.
   // marker.fileEvents (escritos por on-edit.js directo; marker.js append-file existe como CLI manual)
   // conserva cada edición con ts; delta = ediciones POSTERIORES al snapshot previo.
-  const prevTs = marker.iterations[String(iter - 1)].ts;
+  const prevTs = fotoPrevia.ts;
   // ── SEGUNDA CAPA: el corte es el ÚLTIMO REVISOR, no la hora de la foto ────────────
   // La hora de la foto es justamente el dato que puede estar mal: si fecha la foto de una iteración a las 17:03 con
   // un arreglo de las 16:58 adentro, el delta de la siguiente
@@ -3538,6 +3542,24 @@ function congelarVuelta({ story, repo, iter }) {
   return ft.sealAndFreeze({
     stateDir: stateDirOf(os.homedir()), sid: sessionIdFileKey(), etiqueta: `rev-iter${iter || 1}`, repos, tipo: 'revisores', story: storyId,
   });
+}
+
+/**
+ * La foto de la vuelta que se lanza (`marker.js snapshot-iter N --at-launch`): la vuelta siguiente calcula su delta desde
+ * ella aunque esta ronda no se complete. Nunca frena el lanzamiento; si no se pudo, lo dice. Una vuelta servida para otra
+ * sesión (`--for-session`) no toca su marcador: la firma autoriza la vuelta, no escribir la corrida ajena.
+ */
+function fotoAlLanzar(iter) {
+  if (paraOtra) return;
+  const n = parseInt(iter, 10) || 1;
+  try {
+    require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'snapshot-iter', String(n), '--at-launch'], {
+      windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000,
+    });
+  } catch (e) {
+    process.stderr.write(`⚠️  no pude guardar la foto de la vuelta ${n} al lanzarla (${String((e && (e.stderr || e.message)) || e).trim().split('\n')[0]}): ` +
+      'si la ronda no se completa, la vuelta siguiente re-corre el set completo.\n');
+  }
 }
 
 /** Suma al contexto de los revisores (el compartido y los recortados) la copia y el sello de cada repo. */
@@ -7621,6 +7643,7 @@ function main() {
       return;
     }
     set.frozen = congelada.repos;
+    fotoAlLanzar(args.iter);
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     contextoConLaCopia(ctx, congelada.repos);
     // El estado de la sección «Reglas para revisores» del repo (el orquestador avisa al
@@ -7779,6 +7802,7 @@ function main() {
       return;
     }
     result.frozen = congelada.repos;
+    fotoAlLanzar(args.iter);
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     contextoConLaCopia(ctx, congelada.repos);
     result.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
@@ -8866,7 +8890,7 @@ function main() {
     '  node pipeline.js smart-reloop   --iter N --repo <r> --story <s> --files ... [--force-full-reloop]\n' +
     '                                  [--allow-missing-files]\n' +
     '       (SPEED-1 — delta = unión(nombres nuevos ∪ fileEvents ∪ mtime post-snapshot);\n' +
-    '       requiere marker.js snapshot-iter (N-1) previo. Valida --files. Emite\n' +
+    '       desde la foto de la vuelta N-1, que se guarda al lanzarla. Valida --files. Emite\n' +
     '       reloop_model_hints en TODOS los modos iter>1 y aplica descuento MECH-2.)\n' +
     '  node pipeline.js mech-check     --repo <dir> --story <spec.md> [--files ...]\n' +
     '       (checks deterministas ACCOV-C1/C5, DEFTR-C1/C2, WIRING-C1 — 0 tokens; findings\n' +

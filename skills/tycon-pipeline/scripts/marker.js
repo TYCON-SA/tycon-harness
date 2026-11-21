@@ -94,7 +94,7 @@
  *                                                  Queda provenance='manual' + entry en gates.log.
  *                                                  Para checks mecánicos usá run-check — set-check
  *                                                  --manual es la excepción auditable, no la regla.
- *   marker.js snapshot-iter <N> [--date-at-last-reviewer]
+ *   marker.js snapshot-iter <N> [--date-at-last-reviewer | --at-launch]
  *                                                → la FOTO del estado auditado de la iteración N.
  *                                                  La toma SOLA el hook al lanzar el último revisor;
  *                                                  si la llamás a mano con código editado después,
@@ -1017,6 +1017,7 @@ function sellosDe(v) {
 
 function cmdSnapshotIter(nRaw, flags) {
   const fecharAlUltimo = Array.isArray(flags) && flags.includes('--date-at-last-reviewer');
+  const alLanzar = Array.isArray(flags) && flags.includes('--at-launch');
   const n = parseInt(nRaw, 10);
   if (Number.isNaN(n) || n < 1) {
     console.error('marker.js snapshot-iter: N debe ser entero >= 1');
@@ -1095,6 +1096,29 @@ function cmdSnapshotIter(nRaw, flags) {
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     if (code) process.exit(code);
   };
+
+  // ── La foto al lanzar la vuelta ───────────────────────────────────────────────────────────────
+  // La pide `pipeline.js advisors` / `smart-reloop` apenas sella la vuelta: lo que hay en ese momento es justo lo que
+  // los revisores van a leer, así que es una foto honesta aunque después la ronda no se complete o se arregle algo antes
+  // de que salga el último revisor. Va aparte (`fotosAlLanzar`), no en `iterations`: una foto ahí dice que la vuelta
+  // lanzó sus revisores, y con eso cuentan las vueltas el tope y la nota de «repensar». El re-loop la usa sólo cuando
+  // falta la de `iterations`. Nunca pisa una que ya está.
+  if (alLanzar) {
+    marker.fotosAlLanzar = marker.fotosAlLanzar || {};
+    const previa = marker.fotosAlLanzar[String(n)];
+    if (previa && Array.isArray(previa.filesSnapshot)) {
+      return salida({ iter: n, foto: 'ya-estaba', ts: previa.ts, snapshot_size: previa.filesSnapshot.length }, 0);
+    }
+    marker.fotosAlLanzar[String(n)] = {
+      ts: nowIso(),
+      filesSnapshot: foto,
+      ...(probesFuera ? { probes_excluidos: probesFuera } : {}),
+      ...(congelada ? { ...sellosDe(congelada), vuelta: congelada.etiqueta } : {}),
+    };
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    return salida({ iter: n, foto: 'al-lanzar', snapshot_size: foto.length, ts: marker.fotosAlLanzar[String(n)].ts }, 0);
+  }
 
   // ── Tabla de decisión ─────────────────────────────────────────────────────────────────────────
   // El escape explícito: fechar la foto en el último lanzamiento de revisores. NO es un bypass —

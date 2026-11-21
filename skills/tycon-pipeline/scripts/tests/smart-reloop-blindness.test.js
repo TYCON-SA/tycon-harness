@@ -571,3 +571,57 @@ test('T8 AdvisorRun_WithoutRun_LogsWhy @story-8.288 @ac-10', () => {
   assert.match(sueltos.find((l) => l.advisor === 'tycon-plugin-security-basics').sin_corrida, /sin repo/);
   assert.match(sueltos.find((l) => l.advisor === 'tycon-silent-failure-hunter').sin_corrida, /sin historia/);
 });
+
+// ── La foto de cada vuelta se guarda al lanzarla ─────────────────────────────
+// Caso: una vuelta que no completó su ronda (o con un arreglo antes del último revisor) quedaba sin foto, y la siguiente
+// re-corría el set completo de revisores con un delta vacío. Ahora la vuelta guarda su foto al lanzarse.
+
+const leerMarcador = (home) => JSON.parse(fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'active', `${SID}.json`), 'utf8'));
+
+function reloopIter(repo, home, iter) {
+  const r = spawnSync(process.execPath,
+    [PIPELINE, 'smart-reloop', '--iter', String(iter), '--repo', repo, '--story', path.join(repo, 'story.md'), '--files', 'src/PluginManager.cs'],
+    { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: SID } });
+  assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+  return { out: JSON.parse(r.stdout), stderr: r.stderr };
+}
+
+test('SmartReloop_RoundWithoutCompletion_SavesItsPhotoAtLaunch — la vuelta siguiente no cae al set completo', () => {
+  const repo = mkRepoGit();
+  const archivo = path.join(repo, 'src', 'PluginManager.cs');
+  const home = mkHome({
+    storyId: '9.3.1', repoPath: repo, storyPath: path.join(repo, 'story.md'),
+    filesTouched: [archivo],
+    fileEvents: [{ path: archivo, ts: new Date(Date.now() - 120000).toISOString() }],
+  });
+  // se lanza la vuelta 1 y ningún revisor llega a correr: no hay foto automática
+  reloopIter(repo, home, 1);
+  const m = leerMarcador(home);
+  const foto = (m.fotosAlLanzar || {})['1'];
+  assert.ok(foto && Array.isArray(foto.filesSnapshot), 'la vuelta 1 guardó su foto al lanzarse');
+  // aparte: una foto en `iterations` diría que la vuelta lanzó sus revisores, y con eso se cuentan las vueltas
+  assert.strictEqual((m.iterations || {})['1'], undefined);
+  // un arreglo después, y la vuelta 2 calcula su delta desde esa foto
+  fs.writeFileSync(archivo, '// arreglo de la vuelta 1\n');
+  const { out } = reloopIter(repo, home, 2);
+  assert.notEqual(out.mode, 'no-prev-snapshot-fallback', JSON.stringify(out.warning || out.mode));
+  assert.ok((out.delta_files || []).some((f) => /PluginManager\.cs$/.test(f)), `el arreglo entra al delta: ${JSON.stringify(out.delta_files)}`);
+});
+
+test('SnapshotIter_AtLaunch_NeverOverwritesAnExistingPhoto', () => {
+  const repo = mkRepoGit();
+  const ts = new Date(Date.now() - 60000).toISOString();
+  const home = mkHome({ storyId: '9.3.1', repoPath: repo, filesTouched: ['src/a.js', 'src/b.js'], fotosAlLanzar: { 2: { ts, filesSnapshot: ['src/a.js'] } } });
+  const r = spawnSync(process.execPath, [MARKER, 'snapshot-iter', '2', '--at-launch'], { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: SID } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepStrictEqual(leerMarcador(home).fotosAlLanzar['2'], { ts, filesSnapshot: ['src/a.js'] });
+});
+
+test('SmartReloop_NoPreviousPhoto_FullSetWithoutOfferingALatePhoto', () => {
+  const repo = mkRepoGit();
+  const home = mkHome({ storyId: '9.3.1', repoPath: repo, filesTouched: [path.join(repo, 'src', 'PluginManager.cs')] });
+  const { out } = reloopIter(repo, home, 2);
+  assert.equal(out.mode, 'no-prev-snapshot-fallback');
+  assert.doesNotMatch(out.warning, /Llamá 'marker\.js snapshot-iter/);
+  assert.match(out.warning, /No la tomes ahora/);
+});
