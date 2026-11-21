@@ -303,9 +303,10 @@ for c in "make -f mk/bomba.mk bomba" "make -f mk/incluye.mk nada" "node fifo"; d
   else no "T-puerta-38 Freno_NombrarNoEsCorrer · «${c}»: rc=$rc en $ms ms"; fi
 done
 # el mismo archivo incluido miles de veces se lee una sola: no llega al tope de lo que se lee, y lo que trae se mira (la
-# receta que lee la clave, en el archivo repetido, frena)
+# receta que lee la clave, en el archivo repetido, frena). 2000 renglones: el Makefile queda bajo los 64 KB que el freno
+# lee de un archivo; más grande, no se mira y pasa por el tope de lectura, no por el include
 printf 'leer:\n\t%s\n' "$LEE_CLAVE" > "$JUG/mk/clave-repetida.mk"
-{ for i in $(seq 1 2500); do printf 'include mk/clave-repetida.mk\n'; done; } > "$JUG/mk/incluye-clave.mk"
+{ for i in $(seq 1 2000); do printf 'include mk/clave-repetida.mk\n'; done; } > "$JUG/mk/incluye-clave.mk"
 : > "$REGISTRO"
 frena "T-puerta-38 Freno_NombrarNoEsCorrer · lo que trae un include repetido se mira" "make -f mk/incluye-clave.mk leer" "y este comando lo corre"
 if ! grep -q 'incluye más' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · un include repetido se lee una vez"
