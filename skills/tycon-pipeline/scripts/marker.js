@@ -5731,6 +5731,7 @@ function cmdClear(rest = []) {
   // acuerde de correr `pipeline.js timing-report` antes del clear. Best-effort:
   // un fallo acá JAMÁS bloquea el clear.
   let cerradaEnClear = false;
+  let cierreDicho = false;
   let marcadorAntes = null;
   frenarSiIlegible(markerFilePath(SID), SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
@@ -5891,6 +5892,8 @@ function cmdClear(rest = []) {
       }
       // Cómo terminó cada paso y con qué resultado cerró la corrida, después de la línea de costo; y un aviso
       if (STEPS_LIB.schemeOf(marker) === STEPS_LIB.SCHEME) decirRenglonesDelCierre(marker, dumpFinal, marker.runDir || carpetaDelVolcado);
+      // la historia terminó: la sesión se cierra. Va antes de la oferta, que tiene que quedar última (se lee con «| tail»)
+      if (marker.storyId) { process.stdout.write(`${require('./lib/resume-state.js').CIERRE_DE_SESION}\n`); cierreDicho = true; }
       // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
       // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
       // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.
@@ -5911,8 +5914,9 @@ function cmdClear(rest = []) {
   // y los clones de los humos comparados (historia 8.167)
   try { require('./lib/compare-previous.js').limpiar(STATE_DIR, SID); } catch (e) { process.stderr.write(`[marker] no pude borrar los clones de los humos comparados (${e.message}): los barre la próxima comparación\n`); }
   syncSessionState(SID);
-  // la historia terminó: la sesión se cierra, y la próxima arranca sin arrastrar esta conversación
-  if (marcadorAntes && marcadorAntes.storyId) process.stdout.write(`${require('./lib/resume-state.js').CIERRE_DE_SESION}\n`);
+  // la historia terminó: la sesión se cierra, y la próxima arranca sin arrastrar esta conversación (si el archivo de la
+  // ejecución falló antes de decirlo)
+  if (!cierreDicho && marcadorAntes && marcadorAntes.storyId) process.stdout.write(`${require('./lib/resume-state.js').CIERRE_DE_SESION}\n`);
 }
 
 function cmdIsActive() {
