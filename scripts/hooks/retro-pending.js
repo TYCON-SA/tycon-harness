@@ -41,8 +41,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
 //     directorio (tampoco `popd`).
 //   · `cd $HOME/X && …` — `HOME` se trata como una variable que el comando no define (`~` sí se
 //     expande), así que sale "no pude resolver": no anota nada y lo dice. Ruidoso, no falso.
-// Y lo que NO se ve: un push dentro de un `sh -c "…"` o de un heredoc que no alimenta a un shell (`python3 - <<EOF` que
-// lanza el push por dentro). Ese cuerpo se quita ANTES de analizar —es texto, no comandos: un `node - <<EOF` con un
+// Y lo que NO se ve: un push dentro de un heredoc que no alimenta a un shell (`python3 - <<EOF` que lanza el push por
+// dentro). Un `bash -c "…"` (o `sh`, `zsh`) sí se lee: lo citado ahí es un comando. Ese cuerpo se quita ANTES de analizar —es texto, no comandos: un `node - <<EOF` con un
 // string con forma de push dispararía el aviso de "no pude resolver" sin que hubiera ningún push—; el
 // de un `bash <<EOF` se conserva y su push se anota. Lo demás lo cubre retro-staleness-notice.js, por días.
 // "Cubierto" es MECÁNICO: el capturer escribe en ~/.claude/tycon-harness/.dashboard/metrics-*.json
@@ -869,9 +869,8 @@ function record(event) {
   // texto, no un push. Sin esto, cualquier `grep -rn "git push origin main" …` o `node -e` con
   // strings caería en el aviso de "no pude resolver" + exit 2, y un control ruidoso termina en
   // TYCON_RETRO_PENDING=0.
-  // El precio declarado: un `sh -c "git push origin main"` queda del lado de "mencionado" y no se
-  // ve. Es el mismo precio que se paga por los heredocs, y va al lado barato: ningún push del ledger
-  // real tiene esa forma.
+  // La excepción es una consola que corre lo citado (`bash -c "git push origin main"`): ahí el push es de verdad, y
+  // git-target.js lee cada uno con su carpeta.
   // `cmdShell`: el comando sin los cuerpos de heredoc que son texto (ver el require de sinHeredocs).
   // Sólo el camino del push lo usa; el del PR ya corta sus segmentos sin heredocs (az-pr.js).
   const cmdShell = sinHeredocs(cmd, { salvoShell: true });
@@ -879,7 +878,9 @@ function record(event) {
   // Los pedidos de GitHub (`gh pr create` hacia la rama principal) y los que abre la capa de plataforma: la entrega de
   // un repo que vive ahí.
   const pedidosGh = [...pedidosDeGh(cmd, cwd, /powershell|pwsh/i.test(String(event.tool_name || ''))), ...pedidosDeCapa(cmd, cwd)];
-  const hayPush = /\bgit\b[^|;&\n]*\bpush\b/.test(sinLoCitado(cmdShell));
+  // un `bash -c '…git push…'` corre lo que está entre comillas: ahí lo citado es un comando, y git-target.js lo lee
+  const consolaC = /(^|[\s;&|(])(?:bash|sh|zsh)\s+-[a-z]*c\b/.test(sinLoCitado(cmdShell)) && /\bgit\b[^|;&\n]*\bpush\b/.test(cmdShell);
+  const hayPush = consolaC || /\bgit\b[^|;&\n]*\bpush\b/.test(sinLoCitado(cmdShell));
   if (!isPrCreate && !hayPush && !pedidosGh.length) return;
 
   // ¿Dónde corre cada entrega de este comando? Con el `cd`/`-C` seguidos, no con el cwd de la
