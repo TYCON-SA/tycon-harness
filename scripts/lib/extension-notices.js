@@ -210,7 +210,13 @@ function matchesCommand(command, declared, { powershell = false } = {}) {
       const f = seg[i];
       if (!f || !f.esBandera) break;
       if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(f.texto) || DELANTE.has(f.texto)) { i++; continue; }
-      if (f.texto === 'timeout') { i++; while (seg[i] && seg[i].texto.startsWith('-')) i++; i++; continue; }
+      if (f.texto === 'timeout') {
+        i++;
+        // `-k 5` y `-s KILL` llevan su valor aparte; `--kill-after=5` y `--foreground`, no
+        while (seg[i] && seg[i].texto.startsWith('-')) i += ['-k', '-s', '--kill-after', '--signal'].includes(seg[i].texto) ? 2 : 1;
+        i++;
+        continue;
+      }
       break;
     }
     const f = seg[i];
