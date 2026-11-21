@@ -1360,6 +1360,18 @@ function tierDe(nombre) {
 function contextoCondicion(repo, files, det) {
   return { det, files, agregado: (exts) => readAddedContents(repo, files, exts) };
 }
+/**
+ * Los revisores de código: los que el cálculo del set de una vuelta puede devolver, del núcleo y de los paquetes activos
+ * del repo (sin los de validación de la historia, que no tienen vueltas). Es la lista con la que un revisor lanzado fuera
+ * del set de la vuelta cuenta como parte de ella (on-advisor-run.js): un agente de otra etapa, de exploración o de guía
+ * no está. Casos: tests/smart-reloop-blindness.test.js (AdvisorRun_OutsideSet). Con un paquete roto o que falta, sólo los del núcleo: el freno de la vuelta ya lo dice.
+ */
+function codeReviewerNames(repo) {
+  let dePaquetes = [];
+  try { dePaquetes = paquetesActivos(repo).flatMap((p) => p.revisores.filter((r) => r.grupo !== 'validacion').map((r) => r.agente)); } catch (_e) { dePaquetes = []; }
+  return unique([...coreReviewerNames(), ...dePaquetes]);
+}
+
 function revisoresDePaquetes(activos, grupo, ctx) {
   const out = [];
   for (const p of activos) {
@@ -8961,6 +8973,7 @@ module.exports = {
   CORE_REVIEWERS,
   coreReviewersDrift,
   coreReviewerNames,
+  codeReviewerNames,
   storyRequiresRuntimeEvidenceCheck,
   parseFrontmatterPipeline,
   revisoresDelNucleo,

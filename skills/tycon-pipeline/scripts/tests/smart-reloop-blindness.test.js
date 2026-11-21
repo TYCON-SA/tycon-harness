@@ -571,3 +571,63 @@ test('T8 AdvisorRun_WithoutRun_LogsWhy @story-8.288 @ac-10', () => {
   assert.match(sueltos.find((l) => l.advisor === 'tycon-plugin-security-basics').sin_corrida, /sin repo/);
   assert.match(sueltos.find((l) => l.advisor === 'tycon-silent-failure-hunter').sin_corrida, /sin historia/);
 });
+
+// ── Un revisor lanzado fuera del set de la vuelta ──────────────────────────────────────────────────────────────────
+// La vuelta abierta: su `step5-start` con el set que calculó «Revisores» (sin `expected`, ninguna vuelta abierta).
+// Después, cada lanzamiento por el gancho de salida y su cierre por el gancho de llegada, como en Claude Code.
+function vueltaAbierta(expected) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fuera-set-home-'));
+  const repo = mkRepoGit();
+  const sid = 's-fuera-set';
+  const estado = require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(home);
+  fs.mkdirSync(path.join(estado, 'advisor-runs'), { recursive: true });
+  if (expected) fs.writeFileSync(path.join(estado, 'advisor-runs', `${sid}.jsonl`), `${JSON.stringify({ ts: new Date().toISOString(), event: 'step5-start', expected })}\n`);
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_AUTO_SNAPSHOT: '0' };
+  delete env.TYCON_HOME;
+  const lanzar = (agente, toolUseId) => {
+    const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-advisor-run.js')], { cwd: repo, env, encoding: 'utf8',
+      input: JSON.stringify({ tool_name: 'Agent', session_id: sid, cwd: repo, tool_use_id: toolUseId, tool_input: { subagent_type: agente, prompt: 'x' } }) });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  const cerrar = (agente, texto) => {
+    const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-advisor-done.js')], { cwd: repo, env, encoding: 'utf8',
+      input: JSON.stringify({ hook_event_name: 'SubagentStop', session_id: sid, agent_type: agente, last_assistant_message: texto }) });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  const rc = require(path.join(SCRIPTS, 'lib', 'reported-criticals.js'));
+  const registro = () => rc.readSession(estado, require(path.join(SCRIPTS, 'lib', 'session-id.js')).sessionIdFileKey(sid));
+  return { lanzar, cerrar, registro, rc };
+}
+
+// 🔴 Falla con: el revisor de código lanzado a mano para confirmar un arreglo, fuera del set de la vuelta, no dejaba su
+//    lanzamiento: su reporte no se anotaba, su «cerrado» no contaba y el cierre pedía una exención del dueño.
+test('T1 AdvisorRun_OutsideSet_LeavesTrace @story-8.303 @ac-1 — el revisor de código fuera del set queda en la vuelta, marcado, y su cierre cuenta', () => {
+  const v = vueltaAbierta(['tycon-plugin-security-basics']);
+  v.lanzar('tycon-plugin-security-basics', 'tu-1');
+  v.lanzar('tycon-silent-failure-hunter', 'tu-2');
+  const lanzados = v.registro().filter((l) => l.kind === 'launched');
+  assert.deepEqual(lanzados.map((l) => l.advisor), ['tycon-plugin-security-basics', 'tycon-silent-failure-hunter']);
+  assert.equal(lanzados[0].outside_set, undefined, 'el del set no lleva la marca');
+  assert.equal(lanzados[1].outside_set, true, 'el de afuera lleva la marca «fuera del set»');
+  // su reporte se anota como el de cualquier revisor de la vuelta, y el cruce no le pide nada más
+  v.cerrar('tycon-silent-failure-hunter', 'Revisé el arreglo: sin fallos silenciosos.\nVeredicto: limpio');
+  v.cerrar('tycon-plugin-security-basics', 'Veredicto: limpio');
+  const rep = v.registro().find((l) => l.kind === 'report' && l.advisor === 'tycon-silent-failure-hunter');
+  assert.ok(rep && rep.readable, JSON.stringify(rep));
+  const x = v.rc.cross({ lines: v.registro(), findings: [] });
+  assert.deepEqual(x.problemas, [], JSON.stringify(x.problemas));
+});
+
+test('T2 AdvisorRun_NonReviewerAgent_NoTrace @story-8.303 @ac-2 — un agente que no revisa código no deja lanzamiento ni el cruce le pide reporte', () => {
+  const v = vueltaAbierta(['tycon-plugin-security-basics']);
+  // 🔴 los chequeadores de la historia tampoco: se lanzan para otra historia en medio de la vuelta (una historia de
+  // seguimiento que se valida durante «Hallazgos»), y su crítico no es de ésta
+  for (const agente of ['claude-code-guide', 'tycon-story-adversarial-reviewer', 'Explore', 'general-purpose', 'tycon-retrospective-capturer',
+    'tycon-story-validator', 'tycon-spec-first-checker', 'tycon-ac-coverage-checker', 'tycon-deferral-tracker']) v.lanzar(agente, `tu-${agente}`);
+  assert.deepEqual(v.registro().filter((l) => l.kind === 'launched'), []);
+  assert.deepEqual(v.rc.cross({ lines: v.registro(), findings: [] }).problemas, []);
+  // sin una vuelta abierta, tampoco un revisor de código: no hay vuelta a la que sumarlo
+  const sin = vueltaAbierta(null);
+  sin.lanzar('tycon-silent-failure-hunter', 'tu-x');
+  assert.deepEqual(sin.registro().filter((l) => l.kind === 'launched'), []);
+});
