@@ -414,8 +414,8 @@ function decidir(evento, opts = {}) {
   }
 }
 
-function anotarNegativa(motivo, comando) {
-  try { require('../lib/guard-record.js').anotar({ freno: FRENO, regla: 'tope', veredicto: 'bloqueo', motivo, cmd: comando }); } catch { /* la constancia es ayuda, no evidencia */ }
+function anotarNegativa(motivo, comando, sesion) {
+  try { require('../lib/guard-record.js').anotar({ freno: FRENO, regla: 'tope', veredicto: 'bloqueo', motivo, cmd: comando, sesion }); } catch { /* la constancia es ayuda, no evidencia */ }
 }
 
 function main() {
@@ -435,7 +435,7 @@ function main() {
   if (evento.hook_event_name && evento.hook_event_name !== 'PreToolUse') return 0;
   const d = decidir(evento);
   if (!d.deny) return 0;
-  anotarNegativa(d.motivo, (evento.tool_input || {}).command);
+  anotarNegativa(d.motivo, (evento.tool_input || {}).command, evento.session_id);
   process.stderr.write(`🔴 ${TAG} ${d.message}\n`);
   return 2;
 }
