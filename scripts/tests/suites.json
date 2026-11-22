@@ -2476,6 +2476,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/run-overrun.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/permission-notice.test.js",
       "requiere": []
     },
@@ -4944,6 +4949,16 @@
       "__nota": "story 8.26, tanda F1 (T22, T56): el freno antes de publicar, en un empuje (scripts/hooks/public-push-guard.js). El freno corre COPIADO a un arnés de laboratorio —así la prueba decide si esa «máquina» tiene el perfil del equipo y dónde está la lista— contra repos de juguete con git; un repo desnudo local hace de público. Cada rojo (un término en el contenido, la ruta, el mensaje, la rama o una marca; un token; un correo que no es noreply; una ruta vedada; un objeto ilegible; el tope de tiempo) tiene su verde. La lista es inventada.",
       "raiz": "arnes",
       "ruta": "tests/public-push-guard.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/hook-failure-critical.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/hook-failure-matrix.test.js",
       "requiere": []
     },
     {
