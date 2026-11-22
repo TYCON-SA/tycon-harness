@@ -971,10 +971,19 @@ function story730(repo, archivos, { extra = [], title = 'La lista de facturas' }
   return p;
 }
 const PANTALLA_NORMAL = (repo) => story730(repo, ['src/components/Facturas.tsx'], { extra: ['signed_for_sprint: 3'] });
-function maqueta730(storyPath, boton) {
+// la maqueta y, salvo `mirada: false`, su revisión con navegador limpia (la que deja `mockup.js shots`; acá sin abrir
+// un navegador: lo que se prueba es la aprobación, y el navegador se prueba en mockup.test.js)
+function maqueta730(storyPath, boton, { mirada = true } = {}) {
   const r = spawnSync('node', [MOCKUP_JS, 'render', '--data', '-', '--story', storyPath], { encoding: 'utf8', input: MODELO_730(boton) });
   assert.equal(r.status, 0, r.stderr);
-  return JSON.parse(r.stdout);
+  const out = JSON.parse(r.stdout);
+  if (mirada) miradaLimpia(out.out);
+  return out;
+}
+function miradaLimpia(mockupPath) {
+  const SH = require(path.join(SCRIPTS, 'lib', 'mockup-shots.js'));
+  const { report, shots } = SH.shotsPaths(mockupPath);
+  SH.escribirInforme({ report, file: path.basename(mockupPath), sha256: require(MOCKUP_JS).mockupHash(fs.readFileSync(mockupPath, 'utf8')), shots, findings: [] });
 }
 function marker730(home, sid, storyPath, repo, { done = [0, 1, 2], pending } = {}) {
   const all = [0, 1, 2, 3, 4, 5, 6, 7, 8];
@@ -1012,6 +1021,36 @@ test('7.30-T11 CompleteStep3_ConPantalla_SinMaqueta_Bloquea @story-7.30 @ac-9', 
   r = markerCli(home, 's11b', ['complete-step', '3', '--approved', 'dale']);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /el marcador no tiene la ruta de la story: `marker\.js set` con `storyPath`/);
+});
+
+// CompleteStep3_MaquetaSinMirar_Bloquea
+// 🔴 Falla con: la maqueta se pide aprobar sin que nadie la haya mirado con un navegador, o mirada con hallazgos.
+test('CompleteStep3_MaquetaSinMirar_Bloquea: sin revisión con navegador, o con hallazgos, no se pide aprobarla; limpia, pide las capturas', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const s = PANTALLA_NORMAL(repo);
+  const mq = maqueta730(s, undefined, { mirada: false });
+  marker730(home, 'sm', s, repo);
+  const cita = ['complete-step', '3', '--approved', 'dale', '--mockup-approved', 'va'];
+  let r = markerCli(home, 'sm', cita);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /la maqueta no se pide aprobar sin mirarla: nadie la miró con un navegador/);
+  assert.match(r.stderr, /mockup\.js shots .*1\.1-mockup\.html/);
+  const SH = require(path.join(SCRIPTS, 'lib', 'mockup-shots.js'));
+  const { report, shots } = SH.shotsPaths(mq.out);
+  SH.escribirInforme({ report, file: path.basename(mq.out), sha256: mq.sha256, shots, findings: [{ width: 390, kind: 'se pisan', what: '«Pagar» y «Nuevo» se dibujan uno encima del otro' }] });
+  r = markerCli(home, 'sm', cita);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /no se lee bien en el navegador/);
+  assert.match(r.stderr, /a 390 px, se pisan/);
+  miradaLimpia(mq.out);
+  // limpia y sin la cita: pide mandar las dos capturas a la conversación
+  r = markerCli(home, 'sm', ['complete-step', '3', '--approved', 'dale']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /las dos capturas a la conversación/);
+  assert.ok(r.stderr.includes(shots[1440]) && r.stderr.includes(shots[390]), r.stderr);
+  r = markerCli(home, 'sm', cita);
+  assert.equal(r.status, 0, r.stderr);
 });
 
 test('7.30-T12 CompleteStep3_ConPantalla_PideAprobarLaMaqueta @story-7.30 @ac-10', () => {

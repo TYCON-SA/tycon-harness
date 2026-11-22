@@ -199,17 +199,27 @@ compara lo construido contra ella.
    capa. Sólo la contradice una story que diga literalmente «en la página» o «no modal»; entonces se
    corrige la maqueta y se aprueba de nuevo. Palabras como «panel» o «sección» no la contradicen: un panel puede abrirse
    encima. La prueba en vivo lo comprueba (capa 12).
-3. **Presentarla con el plan, en el chat**: la ruta del archivo y la lista de `mockup.js texts <ruta>` por pantalla. El
-   navegador puede no abrirse (sesión remota, Linux sin escritorio, la jaula de Codex) o estar en otra máquina: la lista
-   en el chat es lo que se aprueba seguro.
-4. **La pregunta**: va en el mismo momento que la del plan. Con `AskUserQuestion` si está; sin ella (Codex), en texto
+3. **Mirarla antes de mostrarla**: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/mockup.js shots <ruta>`
+   la abre con el navegador sin pantalla del arnés (el Playwright fijado, `scripts/lib/pinned-playwright.js`) a 1440 y a
+   390 px. Guarda una captura de cada ancho al lado de la maqueta (`<clave>-mockup-1440.png`, `<clave>-mockup-390.png`) y
+   un informe (`<clave>-mockup-review.json`). Busca textos que se pisan, una página más ancha que la ventana y palabras
+   partidas. Con un hallazgo sale 1: se arregla el modelo y se vuelve a mirar. «Aprobar el plan» no cierra sin el
+   informe de esa misma maqueta y sin hallazgos. Sin el Playwright fijado sale 2 y lo dice: se instala con
+   `node scripts/lib/pinned-playwright.js install`. Lo nuevo se marca con fondo y borde de zona, y lo explica la
+   leyenda de arriba; nada se dibuja encima del contenido.
+4. **Presentarla con el plan, en el chat**: **las dos capturas, mandadas a la conversación de quien aprueba** (no sólo
+   su ruta), la ruta del archivo y la lista de `mockup.js texts <ruta>` por pantalla. El navegador puede no abrirse
+   (sesión remota, Linux sin escritorio, la jaula de Codex) o estar en otra máquina: las capturas y la lista en el chat
+   son lo que se aprueba seguro.
+5. **La pregunta**: va en el mismo momento que la del plan. Con `AskUserQuestion` si está; sin ella (Codex), en texto
    con opciones numeradas: «1. Apruebo la maqueta · 2. Cambiá esto: … · 3. Cancelar». Aunque el riesgo sea LOW,
    la respuesta sobre la maqueta se espera igual.
-5. **Quién la aprueba**: quien aprueba el plan. Es el dueño o, si el dueño dejó el modo autónomo, quien tenga su
+6. **Quién la aprueba**: quien aprueba el plan. Es el dueño o, si el dueño dejó el modo autónomo, quien tenga su
    **delegación** (la coordinadora). La cita dice quién aprobó y por qué vía, por ejemplo «aprobada por la
    coordinadora, por delegación del dueño». El guion no valida quién es: la cita es la constancia.
-6. **Cierre**: `complete-step approve-plan --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"`. Sin la maqueta, con una maqueta que no pasa
-   `mockup.js check`, o sin `--mockup-approved`, «Aprobar el plan» no cierra. Queda la huella en el marcador y en
+7. **Cierre**: `complete-step approve-plan --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"`. Sin la maqueta, con una maqueta que no pasa
+   `mockup.js check`, sin su revisión con navegador limpia (`mockup.js shots`), o sin `--mockup-approved`, «Aprobar el
+   plan» no cierra. Queda la huella en el marcador y en
    `<clave>-mockup-approval.json` (sin la cita), que va en el commit con la maqueta.
 
 Si la maqueta cambia después (un arreglo de legibilidad cambió un texto), se le muestra de nuevo a quien la aprueba y
