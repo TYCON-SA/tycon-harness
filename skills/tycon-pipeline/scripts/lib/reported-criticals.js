@@ -524,7 +524,7 @@ function renglones(r, { marker }) {
       out.push(`   Primero, a ${sinPedir.map((p) => p.advisor).join(', ')}: continuá al mismo agente con un mensaje que pida sólo el renglón de veredicto`
         + ' («Veredicto: limpio» o «Veredicto: hallazgos (REGLA, REGLA) · bloquea: sí|no»), sin cambiar su revisión.');
     }
-    out.push(`   ${sinPedir.length ? 'Si no lo da, una' : 'Una'} persona lo exime:`);
+    out.push(`   ${sinPedir.length ? 'Si no lo da, lo exime una' : 'Lo exime una'} persona: corré esto solo, y ella lo aprueba en la ventana o en el cuadro que da el freno:`);
     for (const p of sinReporte) out.push(`     node ${marker} waive-critical --rule ${NO_REPORT_RULE} --file ${p.advisor} --reason '<por qué>'`);
   }
   if (r.problemas.length > sinReporte.length) {

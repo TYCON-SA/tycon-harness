@@ -7360,7 +7360,7 @@ function cmdDeclarePending(argv) {
   try { appendLog('gates.log', { name: DS.DECLARADO, status: 'ok', sesion: PROPIA, id, repo: r.clave, ruta: r.ruta }, { estricto: true }); } catch (e) {
     console.error(`marker.js declare-pending: no pude anotarlo en el registro de firmas (${e.code || e.message}).`); process.exit(2);
   }
-  console.error(`✅ ${id} declarado por esta sesión en ${r.ruta}. La coordinadora lo aprueba con \`marker.js approve-pending --id ${id} --repo ${r.ruta} --for-session ${PROPIA}\`.`);
+  console.error(`✅ ${id} declarado por esta sesión en ${r.ruta}. No lo apruebes desde acá: mandale a la coordinadora el código y la carpeta, y ella corre desde su pestaña \`marker.js approve-pending --id ${id} --repo ${r.ruta} --for-session ${PROPIA}\`. Sin coordinadora, lo aprueba la persona: corré \`marker.js approve-pending --id ${id} --repo ${r.ruta}\` solo y mostrale el cuadro que da el freno.`);
   process.exit(0);
 }
 
