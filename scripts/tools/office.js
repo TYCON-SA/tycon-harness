@@ -551,6 +551,9 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     // la sesión que tomó el arreglo de main lo dice, como en /wip: es uno solo para todas las que esperan
     const fixIds = (wip.mainFixers || {})[String(d.sid)];
     if (Array.isArray(fixIds) && fixIds.length && !x.mark) a.haciendo = `${a.haciendo ? `${a.haciendo} · ` : ''}arregla main (${fixIds.join(', ')})`;
+    // la corrida que va por el doble de lo estimado (scripts/lib/run-overrun.js), como en /wip y en coordination.js status
+    const over = f ? require('../lib/run-overrun.js').overrunText(f.overrun) : null;
+    if (over && !x.mark) a.haciendo = `${a.haciendo ? `${a.haciendo} · ` : ''}${over}`;
     if (endAt != null && !waiting) {
       // sin historia, la promesa es del trabajo que se declaró, y de esa declaración: otro arreglo u otra nota de la misma
       // sesión no la hereda, ni una nota nueva con el mismo texto

@@ -335,12 +335,38 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   el resultado (`marker.js mark-adversarial-result`, con cualquier veredicto, también `no-medido`) o el salteo
   (`marker.js mark-adversarial-skipped`). Si se relanza, vuelve a ocuparla. Una sesión que se cerró lo libera, y pasada una
   hora ya no frena, porque puede estar terminado o colgado, y se dice.
+- **El turno libre no se toma solo: el «arrancá».** Con una coordinadora designada y viva, el portón que recibió un «esperá»
+  (su 77) queda anotado en la fila (`coordination/suite-waits/<sesión>.json`) y, cuando el turno se libera, no lo toma en
+  su próximo intento: espera el «arrancá». Por qué: el 13/11 un portón en espera tomó el turno apenas se liberó, encima de
+  unos revisores que la coordinadora ya había lanzado. El «arrancá» es un comando, `heavy-turn.js grant --to <sesión>`
+  (el id, su comienzo o el nombre de la sesión), y lo da sólo la coordinadora; la fila del aviso lo trae entero. Vale para
+  los dos lugares del turno. Mientras está vigente, ninguna otra sesión toma el turno libre; vence a los 10 minutos si su
+  sesión no lo toma, o al cerrarse esa sesión, y la fila pasa a la siguiente. Una sesión que nunca recibió un «esperá»
+  toma el turno libre como siempre. La espera anotada vale tres horas. La suite rápida del arranque no es un portón: no
+  se anota ni gasta el «arrancá» de su sesión. Si la coordinadora se cierra o deja de estar designada, todo vuelve a lo
+  de siempre: el portón en espera toma el turno libre.
+- **La reserva, para lo que no pide turno.** Los revisores y el pase los lanza la coordinadora y no tienen un proceso
+  que tome el turno. Antes de lanzarlos, `heavy-turn.js reserve --for "<qué>"` toma el turno a nombre de eso: un portón
+  que lo pide recibe el «esperá» con el nombre de la reserva. Con una ejecución grande corriendo no reserva (sale 77 y dice
+  quién la tiene). Se suelta con `heavy-turn.js release --reserve`, vence a los 90 minutos (una tanda de revisores o un
+  pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10.
 
 `coordination.js status` muestra un solo renglón, «Turno de tarea pesada», con quién lo tiene y qué es; con una ejecución
 grande, si el segundo turno está libre o cerrado, con la memoria y el piso; con dos, las dos. `heavy-turn.js holders` las
 lista. El portón acotado que corre al lado de un pase lo dice en su renglón, con cuántas suites. Sin coordinadora designada, todo responde como siempre: en la
 CI y en la nube no hay turno. `TYCON_SUITE_TURN=0` apaga el de la suite, y `TYCON_SUITE_TURN=1` lo pide aunque no haya
 coordinadora: sólo puede frenar de más.
+
+### La memoria de intercambio
+
+Claude Code cierra sesiones quietas cuando se queda sin memoria de intercambio, aunque la memoria libre del sistema
+parezca de sobra: el 14/11 cerró dos con la máquina al 65 % libre y 0,9 GB libres de 8 GB de intercambio. `coordination.js
+status` la lee (`sysctl vm.swapusage`, en macOS): con menos del 15 % libre dice cuánto queda y nombra las sesiones vivas
+que no están trabajando, primero las que esperan algo, que son las que se pierden. Qué hacer: antes de lanzar algo pesado,
+cerrá las quietas que no esperan nada. Si no se puede leer (otra plataforma, un comando que falla) dice «no medida» y
+no supone nada. Sólo la lee el comando `status`: el aviso de cada turno y el freno del cierre no la miden. Una sesión
+que Claude Code ya cerró sale en «Cerradas por Claude Code» con lo que esperaba (su nota de `marker.js doing
+--waiting-for`) y desde cuándo, arriba de las demás, con su `claude respawn`.
 
 ## Las revisiones automáticas: qué hace la coordinadora
 
@@ -1032,7 +1058,7 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
 | Un rojo no se deja | nadie | Los controles frenan lo propio; un rojo ajeno lo ve quien lo encuentra. |
 | No aflojar una revisión, no hacer papeleo | nadie | Es criterio: ningún dato separa una revisión de un papeleo. |
 | Comprobar un mensaje para el equipo | nadie | El mensaje sale por fuera de la máquina. |
-| La coordinadora no cambia código ni guías ella misma | freno | La sesión designada no escribe, edita ni borra archivos de un repo ni de la copia instalada del arnés, por Edit, Write o la consola: el freno le dice que lo encargue a una sesión. Su memoria y lo de fuera de los repos pasan. Límite, por elección: lo que escribe por dentro un guion guardado en un archivo no se mira, porque los guiones del arnés que corre la coordinadora escriben su estado. |
+| La coordinadora no cambia código ni guías ella misma | freno | La sesión designada no escribe, edita ni borra archivos de un repo ni de la copia instalada del arnés, por Edit, Write o la consola: el freno le dice que lo encargue a una sesión. Un comando de la consola lo corre ella misma si el dueño lo aprueba con un click en el cuadro que muestra el freno: ese comando exacto, una vez, dentro de 30 minutos; un mensaje que diga que autorizó no alcanza. `git worktree remove --force` también frena. Su memoria y lo de fuera de los repos pasan. Límite, por elección: lo que escribe por dentro un guion guardado en un archivo no se mira, porque los guiones del arnés que corre la coordinadora escriben su estado. |
 | Un plan para el dueño pasa antes por un revisor aparte | nadie | Es criterio: ningún dato separa un plan de un mensaje cualquiera. |
 | Afirmar sólo lo comprobado, y medir el uso antes de sacar algo | nadie | Es criterio de la coordinadora. |
 | Medir un cambio de velocidad en un día con carga | nadie | Qué cambio promete velocidad lo dice el mensaje, no un dato. |
