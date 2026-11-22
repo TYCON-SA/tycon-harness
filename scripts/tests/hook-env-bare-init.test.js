@@ -86,6 +86,31 @@ test('HookEnv_SuitesWithBareInit_LeaveRepoWithTree — corridas dentro de un gan
 // propio texto.
 const LIMPIA = /clean-git-env|sinGitDelPadre|\^\(GIT_|\w+\[k\]\s*=\s*process\.env\[k\]|harness_lab_git|env -u GIT_DIR|unset[^\n]*\bGIT_DIR\b|delete [\w.]*\[?['"]?GIT_DIR/;
 
+/**
+ * ¿El renglón de consola tiene un `init … --bare` sin carpeta? Se recorre palabra por palabra (sin una expresión regular
+ * con repeticiones que se pisen): antes de `--bare` sólo opciones; después, opciones (con el valor de `-b`) hasta el fin
+ * del comando (`;`, `&`, `|`, `)`, una redirección) o del renglón. Una palabra que no es opción es la carpeta.
+ */
+function initDeConsolaSinCarpeta(renglon) {
+  const palabras = renglon.trim().split(/\s+/);
+  for (let k = palabras.indexOf('init'); k >= 0; k = palabras.indexOf('init', k + 1)) {
+    let bare = false;
+    let carpeta = false;
+    for (let j = k + 1; j < palabras.length; j += 1) {
+      const cruda = palabras[j];
+      if (/^(?:\d*[<>]|[;&|)])/.test(cruda)) break;
+      // `--bare;` es la última palabra del comando
+      const p = cruda.replace(/[;&|)]+$/, '');
+      if (p === '--bare') bare = true;
+      else if (p === '-b' || p === '--initial-branch') j += 1;
+      else if (!p.startsWith('-')) { carpeta = true; break; }
+      if (p !== cruda) break;
+    }
+    if (bare && !carpeta) return true;
+  }
+  return false;
+}
+
 /** Los renglones de `texto` con un `init --bare` sin carpeta: después de `--bare` sólo vienen opciones. */
 function initsSinCarpeta(texto, esShell) {
   const hallados = [];
@@ -100,10 +125,7 @@ function initsSinCarpeta(texto, esShell) {
       if (!conCarpeta) hallados.push(i + 1);
     }
     // forma de consola: `init … --bare` y después sólo opciones, hasta el fin del comando
-    if (esShell) {
-      const m = /\binit((?:\s+-[-\w=]+)*)\s+--bare((?:\s+(?:-b|--initial-branch)\s+\S+|\s+-[-\w=]+)*)\s*($|[;&|>)])/.exec(renglon);
-      if (m) hallados.push(i + 1);
-    }
+    if (esShell && initDeConsolaSinCarpeta(renglon)) hallados.push(i + 1);
   });
   return hallados;
 }
