@@ -715,7 +715,10 @@ clasificador comprueba que es eso; si no, es un cambio de control, que es sólo 
 Guardar se autoriza en la ventana de permiso, no con una firma: autorización siempre, firma nunca, y donde tiene
 consecuencias: la persona aprueba el pull request, no cada commit. El commit y el empuje de la rama de trabajo los hace el
 agente sin preguntar; se deshacen, y lo que no se deshace ya tiene su firma de control. La firma `save` y
-`marker.js approve-save` siguen en el catálogo, pero el freno ya no las pide.
+`marker.js approve-save` siguen en el catálogo, y el freno las pide sólo si el perfil del equipo dice
+`approvals.local_commit: coordinator`: entonces el commit de una ejecución no guarda sin ese ok vigente, que la
+coordinadora da por delegación con los controles de siempre (ejecución limpia, nada sensible, aviso entregado). Si el
+perfil no dice con certeza quién firma el commit, la ventana pregunta.
 
 El control del commit corre además el freno de publicación sobre lo que agrega ese commit: lo que el empuje frenaría (un
 secreto, un nombre de la lista) frena el commit, y no queda historia que reescribir. La ventana ya preguntó, así que ese
