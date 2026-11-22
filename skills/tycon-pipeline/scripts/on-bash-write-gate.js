@@ -3119,9 +3119,30 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
   const sumarUno = (t) => { if (t && String(t).trim()) out.push(...comandosAnidados(String(t), hondo + 1, asignados)); };
   const sumarValores = (c) => { for (const t of valoresEn(c)) sumarUno(t); };
   const sumar = (c) => { sumarUno(c); sumarValores(c); };
-  // lo de adentro de una sustitución corre; una variable que ahí sólo se NOMBRA como argumento, no (la mira su programa)
-  for (const m of String(cmd).matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumarUno(m[1]);
-  for (const m of String(cmd).matchAll(/`([^`]*)`/g)) sumarUno(m[1]);
+  // entre comillas simples (fuera de las dobles) `$(…)` y las comillas invertidas son texto: no corren
+  let sinSimples = '';
+  let q = null;
+  for (let i = 0, s = String(cmd); i < s.length; i++) {
+    const ch = s[i];
+    if (q === "'") { sinSimples += ch === "'" ? (q = null, ch) : ' '; continue; }
+    if (ch === '\\' && q !== "'") { sinSimples += ch + (s[i + 1] || ''); i++; continue; }
+    if (ch === '"') q = q === '"' ? null : '"';
+    else if (ch === "'" && q !== '"') q = "'";
+    sinSimples += ch;
+  }
+  // una comilla simple que no cierra no deja leer el comando: no se sabe qué es texto, y se mira todo
+  if (q === "'") sinSimples = String(cmd);
+  // un `\$(` o una comilla invertida escapada también son texto
+  // se busca sobre el texto sin lo de comillas simples (mismo largo) y se toma del original: un `sh -c '…'` adentro de
+  // un `$(…)` conserva su cuerpo. Lo de adentro de una sustitución corre; una variable que ahí sólo se NOMBRA como
+  // argumento, no (la mira su programa)
+  const original = String(cmd);
+  for (const m of sinSimples.matchAll(/(?<!\\)\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumarUno(original.slice(m.index + 2, m.index + m[0].length - 1));
+  for (const m of sinSimples.matchAll(/(?<!\\)`([^`]*)`/g)) sumarUno(original.slice(m.index + 1, m.index + m[0].length - 1));
+  // los `cd` de antes en el mismo comando también valen para lo que corre adentro (`bash -c "cd specs && sh -c '…'"`): el
+  // cuerpo anidado se mira con ellos delante
+  const cds = [];
+  const sumarConCd = (b) => sumar(cds.length && b ? `${cds.join(' && ')} && ${b}` : b);
   for (const tramo of tramos(cmd)) {
     const w = palabras(sinPalabrasDelShell(tramo)).filter((x) => x !== '');
     // las asignaciones de delante (`A=1 B=2 programa`) no son el programa, ni `builtin`/`command` (`builtin eval "$c"`)
@@ -3130,11 +3151,25 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
     const c = nombreDeComando(w[k0]);
     // una variable como programa (`$c`, `"$c" arg`): se corre su valor
     if (k0 >= 0 && /^\$\{?[A-Za-z_]\w*\}?$/.test(w[k0])) sumarValores(w[k0]);
-    if (['bash', 'sh', 'zsh', 'dash'].includes(c)) {
+    if (c === 'cd' || c === 'pushd') moverCds(cds, w.slice(k0));
+    if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'mksh', 'pdksh', 'ash', 'fish'].includes(c)) {
       const i = w.findIndex((x, k) => k > k0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(x));
-      if (i > 0) sumar(w[i + 1]);
+      // las opciones después de `-c` (`bash -c -x '…'`) y el `--` que las corta no son el cuerpo: es lo primero que sigue
+      let j = i + 1;
+      while (i > 0 && j < w.length && /^-[A-Za-z-]*$/.test(w[j]) && w[j] !== '-') { if (w[j++] === '--') break; }
+      // con comillas dobles escapadas adentro (`sh -c "echo x >> \"h.md\""`) las palabras cortan el cuerpo en la comilla:
+      // el cuerpo lo saca el lector de los guiones internos, que lee las comillas dobles enteras
+      if (i > 0 && /\\"/.test(tramo)) for (const g of guionesInternos(tramo)) sumarConCd(g);
+      else if (i > 0 && w[j] !== undefined) {
+        // lo que sigue al cuerpo son sus argumentos: `$0`, `$1`… (y `$@`, `$*`) valen eso adentro (`sh -c 'echo x >> "$1"' _ h.md`)
+        const resto = w.slice(j + 1);
+        // entre comillas dobles, `\"` y `\\` llegan escapados: adentro valen la comilla y la barra
+        const cuerpo = String(w[j]).replace(/\\(["\\$`])/g, '$1');
+        sumarConCd(cuerpo.replace(/\$\{?([0-9])\}?/g, (m, d) => (resto[Number(d)] !== undefined ? resto[Number(d)] : m))
+          .replace(/"?\$\{?[@*]\}?"?/g, () => resto.slice(1).join(' ')));
+      }
     }
-    if (c === 'eval') sumar(w.slice(k0 + 1).join(' '));
+    if (c === 'eval') sumarConCd(w.slice(k0 + 1).join(' '));
     if (c === 'find') {
       const i = w.findIndex((x) => x === '-exec' || x === '-execdir' || x === '-ok');
       if (i >= 0) {
@@ -3440,11 +3475,38 @@ const REDIRECCION = /(?<![^\s;&|(])\d*(?:<<<|<<-?|&>>?|[<>]{1,2}&?)[ \t]*(?:'[^'
 function guionDelShell(words) {
   for (let i = 1; i < words.length; i++) {
     if (words[i] === '--') return words[i + 1] || null;
-    if (/^[+-][oO]$/.test(words[i]) || /^--(?:rcfile|init-file)$/.test(words[i])) { i++; continue; }
+    // `-o` toma la palabra que sigue, también agrupado (`-euo pipefail`)
+    if (/^[+-][A-Za-z]*[oO]$/.test(words[i]) || /^--(?:rcfile|init-file)$/.test(words[i])) { i++; continue; }
     if (/^[+-]/.test(words[i])) continue;
     return words[i];
   }
   return null;
+}
+
+/**
+ * Suma a `cds` el `cd` de las palabras `w` (`cd`/`pushd` y su carpeta, sin las opciones `-P`/`-L`/`-e`/`-@` ni el `--`).
+ * `cd -` vuelve a la carpeta de antes: saca el último.
+ */
+function moverCds(cds, w) {
+  const i = w.findIndex((x, k) => k > 0 && !/^-[LPe@]+$/.test(x) && x !== '--');
+  if (i < 0) return;
+  if (w[i] === '-') { cds.pop(); return; }
+  cds.push(`cd ${/\s/.test(w[i]) ? `"${w[i]}"` : w[i]}`);
+}
+
+/** Lo que escribe un `printf` con estos argumentos: el formato con cada `%s` (o `%b`, `%d`) cambiado por el que sigue. */
+function formatoDePrintf(args) {
+  const [formato = '', ...resto] = args;
+  if (!/%/.test(formato)) return [formato, ...resto].join(' ');
+  if (!resto.length) return formato.replace(/%[-0-9.]*[sbdq]/g, '');
+  let salida = '';
+  // como printf, el formato se repite hasta usar todos los argumentos
+  for (let k = 0; k < resto.length;) {
+    const antes = k;
+    salida += formato.replace(/%[-0-9.]*[sbdq]/g, () => (k < resto.length ? resto[k++] : ''));
+    if (k === antes) break;
+  }
+  return salida;
 }
 
 /** ¿El tramo es un shell que lee sus comandos de la entrada? Sí sin guion o con `-s`; no con `-c` ni con un guion. */
@@ -3456,6 +3518,27 @@ function shellLeeEntrada(tramo) {
     if (/^-[A-Za-z]*s/.test(words[i])) return true;
   }
   return guionDelShell(words) === null;
+}
+
+/**
+ * Los renglones de un comando como los lee el shell: un salto adentro de comillas, o después de un `|`, `&&` o `||` que
+ * espera lo que sigue, no corta.
+ */
+function renglonesDelShell(texto) {
+  const out = [];
+  let actual = '';
+  let q = null;
+  const s = String(texto);
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) { actual += c; if (c === '\\' && q === '"') actual += s[++i] || ''; else if (c === q) q = null; continue; }
+    if (c === "'" || c === '"') { q = c; actual += c; continue; }
+    if (c === '\\') { actual += c + (s[i + 1] || ''); i++; continue; }
+    if (c === '\n' && !/(?:\||&&)\s*$/.test(actual)) { out.push(actual); actual = ''; continue; }
+    actual += c === '\n' ? ' ' : c;
+  }
+  out.push(actual);
+  return out;
 }
 
 /** Las tuberías de un renglón y los tramos de cada una, sin cortar adentro de las comillas. */
@@ -3569,7 +3652,7 @@ function ordenesDeXargs(words, previas) {
  */
 function comandosPorOtroPrograma(cmd, cwd) {
   const s = String(cmd || '');
-  if (!/\bfind\b|\bxargs\b|<</.test(s)) return [];
+  if (!/\bfind\b|\bxargs\b|<<|\|/.test(s)) return [];
   const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const bases = [cwd];
   for (const m of s.matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) bases.push(resolver(m[2], cwd));
@@ -3591,7 +3674,13 @@ function comandosPorOtroPrograma(cmd, cwd) {
       for (let previo = null; previo !== antes;) { previo = antes; antes = antes.replace(PREFIJO, '').replace(PALABRA_ANTES_DE_XARGS, '').trim(); }
       const crudas = palabras(antes).filter((w) => w !== '');
       if (nombreDeComando(crudas[0]) === 'xargs') {
-        out.push(...ordenesDeXargs(crudas, k ? palabras(lista[k - 1]).filter((w) => w !== '') : []));
+        // lo que llega por la entrada: las palabras del tramo de antes, sin el `echo`/`printf` que las escribe (con él,
+        // `$0` del cuerpo de un `xargs sh -c` sería `echo`)
+        const previas = k ? palabras(lista[k - 1]).filter((w) => w !== '') : [];
+        // (de `printf`, también el formato: `printf '%s\n' h.md` escribe sólo `h.md`)
+        const escritor = nombreDeComando(previas[0]) || '';
+        const entrada = /^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas;
+        out.push(...ordenesDeXargs(crudas, escritor === 'printf' && /%/.test(entrada[0] || '') ? entrada.slice(1) : entrada));
         return;
       }
       const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
@@ -3602,6 +3691,47 @@ function comandosPorOtroPrograma(cmd, cwd) {
       if (entrada) out.push(entrada[1] ?? entrada[2] ?? entrada[3]);
     });
     const lineas = texto.split('\n');
+    // lo que un `echo`/`printf` escribe por una tubería a un shell que lee sus órdenes de la entrada (`| sh`, `| bash -s`)
+    // corre como un comando
+    // (con filtros en el medio, `| cat | sh`; con llaves o un subshell alrededor; y con los `cd` de antes en el renglón)
+    const sinEnvoltura = (t) => String(t).replace(/\s+#[^'"]*$/, '').trim().replace(/^[({]\s*/, '').replace(/\s*;?\s*[)}]\s*$/, '').replace(/^(?:builtin|busybox)\s+/, '');
+    const escritoPor = (tramo) => {
+      const w = palabras(sinPalabrasDelShell(sinEnvoltura(tramo))).filter((x) => x !== '');
+      const escritor = nombreDeComando(w[0]) || '';
+      if (!/^(?:echo|printf|print)$/.test(escritor)) return null;
+      if (escritor === 'printf') return formatoDePrintf(w.slice(1)).replace(/\\(.)/g, (m, c) => (c === 'n' ? '\n' : c));
+      // el de `echo` sale del tramo crudo, sin comillas ni escapes como lo deja el shell: las palabras sacan un `\>` suelto
+      const crudo = sinEnvoltura(tramo).replace(/^\s*(?:builtin\s+)?\S*?(?:echo|print)\s*/, '').replace(/^(?:-[neE]+\s+)+/, '');
+      let texto = '';
+      for (let i = 0, q = null; i < crudo.length; i++) {
+        const ch = crudo[i];
+        if (q === "'") { if (ch === "'") q = null; else texto += ch; continue; }
+        if (ch === '\\') { const sig = crudo[++i] || ''; texto += sig === 'n' ? '\n' : sig; continue; }
+        if (ch === '"') { q = q === '"' ? null : '"'; continue; }
+        if (ch === "'" && !q) { q = "'"; continue; }
+        texto += ch;
+      }
+      return texto.replace(/\\n/g, '\n').trim();
+    };
+    // los `cd` valen para los renglones que siguen; un renglón del shell no se corta adentro de comillas ni después de un `|`
+    const cdsDelRenglon = [];
+    for (const linea of renglonesDelShell(texto)) {
+      // lo que escribió la tubería de antes: un grupo (`{ echo …; } | sh`) se corta en el `;`, y lo que sigue empieza en `}`
+      let escritoAntes = null;
+      for (const tuberia of tuberiasDelRenglon(linea)) {
+        const primera = palabras(sinPalabrasDelShell(sinEnvoltura(tuberia[0] || ''))).filter((x) => x !== '');
+        if (nombreDeComando(primera[0]) === 'cd' || nombreDeComando(primera[0]) === 'pushd') moverCds(cdsDelRenglon, primera);
+        const cierraGrupo = /^\s*[})]/.test(tuberia[0] || '');
+        for (let k = 1; k < tuberia.length; k++) {
+          if (!shellLeeEntrada(sinEnvoltura(tuberia[k]))) continue;
+          let texto = null;
+          for (let j = k - 1; j >= 0 && texto === null; j--) texto = escritoPor(tuberia[j]);
+          if (texto === null && cierraGrupo) texto = escritoAntes;
+          if (texto !== null) out.push(cdsDelRenglon.length ? `${cdsDelRenglon.join(' && ')} && ${texto}` : texto);
+        }
+        escritoAntes = escritoPor(tuberia[tuberia.length - 1] || '');
+      }
+    }
     for (const { abre, desde, cierre, indice } of heredocsCerrados(lineas)) {
       if (heredocVaAUnShell(lineas[abre], indice)) out.push(lineas.slice(desde, cierre).join('\n'));
     }
@@ -3694,14 +3824,20 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   // más allá del tope no se sabe qué corre: si nombra la ruta de una historia y escribe o borra, frena por el texto
   const sinLeer = anidadosHasta(cmd).hondos.some((h) => NOMBRA_RUTA_DE_HISTORIA.test(h) && (ESCRIBE.test(h) || BORRA_O_MUEVE.test(h)));
   // un guion de shell que escribe un heredoc del mismo comando corre lo que dice, y lo mismo lo que llega por otro
-  // programa: se mira como otro comando, un nivel
+  // programa: se mira como otro comando, un nivel. Lo que corre adentro (`sh -c '…'`, `$(…)`, comillas invertidas,
+  // también dentro de la orden de un `xargs`) se mira igual: su redirección a una historia escribe aunque vaya entre
+  // comillas para el comando de afuera
+  // lo que pasa el tope se dice primero: la lectura de abajo vería sólo los niveles que alcanza
+  if (sinLeer) return [`(un comando anidado a más de ${TOPE_ANIDADOS} niveles nombra una historia y escribe o borra: no se lee qué corre)`];
   if (hondo === 0) {
-    for (const texto of [...guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])]), ...comandosPorOtroPrograma(cmd, cwd)]) {
+    const porOtro = [...guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])]), ...comandosPorOtroPrograma(cmd, cwd)];
+    // sólo lo que de verdad corre (en posición de comando): un `sh -c "…"` citado en un mensaje o en un texto no
+    const adentro = [cmd, ...porOtro].flatMap((t) => comandosAnidados(sinCuerposDeTexto(t)).slice(1));
+    for (const texto of [...new Set([...porOtro, ...adentro])]) {
       const h = historiasPorConsola(texto, cwd, extractWriteTargets(texto, { keep: () => true }), sesion, [], hondo + 1, instalados);
       if (h.length) return h;
     }
   }
-  if (sinLeer) return [`(un comando anidado a más de ${TOPE_ANIDADOS} niveles nombra una historia y escribe o borra: no se lee qué corre)`];
   if (!enSitio && !destinosB.length && !ESCRIBE.test(String(cmd || ''))) return [];
   // con todos los editores en el lugar escritos como `sed` que nombra sus archivos, lo que escriben es lo que nombran:
   // la carpeta de un `cd` es desde dónde se leen, y una historia que tocan se ensaya para ver si le cambia el estado
