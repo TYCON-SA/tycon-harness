@@ -2252,3 +2252,15 @@ test('T16 StoryGateIo_LoQueEncontroElPase @story-8.317 @ac-1 @ac-2 @ac-3', () =>
     assert.equal(decide(path.join(hermano, 'src', 'a.cs'), { repoPath: corrida, storyPath: path.join(padre, 'no-existe', 'specs', 's.md'), ...APROBADO }).action, 'pass');
   });
 });
+
+// La guía vive en el repo del arnés, no junto a las skills: esta prueba va acá, que corre sólo en la CI sobre el repo
+// unido, y no en story-gate.test.js, que el instalador corre en cada arranque sobre las skills instaladas (en un clon de
+// skills aparte no hay guías, y la suite rápida daría rojo en cada arranque).
+test('T15 Guia_PortonDeCarril_DiceLaRegla @story-8.317 @ac-12', () => {
+  const guia = fs.readFileSync(path.join(SCRIPTS, '..', '..', '..', 'guides', 'what-the-harness-does.md'), 'utf8');
+  const fila = guia.split('\n').find((l) => l.startsWith('| **el portón de carril**'));
+  assert.ok(fila, 'no está la fila del portón de carril');
+  assert.match(fila, /repo de la historia/);
+  assert.match(fila, /hermanos/);
+  assert.match(fila, /repo_group/);
+});
