@@ -3343,6 +3343,12 @@
       "requiere": []
     },
     {
+      "__nota": "la copia propia del pre-commit del privado le pide al gancho público los controles que no nombra: el gancho corre sólo esos (y como gancho propio no filtra), `unnamed` los lista y frena si falta uno, y el control de la base acepta la delegación sólo de la copia declarada.",
+      "raiz": "arnes",
+      "ruta": "tests/hook-delegation.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
