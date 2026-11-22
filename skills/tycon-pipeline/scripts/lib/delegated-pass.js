@@ -111,14 +111,25 @@ function paseDelegado({ repo, story, files, filesDeclarado, marcador, estado, ho
   if (propio.error) return no(propio.error);
   if (propio.archivos.length) return no(`el repo de la corrida tiene código cambiado (${propio.archivos.slice(0, 3).join(', ')}): ese pase es de esta corrida`);
 
-  // los hermanos declarados en lo commiteado, del repo de la corrida y del de la historia
+  // los hermanos declarados en lo commiteado, del repo de la corrida y del de la historia. El repo de la corrida, o una
+  // copia suya (la misma carpeta común de git), nunca es su propio hermano: dos sesiones en el mismo repo se dejarían el
+  // pase una a la otra y ninguna lo correría
   const repoDeLaStory = discoverRepoRoot(story) || repo;
+  const comunPropio = comunDe(repo);
+  if (!comunPropio) return no('no pude leer la carpeta común de git del repo de la corrida');
   const raices = [];
   for (const r of [repo, repoDeLaStory]) {
-    for (const c of parseEvidenceConfig(r, { freno: true }).roots) if (!raices.some((x) => companionLib.real(x) === companionLib.real(c))) raices.push(c);
+    for (const c of parseEvidenceConfig(r, { freno: true }).roots) {
+      if (comunDe(c) === comunPropio) continue;
+      if (!raices.some((x) => companionLib.real(x) === companionLib.real(c))) raices.push(c);
+    }
   }
+  // el código que la historia declara en el repo de la corrida: visto desde el repo de la historia, sea éste o un hermano
   let declaradoAca;
-  try { declaradoAca = companionLib.declaredFor(repoDeLaStory, story, repoDeLaStory).filter(esCodigo); } catch (e) {
+  try {
+    declaradoAca = companionLib.declaredFor(repoDeLaStory, story, repo).filter(esCodigo);
+    if (comunDe(repoDeLaStory) === comunPropio) declaradoAca.push(...companionLib.declaredFor(repoDeLaStory, story, repoDeLaStory).filter(esCodigo));
+  } catch (e) {
     return no(`no pude leer lo que declara la historia (${e.message})`);
   }
   if (declaradoAca.length) return no(`la historia declara código en el repo de la corrida (${declaradoAca.slice(0, 3).join(', ')}): ese pase es de esta corrida`);

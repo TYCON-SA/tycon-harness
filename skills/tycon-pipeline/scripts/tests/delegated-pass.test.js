@@ -231,3 +231,21 @@ test('T15 Delegate_StaleOrForeignCompanionRun_DoesNotDelegate @story-8.238 @ac-7
   escribir(path.join(claudeDir(muerta.casa), 'sessions', 's-code.json'), JSON.stringify({ sessionId: 's-code', pid: 2147483646 }));
   assert.strictEqual(consultar(muerta).ok, false, 'proceso muerto');
 });
+
+// T16 Delegate_RunInTheCodeRepo_DoesNotDelegate @story-8.238 @ac-7
+// 🔴 Falla con: una corrida en el repo del código (o en un worktree suyo) que se toma como su propio hermano y le deja
+//    el pase a otra sesión de la misma historia en ese repo, que se lo deja de vuelta: nadie corre el pase.
+test('T16 Delegate_RunInTheCodeRepo_DoesNotDelegate @story-8.238 @ac-7', (t) => {
+  const c = armar(t);
+  const enElCodigo = { storyId: STORY_ID, storyPath: c.story, repoPath: c.code, baseSha: git(c.code, 'rev-parse', 'HEAD'), sessionId: 's-otra' };
+  const d = consultar(c, { repo: c.code, marcador: enElCodigo });
+  assert.strictEqual(d.ok, false, 'en el repo del código');
+  assert.match(d.motivo, /la historia declara código en el repo de la corrida/);
+  // en un worktree del repo del código, con la otra sesión en el checkout principal
+  const wt = path.join(c.raiz, 'acme-code-wt');
+  git(c.code, 'worktree', 'add', '-q', '-b', 'wt/9.1', wt);
+  const enElWorktree = { ...enElCodigo, repoPath: wt, baseSha: git(wt, 'rev-parse', 'HEAD') };
+  const w = consultar(c, { repo: wt, marcador: enElWorktree });
+  assert.strictEqual(w.ok, false, 'en un worktree del repo del código');
+  assert.match(w.motivo, /la historia declara código en el repo de la corrida/);
+});
