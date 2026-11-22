@@ -32,8 +32,10 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            por el ref de ListAgents); no borra nada y se retoma con claude respawn <id>
  *   owner-wait               lo lanza la coordinadora confirmada, de fondo: mira cada 2 s y termina, con una línea por
  *                            novedad, cuando otra sesión queda frenada en un permiso, cuando una frenada sigue o se
- *                            cierra, o cuando Claude Code cierra una sesión de fondo. Terminar la despierta. Uno por
- *                            máquina; sin coordinadora confirmada, o desde otra sesión, sale enseguida
+ *                            cierra, cuando Claude Code cierra una sesión de fondo, o cuando el permiso de una sesión de
+ *                            fondo le llega como cuadro (scripts/hooks/permission-relay.js; cada renglón se anuncia una
+ *                            vez). Terminar la despierta. Uno por máquina; sin coordinadora confirmada, o desde otra
+ *                            sesión, sale enseguida. Sin owner-wait vivo, el gancho de permisos no lleva nada
  *   pr-wait --repo <org/repo> --number <n> [--interval <s>]
  *                            el vigilante de sólo lectura de un pedido: repite sólo su lectura por la capa de plataforma
  *                            (cada 120 s por defecto) y termina con 0 e imprime el estado cuando deja de estar abierto;
@@ -601,7 +603,19 @@ function swapLine(s) {
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
-const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''} Para entrar: claude attach ${x.session}`;
+const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
+
+// Por qué el permiso de la sesión no le llegó a la coordinadora como cuadro, o dejó de esperarlo: lo anota el gancho de
+// permisos (scripts/hooks/permission-relay.js) en `coordination/permission-relay/<sesión>.json`. Vale para el permiso
+// abierto: uno anotado más de un minuto antes de que empezara la espera es de otro pedido. Sin archivo, o ilegible, null.
+const RELAY_NOTE_MAX = 200;
+function relayNoteOf(home, sid, since) {
+  const n = readJson(path.join(coordinationDir(home), 'permission-relay', `${String(sid).replace(/[/\\]/g, '_')}.json`), null);
+  if (!n || typeof n.motivo !== 'string' || !n.motivo.trim()) return null;
+  const at = Date.parse(n.at);
+  if (!Number.isFinite(at) || (Number.isFinite(since) && at < since - 60000)) return null;
+  return oneLine(n.motivo).slice(0, RELAY_NOTE_MAX);
+}
 // qué esperaba, si lo anotó: sin eso nadie sabe qué hay que darle al levantarla (scripts/lib/claude-retired.js); y desde
 // cuándo, de su nota de espera (retiredOf)
 const retiredWaited = (x) => (x.waited ? `, esperando ${oneLine(x.waited).slice(0, 160)}${x.waitingSince == null ? '' : ` desde las ${hhmm(x.waitingSince)}`}` : ', sin anotar qué esperaba');
@@ -661,8 +675,13 @@ function status(opts = {}) {
     const st = stalledOf(s, files.get(String(sid)), now);
     if (st) {
       const { key, ...rest } = st;
-      // la clave de la espera no sale en --json: es sólo para owner-wait
-      stalled.push(Object.defineProperty({ session: nameOf(sid), sid, ...rest }, 'key', { value: key }));
+      // la clave de la espera no sale en --json: es sólo para owner-wait; tampoco el motivo del gancho de permisos, que
+      // sale en la línea
+      const row = Object.defineProperty({ session: nameOf(sid), sid, ...rest }, 'key', { value: key });
+      let relay = null;
+      try { relay = relayNoteOf(home, sid, st.since); } catch { relay = null; }
+      if (relay) Object.defineProperty(row, 'relay', { value: relay });
+      stalled.push(row);
       continue;
     }
     const q = askingOf(s, files.get(String(sid)), now);
@@ -751,7 +770,7 @@ function statusText(s) {
   for (const w of s.working) lines.push(`  · ${w.session} — ${w.why}`);
   // el tope de historias en el ciclo completo: la regla de la coordinadora (guides/coordination.md); acá va el número
   if (s.storiesCap && s.storiesCap.value) lines.push(`Historias en el ciclo completo: hasta ${s.storiesCap.value} (tope ${ORIGIN[s.storiesCap.origin] || s.storiesCap.origin}); las demás, en fila`);
-  if (s.stalled && s.stalled.length) lines.push(`Trabadas: ${s.stalled.map((x) => `${x.session}: esperando un permiso${x.tool ? ` (${permissionText(x)})` : ''}, hace ${Math.max(0, Math.floor((s.now - x.since) / 60000))} min`).join(' · ')}`);
+  if (s.stalled && s.stalled.length) lines.push(`Trabadas: ${s.stalled.map((x) => `${x.session}: esperando un permiso${x.tool ? ` (${permissionText(x)})` : ''}, hace ${Math.max(0, Math.floor((s.now - x.since) / 60000))} min${x.relay ? `; no te llegó como cuadro: ${x.relay}` : ''}`).join(' · ')}`);
   lines.push(`Esperando: ${s.waiting.length}`);
   for (const w of s.waiting) lines.push(`  · ${w.session} — ${w.why}`);
   if (s.retiredMeasured === false) lines.push(`Sesiones cerradas por Claude Code: no medido (${oneLine(s.retiredWhy).slice(0, 160)})`);
@@ -1008,7 +1027,7 @@ function readAnnounced(home) {
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
   const o = obj(a && a.owner);
   return {
-    waits: obj(a && a.waits), retired: obj(a && a.retired), delegables: obj(a && a.delegables),
+    waits: obj(a && a.waits), retired: obj(a && a.retired), delegables: obj(a && a.delegables), permisos: obj(a && a.permisos),
     owner: { leidoAt: Number.isFinite(o.leidoAt) ? o.leidoAt : null, esperas: obj(o.esperas), motivos: obj(o.motivos) },
   };
 }
@@ -1156,6 +1175,29 @@ function delegatedTurn(opts, a, lines, { home, me, now, sessions }) {
   return changed;
 }
 
+/**
+ * Los permisos de las sesiones de fondo que esperan a la persona (scripts/hooks/permission-relay.js) en una vuelta de
+ * owner-wait: cada renglón se anuncia una vez, también uno que ya estaba al lanzarlo, y lo que ya no está en la lista se
+ * olvida. El cuadro lo da owner-next; el permiso lo aprueba la persona con un click, nunca la coordinadora. Sin poder
+ * leer la lista no retira nada (ya lo dice la vuelta de lo desviado). Devuelve si cambió lo anunciado.
+ */
+function permissionTurn(opts, a, lines, { home, now, sessions }) {
+  let filas;
+  try { filas = signatureList.abiertos(home, { arnes: opts.arnes, env: opts.env, ahora: now }).filas.filter((f) => signatureList.esDelGancho(f)); } catch { return false; }
+  let changed = false;
+  const vivos = new Set();
+  for (const f of filas) {
+    vivos.add(f.id);
+    if (a.permisos[f.id]) continue;
+    const s = sessions.get(f.destino);
+    lines.push(`un permiso para la persona: ${quoted((s && s.name) || String(f.destino).slice(0, 8), LABEL_MAX)} pide ${quoted(f.herramienta, LABEL_MAX)} en ${quoted(f.carpeta, WAIT_TEXT_MAX)} (${f.id}). Te da el cuadro owner-next: node "${__filename}" owner-next. Lo aprueba la persona con su click; vos no`);
+    a.permisos[f.id] = true;
+    changed = true;
+  }
+  for (const id of Object.keys(a.permisos)) if (!vivos.has(id)) { delete a.permisos[id]; changed = true; }
+  return changed;
+}
+
 // Las trabadas de un repo que el arnés no sigue: la regla de «Otro proyecto» de la oficina (`otherProjectsOf`), con los
 // repos de la última foto de pedidos leída del disco (no sale a la red) y el remoto de la carpeta de cada una. Se mira
 // sólo con alguna trabada. Sin foto, sin carpeta o sin remoto, la sesión no es de otro proyecto: ante la duda, despierta.
@@ -1225,8 +1267,9 @@ function ownerWaitOnce(opts = {}) {
   }
   const at = opts.now == null ? Date.now() : Number(opts.now);
   const routed = delegatedTurn(opts, a, lines, { home, me, now: at, sessions });
+  const asked = permissionTurn(opts, a, lines, { home, now: at, sessions });
   const read = ownerWaitTurn(opts, a, lines, { home, me, stalled: s.stalled.map((x) => x.sid), now: at });
-  if (lines.length || read || dropped || routed) writeJson(ownerWaitFile(home), a);
+  if (lines.length || read || dropped || routed || asked) writeJson(ownerWaitFile(home), a);
   return { lines, stop: false };
 }
 
@@ -2161,6 +2204,7 @@ function ownerNextText(r, sesion, nota = null) {
     lines.push('Si el cuadro se cierra o se resuelve solo: no corras nada; la pasada se corta y el renglón queda.');
     if (r.tipo === 'firma') lines.push(`Con «${r.opciones[0]}», esto no se corre acá: lo repite su sesión. ${r.destino === sesion ? 'Es ésta: repetilo.' : `Mandale este mensaje a ${r.nombre}:`}`, r.aviso);
     if (r.tipo === 'firma') lines.push(`Si la repetición se niega: owner-next --after ${r.id} da el siguiente, y el renglón queda.`);
+    if (r.tipo === 'permiso') lines.push(`Con «${r.opciones[0]}», no corras nada: el gancho de ${r.nombre} ve el click de la persona y deja correr ese pedido una sola vez. Seguí con owner-next.`);
     return [...lines, ...saltados].join('\n');
   }
   if (r.tipo === 'plan') lines.push(r.texto, 'El plan:', r.plan);
@@ -3323,6 +3367,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines,reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN,
+module.exports = { LAUNCH_TIMEOUT_MS, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines,reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN,
   // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
   stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };

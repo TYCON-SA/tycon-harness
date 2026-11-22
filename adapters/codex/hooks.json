@@ -488,6 +488,13 @@
       ]
     },
     {
+      "log": "PermissionRequest · Bash|PowerShell|Edit|Write|NotebookEdit|WebFetch — SOLO Claude Code (el permiso de una sesión de fondo le llega a la persona como cuadro)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-22, story 8.180, tanda B): permission-relay.js lleva el pedido de permiso de una sesión de fondo de Claude Code a la pestaña de la coordinadora, donde la persona lo aprueba con un click o lo niega. Codex no avisa cuando pide un permiso (no tiene el evento PermissionRequest: la misma asimetría que declara el gancho del estado de cada sesión), no abre sesiones de fondo y no coordina, así que de su lado no hay pedido que llevar y el gancho no se registra. Lo que trae Codex se mide en la tanda C de la historia.",
+      "scripts": [
+        "permission-relay.js"
+      ]
+    },
+    {
       "log": "PreToolUse · Bash — el lanzador del freno de publicación, SOLO Claude Code",
       "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-22): node-missing-launcher.sh va delante del freno de publicación en la línea que el instalador escribe en settings.json de Claude Code, y decide por el terreno del freno cuando falta Node. En Codex el freno se registra como siempre, sin el lanzador: sin Node no arranca, igual que antes de este cambio (límite declarado en scripts/setup/hook-failure-policy.json).",
       "scripts": [
