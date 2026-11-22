@@ -453,3 +453,14 @@ test('T19 Download_InstinctDaysOnlyWithFlag_LatestVersion @story-4.7 @ac-17 — 
   assert.ok(!fs.existsSync(local(path.join(base, 'sin-hilos'))));
   assert.strictEqual(sinHilos.res.omitidos, 1);
 });
+
+test('T20 Upload_ResanitizesSummary — una línea grabada antes del arreglo no sale con un token', () => {
+  const up = require(INSTINCT_UPLOAD);
+  const pat = ['github', '_pat_', '11AAAAAAAAAAAAAAAAAAAA', '_', 'b'.repeat(59)].join('');
+  const l = lab({ lineas: [linea('2026-10-16T10:00:00.000Z', { summary: `cd /tmp && TOK='${pat}' && curl -s x` })] });
+  const out = path.join(l.home, 'armado');
+  up.prepareDays({ obsDir: l.obsDir, outDir: out, seal: { said_on: '2026-10-15' }, org: 'https://dev.azure.com/acme', today: '2026-10-20' });
+  const [l1] = lineasDe(fs.readFileSync(path.join(out, '2026-10-16.jsonl.gz')));
+  assert.ok(!l1.summary.includes(pat), l1.summary);
+  assert.match(l1.summary, /\[REDACTED-GHP\]/);
+});

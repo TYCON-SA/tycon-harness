@@ -80,8 +80,12 @@ const POR_QUE_REGLA = Object.freeze({
 });
 const ACCION_RECOMENDADA = Object.freeze({ approve: 'aprobar', reject: 'rechazar' });
 // lo que marca un patrón como ruido sólo cuenta al principio de una palabra o de un segmento de ruta
-const INICIO_DE_PALABRA = '(?:^|[\\s"\'=])';
-const INICIO_DE_SEGMENTO = '(?:^|[\\\\/\\s"\'=])';
+// de una palabra: pegado a un signo del shell (una redirección, un paréntesis, un `;`, un `|` o un acento grave) también
+const INICIO_DE_PALABRA = '(?:^|[\\s"\'=>(;|`])';
+const INICIO_DE_SEGMENTO = '(?:^|[\\\\/\\s"\'=>(;|`])';
+// la unidad de Git Bash (`/c/…`) sólo después de un blanco, una comilla o un `=`: pegada a un paréntesis o a un `|` es una
+// expresión regular (`(/x/g)`, `|/a/b`)
+const INICIO_DE_UNIDAD = '(?:^|[\\s"\'=])';
 let carpetasDeTrabajo = null;
 /** Los patrones de carpeta de trabajo. El nombre de la carpeta de Claude Code lo sabe tycon-home; se pide recién al usarlo: el sitio carga este archivo y no llama al filtro. */
 function patronesDeCarpeta() {
@@ -91,7 +95,9 @@ function patronesDeCarpeta() {
   carpetasDeTrabajo = [
     /--wt-/i,
     new RegExp(`${INICIO_DE_SEGMENTO}${deClaude}[\\\\/]worktrees[\\\\/]`, 'i'),
-    new RegExp(`${INICIO_DE_PALABRA}(?:/tmp/|/private/tmp/|/var/folders/|/private/var/folders/|\\$TMPDIR\\b)`, 'i'),
+    new RegExp(`${INICIO_DE_SEGMENTO}${deClaude}[\\\\/]jobs[\\\\/]`, 'i'),
+    /\$\{?CLAUDE_JOB_DIR\b/,
+    new RegExp(`${INICIO_DE_PALABRA}(?:(?:/private)?/tmp(?:/|[\\s"'\\x60;|)>]|$)|(?:/private)?/var/folders/|\\$\\{?TMPDIR\\b)`, 'i'),
     new RegExp(`${INICIO_DE_SEGMENTO}AppData[\\\\/]Local[\\\\/]Temp(?:[\\\\/\\s]|$)`, 'i'),
     new RegExp(`${INICIO_DE_SEGMENTO}\\.tycon[\\\\/]state[\\\\/]`, 'i'),
     new RegExp(`${INICIO_DE_SEGMENTO}\\.advisors[\\\\/]`, 'i'),
@@ -100,7 +106,7 @@ function patronesDeCarpeta() {
 }
 // distingue mayúsculas a propósito, y a `/c/` le pide un segmento de verdad: una ruta de API (`/users/42/`) o una dirección
 // de awk o sed (`'/a/ {`, `'/x/d'`) no son la ruta de una máquina
-const RUTA_DE_UNA_MAQUINA = new RegExp(`${INICIO_DE_PALABRA}(?:[a-zA-Z]:[\\\\/](?![\\\\/])|/[a-zA-Z]/(?:[^/\\s"']{2}|$)|/(?:Users|home)/[^/\\s"']+/)`);
+const RUTA_DE_UNA_MAQUINA = new RegExp(`${INICIO_DE_PALABRA}(?:[a-zA-Z]:[\\\\/](?![\\\\/])|/(?:Users|home)/[^/\\s"']+/)|${INICIO_DE_UNIDAD}/[a-zA-Z]/(?:[^/\\s"']{2}|$)`);
 
 const log = (m) => process.stderr.write(`[instinct-nightly] ${m}\n`);
 const diasEntre = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 864e5);
