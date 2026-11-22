@@ -486,6 +486,13 @@
       "scripts": [
         "background-question-guard.js"
       ]
+    },
+    {
+      "log": "PreToolUse · Bash — el lanzador del freno de publicación, SOLO Claude Code",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-22): node-missing-launcher.sh va delante del freno de publicación en la línea que el instalador escribe en settings.json de Claude Code, y decide por el terreno del freno cuando falta Node. En Codex el freno se registra como siempre, sin el lanzador: sin Node no arranca, igual que antes de este cambio (límite declarado en scripts/setup/hook-failure-policy.json).",
+      "scripts": [
+        "node-missing-launcher.sh"
+      ]
     }
   ]
 }

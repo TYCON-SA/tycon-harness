@@ -20,7 +20,7 @@
       "timeout_del_instalador": null,
       "lanzador": "node-missing-launcher.sh",
       "plataformas": { "mac": true, "linux": true, "windows": true },
-      "limites": ["en Windows no lleva el lanzador: sin Node el freno no arranca y la herramienta deja pasar"]
+      "limites": ["en Windows no lleva el lanzador: sin Node el freno no arranca y la herramienta deja pasar", "en Codex no lleva el lanzador: sin Node el freno no arranca, como antes"]
     }
   ]
 }
