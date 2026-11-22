@@ -703,7 +703,8 @@ function noSeLeeElPrograma(cmd, w) {
  * está el programa ni qué lanzador lo antecede: `$N x.js`, `timeout -s KILL 9 $N x.js`, `if $N x.js` o `xargs $N` frenan
  * igual que con `node` escrito. Sólo queda afuera un tramo cuyo programa escrito no corre sus argumentos
  * (`git diff $(…) -- x.js`, `wc -l $F x.js`). Detrás de `xargs` el guion llega por la entrada: cuenta el de cualquier
- * parte del comando. `[{ interprete, valor, argv }]`.
+ * parte del comando. `todas` da las palabras de todo el comando (se arman sólo si hacen falta).
+ * `[{ interprete, valor, argv }]`.
  */
 function guionesDelPeorCaso(cmd, crudas, todas, escrito) {
   const i0 = crudas.findIndex((w) => !ANTES_DEL_PROGRAMA.test(w) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
@@ -721,7 +722,7 @@ function guionesDelPeorCaso(cmd, crudas, todas, escrito) {
     if (familia) out.push({ interprete: INTERPRETE_DE[familia], valor, argv: crudas.slice(j + 1) });
   }
   if (ilegible >= 0 && !out.length && crudas.slice(0, ilegible).some((w) => nombreDeComando(w) === 'xargs')) {
-    for (const w of todas) {
+    for (const w of todas()) {
       const [valor, familia] = deGuion(w);
       if (familia) out.push({ interprete: INTERPRETE_DE[familia], valor, argv: [] });
     }
@@ -833,6 +834,10 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
   const escritos = heredocs(cmd).filter((h) => h.target);
   const todosLosTramos = comandosAnidados(sinContinuaciones(cmd)).flatMap((sub) => tramos(sub));
   const palabrasDe = (tramo) => palabras(tramo.trim().replace(PREFIJO, '')).map(sinGrupo).filter((w) => w !== '');
+  // las palabras de todo el comando, armadas una vez: pedirlas en cada tramo crece con el cuadrado de los tramos (una
+  // tira de miles de tuberías tardaba segundos)
+  let todas = null;
+  const todasLasPalabras = () => todas || (todas = todosLosTramos.flatMap(palabrasDe));
   // la ruta real del guion tal como la abre el intérprete: unida a la carpeta sin normalizar, para que `enlace/..` se
   // resuelva por donde lleva el enlace y no por el texto (la versión nativa: la otra normaliza el `..` antes)
   const rutaReal = rutaRealDelGuion;
@@ -927,7 +932,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     const escrito = programaEscrito(cmd, tramo);
     if (!soloNombra) {
       const crudas = palabras(tramo.trim()).map(sinGrupo).filter((w) => w !== '');
-      for (const g of guionesDelPeorCaso(cmd, crudas, todosLosTramos.flatMap(palabrasDe), escrito)) abrir(g.interprete, g.valor, argumentos(g.argv));
+      for (const g of guionesDelPeorCaso(cmd, crudas, todasLasPalabras, escrito)) abrir(g.interprete, g.valor, argumentos(g.argv));
     }
     // en un tramo de un programa que no corre sus argumentos, una variable con valor conocido es un argumento más
     const lector = !escrito.ilegible && noCorreSusArgumentos(escrito.programa);
@@ -953,7 +958,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
       }
       // `echo p.py | xargs python3`: el guion llega por la entrada; cuenta cada archivo del comando con su extensión
       if (!hallado && words.slice(0, k).some((w) => nombreDeComando(w) === 'xargs')) {
-        for (const w of todosLosTramos.flatMap(palabrasDe)) if (EXTENSION_DE[familia].test(w)) abrir(interprete, expandirRuta(cmd, w).valor, []);
+        for (const w of todasLasPalabras()) if (EXTENSION_DE[familia].test(w)) abrir(interprete, expandirRuta(cmd, w).valor, []);
       }
     }
   }
