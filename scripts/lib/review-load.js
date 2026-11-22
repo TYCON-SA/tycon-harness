@@ -7,7 +7,7 @@
  *   · firmas: las que esperan a la persona en la lista de firmas (`terminal`, `firma`, `permiso`; las delegadas no);
  *   · terminados: ejecuciones y caminos cortos terminados sin cerrar (finished-open.js `machine`);
  *   · carpetas: carpetas de trabajo con cambios sin commitear y sin sesión (`unsavedFolderItems`), salvo las copias de
- *     prueba de un trabajo de fondo, bajo ~/.claude/jobs/;
+ *     prueba de un trabajo de fondo, en la carpeta `jobs` de Claude Code (state-dir.js `claudeDir`);
  *   · pedidos: los de `stuck-prs.json` trabados hace una hora o más; un borrador no, salvo en choque. No sale a la red.
  * Lo que no se pudo mirar va aparte (`noMedido`) y nunca suma ni se dice como cero. Una fuente que no se lee queda en
  * null, con su motivo en `problems`.
