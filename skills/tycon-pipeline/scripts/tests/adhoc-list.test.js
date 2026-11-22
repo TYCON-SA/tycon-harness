@@ -577,6 +577,36 @@ test('T52 CarrilViejoSinLista_ComoHoyHastaElSet — @story-8.174 @ac-49', () => 
   assert.notEqual(ev(state, 'per', path.join(dir, 'docs/x.md'), dir).verdict.kind, 'adhoc-out-of-list');
 });
 
+// El mismo borde por la consola (on-bash-write-gate.js), que T52 cubre sólo por la herramienta de edición.
+// 🔴 Falla con: la consola que deja de mandarle al portón lo que no es código de un carril con lista o delegado (con el
+// portón apagado, la lista del delegado deja de frenar por la consola), o que deja de contar el tope del carril viejo.
+// Que un carril sin lista no frene «fuera de la lista» lo decide el portón compartido: lo cubre también T52.
+test('T52b CarrilViejoSinLista_PorLaConsola_ComoHoy — @story-8.174 @ac-49', () => {
+  const raiz = tmp('t52b-');
+  const dir = repo(raiz, 'producto');
+  const h = tmp('home-');
+  const a = escribir(dir, 'src/a.js');
+  const state = conCarril(h, 'viejo', { maxFiles: 1, files: [a] });
+  // sin lista: escribir por la consola no frena por la lista
+  for (const command of ['echo x > docs/x.md', 'echo x | tee src/a.js']) {
+    const r = porConsola(state, 'viejo', dir, command);
+    assert.ok(!r || !/FUERA DE LA LISTA/.test(r.block || ''), `${command}: ${JSON.stringify(r)}`);
+  }
+  // el tope de siempre sigue: con el cupo lleno, un archivo de implementación nuevo frena por el tope
+  const tope = porConsola(state, 'viejo', dir, "cat > src/b.js <<'EOF'\nx\nEOF");
+  assert.ok(tope && /cupo|tope/i.test(tope.block || '') && !/FUERA DE LA LISTA/.test(tope.block), JSON.stringify(tope));
+  // con el portón apagado por la configuración del repo: el delegado frena igual por la lista; el de una persona no
+  escribir(dir, '.tycon/advisors.yaml', 'pipeline:\n  story_gate: false\n');
+  git(dir, 'add', '.');
+  commitear(dir, 'portón apagado');
+  conCarril(h, 'del', { via: 'delegacion', allowedFiles: [a] });
+  conCarril(h, 'per', { allowedFiles: [a] });
+  const del = porConsola(state, 'del', dir, 'echo x > docs/x.md');
+  assert.ok(del && /FUERA DE LA LISTA/.test(del.block || ''), `delegado: ${JSON.stringify(del)}`);
+  const per = porConsola(state, 'per', dir, 'echo x > docs/x.md');
+  assert.ok(!per || !/FUERA DE LA LISTA/.test(per.block || ''), `de una persona: ${JSON.stringify(per)}`);
+});
+
 // ── el carril trae la base al abrir ─────────────────────────────────────────────────────────────
 
 test('T57 AdhocSet_TraeLaBaseAlAbrir — @story-8.174 @ac-54', () => {
