@@ -126,6 +126,13 @@ comando no corre ([producción con permiso](produccion-con-permiso.md)).
 | `session-collision-guard.js` | No | Pasa a los 600 s |
 | `background-question-guard.js` | No | Pasa a los 600 s |
 
+Cada freno tiene una clase propuesta: **exigencia** (protege algo que no se deshace o que no es del agente: producción y
+datos, secretos, la rama compartida y lo público, las firmas del dueño, las historias y las constancias; no se apaga para
+ningún modelo) o **preferencia** (un trámite o un estilo que un modelo podría decidir bien solo). Es una propuesta
+hasta que la firma el dueño, control por control, y no cambia lo que el freno decide. Vive, con su motivo y su fecha de
+revisión, en `scripts/metrics/controls-classification.json`; cuánto frenó cada uno, por modelo, lo dice
+`scripts/metrics/controls-table.js`.
+
 Lo que el reloj no cubre: si a un freno lo matan desde afuera, o no arranca, el comando pasa. No se les pone
 `onFailure` a estos ganchos a propósito: viven en la carpeta del usuario, y una actualización a medias dejaría a todas
 las sesiones de la máquina sin consola. En `on-bash-write-gate.js`, en Windows o con un Node sin `process.execve`, un

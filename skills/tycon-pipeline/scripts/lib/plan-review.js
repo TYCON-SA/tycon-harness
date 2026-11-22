@@ -484,6 +484,7 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   escribirDeUnaVez(argsFile, `${JSON.stringify(args, null, 2)}\n`);
   // el resultado de la revisión anterior, antes de que el corredor lo pise: si no se puede guardar, se dice y se sigue
   try { guardarResultado(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el resultado de la revisión anterior (${e.code || e.message}): el corredor lo va a pisar\n`); }
+  try { guardarUso(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el consumo de la revisión anterior (${e.code || e.message}): el corredor lo va a pisar\n`); }
   return { codigo: 0, args, argsFile, pedido: rutaPedido(estado, lanza, dest), delicate, informativa, destino: dest };
 }
 
@@ -587,7 +588,18 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
   // el resultado de esta revisión, con fecha y sin pisar el de la anterior; y cuánto costó, por agente y por tipo
   let guardado = null;
   try { guardado = guardarResultado(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el resultado de la revisión (${e.code || e.message})\n`); }
-  const uso = resultado && resultado.corredor && resultado.corredor.tokens && typeof resultado.corredor.tokens === 'object' ? resultado.corredor.tokens : null;
+  // el consumo del resultado vale sólo si el resultado es de esta revisión: la ruta fija puede tener todavía el de la anterior
+  const esDeEsta = !!(resultado && !noVale && pedido.numero && resultado.pedido === pedido.numero);
+  let uso = esDeEsta && resultado.corredor && resultado.corredor.tokens && typeof resultado.corredor.tokens === 'object' ? resultado.corredor.tokens : null;
+  // una revisión cortada no deja resultado, pero el corredor dejó su consumo al momento: vale sólo el de esta revisión
+  let usoGuardado = null;
+  if (!uso) {
+    const parcial = usoDe(estado, lanza, dest);
+    if (parcial && pedido.numero && parcial.pedido === pedido.numero && parcial.tokens && typeof parcial.tokens === 'object') {
+      uso = { ...parcial.tokens, cortada: !parcial.completo };
+      try { usoGuardado = guardarUso(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el consumo de la revisión (${e.code || e.message})\n`); }
+    }
+  }
   const constancia = {
     id: sha(`${lanza}|${dest}|${ahora}`).slice(0, 12),
     veredicto, motivo, informativa: !!pedido.informativa,
@@ -595,6 +607,7 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
     notas: confirmados.filter((h) => !blocks(h.adjusted_severity || h.severity, corte)).map(aHallazgo),
     corte, modelo, proveedor, hora: new Date(ahora).toISOString(), lanzo: lanza, destino: dest,
     corrida: pedido.corrida, storyId: pedido.storyId, huellas: pedido.huellas, delicate: pedido.delicate, uso, resultado_guardado: guardado,
+    ...(usoGuardado ? { uso_guardado: usoGuardado } : {}),
     // la parte y su lista, congeladas: el portón lee de acá la lista que vale con el plan aprobado por delegación
     ...(pedido.parte ? { parte: pedido.parte } : {}),
   };
@@ -1103,8 +1116,40 @@ function guardarResultado(estado, lanza, destino) {
   return destinoArchivo;
 }
 
+/**
+ * La ruta donde el corredor deja, al momento, lo que lleva gastado la revisión de `lanza` sobre `destino`: queda aunque la
+ * revisión se corte (workflow-lite.js, `usoDe`).
+ */
+const rutaUso = (estado, lanza, destino) => path.join(carpetaDe(estado, lanza), `${destino}.resultado.uso.json`);
+
+/** El consumo al momento de la última revisión, o null si no hay uno legible. */
+function usoDe(estado, lanza, destino) {
+  try { return JSON.parse(fs.readFileSync(rutaUso(estado, lanza, destino), 'utf8')); } catch (_) { return null; }
+}
+
+/**
+ * Guarda con fecha el consumo al momento, si hay uno y no está guardado; devuelve su ruta guardada o null. Va junto a los
+ * resultados, terminado en `.uso.json`: la revisión siguiente lo pisa, y una cortada no tiene otro lugar donde quede.
+ */
+function guardarUso(estado, lanza, destino) {
+  const fijo = rutaUso(estado, lanza, destino);
+  let texto;
+  let cuando;
+  try { texto = fs.readFileSync(fijo, 'utf8'); cuando = fs.statSync(fijo).mtime; } catch (_) { return null; }
+  const huella = sha(texto).slice(0, 8);
+  let archivos = [];
+  try { archivos = fs.readdirSync(carpetaResultados(estado, lanza)); } catch (_) { archivos = []; }
+  const ya = archivos.find((f) => f.startsWith(`${destino}.`) && f.endsWith(`.${huella}.uso.json`));
+  if (ya) return path.join(carpetaResultados(estado, lanza), ya);
+  const fecha = cuando.toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, 'Z');
+  const destinoArchivo = path.join(carpetaResultados(estado, lanza), `${destino}.${fecha}.${huella}.uso.json`);
+  fs.mkdirSync(carpetaResultados(estado, lanza), { recursive: true });
+  escribirDeUnaVez(destinoArchivo, texto);
+  return destinoArchivo;
+}
+
 module.exports = {
-  rutaResultado, resultadosGuardados, guardarResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
+  rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,

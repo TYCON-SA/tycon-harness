@@ -7114,7 +7114,7 @@ function writeFindings(args) {
       const lineas = [`Un crítico lo decide una persona: ${faltan.length} CRITICAL marcado(s) como waived sin el ok de una persona:`];
       lineas.push(...cw.renglonesDeFaltantes(rev));
       lineas.push('Arreglalo, o que el dev lo exima antes de escribir los hallazgos. Los caminos:');
-      for (const f of faltan) lineas.push(...cw.caminos({ marker, ruleId: f.rule_id, file: f.file || '<archivo>' }));
+      for (const f of cw.agrupar(faltan)) lineas.push(...cw.caminos({ marker, ruleId: f.rule_id, file: f.file || '<archivo>' }));
       return { error: lineas.join('\n'), criticos_sin_ok: faltan, run_dir: runDir,
         note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
     }
