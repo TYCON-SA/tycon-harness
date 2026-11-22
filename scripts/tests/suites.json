@@ -716,6 +716,12 @@
       "requiere": []
     },
     {
+      "__nota": "el pedido sin preparar que no es de la historia dice la salida (la coordinadora cierra la ejecución con el comando exacto); aparte de save-brake.test.js, que es de las suites bajadas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/save-brake-way-out.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el cambio a mano del estado de una historia lo ve el freno en cada tanda del bloque pipelines (la forma de lista y la de mapa), no sólo en la última.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-transition.test.js",
@@ -1049,6 +1055,12 @@
       "requiere": []
     },
     {
+      "__nota": "la puerta de la consola no deja sacar un worktree (ni borrar la carpeta) con una constancia de control sin commitear: la firma del dueño se perdería.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-unsaved-approval.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Con un camino corto con lista, el freno de la consola juzga la ruta real de una variable del comando (también con bucles) y, si no la puede resolver o la carpeta cambió con un cd que no sigue, frena diciendo que no pudo; ve cp, mv y sed -i dentro de bloques.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-unresolved-path.test.js",
@@ -1064,6 +1076,12 @@
       "__nota": "Un guion en archivo demasiado grande para leerlo entero frena si escribe y nombra una historia (la palabra entera) o una constancia; en un repo sin historias, sólo por una constancia o la ruta de una historia.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-big-script.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La segunda capa del freno de escrituras por consola: lo protegido que un comando cambió vuelve a lo que tenía la foto de antes, comparado por contenido, salvo lo que escribe marker.js solo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-after.test.js",
       "requiere": []
     },
     {
@@ -1145,6 +1163,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.274: el cierre de una corrida autónoma con la matriz roja pide la exención por el cuadro de la lista del dueño, y salir del modo autónomo no saltea la matriz en «Preparar».",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/autonomous-close.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "cada proceso le pregunta a git una sola vez lo mismo (la huella de la carpeta, leída del disco); el gancho, la configuración, los hermanos y los controles de la base.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/git-memo.test.js",
@@ -1183,6 +1207,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/ci-red-close.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/main-check.test.js",
       "requiere": []
     },
@@ -1201,6 +1230,12 @@
       "__nota": "story 8.109: el estado de la historia y el marcador no se tocan a mano (consola, Edit, apply_patch).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/status-by-hand.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 44 (21/11): pasar una historia a done fuera de una corrida mira la matriz de evidencia en vivo o la constancia de la corrida.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-done-needs-matrix.test.js",
       "requiere": []
     },
     {
@@ -2975,6 +3010,12 @@
       "requiere": []
     },
     {
+      "__nota": "el aviso de contexto al cerrar un paso pesado del pipeline: sobre el umbral recomienda /compact o sesión nueva; debajo, en un paso liviano, tras compactar o apagado, nada. Nunca frena.",
+      "raiz": "arnes",
+      "ruta": "tests/context-at-step-close.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.53: la descripción de cada agente tiene 200 caracteres o menos y, si es condicional, sigue nombrando su disparador.",
       "raiz": "arnes",
       "ruta": "tests/agent-descriptions.test.js",
@@ -3385,6 +3426,18 @@
       "requiere": []
     },
     {
+      "__nota": "la clasificación de cada control (scripts/metrics/controls-classification.json): cada freno de guard-record.js y cada gancho que frena tiene su entrada con exigencia o preferencia, motivo y fecha de revisión; una exigencia dice qué protege. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/controls-classification.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el modelo de una sesión (scripts/lib/session-model.js): el primer modelo real de su conversación, leído por tramos; sin conversación, ilegible o sin modelo, «no medido» con el motivo. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/session-model.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el registro común de las firmas (scripts/lib/signature-log.js): cada firma de guion deja un renglón con quién firmó, la vía, si fue delegada, quién la pidió, su id y su nivel del catálogo, la máquina, la hora y el motivo; si no se puede escribir, la firma sigue y avisa.",
       "raiz": "arnes",
       "ruta": "tests/signature-log.test.js",
@@ -3600,6 +3653,12 @@
       "__nota": "story 8.150: la carpeta del estado y la de los registros sueltos dichas por el ayudante de shell (scripts/lib/state-dir.sh) son las mismas que dice tycon-home.js, en nueve casos (casa propia o no, TYCON_HOME absoluta, relativa, con espacios, vacía). Sin red: HOME de juguete en procesos hijos.",
       "raiz": "arnes",
       "ruta": "tests/state-dir-parity.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un marcador viejo, sin la ruta del repo o con rutas relativas: la pregunta de firma y los lectores directos (la tanda, la procedencia) no dependen de la carpeta del proceso.",
+      "raiz": "arnes",
+      "ruta": "tests/old-marker-paths.test.js",
       "requiere": []
     },
     {
