@@ -1727,7 +1727,7 @@ function reviewLocalFile(R, list, file, c, dir, top) {
 // (con cualquier cosa entre `gh` y la orden dentro del mismo comando: banderas, valores pegados o entre comillas,
 // `gh -R dueño/repo pr create`, `gh -t "x y" issue create`; el comando termina en `;`, `&`, `|`, paréntesis o
 // redirección)
-const GH_IN_RAW = /(^|[^A-Za-z0-9_.-])gh(\.exe)?["',\s\\]+(?:[^"',\s\;&|()<>]+["',\s\\]+)*(pr|issue|release|api|gist|repo|label)(?=["',\s\;&|()<>]|$)/i;
+const GH_IN_RAW = /(^|[^A-Za-z0-9_.-])gh(\.exe)?["',\s\\]+(?:[^"',\s\\;&|()<>]+["',\s\\]+)*(pr|issue|release|api|gist|repo|label)(?=["',\s\\;&|()<>]|$)/i;
 // el terreno del freno cuando no alcanza a revisar el comando: un `gh` que publica o un `push`, en el texto crudo. Lo
 // mismo mira node-missing-launcher.sh cuando falta Node
 const inTerrain = (text) => GH_IN_RAW.test(String(text || '')) || /push/.test(String(text || ''));

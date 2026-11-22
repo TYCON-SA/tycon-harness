@@ -219,3 +219,10 @@ test('T14d Rollback_DropsLauncherTheOldVersionLacks @story-8.159 @ac-0 — volve
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), hooks(`node "${guion}"`, `bash "${esta}" node "${guion}"`));
   assert.match(dicho.join('\n'), /saqué el lanzador/);
 });
+
+test('T21c Critical_Terrain_NoCatastrophicBacktracking @story-8.159 @ac-0 — el terreno contesta al instante con textos armados para trabarlo', () => {
+  // stable-data: mide cuánto tarda la expresión del terreno, no una fecha
+  const t0 = Date.now();
+  for (const s of [`gh\t${'!\\'.repeat(5000)}x`, `gh\t!${'\t\\'.repeat(5000)}x`, `gh ${'-a '.repeat(5000)}`]) G.inTerrain(s);
+  assert.ok(Date.now() - t0 < 2000, `tardó ${Date.now() - t0} ms`);
+});
