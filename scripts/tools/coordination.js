@@ -102,6 +102,10 @@ const STALLED_NOTICE_MS = 2 * 60000;
 // lo de «Tu firma» se lee armando la oficina entera (unos 8 s): owner-wait lo mira a lo sumo cada dos minutos, con un tope
 const OWNER_WAIT_SLOW_MS = 2 * 60000;
 const OFFICE_TIMEOUT_MS = 30000;
+// una lectura de la oficina que falla (lenta, cortada) no termina la espera: se reintenta en la vuelta siguiente, y sólo
+// estas fallas seguidas se le dicen a la coordinadora (una vez por motivo). Antes, la primera la despertaba y el vigilante
+// quedaba muerto hasta el próximo pulso
+const OFFICE_FAILS_TO_ANNOUNCE = 3;
 const OFFICE_JS = path.join(__dirname, 'office.js');
 // Empieza con letra o número: el nombre va como valor de `-n` y no puede leerse como una bandera.
 const { NAME_RE } = sessionNames;
@@ -858,7 +862,7 @@ function ownerWaitAlive(home) {
 }
 
 // Lo ya anunciado: `{ waits: { <sesión>: { since, session } }, retired: { <id corto>@<hora>: true }, owner: { leidoAt,
-// esperas: { <sesión>: { quien, espera } }, motivos: { <motivo>: true } }, delegables: { <renglón>: 'coordinadora' |
+// esperas: { <sesión>: { quien, espera } }, motivos: { <motivo>: true }, fallas: <lecturas fallidas seguidas> }, delegables: { <renglón>: 'coordinadora' |
 // 'persona' } }`. `owner` es lo de «Tu firma» de la oficina; `delegables`, lo desviado a la coordinadora (cada renglón se
 // anuncia una vez a ella y una vez cuando pasa a la persona).
 function readAnnounced(home) {
@@ -867,7 +871,8 @@ function readAnnounced(home) {
   const o = obj(a && a.owner);
   return {
     waits: obj(a && a.waits), retired: obj(a && a.retired), delegables: obj(a && a.delegables),
-    owner: { leidoAt: Number.isFinite(o.leidoAt) ? o.leidoAt : null, esperas: obj(o.esperas), motivos: obj(o.motivos) },
+    owner: { leidoAt: Number.isFinite(o.leidoAt) ? o.leidoAt : null, esperas: obj(o.esperas), motivos: obj(o.motivos),
+      fallas: Number.isInteger(o.fallas) && o.fallas > 0 ? o.fallas : 0 },
   };
 }
 
@@ -934,7 +939,8 @@ function openSignatureSessions(home, opts, now) {
  * Lo de «Tu firma» en una vuelta de owner-wait: lee la oficina a lo sumo cada `OWNER_WAIT_SLOW_MS` (también con la hora
  * guardada en el futuro) y guarda la hora aunque no haya novedades. Anuncia la sesión nueva, la que cambió de espera y la que
  * ya no espera; no a la coordinadora, ni a las trabadas en un permiso (ya tienen su línea), ni a las de la lista. Con la
- * lectura fallida no anuncia ni retira, y dice cada motivo una vez; con avisos de la oficina, anuncia y no retira.
+ * lectura fallida no anuncia ni retira, reintenta en la vuelta siguiente, y a la tercera falla seguida dice el motivo, una
+ * vez; con avisos de la oficina, anuncia y no retira.
  * Devuelve si cambió lo anunciado.
  */
 function ownerWaitTurn(opts, a, lines, { home, me, stalled, now }) {
@@ -944,10 +950,15 @@ function ownerWaitTurn(opts, a, lines, { home, me, stalled, now }) {
   o.leidoAt = now;
   if (lectura.error) {
     const motivo = String(lectura.error);
-    if (!o.motivos[motivo]) { lines.push(`no pude mirar lo de Tu firma: ${quoted(motivo, 200)}`); o.motivos[motivo] = true; }
+    o.fallas += 1;
+    if (o.fallas >= OFFICE_FAILS_TO_ANNOUNCE && !o.motivos[motivo]) {
+      lines.push(`no pude mirar lo de Tu firma (${o.fallas} veces seguidas): ${quoted(motivo, 200)}`);
+      o.motivos[motivo] = true;
+    }
     return true;
   }
   o.motivos = {};
+  o.fallas = 0;
   const fuera = new Set([me, ...stalled, ...openSignatureSessions(home, opts, now)].filter(Boolean).map(String));
   const ahora = new Map();
   for (const w of lectura.esperas || []) if (w.sid != null && !fuera.has(String(w.sid))) ahora.set(String(w.sid), w);

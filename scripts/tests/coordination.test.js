@@ -1767,9 +1767,18 @@ test('T7 OwnerWait_UnaVezCadaDosMinutosYEntreProcesos @story-8.219 @ac-7: owner-
     lectura = { esperas: [espera('s-b', 'Bea', PLAN)], problemas: [] };
     assert.deepStrictEqual(vuelta(480), ['«Ana» ya no espera a la persona']);
     lectura = { error: 'la oficina salió con 1' };
-    assert.deepStrictEqual(vuelta(600), ['no pude mirar lo de Tu firma: «la oficina salió con 1»']);
-    assert.deepStrictEqual(vuelta(720), [], 'el mismo motivo, una vez');
+    // una lectura fallida no despierta a la coordinadora (owner-wait terminaría): se reintenta, y a la tercera se dice
+    assert.deepStrictEqual(vuelta(600), [], 'la primera falla no termina la espera');
+    assert.deepStrictEqual(vuelta(720), [], 'la segunda tampoco');
+    assert.deepStrictEqual(vuelta(840), ['no pude mirar lo de Tu firma (3 veces seguidas): «la oficina salió con 1»']);
+    assert.deepStrictEqual(vuelta(960), [], 'el mismo motivo, una vez');
     assert.ok(owner().esperas['s-b'], 'la lectura fallida no retira');
+    // una lectura buena vuelve a contar desde cero
+    lectura = { esperas: [espera('s-b', 'Bea', PLAN)], problemas: [] };
+    vuelta(1080);
+    assert.strictEqual(owner().fallas, 0);
+    lectura = { error: 'la oficina tardó más de 30 s' };
+    assert.deepStrictEqual(vuelta(1200), [], 'después de una buena, otra falla vuelve a esperar tres');
     // un reloj atrasado: la hora guardada en el futuro no frena la lectura
     const file = path.join(C.coordinationDir(t.home), 'owner-wait.json');
     const a = JSON.parse(fs.readFileSync(file, 'utf8'));
