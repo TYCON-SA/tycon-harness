@@ -2998,14 +2998,41 @@ function comandosAnidados(comando, hondo = 0) {
   const out = [cmd];
   if (hondo > 3) return out;
   const sumar = (c) => { if (c && String(c).trim()) out.push(...comandosAnidados(String(c), hondo + 1)); };
-  for (const m of String(cmd).matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumar(m[1]);
-  for (const m of String(cmd).matchAll(/`([^`]*)`/g)) sumar(m[1]);
+  // entre comillas simples (fuera de las dobles) `$(…)` y las comillas invertidas son texto: no corren
+  let sinSimples = '';
+  for (let i = 0, q = null, s = String(cmd); i < s.length; i++) {
+    const ch = s[i];
+    if (q === "'") { sinSimples += ch === "'" ? (q = null, ch) : ' '; continue; }
+    if (ch === '\\' && q !== "'") { sinSimples += ch + (s[i + 1] || ''); i++; continue; }
+    if (ch === '"') q = q === '"' ? null : '"';
+    else if (ch === "'" && q !== '"') q = "'";
+    sinSimples += ch;
+  }
+  // un `\$(` o una comilla invertida escapada también son texto
+  // se busca sobre el texto sin lo de comillas simples (mismo largo) y se toma del original: un `sh -c '…'` adentro de
+  // un `$(…)` conserva su cuerpo
+  const original = String(cmd);
+  for (const m of sinSimples.matchAll(/(?<!\\)\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumar(original.slice(m.index + 2, m.index + m[0].length - 1));
+  for (const m of sinSimples.matchAll(/(?<!\\)`([^`]*)`/g)) sumar(original.slice(m.index + 1, m.index + m[0].length - 1));
   for (const tramo of tramos(cmd)) {
     const w = palabras(sinPalabrasDelShell(tramo)).filter((x) => x !== '');
     const c = nombreDeComando(w[0]);
-    if (['bash', 'sh', 'zsh', 'dash'].includes(c)) {
+    if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'mksh', 'pdksh', 'ash', 'fish'].includes(c)) {
       const i = w.findIndex((x, k) => k > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(x));
-      if (i > 0) sumar(w[i + 1]);
+      // las opciones después de `-c` (`bash -c -x '…'`) y el `--` que las corta no son el cuerpo: es lo primero que sigue
+      let j = i + 1;
+      while (i > 0 && j < w.length && /^-[A-Za-z-]*$/.test(w[j]) && w[j] !== '-') { if (w[j++] === '--') break; }
+      // con comillas dobles escapadas adentro (`sh -c "echo x >> \"h.md\""`) las palabras cortan el cuerpo en la comilla:
+      // el cuerpo lo saca el lector de los guiones internos, que lee las comillas dobles enteras
+      if (i > 0 && /\\"/.test(tramo)) for (const g of guionesInternos(tramo)) sumar(g);
+      else if (i > 0 && w[j] !== undefined) {
+        // lo que sigue al cuerpo son sus argumentos: `$0`, `$1`… (y `$@`, `$*`) valen eso adentro (`sh -c 'echo x >> "$1"' _ h.md`)
+        const resto = w.slice(j + 1);
+        // entre comillas dobles, `\"` y `\\` llegan escapados: adentro valen la comilla y la barra
+        const cuerpo = String(w[j]).replace(/\\(["\\$`])/g, '$1');
+        sumar(cuerpo.replace(/\$\{?([0-9])\}?/g, (m, d) => (resto[Number(d)] !== undefined ? resto[Number(d)] : m))
+          .replace(/"?\$\{?[@*]\}?"?/g, () => resto.slice(1).join(' ')));
+      }
     }
     if (c === 'eval') sumar(w.slice(1).join(' '));
     if (c === 'find') {
@@ -3435,7 +3462,13 @@ function comandosPorOtroPrograma(cmd, cwd) {
       for (let previo = null; previo !== antes;) { previo = antes; antes = antes.replace(PREFIJO, '').replace(PALABRA_ANTES_DE_XARGS, '').trim(); }
       const crudas = palabras(antes).filter((w) => w !== '');
       if (nombreDeComando(crudas[0]) === 'xargs') {
-        out.push(...ordenesDeXargs(crudas, k ? palabras(lista[k - 1]).filter((w) => w !== '') : []));
+        // lo que llega por la entrada: las palabras del tramo de antes, sin el `echo`/`printf` que las escribe (con él,
+        // `$0` del cuerpo de un `xargs sh -c` sería `echo`)
+        const previas = k ? palabras(lista[k - 1]).filter((w) => w !== '') : [];
+        // (de `printf`, también el formato: `printf '%s\n' h.md` escribe sólo `h.md`)
+        const escritor = nombreDeComando(previas[0]) || '';
+        const entrada = /^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas;
+        out.push(...ordenesDeXargs(crudas, escritor === 'printf' && /%/.test(entrada[0] || '') ? entrada.slice(1) : entrada));
         return;
       }
       const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
@@ -3538,14 +3571,20 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   // más allá del tope no se sabe qué corre: si nombra la ruta de una historia y escribe o borra, frena por el texto
   const sinLeer = anidadosHasta(cmd).hondos.some((h) => NOMBRA_RUTA_DE_HISTORIA.test(h) && (ESCRIBE.test(h) || BORRA_O_MUEVE.test(h)));
   // un guion de shell que escribe un heredoc del mismo comando corre lo que dice, y lo mismo lo que llega por otro
-  // programa: se mira como otro comando, un nivel
+  // programa: se mira como otro comando, un nivel. Lo que corre adentro (`sh -c '…'`, `$(…)`, comillas invertidas,
+  // también dentro de la orden de un `xargs`) se mira igual: su redirección a una historia escribe aunque vaya entre
+  // comillas para el comando de afuera
+  // lo que pasa el tope se dice primero: la lectura de abajo vería sólo los niveles que alcanza
+  if (sinLeer) return [`(un comando anidado a más de ${TOPE_ANIDADOS} niveles nombra una historia y escribe o borra: no se lee qué corre)`];
   if (hondo === 0) {
-    for (const texto of [...guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])]), ...comandosPorOtroPrograma(cmd, cwd)]) {
+    const porOtro = [...guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])]), ...comandosPorOtroPrograma(cmd, cwd)];
+    // sólo lo que de verdad corre (en posición de comando): un `sh -c "…"` citado en un mensaje o en un texto no
+    const adentro = [cmd, ...porOtro].flatMap((t) => comandosAnidados(sinCuerposDeTexto(t)).slice(1));
+    for (const texto of [...new Set([...porOtro, ...adentro])]) {
       const h = historiasPorConsola(texto, cwd, extractWriteTargets(texto, { keep: () => true }), sesion, [], hondo + 1, instalados);
       if (h.length) return h;
     }
   }
-  if (sinLeer) return [`(un comando anidado a más de ${TOPE_ANIDADOS} niveles nombra una historia y escribe o borra: no se lee qué corre)`];
   if (!enSitio && !destinosB.length && !ESCRIBE.test(String(cmd || ''))) return [];
   // con todos los editores en el lugar escritos como `sed` que nombra sus archivos, lo que escriben es lo que nombran:
   // la carpeta de un `cd` es desde dónde se leen, y una historia que tocan se ensaya para ver si le cambia el estado

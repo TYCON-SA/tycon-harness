@@ -368,6 +368,51 @@ test('T13b Adversarial_FormsThatOnlyRead_Pass @story-8.308 @ac-13', () => {
   ]) pasa(c, cmd);
 });
 
+// T16 ShellConC_EscribeLaHistoria_Frena
+// `sh -c '…'` (y bash, zsh, dash, ksh con `-c`) corre su texto como un comando: lo que ese texto escribe sobre una
+// historia frena como si estuviera afuera. Borrar ya frenaba; agregar con `>>`, `tee` o `sed -i` adentro pasaba.
+// 🔴 Falla con: leer el cuerpo de `sh -c` sólo para lo que borra, o tomar por escritura un `sh -c` que sólo lee.
+test('T16 ShellConC_EscribeLaHistoria_Frena', () => {
+  const c = corral();
+  for (const shell of SHELLS) {
+    frena(c, `${shell} -c 'echo x >> ${H}'`);
+    frena(c, `${shell} -c "echo x > ${H}"`);
+  }
+  for (const cmd of [
+    `sh -c 'echo x | tee -a ${H}'`,
+    `bash -c 'sed -i s/a/b/ ${H}'`,
+    `bash -lc 'printf x >> ${H}'`,
+    `echo ${H} | xargs -I {} sh -c 'echo x >> {}'`,
+    `sh -c "sh -c 'echo x >> ${H}'"`,
+    // lo que encontró el pase: el `--` antes del cuerpo y la historia como argumento del cuerpo
+    `bash -c -- 'echo x >> ${H}'`,
+    `bash -c -- 'rm ${H}'`,
+    `sh -c 'echo x >> "$1"' _ ${H}`,
+    `bash -c 'echo x >> $0' ${H}`,
+    `echo ${H} | xargs sh -c 'echo x >> $0'`,
+    // de la segunda vuelta: comillas dobles escapadas en el cuerpo, una opción después de -c, $* y el formato de printf
+    `sh -c "echo x >> \\"${H}\\""`,
+    `bash -c "echo \\"a b\\" >> ${H}"`,
+    `bash -c -x 'echo x >> ${H}'`,
+    `sh -c 'echo x >> $*' _ ${H}`,
+    `printf '%s\\n' ${H} | xargs sh -c 'echo x >> $0'`,
+    // de la tercera vuelta: un sh -c con comillas simples adentro de $(…) o de comillas invertidas
+    `echo $(sh -c 'echo x >> ${H}')`,
+    `echo \`bash -c 'echo x >> ${H}'\``,
+  ]) frena(c, cmd);
+  for (const cmd of [
+    `sh -c 'cat ${H}'`,
+    `bash -c 'grep -c status ${H} > /tmp/cuenta.txt'`,
+    `sh -c 'echo x >> notes.txt'`,
+    // un `sh -c` citado como texto (un mensaje, un heredoc a un archivo) no corre
+    `git commit -m 'doc: sh -c "echo x >> ${H}"'`,
+    `echo "use: sh -c 'echo x >> ${H}'"`,
+    `cat <<EOF > /tmp/n.txt\nsh -c 'echo x >> ${H}'\nEOF`,
+    // un `$(` escapado es texto
+    `echo "\\$(rm ${H})"`,
+  ]) pasa(c, cmd);
+});
+
 // T15 Bench_FrenoComandosAnidados
 // 🔴 Falla con: un caso del banco que no corre o que da otra salida que la esperada.
 test('T15 Bench_FrenoComandosAnidados', () => {
