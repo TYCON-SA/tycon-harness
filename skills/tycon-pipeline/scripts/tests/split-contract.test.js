@@ -26,7 +26,7 @@ function requiresLocales(archivo, scriptsDir = SCRIPTS) {
   const out = new Set();
   const rel = (abs) => path.relative(path.resolve(scriptsDir, '..', '..', '..'), abs).split(path.sep).join('/');
   for (const m of texto.matchAll(/require\(\s*['"](\.\.?\/[^'"]+)['"]\s*\)/g)) out.add(rel(path.resolve(dir, m[1])));
-  for (const m of texto.matchAll(/require\(\s*path\.join\(\s*(__dirname|SCRIPTS_DIR)\s*,\s*((?:'[^']*'\s*,?\s*)+)\)\s*\)/g)) {
+  for (const m of texto.matchAll(/require\(\s*path\.join\(\s*(__dirname|SCRIPTS_DIR)\s*,\s*('[^']*'(?:\s*,\s*'[^']*')*)\s*(?:,\s*)?\)\s*\)/g)) {
     const base = m[1] === '__dirname' ? dir : scriptsDir;
     const partes = [...m[2].matchAll(/'([^']*)'/g)].map((x) => x[1]);
     out.add(rel(path.resolve(base, ...partes)));
