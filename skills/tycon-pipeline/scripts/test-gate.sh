@@ -186,6 +186,7 @@ TG_SUITES_PID=""
 TG_TREE_PUB_ROOT=""
 TG_NO_COMPANIONS=""
 TG_TREE_TOUCHED_FILE=""
+_TG_HEREDADOS_ARGS=()
 TG_TOP_FULL=""
 TG_FULL_SUITE_BY=""
 TG_MEASURED=""
@@ -322,7 +323,7 @@ correr_hermanos_al_salir() {
   [[ "$final" == "78" ]] && salir_esperando_a_main "repos hermanos (este repo: $rc)"
   node -e '
     const fs = require("fs"), p = require("path");
-    const [out, ts, storyId, rc, final, filas] = process.argv.slice(1);
+    const [out, ts, storyId, rc, final, filas, frescura, repoStory] = process.argv.slice(1);
     const companions = filas.split("\n").filter(Boolean).map((l) => {
       const [root, scope, archivos, exit] = l.split("\x1f");
       const n = Number(exit);
@@ -340,6 +341,16 @@ correr_hermanos_al_salir() {
     }
     art.companions = companions;
     art.all_green = Number(final) === 0;
+    // La huella de cada hermano, con su nombre, al lado de la de este repo: `suite-freshness.js
+    // check` la compara para saber si el verde sigue midiendo el código de los dos. La constancia que arma este bloque
+    // (este repo sin suite propia) no trae la de este repo: se mide acá. Si medir falla, la entrada queda sin huella y el
+    // chequeo dice «sin datos»: el hermano nunca se omite.
+    let sf = null;
+    try { sf = require(frescura); } catch (e) { process.stderr.write(`[test-gate] ⚠️  no pude cargar ${frescura} (${e && e.message}): la constancia queda sin la huella de los hermanos y el chequeo de frescura dirá «sin datos»\n`); }
+    if (sf) {
+      const propia = art.code_state && art.code_state.state_hash !== undefined ? art.code_state : sf.codeState(repoStory);
+      art.code_state = { ...propia, repos: sf.siblingStates(companions.map((c) => c.root)) };
+    }
     // este repo no tiene pruebas que el portón sepa correr, pero un hermano las corrió: lo medido es el hermano, y
     // «pruebas no medidas» ya no es cierto (el marcador lo dejó la corrida del hermano)
     if (art.no_stack && companions.some((c) => c.green)) {
@@ -358,7 +369,7 @@ correr_hermanos_al_salir() {
     }
     fs.mkdirSync(p.dirname(out), { recursive: true });
     fs.writeFileSync(out, JSON.stringify(art, null, 2) + "\n");
-  ' "$OUT_FILE" "$TS" "$STORY_ID" "$rc" "$final" "$filas" \
+  ' "$OUT_FILE" "$TS" "$STORY_ID" "$rc" "$final" "$filas" "$SCRIPT_DIR/lib/suite-freshness.js" "$REPO_STORY" \
     || echo "[test-gate] ⚠️  no pude anotar los repos hermanos en $OUT_FILE (mirá el error de arriba)" >&2
   if [[ "$final" == "7" ]]; then
     marcar_tests_en_rojo 7 "sin acotar: la cubre la CI del pedido (un repo hermano no se pudo acotar a lo tocado); no es verde"
@@ -891,6 +902,8 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     _tg_tree_field() { node -e 'const j=JSON.parse(process.argv[1]);const v=process.argv[2].split(".").reduce((o,k)=>o==null?o:o[k],j);process.stdout.write(v==null?"":String(v))' "$_TG_TREE_JSON" "$1"; }
     _TG_PUB_ROOT="$(_tg_tree_field base.root)"
     TG_TREE_PUB_ROOT="$_TG_PUB_ROOT"
+    # el juez de heredados mide un caso que la foto no conoce sobre los dos origin/main: le pasa de qué repos
+    _TG_HEREDADOS_ARGS=(--assembled --private "$(_tg_tree_field private.root)" --public "$_TG_PUB_ROOT")
     _tg_rama="$(_tg_tree_field base.branch)"
     _tg_equipo="$(_tg_tree_field team)"
     # de dónde salió la capa del equipo (lib/private-tree.js → teamLayer): la variable, lo que declara la máquina, o
@@ -1012,7 +1025,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     _TG_ONE_INHERITED=""
     if [[ "$_tg_rc" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
       _tg_her=0
-      TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
+      TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${_TG_HEREDADOS_ARGS[@]+"${_TG_HEREDADOS_ARGS[@]}"} || _tg_her=$?
       if [[ "$_tg_her" == "0" ]]; then
         echo "🟡 [test-gate] $SUITE_ONLY ya estaba roja antes del cambio, en el nocturno de esta mañana o en la base: avisa y no frena, igual que en la validación del pedido" >&2
         ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests-suite -- node -e 'console.error(`test-gate: ${process.argv[1]} ya estaba roja antes del cambio: avisa, no frena`)' "$SUITE_ONLY" ) >&2 \
@@ -1415,7 +1428,7 @@ if [[ "$RUNNER" == "suites-json" && "$SUITE_EXIT" == "1" && -f "$RESULTS_DIR/sui
   cp "$RESULTS_DIR/suites.json" "$RESULTS_DIR/suites-antes-del-perdon.json" \
     || echo "[test-gate] ⚠️  no pude copiar el resumen de antes del perdón: si esta completa sale verde por lo heredado, no la guardo" >&2
   _tg_her=0
-  TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
+  TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${_TG_HEREDADOS_ARGS[@]+"${_TG_HEREDADOS_ARGS[@]}"} || _tg_her=$?
   if [[ "$_tg_her" == "0" ]]; then
     echo "🟡 [test-gate] todo lo rojo ya estaba rojo antes del cambio, en el nocturno de esta mañana o en la base (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
     ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo rojo ya estaba rojo antes del cambio: avisa, no frena")' ) >&2 \
