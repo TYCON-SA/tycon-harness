@@ -860,29 +860,30 @@ function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO
   // lo que git contestó, por esta llamada: un módulo que importan varios se pregunta una vez
   const memo = { porRuta: new Map() };
   const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real, memo);
+  // cada archivo se lee una vez, y entre todos no pasan del tope: el que lo pasaría no se lee, y desde ahí no se lee
+  // más. Lo que falta cuenta como un guion que no se pudo leer
+  const lecturas = new Map();
+  let gastado = 0;
+  let agotado = false;
+  const sinLugar = (real) => {
+    if (!agotado) out.push({ interprete: '', archivo: real, texto: '', argv: [], grande: true });
+    agotado = true;
+    return { texto: '', grande: true };
+  };
   const leerDelDisco = (real) => {
     try {
       const st = fs.statSync(real);
       if (!st.isFile()) return null;
       if (st.size > GUION_TOPE_DURO) return { texto: '', grande: true };
-      gastado += Math.max(st.size, 4096);
+      const costo = Math.max(st.size, 4096);
+      if (agotado || gastado + costo > topeDeLectura) return sinLugar(real);
+      gastado += costo;
       const texto = fs.readFileSync(real, 'utf8').replace(/\u0000/g, ' ');
       return { texto, grande: st.size > GUION_TOPE };
     } catch { return null; }
   };
-  // cada archivo se lee una vez. Gastado el tope no se lee más: lo que falta cuenta como un guion que no se pudo leer
-  const lecturas = new Map();
-  let gastado = 0;
-  let agotado = false;
   const leer = (real) => {
-    if (!lecturas.has(real)) {
-      const sinLugar = gastado > topeDeLectura;
-      if (sinLugar && !agotado) {
-        agotado = true;
-        out.push({ interprete: '', archivo: real, texto: '', argv: [], grande: true });
-      }
-      lecturas.set(real, sinLugar ? { texto: '', grande: true } : leerDelDisco(real));
-    }
+    if (!lecturas.has(real)) lecturas.set(real, leerDelDisco(real));
     return lecturas.get(real);
   };
   // el guion y los módulos locales que importa, hasta RECORRIDO_NIVELES niveles y RECORRIDO_ARCHIVOS archivos; uno del

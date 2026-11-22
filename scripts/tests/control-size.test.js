@@ -159,6 +159,10 @@ test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: el tope co
   const conNombre = 'const RECORRIDO_NIVELES = 7;\nconst RECORRIDO_ARCHIVOS = 31;\n' + FRENO(2, 20);
   const root = arbol({ [`${PIPE}/on-bash-write-gate.js`]: conNombre });
   assert.deepStrictEqual(datos(root).recorrido.tope, { niveles: 7, modulos: 31 });
+  // un renglón comentado con la misma forma, antes del de verdad, no cuenta
+  const comentado = '// const RECORRIDO_NIVELES = 3;\n// const RECORRIDO_ARCHIVOS = 5;\n' + conNombre;
+  const otro = arbol({ [`${PIPE}/on-bash-write-gate.js`]: comentado });
+  assert.deepStrictEqual(datos(otro).recorrido.tope, { niveles: 7, modulos: 31 });
 });
 
 test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: un freno sin los dos números es «no medido», nunca silencio', () => {

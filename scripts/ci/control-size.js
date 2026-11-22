@@ -217,10 +217,10 @@ function topeDelFreno(gate) {
     const resto = texto.slice(desde + 1).search(/\nfunction\s/);
     cuerpo = texto.slice(desde, resto < 0 ? texto.length : desde + 1 + resto);
   }
-  // con nombre (RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS) en cualquier lugar del freno; si no, la forma de antes, dentro
-  // de guionesEnArchivo
-  const niveles = texto.match(/\bconst\s+RECORRIDO_NIVELES\s*=\s*(\d+)\s*;/) || cuerpo.match(/\bhondo\s*>=\s*(\d+)/);
-  const modulos = texto.match(/\bconst\s+RECORRIDO_ARCHIVOS\s*=\s*(\d+)\s*;/) || cuerpo.match(/\bmodulos\[\w+\]\+\+\s*>=\s*(\d+)/);
+  // con nombre (RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS), declarado al comienzo de un renglón del freno (uno comentado no
+  // cuenta); si no, la forma de antes, dentro de guionesEnArchivo
+  const niveles = texto.match(/^const\s+RECORRIDO_NIVELES\s*=\s*(\d+)\s*;/m) || cuerpo.match(/\bhondo\s*>=\s*(\d+)/);
+  const modulos = texto.match(/^const\s+RECORRIDO_ARCHIVOS\s*=\s*(\d+)\s*;/m) || cuerpo.match(/\bmodulos\[\w+\]\+\+\s*>=\s*(\d+)/);
   if (!niveles || !modulos) return { tope: null, motivo: `no medido: no encontré el tope del recorrido en el freno (${path.basename(gate)}, guionesEnArchivo)` };
   return { tope: { niveles: Number(niveles[1]), modulos: Number(modulos[1]) } };
 }

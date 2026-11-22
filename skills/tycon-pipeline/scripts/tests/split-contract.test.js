@@ -184,6 +184,14 @@ test('T14 BashGate_ModuleWalk_ReadsAreBounded @story-8.163 @ac-14', () => {
   const guiones = bash().guionesEnArchivo('node herr/principal.js', [b.dir], [], 8192);
   assert.ok(guiones.some((g) => g.grande && !g.texto), 'agotado el tope, queda un guion sin leer');
   assert.ok(!guiones.some((g) => g.archivo.endsWith('despues.js') && g.texto), 'lo de después del tope no se lee');
+  // el tope es lo que se lee entre todos, no un umbral que se mira antes de leer: un archivo que lo pasaría no se lee
+  const b2 = repoDelFreno();
+  fs.mkdirSync(path.join(b2.dir, 'herr'), { recursive: true });
+  fs.writeFileSync(path.join(b2.dir, 'herr', 'principal.js'), "require('./justo.js');\n");
+  fs.writeFileSync(path.join(b2.dir, 'herr', 'justo.js'), `// ${'x'.repeat(5000)}\n`);
+  const justos = bash().guionesEnArchivo('node herr/principal.js', [b2.dir], [], 8192);
+  assert.ok(!justos.some((g) => g.archivo.endsWith('justo.js') && g.texto), 'el que pasaría el tope de lectura no se lee');
+  assert.ok(justos.some((g) => g.grande && !g.texto), 'y queda como un guion sin leer');
   // de un ejecutable nombrado se mira el comienzo: su línea `#!` no pide leerlo entero
   if (process.platform !== 'win32') {
     const c = repoDelFreno();
