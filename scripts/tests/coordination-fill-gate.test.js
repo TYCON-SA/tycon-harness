@@ -520,6 +520,20 @@ test('T15 FillGate_MismaFoto_DecideIgualQueStatus @story-8.307 @ac-1 @ac-2 @ac-6
   assert.strictEqual(C.keepFree(opts(t2, { reason: 'espero el merge de la 8.288 antes de abrir otra' })).code, 1);
 });
 
+test('T16 FillGate_MotivoIlegible_NoCalla @story-8.159: un motivo de lugares libres roto no cubre el trabajo: el gancho frena y la cuenta lo dice', () => {
+  // 🔴 mutación: tomar el motivo que no se pudo leer como vigente (el cierre pasa callado con lugar, memoria y trabajo)
+  const t = toy();
+  busy(t, 's-a', 'Uno');
+  snapshot(t, [proyecto([story('A'), story('B')])]);
+  const f = FS.files(t.state).current;
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, '{ roto');
+  const r = C.fillCheck(opts(t));
+  assert.strictEqual(r.block, true, JSON.stringify(r));
+  assert.ok(r.problems.some((p) => /motivo de los lugares libres/.test(p)), JSON.stringify(r.problems));
+  assert.match(runIn(t).stdout, /"decision":"block"/);
+});
+
 // ── Instalación (AC 17) ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T17 FillGate_Registrado @story-8.307 @ac-17: el gancho está en cada lista del instalador, en Codex como asimetría, en la guía de instalación, en el sitio, en las suites y en el banco', () => {

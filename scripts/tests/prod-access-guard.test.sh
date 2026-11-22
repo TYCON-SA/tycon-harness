@@ -240,6 +240,20 @@ if [ -x /bin/zsh ]; then
   frena "T30f · sin snapshot, un shell de login que se cuelga frena" "$PUERTA $PROD 'select 1'" $ZD SHELL=/bin/zsh
   t=$(( $(date +%s) - t ))
   if [ "$t" -le 5 ]; then ok "T30f2 · y frena dentro del reloj propio (${t}s)"; else no "T30f2 · tardó ${t}s en frenar (tope 5)"; fi
+  # T30j · el shell de login contesta dos veces por el mismo nombre: la respuesta no se puede leer, y eso frena.
+  # 🔴 Falla con: una respuesta del shell que no se puede leer, tomada como «no define nada».
+  mundo; printf 'echo "tycon-prod-sql: none"\n' > "$CASA/.zlogin"
+  frena "T30j · sin snapshot, un shell de login que contesta dos veces por un nombre frena" "$PUERTA $PROD 'select 1'" $ZD SHELL=/bin/zsh
+  # T30k · sin la marca de arranque de la sesión y sin `ps` para buscar el `claude` que lanzó al freno, no se sabe qué
+  # snapshot es de esta sesión: frena, aunque el shell de login esté limpio (T30a pasa con el mismo mundo). Se corre
+  # sin `corre` porque el PATH vacío no dejaría encontrar a node.
+  # 🔴 Falla con: no saber cuándo arrancó la sesión, tomado como «no hay secuestro».
+  mundo; mkdir -p "$TMP/sin-ps"
+  NODE_ABS="$(command -v node)"
+  CMD="$PUERTA $PROD 'select 1'" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:"/tmp",tool_input:{command:process.env.CMD}}))' \
+    | env -u TYCON_PROD_SESSION_SINCE HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" ZDOTDIR="$CASA" SHELL=/bin/zsh PATH="$TMP/sin-ps" "$NODE_ABS" "$HOOK" >"$TMP/out" 2>"$TMP/err"; rc=$?
+  if [ "$rc" = 2 ] && grep -q "cuándo arrancó esta sesión" "$TMP/err"; then ok "T30k · sin marca de la sesión ni ps para buscarla, la puerta frena"
+  else no "T30k · sin marca de la sesión ni ps salió rc=$rc (esperaba 2 por no saber la sesión) — err: $(head -c 120 "$TMP/err")"; fi
 else
   echo "⏭ prod-guard: sin /bin/zsh en esta máquina, T30a/c/d/e/f no se pueden medir (constancia, no verde)"
 fi
@@ -304,6 +318,35 @@ printf '{no es json sqlcmd -S %s' "$PROD" | env HOME="$CASA" TYCON_REPOS_ROOT="$
 [ "$rc" = 2 ] && ok "T17e · un payload ilegible que nombra una base frena" || no "T17e · payload ilegible con base salió rc=$rc"
 printf '{no es json, git status' | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" node "$HOOK" >/dev/null 2>&1; rc=$?
 [ "$rc" = 0 ] && ok "T17f · un payload ilegible sin bases deja pasar" || no "T17f · payload ilegible sin base salió rc=$rc"
+
+# T17h · el índice de servidores que no se puede leer ni rearmar (en su lugar hay una carpeta) frena lo que nombra un
+# servidor, aunque sea de staging, y también un guion del disco que lo nombra. Son dos lecturas distintas del índice:
+# la del comando y la de lo que el comando corre.
+# 🔴 Falla con: el error al leer el índice que deja pasar, en cualquiera de las dos lecturas.
+mundo
+printf 'sqlcmd -S %s -Q "select 1"\n' "$STAGING" > "$TMP/guion-staging.sh"
+pasa  "T17h · control: con el índice sano, el guion que nombra staging pasa" "bash $TMP/guion-staging.sh"
+rm -f "$CASA/.claude/.tycon-pipeline/production-index.json"; mkdir -p "$CASA/.claude/.tycon-pipeline/production-index.json/x"
+rc="$(corre "sqlcmd -S $STAGING -Q \"select 1\"")"
+if [ "$rc" = 2 ] && grep -q "no pude leer el índice" "$TMP/err"; then ok "T17h · con el índice ilegible, un comando que nombra un servidor frena"
+else no "T17h · con el índice ilegible, el comando salió rc=$rc (esperaba 2 por el índice) — err: $(head -c 120 "$TMP/err")"; fi
+rc="$(corre "bash $TMP/guion-staging.sh")"
+if [ "$rc" = 2 ] && grep -q "no pude leer el índice" "$TMP/err"; then ok "T17h · con el índice ilegible, un guion del disco que nombra un servidor frena"
+else no "T17h · con el índice ilegible, el guion salió rc=$rc (esperaba 2 por el índice) — err: $(head -c 120 "$TMP/err")"; fi
+
+# T17g · el reloj propio vencido, con un comando que nombra un servidor, frena aunque el servidor sea de staging. El
+# reloj de 5 s no tiene variable para acortarlo: un `--require` adelanta 6 s cada lectura del reloj después de la
+# primera (la que marca el arranque del freno), así el freno ve su reloj vencido sin esperar.
+# 🔴 Falla con: un reloj que nunca vence, o un vencimiento que deja pasar en vez de frenar.
+mundo
+printf 'const r = Date.now; let n = 0; Date.now = () => r() + (n++ > 0 ? 6000 : 0);\n' > "$TMP/reloj-adelantado.js"
+pasa  "T17g · control: staging con el reloj normal pasa" "sqlcmd -S $STAGING -Q \"select 1\""
+rc="$(corre "sqlcmd -S $STAGING -Q \"select 1\"" NODE_OPTIONS="--require=$TMP/reloj-adelantado.js")"
+if [ "$rc" = 2 ] && grep -q "sin tiempo" "$TMP/err"; then ok "T17g · con el reloj propio vencido, un comando que nombra un servidor frena por tiempo"
+else no "T17g · con el reloj vencido salió rc=$rc (esperaba 2 por tiempo) — err: $(head -c 120 "$TMP/err")"; fi
+
+
+
 
 # ── el freno lee los nombres como el shell (T17-T26) ─────────────────
 # Caso que lo motiva: `rm -f …/production-{index,memory}.json` tiene que frenar. La tabla entera de formas vive en

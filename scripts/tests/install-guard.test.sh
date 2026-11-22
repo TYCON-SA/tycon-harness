@@ -383,6 +383,27 @@ if [ -f "$SHIM" ]; then
   done
 fi
 
+# T33v · la puerta que no coincide con la huella que dejó el instalador frena su forma canónica. La raíz falsa lleva la
+# puerta y su huellas.json; el freno corre desde el repo, con su costura de raíz (sólo existe sin /opt/tycon).
+# 🔴 Falla con: la comparación de la huella de la puerta que deja pasar una puerta cambiada.
+if [ -d /opt/tycon ]; then
+  echo "⏭ instalar-freno: NO MEDIDO — T33v (la puerta alterada): con el freno instalado, el freno ignora la raíz de prueba; lo mide la CI. No es un verde."
+else
+  RV="$TMP/sys-puerta"; CASA_V="$TMP/casa-33v"; REPOS_V="$TMP/repos-33v"; rm -rf "$RV" "$CASA_V" "$REPOS_V"
+  mkdir -p "$RV/opt/tycon/bin" "$CASA_V/.claude/shell-snapshots" "$CASA_V/.claude/.tycon-pipeline" "$REPOS_V"
+  printf '#!/bin/bash\necho puerta\n' > "$RV/opt/tycon/bin/tycon-prod-sql"
+  printf '# Snapshot file\n\n# Functions\n\n# Shell Options\n# Aliases\n\n# Check for rg availability\n' > "$CASA_V/.claude/shell-snapshots/snapshot-zsh-$(date +%s)000-aaaaaa.sh"
+  huella_puerta(){ printf '{"/opt/tycon/bin/tycon-prod-sql":"%s"}' "$1" > "$RV/opt/tycon/huellas.json"; }
+  puerta_v(){ printf '%s' '{"tool_name":"Bash","tool_input":{"command":"/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net '"'"'select 1'"'"'"}}' \
+    | env HOME="$CASA_V" TYCON_PROD_ROOT="$RV" TYCON_REPOS_ROOT="$REPOS_V" TYCON_PROD_SESSION_SINCE=0 node "$AQUI/scripts/hooks/prod-access-guard.js" >/dev/null 2>"$TMP/v-err"; echo $?; }
+  huella_puerta "$(shasum -a 256 "$RV/opt/tycon/bin/tycon-prod-sql" | cut -d' ' -f1)"
+  rc1="$(puerta_v)"
+  echo 'echo cambiada' >> "$RV/opt/tycon/bin/tycon-prod-sql"
+  rc2="$(puerta_v)"
+  if [ "$rc1" = 0 ] && [ "$rc2" = 2 ] && grep -q "huella" "$TMP/v-err"; then ok "T33v · la puerta con su huella pasa, y la puerta cambiada frena por la huella"
+  else no "T33v · la puerta con su huella salió $rc1 (esperaba 0) y la cambiada $rc2 (esperaba 2 por la huella) — err: $(head -c 160 "$TMP/v-err")"; fi
+fi
+
 # T33g · esta suite no escribe NADA en la casa real. Se mira el registro del freno de la
 # casa de verdad antes y después del bloque de arriba: si crece, algún caso perdió su `HOME=` y está
 # fabricando bloqueos que el tablero después cuenta como reales. Sin el `HOME=`, la suite suma ~10 líneas por corrida.

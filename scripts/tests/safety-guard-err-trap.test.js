@@ -116,3 +116,19 @@ test('T15 NormalExit_NoErrLine @story-8.257 @ac-16', () => {
   assert.equal(frena.status, 2, 'el freno dejó de frenar lo de siempre');
   assert.equal(leer(registroDe(home)), '', 'la salida normal escribió en hook-errors.log');
 });
+
+test('T16 GitC4_MasCarpetasQueElTope_Frena @story-8.159', () => {
+  // 🔴 mutación: dejar pasar el `git add -A` cuando las carpetas pasan del tope (no se pudo saber si cae en el árbol
+  // de las skills, y pasaba callado).
+  const raiz = tmp('c4-tope-');
+  const cds = [];
+  for (let i = 0; i < 70; i++) {
+    const d = path.join(raiz, `d${i}`);
+    fs.mkdirSync(d);
+    cds.push(`cd ${d}`);
+  }
+  const r = correr(GUARD, `${cds.join('; ')}; git add -A`, tmp('home-'));
+  assert.equal(r.status, 2, `salió ${r.status}\n${r.stderr}`);
+  assert.match(r.stderr, /GIT-C4/);
+  assert.match(r.stderr, /nombra más de \d+ carpetas distintas/);
+});

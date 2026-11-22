@@ -214,6 +214,18 @@ test('T9 BigScript_RunCheckOfReadOnlyList_OnlyNamesIt', () => {
   assert.strictEqual(frenoDeComando(`node ${MARKER} run-check $PASO -- node ${PIPELINE} check-count ${lista}`), FRENO, 'un paso que no se lee');
 });
 
+// T10 BigScript_OverHardCap_BlocksWithoutReading
+// 🔴 Falla con: tomar un guion de más de 64 MB, que no se abre, como uno que no escribe ni nombra nada: sin su texto no se
+//    sabe qué escribe, y frena aunque el repo no tenga historias.
+test('T10 BigScript_OverHardCap_BlocksWithoutReading', () => {
+  const { estado, dir } = repo(null);
+  // un archivo disperso: dice medir más de 64 MB sin ocupar el disco
+  const guion = path.join(dir, 'scripts', 'barrido.py');
+  fs.writeFileSync(guion, "print('hola')\n");
+  fs.truncateSync(guion, 65 * 1024 * 1024);
+  assert.strictEqual(freno(estado, dir), FRENO, 'sin poder leerlo, no se sabe qué escribe');
+});
+
 // ── la vuelta extra con guiones grandes en --files ──────────────────────────────────────────────
 
 // 8.235 T4 BashWrite_ExtraRoundConGuionesGrandesEnFiles_Pasa

@@ -1226,3 +1226,101 @@ test('PlanReview_ForgedResult_ThreeWays_Blocked (T28, el freno) @story-8.267 @ac
     assert.equal(bash.handle(ev(`node /tmp/build.js --out "$OUT/dist.json"`), { stateDir, installedRoots: [arnes] }), null);
   });
 });
+
+// Un destino con `$(date …)` cuenta por las historias de su carpeta, y con un editor en el lugar también la carpeta de
+// cada `cd`: si esa carpeta (o una de adentro) no se puede leer, no se sabe si tiene historias, y frena diciéndolo.
+// 🔴 mutación: tomar la carpeta del destino con comodín que no se puede leer como una sin historias → el `echo` pasa.
+// 🔴 mutación: saltear la carpeta de adentro del `cd` que no se puede leer → el `perl -pi` pasa.
+test('BashWrite_UnreadableFolder_MayHaveStories_Blocks', { skip: (process.platform === 'win32' || (process.getuid && process.getuid() === 0)) && 'sin permisos de carpeta que valgan' }, () => {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'carpeta-ilegible-')));
+  const estado = path.join(raiz, 'estado');
+  const dir = path.join(raiz, 'repo');
+  fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'out'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'docs', 'privada'), { recursive: true });
+  const notas = path.join(dir, 'notas.md');
+  fs.writeFileSync(notas, 'a\n');
+  const vars = { TYCON_LEDGER_VISIBLE: undefined, TYCON_STORY_GATE: undefined, TYCON_NO_RUN_CHANGE: '1' };
+  const antes = {};
+  for (const k of Object.keys(vars)) { antes[k] = process.env[k]; if (vars[k] === undefined) delete process.env[k]; else process.env[k] = vars[k]; }
+  const correr = (command) => {
+    const r = bash.handle({ tool_name: 'Bash', session_id: 'sesion-carpeta-ilegible', cwd: dir, tool_input: { command } }, { stateDir: estado, installedRoots: [] });
+    return (r && r.block) || '';
+  };
+  const conComodin = 'echo x > out/run-$(date +%s).log';
+  const conCd = `echo hola; cd docs; perl -pi -e 's/a/b/' ${notas}`;
+  try {
+    assert.equal(correr(conComodin), '', 'con la carpeta legible y sin historias, pasa');
+    assert.equal(correr(conCd), '', 'con la carpeta legible y sin historias, pasa');
+    fs.chmodSync(path.join(dir, 'out'), 0o000);
+    fs.chmodSync(path.join(dir, 'docs', 'privada'), 0o000);
+    const a = correr(conComodin);
+    assert.match(a, /HISTORIA ESCRITA POR CONSOLA/, a);
+    assert.match(a, /no pude leer [^\n]*out\b[^\n]*puede tener historias/, a);
+    const b = correr(conCd);
+    assert.match(b, /HISTORIA ESCRITA POR CONSOLA/, b);
+    assert.match(b, /no pude leer [^\n]*privada[^\n]*puede tener historias/, b);
+  } finally {
+    try { fs.chmodSync(path.join(dir, 'out'), 0o755); fs.chmodSync(path.join(dir, 'docs', 'privada'), 0o755); } catch { /* ya borrada */ }
+    for (const k of Object.keys(vars)) { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }
+    fs.rmSync(raiz, { recursive: true, force: true });
+  }
+});
+
+// Escribir por consola en un `.md` que no es una historia pasa; si el archivo existe y no se puede leer, no se sabe si
+// es una historia ni en qué estado está, y cuenta como una que no está en borrador: frena.
+// 🔴 mutación: `estadoDeHistoria` toma un archivo que no se puede leer como uno que no es historia → el `echo >>` pasa.
+test('BashWrite_UnreadableMd_CountsAsStory_Blocks', { skip: (process.platform === 'win32' || (process.getuid && process.getuid() === 0)) && 'sin permisos de archivo que valgan' }, () => {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'md-ilegible-')));
+  const estado = path.join(raiz, 'estado');
+  const dir = path.join(raiz, 'repo');
+  fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+  const notas = path.join(dir, 'notas.md');
+  fs.writeFileSync(notas, '# notas sueltas\n');
+  const vars = { TYCON_LEDGER_VISIBLE: undefined, TYCON_STORY_GATE: undefined, TYCON_NO_RUN_CHANGE: '1' };
+  const antes = {};
+  for (const k of Object.keys(vars)) { antes[k] = process.env[k]; if (vars[k] === undefined) delete process.env[k]; else process.env[k] = vars[k]; }
+  const correr = () => {
+    const r = bash.handle({ tool_name: 'Bash', session_id: 'sesion-md-ilegible', cwd: dir, tool_input: { command: 'echo x >> notas.md' } }, { stateDir: estado, installedRoots: [] });
+    return (r && r.block) || '';
+  };
+  try {
+    assert.equal(correr(), '', 'un .md legible que no es una historia pasa');
+    fs.chmodSync(notas, 0o000);
+    const b = correr();
+    assert.match(b, /HISTORIA ESCRITA POR CONSOLA/, b);
+    assert.ok(b.includes(notas), b);
+  } finally {
+    try { fs.chmodSync(notas, 0o644); } catch { /* ya borrado */ }
+    for (const k of Object.keys(vars)) { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }
+    fs.rmSync(raiz, { recursive: true, force: true });
+  }
+});
+
+// Reponer una historia sin cambios no le cambia nada y pasa; si git no contesta qué cambió, no se sabe si se pierde algo
+// y cuenta como una historia con cambios: el `git checkout --` y el `git restore` frenan.
+// 🔴 mutación: `conCambios` toma un `git status` que falla como «sin cambios» → reponer la historia pasa.
+test('BashWrite_RestoreStory_GitDoesNotAnswer_Blocks', () => {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repone-sin-git-')));
+  const estado = path.join(raiz, 'estado');
+  const dir = path.join(raiz, 'repo');
+  fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'specs'), { recursive: true });
+  // sin `.git`: `git status` no contesta
+  fs.writeFileSync(path.join(dir, 'specs', 'story-1.1.md'), '---\nstory: "1.1"\nepic: "1"\ntitle: "x"\nstatus: in-progress\n---\n\n# x\n');
+  const vars = { TYCON_LEDGER_VISIBLE: undefined, TYCON_STORY_GATE: undefined, TYCON_NO_RUN_CHANGE: '1', GIT_CEILING_DIRECTORIES: raiz };
+  const antes = {};
+  for (const k of Object.keys(vars)) { antes[k] = process.env[k]; if (vars[k] === undefined) delete process.env[k]; else process.env[k] = vars[k]; }
+  try {
+    for (const command of ['git checkout -- specs/story-1.1.md', 'git restore specs/story-1.1.md']) {
+      const r = bash.handle({ tool_name: 'Bash', session_id: 'sesion-repone-sin-git', cwd: dir, tool_input: { command } }, { stateDir: estado, installedRoots: [] });
+      assert.ok(r && r.block, `${command}: sin poder preguntarle a git, reponer la historia frena`);
+      assert.ok(r.block.includes('story-1.1.md'), r.block);
+    }
+  } finally {
+    for (const k of Object.keys(vars)) { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }
+    fs.rmSync(raiz, { recursive: true, force: true });
+  }
+});

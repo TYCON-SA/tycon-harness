@@ -289,3 +289,18 @@ test('T9 CdQueElFrenoNoSigue_FrenaLoRelativo — cd en un paréntesis o en un bu
   assert.equal(freno('cp src/a.js src/a.js'), '');
   assert.equal(freno(`(cd docs && cp src/a.js ${scratch}/copia.js)`), '');
 });
+
+// T10 CdSinResolverConEditorEnElLugar_PuedeTenerHistorias
+// Con un editor en el lugar, la carpeta de cada `cd` cuenta por las historias que tiene. Un `cd` con una variable que no
+// se sabe no dice qué carpeta es: puede tener historias, y frena diciéndolo.
+// 🔴 mutación: soltar las carpetas de `cd` que no se resolvieron → el `sed -i` desde `cd $NADIE_DEFINIDA` pasa.
+test('T10 CdSinResolverConEditorEnElLugar_PuedeTenerHistorias — la carpeta que no se sabe frena; una que se sabe, no', () => {
+  const { repo, freno } = corral(['notas.md']);
+  fs.writeFileSync(path.join(repo, 'notas.md'), 'a\n');
+  // la ruta entera: el camino corto no frena por no saber la carpeta
+  const notas = path.join(repo, 'notas.md');
+  const b = freno(`echo hola; cd $NADIE_DEFINIDA; sed -i 's/a/b/' ${notas}`);
+  assert.match(b, /HISTORIA ESCRITA POR CONSOLA/, b);
+  assert.match(b, /la carpeta de `cd \$NADIE_DEFINIDA`, que no sé resolver: puede tener historias/, b);
+  assert.equal(freno(`echo hola; cd src; sed -i 's/a/b/' ${notas}`), '', 'una carpeta que se sabe y no tiene historias pasa');
+});

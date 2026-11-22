@@ -393,6 +393,22 @@ test('T16 PreCommit_LibMissing_FailsClosed', (t) => {
   assert.match(fs.readFileSync(log, 'utf8'), /sin biblioteca/);
 });
 
+test('T27 PreCommitGates_LibMissing_StagedToReview_Blocks', (t) => {
+  // 🔴 mutación: el freno del cierre deja pasar el `null` del lector que no cargó (`if (acsCierre && !acsCierre.length)`)
+  // El lector falla dentro del hook real: un preload rompe su `parseAcsFromSpec` antes de que el hook lo use.
+  const c = armarCommit(t, LAB_STORY);
+  const preload = path.join(tmp(t, 'tycon-lector-roto-'), 'romper-lector.js');
+  fs.writeFileSync(preload, `require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'story-checks.js'))}).parseAcsFromSpec = () => { throw new Error('lector roto'); };\n`);
+  const env = { ...envLimpio(c.home), TYCON_CLOSURE_RECORD: 'off', TYCON_ADVISORS_GATE: 'off', NODE_OPTIONS: `--require ${preload}` };
+  const r = spawnSync(process.execPath, [HOOK], {
+    cwd: c.repo, env, encoding: 'utf8',
+    input: JSON.stringify({ session_id: 'headings-test', cwd: c.repo, tool_name: 'Bash', tool_input: { command: 'git commit -m "story 1.1 a review"' } }),
+  });
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /no encontré los criterios/i);
+  assert.match(r.stderr, /no pude cargar el lector de criterios/);
+});
+
 // ── Que no vuelva ─────────────────────────────────────────────────────────────
 
 // Las expresiones que delatan un lector propio: títulos de criterios o de pruebas de la story, o formas de criterio.

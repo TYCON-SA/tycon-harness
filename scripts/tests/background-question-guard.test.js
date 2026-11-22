@@ -551,3 +551,15 @@ test('T26 BgGuard_LoQueQuedabaDeLaVuelta2 @story-8.232 @ac-9 @ac-12', (t) => {
   SL.sesiones = () => { throw new Error('sin sesiones'); };
   assert.strictEqual(decidir(maquinaConOtra(t), mensaje(OTRA)), null);
 });
+
+test('T27 BgGuard_RegistroDeRelevoIlegible_NiegaSinPlazo @story-8.159', (t) => {
+  // 🔴 mutación: dejar pasar la pregunta cuando el registro de las preguntas a la coordinadora no se puede leer
+  const toy = maquina(t);
+  // el registro es una carpeta: leerlo tira, y no es «todavía no hay registro»
+  fs.mkdirSync(path.join(stateDir(toy.casa), 'coordination', 'question-relays.jsonl'));
+  const r = decidir(toy, evento(LANZADA));
+  assert.ok(r && r.decision === 'deny', JSON.stringify(r));
+  assert.match(r.reason, /SendMessage/);
+  assert.doesNotMatch(r.reason, /min no te la resuelve/, 'sin registro no hay plazo que prometer');
+  assert.match(erroresDe(toy), /no pude llevar el registro de las preguntas.*negué sin plazo/);
+});

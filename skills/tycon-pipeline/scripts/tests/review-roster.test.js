@@ -84,6 +84,28 @@ test('un roster ilegible hace fallar read (no lo tapa devolviendo null)', () => 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// 🔴 mutación: el freno local del commit traga la falla de `read` y devuelve null (el `done` se guarda sin revisores
+// legibles). El freno real, en un proceso con una HOME de juguete.
+test('RosterIlegible_ElFrenoLocalDelCommit_Frena', () => {
+  const { execFileSync } = require('child_process');
+  const SCRIPTS = path.join(__dirname, '..');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'roster-ilegible-'));
+  const home = path.join(base, 'home');
+  const repo = path.join(base, 'repo');
+  const runDir = path.join(repo, '.advisors', 'pipeline-runs', '1.1-20260922120000');
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(runDir, { recursive: true });
+  fs.writeFileSync(path.join(runDir, 'review-roster.json'), '{ no es json');
+  const env = { ...process.env, HOME: home, USERPROFILE: home };
+  delete env.TYCON_HOME;
+  const r = JSON.parse(execFileSync(process.execPath, ['-e',
+    `const r = require(${JSON.stringify(path.join(SCRIPTS, 'on-pre-commit.js'))}).revisarRosterLocal(${JSON.stringify(repo)}, '1.1'); process.stdout.write(JSON.stringify(r));`],
+  { encoding: 'utf8', env }) || 'null');
+  assert.equal(r && r.reason, 'roster-ilegible', `un registro de autoría que no se lee frena: ${JSON.stringify(r)}`);
+  assert.equal(r.runDir, runDir, 'y nombra la corrida');
+  fs.rmSync(base, { recursive: true, force: true });
+});
+
 // ── Qué cuenta como revisor ─────────────────────────────────────────────────────────────────
 // Los tres primeros fijan la promesa central: no cualquier spawn es un revisor.
 

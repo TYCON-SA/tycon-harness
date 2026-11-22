@@ -1106,6 +1106,118 @@ test('T28 SaveBrake_NoPudoMedir_NoGuarda @story-8.181 @ac-13', (t) => {
   assert.match(r.texto, /no pude medir/i);
 });
 
+/** Reemplaza `nombre` de lib/adhoc-base.js mientras dura la prueba: cada freno lo pide al decidir, no al cargar. */
+function conBaseCambiada(t, nombre, fn) {
+  const base = require(path.join(SCRIPTS, 'lib', 'adhoc-base.js'));
+  const orig = base[nombre];
+  base[nombre] = fn(orig);
+  t.after(() => { base[nombre] = orig; });
+}
+
+// 🔴 mutación: el carril con un repo que no se pudo ubicar sigue de largo (`if (false)` en vez de `if (sinUbicar.length)`)
+test('SaveBrake_RepoSinUbicar_NoGuarda', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8 });
+  assert.ok(!(guardar(d, h) || {}).texto, 'con todo ubicado, guarda');
+  conBaseCambiada(t, 'reposQueSeMiden', (orig) => (...a) => ({ ...orig(...a), fallas: ['repo de prueba sin ubicar'] }));
+  const r = guardar(d, h);
+  assert.match((r || {}).texto || '', /no pude medir este camino corto \(repo de prueba sin ubicar\)/, JSON.stringify(r));
+});
+
+// 🔴 mutación: el tope del carril que no se pudo contar sigue de largo (`if (false)` en vez de `if (c.fallas.length)`)
+test('SaveBrake_TopeSinContar_NoGuarda', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8 });
+  conBaseCambiada(t, 'cuentaDelCarril', () => () => { throw new Error('cuenta rota de prueba'); });
+  const r = guardar(d, h);
+  assert.match((r || {}).texto || '', /no pude medir cuántos archivos cambió este camino corto \(cuenta rota de prueba\)/, JSON.stringify(r));
+});
+
+// 🔴 mutación: el carril con lista que no pudo medir qué cambió sigue de largo (`if (false)` en vez de `if (m.fallas…)`)
+test('SaveBrake_ListaSinMedir_NoGuarda', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8 });
+  const p = path.join(estado(h), 'adhoc', `${SID}.json`);
+  fs.writeFileSync(p, JSON.stringify({ ...JSON.parse(fs.readFileSync(p, 'utf8')), allowedFiles: ['src/a.js'] }));
+  conBaseCambiada(t, 'cuentaDelCarril', () => () => ({ archivos: [], avisos: [], fallas: [] }));
+  conBaseCambiada(t, 'medirLoPropio', (orig) => (...a) => ({ ...orig(...a), fallas: ['lista rota de prueba'] }));
+  const r = guardar(d, h);
+  assert.match((r || {}).texto || '', /no pude medir qué cambió este camino corto \(lista rota de prueba\)/, JSON.stringify(r));
+});
+
+// 🔴 mutación: el carril sobre el tope que no sabe en qué rama guarda sigue de largo (`if (false)` en vez de
+// `if (!destino && falla)`)
+test('SaveBrake_RamaSinSaber_NoGuarda', { skip: process.platform === 'win32' }, (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8 });
+  const p = path.join(estado(h), 'adhoc', `${SID}.json`);
+  const a = { ...JSON.parse(fs.readFileSync(p, 'utf8')), allowedFiles: ['src/a.js'], sobreCupo: true };
+  fs.writeFileSync(p, JSON.stringify(a));
+  // la medida se toma antes de romper git: sólo la pregunta por la rama falla
+  const base = require(path.join(SCRIPTS, 'lib', 'adhoc-base.js'));
+  const medida = base.medirLoPropio(a, { repos: [d] });
+  conBaseCambiada(t, 'medirLoPropio', () => () => medida);
+  conBaseCambiada(t, 'cuentaDelCarril', () => () => ({ archivos: [], avisos: [], fallas: [] }));
+  gitQueFalla(t, 'rev-parse --abbrev-ref HEAD');
+  const r = guardar(d, h);
+  assert.match((r || {}).texto || '', /no pude saber en qué rama guarda este camino corto/, JSON.stringify(r));
+});
+
+// 🔴 mutación: la pantalla que no se pudo medir deja guardar (`if (r.sinMedir) { return null;`)
+test('SaveBrake_PantallaSinMedir_NoGuarda', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8 });
+  const pantalla = require(path.join(SCRIPTS, 'lib', 'adhoc-screen.js'));
+  const orig = pantalla.revisar;
+  pantalla.revisar = () => { throw new Error('pantalla rota de prueba'); };
+  t.after(() => { pantalla.revisar = orig; });
+  const r = guardar(d, h);
+  assert.match((r || {}).texto || '', /no pude medir si este camino rápido toca una pantalla \(pantalla rota de prueba\)/, JSON.stringify(r));
+});
+
+/** El carril de la prueba, como lo lee el freno, con su medida tomada sobre `d`. */
+function carrilYMedida(h, d) {
+  const a = JSON.parse(fs.readFileSync(path.join(estado(h), 'adhoc', `${SID}.json`), 'utf8'));
+  return { a, medida: require(path.join(SCRIPTS, 'lib', 'adhoc-base.js')).medirLoPropio(a, { repos: [d] }) };
+}
+
+// 🔴 mutación: el freno de los datos que no pudo medir sigue de largo (`if (false)` en vez de `if (r.fallas.length)`)
+test('SaveBrake_DatosSinMedir_NoGuarda', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8 });
+  const { a } = carrilYMedida(h, d);
+  const r = brake().frenoDeDatos(a, SID, h, [d], { medir: () => ({ hallazgos: [], avisos: [], fallas: ['datos rotos de prueba'] }) });
+  assert.match((r || {}).texto || '', /no pude medir si este camino corto cambia de dónde sale un dato o quién lo ve \(datos rotos de prueba\)/, JSON.stringify(r));
+});
+
+// 🔴 mutación: el riesgo que no se pudo medir, sin marca ni ruta nueva, sigue de largo (`if (false)` en vez de
+// `if (!marca && !nueva)`)
+test('SaveBrake_RiesgoSinMedir_NoGuarda', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8 });
+  const { a, medida } = carrilYMedida(h, d);
+  const r = brake().frenoDelRiesgo(a, SID, h, [], { medida: { ...medida, fallas: ['riesgo roto de prueba'] } });
+  assert.match((r || {}).texto || '', /toca una ruta de riesgo alto \(riesgo roto de prueba\)/, JSON.stringify(r));
+});
+
+// 🔴 mutación: el error al medir el riesgo devuelve null (`return null && { texto… }` en el catch)
+test('SaveBrake_RiesgoQueTiraError_NoGuarda', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8 });
+  const { a, medida } = carrilYMedida(h, d);
+  conBaseCambiada(t, 'rutasDe', () => () => { throw new Error('rutas rotas de prueba'); });
+  const r = brake().frenoDelRiesgo(a, SID, h, [], { medida });
+  assert.match((r || {}).texto || '', /toca una ruta de riesgo alto \(rutas rotas de prueba\)/, JSON.stringify(r));
+});
+
 test('T29 SaveBrake_RepoBorrado_NoEsNoPudoMedir @story-8.181 @ac-13', (t) => {
   const d = repoConOrigin(t);
   const otro = repoConOrigin(t, 'otro');
@@ -1540,6 +1652,19 @@ test('8.242-FrenoQueNoCarga_EnCorridaFrena (T20) @story-8.242 @ac-11', (t) => {
   const r = gancho(h, 'gh pr create --fill', { cwd: a, preload: frenoRoto(t) });
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /el freno de guardar no pudo correr/);
+});
+
+// 🔴 mutación: el gancho traga el error de medir el diff entero del cierre (`cierre = null`) y el commit pasa.
+test('Cierre_SinPoderMedirElDiffEntero_NoGuarda', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, preparada(a));
+  assert.strictEqual(gancho(h, 'git commit -m x', { cwd: a }).status, 0, 'con la medida sana, el commit de la corrida pasa');
+  const p = path.join(tmp(t, 'cierre-roto-'), 'cierre-roto.js');
+  fs.writeFileSync(p, `require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'batch-scope.js'))}).frenoDelCierre = () => { throw new Error('medida rota de prueba'); };\n`);
+  const r = gancho(h, 'git commit -m x', { cwd: a, preload: p });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /no pude medir el diff entero \(medida rota de prueba\)/);
 });
 
 // 🔴 Falla con: lo que se trajo de `main` después de preparar que sale en el pedido sin pasar por «Preparar el pull request».

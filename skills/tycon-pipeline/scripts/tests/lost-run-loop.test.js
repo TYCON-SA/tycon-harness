@@ -470,6 +470,19 @@ test('T17 WorktreePrune_ConEjecucionAbiertaEnLaLista_Frena @story-8.318 @ac-14 �
   assert.match(viejo.out, /no pude saber qué se poda/);
 });
 
+test('T17c WorktreePrune_GitSinContestar_ConEjecucionAbierta_Frena — git no lista las carpetas de trabajo: no se sabe qué se poda', { skip: WIN && 'el git de juguete es un guion de sh' }, () => {
+  // 🔴 mutación: `lasQuePoda` toma un `git worktree list` que falla como una lista vacía y el prune pasa
+  const E = entorno();
+  E.abrir('s-viva');
+  const bin = path.join(E.base, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'git'), "#!/bin/sh\necho 'fatal: no anda' >&2\nexit 128\n");
+  fs.chmodSync(path.join(bin, 'git'), 0o755);
+  const r = E.gancho('on-bash-write-gate.js', 's-t17c', { tool_name: 'Bash', tool_input: { command: 'git worktree prune' } }, { PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+  assert.ok(frena(r), r.out);
+  assert.match(r.out, /no pude leer las carpetas de trabajo de git/);
+});
+
 test('T18 BorrarSinEjecucionAbierta_Pasa @story-8.318 @ac-15 — sin copia, con la apertura cerrada y con una copia de antes del registro', () => {
   const E = entorno();
   const wt = carpetaDeTrabajo(E);
@@ -547,4 +560,44 @@ test('T24 Guias_DicenLaEsperaYElBorrado @story-8.318 @ac-21 — safety-guard.md 
   assert.match(seccion, /marker\.js clear` antes de borrar/);
   const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');
   assert.match(paso, /antes de borrar o mover su carpeta/);
+});
+
+// ── La copia de la apertura que no se lee retiene el cierre ─────────────────────────────────────────────────────────
+
+// 🔴 mutación: la copia ilegible que encuentra la búsqueda en el repo no frena (`if (false)` en lib/open-runs.js perdida)
+test('T25 CopiaIlegibleEnElRepo_CierreDeTurno_Frena — otra copia de la sesión, en el repo, con texto roto', () => {
+  const E = entorno();
+  E.abrir('s-t25');
+  assert.ok(!frena(E.turno('s-t25')), 'con la copia sana, el cierre pasa');
+  // la copia vigente sigue sana: sólo la búsqueda en el repo ve la rota, que nombra a la sesión
+  const rota = path.join(E.repo, '.advisors', 'pipeline-runs', '9.8-s-t25');
+  fs.mkdirSync(rota, { recursive: true });
+  fs.writeFileSync(path.join(rota, 'run-open.json'), '{ no es json "s-t25"');
+  const r = E.turno('s-t25');
+  assert.ok(frena(r), r.out);
+  assert.match(salida(r).reason, PERDIDA);
+});
+
+// 🔴 mutación: la copia de la apertura que no se lee, fuera de las carpetas que se recorren, pasa como si no faltara nada
+test('T26 CopiaIlegibleFueraDelRepo_CierreDeTurno_Frena — la apertura vive en otra carpeta y su copia no se lee', () => {
+  const E = entorno();
+  const otra = path.join(E.base, 'otra-carpeta');
+  fs.mkdirSync(otra, { recursive: true });
+  const a = E.abrir('s-t26', otra);
+  assert.ok(!frena(E.turno('s-t26')), 'con la copia sana, el cierre pasa');
+  fs.writeFileSync(path.join(a.runDir, 'run-open.json'), '{ no es json');
+  const r = E.turno('s-t26');
+  assert.ok(frena(r), r.out);
+  assert.match(salida(r).reason, PERDIDA);
+});
+
+// 🔴 mutación: el cierre de turno traga el error de revisar las piezas (`p = null`) y deja cerrar
+test('T27 PiezasQueNoSeRevisan_CierreDeTurno_Frena — si revisar la ejecución tira un error, el cierre frena', () => {
+  const E = entorno();
+  E.abrir('s-t27');
+  const preload = path.join(E.base, 'perdida-rota.js');
+  fs.writeFileSync(preload, `require(${JSON.stringify(OR)}).perdida = () => { throw new Error('piezas rotas'); };\n`);
+  const r = E.turno('s-t27', {}, { NODE_OPTIONS: `--require ${preload}` });
+  assert.ok(frena(r), r.out);
+  assert.match(salida(r).reason, /no pude revisar las piezas de la ejecución/);
 });

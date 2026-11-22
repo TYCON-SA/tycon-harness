@@ -338,7 +338,7 @@
         {
           "camino": "repo-con-historias-por-error",
           "dispara": "el descubridor de historias falla: se toma el repo como uno con historias",
-          "suite": "tycon-pipeline/scripts/tests/story-gate.test.js",
+          "suite": "tycon-pipeline/scripts/tests/bash-write-big-script.test.js",
           "motivo": "es una regla sobre un texto que no se puede leer, no una pieza que falla: la prueba su suite"
         },
         {

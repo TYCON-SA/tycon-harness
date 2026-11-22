@@ -327,6 +327,22 @@ limpia; rc=$(correEn "$JUG" "gh pr merge 77 --squash --auto")
 limpia; rc=$(correEn "$JUG" "az repos pr update $ORG --id 6081 --draft false -o json")
 [ "$rc" -eq 2 ] && grep -q "publica un borrador" "$TMP/err.txt" && ok "E4 publicar un borrador sin sus banderas sigue frenando" || no "E4 dejó pasar un borrador sin banderas ($rc)"
 
+# ---------------------------------------------------------------- GhMerge_QueNoSeLee_Frena
+# Lo que no se lee no está aprobado, también del lado de gh: otro intérprete, una opción que arma la terminal o un
+# lector de comandos que se rompe.
+# 🔴 mutación: el `gh pr merge` ilegible se juzga como uno legible (`const faltas = false ? … : faltasGh(seg)`)
+rc=$(corre "bash -c \"gh pr merge 77 --squash\"")
+[ "$rc" -eq 2 ] && grep -q "no se deja leer desde acá" "$TMP/err.txt" && ok "GhMerge_QueNoSeLee_Frena: un gh pr merge adentro de bash -c frena" || no "🔴 GhMerge_QueNoSeLee_Frena: el intérprete escondió el gh pr merge ($rc)"
+# 🔴 mutación: la opción que arma la terminal no se anota como falta
+rc=$(corre "gh pr merge 77 --merge \$OPC")
+[ "$rc" -eq 2 ] && grep -q "lo reemplaza la terminal" "$TMP/err.txt" && ok "GhMerge_QueNoSeLee_Frena: una opción en una variable frena" || no "🔴 GhMerge_QueNoSeLee_Frena: dejó pasar la opción que arma la terminal ($rc)"
+# 🔴 mutación: el lector de comandos de gh que tira un error devuelve null (como si se hubiera leído)
+echo "require('$AQUI/scripts/lib/gh-pr.js').comandosGh = () => { throw new Error('lector roto'); };" > "$TMP/gh-roto.js"
+rc=$(NODE_OPTIONS="--require $TMP/gh-roto.js" corre "gh pr merge 77 --merge --auto")
+[ "$rc" -eq 2 ] && grep -q "no pude leer el comando" "$TMP/err.txt" && ok "GhMerge_QueNoSeLee_Frena: con el lector de gh roto, frena" || no "🔴 GhMerge_QueNoSeLee_Frena: con el lector de gh roto dejó pasar ($rc)"
+rc=$(corre "gh pr merge 77 --merge --auto")
+[ "$rc" -eq 0 ] && ok "GhMerge_QueNoSeLee_Frena: …y el mismo comando, con el lector sano, pasa" || no "GhMerge_QueNoSeLee_Frena: el comando sano frenó ($rc)"
+
 # ---------------------------------------------------------------- 8.164-SinBorrarRama_Frena @story-8.164 @ac-1 (T1)
 # 🔴 Sin `--delete-source-branch` explícito, la rama sobrevive al pedido: el 1/11 había 1.019 ramas ya entradas. `false`
 # sólo vale desde una rama de larga vida (§9b.4 del paso de merge), que el freno tiene que poder VER en el comando.

@@ -237,3 +237,14 @@ test('SG-A4 SessionStart_Unreadable_SaysSo @story-8.292 @ac-11', { skip: process
     assert.match(r.stdout, /no pude ver si hay otra sesión en este checkout/);
   } finally { fs.chmodSync(projects, 0o755); fs.chmodSync(active, 0o755); }
 });
+
+test('T8 Choque_DestinoGitIrresuelto_SeAsumeElCheckout @story-8.159: un git que escribe con un destino que el texto no define cuenta como el checkout de la sesión', () => {
+  // 🔴 mutación: saltear el destino que no se resolvió (`git -C "$NADIE" commit` pasa sin mirar con otra sesión viva)
+  const t = toy();
+  const checkout = repo(t, 'producto');
+  transcript(t, checkout, 'jjjj1010-otra', checkout);
+  const r = run(t, 'PreToolUse', checkout, { tool_input: { command: 'git -C "$NADIE_LA_DEFINE" commit -m algo' } });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /jjjj1010/);
+  assert.match(r.stderr, /no se pudo resolver desde el texto/);
+});
