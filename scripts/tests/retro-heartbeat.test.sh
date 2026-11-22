@@ -113,6 +113,9 @@ if [ "${RC}" = "0" ] && [ -f "${ARCH1}" ]; then
   # generated_by es un campo del registro: conserva el nombre original del generador
   ESP="2.0|proyecto|${HOY}|${REPO_REAL}|${SHA1}|9.9|.advisors/pipeline-runs/9.9-20260916-1000/|retro-""latido.js"
   [ "${ID}" = "${ESP}" ] && ok "T1 identidad completa (repo real, sha completo, story, run_dir, generated_by)" || bad "T1 identidad" "vino ${ID} · esperaba ${ESP}"
+  # el tablero lee la historia de `story_id` (el nombre del formato 2.0)
+  SID="$(campo "${ARCH1}" 'd.story_id')"
+  [ "${SID}" = "9.9" ] && ok "T1 lleva story_id para el tablero" || bad "T1 story_id" "vino ${SID}"
   NULOS="$(campo "${ARCH1}" 'Object.entries(d.metrics).filter(([k]) => k !== "advisor_rerun_loop_iterations").map(([k, m]) => k + "=" + (m.value === null ? "null:" + m.unavailable_reason : m.value)).join("\n")')"
   CINCO="$(printf '%s\n' "${NULOS}" | grep -c '=null:')"
   # son SEIS: incluye `deep_review_skipped_then_hotfixed`, que va siempre en null con su
