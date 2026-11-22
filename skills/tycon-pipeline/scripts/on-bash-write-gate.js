@@ -703,7 +703,8 @@ function noSeLeeElPrograma(cmd, w) {
  * está el programa ni qué lanzador lo antecede: `$N x.js`, `timeout -s KILL 9 $N x.js`, `if $N x.js` o `xargs $N` frenan
  * igual que con `node` escrito. Sólo queda afuera un tramo cuyo programa escrito no corre sus argumentos
  * (`git diff $(…) -- x.js`, `wc -l $F x.js`). Detrás de `xargs` el guion llega por la entrada: cuenta el de cualquier
- * parte del comando. `[{ interprete, valor, argv }]`.
+ * parte del comando. `todas` da las palabras de todo el comando (se arman sólo si hacen falta).
+ * `[{ interprete, valor, argv }]`.
  */
 function guionesDelPeorCaso(cmd, crudas, todas, escrito) {
   const i0 = crudas.findIndex((w) => !ANTES_DEL_PROGRAMA.test(w) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
@@ -721,7 +722,7 @@ function guionesDelPeorCaso(cmd, crudas, todas, escrito) {
     if (familia) out.push({ interprete: INTERPRETE_DE[familia], valor, argv: crudas.slice(j + 1) });
   }
   if (ilegible >= 0 && !out.length && crudas.slice(0, ilegible).some((w) => nombreDeComando(w) === 'xargs')) {
-    for (const w of todas) {
+    for (const w of todas()) {
       const [valor, familia] = deGuion(w);
       if (familia) out.push({ interprete: INTERPRETE_DE[familia], valor, argv: [] });
     }
@@ -833,6 +834,10 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
   const escritos = heredocs(cmd).filter((h) => h.target);
   const todosLosTramos = comandosAnidados(sinContinuaciones(cmd)).flatMap((sub) => tramos(sub));
   const palabrasDe = (tramo) => palabras(tramo.trim().replace(PREFIJO, '')).map(sinGrupo).filter((w) => w !== '');
+  // las palabras de todo el comando, armadas una vez: pedirlas en cada tramo crece con el cuadrado de los tramos (una
+  // tira de miles de tuberías tardaba segundos)
+  let todas = null;
+  const todasLasPalabras = () => todas || (todas = todosLosTramos.flatMap(palabrasDe));
   // la ruta real del guion tal como la abre el intérprete: unida a la carpeta sin normalizar, para que `enlace/..` se
   // resuelva por donde lleva el enlace y no por el texto (la versión nativa: la otra normaliza el `..` antes)
   const rutaReal = rutaRealDelGuion;
@@ -927,7 +932,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     const escrito = programaEscrito(cmd, tramo);
     if (!soloNombra) {
       const crudas = palabras(tramo.trim()).map(sinGrupo).filter((w) => w !== '');
-      for (const g of guionesDelPeorCaso(cmd, crudas, todosLosTramos.flatMap(palabrasDe), escrito)) abrir(g.interprete, g.valor, argumentos(g.argv));
+      for (const g of guionesDelPeorCaso(cmd, crudas, todasLasPalabras, escrito)) abrir(g.interprete, g.valor, argumentos(g.argv));
     }
     // en un tramo de un programa que no corre sus argumentos, una variable con valor conocido es un argumento más
     const lector = !escrito.ilegible && noCorreSusArgumentos(escrito.programa);
@@ -953,7 +958,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
       }
       // `echo p.py | xargs python3`: el guion llega por la entrada; cuenta cada archivo del comando con su extensión
       if (!hallado && words.slice(0, k).some((w) => nombreDeComando(w) === 'xargs')) {
-        for (const w of todosLosTramos.flatMap(palabrasDe)) if (EXTENSION_DE[familia].test(w)) abrir(interprete, expandirRuta(cmd, w).valor, []);
+        for (const w of todasLasPalabras()) if (EXTENSION_DE[familia].test(w)) abrir(interprete, expandirRuta(cmd, w).valor, []);
       }
     }
   }
@@ -1387,8 +1392,11 @@ function tramos(cmd) {
   return out;
 }
 
+// el valor de una asignación: cada pedazo se lee de una sola forma. Un `$` suelto no puede ir seguido de comilla, así
+// `$'…'` es siempre una cadena y un `$''` repetido no abre caminos que crecen al doble por cada uno
+const VALOR_DE_ASIGNACION = String.raw`(?:\$'(?:\\.|[^'\\])*'|'[^']*'|"(?:\\.|[^"\\])*"|\\.|\$(?!')|[^\s'"\\$])*`;
 // los prefijos que no cambian qué comando corre
-const PREFIJO = /^(?:\(\s*|[A-Za-z_]\w*=\S*\s+|sudo\s+(?:-\S+\s+)*|command\s+|exec\s+|nice\s+(?:-n\s+\S+\s+)?|nohup\s+|env\s+(?:-\S+\s+)*(?:[A-Za-z_]\w*=\S*\s+)*|timeout\s+(?:-\S+\s+)*\S+\s+)+/;
+const PREFIJO = new RegExp(String.raw`^(?:\(\s*|[A-Za-z_]\w*=${VALOR_DE_ASIGNACION}\s+|sudo\s+(?:-\S+\s+)*|command\s+|exec\s+|nice\s+(?:-n\s+\S+\s+)?|nohup\s+|env\s+(?:-\S+\s+)*(?:[A-Za-z_]\w*=${VALOR_DE_ASIGNACION}\s+)*|timeout\s+(?:-\S+\s+)*\S+\s+)+`);
 // los parámetros de Remove-Item que llevan un valor que no es la ruta
 const PS_CON_VALOR = /^-(?:filter|include|exclude|erroraction|ea|credential|stream|warningaction|wa|informationaction|ia)$/i;
 
@@ -2381,6 +2389,12 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
   const lecturas = plano === String(cmd) ? [cmd] : [cmd, plano];
   const todos = [...new Set(lecturas.flatMap((t) => [...comandosAnidados(t), ...comandosPorOtroPrograma(t, cwd)]))]
     .flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/));
+  // Un texto entre comillas es texto (`desc='…'`, `--description '…'`, `echo '…'`) sólo si nada en el comando puede
+  // correrlo. Si algo puede —un shell, `eval`, `source`, un intérprete, `xargs`, un guion como programa, una variable como
+  // programa—, falla cerrado: la redirección citada cuenta, y cada texto citado se mira también como un comando (el que
+  // entra a un shell por tubería, por `<<<`, por un guion escrito antes o leído con `read`)
+  const ejecuta = ejecutaTexto(cmd);
+  if (ejecuta) todos.push(...citados(cmd).flatMap((c) => comandosAnidados(c)).flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/)));
   for (const tramo of todos) {
     base = cwd;
     // sin las redirecciones de lectura con su archivo (`< lista`): no son argumentos de la copia
@@ -2389,7 +2403,11 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     // `<>` abre el archivo para leer y escribir
     // el destino es la palabra entera del shell, con sus comillas resueltas (`.tycon/'control-changes.jsonl'`); uno armado
     // con una sustitución que nombra una constancia no se puede resolver y no pasa
+    // sólo la redirección que está fuera de comillas: `desc='… > .tycon/control-changes.jsonl'` es un texto. Salvo que el
+    // comando pueda correr un texto (`ejecuta`): ahí cuenta también la citada, como siempre
+    const fuera = ejecuta ? () => true : posicionesFueraDeComillas(limpio);
     for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*((?:\$\([^()]*\)|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s<>;&|'"\\])+)/g)) {
+      if (!fuera(m.index)) continue;
       const destino = palabraDelShell(m[1]);
       if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log/i.test(destino))) out.push(destino);
     }
@@ -3089,21 +3107,34 @@ function sinCuerposDeTexto(cmd) {
  * El comando y lo que corre adentro de él: `$(…)`, comillas invertidas, `bash -c '…'`, `eval …` y `find … -exec …`.
  * Cada uno se mira como otro comando. El texto de un heredoc que nadie corre no es un comando.
  */
-function comandosAnidados(comando, hondo = 0) {
+function comandosAnidados(comando, hondo = 0, valores = null) {
   const cmd = sinTextoDeHeredocs(comando);
   const out = [cmd];
   if (hondo > 3) return out;
-  const sumar = (c) => { if (c && String(c).trim()) out.push(...comandosAnidados(String(c), hondo + 1)); };
-  for (const m of String(cmd).matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumar(m[1]);
-  for (const m of String(cmd).matchAll(/`([^`]*)`/g)) sumar(m[1]);
+  // Lo que el comando guarda en una variable (`c='cp … constancia'`) es texto hasta que se corre: con `eval "$c"`,
+  // `bash -c "$c"` o `$c` como programa. Ahí su valor se mira como un comando más; sin esto, guardarlo antes en una
+  // variable era el camino para que el freno no lo viera. Los valores de todo el comando, también los de afuera.
+  const asignados = valores || asignacionesDe(cmd);
+  const valoresEn = (c) => [...String(c || '').matchAll(/\$\{?([A-Za-z_]\w*)\}?/g)].flatMap((m) => asignados.get(m[1]) || []);
+  const sumarUno = (t) => { if (t && String(t).trim()) out.push(...comandosAnidados(String(t), hondo + 1, asignados)); };
+  const sumarValores = (c) => { for (const t of valoresEn(c)) sumarUno(t); };
+  const sumar = (c) => { sumarUno(c); sumarValores(c); };
+  // lo de adentro de una sustitución corre; una variable que ahí sólo se NOMBRA como argumento, no (la mira su programa)
+  for (const m of String(cmd).matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumarUno(m[1]);
+  for (const m of String(cmd).matchAll(/`([^`]*)`/g)) sumarUno(m[1]);
   for (const tramo of tramos(cmd)) {
     const w = palabras(sinPalabrasDelShell(tramo)).filter((x) => x !== '');
-    const c = nombreDeComando(w[0]);
+    // las asignaciones de delante (`A=1 B=2 programa`) no son el programa, ni `builtin`/`command` (`builtin eval "$c"`)
+    let k0 = w.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));
+    while (k0 >= 0 && k0 < w.length - 1 && ['builtin', 'command'].includes(w[k0])) k0++;
+    const c = nombreDeComando(w[k0]);
+    // una variable como programa (`$c`, `"$c" arg`): se corre su valor
+    if (k0 >= 0 && /^\$\{?[A-Za-z_]\w*\}?$/.test(w[k0])) sumarValores(w[k0]);
     if (['bash', 'sh', 'zsh', 'dash'].includes(c)) {
-      const i = w.findIndex((x, k) => k > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(x));
+      const i = w.findIndex((x, k) => k > k0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(x));
       if (i > 0) sumar(w[i + 1]);
     }
-    if (c === 'eval') sumar(w.slice(1).join(' '));
+    if (c === 'eval') sumar(w.slice(k0 + 1).join(' '));
     if (c === 'find') {
       const i = w.findIndex((x) => x === '-exec' || x === '-execdir' || x === '-ok');
       if (i >= 0) {
@@ -3114,6 +3145,35 @@ function comandosAnidados(comando, hondo = 0) {
   }
   return out;
 }
+
+/** Los valores asignados a cada variable en el comando (`A='x'`, `export A=x`, `local A="x"`), todos los que tenga. */
+function asignacionesDe(cmd) {
+  // la palabra entera del shell, leída del texto: `palabras` parte `c='a b'` en `c=` y `a b`
+  const m = new Map();
+  for (const tramo of tramos(String(cmd))) {
+    for (const a of String(tramo).matchAll(/(?:^|[\s(])(?:(?:export|local|declare|readonly|typeset)\s+(?:-\w+\s+)*)?([A-Za-z_]\w*)=((?:'[^']*'|"(?:\\.|[^"\\])*"|\$'(?:\\.|[^'\\])*'|\\.|[^\s'"\\;&|()])*)/g)) {
+      // `$'…'` con sus escapes de comilla y barra (palabraDelShell no lee el citado ANSI-C y dejaría el `$` delante)
+      const v = /^\$'((?:\\.|[^'\\])*)'$/.exec(a[2]);
+      m.set(a[1], [...(m.get(a[1]) || []), v ? v[1].replace(/\\(['\\])/g, '$1') : palabraDelShell(a[2])]);
+    }
+  }
+  return m;
+}
+
+// Si el comando puede correr un texto, qué hay entre comillas y dónde: lo decide el partidor común
+// (scripts/lib/shell-parse.js), el mismo del freno de sesiones. Sin él (una instalación a medias), todo texto puede
+// correrse: falla cerrado, como antes de que un texto entre comillas fuera texto.
+let partidor;
+function partidorComun() {
+  if (partidor === undefined) {
+    try { partidor = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js')); } catch (e) { logHookError(e); partidor = null; }
+    if (partidor && typeof partidor.ejecutaTexto !== 'function') partidor = null;
+  }
+  return partidor;
+}
+const ejecutaTexto = (cmd) => { const p = partidorComun(); return p ? p.ejecutaTexto(cmd) : true; };
+const citados = (cmd) => { const p = partidorComun(); return p ? p.citados(cmd) : []; };
+const posicionesFueraDeComillas = (texto) => { const p = partidorComun(); return p ? p.posicionesFueraDeComillas(texto) : () => true; };
 
 /** ¿La ruta queda adentro de un repo de git? Sube desde la carpeta que exista más cerca. */
 function dentroDeUnRepo(p) {

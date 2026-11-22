@@ -314,6 +314,16 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibguard-recordjs)
 
+## scripts/metrics/controls-table.js
+
+**Qué es:** La tabla de los controles de esta máquina, por freno y por modelo: cuánto frenó, avisó, pasó con firma y dejó pasar, los controles del pipeline que frenaron, las fallas de cada freno y si es exigencia o preferencia.
+
+**Por qué existe:** Para decidir qué freno se relaja y para qué modelo hace falta saber cuánto frena y cuánto se firma igual. Sólo lee.
+
+**Quién la usa:** Quien mantiene el arnés, a mano. La clasificación vive en `controls-classification.json`.
+
+**Dónde se prueba:** `scripts/tests/controls-table.test.js`
+
 ## scripts/nightly/dashboard/reducer.js
 
 **Qué es:** Cuenta los frenos y los escapes de todas las máquinas desde el buzón de corridas y publica sólo las cuentas. También junta qué máquina tiene una vuelta atrás vigente (no se actualiza sola), qué versión deshizo y desde cuándo.
