@@ -3958,8 +3958,8 @@ function mensajeCarpetaSinSeguir(d, via) {
 
 function destinosResueltos(cmd, cwd, platform = process.platform, { keep = null } = {}) {
   return extractWriteTargets(cmd, { keep }).map((raw) => {
-    const { valor, sinResolver } = expandirRuta(cmd, raw);
-    return { raw, abs: resolveTarget(valor, cwd, platform, { homeVariable: true }), sinResolver };
+    const { valor, sinResolver, temporal } = expandirRuta(cmd, raw);
+    return { raw, abs: resolveTarget(valor, cwd, platform, { homeVariable: true }), sinResolver, ...(temporal ? { temporal } : {}) };
   });
 }
 
@@ -5085,8 +5085,10 @@ function handleCarrilEHistoria(event, opts = {}) {
     // otra carpeta que la que queda al normalizarla). Ante cualquier falla del criterio, se anota.
     const textoDestinos = String(cmdDestinos);
     const noSeVe = /(^|[\s;&|(])ln\s[^;&|]*-[a-zA-Z]*s/.test(textoDestinos) || /(^|[\s/'"=])\.\.([\\/]|$)/.test(textoDestinos);
-    // un destino sin resolver no suma al cupo: no se sabe cuál es
-    for (const abs of passedCode.filter((f) => isCodeFile(f) && !sinResolverDe.has(f))) {
+    // un destino sin resolver no suma al cupo: no se sabe cuál es. Uno en una carpeta de `mktemp` tampoco: su nombre
+    // lleva las `X` del molde, no es un archivo que exista
+    const temporales = new Set(resueltos.filter((d) => d.temporal).map((d) => d.abs));
+    for (const abs of passedCode.filter((f) => isCodeFile(f) && !sinResolverDe.has(f) && !temporales.has(f))) {
       let sonda = false;
       if (!noSeVe) {
         try { sonda = require('./on-edit.js').esSondaDeSubagente(event, abs, sessionId, stateDir); } catch (e) { logHookError(e); }

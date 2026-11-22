@@ -389,6 +389,8 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
     return { valor: null, sinResolver: nombres.length ? nombres : ['$(…)'] };
   }
   const sinResolver = [];
+  // si alguna variable de la ruta vale una carpeta de `mktemp` (directa o a través de otra asignación)
+  let temporal = false;
   const valorDe = (nombre) => {
     let a = null;
     // adentro de un bucle, una asignación que viene DESPUÉS en el mismo cuerpo vale desde la segunda vuelta
@@ -403,8 +405,7 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
           const crudo = String(a.valor);
           // `D=$(mktemp -d …)`: una carpeta temporal, que se sabe dónde queda aunque no su nombre
           const temporal = carpetaDeMktemp(crudo, a.pos, asigs, env);
-          if (temporal !== null) a.resuelto = temporal;
-          else if (/^'[\s\S]*'$/.test(crudo)) {
+          if (temporal !== null) { a.resuelto = temporal; a.temporal = true; } else if (/^'[\s\S]*'$/.test(crudo)) {
             // entre comillas simples el shell no expande nada: el valor es literal. Si trae un `$`, la ruta final tendría
             // un `$` de verdad y otra pieza (resolveTarget) lo expandiría: «no sé».
             const literal = crudo.slice(1, -1);
@@ -412,9 +413,11 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
           } else {
             const r = expandirEn(sinComillas(crudo), a.pos, asigs, env, home, prof + 1);
             a.resuelto = r.valor === null ? NO_SE : r.valor;
+            if (r.temporal) a.temporal = true;
           }
         }
       }
+      if (a.temporal && a.resuelto !== NO_SE) temporal = true;
       return a.resuelto;
     }
     if (nombre === 'HOME') return home;
@@ -430,14 +433,16 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
     return v;
   });
   sinResolver.unshift(...especiales);
-  return { valor: sinResolver.length ? null : valor, sinResolver };
+  return { valor: sinResolver.length ? null : valor, sinResolver, ...(temporal && !sinResolver.length ? { temporal } : {}) };
 }
 
 /**
  * La ruta `raw`, que aparece en `cmd`, con sus variables expandidas como en ese punto del comando.
  * @param {object} [opts] env (default process.env) · home (default os.homedir()) · posibles (las asignaciones que
  *   pueden no haber quedado puestas cuentan como puestas)
- * @returns {{ valor: string, sinResolver: string[] }} `valor` es la ruta expandida, o `raw` tal cual si algo no se supo.
+ * @returns {{ valor: string, sinResolver: string[], temporal?: true }} `valor` es la ruta expandida, o `raw` tal cual si
+ *   algo no se supo. `temporal` dice que pasa por una carpeta de `mktemp`: su nombre lleva las `X` del molde, no es el
+ *   nombre real.
  */
 function expandirRuta(cmd, raw, opts = {}) {
   if (!/[$`]/.test(String(raw))) return { valor: raw, sinResolver: [] };
@@ -481,7 +486,7 @@ function expandirRutaSinRed(cmd, raw, opts) {
   if (fallidos.length) return { valor: raw, sinResolver: [...new Set(fallidos.flatMap((r) => r.sinResolver))] };
   // el mismo texto daría rutas distintas según dónde se lo mire: no se sabe cuál es la escritura
   if (new Set(resultados.map((r) => r.valor)).size > 1) return { valor: raw, sinResolver: [...new Set(nombres)] };
-  return { valor: resultados[0].valor, sinResolver: [] };
+  return { valor: resultados[0].valor, sinResolver: [], ...(resultados.some((r) => r.temporal) ? { temporal: true } : {}) };
 }
 
 module.exports = { asignaciones, expandirRuta, carpetaDeMktemp };

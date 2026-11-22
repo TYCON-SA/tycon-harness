@@ -314,7 +314,10 @@ test('T11 CarpetaDeMktemp_SeSabeDondeQueda — la carpeta temporal pasa; un mold
     'T=$(mktemp -d /tmp/a.XX; echo src); echo x > $T/a.js', "T='$(mktemp -d)'; echo x > $T/a.js"]) {
     assert.match(freno(c), SIN_RESOLVER, c);
   }
-  assert.deepStrictEqual(expandirRuta('T=$(mktemp -d /tmp/p.XXXX); cat > $T/x', '$T/x'), { valor: '/tmp/p.XXXX/x', sinResolver: [] });
+  assert.deepStrictEqual(expandirRuta('T=$(mktemp -d /tmp/p.XXXX); cat > $T/x', '$T/x'), { valor: '/tmp/p.XXXX/x', sinResolver: [], temporal: true });
+  // y a través de otra asignación
+  assert.equal(expandirRuta('T=$(mktemp -d /tmp/p.XXXX); U=$T/sub; cat > $U/x', '$U/x').temporal, true);
+  assert.equal(expandirRuta('D=/tmp/fija; cat > $D/x', '$D/x').temporal, undefined);
   // un TMPDIR relativo en el ambiente: mktemp lo usa relativo, no `/tmp`
   assert.deepStrictEqual(expandirRuta('T=$(mktemp -d); cat > $T/x', '$T/x', { env: { TMPDIR: 'src' } }).sinResolver, ['T']);
 });
