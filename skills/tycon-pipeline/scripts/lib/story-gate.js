@@ -621,9 +621,9 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '⛔ una constancia de cambio de control no se escribe a mano',
       viaLine.replace(/\n$/, ''),
       `  ${f}`,
-      '  La escribe `bash scripts/ci/run-base-controls.sh approve`, con la firma del dueño: corré el comando que da',
-      '  `pending`, solo y en su forma exacta, y el dueño lo aprueba en la ventana o en el cuadro; o lo corre él en su',
-      '  terminal con `--terminal`. Ni la delegación ni `--relayed-by` la dan.',
+      '  La escribe `bash scripts/ci/run-base-controls.sh approve`, con la firma de una persona: corré el comando que da',
+      '  `pending`, solo y en su forma exacta, y ella lo aprueba en la ventana o en el cuadro; o lo corre en su terminal',
+      '  con `--terminal`. Un reenvío (`--relayed-by`) no la da.',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'adversarial-skip-record') {

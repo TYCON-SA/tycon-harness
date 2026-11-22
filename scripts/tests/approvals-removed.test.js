@@ -294,6 +294,8 @@ test('LocalBrake_WriteApprovalByHand_NoOfreceLaViaQueSeNiega', (t) => {
   const r = spawnSync(process.execPath, [HOOK], { encoding: 'utf8', input: JSON.stringify(evento), cwd: repo, env: gitEnv(dir) });
   assert.strictEqual(r.status, 2, `el freno no frenó: ${r.stdout}${r.stderr}`);
   assert.doesNotMatch(r.stderr, /sesión designada/);
-  assert.match(r.stderr, /Ni la delegación ni `--relayed-by` la dan/);
-  assert.match(r.stderr, /el dueño lo aprueba en la ventana o en el cuadro/);
+  assert.match(r.stderr, /Un reenvío \(`--relayed-by`\) no la da/);
+  assert.match(r.stderr, /ella lo aprueba en la ventana o en el cuadro/);
+  // el mensaje sale también en un repo de producto: no nombra las piezas de la capa de mantenimiento
+  assert.doesNotMatch(r.stderr, /dueño|coordinadora|delegación/);
 });
