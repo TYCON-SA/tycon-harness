@@ -1105,6 +1105,10 @@ function commitLocalDelPerfil({ home, arnes } = {}) {
     return { noSe: `no pude leer el perfil del equipo (${e.message})` };
   }
 }
+/** La ventana del commit cuando el perfil no dice con certeza quién lo firma: ni pasa callado ni frena. */
+function preguntaCommitNoSe(forma, storyId, motivo) {
+  return `¿GUARDO? «${forma}»${storyId ? `, de la corrida de ${storyId}` : ''}: ${motivo}, y no sé si tu organización pide que la coordinadora firme cada commit. ${COMO_SE_AUTORIZA}`;
+}
 /** Por qué el ok de guardar de la corrida no cubre un commit en `dirs`, o null si lo cubre. */
 function okDeGuardarQueNoCubre(m, dirs) {
   const ok = m.saveOk;
@@ -1233,9 +1237,11 @@ function decidir({ command, cwd, sid, home, arnes }) {
     const haciaElEquipo = dudas.length || cs.some((c) => c.opaco || c.tipo === 'pr' || (c.tipo === 'push' && destinoDelEmpuje(c).compartida));
     if (haciaElEquipo) return { texto: TEXTO_MARCADOR };
     // el ok de la coordinadora vive en el marcador: sin leerlo no se sabe si lo hay
-    if (cs.some((c) => c.tipo === 'commit') && commitLocalDelPerfil({ home, arnes }).valor === COMMIT_POR_LA_COORDINADORA) {
+    const quien = cs.some((c) => c.tipo === 'commit') ? commitLocalDelPerfil({ home, arnes }) : null;
+    if (quien && quien.valor === COMMIT_POR_LA_COORDINADORA) {
       return { texto: `${TEXTO_COMMIT_COORDINADORA} (no pude leer el marcador de la corrida, que es donde queda su ok)` };
     }
+    if (quien && quien.noSe) return { pregunta: preguntaCommitNoSe(cs.find((c) => c.tipo === 'commit').forma, null, quien.noSe) };
     return { aviso: `el marcador de la corrida no se puede leer o no dice de qué historia es: «${c0.forma}» guarda sin preguntar; un pull request no sale hasta arreglarlo.` };
   }
   const pasoCerrado = pasoPreparado(m);
@@ -1283,6 +1289,11 @@ function decidir({ command, cwd, sid, home, arnes }) {
   // request
   const quien = commits.length ? commitLocalDelPerfil({ home, arnes }) : null;
   if (quien && quien.valor === COMMIT_POR_LA_COORDINADORA) {
+    // el ok se mide con el árbol de antes del comando: lo que el mismo comando escribe antes de commitear no lo cubre
+    for (const c of commits) {
+      const escrito = escribeCodigo(c);
+      if (escrito) return { texto: `${TEXTO_COMMIT_COORDINADORA} (este comando cambia el código antes de commitearlo: ${escrito}; corré el cambio aparte y pedí otro ok)` };
+    }
     const motivo = okDeGuardarQueNoCubre(m, commits.map((c) => c.dir).filter(Boolean));
     if (motivo) return { texto: `${TEXTO_COMMIT_COORDINADORA} (${motivo})` };
   }
@@ -1294,7 +1305,7 @@ function decidir({ command, cwd, sid, home, arnes }) {
   }
   if (quien) {
     // un perfil que no se lee no dice si la organización quiere la segunda mirada: ni pasa callado ni frena
-    if (quien.noSe) return { pregunta: `¿GUARDO? «${commits[0].forma}», de la corrida de ${m.storyId}: ${quien.noSe}, y no sé si tu organización pide que la coordinadora firme cada commit. ${COMO_SE_AUTORIZA}` };
+    if (quien.noSe) return { pregunta: preguntaCommitNoSe(commits[0].forma, m.storyId, quien.noSe) };
     const dir = path.dirname(path.dirname(markerPath));
     const reason = quien.valor === COMMIT_POR_LA_COORDINADORA ? `commit local con el ok de guardar de la coordinadora (historia ${m.storyId})` : `commit local, sin pregunta (historia ${m.storyId})`;
     require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason });

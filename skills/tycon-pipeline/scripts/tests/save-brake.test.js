@@ -1605,6 +1605,18 @@ test('8.242-Perfil_Coordinadora_PideElOk (T22) @story-8.242 @ac-15', (t) => {
   d = decideCon(h, 'git commit -m x', a, arnes);
   assert.match((d || {}).texto || '', POR_LA_COORDINADORA, JSON.stringify(d));
   assert.match(d.texto, /cambió después del ok/);
+  // el ok se mide con el árbol de antes del comando: lo que el mismo comando escribe antes de commitear no lo cubre
+  const b = repoConOrigin(t, 'escribe');
+  escribir(b, 'a.js', 'module.exports = 1;\n');
+  sh(b, 'add', '-A');
+  sh(b, 'commit', '-q', '-m', 'a');
+  abrir(h, corrida(b, { saveOk: { storyId: '9.99', startedAt: ANTES, huellas: so.huellas([b]) } }));
+  assert.strictEqual(decideCon(h, 'git commit -am x', b, arnes), null, 'sin escribir nada, el ok lo cubre');
+  for (const cmd of ['echo 2 > a.js && git commit -am x', "sed -i '' s/1/2/ a.js && git commit -am x", 'echo x > src.js && git add -A && git commit -m y']) {
+    d = decideCon(h, cmd, b, arnes);
+    assert.match((d || {}).texto || '', POR_LA_COORDINADORA, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.texto, /cambia el código antes de commitearlo/);
+  }
   // el marcador que no se lee: el ok vive ahí, así que el commit no guarda
   fs.writeFileSync(marcadorPath(h), '{ esto no es json');
   assert.match((decideCon(h, 'git commit -m x', a, arnes) || {}).texto || '', POR_LA_COORDINADORA);
@@ -1628,6 +1640,13 @@ test('8.242-Perfil_ValorQueNoSeEntiende_Pregunta (T23) @story-8.242 @ac-16', (t)
     assert.match(d.pregunta, /^¿GUARDO\? «git commit», de la corrida de 9\.99: /);
     assert.match(d.pregunta, motivo);
     assert.match(d.pregunta, /no sé si tu organización pide que la coordinadora firme cada commit/);
+  }
+  // con el marcador que tampoco se lee, pregunta igual: no pasa con el aviso de siempre
+  fs.writeFileSync(marcadorPath(h), '{ esto no es json');
+  for (const [perfil, motivo] of casos) {
+    const d = decideCon(h, 'git commit -m x', a, arbolCon(t, perfil));
+    assert.ok(d && d.pregunta && !d.texto && !d.aviso, `${JSON.stringify(perfil)}: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, motivo);
   }
 });
 
