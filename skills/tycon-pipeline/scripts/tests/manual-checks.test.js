@@ -312,3 +312,16 @@ test('ManualChecks_NoRegresion_ApagadaCierraComoHoy @story-7.46 @ac-17', () => {
   assert.equal(ayuda.status, 2);
   assert.match(ayuda.stderr, /faltan --rule <regla> y --reason/);
 });
+
+test('Bloqueos_SinBypass_CadaUnoDiceSuSalida: el waiver TTY sólo para la matriz; la guía y la marca a mano dicen la suya', () => {
+  // la guía de tester y la marca a mano no se destraban con un waiver TTY: el mensaje no puede ofrecer una salida que no
+  // existe para ellas (una sesión frenada por la maqueta la buscó y no estaba)
+  const src = fs.readFileSync(path.join(REAL, 'skills', 'tycon-pipeline', 'scripts', 'marker.js'), 'utf8');
+  const at = src.indexOf("if (String(blocked).startsWith('acmatrix') || blocked === 'qaguide' || blocked === 'manualcheck') {");
+  assert.ok(at > 0, 'el bloque de los bloqueos sin DOD_BYPASS');
+  const bloque = src.slice(at, src.indexOf('process.exit(2);', at));
+  assert.match(bloque, /String\(blocked\)\.startsWith\('acmatrix'\)\)[^\n]*waiver TTY del usuario/, 'el waiver TTY, sólo para la matriz');
+  assert.equal((bloque.match(/waiver TTY/g) || []).length, 1, 'y en ningún otro renglón');
+  assert.match(bloque, /blocked === 'qaguide'\)[^\n]*corregí la pantalla[^\n]*aprueben de nuevo[^\n]*differs/, 'la guía: sus salidas reales');
+  assert.match(bloque, /marca a mano de una persona/, 'la marca a mano: la suya');
+});
