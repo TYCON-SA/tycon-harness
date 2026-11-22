@@ -130,10 +130,10 @@ const byAge = (a, b) => (Number(a.at) - Number(b.at)) || (Number(a.pid) - Number
 
 /**
  * Las ejecuciones grandes que corren: `[{ pid, sid, session, what, at }]`, de la más vieja a la más nueva. Con `problems`,
- * el lugar que no se puede leer se anota ahí.
+ * el lugar que no se puede leer se anota ahí. Con `state`, se leen de esa carpeta de estado en vez de la de `home`.
  */
-function holders({ home = require('os').homedir(), now = Date.now(), problems = null } = {}) {
-  return slotFiles(home).map((f) => readSlot(f, problems).turn).filter((t) => inForce(t, now)).sort(byAge);
+function holders({ home = require('os').homedir(), now = Date.now(), problems = null, state = null } = {}) {
+  return (state ? slotFilesIn(state) : slotFiles(home)).map((f) => readSlot(f, problems).turn).filter((t) => inForce(t, now)).sort(byAge);
 }
 
 /** La ejecución grande más vieja que corre, `{ pid, sid, session, what, at }`, o null; `problems` como en `holders`. */

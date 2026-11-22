@@ -2446,6 +2446,30 @@ async function machineLoad({ platform = process.platform, run, readFile, readCpu
 }
 
 /**
+ * Quién corre una ejecución grande y cuántas suites, para la etiqueta de los racks: `[{ sesion, suites }]`, de la más vieja
+ * a la más nueva (`holders()` de heavy-turn.js), o null sin turno tomado. Lo que no se sabe (una sesión sin nombre, un
+ * `what` sin la cuenta) no va; un lugar del turno que no se puede leer va a `problems`.
+ */
+function heavyTurns(sdir, nowMs, problems) {
+  let turns;
+  try {
+    const HT = require('./heavy-turn.js');
+    turns = HT.holders({ state: sdir, now: nowMs, problems }).map((t) => {
+      const e = {};
+      const name = typeof t.session === 'string' ? t.session.trim() : '';
+      if (name) e.sesion = name;
+      const suites = HT.suitesOf(t);
+      if (Number.isInteger(suites) && suites >= 0) e.suites = suites;
+      return e;
+    });
+  } catch (e) {
+    problems.push(`el turno de tarea pesada no se pudo leer (${e.code || e.message})`);
+    return null;
+  }
+  return turns.length ? turns : null;
+}
+
+/**
  * Lee todo lo de esta máquina y arma los datos; guarda las promesas al día. `arbol` y `validarAprobacion` van a la
  * lectura de las firmas ya aprobadas (`aprobadasSinRepetir`); se pasan en las pruebas.
  */
@@ -2599,7 +2623,12 @@ async function collect(opts = {}) {
   const url = site.code === 0 ? String(site.out || '').trim() : '';
   if (/^https?:\/\/\S+$/i.test(url)) data.meta.sitio = url;
   else if (site.code === 2) data.unreadable.push(`la dirección del sitio no se pudo leer: ${String(site.out || '').trim().split('\n')[0] || 'sin motivo'}`);
-  if (load) data.meta.maquina = await load;
+  if (load) {
+    data.meta.maquina = await load;
+    // el turno de tarea pesada va con la carga: quien no mide la máquina (el lector de las firmas) tampoco lo lee
+    const turns = heavyTurns(sdir, nowMs, data.unreadable);
+    if (turns) data.meta.turnoPesado = turns;
+  }
   if (!opts.readOnly) try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     // entero y después renombrado: otro lector (la foto fija y el proceso vivo leen el mismo) nunca lo ve a medias
