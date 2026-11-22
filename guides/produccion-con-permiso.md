@@ -468,8 +468,10 @@ cierre seguro deja de funcionar. Cómo combinar los dos lo decide el dueño.
   el programa con `-e` o `-c` y lo arma por dentro (`node -e`, `python3 -c` con una lista de
   argumentos), o un archivo cuyo nombre llega recién al correr (`find … -exec bash {} \;`,
   `echo x | xargs bash`) no se ven. Tampoco las recetas de `make -n` que se ejecutan igual (las que
-  empiezan con `+` o llaman a `$(MAKE)`): con `-n` el freno no mira las recetas. Por eso la aprobación ya no depende del freno: la pide la puerta, aunque la
-  llame un guion o un hook propio.
+  empiezan con `+` o llaman a `$(MAKE)`): con `-n` el freno no mira las recetas. Y hay dos lecturas de `make` que el
+  freno no hace, a propósito, para no seguir agrandándolo: una regla por patrón que fabrica un `include` que falta (`make`
+  la corre aunque sea con `-n`), y un `${call shell,…}` con llaves adentro de las llaves, que no se lee ni se avisa. Por
+  eso la aprobación ya no depende del freno: la pide la puerta, aunque la llame un guion o un hook propio.
 - **El cuadro de la puerta lo puede apretar una aplicación con permiso de Accesibilidad** (la terminal o
   el editor donde corre el asistente, si se lo diste). El freno frena los comandos que ve que lo intentan
   (`osascript` con System Events y un clic o una tecla, `cliclick`), pero eso es otra vez texto. Touch ID,
@@ -522,8 +524,14 @@ Y cinco más, propios de leer los nombres como el shell:
 - 🔴 **Si el lanzador no contesta en 30 s, lo matan o no arranca, el comando no corre.** Vale desde
   Claude Code 2.1.295: el gancho de consola lleva `"onFailure": "block"` en la configuración administrada.
   Con una versión anterior la opción no hace nada: Claude Code corta al lanzador y el comando corre igual.
-  Codex no la tiene. Cada corte queda contado: la revisión nocturna de las ejecuciones cuenta cada hook
-  que se pasó de tiempo.
+  Cada corte queda contado: la revisión nocturna de las ejecuciones cuenta cada hook que se pasó de tiempo.
+- 🔴 **En Codex el freno corre sin el lanzador y sin `onFailure`.** Codex llama al freno directo
+  (`node …/prod-access-guard.js`), sin el reloj de 7 s del lanzador, y no tiene la opción de frenar cuando el gancho
+  falla. Si el freno se cae o se cuelga, el comando corre. En Claude Code ese mismo fallo frena.
+- **Un freno colgado no se corta desde adentro.** El reloj propio del freno no interrumpe una expresión regular ni un
+  análisis que ya empezó. En Claude Code lo ataja el tope del gancho con `onFailure: block`; en Codex, nada. Y hay
+  expresiones del freno que tardan más cuanto más largo es el comando: medida sola, la peor de `shell-parse.js` tarda
+  2,5 s con 64 KB y casi 30 s con 200 KB.
 - **Si falta el lanzador, ningún comando de consola del agente corre, y el agente no lo puede arreglar.**
   Sale una persona, desde su terminal y con `sudo`: reinstala el freno
   (`sudo bash ~/.tycon/harness/scripts/production/install-guard.sh`) o saca el archivo administrado
