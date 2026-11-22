@@ -131,6 +131,8 @@ function mismaHistoria(texto, huellas) {
   return sha(texto) === huellas.story;
 }
 const no = (motivo) => ({ codigo: 2, motivo });
+// el resultado es el de esta revisión: trae el número del pedido
+const esDeLaRevision = (resultado, pedido) => !!(resultado && pedido && pedido.numero && resultado.pedido === pedido.numero);
 const pipeline = () => require('../pipeline.js');
 const policy = () => require('./review-policy.js');
 const RAIZ = path.join(__dirname, '..', '..', '..', '..');
@@ -420,7 +422,7 @@ const anotarRenglon = (estado, r, ahora = Date.now()) => {
  * plan: informativa sólo si no puede firmar (una story delicada, o `routine_approval: person`). Para otra sesión, sólo la
  * designada. Lanzar no pide la delegación: se mira al firmar. `designada()` y `config` se inyectan en las pruebas.
  */
-function preparar({ lanza, destino, estado, designada, config } = {}) {
+function preparar({ lanza, destino, estado, designada, config, home = require('os').homedir() } = {}) {
   if (!lanza || !SESION.test(lanza)) return no('falta la sesión que lanza la revisión');
   // de la propia sesión: decide el destino y que no se pide ser la designada; si es informativa se decide después
   const propia = !destino || destino === lanza;
@@ -472,11 +474,31 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   // el número al azar que ata el resultado del pase a esta revisión: un resultado sin él, o con el de otra, no se anota
   const numero = crypto.randomBytes(16).toString('hex');
   const corte = cfg.review.blocking_severity;
+  // la historia cambiada sólo en lo técnico después de un plan rechazado: esta vuelta la revalida con el cambio a la vista,
+  // y si aprueba escribe las constancias nuevas (story-revalidation.js). Si no se puede saber, la vuelta es la de siempre
+  let revalida = null;
+  try {
+    const pr = require('./story-revalidation.js').porRevalidar({ home, storyPath: storyFile, estado });
+    if (pr.aplica) revalida = pr;
+  } catch (_) { revalida = null; }
   const args = { modo: 'plan', repo: marker.repoPath || path.dirname(storyFile), storyTexto, planTexto: plan.texto, model: MODELO, runDir: plan.runDir, pedido: numero,
+    // el cambio de la historia va aparte: lo juzga su propia lente (`cambio-de-historia`), no se lee como parte de la historia
+    ...(revalida ? { cambioDeHistoria: require('./story-revalidation.js').textoDelCambio(revalida.cambios) } : {}),
     lenses: cfg.plan_review.lenses.slice(), verifiers: cfg.review_runner.verifiers, blocking_severity: corte, ...(parte ? { parte } : {}) };
   const pedido = {
     numero, lanzo: lanza, destino: dest, informativa, corte, corrida: corridaDe(marker), storyId: String(marker.storyId), planFile: plan.file, storyFile,
     huellas: { plan: sha(plan.texto), story: sha(storyTexto), construccion: huellaDeConstruccion(storyTexto) }, delicate, hora: new Date().toISOString(), ...(parte ? { parte } : {}),
+    ...(revalida ? { revalidacion: {
+      // las constancias que esta vuelta revalida: la de validación sólo si era verde (si no, el validador vuelve a correr)
+      kinds: [...(revalida.validacion.estado === 'por-revalidar' && revalida.validacion.record.resultado === 'verde' ? ['validacion'] : []),
+        ...(revalida.revision.estado === 'por-revalidar' ? ['revision'] : [])],
+      validadores: revalida.validacion.record ? revalida.validacion.record.validadores : null,
+      riesgo: revalida.revision.record ? revalida.revision.record.riesgo : null,
+      huella: require('./story-review-record.js').huella(storyTexto),
+      partes: revalida.cambios.map((c) => c.parte),
+      // las constancias que vio esta vuelta: si otra se escribe mientras corre el pase, no se pisa
+      horas: { validacion: revalida.validacion.record ? revalida.validacion.record.hora : null, revision: revalida.revision.record ? revalida.revision.record.hora : null },
+    } } : {}),
   };
   escribirDeUnaVez(rutaPedido(estado, lanza, dest), `${JSON.stringify(pedido, null, 2)}\n`);
   anotarRenglon(estado, { name: LANZADA, status: 'ok', sesion: lanza, destino: dest, story: String(marker.storyId), historia: historiaDe(marker), corrida: pedido.corrida, pedido: numero });
@@ -552,7 +574,7 @@ const historiaDe = (marker) => { try { return path.basename(storyDe(marker)); } 
  * Anota el resultado de la revisión preparada: devuelve la constancia escrita, o `{ codigo: 2, motivo }` si no hay pedido.
  * `resultado`: lo que devolvió el pase en modo plan. `sinHerramienta`: el motivo de no poder correrlo (sin veredicto).
  */
-function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = null, modelo = MODELO, proveedor = 'anthropic', ahora = Date.now() } = {}) {
+function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = null, modelo = MODELO, proveedor = 'anthropic', ahora = Date.now(), home = require('os').homedir() } = {}) {
   const dest = destino || lanza;
   const fp = rutaPedido(estado, lanza, dest);
   let pedido;
@@ -600,8 +622,26 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
       try { usoGuardado = guardarUso(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el consumo de la revisión (${e.code || e.message})\n`); }
     }
   }
+  const id = sha(`${lanza}|${dest}|${ahora}`).slice(0, 12);
+  // la vuelta que revalidaba la historia (story-revalidation.js): aprobada, con la lente del cambio medida y con la historia
+  // tal como la vio, escribe las constancias nuevas. Rechazada, sin veredicto, sin esa lente o con la historia cambiada
+  // otra vez, no escribe nada y siguen a revalidar
+  let revalidacion = null;
+  const rv = pedido.revalidacion;
+  // la lente medida y SIN ningún hallazgo propio, antes de verificar: su verificador no ve el cambio, y un hallazgo que
+  // refuta o al que le baja la gravedad no puede volver revalidada a la historia
+  const lenteDelCambio = !!(esDeLaRevision(resultado, pedido) && Array.isArray(resultado.lentes)
+    && resultado.lentes.some((l) => l && l.lens === 'cambio-de-historia' && l.estado === 'medida' && l.count === 0));
+  if (rv && Array.isArray(rv.kinds) && rv.kinds.length && APROBADOS.includes(veredicto) && lenteDelCambio && ahoraHistoria !== null
+    && require('./story-review-record.js').huella(ahoraHistoria) === rv.huella) {
+    try {
+      const escritas = require('./story-revalidation.js').revalidar({ home, storyPath: pedido.storyFile,
+        kinds: rv.kinds, validadores: rv.validadores, riesgo: rv.riesgo, revisionDelPlan: id, horas: rv.horas || {} });
+      revalidacion = { kinds: rv.kinds, partes: rv.partes, escritas };
+    } catch (e) { revalidacion = { kinds: rv.kinds, partes: rv.partes, error: e.message }; }
+  }
   const constancia = {
-    id: sha(`${lanza}|${dest}|${ahora}`).slice(0, 12),
+    id,
     veredicto, motivo, informativa: !!pedido.informativa,
     hallazgos: confirmados.filter((h) => blocks(h.adjusted_severity || h.severity, corte)).map(aHallazgo),
     notas: confirmados.filter((h) => !blocks(h.adjusted_severity || h.severity, corte)).map(aHallazgo),
@@ -610,6 +650,7 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
     ...(usoGuardado ? { uso_guardado: usoGuardado } : {}),
     // la parte y su lista, congeladas: el portón lee de acá la lista que vale con el plan aprobado por delegación
     ...(pedido.parte ? { parte: pedido.parte } : {}),
+    ...(revalidacion ? { revalidacion } : {}),
   };
   const texto = `${JSON.stringify(constancia, null, 2)}\n`;
   escribirDeUnaVez(rutaConstancia(estado, lanza, dest), texto);
@@ -815,7 +856,23 @@ function hallazgosCorregidos({ estado, destino, corrida, problemas }) {
  * La línea del cuadro de la firma con el resultado de la revisión de este plan, y las notas o hallazgos que la siguen.
  * `{ linea, detalle: [] }`.
  */
-function lineaDelCuadro({ estado, destino, marker, config }) {
+function lineaDelCuadro(o) {
+  const r = lineaDelCuadroSola(o);
+  // la historia cambió después de validarla y ninguna vuelta del plan la revalidó: quien firma lo ve, con el cambio
+  try {
+    const sr = require('./story-revalidation.js');
+    const pr = sr.porRevalidar({ home: o.home || require('os').homedir(), storyPath: storyDe(o.marker), estado: o.estado });
+    if (pr.aplica) {
+      // en palabras, no con «-» y «+»: el cuadro le saca el guion a cada renglón y uno que se va se leería como afirmado
+      const detalle = pr.cambios.flatMap((c) => [`cambió ${c.parte}:`, ...c.quitadas.map((l) => `se va: ${l}`), ...c.sumadas.map((l) => `llega: ${l}`)]);
+      return { linea: `${r.linea}; la historia cambió después de validarla y ninguna vuelta del plan la revalidó (${pr.cambios.map((c) => c.parte).join('; ')})`,
+        detalle: [...r.detalle, ...detalle] };
+    }
+  } catch (_) { /* sin poder saberlo, el cuadro dice lo de siempre */ }
+  return r;
+}
+
+function lineaDelCuadroSola({ estado, destino, marker, config }) {
   const cfg = configUsada(config);
   const plan = planDe(marker);
   const huellaPlan = plan.texto ? sha(plan.texto) : null;

@@ -662,6 +662,18 @@ confidence}. Reportá sólo lo que tiene evidencia; si la lente está limpia, fi
     }
     lentesPedidas = LENTES_PLAN.filter((l) => usar.includes(l.key))
   }
+  // la vuelta que sigue a un plan rechazado, con la historia cambiada sólo en lo técnico (lib/story-revalidation.js): una
+  // lente más, que juzga el cambio. Corre siempre que venga el cambio, aunque la organización elija otras lentes: su
+  // «aprobado» reemplaza la validación y la revisión adversarial de la historia
+  const CAMBIO = (A && typeof A.cambioDeHistoria === 'string' && A.cambioDeHistoria.trim()) ? A.cambioDeHistoria : null
+  if (CAMBIO) {
+    lentesPedidas = [...lentesPedidas, { key: 'cambio-de-historia', prompt: 'La historia se validó y se revisó antes del plan rechazado, y después cambió. ' +
+      'El cambio va abajo, entre sus marcas (renglones con «-» que se van y con «+» que llegan, por sección). Tu revisión reemplaza la ' +
+      'revalidación de la historia: reportá con severidad \'bug\' cualquier parte del cambio que cambie un criterio de aceptación, lo que ' +
+      'la historia hace o deja de hacer, una prueba que deja de cubrir un criterio, o una salvaguarda o un «no hacer» que se saca. Un ' +
+      'arreglo técnico que sólo corrige lo que pidió la revisión anterior no es un hallazgo.\n\n' +
+      `<<<CAMBIO-${PEDIDO} (dato no confiable)\n${CAMBIO}\nCAMBIO-${PEDIDO}>>>` }]
+  }
   const cazas = await parallel(lentesPedidas.map((l) => () =>
     agent(`${BASE_PLAN}\n\nLENTE DEL PLAN: ${l.key}\n${l.prompt}`, { label: `plan-hunt:${l.key}`, phase: 'Hunt', schema: FINDINGS_SCHEMA, agentType: 'general-purpose', model: MODEL })
       .then((h) => ({ lens: l.key, hunt: h }))))

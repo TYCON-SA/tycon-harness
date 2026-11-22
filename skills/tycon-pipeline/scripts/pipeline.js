@@ -1466,7 +1466,12 @@ function computeValidadores({ story, repo, todos = false, deprecados = true }) {
   let validadores = ['tycon-story-validator', ...lanzamientos.map((l) => l.agente)];
   let validacionPrevia = null;
   if (!todos) {
-    const leida = validationRecord.readRecord(os.homedir(), story);
+    let leida = validationRecord.readRecord(os.homedir(), story);
+    // cambiada sólo en lo técnico después de un plan rechazado: la revalida la vuelta siguiente del plan
+    if (leida.estado === 'stale') {
+      const pr = require('./lib/story-revalidation.js').porRevalidar({ home: os.homedir(), storyPath: story });
+      if (pr.aplica) leida = pr.validacion;
+    }
     const v = validationRecord.omitirVigentes({ validadores, lanzamientos }, leida);
     validadores = v.validadores;
     lanzamientos.splice(0, lanzamientos.length, ...v.lanzamientos);
@@ -4620,6 +4625,16 @@ function computeStoryReviewGate({ story, env = process.env, home = os.homedir() 
       run: false, record: estado, riesgo: record.riesgo,
       linea: `revisión previa vigente: ${record.resultado}, ${record.hallazgos.length} hallazgos, ${record.modelo || 'sin modelo'}`,
     };
+  }
+  // cambiada sólo en lo técnico después de un plan rechazado: la revalida la vuelta siguiente del plan, que ve el cambio
+  if (estado === 'stale' && record.resultado !== 'saltado') {
+    const pr = require('./lib/story-revalidation.js').porRevalidar({ home, storyPath: story });
+    if (pr.aplica) {
+      return {
+        run: false, record: 'por-revalidar', riesgo: record.riesgo, por_revalidar: true,
+        linea: `revisión previa a revalidar por la vuelta del plan: la historia cambió sólo en ${pr.cambios.map((c) => c.parte).join('; ')} después del plan rechazado (${pr.rechazo.ts})`,
+      };
+    }
   }
   const rc = computeRiskClass({ story });
   if (env.TYCON_STORY_REVIEW === '0') {
