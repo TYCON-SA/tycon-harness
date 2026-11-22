@@ -1137,6 +1137,12 @@
       "requiere": []
     },
     {
+      "__nota": "marker.js partido por responsabilidad (8.163 B): lo nuevo que cargue el despachador es sensible y el recorrido de módulos del freno de guiones no corta callado (topes con nombre, lectura única y con tope de bytes). Repos de juguete en el temporal; sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/split-contract.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/replace-section.test.js",
       "requiere": []

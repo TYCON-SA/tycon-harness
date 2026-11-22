@@ -147,7 +147,18 @@ test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: avisa por 
 test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: el tope sale del freno real del árbol', () => {
   const root = arbol({ 'scripts/ci/uno.js': '// nada\n' });
   const j = datos(root, '--gate', REAL_GATE);
-  assert.deepStrictEqual(j.recorrido.tope, { niveles: 2, modulos: 20 });
+  // el número es el que tiene el freno en su texto, por su nombre: nunca una copia en la prueba
+  const texto = fs.readFileSync(REAL_GATE, 'utf8');
+  const niveles = Number(/\bconst RECORRIDO_NIVELES = (\d+);/.exec(texto)[1]);
+  const modulos = Number(/\bconst RECORRIDO_ARCHIVOS = (\d+);/.exec(texto)[1]);
+  assert.ok(niveles > 2 && modulos > 20, 'el tope del recorrido subió a lo medido');
+  assert.deepStrictEqual(j.recorrido.tope, { niveles, modulos });
+});
+
+test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: el tope con nombre gana sobre la forma de antes', () => {
+  const conNombre = 'const RECORRIDO_NIVELES = 7;\nconst RECORRIDO_ARCHIVOS = 31;\n' + FRENO(2, 20);
+  const root = arbol({ [`${PIPE}/on-bash-write-gate.js`]: conNombre });
+  assert.deepStrictEqual(datos(root).recorrido.tope, { niveles: 7, modulos: 31 });
 });
 
 test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: un freno sin los dos números es «no medido», nunca silencio', () => {
