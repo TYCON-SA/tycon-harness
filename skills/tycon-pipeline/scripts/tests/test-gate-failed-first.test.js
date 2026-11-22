@@ -1086,6 +1086,25 @@ test('RepetirVerdeConSuite_ReescribeLaConstancia (sin entrada) @story-8.230 @ac-
   assert.equal(d.suite_green, false);
 });
 
+test('RepetirVerdeConSuite_ReescribeLaConstancia (otra suite) @story-8.230 @ac-12 — una suite que no está entre las fallas no saca ninguna, ni de la copia', () => {
+  // 🔴 mutación: sin `if (i < 0) return false` → splice(-1, 1) saca la última falla, que es de otra suite.
+  const dir = tmp('ff-const-');
+  const f = constanciaFalsa(dir, [{ raiz: 'arnes', ruta: A }]);
+  const antes = fs.readFileSync(f, 'utf8');
+  const r = repetir(f, B);
+  assert.equal(r.written, false);
+  assert.match(r.reason, /no está entre las fallas de la constancia: no la toco/);
+  assert.equal(fs.readFileSync(f, 'utf8'), antes);
+  // la constancia la trae y la copia no: la constancia cambia, la copia queda igual y lo dice
+  const g = constanciaFalsa(tmp('ff-const-'), [{ raiz: 'arnes', ruta: A }, { raiz: 'arnes', ruta: B }]);
+  const sellada = path.join(dir, 'copia.json');
+  fs.writeFileSync(sellada, JSON.stringify(JSON.parse(antes)));
+  const s = repetir(g, B, { sealed: sellada });
+  assert.equal(s.written, true);
+  assert.match(s.reason, /la copia que viaja no trae esa falla: no la toco/);
+  assert.equal(fs.readFileSync(sellada, 'utf8'), JSON.stringify(JSON.parse(antes)));
+});
+
 test('RepetirVerdeConSuite_ReescribeLaConstancia (copia que no se toca) @story-8.230 @ac-12 — sin copia, o de otra corrida, lo dice', () => {
   const dir = tmp('ff-const-');
   const f = constanciaFalsa(dir, [{ raiz: 'arnes', ruta: A }, { raiz: 'arnes', ruta: B }]);

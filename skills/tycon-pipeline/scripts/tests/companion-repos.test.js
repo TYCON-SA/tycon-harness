@@ -695,6 +695,35 @@ test('T18 8.55-TestGate_Salida7DeOtroCorredor_EsRojo @story-8.55 @ac-5 @ac-7 —
   assert.match(String(m.checks.tests), /^red/, `checks.tests=${m.checks.tests}`);
 });
 
+test('T19 TestGate_VitestSinPaqueteDeCobertura_NoEsRojo — sin @vitest/coverage-v8 las pruebas se corren sin cobertura y se dice qué instalar', () => {
+  // 🔴 mutación: tomar la salida de vitest sin el paquete de la cobertura como el resultado de las pruebas deja el check
+  //    en rojo con todas las pruebas en verde, y el cierre del modo autónomo lo cuenta como una vuelta que no converge.
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'vitest-sin-cob-')));
+  const repo = repoGit(path.join(raiz, 'R'), {
+    'package.json': JSON.stringify({ name: 'r', version: '1.0.0', devDependencies: { vitest: '^2.0.0' } }) + '\n',
+    'src/a.test.ts': "import { test } from 'vitest'; test('ok', () => {});\n",
+  });
+  // un npx de juguete: con --coverage falta el paquete, como en un repo nuevo; sin él, las pruebas pasan
+  const bin = path.join(raiz, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'npx'), [
+    '#!/bin/sh',
+    'case " $* " in *" --coverage "*) echo " MISSING DEPENDENCY  Cannot find dependency \'@vitest/coverage-v8\'" >&2; exit 1;; esac',
+    'out=""; prev=""; for a in "$@"; do [ "$prev" = "--outputFile" ] && out="$a"; prev="$a"; done',
+    'echo \'{"numTotalTests":3,"numPassedTests":3,"numFailedTests":0,"numPendingTests":0,"success":true,"testResults":[]}\' > "$out"',
+    'exit 0', ''].join('\n'));
+  fs.chmodSync(path.join(bin, 'npx'), 0o755);
+  const home = casa();
+  const archivoMarker = markerFalso(home, 'tcob', repo, path.join(repo, 'no-hay.md'));
+  const r = spawnSync('bash', [TEST_GATE, repo, '9.27'], { encoding: 'utf8', env: entorno(home, 'tcob', { PATH: `${bin}${path.delimiter}${process.env.PATH}` }), cwd: repo });
+  assert.match(r.stderr, /cobertura no medida: falta @vitest\/coverage-v8 \(instalalo en el repo: npm i -D @vitest\/coverage-v8\)/, `${r.stdout}\n${r.stderr}`);
+  const m = JSON.parse(fs.readFileSync(archivoMarker, 'utf8'));
+  assert.strictEqual(m.checks.tests, 'green', `checks.tests=${m.checks.tests}`);
+  assert.strictEqual(artefacto(repo).totals.passed, 3);
+  // quien lee sólo el informe (el revisor de cobertura) ve por qué no hay cobertura
+  assert.match(JSON.stringify(artefacto(repo)), /cobertura no medida: falta @vitest\/coverage-v8/);
+});
+
 test('T22 8.55-HermanoEnWorktree_RutaConPuntosSigueResolviendo @story-8.55 @ac-2 — «../<hermano>/x» se asigna al worktree del hermano', () => {
   // 🔴 mutación: con el hermano en su worktree, la ruta «../Front/x» de la story cae en el
   //    checkout compartido y deja de ser del hermano: `targets` la pierde sin aviso y su suite puede no correr.

@@ -2981,6 +2981,12 @@
       "requiere": []
     },
     {
+      "__nota": "el aviso de contexto al cerrar un paso pesado del pipeline: sobre el umbral recomienda /compact o sesión nueva; debajo, en un paso liviano, tras compactar o apagado, nada. Nunca frena.",
+      "raiz": "arnes",
+      "ruta": "tests/context-at-step-close.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.53: la descripción de cada agente tiene 200 caracteres o menos y, si es condicional, sigue nombrando su disparador.",
       "raiz": "arnes",
       "ruta": "tests/agent-descriptions.test.js",
@@ -3606,6 +3612,12 @@
       "__nota": "story 8.150: la carpeta del estado y la de los registros sueltos dichas por el ayudante de shell (scripts/lib/state-dir.sh) son las mismas que dice tycon-home.js, en nueve casos (casa propia o no, TYCON_HOME absoluta, relativa, con espacios, vacía). Sin red: HOME de juguete en procesos hijos.",
       "raiz": "arnes",
       "ruta": "tests/state-dir-parity.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un marcador viejo, sin la ruta del repo o con rutas relativas: la pregunta de firma y los lectores directos (la tanda, la procedencia) no dependen de la carpeta del proceso.",
+      "raiz": "arnes",
+      "ruta": "tests/old-marker-paths.test.js",
       "requiere": []
     },
     {

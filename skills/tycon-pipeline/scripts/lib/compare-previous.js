@@ -886,9 +886,9 @@ function rutaMudada(ruta, renombres) {
 function archivosDeLaTanda(marker, storyPath) {
   const tanda = marker && marker.batch ? String(marker.batch) : null;
   if (!tanda) return { files: null, tanda: null, motivo: 'la corrida no tiene tanda' };
-  const suya = marker.storyPath
-    ? (path.isAbsolute(marker.storyPath) ? marker.storyPath : path.resolve(marker.repoPath || process.cwd(), marker.storyPath))
-    : null;
+  // las rutas del marcador, absolutas contra su repo (lib/run-dir.js); nunca contra la carpeta del proceso
+  const r = marker.storyPath ? require('./run-dir.js').rutasDeLaCorrida(marker) : null;
+  const suya = r && typeof r.storyPath === 'string' && path.isAbsolute(r.storyPath) ? r.storyPath : null;
   if (!suya || !storyPath || real(suya) !== real(storyPath)) return { files: null, tanda, motivo: `el marcador es de otra historia (${marker.storyPath || 'sin historia'})` };
   let texto;
   try { texto = fs.readFileSync(storyPath, 'utf8'); } catch (e) { return { files: null, tanda, motivo: `no pude leer la historia (${e.code || e.message})` }; }
@@ -1197,9 +1197,11 @@ if (require.main === module) {
     if (!runDir) {
       try {
         const m = JSON.parse(fs.readFileSync(path.join(stateDir, 'active', `${seguro(sid)}.json`), 'utf8'));
-        const repo = m.repoPath || process.cwd();
-        const story = m.storyPath ? (path.isAbsolute(m.storyPath) ? m.storyPath : path.resolve(repo, m.storyPath)) : undefined;
-        runDir = m.runDir || (m.storyId ? require('../pipeline.js').resolveRunDir(repo, String(m.storyId), true, story, { marker: m }) : null);
+        // las rutas del marcador, absolutas contra su repo (lib/run-dir.js); nunca contra la carpeta del proceso
+        const r = require('./run-dir.js').rutasDeLaCorrida(m);
+        const abs = (p) => (typeof p === 'string' && path.isAbsolute(p) ? p : null);
+        const repo = abs(r.repoPath);
+        runDir = abs(r.runDir) || (m.storyId && repo ? require('../pipeline.js').resolveRunDir(repo, String(m.storyId), true, abs(r.storyPath) || undefined, { marker: m }) : null);
       } catch (_) { runDir = null; }
     }
     if (!runDir) {

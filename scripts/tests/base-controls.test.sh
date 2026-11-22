@@ -633,6 +633,26 @@ is "T10 el pedido que borra el inventario: rojo (borrar una regla que la base ti
 has "T10 corre el de la base y lo dice" "${T}/t10c.out" "el pedido no trae un inventario que se lea"
 has "T10 …nombrando lo borrado" "${T}/t10c.out" "el pedido borra scripts/ci/controls-from-base.json, que la base tiene"
 has "T10 …y el borrado se lista" "${T}/t10c.out" "scripts/ci/controls-from-base.json (el inventario): borrado"
+# un control nuevo que main inventarió sin que nada lo corra (llegó con la copia pública antes que su llamada): el pedido
+# que lo deja corriendo pasa, aunque el inventario de main siga roto; el que no lo arregla sigue en rojo
+R="${T}/t10f"; make_base "${R}"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/nuevo.sh"
+inv "${R}" 'j.controls.push({name:"nuevo",script:"scripts/ci/nuevo.sh",rules:[]})'; commit "${R}" "control nuevo sin llamar"
+pr "${R}"; printf 'bash "$REPO_ROOT/scripts/ci/nuevo.sh" || exit 1\n' >> "${R}/.githooks/pre-commit-checks"; commit "${R}" "lo llama el pre-commit"
+run "${R}" "${T}/t10f.out"; is "T10 el pedido que deja bien el inventario pasa aunque main lo tenga roto" "0" "${RC}"
+has "T10 …y dice lo de main" "${T}/t10f.out" "ningún paso corre scripts/ci/nuevo.sh"
+R="${T}/t10g"; make_base "${R}"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/nuevo.sh"
+inv "${R}" 'j.controls.push({name:"nuevo",script:"scripts/ci/nuevo.sh",rules:[]})'; commit "${R}" "control nuevo sin llamar"
+pr "${R}"; printf 'x\n' > "${R}/docs/x.txt"; commit "${R}"
+run "${R}" "${T}/t10g.out"; is "T10 el pedido que no lo arregla sigue en rojo" "1" "${RC}"
+# sólo se perdona el control que ningún paso ejecuta: un dato sin clasificar en main deja una regla sin proteger, y frena aunque el
+# pedido deje su inventario limpio
+R="${T}/t10h"; make_base "${R}"
+printf '{}\n' > "${R}/scripts/ci/toy-extra.json"; printf '%s\n' '# lee "scripts/ci/toy-extra.json"' >> "${R}/scripts/ci/toy-check.sh"; commit "${R}" "dato sin clasificar en main"
+pr "${R}"; inv "${R}" 'j.controls[0].rules.push("scripts/ci/toy-extra.json")'; commit "${R}" "lo clasifica"
+run "${R}" "${T}/t10h.out"; is "T10 un dato sin clasificar en main sigue en rojo aunque el pedido lo clasifique" "1" "${RC}"
+has "T10 …por el inventario de la base" "${T}/t10h.out" "el inventario de la base no cuadra"
 
 # T8 · una constancia no tapa un rojo que viene de otra regla que main endureció después
 R="${T}/t8d"; make_base "${R}"; pr "${R}"

@@ -212,6 +212,8 @@ const PARA_OTRA_SESION = {
   'adhoc': { firma: 'adhoc-lane', si: (a) => a[3] === 'set' },
   // el pendiente que abrió otra sesión: la firma se escribe en su repo, que el freno comprueba que es de esa sesión
   'approve-pending': { firma: 'pending-approval' },
+  // seguir en autónomo: la coordinadora lo pide para la sesión detenida y lo decide el click del dueño en su cuadro
+  'resume-autonomy': { firma: 'autonomy-resume', marcador: true },
 };
 
 // cerrar la ejecución que la partición de su historia dejó sin objeto: la forma de rutina de la salida perdida
@@ -222,6 +224,8 @@ const PARTICION = { firma: 'lost-run:particion', nombra: 3, si: (a) => a.include
 const reglaParaOtra = (argv) => {
   if (argv[2] === 'clear-session' && PARTICION.si(argv)) return PARTICION;
   if (argv[2] === 'adhoc' && argv[3] === 'allow-foreign-save') return { firma: 'adhoc-lane:guardado-ajeno' };
+  // el freno de los datos, sólo para dejarlo pasar: descartar o pasar a historia tocan el carril de la sesión sin firma
+  if (argv[2] === 'adhoc' && argv[3] === 'allow-data-change') return { firma: 'adhoc-lane:datos', si: (a) => a[a.indexOf('--recommends') + 1] === 'pasar' };
   if (argv[2] === 'sign-file') return { firma: `escape:${argv[3]}` };
   return PARA_OTRA_SESION[argv[2]];
 };
@@ -2875,6 +2879,17 @@ function cmdCompleteStep(nRaw, flags) {
   syncSessionState(SID);
   process.stdout.write(JSON.stringify(marker, null, 2));
   if (nuevo) decirRenglonDelPaso(marker, paso);
+  avisarContextoAlCerrar(ids);
+}
+
+// Al cerrar un paso pesado con la sesión sobre el umbral de contexto, que es el momento de compactar o de abrir una
+// sesión nueva (scripts/hooks/context-size-notice.js). Avisa, nunca frena.
+function avisarContextoAlCerrar(ids) {
+  try {
+    const aviso = require(path.join(__dirname, '..', '..', '..', 'scripts', 'hooks', 'context-size-notice.js'))
+      .avisoAlCerrarPaso({ pasos: ids, sessionId: SID, home: os.homedir() });
+    if (aviso) process.stderr.write(`${aviso}\n`);
+  } catch (e) { process.stderr.write(`🧠 contexto: no pude medir la sesión al cerrar el paso (${e.message})\n`); }
 }
 
 /**
@@ -8032,10 +8047,13 @@ function cmdResumeAutonomy(argv) {
     writeMarker(fresco);
     syncSessionState(SID);
     appendLog('gates.log', { name: 'autonomy-resume', status: 'ok', via, by, huella: d.huella, reason: ahora.reason, detenidaEn: ahora.at });
-    process.stdout.write(`Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): corré los controles de nuevo antes de cerrar el turno.\n`);
+    process.stdout.write(SID === PROPIA ? `Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): corré los controles de nuevo antes de cerrar el turno.\n`
+      : `Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): la sesión ${SID} volvió al modo autónomo. Avisale que siga: corre los controles de nuevo antes de cerrar el turno.\n`);
     process.exit(0);
   };
-  if (!terminal) {
+  // pedida por la coordinadora para la sesión detenida: el permiso de la terminal es de esa sesión, que lo consume ella
+  const paraOtra = SID !== PROPIA && !terminal;
+  if (!terminal && !paraOtra) {
     const p = ad.tomarPermiso(STATE_DIR, SID, d.huella, { seco: PREVIO });
     if (p.permiso) {
       if (PREVIO) { process.stdout.write(`${ow.PRECHEQUEO_OK}\n`); process.exit(0); }
@@ -8066,6 +8084,8 @@ function cmdResumeAutonomy(argv) {
     process.stdout.write(`Una persona decidió seguir desde su terminal: el permiso quedó para la sesión ${SID}. Cuando esa sesión corra marker.js resume-autonomy, vuelve al modo autónomo.\n`);
     process.exit(0);
   }
+  // para otra sesión, con la firma se escribe su marcador: el que vio el dueño en el cuadro
+  if (paraOtra) trabajarSobreElDestino(ow, r);
   return aplicar({ via: r.via, by: (r.registro && r.registro.aprobada_en) || r.sesion || SID, at: nowIso() });
 }
 

@@ -33,8 +33,40 @@ const { resolveSessionId } = require('./lib/session-id.js');
 
 const CAP = 6;               // máx iteraciones del loop antes de escalar
 const MAX_NO_PROGRESS = 1;   // la primera vuelta que no resuelve ningún fallo escala: repetir el mismo intento no aprende nada
+// cierres seguidos con la misma medición (nada se volvió a correr) antes de escalar: no cuentan como vueltas, pero tampoco
+// dejan al agente cerrar en rojo para siempre
+const MAX_SAME_MEASURE = 3;
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const ACTIVE_DIR = path.join(STATE_DIR, 'active');
+
+/**
+ * La corrida de un control de esta sesión que todavía está en marcha (`marker.js run-check` toma un candado por control y
+ * repo, con la sesión y el proceso del comando), o null. Mientras corre, el resultado anotado es el de la corrida
+ * anterior: medirlo cuenta dos veces el mismo rojo. Sin el módulo del candado (un árbol sin el arnés) no se sabe: null.
+ */
+// Una corrida en marcha sirve para no medir sólo mientras es creíble: pasada una hora, o con su arranque ilegible, se
+// mide igual (un candado que nadie suelta no deja cerrar en rojo para siempre).
+const RUN_IN_FLIGHT_MAX_MS = 60 * 60 * 1000;
+function runInFlight(sessionId, now = Date.now()) {
+  let lock;
+  try { lock = require(path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'lock.js')); } catch (_) { return null; }
+  const dir = path.join(STATE_DIR, 'run-check-locks');
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch (_) { return null; }
+  for (const n of names) {
+    const owner = lock.readOwner(path.join(dir, n));
+    const e = owner && owner.extra;
+    if (!e || e.session !== sessionId || lock.ownerIsDead(owner)) continue;
+    const since = Date.parse(e.startedAt);
+    if (!Number.isFinite(since) || now - since > RUN_IN_FLIGHT_MAX_MS) continue;
+    return { check: e.check || n, since: e.startedAt, key: `${n}@${e.startedAt}` };
+  }
+  return null;
+}
+
+// Lo que se midió: el estado y la hora de cada control, la cantidad de pruebas en rojo y los fallos. Si es igual al de
+// la vuelta anterior, nada se volvió a correr: no hay vuelta nueva que juzgar.
+const measureOf = (marker, failedNow, failures) => JSON.stringify({ checks: marker.checks || {}, at: marker.checksAt || {}, failed: failedNow, failures });
 
 function markerPath(sessionId) {
   const safe = String(sessionId || '_nosession').replace(/[/\\]/g, '_');
@@ -326,8 +358,10 @@ function main() {
   const gate = computeGate(marker);
   if (gate.green) {                     // objetivo cumplido → deja cerrar
     // Un verde cierra el lazo: el próximo rojo es un primer rojo, aunque repita uno de antes.
-    if (last.length || marker.noProgressStreak || 'lastTestsFailed' in marker) {
-      marker.lastFailures = []; marker.noProgressStreak = 0; delete marker.lastTestsFailed; writeMarker(sessionId, marker);
+    if (last.length || marker.noProgressStreak || 'lastTestsFailed' in marker || marker.lastMeasure || marker.sameMeasureStreak || marker.waitedRun) {
+      marker.lastFailures = []; marker.noProgressStreak = 0; delete marker.lastTestsFailed;
+      delete marker.lastMeasure; delete marker.sameMeasureStreak; delete marker.waitedRun;
+      writeMarker(sessionId, marker);
     }
     if ((marker.checks || {}).tests === 'sin-turno') {
       toPerson = [toPerson, 'Las pruebas esperan el turno de la coordinadora: el portón no corrió y falta medirlas.'].filter(Boolean).join('\n');
@@ -346,6 +380,34 @@ function main() {
   // Con vuelta anterior, progresa si al menos un fallo previo desapareció, o si bajó la cantidad de pruebas en rojo
   // (el rótulo de `tests` es sólo el código de salida: arreglar 9 de 10 no lo cambia). Sin cantidad, vale el rótulo.
   const failedNow = testsFailedCount(marker);
+  // Una corrida de esta sesión en marcha: lo anotado es el resultado anterior. No se mide ni se cuenta; el turno cierra y
+  // el aviso de la corrida que termina lo vuelve a abrir.
+  // Una vez por corrida: si el turno se vuelve a cerrar con la misma corrida en marcha, se mide (y una medición igual a la
+  // anterior no cuenta, abajo).
+  const enCurso = runInFlight(sessionId);
+  if (enCurso && marker.waitedRun !== enCurso.key) {
+    marker.waitedRun = enCurso.key;
+    writeMarker(sessionId, marker);
+    toPerson = [toPerson, `El portón no mide: la corrida de «${enCurso.check}» sigue en marcha (desde ${enCurso.since}). Se mide cuando termine.`].filter(Boolean).join('\n');
+    return allowStop();
+  }
+  // La misma medición que la vuelta anterior (nada se volvió a correr): no es una vuelta nueva. No suma al tope ni a las
+  // vueltas sin progreso; tres seguidas escalan, para que el rojo no quede sin mirar.
+  const medida = measureOf(marker, failedNow, gate.failures);
+  if (last.length && marker.lastMeasure === medida) {
+    marker.sameMeasureStreak = (marker.sameMeasureStreak || 0) + 1;
+    if (marker.sameMeasureStreak >= MAX_SAME_MEASURE) {
+      return escalate(sessionId, marker, `${MAX_SAME_MEASURE} cierres seguidos sin volver a correr nada`, gate.failures);
+    }
+    writeMarker(sessionId, marker);
+    return blockStop(
+      `⛔ DoD todavía rojo, y es la misma medición que la vuelta anterior: nada se volvió a correr, así que no cuenta como ` +
+      `vuelta (iter ${marker.iter || 0}/${CAP}). Arreglá y volvé a correr lo que falla:\n` +
+      gate.failures.map((f) => `  - ${f}`).join('\n'),
+    );
+  }
+  marker.lastMeasure = medida;
+  marker.sameMeasureStreak = 0;
   const failedBefore = Number.isInteger(marker.lastTestsFailed) ? marker.lastTestsFailed : null;
   const fewerTests = failedNow !== null && failedBefore !== null && failedNow < failedBefore;
   const progressed = last.some((f) => !gate.failures.includes(f)) || fewerTests;

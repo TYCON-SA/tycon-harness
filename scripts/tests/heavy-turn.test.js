@@ -889,7 +889,8 @@ test('HT39 FirstSlot_FormatAndHolder_Unchanged @story-8.291 @ac-17 — el primer
   assert.strictEqual(secondAs(m, a, memory(62)).taken, true);
   const first = JSON.parse(fs.readFileSync(HT.turnFile(m.home), 'utf8'));
   assert.deepStrictEqual(Object.keys(first).sort(), ['at', 'pid', 'session', 'sid', 'what']);
-  assert.strictEqual(secondAs(m, process.pid, memory(62)).taken, true);
+  // la segunda, un segundo después: en el mismo milisegundo la más vieja se desempata por el proceso menor
+  assert.strictEqual(HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma' }, pid: process.pid, what: '204 suites de repo', readMemory: memory(62), now: first.at + 1000 }).taken, true);
   assert.strictEqual(HT.holder({ home: m.home }).pid, a, 'holder es la más vieja');
   const cli = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'holder', '--json'], { env: machineEnv(m), encoding: 'utf8' });
   assert.deepStrictEqual(JSON.parse(cli.stdout), first);

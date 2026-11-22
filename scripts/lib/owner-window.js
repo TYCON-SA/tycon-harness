@@ -43,7 +43,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, DELEGABLE_EXCEPTIONS, firmaDelPedidoAdhoc } = require('./signatures.js');
+const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, firmaDelPedidoAdhoc } = require('./signatures.js');
 const { approverOf } = require('./approver.js');
 const { casaDeLaCuenta } = require('./real-home.js');
 
@@ -948,6 +948,17 @@ function formaCanonica(palabras, { historia } = {}) {
   return [...prefijo, ...orden.flatMap((x) => x.p)];
 }
 
+/** La ruta resuelta del archivo de una firma sobre un archivo (`sign-file <firma> <archivo>`), o null. */
+function archivoDelPedido(firma, palabras, cwd) {
+  if (!String(firma).startsWith('escape:') || !FIRMAS_DE_ARCHIVO.includes(firma.slice('escape:'.length)) || !palabras) return null;
+  const i = palabras.indexOf('sign-file');
+  const archivo = i >= 0 ? palabras[i + 2] : undefined;
+  if (!archivo || archivo.startsWith('--')) return null;
+  // una ruta relativa sin la carpeta del pedido no se resuelve contra la de quien dibuja el cuadro: el mismo pedido daría
+  // otro sello en cada proceso. Queda el texto, marcado, y el click no vale para el pedido con carpeta
+  return path.isAbsolute(archivo) || cwd ? rutaReal(archivo, cwd) : `sin-carpeta:${archivo}`;
+}
+
 /**
  * El cuadro de opciones de una firma, armado por este módulo y no por el agente (owner-approvals.js `cuadroDe`). El mismo
  * pedido da el mismo cuadro: la huella y el comando que se muestra salen de su forma canónica (`formaCanonica`), sin la
@@ -989,8 +1000,10 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     partes = { queHace: [d.linea], fuente: '' };
     delComando = d.detalle;
   }
-  // la huella ata el click a lo que se mostró: el pedido y la fuente de la pregunta
-  const huella = sha256(`${delPedido}\0${partes.fuente || ''}`).slice(0, 8);
+  // la huella ata el click a lo que se mostró: el pedido y la fuente de la pregunta. Una firma sobre un archivo suma la
+  // ruta resuelta: una ruta relativa desde otra carpeta es otro archivo, y el click dado a uno no vale para el otro
+  const real = archivoDelPedido(firma, sinDestino, cwd);
+  const huella = sha256(`${delPedido}\0${partes.fuente || ''}${real ? `\0${real}` : ''}`).slice(0, 8);
   const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
     completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: partes.siSaleMal || s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
     // sólo la fuente que lee la explicación del cambio la trae (null si la leyó y no hay): las demás, el cuadro de siempre
@@ -1063,9 +1076,11 @@ function negarConElCuadro(motivo, ids, sesion, cuadro = null, deFondo = false, a
   // una sesión que abrió la coordinadora no le muestra el cuadro a la persona (scripts/hooks/background-question-guard.js):
   // se lo manda a la coordinadora, que lo muestra en su pestaña
   const aQuien = coordinadora ? `«${coordinadora.name}» (${coordinadora.sid})` : null;
-  if (aQuien && cuadro && cuadro.soloClick) {
-    return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esta sesión la abrió la coordinadora y esta firma sólo la aprueba un click en la pestaña que trabaja: no muestres el cuadro. `
-      + `Queda la terminal del dueño (${t || 'el mismo comando con --terminal'}): mandale eso a ${aQuien} por SendMessage, con lo que se decide en tres renglones, y esperá su aviso.` };
+  // la de sólo click vale únicamente en esta pestaña: el cuadro se muestra acá aunque la sesión la haya abierto la
+  // coordinadora, y ella se entera para que el dueño entre (o la abra por control remoto). La terminal queda de emergencia
+  if (aQuien && cuadro && cuadro.soloClick && !cuadro.error) {
+    return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo elige la persona con un click en el cuadro de opciones de esta pestaña, aunque la sesión la haya abierto la coordinadora: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}», con la descripción «${cuadro.descripciones[0]}», y «${cuadro.opciones[1]}», con la descripción «${cuadro.descripciones[1]}». `
+      + `Antes, avisale a ${aQuien} por SendMessage que hay un cuadro esperando en esta pestaña, con lo que se decide en tres renglones: el dueño lo contesta acá o por control remoto. Con su click, repetí el mismo comando. Un mensaje escrito no vale, ni un click en otra pestaña. ${otraForma}` };
   }
   if (aQuien && !anotado && cuadro && !cuadro.error && ids.length === 1) {
     return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esta sesión la abrió la coordinadora: no le muestres el cuadro a la persona. `
@@ -1618,7 +1633,8 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // delega con la misma condición (el guardado ajeno; el freno de los datos, nunca: delegated-signing.js)
   const clickDelDueno = pendientes.length === 1 && !!(firmaDe(pendientes[0]) || {}).clickDelDueno;
   // una firma de click que no es de esas no llega a preguntarle a la delegación, diga lo que diga el perfil
-  const clickDelegable = !(soloClick || clickDelDueno) || DELEGABLE_EXCEPTIONS.includes(pendientes[0]);
+  // y la que es sólo del dueño aunque se pida para otra sesión no le pregunta nunca, diga lo que diga la delegación
+  const clickDelegable = (!(soloClick || clickDelDueno) || DELEGABLE_EXCEPTIONS.includes(pendientes[0])) && !pendientes.some((id) => PARA_OTRA_SESION_SIN_DELEGAR.includes(id));
   if (!enWindows && clickDelegable) try {
     const estado = stateDir(casa);
     const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras), pendiente: pendienteDe(can && can.palabras) }));
@@ -2221,12 +2237,17 @@ function formasDeFirmar(firma, archivo, sesion, { casa } = {}) {
   const ventana = comoSeFirma(firma, archivo, { casa });
   const terminal = comoSeFirmaEnLaTerminal(firma, archivo, sesion, { casa });
   const sinCita = sinFormaDeTerminal(archivo, { casa });
+  // la que la coordinadora pide para esta sesión sin delegarla: el dueño la aprueba en la pestaña de ella
+  const desdeLaCoordinadora = PARA_OTRA_SESION_SIN_DELEGAR.includes(`escape:${firma}`) && SESION.test(String(sesion || '')) && sesion !== SIN_SESION
+    ? `${ventana} --for-session ${sesion}` : null;
   return {
     ventana,
     terminal,
+    desdeLaCoordinadora,
     renglones: [
       `en la ventana de permiso (la corre el agente y vos decís que sí): ${ventana}`,
       terminal ? `o en tu terminal: ${terminal}` : `o en tu terminal: ${sinCita || SIN_SESION_TERMINAL}`,
+      ...(desdeLaCoordinadora ? [`o desde la pestaña de la coordinadora, que la pide para esta sesión y vos la aprobás ahí (nunca por delegación): ${desdeLaCoordinadora}`] : []),
     ],
   };
 }
@@ -2443,7 +2464,7 @@ function quienFirmo({ via, sesion, automatica } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, padres, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, ofreceTrasDecidir, markerEstable,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 

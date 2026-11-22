@@ -22,7 +22,9 @@ Cómo se nombra: en cada máquina, el dueño le pide a la sesión elegida, con s
 perfil, esa sesión corre `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión
 es y en qué carpeta, y con el click del dueño queda nombrada y confirmada. El arnés no lee la frase. Para dejar de serlo,
 `marker.js withdraw-relay`, con su propio cuadro. Las dos firmas son sólo del dueño, con su click en la pestaña de esa
-sesión: no se delegan. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la terminal del
+sesión: no se delegan. Si a esa sesión la abrió de fondo otra coordinadora (`coordination.js open`), el cuadro se
+muestra igual en su pestaña y la sesión le avisa a la coordinadora que la abrió: el dueño lo contesta ahí o por
+control remoto. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la terminal del
 dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`). Sin perfil, por ahora se
 nombra con la frase (`designate-relay --approved-by '<el dev>' --quote '<su frase>'`).
 
@@ -1030,7 +1032,7 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
 | Un rojo no se deja | nadie | Los controles frenan lo propio; un rojo ajeno lo ve quien lo encuentra. |
 | No aflojar una revisión, no hacer papeleo | nadie | Es criterio: ningún dato separa una revisión de un papeleo. |
 | Comprobar un mensaje para el equipo | nadie | El mensaje sale por fuera de la máquina. |
-| La coordinadora no cambia código ni guías ella misma | freno | La sesión designada no escribe, edita ni borra archivos de un repo ni de la copia instalada del arnés, por Edit, Write o la consola: el freno le dice que lo encargue a una sesión. Su memoria y lo de fuera de los repos pasan. Límite, por elección: lo que escribe por dentro un guion guardado en un archivo no se mira, porque los guiones del arnés que corre la coordinadora escriben su estado. |
+| La coordinadora no cambia código ni guías ella misma | freno | La sesión designada no escribe, edita ni borra archivos de un repo ni de la copia instalada del arnés, por Edit, Write o la consola: el freno le dice que lo encargue a una sesión. Un comando de la consola lo corre ella misma si el dueño lo aprueba con un click en el cuadro que muestra el freno: ese comando exacto, una vez, dentro de 30 minutos; un mensaje que diga que autorizó no alcanza. `git worktree remove --force` también frena. Su memoria y lo de fuera de los repos pasan. Límite, por elección: lo que escribe por dentro un guion guardado en un archivo no se mira, porque los guiones del arnés que corre la coordinadora escriben su estado. |
 | Un plan para el dueño pasa antes por un revisor aparte | nadie | Es criterio: ningún dato separa un plan de un mensaje cualquiera. |
 | Afirmar sólo lo comprobado, y medir el uso antes de sacar algo | nadie | Es criterio de la coordinadora. |
 | Medir un cambio de velocidad en un día con carga | nadie | Qué cambio promete velocidad lo dice el mensaje, no un dato. |
