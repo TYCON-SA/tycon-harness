@@ -4556,6 +4556,14 @@ function destinosDeLaCoordinadora(cmd) {
       }
       const sub = resto[i];
       const deSub = resto.slice(i + 1);
+      // `worktree remove --force` borra la copia aunque tenga cambios sin commitear; sin `--force`, git no la borra si los tiene
+      if (sub === 'worktree' && deSub[0] === 'remove') {
+        // git acepta `--force` abreviado (`--fo`, `--forc`) y `-f` junto a otras letras
+        if (deSub.some((w) => (w.length >= 3 && '--force'.startsWith(w)) || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(w))) {
+          for (const w of deSub.slice(1)) if (!w.startsWith('-')) poner(w, base);
+        }
+        continue;
+      }
       if (!GIT_CAMBIA_EL_ARBOL.has(sub)) continue;
       if (sub === 'reset' && !deSub.some((w) => /^--(?:hard|merge|keep)$/.test(w))) continue;
       if (sub === 'clean' && deSub.some((w) => w === '-n' || w === '--dry-run')) continue;
@@ -4638,6 +4646,8 @@ function coordinadoraPorConsola(event, opts = {}) {
   };
   return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'coordination-writes.js')).judge({
     sessionId: event.session_id, files: archivos, home: opts.home, stateDir: opts.stateDir, installedRoots: opts.installedRoots,
+    // con el click del dueño a este comando exacto, pasa una vez
+    comando: original, cwd: baseCwd, casa: opts.casa, buscar: opts.buscarAprobacion, herramienta: opts.herramienta,
   });
 }
 
