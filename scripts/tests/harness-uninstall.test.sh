@@ -55,6 +55,9 @@
 # Uso: bash scripts/tests/harness-uninstall.test.sh [--only T18|T21|T26|T27|K3|REG|T38|S16]
 #   S16 · «deja» nombra ~/.claude/response-style/ y ~/.claude/safety-guard.log cuando existen.
 set -uo pipefail
+# partida en dos (scripts/tests/lib/suite-parts.sh): cada parte es harness-uninstall.p<k>.test.sh; a mano corre todo
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
+suite_parts 2
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=lib/tree-sums.sh
 source "$RAIZ/scripts/tests/lib/tree-sums.sh"   # la huella del HOME, antes de armar el laboratorio
@@ -66,8 +69,8 @@ FIX="$RAIZ/scripts/tests/fixtures/harness-managed-pieces.json"
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 FALLOS=0
-ok()  { echo "  ok   — $1"; }
-mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
+ok()  { suite_check; echo "  ok   — $1"; }
+mal() { suite_check; echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 T="$(mktemp -d)"
 node "$RAIZ/scripts/tests/lib/lab-guard.js" "$T" harness-uninstall || exit 1
 trap 'rm -rf "$T"' EXIT
@@ -230,7 +233,7 @@ print("piezas: %d" % len(found))
 sys.exit(1 if bad else 0)
 PY
 
-if corre T18; then
+if suite_part 1 && corre T18; then
   echo "T18 · Applier_ReportJson_AgainstDeclaredList_Ps1ByReading"
   H="$T/casa"
 
@@ -479,7 +482,7 @@ PY
   fi
 fi
 
-if corre T21; then
+if suite_part 2 && corre T21; then
   echo "T21 · Applier_NoLegacyBakUnderHarness_YesStandalone (aplicador .sh y reparador de la línea de arranque)"
   H="$T/casa21"
   # la máquina con un settings.json, un CLAUDE.md del dev y un pre-commit/post-commit ajenos que ya tienen su .local
@@ -655,7 +658,7 @@ for (const l of out.lines) console.log(l);
 process.exit(out.ok ? 0 : 1);
 JS
 
-if corre T26; then
+if suite_part 1 && corre T26; then
   echo "T26 · Uninstall_OnlyManaged_NeverVersionedInOtherRepo_WorksWithoutTree"
   T26_T0=$SECONDS
 
@@ -983,7 +986,7 @@ PY
   echo "  ·    T26 tardó $((SECONDS - T26_T0)) s"
 fi
 
-if corre T27; then
+if suite_part 1 && corre T27; then
   echo "T27 · Uninstall_ByteForByte_AliensAndLocalHookIntact"
   T27_T0=$SECONDS
   # la máquina del dev ANTES del arnés: settings.json con hooks ajenos y su propio formato (4 espacios, sin salto final),
@@ -1053,7 +1056,7 @@ fi
 # de la persona, un enlace por entrada adentro. Apuntan ADENTRO del árbol, no al árbol: `remove.js` los dejaba, y
 # `uninstall.js` los listaba como «no registrados». Acá: (a) los módulos, con sus espejos (lo que apunta a otro lado no se
 # toca); (b) de punta a punta, con el aplicador real, en las dos variantes.
-if corre K3; then
+if suite_part 2 && corre K3; then
   echo "K3 · Uninstall_SingleRepo_LinksIntoTheTree"
   K3_T0=$SECONDS
 
@@ -1293,7 +1296,7 @@ PY
   echo "  ·    K3 tardó $((SECONDS - K3_T0)) s"
 fi
 
-if corre REG; then
+if suite_part 2 && corre REG; then
   echo "REG · regresiones del pase adversarial (tanda C)"
   cat > "$T/reg.js" <<'JS'
 const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
@@ -1461,7 +1464,7 @@ fi
 # `uninstall` quita sólo lo registrado en las tres formas, y NO borra el clon viejo de skills ni toca su remoto: ni en la forma de
 # dos clones sin re-apuntar ni en la re-apuntada al repo unificado (que queda re-apuntado y mostrando sólo lo suyo:
 # deshacer la mudanza es la llave, no la desinstalación). Va al final: el laboratorio cambia la HOME de la suite.
-if corre T38; then
+if suite_part 2 && corre T38; then
   echo "T38 · Mechanism_SkillsSourceInThreeShapes_Uninstall"
   # shellcheck disable=SC1091
   source "$RAIZ/scripts/tests/lib/harness-lab.sh"
@@ -1496,7 +1499,7 @@ fi
 # La portada no puede decir «uninstall deshace todo»: el comando deja,
 # entre otras cosas, lo que guardaron dos hooks: las respuestas largas (`~/.claude/response-style/`) y los comandos
 # bloqueados (`~/.claude/safety-guard.log`). Las nombra en «deja» cuando existen, y sólo entonces.
-if corre S16; then
+if suite_part 2 && corre S16; then
   echo "S16-T6 · Uninstall_KeepsListed_ResponseStyleAndSafetyGuardLog"
   # shellcheck disable=SC1091
   source "$RAIZ/scripts/tests/lib/harness-lab.sh"
@@ -1525,6 +1528,7 @@ fi
 # ── T29 · Uninstall_DosFormas_DejaLaCarpetaNombrada ─────────────────────────────────────────────────
 # @story-8.39 @ac-22  uninstall reconoce el hook del arnés escrito con la ruta del Node propio (sin comillas, con
 # comillas, y la forma de Windows en texto) y deja ~/.tycon/node, nombrado en «deja» con el comando para borrarlo
+if suite_part 2; then
 echo "T29 · uninstall y el Node del arnés"
 T29_RES="$(node -e '
 const { isHarnessCommand } = require(process.argv[1]);
@@ -1552,6 +1556,9 @@ SALIDA="$(harness uninstall --yes < /dev/null 2>&1)"; RC=$?
 [ "$RC" = 0 ] && ! grep -q 'lab-hook.js' "$LAB_HOME/.claude/settings.json" 2>/dev/null && ok "T29 uninstall saca el hook en la forma nueva" || mal "T29 uninstall (rc $RC) dejó el hook: $(grep -c lab-hook.js "$LAB_HOME/.claude/settings.json" 2>/dev/null)"
 [ -d "$LAB_HOME/.tycon/node" ] && case "$SALIDA" in *"el Node propio del arnés $LAB_HOME/.tycon/node/ — para borrarlo: rm -rf"*) true ;; *) false ;; esac \
   && ok "T29 ~/.tycon/node queda, nombrado en «deja» con el comando para borrarlo" || mal "T29 la carpeta del Node: $( [ -d "$LAB_HOME/.tycon/node" ] && echo queda || echo borrada ) · salida: $(printf '%s' "$SALIDA" | grep -i 'node' | head -3)"
+
+fi
+suite_parts_end
 
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "❌ harness-uninstall: FALLARON $FALLOS chequeo(s)"; exit 1; fi
