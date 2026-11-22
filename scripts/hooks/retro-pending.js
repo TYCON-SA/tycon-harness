@@ -1077,6 +1077,27 @@ function hijoConOrigen(dir, ruta) {
   }
   return hallados.length === 1 ? hallados[0] : null;
 }
+/**
+ * La copia de trabajo del repo `ruta` (`dueño/repo`) que tiene la rama `rama`, buscada desde la carpeta `desde`: el clon
+ * que se llama como el repo, al lado de `desde` o adentro, con ese `origin`, y entre sus copias (`git worktree list`) la
+ * única con esa rama. Sin rama, sin clon o con más de una copia, null: no se adivina.
+ */
+function copiaConLaRama(desde, ruta, rama) {
+  if (!rama || !ruta) return null;
+  const nombre = ruta.split('/').pop();
+  for (const base of [path.dirname(desde), desde]) {
+    const cand = path.join(base, nombre);
+    const r = raizGit(cand);
+    if (!r || real(r) !== real(cand)) continue;
+    const origen = identidadRemoto(git(r, ['remote', 'get-url', 'origin']));
+    if (!origen || origen.ruta !== ruta) continue;
+    const copias = String(git(r, ['worktree', 'list', '--porcelain']) || '').split(/\n\s*\n/)
+      .map((b) => ({ dir: (/^worktree (.+)$/m.exec(b) || [])[1], rama: (/^branch refs\/heads\/(.+)$/m.exec(b) || [])[1] }))
+      .filter((x) => x.dir && x.rama === rama);
+    return copias.length === 1 ? copias[0].dir : null;
+  }
+  return null;
+}
 function pedidosDeAz(cmd, base) {
   const out = [];
   let statements = [];
@@ -1207,16 +1228,18 @@ function pedidosDeGh(cmd, cwd, powershell) {
     // los `cd` literales de la línea, en orden; `~` es la carpeta de la persona (la terminal la expande, `path` no)
     const dir = (c.cds || []).reduce((d, paso) => path.resolve(d, String(paso).replace(/^~(?=$|[\\/])/, os.homedir())), cwd);
     // desde la carpeta que agrupa los repos, `--repo` elige al hijo cuyo origin es ese repo
-    const root = git(dir, ['rev-parse', '--show-toplevel']) || (c.repo ? hijoConOrigen(dir, c.repo) : null);
-    if (!root) { out.push({ resuelto: false }); continue; }
+    let root = git(dir, ['rev-parse', '--show-toplevel']) || (c.repo ? hijoConOrigen(dir, c.repo) : null);
+    const propia = c.head && !c.head.includes(':') ? c.head : null;
     if (c.repo) {
-      // `--repo`/`GH_REPO` nombran un repo: si no es el `origin` de esta carpeta, el pedido es de OTRO repo
-      const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
-      if (!origen || origen.ruta !== c.repo) { out.push({ resuelto: false }); continue; }
+      // `--repo`/`GH_REPO` nombran un repo: si no es el `origin` de esta carpeta, el pedido es de OTRO repo. Se busca su
+      // copia por la rama de `--head` (el clon de ese repo al lado de esta carpeta, y la copia de trabajo con esa rama);
+      // sin una sola que la tenga, no se sabe dónde corre
+      const origen = root ? identidadRemoto(git(root, ['remote', 'get-url', 'origin'])) : null;
+      if (!origen || origen.ruta !== c.repo) root = copiaConLaRama(root || dir, c.repo, propia);
     }
+    if (!root) { out.push({ resuelto: false }); continue; }
     // la punta: la de la rama de `--head` o, sin `--head`, la de la rama en la que está la carpeta; con `dueño:rama` es
     // la de otro repo, y si no está en ningún lado, la de HEAD
-    const propia = c.head && !c.head.includes(':') ? c.head : null;
     const puntaPropia = propia && puntaDeLaRama(root, propia);
     const rama = puntaPropia ? ramaCorta(propia) : git(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
     let target = c.base;
