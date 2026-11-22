@@ -1,9 +1,15 @@
 'use strict';
 
 /**
- * Lo que sostiene partir marker.js por responsabilidad, antes de mover nada: lo que el despachador cargue de nuevo es
- * sensible (T16) y el recorrido del freno de guiones no corta callado (T14), porque partir suma un nivel de `require`
- * locales (despachador → módulo → ayudante).
+ * El contrato de marker.js partido por responsabilidad: cada subcomando da la misma salida, el mismo código y escribe los
+ * mismos archivos que antes de partir (T3), una diferencia se nombra (T11), y lo que sostiene la partición: el
+ * despachador y sus módulos por debajo del tope (T4), el freno los lee enteros (T5), un módulo que falta se dice (T10), las
+ * exportaciones no cambian (T15), lo que el despachador carga de nuevo es sensible (T16), el recorrido del freno no corta
+ * callado (T14) y lo publicado los lleva (T13).
+ *
+ * La foto de antes (`fixtures/split-contract/marker-before.json`) se graba con `SPLIT_CONTRACT_RECORD=1` sobre el
+ * marker.js sin partir. Cada caso corre en una carpeta fija (`<tmp>/split-contract/<caso>`), así las huellas que salen de
+ * una ruta son iguales entre la foto y la corrida; la normalización saca la carpeta, las fechas, las horas y los sellos.
  */
 
 const test = require('node:test');
@@ -11,9 +17,305 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const SCRIPTS = path.resolve(__dirname, '..');
+const FOTO = path.join(__dirname, 'fixtures', 'split-contract', 'marker-before.json');
+const SID = 'ses-contrato-8163';
+const GRABAR = process.env.SPLIT_CONTRACT_RECORD === '1';
+
+const FUERA_DEL_ENTORNO = ['TYCON_GUIDES_DIR', 'TCG', 'NODE_TEST_CONTEXT', 'TYCON_SKILLS_DIR', 'TYCON_HOME', 'TYCON_STATE_DIR',
+  'TYCON_AUTO_SNAPSHOT', 'TYCON_SNAPSHOT_GUARD', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'TYCON_SESSION_ID',
+  'CODEX_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'TYCON_EVIDENCE_DIR', 'TYCON_EVIDENCE_KEY', 'STOP_AUTONOMY',
+  'TYCON_HARNESS_LOCK_HELD', 'TYCON_TEST_GATE', 'TYCON_TEST_SCOPE', 'TF_BUILD', 'CI', 'GITHUB_ACTIONS'];
+
+function entorno(home, extra = {}) {
+  const env = { ...process.env };
+  for (const k of FUERA_DEL_ENTORNO) delete env[k];
+  return Object.assign(env, {
+    HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID, TYCON_PACKS_DEFAULT: 'none',
+    // sin el perfil del equipo: el árbol armado del portón trae la capa del equipo y la foto se grabó sin ella
+    TYCON_PROFILE: '0',
+    GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig-vacio'), TZ: 'UTC', LANG: 'C', LC_ALL: 'C',
+    GIT_AUTHOR_NAME: 'acme', GIT_AUTHOR_EMAIL: 'acme@example.invalid', GIT_COMMITTER_NAME: 'acme',
+    GIT_COMMITTER_EMAIL: 'acme@example.invalid', GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+  }, extra);
+}
+
+const HISTORIA = `---
+epic: 9
+story: "9.1"
+title: "Historia de juguete del contrato"
+status: in-progress
+pipelines:
+  - name: A-una
+    title: "una"
+    status: in-progress
+    acs_pending: [1]
+    tasks_pending: [1]
+    tests_pending: [T1]
+---
+
+# Story 9.1: Historia de juguete del contrato
+
+Status: in-progress
+
+## Acceptance Criteria
+
+1. **Given** algo **When** pasa **Then** se ve.
+
+### Tests (1 verificación)
+
+| # | Test | AC | Nivel | Escenario | Resultado esperado |
+|---|------|----|-------|-----------|--------------------|
+| T1 | \`Algo_Pasa_SeVe\` | 1 | unit | algo | se ve |
+
+## Tasks / Subtasks
+
+- [ ] Task 1: algo (AC: 1)
+`;
+
+/**
+ * Los casos: al menos uno por subcomando. `marcador`: arranca con un marcador de la historia de juguete. Las rutas van
+ * con marcas que el armado reemplaza: {REPO}, {STORY}, {HOME}. Los que piden una firma entran por su camino sin
+ * terminal (la salida nombra el comando que corre la persona).
+ */
+const CASOS = [
+  { id: 'set-sin-json', argv: ['set', '{no'] },
+  { id: 'set-ok', argv: ['set', '{"storyId":"9.1","storyPath":"{STORY}","repoPath":"{REPO}"}'] },
+  { id: 'get', marcador: true, argv: ['get'] },
+  { id: 'get-sin-marcador', argv: ['get'] },
+  { id: 'touch', marcador: true, argv: ['touch'] },
+  { id: 'complete-step-sin-paso', marcador: true, argv: ['complete-step'] },
+  { id: 'complete-step-numero', marcador: true, argv: ['complete-step', '3'] },
+  { id: 'complete-step-plan-sin-validar', marcador: true, argv: ['complete-step', 'plan'] },
+  { id: 'start-step', marcador: true, argv: ['start-step', 'validate-story'] },
+  { id: 'append-file', marcador: true, argv: ['append-file', '{REPO}/src/a.js'] },
+  { id: 'clear', marcador: true, argv: ['clear'] },
+  { id: 'is-active', marcador: true, argv: ['is-active'] },
+  { id: 'list-all', marcador: true, argv: ['list-all'] },
+  { id: 'find-by-story', marcador: true, argv: ['find-by-story', '9.1'] },
+  { id: 'clear-session-sin-id', argv: ['clear-session'] },
+  { id: 'restore-sin-id', argv: ['restore'] },
+  { id: 'restore-desconocida', argv: ['restore', 'ses-que-no-existe'] },
+  { id: 'adopt-session-sin-id', argv: ['adopt-session'] },
+  { id: 'update-story-status', marcador: true, argv: ['update-story-status', '{STORY}', 'review'] },
+  { id: 'update-story-status-invalido', marcador: true, argv: ['update-story-status', '{STORY}', 'cualquiera'] },
+  { id: 'update-pipeline-status', marcador: true, argv: ['update-pipeline-status', '{STORY}', 'A-una', 'blocked'] },
+  { id: 'mark-dod-runtime-checked-sin-json', marcador: true, argv: ['mark-dod-runtime-checked', '{no'] },
+  { id: 'set-autonomous', marcador: true, argv: ['set-autonomous', 'false'] },
+  { id: 'set-batch', marcador: true, argv: ['set-batch', 'A-una'] },
+  { id: 'set-check-sin-manual', marcador: true, argv: ['set-check', 'build', 'green'] },
+  { id: 'set-check-manual', marcador: true, argv: ['set-check', 'build', 'green', '--manual'] },
+  { id: 'run-check-ok', marcador: true, argv: ['run-check', 'build', '--', 'node', '-e', 'process.exit(0)'] },
+  { id: 'run-check-rojo', marcador: true, argv: ['run-check', 'build', '--', 'node', '-e', 'process.exit(3)'] },
+  { id: 'mark-tests-not-scoped', marcador: true, argv: ['mark-tests-not-scoped'] },
+  { id: 'tests-failed-sin-args', marcador: true, argv: ['tests-failed'] },
+  { id: 'mark-tests-not-measured', marcador: true, argv: ['mark-tests-not-measured'] },
+  { id: 'set-flag-sin-motivo', marcador: true, argv: ['set-flag', 'atddBypass', 'true'] },
+  { id: 'set-flag-con-motivo', marcador: true, argv: ['set-flag', 'atddBypass', 'true', '--reason', 'refactor sobre la red de siempre'] },
+  { id: 'start-warning', marcador: true, argv: ['start-warning', 'time-tracking', 'sin persona'] },
+  { id: 'close-as-debt-sin-args', marcador: true, argv: ['close-as-debt'] },
+  { id: 'lift-debt-sin-args', marcador: true, argv: ['lift-debt'] },
+  { id: 'expect-red-sin-args', marcador: true, argv: ['expect-red'] },
+  { id: 'note-red-test-sin-args', marcador: true, argv: ['note-red-test'] },
+  { id: 'set-size', marcador: true, argv: ['set-size', 'completa', '--reason', 'superficie compartida'] },
+  { id: 'set-models-sin-args', marcador: true, argv: ['set-models'] },
+  { id: 'mark-models-warned', marcador: true, argv: ['mark-models-warned'] },
+  { id: 'snapshot-iter-sin-n', marcador: true, argv: ['snapshot-iter'] },
+  { id: 'snapshot-iter', marcador: true, argv: ['snapshot-iter', '1'] },
+  { id: 'runtime-waiver-sin-args', marcador: true, argv: ['runtime-waiver'] },
+  { id: 'runtime-waiver-sin-terminal', marcador: true, argv: ['runtime-waiver', '{STORY}'] },
+  { id: 'waive-critical-sin-args', marcador: true, argv: ['waive-critical'] },
+  { id: 'waive-critical-sin-terminal', marcador: true, argv: ['waive-critical', '--rule', 'X-C1', '--file', 'src/a.js', '--reason', 'probado'] },
+  { id: 'compare-waiver-sin-args', marcador: true, argv: ['compare-waiver'] },
+  { id: 'sign-adversarial-skip-sin-args', marcador: true, argv: ['sign-adversarial-skip'] },
+  { id: 'approve-pending-sin-args', marcador: true, argv: ['approve-pending'] },
+  { id: 'approve-save-sin-args', marcador: true, argv: ['approve-save'] },
+  { id: 'plan-review-sin-plan', marcador: true, argv: ['plan-review'] },
+  { id: 'review-ask-sin-args', marcador: true, argv: ['review-ask'] },
+  { id: 'review-answer-sin-args', marcador: true, argv: ['review-answer'] },
+  { id: 'owner-away-sin-args', argv: ['owner-away'] },
+  { id: 'save-check-sin-args', marcador: true, argv: ['save-check'] },
+  // con una frase que no nombra el rol: sin frase, la respuesta depende de las firmas del perfil del equipo, que se leen
+  // siempre del perfil del árbol (ninguna variable las cambia) y el árbol armado del portón lo trae
+  { id: 'designate-relay-frase-sin-rol', argv: ['designate-relay', '--approved-by', 'acme', '--quote', 'hola'] },
+  { id: 'withdraw-relay', argv: ['withdraw-relay'] },
+  { id: 'mark-tested-sin-args', marcador: true, argv: ['mark-tested'] },
+  { id: 'mark-adversarial-launched', marcador: true, argv: ['mark-adversarial-launched', 'run-juguete', '4'] },
+  { id: 'freeze-adversarial', marcador: true, argv: ['freeze-adversarial'] },
+  { id: 'mark-adversarial-result-sin-json', marcador: true, argv: ['mark-adversarial-result', '{no'] },
+  { id: 'mark-adversarial-skipped-sin-args', marcador: true, argv: ['mark-adversarial-skipped'] },
+  { id: 'mark-adversarial-gate-sin-json', marcador: true, argv: ['mark-adversarial-gate', '{no'] },
+  { id: 'promote-probe-sin-args', marcador: true, argv: ['promote-probe'] },
+  { id: 'adhoc-get', argv: ['adhoc', 'get'] },
+  { id: 'adhoc-clear-sin-carril', argv: ['adhoc', 'clear'] },
+  { id: 'adhoc-set-sin-terminal', argv: ['adhoc', 'set', '{"reason":"arreglo del texto del botón","datos":"sin-cambio","allowedFiles":["src/a.js"]}'] },
+  { id: 'adhoc-desconocido', argv: ['adhoc', 'cualquiera'] },
+  { id: 'doing', marcador: true, argv: ['doing', 'algo de la historia', '--until', '23:59'] },
+  { id: 'doing-esperando', marcador: true, argv: ['doing', '--waiting-for', 'la firma del plan'] },
+  { id: 'story-skill-bypass', argv: ['story-skill-bypass'] },
+  { id: 'sign-file-sin-args', argv: ['sign-file'] },
+  { id: 'approve-mockup-sin-args', marcador: true, argv: ['approve-mockup'] },
+  { id: 'rethink-sin-args', marcador: true, argv: ['rethink'] },
+  { id: 'park-sin-args', marcador: true, argv: ['park'] },
+  { id: 'unpark-sin-args', argv: ['unpark'] },
+  // el estado que cambia mientras corre (SID, SOLO_LECTURA, NECESITA_MARCADOR): otra sesión, la terminal sin sesión
+  // propia y una firma para otra sesión
+  { id: 'get-para-otra-sesion', marcador: true, argv: ['get', '--for-session', 'ses-otra'] },
+  { id: 'set-check-para-otra-sesion', marcador: true, argv: ['set-check', 'build', 'green', '--manual', '--for-session', 'ses-otra'] },
+  { id: 'doing-terminal-sin-sesion', marcador: true, sinSesion: true, argv: ['doing', '--waiting-for', 'la firma', '--terminal', '--for-session', SID] },
+  { id: 'get-terminal-sin-sesion', marcador: true, sinSesion: true, argv: ['get', '--terminal', '--for-session', SID] },
+  { id: 'approve-pending-para-otra-sesion', marcador: true, argv: ['approve-pending', '--id', 'DEF-x', '--for-session', 'ses-otra'] },
+  { id: 'waive-critical-para-otra-sesion', marcador: true, argv: ['waive-critical', '--rule', 'X-C1', '--file', 'src/a.js', '--reason', 'probado', '--for-session', 'ses-otra'] },
+  // los subcomandos que nacieron después del primer borrador de la partición
+  { id: 'pr-sin-args', marcador: true, argv: ['pr'] },
+  { id: 'resume-autonomy-sin-pausa', marcador: true, argv: ['resume-autonomy'] },
+  { id: 'declare-pending-sin-args', marcador: true, argv: ['declare-pending'] },
+  { id: 'waiting-on-main-sin-args', marcador: true, argv: ['waiting-on-main'] },
+  { id: 'waiting-on-main-mark-sin-porton', marcador: true, argv: ['waiting-on-main', 'mark'] },
+  { id: 'desconocido', argv: ['cualquiera'] },
+  { id: 'sin-comando', argv: [] },
+];
+
+const reemplazar = (s, m) => String(s).replace(/\{REPO\}/g, m.repo).replace(/\{STORY\}/g, m.story).replace(/\{HOME\}/g, m.home);
+
+function git(dir, env, ...a) {
+  return spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', dir, ...a], { encoding: 'utf8', env });
+}
+
+/** La carpeta fija de un caso, vacía: la HOME y el repo de juguete con la historia. */
+function armar(caso) {
+  const raiz = path.join(fs.realpathSync(os.tmpdir()), 'split-contract', caso.id);
+  fs.rmSync(raiz, { recursive: true, force: true });
+  const home = path.join(raiz, 'home');
+  const repo = path.join(raiz, 'repo');
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  const story = path.join(repo, 'specs', 'story-9.1-juguete.md');
+  fs.writeFileSync(story, HISTORIA);
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'module.exports = 1;\n');
+  const env = entorno(home);
+  git(repo, env, 'init', '-q', '-b', 'main');
+  git(repo, env, 'add', '-A');
+  git(repo, env, 'commit', '-q', '-m', 'base');
+  return { raiz, home, repo, story, env };
+}
+
+/** Los archivos de la HOME y del repo (sin .git), con su texto. */
+function archivos(m) {
+  const out = {};
+  const recorrer = (base, etiqueta) => {
+    const pila = [base];
+    while (pila.length) {
+      const d = pila.pop();
+      let hijos = [];
+      try { hijos = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+      for (const h of hijos) {
+        const p = path.join(d, h.name);
+        if (h.isDirectory()) { if (h.name !== '.git') pila.push(p); continue; }
+        if (!h.isFile()) continue;
+        let t;
+        try { t = fs.readFileSync(p, 'utf8'); } catch { t = '<ilegible>'; }
+        out[`${etiqueta}/${path.relative(base, p)}`] = t;
+      }
+    }
+  };
+  recorrer(m.home, 'HOME');
+  recorrer(m.repo, 'REPO');
+  return out;
+}
+
+/**
+ * Lo que cambia de una corrida a otra sin que cambie el comportamiento: la carpeta del caso, las fechas, las horas, los
+ * sellos (milisegundos, pid, huellas largas) y las duraciones.
+ */
+function normalizar(texto, m) {
+  let t = String(texto);
+  for (const r of [m.raiz, fs.realpathSync(os.tmpdir()), os.tmpdir()]) t = t.split(r).join('<RAIZ>');
+  t = t.split(SCRIPTS).join('<GUIONES>');
+  // la raíz del arnés (sus scripts/lib, sus guías): la carpeta de la máquina no es comportamiento, ni se publica
+  t = t.split(path.resolve(SCRIPTS, '..', '..', '..')).join('<ARNES>');
+  t = t.split(os.homedir()).join('<CASA>');
+  // el usuario de la máquina (quién anotó algo): tampoco es comportamiento
+  const usuario = (() => { try { return os.userInfo().username; } catch { return ''; } })();
+  if (usuario.length >= 3) t = t.replace(new RegExp(`\\b${usuario.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), '<USUARIO>');
+  return t
+    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g, '<FECHA>')
+    .replace(/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:-\d+)?Z?/g, '<FECHA>')
+    .replace(/\d{4}-\d{2}-\d{2}T\d{4}(?:\d{2})?\b/g, '<FECHA>')
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, '<DIA>')
+    .replace(/\b\d{8}-?\d{6}\b/g, '<SELLO>')
+    .replace(/\b\d{13}\b/g, '<MS>')
+    .replace(/\b[0-9a-f]{12,}\b/g, '<HEX>')
+    // el sello de la copia congelada de un repo depende del árbol, no de lo que hace el subcomando
+    .replace(/\brepo-[0-9a-f]{8}\b/g, 'repo-<SELLO>')
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, '<HORA>')
+    .replace(/\b\d+(?:[.,]\d+)?\s?(ms|s|min)\b/g, '<N> $1')
+    .replace(/"(pid|ppid|durationMs|duration_ms|ms)":\s?\d+/g, '"$1":<N>');
+}
+
+/** Corre un caso contra `scripts` (la carpeta con marker.js): `{ status, stdout, stderr, archivos }`, normalizado. */
+function correr(caso, scripts = SCRIPTS) {
+  const m = armar(caso);
+  const marker = path.join(scripts, 'marker.js');
+  if (caso.marcador) {
+    const r = spawnSync(process.execPath, [marker, 'set', JSON.stringify({ storyId: '9.1', storyPath: m.story, repoPath: m.repo })],
+      { cwd: m.repo, env: m.env, encoding: 'utf8', timeout: 30000 });
+    if (r.status !== 0) throw new Error(`no pude armar el marcador del caso ${caso.id}: ${r.stderr}`);
+  }
+  const antes = archivos(m);
+  const env = { ...m.env };
+  if (caso.sinSesion) { delete env.CLAUDE_CODE_SESSION_ID; delete env.TYCON_SESSION_ID; }
+  const r = spawnSync(process.execPath, [marker, ...caso.argv.map((a) => reemplazar(a, m))],
+    { cwd: m.repo, env, encoding: 'utf8', timeout: 30000, input: '' });
+  const despues = archivos(m);
+  const cambiados = {};
+  for (const [k, v] of Object.entries(despues)) if (antes[k] !== v) cambiados[normalizar(k, m)] = normalizar(v, m);
+  for (const k of Object.keys(antes)) if (!(k in despues)) cambiados[normalizar(k, m)] = '<BORRADO>';
+  const out = { status: r.status, signal: r.signal || null, stdout: normalizar(r.stdout || '', m), stderr: normalizar(r.stderr || '', m), archivos: cambiados };
+  fs.rmSync(m.raiz, { recursive: true, force: true });
+  return out;
+}
+
+/**
+ * La primera diferencia entre dos resultados de un caso, en una línea legible, o null si son iguales: qué campo, qué
+ * renglón y qué decía antes y después.
+ */
+function diferencia(antes, despues) {
+  if (antes.status !== despues.status) return `código de salida: antes ${antes.status}, después ${despues.status}`;
+  if ((antes.signal || null) !== (despues.signal || null)) return `señal: antes ${antes.signal}, después ${despues.signal}`;
+  for (const campo of ['stdout', 'stderr']) {
+    if (antes[campo] === despues[campo]) continue;
+    const a = String(antes[campo]).split('\n');
+    const d = String(despues[campo]).split('\n');
+    const i = a.findIndex((l, k) => l !== d[k]);
+    const n = i === -1 ? a.length : i;
+    return `${campo}, renglón ${n + 1}: antes «${a[n] === undefined ? '<nada>' : a[n]}», después «${d[n] === undefined ? '<nada>' : d[n]}»`;
+  }
+  const ka = Object.keys(antes.archivos || {}).sort();
+  const kd = Object.keys(despues.archivos || {}).sort();
+  for (const k of new Set([...ka, ...kd])) {
+    if (!(k in (antes.archivos || {}))) return `archivo escrito sólo después: ${k}`;
+    if (!(k in (despues.archivos || {}))) return `archivo escrito sólo antes: ${k}`;
+    if (antes.archivos[k] !== despues.archivos[k]) {
+      const a = antes.archivos[k].split('\n');
+      const d = despues.archivos[k].split('\n');
+      const i = a.findIndex((l, j) => l !== d[j]);
+      const n = i === -1 ? a.length : i;
+      return `archivo ${k}, renglón ${n + 1}: antes «${a[n] === undefined ? '<nada>' : a[n]}», después «${d[n] === undefined ? '<nada>' : d[n]}»`;
+    }
+  }
+  return null;
+}
+
+const RAIZ_ARNES = path.resolve(SCRIPTS, '..', '..', '..');
 const LIB = path.join(SCRIPTS, 'lib');
+/** Los módulos de la partición que hay hoy: `lib/marker-*.js` (sin marker-command.js, que ya existía y es otra cosa). */
+const modulosDeLaParticion = (lib = LIB) => {
+  try { return fs.readdirSync(lib).filter((f) => /^marker-.+\.js$/.test(f) && f !== 'marker-command.js').sort(); } catch { return []; }
+};
 
 /**
  * Los `require` locales de un archivo, resueltos a rutas relativas a la raíz del arnés (con `/`): los literales
@@ -33,6 +335,92 @@ function requiresLocales(archivo, scriptsDir = SCRIPTS) {
   }
   return [...out].sort();
 }
+
+/** Las claves de `module.exports` de pipeline.js (se carga sin correr: tiene su guardia de `require.main`). */
+function clavesDePipeline(scriptsDir = SCRIPTS) {
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(Object.keys(require(${JSON.stringify(path.join(scriptsDir, 'pipeline.js'))})).sort()))`],
+    { encoding: 'utf8', env: entorno(fs.mkdtempSync(path.join(os.tmpdir(), 'split-claves-'))), timeout: 30000 });
+  if (r.status !== 0) throw new Error(`no pude cargar pipeline.js: ${r.stderr}`);
+  return JSON.parse(r.stdout);
+}
+
+/**
+ * Las claves de `module.exports` de marker.js, leídas del texto: el despachador corre al cargarse, así que no se puede
+ * hacer `require` sin correr un subcomando. Hoy no exporta nada.
+ */
+function clavesDeMarker(scriptsDir = SCRIPTS) {
+  const texto = fs.readFileSync(path.join(scriptsDir, 'marker.js'), 'utf8');
+  const claves = new Set();
+  for (const m of texto.matchAll(/module\.exports\s*=\s*\{([^}]*)\}/g)) for (const k of m[1].split(',')) if (k.trim()) claves.add(k.split(':')[0].trim());
+  for (const m of texto.matchAll(/module\.exports\.(\w+)\s*=/g)) claves.add(m[1]);
+  return [...claves].sort();
+}
+
+/** Corre todos los casos dos veces y deja afuera lo que no es estable entre corridas (eso no es comportamiento). */
+function grabar() {
+  const foto = { nota: 'salida de cada caso con el marker.js sin partir; grabada con SPLIT_CONTRACT_RECORD=1', casos: {} };
+  const inestables = [];
+  for (const caso of CASOS) {
+    const a = correr(caso);
+    const b = correr(caso);
+    const d = diferencia(a, b);
+    if (d) inestables.push(`${caso.id}: ${d}`);
+    foto.casos[caso.id] = a;
+  }
+  if (inestables.length) throw new Error(`casos inestables entre dos corridas (arreglá la normalización antes de grabar):\n${inestables.join('\n')}`);
+  foto.requires = requiresLocales(path.join(SCRIPTS, 'marker.js'));
+  foto.exports = { marker: clavesDeMarker(), pipeline: clavesDePipeline() };
+  fs.mkdirSync(path.dirname(FOTO), { recursive: true });
+  fs.writeFileSync(FOTO, JSON.stringify(foto, null, 2) + '\n');
+  return foto;
+}
+
+if (GRABAR) {
+  test('grabar la foto de antes', () => { grabar(); });
+} else {
+  test('T3 Marker_SameOutputsBeforeAndAfter @story-8.163 @ac-3', () => {
+    assert.ok(fs.existsSync(FOTO), `falta la foto de antes: ${FOTO}`);
+    const foto = JSON.parse(fs.readFileSync(FOTO, 'utf8'));
+    const faltan = CASOS.filter((c) => !foto.casos[c.id]).map((c) => c.id);
+    assert.deepStrictEqual(faltan, [], `casos sin foto de antes: ${faltan.join(', ')}`);
+    const distintos = [];
+    for (const caso of CASOS) {
+      const d = diferencia(foto.casos[caso.id], correr(caso));
+      if (d) distintos.push(`${caso.argv[0] || '(sin comando)'} · caso ${caso.id} · ${d}`);
+    }
+    assert.deepStrictEqual(distintos, [], `salidas que cambiaron al partir:\n${distintos.join('\n')}`);
+  });
+
+  test('T3b cada subcomando del despacho tiene al menos un caso @story-8.163 @ac-3', () => {
+    const texto = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+    const despacho = texto.slice(texto.lastIndexOf('switch (cmd)'));
+    const subcomandos = [...despacho.matchAll(/case '([\w-]+)':/g)].map((x) => x[1]);
+    assert.ok(subcomandos.length >= 65, `esperaba los 65 subcomandos del despacho, encontré ${subcomandos.length}`);
+    const conCaso = new Set(CASOS.map((c) => c.argv[0]));
+    const sin = subcomandos.filter((s) => !conCaso.has(s));
+    assert.deepStrictEqual(sin, [], `subcomandos sin caso: ${sin.join(', ')}`);
+  });
+}
+
+test('T11 Split_ChangedOutput_Named @story-8.163 @ac-11', () => {
+  const base = { status: 0, signal: null, stdout: 'uno\ndos\n', stderr: '', archivos: { 'HOME/a.json': '{"x":1}' } };
+  assert.strictEqual(diferencia(base, JSON.parse(JSON.stringify(base))), null, 'iguales: sin diferencia');
+  assert.match(diferencia(base, { ...base, status: 2 }), /código de salida: antes 0, después 2/);
+  assert.match(diferencia(base, { ...base, stdout: 'uno\ntres\n' }), /stdout, renglón 2: antes «dos», después «tres»/);
+  assert.match(diferencia(base, { ...base, archivos: { 'HOME/a.json': '{"x":2}' } }), /archivo HOME\/a\.json, renglón 1/);
+  assert.match(diferencia(base, { ...base, archivos: {} }), /archivo escrito sólo antes: HOME\/a\.json/);
+  // la prueba de T3 arma su mensaje con el subcomando, el caso y la diferencia
+  const caso = CASOS.find((c) => c.id === 'get');
+  const linea = `${caso.argv[0]} · caso ${caso.id} · ${diferencia(base, { ...base, status: 1 })}`;
+  assert.match(linea, /^get · caso get · código de salida: antes 0, después 1$/);
+});
+
+test('T15 Exports_SameKeysBeforeAndAfter @story-8.163 @ac-15', () => {
+  const foto = JSON.parse(fs.readFileSync(FOTO, 'utf8'));
+  assert.ok(foto.exports, 'la foto de antes trae las exportaciones');
+  assert.deepStrictEqual(clavesDeMarker(), foto.exports.marker, 'marker.js exporta lo mismo');
+  assert.deepStrictEqual(clavesDePipeline(), foto.exports.pipeline, 'pipeline.js exporta lo mismo');
+});
 
 /** Lo que cargan los archivos y no estaba en la lista de antes, y no es sensible. */
 function nuevosNoSensibles(antes, archivos, scriptsDir = SCRIPTS) {
@@ -209,3 +597,5 @@ test('T14 BashGate_ModuleWalk_ReadsAreBounded @story-8.163 @ac-14', () => {
     assert.notStrictEqual(frenar(d, './herr/guion'), '', 'un ejecutable de node que escribe una constancia frena');
   }
 });
+
+module.exports = { CASOS, correr, diferencia, normalizar, armar, entorno, requiresLocales, SID };
