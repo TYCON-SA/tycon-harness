@@ -1507,7 +1507,100 @@ function programasPorEntrada(cmd) {
   return out;
 }
 
+// Los programas que NO corren un texto que reciben. Es una lista de los que se sabe que no, y no de los que sí: las formas
+// de correr un texto no se terminan de enumerar (un shell con otro nombre o escrito entre comillas, `$0`, `trap`, `su -c`,
+// `ssh`, un intérprete que no estaba en la lista), así que lo que falta acá frena de más, nunca de menos. Sólo programas sin
+// ninguna opción que corra un texto: `git` (`rebase -x`, `submodule foreach`, un alias con `!`), `gh` (`alias set`), `az` y
+// `sort` (`--compress-program`) quedan afuera a propósito.
+const NO_CORREN_TEXTO = new Set(['echo', 'printf', 'cat', 'tee', 'cd', 'pwd', 'ls', 'mkdir', 'touch', 'head', 'tail', 'wc', 'grep',
+  'true', 'false', 'test', '[', 'uniq', 'cut', 'tr', 'date', 'sleep', 'jq', 'diff']);
+// lo que separa un comando del siguiente, y lo que abre uno adentro de otro (`$(…)`, comillas invertidas, `<(…)`, `>(…)`)
+const ENTRE_COMANDOS = /\$\(|<\(|>\(|[;&|\n(){}`]/;
+
+/**
+ * ¿Algo en el comando puede correr un texto? Ante la duda, sí. Sólo dice que no cuando cada programa del comando está
+ * escrito tal cual (sin comillas, barras ni `$`), es de `NO_CORREN_TEXTO`, no lleva variables asignadas delante (las
+ * que cambian lo que corre un programa: `GIT_SSH_COMMAND=…`, `PAGER=…`) y no hay palabras de control (`if`, `then`,
+ * `for`, `!`, `time`…). Los cuerpos de los heredocs no cuentan: el que va a un programa que corre texto ya está en su
+ * renglón (`cat <<EOF | bash`). Una comilla invertida escapada falla cerrado: empareja mal las sustituciones.
+ */
+function ejecutaTexto(cmd, hondo = 0) {
+  const s = sinHeredocs(String(cmd));
+  if (/\\`/.test(s)) return true;
+  // una sustitución corre aunque esté entre comillas dobles (`echo "$(bash -c x)"`): se mira lo de adentro, también
+  // la que está entre comillas simples (ahí no corre: mirarla frena de más, nunca de menos)
+  if (hondo > 4) return true;
+  for (const m of s.matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)|`([^`]*)`/g)) {
+    if (ejecutaTexto(m[1] !== undefined ? m[1] : m[2], hondo + 1)) return true;
+  }
+  const f = posicionesFueraDeComillas(s);
+  // lo citado o escapado queda como `"`: una palabra con eso adentro no es un programa escrito tal cual
+  let afuera = '';
+  for (let i = 0; i < s.length; i++) afuera += f(i) ? s[i] : f.esComentario(i) ? ' ' : '"';
+  for (const tramo of afuera.split(ENTRE_COMANDOS)) {
+    const palabras = tramo.trim().split(/\s+/).filter(Boolean);
+    let k = 0;
+    while (k < palabras.length && /^[A-Za-z_]\w*=/.test(palabras[k])) k++;   // las asignaciones de delante
+    if (k >= palabras.length) continue;                                       // sólo asignaciones, o vacío
+    if (k > 0) return true;                                                   // una variable que el programa lee
+    const programa = /^[^<>]*/.exec(palabras[k])[0];
+    if (!/^[A-Za-z0-9._[-]+$/.test(programa) || !NO_CORREN_TEXTO.has(programa)) return true;
+  }
+  return false;
+}
+
+/** El contenido de cada texto entre comillas del comando (`'…'`, `"…"`, `$'…'` con sus escapes de comilla y barra). */
+function citados(cmd) {
+  const out = [];
+  // fuera de los cuerpos de los heredocs: el de `git commit -m "$(cat <<'EOF' … EOF)"` es el mensaje que imprime `cat`,
+  // no un comando; el que va a un shell queda entero (`salvoShell`), y los demás caminos de un cuerpo a un programa los
+  // mira cada freno con su propio lector de heredocs
+  for (const m of sinHeredocs(String(cmd), { salvoShell: true }).matchAll(/\$'((?:\\.|[^'\\])*)'|'([^']*)'|"((?:\\.|[^"\\])*)"/g)) {
+    if (m[1] !== undefined) out.push(m[1].replace(/\\(['\\])/g, '$1'));
+    else if (m[2] !== undefined) out.push(m[2]);
+    else out.push(m[3].replace(/\\(["\\$`])/g, '$1'));
+  }
+  return out.filter((t) => t.trim());
+}
+
+/**
+ * ¿Cada posición del texto está fuera de comillas? Con las reglas de la terminal: entre comillas simples nada escapa,
+ * entre dobles la barra escapa, fuera la barra escapa el carácter que sigue y `$'…'` deja escapar su comilla.
+ */
+function posicionesFueraDeComillas(texto) {
+  const s = String(texto);
+  const fuera = new Array(s.length + 1).fill(true);
+  const comentario = [];
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      fuera[i] = false;
+      if (q === "'") { if (c === "'") q = null; continue; }
+      if (c === '\\') { fuera[i + 1] = false; i++; continue; }
+      if (c === (q === "$'" ? "'" : '"')) q = null;
+      continue;
+    }
+    if (c === '\\') { fuera[i + 1] = false; i++; continue; }
+    // un comentario (`#` al empezar una palabra) llega hasta el fin del renglón: una comilla adentro no abre nada
+    if (c === '#' && (i === 0 || /[\s;&|()]/.test(s[i - 1]))) {
+      while (i < s.length && s[i] !== '\n') { fuera[i] = false; comentario[i] = true; i++; }
+      i--;
+      continue;
+    }
+    // `$$` es el número del proceso: la comilla que lo siga es simple común, no `$'…'`
+    if (c === '$' && s[i + 1] === '$') { i++; continue; }
+    if (c === '$' && s[i + 1] === "'") { fuera[i] = false; fuera[i + 1] = false; q = "$'"; i++; continue; }
+    if (c === "'" || c === '"') { fuera[i] = false; q = c; }
+  }
+  const f = (i) => fuera[i] !== false;
+  f.esComentario = (i) => comentario[i] === true;
+  return f;
+}
+
 module.exports = {
+  // si un comando puede correr un texto, y qué hay entre comillas (los frenos de escritura y de sesiones)
+  ejecutaTexto, citados, posicionesFueraDeComillas,
   // las de siempre
   programasPorEntrada,
   sinHeredocs, segmentos, tokens, PREFIJOS, expandir, variablesDelComando, SIN_RESOLVER,

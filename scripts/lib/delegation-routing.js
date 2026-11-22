@@ -46,6 +46,9 @@ const RUTAS = Object.freeze({
   'manual-test': Object.freeze({ rutas: [], conPunto: [] }),
   'lost-run': Object.freeze({ rutas: [], conPunto: [] }),
   'escape:force-manual': Object.freeze({ rutas: [], conPunto: [] }),
+  // cambiar a mano el estado de una historia (sign-file cambiar-el-estado <archivo>): la constancia es de la sesión
+  // destino; el archivo, en la posición 3, tiene que venir absoluto
+  'escape:cambiar-el-estado': Object.freeze({ rutas: [], conPunto: [], absoluta: 3 }),
 });
 
 const no = (motivo, callar = false) => ({ ok: false, motivo, callar });

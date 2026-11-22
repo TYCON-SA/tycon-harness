@@ -186,6 +186,7 @@ TG_SUITES_PID=""
 TG_TREE_PUB_ROOT=""
 TG_NO_COMPANIONS=""
 TG_TREE_TOUCHED_FILE=""
+_TG_HEREDADOS_ARGS=()
 TG_TOP_FULL=""
 TG_FULL_SUITE_BY=""
 TG_MEASURED=""
@@ -322,7 +323,7 @@ correr_hermanos_al_salir() {
   [[ "$final" == "78" ]] && salir_esperando_a_main "repos hermanos (este repo: $rc)"
   node -e '
     const fs = require("fs"), p = require("path");
-    const [out, ts, storyId, rc, final, filas] = process.argv.slice(1);
+    const [out, ts, storyId, rc, final, filas, frescura, repoStory] = process.argv.slice(1);
     const companions = filas.split("\n").filter(Boolean).map((l) => {
       const [root, scope, archivos, exit] = l.split("\x1f");
       const n = Number(exit);
@@ -340,6 +341,16 @@ correr_hermanos_al_salir() {
     }
     art.companions = companions;
     art.all_green = Number(final) === 0;
+    // La huella de cada hermano, con su nombre, al lado de la de este repo: `suite-freshness.js
+    // check` la compara para saber si el verde sigue midiendo el código de los dos. La constancia que arma este bloque
+    // (este repo sin suite propia) no trae la de este repo: se mide acá. Si medir falla, la entrada queda sin huella y el
+    // chequeo dice «sin datos»: el hermano nunca se omite.
+    let sf = null;
+    try { sf = require(frescura); } catch (e) { process.stderr.write(`[test-gate] ⚠️  no pude cargar ${frescura} (${e && e.message}): la constancia queda sin la huella de los hermanos y el chequeo de frescura dirá «sin datos»\n`); }
+    if (sf) {
+      const propia = art.code_state && art.code_state.state_hash !== undefined ? art.code_state : sf.codeState(repoStory);
+      art.code_state = { ...propia, repos: sf.siblingStates(companions.map((c) => c.root)) };
+    }
     // este repo no tiene pruebas que el portón sepa correr, pero un hermano las corrió: lo medido es el hermano, y
     // «pruebas no medidas» ya no es cierto (el marcador lo dejó la corrida del hermano)
     if (art.no_stack && companions.some((c) => c.green)) {
@@ -358,7 +369,7 @@ correr_hermanos_al_salir() {
     }
     fs.mkdirSync(p.dirname(out), { recursive: true });
     fs.writeFileSync(out, JSON.stringify(art, null, 2) + "\n");
-  ' "$OUT_FILE" "$TS" "$STORY_ID" "$rc" "$final" "$filas" \
+  ' "$OUT_FILE" "$TS" "$STORY_ID" "$rc" "$final" "$filas" "$SCRIPT_DIR/lib/suite-freshness.js" "$REPO_STORY" \
     || echo "[test-gate] ⚠️  no pude anotar los repos hermanos en $OUT_FILE (mirá el error de arriba)" >&2
   if [[ "$final" == "7" ]]; then
     marcar_tests_en_rojo 7 "sin acotar: la cubre la CI del pedido (un repo hermano no se pudo acotar a lo tocado); no es verde"
@@ -885,6 +896,8 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     _tg_tree_field() { node -e 'const j=JSON.parse(process.argv[1]);const v=process.argv[2].split(".").reduce((o,k)=>o==null?o:o[k],j);process.stdout.write(v==null?"":String(v))' "$_TG_TREE_JSON" "$1"; }
     _TG_PUB_ROOT="$(_tg_tree_field base.root)"
     TG_TREE_PUB_ROOT="$_TG_PUB_ROOT"
+    # el juez de heredados mide un caso que la foto no conoce sobre los dos origin/main: le pasa de qué repos
+    _TG_HEREDADOS_ARGS=(--assembled --private "$(_tg_tree_field private.root)" --public "$_TG_PUB_ROOT")
     _tg_rama="$(_tg_tree_field base.branch)"
     _tg_equipo="$(_tg_tree_field team)"
     # de dónde salió la capa del equipo (lib/private-tree.js → teamLayer): la variable, lo que declara la máquina, o
@@ -1006,7 +1019,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     _TG_ONE_INHERITED=""
     if [[ "$_tg_rc" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
       _tg_her=0
-      TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
+      TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${_TG_HEREDADOS_ARGS[@]+"${_TG_HEREDADOS_ARGS[@]}"} || _tg_her=$?
       if [[ "$_tg_her" == "0" ]]; then
         echo "🟡 [test-gate] $SUITE_ONLY ya estaba roja antes del cambio, en el nocturno de esta mañana o en la base: avisa y no frena, igual que en la validación del pedido" >&2
         ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests-suite -- node -e 'console.error(`test-gate: ${process.argv[1]} ya estaba roja antes del cambio: avisa, no frena`)' "$SUITE_ONLY" ) >&2 \
@@ -1355,6 +1368,21 @@ else
   echo "[test-gate] vitest run --coverage (1 sola corrida)"
   ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
       bash -c "set -o pipefail; npx vitest run --coverage --reporter=json --outputFile $(printf %q "$RESULTS_DIR/vitest.json") 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
+  # Sin el paquete de la cobertura (un repo nuevo sin @vitest/coverage-v8), vitest sale en rojo aunque las pruebas pasen:
+  # no es un rojo de las pruebas. Se vuelven a correr sin cobertura, para que el check diga lo que pasó con ellas, y la
+  # cobertura queda «no medida» con el paquete que falta.
+  TG_COV_MISSING=""
+  if [[ "$SUITE_EXIT" != "0" && -f "$RESULTS_DIR/run.log" ]]; then
+    TG_COV_MISSING="$(grep -oE "Cannot find (dependency|package|module) '@vitest/coverage-[a-z0-9-]+'" "$RESULTS_DIR/run.log" | grep -oE "@vitest/coverage-[a-z0-9-]+" | head -1)"
+  fi
+  if [[ -n "$TG_COV_MISSING" ]]; then
+    echo "🟡 [test-gate] cobertura no medida: falta $TG_COV_MISSING (instalalo en el repo: npm i -D $TG_COV_MISSING). Corro las pruebas sin cobertura." >&2
+    SUITE_EXIT=0
+    # una cobertura de una corrida anterior no se lee como la de ésta; y la del archivo de configuración queda apagada
+    rm -rf "$REPO_RUN/coverage"
+    ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
+        bash -c "set -o pipefail; npx vitest run --coverage.enabled=false --reporter=json --outputFile $(printf %q "$RESULTS_DIR/vitest.json") 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
+  fi
 fi
 
 # De 3 a 7 son salidas del propio gate («sin suite», «no sé el alcance»…): una herramienta de pruebas que sale así
@@ -1394,7 +1422,7 @@ if [[ "$RUNNER" == "suites-json" && "$SUITE_EXIT" == "1" && -f "$RESULTS_DIR/sui
   cp "$RESULTS_DIR/suites.json" "$RESULTS_DIR/suites-antes-del-perdon.json" \
     || echo "[test-gate] ⚠️  no pude copiar el resumen de antes del perdón: si esta completa sale verde por lo heredado, no la guardo" >&2
   _tg_her=0
-  TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
+  TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${_TG_HEREDADOS_ARGS[@]+"${_TG_HEREDADOS_ARGS[@]}"} || _tg_her=$?
   if [[ "$_tg_her" == "0" ]]; then
     echo "🟡 [test-gate] todo lo rojo ya estaba rojo antes del cambio, en el nocturno de esta mañana o en la base (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
     ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo rojo ya estaba rojo antes del cambio: avisa, no frena")' ) >&2 \
@@ -1580,7 +1608,7 @@ BASE_REF="$(node -e 'try{const j=JSON.parse(process.argv[1]);process.stdout.writ
 # `realpath`, que en un Git Bash pueden faltar: el informe trae su propio reemplazo de los dos.
 # El artefacto de una corrida anterior se borra antes: si el informe falla, no puede quedar un verde viejo a la vista.
 rm -f "$OUT_FILE"
-TYCON_TEST_GATE_AFTER_MAIN="${TG_AFTER_MAIN:-}" TYCON_TEST_GATE_TREE_TOUCHED="${TG_TREE_TOUCHED_FILE:-}" node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESULTS_DIR" "$OUT_FILE" "$SUITE_EXIT" "$STORY_ID" "$COV_MIN" "$TS" "$TEST_PROJECT_COUNT" "$SCOPE" "$SCOPE_SOURCE" "$DECLARED_NEW" "$CODE_STATE_JSON" "$BASE_REF" "$BASE_JSON" \
+TYCON_TEST_GATE_COVERAGE_MISSING="${TG_COV_MISSING:-}" TYCON_TEST_GATE_AFTER_MAIN="${TG_AFTER_MAIN:-}" TYCON_TEST_GATE_TREE_TOUCHED="${TG_TREE_TOUCHED_FILE:-}" node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESULTS_DIR" "$OUT_FILE" "$SUITE_EXIT" "$STORY_ID" "$COV_MIN" "$TS" "$TEST_PROJECT_COUNT" "$SCOPE" "$SCOPE_SOURCE" "$DECLARED_NEW" "$CODE_STATE_JSON" "$BASE_REF" "$BASE_JSON" \
   || echo "[test-gate] ⚠️  el informe falló (lib/test-gate-report.js): mirá el error de arriba; no quedó artefacto" >&2
 
 # 🔴 Una suite que sale 0 sin haber corrido ninguna prueba (o sin informe que lo cuente) NO es verde (story 8.17,

@@ -880,6 +880,9 @@ function informe(argv) {
       }
     } else {
       const covf = path.join(repoRun, 'coverage', 'coverage-final.json');
+      // sin el paquete de la cobertura, test-gate.sh corrió las pruebas sin ella: quien lee el informe ve por qué
+      const faltaCob = process.env.TYCON_TEST_GATE_COVERAGE_MISSING;
+      if (!existe(covf) && faltaCob) result.coverage.not_measured = `cobertura no medida: falta ${faltaCob} (instalalo en el repo: npm i -D ${faltaCob})`;
       if (existe(covf)) {
         const d = leerJson(covf);
         for (const [ruta, entry] of Object.entries(d)) {
@@ -1075,7 +1078,9 @@ function informe(argv) {
       }
     } else {
       const covf = path.join(repoRun, 'coverage', 'coverage-final.json');
-      if (!existe(covf)) throw new Error('la corrida no dejó reporte de cobertura (coverage/coverage-final.json)');
+      // sin el paquete de la cobertura, test-gate.sh corrió las pruebas sin ella: se dice cuál falta
+      const falta = process.env.TYCON_TEST_GATE_COVERAGE_MISSING;
+      if (!existe(covf)) throw new Error(falta ? `cobertura no medida: falta ${falta} (instalalo en el repo: npm i -D ${falta})` : 'la corrida no dejó reporte de cobertura (coverage/coverage-final.json)');
       const d = leerJson(covf);
       for (const [ruta, entry] of Object.entries(d)) {
         const sm = get(entry, 'statementMap') || {};
