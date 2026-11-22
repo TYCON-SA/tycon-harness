@@ -262,9 +262,10 @@ cuidan esa carpeta entera, con Edit, Write y por consola, igual que los registro
 solo: es el mismo límite que tienen esos registros. Cerrarlo pide un proceso aparte con otro dueño, que queda para más
 adelante.
 
-Pendiente: `escape:TYCON_SAFETY_OFF` y `escape:TYCON_PROD_LINT` siguen en el catálogo de firmas aunque ya nada las
-pide. Se retiran en una tanda aparte, porque un perfil del equipo que las nombra en `approvals.owner_only` se leería
-roto.
+`escape:TYCON_SAFETY_OFF` y `escape:TYCON_PROD_LINT` siguen en el catálogo de firmas, marcadas retiradas: ya no apagan
+nada, ya nada las pide, y su fila de [las firmas del dueño](firmas-del-arnes.md) da la emergencia como salida. Siguen
+ahí porque sin ellas un perfil del equipo que las nombra en `approvals.owner_only` se leería roto; sacarlas pide migrar
+ese perfil.
 
 ### El estado de la historia y el marcador
 

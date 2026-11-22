@@ -1744,6 +1744,12 @@
       "requiere": []
     },
     {
+      "__nota": "ninguna guía ofrece un escape que ya no apaga nada: la lista sale de los retirados del catálogo de firmas, y cada párrafo que nombra uno dice que está retirado o figura en las excepciones con su motivo.",
+      "raiz": "arnes",
+      "ruta": "tests/retired-escape-docs.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/e2e-gate-key.test.sh",
       "requiere": []
