@@ -422,6 +422,31 @@ test('T6 No_SacaElRenglon_LaSesionSigueDetenida @story-8.298 @ac-5 @ac-18', (t) 
   assert.ok(!fs.existsSync(path.join(ilegible.raiz, 'exigir')), 'no pide la firma');
 });
 
+// 🔴 Falla con: decir «sin renglón en la lista» cuando la lista tiene filas que no se entienden (puede estar ahí), o
+//    contar el «No» roto de otra sesión, que frenaba el regreso automático de todas las detenidas.
+test('Recordatorio_FilasIlegibles_NoDiceSinRenglon_YNoRotoDeOtraSesion', (t) => {
+  const c = casaNueva(t);
+  escribirMarcador(c, DETENIDA);
+  fs.mkdirSync(path.join(c.estado, 'coordination'), { recursive: true });
+  // una fila de firma a medias (sin su comando): puede ser la de esta detención, y no se entiende
+  fs.writeFileSync(path.join(c.estado, 'coordination', 'signatures.json'), JSON.stringify([{ tipo: 'firma', id: 'f1', firma: 'autonomy-resume', destino: S }]));
+  const rec = ad.recordatorio({ casa: c.casa, sesion: S, marker: leerMarcador(c) });
+  assert.match(rec, /no sé si tiene renglón en la lista: 1 fila de la lista de firmas no se entienden/, rec);
+  assert.doesNotMatch(rec, /sin renglón en la lista|f1/, 'ni «sin renglón» ni el texto de la fila');
+  // el renglón real del «No» lleva primero quién rechaza y el destino al final. Roto con el destino entero y de otra
+  // sesión, no es de ésta (tampoco de la coordinadora que rechazó); cortado antes del destino, puede serlo: cuenta
+  const otra = casaNueva(t);
+  fs.appendFileSync(path.join(otra.estado, 'gates.log'), `{"ts":"2026-01-01T00:00:00.000Z","name":"signature-rejected","sessionId":"${S}","firma":"autonomy-resume","destino":"${T}"\n`);
+  assert.strictEqual(ad.rechazoDe({ casa: otra.casa, sesion: S, detencion: { at: null } }), null, 'el roto es de otra sesión');
+  assert.ok(ad.rechazoDe({ casa: otra.casa, sesion: T, detencion: { at: null } }).ilegible, 'para su sesión sigue ilegible');
+  const cortado = casaNueva(t);
+  fs.appendFileSync(path.join(cortado.estado, 'gates.log'), `{"ts":"2026-01-01T00:00:00.000Z","name":"signature-rejected","sessionId":"coord","firma":"autonomy-resume","desti\n`);
+  assert.ok(ad.rechazoDe({ casa: cortado.casa, sesion: S, detencion: { at: null } }).ilegible, 'cortado antes del destino: cuenta');
+  const enElId = casaNueva(t);
+  fs.appendFileSync(path.join(enElId.estado, 'gates.log'), `{"ts":"2026-01-01T00:00:00.000Z","name":"signature-rejected","sessionId":"coord","firma":"autonomy-resume","destino":"ses-\n`);
+  assert.ok(ad.rechazoDe({ casa: enElId.casa, sesion: S, detencion: { at: null } }).ilegible, 'cortado dentro del destino: cuenta');
+});
+
 // ── Modos de falla ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 // 🔴 Falla con: un cierre trabado porque la lista no se pudo escribir, o una detención que no dice que no quedó en la lista.
