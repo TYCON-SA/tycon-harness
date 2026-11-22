@@ -1083,3 +1083,18 @@ test('T43 Nightly_SanitizesBeforeCutAndLowercase — la clave del grupo, el patr
   assert.ok(!todo.includes(valor.toLowerCase()), 'ni en minúscula llega al modelo');
   for (const p of propuestasDe(b)) assert.ok(!String(p.patron).toLowerCase().includes(valor.toLowerCase()), p.patron);
 });
+
+test('T44 Nightly_RevisionPromptSanitizesDecidedProposals — lo ya decidido que lee el pedido de revisión pasa por el saneado', async () => {
+  const b = base('revision-saneada');
+  const valor = ['Zq9xLm4v', 'Rt7wKp'].join('');
+  const d = diaMenos(1);
+  const lineas = veces(6, d, 'acme/api', 'npm run build -- --prod');
+  espejo(b.espejo, { 'mac-a': { [d]: lineas }, 'mac-b': { [d]: lineas } });
+  // una propuesta aprobada por otra noche, escrita con el saneado de entonces
+  const comun = { herramienta: 'Bash', repo: 'acme/api', veces: 6, maquinas: 2, desde: d, hasta: d, propuesta_el: diaMenos(5), sin_redaccion: null, modelo: null };
+  escribirPropuesta(b, { ...comun, huella: 'aaaaaaaaaa', estado: 'aprobada', patron: 'export clientSecret', redaccion: { trigger: `cuando hagas export clientSecret=${valor}`, action: `corré export clientSecret=${valor}` }, decision: { texto: `corré export clientSecret=${valor}` } });
+  const r = await noche(b);
+  assert.strictEqual(r.codigo, 0);
+  assert.ok(r.m.revisiones.length > 0, 'la noche hizo el pedido de revisión');
+  assert.ok(!r.m.revisiones.join('\n').includes(valor), 'lo decidido llega al modelo saneado');
+});

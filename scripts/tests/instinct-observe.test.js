@@ -458,3 +458,34 @@ test('T44 Observe_MoreCredentialForms_Masked — un nombre en mayúsculas, un JS
     assert.strictEqual(s(una), una, una.slice(-30));
   }
 });
+
+test('T45 Observe_ThirdRoundForms — la herramienta por su ruta o con .exe, secretKey, una sigla delante, PowerShell, sshpass, redis-cli -a, mongosh, un usuario de dominio', () => {
+  const s = (x) => obs.sanitize(x, null);
+  for (const cmd of [
+    `docker exec -it sql1 /opt/mssql-tools18/bin/${SQLCMD} -S localhost -U sa -P "${CLAVE}" -C -Q "select 1"`,
+    `${SQLCMD}.exe -S h -U sa -P ${CLAVE} -Q x`,
+    `./${SQLCMD} -P ${CLAVE}`,
+    `/usr/local/mysql/bin/mysql -uroot -p${CLAVE} app`,
+    `curl -d '{"secretKey":"${CLAVE}"}' x`,
+    `node app.js --privateKey ${CLAVE}`,
+    `export DB${PASS.slice(0, 1)}${PASS.slice(1).toLowerCase()}=${CLAVE}`,
+    `$sec = ConvertTo-SecureString '${CLAVE}' -AsPlainText -Force`,
+    `New-LocalUser -Name dev -${PASS.slice(0, 1)}${PASS.slice(1).toLowerCase()} (ConvertTo-SecureString '${CLAVE}' -AsPlainText -Force)`,
+    `sshpass -p '${CLAVE}' ssh dev@acme.test`,
+    `redis-cli -h cache -a ${CLAVE} ping`,
+    `mongosh mongodb://h --username dev -p ${CLAVE}`,
+    `curl -u 'CORP\\jdoe:${CLAVE}' https://intranet.acme.test`,
+  ]) {
+    const out = s(cmd);
+    assert.ok(!out.includes(CLAVE), out);
+    assert.strictEqual(s(out), out, `sanear dos veces deja lo mismo: ${out}`);
+  }
+  for (const cmd of [
+    'docker run --user 1000:1000 img', 'docker run -u 1000:1000 img', j('x abc_', 'ghs', '_abcdefghijklmnopqrstuvwxyz_total'),
+    'export TYCON_BYPASS=yesyesyes', 'export COMPASS=northnorth', `node -e "cfg({ pass${'word'}: false, secret: null })"`,
+    'grep -rn secretKey src/config', `curl -d "{\\"pass${'word'}\\":\\"$PW\\"}" x`, 'redis-cli -u redis://:$REDIS_PW@cache',
+    'Invoke-RestMethod -Headers @{Authorization="Bearer $token"}',
+  ]) {
+    assert.strictEqual(s(cmd), cmd);
+  }
+});
