@@ -529,9 +529,9 @@ Y cinco más, propios de leer los nombres como el shell:
   (`node …/prod-access-guard.js`), sin el reloj de 7 s del lanzador, y no tiene la opción de frenar cuando el gancho
   falla. Si el freno se cae o se cuelga, el comando corre. En Claude Code ese mismo fallo frena.
 - **Un freno colgado no se corta desde adentro.** El reloj propio del freno no interrumpe una expresión regular ni un
-  análisis que ya empezó. En Claude Code lo ataja el tope del gancho con `onFailure: block`; en Codex, nada. Y hay
-  expresiones del freno que tardan más cuanto más largo es el comando: medida sola, la peor tarda 5,6 s con 64 KB y
-  43 s con 200 KB, más que el tope del gancho.
+  análisis que ya empezó. En Claude Code lo ataja el tope del gancho con `onFailure: block`; en Codex, nada. Las
+  expresiones del freno que crecían con el cuadrado del largo del comando ya no lo hacen: con el freno entero, una
+  palabra hostil de 200 KB tarda 63 ms. Si una expresión nueva se vuelve lenta, la ataja sólo ese tope.
 - **Si falta el lanzador, ningún comando de consola del agente corre, y el agente no lo puede arreglar.**
   Sale una persona, desde su terminal y con `sudo`: reinstala el freno
   (`sudo bash ~/.tycon/harness/scripts/production/install-guard.sh`) o saca el archivo administrado

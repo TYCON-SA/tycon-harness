@@ -1027,3 +1027,74 @@ test('T40 4.14-Filter_PathsGluedToShellSigns — una temporal o la ruta de una m
     assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
   }
 });
+
+test('T41 Nightly_ModelPromptIsSanitized — la clave y los resúmenes que van al modelo pasan por el saneado', async () => {
+  const b = base('prompt-saneado');
+  // un token de GitHub de laboratorio, armado por partes: un día subido antes del arreglo del saneado lo puede traer
+  const gho = ['gho', '_', 'abcdefghijklmnopqrstuvwxyz0123'].join('');
+  const largo = `gh api repos/acme/api/pulls --paginate --jq '.[].number' -H "X: ${gho}"`;
+  const enLaClave = `export X=${gho} && npm run build -- --prod`;
+  const d = diaMenos(1);
+  const lineas = [...veces(6, d, 'acme/api', largo), ...veces(6, d, 'acme/api', enLaClave)];
+  espejo(b.espejo, { 'mac-a': { [d]: lineas }, 'mac-b': { [d]: lineas } });
+  const r = await noche(b);
+  assert.strictEqual(r.codigo, 0);
+  assert.ok(r.m.propuestas.length > 0, 'la noche le pidió propuestas al modelo');
+  const todo = [...r.m.propuestas, ...r.m.revisiones, ...r.m.recomendaciones].join('\n');
+  assert.ok(!todo.includes(gho), 'el token no llega al modelo');
+  assert.match(todo, /\[REDACTED-GHP\]/);
+});
+
+test('T42 4.14-Filter_WindowsTempAndCutKeys — el temporal de Windows por su variable, la carpeta de la sesión cortada y el repo con unidad', () => {
+  for (const summary of [
+    'Remove-Item $env:TEMP\\lab -Recurse -Force',
+    'New-Item -ItemType Directory "$env:TEMP\\probe"',
+    'cd $env:TMP\\x',
+    'Set-Location ${env:TEMP}\\x',
+    'cd %TEMP%\\probe && dir',
+    'copy a.txt %TMP%\\b.txt',
+    // la variable de Windows por partes: el control de nombres la leería como una variable nueva
+    `Get-ChildItem $env:${'LOCAL'}APPDATA\\Temp\\x`,
+    'cat $HOME/.claude/jobs',
+  ]) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), 'carpeta_de_trabajo', summary);
+  }
+  // un nombre que sólo empieza como TEMP no es el temporal
+  for (const summary of ['echo $env:TEMPLATE', 'type %TEMPLATES%\\x', 'npm run template']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
+  }
+  // en Windows, un repo en otra unidad que la casa queda grabado con su unidad: es la ruta de una máquina
+  assert.strictEqual(N.motivoDeRuido({ repo: 'D:/work/api', summary: 'npm test -- --watch=false' }), 'ruta_de_una_maquina');
+  assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary: 'npm test -- --watch=false' }), null);
+});
+
+test('T43 Nightly_SanitizesBeforeCutAndLowercase — la clave del grupo, el patrón y todo lo que va al modelo salen del resumen ya saneado', async () => {
+  const b = base('saneado-antes-del-corte');
+  // un valor de laboratorio y dos formas que el saneado viejo dejaba pasar: un día subido antes del arreglo las trae así
+  const valor = ['Zq9xLm4v', 'Rt7wKp'].join('');
+  const sql = ['sql', 'cmd'].join('');
+  const d = diaMenos(1);
+  const lineas = [...veces(6, d, 'acme/api', `export clientSecret=${valor} && npm run deploy`), ...veces(6, d, 'acme/api', `${sql} -U sa -P ${valor} -Q x`)];
+  espejo(b.espejo, { 'mac-a': { [d]: lineas }, 'mac-b': { [d]: lineas } });
+  const r = await noche(b);
+  assert.strictEqual(r.codigo, 0);
+  const todo = [...r.m.propuestas, ...r.m.revisiones, ...r.m.recomendaciones].join('\n').toLowerCase();
+  assert.ok(r.m.propuestas.length > 0, 'la noche le pidió propuestas al modelo');
+  assert.ok(!todo.includes(valor.toLowerCase()), 'ni en minúscula llega al modelo');
+  for (const p of propuestasDe(b)) assert.ok(!String(p.patron).toLowerCase().includes(valor.toLowerCase()), p.patron);
+});
+
+test('T44 Nightly_RevisionPromptSanitizesDecidedProposals — lo ya decidido que lee el pedido de revisión pasa por el saneado', async () => {
+  const b = base('revision-saneada');
+  const valor = ['Zq9xLm4v', 'Rt7wKp'].join('');
+  const d = diaMenos(1);
+  const lineas = veces(6, d, 'acme/api', 'npm run build -- --prod');
+  espejo(b.espejo, { 'mac-a': { [d]: lineas }, 'mac-b': { [d]: lineas } });
+  // una propuesta aprobada por otra noche, escrita con el saneado de entonces
+  const comun = { herramienta: 'Bash', repo: 'acme/api', veces: 6, maquinas: 2, desde: d, hasta: d, propuesta_el: diaMenos(5), sin_redaccion: null, modelo: null };
+  escribirPropuesta(b, { ...comun, huella: 'aaaaaaaaaa', estado: 'aprobada', patron: 'export clientSecret', redaccion: { trigger: `cuando hagas export clientSecret=${valor}`, action: `corré export clientSecret=${valor}` }, decision: { texto: `corré export clientSecret=${valor}` } });
+  const r = await noche(b);
+  assert.strictEqual(r.codigo, 0);
+  assert.ok(r.m.revisiones.length > 0, 'la noche hizo el pedido de revisión');
+  assert.ok(!r.m.revisiones.join('\n').includes(valor), 'lo decidido llega al modelo saneado');
+});

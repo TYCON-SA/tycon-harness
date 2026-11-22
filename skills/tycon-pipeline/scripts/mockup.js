@@ -16,6 +16,8 @@
  *   status --story <spec> [--json]                                     ¿tiene pantalla? dónde va su maqueta, aprobada o no
  *   schema                                                             la forma del modelo
  *   demo [--out <ruta>]                                                la maqueta del modelo de ejemplo
+ *   shots <html>                                                       la mira con un navegador a 1440 y 390 px: capturas
+ *                                                                      e informe (0 = se lee bien · 1 = hallazgos · 2 = no pude)
  *
  * Es estática a propósito: sin <script>, sin imágenes, sin enlaces que naveguen, con una política de seguridad del
  * contenido que niega todo salvo estilos en línea. Sin código ni direcciones no hay forma de cargar red, y la
@@ -260,14 +262,13 @@ const STYLE = `
   fieldset.group legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
   .group-row { display: flex; flex-direction: row; flex-wrap: wrap; gap: 16px; }
   .existing { filter: saturate(0.35); opacity: 0.78; }
-  .new { position: relative; outline: 2px solid #6d28d9; outline-offset: 5px; border-radius: 6px; }
-  .new-tag { position: absolute; top: -22px; left: 4px; z-index: 1; font-size: 12px; font-weight: 700; line-height: 1; color: #fff; background: #6d28d9; border-radius: 4px; padding: 3px 7px; }
+  .new { background: #f3eefe; border: 2px solid #6d28d9; border-radius: 8px; padding: 6px 8px; max-width: 100%; box-sizing: border-box; }
   .opens { position: relative; display: inline-block; }
   .open-tag { position: absolute; bottom: -26px; right: 0; z-index: 1; white-space: nowrap; font-size: 12px; font-weight: 700; line-height: 1; color: #1d2433; background: #ffe7a3; border: 1px solid #e0a100; border-radius: 4px; padding: 2px 6px; }
   .trigger { outline: 3px solid #e0a100; outline-offset: 3px; }
   .new .trigger { outline: 0; }
   .ph-bar { display: block; width: 180px; max-width: 40vw; height: 12px; border-radius: 6px; background: #e3e6eb; }
-  table.table { border-collapse: collapse; min-width: 420px; }
+  table.table { border-collapse: collapse; max-width: 100%; }
   table.table th, table.table td { border-bottom: 1px solid #e3e6eb; padding: 8px 12px; text-align: left; font-size: 14px; }
   table.table th { color: #5a6475; font-weight: 600; }
   ul.list { margin: 0; padding-left: 20px; }
@@ -292,13 +293,13 @@ const STYLE = `
   .screen-body.zoned { align-items: stretch; padding: 0; gap: 0; }
   .zone-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 16px 24px; }
   .zone-head { border-bottom: 1px solid #eef0f3; }
-  .zone-row:has(.new), .screen-body:not(.zoned):has(> .new:first-child) { padding-top: 32px; }
   .zone-foot { border-top: 1px solid #eef0f3; }
-  .zone-middle { display: flex; flex-wrap: nowrap; gap: 0; align-items: stretch; flex: 1; padding: 0; }
-  .zone { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; min-width: 0; overflow-wrap: anywhere; }
+  .zone-middle { display: flex; flex-wrap: wrap; gap: 0; align-items: stretch; flex: 1; padding: 0; }
+  .zone { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; overflow-wrap: break-word; box-sizing: border-box; }
   .zone-middle .zone { padding: 20px 24px; }
-  .zone-left { flex: 0 0 34%; min-width: 200px; box-sizing: border-box; border-right: 1px solid #e3e6eb; background: #fbfbfc; padding: 0 !important; }
-  .zone-center, .zone-right { flex: 1; min-width: 0; }
+  .zone-left { flex: 0 1 34%; min-width: 200px; border-right: 1px solid #e3e6eb; background: #fbfbfc; padding: 0 !important; }
+  .zone-center { flex: 3 1 360px; }
+  .zone-right { flex: 1 1 240px; }
   .zone-middle .zone:has(> .chat), .zone-middle .zone:has(> div > .chat) { padding: 0; }
   .zone-middle .zone > .chat, .zone-middle .zone > div > .chat { border-radius: 0; flex: 1; }
   .zone-middle .zone:has(> div > .chat) > div:has(> .chat) { flex: 1; display: flex; flex-direction: column; }
@@ -306,7 +307,7 @@ const STYLE = `
   .variants { margin-top: 18px; }
   .variants-title { margin: 0 0 10px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #5a6475; }
   .variant-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; align-items: stretch; }
-  .variant { max-width: 560px; background: #fff; border: 1px solid #cfd4dc; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; min-width: 0; overflow-wrap: anywhere; }
+  .variant { max-width: 560px; background: #fff; border: 1px solid #cfd4dc; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; min-width: 0; overflow-wrap: break-word; }
   .variant-when { margin: 0; font-size: 14px; font-weight: 600; }
   .variant-zone { display: block; font-weight: 400; font-size: 12px; color: #5a6475; }
   .variant-note { margin: 0; font-size: 14px; color: #3b4456; }
@@ -318,7 +319,7 @@ const STYLE = `
   .dev-notes { font-size: 12px; color: #6b7485; margin-top: 12px; border-top: 1px solid #d5d9e0; padding-top: 10px; }
   .dev-notes p { margin: 0; }
   .dev-notes ul { margin: 4px 0 0; padding-left: 20px; }
-  @media (max-width: 600px) { body { padding: 20px 12px 32px; } .zone-middle { flex-direction: column; } .zone-left { flex: none; border-right: 0; border-bottom: 1px solid #e3e6eb; } .bubble { max-width: 88%; } }
+  @media (max-width: 600px) { body { padding: 20px 12px 32px; } .zone-middle { flex-direction: column; } .zone-left { flex: none; border-right: 0; border-bottom: 1px solid #e3e6eb; } .zone-center, .zone-right { flex: none; } .zone-middle .zone, .zone-row { padding-left: 12px; padding-right: 12px; } .new { padding: 4px 6px; } table.table th, table.table td { padding: 6px 4px; font-size: 12px; } .bubble { max-width: 88%; } }
 `;
 // Sólo va cuando la maqueta tiene una capa: una maqueta sin capas sale sin esa parte.
 const LAYER_STYLE = `
@@ -388,7 +389,8 @@ function renderMockup(model) {
   // una vez, en su cabecera)
   const el = (x, i, ctx) => {
     if (ctx.marcas && x.existing === true) return `<div class="existing">${dibujo(x, i, ctx)}</div>`;
-    if (ctx.marcas && ctx.mezcla) return `<div class="new"><span class="new-tag">Nuevo</span>${dibujo(x, i, ctx)}</div>`;
+    // lo nuevo va con fondo y borde de zona, explicado en la leyenda: una etiqueta encima tapaba el contenido
+    if (ctx.marcas && ctx.mezcla) return `<div class="new">${dibujo(x, i, ctx)}</div>`;
     return dibujo(x, i, ctx);
   };
   // sin zonas, la columna de siempre; con zonas, una grilla aproximada: arriba, al medio (izquierda, centro,
@@ -525,8 +527,11 @@ function mockupTexts(html) {
 }
 
 /**
- * Las capas de una maqueta armada por este guion: `[{ screen, name, trigger, over, texts }]`, o null si el archivo no es
- * de mockup.js. `texts` son los de la ventana; los de la pantalla de abajo, dibujada detrás, no cuentan.
+ * Las capas de una maqueta armada por este guion: `[{ screen, name, trigger, over, texts, variants }]`, o null si el
+ * archivo no es de mockup.js. `texts` son los de la ventana; los de la pantalla de abajo, dibujada detrás, no cuentan.
+ * `variants` son los otros casos de la ventana (`[{ when, texts }]`): salen de a uno, cada uno con sus textos. Una pantalla
+ * repetida con el nombre de la capa (`Otro caso de «…»`) es otro caso, con su estado como `when`. El motivo de una
+ * casilla deshabilitada no cuenta: va como atributo, y la prueba en vivo lee el texto.
  */
 function mockupLayers(html) {
   const s = String(html);
@@ -535,7 +540,25 @@ function mockupLayers(html) {
   const out = [];
   for (const m of s.matchAll(/<section class="screen layer" data-screen-index="(\d+)" data-screen-name="([^"]*)" data-presentation="layer">[\s\S]*?<p class="layer-how">Se abre al tocar «([^»]*)» en «([^»]*)»\.<\/p>/g)) {
     const screen = Number(m[1]);
-    out.push({ screen, name: decode(m[2]), trigger: decode(m[3]), over: decode(m[4]), texts: textos.filter((t) => t.screen === screen).map((t) => t.text) });
+    // los otros casos van al final de la sección, en sus tarjetas: lo de antes es la ventana
+    const fin = s.indexOf('</section>', m.index);
+    const seccion = s.slice(m.index, fin === -1 ? undefined : fin);
+    const textosDe = (t, n = screen) => [...t.matchAll(/data-mockup-text="([^"]*)" data-kind="([^"]*)" data-screen="(\d+)"/g)].filter((x) => Number(x[3]) === n && x[2] !== 'title').map((x) => decode(x[1]));
+    const corte = seccion.indexOf('<div class="variants">');
+    const variants = corte === -1 ? [] : seccion.slice(corte).split('<div class="variant">').slice(1)
+      .map((tarjeta) => ({ when: decode(((/<p class="variant-when">([^<]*)/.exec(tarjeta) || [])[1] || '').trim()), texts: textosDe(tarjeta) }))
+      .filter((v) => v.texts.length);
+    const name = decode(m[2]);
+    for (const r of s.matchAll(/<section class="screen repeat" data-screen-index="(\d+)" data-screen-name="([^"]*)" data-presentation="layer">/g)) {
+      if (decode(r[2]) !== name) continue;
+      const n = Number(r[1]);
+      const finR = s.indexOf('</section>', r.index);
+      const otra = s.slice(r.index, finR === -1 ? undefined : finR);
+      const estado = (/<span class="screen-state">([^<]*)<\/span>/.exec(otra) || [])[1];
+      const texts = textosDe(otra, n);
+      if (texts.length) variants.push({ when: estado ? decode(estado) : `otro caso de «${name}»`, texts });
+    }
+    out.push({ screen, name, trigger: decode(m[3]), over: decode(m[4]), texts: textosDe(corte === -1 ? seccion : seccion.slice(0, corte)), variants });
   }
   return out;
 }
@@ -756,8 +779,9 @@ ${JSON.stringify(DEMO, null, 2)}
 - "summary" (opcional): una frase en castellano llano que dice qué cambia en la pantalla. Va arriba de todo: es lo
   primero que lee quien aprueba, que no programa.
 - "existing": true, en cualquier elemento, lo dibuja atenuado: la pantalla ya lo tiene y la story no lo agrega. Se sigue
-  comparando. Con algún "existing" en la maqueta, lo demás sale en violeta con la marca "Nuevo" (una pantalla toda nueva
-  lleva la marca una sola vez). Sin ninguno no se marca nada: marcá lo que ya existe.
+  comparando. Con algún "existing" en la maqueta, lo demás sale con fondo violeta claro y borde, explicado en la
+  leyenda de arriba; nada se dibuja encima del contenido (una pantalla toda nueva lleva la marca "Todo nuevo" una sola
+  vez, en su título). Sin ninguno no se marca nada: marcá lo que ya existe.
 - "zone" (opcional), en cualquier elemento: dónde va, a grandes rasgos: ${ZONES.join(' | ')}. Se dibuja en una grilla
   aproximada (arriba, al medio izquierda-centro-derecha, abajo); sin zona va al centro.
 - "variants" (opcional), en una pantalla: los otros casos (cargando, vacío, error, sin permiso). Cada una lleva "when"
@@ -885,12 +909,28 @@ function main() {
     return;
   }
 
-  fail('comandos: render | check | texts | status | schema | demo');
+  if (cmd === 'shots') {
+    const f = argv[1];
+    if (!f) fail('uso: mockup.js shots <maqueta.html>');
+    require(path.join(__dirname, 'lib', 'mockup-shots.js')).revisar({ mockupPath: f }).then((r) => {
+      if (r.error) { console.error(`mockup.js shots: no la pude mirar: ${r.error}`); process.exit(2); }
+      console.log(JSON.stringify({ ok: r.ok, report: r.report, shots: r.shots, findings: r.findings }, null, 2));
+      console.error(`capturas: ${Object.values(r.shots).join(' · ')} — mandáselas a quien aprueba, no sólo la ruta`);
+      if (!r.ok) {
+        console.error(`🔴 la maqueta no se lee bien (${r.findings.length} hallazgo(s)):`);
+        for (const x of r.findings) console.error(`  - a ${x.width} px, ${x.kind}: ${x.what}`);
+        process.exit(1);
+      }
+    }, (e) => { console.error(`mockup.js shots: ${e.message}`); process.exit(2); });
+    return;
+  }
+
+  fail('comandos: render | check | texts | status | schema | demo | shots');
 }
 
 module.exports = {
   renderMockup, mockupEsc, validateMockupHtml, mockupTexts, mockupLayers, mockupHash, mockupPaths, screenStory, readApproval,
-  writeApproval, compareWithScreens, qaGuideCheckArgs, mockupStep8, validateModel, modelWarnings, declaredDiffs, GENERATOR, CSP,
+  writeApproval, compareWithScreens, qaGuideCheckArgs, mockupStep8, validateModel, modelWarnings, declaredDiffs, GENERATOR, CSP, DEMO,
 };
 
 if (require.main === module) main();

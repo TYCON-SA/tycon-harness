@@ -149,11 +149,19 @@ function encierro(env = process.env) {
   return { nombre: 'ninguno', corta: 'nada: corren con las otras capas' };
 }
 const sbplString = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+const subpaths = (rutas) => [...new Set(rutas.flatMap((p) => [p, real(p)]))].map((p) => `(subpath ${sbplString(p)})`).join(' ');
 // `red`: deja la red abierta (la corrida aislada de un humo, historia 8.314: sus guiones hablan con localhost); la
-// comparación la corta
-function perfilSandbox(escribibles, { red = false } = {}) {
-  const permitidas = [...new Set(escribibles.flatMap((p) => [p, real(p)]))].map((p) => `(subpath ${sbplString(p)})`).join(' ');
-  return `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} (subpath "/dev"))))`;
+// comparación la corta.
+// `fatales` y `mensaje`: una escritura negada adentro de esas carpetas mata al proceso, y el sistema la anota en su
+// registro con `mensaje`. Una negación común sólo queda anotada para los programas del sistema (bash, touch), nunca para
+// node; la que mata, para todos
+function perfilSandbox(escribibles, { red = false, fatales = [], mensaje = null } = {}) {
+  const permitidas = subpaths(escribibles);
+  const base = `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} (subpath "/dev"))))`;
+  if (!fatales.length) return base;
+  // la regla que mata va última: entre las que coinciden manda la última
+  return `${base}(deny file-write* (require-all (require-any ${subpaths(fatales)}) (require-not (require-any ${permitidas} (subpath "/dev"))))`
+    + ` (with send-signal SIGKILL)${mensaje ? ` (with message ${sbplString(mensaje)})` : ''})`;
 }
 
 /** El git de verdad, para los reemplazos: el primero del PATH que no es el de compare-shims. */
