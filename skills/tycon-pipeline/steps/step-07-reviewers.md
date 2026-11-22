@@ -589,7 +589,7 @@ tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
   preguntale: una vuelta más (`smart-reloop … --extra-round --approved-by "<la persona>"`, que la persona aprueba en
   la ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`). Si
   el perfil del equipo lista la vuelta extra como trámite (`approvals.delegated_signing`), la da el arnés solo, sin
-  ventana, y el aviso del tope lo dice: no es una firma del dueño. Eximir el crítico sigue siendo de una persona.
+  ventana, y el aviso del tope lo dice: no la firma una persona. Eximir el crítico sigue siendo de una persona.
   Sin eso, `complete-step prepare-commit` no cierra.
 - **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
   `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.

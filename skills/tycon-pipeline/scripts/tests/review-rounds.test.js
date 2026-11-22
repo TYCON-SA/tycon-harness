@@ -294,7 +294,7 @@ test('T80a Cap_VueltaExtraDeTramite_ElCartelLoDice: el cartel dice quién da la 
     const b = tope(con);
     assert.equal(b.status, 3, b.stderr);
     assert.match(b.stderr, /firma de trámite del perfil del equipo/);
-    assert.match(b.stderr, /no es una firma del dueño/);
+    assert.match(b.stderr, /no la firma una persona/);
     // eximir el crítico sigue siendo de una persona (critical-waiver nunca es trámite): lo que cambia es la vuelta extra
     assert.doesNotMatch(b.stderr, /--extra-round, y la persona lo aprueba/);
     assert.match(b.stderr, /waive-critical[^\n]*la persona lo aprueba/);

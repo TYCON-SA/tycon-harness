@@ -6642,7 +6642,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
     if (tramite) {
       renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round. Es una firma de trámite del perfil del equipo');
-      renglones.push('       (approvals.delegated_signing): la da el arnés solo, sin ventana ni cuadro, y no es una firma del dueño.');
+      renglones.push('       (approvals.delegated_signing): la da el arnés solo, sin ventana ni cuadro; no la firma una persona.');
     } else {
       renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y la persona lo aprueba en la ventana de permiso');
       renglones.push('       (o lo corre en su terminal con --terminal); si el perfil del equipo la delega, la sesión designada lo corre con');
