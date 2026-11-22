@@ -893,6 +893,8 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     return reales.length > 0 && reales.every((r) => path.basename(r) === nombre && instalado(r));
   };
   const noTocaElShell = comandoNoTocaElShell(cmd);
+  // las palabras de todo el comando, una sola vez: leerlas en cada tramo hace la búsqueda cuadrática en una tira de tuberías
+  const todasLasPalabras = todosLosTramos.flatMap(palabrasDe);
   for (const tramo of todosLosTramos) {
     const words = palabrasDe(tramo);
     const soloNombra = noTocaElShell && tramoQueSoloNombra(cmd, tramo, esGuionInstalado);
@@ -927,7 +929,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     const escrito = programaEscrito(cmd, tramo);
     if (!soloNombra) {
       const crudas = palabras(tramo.trim()).map(sinGrupo).filter((w) => w !== '');
-      for (const g of guionesDelPeorCaso(cmd, crudas, todosLosTramos.flatMap(palabrasDe), escrito)) abrir(g.interprete, g.valor, argumentos(g.argv));
+      for (const g of guionesDelPeorCaso(cmd, crudas, todasLasPalabras, escrito)) abrir(g.interprete, g.valor, argumentos(g.argv));
     }
     // en un tramo de un programa que no corre sus argumentos, una variable con valor conocido es un argumento más
     const lector = !escrito.ilegible && noCorreSusArgumentos(escrito.programa);
@@ -953,7 +955,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
       }
       // `echo p.py | xargs python3`: el guion llega por la entrada; cuenta cada archivo del comando con su extensión
       if (!hallado && words.slice(0, k).some((w) => nombreDeComando(w) === 'xargs')) {
-        for (const w of todosLosTramos.flatMap(palabrasDe)) if (EXTENSION_DE[familia].test(w)) abrir(interprete, expandirRuta(cmd, w).valor, []);
+        for (const w of todasLasPalabras) if (EXTENSION_DE[familia].test(w)) abrir(interprete, expandirRuta(cmd, w).valor, []);
       }
     }
   }
@@ -2126,7 +2128,11 @@ function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = nul
     return false;
   };
   const out = [];
+  // una palabra repetida contesta lo mismo: se mira una vez, y una tira de `!|` no resuelve la misma ruta miles de veces
+  const vistas = new Set();
   for (const w of palabrasProfundas(cmd)) {
+    if (vistas.has(w)) continue;
+    vistas.add(w);
     // `enTexto`: la zona dice cómo se la nombra; el nombre suelto de la carpeta del estado no habla de ella
     if (porTexto && (enTexto ? enTexto(w) : nombraPorTexto(w))) { out.push(w); continue; }
     if (/\s/.test(w)) continue;
