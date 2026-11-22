@@ -167,6 +167,8 @@ function validateList(list) {
     if (h.async !== undefined && (h.async !== true || !ASYNC_ALLOWED)) out.push(`${who}: async sólo puede ser true`);
     // el gancho de fondo que despierta a la sesión al terminar con 2 (el vigilante de la oficina) y su plazo en segundos
     if (h.asyncRewake !== undefined && h.asyncRewake !== true) out.push(`${who}: asyncRewake sólo puede ser true`);
+    // el lanzador que va delante de un freno `.js` (scripts/hooks/<lanzador>): sin Node, decide por el terreno del freno
+    if (h.launcher !== undefined && !(h.launcher === 'node-missing-launcher.sh' && typeof h.spec === 'string' && h.spec.startsWith('@tcg:') && h.spec.endsWith('.js'))) out.push(`${who}: launcher sólo puede ser node-missing-launcher.sh, delante de un .js del arnés`);
     if (h.timeout !== undefined && !(Number.isInteger(h.timeout) && h.timeout > 0 && h.timeout <= MAX_TIMEOUT_S)) out.push(`${who}: timeout es un entero de segundos entre 1 y ${MAX_TIMEOUT_S}`);
     if (!h.platforms || typeof h.platforms !== 'object' || typeof h.platforms.windows !== 'boolean') out.push(`${who}: falta platforms.windows (true o false)`);
     // en qué pasos del pipeline actúa y qué hace: no cambian lo que se registra; los muestra «Cómo trabaja» del sitio
@@ -581,6 +583,14 @@ function applyToSettings(settings, o) {
   const useFloor = !ownNode && !switchedOff && Boolean(floorAbs) && fs.existsSync(floorAbs);
   const isGate = (h) => h.event === 'PreToolUse' && h.effect === 'blocks';
   const jsHead = (h) => (useFloor ? `node "${windows ? fwd(floorAbs) : floorAbs}"${isGate(h) ? ' --gate' : ''}` : jsPrefix);
+  // un freno con lanzador (`launcher` en la lista) va detrás de él: `bash "<lanzador>" <intérprete> "<guion>"`. En
+  // Windows no: la herramienta lanza ahí los ganchos con el bash de Git y el lanzador no está medido (límite declarado)
+  const launcherOf = (h) => {
+    if (windows || !h.launcher || !o.hooksDir) return null;
+    const l = path.join(o.hooksDir, h.launcher);
+    return fs.existsSync(l) ? l : null;
+  };
+  const headFor = (h) => (launcherOf(h) ? `bash "${launcherOf(h)}" ${jsHead(h)}` : jsHead(h));
   // se copia: un hook que queda como está pero cuyo archivo de antes ya no existe vuelve en su ruta nueva (abajo)
   const active = o.decision.active.slice();
   const activeSpecs = new Set(active.map((h) => h.spec));
@@ -687,13 +697,19 @@ function applyToSettings(settings, o) {
   const reform = (cmd, runner, h, absCmd) => {
     // un `.sh` no cambia de intérprete: sólo sale de la carpeta de una versión
     if (runner !== 'node') { const sc = scriptOf(cmd); return sc && deUnaVersion(sc, h) ? String(cmd).split(sc).join(absCmd) : null; }
-    const now = leadingInterpreter(cmd);
+    // un lanzador delante (el de ahora o uno viejo) no es el intérprete: se mira lo que sigue
+    const launched = /^\s*bash\s+"[^"]*node-missing-launcher\.sh"\s+/.exec(String(cmd || ''));
+    const now = leadingInterpreter(launched ? String(cmd).slice(launched[0].length) : cmd);
     // sólo un intérprete que es un Node (`node`, o una ruta que termina en node/node.exe): otro comando no se toca
     if (!now || !/(?:^|[/"])node(?:\.exe)?"?$/i.test(now)) return null;
     // el guion queda como estaba escrito si existe; la ruta de una versión, borrada o no, vuelve a la estable
     const old = scriptOf(cmd);
     const script = old && fs.existsSync(old) && !deadSame(cmd, h) ? old : absCmd;
-    const next = `${jsHead(h)} "${script}"`;
+    // el lanzador queda como estaba escrito si existe (como el guion): correr el aplicador por el enlace o por el clon no
+    // cambia la línea
+    const keptL = launched && /"([^"]+)"/.exec(launched[0])[1];
+    const head = launcherOf(h) && keptL && fs.existsSync(keptL) ? `bash "${keptL}" ${jsHead(h)}` : headFor(h);
+    const next = `${head} "${script}"`;
     return next === String(cmd).trim() ? null : next;
   };
   const takeNarrower = (bucket, h, abs, runner) => {
@@ -734,7 +750,7 @@ function applyToSettings(settings, o) {
     // lanza cada hook con el bash de Git, donde `bash` es ese mismo bash: la ruta absoluta no suma nada.
     // un `.js` con el Node del arnés si está (sin comillas, o con comillas en Mac y Linux si la ruta trae
     // espacios); si no, `node`. La ruta del intérprete nunca deja un hook sin registrar: lo decide sólo la del guion
-    const command = `${runner === 'node' ? jsHead(h) : runner} "${absCmd}"`;
+    const command = `${runner === 'node' ? headFor(h) : runner} "${absCmd}"`;
     const eol = windows && isSh ? crlfOnDisk(abs) : null;
     const crlf = !!(eol && eol.ok && eol.crlf);
     const unverified = !!(eol && !eol.ok);
@@ -764,7 +780,7 @@ function applyToSettings(settings, o) {
       // el mismo hook en la otra forma del intérprete: se reescribe ESE comando, en su lugar (misma posición, matcher y
       // `async`), y se informa como cambio de forma
       const next = reform(cmdOf(found), runner, h, absCmd);
-      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(found)), to: runner === 'node' ? jsHead(h) : runner }); found.command = next; }
+      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(found)), to: runner === 'node' ? headFor(h) : runner }); found.command = next; }
       // el mismo hook escrito otra vez en el grupo (la ruta de una versión borrada al lado de la viva, lo que dejaba el
       // aplicador anterior): queda uno solo, el ya reescrito, sin importar en qué orden estaban
       for (const entry of bucket) {
@@ -795,7 +811,7 @@ function applyToSettings(settings, o) {
     if (carried) {
       hookObj = carried.hook; label = `${h.label} — matcher ampliado de «${carried.matcher}» a «${h.matcher}»`;
       const next = reform(cmdOf(hookObj), runner, h, absCmd);
-      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(hookObj)), to: runner === 'node' ? jsHead(h) : runner }); hookObj.command = next; }
+      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(hookObj)), to: runner === 'node' ? headFor(h) : runner }); hookObj.command = next; }
     }
     else { hookObj = { type: 'command', command }; if (h.async) hookObj.async = true; }
     withRewake(hookObj, h);
