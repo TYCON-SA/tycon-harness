@@ -307,6 +307,65 @@ if runs T48; then
   [ -z "$(claude_listing "$H")" ] && ok "nada en ~/.claude" || bad "apareció en ~/.claude: $(claude_listing "$H" | head -12 | tr '\n' ' ')"
 fi
 
+if runs T54; then
+  echo "T54 · CodexSolo_LoQueSuma — el refresco de Azure, engram y sqlite3, el AGENTS.md puntero y las pruebas rápidas de las skills (decisión del dueño, 22/11)"
+  # un árbol de laboratorio: el de este repo sin las pruebas, con las piezas de mentira (anotan que corrieron, sin red ni
+  # servicios), y unido (skills/ con tycon-pipeline y agents/), como una versión bajada
+  TREE54="$BASE/tree54"; mkdir -p "$TREE54"
+  ( cd "$ROOT" && tar --exclude='./scripts/tests' -cf - ./scripts ) | ( cd "$TREE54" && tar -xf - )
+  anota54() { printf 'require("fs").appendFileSync(require("path").join(process.env.HOME, "corrio.txt"), "%s\\n");\n' "$1"; }
+  anota54 refresco-azure > "$TREE54/scripts/hooks/failed-query-notice.js"
+  for f in check-engram-version ensure-sqlite3 check-engram-project; do
+    printf '#!/usr/bin/env bash\necho %s >> "$HOME/corrio.txt"\n' "$f" > "$TREE54/scripts/setup/$f.sh"
+  done
+  mkdir -p "$TREE54/skills/tycon-pipeline/scripts/tests" "$TREE54/agents"
+  anota54 pruebas-rapidas > "$TREE54/skills/tycon-pipeline/scripts/tests/story-discovery.test.js"
+  H="$(off_home t54)"
+  mkdir -p "$H/bin" && printf '#!/bin/sh\nexit 0\n' > "$H/bin/az" && chmod +x "$H/bin/az"
+  P54="$H/repos/proyecto"; mkdir -p "$P54" && git -C "$P54" init -q && git -C "$P54" remote add origin "https://dev.azure.com/acme/proyecto/_git/proyecto" && printf '# reglas del proyecto\n' > "$P54/CLAUDE.md"
+  PATH="$H/bin:$PATH" real_applier_off "$TREE54" "$H" TYCON_ENGRAM=1 TYCON_ADO_ORG=https://dev.azure.com/acme \
+    TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1; RC=$?
+  [ "$RC" = 0 ] && ok "el aplicador sin Claude Code sale 0" || bad "el aplicador salió $RC: $(tail -5 "$H/applier.out")"
+  # el refresco va de fondo
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q refresco-azure "$H/corrio.txt" 2>/dev/null && break; sleep 0.5; done
+  for f in refresco-azure check-engram-version ensure-sqlite3 check-engram-project pruebas-rapidas; do
+    grep -qx "$f" "$H/corrio.txt" 2>/dev/null && ok "corrió $f" || bad "no corrió $f: $(tr '\n' ' ' < "$H/corrio.txt" 2>/dev/null)"
+  done
+  grep -q 'puntero' "$P54/AGENTS.md" 2>/dev/null && ok "dejó el AGENTS.md puntero en el repo del proyecto" || bad "sin AGENTS.md puntero: $(ls -A "$P54" | tr '\n' ' ') · $(grep -i agents "$H/applier.out" | head -2)"
+  [ -z "$(claude_listing "$H")" ] && ok "nada en ~/.claude" || bad "apareció en ~/.claude: $(claude_listing "$H" | head -12 | tr '\n' ' ')"
+  # los sellos de engram y de sqlite3 van al estado de la casa propia, no a ~/.claude
+  H2="$(off_home t54b)"; mkdir -p "$H2/bin"
+  printf '#!/bin/sh\nexit 1\n' > "$H2/bin/sqlite3"; chmod +x "$H2/bin/sqlite3"
+  env -i PATH="$H2/bin:/usr/bin:/bin" HOME="$H2" TYCON_HARNESS_CLAUDE=off TYCON_SQLITE_AUTO_INSTALL=0 bash "$ROOT/scripts/setup/ensure-sqlite3.sh" >/dev/null 2>&1
+  [ -f "$H2/.tycon/state/sqlite3-install-last-try" ] && [ -z "$(claude_listing "$H2")" ] && ok "el sello de sqlite3 quedó en ~/.tycon/state" || bad "el sello de sqlite3: $(find "$H2" -name 'sqlite3-install-last-try' 2>/dev/null | tr '\n' ' ')"
+  # engram con una versión nueva afuera: el sello del aviso, también en el estado
+  printf '#!/bin/sh\necho "engram 1.20.0"\necho "Update available: 1.20.0 -> 9.9.9" >&2\n' > "$H2/bin/engram"; chmod +x "$H2/bin/engram"
+  env -i PATH="$H2/bin:/usr/bin:/bin" HOME="$H2" TYCON_HARNESS_CLAUDE=off TYCON_ENGRAM_AUTO_UPGRADE=0 bash "$ROOT/scripts/setup/check-engram-version.sh" >/dev/null 2>&1
+  [ -f "$H2/.tycon/state/.tycon-engram-upstream-notice" ] && [ -z "$(claude_listing "$H2")" ] && ok "el sello del aviso de engram quedó en ~/.tycon/state" || bad "el sello de engram: $(find "$H2" -name '.tycon-engram-*' 2>/dev/null | tr '\n' ' ')"
+fi
+
+if runs T55; then
+  echo "T55 · CodexSolo_SkillsDeTerceros — la bajada las repone en ~/.tycon/harness y quedan enlazadas en ~/.codex/skills, sin ~/.claude"
+  harness_lab_create "$BASE/lab55"
+  harness_lab_release_server
+  harness_lab_codex_pieces
+  harness_lab_publish_stable 2026.10.07.1
+  # una skill de terceros de juguete: la de tycon-pipeline del mismo repo, fijada por commit y árbol, desde la fuente local
+  TP55_COMMIT="$(harness_lab_remote_head main)"
+  TP55_TREE="$(harness_lab_git "$LAB_REMOTE_TREE" rev-parse "$TP55_COMMIT:skills/tycon-pipeline")"
+  MANIFEST55="{ \"retirement\": \"done\", \"third_party\": [ { \"name\": \"lab-third\", \"install\": \"download\", \"origin\": \"https://github.com/$LAB_RELEASE_ORG/$LAB_RELEASE_NAME\", \"commit\": \"$TP55_COMMIT\", \"path\": \"skills/tycon-pipeline\", \"tree\": \"$TP55_TREE\", \"target\": \"skills/lab-third\", \"license\": \"MIT\" } ] }"
+  harness_lab_publish_stable 2026.10.07.2 scripts/publishing/third-party-skills.json "$MANIFEST55"
+  harness_lab_tools codex; harness_lab_tools_fresh_home
+  OUT="$(harness install --version latest --yes 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "install sólo con Codex sale 0" || bad "install salió $RC: $OUT"
+  grep -q 'claude=off' "$LAB_HOME/.tycon/state/lab-applier.log" 2>/dev/null && ok "el aplicador corrió en el modo sin Claude Code" || bad "el aplicador no corrió sin Claude Code"
+  [ -f "$LAB_HOME/.tycon/harness/skills/lab-third/SKILL.md" ] && ok "la skill de terceros quedó en ~/.tycon/harness/skills" || bad "falta skills/lab-third en ~/.tycon/harness: $OUT"
+  [ -L "$CODEX_HOME/skills/lab-third" ] && [ "$(cd "$(readlink "$CODEX_HOME/skills/lab-third")" 2>/dev/null && pwd -P)" = "$(cd "$LAB_HOME/.tycon/harness/skills/lab-third" 2>/dev/null && pwd -P)" ] \
+    && ok "y está enlazada en ~/.codex/skills hacia ~/.tycon/harness" || bad "~/.codex/skills/lab-third: $(ls -la "$CODEX_HOME/skills/lab-third" 2>&1)"
+  [ -z "$(harness_lab_claude_home_listing)" ] && ok "nada en ~/.claude" || bad "apareció en ~/.claude: $(harness_lab_claude_home_listing | head -8 | tr '\n' ' ')"
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
 if runs T49; then
   echo "8.150 T49 · ConClaude_SinCambios @story-8.150 @ac-11"
   harness_lab_create "$BASE/lab49"

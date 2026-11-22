@@ -47,6 +47,11 @@ FORCE=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIN_FILE="$SCRIPT_DIR/../../engram-version"
+# los sellos, en la carpeta de los registros sueltos (scripts/lib/state-dir.sh): ~/.claude en una máquina de siempre,
+# ~/.tycon/state en la que vive en la casa propia (la única que tiene una máquina sin Claude Code). Sin la biblioteca,
+# la de siempre. La marca de la migración a medias se lee también de la de siempre: la pudo dejar una versión anterior
+STAMP_DIR="$HOME/.claude"
+if [[ -f "$SCRIPT_DIR/../lib/state-dir.sh" ]] && . "$SCRIPT_DIR/../lib/state-dir.sh" 2>/dev/null; then STAMP_DIR="$(tycon_logs_dir)"; fi
 
 [[ -f "$PIN_FILE" ]] || exit 0
 command -v python3 >/dev/null 2>&1 || exit 0
@@ -56,8 +61,8 @@ command -v python3 >/dev/null 2>&1 || exit 0
 # este script lo desinstaló. Salir en silencio ahí dejaría al dev sin memoria y sin
 # enterarse — el peor final posible. Se avisa en CADA arranque hasta que lo resuelva.
 if ! command -v engram >/dev/null 2>&1; then
-  if [[ -f "$HOME/.claude/.tycon-engram-upgrade-failed" ]] \
-     && [[ "$(cat "$HOME/.claude/.tycon-engram-upgrade-failed" 2>/dev/null)" == "migracion" ]]; then
+  if [[ "$(cat "$STAMP_DIR/.tycon-engram-upgrade-failed" 2>/dev/null)" == "migracion" ]] \
+     || [[ "$(cat "$HOME/.claude/.tycon-engram-upgrade-failed" 2>/dev/null)" == "migracion" ]]; then
     echo "🛑 tycon: NO TENÉS ENGRAM — una migración automática quedó a medias y tu memoria"
     echo "   no se está guardando. Corré esto para recuperarlo:"
     echo "       brew install gentleman-programming/tap/engram"
@@ -71,7 +76,7 @@ fi
 LOCAL_RAW="$(engram version 2>/dev/null || true)"
 UPSTREAM_RAW="$(engram version 2>&1 >/dev/null || true)"
 
-STAMP="$HOME/.claude/.tycon-engram-upstream-notice"
+STAMP="$STAMP_DIR/.tycon-engram-upstream-notice"
 SENTINEL="$(mktemp -t tycon-engram-upgrade 2>/dev/null || echo "/tmp/tycon-engram-upgrade.$$")"
 rm -f "$SENTINEL"
 trap 'rm -f "$SENTINEL"' EXIT
@@ -184,7 +189,7 @@ PYEOF
 
 TARGET="$(cat "$SENTINEL" 2>/dev/null || true)"
 GOPKG="github.com/Gentleman-Programming/engram/cmd/engram"
-FAILED_STAMP="$HOME/.claude/.tycon-engram-upgrade-failed"
+FAILED_STAMP="$STAMP_DIR/.tycon-engram-upgrade-failed"
 
 # Método de instalación → cómo se actualiza. Se elige por lo que HAY en la máquina, no
 # por el sistema operativo: un dev de Mac puede haberlo puesto con `go install` igual.
