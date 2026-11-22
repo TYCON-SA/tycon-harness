@@ -3304,7 +3304,9 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
   for (let i = 0, s = String(cmd); i < s.length; i++) {
     const ch = s[i];
     if (q === "'") { sinSimples += ch === "'" ? (q = null, ch) : ' '; continue; }
-    if (ch === '\\' && q !== "'") { sinSimples += ch + (s[i + 1] || ''); i++; continue; }
+    // la barra se come el carácter que sigue: un `$` o una comilla invertida escapados quedan como espacio (no abren una
+    // sustitución), y una barra escapada (`\\`) no escapa lo que viene después
+    if (ch === '\\' && q !== "'") { const sig = s[i + 1] || ''; sinSimples += ch + (sig === '$' || sig === '`' ? ' ' : sig); i++; continue; }
     if (ch === '"') q = q === '"' ? null : '"';
     else if (ch === "'" && q !== '"') q = "'";
     sinSimples += ch;
@@ -3316,8 +3318,8 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
   // un `$(…)` conserva su cuerpo. Lo de adentro de una sustitución corre; una variable que ahí sólo se NOMBRA como
   // argumento, no (la mira su programa)
   const original = String(cmd);
-  for (const m of sinSimples.matchAll(/(?<!\\)\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumarUno(original.slice(m.index + 2, m.index + m[0].length - 1));
-  for (const m of sinSimples.matchAll(/(?<!\\)`([^`]*)`/g)) sumarUno(original.slice(m.index + 1, m.index + m[0].length - 1));
+  for (const m of sinSimples.matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumarUno(original.slice(m.index + 2, m.index + m[0].length - 1));
+  for (const m of sinSimples.matchAll(/`([^`]*)`/g)) sumarUno(original.slice(m.index + 1, m.index + m[0].length - 1));
   // los `cd` de antes en el mismo comando también valen para lo que corre adentro (`bash -c "cd specs && sh -c '…'"`): el
   // cuerpo anidado se mira con ellos delante
   const cds = [];

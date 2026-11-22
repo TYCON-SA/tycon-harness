@@ -455,6 +455,21 @@ test('T17 TuberiaAUnShell_YCdDeAfuera_Frenan', () => {
   ]) pasa(c, cmd);
 });
 
+// 🔴 Falla con: una sustitución precedida por una barra escapada (`\\$(…)`) leída como escapada: la barra doble es una
+// barra suelta y la sustitución corre. La escapada de verdad (`\$(…)`) sigue siendo texto.
+test('T18 SustitucionTrasBarraEscapada_Corre', () => {
+  const c = corral();
+  for (const cmd of [
+    `echo \\\\$(sh -c 'echo x > ${H}')`,
+    `echo \\\\\`sh -c 'echo x > ${H}'\``,
+    `echo "\\\\$(sh -c 'echo x > ${H}')"`,
+  ]) frena(c, cmd);
+  for (const cmd of [
+    `echo \\$(sh -c 'echo x > ${H}')`,
+    `echo "\\$(sh -c 'echo x > ${H}')"`,
+  ]) pasa(c, cmd);
+});
+
 // T15 Bench_FrenoComandosAnidados
 // 🔴 Falla con: un caso del banco que no corre o que da otra salida que la esperada.
 test('T15 Bench_FrenoComandosAnidados', () => {
