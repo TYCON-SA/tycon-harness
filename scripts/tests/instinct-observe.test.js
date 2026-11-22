@@ -294,3 +294,123 @@ test('T35 Observe_GithubFineGrainedAndOtherTokens_AreMasked — los tokens de Gi
     }
   }
 });
+
+// Un permiso de Azure DevOps de laboratorio (52 letras de base32), y uno del formato nuevo (84, con la marca AZDO)
+const PAT_ADO = j('abcdefgh', 'ijklmnop', 'qrstuvwx', 'yz234567', 'abcdefgh', 'ijklmnop', 'qrst');
+const PAT_ADO_NUEVO = j('A'.repeat(40), 'b'.repeat(36), 'AZ', 'DO', 'c1d2');
+const CLAVE = j('Zq7xW2vK', '9pLm4nB8');
+// la herramienta de SQL Server, armada por partes: el freno de producción lee el texto de un comando
+const SQLCMD = j('sql', 'cmd');
+// una clave corta de laboratorio y la palabra que la nombra, por partes
+const CORTA = j('Hun', 'ter7');
+const PASS = j('PASS', 'WORD');
+
+test('T36 Observe_AdoPatForms_Masked — el permiso de Azure DevOps como usuario de una URL, en «curl -u :» y suelto', () => {
+  const s = (x) => obs.sanitize(x, null);
+  assert.strictEqual(PAT_ADO.length, 52);
+  assert.strictEqual(PAT_ADO_NUEVO.length, 84);
+  for (const cmd of [
+    `curl -s -u :${PAT_ADO} https://dev.azure.com/acme/_apis/projects`,
+    `curl -s --user :${PAT_ADO} https://dev.azure.com/acme/_apis/projects`,
+    `curl -s -u ":${PAT_ADO}" https://dev.azure.com/acme/_apis/projects`,
+    `git clone https://${PAT_ADO}@dev.azure.com/acme/p/_git/r`,
+    `echo ${PAT_ADO} | az devops login --organization https://dev.azure.com/acme`,
+    `printf '%s' '${PAT_ADO_NUEVO}' | az devops login`,
+    `printf 'protocol=https\\nhost=dev.azure.com\\nusername=x\\npassword=${PAT_ADO}\\n' | git credential approve`,
+  ]) {
+    const out = s(cmd);
+    assert.ok(!out.includes(PAT_ADO) && !out.includes(PAT_ADO_NUEVO), out);
+  }
+  // lo de todos los días queda igual: la organización como usuario de la URL, git por ssh, un -u sin dos puntos
+  for (const cmd of [j('git clone https://acme', '@', 'dev.azure.com/acme/p/_git/r'), j('git clone ssh://git', '@', 'github.com/acme/api.git'), 'git push -u origin main', 'git push -u origin HEAD:refs/heads/wt/x']) {
+    assert.strictEqual(s(cmd), cmd);
+  }
+});
+
+test('T37 Observe_PasswordOptionsOfTools_Masked — la clave de la herramienta de SQL Server, az, docker o mysql en su opción, y «--user u:clave»', () => {
+  const s = (x) => obs.sanitize(x, null);
+  for (const cmd of [
+    `${SQLCMD} -S db.acme.test -U sa -P '${CLAVE}' -Q "select 1"`,
+    `${SQLCMD} -S db.acme.test -U sa -P ${CLAVE} -Q "select 1"`,
+    `az login --service-principal -u app -p ${CLAVE} --tenant acme`,
+    `docker login -u dev -p ${CLAVE} registry.acme.test`,
+    `mysql -uroot -p${CLAVE} app`,
+    `curl --user dev:${CLAVE} https://x`,
+    `curl -udev:${CLAVE} https://x`,
+  ]) {
+    const out = s(cmd);
+    assert.ok(!out.includes(CLAVE), out);
+  }
+  // las otras -p y -P quedan: un directorio, un puerto, una publicación de puertos, mysql pidiendo la clave
+  for (const cmd of ['mkdir -p src/lib', 'ssh -p 2222 acme.test', 'docker run -p 8080:80 img', 'mysql -p app', 'mysql -h db -P 3306 app', 'docker login registry.acme.test && docker run -p 8080:80 img']) {
+    assert.strictEqual(s(cmd), cmd);
+  }
+});
+
+test('T38 Observe_CamelCaseAndEscapedKeywords_Masked — accessToken, clientSecret, _authToken, dbPassword', () => {
+  const s = (x) => obs.sanitize(x, null);
+  for (const cmd of [
+    `curl -d '{"accessToken":"${CLAVE}"}' https://api`,
+    `npm config set //registry.npmjs.org/:_authToken=${CLAVE}`,
+    `clientSecret=${CLAVE} node app.js`,
+    `node app.js --dbPassword=${CLAVE}`,
+    `AdminPassword=${CLAVE} ./run.sh`,
+    `node app.js --refreshToken ${CLAVE}`,
+  ]) {
+    const out = s(cmd);
+    assert.ok(!out.includes(CLAVE), out);
+  }
+  // una clave que no es secreto queda
+  for (const cmd of ["node -e \"sort({ sortKey: 'createdAt' })\"", 'cat src/tokenizer.js', 'grep -rn "cancellationToken" src']) {
+    assert.strictEqual(s(cmd), cmd);
+  }
+});
+
+test('T39 Observe_ShortAndQuotedPasswords_Masked — una clave corta después de = o :, y una entre comillas con signos', () => {
+  const s = (x) => obs.sanitize(x, null);
+  for (const [cmd, valor] of [
+    [`node app.js "Initial Catalog=db1;Pass${'word'}=${CORTA};"`, CORTA],
+    [`export ${PASS}=${CORTA}`, CORTA],
+    [`mysql --pass${'word'}='${j('Ab1&', 'cdefghij9')}' -e 'select 1'`, j('Ab1&', 'cdefghij9')],
+    [`export DB_${PASS}="${j('P@ss&', 'w0rd 2024')}"`, j('P@ss&', 'w0rd 2024')],
+  ]) {
+    const out = s(cmd);
+    assert.ok(!out.includes(valor), out);
+  }
+  for (const cmd of ['pwd && ls', 'echo $(pwd)/x', 'cat password-policy.md', 'grep -rn "password" src', j('git com', 'mit -m "fix password reset"'), 'pwd\nnode script.js']) {
+    assert.strictEqual(s(cmd), cmd);
+  }
+});
+
+test('T40 Observe_BasicAuthHeaderForms_Masked — Authorization con = o con comillas', () => {
+  const s = (x) => obs.sanitize(x, null);
+  for (const cmd of [`Invoke-RestMethod -Uri $u -Headers @{Authorization="Basic ${CLAVE}"}`, `http GET https://x Authorization:"Basic ${CLAVE}"`]) {
+    const out = s(cmd);
+    assert.ok(!out.includes(CLAVE), out);
+  }
+});
+
+test('T41 Observe_SanitizeIsIdempotent — sanear dos veces deja lo mismo, también un resumen cortado después de un valor tapado', () => {
+  const s = (x) => obs.sanitize(x, null);
+  const cortado = s(`cd x && ${'a'.repeat(470)} --token=${CLAVE}123 && echo fin`);
+  assert.ok(cortado.endsWith('...'), cortado.slice(-30));
+  for (const x of [cortado, `curl -u :${PAT_ADO} x`, `git clone https://${PAT_ADO}@dev.azure.com/a/b`, `${SQLCMD} -P ${CLAVE}`, `x accessToken=${CLAVE}`, `export ${PASS}=${CORTA}`, `Authorization="Basic ${CLAVE}"`, j('ghp', '_', 'abcdefghijklmnopqrst')]) {
+    const una = s(x);
+    assert.strictEqual(s(una), una, una);
+  }
+});
+
+test('T42 Observe_ShellVariablesAreNotSecrets — en las formas nuevas, una variable del shell o el comienzo de un objeto quedan como están', () => {
+  const s = (x) => obs.sanitize(x, null);
+  for (const cmd of [
+    `${SQLCMD} -S "$SRV" -U "$USR" -P "$PW" -Q "select 1"`,
+    `${SQLCMD} -S db.acme.test -U sa -P $SA_PASSWORD -Q "select 1"`,
+    `export ${PASS}=$PW`,
+    `export DB_${PASS}="$PW"`,
+    `node app.js --dbPass${'word'}=$DB_${PASS}`,
+    'node -e "run({ secret:{env:\'X\'} })"',
+    'docker login -u dev -p "${REGISTRY_TOKEN}" registry.acme.test',
+  ]) {
+    assert.strictEqual(s(cmd), cmd);
+  }
+});

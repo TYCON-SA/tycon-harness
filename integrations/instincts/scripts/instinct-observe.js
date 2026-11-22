@@ -25,16 +25,42 @@ const MAX_ERRORS_LOG = 100 * 1024;
 
 // ── el saneado ─────────────────────────────────────────────────────────────────────────────────────────────────────
 // Las palabras de un secreto (`token=`, `password:`, `AZURE_DEVOPS_EXT_PAT=`, `AWS_SECRET_ACCESS_KEY=`, `AccountKey=` de
-// una cadena de conexión…) tapan su valor hasta el próximo blanco o comilla: la clave puede traer cualquier símbolo.
-// Además: las claves con forma propia (`sk-`, un token de GitHub, un JWT, una llave de AWS), la firma de un enlace firmado, las
-// credenciales en una URL (hasta la última `@`: la clave puede tener una), `-u usuario:clave` y `Authorization`.
-const AUTH_RE = /(authorization)\s*:\s*[^"'\n]+/gi;
+// una cadena de conexión…) tapan su valor hasta el próximo blanco o comilla; entre comillas, hasta la comilla que cierra.
+// Una palabra pegada al final de un nombre (`accessToken`, `clientSecret`, `_authToken`) también cuenta, y una clave corta
+// (desde 4 caracteres) se tapa después de `password`, `passwd` o `secret` con `=` o `:`. Además: las claves con forma propia (`sk-`,
+// un token de GitHub, un permiso de Azure DevOps, un JWT, una llave de AWS), la firma de un enlace firmado, las
+// credenciales en una URL (`usuario:clave@` hasta la última `@`, y un permiso largo puesto como usuario), `-u` y `--user`
+// con `usuario:clave` (también con el usuario vacío), la clave en la opción de sqlcmd, bcp, mysql, `docker login` o `az login`,
+// y `Authorization`. Una palabra cuenta también pegada a un escape (`\n`, `\t`) o a un signo codificado (`%20`). Sanear dos
+// veces deja lo mismo: un valor ya tapado no se vuelve a tapar. En las formas que no son de siempre, una variable del
+// shell (`"$PW"`, `$DB_PASSWORD`) o el comienzo de un objeto (`secret:{…}`) no es una clave y queda como está.
+const INICIO = '(?:(?<![A-Za-z0-9])|(?<=\\\\[ntr])|(?<=%[0-9A-Fa-f]{2}))';
+const PALABRAS = '(?:api[_-]?key|access[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|key|token|password|passwd|pwd|secret|bearer|pat)';
+const FUERTES = '(?:api[_-]?key|access[_-]?key|account[_-]?key|token|password|passwd|secret)';
+const NOMBRE = (palabras) => `((?:[A-Za-z0-9]+_)*${palabras}(?:_[A-Za-z0-9]+)*)`;
+const NO_TAPADO = '(?!\\[REDACTED)';
+const NO_VARIABLE = '(?!\\$[{(A-Za-z_])';
+const ENTRE_COMILLAS = `(?:"${NO_TAPADO}${NO_VARIABLE}[^"\\n]{4,}"|'${NO_TAPADO}${NO_VARIABLE}[^'\\n]{4,}')`;
+const AUTH_RE = /(authorization)["']?\s*[:=]\s*["']?[^"'\n]+/gi;
 const SIG_RE = /([?&]sig=)[^&"'\s]+/gi;
 const URL_CRED_RE = /(\b[a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s]*@/gi;
-const DASH_U_RE = /(\s-u\s+)[^\s:]+:\S+/g;
-const SECRET_RE = /(?<![A-Za-z0-9])((?:[A-Za-z0-9]+_)*(?:api[_-]?key|access[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|key|token|password|passwd|pwd|secret|bearer|pat)(?:_[A-Za-z0-9]+)*)["':\s=]+["']?[^\s"'&;,]{8,}/gi;
+const URL_USER_RE = /(\b[a-z][a-z0-9+.-]*:\/\/)[A-Za-z0-9_]{20,}@/gi;
+const DASH_U_RE = /((?:\s-u\s*|\s--user[\s=]+)["']?)[^\s:"']*:[^\s"']+/g;
+const VALOR_DE_OPCION = `("${NO_VARIABLE}[^"\\n]*"|'${NO_VARIABLE}[^'\\n]*'|${NO_VARIABLE}[^\\s"']+)`;
+const CLAVE_DE_HERRAMIENTA_RES = [
+  new RegExp(`(\\b(?:sqlcmd|bcp|osql)\\b[^|;&\\n]*?\\s-P\\s*)${VALOR_DE_OPCION}`, 'g'),
+  new RegExp(`(\\b(?:mysql|mysqldump|mysqladmin|mariadb)\\b[^|;&\\n]*?\\s-p)${VALOR_DE_OPCION}`, 'g'),
+  new RegExp(`(\\b(?:docker|podman|nerdctl|helm|oras)\\s+(?:registry\\s+)?login\\b[^|;&\\n]*?\\s-p\\s+)${VALOR_DE_OPCION}`, 'g'),
+  new RegExp(`(\\baz\\s+login\\b[^|;&\\n]*?\\s-p\\s+)${VALOR_DE_OPCION}`, 'g'),
+];
+const QUOTED_SECRET_RE = new RegExp(`${INICIO}${NOMBRE(FUERTES)}["']?\\s*[:=]\\s*${ENTRE_COMILLAS}`, 'gi');
+const SECRET_RE = new RegExp(`${INICIO}${NOMBRE(PALABRAS)}["':\\s=]+["']?${NO_TAPADO}[^\\s"'&;,]{8,}`, 'gi');
+const SHORT_SECRET_RE = new RegExp(`${INICIO}${NOMBRE('(?:password|passwd|secret)')}\\s*[:=]\\s*${NO_TAPADO}(?![{(\\[<$\\\\])[^\\s"'&;,]{4,7}(?=[\\s"'&;,]|$)`, 'gi');
+const CAMEL_SECRET_RE = new RegExp(`(?<=[a-z])(Token|Secret|Password|Passwd|Pwd|ApiKey|AccessKey|AccountKey|PrivateKey|SecretKey)(?:["']?\\s*[:=]\\s*${ENTRE_COMILLAS}|["':\\s=]+["']?${NO_TAPADO}${NO_VARIABLE}[^\\s"'&;,]{8,})`, 'g');
 const SK_RE = /\b(sk-[A-Za-z0-9_-]{16,})/g;
-const GHP_RE = /\b((?:gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,})/g;
+const GHP_RE = new RegExp(`${INICIO}((?:gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,})`, 'g');
+// los permisos de Azure DevOps: los de 52 letras de base32 y los de 84 con la marca AZDO
+const ADO_RE = new RegExp(`${INICIO}(?:[A-Za-z0-9]{76}AZDO[A-Za-z0-9]{4}|[a-z2-7]{52})(?![A-Za-z0-9])`, 'g');
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+/g;
 const AKIA_RE = /\bAKIA[0-9A-Z]{16}\b/g;
 
@@ -45,10 +71,16 @@ function sanitize(s, home) {
   out = out.replace(AUTH_RE, '$1: [REDACTED]');
   out = out.replace(SIG_RE, '$1[REDACTED]');
   out = out.replace(URL_CRED_RE, '$1[REDACTED]@');
+  out = out.replace(URL_USER_RE, '$1[REDACTED]@');
   out = out.replace(DASH_U_RE, '$1[REDACTED]');
+  for (const re of CLAVE_DE_HERRAMIENTA_RES) out = out.replace(re, '$1[REDACTED]');
+  out = out.replace(QUOTED_SECRET_RE, '$1=[REDACTED]');
   out = out.replace(SECRET_RE, '$1=[REDACTED]');
+  out = out.replace(SHORT_SECRET_RE, '$1=[REDACTED]');
+  out = out.replace(CAMEL_SECRET_RE, '$1=[REDACTED]');
   out = out.replace(SK_RE, '[REDACTED-SK]');
   out = out.replace(GHP_RE, '[REDACTED-GHP]');
+  out = out.replace(ADO_RE, '[REDACTED-ADO]');
   out = out.replace(JWT_RE, '[REDACTED-JWT]');
   out = out.replace(AKIA_RE, '[REDACTED-AKIA]');
   if (out.length > MAX_SUMMARY) out = `${out.slice(0, MAX_SUMMARY - 3)}...`;
