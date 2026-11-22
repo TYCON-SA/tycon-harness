@@ -327,6 +327,47 @@ function enComillasSimples(s, pos) {
   return q === "'";
 }
 
+/**
+ * La carpeta que crea un `$(mktemp …)` asignado a una variable, con sus `X` sin reemplazar (`/tmp/probe.XXXXXX`), o
+ * null si no se sabe. Lo que importa es DÓNDE queda: la cantidad de carpetas es la misma que la del molde, así que un
+ * `..` después se resuelve igual. Se lee sólo la forma sencilla: `-d`, `-q`, `-u`, `-t <prefijo>`, `-p <carpeta
+ * absoluta>` y un molde. Sin molde, o con `-t`, va a `$TMPDIR` (o `/tmp`), y si el mismo comando asigna `TMPDIR`, no se
+ * sabe. Un molde relativo queda relativo: cae en la carpeta del comando, como lo deja el shell.
+ */
+function carpetaDeMktemp(crudo, pos, asigs, env) {
+  // entre comillas dobles el shell corre el `$(…)` igual; entre simples es texto (no llega acá: no coincide la forma)
+  const t = String(crudo).trim();
+  const m = /^\$\(\s*mktemp((?:\s+[A-Za-z0-9_./+@%:,-]+)*)\s*\)$/.exec(/^"[^"]*"$/.test(t) ? t.slice(1, -1) : t);
+  if (!m) return null;
+  const w = m[1].trim() ? m[1].trim().split(/\s+/) : [];
+  let molde = null;
+  let prefijo = null;
+  let carpeta = null;
+  for (let i = 0; i < w.length; i++) {
+    const p = w[i];
+    if (p === '-d' || p === '-q' || p === '-u') continue;
+    if (p === '-t' || p === '-p') {
+      const v = w[i + 1];
+      if (!v || v.startsWith('-')) return null;
+      if (p === '-t') prefijo = v; else if (v.startsWith('/')) carpeta = v; else return null;
+      i++;
+      continue;
+    }
+    if (p.startsWith('-') || molde !== null) return null;
+    molde = p;
+  }
+  const tmpdir = () => {
+    if (asigs.some((x) => x.nombre === 'TMPDIR' && x.pos < pos)) return null;
+    const v = Object.prototype.hasOwnProperty.call(env, 'TMPDIR') ? String(env.TMPDIR || '') : '';
+    return (v && v.startsWith('/') ? v : '/tmp').replace(/\/+$/, '');
+  };
+  if (carpeta) return `${carpeta.replace(/\/+$/, '')}/${molde && !molde.includes('/') ? molde : 'tmp.XXXXXXXXXX'}`;
+  if (prefijo !== null) { const b = tmpdir(); return b && !prefijo.includes('/') ? `${b}/${prefijo}.XXXXXXXX` : null; }
+  if (molde !== null) return molde;
+  const b = tmpdir();
+  return b ? `${b}/tmp.XXXXXXXXXX` : null;
+}
+
 function expandirEn(t, pos, asigs, env, home, prof = 0) {
   // `$(…)`, comillas invertidas, el tope de profundidad, y las variables posicionales o especiales (`$1`, `${1}`, `$@`,
   // `$$`, `$?`…): «no sé»
@@ -355,7 +396,10 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
         if (!a.cierta) a.resuelto = NO_SE;
         else {
           const crudo = String(a.valor);
-          if (/^'[\s\S]*'$/.test(crudo)) {
+          // `D=$(mktemp -d …)`: una carpeta temporal, que se sabe dónde queda aunque no su nombre
+          const temporal = carpetaDeMktemp(crudo, a.pos, asigs, env);
+          if (temporal !== null) a.resuelto = temporal;
+          else if (/^'[\s\S]*'$/.test(crudo)) {
             // entre comillas simples el shell no expande nada: el valor es literal. Si trae un `$`, la ruta final tendría
             // un `$` de verdad y otra pieza (resolveTarget) lo expandiría: «no sé».
             const literal = crudo.slice(1, -1);
@@ -435,4 +479,4 @@ function expandirRutaSinRed(cmd, raw, opts) {
   return { valor: resultados[0].valor, sinResolver: [] };
 }
 
-module.exports = { asignaciones, expandirRuta };
+module.exports = { asignaciones, expandirRuta, carpetaDeMktemp };

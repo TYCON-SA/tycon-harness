@@ -289,3 +289,28 @@ test('T9 CdQueElFrenoNoSigue_FrenaLoRelativo — cd en un paréntesis o en un bu
   assert.equal(freno('cp src/a.js src/a.js'), '');
   assert.equal(freno(`(cd docs && cp src/a.js ${scratch}/copia.js)`), '');
 });
+
+// T11 CarpetaDeMktemp_SeSabeDondeQueda
+// 🔴 Falla con: tomar `$(mktemp …)` como «no sé»: una escritura a una carpeta temporal del laboratorio salía frenada
+// como fuera de la lista (medido en la revisión de precisión). Lo que la deja caer en el repo sigue frenando.
+test('T11 CarpetaDeMktemp_SeSabeDondeQueda — la carpeta temporal pasa; un molde relativo, un TMPDIR del comando o un .. al repo, no', () => {
+  const { repo, freno } = corral();
+  const pasan = [
+    'T=$(mktemp -d /tmp/probe.XXXXXX); echo x > $T/probe.js',
+    'P="$(mktemp -d /tmp/probe.XXXXXX)"; cat > $P/probe.js <<\'EOF\'\nx\nEOF',
+    'T=$(mktemp -d); echo x > $T/a.js',
+    'T=$(mktemp -d -t lab); echo x > $T/a.js',
+  ];
+  for (const c of pasan) assert.equal(freno(c), '', c);
+  // un molde relativo cae en la carpeta del comando (el repo): fuera de la lista
+  assert.match(freno('T=$(mktemp -d lab.XXXX); echo x > $T/a.js'), FUERA);
+  // con `..` la cuenta de carpetas es la del molde: vuelve al repo
+  const subir = path.relative('/tmp/x.XXXX', path.join(repo, 'src', 'b.js'));
+  assert.match(freno(`T=$(mktemp -d /tmp/x.XXXX); echo x > $T/${subir}`), FUERA);
+  // un TMPDIR del mismo comando, una forma que no se lee o un mktemp con otro comando adentro: no se sabe
+  for (const c of ['TMPDIR=src; T=$(mktemp -d); echo x > $T/a.js', 'T=$(mktemp --tmpdir=src x); echo x > $T/a.js',
+    'T=$(mktemp -d /tmp/a.XX; echo src); echo x > $T/a.js', "T='$(mktemp -d)'; echo x > $T/a.js"]) {
+    assert.match(freno(c), SIN_RESOLVER, c);
+  }
+  assert.deepStrictEqual(expandirRuta('T=$(mktemp -d /tmp/p.XXXX); cat > $T/x', '$T/x'), { valor: '/tmp/p.XXXX/x', sinResolver: [] });
+});
