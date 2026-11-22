@@ -521,18 +521,44 @@ function rootsOf(storyFile) {
  * sin poder listarla (un error, el tiempo agotado), 'unknown': no se da por inventada. Dentro de un commit git deja
  * `GIT_DIR` y compañía en el entorno, y le ganan a `-C`: sin sacarlas, contestaría el repo del commit.
  */
+// El tiempo de git para preguntarle a la rama principal del remoto: cada llamada, y todas juntas en una corrida del lint.
+// Con git colgado, una historia con varias rutas hacía esperar el commit minutos; pasado el total, lo que falta no se
+// mira y no se da por inventado.
+const GIT_POR_LLAMADA_MS = 5000;
+const GIT_EN_TOTAL_MS = 10000;
+let gitGastadoMs = 0;
+// la rama principal de cada repo, preguntada una vez por corrida
+const ramaDe = new Map();
+
+/** Corre git con lo que queda del tope total; sin tiempo, `{ sinTiempo: true }` sin correrlo. */
+function gitConTope(args, opts) {
+  const queda = GIT_EN_TOTAL_MS - gitGastadoMs;
+  if (queda <= 0) return { sinTiempo: true };
+  const desde = Date.now();
+  try {
+    return { out: execFileSync('git', args, { windowsHide: true, ...opts, timeout: Math.min(GIT_POR_LLAMADA_MS, queda) }) };
+  } catch (e) { return { error: e }; } finally { gitGastadoMs += Date.now() - desde; }
+}
+
 function inRemoteMain(root, p) {
   if (!fs.existsSync(path.join(root, '.git'))) return 'no';
   const env = sinGitDelPadre();
-  let ref = null;
-  for (const r of ['origin/HEAD', 'origin/main']) {
-    try { execFileSync('git', ['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { windowsHide: true, stdio: 'ignore', timeout: 5000, env }); ref = r; break; } catch { /* la siguiente */ }
+  if (!ramaDe.has(root)) {
+    let ref = null;
+    for (const r of ['origin/HEAD', 'origin/main']) {
+      const g = gitConTope(['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { stdio: 'ignore', env });
+      if (g.sinTiempo) return 'unknown';
+      if (!g.error) { ref = r; break; }
+      // se cortó por tiempo: no se sabe si tiene la rama
+      if (g.error.signal) return 'unknown';
+    }
+    ramaDe.set(root, ref);
   }
+  const ref = ramaDe.get(root);
   if (!ref) return 'no';
-  try {
-    const out = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', ref, '--', p], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, env });
-    return out.trim() ? 'yes' : 'no';
-  } catch { return 'unknown'; }
+  const g = gitConTope(['-C', root, 'ls-tree', '--name-only', ref, '--', p], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env });
+  if (g.sinTiempo || g.error) return 'unknown';
+  return g.out.trim() ? 'yes' : 'no';
 }
 
 /**
@@ -543,13 +569,22 @@ function inRemoteMain(root, p) {
 function lugaresEnElRemoto(roots, p) {
   const [top, ...resto] = p.split('/');
   const lugares = roots.map((r) => [r, p]);
-  if (!resto.length) return lugares;
-  const rest = resto.join('/');
-  for (const r of roots) {
-    if (path.basename(r) === top) lugares.push([r, rest]);
-    else if (fs.existsSync(path.join(r, top, '.git'))) lugares.push([path.join(r, top), rest]);
+  if (resto.length) {
+    const rest = resto.join('/');
+    for (const r of roots) {
+      // el nombre del repo sin distinguir mayúsculas: en macOS y Windows «backend/» es la carpeta «Backend»
+      if (path.basename(r).toLowerCase() === top.toLowerCase()) lugares.push([r, rest]);
+      else if (fs.existsSync(path.join(r, top, '.git'))) lugares.push([path.join(r, top), rest]);
+    }
   }
-  return lugares;
+  // el mismo repo llega como hermano y como carpeta del padre: se le pregunta una vez
+  const vistos = new Set();
+  return lugares.filter(([r, q]) => {
+    const k = `${path.resolve(r)}\0${q}`;
+    if (vistos.has(k)) return false;
+    vistos.add(k);
+    return true;
+  });
 }
 
 /**
