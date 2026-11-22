@@ -4072,7 +4072,7 @@
       "requiere": []
     },
     {
-      "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
+      "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 28 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",
       "requiere": []
