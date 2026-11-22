@@ -50,9 +50,10 @@ const SESION = /^[\w-]+$/;
 // lo que no se ve en el cuadro, o se ve en blanco: los de control (el salto de línea se mira aparte), los de formato
 // (marcas bidireccionales, de ancho cero, el guion suave), los separadores de línea y de párrafo, las marcas que se
 // combinan con la letra de antes, lo que Unicode deja sin dibujar (rellenos hangul, selectores de variación, la unión de
-// grafemas), el braille en blanco y todo espacio que no es el común
-const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{M}\p{Default_Ignorable_Code_Point}\u2800]|(?! )\p{Zs}/u;
-const NO_SE_VE = 'el pedido trae caracteres que no se ven o se ven en blanco (de control, bidireccionales, de ancho cero, rellenos o espacios que no son el común)';
+// grafemas), los de uso privado, los sin asignar (también los no-caracteres), los sustitutos sueltos, el braille en
+// blanco, el objeto reemplazado, la nota musical sin dibujo y todo espacio que no es el común
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{M}\p{Co}\p{Cn}\p{Cs}\p{Default_Ignorable_Code_Point}\u2800\uFFFC\u{1D159}]|(?! )\p{Zs}/u;
+const NO_SE_VE = 'el pedido trae caracteres que no se ven o se ven en blanco (de control, bidireccionales, de ancho cero, rellenos, de uso privado, sin asignar o espacios que no son el común)';
 // la marca de cada renglón de un texto libre: ningún rótulo del armado empieza así
 const MARCA = '│ ';
 const CELDA = /^[\w.-]{1,64}$/;

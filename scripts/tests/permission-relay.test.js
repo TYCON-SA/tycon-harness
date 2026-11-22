@@ -250,6 +250,27 @@ test('Permiso_CaracteresQueNoSeVen_NoSeLlevan (T11b) @story-8.180 @ac-11', (t) =
   assert.deepStrictEqual(delGancho(L), []);
 });
 
+test('Permiso_CaracteresSinDibujo_NoSeLlevan (T11d) @story-8.180 @ac-11', () => {
+  // se ven en blanco o como un cuadradito: uso privado, sin asignar, no-caracteres, sustitutos sueltos y dos puntuales
+  const casos = [
+    ['uso privado', '\u{E000}'],
+    ['uso privado del plano 15', '\u{F0000}'],
+    ['uso privado del plano 16', '\u{10FFFD}'],
+    ['sin asignar', '\u{378}'],
+    ['no-carácter FFFE', '\u{FFFE}'],
+    ['no-carácter FFFF', '\u{FFFF}'],
+    ['no-carácter de otro plano', '\u{1FFFE}'],
+    ['sustituto suelto', '\u{D800}'],
+    ['objeto reemplazado', '\u{FFFC}'],
+    ['marca musical sin dibujo', '\u{1D159}'],
+  ];
+  for (const [que, c] of casos) {
+    assert.match(String(PR.pedidoDe('Bash', { command: `ls ./x${c}y` }).motivo), /no se ven/, `${que} en un comando`);
+    assert.match(String(PR.pedidoDe('WebFetch', { url: 'https://example.com', prompt: `qué${c}dice` }).motivo), /no se ven/, `${que} en un texto libre`);
+    assert.ok(PR.carpetaDe(`/r/a${c}b`).motivo, `${que} en la carpeta`);
+  }
+});
+
 // ── AC 11: «Trabadas» no dice que no llegó un pedido que sí llegó ───────────────────────────────────────────────────
 
 test('Trabadas_MotivoViejo_NoSeMuestra (T11c) @story-8.180 @ac-11', (t) => {
