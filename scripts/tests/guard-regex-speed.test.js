@@ -35,7 +35,7 @@ function textos(piezas, semilla, n = VUELTAS, largo = 14) {
   return out;
 }
 // los saltos de línea que el `.` de una expresión no cruza: van en todos los alfabetos
-const FINES = ['\n', '\r', ' ', ' '];
+const FINES = ['\n', '\r', '\u2028', '\u2029'];
 const repetido = (pieza) => pieza.repeat(Math.ceil(LARGO / pieza.length)).slice(0, LARGO);
 function tarda(fn) {
   const t0 = process.hrtime.bigint();
@@ -129,13 +129,31 @@ test('T6 RegexLentas_Citados_IgualYLineal @fila-74: los textos entre comillas, l
     assert.deepStrictEqual(sp.textosEntreComillas(t), viejosCitados(t), JSON.stringify(t));
   }
   // una comilla que no cierra por una barra con un salto de línea no apaga las comillas que siguen
-  for (const t of ['"a\\\n" b"', 'echo "foo \\\n bar" x "y"', 'echo "a\\\nb"; sh -c "rm x"', "$'a\\\n' $'b'", '"\\ " "c"']) {
+  for (const t of ['"a\\\n" b"', 'echo "foo \\\n bar" x "y"', 'echo "a\\\nb"; sh -c "rm x"', "$'a\\\n' $'b'", '"\\\u2028" "c"']) {
     assert.deepStrictEqual(sp.textosEntreComillas(t), viejosCitados(t), JSON.stringify(t));
   }
   for (const p of ['\\"', '"\\"', "$'\\'", '"a\\', '"\\\n']) {
     const s = repetido(p);
     const ms = tarda(() => sp.textosEntreComillas(s));
     assert.ok(ms < TOPE_MS, `«${p}»×64 KB tardó ${ms.toFixed(0)} ms`);
+  }
+});
+
+test('T8 RegexLentas_InvokeRest_IgualYLineal @fila-74: un Invoke-AzRestMethod que borra, igual que antes y sin colgarse', () => {
+  // también vive adentro del freno, sin bibliotecas (la usa el criterio de emergencia): se toma la función del archivo
+  const VIEJA_INVOKE_REST = /Invoke-AzRestMethod\b.*?\s-M[a-z]*[\s:=]*\\?["']?(?:delete\b|\$)|Invoke-AzRestMethod\b[^;|&]*\s@[A-Za-z_]/i;
+  const fuente = require('fs').readFileSync(path.join(ROOT, 'scripts', 'hooks', 'prod-access-guard.js'), 'utf8');
+  const cuerpo = /^function invocaBorradoRest\(texto\) \{\n[\s\S]*?\n\}\n/m.exec(fuente);
+  assert.ok(cuerpo, 'el freno no trae invocaBorradoRest');
+  const invocaBorradoRest = new Function(`${cuerpo[0]}; return invocaBorradoRest;`)();
+  const piezas = ['Invoke-AzRestMethod', 'invoke-azrestmethod', 'Invoke-AzRestMethodX', ' ', '\t', '-M', '-Method', '-m', 'delete', 'DELETE',
+    'deleted', '$', '"', "'", '\\', '@', '@a', 'a', ':', '=', ';', '|', '&', 'X', ...FINES];
+  for (const t of textos(piezas, 748, VUELTAS * 2, 10)) assert.strictEqual(invocaBorradoRest(t), VIEJA_INVOKE_REST.test(t), JSON.stringify(t));
+  // la de antes tardaba 4 s con 256 KB: probaba desde cada aparición
+  for (const p of ['Invoke-AzRestMethod ', 'Invoke-AzRestMethod -M ', 'Invoke-AzRestMethod\n']) {
+    const s = p.repeat(Math.ceil((256 * 1024) / p.length));
+    const ms = tarda(() => invocaBorradoRest(s));
+    assert.ok(ms < TOPE_MS, `«${p.trim()}»×256 KB tardó ${ms.toFixed(0)} ms`);
   }
 });
 

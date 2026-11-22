@@ -98,7 +98,41 @@ const CRUDO = new RegExp('(' + [
 // expresión retrocedía sin fin en un texto largo, justo en el camino de más de 32 KB. Corre también sobre el JSON crudo del
 // evento, donde un salto de línea es el texto `\n`: por eso `\n` y `\r` escritos cortan el tramo y `\t` separa palabras.
 const REMOVE_AZ_RE = /Remove-Az(?:ResourceGroup|ResourceLock|Resource|SqlServer|SqlDatabase)(?![A-Za-z0-9_])/i;
-const INVOKE_REST_RE = /Invoke-AzRestMethod\b.*?\s-M[a-z]*[\s:=]*\\?["']?(?:delete\b|\$)|Invoke-AzRestMethod\b[^;|&]*\s@[A-Za-z_]/i;
+/**
+ * Un `Invoke-AzRestMethod` que borra (`-Method DELETE`, o un método en una variable) o que arma el pedido con `@args`.
+ * Dice lo mismo que `/Invoke-AzRestMethod\b.*?\s-M[a-z]*[\s:=]*\\?["']?(?:delete\b|\$)|Invoke-AzRestMethod\b[^;|&]*\s@[A-Za-z_]/i`
+ * sin probar desde cada aparición, que crecía con el cuadrado del largo: alcanza con la primera de cada tramo, porque
+ * desde ella se ve todo lo que verían las siguientes. En el primer caso el tramo termina en un salto de línea (el `.*?`
+ * no lo cruza), pero la cola puede empezar en ese mismo salto y seguir después (su `\s` y su `[\s:=]*` sí lo cruzan); en
+ * el segundo, el tramo termina en `;`, `|` o `&`, que la cola no tiene. Sin bibliotecas: la usa el criterio de emergencia.
+ */
+function invocaBorradoRest(texto) {
+  const s = String(texto);
+  const finDeLinea = (k) => { const c = s.charCodeAt(k); return c === 10 || c === 13 || c === 0x2028 || c === 0x2029; };
+  const aparicion = /Invoke-AzRestMethod\b/gi;
+  const cola = /\s-M[a-z]*[\s:=]*\\?["']?(?:delete\b|\$)/gi;
+  // la primera cola desde `colaDesde` empieza en `colaEn` (Infinity si no hay): vale para todo lugar entre los dos
+  let colaDesde = Infinity;
+  let colaEn = -1;
+  for (let m = aparicion.exec(s); m; m = aparicion.exec(s)) {
+    const e = m.index + m[0].length;
+    let b = e;
+    while (b < s.length && !finDeLinea(b)) b++;
+    if (!(colaDesde <= e && e <= colaEn)) {
+      cola.lastIndex = e;
+      const c = cola.exec(s);
+      colaDesde = e;
+      colaEn = c ? c.index : Infinity;
+    }
+    if (colaEn <= b) return true;
+    aparicion.lastIndex = b + 1;
+  }
+  const primeraY = (tramo, resto) => {
+    const m = /Invoke-AzRestMethod\b/i.exec(tramo);
+    return Boolean(m) && resto.test(tramo.slice(m.index + m[0].length));
+  };
+  return s.split(/[;|&]/).some((t) => primeraY(t, /\s@[A-Za-z_]/));
+}
 // `az` como palabra: sola, al final de una ruta (con barras de los dos lados) o pegada a una comilla o un paréntesis de un
 // programa que la ejecuta (`system("az …`)
 const esPalabraAz = (w) => /(?:^|[\\/:"'`({])az(?:\.cmd|\.exe)?$/i.test(w) || /az\.(?:cmd|exe)$/i.test(w);
@@ -120,7 +154,7 @@ function sinComillasDeLosBordes(palabra) {
 
 function nombraBorradoAzure(texto) {
   for (const tramo of String(texto || '').split(/[;|&\n\r]|\\[nr]/)) {
-    if (REMOVE_AZ_RE.test(tramo) || INVOKE_REST_RE.test(tramo)) return true;
+    if (REMOVE_AZ_RE.test(tramo) || invocaBorradoRest(tramo)) return true;
     const pal = tramo.split(/(?:\s|\\t)+/).map((x) => sinComillasDeLosBordes(x).toLowerCase()).filter(Boolean);
     for (let k = 0; k < pal.length; k++) {
       if (/(?:^|[\\/:"'`({])azd(?:\.exe)?$/.test(pal[k]) && pal[k + 1] === 'down') return true;
