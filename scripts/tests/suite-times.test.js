@@ -376,6 +376,35 @@ test('T11 Repeats_FromRunLines_HoursByModeAndMotive @story-8.297 @ac-10 — por 
   assert.match(texto.stdout, /lo guardado es de otra historia \(8\.1\)/);
 });
 
+test('T79a Repeats_ByStory_RunsAndHoursPerStory: para la retro, las corridas del portón y su tiempo por historia', () => {
+  // 🔴 mutación: agrupar por día junta las dos historias del mismo día, y --story que no filtra suma la otra
+  const f = gatesLog([
+    run(local(10, 9), 's1', '3.4', 'primera', 'no hay un verde guardado de esta historia en esta sesión', 15),
+    run(local(10, 10), 's1', '3.4', 'entera', 'cambió un archivo del sitio', 12),
+    run(local(11, 9), 's1', '3.4', 'entera', 'cambió un archivo del sitio', 13),
+    run(local(10, 11), 's2', '3.10', 'primera', 'no hay un verde guardado de esta historia en esta sesión', 5),
+    run(local(10, 12), 's3', null, 'primera', null, 2),
+  ]);
+  const r = cli('repeats', '--log', f, '--by-story', '--json');
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  const j = JSON.parse(r.stdout);
+  // orden por número, no por texto: el número menor primero
+  assert.deepEqual(j.historias.map((h) => h.historia), ['3.4', '3.10', 'sin historia']);
+  const [h34, h310] = j.historias;
+  assert.deepEqual(h34.total, { n: 3, ms: 40 * 60000 });
+  assert.deepEqual(h34.entera, { n: 2, ms: 25 * 60000 });
+  assert.deepEqual(h34.enteras_por_motivo, [{ motivo: 'cambió un archivo del sitio', n: 2, ms: 25 * 60000 }]);
+  assert.deepEqual(h310.total, { n: 1, ms: 5 * 60000 });
+  const una = JSON.parse(cli('repeats', '--log', f, '--by-story', '--story', '3.4', '--json').stdout);
+  assert.deepEqual(una.historias.map((h) => h.historia), ['3.4']);
+  const texto = cli('repeats', '--log', f, '--by-story', '--story', '3.4');
+  assert.match(texto.stdout, /por historia/);
+  assert.match(texto.stdout, /3\.4: 3 ejecución\(es\), 0,7 h/);
+  const ninguna = cli('repeats', '--log', f, '--story', '9.9');
+  assert.equal(ninguna.status, 3);
+  assert.match(ninguna.stdout, /de la historia 9\.9/);
+});
+
 test('T12 Repeats_OldDays_FromCheckCommand_NoMotive @story-8.297 @ac-10 — los días de antes se clasifican por el comando, sin achicar', () => {
   // 🔴 mutación: contar la segunda completa de la misma historia y sesión como «primera» achica las repeticiones
   const T = '/var/folders/T';
