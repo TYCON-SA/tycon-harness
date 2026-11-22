@@ -6498,6 +6498,15 @@ function paraOtraSesion(cmd, args, argv) {
   return null;
 }
 
+// ¿La vuelta extra es una firma de trámite? Lo es si el perfil del equipo la lista en `approvals.delegated_signing`
+// (scripts/lib/automatic-signing.js): la da el arnés solo, sin ventana ni cuadro, y el cartel no puede decir que la
+// aprueba una persona. Sin poder leer el perfil, no lo es.
+function vueltaExtraDeTramite() {
+  try {
+    return !!require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'automatic-signing.js')).esDeTramite({ firma: 'extra-round' }).ok;
+  } catch (_) { return false; }
+}
+
 // El tope de vueltas de revisores (lib/review-rounds.js): null si la vuelta `iter` puede servirse, o el mensaje llano de
 // por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona (una vuelta extra con su
 // ok, que se anota en gates.log, o eximirlo); lo demás queda como deuda visible y el recorrido sigue sin otra vuelta.
@@ -6531,14 +6540,21 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   // «no pude mirar» no es «no quedó nada abierto»
   const noMirado = h.error || (!runDir ? 'no encontré la carpeta de la corrida' : null);
   const avisos = [...tope.problems, ...pre.problems].map((p) => `   ⚠️  ${p}`);
+  const tramite = vueltaExtraDeTramite();
   if (args.extraRound && args.delegated) {
-    return `🛑 No se autorizó la vuelta extra ${iter}: --delegated ya no la autoriza. Va el mismo comando sin --delegated: la persona lo aprueba en la ventana de permiso, o lo deja correr sin ventana la delegación del perfil del equipo.\n`;
+    const quien = tramite ? 'es una firma de trámite del perfil del equipo y la da el arnés solo, sin ventana'
+      : 'la persona lo aprueba en la ventana de permiso, o lo deja correr sin ventana la delegación del perfil del equipo';
+    return `🛑 No se autorizó la vuelta extra ${iter}: --delegated ya no la autoriza. Va el mismo comando sin --delegated: ${quien}.\n`;
   }
   if (args.extraRound) {
     // la aprueba la persona en la ventana de permiso (o con --terminal), después del aviso del tope de ESTA vuelta
     const aviso = rr.avisoDelTope({ stateDir, story: storyId, iter });
     if (!aviso || !aviso.ts) return `🛑 No se autorizó la vuelta extra ${iter}: todavía no se avisó el tope de esta vuelta. Pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale la aprobación.\n`;
-    if (args.quote) return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. La aprueba la persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal).\n`;
+    if (args.quote) {
+      const quien = tramite ? 'Es una firma de trámite del perfil del equipo: el mismo comando sin --quote, y la da el arnés solo'
+        : 'La aprueba la persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal)';
+      return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. ${quien}.\n`;
+    }
     // desde la tercera vuelta, la nota de repensar se pide antes de gastar la firma: sin ella el set no se sirve igual
     const rt = require('./lib/rethink.js');
     const antes = () => {
@@ -6563,9 +6579,14 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
-    renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y la persona lo aprueba en la ventana de permiso');
-    renglones.push('       (o lo corre en su terminal con --terminal); si el perfil del equipo la delega, la sesión designada lo corre con');
-    renglones.push('       --for-session desde su pestaña, sin ventana.');
+    if (tramite) {
+      renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round. Es una firma de trámite del perfil del equipo');
+      renglones.push('       (approvals.delegated_signing): la da el arnés solo, sin ventana ni cuadro, y no es una firma del dueño.');
+    } else {
+      renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y la persona lo aprueba en la ventana de permiso');
+      renglones.push('       (o lo corre en su terminal con --terminal); si el perfil del equipo la delega, la sesión designada lo corre con');
+      renglones.push('       --for-session desde su pestaña, sin ventana.');
+    }
     renglones.push('   (b) Eximirlo: marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" (la persona lo aprueba en la ventana de permiso).');
   }
   if (deuda.length) {
