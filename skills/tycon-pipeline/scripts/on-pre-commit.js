@@ -431,7 +431,8 @@ function storyRequiresRuntimeEvidence(specContent) {
     'e2e-tests',
     'smoke runtime',
   ];
-  return runtimeMarkers.some(m => specContent.includes(m));
+  // una prueba de la tabla con Nivel `staging` también corre en vivo (en staging, después del merge)
+  return runtimeMarkers.some(m => specContent.includes(m)) || /^\|.*\|\s*[`*_]*staging\b[^|]*\|/im.test(specContent);
 }
 
 // DODRT-C5.1 — ¿La story toca UI? Para una story de UI la evidencia DoD debe venir de un
@@ -1575,7 +1576,10 @@ function main() {
         // sólo a otra tanda devuelve sus criterios. Sin cierre de tanda, la matriz se computa como siempre.
         const repoRoot = rm.discoverRepoRoot(specAbs);
         const cierra = tandasQueCierran.has(specRel);
-        out = { rm, specAbs, matrix: rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot,
+        // pasar a done pide el humo de staging de los criterios que se comprueban en staging, como el freno de done
+        const estadoRaiz = (texto) => ((String(texto || '').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '').match(/^status:\s*["']?([\w-]+)/m);
+        const aDone = (estadoRaiz(staged) || [])[1] === 'done' && (estadoRaiz(getHeadFileContent(cwd, specRel)) || [])[1] !== 'done';
+        out = { rm, specAbs, matrix: rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot, paraDone: aDone,
           closingBatches: cierra ? tandasQueCierran.get(specRel).nombres : null,
           closingAcsBefore: cierra ? tandasQueCierran.get(specRel).antes : null,
           ...(cierra ? { changed: diffFiles, codeRepo: repoRoot } : {}) }) };

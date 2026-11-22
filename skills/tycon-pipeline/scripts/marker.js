@@ -6622,9 +6622,22 @@ function cmdUpdateStoryStatus(storyPath, newStatus) {
  */
 function frenarDoneSinMatriz(storyPath) {
   let matrix = null;
-  try { matrix = require('./runtime-matrix.js').compute({ storyPath }); } catch (_e) { matrix = null; }
+  try { matrix = require('./runtime-matrix.js').compute({ storyPath, paraDone: true }); } catch (_e) { matrix = null; }
   if (matrix && !matrix.structuralError && matrix.green) return;
   const donde = dondeViveLaHistoria(storyPath);
+  // un criterio que se comprueba en staging sin su humo de staging frena aunque haya constancia: la constancia de la
+  // corrida es de antes del merge, cuando staging todavía no tenía el código
+  const faltaStaging = matrix && !matrix.structuralError ? matrix.stagingFalta || [] : [];
+  if (faltaStaging.length) {
+    appendLog('gates.log', { name: 'story-done', status: 'blocked', storyPath: path.resolve(storyPath), ...donde, motivo: 'sin-humo-de-staging' });
+    console.error(`marker.js update-story-status BLOQUEADO — ${faltaStaging.map((n) => `AC#${n}`).join(', ')} se comprueba(n) en staging y no tiene(n) un humo corrido contra staging.`);
+    console.error('  Cómo se sale: desplegá el código a staging y corré el humo de cada uno contra staging, con --environment staging:');
+    for (const n of faltaStaging) {
+      console.error(`   · bash ${path.join(__dirname, 'smoke-run.sh')} ${(matrix.evidenceDirs || [])[0] || '<carpeta de evidencia>'} ${storyPath} --acs ${n} --environment staging -- <el comando contra staging>`);
+    }
+    console.error('  Con el humo verde, este mismo comando la pasa a done. Si staging falla, la historia queda en review: arreglalo y volvé a desplegar.');
+    process.exit(1);
+  }
   const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(String(p)); } };
   const misma = (l) => (donde.storyRel && donde.repoCommon && l.storyRel && l.repoCommon
     ? l.storyRel === donde.storyRel && real(l.repoCommon) === real(donde.repoCommon)

@@ -1216,6 +1216,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 45 (21/11): un criterio con prueba de Nivel staging no frena antes del merge y pide su humo de staging para done.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/staging-criteria.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.121: la ejecución perdida (marcador, apertura o copia que faltan) frena, y su salida es del dueño.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/lost-marker.test.js",

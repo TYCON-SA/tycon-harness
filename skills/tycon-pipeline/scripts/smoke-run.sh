@@ -74,6 +74,7 @@ fi
 
 ACS=""
 MUTATES=0
+ENTORNO=""
 # --compare (historia 8.167): además del humo de siempre, el comando se corre con main y con el cambio, aislados y sin
 # red, y el resultado queda en compare-previous.json de la corrida. --covers <archivo>[:<subcomando>],…: los
 # candidatos que cubre un humo que corre un laboratorio con {raiz}; va sólo con --compare.
@@ -100,6 +101,14 @@ while true; do
       fi
       ACS="$2"; shift 2 ;;
     --mutates) MUTATES=1; shift ;;
+    # Contra qué entorno corrió el humo (`staging`): un criterio con una prueba de Nivel `staging` lo pide para pasar a
+    # done. Va al registro y al espejo, como `--mutates`. Sólo minúsculas, números y guiones.
+    --environment)
+      if [ $# -lt 2 ] || ! [[ "$2" =~ ^[a-z][a-z0-9-]*$ ]]; then
+        echo "smoke-run.sh: --environment necesita el nombre del entorno en minúsculas (ej: --environment staging)" >&2
+        exit 2
+      fi
+      ENTORNO="$2"; shift 2 ;;
     --compare) COMPARE=1; shift ;;
     --covers)
       if [ $# -lt 2 ] || [ "$2" = "--" ]; then
@@ -325,6 +334,7 @@ fi
 ACS_JSON="[$(echo "$ACS" | tr ',' '\n' | grep -E '^[0-9]+$' | paste -sd, -)]"
 MUT_FIELD=""
 if [ "$MUTATES" = "1" ]; then MUT_FIELD=',"mutates":true'; fi
+if [ -n "$ENTORNO" ]; then MUT_FIELD="$MUT_FIELD,\"environment\":\"$ENTORNO\""; fi
 
 # ── El `cmd` se TAPA antes de escribirlo ──
 # El ledger vive en `<repo>/.advisors/dod-runtime/`, que el .gitignore canónico deja VIAJAR por

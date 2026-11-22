@@ -493,6 +493,15 @@ historia abierta, la salida es corregir la ruta si el archivo se movió, crearlo
 traer el hermano al día. En `done`, traer el hermano al día o volver a correr la evidencia: la lista no se edita para ponerla
 en verde. Un archivo que no es código no se mira, esté o no.
 
+### Un criterio que se comprueba en staging
+
+Una prueba de la tabla con Nivel `staging` dice que su criterio se comprueba en staging, que tiene el código recién después
+del merge. Antes de `done`, si el criterio no corrió, queda «se comprueba en staging» (🕓): no frena ni pide firma de deuda.
+Para pasar a `done`, el freno de `update-story-status` pide un humo de ese criterio corrido contra staging:
+`smoke-run.sh <carpeta> <historia> --acs N --environment staging -- <comando contra staging>`. Lo pide aunque haya
+constancia de la matriz verde, y aunque el criterio haya corrido en otro lado. El entorno vale sólo si el espejo de esta
+máquina lo trae. Si staging falla, la historia queda en `review` hasta que el humo dé verde.
+
 Una historia cuyo id no entra en el patrón de historias del repo (el de fábrica es de números: `8.12`, `3-4`) no pasa por
 el freno del commit: ni la matriz ni la evidencia se miran. Cuando una así pasa a `review` o `done`, el freno avisa, nombra
 la historia y su id, y sale igual: el aviso no frena. Para que entre, el repo declara su forma en `stories.id_pattern` de
