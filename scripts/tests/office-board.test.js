@@ -1340,3 +1340,21 @@ test('T20 Regresion_TarjetasYColumnasIguales @story-8.313 @ac-20 — la misma fo
   assert.deepStrictEqual(ta.pendientes.filas, tb.pendientes.filas);
   assert.strictEqual(ta.pendientes.cruce, tb.pendientes.cruce);
 });
+
+test('T343 Kanban_FirmaDeSesionQueNoEsta_SinSesion: una firma del tablero para una sesión que ya no está no espera al dueño', () => {
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Ana', status: 'busy', work: '9.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement' } }]),
+    board: buildBoard({ pendientes: [
+      { titulo: 'La de una sesión cerrada', estado: 'firma', quien: 'Muerta-6' },
+      { titulo: 'La de Ana', estado: 'firma', quien: 'Ana (la tanda B)' },
+      { titulo: 'La tuya', estado: 'firma', quien: 'vos' },
+      { titulo: 'Sin nombre', estado: 'firma' },
+    ] }),
+    nowMs: NOW,
+  });
+  assert.deepStrictEqual(titles(data, 'firma').sort(), ['La de Ana', 'La tuya', 'Sin nombre'].sort(), 'la de una sesión viva, la del dueño y la que no nombra a nadie siguen en «Tu firma»');
+  const sin = col(data, 'sinEmpezar').tarjetas.find((t) => t.titulo === 'La de una sesión cerrada');
+  assert.ok(sin, 'la de la sesión que ya no está va a «Sin sesión»');
+  assert.strictEqual(sin.motivo, 'la sesión que la esperaba ya no está');
+  assert.ok(!JSON.stringify((data.meta.esperan || {}).dueno || []).includes('Muerta-6'), '«Esperan al dueño» no la nombra');
+});
