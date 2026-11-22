@@ -34,6 +34,8 @@ function textos(piezas, semilla, n = VUELTAS, largo = 14) {
   }
   return out;
 }
+// los saltos de línea que el `.` de una expresión no cruza: van en todos los alfabetos
+const FINES = ['\n', '\r', ' ', ' '];
 const repetido = (pieza) => pieza.repeat(Math.ceil(LARGO / pieza.length)).slice(0, LARGO);
 function tarda(fn) {
   const t0 = process.hrtime.bigint();
@@ -62,7 +64,7 @@ function viejosCitados(texto) {
 for (const [cual, sp] of Object.entries(COPIAS)) {
   test(`T1 RegexLentas_Printf_IgualYLineal (${cual}) @fila-74: el largo de un %… de printf, igual que antes y sin colgarse`, () => {
     const viejo = (fmt, i) => { const m = VIEJA_PRINTF.exec(fmt.slice(i)); return m ? m[0].length : 0; };
-    for (const t of textos(['0', '00', '-', '+', ' ', '#', '1', '9', '*', '.', 'd', 's', 'x', '%', 'Z', '\\'], 741)) {
+    for (const t of textos(['0', '00', '-', '+', ' ', '#', '1', '9', '*', '.', 'd', 's', 'x', '%', 'Z', '\\', ...FINES], 741)) {
       for (let i = 0; i <= t.length; i++) assert.strictEqual(sp.largoDeEspecificadorPrintf(t, i), viejo(t, i), `${JSON.stringify(t)} desde ${i}`);
     }
     for (const p of ['0', '0 ', '-0', '0.', '#0+']) {
@@ -73,7 +75,7 @@ for (const [cual, sp] of Object.entries(COPIAS)) {
   });
 
   test(`T2 RegexLentas_BarrasFinales_IgualYLineal (${cual}) @fila-74: sacar las barras del final, igual que antes`, () => {
-    for (const t of textos(['/', '//', 'a', '.', ' ', 'b/'], 742)) assert.strictEqual(sp.sinBarrasFinales(t), t.replace(VIEJA_BARRAS, ''), JSON.stringify(t));
+    for (const t of textos(['/', '//', 'a', '.', ' ', 'b/', ...FINES], 742)) assert.strictEqual(sp.sinBarrasFinales(t), t.replace(VIEJA_BARRAS, ''), JSON.stringify(t));
     for (const p of ['/', '/a', '//x']) {
       const s = `${repetido(p)}x`;
       const ms = tarda(() => sp.sinBarrasFinales(s));
@@ -82,7 +84,7 @@ for (const [cual, sp] of Object.entries(COPIAS)) {
   });
 
   test(`T4 RegexLentas_ShellAntes_IgualYLineal (${cual}) @fila-74: «la línea del heredoc termina en un shell», igual que antes`, () => {
-    const piezas = [' ', '\t', ';', '&', '|', '(', '/', 'bash', 'sh', 'zsh', 'dash', 'ksh', 'sudo ', 's', 'h', 'a', '-x', ' -e', 'x', '.', '\n'];
+    const piezas = [' ', '\t', ';', '&', '|', '(', '/', 'bash', 'sh', 'zsh', 'dash', 'ksh', 'sudo ', 's', 'h', 'a', '-x', ' -e', 'x', '.', ...FINES];
     for (const t of textos(piezas, 744, VUELTAS * 2)) assert.strictEqual(sp.SHELL_ANTES.test(t), VIEJA_SHELL_ANTES.test(t), JSON.stringify(t));
     for (const p of ['(', ';&', '/', 'a/', ' sudo', 'bash ', '/bash ']) {
       const s = `${repetido(p)}x`;
@@ -92,7 +94,7 @@ for (const [cual, sp] of Object.entries(COPIAS)) {
   });
 
   test(`T5 RegexLentas_ShellDespues_IgualYLineal (${cual}) @fila-74: «el heredoc sigue en una tubería a un shell», igual que antes`, () => {
-    const piezas = [' ', '\t', '|', '/', 'bash', 'sh', 'zsh', 'dash', 'ksh', 'sudo ', 's', 'h', 'a', 'x', ';', '\n', '-'];
+    const piezas = [' ', '\t', '|', '/', 'bash', 'sh', 'zsh', 'dash', 'ksh', 'sudo ', 's', 'h', 'a', 'x', ';', '-', ...FINES];
     for (const t of textos(piezas, 745, VUELTAS * 2)) assert.strictEqual(sp.SHELL_DESPUES.test(t), VIEJA_SHELL_DESPUES.test(t), JSON.stringify(t));
     for (const p of ['|', '|/', '/', '/sh', '| ', 'a/sh/']) {
       const s = `${repetido(p)}x`;
@@ -110,7 +112,7 @@ test('T3 RegexLentas_BordesDeUnaPalabra_IgualYLineal @fila-74: las comillas y pa
   const cuerpo = /^function sinComillasDeLosBordes\(palabra\) \{\n[\s\S]*?\n\}\n/m.exec(fuente);
   assert.ok(cuerpo, 'el freno no trae sinComillasDeLosBordes');
   const sinComillasDeLosBordes = new Function(`${cuerpo[0]}; return sinComillasDeLosBordes;`)();
-  for (const t of textos(['\\', '"', "'", '`', '(', ')', '{', '}', '$', 'a', 'z', '-'], 743)) {
+  for (const t of textos(['\\', '"', "'", '`', '(', ')', '{', '}', '$', 'a', 'z', '-', ...FINES], 743)) {
     assert.strictEqual(sinComillasDeLosBordes(t), t.replace(VIEJA_BORDES, ''), JSON.stringify(t));
   }
   for (const p of [')}', '")', "'`", '\\']) {
@@ -122,10 +124,15 @@ test('T3 RegexLentas_BordesDeUnaPalabra_IgualYLineal @fila-74: las comillas y pa
 
 test('T6 RegexLentas_Citados_IgualYLineal @fila-74: los textos entre comillas, los mismos que antes y sin colgarse', () => {
   const sp = COPIAS.compartida;
-  for (const t of textos(['$', "'", '"', '\\', 'a', ' ', '$\'', '\\"', "\\'", 'b'], 746, VUELTAS * 2)) {
+  // con saltos de línea: una barra seguida de uno no escapa nada, y la comilla que no cerró por eso puede cerrar más adelante
+  for (const t of textos(['$', "'", '"', '\\', 'a', ' ', '$\'', '\\"', "\\'", 'b', ...FINES, '\\\n', '\\\r'], 746, VUELTAS * 2)) {
     assert.deepStrictEqual(sp.textosEntreComillas(t), viejosCitados(t), JSON.stringify(t));
   }
-  for (const p of ['\\"', '"\\"', "$'\\'", '"a\\']) {
+  // una comilla que no cierra por una barra con un salto de línea no apaga las comillas que siguen
+  for (const t of ['"a\\\n" b"', 'echo "foo \\\n bar" x "y"', 'echo "a\\\nb"; sh -c "rm x"', "$'a\\\n' $'b'", '"\\ " "c"']) {
+    assert.deepStrictEqual(sp.textosEntreComillas(t), viejosCitados(t), JSON.stringify(t));
+  }
+  for (const p of ['\\"', '"\\"', "$'\\'", '"a\\', '"\\\n']) {
     const s = repetido(p);
     const ms = tarda(() => sp.textosEntreComillas(s));
     assert.ok(ms < TOPE_MS, `«${p}»×64 KB tardó ${ms.toFixed(0)} ms`);

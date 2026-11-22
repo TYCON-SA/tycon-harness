@@ -1561,38 +1561,53 @@ function citados(cmd) {
   return textosEntreComillas(sinHeredocs(String(cmd), { salvoShell: true })).filter((t) => t.trim());
 }
 
-// Cada forma de comilla, leída desde un lugar fijo
-const CITA_ANSI = /\$'((?:\\.|[^'\\])*)'/y;
-const CITA_SIMPLE = /'([^']*)'/y;
-const CITA_DOBLE = /"((?:\\.|[^"\\])*)"/y;
-const FORMAS_DE_CITA = [
-  { re: CITA_ANSI, abre: "$'", valor: (m) => m[1].replace(/\\(['\\])/g, '$1') },
-  { re: CITA_SIMPLE, abre: "'", valor: (m) => m[1] },
-  { re: CITA_DOBLE, abre: '"', valor: (m) => m[1].replace(/\\(["\\$`])/g, '$1') },
-];
+// Lo que el `.` de una expresión regular no cruza: una barra seguida de uno de éstos no escapa nada
+const FIN_DE_LINEA = new Set(['\n', '\r', '\u2028', '\u2029']);
+
+/**
+ * Lee una cita con escapes de barra (`"…"` o `$'…'`) cuyo contenido empieza en `desde`, como
+ * `(?:\\.|[^<cierre>\\])*<cierre>`: `{ contenido, fin }`, o `{ corte }` con el lugar donde la lectura no pudo seguir (el
+ * final del texto, o una barra al final o seguida de un salto de línea).
+ */
+function citaConEscapes(s, desde, cierre) {
+  for (let j = desde; j < s.length;) {
+    if (s[j] === cierre) return { contenido: s.slice(desde, j), fin: j + 1 };
+    if (s[j] !== '\\') { j++; continue; }
+    if (j + 1 < s.length && !FIN_DE_LINEA.has(s[j + 1])) { j += 2; continue; }
+    return { corte: j };
+  }
+  return { corte: s.length };
+}
 
 /**
  * Los textos entre comillas, en orden: los mismos que da
  * `/\$'((?:\\.|[^'\\])*)'|'([^']*)'|"((?:\\.|[^"\\])*)"/g`, sin crecer con el cuadrado del largo. Ante una comilla que no
- * cierra, la expresión recorría hasta el final desde cada comilla siguiente. Acá una forma que abrió y no cerró desde un
- * lugar no se vuelve a probar: tampoco cierra desde uno posterior, porque esa comilla posterior quedó adentro, escapada,
- * y desde ahí se lee igual.
+ * cierra, la expresión recorría desde cada comilla siguiente. Acá, una forma que abrió y no cerró no se vuelve a probar
+ * hasta el lugar donde se cortó su lectura: una comilla de esa forma antes del corte quedó adentro, escapada, y desde
+ * ahí se lee igual hasta el mismo corte. Después del corte (una barra con un salto de línea) se prueba de nuevo.
  */
 function textosEntreComillas(texto) {
   const s = String(texto);
   const out = [];
-  const sinCierre = FORMAS_DE_CITA.map(() => false);
+  // por forma (`$'`, `'`, `"`): hasta dónde se sabe que no cierra
+  const sinCierreHasta = [-1, -1, -1];
   let i = 0;
   while (i < s.length) {
-    let leida = false;
-    for (let f = 0; f < FORMAS_DE_CITA.length && !leida; f++) {
-      const forma = FORMAS_DE_CITA[f];
-      if (sinCierre[f] || !s.startsWith(forma.abre, i)) continue;
-      forma.re.lastIndex = i;
-      const m = forma.re.exec(s);
-      if (m) { out.push(forma.valor(m)); i = forma.re.lastIndex; leida = true; } else sinCierre[f] = true;
+    let r = null;
+    let f = -1;
+    if (s[i] === '$' && s[i + 1] === "'" && i > sinCierreHasta[0]) { f = 0; r = citaConEscapes(s, i + 2, "'"); }
+    else if (s[i] === "'" && i > sinCierreHasta[1]) {
+      f = 1;
+      const k = s.indexOf("'", i + 1);
+      r = k < 0 ? { corte: s.length } : { contenido: s.slice(i + 1, k), fin: k + 1 };
+    } else if (s[i] === '"' && i > sinCierreHasta[2]) { f = 2; r = citaConEscapes(s, i + 1, '"'); }
+    if (r && r.fin !== undefined) {
+      out.push(f === 0 ? r.contenido.replace(/\\(['\\])/g, '$1') : f === 1 ? r.contenido : r.contenido.replace(/\\(["\\$`])/g, '$1'));
+      i = r.fin;
+      continue;
     }
-    if (!leida) i++;
+    if (r) sinCierreHasta[f] = r.corte;
+    i++;
   }
   return out;
 }
