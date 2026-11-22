@@ -2469,3 +2469,20 @@ test('Candado_UnSoloDueno — office.js pregunta por el proceso del candado con 
     try { assert.strictEqual(await answers({ pid: process.pid, port: otro.address().port, token: 'x' }), false); } finally { otro.close(); }
   } finally { toy.close(); }
 });
+
+test('Candado_RespuestaCortada_NoQuedaColgada — el puerto del candado manda las cabeceras y corta a mitad del cuerpo: cuenta como otra cosa', async () => {
+  const net = require('net');
+  const { lockOwner } = require(path.join(ROOT, 'scripts', 'tools', 'office', 'site-link.js'));
+  const { answers } = require(OFFICE);
+  const cortador = net.createServer((s) => {
+    s.once('data', () => { s.write('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{"pid":'); setTimeout(() => s.destroy(), 30); });
+  });
+  await new Promise((r) => cortador.listen(0, '127.0.0.1', r));
+  const lock = { pid: process.pid, port: cortador.address().port, token: 'x' };
+  // un vigilante: sin el arreglo, la pregunta no termina nunca
+  const conPlazo = (p) => Promise.race([p, new Promise((r) => setTimeout(() => r('colgada'), 3000))]);
+  try {
+    assert.strictEqual(await conPlazo(lockOwner(lock, 1000)), 'foreign');
+    assert.strictEqual(await conPlazo(answers(lock)), false);
+  } finally { cortador.close(); }
+});
