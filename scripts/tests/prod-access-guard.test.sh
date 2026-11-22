@@ -422,6 +422,18 @@ frena "T21ag Gxargs_EsXargs_Frena" "echo $P/$NM | gxargs sed -i s/a/b/"
 frena "T21ah Gxargs_HeredocAUnInterprete_Frena" "cat <<'EOF' | gxargs -I{} python3 -c {}
 import os; os.remove(\"$P/$NM\")
 EOF"
+# T21ai a T21ap · también los intérpretes que el resto del freno no conoce (bun, deno, awk, osascript, pwsh) y los que
+# corren uno (npx, uv run): lo que xargs les pasa puede ser su programa (fila 104).
+frena "T21ai Xargs_ProgramaParaBun_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} bun -e {}"
+frena "T21aj Xargs_ProgramaParaDeno_Frena" "echo 'Deno.removeSync(\"$P/$NM\")' | xargs -I{} deno eval {}"
+frena "T21ak Xargs_ProgramaDeAwkPorUnHeredoc_Frena" "cat <<'EOF' | xargs -I{} awk {}
+BEGIN{system(\"rm $P/$NM\")}
+EOF"
+frena "T21al Xargs_ProgramaParaOsascript_Frena" "echo 'do shell script \"rm $P/$NM\"' | xargs -I{} osascript -e {}"
+frena "T21am Xargs_ProgramaParaPwsh_Frena" "echo 'Remove-Item $P/$NM' | xargs -I{} pwsh -c {}"
+frena "T21an Xargs_ProgramaParaNpxTsx_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} npx tsx -e {}"
+frena "T21ao Xargs_ProgramaParaUvRun_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -I{} uv run python -c {}"
+pasa  "T21ap Xargs_ProgramaParaBunQueNoNombraNada_Pasa" "echo 'console.log(1)' | xargs -I{} bun -e {}"
 pasa  "T21aa Xargs_HeredocDesdeUnGrupoQueNoNombraNada_Pasa" "{ cat <<'EOF'
 print(1)
 EOF

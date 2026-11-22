@@ -1925,9 +1925,17 @@ const LECTORES = new Set(['cat', 'bat', 'less', 'more', 'head', 'tail', 'grep', 
 // Intérpretes que corren un PROGRAMA: lo que reciben como argumento es dato del programa (ver `juzgarPalabra`). Los
 // shells no entran: lo que corren se lee como shell y se juzga entero.
 const INTERPRETE_DE_PROGRAMA = /^(?:python(?:\d+(?:\.\d+)*)?|node|perl|ruby|php)$/;
-// un `xargs` o un `parallel` con uno de esos intérpretes después, en cualquier parte del comando (también dentro de un
+// Los programas a los que lo que les pasa xargs les puede llegar como programa: los intérpretes de arriba, los que el resto
+// del freno no conoce y los que corren uno (`npx tsx`, `uv run python`). Es una lista aparte a propósito:
+// INTERPRETE_DE_PROGRAMA también afloja (en juzgarPalabra, lo que un intérprete recibe sin resolver es un dato), y esta
+// sólo aprieta. Los shells los juzga la regla de shell.
+const POR_XARGS = ['python(?:\\d+(?:\\.\\d+)*)?', 'node', 'perl', 'ruby', 'php', 'bun', 'bunx', 'deno', 'awk', 'gawk', 'mawk', 'nawk',
+  'osascript', 'tsx', 'ts-node', 'lua', 'luajit', 'rscript', 'pwsh', 'powershell', 'tclsh', 'julia', 'npx', 'pnpx', 'uv', 'uvx', 'poetry',
+  'pipenv'];
+const INTERPRETE_POR_XARGS = new RegExp(`^(?:${POR_XARGS.join('|')})$`, 'i');
+// un `xargs` o un `parallel` con uno de esos programas después, en cualquier parte del comando (también dentro de un
 // `bash -c '…'` o de una función)
-const XARGS_CON_INTERPRETE = /(?<![\w.-])(g?xargs|parallel)(?![\w.-])[\s\S]*?(?<![\w-])(?:python(?:\d+(?:\.\d+)*)?|node|perl|ruby|php)(?![\w.-])/;
+const XARGS_CON_INTERPRETE = new RegExp(`(?<![\\w.-])(g?xargs|parallel)(?![\\w.-])[\\s\\S]*?(?<![\\w-])(?:${POR_XARGS.join('|')})(?![\\w.-])`, 'i');
 // `sed` sin `-i`/`-I`/`--in-place` sólo LEE sus archivos; su programa (`-e`, `--expression`, o el primer argumento) sí se
 // juzga: `sed -n 'w <archivo>'` escribe (revisión de la tanda A, T30: freno falso con `sed` sobre una variable del `for`).
 const SED_EN_SITIO = /^(?:-[^-]*[iI]|--in-place(?:=|$))/;
@@ -2555,13 +2563,13 @@ function escrituraProtegida(cmd, payload) {
         if (v) {
           // a un intérprete, el freno no le lee el programa (uno «que sólo lee» corre lo que haya en un json.py de la
           // carpeta): que el motivo diga cómo leer sin escribir
-          const leer = INTERPRETE_DE_PROGRAMA.test(p) ? ' Para sólo leerlos, usá jq o la herramienta de lectura: un intérprete al que xargs le pasa esos nombres cuenta como escritura.' : '';
+          const leer = INTERPRETE_POR_XARGS.test(p) ? ' Para sólo leerlos, usá jq o la herramienta de lectura: un intérprete al que xargs le pasa esos nombres cuenta como escritura.' : '';
           return { motivo: `ese comando ESCRIBE sobre ${v} (xargs arma los argumentos de «${p}» con lo que le llega de «${corto(c.raw)}»).${leer}` };
         }
         // a un intérprete, lo que llega puede ser su programa (`xargs -I{} python3 -c {}`, o `-c` sin programa): un texto
         // que nombra un estado de producción, escrito o en una variable de valor conocido, se juzga como el programa
         // escrito en el comando. Los heredocs los mira programaPorHeredoc.
-        if (!INTERPRETE_DE_PROGRAMA.test(p)) continue;
+        if (!INTERPRETE_POR_XARGS.test(p)) continue;
         const textos = [pal(c.raw), ...expandir(c.raw, c.opts).patterns.map(sp.patternToLiteral)];
         const m = textos.map((x) => MENCION_PROTEGIDA.exec(x)).find(Boolean);
         if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (xargs le pasa a «${p}» un texto que lo nombra, y puede ser su programa: «${corto(c.raw)}»).` };
