@@ -127,9 +127,11 @@ test('OwnerWindow_FirmaReconocida_PideVentanaYAnota (T7)', (t) => {
     assert.strictEqual(r.decision, 'ask', `${cmd}: ${r.texto}`);
     assert.deepStrictEqual(r.firmas, [firma], cmd);
     const s = require('../lib/signatures.js').SIGNATURES.find((x) => x.id === firma);
-    // el de la excepción en vivo dice la razón declarada, no el texto del catálogo
+    // el de la excepción en vivo dice la razón declarada, no el texto del catálogo; volver a aprobar la maqueta firma como
+    // el plan, pero su cuadro dice que es la maqueta
     const que = firma === 'runtime-waiver' ? 'Aceptar sin prueba en vivo el AC 1, porque «el servicio externo no tiene ambiente de prueba»'
-      : `${s.approves.charAt(0).toUpperCase()}${s.approves.slice(1)}`;
+      : / approve-mockup /.test(cmd) ? 'Volver a aprobar la maqueta de una story'
+        : `${s.approves.charAt(0).toUpperCase()}${s.approves.slice(1)}`;
     assert.ok(r.texto.includes(`¿${que}?`), `${cmd}: el texto dice qué aprueba`);
     assert.match(r.texto, /9\.99/, `${cmd}: el texto dice la story`);
     assert.match(r.texto, /ses-a/, `${cmd}: el texto dice la sesión destino`);

@@ -1853,3 +1853,62 @@ test('RunPaths_OldRelativeMarker_ReadAbsolute (T8) @story-8.287 @ac-13', (t) => 
   assert.strictEqual(clear.status, 0, clear.err);
   assert.ok(!fs.existsSync(path.join(runDir, 'run-open.json')), 'el cierre no encontró la apertura de esa carpeta');
 });
+
+// ── volver a aprobar la maqueta: su propio cuadro, no el del plan ──────────────────────────────────────────────────
+const MOCKUP_JS = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'mockup.js');
+// una historia con pantalla: la que tiene maqueta
+const CON_PANTALLA = ['files_to_modify:', '  - src/components/Facturas.tsx'];
+const APRUEBA_MAQUETA = `node ${MARKER} approve-mockup --approved "pido el click del dueño para la maqueta nueva"`;
+// el modelo de la maqueta; `texto` cambia lo que se compara con la pantalla, `estado` sólo el dibujo
+const modeloMaqueta = ({ texto = 'Guardar', estado = 'con facturas' } = {}) => JSON.stringify({ title: 'Facturas', screens: [{ name: 'Lista de facturas', state: estado, elements: [{ kind: 'heading', text: 'Facturas' }, { kind: 'button', text: texto }] }] });
+function armarMaqueta(c, modelo) {
+  const r = spawnSync('node', [MOCKUP_JS, 'render', '--data', '-', '--story', c.ruta], { encoding: 'utf8', input: modelo, env: { ...process.env, HOME: c.casa } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
+}
+// el commit de laboratorio: identidad y fechas fijas, sin el mantenimiento automático de git
+const commitDeLab = (repo) => {
+  const env = { ...process.env, GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.invalid', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.invalid', GIT_AUTHOR_DATE: '2026-11-04T12:00:00Z', GIT_COMMITTER_DATE: '2026-11-04T12:00:00Z' };
+  for (const a of [['add', '-A'], ['commit', '-q', '-m', 'maqueta aprobada']]) assert.strictEqual(spawnSync('git', ['-c', 'maintenance.auto=false', '-C', repo, ...a], { env }).status, 0, a.join(' '));
+};
+// la aprobación anterior, en el marcador de la sesión (como la deja marker.js)
+const aprobadaCon = (c, sha256) => {
+  const f = path.join(c.estado, 'active', 'ses-a.json');
+  fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), mockupApproval: { sha256, mode: 'user' } }));
+};
+
+// 🔴 Falla con: el cuadro del plan («¿Aprobar el plan de una story?», su revisión) para volver a aprobar la maqueta.
+test('SignatureQuestion_ApproveMockup_OwnBox_NamesFingerprintsAndTexts', (t) => {
+  const c = corrida(t, { extraHistoria: CON_PANTALLA });
+  const v1 = armarMaqueta(c, modeloMaqueta());
+  aprobadaCon(c, v1.sha256);
+  commitDeLab(c.repo);
+  const v2 = armarMaqueta(c, modeloMaqueta({ texto: 'Guardar cambios' }));
+  const r = cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' });
+  const q = r.pregunta;
+  assert.ok(q.startsWith('¿Volver a aprobar la maqueta de una story?'), q);
+  assert.match(q, /Historia 9\.99/);
+  assert.ok(q.includes(`Huella: ${v1.sha256.slice(0, 12)} → ${v2.sha256.slice(0, 12)}`), q);
+  assert.match(q, /Cambian los textos que se comparan con la pantalla: sale «Guardar»; entra «Guardar cambios»/);
+  assert.match(q, /Si sale mal: se construye contra una maqueta que no querías/);
+  // del plan sólo queda el nombre de la firma, al final: ni su pregunta, ni su revisión, ni su archivo
+  assert.doesNotMatch(q.replace(/\(firma plan-approval[^)]*\)/, ''), /plan|Revisión automática/i);
+  assert.ok(r.detalle.includes(`Completo en: ${v2.out}`), JSON.stringify(r.detalle));
+});
+
+test('SignatureQuestion_ApproveMockup_SameTexts_AndUnknown', (t) => {
+  const c = corrida(t, { extraHistoria: CON_PANTALLA });
+  const v1 = armarMaqueta(c, modeloMaqueta());
+  aprobadaCon(c, v1.sha256);
+  // la versión aprobada no está en ningún commit: no se sabe qué textos tenía
+  armarMaqueta(c, modeloMaqueta({ estado: 'sin facturas' }));
+  assert.match(cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' }).pregunta, /No sé si los textos que se comparan con la pantalla son los mismos/);
+  // con la aprobada en el último commit, un cambio que sólo toca el dibujo dice que los textos son los mismos
+  armarMaqueta(c, modeloMaqueta());
+  commitDeLab(c.repo);
+  armarMaqueta(c, modeloMaqueta({ estado: 'sin facturas' }));
+  assert.match(cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' }).pregunta, /Los textos que se comparan con la pantalla son los mismos: cambió el dibujo/);
+  // y el plan sigue con su cuadro
+  escribirPlan(c);
+  assert.ok(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta.startsWith('¿Aprobar el plan de una story?'));
+});
