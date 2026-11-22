@@ -419,6 +419,9 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/lib/story-gate.js', 'skills/tycon-pipeline/scripts/lib/story-gate-io.js',
   // lo que decide si la story está limpia: el pase, los hallazgos, las exenciones y el portón de pruebas
   'skills/tycon-pipeline/scripts/marker.js', 'skills/tycon-pipeline/scripts/pipeline.js',
+  // lo que sale de esos dos y del freno de guiones al partirlos sigue siendo sensible: lo que carga un sensible, lo es
+  'skills/tycon-pipeline/scripts/lib/marker-*.js', 'skills/tycon-pipeline/scripts/lib/pipeline-*.js',
+  'skills/tycon-pipeline/scripts/lib/bash-gate-*.js',
   'skills/tycon-pipeline/scripts/lib/adversarial-verdict.js', 'skills/tycon-pipeline/scripts/lib/critical-waivers.js',
   'skills/tycon-pipeline/scripts/lib/runtime-waiver.js', 'skills/tycon-pipeline/scripts/test-gate.sh',
   'skills/tycon-pipeline/scripts/lib/test-gate-*.js', 'skills/tycon-pipeline/scripts/lib/test-scope.js',
