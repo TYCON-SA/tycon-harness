@@ -594,7 +594,7 @@ test('T52b CarrilViejoSinLista_PorLaConsola_ComoHoy — @story-8.174 @ac-49', ()
   }
   // el tope de siempre sigue: con el cupo lleno, un archivo de implementación nuevo frena por el tope
   const tope = porConsola(state, 'viejo', dir, "cat > src/b.js <<'EOF'\nx\nEOF");
-  assert.ok(tope && /cupo|tope/i.test(tope.block || '') && !/FUERA DE LA LISTA/.test(tope.block), JSON.stringify(tope));
+  assert.ok(tope && /PASÓ EL TOPE DE ARCHIVOS/.test(tope.block || '') && !/FUERA DE LA LISTA/.test(tope.block), JSON.stringify(tope));
   // con el portón apagado por la configuración del repo: el delegado frena igual por la lista; el de una persona no
   escribir(dir, '.tycon/advisors.yaml', 'pipeline:\n  story_gate: false\n');
   git(dir, 'add', '.');
