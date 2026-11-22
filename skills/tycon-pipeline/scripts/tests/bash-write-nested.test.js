@@ -413,6 +413,48 @@ test('T16 ShellConC_EscribeLaHistoria_Frena', () => {
   ]) pasa(c, cmd);
 });
 
+// T17 TuberiaAUnShell_YCdDeAfuera_Frenan (filas 59 y 60 de la coordinadora, del pase de la fila 54)
+// 🔴 Falla con: un texto que llega por una tubería a un shell sin `-c` que escribe la historia y pasa, o un `cd` del shell
+//    de afuera que no se aplica al comando anidado.
+test('T17 TuberiaAUnShell_YCdDeAfuera_Frenan', () => {
+  const c = corral();
+  for (const cmd of [
+    `echo 'echo x >> ${H}' | sh`,
+    `printf 'echo x >> ${H}\\n' | bash`,
+    `echo "echo x >> ${H}" | bash -s`,
+    `printf '%s\\n' 'echo x >> ${H}' | sh`,
+    `echo -e 'true\\necho x >> ${H}' | sh`,
+    `bash -c "cd specs && sh -c 'echo x >> story-1.1.md'"`,
+    `sh -c 'cd specs; bash -c "echo x > story-1.1.md"'`,
+    // del pase: filtros en el medio, envolturas, printf con el destino en el formato, opciones del cd, las dos
+    // filas juntas, -o agrupado y barras de escape
+    `echo 'echo x >> ${H}' | cat | sh`,
+    `echo 'echo x >> ${H}' | tee /dev/null | sh`,
+    `{ echo 'echo x >> ${H}'; } | sh`,
+    `builtin echo 'echo x >> ${H}' | sh`,
+    `echo 'echo x >> ${H}' | ( sh )`,
+    `printf 'echo x >> %s\\n' ${H} | sh`,
+    `bash -c 'cd -P specs && sh -c "echo x >> story-1.1.md"'`,
+    `cd -- specs && sh -c 'echo x >> story-1.1.md'`,
+    `bash -c 'cd specs && echo "echo x >> story-1.1.md" | sh'`,
+    `echo 'echo x >> ${H}' | bash -euo pipefail`,
+    `echo echo x \\>\\> ${H} | sh`,
+    // de la segunda vuelta: el cd de un renglón anterior, la tubería partida en renglones, comillas de varios renglones,
+    // un comentario después del shell y busybox
+    `cd specs\necho 'echo x >> story-1.1.md' | sh`,
+    `echo 'echo x >> ${H}' |\nsh`,
+    `echo 'a\necho x >> ${H}' | sh`,
+    `echo 'echo x >> ${H}' | sh # corre`,
+    `echo 'echo x >> ${H}' | busybox sh`,
+  ]) frena(c, cmd);
+  for (const cmd of [
+    `echo 'cat ${H}' | sh`,
+    `echo 'echo x >> notes.txt' | bash`,
+    `echo 'echo x >> ${H}' | cat`,
+    `bash -c "cd /tmp && sh -c 'echo x >> story-1.1.md'"`,
+  ]) pasa(c, cmd);
+});
+
 // T15 Bench_FrenoComandosAnidados
 // 🔴 Falla con: un caso del banco que no corre o que da otra salida que la esperada.
 test('T15 Bench_FrenoComandosAnidados', () => {
