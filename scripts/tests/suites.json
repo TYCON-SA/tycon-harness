@@ -1913,6 +1913,12 @@
       "requiere": []
     },
     {
+      "__nota": "2026-11-22, filas 79 y 80: qué cambió adentro de un archivo de código (espacios, comentarios, textos o código) en .js, .ts, .tsx y .cs; ante la duda, código. Textos de juguete y los .js de lib/ leídos, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/change-kind.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.272 (T1-T4): el revisor de un crítico arreglado vuelve a la vuelta siguiente aunque el descuento mecánico o el cálculo por diferencias lo saquen. HOME y repo de juguete, el registro de críticos y findings.json escritos como los deja el arnés, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/criticals-to-confirm.test.js",
