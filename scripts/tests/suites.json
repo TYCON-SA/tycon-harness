@@ -4960,6 +4960,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/deny-permissions.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.10.1 (T23-T25): tres cosas que la limpieza de datos internos sacó de lo que se publica y ninguna otra suite cuidaba — la guía de reglas para revisores no enumera la cartera de repos en su texto público (T23), ninguna guía enlaza un repo de Azure DevOps de una organización de verdad (T24), y cada hallazgo de la auditoría que quedó sin hacer tiene su línea de deuda en tasks/todo.md (T25; NO MEDIDO en una copia sin tasks/). El texto público se saca con la función del exportador.",
       "raiz": "arnes",
       "ruta": "tests/internal-data-leftovers.test.js",
