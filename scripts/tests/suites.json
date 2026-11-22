@@ -716,6 +716,12 @@
       "requiere": []
     },
     {
+      "__nota": "la familia «sin medir no guarda» del freno de guardar, aparte de save-brake.test.js (una suite bajada, con su lista de casos fija): cada lugar donde una consulta que falla frena el guardado.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/save-brake-unmeasured.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el cambio a mano del estado de una historia lo ve el freno en cada tanda del bloque pipelines (la forma de lista y la de mapa), no sólo en la última.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-transition.test.js",

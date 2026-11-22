@@ -138,7 +138,7 @@
         {
           "camino": "cierre-sin-poder-medir-el-diff-entero",
           "dispara": "con el plan aprobado por la coordinadora, no puede medir el diff entero del cierre",
-          "suite": "tycon-pipeline/scripts/tests/save-brake.test.js",
+          "suite": "tycon-pipeline/scripts/tests/save-brake-unmeasured.test.js",
           "motivo": "el caso necesita una corrida armada entera (plan, revisores, constancias): lo prueba su suite"
         },
         {
@@ -150,8 +150,8 @@
         {
           "camino": "guardar-sin-medir",
           "dispara": "la familia «sin medir no guarda» del freno de guardar: una consulta a git o a un archivo que falla dentro de una corrida o un carril",
-          "suite": "tycon-pipeline/scripts/tests/save-brake.test.js",
-          "motivo": "el caso necesita una corrida armada entera (plan, revisores, constancias): lo prueba su suite"
+          "suite": "tycon-pipeline/scripts/tests/save-brake-unmeasured.test.js",
+          "motivo": "el caso necesita una corrida armada entera (plan, revisores, constancias): lo prueba su suite. Tres de sus lugares (el freno que no carga dentro de una corrida, el empuje sin medir y el comando que no se lee) los prueba save-brake.test.js"
         }
       ],
       "modos_que_no_aplican": {
