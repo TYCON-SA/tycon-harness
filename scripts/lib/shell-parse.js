@@ -51,8 +51,12 @@ const os = require('os');
 // `{ salvoShell: true }` (2026-09-17, retro-pending.js): conserva el cuerpo cuando el heredoc alimenta a
 // un SHELL (`bash <<EOF`, `cat <<EOF | sh`) —ahí el cuerpo SON comandos— y lo quita en el resto
 // (`node - <<EOF`, `cat > f <<EOF`, `python3 - <<EOF`), donde es texto. Sin la opción, todo igual que siempre.
-const SHELL_ANTES = /(?:^|[\s;&|(])(?:sudo\s+)?(?:\S*\/)?(?:bash|sh|zsh|dash|ksh)(?:\s+-[A-Za-z]+)*\s*$/;
-const SHELL_DESPUES = /\|\s*(?:sudo\s+)?(?:\S*\/)?(?:bash|sh|zsh|dash|ksh)(?=\s|$)/;
+// Las dos sin recorrer la tira desde cada posición: con un comando largo de `(` o `/`, la forma de antes
+// (`(?:^|[\s;&|(])(?:sudo\s+)?(?:\S*\/)?` delante del nombre) crecía con el cuadrado del largo. En SHELL_ANTES ese prefijo
+// equivale a mirar el carácter de antes del nombre: un `sudo ` termina en un espacio, y un `…/` siempre tiene delante un
+// espacio o el principio del texto. En SHELL_DESPUES el prefijo se mira para atrás, desde un nombre que ya terminó.
+const SHELL_ANTES = /(?:^|[\s;&|(/])(?:bash|sh|zsh|dash|ksh)(?:\s+-[A-Za-z]+)*\s*$/;
+const SHELL_DESPUES = /(?:bash|sh|zsh|dash|ksh)(?=\s|$)(?<=\|\s*(?:sudo\s+)?(?:\S*\/)?(?:bash|sh|zsh|dash|ksh))/;
 
 // El operador de un heredoc con su palabra, como la escribe el shell: `EOF`, `'EOF'`, `"EOF"`, `\EOF`, `E"OF"`, `'E'OF`.
 // Sin `<<<`: eso es una cadena, no un heredoc.
@@ -1551,16 +1555,66 @@ function ejecutaTexto(cmd, hondo = 0) {
 
 /** El contenido de cada texto entre comillas del comando (`'…'`, `"…"`, `$'…'` con sus escapes de comilla y barra). */
 function citados(cmd) {
-  const out = [];
   // fuera de los cuerpos de los heredocs: el de `git commit -m "$(cat <<'EOF' … EOF)"` es el mensaje que imprime `cat`,
   // no un comando; el que va a un shell queda entero (`salvoShell`), y los demás caminos de un cuerpo a un programa los
   // mira cada freno con su propio lector de heredocs
-  for (const m of sinHeredocs(String(cmd), { salvoShell: true }).matchAll(/\$'((?:\\.|[^'\\])*)'|'([^']*)'|"((?:\\.|[^"\\])*)"/g)) {
-    if (m[1] !== undefined) out.push(m[1].replace(/\\(['\\])/g, '$1'));
-    else if (m[2] !== undefined) out.push(m[2]);
-    else out.push(m[3].replace(/\\(["\\$`])/g, '$1'));
+  return textosEntreComillas(sinHeredocs(String(cmd), { salvoShell: true })).filter((t) => t.trim());
+}
+
+// Cada forma de comilla, leída desde un lugar fijo
+const CITA_ANSI = /\$'((?:\\.|[^'\\])*)'/y;
+const CITA_SIMPLE = /'([^']*)'/y;
+const CITA_DOBLE = /"((?:\\.|[^"\\])*)"/y;
+const FORMAS_DE_CITA = [
+  { re: CITA_ANSI, abre: "$'", valor: (m) => m[1].replace(/\\(['\\])/g, '$1') },
+  { re: CITA_SIMPLE, abre: "'", valor: (m) => m[1] },
+  { re: CITA_DOBLE, abre: '"', valor: (m) => m[1].replace(/\\(["\\$`])/g, '$1') },
+];
+
+/**
+ * Los textos entre comillas, en orden: los mismos que da
+ * `/\$'((?:\\.|[^'\\])*)'|'([^']*)'|"((?:\\.|[^"\\])*)"/g`, sin crecer con el cuadrado del largo. Ante una comilla que no
+ * cierra, la expresión recorría hasta el final desde cada comilla siguiente. Acá una forma que abrió y no cerró desde un
+ * lugar no se vuelve a probar: tampoco cierra desde uno posterior, porque esa comilla posterior quedó adentro, escapada,
+ * y desde ahí se lee igual.
+ */
+function textosEntreComillas(texto) {
+  const s = String(texto);
+  const out = [];
+  const sinCierre = FORMAS_DE_CITA.map(() => false);
+  let i = 0;
+  while (i < s.length) {
+    let leida = false;
+    for (let f = 0; f < FORMAS_DE_CITA.length && !leida; f++) {
+      const forma = FORMAS_DE_CITA[f];
+      if (sinCierre[f] || !s.startsWith(forma.abre, i)) continue;
+      forma.re.lastIndex = i;
+      const m = forma.re.exec(s);
+      if (m) { out.push(forma.valor(m)); i = forma.re.lastIndex; leida = true; } else sinCierre[f] = true;
+    }
+    if (!leida) i++;
   }
-  return out.filter((t) => t.trim());
+  return out;
+}
+
+// El especificador de un `%…` de printf: marcas, ancho, precisión y letra. El ancho no empieza con 0: ese 0 es una marca,
+// y con las dos lecturas posibles una tira de ceros crecía con el cuadrado del largo. Dice lo mismo que
+// `/^[-+ #0]*(?:\d+|\*)?(?:\.(?:\d+|\*))?[a-zA-Z]/` sobre el texto desde ese lugar.
+const ESPECIFICADOR_PRINTF = /[-+ #0]*(?:[1-9]\d*|\*)?(?:\.(?:\d+|\*))?[a-zA-Z]/y;
+
+/** Cuántos caracteres ocupa el especificador de printf que empieza en `desde` (lo que sigue al `%`); 0 si no hay. */
+function largoDeEspecificadorPrintf(fmt, desde) {
+  ESPECIFICADOR_PRINTF.lastIndex = desde;
+  const m = ESPECIFICADOR_PRINTF.exec(String(fmt));
+  return m ? m[0].length : 0;
+}
+
+/** El texto sin las barras del final: lo mismo que `.replace(/\/+$/, '')`, sin probar desde cada barra de una tira larga. */
+function sinBarrasFinales(texto) {
+  const s = String(texto);
+  let j = s.length;
+  while (j > 0 && s[j - 1] === '/') j--;
+  return s.slice(0, j);
 }
 
 /**
@@ -1601,6 +1655,8 @@ function posicionesFueraDeComillas(texto) {
 module.exports = {
   // si un comando puede correr un texto, y qué hay entre comillas (los frenos de escritura y de sesiones)
   ejecutaTexto, citados, posicionesFueraDeComillas,
+  // lo que el freno de producción lee sin crecer con el cuadrado del largo del comando
+  SHELL_ANTES, SHELL_DESPUES, textosEntreComillas, largoDeEspecificadorPrintf, sinBarrasFinales,
   // las de siempre
   programasPorEntrada,
   sinHeredocs, segmentos, tokens, PREFIJOS, expandir, variablesDelComando, SIN_RESOLVER,
