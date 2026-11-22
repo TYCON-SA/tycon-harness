@@ -3147,3 +3147,67 @@ test('Planes_DuenoAusente_SeJuntanParaLaVuelta: con la marca de ausente, el avis
   require(path.join(ROOT, 'scripts', 'lib', 'owner-away.js')).set({ estado: t.state, quien: 'coordinadora', frase: 'me voy', ahora: mins(100) });
   assert.match(aviso(), /Coordinación: para cuando vuelva la persona: 1 plan espera su aprobación: Ana \(9\.11, hace 180 min\)/);
 });
+
+// ── Fila 98: la sesión que dice que trabaja, pero no escribe hace rato y no corre nada ──────────────────────────────────
+
+// La conversación de una sesión con su último paso, escrita hace `minutos`; con `agente`, un archivo de agente escrito hace
+// `agenteMin` (en un lote de flujo si `lote`).
+function conversacionQuieta(t, sid, { minutos, agenteMin = null, lote = false } = {}) {
+  const dir = path.join(t.home, '.claude', 'projects', t.root.replace(/[^A-Za-z0-9-]/g, '-'));
+  fs.mkdirSync(dir, { recursive: true });
+  const archivo = path.join(dir, `${sid}.jsonl`);
+  fs.writeFileSync(archivo, `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash', input: { command: 'npm test' } }] } })}\n`);
+  fs.utimesSync(archivo, new Date(mins(minutos)), new Date(mins(minutos)));
+  if (agenteMin != null) {
+    const sub = lote ? path.join(dir, sid, 'subagents', 'workflows', 'wf_1') : path.join(dir, sid, 'subagents');
+    fs.mkdirSync(sub, { recursive: true });
+    const a = path.join(sub, 'agent-x1.jsonl');
+    fs.writeFileSync(a, '{}\n');
+    fs.utimesSync(a, new Date(mins(agenteMin)), new Date(mins(agenteMin)));
+  }
+}
+
+test('T98a Status_OcupadaCalladaSinNadaCorriendo_LoDice: la que dice que trabaja y no escribe hace una hora, sin agentes, sale', () => {
+  // 🔴 mutación: no mirar las ocupadas (una sesión trabada pasa por trabajando y nadie se entera)
+  const t = toy();
+  session(t, 's-trabada', 'Trabada', { status: 'busy', statusUpdatedAt: mins(90) });
+  conversacionQuieta(t, 's-trabada', { minutos: 70 });
+  session(t, 's-agente', 'ConAgente', { status: 'busy', statusUpdatedAt: mins(90) });
+  conversacionQuieta(t, 's-agente', { minutos: 70, agenteMin: 5 });
+  session(t, 's-lote', 'ConLote', { status: 'busy', statusUpdatedAt: mins(90) });
+  conversacionQuieta(t, 's-lote', { minutos: 70, agenteMin: 5, lote: true });
+  session(t, 's-reciente', 'Reciente', { status: 'busy', statusUpdatedAt: mins(90) });
+  conversacionQuieta(t, 's-reciente', { minutos: 40 });
+  session(t, 's-sin', 'SinConversacion', { status: 'busy', statusUpdatedAt: mins(90) });
+  const s = C.status(t.opts);
+  assert.deepStrictEqual(s.busySilent.map((b) => [b.session, b.minutos, b.herramienta]), [['Trabada', 70, 'Bash']]);
+  assert.match(C.statusText(s), /Trabada dice que trabaja, pero no escribe hace 70 min y no corre nada \(su último paso: «Bash»\): ¿trabada\?/);
+  assert.ok(s.working.some((w) => w.session === 'Trabada'), 'sigue contando como trabajando para el tope');
+  // un agente viejo (hace 40 min) no cuenta como algo que corre
+  const t2 = toy();
+  session(t2, 's-trabada', 'Trabada', { status: 'busy', statusUpdatedAt: mins(90) });
+  conversacionQuieta(t2, 's-trabada', { minutos: 70, agenteMin: 40 });
+  assert.deepStrictEqual(C.status(t2.opts).busySilent.map((b) => b.session), ['Trabada']);
+});
+
+test('T98b OwnerWait_OcupadaCallada_UnaVez: owner-wait le dice a la coordinadora una vez por sesión, y se olvida si vuelve a escribir', () => {
+  const OA = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+  const DS = require(path.join(ROOT, 'scripts', 'lib', 'delegated-signing.js'));
+  const t = toy();
+  fs.writeFileSync(path.join(t.arnes, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+  const COORD_SID = 's-coord';
+  const d = { name: 'relay-designation', status: 'ok', ts: new Date(NOW).toISOString(), sesion: COORD_SID, rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' };
+  fs.writeFileSync(path.join(t.state, 'gates.log'), `${JSON.stringify(d)}\n${JSON.stringify(DS.confirmationRecord(d, new Date(NOW).toISOString()))}\n`);
+  session(t, COORD_SID, 'Coordinadora', { status: 'busy' });
+  session(t, 's-trabada', 'Trabada', { status: 'busy', statusUpdatedAt: mins(90) });
+  conversacionQuieta(t, 's-trabada', { minutos: 70 });
+  const confirmada = OA.coordinadoraConfirmada;
+  OA.coordinadoraConfirmada = (casa, o = {}) => confirmada(casa, { arnes: t.arnes, ...o });
+  try {
+    const vuelta = (seg) => C.ownerWaitOnce({ ...t.opts, sessionId: COORD_SID, now: NOW + seg * 1000, ownerWaits: () => ({ esperas: [], problemas: [] }), signatureDestinos: () => [] }).lines;
+    assert.deepStrictEqual(vuelta(0).filter((l) => /trabada/.test(l)), ['Trabada dice que trabaja, pero no escribe hace 70 min y no corre nada (su último paso: «Bash»): ¿trabada?']);
+    assert.deepStrictEqual(vuelta(2).filter((l) => /trabada/.test(l)), [], 'una vez');
+  } finally {
+    OA.coordinadoraConfirmada = confirmada;
+  }
+});

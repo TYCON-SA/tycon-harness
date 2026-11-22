@@ -80,4 +80,37 @@ function silentAgents({ projectsDir, cwd, sid, now = Date.now(), calladoMs }) {
   return { pendientes, callados };
 }
 
-module.exports = { silentAgents, projectDirOf };
+/** Si algún archivo de agente de `root` (o de un lote de flujo, en `root/workflows/<lote>`) cambió en los últimos `ms`. */
+function agentWroteSince(root, now, ms) {
+  const fresh = (dir) => {
+    let names;
+    try { names = fs.readdirSync(dir); } catch { return false; }
+    return names.some((n) => /^agent-.*\.jsonl$/.test(n) && (() => { try { return now - fs.statSync(path.join(dir, n)).mtimeMs < ms; } catch { return false; } })());
+  };
+  if (fresh(root)) return true;
+  let lotes;
+  try { lotes = fs.readdirSync(path.join(root, 'workflows')); } catch { return false; }
+  return lotes.some((l) => fresh(path.join(root, 'workflows', l)));
+}
+
+/**
+ * La sesión que dice que trabaja pero no escribe su conversación hace `silentMs` y no corre nada: ningún archivo de agente
+ * suyo cambió en `agentMs` (un comando no pasa de su tope de 10 min, así que una hora callada sin agentes no es un comando
+ * largo). `{ minutos, herramienta }` con su último paso; null si escribe, si corre un agente o si no tiene conversación;
+ * `{ problem }` si no se pudo leer.
+ */
+function busySilence({ projectsDir, cwd, sid, now = Date.now(), silentMs, agentMs }) {
+  if (!projectsDir || typeof cwd !== 'string' || !cwd || !SAFE.test(String(sid))) return null;
+  const dir = projectDirOf(projectsDir, cwd);
+  const conversacion = path.join(dir, `${sid}.jsonl`);
+  let st;
+  try { st = fs.statSync(conversacion); } catch (e) {
+    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return null;
+    return { problem: `no pude leer la conversación de ${sid} (${e.code || e.message})` };
+  }
+  if (now - st.mtimeMs < silentMs) return null;
+  if (agentWroteSince(path.join(dir, String(sid), 'subagents'), now, agentMs)) return null;
+  return { minutos: Math.floor((now - st.mtimeMs) / 60000), herramienta: lastToolOf(conversacion) };
+}
+
+module.exports = { silentAgents, busySilence, projectDirOf };
