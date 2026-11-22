@@ -769,6 +769,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 72 (DemoTracking #44): un cambio técnico de la historia después de un plan rechazado lo revalida la vuelta siguiente de la revisión del plan — el portón de la adversarial y validators no relanzan, lo que sigue venciendo, y la vuelta que escribe las constancias sólo al aprobar.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-revalidation.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una historia que no cambió desde su última validación verde no se vuelve a validar: la constancia, su huella y validators.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/validation-record.test.js",
@@ -1759,6 +1765,12 @@
       "__nota": "las guías del pipeline dicen lo que el código hace: las recetas y la fecha del chequeo de mutantes, y la plantilla de historia que nace en borrador.",
       "raiz": "arnes",
       "ruta": "tests/pipeline-docs-match-code.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "ninguna guía ofrece un escape que ya no apaga nada: la lista sale de los retirados del catálogo de firmas, y cada párrafo que nombra uno dice que está retirado o figura en las excepciones con su motivo.",
+      "raiz": "arnes",
+      "ruta": "tests/retired-escape-docs.test.js",
       "requiere": []
     },
     {

@@ -31,6 +31,9 @@
  *                 u otro si es un escape que hace lo mismo que otra firma.
  *   level         el mayor nivel de lo que cubre.
  *   profiles      a quién se le pide: 'dev' (el dev de producto) y 'mant' (quien mantiene el arnés).
+ *   retired       sólo en un escape que ya no apaga nada (RETIRADAS): el comando de la salida que queda en su lugar, la
+ *                 emergencia. Sigue en el catálogo con su id y su comando para que un perfil que lo nombra se lea
+ *                 igual; la guía lo muestra como retirado.
  *
  * LEVELS es la tabla de niveles del esquema de firmas, un nivel por id: 1 rutina, 2 excepción (da por bueno
  * algo sin verificarlo y deja deuda), 3 irreversible o afloja un freno. La coordinadora firma por delegación la rutina
@@ -91,8 +94,8 @@ const LEVELS_EN = Object.freeze({
   'designation-set': "name a session as this machine's coordinator, with a click in its tab",
   'designation-withdraw': "withdraw this machine's coordinator, with a click in its tab",
   'control-change': 'any change to a control',
-  'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
-  'escape:TYCON_PROD_LINT': 'turn off the production query control',
+  'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command (retired: it no longer turns anything off)',
+  'escape:TYCON_PROD_LINT': 'turn off the production query control (retired: it no longer turns anything off)',
   'escape:TYCON_NEW_NAMES': 'turn off the names check on what is published',
   emergency: 'the emergency exit: let one command that a brake stops go through, with a reason and for that command only',
   'escape:merge-bypass': "merge skipping main's queue and CI, or loosen the branch policies: one command, never delegated",
@@ -135,8 +138,8 @@ const LEVELS = Object.freeze([
   ['designation-set', 2, AMBOS, 'nombrar a una sesión coordinadora de esta máquina, con un click en su pestaña'],
   ['designation-withdraw', 2, AMBOS, 'retirar a la coordinadora de esta máquina, con un click en su pestaña'],
   ['control-change', 3, MANT, 'cualquier cambio de control'],
-  ['escape:TYCON_SAFETY_OFF', 3, AMBOS, 'apagar el freno de seguridad para un comando'],
-  ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción'],
+  ['escape:TYCON_SAFETY_OFF', 3, AMBOS, 'apagar el freno de seguridad para un comando (retirada: ya no apaga nada)'],
+  ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción (retirada: ya no apaga nada)'],
   ['escape:TYCON_NEW_NAMES', 3, MANT, 'apagar el control de nombres en lo que se publica'],
   ['emergency', 3, AMBOS, 'la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo'],
   ['escape:merge-bypass', 3, AMBOS, 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: un comando, nunca por delegación'],
@@ -184,9 +187,17 @@ const DELEGABLE_FORMS = Object.freeze({ [PLAN_DELICADO]: 'plan-approval', [SAVE_
 const levelOf = (id) => LEVELS.find((l) => l.id === id);
 const coversOf = (id) => COVERS[id] || [id];
 
+// los escapes que ya no apagan nada: el freno anota la variable y la deja sin efecto. Siguen en el catálogo, con su id y
+// su comando, para que un perfil del equipo que los nombra en `approvals.owner_only` se siga leyendo entero; cada uno
+// dice la salida que queda en su lugar, la emergencia que la persona firma en su terminal
+const RETIRADAS = Object.freeze({
+  'escape:TYCON_SAFETY_OFF': 'harness.js sign emergency --reason "<por qué>" --request <número>',
+  'escape:TYCON_PROD_LINT': 'harness.js sign emergency --reason "<por qué>" --commit',
+});
+
 const POR_VARIABLE = [
-  ['TYCON_SAFETY_OFF', '1', 'apagar el freno de seguridad para un comando'],
-  ['TYCON_PROD_LINT', '0', 'apagar el control de consultas a producción para un comando'],
+  ['TYCON_SAFETY_OFF', '1', 'apagar el freno de seguridad para un comando (retirada: ya no apaga nada)'],
+  ['TYCON_PROD_LINT', '0', 'apagar el control de consultas a producción para un comando (retirada: ya no apaga nada)'],
   ['TYCON_NEW_NAMES', '0', 'apagar el control de nombres nuevos en lo que se publica'],
   ['TYCON_TEST_GATE', '1', 'saltear el portón de pruebas del commit'],
   ['DOD_BYPASS', '1', 'saltear los controles del commit (queda anotado)'],
@@ -217,8 +228,8 @@ const CON_NOMBRE = [
 // qué pasa si sale mal: lo dice el cuadro de opciones que arma el guion de la firma (owner-window.js `cuadroPara`). Cada
 // firma trae el suyo, escapes incluidos: un mismo texto para todas no le dice a la persona qué arriesga con ésta
 const SI_SALE_MAL = Object.freeze({
-  'escape:TYCON_SAFETY_OFF': 'un comando que el freno de seguridad para, como un borrado grande o un push forzado, corre sin freno',
-  'escape:TYCON_PROD_LINT': 'una consulta a producción corre sin que nadie mire si escribe o borra datos',
+  'escape:TYCON_SAFETY_OFF': 'nada: está retirada y ya no apaga el freno de seguridad; la salida es la emergencia, que la persona firma en su terminal',
+  'escape:TYCON_PROD_LINT': 'nada: está retirada y ya no apaga la revisión de producción; la salida es la emergencia del commit, que la persona firma en su terminal',
   'escape:TYCON_NEW_NAMES': 'un nombre viejo o interno sale en lo que se publica',
   'escape:TYCON_TEST_GATE': 'el commit entra sin correr las pruebas, y una prueba rota llega al pedido',
   'escape:DOD_BYPASS': 'el commit entra sin ningún control de cierre, y un criterio sin probar puede llegar a main; queda anotado',
@@ -289,8 +300,8 @@ const APPROVES_EN = {
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view',
   'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset',
   save: 'save the story: commit, push and the pull requests',
-  'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
-  'escape:TYCON_PROD_LINT': 'turn off the production query control for one command',
+  'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command (retired: it no longer turns anything off)',
+  'escape:TYCON_PROD_LINT': 'turn off the production query control for one command (retired: it no longer turns anything off)',
   'escape:TYCON_NEW_NAMES': 'turn off the new names control on what is published',
   'escape:TYCON_TEST_GATE': "skip the commit's test gate",
   'escape:DOD_BYPASS': "skip the commit's controls (it is logged)",
@@ -386,6 +397,7 @@ const SIGNATURES = Object.freeze([
   const covers = coversOf(s.id).map(levelOf);
   return Object.freeze({
     ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id), ifWrong: SI_SALE_MAL[s.id],
+    ...(RETIRADAS[s.id] ? { retired: RETIRADAS[s.id] } : {}),
     covers: Object.freeze(covers.map((l) => l.id)),
     level: Math.max(...covers.map((l) => l.level)),
     profiles: Object.freeze(AMBOS.filter((p) => covers.some((l) => l.profiles.includes(p)))),

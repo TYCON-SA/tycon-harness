@@ -496,7 +496,8 @@ function textoDelTope({ harness = true, tocados, cupo, archivos = [], ibaA = nul
     ...(harness ? [
       '  Si el dev elige seguir sin historia, es su click aparte, en esta pestaña; la coordinadora no lo da:',
     ] : [
-      '  Si preferís seguir sin historia, lo elegís vos con un click aparte, en esta pestaña:',
+      '  Si el dev prefiere seguir sin historia, lo elige él con un click aparte, en esta pestaña. Preguntale; con su sí,',
+      '  corré este comando solo:',
     ]),
     `   ${pedido}`,
     '  Ese comando trae el cuadro. Cuentan sólo los archivos de implementación, sin pruebas ni guías.',
@@ -523,7 +524,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '⛔ camino rápido — RUTA DE RIESGO ALTO',
       viaLine.replace(/\n$/, ''),
       `  ${f} es de riesgo alto (regla: ${regla}).`,
-      '  Este cambio lo aprobás vos: abrí el camino rápido con tu sí en la ventana de permiso. Antes de guardar corren',
+      '  Este cambio lo aprueba el dev con su sí en la ventana de permiso (o en el cuadro). Preguntale si lo quiere por',
+      '  camino rápido; si dice que sí, corré `marker.js adhoc set` solo y en su forma exacta. Antes de guardar corren',
       '  los revisores y el pase adversarial sobre su diff.',
     ]).filter((l) => l !== '').join('\n');
   }
@@ -574,7 +576,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       ...(r.vecino ? [`  Ese archivo es de ${r.vecino}: ampliar la lista no alcanza.`] : []),
       harness
         ? '  Para tocarlo, ampliá la lista: es otra autorización del mismo tipo que abrir, que da una persona (por delegación, la lista nueva contiene entera la firmada):'
-        : '  Para tocarlo, ampliá la lista: lo aprobás vos con tu sí, como al abrir:',
+        : '  Para tocarlo hay que ampliar la lista, y eso lo aprueba el dev, como al abrir. Preguntale; con su sí, corré este comando solo (la ventana o el cuadro le piden el sí):',
       `   ${pedido}`,
       '  Si el arreglo creció, la salida es una historia: `Skill(skill="tycon-create-story", …)`.',
     ].filter((l) => l !== '').join('\n');
@@ -619,8 +621,9 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '⛔ una constancia de cambio de control no se escribe a mano',
       viaLine.replace(/\n$/, ''),
       `  ${f}`,
-      '  La escribe `bash scripts/ci/run-base-controls.sh approve`: una persona en su terminal, o la sesión designada con',
-      '  la frase de la persona (`--relayed-by`). `pending` da los dos comandos.',
+      '  La escribe `bash scripts/ci/run-base-controls.sh approve`, con la firma de una persona: corré el comando que da',
+      '  `pending`, solo y en su forma exacta, y ella lo aprueba en la ventana o en el cuadro; o lo corre en su terminal',
+      '  con `--terminal`. Un reenvío (`--relayed-by`) no la da.',
       '  Si sólo la NOMBRA un texto entre comillas (la descripción de un pedido, un mensaje): en un comando con un',
       '  programa que puede correr un texto (gh, az, git, un shell…) ese texto cuenta como comando. Escribilo antes a',
       '  un archivo (`cat > /tmp/cuerpo.md <<\'EOF\'`) y pasalo con `--body-file` (o `--description @/tmp/cuerpo.md`).',
