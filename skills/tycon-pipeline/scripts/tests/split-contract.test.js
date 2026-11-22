@@ -415,6 +415,95 @@ test('T11 Split_ChangedOutput_Named @story-8.163 @ac-11', () => {
   assert.match(linea, /^get · caso get · código de salida: antes 0, después 1$/);
 });
 
+// ── la partición ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const TOPE_LETRAS = 90000;
+/** Los módulos del plan, con un caso de la foto que corre uno de sus subcomandos (el compartido no tiene). */
+const MODULOS = {
+  'marker-shared.js': null,
+  'marker-lifecycle.js': 'get',
+  'marker-sessions.js': 'list-all',
+  'marker-steps.js': 'start-step',
+  'marker-complete-step.js': 'complete-step-sin-paso',
+  'marker-checks.js': 'set-check-manual',
+  'marker-adversarial.js': 'mark-adversarial-launched',
+  'marker-signatures.js': 'approve-pending-sin-args',
+  'marker-adhoc.js': 'adhoc-get',
+};
+const letras = (archivo) => [...fs.readFileSync(archivo, 'utf8')].length;
+
+test('T4 Marker_UnderLimit_OneJobPerModule @story-8.163 @ac-4', () => {
+  assert.ok(letras(path.join(SCRIPTS, 'marker.js')) < TOPE_LETRAS, `marker.js tiene ${letras(path.join(SCRIPTS, 'marker.js'))} letras: el tope es ${TOPE_LETRAS}`);
+  assert.deepStrictEqual(modulosDeLaParticion(), Object.keys(MODULOS).sort(), 'los módulos de la partición son los del plan');
+  for (const m of Object.keys(MODULOS)) {
+    const archivo = path.join(LIB, m);
+    const texto = fs.readFileSync(archivo, 'utf8');
+    assert.match(texto.split('\n').slice(0, 30).join('\n'), /Responsabilidad: \S/, `${m}: su cabecera dice su responsabilidad`);
+    // la ubicación del archivo cambió: lo que dependía de ella va por las rutas que fija el despachador
+    const sinComentarios = texto.split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+    if (m !== 'marker-shared.js') assert.doesNotMatch(sinComentarios, /\b__filename\b|\b__dirname\b/, `${m}: usa MARKER_JS y SCRIPTS_DIR, no su propia ubicación`);
+    // el estado que cambia mientras corre se lee del objeto compartido, nunca de una copia
+    const copia = sinComentarios.split('\n').find((l) => /\b(?:let|const|var)\s+(?:SID|SOLO_LECTURA|NECESITA_MARCADOR)\b/.test(l)
+      || /\b(?:let|const|var)\s*\{[^}\n]*(?<![.\w])(?:SID|SOLO_LECTURA|NECESITA_MARCADOR)\b[^}\n]*\}\s*=/.test(l));
+    assert.strictEqual(copia, undefined, `${m}: no copia SID, SOLO_LECTURA ni NECESITA_MARCADOR (${copia})`);
+    for (const r of requiresLocales(archivo)) assert.ok(fs.existsSync(path.join(RAIZ_ARNES, r)), `${m}: carga ${r}, que no existe`);
+  }
+  // cada parte la lee entera el freno de guiones (por debajo de su tope por archivo)
+  const freno = fs.readFileSync(path.join(SCRIPTS, 'on-bash-write-gate.js'), 'utf8');
+  const tope = Number((/const GUION_TOPE = (\d+) \* 1024;/.exec(freno) || [])[1]) * 1024;
+  assert.ok(tope > 0, 'el tope por archivo del freno se lee de su texto');
+  for (const m of ['../marker.js', ...Object.keys(MODULOS)]) {
+    const bytes = fs.statSync(path.join(LIB, m)).size;
+    assert.ok(bytes < tope, `${m} pesa ${bytes} bytes y el freno lee enteros hasta ${tope}`);
+  }
+});
+
+for (const [modulo, caso] of Object.entries(MODULOS)) {
+  test(`T4 Modulo_${modulo.replace(/\.js$/, '')}_CargaYCorre @story-8.163 @ac-4`, () => {
+    const archivo = path.join(LIB, modulo);
+    assert.ok(fs.existsSync(archivo), `falta ${modulo}`);
+    const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-modulo-')));
+    if (caso === null) {
+      // el compartido: el estado que cambia mientras corre y las dos rutas que fija el despachador
+      const r = spawnSync(process.execPath, ['-e', `const s = require(${JSON.stringify(archivo)}); process.stdout.write(JSON.stringify({ sid: s.estado.SID, solo: s.estado.SOLO_LECTURA, necesita: s.estado.NECESITA_MARCADOR, scripts: s.SCRIPTS_DIR, marker: s.MARKER_JS }))`],
+        { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.deepStrictEqual(JSON.parse(r.stdout), { sid: SID, solo: false, necesita: false, scripts: SCRIPTS, marker: path.join(SCRIPTS, 'marker.js') });
+      return;
+    }
+    const carga = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(archivo)})`], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+    assert.strictEqual(carga.status, 0, `${modulo} no carga: ${carga.stderr}`);
+    const foto = JSON.parse(fs.readFileSync(FOTO, 'utf8'));
+    const c = CASOS.find((x) => x.id === caso);
+    assert.strictEqual(diferencia(foto.casos[caso], correr(c)), null, `${modulo}: su subcomando (${c.argv.join(' ')}) cambió`);
+  });
+}
+
+test('T10 Split_MissingModule_FailsLoud @story-8.163 @ac-10', () => {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-falta-')));
+  const copia = path.join(raiz, 'scripts');
+  fs.cpSync(SCRIPTS, copia, { recursive: true, filter: (s) => !/[\\/]tests([\\/]|$)/.test(s.slice(SCRIPTS.length)) });
+  const falta = path.join(copia, 'lib', 'marker-adhoc.js');
+  assert.ok(fs.existsSync(falta), 'la copia tiene el módulo de los carriles');
+  fs.rmSync(falta);
+  const home = path.join(raiz, 'home');
+  fs.mkdirSync(home);
+  const r = spawnSync(process.execPath, [path.join(copia, 'marker.js'), 'adhoc', 'get'], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+  assert.notStrictEqual(r.status, 0, 'sin su módulo, el subcomando no sigue como si nada');
+  const lineas = r.stderr.split('\n').filter((l) => l.trim());
+  assert.strictEqual(lineas.length, 1, `una sola línea con el motivo:\n${r.stderr}`);
+  assert.match(lineas[0], /lib\/marker-adhoc\.js/, 'nombra el módulo que falta');
+  const otro = spawnSync(process.execPath, [path.join(copia, 'marker.js'), 'get'], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+  assert.strictEqual(otro.status, 0, `un subcomando de otro módulo sigue andando: ${otro.stderr}`);
+  // el compartido lo carga el despachador al arrancar: sin él tampoco sale el error largo de Node
+  fs.rmSync(path.join(copia, 'lib', 'marker-shared.js'));
+  const sinCompartido = spawnSync(process.execPath, [path.join(copia, 'marker.js'), 'get'], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+  assert.strictEqual(sinCompartido.status, 2, `sin el módulo compartido sale 2:\n${sinCompartido.stderr}`);
+  const renglones = sinCompartido.stderr.split('\n').filter((l) => l.trim());
+  assert.strictEqual(renglones.length, 1, `una sola línea con el motivo:\n${sinCompartido.stderr}`);
+  assert.match(renglones[0], /lib\/marker-shared\.js/, 'nombra el módulo compartido');
+});
+
 test('T15 Exports_SameKeysBeforeAndAfter @story-8.163 @ac-15', () => {
   const foto = JSON.parse(fs.readFileSync(FOTO, 'utf8'));
   assert.ok(foto.exports, 'la foto de antes trae las exportaciones');
@@ -422,7 +511,7 @@ test('T15 Exports_SameKeysBeforeAndAfter @story-8.163 @ac-15', () => {
   assert.deepStrictEqual(clavesDePipeline(), foto.exports.pipeline, 'pipeline.js exporta lo mismo');
 });
 
-/** Lo que cargan los archivos y no estaba en la lista de antes, y no es sensible. */
+/** Lo que el despachador y sus módulos cargan y no cargaba marker.js antes de partir, y no es sensible. */
 function nuevosNoSensibles(antes, archivos, scriptsDir = SCRIPTS) {
   const { esSensible } = require(path.join(LIB, 'save-ok.js'));
   const ahora = new Set(archivos.flatMap((a) => requiresLocales(a, scriptsDir)));
@@ -431,20 +520,21 @@ function nuevosNoSensibles(antes, archivos, scriptsDir = SCRIPTS) {
 
 test('T16 Split_ModulesAreSensitive @story-8.163 @ac-16', () => {
   const { esSensible } = require(path.join(LIB, 'save-ok.js'));
-  // lo que sale de marker.js, de pipeline.js y del freno de guiones nace sensible, se llame como se llame la parte
-  for (const m of ['marker-firmas.js', 'pipeline-pasos.js', 'bash-gate-guiones.js']) {
-    assert.ok(esSensible(`skills/tycon-pipeline/scripts/lib/${m}`), `lib/${m} es sensible`);
-  }
-  // la medida es lo que carga el despachador contra la lista de antes, no el nombre: un módulo nuevo fuera del patrón
-  // falla; uno de la partición no; uno que ya cargaba (lib/steps.js) no cuenta
-  const antes = requiresLocales(path.join(SCRIPTS, 'marker.js'));
-  assert.ok(antes.includes('skills/tycon-pipeline/scripts/lib/steps.js'), 'marker.js ya cargaba lib/steps.js');
+  const foto = JSON.parse(fs.readFileSync(FOTO, 'utf8'));
+  assert.ok(Array.isArray(foto.requires) && foto.requires.length > 40, 'la foto de antes trae los require de marker.js');
+  const archivos = [path.join(SCRIPTS, 'marker.js'), ...modulosDeLaParticion().map((m) => path.join(LIB, m))];
+  assert.deepStrictEqual(nuevosNoSensibles(foto.requires, archivos), [], 'todo lo nuevo que carga el despachador es sensible');
+  assert.ok(modulosDeLaParticion().length > 0, 'hay módulos de la partición');
+  for (const m of modulosDeLaParticion()) assert.ok(esSensible(`skills/tycon-pipeline/scripts/lib/${m}`), `${m} es sensible`);
+  // lo que salga de pipeline.js y del freno de guiones también nace sensible
+  for (const m of ['pipeline-pasos.js', 'bash-gate-guiones.js']) assert.ok(esSensible(`skills/tycon-pipeline/scripts/lib/${m}`), `lib/${m} es sensible`);
+  // un módulo de juguete nuevo, fuera del patrón y de la lista de antes, hace fallar la medida; uno viejo no cuenta
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'split-sensible-'));
   const juguete = path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
   fs.mkdirSync(path.dirname(juguete), { recursive: true });
-  fs.writeFileSync(juguete, "require('./lib/x.js');\nrequire('./lib/steps.js');\nrequire('./lib/marker-firmas.js');\n");
-  assert.deepStrictEqual(nuevosNoSensibles(antes, [juguete], path.dirname(juguete)), ['skills/tycon-pipeline/scripts/lib/x.js'],
-    'el juguete nuevo falla; lib/steps.js, que ya estaba, y lib/marker-firmas.js, sensible, no');
+  fs.writeFileSync(juguete, "require('./lib/x.js');\nrequire('./lib/steps.js');\n");
+  assert.deepStrictEqual(nuevosNoSensibles(foto.requires, [juguete], path.dirname(juguete)), ['skills/tycon-pipeline/scripts/lib/x.js'],
+    'el juguete nuevo falla; lib/steps.js, que ya estaba, no');
 });
 
 // ── el recorrido del freno de guiones ────────────────────────────────────────────────────────────────────────────────
@@ -472,6 +562,22 @@ function frenar(r, command, installedRoots = []) {
     return x && x.block ? String(x.block) : '';
   } finally { if (antes === undefined) delete process.env.TYCON_NO_RUN_CHANGE; else process.env.TYCON_NO_RUN_CHANGE = antes; }
 }
+
+test('T5 BashGate_ReadsMarkerWhole @story-8.163 @ac-5', () => {
+  // una copia de trabajo, fuera de lo instalado y de cualquier repo: la instalada y la de main son exentas
+  const r = repoDelFreno();
+  const copia = path.join(r.raiz, 'scripts');
+  fs.cpSync(SCRIPTS, copia, { recursive: true, filter: (s) => !/[\\/]tests([\\/]|$)/.test(s.slice(SCRIPTS.length)) });
+  // sin una historia entre los argumentos: esa frena por su cuenta (cuenta como escrita) y taparía lo que se mide acá
+  const bloque = frenar(r, `node ${path.join(copia, 'marker.js')} get`);
+  const nombrado = bloque.startsWith(FRENO_ENTERO) ? bloque.split('\n')[2].trim() : null;
+  assert.notStrictEqual(nombrado, path.join(copia, 'marker.js'), 'marker.js se lee entero');
+  assert.ok(!nombrado || !/[\\/]lib[\\/]marker-[^\\/]+\.js$/.test(nombrado), `un módulo de la partición se lee entero (${nombrado})`);
+  // lo que marker.js ya cargaba y pasa el tope sigue sin leerse entero hasta que se partan pipeline.js y el freno: se
+  // nombra, no se esconde
+  assert.ok([path.join(copia, 'pipeline.js'), path.join(copia, 'on-bash-write-gate.js')].includes(nombrado),
+    `lo que falta hasta partir pipeline.js y el freno: uno de los dos (${nombrado})`);
+});
 
 /** Una cadena de módulos de juguete: `principal.js` → m1 → … → m<largo>; el último hace `ultimo`. */
 function cadena(dir, largo, ultimo) {
@@ -595,6 +701,40 @@ test('T14 BashGate_ModuleWalk_ReadsAreBounded @story-8.163 @ac-14', () => {
     fs.mkdirSync(path.join(d.dir, 'herr'), { recursive: true });
     fs.writeFileSync(path.join(d.dir, 'herr', 'guion'), `#!/usr/bin/env node\n${ESCRIBE_CONSTANCIA}`, { mode: 0o755 });
     assert.notStrictEqual(frenar(d, './herr/guion'), '', 'un ejecutable de node que escribe una constancia frena');
+  }
+});
+
+// ── lo publicado ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+test('T13 Install_CopiesNewModules @story-8.163 @ac-13', () => {
+  // en el repo público, lo que se publica es lo versionado: una instalación nueva lo copia tal cual
+  const ls = spawnSync('git', ['-C', RAIZ_ARNES, 'ls-files', '-z', '--', 'skills', 'scripts', 'version.json'], { encoding: 'utf8', maxBuffer: 256 << 20 });
+  assert.strictEqual(ls.status, 0, `no pude listar lo versionado: ${ls.stderr}`);
+  const versionados = ls.stdout.split('\0').filter(Boolean);
+  for (const m of Object.keys(MODULOS)) assert.ok(versionados.includes(`skills/tycon-pipeline/scripts/lib/${m}`), `lo publicado lleva lib/${m}`);
+  const instalado = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-instalado-')));
+  for (const f of versionados) {
+    const desde = path.join(RAIZ_ARNES, f);
+    if (!fs.existsSync(desde)) continue;
+    fs.mkdirSync(path.dirname(path.join(instalado, f)), { recursive: true });
+    fs.copyFileSync(desde, path.join(instalado, f));
+  }
+  const scriptsInstalados = path.join(instalado, 'skills', 'tycon-pipeline', 'scripts');
+  // `marker.js get` y `pipeline.js next` responden igual desde la copia que desde el árbol
+  const responder = (scripts, guion, args) => {
+    const caso = { id: `instalado-${guion}`, marcador: true, argv: args };
+    const m = armar(caso);
+    spawnSync(process.execPath, [path.join(scripts, 'marker.js'), 'set', JSON.stringify({ storyId: '9.1', storyPath: m.story, repoPath: m.repo })], { cwd: m.repo, env: m.env, encoding: 'utf8', timeout: 30000 });
+    const r = spawnSync(process.execPath, [path.join(scripts, guion), ...args], { cwd: m.repo, env: m.env, encoding: 'utf8', timeout: 60000 });
+    const sacar = (t) => normalizar(String(t || ''), m).split(scripts).join('<GUIONES>').split(path.resolve(scripts, '..', '..', '..')).join('<ARNES>');
+    const out = { status: r.status, stdout: sacar(r.stdout), stderr: sacar(r.stderr) };
+    fs.rmSync(m.raiz, { recursive: true, force: true });
+    return out;
+  };
+  for (const [guion, args] of [['marker.js', ['get']], ['pipeline.js', ['next']]]) {
+    const arbol = responder(SCRIPTS, guion, args);
+    const copia = responder(scriptsInstalados, guion, args);
+    assert.deepStrictEqual(copia, arbol, `${guion} ${args.join(' ')} responde igual desde lo instalado`);
   }
 });
 
