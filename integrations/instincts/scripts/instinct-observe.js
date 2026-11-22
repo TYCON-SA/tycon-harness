@@ -43,8 +43,9 @@ const INICIO_DE_TOKEN = '(?:(?<![A-Za-z0-9_])|(?<=\\\\[ntr])|(?<=%[0-9A-Fa-f]{2}
 const PALABRAS = '(?:api[_-]?key|access[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|key|token|password|passwd|pwd|secret|bearer|pat)';
 const FUERTES = '(?:api[_-]?key|access[_-]?key|account[_-]?key|token|password|passwd|secret)';
 const NOMBRE = (palabras) => `((?:[A-Za-z0-9]+_)*${palabras}(?:_[A-Za-z0-9]+)*)`;
-// un valor ya tapado (la marca en su misma palabra, sin cruzar un escape), o los «...» del corte de 500, no se vuelven a tapar
-const NO_TAPADO = '(?![^\\s"\'&;,\\\\]*(?:\\[REDACTED|\\.\\.\\.$))';
+// un valor ya tapado (la marca en su misma palabra, sin cruzar un escape), o los «...» solos del corte de 500, no se vuelven
+// a tapar; una clave de antes que el corte partió («Hun...») sí
+const NO_TAPADO = '(?![^\\s"\'&;,\\\\]*\\[REDACTED)(?!\\.\\.\\.$)';
 const NO_VARIABLE = '(?!\\$[{(A-Za-z_]|\\{\\{)';
 // un comando de PowerShell en lugar de un valor: la clave, si la hay, está en su argumento
 const NO_COMANDO = '(?!\\(?ConvertTo-SecureString\\b)';
@@ -55,23 +56,22 @@ const URL_CRED_RE = /(\b[a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s]*@/gi;
 const URL_USER_RE = /(\b[a-z][a-z0-9+.-]*:\/\/)[A-Za-z0-9_]{20,}@/gi;
 const URL_EMPTY_USER_RE = new RegExp(`(\\b[a-z][a-z0-9+.-]*:\\/\\/):${NO_TAPADO}${NO_VARIABLE}[^/\\s@]+@`, 'gi');
 // el usuario de -u y --user: también uno de dominio (CORP\dev) o con + o %; un uid:gid (1000:1000) no es usuario:clave
-const USUARIO = '[A-Za-z0-9_.@\\\\+%-]';
-const DASH_U_RE = new RegExp(`((?:\\s-u(?:\\s+|(?=${USUARIO}+:))|\\s--user[\\s=]+)["']?)(?!\\d+:\\d+(?:["'\\s]|$))${USUARIO}*:(?!\\/\\/)${NO_VARIABLE}${NO_TAPADO}[^\\s"']+`, 'g');
+const USUARIO = '(?:[A-Za-z0-9_\\\\][A-Za-z0-9_.@\\\\+%-]*)';
+const DASH_U_RE = new RegExp(`((?:\\s-u(?:\\s+|(?=${USUARIO}:))|\\s--user[\\s=]+)["']?)(?!\\d+:\\d+(?:["'\\s]|$))${USUARIO}?:(?!\\/\\/)${NO_VARIABLE}${NO_TAPADO}[^\\s"']+`, 'g');
 const DASH_U_KEY_RE = new RegExp(`((?:\\s-u\\s+|\\s--user[\\s=]+)["']?)${NO_TAPADO}[A-Za-z0-9_.-]{16,}:(?=["'\\s]|$)`, 'g');
-const VALOR_DE_OPCION = `("${NO_VARIABLE}[^"\\n]*"|'${NO_VARIABLE}[^'\\n]*'|${NO_VARIABLE}${NO_TAPADO}[^\\s"';|&]+)`;
+const VALOR_DE_OPCION = `("${NO_VARIABLE}[^"\\n]*"|'${NO_VARIABLE}[^'\\n]*'|${NO_VARIABLE}${NO_TAPADO}(?!-)[^\\s"';|&]+)`;
 // la herramienta como comando: suelta, con su ruta (/opt/…/sqlcmd, ./sqlcmd) o con .exe, en mayúsculas o en minúsculas;
 // mysql con ruta sólo desde una carpeta bin (/var/lib/mysql es la carpeta de sus datos, no el comando)
 const COMANDO = '(?:^|[\\s;&|(`"\'])';
 const SIN_MAYUSCULAS = (w) => w.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`);
 const HERRAMIENTA = (nombres, ruta) => `${COMANDO}${ruta}(?:${nombres.map(SIN_MAYUSCULAS).join('|')})(?:\\.[Ee][Xx][Ee])?["']?(?=\\s)`;
-const CUALQUIER_RUTA = '(?:[^\\s"\'|;&]*[\\\\/])?';
-const RUTA_BIN = '(?:[^\\s"\'|;&]*[\\\\/][Bb][Ii][Nn][\\\\/])?';
+const CUALQUIER_RUTA = '(?:[^\\s"\'|;&(`]*[\\\\/])?';
+const RUTA_BIN = '(?:[^\\s"\'|;&(`]*[\\\\/][Bb][Ii][Nn][\\\\/])?';
 const TRAMO = '(?:[^|;&\\n]|[\\\\`]\\r?\\n)*?';
 const CLAVE_DE_HERRAMIENTA_RES = [
   new RegExp(`(${HERRAMIENTA(['sqlcmd', 'bcp', 'osql'], CUALQUIER_RUTA)}${TRAMO}\\s-P\\s*)${VALOR_DE_OPCION}`, 'g'),
   new RegExp(`(${HERRAMIENTA(['mysql', 'mysqldump', 'mysqladmin', 'mariadb'], RUTA_BIN)}${TRAMO}\\s-p)${VALOR_DE_OPCION}`, 'g'),
-  new RegExp(`(${HERRAMIENTA(['mongosh', 'mongo', 'mongodump', 'mongorestore'], RUTA_BIN)}${TRAMO}\\s-p\\s+)${VALOR_DE_OPCION}`, 'g'),
-  new RegExp(`(${HERRAMIENTA(['sshpass'], CUALQUIER_RUTA)}${TRAMO}\\s-p\\s*)${VALOR_DE_OPCION}`, 'g'),
+  new RegExp(`(${HERRAMIENTA(['sshpass'], CUALQUIER_RUTA)}\\s+-p\\s*)${VALOR_DE_OPCION}`, 'g'),
   new RegExp(`(${HERRAMIENTA(['redis-cli'], CUALQUIER_RUTA)}${TRAMO}\\s-a\\s+)${VALOR_DE_OPCION}`, 'g'),
   new RegExp(`(${COMANDO}(?:docker|podman|nerdctl|helm|oras)\\s+(?:registry\\s+)?login(?=\\s)${TRAMO}\\s-p\\s+)${VALOR_DE_OPCION}`, 'g'),
   new RegExp(`(${COMANDO}az\\s+login(?=\\s)${TRAMO}\\s-p\\s+)${VALOR_DE_OPCION}`, 'g'),
@@ -81,8 +81,8 @@ const SECURE_STRING_RE = new RegExp(`(ConvertTo-SecureString\\s+(?:-String\\s+)?
 const OPTION_QUOTED_SECRET_RE = new RegExp(`(\\s--?(?:password|passwd|secret|token|api-?key))\\s+${ENTRE_COMILLAS}`, 'gi');
 const QUOTED_SECRET_RE = new RegExp(`${INICIO}${NOMBRE(FUERTES)}["']?\\s*[:=]\\s*${ENTRE_COMILLAS}`, 'gi');
 const SECRET_RE = new RegExp(`${INICIO}${NOMBRE(PALABRAS)}["':\\s=]+["']?${NO_TAPADO}${NO_COMANDO}[^\\s"'&;,]{8,}`, 'gi');
-// un nombre en mayúsculas con la palabra pegada (PGPASSWORD=, SQLCMDPASSWORD=); PASS sola, como palabra (DB_PASS=, no BYPASS)
-const UPPER_SECRET_RE = new RegExp(`${INICIO}((?:[A-Z0-9]+_)*(?:[A-Z0-9]*(?:PASSWORD|PASSWD|SECRET|TOKEN|APIKEY)|PASS(?![A-Z0-9_]))(?:_[A-Z0-9]+)*)\\s*=\\s*["']?${NO_TAPADO}${NO_VARIABLE}[^\\s"'&;,]{4,}`, 'g');
+// un nombre en mayúsculas con la palabra pegada (PGPASSWORD=, SQLCMDPASSWORD=, SSHPASS=, DB_PASS=; no BYPASS ni COMPASS)
+const UPPER_SECRET_RE = new RegExp(`${INICIO}((?:[A-Z0-9]+_)*(?:[A-Z0-9]*(?:PASSWORD|PASSWD|SECRET|TOKEN|APIKEY)|[A-Z0-9]*(?<!BY|COM|SUR|TRES)PASS(?![A-Z0-9_]))(?:_[A-Z0-9]+)*)\\s*=\\s*["']?${NO_TAPADO}${NO_VARIABLE}[^\\s"'&;,]{4,}`, 'g');
 // un JSON con las comillas escapadas dentro de un texto entre comillas dobles: {\"password\":\"…\"}
 const ESCAPED_JSON_SECRET_RE = new RegExp(`${INICIO}((?:[A-Za-z0-9]+_)*[A-Za-z0-9]*(?:password|passwd|secret|token|api_?key|access_?key|private_?key))\\\\"\\s*:\\s*\\\\"${NO_TAPADO}${NO_VARIABLE}[^"\\\\\\n]+\\\\"`, 'gi');
 // una clave corta: no un valor de verdad o mentira (password: false), ni el comienzo de un objeto o una variable
@@ -101,7 +101,8 @@ const AKIA_RE = /\bAKIA[0-9A-Z]{16}\b/g;
 
 function sanitize(s, home) {
   if (!s) return s;
-  let out = String(s);
+  // del resumen quedan 500 caracteres: de un comando enorme se sanea un tramo de sobra, y el saneado no se vuelve lento
+  let out = String(s).slice(0, 8 * MAX_SUMMARY);
   if (home) out = out.split(home).join('$HOME');
   out = out.replace(AUTH_RE, '$1: [REDACTED]');
   out = out.replace(SIG_RE, '$1[REDACTED]');

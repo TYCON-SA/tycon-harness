@@ -459,7 +459,7 @@ test('T44 Observe_MoreCredentialForms_Masked — un nombre en mayúsculas, un JS
   }
 });
 
-test('T45 Observe_ThirdRoundForms — la herramienta por su ruta o con .exe, secretKey, una sigla delante, PowerShell, sshpass, redis-cli -a, mongosh, un usuario de dominio', () => {
+test('T45 Observe_ThirdRoundForms — la herramienta por su ruta o con .exe, secretKey, una sigla delante, PowerShell, sshpass, redis-cli -a, un usuario de dominio', () => {
   const s = (x) => obs.sanitize(x, null);
   for (const cmd of [
     `docker exec -it sql1 /opt/mssql-tools18/bin/${SQLCMD} -S localhost -U sa -P "${CLAVE}" -C -Q "select 1"`,
@@ -473,7 +473,6 @@ test('T45 Observe_ThirdRoundForms — la herramienta por su ruta o con .exe, sec
     `New-LocalUser -Name dev -${PASS.slice(0, 1)}${PASS.slice(1).toLowerCase()} (ConvertTo-SecureString '${CLAVE}' -AsPlainText -Force)`,
     `sshpass -p '${CLAVE}' ssh dev@acme.test`,
     `redis-cli -h cache -a ${CLAVE} ping`,
-    `mongosh mongodb://h --username dev -p ${CLAVE}`,
     `curl -u 'CORP\\jdoe:${CLAVE}' https://intranet.acme.test`,
   ]) {
     const out = s(cmd);
@@ -488,4 +487,29 @@ test('T45 Observe_ThirdRoundForms — la herramienta por su ruta o con .exe, sec
   ]) {
     assert.strictEqual(s(cmd), cmd);
   }
+});
+
+test('T46 Observe_ThirdRoundRegressions — SSHPASS y DBPASS se tapan; date -u, el puerto de un contenedor y el de ssh dentro de sshpass quedan; una clave vieja partida por el corte se tapa; un texto enorme no hace lento el saneado', () => {
+  const s = (x) => obs.sanitize(x, null);
+  for (const cmd of [`SSH${PASS.slice(0, 4)}=${CLAVE} sshpass -e ssh admin@acme.test`, `DB${PASS.slice(0, 4)}=${CLAVE} ./deploy.sh`, `export ADMIN${PASS.slice(0, 4)}=${CLAVE}`]) {
+    const out = s(cmd);
+    assert.ok(!out.includes(CLAVE), out);
+  }
+  for (const cmd of [
+    'date -u +%H:%M',
+    'echo "$(date -u +%Y-%m-%dT%H:%M:%SZ); ok"',
+    'docker run -d --name mongo -p 27017:27017 mongo:7',
+    'sshpass -e ssh -p 2222 deploy@acme.test',
+    'mongosh --port 27017 -u admin -p --authenticationDatabase admin',
+  ]) {
+    assert.strictEqual(s(cmd), cmd);
+  }
+  // una línea de antes, que el saneado de entonces no tapó y que el corte partió en medio de la clave
+  const vieja = `cd ~/repo && echo ${'a'.repeat(440)} && PG${PASS}=${CLAVE}${CLAVE}...`;
+  assert.ok(!s(vieja).includes(CLAVE.slice(0, 10)), s(vieja).slice(-40));
+  // un texto enorme hecho de signos que abren un comando: el saneado termina enseguida
+  // stable-data: mide cuánto tarda el saneado, no una fecha
+  const desde = Date.now();
+  s(`${'('.repeat(200000)}${'`'.repeat(200000)}`);
+  assert.ok(Date.now() - desde < 2000, `tardó ${Date.now() - desde} ms`);
 });
