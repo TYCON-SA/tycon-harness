@@ -384,6 +384,48 @@ frena "T21r Xargs_MarcaPegadaAOtrasOpciones_Frena" "echo x | xargs -0I{} rm $P/{
 frena "T21s Xargs_ReplaceSolo_Frena" "echo x | xargs --replace rm $P/{}"
 frena "T21t Xargs_ReplaceAbreviado_Frena" "echo x | xargs --re=% rm $P/%"
 frena "T21u Xargs_MarcaDespuesDeUnDashE_Frena" "echo x | xargs -e -I@ rm $P/@"
+# T21v a T21aa · el heredoc que llega a un xargs con un intérprete por otro camino que su renglón: un grupo con llaves o
+# con paréntesis, un renglón continuado con barra, una función o un `bash -c`. Si el comando tiene un xargs o un
+# parallel con un intérprete, el heredoc que nombra un estado de producción se juzga como su programa.
+frena "T21v Xargs_HeredocDesdeUnGrupoConLlaves_Frena" "{ cat <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF
+} | xargs -I{} python3 -c {}"
+frena "T21w Xargs_HeredocDesdeUnSubshell_Frena" "( cat <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF
+) | xargs -I{} python3 -c {}"
+frena "T21x Xargs_HeredocConElRenglonContinuado_Frena" "cat <<'EOF' | \\
+xargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21y Xargs_HeredocAUnaFuncion_Frena" "f() { xargs -I{} python3 -c {}; }; f <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21z Xargs_HeredocAUnBashC_Frena" "bash -c 'xargs -I{} python3 -c {}' <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+# T21ab y T21ac · el xargs con intérprete se busca fuera de los cuerpos: un mensaje de commit o una nota que nombra un
+# estado de producción y habla de xargs y node no corre ningún xargs, y pasa.
+pasa  "T21ab Heredoc_MensajeDeCommitQueHablaDeXargs_Pasa" "git commit -F - <<'EOF'
+fix(freno): xargs con node ya no deja pasar $NM
+EOF"
+pasa  "T21ac Heredoc_NotaQueHablaDeParallel_Pasa" "cat > /tmp/nota.md <<'EOF'
+El freno juzga $NM; las pruebas corren en parallel y usan node
+EOF"
+# T21ae a T21ah · las opciones largas de GNU xargs: las de argumento opcional, como --max-lines, lo llevan sólo pegado
+# (sueltas no se comen la palabra que sigue), una abreviada que lo lleva aparte se reconoce (--max-a 1), y gxargs (GNU
+# de Homebrew) es xargs.
+frena "T21ae Xargs_MaxLinesSuelto_Frena" "echo $P/$NM | xargs --max-lines sed -i s/a/b/"
+frena "T21af Xargs_OpcionLargaAbreviada_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs --max-a 1 python3 -c"
+frena "T21ag Gxargs_EsXargs_Frena" "echo $P/$NM | gxargs sed -i s/a/b/"
+frena "T21ah Gxargs_HeredocAUnInterprete_Frena" "cat <<'EOF' | gxargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+pasa  "T21aa Xargs_HeredocDesdeUnGrupoQueNoNombraNada_Pasa" "{ cat <<'EOF'
+print(1)
+EOF
+} | xargs -I{} python3 -c {}"
 
 # T22 · find recursivo desde una carpeta protegida o un ancestro.
 frena "8.14 T22a Find_Recursive_FromProtectedOrAncestor (G7)" "find $P -name 'prod*' -delete"

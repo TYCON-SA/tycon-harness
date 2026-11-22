@@ -75,7 +75,7 @@ const ES_SHELL = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash', 'eval']);
 // como «heredoc que alimenta a un shell», y el cuerpo —el CONTENIDO del archivo, con sus `mkdir`,
 // `chmod` y `rm` sobre `$CASA/.claude/.tycon-pipeline` de una prueba— se juzgaba como escrituras de
 // este comando. Dos falsos positivos en vivo el 2026-09-16 (y `docs/bash-tips.md` caía igual).
-const CONSUME_COMO_SHELL = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash', 'xargs', 'ssh']);
+const CONSUME_COMO_SHELL = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash', 'xargs', 'gxargs', 'ssh']);
 const CONSUME_COMO_SHELL_SI_ES_PROGRAMA = new Set(['source', '.', 'eval']);
 const escRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const CRUDO = new RegExp('(' + [
@@ -1119,7 +1119,7 @@ function sinEnvoltorios(palabras) {
     if (!t.length) break;
     const b = basename(t[0]);
     let i = 1;
-    if (b === 'xargs') {
+    if (b === 'xargs' || b === 'gxargs') {
       while (i < t.length && /^-/.test(t[i])) i += XARGS_CON_ARGUMENTO.test(t[i]) ? 2 : 1;
       t = t.slice(i); continue;
     }
@@ -1925,6 +1925,9 @@ const LECTORES = new Set(['cat', 'bat', 'less', 'more', 'head', 'tail', 'grep', 
 // Intérpretes que corren un PROGRAMA: lo que reciben como argumento es dato del programa (ver `juzgarPalabra`). Los
 // shells no entran: lo que corren se lee como shell y se juzga entero.
 const INTERPRETE_DE_PROGRAMA = /^(?:python(?:\d+(?:\.\d+)*)?|node|perl|ruby|php)$/;
+// un `xargs` o un `parallel` con uno de esos intérpretes después, en cualquier parte del comando (también dentro de un
+// `bash -c '…'` o de una función)
+const XARGS_CON_INTERPRETE = /(?<![\w.-])(g?xargs|parallel)(?![\w.-])[\s\S]*?(?<![\w-])(?:python(?:\d+(?:\.\d+)*)?|node|perl|ruby|php)(?![\w.-])/;
 // `sed` sin `-i`/`-I`/`--in-place` sólo LEE sus archivos; su programa (`-e`, `--expression`, o el primer argumento) sí se
 // juzga: `sed -n 'w <archivo>'` escribe (revisión de la tanda A, T30: freno falso con `sed` sobre una variable del `for`).
 const SED_EN_SITIO = /^(?:-[^-]*[iI]|--in-place(?:=|$))/;
@@ -1953,6 +1956,13 @@ const FIND_ESCRIBE_ARCHIVO = new Set(['-fprint', '-fprint0', '-fprintf', '-fls']
 // Era 300 y con más se daba por «fuera de alcance» en silencio; 300 no alcanza ni para el /tmp de una Mac en uso (~1.600
 // subcarpetas medidas el 2026-10-03), y 5.000 `stat` cuestan decenas de milisegundos con el reloj mirado cada 256.
 const MAX_HIJOS_FIND = 5000;
+// Las opciones largas de GNU xargs: `true`, lleva su argumento aparte; `false`, sólo pegado con `=` o ninguno. getopt
+// acepta una abreviada mientras no sea ambigua (`--max-a 1`).
+const XARGS_LARGAS = {
+  'arg-file': true, delimiter: true, 'max-args': true, 'max-chars': true, 'max-procs': true, 'process-slot-var': true,
+  eof: false, 'max-lines': false, replace: false, null: false, 'no-run-if-empty': false, interactive: false, 'open-tty': false,
+  verbose: false, 'show-limits': false, exit: false, help: false, version: false,
+};
 const XARGS_CON_ARGUMENTO =/^-(?:[LnPsEeRSda]|-(?:max-args|max-procs|max-lines|delimiter|arg-file|eof|max-chars))$/;
 const escPatron = (s) => String(s).replace(/[\\*?[\]~]/g, '\\$&');
 
@@ -2487,17 +2497,24 @@ function escrituraProtegida(cmd, payload) {
   const processSubstitutionText = (raw) => { const m = /^<\(([\s\S]*)\)$/.exec(String(raw)); return m ? m[1] : null; };
 
   /** `xargs`/`parallel` con un escritor: escribe sobre lo que nombra cualquier segmento anterior de su tubería (AC 13a). */
-  const juzgarXargs = (args, cwd, previos, pp, prof) => {
+  const juzgarXargs = (args, cwd, previos, pp, prof, quien) => {
     let k = 0; let marca = null;
     while (k < args.length) {
       const a = pal(args[k]);
       if (a === '--') { k++; break; }
       if (!/^-/.test(a)) break;
-      // `--replace` (GNU), también abreviado como lo acepta getopt (`--re=%`, `--r`): sin `=` es la marca `{}`, y no se
-      // come la palabra que sigue
-      const largo = a.split('=')[0];
-      if (largo.length >= 3 && '--replace'.startsWith(largo)) { marca = a.includes('=') ? (a.slice(a.indexOf('=') + 1) || '{}') : '{}'; k++; continue; }
-      if (/^--/.test(a)) { k += XARGS_CON_ARGUMENTO.test(a) ? 2 : 1; continue; }
+      // una opción larga, como la lee getopt: también abreviada (`--re=%` es `--replace=%`). `--replace` sin `=` es la
+      // marca `{}`; `--eof` y `--max-lines` sin `=` no llevan argumento: ninguna de las tres se come la palabra que sigue
+      if (/^--/.test(a)) {
+        const igual = a.indexOf('=');
+        const nombre = a.slice(2, igual < 0 ? a.length : igual);
+        const cuales = Object.keys(XARGS_LARGAS).filter((o) => o.startsWith(nombre));
+        const o = cuales.includes(nombre) ? nombre : (cuales.length === 1 ? cuales[0] : null);
+        if (nombre && o === 'replace') { marca = igual < 0 ? '{}' : (a.slice(igual + 1) || '{}'); k++; continue; }
+        if (quien === 'parallel') { k += XARGS_CON_ARGUMENTO.test(a) ? 2 : 1; continue; }
+        k += nombre && o && XARGS_LARGAS[o] && igual < 0 ? 2 : 1;
+        continue;
+      }
       // un grupo de letras (`-0I{}`, `-tI {}`, `-ti`, `-iX`): cada letra es una opción, hasta la que lleva argumento.
       // `-e` de GNU lleva el suyo sólo pegado: suelto no se come la palabra que sigue (`xargs -e -I@`)
       let salto = 1;
@@ -2757,7 +2774,7 @@ function escrituraProtegida(cmd, payload) {
         const v = juzgarPalabra(raw, cwdSeg, prog, { assignment: true, unknownIsData: true }); if (v) return v;
       }
     }
-    if (prog === 'xargs' || prog === 'parallel') return juzgarXargs(args, cwdSeg, tuberia, pp, prof);
+    if (prog === 'xargs' || prog === 'gxargs' || prog === 'parallel') return juzgarXargs(args, cwdSeg, tuberia, pp, prof, prog);
     if (prog === 'find') return juzgarFind(args, cwdSeg, prof, null);
     if ((prog === 'sed' || prog === 'gsed') && !args.some((a) => SED_EN_SITIO.test(pal(a)))) {
       for (const raw of programaDeSed(args)) { const v = juzgarPalabra(raw, cwdSeg, prog); if (v) return v; }
@@ -2872,18 +2889,24 @@ function programaPorHeredoc(cmd, sp, prof = 0) {
     const m = MENCION_PROTEGIDA.exec(String(p.cuerpo || ''));
     if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra el programa que el intérprete recibe por su entrada).` };
   }
-  // A un `xargs` o un `parallel` que corre un intérprete, el heredoc es lo que le llega (`xargs -I{} python3 -c {} <<EOF`,
-  // `cat <<EOF | xargs …`): puede ser su programa, y se juzga igual. Cuenta su renglón, y el siguiente si termina en `|`.
-  for (const h of sp.heredocs(cmd)) {
-    const m = MENCION_PROTEGIDA.exec(String(h.cuerpo || ''));
-    if (!m) continue;
-    const resto = String(h.resto || '');
-    let renglon = `${cmd.slice(cmd.lastIndexOf('\n', h.indice) + 1, h.indice)} ${resto}`;
-    if (/\|\s*$/.test(resto) && h.fin < cmd.length) { const f = cmd.indexOf('\n', h.fin + 1); renglon += ` ${cmd.slice(h.fin + 1, f < 0 ? cmd.length : f)}`; }
-    const t = sp.tokens(renglon).map((x) => basename(sinComillas(x)).toLowerCase());
-    const ix = t.findIndex((x) => x === 'xargs' || x === 'parallel');
-    if (ix >= 0 && t.slice(ix + 1).some((x) => INTERPRETE_DE_PROGRAMA.test(x))) {
-      return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra el texto que «${t[ix]}» le pasa a un intérprete, y puede ser su programa).` };
+  // A un `xargs` o un `parallel` que corre un intérprete, un heredoc puede ser lo que le llega, y entonces su programa:
+  // en su renglón (`xargs -I{} python3 -c {} <<EOF`), por la tubería (`cat <<EOF | xargs …`), desde un grupo o un
+  // subshell, en un renglón continuado, por una función que corre el xargs o por un `bash -c '… xargs …'`. Se mira el
+  // comando entero sin los cuerpos (un mensaje de commit que habla de xargs no corre ninguno): si en alguna parte hay un
+  // xargs o un parallel con un intérprete después, el heredoc que nombra un estado de producción se juzga como su
+  // programa. Frena de más el comando que tiene las dos cosas sin relación.
+  // Con el renglón del heredoc continuado con una barra, para el shell el cuerpo empieza después del renglón lógico, y
+  // shell-parse cuenta los renglones continuados como cuerpo: se suman al texto que se mira.
+  const continuados = sp.heredocs(cmd).filter((h) => /\\\s*$/.test(String(h.resto || ''))).map((h) => {
+    const renglones = String(h.cuerpo || '').split('\n');
+    const k = renglones.findIndex((r) => !/\\\s*$/.test(r));
+    return renglones.slice(0, k < 0 ? renglones.length : k + 1).join('\n');
+  });
+  const x = XARGS_CON_INTERPRETE.exec([sp.sinHeredocs(cmd), ...continuados].join('\n'));
+  if (x) {
+    for (const h of sp.heredocs(cmd)) {
+      const m = MENCION_PROTEGIDA.exec(String(h.cuerpo || ''));
+      if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra un heredoc que puede llegarle a «${x[1]}» como programa de un intérprete).` };
     }
   }
   if (prof >= 6) return null;                                               // el mismo tope de anidamiento de `texto`
