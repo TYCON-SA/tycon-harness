@@ -776,9 +776,13 @@ function respuestaDe({ estado, sesion, kind, huella, problemas }) {
   return r.length ? r[r.length - 1].choice : null;
 }
 
-/** ¿Para este plan (su huella) se eligió seguir sin revisión? La última respuesta sobre esa huella manda. */
+/**
+ * ¿Para este plan (su huella) se eligió seguir sin revisión? La última respuesta sobre esa huella manda; `destino` puede
+ * ser varias sesiones (las de una corrida adoptada), y entonces manda la última de todas.
+ */
 function eligioSeguir({ estado, destino, huellaPlan, problemas }) {
-  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === 'plan' && j.sesion === destino && j.huella === huellaPlan);
+  const destinos = [].concat(destino);
+  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === 'plan' && destinos.includes(j.sesion) && j.huella === huellaPlan);
   return r.length ? r[r.length - 1].choice === 'skip' : false;
 }
 
@@ -835,7 +839,7 @@ function lineaDelCuadro({ estado, destino, marker, config }) {
   renglones(estado, sinRegistro);
   if (sinRegistro.length) return { linea: `${sinRegistro[0]}: no sé cómo quedó la revisión`, detalle: [] };
   const destinos = sesionesDeLaCorrida(destino, marker);
-  if (huellaPlan && destinos.some((d) => eligioSeguir({ estado, destino: d, huellaPlan }))) return { linea: 'sin revisión (se eligió seguir)', detalle: [] };
+  if (huellaPlan && eligioSeguir({ estado, destino: destinos, huellaPlan })) return { linea: 'sin revisión (se eligió seguir)', detalle: [] };
   const deEsta = destinos.map((d) => ultimaDelDestino({ estado, destino: d })).filter((c) => c && c.veredicto && mismaCorrida(c.corrida, corrida))
     .sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora))[0] || null;
   if (!deEsta) {
@@ -886,15 +890,15 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
     try { d = delegacion({ firma: 'plan-approval', sesion: firmante, destino, home, estado }); } catch (e) { d = { ok: false, motivo: e.message }; }
     if (!d || !d.ok) return no(`el perfil no delega la aprobación del plan (${(d && d.motivo) || 'sin respuesta'}): ${ESPERA}`);
   }
-  // la constancia de la sesión de ahora o, en una corrida adoptada sin una propia, la de la sesión anterior
+  // la constancia de esta corrida: la de la sesión de ahora o, en una corrida adoptada, la de la anterior. Si ninguna es
+  // de esta corrida, la primera que se lee dice por qué no
   const destinos = sesionesDeLaCorrida(destino, marker);
-  let r = null;
-  let deQuien = destino;
-  for (const d of destinos) {
-    r = leerConstancia({ estado, lanza: firmante, destino: d });
-    deQuien = d;
-    if (r.ok || !r.ausente) break;
-  }
+  const hoyCorrida = corridaDe(marker);
+  const leidas = destinos.map((d) => ({ d, r: leerConstancia({ estado, lanza: firmante, destino: d }) }));
+  const deEsta = leidas.find((x) => x.r.ok && x.r.constancia.corrida && mismaCorrida(x.r.constancia.corrida, hoyCorrida));
+  const elegida = deEsta || leidas.find((x) => x.r.ok || !x.r.ausente) || leidas[0];
+  const r = elegida.r;
+  const deQuien = elegida.d;
   if (!r.ok && r.ausente) return no(`no hay una revisión automática de este plan lanzada por esta sesión (marker.js plan-review${firmante === destino ? '' : ` --for-session ${destino}`}): ${ESPERA}`);
   if (!r.ok) return no(`la constancia de la revisión no se puede leer (${r.motivo}): ${ESPERA}`);
   const c = r.constancia;
@@ -909,7 +913,7 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   if (c.delicate.value !== delicate.value) return no(`la story era delicada cuando se revisó y ya no lo es: ${ESPERA}`);
   // la coordinadora aprueba lo que se revisó: la misma parte, igual de válida y con la misma lista
   if (!mismaParte(c.parte, parte)) return no(`la parte o su lista cambiaron desde la revisión (${c.parte ? c.parte.nombre : 'sin parte'} → ${parte ? parte.nombre : 'sin parte'}): ${ESPERA}`);
-  if (destinos.some((d) => eligioSeguir({ estado, destino: d, huellaPlan: c.huellas.plan }))) return no(`para este plan se eligió seguir sin revisión: lo firma una persona`);
+  if (eligioSeguir({ estado, destino: destinos, huellaPlan: c.huellas.plan })) return no(`para este plan se eligió seguir sin revisión: lo firma una persona`);
   if (!APROBADOS.includes(c.veredicto)) return no(`${ESPERA} (la revisión dijo ${c.veredicto})`);
   return { codigo: 0, via: 'revision', constancia: c };
 }
@@ -940,7 +944,8 @@ function textoDeLaAprobacion(c) {
 function revisionEnContra({ estado, destino, marker }) {
   const plan = planDe(marker);
   const problemas = [];
-  const conVeredicto = revisionesDe(estado, destino, corridaDe(marker), problemas)
+  // en una corrida adoptada, el rechazo de la sesión anterior cuenta como su aprobación
+  const conVeredicto = revisionesDe(estado, sesionesDeLaCorrida(destino, marker), corridaDe(marker), problemas)
     .filter((j) => j.veredicto === 'rechazado' || APROBADOS.includes(j.veredicto));
   const u = conVeredicto[conVeredicto.length - 1];
   // con el registro ilegible no se sabe si hay una revisión en contra: cuenta como si la hubiera

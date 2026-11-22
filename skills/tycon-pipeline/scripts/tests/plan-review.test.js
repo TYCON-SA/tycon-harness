@@ -2044,3 +2044,18 @@ test('PlanReview_AdoptedRun_InheritsReviewOfPreviousSession', (t) => {
   assert.strictEqual(cambiado.codigo, 2, JSON.stringify(cambiado));
   assert.match(cambiado.motivo, /el plan cambió después de la revisión/);
 });
+
+test('PlanReview_AdoptedRun_InheritsRejectionAndLatestAnswer', (t) => {
+  const lab = laboratorio(t, { sensible: 'seguridad' });
+  const NUEVA = 'ses-nueva';
+  const adoptado = () => ({ ...JSON.parse(lab.leer(DESTINO)), sessionId: NUEVA, adoptedFrom: DESTINO, adoptedAt: '2026-11-22T12:00:00.000Z' });
+  // la sesión anterior rechazó el plan delicado: el rechazo se hereda como la aprobación
+  lab.revisar(RECHAZADO);
+  const enContra = PR().revisionEnContra({ estado: lab.estado, destino: NUEVA, marker: adoptado() });
+  assert.ok(enContra && enContra.codigo === 2, JSON.stringify(enContra));
+  // «seguir sin revisión» de la sesión anterior y después «revisar» de la nueva: manda la última
+  const huella = sha(fs.readFileSync(lab.planFile, 'utf8'));
+  PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'skip', huella, quien: 'la persona', ahora: Date.parse('2026-11-22T12:00:00Z') });
+  PR().anotarRespuesta({ estado: lab.estado, sesion: NUEVA, kind: 'plan', choice: 'review', huella, quien: 'la persona', ahora: Date.parse('2026-11-22T13:00:00Z') });
+  assert.doesNotMatch(PR().lineaDelCuadro({ estado: lab.estado, destino: NUEVA, marker: adoptado() }).linea, /se eligió seguir/);
+});

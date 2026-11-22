@@ -527,7 +527,9 @@ function mockupTexts(html) {
 /**
  * Las capas de una maqueta armada por este guion: `[{ screen, name, trigger, over, texts, variants }]`, o null si el
  * archivo no es de mockup.js. `texts` son los de la ventana; los de la pantalla de abajo, dibujada detrás, no cuentan.
- * `variants` son los otros casos de la ventana (`[{ when, texts }]`): salen de a uno, cada uno con sus textos.
+ * `variants` son los otros casos de la ventana (`[{ when, texts }]`): salen de a uno, cada uno con sus textos. Una pantalla
+ * repetida con el nombre de la capa (`Otro caso de «…»`) es otro caso, con su estado como `when`. El motivo de una
+ * casilla deshabilitada no cuenta: va como atributo, y la prueba en vivo lee el texto.
  */
 function mockupLayers(html) {
   const s = String(html);
@@ -539,12 +541,22 @@ function mockupLayers(html) {
     // los otros casos van al final de la sección, en sus tarjetas: lo de antes es la ventana
     const fin = s.indexOf('</section>', m.index);
     const seccion = s.slice(m.index, fin === -1 ? undefined : fin);
-    const textosDe = (t) => [...t.matchAll(/data-mockup-text="([^"]*)" data-kind="[^"]*" data-screen="(\d+)"/g)].filter((x) => Number(x[2]) === screen).map((x) => decode(x[1]));
+    const textosDe = (t, n = screen) => [...t.matchAll(/data-mockup-text="([^"]*)" data-kind="([^"]*)" data-screen="(\d+)"/g)].filter((x) => Number(x[3]) === n && x[2] !== 'title').map((x) => decode(x[1]));
     const corte = seccion.indexOf('<div class="variants">');
     const variants = corte === -1 ? [] : seccion.slice(corte).split('<div class="variant">').slice(1)
       .map((tarjeta) => ({ when: decode(((/<p class="variant-when">([^<]*)/.exec(tarjeta) || [])[1] || '').trim()), texts: textosDe(tarjeta) }))
       .filter((v) => v.texts.length);
-    out.push({ screen, name: decode(m[2]), trigger: decode(m[3]), over: decode(m[4]), texts: textosDe(corte === -1 ? seccion : seccion.slice(0, corte)), variants });
+    const name = decode(m[2]);
+    for (const r of s.matchAll(/<section class="screen repeat" data-screen-index="(\d+)" data-screen-name="([^"]*)" data-presentation="layer">/g)) {
+      if (decode(r[2]) !== name) continue;
+      const n = Number(r[1]);
+      const finR = s.indexOf('</section>', r.index);
+      const otra = s.slice(r.index, finR === -1 ? undefined : finR);
+      const estado = (/<span class="screen-state">([^<]*)<\/span>/.exec(otra) || [])[1];
+      const texts = textosDe(otra, n);
+      if (texts.length) variants.push({ when: estado ? decode(estado) : `otro caso de «${name}»`, texts });
+    }
+    out.push({ screen, name, trigger: decode(m[3]), over: decode(m[4]), texts: textosDe(corte === -1 ? seccion : seccion.slice(0, corte)), variants });
   }
   return out;
 }

@@ -1912,3 +1912,22 @@ test('SignatureQuestion_ApproveMockup_SameTexts_AndUnknown', (t) => {
   escribirPlan(c);
   assert.ok(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta.startsWith('¿Aprobar el plan de una story?'));
 });
+
+test('SignatureQuestion_ApproveMockup_TextsByContent_FirstApprovalFromTheRun', (t) => {
+  const c = corrida(t, { extraHistoria: CON_PANTALLA });
+  const dos = (orden) => JSON.stringify({ title: 'Facturas', screens: orden.map((n) => ({ name: n, elements: [{ kind: 'heading', text: `Título ${n}` }] })) });
+  const v1 = armarMaqueta(c, dos(['Lista', 'Detalle']));
+  aprobadaCon(c, v1.sha256);
+  commitDeLab(c.repo);
+  // las mismas pantallas en otro orden: los textos que se comparan son los mismos
+  armarMaqueta(c, dos(['Detalle', 'Lista']));
+  assert.match(cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' }).pregunta, /Los textos que se comparan con la pantalla son los mismos/);
+  // sin aprobación en la corrida, el archivo de aprobación del repo no dice cuál es la huella aprobada
+  const f = path.join(c.estado, 'active', 'ses-a.json');
+  const m = JSON.parse(fs.readFileSync(f, 'utf8'));
+  delete m.mockupApproval;
+  fs.writeFileSync(f, JSON.stringify(m));
+  const q = cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' }).pregunta;
+  assert.match(q, /Primera aprobación de la maqueta en esta corrida/);
+  assert.doesNotMatch(q, /Huella: [0-9a-f]{12} →/);
+});

@@ -880,7 +880,7 @@ test('LayerProbe_MenuListaYPopover_CuentanComoCapa @capa-de-la-maqueta', () => {
   const lp = require(LAYER_PROBE);
   const el = (attrs, text) => ({ getAttribute: (k) => attrs[k] ?? null, textContent: text, hidden: false });
   for (const role of ['menu', 'listbox']) {
-    const r = lp.probeDocument({ querySelectorAll: (sel) => (sel.includes(`role="${role}"`) ? [el({ role }, 'Editar Borrar')] : []) }, { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'] });
+    const r = lp.probeDocument({ querySelectorAll: (sel) => (sel.includes(`role="${role}"`) ? [el({ role }, 'Editar Borrar')] : []) }, { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'], antes: lp.antesDe({ querySelectorAll: () => [] }) });
     assert.deepStrictEqual([r.dialog, r.texts], [true, ['Editar', 'Borrar']], role);
   }
   // un popover abierto cuenta; un documento que no sabe de popovers no rompe la prueba
@@ -901,4 +901,44 @@ test('Capa_ConstruidaEnLaPagina_NombraMenuYLista @capa-de-la-maqueta', () => {
   const r = checkCon(m.s);
   assert.strictEqual(r.rc, 2, r.out);
   assert.match(r.out, /un menú, una lista desplegable o un popover/);
+});
+
+test('LayerProbe_MenuQueYaEstaba_NoCuentaComoAbierto @capa-de-la-maqueta', () => {
+  const lp = require(LAYER_PROBE);
+  const el = (attrs, text, padre = null) => ({ getAttribute: (k) => attrs[k] ?? null, textContent: text, hidden: false, parentElement: padre });
+  const menu = el({ role: 'menu' }, 'Inicio Facturas Editar Borrar');
+  const doc = (els) => ({ querySelectorAll: (sel) => (sel.includes('role="menu"') ? els : []) });
+  // el menú de la barra ya estaba antes del click: no es lo que se abrió
+  const antes = lp.antesDe(doc([menu]));
+  let r = lp.probeDocument(doc([menu]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'], antes });
+  assert.deepStrictEqual([r.dialog, r.texts], [false, []]);
+  // sin la foto de antes, un menú no se puede dar por abierto
+  r = lp.probeDocument(doc([menu]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'] });
+  assert.strictEqual(r.dialog, false);
+  // un menú nuevo, sí; uno dentro de un contenedor escondido, no
+  const nuevo = el({ role: 'menu' }, 'Editar Borrar');
+  r = lp.probeDocument(doc([menu, nuevo]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'], antes });
+  assert.deepStrictEqual([r.dialog, r.texts], [true, ['Editar', 'Borrar']]);
+  const escondido = el({ role: 'menu' }, 'Editar Borrar', el({ 'aria-hidden': 'true' }, ''));
+  r = lp.probeDocument(doc([escondido]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'], antes: lp.antesDe(doc([])) });
+  assert.strictEqual(r.dialog, false);
+});
+
+test('Capa_PantallaRepetida_EsOtroCasoDeLaCapa @capa-de-la-maqueta', () => {
+  // un modelo que trae el caso de error como la pantalla entera repetida: es otro caso de la misma capa
+  const conError = { ...CAPA_PROBAR, state: 'con error', elements: [{ kind: 'heading', text: 'Probar la plantilla' }, { kind: 'message', text: 'La plantilla tiene un error' }] };
+  const m = mundoConCapa([CAPA_EDITAR, CAPA_PROBAR, conError], PANTALLA_CAPA.replace('</div>;', '<p>La plantilla tiene un error</p></div>;'));
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar', 'Repetida sola'] });
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /ninguna prueba muestra adentro el caso «con error» \(«(Probar la plantilla», «)?La plantilla tiene un error»\)/);
+});
+
+test('Capa_MotivoDeUnaCasilla_NoSeExigeAdentro @capa-de-la-maqueta', () => {
+  // el motivo de una casilla deshabilitada va como atributo title: la prueba en vivo lee el texto, no los atributos
+  const conCasilla = { ...CAPA_PROBAR, elements: [...CAPA_PROBAR.elements, { kind: 'checkbox', label: 'Publicar', disabled: true, title: 'Requiere permiso de publicación' }] };
+  const m = mundoConCapa([CAPA_EDITAR, conCasilla], PANTALLA_CAPA.replace('</div>;', '<input type="checkbox" disabled title="Requiere permiso de publicación" />Publicar</div>;'));
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar', 'Publicar'] });
+  const r = checkCon(m.s);
+  assert.doesNotMatch(r.out, /\(12\)[^\n]*Requiere permiso de publicación/, r.out);
 });

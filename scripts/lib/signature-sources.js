@@ -178,12 +178,12 @@ function deLaMaqueta(palabras, m) {
     return { que, queHace: [linea], fuente: linea, cita, siSaleMal: SI_SALE_MAL_MAQUETA };
   }
   const nueva = mk.mockupHash(html);
-  let vieja = m && m.mockupApproval && m.mockupApproval.sha256 ? String(m.mockupApproval.sha256) : null;
-  if (!vieja) { const ap = mk.readApproval(p.approval); if (ap.state === 'ok' && ap.data && ap.data.sha256) vieja = String(ap.data.sha256); }
+  // la aprobada es la que anotó la corrida (como la mira approve-mockup); el archivo de aprobación del repo no la prueba
+  const vieja = m && m.mockupApproval && m.mockupApproval.sha256 ? String(m.mockupApproval.sha256) : null;
   const corta = (h) => h.slice(0, 12);
   const lineas = [];
   let textos = 'sin comparar';
-  if (!vieja) lineas.push(`Primera aprobación de la maqueta: huella ${corta(nueva)}`);
+  if (!vieja) lineas.push(`Primera aprobación de la maqueta en esta corrida: huella ${corta(nueva)}`);
   else if (vieja === nueva) lineas.push(`La maqueta no cambió desde su aprobación: huella ${corta(nueva)}`);
   else {
     lineas.push(`Huella: ${corta(vieja)} → ${corta(nueva)}`);
@@ -194,7 +194,8 @@ function deLaMaqueta(palabras, m) {
       textos = 'no sé';
       lineas.push('No sé si los textos que se comparan con la pantalla son los mismos: la versión aprobada no está en el último commit');
     } else {
-      const de = (ts) => ts.map((x) => `${x.screen}\u0000${x.text}`);
+      // como los compara la capa 10: por su texto, en cualquier pantalla; el motivo de una casilla es otra cosa
+      const de = (ts) => [...new Set(ts.map((x) => `${x.kind === 'title' ? 'title' : ''}\u0000${String(x.text).replace(/\s+/g, ' ').trim()}`))];
       const a = de(antes); const b = de(ahora);
       const sale = a.filter((x) => !b.includes(x)); const entra = b.filter((x) => !a.includes(x));
       const nombres = (xs) => xs.slice(0, 3).map((x) => `«${x.split('\u0000')[1]}»`).join(', ') + (xs.length > 3 ? ` y ${xs.length - 3} más` : '');
