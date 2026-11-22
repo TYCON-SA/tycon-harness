@@ -704,7 +704,11 @@ function applyToSettings(settings, o) {
     // el guion queda como estaba escrito si existe; la ruta de una versión, borrada o no, vuelve a la estable
     const old = scriptOf(cmd);
     const script = old && fs.existsSync(old) && !deadSame(cmd, h) ? old : absCmd;
-    const next = `${headFor(h)} "${script}"`;
+    // el lanzador queda como estaba escrito si existe (como el guion): correr el aplicador por el enlace o por el clon no
+    // cambia la línea
+    const keptL = launched && /"([^"]+)"/.exec(launched[0])[1];
+    const head = launcherOf(h) && keptL && fs.existsSync(keptL) ? `bash "${keptL}" ${jsHead(h)}` : headFor(h);
+    const next = `${head} "${script}"`;
     return next === String(cmd).trim() ? null : next;
   };
   const takeNarrower = (bucket, h, abs, runner) => {

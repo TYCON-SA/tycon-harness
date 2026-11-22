@@ -87,6 +87,15 @@ test('T14b Installer_WritesLauncher_UpgradesOld_NotOnWindows @story-8.159 @ac-0 
   const otraVez = aplicar(nuevo, 'posix');
   assert.deepStrictEqual(otraVez.reformed, [], 'la segunda vez no cambia nada');
   assert.strictEqual(comandos(nuevo).length, 1, 'sin repetirlo');
+  // por otra ruta al mismo árbol (el enlace estable o el clon), la línea queda como estaba escrita
+  const enlace = path.join(L.dir, 'enlace');
+  fs.symlinkSync(dir, enlace);
+  const porEnlace = (() => {
+    const d = AH.decide(cargada, { env: {}, integ: { state: 'ok', values: {} }, profile: { state: 'ok', value: 'full' }, minimalIds: new Set(), platform: 'posix', has: () => true });
+    return AH.applyToSettings(nuevo, { list: cargada, decision: d, platform: 'posix', hooksDir: enlace, skills: enlace, env: {}, check: false, floor: null, settingsPath: path.join(dir, 'settings.json') });
+  })();
+  assert.deepStrictEqual(porEnlace.reformed, [], 'por el enlace no se reescribe');
+  assert.strictEqual(comandos(nuevo).length, 1, 'por el enlace no se repite');
   // una instalación de antes, sin lanzador, se pone al día en su lugar
   const viejo = { hooks: { PreToolUse: [{ matcher: 'Bash|PowerShell', hooks: [{ type: 'command', command: `node "${path.join(dir, 'public-push-guard.js')}"` }] }] } };
   const r = aplicar(viejo, 'posix');
