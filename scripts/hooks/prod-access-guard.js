@@ -1930,8 +1930,8 @@ const INTERPRETE_DE_PROGRAMA = /^(?:python(?:\d+(?:\.\d+)*)?|node|perl|ruby|php)
 // INTERPRETE_DE_PROGRAMA también afloja (en juzgarPalabra, lo que un intérprete recibe sin resolver es un dato), y esta
 // sólo aprieta. Los shells los juzga la regla de shell.
 const POR_XARGS = ['python(?:\\d+(?:\\.\\d+)*)?', 'node', 'perl', 'ruby', 'php', 'bun', 'bunx', 'deno', 'awk', 'gawk', 'mawk', 'nawk',
-  'osascript', 'tsx', 'ts-node', 'lua', 'luajit', 'rscript', 'pwsh', 'powershell', 'tclsh', 'julia', 'npx', 'pnpx', 'uv', 'uvx', 'poetry',
-  'pipenv'];
+  'osascript', 'tsx', 'ts-node', 'lua', 'luajit', 'rscript', 'pwsh', 'powershell', 'tclsh', 'julia', 'ipython', 'irb', 'nodejs',
+  'pypy\\d*', 'npx', 'pnpx', 'npm', 'pnpm', 'yarn', 'uv', 'uvx', 'poetry', 'pipenv', 'pipx', 'pyenv', 'mise', 'conda'];
 const INTERPRETE_POR_XARGS = new RegExp(`^(?:${POR_XARGS.join('|')})$`, 'i');
 // un `xargs` o un `parallel` con uno de esos programas después, en cualquier parte del comando (también dentro de un
 // `bash -c '…'` o de una función)
@@ -2504,6 +2504,26 @@ function escrituraProtegida(cmd, payload) {
   /** El texto de un `<(…)` (una palabra o el destino de un `<`), o null. */
   const processSubstitutionText = (raw) => { const m = /^<\(([\s\S]*)\)$/.exec(String(raw)); return m ? m[1] : null; };
 
+  /**
+   * ¿A un lector como awk, lo que le pasa xargs le llega en el lugar del programa? Con `-f` el programa está en un archivo:
+   * no. Con `-e`, si su valor lleva la marca de xargs. Si no, si la primera palabra que no es opción falta o lleva la marca.
+   */
+  const programaPorLaEntrada = (argsM) => {
+    const marcado = (raw) => String(raw).includes('${__XARGS_MARCA__}');
+    let i = 0; let conE = false;
+    while (i < argsM.length) {
+      const w = pal(argsM[i]);
+      if (w === '--') { i++; break; }
+      if (w === '-f' || /^-f./.test(w)) return false;
+      if (w === '-e') { conE = true; if (marcado(argsM[i + 1] || '')) return true; i += 2; continue; }
+      if (/^-[Fvil]$/.test(w)) { i += 2; continue; }
+      if (/^-/.test(w)) { i++; continue; }
+      break;
+    }
+    if (conE) return false;
+    return i >= argsM.length || marcado(argsM[i]);
+  };
+
   /** `xargs`/`parallel` con un escritor: escribe sobre lo que nombra cualquier segmento anterior de su tubería (AC 13a). */
   const juzgarXargs = (args, cwd, previos, pp, prof, quien) => {
     let k = 0; let marca = null;
@@ -2537,21 +2557,39 @@ function escrituraProtegida(cmd, payload) {
     }
     const sub = args.slice(k);
     const i1 = programa(sub); const p = progDe(sub[i1]); const subArgs = sub.slice(i1 + 1);
-    if (!p || esLector(p, subArgs)) return null;                                  // sin programa es `echo`
+    if (!p) return null;                                                           // sin programa es `echo`
     // la marca de -I/-J vale `*` en los argumentos del escritor
     const subArgsM = subArgs.map((raw) => (marca && raw.includes(marca) ? raw.split(marca).join('${__XARGS_MARCA__}') : raw));
-    // `xargs sh -c '…'`: el texto corre como shell (#8)
-    const vEj = judgeShellText(p, subArgsM, cwd, prof, {}); if (vEj) return vEj;
-    for (let x = 0; x < subArgs.length; x++) {
-      const v = juzgarPalabra(subArgsM[x], cwd, p, undefined, subArgsM[x] !== subArgs[x]);
-      if (v) return v;
-    }
     // las fuentes: los segmentos anteriores de la tubería, un `<<<`, y un `< <(…)` (#16)
     const entradas = [...previos];
     for (const red of pp.redirections) {
       if (red.target === null || red.dup) continue;
       if (red.op === '<<<') entradas.push({ crudos: [{ raw: red.target, opts: { hereString: true } }], cwd });
       else if (red.op === '<') { const t = processSubstitutionText(red.target); if (t !== null) entradas.push(...pipeEntriesOf(t, cwd)); }
+    }
+    // A un programa de POR_XARGS, lo que llega puede ser su programa (`xargs -I{} python3 -c {}`, o `-c` sin programa): un
+    // texto que nombra un estado de producción, escrito o en una variable de valor conocido, se juzga como el programa
+    // escrito en el comando. Los heredocs los mira programaPorHeredoc.
+    const mencionEnLoQueLlega = () => {
+      if (!INTERPRETE_POR_XARGS.test(p)) return null;
+      for (const e of entradas) {
+        if (e.prog === 'find') continue;
+        for (const c of e.crudos) {
+          const textos = [pal(c.raw), ...expandir(c.raw, c.opts).patterns.map(sp.patternToLiteral)];
+          const m = textos.map((x) => MENCION_PROTEGIDA.exec(x)).find(Boolean);
+          if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (xargs le pasa a «${p}» un texto que lo nombra, y puede ser su programa: «${corto(c.raw)}»).` };
+        }
+      }
+      return null;
+    };
+    // Un lector (awk sin -i) no escribe los archivos que le llegan, pero lo que le llega en el lugar del programa (la marca
+    // de -I, o sin programa escrito) es su programa. Con el programa escrito (`xargs awk '{print}'`), son archivos que lee.
+    if (esLector(p, subArgs)) return programaPorLaEntrada(subArgsM) ? mencionEnLoQueLlega() : null;
+    // `xargs sh -c '…'`: el texto corre como shell (#8)
+    const vEj = judgeShellText(p, subArgsM, cwd, prof, {}); if (vEj) return vEj;
+    for (let x = 0; x < subArgs.length; x++) {
+      const v = juzgarPalabra(subArgsM[x], cwd, p, undefined, subArgsM[x] !== subArgs[x]);
+      if (v) return v;
     }
     for (const e of entradas) {
       // lo que imprime un `find` lo deciden sus reglas (punto de partida, bajada, patrones), no sus palabras sueltas: el
@@ -2566,16 +2604,9 @@ function escrituraProtegida(cmd, payload) {
           const leer = INTERPRETE_POR_XARGS.test(p) ? ' Para sólo leerlos, usá jq o la herramienta de lectura: un intérprete al que xargs le pasa esos nombres cuenta como escritura.' : '';
           return { motivo: `ese comando ESCRIBE sobre ${v} (xargs arma los argumentos de «${p}» con lo que le llega de «${corto(c.raw)}»).${leer}` };
         }
-        // a un intérprete, lo que llega puede ser su programa (`xargs -I{} python3 -c {}`, o `-c` sin programa): un texto
-        // que nombra un estado de producción, escrito o en una variable de valor conocido, se juzga como el programa
-        // escrito en el comando. Los heredocs los mira programaPorHeredoc.
-        if (!INTERPRETE_POR_XARGS.test(p)) continue;
-        const textos = [pal(c.raw), ...expandir(c.raw, c.opts).patterns.map(sp.patternToLiteral)];
-        const m = textos.map((x) => MENCION_PROTEGIDA.exec(x)).find(Boolean);
-        if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (xargs le pasa a «${p}» un texto que lo nombra, y puede ser su programa: «${corto(c.raw)}»).` };
       }
     }
-    return null;
+    return mencionEnLoQueLlega();
   };
 
   /** Las lecturas de una palabra como TEXTO que se va a volver a leer como shell (el guion de `bash -c`, lo de `eval`). */
@@ -3190,7 +3221,7 @@ function borradoDeAzure(partes, tokens, PREFIJOS) {
     const subcomando = [];
     for (const x of resto) { if (x.startsWith('-')) break; subcomando.push(x); }
     if (subcomando.some((x) => NO_LITERAL.test(x))) return { frena: true, que: 'algo que no se puede leer (el subcomando de az sale de una variable)' };
-    const agrega = /^(?:xargs|parallel|find)$/.test(basename(t[0]).toLowerCase());
+    const agrega = /^(?:g?xargs|parallel|find)$/.test(basename(t[0]).toLowerCase());
     const conMarcador = subcomando.some((x) => /\{\}|^%$|\{[0-9.]*\}/.test(x));
     // sólo el grupo sin verbo (`xargs az group`): el verbo lo agrega la entrada; `az group show -n {}` sí se lee
     const sinVerbo = subcomando.length === 1 && ['group', 'lock', 'resource'].includes(subcomando[0].toLowerCase());

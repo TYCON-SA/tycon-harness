@@ -433,6 +433,17 @@ frena "T21al Xargs_ProgramaParaOsascript_Frena" "echo 'do shell script \"rm $P/$
 frena "T21am Xargs_ProgramaParaPwsh_Frena" "echo 'Remove-Item $P/$NM' | xargs -I{} pwsh -c {}"
 frena "T21an Xargs_ProgramaParaNpxTsx_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} npx tsx -e {}"
 frena "T21ao Xargs_ProgramaParaUvRun_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -I{} uv run python -c {}"
+# T21aq a T21at · awk es un lector, pero lo que xargs le pasa en el lugar del programa (la marca, o sin programa escrito)
+# es su programa. Con el programa escrito, lo que llega son archivos que lee, y pasa.
+frena "T21aq Xargs_ProgramaDeAwkPorLaTuberia_Frena" "echo 'BEGIN{system(\"rm $P/$NM\")}' | xargs -I{} awk {}"
+frena "T21ar Xargs_ProgramaDeGawkPorUnHereString_Frena" "xargs -I{} gawk {} <<< 'BEGIN{print \"x\" > \"$P/$NM\"}'"
+frena "T21as Xargs_AwkSinProgramaEscrito_Frena" "echo 'BEGIN{system(\"rm $P/$NM\")}' | xargs awk"
+pasa  "T21at Xargs_AwkConElProgramaEscritoLeeLosEstados_Pasa" "ls $P/$NI | xargs awk '{print}'"
+# T21au a T21aw · los lanzadores y los intérpretes comunes en una Mac de desarrollo (pnpm exec, ipython), y gxargs también
+# en el freno de borrado de Azure.
+frena "T21au Xargs_ProgramaParaPnpmExec_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} pnpm exec node -e {}"
+frena "T21av Xargs_ProgramaParaIpython_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -I{} ipython -c {}"
+frena "T21aw Gxargs_ArmaUnBorradoDeAzure_Frena" "echo delete | gxargs az group"
 pasa  "T21ap Xargs_ProgramaParaBunQueNoNombraNada_Pasa" "echo 'console.log(1)' | xargs -I{} bun -e {}"
 pasa  "T21aa Xargs_HeredocDesdeUnGrupoQueNoNombraNada_Pasa" "{ cat <<'EOF'
 print(1)
