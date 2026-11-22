@@ -1357,4 +1357,21 @@ test('T343 Kanban_FirmaDeSesionQueNoEsta_SinSesion: una firma del tablero para u
   assert.ok(sin, 'la de la sesión que ya no está va a «Sin sesión»');
   assert.strictEqual(sin.motivo, 'la sesión que la esperaba ya no está');
   assert.ok(!JSON.stringify((data.meta.esperan || {}).dueno || []).includes('Muerta-6'), '«Esperan al dueño» no la nombra');
+  // el nombre entero: una sesión viva «Tero» no retiene la firma de «Tero-2», que ya no está. Lo que no es un nombre de
+  // sesión (el dueño dicho de otra forma, un texto) se queda; la hora de la que se mueve es la de «Sin sesión»
+  const otra = buildOffice({
+    wip: wip([{ session: 'Tero', status: 'busy', work: '9.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement' } }]),
+    board: buildBoard({ pendientes: [
+      { titulo: 'De Tero-2', estado: 'firma', quien: 'Tero-2' },
+      { titulo: 'De Tero', estado: 'firma', quien: 'tero' },
+      { titulo: 'Vos decidís', estado: 'firma', quien: 'Vos decidís' },
+      { titulo: 'La dueña', estado: 'firma', quien: 'la dueña' },
+      { titulo: 'Con hora', estado: 'firma', quien: 'Pinola-6', pronosticoIso: '2026-10-18T08:00' },
+    ] }),
+    nowMs: NOW,
+  }).data;
+  assert.deepStrictEqual(titles(otra, 'firma').sort(), ['De Tero', 'La dueña', 'Vos decidís'].sort());
+  const hora = col(otra, 'sinEmpezar').tarjetas.find((t) => t.titulo === 'Con hora');
+  assert.ok(col(otra, 'sinEmpezar').tarjetas.some((t) => t.titulo === 'De Tero-2'), 'la de Tero-2 va a «Sin sesión»');
+  assert.ok(hora && /^estaba para /.test(hora.hora) && !hora.cls, `sin sesión no hay nadie atrasado: ${JSON.stringify(hora)}`);
 });

@@ -999,10 +999,10 @@ function workedAfterWait(x, lastWrite, status) {
 }
 const cardHour = (fin) => (fin ? fin.hora + (fin.dif ? ` · ${fin.dif}` : '') : '');
 const firstWord = (t) => String(t || '').trim().split(/\s+/)[0].toLowerCase();
-// quién de una fila del tablero es el dueño, no una sesión
-const OWNER_WHO = /^(vos|(el )?dueñ[oa]|—)$/iu;
-// el nombre de una sesión dicho como palabra en un texto («Ana, revisando» nombra a Ana)
-const nameIn = (name, text) => new RegExp(`(?<![\\p{L}\\p{N}])${String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(String(text));
+// el nombre de una sesión: una palabra de letras, números, guion y guion bajo («Tero», «Tero-2», «H-8290»)
+const SESSION_NAME = /^[\p{L}\p{N}_-]+$/u;
+// el dueño dicho en una palabra, que también podría pasar por un nombre de sesión
+const OWNER_WHO = /^(vos|dueñ[oa]|duen[oa])$/iu;
 // Lo que sólo usan las tablas (la clave del trabajo, su hora y el tema de su fila) va en campos que no se enumeran: no llega a
 // la página ni al sitio, y la tarjeta sigue igual.
 // Una tarjeta sin título anotado muestra lo que dice su conversación: eso no es un título y no se clasifica (`sinTitulo`).
@@ -1174,16 +1174,17 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     } else if (pr) card.motivo = 'se cerró sin entrar';
     // llegó hasta acá sin una sesión viva que la haga. Si no se pudo preguntar por su pedido, no se sabe: queda donde dice el archivo
     if (id === 'curso' && (!f.pedido || pr)) id = 'sinEmpezar';
+    // una firma anotada para una sesión que ya no está en la oficina no espera al dueño: no hay quién la use. Va a «Sin
+    // sesión», con el motivo. Sólo si `quien` es un nombre de sesión entero: el dueño o un texto libre se quedan
+    const quien = String(f.quien || '').normalize('NFC').trim();
+    if (id === 'firma' && SESSION_NAME.test(quien) && !OWNER_WHO.test(quien) && !agents.some((a) => String(a.nombre || '').normalize('NFC').toLowerCase() === quien.toLowerCase())) {
+      id = 'sinEmpezar';
+      card.motivo = 'la sesión que la esperaba ya no está';
+    }
     // sin una sesión que la haga no hay nadie atrasado: se dice para cuándo estaba. Lo que espera la cola tampoco está atrasado
     if (late && id === 'sinEmpezar') { card.hora = `estaba para ${f.fin}`; delete card.cls; }
     if (late && id === 'entrando') { card.hora = 'esperando entrar'; delete card.cls; }
     inProgress.set(card, Number.isFinite(f.finAt) ? { tier: 0, at: f.finAt } : { tier: 1 });
-    // una firma anotada para una sesión que ya no está en la oficina no espera al dueño: no hay quién la use. Va a «Sin
-    // sesión», con el motivo; la del dueño («vos») y la que no nombra a nadie se quedan
-    if (id === 'firma' && f.quien && !OWNER_WHO.test(String(f.quien).trim()) && !agents.some((a) => a.nombre && nameIn(a.nombre, f.quien))) {
-      id = 'sinEmpezar';
-      card.motivo = 'la sesión que la esperaba ya no está';
-    }
     if (id === 'firma') signedBy(card, null, 'tablero');
     col(id).tarjetas.push(card);
     boardCards.push({ f, id, card });
