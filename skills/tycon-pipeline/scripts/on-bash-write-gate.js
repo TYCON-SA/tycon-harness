@@ -646,6 +646,88 @@ function repoConHistorias(carpeta) {
 }
 const EXTENSION_DE = { python: /\.py$/i, node: /\.(?:[cm]?js|[cm]?ts)$/i, perl: /\.p[lm]$/i, ruby: /\.rb$/i };
 const familiaDe = (interprete) => (/^python/.test(interprete) ? 'python' : interprete === 'perl' ? 'perl' : interprete === 'ruby' ? 'ruby' : 'node');
+const INTERPRETE_DE = { python: 'python3', node: 'node', perl: 'perl', ruby: 'ruby' };
+
+// Una palabra del comando con sus variables expandidas y sin las comillas que la envuelven: `"${F}"` es la ruta de F
+const palabraExpandida = (cmd, w) => String(expandirRuta(cmd, w).valor).replace(/^"([^"]*)"$|^'([^']*)'$/, (_, a, b) => (a !== undefined ? a : b));
+
+// una palabra que es sólo una variable: `$N`, `${N}` (no `$VENV/bin/black`, donde el programa es el nombre escrito)
+const SOLO_VARIABLE = /^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$/;
+// lo que el shell lee antes del programa dentro de un tramo: `if`, `then`, `do`, `!`…
+const ANTES_DEL_PROGRAMA = /^(?:if|then|else|elif|do|while|until|!)$/;
+// programas que no corren sus argumentos: un guion que aparece entre ellos se lee o se nombra, no se ejecuta. Son los
+// lectores y vecinos que el freno ya conoce (LEE_ARCHIVOS, VECINOS, sin los intérpretes ni `cd`) más estos
+const NO_CORRE_PROPIOS = ['rg', 'file', 'du', 'cp', 'mv', 'rm', 'ln', 'mkdir', 'touch', 'chmod', 'cmp', 'less', 'readlink',
+  'shasum', 'sha1sum', 'sha256sum', 'md5', 'md5sum', 'xxd', 'tar', 'zip', 'rsync', 'scp', 'eslint', 'prettier', 'tsc',
+  'black', 'ruff', 'flake8', 'mypy'];
+const noCorreSusArgumentos = (programa) => !CORRE_ARCHIVO.test(programa) && programa !== 'cd'
+  && (NO_CORRE_PROPIOS.includes(programa) || LEE_ARCHIVOS.has(programa) || VECINOS.has(programa));
+
+/**
+ * El programa escrito de un tramo: la primera palabra que no es del shell ni una asignación, sin comillas, leída del texto
+ * (así `"$PWD"/node_modules/.bin/tsc` es `tsc`). Una variable con valor conocido vale su programa. `{ programa, ilegible }`.
+ */
+function programaEscrito(cmd, tramo) {
+  const partes = String(tramo).trim().split(/\s+/).map((w) => sinGrupo(w)).filter(Boolean);
+  const w = partes.find((x) => !ANTES_DEL_PROGRAMA.test(x) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(x));
+  if (!w) return { programa: '', ilegible: false };
+  const s = w.replace(/["']/g, '');
+  if (SOLO_VARIABLE.test(s) || /^\$\((?!\()|^`/.test(s)) return { programa: interpreteDe(cmd, s), ilegible: noSeLeeElPrograma(cmd, s) };
+  return { programa: nombreDeComando(s), ilegible: false };
+}
+
+/** El programa de una palabra. Una variable con valor conocido (`N=/usr/bin/node`, `N="env node --test"`) es su programa. */
+function interpreteDe(cmd, w) {
+  const s = String(w || '');
+  if (!SOLO_VARIABLE.test(s)) return nombreDeComando(s);
+  const e = expandirRuta(cmd, s);
+  if (e.sinResolver.length || /^\$/.test(String(e.valor))) return nombreDeComando(s);
+  const partes = String(e.valor).trim().split(/\s+/);
+  const programa = nombreDeComando(partes[0]);
+  return programa !== 'env' ? programa : nombreDeComando(partes.slice(1).find((x) => !x.startsWith('-') && !x.includes('=')) || 'env');
+}
+
+/** ¿El freno no puede leer qué programa es esta palabra? Una variable sin valor conocido, una sustitución o `eval`. */
+function noSeLeeElPrograma(cmd, w) {
+  const s = String(w);
+  // `$((…))` es una cuenta, no una sustitución
+  if (s === 'eval' || /\$\((?!\()|`/.test(s)) return true;
+  if (!SOLO_VARIABLE.test(s)) return false;
+  const e = expandirRuta(cmd, s);
+  return e.sinResolver.length > 0 || /^\$/.test(String(e.valor));
+}
+
+/**
+ * El peor caso: en un tramo con algo que el freno no puede leer (una variable sin valor conocido, `$(…)`, `eval`), cada
+ * guion que aparece después se mira como si corriera, con el intérprete de su extensión. No hace falta saber dónde
+ * está el programa ni qué lanzador lo antecede: `$N x.js`, `timeout -s KILL 9 $N x.js`, `if $N x.js` o `xargs $N` frenan
+ * igual que con `node` escrito. Sólo queda afuera un tramo cuyo programa escrito no corre sus argumentos
+ * (`git diff $(…) -- x.js`, `wc -l $F x.js`). Detrás de `xargs` el guion llega por la entrada: cuenta el de cualquier
+ * parte del comando. `[{ interprete, valor, argv }]`.
+ */
+function guionesDelPeorCaso(cmd, crudas, todas, escrito) {
+  const i0 = crudas.findIndex((w) => !ANTES_DEL_PROGRAMA.test(w) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
+  if (i0 < 0) return [];
+  if (!escrito.ilegible && noCorreSusArgumentos(escrito.programa)) return [];
+  const deGuion = (w) => { const v = palabraExpandida(cmd, w); return [v, Object.keys(EXTENSION_DE).find((f) => EXTENSION_DE[f].test(v))]; };
+  const out = [];
+  let ilegible = -1;
+  for (let j = i0; j < crudas.length; j++) {
+    const w = crudas[j];
+    if (/^(?:\d|&)?[<>|]/.test(w)) break;
+    if (noSeLeeElPrograma(cmd, w)) { if (ilegible < 0) ilegible = j; continue; }
+    if (ilegible < 0 || w.startsWith('-')) continue;
+    const [valor, familia] = deGuion(w);
+    if (familia) out.push({ interprete: INTERPRETE_DE[familia], valor, argv: crudas.slice(j + 1) });
+  }
+  if (ilegible >= 0 && !out.length && crudas.slice(0, ilegible).some((w) => nombreDeComando(w) === 'xargs')) {
+    for (const w of todas) {
+      const [valor, familia] = deGuion(w);
+      if (familia) out.push({ interprete: INTERPRETE_DE[familia], valor, argv: [] });
+    }
+  }
+  return out;
+}
 
 /**
  * Las opciones de un intérprete hasta su guion: `{ enLinea, desde, modulos, precargas }`. `enLinea` si el programa va
@@ -689,7 +771,12 @@ function opcionesDelInterprete(familia, words, i) {
 }
 
 /** La palabra sin los signos del shell que la pegan a un grupo: `(python3`, `p.py)`, `{`. */
-const sinGrupo = (w) => String(w).replace(/^[({]+/, '').replace(/[)};]+$/, '');
+// sin lo que abre o cierra una agrupación (`(`, `{`, `)`, `}`, `;`); la llave que cierra una variable (`${F}`) se queda
+const sinGrupo = (w) => {
+  const s = String(w).replace(/^[({]+/, '');
+  const conVariable = s.match(/^(.*\$\{[^{}]*\})[)};]*$/);
+  return conVariable ? conVariable[1] : s.replace(/[)};]+$/, '');
+};
 
 /**
  * El comando con los renglones unidos donde el shell los une: una barra invertida justo antes del salto de línea. No en un
@@ -835,9 +922,18 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
         break;
       }
     }
+    // lo que el freno no puede leer (un programa en una variable sin valor conocido, `$(…)`, `eval`): el peor caso, cada
+    // guion que sigue se mira como si corriera. Sobre las palabras del tramo sin recortar
+    const escrito = programaEscrito(cmd, tramo);
+    if (!soloNombra) {
+      const crudas = palabras(tramo.trim()).map(sinGrupo).filter((w) => w !== '');
+      for (const g of guionesDelPeorCaso(cmd, crudas, todosLosTramos.flatMap(palabrasDe), escrito)) abrir(g.interprete, g.valor, argumentos(g.argv));
+    }
+    // en un tramo de un programa que no corre sus argumentos, una variable con valor conocido es un argumento más
+    const lector = !escrito.ilegible && noCorreSusArgumentos(escrito.programa);
     // de un tramo que sólo nombra, el intérprete es la primera palabra: `grep node x` o un archivo `node` de la lista no lo son
     for (let k = 0; k < (soloNombra ? 1 : words.length); k++) {
-      const interprete = nombreDeComando(words[k]);
+      const interprete = lector ? nombreDeComando(words[k]) : interpreteDe(cmd, words[k]);
       if (!CORRE_ARCHIVO.test(interprete)) continue;
       const familia = familiaDe(interprete);
       let i = k + 1;
@@ -853,7 +949,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
       for (let j = op.desde; j < words.length && !hallado; j++) {
         const w = words[j];
         if (w === '-' || /^\/dev\/(?:stdin|fd\/0)$/.test(w) || /^(?:\d|&)?[<>]/.test(w)) break;
-        hallado = abrir(interprete, expandirRuta(cmd, w).valor, argumentos(words.slice(j + 1)));
+        hallado = abrir(interprete, palabraExpandida(cmd, w), argumentos(words.slice(j + 1)));
       }
       // `echo p.py | xargs python3`: el guion llega por la entrada; cuenta cada archivo del comando con su extensión
       if (!hallado && words.slice(0, k).some((w) => nombreDeComando(w) === 'xargs')) {
@@ -4556,6 +4652,14 @@ function destinosDeLaCoordinadora(cmd) {
       }
       const sub = resto[i];
       const deSub = resto.slice(i + 1);
+      // `worktree remove --force` borra la copia aunque tenga cambios sin commitear; sin `--force`, git no la borra si los tiene
+      if (sub === 'worktree' && deSub[0] === 'remove') {
+        // git acepta `--force` abreviado (`--fo`, `--forc`) y `-f` junto a otras letras
+        if (deSub.some((w) => (w.length >= 3 && '--force'.startsWith(w)) || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(w))) {
+          for (const w of deSub.slice(1)) if (!w.startsWith('-')) poner(w, base);
+        }
+        continue;
+      }
       if (!GIT_CAMBIA_EL_ARBOL.has(sub)) continue;
       if (sub === 'reset' && !deSub.some((w) => /^--(?:hard|merge|keep)$/.test(w))) continue;
       if (sub === 'clean' && deSub.some((w) => w === '-n' || w === '--dry-run')) continue;
@@ -4638,6 +4742,8 @@ function coordinadoraPorConsola(event, opts = {}) {
   };
   return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'coordination-writes.js')).judge({
     sessionId: event.session_id, files: archivos, home: opts.home, stateDir: opts.stateDir, installedRoots: opts.installedRoots,
+    // con el click del dueño a este comando exacto, pasa una vez
+    comando: original, cwd: baseCwd, casa: opts.casa, buscar: opts.buscarAprobacion, herramienta: opts.herramienta,
   });
 }
 

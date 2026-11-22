@@ -1043,6 +1043,22 @@ test('Close_DeadSession_OnlyRemoves: la que ya no corre no se para: sólo se bor
   assert.deepStrictEqual(closed(t), ['rm job-muerta']);
 });
 
+// 🔴 Falla con: «no sé: su carpeta ya no está» para una sesión que ya no corre (no se podía cerrar nunca), o cerrar una
+//    viva sin carpeta.
+test('Close_FolderGone_DeadSession_Closes: la que ya no corre y cuya carpeta se borró se cierra; la viva, no', () => {
+  const t = closeLab();
+  const borrada = path.join(t.root, 'ya-no-esta');
+  bg(t, 'sin-carpeta', borrada, { pid: 2147483646 });
+  const r = closeIt(t, 'sin-carpeta');
+  assert.strictEqual(r.closed, true, r.message);
+  assert.match(r.message, /Su carpeta .*ya-no-esta ya no estaba/);
+  assert.deepStrictEqual(closed(t), ['rm job-sin-carpeta']);
+  bg(t, 'viva-sin-carpeta', borrada);
+  const v = closeIt(t, 'viva-sin-carpeta');
+  assert.strictEqual(v.closed, false);
+  assert.match(v.message, /no sé: su carpeta .* ya no está/);
+});
+
 test('Close_Uncommitted_SaysWhat: con cambios sin commitear no cierra y dice cuántos', () => {
   const t = closeLab();
   fs.writeFileSync(path.join(t.repo, 'suelto.txt'), 'z\n');
