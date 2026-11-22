@@ -26,7 +26,7 @@ const MAX_ERRORS_LOG = 100 * 1024;
 // ── el saneado ─────────────────────────────────────────────────────────────────────────────────────────────────────
 // Las palabras de un secreto (`token=`, `password:`, `AZURE_DEVOPS_EXT_PAT=`, `AWS_SECRET_ACCESS_KEY=`, `AccountKey=` de
 // una cadena de conexión…) tapan su valor hasta el próximo blanco o comilla: la clave puede traer cualquier símbolo.
-// Además: las claves con forma propia (`sk-`, `ghp_`, un JWT, una llave de AWS), la firma de un enlace firmado, las
+// Además: las claves con forma propia (`sk-`, un token de GitHub, un JWT, una llave de AWS), la firma de un enlace firmado, las
 // credenciales en una URL (hasta la última `@`: la clave puede tener una), `-u usuario:clave` y `Authorization`.
 const AUTH_RE = /(authorization)\s*:\s*[^"'\n]+/gi;
 const SIG_RE = /([?&]sig=)[^&"'\s]+/gi;
@@ -34,7 +34,7 @@ const URL_CRED_RE = /(\b[a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s]*@/gi;
 const DASH_U_RE = /(\s-u\s+)[^\s:]+:\S+/g;
 const SECRET_RE = /(?<![A-Za-z0-9])((?:[A-Za-z0-9]+_)*(?:api[_-]?key|access[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|key|token|password|passwd|pwd|secret|bearer|pat)(?:_[A-Za-z0-9]+)*)["':\s=]+["']?[^\s"'&;,]{8,}/gi;
 const SK_RE = /\b(sk-[A-Za-z0-9_-]{16,})/g;
-const GHP_RE = /\b(ghp_[A-Za-z0-9_-]{16,})/g;
+const GHP_RE = /\b((?:gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,})/g;
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+/g;
 const AKIA_RE = /\bAKIA[0-9A-Z]{16}\b/g;
 

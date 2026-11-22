@@ -1005,3 +1005,25 @@ test('T11 4.14-Recommend_TextIsSanitized @story-4.14 @ac-10 — el porqué del m
   assert.strictEqual(entradaDe(b, h).recomendacion.porque, 'Revisar $HOME antes de aprobar');
   assert.ok(!fs.readFileSync(path.join(b.ops, '.dashboard', 'instincts', 'recomendaciones.json'), 'utf8').includes(CASA));
 });
+
+test('T40 4.14-Filter_PathsGluedToShellSigns — una temporal o la ruta de una máquina pegada a un signo del shell también es ruido', () => {
+  const otraMac = ['', 'Users', 'otra', 'x'].join('/');
+  const temporales = ['echo x >/tmp/out', 'tee >/private/tmp/y', 'cat (/tmp/z)', 'a;/var/folders/b/T/x', 'a|/tmp/x', 'echo `ls /tmp`', 'cd /tmp', 'ls /private/tmp',
+    'cat ${TMPDIR}/x', 'rm -rf "${TMPDIR}"', 'cat $TMPDIR/x'];
+  for (const summary of temporales) assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), 'carpeta_de_trabajo', summary);
+  for (const summary of [`cat >${otraMac}`, `a;${otraMac}`, 'a|C:\\Proyectos\\x', 'x>(d:/work/y)']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), 'ruta_de_una_maquina', summary);
+  }
+  // lo que sólo se parece sigue pasando
+  // la carpeta temporal de una sesión de Claude Code
+  for (const summary of ['ls $HOME/.claude/jobs/ab12cd34/tmp/x', 'cat $CLAUDE_JOB_DIR/tmp/y']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), 'carpeta_de_trabajo', summary);
+  }
+  // una expresión regular o una etiqueta no son una ruta
+  for (const summary of ['node -e "s.match(/x/g)"', "awk '(/a/){print}' f", "grep -E 'foo|/v/12' src", 'grep -n "</tmp>" config.xml']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
+  }
+  for (const summary of ['node build/tmpfile.js', 'ls acme/tmp/x', 'echo $TMPDIRS', 'cat ./tmp/y', 'npm run tmp']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
+  }
+});

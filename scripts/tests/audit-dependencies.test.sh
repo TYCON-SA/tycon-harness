@@ -25,6 +25,8 @@ cat > "$TMP/doble.sh" <<'DOBLE'
 #!/usr/bin/env bash
 case "${TYCON_DEP_REAL}:$1" in
   npm:audit)      [ -f "$FIX/npm.json" ] && cat "$FIX/npm.json";     exit "${NPM_EXIT:-0}" ;;
+  npm:install)    cp package.json "$FIX/copias-package.json" 2>/dev/null
+                  [ "${INSTALL_EXIT:-0}" = 0 ] && : > package-lock.json; exit "${INSTALL_EXIT:-0}" ;;
   dotnet:restore) exit "${RESTORE_EXIT:-0}" ;;
   dotnet:list)    [ -f "$FIX/nuget.json" ] && cat "$FIX/nuget.json"; exit "${LIST_EXIT:-0}" ;;
   pip-audit:*)    printf '%s\n' "$@" > "$FIX/pip-args.txt"
@@ -472,7 +474,7 @@ rc=$(corre --type pip --block)
 # T9 — la ayuda nombra pip; un tipo desconocido es error de uso y nombra los tres
 node "$GUION" --help > "$TMP/out.txt" 2>&1
 rc=$(node "$GUION" --repo "$TMP/repo" --type cargo > "$TMP/out2.txt" 2>&1; echo $?)
-{ grep -q "npm|nuget|pip" "$TMP/out.txt" && [ "$rc" -eq 2 ] && grep -q "npm, nuget o pip" "$TMP/out2.txt"; } \
+{ grep -q "npm|nuget|pip" "$TMP/out.txt" && [ "$rc" -eq 2 ] && grep -q "npm, nuget, pip o vendored" "$TMP/out2.txt"; } \
   && ok "T9 la ayuda nombra pip y un tipo desconocido sale 2 nombrando los tres" || no "T9 ayuda/tipo: rc=$rc $(cat "$TMP/out2.txt")"
 # y la documentación de `tipo` lo nombra: los dos ejemplos de repos.json y las dos guías de operaciones
 faltan=""
@@ -541,5 +543,44 @@ case "$v" in *'npm-cli.js'*) no "T14 8.319 fuera de Windows buscó npm-cli.js: $
 v=$( TYCON_DEP_CMD="$TMP/doble.sh" PATH="$W/vacio:$PATH" node -e '
   const a = require(process.argv[1]); console.log(JSON.stringify(a.correr("npm", ["--version"], process.cwd(), 0, { plataforma: "win32" })));' "$GUION" )
 case "$v" in *'no hay npm.cmd'*) no "T14 8.319 con TYCON_DEP_CMD igual buscó npm.cmd: $v" ;; *) ok "T14 8.319 con TYCON_DEP_CMD, como hoy" ;; esac
+
+# ── T15 las librerías copiadas en el repo (vendor/<nombre>/VERSION.json) ─────────────────────
+# No tienen package-lock: el auditor arma uno con sus versiones exactas y les corre el mismo npm audit. Sin copias, una
+# copia sin VERSION.json, o el registro que no resuelve: NO MEDIDO, nunca limpio. Una copia que no es de npm lo declara
+# con su motivo y se nombra sin auditar.
+copias(){ rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/lib/vendor/ws" "$TMP/repo/lib/vendor/esquema" "$TMP/repo/tests/fixtures/vendor/juguete"
+  echo '{"name":"ws","version":"8.22.0"}' > "$TMP/repo/lib/vendor/ws/VERSION.json"
+  echo '{"name":"esquema","audit":{"applies":false,"reason":"un esquema JSON, sin código"}}' > "$TMP/repo/lib/vendor/esquema/VERSION.json"; }
+copias; echo "$conAltas" > "$TMP/npm.json"; rm -f "$TMP/copias-package.json"
+rc=$(corre --type vendored --block)
+{ [ "$rc" -eq 1 ] && grep -q "browserslist" "$TMP/out.txt" && grep -q "copias auditadas: ws@8.22.0" "$TMP/out.txt" \
+  && grep -q "sin auditar, a propósito: esquema: un esquema JSON" "$TMP/out.txt" && grep -q '"ws": "8.22.0"' "$TMP/copias-package.json"; } \
+  && ok "T15 las copias se auditan por su versión exacta, y la que no es de npm se nombra" || no "T15 copias salió $rc: $(cat "$TMP/out.txt")"
+copias; echo "$limpio" > "$TMP/npm.json"
+rc=$(INSTALL_EXIT=1 corre --type vendored)
+{ [ "$rc" -eq 2 ] && grep -q "NO MEDIDO.*no pude resolver las copias en el registro de npm" "$TMP/out.txt"; } \
+  && ok "T15 el registro que no resuelve las copias: no medido, nunca limpio" || no "T15 registro caído salió $rc: $(cat "$TMP/out.txt")"
+copias; mkdir -p "$TMP/repo/lib/vendor/sin-dato"
+rc=$(corre --type vendored)
+{ [ "$rc" -eq 2 ] && grep -q "copias sin VERSION.json.*lib/vendor/sin-dato" "$TMP/out.txt" && ! grep -q "juguete" "$TMP/out.txt"; } \
+  && ok "T15 una copia sin VERSION.json no se saltea callada (las de las pruebas no cuentan)" || no "T15 copia sin dato salió $rc: $(cat "$TMP/out.txt")"
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"
+rc=$(corre --type vendored)
+{ [ "$rc" -eq 2 ] && grep -q "no hay copias de librerías" "$TMP/out.txt"; } \
+  && ok "T15 sin copias: no medido" || no "T15 sin copias salió $rc: $(cat "$TMP/out.txt")"
+# lo que vio el pase adversarial: un rango no es una versión exacta (npm auditaría otra versión), una copia que es un
+# enlace no se saltea callada, y un nombre como «constructor» no choca con el objeto
+copias; echo '{"name":"ws","version":"7.0.0 || 8.18.3"}' > "$TMP/repo/lib/vendor/ws/VERSION.json"
+rc=$(corre --type vendored)
+{ [ "$rc" -eq 2 ] && grep -q "no trae nombre y versión exacta" "$TMP/out.txt"; } \
+  && ok "T15 un rango en vez de la versión exacta: no medido" || no "T15 rango salió $rc: $(cat "$TMP/out.txt")"
+copias; mkdir -p "$TMP/otra"; echo '{"name":"lodash","version":"4.17.15"}' > "$TMP/otra/VERSION.json"; ln -s "$TMP/otra" "$TMP/repo/lib/vendor/enlazada"
+rc=$(corre --type vendored)
+{ [ "$rc" -eq 2 ] && grep -q "copias que son un enlace, no se siguen: lib/vendor/enlazada" "$TMP/out.txt"; } \
+  && ok "T15 una copia que es un enlace: no medido, con su nombre" || no "T15 enlace salió $rc: $(cat "$TMP/out.txt")"
+copias; echo "$limpio" > "$TMP/npm.json"; echo '{"name":"constructor","version":"1.0.0"}' > "$TMP/repo/lib/vendor/ws/VERSION.json"
+rc=$(corre --type vendored)
+{ [ "$rc" -eq 0 ] && grep -q "copias auditadas: constructor@1.0.0" "$TMP/out.txt"; } \
+  && ok "T15 un nombre como constructor se audita como cualquier otro" || no "T15 constructor salió $rc: $(cat "$TMP/out.txt")"
 
 [ "$fallos" -eq 0 ] && { echo "✅ auditar-dependencias: todo verde ($casos casos)"; exit 0; } || { echo "❌ auditar-dependencias: $fallos fallo(s)"; exit 1; }
