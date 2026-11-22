@@ -265,6 +265,23 @@ test('T1 ReviewRunner_UsageByType_PerAgent — cada agente deja su consumo por t
   });
 });
 
+// Pedido del 20/11: una revisión que se corta (la mataron, se colgó, se cayó la máquina) no dejaba su consumo, porque el
+// corredor lo escribía sólo al terminar. Con `usoFile`, cada intento lo deja escrito al momento, marcado sin terminar.
+test('T2 ReviewRunner_UsageWrittenAsItGoes_SurvivesACut — el consumo queda escrito después de cada intento, sin terminar', (t) => {
+  const { anotarUso, escribirUso } = require('../workflow-lite.js');
+  const dir = carpeta(t, 'wflite-uso-');
+  const usoFile = path.join(dir, 'ses-a.resultado.uso.json');
+  const corredor = { usoFile, pedido: 'pedido-1', tokensPorFase: {} };
+  anotarUso(corredor, { clave: 'plan-hunt:ac', fase: 'Hunt', nombre: 'claude', modelo: 'opus', usage: { input_tokens: 5, cache_read_input_tokens: 7, output_tokens: 3 } });
+  const j = JSON.parse(fs.readFileSync(usoFile, 'utf8'));
+  assert.strictEqual(j.pedido, 'pedido-1');
+  assert.strictEqual(j.completo, false, 'sin terminar: si se corta acá, el consumo de lo que ya corrió queda');
+  assert.deepStrictEqual(j.tokens.por_agente['plan-hunt:ac'], { fase: 'Hunt', corredor: 'claude', modelo: 'opus', intentos: 1, input_tokens: 5, cache_read_input_tokens: 7, output_tokens: 3 });
+  assert.strictEqual(j.tokens.total, 15);
+  escribirUso(corredor, true);
+  assert.strictEqual(JSON.parse(fs.readFileSync(usoFile, 'utf8')).completo, true);
+});
+
 test('T60 ReviewRunner_LeeLaRespuestaYElTopeDeCadaCorredor @story-8.221 @ac-2 @ac-4 @ac-5 — salidas reales: respuesta, tokens, error y tope; sin confinamiento no corre en el modo código', () => {
   const integ = RR.loadIntegration({ env: {} });
   const claude = integ.runners.claude;
