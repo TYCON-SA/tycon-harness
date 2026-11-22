@@ -1286,7 +1286,7 @@ const TEXTOS = {
   'pantalla.quienReenviaElOk': { es: "¿Quién pasa la autorización para saltarse un control grave?", en: "Who passes on the authorization to skip a serious check?" },
   'pantalla.quienReenviaElOkNo': { es: "Cada programador (de fábrica)", en: "Each developer (default)" },
   'pantalla.quienReenviaElOkSi': { es: "Una sesión coordinadora", en: "A coordinating session" },
-  'pantalla.commitLocal': { es: "¿Quién firma cada commit de una corrida?", en: "Who signs each commit in a run?" },
+  'pantalla.commitLocal': { es: "¿Quién firma cada commit de una ejecución?", en: "Who signs each commit in a run?" },
   'pantalla.commitLocalAgente': { es: "Nadie: el agente commitea solo (de fábrica)", en: "No one: the agent commits on its own (default)" },
   'pantalla.commitLocalCoordinadora': { es: "La coordinadora, antes de cada commit", en: "The coordinator, before each commit" },
   'pantalla.commitLocalAyuda': { es: "De fábrica, la persona aprueba el pull request con la evidencia adelante, y el commit, que es local y se deshace, no pide nada. Con la coordinadora, el agente no puede commitear sin su ok de guardar, y cada cambio después del ok pide otro: es una segunda mirada, a cambio de una espera por commit. Si el perfil no le delega esa firma, la da la persona en la ventana de permiso.", en: "By default, the person approves the pull request with the evidence in front of them, and the commit, which is local and can be undone, asks for nothing. With the coordinator, the agent cannot commit without its ok to save, and every change after the ok needs another one: a second look, at the cost of one wait per commit. If the profile does not delegate that signature, the person gives it in the permission window." },
