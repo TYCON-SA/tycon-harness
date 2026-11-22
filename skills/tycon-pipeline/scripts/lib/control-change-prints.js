@@ -169,7 +169,7 @@ function frenoDe({ dir: desde, cuando, stateDir, comoFirmar, refs = ['HEAD'] }) 
       lista.constancias.push(...una.constancias);
     }
   } else lista = sinCommitear(dir);
-  if (lista.error) return `🔒 CONSTANCIA SIN MIRAR — antes de ${cuando === 'push' ? 'empujar' : 'commitear'} en ${dir}: ${lista.error}. Lo que no se puede mirar frena: no se sabe si la constancia la firmó el dueño.`;
+  if (lista.error) return `🔒 CONSTANCIA SIN MIRAR — antes de ${cuando === 'push' ? 'empujar' : 'commitear'} en ${dir}: ${lista.error}. Lo que no se puede mirar frena: no se sabe si la constancia la firmó una persona.`;
   if (!lista.constancias.length) return null;
   const c = conocidas(stateDir);
   if (c.error) return `🔒 CONSTANCIA SIN MIRAR — antes de ${cuando === 'push' ? 'empujar' : 'commitear'} en ${dir}: ${c.error}. Lo que no se puede mirar frena.`;
@@ -178,9 +178,9 @@ function frenoDe({ dir: desde, cuando, stateDir, comoFirmar, refs = ['HEAD'] }) 
   const archivos = [...new Set(sin.map((x) => x.archivo))];
   return [
     `🔒 CONSTANCIA SIN HUELLA — ${cuando === 'push' ? 'el empuje lleva' : 'el commit lleva'} en ${dir} ${archivos.length === 1 ? 'una constancia' : 'constancias'} de cambio de control que \`approve\` no escribió en esta máquina: ${archivos.join(', ')}.`,
-    'Una constancia la escribe sólo `bash scripts/ci/run-base-controls.sh approve` con la firma del dueño, y deja su huella en el registro de la máquina.',
+    'Una constancia la escribe sólo `bash scripts/ci/run-base-controls.sh approve` con la firma de una persona, y deja su huella en el registro de la máquina.',
     'Cómo se sigue:',
-    `  · Si el dueño la firmó en OTRA máquina: empujá desde esa máquina, o firmala de nuevo acá (anota la huella sin cambiar el archivo): ${comoFirmar || 'el comando que da `run-base-controls.sh pending --root <repo> --base <base> --range <base>...HEAD`'}.`,
+    `  · Si se firmó en OTRA máquina: empujá desde esa máquina, o firmala de nuevo acá (anota la huella sin cambiar el archivo): ${comoFirmar || 'el comando que da `run-base-controls.sh pending --root <repo> --base <base> --range <base>...HEAD`'}.`,
     `  · Si no la escribió approve: sacala (\`git rm --cached <archivo>\` y borrala, o \`git checkout -- <archivo>\`) y pedí la firma con ese mismo comando.`,
   ].join('\n');
 }
