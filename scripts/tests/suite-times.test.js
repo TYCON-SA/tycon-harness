@@ -403,6 +403,11 @@ test('T79a Repeats_ByStory_RunsAndHoursPerStory: para la retro, las corridas del
   const ninguna = cli('repeats', '--log', f, '--story', '9.9');
   assert.equal(ninguna.status, 3);
   assert.match(ninguna.stdout, /de la historia 9\.9/);
+  // un --story vacío no es «todas», y las opciones de la vista por historia no son de otro subcomando
+  for (const args of [['repeats', '--log', f, '--story', ''], ['slow', '--by-story'], ['runs', '--story', '3.4']]) {
+    const mal = cli(...args);
+    assert.equal(mal.status, 2, `${args.join(' ')}: ${mal.stdout}${mal.stderr}`);
+  }
 });
 
 test('T12 Repeats_OldDays_FromCheckCommand_NoMotive @story-8.297 @ac-10 — los días de antes se clasifican por el comando, sin achicar', () => {

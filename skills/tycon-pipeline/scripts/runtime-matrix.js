@@ -127,7 +127,12 @@ const MOTIVOS_DE_LA_ENTRADA = new Set(['otra-version', 'cambio-posterior', 'otro
 const RIESGO_SIN_COBERTURA = 'si otra historia lo rompe, ninguna prueba de noche lo va a avisar';
 
 // Por qué una evidencia siguió contando aunque el archivo cambió: lo que el control afloja se dice.
-function avisoDeLoQueContó({ rel, via, fusion, commit, historia, regla, ajenas, sinHistoria, carga }) {
+// Los motivos del juez que dicen que el archivo cambió desde la evidencia (lib/evidence-vs-commit.js): los demás dicen que
+// no se pudo comparar.
+const CAMBIOS_DEL_ARCHIVO = new Set(['cambio-posterior', 'otro-repo', 'sin-commitear', 'otra-version']);
+
+function avisoDeLoQueContó({ rel, via, fusion, commit, historia, regla, ajenas, sinHistoria, carga, repo, ejercita }) {
+  if (regla === 'repo-no-ejercitado') return `${rel}: cambió en ${repo}, y el humo dice que ejercita sólo ${ejercita.join(', ')} → la evidencia sigue contando.`;
   if (regla === 'entrada') {
     // el código declarado nombra todas sus fusiones; lo que carga una prueba puede haber cambiado decenas de veces
     const tope = (l) => (carga && l.length > TOPE_DE_FUSIONES ? `${l.slice(0, TOPE_DE_FUSIONES).join(', ')} y ${l.length - TOPE_DE_FUSIONES} más` : l.join(', '));
@@ -987,6 +992,9 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // `--environment` (contra qué entorno corrió: `staging`): cuenta sólo si una línea confirmada del espejo trae el mismo
       const entorno = typeof e.environment === 'string' && confirmadas.some((l) => l.includes(`"environment":${JSON.stringify(e.environment)}`))
         ? e.environment : null;
+      // `--exercises` (qué repos ejercita el humo): cuenta sólo si una línea confirmada del espejo trae la misma lista
+      const ejercita = Array.isArray(e.exercises) && e.exercises.length && e.exercises.every((r) => typeof r === 'string' && /^[A-Za-z0-9._-]+$/.test(r))
+        && confirmadas.some((l) => l.includes(`"exercises":${JSON.stringify(e.exercises)}`)) ? e.exercises : null;
       // Lo que midió el humo (`duration_ms`, `measures`) decide el veredicto de un criterio con cota: se confirma contra
       // el espejo leyendo cada renglón, por igualdad exacta y `measures` entero. Nunca por «el texto contiene»:
       // `"duration_ms":100` está contenido en `"duration_ms":1005`.
@@ -1004,7 +1012,7 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // La imagen que el humo guardó con `--capture`, verificada contra el espejo como la salida.
       const imagen = mirrored ? imagenDelHumo(e, dir, confirmadas) : { ruta: null, problema: null };
       // `linea`: la línea entera, para encontrar en git el commit de ESTA corrida; un checkout puede dejarle el `\r`.
-      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, sello, mutatesOk, entorno, medidaConfirmada, evidenceKind: classifyCmd(e.cmd),
+      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, sello, mutatesOk, entorno, ejercita, medidaConfirmada, evidenceKind: classifyCmd(e.cmd),
         v2, salidaProblema, visual: imagen.ruta, visualProblema: imagen.problema });
     }
   }
@@ -1779,6 +1787,21 @@ function compute(opts) {
     }
     return conPruebaDeNoche;
   };
+  // Los repos de la historia: los de su código declarado. Un humo que dice qué repos ejercita (`--exercises`) no vence por
+  // un archivo de otro; si nombra uno que no es de la historia, el nombre puede estar mal escrito, y entonces vale para
+  // todos, como sin la opción: un error de tipeo no puede dejar una evidencia sin vencer nunca.
+  let reposDeLaHistoria;
+  const ejercitaDe = (evidencia) => {
+    if (!evidencia.ejercita) return null;
+    if (!reposDeLaHistoria) reposDeLaHistoria = new Set(codeFiles.map((f) => juez.repoDe(f.abs)).filter(Boolean));
+    return evidencia.ejercita.every((r) => reposDeLaHistoria.has(r)) ? new Set(evidencia.ejercita) : null;
+  };
+  // El repo de un archivo que el humo no ejercita, o null (lo ejercita, el humo no lo dice, o git no contesta).
+  const repoNoEjercitado = (ejercita, abs) => {
+    if (!ejercita) return null;
+    const repo = juez.repoDe(abs);
+    return repo && !ejercita.has(repo) ? repo : null;
+  };
   /**
    * La segunda pasada: ¿la evidencia cuenta por el código con que la historia entró a main? null si no se aplica y queda lo
    * de hoy; `{ cuenta: false, … }` si lo que entró no es lo probado o la historia lo cambió después. Hace falta código
@@ -1841,8 +1864,18 @@ function compute(opts) {
       let v = { cuenta: true };
       const contadas = [];
       const porCriterio = [];
+      const ejercita = ejercitaDe(evidencia);
+      // el código declarado que cambió en un repo que el humo no ejercita no lo vence: sigue contando, y se avisa. Sólo si
+      // el juez dice que cambió: si no pudo comparar, no se sabe. Las pruebas, lo que cargan y la segunda pasada (la entrada
+      // a main) no hacen este corte: vencen como siempre
+      const deOtroRepo = (r, f) => {
+        const repo = !r.cuenta && CAMBIOS_DEL_ARCHIVO.has(r.motivo) && !esPruebaDeclarada(f) && repoNoEjercitado(ejercita, f.abs);
+        if (repo) contadas.push({ regla: 'repo-no-ejercitado', rel: f.rel, repo, ejercita: [...ejercita] });
+        return Boolean(repo);
+      };
       for (const f of codeFiles) {
         const r = juez.vigencia({ archivo: f.abs, mtimeMs: f.mt, evidencia });
+        if (deOtroRepo(r, f)) continue;
         if (!r.cuenta && r.regla === 6 && Array.isArray(r.criterios) && r.criterios.length) { porCriterio.push({ ...r, rel: f.rel }); continue; }
         if (!r.cuenta) { v = { ...r, rel: f.rel, sinCopia: f.sinCopia }; break; }
         if (r.via === 'fusion-propia' || r.regla === 6) contadas.push({ ...r, rel: f.rel });
@@ -1878,7 +1911,7 @@ function compute(opts) {
     return vigencias.get(ev);
   };
   const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts, ancla: g.ancla });
-  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla, sello: e.sello, acs: e.acs });
+  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla, sello: e.sello, acs: e.acs, ejercita: e.ejercita });
   // ¿Una evidencia que cuenta vale para el criterio `n`? No, si una prueba que la historia corrigió después lo nombra.
   const valePara = (ev, n) => !(vigencias.get(ev) && vigencias.get(ev).vencidos.has(n));
   // «venció por <archivo>, que prueba los criterios 2 y 3»: lo que dice el renglón del criterio vencido

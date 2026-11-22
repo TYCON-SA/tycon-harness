@@ -804,6 +804,14 @@ la evidencia de los criterios 2 y 3, y la de los demás sigue contando. El rengl
 si cambió un archivo de código, si la prueba no nombra criterios de la historia o no se deja leer, o si no se sabe
 quién la cambió (un commit sin historia que ya está en main, o la resolución de una fusión).
 
+**Un humo que dice qué repos ejercita no lo vence un cambio en otro.** En una historia de varios repos, `smoke-run.sh
+… --exercises Back -- curl …` anota que ese humo prueba sólo el repo `Back` (el nombre de su carpeta). Después, un
+archivo de código declarado que cambia en otro repo de la historia (el sitio, por ejemplo) no vence ese humo, y la matriz
+lo avisa: «cambió en <repo>, y el humo dice que ejercita sólo Back». Un cambio en `Back` lo vence como siempre, y
+también una prueba declarada de cualquier repo o un archivo que no se pudo comparar. Se
+declara sólo lo que el comando de verdad toca: un humo por el navegador ejercita el sitio y el backend. Sin la opción, o
+si nombra un repo que no es de la historia, lo vence un cambio en cualquiera.
+
 `complete-step prepare-commit` exige `checks.acmatrix=green` (provenance run-check) — sin este
 sub-step el pipeline NO llega a commit prep. `on-pre-commit.js` además RE-COMPUTA
 la matriz en las transiciones a review/done (el .md escrito no se confía).

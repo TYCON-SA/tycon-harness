@@ -61,6 +61,8 @@ function parse(argv) {
     } else if (['--source', '--tsv', '--out', '--repo', '--suites', '--log', '--since', '--until', '--story'].includes(a)) o[a.slice(2)] = val();
     else throw new Error(`no conozco ${a}`);
   }
+  if (o.story !== undefined && !o.story.trim()) throw new Error('--story pide el id de una historia');
+  if ((o.by_story || o.story !== undefined) && o.cmd !== 'repeats') throw new Error('--by-story y --story son de repeats');
   return o;
 }
 
