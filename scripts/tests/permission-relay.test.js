@@ -135,8 +135,8 @@ test('Permiso_Cuadro_LoArmaElGuion (T10) @story-8.180 @ac-10', (t) => {
   const L = lab(t);
   const casos = [
     ['Bash', { command: 'for f in a b; do\n  echo   "$f"\ndone' }, 'for f in a b; do\n  echo   "$f"\ndone'],
-    ['Edit', { file_path: '/r/pro/a.txt', old_string: 'uno  dos', new_string: 'uno\n  tres' }, 'Archivo: /r/pro/a.txt\nReemplaza:\nuno  dos\nPor:\nuno\n  tres'],
-    ['WebFetch', { url: 'https://example.com/x', prompt: 'qué dice' }, 'Dirección: https://example.com/x\nQué pregunta de la página:\nqué dice'],
+    ['Edit', { file_path: '/r/pro/a.txt', old_string: 'uno  dos', new_string: 'uno\n  tres' }, 'Archivo: /r/pro/a.txt\nReemplaza:\n│ uno  dos\nPor:\n│ uno\n│   tres'],
+    ['WebFetch', { url: 'https://example.com/x', prompt: 'qué dice' }, 'Dirección: https://example.com/x\nQué pregunta de la página:\n│ qué dice'],
   ];
   for (const [tool_name, tool_input, pedido] of casos) {
     let dado = null;
@@ -167,8 +167,8 @@ test('Permiso_NoEntraEntero_VentanaNormal (T11) @story-8.180 @ac-11', (t) => {
     ['más de 1500', `echo ${'x'.repeat(1500)}`, /1505 caracteres/],
     ['control', 'echo a\u0007b', /no se ven/],
     ['retorno de carro', 'echo a\rb', /no se ven/],
-    ['bidireccional', 'echo ‮abc', /no se ven/],
-    ['ancho cero', 'rm -rf ./a​b', /no se ven/],
+    ['bidireccional', 'echo \u202Eabc', /no se ven/],
+    ['ancho cero', 'rm -rf ./a\u200Bb', /no se ven/],
   ];
   for (const [que, command, motivo] of casos) {
     const { r, vueltas } = correr(L, evento({ tool_input: { command } }));
@@ -188,6 +188,93 @@ test('Permiso_NoEntraEntero_VentanaNormal (T11) @story-8.180 @ac-11', (t) => {
   let fila = null;
   correr(L, evento({ tool_input: { command: 'echo uno\n\necho dos' } }), { pasos: [(p) => { fila = p.fila; }] });
   assert.strictEqual(fila.pedido, 'echo uno\n\necho dos');
+});
+
+// ── AC 10 y 12: dos pedidos distintos nunca se ven igual ni comparten código ──────────────────────────────────────
+
+test('Permiso_PedidoAmbiguo_NoSeConfunde (T10b) @story-8.180 @ac-10 @ac-12', (t) => {
+  // los rótulos del armado escritos adentro de un campo: o no se lleva, o se ve distinto y tiene otro código
+  const pares = [
+    ['Edit', { file_path: '/tmp/a', old_string: 'a\nPor:\nb', new_string: 'c' }, { file_path: '/tmp/a', old_string: 'a', new_string: 'b\nPor:\nc' }],
+    ['Write', { file_path: '/tmp/a\nContenido nuevo, entero:\nhi', content: 'x' }, { file_path: '/tmp/a', content: 'hi\nContenido nuevo, entero:\nx' }],
+    ['NotebookEdit', { notebook_path: '/tmp/n.ipynb', cell_id: '(nueva)', new_source: 'x' }, { notebook_path: '/tmp/n.ipynb', new_source: 'x' }],
+    ['WebFetch', { url: 'https://example.com/p\nQué pregunta de la página:\nq', prompt: 'r' }, { url: 'https://example.com/p', prompt: 'q\nQué pregunta de la página:\nr' }],
+  ];
+  for (const [herramienta, a, b] of pares) {
+    const pa = PR.pedidoDe(herramienta, a);
+    const pb = PR.pedidoDe(herramienta, b);
+    const ambos = pa.pedido !== undefined && pb.pedido !== undefined;
+    assert.ok(!ambos || pa.pedido !== pb.pedido, `${herramienta}: dos pedidos distintos se ven igual: ${JSON.stringify(pa.pedido)}`);
+    assert.notStrictEqual(PR.huellaDe(herramienta, a), PR.huellaDe(herramienta, b), `${herramienta}: la huella sale de los campos, no del texto`);
+  }
+  // un campo de un renglón con un salto de línea no se lleva: inyectaría renglones falsos
+  const deUnRenglon = [
+    ['Edit', { file_path: '/r/a.txt\nReemplaza:\nx', old_string: 'a', new_string: 'b' }],
+    ['Write', { file_path: '/r/a.txt\nx', content: 'y' }],
+    ['NotebookEdit', { notebook_path: '/r/n.ipynb\nx', new_source: 'y' }],
+    ['NotebookEdit', { notebook_path: '/r/n.ipynb', cell_id: 'c1\nx', new_source: 'y' }],
+    ['NotebookEdit', { notebook_path: '/r/n.ipynb', cell_id: '(nueva)', new_source: 'y' }],
+    ['NotebookEdit', { notebook_path: '/r/n.ipynb', edit_mode: 'otro', new_source: 'y' }],
+    ['WebFetch', { url: 'https://example.com\nx', prompt: 'y' }],
+  ];
+  for (const [herramienta, entrada] of deUnRenglon) assert.ok(PR.pedidoDe(herramienta, entrada).motivo, `${herramienta} ${JSON.stringify(entrada)}: se lleva`);
+  // cada renglón del texto libre lleva su marca: un rótulo adentro del texto no se confunde con el del armado
+  assert.strictEqual(PR.pedidoDe('Edit', { file_path: '/tmp/a', old_string: 'a\nPor:\nb', new_string: '' }).pedido, 'Archivo: /tmp/a\nReemplaza:\n│ a\n│ Por:\n│ b\nPor:\n│ ');
+  // el código del cuadro es el de la huella de los campos del pedido que espera
+  const L = lab(t);
+  const entrada = { file_path: '/r/pro/a.txt', old_string: 'a', new_string: 'b' };
+  let fila = null;
+  correr(L, evento({ tool_name: 'Edit', tool_input: entrada }), { pasos: [(p) => { fila = p.fila; }] });
+  assert.strictEqual(fila.huella, PR.huellaDe('Edit', entrada));
+  assert.match(sl.cuadroDePermiso(fila).sello, new RegExp(`· código ${fila.huella.slice(0, 8)}$`));
+});
+
+// ── AC 11: lo que no se ve, o se ve en blanco, no se lleva ──────────────────────────────────────────────────────────
+
+test('Permiso_CaracteresQueNoSeVen_NoSeLlevan (T11b) @story-8.180 @ac-11', (t) => {
+  const raros = {
+    'espacio duro': '\u00A0', 'espacio largo': '\u2003', 'espacio fino': '\u2009', 'espacio ideográfico': '\u3000', 'espacio angosto': '\u202F',
+    'relleno hangul': '\u3164', 'relleno hangul inicial': '\u115F', 'relleno hangul de ancho medio': '\uFFA0', 'braille en blanco': '\u2800',
+    'selector de variación': '\uFE0F', 'selector de variación suplementario': '\u{E0100}', 'unión de grafemas': '\u034F', 'acento suelto': 'e\u0301',
+  };
+  for (const [que, c] of Object.entries(raros)) {
+    assert.match(String(PR.pedidoDe('Bash', { command: `rm -rf ./x${c}y` }).motivo), /no se ven/, `${que} en un comando`);
+    assert.match(String(PR.pedidoDe('Edit', { file_path: '/r/a', old_string: `a${c}`, new_string: 'b' }).motivo), /no se ven/, `${que} en un texto libre`);
+    assert.ok(PR.carpetaDe(`/r/a${c}b`).motivo, `${que} en la carpeta`);
+  }
+  // lo común se lleva: el espacio, el salto de línea, la ñ y los acentos escritos de una
+  assert.ok(PR.pedidoDe('Bash', { command: 'echo "año más"\nls  -la' }).pedido);
+  const L = lab(t);
+  const { vueltas } = correr(L, evento({ tool_input: { command: 'ls\u3164' } }));
+  assert.strictEqual(vueltas, 0);
+  assert.deepStrictEqual(delGancho(L), []);
+});
+
+// ── AC 11: «Trabadas» no dice que no llegó un pedido que sí llegó ───────────────────────────────────────────────────
+
+test('Trabadas_MotivoViejo_NoSeMuestra (T11c) @story-8.180 @ac-11', (t) => {
+  const L = lab(t);
+  const dir = path.join(estado(L.casa), 'coordination', 'permission-relay');
+  fs.mkdirSync(dir, { recursive: true });
+  const nota = (desde, motivo = 'no se lleva al cuadro: A') => fs.writeFileSync(path.join(dir, `${BG}.json`), JSON.stringify({ at: iso(desde), desde: iso(desde), motivo }));
+  // el de un pedido anterior, aunque sea de 30 s antes, no es el del permiso que espera ahora
+  nota(AHORA - 30000);
+  assert.strictEqual(C.relayNoteOf(L.casa, BG, AHORA), null);
+  // sin la hora de la espera, no se sabe de cuál es: no se muestra
+  assert.strictEqual(C.relayNoteOf(L.casa, BG, NaN), null);
+  // el del pedido que espera, sí
+  nota(AHORA + 1000, 'no se lleva al cuadro: B');
+  assert.match(C.relayNoteOf(L.casa, BG, AHORA), /: B$/);
+  // un pedido que sí llega como cuadro borra el motivo del anterior
+  nota(AHORA - 3000);
+  let mientras = null;
+  correr(L, evento(), { pasos: [({ reloj, fila }) => {
+    const s = C.status({ home: L.casa, arnes: L.arnes, env: L.env, now: reloj, noTranscripts: true, codexHome: path.join(L.raiz, 'sin-codex') });
+    mientras = C.statusText(s);
+    click(L, { pregunta: pregunta(fila), ts: reloj });
+  }] });
+  assert.ok(mientras && /Trabadas: V1-8180/.test(mientras), mientras);
+  assert.doesNotMatch(mientras, /no te llegó como cuadro/);
 });
 
 // ── AC 12: el click «Sí, aprobar» ──────────────────────────────────────────────────────────────────────────────────

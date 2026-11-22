@@ -22,8 +22,13 @@
  * trabada. Nada se afloja: lo que hoy se pide sigue pidiéndose, y un click vale sólo para ese pedido. Al irse saca su
  * renglón; si Claude Code lo mata, el renglón se cierra solo, porque su proceso ya no vive (signature-list.js).
  *
- * Un pedido que no se puede mostrar entero (más de 1500 caracteres; caracteres de control, marcas bidireccionales o de
- * ancho cero, salvo el salto de línea; datos que el cuadro no sabe mostrar) no se lleva. Ni ése ni el vencido le hablan
+ * El texto del cuadro no puede ser el de otro pedido: los campos de un renglón (la ruta, la dirección, la celda) no llevan
+ * saltos de línea, y cada renglón de un texto libre (lo que se reemplaza, el contenido, la pregunta) va con su marca
+ * «│ », así un rótulo escrito adentro no se confunde con el del armado. El código del sello es la huella de los campos
+ * del pedido (`huellaDe`), no la del texto mostrado.
+ *
+ * Un pedido que no se puede mostrar entero (más de 1500 caracteres; un carácter que no se ve o se ve en blanco, salvo
+ * el espacio común y el salto de línea; datos que el cuadro no sabe mostrar) no se lleva. Ni ése ni el vencido le hablan
  * a la persona: el motivo queda en `<estado>/coordination/permission-relay/<sesión>.json` y la coordinadora lo ve en
  * «Trabadas». Lo que pasó con cada pedido queda en gates.log (`permission-relay`: el estado, el id, la huella del pedido
  * y cuántos segundos esperó; sin el texto del pedido).
@@ -42,9 +47,15 @@ const PEDIDO_MAX = 1500;
 const POLL_MS = 2000;
 const ESPERA_MIN = 10;
 const SESION = /^[\w-]+$/;
-// lo que no se ve en el cuadro: los de control (salvo el salto de línea), los de formato (marcas bidireccionales, de
-// ancho cero, el guion suave) y los separadores de línea y de párrafo
-const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+// lo que no se ve en el cuadro, o se ve en blanco: los de control (el salto de línea se mira aparte), los de formato
+// (marcas bidireccionales, de ancho cero, el guion suave), los separadores de línea y de párrafo, las marcas que se
+// combinan con la letra de antes, lo que Unicode deja sin dibujar (rellenos hangul, selectores de variación, la unión de
+// grafemas), el braille en blanco y todo espacio que no es el común
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{M}\p{Default_Ignorable_Code_Point}\u2800]|(?! )\p{Zs}/u;
+const NO_SE_VE = 'el pedido trae caracteres que no se ven o se ven en blanco (de control, bidireccionales, de ancho cero, rellenos o espacios que no son el común)';
+// la marca de cada renglón de un texto libre: ningún rótulo del armado empieza así
+const MARCA = '│ ';
+const CELDA = /^[\w.-]{1,64}$/;
 
 const stateDirOf = (casa) => require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(casa);
 const sl = () => require(path.join(ROOT, 'scripts', 'lib', 'signature-list.js'));
@@ -66,9 +77,13 @@ const CLAVES = {
   WebFetch: ['url', 'prompt'],
 };
 
+class NoSeLleva extends Error {}
+
 /**
- * El pedido entero, como lo va a ver la persona: `{ pedido }`, o `{ motivo }` si no se puede mostrar entero. Lo que la
- * herramienta va a hacer está todo en el texto: el comando, o el archivo y lo que cambia, o la dirección y la pregunta.
+ * El pedido entero, como lo va a ver la persona: `{ pedido }`, o `{ motivo }` si no se puede mostrar entero y sin
+ * confundirse con otro. Lo que la herramienta va a hacer está todo en el texto: el comando, o el archivo y lo que
+ * cambia, o la dirección y la pregunta. Los campos de un renglón no llevan saltos de línea; cada renglón de un texto
+ * libre va con su marca, así dos pedidos distintos nunca dan el mismo texto.
  */
 function pedidoDe(herramienta, entrada) {
   const i = entrada && typeof entrada === 'object' && !Array.isArray(entrada) ? entrada : null;
@@ -77,31 +92,66 @@ function pedidoDe(herramienta, entrada) {
   if (otras.length) return { motivo: `el pedido trae datos que el cuadro no muestra (${otras.slice(0, 3).join(', ')})` };
   const texto = (k, { opcional = false } = {}) => {
     if (i[k] === undefined && opcional) return '';
-    if (typeof i[k] !== 'string') throw new Error(`el pedido no trae ${k} como texto`);
+    if (typeof i[k] !== 'string') throw new NoSeLleva(`el pedido no trae ${k} como texto`);
+    return i[k];
+  };
+  // un campo de un renglón: con un salto de línea inyectaría renglones falsos del armado
+  const renglon = (k, o) => {
+    const v = texto(k, o);
+    if (/[\n\r\u2028\u2029]/.test(v)) throw new NoSeLleva(`${k} trae un salto de línea, y en el cuadro se confundiría con otro pedido`);
+    if (INVISIBLE.test(v)) throw new NoSeLleva(NO_SE_VE);
+    return v;
+  };
+  // un texto libre: cada renglón con su marca
+  const libre = (k) => {
+    const v = texto(k);
+    if (INVISIBLE.test(v.replace(/\n/g, ''))) throw new NoSeLleva(NO_SE_VE);
+    return v.split('\n').map((l) => `${MARCA}${l}`).join('\n');
+  };
+  const deLista = (k, valores) => {
+    if (i[k] === undefined) return null;
+    if (!valores.includes(i[k])) throw new NoSeLleva(`${k} trae un valor que el cuadro no sabe mostrar`);
     return i[k];
   };
   let pedido;
   try {
     if (herramienta === 'Bash' || herramienta === 'PowerShell') pedido = texto('command');
     else if (herramienta === 'Edit') {
-      if (i.replace_all !== undefined && typeof i.replace_all !== 'boolean') throw new Error('el pedido no trae replace_all como sí o no');
-      pedido = `Archivo: ${texto('file_path')}\n${i.replace_all ? 'Reemplaza, todas las veces que aparece' : 'Reemplaza'}:\n${texto('old_string')}\nPor:\n${texto('new_string')}`;
-    } else if (herramienta === 'Write') pedido = `Archivo: ${texto('file_path')}\nContenido nuevo, entero:\n${texto('content')}`;
+      if (i.replace_all !== undefined && typeof i.replace_all !== 'boolean') throw new NoSeLleva('el pedido no trae replace_all como sí o no');
+      pedido = `Archivo: ${renglon('file_path')}\n${i.replace_all ? 'Reemplaza, todas las veces que aparece' : 'Reemplaza'}:\n${libre('old_string')}\nPor:\n${libre('new_string')}`;
+    } else if (herramienta === 'Write') pedido = `Archivo: ${renglon('file_path')}\nContenido nuevo, entero:\n${libre('content')}`;
     else if (herramienta === 'NotebookEdit') {
-      pedido = `Cuaderno: ${texto('notebook_path')}\nCelda: ${texto('cell_id', { opcional: true }) || '(nueva)'} · ${texto('edit_mode', { opcional: true }) || 'replace'}${i.cell_type !== undefined ? ` · ${texto('cell_type')}` : ''}\nContenido:\n${texto('new_source')}`;
-    } else pedido = `Dirección: ${texto('url')}\nQué pregunta de la página:\n${texto('prompt')}`;
-  } catch (e) { return { motivo: e.message }; }
+      const celda = i.cell_id === undefined ? null : renglon('cell_id');
+      if (celda !== null && !CELDA.test(celda)) throw new NoSeLleva('cell_id no tiene la forma de un id de celda');
+      const modo = deLista('edit_mode', ['replace', 'insert', 'delete']) || 'replace';
+      const tipo = deLista('cell_type', ['code', 'markdown']);
+      pedido = `Cuaderno: ${renglon('notebook_path')}\nCelda: ${celda === null ? 'nueva, sin id' : celda} · ${modo}${tipo ? ` · ${tipo}` : ''}\nContenido:\n${libre('new_source')}`;
+    } else pedido = `Dirección: ${renglon('url')}\nQué pregunta de la página:\n${libre('prompt')}`;
+  } catch (e) {
+    if (e instanceof NoSeLleva) return { motivo: e.message };
+    throw e;
+  }
   if (!pedido.trim()) return { motivo: 'el pedido viene vacío' };
   if (pedido.length > PEDIDO_MAX) return { motivo: `el pedido tiene ${pedido.length} caracteres y el cuadro lleva hasta ${PEDIDO_MAX}` };
-  if (INVISIBLE.test(pedido.replace(/\n/g, ''))) return { motivo: 'el pedido trae caracteres que no se ven (de control, bidireccionales o de ancho cero)' };
+  if (INVISIBLE.test(pedido.replace(/\n/g, ''))) return { motivo: NO_SE_VE };
   return { pedido };
+}
+
+/**
+ * La huella del pedido: de la herramienta y sus campos tal como los manda Claude Code (las claves en orden), no del texto
+ * que se muestra. Es el código del sello del cuadro: dos pedidos distintos nunca comparten click.
+ */
+function huellaDe(herramienta, entrada) {
+  const i = entrada && typeof entrada === 'object' && !Array.isArray(entrada) ? entrada : {};
+  const campos = Object.keys(i).sort().map((k) => [k, i[k]]);
+  return sha(JSON.stringify([String(herramienta), campos]));
 }
 
 /** La carpeta del pedido, si se puede mostrar tal cual en un renglón: el cuadro la pasa por `una()`. */
 function carpetaDe(cwd) {
   const c = typeof cwd === 'string' ? cwd : '';
   if (!c || !path.isAbsolute(c)) return { motivo: 'el pedido no dice desde qué carpeta' };
-  if (INVISIBLE.test(c) || c !== c.replace(/\s+/g, ' ').trim()) return { motivo: 'la carpeta del pedido trae caracteres que no se ven o espacios que el cuadro no muestra' };
+  if (INVISIBLE.test(c) || c !== c.replace(/\s+/g, ' ').trim()) return { motivo: 'la carpeta del pedido trae caracteres que no se ven o se ven en blanco, o espacios que el cuadro no muestra' };
   return { carpeta: c };
 }
 
@@ -115,14 +165,18 @@ function esperaMs(casa, env) {
   return ESPERA_MIN * 60000;
 }
 
-/** Lo que la coordinadora ve en «Trabadas» de esa sesión: por qué el permiso no le llegó como cuadro, o dejó de esperar. */
-function anotarMotivo(casa, sesion, { herramienta, motivo, ahora }) {
+const archivoDelMotivo = (casa, sesion) => path.join(stateDirOf(casa), 'coordination', 'permission-relay', `${sesion}.json`);
+
+/**
+ * Lo que la coordinadora ve en «Trabadas» de esa sesión: por qué el permiso no le llegó como cuadro, o dejó de esperar.
+ * `desde`: cuándo llegó el pedido, para que «Trabadas» lo muestre sólo con ese permiso abierto.
+ */
+function anotarMotivo(casa, sesion, { herramienta, motivo, ahora, desde }) {
   try {
-    const dir = path.join(stateDirOf(casa), 'coordination', 'permission-relay');
-    fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, `${sesion}.json`);
+    const file = archivoDelMotivo(casa, sesion);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, `${JSON.stringify({ at: new Date(ahora).toISOString(), herramienta, motivo })}\n`);
+    fs.writeFileSync(tmp, `${JSON.stringify({ at: new Date(ahora).toISOString(), desde: new Date(desde).toISOString(), herramienta, motivo })}\n`);
     fs.renameSync(tmp, file);
   } catch (e) { logError(casa, `no pude anotar el motivo de ${sesion} (${e.code || e.message})`); }
 }
@@ -176,6 +230,7 @@ function decidir(evento, opts = {}) {
   const plataforma = opts.plataforma || process.platform;
   const ownerWaitVivo = opts.ownerWaitVivo || ((c) => Boolean(require(path.join(ROOT, 'scripts', 'tools', 'coordination.js')).ownerWaitAlive(c)));
   if (env.TYCON_PERMISSION_RELAY === '0') return { decision: null, motivo: 'apagado' };
+  const inicio = ahora();
   const a = alcance(evento, { casa, env, plataforma, arnes: opts.arnes, ownerWaitVivo });
   if (!a.lleva) return { decision: null, motivo: a.motivo };
   const { sesion, herramienta, coordinadora } = a;
@@ -183,7 +238,7 @@ function decidir(evento, opts = {}) {
   const c = p.pedido ? carpetaDe(evento.cwd) : {};
   const noSeLleva = p.motivo || c.motivo;
   if (noSeLleva) {
-    anotarMotivo(casa, sesion, { herramienta, motivo: `no se lleva al cuadro: ${noSeLleva}`, ahora: ahora() });
+    anotarMotivo(casa, sesion, { herramienta, motivo: `no se lleva al cuadro: ${noSeLleva}`, ahora: ahora(), desde: inicio });
     anotarDecision(casa, { sesion, estado: 'no-se-lleva', herramienta, pedido: p.pedido, coordinadora, motivo: noSeLleva });
     return { decision: null, motivo: noSeLleva };
   }
@@ -191,16 +246,18 @@ function decidir(evento, opts = {}) {
   const { carpeta } = c;
   const L = sl();
   const plazo = esperaMs(casa, env);
-  const r = L.anotarPermiso({ casa, herramienta, pedido, carpeta, sesion, pid: process.pid, ahora: ahora(), relay: true });
+  const r = L.anotarPermiso({ casa, herramienta, pedido, carpeta, sesion, pid: process.pid, ahora: ahora(), relay: true, huella: huellaDe(herramienta, evento.tool_input) });
   if (!r.ok) {
     logError(casa, `${r.motivo}: el pedido de ${sesion} va a la ventana normal`);
     return { decision: null, motivo: r.motivo };
   }
+  // el motivo de un pedido anterior no es de éste, que sí llegó como cuadro
+  try { fs.unlinkSync(archivoDelMotivo(casa, sesion)); } catch (e) { if (e.code !== 'ENOENT') logError(casa, `no pude borrar el motivo viejo de ${sesion} (${e.code || e.message})`); }
   const id = r.id;
   const desde = ahora();
   const cerrar = (estado, motivo, decision) => {
     try { L.renglonDelGancho(casa, id, { quitar: true }); } catch (e) { logError(casa, `no pude sacar ${id} de la lista (${e.message}): se cierra solo cuando este gancho termine`); }
-    if (decision === null && estado !== 'sin-renglon') anotarMotivo(casa, sesion, { herramienta, motivo, ahora: ahora() });
+    if (decision === null && estado !== 'sin-renglon') anotarMotivo(casa, sesion, { herramienta, motivo, ahora: ahora(), desde: inicio });
     anotarDecision(casa, { sesion, estado, id, herramienta, pedido, coordinadora, motivo: decision === null ? motivo : null, esperaS: Math.round((ahora() - desde) / 1000) });
     return { decision, motivo, id };
   };
@@ -230,13 +287,13 @@ function salida(r) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } });
 }
 
-module.exports = { HERRAMIENTAS, PEDIDO_MAX, pedidoDe, carpetaDe, alcance, decidir, salida, esperaMs };
+module.exports = { HERRAMIENTAS, PEDIDO_MAX, pedidoDe, huellaDe, carpetaDe, alcance, decidir, salida, esperaMs };
 
 if (require.main === module) {
   let casa = null;
   try {
     if (process.env.TYCON_PERMISSION_RELAY === '0') process.exit(0);
-    const evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, '') || '{}');
+    const evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^\uFEFF/, '') || '{}');
     // lo que no es de este gancho sale antes de leer nada de la máquina
     if (!evento || evento.hook_event_name !== 'PermissionRequest' || !HERRAMIENTAS.has(String(evento.tool_name || '')) || evento.permission_mode !== 'default') process.exit(0);
     // la casa donde anota el click el gancho del cuadro (owner-approval-record.js), que no mira HOME

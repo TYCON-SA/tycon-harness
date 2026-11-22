@@ -679,8 +679,10 @@ Con la lista encendida, una coordinadora confirmada y viva y su `owner-wait` cor
 fondo en modo normal le llega a la persona como cuadro, en la pestaña de la coordinadora**
 (`scripts/hooks/permission-relay.js`). El gancho anota el pedido entero en la lista y espera; `owner-wait` lo anuncia y
 `owner-next` da el cuadro, que va primero: «¿Aprobás este pedido de <herramienta>? (permiso <id> · sesión <id> · código
-<huella>) Carpeta: <carpeta>. Pedido:» y el pedido entero, con sus saltos de línea. La coordinadora lo muestra sin
-cambiarle una letra, con «Sí, aprobar» y «No».
+<huella>) Carpeta: <carpeta>. Pedido:» y el pedido entero, con sus saltos de línea. En Edit, Write, NotebookEdit y
+WebFetch cada renglón del texto libre va con la marca «│ », así nada escrito adentro se confunde con un rótulo, y el
+código es la huella de los campos del pedido: dos pedidos distintos nunca se ven igual ni comparten click. La
+coordinadora lo muestra sin cambiarle una letra, con «Sí, aprobar» y «No».
 
 - **Con «Sí, aprobar», no corre nada.** El gancho ve el click de la persona, lo gasta y deja correr ese pedido una sola
   vez, sin reglas permanentes. Un pedido igual después lleva otro id y pide otro click.
@@ -694,7 +696,8 @@ cambiarle una letra, con «Sí, aprobar» y «No».
 - **No se lleva, y sale la ventana de siempre sin demora:** una pestaña abierta, otro modo (automático, sin permisos,
   aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, la propia
   coordinadora, Codex, y en Windows un comando por PowerShell. Tampoco un pedido que no se puede mostrar entero (más de
-  1500 caracteres, caracteres que no se ven, datos que el cuadro no muestra): la sesión queda trabada con ese motivo.
+  1500 caracteres, caracteres que no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que
+  el cuadro no muestra): la sesión queda trabada con ese motivo.
   Las herramientas que lleva son Bash, PowerShell, Edit, Write, NotebookEdit y WebFetch; el cuadro de preguntas y el
   plan, nunca.
 - **Si la persona contesta en la ventana de la sesión** o la sesión se cierra, el gancho muere y su renglón se cierra

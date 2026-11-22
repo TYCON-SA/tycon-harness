@@ -35,6 +35,7 @@ const ROTULO_MAX = 12;
 const SESION = /^[\w-]+$/;
 // el gancho de permisos muere a los 31 minutos (su plazo en hooks-list.json): uno de más de una hora no espera a nadie
 const RELAY_VENCE_MS = 60 * 60000;
+const HUELLA = /^[0-9a-f]{64}$/;
 
 const ow = () => require('./owner-window.js');
 const oa = () => require('./owner-approvals.js');
@@ -307,19 +308,21 @@ function anotarFirma({ casa, firma, titulo, sesion, destino, comando, palabras, 
 /**
  * Anota lo que una sesión espera de la persona, entero. `{ ok, id }` o `{ ok: false, motivo }`, que dice qué falta. Con
  * `relay`, el renglón es del gancho de permisos que corre en el proceso `pid`, y se cierra cuando ese proceso muere.
+ * `huella`: la de los campos del pedido (permission-relay.js `huellaDe`), que pasa a ser el código del sello.
  */
-function anotarPermiso({ casa, herramienta, pedido, carpeta, sesion, pid, ahora = Date.now(), relay = false }) {
+function anotarPermiso({ casa, herramienta, pedido, carpeta, sesion, pid, ahora = Date.now(), relay = false, huella = null }) {
   const campos = { herramienta, pedido, carpeta, sesion, pid };
   // limpio, como se va a escribir: sólo espacios no es un valor, y un renglón sin eso nadie lo podría leer
   const falta = Object.keys(campos).filter((c) => campos[c] === undefined || campos[c] === null || una(campos[c]) === '');
   if (falta.length) return { ok: false, motivo: `al permiso le falta ${falta.join(', ')}: no lo anoté` };
   if (!SESION.test(String(sesion))) return { ok: false, motivo: 'la sesión del permiso no se puede leer: no lo anoté' };
+  if (huella !== null && !HUELLA.test(String(huella))) return { ok: false, motivo: 'la huella del permiso no se puede leer: no lo anoté' };
   const id = `permiso-${crypto.randomBytes(4).toString('hex')}`;
   const herr = una(herramienta);
   try {
     return conCandado(casa, () => {
       const lista = leer(casa);
-      escribir(casa, [...lista, { tipo: 'permiso', id, herramienta: herr, pedido: String(pedido), carpeta: String(carpeta), sesion: String(sesion), destino: String(sesion), pid, title: `Permiso: ${herr}`, at: ahora, ...(relay ? { relay: true } : {}) }]);
+      escribir(casa, [...lista, { tipo: 'permiso', id, herramienta: herr, pedido: String(pedido), carpeta: String(carpeta), sesion: String(sesion), destino: String(sesion), pid, title: `Permiso: ${herr}`, at: ahora, ...(relay ? { relay: true } : {}), ...(huella !== null ? { huella: String(huella) } : {}) }]);
       return { ok: true, id };
     });
   } catch (e) { return { ok: false, motivo: `no anoté el permiso: ${e.message}` }; }
@@ -339,9 +342,12 @@ function alNegar({ casa, deFondo, sesion, arnes, env, ...pedido }) {
   return Boolean(c) && c !== sesion;
 }
 
-/** El cuadro de un permiso: el sello y la carpeta van antes del pedido, que va entero y al final. */
+/**
+ * El cuadro de un permiso: el sello y la carpeta van antes del pedido, que va entero y al final. El código es el de la
+ * huella de los campos del pedido si el renglón la trae; si no, el del texto.
+ */
 function cuadroDePermiso(f) {
-  const sello = `permiso ${f.id} · sesión ${f.destino} · código ${sha(f.pedido).slice(0, 8)}`;
+  const sello = `permiso ${f.id} · sesión ${f.destino} · código ${(HUELLA.test(String(f.huella || '')) ? f.huella : sha(f.pedido)).slice(0, 8)}`;
   return { sello, pregunta: `¿Aprobás este pedido de ${una(f.herramienta)}? (${sello}) Carpeta: ${una(f.carpeta)}. Pedido:\n${f.pedido}`, opciones: [oa().APRUEBA, oa().NIEGA] };
 }
 

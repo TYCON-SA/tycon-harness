@@ -606,14 +606,18 @@ const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin n
 const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
 
 // Por qué el permiso de la sesión no le llegó a la coordinadora como cuadro, o dejó de esperarlo: lo anota el gancho de
-// permisos (scripts/hooks/permission-relay.js) en `coordination/permission-relay/<sesión>.json`. Vale para el permiso
-// abierto: uno anotado más de un minuto antes de que empezara la espera es de otro pedido. Sin archivo, o ilegible, null.
+// permisos (scripts/hooks/permission-relay.js) en `coordination/permission-relay/<sesión>.json`, con la hora en que llegó
+// el pedido (`desde`). Vale sólo para el permiso abierto: el gancho y la espera arrancan con el mismo pedido, así que uno
+// de más de unos segundos antes es de otro. Sin la hora de la espera no se sabe de cuál es. Sin archivo, ilegible o
+// dudoso, null: nunca dice que no llegó un pedido que sí llegó.
 const RELAY_NOTE_MAX = 200;
+const RELAY_NOTE_SKEW_MS = 5000;
 function relayNoteOf(home, sid, since) {
+  if (!Number.isFinite(since)) return null;
   const n = readJson(path.join(coordinationDir(home), 'permission-relay', `${String(sid).replace(/[/\\]/g, '_')}.json`), null);
   if (!n || typeof n.motivo !== 'string' || !n.motivo.trim()) return null;
-  const at = Date.parse(n.at);
-  if (!Number.isFinite(at) || (Number.isFinite(since) && at < since - 60000)) return null;
+  const desde = Date.parse(n.desde);
+  if (!Number.isFinite(desde) || desde < since - RELAY_NOTE_SKEW_MS) return null;
   return oneLine(n.motivo).slice(0, RELAY_NOTE_MAX);
 }
 // qué esperaba, si lo anotó: sin eso nadie sabe qué hay que darle al levantarla (scripts/lib/claude-retired.js); y desde

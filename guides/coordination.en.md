@@ -694,8 +694,10 @@ With the list on, a confirmed and alive coordinator and her `owner-wait` running
 in normal mode asks for reaches the person as a box, in the coordinator's tab** (`scripts/hooks/permission-relay.js`).
 The hook writes the whole request in the list and waits; `owner-wait` announces it and `owner-next` gives the box, which
 goes first: "¿Aprobás este pedido de <tool>? (permiso <id> · sesión <id> · código <fingerprint>) Carpeta: <folder>.
-Pedido:" and the whole request, with its line breaks. The coordinator shows it without changing a letter, with «Sí,
-aprobar» and «No».
+Pedido:" and the whole request, with its line breaks. In Edit, Write, NotebookEdit and WebFetch each line of free text
+carries the mark "│ ", so nothing written inside is taken for a label, and the code is the fingerprint of the request's
+fields: two different requests never look the same nor share a click. The coordinator shows it without changing a
+letter, with «Sí, aprobar» and «No».
 
 - **On «Sí, aprobar», nothing is run.** The hook sees the person's click, spends it and lets that request run once,
   with no permanent rule. The same request later carries another id and asks for another click.
@@ -710,7 +712,8 @@ aprobar» and «No».
 - **Not carried, and the usual window comes at once:** an open tab, another mode (auto, no permissions, accept edits,
   plan), no confirmed and alive coordinator, no `owner-wait`, the list off, the coordinator herself, Codex, and on
   Windows a PowerShell command. Neither is a request that cannot be shown whole (over 1500 characters, characters that
-  are not seen, data the box does not show): the session stays stuck with that reason. The tools it carries are Bash,
+  are not seen or look blank, a line break in a path or an address, data the box does not show): the session stays
+  stuck with that reason. The tools it carries are Bash,
   PowerShell, Edit, Write, NotebookEdit and WebFetch; the question box and the plan, never.
 - **If the person answers in the session's window** or the session closes, the hook dies and its row closes by itself:
   a click is never asked for a request that no longer waits.
