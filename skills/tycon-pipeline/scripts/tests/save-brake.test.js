@@ -358,6 +358,37 @@ test('Freno_RepoAjeno_Pasa_PedidoPregunta (T5) @story-8.151 @ac-5', (t) => {
   assert.match(r.stdout, VENTANA, 'el pedido pregunta: se juzga contra toda la corrida');
 });
 
+// Freno_CorridaEstacionada_PedidoDeRepoAjeno_Pasa (fila 100)
+// Una corrida estacionada (la marca de su historia en parked/, puesta después de que arrancó, o `paused_until:` en la
+// historia) no ata a su sesión: un pedido desde un repo que no es de la corrida no se juzga contra ella. Desde un repo de
+// la corrida, sin marca, con la marca de una corrida anterior o con una marca ilegible, frena como siempre.
+// 🔴 Falla con: el pedido del repo ajeno sumado a lo que sale hacia el equipo aunque la corrida esté estacionada.
+test('Freno_CorridaEstacionada_PedidoDeRepoAjeno_Pasa (fila 100)', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const ajeno = repoConOrigin(t, 'ajeno');
+  abrir(h, corrida(a));
+  const marca = path.join(estado(h), 'parked', `${SID}.json`);
+  fs.mkdirSync(path.dirname(marca), { recursive: true });
+  const marcar = (at, story = '9.99') => fs.writeFileSync(marca, JSON.stringify({ story, kind: 'queue', at, by: 'prueba' }));
+  const pedido = (cwd) => brake().decidir({ command: 'gh pr create --fill', cwd, sid: SID, home: h });
+  marcar(new Date().toISOString());
+  assert.strictEqual(pedido(ajeno), null, 'estacionada: el pedido de otro repo pasa');
+  assert.ok(pedido(a) && pedido(a).texto, 'estacionada: el pedido de un repo de la corrida sigue frenando');
+  marcar('2020-01-01T00:00:00Z');
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'la marca de una corrida anterior no la estaciona');
+  marcar(new Date().toISOString(), '9.98');
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'la marca de otra historia no la estaciona');
+  fs.writeFileSync(marca, '{ no es json');
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'una marca ilegible no afloja el freno');
+  fs.rmSync(marca);
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'sin la marca frena como siempre');
+  // la pausa escrita en la historia también la estaciona
+  escribir(a, 'specs/story-9.99.md', '---\nstory_id: "9.99"\nstatus: in-progress\npaused_until: 2099-01-01\n---\n');
+  assert.strictEqual(pedido(ajeno), null, 'con paused_until en la historia, el pedido de otro repo pasa');
+  assert.ok(pedido(a) && pedido(a).texto, 'con paused_until, el de un repo de la corrida sigue frenando');
+});
+
 // T6 Freno_SinCorrida_O_Adhoc_IgualQueHoy
 // El adhoc de esta prueba no trae su firma: no es un carril abierto. El carril firmado pregunta (T15).
 // 🔴 Falla con: el freno cambiando lo que pasa fuera de una corrida (un aviso, una salida distinta o una pregunta nueva
