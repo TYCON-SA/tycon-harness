@@ -1033,6 +1033,33 @@ test('computeSmartReloop: delta vacío en re-loop → suspect_empty_delta + warn
   }
 });
 
+// 🔴 Falla con: una vuelta sin agentes (no deja foto) que hace caer a la siguiente al set completo, relanzando a todos los
+//    revisores aunque haya una foto anterior contra la cual medir.
+test('computeSmartReloop: sin la foto de la vuelta anterior (no tuvo agentes), mide contra la última que hay', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-hueco-'));
+  const f1 = path.join(tmp, 'a.mjs');
+  fs.writeFileSync(f1, '// código');
+  const pasado = new Date(Date.now() - 3600000).toISOString();
+  // la vuelta 1 dejó foto; la 2 no tuvo agentes y no la dejó; el archivo cambió después de la foto de la 1
+  const marker = { filesTouched: [f1], fileEvents: [], iterations: { '1': { ts: pasado, filesSnapshot: [f1] } } };
+  const fakeHome = path.join(tmp, 'home');
+  fs.mkdirSync(path.join(fakeHome, '.claude/.tycon-pipeline/active'), { recursive: true });
+  fs.writeFileSync(path.join(fakeHome, '.claude/.tycon-pipeline/active/hueco-smoke.json'), JSON.stringify(marker));
+  const prevSess = process.env.CLAUDE_CODE_SESSION_ID;
+  const volverCasa = ponerCarpetaPersonal(fakeHome);
+  process.env.CLAUDE_CODE_SESSION_ID = 'hueco-smoke';
+  try {
+    const out = computeSmartReloop({ repo: tmp, story: 'x', files: [f1], iter: 3, forceFullReloop: false, costTier: null });
+    assert.notEqual(out.mode, 'no-prev-snapshot-fallback', `cayó al set completo con la foto de la vuelta 1 a mano: ${out.warning || ''}`);
+    assert.deepEqual(out.delta_files, [f1], 'lo cambiado desde la foto de la vuelta 1');
+  } finally {
+    volverCasa();
+    if (prevSess === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = prevSess;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('validateFilesExist: vacío y fantasma abortan; reales y override pasan', () => {
   const realFile = __filename;
   // vacío → error (la variante zsh empty-removal del caso 9.4)
