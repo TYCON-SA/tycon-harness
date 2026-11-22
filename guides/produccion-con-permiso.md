@@ -530,8 +530,8 @@ Y cinco más, propios de leer los nombres como el shell:
   falla. Si el freno se cae o se cuelga, el comando corre. En Claude Code ese mismo fallo frena.
 - **Un freno colgado no se corta desde adentro.** El reloj propio del freno no interrumpe una expresión regular ni un
   análisis que ya empezó. En Claude Code lo ataja el tope del gancho con `onFailure: block`; en Codex, nada. Y hay
-  expresiones del freno que tardan más cuanto más largo es el comando: medida sola, la peor de `shell-parse.js` tarda
-  2,5 s con 64 KB y casi 30 s con 200 KB.
+  expresiones del freno que tardan más cuanto más largo es el comando: medida sola, la peor tarda 5,6 s con 64 KB y
+  43 s con 200 KB, más que el tope del gancho.
 - **Si falta el lanzador, ningún comando de consola del agente corre, y el agente no lo puede arreglar.**
   Sale una persona, desde su terminal y con `sudo`: reinstala el freno
   (`sudo bash ~/.tycon/harness/scripts/production/install-guard.sh`) o saca el archivo administrado
