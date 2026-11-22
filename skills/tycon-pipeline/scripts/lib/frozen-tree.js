@@ -30,6 +30,8 @@ function git(args, env) {
 }
 const unaLinea = (t) => String(t || '').split('\n').map((x) => x.trim()).filter(Boolean)[0] || 'sin detalle';
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+// Hasta qué tamaño se lee qué cambió adentro de un archivo (lib/change-kind.js no tiene tope de tiempo)
+const TOPE_DEL_LECTOR = 256 * 1024;
 
 /** Un índice aparte, en la carpeta temporal; se borra al terminar. */
 function conIndiceAparte(fn) {
@@ -358,9 +360,10 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
  * Con `mainAntes` y `mainAhora` (el punto en común con main del sello y el de ahora), un archivo que en la foto revisada
  * es igual al de `mainAntes` y ahora es igual al de `mainAhora` va a `deMain`: lo cambió main y la corrida no lo tocó
  * (en el estado del sprint, sin el renglón de la historia). Un archivo que la corrida tocó cuenta aunque main también.
- * Con `comentarios` (historia 8.217), un archivo con el mismo modo en los dos árboles que sólo movió comentarios
- * (lib/comment-only.js) va a `comentarios` y no a `files`; cualquier error al mirarlo lo deja en `files`. Sin la opción,
- * la salida no trae ese campo.
+ * Con `comentarios` (historia 8.217), un archivo con el mismo modo en los dos árboles cuyo cambio no pide otra vuelta
+ * (sólo comentarios o espacios, lib/change-kind.js; también textos si el dueño eligió que no la pidan,
+ * lib/review-change-policy.js) va a `comentarios` y no a `files`; cualquier error al mirarlo lo deja en `files`. Sin la
+ * opción, la salida no trae ese campo.
  */
 function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null, comentarios = false } = {}) {
   if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}) };
@@ -378,7 +381,10 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
       const a = contenidoDelSello(repo, treeA, rel);
       const b = contenidoDelSello(repo, treeB, rel);
       if (a.error || b.error || a.modo !== b.modo) return false;
-      return require('./comment-only.js').soloSeMovieronComentarios(a.buf, b.buf, { archivo: rel }).ok === true;
+      // el lector no tiene tope de tiempo: un archivo grande cuenta como cambio, como en el gancho de cada edición
+      if (a.buf.length > TOPE_DEL_LECTOR || b.buf.length > TOPE_DEL_LECTOR) return false;
+      const t = require('./change-kind.js').queCambio(a.buf, b.buf, { archivo: rel });
+      return !require('./review-change-policy.js').pideVuelta(t.tipo);
     } catch (_) { return false; }
   };
   const leer = (t, rel) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
@@ -461,20 +467,22 @@ function contenidoDelSello(repo, tree, rel, { timeout } = {}) {
 }
 
 /**
- * ¿El archivo del disco difiere de lo sellado sólo en el lugar de sus comentarios? Un archivo común (no un enlace), con
- * el mismo bit de ejecución que en el sello. Lo que no se puede leer da `false`: cuenta como cambio.
+ * Qué cambió adentro del archivo del disco respecto de lo sellado (lib/change-kind.js): `{ tipo, motivo, visibles? }`,
+ * o null si no se puede comparar (no es un archivo común, pasa de `topeBytes`, no está en el sello, cambió su bit de
+ * ejecución, no se leyó). null cuenta como código.
  */
-function difiereSoloEnComentarios(repo, tree, abs, { timeout } = {}) {
+function tipoContraElSello(repo, tree, abs, { timeout, topeBytes = TOPE_DEL_LECTOR } = {}) {
   try {
     const st = fs.lstatSync(abs);
-    if (!st.isFile()) return false;
+    // el lector no tiene tope de tiempo: corre en el gancho de cada edición, y un archivo grande cuenta como código
+    if (!st.isFile() || st.size > topeBytes) return null;
     const rel = path.relative(real(repo), real(abs));
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
     const sello = contenidoDelSello(repo, tree, rel.split(path.sep).join('/'), { timeout });
-    if (sello.error) return false;
-    if (process.platform !== 'win32' && ((st.mode & 0o111) !== 0) !== (sello.modo === '100755')) return false;
-    return require('./comment-only.js').soloSeMovieronComentarios(sello.buf, fs.readFileSync(abs), { archivo: abs }).ok === true;
-  } catch (_) { return false; }
+    if (sello.error) return null;
+    if (process.platform !== 'win32' && ((st.mode & 0o111) !== 0) !== (sello.modo === '100755')) return null;
+    return require('./change-kind.js').queCambio(sello.buf, fs.readFileSync(abs), { archivo: abs });
+  } catch (_) { return null; }
 }
 
 /**
@@ -492,19 +500,20 @@ function vueltaCerradaDeLosRevisores(marker, cierre, { stateDir } = {}) {
 }
 
 /**
- * Los archivos (rutas absolutas) editados después de la última vuelta de revisores que quedaron iguales a lo revisado,
- * salvo el lugar de sus comentarios: los que no piden otra vuelta. Con más de 20 archivos no mira ninguno, y cuando se
- * acaba el presupuesto deja de mirar: lo que falta cuenta. Cada error queda en hook-errors.log y ese archivo cuenta.
+ * Qué cambió adentro de cada archivo (rutas absolutas) editado después de la última vuelta de revisores cerrada de esta
+ * historia, contra su sello: Map ruta → `{ tipo, motivo, visibles? }` (lib/change-kind.js). Lo que no se pudo mirar no
+ * está en el mapa, y cuenta como código. Con más de 20 archivos no mira ninguno, y cuando se acaba el presupuesto deja
+ * de mirar. Cada error queda en hook-errors.log.
  */
-function comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos, presupuestoMs = 500, stateDir } = {}) {
-  const fuera = new Set();
+function tiposDesdeLaVuelta({ marker, cierre, archivos, presupuestoMs = 500, stateDir } = {}) {
+  const tipos = new Map();
   const lista = Array.isArray(archivos) ? archivos : [];
-  if (!lista.length || lista.length > 20) return fuera;
+  if (!lista.length || lista.length > 20) return tipos;
   const inicio = Date.now();
   const dir = stateDir || require('./state-dir.js').stateDir(os.homedir());
   let v;
-  try { v = vueltaCerradaDeLosRevisores(marker, cierre, { stateDir: dir }); } catch (e) { anotarError(dir, e); return fuera; }
-  if (!v || !Array.isArray(v.repos)) return fuera;
+  try { v = vueltaCerradaDeLosRevisores(marker, cierre, { stateDir: dir }); } catch (e) { anotarError(dir, e); return tipos; }
+  if (!v || !Array.isArray(v.repos)) return tipos;
   const { raizDelRepo } = require('./reloop-code.js');
   for (const abs of lista) {
     const queda = presupuestoMs - (Date.now() - inicio);
@@ -512,16 +521,17 @@ function comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos, presupuesto
     try {
       const raiz = raizDelRepo(abs);
       const r = raiz && v.repos.find((x) => x && x.repo && x.tree && real(x.repo) === real(raiz));
-      if (r && difiereSoloEnComentarios(r.repo, r.tree, abs, { timeout: queda })) fuera.add(abs);
+      const t = r ? tipoContraElSello(r.repo, r.tree, abs, { timeout: queda }) : null;
+      if (t) tipos.set(abs, t);
     } catch (e) { anotarError(dir, e); }
   }
-  return fuera;
+  return tipos;
 }
 
 function anotarError(dir, e) {
   try {
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] comentarios movidos: no pude mirar lo revisado (${unaLinea((e && e.message) || e)}) — el archivo cuenta como cambio\n`, 'utf8');
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] qué cambió desde la vuelta: no pude mirar lo revisado (${unaLinea((e && e.message) || e)}) — el archivo cuenta como código\n`, 'utf8');
   } catch (_) { /* ayuda, no evidencia */ }
 }
 
@@ -576,7 +586,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 
 module.exports = {
   seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
-  contenidoDelSello, difiereSoloEnComentarios, vueltaCerradaDeLosRevisores, comentariosMovidosDesdeLaVuelta,
+  contenidoDelSello, tipoContraElSello, vueltaCerradaDeLosRevisores, tiposDesdeLaVuelta,
 };
 
 // `node frozen-tree.js procedencia <repo>`: la procedencia como fragmento JSON (`"run":…,"tree":…`), para sumar a un

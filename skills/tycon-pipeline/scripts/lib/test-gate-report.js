@@ -252,8 +252,15 @@ function rutaReal(p) {
  * Los totales de uno o más TRX de vstest (`dotnet test --logger trx` o `vstest.console /Logger:trx`): la suma de sus
  * `Counters`. `{ total, passed, failed, executed }`. La usan la rama de .NET y la de una herramienta con reporte `trx`.
  */
+// Lo que no corrió: la salteada, y lo que vstest no llegó a correr (no se pudo, quedó pendiente o se cortó).
+const NO_CORRIO = new Set(['NotExecuted', 'NotRunnable', 'Pending', 'Disconnected']);
 function contarTrx(archivos, sinResumen = []) {
   const tot = { total: 0, passed: 0, failed: 0, executed: 0 };
+  // Las salteadas salen de cada resultado, no del resumen: con xUnit, una salteada (`outcome="NotExecuted"`) no suma en
+  // el `notExecuted` ni en el `total` del resumen, y una corrida con 17 salteadas se leía «353 de 353». Cada una con su
+  // motivo (el `Message` de su `ErrorInfo`, o su salida).
+  const salteadas = [];
+  let resultados = 0;
   for (const tf of archivos) {
     const t = leerXml(fs.readFileSync(tf, 'utf8'));
     // `{ns}` de la raíz, como en ElementTree de Python: `.//x:Counters` con el espacio de nombres de la raíz
@@ -262,8 +269,51 @@ function contarTrx(archivos, sinResumen = []) {
     const c = descendientes(t, buscado).find((e) => e !== t);
     if (c) for (const k of Object.keys(tot)) tot[k] += pyInt(atributo(c, k, 0));
     else sinResumen.push(tf);
+    // sólo los resultados de primer nivel (los hijos de `Results`): las filas de datos de MSTest van en `InnerResults`
+    // dentro de su madre, y contarlas sumaría la madre y cada fila
+    const enResults = descendientes(t, `{${ns}}Results`).find((e) => e !== t);
+    const deArriba = enResults ? enResults.children.filter((e) => e.tag === `{${ns}}UnitTestResult`) : [];
+    for (const r of deArriba) {
+      resultados += 1;
+      if (!NO_CORRIO.has(String(atributo(r, 'outcome', '')))) continue;
+      // el motivo de la salteada: el `Message` de su `ErrorInfo` (donde lo deja xUnit), nunca su salida, que puede traer
+      // rutas o cadenas de la máquina y va a la copia del informe que viaja
+      const salida = r.children.find((e) => e.tag === `{${ns}}Output`);
+      const info = salida && salida.children.find((e) => e.tag === `{${ns}}ErrorInfo`);
+      const msj = info && info.children.find((e) => e.tag === `{${ns}}Message`);
+      salteadas.push({ nombre: String(atributo(r, 'testName', '') || '?'), motivo: msj ? pyStrip(msj.text || '') : '' });
+    }
+  }
+  if (resultados) {
+    // el resumen de xUnit deja afuera las salteadas: el total es el de los resultados si es mayor
+    tot.total = Math.max(tot.total, resultados);
+    tot.executed = tot.total - salteadas.length;
+    tot.skipped = salteadas.length;
+    tot.skipped_tests = salteadas;
   }
   return tot;
+}
+
+// Una salteada cuenta como NO medida si no dice por qué, o si su motivo dice que no se pudo medir (le faltó la base de
+// prueba, una variable de entorno, un servicio): eso no es verde. Una salteada a propósito, con su motivo, no frena,
+// pero se dice siempre.
+// Lo que cuenta como «no se pudo medir»: una variable, una base, un servicio o una conexión que faltó. Un motivo que no
+// encaja queda verde y listado aparte: el texto decide el color, nunca si se dice.
+const NO_SE_MIDIO = new RegExp([
+  'no se (pudo )?midi[oó]', 'not (been )?measured',
+  'falta (la variable|la base|el servicio|la conexi[oó]n|[A-Z][A-Z0-9]*_[A-Z0-9_]+)', 'sin (la )?base de prueba',
+  'missing (env|environment|variable|connection)', 'requires? (the |a )?(env|environment) variable',
+  'requires? (a |the )?(sql( server)?|database|db)\\b', '(database|db|sql server) (is )?(not available|unavailable)',
+  'no connection string', '\\bset [A-Z][A-Z0-9]*_[A-Z0-9_]+ to run',
+].join('|'), 'i');
+function clasificarSalteadas(salteadas) {
+  const noMedidas = [];
+  const aProposito = [];
+  for (const s of salteadas || []) {
+    if (!String(s.motivo || '').trim() || NO_SE_MIDIO.test(s.motivo)) noMedidas.push(s);
+    else aProposito.push(s);
+  }
+  return { noMedidas, aProposito };
 }
 
 /** Un TRX con la forma del lector de JUnit (`readJunit`): `{ ok, total, passed, failed, skipped, files }` o `{ ok:false, reason }`. */
@@ -274,7 +324,8 @@ function trxComoReporte(archivos) {
     const t = contarTrx(archivos, sinResumen);
     // un TRX sin su resumen (Counters) no dice cuántas corrieron: eso es «no pude contar», no «cero pruebas»
     if (sinResumen.length) return { ok: false, reason: `${sinResumen.length} reporte(s) TRX sin su resumen de pruebas (Counters): ${sinResumen.map((f) => path.basename(f)).join(', ')}` };
-    return { ok: true, total: t.total, passed: t.passed, failed: t.failed, skipped: Math.max(0, t.total - t.executed), files: archivos.length };
+    return { ok: true, total: t.total, passed: t.passed, failed: t.failed, skipped: Math.max(0, t.total - t.executed), files: archivos.length,
+      ...(t.skipped_tests ? { skipped_tests: t.skipped_tests } : {}) };
   } catch (e) {
     return { ok: false, reason: `no pude leer el reporte TRX (${e && e.message ? e.message : e})` };
   }
@@ -590,7 +641,8 @@ function informe(argv) {
       const sinPruebas = path.join(resultsDir, 'sin-pruebas.txt');
       if (existe(sinPruebas)) result.no_tests_run = `${fs.readFileSync(sinPruebas, 'utf8').trim()}: eso no es verde`;
       if (j.ok) {
-        result.totals = { total: j.total, passed: j.passed, failed: j.failed, skipped: j.skipped, executed: j.total - j.skipped };
+        result.totals = { total: j.total, passed: j.passed, failed: j.failed, skipped: j.skipped, executed: j.total - j.skipped,
+          ...(j.skipped_tests ? { skipped_tests: j.skipped_tests } : {}) };
         result.report_files = j.files;
         // una herramienta que sale 0 con fallas en el reporte (Maven con testFailureIgnore) no es verde
         if (j.failed > 0 && result.suite_green) {
@@ -770,6 +822,26 @@ function informe(argv) {
         ? `la suite salió 0 pero no corrió ninguna prueba (${runner}): eso no es verde`
         : `la suite salió 0 pero no se pudo contar ninguna prueba corrida (${runner}${result.totals_error ? `: ${result.totals_error}` : ', no dejó su resumen'}): eso no es verde`;
       process.stderr.write(`[test-gate] 🔴 ${result.no_tests_run}\n`);
+    }
+  }
+
+  // ── Las salteadas: nunca calladas ──
+  // Con su lista (hoy, la de un TRX), una salteada sin motivo o que no se pudo medir deja el veredicto en «N sin
+  // correr», no en verde; una a propósito, con su motivo, no frena, pero queda listada en un renglón aparte.
+  const salteadas = esObjeto(result.totals) && Array.isArray(result.totals.skipped_tests) ? result.totals.skipped_tests : [];
+  if (salteadas.length) {
+    const { noMedidas, aProposito } = clasificarSalteadas(salteadas);
+    const lista = (xs) => xs.slice(0, 5).map((s) => `${s.nombre}${s.motivo ? ` («${String(s.motivo).split('\n')[0].slice(0, 120)}»)` : ' (sin motivo)'}`).join('; ')
+      + (xs.length > 5 ? `; y ${xs.length - 5} más` : '');
+    if (noMedidas.length) {
+      result.totals.not_run = noMedidas.length;
+      result.not_run = `${noMedidas.length} prueba(s) sin correr: salteadas sin motivo o porque no se pudieron medir — ${lista(noMedidas)}. Eso no es verde`;
+      result.suite_green = false;
+      process.stderr.write(`[test-gate] 🔴 ${result.not_run}\n`);
+    }
+    if (aProposito.length) {
+      result.totals.skipped_on_purpose = aProposito.length;
+      process.stderr.write(`[test-gate] 🟡 ${aProposito.length} prueba(s) salteada(s) a propósito, con su motivo: ${lista(aProposito)}\n`);
     }
   }
 
@@ -1265,7 +1337,7 @@ function calzaPorTerminacion(a, b) {
   return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
 
-module.exports = { informe, calzaPorTerminacion, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, OBS_HASTA, isCodeFile, resolverUmbral };
+module.exports = { informe, calzaPorTerminacion, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, clasificarSalteadas, OBS_HASTA, isCodeFile, resolverUmbral };
 
 if (require.main === module) {
   try {

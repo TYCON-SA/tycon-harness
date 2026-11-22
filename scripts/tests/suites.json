@@ -763,6 +763,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 72 (DemoTracking #44): un cambio técnico de la historia después de un plan rechazado lo revalida la vuelta siguiente de la revisión del plan — el portón de la adversarial y validators no relanzan, lo que sigue venciendo, y la vuelta que escribe las constancias sólo al aprobar.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-revalidation.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una historia que no cambió desde su última validación verde no se vuelve a validar: la constancia, su huella y validators.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/validation-record.test.js",
@@ -1283,6 +1289,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 45 (21/11): un criterio con prueba de Nivel staging no frena antes del merge y pide su humo de staging para done.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/staging-criteria.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.121: la ejecución perdida (marcador, apertura o copia que faltan) frena, y su salida es del dueño.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/lost-marker.test.js",
@@ -1750,6 +1762,12 @@
       "requiere": []
     },
     {
+      "__nota": "ninguna guía ofrece un escape que ya no apaga nada: la lista sale de los retirados del catálogo de firmas, y cada párrafo que nombra uno dice que está retirado o figura en las excepciones con su motivo.",
+      "raiz": "arnes",
+      "ruta": "tests/retired-escape-docs.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/e2e-gate-key.test.sh",
       "requiere": []
@@ -1910,6 +1928,12 @@
       "__nota": "story 8.217: un .js que sólo movió comentarios no pide otra vuelta de revisores; el lector de tokens ante la duda no decide. Textos de juguete y los .js de lib/ leídos, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/comment-only.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "2026-11-22, filas 79 y 80: qué cambió adentro de un archivo de código (espacios, comentarios, textos o código) en .js, .ts, .tsx y .cs; ante la duda, código. Textos de juguete y los .js de lib/ leídos, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/change-kind.test.js",
       "requiere": []
     },
     {
@@ -2481,6 +2505,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/office-inbox-watch.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/provider-retry.test.js",
       "requiere": []
     },
     {
@@ -3346,6 +3375,12 @@
       "__nota": "al commitear en el público, el inventario de los controles se compara con el pre-commit propio del repo privado (de su origin/main): avisa el mismo día lo que antes salía rojo de noche, y en el privado no aplica.",
       "raiz": "arnes",
       "ruta": "tests/private-inventory.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la copia propia del pre-commit del privado le pide al gancho público los controles que no nombra: el gancho corre sólo esos (y como gancho propio no filtra), `unnamed` los lista y frena si falta uno, y el control de la base acepta la delegación sólo de la copia declarada.",
+      "raiz": "arnes",
+      "ruta": "tests/hook-delegation.test.js",
       "requiere": []
     },
     {
@@ -4943,6 +4978,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 74 (22/11): las expresiones del freno de producción que crecían con el cuadrado del largo dicen lo mismo que antes y no se cuelgan.",
+      "raiz": "arnes",
+      "ruta": "tests/guard-regex-speed.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.115 (T7): ningún salteo de Windows sin su motivo escrito en las siete suites que corre el ensayo de Windows (apply-hooks, safety-escape, story-gate, ledger-visible, run-close, pipeline-unit; harness-node mide su propia lista fija). Sólo lee archivos.",
       "raiz": "arnes",
       "ruta": "tests/windows-skips.test.js",
@@ -4952,6 +4993,11 @@
       "__nota": "story 8.66: las reglas de lectura de las carpetas del arnés en permissions.allow de ~/.claude/settings.json — cuáles (el árbol, sus dos enlaces y cada skill enlazada), su forma, sumar sin pisar al dev, sin repetir, después del aplicador, sacar al actualizar lo que ya no es del arnés (leyendo el registro de disco) y desinstalar sólo lo anotado. Con HOME y settings.json de prueba.",
       "raiz": "arnes",
       "ruta": "tests/read-permissions.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/deny-permissions.test.js",
       "requiere": []
     },
     {

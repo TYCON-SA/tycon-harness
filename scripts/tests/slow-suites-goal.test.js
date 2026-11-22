@@ -11,7 +11,7 @@
  * la de después sale de la CI del pedido y se anota antes de cerrar la historia.
  *
  *   T18 Lentas_TablaCompletaEnElRegistro — las dos mediciones, las bajadas con su meta, las partes de GitHub
- *   T19 Lentas_MismosCasos               — cada suite bajada tiene los mismos casos que en el commit de antes
+ *   T19 Lentas_MismosCasos               — cada suite bajada tiene todos los casos del commit de antes (puede sumar)
  *   T20 Lentas_RomperDaRojo              — cada bajada dice qué se rompió y qué caso suyo dio rojo
  *   T21 Guia_TrabajadoresLentasYBase     — las dos guías: cuántas a la vez y por qué, las lentas, la base del portón
  *   T22 Lentas_NadaSeEscondio            — ni a la noche, ni salteado, ni tope menor, ni fuera de suites.json
@@ -113,7 +113,7 @@ test('T18 Lentas_TablaCompletaEnElRegistro — las dos mediciones, las bajadas c
   }
 });
 
-test('T19 Lentas_MismosCasos — cada suite bajada tiene los mismos casos que en el commit de antes', (t) => {
+test('T19 Lentas_MismosCasos — cada suite bajada tiene todos los casos del commit de antes (puede sumar)', (t) => {
   const r = registro();
   assert.ok(r.antes && r.bajadas.length > 0, 'el registro no está medido');
   if (!commitDisponible(t, r.antes.commit)) return;
@@ -122,7 +122,9 @@ test('T19 Lentas_MismosCasos — cada suite bajada tiene los mismos casos que en
     assert.ok(antes !== null, `${b.archivo} no existía en el commit de antes`);
     const ahora = fs.readFileSync(path.join(ROOT, b.archivo), 'utf8');
     assert.ok(casos(b.archivo, antes).length > 0, `${b.archivo}: no encontré sus casos`);
-    assert.deepEqual(casos(b.archivo, ahora), casos(b.archivo, antes), `${b.archivo}: los casos cambiaron`);
+    // un caso de menos o renombrado frena; uno nuevo no: la suite puede crecer después de bajada
+    const hoy = new Set(casos(b.archivo, ahora));
+    assert.deepEqual(casos(b.archivo, antes).filter((c) => !hoy.has(c)), [], `${b.archivo}: le faltan casos que tenía, o cambiaron de nombre`);
   }
 });
 

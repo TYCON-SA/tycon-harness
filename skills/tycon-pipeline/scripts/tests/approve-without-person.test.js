@@ -106,6 +106,13 @@ function maqueta(t, { sensible = false } = {}) {
     elements: [{ kind: 'heading', text: 'Facturas pendientes' }, { kind: 'button', text: 'Pagar seleccionadas' }] }] });
   const r = spawnSync(process.execPath, [MOCKUP, 'render', '--data', '-', '--story', story], { encoding: 'utf8', input: modelo, env: ambiente(home) });
   assert.strictEqual(r.status, 0, salida(r));
+  // su revisión con navegador, limpia (la de `mockup.js shots`; el navegador se prueba en mockup.test.js)
+  {
+    const out = JSON.parse(r.stdout).out;
+    const SH = require(path.join(COPIA, 'lib', 'mockup-shots.js'));
+    const { report, shots } = SH.shotsPaths(out);
+    SH.escribirInforme({ report, file: path.basename(out), sha256: require(MOCKUP).mockupHash(fs.readFileSync(out, 'utf8')), shots, findings: [] });
+  }
   const estado = estadoDe(home);
   fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
   const marcador = { storyId: '9.91', sessionId: DEST, stepScheme: 2, startedAt: new Date(AHORA - 3600000).toISOString(), lastTouch: new Date(AHORA).toISOString(),

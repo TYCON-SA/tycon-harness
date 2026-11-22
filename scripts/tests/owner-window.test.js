@@ -127,9 +127,11 @@ test('OwnerWindow_FirmaReconocida_PideVentanaYAnota (T7)', (t) => {
     assert.strictEqual(r.decision, 'ask', `${cmd}: ${r.texto}`);
     assert.deepStrictEqual(r.firmas, [firma], cmd);
     const s = require('../lib/signatures.js').SIGNATURES.find((x) => x.id === firma);
-    // el de la excepción en vivo dice la razón declarada, no el texto del catálogo
+    // el de la excepción en vivo dice la razón declarada, no el texto del catálogo; volver a aprobar la maqueta firma como
+    // el plan, pero su cuadro dice que es la maqueta
     const que = firma === 'runtime-waiver' ? 'Aceptar sin prueba en vivo el AC 1, porque «el servicio externo no tiene ambiente de prueba»'
-      : `${s.approves.charAt(0).toUpperCase()}${s.approves.slice(1)}`;
+      : / approve-mockup /.test(cmd) ? 'Volver a aprobar la maqueta de una story'
+        : `${s.approves.charAt(0).toUpperCase()}${s.approves.slice(1)}`;
     assert.ok(r.texto.includes(`¿${que}?`), `${cmd}: el texto dice qué aprueba`);
     assert.match(r.texto, /9\.99/, `${cmd}: el texto dice la story`);
     assert.match(r.texto, /ses-a/, `${cmd}: el texto dice la sesión destino`);
@@ -4018,6 +4020,31 @@ test('OwnerNext_DaElCuadro_LaSesionRepite (T11) — @story-8.153 @ac-11', (t) =>
   const propia = pasada(casa, 'ses-a');
   assert.strictEqual(propia.tipo, 'firma');
   assert.strictEqual(propia.destino, 'ses-a');
+});
+
+test('OwnerNext_OtraSesionNo_SinCuadroSalvoDelegada (T20) — @story-8.319 @ac-4 @ac-15', (t) => {
+  // una firma que no se corre desde la pestaña de otra sesión: a la coordinadora no le da cuadro, le da la pestaña
+  // destino y la forma de la terminal. La que el perfil le delega sigue con su cuadro, como antes
+  const pasadaCon = (casa, delegacion) => sl.siguiente({ casa, ...SIN_PERFIL(casa), sesion: 'ses-coord', ahora: AHORA, arbol: CON_COORD, validar: VALIDA(casa), delegacion });
+  const anotar = (casa, firma, cmd, titulo) => sl.anotarFirma({ casa, firma, titulo, sesion: 'ses-a', destino: 'ses-a', comando: cmd, palabras: ow.canonica(cmd), cwd: '/r', ahora: AHORA - 600000 });
+
+  let casa = casaDeLista(t);
+  anotar(casa, 'adversarial-skip', SKIP_T, 'saltear el pase adversarial con constancia');
+  const sinDelegar = pasadaCon(casa, SIN_DELEGACION);
+  assert.strictEqual(sinDelegar.tipo, 'via', JSON.stringify(sinDelegar));
+  assert.strictEqual(sinDelegar.pregunta, undefined, 'sin cuadro');
+  assert.strictEqual(sinDelegar.delegada, false);
+  assert.match(sinDelegar.texto, /pestaña de ses-a/);
+  assert.ok(sinDelegar.texto.includes('sign-adversarial-skip --story s --reason porque --terminal --for-session ses-a'), sinDelegar.texto);
+
+  // la delegación es la que se le pasa: con una que dice que el perfil se la delega, el mismo renglón lleva su cuadro
+  casa = casaDeLista(t);
+  anotar(casa, 'adversarial-skip', SKIP_T, 'saltear el pase adversarial con constancia');
+  const delegada = pasadaCon(casa, () => ({ ok: true }));
+  assert.strictEqual(delegada.tipo, 'firma', JSON.stringify(delegada));
+  assert.ok(delegada.pregunta, 'el cuadro de siempre');
+  // sin delegar, la misma firma pierde el cuadro
+  assert.strictEqual(pasadaCon(casa, SIN_DELEGACION).tipo, 'via');
 });
 
 test('Aviso_SinCoordinadora_AprobadoAlCuadroYaMostrado (T10) — @story-8.153 @ac-10', (t) => {
