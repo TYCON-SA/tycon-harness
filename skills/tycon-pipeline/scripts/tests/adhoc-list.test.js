@@ -243,7 +243,7 @@ test('T32b FueraDeLaLista_EnElArnes_ConservaLaDelegacion — @story-8.174 @ac-52
   const r = ev(state, 's32b', path.join(dir, 'docs/x.md'), dir);
   assert.strictEqual(r.verdict.kind, 'adhoc-out-of-list');
   assert.match(r.message, /por delegación, la lista nueva contiene entera la firmada/, r.message);
-  assert.doesNotMatch(r.message, /lo aprobás vos con tu sí/);
+  assert.doesNotMatch(r.message, /lo aprueba el dev, como al abrir/);
 });
 
 test('T33 Lista_PorLaRutaReal — @story-8.174 @ac-31', () => {
@@ -358,15 +358,16 @@ test('P10 Delegado_UnoPorRepo_TambienConAvisado — @story-8.174 @ac-35', () => 
 
 // 🔴 Falla con: el mensaje de «fuera de la lista» en un repo de producto, que nombraba la delegación (la prueba en vivo
 // del AC 52, 9/11): el portón le pasaba siempre el perfil del arnés.
-test('P2v52 FueraDeLaLista_EnUnProducto_HablaDeVos — @story-8.174 @ac-52', () => {
+// El texto lo lee el agente: dice que aprueba el dev y qué hace el agente con su sí (no «lo aprobás vos»).
+test('P2v52 FueraDeLaLista_EnUnProducto_ApruebaElDev — @story-8.174 @ac-52', () => {
   const raiz = tmp('p2v52-');
   const dir = repo(raiz, 'producto');
   const h = tmp('home-');
   const state = conCarril(h, 's52', { allowedFiles: [path.join(dir, 'src/a.js')] });
   const r = ev(state, 's52', path.join(dir, 'src/otro.js'), dir);
   assert.strictEqual(r.verdict.kind, 'adhoc-out-of-list');
-  assert.match(r.message, /lo aprobás vos con tu sí/);
-  assert.doesNotMatch(r.message, /delegación|coordinadora|dueño/);
+  assert.match(r.message, /lo aprueba el dev, como al abrir\. Preguntale; con su sí, corré este comando solo/);
+  assert.doesNotMatch(r.message, /delegación|coordinadora|dueño|lo aprobás vos/);
 });
 
 // 🔴 Falla con: una carpeta de carriles que no se lee, que salteaba el «uno por repo» como si no hubiera otros

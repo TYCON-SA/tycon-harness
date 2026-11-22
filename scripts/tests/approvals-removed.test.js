@@ -282,3 +282,18 @@ test('LocalBrake_WriteApprovalByHand_Unchanged @story-8.248 @ac-12', (t) => {
   assert.match(r.stderr, /constancia de cambio de control no se escribe a mano/);
   assert.match(r.stderr, /run-base-controls\.sh approve/);
 });
+
+// 🔴 Falla con: el mensaje que ofrecía como vía válida «la sesión designada con la frase de la persona (`--relayed-by`)»,
+// que el guion y el freno de mano niegan: el agente lo intentaba y chocaba (revisión de precisión de los frenos).
+test('LocalBrake_WriteApprovalByHand_NoOfreceLaViaQueSeNiega', (t) => {
+  const dir = lab(t);
+  const repo = path.join(dir, 'repo');
+  fs.mkdirSync(repo);
+  git(dir, repo, ['init', '-q', '.']);
+  const evento = { session_id: 'prueba-constancia', tool_name: 'Write', tool_input: { file_path: path.join(repo, CARPETA, 'abc.json'), content: '{}' } };
+  const r = spawnSync(process.execPath, [HOOK], { encoding: 'utf8', input: JSON.stringify(evento), cwd: repo, env: gitEnv(dir) });
+  assert.strictEqual(r.status, 2, `el freno no frenó: ${r.stdout}${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /sesión designada/);
+  assert.match(r.stderr, /Ni la delegación ni `--relayed-by` la dan/);
+  assert.match(r.stderr, /el dueño lo aprueba en la ventana o en el cuadro/);
+});

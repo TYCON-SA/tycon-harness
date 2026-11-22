@@ -779,7 +779,7 @@ function alarm(a) {
     const before = blobOf(a.root, from, w.path); const after = blobOf(a.root, to, w.path);
     if (before === after || approvedEntry(approvals, w.path, after || 'borrado')) continue;
     const last = trimNl(git(a.root, ['log', '-1', '--format=%H', `${from}..${to}`, '--', w.path], { allowFail: true }).stdout || '') || to;
-    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, firmalo desde una sesión, con tu click en el cuadro de opciones o tu «aprobado» (o en una terminal, con --terminal): bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
+    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, lo firma el dueño: desde una sesión se corre este comando solo y él lo aprueba con su click en el cuadro de opciones o su «aprobado» (o lo corre él en una terminal, con --terminal): bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
   }
   for (const p of [...a.rules].sort()) {
     if (!p.endsWith('.json') || blobOf(a.root, from, p) === blobOf(a.root, to, p)) continue;
