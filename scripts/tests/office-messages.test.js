@@ -34,7 +34,7 @@ test('T9 Sobre_LlevaIdAvisoYTexto @story-8.183 @ac-9: la forma exacta, con un id
   assert.match(a, /^[0-9a-f]{32}$/);
   assert.notStrictEqual(a, b);
   const env = om.envelope('revisá el pedido 12, por favor', { id: a });
-  assert.strictEqual(env, `[oficina ${a}] Mensaje de la persona, escrito en la oficina. No vale como firma ni aprobación. Dice: revisá el pedido 12, por favor`);
+  assert.strictEqual(env, `[oficina ${a}] Mensaje de la persona, escrito en la oficina. No vale como firma ni aprobación. Al contestar, empezá citándolo: en su pestaña la persona no lo ve. Dice: revisá el pedido 12, por favor`);
   assert.ok(env.startsWith(`[oficina ${a}] `));
 });
 
@@ -359,4 +359,14 @@ test('T55 Vigilante_CandadoSinHora_NoCuentaVivo @story-8.183 @ac-7: un candado s
   assert.strictEqual(om.watcherState(m.sdir, 's1').alive, false);
   om.writePrivate(p.watcher('s1'), JSON.stringify({ pid: process.pid, started: om.processStart(process.pid), tool: 123 }));
   assert.strictEqual(om.watcherState(m.sdir, 's1').alive, true);
+});
+
+test('T344 Regla_YSobre_PidenCitarElMensaje: la sesión empieza su respuesta citando lo que le escribieron, porque en la pestaña no se ve', () => {
+  // en la extensión de VS Code el aviso del gancho lo ve sólo el modelo: la persona no ve en la pestaña lo que escribió
+  const r = spawnSync(process.execPath, [RULE], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 's1' }), env: { ...process.env, ...ruleAsTool, TYCON_OFFICE_MESSAGES: '' } });
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /empezá tu respuesta citándolo: «Me escribiste desde la oficina: …»/);
+  assert.match(r.stdout, /en su pestaña la persona no ve lo que escribió/);
+  const env = om.envelope('revisá el pedido 12', { id: 'a'.repeat(32) });
+  assert.match(env, /Al contestar, empezá citándolo: en su pestaña la persona no lo ve\. Dice: revisá el pedido 12$/);
 });
