@@ -304,7 +304,7 @@ test('T11 AdhocSet_Windows_SinCdNiAnd @story-8.319 @ac-8', (t) => {
 test('T12 AdhocSet_AvisaLasPruebasPorErrores @story-8.319 @ac-10 @ac-11', (t) => {
   // el aviso sale por la salida de errores y la salida normal sigue siendo el JSON: se mira en la fuente, porque declarar de
   // verdad necesita la firma de una persona
-  const fuente = fs.readFileSync(MARKER, 'utf8');
+  const fuente = require(path.join(path.dirname(MARKER), 'tests', 'lib', 'marker-source.js'))(path.dirname(MARKER));
   const j = fuente.indexOf('console.error(`Si este camino corto cambia código, guardar pide una corrida en verde: ');
   assert.ok(j > 0, 'el aviso está');
   const antes = fuente.slice(Math.max(0, j - 300), j);

@@ -316,7 +316,7 @@ test('T24 QaGuideArgs_ConAprobacion_PasaLaHuella', () => {
   assert.ok(!sin.includes('--mockup-sha'));
   assert.strictEqual(typeof mockupStep8, 'function');
   // en marker.js, la llamada del paso 8 usa esa función y su condición incluye la maqueta aprobada
-  const src = fs.readFileSync(MARKER, 'utf8');
+  const src = require('./lib/marker-source.js')(SK);
   assert.match(src, /qaGuideCheckArgs\(/);
   assert.match(src, /mockupApproval/);
 

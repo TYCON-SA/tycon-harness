@@ -521,7 +521,8 @@ withWaiverLog(() => {
   const texto = lineas.join('\n');
   check('T16 el bloqueo nombra el AC con firma descartada y el comando para volver a firmar',
     /#2/.test(texto) && /descart/i.test(texto) && /marker\.js runtime-waiver/.test(texto) && texto.includes(f.storyPath), texto);
-  const fuente = (n) => fs.readFileSync(path.join(__dirname, '..', n), 'utf8');
+  // marker.js con sus partes de lib/
+  const fuente = (n) => (n === 'marker.js' ? require('./lib/marker-source.js')(path.join(__dirname, '..')) : fs.readFileSync(path.join(__dirname, '..', n), 'utf8'));
   check('T16 marker.js y on-pre-commit.js imprimen ese mismo aviso',
     /avisoFirmasDescartadas\(/.test(fuente('marker.js')) && /avisoFirmasDescartadas\(/.test(fuente('on-pre-commit.js')));
 });

@@ -34,6 +34,8 @@ function entorno(home, extra = {}) {
   for (const k of FUERA_DEL_ENTORNO) delete env[k];
   return Object.assign(env, {
     HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID, TYCON_PACKS_DEFAULT: 'none',
+    // quién pide algo (`set-size` lo anota): fijo, porque en la CI no hay USER y cae en la sesión
+    USER: 'acme', USERNAME: 'acme', LOGNAME: 'acme',
     // sin el perfil del equipo: el árbol armado del portón trae la capa del equipo y la foto se grabó sin ella
     TYCON_PROFILE: '0',
     GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig-vacio'), TZ: 'UTC', LANG: 'C', LC_ALL: 'C',

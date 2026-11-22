@@ -617,7 +617,7 @@ test('T20 8.56-Bordes_SinArchivos_SinLanzamiento_PortonLow_Tablero @story-8.56 @
 // El aviso del marcador era la receta con que el agente apagaba el pase solo: «Abandonarlo es una decisión:
 // TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped …». Abandonarlo lo decide la persona con su frase.
 test('T8 AvisosDelMarcador_NoRecetanElApagado @story-8.104 @ac-2', () => {
-  const src = fs.readFileSync(MARKER, 'utf8');
+  const src = require('./lib/marker-source.js')(SCRIPTS);
   const avisos = src.split('\n').filter((l) => /Abandonarlo/.test(l));
   assert.equal(avisos.length, 3, `los tres avisos: el del pase no medido, el del pase sin resultado y el del salteo con el pase lanzado — ${avisos.length}`);
   // abandonarlo lo firma el dueño: ni la receta de la variable ni la frase de la persona
