@@ -643,7 +643,10 @@ function status(opts = {}) {
     if (s.internal && !markers.has(sid)) continue;
     if (s.name) alive.add(s.name);
     const m = markers.get(sid);
-    const story = m && m.storyId ? `la ${m.storyId}` : null;
+    // la corrida que va por el doble de lo estimado lo dice en su renglón: la que cambia el rumbo es la coordinadora
+    let over = null;
+    try { over = require('../lib/run-overrun.js').sessionText(stateDir(home), sid); } catch { over = null; }
+    const story = m && m.storyId ? `la ${m.storyId}${over ? `, ${over}` : ''}` : null;
     if (s.nameSource === 'derived' && s.name) unnamed.push(label(s.name));
     try {
       const since = suiteWaitSince(home, sid, runningHeavy);
