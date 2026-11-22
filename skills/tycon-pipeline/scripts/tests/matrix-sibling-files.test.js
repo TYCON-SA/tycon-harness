@@ -489,6 +489,17 @@ test('T18b HermanoAtrasado_MainNoTocoElArchivo_SigueVerde', () => {
   assert.equal(r.green, true, avisos(r));
 });
 
+test('T18d HermanoAtrasado_NombreConCorchetes_NoEsUnComodin', () => {
+  // `[id].cs` es ese archivo: que main cambie `i.cs` no lo vuelve una copia vieja
+  const f = lab({ declarados: ['src/[id].cs'], delHermano: { 'src/[id].cs': '// v1\n', 'src/i.cs': '// v1\n' } });
+  git(f.esp, ['checkout', '-q', '-b', RAMA]);
+  f.humo();
+  atrasarElHermano(f, 'src/i.cs');
+  const r = f.calcular();
+  assert.deepEqual(r.noLeidos, [], avisos(r));
+  assert.equal(r.green, true, avisos(r));
+});
+
 test('T18c HermanoConCopiaDeLaHistoria_ClonAtrasado_NoImporta', () => {
   // con copia en la rama de la historia, el clon compartido no se mira: atrasado o no, no cambia nada
   const f = labConCopia();

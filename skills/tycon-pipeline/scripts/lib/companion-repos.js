@@ -288,7 +288,8 @@ function mainCambioDespues(abs) {
   if (!conOrigen.error && conOrigen.status === 1) return { commit: null };
   const motivo = (r) => (r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`;
   if (conOrigen.error || conOrigen.status !== 0) return { error: motivo(conOrigen) };
-  const r = correr(['log', '-1', '--format=%h', 'HEAD..refs/remotes/origin/main', '--', path.basename(abs)]);
+  // `:(literal)`: un nombre con `[ ] * ?` (una ruta `[id].tsx`) es ese archivo, no un comodín que nombra otros
+  const r = correr(['log', '-1', '--format=%h', 'HEAD..refs/remotes/origin/main', '--', `:(literal)${path.basename(abs)}`]);
   if (r.error || r.status !== 0) return { error: motivo(r) };
   return { commit: String(r.stdout || '').trim() || null };
 }
