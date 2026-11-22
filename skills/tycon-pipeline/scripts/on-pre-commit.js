@@ -775,23 +775,23 @@ const REGLA_DE_MOTIVO = {
   // vocabulario cerrado de guard-record.js —que comparte el freno de producción— no cambia
   'no-criteria': 'matriz-estructural',
 };
-function anotarDecisionesDelCierre({ violations, soloAviso, pasos, estadoDe, avisosSelfAudit = [] }) {
+function anotarDecisionesDelCierre({ violations, soloAviso, pasos, estadoDe, avisosSelfAudit = [], sesion }) {
   let anotarCierre;
   try { ({ anotarCierre } = require('./lib/closing-record.js')); } catch { return; } // ayuda, no evidencia
   const huella = (storyId, specRel) => `${storyId}\0${estadoDe.get(specRel) || ''}`;
   for (const v of violations) {
     try {
       anotarCierre({ freno: 'on-pre-commit', regla: REGLA_DE_MOTIVO[v.reason] || String(v.reason),
-        veredicto: soloAviso.has(v.specRel) ? 'aviso' : 'bloqueo', huella: huella(v.storyId, v.specRel) });
+        veredicto: soloAviso.has(v.specRel) ? 'aviso' : 'bloqueo', huella: huella(v.storyId, v.specRel), sesion });
     } catch { /* ayuda, no evidencia */ }
   }
   for (const [specRel, { regla, storyId }] of pasos) {
-    try { anotarCierre({ freno: 'on-pre-commit', regla, veredicto: 'paso', huella: huella(storyId, specRel) }); } catch { /* idem */ }
+    try { anotarCierre({ freno: 'on-pre-commit', regla, veredicto: 'paso', huella: huella(storyId, specRel), sesion }); } catch { /* idem */ }
   }
   // Un self-audit incompleto que pasó: UNA línea (aviso), no además un «paso» (una decisión, una línea).
   for (const a of avisosSelfAudit) {
     if (violations.some((v) => v.specRel === a.specRel)) continue;
-    try { anotarCierre({ freno: 'on-pre-commit', regla: 'self-audit', veredicto: 'aviso', huella: huella(a.storyId, a.specRel) }); } catch { /* idem */ }
+    try { anotarCierre({ freno: 'on-pre-commit', regla: 'self-audit', veredicto: 'aviso', huella: huella(a.storyId, a.specRel), sesion }); } catch { /* idem */ }
   }
 }
 
@@ -1918,7 +1918,7 @@ function main() {
   // Lo que viene de una transición interna `review → done` AVISA en vez de bloquear (ver arriba).
   const avisos = violations.filter((v) => soloAviso.has(v.specRel));
   const bloqueantes = violations.filter((v) => !soloAviso.has(v.specRel));
-  anotarDecisionesDelCierre({ violations, soloAviso, pasos, estadoDe, avisosSelfAudit });
+  anotarDecisionesDelCierre({ violations, soloAviso, pasos, estadoDe, avisosSelfAudit, sesion: event.session_id });
   if (avisosSelfAudit.length) {
     const av = ['⚠️  AVISO — self-audit incompleto (ACCOV-C8 es opcional desde 2026-09-16, story 7.2 del arnés: no frena)'];
     for (const a of avisosSelfAudit) av.push(`   · ${a.specRel} (story ${a.storyId}): faltan ${a.missingSections.join(', ')} — ${a.selfAuditPath}`);

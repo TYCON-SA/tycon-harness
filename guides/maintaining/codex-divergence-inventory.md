@@ -435,3 +435,16 @@ gancho. Es el mismo hueco que ya tenía el «¿guardo?» del commit.
 **Lo que Codex NO cubre, dicho y no prometido**: que una persona diga que sí antes de que el pull request preparado
 salga. Casos: T18 de `skills/tycon-pipeline/scripts/tests/save-brake.test.js` (el gancho registrado en Codex frena un
 pull request sin preparar). Qué hace Codex con `ask` queda por medir en una sesión de Codex.
+
+## El tope por defecto de un gancho — tomado de la documentación (2026-11-21)
+
+Cuánto espera cada herramienta a un gancho sin `timeout` en su registro, y qué pasa al vencer. Tomado de la
+documentación de cada una el 2026-11-21, no medido con una corrida: la medición en vivo va en este mismo inventario cuando
+se corra. Lo usa la prueba de que el reloj propio de un freno vence antes (`hook-failure-critical.test.js`).
+
+| Herramienta | Tope por defecto | Al vencer, antes de una herramienta | Fuente |
+|---|---|---|---|
+| Claude Code | tope_s: 600 | la herramienta corre igual, salvo con `onFailure: block` | https://code.claude.com/docs/en/hooks («Defaults: 600 for `command`…») |
+| Codex | tope_s: 600 | NO MEDIDO (no documentado) | https://learn.chatgpt.com/docs/hooks («Codex uses `600` seconds for most hooks») |
+
+Codex acepta un `timeout` por gancho, en segundos.
