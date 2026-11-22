@@ -5150,6 +5150,89 @@ function coordinadoraPorConsola(event, opts = {}) {
   });
 }
 
+/**
+ * Antes de un `git commit` o un `git push` (también con `-C <carpeta>`), cada constancia de control nueva del repo tiene que
+ * tener la huella que deja `approve` en esta máquina (lib/control-change-prints.js): mira lo escrito en la carpeta de
+ * constancias, no el comando que lo escribió. Sin huella, frena y dice cómo seguir.
+ */
+function constanciasSinHuella(event, opts = {}) {
+  if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
+  const cmd = event?.tool_input?.command;
+  if (!cmd || !/\bgit\b/.test(cmd) || !/\b(?:commit|push)\b/.test(cmd)) return null;
+  const huellas = require('./lib/control-change-prints.js');
+  const stateDir = opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR;
+  const base = cwdDelComando(cmd, nativePath(event?.cwd || process.cwd()));
+  const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
+  const frena = (texto) => {
+    try { require('./lib/story-gate-io.js').appendLog(stateDir, 'gates.log', resolveSessionId(event?.session_id), { name: 'story-gate', status: 'blocked', kind: 'constancia-sin-huella', via, reason: texto.split('\n')[0] }); } catch { /* el registro no traba el freno */ }
+    return { block: `${texto}\n` };
+  };
+  const vistos = new Set();
+  // también lo que corre adentro (`bash -c "git commit …"`, `$(…)`)
+  for (const texto of [String(cmd), ...comandosAnidados(String(cmd)).slice(1)]) {
+    for (const tramo of tramos(texto)) {
+      // sin las redirecciones: `2>&1` o `> salida.txt` no son parte de lo que se empuja
+      const w = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).filter((x) => x !== '');
+      if (nombreDeComando(w[0]) !== 'git') continue;
+      let dir = base;
+      let i = 1;
+      while (i < w.length && /^-/.test(w[i])) {
+        const pegada = /^-C(.+)$/.exec(w[i]);
+        if ((w[i] === '-C' && w[i + 1] !== undefined) || pegada) {
+          const crudo = pegada ? pegada[1] : w[i + 1];
+          const ruta = expandirRuta(texto, crudo);
+          // una carpeta que no se resuelve no se puede mirar: frena
+          if (ruta.sinResolver.length) return frena(`🔒 CONSTANCIA SIN MIRAR — no pude resolver la carpeta de \`git -C ${crudo}\`: no sé qué repo commitea o empuja ni si lleva una constancia sin firmar. Escribí la ruta sin variables.`);
+          dir = resolveTarget(ruta.valor, dir, process.platform, { homeVariable: true }); i += pegada ? 1 : 2; continue;
+        }
+        // las opciones de git que llevan su valor en la palabra que sigue
+        if (/^(?:-c|--git-dir|--work-tree|--namespace|--super-prefix|--attr-source|--config-env|--exec-path)$/.test(w[i])) { i += 2; continue; }
+        const wt = /^--work-tree=(.+)$/.exec(w[i]);
+        if (wt) dir = resolveTarget(wt[1], dir, process.platform, { homeVariable: true });
+        i++;
+      }
+      const sub = w[i];
+      if (sub !== 'commit' && sub !== 'push') continue;
+      // lo que se empuja: sin refspec, la rama de HEAD; con `--all`/`--mirror`/`--branches` (también abreviadas) o un
+      // comodín, todas; si no, el origen de cada refspec. Borrar una rama remota no empuja nada
+      let refs = ['HEAD'];
+      if (sub === 'push') {
+        const resto = w.slice(i + 1);
+        const posicionales = [];
+        let remotoPorOpcion = false;
+        let borra = false;
+        for (let k = 0; k < resto.length; k++) {
+          const x = resto[k];
+          if (/^(?:-o|--push-option|--repo|--receive-pack|--exec)$/.test(x)) { if (x === '--repo') remotoPorOpcion = true; k++; continue; }
+          if (/^--repo=/.test(x)) { remotoPorOpcion = true; continue; }
+          if (x === '-d' || /^--del(?:e(?:t(?:e)?)?)?$/.test(x)) { borra = true; continue; }
+          if (x.startsWith('-')) continue;
+          posicionales.push(x);
+        }
+        const todas = resto.some((x) => /^--(?:al|all|mir|mirr|mirro|mirror|br|bra|bran|branc|branch|branche|branches)$/.test(x));
+        const especificaciones = [];
+        const lista = remotoPorOpcion ? posicionales : posicionales.slice(1);
+        for (let k = 0; k < lista.length; k++) {
+          if (lista[k] === 'tag' && lista[k + 1]) { especificaciones.push(`refs/tags/${lista[++k]}`); continue; }
+          const origen = lista[k].replace(/^\+/, '').split(':')[0];
+          if (origen) especificaciones.push(/\*/.test(origen) ? '*' : origen);
+        }
+        if (todas || especificaciones.includes('*')) refs = ['*'];
+        else if (borra) refs = [];
+        else if (especificaciones.length) refs = especificaciones;
+        else if (lista.length) refs = [];
+        if (!refs.length) continue;
+      }
+      const clave = `${dir}\0${sub}\0${refs.join(',')}`;
+      if (vistos.has(clave)) continue;
+      vistos.add(clave);
+      const cartel = huellas.frenoDe({ dir, cuando: sub, stateDir, refs });
+      if (cartel) return frena(cartel);
+    }
+  }
+  return null;
+}
+
 function handle(event, opts = {}) {
   {
     let perdida = null;
@@ -5160,6 +5243,11 @@ function handle(event, opts = {}) {
     let abierta = null;
     try { abierta = borraEjecucionAbierta(event); } catch (e) { logHookError(e); abierta = { block: `🔒 CERRÁ LA EJECUCIÓN ANTES — no pude revisar si el comando borra la carpeta de una ejecución abierta (${e.message}): frena hasta poder mirarlo.\n` }; }
     if (abierta) return abierta;
+  }
+  {
+    let huella = null;
+    try { huella = constanciasSinHuella(event, opts); } catch (e) { logHookError(e); huella = { block: `🔒 CONSTANCIA SIN MIRAR — no pude revisar las constancias antes del commit o del empuje (${e.message}): frena hasta poder mirarlas.\n` }; }
+    if (huella) return huella;
   }
   {
     let coordinadora = null;
