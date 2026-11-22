@@ -57,7 +57,7 @@ const LOST_RUN_PARTICION = 'lost-run:particion';
 
 // qué aprueba cada id de la tabla, en inglés: la pantalla del sitio lo muestra en ese idioma
 const LEVELS_EN = Object.freeze({
-  'plan-approval': 'approve the plan (level 2 if the story is sensitive: risk-class works it out, and the coordinator approves it only if the profile delegates plan-approval:delicada and her automatic review came back approved; level 1 is also approved by the approved verdict of the automatic review, with or without a coordinator, unless plan_review.routine_approval is person)',
+  'plan-approval': 'approve the plan (level 2 if the story is sensitive: risk-class works it out, and then the plan and its mockup are approved only by the owner, with a click or an «approved», even if the profile names plan-approval:delicada; level 1 is also approved by the approved verdict of the automatic review, with or without a coordinator, unless plan_review.routine_approval is person)',
   'extra-round': 'one more round of reviewers',
   'pending-approval': 'open a new item in the pending list',
   'save': 'save: commit, push and pull requests, if no commit touches anything sensitive',
@@ -101,7 +101,7 @@ const LEVELS_EN = Object.freeze({
 
 // id, nivel, perfiles, qué aprueba
 const LEVELS = Object.freeze([
-  ['plan-approval', 1, AMBOS, 'aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y la coordinadora lo aprueba sólo si el perfil delega plan-approval:delicada y su revisión automática dio aprobado; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person)'],
+  ['plan-approval', 1, AMBOS, 'aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y entonces el plan y su maqueta los aprueba sólo el dueño, con su click o su «aprobado», aunque el perfil nombre plan-approval:delicada; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person)'],
   ['extra-round', 1, AMBOS, 'una vuelta más de revisores'],
   ['pending-approval', 1, AMBOS, 'abrir un pendiente nuevo en la lista'],
   ['save', 1, AMBOS, 'guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible'],
@@ -172,9 +172,11 @@ const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'es
 // las pasa por la delegación (owner-window.js)
 const PARA_OTRA_SESION_SIN_DELEGAR = Object.freeze(['escape:dod_runtime_exempt', 'escape:story-skill-bypass', 'autonomy-resume', 'adhoc-lane:datos']);
 const otraSinDelegar = (id) => (PARA_OTRA_SESION_SIN_DELEGAR.includes(id) ? 'yes' : 'no');
-// las dos formas de nivel 2 de una firma de rutina, que el perfil delega con su propio nombre (no son firmas de
-// SIGNATURES: se piden con la firma de la derecha, y su guion mira si el perfil nombra la forma): el plan de una historia
-// delicada, sólo con el «aprobado» de la revisión automática que lanzó la coordinadora, y el guardado que toca algo sensible
+// las dos formas de nivel 2 de una firma de rutina, que el perfil nombra con su propio nombre (no son firmas de
+// SIGNATURES: se piden con la firma de la derecha, y su guion mira si el perfil nombra la forma): el guardado que toca
+// algo sensible, que la coordinadora firma si el perfil lo delega, y el plan de una historia delicada, que el perfil
+// puede nombrar sin que eso delegue nada: ese plan y su maqueta los aprueba sólo el dueño, con su click o su «aprobado»
+// (lib/plan-review.js antesDeAprobar). La forma sigue en la lista para que un perfil que la nombra siga siendo válido
 const PLAN_DELICADO = 'plan-approval:delicada';
 const SAVE_SENSIBLE = 'save:sensible';
 const DELEGABLE_FORMS = Object.freeze({ [PLAN_DELICADO]: 'plan-approval', [SAVE_SENSIBLE]: 'save' });

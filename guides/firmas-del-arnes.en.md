@@ -18,7 +18,8 @@ does not wait for the coordinator. The harness gives it on its own, in the sessi
 harness sessions and product sessions, on any machine, with no list of machines.
 
 - **The same content check as before.** Each script checks its own thing before signing without a person: the plan, with
-  the automatic review approved on that same plan; the comparison with main, that the story is not delicate; the save,
+  the automatic review approved on that same plan, and never the plan of a delicate story (that plan and its mockup, only
+  with the owner's click or «approved», even if the profile names `plan-approval:delicada`); the comparison with main, that the story is not delicate; the save,
   with a clean story; the short path, within its allowance and with no high-risk paths; the pending item, on a repo where
   the session works. If that check says no, the signature goes to a person as always, and the window says why it did not
   go out on its own.

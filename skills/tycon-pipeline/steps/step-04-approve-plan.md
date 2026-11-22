@@ -96,9 +96,9 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
 **Un plan delicado espera al dev.** `pipeline.js risk-class --story <story_path>` dice si la story es **delicada**
 (`delicate`): rutas sensibles en la story o en el plan, la superficie compartida, producción, el portón de CI, el
 instalador, una migración, la constancia de controles, o `sensible:` en el frontmatter; en duda, delicada. Su plan es
-nivel 2: lo aprueba el dev, también de noche. La revisión corre sobre él, pero sólo ataca y avisa. La única salida sin
-el dev: el perfil del equipo delega `plan-approval:delicada`, y entonces lo aprueba la coordinadora con el «aprobado» de
-la revisión que ella lanzó sobre ese mismo plan (nunca la revisión de la propia sesión).
+nivel 2: lo aprueba el dev con su click o su «aprobado», también de noche, y su maqueta lo mismo. La revisión corre
+sobre él, pero sólo ataca y avisa. No hay salida sin el dev: ni la coordinadora, ni la firma de trámite, ni la revisión
+de la propia sesión, aunque el perfil nombre `plan-approval:delicada`.
 
 **El cuadro de la firma dice el resultado.** La pregunta de `plan-approval` trae una línea «Revisión automática: …» con
 el resultado de la revisión de ese mismo plan, y si el plan cambió después, que la revisión es de otra versión.
