@@ -1642,7 +1642,8 @@ test('T340 Office_Foto_TraeElTurnoPesado @story-8.234 @ac-16 — la foto dice qu
   turnSlot(broken, 'suite-turn.json', '{roto');
   const b = await collect({ home: broken, now: iso, siteUrl: noSite, machine: quietMachine() });
   assert.strictEqual('turnoPesado' in b.meta, false);
-  assert.ok(b.unreadable.some((u) => /turno de las ejecuciones grandes .* no se puede leer/.test(u)), b.unreadable.join(' | '));
+  // una sola vez: /wip ya lo anota al leer los mismos lugares, y la oficina no lo repite
+  assert.strictEqual(b.unreadable.filter((u) => /turno de las ejecuciones grandes .* no se puede leer/.test(u)).length, 1, b.unreadable.join(' | '));
   // el lector de las firmas del dueño no mide la máquina: tampoco trae el turno
   const owner = await collect({ home, now: iso, siteUrl: noSite, machine: false });
   assert.strictEqual('turnoPesado' in owner.meta, false);

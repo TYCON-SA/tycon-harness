@@ -2448,13 +2448,15 @@ async function machineLoad({ platform = process.platform, run, readFile, readCpu
 /**
  * Quién corre una ejecución grande y cuántas suites, para la etiqueta de los racks: `[{ sesion, suites }]`, de la más vieja
  * a la más nueva (`holders()` de heavy-turn.js), o null sin turno tomado. Lo que no se sabe (una sesión sin nombre, un
- * `what` sin la cuenta) no va; un lugar del turno que no se puede leer va a `problems`.
+ * `what` sin la cuenta) no va; un lugar del turno que no se puede leer va a `problems`, una sola vez: /wip lee los mismos
+ * lugares y ya pudo haberlo anotado ahí.
  */
 function heavyTurns(sdir, nowMs, problems) {
   let turns;
+  const mine = [];
   try {
     const HT = require('./heavy-turn.js');
-    turns = HT.holders({ state: sdir, now: nowMs, problems }).map((t) => {
+    turns = HT.holders({ state: sdir, now: nowMs, problems: mine }).map((t) => {
       const e = {};
       const name = typeof t.session === 'string' ? t.session.trim() : '';
       if (name) e.sesion = name;
@@ -2463,9 +2465,10 @@ function heavyTurns(sdir, nowMs, problems) {
       return e;
     });
   } catch (e) {
-    problems.push(`el turno de tarea pesada no se pudo leer (${e.code || e.message})`);
-    return null;
+    mine.push(`el turno de tarea pesada no se pudo leer (${e.code || e.message})`);
+    turns = [];
   }
+  for (const p of mine) if (!problems.includes(p)) problems.push(p);
   return turns.length ? turns : null;
 }
 
