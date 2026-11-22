@@ -1067,3 +1067,19 @@ test('T42 4.14-Filter_WindowsTempAndCutKeys — el temporal de Windows por su va
   assert.strictEqual(N.motivoDeRuido({ repo: 'D:/work/api', summary: 'npm test -- --watch=false' }), 'ruta_de_una_maquina');
   assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary: 'npm test -- --watch=false' }), null);
 });
+
+test('T43 Nightly_SanitizesBeforeCutAndLowercase — la clave del grupo, el patrón y todo lo que va al modelo salen del resumen ya saneado', async () => {
+  const b = base('saneado-antes-del-corte');
+  // un valor de laboratorio y dos formas que el saneado viejo dejaba pasar: un día subido antes del arreglo las trae así
+  const valor = ['Zq9xLm4v', 'Rt7wKp'].join('');
+  const sql = ['sql', 'cmd'].join('');
+  const d = diaMenos(1);
+  const lineas = [...veces(6, d, 'acme/api', `export clientSecret=${valor} && npm run deploy`), ...veces(6, d, 'acme/api', `${sql} -U sa -P ${valor} -Q x`)];
+  espejo(b.espejo, { 'mac-a': { [d]: lineas }, 'mac-b': { [d]: lineas } });
+  const r = await noche(b);
+  assert.strictEqual(r.codigo, 0);
+  const todo = [...r.m.propuestas, ...r.m.revisiones, ...r.m.recomendaciones].join('\n').toLowerCase();
+  assert.ok(r.m.propuestas.length > 0, 'la noche le pidió propuestas al modelo');
+  assert.ok(!todo.includes(valor.toLowerCase()), 'ni en minúscula llega al modelo');
+  for (const p of propuestasDe(b)) assert.ok(!String(p.patron).toLowerCase().includes(valor.toLowerCase()), p.patron);
+});

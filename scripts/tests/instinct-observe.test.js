@@ -414,3 +414,47 @@ test('T42 Observe_ShellVariablesAreNotSecrets — en las formas nuevas, una vari
     assert.strictEqual(s(cmd), cmd);
   }
 });
+
+test('T43 Observe_EverydayCommandsStayTheSame — buscar un nombre de clave, $(id -u), pip --user, find en la carpeta de mysql', () => {
+  const s = (x) => obs.sanitize(x, null);
+  for (const cmd of [
+    'grep -rn "authorization:" src/',
+    `rg "pass${'word'}=" -g "*.env"`,
+    'grep -rn cancellationToken src/Features',
+    'docker run -u $(id -u):$(id -g) img',
+    'pip install --user https://x.test/p.whl',
+    'find /var/lib/mysql -perm 600 -print',
+    `grep -rn 'pass${'word'}: "{{ .Values.db.pass${'word'} }}"' charts`,
+    j('git com', 'mit -m "refactor: rename accessToken handling in AuthService module"'),
+    'jq ".accessToken" response.json',
+  ]) {
+    assert.strictEqual(s(cmd), cmd);
+  }
+});
+
+test('T44 Observe_MoreCredentialForms_Masked — un nombre en mayúsculas, un JSON escapado, la URL sin usuario, la llave como usuario, un comando en varios renglones', () => {
+  const s = (x) => obs.sanitize(x, null);
+  for (const cmd of [
+    `export PG${PASS}=${CLAVE}`,
+    `export DB_PASS=${CLAVE}`,
+    `curl -d "{\\"pass${'word'}\\":\\"${CLAVE}\\"}" x`,
+    `redis-cli -u redis://:${CLAVE}@cache.acme.test:6379`,
+    `curl -u ${j('sk_test_', 'abcdefghijklmnop')}: https://x`,
+    `az login \\\n  -u app \\\n  -p ${CLAVE}`,
+    `Invoke-RestMethod -Headers @{Authorization="Basic ${CLAVE}"}`,
+  ]) {
+    const out = s(cmd);
+    assert.ok(!out.includes(CLAVE) && !out.includes(j('sk_test_', 'abcdefghijklmnop')), out);
+    assert.strictEqual(s(out), out, `sanear dos veces deja lo mismo: ${out}`);
+  }
+  // lo que sigue a una clave tapada queda, también en la segunda pasada
+  const conPuntoYComa = s(`${SQLCMD} -S h -U sa -P "${CLAVE}"; echo $?`);
+  assert.match(conPuntoYComa, /\[REDACTED\]; echo \$\?$/);
+  assert.strictEqual(s(conPuntoYComa), conPuntoYComa);
+  // el corte de 500 no parte una marca
+  for (let n = 470; n < 500; n++) {
+    const una = s(`${'a'.repeat(n)} token=${CLAVE} y más texto después del valor para pasar el corte de quinientos`);
+    assert.doesNotMatch(una, /\[REDACT?E?D?\.\.\.$|\[RE?D?A?C?\.\.\.$/, una.slice(-20));
+    assert.strictEqual(s(una), una, una.slice(-30));
+  }
+});

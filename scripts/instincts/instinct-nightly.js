@@ -95,11 +95,11 @@ function patronesDeCarpeta() {
   carpetasDeTrabajo = [
     /--wt-/i,
     new RegExp(`${INICIO_DE_SEGMENTO}${deClaude}[\\\\/]worktrees[\\\\/]`, 'i'),
-    new RegExp(`${INICIO_DE_SEGMENTO}${deClaude}[\\\\/]jobs(?:[\\\\/]|$)`, 'i'),
+    new RegExp(`${INICIO_DE_SEGMENTO}${deClaude}[\\\\/](?:jobs(?:[\\\\/]|$)|jo?b?$)`, 'i'),
     /\$\{?CLAUDE_JOB_DIR\b/,
     new RegExp(`${INICIO_DE_PALABRA}(?:(?:/private)?/tmp(?:/|[\\s"'\\x60;|)>]|$)|(?:/private)?/var/folders/|\\$\\{?TMPDIR\\b)`, 'i'),
     new RegExp(`${INICIO_DE_SEGMENTO}AppData[\\\\/]Local[\\\\/]Temp(?:[\\\\/\\s]|$)`, 'i'),
-    /\$\{?env:(?:TEMP|TMP)\b|%(?:TEMP|TMP)%|\$\{?env:LOCALAPPDATA\}?[\\/]Temp(?:[\\/\s]|$)/i,
+    /\$\{?env:(?:TEMP|TMP)\b|%(?:TEMP|TMP)%|\$\{?env:LOCALAPPDATA\}?[\\/]Temp(?:[\\/\s"']|$)/i,
     new RegExp(`${INICIO_DE_SEGMENTO}\\.tycon[\\\\/]state[\\\\/]`, 'i'),
     new RegExp(`${INICIO_DE_SEGMENTO}\\.advisors[\\\\/]`, 'i'),
   ];
@@ -232,7 +232,9 @@ async function recomendarPendientes({ pendientes, anteriores, proyectos, noche, 
   if (listo) cola.slice(TOPE_RECOMENDAR).forEach((x) => sin(x, 'tope'));
   for (let i = 0; i < entran.length; i += TANDA) {
     const tanda = entran.slice(i, i + TANDA);
-    const r = await llamar({ prompt: promptDeRecomendacion(tanda.map((x) => x.p)), nightly: noche, env });
+    // las propuestas guardadas se escribieron con el saneado de su noche: se vuelven a sanear antes de ir al modelo
+    const limpia = (p) => ({ ...p, patron: limpio(p.patron), repo: limpio(p.repo), redaccion: Object.fromEntries(Object.entries(p.redaccion || {}).map(([k, v]) => [k, typeof v === 'string' ? limpio(v) : v])) });
+    const r = await llamar({ prompt: promptDeRecomendacion(tanda.map((x) => limpia(x.p))), nightly: noche, env });
     // con el modelo caído no se le sigue pidiendo esa noche
     if (!r || !r.ok) { fallo((r && r.fallo) || 'red'); entran.slice(i).forEach((x) => sin(x, 'fallo')); break; }
     sumar(r.tokens);
@@ -326,7 +328,9 @@ function leerEspejo(espejo, hoy) {
         try { l = JSON.parse(cruda); } catch (_) { r.ilegibles++; continue; }
         if (!l || typeof l !== 'object') { r.ilegibles++; continue; }
         if (!l.repo || typeof l.repo !== 'string') { r.sin_repo++; continue; }
-        r.lineas.push({ maquina: m, dia, repo: l.repo, tool: String(l.tool || ''), summary: l.summary == null ? '' : String(l.summary), ts: l.ts, status: l.status });
+        // el resumen pasa por el saneado antes de todo: la clave del grupo, el patrón y lo que va al modelo salen de él
+        // cortado y en minúscula, y un día subido antes de un arreglo del saneado puede traer un secreto
+        r.lineas.push({ maquina: m, dia, repo: l.repo, tool: String(l.tool || ''), summary: l.summary == null ? '' : sanitize(String(l.summary), null), ts: l.ts, status: l.status });
       }
     }
   }
@@ -358,7 +362,7 @@ function respuestaVacia(texto) {
 }
 
 /** El candidato en la forma que leen `buildPrompt` y la revisión del observador. */
-// la clave y los resúmenes pasan por el saneado: un día subido antes de un arreglo del saneado puede traer un secreto
+// la clave y los resúmenes vienen de líneas ya saneadas al leerlas; se vuelven a pasar por si alguien llama con otras
 const paraElModelo = (c, limpio) => ({ key: limpio(c.clave), count: c.veces, items: c.items.map((l) => ({ ts: l.ts, status: l.status, summary: limpio(l.summary) })) });
 
 function escribirJson(archivo, datos) {

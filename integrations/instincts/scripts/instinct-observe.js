@@ -31,32 +31,42 @@ const MAX_ERRORS_LOG = 100 * 1024;
 // un token de GitHub, un permiso de Azure DevOps, un JWT, una llave de AWS), la firma de un enlace firmado, las
 // credenciales en una URL (`usuario:clave@` hasta la última `@`, y un permiso largo puesto como usuario), `-u` y `--user`
 // con `usuario:clave` (también con el usuario vacío), la clave en la opción de sqlcmd, bcp, mysql, `docker login` o `az login`,
-// y `Authorization`. Una palabra cuenta también pegada a un escape (`\n`, `\t`) o a un signo codificado (`%20`). Sanear dos
-// veces deja lo mismo: un valor ya tapado no se vuelve a tapar. En las formas que no son de siempre, una variable del
-// shell (`"$PW"`, `$DB_PASSWORD`) o el comienzo de un objeto (`secret:{…}`) no es una clave y queda como está.
+// y `Authorization`. Una palabra cuenta también pegada a un escape (`\n`, `\t`) o a un signo codificado (`%20`), en un nombre
+// en mayúsculas que la lleva pegada (`PGPASSWORD=`, `DB_PASS=`) y en un JSON con las comillas escapadas (`{\"password\":…}`).
+// Un valor ya tapado no se vuelve a tapar, y el corte de 500 no parte una marca: sanear dos veces no destapa nada. En
+// las formas que no son de siempre, una variable del shell (`"$PW"`), una plantilla (`{{ … }}`) o el comienzo de un
+// objeto (`secret:{…}`) no son una clave y quedan como están; tampoco el nombre de una clave buscado o citado
+// (`grep -rn accessToken src`): el nombre pegado a una minúscula se tapa con `=` o `:`, o como opción (`--refreshToken x`).
 const INICIO = '(?:(?<![A-Za-z0-9])|(?<=\\\\[ntr])|(?<=%[0-9A-Fa-f]{2}))';
 const PALABRAS = '(?:api[_-]?key|access[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|key|token|password|passwd|pwd|secret|bearer|pat)';
 const FUERTES = '(?:api[_-]?key|access[_-]?key|account[_-]?key|token|password|passwd|secret)';
 const NOMBRE = (palabras) => `((?:[A-Za-z0-9]+_)*${palabras}(?:_[A-Za-z0-9]+)*)`;
-const NO_TAPADO = '(?!\\[REDACTED)';
-const NO_VARIABLE = '(?!\\$[{(A-Za-z_])';
-const ENTRE_COMILLAS = `(?:"${NO_TAPADO}${NO_VARIABLE}[^"\\n]{4,}"|'${NO_TAPADO}${NO_VARIABLE}[^'\\n]{4,}')`;
-const AUTH_RE = /(authorization)["']?\s*[:=]\s*["']?[^"'\n]+/gi;
-const SIG_RE = /([?&]sig=)[^&"'\s]+/gi;
+const NO_TAPADO = '(?![^\\s"\'&;,]*\\[REDACTED)';
+const NO_VARIABLE = '(?!\\$[{(A-Za-z_]|\\{\\{)';
+const ENTRE_COMILLAS = `(?:"${NO_TAPADO}${NO_VARIABLE}(?!\\s)[^"\\n]{4,}"|'${NO_TAPADO}${NO_VARIABLE}(?!\\s)[^'\\n]{4,}')`;
+const AUTH_RE = /(authorization)(?:\s*[:=]\s*(?!\[REDACTED)[^"'\n;&|\s\\][^"'\n;&|]*|["']?\s*[:=]\s*(["'])(?:basic|bearer|token|digest|negotiate)\s[^"'\n]*\2)/gi;
+const SIG_RE = /([?&]sig=)(?!\[REDACTED)[^&"'\s]+/gi;
 const URL_CRED_RE = /(\b[a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s]*@/gi;
 const URL_USER_RE = /(\b[a-z][a-z0-9+.-]*:\/\/)[A-Za-z0-9_]{20,}@/gi;
-const DASH_U_RE = /((?:\s-u\s*|\s--user[\s=]+)["']?)[^\s:"']*:[^\s"']+/g;
-const VALOR_DE_OPCION = `("${NO_VARIABLE}[^"\\n]*"|'${NO_VARIABLE}[^'\\n]*'|${NO_VARIABLE}[^\\s"']+)`;
+const URL_EMPTY_USER_RE = /(\b[a-z][a-z0-9+.-]*:\/\/):(?!\[REDACTED)[^/\s@]+@/gi;
+const DASH_U_RE = /((?:\s-u(?:\s+|(?=[A-Za-z0-9_.@-]+:))|\s--user[\s=]+)["']?)[A-Za-z0-9_.@-]*:(?!\/\/)(?!\$[{(A-Za-z_])(?!\[REDACTED)[^\s"']+/g;
+const DASH_U_KEY_RE = /((?:\s-u\s+|\s--user[\s=]+)["']?)(?!\[REDACTED)[A-Za-z0-9_.-]{16,}:(?=["'\s]|$)/g;
+const VALOR_DE_OPCION = `("${NO_VARIABLE}[^"\\n]*"|'${NO_VARIABLE}[^'\\n]*'|${NO_VARIABLE}(?!\\[REDACTED)[^\\s"';|&]+)`;
+const COMANDO = '(?:^|[\\s;&|(`])';
+const TRAMO = '(?:[^|;&\\n]|[\\\\`]\\r?\\n)*?';
 const CLAVE_DE_HERRAMIENTA_RES = [
-  new RegExp(`(\\b(?:sqlcmd|bcp|osql)\\b[^|;&\\n]*?\\s-P\\s*)${VALOR_DE_OPCION}`, 'g'),
-  new RegExp(`(\\b(?:mysql|mysqldump|mysqladmin|mariadb)\\b[^|;&\\n]*?\\s-p)${VALOR_DE_OPCION}`, 'g'),
-  new RegExp(`(\\b(?:docker|podman|nerdctl|helm|oras)\\s+(?:registry\\s+)?login\\b[^|;&\\n]*?\\s-p\\s+)${VALOR_DE_OPCION}`, 'g'),
-  new RegExp(`(\\baz\\s+login\\b[^|;&\\n]*?\\s-p\\s+)${VALOR_DE_OPCION}`, 'g'),
+  new RegExp(`(${COMANDO}(?:sqlcmd|bcp|osql)(?=\\s)${TRAMO}\\s-P\\s*)${VALOR_DE_OPCION}`, 'g'),
+  new RegExp(`(${COMANDO}(?:mysql|mysqldump|mysqladmin|mariadb)(?=\\s)${TRAMO}\\s-p)${VALOR_DE_OPCION}`, 'g'),
+  new RegExp(`(${COMANDO}(?:docker|podman|nerdctl|helm|oras)\\s+(?:registry\\s+)?login(?=\\s)${TRAMO}\\s-p\\s+)${VALOR_DE_OPCION}`, 'g'),
+  new RegExp(`(${COMANDO}az\\s+login(?=\\s)${TRAMO}\\s-p\\s+)${VALOR_DE_OPCION}`, 'g'),
 ];
 const QUOTED_SECRET_RE = new RegExp(`${INICIO}${NOMBRE(FUERTES)}["']?\\s*[:=]\\s*${ENTRE_COMILLAS}`, 'gi');
 const SECRET_RE = new RegExp(`${INICIO}${NOMBRE(PALABRAS)}["':\\s=]+["']?${NO_TAPADO}[^\\s"'&;,]{8,}`, 'gi');
+const UPPER_SECRET_RE = new RegExp(`${INICIO}((?:[A-Z0-9]+_)*[A-Z0-9]*(?:PASSWORD|PASSWD|PASS(?![A-Z0-9_])|SECRET|TOKEN|APIKEY)(?:_[A-Z0-9]+)*)\\s*=\\s*["']?${NO_TAPADO}${NO_VARIABLE}[^\\s"'&;,]{4,}`, 'g');
+// un JSON con las comillas escapadas dentro de un texto entre comillas dobles: {\"password\":\"…\"}
+const ESCAPED_JSON_SECRET_RE = new RegExp(`${INICIO}((?:[A-Za-z0-9]+_)*[A-Za-z0-9]*(?:password|passwd|secret|token|api_?key|access_?key))\\\\"\\s*:\\s*\\\\"${NO_TAPADO}[^"\\\\\\n]+\\\\"`, 'gi');
 const SHORT_SECRET_RE = new RegExp(`${INICIO}${NOMBRE('(?:password|passwd|secret)')}\\s*[:=]\\s*${NO_TAPADO}(?![{(\\[<$\\\\])[^\\s"'&;,]{4,7}(?=[\\s"'&;,]|$)`, 'gi');
-const CAMEL_SECRET_RE = new RegExp(`(?<=[a-z])(Token|Secret|Password|Passwd|Pwd|ApiKey|AccessKey|AccountKey|PrivateKey|SecretKey)(?:["']?\\s*[:=]\\s*${ENTRE_COMILLAS}|["':\\s=]+["']?${NO_TAPADO}${NO_VARIABLE}[^\\s"'&;,]{8,})`, 'g');
+const CAMEL_SECRET_RE = new RegExp(`(?<=[a-z])(Token|Secret|Password|Passwd|Pwd|ApiKey|AccessKey|AccountKey|PrivateKey|SecretKey)(?:["']?\\s*[:=]\\s*${ENTRE_COMILLAS}|["']?\\s*[:=]\\s*["']?${NO_TAPADO}${NO_VARIABLE}[^\\s"'&;,]{8,})|(?<=--[a-z][A-Za-z0-9]*)(Token|Secret|Password|Passwd|Pwd|ApiKey|AccessKey|AccountKey|PrivateKey|SecretKey)\\s+${NO_TAPADO}${NO_VARIABLE}(?!-)[^\\s"'&;,]{8,}`, 'g');
 const SK_RE = /\b(sk-[A-Za-z0-9_-]{16,})/g;
 const GHP_RE = new RegExp(`${INICIO}((?:gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,})`, 'g');
 // los permisos de Azure DevOps: los de 52 letras de base32 y los de 84 con la marca AZDO
@@ -72,18 +82,28 @@ function sanitize(s, home) {
   out = out.replace(SIG_RE, '$1[REDACTED]');
   out = out.replace(URL_CRED_RE, '$1[REDACTED]@');
   out = out.replace(URL_USER_RE, '$1[REDACTED]@');
+  out = out.replace(URL_EMPTY_USER_RE, '$1:[REDACTED]@');
   out = out.replace(DASH_U_RE, '$1[REDACTED]');
+  out = out.replace(DASH_U_KEY_RE, '$1[REDACTED]:');
   for (const re of CLAVE_DE_HERRAMIENTA_RES) out = out.replace(re, '$1[REDACTED]');
+  out = out.replace(ESCAPED_JSON_SECRET_RE, '$1\\":\\"[REDACTED]\\"');
   out = out.replace(QUOTED_SECRET_RE, '$1=[REDACTED]');
   out = out.replace(SECRET_RE, '$1=[REDACTED]');
   out = out.replace(SHORT_SECRET_RE, '$1=[REDACTED]');
-  out = out.replace(CAMEL_SECRET_RE, '$1=[REDACTED]');
+  out = out.replace(UPPER_SECRET_RE, '$1=[REDACTED]');
+  out = out.replace(CAMEL_SECRET_RE, (m, a, b) => `${a || b}=[REDACTED]`);
   out = out.replace(SK_RE, '[REDACTED-SK]');
   out = out.replace(GHP_RE, '[REDACTED-GHP]');
   out = out.replace(ADO_RE, '[REDACTED-ADO]');
   out = out.replace(JWT_RE, '[REDACTED-JWT]');
   out = out.replace(AKIA_RE, '[REDACTED-AKIA]');
-  if (out.length > MAX_SUMMARY) out = `${out.slice(0, MAX_SUMMARY - 3)}...`;
+  if (out.length > MAX_SUMMARY) {
+    // el corte no parte una marca: una a medias («[REDACTE») se lee como un valor y se volvería a tapar
+    let corte = out.slice(0, MAX_SUMMARY - 3);
+    const marca = /\[[A-Z-]*$/.exec(corte);
+    if (marca && ('[REDACTED'.startsWith(marca[0]) || marca[0].startsWith('[REDACTED'))) corte = corte.slice(0, marca.index);
+    out = `${corte}...`;
+  }
   return out;
 }
 
