@@ -917,7 +917,7 @@ function revisionEnContra({ estado, destino, marker }) {
   let storyTexto = null;
   try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
   // sin poder saber si es delicada, cuenta como delicada
-  let delicada = true;
+  let delicada;
   try {
     delicada = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parteDe(marker, storyTexto)) }).value !== false;
   } catch (_) { delicada = true; }
