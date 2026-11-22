@@ -122,7 +122,9 @@ test('T19 Lentas_MismosCasos — cada suite bajada tiene los mismos casos que en
     assert.ok(antes !== null, `${b.archivo} no existía en el commit de antes`);
     const ahora = fs.readFileSync(path.join(ROOT, b.archivo), 'utf8');
     assert.ok(casos(b.archivo, antes).length > 0, `${b.archivo}: no encontré sus casos`);
-    assert.deepEqual(casos(b.archivo, ahora), casos(b.archivo, antes), `${b.archivo}: los casos cambiaron`);
+    // lo que se mira es que bajar el tiempo no sacó ni renombró un caso; una prueba nueva de otra historia puede sumarse
+    const hoy = new Set(casos(b.archivo, ahora));
+    assert.deepEqual(casos(b.archivo, antes).filter((c) => !hoy.has(c)), [], `${b.archivo}: faltan casos del commit de antes`);
   }
 });
 
