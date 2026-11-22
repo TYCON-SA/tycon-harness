@@ -935,10 +935,16 @@ if command -v script > /dev/null 2>&1 && [ "$(uname -s | cut -c1-5)" != MINGW ] 
   is "T22 approve a la carpeta firma (exit 0)" "0" "${RC}"
   if [ -f "${R}/${CARPETA}${H}.json" ] && [ "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).hash)' "${R}/${CARPETA}${H}.json")" = "${H}" ]; then ok "T22 …en <hash>.json, con ese hash"; else no "T22 no escribió ${CARPETA}${H}.json: ${OUT}"; fi
   cp "${R}/${CARPETA}${H}.json" "${T}/t22-antes.json"
+  # la huella de lo que escribió queda en el registro de la máquina (fila 64): el freno de la consola la pide al commitear
+  SD="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir(process.argv[2]))' "${ROOT}/scripts/setup/harness/tycon-home.js" "${HOME}")"
+  grep -q "\"name\":\"control-change-written\".*\"file\":\"${CARPETA}${H}.json\"" "${SD}/gates.log" 2>/dev/null && ok "T22 …y anota su huella en esta máquina" || no "T22 approve no anotó la huella de ${CARPETA}${H}.json"
+  # firmada en otra máquina (sin su huella acá): la misma firma de nuevo anota la huella sin tocar el archivo
+  grep -v '"name":"control-change-written"' "${SD}/gates.log" > "${T}/t22-gates" 2>/dev/null; cp "${T}/t22-gates" "${SD}/gates.log"
   aprobar "${CARPETA}"
   is "T22 la misma firma otra vez: exit 0" "0" "${RC}"
   case "${OUT}" in *"ya estaba firmado"*) ok "T22 …dice que ya estaba firmado";; *) no "T22 la segunda firma no dijo «ya estaba firmado»: ${OUT}";; esac
   cmp -s "${T}/t22-antes.json" "${R}/${CARPETA}${H}.json" && ok "T22 …y no tocó el archivo" || no "T22 la segunda firma reescribió el archivo"
+  grep -q "\"name\":\"control-change-written\".*\"file\":\"${CARPETA}${H}.json\"" "${SD}/gates.log" 2>/dev/null && ok "T22 …y anotó la huella que faltaba" || no "T22 la segunda firma no anotó la huella"
   printf '{"otra":"cosa"}\n' > "${R}/${CARPETA}${H}.json"; cp "${R}/${CARPETA}${H}.json" "${T}/t22-otro.json"
   aprobar "${CARPETA}"
   is "T22 el archivo ya está con otra cosa: exit 1" "1" "${RC}"
@@ -1389,6 +1395,13 @@ bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/ya-
 is "CatchingUpMainWithoutSignedChange: la revisión da verde" "0" "${RC}"
 
 # BaseControls_ApproveStillSkipsWindowForSigned @story-8.226 @ac-14: el chequeo antes de la ventana se niega
+# sin la huella de esta máquina (firmada en otra, fila 64) el chequeo deja firmar de nuevo, para anotarla
+( cd "${R}" && TYCON_SIGN_PRECHECK=1 bash "${SCRIPT}" approve --root "${R}" --base main --out "${CARPETA}" --entries "${E1}" < /dev/null ) > "${T}/ya-approve-sin-huella.out" 2>&1; RC=$?
+is "ApproveStillSkipsWindowForSigned: sin la huella de esta máquina, el chequeo previo deja firmar" "0" "${RC}"
+# con la huella anotada, como siempre
+SD="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir(process.argv[2]))' "${ROOT}/scripts/setup/harness/tycon-home.js" "${HOME}")"
+node -e 'const [lib, sd, repo, rel, f] = process.argv.slice(1); require(lib).anotar({ stateDir: sd, repo, archivo: rel, texto: require("fs").readFileSync(f, "utf8") })' \
+  "${ROOT}/skills/tycon-pipeline/scripts/lib/control-change-prints.js" "${SD}" "${R}" "${CARPETA}${H1}.json" "${R}/${CARPETA}${H1}.json"
 ( cd "${R}" && TYCON_SIGN_PRECHECK=1 bash "${SCRIPT}" approve --root "${R}" --base main --out "${CARPETA}" --entries "${E1}" < /dev/null ) > "${T}/ya-approve.out" 2>&1; RC=$?
 is "ApproveStillSkipsWindowForSigned: el chequeo previo se niega" "1" "${RC}"
 has "ApproveStillSkipsWindowForSigned: …porque ya trae esta firma" "${T}/ya-approve.out" "ya trae esta misma firma: no hace falta firmar de nuevo"
