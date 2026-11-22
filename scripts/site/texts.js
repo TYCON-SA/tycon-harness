@@ -746,6 +746,8 @@ const TEXTOS = {
   'ficha.rework.paraQue': { es: 'Qué parte de lo entregado hubo que volver a tocar.', en: 'How much of what was delivered had to be touched again.' },
   'ficha.rework_por_causa.titulo': { es: 'Por qué volvió: defecto nuestro contra cambio de requisito', en: 'Why it came back: our defect vs. a requirement change' },
   'ficha.rework_por_causa.paraQue': { es: 'Separa lo que volvió por un error nuestro de lo que volvió porque cambió lo que se pedía.', en: 'Separates what came back because of our mistake from what came back because what was asked changed.' },
+  'ficha.rework_por_mes.titulo': { es: 'Lo rehecho al lado de lo entregado, mes por mes', en: 'Reworked next to delivered, month by month' },
+  'ficha.rework_por_mes.paraQue': { es: 'Muestra, para cada uno de los últimos meses, cuántas historias se entregaron y cuántas se rehicieron por cada causa, para ver si lo rehecho crece o baja.', en: 'Shows, for each of the last months, how many stories were delivered and how many were reworked for each cause, to see whether rework grows or shrinks.' },
   'ficha.rework_por_carril.titulo': { es: '¿Vuelve menos lo que pasó por el pipeline?', en: 'Does what went through the pipeline come back less?' },
   'ficha.rework_por_carril.paraQue': { es: 'Compara, por repo, lo que volvió con constancia del pipeline contra lo que no la tiene.', en: 'Compares, per repo, rework with a pipeline record against rework without one.' },
   'ficha.mutacion.titulo': { es: 'Puntaje de mutación: proporción de mutantes que las pruebas matan', en: 'Mutation score: share of mutants the tests kill' },
@@ -818,6 +820,9 @@ const TEXTOS = {
   'fichas.causa.descubrimiento': { es: 'descubrimiento', en: 'discovery' },
   'fichas.causa.sin-declarar': { es: 'sin declarar', en: 'not declared' },
   'fichas.causa.otra': { es: 'fuera del vocabulario', en: 'outside the vocabulary' },
+  // una fila de «lo rehecho al lado de lo entregado»: dos conteos del mismo mes, no un porcentaje
+  'fichas.mes.fila': { es: '{mes}: {entregadas} entregadas · rehechas: {rehechas}', en: '{mes}: {entregadas} delivered · reworked: {rehechas}' },
+  'fichas.mes.filaEnCurso': { es: '{mes} (en curso): {entregadas} entregadas · rehechas: {rehechas}', en: '{mes} (in progress): {entregadas} delivered · reworked: {rehechas}' },
   'fichas.fuenteDelParen': { es: '(fuente del {fecha})', en: '(source from {fecha})' },
   'fichas.de': { es: '{medidos} de {total}', en: '{medidos} of {total}' },
   // los denominadores del tablero, por su código (scripts/nightly/dashboard/common.js, DENOMINADORES)
@@ -1492,6 +1497,7 @@ const TEXTOS = {
   'pantalla.fichaLlana.dod': { es: "Historias cerradas que se probaron funcionando de verdad", en: "Closed stories that were tested actually working" },
   'pantalla.fichaLlana.rework': { es: "Trabajo entregado que hubo que volver a tocar", en: "Delivered work that had to be touched again" },
   'pantalla.fichaLlana.rework_por_causa': { es: "Por qué volvió: un error nuestro o un requisito que cambió", en: "Why it came back: our mistake or a changed requirement" },
+  'pantalla.fichaLlana.rework_por_mes': { es: "Cuánto se rehízo cada mes, por causa, al lado de lo que se entregó", en: "How much was reworked each month, by cause, next to what was delivered" },
   'pantalla.fichaLlana.rework_por_carril': { es: "¿Vuelve menos lo que pasó por todos los controles?", en: "Does what went through every control come back less?" },
   'pantalla.fichaLlana.mutacion': { es: "Qué tan bien detectan las pruebas un error puesto a propósito", en: "How well the tests catch a mistake planted on purpose" },
   'pantalla.fichaLlana.cobertura_tocada_evaluo': { es: "Veces que se midió cuánto del código cambiado tiene pruebas", en: "Times it was measured how much of the changed code has tests" },

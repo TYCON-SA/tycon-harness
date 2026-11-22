@@ -1967,9 +1967,15 @@ function cmdCompleteStep(nRaw, flags) {
       }
       const v = mk.validateMockupHtml(html);
       if (!v.ok) bloquear3(`la maqueta no pasa mockup.js check (${p.mockup}):`, v.findings.map((x) => `- ${x.line ? `línea ${x.line}: ` : ''}${x.what}`));
+      // la maqueta se mira con un navegador antes de pedir su aprobación: lo que se pisa, desborda o parte una palabra frena
+      const shots = require('./lib/mockup-shots.js');
+      const mirada = shots.problemaDeLaRevision({ mockupPath: p.mockup, html, mockupJs: path.join(__dirname, 'mockup.js') });
+      if (mirada) bloquear3(mirada.motivo, mirada.extra);
       if (!mockupCita) {
+        const capturas = Object.values(shots.shotsPaths(p.mockup).shots);
         bloquear3(`story con pantalla: mostrale la maqueta (${p.mockup}) y pasá su aprobación con --mockup-approved`, [
-          `Mostrale la maqueta (${p.mockup}) a la persona que aprueba —o a quien tenga su delegación— y cerrá con --mockup-approved "<cita: quién aprobó y por qué vía>".`,
+          `Mandale a la persona que aprueba —o a quien tenga su delegación— las dos capturas a la conversación, no sólo la ruta: ${capturas.join(' · ')}`,
+          `La maqueta entera: ${p.mockup}. Cerrá con --mockup-approved "<cita: quién aprobó y por qué vía>".`,
         ]);
       }
       mockupPlan = { p, sha: mk.mockupHash(html) };
@@ -3245,6 +3251,8 @@ function cmdApproveMockup(flags) {
   }
   const v = mk.validateMockupHtml(html);
   if (!v.ok) no(`la maqueta no pasa mockup.js check (${p.mockup}):`, v.findings.map((x) => `- ${x.line ? `línea ${x.line}: ` : ''}${x.what}`));
+  const mirada = require('./lib/mockup-shots.js').problemaDeLaRevision({ mockupPath: p.mockup, html, mockupJs: path.join(__dirname, 'mockup.js') });
+  if (mirada) no(mirada.motivo, mirada.extra);
   const sha = mk.mockupHash(html);
   const prev = marker.mockupApproval && marker.mockupApproval.sha256;
   // sin persona, la maqueta la reaprueba sólo la coordinadora con la revisión que ella lanzó; la de la propia sesión no

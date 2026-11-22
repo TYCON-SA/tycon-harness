@@ -1937,6 +1937,12 @@
       "requiere": []
     },
     {
+      "__nota": "2026-11-22, filas 79 y 80: qué cambió adentro de un archivo de código (espacios, comentarios, textos o código) en .js, .ts, .tsx y .cs; ante la duda, código. Textos de juguete y los .js de lib/ leídos, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/change-kind.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.272 (T1-T4): el revisor de un crítico arreglado vuelve a la vuelta siguiente aunque el descuento mecánico o el cálculo por diferencias lo saquen. HOME y repo de juguete, el registro de críticos y findings.json escritos como los deja el arnés, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/criticals-to-confirm.test.js",
@@ -3378,6 +3384,12 @@
       "requiere": []
     },
     {
+      "__nota": "la copia propia del pre-commit del privado le pide al gancho público los controles que no nombra: el gancho corre sólo esos (y como gancho propio no filtra), `unnamed` los lista y frena si falta uno, y el control de la base acepta la delegación sólo de la copia declarada.",
+      "raiz": "arnes",
+      "ruta": "tests/hook-delegation.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
@@ -3988,6 +4000,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 87: una prueba que arma un repo pelado de juguete no deja pelado al repo de verdad aunque corra dentro de un gancho de una copia enlazada (con su GIT_DIR) — team-config y third-party-origin dejan el repo de juguete con su árbol, y toda prueba con un init --bare sin carpeta saca GIT_DIR antes",
+      "raiz": "arnes",
+      "ruta": "tests/hook-env-bare-init.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.29: la pestaña Configuración del sitio de la organización, sólo para los que mantienen — un dev recibe 403 en cada ruta y sin sesión contesta como la 2.23; cada escritura exige el Origin del sitio (o Sec-Fetch-Site), el X-Site-Token de la sesión, JSON y un cuerpo de hasta 256 KB, y ninguna falta crea nada; las ocho secciones editables más Productos y Versiones de sólo lectura; «Revisar» valida con el parse del mismo lector del arnés y conserva byte por byte lo que no se editó; la propuesta de stages sólo lee; Personas guarda la huella del correo, nunca el correo; Umbrales edita sólo claves conocidas y queda en sólo lectura sin la marca del nocturno; la paridad por producto con renovar y cerrar; sin identidad de escritura, sólo lectura y descarga; el código no nombra la configuración de ninguna máquina ni un valor de una organización. Levanta el servidor del sitio con una sesión inyectada, repos git locales por HTTP y una API falsa de Azure DevOps y de GitHub en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-config.test.js",
@@ -4066,7 +4084,7 @@
       "requiere": []
     },
     {
-      "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
+      "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 28 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",
       "requiere": []
@@ -4969,6 +4987,12 @@
     {
       "raiz": "arnes",
       "ruta": "tests/hostile-command-text.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 74 (22/11): las expresiones del freno de producción que crecían con el cuadrado del largo dicen lo mismo que antes y no se cuelgan.",
+      "raiz": "arnes",
+      "ruta": "tests/guard-regex-speed.test.js",
       "requiere": []
     },
     {
