@@ -461,12 +461,18 @@ correr_partes() {
     let fin = Number(final);
     const corridas = suma("total") - suma("skipped");
     if (fin === 0 && !(corridas > 0)) fin = 6;
+    // una parte que dejó pruebas sin correr (salteadas sin motivo o que no se pudieron medir) sale 6 con pruebas
+    // corridas: el total dice cuántas y en qué parte, no «ninguna corrió»
+    const sinCorrer = suma("not_run");
+    const conSinCorrer = parts.filter((x) => Number.isFinite(x.totals && x.totals.not_run) && x.totals.not_run > 0).map((x) => x.scope);
     const art = { ts, story_id: storyId, runner: parts.map((x) => x.runner || "?").join("+"), repo: null,
       suite_exit: fin, suite_green: fin === 0 && parts.length > 0,
-      ...(fin === 6 ? { no_tests_run: "ninguna de las partes corrió pruebas: eso no es verde" } : {}),
+      ...(fin === 6 && sinCorrer > 0 ? { not_run: `${sinCorrer} prueba(s) sin correr en ${conSinCorrer.join(", ")}: salteadas sin motivo o que no se pudieron medir. Eso no es verde` }
+        : fin === 6 ? { no_tests_run: "ninguna de las partes corrió pruebas: eso no es verde" } : {}),
       ...(fin === 7 ? { unscoped: true, merge_requires_ci: true,
         unscoped_reason: `parte(s) sin acotar: ${parts.filter((x) => x.exit === 7).map((x) => x.scope).join(", ")} — la cubre la CI del pedido` } : {}),
-      totals: { total: suma("total"), passed: suma("passed"), failed: suma("failed"), skipped: suma("skipped") },
+      totals: { total: suma("total"), passed: suma("passed"), failed: suma("failed"), skipped: suma("skipped"),
+        ...(sinCorrer > 0 ? { not_run: sinCorrer } : {}) },
       parts,
       coverage: { per_new_file: {}, new_files_pct: null, threshold: null, meets_threshold: null,
         no_cross_check: "la cobertura está en el artefacto de cada parte (parts[].artifact)" },
@@ -1642,12 +1648,17 @@ if [[ "$SUITE_EXIT" == "7" ]]; then
   echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — no se corrió ninguna suite (el motivo está en $OUT_FILE). No es verde: antes del merge, mirá que la CI del pedido salga verde (esta máquina no lo comprueba)." >&2
 fi
 if [[ "$SUITE_EXIT" == "0" ]]; then
-  _VERDE="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(j.suite_green===true?"si":(j.totals&&j.totals.failed>0)?"falla":"no")}catch(e){process.stdout.write("no")}' "$OUT_FILE")"
+  _VERDE="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(j.suite_green===true?"si":(j.totals&&j.totals.failed>0)?"falla":j.not_run?"sin-correr":"no")}catch(e){process.stdout.write("no")}' "$OUT_FILE")"
   if [[ "$_VERDE" == "falla" ]]; then
     # la herramienta salió 0 pero el reporte trae fallas (Maven con testFailureIgnore, por ejemplo): es un rojo
     echo "🔴 [test-gate] la herramienta salió 0 pero el reporte trae pruebas fallidas: NO es verde." >&2
     ( cd "$REPO_RUN" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la herramienta salió 0 con pruebas fallidas en el reporte: no es verde"); process.exit(1)' ) || true
     SUITE_EXIT=1
+  elif [[ "$_VERDE" == "sin-correr" ]]; then
+    # salteadas sin motivo o que no se pudieron medir (arriba, cuáles): ni verde ni un rojo de pruebas
+    echo "🔴 [test-gate] la suite salió 0 pero dejó pruebas sin correr (salteadas sin motivo, o que no se pudieron medir; arriba, cuáles): NO es verde." >&2
+    ( cd "$REPO_RUN" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la suite dejó pruebas sin correr (salteadas sin motivo o que no se pudieron medir): no es verde"); process.exit(6)' ) || true
+    SUITE_EXIT=6
   elif [[ "$_VERDE" != "si" ]]; then
     echo "🔴 [test-gate] la suite salió 0 pero no corrió ninguna prueba, o no se pudo contar: NO es verde." >&2
     ( cd "$REPO_RUN" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la suite salió 0 sin ninguna prueba corrida (o sin informe que lo cuente): no es verde"); process.exit(6)' ) || true

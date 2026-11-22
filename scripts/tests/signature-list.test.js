@@ -255,18 +255,19 @@ test('OwnerNext_SinDistincion_YTerminal (T12) — @story-8.153 @ac-12', (t) => {
   designar(toy.casa);
   sesion(toy.casa, 'ses-coord');
   sesion(toy.casa, 'ses-a');
-  // `adversarial-skip` no se corre desde otra pestaña: se da igual, y lo repite su sesión
+  // `adversarial-skip` no se corre desde otra pestaña y no se delega: a la coordinadora no le da cuadro, le da la pestaña
+  // de su sesión y la terminal (@story-8.319 AC 4)
   const cmd = `node ${MARKER} sign-adversarial-skip --story s --reason porque`;
   firma(toy, { firmaId: 'adversarial-skip', comando: cmd, titulo: 'saltear el pase adversarial con constancia' });
   const r = sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }) }));
-  assert.strictEqual(r.tipo, 'firma', JSON.stringify(r));
+  assert.strictEqual(r.tipo, 'via', JSON.stringify(r));
   assert.strictEqual(r.destino, 'ses-a');
-  assert.match(r.aviso, /sign-adversarial-skip/);
-  assert.doesNotMatch(r.aviso, /--for-session/);
+  assert.strictEqual(r.pregunta, undefined);
+  assert.match(r.texto, /sign-adversarial-skip/);
   // un renglón de la terminal sale al final, sin cuadro
   const crudo = crudas(toy);
   fs.writeFileSync(sl.archivo(toy.casa), JSON.stringify([{ id: 't1', key: 'k', file: '/f/t1.command', kind: 'x', title: 'por la terminal', at: antes(100) }, ...crudo]));
-  assert.strictEqual(sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }) })).tipo, 'firma', 'va después de la firma, aunque es más vieja');
+  assert.strictEqual(sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }) })).tipo, 'via', 'va después de la firma, aunque es más vieja');
   const t2 = sl.siguiente(opts(toy, { sesion: 'ses-coord', after: r.id, validar: () => ({ ok: false }) }));
   assert.strictEqual(t2.tipo, 'terminal');
   assert.strictEqual(t2.archivo, '/f/t1.command');
