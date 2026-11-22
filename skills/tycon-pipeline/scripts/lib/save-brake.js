@@ -1207,6 +1207,16 @@ function decidir({ command, cwd, sid, home }) {
     if (!repos) return true;
     try { const r = SO().raizDe(c.dir); return !!r && repos.includes(r); } catch (_) { return true; }
   };
+  // una corrida estacionada (su marca en parked/ o `paused_until:` en la historia) no ata a la sesión: un pedido de un
+  // repo que no es de la corrida no se juzga contra ella. Una marca ilegible no afloja nada
+  let estacionada;
+  const esEstacionada = () => {
+    if (estacionada === undefined) {
+      const k = require('./open-runs.js').marcaDeEstacionada(sid, m, { home });
+      estacionada = !!k && k.kind !== 'ilegible';
+    }
+    return estacionada;
+  };
   let haciaElEquipo = null;
   let pista = false;
   let commits = 0;
@@ -1220,8 +1230,9 @@ function decidir({ command, cwd, sid, home }) {
     }
   }
   for (const c of cs) {
-    // un pedido se juzga contra toda la corrida
-    if (c.tipo === 'pr') { haciaElEquipo = haciaElEquipo || c; continue; }
+    // un pedido se juzga contra toda la corrida; con la corrida estacionada, sólo el de uno de sus repos (o el de un repo
+    // que no se puede ubicar)
+    if (c.tipo === 'pr') { if (deLaCorrida(c) || !esEstacionada()) haciaElEquipo = haciaElEquipo || c; continue; }
     if (!deLaCorrida(c)) continue;
     if (c.tipo === 'commit') { commits += 1; continue; }
     if (c.tipo !== 'push') continue;
