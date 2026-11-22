@@ -16,7 +16,8 @@
  * propio y lineal, con las reglas de lectura de lib/comment-only.js, que ante la duda dice `codigo`: algo sin cerrar, una
  * `/` o un `<` que no sabe leer, una etiqueta de JSX que cierra con otro nombre. Lo de dentro de `${…}`, de las llaves de
  * JSX y de los huecos de una cadena interpolada de C# es código; un carácter de C# (`','`) también, y una línea `#` de
- * C#, `#region` incluida. Un comentario que puede ser una directiva (`eslint-disable`, `@ts-ignore`, `ReSharper`) y
+ * C#, `#region` incluida. Un comentario que puede ser una directiva (`eslint-disable`, `@ts-ignore`, `ReSharper`,
+ * `snyk:ignore`, el código de una regla, cualquier «ignore», «skip» o «suppress») y
  * cambió, apareció, se fue, se movió o cambió los saltos a su alrededor es código. El texto de JSX se compara como lo
  * muestra React: los espacios con un fin de línea al principio y al final de cada renglón no cuentan. Nunca lanza por
  * el contenido.
@@ -32,9 +33,13 @@ const IDIOMAS = Object.freeze({
 });
 const EXTENSIONES = Object.freeze(Object.keys(IDIOMAS));
 const TIPOS = Object.freeze(['igual', 'comentarios', 'textos', 'codigo']);
-// Lo que un comentario de C# nombra para ser una directiva de alguna herramienta, además de las de lib/comment-only.js
-const DIRECTIVAS_CS = [/resharper/i, /auto-?generated/i, /stylecop/i, /csharpier/i, /dotnet_diagnostic/i];
-const esDirectiva = (t) => puedeSerDirectiva(t) || DIRECTIVAS_CS.some((re) => re.test(t));
+// Lo que un comentario nombra para ser una directiva de alguna herramienta, además de las de lib/comment-only.js: los
+// analizadores de C#, los escáneres de seguridad y cualquier palabra de silenciar o el código de una regla (CA2100,
+// JS-0060). Ante la duda, directiva: lo peor es una vuelta de más
+const DIRECTIVAS_MAS = [/resharper/i, /auto-?generated/i, /stylecop/i, /csharpier/i, /dotnet_diagnostic/i, /snyk/i, /checkov/i,
+  /skipcq/i, /devskim/i, /semgrep/i, /bandit/i, /trivy/i, /\b(?:ignore|skip|suppress|disable|nolint|noinspection)/i,
+  /\b[A-Z]{1,4}-?\d{3,}\b/];
+const esDirectiva = (t) => puedeSerDirectiva(t) || DIRECTIVAS_MAS.some((re) => re.test(t));
 
 const FIN_DE_LINEA = /[\n\r\u2028\u2029]/;
 const SALTOS = /\r\n|[\n\r\u2028\u2029]/g;

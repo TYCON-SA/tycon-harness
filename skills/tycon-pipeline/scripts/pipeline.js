@@ -2441,11 +2441,21 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   };
   // Lo que cambió adentro de cada archivo desde la última vuelta cerrada, contra su sello (lib/change-kind.js): sólo
   // comentarios no pide vuelta, y sólo textos pide la vuelta chica (lib/review-change-policy.js). Lo que no se pudo
-  // mirar cuenta como código.
+  // mirar cuenta como código. Comparar contra el sello vale sólo si cada revisor de la vuelta leyó ese sello: consta el
+  // lanzamiento de cada uno y todos se lanzaron después de sellarla (pedir el set otra vez a mitad de la vuelta la vuelve
+  // a sellar con un arreglo que los primeros no vieron). Si no, todo archivo de código cuenta como código, como antes.
   const politica = require('./lib/review-change-policy.js');
+  let selloMs = NaN;
+  try {
+    const sellada = require('./lib/frozen-tree.js').vueltaCerradaDeLosRevisores(marker, STEPS_TABLE.reviewersClose(marker));
+    if (sellada) selloMs = Date.parse(sellada.ts);
+  } catch { /* sin sello: como antes */ }
+  const deLaVuelta = vista.medible ? [...vista.esperados].filter((a) => require('./lib/late-snapshot.js').esRevisor(a)) : [];
+  const todosLeyeronElSello = Number.isFinite(selloMs) && deLaVuelta.length > 0
+    && deLaVuelta.every((a) => { const t = vista.lanzamientos.get(a); return Number.isFinite(t) && t >= selloMs; });
   let tipos = new Map();
   const porRuta = delta.filter(pideVuelta);
-  if (porRuta.length) {
+  if (porRuta.length && todosLeyeronElSello) {
     try {
       tipos = require('./lib/frozen-tree.js').tiposDesdeLaVuelta({ marker, cierre: STEPS_TABLE.reviewersClose(marker), archivos: porRuta.map((f) => path.resolve(f)) });
     } catch { /* sin mirar: todo cuenta como código */ }
@@ -6574,13 +6584,6 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     if (paraOtra) return `🛑 La vuelta extra ${iter} ya está autorizada. ${laPideLaCorrida}, sin otra firma.\n`;
     return args.extraRound ? `🛑 La vuelta extra ${iter} ya está autorizada: pedí el set sin --extra-round, sin otra firma.\n` : null;
   }
-  // sólo textos desde la última vuelta: la vuelta chica pasa el tope sin firma (lib/review-change-policy.js)
-  if (vueltaChica && !paraOtra) {
-    if (args.extraRound) return `🛑 La vuelta ${iter} es una vuelta chica (sólo cambiaron textos): pasa el tope sin la vuelta extra ni la firma. Pedí el set sin --extra-round.\n`;
-    anotar({ name: 'small-round', status: 'ok', tope: tope.value });
-    process.stderr.write(`ℹ️  La vuelta ${iter} pasa el tope de ${tope.value} como vuelta chica: desde la última vuelta sólo cambiaron textos, y la revisan ${require('./lib/review-change-policy.js').REVISORES_DE_LA_VUELTA_CHICA.join(', ')}, sin firma.\n`);
-    return null;
-  }
   const h = rr.hallazgosDe(runDir);
   const pre = rr.prefijos();
   const ab = rr.abiertos(h.lista, { prefijos: pre });
@@ -6589,6 +6592,14 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   const de = { maquina: 'de esta máquina', repo: 'del repo', organizacion: 'de la organización', fabrica: 'de fábrica' }[tope.source] || '';
   // «no pude mirar» no es «no quedó nada abierto»
   const noMirado = h.error || (!runDir ? 'no encontré la carpeta de la corrida' : null);
+  // sólo textos desde la última vuelta: la vuelta chica pasa el tope sin firma (lib/review-change-policy.js). No con un
+  // crítico de seguridad o de datos abierto, ni sin poder mirar lo abierto: eso lo sigue decidiendo una persona
+  if (vueltaChica && !paraOtra && !noMirado && !bloquean.length) {
+    if (args.extraRound) return `🛑 La vuelta ${iter} es una vuelta chica (sólo cambiaron textos): pasa el tope sin la vuelta extra ni la firma. Pedí el set sin --extra-round.\n`;
+    anotar({ name: 'small-round', status: 'ok', tope: tope.value });
+    process.stderr.write(`ℹ️  La vuelta ${iter} pasa el tope de ${tope.value} como vuelta chica: desde la última vuelta sólo cambiaron textos, y la revisan ${require('./lib/review-change-policy.js').REVISORES_DE_LA_VUELTA_CHICA.join(', ')}, sin firma.\n`);
+    return null;
+  }
   const avisos = [...tope.problems, ...pre.problems].map((p) => `   ⚠️  ${p}`);
   const tramite = vueltaExtraDeTramite();
   if (args.extraRound && args.delegated) {

@@ -1064,6 +1064,26 @@ test('T80c ReviewersRound_SoloTextos_VueltaChica: un texto cambiado pide la vuel
   assert.strictEqual(r2.chica, undefined, JSON.stringify(r2));
 });
 
+test('T80j ReviewersRound_ArchivoGrande_CuentaComoCodigo: un archivo de más de 256 KiB no se lee en el gancho y cuenta como código', () => {
+  const grande = `${B_TEXTO}${'const x = 1;\n'.repeat(22000)}`;
+  const C = corridaRevisada('s-ft-80j', { extra: { 'src/g.js': grande } });
+  C.editar('src/g.js', grande.replace('sin permiso', 'no autorizado'));
+  const r = C.ronda();
+  assert.deepStrictEqual(r && r.archivos, ['src/g.js']);
+  assert.strictEqual(r.chica, undefined, JSON.stringify(r));
+  // la comparación del sello tampoco lo lee: un comentario cambiado en un archivo grande cuenta como cambio
+  const sello = require(path.join(SCRIPTS, 'lib', 'frozen-tree.js'));
+  const g = (...a) => spawnSync('git', ['-C', C.codigo.repo, ...a], { encoding: 'utf8' }).stdout.trim();
+  const blob = (txt) => { fs.writeFileSync(path.join(C.codigo.repo, 'src', 'g.js'), txt); g('add', 'src/g.js'); return g('write-tree'); };
+  const antes = blob(grande);
+  const despues = blob(grande.replace("'use strict';\n", "'use strict';\n// nota\n"));
+  const c = sello.changed(C.codigo.repo, antes, despues, { comentarios: true });
+  assert.ok(c.files.includes('src/g.js'), JSON.stringify(c));
+  const chico = blob(B_TEXTO);
+  const chicoConNota = blob(B_TEXTO.replace("'use strict';\n", "'use strict';\n// nota\n"));
+  assert.deepStrictEqual(sello.changed(C.codigo.repo, chico, chicoConNota, { comentarios: true }).comentarios, ['src/g.js'], 'uno chico sí se lee');
+});
+
 test('T80d ReviewersRound_PedidaComoCodigo_NoSeAchica: lo ya pedido como código no se vuelve chico con un texto después', () => {
   const C = corridaRevisada('s-ft-80d', { extra: { 'src/m.js': B_TEXTO } });
   C.escribir(() => ({ otraVuelta: { round: 2, archivos: ['src/b.js'], desde: new Date(C.cierre + 500).toISOString() } }));
@@ -1073,10 +1093,24 @@ test('T80d ReviewersRound_PedidaComoCodigo_NoSeAchica: lo ya pedido como código
   assert.strictEqual(r.chica, undefined, JSON.stringify(r));
 });
 
-/** La foto de la vuelta 1, de antes del cierre, como la deja el arnés al lanzar el último revisor. */
-function conFotoDeLaVuelta(C, rels) {
+/**
+ * Los lanzamientos de los revisores de la vuelta `iter`, como los anota el gancho de cada lanzamiento: después del sello
+ * de la vuelta, o antes con `antes` (un set pedido otra vez a mitad de la vuelta la vuelve a sellar).
+ */
+function lanzarRevisores(C, iter, { antes = false } = {}) {
+  const reg = path.join(C.estado(), 'advisor-runs', `${C.sid}.jsonl`);
+  const inicio = fs.readFileSync(reg, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((l) => l.event === 'step5-start' && Number(l.iter) === 1).pop();
+  const ts = new Date(antes ? Date.parse(inicio.ts) - 60000 : C.cierre - 200).toISOString();
+  const nuevas = iter === 1 ? [] : [{ ts: new Date(C.cierre - 400).toISOString(), event: 'step5-start', iter, expected: inicio.expected }];
+  for (const a of inicio.expected) nuevas.push({ ts, advisor: a });
+  fs.appendFileSync(reg, `${nuevas.map((l) => JSON.stringify(l)).join('\n')}\n`);
+}
+
+/** La foto de la vuelta 1, de antes del cierre, como la deja el arnés al lanzar el último revisor, y sus lanzamientos. */
+function conFotoDeLaVuelta(C, rels, { antes = false } = {}) {
   const abs = rels.map((r) => path.join(C.codigo.repo, r));
   C.escribir(() => ({ iterations: { 1: { ts: new Date(C.cierre - 500).toISOString(), filesSnapshot: abs } }, filesTouched: abs }));
+  lanzarRevisores(C, 1, { antes });
 }
 
 test('T80f SmartReloop_SoloTextos_VueltaChica: con sólo textos cambiados vuelve el revisor de seguridad; con código, el set de siempre', () => {
@@ -1092,6 +1126,21 @@ test('T80f SmartReloop_SoloTextos_VueltaChica: con sólo textos cambiados vuelve
   const v2 = C.vuelta(2);
   assert.strictEqual(v2.r.status, 0, salida(v2.r));
   assert.notStrictEqual(v2.json.mode, 'small-round', salida(v2.r));
+});
+
+test('T80i SmartReloop_RevisorLanzadoAntesDelSello_NoAchica: si un revisor no leyó el sello, ni se cierra sola ni es chica', () => {
+  // el set se pidió otra vez a mitad de la vuelta: el sello trae un arreglo que los revisores lanzados antes no vieron
+  for (const [nombre, editar] of [['un texto', (C) => C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'))],
+    ['un comentario', (C) => C.editar('src/m.js', B_TEXTO.replace("'use strict';\n", "'use strict';\n// el motivo\n"))]]) {
+    const C = corridaRevisada(`s-ft-80i-${nombre.length}`, { extra: { 'src/m.js': B_TEXTO } });
+    conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js', 'src/m.js'], { antes: true });
+    editar(C);
+    const v = C.vuelta(2);
+    assert.strictEqual(v.r.status, 0, salida(v.r));
+    assert.notStrictEqual(v.json.mode, 'small-round', `${nombre}: ${salida(v.r)}`);
+    assert.ok(!v.json.no_code_delta, `${nombre}: la vuelta no se cierra sola`);
+    assert.ok(v.json.rerun.length > 1, `${nombre}: ${JSON.stringify(v.json.rerun)}`);
+  }
 });
 
 test('T80g Tope_VueltaChica_PasaSinFirma: pasado el tope, sólo textos se sirve sin firma y queda anotado; código pide la vuelta extra', () => {
@@ -1120,6 +1169,18 @@ test('T80g Tope_VueltaChica_PasaSinFirma: pasado el tope, sólo textos se sirve 
   assert.strictEqual(v2.r.status, 3, salida(v2.r));
   assert.match(v2.r.stderr, /Llegaste al tope de 1/);
   assert.ok(!gatesDe(C2).some((g) => g.name === 'small-round'), 'el código no pasa como vuelta chica');
+  // con un crítico de seguridad abierto, la vuelta chica tampoco pasa el tope: lo decide una persona
+  const C3 = corridaRevisada('s-ft-80g3', { extra: { 'src/m.js': B_TEXTO, ...tope } });
+  commitearElTope(C3);
+  conFotoDeLaVuelta(C3, ['src/a.js', 'src/b.js', 'src/m.js']);
+  const corridas = path.join(C3.codigo.repo, '.advisors', 'pipeline-runs');
+  const run = path.join(corridas, fs.readdirSync(corridas)[0]);
+  fs.writeFileSync(path.join(run, 'findings.json'), JSON.stringify([{ rule_id: 'SEC-C1', severity: 'CRITICAL', advisor: 'tycon-plugin-security-basics', file: 'src/m.js', disposition: 'open' }]));
+  C3.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const v3 = C3.vuelta(2);
+  assert.strictEqual(v3.r.status, 3, salida(v3.r));
+  assert.match(v3.r.stderr, /SEC-C1/);
+  assert.ok(!gatesDe(C3).some((g) => g.name === 'small-round'), 'con un crítico abierto no pasa como vuelta chica');
 });
 
 test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide la nota de repensar; con código, sí', () => {
@@ -1127,6 +1188,7 @@ test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide 
     const abs = ['src/a.js', 'src/b.js', 'src/m.js'].map((r) => path.join(C.codigo.repo, r));
     const foto = { ts: new Date(C.cierre - 500).toISOString(), filesSnapshot: abs };
     C.escribir(() => ({ iterations: { 1: foto, 2: foto }, filesTouched: abs }));
+    lanzarRevisores(C, 2);
   };
   const C = corridaRevisada('s-ft-80h', { extra: { 'src/m.js': B_TEXTO } });
   tercera(C);

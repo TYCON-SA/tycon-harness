@@ -30,6 +30,8 @@ function git(args, env) {
 }
 const unaLinea = (t) => String(t || '').split('\n').map((x) => x.trim()).filter(Boolean)[0] || 'sin detalle';
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+// Hasta qué tamaño se lee qué cambió adentro de un archivo (lib/change-kind.js no tiene tope de tiempo)
+const TOPE_DEL_LECTOR = 256 * 1024;
 
 /** Un índice aparte, en la carpeta temporal; se borra al terminar. */
 function conIndiceAparte(fn) {
@@ -379,6 +381,8 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
       const a = contenidoDelSello(repo, treeA, rel);
       const b = contenidoDelSello(repo, treeB, rel);
       if (a.error || b.error || a.modo !== b.modo) return false;
+      // el lector no tiene tope de tiempo: un archivo grande cuenta como cambio, como en el gancho de cada edición
+      if (a.buf.length > TOPE_DEL_LECTOR || b.buf.length > TOPE_DEL_LECTOR) return false;
       const t = require('./change-kind.js').queCambio(a.buf, b.buf, { archivo: rel });
       return !require('./review-change-policy.js').pideVuelta(t.tipo);
     } catch (_) { return false; }
@@ -464,13 +468,14 @@ function contenidoDelSello(repo, tree, rel, { timeout } = {}) {
 
 /**
  * Qué cambió adentro del archivo del disco respecto de lo sellado (lib/change-kind.js): `{ tipo, motivo, visibles? }`,
- * o null si no se puede comparar (no es un archivo común, no está en el sello, cambió su bit de ejecución, no se leyó).
- * null cuenta como código.
+ * o null si no se puede comparar (no es un archivo común, pasa de `topeBytes`, no está en el sello, cambió su bit de
+ * ejecución, no se leyó). null cuenta como código.
  */
-function tipoContraElSello(repo, tree, abs, { timeout } = {}) {
+function tipoContraElSello(repo, tree, abs, { timeout, topeBytes = TOPE_DEL_LECTOR } = {}) {
   try {
     const st = fs.lstatSync(abs);
-    if (!st.isFile()) return null;
+    // el lector no tiene tope de tiempo: corre en el gancho de cada edición, y un archivo grande cuenta como código
+    if (!st.isFile() || st.size > topeBytes) return null;
     const rel = path.relative(real(repo), real(abs));
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
     const sello = contenidoDelSello(repo, tree, rel.split(path.sep).join('/'), { timeout });

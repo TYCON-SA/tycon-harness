@@ -165,6 +165,13 @@ test('T8 ChangeKind_Directivas_SonCodigo: un comentario que puede ser una direct
     ['se va la directiva', base, base.replace('// eslint-disable-next-line no-console\n', ''), 'codigo'],
     ['otro comentario, la directiva quieta', base, base.replace('nota', 'una nota'), 'comentarios'],
   ]);
+  // los escáneres de seguridad y los analizadores también se silencian con un comentario
+  const sin = "const q = run(sql);\n";
+  for (const d of ['// snyk:ignore', '// checkov:skip=CKV_1', '// skipcq: JS-0060', '// DevSkim: ignore DS104456', '// CA2100:ignore', '// nosemgrep', '/* bandit */']) {
+    for (const archivo of ['a.js', 'a.ts', 'a.cs']) {
+      assert.strictEqual(tipo(sin, sin.replace(';\n', `; ${d}\n`), archivo).tipo, 'codigo', `${d} en ${archivo}`);
+    }
+  }
 });
 
 test('T9 ChangeKind_AnteLaDuda_Codigo: lo que no sabe leer, un lenguaje sin lector y lo que no es texto', () => {
