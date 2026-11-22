@@ -634,6 +634,7 @@ if (-not $ClaudeOff -and (Test-Path $rutaCanonica) -and (Get-Command node -Error
 # (`separateSkillsClone`), igual para este archivo y para el .sh. Una carpeta real en ese lugar que NO es un clon de
 # agent-skills sigue avisando.
 function Invoke-RepoLinks([string]$Only) {
+    if ($ClaudeOff) { return }   # sin Claude Code no hay enlaces del repo único en la carpeta de Claude Code
     # sólo si el clon trae skills/ y agents/: en un clon sin ellas ni se lanza node (este archivo corre en cada arranque)
     $root = Split-Path -Parent $PSScriptRoot
     if (-not ((Test-Path (Join-Path (Join-Path $root 'skills') 'tycon-pipeline')) -and (Test-Path (Join-Path $root 'agents')))) { return }
@@ -645,7 +646,7 @@ function Invoke-RepoLinks([string]$Only) {
     if ($Check) { $rlArgs += '--check' }
     try { & node $rutaCanonica @rlArgs } catch { }   # un enlace que no se pudo escribir avisa, no frena
 }
-if (-not $ClaudeOff) { Invoke-RepoLinks 'agent-skills' }
+Invoke-RepoLinks 'agent-skills'
 
 # ── ¿El arnés está donde el arnés cree que está? (mira el enlace) ────
 # Aviso por stdout si el clon que corre este instalador no es el que apunta el enlace (o el enlace
