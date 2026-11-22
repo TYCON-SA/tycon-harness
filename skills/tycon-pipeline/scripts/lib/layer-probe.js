@@ -4,8 +4,9 @@
  *
  * La maqueta aprobada marca una pantalla con `presentation: "layer"`: una ventana que se abre al tocar `trigger` en
  * `over`. Construirla en la página pasa los textos (capa 10 de qa-guide.js) y se ve distinta de lo aprobado. Este
- * ayudante toca el botón y anota, en una línea `layer-check {…}`, si apareció una ventana encima (`role="dialog"`,
- * `aria-modal="true"` o un `<dialog open>`) y cuáles de los textos de la capa están adentro. La línea vale como
+ * ayudante toca el botón y anota, en una línea `layer-check {…}`, si apareció algo encima (una ventana con `role="dialog"`,
+ * `aria-modal="true"` o un `<dialog open>`, un menú, una lista desplegable o un popover abierto) y cuáles de los textos
+ * de la capa están adentro. El campo `dialog` de la línea dice eso: si se abrió algo encima. La línea vale como
  * evidencia sólo en la salida de un humo corrido por smoke-run.sh: la capa 12 de `qa-guide.js --check` la lee de ahí.
  *
  * Con Playwright:
@@ -17,7 +18,9 @@
  */
 
 const PREFIJO = 'layer-check ';
-const SELECTOR = '[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open]';
+const BASE = '[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open], [role="menu"], [role="listbox"]';
+const POPOVER = '[popover]:popover-open';
+const SELECTOR = `${BASE}, ${POPOVER}`;
 
 const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -41,14 +44,21 @@ function leer(texto) {
 
 const visible = (el) => !el.hidden && el.getAttribute('aria-hidden') !== 'true';
 
-/** Mira un documento ya abierto: ¿hay una ventana visible encima, y qué textos de la capa tiene adentro? */
+/** Lo que está encima en un documento; uno que no sabe de popovers (un jsdom viejo) no tiene ninguno abierto. */
+function encimaDe(document) {
+  const els = Array.from(document.querySelectorAll(BASE));
+  try { els.push(...document.querySelectorAll(POPOVER)); } catch { /* sin popovers */ }
+  return [...new Set(els)].filter(visible);
+}
+
+/** Mira un documento ya abierto: ¿hay algo visible encima, y qué textos de la capa tiene adentro? */
 function probeDocument(document, { screen, trigger, texts }) {
-  const ventanas = Array.from(document.querySelectorAll(SELECTOR)).filter(visible);
+  const ventanas = encimaDe(document);
   const adentro = norm(ventanas.map((v) => v.textContent).join(' '));
   return { screen, trigger, dialog: ventanas.length > 0, texts: ventanas.length ? (texts || []).filter((t) => adentro.includes(norm(t))) : [] };
 }
 
-/** Con Playwright: toca `trigger` y mira si se abrió una ventana encima con los textos de la capa. */
+/** Con Playwright: toca `trigger` y mira si se abrió algo encima con los textos de la capa. */
 async function probeLayer(page, { screen, trigger, texts, timeout = 5000 }) {
   const boton = page.getByRole('button', { name: trigger, exact: true }).or(page.getByRole('link', { name: trigger, exact: true }));
   await boton.first().click({ timeout });

@@ -525,8 +525,9 @@ function mockupTexts(html) {
 }
 
 /**
- * Las capas de una maqueta armada por este guion: `[{ screen, name, trigger, over, texts }]`, o null si el archivo no es
- * de mockup.js. `texts` son los de la ventana; los de la pantalla de abajo, dibujada detrás, no cuentan.
+ * Las capas de una maqueta armada por este guion: `[{ screen, name, trigger, over, texts, variants }]`, o null si el
+ * archivo no es de mockup.js. `texts` son los de la ventana; los de la pantalla de abajo, dibujada detrás, no cuentan.
+ * `variants` son los otros casos de la ventana (`[{ when, texts }]`): salen de a uno, cada uno con sus textos.
  */
 function mockupLayers(html) {
   const s = String(html);
@@ -535,7 +536,15 @@ function mockupLayers(html) {
   const out = [];
   for (const m of s.matchAll(/<section class="screen layer" data-screen-index="(\d+)" data-screen-name="([^"]*)" data-presentation="layer">[\s\S]*?<p class="layer-how">Se abre al tocar «([^»]*)» en «([^»]*)»\.<\/p>/g)) {
     const screen = Number(m[1]);
-    out.push({ screen, name: decode(m[2]), trigger: decode(m[3]), over: decode(m[4]), texts: textos.filter((t) => t.screen === screen).map((t) => t.text) });
+    // los otros casos van al final de la sección, en sus tarjetas: lo de antes es la ventana
+    const fin = s.indexOf('</section>', m.index);
+    const seccion = s.slice(m.index, fin === -1 ? undefined : fin);
+    const textosDe = (t) => [...t.matchAll(/data-mockup-text="([^"]*)" data-kind="[^"]*" data-screen="(\d+)"/g)].filter((x) => Number(x[2]) === screen).map((x) => decode(x[1]));
+    const corte = seccion.indexOf('<div class="variants">');
+    const variants = corte === -1 ? [] : seccion.slice(corte).split('<div class="variant">').slice(1)
+      .map((tarjeta) => ({ when: decode(((/<p class="variant-when">([^<]*)/.exec(tarjeta) || [])[1] || '').trim()), texts: textosDe(tarjeta) }))
+      .filter((v) => v.texts.length);
+    out.push({ screen, name: decode(m[2]), trigger: decode(m[3]), over: decode(m[4]), texts: textosDe(corte === -1 ? seccion : seccion.slice(0, corte)), variants });
   }
   return out;
 }
