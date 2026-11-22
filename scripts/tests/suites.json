@@ -1191,13 +1191,51 @@
       "requiere": []
     },
     {
+      "__nota": "Parte 1 de 3 de tycon-pipeline/scripts/tests/test-gate-failed-first.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
       "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.test.js",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.p1.test.js",
       "requiere": []
     },
     {
+      "__nota": "Parte 2 de 3 de tycon-pipeline/scripts/tests/test-gate-failed-first.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
       "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.test.js",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 3 de tycon-pipeline/scripts/tests/test-gate-failed-first.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.p3.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 1 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p1.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p3.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 4 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p4.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 5 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p5.test.js",
       "requiere": []
     },
     {
