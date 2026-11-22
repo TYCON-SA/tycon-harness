@@ -613,6 +613,37 @@ test('OwnerNext_LineaDeComandos (T11, la orden) — @story-8.153 @ac-11', (t) =>
   assert.match(linea(toy, ['owner-next'], { home: vacia }).stdout, /«Firma 1\/1»/);
 });
 
+// con la marca de ausente, owner-next no arma el cuadro: dice que el dueño está ausente, que se le avise por los canales de
+// los avisos y que se espere a que escriba. El renglón queda igual. Vencida la marca, el cuadro de siempre
+test('OwnerNext_DuenoAusente_SinCuadro — fila 71', (t) => {
+  const OA = require('../lib/owner-away.js');
+  const toy = casaNueva(t);
+  sesion(toy.casa, 'ses-a');
+  firma(toy, { ahora: Date.now() });
+  const antesDe = JSON.stringify(crudas(toy));
+  OA.set({ estado: estado(toy.casa), quien: 'ses-coord', frase: 'me voy a dormir' });
+  const r = linea(toy, ['owner-next']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /AskUserQuestion/);
+  assert.doesNotMatch(r.stdout, /«Firma 1\/1»/);
+  assert.match(r.stdout, /El dueño está ausente/);
+  assert.match(r.stdout, /canales de los avisos/);
+  assert.match(r.stdout, /notify\.js" --side session/);
+  assert.match(r.stdout, /esperá a que escriba/);
+  assert.strictEqual(JSON.stringify(crudas(toy)), antesDe, 'el renglón queda sin cambios');
+  // la marca vencida (24 horas) no cuenta: el cuadro de siempre
+  OA.set({ estado: estado(toy.casa), quien: 'ses-coord', frase: 'me voy', ahora: Date.now() - OA.VENCE_MS - 60000 });
+  const vencida = linea(toy, ['owner-next']);
+  assert.match(vencida.stdout, /AskUserQuestion/);
+  assert.match(vencida.stdout, /«Firma 1\/1»/);
+  // el permiso tampoco abre el cuadro con la marca; sin marca, igual que siempre
+  const permiso = { tipo: 'permiso', id: 'p1', destino: 'ses-a', nombre: 'Alma', rotulo: 'Permiso 1/1', pregunta: 'p', opciones: ['Sí', 'No'], faltaRepetir: [], problemas: [] };
+  const conMarca = C.ownerNextText(permiso, 'ses-coord', null, { setAt: '2026-11-22T03:00:00.000Z' });
+  assert.doesNotMatch(conMarca, /AskUserQuestion/);
+  assert.match(conMarca, /desde 2026-11-22T03:00:00.000Z/);
+  assert.match(C.ownerNextText(permiso, 'ses-coord'), /AskUserQuestion/);
+});
+
 // ── lo que encontró el pase adversarial ─────────────────────────────────────────────────────────────────────────────────
 
 test('Pase_TerminalDaComoSeguir — @story-8.153 @ac-12', (t) => {
