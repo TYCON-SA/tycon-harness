@@ -139,8 +139,8 @@ unset _SD_LIB
 # `TYCON_HARNESS_CLAUDE=off` lo pone harness.js en una máquina que instaló el arnés sin Claude Code (sólo Codex). En
 # ese modo corre una lista cerrada: el candado, el reporte y el plan; la lectura de la configuración y del perfil; los
 # tres hooks globales de git y la mirada al core.hooksPath local de los clones; la recolección de hallazgos y el buzón;
-# y, por decisión del dueño del 22/11, las pruebas rápidas de las skills, el refresco de la lista de proyectos de Azure,
-# los chequeos de engram y de sqlite3 y el AGENTS.md puntero en los repos de proyecto (Codex los usa igual).
+# las pruebas rápidas de las skills, el refresco de la lista de proyectos de Azure, los chequeos de engram y de sqlite3 y
+# el AGENTS.md puntero en los repos de proyecto (Codex los usa igual).
 # Todo lo demás —el lugar del arnés, los enlaces, settings.json, el paso de skills de este archivo, los bloques de
 # CLAUDE.md, los comandos, el rescate del hilo (lee conversaciones de Claude Code), el banco, las métricas— no corre, y
 # nada se escribe en ~/.claude. Las skills de esa máquina no faltan: las del arnés y las de terceros vienen en la versión

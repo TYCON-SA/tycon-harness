@@ -2819,6 +2819,12 @@
       "requiere": []
     },
     {
+      "__nota": "Tanda 11 de las menores: el instalador de Windows en una máquina sólo con Codex (TYCON_HARNESS_CLAUDE=off), corrido con pwsh. Corre la lista cerrada (engram, el AGENTS.md puntero, el refresco de Azure, la subida al buzón, los hooks globales de git), no busca agent-skills y no escribe nada en la carpeta de Claude Code; los sellos de engram y de sqlite3 de Windows van a la carpeta del estado; harness.js lo lanza en Windows. Sin pwsh o sin node: NO MEDIDO, exit 0. ~10 s.",
+      "raiz": "arnes",
+      "ruta": "tests/installer-ps1-codex-only.test.sh",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.18, tramo 3 (pase adversarial, clases 14 y 21): el aplicador real de Mac y Linux en dos lugares donde juzgaba por cómo está escrita una ruta y no por lo que hay en el disco. CASE: llamado por la misma carpeta escrita con otra caja no registra los hooks por segunda vez (identidad de archivo; la caja se iguala sólo si el disco no la distingue). HOOKSPATH: un core.hooksPath local que apunta a una carpeta que la vista reducida esconde no es vestigial, no se toca y se dice. HOME y clones de juguete; en un disco que distingue mayúsculas CASE sale NO MEDIDO. Unos 2 minutos.",
       "raiz": "arnes",
       "ruta": "tests/installer-repeated-hooks.test.sh",

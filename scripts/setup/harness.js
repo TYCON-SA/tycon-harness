@@ -586,11 +586,10 @@ function runApplierOnly(ctx, treeGiven, { log, snapshotDir = null, tools = undef
   const hn = ensureHarnessNode(ctx, tree, log);
   const withClaude = !tools || tools.includes('claude');
   const withCodex = Boolean(tools && tools.includes('codex'));
-  // sin Claude Code el aplicador corre en su modo sin Claude Code (lo de fondo: los hooks de git, el buzón, la
-  // recolección; nada en la carpeta de Claude Code). No corre, como antes, en Windows (el .ps1 todavía no tiene ese modo)
-  // ni con un árbol cuyo aplicador no lo conoce (una vuelta atrás, `install --version` de una anterior): ése instalaría
-  // todo Claude Code
-  const a = withClaude || (!isWin(ctx) && applierKnowsClaudeOff(applierPath(ctx, tree)))
+  // sin Claude Code el aplicador corre en su modo sin Claude Code (lo de fondo: los hooks de git, el buzón, engram, el
+  // AGENTS.md puntero…; nada en la carpeta de Claude Code), en Mac y en Windows. No corre con un árbol cuyo aplicador no lo
+  // conoce (una vuelta atrás, `install --version` de una anterior): ése instalaría todo Claude Code
+  const a = withClaude || applierKnowsClaudeOff(applierPath(ctx, tree))
     ? runClaudeApplier(ctx, tree, { log, snapshotDir, codex: tools ? (withCodex ? 'done' : 'off') : null, env: hn.env, claude: withClaude })
     : { ok: true, status: 0, out: '', report: [], shared: [], warnings: [], reason: null };
   a.harnessNode = hn.result;
@@ -715,16 +714,12 @@ function applierKnowsPlan(script) {
  */
 function applierPlan(ctx, tree) {
   if (ctx.env.TYCON_NO_AUTOINSTALL === '1') return { ok: true, known: true, pieces: [], off: true };
-  // una máquina que no enchufa a Claude Code pregunta el plan del modo sin Claude Code (los hooks de git); en Windows
-  // ese modo no existe todavía y el aplicador no corre, tampoco para preguntarle su plan
+  // una máquina que no enchufa a Claude Code pregunta el plan del modo sin Claude Code (lo de fondo), en Mac y en Windows
   let claudeOff = false;
   {
     const st = loadState(ctx);
     const T = mod('tools');
-    if (st.state && T.recorded(st.state) && !T.plugged(st.state, { home: ctx.home, env: ctx.env }).includes('claude')) {
-      if (isWin(ctx)) return { ok: true, known: true, pieces: [] };
-      claudeOff = true;
-    }
+    if (st.state && T.recorded(st.state) && !T.plugged(st.state, { home: ctx.home, env: ctx.env }).includes('claude')) claudeOff = true;
   }
   const script = applierPath(ctx, tree);
   if (!fs.existsSync(script)) return { ok: false, reason: `sin aplicador en ${script}` };

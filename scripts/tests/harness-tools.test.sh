@@ -308,7 +308,7 @@ if runs T48; then
 fi
 
 if runs T54; then
-  echo "T54 · CodexSolo_LoQueSuma — el refresco de Azure, engram y sqlite3, el AGENTS.md puntero y las pruebas rápidas de las skills (decisión del dueño, 22/11)"
+  echo "T54 · CodexSolo_LoQueSuma — el refresco de Azure, engram y sqlite3, el AGENTS.md puntero y las pruebas rápidas de las skills"
   # un árbol de laboratorio: el de este repo sin las pruebas, con las piezas de mentira (anotan que corrieron, sin red ni
   # servicios), y unido (skills/ con tycon-pipeline y agents/), como una versión bajada
   TREE54="$BASE/tree54"; mkdir -p "$TREE54"
