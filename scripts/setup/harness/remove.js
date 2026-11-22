@@ -68,7 +68,9 @@ const norm = (p) => slash(p).replace(/\/+$/, '').replace(/^\/private(?=\/(?:var|
 // También la ruta del Node propio del arnés, con o sin comillas (`…/node/current/bin/node`,
 // `C:/…/node.exe`), como la escribe el aplicador cuando ese Node está.
 const RUNNER = '(?:node|bash|sh|python3?|"[^"]*/bash(?:\\.exe)?"|[^\\s"]*/node(?:\\.exe)?|"[^"]*/node(?:\\.exe)?")';
-const RUNNER_RE = new RegExp(`^\\s*${RUNNER}\\s+"([^"]+)"\\s*$`, 'i');
+// con el lanzador del freno de publicación delante (`bash "<…>/node-missing-launcher.sh" <intérprete> "<ruta>"`)
+const LAUNCHER = '(?:bash\\s+"[^"]*/node-missing-launcher\\.sh"\\s+)?';
+const RUNNER_RE = new RegExp(`^\\s*${LAUNCHER}${RUNNER}\\s+"([^"]+)"\\s*$`, 'i');
 const BOM = /^﻿/;
 
 /**
