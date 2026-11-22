@@ -291,7 +291,8 @@ function usesChildProcess(text) {
 
 /**
  * ¿Es un atajo de nombre viejo? Lo escribe `scripts/lib/legacy-names.js --write-shims`, igual a su plantilla (una prueba
- * lo exige), y vive sólo en el repo privado de quien mantiene: no se edita a mano ni se escanea como código propio.
+ * lo exige), y vive sólo en el repo privado de quien mantiene. Se escanea como cualquier guion: lanza su destino con
+ * node, y la plantilla pide la ventana oculta. Esta marca sólo dice si una carpeta no tiene código propio.
  */
 const isLegacyShim = (text) => /^\/\/ tycon-legacy-shim: /m.test(text.slice(0, 300));
 
@@ -314,12 +315,11 @@ function scriptFiles(root, dirs, skip = []) {
   return out.sort();
 }
 
-/** Cada lanzamiento de esas carpetas, con su archivo (sin los atajos de nombres viejos). */
+/** Cada lanzamiento de esas carpetas, con su archivo (también los atajos de nombres viejos). */
 function scanTree(root, dirs, skip = []) {
   const out = [];
   for (const file of scriptFiles(root, dirs, skip)) {
     const text = fs.readFileSync(path.join(root, file), 'utf8');
-    if (isLegacyShim(text)) continue;
     for (const l of findLaunches(text)) out.push({ file, ...l });
   }
   return out;
