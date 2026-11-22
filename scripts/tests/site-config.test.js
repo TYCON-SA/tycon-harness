@@ -6728,6 +6728,7 @@ test('RevisionSemanal_ValorFueraDeRango_NoSePropone @story-2.58 @ac-2 — un val
     { path: 'response.max_chars', message: 'y', sinCampo: true },
     { path: 'weekly_review.enabled', message: 'z', sinCampo: true },
     { path: 'wait_notice.enabled', message: 'w', sinCampo: true },
+    { path: 'weekly_review.constructor', message: 'v', sinCampo: true },
   ] } : {})) });
   const lineas = []; const walk = (n) => { if (n.textContent) lineas.push(n.textContent); (n.hijos || []).forEach(walk); }; walk(donde.panelDe('seccion-sitio'));
   const err = lineas.filter((t) => / › /.test(t)).join('\n');
@@ -6737,6 +6738,8 @@ test('RevisionSemanal_ValorFueraDeRango_NoSePropone @story-2.58 @ac-2 — un val
   assert.match(err, /Revisión de la semana › Prendida: z/, err);
   assert.match(err, /aviso de espera › Si el aviso de espera corre: w/, err);
   assert.doesNotMatch(err, /enabled/, err);
+  // una clave que se llama como un método de los objetos se muestra con su nombre, no con lo heredado
+  assert.match(err, /Revisión de la semana › «constructor»: v/, err);
   // la tabla de nombres no repite claves: una clave repetida pisa en silencio a la otra
   const fuente = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
   const desde = fuente.indexOf('var PALABRAS = {');

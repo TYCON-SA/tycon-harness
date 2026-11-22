@@ -1797,7 +1797,9 @@ ${trabajandoJs}
     if (!ruta) return '';
     // una hoja que se llama igual en dos claves se nombra con su ruta de dos partes (weekly_review.max_chars)
     var partes = String(ruta).split('.');
-    return partes.map(function (p, i) { return /^\d+$/.test(p) ? T('pantalla.fila') + (Number(p) + 1) : (i && PALABRAS[partes[i - 1] + '.' + p]) || PALABRAS[p] || '«' + p + '»'; }).join(' › ');
+    // sólo las claves propias de la tabla: una clave que se llama como un método («constructor») no toma el heredado
+    var de = function (k) { return Object.prototype.hasOwnProperty.call(PALABRAS, k) ? PALABRAS[k] : null; };
+    return partes.map(function (p, i) { return /^\d+$/.test(p) ? T('pantalla.fila') + (Number(p) + 1) : (i && de(partes[i - 1] + '.' + p)) || de(p) || '«' + p + '»'; }).join(' › ');
   }
   // [patrón, frase]: los mensajes que nombran claves del archivo, dichos con las palabras de la pantalla
   var FRASES = [
