@@ -1210,6 +1210,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 44 (21/11): pasar una historia a done fuera de una corrida mira la matriz de evidencia en vivo o la constancia de la corrida.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-done-needs-matrix.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.121: la ejecución perdida (marcador, apertura o copia que faltan) frena, y su salida es del dueño.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/lost-marker.test.js",

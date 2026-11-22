@@ -2702,10 +2702,15 @@ function cmdCompleteStep(nRaw, flags) {
             appendLog('gates.log', { name: 'acmatrix-debt', story: nn(marker.storyId, null), storyPath, ...dondeViveLaHistoria(storyPath), deuda: marker.cierre.deuda, acs: deudaEnVivo.acs, tests: deudaEnVivo.tests, until: deudaEnVivo.until }, { estricto: true });
             console.error(`⚠️  matriz (DODRT-C6): AC ${acs} sin evidencia en vivo — aceptados por la deuda ${marker.cierre.deuda}, vence ${deudaEnVivo.until}`);
             console.error(`📌 El mensaje de commit lleva esta línea: Sin evidencia en vivo: AC ${acs} — deuda ${marker.cierre.deuda}, vence ${deudaEnVivo.until}`);
+            // lo aceptado por la deuda cuenta como la matriz verde para pasar a done, con la deuda nombrada
+            appendLog('gates.log', { name: 'acmatrix-green', story: nn(marker.storyId, null), storyPath: path.resolve(storyPath), ...dondeViveLaHistoria(storyPath), deuda: marker.cierre.deuda, ...(matrix.batch ? { batch: matrix.batch } : {}) });
           } catch (e) {
             blocked = 'acmatrix-debt-log';
             console.error(`marker.js complete-step ${n} BLOQUEADO — no pude anotar la deuda de evidencia en vivo en gates.log (${e.code || e.message}): sin ese renglón nadie avisa cuando venza. Revisá la carpeta de estado y reintentá.`);
           }
+        } else if (matrix && matrix.green) {
+          // la constancia de la matriz verde: con ella, la historia puede pasar a done fuera de la corrida en esta máquina
+          appendLog('gates.log', { name: 'acmatrix-green', story: nn(marker.storyId, null), storyPath: path.resolve(storyPath), ...dondeViveLaHistoria(storyPath), ...(matrix.batch ? { batch: matrix.batch } : {}) });
         } else if (matrix && !matrix.green) {
           blocked = 'acmatrix';
           console.error(`marker.js complete-step ${n} BLOQUEADO — matriz de verificación runtime (DODRT-C6) ROJA.`);
@@ -6576,6 +6581,11 @@ function cmdUpdateStoryStatus(storyPath, newStatus) {
   // con la corrida esperando a main, la historia no pasa a review ni a done (el mismo freno que el rojo)
   if (newStatus === 'review' || newStatus === 'done') frenarEstadoSiEsperaMain('update-story-status', storyPath);
   const content = fs.readFileSync(storyPath, 'utf8');
+  // done pide la matriz de evidencia en vivo (DODRT-C6), también fuera de una corrida: verde en esta carpeta, o la
+  // constancia que dejó la corrida de esta historia al pasarla en verde. Repetir done sobre una historia en done no frena
+  // el `status:` de la historia es el de la raíz del encabezado, no el de una tanda de `pipelines:`
+  const estadoActual = ((content.match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '').match(/^status\s*:\s*["']?([\w-]+)/m);
+  if (newStatus === 'done' && !(estadoActual && estadoActual[1] === 'done')) frenarDoneSinMatriz(storyPath);
   // Frontmatter YAML entre los dos '---' del inicio del archivo.
   const fmRegex = /^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n)/;
   const m = content.match(fmRegex);
@@ -6600,7 +6610,58 @@ function cmdUpdateStoryStatus(storyPath, newStatus) {
   const tmp = `${storyPath}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, newContent, 'utf8');
   fs.renameSync(tmp, storyPath);
+  // cada cambio de estado queda anotado: una vuelta a in-progress invalida la constancia de la matriz anterior
+  appendLog('gates.log', { name: 'story-status', status: newStatus, storyPath: path.resolve(storyPath), ...dondeViveLaHistoria(storyPath) });
   process.stdout.write(`status: ${newStatus}\n`);
+}
+
+/**
+ * Con la matriz de evidencia en vivo roja en esta carpeta y sin constancia de la matriz verde de esta historia (de su
+ * repo y su ruta en el repo, posterior a su última vuelta a in-progress) en el registro de esta máquina, la historia no
+ * pasa a done: frena y dice cómo se sale.
+ */
+function frenarDoneSinMatriz(storyPath) {
+  let matrix = null;
+  try { matrix = require('./runtime-matrix.js').compute({ storyPath }); } catch (_e) { matrix = null; }
+  if (matrix && !matrix.structuralError && matrix.green) return;
+  const donde = dondeViveLaHistoria(storyPath);
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(String(p)); } };
+  const misma = (l) => (donde.storyRel && donde.repoCommon && l.storyRel && l.repoCommon
+    ? l.storyRel === donde.storyRel && real(l.repoCommon) === real(donde.repoCommon)
+    : Boolean(l.storyPath) && real(l.storyPath) === real(storyPath));
+  let lineas = [];
+  try { lineas = fs.readFileSync(path.join(STATE_DIR, 'gates.log'), 'utf8').split('\n'); } catch (_e) { lineas = []; }
+  let verde = null;
+  let reabierta = null;
+  // la constancia de una tanda (historia paraguas) mide sólo sus criterios: vale si cada tanda de la historia tiene la suya
+  const porTanda = new Map();
+  for (const t of lineas) {
+    let l;
+    try { l = JSON.parse(t); } catch (_e) { continue; }
+    if (!l || typeof l.ts !== 'string' || !misma(l)) continue;
+    if (l.name === 'acmatrix-green' && l.batch) { if (!porTanda.has(l.batch) || l.ts > porTanda.get(l.batch)) porTanda.set(l.batch, l.ts); continue; }
+    if (l.name === 'acmatrix-green' && (!verde || l.ts > verde)) verde = l.ts;
+    if (l.name === 'story-status' && l.status === 'in-progress' && (!reabierta || l.ts > reabierta)) reabierta = l.ts;
+  }
+  if (verde && (!reabierta || verde > reabierta)) return;
+  const tandas = [...String(((fs.readFileSync(storyPath, 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '').split(/^pipelines\s*:/m)[1] || '')
+    .split(/^\S/m)[0].matchAll(/^\s*-\s+name\s*:\s*["']?([^"'#\s]+)/gm)].map((m) => m[1]);
+  const deCadaTanda = tandas.length && tandas.every((b) => porTanda.has(b) && (!reabierta || porTanda.get(b) > reabierta));
+  if (deCadaTanda) return;
+  if (!verde && porTanda.size) verde = [...porTanda.values()].sort().pop();
+  appendLog('gates.log', { name: 'story-done', status: 'blocked', storyPath: path.resolve(storyPath), ...donde, motivo: verde ? 'constancia-anterior-a-reabrir' : 'sin-matriz' });
+  console.error('marker.js update-story-status BLOQUEADO — la historia no pasa a done sin la matriz de evidencia en vivo (DODRT-C6).');
+  if (matrix && matrix.structuralError) console.error(`  La matriz no se pudo calcular acá: ${matrix.structuralError}`);
+  else if (matrix) console.error(`  En esta carpeta la matriz está roja: ${matrix.stats.runtime}/${matrix.stats.total} corridos${(matrix.notRun || []).length ? ` · sin correr: ${matrix.notRun.map((n) => `#${n}`).join(', ')}` : ''}.`);
+  console.error(verde
+    ? `  La constancia de la matriz verde de esta historia (${verde}) es anterior a su última vuelta a in-progress (${reabierta}): no vale.`
+    : '  Tampoco hay en esta máquina una constancia de la matriz verde de esta historia (la deja la corrida al pasarla).');
+  console.error('  Cómo se sale:');
+  console.error(`   · Si la evidencia está en esta carpeta, mirá qué falta: node ${path.join(__dirname, 'runtime-matrix.js')} --story ${storyPath}`);
+  console.error('     Con la matriz verde acá, este mismo comando la pasa a done.');
+  console.error('   · Si la corrida fue en otra carpeta o en otra máquina, cerrala allá con la corrida: /tycon-pipeline close <id>.');
+  console.error('   · Un criterio imposible de probar en vivo lo firma la persona: marker.js runtime-waiver <historia>.');
+  process.exit(1);
 }
 
 // El estado de una tanda del bloque `pipelines:` de la story (lista de `- name: X` con su `status:`). Lo usa el cierre
