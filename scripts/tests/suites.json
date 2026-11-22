@@ -716,6 +716,12 @@
       "requiere": []
     },
     {
+      "__nota": "el pedido sin preparar que no es de la historia dice la salida (la coordinadora cierra la ejecución con el comando exacto); aparte de save-brake.test.js, que es de las suites bajadas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/save-brake-way-out.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el cambio a mano del estado de una historia lo ve el freno en cada tanda del bloque pipelines (la forma de lista y la de mapa), no sólo en la última.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-transition.test.js",
@@ -1073,6 +1079,12 @@
       "requiere": []
     },
     {
+      "__nota": "La segunda capa del freno de escrituras por consola: lo protegido que un comando cambió vuelve a lo que tenía la foto de antes, comparado por contenido, salvo lo que escribe marker.js solo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-after.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Un texto con forma de comodín que no se puede convertir no abre el freno: es texto. Tampoco lo abre una carpeta que no se puede leer, ni lo cuelga una tira de estrellas, y el registro dice «FAILED OPEN» sólo si dejó pasar el comando sin mirarlo.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-bracket.test.js",
@@ -1218,6 +1230,12 @@
       "__nota": "story 8.109: el estado de la historia y el marcador no se tocan a mano (consola, Edit, apply_patch).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/status-by-hand.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 44 (21/11): pasar una historia a done fuera de una corrida mira la matriz de evidencia en vivo o la constancia de la corrida.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-done-needs-matrix.test.js",
       "requiere": []
     },
     {
@@ -3405,6 +3423,18 @@
       "__nota": "la tabla de controles de la máquina (scripts/metrics/controls-table.js): cuenta por freno y regla y las firmas por vía con los registros de una casa de prueba; un registro que no está sale «no medido», los renglones sin fecha se cuentan aparte y el guion no escribe en la carpeta de estado. Segundos.",
       "raiz": "arnes",
       "ruta": "tests/controls-table.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la clasificación de cada control (scripts/metrics/controls-classification.json): cada freno de guard-record.js y cada gancho que frena tiene su entrada con exigencia o preferencia, motivo y fecha de revisión; una exigencia dice qué protege. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/controls-classification.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el modelo de una sesión (scripts/lib/session-model.js): el primer modelo real de su conversación, leído por tramos; sin conversación, ilegible o sin modelo, «no medido» con el motivo. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/session-model.test.js",
       "requiere": []
     },
     {
