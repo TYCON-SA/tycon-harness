@@ -134,19 +134,32 @@ async function reviewLoad({ home = os.homedir(), stateDir, ahora = Date.now(), e
 const sinCuenta = (tope, problema) => ({ total: 0, partes: { firmas: null, terminados: null, carpetas: null, pedidos: null }, noMedido: { terminados: 0, carpetas: 0 }, tope, problems: [problema] });
 
 /**
+ * La HOME y la casa del arnés con que cuenta el hijo, sacadas del `env` de quien llama y no del ambiente de este proceso:
+ * `{ home, tyconHome }`. Como en `ownRootOf` de tycon-home.js, el `TYCON_HOME` de un ambiente vale sólo para la HOME de
+ * ese ambiente (su `HOME`, o `USERPROFILE` en Windows; si no la dice, la de este proceso) y sólo si es absoluto. Con otra
+ * HOME la casa es `<home>/.tycon`: la cuenta de una casa de prueba no lee ni escribe la casa real de quien la pide. Una
+ * HOME vacía es la del ambiente; una relativa se resuelve.
+ */
+function casaDelHijo(home, env) {
+  const { OWN_DIR_NAME } = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+  const delAmbiente = path.resolve(String((process.platform === 'win32' ? env.USERPROFILE : env.HOME) || '').trim() || os.homedir());
+  const casa = String(home || '').trim() ? path.resolve(String(home).trim()) : delAmbiente;
+  const v = env.TYCON_HOME == null ? '' : String(env.TYCON_HOME).trim();
+  return { home: casa, tyconHome: casa === delAmbiente && v && path.isAbsolute(v) ? v : path.join(casa, OWN_DIR_NAME) };
+}
+
+/**
  * La cuenta para quien decide sin `await` (capCheck, fillCheck): corre este archivo en un proceso hijo con tope
  * (`topeMs` + 1 s). Si el hijo se pasa, sale con error o con salida ilegible, las partes quedan en null y el motivo va a
  * `problems`: la cuenta de revisión nunca impide abrir por no poder contarse. `script` reemplaza el hijo en las pruebas.
  */
-function reviewLoadSync({ home = os.homedir(), env = process.env, topeMs = module.exports.TOPE_DE_DECISION_MS, script = __filename } = {}) {
-  const tope = topeDeRevision({ home, env });
-  // el hijo cuenta la casa del arnés que contaría quien llama: con otra HOME en el hijo, el `TYCON_HOME` de quien llama
-  // pasaría por el de esa HOME, y la cuenta de una casa de prueba leería (y escribiría) la casa real
+function reviewLoadSync({ home, env = process.env, topeMs = module.exports.TOPE_DE_DECISION_MS, script = __filename } = {}) {
   let casa;
-  try { casa = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).ownRootOf(home); } catch (e) { return sinCuenta(tope, `la cuenta no corrió (${motivo(e)})`); }
+  try { casa = casaDelHijo(home, env); } catch (e) { return sinCuenta(topeDeRevision({ home: home || os.homedir(), env }), `la cuenta no corrió (${motivo(e)})`); }
+  const tope = topeDeRevision({ home: casa.home, env });
   const r = require('child_process').spawnSync(process.execPath, [script, '--json', '--timeout-ms', String(topeMs)], {
     encoding: 'utf8', timeout: topeMs + 1000, killSignal: 'SIGKILL', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...env, HOME: home, USERPROFILE: home, TYCON_HOME: casa },
+    env: { ...env, HOME: casa.home, USERPROFILE: casa.home, TYCON_HOME: casa.tyconHome },
   });
   if (r.error) return sinCuenta(tope, r.error.code === 'ETIMEDOUT' ? `la cuenta no terminó en ${(topeMs + 1000) / 1000} s` : `la cuenta no corrió (${motivo(r.error)})`);
   if (r.status !== 0) return sinCuenta(tope, `la cuenta salió con ${r.status === null ? r.signal : r.status}`);

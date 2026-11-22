@@ -176,6 +176,40 @@ test('T21 ReviewLoadSync_SoloLaCasaDePrueba @story-8.326 @ac-3', () => {
   assert.deepStrictEqual(foto(real), antes, 'no escribió nada en la casa real');
 });
 
+// 🔴 Falla con: la casa del hijo sacada del ambiente del proceso y no del `env` de quien pide la cuenta (pierde su
+// TYCON_HOME, hereda el del proceso), o una HOME vacía o relativa que llega así al hijo.
+test('T22 ReviewLoadSync_LaCasaDelHijoSaleDelEnv @story-8.326 @ac-3', () => {
+  const lab = laboratorio();
+  const eco = path.join(lab.root, 'eco.js');
+  fs.writeFileSync(eco, `process.stdout.write(JSON.stringify({ total: 0, partes: { firmas: 0, terminados: 0, carpetas: 0, pedidos: 0 }, noMedido: { terminados: 0, carpetas: 0 }, tope: { value: 8, origin: 'sin-valor' }, problems: [process.env.TYCON_HOME + '|' + process.env.HOME] }))`);
+  const hijo = (o) => RL.reviewLoadSync({ topeMs: 2000, script: eco, ...o }).problems[0];
+  const propia = path.join(lab.root, 'propia');
+  const otra = path.join(lab.root, 'otra');
+  const custom = path.join(lab.root, 'custom');
+  const delProceso = path.join(lab.root, 'del-proceso');
+  const PATH = process.env.PATH;
+  const guardado = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, TYCON_HOME: process.env.TYCON_HOME };
+  // el HOME de este proceso pasa a ser una casa de prueba, así quien llama cuenta «su propia» casa sin tocar la real
+  process.env.HOME = propia;
+  process.env.USERPROFILE = propia;
+  try {
+    delete process.env.TYCON_HOME;
+    assert.strictEqual(hijo({ home: propia, env: { PATH, HOME: propia, TYCON_HOME: custom } }), `${custom}|${propia}`, '(1) el TYCON_HOME del env de quien llama, con el proceso sin él');
+    process.env.TYCON_HOME = delProceso;
+    assert.strictEqual(hijo({ home: propia, env: { PATH, HOME: propia } }), `${path.join(propia, '.tycon')}|${propia}`, '(2) sin TYCON_HOME en el env, el del proceso no pasa');
+    assert.strictEqual(hijo({ home: otra, env: { PATH, HOME: otra, TYCON_HOME: custom } }), `${custom}|${otra}`, '(3) otra casa con su HOME y su TYCON_HOME en el env');
+    // el TYCON_HOME de un env vale sólo para la HOME de ese env: con otra casa no cae en la casa de quien llama (T21)
+    assert.strictEqual(hijo({ home: otra, env: { PATH, HOME: propia, TYCON_HOME: custom } }), `${path.join(otra, '.tycon')}|${otra}`);
+    assert.strictEqual(hijo({ home: otra, env: { PATH, TYCON_HOME: custom } }), `${path.join(otra, '.tycon')}|${otra}`, 'un env sin HOME es del proceso');
+    assert.strictEqual(hijo({ home: '', env: { PATH, HOME: otra } }), `${path.join(otra, '.tycon')}|${otra}`, 'una HOME vacía es la del env');
+    assert.strictEqual(hijo({ env: { PATH, HOME: otra, TYCON_HOME: custom } }), `${custom}|${otra}`, 'sin HOME, la del env');
+    assert.strictEqual(hijo({ home: path.relative(process.cwd(), otra), env: { PATH, HOME: otra } }), `${path.join(otra, '.tycon')}|${otra}`, 'una HOME relativa se resuelve');
+    assert.strictEqual(hijo({ home: propia, env: { PATH, HOME: propia, TYCON_HOME: 'relativa' } }), `${path.join(propia, '.tycon')}|${propia}`, 'un TYCON_HOME relativo no vale');
+  } finally {
+    for (const [k, v] of Object.entries(guardado)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
 // 🔴 Falla con: una foto con otra forma (escrita a mano) que hace caer /wip y el estado de la coordinación.
 test('T13b ReviewLoad_FotoConOtraForma_NoEsFoto @story-8.326 @ac-10', () => {
   const lab = laboratorio();
