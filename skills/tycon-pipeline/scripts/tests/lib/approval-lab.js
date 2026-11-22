@@ -116,6 +116,11 @@ function laboratorio(t, { delicada = false } = {}) {
   const rm = spawnSync(process.execPath, [MOCKUP, 'render', '--data', modelo, '--story', stories[DESTINO]], { cwd: repo, encoding: 'utf8', env });
   assert.strictEqual(rm.status, 0, rm.stderr);
   lab.maqueta = path.join(repo, 'specs', 'qa', '9.91-mockup.html');
+  // su revisión con navegador limpia, la que deja `mockup.js shots` (acá sin abrir un navegador, como story-gate-cli.test.js:
+  // lo que se prueba es la aprobación; el navegador se prueba en mockup.test.js)
+  const SH = require(path.join(COPIA_SCRIPTS, 'lib', 'mockup-shots.js'));
+  const { report, shots } = SH.shotsPaths(lab.maqueta);
+  SH.escribirInforme({ report, file: path.basename(lab.maqueta), sha256: require(MOCKUP).mockupHash(fs.readFileSync(lab.maqueta, 'utf8')), shots, findings: [] });
   lab.comando = (args) => `node ${MARKER} ${args.map(comillas).join(' ')}`;
   lab.pregunta = (args) => OW.cuadroPara({ firma: 'plan-approval', comando: lab.comando(args), palabras: OW.canonica(lab.comando(args)), destino: DESTINO, cwd: repo, casa: home, sesion: COORD }).pregunta;
   /** El freno ante el comando que corre ses-coord y, si lo deja, el guion de verdad. `{ freno, r }`. */
