@@ -1049,6 +1049,12 @@
       "requiere": []
     },
     {
+      "__nota": "la puerta de la consola no deja sacar un worktree (ni borrar la carpeta) con una constancia de control sin commitear: la firma del dueño se perdería.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-unsaved-approval.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Con un camino corto con lista, el freno de la consola juzga la ruta real de una variable del comando (también con bucles) y, si no la puede resolver o la carpeta cambió con un cd que no sigue, frena diciendo que no pudo; ve cp, mv y sed -i dentro de bloques.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-unresolved-path.test.js",
@@ -2127,6 +2133,12 @@
       "requiere": []
     },
     {
+      "__nota": "el candado del instalador no vence por edad mientras su dueño vive; con el dueño vivo, a la hora. Evalúa sólo _lock_stale, sin correr el instalador.",
+      "raiz": "arnes",
+      "ruta": "tests/install-lock-owner.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/guard-update-notice.test.sh",
       "requiere": []
@@ -2966,6 +2978,12 @@
       "__nota": "story 7.54: el aviso de contexto. Avisa al cruzar el umbral de tokens y cada 100 mil más; /clear y compactar lo vuelven a cero; máquina sobre organización sobre fábrica; lo que no puede medir lo dice. Nunca frena.",
       "raiz": "arnes",
       "ruta": "tests/context-size-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el aviso de contexto al cerrar un paso pesado del pipeline: sobre el umbral recomienda /compact o sesión nueva; debajo, en un paso liviano, tras compactar o apagado, nada. Nunca frena.",
+      "raiz": "arnes",
+      "ruta": "tests/context-at-step-close.test.js",
       "requiere": []
     },
     {

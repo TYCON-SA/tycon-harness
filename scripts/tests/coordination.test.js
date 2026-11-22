@@ -152,6 +152,14 @@ const MEASURES = {
   'Un plan para el dueño pasa antes por un revisor aparte': 'nadie',
   'Afirmar sólo lo comprobado, y medir el uso antes de sacar algo': 'nadie',
   'Medir un cambio de velocidad en un día con carga': 'nadie',
+  'El cuadro de una pregunta lleva el contexto adentro': 'nadie',
+  'La constancia de un cambio de control, al final': 'nadie',
+  'Las historias se cierran en horas': 'nadie',
+  'Foco en el arnés': 'nadie',
+  'Primero lo que rompe o demora, y después el resto en el mismo pulso': 'nadie',
+  'Cada pendiente con quién lo tiene y en qué pedido': 'nadie',
+  'Un solo empuje por pedido': 'nadie',
+  'Nunca cerrar un turno con «¿seguimos?»': 'nadie',
 };
 const COMMAND = path.join(ROOT, 'commands', 'coordinate.md');
 const headings = (file) => fs.readFileSync(file, 'utf8').split('\n').filter((l) => /^## /.test(l));

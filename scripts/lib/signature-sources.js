@@ -627,7 +627,81 @@ function delPedidoDeAfuera(palabras, cwd, casa) {
   return { que: 'encolar o mergear un pedido de alguien de afuera del equipo', queHace: r.firmas, fuente: r.firmas.join('\n') };
 }
 
-function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes, casa } = {}) {
+// lo que pasa si sale mal al cambiar o borrar un conjunto de reglas: no es que algo entre a main sin la CI, es que una
+// regla que estaba deja de aplicarse
+const SI_REEMPLAZA = 'el conjunto de reglas queda como lo escribe el comando; si le falta una regla que estaba (la revisión, la CI exigida, la cola), deja de aplicarse';
+const SI_BORRA = 'lo que exigía el conjunto de reglas (la revisión, la CI exigida, la cola) deja de aplicarse';
+// el archivo de `--input` que se lee para el cuadro: uno de verdad tiene unos pocos kilobytes
+const TOPE_DEL_CUERPO = 256 * 1024;
+const NOMBRE_DE_CLAVE = /^[\w.-]{1,60}(\[[\w.-]{1,60}\])?$/;
+const CLAVES_A_LA_VISTA = 12;
+
+/** Las claves de primer nivel del cuerpo JSON de `--input` (de una regla, su tipo), o `{ error }` si no se lee. */
+function clavesDelCuerpo(archivo, cwd) {
+  try {
+    // la terminal expande la tilde antes de correr el comando: el cuadro lee el mismo archivo
+    const tilde = /^~(?=[\\/]|$)/.test(archivo) ? require('os').homedir() + archivo.slice(1) : archivo;
+    const ruta = path.resolve(cwd || process.cwd(), tilde);
+    const st = fs.statSync(ruta);
+    // un dispositivo o una tubería dice tamaño 0 y su lectura no termina: el cuadro no espera
+    if (!st.isFile()) return { error: 'no es un archivo común' };
+    if (st.size > TOPE_DEL_CUERPO) return { error: 'es demasiado grande para leerlo' };
+    const cuerpo = JSON.parse(fs.readFileSync(ruta, 'utf8'));
+    if (!cuerpo || typeof cuerpo !== 'object' || Array.isArray(cuerpo)) return { error: 'no es un objeto JSON' };
+    const claves = [];
+    for (const k of Object.keys(cuerpo)) {
+      const tipos = k === 'rules' && Array.isArray(cuerpo.rules) ? cuerpo.rules.map((r) => r && typeof r.type === 'string' && `rules[${r.type}]`).filter(Boolean) : [];
+      claves.push(...(tipos.length ? tipos : [k]));
+    }
+    return { claves };
+  } catch (e) { return { error: e && e.code === 'ENOENT' ? 'no está' : 'no se puede leer' }; }
+}
+
+/** Lo que manda un comando que reemplaza un conjunto de reglas, en palabras: sus claves, o que no se ve. */
+function loQueManda(manda, cwd) {
+  const claves = [...(manda.campos || [])];
+  let porQue = '';
+  if (manda.archivo) {
+    const c = clavesDelCuerpo(manda.archivo, cwd);
+    if (c.error) porQue = ` (${path.basename(manda.archivo)} ${c.error})`;
+    else claves.push(...c.claves);
+  }
+  // una clave con caracteres raros no se muestra tal cual: el cuadro no repite lo que el agente quiera escribir
+  const todas = [...new Set(claves)];
+  const vistas = todas.filter((k) => NOMBRE_DE_CLAVE.test(k));
+  if (!vistas.length) return `no se ve qué manda${porQue}`;
+  const mas = vistas.length > CLAVES_A_LA_VISTA || vistas.length < todas.length ? ' y otras' : '';
+  return `${vistas.slice(0, CLAVES_A_LA_VISTA).join(', ')}${mas}${porQue}`;
+}
+
+/**
+ * Saltear la cola o aflojar las reglas: lo que el lector (ci-bypass.js) dice de cada forma del comando. Sólo con un
+ * conjunto de reglas de GitHub tiene texto propio (qué le hace y lo que manda); lo demás, el cuadro de siempre.
+ */
+function deSaltearLaCola(comando, cwd) {
+  if (comando == null) return null;
+  let hs;
+  try { hs = require('./ci-bypass.js').leer(String(comando)); } catch (_) { return null; }
+  // una parte que el lector no lee entera puede ser un merge: el cuadro de siempre, con la alarma
+  if (hs.some((h) => !h.legible)) return null;
+  const conjuntos = hs.filter((h) => h.conjunto);
+  if (!conjuntos.length) return null;
+  const queHace = [];
+  for (const h of hs) if (!queHace.includes(h.motivo)) queHace.push(h.motivo);
+  const corto = require('./owner-approvals.js').sinRutas(String(comando).replace(/\s+/g, ' ').trim());
+  // lo que manda cada conjunto que se reemplaza, con su número cuando son varios
+  const reemplazos = conjuntos.filter((h) => h.accion === 'replace');
+  const reemplaza = reemplazos.length > 0;
+  const mandas = reemplazos.map((h) => `${reemplazos.length > 1 ? `al ${h.conjunto}: ` : ''}${loQueManda(h.manda, cwd)}`);
+  queHace.push(`${reemplaza ? `lo que manda: ${mandas.join('; ')}; ` : ''}el comando: ${corto}`);
+  // con otra forma en el mismo comando (un merge con --admin), su consecuencia de siempre también vale: no se reemplaza
+  const soloReglas = conjuntos.length === hs.length;
+  return { ...(soloReglas ? { que: 'cambiar o borrar un conjunto de reglas de la rama', siSaleMal: reemplaza ? SI_REEMPLAZA : SI_BORRA } : {}),
+    queHace, fuente: queHace.join('\n') };
+}
+
+function partesDe({ firma, palabras, comando, cwd, marcador, estado, destino, topes, casa } = {}) {
+  if (firma === 'escape:merge-bypass') return deSaltearLaCola(comando, cwd);
   if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd, palabras);
   if (firma === 'escape:rojo-esperado-de-la-matriz') return delRojoEsperado(palabras, marcador);
   // volver al modo autónomo: el cuadro sale de la detención que el control de cierre anotó en el marcador de la sesión

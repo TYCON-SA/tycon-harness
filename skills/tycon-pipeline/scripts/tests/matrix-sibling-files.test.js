@@ -437,3 +437,24 @@ test('T15b CopiaDeLaHistoria_RutaConOtraMayusculaOSoloEnLaCopia @story-8.235 @ac
     assert.equal(m.calcular().perAc[1].verdict, 'NOT-RUN', 'la copia cambió: no cuenta');
   }
 });
+
+test('T17d HermanoEnMain_SoloAlDiaConSuOrigenEsSuCopia', () => {
+  // la historia y el hermano en `main`: `main` no nombra a ninguna historia, así que el hermano es su copia sólo al día
+  // con su origin/main y limpio. Sin origen (o al día), lo que cambió en él cuenta; adelantado, se juzga en el declarado
+  const alDia = lab({ declarados: ['src/Feature.cs'] });
+  alDia.humo();
+  avanzaElClon(alDia);
+  const r = alDia.calcular();
+  assert.doesNotMatch(avisos(r), /tal como está declarado/, avisos(r));
+  const adelantado = lab({ declarados: ['src/Feature.cs'] });
+  const origen = path.join(adelantado.ws, 'Back-origen.git');
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origen]);
+  git(adelantado.back, ['remote', 'add', 'origin', origen]);
+  git(adelantado.back, ['push', '-q', 'origin', 'main']);
+  git(adelantado.back, ['fetch', '-q', 'origin']);
+  adelantado.humo();
+  avanzaElClon(adelantado);
+  const s = adelantado.calcular();
+  assert.equal(s.perAc[1].verdict, 'NOT-RUN', avisos(s));
+  assert.match(avisos(s), /comparada contra Back tal como está declarado/);
+});

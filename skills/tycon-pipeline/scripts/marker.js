@@ -212,6 +212,8 @@ const PARA_OTRA_SESION = {
   'adhoc': { firma: 'adhoc-lane', si: (a) => a[3] === 'set' },
   // el pendiente que abrió otra sesión: la firma se escribe en su repo, que el freno comprueba que es de esa sesión
   'approve-pending': { firma: 'pending-approval' },
+  // seguir en autónomo: la coordinadora lo pide para la sesión detenida y lo decide el click del dueño en su cuadro
+  'resume-autonomy': { firma: 'autonomy-resume', marcador: true },
 };
 
 // cerrar la ejecución que la partición de su historia dejó sin objeto: la forma de rutina de la salida perdida
@@ -222,6 +224,8 @@ const PARTICION = { firma: 'lost-run:particion', nombra: 3, si: (a) => a.include
 const reglaParaOtra = (argv) => {
   if (argv[2] === 'clear-session' && PARTICION.si(argv)) return PARTICION;
   if (argv[2] === 'adhoc' && argv[3] === 'allow-foreign-save') return { firma: 'adhoc-lane:guardado-ajeno' };
+  // el freno de los datos, sólo para dejarlo pasar: descartar o pasar a historia tocan el carril de la sesión sin firma
+  if (argv[2] === 'adhoc' && argv[3] === 'allow-data-change') return { firma: 'adhoc-lane:datos', si: (a) => a[a.indexOf('--recommends') + 1] === 'pasar' };
   if (argv[2] === 'sign-file') return { firma: `escape:${argv[3]}` };
   return PARA_OTRA_SESION[argv[2]];
 };
@@ -2455,15 +2459,17 @@ function cmdCompleteStep(nRaw, flags) {
         appendLog('gates.log', { name: 'compare-previous-gate', action: 'no-medido', story: marker.storyId || null, motivo: noMedido });
       } else if (f && (f.candidatos.length || (f.sinRepo || []).length)) {
         for (const a of f.avisos) console.error(`⚠️  complete-step ${n}: ${a}`);
+        // lo que no se pudo mirar junto a los demás candidatos también queda en el renglón, no sólo en pantalla
+        const noMedidos = (f.noMedidos || []).map((x) => ({ archivo: x.archivo, motivo: x.motivo }));
         if (f.bloquea) {
           appendLog('gates.log', { name: 'compare-previous-gate', action: 'bloqueo', story: marker.storyId || null,
-            faltan: f.juicio.faltan.map((x) => x.archivo), noDeclaradas: f.juicio.noDeclaradas.map((x) => x.cmd) });
+            faltan: f.juicio.faltan.map((x) => x.archivo), noDeclaradas: f.juicio.noDeclaradas.map((x) => x.cmd), ...(noMedidos.length ? { noMedidos } : {}) });
           console.error(`marker.js complete-step ${n} BLOQUEADO — ${f.lineas[0]}`);
           for (const l of f.lineas.slice(1)) console.error(l.startsWith('comparación con main') ? `   ${l}` : l);
           process.exit(1);
         }
         for (const l of f.lineas) console.error(`   ${l.trim()}`);
-        appendLog('gates.log', { name: 'compare-previous-gate', action: 'verde', story: marker.storyId || null, candidatos: f.candidatos.map((x) => x.archivo), avisos: f.juicio.avisos.length });
+        appendLog('gates.log', { name: 'compare-previous-gate', action: 'verde', story: marker.storyId || null, candidatos: f.candidatos.map((x) => x.archivo), avisos: f.juicio.avisos.length, ...(noMedidos.length ? { noMedidos } : {}) });
       }
     }
     // Un crítico de seguridad o de datos abierto o diferido no cierra callado: lo arregla una vuelta (extra, si se llegó al
@@ -2873,6 +2879,17 @@ function cmdCompleteStep(nRaw, flags) {
   syncSessionState(SID);
   process.stdout.write(JSON.stringify(marker, null, 2));
   if (nuevo) decirRenglonDelPaso(marker, paso);
+  avisarContextoAlCerrar(ids);
+}
+
+// Al cerrar un paso pesado con la sesión sobre el umbral de contexto, que es el momento de compactar o de abrir una
+// sesión nueva (scripts/hooks/context-size-notice.js). Avisa, nunca frena.
+function avisarContextoAlCerrar(ids) {
+  try {
+    const aviso = require(path.join(__dirname, '..', '..', '..', 'scripts', 'hooks', 'context-size-notice.js'))
+      .avisoAlCerrarPaso({ pasos: ids, sessionId: SID, home: os.homedir() });
+    if (aviso) process.stderr.write(`${aviso}\n`);
+  } catch (e) { process.stderr.write(`🧠 contexto: no pude medir la sesión al cerrar el paso (${e.message})\n`); }
 }
 
 /**
@@ -7175,7 +7192,7 @@ function cmdApprovePending(argv) {
   if (r.codigo !== 0) { console.error(`🔒 marker.js approve-pending: no se aprobó ${id} — ${r.motivo}`); process.exit(r.codigo); }
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
   const q = r.via === 'terminal' ? { tipo: 'manual', quien: persona } : quienFirmo(r, persona);
-  const escrita = { ...linea, via: r.via, quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
+  const escrita = { ...linea, via: PA.viaDeLaFirma(r), quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
   // cada aprobación en su archivo: dos ramas que aprueban a la vez no chocan en el merge
   const archivo = PA.archivoDe(escrita);
   try {
@@ -8030,10 +8047,13 @@ function cmdResumeAutonomy(argv) {
     writeMarker(fresco);
     syncSessionState(SID);
     appendLog('gates.log', { name: 'autonomy-resume', status: 'ok', via, by, huella: d.huella, reason: ahora.reason, detenidaEn: ahora.at });
-    process.stdout.write(`Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): corré los controles de nuevo antes de cerrar el turno.\n`);
+    process.stdout.write(SID === PROPIA ? `Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): corré los controles de nuevo antes de cerrar el turno.\n`
+      : `Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): la sesión ${SID} volvió al modo autónomo. Avisale que siga: corre los controles de nuevo antes de cerrar el turno.\n`);
     process.exit(0);
   };
-  if (!terminal) {
+  // pedida por la coordinadora para la sesión detenida: el permiso de la terminal es de esa sesión, que lo consume ella
+  const paraOtra = SID !== PROPIA && !terminal;
+  if (!terminal && !paraOtra) {
     const p = ad.tomarPermiso(STATE_DIR, SID, d.huella, { seco: PREVIO });
     if (p.permiso) {
       if (PREVIO) { process.stdout.write(`${ow.PRECHEQUEO_OK}\n`); process.exit(0); }
@@ -8064,6 +8084,8 @@ function cmdResumeAutonomy(argv) {
     process.stdout.write(`Una persona decidió seguir desde su terminal: el permiso quedó para la sesión ${SID}. Cuando esa sesión corra marker.js resume-autonomy, vuelve al modo autónomo.\n`);
     process.exit(0);
   }
+  // para otra sesión, con la firma se escribe su marcador: el que vio el dueño en el cuadro
+  if (paraOtra) trabajarSobreElDestino(ow, r);
   return aplicar({ via: r.via, by: (r.registro && r.registro.aprobada_en) || r.sesion || SID, at: nowIso() });
 }
 

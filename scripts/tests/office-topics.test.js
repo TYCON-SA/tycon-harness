@@ -8,7 +8,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const TOPICS =path.join(__dirname, '..', 'tools', 'office', 'topics.js');
 const T = require(TOPICS);
@@ -963,4 +963,29 @@ test('Regresion_SinTarjeta @story-8.184 @ac-20: no toca nada, ni la red; una pal
   assert.strictEqual(fs.existsSync(path.join(m.sdir, 'office', 'promises.json')), false, 'ni las horas prometidas');
   fs.writeFileSync(file, 'null');
   assert.throws(() => execFileSync('node', [TOPICS, '--unmatched'], { env, encoding: 'utf8', stdio: 'pipe' }), (e) => e.status === 2 && /no se pudo leer/.test(String(e.stderr)));
+});
+
+test('SinTarjeta_NoMideLaMaquina: --unmatched pide a la oficina sin la carga de la máquina, que descarta', () => {
+  const m = machine();
+  fs.writeFileSync(path.join(m.sdir, 'coordination', 'tablero.json'), JSON.stringify({ tablas: { hoy: [{ grupo: 'G', que: 'Algo' }] } }));
+  // la oficina anota con qué opciones la llamaron. Se envuelve cuando topics.js la pide: cargarla antes cargaría
+  // también topics.js (la oficina lo usa), y entonces no correría como el guion principal
+  const anotadas = path.join(m.home, 'opciones.json');
+  const previa = path.join(m.home, 'espia.js');
+  fs.writeFileSync(previa, `const M = require('module');
+const orig = M.prototype.require;
+M.prototype.require = function (id) {
+  const r = orig.apply(this, arguments);
+  if (/office\\.js$/.test(String(id)) && r && typeof r.collect === 'function' && !r.__espia) {
+    const real = r.collect;
+    r.__espia = true;
+    r.collect = (opts) => { require('fs').writeFileSync(${JSON.stringify(anotadas)}, JSON.stringify(opts)); return real(opts); };
+  }
+  return r;
+};
+`);
+  const env = { ...process.env, HOME: m.home, USERPROFILE: m.home, TYCON_OFFICE_LINK: '0' };
+  const salida = spawnSync('node', ['-r', previa, TOPICS, '--unmatched'], { env, encoding: 'utf8' });
+  assert.ok(fs.existsSync(anotadas), `${salida.status} ${salida.stdout} ${salida.stderr}`);
+  assert.strictEqual(JSON.parse(fs.readFileSync(anotadas, 'utf8')).machine, false);
 });
