@@ -1,8 +1,10 @@
 'use strict';
 // coordination-fill-gate.test.js — the brake that keeps the coordinator from closing her turn with a free slot, free
 // memory and a ready story: the Stop hook, `fillCheck`, `keep-free` and the written reason. Nothing here reads the real
-// HOME: every case builds its own HOME, team profile, sessions and project reading. The in-process cases hand the role
-// through `arnes`; the hook as a child process gets the same profile through TYCON_PROFILE, like session-cap-guard.
+// HOME: every case builds its own HOME, team profile, sessions and project reading, and an empty repos root
+// (TYCON_REPOS_ROOT): without it the review count (scripts/lib/review-load.js) walks the real repos next to the harness
+// clone. The in-process cases hand the role through `arnes`; the hook as a child process gets the same profile through
+// TYCON_PROFILE, like session-cap-guard.
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -52,7 +54,9 @@ function toy({ cap = 6, designated = COORD, remote = REMOTE, nowMs = NOW } = {})
   fs.mkdirSync(cwd);
   git(cwd, 'init', '-q');
   if (remote) git(cwd, 'remote', 'add', 'origin', remote);
-  const t = { root, home, state, arnes, profile, cwd, nowMs };
+  const repos = path.join(root, 'repos');
+  fs.mkdirSync(repos);
+  const t = { root, home, state, arnes, profile, cwd, nowMs, env: { TYCON_REPOS_ROOT: repos } };
   session(t, COORD, 'Coordinadora', { status: 'busy', statusUpdatedAt: nowMs });
   return t;
 }
@@ -95,7 +99,7 @@ function opened(t, name, minutesAgo) {
   fs.writeFileSync(f, JSON.stringify([...list, { name, cwd: t.root, at: t.nowMs - minutesAgo * 60000 }]));
 }
 const mem = (pct) => () => ({ pct, why: pct == null ? 'no se pudo' : null });
-const opts = (t, extra = {}) => ({ home: t.home, arnes: t.arnes, env: {}, now: t.nowMs, sessionId: COORD, cwd: t.cwd, readMemory: mem(48), refreshLauncher: () => {}, ...extra });
+const opts = (t, extra = {}) => ({ home: t.home, arnes: t.arnes, env: t.env, now: t.nowMs, sessionId: COORD, cwd: t.cwd, readMemory: mem(48), refreshLauncher: () => {}, ...extra });
 const keysOf = (r) => (r.work || []).map((w) => w.key).sort();
 const countFile = (t, sid = COORD) => path.join(t.state, 'coordination', `fill-gate-${sid}.count`);
 const freeSlots = (t) => FS.read(t.state);
@@ -105,7 +109,7 @@ function runHook(t, event, { memory = 48, input } = {}) {
   const args = memory == null ? [HOOK] : [HOOK, '--memory-pct', String(memory)];
   const r = spawnSync(process.execPath, args, {
     input: input !== undefined ? input : JSON.stringify(event), encoding: 'utf8',
-    env: { PATH: process.env.PATH, HOME: t.home, USERPROFILE: t.home, TYCON_PROFILE: t.profile },
+    env: { PATH: process.env.PATH, HOME: t.home, USERPROFILE: t.home, TYCON_PROFILE: t.profile, ...t.env },
   });
   let decision = null;
   try { decision = r.stdout.trim() ? JSON.parse(r.stdout) : null; } catch { decision = { unparsed: r.stdout }; }
@@ -113,7 +117,7 @@ function runHook(t, event, { memory = 48, input } = {}) {
 }
 const stopEvent = (t, sid = COORD, extra = {}) => ({ hook_event_name: 'Stop', session_id: sid, cwd: t.cwd, stop_hook_active: false, ...extra });
 /** The hook in process, with the toy's clock and memory. */
-const runIn = (t, extra = {}) => G.run({ event: stopEvent(t), home: t.home, arnes: t.arnes, env: {}, now: t.nowMs, readMemory: mem(48), refreshLauncher: () => {}, ...extra });
+const runIn = (t, extra = {}) => G.run({ event: stopEvent(t), home: t.home, arnes: t.arnes, env: t.env, now: t.nowMs, readMemory: mem(48), refreshLauncher: () => {}, ...extra });
 
 // ── Cuándo frena (AC 1-4) ───────────────────────────────────────────────────────────────────────────────────────────
 
@@ -407,7 +411,7 @@ test('T10 KeepFree_RechazaLoQueNoCorresponde @story-8.307 @ac-12: otra sesión, 
   assert.strictEqual(ok.code, 0, ok.message);
   assert.strictEqual(freeSlots(t).record.reason, 'espero bla firma/b del dueño para la 8.288');
   // the command line: without --reason it exits 2 and touches nothing
-  const cli = spawnSync(process.execPath, [COORDINATION, 'keep-free'], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: empty.home, USERPROFILE: empty.home, TYCON_PROFILE: empty.profile, CLAUDE_CODE_SESSION_ID: COORD } });
+  const cli = spawnSync(process.execPath, [COORDINATION, 'keep-free'], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: empty.home, USERPROFILE: empty.home, TYCON_PROFILE: empty.profile, CLAUDE_CODE_SESSION_ID: COORD, ...empty.env } });
   assert.strictEqual(cli.status, 2, cli.stderr);
   assert.match(cli.stderr, /--reason/);
   assert.strictEqual(fs.existsSync(FS.files(empty.state).current), false);
@@ -498,7 +502,7 @@ test('T15 FillGate_MismaFoto_DecideIgualQueStatus @story-8.307 @ac-1 @ac-2 @ac-6
   busy(t, 's-a', 'Uno');
   busy(t, 's-b', 'Dos');
   snapshot(t, [proyecto([story('A'), story('B')])]);
-  const env = { PATH: process.env.PATH, HOME: t.home, USERPROFILE: t.home, TYCON_PROFILE: t.profile, CLAUDE_CODE_SESSION_ID: COORD };
+  const env = { PATH: process.env.PATH, HOME: t.home, USERPROFILE: t.home, TYCON_PROFILE: t.profile, CLAUDE_CODE_SESSION_ID: COORD, ...t.env };
   const cli = spawnSync(process.execPath, [COORDINATION, 'status', '--json'], { encoding: 'utf8', env });
   assert.strictEqual(cli.status, 0, cli.stderr);
   const s = JSON.parse(cli.stdout);

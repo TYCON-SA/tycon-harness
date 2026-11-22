@@ -140,9 +140,13 @@ const sinCuenta = (tope, problema) => ({ total: 0, partes: { firmas: null, termi
  */
 function reviewLoadSync({ home = os.homedir(), env = process.env, topeMs = module.exports.TOPE_DE_DECISION_MS, script = __filename } = {}) {
   const tope = topeDeRevision({ home, env });
+  // el hijo cuenta la casa del arnés que contaría quien llama: con otra HOME en el hijo, el `TYCON_HOME` de quien llama
+  // pasaría por el de esa HOME, y la cuenta de una casa de prueba leería (y escribiría) la casa real
+  let casa;
+  try { casa = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).ownRootOf(home); } catch (e) { return sinCuenta(tope, `la cuenta no corrió (${motivo(e)})`); }
   const r = require('child_process').spawnSync(process.execPath, [script, '--json', '--timeout-ms', String(topeMs)], {
     encoding: 'utf8', timeout: topeMs + 1000, killSignal: 'SIGKILL', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...env, HOME: home, USERPROFILE: home },
+    env: { ...env, HOME: home, USERPROFILE: home, TYCON_HOME: casa },
   });
   if (r.error) return sinCuenta(tope, r.error.code === 'ETIMEDOUT' ? `la cuenta no terminó en ${(topeMs + 1000) / 1000} s` : `la cuenta no corrió (${motivo(r.error)})`);
   if (r.status !== 0) return sinCuenta(tope, `la cuenta salió con ${r.status === null ? r.signal : r.status}`);

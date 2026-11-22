@@ -32,7 +32,10 @@ function toy({ profile = {}, machine = null } = {}) {
   fs.mkdirSync(arnes);
   fs.writeFileSync(path.join(arnes, 'perfil-equipo.json'), JSON.stringify(profile));
   if (machine) fs.writeFileSync(path.join(home, '.claude', 'tycon.json'), JSON.stringify(machine));
-  const opts = { home, arnes, env: {}, now: NOW };
+  // an empty repos root: without it the review count (scripts/lib/review-load.js) walks the real repos next to the harness clone
+  const repos = path.join(root, 'repos');
+  fs.mkdirSync(repos);
+  const opts = { home, arnes, env: { TYCON_REPOS_ROOT: repos }, now: NOW };
   return { root, home, state, arnes, opts };
 }
 

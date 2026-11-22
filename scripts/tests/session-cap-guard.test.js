@@ -29,7 +29,10 @@ function toy({ cap = 5, busy = 0 } = {}) {
   fs.mkdirSync(path.join(stateDir(home), 'active'), { recursive: true });
   const profile = path.join(root, 'perfil-equipo.json');
   fs.writeFileSync(profile, JSON.stringify(cap == null ? {} : { coordination: { max_working: cap } }));
-  const env = { TYCON_PROFILE: profile };
+  // an empty repos root: without it the review count (scripts/lib/review-load.js) walks the real repos next to the harness clone
+  const repos = path.join(root, 'repos');
+  fs.mkdirSync(repos);
+  const env = { TYCON_PROFILE: profile, TYCON_REPOS_ROOT: repos };
   const t = { root, home, profile, env };
   for (let i = 1; i <= busy; i += 1) session(t, `busy-${i}`, `S${i}`, { status: 'busy' });
   return t;
@@ -131,7 +134,7 @@ const STATES = [
 ];
 function stateToy(s) {
   const t = toy({ cap: s.cap, busy: s.busy });
-  if (s.cap == null) t.env = { TYCON_PROFILE: '0' };
+  if (s.cap == null) t.env = { ...t.env, TYCON_PROFILE: '0' };
   if (s.openedAgo) {
     fs.mkdirSync(C.coordinationDir(t.home), { recursive: true });
     fs.writeFileSync(openedFile(t), JSON.stringify([{ name: 'recien', cwd: t.root, at: NOW - s.openedAgo * 60000 }]));

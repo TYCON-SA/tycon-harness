@@ -141,6 +141,41 @@ test('T17 CapCheck_SincronaConLaCuentaEnUnHijo @story-8.326 @ac-3', () => {
   assert.match(l.problems[0], /no terminó/);
 });
 
+// 🔴 Falla con: la cuenta del hijo que lee o escribe la casa real de quien la pide (su `TYCON_HOME`) cuando le piden la
+// de una casa de prueba: con la casa de prueba en HOME, el hijo tomaba la variable como suya.
+test('T21 ReviewLoadSync_SoloLaCasaDePrueba @story-8.326 @ac-3', () => {
+  const lab = laboratorio();
+  const { stateDir } = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+  fs.mkdirSync(path.join(lab.home, '.claude', 'sessions'), { recursive: true });
+  const repos = path.join(lab.root, 'repos');
+  fs.mkdirSync(repos);
+  // stable-data: el hijo cuenta con su reloj, así que los pedidos se fechan contra el momento de armarlos
+  const trabado = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`o/r#${i + 1}`, { estado: 'blocked', punta: 'abc', vistoDesde: new Date(Date.now() - 2 * 3600000).toISOString() }]));
+  const propio = stateDir(lab.home);
+  fs.mkdirSync(propio, { recursive: true });
+  fs.writeFileSync(path.join(propio, 'stuck-prs.json'), JSON.stringify(trabado(1)));
+  // la casa «real» de quien pide la cuenta, en otra carpeta: dos pedidos trabados y dos caminos cortos viejos de sesiones
+  // que ya no están (con eso `machine()` escribiría su lista en la carpeta de estado que lea)
+  const real = path.join(lab.root, 'real', '.tycon');
+  const estadoReal = path.join(real, 'state');
+  fs.mkdirSync(path.join(estadoReal, 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(estadoReal, 'stuck-prs.json'), JSON.stringify(trabado(2)));
+  for (const sid of ['viejo-1', 'viejo-2']) fs.writeFileSync(path.join(estadoReal, 'adhoc', `${sid}.json`), JSON.stringify({ reason: 'x', lastTouch: new Date(Date.now() - 30 * 86400000).toISOString() }));
+  const foto = (dir) => {
+    const out = {};
+    const andar = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) andar(p); else { const s = fs.statSync(p); out[path.relative(dir, p)] = `${s.size}:${s.mtimeMs}`; } } };
+    andar(dir);
+    return out;
+  };
+  const antes = foto(real);
+  const r = RL.reviewLoadSync({ home: lab.home, env: { PATH: process.env.PATH, TYCON_HOME: real, TYCON_REPOS_ROOT: repos }, topeMs: 8000 });
+  assert.deepStrictEqual(r.problems, [], JSON.stringify(r));
+  assert.strictEqual(r.partes.pedidos, 1, `cuenta los pedidos de la casa de prueba, no los de la real: ${JSON.stringify(r.partes)}`);
+  assert.strictEqual(r.partes.firmas, 0);
+  assert.strictEqual(r.partes.terminados, 0);
+  assert.deepStrictEqual(foto(real), antes, 'no escribió nada en la casa real');
+});
+
 // 🔴 Falla con: una foto con otra forma (escrita a mano) que hace caer /wip y el estado de la coordinación.
 test('T13b ReviewLoad_FotoConOtraForma_NoEsFoto @story-8.326 @ac-10', () => {
   const lab = laboratorio();
