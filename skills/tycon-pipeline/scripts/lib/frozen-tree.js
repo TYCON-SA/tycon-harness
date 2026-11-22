@@ -289,11 +289,19 @@ function sinPapeleoDeLaHistoria(txt) {
   const conFrontmatter = lineas[0] === '---';
   let enFrontmatter = conFrontmatter;
   let enPipelines = false;
+  let enArchivos = false;      // `files_to_modify` / `files_to_create`: sumar o sacar una prueba no cambia lo revisado
   let campoDeLaTanda = null;   // la sangría del campo que se saca, con sus renglones de continuación
+  const { isTestPath } = require('./atdd-order.js');
   for (const [i, l] of lineas.entries()) {
     if (enFrontmatter) {
       if (i > 0 && l === '---') { enFrontmatter = false; out.push(l); continue; }
-      if (/^\S/.test(l)) { enPipelines = /^pipelines\s*:/.test(l); campoDeLaTanda = null; }
+      if (/^\S/.test(l)) { enPipelines = /^pipelines\s*:/.test(l); enArchivos = /^files_to_(modify|create)\s*:/.test(l); campoDeLaTanda = null; }
+      // un archivo de prueba de la lista de archivos (el mismo criterio de «qué es una prueba» que el orden de ATDD): las
+      // vueltas lo suman al escribir la prueba de un hallazgo. Un archivo de código, o cualquier otro campo, sigue contando
+      if (enArchivos) {
+        const item = l.match(/^\s+-\s+["']?([^"'#\s]+)["']?\s*(#.*)?$/);
+        if (item && isTestPath(item[1])) continue;
+      }
       if (enPipelines) {
         const sangria = l.match(/^(\s*)/)[1].length;
         // su continuación: más sangrada, o una lista escrita a la misma sangría que el campo (también es YAML válido)
@@ -358,7 +366,7 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
   if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}) };
   const d = git(['-C', repo, 'diff-tree', '-r', '-z', '--no-renames', treeA, treeB]);
   if (!d.ok) return { error: `no pude comparar ${repo} entre ${treeA} y ${treeB}: ${unaLinea(d.err)}` };
-  const { esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo } = require('./save-ok.js');
+  const { esPapeleoDeLaHuella, esEvidenciaEnVivo, esCapturaDelPorton, esGuionEnVivo } = require('./save-ok.js');
   const partes = d.crudo.split('\0');
   const files = [];
   const papeleo = [];
@@ -375,6 +383,15 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
   };
   const leer = (t, rel) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
   const estadoDelSprint = storyRel ? path.posix.join(path.posix.dirname(storyRel), 'sprint-status.yaml') : null;
+  // la guía de la prueba a mano de ESTA historia, que qa-guide.js arma desde ella (`<su carpeta qa>/<historia>-guia-qa.html`)
+  // y se regenera con cada vuelta. Sólo ésa: otra `-guia-qa.html` del repo puede ser una página que la app sirve
+  let guiaDeLaHistoria = null;
+  if (storyRel) {
+    try {
+      const qa = require('./qa-dir.js').qaDirFor(path.join(repo, storyRel));
+      guiaDeLaHistoria = path.relative(repo, path.join(qa, `${path.posix.basename(storyRel, '.md')}-guia-qa.html`)).split(path.sep).join('/');
+    } catch (_) { guiaDeLaHistoria = null; }
+  }
   // la entrada de una ruta en un árbol: modo, tipo y objeto («» si no existe, null si no se pudo leer). Así cuentan también
   // un cambio de permisos y el puntero de un submódulo, que el contenido solo no muestra
   const entrada = (t, rel) => { const r = git(['-C', repo, 'ls-tree', t, '--', rel]); return r.ok ? r.out.split('\t')[0] : null; };
@@ -412,9 +429,10 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
       const b = leer(treeB, rel);
       esPapeleo = !!clave && a !== null && b !== null && sinRenglonDeLaHistoria(a, clave) === sinRenglonDeLaHistoria(b, clave);
     } else {
-      // la salida o la captura de un humo, o el guion de la prueba en vivo, que su registro nombra con la misma huella:
-      // «Probar en vivo» corre después de los revisores y deja esa evidencia; no es código
-      esPapeleo = rel === 'tasks/todo.md' || esPapeleoDeLaHuella(rel, modo) || esEvidenciaEnVivo(repo, rel)
+      // la salida o la captura de un humo, una captura del portón de navegador o el guion de la prueba en vivo, que su
+      // registro o su índice nombran con la misma huella: corren después de los revisores y dejan esa evidencia; no es código
+      esPapeleo = rel === 'tasks/todo.md' || (rel === guiaDeLaHistoria && modo !== '120000') || esPapeleoDeLaHuella(rel, modo)
+        || esEvidenciaEnVivo(repo, rel) || esCapturaDelPorton(repo, rel)
         || (modo !== '120000' && esGuionEnVivo(repo, rel));
     }
     if (esPapeleo) papeleo.push(rel);
@@ -527,11 +545,16 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
   }
   // la carpeta de la corrida: la que guarda el marcador, o la que calcula el pipeline para su historia
   if (marcador) {
-    run = marcador.runDir || null;
-    if (!run && marcador.storyId) {
+    // las rutas del marcador, absolutas contra su repo (lib/run-dir.js); nunca contra la carpeta del proceso
+    const r = require('./run-dir.js').rutasDeLaCorrida(marcador);
+    const abs = (p) => (typeof p === 'string' && path.isAbsolute(p) ? p : null);
+    run = abs(r.runDir);
+    if (!run && marcador.runDir) runError = `no pude ubicar la carpeta de la corrida del marcador (${r.motivo || marcador.runDir})`;
+    else if (!run && marcador.storyId && !abs(r.repoPath)) runError = `el marcador no dice su repo (${r.motivo || 'sin repoPath ni historia absoluta'})`;
+    else if (!run && marcador.storyId) {
       try {
-        const repoM = marcador.repoPath || process.cwd();
-        const story = marcador.storyPath ? (path.isAbsolute(marcador.storyPath) ? marcador.storyPath : path.resolve(repoM, marcador.storyPath)) : undefined;
+        const repoM = abs(r.repoPath);
+        const story = abs(r.storyPath) || undefined;
         // de `run-dir.js`, no de `pipeline.js`: el tablero del sitio carga esto y su imagen no lleva el pipeline entero
         run = require('./run-dir.js').resolveRunDir(repoM, String(marcador.storyId), false, story, { marker: marcador }) || null;
         if (!run) runError = 'la historia del marcador todavía no tiene carpeta de corrida';

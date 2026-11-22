@@ -779,7 +779,7 @@ function alarm(a) {
     const before = blobOf(a.root, from, w.path); const after = blobOf(a.root, to, w.path);
     if (before === after || approvedEntry(approvals, w.path, after || 'borrado')) continue;
     const last = trimNl(git(a.root, ['log', '-1', '--format=%H', `${from}..${to}`, '--', w.path], { allowFail: true }).stdout || '') || to;
-    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, firmalo desde una sesión, con tu click en el cuadro de opciones o tu «aprobado» (o en una terminal, con --terminal): bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
+    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, lo firma el dueño: desde una sesión se corre este comando solo y él lo aprueba con su click en el cuadro de opciones o su «aprobado» (o lo corre él en una terminal, con --terminal): bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
   }
   for (const p of [...a.rules].sort()) {
     if (!p.endsWith('.json') || blobOf(a.root, from, p) === blobOf(a.root, to, p)) continue;
@@ -826,9 +826,22 @@ function cmdRun() {
     console.log(`base-controls: base ${short(a.base)} · ancestro ${short(a.mb)} · punta ${short(a.tip)}${a.prHead ? ` (merge; el pedido es ${short(a.prHead)})` : ''} · los controles y su regla salen de la base`);
     // el inventario: el de la base contra la base (sus guiones están), y el del pedido contra el pedido (sus controles nuevos tienen entrada)
     const baseProblems = inventoryProblems(a.root, a.base, a.inv);
-    for (const p of baseProblems) console.log(`❌ base-controls: inventario de la base — ${p}`);
-    if (baseProblems.length) reasons.push('el inventario de la base no cuadra');
     const tipRead = readInventory(a.root, a.tip);
+    // Un problema de la base que el pedido deja bien no frena: cuando el público suma un control que la copia propia del
+    // hook del privado no llama, todo pedido del privado frenaría, también el que lo arregla. Se mira con el inventario
+    // DE LA BASE sobre el árbol del pedido: sacar el control del inventario del pedido no lo arregla. Sin un inventario
+    // del pedido que se lea, frena todo como siempre.
+    // Se perdona sólo «ningún paso corre X», y sólo si el pedido no cambia ningún archivo de control salvo el hook, ni el
+    // mapa de renombres: así no puede llamar al control y vaciarlo en el mismo pedido, ni llamarlo por un atajo nuevo. Un
+    // guion que falta no se perdona (el pedido lo traería con cualquier contenido).
+    const RENOMBRES = 'scripts/lib/renames.json';
+    const soloElHook = a.changed.every((f) => f === a.inv.hook) && blobOf(a.root, a.mb, RENOMBRES) === blobOf(a.root, a.tip, RENOMBRES);
+    const sigueEnElPedido = new Set(tipRead.inv ? inventoryProblems(a.root, a.tip, a.inv) : baseProblems);
+    const arreglados = soloElHook ? baseProblems.filter((p) => p.startsWith('ningún paso corre ') && !sigueEnElPedido.has(p)) : [];
+    const quedan = baseProblems.filter((p) => !arreglados.includes(p));
+    for (const p of arreglados) console.log(`· base-controls: inventario de la base — ${p} (el pedido lo arregla)`);
+    for (const p of quedan) console.log(`❌ base-controls: inventario de la base — ${p}`);
+    if (quedan.length) reasons.push('el inventario de la base no cuadra');
     if (tipRead.inv) {
       const tipProblems = inventoryProblems(a.root, a.tip, tipRead.inv);
       // los nombres y rutas salen del inventario del pedido: un salto de línea no arma una línea propia

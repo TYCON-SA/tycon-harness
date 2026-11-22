@@ -282,3 +282,15 @@ test('T34 Observe_PowerShellTool_RecordedLikeBash @story-4.7 @ac-1 — el comand
   assert.strictEqual(lines[0].tool, 'PowerShell');
   assert.strictEqual(lines[0].summary, '$env:K="[REDACTED-SK]"; dir C:\\x');
 });
+
+test('T35 Observe_GithubFineGrainedAndOtherTokens_AreMasked — los tokens de GitHub de grano fino y los gho_/ghu_/ghs_/ghr_ también se tapan', () => {
+  const s = (x) => obs.sanitize(x, null);
+  const pat = j('github', '_pat_', '11AAAAAAAAAAAAAAAAAAAA', '_', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+  for (const t of [pat, j('gho', '_', 'abcdefghijklmnopqrst'), j('ghs', '_', 'abcdefghijklmnopqrst')]) {
+    for (const cmd of [`cd /tmp && TOK='${t}' && curl -s x`, `gh auth login --with-token <<< ${t}`, `curl -H "X: ${t}" x`]) {
+      const out = s(cmd);
+      assert.ok(!out.includes(t), out);
+      assert.match(out, /\[REDACTED-GHP\]/, out);
+    }
+  }
+});

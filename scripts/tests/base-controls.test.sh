@@ -633,6 +633,94 @@ is "T10 el pedido que borra el inventario: rojo (borrar una regla que la base ti
 has "T10 corre el de la base y lo dice" "${T}/t10c.out" "el pedido no trae un inventario que se lea"
 has "T10 …nombrando lo borrado" "${T}/t10c.out" "el pedido borra scripts/ci/controls-from-base.json, que la base tiene"
 has "T10 …y el borrado se lista" "${T}/t10c.out" "scripts/ci/controls-from-base.json (el inventario): borrado"
+# un control nuevo que main inventarió sin que nada lo corra (llegó con la copia pública antes que su llamada): el pedido
+# que lo deja corriendo pasa, aunque el inventario de main siga roto; el que no lo arregla sigue en rojo
+R="${T}/t10f"; make_base "${R}"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/nuevo.sh"
+inv "${R}" 'j.controls.push({name:"nuevo",script:"scripts/ci/nuevo.sh",rules:[]})'; commit "${R}" "control nuevo sin llamar"
+pr "${R}"; printf 'bash "$REPO_ROOT/scripts/ci/nuevo.sh" || exit 1\n' >> "${R}/.githooks/pre-commit-checks"; commit "${R}" "lo llama el pre-commit"
+run "${R}" "${T}/t10f.out"; is "T10 el pedido que deja bien el inventario pasa aunque main lo tenga roto" "0" "${RC}"
+has "T10 …y dice lo de main" "${T}/t10f.out" "ningún paso corre scripts/ci/nuevo.sh"
+R="${T}/t10g"; make_base "${R}"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/nuevo.sh"
+inv "${R}" 'j.controls.push({name:"nuevo",script:"scripts/ci/nuevo.sh",rules:[]})'; commit "${R}" "control nuevo sin llamar"
+pr "${R}"; printf 'x\n' > "${R}/docs/x.txt"; commit "${R}"
+run "${R}" "${T}/t10g.out"; is "T10 el pedido que no lo arregla sigue en rojo" "1" "${RC}"
+# sólo se perdona el control que ningún paso ejecuta: un dato sin clasificar en main deja una regla sin proteger, y frena aunque el
+# pedido deje su inventario limpio
+R="${T}/t10h"; make_base "${R}"
+printf '{}\n' > "${R}/scripts/ci/toy-extra.json"; printf '%s\n' '# lee "scripts/ci/toy-extra.json"' >> "${R}/scripts/ci/toy-check.sh"; commit "${R}" "dato sin clasificar en main"
+pr "${R}"; inv "${R}" 'j.controls[0].rules.push("scripts/ci/toy-extra.json")'; commit "${R}" "lo clasifica"
+run "${R}" "${T}/t10h.out"; is "T10 un dato sin clasificar en main sigue en rojo aunque el pedido lo clasifique" "1" "${RC}"
+has "T10 …por el inventario de la base" "${T}/t10h.out" "el inventario de la base no cuadra"
+
+# T13 BaseInventory_FixedByPr_Passes @story-8.267 @ac-10 · main trae un control que su pre-commit no llama (el público
+# sumó un control y la copia propia del hook no lo llama todavía): el pedido que hace que el hook lo llame no frena por
+# el inventario de la base, y su pasada corre el control.
+# 🔴 Falla con: el problema de la base en `reasons` aunque el pedido lo arregle (todo pedido del privado frenado).
+huerfano_en_main() {
+  make_base "$1"
+  printf '#!/usr/bin/env bash\n# frena un archivo con la palabra HUERFANO\ngrep -rqs HUERFANO "$(git rev-parse --show-toplevel)/docs" && { echo "huerfano: frena"; exit 1; }\nexit 0\n' > "$1/scripts/ci/huerfano.sh"
+  inv "$1" 'j.controls.push({name:"huerfano",script:"scripts/ci/huerfano.sh",rules:[]})'; commit "$1" "control nuevo en main, sin el hook"
+  pr "$1"
+}
+R="${T}/t13"; huerfano_en_main "${R}"
+printf 'bash "$REPO_ROOT/scripts/ci/huerfano.sh" || exit 1\n' >> "${R}/.githooks/pre-commit-checks"; commit "${R}"
+run "${R}" "${T}/t13.out"
+is "T13 el pedido que arregla el inventario de la base: verde" "0" "${RC}"
+has "T13 lo dice sin frenar" "${T}/t13.out" "inventario de la base — ningún paso corre scripts/ci/huerfano.sh: lo llama el pre-commit o una pasada del inventario, o no es un control (el pedido lo arregla)"
+lacks "T13 …y no es un motivo" "${T}/t13.out" "el inventario de la base no cuadra"
+R="${T}/t13b"; huerfano_en_main "${R}"
+printf 'bash "$REPO_ROOT/scripts/ci/huerfano.sh" || exit 1\n' >> "${R}/.githooks/pre-commit-checks"; printf 'HUERFANO\n' > "${R}/docs/h.txt"; commit "${R}"
+run "${R}" "${T}/t13b.out"
+is "T13 la pasada del pedido corre el control: lo que el control frena, frena" "1" "${RC}"
+has "T13 …y es el control el que frena" "${T}/t13b.out" "huerfano: frena"
+
+# T14 BaseInventory_NotFixedByPr_StillRed @story-8.267 @ac-11 @ac-12 · el mismo problema en main y un pedido que no lo
+# arregla: sin tocar el hook, sacando el control de su propio inventario o borrando el inventario. Los tres, rojo como
+# hoy; y check-inventory sobre main sigue en rojo.
+# 🔴 Falla con: perdonar lo que el pedido no deja bien (un control que deja de correr porque el pedido lo saca del inventario).
+R="${T}/t14a"; huerfano_en_main "${R}"; printf 'x\n' > "${R}/docs/x.txt"; commit "${R}"
+run "${R}" "${T}/t14a.out"
+is "T14 el pedido que no toca el hook: rojo" "1" "${RC}"
+has "T14 …por el inventario de la base" "${T}/t14a.out" "❌ base-controls: inventario de la base — ningún paso corre scripts/ci/huerfano.sh"
+has "T14 …que es un motivo" "${T}/t14a.out" "el inventario de la base no cuadra"
+R="${T}/t14b"; huerfano_en_main "${R}"; inv "${R}" 'j.controls=j.controls.filter((c)=>c.name!=="huerfano")'; commit "${R}"
+run "${R}" "${T}/t14b.out"
+is "T14 el pedido que saca el control de su inventario: rojo" "1" "${RC}"
+has "T14 …sigue siendo el inventario de la base" "${T}/t14b.out" "el inventario de la base no cuadra"
+R="${T}/t14c"; huerfano_en_main "${R}"; printf 'bash "$REPO_ROOT/scripts/ci/huerfano.sh" || exit 1\n' >> "${R}/.githooks/pre-commit-checks"
+lab_git -C "${R}" rm -q scripts/ci/controls-from-base.json; commit "${R}"
+run "${R}" "${T}/t14c.out"
+is "T14 el pedido que llama al control pero borra su inventario: rojo" "1" "${RC}"
+has "T14 …por el inventario de la base" "${T}/t14c.out" "el inventario de la base no cuadra"
+bash "${SCRIPT}" check-inventory --root "${R}" --ref main > "${T}/t14d.out" 2>&1; RC=$?
+is "T14 check-inventory sobre main no cambia: rojo" "1" "${RC}"
+has "T14 …y lo nombra" "${T}/t14d.out" "ningún paso corre scripts/ci/huerfano.sh"
+
+# T15 BaseInventory_FixedByPr_NoEscape @story-8.267 @ac-11 · lo que parece arreglar el inventario de la base y deja un
+# control que no frena nada sigue en rojo: el pedido que llama al control y lo vacía en el mismo cambio, el que trae el
+# guion que la base nombra y no tenía (con cualquier contenido), y el que lo llama por un atajo con un mapa de renombres
+# propio.
+# 🔴 Falla con: perdonar el problema de la base sin mirar que el código del control quede como en la base.
+LLAMA='bash "$REPO_ROOT/scripts/ci/huerfano.sh" || exit 1'
+R="${T}/t15inva"; huerfano_en_main "${R}"; printf '%s\n' "${LLAMA}" >> "${R}/.githooks/pre-commit-checks"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/huerfano.sh"; commit "${R}"
+run "${R}" "${T}/t15inva.out"
+is "T15 el pedido que llama al control y lo vacía: rojo" "1" "${RC}"
+has "T15 …por el inventario de la base" "${T}/t15inva.out" "el inventario de la base no cuadra"
+lacks "T15 …sin perdonarlo" "${T}/t15inva.out" "(el pedido lo arregla)"
+R="${T}/t15invb"; make_base "${R}"; inv "${R}" 'j.controls.push({name:"fantasma",script:"scripts/ci/fantasma.sh",rules:[]})'; commit "${R}" "fantasma en main"
+pr "${R}"; printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/fantasma.sh"
+printf '%s\n' 'bash "$REPO_ROOT/scripts/ci/fantasma.sh" || exit 1' >> "${R}/.githooks/pre-commit-checks"; commit "${R}"
+run "${R}" "${T}/t15invb.out"
+is "T15 el pedido que trae el guion que faltaba: rojo" "1" "${RC}"
+has "T15 …por el inventario de la base" "${T}/t15invb.out" "el inventario de la base no cuadra"
+R="${T}/t15invc"; huerfano_en_main "${R}"; printf '%s\n' "${LLAMA}" >> "${R}/.githooks/pre-commit-checks"
+mkdir -p "${R}/scripts/lib"; printf '{"entries":[]}\n' > "${R}/scripts/lib/renames.json"; commit "${R}"
+run "${R}" "${T}/t15invc.out"
+is "T15 el pedido que llama al control y cambia el mapa de renombres: rojo" "1" "${RC}"
+lacks "T15 …sin perdonarlo" "${T}/t15invc.out" "(el pedido lo arregla)"
 
 # T8 · una constancia no tapa un rojo que viene de otra regla que main endureció después
 R="${T}/t8d"; make_base "${R}"; pr "${R}"

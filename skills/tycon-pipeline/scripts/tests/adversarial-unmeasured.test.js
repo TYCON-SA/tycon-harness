@@ -903,8 +903,9 @@ test('T27 8.215-CazadorGuardaSuPrueba_ElGanchoNoLoFrena @story-8.215 @ac-2', () 
     const r = gancho(cmd);
     assert.equal(r.status, 0, `${cmd}\n${r.stdout}${r.stderr}`);
   }
-  // un enlace simbólico a una carpeta que no se ve sigue frenando (el gancho no sabe qué trae)
-  assert.equal(gancho('L=$(mktemp -d /tmp/probe.XXXXXX); mkdir -p $L/run/step-05b-probes/caza-a; ln -s run $L/runlink').status, 2);
+  // un enlace simbólico en una carpeta que no se ve sigue frenando (el gancho no sabe qué trae). Una carpeta de
+  // `mktemp` sí se ve (lib/command-vars.js `carpetaDeMktemp`), como una ruta literal en /tmp: la que no se ve es un `$(…)`
+  assert.equal(gancho('L=$(echo /tmp/probe.abc); mkdir -p $L/run/step-05b-probes/caza-a; ln -s run $L/runlink').status, 2);
 });
 
 test('T24 8.215-Revision_ConResultado_MiraLasPruebas @story-8.215 @ac-6', () => {

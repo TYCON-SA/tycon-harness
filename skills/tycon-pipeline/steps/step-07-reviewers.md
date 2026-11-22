@@ -365,7 +365,18 @@ enumeres lo que revisaste y salió bien. El ÚLTIMO renglón es SIEMPRE el vered
 ni negrita adelante, con la regla de cada hallazgo UNA VEZ POR HALLAZGO (dos del mismo tipo, dos veces):
 Veredicto: limpio
 Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código:
+Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C1, SEC-C3)
+Veredicto: limpio · resueltos (SEC-C1)
 ```
+
+**En la vuelta 2 en adelante, el prompt de cada revisor que vuelve trae su veredicto de la vuelta anterior y el detalle
+de esos críticos** (archivo y qué era), del archivo donde el orquestador dejó lo que devolvió. Sin eso no puede
+confirmar nada. La parte «resueltos (…)» la lee el arnés como comprobación del arreglo, igual que una cuenta que baja:
+sale del revisor, nunca del agente. Sin ella, un hallazgo nuevo con el mismo código deja el arreglo de la vuelta
+anterior «sin comprobar», y eso cuesta otra vuelta o la exención del dueño. El arnés cuenta, por revisor, hasta lo que
+ese mismo revisor reportó en su reporte anterior: no confirma lo que no reportó, ni más de lo que reportó.
 
 **El renglón de veredicto lo lee el arnés** (`lib/reported-criticals.js`): al terminar cada revisor, el gancho del fin
 del subagente (`on-advisor-done.js`) lee sus palabras de su propia transcripción y anota cada regla crítica con cuántas

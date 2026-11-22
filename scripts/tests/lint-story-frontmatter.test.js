@@ -534,6 +534,40 @@ test('NaceAhora_UnreadableMergeHead_CountsAsExisting @story-8.269 @ac-9 @ac-10',
   fs.rmSync(mergeHead, { recursive: true, force: true });
 });
 
+/**
+ * `naceAhora` en un proceso aparte con un `git` que falla a propósito: `grep2` hace que `git grep` salga 2 (un error, no
+ * «no encontré»), y `log` hace fallar el `git log --follow`. Lo demás va al git de verdad.
+ */
+function naceAhoraConGitRoto(abs, storyId, falla) {
+  const programa = `
+    const cp = require('child_process');
+    const original = cp.execFileSync;
+    cp.execFileSync = (cmd, args, opts) => {
+      if (cmd === 'git' && ${JSON.stringify(falla)} === 'grep2' && args[0] === 'grep') {
+        const e = new Error('git grep salió 2'); e.status = 2; throw e;
+      }
+      if (cmd === 'git' && ${JSON.stringify(falla)} === 'log' && args[0] === 'log') {
+        const e = new Error('git log falló'); e.status = 128; throw e;
+      }
+      return original(cmd, args, opts);
+    };
+    const { naceAhora } = require(${JSON.stringify(FOLLOWUP_OF)});
+    process.stdout.write(JSON.stringify({ nace: naceAhora(${JSON.stringify(abs)}, ${JSON.stringify(storyId)}) }));`;
+  return JSON.parse(execFileSync(process.execPath, ['-e', programa], { encoding: 'utf8' })).nace;
+}
+
+// 🔴 Falla con: tomar cualquier salida de `git grep` que no sea 0 como «no la encontré» (la 1 lo es; la 2 es un error), o
+// seguir de largo cuando `git log` falla: la historia nueva saldría «nace ahora» sin que nadie lo pudiera saber, y el lint
+// frenaría. Un git que no contesta es «no sé»: existente (avisa, no frena).
+test('NaceAhora_GitThatFails_CountsAsExisting @story-8.269 — git grep que sale 2 y git log que falla', () => {
+  const { proj } = ramaAtrasada();
+  const nueva = story(proj, 'specs/story-9.6-nueva.md', ['story: "9.6"', 'epic: 9', 'status: ready-for-dev']);
+  // con el git de verdad, la historia nueva nace: así la prueba mira el error y no otra cosa
+  assert.strictEqual(naceAhoraConGitRoto(nueva, '9.6', 'ninguna'), true, 'sin fallas, nace');
+  assert.strictEqual(naceAhoraConGitRoto(nueva, '9.6', 'grep2'), false, 'git grep que sale 2: no se sabe, existente');
+  assert.strictEqual(naceAhoraConGitRoto(nueva, '9.6', 'log'), false, 'git log que falla: no se sabe, existente');
+});
+
 // 🔴 Falla con: la búsqueda por `story:` sin comillas como texto fijo — `story: 9.2` aparece dentro de `story: 9.26`, y
 // una historia nueva cuyo número es el comienzo de otro que ya existe se da por existente (el lint no la frena).
 test('NaceAhora_StoryIdPrefixOfAnother_StillBorn @story-8.269 @ac-7', () => {

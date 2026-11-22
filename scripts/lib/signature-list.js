@@ -579,8 +579,11 @@ function viaQueAnda(f, { casa, sesion, nombre, delegacion, arnes, env, coord }) 
   if (otra && s.soloClick) {
     return { delegada: false, texto: `Renglón ${una(f.id)}. «${una(s.approves)}», de ${nombre} (${una(f.destino)}), no se aprueba desde esta pestaña: no muestres un cuadro. La aprueba la persona con un click en el cuadro de la pestaña de ${nombre}, o en su terminal: ${una(s.terminal)}.` };
   }
-  // `otherSession: 'no'` de otra sesión sigue con el cuadro y lo repite su sesión (8.153, AC 11 y 12): el AC 4 de la 8.319
-  // lo contradice, y su AC 15 pide no cambiarlo; queda como hoy hasta que se decida (Dev Agent Record de la 8.319)
+  // `otherSession: 'no'` de otra sesión: el cuadro en esta pestaña no firma, va la pestaña destino o la terminal. La que el
+  // perfil le delega a la coordinadora sigue con su cuadro, como siempre (@story-8.319 AC 4 y 15)
+  if (otra && s.otherSession === 'no' && !(d && d.ok)) {
+    return { delegada: false, texto: `Renglón ${una(f.id)}. «${una(s.approves)}», de ${nombre} (${una(f.destino)}), no se da desde la pestaña de otra sesión: no muestres un cuadro. La da la persona en la pestaña de ${nombre}, por su ventana o su cuadro, o en su terminal. ${enLaTerminalDeLaFila(f, s)}` };
+  }
   return null;
 }
 

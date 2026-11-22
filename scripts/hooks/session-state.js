@@ -22,8 +22,12 @@
  * `workingSince`/`lastEventAt`; el renglón de cada tramo que se cierra va a `<estado>/worked/<día>.jsonl`. Off:
  * TYCON_WORKDAYS=0.
  *
+ * La corrida que va por el doble de lo estimado (scripts/lib/run-overrun.js): después de cada herramienta de Claude, como
+ * mucho una vez por minuto, anota `overrun` y, la primera vez que pasa el doble y el cuádruple, le avisa a la sesión.
+ * Es lo único que imprime. Off: TYCON_OVERRUN=0.
+ *
  * Cualquier momento crea el archivo si falta. La espera la anota este gancho y no wait-notice.js, que no anota nada sin
- * pipeline ni sin un canal de aviso. Nunca frena ni imprime: todo error sale 0 y queda en
+ * pipeline ni sin un canal de aviso. Nunca frena: todo error sale 0 y queda en
  * `<estado>/office/session-state-errors.log`. Off: TYCON_SESSION_STATE=0.
  */
 const fs = require('fs');
@@ -150,7 +154,22 @@ function decide(d, codex, cur = null, now = Date.now()) {
   return null;
 }
 
+/**
+ * Atiende un momento: anota la espera, el cierre y el tramo trabajado (`record`) y, después de cada herramienta de Claude,
+ * repasa si la corrida pasó su estimación. Devuelve el aviso para la sesión, o null.
+ */
 function handle(d, env = process.env, home = os.homedir(), now = Date.now()) {
+  record(d, env, home, now);
+  if (!d || d.hook_event_name !== 'PostToolUse' || typeof d.session_id !== 'string' || toolOf(d, env).tool === 'codex') return null;
+  const lib = require(LIB);
+  const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+  const sdir = stateDir(home);
+  const st = lib.read(sdir, d.session_id).state;
+  if (!st) return null;
+  return overrunStep(lib, sdir, d.session_id, { workingSince: st.workingSince || null, now, env, tool: st.tool });
+}
+
+function record(d, env = process.env, home = os.homedir(), now = Date.now()) {
   const lib = require(LIB);
   const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
   const sdir = stateDir(home);
@@ -192,6 +211,21 @@ function handle(d, env = process.env, home = os.homedir(), now = Date.now()) {
 }
 
 /**
+ * Si la corrida de la sesión va por el doble o el cuádruple de lo estimado (scripts/lib/run-overrun.js): anota `overrun`
+ * en su archivo y devuelve el aviso para la sesión, la primera vez que pasa cada umbral (o null). Nunca tira.
+ */
+function overrunStep(lib, sdir, sid, { workingSince, now, env, tool }) {
+  try {
+    const r = require(path.join(ROOT, 'scripts', 'lib', 'run-overrun.js')).check(sdir, sid, { now, openSince: workingSince, env });
+    if (r.overrun !== undefined) lib.update(sdir, sid, { overrun: r.overrun }, { env, tool });
+    return r.notice;
+  } catch (e) {
+    lib.logError(sdir, `sesión ${sid}: no pude ver si la ejecución pasó su estimación (${e.code || e.message})`);
+    return null;
+  }
+}
+
+/**
  * La apertura del día y el tramo trabajado de la sesión con este momento (scripts/lib/worked-time.js): escribe los
  * renglones de los tramos que se cierran y devuelve lo que cambia en el archivo de estado (`workingSince`,
  * `lastEventAt`). Apagado con TYCON_WORKDAYS=0; un error queda en el registro y no frena.
@@ -227,7 +261,11 @@ if (require.main === module) {
     } catch { /* sin registro tampoco */ }
     process.exit(0);
   }
-  try { handle(d, env); } catch (e) {
+  try {
+    const notice = handle(d, env);
+    // el aviso de la corrida que pasó su estimación: lo agrega a lo que ve el modelo después de la herramienta
+    if (notice) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: notice } }));
+  } catch (e) {
     try {
       const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
       require(LIB).logError(stateDir(os.homedir()), `sesión ${d && d.session_id}: ${e.message}`);

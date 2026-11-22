@@ -1599,7 +1599,26 @@ function criticosMecanicos(args) {
     conDestino[r] = (h.lista || []).filter((f) => String(f.rule_id || f.rule) === r && String(f.severity || '').toUpperCase() === 'CRITICAL'
       && ['deferred', 'refuted', 'waived'].includes(String(f.disposition || '').toLowerCase())).length;
   }
-  return { ...vacio, reglas, conDestino };
+  // Las reglas del pase adversarial ya arregladas con su prueba: el pase no se repite y ningún revisor las tiene, así que
+  // su prueba es lo que las confirma. Todas sus instancias vivas tienen que ser del pase, `fixed` y con una prueba que
+  // está en el repo. El firmante del pase lo puede escribir cualquiera en findings.json: lo que lo ata al pase es su
+  // anotación en el marcador (mark-adversarial-result), medida, que dice cuántos confirmados quedaron con su prueba. Si
+  // hay más críticos firmados por el pase que esos, ninguno cuenta (uno de ellos no es del pase).
+  const delPase = /^(adversarial-verify|pase adversarial)(\s|:|\(|-|$)/i;
+  const raiz = marker.repoPath || args.repo || process.cwd();
+  const pruebaEnElRepo = (f) => {
+    const p = String(f.test || f.prueba || '').trim().split('::')[0].trim();
+    if (!p || path.isAbsolute(p) || p.split(/[\\/]/).includes('..')) return false;
+    try { return fs.statSync(path.join(raiz, p)).isFile(); } catch { return false; }
+  };
+  const pase = (Array.isArray(marker.adversarialPasses) ? marker.adversarialPasses : [])
+    .filter((p) => p && p.tipo === '5b' && p.veredicto !== 'no-medido').pop();
+  const cupo = pase ? (Number(pase.pruebas) || 0) + (Number(pase.propias) || 0) : 0;
+  const firmadosPorElPase = vivos.filter((f) => delPase.test(String(f.advisor || '').trim()));
+  const candidatas = reglas.filter((r) => vivos.filter((f) => String(f.rule_id || f.rule) === r).every((f) => delPase.test(String(f.advisor || '').trim())
+    && String(f.disposition || '').toLowerCase() === 'fixed' && pruebaEnElRepo(f)));
+  const conPruebaDelPase = firmadosPorElPase.length <= cupo ? candidatas : [];
+  return { ...vacio, reglas, conDestino, conPruebaDelPase };
 }
 
 // Las reglas que mech-check mira siempre sobre la historia, haga lo que haga el cambio: su ausencia en una vuelta quiere
@@ -2184,14 +2203,23 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   }
 
   const marker = readSessionMarker();
-  const prevSnapshot = at(at(at(marker, 'iterations'), String(iter - 1)), 'filesSnapshot');
+  // La vuelta de antes es la última que dejó foto: una vuelta sin agentes (todos salteados, o cerrada sola porque el cambio
+  // no traía código) no la deja, y caer al set completo relanzaba a todos los revisores. Comparar contra una foto
+  // anterior sólo suma lo cambiado desde ella: nunca saltea a un revisor que tenga algo nuevo para ver.
+  let prev = iter - 1;
+  while (prev > 1 && !at(at(at(marker, 'iterations'), String(prev)), 'filesSnapshot')) prev -= 1;
+  // se dice: una vuelta que sí lanzó revisores y no guardó su foto también cae acá, y no tiene que pasar callada
+  if (prev < iter - 1 && at(at(at(marker, 'iterations'), String(prev)), 'filesSnapshot')) {
+    process.stderr.write(`⚠️  la vuelta ${iter - 1} no dejó foto (sin agentes, o sin 'marker.js snapshot-iter ${iter - 1}'): mido lo cambiado desde la foto de la vuelta ${prev}.\n`);
+  }
+  const prevSnapshot = at(at(at(marker, 'iterations'), String(prev)), 'filesSnapshot');
   if (!prevSnapshot) {
     const out = {
       ...fullSet,
       iter,
       mode: 'no-prev-snapshot-fallback',
-      warning: `no hay marker.iterations[${iter - 1}].filesSnapshot — fallback a set completo. ` +
-               `Llamá 'marker.js snapshot-iter ${iter - 1}' después de invocar advisors de esa iter.`,
+      warning: `no hay marker.iterations[${prev}].filesSnapshot — fallback a set completo. ` +
+               `Llamá 'marker.js snapshot-iter ${prev}' después de invocar advisors de esa iter.`,
       rerun: fullSet.all,
       skipped: [],
       delta_files: [],
@@ -2237,7 +2265,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // reportó el finding NUNCA re-auditaría su propio fix.
   // marker.fileEvents (escritos por on-edit.js directo; marker.js append-file existe como CLI manual)
   // conserva cada edición con ts; delta = ediciones POSTERIORES al snapshot previo.
-  const prevTs = marker.iterations[String(iter - 1)].ts;
+  const prevTs = marker.iterations[String(prev)].ts;
   // ── SEGUNDA CAPA: el corte es el ÚLTIMO REVISOR, no la hora de la foto ────────────
   // La hora de la foto es justamente el dato que puede estar mal: si fecha la foto de una iteración a las 17:03 con
   // un arreglo de las 16:58 adentro, el delta de la siguiente
@@ -2255,7 +2283,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   } catch { /* sin registro de spawns → el corte sigue siendo la foto, y la vista por revisor no se mide */ }
   try {
     const { ultimoRevisorDeLaRonda } = require('./lib/late-snapshot.js');
-    const ur = ultimoRevisorDeLaRonda(lineasRegistro || [], iter - 1);
+    const ur = ultimoRevisorDeLaRonda(lineasRegistro || [], prev);
     if (Number.isFinite(ur.ts)) ultimoRevisorMs = ur.ts;
   } catch { /* ídem */ }
   // El PRIMER revisor de la vuelta: un arreglo hecho después de que salió el primero y antes del
@@ -2265,7 +2293,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   let primerRevisorMs = null;
   try {
     const ls = require('./lib/late-snapshot.js');
-    const v = ls.vistaPorRevisor(lineasRegistro || [], iter - 1);
+    const v = ls.vistaPorRevisor(lineasRegistro || [], prev);
     for (const [adv, t] of v.lanzamientos || []) if (ls.esRevisor(adv) && Number.isFinite(t) && (primerRevisorMs === null || t < primerRevisorMs)) primerRevisorMs = t;
   } catch { /* sin registro, el corte es la foto o el último revisor, como antes */ }
   // Delta = UNIÓN de TRES fuentes (si fileEvents y mtime fueran either/or,
@@ -2379,7 +2407,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   //     vio: se re-corre por las dudas, y se dice.
   let vista;
   try {
-    vista = require('./lib/late-snapshot.js').vistaPorRevisor(lineasRegistro || [], iter - 1);
+    vista = require('./lib/late-snapshot.js').vistaPorRevisor(lineasRegistro || [], prev);
   } catch (e) {
     vista = { medible: false, motivo: `no se pudo leer el registro de lanzamientos (${(e && e.message) || e})` };
   }
@@ -2443,7 +2471,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       const sinVer = delta.filter((f) => { const t = ultimaEdicion.get(f); return !(Number.isFinite(t) && t <= lanzadoAdv); });
       if (!advisorAffectedByDelta(adv, sinVer).affected) {
         affected = false;
-        reason = `ya vio lo que cambió: se lanzó en la vuelta ${iter - 1} (${new Date(lanzadoAdv).toISOString()}) después de la última edición de su alcance`;
+        reason = `ya vio lo que cambió: se lanzó en la vuelta ${prev} (${new Date(lanzadoAdv).toISOString()}) después de la última edición de su alcance`;
       } else {
         // lo de su alcance que se editó después de su lanzamiento y quedó adentro de la foto: no lo vio
         const tapados = sinVer.filter((f) => { const t = ultimaEdicion.get(f); return Number.isFinite(t) && t <= prevTsMs && advisorAffectedByDelta(adv, [f]).affected; });
@@ -2452,13 +2480,13 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     }
     if (!affected && !vista.medible) {
       affected = true;
-      reason = `no se sabe qué versión del cambio vio en la vuelta ${iter - 1} (${vista.motivo}) → se re-corre por las dudas`;
+      reason = `no se sabe qué versión del cambio vio en la vuelta ${prev} (${vista.motivo}) → se re-corre por las dudas`;
       sinVista.push(adv);
     } else if (!affected) {
       const lanzado = vista.lanzamientos.get(adv);
       if (lanzado === undefined && vista.esperados.has(adv)) {
         affected = true;
-        reason = `estaba en la vuelta ${iter - 1} y no consta su lanzamiento → no se sabe qué vio: se re-corre por las dudas`;
+        reason = `estaba en la vuelta ${prev} y no consta su lanzamiento → no se sabe qué vio: se re-corre por las dudas`;
         sinVista.push(adv);
       } else {
         const desde = lanzado !== undefined ? lanzado : vista.inicioMs;
@@ -2467,8 +2495,8 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
           affected = true;
           noVistosPorRevisor[adv] = enSuAlcance;
           reason = lanzado !== undefined
-            ? `'${enSuAlcance[0]}' se editó después de su lanzamiento en la vuelta ${iter - 1} (${new Date(lanzado).toISOString()}): no lo vio`
-            : `'${enSuAlcance[0]}' se editó durante la vuelta ${iter - 1}, que lo había salteado: no lo vio`;
+            ? `'${enSuAlcance[0]}' se editó después de su lanzamiento en la vuelta ${prev} (${new Date(lanzado).toISOString()}): no lo vio`
+            : `'${enSuAlcance[0]}' se editó durante la vuelta ${prev}, que lo había salteado: no lo vio`;
         }
       }
     }
@@ -2508,7 +2536,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     : [];
   if (lateSnapshotFiles.length) {
     process.stderr.write(
-      `⚠ la foto de la iteración ${iter - 1} se fechó DESPUÉS del último revisor y tapó ` +
+      `⚠ la foto de la iteración ${prev} se fechó DESPUÉS del último revisor y tapó ` +
       `${lateSnapshotFiles.length} archivo(s) de código que nadie auditó: ` +
       `${lateSnapshotFiles.slice(0, 10).map((f) => path.basename(f)).join(', ')}` +
       `${lateSnapshotFiles.length > 10 ? ` y ${lateSnapshotFiles.length - 10} más` : ''}.\n` +
@@ -2521,7 +2549,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const revisoresNoVieron = Object.keys(noVistosPorRevisor);
   if (revisoresNoVieron.length) {
     process.stderr.write(
-      `⚠ ${revisoresNoVieron.length} revisor(es) de la vuelta ${iter - 1} no vieron un arreglo hecho después de ` +
+      `⚠ ${revisoresNoVieron.length} revisor(es) de la vuelta ${prev} no vieron un arreglo hecho después de ` +
       `lanzarse (quedó adentro de la foto): ` +
       `${revisoresNoVieron.map((a) => `${a} (${noVistosPorRevisor[a].slice(0, 3).map((f) => path.basename(f)).join(', ')})`).join('; ')}.\n` +
       `   ESTA vuelta los re-corre.\n`,
@@ -2529,7 +2557,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   }
   if (sinVista.length) {
     process.stderr.write(
-      `⚠ no se sabe qué versión del cambio vieron ${sinVista.length} revisor(es) en la vuelta ${iter - 1}` +
+      `⚠ no se sabe qué versión del cambio vieron ${sinVista.length} revisor(es) en la vuelta ${prev}` +
       `${vista.medible ? ' (estaban en la vuelta y no consta su lanzamiento)' : ` (${vista.motivo})`}: ` +
       `se re-corren por las dudas — ${sinVista.join(', ')}.\n`,
     );
@@ -2538,7 +2566,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const suspectEmptyDelta = delta.length === 0;
   const emptyDeltaWarning = suspectEmptyDelta
     ? `⚠ DELTA VACÍO en un re-loop (iter ${iter}) — un re-loop sigue a fixes, así que un delta vacío ` +
-      `casi siempre = 'snapshot-iter ${iter - 1}' tomado DESPUÉS de los fixes (debe tomarse al cierre ` +
+      `casi siempre = 'snapshot-iter ${prev}' tomado DESPUÉS de los fixes (debe tomarse al cierre ` +
       `de la tanda de advisors, ANTES de fixear). NO tomes el "todo skip por surface" como legítimo. ` +
       `Acción: re-snapshotear en el momento correcto la próxima iteración; para ESTA, --force-full-reloop.`
     : null;
@@ -2559,7 +2587,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     ...(lateSnapshotFiles.length ? {
       suspect_late_snapshot: true,
       late_snapshot_files: lateSnapshotFiles,
-      late_snapshot_note: `la foto de iter ${iter - 1} se fechó después del último lanzamiento de revisores: ` +
+      late_snapshot_note: `la foto de iter ${prev} se fechó después del último lanzamiento de revisores: ` +
         `el delta se cortó por el último revisor y esos archivos entraron igual. La foto se toma SOLA al ` +
         `lanzar el último revisor — no la repitas a mano después de arreglar.`,
     } : {}),
@@ -2569,7 +2597,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       ? { medible: true, ...(sinVista.length ? { sin_vista: sinVista } : {}) }
       : { medible: false, motivo: vista.motivo, sin_vista: sinVista },
     note: !vista.medible && sinVista.length
-      ? `no se sabe qué versión del cambio vio cada revisor en la vuelta ${iter - 1} (${vista.motivo}): se re-corren todos los que el delta no traía. Ver vista_por_revisor.`
+      ? `no se sabe qué versión del cambio vio cada revisor en la vuelta ${prev} (${vista.motivo}): se re-corren todos los que el delta no traía. Ver vista_por_revisor.`
       : suspectEmptyDelta
       ? `delta vacío en un re-loop → ver "warning": snapshot probablemente post-fixes. NO degradar a "todo skip" en silencio.`
       : skipped.length > 0
@@ -7086,7 +7114,7 @@ function writeFindings(args) {
       const lineas = [`Un crítico lo decide una persona: ${faltan.length} CRITICAL marcado(s) como waived sin el ok de una persona:`];
       lineas.push(...cw.renglonesDeFaltantes(rev));
       lineas.push('Arreglalo, o que el dev lo exima antes de escribir los hallazgos. Los caminos:');
-      for (const f of faltan) lineas.push(...cw.caminos({ marker, ruleId: f.rule_id, file: f.file || '<archivo>' }));
+      for (const f of cw.agrupar(faltan)) lineas.push(...cw.caminos({ marker, ruleId: f.rule_id, file: f.file || '<archivo>' }));
       return { error: lineas.join('\n'), criticos_sin_ok: faltan, run_dir: runDir,
         note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
     }
@@ -7750,6 +7778,7 @@ function main() {
         const ambiguas = new Set(disc.mech_ambiguous_rules || []);
         const abiertos = [];
         for (const rule of cm.reglas) {
+          if (cm.conPruebaDelPase.includes(rule)) continue;
           if (!REGLAS_QUE_MECH_COMPRUEBA.has(rule)) abiertos.push({ rule, reason: 'mech-check no la evalúa: no la puedo comprobar sin un revisor' });
           else if (ambiguas.has(rule)) abiertos.push({ rule, reason: 'mech-check la deja ambigua: no la puedo comprobar sin un revisor' });
           else if (vivos(rule) > (cm.conDestino[rule] || 0)) abiertos.push({ rule, reason: 'findings.json lo da por arreglado y mech-check lo sigue reportando' });
