@@ -1197,13 +1197,51 @@
       "requiere": []
     },
     {
+      "__nota": "Parte 1 de 3 de tycon-pipeline/scripts/tests/test-gate-failed-first.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
       "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.test.js",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.p1.test.js",
       "requiere": []
     },
     {
+      "__nota": "Parte 2 de 3 de tycon-pipeline/scripts/tests/test-gate-failed-first.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
       "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.test.js",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 3 de tycon-pipeline/scripts/tests/test-gate-failed-first.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.p3.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 1 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p1.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p3.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 4 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p4.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 5 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p5.test.js",
       "requiere": []
     },
     {
@@ -3873,9 +3911,21 @@
       ]
     },
     {
-      "__nota": "story 8.23 (tanda D, T27, T28, T29 y T32): la mudanza de una máquina del clon a ~/.tycon (harness.js migrate --to-home): las precondiciones sin escribir y el plan (--dry-run); la mudanza entera con diario (la versión en ~/.tycon/harness, el estado, la configuración fundida y el .dashboard en ~/.tycon, los hooks al árbol nuevo con la misma cuenta, los enlaces viejos) y sus cortes en cuatro puntos (el arranque completa o deshace); el clon de la persona intacto y declarable (paths.maintained); la llave install.home del perfil (una vez, la precondición reintenta, el fallo durante queda failed). Sobre la máquina de juguete instalada desde un clon y el servidor de versiones de juguete; sin red real.",
+      "__nota": "Parte 1 de 2 de tests/harness-move-home.test.sh (2026-11-22, fila 48: entera era de las que salían rojas por tiempo en la validación del privado; parte 1: T27, T28 y T28x; parte 2: T28y, T28r, T29, T32, T13 y T14. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.23 (tanda D, T27, T28, T29 y T32): la mudanza de una máquina del clon a ~/.tycon (harness.js migrate --to-home): las precondiciones sin escribir y el plan (--dry-run); la mudanza entera con diario (la versión en ~/.tycon/harness, el estado, la configuración fundida y el .dashboard en ~/.tycon, los hooks al árbol nuevo con la misma cuenta, los enlaces viejos) y sus cortes en cuatro puntos (el arranque completa o deshace); el clon de la persona intacto y declarable (paths.maintained); la llave install.home del perfil (una vez, la precondición reintenta, el fallo durante queda failed). Sobre la máquina de juguete instalada desde un clon y el servidor de versiones de juguete; sin red real.",
       "raiz": "arnes",
-      "ruta": "tests/harness-move-home.test.sh",
+      "ruta": "tests/harness-move-home.p1.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/harness-move-home.test.sh (2026-11-22, fila 48: entera era de las que salían rojas por tiempo en la validación del privado; parte 1: T27, T28 y T28x; parte 2: T28y, T28r, T29, T32, T13 y T14. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.23 (tanda D, T27, T28, T29 y T32): la mudanza de una máquina del clon a ~/.tycon (harness.js migrate --to-home): las precondiciones sin escribir y el plan (--dry-run); la mudanza entera con diario (la versión en ~/.tycon/harness, el estado, la configuración fundida y el .dashboard en ~/.tycon, los hooks al árbol nuevo con la misma cuenta, los enlaces viejos) y sus cortes en cuatro puntos (el arranque completa o deshace); el clon de la persona intacto y declarable (paths.maintained); la llave install.home del perfil (una vez, la precondición reintenta, el fallo durante queda failed). Sobre la máquina de juguete instalada desde un clon y el servidor de versiones de juguete; sin red real.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-move-home.p2.test.sh",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/setup/**",
@@ -4302,8 +4352,15 @@
       "requiere": []
     },
     {
+      "__nota": "Parte 1 de 2 de tests/harness-uninstall.test.sh (2026-11-22, fila 48: entera era de las que salían rojas por tiempo en la validación del privado; parte 1: T18, T26 y T27; parte 2: T21, K3, REG, T38, S16 y T29. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
       "raiz": "arnes",
-      "ruta": "tests/harness-uninstall.test.sh",
+      "ruta": "tests/harness-uninstall.p1.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/harness-uninstall.test.sh (2026-11-22, fila 48: entera era de las que salían rojas por tiempo en la validación del privado; parte 1: T18, T26 y T27; parte 2: T21, K3, REG, T38, S16 y T29. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
+      "raiz": "arnes",
+      "ruta": "tests/harness-uninstall.p2.test.sh",
       "requiere": []
     },
     {

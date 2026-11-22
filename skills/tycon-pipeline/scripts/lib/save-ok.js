@@ -53,6 +53,24 @@ function esEvidenciaEnVivo(repo, rel) {
   return lineas.some((l) => { try { const o = JSON.parse(l); return o[campo] === sub && o[huellaCampo] === sha; } catch (_) { return false; } });
 }
 /**
+ * ¿`rel` es una captura del portón de navegador (`<carpeta de .advisors>/<clave>-captures-<hora>/<nombre>`) que el índice
+ * de esa carpeta (`captures.json`, lo escribe e2e-evidence.js) nombra con su sha256 de ahora? El portón corre después de
+ * los revisores y cada corrida deja su carpeta con otra hora: no es código, y sin esto vencía el sello en cada vuelta.
+ */
+function esCapturaDelPorton(repo, rel) {
+  const m = /^(.*\/[^/]+-captures-[^/]+)\/([^/]+)$/.exec(String(rel));
+  // sólo una imagen o una grabación (lo que copia e2e-evidence.js), y un archivo común: un guion, otra extensión o un
+  // enlace simbólico no son una captura aunque un índice los nombre
+  if (!m || !m[1].startsWith(`${EVIDENCIA}/`) || !/\.(png|jpe?g|webp|gif|webm|mp4)$/i.test(m[2])) return false;
+  try { if (!fs.lstatSync(path.join(repo, rel)).isFile()) return false; } catch (_) { return false; }
+  let indice;
+  try { indice = JSON.parse(fs.readFileSync(path.join(repo, m[1], 'captures.json'), 'utf8')); } catch (_) { return false; }
+  if (!Array.isArray(indice)) return false;
+  let sha;
+  try { sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(repo, rel))).digest('hex'); } catch (_) { return false; }
+  return indice.some((c) => c && c.file === m[2] && c.sha256 === sha);
+}
+/**
  * ¿`rel` es el guion de la prueba en vivo de una historia (`<carpeta de .advisors>/<clave>-*.js`) que el registro de
  * humos de esa carpeta (`<clave>-smoke-ledger.jsonl`) nombra con su sha256 de ahora? Lo deja smoke-run.sh en `script` y
  * `script_sha` cuando el comando nombra el guion. Un guion que ningún renglón nombra, o que cambió después de correrlo,
@@ -493,7 +511,7 @@ function sensibles({ repos = [] } = {}) {
       if (es(rel) || (!relReal.startsWith('..') && es(relReal))) { out.push({ repo, archivo: rel, motivo: 'está en la lista de lo sensible' }); continue; }
       // la huella y «el último cambio» no miran la evidencia: lo que no es evidencia ahí adentro no pasa sin verse. Las
       // salidas y capturas de una prueba en vivo que su registro nombra con la misma huella sí son evidencia
-      if (rel.startsWith(`${EVIDENCIA}/`) && !esEvidencia(rel) && !esEvidenciaEnVivo(repo, rel)) { out.push({ repo, archivo: rel, motivo: 'no es evidencia y está en la carpeta de la evidencia' }); continue; }
+      if (rel.startsWith(`${EVIDENCIA}/`) && !esEvidencia(rel) && !esEvidenciaEnVivo(repo, rel) && !esCapturaDelPorton(repo, rel)) { out.push({ repo, archivo: rel, motivo: 'no es evidencia y está en la carpeta de la evidencia' }); continue; }
       let texto = null;
       try { texto = fs.readFileSync(abs, 'utf8'); } catch (e) {
         // borrado: no carga nada; no poder leerlo (permisos, una carpeta, un submódulo) no prueba que no cargue nada
@@ -737,4 +755,4 @@ function evidenciaDelPedido({ marker = {}, findings = null } = {}) {
   return `Pruebas: ${pruebas} · Revisores: ${revisores} · Pase: ${pase} · Hallazgos: ${hallazgos}`;
 }
 
-module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, arbolDelCommit, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia, fotoDelPedido, evidenciaDelPedido };
+module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esCapturaDelPorton, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, arbolDelCommit, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia, fotoDelPedido, evidenciaDelPedido };
