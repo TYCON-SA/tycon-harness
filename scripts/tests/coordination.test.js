@@ -2982,3 +2982,82 @@ test('T49 Status_EsperaVieja_GanaElRegistroDeTurnos: con su portón o su lugar d
   const s2 = C.status(opts(62));
   assert.deepStrictEqual(s2.suiteWaiting.map((x) => x.session), ['Bea'], JSON.stringify(s2.suiteWaiting));
 });
+
+// ── Fila 70: la sesión que espera a su agente callado, y la espera anotada que vence ─────────────────────────────────
+
+// La conversación de una sesión de fondo que lanzó un agente (y, si `fin`, su aviso de fin), y el archivo del agente con
+// su último paso y su fecha.
+function agenteDeFondo(t, sid, { agente = 'a1', minutosCallado = 30, fin = false } = {}) {
+  const dir = path.join(t.home, '.claude', 'projects', t.root.replace(/[^A-Za-z0-9-]/g, '-'));
+  fs.mkdirSync(path.join(dir, sid, 'subagents'), { recursive: true });
+  const renglones = [JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'lanzado' }] }, toolUseResult: { status: 'async_launched', agentId: agente } })];
+  if (fin) renglones.push(JSON.stringify({ type: 'user', message: { role: 'user', content: `<task-notification><task-id>${agente}</task-id><status>completed</status></task-notification>` } }));
+  fs.writeFileSync(path.join(dir, `${sid}.jsonl`), `${renglones.join('\n')}\n`);
+  const archivo = path.join(dir, sid, 'subagents', `agent-${agente}.jsonl`);
+  fs.writeFileSync(archivo, `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash', input: { command: 'python3 -' } }] } })}\n`);
+  const fecha = new Date(mins(minutosCallado));
+  fs.utimesSync(archivo, fecha, fecha);
+}
+
+test('T70a Status_EsperaASuAgenteCallado_LoDiceYNoEsQuieta: la sesión que espera a un agente que no escribe hace 20 min', () => {
+  // 🔴 mutación: no leer los agentes de la conversación (la sesión sale quieta y nadie sabe que su agente se trabó)
+  const t = toy();
+  session(t, 's-bg', 'Fondo', { kind: 'bg', statusUpdatedAt: mins(60) });
+  agenteDeFondo(t, 's-bg', { minutosCallado: 30 });
+  const s = C.status(t.opts);
+  assert.deepStrictEqual(s.agentSilent.map((a) => [a.session, a.agente, a.minutos, a.herramienta]), [['Fondo', 'a1', 30, 'Bash']]);
+  assert.deepStrictEqual(s.quiet, [], 'espera a su agente: no está quieta');
+  assert.match(C.statusText(s), /Fondo espera a su agente a1, que no escribe hace 30 min \(su último paso: «Bash»\)/);
+  // el agente escribe: trabaja por la sesión, no se dice nada
+  const t2 = toy();
+  session(t2, 's-bg', 'Fondo', { kind: 'bg', statusUpdatedAt: mins(60) });
+  agenteDeFondo(t2, 's-bg', { minutosCallado: 5 });
+  const s2 = C.status(t2.opts);
+  assert.deepStrictEqual([s2.agentSilent, s2.quiet], [[], []]);
+  // el agente terminó: la sesión sí está quieta
+  const t3 = toy();
+  session(t3, 's-bg', 'Fondo', { kind: 'bg', statusUpdatedAt: mins(60) });
+  agenteDeFondo(t3, 's-bg', { minutosCallado: 30, fin: true });
+  const s3 = C.status(t3.opts);
+  assert.deepStrictEqual(s3.agentSilent, []);
+  assert.deepStrictEqual(s3.quiet.map((q) => q.session), ['Fondo']);
+});
+
+test('T70b Status_EsperaAnotada_VenceALaMediaHora: --waiting-for ya no calla por horas el aviso de quieta', () => {
+  // 🔴 mutación: la nota con espera vale tres horas como cualquier nota (la sesión no sale quieta hasta entonces)
+  const t = toy();
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  const nota = (sid, campos) => {
+    const f = path.join(doing, `${sid}.json`);
+    fs.writeFileSync(f, JSON.stringify({ text: 'algo', at: new Date(mins(1)).toISOString(), ...campos }));
+    fs.utimesSync(f, new Date(mins(1)), new Date(mins(1)));
+  };
+  session(t, 's-vieja', 'Vieja', { kind: 'bg', statusUpdatedAt: mins(60) }); nota('s-vieja', { waitingFor: 'a mi agente', waitingSince: new Date(mins(50)).toISOString() });
+  session(t, 's-nueva', 'Nueva', { kind: 'bg', statusUpdatedAt: mins(60) }); nota('s-nueva', { waitingFor: 'a mi agente', waitingSince: new Date(mins(10)).toISOString() });
+  session(t, 's-hace', 'Hace', { kind: 'bg', statusUpdatedAt: mins(60) }); nota('s-hace', {});
+  const s = C.status(t.opts);
+  assert.deepStrictEqual(s.quiet.map((q) => q.session), ['Vieja'], 'la espera de hace 50 min ya no calla; la de 10 sí; la nota sin espera, como antes');
+});
+
+test('T70c OwnerWait_AgenteCallado_UnaVez: owner-wait le dice a la coordinadora que una sesión espera a su agente callado', () => {
+  const OA = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+  const DS = require(path.join(ROOT, 'scripts', 'lib', 'delegated-signing.js'));
+  const t = toy();
+  fs.writeFileSync(path.join(t.arnes, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+  const COORD_SID = 's-coord';
+  const d = { name: 'relay-designation', status: 'ok', ts: new Date(NOW).toISOString(), sesion: COORD_SID, rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' };
+  fs.writeFileSync(path.join(t.state, 'gates.log'), `${JSON.stringify(d)}\n${JSON.stringify(DS.confirmationRecord(d, new Date(NOW).toISOString()))}\n`);
+  session(t, COORD_SID, 'Coordinadora', { status: 'busy' });
+  session(t, 's-bg', 'Fondo', { kind: 'bg', statusUpdatedAt: mins(60) });
+  agenteDeFondo(t, 's-bg', { minutosCallado: 30 });
+  const confirmada = OA.coordinadoraConfirmada;
+  OA.coordinadoraConfirmada = (casa, o = {}) => confirmada(casa, { arnes: t.arnes, ...o });
+  try {
+    const vuelta = (seg) => C.ownerWaitOnce({ ...t.opts, sessionId: COORD_SID, now: NOW + seg * 1000, ownerWaits: () => ({ esperas: [], problemas: [] }), signatureDestinos: () => [] }).lines;
+    assert.deepStrictEqual(vuelta(0).filter((l) => /agente/.test(l)), ['Fondo espera a su agente a1, que no escribe hace 30 min (su último paso: «Bash»)']);
+    assert.deepStrictEqual(vuelta(2).filter((l) => /agente/.test(l)), [], 'una vez');
+  } finally {
+    OA.coordinadoraConfirmada = confirmada;
+  }
+});

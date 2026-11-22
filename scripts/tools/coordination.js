@@ -93,6 +93,10 @@ const QUIET_MS = 15 * 60000;
 const ADVERSARIAL_TURN_MAX_MS = 60 * 60000;
 // La nota de `marker.js doing` dice que la sesión hace algo sin tocar archivos, mientras sea reciente.
 const DOING_FRESH_MS = 3 * 3600000;
+// una espera anotada (`marker.js doing --waiting-for`) calla el aviso de quieta sólo media hora
+const WAIT_NOTE_FRESH_MS = 30 * 60000;
+// un agente de fondo que no escribe en este rato se le dice a la coordinadora
+const AGENT_SILENT_MS = 20 * 60000;
 const LAUNCH_TIMEOUT_MS = 30000;
 const GIT_TIMEOUT_MS = 20000;
 // owner-wait mira cada tanto (TYCON_OWNER_WAIT_POLL_MS para las pruebas); una frenada sin anunciar sale en el turno de la
@@ -213,8 +217,19 @@ function recentOpened(home, now, problems) {
 }
 
 // La sesión anotó hace poco qué hace (`marker.js doing`): no está quieta, aunque su archivo diga `idle`.
-function hasFreshDoing(home, sid, now) {
-  try { return now - fs.statSync(path.join(stateDir(home), 'doing', `${sid}.json`)).mtimeMs < DOING_FRESH_MS; } catch { return false; }
+// Con `waitMs`, una nota que dice que espera algo (`--waiting-for`) vale sólo ese rato: una espera anotada no puede callar
+// por horas el aviso de quieta (una sesión esperó así 7 h 40 min a un agente trabado, y nadie se enteró).
+function hasFreshDoing(home, sid, now, { waitMs } = {}) {
+  const file = path.join(stateDir(home), 'doing', `${sid}.json`);
+  let edad;
+  try { edad = now - fs.statSync(file).mtimeMs; } catch { return false; }
+  if (edad >= DOING_FRESH_MS) return false;
+  if (waitMs == null) return true;
+  const note = readJson(file, null);
+  if (!(note && typeof note.waitingFor === 'string' && note.waitingFor.trim())) return true;
+  // desde que empezó a esperar lo mismo (`waitingSince`): volver a anotar la misma espera no la renueva
+  const desde = Date.parse(note.waitingSince || note.at);
+  return (Number.isFinite(desde) ? now - desde : edad) < waitMs;
 }
 
 // Desde cuándo la sesión espera el turno de la suite completa o del portón, según lo que anotó con `marker.js doing
@@ -489,6 +504,8 @@ const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin n
 const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''} Para entrar: claude attach ${x.session}`;
 // qué esperaba, si lo anotó: sin eso nadie sabe qué hay que darle al levantarla (scripts/lib/claude-retired.js)
 const retiredWaited = (x) => (x.waited ? `, esperando ${oneLine(x.waited).slice(0, 160)}` : ', sin anotar qué esperaba');
+// una sesión que espera a su agente de fondo, que no escribe hace rato (lib/agent-silence.js)
+const agentSilentLine = (a) => `${a.session} espera a su agente ${String(a.agente).slice(0, 17)}, que no escribe hace ${a.minutos} min${a.herramienta ? ` (su último paso: ${quoted(a.herramienta, 40)})` : ''}`;
 const retiredLine = (x) => `${x.session}: la cerró Claude Code a las ${hhmm(x.at)} por ${x.reason}, quieta ${x.idleMin} min${retiredWaited(x)}. Para levantarla: claude respawn ${x.short}`;
 
 /** El estado de la máquina, como datos. `noTranscripts`: sin abrir las conversaciones (el aviso de cada turno). */
@@ -504,6 +521,7 @@ function status(opts = {}) {
   const waiting = [];
   const unnamed = [];
   const quiet = [];
+  const agentSilent = [];
   const passWaiting = [];
   const suiteWaiting = [];
   const outsideWaiting = [];
@@ -556,10 +574,22 @@ function status(opts = {}) {
       // la que tiene que lanzar su pase y espera el lugar: no está quieta, le falta que alguien la despierte
       const owesPass = m && m.adversarialGate && m.adversarialGate.run === true && !m.adversarial && m.deepReviewDone !== true;
       if (owesPass && s.status === 'idle') passWaiting.push({ session: nameOf(sid), sid });
-      // una de fondo, quieta: ni esperando su pase, ni con una nota de lo que hace, ni con una ejecución grande de la máquina
-      else if (s.kind === 'bg' && s.status === 'idle' && Number.isFinite(s.statusAt) && now - s.statusAt >= QUIET_MS
-        && !(m && passOccupiesMachine(m, { home, sid })) && !hasFreshDoing(home, sid, now) && !suites.some((x) => x.sid === sid)) {
-        quiet.push({ session: nameOf(sid), sid, minutes: Math.floor((now - s.statusAt) / 60000) });
+      // una de fondo que espera a su propio agente: si el agente no escribe hace rato, se dice (un comando suyo que nunca
+      // volvió, o un permiso que no le sale a nadie); si escribe, la sesión trabaja por él y no está quieta
+      else {
+        let agentes = { pendientes: 0, callados: [] };
+        if (s.kind === 'bg' && s.status === 'idle') {
+          try { agentes = require('../lib/agent-silence.js').silentAgents({ projectsDir: path.join(claudeDir(home), 'projects'), cwd: s.cwd, sid, now, calladoMs: AGENT_SILENT_MS }); } catch (e) { agentes = { problem: e.message }; }
+          if (agentes.problem) { problems.push(agentes.problem); agentes = { pendientes: 0, callados: [] }; }
+        }
+        for (const a of agentes.callados) agentSilent.push({ session: nameOf(sid), sid, ...a });
+        // una de fondo, quieta: ni esperando su pase, ni a su agente, ni con una nota fresca de lo que hace (una espera
+        // anotada vale media hora), ni con su espera de turno o de afuera ya dicha, ni con una ejecución grande
+        if (!agentes.pendientes && s.kind === 'bg' && s.status === 'idle' && Number.isFinite(s.statusAt) && now - s.statusAt >= QUIET_MS
+          && !(m && passOccupiesMachine(m, { home, sid })) && !hasFreshDoing(home, sid, now, { waitMs: WAIT_NOTE_FRESH_MS })
+          && !suites.some((x) => x.sid === sid) && !suiteWaiting.some((x) => x.sid === sid) && !outsideWaiting.some((x) => x.sid === sid)) {
+          quiet.push({ session: nameOf(sid), sid, minutes: Math.floor((now - s.statusAt) / 60000) });
+        }
       }
     }
   }
@@ -602,7 +632,7 @@ function status(opts = {}) {
   if (vigente && vigente.error) problems.push(vigente.error);
   else if (vigente && vigente.pendiente) pendingDesignation = { sesion: vigente.pendiente.sesion, ts: vigente.pendiente.ts };
   return {
-    now, working, waiting, quiet, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
+    now, working, waiting, quiet, agentSilent, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
     suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
     signatures, pendingDesignation,
@@ -640,6 +670,7 @@ function statusText(s) {
   if (s.outsideWaiting && s.outsideWaiting.length) lines.push(`Esperan algo de afuera: ${s.outsideWaiting.map((w) => `${w.session} (${w.waitingFor})${w.since == null ? '' : ` desde las ${hhmm(w.since)}`}`).join(' · ')}`);
   if (s.suiteWaiting && s.suiteWaiting.length) lines.push(`Esperando turno de suite o portón: ${[...s.suiteWaiting].sort((a, b) => a.since - b.since).map((w) => `${w.session} desde las ${hhmm(w.since)}${w.worked ? ' (trabajó después: ¿sigue esperando?)' : ''}`).join(' · ')}`);
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
+  if (s.agentSilent && s.agentSilent.length) lines.push(`Esperan a un agente callado: ${s.agentSilent.map(agentSilentLine).join(' · ')}`);
   lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`].join(' · ')}`);
   if (s.pendingDesignation) lines.push(`Designación sin confirmar: la sesión ${label(s.pendingDesignation.sesion)} la anotó a las ${hhmm(s.pendingDesignation.ts)} y no cuenta hasta que el dueño la confirme`);
   lines.push(`Sin nombre puesto por una persona: ${s.unnamed.length ? s.unnamed.join(', ') : 'ninguna'}`);
@@ -870,7 +901,7 @@ function readAnnounced(home) {
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
   const o = obj(a && a.owner);
   return {
-    waits: obj(a && a.waits), retired: obj(a && a.retired), delegables: obj(a && a.delegables),
+    waits: obj(a && a.waits), retired: obj(a && a.retired), delegables: obj(a && a.delegables), agents: obj(a && a.agents),
     owner: { leidoAt: Number.isFinite(o.leidoAt) ? o.leidoAt : null, esperas: obj(o.esperas), motivos: obj(o.motivos),
       fallas: Number.isInteger(o.fallas) && o.fallas > 0 ? o.fallas : 0 },
   };
@@ -1092,6 +1123,16 @@ function ownerWaitOnce(opts = {}) {
     lines.push(retiredLine(x));
     a.retired[key] = true;
   }
+  // la que espera a su agente callado: una vez por agente; si el agente vuelve a escribir o termina, se olvida
+  const callados = new Set();
+  for (const x of (s.agentSilent || []).filter((y) => y.sid !== me)) {
+    const key = `${x.sid}:${x.agente}`;
+    callados.add(key);
+    if (a.agents[key]) continue;
+    lines.push(agentSilentLine(x));
+    a.agents[key] = true;
+  }
+  for (const key of Object.keys(a.agents)) if (!callados.has(key)) { delete a.agents[key]; dropped = true; }
   const at = opts.now == null ? Date.now() : Number(opts.now);
   const routed = delegatedTurn(opts, a, lines, { home, me, now: at, sessions });
   const read = ownerWaitTurn(opts, a, lines, { home, me, stalled: s.stalled.map((x) => x.sid), now: at });
@@ -1719,6 +1760,7 @@ function capNotice(opts = {}) {
     }
   }
   for (const q of s.quiet.filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${q.session} está quieta hace ${q.minutes} min: cerrala o dale trabajo.`);
+  for (const a of (s.agentSilent || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${agentSilentLine(a)}. Preguntale qué espera (SendMessage), o que detenga ese agente y lo relance.`);
   // nada la despierta sola: quien tiene que avisarle cuando se libera el lugar es la coordinadora. Con el mismo criterio
   // que el portón: el pase de una sesión cerrada, o de más de una hora, no ocupa el lugar.
   for (const w of s.passWaiting.filter((x) => x.sid !== sid)) {
