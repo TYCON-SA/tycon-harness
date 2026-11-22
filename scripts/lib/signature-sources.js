@@ -178,12 +178,12 @@ function deLaMaqueta(palabras, m) {
     return { que, queHace: [linea], fuente: linea, cita, siSaleMal: SI_SALE_MAL_MAQUETA };
   }
   const nueva = mk.mockupHash(html);
-  // la aprobada es la que anotó la corrida (como la mira approve-mockup); el archivo de aprobación del repo no la prueba
+  // la aprobada es la que anotó la ejecución (como la mira approve-mockup); el archivo de aprobación del repo no la prueba
   const vieja = m && m.mockupApproval && m.mockupApproval.sha256 ? String(m.mockupApproval.sha256) : null;
   const corta = (h) => h.slice(0, 12);
   const lineas = [];
   let textos = 'sin comparar';
-  if (!vieja) lineas.push(`Primera aprobación de la maqueta en esta corrida: huella ${corta(nueva)}`);
+  if (!vieja) lineas.push(`Primera aprobación de la maqueta en esta ejecución: huella ${corta(nueva)}`);
   else if (vieja === nueva) lineas.push(`La maqueta no cambió desde su aprobación: huella ${corta(nueva)}`);
   else {
     lineas.push(`Huella: ${corta(vieja)} → ${corta(nueva)}`);

@@ -1928,6 +1928,6 @@ test('SignatureQuestion_ApproveMockup_TextsByContent_FirstApprovalFromTheRun', (
   delete m.mockupApproval;
   fs.writeFileSync(f, JSON.stringify(m));
   const q = cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' }).pregunta;
-  assert.match(q, /Primera aprobación de la maqueta en esta corrida/);
+  assert.match(q, /Primera aprobación de la maqueta en esta ejecución/);
   assert.doesNotMatch(q, /Huella: [0-9a-f]{12} →/);
 });
