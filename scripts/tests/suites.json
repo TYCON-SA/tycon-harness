@@ -3615,6 +3615,12 @@
       "requiere": []
     },
     {
+      "__nota": "un marcador viejo, sin la ruta del repo o con rutas relativas: la pregunta de firma y los lectores directos (la tanda, la procedencia) no dependen de la carpeta del proceso.",
+      "raiz": "arnes",
+      "ruta": "tests/old-marker-paths.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Parte 1 de 3 de tests/night-notices.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Los avisos de arranque leen la noche del clon de mantenimiento que la máquina declara (scripts/lib/night-data.js): una línea por nocturno, una pieza muerta nunca se ve igual que una sana, y lo que escribe la máquina cae en su carpeta de estado, nunca en un clon. Un laboratorio por caso: una versión instalada de juguete con su HOME, un clon público sin datos y un clon de mantenimiento con la noche publicada; remotos locales, sin red.",
       "raiz": "arnes",
       "ruta": "tests/night-notices.p1.test.js",

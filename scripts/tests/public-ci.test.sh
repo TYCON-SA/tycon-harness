@@ -817,7 +817,7 @@ else
   altered "clase 2: un secreto escondido con un escape de YAML" "" 'return t.replace(/^(\s*)TYCON_PUBLIC_CI_OUT:.*$/m, (l, s) => l + "\n" + s + "TOKEN: \"${{ secr\\x65ts.GITHUB_TOKEN }}\"");'
   altered "clase 3: un job salteado cuenta como aprobado" "" 'return t.replace("[ \"${r}\" = \"success\" ] || exit 1", "[ \"${r}\" = \"success\" ] || [ \"${r}\" = \"skipped\" ] || exit 1");'
   altered "clase 4: un exclude en la matriz" "" 'return t.replace(/^(        node: \[24\])$/m, "$1\n        exclude:\n          - node: 24");'
-  altered "clase 5: un filtro bajo pull_request" "" 'return t.replace(/^  pull_request:$/m, "  pull_request:\n    types: [closed]");'
+  altered "clase 5: un filtro bajo pull_request" "triggers" 'return t.replace(/^    types: \[opened, synchronize, reopened, ready_for_review\]$/m, "    types: [closed]");'
   altered "clase 8: un job en estilo flujo con permisos de escritura" "after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, permissions: write-all, steps: [ { run: \"echo hola\" } ] }\n  public-ci:\n").replace("needs: [checks, installer-floor, windows]", "needs: [checks, installer-floor, windows, extra]");'
   altered "clase 9: un if propio en el paso del job public-ci" "" 'return t.replace(/^(      - name: Todos los jobs terminaron bien)$/m, "$1\n        if: github.event_name == \x27push\x27");'
   altered "clase 10: la llamada escrita de otra forma" "" 'return t.replace(/bash scripts\/ci\/public-ci\.sh --clean-machine$/m, "bash ./scripts/ci/public-ci.sh");'
@@ -872,10 +872,18 @@ else
   altered "en un pedido corre también el piso del instalador" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \]; then\n *echo "en un pedido no corre installer-floor.*\n *exit 0\n *fi\n/m, "");'
   # el push a main que hace la cola al entrar un pedido no corre nada (la cola ya probó ese commit), y sólo
   # ése: cualquier otro push a main —el merge directo de un administrador— corre entero, y un pedido o la cola, igual
-  altered "sin la condición de la cola en el job de la matriz" "after-queue" 'return t.replace(/^    if: github\.event_name .*\n/m, "");'
-  altered "salteando todo push a main" "after-queue" 'return t.replace(/^    if: github\.event_name != \x27push\x27 \|\| .*$/m, "    if: github.event_name != \x27push\x27");'
-  altered "salteando todo lo que empuja el bot, también la cola" "after-queue" 'return t.replace(/^    if: github\.event_name != \x27push\x27 \|\| /m, "    if: ");'
-  altered "salteando el push de cualquiera que no sea el bot" "after-queue" 'return t.replace(/^(    if: github\.event_name .*)!= \x27github-merge-queue\[bot\]\x27$/m, "$1== \x27github-merge-queue[bot]\x27");'
+  altered "sin la condición de la cola en el job de la matriz" "after-queue" 'return t.replace(/^    if: github\.event\.pull_request\.draft .*\n/m, "");'
+  altered "salteando todo push a main" "after-queue" 'return t.replace(/^(    if: github\.event\.pull_request\.draft != true && )\(github\.event_name != \x27push\x27 \|\| .*$/m, "$1(github.event_name != \x27push\x27)");'
+  altered "salteando todo lo que empuja el bot, también la cola" "after-queue" 'return t.replace(/^(    if: github\.event\.pull_request\.draft != true && \()github\.event_name != \x27push\x27 \|\| /m, "$1");'
+  altered "salteando el push de cualquiera que no sea el bot" "after-queue" 'return t.replace(/^(    if: github\.event\.pull_request\.draft .*)!= \x27github-merge-queue\[bot\]\x27\)$/m, "$1== \x27github-merge-queue[bot]\x27)");'
+  # un pedido en borrador no corre los trabajos, y sólo ése; el veredicto corre igual y sale rojo (salteado contaría
+  # como aprobado), y sacarlo del borrador corre todo
+  altered "un job que corre también en borrador" "after-queue" 'return t.replace(/^    if: github\.event\.pull_request\.draft != true && \((.*)\)$/m, "    if: $1");'
+  altered "un job que se saltea también en la cola" "after-queue" 'return t.replace(/^    if: github\.event\.pull_request\.draft != true && /m, "    if: github.event_name == \x27pull_request\x27 && ");'
+  altered "el veredicto se saltea en borrador" "after-queue" 'return t.replace(/^    if: always\(\) && \(/m, "    if: always() && github.event.pull_request.draft != true && (");'
+  altered "sacar del borrador no corre nada" "triggers" 'return t.replace(", ready_for_review]", "]");'
+  altered "sin los tipos del pedido" "triggers" 'return t.replace(/^    types: \[opened.*\n/m, "");'
+  altered "el veredicto no frena el borrador" "=shape" 'return t.replace(/^ *if \[ "\$\{DRAFT\}" = "true" \].*\n/m, "");'
   altered "con el job public-ci sólo con always" "after-queue" 'return t.replace(/^    if: always\(\) && .*$/m, "    if: always()");'
   altered "con el job public-ci con la condición y sin always" "aggregate-job after-queue" 'return t.replace(/^    if: always\(\) && \((.*)\)$/m, "    if: $1");'
   # ── T12 · PublicCi_Workflow_PassesBaseInPullRequestAndMergeGroup — en un pedido y en la cola corre el
@@ -994,6 +1002,22 @@ node "${REH}" --scenario portable --work "${T}/reh" > "${T}/reh.out" 2>&1; is "T
 node "${REH}" --scenario all > "${T}/reh.out" 2>&1; is "T27 sin --work sale 2" 2 "$?"
 if [ -e "${T}/reh" ]; then no "T27 con un error de uso armó la carpeta"; else ok "T27 con un error de uso no armó nada"; fi
 is "T27 los escenarios del guion" "all,waiver,old-node,npx" "$(node -e 'process.stdout.write(require(process.argv[1]).SCENARIOS.join(","))' "${REH}")"
+
+# T28 · el veredicto (`public-ci`), su bloque `run` sacado del ci.yml real y corrido con `bash -e`: en un pedido en
+#       borrador sale rojo aunque los demás digan «skipped» (salteado contaría como aprobado); fuera del borrador
+#       manda el resultado de cada job, como siempre. Lo que salteado no corre lo exige la regla `after-queue`.
+awk '/^      - name: Todos los jobs terminaron bien$/ { s = 1; next }
+  s && /^        run: \|$/ { r = 1; next }
+  r && /^          / { sub(/^          /, ""); print; next }
+  r { exit }' "${CI_YML}" > "${T}/verdict.sh"
+grep -q 'DRAFT' "${T}/verdict.sh" || no "T28 no encuentro el bloque run del veredicto en ${CI_YML#${ROOT}/}"
+verdict() { DRAFT="$1" RESULTS="$2" bash -e "${T}/verdict.sh" > "${T}/verdict.out" 2>&1; echo "$?"; }
+is "T28 en borrador, con todo salteado, el veredicto es rojo" 1 "$(verdict true 'skipped skipped skipped')"
+grep -q 'borrador' "${T}/verdict.out" && ok "T28 el rojo del borrador dice que la CI corre al sacarlo del borrador" || no "T28 el rojo del borrador no lo explica: $(cat "${T}/verdict.out")"
+is "T28 en borrador es rojo aunque todo diga success" 1 "$(verdict true 'success success success')"
+is "T28 fuera del borrador, todo success es verde" 0 "$(verdict false 'success success success')"
+is "T28 fuera del borrador, todo salteado es rojo" 1 "$(verdict false 'skipped skipped skipped')"
+is "T28 en la cola y en main (sin pedido: DRAFT false) todo success es verde" 0 "$(verdict false 'success success success')"
 
 echo ""
 if [ "${FAILS}" -eq 0 ] && [ "${TOTAL}" -gt 0 ]; then echo "✅ public-ci.test: ${TOTAL} verificaciones verdes"; exit 0; fi

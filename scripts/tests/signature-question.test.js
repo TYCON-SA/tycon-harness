@@ -918,6 +918,69 @@ test('8.176-Cuadro_RutaQueFalsea_SinCuadro (T10) @story-8.176 @ac-9', (t) => {
   assert.match(deVerdad.texto, /run-base-controls\.sh pending --root /, deVerdad.texto);
 });
 
+// 🔴 Mutaciones: tomar por cambio de control un pedido de varias firmas que trae una de control, o una firma sola que no
+//    es de control (`esDeControl` con «||»); mandar a pending una negativa sin cuadro que no es de control; armar la
+//    vista con la primera de varias firmas, o no armarla con una sola (`pendientes.length === 1`).
+test('8.176-SinCuadro_VariasFirmasConUnaDeControl_NoMandaAPending (T10b) @story-8.176 @ac-9', (t) => {
+  const roto = { error: 'el --entries no es JSON' };
+  const casos = [
+    ['varias con una de control', ['control-change', 'plan-approval'], roto],
+    ['varias de control', ['control-change', 'refresh-after-main'], roto],
+    ['una que no es de control', ['plan-approval'], roto],
+    ['de control sin cuadro', ['control-change'], null],
+  ];
+  for (const [nombre, ids, cuadro] of casos) {
+    const r = ow.negarSinVentana('sin ventana', ids, 'ses-a', cuadro);
+    assert.strictEqual(r.decision, 'deny', nombre);
+    assert.deepStrictEqual(r.firmas, ids, nombre);
+    assert.ok(!r.cuadro, `${nombre}: dio el cuadro`);
+    assert.doesNotMatch(r.texto, /run-base-controls\.sh pending/, `${nombre}: ${r.texto}`);
+    assert.match(r.texto, /corré cada firma sola, en su forma exacta/, `${nombre}: ${r.texto}`);
+  }
+  // la de control sola y sin cuadro, sí: la salida es pedir las rutas de nuevo
+  assert.match(ow.negarSinVentana('sin ventana', ['control-change'], 'ses-a', roto).texto, /run-base-controls\.sh pending --root /);
+  // y con su cuadro armado, el cuadro: no se manda a pending lo que se puede aprobar
+  const { c: cc, entradas, comando } = repoConArchivos(t, ['scripts/ci/a.sh']);
+  const bueno = conFirma('control-change')(cc, comando(entradas()));
+  assert.ok(bueno.pregunta && !bueno.error, bueno.error);
+  const conCuadro = ow.negarSinVentana('sin ventana', ['control-change'], 'ses-a', bueno);
+  assert.strictEqual(conCuadro.cuadro, bueno);
+  assert.ok(conCuadro.texto.includes(bueno.pregunta), conCuadro.texto);
+  assert.doesNotMatch(conCuadro.texto, /run-base-controls\.sh pending/, conCuadro.texto);
+  // en la ventana de permiso, una firma sola que no es de control y no tiene cuadro se niega con su motivo, sin pending
+  const c = corrida(t);
+  const r = pedirControl(c, `node ${MARKER} runtime-waiver ${c.ruta} --acs 1`, { sesion: 'ses-a' });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.deepStrictEqual(r.firmas, ['runtime-waiver']);
+  assert.match(r.texto, /el AC 1 no es un criterio pendiente de firma/, r.texto);
+  assert.doesNotMatch(r.texto, /run-base-controls\.sh pending/, r.texto);
+  // con dos firmas, la ventana dice las dos: no la pregunta de la primera
+  const dos = ['escape:TYCON_TEST_GATE', 'escape:TYCON_STATUS_GATE'];
+  const ventana = ow.decidir({
+    evento: { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: 'TYCON_TEST_GATE=1 TYCON_STATUS_GATE=off bash test-gate.sh' }, cwd: c.repo },
+    escapes: dos, arbol: arbolDelFreno(), pid: 201, casa: c.casa, ahora: AHORA, delegacion: delegacionReal, clasificar: () => null, comprobar: () => null,
+    aprobador: () => APPROVERS.maintainers, aprobaciones });
+  assert.strictEqual(ventana.decision, 'ask', ventana.texto);
+  assert.deepStrictEqual(ventana.firmas, dos);
+  const aprueba = (id) => sig.SIGNATURES.find((s) => s.id === id).approves;
+  assert.ok(ventana.texto.includes(`${aprueba(dos[0])}; ${aprueba(dos[1])}.`), ventana.texto);
+});
+
+// 🔴 Mutaciones: el borde del largo de un nombre en el cuadro (`<= 40` cambiado por `< 40`): un nombre de exactamente 40
+//    letras entra entero; uno de 41, no.
+test('8.176-Cuadro_NombreDelLargoJusto_EntraEntero (T2b) @story-8.176 @ac-2', () => {
+  const pregunta = (archivos) => oa.cuadroDe({ firma: 'plan-approval', destino: 'ses-a', que: 'aprobar el plan', queHace: ['uno'], archivos, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
+  const justo = 'n'.repeat(40);
+  const q = pregunta([`scripts/${justo}.js`, 'scripts/b.js']);
+  assert.ok(q.includes(`Archivos: 2 archivos: 2 de código (${justo} y b).`), q);
+  const pasado = pregunta([`scripts/${justo}x.js`, 'scripts/b.js']);
+  assert.ok(pasado.includes('Archivos: 2 archivos: 2 de código (scripts).'), pasado);
+  // y la carpeta: de 40 letras se nombra; de 41, se cuenta
+  const muchos = (carpeta) => pregunta(['a', 'b', 'c', 'd'].map((n) => `${carpeta}/${n}.js`));
+  assert.ok(muchos(justo).includes(`4 de código (${justo})`), muchos(justo));
+  assert.ok(muchos(`${justo}x`).includes('4 de código (1 carpeta)'), muchos(`${justo}x`));
+});
+
 // 🔴 Mutaciones: mostrar sólo la nota de repensar (T8), tomar la nota de otra vuelta como la pedida o decir «nada
 // abierto» cuando el informe no se lee (T9), un sello que no cambia cuando cambia lo abierto (T8).
 const VUELTA_4 = `node ${PIPELINE} smart-reloop --iter 4 --extra-round`;
@@ -1486,7 +1549,13 @@ test('RunDir_RelativeInMarker_ResolvesAgainstItsRepo (T2) @story-8.287 @ac-2 @ac
     assert.strictEqual(r.status, 0, r.err);
     assert.strictEqual(r.out, c.runDir, `${rel}: no es la carpeta del repo del marcador`);
   }
-  for (const m of [{ ...base, runDir: path.join('otra', 'forma', nombre) }, (({ repoPath: _r, ...resto }) => ({ ...resto, runDir: path.join(TRAMO, nombre) }))(base)]) {
+  // un marcador viejo sin el repo pero con la historia absoluta: el repo es el de la historia, nunca la carpeta del proceso
+  {
+    const r = resolver((({ repoPath: _r, ...resto }) => ({ ...resto, runDir: path.join(TRAMO, nombre) }))(base));
+    assert.strictEqual(r.status, 0, r.err);
+    assert.strictEqual(r.out, c.runDir, 'sin repoPath, la carpeta relativa se ubica en el repo de la historia');
+  }
+  for (const m of [{ ...base, runDir: path.join('otra', 'forma', nombre) }]) {
     const r = resolver(m);
     assert.strictEqual(r.status, 0, r.err);
     assert.strictEqual(r.out, nueva, `${JSON.stringify(m)}: tenía que caer en la regla sin marcador`);

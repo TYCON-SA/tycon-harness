@@ -24,7 +24,9 @@ How she is named: on each machine, the owner asks the chosen session, in their o
 the profile, that session runs `marker.js designate-relay` with no sentence: the guard gives a box with "Sí" and "No"
 that says which session it is and in which folder, and with the owner's click it is named and confirmed. The harness
 does not read the sentence. To stop being it, `marker.js withdraw-relay`, with its own box. Both signatures belong only
-to the owner, with a click in that session's tab: they are never delegated. Where the click cannot be checked, the
+to the owner, with a click in that session's tab: they are never delegated. If another coordinator opened that session
+in the background (`coordination.js open`), the box is still shown in its tab and the session tells the coordinator
+that opened it: the owner answers there or through remote control. Where the click cannot be checked, the
 command says why and gives the fallbacks: the owner's terminal (`designate-relay --terminal`) or the sentence
 (`--quote`, then `confirm-designation`). Without a profile, for now she is named with the sentence
 (`designate-relay --approved-by '<the dev>' --quote '<their sentence>'`).
