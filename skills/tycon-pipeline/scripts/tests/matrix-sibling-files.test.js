@@ -458,3 +458,42 @@ test('T17d HermanoEnMain_SoloAlDiaConSuOrigenEsSuCopia', () => {
   assert.equal(s.perAc[1].verdict, 'NOT-RUN', avisos(s));
   assert.match(avisos(s), /comparada contra Back tal como está declarado/);
 });
+
+// ---------------------------------------------------------------- el hermano atrasado que sí tiene el archivo
+
+/** El hermano sin copia de la historia queda atrás de su origin/main local, y main ya cambió `rel` después de él. */
+function atrasarElHermano(f, rel = 'src/Feature.cs') {
+  escribir(f.back, rel, '// otra versión que ya entró a main\n');
+  commit(f.back, 'main avanza en el origen', f.ahora + 100);
+  git(f.back, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+  git(f.back, ['reset', '-q', '--hard', 'HEAD~1']);
+}
+
+test('T18 HermanoAtrasado_ConElArchivo_RojoYDiceQueEsUnaCopiaVieja', () => {
+  // el clon compartido quedó atrás de main y main cambió el archivo: la copia que se mira es vieja, y su verde no vale
+  const f = labConCopia({ copia: false });
+  atrasarElHermano(f);
+  const r = f.calcular();
+  assert.equal(r.green, false, avisos(r));
+  assert.deepEqual(r.noLeidos.map((n) => n.rel), ['src/Feature.cs'], avisos(r));
+  assert.match(avisos(r), /src\/Feature\.cs.*atrás de su origin\/main/, avisos(r));
+  assert.match(avisos(r), /Traé Back al día/, avisos(r));
+});
+
+test('T18b HermanoAtrasado_MainNoTocoElArchivo_SigueVerde', () => {
+  // atrás de main, pero main no cambió el archivo declarado: la copia es la misma que en main
+  const f = labConCopia({ copia: false });
+  atrasarElHermano(f, 'src/Otro.cs');
+  const r = f.calcular();
+  assert.deepEqual(r.noLeidos, [], avisos(r));
+  assert.equal(r.green, true, avisos(r));
+});
+
+test('T18c HermanoConCopiaDeLaHistoria_ClonAtrasado_NoImporta', () => {
+  // con copia en la rama de la historia, el clon compartido no se mira: atrasado o no, no cambia nada
+  const f = labConCopia();
+  atrasarElHermano(f);
+  const r = f.calcular();
+  assert.deepEqual(r.noLeidos, [], avisos(r));
+  assert.equal(r.green, true, avisos(r));
+});

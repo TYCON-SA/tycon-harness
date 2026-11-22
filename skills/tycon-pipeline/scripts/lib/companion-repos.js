@@ -275,6 +275,24 @@ function mainAlDia(dir) {
   return !estado.error && estado.status === 0 && !String(estado.stdout || '').trim();
 }
 
+/**
+ * ¿Su `origin/main` local cambió el archivo `abs` en commits que el checkout donde está no tiene? Sin `fetch`.
+ * `{ commit }` con el más nuevo de esos commits, `{ commit: null }` si no (o sin `origin/main`: nada contra qué comparar),
+ * `{ error }` si git no contestó: no se sabe si la copia es vieja.
+ */
+function mainCambioDespues(abs) {
+  const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre();
+  const dir = path.dirname(abs);
+  const correr = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
+  const conOrigen = correr(['show-ref', '--verify', '--quiet', 'refs/remotes/origin/main']);
+  if (!conOrigen.error && conOrigen.status === 1) return { commit: null };
+  const motivo = (r) => (r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`;
+  if (conOrigen.error || conOrigen.status !== 0) return { error: motivo(conOrigen) };
+  const r = correr(['log', '-1', '--format=%h', 'HEAD..refs/remotes/origin/main', '--', path.basename(abs)]);
+  if (r.error || r.status !== 0) return { error: motivo(r) };
+  return { commit: String(r.stdout || '').trim() || null };
+}
+
 /** La raíz git que contiene un archivo o carpeta (la carpeta con `.git`), o null. */
 function gitRootOf(p) {
   const r = discoverRepoRoot(p);
@@ -564,7 +582,7 @@ function anclasDeLaEvidencia(repo, historia) {
 
 module.exports = {
   anclasDeLaEvidencia, nombreDelRepo,
-  companionRoots, ramaDe, limpiarRamas, enLaMismaRama, mainAlDia, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
+  companionRoots, ramaDe, limpiarRamas, enLaMismaRama, mainAlDia, mainCambioDespues, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, declaredFor, real,
 };
 

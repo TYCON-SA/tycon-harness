@@ -1681,6 +1681,15 @@ function compute(opts) {
       continue;
     }
     for (const { abs, lugar, sinCopia: declarado } of copias.values()) {
+      // Una copia que se juzga en el hermano tal como está declarado y que su main ya cambió después es vieja: su verde
+      // no dice nada del código de hoy. Sin poder preguntarle a git, tampoco se sabe: las dos no se pueden mirar.
+      if (declarado) {
+        const despues = companionLib.mainCambioDespues(abs);
+        if (despues.error || despues.commit) {
+          noLeidos.push({ rel, lugares, atrasado: { hermano: declarado, ...despues } });
+          continue;
+        }
+      }
       const mt = mtimeMs(abs);
       // Con más de una copia, el aviso dice de qué lugar es la que no cuenta.
       codeFiles.push({ rel: copias.size > 1 ? `${rel} (en ${path.basename(lugar)})` : rel, declarado: rel, abs, mt, sinCopia: declarado });
@@ -1699,7 +1708,15 @@ function compute(opts) {
       'No anulan la evidencia de esta tanda; cuentan cuando se mida la suya o la historia entera.');
   }
   const historiaEnDone = /^status:\s*["']?done\b/m.test(String(content).split(/^---\s*$/m)[1] || '');
-  for (const { rel, lugares: donde } of noLeidos) {
+  for (const { rel, lugares: donde, atrasado } of noLeidos) {
+    if (atrasado) {
+      const hermano = companionLib.label(atrasado.hermano);
+      warnings.push(atrasado.error
+        ? `No pude saber si ${rel} en ${hermano} es la versión de main (git: ${atrasado.error}) → ninguna evidencia cuenta. Revisá ese repo y volvé a correr la matriz.`
+        : `${rel} en ${hermano} es una copia vieja: ${hermano} está atrás de su origin/main, que lo cambió después (${atrasado.commit}) → ninguna evidencia cuenta. ` +
+          `Traé ${hermano} al día (o poné el código de la historia en su rama) y volvé a correr la evidencia.`);
+      continue;
+    }
     warnings.push(`No pude leer ${rel}: es código declarado y no está en ${donde.join(', ')} → ninguna evidencia cuenta. ` +
       (historiaEnDone
         ? 'La historia está en done: traé el hermano al día o volvé a correr la evidencia; no edites la lista para ponerla en verde.'
