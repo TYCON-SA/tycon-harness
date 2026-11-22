@@ -827,17 +827,23 @@ function cmdRun() {
     // el inventario: el de la base contra la base (sus guiones están), y el del pedido contra el pedido (sus controles nuevos tienen entrada)
     const baseProblems = inventoryProblems(a.root, a.base, a.inv);
     const tipRead = readInventory(a.root, a.tip);
-    const tipProblems = tipRead.inv ? inventoryProblems(a.root, a.tip, tipRead.inv) : null;
-    // el inventario de la base roto frena, salvo que lo único roto sea un control inventariado que nada corre todavía y el
-    // pedido lo deje cuadrando: un control nuevo que main inventarió antes que su llamada trabaría todo pedido, también el
-    // que lo arregla, y un control de más no afloja nada. Cualquier otro problema de main (un control sin inventariar, un
-    // dato sin clasificar) deja una regla sin proteger en la pasada de la base: sigue en rojo
-    const notRunYet = (p) => p.startsWith('ningún paso corre ');
-    const fixedByPr = baseProblems.length > 0 && baseProblems.every(notRunYet) && Array.isArray(tipProblems) && tipProblems.length === 0;
-    for (const p of baseProblems) console.log(`${fixedByPr ? '⚠️' : '❌'} base-controls: inventario de la base — ${p}`);
-    if (fixedByPr) console.log('⚠️ base-controls: el inventario de la base no cuadra y el del pedido sí: este pedido lo arregla, no frena por eso');
-    else if (baseProblems.length) reasons.push('el inventario de la base no cuadra');
+    // Un problema de la base que el pedido deja bien no frena: cuando el público suma un control que la copia propia del
+    // hook del privado no llama, todo pedido del privado frenaría, también el que lo arregla. Se mira con el inventario
+    // DE LA BASE sobre el árbol del pedido: sacar el control del inventario del pedido no lo arregla. Sin un inventario
+    // del pedido que se lea, frena todo como siempre.
+    // Se perdona sólo «ningún paso corre X», y sólo si el pedido no cambia ningún archivo de control salvo el hook, ni el
+    // mapa de renombres: así no puede llamar al control y vaciarlo en el mismo pedido, ni llamarlo por un atajo nuevo. Un
+    // guion que falta no se perdona (el pedido lo traería con cualquier contenido).
+    const RENOMBRES = 'scripts/lib/renames.json';
+    const soloElHook = a.changed.every((f) => f === a.inv.hook) && blobOf(a.root, a.mb, RENOMBRES) === blobOf(a.root, a.tip, RENOMBRES);
+    const sigueEnElPedido = new Set(tipRead.inv ? inventoryProblems(a.root, a.tip, a.inv) : baseProblems);
+    const arreglados = soloElHook ? baseProblems.filter((p) => p.startsWith('ningún paso corre ') && !sigueEnElPedido.has(p)) : [];
+    const quedan = baseProblems.filter((p) => !arreglados.includes(p));
+    for (const p of arreglados) console.log(`· base-controls: inventario de la base — ${p} (el pedido lo arregla)`);
+    for (const p of quedan) console.log(`❌ base-controls: inventario de la base — ${p}`);
+    if (quedan.length) reasons.push('el inventario de la base no cuadra');
     if (tipRead.inv) {
+      const tipProblems = inventoryProblems(a.root, a.tip, tipRead.inv);
       // los nombres y rutas salen del inventario del pedido: un salto de línea no arma una línea propia
       for (const p of tipProblems) console.log(`❌ base-controls: inventario del pedido — ${safe(p)}`);
       if (tipProblems.length) reasons.push('el inventario del pedido no cuadra');

@@ -386,6 +386,14 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS, para = 'firma', s
     } finally {
       try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
     }
+    // los controles de la CI que corren en local (lib/ci-local-checks.js): un rojo que la compilación del pull request
+    // daría después de la cola se ve antes de pedir la aprobación. Sólo en el cierre del paso: la firma de guardar no
+    // abre un pull request
+    if (pedido) {
+      const ci = require('./ci-local-checks.js').correr(repo, { limite });
+      if (ci.codigo !== 0) return { codigo: 2, motivo: `${ci.motivo}. Arreglalo y volvé a cerrar «Preparar el pull request»` };
+      for (const a of ci.avisos) process.stderr.write(`save-ok: ${a}\n`);
+    }
     const despues = huella(repo);
     if (despues.error || despues.arbol !== antes.arbol) {
       const cambios = despues.error ? despues.error : git(repo, ['diff-tree', '-r', '--name-only', antes.arbol, despues.arbol]).out.split('\n').filter(Boolean).join(', ');
