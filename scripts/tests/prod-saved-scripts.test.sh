@@ -302,9 +302,15 @@ for c in "make -f mk/bomba.mk bomba" "make -f mk/incluye.mk nada" "node fifo"; d
   if [ "$rc" = 0 ] && [ "$ms" -lt 5000 ]; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · «${c}» no cuelga al freno"
   else no "T-puerta-38 Freno_NombrarNoEsCorrer · «${c}»: rc=$rc en $ms ms"; fi
 done
-# el mismo archivo incluido miles de veces se lee una sola: no llega al tope de lo que se lee
-if ! grep -q 'incluye más' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · un include repetido se lee una vez"
-else no "T-puerta-38 Freno_NombrarNoEsCorrer · include repetido: $(grep 'incluye más' "$REGISTRO" | head -c 200)"; fi
+# el mismo archivo incluido miles de veces se lee una sola: no llega al tope de lo que se lee. La marca es positiva: el
+# archivo incluido trae la receta que lee la clave, así que el freno frena sólo si lo leyó; y el registro se vacía antes,
+# para que no pase con el registro vacío
+head -c 60000 /dev/zero | tr '\0' '#' > "$JUG/mk/relleno-lee.mk"; printf '\nnada:\n\t%s\n' "$LEE_CLAVE" >> "$JUG/mk/relleno-lee.mk"
+for i in $(seq 1 2500); do printf 'include mk/relleno-lee.mk\n'; done > "$JUG/mk/incluye-lee.mk"
+: > "$REGISTRO"
+frena "T-puerta-38 Freno_NombrarNoEsCorrer · un include repetido se lee: ve la receta que trae" "make -f mk/incluye-lee.mk nada" "y este comando lo corre"
+if [ -s "$REGISTRO" ] && ! grep -q 'incluye más' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · un include repetido se lee una vez"
+else no "T-puerta-38 Freno_NombrarNoEsCorrer · include repetido: $(head -c 200 "$REGISTRO")"; fi
 # un include dentro de otro se sigue; lo que pasa de los topes queda dicho
 printf 'include mk/in2.mk\n' > "$JUG/mk/in1.mk"; printf 'leer:\n\t%s\n' "$LEE_CLAVE" > "$JUG/mk/in2.mk"; printf 'include mk/in1.mk\n' > "$JUG/mk/anidado.mk"
 frena "T-puerta-36 Freno_MakeComoLoLeeMake · un include dentro de otro" "make -f mk/anidado.mk leer" "y este comando lo corre"

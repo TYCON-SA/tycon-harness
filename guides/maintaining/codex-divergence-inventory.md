@@ -300,6 +300,10 @@ El hook reconoce Codex por el `turn_id` del payload (mismo criterio que `on-skil
 se consulta producción desde Codex». Caso del banco: `codex-frena-tambien-la-puerta`
 (`40-prod-access-guard.json`), y la divergencia está declarada en `adapters/codex/hooks.json`.
 
+**Un freno que falla, en Codex, deja pasar.** Codex llama al freno directo (`node …/prod-access-guard.js`), sin el
+lanzador ni su reloj de 7 s, y no tiene `onFailure`. Si el freno se cae o se cuelga, el comando corre; en Claude Code el
+mismo fallo frena. Dicho en `guides/produccion-con-permiso.md`, «Los límites, dichos antes».
+
 **El firewall de la puerta** (`--open-firewall` / `--close-firewall`): en Codex tampoco se abre una regla.
 Además del cuadro, le falta un evento de fin de sesión (sus hooks son PreToolUse, PostToolUse,
 SessionStart, Stop y UserPromptSubmit, y `Stop` es fin de turno, no de sesión), así que nadie cerraría la
