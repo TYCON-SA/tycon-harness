@@ -1177,13 +1177,30 @@ function preparado(m, salientes = []) {
 function escribeCodigo(c) {
   const so = SO();
   for (const p of (c && c.escritos) || []) {
-    let raiz = null;
-    try { raiz = so.raizDe(fs.existsSync(p) && fs.statSync(p).isDirectory() ? p : path.dirname(p)); } catch (_) { raiz = null; }
-    const rel = raiz ? path.relative(raiz, p).split(path.sep).join('/') : '';
+    let raiz;
+    // si git no contesta no se sabe de qué repo es: cuenta como código
+    try { raiz = so.raizDe(fs.existsSync(p) && fs.statSync(p).isDirectory() ? p : path.dirname(p)); } catch (_) { return path.basename(p); }
+    // fuera de todo repo (el mensaje del commit en una carpeta temporal, el registro de una compilación) no es código
+    if (!raiz) continue;
+    // la raíz es la ruta real: la del archivo también, para que una carpeta que llega por un enlace se compare igual
+    const rel = path.relative(raiz, rutaReal(p)).split(path.sep).join('/');
     if (rel && !rel.startsWith('..') && so.esPapeleoDeLaHuella(rel, '100644')) continue;
     return rel || path.basename(p);
   }
   return null;
+}
+
+/** La ruta real de `p` aunque todavía no exista: la de su carpeta existente más cercana, con lo que falta debajo. */
+function rutaReal(p) {
+  let base = path.resolve(String(p));
+  const resto = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync(base), ...resto); } catch (_) { /* subo */ }
+    const arriba = path.dirname(base);
+    if (arriba === base) return path.resolve(String(p));
+    resto.unshift(path.basename(base));
+    base = arriba;
+  }
 }
 
 // Los hallazgos de la corrida (`findings.json` de su carpeta), o null si no se ubica o no se lee: la evidencia dice

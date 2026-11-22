@@ -1617,6 +1617,15 @@ test('8.242-Perfil_Coordinadora_PideElOk (T22) @story-8.242 @ac-15', (t) => {
     assert.match((d || {}).texto || '', POR_LA_COORDINADORA, `«${cmd}»: ${JSON.stringify(d)}`);
     assert.match(d.texto, /cambia el código antes de commitearlo/);
   }
+  // lo que se escribe fuera de todo repo (el mensaje del commit, un registro) no es código, y el papeleo tampoco lo es
+  // cuando la carpeta llega por un enlace
+  const fuera = tmp(t, 'freno-fuera-');
+  for (const cmd of [`printf msg > ${fuera}/msg.txt && git commit -F ${fuera}/msg.txt`, `npm run build > ${fuera}/b.log; git commit -am x`]) {
+    assert.strictEqual(decideCon(h, cmd, b, arnes), null, `«${cmd}»`);
+  }
+  const enlace = path.join(tmp(t, 'freno-enlace-'), 'repo');
+  fs.symlinkSync(b, enlace);
+  assert.strictEqual(decideCon(h, 'echo y > specs/story-9.99.md && git commit -am x', enlace, arnes), null, 'el papeleo, por el enlace');
   // el marcador que no se lee: el ok vive ahí, así que el commit no guarda
   fs.writeFileSync(marcadorPath(h), '{ esto no es json');
   assert.match((decideCon(h, 'git commit -m x', a, arnes) || {}).texto || '', POR_LA_COORDINADORA);
