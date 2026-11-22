@@ -2493,12 +2493,22 @@ function escrituraProtegida(cmd, payload) {
       const a = pal(args[k]);
       if (a === '--') { k++; break; }
       if (!/^-/.test(a)) break;
-      let m;
-      if (a === '-I' || a === '-J' || a === '--replace') { marca = pal(args[k + 1] || ''); k += 2; continue; }
-      if ((m = /^-([IJ])(.+)$/.exec(a))) { marca = m[2]; k++; continue; }
-      if (/^--replace=/.test(a)) { marca = a.slice(10) || '{}'; k++; continue; }
-      if (a === '-i') { marca = '{}'; k++; continue; }
-      k += XARGS_CON_ARGUMENTO.test(a) ? 2 : 1;
+      // `--replace` (GNU), también abreviado como lo acepta getopt (`--re=%`, `--r`): sin `=` es la marca `{}`, y no se
+      // come la palabra que sigue
+      const largo = a.split('=')[0];
+      if (largo.length >= 3 && '--replace'.startsWith(largo)) { marca = a.includes('=') ? (a.slice(a.indexOf('=') + 1) || '{}') : '{}'; k++; continue; }
+      if (/^--/.test(a)) { k += XARGS_CON_ARGUMENTO.test(a) ? 2 : 1; continue; }
+      // un grupo de letras (`-0I{}`, `-tI {}`, `-ti`, `-iX`): cada letra es una opción, hasta la que lleva argumento.
+      // `-e` de GNU lleva el suyo sólo pegado: suelto no se come la palabra que sigue (`xargs -e -I@`)
+      let salto = 1;
+      for (let j = 1; j < a.length; j++) {
+        const l = a[j];
+        if (l === 'I' || l === 'J') { if (j + 1 < a.length) marca = a.slice(j + 1); else { marca = pal(args[k + 1] || ''); salto = 2; } break; }
+        if (l === 'i') { marca = a.slice(j + 1) || '{}'; break; }
+        if (l === 'e') break;
+        if (/[LnPsERSda]/.test(l)) { if (j + 1 === a.length) salto = 2; break; }
+      }
+      k += salto;
     }
     const sub = args.slice(k);
     const i1 = programa(sub); const p = progDe(sub[i1]); const subArgs = sub.slice(i1 + 1);
@@ -2525,7 +2535,19 @@ function escrituraProtegida(cmd, payload) {
       for (const c of e.crudos) {
         const v = alimenta(c.raw, e.cwd, 0, c.opts);
         if (v && typeof v !== 'string') return v;                                // indecidible en alcance
-        if (v) return { motivo: `ese comando ESCRIBE sobre ${v} (xargs arma los argumentos de «${p}» con lo que le llega de «${corto(c.raw)}»).` };
+        if (v) {
+          // a un intérprete, el freno no le lee el programa (uno «que sólo lee» corre lo que haya en un json.py de la
+          // carpeta): que el motivo diga cómo leer sin escribir
+          const leer = INTERPRETE_DE_PROGRAMA.test(p) ? ' Para sólo leerlos, usá jq o la herramienta de lectura: un intérprete al que xargs le pasa esos nombres cuenta como escritura.' : '';
+          return { motivo: `ese comando ESCRIBE sobre ${v} (xargs arma los argumentos de «${p}» con lo que le llega de «${corto(c.raw)}»).${leer}` };
+        }
+        // a un intérprete, lo que llega puede ser su programa (`xargs -I{} python3 -c {}`, o `-c` sin programa): un texto
+        // que nombra un estado de producción, escrito o en una variable de valor conocido, se juzga como el programa
+        // escrito en el comando. Los heredocs los mira programaPorHeredoc.
+        if (!INTERPRETE_DE_PROGRAMA.test(p)) continue;
+        const textos = [pal(c.raw), ...expandir(c.raw, c.opts).patterns.map(sp.patternToLiteral)];
+        const m = textos.map((x) => MENCION_PROTEGIDA.exec(x)).find(Boolean);
+        if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (xargs le pasa a «${p}» un texto que lo nombra, y puede ser su programa: «${corto(c.raw)}»).` };
       }
     }
     return null;
@@ -2849,6 +2871,20 @@ function programaPorHeredoc(cmd, sp, prof = 0) {
   for (const p of sp.programasPorEntrada(cmd)) {
     const m = MENCION_PROTEGIDA.exec(String(p.cuerpo || ''));
     if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra el programa que el intérprete recibe por su entrada).` };
+  }
+  // A un `xargs` o un `parallel` que corre un intérprete, el heredoc es lo que le llega (`xargs -I{} python3 -c {} <<EOF`,
+  // `cat <<EOF | xargs …`): puede ser su programa, y se juzga igual. Cuenta su renglón, y el siguiente si termina en `|`.
+  for (const h of sp.heredocs(cmd)) {
+    const m = MENCION_PROTEGIDA.exec(String(h.cuerpo || ''));
+    if (!m) continue;
+    const resto = String(h.resto || '');
+    let renglon = `${cmd.slice(cmd.lastIndexOf('\n', h.indice) + 1, h.indice)} ${resto}`;
+    if (/\|\s*$/.test(resto) && h.fin < cmd.length) { const f = cmd.indexOf('\n', h.fin + 1); renglon += ` ${cmd.slice(h.fin + 1, f < 0 ? cmd.length : f)}`; }
+    const t = sp.tokens(renglon).map((x) => basename(sinComillas(x)).toLowerCase());
+    const ix = t.findIndex((x) => x === 'xargs' || x === 'parallel');
+    if (ix >= 0 && t.slice(ix + 1).some((x) => INTERPRETE_DE_PROGRAMA.test(x))) {
+      return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra el texto que «${t[ix]}» le pasa a un intérprete, y puede ser su programa).` };
+    }
   }
   if (prof >= 6) return null;                                               // el mismo tope de anidamiento de `texto`
   for (const interno of sp.tokens(cmd).filter((t, i, ts) => i > 0 && ts[i - 1] === '-c' && t.includes('<<'))) {
