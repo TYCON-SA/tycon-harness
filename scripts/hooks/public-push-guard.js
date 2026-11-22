@@ -1047,11 +1047,17 @@ function limitOf(env) {
   return env.TYCON_PUBLIC_PUSH_LIMIT_MS !== undefined && env.TYCON_PUBLIC_PUSH_LIMIT_MS !== '' && Number.isFinite(n) && n >= 0 ? n : DEFAULT_LIMIT_MS;
 }
 
-/** La constancia: freno, regla y veredicto. Nunca el comando ni un texto. Es ayuda: si no se puede anotar, se sigue. */
+// La sesión del evento, cuando corre como gancho de la herramienta; en el modo de git (pre-push) no hay evento y queda vacía.
+let recordSession;
+
+/**
+ * La constancia: freno, regla, veredicto y la sesión del evento si la hay. Nunca el comando ni un texto. Es ayuda: si no
+ * se puede anotar, se sigue.
+ */
 function record(rule, verdict) {
   try {
     const lib = path.join(ROOT, 'scripts', 'lib', 'guard-record.js');
-    if (fs.existsSync(lib)) require(lib).anotar({ freno: 'public-push-guard', regla: rule, veredicto: verdict });
+    if (fs.existsSync(lib)) require(lib).anotar({ freno: 'public-push-guard', regla: rule, veredicto: verdict, sesion: recordSession });
   } catch (_) { /* la decisión ya está tomada */ }
 }
 
@@ -1745,6 +1751,7 @@ function hookMode(payloadText, env = process.env) {
     return { code: 0, lines: [said('el evento no trae un comando que yo sepa leer')] };
   }
   if (!command) return { code: 0, lines: [] };
+  recordSession = typeof payload.session_id === 'string' ? payload.session_id : undefined;
   const cwd = typeof payload.cwd === 'string' && payload.cwd ? payload.cwd : process.cwd();
   try {
     // la herramienta de PowerShell escribe sus comandos con otras reglas (la barra invertida no escapa, los bloques de

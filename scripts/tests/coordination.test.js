@@ -2862,10 +2862,10 @@ test('T46 CapNotice_QueueWithOneRunning @story-8.291 @ac-12: con gente en la fil
   fs.mkdirSync(doing, { recursive: true });
   fs.writeFileSync(path.join(doing, 's-ana.json'), JSON.stringify({ text: 'implementar la historia', at: new Date(mins(10)).toISOString(), waitingFor: 'turno de suite', waitingSince: new Date(mins(10)).toISOString() }));
   // (d) ninguna corriendo: el texto de hoy
-  assert.match(C.capNotice(opts(62)), /^Coordinación: no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Ana\.$/m);
+  assert.match(C.capNotice(opts(62)), /^Coordinación: no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Ana: heavy-turn\.js grant --to [\w-]+\.$/m);
   slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
   // (a) una, 62 %
-  assert.match(C.capNotice(opts(62)), /^Coordinación: corre Uma \(204 suites de repo, desde las \d\d:\d\d\); hay lugar para una segunda \(memoria libre 62 %, piso 50 %\): dale el «arrancá» a Ana\.$/m);
+  assert.match(C.capNotice(opts(62)), /^Coordinación: corre Uma \(204 suites de repo, desde las \d\d:\d\d\); hay lugar para una segunda \(memoria libre 62 %, piso 50 %\): dale el «arrancá» a Ana: heavy-turn\.js grant --to [\w-]+\.$/m);
   // (b) una, 41 %
   assert.match(C.capNotice(opts(41)), /^Coordinación: corre Uma \(.*\); la segunda no entra \(memoria libre 41 %, piso 50 %\): cuando termine, sigue Ana\.$/m);
   // (e) una, sin medir: ni «null» ni un porcentaje vacío
@@ -2969,7 +2969,7 @@ test('T49 Status_EsperaVieja_GanaElRegistroDeTurnos: con su portón o su lugar d
   waits('s-ana', 'portón final de pruebas de la 9.9');
   slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
   // sin registro de Ana: está en la fila, como hoy
-  assert.match(C.capNotice(opts(62)), /dale el «arrancá» a Ana\./);
+  assert.match(C.capNotice(opts(62)), /dale el «arrancá» a Ana: heavy-turn\.js grant --to [\w-]+\./);
   // su portón corre, anotado antes que la nota: gana el registro
   gateRec(t, { sid: 's-ana', session: 'Ana', what: '81 suites de repo', suites: 81, at: mins(3) });
   const s = C.status(opts(62));
@@ -3060,4 +3060,90 @@ test('T70c OwnerWait_AgenteCallado_UnaVez: owner-wait le dice a la coordinadora 
   } finally {
     OA.coordinadoraConfirmada = confirmada;
   }
+});
+
+// ── Los planes que esperan su aprobación (defecto 11 de la fila de la coordinadora) ──
+// Un plan cerrado que espera «Aprobar el plan» no pide su firma hasta que alguien la pide: no tiene renglón en la lista de
+// firmas, y la coordinadora veía «0 firmas pendientes» mientras cinco sesiones esperaban 3 h.
+const planEsperando = (t, sid, name, { story = '9.11', hace = 180, extra = {} } = {}) => {
+  session(t, sid, name, { kind: 'bg' });
+  marker(t, sid, { storyId: story, stepScheme: 2, stepsCompleted: ['start', 'validate-story', 'plan'], stepsPending: ['approve-plan', 'implement'],
+    stepTimings: { plan: { completedAt: new Date(mins(hace)).toISOString() } }, ...extra });
+};
+
+// Planes_EsperandoAprobacion_EnStatus
+// 🔴 Falla con: status dice «0 firmas pendientes» con un plan cerrado esperando su aprobación hace 3 h.
+test('Planes_EsperandoAprobacion_EnStatus: el plan que espera su aprobación sale en «Firmas pendientes» con su sesión y su espera', () => {
+  const t = toy();
+  planEsperando(t, 's-ana', 'Ana');
+  // uno con el plan ya aprobado y otro sin el plan cerrado: no esperan
+  session(t, 's-bea', 'Bea', { kind: 'bg' });
+  marker(t, 's-bea', { storyId: '9.12', stepScheme: 2, stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan'], stepsPending: ['implement'] });
+  session(t, 's-ceci', 'Ceci', { kind: 'bg' });
+  marker(t, 's-ceci', { storyId: '9.13', stepScheme: 2, stepsCompleted: ['start', 'validate-story'], stepsPending: ['plan', 'approve-plan'] });
+  const s = C.status(t.opts);
+  assert.deepStrictEqual(s.plansWaiting.map((p) => [p.sid, p.storyId, p.minutes]), [['s-ana', '9.11', 180]]);
+  const texto = C.statusText(s);
+  assert.match(texto, /Firmas pendientes: .*1 plan esperando su aprobación/);
+  assert.match(texto, /Ana \(s-ana\): el plan de la 9\.11 espera su aprobación hace 180 min/);
+  assert.ok(!texto.split('\n').some((l) => /espera su aprobación/.test(l) && /Bea|Ceci/.test(l)), texto);
+});
+
+// Planes_Delegado_LaCoordinadoraLoAprueba
+// 🔴 Falla con: un plan delicado que el perfil delega y la revisión aprobó no dice que lo puede dar la coordinadora.
+test('Planes_Delegado_LaCoordinadoraLoAprueba: con plan-approval:delicada delegada y la revisión aprobada, lo dice', () => {
+  const t = toy();
+  planEsperando(t, 's-ana', 'Ana');
+  planEsperando(t, 's-bea', 'Bea', { story: '9.12', hace: 30 });
+  const deps = {
+    revision: (sid) => (sid === 's-ana' ? { veredicto: 'aprobado', delicate: { value: true } } : { veredicto: 'rechazado', delicate: { value: true } }),
+    delegada: () => true,
+  };
+  const rows = C.plansWaiting({ ...t.opts, planDeps: deps });
+  const ana = rows.find((p) => p.sid === 's-ana');
+  const bea = rows.find((p) => p.sid === 's-bea');
+  assert.strictEqual(ana.porCoordinadora, true);
+  assert.strictEqual(bea.porCoordinadora, false, 'con la revisión rechazada, no');
+  const lineas = C.planWaitLines(rows).join('\n');
+  assert.match(lineas, /Ana \(s-ana\).*revisión: aprobado.*lo puede dar la coordinadora con el sí de la persona: .*complete-step approve-plan --for-session s-ana/);
+  assert.match(lineas, /Bea \(s-bea\).*revisión: rechazado/);
+  assert.doesNotMatch(lineas.split('\n').find((l) => /Bea/.test(l)), /coordinadora/);
+  // sin delegación: no lo dice
+  assert.strictEqual(C.plansWaiting({ ...t.opts, planDeps: { ...deps, delegada: () => false } }).find((p) => p.sid === 's-ana').porCoordinadora, false);
+});
+
+// Planes_OwnerNext_LosNombra
+// 🔴 Falla con: owner-next dice «No hay nada que espere a la persona» con planes esperando su aprobación.
+test('Planes_OwnerNext_LosNombra: owner-next suma los planes que esperan, aunque la lista de firmas esté vacía', () => {
+  const t = toy();
+  planEsperando(t, 's-ana', 'Ana');
+  const r = { tipo: 'nada', texto: 'No hay nada que espere a la persona.', problemas: [], faltaRepetir: [] };
+  const nota = C.ownerNextPlans({ ...t.opts, sesion: 's-coord' });
+  assert.ok(nota && nota.length, 'hay líneas');
+  const texto = C.ownerNextText(r, 's-coord', { reemplaza: true, lineas: nota });
+  assert.doesNotMatch(texto, /No hay nada que espere a la persona/);
+  assert.match(texto, /Ana \(s-ana\): el plan de la 9\.11 espera su aprobación/);
+});
+
+// Planes_DuenoAusente_SeJuntanParaLaVuelta
+// 🔴 Falla con: con la marca de ausente, los planes no se juntan en el aviso para cuando vuelva la persona.
+test('Planes_DuenoAusente_SeJuntanParaLaVuelta: con la marca de ausente, el aviso los junta sin cuadro; sin ella, no', () => {
+  const rows = [
+    { sid: 's-ana', session: 'Ana', storyId: '9.11', minutes: 180, review: 'aprobado', porCoordinadora: false },
+    { sid: 's-bea', session: 'Bea', storyId: '9.12', minutes: 30, review: null, porCoordinadora: false },
+  ];
+  assert.deepStrictEqual(C.planAwayLines(rows, null), []);
+  const l = C.planAwayLines(rows, { setAt: '2026-10-25T10:00:00.000Z' }).join('\n');
+  assert.match(l, /para cuando vuelva la persona: 2 planes esperan su aprobación/);
+  assert.match(l, /Ana \(9\.11, hace 180 min\)/);
+  assert.match(l, /sin cuadro/);
+  // en el aviso de la coordinadora: con la marca, una línea; sin ella, no
+  const t = toy();
+  designate(t, 'coord-1');
+  session(t, 'coord-1', 'Coord', { kind: 'interactive' });
+  planEsperando(t, 's-ana', 'Ana');
+  const aviso = () => C.capNotice({ ...t.opts, sessionId: 'coord-1', readMemory: () => ({ pct: 62, why: null }) }) || '';
+  assert.doesNotMatch(aviso(), /para cuando vuelva la persona/);
+  require(path.join(ROOT, 'scripts', 'lib', 'owner-away.js')).set({ estado: t.state, quien: 'coordinadora', frase: 'me voy', ahora: mins(100) });
+  assert.match(aviso(), /Coordinación: para cuando vuelva la persona: 1 plan espera su aprobación: Ana \(9\.11, hace 180 min\)/);
 });

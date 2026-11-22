@@ -358,3 +358,77 @@ test('Constancias_SustitucionDeProceso_SeSigueMirando', () => {
   assert.ok(r && r.block);
   assert.match(r.block, /constancia de cambio de control no se escribe a mano/);
 });
+
+// 🔴 Falla con (lado del texto): un texto entre comillas leído como comando. El valor de una variable o de una
+// descripción que CITA el guion de la firma o una redirección a la constancia frenaba sin que se escribiera nada.
+test('Constancias_TextoEntreComillas_NoEsUnComando', () => {
+  const correr = correrEn(repoConRamas());
+  const pasan = [
+    "desc='Trae main con git merge origin/main; la constancia la escribe bash scripts/ci/run-base-controls.sh approve > .tycon/control-changes.jsonl'; echo \"$desc\"",
+    'desc="x > .tycon/control-changes.jsonl"',
+    "echo 'cp /tmp/x.json .github/control-changes/ > .tycon/control-changes.jsonl'",
+    "echo $'it\\'s > .tycon/control-changes.jsonl'",
+    "printf '%s\\n' 'git checkout main -- .tycon/control-changes.jsonl' > /tmp/nota.md",
+    // nombrar una variable como argumento adentro de una sustitución no la corre
+    "msg='cp /tmp/x.json .github/control-changes/'; echo \"$(printf '%s' \"$msg\")\" > /tmp/nota.md",
+  ];
+  for (const c of pasan) {
+    const r = correr(c);
+    assert.ok(!(r && r.block && /constancia de cambio de control/.test(r.block)), `frenó un texto: ${c}\n${r && r.block}`);
+  }
+});
+
+// 🔴 Falla con (lado del comando): un texto entre comillas que después SE CORRE —con `bash -c`, `eval`, o guardado en
+// una variable que corre `eval "$c"`, `bash -c "$c"` o `$c`— pasa sin mirar. Lo que se corre es un comando.
+test('Constancias_TextoQueSeCorre_SeSigueMirando', () => {
+  const correr = correrEn(repoConRamas());
+  const frenan = [
+    "bash -c 'cp /tmp/x.json .github/control-changes/'",
+    "eval 'echo hola > .tycon/control-changes.jsonl'",
+    "c='cp /tmp/x.json .github/control-changes/'; eval \"$c\"",
+    "c='echo hola > .tycon/control-changes.jsonl'; bash -c \"$c\"",
+    "export c='cp /tmp/x.json .github/control-changes/'; sh -c \"$c\"",
+    "c='cp /tmp/x.json .github/control-changes/'; $c",
+    'c="git checkout firma -- .tycon/control-changes.jsonl"; eval ${c}',
+    // el texto que entra a un shell o a otro programa por otro camino que `-c` (del pase adversarial)
+    "echo 'echo hola > .tycon/control-changes.jsonl' | bash",
+    "echo 'cp /tmp/x.json .github/control-changes/' | sh -s",
+    "printf '%s' 'cp /tmp/x.json .github/control-changes/' | xargs -0 bash -c",
+    "echo 'echo hola > .tycon/control-changes.jsonl' > /tmp/s.sh && bash /tmp/s.sh",
+    "echo 'cp /tmp/x.json .github/control-changes/' > /tmp/s.sh; chmod +x /tmp/s.sh; /tmp/s.sh",
+    "bash <<< 'cp /tmp/x.json .github/control-changes/'",
+    "read c <<< 'cp /tmp/x.json .github/control-changes/'; eval \"$c\"",
+    "bash -c $'cp /tmp/x.json .github/control-changes/'",
+    "sh -c $'echo hola > .tycon/control-changes.jsonl'",
+    "c=$'cp /tmp/x.json .github/control-changes/'; eval \"$c\"",
+    "c='cp /tmp/x.json .github/control-changes/'; builtin eval \"$c\"",
+    // armado acá: escrito entero, el freno instalado leería este archivo como un guion que escribe la constancia
+    `node -e "require('fs').writeFileSync('${['.tycon', 'control-changes.jsonl'].join('/')}', 'x')"`,
+    'echo "$(echo \'x\') > .tycon/control-changes.jsonl"; bash -c "echo hola > .tycon/control-changes.jsonl"',
+  ];
+  for (const c of frenan) {
+    const r = correr(c);
+    assert.ok(r && r.block, `pasó: ${c}`);
+    assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
+  }
+  // la descripción citada en la línea de `gh` frena (gh puede correr un texto), y el cartel dice cómo salir
+  const desc = correr("gh pr create --title t --body 'ejemplo: echo x > .tycon/control-changes.jsonl'");
+  assert.ok(desc && desc.block, 'la descripción citada en la línea de gh pasó');
+  assert.match(desc.block, /--body-file/, desc.block);
+});
+
+// 🔴 Falla con: el lector de los prefijos (`A=…`, `env A=…`) que prueba todas las formas de partir un `$''` repetido y
+// tarda exponencialmente: el freno se pasa de su tiempo y un freno colgado deja pasar.
+test('Constancias_PrefijoConComillasRepetidas_TerminaRapido', () => {
+  const correr = correrEn(repoConRamas());
+  for (const cab of ['A=', 'env A=']) {
+    const largo = `${cab}${"$''".repeat(30)}`;
+    // stable-data: el reloj mide cuánto tarda el freno, no fecha ningún dato
+    const t0 = Date.now();
+    correr(largo);
+    assert.ok(Date.now() - t0 < 2000, `«${cab}» con 30 «$''» tardó ${Date.now() - t0} ms`);
+    // con una escritura de la constancia detrás, el prefijo largo no la esconde
+    const r = correr(`${largo} cp /tmp/x.json .github/control-changes/`);
+    assert.ok(r && r.block, `pasó con el prefijo «${cab}» largo`);
+  }
+});
