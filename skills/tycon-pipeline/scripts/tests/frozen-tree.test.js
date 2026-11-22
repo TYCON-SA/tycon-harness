@@ -291,6 +291,55 @@ test('T7 PrepareCommit_PaperworkOnly_DoesNotBlock @story-8.161 @ac-6 — el pape
   assert.match(salida(r), /\.advisors\/dod-runtime\/ayuda\.js/);
 });
 
+// El caso de una historia real: después de la última vuelta, el portón de navegador deja sus capturas en una carpeta con
+// la hora (otra en cada corrida), la guía de la prueba a mano se regenera, y la historia suma a sus archivos las pruebas
+// que se escribieron. Nada de eso es código revisado; cada cosa pedía otra vuelta.
+// 🔴 Falla con: una captura del portón que su índice nombra, la guía HTML de qa/ o una prueba sumada a files_to_modify que
+//    frenan; o una captura que su índice no nombra con esa huella, o un archivo de código sumado a la lista, que no frenan.
+test('PrepareCommit_EvidenciaDelPortonGuiaYPruebasDeLaHistoria_NoFrenan', () => {
+  const C = corrida('s-ft-portón');
+  C.vuelta();
+  const capturas = (repo, hora, nombre, contenido, enIndice = contenido) => {
+    const dir = path.join(repo, '.advisors', 'dod-runtime', `9.9-captures-${hora}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, nombre), contenido);
+    const sha = require('crypto').createHash('sha256').update(enIndice).digest('hex');
+    fs.writeFileSync(path.join(dir, 'captures.json'), JSON.stringify([{ file: nombre, title: 'el caso', acs: ['1'], sha256: sha }]));
+  };
+  capturas(C.codigo.repo, '20261122T014109Z', '01-el-caso.png', 'PNG-1');
+  fs.mkdirSync(path.join(C.historias.repo, 'specs', 'qa'), { recursive: true });
+  fs.writeFileSync(path.join(C.historias.repo, 'specs', 'qa', 'story-9.9-sello-guia-qa.html'), '<html>guía</html>\n');
+  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('  - src/a.js\n', '  - src/a.js\n  - tests/a.test.js\n  - "src/__tests__/b.test.tsx"\n'));
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // otra corrida del portón, con otra hora: tampoco
+  capturas(C.codigo.repo, '20261122T020054Z', '01-el-caso.png', 'PNG-2');
+  r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // una captura que su índice no nombra con esa huella: frena
+  capturas(C.codigo.repo, '20261122T030000Z', '01-el-caso.png', 'PNG-3', 'otra cosa');
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /9\.9-captures-20261122T030000Z\/01-el-caso\.png/);
+  // un archivo de código sumado a la lista de la historia: frena
+  const C2 = corrida('s-ft-portón-b');
+  C2.vuelta();
+  fs.writeFileSync(C2.story, fs.readFileSync(C2.story, 'utf8').replace('  - src/a.js\n', '  - src/a.js\n  - src/c.js\n'));
+  r = prepararCommit(C2);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /story-9\.9-sello\.md/);
+  // un guion en la carpeta de capturas, aunque su índice lo nombre, y otra guía que no es la de la historia: frenan
+  const C3 = corrida('s-ft-portón-c');
+  C3.vuelta();
+  capturas(C3.codigo.repo, '20261122T040000Z', 'ayuda.js', 'console.log(1)\n');
+  fs.mkdirSync(path.join(C3.codigo.repo, 'public', 'qa'), { recursive: true });
+  fs.writeFileSync(path.join(C3.codigo.repo, 'public', 'qa', 'story-9.9-sello-guia-qa.html'), '<script>x()</script>\n');
+  r = prepararCommit(C3);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /9\.9-captures-20261122T040000Z\/ayuda\.js/);
+  assert.match(salida(r), /public\/qa\/story-9\.9-sello-guia-qa\.html/);
+});
+
 test('T13 PrepareCommit_OldRunWithoutTree_NotMeasured @story-8.161 @ac-12 — una vuelta sin sello no se compara, y se dice', () => {
   const C = corrida('s-ft13');
   const r = prepararCommit(C);

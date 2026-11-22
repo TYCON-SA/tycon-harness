@@ -159,6 +159,11 @@ function launchedId(r) {
 }
 /** Cuántas tareas de fondo lanzadas en estos renglones no avisaron que terminaron. */
 function backgroundPending(lines) {
+  return backgroundPendingIds(lines).size;
+}
+
+/** Los ids de las tareas de fondo (agentes o comandos) lanzadas en estos renglones que no avisaron que terminaron. */
+function backgroundPendingIds(lines) {
   const running = new Set();
   const textOf = (v) => JSON.stringify(v || '').replace(/\\n/g, '\n');
   for (const line of lines) {
@@ -178,7 +183,7 @@ function backgroundPending(lines) {
     else if (d.type === 'attachment' && d.attachment && d.attachment.type === 'queued_command') notices = textOf(d.attachment);
     if (notices) for (const m of notices.matchAll(NOTICE)) running.delete(m[1]);
   }
-  return running.size;
+  return running;
 }
 
 /**
@@ -574,4 +579,4 @@ function readConversation(file, { coordinator, isCoordinator = false, background
   return out;
 }
 
-module.exports = { officeOf, peerOf, readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, dayTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
+module.exports = { officeOf, peerOf, readTranscript, backgroundPendingIds, wholeLines, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, dayTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
