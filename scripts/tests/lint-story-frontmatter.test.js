@@ -338,6 +338,23 @@ test('T47 FilesToModify_SoloEnElRemoto_NoFrena: un clon atrasado no hace inventa
   assert.match(r.out, /al día/);
 });
 
+// 🔴 Falla con: la consulta a la rama principal del remoto con la ruta tal como la escribe la historia, con el nombre
+// del repo adelante («Backend/src/…»): dentro del repo hermano esa ruta no existe, y un clon atrasado frena el commit de
+// una historia cuyo archivo ya está en su rama principal.
+test('T50 FilesToModify_ConElRepoAdelante_SoloEnElRemoto_NoFrena: la ruta con el nombre del repo se busca dentro de ese repo', () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['Backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /al día/);
+  // la misma ruta con el nombre del repo, sin el archivo en ningún lado: sigue siendo inventada
+  const g = story(proj, 'specs/story-6.6-otra.md', HISTORIA_65(['Backend/src/AcmeBackend/Features/Nuevo/Inventado.cs']).map((l) => l.replace('"6.5"', '"6.6"')));
+  const s = run([g], proj);
+  assert.notStrictEqual(s.code, 0, s.out);
+  assert.match(s.out, /Inventado\.cs/);
+});
+
 // 🔴 Falla con: la consulta a un repo hermano hereda el GIT_DIR que git le pone al gancho de un commit. Esa variable le
 // gana a `-C`: se le pregunta al repo del commit, y un archivo que está en la rama principal del hermano se da por
 // inventado; o al revés, el repo del commit contesta por un hermano que no tiene el archivo.
