@@ -2439,7 +2439,20 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     const lanzado = vista.lanzamientos.get(adv);
     return noVistosDesde(lanzado !== undefined ? lanzado : vista.inicioMs).some((f) => pideVuelta(f) && advisorAffectedByDelta(adv, [f]).affected);
   };
-  if (delta.length && !delta.some(pideVuelta) && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
+  // Lo que cambió adentro de cada archivo desde la última vuelta cerrada, contra su sello (lib/change-kind.js): sólo
+  // comentarios no pide vuelta, y sólo textos pide la vuelta chica (lib/review-change-policy.js). Lo que no se pudo
+  // mirar cuenta como código.
+  const politica = require('./lib/review-change-policy.js');
+  let tipos = new Map();
+  const porRuta = delta.filter(pideVuelta);
+  if (porRuta.length) {
+    try {
+      tipos = require('./lib/frozen-tree.js').tiposDesdeLaVuelta({ marker, cierre: STEPS_TABLE.reviewersClose(marker), archivos: porRuta.map((f) => path.resolve(f)) });
+    } catch { /* sin mirar: todo cuenta como código */ }
+  }
+  const tipoDe = (f) => (tipos.get(path.resolve(f)) || {}).tipo || 'codigo';
+  const pideVueltaAdentro = (f) => pideVuelta(f) && politica.pideVuelta(tipoDe(f));
+  if (delta.length && !delta.some(pideVueltaAdentro) && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
     logGate({ repoPath: repo, name: 'smart-reloop', check: 'smart-reloop-sin-codigo', status: 'closed', iter, delta });
     return {
       ...fullSet,
@@ -2455,6 +2468,34 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       delta_source: deltaSource,
       no_code_delta: true,
     };
+  }
+
+  // ── Sólo textos: la vuelta chica ──────────────────────────────────────────────────────
+  // Si todo lo que pide la vuelta son textos (y a ningún revisor le queda código sin ver), vuelven sólo los revisores de
+  // la vuelta chica: una cadena puede ser una consulta o una ruta. Pasa el tope sin firma (topeDeVueltas).
+  const conCodigo = delta.filter(pideVueltaAdentro);
+  if (conCodigo.length && conCodigo.every((f) => tipoDe(f) === 'textos') && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
+    const chicos = fullSet.all.filter((a) => politica.REVISORES_DE_LA_VUELTA_CHICA.includes(a));
+    if (chicos.length) {
+      logGate({ repoPath: repo, name: 'smart-reloop', check: 'small-round', status: 'small', iter, textos: conCodigo.length });
+      const nombres = conCodigo.slice(0, 3).map((f) => path.basename(f)).join(', ') + (conCodigo.length > 3 ? ` y ${conCodigo.length - 3} más` : '');
+      return {
+        ...fullSet,
+        iter,
+        mode: 'small-round',
+        all_iter1: fullSet.all,
+        rerun_count: chicos.length,
+        rerun: chicos,
+        rerun_reasons: chicos.map((name) => ({ name, reason: 'sólo cambiaron textos: una cadena puede ser una consulta o una ruta' })),
+        skipped_count: fullSet.all.length - chicos.length,
+        skipped: fullSet.all.filter((a) => !chicos.includes(a)).map((name) => ({ name, reason: 'sólo cambiaron textos: los revisa la vuelta chica' })),
+        delta_files: delta,
+        delta_source: deltaSource,
+        small_round: true,
+        textos: conCodigo,
+        note: `vuelta chica: en ${nombres} sólo cambiaron textos desde la última vuelta; re-corre ${chicos.join(', ')}.`,
+      };
+    }
   }
 
   const noVistosPorRevisor = {};       // revisor → archivos de su alcance editados después de su lanzamiento
@@ -3398,7 +3439,8 @@ function computeNext() {
     }
     const round = s.id === 'reviewers' && reloop ? reloop.round : undefined;
     const entry = { step: s.id, number: s.number, name: STEPS_TABLE.stepName(s.id, round), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}),
-      ...(round ? { to_review: reloop.archivos } : {}), ...(s.id === 'prepare-commit' && ultimoViejo ? { again: 'los revisores cerraron después: lo preparado ya no es lo revisado' } : {}) };
+      ...(round ? { to_review: reloop.archivos } : {}), ...(round && reloop.chica ? { small_round: true } : {}),
+      ...(s.id === 'prepare-commit' && ultimoViejo ? { again: 'los revisores cerraron después: lo preparado ya no es lo revisado' } : {}) };
     stepState.push(entry);
     if (!nextStep && !done) nextStep = { ...entry, ...(round ? { round } : {}) };
   }
@@ -3407,6 +3449,7 @@ function computeNext() {
   // lo que falta revisar, por su nombre (hasta cinco), o por qué se prepara el commit otra vez
   const faltaRevisar = nextStep && nextStep.to_review
     ? ` Falta revisar lo cambiado después de los revisores: ${nextStep.to_review.slice(0, 5).join(', ')}${nextStep.to_review.length > 5 ? ` y ${nextStep.to_review.length - 5} más` : ''}.`
+      + (nextStep.small_round ? ' Sólo cambiaron textos: es una vuelta chica (smart-reloop devuelve sólo el revisor de seguridad, sin firma aunque se haya pasado el tope).' : '')
     : nextStep && nextStep.again ? ` Otra vez: ${nextStep.again}.` : '';
 
   // Pre-condiciones del next conocidas por el script.
@@ -6510,7 +6553,7 @@ function vueltaExtraDeTramite() {
 // El tope de vueltas de revisores (lib/review-rounds.js): null si la vuelta `iter` puede servirse, o el mensaje llano de
 // por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona (una vuelta extra con su
 // ok, que se anota en gates.log, o eximirlo); lo demás queda como deuda visible y el recorrido sigue sin otra vuelta.
-function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
+function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica = false }) {
   const tope = rr.tope({ repo: repoAbs });
   const stateDir = stateDirOf(os.homedir());
   const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), story: storyId, iter, ...g })}\n`); };
@@ -6530,6 +6573,13 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) {
     if (paraOtra) return `🛑 La vuelta extra ${iter} ya está autorizada. ${laPideLaCorrida}, sin otra firma.\n`;
     return args.extraRound ? `🛑 La vuelta extra ${iter} ya está autorizada: pedí el set sin --extra-round, sin otra firma.\n` : null;
+  }
+  // sólo textos desde la última vuelta: la vuelta chica pasa el tope sin firma (lib/review-change-policy.js)
+  if (vueltaChica && !paraOtra) {
+    if (args.extraRound) return `🛑 La vuelta ${iter} es una vuelta chica (sólo cambiaron textos): pasa el tope sin la vuelta extra ni la firma. Pedí el set sin --extra-round.\n`;
+    anotar({ name: 'small-round', status: 'ok', tope: tope.value });
+    process.stderr.write(`ℹ️  La vuelta ${iter} pasa el tope de ${tope.value} como vuelta chica: desde la última vuelta sólo cambiaron textos, y la revisan ${require('./lib/review-change-policy.js').REVISORES_DE_LA_VUELTA_CHICA.join(', ')}, sin firma.\n`);
+    return null;
   }
   const h = rr.hallazgosDe(runDir);
   const pre = rr.prefijos();
@@ -6640,7 +6690,9 @@ function emptyWorkGate(args) {
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
 // Si sigue, anota la vuelta servida en la carpeta de la corrida (rethink/served.json). La corrida se busca como en el
 // resto del pipeline (`resolveRunDir`); sin story o sin carpeta no hay nota posible. Ante la duda, frena.
-function rethinkGate(args) {
+// `vueltaChica`: el re-loop ya calculó que desde la última vuelta sólo cambiaron textos. Esa vuelta pasa el tope sin firma
+// y no pide la nota de repensar: no es un arreglo que se repite.
+function rethinkGate(args, { vueltaChica = false } = {}) {
   const rt = require('./lib/rethink.js');
   // La vuelta que vale es la MAYOR entre la que declara quien llama, la que cuenta el marcador (las fotos de iteración
   // guardadas: la última + 1, o el `iter` que lleve alguna) y la de la propia carpeta de la corrida: si ya se sirvió alguna
@@ -6702,9 +6754,9 @@ function rethinkGate(args) {
   const ultimaLanzada = servidas.last > 0 && (!marcadorConStory || rr.lanzada(marcador, servidas.last));
   const iter = servidas.last > 0 ? Math.max(pedida, ultimaLanzada ? servidas.last + 1 : servidas.last) : pedida;
   // El tope de vueltas: más allá, sólo una vuelta extra que autorizó una persona.
-  const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId });
+  const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId, vueltaChica });
   if (bloqueoDelTope) return bloqueoDelTope;
-  if (iter >= rt.FIRST_ITER) {
+  if (iter >= rt.FIRST_ITER && !vueltaChica) {
     const dice = [];
     if (iter !== declarada) {
       dice.push(`Pediste la vuelta ${args.iter === undefined ? '(sin --iter)' : declarada}, pero ${iter === pedida
@@ -7762,12 +7814,13 @@ function main() {
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
     const emptyWork = emptyWorkGate(args);
     if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
-    const rethinkBlock = rethinkGate(args);
+    // el set se calcula antes del freno de vueltas: una vuelta chica (sólo textos) pasa el tope sin firma
+    const conModelos = conModelosDeLaCorrida(args);
+    const result = computeSmartReloop(conModelos);
+    const rethinkBlock = rethinkGate(args, { vueltaChica: result.mode === 'small-round' });
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     // el chequeo antes de la ventana termina en la firma (owner-window.js): si llegó acá sin pasar por ella, no dice que sí
     if (process.env[PRECHEQUEO] === '1') process.exit(0);
-    const conModelos = conModelosDeLaCorrida(args);
-    const result = computeSmartReloop(conModelos);
     const avisosModelos = result._avisos || [];
     // El descuento aplica también al subset rerun del re-loop. Sin poder leer los críticos de la corrida, no se descuenta.
     const pc = revisoresPorConfirmar(args);

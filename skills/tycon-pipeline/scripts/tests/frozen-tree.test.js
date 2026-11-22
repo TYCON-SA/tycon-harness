@@ -1025,15 +1025,134 @@ test('T3 ReviewedTree_ComentarioMovido_NoFrenaYLoDice @story-8.217 @ac-2 — «P
   assert.strictEqual(ok && ok.comentarios_movidos, 1, JSON.stringify(ok));
 });
 
-test('T4 ReviewersRound_ContenidoIgualAlSello_NoPideVuelta @story-8.217 @ac-3 — vuelto a lo revisado: un .js no cuenta; un .ts sí', () => {
-  const C = corridaRevisada('s-ft-8217-t4', { extra: { 'src/c.ts': 'export const c = 1;\n' } });
+test('T4 ReviewersRound_ContenidoIgualAlSello_NoPideVuelta @story-8.217 @ac-3 — vuelto a lo revisado: un .js y un .ts no cuentan; un .py sí', () => {
+  // el .ts se lee desde lib/change-kind.js; un lenguaje sin lector sigue contando como código
+  const C = corridaRevisada('s-ft-8217-t4', { extra: { 'src/c.ts': 'export const c = 1;\n', 'src/d.py': 'c = 1\n' } });
   C.editar('src/a.js', A_CODIGO);
   C.editar('src/a.js', A_REVISADO);
   C.editar('src/c.ts', 'export const c = 2;\n');
   C.editar('src/c.ts', 'export const c = 1;\n');
+  C.editar('src/d.py', 'c = 2\n');
+  C.editar('src/d.py', 'c = 1\n');
   const r = C.ronda();
-  assert.ok(r, 'la vuelta se pide por el .ts');
-  assert.deepStrictEqual(r.archivos, ['src/c.ts']);
+  assert.ok(r, 'la vuelta se pide por el .py');
+  assert.deepStrictEqual(r.archivos, ['src/d.py']);
+});
+
+// ── Sólo comentarios no pide vuelta; sólo textos pide la vuelta chica ──
+const B_TEXTO = "'use strict';\nmodule.exports = { n: 2, motivo: 'sin permiso' };\n";
+test('T80b ReviewersRound_ComentarioCambiado_NoPideVuelta: el texto de un comentario cambiado, en un .ts, no reabre a los revisores', () => {
+  const C = corridaRevisada('s-ft-80b', { extra: { 'src/c.ts': '// la constante\nexport const c = 1;\n' } });
+  C.editar('src/c.ts', '// la constante de la prueba, explicada\nexport const c = 1;\n');
+  assert.strictEqual(C.ronda(), null);
+});
+
+test('T80c ReviewersRound_SoloTextos_VueltaChica: un texto cambiado pide la vuelta chica; con la otra decisión, ninguna', () => {
+  const C = corridaRevisada('s-ft-80c', { extra: { 'src/m.js': B_TEXTO } });
+  C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const r = C.ronda();
+  assert.ok(r, 'la vuelta se pide');
+  assert.deepStrictEqual(r.archivos, ['src/m.js']);
+  assert.strictEqual(r.chica, true, JSON.stringify(r));
+  // `next` lo dice al pedir la vuelta
+  assert.match(salida(C.correr('pipeline.js', ['next'])), /Sólo cambiaron textos: es una vuelta chica/);
+  assert.strictEqual(C.ronda({ textosConVueltaChica: false }), null, 'si el dueño elige que los textos no pidan vuelta');
+  // un texto y una línea de código: la vuelta de siempre
+  C.editar('src/b.js', B_CODIGO);
+  const r2 = C.ronda();
+  assert.deepStrictEqual(r2.archivos.sort(), ['src/b.js', 'src/m.js']);
+  assert.strictEqual(r2.chica, undefined, JSON.stringify(r2));
+});
+
+test('T80d ReviewersRound_PedidaComoCodigo_NoSeAchica: lo ya pedido como código no se vuelve chico con un texto después', () => {
+  const C = corridaRevisada('s-ft-80d', { extra: { 'src/m.js': B_TEXTO } });
+  C.escribir(() => ({ otraVuelta: { round: 2, archivos: ['src/b.js'], desde: new Date(C.cierre + 500).toISOString() } }));
+  C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const r = C.ronda();
+  assert.deepStrictEqual(r.archivos.sort(), ['src/b.js', 'src/m.js']);
+  assert.strictEqual(r.chica, undefined, JSON.stringify(r));
+});
+
+/** La foto de la vuelta 1, de antes del cierre, como la deja el arnés al lanzar el último revisor. */
+function conFotoDeLaVuelta(C, rels) {
+  const abs = rels.map((r) => path.join(C.codigo.repo, r));
+  C.escribir(() => ({ iterations: { 1: { ts: new Date(C.cierre - 500).toISOString(), filesSnapshot: abs } }, filesTouched: abs }));
+}
+
+test('T80f SmartReloop_SoloTextos_VueltaChica: con sólo textos cambiados vuelve el revisor de seguridad; con código, el set de siempre', () => {
+  const C = corridaRevisada('s-ft-80f', { extra: { 'src/m.js': B_TEXTO } });
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js', 'src/m.js']);
+  C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const v = C.vuelta(2);
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  assert.strictEqual(v.json.mode, 'small-round', salida(v.r));
+  assert.deepStrictEqual(v.json.rerun, ['tycon-plugin-security-basics']);
+  assert.ok(v.json.skipped.length > 0 && v.json.skipped.every((s) => /textos/.test(s.reason)), JSON.stringify(v.json.skipped));
+  C.editar('src/b.js', B_CODIGO);
+  const v2 = C.vuelta(2);
+  assert.strictEqual(v2.r.status, 0, salida(v2.r));
+  assert.notStrictEqual(v2.json.mode, 'small-round', salida(v2.r));
+});
+
+test('T80g Tope_VueltaChica_PasaSinFirma: pasado el tope, sólo textos se sirve sin firma y queda anotado; código pide la vuelta extra', () => {
+  const tope = { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' };
+  // el tope del repo se lee de lo commiteado
+  const commitearElTope = (X) => {
+    for (const a of [['add', '.tycon/advisors.yaml'], ['commit', '-qm', 'tope']]) {
+      const g = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-C', X.codigo.repo, ...a], { encoding: 'utf8' });
+      assert.strictEqual(g.status, 0, g.stderr);
+    }
+  };
+  const C = corridaRevisada('s-ft-80g', { extra: { 'src/m.js': B_TEXTO, ...tope } });
+  commitearElTope(C);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js', 'src/m.js']);
+  C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const v = C.vuelta(2);
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  assert.strictEqual(v.json.mode, 'small-round', salida(v.r));
+  assert.match(v.r.stderr, /pasa el tope de 1 como vuelta chica/);
+  assert.ok(gatesDe(C).some((g) => g.name === 'small-round' && g.status === 'ok'), 'la vuelta chica queda anotada');
+  const C2 = corridaRevisada('s-ft-80g2', { extra: tope });
+  commitearElTope(C2);
+  conFotoDeLaVuelta(C2, ['src/a.js', 'src/b.js']);
+  C2.editar('src/b.js', B_CODIGO);
+  const v2 = C2.vuelta(2);
+  assert.strictEqual(v2.r.status, 3, salida(v2.r));
+  assert.match(v2.r.stderr, /Llegaste al tope de 1/);
+  assert.ok(!gatesDe(C2).some((g) => g.name === 'small-round'), 'el código no pasa como vuelta chica');
+});
+
+test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide la nota de repensar; con código, sí', () => {
+  const tercera = (C) => {
+    const abs = ['src/a.js', 'src/b.js', 'src/m.js'].map((r) => path.join(C.codigo.repo, r));
+    const foto = { ts: new Date(C.cierre - 500).toISOString(), filesSnapshot: abs };
+    C.escribir(() => ({ iterations: { 1: foto, 2: foto }, filesTouched: abs }));
+  };
+  const C = corridaRevisada('s-ft-80h', { extra: { 'src/m.js': B_TEXTO } });
+  tercera(C);
+  C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const v = C.vuelta(3);
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  assert.strictEqual(v.json.mode, 'small-round', salida(v.r));
+  const C2 = corridaRevisada('s-ft-80h2', { extra: { 'src/m.js': B_TEXTO } });
+  tercera(C2);
+  C2.editar('src/b.js', B_CODIGO);
+  const v2 = C2.vuelta(3);
+  assert.strictEqual(v2.r.status, 3, salida(v2.r));
+  assert.match(salida(v2.r), /repens|nota/i);
+});
+
+test('T80e ReviewedTree_ComentarioCambiado_NoFrena_TextoSi: «Preparar el commit» perdona un comentario cambiado y frena un texto', () => {
+  const C = corridaRevisada('s-ft-80e');
+  C.editar('src/a.js', A_REVISADO.replace('la suma de los dos', 'la suma de a y b'), { evento: false });
+  const r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  const C2 = corridaRevisada('s-ft-80e2', { extra: { 'src/m.js': B_TEXTO } });
+  C2.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'), { evento: false });
+  const r2 = prepararCommit(C2);
+  assert.strictEqual(r2.status, 2, salida(r2));
+  assert.match(salida(r2), MISMATCH);
+  assert.match(salida(r2), /src\/m\.js/);
 });
 
 test('T7 ReviewedTree_CodigoCambiado_SigueFrenando @story-8.217 @ac-5 — una línea de código cambiada frena como hoy', () => {
@@ -1117,24 +1236,24 @@ test('T24 ReviewedTree_SelloSinCerrar_NoPerdonaComentarios @story-8.217 @ac-16 �
 test('T26 ReviewersRound_LectorFalla_PideVuelta @story-8.217 @ac-18 — si el lector lanza, el archivo cuenta y queda en hook-errors.log', () => {
   const C = corridaRevisada('s-ft-8217-t26');
   C.editar('src/a.js', A_MOVIDO);
-  const ruta = require.resolve(path.join(SCRIPTS, 'lib', 'comment-only.js'));
+  const ruta = require.resolve(path.join(SCRIPTS, 'lib', 'change-kind.js'));
   const original = require.cache[ruta];
   require(ruta);
   const guardado = require.cache[ruta].exports;
-  require.cache[ruta].exports = { ...guardado, soloSeMovieronComentarios: () => { throw new Error('lector roto de prueba'); } };
+  require.cache[ruta].exports = { ...guardado, queCambio: () => { throw new Error('lector roto de prueba'); } };
   try {
     const r = C.ronda();
     assert.ok(r && r.archivos.includes('src/a.js'), JSON.stringify(r));
   } finally { if (original) require.cache[ruta] = original; require.cache[ruta].exports = guardado; }
-  // la falla dentro de difiereSoloEnComentarios la absorbe: cuenta. Una que sale de frozen-tree.js queda en el registro
+  // la falla dentro de tipoContraElSello la absorbe: cuenta. Una que sale de frozen-tree.js queda en el registro
   const ft = path.join(SCRIPTS, 'lib', 'frozen-tree.js');
   const ftMod = require(ft);
-  const guardadoFt = ftMod.comentariosMovidosDesdeLaVuelta;
-  ftMod.comentariosMovidosDesdeLaVuelta = () => { throw new Error('frozen-tree roto de prueba'); };
+  const guardadoFt = ftMod.tiposDesdeLaVuelta;
+  ftMod.tiposDesdeLaVuelta = () => { throw new Error('frozen-tree roto de prueba'); };
   try {
     const r = C.ronda();
     assert.ok(r && r.archivos.includes('src/a.js'), JSON.stringify(r));
-  } finally { ftMod.comentariosMovidosDesdeLaVuelta = guardadoFt; }
+  } finally { ftMod.tiposDesdeLaVuelta = guardadoFt; }
   assert.match(fs.readFileSync(path.join(C.estado(), 'hook-errors.log'), 'utf8'), /frozen-tree roto de prueba/);
 });
 
