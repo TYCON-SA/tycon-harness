@@ -19,6 +19,8 @@ instalador, producción, una migración, o declara `sensible:`. En duda, delicad
   autónomo», «me voy», «hasta mañana» o algo parecido): la coordinadora, o la propia sesión si no hay coordinadora, con
   `marker.js owner-away set --phrase "<lo que dijo>"`. Se borra sola cuando el dueño vuelve: un mensaje tipeado por él,
   un mensaje de la oficina verificado, una firma suya, o a las 24 horas. La oficina la muestra mientras está puesta.
+  Con la marca puesta, `owner-next` no arma el cuadro de una firma: dice que se le avise al dueño por los canales de los
+  avisos y que se espere a que escriba, y la firma queda en la lista sin cambios.
 - O la pregunta de una revisión lleva `plan_review.owner_away_minutes` minutos sin respuesta (de fábrica 20). Los
   minutos se cuentan desde que se anotó la pregunta (`marker.js review-ask`).
 

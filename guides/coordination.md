@@ -269,7 +269,13 @@ El mismo aviso trae dos cosas más:
 
 - **Las sesiones de fondo quietas.** Una sesión de fondo que lleva más de 15 minutos sin trabajar sale como «X está
   quieta hace N min: cerrala o dale trabajo». No sale la que espera su pase adversarial, la que anotó hace poco qué hace
-  (`marker.js doing`) ni la que tiene la suite completa de la máquina.
+  (`marker.js doing`) ni la que tiene la suite completa de la máquina. Una espera anotada (`--waiting-for`) la calla sólo
+  media hora desde que empezó a esperar: una sesión esperó así 7 h 40 min a un agente trabado y nadie se enteró. La espera
+  de turno o de afuera (la CI, la cola) no sale como quieta, porque ya tiene su propio aviso.
+- **La sesión que espera a su agente callado.** Una sesión de fondo quieta que lanzó un agente que no avisó que terminó,
+  y cuyo archivo (`<conversación>/subagents/agent-<id>.jsonl`) no cambió en 20 minutos, sale como «X espera a su agente Y,
+  que no escribe hace N min (su último paso: …)». `owner-wait` lo dice una vez por agente. Por qué: un comando del agente
+  que nunca vuelve, o un permiso que no le sale a nadie, deja a la sesión esperando para siempre.
 - **Los pedidos listos que nadie encoló, en GitHub.** Un pedido abierto y limpio (sin choque ni controles obligatorios
   pendientes), sin auto-merge y fuera de la cola, igual por más de 10 minutos, sale con el comando para encolarlo. Por qué:
   nadie lo va a mergear, y todos creen que ya entró. Sale de la última lectura guardada, de menos de una hora: el aviso no

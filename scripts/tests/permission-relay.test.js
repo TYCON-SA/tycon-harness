@@ -329,6 +329,42 @@ test('Permiso_ClickSi_AllowUnaVez (T12) @story-8.180 @ac-12', (t) => {
   assert.strictEqual(otraVez.r.decision, null, 'pide otro click');
 });
 
+// ── AC 10 y 12 con la lista de hoy: el dueño ausente, un cuadro con varias preguntas y el permiso de otra sesión ─────
+
+test('Permiso_DuenoAusente_VariasPreguntas_OtraSesion (T12b) @story-8.180 @ac-10 @ac-12', (t) => {
+  const L = lab(t);
+  // el permiso es siempre de otra sesión: a la coordinadora le llega como cuadro, no como «se da en su pestaña»
+  let dado = null;
+  let ausente = null;
+  correr(L, evento(), { pasos: [() => {
+    dado = sl.siguiente({ casa: L.casa, sesion: COORD, arnes: L.arnes, env: L.env, ahora: AHORA + 2000, arbol: [] });
+    ausente = C.ownerNextText(dado, COORD, null, { setAt: iso(AHORA) });
+  }] });
+  assert.strictEqual(dado.tipo, 'permiso');
+  assert.strictEqual(dado.destino, BG);
+  assert.ok(dado.pregunta && dado.opciones, 'con su cuadro');
+  // con el dueño ausente, owner-next no arma el cuadro, avisa y el renglón queda; el gancho vence como siempre
+  assert.doesNotMatch(ausente, /Mostrá AskUserQuestion/);
+  assert.match(ausente, /El dueño está ausente/);
+  assert.match(ausente, /un permiso esperando/);
+  assert.deepStrictEqual(delGancho(L), [], 'el gancho venció y sacó su renglón');
+  // un cuadro con varias preguntas: cada «Sí» vale sólo para el pedido de su pregunta
+  const contestar = (fila, reloj, aprueba) => {
+    const otra = pregunta({ ...fila, id: 'permiso-00000000' });
+    const respuesta = { answers: { [pregunta(fila)]: aprueba ? 'Sí, aprobar' : 'No', [otra]: aprueba ? 'No' : 'Sí, aprobar' } };
+    const rs = record.registrosDe({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', session_id: COORD, tool_use_id: 'toolu_02', tool_response: respuesta }, { ahora: reloj });
+    for (const r of rs) oa.anotar(L.casa, { ...r, herramienta: { pid: process.pid, inicio: INICIO } });
+    return rs;
+  };
+  let anotados = null;
+  const si = correr(L, evento(), { pasos: [({ reloj, fila }) => { anotados = contestar(fila, reloj, true); }] });
+  assert.strictEqual(anotados.length, 1, 'un renglón por pregunta aprobada');
+  assert.strictEqual(si.r.decision, 'allow');
+  const no = correr(L, evento(), { pasos: [({ reloj, fila }) => { anotados = contestar(fila, reloj, false); }] });
+  assert.strictEqual(anotados.length, 1);
+  assert.strictEqual(no.r.decision, null, 'el «Sí» a la otra pregunta no aprueba este pedido');
+});
+
 // ── AC 13: el «No» ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 test('Permiso_ClickNo_Deny (T13) @story-8.180 @ac-13', (t) => {
