@@ -333,6 +333,11 @@ if runs T54; then
   done
   grep -q 'puntero' "$P54/AGENTS.md" 2>/dev/null && ok "dejó el AGENTS.md puntero en el repo del proyecto" || bad "sin AGENTS.md puntero: $(ls -A "$P54" | tr '\n' ' ') · $(grep -i agents "$H/applier.out" | head -2)"
   [ -z "$(claude_listing "$H")" ] && ok "nada en ~/.claude" || bad "apareció en ~/.claude: $(claude_listing "$H" | head -12 | tr '\n' ' ')"
+  # un árbol sin scripts/lib/skills-dir.js (una copia parcial): las pruebas rápidas no frenan lo que sigue
+  TREE54P="$BASE/tree54p"; cp -R "$TREE54" "$TREE54P" && rm -f "$TREE54P/scripts/lib/skills-dir.js"
+  HP="$(off_home t54p)"
+  real_applier_off "$TREE54P" "$HP" TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1; RC=$?
+  ! grep -q 'unbound variable' "$HP/applier.out" && [ -x "$HP/.git-hooks/pre-push" ] && ok "sin skills-dir.js, el aplicador sigue hasta los hooks de git" || bad "sin skills-dir.js: rc $RC · $(grep -m1 'unbound' "$HP/applier.out") · hooks: $(ls -A "$HP/.git-hooks" 2>&1 | tr '\n' ' ')"
   # los sellos de engram y de sqlite3 van al estado de la casa propia, no a ~/.claude
   H2="$(off_home t54b)"; mkdir -p "$H2/bin"
   printf '#!/bin/sh\nexit 1\n' > "$H2/bin/sqlite3"; chmod +x "$H2/bin/sqlite3"
@@ -342,6 +347,13 @@ if runs T54; then
   printf '#!/bin/sh\necho "engram 1.20.0"\necho "Update available: 1.20.0 -> 9.9.9" >&2\n' > "$H2/bin/engram"; chmod +x "$H2/bin/engram"
   env -i PATH="$H2/bin:/usr/bin:/bin" HOME="$H2" TYCON_HARNESS_CLAUDE=off TYCON_ENGRAM_AUTO_UPGRADE=0 bash "$ROOT/scripts/setup/check-engram-version.sh" >/dev/null 2>&1
   [ -f "$H2/.tycon/state/.tycon-engram-upstream-notice" ] && [ -z "$(claude_listing "$H2")" ] && ok "el sello del aviso de engram quedó en ~/.tycon/state" || bad "el sello de engram: $(find "$H2" -name '.tycon-engram-*' 2>/dev/null | tr '\n' ' ')"
+  # la marca de una migración a medias que dejó una versión anterior en ~/.claude sigue frenando la migración del cask
+  # viejo en una máquina que vive en la casa propia (con Claude Code): no se vuelve a desinstalar
+  H3="$(off_home t54c)"; mkdir -p "$H3/bin" "$H3/.claude"; echo migracion > "$H3/.claude/.tycon-engram-upgrade-failed"
+  printf '#!/bin/sh\necho "engram 1.0.0"\n' > "$H3/bin/engram"; chmod +x "$H3/bin/engram"
+  printf '#!/bin/sh\necho "brew $*" >> "$HOME/brew-calls.txt"\ncase "$*" in "list --formula engram") exit 1 ;; "list --cask engram") exit 0 ;; *) exit 0 ;; esac\n' > "$H3/bin/brew"; chmod +x "$H3/bin/brew"
+  env -i PATH="$H3/bin:/usr/bin:/bin" HOME="$H3" bash "$ROOT/scripts/setup/check-engram-version.sh" > "$H3/out.txt" 2>&1
+  ! grep -q 'uninstall' "$H3/brew-calls.txt" 2>/dev/null && grep -q 'ya falló una vez' "$H3/out.txt" && ok "la marca vieja de la migración de engram sigue frenando la desinstalación" || bad "la marca vieja no frenó: $(tr '\n' ' ' < "$H3/brew-calls.txt" 2>/dev/null) · $(head -2 "$H3/out.txt" | tr '\n' ' ')"
 fi
 
 if runs T55; then

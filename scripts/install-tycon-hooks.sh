@@ -776,7 +776,7 @@ fi
 UT_SKILLS=""; UT_PRESENT=()
 if [[ "$CHECK_ONLY" != "1" ]] && command -v node >/dev/null 2>&1; then
   if [[ ! -f "$SKILLS_DIR_JS" ]]; then
-    UT_SKILLS="$AGENT_SKILLS"   # sin la biblioteca (copia parcial): las instaladas, como siempre
+    UT_SKILLS="${AGENT_SKILLS:-}"   # sin la biblioteca (copia parcial): las instaladas, como siempre (sin Claude Code, ninguna)
   else
     UT_SKILLS="$(_skills_dir read --skills 2>/dev/null)" || UT_SKILLS=""
     if [[ -z "$UT_SKILLS" ]]; then

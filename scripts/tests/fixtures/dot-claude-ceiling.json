@@ -5,7 +5,7 @@
     "direction": "igual: dos archivos cambian de ruta",
     "reason": "Los dos guiones que sólo sirven en Azure DevOps (validate-pipeline-in-ado.sh y grant-new-product-permissions.js) se mudan de scripts/ci/ a su conector, integrations/azure-devops/scripts/, con el mismo número; nadie sube. Total 795."
   },
-  "total": 790,
+  "total": 789,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -120,7 +120,7 @@
     "scripts/publishing/spanish-names.js": 3,
     "scripts/publishing/third-party-coverage.js": 3,
     "scripts/setup/check-engram-version.ps1": 1,
-    "scripts/setup/check-engram-version.sh": 3,
+    "scripts/setup/check-engram-version.sh": 2,
     "scripts/setup/engram-rescue-unexported.js": 1,
     "scripts/setup/ensure-sqlite3.ps1": 1,
     "scripts/setup/ensure-sqlite3.sh": 1,

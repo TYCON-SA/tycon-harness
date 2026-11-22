@@ -588,8 +588,9 @@ function runApplierOnly(ctx, treeGiven, { log, snapshotDir = null, tools = undef
   const withCodex = Boolean(tools && tools.includes('codex'));
   // sin Claude Code el aplicador corre en su modo sin Claude Code (lo de fondo: los hooks de git, el buzón, engram, el
   // AGENTS.md puntero…; nada en la carpeta de Claude Code), en Mac y en Windows. No corre con un árbol cuyo aplicador no lo
-  // conoce (una vuelta atrás, `install --version` de una anterior): ése instalaría todo Claude Code
-  const a = withClaude || applierKnowsClaudeOff(applierPath(ctx, tree))
+  // conoce (una vuelta atrás, `install --version` de una anterior): ése instalaría todo Claude Code. En Windows, tampoco
+  // sin PowerShell 7, que esa máquina no está obligada a tener
+  const a = withClaude || applierRunsWithoutClaude(ctx, applierPath(ctx, tree))
     ? runClaudeApplier(ctx, tree, { log, snapshotDir, codex: tools ? (withCodex ? 'done' : 'off') : null, env: hn.env, claude: withClaude })
     : { ok: true, status: 0, out: '', report: [], shared: [], warnings: [], reason: null };
   a.harnessNode = hn.result;
@@ -606,6 +607,14 @@ function runApplierOnly(ctx, treeGiven, { log, snapshotDir = null, tools = undef
 /** Variable con que se le dice al aplicador que la máquina no tiene Claude Code: `off` (lo de fondo, y nada en la carpeta de Claude Code). */
 const CLAUDE_BY_HARNESS_ENV = 'TYCON_HARNESS_CLAUDE';
 /** ¿El aplicador del árbol conoce el modo sin Claude Code? Uno anterior no nombra la variable y la ignoraría. */
+/**
+ * ¿Corre el aplicador en su modo sin Claude Code? Si lo conoce (`applierKnowsClaudeOff`) y, en Windows, si está PowerShell 7:
+ * una máquina sólo con Codex no lo pide al instalar (release.js), y sin él el aplicador no corre, como antes, sin frenar nada.
+ */
+function applierRunsWithoutClaude(ctx, script) {
+  if (!applierKnowsClaudeOff(script)) return false;
+  return !isWin(ctx) || !requirementChecks(ctx, { release: true }).some((r) => r.name === 'pwsh' && r.problem);
+}
 function applierKnowsClaudeOff(script) {
   try { return fs.readFileSync(script, 'utf8').includes(CLAUDE_BY_HARNESS_ENV); } catch (_) { return false; }
 }
@@ -724,7 +733,7 @@ function applierPlan(ctx, tree) {
   const script = applierPath(ctx, tree);
   if (!fs.existsSync(script)) return { ok: false, reason: `sin aplicador en ${script}` };
   // un aplicador que no conoce el modo sin Claude Code no corre en una máquina sin Claude Code: su plan es vacío
-  if (claudeOff && !applierKnowsClaudeOff(script)) return { ok: true, known: true, pieces: [] };
+  if (claudeOff && !applierRunsWithoutClaude(ctx, script)) return { ok: true, known: true, pieces: [] };
   if (!applierKnowsPlan(script)) return { ok: true, known: false, pieces: [] };
   // el mismo paso que antes de aplicar: un aplicador con `\r\n` (un clon de Windows viejo) no corre ni para dar su plan
   normalizeTreeEol(ctx, tree);
@@ -5328,4 +5337,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, doctorBranchApprovalItems, dropForProfile, behaviorDiff, ensureImport, restoreFixedCopy, rollbackOutcome };
+module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, applierRunsWithoutClaude, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, doctorBranchApprovalItems, dropForProfile, behaviorDiff, ensureImport, restoreFixedCopy, rollbackOutcome };

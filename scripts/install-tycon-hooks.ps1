@@ -864,6 +864,8 @@ if ($ApplyOut -and (Test-Path $ApplyJs)) { $applySteps += @{ id = 'apply'; scrip
 $looseLogsJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'loose-logs.js'
 if (-not $Check -and (Test-Path $looseLogsJs)) { $applySteps += @{ id = 'loose'; script = 'loose-logs'; args = @('--move-old') } }
 $ApplyBatch = Invoke-NodeBatch $applySteps
+# la mudanza ya corrió en la tanda: se dice acá, porque más abajo el instalador puede cortar (un settings.json roto)
+if ($ApplyBatch -and $ApplyBatch['loose']) { Write-NodeChunks $ApplyBatch['loose'].Chunks }
 
 # ── Las skills de terceros vuelven a su lugar (espejo del .sh, mismos argumentos) ──────────────────
 # Restituye lo ajeno desde la historia del clon (sin red) o desde su origen (con el retiro hecho, tope 20 s), sin
@@ -1197,7 +1199,12 @@ if ((Test-Path $importLineJs) -and (Get-Command node -ErrorAction SilentlyContin
 $engramVerCheck = Join-Path (Join-Path $PSScriptRoot 'setup') 'check-engram-version.ps1'
 # los chequeos de engram sólo con la integración prendida
 if ((Integ-Prendida 'engram') -and (Test-Path $engramVerCheck)) {
-    try { & $engramVerCheck } catch { }
+    if ($Check) {
+        # -Check no escribe: el -Check del guion no anota el sello, y con la variable no se actualiza nada (espejo del .sh)
+        $prevAuto = $env:TYCON_ENGRAM_AUTO_UPGRADE; $env:TYCON_ENGRAM_AUTO_UPGRADE = '0'
+        try { & $engramVerCheck -Check } catch { }
+        finally { if ($null -eq $prevAuto) { Remove-Item Env:TYCON_ENGRAM_AUTO_UPGRADE -ErrorAction SilentlyContinue } else { $env:TYCON_ENGRAM_AUTO_UPGRADE = $prevAuto } }
+    } else { try { & $engramVerCheck } catch { } }
 
 # ============================================================
 # Dependencia de los chequeos de salud de la memoria: el COMANDO `sqlite3`.
@@ -1674,11 +1681,11 @@ foreach ($repo in @(if ($ProfileFull) { @($AgentSkillsRepo, (Split-Path -Parent 
 # ── El historial viejo de los hooks, a la carpeta del estado (espejo del .sh) ──────────────────────────────────────
 # En una máquina que vive en la casa propia, los registros que los hooks dejaron en la carpeta de Claude Code antes de pedir
 # su casa se mudan una vez a la carpeta del estado. Nunca pisa ni borra; en otra máquina no hace nada. Corre en la tanda de
-# aplicación (sin un Node más por arranque); sin la tanda, suelta. Sin Claude Code no corre: esa máquina nació en su casa y
+# aplicación (sin un Node más por arranque) y se dice apenas termina la tanda; sin la tanda, suelta, acá. Sin Claude Code no corre: esa máquina nació en su casa y
 # no tiene historial en la carpeta de Claude Code. Con -Check no se llama. Detalle: scripts/lib/loose-logs.js (`moveOld`).
 if (-not $ClaudeOff -and -not $Check -and (Test-Path $looseLogsJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
-    if ($ApplyBatch -and $ApplyBatch['loose']) { Write-NodeChunks $ApplyBatch['loose'].Chunks }
-    else {
+    # con la tanda ya se dijo, arriba; sin ella, suelta
+    if (-not ($ApplyBatch -and $ApplyBatch['loose'])) {
         $eapM = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
         try { & node $looseLogsJs --move-old } catch { } finally { $ErrorActionPreference = $eapM }
     }

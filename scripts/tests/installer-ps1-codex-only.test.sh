@@ -37,7 +37,7 @@ anota_js() { printf 'require("fs").appendFileSync(require("path").join(require("
 anota_js refresco-azure > "$CLONE/scripts/hooks/failed-query-notice.js"
 anota_js subida-al-buzon > "$CLONE/scripts/metrics/upload-runs.js"
 for f in check-engram-version ensure-sqlite3; do
-  printf 'Add-Content -LiteralPath (Join-Path $HOME "corrio.txt") -Value "%s"\nexit 0\n' "$f" > "$CLONE/scripts/setup/$f.ps1"
+  printf 'Add-Content -LiteralPath (Join-Path $HOME "corrio.txt") -Value "%s"\nif ($args.Count) { Add-Content -LiteralPath (Join-Path $HOME "corrio.txt") -Value ("%s con: " + ($args -join " ") + " auto=" + $env:TYCON_ENGRAM_AUTO_UPGRADE) }\nexit 0\n' "$f" "$f" > "$CLONE/scripts/setup/$f.ps1"
 done
 
 # ── la HOME: vive en la casa propia, con un repo de proyecto y un az de mentira ─────────────────────────────────────
@@ -79,6 +79,7 @@ lab TYCON_HARNESS_CLAUDE=off TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_CODEX=done 
   -- pwsh -NoProfile -NonInteractive -File "$CLONE/scripts/install-tycon-hooks.ps1" -Check > "$T/t2.out" 2>&1; RC=$?
 [ "$RC" = 0 ] && ok "T2 con -Check sale 0" || no "T2 con -Check salió $RC: $(tail -3 "$T/t2.out" | tr '\n' ' ' | cut -c1-300)"
 [ "$(cd "$H" && find . -path ./corrio.txt -prune -o -print | LC_ALL=C sort | tr '\n' ' ')" = "$H2SNAP" ] && ok "T2 con -Check no escribió nada en la HOME" || no "T2 -Check escribió en la HOME"
+grep -qx 'check-engram-version con: -Check auto=0' "$H/corrio.txt" 2>/dev/null && ok "T2 con -Check, el chequeo de engram también mira sin escribir ni actualizar" || no "T2 el chequeo de engram con -Check: $(grep 'con:' "$H/corrio.txt" 2>/dev/null | tr '\n' ' ')"
 
 # ── T3 · los sellos de engram y de sqlite3 de Windows, con los guiones reales: en la carpeta del estado ─────────────────
 H3="$T/home3"; mkdir -p "$H3/.tycon/state" "$T/bin3"
@@ -96,6 +97,23 @@ lab3 TYCON_ENGRAM_AUTO_UPGRADE=0 pwsh -NoProfile -NonInteractive -File "$ROOT/sc
 grep -q 'TYCON_HARNESS_CLAUDE' "$ROOT/scripts/install-tycon-hooks.ps1" && ok "T4 el .ps1 nombra TYCON_HARNESS_CLAUDE (harness.js lo lanza en una máquina sólo con Codex)" || no "T4 el .ps1 no nombra TYCON_HARNESS_CLAUDE: harness.js no lo lanzaría"
 ! grep -n 'isWin(ctx) && applierKnowsClaudeOff\|if (isWin(ctx)) return { ok: true, known: true, pieces: \[\] }' "$ROOT/scripts/setup/harness.js" >/dev/null \
   && ok "T4 harness.js ya no saltea el aplicador de Windows sin Claude Code" || no "T4 harness.js sigue salteando Windows: $(grep -n 'isWin(ctx) && applierKnowsClaudeOff' "$ROOT/scripts/setup/harness.js" | head -1)"
+
+# ── T5 · sin PowerShell 7, una máquina sólo con Codex en Windows no corre el aplicador (no lo pide al instalar) ──────
+mkdir -p "$T/sin-pwsh" "$T/con-pwsh"; printf '#!/bin/sh\necho "PowerShell 7.4.0"\n' > "$T/con-pwsh/pwsh"; chmod +x "$T/con-pwsh/pwsh"
+printf '# nombra TYCON_HARNESS_CLAUDE\n' > "$T/aplicador.ps1"
+R5="$(node -e '
+const H = require(process.argv[1]); const [, , script, sin, con] = process.argv;
+const corre = (platform, PATH) => H.applierRunsWithoutClaude({ platform, env: { PATH } }, script);
+process.stdout.write([corre("win32", sin), corre("win32", con), corre("darwin", sin)].join(" "));' "$ROOT/scripts/setup/harness.js" "$T/aplicador.ps1" "$T/sin-pwsh" "$T/con-pwsh" 2>&1)"
+[ "$R5" = "false true true" ] && ok "T5 en Windows sin PowerShell 7 el aplicador sin Claude Code no corre; con él, sí; en Mac no lo pide" || no "T5 Windows sin pwsh / con pwsh / Mac: «${R5}» (esperaba «false true true»)"
+
+# ── T6 · con Claude Code, la mudanza del historial se dice aunque el instalador corte después (settings.json roto) ──────
+H6="$T/home6"; mkdir -p "$H6/.tycon/state" "$H6/.claude"; printf 'una línea\n' > "$H6/.claude/safety-guard.log"; printf '{ "hooks": ' > "$H6/.claude/settings.json"
+( cd "$H6" && env -i HOME="$H6" USERPROFILE="$H6" PATH="$PATH" TMPDIR="$T/tmp" XDG_CACHE_HOME="$T/xdg/cache" XDG_DATA_HOME="$T/xdg/data" \
+    XDG_CONFIG_HOME="$T/xdg/config" POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    TYCON_HARNESS_NODE=0 TYCON_PROFILE=0 TYCON_THIRD_PARTY=0 TYCON_NO_GIT_HOOKS=1 TYCON_CODEX=0 TYCON_NO_CLAUDEMD_SYNC=1 TYCON_MAILBOX=0 \
+    pwsh -NoProfile -NonInteractive -File "$CLONE/scripts/install-tycon-hooks.ps1" ) > "$T/t6.out" 2>&1
+[ -f "$H6/.tycon/state/safety-guard.log" ] && grep -q 'mudé' "$T/t6.out" && ok "T6 la mudanza del historial se dice aunque el instalador corte por un settings.json roto" || no "T6 movido: $([ -f "$H6/.tycon/state/safety-guard.log" ] && echo sí || echo no) · dicho: $(grep -c 'mudé' "$T/t6.out") · $(tail -2 "$T/t6.out" | tr '\n' ' ' | cut -c1-200)"
 
 echo
 if [ "$FAILURES" -gt 0 ]; then echo "❌ installer-ps1-codex-only: $FAILURES de $TOTAL en rojo"; exit 1; fi

@@ -51,6 +51,7 @@ PIN_FILE="$SCRIPT_DIR/../../engram-version"
 # ~/.tycon/state en la que vive en la casa propia (la única que tiene una máquina sin Claude Code). Sin la biblioteca,
 # la de siempre. La marca de la migración a medias se lee también de la de siempre: la pudo dejar una versión anterior
 STAMP_DIR="$HOME/.claude"
+LEGACY_MARK="$STAMP_DIR/.tycon-engram-upgrade-failed"
 if [[ -f "$SCRIPT_DIR/../lib/state-dir.sh" ]] && . "$SCRIPT_DIR/../lib/state-dir.sh" 2>/dev/null; then STAMP_DIR="$(tycon_logs_dir)"; fi
 
 [[ -f "$PIN_FILE" ]] || exit 0
@@ -62,7 +63,7 @@ command -v python3 >/dev/null 2>&1 || exit 0
 # enterarse — el peor final posible. Se avisa en CADA arranque hasta que lo resuelva.
 if ! command -v engram >/dev/null 2>&1; then
   if [[ "$(cat "$STAMP_DIR/.tycon-engram-upgrade-failed" 2>/dev/null)" == "migracion" ]] \
-     || [[ "$(cat "$HOME/.claude/.tycon-engram-upgrade-failed" 2>/dev/null)" == "migracion" ]]; then
+     || [[ "$(cat "$LEGACY_MARK" 2>/dev/null)" == "migracion" ]]; then
     echo "🛑 tycon: NO TENÉS ENGRAM — una migración automática quedó a medias y tu memoria"
     echo "   no se está guardando. Corré esto para recuperarlo:"
     echo "       brew install gentleman-programming/tap/engram"
@@ -190,6 +191,8 @@ PYEOF
 TARGET="$(cat "$SENTINEL" 2>/dev/null || true)"
 GOPKG="github.com/Gentleman-Programming/engram/cmd/engram"
 FAILED_STAMP="$STAMP_DIR/.tycon-engram-upgrade-failed"
+# la marca, de la carpeta de hoy o, si ahí no está, de la de siempre: la pudo dejar una versión anterior
+failed_mark() { local m; m="$(cat "$FAILED_STAMP" 2>/dev/null)"; [[ -n "$m" ]] || m="$(cat "$LEGACY_MARK" 2>/dev/null)"; printf '%s' "$m"; }
 
 # Método de instalación → cómo se actualiza. Se elige por lo que HAY en la máquina, no
 # por el sistema operativo: un dev de Mac puede haberlo puesto con `go install` igual.
@@ -243,7 +246,7 @@ fallback_manual() {
 # recuperación — nunca se sale en silencio de un estado roto.
 # ------------------------------------------------------------
 if [[ "$METHOD" == "cask-legacy" ]]; then
-  if [[ -f "$FAILED_STAMP" && "$(cat "$FAILED_STAMP" 2>/dev/null)" == "migracion" ]]; then
+  if [[ "$(failed_mark)" == "migracion" ]]; then
     echo "   La migración automática ya falló una vez. Hacela a mano:"
     echo "       $CMD"
     exit 0
@@ -266,7 +269,7 @@ if [[ "$METHOD" == "cask-legacy" ]]; then
   NEW="$(engram version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
 
   if [[ -n "$NEW" ]]; then
-    rm -f "$FAILED_STAMP"
+    rm -f "$FAILED_STAMP" "$LEGACY_MARK"
     if [[ "$NEW" == "$TARGET" ]]; then
       echo "   ✓ Listo: engram $NEW (migrado al paquete nuevo)"
     else
@@ -290,7 +293,7 @@ fi
 # reintenta en cada arranque de sesión. Un upgrade que "funciona" pero deja una versión
 # distinta a la pedida (p.ej. el cask sobre-dispara a la última) reintentaría para
 # siempre, corriendo un `brew update` de minutos en cada sesión y sin llegar nunca.
-if [[ -f "$FAILED_STAMP" && "$(cat "$FAILED_STAMP" 2>/dev/null)" == "$TARGET" ]]; then
+if [[ "$(failed_mark)" == "$TARGET" ]]; then
   fallback_manual
 fi
 
@@ -316,7 +319,7 @@ fi
 NEW="$(engram version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
 
 if [[ "$UPGRADE_OK" == "1" && "$NEW" == "$TARGET" ]]; then
-  rm -f "$FAILED_STAMP"
+  rm -f "$FAILED_STAMP" "$LEGACY_MARK"
   echo "   ✓ Listo: engram $NEW"
   exit 0
 fi
