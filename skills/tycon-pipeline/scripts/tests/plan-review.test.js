@@ -2022,3 +2022,40 @@ test('PlanReview_RegistroIlegible_LlegaAlDuenoSinRelanzar (T12) @story-8.281 @ac
   volver();
   assert.strictEqual(SGIO.listaDelPlanDelegado(lab.estado, DESTINO, marker), null, 'legible y sin parte: como hoy');
 });
+
+// ── una sesión que adopta la corrida de otra (adopt-session) ve la revisión del plan que se hizo para la anterior ──────
+test('PlanReview_AdoptedRun_InheritsReviewOfPreviousSession', (t) => {
+  const lab = laboratorio(t);
+  lab.revisar(APROBADO);
+  const NUEVA = 'ses-nueva';
+  // el marcador como lo deja adopt-session: el mismo, con la sesión nueva y de cuál viene
+  const adoptado = { ...JSON.parse(lab.leer(DESTINO)), sessionId: NUEVA, adoptedFrom: DESTINO, adoptedAt: '2026-11-22T12:00:00.000Z' };
+  const linea = PR().lineaDelCuadro({ estado: lab.estado, destino: NUEVA, marker: adoptado });
+  assert.match(linea.linea, /^revisado/, JSON.stringify(linea));
+  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: NUEVA, marker: adoptado });
+  assert.strictEqual(a.codigo, 0, JSON.stringify(a));
+  // sin «adoptedFrom» la sesión nueva no hereda nada: la revisión es de otra
+  const ajeno = { ...adoptado, adoptedFrom: undefined };
+  assert.match(PR().lineaDelCuadro({ estado: lab.estado, destino: NUEVA, marker: ajeno }).linea, /^sin revisión \(todavía no corrió/);
+  assert.strictEqual(PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: NUEVA, marker: ajeno }).codigo, 2);
+  // heredada, sigue atada al plan: si cambia después de la revisión, no aprueba
+  fs.appendFileSync(lab.planFile, '\n4. Un paso que se sumó después.\n');
+  const cambiado = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: NUEVA, marker: adoptado });
+  assert.strictEqual(cambiado.codigo, 2, JSON.stringify(cambiado));
+  assert.match(cambiado.motivo, /el plan cambió después de la revisión/);
+});
+
+test('PlanReview_AdoptedRun_InheritsRejectionAndLatestAnswer', (t) => {
+  const lab = laboratorio(t, { sensible: 'seguridad' });
+  const NUEVA = 'ses-nueva';
+  const adoptado = () => ({ ...JSON.parse(lab.leer(DESTINO)), sessionId: NUEVA, adoptedFrom: DESTINO, adoptedAt: '2026-11-22T12:00:00.000Z' });
+  // la sesión anterior rechazó el plan delicado: el rechazo se hereda como la aprobación
+  lab.revisar(RECHAZADO);
+  const enContra = PR().revisionEnContra({ estado: lab.estado, destino: NUEVA, marker: adoptado() });
+  assert.ok(enContra && enContra.codigo === 2, JSON.stringify(enContra));
+  // «seguir sin revisión» de la sesión anterior y después «revisar» de la nueva: manda la última
+  const huella = sha(fs.readFileSync(lab.planFile, 'utf8'));
+  PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'skip', huella, quien: 'la persona', ahora: Date.parse('2026-11-22T12:00:00Z') });
+  PR().anotarRespuesta({ estado: lab.estado, sesion: NUEVA, kind: 'plan', choice: 'review', huella, quien: 'la persona', ahora: Date.parse('2026-11-22T13:00:00Z') });
+  assert.doesNotMatch(PR().lineaDelCuadro({ estado: lab.estado, destino: NUEVA, marker: adoptado() }).linea, /se eligió seguir/);
+});

@@ -763,6 +763,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 72 (DemoTracking #44): un cambio técnico de la historia después de un plan rechazado lo revalida la vuelta siguiente de la revisión del plan — el portón de la adversarial y validators no relanzan, lo que sigue venciendo, y la vuelta que escribe las constancias sólo al aprobar.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-revalidation.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una historia que no cambió desde su última validación verde no se vuelve a validar: la constancia, su huella y validators.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/validation-record.test.js",
@@ -1134,6 +1140,12 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-gate-clock.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "marker.js partido por responsabilidad (8.163 B): lo nuevo que cargue el despachador es sensible y el recorrido de módulos del freno de guiones no corta callado (topes con nombre, lectura única y con tope de bytes). Repos de juguete en el temporal; sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/split-contract.test.js",
       "requiere": []
     },
     {
@@ -1747,6 +1759,12 @@
       "__nota": "las guías del pipeline dicen lo que el código hace: las recetas y la fecha del chequeo de mutantes, y la plantilla de historia que nace en borrador.",
       "raiz": "arnes",
       "ruta": "tests/pipeline-docs-match-code.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "ninguna guía ofrece un escape que ya no apaga nada: la lista sale de los retirados del catálogo de firmas, y cada párrafo que nombra uno dice que está retirado o figura en las excepciones con su motivo.",
+      "raiz": "arnes",
+      "ruta": "tests/retired-escape-docs.test.js",
       "requiere": []
     },
     {
@@ -4954,6 +4972,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 74 (22/11): las expresiones del freno de producción que crecían con el cuadrado del largo dicen lo mismo que antes y no se cuelgan.",
+      "raiz": "arnes",
+      "ruta": "tests/guard-regex-speed.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.115 (T7): ningún salteo de Windows sin su motivo escrito en las siete suites que corre el ensayo de Windows (apply-hooks, safety-escape, story-gate, ledger-visible, run-close, pipeline-unit; harness-node mide su propia lista fija). Sólo lee archivos.",
       "raiz": "arnes",
       "ruta": "tests/windows-skips.test.js",
@@ -4963,6 +4987,11 @@
       "__nota": "story 8.66: las reglas de lectura de las carpetas del arnés en permissions.allow de ~/.claude/settings.json — cuáles (el árbol, sus dos enlaces y cada skill enlazada), su forma, sumar sin pisar al dev, sin repetir, después del aplicador, sacar al actualizar lo que ya no es del arnés (leyendo el registro de disco) y desinstalar sólo lo anotado. Con HOME y settings.json de prueba.",
       "raiz": "arnes",
       "ruta": "tests/read-permissions.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/deny-permissions.test.js",
       "requiere": []
     },
     {

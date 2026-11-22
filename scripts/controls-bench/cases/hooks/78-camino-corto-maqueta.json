@@ -18,7 +18,7 @@
             "S=\"$HOME/.claude/.tycon-pipeline\"; R=$(pwd -P); T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); H=$(node -e \"process.stdout.write(require(process.argv[1]).mockupHash(require('fs').readFileSync('maqueta.html','utf8')))\" \"${SKILLS}/skills/tycon-pipeline/scripts/mockup.js\"); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":5,\"files\":[\"%s/src/Combo.tsx\"],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\",\"mockup\":{\"file\":\"%s/maqueta.html\",\"sha256\":\"%s\",\"approval\":\"la aprobó Ana\"},\"capture\":{\"file\":\"%s/captura.png\"}}' \"$R\" \"$T\" \"$T\" \"$T\" \"$R\" \"$H\" \"$R\" > \"$S/adhoc/bench-maqueta.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-maqueta\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
           ],
           "stdin": { "session_id": "bench-maqueta", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
-          "expect": { "exit": 2, "stderr_re": ["texto\\(s\\) de su maqueta", "Corregí la pantalla", "Volvé a aprobar la maqueta", "differs:"] }
+          "expect": { "exit": 2, "stderr_re": ["texto\\(s\\) de su maqueta", "Corregí la pantalla", "Si lo que cambió es la maqueta: mostrásela a la persona", "differs:"] }
         },
         {
           "id": "camino-corto-maqueta-diferencia-declarada-pasa-y-se-muestra",

@@ -68,7 +68,11 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      plan cambió después de la revisión, frena y hay que volver a lanzarla. Con `person`, sin delegación o en una
      delicada, le llega al dueño con «revisado, sin hallazgos» (o con sus notas).
    - **4b. Rechazado.** `pipeline.js next` le muestra los hallazgos a la sesión (`plan_review`). La sesión corrige el
-     plan y lo vuelve a cerrar, y la revisión vuelve a correr. No llega al dueño mientras siga rechazado, salvo con
+     plan y lo vuelve a cerrar, y la revisión vuelve a correr. Si el hallazgo pide corregir la historia y el arreglo es
+     técnico (las pruebas, las tareas, las notas de desarrollo o la lista de archivos del encabezado), no se vuelve a
+     «Validar la historia»: la vuelta siguiente ve el cambio y, si aprueba, deja las constancias de validación y de
+     revisión adversarial al día (`lib/story-revalidation.js`). Un criterio o lo que la historia hace sí vuelven a
+     validarse completos. No llega al dueño mientras siga rechazado, salvo con
      `plan_review.rejected_reaches_owner` en sí o al llegar al tope de rechazos seguidos (`review.max_rounds`, de
      fábrica 3): entonces llega con los hallazgos y «rechazado N veces seguidas», y el dueño decide partir la historia o
      firmar una vuelta extra. Un plan delicado con su revisión en rechazo no se aprueba por la delegación, por la
