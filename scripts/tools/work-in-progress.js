@@ -1381,7 +1381,10 @@ function buildWip(opts = {}) {
       if (kind === 'pipeline' && !mark) {
         try { stepLine = require(RUN_LINES).stateLine({ marker: m, stateDir: sdir, home }); } catch (e) { unreadable.push(`story ${m.storyId || '?'}: no pude armar el renglón del paso (${e.message})`); }
       }
-      addRow({ work, state: step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
+      // la corrida que va por el doble de lo estimado (scripts/lib/run-overrun.js) lo dice al lado del paso
+      let over = null;
+      try { over = require('../lib/run-overrun.js').sessionText(sdir, sid); } catch { over = null; }
+      addRow({ work, state: over && !mark ? `${step} · ${over}` : step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
         { kind, storyId: m.storyId ? String(m.storyId) : null, ...(stepLine ? { stepLine } : {}), title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt, ...stages,
           ...(verdict ? { hourInWords: true } : {}), ...(mark ? { mark } : {}), ...(save === 'ok' ? { saveOk: true } : {}), ...(kind === 'finished' && !save ? { nothingToSave: true } : {}),
           ...(open ? { finishedOpen: true, ...(open.revisar ? { finishedReview: true } : {}) } : {}),
