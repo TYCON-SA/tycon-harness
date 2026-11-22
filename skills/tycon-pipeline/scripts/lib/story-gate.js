@@ -256,10 +256,15 @@ function signedRecordKind(p) {
   return isAdversarialSkipRecord(p) ? 'adversarial-skip-record' : null;
 }
 
+// Con una historia abierta, el código de un repo fuera de su grupo: 'aviso' (pasa y queda anotado) o 'freno'. Pasar a
+// freno es un commit que cambia este valor; ninguna variable, opción ni archivo lo cambia
+const MODO_FUERA_DEL_GRUPO = 'aviso';
+const modoFueraDelGrupo = () => (module.exports.MODO_FUERA_DEL_GRUPO === 'freno' ? 'freno' : 'aviso');
+
 function computeStoryGate({
   filePath, stateDir, homeDir, repoRoot, repoHasTycon, repoHasStories, gateEnabled = true, marker, adhoc,
   isHarness, realFilePath = null, installedRoots = [], realStateDir = null, sensitiveCheck = null,
-  adhocRepoRoot = null, riesgoAlto = null, listGateEnabled = true, batchList = null,
+  adhocRepoRoot = null, riesgoAlto = null, listGateEnabled = true, batchList = null, grupo = null,
 }) {
   if (!filePath) return { action: 'pass', reason: 'sin file_path' };
   // la ruta real (por los enlaces) la resuelve el borde; sin ella, la escrita
@@ -405,9 +410,19 @@ function computeStoryGate({
     // ningún esquema no dice si el plan está aprobado: se trata como pendiente (frena, no abre)
     const S = require('./steps.js');
     const planPending = S.schemeOf(marker) === null || S.isPending(marker, 'approve-plan');
-    // El sub-portón de plan aplica al repo de la story (si lo conocemos) — editar otra cosa
-    // mid-pipeline no es "implementar antes del plan".
-    const inStoryRepo = !marker.repoPath || isInside(marker.repoPath, filePath);
+    // Un repo fuera del grupo de la historia (ni el de la corrida, ni el de su historia, ni un hermano declarado), o uno
+    // del que no se pudo saber: en freno, frena por esta regla aunque el plan esté pendiente; en aviso, pasa y el borde
+    // lo anota. El modo se lee de los exports en cada decisión: lo cambia un commit, nunca el ambiente
+    if (grupo && (grupo.estado === 'fuera' || grupo.estado === 'no-pude-saber')) {
+      const datos = { kind: 'story-out-of-group', estado: grupo.estado, repoDelArchivo: grupo.repoDelArchivo || null, motivo: grupo.motivo || null };
+      if (modoFueraDelGrupo() === 'freno') {
+        return { action: 'block', ...datos, reason: `el archivo es de un repo fuera del grupo de la historia ${marker.storyId}${grupo.motivo ? `: ${grupo.motivo}` : ''}` };
+      }
+      return { action: 'pass', reason: 'pipeline activo (marker) — carril story, fuera del grupo (aviso)', aviso: { ...datos, modo: 'aviso' } };
+    }
+    // El sub-portón de plan aplica al repo de la story y a lo de adentro de su grupo (los hermanos y el repo de su
+    // historia) — editar otra cosa mid-pipeline no es "implementar antes del plan".
+    const inStoryRepo = !marker.repoPath || isInside(marker.repoPath, filePath) || (grupo && grupo.estado === 'adentro');
     if (planPending && inStoryRepo) {
       return {
         action: 'block',
@@ -715,6 +730,23 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  en la ventana de permiso, o en su terminal con `--terminal`). Esa firma escribe la línea.',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'story-out-of-group') {
+    const repoDeLaHistoria = marker && marker.repoPath ? norm(marker.repoPath) : '(el repo de la historia)';
+    const repoDelArchivo = r.repoDelArchivo ? norm(r.repoDelArchivo) : '(no se pudo leer)';
+    return [
+      `⛔ tycon-pipeline — CÓDIGO FUERA DEL GRUPO DE LA HISTORIA (story ${marker?.storyId || '?'})`,
+      viaLine + '',
+      `  Ibas a editar ${f}, del repo ${repoDelArchivo}.`,
+      `  La historia abierta es del repo ${repoDeLaHistoria}, y con ella se edita sólo ese repo, el de su historia y sus`,
+      '  hermanos declarados.',
+      `  Motivo: ${r.motivo || (r.estado === 'no-pude-saber' ? 'no pude saber si es un hermano' : 'no está en el grupo')}.`,
+      '',
+      '  Salidas:',
+      '   1. Si el repo es un hermano: declararlo en `repo_group` de `.tycon/advisors.yaml` en los DOS repos, commiteado y',
+      '      subido a su rama principal (el grupo se lee de la rama principal del remoto).',
+      '   2. Si no lo es: trabajar ese cambio con su propio carril en ese repo (una historia o un camino corto allá).',
+    ].join('\n');
+  }
   if (r.kind === 'plan') {
     return [
       `⛔ tycon-pipeline — CÓDIGO ANTES DEL PLAN APROBADO (story ${marker?.storyId || '?'})`,
@@ -864,6 +896,7 @@ function storyByConsoleMessage(rutas, via) {
 }
 
 module.exports = {
+  MODO_FUERA_DEL_GRUPO,
   markerDeleteMessage, storyByConsoleMessage,
   computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
