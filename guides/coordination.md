@@ -22,7 +22,9 @@ Cómo se nombra: en cada máquina, el dueño le pide a la sesión elegida, con s
 perfil, esa sesión corre `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión
 es y en qué carpeta, y con el click del dueño queda nombrada y confirmada. El arnés no lee la frase. Para dejar de serlo,
 `marker.js withdraw-relay`, con su propio cuadro. Las dos firmas son sólo del dueño, con su click en la pestaña de esa
-sesión: no se delegan. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la terminal del
+sesión: no se delegan. Si a esa sesión la abrió de fondo otra coordinadora (`coordination.js open`), el cuadro se
+muestra igual en su pestaña y la sesión le avisa a la coordinadora que la abrió: el dueño lo contesta ahí o por
+control remoto. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la terminal del
 dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`). Sin perfil, por ahora se
 nombra con la frase (`designate-relay --approved-by '<el dev>' --quote '<su frase>'`).
 
@@ -280,7 +282,13 @@ El mismo aviso trae dos cosas más:
 
 - **Las sesiones de fondo quietas.** Una sesión de fondo que lleva más de 15 minutos sin trabajar sale como «X está
   quieta hace N min: cerrala o dale trabajo». No sale la que espera su pase adversarial, la que anotó hace poco qué hace
-  (`marker.js doing`) ni la que tiene la suite completa de la máquina.
+  (`marker.js doing`) ni la que tiene la suite completa de la máquina. Una espera anotada (`--waiting-for`) la calla sólo
+  media hora desde que empezó a esperar: una sesión esperó así 7 h 40 min a un agente trabado y nadie se enteró. La espera
+  de turno o de afuera (la CI, la cola) no sale como quieta, porque ya tiene su propio aviso.
+- **La sesión que espera a su agente callado.** Una sesión de fondo quieta que lanzó un agente que no avisó que terminó,
+  y cuyo archivo (`<conversación>/subagents/agent-<id>.jsonl`) no cambió en 20 minutos, sale como «X espera a su agente Y,
+  que no escribe hace N min (su último paso: …)». `owner-wait` lo dice una vez por agente. Por qué: un comando del agente
+  que nunca vuelve, o un permiso que no le sale a nadie, deja a la sesión esperando para siempre.
 - **Los pedidos listos que nadie encoló, en GitHub.** Un pedido abierto y limpio (sin choque ni controles obligatorios
   pendientes), sin auto-merge y fuera de la cola, igual por más de 10 minutos, sale con el comando para encolarlo. Por qué:
   nadie lo va a mergear, y todos creen que ya entró. Sale de la última lectura guardada, de menos de una hora: el aviso no
@@ -346,12 +354,38 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   el resultado (`marker.js mark-adversarial-result`, con cualquier veredicto, también `no-medido`) o el salteo
   (`marker.js mark-adversarial-skipped`). Si se relanza, vuelve a ocuparla. Una sesión que se cerró lo libera, y pasada una
   hora ya no frena, porque puede estar terminado o colgado, y se dice.
+- **El turno libre no se toma solo: el «arrancá».** Con una coordinadora designada y viva, el portón que recibió un «esperá»
+  (su 77) queda anotado en la fila (`coordination/suite-waits/<sesión>.json`) y, cuando el turno se libera, no lo toma en
+  su próximo intento: espera el «arrancá». Por qué: el 13/11 un portón en espera tomó el turno apenas se liberó, encima de
+  unos revisores que la coordinadora ya había lanzado. El «arrancá» es un comando, `heavy-turn.js grant --to <sesión>`
+  (el id, su comienzo o el nombre de la sesión), y lo da sólo la coordinadora; la fila del aviso lo trae entero. Vale para
+  los dos lugares del turno. Mientras está vigente, ninguna otra sesión toma el turno libre; vence a los 10 minutos si su
+  sesión no lo toma, o al cerrarse esa sesión, y la fila pasa a la siguiente. Una sesión que nunca recibió un «esperá»
+  toma el turno libre como siempre. La espera anotada vale tres horas. La suite rápida del arranque no es un portón: no
+  se anota ni gasta el «arrancá» de su sesión. Si la coordinadora se cierra o deja de estar designada, todo vuelve a lo
+  de siempre: el portón en espera toma el turno libre.
+- **La reserva, para lo que no pide turno.** Los revisores y el pase los lanza la coordinadora y no tienen un proceso
+  que tome el turno. Antes de lanzarlos, `heavy-turn.js reserve --for "<qué>"` toma el turno a nombre de eso: un portón
+  que lo pide recibe el «esperá» con el nombre de la reserva. Con una ejecución grande corriendo no reserva (sale 77 y dice
+  quién la tiene). Se suelta con `heavy-turn.js release --reserve`, vence a los 90 minutos (una tanda de revisores o un
+  pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10.
 
 `coordination.js status` muestra un solo renglón, «Turno de tarea pesada», con quién lo tiene y qué es; con una ejecución
 grande, si el segundo turno está libre o cerrado, con la memoria y el piso; con dos, las dos. `heavy-turn.js holders` las
 lista. El portón acotado que corre al lado de un pase lo dice en su renglón, con cuántas suites. Sin coordinadora designada, todo responde como siempre: en la
 CI y en la nube no hay turno. `TYCON_SUITE_TURN=0` apaga el de la suite, y `TYCON_SUITE_TURN=1` lo pide aunque no haya
 coordinadora: sólo puede frenar de más.
+
+### La memoria de intercambio
+
+Claude Code cierra sesiones quietas cuando se queda sin memoria de intercambio, aunque la memoria libre del sistema
+parezca de sobra: el 14/11 cerró dos con la máquina al 65 % libre y 0,9 GB libres de 8 GB de intercambio. `coordination.js
+status` la lee (`sysctl vm.swapusage`, en macOS): con menos del 15 % libre dice cuánto queda y nombra las sesiones vivas
+que no están trabajando, primero las que esperan algo, que son las que se pierden. Qué hacer: antes de lanzar algo pesado,
+cerrá las quietas que no esperan nada. Si no se puede leer (otra plataforma, un comando que falla) dice «no medida» y
+no supone nada. Sólo la lee el comando `status`: el aviso de cada turno y el freno del cierre no la miden. Una sesión
+que Claude Code ya cerró sale en «Cerradas por Claude Code» con lo que esperaba (su nota de `marker.js doing
+--waiting-for`) y desde cuándo, arriba de las demás, con su `claude respawn`.
 
 ## Las revisiones automáticas: qué hace la coordinadora
 
@@ -965,6 +999,33 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 - **Un cambio que promete velocidad se mide antes y después en un día con carga.** No sólo con la máquina quieta. Por
   qué: con la máquina quieta todo anda rápido, y la diferencia aparece cuando corren varias cosas a la vez.
 
+## Cómo trabaja la coordinadora con el dueño
+
+Salen de un día entero en que la coordinadora trabajó con el dueño ausente. Cada una, con su porqué.
+
+- **El cuadro de una pregunta lleva el contexto adentro.** Qué pasa hoy, cuál es el problema, qué cambia y qué implica.
+  Por qué: el dueño ve sólo el cuadro, no la conversación que lo explica.
+- **La constancia de un cambio de control se pide al final.** Recién con el resto de la CI en verde y después de que
+  entren los pedidos que tocan los mismos archivos. Por qué: una constancia pedida antes vence con el próximo cambio, y
+  hay que pedirla de nuevo.
+- **Las historias se cierran en horas.** Los humos rápidos que tienen guion se corren. Un criterio imposible de probar
+  en vivo va por su exención: la firma la coordinadora con `marker.js runtime-waiver <historia> --acs <n> --for-session
+  <D>` si el perfil del equipo se la delega, y si no, el dueño. Eximir la historia entera es firma sólo del dueño. Por
+  qué: una historia terminada que espera días su cierre ocupa la fila sin aportar nada.
+- **Foco en el arnés.** Lo que toca un producto no se mide ni se propone sin pedido. Por qué: un producto tiene su
+  propio equipo y sus tiempos, y una propuesta que nadie pidió le cae encima.
+- **Primero lo que rompe o demora.** Cuando no queda nada de eso libre, se reparte en el mismo pulso el resto
+  (menores, mantenimiento, mediciones, mejoras aprobadas), sin esperar a que el dueño lo pida. Por qué: una sesión
+  libre es tiempo de máquina perdido, y el dueño no tiene que repartir lo ya aprobado.
+- **Cada pendiente lleva anotado quién lo tiene y en qué pedido, antes de asignarlo.** Por qué: sin esa anotación el
+  mismo arreglo se hace dos veces; en un solo día hubo cuatro duplicados.
+- **Un solo empuje por pedido, con todo junto.** Después, sólo el arreglo de un rojo o de lo que pidió una revisión.
+  Cada empuje lanza unos 14 trabajos de CI, y GitHub corre unos 20 a la vez. Si `main` no se mueve, se cuentan los
+  trabajos en espera antes de culpar a un pedido. Por qué: los empujes de más llenan la cola de todos, y un pedido que
+  espera no es un pedido roto.
+- **Nunca se cierra un turno con «¿seguimos?».** Una sesión que espera recibe trabajo. Por qué: con el dueño ausente,
+  esa pregunta no la contesta nadie y la sesión queda parada.
+
 ## Qué mide cada regla
 
 | Regla | Mide | Por qué |
@@ -1017,7 +1078,15 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Un rojo no se deja | nadie | Los controles frenan lo propio; un rojo ajeno lo ve quien lo encuentra. |
 | No aflojar una revisión, no hacer papeleo | nadie | Es criterio: ningún dato separa una revisión de un papeleo. |
 | Comprobar un mensaje para el equipo | nadie | El mensaje sale por fuera de la máquina. |
-| La coordinadora no cambia código ni guías ella misma | freno | La sesión designada no escribe, edita ni borra archivos de un repo ni de la copia instalada del arnés, por Edit, Write o la consola: el freno le dice que lo encargue a una sesión. Su memoria y lo de fuera de los repos pasan. Límite, por elección: lo que escribe por dentro un guion guardado en un archivo no se mira, porque los guiones del arnés que corre la coordinadora escriben su estado. |
+| La coordinadora no cambia código ni guías ella misma | freno | La sesión designada no escribe, edita ni borra archivos de un repo ni de la copia instalada del arnés, por Edit, Write o la consola: el freno le dice que lo encargue a una sesión. Un comando de la consola lo corre ella misma si el dueño lo aprueba con un click en el cuadro que muestra el freno: ese comando exacto, una vez, dentro de 30 minutos; un mensaje que diga que autorizó no alcanza. `git worktree remove --force` también frena. Su memoria y lo de fuera de los repos pasan. Límite, por elección: lo que escribe por dentro un guion guardado en un archivo no se mira, porque los guiones del arnés que corre la coordinadora escriben su estado. |
 | Un plan para el dueño pasa antes por un revisor aparte | nadie | Es criterio: ningún dato separa un plan de un mensaje cualquiera. |
 | Afirmar sólo lo comprobado, y medir el uso antes de sacar algo | nadie | Es criterio de la coordinadora. |
 | Medir un cambio de velocidad en un día con carga | nadie | Qué cambio promete velocidad lo dice el mensaje, no un dato. |
+| El cuadro de una pregunta lleva el contexto adentro | nadie | Es la forma del mensaje: ningún dato de la máquina la ve. |
+| La constancia de un cambio de control, al final | nadie | Cuándo la pide lo decide la sesión; la constancia vencida la frena su control, no el momento en que se pidió. |
+| Las historias se cierran en horas | nadie | Es criterio: cuál humo tiene guion lo ve la sesión. |
+| Foco en el arnés | nadie | Es criterio de la coordinadora. |
+| Primero lo que rompe o demora, y después el resto en el mismo pulso | nadie | Qué rompe o demora es criterio; las sesiones quietas las cuenta el aviso de cada turno. |
+| Cada pendiente con quién lo tiene y en qué pedido | nadie | La anotación va en la lista de la coordinadora, que no pasa por un control. |
+| Un solo empuje por pedido | nadie | Un empuje de más no lo frena nada: lo ve la cola de la CI. |
+| Nunca cerrar un turno con «¿seguimos?» | nadie | Es la forma del mensaje; la coordinadora con lugar y trabajo listo ya la frena el gancho del cierre del turno. |

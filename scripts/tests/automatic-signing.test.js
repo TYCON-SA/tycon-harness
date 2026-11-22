@@ -187,6 +187,25 @@ test('AutomaticSigning_LasListasDelPerfil_DecidenQueEsTramite', () => {
   assert.strictEqual(A.todasDeTramite(['plan-approval', 'extra-round'], { perfil }).ok, false);
 });
 
+// Caso 3 del encargo «de terminal a click» (historia 8.298 de la coordinadora, 20/11): con el perfil que lista la exención
+// de un crítico como trámite, el arnés la firmaba solo y anotaba quién = el arnés; después write-findings la rechazaba
+// («no nombra a la persona») y quedaba la terminal. Un crítico lo decide una persona: nunca sale como trámite, y va por la
+// delegación (que nombra al dueño) o por el click del dueño.
+test('T1 AutomaticSigning_CriticalWaiver_NeverTramite — la exención de un crítico no sale sola aunque el perfil la liste', () => {
+  const perfil = () => ({ delegated_signing: ['plan-approval', 'critical-waiver'], owner_only: [] });
+  const r = A.esDeTramite({ firma: 'critical-waiver', perfil });
+  assert.strictEqual(r.ok, false, JSON.stringify(r));
+  assert.match(r.motivo, /un crítico lo decide una persona/);
+  assert.ok(A.esDeTramite({ firma: 'plan-approval', perfil }).ok, 'lo demás de la lista sigue saliendo solo');
+  // la constancia que dejaría el trámite no la acepta write-findings; la de la delegación, sí
+  const cw = require('../../skills/tycon-pipeline/scripts/lib/critical-waivers.js');
+  const base = { ts: '2026-11-20T10:00:00.000Z', rule_id: 'TEST-C1', file: '.advisors/tests-result.json', reason: 'rojo de main' };
+  const conVia = (firma) => { const q = ow.quienFirmo(firma, 'dueño'); return { ...base, ...q, via: `waive-critical (${q.via})` }; };
+  assert.match(cw.constanciaInvalida(conVia({ automatica: true })) || '', /no nombra a la persona/);
+  assert.strictEqual(cw.constanciaInvalida(conVia({ via: 'delegacion', sesion: 'ses-coord' })), null);
+  assert.strictEqual(cw.constanciaInvalida(conVia({ via: 'click' })), null);
+});
+
 test('AutomaticSigning_PendienteSinCarpeta_NoSaleYNoNombraALaCoordinadora', () => {
   const ds = require('../lib/delegated-signing.js');
   const r = ds.antesDelPendiente({ via: 'delegacion', registro: { via: 'automatica' }, propia: 'ses-a', estado: os.tmpdir(), cwd: null, repo: '.' });

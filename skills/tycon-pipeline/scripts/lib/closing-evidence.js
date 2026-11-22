@@ -86,6 +86,8 @@ function coberturaDeLaUnion(matriz) {
     if (enVivo && v && v.fuentes && v.fuentes.smoke && v.fuentes.smoke.length) f.push('smoke');
     if (enVivo && v && v.fuentes && v.fuentes.e2e && v.fuentes.e2e.length) f.push('e2e');
     if (v && v.verdict === 'WAIVED-USER') f.push('firma');
+    // se comprueba en staging, después del merge: antes de done no falta; para done la matriz lo da STAGING-FALTA
+    if (v && v.verdict === 'EN-STAGING') f.push('staging');
     if (f.length) porAc.set(Number(k), f);
   }
   return { porAc, cubiertos: new Set(porAc.keys()) };

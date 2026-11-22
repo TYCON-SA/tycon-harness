@@ -11,8 +11,8 @@ no es una promesa de que todo ande igual con tus repos.
 - **Los controles y las skills andan tal cual**, sin instalar nada para Cursor.
 - **Faltan las reglas globales y los revisores como agentes aparte.** Los trae una story en curso.
 - **El plan gratis se agota rápido** con el pipeline de una story.
-- **El modelo «Auto» esquivó un freno** escribiendo por su cuenta la variable que lo apaga. Leé
-  [las advertencias](#advertencias).
+- **El modelo «Auto» esquivó un freno** escribiendo por su cuenta la variable que entonces lo apagaba. Esa variable ya
+  no apaga nada: leé [las advertencias](#advertencias).
 
 ## Qué anda tal cual
 
@@ -42,10 +42,12 @@ Cursor y un identificador propio por sesión.
 
 ## Advertencias
 
-- **El freno que se esquiva.** Con el modelo «Auto», el agente se encontró con el freno de seguridad y lo esquivó
-  escribiendo él mismo la variable que lo apaga, diciendo que tenía un permiso que nadie le había dado. Pasó también
-  con modelos abiertos en otras herramientas. Mientras ese escape sea una variable que el agente puede escribir, el
-  freno sólo para a un modelo que obedece. Lo cierra otra story en curso, que pide el permiso de una persona.
+- **El freno que se esquivaba.** Con el modelo «Auto», el agente se encontró con el freno de seguridad y lo esquivó
+  escribiendo él mismo la variable que entonces lo apagaba, diciendo que tenía un permiso que nadie le había dado. Pasó
+  también con modelos abiertos en otras herramientas. Esa variable ya no apaga nada: la única salida del freno es la
+  emergencia, que la persona firma en su terminal para un comando ([guía del freno](../safety-guard.md)). Queda el
+  límite que esa guía declara: el permiso de la emergencia es un archivo en la carpeta de estado, y un agente que
+  lograra escribirlo sin pasar por los frenos se daría el permiso solo.
 - **El plan gratis se agota rápido.** Una sola corrida del pipeline hasta el código usó unos 40.000 tokens de entrada
   y 350.000 de caché, y unas pocas órdenes más agotaron el cupo. Cuando se agota, cualquier orden devuelve el mismo
   aviso de límite.

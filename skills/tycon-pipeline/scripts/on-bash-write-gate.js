@@ -617,6 +617,13 @@ const CORRE_ARCHIVO = /^(?:node|nodejs|python[0-9.]*|perl|ruby|bun|deno|tsx|ts-n
 // lo que el guion escribe se lee entero hasta este tamaño; más grande, cuenta si nombra una historia o una constancia
 const GUION_TOPE = 256 * 1024;
 const GUION_TOPE_DURO = 64 * 1024 * 1024;
+// el recorrido de los módulos locales: lo medido sobre los despachadores sin partir (marker.js, 127 módulos en 14
+// niveles) por dos. Lo que queda más allá no se corta callado: se juzga como un guion que no se lee entero
+const RECORRIDO_NIVELES = 28;
+const RECORRIDO_ARCHIVOS = 254;
+// lo que un comando puede hacerle leer al freno entre todos sus guiones y módulos (lo medido en los despachadores son
+// unos 3 MB): el freno corre antes de cada comando, y un guion armado a propósito no le agota la memoria
+const RECORRIDO_BYTES = 2 * GUION_TOPE_DURO;
 const ESCANEO_REINTENTO_MS = 3000;
 const CORCHETE_TOPE = 64;
 const CLASES_POSIX = {
@@ -646,6 +653,89 @@ function repoConHistorias(carpeta) {
 }
 const EXTENSION_DE = { python: /\.py$/i, node: /\.(?:[cm]?js|[cm]?ts)$/i, perl: /\.p[lm]$/i, ruby: /\.rb$/i };
 const familiaDe = (interprete) => (/^python/.test(interprete) ? 'python' : interprete === 'perl' ? 'perl' : interprete === 'ruby' ? 'ruby' : 'node');
+const INTERPRETE_DE = { python: 'python3', node: 'node', perl: 'perl', ruby: 'ruby' };
+
+// Una palabra del comando con sus variables expandidas y sin las comillas que la envuelven: `"${F}"` es la ruta de F
+const palabraExpandida = (cmd, w) => String(expandirRuta(cmd, w).valor).replace(/^"([^"]*)"$|^'([^']*)'$/, (_, a, b) => (a !== undefined ? a : b));
+
+// una palabra que es sólo una variable: `$N`, `${N}` (no `$VENV/bin/black`, donde el programa es el nombre escrito)
+const SOLO_VARIABLE = /^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$/;
+// lo que el shell lee antes del programa dentro de un tramo: `if`, `then`, `do`, `!`…
+const ANTES_DEL_PROGRAMA = /^(?:if|then|else|elif|do|while|until|!)$/;
+// programas que no corren sus argumentos: un guion que aparece entre ellos se lee o se nombra, no se ejecuta. Son los
+// lectores y vecinos que el freno ya conoce (LEE_ARCHIVOS, VECINOS, sin los intérpretes ni `cd`) más estos
+const NO_CORRE_PROPIOS = ['rg', 'file', 'du', 'cp', 'mv', 'rm', 'ln', 'mkdir', 'touch', 'chmod', 'cmp', 'less', 'readlink',
+  'shasum', 'sha1sum', 'sha256sum', 'md5', 'md5sum', 'xxd', 'tar', 'zip', 'rsync', 'scp', 'eslint', 'prettier', 'tsc',
+  'black', 'ruff', 'flake8', 'mypy'];
+const noCorreSusArgumentos = (programa) => !CORRE_ARCHIVO.test(programa) && programa !== 'cd'
+  && (NO_CORRE_PROPIOS.includes(programa) || LEE_ARCHIVOS.has(programa) || VECINOS.has(programa));
+
+/**
+ * El programa escrito de un tramo: la primera palabra que no es del shell ni una asignación, sin comillas, leída del texto
+ * (así `"$PWD"/node_modules/.bin/tsc` es `tsc`). Una variable con valor conocido vale su programa. `{ programa, ilegible }`.
+ */
+function programaEscrito(cmd, tramo) {
+  const partes = String(tramo).trim().split(/\s+/).map((w) => sinGrupo(w)).filter(Boolean);
+  const w = partes.find((x) => !ANTES_DEL_PROGRAMA.test(x) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(x));
+  if (!w) return { programa: '', ilegible: false };
+  const s = w.replace(/["']/g, '');
+  if (SOLO_VARIABLE.test(s) || /^\$\((?!\()|^`/.test(s)) return { programa: interpreteDe(cmd, s), ilegible: noSeLeeElPrograma(cmd, s) };
+  return { programa: nombreDeComando(s), ilegible: false };
+}
+
+/** El programa de una palabra. Una variable con valor conocido (`N=/usr/bin/node`, `N="env node --test"`) es su programa. */
+function interpreteDe(cmd, w) {
+  const s = String(w || '');
+  if (!SOLO_VARIABLE.test(s)) return nombreDeComando(s);
+  const e = expandirRuta(cmd, s);
+  if (e.sinResolver.length || /^\$/.test(String(e.valor))) return nombreDeComando(s);
+  const partes = String(e.valor).trim().split(/\s+/);
+  const programa = nombreDeComando(partes[0]);
+  return programa !== 'env' ? programa : nombreDeComando(partes.slice(1).find((x) => !x.startsWith('-') && !x.includes('=')) || 'env');
+}
+
+/** ¿El freno no puede leer qué programa es esta palabra? Una variable sin valor conocido, una sustitución o `eval`. */
+function noSeLeeElPrograma(cmd, w) {
+  const s = String(w);
+  // `$((…))` es una cuenta, no una sustitución
+  if (s === 'eval' || /\$\((?!\()|`/.test(s)) return true;
+  if (!SOLO_VARIABLE.test(s)) return false;
+  const e = expandirRuta(cmd, s);
+  return e.sinResolver.length > 0 || /^\$/.test(String(e.valor));
+}
+
+/**
+ * El peor caso: en un tramo con algo que el freno no puede leer (una variable sin valor conocido, `$(…)`, `eval`), cada
+ * guion que aparece después se mira como si corriera, con el intérprete de su extensión. No hace falta saber dónde
+ * está el programa ni qué lanzador lo antecede: `$N x.js`, `timeout -s KILL 9 $N x.js`, `if $N x.js` o `xargs $N` frenan
+ * igual que con `node` escrito. Sólo queda afuera un tramo cuyo programa escrito no corre sus argumentos
+ * (`git diff $(…) -- x.js`, `wc -l $F x.js`). Detrás de `xargs` el guion llega por la entrada: cuenta el de cualquier
+ * parte del comando. `todas` da las palabras de todo el comando (se arman sólo si hacen falta).
+ * `[{ interprete, valor, argv }]`.
+ */
+function guionesDelPeorCaso(cmd, crudas, todas, escrito) {
+  const i0 = crudas.findIndex((w) => !ANTES_DEL_PROGRAMA.test(w) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
+  if (i0 < 0) return [];
+  if (!escrito.ilegible && noCorreSusArgumentos(escrito.programa)) return [];
+  const deGuion = (w) => { const v = palabraExpandida(cmd, w); return [v, Object.keys(EXTENSION_DE).find((f) => EXTENSION_DE[f].test(v))]; };
+  const out = [];
+  let ilegible = -1;
+  for (let j = i0; j < crudas.length; j++) {
+    const w = crudas[j];
+    if (/^(?:\d|&)?[<>|]/.test(w)) break;
+    if (noSeLeeElPrograma(cmd, w)) { if (ilegible < 0) ilegible = j; continue; }
+    if (ilegible < 0 || w.startsWith('-')) continue;
+    const [valor, familia] = deGuion(w);
+    if (familia) out.push({ interprete: INTERPRETE_DE[familia], valor, argv: crudas.slice(j + 1) });
+  }
+  if (ilegible >= 0 && !out.length && crudas.slice(0, ilegible).some((w) => nombreDeComando(w) === 'xargs')) {
+    for (const w of todas()) {
+      const [valor, familia] = deGuion(w);
+      if (familia) out.push({ interprete: INTERPRETE_DE[familia], valor, argv: [] });
+    }
+  }
+  return out;
+}
 
 /**
  * Las opciones de un intérprete hasta su guion: `{ enLinea, desde, modulos, precargas }`. `enLinea` si el programa va
@@ -689,7 +779,12 @@ function opcionesDelInterprete(familia, words, i) {
 }
 
 /** La palabra sin los signos del shell que la pegan a un grupo: `(python3`, `p.py)`, `{`. */
-const sinGrupo = (w) => String(w).replace(/^[({]+/, '').replace(/[)};]+$/, '');
+// sin lo que abre o cierra una agrupación (`(`, `{`, `)`, `}`, `;`); la llave que cierra una variable (`${F}`) se queda
+const sinGrupo = (w) => {
+  const s = String(w).replace(/^[({]+/, '');
+  const conVariable = s.match(/^(.*\$\{[^{}]*\})[)};]*$/);
+  return conVariable ? conVariable[1] : s.replace(/[)};]+$/, '');
+};
 
 /**
  * El comando con los renglones unidos donde el shell los une: una barra invertida justo antes del salto de línea. No en un
@@ -735,47 +830,97 @@ function sinContinuaciones(cmd) {
  * módulos locales que importa. Un guion de la instalación del arnés no cuenta, por la ruta real ya resuelta: el
  * orquestador escribe historias. Un guion que un tramo sólo nombra tampoco (`tramoQueSoloNombra`).
  */
+// el comienzo de un archivo, sin leerlo entero: un ejecutable puede ser enorme y su línea `#!` no pide más
+function comienzoDe(real, bytes) {
+  const fd = fs.openSync(real, 'r');
+  try {
+    const buf = Buffer.alloc(bytes);
+    return buf.toString('utf8', 0, fs.readSync(fd, buf, 0, bytes, 0));
+  } finally { fs.closeSync(fd); }
+}
+
 function rutaRealDelGuion(valor, base) {
   const crudo = valor.startsWith('~/') ? os.homedir() + valor.slice(1) : path.isAbsolute(valor) ? valor : `${base}${path.sep}${valor}`;
   try { return fs.realpathSync.native(crudo); } catch { return null; }
 }
 
-function guionesEnArchivo(cmd, bases, instalados = []) {
+function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO_BYTES) {
   const out = [];
   const vistos = new Set();
   const escritos = heredocs(cmd).filter((h) => h.target);
   const todosLosTramos = comandosAnidados(sinContinuaciones(cmd)).flatMap((sub) => tramos(sub));
   const palabrasDe = (tramo) => palabras(tramo.trim().replace(PREFIJO, '')).map(sinGrupo).filter((w) => w !== '');
+  // las palabras de todo el comando, armadas una vez: pedirlas en cada tramo crece con el cuadrado de los tramos (una
+  // tira de miles de tuberías tardaba segundos)
+  let todas = null;
+  const todasLasPalabras = () => todas || (todas = todosLosTramos.flatMap(palabrasDe));
   // la ruta real del guion tal como la abre el intérprete: unida a la carpeta sin normalizar, para que `enlace/..` se
   // resuelva por donde lleva el enlace y no por el texto (la versión nativa: la otra normaliza el `..` antes)
   const rutaReal = rutaRealDelGuion;
   // lo que git contestó, por esta llamada: un módulo que importan varios se pregunta una vez
   const memo = { porRuta: new Map() };
   const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real, memo);
-  const leer = (real) => {
+  // cada archivo se lee una vez, y entre todos no pasan del tope: el que lo pasaría no se lee, y desde ahí no se lee
+  // más. Lo que falta cuenta como un guion que no se pudo leer
+  const lecturas = new Map();
+  let gastado = 0;
+  let agotado = false;
+  const sinLugar = (real) => {
+    if (!agotado) out.push({ interprete: '', archivo: real, texto: '', argv: [], grande: true });
+    agotado = true;
+    return { texto: '', grande: true };
+  };
+  const leerDelDisco = (real) => {
     try {
       const st = fs.statSync(real);
       if (!st.isFile()) return null;
       if (st.size > GUION_TOPE_DURO) return { texto: '', grande: true };
+      const costo = Math.max(st.size, 4096);
+      if (agotado || gastado + costo > topeDeLectura) return sinLugar(real);
+      gastado += costo;
       const texto = fs.readFileSync(real, 'utf8').replace(/\u0000/g, ' ');
       return { texto, grande: st.size > GUION_TOPE };
     } catch { return null; }
   };
-  // el guion y los módulos locales que importa, hasta dos niveles y veinte archivos; uno del arnés no se revisa, pero
-  // lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la cuenta aparte: no le comen
-  // el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre
+  const leer = (real) => {
+    if (!lecturas.has(real)) lecturas.set(real, leerDelDisco(real));
+    return lecturas.get(real);
+  };
+  // el guion y los módulos locales que importa, hasta RECORRIDO_NIVELES niveles y RECORRIDO_ARCHIVOS archivos; uno del
+  // arnés no se revisa, pero lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la
+  // cuenta aparte: no le comen el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre. Lo que
+  // el tope deja afuera cuenta como grande: frena si no se pudo leer, o si escribe y nombra una historia o una constancia.
+  // Lo que carga un módulo de afuera también queda afuera, hasta agotarlo (`vistos` termina el recorrido): cortar ahí
+  // dejaría pasar al que escribe un nivel más abajo
   const modulos = { exentos: 0, revisados: 0 };
+  const afuera = (interprete, real, leido, argv) => {
+    const pendientes = [];
+    const anotar = (archivo, l) => {
+      vistos.add(archivo);
+      if (!instalado(archivo)) out.push({ interprete, archivo, texto: l ? l.texto : '', argv, grande: true });
+      if (l) pendientes.push([archivo, l]);
+    };
+    if (!vistos.has(real)) anotar(real, leido);
+    while (pendientes.length) {
+      const [archivo, l] = pendientes.pop();
+      for (const m of importsLocales(familiaDe(interprete), l.texto, path.dirname(archivo))) {
+        const r = rutaReal(m, path.dirname(archivo));
+        if (r && !vistos.has(r)) anotar(r, leer(r));
+      }
+    }
+  };
   const agregar = (interprete, real, leido, argv, hondo = 0, exento = false) => {
     if (vistos.has(real)) return;
     const cuenta = exento ? 'exentos' : 'revisados';
-    if (hondo > 0 && modulos[cuenta]++ >= 20) return;
+    if (hondo > 0 && modulos[cuenta]++ >= RECORRIDO_ARCHIVOS) { afuera(interprete, real, leido, argv); return; }
     vistos.add(real);
     if (!exento) out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
-    if (hondo >= 2 || (leido.grande && !exento)) return;
+    if (leido.grande && !exento) return;
     for (const m of importsLocales(familiaDe(interprete), leido.texto, path.dirname(real))) {
       const r = rutaReal(m, path.dirname(real));
       if (!r) continue;
       const l = leer(r);
+      if (hondo >= RECORRIDO_NIVELES) { afuera(interprete, r, l, argv); continue; }
       if (l) agregar(interprete, r, l, argv, hondo + 1, instalado(r));
     }
   };
@@ -819,7 +964,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
         try {
           const st = fs.statSync(real);
           if (!st.isFile() || !(st.mode & 0o111)) break;
-          const linea = fs.readFileSync(real, 'utf8').slice(0, 200).split('\n')[0];
+          const linea = comienzoDe(real, 200).split('\n')[0];
           // `#!/usr/bin/python3` · `#!/usr/bin/env -S python3 -u`: con `env`, el intérprete es su primera palabra
           const partes = linea.startsWith('#!') ? linea.slice(2).trim().split(/\s+/) : [];
           const interprete = nombreDeComando(partes[0]) === 'env'
@@ -835,9 +980,18 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
         break;
       }
     }
+    // lo que el freno no puede leer (un programa en una variable sin valor conocido, `$(…)`, `eval`): el peor caso, cada
+    // guion que sigue se mira como si corriera. Sobre las palabras del tramo sin recortar
+    const escrito = programaEscrito(cmd, tramo);
+    if (!soloNombra) {
+      const crudas = palabras(tramo.trim()).map(sinGrupo).filter((w) => w !== '');
+      for (const g of guionesDelPeorCaso(cmd, crudas, todasLasPalabras, escrito)) abrir(g.interprete, g.valor, argumentos(g.argv));
+    }
+    // en un tramo de un programa que no corre sus argumentos, una variable con valor conocido es un argumento más
+    const lector = !escrito.ilegible && noCorreSusArgumentos(escrito.programa);
     // de un tramo que sólo nombra, el intérprete es la primera palabra: `grep node x` o un archivo `node` de la lista no lo son
     for (let k = 0; k < (soloNombra ? 1 : words.length); k++) {
-      const interprete = nombreDeComando(words[k]);
+      const interprete = lector ? nombreDeComando(words[k]) : interpreteDe(cmd, words[k]);
       if (!CORRE_ARCHIVO.test(interprete)) continue;
       const familia = familiaDe(interprete);
       let i = k + 1;
@@ -853,11 +1007,11 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
       for (let j = op.desde; j < words.length && !hallado; j++) {
         const w = words[j];
         if (w === '-' || /^\/dev\/(?:stdin|fd\/0)$/.test(w) || /^(?:\d|&)?[<>]/.test(w)) break;
-        hallado = abrir(interprete, expandirRuta(cmd, w).valor, argumentos(words.slice(j + 1)));
+        hallado = abrir(interprete, palabraExpandida(cmd, w), argumentos(words.slice(j + 1)));
       }
       // `echo p.py | xargs python3`: el guion llega por la entrada; cuenta cada archivo del comando con su extensión
       if (!hallado && words.slice(0, k).some((w) => nombreDeComando(w) === 'xargs')) {
-        for (const w of todosLosTramos.flatMap(palabrasDe)) if (EXTENSION_DE[familia].test(w)) abrir(interprete, expandirRuta(cmd, w).valor, []);
+        for (const w of todasLasPalabras()) if (EXTENSION_DE[familia].test(w)) abrir(interprete, expandirRuta(cmd, w).valor, []);
       }
     }
   }
@@ -878,7 +1032,7 @@ function importsLocales(familia, texto, dir) {
       out.push(m[2], ...['.js', '.cjs', '.mjs', '.ts', '/index.js'].map((e) => m[2] + e));
     }
   }
-  return out.filter((r) => { try { return fs.statSync(path.join(dir, r)).isFile(); } catch { return false; } });
+  return [...new Set(out)].filter((r) => { try { return fs.statSync(path.join(dir, r)).isFile(); } catch { return false; } });
 }
 
 /**
@@ -1291,8 +1445,11 @@ function tramos(cmd) {
   return out;
 }
 
+// el valor de una asignación: cada pedazo se lee de una sola forma. Un `$` suelto no puede ir seguido de comilla, así
+// `$'…'` es siempre una cadena y un `$''` repetido no abre caminos que crecen al doble por cada uno
+const VALOR_DE_ASIGNACION = String.raw`(?:\$'(?:\\.|[^'\\])*'|'[^']*'|"(?:\\.|[^"\\])*"|\\.|\$(?!')|[^\s'"\\$])*`;
 // los prefijos que no cambian qué comando corre
-const PREFIJO = /^(?:\(\s*|[A-Za-z_]\w*=\S*\s+|sudo\s+(?:-\S+\s+)*|command\s+|exec\s+|nice\s+(?:-n\s+\S+\s+)?|nohup\s+|env\s+(?:-\S+\s+)*(?:[A-Za-z_]\w*=\S*\s+)*|timeout\s+(?:-\S+\s+)*\S+\s+)+/;
+const PREFIJO = new RegExp(String.raw`^(?:\(\s*|[A-Za-z_]\w*=${VALOR_DE_ASIGNACION}\s+|sudo\s+(?:-\S+\s+)*|command\s+|exec\s+|nice\s+(?:-n\s+\S+\s+)?|nohup\s+|env\s+(?:-\S+\s+)*(?:[A-Za-z_]\w*=${VALOR_DE_ASIGNACION}\s+)*|timeout\s+(?:-\S+\s+)*\S+\s+)+`);
 // los parámetros de Remove-Item que llevan un valor que no es la ruta
 const PS_CON_VALOR = /^-(?:filter|include|exclude|erroraction|ea|credential|stream|warningaction|wa|informationaction|ia)$/i;
 
@@ -2027,7 +2184,11 @@ function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = nul
     return false;
   };
   const out = [];
+  // una palabra repetida contesta lo mismo: se mira una vez, y una tira de `!|` no resuelve la misma ruta miles de veces
+  const vistas = new Set();
   for (const w of palabrasProfundas(cmd)) {
+    if (vistas.has(w)) continue;
+    vistas.add(w);
     // `enTexto`: la zona dice cómo se la nombra; el nombre suelto de la carpeta del estado no habla de ella
     if (porTexto && (enTexto ? enTexto(w) : nombraPorTexto(w))) { out.push(w); continue; }
     if (/\s/.test(w)) continue;
@@ -2285,6 +2446,12 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
   const lecturas = plano === String(cmd) ? [cmd] : [cmd, plano];
   const todos = [...new Set(lecturas.flatMap((t) => [...comandosAnidados(t), ...comandosPorOtroPrograma(t, cwd)]))]
     .flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/));
+  // Un texto entre comillas es texto (`desc='…'`, `--description '…'`, `echo '…'`) sólo si nada en el comando puede
+  // correrlo. Si algo puede —un shell, `eval`, `source`, un intérprete, `xargs`, un guion como programa, una variable como
+  // programa—, falla cerrado: la redirección citada cuenta, y cada texto citado se mira también como un comando (el que
+  // entra a un shell por tubería, por `<<<`, por un guion escrito antes o leído con `read`)
+  const ejecuta = ejecutaTexto(cmd);
+  if (ejecuta) todos.push(...citados(cmd).flatMap((c) => comandosAnidados(c)).flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/)));
   for (const tramo of todos) {
     base = cwd;
     // sin las redirecciones de lectura con su archivo (`< lista`): no son argumentos de la copia
@@ -2293,7 +2460,11 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     // `<>` abre el archivo para leer y escribir
     // el destino es la palabra entera del shell, con sus comillas resueltas (`.tycon/'control-changes.jsonl'`); uno armado
     // con una sustitución que nombra una constancia no se puede resolver y no pasa
+    // sólo la redirección que está fuera de comillas: `desc='… > .tycon/control-changes.jsonl'` es un texto. Salvo que el
+    // comando pueda correr un texto (`ejecuta`): ahí cuenta también la citada, como siempre
+    const fuera = ejecuta ? () => true : posicionesFueraDeComillas(limpio);
     for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*((?:\$\([^()]*\)|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s<>;&|'"\\])+)/g)) {
+      if (!fuera(m.index)) continue;
       const destino = palabraDelShell(m[1]);
       if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log/i.test(destino))) out.push(destino);
     }
@@ -2993,21 +3164,34 @@ function sinCuerposDeTexto(cmd) {
  * El comando y lo que corre adentro de él: `$(…)`, comillas invertidas, `bash -c '…'`, `eval …` y `find … -exec …`.
  * Cada uno se mira como otro comando. El texto de un heredoc que nadie corre no es un comando.
  */
-function comandosAnidados(comando, hondo = 0) {
+function comandosAnidados(comando, hondo = 0, valores = null) {
   const cmd = sinTextoDeHeredocs(comando);
   const out = [cmd];
   if (hondo > 3) return out;
-  const sumar = (c) => { if (c && String(c).trim()) out.push(...comandosAnidados(String(c), hondo + 1)); };
-  for (const m of String(cmd).matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumar(m[1]);
-  for (const m of String(cmd).matchAll(/`([^`]*)`/g)) sumar(m[1]);
+  // Lo que el comando guarda en una variable (`c='cp … constancia'`) es texto hasta que se corre: con `eval "$c"`,
+  // `bash -c "$c"` o `$c` como programa. Ahí su valor se mira como un comando más; sin esto, guardarlo antes en una
+  // variable era el camino para que el freno no lo viera. Los valores de todo el comando, también los de afuera.
+  const asignados = valores || asignacionesDe(cmd);
+  const valoresEn = (c) => [...String(c || '').matchAll(/\$\{?([A-Za-z_]\w*)\}?/g)].flatMap((m) => asignados.get(m[1]) || []);
+  const sumarUno = (t) => { if (t && String(t).trim()) out.push(...comandosAnidados(String(t), hondo + 1, asignados)); };
+  const sumarValores = (c) => { for (const t of valoresEn(c)) sumarUno(t); };
+  const sumar = (c) => { sumarUno(c); sumarValores(c); };
+  // lo de adentro de una sustitución corre; una variable que ahí sólo se NOMBRA como argumento, no (la mira su programa)
+  for (const m of String(cmd).matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumarUno(m[1]);
+  for (const m of String(cmd).matchAll(/`([^`]*)`/g)) sumarUno(m[1]);
   for (const tramo of tramos(cmd)) {
     const w = palabras(sinPalabrasDelShell(tramo)).filter((x) => x !== '');
-    const c = nombreDeComando(w[0]);
+    // las asignaciones de delante (`A=1 B=2 programa`) no son el programa, ni `builtin`/`command` (`builtin eval "$c"`)
+    let k0 = w.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));
+    while (k0 >= 0 && k0 < w.length - 1 && ['builtin', 'command'].includes(w[k0])) k0++;
+    const c = nombreDeComando(w[k0]);
+    // una variable como programa (`$c`, `"$c" arg`): se corre su valor
+    if (k0 >= 0 && /^\$\{?[A-Za-z_]\w*\}?$/.test(w[k0])) sumarValores(w[k0]);
     if (['bash', 'sh', 'zsh', 'dash'].includes(c)) {
-      const i = w.findIndex((x, k) => k > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(x));
+      const i = w.findIndex((x, k) => k > k0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(x));
       if (i > 0) sumar(w[i + 1]);
     }
-    if (c === 'eval') sumar(w.slice(1).join(' '));
+    if (c === 'eval') sumar(w.slice(k0 + 1).join(' '));
     if (c === 'find') {
       const i = w.findIndex((x) => x === '-exec' || x === '-execdir' || x === '-ok');
       if (i >= 0) {
@@ -3018,6 +3202,35 @@ function comandosAnidados(comando, hondo = 0) {
   }
   return out;
 }
+
+/** Los valores asignados a cada variable en el comando (`A='x'`, `export A=x`, `local A="x"`), todos los que tenga. */
+function asignacionesDe(cmd) {
+  // la palabra entera del shell, leída del texto: `palabras` parte `c='a b'` en `c=` y `a b`
+  const m = new Map();
+  for (const tramo of tramos(String(cmd))) {
+    for (const a of String(tramo).matchAll(/(?:^|[\s(])(?:(?:export|local|declare|readonly|typeset)\s+(?:-\w+\s+)*)?([A-Za-z_]\w*)=((?:'[^']*'|"(?:\\.|[^"\\])*"|\$'(?:\\.|[^'\\])*'|\\.|[^\s'"\\;&|()])*)/g)) {
+      // `$'…'` con sus escapes de comilla y barra (palabraDelShell no lee el citado ANSI-C y dejaría el `$` delante)
+      const v = /^\$'((?:\\.|[^'\\])*)'$/.exec(a[2]);
+      m.set(a[1], [...(m.get(a[1]) || []), v ? v[1].replace(/\\(['\\])/g, '$1') : palabraDelShell(a[2])]);
+    }
+  }
+  return m;
+}
+
+// Si el comando puede correr un texto, qué hay entre comillas y dónde: lo decide el partidor común
+// (scripts/lib/shell-parse.js), el mismo del freno de sesiones. Sin él (una instalación a medias), todo texto puede
+// correrse: falla cerrado, como antes de que un texto entre comillas fuera texto.
+let partidor;
+function partidorComun() {
+  if (partidor === undefined) {
+    try { partidor = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js')); } catch (e) { logHookError(e); partidor = null; }
+    if (partidor && typeof partidor.ejecutaTexto !== 'function') partidor = null;
+  }
+  return partidor;
+}
+const ejecutaTexto = (cmd) => { const p = partidorComun(); return p ? p.ejecutaTexto(cmd) : true; };
+const citados = (cmd) => { const p = partidorComun(); return p ? p.citados(cmd) : []; };
+const posicionesFueraDeComillas = (texto) => { const p = partidorComun(); return p ? p.posicionesFueraDeComillas(texto) : () => true; };
 
 /** ¿La ruta queda adentro de un repo de git? Sube desde la carpeta que exista más cerca. */
 function dentroDeUnRepo(p) {
@@ -3958,8 +4171,8 @@ function mensajeCarpetaSinSeguir(d, via) {
 
 function destinosResueltos(cmd, cwd, platform = process.platform, { keep = null } = {}) {
   return extractWriteTargets(cmd, { keep }).map((raw) => {
-    const { valor, sinResolver } = expandirRuta(cmd, raw);
-    return { raw, abs: resolveTarget(valor, cwd, platform, { homeVariable: true }), sinResolver };
+    const { valor, sinResolver, temporal } = expandirRuta(cmd, raw);
+    return { raw, abs: resolveTarget(valor, cwd, platform, { homeVariable: true }), sinResolver, ...(temporal ? { temporal } : {}) };
   });
 }
 
@@ -4375,6 +4588,20 @@ function cartelBorraAbierta(abiertas, sid, via) {
   return lineas.join('\n');
 }
 
+/**
+ * Las constancias de control (`.github/control-changes/`, `.tycon/control-changes/` y su registro `.jsonl`) sin commitear
+ * en el repo o worktree que vive en `dir`, con su ruta relativa. Una carpeta que no es la raíz de un repo, o donde git no
+ * contesta, no tiene: el freno de siempre decide.
+ */
+function constanciasSinCommitear(dir) {
+  if (!fs.existsSync(path.join(dir, '.git'))) return [];
+  const { spawnSync } = require('child_process');
+  const r = spawnSync('git', ['-C', dir, '-c', 'core.quotepath=false', 'status', '--porcelain', '--untracked-files=all', '--', '.github/control-changes', '.tycon/control-changes', '.tycon/control-changes.jsonl'],
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+  if (r.error || r.status !== 0) return [];
+  return String(r.stdout).split('\n').filter(Boolean).map((l) => l.slice(3).trim());
+}
+
 // El comando borra o mueve una carpeta que contiene la carpeta de una ejecución abierta (D4 de la 8.318: abierta según
 // gates.log). Sólo mira cuando el comando borra o mueve, y lee el registro sólo si hay una carpeta que exista en el disco
 // (o un `git worktree prune`). Un registro que no se puede leer frena: lo indecidible frena (8.121, decisión 13).
@@ -4446,6 +4673,16 @@ function borraEjecucionAbierta(event) {
       const r = lasQuePoda(dir);
       if (!r.ok) motivos.push(r.motivo);
       else for (const c of r.carpetas) carpetas.add(c);
+    }
+  }
+  // una constancia de control firmada y sin commitear vive sólo en esa carpeta: sacarla borra la firma del dueño, y
+  // `git worktree remove` sugiere `--force` justamente por ella
+  for (const c of carpetas) {
+    const sueltas = constanciasSinCommitear(c);
+    if (sueltas.length) {
+      return frena(`🔒 CONSTANCIA SIN COMMITEAR — ${via} saca ${c}, que tiene una constancia de control sin commitear: ${sueltas.join(', ')}. ` +
+        'Sacar la carpeta la borra, y con ella la firma. Commiteala y empujala a la rama de su pedido antes; con la constancia en la rama, el mismo comando pasa.',
+      `saca una constancia sin commitear: ${sueltas.join(', ')}`);
     }
   }
   if (!carpetas.size && !motivos.length && !comodines.length) return null;
@@ -4532,6 +4769,14 @@ function destinosDeLaCoordinadora(cmd) {
       }
       const sub = resto[i];
       const deSub = resto.slice(i + 1);
+      // `worktree remove --force` borra la copia aunque tenga cambios sin commitear; sin `--force`, git no la borra si los tiene
+      if (sub === 'worktree' && deSub[0] === 'remove') {
+        // git acepta `--force` abreviado (`--fo`, `--forc`) y `-f` junto a otras letras
+        if (deSub.some((w) => (w.length >= 3 && '--force'.startsWith(w)) || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(w))) {
+          for (const w of deSub.slice(1)) if (!w.startsWith('-')) poner(w, base);
+        }
+        continue;
+      }
       if (!GIT_CAMBIA_EL_ARBOL.has(sub)) continue;
       if (sub === 'reset' && !deSub.some((w) => /^--(?:hard|merge|keep)$/.test(w))) continue;
       if (sub === 'clean' && deSub.some((w) => w === '-n' || w === '--dry-run')) continue;
@@ -4614,6 +4859,8 @@ function coordinadoraPorConsola(event, opts = {}) {
   };
   return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'coordination-writes.js')).judge({
     sessionId: event.session_id, files: archivos, home: opts.home, stateDir: opts.stateDir, installedRoots: opts.installedRoots,
+    // con el click del dueño a este comando exacto, pasa una vez
+    comando: original, cwd: baseCwd, casa: opts.casa, buscar: opts.buscarAprobacion, herramienta: opts.herramienta,
   });
 }
 
@@ -5061,8 +5308,10 @@ function handleCarrilEHistoria(event, opts = {}) {
     // otra carpeta que la que queda al normalizarla). Ante cualquier falla del criterio, se anota.
     const textoDestinos = String(cmdDestinos);
     const noSeVe = /(^|[\s;&|(])ln\s[^;&|]*-[a-zA-Z]*s/.test(textoDestinos) || /(^|[\s/'"=])\.\.([\\/]|$)/.test(textoDestinos);
-    // un destino sin resolver no suma al cupo: no se sabe cuál es
-    for (const abs of passedCode.filter((f) => isCodeFile(f) && !sinResolverDe.has(f))) {
+    // un destino sin resolver no suma al cupo: no se sabe cuál es. Uno en una carpeta de `mktemp` tampoco: su nombre
+    // lleva las `X` del molde, no es un archivo que exista
+    const temporales = new Set(resueltos.filter((d) => d.temporal).map((d) => d.abs));
+    for (const abs of passedCode.filter((f) => isCodeFile(f) && !sinResolverDe.has(f) && !temporales.has(f))) {
       let sonda = false;
       if (!noSeVe) {
         try { sonda = require('./on-edit.js').esSondaDeSubagente(event, abs, sessionId, stateDir); } catch (e) { logHookError(e); }
@@ -5121,7 +5370,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
+module.exports = { handle, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
 
 if (require.main === module) {
   const cruda = leerEntrada();
