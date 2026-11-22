@@ -18,7 +18,8 @@
  * Correr: node --test skills/tycon-pipeline/scripts/tests/test-gate-green-saved.test.js < /dev/null
  */
 
-const test = require('node:test');
+// partida sin mover sus pruebas: cada parte es test-gate-green-saved.p<k>.test.js (cuáles, suite-parts.json de esta carpeta)
+const test = require('./lib/suite-parts.js').test;
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
