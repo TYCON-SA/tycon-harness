@@ -227,6 +227,12 @@ persona se lo pasan de a uno con ese mismo cuadro. La lista no firma nada: un cl
 sesión que lo pidió repite el comando. Lo delegado, lo irreversible y lo que corre otra sesión no dejan renglón. El detalle:
 `guides/coordination.md`, «La lista de firmas».
 
+**Un permiso no es una firma.** Con una coordinadora confirmada, el permiso que pide una sesión de fondo en modo normal
+también llega como cuadro a su pestaña, con el pedido entero (`scripts/hooks/permission-relay.js`). Lo aprueba sólo tu
+click en ese cuadro, para ese pedido y una vez: la coordinadora nunca, ni por delegación (`approvals.delegated_signing` no
+lo cubre), ni con un «aprobado» escrito. Sin tu respuesta vuelve la ventana de siempre. El detalle:
+`guides/coordination.md`, «El permiso de una sesión de fondo, como cuadro».
+
 Con Claude Code, la mayoría de las firmas no piden la terminal. El camino depende de la pestaña:
 
 - **La pestaña pide permisos:** te aparece la ventana de permiso y contestás «Sí». Ahí escribir «aprobado» no firma nada,
