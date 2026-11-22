@@ -17,7 +17,8 @@
  * abandonado, y la hora de cada entrada de la lista no se compara con nada.
  */
 
-const test = require('node:test');
+// partida sin mover sus pruebas: cada parte es test-gate-failed-first.p<k>.test.js (cuáles, suite-parts.json de esta carpeta)
+const test = require('./lib/suite-parts.js').test;
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
