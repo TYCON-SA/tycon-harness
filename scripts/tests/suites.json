@@ -2479,6 +2479,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/provider-retry.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-topics.test.js",
       "requiere": []
     },
