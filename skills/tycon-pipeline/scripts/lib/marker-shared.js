@@ -23,7 +23,7 @@ const path = require('path');
 // La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
-const stateDirOf = (() => { const lib = path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { resolveSessionId } = require('./session-id.js');
 const { homeCommand, signatureCommand } = require('./home-command.js');
 // la tabla de los pasos: nombres, orden, equivalencia con el marcador viejo
@@ -98,7 +98,7 @@ const reglaParaOtra = (argv) => {
   return PARA_OTRA_SESION[argv[2]];
 };
 
-const ownerWindow = () => require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
 
 /** Con `--for-session` a otra sesión: el subcomando tiene que ser una firma que se corre así; si no, sale 2 sin escribir. */
 function paraOtraSesion(argv) {
@@ -143,7 +143,7 @@ function paraOtraSesion(argv) {
   if (PEDIDA === '_nosession') no('«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id');
   if (argv[2] === 'clear') no(`clear cierra la ejecución de la propia sesión; la de otra sesión se cierra con marker.js clear-session ${PEDIDA} (y si quedó perdida, clear-session ${PEDIDA} --lost --for-session ${PEDIDA})`);
   const t = reglaParaOtra(argv);
-  const s = t && require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
+  const s = t && require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
   if (!t || (t.si && !t.si(argv)) || !s || s.otherSession !== 'yes') no(`«${argv.slice(2, 4).join(' ')}» no es una firma que se pida para otra sesión`);
   if (t.nombra && String(argv[t.nombra] || '').replace(/[/\\]/g, '_') !== PEDIDA) no(`el comando nombra la sesión ${argv[t.nombra]}, y la firma es para ${PEDIDA}`);
   estado.SID = PEDIDA;
@@ -175,7 +175,7 @@ function markerFilePath(sessionId) {
 // ¿la sesión tiene una firma más nueva que el corte? `{ viva }` o `{ error }` (scripts/lib/signature-log.js)
 function firmadaDespuesDe(sesion, cutoff) {
   try {
-    return require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'signature-log.js')).signedSince(sesion, STATE_DIR, cutoff);
+    return require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'signature-log.js')).signedSince(sesion, STATE_DIR, cutoff);
   } catch (e) { return { error: `no pude mirar el registro de firmas (${(e && e.message) || e})` }; }
 }
 
@@ -337,7 +337,7 @@ function sinFirmaNoSeEscribe() {
 // Cambió lo que la oficina muestra de una sesión (un marcador, un arreglo rápido o una nota). El aviso no espera ni cambia
 // el resultado: este archivo viaja suelto, y sin el aviso se pierde en silencio.
 function avisarOficina(sesion = estado.SID) {
-  try { require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'office-event.js')).notify(sesion); } catch (_e) { /* la vigilancia de la oficina lo ve después */ }
+  try { require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'office-event.js')).notify(sesion); } catch (_e) { /* la vigilancia de la oficina lo ve después */ }
 }
 
 function writeMarker(marker) {
@@ -357,7 +357,7 @@ function syncSessionState(sid) {
   if (PREVIO || estado.SOLO_LECTURA) return;
   let lib = null;
   try {
-    lib = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'session-state.js'));
+    lib = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'session-state.js'));
     lib.refresh(STATE_DIR, String(sid));
   } catch (e) {
     // sin la librería, la oficina deduce como antes; el motivo queda en el registro del estado de las sesiones
@@ -653,7 +653,7 @@ function planVisto(marker, planTxt, { porElCuadro = false } = {}) {
   // la terminal no lo muestran. El plan entero se muestra si la persona lo pide
   if (porElCuadro) {
     let secciones = null;
-    try { secciones = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js')).seccionesDelPlan(planTxt); } catch (e) {
+    try { secciones = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'signature-sources.js')).seccionesDelPlan(planTxt); } catch (e) {
       appendLog('gates.log', { name: 'plan-approval', status: 'skipped', story: marker.storyId, motivo: 'no pude leer las secciones del plan para el cuadro', error: String(e.code || e.message).slice(0, 200) });
     }
     if (secciones && !secciones.error) return { ...visto, mostrado: true, porElCuadro: true };
@@ -708,7 +708,7 @@ const ORDER_REQUIRES_OLD = { 3: ['1', '2'], 4: ['3'], 5: ['4'], 8: ['5'] };
 // terminal). Con eso, el renglón `<firma>-signed` queda en gates.log antes de la constancia de siempre.
 // `opciones`: lo que el guion comprueba con el pedido sin gastar (`antes`) y los campos más del renglón (`extra`).
 function firmaDelDueno(firma, resumen, opciones = {}) {
-  const ow = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const ow = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
   const r = ow.exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, anotar: anotarFirma, ...opciones });
   if (r.codigo !== 0) {
     console.error(`🔒 marker.js: ${r.motivo}`);
@@ -847,7 +847,7 @@ function markerScreenRule(marker, opts) {
     const p = marker && marker.storyPath;
     if (!p || !fs.existsSync(p)) return false;
     const content = fs.readFileSync(p, 'utf8');
-    const ui = require(path.join(SCRIPTS_DIR, 'lib', 'ui-signal.js'));
+    const ui = require(path.join(__dirname, '..', 'lib', 'ui-signal.js'));
     const repo = (marker && marker.repoPath) || process.cwd();
     // la baja de una tanda bloqueada se cruza con lo que cambió la corrida desde su arranque; con tanda anotada, la
     // pantalla mira las mismas tandas que la matriz
@@ -863,7 +863,7 @@ function markerScreenRule(marker, opts) {
 }
 
 function screenRule() {
-  try { return require(path.join(SCRIPTS_DIR, 'lib', 'stack-config.js')).orgRules().rules.screen_test.value; } catch (_e) { return 'ui'; }
+  try { return require(path.join(__dirname, '..', 'lib', 'stack-config.js')).orgRules().rules.screen_test.value; } catch (_e) { return 'ui'; }
 }
 
 // Las tandas que mide la corrida (la anotada más las que volvieron), con la matriz de «Preparar el commit»; null sin
@@ -875,7 +875,7 @@ function tandasMedidasDe(marker) {
   if (TANDAS_MEDIDAS.has(storyPath)) return TANDAS_MEDIDAS.get(storyPath);
   let out = null;
   try {
-    const rmx = require(path.join(SCRIPTS_DIR, 'runtime-matrix.js'));
+    const rmx = require(path.join(__dirname, '..', 'runtime-matrix.js'));
     const op = rmx.opcionesDeTandaDelMarcador({ ...marker, storyPath }, storyPath);
     if (op.batch && Array.isArray(op.changed)) out = rmx.compute({ storyPath, ...op }).measuredBatches || null;
   } catch (_e) { out = null; }
@@ -891,7 +891,7 @@ function avisarBajaDePantalla(marker) {
   try {
     const p = marker && resolveStoryPath(marker.storyPath, marker);
     if (!p || !fs.existsSync(p)) return;
-    const ui = require(path.join(SCRIPTS_DIR, 'lib', 'ui-signal.js'));
+    const ui = require(path.join(__dirname, '..', 'lib', 'ui-signal.js'));
     const content = fs.readFileSync(p, 'utf8');
     const linea = ui.proseDropNotice(ui.uiSignalDetail(content, marker.repoPath || process.cwd()));
     if (linea) console.error(linea);
@@ -1130,7 +1130,7 @@ function marcaDe(sid, m) {
   }
   if (mark && String(mark.story) === String(m && m.storyId) && !(Date.parse(mark.at) < Date.parse(m.startedAt))) return mark;
   let until = null;
-  try { until = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).storyPausedUntil(m && m.storyPath); } catch (e) {
+  try { until = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).storyPausedUntil(m && m.storyPath); } catch (e) {
     // sin ese lector, sólo cuenta la marca: se dice, porque esto protege trabajo
     process.stderr.write(`[marker] no pude ver si la historia ${m && m.storyId} está en pausa (${e.message}).\n`);
   }
@@ -1141,7 +1141,7 @@ function marcaDe(sid, m) {
 function esperaGuardar(m) {
   if (!m || !Array.isArray(m.stepsPending) || m.stepsPending.length) return false;
   try {
-    const t = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).unsavedChanges(m, { until: Date.now() + 3000, cache: new Map() });
+    const t = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).unsavedChanges(m, { until: Date.now() + 3000, cache: new Map() });
     return t.dirty || t.problems.length > 0;
   } catch (_e) { return true; }
 }
@@ -1151,11 +1151,11 @@ function esperaGuardar(m) {
 function conHoraDelPaso(marker) {
   if (PREVIO) return marker;
   try {
-    const hora = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).hourForStep(marker, { home: os.homedir(), stateDir: STATE_DIR });
+    const hora = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).hourForStep(marker, { home: os.homedir(), stateDir: STATE_DIR });
     if (hora) marker.horaDelPaso = hora; else delete marker.horaDelPaso;
   } catch (e) {
     delete marker.horaDelPaso;
-    try { require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'session-state.js')).logError(STATE_DIR, `marker.js no pudo calcular la hora del paso (${e && e.message ? e.message : e})`); } catch (_e) { /* sin registro tampoco */ }
+    try { require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'session-state.js')).logError(STATE_DIR, `marker.js no pudo calcular la hora del paso (${e && e.message ? e.message : e})`); } catch (_e) { /* sin registro tampoco */ }
   }
   return marker;
 }
@@ -1217,7 +1217,7 @@ function reposParaComparar(m) {
   return so.reposDeLaCorrida({ marker: { ...m, storyPath: resolveStoryPath(m.storyPath, m) || m.storyPath }, hermanos: hermanosDeLaCorrida(m) });
 }
 
-const delegatedSigning = () => require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
+const delegatedSigning = () => require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
 
 // ============================================================
 // Carril AD-HOC — hotfix / ajuste chico SIN story, declarado por sesión.
@@ -1250,7 +1250,7 @@ const citar = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
  */
 function formasDeFirmarArchivo(firma, archivo, sesion) {
   try {
-    return require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).formasDeFirmar(firma, archivo, sesion).renglones;
+    return require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).formasDeFirmar(firma, archivo, sesion).renglones;
   } catch (e) {
     return [`la firma de archivo ${firma}${archivo ? ` sobre ${archivo}` : ''}, en la ventana de permiso (no pude armar el comando: ${e.message})`];
   }
