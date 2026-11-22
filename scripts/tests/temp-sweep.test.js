@@ -34,7 +34,7 @@ const { spawn, spawnSync } = require('child_process');
 const REPO = path.resolve(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'scripts', 'hooks', 'temp-sweep.js');
 const { stateDir } = require(path.join(REPO, 'scripts', 'setup', 'harness', 'tycon-home.js'));
-const { sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine } = require(HOOK);
+const { LSOF_ARGS, sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine } = require(HOOK);
 
 const WIN = process.platform === 'win32';
 const ROOT_USER = !WIN && process.getuid() === 0;
@@ -527,4 +527,9 @@ test('T27 el guion suelto, sin la librería que sabe dónde va el sello, no barr
   assert.ok(fs.existsSync(dir));
   const j = spawnSync(process.execPath, [suelto, '--json'], { cwd: L.base, encoding: 'utf8', env: { ...process.env, HOME: L.home, USERPROFILE: L.home, TYCON_TEMP_SWEEP: '', TYCON_EVAL_SANDBOX: '' } });
   assert.ok(JSON.parse(j.stdout).error, 'con --json, el fallo también sale en JSON');
+});
+
+test('T28 lsof no traduce las direcciones ni los puertos de red: con muchas conexiones, la lista llega antes del tope', () => {
+  assert.ok(LSOF_ARGS.includes('-n') && LSOF_ARGS.includes('-P'), LSOF_ARGS.join(' '));
+  assert.deepStrictEqual(LSOF_ARGS.slice(-3), ['-u', String(process.getuid ? process.getuid() : ''), '-Fn']);
 });

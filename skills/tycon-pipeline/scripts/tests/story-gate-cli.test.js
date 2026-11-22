@@ -971,10 +971,19 @@ function story730(repo, archivos, { extra = [], title = 'La lista de facturas' }
   return p;
 }
 const PANTALLA_NORMAL = (repo) => story730(repo, ['src/components/Facturas.tsx'], { extra: ['signed_for_sprint: 3'] });
-function maqueta730(storyPath, boton) {
+// la maqueta y, salvo `mirada: false`, su revisión con navegador limpia (la que deja `mockup.js shots`; acá sin abrir
+// un navegador: lo que se prueba es la aprobación, y el navegador se prueba en mockup.test.js)
+function maqueta730(storyPath, boton, { mirada = true } = {}) {
   const r = spawnSync('node', [MOCKUP_JS, 'render', '--data', '-', '--story', storyPath], { encoding: 'utf8', input: MODELO_730(boton) });
   assert.equal(r.status, 0, r.stderr);
-  return JSON.parse(r.stdout);
+  const out = JSON.parse(r.stdout);
+  if (mirada) miradaLimpia(out.out);
+  return out;
+}
+function miradaLimpia(mockupPath) {
+  const SH = require(path.join(SCRIPTS, 'lib', 'mockup-shots.js'));
+  const { report, shots } = SH.shotsPaths(mockupPath);
+  SH.escribirInforme({ report, file: path.basename(mockupPath), sha256: require(MOCKUP_JS).mockupHash(fs.readFileSync(mockupPath, 'utf8')), shots, findings: [] });
 }
 function marker730(home, sid, storyPath, repo, { done = [0, 1, 2], pending } = {}) {
   const all = [0, 1, 2, 3, 4, 5, 6, 7, 8];
@@ -1012,6 +1021,36 @@ test('7.30-T11 CompleteStep3_ConPantalla_SinMaqueta_Bloquea @story-7.30 @ac-9', 
   r = markerCli(home, 's11b', ['complete-step', '3', '--approved', 'dale']);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /el marcador no tiene la ruta de la story: `marker\.js set` con `storyPath`/);
+});
+
+// CompleteStep3_MaquetaSinMirar_Bloquea
+// 🔴 Falla con: la maqueta se pide aprobar sin que nadie la haya mirado con un navegador, o mirada con hallazgos.
+test('CompleteStep3_MaquetaSinMirar_Bloquea: sin revisión con navegador, o con hallazgos, no se pide aprobarla; limpia, pide las capturas', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const s = PANTALLA_NORMAL(repo);
+  const mq = maqueta730(s, undefined, { mirada: false });
+  marker730(home, 'sm', s, repo);
+  const cita = ['complete-step', '3', '--approved', 'dale', '--mockup-approved', 'va'];
+  let r = markerCli(home, 'sm', cita);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /la maqueta no se pide aprobar sin mirarla: nadie la miró con un navegador/);
+  assert.match(r.stderr, /mockup\.js shots .*1\.1-mockup\.html/);
+  const SH = require(path.join(SCRIPTS, 'lib', 'mockup-shots.js'));
+  const { report, shots } = SH.shotsPaths(mq.out);
+  SH.escribirInforme({ report, file: path.basename(mq.out), sha256: mq.sha256, shots, findings: [{ width: 390, kind: 'se pisan', what: '«Pagar» y «Nuevo» se dibujan uno encima del otro' }] });
+  r = markerCli(home, 'sm', cita);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /no se lee bien en el navegador/);
+  assert.match(r.stderr, /a 390 px, se pisan/);
+  miradaLimpia(mq.out);
+  // limpia y sin la cita: pide mandar las dos capturas a la conversación
+  r = markerCli(home, 'sm', ['complete-step', '3', '--approved', 'dale']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /las dos capturas a la conversación/);
+  assert.ok(r.stderr.includes(shots[1440]) && r.stderr.includes(shots[390]), r.stderr);
+  r = markerCli(home, 'sm', cita);
+  assert.equal(r.status, 0, r.stderr);
 });
 
 test('7.30-T12 CompleteStep3_ConPantalla_PideAprobarLaMaqueta @story-7.30 @ac-10', () => {
@@ -1973,4 +2012,243 @@ test('ArchivosQueSuman_LaboratorioEnTemporal_NoSuma @story-8.181 @ac-10', () => 
   assert.deepStrictEqual(io.archivosQueSuman([lab.f], { cwd: lab.r }, { temporales }), [lab.f], 'con el carril en el temporal, suma');
   assert.deepStrictEqual(io.archivosQueSuman([lab.f], {}, { temporales }), [lab.f], 'sin saber dónde vive el carril, suma');
   assert.deepStrictEqual(io.archivosQueSuman([lab.f]), [lab.f], 'sin el camino corto, suma');
+});
+
+// ── 8.317: el borde del grupo de la historia ─────────────────────────────────────────────────────────────────────────
+
+/** Un repo de git con `.tycon/` y un archivo, commiteado. `remoto`: con su remoto local y la rama principal en origin. */
+function repoDeGit(padre, nombre, { grupo = null, remoto = false } = {}) {
+  const dir = path.join(padre, nombre);
+  const git = (...a) => execFileSync('git', ['-C', dir, ...a], { stdio: 'ignore' });
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  fs.mkdirSync(path.join(dir, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.tycon', 'advisors.yaml'), grupo ? `repo_group: [${grupo.join(', ')}]\n` : 'pipeline:\n  story_gate: true\n');
+  fs.writeFileSync(path.join(dir, 'src', 'a.cs'), '// a\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  if (remoto) {
+    const origen = path.join(padre, `${nombre}-origen.git`);
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origen], { stdio: 'ignore' });
+    git('remote', 'add', 'origin', origen); git('push', '-q', 'origin', 'main'); git('remote', 'set-head', 'origin', 'main');
+  }
+  return fs.realpathSync(dir);
+}
+/** La carpeta de estado con el marcador de una historia abierta de la sesión `sid`. */
+function conHistoria(sid, marker) {
+  const stateDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sg8317-')));
+  fs.mkdirSync(path.join(stateDir, 'active'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'active', `${sid}.json`), JSON.stringify({ storyId: '8.9', sessionId: sid, lastTouch: new Date().toISOString(), ...marker }));
+  return stateDir;
+}
+const renglones = (stateDir) => { try { return fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
+const delGrupo = (stateDir) => renglones(stateDir).filter((r) => r.kind === 'story-out-of-group');
+/** Un lector de juguete: el hermano `nombre` está en el grupo; los demás no. Cuenta las llamadas. */
+function lectorQueDice(nombre, raiz) {
+  const L = require(path.join(SCRIPTS, 'lib', 'repo-group.js'));
+  const lector = { llamadas: 0, checkoutPrincipal: L.checkoutPrincipal,
+    hermanoDeEdicion: (_r, n) => { lector.llamadas += 1; return n === nombre ? { raiz, nombre } : { problema: `${n} no está en repo_group de Corrida (origin/main)`, fueraDelGrupo: true }; } };
+  return lector;
+}
+function conModoFreno(fn) {
+  const antes = gate.MODO_FUERA_DEL_GRUPO;
+  gate.MODO_FUERA_DEL_GRUPO = 'freno';
+  try { return fn(); } finally { gate.MODO_FUERA_DEL_GRUPO = antes; }
+}
+const APROBADO = { stepsPending: [4, 5] };
+const PENDIENTE = { stepsPending: [3, 4, 5] };
+
+test('T3 StoryGate_WorktreeDeHermano_CuentaComoHermano @story-8.317 @ac-2', () => {
+  const padre = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't3-8317-')));
+  const corrida = repoDeGit(padre, 'Corrida');
+  const hermano = repoDeGit(padre, 'Hermano');
+  const wt = path.join(padre, 'wt-hermano');
+  execFileSync('git', ['-C', hermano, 'worktree', 'add', '-q', '-b', 'x', wt], { stdio: 'ignore' });
+  const stateDir = conHistoria('s3', { repoPath: corrida, ...APROBADO });
+  conModoFreno(() => {
+    const r = io.evaluate({ filePath: path.join(wt, 'src', 'a.cs'), sessionId: 's3', stateDir, installedRoots: [],
+      grupoDeps: { lector: lectorQueDice('Hermano', hermano), esDelArnes: () => false } });
+    assert.equal(r.verdict.action, 'pass', r.message);
+  });
+  assert.deepEqual(delGrupo(stateDir), []);
+});
+
+test('T4 StoryGate_RepoDeLaHistoria_Pasa @story-8.317 @ac-3', () => {
+  const padre = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't4-8317-')));
+  const backend = repoDeGit(padre, 'Backend');
+  const historias = repoDeGit(padre, 'Historias');
+  fs.mkdirSync(path.join(historias, 'specs'));
+  const archivo = path.join(historias, 'src', 'a.cs');
+  const ninguno = { lector: lectorQueDice('nadie', null), esDelArnes: () => false };
+  conModoFreno(() => {
+    for (const storyPath of [path.join(historias, 'specs', 'story-8.9.md'), '../Historias/specs/story-8.9.md']) {
+      const aprobado = conHistoria('s4', { repoPath: backend, storyPath, ...APROBADO });
+      assert.equal(io.evaluate({ filePath: archivo, sessionId: 's4', stateDir: aprobado, installedRoots: [], grupoDeps: ninguno }).verdict.action, 'pass', storyPath);
+      const pendiente = conHistoria('s4', { repoPath: backend, storyPath, ...PENDIENTE });
+      assert.equal(io.evaluate({ filePath: archivo, sessionId: 's4', stateDir: pendiente, installedRoots: [], grupoDeps: ninguno }).verdict.kind, 'plan', storyPath);
+    }
+    // el repo de la historia no se puede leer: no pude saber, y en freno frena
+    const perdida = conHistoria('s4', { repoPath: backend, storyPath: path.join(padre, 'no-existe', 'specs', 'story-8.9.md'), ...APROBADO });
+    const r = io.evaluate({ filePath: archivo, sessionId: 's4', stateDir: perdida, installedRoots: [], grupoDeps: ninguno });
+    assert.equal(r.verdict.kind, 'story-out-of-group');
+    assert.match(r.verdict.reason, /no pude leer el repo de la historia/);
+  });
+});
+
+// 🔴 Falla con: en aviso, la edición fuera del grupo pasa sin dejar rastro, y no hay números para decidir cuándo frenar.
+test('T6 StoryGateIo_ModoAviso_PasaYAnota @story-8.317 @ac-5 @ac-8', () => {
+  const padre = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't6-8317-')));
+  const corrida = repoDeGit(padre, 'Corrida');
+  const otro = repoDeGit(padre, 'Otro');
+  const deps = { lector: lectorQueDice('nadie', null), esDelArnes: () => false };
+  const stateDir = conHistoria('s6', { repoPath: corrida, ...APROBADO });
+  const archivo = path.join(otro, 'src', 'a.cs');
+  const r = io.evaluate({ filePath: archivo, sessionId: 's6', stateDir, installedRoots: [], grupoDeps: deps });
+  assert.equal(r.verdict.action, 'pass');
+  const [renglon] = delGrupo(stateDir);
+  assert.ok(renglon, 'no quedó el renglón del aviso en gates.log');
+  assert.equal(renglon.name, 'story-gate');
+  assert.equal(renglon.status, 'warn');
+  assert.equal(renglon.story, '8.9');
+  assert.equal(renglon.repoPath, corrida);
+  assert.equal(renglon.file, archivo);
+  assert.equal(renglon.repoDelArchivo, otro);
+  assert.equal(renglon.modo, 'aviso');
+  assert.match(renglon.motivo, /Otro no está en repo_group/);
+  // sin poder escribir el renglón, pasa igual y lo dice
+  if (process.platform !== 'win32' && process.getuid && process.getuid() !== 0) {
+    const errores = [];
+    const escribir = process.stderr.write;
+    fs.chmodSync(path.join(stateDir, 'gates.log'), 0o400);
+    fs.chmodSync(stateDir, 0o500);
+    process.stderr.write = (t, ...resto) => { errores.push(String(t)); return true; };
+    let r2;
+    try { r2 = io.evaluate({ filePath: archivo, sessionId: 's6', stateDir, installedRoots: [], grupoDeps: deps }); } finally {
+      process.stderr.write = escribir;
+      fs.chmodSync(stateDir, 0o700);
+      fs.chmodSync(path.join(stateDir, 'gates.log'), 0o600);
+    }
+    assert.equal(r2.verdict.action, 'pass');
+    assert.ok(errores.some((e) => /no pude anotar en gates\.log la edición fuera del grupo/.test(e)), errores.join(''));
+  }
+});
+
+test('T8 StoryGateIo_LectorFalla_NoPudeSaber @story-8.317 @ac-6', () => {
+  const padre = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't8-8317-')));
+  const corrida = repoDeGit(padre, 'Corrida');
+  const otro = repoDeGit(padre, 'Otro');
+  const archivo = path.join(otro, 'src', 'a.cs');
+  const L = require(path.join(SCRIPTS, 'lib', 'repo-group.js'));
+  const lectores = [
+    { checkoutPrincipal: L.checkoutPrincipal, hermanoDeEdicion: () => ({ problema: 'Corrida: no leo la rama principal del remoto' }) },
+    { checkoutPrincipal: L.checkoutPrincipal, hermanoDeEdicion: () => { throw new Error('reventó'); } },
+    { checkoutPrincipal: L.checkoutPrincipal, hermanoDeEdicion: () => ({ problema: 'no contestó a tiempo' }) },
+  ];
+  const contextos = [
+    () => ({ repoRoot: otro, repoHasTycon: false, repoHasStories: false, discoveryPartial: false, fallo: 'no pude buscar la raíz del repo (x)' }),
+    () => ({ repoRoot: otro, repoHasTycon: false, repoHasStories: false, discoveryPartial: true }),
+  ];
+  const casos = [...lectores.map((lector) => ({ lector, esDelArnes: () => false })), ...contextos.map((repoContext) => ({ repoContext, esDelArnes: () => false }))];
+  for (const deps of casos) {
+    for (const marker of [APROBADO, PENDIENTE]) {
+      const aviso = io.evaluate({ filePath: archivo, sessionId: 's8', stateDir: conHistoria('s8', { repoPath: corrida, ...marker }), installedRoots: [], grupoDeps: deps });
+      assert.equal(aviso.verdict.action, 'pass');
+      assert.equal(aviso.verdict.aviso.estado, 'no-pude-saber');
+    }
+    conModoFreno(() => {
+      const freno = io.evaluate({ filePath: archivo, sessionId: 's8', stateDir: conHistoria('s8', { repoPath: corrida, ...APROBADO }), installedRoots: [], grupoDeps: deps });
+      assert.equal(freno.verdict.kind, 'story-out-of-group');
+    });
+  }
+  // un archivo fuera de git, sin fallo: no aplica, como hoy
+  const suelto = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't8s-')));
+  conModoFreno(() => {
+    const r = io.evaluate({ filePath: path.join(suelto, 'a.cs'), sessionId: 's8', stateDir: conHistoria('s8', { repoPath: corrida, ...APROBADO }), installedRoots: [], grupoDeps: { esDelArnes: () => false } });
+    assert.equal(r.verdict.action, 'pass');
+    assert.equal(r.verdict.aviso, undefined);
+  });
+});
+
+test('T9 StoryGateIo_MarcadorSinRepo_NoAplica @story-8.317 @ac-6', () => {
+  const padre = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't9-8317-')));
+  const otro = repoDeGit(padre, 'Otro');
+  const stateDir = conHistoria('s9', { ...APROBADO });
+  const r = io.evaluate({ filePath: path.join(otro, 'src', 'a.cs'), sessionId: 's9', stateDir, installedRoots: [], grupoDeps: { esDelArnes: () => false } });
+  assert.equal(r.verdict.action, 'pass');
+  const [renglon] = delGrupo(stateDir);
+  assert.ok(renglon, 'no quedó el renglón unknown');
+  assert.equal(renglon.status, 'unknown');
+});
+
+// 🔴 Falla con: una edición dentro del repo de la corrida paga lecturas de git o del grupo que antes no pagaba.
+test('T12 StoryGateIo_EnElRepo_NoLlamaGitNiLector @story-8.317 @ac-10', () => {
+  const padre = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't12-8317-')));
+  const corrida = repoDeGit(padre, 'Corrida', { grupo: ['Hermano'], remoto: true });
+  repoDeGit(padre, 'Hermano', { grupo: ['Corrida'], remoto: true });
+  repoDeGit(padre, 'Tercero', { remoto: true });
+  const L = require(path.join(SCRIPTS, 'lib', 'repo-group.js'));
+  let llamadas = 0;
+  let gits = 0;
+  const contado = { checkoutPrincipal: L.checkoutPrincipal, hermanoDeEdicion: (...a) => { llamadas += 1; return L.hermanoDeEdicion(...a); } };
+  const deps = { lector: contado, esDelArnes: () => false, raizDeGit: (d) => { gits += 1; return null; } };
+  const stateDir = conHistoria('s12', { repoPath: corrida, ...APROBADO });
+  // adentro del repo de la corrida: ninguna lectura
+  assert.equal(io.evaluate({ filePath: path.join(corrida, 'src', 'a.cs'), sessionId: 's12', stateDir, installedRoots: [], grupoDeps: deps }).verdict.action, 'pass');
+  assert.equal(llamadas, 0);
+  assert.equal(gits, 0);
+  // en el hermano, con el lector real: una llamada, en menos de 1 s
+  const desde = process.hrtime.bigint();
+  const r = io.evaluate({ filePath: path.join(padre, 'Hermano', 'src', 'a.cs'), sessionId: 's12', stateDir, installedRoots: [], grupoDeps: { lector: contado, esDelArnes: () => false } });
+  const ms = Number(process.hrtime.bigint() - desde) / 1e6;
+  assert.equal(r.verdict.action, 'pass');
+  assert.equal(r.verdict.aviso, undefined, JSON.stringify(r.verdict));
+  assert.equal(llamadas, 1);
+  assert.ok(ms < 1000, `tardó ${ms} ms`);
+  // el tercero no está en el grupo
+  llamadas = 0;
+  const t = io.evaluate({ filePath: path.join(padre, 'Tercero', 'src', 'a.cs'), sessionId: 's12', stateDir, installedRoots: [], grupoDeps: { lector: contado, esDelArnes: () => false } });
+  assert.equal(t.verdict.aviso.estado, 'fuera');
+  assert.equal(llamadas, 1);
+});
+
+test('T14 StoryGateIo_PorConsola_MismaRegla @story-8.317 @ac-11', () => {
+  const padre = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't14-8317-')));
+  const corrida = repoDeGit(padre, 'Corrida');
+  const otro = repoDeGit(padre, 'Otro');
+  const stateDir = conHistoria('s14', { repoPath: corrida, ...APROBADO });
+  conModoFreno(() => {
+    const b = bash.handle({ tool_name: 'Bash', session_id: 's14', cwd: otro, tool_input: { command: `echo x > ${path.join(otro, 'src', 'b.cs')}` } }, { stateDir, installedRoots: [] });
+    assert.ok(b && /CÓDIGO FUERA DEL GRUPO DE LA HISTORIA/.test(b.block || b.reason || JSON.stringify(b)), JSON.stringify(b));
+    const e = io.evaluate({ filePath: path.join(otro, 'src', 'b.cs'), sessionId: 's14', stateDir, installedRoots: [] });
+    assert.equal(e.verdict.kind, 'story-out-of-group');
+  });
+});
+
+// 🔴 Falla con: lo que confirmó el pase adversarial de la 8.317. Otro checkout del repo de la corrida salía «fuera»; un
+// enlace dentro del repo de la corrida hacía «adentro» el código de otro repo; un repo de la historia que contiene a
+// otros los abría a todos; y sin la carpeta de la historia, un hermano declarado salía «no pude saber».
+test('T16 StoryGateIo_LoQueEncontroElPase @story-8.317 @ac-1 @ac-2 @ac-3', () => {
+  const padre = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't16-8317-')));
+  const corrida = repoDeGit(padre, 'Corrida');
+  const hermano = repoDeGit(padre, 'Hermano');
+  const tercero = repoDeGit(padre, 'Tercero');
+  const deps = { lector: lectorQueDice('Hermano', hermano), esDelArnes: () => false };
+  const decide = (archivo, marker) => io.evaluate({ filePath: archivo, sessionId: 's16', stateDir: conHistoria('s16', marker), installedRoots: [], grupoDeps: deps }).verdict;
+  conModoFreno(() => {
+    // otro checkout del repo de la corrida (un worktree suyo, fuera de su carpeta) es el repo de la corrida
+    const wt = path.join(padre, 'wt-corrida');
+    execFileSync('git', ['-C', corrida, 'worktree', 'add', '-q', '-b', 'y', wt], { stdio: 'ignore' });
+    assert.equal(decide(path.join(wt, 'src', 'a.cs'), { repoPath: corrida, ...APROBADO }).action, 'pass');
+    assert.equal(decide(path.join(corrida, 'src', 'a.cs'), { repoPath: wt, ...APROBADO }).action, 'pass');
+    // un enlace dentro del repo de la corrida que lleva a otro repo no lo vuelve del repo de la corrida
+    fs.symlinkSync(tercero, path.join(corrida, 'enlace'));
+    assert.equal(decide(path.join(corrida, 'enlace', 'src', 'a.cs'), { repoPath: corrida, ...APROBADO }).kind, 'story-out-of-group');
+    // un repo de la historia que contiene a otros repos no los abre
+    const contenedor = path.join(padre, 'contenedor');
+    fs.mkdirSync(path.join(contenedor, 'specs'), { recursive: true });
+    execFileSync('git', ['init', '-q', contenedor], { stdio: 'ignore' });
+    const anidado = repoDeGit(contenedor, 'Anidado');
+    assert.equal(decide(path.join(anidado, 'src', 'a.cs'), { repoPath: corrida, storyPath: path.join(contenedor, 'specs', 's.md'), ...APROBADO }).kind, 'story-out-of-group');
+    // sin la carpeta de la historia, un hermano declarado sigue adentro
+    assert.equal(decide(path.join(hermano, 'src', 'a.cs'), { repoPath: corrida, storyPath: path.join(padre, 'no-existe', 'specs', 's.md'), ...APROBADO }).action, 'pass');
+  });
 });

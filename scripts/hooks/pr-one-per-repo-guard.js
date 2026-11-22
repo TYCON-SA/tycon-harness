@@ -59,7 +59,8 @@ if (varOnePerRepo === undefined || varOnePerRepo === '') {
 }
 if (varOnePerRepo !== '1' && !encendidoPorLaOrganizacion) process.exit(0);
 let cmd = '';
-try { cmd = ((JSON.parse(payload || '{}').tool_input) || {}).command || ''; } catch { process.exit(0); }
+let sesion; // la del evento, para la constancia; guard-record.js descarta una de otra forma
+try { const ev = JSON.parse(payload || '{}'); cmd = (ev.tool_input || {}).command || ''; sesion = ev.session_id; } catch { process.exit(0); }
 
 // Sólo mira la creación de un pull request. Actualizar, listar o abandonar no se tocan.
 // 🔴 Se lee con el lector COMPARTIDO (`lib/az-pr.js`), no con un regex propio. Un lector
@@ -177,7 +178,7 @@ async function revisarGitHub(pedidos) {
     if (enCurso.length) bloqueos.push({ donde: p.donde, enCurso });
   }
   if (bloqueos.length) bloquear(bloqueos);
-  if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd });
+  if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd, sesion });
   return 0;
 }
 
@@ -225,7 +226,7 @@ if (!bloqueos.length) {
   // Creaba un pull request y no había otro abierto: `paso`.
   // 🔴 Pero si NO se pudo preguntar, eso no es «verifiqué y está bien»: es «no miré», y anotarlo
   //    como paso mezcla las dos cosas. Sin decisión, no hay línea.
-  if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd });
+  if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd, sesion });
   process.exit(0);
 }
 bloquear(bloqueos);
@@ -287,6 +288,6 @@ ANTES de abrir la sesión: pegada al comando no sirve, porque el freno lee el en
     : `Este freno está encendido porque esta máquina tiene TYCON_PR_ONE_PER_REPO=1 para una tanda de cambios en
 varios repos. Para apagarlo, sacá esa variable del entorno (o ponela en 0) ANTES de abrir la sesión: pegada al
 comando no sirve, porque el freno lee el entorno de la sesión.`}`);
-constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'bloqueo', cmd });
+constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'bloqueo', cmd, sesion });
 process.exit(2);
 }

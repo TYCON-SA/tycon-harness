@@ -153,10 +153,9 @@ test('T4 OwnerNext_RenglonSoloTerminal_DaLaTerminal @story-8.319 @ac-3', (t) => 
   }
 });
 
-// El AC 4 (sin cuadro para `otherSession: 'no'` de otra sesión) contradice lo que fija signature-list.test.js T12 y
-// owner-window.test.js T11 (8.153: el cuadro se da y la sesión destino repite), que el AC 15 pide no cambiar. Queda como
-// hoy: esta prueba fija eso hasta que se decida.
-test('T5 OwnerNext_OtraSesionNo_SigueComoHoy @story-8.319 @ac-4 @ac-15', (t) => {
+// `otherSession: 'no'` de otra sesión, sin delegar: sin cuadro, la pestaña destino y la terminal. La delegada sigue con
+// su cuadro (owner-window.test.js T20)
+test('T5 OwnerNext_OtraSesionNo_DaLaPestana @story-8.319 @ac-4', (t) => {
   const toy = casaNueva(t);
   designar(toy.casa);
   sesion(toy.casa, 'ses-coord');
@@ -164,7 +163,10 @@ test('T5 OwnerNext_OtraSesionNo_SigueComoHoy @story-8.319 @ac-4 @ac-15', (t) => 
   const cmd = `node ${MARKER} sign-adversarial-skip --story s --reason porque`;
   renglon(toy, { firmaId: 'adversarial-skip', comando: cmd, titulo: 'saltear el pase adversarial con constancia' });
   const r = pasar(toy);
-  assert.strictEqual(r.tipo, 'firma', JSON.stringify(r));
+  assert.strictEqual(r.tipo, 'via', JSON.stringify(r));
+  assert.strictEqual(r.pregunta, undefined, 'sin cuadro');
+  assert.match(r.texto, /pestaña de ses-a/);
+  assert.ok(r.texto.includes('--terminal --for-session ses-a'), r.texto);
 });
 
 test('T6 OwnerNext_DelegadaSigueDelegada @story-8.319 @ac-4', (t) => {

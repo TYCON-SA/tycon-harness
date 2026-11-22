@@ -4,8 +4,8 @@
  * adhoc-two-profiles.test.js — los textos del camino rápido en los dos perfiles.
  *
  *   T48 el texto de `adhoc-high-risk`, «faltan los revisores y el pase» y el error del lint de `riesgo_alto_por:`:
- *       en un producto dicen «vos» y no nombran al dueño, la coordinadora, la delegación ni la constancia; en el
- *       arnés, sí.
+ *       en un producto le hablan al dev («vos», o «el dev» en un freno que lee el agente y le dice qué hacer con su
+ *       sí) y no nombran al dueño, la coordinadora, la delegación ni la constancia; en el arnés, sí.
  *
  * Los demás textos del camino rápido (el cierre, la lista, las pruebas y la rama) suman acá sus pruebas.
  * stable-data: sólo arma textos; no toca archivos.
@@ -22,13 +22,16 @@ const saveBrake = require(path.join(SCRIPTS, 'lib', 'save-brake.js'));
 const lint = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'lint-story-frontmatter.js'));
 
 const DE_MANTENIMIENTO = /dueñ[oa]|coordinadora|delegaci[oó]n|delegad[oa]|constancia/i;
+// el que decide en un producto: «vos», o «el dev» cuando el texto lo lee el agente (un freno) y le dice qué hacer con
+// su sí (con «lo aprobás vos» el agente se tomaba como quien aprueba)
+const AL_DEV = /\bvos\b|\b[ae]l dev\b/;
 
 function dosFormas(armar) {
   const producto = armar(false);
   const arnes = armar(true);
   assert.ok(producto && arnes);
   assert.doesNotMatch(producto, DE_MANTENIMIENTO, producto);
-  assert.match(producto, /\bvos\b/, producto);
+  assert.match(producto, AL_DEV, producto);
   assert.match(arnes, DE_MANTENIMIENTO, arnes);
 }
 

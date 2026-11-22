@@ -1,0 +1,58 @@
+{
+  "__doc": "provider-retry.js: cuando el proveedor corta el turno (StopFailure), espera y despierta a la sesión para que siga. Las esperas se acortan con TYCON_PROVIDER_RETRY_SCALE y el gancho corre sin la herramienta como padre con TYCON_PROVIDER_RETRY_ANY_PARENT=1 (las dos, sólo para pruebas). Casos con su prueba: scripts/tests/provider-retry.test.js.",
+  "hooks": [
+    {
+      "hook": "provider-retry.js (reanudar la sesión tras un corte del proveedor)",
+      "script": "${TCG}/scripts/hooks/provider-retry.js",
+      "event": "StopFailure",
+      "matcher": "overloaded|server_error|rate_limit",
+      "cases": [
+        {
+          "id": "corte-por-sobrecarga-despierta-a-la-sesion",
+          "type": "must-run",
+          "__doc": "Un corte que se cura reintentando (sobrecarga): espera, sale 2 y le pide a la sesión que siga. Anota el intento.",
+          "env": { "CLAUDE_CODE_ENTRYPOINT": "cli", "TYCON_PROVIDER_RETRY_ANY_PARENT": "1", "TYCON_PROVIDER_RETRY_SCALE": "0.0001" },
+          "stdin": { "hook_event_name": "StopFailure", "session_id": "bench-retry-1", "error": "overloaded" },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["El proveedor cortó el turno anterior \\(overloaded\\)\\. Reintento 1 de 4"],
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/provider-retry/bench-retry-1.json", "re": "\"attempt\":1" }]
+          }
+        },
+        {
+          "id": "error-que-no-se-cura-reintentando-no-despierta",
+          "type": "must-stay-quiet",
+          "__doc": "Credenciales o facturación no se curan esperando: sale 0, sin aviso y sin anotar nada.",
+          "env": { "CLAUDE_CODE_ENTRYPOINT": "cli", "TYCON_PROVIDER_RETRY_ANY_PARENT": "1", "TYCON_PROVIDER_RETRY_SCALE": "0.0001" },
+          "stdin": { "hook_event_name": "StopFailure", "session_id": "bench-retry-2", "error": "authentication_failed" },
+          "expect": {
+            "exit": 0,
+            "file_absent": ["${SANDBOX_HOME}/.claude/.tycon-pipeline/provider-retry/bench-retry-2.json"]
+          }
+        },
+        {
+          "id": "sin-la-herramienta-como-padre-no-se-arma",
+          "type": "must-stay-quiet",
+          "__doc": "Lanzado por otro proceso (un laboratorio, una prueba), no hay sesión que despertar: sale 0 sin esperar.",
+          "env": { "CLAUDE_CODE_ENTRYPOINT": "cli", "TYCON_PROVIDER_RETRY_SCALE": "0.0001" },
+          "stdin": { "hook_event_name": "StopFailure", "session_id": "bench-retry-3", "error": "overloaded" },
+          "expect": {
+            "exit": 0,
+            "file_absent": ["${SANDBOX_HOME}/.claude/.tycon-pipeline/provider-retry/bench-retry-3.json"]
+          }
+        },
+        {
+          "id": "apagado-con-su-variable",
+          "type": "must-stay-quiet",
+          "__doc": "TYCON_PROVIDER_RETRY=0 lo apaga.",
+          "env": { "CLAUDE_CODE_ENTRYPOINT": "cli", "TYCON_PROVIDER_RETRY_ANY_PARENT": "1", "TYCON_PROVIDER_RETRY_SCALE": "0.0001", "TYCON_PROVIDER_RETRY": "0" },
+          "stdin": { "hook_event_name": "StopFailure", "session_id": "bench-retry-4", "error": "overloaded" },
+          "expect": {
+            "exit": 0,
+            "file_absent": ["${SANDBOX_HOME}/.claude/.tycon-pipeline/provider-retry/bench-retry-4.json"]
+          }
+        }
+      ]
+    }
+  ]
+}

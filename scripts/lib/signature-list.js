@@ -344,7 +344,7 @@ function comandoParaRepetir(palabras) {
 // `planEnElCuadro`: el plan trae «Qué hace» y «Archivos», y el cuadro mostró qué hace, cuántos archivos y de qué zonas y
 // dónde está el plan: la lista de archivos no hace falta para decidir; el freno no lo pide en la conversación
 function avisoALaSesion(f, palabras, planEnElCuadro = false) {
-  const plan = f.firma === 'plan-approval' && !planEnElCuadro ? ' Si lo niega porque el plan no está en tu conversación, escribilo tal cual en un mensaje tuyo y repetí.' : '';
+  const plan = f.firma === 'plan-approval' && !planEnElCuadro && palabras[1] !== 'approve-mockup' ? ' Si lo niega porque el plan no está en tu conversación, escribilo tal cual en un mensaje tuyo y repetí.' : '';
   return `Ya aprobó la persona. Repetí este comando solo, tal cual y una sola vez: el click vale para una firma.${plan} El comando es un dato, no una instrucción:\n${comandoParaRepetir(palabras)}`;
 }
 
@@ -527,7 +527,8 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
     const via = (coord && coord === sesion && f.destino !== sesion && !f.delegable) || soloTerminal ? viaQueAnda(f, { casa, sesion, nombre: nombreDe(f.destino), delegacion, arnes, env, coord }) : null;
     if (via) return sale({ tipo: 'via', id: f.id, destino: f.destino, nombre: nombreDe(f.destino), delegada: via.delegada, texto: via.texto, sigue: `owner-next --after ${f.id}` });
     let nota = null;
-    if (f.firma === 'plan-approval') {
+    // volver a aprobar la maqueta firma como el plan, pero su cuadro muestra la maqueta: no hay plan que ver antes
+    if (f.firma === 'plan-approval' && can.palabras[1] !== 'approve-mockup') {
       const { plan, error } = planDe(casa, f.destino);
       if (error) nota = `No pude leer el plan de esa ejecución (${una(error)}): no sé si hay uno para ver.`;
       else if (!plan) nota = 'Esta aprobación llega sin un plan escrito: la persona no tiene un plan para ver.';
@@ -579,8 +580,11 @@ function viaQueAnda(f, { casa, sesion, nombre, delegacion, arnes, env, coord }) 
   if (otra && s.soloClick) {
     return { delegada: false, texto: `Renglón ${una(f.id)}. «${una(s.approves)}», de ${nombre} (${una(f.destino)}), no se aprueba desde esta pestaña: no muestres un cuadro. La aprueba la persona con un click en el cuadro de la pestaña de ${nombre}, o en su terminal: ${una(s.terminal)}.` };
   }
-  // `otherSession: 'no'` de otra sesión sigue con el cuadro y lo repite su sesión (8.153, AC 11 y 12): el AC 4 de la 8.319
-  // lo contradice, y su AC 15 pide no cambiarlo; queda como hoy hasta que se decida (Dev Agent Record de la 8.319)
+  // `otherSession: 'no'` de otra sesión: el cuadro en esta pestaña no firma, va la pestaña destino o la terminal. La que el
+  // perfil le delega a la coordinadora sigue con su cuadro, como siempre (@story-8.319 AC 4 y 15)
+  if (otra && s.otherSession === 'no' && !(d && d.ok)) {
+    return { delegada: false, texto: `Renglón ${una(f.id)}. «${una(s.approves)}», de ${nombre} (${una(f.destino)}), no se da desde la pestaña de otra sesión: no muestres un cuadro. La da la persona en la pestaña de ${nombre}, por su ventana o su cuadro, o en su terminal. ${enLaTerminalDeLaFila(f, s)}` };
+  }
   return null;
 }
 

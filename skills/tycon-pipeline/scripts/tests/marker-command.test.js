@@ -33,6 +33,23 @@ test('T2b MarkerCommand_SignLibrary_OnlyWhenRun @story-8.278 @story-8.308 @ac-1 
   for (const cmd of [`cat "${FIRMA}.js`, `cat '${FIRMA}.js`, `cat ${FIRMA}.js\r`]) assert.strictEqual(mc.leerFirma(cmd), 'ilegible', cmd);
 });
 
+// T2d MarkerCommand_SignLibrary_ReadsWithSeparatorsAndSed
+// 🔴 Falla con: el lector de antes, que frenaba como si corriera la biblioteca un `sed -n` que muestra renglones, un `grep`
+// con `2>/dev/null` y dos lecturas encadenadas con `;` o `&&` (falsos positivos medidos en la revisión de precisión).
+test('T2d MarkerCommand_SignLibrary_ReadsWithSeparatorsAndSed — sed -n que muestra, 2>/dev/null y lecturas encadenadas leen; lo demás sigue corriendo', () => {
+  for (const cmd of [
+    `sed -n 320,350p scripts/tests/${FIRMA}.test.js`, `sed -n 5p ${FIRMA}.js`,
+    `grep -rn x scripts/tests/${FIRMA}.test.js 2>/dev/null | head -8`,
+    `grep -n a tycon-home.js | head -10; grep -n b scripts/lib/${FIRMA}.js 2>/dev/null | head -5`,
+    `cat ${FIRMA}.js && wc -l ${FIRMA}.js`,
+  ]) assert.strictEqual(mc.leerFirma(cmd), 'lee', cmd);
+  for (const cmd of [
+    `cat ${FIRMA}.js; node ${FIRMA}.js`, `grep x ${FIRMA}.js && node ${FIRMA}.js sign`, `grep x ${FIRMA}.js 2>/dev/null > y`,
+    `grep x ${FIRMA}.js &`, `cat ${FIRMA}.js & node ${FIRMA}.js`, `sed -n '1w /tmp/x' ${FIRMA}.js`, `sed -n 1,5e ${FIRMA}.js`,
+    `sed -i 1d ${FIRMA}.js`, `sed -n 1,5p ${FIRMA}.js -i`, `sed 1p ${FIRMA}.js`, `grep x ${FIRMA}.js 2>&1 | head`, `grep x ${FIRMA}.js ;`,
+  ]) assert.strictEqual(mc.leerFirma(cmd), 'corre', cmd);
+});
+
 // T2c MarkerCommand_SignGateCli
 // 🔴 Falla con: un modo de consola que no contesta lo que el freno de shell espera leer.
 test('T2c MarkerCommand_SignGateCli @story-8.278 @story-8.308 @ac-1 @ac-2 @ac-3 @ac-15', () => {

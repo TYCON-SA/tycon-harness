@@ -551,6 +551,9 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     // la sesión que tomó el arreglo de main lo dice, como en /wip: es uno solo para todas las que esperan
     const fixIds = (wip.mainFixers || {})[String(d.sid)];
     if (Array.isArray(fixIds) && fixIds.length && !x.mark) a.haciendo = `${a.haciendo ? `${a.haciendo} · ` : ''}arregla main (${fixIds.join(', ')})`;
+    // la corrida que va por el doble de lo estimado (scripts/lib/run-overrun.js), como en /wip y en coordination.js status
+    const over = f ? require('../lib/run-overrun.js').overrunText(f.overrun) : null;
+    if (over && !x.mark) a.haciendo = `${a.haciendo ? `${a.haciendo} · ` : ''}${over}`;
     if (endAt != null && !waiting) {
       // sin historia, la promesa es del trabajo que se declaró, y de esa declaración: otro arreglo u otra nota de la misma
       // sesión no la hereda, ni una nota nueva con el mismo texto
@@ -2619,18 +2622,10 @@ function openFile(target, { platform = process.platform, spawn: run = spawn } = 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const isAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 
-// El proceso del candado contesta en 1 s, con su pid.
-function answers(lock) {
-  return new Promise((resolve) => {
-    if (!lock || !Number.isInteger(lock.pid) || !Number.isInteger(lock.port) || !isAlive(lock.pid)) { resolve(false); return; }
-    const req = require('http').get({ host: '127.0.0.1', port: lock.port, path: `/health?t=${lock.token}`, headers: { host: `127.0.0.1:${lock.port}` }, timeout: 1000 }, (res) => {
-      let body = '';
-      res.on('data', (d) => { body += d; });
-      res.on('end', () => { try { resolve(res.statusCode === 200 && JSON.parse(body).pid === lock.pid); } catch { resolve(false); } });
-    });
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.on('error', () => resolve(false));
-  });
+// El proceso del candado contesta en 1 s, con su pid. Quién es el dueño del candado lo dice un solo lugar, lockOwner del
+// enlace al sitio: el arranque de la oficina desde el gancho y la apertura con --open preguntan igual.
+async function answers(lock) {
+  return (await require('./office/site-link.js').lockOwner(lock, 1000)) === 'office';
 }
 
 /**
@@ -2777,4 +2772,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES, openStories };
+module.exports = { answers, workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES, openStories };

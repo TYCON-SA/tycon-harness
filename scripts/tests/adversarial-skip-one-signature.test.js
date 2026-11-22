@@ -136,7 +136,8 @@ test('T5 OneSignature_SignatureIdsStayWithNewText @story-8.238 @ac-5', () => {
     assert.doesNotMatch(todo, /arranca sin el pase adversarial|sigue sin el pase adversarial/, `${id}: el texto viejo`);
   }
   assert.match(JSON.stringify(de('escape:no-deep-review')), /--env-file/, 'la firma que queda es la del --env-file');
-  assert.match(JSON.stringify(de('escape:TYCON_NO_DEEP_REVIEW')), /pedido/, 'la variable es un pedido');
+  // la variable sólo pide saltear el pase: lo saltea la firma (sin el sustantivo «pedido», que los textos no usan)
+  assert.match(JSON.stringify(de('escape:TYCON_NO_DEEP_REVIEW')), /"pedir [^"]*sólo la firma adversarial-skip/, 'la variable sólo pide saltear el pase');
   const en = JSON.stringify(de('escape:no-deep-review'));
   assert.match(en, /env-file/);
 });
