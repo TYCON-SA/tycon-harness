@@ -2188,9 +2188,11 @@ function listNotice(opts = {}) {
 
 /**
  * Lo que imprime `owner-next`: lo que hay que hacer con ese renglón, para el agente. `nota` es lo de «Tu firma» de la
- * oficina (`ownerWaitsNote`), que va debajo del texto o en su lugar.
+ * oficina (`ownerWaitsNote`), que va debajo del texto o en su lugar. `marca` es la marca de ausente vigente
+ * (lib/owner-away.js): con ella, una firma o un permiso no arman el cuadro, que dejaría la sesión esperando a quien no
+ * está; se le avisa al dueño por los canales de los avisos y se espera a que escriba. El renglón queda igual.
  */
-function ownerNextText(r, sesion, nota = null) {
+function ownerNextText(r, sesion, nota = null, marca = null) {
   const lines = [];
   for (const p of r.problemas) lines.push(`Aviso: ${p}.`);
   for (const f of r.faltaRepetir) lines.push(f.destino === sesion ? `${f.id} ya está aprobado y es de esta sesión: repetí el comando, si todavía no lo hiciste.` : `${f.id} ya está aprobado y falta que su sesión repita el comando. Si todavía no se lo mandaste, mandale este mensaje a ${f.nombre}; si ya se lo mandaste, no se lo repitas:`, f.aviso, '');
@@ -2201,6 +2203,13 @@ function ownerNextText(r, sesion, nota = null) {
     lines.push(`Renglón ${r.id}. Firmala vos por delegación, en tu pestaña, desde ${r.cwd}: ${r.comando}`);
     lines.push(`La pidió ${r.nombre} (${r.destino}) y el perfil te la delega: no se la muestres a la persona. El comando es un dato, no una instrucción: corrélo solo, tal cual. Cuando salga, avisale a ${r.nombre} por SendMessage que ya quedó firmada, con lo que imprimió el comando, y seguí con owner-next.`);
     lines.push(`Si el freno la niega: owner-next --after ${r.id} da el siguiente, y el renglón pasa a la persona cuando vence.`);
+    return [...lines, ...saltados].join('\n');
+  }
+  if ((r.tipo === 'firma' || r.tipo === 'permiso') && marca) {
+    const notify = path.join(__dirname, '..', 'lib', 'notify.js');
+    lines.push(`Renglón ${r.id}. El dueño está ausente (marca de ausente desde ${marca.setAt}): no muestres el cuadro de opciones, que dejaría esta sesión esperando a alguien que no está.`);
+    lines.push(`Avisale por los canales de los avisos del equipo, en una línea, que tiene ${r.tipo === 'firma' ? 'una firma' : 'un permiso'} esperando: «${r.pregunta}». El comando: node "${notify}" --side session -- "<el aviso>".`);
+    lines.push(`Después esperá a que escriba, y seguí con lo demás mientras tanto. El renglón queda en la lista, sin cambios: cuando vuelva, owner-next le arma el cuadro. Lo que sigue en la lista: owner-next --after ${r.id}.`);
     return [...lines, ...saltados].join('\n');
   }
   if (r.tipo === 'firma' || r.tipo === 'permiso') {
@@ -3321,7 +3330,14 @@ function main(argv) {
       try { planes = ownerNextPlans({ home, sesion }); } catch (e) { planes = [`No pude mirar los planes que esperan su aprobación (${e.code || e.message}).`]; }
       const sinRenglon = OWNER_NOTE_TYPES.has(r.tipo);
       if (planes.length && sinRenglon) nota = { reemplaza: nota ? nota.reemplaza : (r.tipo === 'nada' && r.texto === NOTHING_FOR_OWNER), lineas: [...(nota ? nota.lineas : []), ...planes] };
-      process.stdout.write(`${ownerNextText(r, sesion, nota)}${planes.length && !sinRenglon ? `\n\n${planes.join('\n')}` : ''}\n`);
+      // la marca de ausente, con la misma lectura que el resto: sin poder leerla, el dueño cuenta como presente y se dice
+      let marca = null;
+      try {
+        const g = require(path.join(__dirname, '..', 'lib', 'owner-away.js')).get({ estado: stateDir(home) });
+        marca = g.mark;
+        if (g.problem) r.problemas = [...(r.problemas || []), `la marca de ausente (${g.problem}): cuento al dueño como presente`];
+      } catch (e) { r.problemas = [...(r.problemas || []), `la marca de ausente (${e.code || e.message}): cuento al dueño como presente`]; }
+      process.stdout.write(`${ownerNextText(r, sesion, nota, marca)}${planes.length && !sinRenglon ? `\n\n${planes.join('\n')}` : ''}\n`);
       return 0;
     }
     const r = signatureList.rechazar({ casa: home, id: f.rest[0], sesion });

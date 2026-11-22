@@ -102,21 +102,43 @@ function mensajeDeLaPersona(prompt) {
 }
 
 /**
- * La respuesta del cuadro, tal como la devolvió la herramienta (`tool_response`, nunca `tool_input`): `{ ok, pregunta,
- * respuesta }` si la persona eligió una opción que aprueba, o `{ ok: false, motivo }`. Una sola pregunta; sin
- * resolución por ausencia (`afkTimeoutMs`) ni preguntas sin contestar (`annotations.*.unanswered`).
+ * Las respuestas del cuadro, tal como las devolvió la herramienta (`tool_response`, nunca `tool_input`): `{ ok,
+ * respuestas: [[pregunta, respuesta]…] }` o `{ ok: false, motivo }`. Lo que vale para el cuadro entero se mira acá: sin
+ * resolución por ausencia (`afkTimeoutMs`) ni preguntas sin contestar (`annotations.*.unanswered`), ninguna cuenta.
  */
-function respuestaDelCuadro(salida) {
+function respuestasDelCuadro(salida) {
   const r = salida && typeof salida === 'object' ? salida : null;
   if (!r) return { ok: false, motivo: 'la herramienta no devolvió respuesta' };
   if (r.afkTimeoutMs !== undefined && r.afkTimeoutMs !== null) return { ok: false, motivo: 'el cuadro se resolvió solo, por ausencia' };
   const notas = r.annotations && typeof r.annotations === 'object' ? Object.values(r.annotations) : [];
   if (notas.some((n) => n && typeof n === 'object' && n.unanswered)) return { ok: false, motivo: 'una pregunta quedó sin contestar' };
   const respuestas = r.answers && typeof r.answers === 'object' ? Object.entries(r.answers) : [];
-  if (respuestas.length !== 1) return { ok: false, motivo: respuestas.length ? 'el cuadro tenía más de una pregunta' : 'nadie contestó el cuadro' };
-  const [pregunta, respuesta] = respuestas[0];
+  return respuestas.length ? { ok: true, respuestas } : { ok: false, motivo: 'nadie contestó el cuadro' };
+}
+
+/** `{ ok, pregunta, respuesta }` si la respuesta a esa pregunta aprueba, o `{ ok: false, motivo }`. */
+function unaRespuesta([pregunta, respuesta]) {
   if (typeof respuesta !== 'string' || !esAprobacion(respuesta)) return { ok: false, motivo: 'la opción elegida no aprueba' };
   return { ok: true, pregunta: String(pregunta), respuesta };
+}
+
+/**
+ * La respuesta del cuadro a una pregunta: `{ ok, pregunta, respuesta }` si la persona eligió una opción que aprueba, o
+ * `{ ok: false, motivo }`. Sin `pregunta`, el cuadro tiene que traer una sola. Con `pregunta`, se mira sólo la respuesta
+ * a ésa, como si fuera un cuadro de una sola pregunta: en un cuadro con varias firmas, cada una tiene la suya.
+ */
+function respuestaDelCuadro(salida, { pregunta } = {}) {
+  const todas = respuestasDelCuadro(salida);
+  if (!todas.ok) return todas;
+  if (pregunta === undefined) return todas.respuestas.length === 1 ? unaRespuesta(todas.respuestas[0]) : { ok: false, motivo: 'el cuadro tenía más de una pregunta' };
+  const esa = todas.respuestas.find(([p]) => p === pregunta);
+  return esa ? unaRespuesta(esa) : { ok: false, motivo: 'el cuadro no trae esa pregunta' };
+}
+
+/** Las preguntas del cuadro cuya respuesta aprueba, cada una como `{ pregunta, respuesta }`; ninguna si el cuadro no vale entero. */
+function aprobadasDelCuadro(salida) {
+  const todas = respuestasDelCuadro(salida);
+  return todas.ok ? todas.respuestas.map(unaRespuesta).filter((r) => r.ok).map(({ pregunta, respuesta }) => ({ pregunta, respuesta })) : [];
 }
 
 // lo que puede seguir a «sesión» en una frase sin nombrar ninguna; cualquier otra palabra cuenta como un id, y ante la duda
@@ -591,7 +613,8 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, se
   if (!d) return { ok: false, motivo: `la transcripción no dice quién contestó el cuadro${pistaDeVersion(r)}` };
   if (d.source === 'hook' || d.reasonType === 'hook') return { ok: false, motivo: 'el cuadro lo contestó un gancho, no la persona' };
   if (d.decision && d.decision !== 'accept') return { ok: false, motivo: 'el cuadro no se aceptó' };
-  const dijo = respuestaDelCuadro(r.toolUseResult);
+  // sólo la respuesta a la pregunta del registro: en un cuadro con varias firmas, las otras son de otras firmas
+  const dijo = respuestaDelCuadro(r.toolUseResult, { pregunta: a.pregunta });
   if (!dijo.ok) return { ok: false, motivo: `en la transcripción, ${dijo.motivo}` };
   if (dijo.pregunta !== a.pregunta || dijo.respuesta !== a.respuesta) return { ok: false, motivo: 'la respuesta del cuadro en la transcripción no es la del registro' };
   if (!pregunta || dijo.pregunta !== pregunta) {
@@ -1057,6 +1080,6 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
   return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones, sello: cuadro.sello, casa });
 }
 
-module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
+module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, aprobadasDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
   anotar, leerSesion, consumir, devolver, transcripcionDe, controlRemotoDelProceso, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
   escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, validarEnClaude, plataformaDe, constanciaDeLaTerminal };

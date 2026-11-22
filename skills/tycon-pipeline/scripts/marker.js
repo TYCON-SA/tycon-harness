@@ -4449,6 +4449,22 @@ function dondeViveLaHistoria(storyPath) {
  * lista, antes de su fecha, y nada más pendiente (imposibles sin firma, acción no ejercida, pantalla sin imagen, código
  * sin leer). `motivos`: lo que no acepta, dicho.
  */
+/**
+ * Los criterios sin correr que quedan fuera del rojo esperado vigente de la deuda: los que cubre la lista, antes de su
+ * fecha, ya tienen su salida (la deuda), así que no frenan la exención de los imposibles-declarados. Sin deuda, sin rojo
+ * esperado de la matriz o vencido, todos los sin correr, como siempre.
+ */
+function sinCorrerFueraDeLaDeuda(marker, matrix) {
+  const notRun = matrix.notRun || [];
+  const er = marker && (marker.expectedRed || {}).acmatrix;
+  if (!notRun.length || !er || !marker.cierre || marker.cierre.estado !== 'deuda') return notRun;
+  if (!/^rojo-esperado/.test(String(at(marker.checks, 'acmatrix') || ''))) return notRun;
+  if (!esFecha(er.until) || fechaLocal(new Date()) > er.until) return notRun;
+  const tests = Array.isArray(er.tests) ? er.tests.map(String) : [];
+  const cubiertos = new Set(require('./runtime-matrix.js').debtCoverage(matrix, tests).covered);
+  return notRun.filter((n) => !cubiertos.has(n));
+}
+
 function deudaDeLaMatriz(marker, matrix) {
   const er = (marker.expectedRed || {}).acmatrix;
   if (!marker.cierre || marker.cierre.estado !== 'deuda' || !er || !/^rojo-esperado/.test(String(at(marker.checks, 'acmatrix') || ''))) return null;
@@ -6885,7 +6901,8 @@ function runtimeWaiverConOk(storyPath, argv, m) {
     console.error(`🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma en la corrida de su tanda.`);
     process.exit(2);
   }
-  const notRun = matrix.notRun || [];
+  // los que cubre el rojo esperado vigente de la deuda ya tienen su salida: no frenan la exención de los imposibles
+  const notRun = sinCorrerFueraDeLaDeuda(m, matrix);
   if (notRun.length) {
     console.error(`🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC ${notRun.map((n) => '#' + n).join(', ')}. Los corre el agente.`);
     process.exit(2);
@@ -7343,7 +7360,7 @@ function cmdDeclarePending(argv) {
   try { appendLog('gates.log', { name: DS.DECLARADO, status: 'ok', sesion: PROPIA, id, repo: r.clave, ruta: r.ruta }, { estricto: true }); } catch (e) {
     console.error(`marker.js declare-pending: no pude anotarlo en el registro de firmas (${e.code || e.message}).`); process.exit(2);
   }
-  console.error(`✅ ${id} declarado por esta sesión en ${r.ruta}. La coordinadora lo aprueba con \`marker.js approve-pending --id ${id} --repo ${r.ruta} --for-session ${PROPIA}\`.`);
+  console.error(`✅ ${id} declarado por esta sesión en ${r.ruta}. No lo apruebes desde acá: mandale a la coordinadora el código y la carpeta, y ella corre desde su pestaña \`marker.js approve-pending --id ${id} --repo ${r.ruta} --for-session ${PROPIA}\`. Sin coordinadora, lo aprueba la persona: corré \`marker.js approve-pending --id ${id} --repo ${r.ruta}\` solo y mostrale el cuadro que da el freno.`);
   process.exit(0);
 }
 
@@ -7832,8 +7849,9 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 
   // 🔴 REGLA: el waiver SÓLO aplica a los ACs declarados imposibles de
   // verificar corriendo (runtime_not_verifiable). Si hay ACs SIN CORRER (no declarados), se
-  // REHÚSA — esos el agente los tiene que correr, no se pueden saltear.
-  const notRun = matrix.notRun || [];
+  // REHÚSA — esos el agente los tiene que correr, no se pueden saltear. Los que cubre el rojo esperado vigente de la
+  // deuda ya tienen su salida.
+  const notRun = sinCorrerFueraDeLaDeuda(m, matrix);
   if (notRun.length > 0) {
     console.error('🚫 marker.js runtime-waiver RECHAZADO — hay ACs SIN CORRER que NO se pueden waivear:');
     console.error(`   AC ${notRun.map((n) => '#' + n).join(', ')}`);

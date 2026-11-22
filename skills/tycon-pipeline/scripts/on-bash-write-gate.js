@@ -618,6 +618,13 @@ const CORRE_ARCHIVO = /^(?:node|nodejs|python[0-9.]*|perl|ruby|bun|deno|tsx|ts-n
 // lo que el guion escribe se lee entero hasta este tamaño; más grande, cuenta si nombra una historia o una constancia
 const GUION_TOPE = 256 * 1024;
 const GUION_TOPE_DURO = 64 * 1024 * 1024;
+// el recorrido de los módulos locales: lo medido sobre los despachadores sin partir (marker.js, 127 módulos en 14
+// niveles) por dos. Lo que queda más allá no se corta callado: se juzga como un guion que no se lee entero
+const RECORRIDO_NIVELES = 28;
+const RECORRIDO_ARCHIVOS = 254;
+// lo que un comando puede hacerle leer al freno entre todos sus guiones y módulos (lo medido en los despachadores son
+// unos 3 MB): el freno corre antes de cada comando, y un guion armado a propósito no le agota la memoria
+const RECORRIDO_BYTES = 2 * GUION_TOPE_DURO;
 const ESCANEO_REINTENTO_MS = 3000;
 const CORCHETE_TOPE = 64;
 const CLASES_POSIX = {
@@ -824,12 +831,21 @@ function sinContinuaciones(cmd) {
  * módulos locales que importa. Un guion de la instalación del arnés no cuenta, por la ruta real ya resuelta: el
  * orquestador escribe historias. Un guion que un tramo sólo nombra tampoco (`tramoQueSoloNombra`).
  */
+// el comienzo de un archivo, sin leerlo entero: un ejecutable puede ser enorme y su línea `#!` no pide más
+function comienzoDe(real, bytes) {
+  const fd = fs.openSync(real, 'r');
+  try {
+    const buf = Buffer.alloc(bytes);
+    return buf.toString('utf8', 0, fs.readSync(fd, buf, 0, bytes, 0));
+  } finally { fs.closeSync(fd); }
+}
+
 function rutaRealDelGuion(valor, base) {
   const crudo = valor.startsWith('~/') ? os.homedir() + valor.slice(1) : path.isAbsolute(valor) ? valor : `${base}${path.sep}${valor}`;
   try { return fs.realpathSync.native(crudo); } catch { return null; }
 }
 
-function guionesEnArchivo(cmd, bases, instalados = []) {
+function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO_BYTES) {
   const out = [];
   const vistos = new Set();
   const escritos = heredocs(cmd).filter((h) => h.target);
@@ -845,30 +861,67 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
   // lo que git contestó, por esta llamada: un módulo que importan varios se pregunta una vez
   const memo = { porRuta: new Map() };
   const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real, memo);
-  const leer = (real) => {
+  // cada archivo se lee una vez, y entre todos no pasan del tope: el que lo pasaría no se lee, y desde ahí no se lee
+  // más. Lo que falta cuenta como un guion que no se pudo leer
+  const lecturas = new Map();
+  let gastado = 0;
+  let agotado = false;
+  const sinLugar = (real) => {
+    if (!agotado) out.push({ interprete: '', archivo: real, texto: '', argv: [], grande: true });
+    agotado = true;
+    return { texto: '', grande: true };
+  };
+  const leerDelDisco = (real) => {
     try {
       const st = fs.statSync(real);
       if (!st.isFile()) return null;
       if (st.size > GUION_TOPE_DURO) return { texto: '', grande: true };
+      const costo = Math.max(st.size, 4096);
+      if (agotado || gastado + costo > topeDeLectura) return sinLugar(real);
+      gastado += costo;
       const texto = fs.readFileSync(real, 'utf8').replace(/\u0000/g, ' ');
       return { texto, grande: st.size > GUION_TOPE };
     } catch { return null; }
   };
-  // el guion y los módulos locales que importa, hasta dos niveles y veinte archivos; uno del arnés no se revisa, pero
-  // lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la cuenta aparte: no le comen
-  // el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre
+  const leer = (real) => {
+    if (!lecturas.has(real)) lecturas.set(real, leerDelDisco(real));
+    return lecturas.get(real);
+  };
+  // el guion y los módulos locales que importa, hasta RECORRIDO_NIVELES niveles y RECORRIDO_ARCHIVOS archivos; uno del
+  // arnés no se revisa, pero lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la
+  // cuenta aparte: no le comen el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre. Lo que
+  // el tope deja afuera cuenta como grande: frena si no se pudo leer, o si escribe y nombra una historia o una constancia.
+  // Lo que carga un módulo de afuera también queda afuera, hasta agotarlo (`vistos` termina el recorrido): cortar ahí
+  // dejaría pasar al que escribe un nivel más abajo
   const modulos = { exentos: 0, revisados: 0 };
+  const afuera = (interprete, real, leido, argv) => {
+    const pendientes = [];
+    const anotar = (archivo, l) => {
+      vistos.add(archivo);
+      if (!instalado(archivo)) out.push({ interprete, archivo, texto: l ? l.texto : '', argv, grande: true });
+      if (l) pendientes.push([archivo, l]);
+    };
+    if (!vistos.has(real)) anotar(real, leido);
+    while (pendientes.length) {
+      const [archivo, l] = pendientes.pop();
+      for (const m of importsLocales(familiaDe(interprete), l.texto, path.dirname(archivo))) {
+        const r = rutaReal(m, path.dirname(archivo));
+        if (r && !vistos.has(r)) anotar(r, leer(r));
+      }
+    }
+  };
   const agregar = (interprete, real, leido, argv, hondo = 0, exento = false) => {
     if (vistos.has(real)) return;
     const cuenta = exento ? 'exentos' : 'revisados';
-    if (hondo > 0 && modulos[cuenta]++ >= 20) return;
+    if (hondo > 0 && modulos[cuenta]++ >= RECORRIDO_ARCHIVOS) { afuera(interprete, real, leido, argv); return; }
     vistos.add(real);
     if (!exento) out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
-    if (hondo >= 2 || (leido.grande && !exento)) return;
+    if (leido.grande && !exento) return;
     for (const m of importsLocales(familiaDe(interprete), leido.texto, path.dirname(real))) {
       const r = rutaReal(m, path.dirname(real));
       if (!r) continue;
       const l = leer(r);
+      if (hondo >= RECORRIDO_NIVELES) { afuera(interprete, r, l, argv); continue; }
       if (l) agregar(interprete, r, l, argv, hondo + 1, instalado(r));
     }
   };
@@ -912,7 +965,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
         try {
           const st = fs.statSync(real);
           if (!st.isFile() || !(st.mode & 0o111)) break;
-          const linea = fs.readFileSync(real, 'utf8').slice(0, 200).split('\n')[0];
+          const linea = comienzoDe(real, 200).split('\n')[0];
           // `#!/usr/bin/python3` · `#!/usr/bin/env -S python3 -u`: con `env`, el intérprete es su primera palabra
           const partes = linea.startsWith('#!') ? linea.slice(2).trim().split(/\s+/) : [];
           const interprete = nombreDeComando(partes[0]) === 'env'
@@ -980,7 +1033,7 @@ function importsLocales(familia, texto, dir) {
       out.push(m[2], ...['.js', '.cjs', '.mjs', '.ts', '/index.js'].map((e) => m[2] + e));
     }
   }
-  return out.filter((r) => { try { return fs.statSync(path.join(dir, r)).isFile(); } catch { return false; } });
+  return [...new Set(out)].filter((r) => { try { return fs.statSync(path.join(dir, r)).isFile(); } catch { return false; } });
 }
 
 /**
@@ -2132,7 +2185,11 @@ function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = nul
     return false;
   };
   const out = [];
+  // una palabra repetida contesta lo mismo: se mira una vez, y una tira de `!|` no resuelve la misma ruta miles de veces
+  const vistas = new Set();
   for (const w of palabrasProfundas(cmd)) {
+    if (vistas.has(w)) continue;
+    vistas.add(w);
     // `enTexto`: la zona dice cómo se la nombra; el nombre suelto de la carpeta del estado no habla de ella
     if (porTexto && (enTexto ? enTexto(w) : nombraPorTexto(w))) { out.push(w); continue; }
     if (/\s/.test(w)) continue;
@@ -5746,7 +5803,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
+module.exports = { handle, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
 
 if (require.main === module) {
   const cruda = leerEntrada();

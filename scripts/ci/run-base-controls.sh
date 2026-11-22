@@ -47,6 +47,9 @@
 #        (la cuenta de la noche: las constancias que salieron de <rev>, con y sin la firma del dueño; la llama
 #        scripts/ci/approvals-removed.js)
 #   bash scripts/ci/run-base-controls.sh classify --root <dir> --base <rev> --entries '<json>'   (la clase de la firma, en JSON)
+#   bash scripts/ci/run-base-controls.sh unnamed --hook <copia> --harness <arnés> [--public-hook <archivo>]
+#        (los controles del inventario del arnés que su gancho público llama y la copia propia del pre-commit de otro
+#        repo no; la copia los corre con el gancho público y TYCON_CHECKS_ONLY. Uno que el arnés no trae sale 1)
 #
 # LA REFIRMA TRAS TRAER MAIN. Traer main a un pedido con un cambio de control firmado cambia el blob de lo firmado y pide
 # firmar otra vez. Si `scripts/lib/refresh-after-main.js` comprueba que es sólo eso (`approve --base`), la firma la puede
@@ -89,7 +92,7 @@ const [cmd, ...rest] = enLaVentana ? JSON.parse(process.env.BASE_CONTROLS_WINDOW
 delete process.env.BASE_CONTROLS_WINDOW_ARGS;
 
 function usage(code) {
-  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json> · removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>]');
+  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json> · removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>] · unnamed --hook <copia> --harness <arnés> [--public-hook <archivo>]');
   process.exit(code);
 }
 function opt(name) {
@@ -203,6 +206,27 @@ function shimTarget(text) {
   return m ? m[1] : null;
 }
 
+// La copia propia del pre-commit en el privado adelgazado (declarada en «own» de .tycon/internal-forms.json) le pide al
+// gancho público del arnés que corra los controles del inventario que ella no nombra: llama a `run-base-controls.sh
+// unnamed` y le pasa la lista. Esa copia no deja controles sin paso, porque el inventario público ya obliga a que el
+// gancho público, o una pasada, corra cada uno. La declaración se lee de `formsRev`, en un pedido la base: un pedido
+// que trae su propia declaración (el del arnés, que no delega) no la hace valer. Y como la llamada se lee como texto,
+// cambiar una copia que delega pide la constancia del dueño (`analyze`): sacarle un control o dejar la delegación sin
+// efecto no entra sin firma.
+const FORMS = '.tycon/internal-forms.json';
+const DELEGATES = /\$\{?TCG\}?\/scripts\/ci\/run-base-controls\.sh"?\s+unnamed\b/;
+function delegatesUnnamed(root, rev, inv, hookText, formsRev = rev) {
+  const delegates = String(hookText || '').split('\n').some((raw) => {
+    const line = raw.trim();
+    return line && !line.startsWith('#') && !/^echo\b/.test(line) && DELEGATES.test(line);
+  });
+  if (!delegates) return false;
+  try {
+    const own = (JSON.parse(show(root, formsRev, FORMS) || '{}') || {}).own;
+    return !!own && typeof own === 'object' && !Array.isArray(own) && Object.prototype.hasOwnProperty.call(own, inv.hook);
+  } catch (_) { return false; }
+}
+
 // los guiones que llama el pre-commit: `$REPO_ROOT/…`, `$TCG/…` y `harness_publishing <guion>` (sin comentarios ni echo)
 function scriptsCalledByHook(text) {
   const out = new Set();
@@ -301,8 +325,11 @@ function resolveInventory(root, rev, inv) {
   return { rules, owner, closure, workflows, signOnChange };
 }
 
-/** Los problemas del inventario contra un árbol: guiones que faltan, controles sin entrada o que nada corre, datos sin clasificar. */
-function inventoryProblems(root, rev, inv) {
+/**
+ * Los problemas del inventario contra un árbol: guiones que faltan, controles sin entrada o que nada corre, datos sin
+ * clasificar. `formsRev`: de dónde sale la declaración de la copia que delega (en un pedido, la base).
+ */
+function inventoryProblems(root, rev, inv, formsRev = rev) {
   const problems = [];
   const exists = (p) => !!blobOf(root, rev, p);
   if (!Array.isArray(inv.passes) || !inv.passes.length) problems.push('el inventario no trae ninguna pasada («passes»): sin pasadas no corre ningún control');
@@ -339,9 +366,11 @@ function inventoryProblems(root, rev, inv) {
     else if (!listed.has(norm)) problems.push(`control sin inventariar: ${norm} (el destino del atajo ${p})`);
     else viaShim.add(norm);
   }
-  // un control del inventario que nada corre (ni el pre-commit, directo o por un atajo declarado, ni una pasada) sobra
+  // un control del inventario que nada corre (ni el pre-commit, directo o por un atajo declarado, ni una pasada) sobra;
+  // la copia del privado que delega en el gancho público (arriba) los corre todos
+  const delegated = delegatesUnnamed(root, rev, inv, hookText, formsRev);
   for (const c of inv.controls) {
-    if (!c.script || !exists(c.script) || c.script === SELF) continue;
+    if (!c.script || !exists(c.script) || c.script === SELF || delegated) continue;
     if (!called.has(c.script) && !viaShim.has(c.script) && !passText.includes(c.script)) problems.push(`ningún paso corre ${c.script}: lo llama el pre-commit o una pasada del inventario, o no es un control`);
   }
   const { rules, closure } = resolveInventory(root, rev, inv);
@@ -725,6 +754,11 @@ function analyze() {
   if (read.error) notRun(`el inventario de la base (${INVENTORY}) no se lee: ${read.error}`);
   const inv = read.inv;
   const { rules, owner, workflows, signOnChange } = resolveInventory(root, base, inv);
+  // la copia que delega en el gancho público (delegatesUnnamed): su llamada se lee como texto, así que cambiarla pide la
+  // constancia del dueño aunque la base y el pedido pasen. También la del pedido que empieza a delegar: con la
+  // declaración de la base, podría sumar una delegación que nunca corre y sacar un control en el mismo pedido
+  if (delegatesUnnamed(root, base, inv, show(root, base, inv.hook))
+    || delegatesUnnamed(root, tip, inv, show(root, tip, inv.hook), base)) signOnChange.add(inv.hook);
   const controlFiles = [...new Set([...rules, ...workflows.map((w) => w.path)])].sort();
   // un archivo que el pedido suma y que el código de un control carga en la punta también entra: la base no lo conoce,
   // y sin él la firma de un control que se afloja no lo ancla (se podría cambiar después con la firma valiendo). Lo que
@@ -779,7 +813,7 @@ function alarm(a) {
     const before = blobOf(a.root, from, w.path); const after = blobOf(a.root, to, w.path);
     if (before === after || approvedEntry(approvals, w.path, after || 'borrado')) continue;
     const last = trimNl(git(a.root, ['log', '-1', '--format=%H', `${from}..${to}`, '--', w.path], { allowFail: true }).stdout || '') || to;
-    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, firmalo desde una sesión, con tu click en el cuadro de opciones o tu «aprobado» (o en una terminal, con --terminal): bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
+    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, lo firma el dueño: desde una sesión se corre este comando solo y él lo aprueba con su click en el cuadro de opciones o su «aprobado» (o lo corre él en una terminal, con --terminal): bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
   }
   for (const p of [...a.rules].sort()) {
     if (!p.endsWith('.json') || blobOf(a.root, from, p) === blobOf(a.root, to, p)) continue;
@@ -817,6 +851,43 @@ function cmdCheckInventory() {
   process.exit(problems.length ? 1 : 0);
 }
 
+// La lista para la copia propia del pre-commit de otro repo: los guiones del inventario del arnés que su gancho público
+// llama y la copia no, uno por renglón. Uno que el arnés no trae frena (sale 1 y lo nombra): ese control no podría correr.
+function cmdUnnamed() {
+  const hookArg = opt('--hook'); const harnessArg = opt('--harness');
+  if (!hookArg || !harnessArg) usage(2);
+  const harness = path.resolve(harnessArg);
+  const pub = path.resolve(opt('--public-hook') || path.join(harness, '.githooks', 'pre-commit-checks'));
+  const read = (f, what) => { try { return fs.readFileSync(f, 'utf8'); } catch (e) { return notRun(`no pude leer ${what} (${f}): ${e.code || e.message}`); } };
+  const real = (f) => { try { return fs.realpathSync(f); } catch (_) { return path.resolve(f); } };
+  if (real(pub) === real(hookArg)) notRun(`el gancho público (${pub}) es la misma copia: no hay a quién pedirle los controles que no nombra`);
+  let inv;
+  try { inv = JSON.parse(read(path.join(harness, INVENTORY), 'el inventario del arnés')); } catch (e) { notRun(`el inventario del arnés no se lee: ${e.message}`); }
+  if (!inv || !Array.isArray(inv.controls)) notRun('el inventario del arnés no trae «controls»');
+  const listed = new Map(inv.controls.filter((c) => c && typeof c.script === 'string').map((c) => [c.script, c]));
+  // un gancho que llama al atajo de un nombre viejo (declarado en el mapa de renombres del arnés) llama a su destino
+  let renames = [];
+  try { renames = JSON.parse(fs.readFileSync(path.join(harness, 'scripts', 'lib', 'renames.json'), 'utf8')).entries || []; } catch (_) { renames = []; }
+  const control = (p) => {
+    if (listed.has(p)) return p;
+    let shim = null;
+    try { shim = fs.readFileSync(path.join(harness, p), 'utf8'); } catch (_) { return null; }
+    const target = shimTarget(shim);
+    return target && listed.has(target) && renames.some((e) => e && e.kind === 'file' && e.old === p && e.new === target) ? target : null;
+  };
+  const named = new Set([...scriptsCalledByHook(read(path.resolve(hookArg), 'la copia del pre-commit'))].map(control).filter(Boolean));
+  // se pide con el nombre que usa el gancho público, que es el que su filtro reconoce
+  const unnamed = [...scriptsCalledByHook(read(pub, 'el gancho público'))]
+    .filter((s) => { const c = control(s); return c && c !== SELF && !named.has(c); }).sort();
+  const missing = unnamed.filter((s) => !fs.existsSync(path.join(harness, s)) && (listed.get(s) || {}).optional !== true);
+  if (missing.length) {
+    for (const s of missing) console.log(`falta ${s} en el arnés (${harness}): ese control no podría correr`);
+    process.exit(1);
+  }
+  for (const s of unnamed) if (fs.existsSync(path.join(harness, s))) console.log(s);
+  process.exit(0);
+}
+
 function cmdRun() {
   const a = analyze();
   const outArg = opt('--out');
@@ -836,14 +907,14 @@ function cmdRun() {
     // guion que falta no se perdona (el pedido lo traería con cualquier contenido).
     const RENOMBRES = 'scripts/lib/renames.json';
     const soloElHook = a.changed.every((f) => f === a.inv.hook) && blobOf(a.root, a.mb, RENOMBRES) === blobOf(a.root, a.tip, RENOMBRES);
-    const sigueEnElPedido = new Set(tipRead.inv ? inventoryProblems(a.root, a.tip, a.inv) : baseProblems);
+    const sigueEnElPedido = new Set(tipRead.inv ? inventoryProblems(a.root, a.tip, a.inv, a.base) : baseProblems);
     const arreglados = soloElHook ? baseProblems.filter((p) => p.startsWith('ningún paso corre ') && !sigueEnElPedido.has(p)) : [];
     const quedan = baseProblems.filter((p) => !arreglados.includes(p));
     for (const p of arreglados) console.log(`· base-controls: inventario de la base — ${p} (el pedido lo arregla)`);
     for (const p of quedan) console.log(`❌ base-controls: inventario de la base — ${p}`);
     if (quedan.length) reasons.push('el inventario de la base no cuadra');
     if (tipRead.inv) {
-      const tipProblems = inventoryProblems(a.root, a.tip, tipRead.inv);
+      const tipProblems = inventoryProblems(a.root, a.tip, tipRead.inv, a.base);
       // los nombres y rutas salen del inventario del pedido: un salto de línea no arma una línea propia
       for (const p of tipProblems) console.log(`❌ base-controls: inventario del pedido — ${safe(p)}`);
       if (tipProblems.length) reasons.push('el inventario del pedido no cuadra');
@@ -1323,6 +1394,7 @@ try {
   else if (cmd === 'approve') cmdApprove();
   else if (cmd === 'classify') cmdClassify();
   else if (cmd === 'removed-approvals') cmdRemovedApprovals();
+  else if (cmd === 'unnamed') cmdUnnamed();
   else if (cmd === '-h' || cmd === '--help') usage(0);
   else usage(2);
 } catch (e) {

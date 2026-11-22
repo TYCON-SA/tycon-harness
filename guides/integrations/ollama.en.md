@@ -260,12 +260,13 @@ profiles.
 ## Warnings
 
 - **A model may try to write a control's escape.** In the lab, `gpt-oss` put `TYCON_SAFETY_OFF=1` in front of a
-  commit with `--no-verify`, although the order said not to look for another way. That no longer works: the escape of
-  the security control, and those of the production check (`TYCON_PROD_LINT`) and the names check (`TYCON_NEW_NAMES`),
-  only count if the person signs them in the permission prompt or in their own terminal
-  ([control guide](../safety-guard.md)). The tests control keeps its light escape: `beam` used it on its own, and it
-  only protects the machine's load. Codex has no permission prompt, so there the per-command escape is signed in the
-  terminal.
+  commit with `--no-verify`, although the order said not to look for another way. That no longer works:
+  `TYCON_SAFETY_OFF` and `TYCON_PROD_LINT` no longer turn anything off, even if someone signs them. The way out of the
+  security control is the emergency, which the person signs in their own terminal for one command; for the production
+  catalog check, the emergency with `--commit` ([control guide](../safety-guard.md)). The names escape
+  (`TYCON_NEW_NAMES`) is still there: it only counts if the person signs it in the permission prompt or in their own
+  terminal. The tests control keeps its light escape: `beam` used it on its own, and it only protects the machine's
+  load. Codex has no permission prompt, so there the names escape is signed in the terminal.
 - **A model may skip the steps of the stories skill.** In the lab, `gemma4` called `tycon-create-story` without
   following its steps, authorized the hand-written-story bypass by itself and wrote the story anyway. That no longer
   works: writing a story without the skill only counts if the person signs it with
