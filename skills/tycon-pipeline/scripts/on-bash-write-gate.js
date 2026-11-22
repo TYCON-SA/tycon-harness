@@ -2131,7 +2131,11 @@ function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = nul
     return false;
   };
   const out = [];
+  // una palabra repetida contesta lo mismo: se mira una vez, y una tira de `!|` no resuelve la misma ruta miles de veces
+  const vistas = new Set();
   for (const w of palabrasProfundas(cmd)) {
+    if (vistas.has(w)) continue;
+    vistas.add(w);
     // `enTexto`: la zona dice cómo se la nombra; el nombre suelto de la carpeta del estado no habla de ella
     if (porTexto && (enTexto ? enTexto(w) : nombraPorTexto(w))) { out.push(w); continue; }
     if (/\s/.test(w)) continue;
