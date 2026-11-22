@@ -331,14 +331,17 @@ function enComillasSimples(s, pos) {
  * La carpeta que crea un `$(mktemp …)` asignado a una variable, con sus `X` sin reemplazar (`/tmp/probe.XXXXXX`), o
  * null si no se sabe. Lo que importa es DÓNDE queda: la cantidad de carpetas es la misma que la del molde, así que un
  * `..` después se resuelve igual. Se lee sólo la forma sencilla: `-d`, `-q`, `-u`, `-t <prefijo>`, `-p <carpeta
- * absoluta>` y un molde. Sin molde, o con `-t`, va a `$TMPDIR` (o `/tmp`), y si el mismo comando asigna `TMPDIR`, no se
- * sabe. Un molde relativo queda relativo: cae en la carpeta del comando, como lo deja el shell.
+ * absoluta>` y un molde. Sin molde, o con `-t`, va a `$TMPDIR` (o `/tmp`); si el mismo comando asigna `TMPDIR` o `PATH`,
+ * o el `TMPDIR` del ambiente es relativo, no se sabe. Un molde relativo queda relativo: cae en la carpeta del comando,
+ * como lo deja el shell.
  */
 function carpetaDeMktemp(crudo, pos, asigs, env) {
   // entre comillas dobles el shell corre el `$(…)` igual; entre simples es texto (no llega acá: no coincide la forma)
   const t = String(crudo).trim();
   const m = /^\$\(\s*mktemp((?:\s+[A-Za-z0-9_./+@%:,-]+)*)\s*\)$/.exec(/^"[^"]*"$/.test(t) ? t.slice(1, -1) : t);
   if (!m) return null;
+  // un `PATH` asignado antes en el comando puede hacer de `mktemp` otro programa: no se sabe qué devuelve
+  if (asigs.some((x) => x.nombre === 'PATH' && x.pos < pos)) return null;
   const w = m[1].trim() ? m[1].trim().split(/\s+/) : [];
   let molde = null;
   let prefijo = null;
@@ -359,7 +362,9 @@ function carpetaDeMktemp(crudo, pos, asigs, env) {
   const tmpdir = () => {
     if (asigs.some((x) => x.nombre === 'TMPDIR' && x.pos < pos)) return null;
     const v = Object.prototype.hasOwnProperty.call(env, 'TMPDIR') ? String(env.TMPDIR || '') : '';
-    return (v && v.startsWith('/') ? v : '/tmp').replace(/\/+$/, '');
+    // un TMPDIR relativo mktemp lo usa relativo (cae en la carpeta del comando): no se sabe
+    if (v && !v.startsWith('/')) return null;
+    return (v || '/tmp').replace(/\/+$/, '') || null;
   };
   if (carpeta) return `${carpeta.replace(/\/+$/, '')}/${molde && !molde.includes('/') ? molde : 'tmp.XXXXXXXXXX'}`;
   if (prefijo !== null) { const b = tmpdir(); return b && !prefijo.includes('/') ? `${b}/${prefijo}.XXXXXXXX` : null; }

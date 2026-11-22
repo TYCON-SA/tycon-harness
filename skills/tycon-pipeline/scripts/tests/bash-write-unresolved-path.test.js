@@ -308,9 +308,13 @@ test('T11 CarpetaDeMktemp_SeSabeDondeQueda — la carpeta temporal pasa; un mold
   const subir = path.relative('/tmp/x.XXXX', path.join(repo, 'src', 'b.js'));
   assert.match(freno(`T=$(mktemp -d /tmp/x.XXXX); echo x > $T/${subir}`), FUERA);
   // un TMPDIR del mismo comando, una forma que no se lee o un mktemp con otro comando adentro: no se sabe
+  // y un PATH del mismo comando, que puede hacer de `mktemp` otro programa (hallazgo del pase adversarial)
   for (const c of ['TMPDIR=src; T=$(mktemp -d); echo x > $T/a.js', 'T=$(mktemp --tmpdir=src x); echo x > $T/a.js',
+    'PATH=/tmp/ev:$PATH; T=$(mktemp -d /tmp/x.XXXX); echo x > $T/a.js',
     'T=$(mktemp -d /tmp/a.XX; echo src); echo x > $T/a.js', "T='$(mktemp -d)'; echo x > $T/a.js"]) {
     assert.match(freno(c), SIN_RESOLVER, c);
   }
   assert.deepStrictEqual(expandirRuta('T=$(mktemp -d /tmp/p.XXXX); cat > $T/x', '$T/x'), { valor: '/tmp/p.XXXX/x', sinResolver: [] });
+  // un TMPDIR relativo en el ambiente: mktemp lo usa relativo, no `/tmp`
+  assert.deepStrictEqual(expandirRuta('T=$(mktemp -d); cat > $T/x', '$T/x', { env: { TMPDIR: 'src' } }).sinResolver, ['T']);
 });
