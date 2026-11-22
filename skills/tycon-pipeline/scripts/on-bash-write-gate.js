@@ -3000,7 +3000,8 @@ function comandosAnidados(comando, hondo = 0) {
   const sumar = (c) => { if (c && String(c).trim()) out.push(...comandosAnidados(String(c), hondo + 1)); };
   // entre comillas simples (fuera de las dobles) `$(…)` y las comillas invertidas son texto: no corren
   let sinSimples = '';
-  for (let i = 0, q = null, s = String(cmd); i < s.length; i++) {
+  let q = null;
+  for (let i = 0, s = String(cmd); i < s.length; i++) {
     const ch = s[i];
     if (q === "'") { sinSimples += ch === "'" ? (q = null, ch) : ' '; continue; }
     if (ch === '\\' && q !== "'") { sinSimples += ch + (s[i + 1] || ''); i++; continue; }
@@ -3008,6 +3009,8 @@ function comandosAnidados(comando, hondo = 0) {
     else if (ch === "'" && q !== '"') q = "'";
     sinSimples += ch;
   }
+  // una comilla simple que no cierra no deja leer el comando: no se sabe qué es texto, y se mira todo
+  if (q === "'") sinSimples = String(cmd);
   // un `\$(` o una comilla invertida escapada también son texto
   // se busca sobre el texto sin lo de comillas simples (mismo largo) y se toma del original: un `sh -c '…'` adentro de
   // un `$(…)` conserva su cuerpo
