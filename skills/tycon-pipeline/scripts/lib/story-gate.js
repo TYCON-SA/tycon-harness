@@ -624,6 +624,9 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  La escribe `bash scripts/ci/run-base-controls.sh approve`, con la firma de una persona: corré el comando que da',
       '  `pending`, solo y en su forma exacta, y ella lo aprueba en la ventana o en el cuadro; o lo corre en su terminal',
       '  con `--terminal`. Un reenvío (`--relayed-by`) no la da.',
+      '  Si sólo la NOMBRA un texto entre comillas (la descripción de un pedido, un mensaje): en un comando con un',
+      '  programa que puede correr un texto (gh, az, git, un shell…) ese texto cuenta como comando. Escribilo antes a',
+      '  un archivo (`cat > /tmp/cuerpo.md <<\'EOF\'`) y pasalo con `--body-file` (o `--description @/tmp/cuerpo.md`).',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'adversarial-skip-record') {

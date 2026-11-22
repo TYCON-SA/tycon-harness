@@ -113,6 +113,34 @@ test('T3 Lanzada_PreguntaDeFirma_TalCual @story-8.211 @ac-3', (t) => {
   assert.match(cupo.reason, /tal cual/);
 });
 
+// Nombrar o retirar a la coordinadora sólo lo aprueba un click en la pestaña que trabaja. Una coordinadora nueva que
+// abrió la vieja con `open` (15/11) no podía mostrar ese cuadro y quedaba sólo la terminal: ahora lo muestra en su
+// pestaña, donde lo contesta el dueño (o por control remoto). La terminal sigue como salida de emergencia.
+test('T27 BgGuard_SoloClickDeLaPropiaSesion_Pasa — el cuadro de nombrar la coordinadora se muestra en su pestaña', (t) => {
+  const toy = maquina(t);
+  const propia = decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Nombrás coordinadora a esta sesión? (firma designation-set · sesión ${LANZADA} · código 1a2b3c4d)`)));
+  assert.strictEqual(propia, null, JSON.stringify(propia));
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿La retirás? (firma designation-withdraw · sesión ${LANZADA} · código 1a2b3c4e)`))), null);
+  // el sello de otra sesión, una firma que no es de sólo click o una pregunta libre siguen yendo a la coordinadora
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Nombrás coordinadora? (firma designation-set · sesión ses-otra · código 1a2b3c4d)`))).decision, 'deny');
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Aprobás el plan? (firma plan-approval · sesión ${LANZADA} · código fabb4d5f)`))).decision, 'deny');
+  assert.strictEqual(decidir(toy, evento(LANZADA)).decision, 'deny');
+  // con otra pregunta en el mismo cuadro, o dos sellos en una, va a la coordinadora (lo encontró el pase adversarial)
+  const dos = { questions: [pregunta(`¿Nombrás coordinadora? (firma designation-set · sesión ${LANZADA} · código 1a2b3c4d)`).questions[0],
+    pregunta(`¿Aprobás el plan? (firma plan-approval · sesión ${LANZADA} · código fabb4d5f)`).questions[0]] };
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', dos)).decision, 'deny');
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Nombrás? (firma designation-set · sesión ${LANZADA} · código 1a2b3c4d) ¿Y el plan? (firma plan-approval · sesión ${LANZADA} · código fabb4d5f)`))).decision, 'deny');
+  // la negativa del freno de firmas lo dice: el cuadro va en esta pestaña, se avisa a la coordinadora y queda la terminal
+  const cuadro = oa.cuadroDe({ firma: 'designation-set', destino: LANZADA, que: 'nombrar coordinadora', siSaleMal: 'x', huella: '1a2b3c4d',
+    soloClick: true, descripciones: ['Esa sesión firma en tu nombre.', 'No cambia nada.'] });
+  const r = ow.negarSinVentana('esta sesión corre de fondo', ['designation-set'], LANZADA, cuadro, true, false, { name: 'Coordinadora', sid: COORD });
+  assert.match(r.texto, /mostrale AskUserQuestion/);
+  assert.match(r.texto, /SendMessage/);
+  assert.match(r.texto, /Coordinadora/);
+  assert.match(r.texto, /control remoto/);
+  assert.match(r.texto, /--terminal/);
+});
+
 test('T4 NoLanzada_Pasa @story-8.211 @ac-4', (t) => {
   const toy = maquina(t);
   sesion(toy, 'ses-interactiva', { nombre: 'Acme1', kind: 'interactive', startedAt: AT + 7000 });
@@ -267,10 +295,11 @@ test('T10 FirmaEnLanzada_TextoALaCoordinadora @story-8.211 @ac-12', (t) => {
   const deHoy = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, false, null);
   assert.match(deHoy.texto, /mostrale AskUserQuestion/);
   const cupo = { ...cuadro, soloClick: true, descripciones: ['sigue', 'no sigue'] };
+  // una de sólo click se muestra en la pestaña que trabaja, y la coordinadora se entera (T27)
   const soloClick = ow.negarSinVentana('pasar el tope', ['adhoc-lane:sobre-cupo'], 's', cupo, true, false, coord);
   assert.match(soloClick.texto, /terminal/);
   assert.match(soloClick.texto, /Coordinadora/);
-  assert.doesNotMatch(soloClick.texto, /mostrale AskUserQuestion/);
+  assert.match(soloClick.texto, /mostrale AskUserQuestion/);
 });
 
 test('T11 ClickEnLaCoordinadora_SigueValiendo @story-8.211 @ac-13', (t) => {
