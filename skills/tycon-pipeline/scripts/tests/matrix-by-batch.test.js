@@ -391,6 +391,37 @@ test('T22 PreCommit_BatchToDone_ReadByName — la tanda que pasa a done se lee p
   assert.match(faltan(r), /#2\b/, salida(r));
 });
 
+test('T25 PreCommit_DebutBlockedCriteria_NotLost — los criterios de la tanda bloqueada que no se midieron en el estreno se miden después', async (t) => {
+  // el estreno, commiteado: la primera tanda hecha con su evidencia; la segunda y la tercera bloqueadas
+  const estrenada = () => {
+    const E = entorno();
+    sinTandasEnHead(E);
+    E.humo([1]);
+    const r = commitear(E, estreno(), 's-t25');
+    assert.strictEqual(r.status, 0, salida(r));
+    E.git('commit', '-qm', 'el estreno de las tandas');
+    return E;
+  };
+  // la segunda tanda, ya desbloqueada y hecha: su criterio pasa de acs_pending a acs
+  const conBHecha = (o = {}) => estreno(o).replace('    status: blocked\n    acs_pending: [2]', '    status: done\n    acs: [2]');
+  await t.test('la segunda tanda pasa a done más adelante: se mide su criterio y frena sin evidencia', () => {
+    const r = commitear(estrenada(), conBHecha(), 's-t25a');
+    assert.notStrictEqual(r.status, 0, salida(r));
+    assert.match(salida(r), new RegExp(`cierra la tanda ${B}`), salida(r));
+    assert.match(faltan(r), /#2\b/, salida(r));
+  });
+  await t.test('la historia no pasa a done con la segunda tanda bloqueada', () => {
+    const r = commitear(estrenada(), estreno({ status: 'done' }), 's-t25b');
+    assert.notStrictEqual(r.status, 0, salida(r));
+    assert.match(faltan(r), /#2\b/, salida(r));
+  });
+  await t.test('la historia no pasa a done con la segunda tanda hecha sin evidencia', () => {
+    const r = commitear(estrenada(), conBHecha({ status: 'done' }), 's-t25c');
+    assert.notStrictEqual(r.status, 0, salida(r));
+    assert.match(faltan(r), /#2\b/, salida(r));
+  });
+});
+
 // La historia con otro bloque de tandas en lugar del suyo (el texto del bloque, tal cual).
 const conBloque = (bloque) => historia().replace(/\npipelines:\n[\s\S]*?\n---\n# Story/, `\n${bloque}---\n# Story`);
 const tanda = (nombre, estado, ac) => `  - name: ${nombre}\n    status: ${estado}\n    acs: [${ac}]\n`;
@@ -422,6 +453,41 @@ test('T23 PreCommit_DoubtfulBatchesBlock_MeasuresAll — ante la duda se mide: u
       assert.match(salida(r), /se miden todas las tandas/, salida(r));
     });
   }
+});
+
+// La primera tanda con un `status` anidado (`gate:` y debajo su `status:`), antes o después del suyo.
+const conAnidado = (propio, anidado, anidadoPrimero = false) => {
+  const gate = `    gate:\n      status: ${anidado}\n`;
+  const st = `    status: ${propio}\n`;
+  return conBloque(`pipelines:\n  - name: ${A}\n${anidadoPrimero ? gate + st : st + gate}    acs: [1]\n${tanda(B, 'pending', 2)}${tanda(C, 'pending', 3)}`);
+};
+
+test('T26 PreCommit_NestedStatus_DoesNotOverride — el estado de una tanda es el suyo: uno anidado no lo pisa', async (t) => {
+  const conHead = (contenido) => {
+    const E = entorno();
+    fs.writeFileSync(E.story, contenido);
+    E.git('commit', '-qam', 'la historia con un estado anidado');
+    E.humo([3]);
+    return E;
+  };
+  for (const [caso, anidadoPrimero] of [['el anidado va después del propio', false], ['el anidado va antes del propio', true]]) {
+    await t.test(`la tanda pasa a done y el anidado vuelve a in-progress (${caso}): se mide y frena`, () => {
+      const r = commitear(conHead(conAnidado('in-progress', 'done', anidadoPrimero)), conAnidado('done', 'in-progress', anidadoPrimero), 's-t26a');
+      assert.notStrictEqual(r.status, 0, salida(r));
+      assert.match(salida(r), new RegExp(`cierra la tanda ${A}`), salida(r));
+      assert.match(faltan(r), /#1\b/, salida(r));
+    });
+  }
+  await t.test('la tanda vuelve a in-progress y el anidado pasa a done: no se cierra nada', () => {
+    const r = commitear(conHead(conAnidado('done', 'in-progress')), conAnidado('in-progress', 'done'), 's-t26c');
+    assert.strictEqual(r.status, 0, salida(r));
+  });
+  await t.test('dos estados propios en la misma tanda: la lectura es dudosa y se miden todas', () => {
+    const doble = conBloque(`pipelines:\n  - name: ${A}\n    status: done\n    status: pending\n    acs: [1]\n${tanda(B, 'pending', 2)}`);
+    const r = commitear(conHead(conBloque(`pipelines:\n${tanda(A, 'pending', 1)}${tanda(B, 'pending', 2)}`)), doble, 's-t26d');
+    assert.notStrictEqual(r.status, 0, salida(r));
+    assert.match(salida(r), /más de un estado propio[^\n]*se miden todas las tandas/, salida(r));
+  });
 });
 
 test('T24 PreCommit_DoubtfulBlockUnchanged_Passes — sin una tanda nueva en done, el bloque dudoso no pide nada', () => {

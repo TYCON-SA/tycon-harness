@@ -526,6 +526,9 @@ function parsePipelinesBlock(specContent) {
   let current = null;
   // la lista que se está leyendo de la entrada (`files:` o `sensible:` sin valor en el renglón): sus ítems no son pendientes
   let lista = null;
+  // la sangría de las claves directas de cada tanda: un `status` anidado más adentro (`gate:` y debajo `status:`) no es
+  // el de la tanda y no lo pisa
+  const sangriaDeClaves = new Map();
   const limpio = (s) => String(s).replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
   const enLinea = (v) => v.replace(/^\[|\]$/g, '').split(',').map(limpio).filter(Boolean);
   for (let i = start + 1; i < lines.length; i++) {
@@ -537,11 +540,13 @@ function parsePipelinesBlock(specContent) {
     // (`- texto`) para no tragarse el `- name:` como un ítem pendiente.
     const listNameM = line.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
     const nueva = (name) => ({ name, status: null, blockedBy: null, acs: [], acsPending: [], tasks: [], tasksPending: [], tests: [], testsPending: [], pendingItems: [] });
-    if (listNameM) { current = nueva(listNameM[1]); out.push(current); lista = null; continue; }
+    if (listNameM) { current = nueva(listNameM[1]); sangriaDeClaves.set(current, line.indexOf('name')); out.push(current); lista = null; continue; }
     // (b) MAPA: `  X:` (indent 2, valor vacío) abre una entrada.
     const mapNameM = line.match(/^\s{2}([\w-]+)\s*:\s*$/);
     if (mapNameM && indent === 2) { current = nueva(mapNameM[1]); out.push(current); lista = null; continue; }
     if (!current) continue;
+    // en el mapa, la primera clave de la tanda (no un comentario) fija la sangría de sus claves directas
+    if (!sangriaDeClaves.has(current) && !/^\s*#/.test(line)) sangriaDeClaves.set(current, indent);
     // `files:` y `sensible:` de la parte (8.168): en el renglón (`[a, b]` o un valor) o como lista debajo
     const parteM = line.match(/^(\s+)(files|sensible)\s*:\s*(.*?)\s*$/);
     if (parteM) {
@@ -564,7 +569,15 @@ function parsePipelinesBlock(specContent) {
       lista = null;
     }
     const statusM = line.match(/^\s+status\s*:\s*["']?([\w-]+)/);
-    if (statusM) { current.status = statusM[1]; continue; }
+    if (statusM) {
+      // sólo el estado propio de la tanda; uno anidado se saltea, y un segundo estado propio queda marcado
+      // (`statusRepeated`): quien decide un cierre no sabe cuál de los dos vale
+      if (indent === sangriaDeClaves.get(current)) {
+        if (current.status !== null) current.statusRepeated = true;
+        current.status = statusM[1];
+      }
+      continue;
+    }
     // `title`: el nombre de la tanda que dice /office. Entre comillas se toma entero; sin comillas, sin el comentario.
     const titleM = line.match(/^\s+title\s*:\s*(.*?)\s*$/);
     if (titleM) {
@@ -639,6 +652,7 @@ function readBatches(content) {
   out.region = region.join('\n');
   if (!batches.length) out.doubts.push('el bloque pipelines está y el lector no lee ninguna tanda');
   if (batches.some((t) => t.status == null)) out.doubts.push('una tanda sin estado legible');
+  if (batches.some((t) => t.statusRepeated)) out.doubts.push('una tanda con más de un estado propio');
   const nombres = batches.map((t) => t.name);
   const repetidos = [...new Set(nombres.filter((n, i) => nombres.indexOf(n) !== i))];
   if (repetidos.length) out.doubts.push(`nombres de tanda repetidos (${repetidos.join(', ')})`);

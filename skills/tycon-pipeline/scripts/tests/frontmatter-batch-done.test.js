@@ -122,3 +122,26 @@ test('T7 FrontmatterWrite_DoubtfulBlockUnchanged_Passes — sin una tanda nueva 
   const antes = conBloque(DUDOSOS[0][2]);
   pasa(escribir(antes, antes.replace('title: "paraguas"', 'title: "paraguas, con otro título"')));
 });
+
+// La primera tanda con un `status` anidado (`gate:` y debajo su `status:`), antes o después del suyo.
+const conAnidado = (propio, anidado, anidadoPrimero = false) => {
+  const gate = `    gate:\n      status: ${anidado}\n`;
+  const st = `    status: ${propio}\n`;
+  return conBloque(`pipelines:\n  - name: A\n${anidadoPrimero ? gate + st : st + gate}    acs: [1]\n${tanda('B', 'pending', 2)}`);
+};
+
+test('T8 FrontmatterWrite_NestedStatus_DoesNotOverride — el estado de una tanda es el suyo: uno anidado no lo pisa', async (t) => {
+  for (const [caso, anidadoPrimero] of [['el anidado va después del propio', false], ['el anidado va antes del propio', true]]) {
+    await t.test(`la tanda pasa a done y el anidado vuelve a in-progress (${caso}): frena`, () => {
+      const r = escribir(conAnidado('in-progress', 'done', anidadoPrimero), conAnidado('done', 'in-progress', anidadoPrimero));
+      assert.strictEqual(r.status, 2, salida(r));
+    });
+  }
+  await t.test('la tanda vuelve a in-progress y el anidado pasa a done: pasa', () => {
+    pasa(escribir(conAnidado('done', 'in-progress'), conAnidado('in-progress', 'done')));
+  });
+  await t.test('dos estados propios en la misma tanda: frena', () => {
+    const r = escribir(conBloque(`pipelines:\n${tanda('A', 'pending', 1)}`), conBloque('pipelines:\n  - name: A\n    status: done\n    status: pending\n    acs: [1]\n'));
+    assert.strictEqual(r.status, 2, salida(r));
+  });
+});
