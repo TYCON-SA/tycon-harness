@@ -200,7 +200,9 @@ Antes de cada commit, **compila sin ejecutar** cada migración SQL nueva o modif
 
 **Lo que firma siempre.** Aflojar pide la constancia porque la pasada de la base frena. Con el catálogo de las firmas
 (`signatures.js`), el de las variables que piden una (`env-switches.json` y su lector), las firmas de trámite
-(`automatic-signing.js`) y la marca del dueño ausente (`owner-away.js`) no frena ninguna: el control de los niveles
+(`automatic-signing.js`), la marca del dueño ausente (`owner-away.js`) y las claves que vale sólo el perfil del equipo
+(`profile-only.js`, sacadas de `tycon-config.js` a un archivo chico porque ése se toca en casi cada pedido) no frena
+ninguna: el control de los niveles
 compara el perfil con el catálogo de la misma versión, y lo que decide es el freno de cada máquina. Lo mismo la huella
 de una constancia (`control-change-prints.js`) y lo que decide si hay una terminal de verdad (`runtime-waiver.js`,
 `home-command.js`). Por qué: un pedido que dejaba de pedir una firma (la variable del pase adversarial)
