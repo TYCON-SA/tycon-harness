@@ -7,6 +7,7 @@
 //   node scripts/tests/office-live.smoke.js        sale 0 si todo pasó; 1 si algo no; 2 si no hay navegador
 //   node scripts/tests/office-live.smoke.js --labels    sólo las etiquetas de personas cerca (8.234, AC 12)
 //   node scripts/tests/office-live.smoke.js --racks     sólo los racks con la memoria y el procesador de la máquina
+//   node scripts/tests/office-live.smoke.js --owner-needs   sólo la respuesta a una espera desde «Lo que te necesita» (8.234, AC 36)
 //
 // La oficina corre con una HOME de juguete; el navegador se busca en la carpeta personal de quien lo corre.
 // stable-data: las sesiones de juguete se fechan con el reloj real a propósito, porque la oficina viva compara contra
@@ -751,6 +752,76 @@ async function racksLoad(playwright) {
   }
 }
 
+// La respuesta a una espera desde «Lo que te necesita» (8.234, AC 36), en la oficina de verdad: una sesión anota con
+// `marker.js doing --waiting-for` que espera al dueño, la persona le contesta en el campo de su renglón, la sesión de juguete
+// la toma con la biblioteca real y `office-message.js verify` la da por buena; cuando la sesión deja de esperar, el renglón
+// sale. Una espera a otra sesión no aparece. Necesita `ps` (la hora de arranque del vigilante de la sesión).
+async function ownerNeedsAnswer(playwright) {
+  const om = require(path.join(ROOT, 'scripts', 'lib', 'office-messages.js'));
+  const MARKER = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const VERIFY = path.join(ROOT, 'scripts', 'tools', 'office-message.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-8234m-'));
+  const sdir = stateDir(home);
+  for (const d of ['active', 'adhoc', 'doing', 'sessions']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
+  const sessions = path.join(claudeDir(home), 'sessions');
+  const projects = path.join(claudeDir(home), 'projects', 'toy');
+  fs.mkdirSync(sessions, { recursive: true });
+  fs.mkdirSync(projects, { recursive: true });
+  const now = new Date().toISOString();
+  for (const [sid, name] of [['s-e', 'Enzo'], ['s-c', 'Casco']]) {
+    fs.writeFileSync(path.join(sessions, `${sid}.json`), JSON.stringify({ pid: process.pid, sessionId: sid, name, status: 'idle', statusUpdatedAt: Date.now() }));
+    fs.writeFileSync(path.join(projects, `${sid}.jsonl`), [{ type: 'user', timestamp: now, origin: { kind: 'human' }, message: { role: 'user', content: `Hola ${name}` } },
+      { type: 'assistant', timestamp: now, message: { content: [{ type: 'text', text: 'Hola.' }] } }].map((l) => `${JSON.stringify(l)}\n`).join(''));
+  }
+  const env = (extra = {}) => {
+    const e = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0', TYCON_OFFICE_TEST: '1', TYCON_OFFICE_MESSAGES: '', TYCON_OFFICE_MESSAGE_DEADLINE_MS: '4000', ...extra };
+    for (const k of ['TYCON_HOME', 'TYCON_STATE_DIR', 'CLAUDE_CODE_SESSION_ID']) if (!(k in extra)) delete e[k];
+    return e;
+  };
+  const marker = (sid, args) => {
+    const r = spawnSync(process.execPath, [MARKER, ...args], { input: '', env: env({ CLAUDE_CODE_SESSION_ID: sid }), encoding: 'utf8', timeout: 30000 });
+    check(r.status === 0, `marker.js ${args[0]} (${sid}) salió ${r.status}`);
+  };
+  marker('s-e', ['doing', 'esperando la elección', '--waiting-for', 'que el dueño elija la A o la B (recomiendo: la A)']);
+  marker('s-c', ['doing', 'esperando a Enzo', '--waiting-for', 'que Enzo termine']);
+  fs.mkdirSync(om.paths(sdir).watchers, { recursive: true });
+  fs.writeFileSync(om.paths(sdir).watcher('s-e'), JSON.stringify({ pid: process.pid, started: om.processStart(process.pid) }));
+  const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env: env(), encoding: 'utf8', timeout: 20000 });
+  const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
+  check(open.status === 0 && Boolean(url), 'M36: la oficina viva arrancó');
+  if (!url) return;
+  const lock = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
+  let tomado = null;
+  const tomar = setInterval(() => { const got = om.take(sdir, 's-e'); if (got && got.estado === 'recibido' && !tomado) tomado = got; }, 300);
+  const browser = await playwright.chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    page.on('pageerror', (e) => console.log(`error de la página: ${e.message}`));
+    await page.goto(url);
+    await page.waitForSelector('#necesita:not([hidden])', { timeout: 45000 });
+    const renglones = () => page.evaluate(() => [...document.querySelectorAll('#necesitaLista .necesita-item')].map((li) => li.innerText));
+    check((await renglones()).length === 1 && /^Espera · Enzo: que el dueño elija/.test((await renglones())[0]), `M36: sólo la espera al dueño, no la que espera a otra sesión (${JSON.stringify(await renglones())})`);
+    const enzo = page.locator('#necesitaLista .necesita-item[data-clase="espera"]');
+    await enzo.locator('textarea').fill('la A');
+    await enzo.locator('button', { hasText: 'Mandar' }).click();
+    await page.waitForFunction(() => { const e = document.querySelector('#necesitaLista .estadoMensaje'); return e && e.textContent === 'Lo recibió.'; }, null, { timeout: 15000 })
+      .then(() => check(true, 'M36: la página dice «Lo recibió.»'), () => check(false, 'M36: la página no llegó a «Lo recibió.»'));
+    const id = tomado && tomado.id;
+    const v = spawnSync(process.execPath, [VERIFY, 'verify', String(id)], { input: '', env: env({ CLAUDE_CODE_SESSION_ID: 's-e' }), encoding: 'utf8' });
+    check(Boolean(id) && v.status === 0 && /\nla A\n/.test(v.stdout), `M36: office-message.js verify lo da por bueno para Enzo y devuelve lo escrito (${v.status})`);
+    const otra = spawnSync(process.execPath, [VERIFY, 'verify', String(id)], { input: '', env: env({ CLAUDE_CODE_SESSION_ID: 's-c' }), encoding: 'utf8' });
+    check(otra.status !== 0, 'M36: para otra sesión, verify no lo da por bueno');
+    marker('s-e', ['doing', 'sigo con la A', '--until', '23:59']);
+    const hasta = Date.now() + 30000;
+    while (Date.now() < hasta && (await renglones()).some((t) => /^Espera · Enzo/.test(t))) await sleep(400);
+    check(!(await renglones()).some((t) => /^Espera · Enzo/.test(t)), 'M36: cuando la sesión deja de esperar, su renglón sale');
+  } finally {
+    clearInterval(tomar);
+    await browser.close();
+    try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
+  }
+}
+
 async function main() {
   const playwright = PINNED_PW.load();
   if (!playwright) { console.error(`sin navegador: ${PINNED_PW.locate().why}`); return 2; }
@@ -759,6 +830,11 @@ async function main() {
     await projectPending(playwright);
     await noProjectStories(playwright);
     console.log(fails.length ? `8.185: FALLA (${fails.length})` : '8.185: OK');
+    return fails.length ? 1 : 0;
+  }
+  if (process.argv.includes('--owner-needs')) {
+    await ownerNeedsAnswer(playwright);
+    console.log(fails.length ? `M36 (8.234): FALLA (${fails.length})` : 'M36 (8.234): OK');
     return fails.length ? 1 : 0;
   }
   if (process.argv.includes('--messages')) {
