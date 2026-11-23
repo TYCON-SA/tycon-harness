@@ -153,7 +153,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   el primer Edit/Write de código si no se tocó ningún test (story con tabla `### Tests`, marker activo,
   implementación abierta); `implement` bloquea si el primer test es posterior al primer código (evidencia:
   `marker.fileEvents` + `file-events/<sid>.jsonl`). Sin código → pasa; código sin tests → avisa. Escape
-  único: `marker.js set-flag atddBypass true --reason "<por qué>"`, con firma del dueño por ejecución
+  único: `marker.js set-flag atddBypass true --reason "<por qué>"`, firmado por ejecución
   (`sign-atdd-skip`). Fuera del pipeline, `on-pre-commit.js` avisa
   (`.tycon/atdd-gate` con `block` para frenar). La guía de QA se pide sólo si hay superficie operable a
   mano (`qa_guide: auto|off|always`).
@@ -183,7 +183,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **ATDD fuera del pipeline** (I.i.b · I.i.c + I.i.c.1 · I.i.d + I.i.d.1 · I.i.e): `on-pre-commit.js` avisa inversión test/código por eventos del repo
   (`TYCON_ATDD_COMMIT_GATE=block|off`); las stories se descubren por frontmatter (`lib/story-discovery.js`,
   `TYCON_STORY_SCAN_BUDGET_MS`; diagnóstico `node lib/story-discovery.js --doctor [--budget <ms>]`); aviso de guía de QA faltante o vieja; `lib/story-evidence-gate.js` avisa ACs
-  sin correr. Portón preventivo: `TYCON_ATDD_PREEDIT_GATE=off`. Escape del cierre: `complete-step implement --no-atdd` (misma firma).
+  sin correr. Portón preventivo: `TYCON_ATDD_PREEDIT_GATE=off`. Al cerrar: `complete-step implement --no-atdd` (misma firma).
 - **marker.js**: `get` · `set` · `start-step <paso>` · `complete-step <paso>` · `start-warning` · `run-check <n> -- <cmd>` ·
   `set-check <n> green --manual` · `set-flag <f> true` · `set-autonomous true` ·
   `snapshot-iter N` · `mark-adversarial-launched <runId> 4` · `mark-adversarial-result` ·
