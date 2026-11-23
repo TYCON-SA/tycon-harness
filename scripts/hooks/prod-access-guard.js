@@ -2524,6 +2524,31 @@ function escrituraProtegida(cmd, payload) {
     return i >= argsM.length || marcado(argsM[i]);
   };
 
+  /**
+   * ¿Lo que pasa xargs le llega a `p` (un programa de POR_XARGS) en el lugar del programa? Con un `-c`, `-e`, `-r`,
+   * `--eval` o `eval`, si su valor lleva la marca o falta; si no, si la primera palabra que no es opción falta o lleva la
+   * marca (un guion escrito recibe lo que llega como argumentos). awk, con programaPorLaEntrada. A los que corren un
+   * programa (npx, npm exec, uv run…) les llega si la marca está en cualquier lugar o termina en un `-c` o `-e` sin valor.
+   */
+  const llegaAlPrograma = (p, argsM) => {
+    const marcado = (raw) => String(raw).includes('${__XARGS_MARCA__}');
+    const flagDePrograma = /^(?:-c|-e|-E|-r|-p|--eval|--print|-command|eval)$/i;
+    if (/^[gmn]?awk$/.test(p)) return programaPorLaEntrada(argsM);
+    if (/^(?:npx|pnpx|bunx|uvx|npm|pnpm|yarn|uv|pipx|pyenv|mise|conda|poetry|pipenv)$/.test(p)) {
+      return !argsM.length || argsM.some(marcado) || flagDePrograma.test(pal(argsM[argsM.length - 1]));
+    }
+    let i = 0;
+    while (i < argsM.length) {
+      const w = pal(argsM[i]);
+      if (flagDePrograma.test(w)) return i + 1 >= argsM.length || marcado(argsM[i + 1]);
+      if (/^-c./.test(w)) return marcado(argsM[i]);
+      if (w === '--') { i++; break; }
+      if (/^-/.test(w)) { i++; continue; }
+      break;
+    }
+    return i >= argsM.length || marcado(argsM[i]);
+  };
+
   /** `xargs`/`parallel` con un escritor: escribe sobre lo que nombra cualquier segmento anterior de su tubería (AC 13a). */
   const juzgarXargs = (args, cwd, previos, pp, prof, quien) => {
     let k = 0; let marca = null;
@@ -2567,11 +2592,17 @@ function escrituraProtegida(cmd, payload) {
       if (red.op === '<<<') entradas.push({ crudos: [{ raw: red.target, opts: { hereString: true } }], cwd });
       else if (red.op === '<') { const t = processSubstitutionText(red.target); if (t !== null) entradas.push(...pipeEntriesOf(t, cwd)); }
     }
-    // A un programa de POR_XARGS, lo que llega puede ser su programa (`xargs -I{} python3 -c {}`, o `-c` sin programa): un
-    // texto que nombra un estado de producción, escrito o en una variable de valor conocido, se juzga como el programa
-    // escrito en el comando. Los heredocs los mira programaPorHeredoc.
+    // A un programa de POR_XARGS, lo que llega en el lugar del programa (`xargs -I{} python3 -c {}`, o `-c` sin programa) es
+    // su programa: un texto que nombra un estado de producción, escrito o en una variable de valor conocido, se juzga como
+    // el programa escrito en el comando. También un heredoc del comando, que le puede llegar por la tubería, desde un grupo
+    // o un subshell, o a un `bash -c '… xargs …'`: frena de más si el heredoc no tiene relación con el xargs.
+    const llega = INTERPRETE_POR_XARGS.test(p) && llegaAlPrograma(p, subArgsM);
     const mencionEnLoQueLlega = () => {
-      if (!INTERPRETE_POR_XARGS.test(p)) return null;
+      if (!llega) return null;
+      for (const h of sp.heredocs(cmd)) {
+        const m = MENCION_PROTEGIDA.exec(String(h.cuerpo || ''));
+        if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra un heredoc que puede llegarle a «${p}» como programa por xargs).` };
+      }
       for (const e of entradas) {
         if (e.prog === 'find') continue;
         for (const c of e.crudos) {
@@ -2584,7 +2615,7 @@ function escrituraProtegida(cmd, payload) {
     };
     // Un lector (awk sin -i) no escribe los archivos que le llegan, pero lo que le llega en el lugar del programa (la marca
     // de -I, o sin programa escrito) es su programa. Con el programa escrito (`xargs awk '{print}'`), son archivos que lee.
-    if (esLector(p, subArgs)) return programaPorLaEntrada(subArgsM) ? mencionEnLoQueLlega() : null;
+    if (esLector(p, subArgs)) return mencionEnLoQueLlega();
     // `xargs sh -c '…'`: el texto corre como shell (#8)
     const vEj = judgeShellText(p, subArgsM, cwd, prof, {}); if (vEj) return vEj;
     for (let x = 0; x < subArgs.length; x++) {
@@ -2928,20 +2959,16 @@ function programaPorHeredoc(cmd, sp, prof = 0) {
     const m = MENCION_PROTEGIDA.exec(String(p.cuerpo || ''));
     if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra el programa que el intérprete recibe por su entrada).` };
   }
-  // A un `xargs` o un `parallel` que corre un intérprete, un heredoc puede ser lo que le llega, y entonces su programa:
-  // en su renglón (`xargs -I{} python3 -c {} <<EOF`), por la tubería (`cat <<EOF | xargs …`), desde un grupo o un
-  // subshell, en un renglón continuado, por una función que corre el xargs o por un `bash -c '… xargs …'`. Se mira el
-  // comando entero sin los cuerpos (un mensaje de commit que habla de xargs no corre ninguno): si en alguna parte hay un
-  // xargs o un parallel con un intérprete después, el heredoc que nombra un estado de producción se juzga como su
-  // programa. Frena de más el comando que tiene las dos cosas sin relación.
-  // Con el renglón del heredoc continuado con una barra, para el shell el cuerpo empieza después del renglón lógico, y
-  // shell-parse cuenta los renglones continuados como cuerpo: se suman al texto que se mira.
+  // El heredoc que le llega a un xargs con un intérprete lo juzga juzgarXargs, que sabe si le llega en el lugar del
+  // programa. Salvo con el renglón del heredoc continuado con una barra (`cat <<EOF | \\` y el xargs abajo): para el shell
+  // el cuerpo empieza después del renglón lógico, shell-parse cuenta los renglones continuados como cuerpo, y ese xargs no
+  // se juzga. Esos renglones se miran acá: un xargs o un parallel con un intérprete en ellos juzga el heredoc como su programa.
   const continuados = sp.heredocs(cmd).filter((h) => /\\\s*$/.test(String(h.resto || ''))).map((h) => {
     const renglones = String(h.cuerpo || '').split('\n');
     const k = renglones.findIndex((r) => !/\\\s*$/.test(r));
     return renglones.slice(0, k < 0 ? renglones.length : k + 1).join('\n');
   });
-  const x = XARGS_CON_INTERPRETE.exec([sp.sinHeredocs(cmd), ...continuados].join('\n'));
+  const x = continuados.length ? XARGS_CON_INTERPRETE.exec(continuados.join('\n')) : null;
   if (x) {
     for (const h of sp.heredocs(cmd)) {
       const m = MENCION_PROTEGIDA.exec(String(h.cuerpo || ''));

@@ -444,6 +444,20 @@ pasa  "T21at Xargs_AwkConElProgramaEscritoLeeLosEstados_Pasa" "ls $P/$NI | xargs
 frena "T21au Xargs_ProgramaParaPnpmExec_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} pnpm exec node -e {}"
 frena "T21av Xargs_ProgramaParaIpython_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -I{} ipython -c {}"
 frena "T21aw Gxargs_ArmaUnBorradoDeAzure_Frena" "echo delete | gxargs az group"
+# T21ax a T21az · sólo cuenta lo que llega en el lugar del programa: una nota o un mensaje de commit que nombra un estado,
+# junto a un xargs cuyo programa no lo toma de la entrada (grep, npm test, un guion de Python), pasan.
+pasa  "T21ax Heredoc_ConUnXargsGrepAparte_Pasa" "git commit -F - <<'EOF'
+fix $P/$NI
+EOF
+ls | xargs grep -n node"
+pasa  "T21ay Heredoc_ConUnXargsNpmTestAparte_Pasa" "cat > /tmp/nota.md <<'EOF'
+$P/$NI no se toca
+EOF
+ls | xargs npm test"
+pasa  "T21az Heredoc_ConUnXargsAUnGuionDePython_Pasa" "cat > /tmp/nota.md <<'EOF'
+$P/$NI
+EOF
+ls | xargs -I{} python3 script.py {}"
 pasa  "T21ap Xargs_ProgramaParaBunQueNoNombraNada_Pasa" "echo 'console.log(1)' | xargs -I{} bun -e {}"
 pasa  "T21aa Xargs_HeredocDesdeUnGrupoQueNoNombraNada_Pasa" "{ cat <<'EOF'
 print(1)
