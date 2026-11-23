@@ -113,6 +113,15 @@ test('AutomaticSigning_ControlPrevioNiega_VaALaPersonaConElArbol', (t) => {
   assert.match(n.texto, /consola de fondo/);
 });
 
+test('T108n AutomaticSigning_ChequeoSinRespuesta_NoSaleSola_VaALaVentana', (t) => {
+  // 🔴 rojo si: sin tiempo para el chequeo del guion (el freno de seguridad estaba por cortar), la firma sale sola sin él
+  const casa = casaNueva(t);
+  const r = pedir(casa, PLAN, { tramite: DE_TRAMITE, comprobar: () => ({ sinRespuesta: 'no quedó tiempo para el chequeo del guion antes de que corte el freno' }) });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.notStrictEqual(r.via, 'automatica');
+  assert.match(r.texto, /No salió como firma de trámite: no quedó tiempo para el chequeo/);
+});
+
 test('AutomaticSigning_NoTramite_NoSaleSola', (t) => {
   assert.strictEqual(pedir(casaNueva(t), PLAN, { tramite: () => ({ ok: false, motivo: 'el perfil no la lista' }) }).decision, 'ask');
   const e = pedir(casaNueva(t), `node ${MARKER} set-check dod green --force-manual`, { escapes: ['escape:force-manual'], tramite: () => ({ ok: false, motivo: null }) });

@@ -311,7 +311,12 @@ ow_gate() {
   lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/owner-window.js" || lib=""
   if [[ -n "$lib" && -f "$lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
     for k in "$@"; do args+=(--escape "$k"); done
-    out="$(printf '%s' "$INPUT" | "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
+    # el segundo en que corta el reloj de este freno, para que el chequeo del guion antes de la ventana use sólo lo que
+    # queda (owner-window.js): SECONDS cuenta desde que arrancó el freno, antes que el reloj, y se resta uno por el redondeo
+    local tope=""
+    tope="$(date +%s 2>/dev/null)" || tope=""
+    if [[ "$tope" =~ ^[0-9]+$ ]]; then tope=$(( tope + SG_CLOCK_S - SECONDS - 1 )); else tope=""; fi
+    out="$(printf '%s' "$INPUT" | TYCON_SAFETY_DEADLINE_S="$tope" "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
     while IFS= read -r k; do
       case "$k" in
         decision=*) OW_DECISION="${k#decision=}" ;;
