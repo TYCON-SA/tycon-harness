@@ -1746,14 +1746,14 @@ function palabrasProfundas(cmd) {
   return out;
 }
 
-// `cd <carpeta> && ` al principio exacto del comando, con la carpeta escrita tal cual (sin comillas, sin opción y sin
-// nada que el shell expanda o que corte el comando), seguido de UN `sed` que nombra sus archivos: ni tubería,
+// `cd <carpeta> && ` al principio exacto del comando, con la carpeta hecha sólo de letras, cifras y `_ . / + , -` (puede
+// empezar con `~/`; nada que bash o zsh expandan, como `~+`, `~-` o `~usuario`), seguido de UN `sed` que nombra sus archivos: ni tubería,
 // ni `$(…)`, ni comillas invertidas, ni otro comando, ni redirección, ni salto de línea, ni llaves, `@` o `~` (nombres
 // que el shell expande, `{a,b}.md`, `~+/a.md`). Un `perl -e` es un programa entero, que puede armar y escribir sus
 // archivos desde adentro (`BEGIN{@ARGV=glob …}`): es esta forma sólo como `CD_PERL`. Cualquier otra forma no es ésta: un
 // editor que toma sus archivos de una tubería (`ls | xargs sed -i`) o de `$(ls)` escribe en la carpeta del `cd`, y esa
 // carpeta es lo único que la nombra.
-const CD_INICIAL = /^cd ([^\s'"`$*?[\]{}()<>;&|\\-][^\s'"`$*?[\]{}()<>;&|\\]*) && sed [^\n|;&<>`${}@~]*$/;
+const CD_INICIAL = /^cd ((?:~\/)?[\w./+,][\w./+,-]*) && sed [^\n|;&<>`${}@~]*$/;
 
 // La misma forma con UN `perl` en el lugar: opciones escritas tal cual, un solo programa entre comillas simples sin `$`,
 // `@`, llaves ni comillas invertidas, y la carpeta y los archivos hechos sólo de letras, cifras y `_ . / + , -` (la
@@ -1767,15 +1767,16 @@ const CD_PERL = /^cd ((?:~\/)?[\w./+,][\w./+,-]*) && perl((?: -[A-Za-z0-9.]+)*) 
  * que escribe (en la de sed, null: los dice `sedsLiterales`); o null si el comando no tiene ninguna de las dos. En la de
  * perl, las opciones tienen que editar en el lugar e imprimir (`-i`, sin sufijo o con uno que empieza con punto y no
  * termina en `md`; `-p`; `-0` y `-l` también; nada más: ni `-n`, `-M`, `-I`, `-x`, `-d`), y el programa tiene que ser sólo
- * sustituciones (`programaDePerlSoloSustituye`). Con `CDPATH` puesto, un `cd` relativo puede ir a otra carpeta: no es la
- * forma de perl.
+ * sustituciones (`programaDePerlSoloSustituye`). Con `CDPATH` puesto, un `cd` relativo puede ir a otra carpeta: no es
+ * ninguna de las dos formas.
  */
 function cdInicial(cmd) {
   const s = String(cmd || '');
+  const relativoConCdpath = (carpeta) => Boolean(process.env.CDPATH) && !/^(?:\/|~\/)/.test(carpeta);
   const sed = CD_INICIAL.exec(s);
-  if (sed) return { carpeta: sed[1], archivos: null };
+  if (sed) return relativoConCdpath(sed[1]) ? null : { carpeta: sed[1], archivos: null };
   const p = CD_PERL.exec(s);
-  if (!p || (process.env.CDPATH && !/^(?:\/|~\/)/.test(p[1]))) return null;
+  if (!p || relativoConCdpath(p[1])) return null;
   const opciones = [...p[2].split(' ').filter(Boolean), ...(p[3] ? [`-${p[3]}`] : [])];
   let enLugar = false;
   let imprime = false;

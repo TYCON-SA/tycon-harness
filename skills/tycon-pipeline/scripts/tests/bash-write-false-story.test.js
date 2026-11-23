@@ -139,6 +139,27 @@ test('SedEnLugar_GuionOArchivoQueNoSeLee_Frena — con la carpeta del cd llena d
   ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `frena: ${cmd}`);
 });
 
+// SedEnLugar_CarpetaQueElShellExpande_Frena: la carpeta del cd de la forma de sed tiene la misma regla que la de perl,
+// sólo letras, cifras y `_ . / + , -` (puede empezar con `~/`). Con `~+`, `~-` o `~usuario` el shell la cambia por otra
+// carpeta, y con `CDPATH` un cd relativo puede caer en otra: el freno buscaba los archivos del sed donde no estaban.
+test('SedEnLugar_CarpetaQueElShellExpande_Frena — ~+, ~-, ~usuario y CDPATH, como en perl', () => {
+  const c = carpeta();
+  const usuario = os.userInfo().username;
+  for (const cmd of [
+    `cd ~+ && sed ${EN_LUGAR} 's/ready-for-dev/done/' s9001.md`,
+    `cd ~- && sed ${EN_LUGAR} 's/ready-for-dev/done/' s9001.md`,
+    `cd ~${usuario}/../..${c.lab} && sed ${EN_LUGAR} 's/ready-for-dev/done/' s9001.md`,
+  ]) {
+    const r = conEnv({ ...ENV, OLDPWD: c.lab }, () => bash.handle({ tool_name: 'Bash', session_id: SID, cwd: c.lab, tool_input: { command: cmd } }, { stateDir: c.estado }));
+    assert.ok(frenaComoHistoria(r), `frena: ${cmd}`);
+  }
+  const cmd = `cd plantillas && sed ${EN_LUGAR} 's/ready-for-dev/done/' template.md`;
+  const r = conEnv({ ...ENV, CDPATH: c.lab }, () => bash.handle({ tool_name: 'Bash', session_id: SID, cwd: path.join(c.lab, 'scripts'), tool_input: { command: cmd } }, { stateDir: c.estado }));
+  assert.ok(frenaComoHistoria(r), `frena con CDPATH: ${cmd}`);
+  // la forma de siempre sigue pasando: una carpeta escrita tal cual y un sed sobre un .sh
+  assert.ok(!frenaComoHistoria(juzgar(c, `cd ${c.lab} && sed ${EN_LUGAR} 's/x/y/' medir.sh`)), 'la carpeta escrita tal cual pasa');
+});
+
 test('Programa_QuePuedeCorrerElTexto_Frena — el pase adversarial: otro intérprete, módulos armados, salida a un shell', () => {
   const c = carpeta();
   const sed = 'sed -i \\"\\" s/ready-for-dev/done/ s9001.md';
