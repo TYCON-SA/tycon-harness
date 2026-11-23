@@ -605,6 +605,8 @@ tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
   Sin eso, `complete-step prepare-commit` no cierra.
 - **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
   `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.
+- **nada**: con `findings.json` leído y nada abierto, no frena. Sale 0, sin revisores (`"mode": "cap-nothing-open"`),
+  y dice que sigas con «Probar en vivo». Sin `findings.json`, o sin poder leerlo, no es «nada»: frena como antes.
 
 **El validador de stories en el re-loop**: `smart-reloop` lo saca
 del set cuando ya devolvió **dos veredictos limpios seguidos** después de implementar; lo dice en
