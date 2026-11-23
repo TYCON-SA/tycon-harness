@@ -865,7 +865,7 @@ test('Q7 Notice_SuiteIdleWithQueue_SaysWhoStarts: sin suite completa en curso y 
   note('s-ana', 'Ana', 'el portón de la coordinadora', 70);
   note(COORD, 'Coordinadora', 'turno de suite', 120);
   const n = C.capNotice(t.opts);
-  assert.match(n, /^Coordinación: no corre ninguna suite completa y hay 2 esperando turno: dale el «arrancá» a Ana\.$/m, n);
+  assert.match(n, /^Coordinación: no corre ninguna suite completa y hay 2 esperando turno: dale el «arrancá» a Ana: heavy-turn\.js grant --to [\w-]+\.$/m, n);
   assert.ok(!/Quieta|Otra/.test(n), `sólo cuentan las esperas anotadas de turno: ${n}`);
   const s = C.status({ ...t.opts, noTranscripts: true });
   assert.match(C.statusText(s), /Esperando turno de suite o portón: Coordinadora desde las \d\d:\d\d · Ana desde las \d\d:\d\d · Beto desde las \d\d:\d\d/);
@@ -917,7 +917,7 @@ test('T3 Fila_PortonAcotadoCorriendo_NoPideArranca @story-8.274 @ac-4: con un po
   const t2 = toy();
   gate(t2, deadPid(), 's-ana', 'Ana', '40 suites de repo', 5);
   waitNote(t2, 's-beto', 'Beto', 30);
-  assert.match(C.capNotice(t2.opts), /no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Beto\./);
+  assert.match(C.capNotice(t2.opts), /no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Beto: heavy-turn\.js grant --to [\w-]+\./);
 });
 
 test('T4 Fila_EsperaViejaConTrabajoDespues_PideConfirmar @story-8.274 @ac-6: quien trabajó después de anotar la espera no sale esperando: se pide confirmar', () => {
@@ -931,7 +931,7 @@ test('T4 Fila_EsperaViejaConTrabajoDespues_PideConfirmar @story-8.274 @ac-6: qui
   fs.writeFileSync(path.join(t.state, 'file-events', 's-pia.jsonl'), `${JSON.stringify({ path: path.join(t.root, 'lib', 'a.js'), ts: new Date(mins(8)).toISOString() })}\n`);
   waitNote(t, 's-beto', 'Beto', 30);
   const n = C.capNotice(t.opts);
-  assert.match(n, /^Coordinación: no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Beto\.$/m, n);
+  assert.match(n, /^Coordinación: no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Beto: heavy-turn\.js grant --to [\w-]+\.$/m, n);
   assert.match(n, /^Coordinación: Moreno anotó a las \d\d:\d\d que espera turno y trabajó después: preguntale si sigue esperando\.$/m, n);
   assert.match(n, /^Coordinación: Pía anotó a las \d\d:\d\d que espera turno y trabajó después: preguntale si sigue esperando\.$/m, n);
   const text = C.statusText(C.status({ ...t.opts, noTranscripts: true }));
@@ -1997,4 +1997,127 @@ test('8.289 T8 Aviso_FilaDelPortonLarga_ParaYReabre @story-8.289 @ac-12: con 2 o
   line = gateLine(C.capNotice({ ...t.opts, codexHome, readMemory: mem(30) }));
   assert.match(line, /reabrí la 8\.501/, line);
   assert.doesNotMatch(line, /8\.500/, line);
+});
+
+// ── Las sesiones en espera, la memoria de intercambio y el «arrancá» de la fila ─────────────────────────────────────
+
+// La nota de `marker.js doing` de una sesión, con su espera.
+function esperaAnotada(t, sid, waitingFor, minutesAgo) {
+  fs.mkdirSync(path.join(t.state, 'doing'), { recursive: true });
+  const at = new Date(mins(minutesAgo)).toISOString();
+  fs.writeFileSync(path.join(t.state, 'doing', `${sid}.json`), JSON.stringify({ text: 'implementar la historia', at, waitingFor, waitingSince: at }));
+}
+// El registro de fondo de Claude Code con sesiones que cerró por falta de memoria, y el archivo de cada una.
+function retiredBy(t, list) {
+  const lines = list.map(([short, , , idle]) => `[${new Date(mins(30)).toISOString()}] [bg] bg retire ${short}: idle-prompt, idle ${idle}m [low memory]`);
+  fs.writeFileSync(path.join(t.home, '.claude', 'daemon.log'), `${lines.join('\n')}\n`);
+  for (const [short, name, sid] of list) {
+    fs.mkdirSync(path.join(t.home, '.claude', 'jobs', short), { recursive: true });
+    fs.writeFileSync(path.join(t.home, '.claude', 'jobs', short, 'state.json'), JSON.stringify({ state: 'working', name, sessionId: sid, daemonShort: short }));
+  }
+}
+
+// 🔴 mutación: no leer la nota de la cerrada (la espera se pierde) o no ordenarla (queda detrás de las que no esperaban).
+test('Retirada_ConEspera_DiceQueEsperabaPrimero (T14) @story-8.274 @ac-18', () => {
+  const t = toy();
+  retiredBy(t, [['aaaa1111', 'Sin-espera', 'aaaa1111-sin-espera', 4], ['bbbb2222', 'Con-espera', 'bbbb2222-con-espera', 24]]);
+  esperaAnotada(t, 'bbbb2222-con-espera', 'la firma del dueño para el plan', 50);
+  const s = C.status({ ...t.opts, noTranscripts: true });
+  assert.deepStrictEqual(s.retired.map((x) => x.session), ['Con-espera', 'Sin-espera'], JSON.stringify(s.retired));
+  assert.deepStrictEqual(Object.keys(s.retired[1]).sort(), ['at', 'idleMin', 'reason', 'session', 'short', 'sid'], 'sin espera, la de siempre');
+  assert.strictEqual(s.retired[0].waitingSince, mins(50), 'desde cuándo, de su nota');
+  const text = C.statusText(s);
+  assert.match(text, /Cerradas por Claude Code: Con-espera: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 24 min, esperando la firma del dueño para el plan desde las \d\d:\d\d\. Para levantarla: claude respawn bbbb2222 · Sin-espera:/);
+});
+
+// 🔴 mutación: comparar al revés el 15 %, nombrar las quietas sin poner primero la que espera, o callar cuando no se mide.
+test('Memoria_SwapCasiLlena_NombraLasQuietas (T15) @story-8.274 @ac-19 @ac-20', () => {
+  const t = toy();
+  session(t, 's-ana', 'Ana');
+  session(t, 's-beto', 'Beto');
+  session(t, 's-caro', 'Caro');
+  esperaAnotada(t, 's-caro', 'que entre el pedido 77', 10);
+  const swap = (r) => () => r;
+  const at = (r) => C.statusText(C.status({ ...t.opts, noTranscripts: true, readSwap: swap(r) }));
+  const low = at({ pct: 10, why: null, none: false });
+  assert.match(low, /Memoria de intercambio casi llena: 10 % libre\. Claude Code puede cerrar sesiones quietas: Caro \(espera que entre el pedido 77\) · Ana · Beto\./, low);
+  assert.match(low, /cerrá las quietas que no esperan nada/);
+  assert.doesNotMatch(at({ pct: 15, why: null, none: false }), /Memoria de intercambio/, 'en el umbral no avisa');
+  assert.doesNotMatch(at({ pct: null, why: 'sin memoria de intercambio en uso', none: true }), /Memoria de intercambio/);
+  assert.match(at({ pct: null, why: 'no sé medirla en linux', none: false }), /Memoria de intercambio: no medida \(no sé medirla en linux\)/);
+  // sin pedirla, `status` no la lee (el aviso de cada turno y el freno del cierre): nada que decir
+  assert.strictEqual(C.status({ ...t.opts, noTranscripts: true }).swap, null);
+  // el lector: macOS da el porcentaje; sin intercambio en uso, none; lo ilegible y otra plataforma, null con el motivo
+  const HT = require(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'));
+  const mac = (text) => HT.swapFree({ platform: 'darwin', run: () => text });
+  assert.deepStrictEqual(mac('vm.swapusage: total = 8192.00M  used = 7372.80M  free = 819.20M  (encrypted)'), { pct: 10, why: null, none: false });
+  assert.deepStrictEqual(mac('vm.swapusage: total = 2.00G  used = 1.00G  free = 1024.00M  (encrypted)'), { pct: 50, why: null, none: false });
+  assert.strictEqual(mac('vm.swapusage: total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)').none, true);
+  assert.strictEqual(mac('otra cosa').pct, null);
+  assert.match(HT.swapFree({ platform: 'darwin', run: () => { throw new Error('sysctl no está'); } }).why, /sysctl no está/);
+  assert.deepStrictEqual(HT.swapFree({ platform: 'linux' }), { pct: null, why: 'no sé medirla en linux', none: false });
+});
+
+// 🔴 mutación: volver a pedir el «arrancá» con uno vigente, o no pasar detrás a la que dejó vencer el suyo.
+test('Fila_ArrancaConComandoYVencido @story-8.274 @ac-12 @ac-14', () => {
+  const t = toy();
+  session(t, 's-ana', 'Ana');
+  session(t, 's-beto', 'Beto');
+  esperaAnotada(t, 's-ana', 'turno de la suite completa', 60);
+  esperaAnotada(t, 's-beto', 'turno de portón', 30);
+  const grantFile = path.join(t.state, 'coordination', 'suite-grant.json');
+  assert.match(C.capNotice(t.opts), /dale el «arrancá» a Ana: heavy-turn\.js grant --to s-ana\./);
+  fs.mkdirSync(path.dirname(grantFile), { recursive: true });
+  fs.writeFileSync(grantFile, JSON.stringify({ to: 's-ana', by: COORD, at: mins(3) }));
+  const vigente = C.capNotice(t.opts);
+  assert.match(vigente, /ya le diste el «arrancá» a Ana a las \d\d:\d\d/, vigente);
+  assert.doesNotMatch(vigente, /grant --to/);
+  // vencido sin tomarlo: Ana pasa detrás y la fila ofrece a Beto
+  fs.writeFileSync(grantFile, JSON.stringify({ to: 's-ana', by: COORD, at: mins(11) }));
+  assert.match(C.capNotice(t.opts), /dale el «arrancá» a Beto: heavy-turn\.js grant --to s-beto\./);
+});
+
+// 🔴 mutación: armar la fila sólo con la nota de espera. La sesión que `take` frenó con su 77 (o cuya nota borró un
+// portón acotado) queda frenada hasta tres horas sin que nadie pida su «arrancá».
+test('Fila_FrenadaPorTakeSinNota_PideArranca @story-8.274 @ac-12 @ac-14', () => {
+  const t = toy();
+  session(t, 's-bea', 'Bea');
+  const waits = path.join(t.state, 'coordination', 'suite-waits');
+  fs.mkdirSync(waits, { recursive: true });
+  fs.writeFileSync(path.join(waits, 's-bea.json'), JSON.stringify({ sid: 's-bea', what: '120 suites de repo', at: mins(20) }));
+  const n = C.capNotice(t.opts);
+  assert.match(n, /no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Bea: heavy-turn\.js grant --to s-bea\./, n);
+  assert.match(C.statusText(C.status({ ...t.opts, noTranscripts: true })), /Esperando turno de suite o portón: Bea desde las \d\d:\d\d/);
+  // una anotación vencida (más de tres horas) ya no frena a nadie: no sale
+  fs.writeFileSync(path.join(waits, 's-bea.json'), JSON.stringify({ sid: 's-bea', what: '120 suites de repo', at: mins(181) }));
+  assert.strictEqual(C.capNotice(t.opts), null);
+});
+
+// 🔴 mutación: redondear antes de comparar (14,6 % sale 15 y calla) o leer sólo el punto decimal (con el idioma en
+// castellano, sysctl escribe coma y la memoria sale «no medida»).
+test('Memoria_SwapBordeYComaDecimal_Avisa @story-8.274 @ac-19 @ac-20', () => {
+  const HT = require(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'));
+  const mac = (text) => HT.swapFree({ platform: 'darwin', run: () => text });
+  assert.strictEqual(mac('vm.swapusage: total = 1000.00M  used = 854.00M  free = 146.00M  (encrypted)').pct, 14, 'debajo del 15 % no sube al 15');
+  assert.strictEqual(mac('vm.swapusage: total = 7168,00M  used = 6523,38M  free = 644,62M  (encrypted)').pct, 8);
+  assert.strictEqual(mac('vm.swapusage: total = 0,00M  used = 0,00M  free = 0,00M  (encrypted)').none, true);
+  const t = toy();
+  const text = C.statusText(C.status({ ...t.opts, noTranscripts: true, readSwap: () => mac('vm.swapusage: total = 1000.00M  used = 854.00M  free = 146.00M') }));
+  assert.match(text, /Memoria de intercambio casi llena: 14 % libre/);
+});
+
+// 🔴 mutación: pegar la hora de una nota vieja a una espera que vino de otro lado (la del pipeline): la espera parece
+// empezar después del cierre.
+test('Retirada_HoraSoloDeLaMismaEspera @story-8.274 @ac-18', () => {
+  const t = toy();
+  retiredBy(t, [['dddd4444', 'Uma', 'dddd4444-uma', 30]]);
+  esperaAnotada(t, 'dddd4444-uma', 'turno de la suite', 3 * 1440);
+  const waits = path.join(t.state, 'wait-notice', 'waits');
+  fs.mkdirSync(waits, { recursive: true });
+  fs.writeFileSync(path.join(waits, 'dddd4444-uma.json'), JSON.stringify({ session: 'dddd4444-uma', story: '8.1', stepName: 'Preparar', kind: 'stop', waiting: 'firma del dueño', openedAt: new Date(mins(40)).toISOString() }));
+  const s = C.status({ ...t.opts, noTranscripts: true });
+  const uma = s.retired.find((x) => x.short === 'dddd4444');
+  assert.match(String(uma.waited), /la 8\.1, Preparar: firma del dueño/);
+  assert.strictEqual(uma.waitingSince, undefined, 'la hora de la nota vieja no es la de esta espera');
+  assert.doesNotMatch(C.statusText(s), /firma del dueño desde las/);
 });

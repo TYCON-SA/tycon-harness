@@ -202,7 +202,7 @@ test('PrepareCommit_PassesStoryToThePhoto @story-8.309 @ac-2 — con la historia
   assert.strictEqual(r.codigo, 2, JSON.stringify(r));
   assert.strictEqual(q.uso(), q.instalado);
   // el cierre de «Preparar» le pasa la historia, resuelta como en el resto de marker.js (también relativa al repo)
-  const marker = fs.readFileSync(path.join(__dirname, '..', 'marker.js'), 'utf8');
+  const marker = require('./lib/marker-source.js')(path.join(__dirname, '..'));
   assert.match(marker, /so\.fotoDelPedido\(\{ repos, story: resolveStoryPath\(marker\.storyPath, marker\) \|\| null \}\)/);
 });
 
@@ -225,6 +225,6 @@ test('8.242-PrepararElPedido_EsquemaViejo_ElPaso8TomaLaFoto @story-8.242 @ac-4',
   assert.strictEqual(S.closesStep(viejo, ['7'], 'prepare-commit'), false);
   assert.strictEqual(S.closesStep(nuevo, ['8'], 'prepare-commit'), false, 'en el esquema nuevo, «8» no es un paso');
   // marker.js toma la foto con la misma pregunta, no con el nombre suelto
-  const marker = fs.readFileSync(path.join(__dirname, '..', 'marker.js'), 'utf8');
+  const marker = require('./lib/marker-source.js')(path.join(__dirname, '..'));
   assert.match(marker, /STEPS_LIB\.closesStep\(marker, ids, 'prepare-commit'\)/);
 });

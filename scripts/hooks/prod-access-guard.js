@@ -98,14 +98,64 @@ const CRUDO = new RegExp('(' + [
 // expresión retrocedía sin fin en un texto largo, justo en el camino de más de 32 KB. Corre también sobre el JSON crudo del
 // evento, donde un salto de línea es el texto `\n`: por eso `\n` y `\r` escritos cortan el tramo y `\t` separa palabras.
 const REMOVE_AZ_RE = /Remove-Az(?:ResourceGroup|ResourceLock|Resource|SqlServer|SqlDatabase)(?![A-Za-z0-9_])/i;
-const INVOKE_REST_RE = /Invoke-AzRestMethod\b.*?\s-M[a-z]*[\s:=]*\\?["']?(?:delete\b|\$)|Invoke-AzRestMethod\b[^;|&]*\s@[A-Za-z_]/i;
+/**
+ * Un `Invoke-AzRestMethod` que borra (`-Method DELETE`, o un método en una variable) o que arma el pedido con `@args`.
+ * Dice lo mismo que `/Invoke-AzRestMethod\b.*?\s-M[a-z]*[\s:=]*\\?["']?(?:delete\b|\$)|Invoke-AzRestMethod\b[^;|&]*\s@[A-Za-z_]/i`
+ * sin probar desde cada aparición, que crecía con el cuadrado del largo: alcanza con la primera de cada tramo, porque
+ * desde ella se ve todo lo que verían las siguientes. En el primer caso el tramo termina en un salto de línea (el `.*?`
+ * no lo cruza), pero la cola puede empezar en ese mismo salto y seguir después (su `\s` y su `[\s:=]*` sí lo cruzan); en
+ * el segundo, el tramo termina en `;`, `|` o `&`, que la cola no tiene. Sin bibliotecas: la usa el criterio de emergencia.
+ */
+function invocaBorradoRest(texto) {
+  const s = String(texto);
+  const finDeLinea = (k) => { const c = s.charCodeAt(k); return c === 10 || c === 13 || c === 0x2028 || c === 0x2029; };
+  const aparicion = /Invoke-AzRestMethod\b/gi;
+  const cola = /\s-M[a-z]*[\s:=]*\\?["']?(?:delete\b|\$)/gi;
+  // la primera cola desde `colaDesde` empieza en `colaEn` (Infinity si no hay): vale para todo lugar entre los dos
+  let colaDesde = Infinity;
+  let colaEn = -1;
+  for (let m = aparicion.exec(s); m; m = aparicion.exec(s)) {
+    const e = m.index + m[0].length;
+    let b = e;
+    while (b < s.length && !finDeLinea(b)) b++;
+    if (!(colaDesde <= e && e <= colaEn)) {
+      cola.lastIndex = e;
+      const c = cola.exec(s);
+      colaDesde = e;
+      colaEn = c ? c.index : Infinity;
+    }
+    if (colaEn <= b) return true;
+    aparicion.lastIndex = b + 1;
+  }
+  const primeraY = (tramo, resto) => {
+    const m = /Invoke-AzRestMethod\b/i.exec(tramo);
+    return Boolean(m) && resto.test(tramo.slice(m.index + m[0].length));
+  };
+  return s.split(/[;|&]/).some((t) => primeraY(t, /\s@[A-Za-z_]/));
+}
 // `az` como palabra: sola, al final de una ruta (con barras de los dos lados) o pegada a una comilla o un paréntesis de un
 // programa que la ejecuta (`system("az …`)
 const esPalabraAz = (w) => /(?:^|[\\/:"'`({])az(?:\.cmd|\.exe)?$/i.test(w) || /az\.(?:cmd|exe)$/i.test(w);
+/**
+ * Una palabra sin las comillas, barras y paréntesis de sus bordes: lo mismo que `.replace(/^[\\"'`({$]+|[\\"'`)}]+$/g, '')`,
+ * que probaba el final desde cada carácter de una tira larga y crecía con el cuadrado del largo. Sin bibliotecas: la usa
+ * también el criterio de emergencia, que decide cuando faltan.
+ */
+function sinComillasDeLosBordes(palabra) {
+  const izquierdo = '\\"\'`({$';
+  const derecho = '\\"\'`)}';
+  const s = String(palabra);
+  let i = 0;
+  while (i < s.length && izquierdo.includes(s[i])) i++;
+  let j = s.length;
+  while (j > i && derecho.includes(s[j - 1])) j--;
+  return s.slice(i, j);
+}
+
 function nombraBorradoAzure(texto) {
   for (const tramo of String(texto || '').split(/[;|&\n\r]|\\[nr]/)) {
-    if (REMOVE_AZ_RE.test(tramo) || INVOKE_REST_RE.test(tramo)) return true;
-    const pal = tramo.split(/(?:\s|\\t)+/).map((x) => x.replace(/^[\\"'`({$]+|[\\"'`)}]+$/g, '').toLowerCase()).filter(Boolean);
+    if (REMOVE_AZ_RE.test(tramo) || invocaBorradoRest(tramo)) return true;
+    const pal = tramo.split(/(?:\s|\\t)+/).map((x) => sinComillasDeLosBordes(x).toLowerCase()).filter(Boolean);
     for (let k = 0; k < pal.length; k++) {
       if (/(?:^|[\\/:"'`({])azd(?:\.exe)?$/.test(pal[k]) && pal[k + 1] === 'down') return true;
       if (!esPalabraAz(pal[k])) continue;
@@ -1968,7 +2018,9 @@ function escrituraProtegida(cmd, payload) {
   const componenteEs = (comp, nombre) => {
     if (sp.patternIsLiteral(comp)) return sp.patternToLiteral(comp).toLowerCase() === nombre;
     // `*` solo —lo que deja una variable sin resolver— no es la raíz de una carpeta protegida (AC 2): `rm -rf "$TMP"/*`
-    if (!/[^*?]/.test(sp.patternToLiteral(comp).replace(/\[[^\]]*\]/g, 'x'))) return false;
+    // sin cambiar antes los corchetes por una letra: eso no cambia si queda algo que no sea `*` o `?` (el corchete ya lo
+    // es), y con muchos `[` sin cerrar crecía con el cuadrado del largo
+    if (!/[^*?]/.test(sp.patternToLiteral(comp))) return false;
     if (nombre.startsWith('.') && !puedeSerOculto(comp)) return false;
     // en una carpeta, `?` cuenta como «puede faltar o ser cualquiera»: `.tycon?/` se trata como `.tycon/` (AC 10, T18)
     let flojo = '';
@@ -1978,17 +2030,17 @@ function escrituraProtegida(cmd, payload) {
   const unir = (cwd, p) => {
     if (p.startsWith('/')) return path.posix.normalize(p);
     if (cwd === null) return null;
-    return path.posix.normalize(`${cwd.replace(/\/+$/, '')}/${p}`);
+    return path.posix.normalize(`${sp.sinBarrasFinales(cwd)}/${p}`);
   };
   /** Un nombre (patrón) en su carpeta: la carpeta sale de la ruta o de la carpeta de trabajo (AC 2, 12). */
   const partir = (p, cwd) => {
     let s = String(p); let dirDesconocida = false;
     if (!s.startsWith('/')) {
-      if (cwd !== null) s = `${cwd.replace(/\/+$/, '')}/${s}`;
-      else if (!s.replace(/\/+$/, '').includes('/')) dirDesconocida = true;
+      if (cwd !== null) s = `${sp.sinBarrasFinales(cwd)}/${s}`;
+      else if (!sp.sinBarrasFinales(s).includes('/')) dirDesconocida = true;
     }
     s = path.posix.normalize(s);
-    if (s.length > 1) s = s.replace(/\/+$/, '');
+    if (s.length > 1) s = sp.sinBarrasFinales(s);
     const k = s.lastIndexOf('/');
     const base = k >= 0 ? s.slice(k + 1) : s;
     const dir = k > 0 ? s.slice(0, k) : (k === 0 ? '/' : '');
@@ -2089,7 +2141,7 @@ function escrituraProtegida(cmd, payload) {
     for (const frag of String(txt).split(/[\s'"\\;|&()<>`]+/)) {
       if (!frag) continue;
       const v = veredicto(frag, cwd, true);
-      const base = frag.replace(/\/+$/, '').split('/').pop().toLowerCase();
+      const base = sp.sinBarrasFinales(frag).split('/').pop().toLowerCase();
       if ((v && v.tipo === 'indecidible') || CARPETAS_PROTEGIDAS.includes(base)) return motivoIndecidible(txt, razon);
     }
     return null;
@@ -2865,6 +2917,7 @@ function parameterDefaultReadings(raw) {
 
 /** Lo que imprime `printf <formato> <args…>`: `%s` y compañía toman el argumento siguiente, y el formato se repite. */
 function printfOutput(fmt, args) {
+  const { largoDeEspecificadorPrintf } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
   const ESC = { n: '\n', t: '\t', r: '\r', '\\': '\\', a: '', b: '', f: '', v: '', e: '' };
   let out = ''; let k = 0; let usados;
   do {
@@ -2873,8 +2926,9 @@ function printfOutput(fmt, args) {
       const c = fmt[i];
       if (c === '\\' && i + 1 < fmt.length) { const d = fmt[++i]; out += d in ESC ? ESC[d] : `\\${d}`; continue; }
       if (c === '%' && fmt[i + 1] === '%') { out += '%'; i++; continue; }
-      const m = c === '%' ? /^[-+ #0]*(?:\d+|\*)?(?:\.(?:\d+|\*))?[a-zA-Z]/.exec(fmt.slice(i + 1)) : null;
-      if (m) { if (args[k] !== undefined) { out += args[k]; usados = true; } k++; i += m[0].length; continue; }
+      // el especificador se lee desde su lugar, sin copiar el resto del texto en cada `%`
+      const largo = c === '%' ? largoDeEspecificadorPrintf(fmt, i + 1) : 0;
+      if (largo) { if (args[k] !== undefined) { out += args[k]; usados = true; } k++; i += largo; continue; }
       out += c;
     }
   } while (usados && k < args.length && out.length < MAX_ESCONDIDO);
