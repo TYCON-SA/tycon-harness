@@ -140,6 +140,9 @@ test('T15 Subtraction_RunsWithAndWithout_InLab @story-8.325 @ac-15: cada histori
     assert.strictEqual(x.control, 'toy-switch');
     // con el control, el gancho de juguete frena hecho.txt en las dos historias; sin él, las dos cumplen
     assert.deepStrictEqual([x.con.corridas, x.con.cumplieron, x.sin.corridas, x.sin.cumplieron], [2, 0, 2, 2], JSON.stringify(x));
+    // el informe dice por qué no cumplió cada corrida que no cumplió, contado; un lado que cumplió entero no lo trae
+    assert.deepStrictEqual(x.con.no_cumplieron_por, { 'no escribió hecho.txt': 2 });
+    assert.strictEqual(x.sin.no_cumplieron_por, undefined);
     assert.strictEqual(x.cumple_igual, false);
     assert.ok(x.con.costo_usd > x.sin.costo_usd, JSON.stringify(x));
     assert.strictEqual(x.veredicto, null);

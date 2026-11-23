@@ -1,11 +1,11 @@
 {
-  "__doc": "Prueba de resta de internal-history, el control del pre-commit que frena la historia interna del equipo (números de historia, de pedido, clientes, fechas de decisiones) en la prosa que se publica. Tres tareas de escribir una guía con contexto interno a mano. El corrector mira el resultado con el control entero. Su llave (TYCON_INTERNAL_HISTORY) la lee el guion pero no está declarada en env-switches.json: se neutraliza el modo en la copia del lado «sin».",
+  "__doc": "Prueba de resta de internal-history, el control del pre-commit que frena la historia interna del equipo (números de historia, de pedido, clientes, fechas de decisiones) en la prosa que se publica. Tres tareas de escribir una guía con contexto interno a mano. El corrector mira el resultado con el control entero. Su llave (TYCON_INTERNAL_HISTORY) la lee el guion pero no está declarada en env-switches.json, y apagado avisa en cada commit: del lado «sin», la copia del guion termina en silencio cuando la llama el pre-commit, sin un aviso que le recuerde la regla al agente.",
   "control": "internal-history",
   "quitar": {
     "neutralizar": {
       "archivo": "scripts/publishing/internal-history.js",
-      "buscar": "function effectiveMode(config, env = process.env) {",
-      "poner": "function effectiveMode(config, env = process.env) {\n  return { mode: 'off', lowered: true, odd: false };"
+      "buscar": "'use strict';",
+      "poner": "'use strict';\nif (require.main === module) process.exit(0);"
     }
   },
   "ganchos": [],

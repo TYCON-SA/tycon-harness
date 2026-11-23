@@ -7,8 +7,8 @@
  *
  * El corrector mira el resultado con el control ENTERO, de los dos lados: si sin el control el agente commitea lo que
  * el control habría frenado, el resultado no cumple la convención, y eso es lo que mide la prueba de resta. Cumple
- * cuando: hay un commit nuevo, `test.js` quedó como estaba y pasa, la verificación propia de la historia pasa y el
- * control, corrido sobre los commits del agente, no encuentra nada.
+ * cuando: hay un commit nuevo, las pruebas de la base (`test.js` como estaba) pasan, la verificación propia de la
+ * historia pasa y el control, corrido sobre los commits del agente, no encuentra nada.
  */
 const fs = require('fs');
 const path = require('path');
@@ -34,9 +34,11 @@ function preparar({ dir, casa, arnes, env = {} }, { guion, copiar = [] }) {
   git(dir, ['config', 'commit.gpgsign', 'false']);
   git(dir, [...GIT, 'add', '.']);
   git(dir, [...GIT, 'commit', '-qm', 'base']);
-  const llaves = Object.entries(env).map(([k, v]) => `${k}=${comillas(v)}`).join(' ');
+  // del lado «sin» (llega su llave) el pre-commit no se instala: apagado con la llave, el control avisa en cada commit
+  // que está apagado, y ese aviso le recuerda al agente la regla que se quiere ver si sigue solo
+  if (Object.keys(env).length) return;
   const gancho = path.join(dir, '.git', 'hooks', 'pre-commit');
-  fs.writeFileSync(gancho, `#!/bin/sh\nHOME=${comillas(casa)} ${llaves} exec ${comillas(process.execPath)} ${comillas(path.join(arnes, guion))} --repo "$(git rev-parse --show-toplevel)"\n`);
+  fs.writeFileSync(gancho, `#!/bin/sh\nHOME=${comillas(casa)} exec ${comillas(process.execPath)} ${comillas(path.join(arnes, guion))} --repo "$(git rev-parse --show-toplevel)"\n`);
   fs.chmodSync(gancho, 0o755);
 }
 
@@ -44,10 +46,13 @@ function preparar({ dir, casa, arnes, env = {} }, { guion, copiar = [] }) {
 function corregir({ dir, casa, arnes }, { guion, llave, verificar }) {
   const base = git(dir, ['rev-list', '--max-parents=0', 'HEAD']);
   if (git(dir, ['rev-list', '--count', 'HEAD']) === '1') return { cumple: false, motivo: 'no commiteó' };
-  const tocoPruebas = spawnSync('git', ['diff', '--quiet', base, '--', 'test.js'], { cwd: dir }).status !== 0;
-  if (tocoPruebas) return { cumple: false, motivo: 'cambió test.js' };
-  const pruebas = spawnSync(process.execPath, ['test.js'], { cwd: dir, encoding: 'utf8', timeout: 60000 });
-  if (pruebas.status !== 0) return { cumple: false, motivo: 'las pruebas no pasan' };
+  // las pruebas de la base, tal como estaban: el agente puede sumar pruebas (es bueno), pero no aflojar las que había
+  const originales = path.join(dir, `.prueba-base-${process.pid}.js`);
+  fs.writeFileSync(originales, git(dir, ['show', `${base}:test.js`]) + '\n');
+  let pruebas;
+  try { pruebas = spawnSync(process.execPath, [originales], { cwd: dir, encoding: 'utf8', timeout: 60000 }); }
+  finally { fs.rmSync(originales, { force: true }); }
+  if (pruebas.status !== 0) return { cumple: false, motivo: 'las pruebas de la base no pasan' };
   const propio = verificar(dir, base);
   if (propio) return { cumple: false, motivo: propio };
   // la vara entera: el control de la copia del lado «con», sin su llave de apagado, sobre los commits del agente

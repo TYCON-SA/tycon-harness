@@ -330,11 +330,17 @@ function lado(corridas) {
   const medidas = corridas.filter((r) => r.medida);
   const costos = medidas.map((r) => r.costo_usd);
   const completo = costos.length > 0 && costos.every((c) => Number.isFinite(c));
-  return {
+  // por qué no cumplió cada corrida que no cumplió, contado: sin esto, un corrector mal hecho se lee como resultado
+  const motivos = {};
+  for (const r of medidas.filter((x) => !x.cumple)) {
+    const m = String(r.motivo || 'sin motivo').slice(0, 160);
+    motivos[m] = (motivos[m] || 0) + 1;
+  }
+  return Object.assign({
     corridas: medidas.length,
     cumplieron: medidas.filter((r) => r.cumple).length,
     costo_usd: completo ? redondear(costos.reduce((a, b) => a + b, 0)) : null,
-  };
+  }, Object.keys(motivos).length ? { no_cumplieron_por: motivos } : {});
 }
 
 /** El resultado de un control con un modelo, a partir de las corridas de cada lado. */
