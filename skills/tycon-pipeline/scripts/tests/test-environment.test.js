@@ -328,21 +328,25 @@ test('T15 TestGate_Environment_SuiteRepeat_NotReady_KeepsFullRunArtifact', () =>
   assert.equal(fs.readFileSync(art, 'utf8'), '{"de":"la completa"}', 'la repetición de una suite no pisa la constancia de la completa');
 });
 
-// 🔴 Falla con: el paso arma el texto de bash con la ruta de node y la del volcado (alerta de CodeQL
-//    js/shell-command-injection-from-environment): una ruta con `'` o `$(…)` sería parte del comando.
-test('T16 TestEnvironment_Step_PathsAsArguments_NotInTheText', async () => {
+// 🔴 Falla con: la ruta de node y la del volcado van en el comando de bash, en el texto o como argumentos después de
+//    `-c` (alertas de CodeQL js/shell-command-injection-from-environment #188 y #190): todo lo que sigue a `-c` cuenta
+//    como parte del comando.
+test('T16 TestEnvironment_Step_PathsInTheEnvironment_NotInTheCommand', async () => {
   const d = tmp('te-args-');
   const dump = path.join(d, "it's $(echo x) env.json");
-  const { script, args } = tenv.stepScript('export ACME_TEST_SQL=z', dump);
+  const { script, env } = tenv.stepScript('export ACME_TEST_SQL=z', dump);
   assert.ok(!script.includes(dump), 'la ruta del volcado no va en el texto');
   assert.ok(!script.includes(process.execPath), 'la de node tampoco');
-  assert.deepEqual(args.slice(1), [process.execPath, dump], 'van como argumentos');
-  assert.deepEqual(tenv.stepScript('true', undefined), { script: 'true', args: [] }, 'sin volcado, el comando tal cual');
-  // con esa ruta el volcado anda, y el comando no ve los argumentos
+  assert.deepEqual(env, { __tycon_node: process.execPath, __tycon_out: dump }, 'van en el ambiente de bash');
+  assert.deepEqual(tenv.stepScript('true', undefined), { script: 'true', env: {} }, 'sin volcado, el comando tal cual');
+  // con esa ruta el volcado anda, sin argumentos, y ni el comando ni el volcado ven las dos variables
   const base = { ...process.env };
-  const r = await tenv.step('export ACME_TEST_SQL=z; echo "args=$#"', { cwd: d, env: base, timeoutS: 30, dump, logFile: path.join(d, 'log') });
+  const r = await tenv.step('export ACME_TEST_SQL=z; echo "args=$#"; echo "vistas=$(env | grep -c "^__tycon_")"', { cwd: d, env: base, timeoutS: 30, dump, logFile: path.join(d, 'log') });
   assert.equal(r.code, 0, r.output);
   assert.match(r.output, /args=0/);
+  assert.match(r.output, /vistas=0/);
+  const volcado = JSON.parse(fs.readFileSync(dump, 'utf8'));
+  assert.ok(!('__tycon_node' in volcado) && !('__tycon_out' in volcado), 'el volcado no las trae');
   assert.equal(tenv.envAfterPrepare(dump, base).env.ACME_TEST_SQL, 'z');
   assert.ok(!fs.existsSync(path.join(d, 'x')), 'el $(…) de la ruta no corrió');
 });
