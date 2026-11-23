@@ -120,7 +120,7 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan — la firma por terminal es m
   // runtime-waiver exige una terminal real (el agente no la tiene): se prueba la forma de las líneas que anota.
   const ls = approvals.lineasDeFirmaPorTerminal([2, 5], 'ana');
   assert.deepEqual(ls.map((l) => [l.que, l.tipo, l.quien]), [['AC 2 imposible de verificar en vivo', 'manual', 'ana'], ['AC 5 imposible de verificar en vivo', 'manual', 'ana']]);
-  const fuente = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+  const fuente = require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS);
   assert.match(fuente, /lineasDeFirmaPorTerminal\(approved, approvedBy\)/, 'runtime-waiver anota con esta función, después de firmar');
 });
 
@@ -924,7 +924,7 @@ test('FirmaDelPlan_PorTerminal_EsDelDueno — la terminal, el click y el «aprob
   assert.deepEqual(approvals.deLaPersona('terminal', ''), { tipo: 'manual', quien: 'persona' });
   assert.equal(approvals.normalizar({ que: 'plan', ...approvals.deLaPersona('terminal', 'claude') }).tipo, 'automatica');
   // el marcador la usa en la firma del plan y de la maqueta: la vía es la de la firma, no una opción del comando
-  const fuente = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
-  assert.match(fuente, /const delDueno = require\('\.\/lib\/approvals\.js'\)\.deLaPersona\(firmaPlan\.via,/);
+  const fuente = require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS);
+  assert.match(fuente, /const delDueno = require\('\.\/(?:lib\/)?approvals\.js'\)\.deLaPersona\(firmaPlan\.via,/);
   assert.doesNotMatch(fuente, /\['click', 'mensaje'\]\.includes\(firmaPlan\.via\)/);
 });
