@@ -515,18 +515,31 @@ test('T323 Transcript_BackgroundTasksStillRunning: cuenta las tareas de fondo la
   assert.strictEqual(readTranscript(file).fondoPendiente, 0);
 });
 
-test('T345 Transcript_CitaDeLaOficinaNoEsLoQueHace: el párrafo que cita un mensaje de la oficina no es lo que hace la sesión', () => {
-  // la regla del arranque pide abrir la respuesta citando lo que la persona escribió desde la oficina, en un párrafo aparte:
-  // es su texto, no lo que hace la sesión, y lo que hace viaja al sitio
+test('T345 Transcript_CitaDeLaOficinaNoEsLoQueHace: desde la cita de un mensaje de la oficina, nada es lo que hace la sesión', () => {
+  // la regla del arranque pide abrir la respuesta citando lo que la persona escribió desde la oficina: es su texto, no lo que
+  // hace la sesión, y lo que hace viaja al sitio. No se sabe dónde termina la cita (párrafos, «>», bloques de código): cuenta
+  // sólo lo que la sesión escribió antes
   const leer = (texto) => {
     const file = path.join(dir(), 's.jsonl');
     write(file, [human('hola', 10), said(texto)]);
     return readTranscript(file, { now: NOW }).haciendoAhora;
   };
-  assert.strictEqual(leer('Me escribiste desde la oficina: «¿cómo vas? Revisá el pedido 12.»\n\nVoy por el paso 5 de la tanda.'), 'Voy por el paso 5 de la tanda.');
-  assert.strictEqual(leer('> Me escribiste desde la oficina: «revisá\n> el pedido 12»\n\nEl pedido 12 está verde.'), 'El pedido 12 está verde.');
-  // sin el renglón en blanco no se sabe dónde termina la cita: ese mensaje no dice qué hace, y el texto de la persona no sale
-  assert.strictEqual(leer('Me escribiste desde la oficina: «revisá el pedido 12». El pedido 12 está verde.'), null);
-  // la misma frase más adelante no es la cita
-  assert.strictEqual(leer('Sigo con la tanda. Me escribiste desde la oficina antes.'), 'Sigo con la tanda.');
+  const PERSONA = /pedido 1[23]|Acme|Hola/;
+  for (const texto of [
+    'Me escribiste desde la oficina: «¿cómo vas? Revisá el pedido 12.»\n\nVoy por el paso 5 de la tanda.',
+    '> Me escribiste desde la oficina: «revisá\n> el pedido 12»\n\nEl pedido 12 está verde.',
+    'Me escribiste desde la oficina: «revisá el pedido 12». Voy por el paso 5.',
+    'Me escribiste desde la oficina: «revisá el pedido 12\n\ny después mirá el pedido 13 de Acme»\n\nVoy con el pedido 12.',
+    '**Me escribiste desde la oficina:**\n\n> Revisá el pedido 12 de Acme.\n\nVoy por el paso 5.',
+    '> Me escribiste desde la oficina: «Hola.\n>\n> Revisá el pedido 12 y avisame.»\n\nVoy por el paso 5.',
+    'Me escribiste desde la oficina:\n\`\`\`\nHola.\n\nRevisá el pedido 12.\n\`\`\`\n\nVoy por el paso 5.',
+  ]) {
+    const dice = leer(texto);
+    assert.ok(dice === null || !PERSONA.test(dice), `el texto de la persona no sale: ${JSON.stringify(dice)}`);
+    assert.strictEqual(dice, null, texto);
+  }
+  // lo que la sesión escribió antes de la cita sí dice qué hace
+  assert.strictEqual(leer('Sigo con la tanda. Me escribiste desde la oficina: «revisá el pedido 12».'), 'Sigo con la tanda.');
+  // un mensaje sin cita, como siempre
+  assert.strictEqual(leer('Voy por el paso 5 de la tanda.\n\nDespués miro el tablero.'), 'Voy por el paso 5 de la tanda.');
 });
