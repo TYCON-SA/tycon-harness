@@ -1222,8 +1222,10 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
     return { r, ms: Date.now() - t0 };
   };
   const sameAsWithProcess = ({ r }) => { assert.strictEqual(r.decision, asked.decision, JSON.stringify(r)); assert.deepStrictEqual(Object.keys(r).sort(), Object.keys(asked).sort()); };
-  const withoutProcess = ask('toolu_02');
-  sameAsWithProcess(withoutProcess);
+  // tres pedidos de cada lado y se comparan las medianas, como con el marcador: una sola muestra de cada lado da un
+  // rojo cuando la máquina está cargada justo en una de las dos
+  const windowTimes = (prefix) => [0, 1, 2].map((i) => { const x = ask(`${prefix}${i}`); sameAsWithProcess(x); return x.ms; });
+  const withoutWindow = windowTimes('toolu_02_');
   // un candado de un proceso que ya no está: el aviso se pierde en silencio
   fs.writeFileSync(lockOf(m), JSON.stringify({ pid: 999999, port: await freePort(), token: 'viejo', startedAt: '2026-06-01T12:00:00.000Z' }));
   const stale = [];
@@ -1232,9 +1234,8 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
   assert.ok(median(stale) - median(without) < 200, `sin proceso: ${without} ms, con candado viejo: ${stale} ms`);
   assert.strictEqual(lastStale.stderr, '', 'y se calla');
   assert.strictEqual(lastStale.stdout, lastWithout.stdout, 'el comando dice lo mismo');
-  const staleWindow = ask('toolu_03');
-  sameAsWithProcess(staleWindow);
-  assert.ok(staleWindow.ms - withoutProcess.ms < 200, `ventana sin proceso: ${withoutProcess.ms} ms, con candado viejo: ${staleWindow.ms} ms`);
+  const staleWindow = windowTimes('toolu_03_');
+  assert.ok(median(staleWindow) - median(withoutWindow) < 200, `ventana sin proceso: ${withoutWindow} ms, con candado viejo: ${staleWindow} ms`);
   const q2 = Date.now();
   assert.doesNotThrow(() => event.notify('s1', { home: m.home }));
   assert.ok(Date.now() - q2 < 200, 'con candado viejo, tampoco espera');
