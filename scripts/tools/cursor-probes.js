@@ -252,14 +252,18 @@ else {
   ancestors = [];
   const ps = (field, pid) => { const r = spawnSync('ps', ['-o', field + '=', '-p', String(pid)], { encoding: 'utf8', timeout: 3000 }); return r.status === 0 ? r.stdout.trim() : null; };
   let pid = process.pid;
-  for (let i = 0; i < 25 && pid > 1 && pid !== stopPid; i++) {
-    const ppid = Number(ps('ppid', pid));
+  let i = 0;
+  for (; i < 25 && pid > 1 && pid !== stopPid; i++) {
+    const ppidText = ps('ppid', pid);
+    const ppid = ppidText == null || !/^\\d+$/.test(ppidText) ? null : Number(ppidText);
     const exe = ps('ucomm', pid);
     if (exe == null) { ancestorsError = i === 0 ? 'ps no contestó' : 'ps dejó de contestar a mitad de la cadena'; break; }
     ancestors.push({ pid, ppid, start: ps('lstart', pid), exe, args: ps('args', pid) });
+    if (ppid == null) { ancestorsError = 'ps no dio el padre del proceso ' + pid + ': la cadena se cortó ahí'; break; }
     if (!ppid || ppid === pid) break;
     pid = ppid;
   }
+  if (!ancestorsError && i === 25 && pid > 1 && pid !== stopPid) ancestorsError = 'la cadena se cortó a las 25 vueltas sin llegar al proceso 1';
 }
 write({ stage: 'cadena', event, ancestors, ancestorsError });
 process.stdout.write('{}');
@@ -602,11 +606,18 @@ function buildProbes(ctx) {
   return probes;
 }
 
+// Each reason carries the status of its question, so an ERROR does not read as one more NOT MEASURED.
+function labeledReasons(items) {
+  return [...new Set(items.filter((i) => i.status !== MEDIDO).map((i) => `${i.status}: ${i.motivo}`))].join(' · ');
+}
+
 function summarize(items) {
   const measured = items.filter((i) => i.status === MEDIDO);
   if (measured.length === items.length) return { status: MEDIDO, motivo: null, items };
-  if (measured.length > 0) {
-    return { status: 'PARCIAL', motivo: [...new Set(items.filter((i) => i.status !== MEDIDO).map((i) => i.motivo))].join(' · '), items };
+  if (measured.length > 0) return { status: 'PARCIAL', motivo: labeledReasons(items), items };
+  // nothing measured: with mixed statuses an ERROR wins, whatever the order of the questions
+  if (new Set(items.map((i) => i.status)).size > 1 && items.some((i) => i.status === ERROR)) {
+    return { status: ERROR, motivo: labeledReasons(items), items };
   }
   return { status: items[0].status, motivo: items[0].motivo, items };
 }
@@ -862,4 +873,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { RECORDER, parseArgs, findCursor, readPackage, checkRecorder, decide, cursorSeenAs, renderReport };
+module.exports = { RECORDER, parseArgs, findCursor, readPackage, checkRecorder, decide, cursorSeenAs, renderReport, summarize };

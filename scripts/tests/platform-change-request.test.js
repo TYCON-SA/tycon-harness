@@ -813,3 +813,54 @@ test('Nightlies_Github_MalformedRepo_IsNoMedido @story-8.85 @ac-16', () => {
   assert.strictEqual(o.status, 1, o.stdout + o.stderr);
   assert.match(o.stdout, /widgets-sin-dueño/);
 });
+
+/**
+ * Un gh de mentira para la lista con la cola: `total` pedidos abiertos (borradores, así no hay más lecturas). Una página
+ * de más de `limite` contesta como GitHub cuando la consulta se pasa de tiempo: con `modo` «502» el 502 de la puerta, y
+ * con «graphql» un 200 con el error de tiempo. Anota el tamaño de cada página pedida.
+ */
+function ghQueCortaPorTiempo({ total, limite, modo = '502' }) {
+  const d = tmp('gh-corta-');
+  const bin = path.join(d, 'gh.js');
+  const log = path.join(d, 'paginas.log');
+  fs.writeFileSync(bin, `'use strict';
+const fs = require('fs');
+const a = process.argv.slice(2);
+const cuerpo = JSON.parse(fs.readFileSync(a[a.indexOf('--input') + 1], 'utf8'));
+const { first, after } = cuerpo.variables;
+fs.appendFileSync(${JSON.stringify(log)}, first + '\\n');
+if (first > ${limite}) {
+  if (${JSON.stringify(modo)} === '502') { process.stderr.write('gh: HTTP 502 <html><title>Unicorn!</title></html>'); process.exit(1); }
+  process.stdout.write(JSON.stringify({ data: null, errors: [{ message: 'Something went wrong while executing your query. This may be the result of a timeout, or it could be a GitHub bug.' }] }));
+  process.exit(0);
+}
+const desde = after ? Number(after) : 0;
+const nodes = [];
+for (let n = desde + 1; n <= Math.min(${total}, desde + first); n++) nodes.push({ number: n, isDraft: true, id: 'PR_' + n, title: 't' + n, headRefName: 'r' + n, headRefOid: 'a', createdAt: '2026-11-01T00:00:00Z', author: { login: 'x' }, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', commits: { nodes: [] }, timelineItems: { nodes: [] }, empujes: { nodes: [] } });
+const hasta = desde + nodes.length;
+process.stdout.write(JSON.stringify({ data: { repository: { pullRequests: { nodes, pageInfo: { hasNextPage: hasta < ${total}, endCursor: String(hasta) } } } } }));
+`);
+  return { bin, paginas: () => fs.readFileSync(log, 'utf8').trim().split('\n').map(Number) };
+}
+
+test('QueueList_Github_TimeoutPage_RetriesWithHalf', () => {
+  const GH_CR = require(path.join(ROOT, 'integrations', 'github', 'scripts', 'change-requests.js'));
+  const listar = (gh) => GH_CR['change-request.list']({ queue: true }, { env: { ...process.env, TYCON_GH_CMD: gh.bin }, repo: { org: 'acme', repo: 'widgets' } });
+  // una página de 20 corta: la misma con la mitad, y las que siguen de ese tamaño
+  const corta = ghQueCortaPorTiempo({ total: 23, limite: 10 });
+  const r = listar(corta);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepStrictEqual(r.value.map((p) => p.number), Array.from({ length: 23 }, (_, i) => i + 1), 'los 23, ninguno repetido ni perdido');
+  assert.deepStrictEqual(corta.paginas(), [20, 10, 10, 10]);
+  // el corte de GraphQL (un 200 con el error de tiempo) también se parte
+  const graphql = ghQueCortaPorTiempo({ total: 7, limite: 5, modo: 'graphql' });
+  assert.ok(listar(graphql).ok);
+  assert.deepStrictEqual(graphql.paginas(), [20, 10, 5, 5]);
+  // con tope: ni de a 5 pasa, no se cuelga y no se da por leída
+  const nunca = ghQueCortaPorTiempo({ total: 7, limite: 4 });
+  const no = listar(nunca);
+  assert.strictEqual(no.ok, false);
+  assert.strictEqual(no.reason, 'no_medido');
+  assert.match(no.detail, /GitHub cortó por tiempo la lista de pedidos abiertos aun de a 5: gh: HTTP 502/);
+  assert.deepStrictEqual(nunca.paginas(), [20, 10, 5]);
+});

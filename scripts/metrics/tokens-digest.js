@@ -183,11 +183,32 @@ function esNombreDeCredencial(nombre) {
  * del `=` y encuentra al siguiente.
  */
 function taparCredencialesConNombre(txt) {
-  const re = /(["']?)([A-Za-z][A-Za-z0-9_\-]*)\1(\s*[=:]\s*)/g;
+  // Se prueba sólo desde la primera letra de cada tirada de nombre (y desde la comilla que la abre): las letras de más
+  // adentro llegan al mismo final de la tirada y fallan igual. Probar desde cada una relee la tirada entera, y con una
+  // tirada larga sin espacios (un hash, un base64) el tiempo crece al cuadrado.
+  const re = /(["']?)([A-Za-z][A-Za-z0-9_\-]*)\1(\s*[=:]\s*)/y;
+  const candidato = /["']?[A-Za-z]/g;
+  const tirada = /[A-Za-z0-9_\-]*/y;
   let out = '';
   let pos = 0;
-  let m;
-  while ((m = re.exec(txt)) !== null) {
+  let desde = 0;
+  for (;;) {
+    candidato.lastIndex = desde;
+    const c = candidato.exec(txt);
+    if (!c) break;
+    re.lastIndex = c.index;
+    let m = re.exec(txt);
+    if (!m && c[0].length === 2) {
+      re.lastIndex = c.index + 1;
+      m = re.exec(txt);
+    }
+    if (!m) {
+      tirada.lastIndex = c.index + c[0].length;
+      tirada.exec(txt);
+      desde = tirada.lastIndex;
+      continue;
+    }
+    desde = m.index + m[0].length;
     if (!esNombreDeCredencial(m[2])) continue;
     const ini = m.index + m[0].length;
     const q = txt[ini];
@@ -208,7 +229,25 @@ function taparCredencialesConNombre(txt) {
     }
     out += txt.slice(pos, m.index) + m[0] + tapado;
     pos = fin;
-    re.lastIndex = fin;
+    desde = fin;
+  }
+  return out + txt.slice(pos);
+}
+
+// Los correos, probando una vez por tirada de letras: si desde su comienzo no hay un correo, desde adentro tampoco (llega
+// al mismo final). Cada tirada empieza donde terminó la anterior, así `a@b.c+d@e.f` tapa los dos.
+function taparCorreos(txt) {
+  const correo = /[\w.+-]+@[\w-]+\.[\w.-]+/y;
+  const tirada = /[\w.+-]+/g;
+  let out = '';
+  let pos = 0;
+  let t;
+  while ((t = tirada.exec(txt)) !== null) {
+    correo.lastIndex = t.index;
+    if (!correo.exec(txt)) continue;
+    out += `${txt.slice(pos, t.index)}<correo>`;
+    pos = correo.lastIndex;
+    tirada.lastIndex = pos;
   }
   return out + txt.slice(pos);
 }
@@ -351,7 +390,7 @@ function sanear(txt, home) {
   const taparFormas = (t) => FORMAS_DE_CREDENCIAL.reduce((a, forma) => a.replace(forma, tapar), t);
   // La llave privada se tapa entera primero: una forma que tapara sólo su encabezado dejaría el cuerpo a la vista.
   const sinControl = sinControlesTapandoClaves(String(txt || '').replace(LLAVE_PRIVADA, '<oculto>'));
-  return taparFormas(sinControl
+  const tapado = taparFormas(sinControl
     // La llave privada otra vez: una partida por un control recién ahora queda entera.
     // el usuario y la clave de una dirección: `postgres://usuario:clave@servidor`
     .replace(/(:\/\/)[^\s/:@]+:[^\s/@]+@/g, '$1<oculto>@')
@@ -385,8 +424,8 @@ function sanear(txt, home) {
     .replace(casaConSuResto, '<ruta>')
     .replace(RUTA_ABSOLUTA, '<ruta>')
     .replace(CASA_BARRA, '<ruta>')
-    .replace(CASA_CONTRABARRA, '<ruta>')
-    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '<correo>')
+    .replace(CASA_CONTRABARRA, '<ruta>');
+  return taparCorreos(tapado)
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<sesión>');
 }
 
