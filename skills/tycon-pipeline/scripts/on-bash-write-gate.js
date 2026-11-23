@@ -1749,22 +1749,89 @@ function palabrasProfundas(cmd) {
 // `cd <carpeta> && ` al principio exacto del comando, con la carpeta escrita tal cual (sin comillas, sin opción y sin
 // nada que el shell expanda o que corte el comando), seguido de UN `sed` que nombra sus archivos: ni tubería,
 // ni `$(…)`, ni comillas invertidas, ni otro comando, ni redirección, ni salto de línea, ni llaves, `@` o `~` (nombres
-// que el shell expande, `{a,b}.md`, `~+/a.md`). Sólo `sed`: un `perl -e` es un programa entero, que puede armar y
-// escribir sus archivos desde adentro (`BEGIN{@ARGV=glob …}`). Cualquier otra forma no es ésta: un editor que toma sus
-// archivos de una tubería (`ls | xargs sed -i`) o de `$(ls)` escribe en la carpeta del `cd`, y esa carpeta es lo único
-// que la nombra.
+// que el shell expande, `{a,b}.md`, `~+/a.md`). Un `perl -e` es un programa entero, que puede armar y escribir sus
+// archivos desde adentro (`BEGIN{@ARGV=glob …}`): es esta forma sólo como `CD_PERL`. Cualquier otra forma no es ésta: un
+// editor que toma sus archivos de una tubería (`ls | xargs sed -i`) o de `$(ls)` escribe en la carpeta del `cd`, y esa
+// carpeta es lo único que la nombra.
 const CD_INICIAL = /^cd ([^\s'"`$*?[\]{}()<>;&|\\-][^\s'"`$*?[\]{}()<>;&|\\]*) && sed [^\n|;&<>`${}@~]*$/;
+
+// La misma forma con UN `perl` en el lugar: opciones escritas tal cual, un solo programa entre comillas simples sin `$`,
+// `@`, llaves ni comillas invertidas, y la carpeta y los archivos hechos sólo de letras, cifras y `_ . / + , -` (la
+// carpeta puede empezar con `~/`): nada que bash o zsh expandan (`~+`, `~usuario`, `^`, `#`, `=`). Nada antes del `cd` ni
+// después de los archivos: dentro del comando no hay dónde cambiar el ambiente de perl ni qué programa se llama así. Las
+// opciones y el programa los mira `cdInicial`.
+const CD_PERL = /^cd ((?:~\/)?[\w./+,][\w./+,-]*) && perl((?: -[A-Za-z0-9.]+)*) -([pl0-9]*)e '([^'\n$@{}`]*)'((?: [\w./+,][\w./+,-]*)+)$/;
+
+/**
+ * La forma de `CD_INICIAL` o de `CD_PERL`: `{ carpeta, archivos }`, con la carpeta del `cd` y, en la de perl, los archivos
+ * que escribe (en la de sed, null: los dice `sedsLiterales`); o null si el comando no tiene ninguna de las dos. En la de
+ * perl, las opciones tienen que editar en el lugar e imprimir (`-i`, sin sufijo o con uno que empieza con punto y no
+ * termina en `md`; `-p`; `-0` y `-l` también; nada más: ni `-n`, `-M`, `-I`, `-x`, `-d`), y el programa tiene que ser sólo
+ * sustituciones (`programaDePerlSoloSustituye`). Con `CDPATH` puesto, un `cd` relativo puede ir a otra carpeta: no es la
+ * forma de perl.
+ */
+function cdInicial(cmd) {
+  const s = String(cmd || '');
+  const sed = CD_INICIAL.exec(s);
+  if (sed) return { carpeta: sed[1], archivos: null };
+  const p = CD_PERL.exec(s);
+  if (!p || (process.env.CDPATH && !/^(?:\/|~\/)/.test(p[1]))) return null;
+  const opciones = [...p[2].split(' ').filter(Boolean), ...(p[3] ? [`-${p[3]}`] : [])];
+  let enLugar = false;
+  let imprime = false;
+  for (const w of opciones) {
+    const m = /^-([pl0-9]*)(?:(i)(\.[\w.-]*)?)?$/.exec(w);
+    if (!m || w === '-' || (m[3] && /md$/i.test(m[3]))) return null;
+    if (/[0-9]/.test(m[1]) && !/^[pl]*0[0-7]*[pl]*$/.test(m[1])) return null;
+    if (m[1].includes('p')) imprime = true;
+    if (m[2]) enLugar = true;
+  }
+  if (!enLugar || !imprime || !programaDePerlSoloSustituye(p[4])) return null;
+  return { carpeta: p[1], archivos: p[5].split(' ').filter(Boolean) };
+}
+
+/**
+ * ¿El programa de un `perl -pi -e` es sólo sustituciones? Uno o más `s<d>…<d>…<d><indicadores>` separados por `;`, con
+ * un delimitador que no abre ni cierra (`/ # | ! , : ~`) y los indicadores `g i m s x`, sin `$`, `@`, llaves, comillas
+ * invertidas ni salto de renglón, y sin una barra seguida de una cifra en el reemplazo (perl lee `\1` como `$1`, y
+ * `\1[…]` calcula su índice): perl no tiene ahí nada que leer como una variable ni que correr como código. Lo que no se
+ * sabe leer cuenta como que no.
+ */
+function programaDePerlSoloSustituye(programa) {
+  const s = String(programa);
+  if (/[$@{}`\n\r]/.test(s)) return false;
+  // hasta el delimitador sin escapar; -1 si no cierra
+  const hasta = (d, j) => { for (; j < s.length; j++) { if (s[j] === '\\') { j++; continue; } if (s[j] === d) return j; } return -1; };
+  let i = 0;
+  let sustituciones = 0;
+  while (i < s.length) {
+    while (/[\s;]/.test(s[i] || '')) i++;
+    if (i >= s.length) break;
+    if (s[i] !== 's' || !/[/#|!,:~]/.test(s[i + 1] || '')) return false;
+    const d = s[i + 1];
+    const medio = hasta(d, i + 2);
+    if (medio < 0) return false;
+    const fin = hasta(d, medio + 1);
+    if (fin < 0 || /\\\d/.test(s.slice(medio + 1, fin))) return false;
+    i = fin + 1;
+    while (/[gimsx]/.test(s[i] || '')) i++;
+    if (i < s.length && !/[\s;]/.test(s[i])) return false;
+    sustituciones++;
+  }
+  return sustituciones > 0;
+}
 
 /**
  * Las palabras que un editor en el lugar puede escribir: las de `palabrasProfundas`, sin las que tienen espacios. Con
  * la forma de `CD_INICIAL`, la carpeta del `cd` sale de la lista por su posición —la segunda palabra, después de `cd`—:
  * es la base desde la que se resuelven las demás, no algo que el editor escribe. La misma carpeta nombrada otra vez más
- * adelante sigue en la lista.
+ * adelante sigue en la lista. Con la de `CD_PERL`, son sólo sus archivos: las palabras del programa no son destinos.
  */
 function palabrasDelEditor(cmd) {
+  const cd = cdInicial(cmd);
+  if (cd && cd.archivos) return cd.archivos;
   const ws = palabrasProfundas(cmd).filter((w) => !/\s/.test(w));
-  const m = CD_INICIAL.exec(String(cmd || ''));
-  if (m && ws[0] === 'cd' && ws[1] === m[1]) ws.splice(1, 1);
+  if (cd && ws[0] === 'cd' && ws[1] === cd.carpeta) ws.splice(1, 1);
   return ws;
 }
 
@@ -4470,11 +4537,11 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   }
   for (const t of tramos(String(cmd))) for (const d of pelarEnv(t).carpetas) bases.push(resolver(d, cwd));
   // con un editor en el lugar, la carpeta de cada `cd` cuenta por las historias que tiene, salvo en la forma exacta de
-  // un solo `sed` que nombra sus archivos: desde la sesión y desde el `cd` anterior, con su comodín expandido; la que no
-  // se sabe resolver frena
+  // un solo `sed` (o un solo `perl` que sólo sustituye) que nombra sus archivos: desde la sesión y desde el `cd` anterior,
+  // con su comodín expandido; la que no se sabe resolver frena
   const carpetasDeCd = [];
   const cdSinResolver = [];
-  if (enSitio && !CD_INICIAL.test(String(cmd))) {
+  if (enSitio && cdInicial(cmd) == null) {
     // un comodín puede dejar varias carpetas: el `cd` que sigue se resuelve desde todas
     let previas = [sesion];
     const absoluta = (v, b) => resolveTarget(v, b, process.platform, { homeVariable: true });
@@ -5583,20 +5650,95 @@ function constanciasSinHuella(event, opts = {}) {
   if (!cmd || !/\bgit\b/.test(cmd) || !/\b(?:commit|push)\b/.test(cmd)) return null;
   const huellas = require('./lib/control-change-prints.js');
   const stateDir = opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR;
-  const base = cwdDelComando(cmd, nativePath(event?.cwd || process.cwd()));
+  const sesion = nativePath(event?.cwd || process.cwd());
+  // las carpetas donde puede correr el `git` que termina en la posición `hasta` del texto sin cuerpos de heredoc (sin
+  // `hasta`, cualquiera): la del `cd` del principio, la de cada `cd` o `pushd` (con sus opciones; desde el anterior y desde
+  // la sesión; `cd -` vuelve al de antes, y vale adentro de un paréntesis o de llaves), la de un `env -C` y la de
+  // GIT_WORK_TREE o GIT_DIR asignadas. Sólo lo que está antes del `git` y a nivel del shell: un `cd` posterior, o adentro
+  // de un texto entre comillas (el mensaje de un commit), de un comentario o del cuerpo de un heredoc, no mueve al `git`.
+  // `sinResolver`: las que no se pueden saber (una variable o una sustitución); `demasiadas`: más carpetas que el tope,
+  // que no se terminan de leer
+  const absoluta = (raw) => resolveTarget(raw, sesion, process.platform, { homeVariable: true });
+  const carpetasDe = (texto, hasta = Infinity) => {
+    const leido = quitarCuerposDeHeredoc(String(texto));
+    const fuera = posicionesFueraDeComillas(leido);
+    // la posición de la palabra que sigue al separador con que empieza la coincidencia
+    const palabraEn = (m) => m.index + (/^[\s;&|({]/.test(m[0]) ? 1 : 0);
+    const out = [cwdDelComando(texto, sesion)];
+    const sinResolver = [];
+    const visitadas = [sesion];
+    // la carpeta del cd: entre comillas, o una palabra suelta que puede llevar `$(…)` o acentos invertidos
+    for (const m of leido.matchAll(/(?:^|[\s;&|({])(?:cd|pushd)(?:[ \t]+(?:-[LPe@]+|--))*[ \t]+(?:'([^']*)'|"([^"]*)"|((?:\$\([^()]*\)|`[^`]*`|[^\s;&|()<>'"`])+))/g)) {
+      if (palabraEn(m) >= hasta) break;
+      if (!fuera(palabraEn(m))) continue;
+      const tok = m[1] ?? m[2] ?? m[3];
+      if (tok === '-') { if (visitadas.length > 1) visitadas.pop(); out.push(visitadas[visitadas.length - 1]); continue; }
+      if (!tok) continue;
+      // un comodín sin comillas lo expande el shell: no se sabe a qué carpeta va
+      if (m[3] !== undefined && /[*?[]|\{[^}]*,/.test(tok)) { sinResolver.push(`cd ${tok}`); continue; }
+      const ex = expandirRuta(leido.slice(0, m.index + m[0].length), tok);
+      if (ex.sinResolver.length) { sinResolver.push(`cd ${tok}`); continue; }
+      const encadenada = resolveTarget(ex.valor, visitadas[visitadas.length - 1], process.platform, { homeVariable: true });
+      out.push(encadenada, absoluta(ex.valor));
+      visitadas.push(encadenada);
+      if (new Set(out).size > TOPE_DE_CARPETAS_DE_CD) return { carpetas: [...new Set(out)], sinResolver, demasiadas: true };
+    }
+    let cursor = 0;
+    for (const t of tramos(String(texto))) {
+      const p = leido.indexOf(t, cursor);
+      if (p < 0) continue;
+      if (p >= hasta) break;
+      cursor = p + t.length;
+      for (const d of pelarEnv(t).carpetas) out.push(absoluta(d));
+    }
+    for (const m of leido.matchAll(/(?:^|[\s;&|({])(?:(?:export|local|declare|readonly|typeset)\s+(?:-\w+\s+)*)?(GIT_WORK_TREE|GIT_DIR)=((?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"\\;&|()])*)/g)) {
+      if (palabraEn(m) >= hasta) break;
+      if (!fuera(palabraEn(m))) continue;
+      const v = palabraDelShell(m[2]);
+      if (/[$`]/.test(v)) { sinResolver.push(`${m[1]}=${v}`); continue; }
+      const abs = absoluta(v);
+      out.push(m[1] === 'GIT_DIR' && path.basename(abs) === '.git' ? path.dirname(abs) : abs);
+    }
+    return { carpetas: [...new Set(out)], sinResolver, demasiadas: false };
+  };
+  // dos lecturas juntas: la del texto anidado y la del comando que lo lleva
+  const unir = (a, b) => (b ? { carpetas: [...new Set([...a.carpetas, ...b.carpetas])], sinResolver: [...a.sinResolver, ...b.sinResolver], demasiadas: a.demasiadas || b.demasiadas } : a);
   const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
   const frena = (texto) => {
     try { require('./lib/story-gate-io.js').appendLog(stateDir, 'gates.log', resolveSessionId(event?.session_id), { name: 'story-gate', status: 'blocked', kind: 'constancia-sin-huella', via, reason: texto.split('\n')[0] }); } catch { /* el registro no traba el freno */ }
     return { block: `${texto}\n` };
   };
   const vistos = new Set();
-  // también lo que corre adentro (`bash -c "git commit …"`, `$(…)`)
-  for (const texto of [String(cmd), ...comandosAnidados(String(cmd)).slice(1)]) {
+  // también lo que corre adentro (`bash -c "git commit …"`, `$(…)`), lo que corre otro programa (un heredoc a un shell)
+  // y el comando con los renglones partidos con `\` juntados
+  const plano = String(cmd).replace(/\\\r?\n/g, ' ');
+  const textos = [...new Set([String(cmd), plano, ...comandosAnidados(String(cmd)).slice(1), ...comandosPorOtroPrograma(String(cmd), sesion)])];
+  const sinMirar = (que, sub) => frena(`🔒 CONSTANCIA SIN MIRAR — no pude resolver la carpeta de \`${que}\` antes de \`git ${sub}\`: no sé qué repo commitea o empuja ni si lleva una constancia sin firmar. Escribí la ruta sin variables.`);
+  const externo = quitarCuerposDeHeredoc(String(cmd));
+  for (const texto of textos) {
+    // un texto anidado (`$(git push)`, `bash -c "…"`, un `-exec`) corre también en las carpetas del comando que lo lleva,
+    // hasta donde aparece
+    const anidado = texto !== String(cmd) && texto !== plano;
+    const dondeAparece = anidado ? externo.indexOf(String(texto)) : -1;
+    const leido = quitarCuerposDeHeredoc(String(texto));
+    let cursor = 0;
     for (const tramo of tramos(texto)) {
-      // sin las redirecciones: `2>&1` o `> salida.txt` no son parte de lo que se empuja
-      const w = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).filter((x) => x !== '');
+      const p = leido.indexOf(tramo, cursor);
+      const fin = p < 0 ? Infinity : p + tramo.length;
+      if (p >= 0) cursor = fin;
+      // sin el comentario del final (`git push # x` no empuja `x`), sin el `env` de delante (`env -C repo git push`), sin
+      // las redirecciones (`2>&1` o `> salida.txt` no son parte de lo que se empuja) y sin el `)` que cierra un grupo; la
+      // palabra vacía de `-C ""` queda (git la toma como «acá»)
+      const enTramo = posicionesFueraDeComillas(String(tramo));
+      let corte = String(tramo).length;
+      if (typeof enTramo.esComentario === 'function') for (let k = 0; k < corte; k++) if (enTramo.esComentario(k)) corte = k;
+      const w = palabras(sinPalabrasDelShell(pelarEnv(String(tramo).slice(0, corte)).resto.replace(REDIRECCION, ' '))).map(sinCierreDeGrupo).filter((x, k, a) => x !== '' || a[k - 1] === '-C');
       if (nombreDeComando(w[0]) !== 'git') continue;
-      let dir = base;
+      const lectura = unir(carpetasDe(texto, fin), anidado ? carpetasDe(String(cmd), dondeAparece < 0 ? Infinity : dondeAparece) : null);
+      const carpetas = lectura.carpetas;
+      let dirs = carpetas;
+      let fija = false;
+      const pendientes = [];
       let i = 1;
       while (i < w.length && /^-/.test(w[i])) {
         const pegada = /^-C(.+)$/.exec(w[i]);
@@ -5605,16 +5747,36 @@ function constanciasSinHuella(event, opts = {}) {
           const ruta = expandirRuta(texto, crudo);
           // una carpeta que no se resuelve no se puede mirar: frena
           if (ruta.sinResolver.length) return frena(`🔒 CONSTANCIA SIN MIRAR — no pude resolver la carpeta de \`git -C ${crudo}\`: no sé qué repo commitea o empuja ni si lleva una constancia sin firmar. Escribí la ruta sin variables.`);
-          dir = resolveTarget(ruta.valor, dir, process.platform, { homeVariable: true }); i += pegada ? 1 : 2; continue;
+          dirs = dirs.map((d) => resolveTarget(ruta.valor, d, process.platform, { homeVariable: true }));
+          fija = fija || path.isAbsolute(String(ruta.valor));
+          i += pegada ? 1 : 2; continue;
         }
-        // las opciones de git que llevan su valor en la palabra que sigue
-        if (/^(?:-c|--git-dir|--work-tree|--namespace|--super-prefix|--attr-source|--config-env|--exec-path)$/.test(w[i])) { i += 2; continue; }
-        const wt = /^--work-tree=(.+)$/.exec(w[i]);
-        if (wt) dir = resolveTarget(wt[1], dir, process.platform, { homeVariable: true });
+        // `--work-tree` y `--git-dir`, pegados o aparte, nombran un repo más para mirar (el del `.git` es la carpeta que lo
+        // tiene); la carpeta de trabajo sigue: `git --git-dir=<otro> add -A` toma los archivos de acá
+        // (`--git-dir="$X"` llega partido en `--git-dir=` y el valor: el `=` vacío toma la palabra que sigue)
+        const repoPor = /^--(work-tree|git-dir)(?:=(.*))?$/.exec(w[i]);
+        if (repoPor) {
+          const valor = repoPor[2] || w[i + 1];
+          if (valor !== undefined) pendientes.push([repoPor[1], valor]);
+          i += repoPor[2] ? 1 : 2;
+          continue;
+        }
+        // las opciones de git que llevan su valor en la palabra que sigue; `-c user.name="AB"` llega partido en
+        // `user.name=` y el valor, que también es de la opción
+        if (w[i] === '-c' && /=$/.test(w[i + 1] || '') && w[i + 2] !== undefined && w[i + 2] !== 'commit' && w[i + 2] !== 'push') { i += 3; continue; }
+        if (/^(?:-c|--namespace|--super-prefix|--attr-source|--config-env|--exec-path)$/.test(w[i])) { i += 2; continue; }
         i++;
       }
       const sub = w[i];
       if (sub !== 'commit' && sub !== 'push') continue;
+      for (const [cual, valor] of pendientes) {
+        const ruta = expandirRuta(texto, valor);
+        if (ruta.sinResolver.length) return sinMirar(`git --${cual} ${valor}`, sub);
+        const abs = resolveTarget(ruta.valor, carpetas[0], process.platform, { homeVariable: true });
+        dirs = [...dirs, cual === 'git-dir' && path.basename(abs) === '.git' ? path.dirname(abs) : abs];
+      }
+      if (!fija && lectura.demasiadas) return frena(`🔒 CONSTANCIA SIN MIRAR — el comando cambia de carpeta más de ${TOPE_DE_CARPETAS_DE_CD} veces antes de \`git ${sub}\`: no sé en qué repo corre ni si lleva una constancia sin firmar. Partilo en comandos más cortos.`);
+      if (!fija && lectura.sinResolver.length) return sinMirar(lectura.sinResolver[0], sub);
       // lo que se empuja: sin refspec, la rama de HEAD; con `--all`/`--mirror`/`--branches` (también abreviadas) o un
       // comodín, todas; si no, el origen de cada refspec. Borrar una rama remota no empuja nada
       let refs = ['HEAD'];
@@ -5636,7 +5798,9 @@ function constanciasSinHuella(event, opts = {}) {
         const lista = remotoPorOpcion ? posicionales : posicionales.slice(1);
         for (let k = 0; k < lista.length; k++) {
           if (lista[k] === 'tag' && lista[k + 1]) { especificaciones.push(`refs/tags/${lista[++k]}`); continue; }
-          const origen = lista[k].replace(/^\+/, '').split(':')[0];
+          // un destino con una variable vale lo asignado; uno que no se resuelve (`$(…)`) puede ser cualquier rama
+          const ex = expandirRuta(texto, lista[k]);
+          const origen = (ex.sinResolver.length ? '*' : String(ex.valor)).replace(/^\+/, '').split(':')[0];
           if (origen) especificaciones.push(/\*/.test(origen) ? '*' : origen);
         }
         if (todas || especificaciones.includes('*')) refs = ['*'];
@@ -5645,11 +5809,13 @@ function constanciasSinHuella(event, opts = {}) {
         else if (lista.length) refs = [];
         if (!refs.length) continue;
       }
-      const clave = `${dir}\0${sub}\0${refs.join(',')}`;
-      if (vistos.has(clave)) continue;
-      vistos.add(clave);
-      const cartel = huellas.frenoDe({ dir, cuando: sub, stateDir, refs });
-      if (cartel) return frena(cartel);
+      for (const dir of dirs) {
+        const clave = `${dir}\0${sub}\0${refs.join(',')}`;
+        if (vistos.has(clave)) continue;
+        vistos.add(clave);
+        const cartel = huellas.frenoDe({ dir, cuando: sub, stateDir, refs });
+        if (cartel) return frena(cartel);
+      }
     }
   }
   return null;
