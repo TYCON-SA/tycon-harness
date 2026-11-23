@@ -519,6 +519,83 @@ test('T23 ShellAnidado_Busybox_Frena', () => {
   pasa(c, `busybox cat ${H}`);
 });
 
+// T24 a T27 · lo que encontró el pase adversarial de la fila 61: las mismas formas con un envoltorio delante, con la
+// variable armada de otra forma y con la entrada del `xargs` escrita de otra forma.
+test('T24 ShellAnidado_BusyboxConEnvoltorioOVariable_Frena', () => {
+  const c = corral();
+  for (const cmd of [`sudo busybox rm ${H}`, `nohup busybox rm ${H}`, `timeout 5 busybox rm ${H}`, `command busybox rm ${H}`,
+    `nice busybox rm ${H}`, `F=${H}; busybox rm $F`]) frena(c, cmd);
+  pasa(c, `sudo busybox cat ${H}`);
+  pasa(c, 'echo busybox rm');
+});
+
+test('T25 ShellAnidado_VariableArmadaDeOtraForma_Frena', () => {
+  const c = corral();
+  const muchas = Array.from({ length: 12 }, (_, k) => `V=a${k}`).join('; ');
+  for (const cmd of [`D=specs; F=$D/story-1.1.md; sh -c 'rm $F'`, `F=$'sp\\x65cs/story-1.1.md'; sh -c 'rm $F'`,
+    `${muchas}; V=${H}; sh -c 'rm $V'`, `F=${H}; sh -c 'rm \${F:-x}'`, `F=${H}; sh -c 'rm "\${F}"'`]) frena(c, cmd);
+  pasa(c, `D=specs; F=$D/README.md; sh -c 'rm $F'`);
+});
+
+test('T26 ShellAnidado_EntradaDeXargsEscritaDeOtraForma_Frena', () => {
+  const c = corral();
+  for (const cmd of [`xargs rm <<< 'specs/story-1.'1.md`, 'xargs rm <<< specs/story-1."1".md',
+    `xargs rm <<< $'README.md\\n${H}'`, `xargs rm <<< $'${H}\\x20README.md'`, `xargs -0 rm <<< $'README.md\\0${H}'`,
+    `xargs -d, rm <<< 'README.md,${H}'`, `F=${H}; xargs rm <<< "$F"`]) frena(c, cmd);
+  pasa(c, `xargs -d, cat <<< 'README.md,${H}'`);
+  pasa(c, 'xargs rm <<< README.md');
+});
+
+test('T27 ShellAnidado_XargsUnaPorVez_Frena', () => {
+  const c = corral();
+  frena(c, `xargs -n1 sh -c 'rm "$1"' _ <<< "README.md ${H}"`);
+  frena(c, `echo README.md ${H} | xargs -n1 sh -c 'rm "$1"' _`);
+  pasa(c, `xargs -n1 sh -c 'cat "$1"' _ <<< "README.md ${H}"`);
+});
+
+// T28 a T30 · la fila 81 (pase del pedido único #1502), la parte de las historias: la carpeta de `env -C`, `pushd` y los
+// `cd` encadenados dentro de un cuerpo anidado, `sudo` con una opción con valor, y `printf` con `\n` hacia `xargs`.
+test('T28 ShellAnidado_CarpetaDeEnvCPushdYCdEncadenados_Frena', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, 'sub'), { recursive: true });
+  for (const cmd of [`env -C specs sh -c 'echo x >> story-1.1.md'`, `sh -c 'cd sub && cd ../specs && echo x >> story-1.1.md'`,
+    `sh -c 'cd specs && cd - && cd specs && rm story-1.1.md'`, 'pushd specs && rm story-1.1.md', 'pushd specs; sh -c \'rm story-1.1.md\'']) frena(c, cmd);
+  pasa(c, `env -C specs sh -c 'cat story-1.1.md'`);
+  pasa(c, 'pushd specs && echo x >> notas.txt');
+});
+
+test('T29 ShellAnidado_SudoConOpcionConValor_Frena', () => {
+  const c = corral();
+  for (const cmd of [`sudo -u root sh -c 'echo x >> ${H}'`, `sudo -u root -g wheel bash -c 'rm ${H}'`]) frena(c, cmd);
+  pasa(c, `sudo -u root sh -c 'cat ${H}'`);
+});
+
+test('T30 ShellAnidado_PrintfConSaltoHaciaXargs_Frena', () => {
+  const c = corral();
+  frena(c, `printf '${H}\\n' | xargs rm`);
+  frena(c, `printf 'README.md\\n${H}\\n' | xargs rm`);
+  pasa(c, `printf '${H}\\n' | xargs cat`);
+});
+
+// T31 · fila 118: comillas pegadas en medio de una palabra (vacías o con algo adentro) son la misma palabra para el shell,
+// afuera y adentro de un shell anidado. T32 · `$PWD` después de un `cd` en el cuerpo es la carpeta de ese `cd`.
+test('T31 ComillasPegadasEnLaPalabra_Frena', () => {
+  const c = corral();
+  for (const cmd of ['rm sp""ecs/story-1.1.md', "rm specs/story-1.''1.md", 'echo x >> specs/"story"-1.1.md',
+    'sed -i s/a/b/ sp""ecs/story-1.1.md', `sh -c 'rm sp""ecs/story-1.1.md'`]) frena(c, cmd);
+  pasa(c, 'rm REA""DME.md');
+  pasa(c, 'cat sp""ecs/story-1.1.md');
+  pasa(c, 'git commit -m "toca sp""ecs/story-1.1.md"');
+});
+
+test('T32 ShellAnidado_PwdDespuesDeUnCd_EsLaCarpetaDelCd', () => {
+  const c = corral();
+  const afuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'freno-afuera-')));
+  pasa(c, `sh -c 'cd ${afuera} && echo x >> $PWD/${H}'`);
+  frena(c, `sh -c 'cd specs && echo x >> $PWD/story-1.1.md'`);
+  frena(c, `sh -c 'echo x >> $PWD/${H}; cd ${afuera}'`);
+});
+
 // T15 Bench_FrenoComandosAnidados
 // 🔴 Falla con: un caso del banco que no corre o que da otra salida que la esperada.
 test('T15 Bench_FrenoComandosAnidados', () => {
