@@ -14,6 +14,8 @@
 // un camino corto, una foto de 10 minutos. Los caminos cortos de sesiones que ya no están, sin tocarse hace más de 7
 // días, sólo se cuentan, con el comando para cerrarlos. También dice la deuda de evidencia en vivo vencida
 // (`debtNotice` de unclosed-runs-notice.js): es lo único que escribe, el cierre de una deuda ya pagada en `gates.log`.
+// Con lo que ya miró deja la foto de lo que espera la revisión de la persona (scripts/lib/review-load.js,
+// `review-load.json` de la carpeta de estado), que leen los avisos de la coordinadora y /wip: nadie decide con ella.
 // Nunca rompe el arranque: sale 0 siempre. Off: TYCON_FINISHED_OPEN_NOTICE=0 (todo) o TYCON_UNSAVED_FOLDERS=0 (las carpetas). TYCON_FINISHED_OPEN_NOW fija la hora (pruebas).
 const fs = require('fs');
 const os = require('os');
@@ -32,15 +34,32 @@ async function main({ env = process.env, home = os.homedir(), write = (t) => pro
   const stateDir = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(home);
   // si lo de las corridas falla, se dice y los avisos que siguen salen igual: la deuda vencida no espera a otro día
   let lines = [];
-  try { ({ lines } = require(LIB).machine({ home, stateDir, now, markerJs: MARKER_JS })); } catch (e) {
+  let terminados = null;
+  try { terminados = require(LIB).machine({ home, stateDir, now, markerJs: MARKER_JS }); ({ lines } = terminados); } catch (e) {
     write(`🔔 terminado sin cerrar: no pude mirar (${String((e && e.message) || e).split('\n')[0]})\n`);
   }
   if (lines.length) write(`🔔 terminado sin cerrar en esta máquina (nada se cierra solo; cerralo después del último push y del último pedido):\n${lines.map((l) => `  · ${l}`).join('\n')}\n`);
   // la deuda de evidencia en vivo vencida: este gancho se instala siempre, el de las corridas sin cerrar sólo con el buzón
   require(path.join(__dirname, 'unclosed-runs-notice.js')).debtNotice({ env, home, write: (t) => write(`${t}\n`) });
-  if (env.TYCON_UNSAVED_FOLDERS === '0') return;
-  const sueltas = await require(LIB).unsavedFolders({ home, now, env });
-  if (sueltas.length) write(`🔔 carpetas de trabajo con cambios sin commitear y sin sesión (no toco nada; commitealos y empujalos a su rama, o descartalos a conciencia):\n${sueltas.map((l) => `  · ${l}`).join('\n')}\n`);
+  let carpetas = null;
+  if (env.TYCON_UNSAVED_FOLDERS !== '0') {
+    carpetas = await require(LIB).unsavedFolderItems({ home, now, env });
+    const sueltas = require(LIB).unsavedFolderLines(carpetas);
+    if (sueltas.length) write(`🔔 carpetas de trabajo con cambios sin commitear y sin sesión (no toco nada; commitealos y empujalos a su rama, o descartalos a conciencia):\n${sueltas.map((l) => `  · ${l}`).join('\n')}\n`);
+  }
+  await dejarFoto({ env, home, stateDir, now, terminados, carpetas });
+}
+
+/** La foto de lo que espera revisión, con lo que el arranque ya miró. Si algo falla, no rompe el arranque. */
+async function dejarFoto({ env, home, stateDir, now, terminados, carpetas }) {
+  try {
+    const RL = require(path.join(ROOT, 'scripts', 'lib', 'review-load.js'));
+    const r = await RL.reviewLoad({ home, stateDir, ahora: now, env, deps: {
+      machine: () => { if (!terminados) throw new Error('el arranque no los pudo mirar'); return terminados; },
+      folderItems: async () => { if (!carpetas) throw new Error('TYCON_UNSAVED_FOLDERS=0: el arranque no las miró'); return carpetas; },
+    } });
+    RL.escribirFoto(stateDir, r, now);
+  } catch (_) { /* la foto es para avisar: sin ella, los avisos dicen que no la hay */ }
 }
 
 if (require.main === module) {
