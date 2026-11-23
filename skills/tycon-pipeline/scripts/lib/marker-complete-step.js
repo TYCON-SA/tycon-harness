@@ -1098,8 +1098,11 @@ function cmdCompleteStep(nRaw, flags) {
       // legacy (ui / non-ui) mantienen su escape DOD_BYPASS.
       if (String(blocked).startsWith('acmatrix') || blocked === 'qaguide' || blocked === 'manualcheck') {
         console.error('');
-        console.error('  🔒 Este bloqueo NO tiene bypass para el agente (ni DOD_BYPASS ni --no-verify lo saltean');
-        console.error('     limpiamente): la verificación runtime es obligatoria. La única salida es el waiver TTY del usuario.');
+        console.error('  🔒 Este bloqueo NO tiene bypass para el agente (ni DOD_BYPASS ni --no-verify lo saltean limpiamente).');
+        // cada bloqueo dice su salida: la exención por terminal existe sólo para la matriz
+        if (String(blocked).startsWith('acmatrix')) console.error('     La verificación runtime es obligatoria: la única salida es el waiver TTY del usuario.');
+        else if (blocked === 'qaguide') console.error('     La salida es lo que dice la guía de tester, arriba: corregí la pantalla, o actualizá la maqueta y pedí que la aprueben de nuevo, o declará la diferencia con una línea `- «texto» — differs: <por qué>` en la revisión de la pantalla.');
+        else console.error('     La salida es la marca a mano de una persona, arriba dice cuál falta.');
         process.exit(2);
       }
       console.error('  Saltear este bloqueo lo decide la persona, no el agente: si quiere, lo firma en la ventana de');
