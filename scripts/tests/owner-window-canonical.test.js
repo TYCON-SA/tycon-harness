@@ -70,8 +70,9 @@ const anotarClick = (casa, pregunta) => oaReal.anotar(casa, { tipo: 'click', ses
   pregunta, respuesta: 'Sí, aprobar', herramienta: { pid: 100, inicio: INICIO } });
 
 /**
- * Una historia de ensayo con tres criterios que no se prueban en vivo (1, 3 y 4). Fuera de `specs/` y sin el nombre
- * `story-*.md`: el freno de comandos lee lo que escribe una prueba.
+ * Una historia de ensayo con tres criterios que no se prueban en vivo (1, 3 y 4), sin otro sin correr: con uno, la
+ * ventana niega antes del cuadro. Fuera de `specs/` y sin el nombre `story-*.md`: el freno de comandos lee lo que escribe
+ * una prueba.
  */
 function historiaConTres(t) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-tres-'));
@@ -82,7 +83,7 @@ function historiaConTres(t) {
   const story = path.join(repo, 'h', 'tres.md');
   const escribir = (texto1 = 'el aviso queda en el servicio externo') => fs.writeFileSync(story, ['---', 'story: "9.94"', 'status: in-progress', 'runtime_not_verifiable:',
     ...[1, 3, 4].flatMap((n) => [`  - ac: ${n}`, '    reason: "el servicio externo no tiene ambiente de prueba"', `    covered_by: T${n}`]), '---', '', '# Story 9.94', '',
-    '## Acceptance Criteria', '', `1. **Given** un pedido **Then** ${texto1}.`, '2. **Given** otro **Then** se ve.', '3. **Given** un tercero **Then** queda afuera.',
+    '## Acceptance Criteria', '', `1. **Given** un pedido **Then** ${texto1}.`, '3. **Given** un tercero **Then** queda afuera.',
     '4. **Given** un cuarto **Then** queda afuera también.', '', '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
     '| T1 | `Uno` | 1 | unit | x | y |', '| T3 | `Tres` | 3 | unit | x | y |', '| T4 | `Cuatro` | 4 | unit | x | y |', ''].join('\n'));
   escribir();

@@ -430,8 +430,11 @@ test('OwnerWindow_Terminal_FirmaYSinTtySaleDos (T15)', (t) => {
   }
 });
 
-/** Una historia con un criterio declarado imposible de probar en vivo, cuya prueba corrió en verde: queda pendiente de firma. */
-function historiaConCriterio(t) {
+/**
+ * Una historia con un criterio declarado imposible de probar en vivo, cuya prueba corrió en verde: queda pendiente de firma.
+ * Con `sinCorrer`, además el AC 2, sin prueba ni evidencia: queda sin correr y el guion niega la firma por él.
+ */
+function historiaConCriterio(t, { sinCorrer = false } = {}) {
   // en una carpeta propia: la matriz mira las hermanas del repo, y las de la carpeta temporal son miles
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-crit-'));
   if (t) t.after(() => fs.rmSync(base, { recursive: true, force: true }));
@@ -442,7 +445,7 @@ function historiaConCriterio(t) {
   const story = path.join(repo, 'specs', 'story-9.91-juguete.md');
   fs.writeFileSync(story, ['---', 'story: "9.91"', 'status: in-progress', 'runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"',
     '    covered_by: T1', '---', '', '# Story 9.91', '', '## Acceptance Criteria', '', '1. **Given** un pedido **Then** el aviso queda en el servicio externo.',
-    '2. **Given** otro pedido **Then** se ve en pantalla.', '', '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
+    ...(sinCorrer ? ['2. **Given** otro pedido **Then** se ve en pantalla.'] : []), '', '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
     '| T1 | `Aviso_QuedaRegistrado` | 1 | unit | x | y |', ''].join('\n'));
   fs.mkdirSync(path.join(repo, '.advisors'));
   fs.writeFileSync(path.join(repo, '.advisors', 'tests-result.json'), JSON.stringify({ ts: new Date().toISOString(), story_id: '9.91', suite_green: true }));
@@ -452,7 +455,7 @@ function historiaConCriterio(t) {
 // 🔴 Falla con: `runtime-waiver --acs` sobre una historia con criterios sin correr que niega con «no es un criterio
 //    pendiente de firma» en vez del motivo real y la lista entera de los que faltan correr (el que da la forma sin --acs).
 test('OwnerWindow_RuntimeWaiver_ConAcs_DiceLosSinCorrer', (t) => {
-  const { story } = historiaConCriterio(t);
+  const { story } = historiaConCriterio(t, { sinCorrer: true });
   for (const acs of ['2', '1,2']) {
     const r = pedir(casaNueva(t), `node ${MARKER} runtime-waiver ${story} --acs ${acs}`);
     assert.strictEqual(r.decision, 'deny', r.texto);
@@ -461,18 +464,45 @@ test('OwnerWindow_RuntimeWaiver_ConAcs_DiceLosSinCorrer', (t) => {
   }
 });
 
+/** La historia con el AC 2 sin correr y nombrado por T2 en la tabla: una deuda con T2 en su rojo esperado lo cubre. */
+function historiaEnDeuda(t) {
+  const h = historiaConCriterio(t, { sinCorrer: true });
+  const fila = '| T1 | `Aviso_QuedaRegistrado` | 1 | unit | x | y |';
+  fs.writeFileSync(h.story, fs.readFileSync(h.story, 'utf8').replace(fila, `${fila}\n| T2 | \`Pantalla_SeVe\` | 2 | unit | x | y |`));
+  return h;
+}
+
+/** Una casa con la ejecución de ses-a sobre la historia, en deuda, con T2 en su rojo esperado hasta `until`. */
+function casaEnDeuda(t, { repo, story, until }) {
+  const casa = casaNueva(t);
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.91', storyPath: story, repoPath: repo,
+    cierre: { estado: 'deuda', deuda: 'D-1' }, checks: { acmatrix: 'rojo-esperado:exit=1' }, expectedRed: { acmatrix: { tests: ['T2'], deuda: 'D-1', until } } }));
+  return casa;
+}
+
+// 🔴 Falla con: los criterios pedidos pendientes de firma, otro criterio de la historia sin correr, y la ventana que arma
+//    el cuadro y pregunta: después el guion niega la firma por el sin correr y el click del dueño no sirve.
+test('OwnerWindow_RuntimeWaiver_OtroSinCorrer_NiegaAntesDelCuadro', (t) => {
+  const { story } = historiaConCriterio(t, { sinCorrer: true });
+  for (const cmd of [`node ${MARKER} runtime-waiver ${story} --acs 1`, `node ${MARKER} runtime-waiver ${story}`]) {
+    const r = pedir(casaNueva(t), cmd);
+    assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
+    assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #2\. Los corre el agente/, r.texto);
+    assert.doesNotMatch(r.texto, /no es un criterio pendiente de firma/, r.texto);
+    assert.ok(!r.cuadro || r.cuadro.error, `${cmd}: sin cuadro`);
+  }
+  // con la misma regla que el guion: en deuda vigente, el sin correr que cubre su rojo esperado no frena el cuadro
+  const h = historiaEnDeuda(t);
+  const r = pedir(casaEnDeuda(t, { ...h, until: '2099-12-31' }), `node ${MARKER} runtime-waiver ${h.story} --acs 1`);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /AC 1: .*el criterio: Given un pedido/, r.texto);
+});
+
 // 🔴 Falla con: la ejecución en deuda cuyo rojo esperado vigente cubre el criterio sin correr, y la ventana que niega
 //    con «hay criterios SIN CORRER» cuando el guion no lo cuenta (no frena) y dice que no es un criterio pendiente.
 test('OwnerWindow_RuntimeWaiver_ConAcs_EnDeudaCuentaComoElGuion', (t) => {
-  const { repo, story } = historiaConCriterio(t);
-  const fila = '| T1 | `Aviso_QuedaRegistrado` | 1 | unit | x | y |';
-  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace(fila, `${fila}\n| T2 | \`Pantalla_SeVe\` | 2 | unit | x | y |`));
-  const enDeuda = (until) => {
-    const casa = casaNueva(t);
-    fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.91', storyPath: story, repoPath: repo,
-      cierre: { estado: 'deuda', deuda: 'D-1' }, checks: { acmatrix: 'rojo-esperado:exit=1' }, expectedRed: { acmatrix: { tests: ['T2'], deuda: 'D-1', until } } }));
-    return pedir(casa, `node ${MARKER} runtime-waiver ${story} --acs 2`);
-  };
+  const { repo, story } = historiaEnDeuda(t);
+  const enDeuda = (until) => pedir(casaEnDeuda(t, { repo, story, until }), `node ${MARKER} runtime-waiver ${story} --acs 2`);
   // vigente: el AC 2 lo cubre la deuda, y el motivo es el del guion
   let r = enDeuda('2099-12-31');
   assert.strictEqual(r.decision, 'deny', r.texto);

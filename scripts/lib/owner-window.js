@@ -831,31 +831,29 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   // en orden: la fuente de la huella y la pregunta no cambian con el orden en que se escribieron
   const pedidos = i >= 0 ? [...new Set(String(palabras[i + 1] || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b) : null;
   if (pedidos && !pedidos.length) return { error: '--acs no dice qué criterios: sin ellos a la vista no se firma' };
+  // la matriz que mide el guion: con la ejecución de la historia a la vista, la de su tanda; si no, la historia entera.
+  // Una sola vez por consulta: los criterios y los sin correr salen de ella
+  let mm = m;
+  if (!mm && sesion) { try { mm = marcadorEn(path.join(stateDir(casa), 'active', `${sesion}.json`)); } catch (_) { mm = null; } }
+  if (mm && !wd.esLaDelMarcador(abs, mm)) mm = null;
   let c;
+  let matriz;
   try {
-    c = wd.criteriosDe(abs, pedidos || []);
-    if (!c.error && !pedidos) c = wd.criteriosDe(abs, c.matrix.notVerifiable || [], c.matrix);
+    matriz = wd.matrixForSignature(abs, mm);
+    c = wd.criteriosDe(abs, pedidos || (matriz.notVerifiable || []), matriz);
   } catch (e) { return { error: `no pude armar los criterios (${una((e && e.message) || String(e), 200)})` }; }
   if (c.error) return { error: `no pude armar los criterios: la matriz no computa (${una(c.error, 200)})` };
   const faltan = (pedidos || []).filter((n) => !c.lista.some((x) => x.ac === n));
-  // con criterios sin correr el guion rechaza por eso, con la lista entera: la ventana dice el mismo motivo, no el de
-  // «no está pendiente de firma», que manda a buscar por el lado equivocado
-  let sinCorrer = (c.matrix && c.matrix.notRun) || [];
-  // con la ejecución a la vista, los mismos que cuenta el guion: con tanda anotada, sólo los de esa tanda
-  if (faltan.length && sinCorrer.length) {
-    try {
-      const mm = m || (sesion ? marcadorEn(path.join(stateDir(casa), 'active', `${sesion}.json`)) : null);
-      if (mm && wd.esLaDelMarcador(abs, mm)) {
-        const firma = wd.matrixForSignature(abs, mm);
-        // en deuda, los que cubre su rojo esperado vigente no frenan la exención: la misma cuenta del guion
-        if (!firma.structuralError) {
-          sinCorrer = mm.cierre && mm.cierre.estado === 'deuda'
-            ? require(path.join(LIB, 'marker-signatures.js')).sinCorrerFueraDeLaDeuda(mm, firma) : (firma.notRun || []);
-        }
-      }
-    } catch (_) { /* sin marcador legible queda la matriz entera: el motivo sigue siendo cierto */ }
+  // con criterios sin correr el guion rechaza la firma por eso, pida los criterios que pida, con la lista entera: la
+  // ventana niega antes del cuadro con el mismo motivo (el click no se gasta), no con «no está pendiente de firma». En
+  // deuda, los que cubre su rojo esperado vigente no cuentan: la misma cuenta del guion
+  let sinCorrer = matriz.notRun || [];
+  if (sinCorrer.length && mm && mm.cierre && mm.cierre.estado === 'deuda') {
+    try { sinCorrer = require(path.join(LIB, 'marker-signatures.js')).sinCorrerFueraDeLaDeuda(mm, matriz); } catch (e) {
+      return { error: `no pude contar los criterios sin correr de la deuda (${una((e && e.message) || String(e), 200)})` };
+    }
   }
-  if (faltan.length && sinCorrer.length) {
+  if (sinCorrer.length) {
     const otros = faltan.filter((n) => !sinCorrer.includes(n));
     return { error: `hay criterios SIN CORRER que no se pueden eximir: AC ${sinCorrer.map((n) => `#${n}`).join(', ')}. Los corre el agente${otros.length ? `; además, el AC ${otros.join(', ')} no es un criterio pendiente de firma` : ''}` };
   }
