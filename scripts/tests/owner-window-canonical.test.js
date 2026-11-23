@@ -47,6 +47,13 @@ function casaNueva(t) {
   return casa;
 }
 
+/** Sin ejecución abierta en ses-a: la exención vale sobre cualquier historia (con la de otra historia, se niega). */
+function casaSinEjecucion(t) {
+  const casa = casaNueva(t);
+  fs.rmSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'));
+  return casa;
+}
+
 const herramienta = () => ({ pid: 100, ppid: 1, inicio: INICIO, comando: '/Applications/x/native-binary/claude --output-format stream-json --verbose' });
 const BASE = [{ pid: 1, ppid: 0, inicio: 'Mon Oct 26 08:00:00 2026', comando: '/sbin/launchd' }];
 const arbolDelFreno = () => [...BASE, herramienta(),
@@ -95,7 +102,7 @@ function historiaConTres(t) {
 const cuadroDe = (casa, firma, cmd, cwd) => ow.cuadroPara({ firma, comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', casa, cwd });
 
 test('T19 Huella_MismoPedidoEscritoDistinto_MismoCodigo @story-8.296 @ac-17 @ac-22', (t) => {
-  const casa = casaNueva(t);
+  const casa = casaSinEjecucion(t);
   const { story } = historiaConTres(t);
   const pares = [
     [`node ${MARKER} runtime-waiver ${story} --acs 1 --approved-by "el dev"`, `node ${MARKER} runtime-waiver ${story} --approved-by "el dev" --acs 1`],
@@ -119,7 +126,7 @@ test('T19 Huella_MismoPedidoEscritoDistinto_MismoCodigo @story-8.296 @ac-17 @ac-
 });
 
 test('T20 Huella_RutaRelativaYAbsoluta_MismoCodigo @story-8.296 @ac-17', (t) => {
-  const casa = casaNueva(t);
+  const casa = casaSinEjecucion(t);
   const { repo, story } = historiaConTres(t);
   const abs = cuadroDe(casa, 'runtime-waiver', `node ${MARKER} runtime-waiver ${story} --acs 1`, repo);
   const rel = cuadroDe(casa, 'runtime-waiver', `node ${MARKER} runtime-waiver h/tres.md --acs 1`, repo);
@@ -150,7 +157,7 @@ test('T20 Huella_RutaRelativaYAbsoluta_MismoCodigo @story-8.296 @ac-17', (t) => 
 });
 
 test('T21 Huella_CambiaLoQueSeFirma_OtroCodigo @story-8.296 @ac-18', (t) => {
-  const casa = casaNueva(t);
+  const casa = casaSinEjecucion(t);
   const h = historiaConTres(t);
   const otra = historiaConTres(t);
   const base = `node ${MARKER} runtime-waiver ${h.story} --acs 1,3 --approved-by x`;
@@ -172,14 +179,14 @@ test('T22 Click_ComandoEquivalente_FirmaSinOtroCuadro_YCambioReal_Pregunta @stor
   const { story, escribir } = historiaConTres(t);
   const A = `node ${MARKER} runtime-waiver ${story} --acs 1,3 --approved-by "el dev"`;
   const B = `node ${MARKER} runtime-waiver ${story} --approved-by "el dev" --acs 3,1`;
-  const casa = casaNueva(t);
+  const casa = casaSinEjecucion(t);
   const ca = cuadroDe(casa, 'runtime-waiver', A);
   assert.ok(!ca.error, ca.error);
   anotarClick(casa, ca.pregunta);
   const rb = pedirSinVentana(casa, B);
   assert.deepStrictEqual([rb.decision, rb.via], ['allow', 'click'], rb.texto);
   // B' cambia un criterio: el click de A no sirve
-  const casa2 = casaNueva(t);
+  const casa2 = casaSinEjecucion(t);
   anotarClick(casa2, cuadroDe(casa2, 'runtime-waiver', A).pregunta);
   escribir('el aviso queda en otro servicio');
   const rb2 = pedirSinVentana(casa2, B);
@@ -193,7 +200,7 @@ test('T22 Click_ComandoEquivalente_FirmaSinOtroCuadro_YCambioReal_Pregunta @stor
 });
 
 test('T23 Huella_SinFormaCanonica_ComoHoy @story-8.296 @ac-20', (t) => {
-  const casa = casaNueva(t);
+  const casa = casaSinEjecucion(t);
   const { story } = historiaConTres(t);
   for (const cmd of [`node ${MARKER} runtime-waiver ${story} --acs 1,a`, `node ${MARKER} runtime-waiver ${story} --acs 1 suelta --approved-by x`,
     `node ${MARKER} runtime-waiver ${story} --terminal --acs 1`]) {

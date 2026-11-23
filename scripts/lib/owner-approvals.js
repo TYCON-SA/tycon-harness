@@ -224,9 +224,9 @@ const primeraOracion = (s) => { const t = enUnRenglon(s); const m = /^(.+?[.!?])
  *
  * El tope: la pregunta con su sello entra en `LARGO_EN_TELEFONO`, achicando en orden (el título al detalle, la cita a su
  * primera oración, «Qué hace» a un renglón, la revisión sin notas, los criterios en tramos, la cita al detalle, «Completo
- * en» al detalle, «Qué hace» al lugar que queda). Lo que se aprueba, la sesión, los números de los criterios, el aviso,
- * los archivos, «si sale mal», lo que hace cada opción y el sello no se sacan; si igual no entra, `pasaElTope` lo dice y la pregunta se
- * da entera (`renglonDelTope`). Los cuadros del click del dueño no se achican: llevan lo que hace cada opción. Con
+ * en» al detalle, «Qué hace» al lugar que queda y, con un aviso que no entra, «Qué hace» al detalle). Lo que se aprueba,
+ * la sesión, los números de los criterios, el aviso, los archivos, «si sale mal», lo que hace cada opción y el sello no
+ * se sacan; si igual no entra, `pasaElTope` lo dice y la pregunta se da entera (`renglonDelTope`). Los cuadros del click del dueño no se achican: llevan lo que hace cada opción. Con
  * `todoQueHace` (el guardado ajeno) nada se corta, se resume ni se cambia: la fuente promete que todo lo que se aprueba
  * está a la vista.
  *
@@ -302,7 +302,8 @@ function cuadroDeSiempre({ firma, destino, que, historia = null, criterios = [],
       partes.push(!historia.titulo ? `Historia ${id} (sin título en su archivo), sesión ${ses}.` : titulo ? `Historia ${id}, «${titulo}», sesión ${ses}.` : `Historia ${id}, sesión ${ses}.`);
     } else if (destino) partes.push(`Sesión ${ses}.`);
     if (nums.length) partes.push(`Criterios: AC ${criteriosEnPalabras(nums, nivel >= 5)}.`);
-    if (lineas.length) {
+    // en el nivel 8 (sólo con aviso) «Qué hace» va entero al detalle, para que el aviso entre
+    if (lineas.length && nivel < 8) {
       const cuantas = todoQueHace ? lineas.length : nivel >= 3 ? 1 : LINEAS_QUE_HACE;
       const vistas = todoQueHace ? lineas : lineas.slice(0, cuantas).map((l) => sinPunto(recortar(vista(l), largoQueHace)));
       const resto = lineas.length - vistas.length;
@@ -334,6 +335,8 @@ function cuadroDeSiempre({ firma, destino, que, historia = null, criterios = [],
   // con todo lo demás achicado, «Qué hace» toma el lugar que queda, sin bajar de 60 letras
   let largoQueHace = LARGO_DE_LINEA;
   if (nivel === 7) while (largoQueHace > MINIMO_QUE_HACE && armar(nivel, largoQueHace).length > LARGO_EN_TELEFONO) largoQueHace -= 5;
+  // el aviso no se saca: si con todo achicado no entra, «Qué hace» va al detalle
+  if (nivel === 7 && aviso && armar(nivel, largoQueHace).length > LARGO_EN_TELEFONO) nivel = 8;
   const pregunta = armar(nivel, largoQueHace);
   const texto = pregunta.slice(0, pregunta.length - sello.length - 3);
 

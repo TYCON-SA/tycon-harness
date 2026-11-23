@@ -848,7 +848,14 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   // si no, la historia entera. Con --acs, sólo los humos de esos criterios, para decidir dentro del reloj del freno: el
   // criterio sale igual que en el guion, y los demás criterios no se miden. Una sola vez por consulta
   let mm = m;
-  if (!mm && sesion) { try { mm = marcadorEn(path.join(stateDir(casa), 'active', `${sesion}.json`)); } catch (_) { mm = null; } }
+  if (!mm && sesion) {
+    try { mm = marcadorEn(path.join(stateDir(casa), 'active', `${sesion}.json`)); } catch (_) { mm = null; }
+    // la ejecución abierta en esta misma sesión es de otra historia: el guion firma sólo sobre la suya y niega después del
+    // click. Pedida para otra sesión, eso ya se dijo arriba
+    if (mm && mm.storyId && !wd.esLaDelMarcador(abs, mm)) {
+      return { error: `${path.basename(abs)} no es la historia de la ejecución abierta en esta sesión${mm.storyPath ? ` (${path.basename(String(mm.storyPath))})` : ''}` };
+    }
+  }
   if (mm && !wd.esLaDelMarcador(abs, mm)) mm = null;
   let c;
   let matriz;
