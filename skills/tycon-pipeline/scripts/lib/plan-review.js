@@ -541,6 +541,8 @@ function revisionesDe(estado, destino, corrida, problemas) {
 /**
  * Las sesiones de la corrida de `marker`: la de ahora y, si adoptó la corrida de otra (`adopt-session`), la anterior.
  * La revisión que se hizo para la anterior es de esta misma corrida: se hereda, y sigue atada a la huella del plan.
+ * Un solo salto: el marcador guarda sólo la última adopción, así que después de A→B→C lo hecho para A no se ve y se
+ * pide de nuevo (falla cerrado).
  */
 function sesionesDeLaCorrida(destino, marker) {
   const previa = marker && typeof marker.adoptedFrom === 'string' && marker.adoptedFrom && marker.adoptedFrom !== destino ? marker.adoptedFrom : null;
@@ -1121,7 +1123,8 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   if (sinRegistro.length) return { ...out, alDueno: { llega: true, motivo: `${sinRegistro[0]}: lo decide una persona` } };
   // en una corrida adoptada cuentan también la revisión, los rechazos y la elección de seguir de la sesión anterior
   const destinos = sesionesDeLaCorrida(sesion, marker);
-  if (destinos.some((d) => eligioSeguir({ estado, destino: d, huellaPlan }))) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
+  // las dos sesiones juntas: manda la última respuesta, no cualquier «seguir» de una de ellas
+  if (eligioSeguir({ estado, destino: destinos, huellaPlan })) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
   const c = ultimaDeLaCorrida({ estado, destinos, corrida: corridaDe(marker) }) || ultimaDelDestino({ estado, destino: sesion });
   // con coordinadora, una informativa no tapa la revisión que ella tiene que lanzar; la de la propia sesión que puede
   // firmar (rutina con `review`) sí cuenta: aprueba en los dos casos

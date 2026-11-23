@@ -12,6 +12,8 @@
  *   PlanReview_CorridaAdoptada_VeLaRevisionYLosRechazosDeLaAnterior — la sesión que adopta la corrida no pide otra
  *     revisión ni le anota un pedido a la coordinadora por un plan que ya revisó, cuenta sus rechazos, y la lista de
  *     planes que esperan a la persona muestra esa revisión
+ *   PlanReview_CorridaAdoptada_MandaLaUltimaRespuestaDeLasDosSesiones — un «seguir sin revisión» viejo de la sesión
+ *     anterior no gana sobre el «revisar» que la persona eligió después en la que adoptó la corrida
  *   Coordinacion_PlanYaAprobado_ElAvisoDelPedidoNoSigue — con el plan aprobado (por la sesión o por la que adoptó la
  *     corrida) o la corrida cerrada, la coordinadora no sigue leyendo que el plan espera su revisión
  *
@@ -233,6 +235,23 @@ test('PlanReview_CorridaAdoptada_VeLaRevisionYLosRechazosDeLaAnterior', (t) => {
   const b = PR().accionDelPlan({ estado: rech.estado, sesion: NUEVA, marker: rech.adoptar(NUEVA), config: RUN(), home: rech.home, ahora: AHORA });
   assert.strictEqual(b.revisado, 'rechazado', JSON.stringify(b));
   assert.strictEqual(b.rechazos, 2, JSON.stringify(b));
+});
+
+// 🔴 Falla con: la sesión que adoptó la corrida sigue sin revisión porque la anterior eligió seguir sin ella, aunque
+//    después la persona pidió revisarlo en la sesión nueva (cada sesión se miraba por separado y ganaba cualquier «seguir»).
+test('PlanReview_CorridaAdoptada_MandaLaUltimaRespuestaDeLasDosSesiones', (t) => {
+  const NUEVA = 'ses-nueva';
+  const lab = laboratorio(t);
+  sesionDeLaCoordinadora(lab, { viva: true });
+  const huella = lab.accion(AHORA).huellaPlan;
+  PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'skip', quien: 'la persona', huella, ahora: AHORA + MIN });
+  const adoptado = lab.adoptar(NUEVA);
+  const accion = (ahora) => PR().accionDelPlan({ estado: lab.estado, sesion: NUEVA, marker: adoptado, config: RUN(), home: lab.home, ahora });
+  assert.strictEqual(accion(AHORA + 2 * MIN).decision, 'skip', 'el «seguir» de la anterior se hereda');
+  PR().anotarRespuesta({ estado: lab.estado, sesion: NUEVA, kind: 'plan', choice: 'review', quien: 'la persona', huella, ahora: AHORA + 3 * MIN });
+  const a = accion(AHORA + 4 * MIN);
+  assert.notStrictEqual(a.decision, 'skip', JSON.stringify(a));
+  assert.match(a.comando || '', /plan-review/, 'pide la revisión que la persona eligió después');
 });
 
 // 🔴 Falla con: la coordinadora lee «cerró su plan y espera que lances su revisión… en N min la lanza ella sola» (y después
