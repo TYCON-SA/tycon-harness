@@ -178,13 +178,25 @@ function motivoDeLente(l, { detalle, resultado, repo, desde }) {
  */
 function motivoSinBase(l) {
   const motivo = l.motivo || 'su cazador no contestó';
-  const s = l.sin_base;
-  if (!s || typeof s.repo !== 'string' || !path.isAbsolute(s.repo) || !/^[0-9a-f]{7,40}$/i.test(String(s.base || ''))) return motivo;
-  const r = spawnSync('git', ['-C', s.repo, 'cat-file', '-e', `${s.base}^{commit}`], { stdio: 'ignore', timeout: 10000, windowsHide: true });
-  if (r.error || r.status === null) return motivo;
-  return r.status === 0
-    ? `${motivo} — git sí la encuentra en ${s.repo}: el cazador miró en otra carpeta; relanzá el pase`
-    : `${motivo} — git tampoco la encuentra en ${s.repo}: relanzá con la base de git merge-base HEAD origin/main`;
+  const esta = baseEnElRepo(l.sin_base);
+  if (esta === null) return motivo;
+  return esta
+    ? `${motivo} — git sí la encuentra en ${l.sin_base.repo}: el cazador miró en otra carpeta; relanzá el pase`
+    : `${motivo} — git tampoco la encuentra en ${l.sin_base.repo}: relanzá con la base de git merge-base HEAD origin/main`;
+}
+
+/**
+ * ¿Está la base `{ repo, base }` en ese repo, según git? `true` o `false`; `null` si no se puede saber: sin los datos,
+ * una base que no es un hash, una carpeta que no es un repo de git o git que no corre.
+ */
+function baseEnElRepo(s) {
+  if (!s || typeof s.repo !== 'string' || !path.isAbsolute(s.repo) || !/^[0-9a-f]{7,40}$/i.test(String(s.base || ''))) return null;
+  const correr = (...a) => spawnSync('git', ['-C', s.repo, ...a], { stdio: 'ignore', timeout: 10000, windowsHide: true });
+  const repo = correr('rev-parse', '--git-dir');
+  if (repo.error || repo.status !== 0) return null;
+  const r = correr('cat-file', '-e', `${s.base}^{commit}`);
+  if (r.error || r.status === null) return null;
+  return r.status === 0;
 }
 
 /**
@@ -211,6 +223,12 @@ function medicionDelResultado(obj, opts = {}) {
   }
   if (!obj.lentes.length) {
     return { medido: false, confirmados, lentes_sin_medir: [], hallazgos_sin_veredicto: 0, motivo: 'el pase no revisó ninguna lente (sin archivos de código)' };
+  }
+  // la base del pase, comprobada con git en su repo: si no está, ninguna lente pudo comparar contra ella, diga lo que
+  // diga su cazador (uno al que se le insistió puede darla por buena sin verla)
+  if (baseEnElRepo(obj.base_del_pase) === false) {
+    return { medido: false, confirmados, lentes_sin_medir: obj.lentes.map((l) => (l && l.lens) || '?'), hallazgos_sin_veredicto: 0,
+      motivo: `la base ${obj.base_del_pase.base} no está en ${obj.base_del_pase.repo} (lo dice git): ninguna lente pudo comparar contra ella; relanzá con la base de git merge-base HEAD origin/main` };
   }
   const detalle = Array.isArray(obj.detalle) ? obj.detalle : [];
   const motivos = {};

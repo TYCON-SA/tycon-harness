@@ -46,7 +46,9 @@ const REPO = (A && A.repo) || '.'
 // Los sellos de lo que se congeló al lanzar el pase (marker.js mark-adversarial-launched): vuelven tal cual en el
 // resultado, y `mark-adversarial-result` los compara con los del lanzamiento, repo por repo.
 const SELLOS = (A && A.sellos && typeof A.sellos === 'object' && !Array.isArray(A.sellos)) ? A.sellos : null
-const conSellos = (r) => (SELLOS ? { ...r, sellos: SELLOS } : r)
+// El resultado lleva además el repo y la base del pase: quien lo anota comprueba con git que la base está en el repo,
+// y sin ella ninguna lente cuenta, diga lo que diga su cazador.
+const conSellos = (r) => ({ ...r, ...(SELLOS ? { sellos: SELLOS } : {}), ...(BASE_VALIDA ? { base_del_pase: { repo: REPO, base: BASE } } : {}) })
 const FILES = (A && Array.isArray(A.files)) ? A.files : []
 const STORY = (A && A.storyPath) || '(no provista)'
 const DECISIONS = (A && A.decisions) || '(ninguna declarada — usá el criterio: no re-flaggees lo que el diff documenta como decisión intencional)'
@@ -785,9 +787,10 @@ const dijoSinBase = (h) => !!h && h.base_existe === false && !(typeof h.git_rech
 const otraVezSinBase = `
 
 SEGUNDA VEZ: en tu vuelta anterior dijiste que la base ${BASE} no está en el repo. Quien lanzó el pase la sacó de ese
-mismo repo (git -C ${REPO} merge-base), así que está: lo más probable es que hayas corrido git en tu propia carpeta, que
-puede ser otro repo. Corré cada git con -C ${REPO}, empezando por  git -C ${REPO} cat-file -e ${BASE}^{commit}
-Si aun así sale distinto de 0, devolvé base_existe = false.`
+mismo repo (git -C ${REPO} merge-base): puede que hayas corrido git en tu propia carpeta, que puede ser otro repo.
+Comprobalo de nuevo con -C, y corré cada git con -C ${REPO}:  git -C ${REPO} cat-file -e ${BASE}^{commit}
+Sólo si sale 0, base_existe = true y seguí. Si sale distinto de 0, devolvé base_existe = false y findings = []: no la
+des por buena sin verla salir 0 (quien anota el resultado la vuelve a comprobar con git).`
 const cazar = (lens, extra = '') => agent(`${COMMON}\n\n${lens.prompt}${pedidoCazador(lens.key)}${extra}`, {
   label: extra ? `hunt-otra-vez:${lens.key}` : `hunt:${lens.key}`,
   phase: 'Hunt',
@@ -1073,4 +1076,5 @@ return {
   verificadores: VERIFIERS,
   respuestas_descartadas: descartadas,
   ...(SELLOS ? { sellos: SELLOS } : {}),
+  base_del_pase: { repo: REPO, base: BASE },
 }

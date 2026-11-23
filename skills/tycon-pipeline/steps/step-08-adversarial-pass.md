@@ -242,6 +242,9 @@ su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
   el pase entero por una lente. Si lo repite, la lente queda sin medir y, al anotar, git busca la base en el repo del
   pase: el motivo dice si está (el cazador miró en otra carpeta: relanzar) o no (la base está mal: relanzar con la de
   `git merge-base`). Un rechazo de la herramienta a correr git no se relanza.
+- Al anotar, git busca también la base del pase entero (`base_del_pase` del resultado) en su repo: si no está, el pase
+  sale no medido aunque todas las lentes digan que midieron. La palabra de un cazador no vuelve verde una base que no
+  existe.
 - Al anotar (`mark-adversarial-result --result`, también en el carril con `--adhoc` y con `--type revision`), cada
   lente limpia tiene que tener su `COMO-SE-CORRIO.txt` no vacío en la carpeta de su lente, al lado del archivo de
   resultado, y no anterior al lanzamiento del pase (sin lanzamiento conocido, no más de 12 h anterior al resultado). Una

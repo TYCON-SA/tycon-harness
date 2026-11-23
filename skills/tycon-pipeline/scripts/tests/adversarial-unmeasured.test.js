@@ -251,6 +251,16 @@ test('BaseSinMedir_LaCompruebaGit: al anotar, git en el repo del pase dice si la
   // sin el repo y la base, o con una base que no es un hash, el motivo queda como vino y no se corre git
   const sinDatos = medicionDelResultado({ confirmed: [], lentes: [{ ...lente(esta), sin_base: { repo, base: '--version' } }] });
   assert.doesNotMatch(sinDatos.motivo, /git (sí|tampoco)/);
+  // la base del pase entero: si git no la encuentra en el repo, ninguna lente cuenta, aunque todas digan que midieron
+  // (un cazador al que se le insistió puede darla por buena sin verla)
+  const medidas = { confirmed: [], lentes: [{ lens: 'x', estado: 'medida', count: 1 }], detalle: [{ lens: 'x' }] };
+  assert.equal(medicionDelResultado({ ...medidas, base_del_pase: { repo, base: esta } }).medido, true, 'con la base en el repo, cuenta');
+  const sinLaBase = medicionDelResultado({ ...medidas, base_del_pase: { repo, base: BASE } });
+  assert.equal(sinLaBase.medido, false);
+  assert.deepEqual(sinLaBase.lentes_sin_medir, ['x']);
+  assert.match(sinLaBase.motivo, /no está en .* \(lo dice git\): ninguna lente pudo comparar/);
+  // en una carpeta que no es un repo de git no se puede saber: no se juzga por eso
+  assert.equal(medicionDelResultado({ ...medidas, base_del_pase: { repo: tmp('adv-sin-git-'), base: BASE } }).medido, true);
 });
 
 // 🔴 Falla con: el cazador de una sesión aislada en otra carpeta corría `git … ; echo rc=$?`, la herramienta lo
