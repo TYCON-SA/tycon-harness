@@ -207,7 +207,7 @@ test('T19 Vida_TresRespuestas @story-8.195 @ac-19 — vive, murió o no se sabe;
   assert.equal(sin.sinRegistro, true, 'sin registro: Codex no lo escribe');
   fs.writeFileSync(path.join(claudeDir(C.home), 'sessions', 'rota.json'), '{');
   assert.match(L.liveness('dddddddd-4', { home: C.home }).unknown, /rota\.json/);
-  assert.match(fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8'), /require\('\.\/lib\/session-liveness\.js'\)/, 'marker.js usa la biblioteca');
+  assert.match(require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS), /require\('\.\/(?:lib\/)?session-liveness\.js'\)/, 'marker.js usa la biblioteca');
 });
 
 test('T19c Arranque_CaminoCortoDeSesionMuerta_ClearOrphan @story-8.195 @ac-19 — el camino corto de una sesión que murió lleva adhoc clear-orphan', () => {

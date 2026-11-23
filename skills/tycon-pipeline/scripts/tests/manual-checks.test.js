@@ -270,7 +270,7 @@ test('ManualChecks_Cierre_FrenaConLoQueFalta @story-7.46 @ac-13', () => {
   assert.deepEqual(f.faltan, [2]);
   assert.match(f.mensaje.join('\n'), /Tu organización pide que una persona marque cada criterio como probado a mano\. Falta: criterio 2 — Un pedido ya despachado/);
   // el freno vive en complete-step 8, después de la guía, y no tiene escape por DOD_BYPASS
-  const src = fs.readFileSync(path.join(REAL, 'skills', 'tycon-pipeline', 'scripts', 'marker.js'), 'utf8');
+  const src = require('./lib/marker-source.js')(path.join(REAL, 'skills', 'tycon-pipeline', 'scripts'));
   const i = src.indexOf("blocked = 'manualcheck'");
   assert.ok(i > src.indexOf("blocked = 'qaguide'"), 'el bloque está después del de la guía');
   assert.ok(/String\(blocked\)\.startsWith\('acmatrix'\) \|\| blocked === 'qaguide' \|\| blocked === 'manualcheck'/.test(src), 'manualcheck está entre los bloqueos sin DOD_BYPASS');
@@ -316,7 +316,7 @@ test('ManualChecks_NoRegresion_ApagadaCierraComoHoy @story-7.46 @ac-17', () => {
 test('Bloqueos_SinBypass_CadaUnoDiceSuSalida: el waiver TTY sólo para la matriz; la guía y la marca a mano dicen la suya', () => {
   // la guía de tester y la marca a mano no se destraban con un waiver TTY: el mensaje no puede ofrecer una salida que no
   // existe para ellas (una sesión frenada por la maqueta la buscó y no estaba)
-  const src = fs.readFileSync(path.join(REAL, 'skills', 'tycon-pipeline', 'scripts', 'marker.js'), 'utf8');
+  const src = fs.readFileSync(path.join(REAL, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'marker-complete-step.js'), 'utf8');
   const at = src.indexOf("if (String(blocked).startsWith('acmatrix') || blocked === 'qaguide' || blocked === 'manualcheck') {");
   assert.ok(at > 0, 'el bloque de los bloqueos sin DOD_BYPASS');
   const bloque = src.slice(at, src.indexOf('process.exit(2);', at));

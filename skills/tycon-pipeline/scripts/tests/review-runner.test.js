@@ -90,7 +90,7 @@ test('T1 ReviewRunner_ElNucleoNoNombraCorredores @story-8.221 @ac-1 â€” ni el cÃ
     assert.deepStrictEqual(malas, [], `${path.basename(f)} nombra un corredor`);
   }
   // los manejadores nuevos de marker.js
-  const marker = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+  const marker = require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS);
   for (const fn of ['cmdPlanReview', 'cmdReviewAsk', 'cmdReviewAnswer', 'cmdOwnerAway']) {
     const i = marker.indexOf(`function ${fn}(`);
     assert.ok(i >= 0, `marker.js no tiene ${fn}`);
