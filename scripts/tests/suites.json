@@ -656,6 +656,12 @@
       "requiere": []
     },
     {
+      "__nota": "el plan de una historia delicada lo aprueba una persona aunque el perfil liste plan-approval:delicada (delegada o de trámite), y el click o el «aprobado» del dueño a ESTE pedido gana a la firma de trámite; el de otro pedido no. El freno en proceso y los guiones de verdad en una casa de juguete, con el perfil del caso en la copia del arnés; unos quince segundos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/delegated-approval-person.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",
@@ -1143,7 +1149,7 @@
       "requiere": []
     },
     {
-      "__nota": "marker.js partido por responsabilidad (8.163 B): lo nuevo que cargue el despachador es sensible y el recorrido de módulos del freno de guiones no corta callado (topes con nombre, lectura única y con tope de bytes). Repos de juguete en el temporal; sin red.",
+      "__nota": "marker.js partido por responsabilidad (8.163 B): cada subcomando contra la foto de antes de partir, el despachador bajo el tope y cada parte con su responsabilidad y su prueba, la parte que falta, las exportaciones, lo nuevo sensible, lo publicado y el recorrido del freno de guiones (que lee entero lo partido y no corta callado). Carpetas fijas en el temporal; sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/split-contract.test.js",
       "requiere": []
@@ -1280,6 +1286,12 @@
       "__nota": "story 8.109: el estado de la historia y el marcador no se tocan a mano (consola, Edit, apply_patch).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/status-by-hand.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 64 (22/11): una constancia de control nueva necesita la huella que deja approve antes del commit y del empuje.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/control-change-prints.test.js",
       "requiere": []
     },
     {
@@ -2621,6 +2633,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/review-load.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el permiso de una sesión de fondo le llega a la persona como cuadro (scripts/hooks/permission-relay.js, story 8.180 tanda B): en proceso, con casa de juguete y reloj propio.",
       "raiz": "arnes",
       "ruta": "tests/permission-relay.test.js",
@@ -2840,6 +2857,12 @@
       "__nota": "Parte 2 de 2 de tests/installer-ps1.test.sh (2026-10-14: entera tardaba ~440 s en el agente de GitHub y en uno lento pasó el tope de 900 s de public-ci; el archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.7 (tanda C, pase adversarial): el gemelo de Windows del instalador y del sync de bloques, corrido con pwsh — -Check sobre una HOME vacía (salía 1 con un error de PowerShell), el settings.json que deja una instalación limpia, uno vacío, el marcador requires-integration mal escrito comparado byte a byte con el .sh. Sin pwsh en la máquina: NO MEDIDO, exit 0. ~12 s.",
       "raiz": "arnes",
       "ruta": "tests/installer-ps1.p2.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "Tanda 11 de las menores: el instalador de Windows en una máquina sólo con Codex (TYCON_HARNESS_CLAUDE=off), corrido con pwsh. Corre la lista cerrada (engram, el AGENTS.md puntero, el refresco de Azure, la subida al buzón, los hooks globales de git), no busca agent-skills y no escribe nada en la carpeta de Claude Code; los sellos de engram y de sqlite3 de Windows van a la carpeta del estado; harness.js lo lanza en Windows. Sin pwsh o sin node: NO MEDIDO, exit 0. ~10 s.",
+      "raiz": "arnes",
+      "ruta": "tests/installer-ps1-codex-only.test.sh",
       "requiere": []
     },
     {

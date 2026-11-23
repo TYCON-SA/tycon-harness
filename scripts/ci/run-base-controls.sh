@@ -1299,6 +1299,36 @@ function approveByWindow(root, out, entries, c) {
   writeApproval(root, out, entries, refreshLine(entries, c.refirma_de, reg.maquina, reg.sesion));
 }
 
+// la biblioteca de las huellas de las constancias y la carpeta de estado de esta cuenta, o null si no están al lado
+function huellasDeLaMaquina() {
+  try {
+    const dir = process.env.BASE_CONTROLS_SELF_DIR || '';
+    const lib = require(path.join(dir, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'control-change-prints.js'));
+    const stateDir = require(path.join(dir, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(os.homedir());
+    return { lib, stateDir };
+  } catch (e) { return { error: String((e && e.message) || e).split('\n')[0] }; }
+}
+
+// la huella de lo que escribió approve, en el registro de esta máquina: el freno de la consola la pide antes de commitear
+// o empujar la constancia. Sin poder anotarla, se dice: la constancia ya está escrita y se firma de nuevo para anotarla
+function anotarHuella(root, rel, texto) {
+  const h = huellasDeLaMaquina();
+  try {
+    if (h.error) throw new Error(h.error);
+    h.lib.anotar({ stateDir: h.stateDir, repo: root, archivo: rel, texto });
+  } catch (e) {
+    console.error(`⚠️ run-base-controls approve: la constancia quedó escrita, pero no pude anotar su huella en esta máquina (${e.message}): el freno la va a frenar antes del commit o del empuje. Firmala de nuevo para anotarla.`);
+  }
+}
+
+// ¿esta máquina ya tiene la huella de este texto? Sin poder mirar, «no»: la firma se pide de nuevo y la anota
+function huellaAnotada(texto) {
+  const h = huellasDeLaMaquina();
+  if (h.error) return false;
+  const c = h.lib.conocidas(h.stateDir);
+  return !c.error && c.huellas.has(h.lib.huellaDe(texto));
+}
+
 // por qué la firma no escribiría nada en la carpeta de constancias (la de este cambio ya está, o algo con su nombre), o null
 function yaEnLaCarpeta(root, out, entries) {
   if (!isApprovalDir(out)) return null;
@@ -1307,8 +1337,10 @@ function yaEnLaCarpeta(root, out, entries) {
   try { st = fs.lstatSync(path.join(root, rel)); } catch (_) { return null; }
   if (!st.isFile()) return `${safe(rel)} ya existe y no es un archivo común: no hace falta firmar, hay que mirarlo`;
   let prev = null;
-  try { prev = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8')); } catch (_) { prev = null; }
-  if (prev && holdsUp(prev) && prev.hash === hashOf(entries)) return `${safe(rel)} ya trae esta misma firma: no hace falta firmar de nuevo`;
+  let crudo = '';
+  try { crudo = fs.readFileSync(path.join(root, rel), 'utf8'); prev = JSON.parse(crudo); } catch (_) { prev = null; }
+  // la misma firma sin su huella en esta máquina (se firmó en otra): firmar de nuevo acá anota la huella sin tocar el archivo
+  if (prev && holdsUp(prev) && prev.hash === hashOf(entries)) return huellaAnotada(crudo) ? `${safe(rel)} ya trae esta misma firma: no hace falta firmar de nuevo` : null;
   return `${safe(rel)} ya existe y no es esta firma: miralo antes de pedir la firma`;
 }
 
@@ -1318,6 +1350,7 @@ function writeApproval(root, out, entries, line) {
     const dest = path.join(root, out);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.appendFileSync(dest, `${line}\n`);
+    anotarHuella(root, out, line);
     console.log(`✅ constancia escrita en ${out}: commiteala en el pedido.`);
     return;
   }
@@ -1338,13 +1371,19 @@ function writeApproval(root, out, entries, line) {
       }
       let prev = null; let why = 'no es esta firma';
       try { prev = JSON.parse(fs.readFileSync(dest, 'utf8')); } catch (e2) { why = e2.code ? `no lo pude leer (${e2.code})` : 'no es JSON'; }
-      if (prev && holdsUp(prev) && prev.hash === hash) { console.log(`✅ ya estaba firmado: ${rel} trae esta misma firma; no se tocó.`); return; }
+      if (prev && holdsUp(prev) && prev.hash === hash) {
+        // firmada en otra máquina: con la firma del dueño de acá, se anota su huella sin tocar el archivo
+        anotarHuella(root, rel, fs.readFileSync(dest, 'utf8'));
+        console.log(`✅ ya estaba firmado: ${rel} trae esta misma firma; no se tocó y su huella quedó anotada en esta máquina.`);
+        return;
+      }
       console.error(`run-base-controls approve: ${safe(rel)} ya existe y ${why}: no se tocó y no se firmó nada. Miralo antes de seguir.`);
       process.exit(1);
     }
     console.error(`run-base-controls approve: no pude escribir ${safe(rel)} (${e.code || e.message}): no se firmó nada.`);
     process.exit(1);
   }
+  anotarHuella(root, rel, line);
   console.log(`✅ constancia escrita en ${rel}: commiteala en el pedido.`);
 }
 

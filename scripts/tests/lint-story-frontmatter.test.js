@@ -720,3 +720,38 @@ test('AjustesDespuesDeLaFirma_SinPasar_FrenanElDone', (t) => {
     assert.notStrictEqual(lint().code, 0, `status: ${estado}`);
   }
 });
+
+// 🔴 Falla con: el nombre del repo comparado distinguiendo mayúsculas. «backend/src/…» con el repo «Backend» y el archivo
+// sólo en su rama principal frenaba el commit en macOS (pase adversarial del #1425).
+test('T51 FilesToModify_RepoEnMinusculas_SoloEnElRemoto_NoFrena: el nombre del repo sin distinguir mayúsculas', { skip: process.platform === 'linux' && 'en Linux la carpeta en minúsculas no existe: sólo avisa' }, () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+});
+
+// 🔴 Falla con: la consulta a la rama principal del remoto sin tope total. Cada llamada a git tenía 5 s, y una historia
+// con varias rutas inventadas, con git colgado, hacía esperar el commit minutos.
+test('T52 FilesToModify_GitColgado_ElRespaldoTieneTopeTotal: con git colgado, el lint termina y no da nada por inventado', () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  // un git que contesta todo salvo la consulta a la rama principal, que se cuelga
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-git-colgado-'));
+  const real = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\ncase "$*" in *ls-tree*) exec sleep 60 ;; esac\nexec ${real} "$@"\n`);
+  fs.chmodSync(path.join(bin, 'git'), 0o755);
+  const inventadas = ['A', 'B', 'C', 'D', 'E', 'F'].map((n) => `Backend/src/AcmeBackend/Features/Nuevo/${n}.cs`);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(inventadas));
+  // stable-data: mide cuánto tarda el lint, no es una fecha que la prueba compare
+  const desde = Date.now();
+  let r;
+  try {
+    r = { code: 0, out: execFileSync('node', [LINT, f], { cwd: proj, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 40000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } }) };
+  } catch (e) { r = { code: e.status ?? 1, out: `${e.stdout || ''}${e.stderr || ''}`, signal: e.signal }; }
+  const tardo = Date.now() - desde;
+  assert.ok(!r.signal, `el lint no terminó en 40 s con git colgado (${tardo} ms)`);
+  assert.ok(tardo < 20000, `el respaldo no tiene tope total: tardó ${tardo} ms`);
+  // lo que no se pudo mirar no se da por inventado
+  assert.strictEqual(r.code, 0, r.out);
+});

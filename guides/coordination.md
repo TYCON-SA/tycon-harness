@@ -229,6 +229,19 @@ pestaña Configuración, «Las sesiones de cada máquina»), y cada máquina pue
 aguanta depende de ella. Sin valor en ningún lado, el tope es 3. `coordination.js status` muestra quién trabaja, quién
 espera y por qué, y el tope con su origen.
 
+**El segundo tope: lo que espera la revisión de la persona.** El primer tope mide lo que aguanta la máquina; éste, lo que
+una persona puede revisar. Cuenta cuatro cosas, sólo mirando: las firmas que esperan a la persona (las delegadas no), las
+ejecuciones y caminos cortos terminados sin cerrar, las carpetas con cambios sin commitear y sin sesión (salvo las copias
+de prueba de un trabajo de fondo, bajo `~/.claude/jobs/`) y los pedidos trabados hace una hora o más (un borrador no,
+salvo en choque). Una sesión viva que espera a la persona no suma aparte: ya está en una de esas. El tope es
+`coordination.max_awaiting_review`, de 1 a 50, con el mismo orden que los otros; sin valor en ningún lado, 8. Entra en
+**modo aviso**: con lo que espera revisión en el tope, `open` y el freno de sesiones de fondo abren igual, lo dicen y
+dejan un renglón `review-cap` en `gates.log` para decidir con números si se pasa a freno; pasar a freno es un commit que
+cambia una constante, ninguna variable lo cambia. Lo que no se pudo mirar (por el tope de tiempo de 4 s, o una fuente
+rota) no suma y no frena. El freno que no deja la máquina vacía no empuja a abrir con la revisión llena. La foto que deja
+el arranque de cada sesión la muestran `status`, `/wip` y el aviso de la coordinadora, con su edad; para decidir se
+cuenta de nuevo, nunca con la foto.
+
 ### Cuántas historias a la vez, quién lanza lo pesado y cuándo se le escribe al dueño
 
 Cuatro reglas de la coordinadora, para cualquier organización:
@@ -389,8 +402,8 @@ una, la coordinadora:
 - **Aprueba en nombre del dueño sólo con «aprobado»** sobre ese mismo plan, con `plan_review.routine_approval` (O4) en
   `review` y `plan-approval` delegado. Sin coordinadora, ese mismo «aprobado» de la revisión que lanza la propia sesión
   aprueba el plan de rutina sin click: alcanza en los dos casos. Con `person`, el plan de rutina lo firma siempre una
-  persona. Rechazado o sin veredicto, el plan espera. Un plan delicado lo firma el dueño, salvo que el perfil delegue
-  `plan-approval:delicada`: entonces lo aprueba la coordinadora con ese mismo «aprobado» de la revisión que ella lanzó.
+  persona. Rechazado o sin veredicto, el plan espera. Un plan delicado, y su maqueta, los firma sólo el dueño con su
+  click o su «aprobado» (también en la pestaña de la coordinadora), aunque el perfil nombre `plan-approval:delicada`.
   **El plan que aprueba es el de una parte**: si la ejecución anotó su tanda (`set-batch`) y la parte vale (con su
   `files:` o, sin `files:`, con los archivos que la historia le ata a la tanda más los que no ata a ninguna), la delicada
   se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide el diff
@@ -804,7 +817,8 @@ aparte para `save --from` va fuera de la carpeta de estado. Si algo lo cambió s
 
 - `pendientes`: una lista; cada uno con `id` (su número, `T-41`: lo pone el comando), `titulo`, `estado` (`hecho`, `curso`,
   `firma`, `riesgo`, `entrando`, `sin-empezar` o `espera`, que va a «Sin sesión»; «curso» y «riesgo» van a «En curso» sólo
-  si una sesión viva lo hace, y si no, también a «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` o
+  si una sesión viva lo hace, y si no, también a «Sin sesión»; una «firma» cuyo `quien` es el nombre de una sesión (una palabra,
+  como «Tero-2») que ya no está en la oficina va a «Sin sesión», con «la sesión que la esperaba ya no está»: no espera al dueño), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` o
   `Más adelante`), `orden`, `quien`, `nota`, y su hora: `pronosticoIso` (hora local, `AAAA-MM-DDTHH:MM`), o `termina` con
   un texto propio. Un hecho lleva `realIso`. `estimadaIso` no va. `ultimoHecho` lo escribe sólo el tablero al moverse solo.
 - `historia` (por ejemplo `"2.81"`) y `pedido` (`{ "repo": "tycon-harness", "numero": 885 }`), opcionales. Con `historia` y
@@ -1060,6 +1074,7 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
 | La coordinadora cierra los detalles con la opción más segura | nadie | Es criterio, y queda anotado para que el dueño lo vea. |
 | Cada sesión con un nombre puesto por una persona | aviso | `/coordinate` lista las que tienen el nombre que armó la herramienta. |
 | No más sesiones trabajando que el tope | freno | `open` no abre en el tope. Una sesión que el dueño abre a mano no la frena nada; la cuenta `status` y, al llegar al tope o cambiar el conteo, el aviso de la coordinadora. |
+| No abrir más cuando lo que espera la revisión de la persona llega a su tope | aviso | `open` y el freno de sesiones de fondo abren igual, lo dicen y anotan el renglón `review-cap`; lo no medido no frena. Pasa a freno con un commit, cuando los renglones lo justifiquen. |
 | Con la fila de la suite larga no se abren sesiones para programar | nadie | Qué trabajo pide suite es criterio; `status` muestra quién espera turno. |
 | Una suite completa por vez | freno | El corredor de las suites y las portables enteras no arrancan con el turno de otro proceso vivo, y dicen quién lo tiene. Una suite que alguien corre por otro camino no la ve. |
 | Pases adversariales de a uno | freno | El portón del pase sale 3 y `next` pide esperar con otro en vuelo. Lanzar el pase sin consultar el portón no lo frena nada, y el de un arreglo rápido no queda anotado como en vuelo. Pasada una hora, sólo avisa. |

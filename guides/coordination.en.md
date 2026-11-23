@@ -234,6 +234,19 @@ Configuration tab, "The sessions on each machine"), and each machine can change 
 can take depends on the machine. With no value anywhere, the cap is 3. `coordination.js status` shows who is working,
 who is waiting and why, and the cap with where it comes from.
 
+**The second cap: what is waiting for the person's review.** The first cap measures what the machine can take; this one,
+what a person can review. It counts four things, only reading: the signatures waiting for the person (not the delegated
+ones), the runs and shortcut paths finished without closing, the folders with uncommitted changes and no session (except
+the test copies of a background job, under `~/.claude/jobs/`) and the pull requests stuck for an hour or more (not a
+draft, unless it has conflicts). A live session waiting for the person does not add on its own: it is already in one of
+those. The cap is `coordination.max_awaiting_review`, from 1 to 50, in the same order as the others; with no value
+anywhere, 8. It comes in **warning mode**: with the review load at the cap, `open` and the background-session brake still
+open, say so and leave a `review-cap` line in `gates.log`, so moving to a brake is decided with numbers; moving to a brake
+is a commit that changes a constant, no variable changes it. What could not be read (because of the 4 s time limit, or a
+broken source) does not add up and does not stop anything. The brake that does not leave the machine empty does not push
+to open with the review full. The snapshot each session start leaves is shown by `status`, `/wip` and the coordinator's
+notice, with its age; deciding counts again, never from the snapshot.
+
 ### How many stories at once, who launches the heavy work and when the owner is written to
 
 Four rules for the coordinator, for any organization:
@@ -389,9 +402,9 @@ the coordinator:
 - **Approves on the owner's behalf only with «approved»** on that same plan, with `plan_review.routine_approval` (O4)
   on `review` and `plan-approval` delegated. Without a coordinator, that same «approved» of the review the session
   launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
-  is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan is signed by the owner, unless
-  the profile delegates `plan-approval:delicada`: then the coordinator approves it with that same «approved» from the
-  review she launched. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan, and its mockup, are signed
+  only by the owner with a click or an «approved» (also in the coordinator's tab), even if the profile names
+  `plan-approval:delicada`. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
   (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
@@ -814,7 +827,9 @@ says so once under «No se pudo leer». A badly written row is not saved: `board
 
 - `pendientes`: a list; each item has `id` (its number, `T-41`: the command sets it), `titulo`, `estado` (`hecho`, `curso`,
   `firma`, `riesgo`, `entrando`, `sin-empezar`, or `espera`, which goes to «Sin sesión»; `curso` and `riesgo` go to «En
-  curso» only if a live session is doing it, and otherwise also to «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana
+  curso» only if a live session is doing it, and otherwise also to «Sin sesión»; a `firma` whose `quien` is a session name
+  (one word, like «Tero-2») that is no longer in the office goes to «Sin sesión», with «la sesión que la esperaba ya no está»: it does not wait for
+  the owner), `grupo` (`Hoy`, `Esta semana`, `La semana
   que viene` or `Más adelante`), `orden`, `quien`, `nota`, and its time: `pronosticoIso` (local time, `YYYY-MM-DDTHH:MM`),
   or `termina` with its own text. A done item carries `realIso`. `estimadaIso` is not allowed. `ultimoHecho` is written
   only by the board when it moves on its own.
@@ -1080,6 +1095,7 @@ They come from a whole day in which the coordinator worked with the owner away. 
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
 | No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, on reaching the cap or a change in the count, so does the coordinator's notice. |
+| Do not open more when what waits for the person's review reaches its cap | aviso | `open` and the background-session brake still open, say so and log the `review-cap` line; what was not measured does not stop anything. It becomes a brake with a commit, when the lines justify it. |
 | With a long suite queue, no sessions are opened to program | nadie | Which work needs the suite is a judgment call; `status` shows who is waiting for the turn. |
 | One full suite at a time | freno | The suite runner and the whole portable run do not start with the turn held by another live process, and they say who holds it. A suite someone runs another way is not seen. |
 | Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. Nothing stops launching the pass without asking the gate, and a quick fix's pass is not noted as in flight. After an hour, it only warns. |

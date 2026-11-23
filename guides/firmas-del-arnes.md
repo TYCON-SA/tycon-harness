@@ -15,7 +15,8 @@ la coordinadora. El arnés la da solo, en la sesión que la pide (también para 
 productos, y en cualquier máquina, sin lista de máquinas.
 
 - **Pasa por el mismo control de contenido que antes.** Cada guion comprueba lo suyo antes de firmar sin persona: el plan,
-  con la revisión automática aprobada sobre ese mismo plan; la comparación con main, que la historia no sea delicada; el
+  con la revisión automática aprobada sobre ese mismo plan, y nunca el de una historia delicada (ese plan y su maqueta,
+  sólo con el click o el «aprobado» del dueño, aunque el perfil nombre `plan-approval:delicada`); la comparación con main, que la historia no sea delicada; el
   guardado, con la historia limpia; el camino corto, dentro del cupo y sin rutas de riesgo alto; el pendiente, sobre un
   repo donde trabaja la sesión. Si ese control dice que no, la firma va a una persona, como siempre, y la ventana dice por
   qué no salió sola.
@@ -72,7 +73,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 <!-- generado: niveles -->
 | Firma | Nivel | Quién la ve | Qué aprueba | Se pide hoy con |
 | --- | --- | --- | --- | --- |
-| `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y la coordinadora lo aprueba sólo si el perfil delega plan-approval:delicada y su revisión automática dio aprobado; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person) | `plan-approval` |
+| `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y entonces el plan y su maqueta los aprueba sólo el dueño, con su click o su «aprobado», aunque el perfil nombre plan-approval:delicada; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person) | `plan-approval` |
 | `extra-round` | 1 · rutina | dev y mantenimiento | una vuelta más de revisores | `extra-round` |
 | `pending-approval` | 1 · rutina | dev y mantenimiento | abrir un pendiente nuevo en la lista | `pending-approval` |
 | `save` | 1 · rutina | dev y mantenimiento | guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible | `save` |
@@ -129,9 +130,12 @@ antes, como `escape-phrases`, no las trae), y vale con las mismas llaves que la 
 sí. Queda en el registro con vía «delegación», como las de nivel 1. Lo que el perfil sube a 3 con `approvals.levels`
 vuelve al dueño.
 
+El plan de una historia delicada no está en esta tabla: su plan y su maqueta los aprueba sólo el dueño, con su click o su
+«aprobado», aunque el perfil nombre `plan-approval:delicada`. Un perfil que la nombra sigue siendo válido; la forma no
+delega nada.
+
 | Se delega, si el perfil la nombra | Cómo la firma la coordinadora |
 |---|---|
-| `plan-approval:delicada`: el plan de una historia delicada | con `plan-approval` y `--for-session`, sólo con el «aprobado» de la revisión automática que lanzó ella sobre ese mismo plan |
 | `save:sensible`: guardar cuando un commit toca algo de lo sensible | con `save` (`approve-save --for-session`), con la historia limpia y el aviso entregado al dueño |
 | `runtime-waiver`, `manual-test`, `critical-waiver`, `lost-run`, `escape:force-manual`, `escape:trust-ran` (y `extra-round`, que ya era rutina) | con el comando de la firma y `--for-session <sesión>`; si la sesión la pide para sí, el freno la desvía a la coordinadora |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:cambiar-el-estado`, `escape:red-control-test-edit` | `marker.js sign-file <firma> <archivo> --for-session <sesión>`: deja la constancia que usa el Edit o Write de esa sesión |
@@ -157,7 +161,7 @@ firmar, y en la columna tu situación:
 | 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
 | 1 · rutina | **Aprobar el plan** (`plan-approval`) de una historia que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, vos | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | su «aprobado» es lo único con que se aprueba sin vos: con coordinadora la lanza ella; sin ella, la propia sesión. Con `plan_review.routine_approval: person`, aprobás vos siempre |
 | 1 · rutina | **Eximir un comando de la comparación con main** (`compare-waiver`): un comando que la historia modifica y que no se puede comparar con su versión de `main` (por ejemplo, porque usa la red). La firma es delegable sólo cuando el perfil del equipo la suma a `approvals.delegated_signing`, con un pedido al perfil que firma el dueño: amplía lo que firma la coordinadora. Hasta entonces, es tuya. | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
-| 2 · excepción | **Aprobar el plan de una historia delicada** (`plan-approval` cuando `risk-class` dice `delicate`) | vos | espera | vos; la coordinadora \* sólo si el perfil delega `plan-approval:delicada` y su revisión dio aprobado | espera; la coordinadora \* con la misma condición | ataca el plan y avisa; su «aprobado» aprueba sólo por la coordinadora con `plan-approval:delicada` delegada |
+| 2 · excepción | **Aprobar el plan de una historia delicada** (`plan-approval` cuando `risk-class` dice `delicate`), con su maqueta | vos, con tu click o tu «aprobado» | espera | vos, con tu click o tu «aprobado» (también en la pestaña de la coordinadora); sin eso, nadie, aunque el perfil nombre `plan-approval:delicada` | espera | ataca el plan y avisa; su «aprobado» nunca aprueba un plan delicado |
 | 2 · excepción | **Saltear un control** o aceptar un problema grave sin arreglarlo (`critical-waiver`, `escape:…` y las demás de nivel 2) | vos | espera | vos; las de trámite, la coordinadora \* si el perfil las delega (ver «Qué excepciones se delegan») | espera; las de trámite, la coordinadora \* si el perfil las delega | no aplica |
 | 2 · excepción | **Aceptar un criterio imposible de probar en vivo** (`runtime-waiver`). Antes de la ventana, el arnés te muestra el criterio en pantalla: su texto, por qué no se puede probar en vivo y qué prueba lo cubre. | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
 | 2 · excepción | **Marcar un criterio como probado a mano** (`manual-test`) | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
@@ -755,7 +759,7 @@ y quedan en el registro de firmas con la vía `notified` («hecho y avisado»): 
 plan y abrir un arreglo rápido. Pasan por los mismos controles que la delegación de la coordinadora:
 
 - el ok de guardar, sólo con la historia limpia y sin nada sensible;
-- el plan, con la revisión automática aprobada; uno delicado, sólo si el perfil delega `plan-approval:delicada`;
+- el plan, con la revisión automática aprobada; uno delicado, nunca: lo aprueba el dueño con su click o su «aprobado»;
 - la maqueta (`approve-mockup`), igual que el plan, y nunca la de la propia sesión: la revisión que lanzó la sesión que
   implementa no cuenta para una pantalla, así que en su pestaña sin permisos la maqueta pide el click;
 - el pendiente (`approve-pending`), sólo si lo pide la coordinadora confirmada para otra sesión y sobre un repo de esa
