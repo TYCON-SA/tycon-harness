@@ -3339,6 +3339,72 @@ function sinCuerposDeTexto(cmd) {
   return out + s.slice(hasta);
 }
 
+/** El texto de un `$'…'` como lo deja el shell: `\n`, `\t`, `\xHH`, `\uHHHH`, `\NNN` (octal), `\cX`, `\'` y `\\`. */
+function ansiC(s) {
+  const simples = { n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', v: '\v' };
+  return String(s).replace(/\\(?:x([0-9A-Fa-f]{1,2})|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})|([0-7]{1,3})|c(.)|([\s\S]))/g,
+    (m, x, u, U, oct, ctl, otro) => {
+      if (x || u || U) { const n = parseInt(x || u || U, 16); return n <= 0x10ffff ? String.fromCodePoint(n) : ''; }
+      if (oct) return String.fromCharCode(parseInt(oct, 8) & 0xff);
+      if (ctl) return String.fromCharCode(ctl.charCodeAt(0) & 0x1f);
+      return Object.prototype.hasOwnProperty.call(simples, otro) ? simples[otro] : otro;
+    });
+}
+
+// una palabra del shell entera: también con `$'…'` y con tramos citados pegados (`'a'"'"'b'` es `a'b`)
+const PALABRA_CON_ANSI = /(?:\$'(?:\\[\s\S]|[^'\\])*'|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"|;&<>\\])+/g;
+
+/** Las palabras de un tramo como las lee el shell, con sus comillas, sus escapes y los `$'…'` resueltos. */
+function palabrasConAnsi(tramo) {
+  return (String(tramo).match(PALABRA_CON_ANSI) || []).map((w) => w.replace(/\$'((?:\\[\s\S]|[^'\\])*)'|'([^']*)'|"((?:\\.|[^"\\])*)"|\\(.)/g,
+    (m, ansi, simple, doble, escapado) => (ansi !== undefined ? ansiC(ansi) : simple !== undefined ? simple
+      : doble !== undefined ? doble.replace(/\\(["\\$`])/g, '$1') : escapado)));
+}
+
+/**
+ * El cuerpo de un shell con `-c` y lo que lo sigue (sus `$0`, `$1`…), leídos como el shell: `bash -c $'…'` y
+ * `sh -c 'sh -c '"'"'…'"'"''` dan el cuerpo entero. null sin `-c`.
+ */
+function cuerpoDelShell(tramo) {
+  const w = palabrasConAnsi(sinPalabrasDelShell(pelarEnv(tramo).resto)).filter((x) => x !== '');
+  let k0 = w.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));
+  while (k0 >= 0 && k0 < w.length - 1 && ['builtin', 'command', 'busybox', 'toybox'].includes(nombreDeComando(w[k0]))) k0++;
+  if (!SHELLS_CON_DASH_C.has(nombreDeComando(w[k0]))) return null;
+  const i = w.findIndex((x, k) => k > k0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(x));
+  if (i < 0) return null;
+  let j = i + 1;
+  while (j < w.length && /^-[A-Za-z-]*$/.test(w[j]) && w[j] !== '-') { if (w[j++] === '--') break; }
+  if (w[j] === undefined) return null;
+  const resto = w.slice(j + 1);
+  return String(w[j]).replace(/\$\{?([0-9])\}?/g, (m, d) => (resto[Number(d)] !== undefined ? resto[Number(d)] : m))
+    .replace(/"?\$\{?[@*]\}?"?/g, () => resto.slice(1).join(' '));
+}
+const SHELLS_CON_DASH_C = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'mksh', 'pdksh', 'ash', 'fish']);
+
+/**
+ * El cuerpo de un shell anidado con lo que vale afuera: `$PWD` (y `${PWD}`, `$(pwd)`) es la carpeta en la que corre, y una
+ * variable asignada en el comando (`F=h.md; sh -c 'echo x >> "$F"'`) vale lo asignado, una lectura por valor. La que
+ * el cuerpo asigna no se toca: adentro vale la suya. Sin exportar, el shell de adentro no la ve; se lee igual, porque
+ * una variable ya exportada cambia de valor con la asignación.
+ */
+function cuerpoConValores(cuerpo, asignados) {
+  const conPwd = String(cuerpo).replace(/\$\{PWD\}|\$PWD(?!\w)|\$\(pwd\)|`pwd`/g, '.');
+  const propias = new Set([...conPwd.matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=/g)].map((m) => m[1]));
+  const nombres = [...new Set([...conPwd.matchAll(/\$\{?([A-Za-z_]\w*)\}?/g)].map((m) => m[1]))]
+    .filter((n) => !propias.has(n) && (asignados.get(n) || []).length);
+  if (!nombres.length) return [conPwd];
+  const lecturas = Math.min(8, Math.max(...nombres.map((n) => asignados.get(n).length)));
+  const out = [];
+  for (let k = 0; k < lecturas; k++) {
+    out.push(conPwd.replace(/\$\{?([A-Za-z_]\w*)\}?/g, (m, n) => {
+      if (!nombres.includes(n)) return m;
+      const v = asignados.get(n);
+      return v[Math.min(k, v.length - 1)];
+    }));
+  }
+  return out;
+}
+
 /**
  * El comando y lo que corre adentro de él: `$(…)`, comillas invertidas, `bash -c '…'`, `eval …` y `find … -exec …`.
  * Cada uno se mira como otro comando. El texto de un heredoc que nadie corre no es un comando.
@@ -3425,6 +3491,12 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
           .replace(/"?\$\{?[@*]\}?"?/g, () => resto.slice(1).join(' ')));
       }
     }
+    // el cuerpo como lo lee el shell (`$'…'`, las comillas pegadas), con lo que vale afuera: `$PWD` y las variables del
+    // comando. Lo de arriba sigue: las palabras de este lector no cortan lo que aquél sí lee
+    const cuerpo = cuerpoDelShell(tramo);
+    if (cuerpo !== null) for (const b of cuerpoConValores(cuerpo, asignados)) sumarConCd(b);
+    // `busybox` y `toybox` corren el programa que les sigue (`busybox rm h.md`, `busybox sh -c '…'`)
+    if (c === 'busybox' || c === 'toybox') sumarConCd(pelarEnv(tramo).resto.replace(/^\s*(?:[A-Za-z_]\w*=\S*\s+)*(?:\S*\/)?(?:busybox|toybox)\s+/, ''));
     if (c === 'eval') sumarConCd(w.slice(k0 + 1).join(' '));
     if (c === 'find') {
       const i = w.findIndex((x) => x === '-exec' || x === '-execdir' || x === '-ok');
@@ -3938,8 +4010,11 @@ function comandosPorOtroPrograma(cmd, cwd) {
       // sinPalabrasDelShell se come el `xargs` con sus opciones: acá sólo se sacan los prefijos y las palabras del shell
       let antes = pelarEnv(tramo).resto.trim();
       for (let previo = null; previo !== antes;) { previo = antes; antes = antes.replace(PREFIJO, '').replace(PALABRA_ANTES_DE_XARGS, '').trim(); }
-      const crudas = palabras(antes).filter((w) => w !== '');
+      // un `<<<` le da su palabra a la entrada, y le gana a la tubería: no es un argumento de la orden
+      const cadena = /<<<[ \t]*(?:'([^']*)'|"([^"]*)"|([^\s;&|]+))/.exec(antes);
+      const crudas = palabras(cadena ? antes.replace(cadena[0], ' ') : antes).filter((w) => w !== '');
       if (nombreDeComando(crudas[0]) === 'xargs') {
+        if (cadena) { out.push(...ordenesDeXargs(crudas, String(cadena[1] ?? cadena[2] ?? cadena[3]).split(/\s+/).filter(Boolean))); return; }
         // lo que llega por la entrada: las palabras del tramo de antes, sin el `echo`/`printf` que las escribe (con él,
         // `$0` del cuerpo de un `xargs sh -c` sería `echo`)
         const previas = k ? palabras(lista[k - 1]).filter((w) => w !== '') : [];

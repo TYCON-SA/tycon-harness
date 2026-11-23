@@ -470,6 +470,55 @@ test('T18 SustitucionTrasBarraEscapada_Corre', () => {
   ]) pasa(c, cmd);
 });
 
+// T19 a T23 · las cinco formas de escribir una historia dentro de un shell anidado que el freno no leía (fila 61, del
+// pase adversarial del #1491), y lo que sólo lee o escribe otra cosa por las mismas formas, que sigue pasando.
+test('T19 ShellAnidado_ComillasAnsiC_Frena', () => {
+  const c = corral();
+  frena(c, `bash -c $'echo x >> ${H}'`);
+  frena(c, `sh -c $'rm ${H}'`);
+  frena(c, `bash -c $'echo x \\x3e\\x3e ${H}'`);
+  pasa(c, `bash -c $'echo x >> README.md'`);
+  pasa(c, `bash -c $'cat ${H}'`);
+});
+
+test('T20 ShellAnidado_RutaEnVariableOEnPwd_Frena', () => {
+  const c = corral();
+  frena(c, `F=${H}; sh -c 'echo x >> "$F"'`);
+  frena(c, `export F=${H}; sh -c 'echo x >> $F'`);
+  frena(c, `F=${H} sh -c 'rm "$F"'`);
+  frena(c, `sh -c 'echo x >> $PWD/${H}'`);
+  frena(c, `sh -c 'echo x >> "\${PWD}/${H}"'`);
+  pasa(c, `F=README.md; sh -c 'echo x >> "$F"'`);
+  pasa(c, `F=${H}; sh -c 'cat "$F"'`);
+  pasa(c, `sh -c 'echo x >> $PWD/README.md'`);
+});
+
+test('T21 ShellAnidado_ComillaSimpleAnidada_Frena', () => {
+  const c = corral();
+  frena(c, `sh -c 'sh -c '"'"'rm ${H}'"'"''`);
+  frena(c, `bash -c 'bash -c '\\''echo x >> ${H}'\\'''`);
+  pasa(c, `sh -c 'sh -c '"'"'cat ${H}'"'"''`);
+});
+
+test('T22 ShellAnidado_XargsPorHereString_Frena', () => {
+  const c = corral();
+  frena(c, `xargs -I{} sh -c 'rm {}' <<< ${H}`);
+  frena(c, `xargs -I{} sh -c 'echo x >> {}' <<< "${H}"`);
+  frena(c, `xargs sh -c 'rm "$@"' sh <<< ${H}`);
+  pasa(c, `xargs -I{} sh -c 'cat {}' <<< ${H}`);
+  pasa(c, `xargs -I{} sh -c 'rm {}' <<< README.md`);
+});
+
+test('T23 ShellAnidado_Busybox_Frena', () => {
+  const c = corral();
+  frena(c, `busybox sh -c 'echo x >> ${H}'`);
+  frena(c, `busybox ash -c 'rm ${H}'`);
+  frena(c, `busybox rm ${H}`);
+  frena(c, `busybox sed -i s/a/b/ ${H}`);
+  pasa(c, `busybox sh -c 'cat ${H}'`);
+  pasa(c, `busybox cat ${H}`);
+});
+
 // T15 Bench_FrenoComandosAnidados
 // 🔴 Falla con: un caso del banco que no corre o que da otra salida que la esperada.
 test('T15 Bench_FrenoComandosAnidados', () => {
