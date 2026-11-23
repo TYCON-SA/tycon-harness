@@ -22,10 +22,13 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            abre una sesión de fondo con ese nombre; nunca reintenta. Sin --name (o con --name auto)
  *                            toma el primero libre de `coordination.session_names` (el lector de configuración);
  *                            sin esa configuración, no la abre
- *   open --name <n> --repo <repo> [--branch <rama>] [--slot] -- <encargo>
+ *   open --name <n> --repo <repo> [--branch <rama>] [--slot] [--reuse] -- <encargo>
  *                            lo mismo, en una copia hermana nueva del repo (`<principal>--wt-<nombre>`, desde
  *                            origin/main), en la rama del trabajo (wt/<nombre> sin rama); con --slot, en un puesto fijo
- *                            libre (scripts/tools/work-slots.js). Si Claude Code no la abre, borra lo que creó
+ *                            libre (scripts/tools/work-slots.js). Si Claude Code no la abre, borra lo que creó, salvo
+ *                            si contesta que la carpeta no está aprobada: la deja, con su rama, para que una persona la
+ *                            apruebe, y con --reuse la reintenta en esa misma carpeta (la copia de ese nombre, o el
+ *                            puesto que está en esa rama)
  *   close --name <n>         cierra una sesión de fondo si quedó limpia; si falta algo, o no pudo mirarlo, no cierra y dice
  *                            qué. A una interactiva la verifica y avisa
  *   stop --name <n>          para una sesión de fondo con el id que anotó (claude stop no la encuentra por el nombre ni
@@ -2914,6 +2917,52 @@ function mainOf(repo) {
   return realDir(path.basename(common.out) === '.git' ? path.dirname(common.out) : common.out);
 }
 
+// Lo que se muestra de la primera línea de Claude Code cuando contesta que la carpeta no está aprobada.
+const UNTRUSTED_SAID_MAX = 200;
+
+/**
+ * La carpeta que dejó una apertura que Claude Code no aceptó por no estar aprobada, para reintentar ahí (`--reuse`): la
+ * copia `<principal>--wt-<nombre>` en la rama del trabajo, o el puesto que está en esa rama. No reusa una carpeta con
+ * una sesión viva adentro: la persona que la aprobó pudo dejar claude abierto ahí. `{ ok, slot, copy }` o
+ * `{ ok: false, message }`.
+ */
+function reusable({ home, env, arnes, repo, name, branch, slot, live }) {
+  const no = (message) => ({ ok: false, message });
+  const main = mainOf(repo);
+  if (!main) return no(`No pude ver el repo ${repo}: no la abrí.`);
+  let found;
+  if (slot) {
+    const l = workSlots.list({ home, env, arnes, repo });
+    if (!l.ok) return no(`${l.message.replace(/\.$/, '')}; no la abrí.`);
+    const s = l.slots.find((x) => x.branch === branch);
+    if (!s) return no(`Ningún puesto de ${main} está en la rama ${branch}: no hay qué reusar; no la abrí. Sin --reuse toma un puesto libre.`);
+    found = { slot: { ok: true, path: s.path, n: s.n, branch, created: false }, copy: null, where: s.path };
+  } else {
+    const p = `${main}--wt-${name}`;
+    if (!fs.existsSync(p)) return no(`La copia ${p} no existe: no hay qué reusar; no la abrí. Sin --reuse crea una nueva.`);
+    if (mainOf(p) !== main) return no(`${p} no es una copia de ${main}: no la reuso; no la abrí.`);
+    const at = gitIn(p, ['symbolic-ref', '-q', '--short', 'HEAD']).out;
+    if (at !== branch) return no(`La copia ${p} está en ${at ? `la rama ${at}` : 'un commit suelto'}, no en ${branch}: no la reuso; no la abrí.`);
+    found = { slot: null, copy: { ok: true, path: p, main, branch, created: false }, where: p };
+  }
+  const here = realDir(found.where);
+  if (live.some((x) => x.cwd && realDir(x.cwd) === here)) {
+    return no(`Hay una sesión viva en ${found.where} (¿quedó abierta la que la aprobó?): que la cierren con /exit y volvé a probar; no la abrí.`);
+  }
+  return { ok: true, slot: found.slot, copy: found.copy };
+}
+
+// El mensaje cuando Claude Code no abrió una copia o un puesto por no estar aprobado: la carpeta queda, y dice cómo
+// aprobarla, cómo reintentar ahí y cómo soltarla si no se va a usar.
+function untrustedFolder({ name, repo, branch, slot, copy, where, said }) {
+  const kind = slot ? `un puesto de ${repo}` : `una copia de ${repo}`;
+  const retry = `node "${__filename}" open --name ${name} --repo "${repo}"${branch ? ` --branch ${branch}` : ''}${slot ? ' --slot' : ''} --reuse -- <el mismo encargo>`;
+  const left = slot
+    ? `El puesto queda tomado, en la rama ${slot.branch}; si no se va a usar, soltalo: node "${path.join(__dirname, 'work-slots.js')}" release "${slot.path}".`
+    : `La copia queda, en la rama ${copy.branch}; si no se va a usar, sacala: git -C "${copy.main}" worktree remove "${copy.path}".`;
+  return `Claude Code no abrió la sesión: la carpeta ${where} (${kind}) no está aprobada en esta versión de Claude Code, que pide aprobar cada copia y cada puesto aparte, aunque la principal lo esté.${said} La aprueba una persona una vez: cd "${where}" y claude, aceptá si pregunta y salí con /exit. Después volvé a abrir la sesión en esa misma carpeta: ${retry}. ${left} No reintenté.`;
+}
+
 /**
  * Abre una sesión de fondo con nombre y encargo. Nunca reintenta; sólo una apertura que salió bien queda anotada. Sin
  * nombre (o con «auto»), toma el primero libre de `coordination.session_names`.
@@ -2936,11 +2985,13 @@ function openNow(opts) {
   const s = capCheck({ ...opts, home, env, now });
   // Sin leer todo no se sabe el tope ni qué nombres están tomados: no se abre a ciegas.
   if (s.problems.length) return no(`No pude leer todo el estado de la máquina (${s.problems[0]}): no la abrí.`);
-  const taken = new Set([...sessionsBySid(path.join(claudeDir(home), 'sessions'), [], path.join(claudeDir(home), 'projects')).values()]
-    .filter((x) => x.alive && x.name).map((x) => x.name));
+  const live = [...sessionsBySid(path.join(claudeDir(home), 'sessions'), [], path.join(claudeDir(home), 'projects')).values()].filter((x) => x.alive);
+  const taken = new Set(live.filter((x) => x.name).map((x) => x.name));
   const openedProblems = [];
   for (const o of recentOpened(home, now, openedProblems)) taken.add(o.name);
   if (openedProblems.length) return no(`No pude saber qué sesiones se abrieron recién (${openedProblems[0]}): no la abrí.`);
+  if (opts.reuse && !opts.repo) return no('--reuse va con --repo (reusa la copia o el puesto de ese repo que quedó sin aprobar): no la abrí.');
+  if (opts.reuse && auto) return no('--reuse va con --name, el de la apertura que quedó sin aprobar: no la abrí.');
   if (auto) {
     const names = sessionNames.namesOf(recipe({ home, arnes: opts.arnes, env }).session_names.value);
     // sin lista, como siempre: el nombre lo pone quien abre
@@ -2972,15 +3023,19 @@ function openNow(opts) {
   // los mensajes de las demás. Sin saberlo, no se abre a ciegas.
   const pm = callerPermissionMode({ home, env });
   if (pm.problem) return no(`No pude saber en qué modo de permisos estás (${pm.problem}): no la abrí.`);
-  // Con el repo, la sesión va a una copia hermana nueva (`<principal>--wt-<nombre>`): Claude Code no pide aprobar una
-  // copia de un repo cuya carpeta principal ya está aprobada (medido con 2.1.312). Con `--slot`, a un puesto fijo
-  // (scripts/tools/work-slots.js), como antes.
+  // Con el repo, la sesión va a una copia hermana nueva (`<principal>--wt-<nombre>`); con `--slot`, a un puesto fijo
+  // (scripts/tools/work-slots.js). Con 2.1.312 una copia de un repo con la principal aprobada no pedía aprobación; con
+  // 2.1.330 la sesión de fondo la pide para cada copia y cada puesto: la carpeta queda y `--reuse` la reintenta ahí.
   let slot = null;
   let copy = null;
   if (opts.repo) {
     if (!path.isAbsolute(opts.repo)) return no('El repo va con su ruta absoluta: no la abrí.');
     const branch = opts.branch || `wt/${name}`;
-    if (opts.slot) {
+    if (opts.reuse) {
+      const u = reusable({ home, env, arnes: opts.arnes, repo: opts.repo, name, branch, slot: opts.slot, live });
+      if (!u.ok) return no(u.message);
+      ({ slot, copy } = u);
+    } else if (opts.slot) {
       const tk = workSlots.take({ home, env, arnes: opts.arnes, repo: opts.repo, branch });
       if (!tk.ok) return no(`${tk.message.replace(/\.$/, '')}; no la abrí.`);
       slot = tk;
@@ -2993,8 +3048,10 @@ function openNow(opts) {
   const where = slot ? slot.path : copy ? copy.path : cwd;
   if (!where || !path.isAbsolute(where)) return no('Falta la carpeta de la sesión, absoluta: no la abrí.');
   if (!fs.existsSync(where)) return no(`La carpeta ${where} no existe: no la abrí.`);
-  // Si no abrió, el puesto vuelve a quedar libre, la copia se borra, y la rama que se creó para el trabajo no queda.
+  // Si no abrió, el puesto vuelve a quedar libre, la copia se borra, y la rama que se creó para el trabajo no queda. Lo
+  // que se reusó ya estaba: queda como estaba.
   const fail = (message) => {
+    if (opts.reuse) return no(`${message} La ${slot ? 'carpeta del puesto' : 'copia'} ${where} queda como estaba.`);
     if (slot) {
       workSlots.release({ home, env, slot: slot.path });
       if (slot.created) spawnSync('git', ['-C', slot.path, 'branch', '-d', slot.branch], { encoding: 'utf8', windowsHide: true });
@@ -3027,11 +3084,14 @@ function openNow(opts) {
   if (r.error) return fail(`El lanzador falló (${r.error.code || r.error.message}): no abrí la sesión.`);
   if (r.status !== 0) {
     const out = `${r.stderr || ''}\n${r.stdout || ''}`;
-    // con la copia no se sabe si falta aprobar la principal o si esta versión de Claude Code pide aprobar cada copia: no
-    // se lee ~/.claude.json para distinguirlo, se dicen las dos salidas
-    if (/not trusted/i.test(out) && copy) return fail(`Claude Code no abrió la copia: falta aprobar la carpeta principal ${copy.main}. Abrila una vez (cd "${copy.main}" y claude) y aceptá; si ya está aprobada, la versión instalada de Claude Code no acepta copias sin aprobar: abrí con --slot.`);
-    if (/not trusted/i.test(out)) return fail(`La carpeta ${where} todavía no está aprobada para Claude Code: la abre el dueño una vez${slot ? ' (los puestos sin aprobar los lista work-slots.js pending-trust)' : ''}. Mientras tanto, la sesión la abre el dueño y yo le doy el encargo.`);
     const first = out.split('\n').map((l) => l.trim()).find(Boolean);
+    if (/not trusted/i.test(out)) {
+      // lo que dijo Claude Code, tal cual y recortado: la próxima versión puede decirlo distinto
+      const line = oneLine(first);
+      const said = line ? ` Claude Code dijo: «${line.length > UNTRUSTED_SAID_MAX ? `${line.slice(0, UNTRUSTED_SAID_MAX)}…` : line}».` : '';
+      if (!slot && !copy) return fail(`La carpeta ${where} todavía no está aprobada para Claude Code: la abre el dueño una vez. Mientras tanto, la sesión la abre el dueño y yo le doy el encargo.${said}`);
+      return no(untrustedFolder({ name, repo: opts.repo, branch: opts.branch, slot, copy, where, said }));
+    }
     return fail(`El lanzador falló: ${first || (r.signal ? `lo cortó la señal ${r.signal}` : `salió con código ${r.status}`)}. No reintenté.`);
   }
   const opened = `Abrí «${name}» en ${where}. Para entrar: claude attach ${name}, o desde claude.ai/code (control remoto «${name}»)`;
@@ -3512,7 +3572,7 @@ function relaunch(opts = {}) {
 // ── La línea de comandos ──
 
 // las opciones que no llevan valor: las demás `--x` toman el argumento siguiente
-const SWITCHES = new Set(['json', 'slot']);
+const SWITCHES = new Set(['json', 'slot', 'reuse']);
 // ── pr-wait: el vigilante de sólo lectura de un pedido ──
 // Repite sólo la lectura del pedido por la capa de plataforma (`change-request.read`: el conector de cada plataforma sabe
 // cómo se lee; el núcleo no nombra ninguna herramienta), y termina cuando el pedido deja de estar abierto. Es la forma
@@ -3645,7 +3705,7 @@ function main(argv) {
       process.stderr.write('coordination.js: open no elige el modo de permisos: copia el de la sesión que lo llama.\n');
       return 2;
     }
-    const r = open({ ...base, name: f.name, cwd: f.cwd, repo: f.repo, branch: f.branch, slot: f.slot === true, task: f.rest.join(' '), timeoutMs: f['timeout-ms'] ? Number(f['timeout-ms']) : undefined });
+    const r = open({ ...base, name: f.name, cwd: f.cwd, repo: f.repo, branch: f.branch, slot: f.slot === true, reuse: f.reuse === true, task: f.rest.join(' '), timeoutMs: f['timeout-ms'] ? Number(f['timeout-ms']) : undefined });
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
