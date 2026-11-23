@@ -372,7 +372,18 @@ The harness controls this, not anyone's memory:
   process that takes the turn. Before launching them, `heavy-turn.js reserve --for "<what>"` takes the turn in that
   name: a gate that asks for it gets the «wait» with the reservation's name. With a large run going it does not reserve
   (it exits 77 and says who holds it). `heavy-turn.js release --reserve` frees it; it expires after 90 minutes (a round of
-  reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10.
+  reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10. With
+  `--to <session>`, the reservation says which session launches what was reserved (its pass without the pipeline, the
+  next point). It is for the pass, not for its suites: that session's gate waits like anyone's until it is released.
+- **The pass without the pipeline also asks for the turn.** A session without a pipeline run (one the coordinator
+  opened for a fix, or a loose one) launches its pass with the Agent or Workflow tool, with no marker to count it. On
+  23/11 at 05:45, with several of those at once, the machine ran out of processes. The `agile-pass-turn.js` hook looks
+  at each launch: every Workflow (the fan-out of agents that fills the machine) and an Agent whose description or type
+  says adversarial (small reviewers and searches do not count; the request text is not read). If the session has neither the «go» (`grant --to`) nor a
+  reservation for it (`reserve --for "<what>" --to <session>`), it warns the session and the person who holds the turn,
+  and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
+  measurement (`MODO` in the hook). It does not look without a coordinator, at the coordinator itself, or at a pipeline
+  session. `TYCON_AGILE_PASS_TURN=0` turns it off.
 
 `coordination.js status` shows a single line, «Turno de tarea pesada», with who holds it and what it is; with one large
 run, whether the second turn is free or closed, with the memory and the floor; with two, both. `heavy-turn.js holders`
