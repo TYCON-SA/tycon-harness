@@ -784,6 +784,22 @@ test('Requeue_AutoMergeBeforePush_NotQueued — con el auto-merge puesto antes d
   assert.strictEqual(SPN().paraReencolar([ghRepo], leidasDe(p), {}).encolar.length, 1);
 });
 
+// 🔴 Falla con: decir «quedó fuera de la cola después del empuje» sin decir cuándo. Un pedido con el auto-merge puesto a
+// las 14:21 y un merge de main a las 17:22 del mismo día se leyó dos días después como un empuje de recién, y mandó a
+// buscar quién lo había tocado (fila 166).
+test('Requeue_PushAge_SaysWhen — el aviso dice hace cuánto llegó la punta, no sólo «después del empuje»', () => {
+  const ahora = Date.parse('2026-11-23T19:30:00Z');
+  const p = listo(1419, { lastQueueDrop: null, autoComplete: true, autoMergeSince: '2026-11-21T14:21:12Z', headCommittedAt: '2026-11-21T17:22:58Z', mergeStatus: 'UNKNOWN' });
+  const r = SPN().paraReencolar([ghRepo], leidasDe(p), {}, ahora);
+  assert.match(r.esperan[0].linea, /pedido 1419 \(harness\) quedó fuera de la cola después del empuje de hace 50 h: no lo re-encolo porque no está limpio \(UNKNOWN\)/);
+  // un empuje forzado posterior al commit cuenta desde el empuje
+  const forzado = listo(1420, { lastQueueDrop: null, autoComplete: true, autoMergeSince: '2026-11-21T14:21:12Z', headCommittedAt: '2026-11-21T17:22:58Z', headPushedAt: '2026-11-23T19:00:00Z', mergeStatus: 'UNKNOWN' });
+  assert.match(SPN().paraReencolar([ghRepo], leidasDe(forzado), {}, ahora).esperan[0].linea, /después del empuje de hace 30 min:/);
+  // sin ninguna fecha de la punta, queda como antes
+  const sinFecha = listo(1421, { headCommittedAt: '', mergeStatus: 'UNKNOWN' });
+  assert.match(SPN().paraReencolar([ghRepo], leidasDe(sinFecha), {}, ahora).esperan[0].linea, /después del empuje: no lo re-encolo/);
+});
+
 test('Requeue_NotWhen — sin aprobar, no limpio, no verde, borrador, de un bot, en la cola, sin empuje posterior o nunca pidió entrar: no', () => {
   const casos = [
     [{ reviewDecision: 'CHANGES_REQUESTED' }, /pidieron cambios/],
@@ -799,7 +815,7 @@ test('Requeue_NotWhen — sin aprobar, no limpio, no verde, borrador, de un bot,
     const r = SPN().paraReencolar([ghRepo], leidasDe(listo(7, o)), {});
     assert.deepStrictEqual(r.encolar, [], JSON.stringify(o));
     assert.strictEqual(r.esperan.length, 1, JSON.stringify(o));
-    assert.match(r.esperan[0].linea, /pedido 7 \(harness\) quedó fuera de la cola después del empuje: no lo re-encolo porque/);
+    assert.match(r.esperan[0].linea, /pedido 7 \(harness\) quedó fuera de la cola después del empuje de hace \d+ (?:min|h): no lo re-encolo porque/);
     assert.match(r.esperan[0].linea, motivo);
   }
   // los que no cuentan: ni re-encolar ni avisar por esto
@@ -842,12 +858,12 @@ test('Requeue_CoordinatorSeesItEveryTurn — la caída, el re-encolado y el que 
   const r = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
   const texto = r.lines.join('\n');
   assert.match(texto, /pedido 1037 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo/);
-  assert.match(texto, /pedido 1039 \(harness\) quedó fuera de la cola después del empuje: lo re-encolé hace 5 min/);
-  assert.match(texto, /pedido 1038 \(harness\) quedó fuera de la cola después del empuje: no lo re-encolo porque sus comprobaciones no están en verde \(PENDING\)/);
+  assert.match(texto, /pedido 1039 \(harness\) quedó fuera de la cola después del empuje de hace \d+ (?:min|h): lo re-encolé hace 5 min/);
+  assert.match(texto, /pedido 1038 \(harness\) quedó fuera de la cola después del empuje de hace \d+ (?:min|h): no lo re-encolo porque sus comprobaciones no están en verde \(PENDING\)/);
   // el intento fallido se dice con cómo encolarlo a mano
   fs.writeFileSync(path.join(dir, 'requeued-prs.json'), JSON.stringify({ 'acme/harness#1039': { punta: 'c1039', nodeId: 'PR_kw1039', at: hace(5), ok: false, detalle: 'gh: boom' } }));
   assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora }).lines.join('\n'),
-    /pedido 1039 \(harness\) quedó fuera de la cola después del empuje: no pude re-encolarlo \(gh: boom\); encolalo a mano con gh api graphql -f query='mutation.*enqueuePullRequest.*' -f id=PR_kw1039/);
+    /pedido 1039 \(harness\) quedó fuera de la cola después del empuje de hace \d+ (?:min|h): no pude re-encolarlo \(gh: boom\); encolalo a mano con gh api graphql -f query='mutation.*enqueuePullRequest.*' -f id=PR_kw1039/);
 });
 
 test('Requeue_FromGithubRead_SaysWhyNot — de la lectura de GitHub de punta a punta: caído, empujado después y sin verde', () => {
@@ -857,7 +873,7 @@ test('Requeue_FromGithubRead_SaysWhyNot — de la lectura de GitHub de punta a p
       before_parents: ['main'.padStart(40, '0'), 'vieja'.padStart(40, '0')] } })]);
   const r = correr(w);
   assert.strictEqual(r.rc, 0, r.err);
-  assert.match(r.out, /pedido 1038 \(harness\) quedó fuera de la cola después del empuje: no lo re-encolo porque sus comprobaciones no están en verde \(PENDING\)/);
+  assert.match(r.out, /pedido 1038 \(harness\) quedó fuera de la cola después del empuje de hace \d+ (?:min|h): no lo re-encolo porque sus comprobaciones no están en verde \(PENDING\)/);
   assert.doesNotMatch(r.out, /pedido 1038 \(harness\) se cayó de la cola/, 'con una punta nueva, la caída ya no es la noticia');
 });
 
