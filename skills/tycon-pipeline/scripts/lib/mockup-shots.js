@@ -8,7 +8,7 @@
  * maqueta no carga nada) a 1440 y a 390 px, se guarda una captura de cada ancho y se buscan tres cosas en la página:
  *   - desborde: la página es más ancha que la ventana;
  *   - textos que se pisan: dos textos visibles cuyas cajas se cruzan (lo que está detrás de una ventana, marcado
- *     `aria-hidden` o tapado por una capa que no lo contiene, no cuenta);
+ *     `aria-hidden` o tapado por lo que dibuja encima una capa que no lo contiene, no cuenta);
  *   - palabras partidas: una palabra que el navegador cortó en dos renglones.
  * El informe queda al lado de la maqueta (`<clave>-mockup-review.json`), atado a la huella del HTML: «Aprobar el plan» no
  * cierra sin un informe de esa misma maqueta y sin hallazgos (`problemaDeLaRevision`).
@@ -32,16 +32,41 @@ function medirEnLaPagina(max) {
   const W = window.innerWidth;
   const sw = document.documentElement.scrollWidth;
   if (sw > W + 1) out.push({ kind: 'desborde', what: `la página mide ${sw} px de ancho y la ventana ${W}: hay que correrla de costado` });
-  // las capas (una ventana, un diálogo y su fondo): lo que queda debajo de una y no es parte de ella está tapado, aunque no
-  // esté marcado `aria-hidden`. Se compara la caja de cada cosa con la de cada capa, no lo que se ve en la ventana del navegador
+  // las capas que se ven (una ventana, un diálogo y su fondo): una invisible, o dentro de algo invisible, no tapa nada
+  const seVe = (m) => {
+    if (getComputedStyle(m).visibility !== 'visible') return false;
+    for (let a = m; a; a = a.parentElement) if (Number(getComputedStyle(a).opacity) === 0) return false;
+    const r = m.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
   const capas = [...document.querySelectorAll('.layer-backdrop, .layer-dialog, [role="dialog"], [aria-modal="true"], dialog[open]')]
-    .filter((m) => !m.closest('[aria-hidden="true"]')).map((m) => ({ m, r: m.getBoundingClientRect() })).filter(({ r }) => r.width > 0 && r.height > 0);
+    .filter((m) => !m.closest('[aria-hidden="true"]') && seVe(m));
+  // tapado: lo que el navegador dibuja en el centro de la cosa es parte de una capa que no la contiene, aunque no esté
+  // marcada `aria-hidden`. Se mira lo que se dibuja arriba, no la caja de la capa: con dos capas encimadas se ve la de
+  // arriba, y lo que se dibuja por encima de una capa no está tapado. El punto tiene que estar en la ventana: se la corre
+  // hasta ahí y se la deja donde estaba
+  const yaVisto = new Map();
   const tapado = (el) => {
     if (!capas.length) return false;
+    if (yaVisto.has(el)) return yaVisto.get(el);
+    const sx = window.scrollX;
+    const sy = window.scrollY;
+    const r0 = el.getBoundingClientRect();
+    window.scrollTo(sx, Math.max(0, sy + r0.top + r0.height / 2 - window.innerHeight / 2));
     const r = el.getBoundingClientRect();
     const x = r.left + r.width / 2;
     const y = r.top + r.height / 2;
-    return capas.some(({ m, r: c }) => !m.contains(el) && !el.contains(m) && x >= c.left && x <= c.right && y >= c.top && y <= c.bottom);
+    let si = false;
+    if (x >= 0 && x < window.innerWidth && y >= 0 && y < window.innerHeight) {
+      const arriba = document.elementFromPoint(x, y);
+      if (arriba && !el.contains(arriba) && !arriba.contains(el)) {
+        const capa = capas.find((m) => m.contains(arriba));
+        si = !!capa && !capa.contains(el);
+      }
+    }
+    window.scrollTo(sx, sy);
+    yaVisto.set(el, si);
+    return si;
   };
   // lo que no se ve no cuenta: lo marcado `aria-hidden` (la pantalla detrás de una ventana), lo invisible y lo tapado por
   // una capa
