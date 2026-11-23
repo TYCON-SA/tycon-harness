@@ -68,6 +68,9 @@ const MARCA_DE_PRUEBA = /[ \t]*(?<![\w@])@(?:story-[\w.-]*\w|ac-\d+)(?!\w)/g;
 const COMENTARIO_VACIO = /^[ \t]*(?:\/\/+|#+|\/\*+[ \t*]*\*\/)?[ \t]*$/;
 // Las palabras que declaran una prueba: su primer argumento es su nombre, donde van las marcas.
 const DECLARA_PRUEBA = /^(?:test|it|describe|context|suite|specify)$/;
+// Lo que se encadena a una de ésas y sigue declarando una prueba (`test.only`, `describe.skip`, `test.describe.serial`,
+// `test.step`). Otro método (`context.setItem`, `test.expect`) es una llamada cualquiera: su texto es un dato.
+const MODIFICA_PRUEBA = /^(?:only|skip|todo|step|concurrent|serial|parallel|sequential|fixme|fail|failing)$/;
 
 /**
  * ¿El texto en la posición `k` es el nombre de una prueba? `test('…'`, `it.only('…'`, `describe.skip('…'`. Uno de un
@@ -76,7 +79,7 @@ const DECLARA_PRUEBA = /^(?:test|it|describe|context|suite|specify)$/;
 function esNombreDePrueba(tokens, k) {
   if (!tokens[k - 1] || tokens[k - 1].v !== '(') return false;
   let j = k - 2;
-  while (j >= 2 && tokens[j].tipo === 'palabra' && !DECLARA_PRUEBA.test(tokens[j].v) && tokens[j - 1].v === '.') j -= 2;
+  while (j >= 2 && tokens[j].tipo === 'palabra' && tokens[j - 1].v === '.' && (MODIFICA_PRUEBA.test(tokens[j].v) || DECLARA_PRUEBA.test(tokens[j].v))) j -= 2;
   return Boolean(tokens[j]) && tokens[j].tipo === 'palabra' && DECLARA_PRUEBA.test(tokens[j].v) && !(tokens[j - 1] && tokens[j - 1].v === '.');
 }
 
@@ -105,7 +108,7 @@ function soloMarcasEnElCodigo(antes, ahora, ext) {
 }
 
 // Lo que hace de un comentario una directiva de alguna herramienta: ahí una marca nueva puede cambiar su efecto.
-const DIRECTIVA = /eslint|prettier|istanbul|\bc8\b|jshint|tslint|@ts-|biome-|deno-|noqa|pylint|shellcheck|nolint|noinspection|ignore|skip|suppress|disable|webpack|sourceMapping|@jsx|environment|^\s*(?:\/\/|#)\s*!|\b(?:global|exported)\s/i;
+const DIRECTIVA = /eslint|prettier|istanbul|\bc8\b|jshint|tslint|@ts-|biome-|deno-|noqa|pylint|shellcheck|nolint|noinspection|ignore|skip|suppress|disable|webpack|sourceMapping|@jsx|environment|<reference|<amd-|^\s*(?:\/\/|#)\s*!|\b(?:global|exported)\s/i;
 
 /** El texto de un comentario sin sus marcas; el de una directiva queda entero, para que una marca ahí cuente como cambio. */
 function sinMarcasDelComentario(texto) {

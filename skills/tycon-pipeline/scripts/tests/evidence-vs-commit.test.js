@@ -652,6 +652,13 @@ test('EvidenceVsCommit_SameStoryOnlyChangesTags_StillCounts — la historia que 
   commit(l.repo, 'saca la marca del 2', 1700000200);
   r = l.juzgar(l.prueba);
   assert.deepStrictEqual([r.cuenta, r.regla, r.via], [true, 6, 'solo-marcas'], JSON.stringify(r));
+  // el nombre de una prueba con modificadores encadenados (`test.describe.serial`) también es un nombre
+  const encadenada = "test.describe.serial('grupo', () => {});\n";
+  l = labDeLaHistoria(encadenada);
+  escribir(l.repo, PRUEBA_9_9, encadenada.replace("'grupo'", "'grupo @ac-4'"));
+  commit(l.repo, 'marca el grupo', 1700000200);
+  r = l.juzgar(l.prueba);
+  assert.deepStrictEqual([r.cuenta, r.regla, r.via], [true, 6, 'solo-marcas'], JSON.stringify(r));
 });
 
 test('EvidenceVsCommit_SameStoryTagsAndCode_VoidsItsCriteria — marcas y algo más, o un comentario que cambió, vencen como siempre', () => {
@@ -675,8 +682,9 @@ test('EvidenceVsCommit_SameStoryTagsAndCode_VoidsItsCriteria — marcas y algo m
 });
 
 test('EvidenceVsCommit_TagsInDataOrWhitespace_Voids — una marca en un dato de la prueba, o un cambio de espacios en un texto, vencen', () => {
-  // la prueba empieza con un pragma de entorno y una directiva: una marca en cualquiera de los dos cambia su efecto
-  const base = '/** @jest-environment node */\n// eslint-disable-next-line\ntest(\'caso a @story-9.9 @ac-2\', () => { assert.equal(f(), \'ok @ac-1\'); const t = `a \nb`; const r = /x @ac-1/; });\n';
+  // la prueba empieza con un pragma de entorno, una directiva de triple barra y otra de un linter: una marca en cualquiera
+  // de ellos cambia su efecto
+  const base = '/** @jest-environment node */\n/// <reference types="vitest" />\n// eslint-disable-next-line\ntest(\'caso a @story-9.9 @ac-2\', () => { assert.equal(f(), \'ok @ac-1\'); const t = `a \nb`; const r = /x @ac-1/; context.setItem(\'k\'); test.expect(\'e\'); });\n';
   for (const [caso, ahora] of [
     ['la marca de un dato', base.replace('\'ok @ac-1\'', '\'ok\'')],
     ['la marca de una expresión', base.replace('/x @ac-1/', '/x/')],
@@ -685,6 +693,9 @@ test('EvidenceVsCommit_TagsInDataOrWhitespace_Voids — una marca en un dato de 
     ['una marca de un método que no declara una prueba', base.replace('assert.equal(f(), \'ok @ac-1\')', 'assert.equal(re.test(\'ok @ac-2\'), true)')],
     ['una marca en una directiva', base.replace('next-line\n', 'next-line @ac-4\n')],
     ['una marca en un pragma de entorno', base.replace('node */', 'node @ac-4 */')],
+    ['una marca en una directiva de triple barra', base.replace('"vitest" />', '"vitest" @ac-4 />')],
+    ['una marca en el texto de un método encadenado a context', base.replace("setItem('k')", "setItem('k @ac-4')")],
+    ['una marca en el texto de un método encadenado a test', base.replace("expect('e')", "expect('e @ac-4')")],
   ]) {
     const l = labDeLaHistoria(base);
     // el salto de Windows tiene que llegar al commit tal cual, con cualquier configuración de la máquina
