@@ -101,6 +101,8 @@ const DOING_FRESH_MS = 3 * 3600000;
 const WAIT_NOTE_FRESH_MS = 30 * 60000;
 // un agente de fondo que no escribe en este rato se le dice a la coordinadora
 const AGENT_SILENT_MS = 20 * 60000;
+// la sesión ocupada que no escribe hace este rato y no corre ningún agente: un comando no pasa de 10 min, así que no es eso
+const BUSY_SILENT_MS = 60 * 60000;
 const LAUNCH_TIMEOUT_MS = 30000;
 const GIT_TIMEOUT_MS = 20000;
 // owner-wait mira cada tanto (TYCON_OWNER_WAIT_POLL_MS para las pruebas); una frenada sin anunciar sale en el turno de la
@@ -192,12 +194,16 @@ function codexThreads(codexHome, problems) {
 // Un marcador sin tocar hace más de un día es una ejecución abandonada, no un plan que espera.
 const PLAN_WAIT_MAX_MS = 24 * 3600000;
 
-/** Las dependencias reales de `plansWaiting`: la última revisión del plan y si el perfil delega el plan delicado. */
+/**
+ * Las dependencias reales de `plansWaiting`: la última revisión del plan (de esta corrida, también la que se hizo para la
+ * sesión que fue adoptada; si no hay, la última de la sesión) y si el perfil delega el plan delicado.
+ */
 function planDepsDefault(home) {
   const PR = require(path.join(SKILL_LIB, 'plan-review.js'));
   const estado = stateDir(home);
   return {
-    revision: (sid) => PR.ultimaDelDestino({ estado, destino: sid }),
+    revision: (sid, m) => (m && m.storyId ? PR.ultimaDeLaCorrida({ estado, destinos: PR.sesionesDeLaCorrida(sid, m), corrida: PR.corridaDe(m) }) : null)
+      || PR.ultimaDelDestino({ estado, destino: sid }),
     delegada: (sid) => {
       const coord = PR.designadaDeVerdad(estado);
       if (!coord || coord === sid) return false;
@@ -227,7 +233,7 @@ function plansWaiting(opts = {}, problems = []) {
     if (Number.isFinite(tocado) && now - tocado > PLAN_WAIT_MAX_MS) continue;
     const desde = Date.parse((((m.stepTimings || {}).plan) || {}).completedAt || '');
     let rev = null;
-    try { rev = deps.revision(sid); } catch (e) { problems.push(`la revisión del plan de ${sid} (${e.code || e.message})`); }
+    try { rev = deps.revision(sid, m); } catch (e) { problems.push(`la revisión del plan de ${sid} (${e.code || e.message})`); }
     // una constancia ilegible de otra revisión no se anuncia acá: la dicen la revisión del plan y su cuadro; acá sólo se
     // usa la que se leyó, para decir quién puede aprobar
     const review = rev && rev.veredicto ? String(rev.veredicto) : null;
@@ -646,6 +652,8 @@ function relayNoteOf(home, sid, since) {
 const retiredWaited = (x) => (x.waited ? `, esperando ${oneLine(x.waited).slice(0, 160)}${x.waitingSince == null ? '' : ` desde las ${hhmm(x.waitingSince)}`}` : ', sin anotar qué esperaba');
 // una sesión que espera a su agente de fondo, que no escribe hace rato (lib/agent-silence.js)
 const agentSilentLine = (a) => `${a.session} espera a su agente ${String(a.agente).slice(0, 17)}, que no escribe hace ${a.minutos} min${a.herramienta ? ` (su último paso: ${quoted(a.herramienta, 40)})` : ''}`;
+// una sesión que dice que trabaja, pero no escribe hace rato y no corre nada (lib/agent-silence.js)
+const busySilentLine = (b) => `${b.session} dice que trabaja, pero no escribe hace ${b.minutos} min y no corre nada${b.herramienta ? ` (su último paso: ${quoted(b.herramienta, 40)})` : ''}: ¿trabada?`;
 const retiredLine = (x) => `${x.session}: la cerró Claude Code a las ${hhmm(x.at)} por ${x.reason}, quieta ${x.idleMin} min${retiredWaited(x)}. Para levantarla: claude respawn ${x.short}`;
 
 /** El estado de la máquina, como datos. `noTranscripts`: sin abrir las conversaciones (el aviso de cada turno). */
@@ -662,6 +670,7 @@ function status(opts = {}) {
   const unnamed = [];
   const quiet = [];
   const agentSilent = [];
+  const busySilent = [];
   const passWaiting = [];
   const suiteWaiting = [];
   const outsideWaiting = [];
@@ -717,7 +726,14 @@ function status(opts = {}) {
     const q = askingOf(s, files.get(String(sid)), now);
     // como la de las trabadas, la clave no sale en --json: es sólo para no anunciar dos veces la misma pregunta
     if (q) asking.push(Object.defineProperty({ session: nameOf(sid), sid, since: q.since }, 'key', { value: q.key }));
-    if (s.busy) working.push({ session: nameOf(sid), sid, why: story || 'trabajando sin pipeline', since: s.statusAt });
+    if (s.busy) {
+      working.push({ session: nameOf(sid), sid, why: story || 'trabajando sin pipeline', since: s.statusAt });
+      // dice que trabaja, pero no da un paso suyo hace una hora y no corre ningún agente: trabada sin que nadie se entere. Con
+      // «shell» terminó su turno y tiene un comando de fondo corriendo: no está trabada
+      let b = null;
+      if (s.status !== 'shell') try { b = require('../lib/agent-silence.js').busySilence({ projectsDir: path.join(claudeDir(home), 'projects'), cwd: s.cwd, sid, now, silentMs: BUSY_SILENT_MS, agentMs: AGENT_SILENT_MS, readSteps: !opts.noTranscripts || opts.ownSteps === true }); } catch { b = null; }
+      if (b && Number.isFinite(b.minutos)) busySilent.push({ session: nameOf(sid), sid, ...b });
+    }
     else if (justOpened.has(s.name)) working.push({ session: nameOf(sid), sid, why: 'recién abierta, todavía arrancando', since: (opened.find((o) => o.name === s.name) || {}).at || null });
     else {
       waiting.push({ session: nameOf(sid), sid, why: story ? `${story}, ${s.status || 'sin estado'}` : 'sin trabajo' });
@@ -803,7 +819,7 @@ function status(opts = {}) {
   if (vigente && vigente.error) problems.push(vigente.error);
   else if (vigente && vigente.pendiente) pendingDesignation = { sesion: vigente.pendiente.sesion, ts: vigente.pendiente.ts };
   return {
-    now, working, waiting, quiet, agentSilent, backgroundStalled, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
+    now, working, waiting, quiet, agentSilent, busySilent, backgroundStalled, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
     // lo que espera revisión, de la foto del arranque: para mostrar, nunca para decidir
     review: RL.leerFoto(stateDir(home), now), reviewCap: r.max_awaiting_review,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why, idle, swap: swapOf(opts),
@@ -851,6 +867,7 @@ function statusText(s) {
   if (s.suiteWaiting && s.suiteWaiting.length) lines.push(`Esperando turno de suite o portón: ${[...s.suiteWaiting].sort((a, b) => a.since - b.since).map((w) => `${w.session} desde las ${hhmm(w.since)}${w.worked ? ' (trabajó después: ¿sigue esperando?)' : ''}`).join(' · ')}`);
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   if (s.agentSilent && s.agentSilent.length) lines.push(`Esperan a un agente callado: ${s.agentSilent.map(agentSilentLine).join(' · ')}`);
+  if (s.busySilent && s.busySilent.length) lines.push(`Trabajando sin novedades: ${s.busySilent.map(busySilentLine).join(' · ')}`);
   for (const b of s.backgroundStalled || []) lines.push(backgroundStalledLine(b));
   const planes = s.plansWaiting || [];
   lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`,
@@ -1292,7 +1309,9 @@ function ownerWaitOnce(opts = {}) {
   if (!me) return { lines: [], stop: true, why: 'no sé de qué sesión es este comando: dejo de esperar' };
   const coord = confirmedCoordinator(home);
   if (coord !== me) return { lines: [], stop: true, why: `esta sesión ya no es la coordinadora confirmada (${coord ? `ahora es ${coord}` : 'no hay ninguna confirmada viva'}): dejo de esperar` };
-  const s = status({ ...opts, noTranscripts: true });
+  // sin abrir las conversaciones, salvo la hora del último paso de una ocupada: un mensaje que le llega (el «¿seguís?» que
+  // pide este mismo aviso) toca el archivo y la escondería otra hora
+  const s = status({ ...opts, noTranscripts: true, ownSteps: true });
   const unread = [...s.problems];
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unread, null);
   const a = readAnnounced(home);
@@ -1338,6 +1357,14 @@ function ownerWaitOnce(opts = {}) {
     callados.add(key);
     if (a.agents[key]) continue;
     lines.push(agentSilentLine(x));
+    a.agents[key] = true;
+  }
+  // la que dice que trabaja y no escribe ni corre nada: una vez por sesión; si vuelve a escribir, se olvida
+  for (const x of (s.busySilent || []).filter((y) => y.sid !== me)) {
+    const key = `ocupada:${x.sid}`;
+    callados.add(key);
+    if (a.agents[key]) continue;
+    lines.push(busySilentLine(x));
     a.agents[key] = true;
   }
   for (const key of Object.keys(a.agents)) if (!callados.has(key)) { delete a.agents[key]; dropped = true; }
@@ -1996,6 +2023,7 @@ function capNotice(opts = {}) {
   }
   for (const q of s.quiet.filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${q.session} está quieta hace ${q.minutes} min: cerrala o dale trabajo.`);
   for (const a of (s.agentSilent || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${agentSilentLine(a)}. Preguntale qué espera (SendMessage), o que detenga ese agente y lo relance.`);
+  for (const b of (s.busySilent || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${busySilentLine(b)} Preguntale si sigue (SendMessage); si no contesta, avisale al dueño.`);
   for (const b of (s.backgroundStalled || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${backgroundStalledLine(b)}: preguntale si la corta.`);
   // nada la despierta sola: quien tiene que avisarle cuando se libera el lugar es la coordinadora. Con el mismo criterio
   // que el portón: el pase de una sesión cerrada, o de más de una hora, no ocupa el lugar.
@@ -2733,6 +2761,19 @@ function questionRelayLines(opts, sid, now = Date.now()) {
 }
 
 /**
+ * ¿El plan del pedido `p` sigue esperando su revisión? No si su corrida (en la sesión que lo cerró o en la que la adoptó
+ * con `adopt-session`) ya tiene «Aprobar el plan» hecho, o si ya no está abierta en ninguna sesión: el aviso diría que
+ * espera un plan que ya no espera. Con algún marcador que no se lee (`leidos`), en duda, sigue esperando.
+ */
+function planEsperaRevision(p, marcadores, leidos, PR) {
+  const STEPS = require(path.join(SKILL_LIB, 'steps.js'));
+  const deLaCorrida = [...marcadores.entries()].filter(([s, m]) => m && (s === p.destino || m.adoptedFrom === p.destino)
+    && PR.mismaCorrida(p.corrida, PR.corridaDe(m)));
+  if (deLaCorrida.some(([, m]) => STEPS.isDone(m, 'approve-plan'))) return false;
+  return deLaCorrida.length > 0 || leidos.length > 0;
+}
+
+/**
  * Las líneas del aviso de la coordinadora `sid` sobre los planes que le pidió el arnés: los que esperan que lance su
  * revisión, con los minutos que le quedan, y los que siguieron sin ella porque no la tomó a tiempo (durante una hora).
  */
@@ -2744,7 +2785,10 @@ function planRequestLines(opts, sid, now = Date.now()) {
   const nombres = signatureList.sesiones(home).mapa;
   const quienEs = (s) => (nombres.get(s) && nombres.get(s).name ? `${nombres.get(s).name} (${s})` : s);
   const out = [];
+  const leidos = [];
+  const marcadores = markersBySid(home, leidos);
   for (const p of PR.pedidosA({ estado, a: sid })) {
+    if (!planEsperaRevision(p, marcadores, leidos, PR)) continue;
     const e = PR.estadoDelPedido({ estado, pedido: p, minutos, ahora: now });
     if (e.estado === 'esperando') out.push(`Coordinación: ${quienEs(p.destino)} cerró su plan a las ${hhmm(p.ts)} y espera que lances su revisión: marker.js plan-review --for-session ${p.destino}. Si no, en ${e.quedan} min la lanza ella sola.`);
     else if (e.estado === 'vencido' && now - e.vencio < RELAY_SEEN_MS) out.push(`Coordinación: ${quienEs(p.destino)} esperó ${minutos} min que lanzaras la revisión de su plan y desde las ${hhmm(e.vencio)} la lanza ella sola: un plan de rutina lo aprueba su propia revisión, uno delicado la persona. Si tenías algo que decir de ese plan, decíselo ahora.`);

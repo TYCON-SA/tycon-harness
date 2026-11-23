@@ -526,6 +526,12 @@ function parsePipelinesBlock(specContent) {
   let current = null;
   // la lista que se está leyendo de la entrada (`files:` o `sensible:` sin valor en el renglón): sus ítems no son pendientes
   let lista = null;
+  // la sangría de las claves directas de cada tanda: un `status` anidado más adentro (`gate:` y debajo `status:`) no es
+  // el de la tanda y no lo pisa
+  const sangriaDeClaves = new Map();
+  // la sangría del primer ítem del bloque: sólo las entradas a esa sangría son tandas; un `- name:` más adentro (una
+  // lista dentro de una tanda, como `checks:`) no lo es
+  let nivel = null;
   const limpio = (s) => String(s).replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
   const enLinea = (v) => v.replace(/^\[|\]$/g, '').split(',').map(limpio).filter(Boolean);
   for (let i = start + 1; i < lines.length; i++) {
@@ -537,11 +543,14 @@ function parsePipelinesBlock(specContent) {
     // (`- texto`) para no tragarse el `- name:` como un ítem pendiente.
     const listNameM = line.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
     const nueva = (name) => ({ name, status: null, blockedBy: null, acs: [], acsPending: [], tasks: [], tasksPending: [], tests: [], testsPending: [], pendingItems: [] });
-    if (listNameM) { current = nueva(listNameM[1]); out.push(current); lista = null; continue; }
+    if (listNameM && nivel !== null && indent !== nivel) continue;
+    if (listNameM) { nivel = indent; current = nueva(listNameM[1]); sangriaDeClaves.set(current, line.indexOf('name')); out.push(current); lista = null; continue; }
     // (b) MAPA: `  X:` (indent 2, valor vacío) abre una entrada.
     const mapNameM = line.match(/^\s{2}([\w-]+)\s*:\s*$/);
-    if (mapNameM && indent === 2) { current = nueva(mapNameM[1]); out.push(current); lista = null; continue; }
+    if (mapNameM && indent === 2 && (nivel === null || nivel === 2)) { nivel = 2; current = nueva(mapNameM[1]); out.push(current); lista = null; continue; }
     if (!current) continue;
+    // en el mapa, la primera clave de la tanda (no un comentario) fija la sangría de sus claves directas
+    if (!sangriaDeClaves.has(current) && !/^\s*#/.test(line)) sangriaDeClaves.set(current, indent);
     // `files:` y `sensible:` de la parte (8.168): en el renglón (`[a, b]` o un valor) o como lista debajo
     const parteM = line.match(/^(\s+)(files|sensible)\s*:\s*(.*?)\s*$/);
     if (parteM) {
@@ -564,7 +573,15 @@ function parsePipelinesBlock(specContent) {
       lista = null;
     }
     const statusM = line.match(/^\s+status\s*:\s*["']?([\w-]+)/);
-    if (statusM) { current.status = statusM[1]; continue; }
+    if (statusM) {
+      // sólo el estado propio de la tanda; uno anidado se saltea, y un segundo estado propio queda marcado
+      // (`statusRepeated`): quien decide un cierre no sabe cuál de los dos vale
+      if (indent === sangriaDeClaves.get(current)) {
+        if (current.status !== null) current.statusRepeated = true;
+        current.status = statusM[1];
+      }
+      continue;
+    }
     // `title`: el nombre de la tanda que dice /office. Entre comillas se toma entero; sin comillas, sin el comentario.
     const titleM = line.match(/^\s+title\s*:\s*(.*?)\s*$/);
     if (titleM) {
@@ -591,6 +608,143 @@ function parsePipelinesBlock(specContent) {
     if (itemM) current.pendingItems.push(itemM[1].replace(/^["']|["']$/g, ''));
   }
   return out;
+}
+
+// Una tanda está hecha si su estado es done, con o sin comillas y sin mirar mayúsculas (`"done"`, `Done`).
+function isDoneBatch(batch) {
+  return String((batch && batch.status) || '').toLowerCase() === 'done';
+}
+
+// La clave del bloque de tandas, con o sin comillas y con lo que siga en el renglón (`pipelines: # x`, `pipelines: []`).
+const PIPELINES_KEY = /^["']?pipelines["']?\s*:/;
+// Un renglón de estado done en el frontmatter, con comillas en la clave o en el valor y sin mirar mayúsculas.
+const DONE_LINE = /^\s+["']?status["']?\s*:\s*["']?done\b/gim;
+
+// Las tandas de una versión de la historia, con lo que el lector no pudo leer bien. parsePipelinesBlock recorta el
+// nombre en `[\w-]+` y devuelve [] sin avisar cuando no entiende el bloque: sin estas dudas, una tanda que el lector no
+// ve, o que confunde con otra, pasaría a done sin que nadie la mida.
+//   present  — el frontmatter tiene la clave pipelines (en cualquier forma)
+//   region   — el texto del bloque, para saber si cambió
+//   doneLines — los renglones de estado done de todo el frontmatter
+//   doubts   — por qué la lectura no es confiable (vacío si lo es)
+function readBatches(content) {
+  const texto = String(content || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const fm = (/^---\n([\s\S]*?)\n---/.exec(texto) || [])[1];
+  const batches = parsePipelinesBlock(content || '');
+  const out = { batches, present: false, region: '', frontmatter: fm == null ? '' : fm, yamlRefs: false, doneLines: 0, doubts: [], strictDoubts: [] };
+  if (fm == null) return out;
+  out.doneLines = (fm.match(DONE_LINE) || []).length;
+  const lines = fm.split('\n');
+  const keys = lines.map((l, i) => (PIPELINES_KEY.test(l) ? i : -1)).filter((i) => i >= 0);
+  if (!keys.length) return out;
+  out.present = true;
+  if (keys.length > 1) out.doubts.push('el bloque pipelines aparece más de una vez');
+  // el bloque: desde la clave hasta el primer renglón sin sangría que no sea un ítem de lista; un comentario o un
+  // renglón en blanco no lo corta
+  const body = [];
+  const region = [];
+  for (const k of keys) {
+    region.push(lines[k]);
+    for (let j = k + 1; j < lines.length; j++) {
+      const l = lines[j];
+      if (/^\s*(#.*)?$/.test(l)) { region.push(l); continue; }
+      if (!/^\s/.test(l) && !/^-(\s|$)/.test(l)) break;
+      region.push(l);
+      body.push(l);
+    }
+  }
+  out.region = region.join('\n');
+  if (!batches.length) out.doubts.push('el bloque pipelines está y el lector no lee ninguna tanda');
+  // Dudas estrictas: YAML puede leer done donde el texto no dice «done» (un escape entre comillas dobles, comillas
+  // partidas en dos renglones, un bloque `>-`, un alias a un ancla de afuera). Un estado es legible sólo si es una
+  // palabra simple, sin comillas o entre comillas simples o dobles sin barra invertida, en un solo renglón. Con el
+  // bloque cambiado, estas dudas miden aunque el bloque no diga done.
+  const estricta = (d) => { out.doubts.push(d); out.strictDoubts.push(d); };
+  if (batches.some((t) => t.status == null)) estricta('una tanda sin estado legible');
+  const sinComentario = (l) => (/^\s*#/.test(l) ? '' : l);
+  const ilegibles = [];
+  for (const l of region.map(sinComentario)) {
+    // cada clave status del renglón, en bloque (`status: x`) o entre llaves (`{status: x}`)
+    for (const m of l.matchAll(/(?:^|[\s{,])["']?status["']?\s*:/g)) {
+      const valor = l.slice(m.index + m[0].length).trimStart();
+      if (!/^(?:[\w-]+|"[\w-]+"|'[\w-]+')(?=\s*(?:$|#|,|\}|\]))/.test(valor)) ilegibles.push(valor.split(/\s+#/)[0].trim() || '(vacío)');
+    }
+  }
+  if (ilegibles.length) estricta(`un estado de tanda que no es una palabra simple (${ilegibles.join(' | ')})`);
+  // un ancla, un alias o una etiqueta fuera de las comillas: el valor puede venir de otro lado
+  const sinComillas = (l) => l.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""').replace(/\s#.*$/, '');
+  const yamlRaro = region.map(sinComentario).map(sinComillas).filter((l) => /(?:^|[\s{[,:-])[&*!][^\s,\]}]/.test(l));
+  if (yamlRaro.length) {
+    out.yamlRefs = true;
+    estricta(`un ancla, alias o etiqueta en el bloque (${yamlRaro.map((l) => l.trim()).join(' | ')})`);
+  }
+  // un escape entre comillas dobles: `"d\x6fne"` o una clave escrita con escapes
+  const conEscape = region.map(sinComentario).filter((l) => /"(?:[^"\\]|\\.)*\\/.test(l) || /"[^"]*\\$/.test(l));
+  if (conEscape.length) estricta(`una barra invertida entre comillas dobles (${conEscape.map((l) => l.trim()).join(' | ')})`);
+  if (batches.some((t) => t.statusRepeated)) out.doubts.push('una tanda con más de un estado propio');
+  const nombres = batches.map((t) => t.name);
+  const repetidos = [...new Set(nombres.filter((n, i) => nombres.indexOf(n) !== i))];
+  if (repetidos.length) out.doubts.push(`nombres de tanda repetidos (${repetidos.join(', ')})`);
+  // el nombre entero de cada `- name:`, como lo escribió la persona: si el lector se quedó con un pedazo, dos tandas
+  // distintas pueden leerse iguales
+  const recortados = [];
+  for (const l of body) {
+    const m = /^\s*-\s*name\s*:\s*(.*)$/.exec(l);
+    if (!m) continue;
+    const entero = m[1].replace(/\s+#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+    const leido = (/^["']?([\w-]+)/.exec(m[1].trim()) || [])[1];
+    if (entero !== leido) recortados.push(entero);
+  }
+  if (recortados.length) out.doubts.push(`un nombre de tanda que el lector no lee entero (${recortados.join(', ')})`);
+  // cada renglón a la sangría del primer ítem abre una entrada, y en bloque: `- name: X` en la lista o `X:` sin valor en
+  // el mapa. Una entrada de una sola línea (`- {name: X, status: done}`, `X: {status: done}`) el lector no la lee, y un
+  // renglón a menos sangría que las tandas queda fuera de las dos cuentas
+  if (body.length) {
+    const sangria = (l) => l.length - l.trimStart().length;
+    const nivelDeTandas = sangria(body[0]);
+    if (body.some((l) => sangria(l) < nivelDeTandas)) out.doubts.push('un renglón del bloque a menos sangría que sus tandas');
+    const entradas = body.filter((l) => sangria(l) === nivelDeTandas);
+    if (entradas.length !== batches.length) out.doubts.push(`el bloque tiene ${entradas.length} entradas y el lector lee ${batches.length}`);
+    const enBloque = (l) => /^\s*-\s*name\s*:\s*\S/.test(l) || /^\s*[^\s#-][^:]*:\s*(#.*)?$/.test(l);
+    const enUnaLinea = entradas.filter((l) => !enBloque(l));
+    if (enUnaLinea.length) out.doubts.push(`una entrada que no se abre en bloque (${enUnaLinea.map((l) => l.trim()).join(' | ')})`);
+  }
+  // la regla de fondo: cada tanda hecha pone una palabra done en el bloque. Si aparece más veces (entre comillas, en
+  // mayúsculas, entre llaves, anidada o en un comentario), hay un done que el lector no atribuye a ninguna tanda
+  const palabrasDone = (out.region.match(/\bdone\b/gi) || []).length;
+  const leidasDone = batches.filter(isDoneBatch).length;
+  if (palabrasDone > leidasDone) out.doubts.push(`la palabra done aparece ${palabrasDone} veces en el bloque y el lector lee ${leidasDone} tandas hechas`);
+  return out;
+}
+
+// ¿Una tanda pasa a done entre dos versiones de una historia? Ante la duda, se mide. Hay transición si:
+//   (a) por nombre, una tanda está done en `after` y no lo estaba en `before` (o no existía);
+//   (b) los renglones de estado done del frontmatter suben (aceptando comillas y mayúsculas);
+//   (c) la lectura de alguna de las dos versiones es dudosa y el bloque cambió: una duda estricta (un estado que no es
+//       una palabra simple, un ancla, un alias, una etiqueta, un escape) basta; una de forma pide además que el bloque
+//       de `after` diga done.
+// Contar renglones solo no ve `"done"` ni `Done` en todas sus formas, ni un done que pasa de una tanda a otra o que se va
+// de otro lugar en el mismo cambio; leer por nombre solo no ve lo que el lector no entiende. Con `doubtful`, quien llama
+// no achica la medición a una tanda: mide todas. Lo usan los dos controles del cierre (on-pre-commit y
+// on-frontmatter-write), para que lean la transición igual.
+function batchTransition(before, after) {
+  const antes = readBatches(before);
+  const despues = readBatches(after);
+  const hechasAntes = new Set(antes.batches.filter(isDoneBatch).map((t) => t.name));
+  const turned = despues.batches.filter((t) => isDoneBatch(t) && !hechasAntes.has(t.name)).map((t) => t.name);
+  const countUp = despues.doneLines > antes.doneLines;
+  const conDudas = antes.doubts.length > 0 || despues.doubts.length > 0;
+  const estrictas = antes.strictDoubts.length > 0 || despues.strictDoubts.length > 0;
+  // con un ancla, alias o etiqueta en el bloque, el valor puede cambiar fuera de él (`x: &d pending` → `x: &d done` con
+  // `status: *d` adentro): el cambio se mide sobre el frontmatter entero
+  const cambio = antes.yamlRefs || despues.yamlRefs ? antes.frontmatter !== despues.frontmatter : antes.region !== despues.region;
+  // las dudas estrictas miden con el bloque cambiado; las de forma (nombres recortados, cuentas que no coinciden),
+  // sólo si además el bloque dice done, para no medir de más a las historias con nombres con punto
+  const dudosa = cambio && (estrictas || (conDudas && /\bdone\b/i.test(despues.region)));
+  const transition = turned.length > 0 || countUp || dudosa;
+  const doubtful = conDudas && transition;
+  return { transition, turned, countUp, doubtful,
+    doubtsBefore: doubtful ? antes.doubts : [], doubtsAfter: doubtful ? despues.doubts : [], before: antes, after: despues };
 }
 
 // ACs legítimamente diferidos = `acs_pending` de cualquier pipeline cuyo status NO es `done`.
@@ -1006,6 +1160,9 @@ module.exports = {
   acTextsFromSpec,
   parseTestsTable,
   parsePipelinesBlock,
+  isDoneBatch,
+  readBatches,
+  batchTransition,
   deferredAcs,
   runStoryChecks,
   walkFiles,

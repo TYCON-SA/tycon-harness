@@ -356,9 +356,13 @@ function entradasCorregidas() {
 // origen atrasada: el pedido anotó un commit viejo, que ninguna retrospectiva de este merge va a cubrir. Sólo se avisa;
 // lo corrige una persona. Sólo para pedidos (un push a main anota lo que acaba de subir) y sólo si se puede leer en git.
 const RE_PEDIDO = /\bpr\s+(create|new)\b|change-request/;
+// ¿La entrada es de un pedido? Lo dice `entrega`, que se decide al anotar con el comando entero: `cmd` va cortado, y un
+// comando largo (`cat <archivo>;` y después el que abre el pedido) pierde el pedido en el corte. Las entradas anotadas antes de
+// `entrega` se juzgan por su `cmd`. (No es `tipo`: ése distingue los renglones que no son entradas.)
+const esPedido = (e) => e.entrega === 'pedido' || RE_PEDIDO.test(String(e.cmd || ''));
 function yaEstabaEnMain(e) {
   // una entrada que entró reclama el commit que el pedido dejó en main: estar en main es lo esperado
-  if (e.corregida || e.estado === 'entro' || !RE_PEDIDO.test(String(e.cmd || ''))) return false;
+  if (e.corregida || e.estado === 'entro' || !esPedido(e)) return false;
   const t = Date.parse(e.ts);
   if (!t) return false;
   const dir = carpetaVigente(e);
@@ -715,8 +719,8 @@ function estadoDelRegistro() {
       // Un pedido creado no es un merge. Sin su número no se le puede preguntar a la plataforma si entró ni con qué
       // commit: la entrada quedó por la punta de la rama, que no es la fusión aunque ya esté en la línea de main. No
       // frena (se ve en el aviso de arranque, con su `--correct`), ni cuando no se puede leer la línea de main.
-      if (!e.pr && e.estado !== 'entro' && RE_PEDIDO.test(String(e.cmd || ''))) { out.fueraDeMain.push({ ...e, sinNumero: true }); continue; }
-      if ((e.pr || e.estado === 'entro' || RE_PEDIDO.test(String(e.cmd || ''))) && enLineaDeMain(e) === false) { out.fueraDeMain.push(e); continue; }
+      if (!e.pr && e.estado !== 'entro' && esPedido(e)) { out.fueraDeMain.push({ ...e, sinNumero: true }); continue; }
+      if ((e.pr || e.estado === 'entro' || esPedido(e)) && enLineaDeMain(e) === false) { out.fueraDeMain.push(e); continue; }
     }
     out.pendientes.push(e);
   }
@@ -978,7 +982,7 @@ function record(event) {
   }
   // un pedido sin número queda por la punta de su rama, que no está en main: su latido no se puede escribir (sale 2), y la
   // entrada no frena el cierre y sale en el aviso de arranque con su `--correct`. No se pide el latido.
-  const sinNumero = reclamadas.filter((x) => x.estado !== 'esperando' && RE_PEDIDO.test(String(x.cmd || '')));
+  const sinNumero = reclamadas.filter((x) => x.estado !== 'esperando' && esPedido(x));
   if (sinNumero.length) lineas.push(`retro-pending: no pude leer el número del pedido en la salida de la herramienta (${sinNumero.map(fmt).join(', ')}): la entrada queda por la punta de la rama y no frena. Cuando el pedido entre, corregila con el commit que dejó en main: ${sinNumero.map(comandoDeCorregir).join(' · ')}`);
   const aLatir = reclamadas.filter((x) => x.estado !== 'esperando' && !sinNumero.includes(x));
   if (aLatir.length) lineas.push(`retro-pending: push a ${aLatir[0].branch} registrado (${aLatir.map(fmt).join(', ')}). Antes de cerrar el turno, corré el latido por ese merge (regla 10b — el Stop-gate exige el archivo): ${aLatir.map(launchHint).join(' · ')}`);
@@ -1423,7 +1427,7 @@ function anotar(event, cmd, punto, ctx) {
   // un pedido con su número queda esperando que entre («LOS PEDIDOS ABIERTOS»)
   const pedido = ctx.isPrCreate && Number.isInteger(ctx.pr) ? { pr: ctx.pr, plataforma: ctx.plataforma || 'azure', estado: 'esperando' } : {};
   const entry = { ts: new Date().toISOString(), sessionId: sessionIdOf(event), repoPath: root, sha: sha.slice(0, 12), branch: target,
-    ...(origen && origen !== 'HEAD' ? { origen } : {}), ...pedido, cmd: cmd.slice(0, 120) };
+    ...(origen && origen !== 'HEAD' ? { origen } : {}), ...pedido, ...(ctx.isPrCreate ? { entrega: 'pedido' } : {}), cmd: cmd.slice(0, 120) };
   if (juicio && juicio.exento) Object.assign(entry, { exento: juicio.exento, motivo: juicio.motivo, commits: juicio.commits, archivos: juicio.archivos.slice(0, 40) });
   if (ctx.isPrCreate && !ctx.sha && ctx.punta) entry.punta = ctx.punta;   // la punta cayó a HEAD, dicho
   const principal = carpetaPrincipal(root);

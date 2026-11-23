@@ -541,10 +541,18 @@ function revisionesDe(estado, destino, corrida, problemas) {
 /**
  * Las sesiones de la corrida de `marker`: la de ahora y, si adoptó la corrida de otra (`adopt-session`), la anterior.
  * La revisión que se hizo para la anterior es de esta misma corrida: se hereda, y sigue atada a la huella del plan.
+ * Un solo salto: el marcador guarda sólo la última adopción, así que después de A→B→C lo hecho para A no se ve y se
+ * pide de nuevo (falla cerrado).
  */
 function sesionesDeLaCorrida(destino, marker) {
   const previa = marker && typeof marker.adoptedFrom === 'string' && marker.adoptedFrom && marker.adoptedFrom !== destino ? marker.adoptedFrom : null;
   return previa ? [destino, previa] : [destino];
+}
+
+/** La constancia más nueva de esta corrida sobre alguna de `destinos` (las sesiones de la corrida), o null. */
+function ultimaDeLaCorrida({ estado, destinos, corrida }) {
+  return destinos.map((d) => ultimaDelDestino({ estado, destino: d })).filter((c) => c && c.corrida && mismaCorrida(c.corrida, corrida))
+    .sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora))[0] || null;
 }
 
 // las vueltas de la revisión del plan de una historia que se lanzan sin preguntar: la siguiente la decide una persona
@@ -1096,8 +1104,11 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   // sin el registro no se sabe si se eligió seguir ni se cuentan los rechazos o los cambios del plan, que son los topes
   // que llevan el caso al dueño: llega al dueño ahora, sin relanzar
   if (sinRegistro.length) return { ...out, alDueno: { llega: true, motivo: `${sinRegistro[0]}: lo decide una persona` } };
-  if (eligioSeguir({ estado, destino: sesion, huellaPlan })) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
-  const c = ultimaDelDestino({ estado, destino: sesion });
+  // en una corrida adoptada cuentan también la revisión, los rechazos y la elección de seguir de la sesión anterior
+  const destinos = sesionesDeLaCorrida(sesion, marker);
+  // las dos sesiones juntas: manda la última respuesta, no cualquier «seguir» de una de ellas
+  if (eligioSeguir({ estado, destino: destinos, huellaPlan })) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
+  const c = ultimaDeLaCorrida({ estado, destinos, corrida: corridaDe(marker) }) || ultimaDelDestino({ estado, destino: sesion });
   // con coordinadora, una informativa no tapa la revisión que ella tiene que lanzar; la de la propia sesión que puede
   // firmar (rutina con `review`) sí cuenta: aprueba en los dos casos
   const informativa = !!c && c.informativa === true;
@@ -1105,7 +1116,7 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     && !(hayCoordinadora && informativa && r.approves === 'coordinator');
   if (revisado && c.veredicto === 'rechazado') {
     // rechazado: la sesión corrige y vuelve a cerrar el plan; llega al dueño con O5 en sí o al tope de rechazos seguidos
-    const n = rechazosSeguidos({ estado, destino: sesion, corrida: corridaDe(marker) });
+    const n = rechazosSeguidos({ estado, destino: destinos, corrida: corridaDe(marker) });
     // el mismo tope que las vueltas de revisores del código: el repo manda sobre la organización
     const tope = topeDeRechazos(cfg, marker.repoPath);
     const llega = cfg.plan_review.rejected_reaches_owner || n >= tope;
@@ -1123,7 +1134,7 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   const deOtraVersion = !!(c && c.huellas && c.huellas.plan !== huellaPlan && mismaCorrida(c.corrida, corridaDe(marker)) && c.veredicto);
   if (r.decision === 'run' || ((deOtraVersion || deUnCambio) && r.decision === 'ask')) {
     // el plan cambió mientras corría: se reintenta una sola vez sobre el plan cerrado; la segunda llega al dueño
-    const deCambio = revisionesDe(estado, sesion, corridaDe(marker)).filter((j) => esCambio(j.motivo));
+    const deCambio = revisionesDe(estado, destinos, corridaDe(marker)).filter((j) => esCambio(j.motivo));
     const cambios = deCambio.length;
     if (cambios >= 2) return { ...out, alDueno: { llega: true, motivo: `no se pudo revisar: ${deCambio[deCambio.length - 1].motivo}, dos veces` } };
     out.comando = hayCoordinadora ? `marker.js plan-review --for-session ${sesion}` : 'marker.js plan-review';
@@ -1216,7 +1227,7 @@ module.exports = {
   rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
-  tieneRenglon, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
+  tieneRenglon, sesionesDeLaCorrida, ultimaDeLaCorrida, mismaCorrida, corridaDe, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };
 
 // el tope de rechazos, para sus pruebas (start-silences.test.js)
