@@ -1031,6 +1031,52 @@ What the person sees in the section, and what the agent does when asked for a to
   `paths.team` key). If there is none, clone the `profile` repo from `team-repos.json` into a folder of your own.
 - **The request** goes to the profile repo's main branch, **without auto-complete**: an admin reads and approves it.
 
+#### A repo's test environment
+
+Some suites need something set up before they run: a local database in a container, a running server, the variables the
+tests use to find it, a pinned Node version for Playwright. Without it, the database tests get skipped and the browser
+tests fail, and the test gate counts that as broken code. Every story rediscovers it.
+
+- **Where it is declared**: in `stack.test_environments` of `team-repos.json`, like the test runners. Never in the repo
+  under test: the organization decides the command, even when it calls a script in the repo. The site does not edit it
+  yet: it goes as a request to the profile repo, with the same validation as above.
+- **An entry**:
+
+  ```json
+  { "name": "acme-local", "label": "Acme local database and server",
+    "repos": [ { "platform": "github", "org": "acme", "repo": "acme-stories" },
+               { "platform": "github", "org": "acme", "repo": "acme-backend" },
+               { "platform": "github", "org": "acme", "repo": "acme-web" } ],
+    "prepare": "bash {sibling:acme-backend}/scripts/test-env/server.sh 5021 && source {sibling:acme-backend}/scripts/test-env/variables.sh 5021",
+    "teardown": "bash {sibling:acme-backend}/scripts/test-env/server.sh 5021 stop",
+    "requires": ["ACME_TEST_SQL"], "timeout_s": 600 }
+  ```
+
+  - `repos`: the repos it applies to, in this file's `<repo>` shape. A repo goes in one environment only.
+  - `prepare`: runs with bash from the folder under test. Whatever it leaves exported (also with `source`) reaches the
+    suite and `teardown`. `teardown` (optional) takes it down at the end, however the suite ends.
+  - `{repo}` is the folder under test; `{sibling:<name>}`, another repo's folder. A companion repo of the story is found
+    the way the gate finds it to run its suite (its copy on the story's branch), so the server that starts is the one for
+    the code under test. Otherwise, the repo next to it: with the folder under test named `<repo>--<suffix>`,
+    `<name>--<suffix>` first. Both come already quoted.
+  - `requires` (optional): the variables the setup has to leave set. `timeout_s` (optional, 1 to 3600; 600 if omitted):
+    the time limit for each command.
+- **What the gate does**: it sets the environment up only when the suite is about to run, and takes it down at the end,
+  after the companion repos. A repo with no tests of its own (the stories repo, for example) does not set it up: each
+  companion that runs its suite does. Parts and companions of a run that already set it up inherit it and do not set it
+  up again. The report records it in `test_environment`.
+- **What is left running**: taking it down also stops whatever the setup left running (a server), even if `teardown`
+  did not stop it. Whatever has to outlive the run is started separately, like a container. A cut (Ctrl-C) in the middle
+  of the setup takes it down anyway, and if a run dies without taking it down, the next one stops what it left. On
+  Windows that last part is not possible: there only `teardown` stops it.
+- **One run per environment**: two runs of the same environment share what it starts (a fixed port, a database). If
+  another run is using it, the gate neither sets it up nor takes it down and exits 75, as when another test run is in
+  progress.
+- **If it is not ready** (the setup fails, passes its time limit or does not leave a `requires` variable), the gate does
+  not run the suite and exits **8, "test environment not ready"**: neither green nor red. Whatever the setup left half
+  done is taken down anyway.
+- **To turn it off** on a machine or in a CI that sets up the environment on its own: `TYCON_TEST_ENV=off`.
+
 ### Installation and updates
 
 - **How the machines update**: which version each machine takes and how it is
