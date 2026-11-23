@@ -804,6 +804,14 @@ la evidencia de los criterios 2 y 3, y la de los demás sigue contando. El rengl
 si cambió un archivo de código, si la prueba no nombra criterios de la historia o no se deja leer, o si no se sabe
 quién la cambió (un commit sin historia que ya está en main, o la resolución de una fusión).
 
+**Un humo que dice qué repos ejercita no lo vence un cambio en otro.** En una historia de varios repos, `smoke-run.sh
+… --exercises Back -- curl …` anota que ese humo prueba sólo el repo `Back` (el nombre de su carpeta). Después, un
+archivo de código declarado que cambia en otro repo de la historia (el sitio, por ejemplo) no vence ese humo, y la matriz
+lo avisa: «cambió en <repo>, y el humo dice que ejercita sólo Back». Un cambio en `Back` lo vence como siempre, y
+también una prueba declarada de cualquier repo o un archivo que no se pudo comparar. Se
+declara sólo lo que el comando de verdad toca: un humo por el navegador ejercita el sitio y el backend. Sin la opción, o
+si nombra un repo que no es de la historia, lo vence un cambio en cualquiera.
+
 `complete-step prepare-commit` exige `checks.acmatrix=green` (provenance run-check) — sin este
 sub-step el pipeline NO llega a commit prep. `on-pre-commit.js` además RE-COMPUTA
 la matriz en las transiciones a review/done (el .md escrito no se confía).
@@ -994,10 +1002,13 @@ si falla, sin bypass por env var — igual que la matriz):
    hasta `mockup-compare: no — <motivo>` (se imprime siempre).
 12. **Cada capa de la maqueta se abre encima**: por cada pantalla con `presentation: "layer"` en la maqueta aprobada,
    un humo de `smoke-run.sh` tiene que escribir en su salida la línea `layer-check` de `scripts/lib/layer-probe.js`.
-   La línea dice que tocar su botón abrió una ventana con `role="dialog"` o `aria-modal="true"`, con los textos de la
-   capa adentro. Con navegador, `probeLayer(page, { screen, trigger, texts })` toca el botón. Sin navegador (un proyecto
+   La línea dice que tocar su botón abrió algo encima, con los textos de la capa adentro: una ventana con
+   `role="dialog"` o `aria-modal="true"`, un menú (`role="menu"`), una lista desplegable (`role="listbox"`) o un
+   popover abierto. Los textos de la ventana van en una misma lectura. Cada otro caso de la capa (una variante de la
+   maqueta: un error, un vacío) sale de a uno, y puede ir en su propia prueba, que lo provoque. Con navegador, `probeLayer(page, { screen, trigger, texts })` toca el botón. Sin navegador (un proyecto
    sin Playwright, o un humo que no puede tocar el botón), la prueba de componente con jsdom o testing-library toca el
-   botón y escribe la misma línea con `probeDocument(document, …)`. Cuenta como la evidencia de la matriz: con su
+   botón y escribe la misma línea con `probeDocument(document, …)`; para un menú o una lista desplegable, con
+   `antes: antesDe(document)` tomado antes del click (uno que ya estaba en la página no cuenta). Cuenta como la evidencia de la matriz: con su
    espejo, la salida sin cambiar y exit 0. Construida en la página, sin evidencia, o con un texto afuera, frena y dice
    qué hacer. Lo arregla el asistente; no es una pregunta para el dev.
 

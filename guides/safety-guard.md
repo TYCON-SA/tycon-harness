@@ -75,7 +75,7 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 | **GIT-C2** | `--no-verify` en `commit`/`push`/`merge`/`rebase` (también con opciones de git antes del subcomando: `git -C <ruta> commit …`), `git commit -n`, y `core.hooksPath` apuntado a otra carpeta para ese comando (`-c`, `--config-env`, `GIT_CONFIG_*`) | Saltea hooks (pre-commit, formatters, security) |
 | **GIT-C3** | `git clean -fdx` | Borra archivos gitignored (.env, builds locales, secretos) |
 | **GIT-C4** | `git add -A` / `--all` / `.` en `~/.claude/agent-skills` o en el árbol del que salen las skills instaladas (aquél al que resuelve `~/.claude/skills`), parado ahí o nombrando esa carpeta en el mismo comando con `cd <dir>` o `git -C <dir>` | Stagea todo lo ajeno que vive en ese árbol. Si no puede mirar el árbol (un enlace colgado, una carpeta sin permiso) no frena: lo dice y sale 1 |
-| **GIT-C5** | Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: `gh pr merge … --admin`; `gh api` que escribe un merge (`pulls/<n>/merge`, `merges`, `mergePullRequest`, `mergeBranch`), mueve una rama (`git/refs/heads/<rama>` con PATCH, `updateRef`), una regla (`rulesets`) o la protección de una rama; `az repos pr update\|create --bypass-policy` cierto; `az repos policy … create\|update\|delete` (crear una regla que sólo suma un requisito —aprobadores, compilación, revisores, comentarios, tareas vinculadas— o un conjunto de reglas nuevo de GitHub endurece la rama y no pide firma); `az devops security permission update` con los bits 128, 32768, 2048 u 8192; `az rest` o `az devops invoke` que escriben sobre pedidos, políticas o permisos. Lo lee `scripts/lib/ci-bypass.js` | La cuenta del agente puede ser administradora: sin este freno, la CI y la constancia de los controles dejan de ser la segunda llave. Pide la firma `merge-bypass` (`escape:merge-bypass`, nivel 3) en la ventana o, sin ventana, con un click o un «aprobado»: vale para ese comando, una vez, y nunca por delegación (en Codex, por la terminal). Lo que el lector no entiende entero frena sin ventana: escondida (`bash -c`, `eval`, `$(…)`, una variable, `xargs`, `find -exec`, un cuerpo que no se lee), lanzada por un programa que no es una envoltura conocida (`arch`, `flock`, `sudo -E`), o con una palabra que arma la terminal donde puede ir la forma; si el lector no carga, frena. Leer y el camino normal (`gh pr merge <n> --merge`) pasan. El empuje directo a main del arnés público lo frena el freno de publicación, sin salida para el agente |
+| **GIT-C5** | Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: `gh pr merge … --admin`; `gh api` que escribe un merge (`pulls/<n>/merge`, `merges`, `mergePullRequest`, `mergeBranch`), mueve una rama (`git/refs/heads/<rama>` con PATCH, `updateRef`), una regla (`rulesets`) o la protección de una rama; `az repos pr update\|create --bypass-policy` cierto; `az repos policy … create\|update\|delete` (crear una política con su tipo —aprobadores, compilación, estrategia de merge, tamaño de archivo, mayúsculas, revisores, comentarios, tareas vinculadas— o un conjunto de reglas nuevo de GitHub endurece la rama y no pide firma; cambiar o borrar un conjunto de reglas la pide con un cuadro que dice que lo reemplaza entero o lo borra, y lo que manda el comando); `az devops security permission update` con los bits 128, 32768, 2048 u 8192; `az rest` o `az devops invoke` que escriben sobre pedidos, políticas o permisos. Lo lee `scripts/lib/ci-bypass.js` | La cuenta del agente puede ser administradora: sin este freno, la CI y la constancia de los controles dejan de ser la segunda llave. Pide la firma `merge-bypass` (`escape:merge-bypass`, nivel 3) en la ventana o, sin ventana, con un click o un «aprobado»: vale para ese comando, una vez, y nunca por delegación (en Codex, por la terminal). Lo que el lector no entiende entero frena sin ventana: escondida (`bash -c`, `eval`, `$(…)`, una variable, `xargs`, `find -exec`, un cuerpo que no se lee), lanzada por un programa que no es una envoltura conocida (`arch`, `flock`, `sudo -E`), o con una palabra que arma la terminal donde puede ir la forma; si el lector no carga, frena. Leer y el camino normal (`gh pr merge <n> --merge`) pasan. El empuje directo a main del arnés público lo frena el freno de publicación, sin salida para el agente |
 | **GIT-C6** | `git reset --hard`, `git stash` (también `push`, `save`, `-u`), `git stash clear` y `git stash drop` sin decir cuál, cuando la copia tiene cambios sin commitear o la pila tiene algo. Pasan la copia limpia, la pila vacía y `git stash push -- <archivos>`, que esconde sólo lo que nombra | Borra o esconde trabajo sin commitear que puede ser de otra sesión o de la persona; la pila de `stash` la comparten todas las copias del repo |
 | **GIT-C7** | Encolar o mergear un pedido de GitHub de alguien de afuera del equipo (su autor no está en `pull_requests.team_authors` del perfil): el merge del pedido por su comando, `enqueuePullRequest`, `enablePullRequestAutoMerge`, `mergePullRequest`, `pulls/<n>/merge`. Pide la firma del dueño; si no sabe de quién es el pedido (sin red, el número armado, el perfil roto), frena | El código de alguien de afuera entraría a main sin que el dueño lo vea |
 | **SUP-C1** | `curl ... \| bash` / `wget ... \| sh` | Ejecuta código remoto sin auditar — supply chain attack |
@@ -104,6 +104,26 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 - `rm -rf <path>` con path explícito (ej: `rm -rf bin obj node_modules`) — uso legítimo.
 - `git push --force-with-lease` a branches que NO son `main`/`master`/`dev`/`release/*` — rebase de feature branch propia es válido.
 - Lectura de `.env` vía `grep`/`awk`/`sed` — el bloqueo es solo sobre `cat`/`less`/`more`/`head`/`tail` (modos típicos de "miremos qué hay acá"). Workflows automatizados que extraen una key específica con `grep` siguen funcionando.
+
+## Las reglas deny: lo que frena aunque los ganchos estén apagados
+
+Este freno es un gancho: si alguien apaga los ganchos, o el gancho no corre, no frena nada. Para lo catastrófico, el
+instalador suma además reglas `permissions.deny` a `~/.claude/settings.json`, que Claude Code aplica antes de lanzar
+cualquier gancho y que ningún gancho puede dejar pasar. La lista es `RULES` en `scripts/setup/harness/deny-permissions.js`:
+
+| Regla | Qué niega | Por qué nunca necesita emergencia |
+|---|---|---|
+| FS-C2 | `rm -rf /` y sus variantes de opciones | Ninguna tarea pide borrar el disco entero |
+| FS-C3 | `rm -rf ~`, `~/`, `$HOME`, `$HOME/` y sus variantes | Ninguna tarea pide borrar la carpeta personal entera; algo de adentro se nombra (`~/.cache/x`) y no lo frena |
+
+Una regla deny no tiene la salida de emergencia de abajo: frena siempre. Por eso quedan sólo en este freno, con su
+emergencia, `curl | bash` (Claude Code parte el comando en el `|`, y la regla tendría que frenar `bash` solo) y el
+borrado de una base entera (SQL-C1: se autoriza para recrear una base de desarrollo, y va adentro de un cliente de SQL
+sin forma fija). Este freno sigue frenando las dos de la tabla, con el mismo id: es la segunda red, y la única en Codex y
+Cursor, que no leen `permissions.deny`.
+
+El instalador las suma en el perfil completo, sin tocar las reglas que ya tenía cada persona; desinstalar saca sólo las
+suyas. `TYCON_NO_DENY_RULES=1` no las suma.
 
 ## Cuando un freno no alcanza a decidir
 
@@ -138,6 +158,13 @@ Lo que el reloj no cubre: si a un freno lo matan desde afuera, o no arranca, el 
 las sesiones de la máquina sin consola. En `on-bash-write-gate.js`, en Windows o con un Node sin `process.execve`, un
 análisis trabado en una llamada del sistema tampoco se corta: pasa a los 600 s. Un programa que el análisis haya
 lanzado puede seguir corriendo después de que el freno frenó.
+
+**Cuando `safety-guard-pre.sh` corta por su reloj, se mide qué paso tardó.** Con `TYCON_SAFETY_TRACE=1` (en el `env` de
+`settings.json`, o en la terminal desde donde se abre la herramienta) el freno anota en `safety-guard-times.jsonl`, en
+la carpeta de los registros sueltos, un renglón por cada node que lanza (y lo que lanzan ellos): cuándo arrancó y cuánto
+tardó. También anota su propio total al salir. Un node que no llegó a terminar porque lo cortó el reloj deja sólo su
+arranque: ése se comió el tiempo. Anota el guion y su subcomando, nunca los valores del comando, y no cambia ninguna
+decisión. Con una ruta en vez de `1`, anota ahí.
 
 ## Saltear el freno: lo decide la persona
 
@@ -262,9 +289,10 @@ cuidan esa carpeta entera, con Edit, Write y por consola, igual que los registro
 solo: es el mismo límite que tienen esos registros. Cerrarlo pide un proceso aparte con otro dueño, que queda para más
 adelante.
 
-Pendiente: `escape:TYCON_SAFETY_OFF` y `escape:TYCON_PROD_LINT` siguen en el catálogo de firmas aunque ya nada las
-pide. Se retiran en una tanda aparte, porque un perfil del equipo que las nombra en `approvals.owner_only` se leería
-roto.
+`escape:TYCON_SAFETY_OFF` y `escape:TYCON_PROD_LINT` siguen en el catálogo de firmas, marcadas retiradas: ya no apagan
+nada, ya nada las pide, y su fila de [las firmas del dueño](firmas-del-arnes.md) da la emergencia como salida. Siguen
+ahí porque sin ellas un perfil del equipo que las nombra en `approvals.owner_only` se leería roto; sacarlas pide migrar
+ese perfil.
 
 ### El estado de la historia y el marcador
 

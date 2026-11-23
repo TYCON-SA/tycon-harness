@@ -15,7 +15,8 @@ la coordinadora. El arnés la da solo, en la sesión que la pide (también para 
 productos, y en cualquier máquina, sin lista de máquinas.
 
 - **Pasa por el mismo control de contenido que antes.** Cada guion comprueba lo suyo antes de firmar sin persona: el plan,
-  con la revisión automática aprobada sobre ese mismo plan; la comparación con main, que la historia no sea delicada; el
+  con la revisión automática aprobada sobre ese mismo plan, y nunca el de una historia delicada (ese plan y su maqueta,
+  sólo con el click o el «aprobado» del dueño, aunque el perfil nombre `plan-approval:delicada`); la comparación con main, que la historia no sea delicada; el
   guardado, con la historia limpia; el camino corto, dentro del cupo y sin rutas de riesgo alto; el pendiente, sobre un
   repo donde trabaja la sesión. Si ese control dice que no, la firma va a una persona, como siempre, y la ventana dice por
   qué no salió sola.
@@ -25,9 +26,12 @@ productos, y en cualquier máquina, sin lista de máquinas.
 - **Las listas se cambian sólo en el perfil del equipo**, con un pedido a ese repo. Una organización que quiere devolverle
   una firma a la persona la saca de `approvals.delegated_signing` o la pone en `approvals.owner_only`.
 - **A una persona le quedan**: el cambio de controles (`control-change`), lo irreversible y producción (todo el nivel 3,
-  con la emergencia), apagar un freno o saltear las pruebas o el pase (todo `approvals.owner_only`: `TYCON_SAFETY_OFF`,
+  con la emergencia), apagar un freno o saltear las pruebas o el pase (todo `approvals.owner_only`: `TYCON_NEW_NAMES`,
   `TYCON_TEST_GATE`, `DOD_BYPASS`, `adversarial-skip`, `no-deep-review` y los demás), y nombrar o retirar a la coordinadora.
   Ninguna de esas sale sola aunque un perfil la liste.
+- **Eximir un hallazgo crítico (`critical-waiver`) tampoco sale sola**, aunque el perfil la liste: un crítico lo decide
+  una persona, y la constancia del trámite no nombra a ninguna. Va por la delegación a la coordinadora, que nombra al
+  dueño, o por el click del dueño. La terminal queda de emergencia.
 - **Los escapes de trámite** (los `escape:…` de la lista, que pasan por el freno de seguridad) también salen solos, cada
   uno en su forma de siempre y sin otra firma en el mismo comando. Su constancia la escribe el freno de seguridad con vía
   `automatica`, y vale para lo que la pide después (cerrar como deuda, el rojo esperado de la matriz).
@@ -69,7 +73,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 <!-- generado: niveles -->
 | Firma | Nivel | Quién la ve | Qué aprueba | Se pide hoy con |
 | --- | --- | --- | --- | --- |
-| `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y la coordinadora lo aprueba sólo si el perfil delega plan-approval:delicada y su revisión automática dio aprobado; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person) | `plan-approval` |
+| `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y entonces el plan y su maqueta los aprueba sólo el dueño, con su click o su «aprobado», aunque el perfil nombre plan-approval:delicada; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person) | `plan-approval` |
 | `extra-round` | 1 · rutina | dev y mantenimiento | una vuelta más de revisores | `extra-round` |
 | `pending-approval` | 1 · rutina | dev y mantenimiento | abrir un pendiente nuevo en la lista | `pending-approval` |
 | `save` | 1 · rutina | dev y mantenimiento | guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible | `save` |
@@ -103,8 +107,8 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `designation-set` | 2 · excepción | dev y mantenimiento | nombrar a una sesión coordinadora de esta máquina, con un click en su pestaña | `designation-set` |
 | `designation-withdraw` | 2 · excepción | dev y mantenimiento | retirar a la coordinadora de esta máquina, con un click en su pestaña | `designation-withdraw` |
 | `control-change` | 3 · irreversible | sólo mantenimiento | cualquier cambio de control | `control-change` |
-| `escape:TYCON_SAFETY_OFF` | 3 · irreversible | dev y mantenimiento | apagar el freno de seguridad para un comando | `escape:TYCON_SAFETY_OFF` |
-| `escape:TYCON_PROD_LINT` | 3 · irreversible | dev y mantenimiento | apagar el control de consultas a producción | `escape:TYCON_PROD_LINT` |
+| `escape:TYCON_SAFETY_OFF` | 3 · irreversible | dev y mantenimiento | apagar el freno de seguridad para un comando (retirada: ya no apaga nada) | ya nada la pide |
+| `escape:TYCON_PROD_LINT` | 3 · irreversible | dev y mantenimiento | apagar el control de consultas a producción (retirada: ya no apaga nada) | ya nada la pide |
 | `escape:TYCON_NEW_NAMES` | 3 · irreversible | sólo mantenimiento | apagar el control de nombres en lo que se publica | `escape:TYCON_NEW_NAMES` |
 | `emergency` | 3 · irreversible | dev y mantenimiento | la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo | todavía no se pide |
 | `escape:merge-bypass` | 3 · irreversible | dev y mantenimiento | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: un comando, nunca por delegación | `escape:merge-bypass` |
@@ -113,8 +117,10 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 
 `emergency` todavía no tiene una firma de hoy que la pida: se da con `harness.js sign emergency --reason "<por qué>"
 --request <número>` (el número lo da el cartel del freno) o `--commit`, en la terminal de la persona
-(guides/safety-guard.md, «Saltear el freno»). `escape:TYCON_SAFETY_OFF` y
-`escape:TYCON_PROD_LINT` siguen en la tabla, pero ya nada las pide: se retiran en una tanda aparte.
+(guides/safety-guard.md, «Saltear el freno»). `escape:TYCON_SAFETY_OFF` y `escape:TYCON_PROD_LINT` están marcadas
+retiradas: ya no apagan nada (el freno anota la variable y la deja sin efecto), ya nada las pide, y la salida de los dos
+frenos es la emergencia. Siguen en la tabla para que un perfil del equipo que las nombra en `approvals.owner_only` se
+siga leyendo entero; sacarlas del catálogo pide migrar ese perfil.
 
 ### Qué excepciones se delegan
 
@@ -124,17 +130,21 @@ antes, como `escape-phrases`, no las trae), y vale con las mismas llaves que la 
 sí. Queda en el registro con vía «delegación», como las de nivel 1. Lo que el perfil sube a 3 con `approvals.levels`
 vuelve al dueño.
 
+El plan de una historia delicada no está en esta tabla: su plan y su maqueta los aprueba sólo el dueño, con su click o su
+«aprobado», aunque el perfil nombre `plan-approval:delicada`. Un perfil que la nombra sigue siendo válido; la forma no
+delega nada.
+
 | Se delega, si el perfil la nombra | Cómo la firma la coordinadora |
 |---|---|
-| `plan-approval:delicada`: el plan de una historia delicada | con `plan-approval` y `--for-session`, sólo con el «aprobado» de la revisión automática que lanzó ella sobre ese mismo plan |
 | `save:sensible`: guardar cuando un commit toca algo de lo sensible | con `save` (`approve-save --for-session`), con la historia limpia y el aviso entregado al dueño |
 | `runtime-waiver`, `manual-test`, `critical-waiver`, `lost-run`, `escape:force-manual`, `escape:trust-ran` (y `extra-round`, que ya era rutina) | con el comando de la firma y `--for-session <sesión>`; si la sesión la pide para sí, el freno la desvía a la coordinadora |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:cambiar-el-estado`, `escape:red-control-test-edit` | `marker.js sign-file <firma> <archivo> --for-session <sesión>`: deja la constancia que usa el Edit o Write de esa sesión |
 | `adhoc-lane:guardado-ajeno` | `marker.js adhoc allow-foreign-save --for-session <sesión>` |
 | `escape:TYCON_STATUS_GATE`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz` | el perfil las acepta, pero su comando corre sólo en la sesión que trabaja y la coordinadora no tiene cómo firmarlas desde su pestaña: hasta que tengan esa vía, las sigue aprobando una persona. Una ejecución perdida la cierra la coordinadora con `lost-run` |
 
-Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el nivel 3 (`escape:TYCON_SAFETY_OFF`,
-`escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `emergency`, `escape:merge-bypass`, `escape:external-pr`); `designation-set`,
+Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el nivel 3 (`escape:TYCON_NEW_NAMES`,
+`emergency`, `escape:merge-bypass`, `escape:external-pr`, y las retiradas `escape:TYCON_SAFETY_OFF` y
+`escape:TYCON_PROD_LINT`, que ya no apagan nada); `designation-set`,
 `designation-confirm` y `designation-withdraw`; `adhoc-lane:datos` y `adhoc-lane:sobre-cupo`; `escape:DOD_BYPASS`; `adversarial-skip` (con
 `escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
 `escape:dod_runtime_exempt`; y decir que no a la prueba con navegador (`browser-test`).
@@ -151,7 +161,7 @@ firmar, y en la columna tu situación:
 | 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
 | 1 · rutina | **Aprobar el plan** (`plan-approval`) de una historia que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, vos | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | su «aprobado» es lo único con que se aprueba sin vos: con coordinadora la lanza ella; sin ella, la propia sesión. Con `plan_review.routine_approval: person`, aprobás vos siempre |
 | 1 · rutina | **Eximir un comando de la comparación con main** (`compare-waiver`): un comando que la historia modifica y que no se puede comparar con su versión de `main` (por ejemplo, porque usa la red). La firma es delegable sólo cuando el perfil del equipo la suma a `approvals.delegated_signing`, con un pedido al perfil que firma el dueño: amplía lo que firma la coordinadora. Hasta entonces, es tuya. | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
-| 2 · excepción | **Aprobar el plan de una historia delicada** (`plan-approval` cuando `risk-class` dice `delicate`) | vos | espera | vos; la coordinadora \* sólo si el perfil delega `plan-approval:delicada` y su revisión dio aprobado | espera; la coordinadora \* con la misma condición | ataca el plan y avisa; su «aprobado» aprueba sólo por la coordinadora con `plan-approval:delicada` delegada |
+| 2 · excepción | **Aprobar el plan de una historia delicada** (`plan-approval` cuando `risk-class` dice `delicate`), con su maqueta | vos, con tu click o tu «aprobado» | espera | vos, con tu click o tu «aprobado» (también en la pestaña de la coordinadora); sin eso, nadie, aunque el perfil nombre `plan-approval:delicada` | espera | ataca el plan y avisa; su «aprobado» nunca aprueba un plan delicado |
 | 2 · excepción | **Saltear un control** o aceptar un problema grave sin arreglarlo (`critical-waiver`, `escape:…` y las demás de nivel 2) | vos | espera | vos; las de trámite, la coordinadora \* si el perfil las delega (ver «Qué excepciones se delegan») | espera; las de trámite, la coordinadora \* si el perfil las delega | no aplica |
 | 2 · excepción | **Aceptar un criterio imposible de probar en vivo** (`runtime-waiver`). Antes de la ventana, el arnés te muestra el criterio en pantalla: su texto, por qué no se puede probar en vivo y qué prueba lo cubre. | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
 | 2 · excepción | **Marcar un criterio como probado a mano** (`manual-test`) | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
@@ -189,9 +199,10 @@ firmar, y en la columna tu situación:
   dijo el agente tiene que traer ese sello y no nombrar otra sesión. Cada aprobación sirve una vez, para ese comando, y
   vence a los 30 minutos. Sin ella, la coordinadora sigue frenada en lo delicado. Si un click no contó y la delegación
   firmó igual, el comando lo dice.
-- **Todo se aprueba sin terminal salvo cuatro cosas**: apagar el freno de seguridad, apagar el control de producción, la
-  salida de emergencia y el `sudo` del freno de producción. Esas siguen en tu terminal porque no tienen vuelta atrás. Lo
-  demás, la terminal es opcional: la columna «Firmarla en la terminal» dice cómo, si la preferís.
+- **Todo se aprueba sin terminal salvo dos cosas**: la salida de emergencia y el `sudo` del freno de producción. Esas
+  siguen en tu terminal porque no tienen vuelta atrás. Apagar el freno de seguridad o el control de producción ya no se
+  firma: sus dos variables están retiradas y ya no apagan nada, y la salida de los dos es la emergencia. Lo demás, la
+  terminal es opcional: la columna «Firmarla en la terminal» dice cómo, si la preferís.
 - **Una aprobación dada en la pestaña de la coordinadora** vale para otra sesión sólo si la coordinadora está confirmada y
   el proceso de su herramienta que la anotó sigue vivo.
 - **El registro de las aprobaciones** (`owner-approvals/` en la carpeta de estado, con lo gastado en `usadas/`) no se
@@ -220,6 +231,12 @@ persona se lo pasan de a uno con ese mismo cuadro. La lista no firma nada: un cl
 sesión que lo pidió repite el comando. Lo delegado, lo irreversible y lo que corre otra sesión no dejan renglón. El detalle:
 `guides/coordination.md`, «La lista de firmas».
 
+**Un permiso no es una firma.** Con una coordinadora confirmada, el permiso que pide una sesión de fondo en modo normal
+también llega como cuadro a su pestaña, con el pedido entero (`scripts/hooks/permission-relay.js`). Lo aprueba sólo tu
+click en ese cuadro, para ese pedido y una vez: la coordinadora nunca, ni por delegación (`approvals.delegated_signing` no
+lo cubre), ni con un «aprobado» escrito. Sin tu respuesta vuelve la ventana de siempre. El detalle:
+`guides/coordination.md`, «El permiso de una sesión de fondo, como cuadro».
+
 Con Claude Code, la mayoría de las firmas no piden la terminal. El camino depende de la pestaña:
 
 - **La pestaña pide permisos:** te aparece la ventana de permiso y contestás «Sí». Ahí escribir «aprobado» no firma nada,
@@ -240,9 +257,9 @@ desde el teléfono, en la sesión que firma o en la coordinadora: tu click firma
 delicada. Es el mismo cuadro con la misma prueba: la pregunta la arma el freno, el agente no puede contestarla, el click
 sirve una vez para ese plan y vence a los 30 minutos. Lo probado es el click desde el teléfono; desde claude.ai en un
 navegador no se midió. Tu «aprobado» escrito sobre esa pregunta también sigue valiendo.
-Lo que hoy sólo se firma en la terminal (apagar el freno de seguridad o el control de producción, y la emergencia) sigue
-ahí, con o sin control remoto. Las demás firmas de nivel 3 (`control-change`, `escape:TYCON_NEW_NAMES`,
-`escape:merge-bypass` y `escape:external-pr`) se aprueban como en la máquina, así que también a distancia.
+Lo que hoy sólo se firma en la terminal (la emergencia) sigue ahí, con o sin control remoto. Las demás firmas de nivel 3
+(`control-change`, `escape:TYCON_NEW_NAMES`, `escape:merge-bypass` y `escape:external-pr`) se aprueban como en la
+máquina, así que también a distancia.
 
 El riesgo que se acepta: quien tenga tu cuenta de claude.ai o tu teléfono con la sesión abierta puede contestar el
 cuadro o escribir «aprobado», y el arnés no distingue si fuiste vos. Por eso:
@@ -276,6 +293,10 @@ Lo que tiene que cumplir esa aprobación:
   al **detalle**, que owner-next imprime debajo de la pregunta y nunca va dentro del cuadro: mostralo si lo pedís. Un
   cuadro que igual no entra (el guardado ajeno, que se muestra entero) llega con el aviso «Este cuadro pasa el tope del
   teléfono»: leelo en la máquina.
+- **El cambio de controles se aprueba con un click**, como las demás firmas de la máquina, o en tu terminal. La CI sigue
+  siendo la segunda llave: un pedido que cambia un control pide la constancia de `control-change`, y sin ella sale en
+  rojo. Antes del cuadro, la sesión te muestra la salida de `run-base-controls.sh pending` y el diff de esas rutas; nada
+  lo frena, es lo que se espera de ella. El cuadro dice cuántos archivos y en qué zonas, y el por qué sale de los commits.
 - **El cambio de controles se explica primero.** El cuadro de `control-change` dice, después de lo que se aprueba, qué
   cambia en el comportamiento del control (qué deja de frenar, qué empieza a frenar), por qué y el riesgo concreto de ese
   cambio. Lo escribe la sesión que hizo el cambio, en sus commits, con tres renglones: `Cambia-control: …`,
@@ -307,9 +328,9 @@ Lo que tiene que cumplir esa aprobación:
 
 Lo que no acepta el click ni el «aprobado», y se firma en tu terminal:
 
-- apagar el freno de seguridad para un comando (`escape:TYCON_SAFETY_OFF`);
-- apagar el control de consultas a producción (`escape:TYCON_PROD_LINT`);
-- la salida de emergencia (`emergency`).
+- la salida de emergencia (`emergency`);
+- apagar el freno de seguridad para un comando (`escape:TYCON_SAFETY_OFF`): retirada, ya no apaga nada aunque se firme;
+- apagar el control de consultas a producción (`escape:TYCON_PROD_LINT`): retirada, ya no apaga nada aunque se firme.
 
 La contraseña que pide reinstalar el freno de producción no es una aprobación: la escribís vos, con `sudo`.
 
@@ -450,15 +471,15 @@ vuelve a pedir la firma del dueño.
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --file <ruta> --terminal --for-session <id>` |
 | `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'` | sí | `marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --file <ruta> --terminal --for-session <id>` |
-| `adhoc-lane:datos` | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>` | no, en la pestaña de esa sesión | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué> --terminal --for-session <id>` |
+| `adhoc-lane:datos` | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>` | sí | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué> --terminal --for-session <id>` |
 | `adhoc-lane:guardado-ajeno` | dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista | `marker.js adhoc allow-foreign-save` | sí | `marker.js adhoc allow-foreign-save --terminal --for-session <id>` |
-| `autonomy-resume` | volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero | `marker.js resume-autonomy` | no, en la pestaña de esa sesión | `marker.js resume-autonomy --terminal --for-session <id>` |
+| `autonomy-resume` | volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero | `marker.js resume-autonomy` | sí | `marker.js resume-autonomy --terminal --for-session <id>` |
 | `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `designation-confirm` | confirmar qué sesión es la coordinadora de esta máquina | `delegated-signing.js confirm-designation` | no, en la pestaña de esa sesión | `delegated-signing.js confirm-designation --terminal` |
 | `designation-set` | nombrar a esta sesión coordinadora de la máquina | `marker.js designate-relay` | no, en la pestaña de esa sesión | `marker.js designate-relay --terminal` |
 | `designation-withdraw` | retirar a esta sesión de coordinadora de la máquina | `marker.js withdraw-relay` | no, en la pestaña de esa sesión | `marker.js withdraw-relay --terminal` |
-| `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, sólo en tu terminal | `TYCON_SAFETY_OFF=1 <comando>` |
-| `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando | `TYCON_PROD_LINT=0 <comando>` | no, sólo en tu terminal | `TYCON_PROD_LINT=0 <comando>` |
+| `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando (retirada: ya no apaga nada) | retirada: ya no apaga nada; la salida es la emergencia | no, sólo en tu terminal | `harness.js sign emergency --reason "<por qué>" --request <número>` |
+| `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando (retirada: ya no apaga nada) | retirada: ya no apaga nada; la salida es la emergencia | no, sólo en tu terminal | `harness.js sign emergency --reason "<por qué>" --commit` |
 | `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, en la pestaña de esa sesión | `TYCON_NEW_NAMES=0 <comando>` |
 | `escape:TYCON_TEST_GATE` | saltear el portón de pruebas del commit | `TYCON_TEST_GATE=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_TEST_GATE=1 <comando>` |
 | `escape:DOD_BYPASS` | saltear los controles del commit (queda anotado) | `DOD_BYPASS=1 <comando>` | no, en la pestaña de esa sesión | `DOD_BYPASS=1 <comando>` |
@@ -466,7 +487,7 @@ vuelve a pedir la firma del dueño.
 | `escape:TYCON_STATUS_GATE` | cambiar a mano el estado de una story | `TYCON_STATUS_GATE=off <comando>` | no, en la pestaña de esa sesión | `TYCON_STATUS_GATE=off <comando>` |
 | `escape:TYCON_MUTATION_CHECK` | saltear el chequeo de mutantes de las pruebas | `TYCON_MUTATION_CHECK=off <comando>` | no, en la pestaña de esa sesión | `TYCON_MUTATION_CHECK=off <comando>` |
 | `escape:TYCON_STORY_REVIEW` | saltear la revisión de la historia antes del plan | `TYCON_STORY_REVIEW=0 <comando>` | no, en la pestaña de esa sesión | `TYCON_STORY_REVIEW=0 <comando>` |
-| `escape:story-skill-bypass` | escribir una story sin la skill de stories | `marker.js sign-file story-skill-bypass <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file story-skill-bypass <archivo> --terminal --for-session <sesión del agente>` |
+| `escape:story-skill-bypass` | escribir una story sin la skill de stories | `marker.js sign-file story-skill-bypass <archivo>` | sí | `marker.js sign-file story-skill-bypass <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:red-control-test-edit` | editar una prueba vieja de un control que estaba en rojo | `marker.js sign-file red-control-test-edit <archivo>` | sí | `marker.js sign-file red-control-test-edit <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:set-autonomous` | cambiar el modo autónomo de una ejecución | `marker.js set-autonomous` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:cerrar-la-ejecucion` | cerrar una ejecución con un control en rojo | `marker.js clear` | no, en la pestaña de esa sesión | `el mismo comando` |
@@ -476,7 +497,7 @@ vuelve a pedir la firma del dueño.
 | `escape:trust-ran` | contar los revisores sin la constancia de que corrieron | `pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]` | sí | `pipeline.js check-count --repo <r> --story <s> --trust-ran --terminal` |
 | `escape:no-mutation` | cerrar «Correr las pruebas» sin el chequeo de mutantes, con motivo | `marker.js complete-step run-tests --no-mutation --reason <motivo>` | no, en la pestaña de esa sesión | `marker.js complete-step run-tests --no-mutation --reason <motivo> --terminal --for-session <sesión>` |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>` | sí | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo> --terminal --for-session <sesión del agente>` |
-| `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file dod_runtime_exempt <archivo> --terminal --for-session <sesión del agente>` |
+| `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | sí | `marker.js sign-file dod_runtime_exempt <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | sí | `marker.js sign-file cambiar-el-estado <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:merge-bypass` | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama | `gh pr merge <n> --admin (o un merge, una regla o una política por la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
@@ -739,7 +760,7 @@ y quedan en el registro de firmas con la vía `notified` («hecho y avisado»): 
 plan y abrir un arreglo rápido. Pasan por los mismos controles que la delegación de la coordinadora:
 
 - el ok de guardar, sólo con la historia limpia y sin nada sensible;
-- el plan, con la revisión automática aprobada; uno delicado, sólo si el perfil delega `plan-approval:delicada`;
+- el plan, con la revisión automática aprobada; uno delicado, nunca: lo aprueba el dueño con su click o su «aprobado»;
 - la maqueta (`approve-mockup`), igual que el plan, y nunca la de la propia sesión: la revisión que lanzó la sesión que
   implementa no cuenta para una pantalla, así que en su pestaña sin permisos la maqueta pide el click;
 - el pendiente (`approve-pending`), sólo si lo pide la coordinadora confirmada para otra sesión y sobre un repo de esa
