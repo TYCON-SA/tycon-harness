@@ -1238,10 +1238,30 @@ function ownerWaitTurn(opts, a, lines, { home, me, stalled, now }) {
   for (const [sid, prev] of Object.entries(o.esperas)) {
     if (ahora.has(sid)) continue;
     // la que pasó a la lista o a un permiso sigue esperando: tiene su aviso por otro lado
-    if (!fuera.has(sid)) lines.push(`${quoted(prev.quien, LABEL_MAX)} ya no espera a la persona`);
+    if (!fuera.has(sid)) {
+      // la oficina saca de «Tu firma» a la sesión ocupada (le llegó un mensaje, corre un comando) aunque su plan siga sin
+      // aprobar: esa espera se retira sólo con el plan aprobado o la corrida cerrada
+      if (prev.espera === PLAN_WAIT && planStillUnapproved(home, sid)) continue;
+      lines.push(`${quoted(prev.quien, LABEL_MAX)} ya no espera a la persona`);
+    }
     delete o.esperas[sid];
   }
   return true;
+}
+
+// lo que la oficina dice que espera una sesión en «Aprobar el plan» (work-in-progress.js realState)
+const PLAN_WAIT = 'que apruebes el plan';
+
+/**
+ * ¿El plan de la corrida de `sid` sigue sin aprobar? Sí con su marcador abierto sin «Aprobar el plan» hecho, y en duda
+ * (un marcador que no se lee); no sin marcador (la corrida se cerró) o con el plan aprobado.
+ */
+function planStillUnapproved(home, sid) {
+  if (!SAFE_SID.test(String(sid))) return true;
+  let m;
+  try { m = JSON.parse(fs.readFileSync(path.join(stateDir(home), 'active', `${sid}.json`), 'utf8')); } catch (e) { return !e || e.code !== 'ENOENT'; }
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return true;
+  return !require(path.join(SKILL_LIB, 'steps.js')).isDone(m, 'approve-plan');
 }
 
 /**
