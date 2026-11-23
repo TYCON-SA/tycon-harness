@@ -231,7 +231,7 @@ function cmdReviewAnswer(argv) {
   const delDueno = pr.pideAlDueno(kind, choice);
   const terminal = tiene('--terminal');
   if (terminal && !delDueno) {
-    console.error('🔒 marker.js review-answer --terminal: la terminal es para «skip» o «wait», que firma el dueño; «review» lo anota la sesión. No se escribió nada.');
+    console.error('🔒 marker.js review-answer --terminal: la terminal es para «skip» o «wait», que firma una persona; «review» lo anota la sesión. No se escribió nada.');
     process.exit(2);
   }
   // para otra sesión, desde una pestaña, sólo la designada; la terminal del dueño contesta por la que nombra
@@ -255,12 +255,12 @@ function cmdReviewAnswer(argv) {
     const r = ownerWindow().exigir({ firma: pr.firmaDeLaRespuesta(kind), argv: process.argv.slice(1), propia: PROPIA, anotar: anotarFirma,
       resumen: `«${choice}» a ${pregunta} de la sesión ${sesion} (${fuente} ${h.huella.slice(0, 12)})` });
     if (r.codigo !== 0) {
-      console.error(`🔒 marker.js review-answer: «${choice}» a ${pregunta} lo anota sólo el dueño — ${r.motivo}. No se escribió nada.`);
+      console.error(`🔒 marker.js review-answer: «${choice}» a ${pregunta} lo anota sólo una persona — ${r.motivo}. No se escribió nada.`);
       console.error(`   Con su click en el cuadro que da el freno, o en su terminal: node ${citar(MARKER_JS)} review-answer --kind ${kind} --choice ${choice} --terminal --for-session ${citar(sesion)}`);
       process.exit(r.codigo === 2 ? 2 : 1);
     }
     if (!pr.VIAS_DEL_DUENO.includes(r.via)) {
-      console.error(`🔒 marker.js review-answer: «${choice}» a ${pregunta} lo anota sólo el click del dueño o su terminal, y volvió por ${r.via}. No se escribió nada.`);
+      console.error(`🔒 marker.js review-answer: «${choice}» a ${pregunta} lo anota sólo el click de una persona o su terminal, y volvió por ${r.via}. No se escribió nada.`);
       process.exit(1);
     }
     // el cuadro mostró este plan o este diff: si cambió entre el click y ahora, no se anota
@@ -270,11 +270,11 @@ function cmdReviewAnswer(argv) {
       process.exit(1);
     }
     via = r.via;
-    if (terminal) quien = 'terminal del dueño';
+    if (terminal) quien = 'terminal de la persona';
   }
   const r = pr.anotarRespuesta({ estado: STATE_DIR, sesion, kind, choice, quien, huella: h.huella, motivo: val('--reason') || null, via });
   if (r.codigo) { console.error(`🔒 marker.js review-answer: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
-  process.stdout.write(`respuesta anotada para la sesión ${sesion}: ${choice} (${kind})${via ? `, con ${via === 'click' ? 'el click' : 'la terminal'} del dueño` : ''}.\n`);
+  process.stdout.write(`respuesta anotada para la sesión ${sesion}: ${choice} (${kind})${via ? `, con ${via === 'click' ? 'el click' : 'la terminal'} de la persona` : ''}.\n`);
   process.exit(0);
 }
 

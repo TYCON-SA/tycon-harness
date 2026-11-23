@@ -142,7 +142,7 @@ test('ReviewAnswer_LaTerminalDelDueno_Anota', (t) => {
     return;
   }
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
-  assert.deepStrictEqual(lab.respuestas().map((j) => [j.choice, j.via, j.quien]), [['skip', 'terminal', 'terminal del dueño']]);
+  assert.deepStrictEqual(lab.respuestas().map((j) => [j.choice, j.via, j.quien]), [['skip', 'terminal', 'terminal de la persona']]);
   assert.deepStrictEqual(lab.abiertas(), []);
 });
 
@@ -225,5 +225,5 @@ test('ReviewAnswerCodigo_LaTerminalDelDueno_Anota', (t) => {
     return;
   }
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
-  assert.deepStrictEqual(lab.respuestas().map((j) => [j.kind, j.choice, j.via, j.quien]), [['code', 'wait', 'terminal', 'terminal del dueño']]);
+  assert.deepStrictEqual(lab.respuestas().map((j) => [j.kind, j.choice, j.via, j.quien]), [['code', 'wait', 'terminal', 'terminal de la persona']]);
 });

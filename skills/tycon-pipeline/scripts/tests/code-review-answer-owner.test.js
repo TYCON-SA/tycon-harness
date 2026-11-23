@@ -43,7 +43,7 @@ test('ReviewAnswerCodigo_SkipOWaitSinElDueno_NoSeAnota', (t) => {
     for (const via of [null, 'delegacion', 'ventana', 'mensaje', 'automatica', 'avisado']) {
       const r = anotar(lab, { choice, via });
       assert.strictEqual(r.codigo, 2, `${choice} por ${via}`);
-      assert.match(r.motivo, /lo anota sólo el dueño, con su click en el cuadro de la firma code-review-answer o en su terminal/);
+      assert.match(r.motivo, /lo anota sólo una persona, con su click en el cuadro de la firma code-review-answer o en su terminal/);
     }
   }
   assert.deepStrictEqual(lab.respuestas(), [], 'no se escribió nada');

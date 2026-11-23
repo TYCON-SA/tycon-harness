@@ -812,7 +812,7 @@ function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo =
   if (!KINDS.includes(kind)) return no(`--kind es ${KINDS.join(' o ')}`);
   if (!CHOICES.includes(choice)) return no(`--choice es ${CHOICES.join(', ')}`);
   if (pideAlDueno(kind, choice) && !VIAS_DEL_DUENO.includes(via)) {
-    return no(`«${choice}» a la pregunta de revisar ${kind === 'plan' ? 'el plan' : 'el código'} lo anota sólo el dueño, con su click en el cuadro de la firma ${firmaDeLaRespuesta(kind)} o en su terminal${via ? ` (llegó por ${via})` : ''}; «review» se anota sin firma`);
+    return no(`«${choice}» a la pregunta de revisar ${kind === 'plan' ? 'el plan' : 'el código'} lo anota sólo una persona, con su click en el cuadro de la firma ${firmaDeLaRespuesta(kind)} o en su terminal${via ? ` (llegó por ${via})` : ''}; «review» se anota sin firma`);
   }
   anotarRenglon(estado, { name: 'review-answer', status: 'ok', sesion, kind, choice, quien, huella: huella || null, motivo, ...(via ? { via } : {}) }, ahora);
   return { codigo: 0 };
