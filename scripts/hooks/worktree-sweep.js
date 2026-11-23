@@ -74,6 +74,8 @@ const BRANCH_STAMP_NAME = 'branch-count-last';
 const BRANCH_EVERY_MS = 7 * 24 * 60 * 60 * 1000;
 // una pasada larga sigue siendo de este proceso: el candado sólo se pisa si su proceso murió o pasó media hora
 const LOCK_STALE_MS = 30 * 60 * 1000;
+// un candado recién creado y todavía vacío es de una pasada que está por escribir su pid
+const LOCK_FRESH_MS = 10 * 1000;
 // cuántas carpetas mira una pasada de fondo; la siguiente sigue desde el cursor
 const MAX_PER_PASS = 20;
 const GIT_TIMEOUT_MS = 15000;
@@ -89,7 +91,30 @@ function git(cwd, args, timeout = GIT_TIMEOUT_MS) {
 }
 
 function norm(p) { const r = path.resolve(p); return WIN ? r.toLowerCase() : r; }
-function inside(child, parent) { const c = norm(child), p = norm(parent); return c === p || c.startsWith(p + path.sep); }
+// la ruta con los enlaces resueltos, aunque ya no exista: se resuelve la carpeta de arriba que existe y se suma el resto
+function realOf(p) {
+  let d = path.resolve(p);
+  const resto = [];
+  for (let i = 0; i < 64; i++) {
+    try { return path.join(fs.realpathSync.native(d), ...[...resto].reverse()); } catch (_) { /* sube */ }
+    const arriba = path.dirname(d);
+    if (arriba === d) return null;
+    resto.push(path.basename(d));
+    d = arriba;
+  }
+  return null;
+}
+/**
+ * ¿`child` es `parent` o está adentro? Con los enlaces resueltos y, donde el sistema no distingue mayúsculas (macOS y
+ * Windows), sin distinguirlas: la misma carpeta por otro nombre cuenta como la misma. Lo que no es texto no está adentro.
+ */
+function inside(child, parent) {
+  if (typeof child !== 'string' || typeof parent !== 'string' || !child || !parent) return false;
+  const sinMayus = WIN || process.platform === 'darwin';
+  const formas = (p) => [path.resolve(p), realOf(p)].filter(Boolean).map((x) => (sinMayus ? x.toLowerCase() : x));
+  for (const c of formas(child)) for (const q of formas(parent)) if (c === q || c.startsWith(q + path.sep)) return true;
+  return false;
+}
 
 /** El checkout principal de un repo (carpeta con `.git` como directorio), o null. */
 function mainRepoOf(dir) {
@@ -201,48 +226,56 @@ function sweep({ repos, cwd, story = null, idleMs = 0, now = Date.now(), dryRun 
     turno = (desde < 0 ? [] : todas.slice(desde)).slice(0, max);
     res.cursor = turno.length === max && desde + max < todas.length ? norm(turno[turno.length - 1].w.path) : '';
   }
-  for (const { repo, target, w } of turno) {
+  for (const item of turno) {
     res.checked++;
-    const name = path.basename(w.path);
-    if (cwd && inside(cwd, w.path)) { res.kept.push({ name, why: 'es la carpeta de esta sesión' }); continue; }
-    if (w.locked) { if (story) res.kept.push({ name, why: 'está bloqueada (git worktree lock)' }); continue; }
-    // al arrancar, una carpeta en uso o recién creada se deja en silencio: puede ser de otra sesión viva
-    if (!story && idleMs > 0 && now - lastUsedMs(w.path) < idleMs) continue;
-    const st = git(w.path, ['status', '--porcelain']);
-    if (!st.ok) { res.kept.push({ name, why: 'no pude leer su estado' }); continue; }
-    if (st.out) { res.kept.push({ name, why: `tiene ${st.out.split('\n').length} archivo(s) con cambios`, cambios: true }); continue; }
-    const ev = evidenciaIgnorada(w.path);
-    if (ev === null) { res.kept.push({ name, why: 'no pude ver si tiene evidencia ignorada en .advisors' }); continue; }
-    if (ev) { res.kept.push({ name, why: `tiene ${ev} archivo(s) de evidencia sin guardar en .advisors`, cambios: true }); continue; }
-    const head = git(w.path, ['rev-parse', 'HEAD']).out;
-    if (!head) { res.kept.push({ name, why: 'no pude leer su HEAD' }); continue; }
-    const merged = git(repo, ['merge-base', '--is-ancestor', head, target.sha]).ok;
-    if (!merged) { res.kept.push({ name, why: `commits sin mergear a ${target.name}` }); continue; }
-    if (!story && head === target.sha) continue;
-    // la carpeta de una sesión viva no se toca, aunque esté quieta
-    const viva = sesionVivaEn(contexto(), w.path);
-    if (viva) { res.kept.push({ name, why: viva }); continue; }
-    // el marcador de una ejecución terminada se cierra antes de borrar; con cualquier otro, la carpeta queda
-    const marca = juzgarMarcadores(contexto(), w.path, { home, dryRun });
-    if (marca) { res.kept.push({ name, why: marca }); continue; }
-    // con la carpeta de una ejecución abierta adentro, borrarla deja la ejecución perdida: se cierra antes
-    const abierta = abiertaEn(w.path);
-    if (abierta) { res.kept.push({ name, why: abierta.why }); continue; }
-    if (dryRun) { res.removed.push(name); continue; }
-    const rm = git(repo, ['worktree', 'remove', w.path]);
-    if (!rm.ok) {
-      // otra pasada pudo borrarla en el medio: lo que ya no está no es un error
-      if (!fs.existsSync(w.path)) continue;
-      res.kept.push({ name, why: `git no la quiso borrar (${rm.err.split('\n')[0] || 'sin motivo'})` });
-      continue;
-    }
-    res.removed.push(name);
-    if (w.branch) {
-      const b = git(repo, ['branch', '-d', w.branch]);
-      if (!b.ok) res.branchKept.push(w.branch);
+    const name = path.basename(item.w.path);
+    // una carpeta que no se puede juzgar queda, con su motivo, y la pasada sigue con las demás
+    try { juzgarCarpeta(item, { res, name, cwd, story, idleMs, now, dryRun, home, abiertaEn, contexto }); } catch (e) {
+      res.kept.push({ name, why: `no pude juzgarla (${(e && e.message) || e})` });
     }
   }
   return res;
+}
+
+/** Juzga una carpeta: la borra, la nombra en `res.kept` o la deja en silencio. */
+function juzgarCarpeta({ repo, target, w }, { res, name, cwd, story, idleMs, now, dryRun, home, abiertaEn, contexto }) {
+  if (cwd && inside(cwd, w.path)) { res.kept.push({ name, why: 'es la carpeta de esta sesión' }); return; }
+  if (w.locked) { if (story) res.kept.push({ name, why: 'está bloqueada (git worktree lock)' }); return; }
+  // al arrancar, una carpeta en uso o recién creada se deja en silencio: puede ser de otra sesión viva
+  if (!story && idleMs > 0 && now - lastUsedMs(w.path) < idleMs) return;
+  const st = git(w.path, ['status', '--porcelain']);
+  if (!st.ok) { res.kept.push({ name, why: 'no pude leer su estado' }); return; }
+  if (st.out) { res.kept.push({ name, why: `tiene ${st.out.split('\n').length} archivo(s) con cambios`, cambios: true }); return; }
+  const ev = evidenciaIgnorada(w.path);
+  if (ev === null) { res.kept.push({ name, why: 'no pude ver si tiene evidencia ignorada en .advisors' }); return; }
+  if (ev) { res.kept.push({ name, why: `tiene ${ev} archivo(s) de evidencia sin guardar en .advisors`, cambios: true }); return; }
+  const head = git(w.path, ['rev-parse', 'HEAD']).out;
+  if (!head) { res.kept.push({ name, why: 'no pude leer su HEAD' }); return; }
+  const merged = git(repo, ['merge-base', '--is-ancestor', head, target.sha]).ok;
+  if (!merged) { res.kept.push({ name, why: `commits sin mergear a ${target.name}` }); return; }
+  if (!story && head === target.sha) return;
+  // la carpeta de una sesión viva no se toca, aunque esté quieta
+  const viva = sesionVivaEn(contexto(), w.path);
+  if (viva) { res.kept.push({ name, why: viva }); return; }
+  // el marcador de una ejecución terminada se cierra antes de borrar; con cualquier otro, la carpeta queda
+  const marca = juzgarMarcadores(contexto(), w.path, { home, dryRun });
+  if (marca) { res.kept.push({ name, why: marca }); return; }
+  // con la carpeta de una ejecución abierta adentro, borrarla deja la ejecución perdida: se cierra antes
+  const abierta = abiertaEn(w.path);
+  if (abierta) { res.kept.push({ name, why: abierta.why }); return; }
+  if (dryRun) { res.removed.push(name); return; }
+  const rm = git(repo, ['worktree', 'remove', w.path]);
+  if (!rm.ok) {
+    // otra pasada pudo borrarla en el medio: lo que ya no está no es un error
+    if (!fs.existsSync(w.path)) return;
+    res.kept.push({ name, why: `git no la quiso borrar (${rm.err.split('\n')[0] || 'sin motivo'})` });
+    return;
+  }
+  res.removed.push(name);
+  if (w.branch) {
+    const b = git(repo, ['branch', '-d', w.branch]);
+    if (!b.ok) res.branchKept.push(w.branch);
+  }
 }
 
 /** Cuántos archivos que git ignora hay en `.advisors/` (sin la copia de la apertura); null si no se pudo mirar. */
@@ -329,7 +362,10 @@ function sesionVivaEn(ctx, wt) {
  */
 function juzgarMarcadores(ctx, wt, { home, dryRun }) {
   if (ctx.ilegibles.length) return `no pude leer ${ctx.ilegibles.join(', ')}: no sé de qué carpeta es`;
-  const deAca = ctx.marcadores.filter(({ m }) => (m.repoPath && inside(m.repoPath, wt)) || (m.storyPath && path.isAbsolute(m.storyPath) && inside(path.dirname(m.storyPath), wt)));
+  // un marcador con una ruta que no es texto no dice de qué carpeta es: no deja borrar ninguna (como uno ilegible)
+  const raros = ctx.marcadores.filter(({ m }) => (m.repoPath != null && typeof m.repoPath !== 'string') || (m.storyPath != null && typeof m.storyPath !== 'string'));
+  if (raros.length) return `no pude leer las rutas del marcador ${raros.map((x) => x.sid).join(', ')}: no sé de qué carpeta es`;
+  const deAca = ctx.marcadores.filter(({ m }) => inside(m.repoPath, wt) || (typeof m.storyPath === 'string' && path.isAbsolute(m.storyPath) && inside(path.dirname(m.storyPath), wt)));
   if (!deAca.length) return null;
   if (deAca.length > 1) return `tiene ${deAca.length} ejecuciones (sesiones ${deAca.map((x) => x.sid).sort().join(', ')})`;
   const { sid, m } = deAca[0];
@@ -505,7 +541,10 @@ function takeLock(file) {
       try { held = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { held = null; }
       const age = held && typeof held.at === 'string' ? Date.now() - Date.parse(held.at) : Infinity;
       if (held && Number.isInteger(held.pid) && pidAlive(held.pid) && age < LOCK_STALE_MS) return 'busy';
-      try { fs.rmSync(file, { force: true }); } catch (_) { return 'error'; }
+      // uno ilegible y recién hecho puede ser el de otra pasada que todavía no escribió su pid: se respeta un rato
+      if (!held) { try { const st = fs.statSync(file); if (st.isFile() && Date.now() - st.mtimeMs < LOCK_FRESH_MS) return 'busy'; } catch (_) { /* ya no está */ } }
+      // lo que no es un candado válido (también una carpeta con ese nombre) se saca: si no, ninguna pasada corre más
+      try { fs.rmSync(file, { force: true, recursive: true }); } catch (_) { return 'error'; }
     }
   }
   return 'busy';
@@ -569,7 +608,14 @@ function pass({ home, cwd, max }) {
     const branches = countBranches(repos, home);
     const { cursor: _c, ...guardar } = res;
     const kept = guardar.kept.map(({ name, why }) => ({ name, why }));
-    writeAtomic(path.join(estado, RESULT_NAME), { at: new Date().toISOString(), ...guardar, kept, branches, shown: false });
+    // lo que borró una pasada anterior que ningún arranque mostró no se pierde: se suma
+    const antes = readJson(path.join(estado, RESULT_NAME));
+    if (antes && antes.shown === false) {
+      const juntar = (a, b) => [...new Set([...(Array.isArray(a) ? a : []), ...b])];
+      guardar.removed = juntar(antes.removed, guardar.removed);
+      guardar.branchKept = juntar(antes.branchKept, guardar.branchKept);
+    }
+    writeAtomic(path.join(estado, RESULT_NAME), { at: new Date().toISOString(), ...guardar, kept, branches: branches || (antes && antes.shown === false ? antes.branches || null : null), shown: false });
     try { fs.writeFileSync(path.join(estado, STAMP_NAME), new Date().toISOString() + '\n'); } catch (_) { /* nada */ }
     return res;
   } finally { releaseLock(lock); }
@@ -602,8 +648,8 @@ function main() {
   const home = os.homedir();
   const maxArg = Number(arg('--max'));
   const max = Number.isInteger(maxArg) && maxArg > 0 ? maxArg : 0;
-  // la pasada de fondo que lanza el arranque
-  if (process.argv.includes('--pass')) { pass({ home, cwd, max }); return 0; }
+  // la pasada de fondo que lanza el arranque (con --dry-run, la prueba sin borrar de abajo)
+  if (process.argv.includes('--pass') && !dryRun) { pass({ home, cwd, max }); return 0; }
   // la pasada de todas, ahora, diciendo qué hizo (y la prueba sin borrar)
   if (process.argv.includes('--force') || dryRun) {
     const lock = path.join(stateDirOf(home), LOCK_NAME);

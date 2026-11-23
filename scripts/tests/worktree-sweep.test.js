@@ -472,3 +472,75 @@ test('T17 8.164-ConteoSemanal_DeRamas @story-8.164 @ac-17 — una vez por semana
   const semana = arranque(L);
   assert.match(semana.out, /2 rama\(s\) remota\(s\) ya entrada\(s\) a main/, 'la semana siguiente no volvió a contar');
 });
+
+// ── lo que encontró el pase adversarial: rutas por otro nombre, marcadores raros, el candado y la prueba sin borrar ──
+
+test('T5b 8.164-OtroNombreDeLaMismaRuta_NoBorra @story-8.164 @ac-5 — la sesión viva o el marcador por un enlace o con otras mayúsculas protegen igual', () => {
+  const L = lugar();
+  const viva = carpeta(L, 'producto-wt-viva', 'feat/viva');
+  const abierta = carpeta(L, 'producto-wt-abierta', 'feat/abierta');
+  mergear(L, 'feat/viva');
+  mergear(L, 'feat/abierta');
+  const enlace = path.join(L.base, 'enlace-a-repos');
+  fs.symlinkSync(L.root, enlace);
+  const sesiones = path.join(L.home, '.claude', 'sessions');
+  fs.mkdirSync(sesiones, { recursive: true });
+  fs.writeFileSync(path.join(sesiones, '1.json'), JSON.stringify({ sessionId: 's-viva', pid: process.pid, cwd: path.join(enlace, 'producto-wt-viva') }));
+  marcador(L, 's-abierta', path.join(enlace, 'producto-wt-abierta'), { extra: { stepsPending: ['implement', 'run-tests', 'prepare-commit'] } });
+  const r = correr(L, ['--force']);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.ok(fs.existsSync(viva), `borró la carpeta de una sesión viva nombrada por un enlace\n${r.out}`);
+  assert.ok(fs.existsSync(abierta), `borró la carpeta de una ejecución sin terminar nombrada por un enlace\n${r.out}`);
+  if (process.platform === 'darwin' || process.platform === 'win32') {
+    const L2 = lugar();
+    const wt = carpeta(L2, 'producto-wt-mayus', 'feat/mayus');
+    mergear(L2, 'feat/mayus');
+    const s2 = path.join(L2.home, '.claude', 'sessions');
+    fs.mkdirSync(s2, { recursive: true });
+    fs.writeFileSync(path.join(s2, '1.json'), JSON.stringify({ sessionId: 's-m', pid: process.pid, cwd: path.join(L2.root, 'Producto-WT-Mayus') }));
+    correr(L2, ['--force']);
+    assert.ok(fs.existsSync(wt), 'borró la carpeta de una sesión viva nombrada con otras mayúsculas');
+  }
+});
+
+test('T5c 8.164-MarcadorConTiposRaros_NoTrabaLaPasada @story-8.164 @ac-5 — un marcador con una ruta que no es texto deja su carpeta y la pasada sigue', () => {
+  const L = lugar();
+  const wt = carpeta(L, 'producto-wt-a', 'feat/a');
+  mergear(L, 'feat/a');
+  fs.mkdirSync(path.join(stateDir(L.home), 'active'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(L.home), 'active', 's-rara.json'), JSON.stringify({ storyId: '9.1', repoPath: 123, storyPath: { x: 1 } }));
+  const r = correr(L, ['--pass']);
+  assert.strictEqual(r.rc, 0, r.err);
+  const res = resultado(L);
+  assert.ok(res, 'la pasada no dejó resultado');
+  assert.ok(!fs.existsSync(wt) || res.kept.some((k) => k.name === 'producto-wt-a'), 'la carpeta ni se borró ni se nombró: la pasada se cortó');
+});
+
+test('T4b 8.164-CandadoQueEsCarpeta_SePisa @story-8.164 @ac-4 — un candado que no es un archivo no frena las pasadas para siempre', () => {
+  const L = lugar();
+  const wt = carpeta(L, 'producto-wt-a', 'feat/a');
+  mergear(L, 'feat/a');
+  fs.mkdirSync(candado(L), { recursive: true });
+  const r = correr(L, ['--pass']);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.ok(!fs.existsSync(wt), 'un candado que es carpeta frenó la pasada');
+});
+
+test('T4c 8.164-PasadaDeFondoEnPrueba_NoBorra @story-8.164 @ac-4 — con --dry-run, también --pass prueba sin borrar', () => {
+  const L = lugar();
+  const wt = carpeta(L, 'producto-wt-a', 'feat/a');
+  mergear(L, 'feat/a');
+  const r = correr(L, ['--pass', '--dry-run']);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.ok(fs.existsSync(wt), '--pass --dry-run borró');
+});
+
+test('T4d 8.164-DosPasadasSinMostrar_SeSuman @story-8.164 @ac-4 — lo que borró una pasada que nadie mostró se suma a la siguiente', () => {
+  const L = lugar();
+  const wts = ['a', 'b'].map((n) => { const w = carpeta(L, `producto-wt-${n}`, `feat/${n}`); mergear(L, `feat/${n}`); return w; });
+  correr(L, ['--pass', '--max', '1']);
+  correr(L, ['--pass', '--max', '1']);
+  assert.ok(wts.every((w) => !fs.existsSync(w)));
+  const r = arranque(L);
+  assert.match(r.out, /borré 2 ya mergeada\(s\)/, r.out);
+});
