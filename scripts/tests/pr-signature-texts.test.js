@@ -94,3 +94,44 @@ test('8.242-Guias_DicenElPedido (T17) @story-8.242 @ac-12', () => {
   const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'tools', 'signatures-guide.js'), '--check'], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, `la guía de firmas no sale del catálogo:\n${r.stdout}${r.stderr}`);
 });
+
+// Los archivos que todavía pueden nombrar el paso 11 como antes, cada uno con su motivo.
+const NOMBRE_VIEJO_PERMITIDO = Object.freeze({
+  // los revisores: cambiar su texto pide el examen de cada uno, que va en la lista semanal
+  'agents/tycon-ac-coverage-checker.md': 'revisor: el cambio pide su examen (lista semanal)',
+  'agents/tycon-deferral-tracker.md': 'revisor: el cambio pide su examen (lista semanal)',
+  'agents/tycon-dod-runtime-checker.md': 'revisor: el cambio pide su examen (lista semanal)',
+  'agents/tycon-story-validator.md': 'revisor: el cambio pide su examen (lista semanal)',
+  'adapters/codex/agents/tycon-ac-coverage-checker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
+  'adapters/codex/agents/tycon-deferral-tracker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
+  'adapters/codex/agents/tycon-dod-runtime-checker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
+  'adapters/codex/agents/tycon-story-validator.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
+  'adapters/codex/agents-native/tycon-ac-coverage-checker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
+  'adapters/codex/agents-native/tycon-deferral-tracker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
+  'adapters/codex/agents-native/tycon-dod-runtime-checker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
+  'adapters/codex/agents-native/tycon-story-validator.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
+  // esta prueba busca las dos formas viejas: las nombra
+  'scripts/tests/pr-signature-texts.test.js': 'la prueba que busca el nombre viejo',
+});
+
+// 🔴 Falla con: un texto del árbol público que todavía llama al paso 11 «Preparar el commit»: la persona lee un nombre
+// que ya no es el del paso.
+test('8.242-Barrido_SinPrepararElCommit (T26) @story-8.242 @ac-18', () => {
+  const l = spawnSync('git', ['-C', RAIZ, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  assert.strictEqual(l.status, 0, `no pude listar los archivos del árbol: ${l.stderr}`);
+  const archivos = l.stdout.split('\0').filter(Boolean);
+  assert.ok(archivos.length > 100, 'la lista del árbol vino corta');
+  const VIEJO = /preparar el commit|prepare the commit/i;
+  const conNombreViejo = [];
+  for (const rel of archivos) {
+    let texto;
+    try { texto = fs.readFileSync(path.join(RAIZ, rel), 'utf8'); } catch (_) { continue; }
+    if (VIEJO.test(texto) && !NOMBRE_VIEJO_PERMITIDO[rel]) conNombreViejo.push(rel);
+  }
+  assert.deepStrictEqual(conNombreViejo, [], 'todavía nombran el paso 11 como «Preparar el commit»');
+  // cada excepción existe y todavía lo necesita: una que ya no lo nombra sale de la lista
+  for (const rel of Object.keys(NOMBRE_VIEJO_PERMITIDO)) {
+    assert.ok(archivos.includes(rel), `la excepción ${rel} no está en el árbol`);
+    assert.ok(VIEJO.test(fs.readFileSync(path.join(RAIZ, rel), 'utf8')), `${rel} ya no nombra el paso viejo: sacalo de la lista`);
+  }
+});

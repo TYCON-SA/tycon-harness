@@ -38,7 +38,7 @@ El script además:
   repo de la historia y el del código y arman una copia de sólo lectura de cada uno en la carpeta de estado del
   pipeline: `[{ repo, tree, copy }]`. El `context_file` nombra cada copia y su sello: **los revisores leen la copia, no
   la carpeta viva**. Si no se puede sellar o copiar, la vuelta no se lanza (sale 2 con el motivo). La foto de la vuelta
-  (`snapshot-iter`) guarda ese sello, y «Preparar el commit» compara lo que se guarda contra él.
+  (`snapshot-iter`) guarda ese sello, y «Preparar el pull request» compara lo que se guarda contra él.
   Los que necesitan la story completa (`story_path_para` de la salida: el spec-first del núcleo
   y los revisores de paquetes con `needsStory`) reciben **además** `story_path`.
 - **`context_file_overrides`** (2026-07-28): mapa `{advisor: path}`. **Si un advisor figura
@@ -566,7 +566,7 @@ La decisión queda escrita en el marcador (`otraVuelta`: la vuelta, los archivos
 
 **Objetivo**: cerrar el loop posterior a «Hallazgos» — si la decisión del usuario (o el auto-flow)
 resultó en **fixes de código aplicados**, el diff que los advisors auditaron ya no es el
-diff actual. NO se avanza a «Probar en vivo» / «Preparar el commit» con auditoría vieja.
+diff actual. NO se avanza a «Probar en vivo» / «Preparar el pull request» con auditoría vieja.
 
 ### Decisión (automática, sin preguntar)
 
@@ -679,9 +679,9 @@ hazard en varios sitios), aplicá TODOS los fixes de la clase en ESTA iteración
 fixees el primer sitio y re-loopees, porque el advisor re-descubre el próximo sitio en la iteración
 siguiente (whack-a-mole). Ver SKILL.md §D.i.2.
 
-### Relación con la pre-condición de «Preparar el commit» (regla D.i)
+### Relación con la pre-condición de «Preparar el pull request» (regla D.i)
 
 La misma lógica GOTO vive como **pre-condición de último recurso en `step-11-prepare-commit.md`**
 (`diff_at_last_step_06 != diff_now` → STOP + volver a Revisores con iteration N+1). Esta sección es la
-referencia del flujo; la pre-condición de «Preparar el commit» atrapa el caso en que esta vuelta se haya
-salteado por inferencia: sin ella, «Preparar el commit» arranca sin re-auditar los fixes hechos después de los revisores.
+referencia del flujo; la pre-condición de «Preparar el pull request» atrapa el caso en que esta vuelta se haya
+salteado por inferencia: sin ella, «Preparar el pull request» arranca sin re-auditar los fixes hechos después de los revisores.

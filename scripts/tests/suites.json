@@ -1411,13 +1411,13 @@
       "requiere": []
     },
     {
-      "__nota": "un criterio con cota fuera de la cota o sin medición: la matriz, «Preparar el commit» y el control del commit lo nombran con lo medido y la cota; la deuda no lo exime; la pregunta de la firma por terminal muestra lo medido. Comandos reales con HOME temporal",
+      "__nota": "un criterio con cota fuera de la cota o sin medición: la matriz, «Preparar el pull request» y el control del commit lo nombran con lo medido y la cota; la deuda no lo exime; la pregunta de la firma por terminal muestra lo medido. Comandos reales con HOME temporal",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/matrix-out-of-bound-message.test.js",
       "requiere": []
     },
     {
-      "__nota": "en una historia paraguas la tanda se anota una vez (set-batch), «Preparar el commit» mide sólo esa tanda, y el control del commit mide todas al pasar a review y la que se cierra al cerrar una tanda. Comandos reales con HOME temporal (8.239)",
+      "__nota": "en una historia paraguas la tanda se anota una vez (set-batch), «Preparar el pull request» mide sólo esa tanda, y el control del commit mide todas al pasar a review y la que se cierra al cerrar una tanda. Comandos reales con HOME temporal (8.239)",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/matrix-by-batch.test.js",
       "requiere": []
@@ -1991,7 +1991,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el commit», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
+      "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el pull request», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/compare-previous-gate.test.js",
       "requiere": []

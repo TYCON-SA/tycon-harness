@@ -1,10 +1,10 @@
 'use strict';
 /**
  * adversarial-verdict.js — ¿el pase adversarial está atendido? Y qué hacer con uno de otra sesión.
- * Lo usan `marker.js` (el freno de «Preparar el commit») y `pipeline.js` (`next`): una sola copia del criterio.
+ * Lo usan `marker.js` (el freno de «Preparar el pull request») y `pipeline.js` (`next`): una sola copia del criterio.
  *
  * `veredictoPaseAdversarial` vive acá y no en `marker.js` (que no exporta nada) para que `next` lo use: sin
- * él, `next` pediría relanzar siempre un pase de otra sesión —también uno ya cerrado, y relanzar un pase cerrado bloquea «Preparar el commit».
+ * él, `next` pediría relanzar siempre un pase de otra sesión —también uno ya cerrado, y relanzar un pase cerrado bloquea «Preparar el pull request».
  */
 
 const fs = require('fs');
@@ -61,7 +61,7 @@ function veredictoPaseAdversarial(marker) {
 
 /**
  * Para `next`: «atendido» es `paso`, y también un `bloqueo` por `resultado-de-otro-lanzamiento`
- * —ése lo frena «Preparar el commit», y pedir otro lanzamiento desde `next` lo empeora—.
+ * —ése lo frena «Preparar el pull request», y pedir otro lanzamiento desde `next` lo empeora—.
  */
 function paseAtendido(v) {
   return !!v && (v.veredicto === 'paso' || v.motivo === 'resultado-de-otro-lanzamiento');

@@ -5,7 +5,7 @@
 > meta-audit, convergencia, checklist-manual prohibido), no checks de cobertura
 > AC↔código. Vivían dentro del advisor más pesado del hot path del Step 5
 > (~30KB releídos en CADA iteración) aunque solo aplican 1 vez, al transicionar
-> a `review`/`done`. Ahora el ORQUESTADOR (tycon-pipeline, en «Probar en vivo» y «Preparar el commit») lee
+> a `review`/`done`. Ahora el ORQUESTADOR (tycon-pipeline, en «Probar en vivo» y «Preparar el pull request») lee
 > este doc on-demand en el cierre; el advisor conserva C1/C2/C3/C5/C4/W1/W2.
 >
 > Los rule IDs NO cambian (ACCOV-C7..C10) — el catálogo y los reportes los citan igual.

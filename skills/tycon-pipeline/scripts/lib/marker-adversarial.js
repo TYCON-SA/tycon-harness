@@ -247,7 +247,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
 // variable): `next` no tiene los archivos del cambio y no recalcula el portón, lee esto.
 //
 // 🔴 Va en un campo PROPIO, `adversarialGate`, nunca dentro de `marker.adversarial`: para el salteo, el freno del
-// «Preparar el commit», `next` y el paso de revisores, `adversarial` significa «lanzado» (con él, `mark-adversarial-skipped` se niega).
+// «Preparar el pull request», `next` y el paso de revisores, `adversarial` significa «lanzado» (con él, `mark-adversarial-skipped` se niega).
 //
 // El temprano apagado (`TYCON_5B_EARLY=0`) se lee del entorno de UN comando, y en una sesión de agente el entorno no
 // pasa de un comando al siguiente (un `next` suelto no lleva la variable que tuvo el comando anterior).

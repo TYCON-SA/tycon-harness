@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // matrix-by-batch.test.js — en una historia paraguas, la ejecución de una tanda anota su tanda (`marker.js set-batch`)
-// y «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. El control del commit mide todas al
+// y «Preparar el pull request» le pide la evidencia en vivo de esa tanda, no la de todas. El control del commit mide todas al
 // pasar la historia a review, y al cerrar una tanda mide la que se cierra (la matriz y la Capa 5). El commit que estrena
 // el bloque de tandas con una ya hecha mide ésa sola, con su evidencia.
 //
@@ -98,7 +98,7 @@ function entorno() {
   return { home, repo, story, git, correr, leer, escribir, activo, arrancar, humo, dir };
 }
 
-// Lleva la ejecución hasta «Preparar el commit», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
+// Lleva la ejecución hasta «Preparar el pull request», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
 const HECHOS = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check'];
 function hastaPrepararElCommit(E, sid) {
   const m = E.leer(sid);
@@ -612,7 +612,7 @@ test('T8 Matrix_Batch_CrossRepoPaths_Match @story-8.240 @ac-5 — historia en un
     const r = rm.compute({ storyPath: E.story, batch: A, changed: ['src/b.js'], codeRepo: C });
     assert.deepStrictEqual(r.returnedAcs, [2], `${renglon}: ${JSON.stringify(r.structuralError || r.warnings)}`);
   }
-  // un marcador cuyo repo del código es C: «Preparar el commit» toma la lista de C
+  // un marcador cuyo repo del código es C: «Preparar el pull request» toma la lista de C
   fs.writeFileSync(E.story, historia({ archivos: ['  - src/b.js  # tanda B'] }));
   E.git('commit', '-qam', 'la historia con el archivo de C');
   E.arrancar('s-a8');
@@ -842,7 +842,7 @@ test('T19 RuntimeWaiver_Terminal_ForSession_ReadsBatch @story-8.240 @ac-12 — l
   }
   // el rechazo por las otras tandas nombra --for-session con la sesión de la corrida
   assert.match(String(wd.pistaDeSesion({ stateDir: E.dir(), storyPath: E.story })), /--for-session s-a19/);
-  // «Preparar el commit» con la matriz roja por el criterio de la tanda: el comando de la firma lleva la sesión
+  // «Preparar el pull request» con la matriz roja por el criterio de la tanda: el comando de la firma lleva la sesión
   hastaPrepararElCommit(E, 's-a19');
   const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a19');
   assert.match(salida(r), MATRIZ_ROJA, salida(r));

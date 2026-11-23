@@ -239,7 +239,7 @@ test('T4 Adversarial_ResultCarriesLaunchedTree @story-8.161 @ac-3 — el resulta
   assert.ok((C.marcador().adversarialPasses || []).length === 1, 'lo guarda');
 });
 
-// «Preparar el commit» hasta el freno de lo revisado: los pasos de antes, por fuera del orden
+// «Preparar el pull request» hasta el freno de lo revisado: los pasos de antes, por fuera del orden
 const prepararCommit = (C) => C.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order']);
 const MISMATCH = /lo que se guarda no es lo revisado/;
 
@@ -1043,7 +1043,7 @@ test('T2 ReviewersRound_BloqueSubidoSobreComentario_NoPideVuelta @story-8.217 @a
   try { assert.strictEqual(require(path.join(SCRIPTS, 'lib', 'steps.js')).otraVueltaDe(C.marcador()), null); } finally { process.env.HOME = antes; }
 });
 
-test('T3 ReviewedTree_ComentarioMovido_NoFrenaYLoDice @story-8.217 @ac-2 — «Preparar el commit» sigue y lo anota', () => {
+test('T3 ReviewedTree_ComentarioMovido_NoFrenaYLoDice @story-8.217 @ac-2 — «Preparar el pull request» sigue y lo anota', () => {
   const C = corridaRevisada('s-ft-8217-t3');
   C.editar('src/a.js', A_MOVIDO);
   const r = prepararCommit(C);
@@ -1232,7 +1232,7 @@ test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide 
   assert.match(salida(v2.r), /repens|nota/i);
 });
 
-test('T80e ReviewedTree_ComentarioCambiado_NoFrena_TextoSi: «Preparar el commit» perdona un comentario cambiado y frena un texto', () => {
+test('T80e ReviewedTree_ComentarioCambiado_NoFrena_TextoSi: «Preparar el pull request» perdona un comentario cambiado y frena un texto', () => {
   const C = corridaRevisada('s-ft-80e');
   C.editar('src/a.js', A_REVISADO.replace('la suma de los dos', 'la suma de a y b'), { evento: false });
   const r = prepararCommit(C);

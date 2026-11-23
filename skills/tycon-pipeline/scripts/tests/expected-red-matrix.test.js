@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // expected-red-matrix.test.js — una ejecución que la persona cerró en deuda por criterios sin evidencia en vivo llega al
-// commit sólo por esos criterios: el control de la matriz al preparar el commit (DODRT-C6) acepta el rojo esperado de
+// commit sólo por esos criterios: el control de la matriz al preparar el pull request (DODRT-C6) acepta el rojo esperado de
 // `acmatrix` cuando cada criterio sin correr está cubierto por la lista de pruebas del rojo esperado, con una fecha de
 // vencimiento de hasta 14 días desde el cierre en deuda. `expect-red acmatrix` pide su propia firma, atada a la lista y la
 // fecha que mostró la ventana. Vencida, el aviso de arranque lo dice.
@@ -121,7 +121,7 @@ function entorno(opciones = {}) {
   return { home, repo, story, git, correr, leer, escribir, activo, arrancar, humo, dir, gates, firmar };
 }
 
-// Lleva la ejecución hasta «Preparar el commit», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
+// Lleva la ejecución hasta «Preparar el pull request», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
 const HECHOS = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check'];
 function hastaPrepararElCommit(E, sid, extra = {}) {
   const m = E.leer(sid);

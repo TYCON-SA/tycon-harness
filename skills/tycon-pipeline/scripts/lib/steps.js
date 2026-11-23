@@ -296,7 +296,7 @@ function nombresDeArchivos(absolutos, marker) {
  * Lo ya anotado en `otraVuelta` del marcador después del mismo cierre de los revisores se conserva: `fileEvents` se
  * recorta a 500 y un cambio viejo no se pierde por eso.
  *
- * `aunConHallazgos`: decide también con Hallazgos abierto. Lo usa el freno de «Preparar el commit»: un arreglo hecho
+ * `aunConHallazgos`: decide también con Hallazgos abierto. Lo usa el freno de «Preparar el pull request»: un arreglo hecho
  * después de los revisores pide la vuelta aunque Hallazgos no se haya cerrado; `next` espera a que cierre.
  *
  * Lo que cambió adentro de cada archivo lo decide lib/frozen-tree.js contra el sello de la última vuelta cerrada, con la
@@ -367,7 +367,7 @@ function otraVueltaDe(marker) {
 }
 
 /**
- * ¿Hay que volver a «Preparar el commit»? Sí, si estaba hecho y los revisores cerraron después: lo que preparó ya no es
+ * ¿Hay que volver a «Preparar el pull request»? Sí, si estaba hecho y los revisores cerraron después: lo que preparó ya no es
  * lo revisado. Compara dos horas del marcador; el cartel tiene una copia de esta regla (mods/harness-mods/hooks/run.mjs)
  * y la prueba de igualdad de harness-mods.test.js frena si se separan.
  */

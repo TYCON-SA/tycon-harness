@@ -80,7 +80,7 @@ function leerMarcador(stateDir, sessionId) {
 }
 
 /**
- * La matriz de una firma: la de «Preparar el commit» (la tanda, la lista de cambios y el repo del código del marcador),
+ * La matriz de una firma: la de «Preparar el pull request» (la tanda, la lista de cambios y el repo del código del marcador),
  * para que los criterios sin correr de las otras tandas no nieguen la firma de uno de la tanda. La tanda vale sólo si el
  * marcador es de esa misma historia; con el de otra, o sin marcador, mide todas.
  */

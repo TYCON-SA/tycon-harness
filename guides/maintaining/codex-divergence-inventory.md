@@ -399,7 +399,7 @@ reporte. Casos: `skills/tycon-pipeline/scripts/tests/codex-reviewers.test.js`.
 evento de cierre (las dos herramientas lo mandan), los `.md` escritos del registro de ediciones y del marcador, y el
 modelo del implementador del marcador (`start --session-model`); la conversación sólo suma. Sin nada de eso: «no
 medido», nunca un veredicto inventado. Al cerrar el turno, si el mensaje afirma un cierre y el marcador tiene pasos
-abiertos, sale una línea que los nombra (aviso; el freno sigue siendo el de «Preparar el commit»). Casos:
+abiertos, sale una línea que los nombra (aviso; el freno sigue siendo el de «Preparar el pull request»). Casos:
 `skills/tycon-pipeline/scripts/tests/closing-evidence-codex.test.js`.
 
 **Lo que no cubre, dicho**: una historia escrita por la terminal no va al registro de ediciones; pasa sólo si el mensaje
