@@ -3449,18 +3449,22 @@ function fullSessionName(home, sid, opts = {}) {
   return unreadable ? { problem: unreadable } : null;
 }
 
+// el nombre de `close` y `stop` se busca exacto entre las sesiones que hay, y nunca va a un comando: alcanza con que sea
+// una sola línea. La persona nombra sus sesiones con espacios («Coordinadora DemoTack»), y status las lista así
+const NOMBRE_BUSCADO_RE = /^[^\u0000-\u001f\u007f]{1,200}$/;
+
 /**
  * La sesión de `--name` para `close` y `stop`, con la regla de quién la puede tocar: la coordinadora designada o una
- * persona en su terminal, nunca otra sesión ni ella misma. Entre las del mismo nombre cuenta la única viva; sin vivas,
- * la única que haya. `w` trae las palabras del comando (`cmd`, `inf`, `hecho`, `tercera`, `reflexivo`).
- * `{ error }` o `{ home, sid, s, sessions }`.
+ * persona en su terminal, nunca otra sesión ni ella misma. `--name` es su nombre exacto, como lo lista status (con
+ * espacios si los tiene), o su id. Entre las del mismo nombre cuenta la única viva; sin vivas, la única que haya. `w` trae
+ * las palabras del comando (`cmd`, `inf`, `hecho`, `tercera`, `reflexivo`). `{ error }` o `{ home, sid, s, sessions }`.
  */
 function namedSession(opts, w) {
   const home = opts.home || require('os').homedir();
   const env = opts.env || process.env;
   const name = opts.name;
   const nada = `no ${w.hecho} nada.`;
-  if (!name || !NAME_RE.test(String(name))) return { error: `${w.cmd} va con --name <el nombre de la sesión>: ${nada}` };
+  if (typeof name !== 'string' || !name.trim() || !NOMBRE_BUSCADO_RE.test(name)) return { error: `${w.cmd} va con --name <el nombre de la sesión, o su id>: ${nada}` };
   if (isCodex(env) && !opts.launcher) return { error: `Codex no tiene sesiones de fondo que ${w.inf}: ${nada}` };
   // el nombre lo escribe la coordinadora o una persona en su terminal: una sesión de trabajo no toca a otra
   const caller = sessionOf({ ...opts, env });
@@ -3474,7 +3478,9 @@ function namedSession(opts, w) {
   // que anotó la sesión, porque dos nombres que empiezan igual quedan iguales en la lista
   const listed = listedName(name);
   const found = [];
-  for (const [sid, s] of sessions.entries()) {
+  // por su id: la sesión de ese id, sin mirar nombres
+  if (sessions.has(name)) found.push([name, sessions.get(name)]);
+  else for (const [sid, s] of sessions.entries()) {
     if (s.name !== listed) continue;
     if (listed === name) { found.push([sid, s]); continue; }
     const full = fullSessionName(home, sid, opts);

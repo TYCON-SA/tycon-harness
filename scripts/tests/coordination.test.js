@@ -1457,6 +1457,26 @@ test('Close_LauncherFails: si no se puede parar no se borra, y sin id de fondo n
 
 const stopIt = (t, name, extra = {}) => C.stop({ ...t.closeOpts, name, ...extra, launcher: extra.launcher || closer(t) });
 
+// 🔴 Falla con: `close --name` y `stop --name` piden la forma de los nombres que abre la coordinadora, y una sesión que la
+// persona nombró con espacios («Coordinadora DemoTack», como la lista status) no se puede cerrar ni parar sin /rename.
+test('Fila158_CloseStop_NombreConEspaciosOElId: el nombre exacto de la sesión, con espacios, o su id', () => {
+  const t = closeLab();
+  session(t, 'sid-con-espacios', 'Coordinadora DemoTack', { cwd: t.repo, kind: 'bg', jobId: 'job-espacios', startedAt: 1000 });
+  const r = closeIt(t, 'Coordinadora DemoTack');
+  assert.strictEqual(r.ok, true, r.message);
+  assert.deepStrictEqual(closed(t), ['stop job-espacios', 'rm job-espacios']);
+  // por el id de la sesión
+  const u = closeLab();
+  session(u, 'sid-por-id', 'Otra con espacios', { cwd: u.repo, kind: 'bg', jobId: 'job-por-id', startedAt: 1000, status: 'busy' });
+  const s = stopIt(u, 'sid-por-id');
+  assert.strictEqual(s.ok, true, s.message);
+  assert.deepStrictEqual(closed(u), ['stop job-por-id']);
+  // un nombre de varias líneas, vacío o sólo espacios no busca nada
+  for (const malo of ['dos\nlineas', '', '   ']) assert.match(stopIt(u, malo).message, /va con --name/);
+  // un nombre que no es de ninguna sesión sigue sin tocar nada
+  assert.match(closeIt(u, 'Nadie se llama así').message, /No encuentro la sesión «Nadie se llama así»/);
+});
+
 test('T7 Stop_PorNombre_ParaConElId @story-8.284 @ac-14: para con el id que anotó la sesión, sin mirar si quedó limpia y sin borrar', () => {
   const t = closeLab();
   bg(t, 'parable', t.repo, { status: 'busy' });
