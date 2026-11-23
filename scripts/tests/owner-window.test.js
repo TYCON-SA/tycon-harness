@@ -461,6 +461,29 @@ test('OwnerWindow_RuntimeWaiver_ConAcs_DiceLosSinCorrer', (t) => {
   }
 });
 
+// 🔴 Falla con: la ejecución en deuda cuyo rojo esperado vigente cubre el criterio sin correr, y la ventana que niega
+//    con «hay criterios SIN CORRER» cuando el guion no lo cuenta (no frena) y dice que no es un criterio pendiente.
+test('OwnerWindow_RuntimeWaiver_ConAcs_EnDeudaCuentaComoElGuion', (t) => {
+  const { repo, story } = historiaConCriterio(t);
+  const fila = '| T1 | `Aviso_QuedaRegistrado` | 1 | unit | x | y |';
+  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace(fila, `${fila}\n| T2 | \`Pantalla_SeVe\` | 2 | unit | x | y |`));
+  const enDeuda = (until) => {
+    const casa = casaNueva(t);
+    fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.91', storyPath: story, repoPath: repo,
+      cierre: { estado: 'deuda', deuda: 'D-1' }, checks: { acmatrix: 'rojo-esperado:exit=1' }, expectedRed: { acmatrix: { tests: ['T2'], deuda: 'D-1', until } } }));
+    return pedir(casa, `node ${MARKER} runtime-waiver ${story} --acs 2`);
+  };
+  // vigente: el AC 2 lo cubre la deuda, y el motivo es el del guion
+  let r = enDeuda('2099-12-31');
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /el AC 2 no es un criterio pendiente de firma/, r.texto);
+  assert.doesNotMatch(r.texto, /SIN CORRER/, r.texto);
+  // vencida: frena como siempre
+  r = enDeuda('2020-01-01');
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #2\. Los corre el agente/, r.texto);
+});
+
 test('OwnerWindow_RuntimeWaiver_PasaPorLaVentana (T16)', (t) => {
   const { repo, story } = historiaConCriterio(t);
   // la ventana muestra cada criterio con su texto, por qué no se prueba en vivo y qué lo cubre: no sólo el número

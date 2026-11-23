@@ -847,7 +847,11 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
       const mm = m || (sesion ? marcadorEn(path.join(stateDir(casa), 'active', `${sesion}.json`)) : null);
       if (mm && wd.esLaDelMarcador(abs, mm)) {
         const firma = wd.matrixForSignature(abs, mm);
-        if (!firma.structuralError) sinCorrer = firma.notRun || [];
+        // en deuda, los que cubre su rojo esperado vigente no frenan la exención: la misma cuenta del guion
+        if (!firma.structuralError) {
+          sinCorrer = mm.cierre && mm.cierre.estado === 'deuda'
+            ? require(path.join(LIB, 'marker-signatures.js')).sinCorrerFueraDeLaDeuda(mm, firma) : (firma.notRun || []);
+        }
       }
     } catch (_) { /* sin marcador legible queda la matriz entera: el motivo sigue siendo cierto */ }
   }
