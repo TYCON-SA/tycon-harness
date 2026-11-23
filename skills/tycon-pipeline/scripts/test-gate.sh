@@ -432,11 +432,30 @@ correr_partes() {
   rm -f "$OUT_FILE"
   echo "[test-gate] la story toca ${partes//,/, }: corre cada proyecto" >&2
   IFS=',' read -r -a _lista <<< "$partes"
+  # Una parte que ya dio verde en esta story y en la que nada cambió desde entonces conserva ese verde y no corre
+  # (lib/part-keep.js dice cuándo: nunca una de navegador, nunca sin story). TYCON_TEST_GATE_ALL_PARTS=1 corre todas.
+  local rama huella despues motivo kept
+  rama="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   for scope in "${_lista[@]}"; do
     [[ -z "$scope" ]] && continue
     out="$OUT_DIR/tests-result.part-${scope//\//_}.json"
-    hrc=0
-    TYCON_TEST_GATE_PART=1 TYCON_TEST_GATE_OUT_FILE="$out" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$REPO" "${story_abs:-$STORY_ARG}" "$scope" < /dev/null || hrc=$?
+    hrc=0; kept=0
+    huella="$(node "$SCRIPT_DIR/lib/part-keep.js" fingerprint --repo "$REPO" --scope "$scope" --scopes "$partes" --story-file "${story_abs:-$STORY_ARG}" < /dev/null)" || huella=""
+    if [[ -n "$huella" && "${TYCON_TEST_GATE_ALL_PARTS:-}" != "1" ]] \
+      && motivo="$(node "$SCRIPT_DIR/lib/part-keep.js" decide --previous "$out" --current "$huella" --story "$STORY_ID" --branch "$rama" < /dev/null)"; then
+      kept=1
+      echo "[test-gate] parte $scope: conservo su verde ($motivo)" >&2
+    else
+      [[ -n "$huella" && -n "${motivo:-}" ]] && echo "[test-gate] parte $scope: corre ($motivo)" >&2
+      TYCON_TEST_GATE_PART=1 TYCON_TEST_GATE_OUT_FILE="$out" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$REPO" "${story_abs:-$STORY_ARG}" "$scope" < /dev/null || hrc=$?
+      # con un verde se anota la huella de después de correr (con lo que la herramienta escribió en lo ignorado, como
+      # bin/), sólo si lo versionado no cambió mientras corría: con eso el próximo arreglo sabe si esta parte cambió
+      if [[ "$hrc" == "0" && -n "$huella" ]]; then
+        despues="$(node "$SCRIPT_DIR/lib/part-keep.js" fingerprint --repo "$REPO" --scope "$scope" --scopes "$partes" --story-file "${story_abs:-$STORY_ARG}" < /dev/null)" || despues=""
+        node "$SCRIPT_DIR/lib/part-keep.js" stamp --artifact "$out" --before "$huella" --current "$despues" --story "$STORY_ID" --branch "$rama" < /dev/null || true
+      fi
+    fi
+    motivo=""
     # 75: otra corrida de las pruebas está en marcha en este repo; no se juntan partes ni se corren hermanos
     if [[ "$hrc" == "75" ]]; then
       TG_NO_COMPANIONS="otra corrida de las pruebas está en marcha en este repo"
@@ -449,7 +468,7 @@ correr_partes() {
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$out"; then hrc=1; fi
     # 78: la parte espera a main (lib/main-check.js); su espera quedó anotada, sumada a la de las otras partes
     [[ "$hrc" == "78" ]] && echo "🟡 [test-gate] la parte $scope espera a main" >&2
-    filas+="${scope}"$'\x1f'"${hrc}"$'\n'
+    filas+="${scope}"$'\x1f'"${hrc}"$'\x1f'"${kept}"$'\n'
     # un rojo de verdad gana sobre la espera a main (78), ésta sobre «sin acotar» (7), y éste sobre verde
     final="$(combinar_salida "$final" "$hrc")"
   done
@@ -460,10 +479,12 @@ correr_partes() {
     // la carpeta viaja como argumento propio, no dentro de las filas: el bash de Git en Windows convierte una ruta
     // suelta a la forma que lee node, y una ruta pegada a otros campos no
     const parts = filas.split("\n").filter(Boolean).map((l) => {
-      const [scope, exit] = l.split("\x1f");
+      const [scope, exit, kept] = l.split("\x1f");
       const file = p.join(dir, `tests-result.part-${scope.replace(/\//g, "_")}.json`);
       let a = null; try { a = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_e) { a = null; }
-      return { scope, exit: Number(exit), green: Number(exit) === 0, runner: a ? a.runner : null, totals: a ? a.totals : {}, artifact: file };
+      // una parte conservada no corrió: su artefacto es el de su verde, y se dice de cuándo
+      const conservada = kept === "1" ? { kept: true, kept_from: a ? a.ts : null } : {};
+      return { scope, exit: Number(exit), green: Number(exit) === 0, runner: a ? a.runner : null, totals: a ? a.totals : {}, artifact: file, ...conservada };
     });
     const suma = (k) => parts.reduce((n, x) => n + (Number.isFinite(x.totals && x.totals[k]) ? x.totals[k] : 0), 0);
     // cero pruebas corridas entre todas las partes no es verde (salida 6), como en una corrida de un solo proyecto
