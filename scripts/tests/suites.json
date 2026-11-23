@@ -674,6 +674,12 @@
       "requiere": []
     },
     {
+      "__nota": "marker.js review-answer: «skip» y «wait» a la pregunta del plan o del código sólo con el click del dueño (o su terminal), de punta a punta con el freno y el guion; sin él, con la ventana, la delegación o el click de otro pedido no se anota; «review» sí, sin firma.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/review-answer-owner-click.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",

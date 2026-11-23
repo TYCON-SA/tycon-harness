@@ -102,12 +102,14 @@ const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', '..', '
 
 /** Con `--for-session` a otra sesión: el subcomando tiene que ser una firma que se corre así; si no, sale 2 sin escribir. */
 function paraOtraSesion(argv) {
-  // la revisión automática del plan y la respuesta a la pregunta de revisar no son firmas: entran por su camino
-  // (cmdPlanReview, cmdReviewAnswer) y no escriben el marcador destino (sólo su constancia o su renglón). Sin
-  // --for-session, la propia sesión prepara la revisión de su plan (aprueba una rutina con `review`; si no, sólo informa);
-  // para otra sesión, la designada (lo mira el camino de cada una)
+  // la revisión automática del plan y la respuesta a la pregunta de revisar entran por su camino (cmdPlanReview,
+  // cmdReviewAnswer) y no escriben el marcador destino (sólo su constancia o su renglón). Sin --for-session, la propia
+  // sesión prepara la revisión de su plan (aprueba una rutina con `review`; si no, sólo informa); para otra sesión, la
+  // designada (lo mira el camino de cada una). «skip» y «wait» a la pregunta de revisar piden su firma en cmdReviewAnswer, y
+  // la terminal del dueño, sin sesión, contesta por la que nombra (`--terminal --for-session <D>`)
   if (argv[2] === 'plan-review' || argv[2] === 'review-answer' || argv[2] === 'review-ask' || argv[2] === 'owner-away') {
-    if (PROPIA === '_nosession') {
+    const terminalDelDueno = argv[2] === 'review-answer' && argv.includes('--terminal') && !!PEDIDA;
+    if (PROPIA === '_nosession' && !terminalDelDueno) {
       console.error(`🔒 marker.js ${argv[2]}: hace falta la sesión que lo pide (CLAUDE_CODE_SESSION_ID). No se escribió nada.`);
       process.exit(2);
     }

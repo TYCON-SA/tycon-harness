@@ -180,6 +180,8 @@ const CALCULADAS = {
   'skills/tycon-pipeline/scripts/lib/marker-signatures.js::cmdApprovePending': { firmas: ['pending-approval'] },
   'skills/tycon-pipeline/scripts/lib/marker-sessions.js::cmdSalidaPerdida': { firmas: ['lost-run', 'lost-run:particion'] },
   'skills/tycon-pipeline/scripts/lib/marker-signatures.js::cmdSignAdversarialSkip': { firmas: ['adversarial-skip'] },
+  // «skip» y «wait» a la pregunta de revisar: la firma de la pregunta, sólo el click del dueño o su terminal
+  'skills/tycon-pipeline/scripts/lib/marker-signatures.js::cmdReviewAnswer': { firmas: ['plan-review-answer', 'code-review-answer'] },
   'skills/tycon-pipeline/scripts/lib/adversarial-skip.js::firmarSalteo': { firmas: ['adversarial-skip'] },
   'scripts/ci/run-base-controls.sh::approveByWindow': { firmas: ['refresh-after-main', 'control-change'] },
 };
