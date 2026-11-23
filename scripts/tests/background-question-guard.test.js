@@ -288,7 +288,8 @@ test('T10 FirmaEnLanzada_TextoALaCoordinadora @story-8.211 @ac-12', (t) => {
   const lanzada = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, false, coord);
   assert.match(lanzada.texto, /SendMessage/);
   assert.match(lanzada.texto, /Coordinadora/);
-  assert.match(lanzada.texto, new RegExp(cuadro.pregunta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  // sin la lista, la pregunta no viaja para que la copien (fila 149): la firma va a la terminal
+  assert.doesNotMatch(lanzada.texto, new RegExp(cuadro.pregunta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(lanzada.texto, /mostrale AskUserQuestion/);
   const anotada = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, true, coord);
   assert.match(anotada.texto, /ya quedó anotado/);
@@ -622,4 +623,65 @@ test('T26 BgGuard_LoQueQuedabaDeLaVuelta2 @story-8.232 @ac-9 @ac-12', (t) => {
   assert.ok(r && r.decision === 'deny', JSON.stringify(r));
   SL.sesiones = () => { throw new Error('sin sesiones'); };
   assert.strictEqual(decidir(maquinaConOtra(t), mensaje(OTRA)), null);
+});
+
+const literal = (s) => new RegExp(String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+// 🔴 Falla con: sin la lista de firmas, el freno le pide a la sesión que la coordinadora abrió mandarle «esta pregunta
+//    exacta» para que la copie en su cuadro. Copiada por dos agentes no queda igual, y el click del dueño no vale.
+test('T30 FirmaEnLanzada_SinLista_NoPideCopiarLaPregunta @fila-149', () => {
+  const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', detalle: 'la cita: «x»', siSaleMal: 'se rehace', huella: 'abcd1234' });
+  const coord = { name: 'Coordinadora', sid: COORD };
+  const r = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, false, coord, 'la lista de firmas está apagada en esta máquina');
+  assert.doesNotMatch(r.texto, literal(cuadro.pregunta), 'no trae la pregunta para copiarla');
+  assert.doesNotMatch(r.texto, /sin cambiarle una letra|pregunta exacta/);
+  // dice por qué no le llega a la coordinadora, le avisa a ella y da la terminal
+  assert.match(r.texto, /la lista de firmas está apagada en esta máquina/);
+  assert.match(r.texto, /SendMessage/);
+  assert.match(r.texto, /Coordinadora/);
+  assert.match(r.texto, /--terminal/);
+  // varias firmas: tampoco se manda la pregunta de cada una
+  const varias = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval', 'save'], 's', cuadro, true, false, coord, 'la lista de firmas está apagada en esta máquina');
+  assert.doesNotMatch(varias.texto, /se la mandás|la pregunta de cada una/);
+});
+
+// 🔴 Falla con: la sesión repite el comando antes de que el dueño firme (el caso del 23/11 a las 15:50), y el freno lo
+//    compara contra un click viejo y le dice que muestre la pregunta otra vez.
+test('T31 FirmaEnLanzada_NoRepetirAntesDelAviso @fila-149', () => {
+  const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', detalle: 'la cita: «x»', siSaleMal: 'se rehace', huella: 'abcd1234' });
+  const coord = { name: 'Coordinadora', sid: COORD };
+  const sinLista = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, false, coord, 'la lista de firmas está apagada en esta máquina');
+  assert.match(sinLista.texto, /No repitas el comando hasta que/);
+  const anotada = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, true, coord);
+  assert.match(anotada.texto, /No repitas el comando hasta que/);
+  // un click a otra pregunta no manda a mostrarla de nuevo: el motivo dice sólo que el click fue a otra
+  const otra = `${cuadro.pregunta} (la de antes)`;
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'bg-question-click-'));
+  try {
+    const dir = path.join(casa, '.claude', 'projects', '-r');
+    fs.mkdirSync(dir, { recursive: true });
+    const ts = '2026-11-04T23:10:00.000Z';
+    const ruta = path.join(dir, 's.jsonl');
+    fs.writeFileSync(ruta, [
+      { type: 'assistant', timestamp: ts, message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_x', name: 'AskUserQuestion', input: { questions: [{ question: otra }] } }] } },
+      { type: 'user', timestamp: ts, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_x', content: 'ok' }] },
+        toolUseResult: { questions: [{ question: otra, options: cuadro.opciones.map((label) => ({ label })) }], answers: { [otra]: oa.APRUEBA } },
+        permissionDecision: { decision: 'accept', source: 'user_temporary' } },
+    ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const v = oa.clickEnLaTranscripcion(ruta, { tool_use_id: 'toolu_x', ts, sesion: 's', pregunta: otra, respuesta: oa.APRUEBA },
+      { pregunta: cuadro.pregunta, opciones: cuadro.opciones, sello: cuadro.sello, casa });
+    assert.strictEqual(v.ok, false);
+    assert.match(v.motivo, /no es la que armó el guion/);
+    assert.doesNotMatch(v.motivo, /mostrala/);
+  } finally { fs.rmSync(casa, { recursive: true, force: true }); }
+});
+
+// 🔴 Falla con: el freno no sabe decir por qué el pedido no llega a la lista de la coordinadora (la lista apagada en la
+//    máquina, o prendida sin una coordinadora confirmada y viva).
+test('T32 PorQueSinLista_ApagadaOSinCoordinadora @fila-149', (t) => {
+  const toy = maquina(t);
+  assert.match(ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes }), /apagada.*approvals\.signature_list/);
+  fs.writeFileSync(path.join(toy.arnes, 'team-profile.json'), JSON.stringify({ approvals: { ...PERFIL.approvals, signature_list: 'on' } }));
+  assert.match(ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes }), /coordinadora/);
+  assert.doesNotMatch(ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes }), /apagada/);
 });

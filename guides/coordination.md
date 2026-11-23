@@ -513,6 +513,10 @@ probarla.
 - **Cómo se pasan, con coordinadora.** Si está confirmada y viva, pasa todas ella. La sesión de fondo no muestra el cuadro ni
   manda mensajes: el freno le dice que espere el aviso. Cuando la persona escribe, a la coordinadora le llega un aviso: que
   conteste lo que escribió y corra `coordination.js owner-next`.
+- **Sin la lista, con coordinadora.** La sesión de fondo no le manda la pregunta para que la copie: copiada a mano no
+  queda igual y el click no vale. El freno dice por qué el pedido no le llega a su lista (la lista apagada, o sin una
+  coordinadora confirmada y viva) y da el comando de la terminal. La sesión le avisa qué se decide y ese comando, y no
+  repite el suyo hasta que ella le avise que el dueño firmó.
 - **Cómo se pasan, sin coordinadora.** Le llega el mismo aviso a la sesión destino, una vez por renglón, y ella corre
   `owner-next`. Si la persona ya contestó «aprobado» a ese cuadro, no se pregunta de nuevo.
 - **Qué da `owner-next`.** Un renglón, el más viejo: un cuadro para mostrar sin cambiarle una letra, con un rótulo («Firma 2/5»),

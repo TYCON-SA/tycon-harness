@@ -519,6 +519,10 @@ turned on in the profile, or on the machine to try it out.
 - **How they go through, with a coordinator.** If the coordinator is confirmed and alive, it passes them all. The background
   session does not show the box or send messages: the brake tells it to wait for the notice. When the person writes, the
   coordinator gets a notice: answer what the person wrote and run `coordination.js owner-next`.
+- **Without the list, with a coordinator.** The background session does not send the coordinator the question to copy:
+  copied by hand it does not stay the same, and the click does not count. The brake says why the request does not reach
+  her list (the list is off, or there is no confirmed, live coordinator) and gives the terminal command. The session tells
+  her what is being decided and that command, and does not repeat its command until she says the owner signed.
 - **How they go through, without a coordinator.** The target session gets the same notice, once per row, and runs `owner-next`.
   If the person already answered «aprobado» to that box, it does not ask again.
 - **What `owner-next` gives.** One row, the oldest: a box to show without changing a letter, with a label («Firma 2/5»), and the
