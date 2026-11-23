@@ -6578,12 +6578,8 @@ function paraOtraSesion(cmd, args, argv) {
   return null;
 }
 
-// ¿La vuelta extra es una firma de trámite? Lo es si el perfil del equipo la lista en `approvals.delegated_signing`
-// (scripts/lib/automatic-signing.js): la da el arnés solo, sin ventana ni cuadro, y el cartel no puede decir que la
-// aprueba una persona. Sin poder leer el perfil, no lo es.
-function vueltaExtraDeTramite() {
-  return require('./lib/review-rounds.js').vueltaExtraDeTramite();
-}
+// ¿La vuelta extra es una firma de trámite? La misma respuesta que el cartel del cierre (lib/review-rounds.js).
+const vueltaExtraDeTramite = () => require('./lib/review-rounds.js').vueltaExtraDeTramite();
 
 // El tope de vueltas de revisores (lib/review-rounds.js): null si la vuelta `iter` puede servirse, o el mensaje llano de
 // por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona (una vuelta extra con su
@@ -6668,7 +6664,6 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     if (tramite) {
       renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round. Es una firma de trámite del perfil del equipo');
       renglones.push('       (approvals.delegated_signing): la da el arnés solo, sin ventana ni cuadro; no la firma una persona.');
-      renglones.push('       Para la vuelta no hace falta una persona: corré vos el mismo comando con --extra-round, desde esta sesión.');
     } else {
       renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y la persona lo aprueba en la ventana de permiso');
       renglones.push('       (o lo corre en su terminal con --terminal); si el perfil del equipo la delega, la sesión designada lo corre con');

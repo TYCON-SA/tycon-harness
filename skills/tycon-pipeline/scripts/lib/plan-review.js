@@ -929,6 +929,41 @@ function lineaDelCuadroSola({ estado, destino, marker, config }) {
 }
 
 /**
+ * Lo que la aprobación del plan de una corrida mide ahora: su plan, su historia, su parte y si es delicada (risk-class,
+ * `computeDelicate`). Con la historia ilegible, delicada. Lo usan `antesDeAprobar` y `planParaDelegar`: el desvío a la
+ * coordinadora y owner-next miden igual que la firma.
+ */
+function medirElPlan(marker) {
+  const plan = planDe(marker);
+  const storyFile = storyDe(marker);
+  let storyTexto = null;
+  try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
+  const parte = parteDe(marker, storyTexto);
+  const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parte) });
+  return { plan, storyFile, storyTexto, parte, delicate };
+}
+
+const PLAN_DE_UNA_PERSONA = 'el plan de una historia delicada lo aprueba una persona';
+
+/**
+ * ¿El plan de la sesión `destino` (o su maqueta, que se firma como el plan) puede ir a la coordinadora por delegación?
+ * null si su historia es de rutina; `{ codigo: 2, motivo }` si es delicada o si no se puede saber (sin marcador, con el
+ * marcador o el plan ilegibles, con la historia ilegible): entonces lo aprueba una persona, como en `antesDeAprobar`.
+ * Lo preguntan el desvío y owner-next antes de ofrecerle la firma (scripts/lib/delegation-routing.js `deUnaPersona`).
+ */
+function planParaDelegar({ estado, destino } = {}) {
+  const sinSaber = (por) => no(`${PLAN_DE_UNA_PERSONA}, y no sé si ésta lo es: ${por}`);
+  if (!estado || !SESION.test(String(destino || ''))) return sinSaber('no sé de qué sesión es el plan');
+  let marker;
+  try { marker = marcadorDe(estado, String(destino)); } catch (e) { return sinSaber(e.message); }
+  if (!marker || marker.storyId == null) return sinSaber(`la sesión ${destino} no tiene una ejecución abierta`);
+  let m;
+  try { m = medirElPlan(marker); } catch (e) { return sinSaber(`no pude medir su historia (${e.message})`); }
+  if (m.plan.error) return sinSaber(`no pude leer su plan (${m.plan.error})`);
+  return m.delicate.value ? no(`${PLAN_DE_UNA_PERSONA} (${m.delicate.reason})`) : null;
+}
+
+/**
  * Las condiciones de la aprobación del plan sin persona (la delegación, la firma de trámite, «hecho y avisado», la
  * revisión de la propia sesión): `{ codigo: 2, motivo }` para no firmar (el pedido no se gasta), o
  * `{ codigo: 0, via: 'revision', constancia }`. Primero si la story es delicada: entonces no, nunca, diga lo que diga el
@@ -937,12 +972,7 @@ function lineaDelCuadroSola({ estado, destino, marker, config }) {
  * freno de la firma.
  */
 function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion, home }) {
-  const plan = planDe(marker);
-  const storyFile = storyDe(marker);
-  let storyTexto = null;
-  try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
-  const parte = parteDe(marker, storyTexto);
-  const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parte) });
+  const { plan, storyTexto, parte, delicate } = medirElPlan(marker);
   // un plan delicado lo aprueba una persona, con su click o su «aprobado» (o en su terminal): ni la revisión de la propia
   // sesión, ni la coordinadora por delegación, ni el arnés como trámite. El perfil no lo cambia: `plan-approval:delicada`
   // en approvals.delegated_signing no lo vuelve trámite ni lo delega
@@ -1225,7 +1255,7 @@ function guardarUso(estado, lanza, destino) {
 
 module.exports = {
   rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
-  ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
+  ultimaDelDestino, antesDeAprobar, planParaDelegar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, sesionesDeLaCorrida, ultimaDeLaCorrida, mismaCorrida, corridaDe, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };
