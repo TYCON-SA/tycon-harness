@@ -939,19 +939,13 @@ function coordinate(opts = {}) {
   if (d && d.error) return { code: 1, text: `No pude saber cuál es la coordinadora: ${d.error}.` };
   if (!d || !sid || d.sesion !== sid) {
     const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
-    // sin el rol en el perfil, el click no tiene qué nombrar: se nombra con la frase
-    if (!r.firma) {
-      return { code: 1, text: [
-        `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
-        `Para que lo sea, el dueño escribe en este chat «Esta sesión es la ${rol.valor}», y después esta sesión corre:`,
-        `  node ${marker} designate-relay --approved-by '<el dueño>' --quote '<su frase, textual>'`,
-      ].join('\n') };
-    }
+    // con perfil o sin él se nombra con el click (sin el rol en el perfil, el de fábrica: ordena y no firma)
     return { code: 1, text: [
       `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
       `Para que lo sea, el dueño se lo pide a esta sesión con sus palabras, y esta sesión corre:`,
       `  node ${marker} designate-relay`,
       'El freno da un cuadro con «Sí» y «No» que dice qué sesión es y en qué carpeta: el dueño hace click y queda nombrada.',
+      ...(r.firma ? [] : ['Sin approvals.relay_session en el perfil del equipo, ordena la máquina y no firma: las firmas siguen yendo a la ventana del dueño.']),
       `Para dejar de serlo, la misma forma: node ${marker} withdraw-relay`,
       `Si el click no se puede comprobar, el comando dice por qué y da los respaldos (su terminal, o su frase con --quote).`,
     ].join('\n') };
@@ -1014,14 +1008,7 @@ function lostDesignation(opts, sid) {
   const rol = { valor: r.rol };
   if (titleIn(path.join(path.dirname(opts.transcript), `${d.sesion}.jsonl`)) !== opts.title) return null;
   const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
-  // sin el rol en el perfil, el click no tiene qué nombrar: se recupera con la frase
-  if (!r.firma) {
-    return [
-      `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
-      `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
-      `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
-    ].join('\n');
-  }
+  // con perfil o sin él se recupera con el click
   return [
     `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
     `Decile a la persona que, si quiere que siga siéndolo, te lo pida con sus palabras. El pedido es de ella, nunca tuyo.`,

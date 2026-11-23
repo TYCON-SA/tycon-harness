@@ -272,7 +272,7 @@ const SI_SALE_MAL = Object.freeze({
   'autonomy-resume': 'la sesión vuelve a iterar sola sobre un rojo que quizá necesitaba otra mirada',
   save: 'se guarda en el repo y se abre el pedido; se revierte con otro commit',
   'designation-confirm': 'esa sesión firma en tu nombre lo que el perfil delega, hasta que se designe otra',
-  'designation-set': 'una sesión que no querías firma en tu nombre lo que el perfil delega, hasta que la retires o nombres otra',
+  'designation-set': 'una sesión que no querías ordena esta máquina (y, con el perfil, firma en tu nombre lo que delega), hasta que la retires o nombres otra',
   'designation-withdraw': 'las firmas que delegabas vuelven a vos hasta que nombres otra coordinadora',
 });
 
@@ -379,7 +379,7 @@ const SIGNATURES = Object.freeze([
   { id: 'designation-confirm', approves: 'confirmar qué sesión es la coordinadora de esta máquina', command: 'delegated-signing.js confirm-designation', otherSession: 'no', terminal: 'delegated-signing.js confirm-designation --terminal' },
   // nombrar y retirar a la coordinadora: el click del dueño en la pestaña de esa sesión, nunca por delegación
   { id: 'designation-set', approves: 'nombrar a esta sesión coordinadora de la máquina', command: 'marker.js designate-relay', otherSession: 'no', terminal: 'marker.js designate-relay --terminal',
-    soloClick: true, descripciones: Object.freeze(['Esa sesión firma en tu nombre lo que el perfil delega, hasta que se nombre otra o la retires.', 'No cambia nada.']) },
+    soloClick: true, descripciones: Object.freeze(['Esa sesión ordena la máquina hasta que se nombre otra o la retires; con el perfil, también firma lo que delega.', 'No cambia nada.']) },
   { id: 'designation-withdraw', approves: 'retirar a esta sesión de coordinadora de la máquina', command: 'marker.js withdraw-relay', otherSession: 'no', terminal: 'marker.js withdraw-relay --terminal',
     soloClick: true, descripciones: Object.freeze(['La sesión deja de firmar en tu nombre: las firmas vuelven a vos hasta que nombres otra.', 'No cambia nada: sigue siendo la coordinadora.']) },
   ...POR_VARIABLE.map(([nombre, valor, approves]) => ({

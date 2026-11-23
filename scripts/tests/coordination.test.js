@@ -256,8 +256,11 @@ test('T6 Coordinate_NoRole_SaysHowToTurnItOn @story-8.122 @ac-6 @story-8.199 @ac
   const r = coordinate(t, { CLAUDE_CODE_SESSION_ID: 'otra-1' });
   assert.strictEqual(r.code, 1);
   assert.doesNotMatch(r.text, /no usa una coordinadora/);
-  assert.match(r.text, /Esta sesión es la coordinadora/);
-  assert.match(r.text, /designate-relay/);
+  // fila 148: sin perfil el click también la nombra (la frase queda de respaldo); y dice que sin perfil no firma
+  assert.match(r.text, /designate-relay\n/);
+  assert.match(r.text, /el dueño hace click/);
+  assert.doesNotMatch(r.text, /«Esta sesión es la coordinadora»/);
+  assert.match(r.text, /ordena la máquina y no firma/);
 });
 
 test('T7 Coordinate_Codex_CannotCoordinate @story-8.122 @ac-7: en Codex lo dice y sale', () => {
