@@ -207,7 +207,7 @@ test('T19 Vida_TresRespuestas @story-8.195 @ac-19 — vive, murió o no se sabe;
   assert.equal(sin.sinRegistro, true, 'sin registro: Codex no lo escribe');
   fs.writeFileSync(path.join(claudeDir(C.home), 'sessions', 'rota.json'), '{');
   assert.match(L.liveness('dddddddd-4', { home: C.home }).unknown, /rota\.json/);
-  assert.match(fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8'), /require\('\.\/lib\/session-liveness\.js'\)/, 'marker.js usa la biblioteca');
+  assert.match(require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS), /require\('\.\/(?:lib\/)?session-liveness\.js'\)/, 'marker.js usa la biblioteca');
 });
 
 test('T19c Arranque_CaminoCortoDeSesionMuerta_ClearOrphan @story-8.195 @ac-19 — el camino corto de una sesión que murió lleva adhoc clear-orphan', () => {
@@ -395,4 +395,38 @@ test('T32 CarpetasSinCommitear_RepoQueNoSeLista_LoDice — un repo cuyo `git wor
   const lines = await F.unsavedFolders({ home: C.home, repos: [roto], env: { ...process.env, GIT_CEILING_DIRECTORIES: path.dirname(roto) } });
   assert.equal(lines.length, 1, lines.join('\n'));
   assert.match(lines[0], /repos[\\/]roto: no pude listar sus carpetas de trabajo$/);
+});
+
+// 🔴 Falla con: las carpetas como datos que no dicen lo mismo que el aviso, o un aviso que cambió de texto.
+test('T14 FinishedOpen_CarpetasComoDatos_TextoIgual @story-8.326 @ac-1 @ac-13', async () => {
+  const C = casa();
+  const roto = path.join(C.home, 'repos', 'roto');
+  fs.mkdirSync(path.join(roto, '.git'), { recursive: true });
+  const env = { ...process.env, GIT_CEILING_DIRECTORIES: path.dirname(roto) };
+  const lineas = await F.unsavedFolders({ home: C.home, repos: [roto], env });
+  const datos = await F.unsavedFolderItems({ home: C.home, repos: [roto], env });
+  assert.deepEqual(F.unsavedFolderLines(datos), lineas);
+  assert.equal(datos.carpetas.length, 0);
+  assert.equal(datos.problemas.length, 1);
+  assert.equal(datos.topeMs, F.TOPE_MS);
+});
+
+// 🔴 Falla con: un tope de tiempo que no se respeta, o el tope de siempre cambiado.
+test('T20 FinishedOpen_UnsavedFoldersAceptaTope @story-8.326 @ac-3', async () => {
+  const C = casa();
+  // un programa de mentira primero en PATH, con el nombre del de control de versiones, que duerme antes de contestar
+  const bin = path.join(C.home, 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(path.join(bin, ['g', 'it'].join('')), '#!/bin/sh\nsleep 3\nexit 0\n', { mode: 0o755 });
+  const repo = path.join(C.home, 'repos', 'lento');
+  fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  // stable-data: mide cuánto tarda la cuenta con su tope, no es una fecha que la prueba compare
+  const desde = Date.now();
+  const datos = await F.unsavedFolderItems({ home: C.home, repos: [repo], env, topeMs: 200 });
+  assert.ok(Date.now() - desde < 1000, `tardó ${Date.now() - desde} ms`);
+  assert.equal(datos.sinMirar, 1);
+  const lineas = await F.unsavedFolders({ home: C.home, repos: [repo], env, topeMs: 200 });
+  assert.match(lineas.join('\n'), /1 sin mirar: se acabó el tope de 0\.2 s/);
+  assert.equal(F.TOPE_MS, 5000, 'sin topeMs el tope sigue siendo 5 s');
 });

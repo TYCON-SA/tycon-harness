@@ -17,7 +17,8 @@
  * abandonado, y la hora de cada entrada de la lista no se compara con nada.
  */
 
-const test = require('node:test');
+// partida sin mover sus pruebas: cada parte es test-gate-failed-first.p<k>.test.js (cuáles, suite-parts.json de esta carpeta)
+const test = require('./lib/suite-parts.js').test;
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
@@ -856,14 +857,14 @@ test('T20 SuiteAlone_Red_KeepsFailedCase — una suite roja por la puerta guarda
 });
 
 /** Pone en el repo el juez de la validación de cada pedido y la foto nocturna con esas suites rojas. */
-function conFoto(l, rojas) {
+function conFoto(l, rojas, casos = null) {
   const ci = path.join(l.repo, 'scripts', 'ci');
   fs.mkdirSync(ci, { recursive: true });
   const origen = path.resolve(SCRIPTS, '..', '..', '..', 'scripts', 'ci');
   for (const f of ['pr-verdict.js', 'legacy-options.js']) fs.copyFileSync(path.join(origen, f), path.join(ci, f));
   fs.mkdirSync(path.join(l.repo, 'scripts', 'controls-bench'), { recursive: true });
   fs.writeFileSync(path.join(l.repo, 'scripts', 'controls-bench', 'ultimo-suites.json'),
-    JSON.stringify({ kind: 'bash-tests', ts: new Date().toISOString(), build: '1', failures: rojas }));
+    JSON.stringify({ kind: 'bash-tests', ts: new Date().toISOString(), build: '1', failures: rojas, ...(casos ? { casos } : {}) }));
   // La foto llega commiteada en el árbol, como en el privado: una con cambios sin commitear no perdona.
   git(l.repo, 'add', '-A'); git(l.repo, 'commit', '-q', '-m', 'foto nocturna');
 }
@@ -912,6 +913,33 @@ test('T24 InheritedRed_SuiteAlone_Forgiven — repetida sola, la que ya estaba r
   const a = puerta(l, ['--suite', A]);
   assert.notEqual(a.status, 0, 'un rojo nuevo, repetido solo, sigue frenando');
   assert.deepEqual(lista(l), [A], a.out);
+});
+
+test('T22 Repeat_InheritedRed_RecordedAndJudgedAgain @story-8.279 @ac-33 @ac-34 — una roja perdonada repetida sola cuenta como repetida: la completa no corre entera, y su falla vuelve al juez', () => {
+  // 🔴 rojo si: la repetición perdonada no se suma a lo guardado → la próxima completa corre entera («falta repetir
+  //    sola»); o si `merge` descarta su falla → el cierre sale verde sin que el juez la mire, y un caso nuevo pasaría.
+  const casosB = (l, ...c) => fs.writeFileSync(path.join(l.state, 'b.casos'), `${c.map((x) => `✗ ${x}`).join('\n')}\n`);
+  const l = conRojoAcotado({ suiteB: suite('b', '# lee docs/x.md\ncat "$FF_STATE/b.casos" 2>/dev/null') });
+  casosB(l, 'caso viejo');
+  conFoto(l, ['b.test.sh'], { 'b.test.sh': ['✗ caso viejo'] });
+  estado(l, { a: 0 });
+  assert.equal(puerta(l, ['--suite', A]).status, 0, 'A arreglada, repetida en verde');
+  const rb = puerta(l, ['--suite', B]);
+  assert.equal(rb.status, 0, rb.out);
+  assert.match(rb.out, /ya estaba roja antes del cambio/, rb.out);
+  limpiarCorridas(l);
+  const r = puerta(l);
+  assert.doesNotMatch(r.out, /falta repetir sola|corre la completa como siempre/, r.out);
+  assert.deepEqual(corridas(l), [], `ninguna suite lee lo cambiado ni es una repetida vieja:\n${r.out}`);
+  assert.match(r.out, /ya estaba rojo en el nocturno[^\n]*b\.test\.sh/, `la falla de B vuelve al juez:\n${r.out}`);
+  assert.equal(r.status, 0, r.out);
+  // la misma suite con un caso que la foto no conoce, y la carpeta cambiada: B vuelve a correr y frena
+  casosB(l, 'caso viejo', 'caso nuevo');
+  fs.appendFileSync(path.join(l.repo, 'docs', 'x.md'), 'otro cambio\n');
+  limpiarCorridas(l);
+  const n = puerta(l);
+  assert.notEqual(n.status, 0, n.out);
+  assert.match(n.out, /caso nuevo/, n.out);
 });
 
 // ── Repetir verde reescribe la constancia ──────────────────────────────────────────────────────────────────────────
@@ -1084,6 +1112,25 @@ test('RepetirVerdeConSuite_ReescribeLaConstancia (sin entrada) @story-8.230 @ac-
   const d = JSON.parse(fs.readFileSync(f, 'utf8'));
   assert.equal(d.totals.failed, 1);
   assert.equal(d.suite_green, false);
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (otra suite) @story-8.230 @ac-12 — una suite que no está entre las fallas no saca ninguna, ni de la copia', () => {
+  // 🔴 mutación: sin `if (i < 0) return false` → splice(-1, 1) saca la última falla, que es de otra suite.
+  const dir = tmp('ff-const-');
+  const f = constanciaFalsa(dir, [{ raiz: 'arnes', ruta: A }]);
+  const antes = fs.readFileSync(f, 'utf8');
+  const r = repetir(f, B);
+  assert.equal(r.written, false);
+  assert.match(r.reason, /no está entre las fallas de la constancia: no la toco/);
+  assert.equal(fs.readFileSync(f, 'utf8'), antes);
+  // la constancia la trae y la copia no: la constancia cambia, la copia queda igual y lo dice
+  const g = constanciaFalsa(tmp('ff-const-'), [{ raiz: 'arnes', ruta: A }, { raiz: 'arnes', ruta: B }]);
+  const sellada = path.join(dir, 'copia.json');
+  fs.writeFileSync(sellada, JSON.stringify(JSON.parse(antes)));
+  const s = repetir(g, B, { sealed: sellada });
+  assert.equal(s.written, true);
+  assert.match(s.reason, /la copia que viaja no trae esa falla: no la toco/);
+  assert.equal(fs.readFileSync(sellada, 'utf8'), JSON.stringify(JSON.parse(antes)));
 });
 
 test('RepetirVerdeConSuite_ReescribeLaConstancia (copia que no se toca) @story-8.230 @ac-12 — sin copia, o de otra corrida, lo dice', () => {

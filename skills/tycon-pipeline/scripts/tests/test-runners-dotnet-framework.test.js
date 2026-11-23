@@ -62,6 +62,7 @@ function herramientas() {
   fs.writeFileSync(f, `#!/usr/bin/env bash
 R="$1"; A="$2"
 echo "args=$A" >> "\${FAKE_LANZAMIENTOS:-/dev/null}"
+[ -n "\${FAKE_TRX_FILE:-}" ] && { mkdir -p "$R/run0"; cp "$FAKE_TRX_FILE" "$R/run0/r.trx"; }
 i=0
 for spec in $(echo "\${FAKE_TRX:-}" | tr ',' ' '); do
   i=$((i+1)); t="\${spec%%:*}"; fa=0; [ "$spec" != "$t" ] && fa="\${spec#*:}"
@@ -170,6 +171,88 @@ test('@story-7.51 @ac-2 T3 Trx_FailedInReport_NotGreen', () => {
   assert.equal(r.art.suite_green, false);
   assert.equal(r.art.totals.failed, 1);
   assert.match(String(r.art.failed_in_report || ''), /1 prueba/);
+});
+
+// Un TRX como el de xUnit: las salteadas (`NotExecuted`) no suman en el resumen, sólo aparecen en su resultado.
+const trxXunit = (salteada) => `<?xml version="1.0" encoding="UTF-8"?>
+<TestRun id="1" name="r" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult testName="A.Pasa1" outcome="Passed" />
+    <UnitTestResult testName="A.Pasa2" outcome="Passed" />
+    <UnitTestResult testName="A.ContraLaBase" outcome="NotExecuted">${salteada === null ? '' : `<Output><ErrorInfo><Message>${salteada}</Message></ErrorInfo></Output>`}</UnitTestResult>
+  </Results>
+  <ResultSummary outcome="Completed">
+    <Counters total="2" executed="2" passed="2" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+  </ResultSummary>
+</TestRun>`;
+
+// Lo que pasó en una historia real: el portón dijo «353 de 353» y la CI corrió 370. Las 17 de más necesitaban la base
+// de prueba y en la máquina se saltearon; con xUnit no suman en el resumen del TRX.
+// 🔴 Falla con: contar del resumen y no de cada resultado, dar verde con una salteada que no se pudo medir o sin motivo,
+//    o callar una salteada a propósito.
+test('Trx_SalteadasDeXunit_NoMedidasNoSonVerde', () => {
+  const bin = herramientas();
+  const correrCon = (salteada) => {
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'nf-trx-')), 'r.trx');
+    fs.writeFileSync(f, trxXunit(salteada));
+    return correr(repo(NETFX, { tocar: ['App/A.cs'] }), { bin, tree: arbol([netfx()]), extra: { FAKE_TRX_FILE: f } });
+  };
+  const noMedida = correrCon('no se midió: falta DEMOTRACKING_TEST_SQL (la base de prueba)');
+  assert.ok(noMedida.art, noMedida.out);
+  assert.equal(noMedida.art.totals.total, 3, `el total sale de cada resultado: ${JSON.stringify(noMedida.art.totals)}`);
+  assert.equal(noMedida.art.totals.skipped, 1);
+  assert.equal(noMedida.art.suite_green, false, 'una salteada que no se pudo medir no es verde');
+  assert.equal(noMedida.art.totals.not_run, 1);
+  assert.match(noMedida.out, /1 prueba\(s\) sin correr[\s\S]*A\.ContraLaBase/);
+  // sin motivo: tampoco
+  const sinMotivo = correrCon(null);
+  assert.equal(sinMotivo.art.suite_green, false, sinMotivo.out);
+  assert.match(sinMotivo.out, /A\.ContraLaBase \(sin motivo\)/);
+  // a propósito, con su motivo: verde, pero dicha en su propio renglón
+  const aProposito = correrCon('a propósito: el reloj de Windows no tiene esa zona horaria');
+  assert.equal(aProposito.art.suite_green, true, aProposito.out);
+  assert.equal(aProposito.art.totals.skipped_on_purpose, 1);
+  assert.match(aProposito.out, /🟡 1 prueba\(s\) salteada\(s\) a propósito, con su motivo: A\.ContraLaBase \(«a propósito/);
+});
+
+// Los bordes del pase adversarial: las filas de datos de MSTest (`InnerResults`) no se cuentan dos veces, la salida de
+// una prueba no es su motivo (puede traer datos de la máquina), lo que vstest no llegó a correr también es «no corrió»,
+// y los motivos de una base o una conexión que faltó cuentan como no medidos.
+// 🔴 Falla con: contar las filas anidadas, tomar el StdOut como motivo, contar NotRunnable como corrida, o dejar
+//    verde «Requires SQL Server».
+test('Trx_SalteadasBordes_AnidadasSalidaYMotivos', () => {
+  const report = require(path.join(SCRIPTS, 'lib', 'test-gate-report.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nf-trxb-'));
+  const f = path.join(dir, 'r.trx');
+  fs.writeFileSync(f, `<?xml version="1.0" encoding="UTF-8"?>
+<TestRun id="1" name="r" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult testName="A.ConFilas" outcome="Passed">
+      <InnerResults>
+        <UnitTestResult testName="A.ConFilas (1)" outcome="Passed" />
+        <UnitTestResult testName="A.ConFilas (2)" outcome="Passed" />
+      </InnerResults>
+    </UnitTestResult>
+    <UnitTestResult testName="A.Salida" outcome="NotExecuted"><Output><StdOut>Server=prod;Password=x</StdOut></Output></UnitTestResult>
+    <UnitTestResult testName="A.NoCorrible" outcome="NotRunnable" />
+  </Results>
+  <ResultSummary outcome="Completed">
+    <Counters total="3" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="1" notExecuted="1" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+  </ResultSummary>
+</TestRun>`);
+  const t = report.contarTrx([f]);
+  assert.equal(t.total, 3, `las filas anidadas no suman: ${JSON.stringify(t)}`);
+  assert.equal(t.skipped, 2, 'NotExecuted y NotRunnable no corrieron');
+  assert.equal(t.executed, 1);
+  const salida = t.skipped_tests.find((s) => s.nombre === 'A.Salida');
+  assert.equal(salida.motivo, '', 'la salida de la prueba no es su motivo');
+  const { noMedidas, aProposito } = report.clasificarSalteadas([
+    { nombre: 'a', motivo: 'Requires SQL Server' }, { nombre: 'b', motivo: 'Database not available' },
+    { nombre: 'c', motivo: 'No connection string configured' }, { nombre: 'd', motivo: 'sin base de prueba' },
+    { nombre: 'e', motivo: 'set DEMO_SQL to run' }, { nombre: 'f', motivo: 'flaky en Windows, issue 12' },
+  ]);
+  assert.deepStrictEqual(noMedidas.map((s) => s.nombre), ['a', 'b', 'c', 'd', 'e']);
+  assert.deepStrictEqual(aProposito.map((s) => s.nombre), ['f']);
 });
 
 test('@story-7.51 @ac-3 T4 Trx_Missing_SaysSo', () => {
