@@ -1008,6 +1008,51 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
   `paths.team`). Si no hay ninguna, se clona el repo `profile` de `team-repos.json` en una carpeta propia.
 - **El pedido** va a la rama principal del repo del perfil, **sin auto-completar**: lo lee y lo aprueba un admin.
 
+#### El entorno de pruebas de un repo
+
+Algunas suites necesitan algo preparado antes de correr: una base local en un contenedor, un servidor levantado, las
+variables con las que las pruebas la encuentran, una versión fija de Node para Playwright. Sin eso, las pruebas contra la
+base se saltean y las de navegador salen en rojo, y el portón lo cuenta como código roto. Cada historia lo redescubre.
+
+- **Dónde se declara**: en `stack.test_environments` de `team-repos.json`, como las herramientas de prueba. Nunca en
+  el repo que se prueba: el comando lo decide la organización, aunque llame a un guion del repo. Todavía no se edita
+  desde el sitio: va como pedido al repo del perfil, con la misma validación de arriba.
+- **Una entrada**:
+
+  ```json
+  { "name": "acme-local", "label": "Base local y servidor de Acme",
+    "repos": [ { "platform": "github", "org": "acme", "repo": "acme-historias" },
+               { "platform": "github", "org": "acme", "repo": "acme-backend" },
+               { "platform": "github", "org": "acme", "repo": "acme-web" } ],
+    "prepare": "bash {sibling:acme-backend}/scripts/test-env/server.sh 5021 && source {sibling:acme-backend}/scripts/test-env/variables.sh 5021",
+    "teardown": "bash {sibling:acme-backend}/scripts/test-env/server.sh 5021 stop",
+    "requires": ["ACME_TEST_SQL"], "timeout_s": 600 }
+  ```
+
+  - `repos`: los repos a los que se aplica, con la forma `<repo>` de este archivo. Un repo va en un solo entorno.
+  - `prepare`: corre con bash desde la carpeta que se prueba. Lo que deja exportado (también con `source`) llega a la
+    suite y a `teardown`. `teardown` (opcional) lo desarma al terminar, salga como salga la suite.
+  - `{repo}` es la carpeta que se prueba; `{sibling:<nombre>}`, la de otro repo. Un repo hermano de la historia se
+    ubica como lo ubica el portón para correr su suite (su copia en la rama de la historia), así el servidor que se
+    levanta es el del código que se prueba. Si no es hermano, el repo al lado: con la carpeta que se prueba llamada
+    `<repo>--<sufijo>`, primero `<nombre>--<sufijo>`. Las dos van ya entre comillas.
+  - `requires` (opcional): las variables que la preparación tiene que dejar puestas. `timeout_s` (opcional, de 1 a
+    3600; 600 si no se dice): el tope de cada comando.
+- **Qué hace el portón**: prepara el entorno recién cuando la suite va a correr, y lo desarma al final, después de los
+  repos hermanos. Un repo sin pruebas propias (el de las historias, por ejemplo) no lo prepara: lo prepara cada hermano
+  que corre su suite. Las partes y los hermanos de una ejecución que ya lo preparó lo heredan y no lo preparan otra vez.
+  El informe lo anota en `test_environment`.
+- **Lo que queda andando**: al desarmar se corta también lo que la preparación dejó andando (un servidor), aunque
+  `teardown` no lo haya parado. Lo que tiene que sobrevivir a la ejecución se arranca aparte, como un contenedor. Un corte
+  (Ctrl-C) en medio de la preparación desarma igual, y si una ejecución muere sin desarmar, la siguiente corta lo que dejó.
+  En Windows esto último no se puede: ahí lo para sólo `teardown`.
+- **Una ejecución por entorno**: dos ejecuciones del mismo entorno comparten lo que levanta (un puerto fijo, una base). Si
+  otra ejecución lo está usando, el portón no lo prepara ni lo desarma y sale 75, como cuando otra ejecución de las pruebas
+  está en marcha.
+- **Si no queda listo** (la preparación falla, pasa el tope o no deja una variable de `requires`), el portón no corre
+  la suite y sale **8, «entorno sin preparar»**: ni verde ni rojo. Lo que la preparación dejó a medias se desarma igual.
+- **Para apagarlo** en una máquina o en una CI que prepara el entorno por su cuenta: `TYCON_TEST_ENV=off`.
+
 ### Instalación y actualización
 
 - **Cómo se actualizan las computadoras del equipo**: qué versión toma cada máquina y cómo se aplica. «Automática, sólo

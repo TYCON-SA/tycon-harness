@@ -566,7 +566,11 @@ function stalledOf(s, f, now) {
       forma = f ? f.que : null;
     } catch (_) { forma = null; }
   }
-  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', ...(forma ? { forma } : {}) };
+  // sin confirmar: Claude Code no da estado, o dice que la sesión espera otra cosa que un permiso. Ahí la marca puede ser
+  // de un permiso que se resolvió por otro camino (lo cortó un freno, o se destrabó) y que queda hasta el cierre del
+  // turno: el aviso no la da por abierta. Esperando sin decir qué, se toma por el permiso, como siempre
+  const confirmed = waits && (!s.waitingFor || /permission/i.test(String(s.waitingFor)));
+  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', confirmed, ...(forma ? { forma } : {}) };
 }
 
 // La espera que el archivo de estado anota cuando una sesión abre un cuadro o pide aprobar su plan (hooks/session-state.js).
@@ -632,7 +636,7 @@ function swapLine(s) {
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
-const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
+const stalledLine = (x) => `${x.session} ${x.confirmed === false ? `tiene un permiso anotado desde las ${hhmm(x.since)}, sin confirmar que siga abierto` : `espera un permiso desde las ${hhmm(x.since)}`}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
 
 // Por qué el permiso de la sesión no le llegó a la coordinadora como cuadro, o dejó de esperarlo: lo anota el gancho de
 // permisos (scripts/hooks/permission-relay.js) en `coordination/permission-relay/<sesión>.json`, con la hora en que llegó
@@ -687,6 +691,7 @@ function status(opts = {}) {
   const files = stateFiles(home, problems);
   const stalled = [];
   const asking = [];
+  const withPid = [];
   let runningHeavy = null;
   try { runningHeavy = require('./heavy-turn.js').runningSids({ state: stateDir(home), now, problems }); } catch (e) { problems.push(`quién corre una prueba pesada (${e.message})`); }
   for (const [sid, s] of sessions) {
@@ -694,6 +699,7 @@ function status(opts = {}) {
     aliveSids.add(String(sid));
     // Un agente interno de otra sesión (carpeta temporal, nombre armado) no es una sesión de trabajo, salvo con marcador.
     if (s.internal && !markers.has(sid)) continue;
+    if (Number.isFinite(Number(s.pid))) withPid.push({ sid: String(sid), pid: Number(s.pid), cwd: s.cwd });
     if (s.name) alive.add(s.name);
     const m = markers.get(sid);
     // la corrida que va por el doble de lo estimado lo dice en su renglón: la que cambia el rumbo es la coordinadora
@@ -713,10 +719,10 @@ function status(opts = {}) {
     } catch (e) { problems.push(`la nota de ${nameOf(sid)} (${e.message})`); }
     const st = stalledOf(s, files.get(String(sid)), now);
     if (st) {
-      const { key, ...rest } = st;
-      // la clave de la espera no sale en --json: es sólo para owner-wait; tampoco el motivo del gancho de permisos, que
-      // sale en la línea
-      const row = Object.defineProperty({ session: nameOf(sid), sid, ...rest }, 'key', { value: key });
+      const { key, confirmed, ...rest } = st;
+      // la clave de la espera y si Claude Code la confirma no salen en --json: son sólo para owner-wait y el aviso;
+      // tampoco el motivo del gancho de permisos, que sale en la línea
+      const row = Object.defineProperties({ session: nameOf(sid), sid, ...rest }, { key: { value: key }, confirmed: { value: confirmed } });
       let relay = null;
       try { relay = relayNoteOf(home, sid, st.since); } catch { relay = null; }
       if (relay) Object.defineProperty(row, 'relay', { value: relay });
@@ -771,6 +777,13 @@ function status(opts = {}) {
       }
     }
   }
+  // la que espera una tarea de fondo que hace rato no escribe ni hace nada: no espera al dueño ni está quieta
+  let backgroundStalled = [];
+  try {
+    backgroundStalled = require('./background-stall.js').stalled({ sessions: withPid, stateDir: stateDir(home), now,
+      ...(opts.tasksRoot !== undefined ? { tasksRoot: opts.tasksRoot } : {}), ...(opts.readProcesses ? { readProcesses: opts.readProcesses } : {}), problems })
+      .map((b) => ({ session: nameOf(b.sid), sid: b.sid, minutes: b.minutes, tasks: b.tasks }));
+  } catch (e) { problems.push(`las tareas de fondo (${e.message})`); }
   for (const c of codexThreads(opts.codexHome || path.join(home, '.codex'), problems)) {
     const session = c.name || c.id.slice(0, 8);
     const ago = c.last ? now - c.last : null;
@@ -812,7 +825,7 @@ function status(opts = {}) {
   if (vigente && vigente.error) problems.push(vigente.error);
   else if (vigente && vigente.pendiente) pendingDesignation = { sesion: vigente.pendiente.sesion, ts: vigente.pendiente.ts };
   return {
-    now, working, waiting, quiet, agentSilent, busySilent, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
+    now, working, waiting, quiet, agentSilent, busySilent, backgroundStalled, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
     // lo que espera revisión, de la foto del arranque: para mostrar, nunca para decidir
     review: RL.leerFoto(stateDir(home), now), reviewCap: r.max_awaiting_review,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why, idle, swap: swapOf(opts),
@@ -824,6 +837,8 @@ function status(opts = {}) {
 
 const ORIGIN = { perfil: 'del perfil del equipo', maquina: 'de esta máquina', env: 'de una variable', 'sin-valor': 'de fábrica' };
 const hhmm = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '?' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
+const backgroundStalledLine = (b) => `${b.session} espera una tarea de fondo sin actividad hace ${b.minutes} min`;
 
 function statusText(s) {
   const lines = [`Trabajando: ${s.working.length} de ${s.cap.value} (tope ${ORIGIN[s.cap.origin] || s.cap.origin})`];
@@ -859,6 +874,7 @@ function statusText(s) {
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   if (s.agentSilent && s.agentSilent.length) lines.push(`Esperan a un agente callado: ${s.agentSilent.map(agentSilentLine).join(' · ')}`);
   if (s.busySilent && s.busySilent.length) lines.push(`Trabajando sin novedades: ${s.busySilent.map(busySilentLine).join(' · ')}`);
+  for (const b of s.backgroundStalled || []) lines.push(backgroundStalledLine(b));
   const planes = s.plansWaiting || [];
   lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`,
     ...(planes.length ? [`${planes.length} ${planes.length === 1 ? 'plan esperando' : 'planes esperando'} su aprobación`] : [])].join(' · ')}`);
@@ -1729,32 +1745,39 @@ function typedMessages(file, from = 0) {
  * a lo sumo 5 líneas y «(+N más)». Cada línea sale una vez, con el texto de la conversación, no el del archivo. La que
  * todavía no está en la conversación vuelve al archivo hasta 10 minutos; la de otro origen se descarta. Cada descarte que
  * no es el esperado, y lo que no se pudo leer, va a `problems`. Si algo falla a mitad de camino, lo tomado vuelve al
- * archivo: no se pierde.
+ * archivo: no se pierde. Lo que tomó una lectura que se cayó (un tomado cuyo proceso ya no vive) se recupera en la
+ * siguiente, junto con lo nuevo. Para las pruebas: `renameOrphan` toma un huérfano y `onTaken` recibe el nombre tomado.
  */
 function ownerReplyLines(opts, sid, problems) {
   const home = opts.home || require('os').homedir();
   const now = opts.now == null ? Date.now() : Number(opts.now);
   const file = repliesFile(home);
   const what = 'las respuestas de la persona en otras pestañas';
+  // el nombre tomado lleva el pid y una marca de esta lectura: nunca pisa lo que dejó otra con el mismo pid
+  const takenName = () => `${file}.${process.pid}.${require('crypto').randomBytes(6).toString('hex')}.leyendo`;
+  const held = orphanReplies(file, what, takenName, opts.renameOrphan || fs.renameSync, problems);
+  const taken = held.map((h) => h.path);
   try {
     if (fs.statSync(file).size >= REPLIES_MAX_BYTES) problems.push(`${what}: el archivo llegó a ${REPLIES_MAX_BYTES / 1024} KB y las nuevas no se anotan`);
+    const mine = takenName();
+    fs.renameSync(file, mine);
+    try {
+      if (opts.onTaken) opts.onTaken(mine);
+      held.push({ path: mine, text: fs.readFileSync(mine, 'utf8') });
+      taken.push(mine);
+    } catch (e) {
+      // sin leerlo no se borra: vuelve a su lugar si nadie anotó otro mientras tanto, y si no, queda dicho dónde está
+      let kept = mine;
+      try { if (!fs.existsSync(file)) { fs.renameSync(mine, file); kept = file; } } catch { /* queda en el tomado */ }
+      problems.push(`${what} (${e.code || e.message}): quedaron en ${kept}`);
+    }
   } catch (e) {
     if (e.code !== 'ENOENT') problems.push(`${what} (${e.code || e.message})`);
-    return [];
   }
-  const taken = `${file}.${process.pid}.leyendo`;
-  try { fs.renameSync(file, taken); } catch (e) {
-    if (e.code !== 'ENOENT') problems.push(`${what} (${e.code || e.message})`);
-    return [];
-  }
-  let text;
-  try { text = fs.readFileSync(taken, 'utf8'); } catch (e) {
-    // sin leerlo no se borra: vuelve a su lugar si nadie anotó otro mientras tanto, y si no, queda dicho dónde está
-    let kept = taken;
-    try { if (!fs.existsSync(file)) { fs.renameSync(taken, file); kept = file; } } catch { /* queda en el tomado */ }
-    problems.push(`${what} (${e.code || e.message}): quedaron en ${kept}`);
-    return [];
-  }
+  if (!held.length) return [];
+  // un renglón igual en dos tomados es el mismo mensaje (una lectura que se cayó después de devolver los sin confirmar):
+  // sale una vez. Dos mensajes de verdad nunca son iguales: cada uno lleva su hora y dónde se lo busca
+  const text = [...new Set(held.flatMap((h) => h.text.split('\n')).filter((l) => l.trim()))].map((l) => `${l}\n`).join('');
   const out = [];
   const back = [];
   // los mensajes de la persona que se pierden, por sesión: la coordinadora le pregunta a esa sesión qué le pidieron
@@ -1800,19 +1823,65 @@ function ownerReplyLines(opts, sid, problems) {
     back.length = 0;
     lost.clear();
     try { fs.appendFileSync(file, text, { mode: 0o600 }); } catch {
-      problems.push(`${what} (${e.code || e.message}): no las pude devolver; quedaron en ${taken}`);
+      problems.push(`${what} (${e.code || e.message}): no las pude devolver; quedaron en ${taken.join(', ')}`);
       return [];
     }
     problems.push(`${what} (${e.code || e.message}): las devolví para el próximo turno`);
   }
   if (back.length) {
     try { fs.appendFileSync(file, back.map((l) => `${l}\n`).join(''), { mode: 0o600 }); } catch (e) {
-      problems.push(`${back.length} de ${what} no las pude guardar para el próximo turno (${e.code || e.message}): quedaron en ${taken}`);
+      problems.push(`${back.length} de ${what} no las pude guardar para el próximo turno (${e.code || e.message}): quedaron en ${taken.join(', ')}`);
       return lines();
     }
   }
-  try { fs.unlinkSync(taken); } catch { /* ya no está */ }
+  for (const p of taken) { try { fs.unlinkSync(p); } catch { /* ya no está */ } }
   return lines();
+}
+
+/**
+ * Los tomados que dejó una lectura que se cayó (`<respuestas>.<pid>[.<marca>].leyendo` cuyo proceso ya no vive), cada uno
+ * tomado con un nombre propio antes de leerlo: `[{ path, text }]`. Si otro lector lo tomó antes (el renombre da
+ * `ENOENT`), no se lee. El de un proceso vivo no se toca: vivo es lo que dice `process.kill(pid, 0)`, con `EPERM` como
+ * vivo, como en `sessionsBySid`; un pid reciclado espera a la próxima lectura. El de un pid que no es un número, y el que
+ * no se puede leer, quedan donde estaban y van a `problems` con su ruta.
+ */
+const MAX_PID = 2147483647;
+function orphanReplies(file, what, takenName, rename, problems) {
+  const dir = path.dirname(file);
+  const base = `${path.basename(file)}.`;
+  let names;
+  try { names = fs.readdirSync(dir); } catch (e) {
+    if (e.code !== 'ENOENT') problems.push(`${what}: no pude leer ${dir} (${e.code || e.message})`);
+    return [];
+  }
+  const out = [];
+  for (const n of names.sort()) {
+    if (!n.startsWith(base) || !n.endsWith('.leyendo')) continue;
+    const orphan = path.join(dir, n);
+    const parts = n.slice(base.length, -'.leyendo'.length).split('.');
+    // un pid es un entero positivo hasta el más alto que acepta process.kill: el 0 le preguntaría al grupo de procesos y
+    // uno más grande hace tirar a process.kill, que se leería como «no vive»
+    if (parts.length > 2 || !/^[1-9]\d*$/.test(parts[0]) || Number(parts[0]) > MAX_PID) {
+      problems.push(`${what}: ${orphan} quedó tomado y su nombre no dice de qué proceso es: no lo toqué`);
+      continue;
+    }
+    const pid = Number(parts[0]);
+    let alive;
+    try { process.kill(pid, 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
+    if (alive) continue;
+    const mine = takenName();
+    try { rename(orphan, mine); } catch (e) {
+      if (e.code !== 'ENOENT') problems.push(`${what}: no pude tomar ${orphan} (${e.code || e.message})`);
+      continue;
+    }
+    try { out.push({ path: mine, text: fs.readFileSync(mine, 'utf8') }); } catch (e) {
+      // sin leerlo no se borra: vuelve a su nombre, y si no se puede, queda dicho dónde está
+      let kept = mine;
+      try { fs.renameSync(mine, orphan); kept = orphan; } catch { /* queda en el tomado */ }
+      problems.push(`${what}: no pude leer ${kept} (${e.code || e.message})`);
+    }
+  }
+  return out;
 }
 
 // Una línea por sesión con mensajes perdidos, la más reciente primero: cuántos y hace cuánto el último, nunca el texto.
@@ -2014,6 +2083,7 @@ function capNotice(opts = {}) {
   for (const q of s.quiet.filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${q.session} está quieta hace ${q.minutes} min: cerrala o dale trabajo.`);
   for (const a of (s.agentSilent || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${agentSilentLine(a)}. Preguntale qué espera (SendMessage), o que detenga ese agente y lo relance.`);
   for (const b of (s.busySilent || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${busySilentLine(b)} Preguntale si sigue (SendMessage); si no contesta, avisale al dueño.`);
+  for (const b of (s.backgroundStalled || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${backgroundStalledLine(b)}: preguntale si la corta.`);
   // nada la despierta sola: quien tiene que avisarle cuando se libera el lugar es la coordinadora. Con el mismo criterio
   // que el portón: el pase de una sesión cerrada, o de más de una hora, no ocupa el lugar.
   for (const w of s.passWaiting.filter((x) => x.sid !== sid)) {
@@ -2657,11 +2727,14 @@ function launchedMatches(row, s) {
   return Number.isFinite(s.startedAt) && s.startedAt >= row.at - LAUNCHED_EARLY_MS && s.startedAt <= row.at + LAUNCHED_LATE_MS;
 }
 
-/** Saca lo que ya no sirve: `drop` (el nombre que se cierra) y lo de más de un día sin una sesión viva que lo use. */
+/**
+ * Saca lo que ya no sirve: `drop` (el nombre que se cierra) y lo de más de un día sin una sesión viva que lo use. `drop`
+ * se compara con el nombre entero que guardó `noteLaunched`: recortados, dos nombres largos que empiezan igual son uno.
+ */
 function pruneLaunched({ home, now, drop = null, sessions = null }) {
   const list = readLaunched(home);
   const live = [...(sessions || sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null)).values()].filter((s) => s.alive);
-  const dropped = (r) => drop !== null && typeof r.name === 'string' && listedName(r.name) === listedName(drop);
+  const dropped = (r) => drop !== null && typeof r.name === 'string' && r.name === drop;
   const keep = list.filter((r) => r && !dropped(r) && (now - r.at < LAUNCHED_KEEP_MS || live.some((s) => launchedMatches(r, s))));
   if (keep.length !== list.length) writeJson(launchedFile(home), keep);
   return keep;
@@ -3216,17 +3289,25 @@ function runGaps(sid, home) {
   return { missing, unknown };
 }
 
-// El nombre completo que anotó la sesión `sid` en su archivo, o `null` si no lo anotó o no se puede leer.
-function fullSessionName(home, sid) {
+/**
+ * El nombre completo que anotó la sesión `sid` en su archivo, `null` si no lo anotó o no está, o `{ problem }` con la ruta
+ * y el motivo si no se pudo leer la carpeta, o si no apareció y algún archivo no se pudo leer: «no pude leer» no es «no
+ * está». Para las pruebas, `opts.readSessionFile` lee cada archivo.
+ */
+function fullSessionName(home, sid, opts = {}) {
   const dir = path.join(claudeDir(home), 'sessions');
+  const read = opts.readSessionFile || ((p) => fs.readFileSync(p, 'utf8'));
   let files = [];
-  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return null; }
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch (e) { return { problem: `${dir} (${e.code || e.message})` }; }
+  let unreadable = null;
   for (const f of files) {
+    const p = path.join(dir, f);
     let s;
-    try { s = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+    // del error de JSON va sólo que no es JSON: su mensaje puede traer un trozo del archivo
+    try { s = JSON.parse(read(p)); } catch (e) { unreadable = unreadable || `${p} (${e.code || (e instanceof SyntaxError ? 'no es JSON' : e.message)})`; continue; }
     if (s && s.sessionId === sid) return typeof s.name === 'string' && s.name.trim() ? oneLine(s.name) : null;
   }
-  return null;
+  return unreadable ? { problem: unreadable } : null;
 }
 
 /**
@@ -3253,7 +3334,14 @@ function namedSession(opts, w) {
   // la lista guarda los nombres largos recortados: uno largo se compara recortado y se confirma con el nombre completo
   // que anotó la sesión, porque dos nombres que empiezan igual quedan iguales en la lista
   const listed = listedName(name);
-  const found = [...sessions.entries()].filter(([sid, s]) => s.name === listed && (listed === name || fullSessionName(home, sid) === name));
+  const found = [];
+  for (const [sid, s] of sessions.entries()) {
+    if (s.name !== listed) continue;
+    if (listed === name) { found.push([sid, s]); continue; }
+    const full = fullSessionName(home, sid, opts);
+    if (full && full.problem) return { error: `No pude leer ${full.problem}: ${nada}` };
+    if (full === name) found.push([sid, s]);
+  }
   const alive = found.filter(([, s]) => s.alive);
   if (!found.length) return { error: `No encuentro la sesión «${name}»: ${nada}` };
   if (alive.length > 1 || (!alive.length && found.length > 1)) return { error: `Hay más de una sesión «${name}»: ${nada}` };
@@ -3615,6 +3703,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, relaunch, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict,
+module.exports = { LAUNCH_TIMEOUT_MS, relaunch, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict, fullSessionName, ownerReplyLines,
   // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
   stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };

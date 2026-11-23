@@ -108,9 +108,12 @@ function companionRoots(repo, storyPath, opts) {
 }
 
 /**
- * La rama en que está un repo, o null (cabeza suelta, o git que no contesta). Se recuerda por carpeta y huella
- * (lib/git-stamp.js): varios lugares de un mismo comando preguntan por los mismos hermanos. Un fallo no se recuerda.
+ * La rama en que está un repo, o null (cabeza suelta, o git que no contesta). Con la cabeza suelta, la rama de la
+ * corrida que dejó anotada quien armó el clon (`RAMA_DE_LA_CORRIDA`, la escribe cloneWithDisk de lib/private-tree.js):
+ * sin ella, una copia en un commit suelto no tiene rama. Se recuerda por carpeta y huella (lib/git-stamp.js): varios
+ * lugares de un mismo comando preguntan por los mismos hermanos. Un fallo no se recuerda.
  */
+const RAMA_DE_LA_CORRIDA = 'tycon.runBranch';
 const RAMAS = new Map();
 function ramaDe(dir) {
   if (!dir) return null;
@@ -121,9 +124,27 @@ function ramaDe(dir) {
       avisar(`no pude leer la rama de ${dir} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): los repos hermanos se leen como están declarados`);
       return { valor: null, recordar: false };
     }
-    const b = r.status === 0 ? String(r.stdout || '').trim() : '';
-    return { valor: b || null, recordar: true };
+    if (r.status === 0) return { valor: String(r.stdout || '').trim() || null, recordar: true };
+    const anotada = spawnSync('git', ['-C', dir, 'config', '--local', '--get', RAMA_DE_LA_CORRIDA], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000, env: entornoDeGit() });
+    return { valor: (!anotada.error && anotada.status === 0 && String(anotada.stdout || '').trim()) || null, recordar: true };
   });
+}
+
+/**
+ * Si otra sesión viva trabaja en `ruta`, en una frase; null si no. El criterio es el de scripts/lib/live-sessions.js (su
+ * transcripción, sus subagentes o su corrida abierta), sin contar la propia. Lo que no se puede mirar también se dice:
+ * sin esa lib (las skills instaladas aparte del arnés) o sin poder leer las transcripciones, no se elige a ciegas.
+ */
+function otraSesionEn(ruta) {
+  let live;
+  try { live = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'live-sessions.js')); } catch (_) {
+    return 'no pude ver si otra sesión trabaja ahí (las skills están instaladas aparte del arnés)';
+  }
+  let r;
+  try { r = live.others({ root: ruta, selfSessionId: live.selfFromEnv() }); } catch (e) { return `no pude ver si otra sesión trabaja ahí (${e.message})`; }
+  if (r.sessions.length) return `ahí trabaja otra sesión (${String(r.sessions[0].id).slice(0, 8)}: ${r.sessions[0].why})`;
+  if (!r.seen.transcripts || !r.seen.markers) return `no pude ver si otra sesión trabaja ahí (${r.problems[0] || 'no pude leer las transcripciones'})`;
+  return null;
 }
 /** Olvida las ramas recordadas (para las pruebas: la huella ya cubre un repo que cambia). */
 function limpiarRamas() { RAMAS.clear(); }
@@ -182,9 +203,10 @@ const DECLARADO = new Map();
  * (`numero`): las ramas de las specs y del código suelen llamarse distinto (`docs/…-1-4-impl` y `feat/…-1-4-…`). Con dos
  * o más candidatos no se adivina: el mismo número se repite entre carpetas de specs de un producto. Toda elección que
  * no sea la de mismo nombre se dice en una línea, y también la caída al declarado cuando está en otra rama.
- * Con la cabeza suelta no hay rama de mismo nombre, pero el número de la story sigue eligiendo: un clon de prueba del
- * repo de la story, en un commit suelto, tomaba el checkout compartido aunque la story tuviera su worktree. Sin rama
- * ni número, el declarado tal cual.
+ * El número no elige una copia donde trabaja otra sesión viva (otraSesionEn): es de otra corrida, y el portón pisaba
+ * sus informes. Con la cabeza suelta no se adivina: sin la rama de la corrida (ramaDe) no hay con qué atar la copia a
+ * esta corrida, y se usa el declarado, dicho si había una copia que nombraba la story. El clon del árbol armado sí la
+ * lleva (lib/private-tree.js cloneWithDisk).
  */
 function enLaMismaRama(declarado, rama, numero) {
   if (!rama && !numero) return declarado;
@@ -229,6 +251,15 @@ function enLaMismaRama(declarado, rama, numero) {
   }
   if (mismoNombre) return rama === 'main' ? elegir(mismoNombre.ruta) : alDiaOVieja(mismoNombre, worktrees, nombre, elegir, null);
   const candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
+  if (!rama) {
+    if (candidatos.length) avisar(`${nombre}: la story ${numero} corre en un commit suelto, sin la rama de la corrida: no elijo por su número (${candidatos.map((w) => `${real(w.ruta)} en ${w.rama}`).join(' · ')}), uso el declarado ${declarado}`);
+    return declarado;
+  }
+  const otra = candidatos.length === 1 ? otraSesionEn(candidatos[0].ruta) : null;
+  if (otra) {
+    avisar(`${nombre}: el worktree ${real(candidatos[0].ruta)} (rama ${candidatos[0].rama}) nombra la story ${numero}, pero ${otra}: no lo elijo, uso el declarado ${declarado}`);
+    return declarado;
+  }
   if (candidatos.length === 1) {
     return alDiaOVieja(candidatos[0], worktrees, nombre, elegir,
       (wt) => `${nombre} se lee del worktree ${wt} (rama ${candidatos[0].rama}): es el único cuya rama nombra la story ${numero}`);
@@ -615,7 +646,7 @@ function anclasDeLaEvidencia(repo, historia) {
 
 module.exports = {
   anclasDeLaEvidencia, nombreDelRepo,
-  companionRoots, ramaDe, limpiarRamas, enLaMismaRama, mainAlDia, mainCambioDespues, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
+  companionRoots, ramaDe, RAMA_DE_LA_CORRIDA, limpiarRamas, enLaMismaRama, mainAlDia, mainCambioDespues, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, declaredFor, real,
 };
 

@@ -37,6 +37,8 @@
 #       · 6 la suite salió 0 sin ninguna prueba corrida, o sin informe que lo cuente (no es verde).
 #       · 7 «sin acotar»: la corrida del repo hermano no pudo acotarse a lo tocado (no se sabe qué se tocó, o ninguna
 #       suite lo lee) y no corrió nada: no es verde ni rojo; la cubre la CI del pedido (esta máquina no comprueba que salga verde).
+#       · 8 «entorno sin preparar»: el entorno de pruebas que declara la organización para el repo no quedó listo y no
+#       se corrió NADA (lib/test-environment.js; tests-result.json con `env_not_ready` y el motivo)
 #
 # Sin `python3`, `timeout` ni `realpath`: en Windows no son
 # requisito. El informe es lib/test-gate-report.js.
@@ -56,6 +58,8 @@ unset NODE_TEST_CONTEXT
 # la corrida completa. Es la que se repite primero después de un rojo (ver «Primero la suite que falló», en la rama de
 # suites.json). Se saca antes de leer los posicionales.
 SUITE_ONLY=""
+# Los argumentos tal cual, para volver a lanzar el portón dentro de su entorno de pruebas (ver «El entorno de pruebas»).
+_TG_ORIG=("$@")
 _TG_ARGS=()
 while [[ $# -gt 0 ]]; do
   if [[ "$1" == "--suite" ]]; then
@@ -311,6 +315,11 @@ correr_hermanos_al_salir() {
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$root/.advisors/tests-result.json"; then
       echo "[test-gate] ⚠️  el repo hermano $(basename "$root") salió 7 sin la constancia de «sin acotar»: es un rojo" >&2
       hrc=1
+    fi
+    # 8: el entorno de pruebas del hermano no quedó listo y su suite no corrió (lib/test-environment.js)
+    # (con su constancia: una suite que sale 8 de verdad es un rojo, y lo dice el informe del hermano)
+    if [[ "$hrc" == "8" ]] && node -e 'try{process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).env_not_ready===true?0:1)}catch(e){process.exit(1)}' "$root/.advisors/tests-result.json"; then
+      echo "🟡 [test-gate] el repo hermano $(basename "$root"): entorno sin preparar, su suite no corrió (no es verde)" >&2
     fi
     # 78: el hermano espera a main (lib/main-check.js); su espera quedó anotada con su repo
     [[ "$hrc" == "78" ]] && echo "🟡 [test-gate] el repo hermano $(basename "$root") espera a main" >&2
@@ -766,6 +775,20 @@ if [[ -n "$_NO_LANZA" ]]; then
   echo "[test-gate] constancia de que no se pudo correr → $OUT_FILE" >&2
   marcar_tests_en_rojo 5 "$_RAZON"
   exit 5
+fi
+
+# --- El entorno de pruebas ------------------------------------------------------------------------------------------
+# La organización puede declarar cómo se prepara el entorno de pruebas de un repo (`stack.test_environments` de
+# team-repos.json: una base local, un servidor levantado, variables, la versión de Node). Se prepara recién acá, cuando
+# la suite va a correr: los cortes de arriba (sin story, alcance ambiguo, sin herramienta, sin pruebas) no preparan nada.
+# Si este repo tiene uno y esta corrida todavía no lo preparó, el portón se vuelve a lanzar dentro de
+# lib/test-environment.js: toma el candado del entorno (otra corrida que lo usa → 75, sin tocarlo), prepara, corre el
+# portón con lo preparado (también los repos hermanos, que lo heredan), desarma y sale con la salida del portón. Si no
+# queda listo, no corre nada y sale 8, «entorno sin preparar»: ni verde ni rojo. `TYCON_TEST_ENV=off` lo apaga.
+_TG_ENTORNO="$(node "$SCRIPT_DIR/lib/test-environment.js" name "$REPO" --story "$STORY_ARG")" || _TG_ENTORNO=""
+if [[ -n "$_TG_ENTORNO" ]]; then
+  trap - EXIT
+  exec node "$SCRIPT_DIR/lib/test-environment.js" run "$REPO" --story "$STORY_ARG" -- bash "$SCRIPT_DIR/test-gate.sh" ${_TG_ORIG[@]+"${_TG_ORIG[@]}"}
 fi
 
 # --- Correr la suite (UNA vez) vía run-check → exit code real + gates.log ----
