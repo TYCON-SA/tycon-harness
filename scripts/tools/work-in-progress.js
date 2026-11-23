@@ -1657,8 +1657,21 @@ function buildWip(opts = {}) {
   const runRepos = [...new Set([...pipeRows.values()].map(({ m }) => m.repoPath).filter((p) => typeof p === 'string' && path.isAbsolute(p)))];
   const retired = retiredNow(home, nowMs, sessions, unreadable);
   const freeSlots = freeSlotsNow(sdir, nowMs, unreadable);
-  const text = render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes, extra.map((x) => x.stepLine || null)) + renderRetired(retired) + renderFreeSlots(freeSlots);
-  return { testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, retired, freeSlots, mainFixers: Object.fromEntries(fixers), text };
+  const review = reviewNow(sdir, nowMs);
+  const text = render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes, extra.map((x) => x.stepLine || null)) + renderRetired(retired) + renderFreeSlots(freeSlots) + renderReview(review);
+  return { review, testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, retired, freeSlots, mainFixers: Object.fromEntries(fixers), text };
+}
+
+// Lo que espera la revisión de la persona, de la foto que deja el arranque (scripts/lib/review-load.js): `{ cuenta, edadMs }`
+// o null. Sólo para mostrar: /wip nunca decide con ella.
+function reviewNow(sdir, nowMs) {
+  try { return require(path.join(ROOT, 'scripts', 'lib', 'review-load.js')).leerFoto(sdir, nowMs); } catch (_) { return null; }
+}
+function renderReview(review) {
+  if (!review) return '';
+  const RL = require(path.join(ROOT, 'scripts', 'lib', 'review-load.js'));
+  const min = Math.round(review.edadMs / 60000);
+  return `\nEspera tu revisión: ${RL.lineaDeRevision(review.cuenta).replace(/\. Se miran con \/wip$/, '')} (foto de hace ${min < 1 ? 'menos de un minuto' : `${min} min`})`;
 }
 
 // El motivo vigente con que la coordinadora dejó lugares libres a propósito, o su cierre sin motivo (scripts/lib/free-slots.js):
