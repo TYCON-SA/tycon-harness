@@ -547,21 +547,22 @@ function stateFiles(home, problems) {
 // PostToolUse y la deja quieta con `permission` todavía anotado: no está trabada. Sin estado de Claude, el archivo de estado.
 // `key` identifica la espera para no anunciarla dos veces: la hora del permiso anotado, o la de Claude sin él.
 // El permiso que pide un agente de la sesión no la pone esperando: Claude Code la sigue dando ocupada (espera a su
-// agente). Se anuncia si está ocupada desde antes del pedido y nada se movió en la sesión después (`lastEventAt`, que se
-// refresca a lo sumo una vez por minuto); si la conversación lo resolvió y siguió, o el agente volvió a moverse, no.
-const MOVIO_DESPUES_MS = 90 * 1000;
-function porUnAgente(s, f, p) {
+// agente). Se anuncia si está ocupada desde antes del pedido y la sesión lleva QUIETA_MS sin moverse: el final de la
+// herramienta pedida borra el permiso, y el de otra lo anota en `movedAt` (hooks/session-state.js, una vez por minuto).
+// El plazo pasa el tope de un comando de consola en primer plano (10 minutos): uno aprobado que todavía corre no sale.
+const QUIETA_MS = 11 * 60 * 1000;
+function porUnAgente(s, p, now) {
   if (!p || s.status !== 'busy') return false;
   const pSince = Date.parse(p.since);
   if (!Number.isFinite(pSince) || !Number.isFinite(s.statusAt) || s.statusAt > pSince) return false;
-  const ultimo = Date.parse(f && f.lastEventAt);
-  return !(Number.isFinite(ultimo) && ultimo > pSince + MOVIO_DESPUES_MS);
+  const movio = Date.parse(p.movedAt);
+  return now - (Number.isFinite(movio) && movio > pSince ? movio : pSince) >= QUIETA_MS;
 }
 function stalledOf(s, f, now) {
   const p = f && f.permission && typeof f.permission === 'object' ? f.permission : null;
   const waits = s.status === 'waiting';
   const known = typeof s.status === 'string' && s.status !== '';
-  const agente = porUnAgente(s, f, p);
+  const agente = porUnAgente(s, p, now);
   if (!((waits && (/permission/i.test(String(s.waitingFor || '')) || p)) || (p && !known) || agente)) return null;
   const pSince = p ? Date.parse(p.since) : NaN;
   const since = Number.isFinite(pSince) ? pSince : (Number.isFinite(s.statusAt) ? s.statusAt : now);

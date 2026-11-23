@@ -697,7 +697,8 @@ click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la 
   sesión o con `claude attach`.
 - «… que pidió un agente suyo (la sesión figura ocupada y no se movió desde entonces)»: el permiso lo pidió un agente
   de la sesión. Claude Code la sigue dando ocupada, porque espera a su agente; sale si está ocupada desde antes del
-  pedido y nada se movió en ella después. Se trata igual que el de arriba.
+  pedido y lleva 11 minutos sin moverse (más que lo que puede correr un comando aprobado). Se trata igual que el de
+  arriba.
 - «<sesión> siguió: el permiso ya no está abierto» o «<sesión> se cerró con un permiso abierto»: se le avisa al dueño si
   se lo había pedido.
 - «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: claude respawn <id>»:
