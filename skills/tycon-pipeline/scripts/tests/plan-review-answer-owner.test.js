@@ -5,12 +5,12 @@
  *
  *   ReviewAnswer_SkipOWaitDelPlanSinElDueno_NoSeAnota — sin el click del dueño ni su terminal (sin vía, la delegación, la
  *     ventana, un «aprobado» escrito, la firma de trámite), `anotarRespuesta` no escribe nada
- *   ReviewAnswer_ReviewYLaDelCodigo_SeAnotanSinFirma — «review» al plan y cualquier respuesta al código, como siempre
+ *   ReviewAnswer_ReviewYLaDelCodigo_SeAnotanSinFirma — «review» al plan y al código, como siempre
  *   ReviewAnswer_ConLaViaDelDueno_SeAnotaYCuenta — con el click: el renglón lleva la vía, cierra la pregunta y elige seguir
  *   ReviewAnswer_RenglonSinElDueno_NoCierraLaPreguntaNiSaltea — un renglón de antes, sin la vía, no saca la pregunta de la
  *     vista ni hace seguir sin revisión: la cuarta vuelta sigue esperando a una persona
  *   Freno_SkipOWaitDelPlan_PidenLaFirmaDelDueno — el freno le ve la firma `plan-review-answer` a `skip` y `wait` del plan,
- *     en cualquier forma; a `review` y a la pregunta del código, ninguna. En el catálogo: nivel 2, sólo el click del dueño,
+ *     en cualquier forma; a `review`, ninguna (la del código tiene la suya). En el catálogo: nivel 2, sólo el click del dueño,
  *     la pide la coordinadora para otra sesión y no se delega aunque el perfil la nombre
  *   Freno_SinElClickDelDueno_NoDeja — la coordinadora que anota «skip» o «wait» para otra sesión: el freno le da el cuadro
  *   Freno_ConElClickDeOtroPedido_NoDeja — el click a «wait», a otra versión del plan o a otra firma no sirve para este «skip»
@@ -50,12 +50,11 @@ test('ReviewAnswer_SkipOWaitDelPlanSinElDueno_NoSeAnota', (t) => {
 test('ReviewAnswer_ReviewYLaDelCodigo_SeAnotanSinFirma', (t) => {
   const lab = laboratorio(t);
   assert.strictEqual(anotar(lab, { choice: 'review' }).codigo, 0);
-  for (const choice of ['review', 'skip', 'wait']) {
-    assert.strictEqual(PR.anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'code', choice, quien: `sesión ${DESTINO}`, huella: 'h-code' }).codigo, 0, `código ${choice}`);
-  }
-  assert.deepStrictEqual(lab.respuestas().map((j) => [j.kind, j.choice, j.via || null]), [['plan', 'review', null], ['code', 'review', null], ['code', 'skip', null], ['code', 'wait', null]]);
+  // «review» al código también; «skip» y «wait» al código los mira code-review-answer-owner.test.js
+  assert.strictEqual(PR.anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'code', choice: 'review', quien: `sesión ${DESTINO}`, huella: 'h-code' }).codigo, 0);
+  assert.deepStrictEqual(lab.respuestas().map((j) => [j.kind, j.choice, j.via || null]), [['plan', 'review', null], ['code', 'review', null]]);
   assert.deepStrictEqual(lab.abiertas(), [], '«review» cierra la pregunta del plan');
-  assert.strictEqual(PR.respuestaDe({ estado: lab.estado, sesion: DESTINO, kind: 'code', huella: 'h-code' }), 'wait', 'la del código cuenta como siempre');
+  assert.strictEqual(PR.respuestaDe({ estado: lab.estado, sesion: DESTINO, kind: 'code', huella: 'h-code' }), 'review', 'la del código cuenta como siempre');
 });
 
 test('ReviewAnswer_ConLaViaDelDueno_SeAnotaYCuenta', (t) => {
@@ -96,9 +95,10 @@ test('Freno_SkipOWaitDelPlan_PidenLaFirmaDelDueno', () => {
     '--kind=plan --choice=skip', '--kind plan --choice "$C"', '--kind "$K" --choice skip']) {
     assert.deepStrictEqual(firmas(resto), [FIRMA], resto);
   }
-  for (const resto of ['--kind plan --choice review --for-session ses-a', '--kind code --choice skip', '--kind code --choice wait', '--kind code --choice review']) {
+  for (const resto of ['--kind plan --choice review --for-session ses-a', '--kind code --choice review']) {
     assert.deepStrictEqual(firmas(resto), [], resto);
   }
+  assert.deepStrictEqual(firmas('--kind code --choice skip'), ['code-review-answer'], 'la del código tiene su firma');
   const s = SIG.SIGNATURES.find((x) => x.id === FIRMA);
   assert.ok(s, 'está en el catálogo');
   assert.deepStrictEqual([s.level, s.clickDelDueno, s.otherSession, s.kind], [2, true, 'yes', 'guion']);

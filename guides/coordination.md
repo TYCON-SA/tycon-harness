@@ -381,10 +381,10 @@ una, la coordinadora:
 
 - **Pregunta o no.** Si la matriz dice preguntar, la pregunta al dueño la hace ella, con el cuadro de opciones, y la
   anota: la sesión corre `marker.js review-ask --kind plan|code` antes del cuadro, y ella anota la respuesta con
-  `marker.js review-answer --for-session <sesión> --kind plan|code --choice review|skip|wait`. «skip» y «wait» a la
-  pregunta del plan la cierran sin revisar, y los anota sólo el click del dueño: el comando le devuelve el cuadro de la firma
-  `plan-review-answer`, que ella le muestra tal cual (o el dueño lo corre en su terminal); «review» y la pregunta del
-  código se anotan sin firma. Con el dueño ausente y la celda en `skip` o `wait`, no anota nada y la pregunta queda a la
+  `marker.js review-answer --for-session <sesión> --kind plan|code --choice review|skip|wait`. «skip» y «wait» cierran
+  la pregunta sin revisar, y los anota sólo el click del dueño: el comando le devuelve el cuadro de la firma
+  (`plan-review-answer` o `code-review-answer`), que ella le muestra tal cual (o el dueño lo corre en su terminal);
+  «review» se anota sin firma. Con el dueño ausente y la celda en `skip` o `wait`, no anota nada y la pregunta queda a la
   vista. En cada mensaje suyo, el
   arnés le muestra las preguntas sin respuesta, con los minutos que llevan y, pasados los de
   `plan_review.owner_away_minutes`, lo que dice la celda de «dueño ausente».
@@ -399,9 +399,10 @@ una, la coordinadora:
   `files:` o, sin `files:`, con los archivos que la historia le ata a la tanda más los que no ata a ninguna), la delicada
   se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide el diff
   entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
-- **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta la pregunta en su
-  nombre según la celda (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la propia
-  sesión con su turno, como siempre.
+- **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente y la celda en `run`, contesta
+  «review» en su nombre (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la propia
+  sesión con su turno, como siempre. «skip» y «wait» a la pregunta del código los anota sólo el click del dueño (la firma
+  `code-review-answer`) o su terminal: con la celda en `skip` o `wait`, no anota nada y la pregunta queda a la vista.
 - **Pone la marca de ausente** cuando el dueño dice que se va («seguí en autónomo», «me voy», «hasta mañana» o algo
   parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases. La marca se borra
   sola cuando el dueño vuelve: un mensaje suyo, un mensaje de la oficina verificado, una firma suya o a las 24 horas. La

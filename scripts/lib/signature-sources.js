@@ -618,6 +618,23 @@ function deLaRespuestaDelPlan(palabras, marcador, estado, destino) {
 }
 
 /**
+ * La respuesta del dueño a la pregunta de correr el pase adversarial sobre un cambio (`review-answer --kind code
+ * --choice skip|wait`): qué elige. La huella del diff va a la fuente: un click dado al cuadro de otro cambio no vale para
+ * éste. Sin la ejecución de la sesión no hay qué contestar, y no hay cuadro.
+ */
+function deLaRespuestaDelCodigo(palabras, estado, destino) {
+  if (!estado || !destino) return { error: 'no sé de qué sesión es la pregunta de correr el pase adversarial' };
+  const PR = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'plan-review.js'));
+  const h = PR.huellaDe({ estado, sesion: destino, kind: 'code' });
+  if (h.codigo) return { error: h.motivo };
+  const choice = valor(palabras, '--choice');
+  const queHace = choice === 'skip'
+    ? ['Tu respuesta a la pregunta de correr el pase adversarial: seguir sin el pase', 'El cambio sigue a main sin el pase adversarial sobre este diff']
+    : ['Tu respuesta a la pregunta de correr el pase adversarial: esperar', 'La pregunta se cierra, y la sesión la vuelve a hacer más tarde'];
+  return { que: choice === 'skip' ? 'seguir sin el pase adversarial sobre este cambio' : 'cerrar la pregunta de correr el pase adversarial y esperar', queHace, fuente: `${choice}\n${h.huella}` };
+}
+
+/**
  * Nombrar o retirar a la coordinadora: qué sesión, en qué carpeta. El id solo no le dice nada al dueño; la carpeta sí.
  * El rol es el que nombra el perfil del equipo (`approvals.relay_session`).
  */
@@ -804,6 +821,7 @@ function partesDe({ firma, palabras, comando, cwd, marcador, estado, destino, to
   if (firma === 'adhoc-lane:guardado-ajeno') return estado && destino ? delGuardadoAjeno(estado, destino) : { error: 'no sé de qué sesión es el guardado ajeno' };
   if (firma === 'lost-run') return deLaSalidaPerdida(palabras, cwd, estado, destino);
   if (firma === 'plan-review-answer') return deLaRespuestaDelPlan(palabras, marcador, estado, destino);
+  if (firma === 'code-review-answer') return deLaRespuestaDelCodigo(palabras, estado, destino);
   return null;
 }
 

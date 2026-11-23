@@ -20,9 +20,10 @@
  * una falsificación coordinada de los dos archivos (el límite de toda la delegación).
  *
  * La pregunta de si revisar y su respuesta quedan en gates.log (`review-ask`, `review-answer`): los minutos sin respuesta
- * se cuentan desde la pregunta, y «seguir sin revisión» sobre un plan hace que la delegación no lo firme. «Seguir sin
- * revisión» y «esperar» a la pregunta del plan la sacan de la vista sin revisar: las anota sólo el dueño, con su click en el
- * cuadro de la firma `plan-review-answer` o su terminal, y una respuesta así sin esa vía no cuenta. «review» no la necesita.
+ * se cuentan desde la pregunta, y «seguir sin revisión» sobre un plan hace que la delegación no lo firme. «skip» y «wait»
+ * cierran la pregunta sin revisar: al plan, sin la cuarta vuelta o sin su revisión; al código, sin el pase adversarial. Los
+ * anota sólo el dueño, con su click en el cuadro de su firma (`plan-review-answer`, `code-review-answer`) o su terminal, y
+ * una respuesta así sin esa vía no cuenta. «review» no la necesita.
  */
 const fs = require('fs');
 const path = require('path');
@@ -41,13 +42,16 @@ const CAMBIO_HISTORIA = 'la historia cambió mientras corría la revisión';
 const esCambio = (motivo) => motivo === CAMBIO || motivo === CAMBIO_HISTORIA;
 const KINDS = Object.freeze(['plan', 'code']);
 const CHOICES = Object.freeze(['review', 'skip', 'wait']);
-// las respuestas a la pregunta de revisar el plan que la cierran sin revisar, y las vías con que las da el dueño: su click
-// en el cuadro de la firma o su terminal. La delegación, la ventana y un «aprobado» escrito no las dan
+// las respuestas que cierran la pregunta de revisar sin revisar, la firma de cada pregunta y las vías con que las da el
+// dueño: su click en el cuadro de la firma o su terminal. La delegación, la ventana y un «aprobado» escrito no las dan
 const RESPUESTA_DEL_DUENO = 'plan-review-answer';
+const FIRMA_DE_LA_RESPUESTA = Object.freeze({ plan: RESPUESTA_DEL_DUENO, code: 'code-review-answer' });
 const SIN_REVISAR = Object.freeze(['skip', 'wait']);
 const VIAS_DEL_DUENO = Object.freeze(['click', 'terminal']);
-/** ¿Esta respuesta la anota sólo el dueño? `skip` y `wait` a la pregunta del plan. */
-const pideAlDueno = (kind, choice) => kind === 'plan' && SIN_REVISAR.includes(choice);
+/** ¿Esta respuesta la anota sólo el dueño? `skip` y `wait`, a la pregunta del plan o a la del código. */
+const pideAlDueno = (kind, choice) => KINDS.includes(kind) && SIN_REVISAR.includes(choice);
+/** La firma con que el dueño contesta la pregunta de `kind`, o null. */
+const firmaDeLaRespuesta = (kind) => FIRMA_DE_LA_RESPUESTA[kind] || null;
 /** ¿El renglón de una respuesta cuenta? El que pide al dueño, sólo con su vía; los demás, siempre. */
 const respuestaQueCuenta = (j) => !pideAlDueno(j.kind, j.choice) || VIAS_DEL_DUENO.includes(j.via);
 
@@ -801,14 +805,14 @@ function anotarPregunta({ estado, sesion, kind, huella, ahora = Date.now() }) {
 }
 
 /**
- * Anota la respuesta: la elección (`review`, `skip`, `wait`) y quién contestó. `skip` y `wait` a la pregunta del plan
- * piden `via`: el click del dueño o su terminal (la firma `plan-review-answer`); sin ella no se anota nada.
+ * Anota la respuesta: la elección (`review`, `skip`, `wait`) y quién contestó. `skip` y `wait` piden `via`: el click del
+ * dueño o su terminal (la firma de la pregunta, `plan-review-answer` o `code-review-answer`); sin ella no se anota nada.
  */
 function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo = null, via = null, ahora = Date.now() }) {
   if (!KINDS.includes(kind)) return no(`--kind es ${KINDS.join(' o ')}`);
   if (!CHOICES.includes(choice)) return no(`--choice es ${CHOICES.join(', ')}`);
   if (pideAlDueno(kind, choice) && !VIAS_DEL_DUENO.includes(via)) {
-    return no(`«${choice}» a la pregunta de revisar el plan lo anota sólo el dueño, con su click en el cuadro de la firma ${RESPUESTA_DEL_DUENO} o en su terminal${via ? ` (llegó por ${via})` : ''}; «review» se anota sin firma`);
+    return no(`«${choice}» a la pregunta de revisar ${kind === 'plan' ? 'el plan' : 'el código'} lo anota sólo el dueño, con su click en el cuadro de la firma ${firmaDeLaRespuesta(kind)} o en su terminal${via ? ` (llegó por ${via})` : ''}; «review» se anota sin firma`);
   }
   anotarRenglon(estado, { name: 'review-answer', status: 'ok', sesion, kind, choice, quien, huella: huella || null, motivo, ...(via ? { via } : {}) }, ahora);
   return { codigo: 0 };
@@ -817,7 +821,7 @@ function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo =
 /**
  * Las preguntas sin respuesta: `[{ sesion, kind, huella, ts }]`, la más vieja primero. `problemas` (opcional) recibe el
  * motivo si el registro no se puede leer; las consultas de abajo hacen lo mismo. Una respuesta que no cuenta (un `skip`
- * o un `wait` al plan sin la vía del dueño) no la cierra.
+ * o un `wait` sin la vía del dueño) no la cierra.
  */
 function preguntasAbiertas({ estado, problemas }) {
   const abiertas = new Map();
@@ -1231,7 +1235,7 @@ function guardarUso(estado, lanza, destino) {
 }
 
 module.exports = {
-  rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, RESPUESTA_DEL_DUENO, VIAS_DEL_DUENO, pideAlDueno, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
+  rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, RESPUESTA_DEL_DUENO, VIAS_DEL_DUENO, pideAlDueno, firmaDeLaRespuesta, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,

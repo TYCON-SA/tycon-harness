@@ -74,6 +74,7 @@ const LEVELS_EN = Object.freeze({
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view (a person\'s click or terminal, or the coordinator if the profile delegates it)',
   'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset (only the owner\'s click or terminal)',
   'plan-review-answer': 'record the owner\'s answer to the question of reviewing the plan when it is «go on without the review» or «wait» (only the owner\'s click or terminal; «review» needs no signature)',
+  'code-review-answer': 'record the owner\'s answer to the question of running the adversarial pass on a change when it is «go on without the pass» or «wait» (only the owner\'s click or terminal; «review» needs no signature)',
   'escape:DOD_BYPASS': 'skip every control of the commit',
   'critical-waiver': 'waive a critical finding',
   'runtime-waiver': 'accept a criterion that cannot be tested live, or exempt the whole story',
@@ -119,6 +120,7 @@ const LEVELS = Object.freeze([
   ['adhoc-lane:guardado-ajeno', 2, AMBOS, 'dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (el click o la terminal de una persona, o la coordinadora si el perfil se lo delega)'],
   ['autonomy-resume', 2, AMBOS, 'volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero (sólo el click o la terminal del dueño)'],
   ['plan-review-answer', 2, AMBOS, 'anotar la respuesta del dueño a la pregunta de revisar el plan cuando es «seguir sin revisión» o «esperar» (sólo el click o la terminal del dueño; «review» no pide firma)'],
+  ['code-review-answer', 2, AMBOS, 'anotar la respuesta del dueño a la pregunta de correr el pase adversarial sobre un cambio cuando es «seguir sin el pase» o «esperar» (sólo el click o la terminal del dueño; «review» no pide firma)'],
   ['adhoc-lane:sobre-cupo', 2, AMBOS, 'abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia (cuentan sólo los archivos de implementación, sin pruebas ni guías)'],
   ['escape:DOD_BYPASS', 2, AMBOS, 'saltear todos los controles del commit'],
   ['critical-waiver', 2, AMBOS, 'eximir un hallazgo crítico'],
@@ -175,7 +177,7 @@ const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'es
 // las firmas sólo del dueño que la coordinadora pide para otra sesión sin delegarlas: le llegan al dueño en la pestaña de
 // ella (la ventana o el cuadro), así no tiene que entrar a la sesión que espera. Siguen siendo sólo suyas: el freno no
 // las pasa por la delegación (owner-window.js)
-const PARA_OTRA_SESION_SIN_DELEGAR = Object.freeze(['escape:dod_runtime_exempt', 'escape:story-skill-bypass', 'autonomy-resume', 'adhoc-lane:datos', 'plan-review-answer']);
+const PARA_OTRA_SESION_SIN_DELEGAR = Object.freeze(['escape:dod_runtime_exempt', 'escape:story-skill-bypass', 'autonomy-resume', 'adhoc-lane:datos', 'plan-review-answer', 'code-review-answer']);
 const otraSinDelegar = (id) => (PARA_OTRA_SESION_SIN_DELEGAR.includes(id) ? 'yes' : 'no');
 // las dos formas de nivel 2 de una firma de rutina, que el perfil nombra con su propio nombre (no son firmas de
 // SIGNATURES: se piden con la firma de la derecha, y su guion mira si el perfil nombra la forma): el guardado que toca
@@ -273,6 +275,7 @@ const SI_SALE_MAL = Object.freeze({
   'adhoc-lane:guardado-ajeno': 'se guarda una vez algo que no es del camino corto mientras el carril espera sus revisores; si en verdad era del carril, entra sin ellos y se revierte con otro commit',
   'autonomy-resume': 'la sesión vuelve a iterar sola sobre un rojo que quizá necesitaba otra mirada',
   'plan-review-answer': 'el plan sigue sin la revisión que tenía que decidir una persona, o la pregunta sale de la vista sin que nadie la conteste',
+  'code-review-answer': 'el cambio llega a main sin el pase adversarial, y un error que él encontraría también; o la pregunta sale de la vista sin que nadie la conteste',
   save: 'se guarda en el repo y se abre el pedido; se revierte con otro commit',
   'designation-confirm': 'esa sesión firma en tu nombre lo que el perfil delega, hasta que se designe otra',
   'designation-set': 'una sesión que no querías firma en tu nombre lo que el perfil delega, hasta que la retires o nombres otra',
@@ -303,6 +306,7 @@ const APPROVES_EN = {
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view',
   'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset',
   'plan-review-answer': 'record your answer to the question of reviewing the plan: go on without the review, or wait',
+  'code-review-answer': 'record your answer to the question of running the adversarial pass on this change: go on without it, or wait',
   save: 'save the story: commit, push and the pull requests',
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command (retired: it no longer turns anything off)',
   'escape:TYCON_PROD_LINT': 'turn off the production query control for one command (retired: it no longer turns anything off)',
@@ -384,6 +388,11 @@ const SIGNATURES = Object.freeze([
   // delegación, la ventana ni un «aprobado» escrito. «review» y la pregunta del código no son esta firma
   { id: 'plan-review-answer', approves: 'anotar tu respuesta a la pregunta de revisar el plan: seguir sin la revisión, o esperar', command: 'marker.js review-answer --kind plan --choice <skip o wait> [--for-session <D>]', otherSession: otraSinDelegar('plan-review-answer'),
     terminal: 'marker.js review-answer --kind plan --choice <skip o wait> --terminal --for-session <id>',
+    clickDelDueno: true, descripciones: Object.freeze(['Se anota la respuesta que dice la pregunta.', 'No se anota nada: la pregunta sigue abierta hasta que la contestes.']) },
+  // lo mismo para la pregunta de correr el pase adversarial sobre un cambio chico: «seguir sin el pase» o «esperar» la
+  // cierran sin revisar el código, y las decide el dueño con su click o su terminal. «review» no es esta firma
+  { id: 'code-review-answer', approves: 'anotar tu respuesta a la pregunta de correr el pase adversarial sobre un cambio: seguir sin el pase, o esperar', command: 'marker.js review-answer --kind code --choice <skip o wait> [--for-session <D>]', otherSession: otraSinDelegar('code-review-answer'),
+    terminal: 'marker.js review-answer --kind code --choice <skip o wait> --terminal --for-session <id>',
     clickDelDueno: true, descripciones: Object.freeze(['Se anota la respuesta que dice la pregunta.', 'No se anota nada: la pregunta sigue abierta hasta que la contestes.']) },
   { id: 'save', approves: 'guardar la story: commit, push y los pull requests', command: 'marker.js approve-save [--for-session <D>]', otherSession: 'yes', terminal: 'marker.js approve-save --terminal --for-session <D>' },
   { id: 'designation-confirm', approves: 'confirmar qué sesión es la coordinadora de esta máquina', command: 'delegated-signing.js confirm-designation', otherSession: 'no', terminal: 'delegated-signing.js confirm-designation --terminal' },

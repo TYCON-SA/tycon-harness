@@ -381,10 +381,10 @@ the coordinator:
 
 - **Asks or not.** If the matrix says to ask, she asks the owner, with the options box, and records it: the session
   runs `marker.js review-ask --kind plan|code` before the box, and she records the answer with
-  `marker.js review-answer --for-session <session> --kind plan|code --choice review|skip|wait`. «skip» and «wait» to the
-  plan question close it without a review, and only the owner's click records them: the command gives her the box of the
-  `plan-review-answer` signature, which she shows as it is (or the owner runs it in a terminal); «review» and the code
-  question are recorded with no signature. With the owner away and the cell on `skip` or `wait`, she records nothing and
+  `marker.js review-answer --for-session <session> --kind plan|code --choice review|skip|wait`. «skip» and «wait» close the
+  question without a review, and only the owner's click records them: the command gives her the box of the signature
+  (`plan-review-answer` or `code-review-answer`), which she shows as it is (or the owner runs it in a terminal);
+  «review» is recorded with no signature. With the owner away and the cell on `skip` or `wait`, she records nothing and
   the question stays in view. On each of her messages,
   the harness shows her the questions without an answer, how many minutes they have been waiting and, past
   `plan_review.owner_away_minutes`, what the «owner away» cell says.
@@ -400,9 +400,11 @@ the coordinator:
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
   still goes by the whole story.
-- **Gives the code pass its turn.** She launches nothing for the code: with the owner away, she answers the question on
-  the owner's behalf according to the cell (`review-answer --for-session`, with «owner away» as the reason), and the
-  session itself launches the pass with its turn, as always.
+- **Gives the code pass its turn.** She launches nothing for the code: with the owner away and the cell on `run`, she
+  answers «review» on the owner's behalf (`review-answer --for-session`, with «owner away» as the reason), and the
+  session itself launches the pass with its turn, as always. Only the owner's click (the `code-review-answer`
+  signature) or terminal records «skip» or «wait» to the code question: with the cell on `skip` or `wait`, she records
+  nothing and the question stays in view.
 - **Sets the away mark** when the owner says they are leaving («go on autonomously», «I'm off», «see you tomorrow» or
   similar): `marker.js owner-away set --phrase "<what they said>"`. She judges it, not a list of phrases. The mark clears
   itself when the owner comes back: a message of theirs, a verified office message, a signature of theirs, or after 24

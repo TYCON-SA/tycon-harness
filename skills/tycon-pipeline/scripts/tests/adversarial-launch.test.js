@@ -76,6 +76,19 @@ function lineas(home, nombre) {
   return fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 }
 
+// «skip» a la pregunta del código: sin el click del dueño o su terminal no se anota (la firma code-review-answer); la
+// prueba lo anota después como lo deja ese click, para seguir con lo que mira
+function skipDelDueno(home, sid) {
+  const PR = require(path.join(SCRIPTS, 'lib', 'plan-review.js'));
+  const sin = ((h, sid, args) => mark(h, args, undefined, sid))(home, sid, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
+  assert.notStrictEqual(sin.status, 0, `sin el click del dueño no se anota: ${sin.stdout}${sin.stderr}`);
+  assert.strictEqual(lineas(home, 'gates.log').filter((x) => x.name === 'review-answer').length, 0, 'sin el click, nada escrito');
+  const h = PR.huellaDe({ estado: estado(home), sesion: sid, kind: 'code' });
+  assert.strictEqual(h.codigo, 0, h.motivo);
+  const r = PR.anotarRespuesta({ estado: estado(home), sesion: sid, kind: 'code', choice: 'skip', quien: 'dueño', huella: h.huella, motivo: 'el dueño eligió no revisarlo', via: 'click' });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+}
+
 /**
  * Un repo de prueba: git + una story con su alcance declarado. `pesada` = 13 archivos y 10 criterios (las dos
  * señales que hacen «pesada» a una story NORMAL, y con ellas la oferta del modelo mayor). `deepReview` va a
@@ -158,9 +171,8 @@ test('T1 Gate_AnnotatesVerdictInItsOwnField — el veredicto va a adversarialGat
 
   // «No corre» → el salteo se acepta (con el veredicto adentro de `adversarial` se negaba: «ya se lanzó»).
   fs.writeFileSync(path.join(repo.dir, '.tycon', 'advisors.yaml'), 'deep_review: off\n');
-  // de fábrica, un cambio chico de día pregunta: el salteo vale recién con la respuesta «skip» para este diff
-  const ra = mark(home, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
-  assert.strictEqual(ra.status, 0, ra.stderr);
+  // de fábrica, un cambio chico de día pregunta: el salteo vale recién con la respuesta «skip» del dueño para este diff
+  skipDelDueno(home, SID);
   const s = mark(home, ['mark-adversarial-skipped', '--files', 'scripts/x1.js']);
   assert.strictEqual(s.status, 0, `el salteo se negó: ${s.stderr}`);
   m = leerMarker(home);

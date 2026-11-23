@@ -668,6 +668,12 @@
       "requiere": []
     },
     {
+      "__nota": "«seguir sin el pase adversarial» y «esperar» a la pregunta de revisar el código los anota sólo el dueño (la firma code-review-answer, su click o su terminal): sin él no se anotan ni son la respuesta del portón, el freno da el cuadro, el click de otro pedido no sirve; «review» sigue sin firma.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/code-review-answer-owner.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",

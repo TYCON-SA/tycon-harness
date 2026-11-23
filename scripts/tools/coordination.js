@@ -1400,8 +1400,11 @@ function reviewAskLines(opts, sid, now, problems = []) {
       return `${base}: dueño ausente, plan_review.routine_owner_away: ${celda} — ${que}. No lo anotes: «${celda}» a la pregunta del plan lo anota sólo el click del dueño, y la pregunta queda a la vista hasta que la conteste.`;
     }
     const celda = cfg.deep_review.small_routine_owner_away;
-    const choice = celda === 'run' ? 'review' : celda;
-    return `${base}: dueño ausente, deep_review.small_routine_owner_away: ${celda} — contestala con marker.js review-answer --for-session ${p.sesion} --kind code --choice ${choice} --reason "dueño ausente"; el pase lo lanza la propia sesión, con tu turno.`;
+    if (celda === 'run') return `${base}: dueño ausente, deep_review.small_routine_owner_away: run — contestala con marker.js review-answer --for-session ${p.sesion} --kind code --choice review --reason "dueño ausente"; el pase lo lanza la propia sesión, con tu turno.`;
+    // «skip» y «wait» a la pregunta del código los anota sólo el click del dueño (la firma code-review-answer): con él
+    // ausente no se anotan, y la pregunta sigue a la vista
+    const que = celda === 'skip' ? 'la sesión sigue sin el pase, por el perfil' : 'la sesión sigue esperando al dueño';
+    return `${base}: dueño ausente, deep_review.small_routine_owner_away: ${celda} — ${que}. No lo anotes: «${celda}» a la pregunta del código lo anota sólo el click del dueño, y la pregunta queda a la vista hasta que la conteste.`;
   });
 }
 

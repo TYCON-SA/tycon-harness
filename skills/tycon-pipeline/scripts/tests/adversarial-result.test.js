@@ -90,6 +90,19 @@ function lineas(home, nombre) {
   if (!fs.existsSync(p)) return [];
   return fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 }
+
+// «skip» a la pregunta del código: sin el click del dueño o su terminal no se anota (la firma code-review-answer); la
+// prueba lo anota después como lo deja ese click, para seguir con lo que mira
+function skipDelDueno(home, sid) {
+  const PR = require(path.join(SCRIPTS, 'lib', 'plan-review.js'));
+  const sin = correr(home, sid, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
+  assert.notStrictEqual(sin.status, 0, `sin el click del dueño no se anota: ${sin.stdout}${sin.stderr}`);
+  assert.strictEqual(lineas(home, 'gates.log').filter((x) => x.name === 'review-answer').length, 0, 'sin el click, nada escrito');
+  const h = PR.huellaDe({ estado: estado(home), sesion: sid, kind: 'code' });
+  assert.strictEqual(h.codigo, 0, h.motivo);
+  const r = PR.anotarRespuesta({ estado: estado(home), sesion: sid, kind: 'code', choice: 'skip', quien: 'dueño', huella: h.huella, motivo: 'el dueño eligió no revisarlo', via: 'click' });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+}
 function crudoLog(home, nombre) {
   const p = path.join(estado(home), nombre);
   return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
@@ -196,9 +209,8 @@ test('T4 Skipped_PortonLow_AnotaSalteoYCierra5b @story-1.8 @ac-4', () => {
   // Sin el comando, marker.js responde «comando desconocido» (exit 2).
   const home = casa(); const SID = 't4'; const repo = mkRepo();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
-  // de fábrica, un cambio chico de día pregunta: el salteo vale recién con la respuesta «skip» para este diff
-  const ra = correr(home, SID, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
-  assert.equal(ra.status, 0, ra.stderr);
+  // de fábrica, un cambio chico de día pregunta: el salteo vale recién con la respuesta «skip» del dueño para este diff
+  skipDelDueno(home, SID);
   const r = correr(home, SID, ['mark-adversarial-skipped', '--files', 'scripts/x.js']);
   assert.equal(r.status, 0, r.stderr);
   const m = leerMarker(home, SID);
@@ -791,8 +803,7 @@ test('T52 Skipped_ArchivosCuentaComoElPorton @story-1.8 @ac-41', () => {
   for (const [args, n] of casos) {
     const home = casa(); const repo = mkRepo({ codigo: 2 });
     writeFakeMarker(home, 't52', { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
-    const ra = correr(home, 't52', ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
-    assert.equal(ra.status, 0, ra.stderr);
+    skipDelDueno(home, 't52');
     const r = correr(home, 't52', ['mark-adversarial-skipped', ...args]);
     assert.equal(r.status, 0, r.stderr);
     assert.equal(leerMarker(home, 't52').adversarialSkip.archivos, n, JSON.stringify(args));

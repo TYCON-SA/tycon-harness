@@ -115,11 +115,12 @@ también cuenta como grande uno chico pero denso, o uno que `risk-class` da NORM
 migración, el alcance firmado, un camino sensible, un freno). El portón usa el riesgo de la historia entera, no el que
 `risk-class` da para la parte anotada con `set-batch`: con una parte, cambia sólo quién aprueba el plan. Con `ask`, el portón da `run: false` con `decision: 'ask'`
 y la pregunta, y sale 0: antes de preguntar, `marker.js review-ask --kind code`; con la respuesta,
-`marker.js review-answer --kind code --choice review|skip|wait`. Con `wait`, `decision: 'wait'`. Una celda `skip` no
-pide la firma del dueño: es la configuración, no un pedido. El dueño cuenta como ausente con la marca de ausente
+`marker.js review-answer --kind code --choice review|skip|wait`. «skip» y «wait» los anota sólo el click del dueño en el
+cuadro de la firma `code-review-answer` (el comando lo devuelve) o su terminal; «review», sin firma. Con `wait`,
+`decision: 'wait'`. Una celda `skip` no pide la firma del dueño: es la configuración, no un pedido. El dueño cuenta como ausente con la marca de ausente
 (`marker.js owner-away set --phrase "<lo que dijo>"`) o con la pregunta sin respuesta pasados los minutos de
-`plan_review.owner_away_minutes`; la coordinadora contesta por él según su celda, y el pase lo lanza la propia sesión
-con su turno.
+`plan_review.owner_away_minutes`; con la celda en `run`, la coordinadora contesta «review» por él, y el pase lo lanza
+la propia sesión con su turno; con `skip` o `wait` no anota nada.
 
 **Lo de siempre sigue ganando**, en este orden: (1) la constancia firmada del salteo (`adversarial-skips.jsonl` de la
 corrida, que firma el dueño con `marker.js sign-adversarial-skip`): `--no-deep-review`, `TYCON_NO_DEEP_REVIEW` y

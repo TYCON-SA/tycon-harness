@@ -1124,7 +1124,8 @@ test('T56 CoordinationNotice_LasPreguntasDeRevisionSinRespuesta @story-8.221 @ac
   assert.ok(!/sin respuesta/.test(C.capNotice({ ...t.opts, sessionId: 's-a' }) || ''), 'sólo la designada');
   // con su respuesta, deja de salir
   PR.anotarRespuesta({ estado: t.state, sesion: 's-a', kind: 'plan', choice: 'review', quien: 'dueño', huella: 'h1', ahora: mins(1) });
-  PR.anotarRespuesta({ estado: t.state, sesion: 's-a', kind: 'code', choice: 'skip', quien: 'dueño', huella: 'h2', ahora: mins(1) });
+  // «skip» al código lo anota sólo el click del dueño (code-review-answer): con su vía
+  PR.anotarRespuesta({ estado: t.state, sesion: 's-a', kind: 'code', choice: 'skip', quien: 'dueño', huella: 'h2', via: 'click', ahora: mins(1) });
   assert.ok(!/sin respuesta/.test(C.capNotice(t.opts) || ''));
   // una pregunta con la hora ilegible no se cuenta como dueño ausente: se dice
   fs.appendFileSync(path.join(t.state, 'gates.log'), `${JSON.stringify({ ts: 'ayer', name: 'review-ask', status: 'ok', sesion: 's-a', kind: 'plan', huella: 'h3' })}\n`);

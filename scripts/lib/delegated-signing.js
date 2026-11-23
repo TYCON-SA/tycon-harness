@@ -30,6 +30,7 @@ const NUNCA_DELEGABLES = new Map([
   ['adhoc-lane:datos', 'dejar pasar un cambio de datos o de permisos sin historia es sólo del dueño: no se delega'],
   ['autonomy-resume', 'volver al modo autónomo lo decide el dueño con su click o su terminal: no se delega'],
   ['plan-review-answer', 'seguir sin la revisión del plan, o esperar, lo decide el dueño con su click o su terminal: no se delega'],
+  ['code-review-answer', 'seguir sin el pase adversarial sobre un cambio, o esperar, lo decide el dueño con su click o su terminal: no se delega'],
   ['escape:dod_runtime_exempt', 'eximir una historia de la prueba en vivo es sólo del dueño, en su pestaña o la de la coordinadora: no se delega'],
 ]);
 

@@ -12,7 +12,9 @@
  * Lo usan plan-review-answer-owner.test.js y review-answer-owner-click.test.js.
  *
  *   laboratorio(t)  → lab: comando(args), freno(sid, args), pedir(sid, args), click(args, { pestana }), cuadro(args),
- *                     respuestas(), abiertas(), accion(), correr(sid, args, ventana)
+ *                     respuestas(), abiertas(), accion(), correr(sid, args, ventana), cambio()
+ *   SKIP, WAIT, REVIEW → la respuesta al plan; SKIP_CODIGO, WAIT_CODIGO, REVIEW_CODIGO → al código (la sesión anota
+ *                     antes las dos preguntas: la del plan al armar el laboratorio y la del código con `preguntarCodigo`)
  *
  * stable-data: las horas son las de la corrida de la prueba; ninguna se compara con una fecha fija.
  */
@@ -35,6 +37,9 @@ const COORD = 'ses-coord';
 const DESTINO = 'ses-a';
 const HUELLA = 'a1b2c3d4e5f60718';
 const FIRMA = 'plan-review-answer';
+const FIRMA_CODIGO = 'code-review-answer';
+// la firma de la respuesta: la del código si el pedido nombra `--kind code`, si no la del plan
+const firmaDe = (args) => (args[args.indexOf('--kind') + 1] === 'code' ? FIRMA_CODIGO : FIRMA);
 // el perfil de la prueba: delega el plan, como el de una coordinadora que firma la rutina
 const PERFIL = { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] } };
 
@@ -106,7 +111,7 @@ function laboratorio(t) {
   const ask = lab.correr(DESTINO, ['review-ask', '--kind', 'plan']);
   assert.strictEqual(ask.status, 0, ask.stderr);
   lab.comando = (args) => `node ${MARKER} ${args.map(comillas).join(' ')}`;
-  lab.cuadro = (args, sesion = COORD) => OW.cuadroPara({ firma: FIRMA, comando: lab.comando(args), palabras: OW.canonica(lab.comando(args)), destino: DESTINO, cwd: repo, casa: home, sesion });
+  lab.cuadro = (args, sesion = COORD) => OW.cuadroPara({ firma: firmaDe(args), comando: lab.comando(args), palabras: OW.canonica(lab.comando(args)), destino: DESTINO, cwd: repo, casa: home, sesion });
   const hora = () => AHORA + (++lab.n) * 1000;
   /** El freno ante el comando que corre `sid`, desde su pestaña, con la delegación del perfil. */
   lab.freno = (sid, args, ahora = hora()) => OW.decidir({ evento: { session_id: sid, tool_use_id: `toolu_${ahora}`, hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', cwd: repo, tool_input: { command: lab.comando(args) } },
@@ -143,6 +148,13 @@ function laboratorio(t) {
     OA.anotar(home, { tipo: 'click', sesion: pestana, ts, tool_use_id: id, pregunta: c.pregunta, respuesta: c.opciones[0], herramienta: { pid: h.pid, inicio: h.inicio } });
     return c;
   };
+  /** La pregunta del código de ses-a, sobre el diff de ahora. */
+  lab.preguntarCodigo = () => {
+    const r = lab.correr(DESTINO, ['review-ask', '--kind', 'code']);
+    assert.strictEqual(r.status, 0, r.stderr);
+  };
+  /** Un cambio en el repo: otro diff, y otra huella de la pregunta del código. */
+  lab.cambio = () => fs.appendFileSync(path.join(repo, 'README.md'), `cambio ${++lab.n}\n`);
   lab.respuestas = () => fs.readFileSync(path.join(estado, 'gates.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((j) => j.name === 'review-answer');
   lab.abiertas = () => PR.preguntasAbiertas({ estado }).map((p) => `${p.sesion}/${p.kind}`);
   return lab;
@@ -152,5 +164,8 @@ const salida = (x) => `${x.freno.decision} ${x.freno.via || ''} ${x.freno.texto 
 const SKIP = ['review-answer', '--kind', 'plan', '--choice', 'skip', '--for-session', DESTINO];
 const WAIT = ['review-answer', '--kind', 'plan', '--choice', 'wait', '--for-session', DESTINO];
 const REVIEW = ['review-answer', '--kind', 'plan', '--choice', 'review', '--for-session', DESTINO];
+const SKIP_CODIGO = ['review-answer', '--kind', 'code', '--choice', 'skip', '--for-session', DESTINO];
+const WAIT_CODIGO = ['review-answer', '--kind', 'code', '--choice', 'wait', '--for-session', DESTINO];
+const REVIEW_CODIGO = ['review-answer', '--kind', 'code', '--choice', 'review', '--for-session', DESTINO];
 
-module.exports = { laboratorio, salida, SKIP, WAIT, REVIEW, COORD, DESTINO, FIRMA, PR, OW, OA, COPIA, CONFIG };
+module.exports = { laboratorio, salida, SKIP, WAIT, REVIEW, SKIP_CODIGO, WAIT_CODIGO, REVIEW_CODIGO, COORD, DESTINO, FIRMA, FIRMA_CODIGO, PR, OW, OA, COPIA, CONFIG };

@@ -518,18 +518,26 @@ function topesDelCaminoCorto(casa) {
   return t;
 }
 
-// la respuesta del dueño a la pregunta de revisar el plan cuando la cierra sin revisar (`skip` o `wait`)
+// la respuesta del dueño a la pregunta de revisar cuando la cierra sin revisar (`skip` o `wait`): la firma de cada pregunta
 const RESPUESTA_DEL_PLAN = 'plan-review-answer';
+const RESPUESTA_DEL_CODIGO = 'code-review-answer';
 
 /**
- * ¿El `review-answer` con estos argumentos (ya leídos) anota «seguir sin revisión» o «esperar» a la pregunta del plan?
- * Cuenta cada valor de `--kind` y `--choice`, separado o con `=`. Una palabra que no se lee hasta correr (`opaca`) puede
- * ser cualquiera de los dos: lo pide.
+ * La firma que pide un `review-answer` con estos argumentos (ya leídos), o null: «seguir sin revisión» o «esperar»
+ * (`skip`, `wait`) a la pregunta del plan o a la del código. Cuenta cada valor de `--kind` y `--choice`, separado o con
+ * `=`; la pregunta es la del primer `--kind` separado, el que lee el guion. Una palabra que no se lee hasta correr
+ * (`opaca`) puede ser cualquier respuesta: la pide, la del código si el pedido la nombra y si no la del plan.
  */
 function respuestaDelDueno(a, opaca) {
-  if (opaca) return true;
   const valores = (b) => a.flatMap((w, k) => (w === b ? [a[k + 1]] : w.startsWith(`${b}=`) ? [w.slice(b.length + 1)] : []));
-  return valores('--kind').includes('plan') && valores('--choice').some((c) => c === 'skip' || c === 'wait');
+  const kinds = valores('--kind');
+  const i = a.indexOf('--kind');
+  const leida = i >= 0 ? a[i + 1] : null;
+  const delCodigo = leida === 'code' || (leida !== 'plan' && kinds.includes('code'));
+  if (opaca) return delCodigo ? RESPUESTA_DEL_CODIGO : RESPUESTA_DEL_PLAN;
+  if (!valores('--choice').some((c) => c === 'skip' || c === 'wait')) return null;
+  if (delCodigo) return RESPUESTA_DEL_CODIGO;
+  return kinds.includes('plan') ? RESPUESTA_DEL_PLAN : null;
 }
 
 /**
@@ -580,8 +588,9 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
     if (sub === 'adhoc' && a[0] === 'allow-foreign-save') return 'adhoc-lane:guardado-ajeno';
     // volver al modo autónomo una ejecución detenida: la decisión del dueño, con o sin --ask-again
     if (sub === 'resume-autonomy') return 'autonomy-resume';
-    // «seguir sin revisión» o «esperar» a la pregunta de revisar el plan: la cierran sin revisar, y lo decide el dueño
-    if (sub === 'review-answer') return respuestaDelDueno(a, opaca) ? RESPUESTA_DEL_PLAN : null;
+    // «seguir sin revisión» o «esperar» a la pregunta de revisar el plan o el código: la cierran sin revisar, y lo decide
+    // el dueño
+    if (sub === 'review-answer') return respuestaDelDueno(a, opaca);
     if (sub === 'adhoc' && /[$`]/.test(a[0] || '')) return SOBRE_CUPO;
     // cerrar la ejecución que la partición de su historia dejó sin objeto: la bandera elige la forma de rutina, y el
     // guion comprueba antes de la firma que la historia se partió después de la apertura
