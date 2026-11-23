@@ -208,6 +208,42 @@ test('T15 Subtraction_RunsWithAndWithout_InLab @story-8.325 @ac-15: cada histori
   assert.match(rc.stderr, /no pude leer la clasificación/);
 });
 
+test('T15c Subtraction_PrepareKnowsItsSide @story-8.325 @ac-15: preparar recibe la llave del lado «sin», y nada del lado «con»', () => {
+  // un control que el caso cablea él mismo (el pre-commit de git de un repo de juguete) sabe de qué lado está por `env`
+  const raiz = tmp('resta-t15c-');
+  const casos = path.join(raiz, 'casos');
+  fs.mkdirSync(casos);
+  fs.writeFileSync(path.join(casos, 'lado.corrector.js'), [
+    "const fs = require('fs'); const path = require('path');",
+    "module.exports.preparar = ({ dir, env }) => fs.writeFileSync(path.join(dir, 'lado.json'), JSON.stringify(env));",
+    "module.exports.corregir = ({ dir }) => ({ cumple: fs.readFileSync(path.join(dir, 'lado.json'), 'utf8') === '{}', motivo: 'lado' });",
+    '',
+  ].join('\n'));
+  const hs = [1, 2].map((i) => ({ nombre: `h${i}`, task: `Escribí hecho.txt (${i}).`, corrector: 'lado.corrector.js' }));
+  fs.writeFileSync(path.join(casos, 'lado.json'), JSON.stringify({ control: 'toy-switch', quitar: { env: { TYCON_TOY_SWITCH: 'off' } }, ganchos: [], k: 2, historias: hs }));
+  const r = correr(['--cases', casos, '--harness', arnesDeJuguete(), '--model', 'm-uno'], { agente: agenteFalso(raiz), home: tmp('resta-home-') });
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  // del lado «con» llega {} (cumple); del lado «sin», la llave (no cumple)
+  assert.match(r.stdout, /con el control 2\/2 cumplen · sin él 0\/2/);
+
+  // corregir mira con el control entero: de los dos lados recibe la copia del lado «con», también cuando el «sin» está
+  // neutralizado
+  const raiz2 = tmp('resta-t15c2-');
+  const casos2 = path.join(raiz2, 'casos');
+  fs.mkdirSync(casos2);
+  fs.writeFileSync(path.join(casos2, 'vara.corrector.js'), [
+    "const fs = require('fs'); const path = require('path');",
+    "module.exports.corregir = ({ arnes }) => ({ cumple: fs.readFileSync(path.join(arnes, 'scripts/hooks/juguete-guard.js'), 'utf8').includes('const FRENA = true;'), motivo: 'vara' });",
+    '',
+  ].join('\n'));
+  const quitar = { neutralizar: { archivo: 'scripts/hooks/juguete-guard.js', buscar: 'const FRENA = true;', poner: 'const FRENA = false;' } };
+  const hs2 = [1, 2].map((i) => ({ nombre: `h${i}`, task: `Escribí hecho.txt (${i}).`, corrector: 'vara.corrector.js' }));
+  fs.writeFileSync(path.join(casos2, 'vara.json'), JSON.stringify({ control: 'toy-switch', quitar, ganchos: [], k: 2, historias: hs2 }));
+  const r2 = correr(['--cases', casos2, '--harness', arnesDeJuguete(), '--model', 'm-uno'], { agente: agenteFalso(raiz2), home: tmp('resta-home-') });
+  assert.strictEqual(r2.status, 0, r2.stderr + r2.stdout);
+  assert.match(r2.stdout, /con el control 2\/2 cumplen · sin él 2\/2/);
+});
+
 test('T15b Subtraction_ToyCorrector_TestsUntouched @story-8.325 @ac-15: el corrector de los casos del piloto no da «cumple» si el agente tocó las pruebas', () => {
   const dirCasos = path.join(TCG, 'scripts', 'controls-bench', 'cases', 'subtraction');
   const piloto = R.cargarCasos(dirCasos).find((e) => e.caso.control === 'ledger-visible');

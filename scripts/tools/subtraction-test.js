@@ -21,10 +21,12 @@
  *   · `ganchos`: los ganchos de `scripts/setup/hooks-list.json` (su `spec`) que corren en el laboratorio;
  *   · `historias`: las historias de juguete, cada una con su tarea (`task`), su árbol (`tree`, ruta → contenido) y su
  *     corrector (`corrector`, un `.js` al lado del caso). El corrector exporta `corregir({ dir, toolLog, salida, casa })
- *     → { cumple, motivo }` (con `sesion` además) y puede exportar `preparar({ dir, casa, arnes, sesion })` para lo que
- *     el árbol no alcanza a decir
- *     (un repo git, una ejecución del pipeline abierta en la casa del laboratorio). Corrige un programa, nunca otro
- *     modelo;
+ *     → { cumple, motivo }` (con `sesion` además, y `arnes`: la copia del lado «con», para mirar el resultado con el
+ *     control entero) y puede exportar `preparar({ dir, casa, arnes, sesion, env })` para
+ *     lo que el árbol no alcanza a decir: un repo git, una ejecución del pipeline abierta en la casa del laboratorio, o
+ *     el `pre-commit` de git de un control que corre ahí y no como gancho de Claude. `env` es la llave de `quitar.env`
+ *     del lado «sin» (vacío del lado «con»): un control que el caso cablea él mismo la necesita para saber de qué lado
+ *     está. Corrige un programa, nunca otro modelo;
  *   · `k`: cuántas corridas medidas por lado hacen falta para decidir (por defecto, una por historia).
  *
  * EL LABORATORIO. Una copia del arnés por lado (sin `.git`), una casa de laboratorio por corrida en la carpeta temporal
@@ -386,7 +388,7 @@ function comandoDelAgente({ task, modelo, settings, sesion }) {
 }
 
 /** Una corrida: arma el árbol y la casa, lanza al agente y corrige. `{ medida, cumple, costo_usd, motivo }`. */
-async function correrUna({ entrada, historia, modelo, copia, env, lista }) {
+async function correrUna({ entrada, historia, modelo, copia, copiaCon = copia, env, lista }) {
   const { caso, dir: dirCaso } = entrada;
   let corrector, arbol, casa, bin, args;
   const sesion = crypto.randomUUID();
@@ -395,7 +397,7 @@ async function correrUna({ entrada, historia, modelo, copia, env, lista }) {
     corrector = require(path.join(dirCaso, historia.corrector));
     arbol = armarArbol(historia);
     casa = casaDelLaboratorio();
-    if (typeof corrector.preparar === 'function') corrector.preparar({ dir: arbol, casa, arnes: copia, sesion });
+    if (typeof corrector.preparar === 'function') corrector.preparar({ dir: arbol, casa, arnes: copia, sesion, env: Object.assign({}, env) });
     const settings = path.join(casa, 'resta-settings.json');
     fs.writeFileSync(settings, JSON.stringify(settingsDelLaboratorio({ ganchos: caso.ganchos || [], lista, copia, casa, env })));
     ({ bin, args } = comandoDelAgente({ task: historia.task, modelo, settings, sesion }));
@@ -415,7 +417,7 @@ async function correrUna({ entrada, historia, modelo, copia, env, lista }) {
       return { medida: false, motivo };
     }
     let nota;
-    try { nota = corrector.corregir({ dir: arbol, toolLog: usosDeHerramientas(r.out), salida: r.out, casa, sesion }); }
+    try { nota = corrector.corregir({ dir: arbol, toolLog: usosDeHerramientas(r.out), salida: r.out, casa, sesion, arnes: copiaCon }); }
     catch (e) { return { medida: false, motivo: `el corrector falló: ${e.message}` }; }
     if (!nota || typeof nota.cumple !== 'boolean') return { medida: false, motivo: 'el corrector no dijo si cumple (true o false)' };
     const costo = Number(res.total_cost_usd);
@@ -498,7 +500,7 @@ async function main(argv) {
         for (const historia of caso.historias) {
           for (let i = 0; i < n; i++) {
             con.push(await correrUna({ entrada: e, historia, modelo, copia: copiaCon, env: {}, lista }));
-            sin.push(await correrUna({ entrada: e, historia, modelo, copia: copiaSin, env: caso.quitar.env || {}, lista }));
+            sin.push(await correrUna({ entrada: e, historia, modelo, copia: copiaSin, copiaCon, env: caso.quitar.env || {}, lista }));
           }
         }
         const ladoSinMedir = [['con el control', con], ['sin el control', sin]].find(([, rs]) => !rs.some((r) => r.medida));
