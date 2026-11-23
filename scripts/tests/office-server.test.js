@@ -287,11 +287,16 @@ test('T7c Server_MachineOnly_NeverCloserThanTheInterval @story-8.301 @ac-7: sin 
   assert.ok(carga.every(({ f, previa }) => Number.isFinite(f.leidaEn) && Number.isFinite(previa.leidaEn)), 'el servidor de prueba dice cuándo leyó cada foto');
   for (const { f, previa } of carga) assert.ok(f.leidaEn - previa.leidaEn >= 1800, `una foto de la carga leída a ${f.leidaEn - previa.leidaEn} ms de la anterior`);
   assert.ok(carga.length <= 3, `a lo sumo una por intervalo: ${carga.length} en 5 s`);
-  // sin ninguna novedad ni relectura de afuera: sólo el reloj de la carga la pone al día
+  // sin ninguna novedad ni relectura de afuera: sólo el reloj de la carga la pone al día, y lo vuelve a hacer. Se esperan
+  // dos fotos más de la carga con un plazo holgado y no se cuentan en una ventana fija: en un runner lento cada lectura
+  // tarda más y un tic puede perder su turno por unos milisegundos, y entonces sale en el siguiente
   const antes = carga.length;
-  await mirar(5500, false);
+  const hasta = Date.now() + 2 * PLAZO;
+  while (fotosDeLaCarga().length - antes < 2 && Date.now() < hasta) await sleep(100);
   p.close();
-  assert.ok(fotosDeLaCarga().length - antes >= 2, `la carga se pone al día sola: ${fotosDeLaCarga().length - antes} fotos en 5,5 s con el intervalo en 2 s`);
+  const todas = fotosDeLaCarga();
+  assert.ok(todas.length - antes >= 2, `la carga se pone al día sola: ${todas.length - antes} fotos en ${2 * PLAZO} ms con el intervalo en 2 s`);
+  for (const { f, previa } of todas.slice(antes)) assert.ok(f.leidaEn - previa.leidaEn >= 1800, `una foto del reloj leída a ${f.leidaEn - previa.leidaEn} ms de la anterior`);
 });
 
 test('T7 Events_BurstOfChanges_OneSnapshot @story-8.301 @ac-7: cinco cambios juntos dan una foto; una igual, o que sólo cambia la carga antes de 30 s, no manda nada', async () => {
