@@ -539,11 +539,24 @@ function stateFiles(home, problems) {
 // sesión, manda él: el permiso está abierto sólo si la da esperando. Una negación (Esc o «No») corta el turno sin Stop ni
 // PostToolUse y la deja quieta con `permission` todavía anotado: no está trabada. Sin estado de Claude, el archivo de estado.
 // `key` identifica la espera para no anunciarla dos veces: la hora del permiso anotado, o la de Claude sin él.
+// El permiso que pide un agente de la sesión no la pone esperando: Claude Code la sigue dando ocupada (espera a su
+// agente). Se anuncia si está ocupada desde antes del pedido y la sesión lleva QUIETA_MS sin moverse: el final de la
+// herramienta pedida borra el permiso, y el de otra lo anota en `movedAt` (hooks/session-state.js, una vez por minuto).
+// El plazo pasa el tope de un comando de consola en primer plano (10 minutos): uno aprobado que todavía corre no sale.
+const QUIETA_MS = 11 * 60 * 1000;
+function porUnAgente(s, p, now) {
+  if (!p || s.status !== 'busy') return false;
+  const pSince = Date.parse(p.since);
+  if (!Number.isFinite(pSince) || !Number.isFinite(s.statusAt) || s.statusAt > pSince) return false;
+  const movio = Date.parse(p.movedAt);
+  return now - (Number.isFinite(movio) && movio > pSince ? movio : pSince) >= QUIETA_MS;
+}
 function stalledOf(s, f, now) {
   const p = f && f.permission && typeof f.permission === 'object' ? f.permission : null;
   const waits = s.status === 'waiting';
   const known = typeof s.status === 'string' && s.status !== '';
-  if (!((waits && (/permission/i.test(String(s.waitingFor || '')) || p)) || (p && !known))) return null;
+  const agente = porUnAgente(s, p, now);
+  if (!((waits && (/permission/i.test(String(s.waitingFor || '')) || p)) || (p && !known) || agente)) return null;
   const pSince = p ? Date.parse(p.since) : NaN;
   const since = Number.isFinite(pSince) ? pSince : (Number.isFinite(s.statusAt) ? s.statusAt : now);
   // el gancho ya lo anota tapado; se tapa otra vez por los archivos escritos antes de que una forma existiera
@@ -561,7 +574,7 @@ function stalledOf(s, f, now) {
   // de un permiso que se resolvió por otro camino (lo cortó un freno, o se destrabó) y que queda hasta el cierre del
   // turno: el aviso no la da por abierta. Esperando sin decir qué, se toma por el permiso, como siempre
   const confirmed = waits && (!s.waitingFor || /permission/i.test(String(s.waitingFor)));
-  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', confirmed, ...(forma ? { forma } : {}) };
+  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', confirmed, ...(agente ? { agente: true } : {}), ...(forma ? { forma } : {}) };
 }
 
 // La espera que el archivo de estado anota cuando una sesión abre un cuadro o pide aprobar su plan (hooks/session-state.js).
@@ -628,7 +641,7 @@ function swapLine(s) {
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
-const stalledLine = (x) => `${x.session} ${x.confirmed === false ? `tiene un permiso anotado desde las ${hhmm(x.since)}, sin confirmar que siga abierto` : `espera un permiso desde las ${hhmm(x.since)}`}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
+const stalledLine = (x) => `${x.session} ${x.agente ? `espera un permiso desde las ${hhmm(x.since)} que pidió un agente suyo (la sesión figura ocupada y no se movió desde entonces)` : x.confirmed === false ? `tiene un permiso anotado desde las ${hhmm(x.since)}, sin confirmar que siga abierto` : `espera un permiso desde las ${hhmm(x.since)}`}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
 
 // Por qué el permiso de la sesión no le llegó a la coordinadora como cuadro, o dejó de esperarlo: lo anota el gancho de
 // permisos (scripts/hooks/permission-relay.js) en `coordination/permission-relay/<sesión>.json`, con la hora en que llegó
