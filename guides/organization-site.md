@@ -801,6 +801,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   (sin click, la frase de antes queda de respaldo). Se retira con `marker.js withdraw-relay`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
+  Después viene **quién firma cada commit de una ejecución** (`approvals.local_commit`). «Nadie: el agente commitea solo»
+  es lo de fábrica: la persona aprueba el pull request, y el commit, que es local y se deshace, no pide nada. «La
+  coordinadora, antes de cada commit» suma una segunda mirada: el agente no commitea sin su ok de guardar (`marker.js
+  approve-save`), y un cambio después del ok pide otro. Si el perfil no le delega la firma `save`, la da la persona en la
+  ventana. El sitio no la propone a una capa que pide una versión del arnés que todavía no la lee.
   Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/firmas-del-arnes.md`), con tres
   opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso; donde la ventana no
   llega, aprueba con un click en el cuadro de opciones o un «aprobado» escrito; o firma en su terminal.
