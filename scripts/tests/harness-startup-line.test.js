@@ -99,9 +99,11 @@ test('T28 · newLine en Windows: barras normales, comillas como el .ps1 (:421), 
   // en Windows los hooks se escriben con `/` y comillas dobles: los escribe el aplicador,
   // scripts/setup/apply-hooks.js con --platform windows. La línea nueva sigue esa regla.
   // Como el arnés trae su propio Node, un `.js` arranca con el intérprete que elige el aplicador (`jsHead`: el Node del
-  // arnés, o el piso de Node cuando no está).
+  // arnés, o el piso de Node cuando no está); `headFor` le pone delante el lanzador de un freno, salvo en Windows, donde
+  // es `jsHead` tal cual.
   const applier = fs.readFileSync(path.join(RAIZ, 'scripts', 'setup', 'apply-hooks.js'), 'utf8');
-  assert.ok(applier.includes('const absCmd = windows ? fwd(abs) : abs;') && applier.includes('command = `${runner === \'node\' ? jsHead(h) : runner} "${absCmd}"`'),
+  assert.ok(applier.includes('const absCmd = windows ? fwd(abs) : abs;') && applier.includes('command = `${runner === \'node\' ? headFor(h) : runner} "${absCmd}"`')
+    && applier.includes('if (windows || !h.launcher'),
     'el aplicador ya no escribe los hooks de Windows con / y comillas como antes: revisar la línea nueva');
 });
 
