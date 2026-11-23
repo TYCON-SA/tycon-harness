@@ -217,6 +217,30 @@ test('T9b OwnerWait_PermisoSinConfirmar_DiceQueNoEstaConfirmado', () => {
   }
 });
 
+// 🔴 Falla con: el permiso que pide un agente de una sesión de fondo no se anuncia. La sesión principal sigue «ocupada»
+// (espera a su agente) y el aviso sólo miraba la que Claude Code da esperando: una noche entera trabada sin que nadie se
+// enterara (fila 70, DemoTracking, 22/11).
+test('T9c OwnerWait_PermisoDeUnAgente_LaSesionFiguraOcupada_LoAnuncia', () => {
+  const t = toy();
+  // ocupada desde antes del pedido, y nada pasó en la sesión desde entonces
+  claudeFile(t, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(30) });
+  frenada(t, OTRA, 'Bash', 'cd /tmp/capt34 && python3 -', 20);
+  const r = vuelta(t);
+  assert.strictEqual(r.lines.length, 1, JSON.stringify(r));
+  assert.match(r.lines[0], /^hora-mensajes espera un permiso desde las \d\d:\d\d que pidió un agente suyo \(la sesión figura ocupada y no se movió desde entonces\): Bash cd \/tmp\/capt34 && python3 -\. Para entrar: claude attach hora-mensajes$/);
+  // si la sesión se movió después del pedido (un «No» y siguió, o el agente siguió), no está trabada
+  const t2 = toy();
+  claudeFile(t2, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(30) });
+  frenada(t2, OTRA, 'Bash', 'npm i', 20);
+  stateFile(t2, OTRA, { lastEventAt: new Date(mins(5)).toISOString() });
+  assert.deepStrictEqual(vuelta(t2).lines, [], 'se movió después del pedido');
+  // ocupada desde después del pedido: la conversación principal lo resolvió y siguió
+  const t3 = toy();
+  claudeFile(t3, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(1) });
+  frenada(t3, OTRA, 'Bash', 'npm i', 20);
+  assert.deepStrictEqual(vuelta(t3).lines, [], 'ocupada desde después del pedido');
+});
+
 test('T10 OwnerWait_YaAnunciada_NoTerminaDeNuevo @story-8.202 @ac-6', () => {
   const t = toy();
   claudeFile(t, OTRA, 'hora-mensajes', { status: 'waiting' });
