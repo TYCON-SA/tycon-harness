@@ -82,20 +82,16 @@ function page(lock, { token = lock.token, origin = `http://127.0.0.1:${lock.port
   const WebSocket = require(VENDOR_WS);
   const ws = new WebSocket(`ws://127.0.0.1:${lock.port}/live${token == null ? '' : `?t=${token}`}`, { origin: origin || undefined, headers: { host } });
   const fotos = [];
-  // la hora a la que llegó cada foto, en el mismo orden: una prueba de intervalos mide la llegada, no cuándo la miró
-  const llegadas = [];
   const waiters = [];
   ws.on('message', (raw) => {
     const msg = JSON.parse(String(raw));
     fotos.push(msg);
-    llegadas.push(Date.now());
     while (waiters.length) waiters.shift()(msg);
   });
   ws.closed = new Promise((resolve) => ws.on('close', (code) => resolve(code)));
   ws.rejected = new Promise((resolve) => ws.on('unexpected-response', (req, res) => resolve(res.statusCode)));
   ws.on('error', () => { /* lo dicen closed y rejected */ });
   ws.fotos = fotos;
-  ws.llegadas = llegadas;
   ws.next = (ms = 3000) => new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`no llegó una foto en ${ms} ms`)), ms);
     waiters.push((msg) => { clearTimeout(t); resolve(msg); });
@@ -265,26 +261,37 @@ test('T7c Server_MachineOnly_NeverCloserThanTheInterval @story-8.301 @ac-7: sin 
   const board = path.join(coordination, 'tablero.json');
   fs.writeFileSync(board, JSON.stringify({ pendientes: [] }));
   await p.next(PLAZO);
-  // las fotos de la carga, con la hora a la que llegó cada una (sin la de la novedad del tablero): medidas cuando
-  // llegan, no cuando la prueba las mira, porque en una máquina cargada una vuelta atrasada junta dos llegadas lejanas
-  const llegadasDeLaCarga = () => p.llegadas.slice(desde + 1);
-  const mirar = async (ms, reescribir) => {
+  // una foto de la carga es la que, respecto de la anterior, sólo cambia la carga; una novedad (otra cosa cambió: el
+  // minuto, un tablero) sale enseguida y no cuenta. El intervalo se mide como lo mide el servidor (`photoDue`): desde
+  // que empezó a leerse la foto anterior hasta que empezó a leerse esta. La llegada no sirve: una lectura lenta seguida
+  // de una rápida manda dos fotos más juntas que sus lecturas, y eso depende de la carga del runner
+  const sinCarga = (f) => JSON.stringify({ ...f.data, meta: { ...f.data.meta, maquina: null } });
+  const fotosDeLaCarga = () => {
+    const vistas = p.fotos.slice(desde);
+    return vistas.slice(1).map((f, i) => ({ f, previa: vistas[i] })).filter(({ f, previa }) => sinCarga(f) === sinCarga(previa));
+  };
+  // la relectura escribe el tablero entero de una vez (archivo aparte y renombre): a medio escribir, el servidor lo vería
+  // vacío o roto y eso sería una novedad, no una relectura
+  const reescribir = () => { fs.writeFileSync(`${board}.tmp`, fs.readFileSync(board)); fs.renameSync(`${board}.tmp`, board); };
+  const mirar = async (ms, conRelecturas) => {
     const t0 = Date.now();
     while (Date.now() - t0 < ms) {
-      if (reescribir) fs.writeFileSync(board, fs.readFileSync(board));
+      if (conRelecturas) reescribir();
       await sleep(300);
     }
   };
-  // relecturas sin novedad, más seguidas que el intervalo: ninguna puede mandar una foto antes de tiempo
+  // relecturas sin novedad, más seguidas que el intervalo: ninguna puede leer una foto de la carga antes de tiempo. Con
+  // el intervalo en 2 s el margen es de 200 ms: entre su lectura y la de la foto anterior, al menos 1800 ms
   await mirar(5000, true);
-  const llegadas = llegadasDeLaCarga();
-  for (let i = 1; i < llegadas.length; i += 1) assert.ok(llegadas[i] - llegadas[i - 1] >= 1500, `dos fotos de la carga a ${llegadas[i] - llegadas[i - 1]} ms`);
-  assert.ok(llegadas.length <= 3, `a lo sumo una por intervalo: ${llegadas.length} en 5 s`);
+  const carga = fotosDeLaCarga();
+  assert.ok(carga.every(({ f, previa }) => Number.isFinite(f.leidaEn) && Number.isFinite(previa.leidaEn)), 'el servidor de prueba dice cuándo leyó cada foto');
+  for (const { f, previa } of carga) assert.ok(f.leidaEn - previa.leidaEn >= 1800, `una foto de la carga leída a ${f.leidaEn - previa.leidaEn} ms de la anterior`);
+  assert.ok(carga.length <= 3, `a lo sumo una por intervalo: ${carga.length} en 5 s`);
   // sin ninguna novedad ni relectura de afuera: sólo el reloj de la carga la pone al día
-  const antes = llegadas.length;
+  const antes = carga.length;
   await mirar(5500, false);
   p.close();
-  assert.ok(llegadasDeLaCarga().length - antes >= 2, `la carga se pone al día sola: ${llegadasDeLaCarga().length - antes} fotos en 5,5 s con el intervalo en 2 s`);
+  assert.ok(fotosDeLaCarga().length - antes >= 2, `la carga se pone al día sola: ${fotosDeLaCarga().length - antes} fotos en 5,5 s con el intervalo en 2 s`);
 });
 
 test('T7 Events_BurstOfChanges_OneSnapshot @story-8.301 @ac-7: cinco cambios juntos dan una foto; una igual, o que sólo cambia la carga antes de 30 s, no manda nada', async () => {
