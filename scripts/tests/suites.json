@@ -934,11 +934,11 @@
       "ruta": "tests/subtraction-test.test.js",
       "requiere": [],
       "gate_only_when_touching": [
-        "scripts/tools/subtraction-test.js",
+        "scripts/tools/**",
         "scripts/controls-bench/**",
-        "scripts/setup/hooks-list.json",
-        "scripts/lib/env-switches.json",
-        "scripts/metrics/controls-classification.json"
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/metrics/**"
       ]
     },
     {
