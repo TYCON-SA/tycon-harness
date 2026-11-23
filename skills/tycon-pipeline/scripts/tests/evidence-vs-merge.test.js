@@ -652,11 +652,11 @@ const GATE = path.join(SCRIPTS, 'e2e-gate.sh');
 const conAncla = (ev, ancla) => ({ ...ev, ancla });
 
 /** Un humo de verdad, por `smoke-run.sh`, con una carpeta personal propia para el espejo. Devuelve la línea del registro. */
-function humoReal(f, story, acs = '1') {
+function humoReal(f, story, acs = '1', extra = []) {
   const home = path.join(f.ws, 'home');
   fs.mkdirSync(home, { recursive: true });
   const dod = path.join(f.esp, '.advisors', 'dod-runtime');
-  const r = spawnSync('bash', [SMOKE, dod, story, '--acs', acs, '--pass-if', 'contesta', '--', 'node', '-e', 'console.log("contesta")'],
+  const r = spawnSync('bash', [SMOKE, dod, story, '--acs', acs, ...extra, '--pass-if', 'contesta', '--', 'node', '-e', 'console.log("contesta")'],
     { cwd: f.esp, encoding: 'utf8', env: { ...entornoGit(), HOME: home } });
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
   const lineas = fs.readFileSync(path.join(dod, '5.28-smoke-ledger.jsonl'), 'utf8').split('\n').filter(Boolean);
@@ -675,6 +675,21 @@ test('T17 Humo_AnotaElAncla_RegistroYEspejo @story-8.192 @ac-17', () => {
     const blob = git(f.back, ['hash-object', 'src/Feature.cs']);
     const sucio = humoReal(f, conRuta ? f.storyPath : '5.28').linea.target.hermanos[0];
     assert.deepEqual(sucio, { repo: 'Back', commit: commitLimpio, huellas: { 'src/Feature.cs': blob } });
+  }
+});
+
+test('T79g Humo_Exercises_RegistroYEspejo_ConLaFormaQueLeeLaMatriz', () => {
+  const f = labMatriz();
+  const h = humoReal(f, '5.28', '1', ['--exercises', 'Back,Front-2']);
+  assert.deepEqual(h.linea.exercises, ['Back', 'Front-2']);
+  // la matriz busca en el espejo exactamente esta forma
+  assert.ok(fs.readFileSync(h.gates, 'utf8').includes('"exercises":["Back","Front-2"]'), 'también en el espejo');
+  const dod = path.join(f.esp, '.advisors', 'dod-runtime');
+  for (const mal of ['Back;x', 'Back,', '']) {
+    const r = spawnSync('bash', [SMOKE, dod, '5.28', '--acs', '1', '--exercises', mal, '--pass-if', 'x', '--', 'true'],
+      { cwd: f.esp, encoding: 'utf8', env: { ...entornoGit(), HOME: path.join(f.ws, 'home') } });
+    assert.equal(r.status, 2, `«${mal}»: ${r.stderr}`);
+    assert.match(r.stderr, /--exercises necesita/);
   }
 });
 

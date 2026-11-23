@@ -288,6 +288,10 @@ The same notice carries two more things:
 - **Background sessions sitting idle.** A background session that has gone more than 15 minutes without working shows up
   as "X has been idle for N min: close it or give it work". Not one waiting for its adversarial pass, one that recently
   noted what it is doing (`marker.js doing`), or the one holding the machine's full suite.
+- **The session that says it is working and does not write.** A "working" session that has not taken a step of its own in an
+  hour (a message reaching it does not count), has no background command running and runs no agent (none wrote in 20 minutes) shows up as "X dice que trabaja, pero no escribe hace N min y no
+  corre nada (su último paso: …): ¿trabada?". `owner-wait` says it once per session. Why: a command does not go past 10
+  minutes, so an hour of silence with no agents is a stuck session, and in the office it looked the same as one at work.
 - **Ready requests nobody queued, on GitHub.** An open, clean request (no conflict and no required checks pending) with no
   auto-merge and outside the queue, unchanged for more than 10 minutes, shows up with the command to queue it. Why: nobody is
   going to merge it, and everyone thinks it already went in. It comes from the last saved reading, less than an hour old: the

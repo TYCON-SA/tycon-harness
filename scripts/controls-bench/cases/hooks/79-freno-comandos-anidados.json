@@ -265,6 +265,28 @@
           }
         },
         {
+          "id": "anidado-comillas-ansi-c-frena",
+          "type": "must-block",
+          "_por_que": "El cuerpo de `bash -c $'…'` corre como lo deja el shell, con sus escapes resueltos.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-anidado",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "bash -c $'echo x \\x3e\\x3e specs/story-1.1.md'"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
           "id": "anidado-mensaje-de-commit-no-frena",
           "type": "must-not-block",
           "_por_que": "El cuerpo de un mensaje de commit en heredoc no corre.",

@@ -67,6 +67,15 @@ a lo sumo una vez por minuto por sesión y sólo a un sitio que la entiende, y e
 su disco. Lo ven las personas con rol en el sitio: con la regla de fábrica, quien mantiene ve todas las máquinas y cada
 dev, las suyas. Una máquina sin aprobar no manda nada.
 
+«Lo que te necesita», debajo de lo que te toca, junta lo que espera al dueño: las firmas de «Tu firma», los cuadros
+abiertos de las sesiones, las sesiones que anotaron que te esperan (`marker.js doing --waiting-for` que te nombra) y lo
+que te toca según el tablero. Cada cosa dice qué hace falta, dónde se contesta, por qué sólo vos (el riesgo de su ficha,
+si la tiene) y la opción recomendada, si alguien la anotó con «recomiendo: …» en su texto; si no, lo dice. Sólo una
+espera en texto se contesta ahí: la respuesta le llega a esa sesión como un mensaje de la oficina. Una firma o un cuadro
+se contestan en el chat de su sesión, con el click, y lo del tablero, con la coordinadora. Si la sesión dejó de esperar,
+la respuesta queda en el registro sin entregarse («ya estaba resuelto»); si cerró, no se manda a nadie. Esta parte es
+sólo de la oficina local: no viaja al sitio.
+
 Las tablas «Hoy» y «Pendientes» se arman solas de las mismas tarjetas que el kanban: nadie las escribe. Tienen una fila por
 tema, con una línea de estado contada de las tarjetas, y al tocarla se abren sus trabajos. El tema de cada trabajo lo elige
 una vez el modelo de la noche de la organización, de fondo y sólo con la página abierta: armar la foto no lo espera, y se le

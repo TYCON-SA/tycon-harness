@@ -49,6 +49,8 @@ function lines(o) {
   if (o.mutates) { ledger.mutates = true; mirror.mutates = true; }
   // contra qué entorno corrió (`--environment`), en las dos líneas
   if (o.environment) { ledger.environment = o.environment; mirror.environment = o.environment; }
+  // qué repos ejercita (`--exercises`), en las dos líneas
+  if (o.exercises) { ledger.exercises = o.exercises; mirror.exercises = o.exercises; }
   // el sello del árbol probado (historia 8.161): `{ tree }`, o `{ tree: null, tree_error }`; va a los dos lados
   if (o.sello) {
     ledger.tree = o.sello.tree === undefined ? null : o.sello.tree;

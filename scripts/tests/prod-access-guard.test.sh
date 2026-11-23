@@ -353,6 +353,117 @@ frena "8.14 T21f Xargs_AnyFeedingSegment_Blocks (FX2)" "ls $P/production-* | xar
 frena "8.14 T21g Xargs_AnyFeedingSegment_Blocks (FX8)" "grep -l . $P/*.json | xargs rm -f"
 pasa  "8.14 T21h Xargs_AnyFeedingSegment_Blocks (cp a /tmp)" "ls | xargs -I{} cp {} /tmp/{}.bak"
 
+# T21i · a un intérprete que xargs alimenta con los estados del pipeline el freno no le lee el programa: un python3 -c
+# «que sólo lee» corre lo que haya en un json.py de la carpeta o en PYTHONPATH. Sigue frenando, y el motivo dice cómo
+# leer sin escribir (jq, la herramienta de lectura).
+rc="$(corre "grep -l x $P/*.json | xargs python3 -c 'import json,sys; [print(json.load(open(f))) for f in sys.argv[1:]]'")"
+if [ "$rc" = 2 ] && grep -q "jq" "$TMP/err"; then ok "T21i Xargs_InterpreteConLosEstados_FrenaYSugiereJq"
+else no "T21i Xargs_InterpreteConLosEstados_FrenaYSugiereJq (rc=$rc) — err: $(head -c 160 "$TMP/err")"; fi
+# T21j a T21q · lo que xargs le pasa a un intérprete puede ser su programa: con la marca en el lugar del programa
+# (`-c {}`), sin programa (`-c` toma el primer argumento que llega), por un heredoc (directo o por la tubería) o por una
+# variable de valor conocido. Si ese texto nombra un estado de producción, es una escritura, como cuando el programa
+# está escrito en el comando. Si no nombra nada protegido, pasa.
+frena "T21j Xargs_ProgramaQueLlegaPorLaEntrada_Frena (-c con la marca)" "echo 'import os; os.remove(\"$P/$NM\")' | xargs -I{} python3 -c {}"
+frena "T21k Xargs_ProgramaQueLlegaPorLaEntrada_Frena (-c sin programa)" "echo 'import os; os.remove(\"$P/$NM\")' | xargs python3 -c"
+frena "T21l Xargs_ProgramaPorUnHeredoc_Frena" "xargs -I{} python3 -c {} <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21m Xargs_ProgramaPorUnHeredocEnLaTuberia_Frena" "cat <<'EOF' | xargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21n Xargs_ProgramaPorUnaVariable_Frena" "X='import os; os.remove(\"$P/$NM\")'; echo \"\$X\" | xargs -I{} python3 -c {}"
+frena "T21o Xargs_ProgramaQueLlegaConLaMarcaPegada_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -0I{} python3 -c {}"
+pasa  "T21p Xargs_ProgramaQueLlegaPorLaEntrada_Pasa (no nombra nada protegido)" "echo 'print(1)' | xargs -I{} python3 -c {}"
+pasa  "T21q Xargs_ProgramaPorUnHeredocQueNoNombraNada_Pasa" "xargs -I{} python3 -c {} <<'EOF'
+print(1)
+EOF"
+# T21r a T21u · la marca de xargs se reconoce pegada a otras opciones (`-0I{}`), con `--replace` solo (que es `{}` y no
+# se come la palabra que sigue), con una forma abreviada (`--re=%`) y después de un `-e` suelto (que en GNU no lleva
+# argumento aparte): la marca vale lo que llega, y en una carpeta protegida nombra sus estados.
+frena "T21r Xargs_MarcaPegadaAOtrasOpciones_Frena" "echo x | xargs -0I{} rm $P/{}"
+frena "T21s Xargs_ReplaceSolo_Frena" "echo x | xargs --replace rm $P/{}"
+frena "T21t Xargs_ReplaceAbreviado_Frena" "echo x | xargs --re=% rm $P/%"
+frena "T21u Xargs_MarcaDespuesDeUnDashE_Frena" "echo x | xargs -e -I@ rm $P/@"
+# T21v a T21aa · el heredoc que llega a un xargs con un intérprete por otro camino que su renglón: un grupo con llaves o
+# con paréntesis, un renglón continuado con barra, una función o un `bash -c`. Si el comando tiene un xargs o un
+# parallel con un intérprete, el heredoc que nombra un estado de producción se juzga como su programa.
+frena "T21v Xargs_HeredocDesdeUnGrupoConLlaves_Frena" "{ cat <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF
+} | xargs -I{} python3 -c {}"
+frena "T21w Xargs_HeredocDesdeUnSubshell_Frena" "( cat <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF
+) | xargs -I{} python3 -c {}"
+frena "T21x Xargs_HeredocConElRenglonContinuado_Frena" "cat <<'EOF' | \\
+xargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21y Xargs_HeredocAUnaFuncion_Frena" "f() { xargs -I{} python3 -c {}; }; f <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21z Xargs_HeredocAUnBashC_Frena" "bash -c 'xargs -I{} python3 -c {}' <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+# T21ab y T21ac · el xargs con intérprete se busca fuera de los cuerpos: un mensaje de commit o una nota que nombra un
+# estado de producción y habla de xargs y node no corre ningún xargs, y pasa.
+pasa  "T21ab Heredoc_MensajeDeCommitQueHablaDeXargs_Pasa" "git commit -F - <<'EOF'
+fix(freno): xargs con node ya no deja pasar $NM
+EOF"
+pasa  "T21ac Heredoc_NotaQueHablaDeParallel_Pasa" "cat > /tmp/nota.md <<'EOF'
+El freno juzga $NM; las pruebas corren en parallel y usan node
+EOF"
+# T21ae a T21ah · las opciones largas de GNU xargs: las de argumento opcional, como --max-lines, lo llevan sólo pegado
+# (sueltas no se comen la palabra que sigue), una abreviada que lo lleva aparte se reconoce (--max-a 1), y gxargs (GNU
+# de Homebrew) es xargs.
+frena "T21ae Xargs_MaxLinesSuelto_Frena" "echo $P/$NM | xargs --max-lines sed -i s/a/b/"
+frena "T21af Xargs_OpcionLargaAbreviada_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs --max-a 1 python3 -c"
+frena "T21ag Gxargs_EsXargs_Frena" "echo $P/$NM | gxargs sed -i s/a/b/"
+frena "T21ah Gxargs_HeredocAUnInterprete_Frena" "cat <<'EOF' | gxargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+# T21ai a T21ap · también los intérpretes que el resto del freno no conoce (bun, deno, awk, osascript, pwsh) y los que
+# corren uno (npx, uv run): lo que xargs les pasa puede ser su programa (fila 104).
+frena "T21ai Xargs_ProgramaParaBun_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} bun -e {}"
+frena "T21aj Xargs_ProgramaParaDeno_Frena" "echo 'Deno.removeSync(\"$P/$NM\")' | xargs -I{} deno eval {}"
+frena "T21ak Xargs_ProgramaDeAwkPorUnHeredoc_Frena" "cat <<'EOF' | xargs -I{} awk {}
+BEGIN{system(\"rm $P/$NM\")}
+EOF"
+frena "T21al Xargs_ProgramaParaOsascript_Frena" "echo 'do shell script \"rm $P/$NM\"' | xargs -I{} osascript -e {}"
+frena "T21am Xargs_ProgramaParaPwsh_Frena" "echo 'Remove-Item $P/$NM' | xargs -I{} pwsh -c {}"
+frena "T21an Xargs_ProgramaParaNpxTsx_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} npx tsx -e {}"
+frena "T21ao Xargs_ProgramaParaUvRun_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -I{} uv run python -c {}"
+# T21aq a T21at · awk es un lector, pero lo que xargs le pasa en el lugar del programa (la marca, o sin programa escrito)
+# es su programa. Con el programa escrito, lo que llega son archivos que lee, y pasa.
+frena "T21aq Xargs_ProgramaDeAwkPorLaTuberia_Frena" "echo 'BEGIN{system(\"rm $P/$NM\")}' | xargs -I{} awk {}"
+frena "T21ar Xargs_ProgramaDeGawkPorUnHereString_Frena" "xargs -I{} gawk {} <<< 'BEGIN{print \"x\" > \"$P/$NM\"}'"
+frena "T21as Xargs_AwkSinProgramaEscrito_Frena" "echo 'BEGIN{system(\"rm $P/$NM\")}' | xargs awk"
+pasa  "T21at Xargs_AwkConElProgramaEscritoLeeLosEstados_Pasa" "ls $P/$NI | xargs awk '{print}'"
+# T21au a T21aw · los lanzadores y los intérpretes comunes en una Mac de desarrollo (pnpm exec, ipython), y gxargs también
+# en el freno de borrado de Azure.
+frena "T21au Xargs_ProgramaParaPnpmExec_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} pnpm exec node -e {}"
+frena "T21av Xargs_ProgramaParaIpython_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -I{} ipython -c {}"
+frena "T21aw Gxargs_ArmaUnBorradoDeAzure_Frena" "echo delete | gxargs az group"
+# T21ax a T21az · sólo cuenta lo que llega en el lugar del programa: una nota o un mensaje de commit que nombra un estado,
+# junto a un xargs cuyo programa no lo toma de la entrada (grep, npm test, un guion de Python), pasan.
+pasa  "T21ax Heredoc_ConUnXargsGrepAparte_Pasa" "git commit -F - <<'EOF'
+fix $P/$NI
+EOF
+ls | xargs grep -n node"
+pasa  "T21ay Heredoc_ConUnXargsNpmTestAparte_Pasa" "cat > /tmp/nota.md <<'EOF'
+$P/$NI no se toca
+EOF
+ls | xargs npm test"
+pasa  "T21az Heredoc_ConUnXargsAUnGuionDePython_Pasa" "cat > /tmp/nota.md <<'EOF'
+$P/$NI
+EOF
+ls | xargs -I{} python3 script.py {}"
+pasa  "T21ap Xargs_ProgramaParaBunQueNoNombraNada_Pasa" "echo 'console.log(1)' | xargs -I{} bun -e {}"
+pasa  "T21aa Xargs_HeredocDesdeUnGrupoQueNoNombraNada_Pasa" "{ cat <<'EOF'
+print(1)
+EOF
+} | xargs -I{} python3 -c {}"
+
 # T22 · find recursivo desde una carpeta protegida o un ancestro.
 frena "8.14 T22a Find_Recursive_FromProtectedOrAncestor (G7)" "find $P -name 'prod*' -delete"
 frena "8.14 T22b Find_Recursive_FromProtectedOrAncestor (FX4)" "find ~/.claude -name '*-index.json' -delete"
