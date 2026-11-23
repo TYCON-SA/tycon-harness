@@ -418,22 +418,25 @@ test('T24 Prueba_OtraHistoria_Cuenta_YAvisa @story-8.192 @ac-24', () => {
 });
 
 test('Matriz_PruebaPropiaSoloConMarcas_CuentaYAvisa — la historia que sólo le suma marcas a la prueba deja la evidencia en pie y lo dice', () => {
+  const JS = 'tests/feature.test.js';
   const conPrueba = (texto) => {
-    const f = labMatriz({ declarados: ['Back/src/Feature.cs', `Back/${PRUEBA}`] });
+    const f = labMatriz({ declarados: ['Back/src/Feature.cs', `Back/${JS}`] });
+    escribir(f.back, JS, "test('caso', () => {}); // p1\n");
+    commit(f.back, 'la prueba', f.ahora - 100);
     f.humo(f.ahora - 50);
     rama(f.back, 'feature/5-28-marcas');
-    escribir(f.back, PRUEBA, texto);
+    escribir(f.back, JS, texto);
     commit(f.back, 'prueba', f.ahora + 10);
     irA(f.back, 'main');
     fusionar(f.back, 'feature/5-28-marcas', f.ahora + 60);
     return f.calcular();
   };
-  const r = conPrueba('// p1 @story-5.28\n// @story-5.28 @ac-1\n');
+  const r = conPrueba("// @story-5.28 @ac-1\ntest('caso @story-5.28 @ac-1', () => {}); // p1\n");
   assert.equal(r.perAc[1].verdict, 'RUNTIME', JSON.stringify(r.warnings));
-  const aviso = r.warnings.find((w) => w.includes(`Back/${PRUEBA}`));
+  const aviso = r.warnings.find((w) => w.includes(`Back/${JS}`));
   assert.ok(aviso && aviso.includes('sólo le cambió marcas'), JSON.stringify(r.warnings));
   // con algo más que marcas vence como siempre
-  const otra = conPrueba('// p2 @story-5.28 @ac-1\n');
+  const otra = conPrueba("test('caso @story-5.28 @ac-1', () => {}); // p2\n");
   assert.notEqual(otra.perAc[1].verdict, 'RUNTIME', JSON.stringify(otra.warnings));
 });
 

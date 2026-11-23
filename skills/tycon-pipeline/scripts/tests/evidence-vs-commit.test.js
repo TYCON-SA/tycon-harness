@@ -682,9 +682,12 @@ test('EvidenceVsCommit_TagsInDataOrWhitespace_Voids — una marca en un dato de 
     ['los espacios de una plantilla', base.replace('`a \nb`', '`a\nb`')],
     ['un salto de Windows en una plantilla', base.replace('`a \nb`', '`a \r\nb`')],
     ['una marca de un método que no declara una prueba', base.replace('assert.equal(f(), \'ok @ac-1\')', 'assert.equal(re.test(\'ok @ac-2\'), true)')],
+    ['una marca en una directiva', base.replace('test(', '// eslint-disable-next-line @ac-4\ntest(')],
   ]) {
-    const l = labDeLaHistoria(base);
-    escribir(l.repo, PRUEBA_9_9, ahora);
+    const l = labDeLaHistoria(base.replace('test(', '// eslint-disable-next-line\ntest('));
+    // el salto de Windows tiene que llegar al commit tal cual, con cualquier configuración de la máquina
+    git(l.repo, ['config', 'core.autocrlf', 'false']);
+    escribir(l.repo, PRUEBA_9_9, caso === 'una marca en una directiva' ? ahora.replace('// eslint-disable-next-line\n', '') : ahora.replace('test(', '// eslint-disable-next-line\ntest('));
     commit(l.repo, 'cambia la prueba', 1700000200);
     const r = l.juzgar(l.prueba);
     assert.equal(r.cuenta, false, `${caso}: ${JSON.stringify(r)}`);
@@ -695,6 +698,7 @@ test('EvidenceVsCommit_SameStoryShellTestOnlyTags_StillCounts — en una suite d
   const nombre = 'tests/feature.test.sh';
   const lab = (inicial = '# @story-9.9 @ac-2\nok "caso a" "$(echo a)"\n') => {
     const repo = repoNuevo(carpeta());
+    git(repo, ['config', 'core.autocrlf', 'false']);
     escribir(repo, 'src/feature.js', '// v1\n');
     const abs = escribir(repo, nombre, inicial);
     commit(repo, 'base', 1700000000);
@@ -724,13 +728,33 @@ test('EvidenceVsCommit_SameStoryShellTestOnlyTags_StillCounts — en una suite d
     r = l.juzgar();
     assert.equal(r.cuenta, false, `${JSON.stringify(ahora)}: ${JSON.stringify(r)}`);
   }
-  // un renglón con `#` adentro de un heredoc es un dato del archivo que escribe: una marca ahí cambia la prueba
-  const conHeredoc = 'ok "caso a" "$(echo a)"\ncat > x.txt <<EOF\n# x\nEOF\n';
-  l = lab(conHeredoc);
-  escribir(l.repo, nombre, conHeredoc.replace('# x', '# x @ac-5'));
-  commit(l.repo, 'marca adentro del heredoc', 1700000200);
-  r = l.juzgar();
-  assert.equal(r.cuenta, false, JSON.stringify(r));
+  // un renglón con `#` adentro de un heredoc o de unas comillas de varios renglones es un dato: una marca ahí cambia la
+  // prueba; también en una directiva
+  for (const inicial of ['ok "caso a" "$(echo a)"\ncat > x.txt <<EOF\n# x\nEOF\n', "cat > x.txt <<\\EOF\n# x\nEOF\n",
+    "cat > x.txt <<'END-X'\n# x\nEND-X\n", "echo 'a\n# x\nb'\n", 'node -e "\n// x\n"\n', '# shellcheck disable=SC2086 # x\nok a\n']) {
+    l = lab(inicial);
+    escribir(l.repo, nombre, inicial.replace('# x', '# x @ac-5').replace('// x', '// x @ac-5'));
+    commit(l.repo, 'marca en un dato', 1700000200);
+    r = l.juzgar();
+    assert.equal(r.cuenta, false, `${JSON.stringify(inicial)}: ${JSON.stringify(r)}`);
+  }
+});
+
+test('EvidenceVsCommit_OtherLanguageOnlyTags_VoidsAsBefore — en un lenguaje que no se sabe leer, sumar marcas vence como en main', () => {
+  for (const [nombre, inicial] of [['tests/test_feature.py', '# x\ndef test_a():\n    pass\n'], ['tests/FeatureTests.cs', '// x\nclass T {}\n']]) {
+    const repo = repoNuevo(carpeta());
+    escribir(repo, 'src/feature.js', '// v1\n');
+    const abs = escribir(repo, nombre, inicial);
+    commit(repo, 'base', 1700000000);
+    git(repo, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+    git(repo, ['switch', '-q', '-c', 'feature/9-9-lab']);
+    const ev = escribir(repo, '.advisors/dod-runtime/9.9-e2e-gate-20270101T000000Z.md', 'verdict=PASS\n');
+    commit(repo, 'evidencia', 1700000100);
+    escribir(repo, nombre, inicial.replace(/^(#|\/\/) x/, '$1 x @story-9.9 @ac-2'));
+    commit(repo, 'marca', 1700000200);
+    const r = evidencia().crearJuez({ historia: HISTORIA_9_9 }).vigencia({ archivo: abs, mtimeMs: Date.now(), evidencia: { ruta: ev, tsMs: 1700000100 * 1000 } });
+    assert.equal(r.cuenta, false, `${nombre}: ${JSON.stringify(r)}`);
+  }
 });
 
 test('T18 EvidenceVsCommit_SameStoryTestWithoutTags_VoidsAll @story-8.263 @ac-15 @ac-16 @ac-17 — sin marcas, ilegible, de código o de autoría desconocida vence todo; la de otra historia cuenta', () => {
