@@ -295,12 +295,32 @@ test('T80a Cap_VueltaExtraDeTramite_ElCartelLoDice: el cartel dice quién da la 
     assert.equal(b.status, 3, b.stderr);
     assert.match(b.stderr, /firma de trámite del perfil del equipo/);
     assert.match(b.stderr, /no la firma una persona/);
+    assert.match(b.stderr, /no hace falta el dueño: corré vos el mismo comando/);
     // eximir el crítico sigue siendo de una persona (critical-waiver nunca es trámite): lo que cambia es la vuelta extra
     assert.doesNotMatch(b.stderr, /--extra-round, y la persona lo aprueba/);
     assert.match(b.stderr, /waive-critical[^\n]*la persona lo aprueba/);
     assert.match(tope(con, ['--extra-round', '--quote', 'dale, una vuelta más']).stderr, /la cita ya no la autoriza\. Es una firma de trámite/);
     assert.match(tope(con, ['--extra-round', '--delegated']).stderr, /Va el mismo comando sin --delegated: es una firma de trámite/);
   } finally { fs.rmSync(perfil, { force: true }); }
+});
+
+// 🔴 Falla con: el cierre de «Hallazgos» con un crítico de seguridad abierto decía siempre que la vuelta extra la aprueba
+// una persona en la ventana de permiso, aunque el perfil la liste como trámite: se le pidió al dueño ausente una firma
+// que el arnés da solo (fila 139, DemoTracking 3.5 C).
+test('CierreConCritico_VueltaExtraDeTramite_LoDice: las salidas del cierre dicen quién da la vuelta extra', () => {
+  const RR = require(path.join(SCRIPTS, 'lib', 'review-rounds.js'));
+  const con = RR.salidasDelCritico({ tramite: true }).join('\n');
+  assert.match(con, /--extra-round/);
+  assert.match(con, /de trámite/);
+  assert.match(con, /no hace falta el dueño/);
+  assert.doesNotMatch(con, /--terminal|la persona aprueba/);
+  assert.match(con, /waive-critical[^\n]*una persona/, 'eximir sigue siendo de una persona');
+  const sin = RR.salidasDelCritico({ tramite: false }).join('\n');
+  assert.match(sin, /la persona aprueba en la ventana de permiso/);
+  assert.doesNotMatch(sin, /de trámite/);
+  // el cierre usa estas salidas
+  const fuente = fs.readFileSync(path.join(__dirname, '..', 'lib', 'marker-complete-step.js'), 'utf8');
+  assert.match(fuente, /salidasDelCritico\(/);
 });
 
 test('Cap_OtherOpen_BecomesDebt @story-7.37 @ac-6', () => {

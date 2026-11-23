@@ -240,4 +240,18 @@ function linea({ n, max, abiertos: ab, noMirado }) {
   return `${n} ${n === 1 ? 'vuelta' : 'vueltas'} de revisores (tope ${max}); quedó abierto: ${partes.length ? partes.join('; ') : 'nada'}.`;
 }
 
-module.exports = { FABRICA, MINIMO, MAXIMO, PREFIJOS_FABRICA, delYaml, tope, topeSinMaquina, prefijos, clase, abiertos, hallazgosDe, vueltas, lanzada, extras, avisoDelTope, juezDeLaVuelta, resumen, linea };
+/**
+ * Las dos salidas de un crítico de seguridad o de datos que quedó abierto, como las dice el cierre de «Hallazgos».
+ * `tramite`: la vuelta extra es una firma de trámite del perfil del equipo (scripts/lib/automatic-signing.js); entonces
+ * la da el arnés solo y no hace falta el dueño. Eximir el crítico es siempre de una persona.
+ */
+function salidasDelCritico({ tramite }) {
+  return [
+    tramite
+      ? 'Arreglarlo: si se llegó al tope, una vuelta más con pipeline.js smart-reloop --extra-round. Es de trámite (el perfil del equipo la lista en approvals.delegated_signing): la da el arnés solo, no hace falta el dueño; corré vos el comando.'
+      : 'Arreglarlo: si se llegó al tope, una vuelta más con pipeline.js smart-reloop --extra-round, que la persona aprueba en la ventana de permiso (o en su terminal, con --terminal); si el perfil del equipo la delega, la sesión designada la pide con --for-session.',
+    'Eximirlo: marker.js waive-critical, con el permiso de una persona a ese crítico.',
+  ];
+}
+
+module.exports = { FABRICA, MINIMO, MAXIMO, PREFIJOS_FABRICA, delYaml, tope, topeSinMaquina, prefijos, clase, abiertos, hallazgosDe, vueltas, lanzada, extras, avisoDelTope, juezDeLaVuelta, resumen, linea, salidasDelCritico };
