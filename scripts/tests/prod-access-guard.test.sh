@@ -359,6 +359,14 @@ pasa  "8.14 T21h Xargs_AnyFeedingSegment_Blocks (cp a /tmp)" "ls | xargs -I{} cp
 rc="$(corre "grep -l x $P/*.json | xargs python3 -c 'import json,sys; [print(json.load(open(f))) for f in sys.argv[1:]]'")"
 if [ "$rc" = 2 ] && grep -q "jq" "$TMP/err"; then ok "T21i Xargs_InterpreteConLosEstados_FrenaYSugiereJq"
 else no "T21i Xargs_InterpreteConLosEstados_FrenaYSugiereJq (rc=$rc) — err: $(head -c 160 "$TMP/err")"; fi
+# T84a · ese comando lee: sigue frenando, pero el motivo no dice que escribe: dice que no puede asegurar que sólo lea
+rc="$(corre "grep -l x $P/*.json | xargs python3 -c 'import json,sys; [print(json.load(open(f))) for f in sys.argv[1:]]'")"
+if [ "$rc" = 2 ] && grep -q "no puedo asegurar que ese comando sólo lea" "$TMP/err" && ! grep -q "ESCRIBE sobre" "$TMP/err"; then ok "T84a Xargs_InterpreteQueLee_ElMotivoNoDiceEscribe"
+else no "T84a Xargs_InterpreteQueLee_ElMotivoNoDiceEscribe (rc=$rc) — err: $(head -c 220 "$TMP/err")"; fi
+# T84b · un escritor de verdad por xargs sigue diciendo que escribe
+rc="$(corre "grep -l . $P/*.json | xargs rm -f")"
+if [ "$rc" = 2 ] && grep -q "ESCRIBE sobre" "$TMP/err" && ! grep -q "no puedo asegurar" "$TMP/err"; then ok "T84b Xargs_EscritorDeVerdad_SigueDiciendoEscribe"
+else no "T84b Xargs_EscritorDeVerdad_SigueDiciendoEscribe (rc=$rc) — err: $(head -c 220 "$TMP/err")"; fi
 # T21j a T21q · lo que xargs le pasa a un intérprete puede ser su programa: con la marca en el lugar del programa
 # (`-c {}`), sin programa (`-c` toma el primer argumento que llega), por un heredoc (directo o por la tubería) o por una
 # variable de valor conocido. Si ese texto nombra un estado de producción, es una escritura, como cuando el programa
@@ -1309,6 +1317,69 @@ done
 # T13 · la guía no ofrece --file y dice el tope
 if [ -f "$GUIA" ] && ! grep -qF -- "--file" "$GUIA" && grep -q "20 renglones" "$GUIA"; then ok "6.6 T13 Guide_NoFileForm · la guía no ofrece --file y dice el tope"
 else no "6.6 T13 Guide_NoFileForm · la guía todavía ofrece --file o no dice el tope de 20 renglones"; fi
+
+# ── T124 · un lector que corre otro programa no es un lector ─────────────────────────
+# Nombrar la puerta con un lector pasa (mirar o documentarla es rutina), salvo que el lector la corra: por una opción
+# (`find -exec`, `rg --pre`, `sort --compress-program`, `git -c core.pager`), porque es un intérprete (`awk`, `sed`), con
+# una variable delante (`GIT_PAGER=…`) o con `env -S`, que se come el comando entero.
+NPL="${PUERTA##*/}"
+frena "T124a Lector_FindExec_Frena" "find . -name x -exec $PUERTA acme-sql 'select 1' \\;"
+frena "T124b Lector_FindExecdirYOk_Frena" "find . -name x -execdir $PUERTA acme-sql 'select 1' \\; -ok $PUERTA \\;"
+frena "T124c Lector_RgPre_Frena" "rg --pre=$PUERTA x scripts"
+frena "T124d Lector_RgHostnameBin_Frena" "rg --hostname-bin=$PUERTA x scripts"
+frena "T124e Lector_AgPagerAbreviado_Frena" "ag --page $PUERTA x scripts"
+frena "T124f Lector_SortCompressProgramAbreviado_Frena" "sort --compress=$PUERTA x"
+frena "T124g Lector_AwkSystem_Frena" "awk 'BEGIN{system(\"$PUERTA acme-sql x\")}'"
+frena "T124h Lector_SedE_Frena" "sed -n '1e $PUERTA acme-sql x' f"
+frena "T124i Lector_GitConfigPager_Frena" "git -c core.pager=$PUERTA log"
+frena "T124j Lector_GitAlias_Frena" "git -c alias.x='!$PUERTA acme-sql y' x"
+frena "T124k Lector_GitDifftool_Frena" "git difftool -x $PUERTA HEAD"
+frena "T124l Lector_GitGrepEnElPager_Frena" "git grep -O$PUERTA x"
+frena "T124m Lector_GitRebaseExec_Frena" "git rebase --exec '$PUERTA acme-sql x' HEAD~1"
+frena "T124n Lector_Open_Frena" "open -a $PUERTA"
+frena "T124o Lector_LessConComando_Frena" "less '+!$PUERTA acme-sql x' f"
+frena "T124p Lector_VariableDelante_Frena" "GIT_PAGER=$PUERTA git log"
+frena "T124q Lector_EnvConVariable_Frena" "env GIT_PAGER=$PUERTA git log"
+frena "T124r Lector_ManConPager_Frena" "man -P $PUERTA ls"
+frena "T124s Lector_BatConPager_Frena" "bat --pager=$PUERTA f"
+frena "T124t EnvS_SeComeElComando_Frena" "env -S '$PUERTA acme-sql x'"
+pasa  "T124u GitLogDeSuArchivo_Pasa" "git log -- scripts/production/$NPL"
+pasa  "T124v GitConOpcionesQueLeen_Pasa" "git --no-pager -C /tmp/r log -1 -- scripts/production/$NPL"
+pasa  "T124w GitGrepSinPager_Pasa" "git grep -n $NPL"
+pasa  "T124x FindSinExec_Pasa" "find . -name $NPL"
+pasa  "T124y RgSinPre_Pasa" "rg -n $NPL scripts"
+pasa  "T124z CatYHead_Pasan" "cat $PUERTA; head -20 scripts/production/$NPL"
+# lo que encontró el pase adversarial: git acepta opciones abreviadas, un lector alimenta un shell por un tubo
+frena "T124aa GitGrepOpenAbreviado_Frena" "git grep --open=$PUERTA x"
+frena "T124ab GitGrepNOPegado_Frena" "git grep -nO$PUERTA x"
+frena "T124ac EchoAUnShell_Frena" "echo '$PUERTA acme-sql q' | sh"
+frena "T124ad HeredocAUnShell_Frena" "cat <<'EOF' | bash
+$PUERTA acme-sql q
+EOF"
+frena "T124ae CodeConPrefijoDeElectron_Frena" "code --renderer-cmd-prefix=$PUERTA f"
+frena "T124af GitAttrSourceSaltaSuValor_Frena" "git --attr-source log rebase --exec '$PUERTA acme-sql x' HEAD~1"
+frena "T124ag SudoS_SeComeElComando_Frena" "sudo -s '$PUERTA acme-sql x'"
+pasa  "T124ah CommandV_Pasa" "command -v $NPL"
+pasa  "T124ai GitCheckoutYSwitch_Pasan" "git checkout HEAD -- scripts/production/$NPL; git switch wt/$NPL"
+pasa  "T124aj VariablesQueNoCorrenNada_Pasan" "TZ=UTC git log -- scripts/production/$NPL; LANG=C grep -rn $NPL scripts; GIT_PAGER=cat git log -- scripts/production/$NPL"
+pasa  "T124ak GitCDeColor_Pasa" "git -c color.ui=always log -- scripts/production/$NPL"
+pasa  "T124al LessYCode_Pasan" "less $PUERTA; code scripts/production/$NPL"
+pasa  "T124am LectorAHead_Pasa" "grep -rn $NPL scripts | head -5"
+# segunda vuelta: lo de adentro de un $( ) corre, un tubo a lo que no es un lector, la puerta como valor de una opción
+frena "T124an SustitucionEnUnLector_Frena" "echo \"\$($PUERTA acme-sql q)\""
+frena "T124ao SustitucionEnUnaVariableDelante_Frena" "TERM=\"\$($PUERTA acme-sql q)\" git log"
+frena "T124ap SustitucionConTuboAUnShell_Frena" "TERM=\"\$(echo '$PUERTA acme-sql q' | sh)\" git log"
+frena "T124aq SustitucionDeProceso_Frena" "echo '$PUERTA acme-sql q' | tee >(sh)"
+frena "T124ar SustitucionDeProcesoDeEntrada_Frena" "sh < <(echo '$PUERTA acme-sql q')"
+frena "T124as LaPuertaComoValorDeUnaOpcion_Frena" "time -p $PUERTA"
+frena "T124at TuboAUnShellConEnvDelante_Frena" "echo '$PUERTA acme-sql q' | env -i sh"
+frena "T124au TuboAXargs_Frena" "echo '$PUERTA acme-sql q' | xargs sh -c"
+frena "T124av GitPushReceivePackAbreviado_Frena" "git push --receive=$PUERTA origin x"
+frena "T124aw GitConfigQueEscribeUnAlias_Frena" "git config alias.x '!$PUERTA acme-sql q'"
+frena "T124ax CodeInstallExtension_Frena" "code --install-extension $PUERTA"
+pasa  "T124ay LsDeWhich_Pasa" "ls -l \"\$(which $NPL)\""
+pasa  "T124az GitPushFetchMergeConfig_Pasan" "git push origin wt/$NPL; git fetch origin $NPL; git merge wt/$NPL; git config --get alias.$NPL"
+pasa  "T124ba TuboAUnShellEnOtroTramo_Pasa" "git add scripts/production/$NPL; echo listo | sh"
 
 # ── T32 · la guía declara la cortesía de la regla de firewall ─────────────────────────
 if [ -f "$GUIA" ] && grep -qi "cortes" "$GUIA" && grep -qi "firewall" "$GUIA"; then

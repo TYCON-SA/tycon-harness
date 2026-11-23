@@ -52,10 +52,10 @@ const PROVEEDORES_DE_BUZON = ['azure-blob'];
  * Baja el buzón con `bajar()` de download-runs.js: { codigo, res }. Sin `sinHilos: false` explícito, no baja las
  * conversaciones ni los cambios de git (lo seguro); la pestaña Corridas los pide con `site.mailbox.threads`.
  */
-function bajarBuzon({ cuenta, contenedor, credencial, dir, urlBase, log, sinHilos = true, budgetMs = 120000, resumenes = false, topeBytesHilos = null, hiloTopeBytes = null, podar = false, confiarIndice = false, jornadas = false }) {
+function bajarBuzon({ cuenta, contenedor, credencial, dir, urlBase, log, sinHilos = true, budgetMs = 120000, resumenes = false, topeBytesHilos = null, hiloTopeBytes = null, podar = false, confiarIndice = false, jornadas = false, soloHuellas = false }) {
   const { bajar } = require('../../metrics/download-runs.js');
   // la lista es fija: una opción nueva de la bajada que el sitio necesita se suma acá (si no, se pierde en el camino)
-  return bajar({ cuenta, contenedor, credencial, dir, sinHilos: sinHilos !== false, urlBase, budgetMs, log, resumenes, topeBytesHilos, hiloTopeBytes, podar, confiarIndice, jornadas: jornadas === true });
+  return bajar({ cuenta, contenedor, credencial, dir, sinHilos: sinHilos !== false, urlBase, budgetMs, log, resumenes, topeBytesHilos, hiloTopeBytes, podar, confiarIndice, jornadas: jornadas === true, soloHuellas: soloHuellas === true });
 }
 
 /** La conversación y el cambio de UNA corrida, para el detalle a demanda (download-runs.js → bajarUnaCorrida). */

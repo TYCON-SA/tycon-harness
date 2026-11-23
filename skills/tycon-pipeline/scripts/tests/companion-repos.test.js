@@ -813,9 +813,9 @@ function laboratorioPorNumero({ id = '1.4', backRama = 'docs/conciliacion-1-4-im
   });
   return { raiz, back, front: fs.realpathSync(front), backWt: fs.realpathSync(backWt), frontWts, story: path.join(backWt, 'specs', 's.md') };
 }
-/** `companionRoots` en un proceso aparte, para leer también sus avisos por stderr. */
-function hermanosConAvisos(repo, story) {
-  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).companionRoots(process.argv[1], process.argv[2])))`, repo, story], { encoding: 'utf8' });
+/** `companionRoots` en un proceso aparte, para leer también sus avisos por stderr. `env`: el entorno, si no el de la prueba. */
+function hermanosConAvisos(repo, story, env) {
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).companionRoots(process.argv[1], process.argv[2])))`, repo, story], { encoding: 'utf8', ...(env ? { env } : {}) });
   assert.equal(r.status, 0, r.stderr);
   return { roots: JSON.parse(r.stdout), avisos: r.stderr };
 }
@@ -904,20 +904,60 @@ test('T5 HermanoEnOtraRama_SeDice @story-7.34 @ac-5 — sin worktree, el checkou
   assert.equal(r.avisos, '', r.avisos);
 });
 
-test('companionRoots: con la cabeza suelta, el número de la story elige el worktree del hermano', () => {
-  // 🔴 mutación: sin rama se devuelve el declarado: el armado de un clon de prueba en un commit suelto mide el checkout
-  // compartido, no el código de la story.
+// Fila 123 del 23/11: desde una copia en un commit suelto, el portón tomó como hermanas las copias de OTRA sesión sólo por
+// el número de la historia, y pisó sus informes. Con la cabeza suelta no se adivina: vale la rama de la corrida que dejó
+// quien armó el clon (lib/private-tree.js cloneWithDisk). Y el número no elige una copia donde trabaja otra sesión viva.
+test('T7 HermanoPorNumero_CabezaSuelta_NoAdivina — en un commit suelto, el declarado y se dice', () => {
+  // 🔴 mutación: con la cabeza suelta el número elige el worktree de otra sesión
   const lab = laboratorioPorNumero();
   git(lab.backWt, 'checkout', '-q', '--detach');
   const { roots, avisos } = hermanosConAvisos(lab.backWt, lab.story);
-  assert.deepEqual(roots, [lab.frontWts[0]]);
-  assert.match(avisos, /nombra la story 1\.4/, avisos);
-  // Sin worktree que nombre la story, el declarado, y sin el aviso del checkout principal (no hay rama con qué compararlo).
+  assert.deepEqual(roots, [lab.front]);
+  assert.match(avisos, /commit suelto[^\n]*no elijo[^\n]*feat\/conciliacion-1-4-x/, avisos);
+  // Sin worktree que nombre la story, el declarado, y nada que decir.
   const sinNumero = laboratorioPorNumero({ frontRamas: ['feat/sin-numero'] });
   git(sinNumero.backWt, 'checkout', '-q', '--detach');
   const r = hermanosConAvisos(sinNumero.backWt, sinNumero.story);
   assert.deepEqual(r.roots, [sinNumero.front]);
   assert.equal(r.avisos, '', r.avisos);
+});
+
+test('T8 ArbolArmado_ClonEnCommitSuelto_EligePorLaRamaDeOrigen — el clon del árbol armado lleva la rama de la corrida', () => {
+  // 🔴 mutación: sin la rama de origen, el clon en un commit suelto mide el checkout compartido (el caso del 26/10)
+  const { cloneWithDisk } = require('../lib/private-tree.js');
+  const lab = laboratorioPorNumero();
+  const clon = path.join(lab.raiz, 'Back-clon');
+  cloneWithDisk(lab.backWt, clon);
+  const deLaStory = path.join(clon, 'specs', 's.md');
+  const { roots, avisos } = hermanosConAvisos(fs.realpathSync(clon), deLaStory);
+  assert.deepEqual(roots, [lab.frontWts[0]], avisos);
+  assert.match(avisos, /nombra la story 1\.4/, avisos);
+  // un clon a una versión fija (la del servidor o main) no es el código de la corrida: no lleva su rama
+  const fijo = path.join(lab.raiz, 'Back-fijo');
+  cloneWithDisk(lab.backWt, fijo, { at: execFileSync('git', ['-C', lab.backWt, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() });
+  assert.deepEqual(hermanosConAvisos(fs.realpathSync(fijo), path.join(fijo, 'specs', 's.md')).roots, [lab.front]);
+});
+
+test('T9 HermanoPorNumero_OtraSesionViva_NoLoElige — dos sesiones sobre el mismo número: no elige la copia de la otra y lo dice', () => {
+  // 🔴 mutación: el número elige la copia donde trabaja otra sesión, y el portón pisa sus informes
+  const lab = laboratorioPorNumero();
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-casa-')));
+  const transcripcion = (sid, cwd) => {
+    const dir = path.join(home, '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${sid}.jsonl`), `${JSON.stringify({ type: 'user', cwd, message: { content: 'sigo con la 1.4' } })}\n`);
+  };
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 'yo' };
+  delete env.TYCON_SESSION_ID; delete env.CODEX_SESSION_ID;
+  transcripcion('yo', lab.backWt);
+  transcripcion('otra', lab.frontWts[0]);
+  const r = hermanosConAvisos(lab.backWt, lab.story, env);
+  assert.deepEqual(r.roots, [lab.front]);
+  assert.match(r.avisos, /nombra la story 1\.4[^\n]*otra sesión[^\n]*no lo elijo/, r.avisos);
+  // la propia sesión trabajando en esa copia no la saca: se elige como siempre
+  const sola = laboratorioPorNumero();
+  transcripcion('yo', sola.frontWts[0]);
+  assert.deepEqual(hermanosConAvisos(sola.backWt, sola.story, env).roots, [sola.frontWts[0]]);
 });
 
 test('T6 TestGate_CorreElHermanoElegidoPorNumero @story-7.34 @ac-8 — el portón corre la suite del worktree elegido', () => {
