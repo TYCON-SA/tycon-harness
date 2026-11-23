@@ -1283,6 +1283,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 110 (22/11): el control de la escritura de una historia lee la tanda que pasa a done por su nombre y, ante una lectura dudosa del bloque, mide. Gancho de verdad con HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/frontmatter-batch-done.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "fila 64 (22/11): una constancia de control nueva necesita la huella que deja approve antes del commit y del empuje.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/control-change-prints.test.js",

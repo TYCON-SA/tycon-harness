@@ -391,6 +391,48 @@ test('T22 PreCommit_BatchToDone_ReadByName — la tanda que pasa a done se lee p
   assert.match(faltan(r), /#2\b/, salida(r));
 });
 
+// La historia con otro bloque de tandas en lugar del suyo (el texto del bloque, tal cual).
+const conBloque = (bloque) => historia().replace(/\npipelines:\n[\s\S]*?\n---\n# Story/, `\n${bloque}---\n# Story`);
+const tanda = (nombre, estado, ac) => `  - name: ${nombre}\n    status: ${estado}\n    acs: [${ac}]\n`;
+// Bloques que el lector de tandas no lee bien, antes y después de que una tanda pase a done.
+const DUDOSOS = [
+  ['nombres con punto', `pipelines:\n${tanda('9.1-back', 'done', 1)}${tanda('9.2-front', 'pending', 2)}`,
+    `pipelines:\n${tanda('9.1-back', 'done', 1)}${tanda('9.2-front', 'done', 2)}`],
+  ['nombres con espacio', `pipelines:\n${tanda('"A b"', 'done', 1)}${tanda('"A c"', 'pending', 2)}`,
+    `pipelines:\n${tanda('"A b"', 'done', 1)}${tanda('"A c"', 'done', 2)}`],
+  ['nombres repetidos', `pipelines:\n${tanda('A', 'done', 1)}${tanda('A', 'pending', 2)}`,
+    `pipelines:\n${tanda('A', 'done', 1)}${tanda('A', 'done', 2)}`],
+  ['pipelines: # comentario', `pipelines: # tandas\n${tanda('A', 'pending', 1)}${tanda('B', 'pending', 2)}`,
+    `pipelines: # tandas\n${tanda('A', 'done', 1)}${tanda('B', 'pending', 2)}`],
+  ['la forma de una línea', 'pipelines:\n  - {name: A, status: pending, acs: [1]}\n  - {name: B, status: pending, acs: [2]}\n',
+    'pipelines:\n  - {name: A, status: done, acs: [1]}\n  - {name: B, status: pending, acs: [2]}\n'],
+  ['- title: primero', 'pipelines:\n  - title: x\n    name: A\n    status: pending\n    acs: [1]\n',
+    'pipelines:\n  - title: x\n    name: A\n    status: done\n    acs: [1]\n'],
+  ['status: >- con done abajo', `pipelines:\n${tanda('A', 'pending', 1)}`, 'pipelines:\n  - name: A\n    status: >-\n      done\n    acs: [1]\n'],
+];
+
+test('T23 PreCommit_DoubtfulBatchesBlock_MeasuresAll — ante la duda se mide: un bloque que el lector no lee bien mide todas las tandas', async (t) => {
+  for (const [i, [caso, antes, despues]] of DUDOSOS.entries()) {
+    await t.test(caso, () => {
+      const E = entorno();
+      fs.writeFileSync(E.story, conBloque(antes));
+      E.git('commit', '-qam', `la historia con ${caso}`);
+      const r = commitear(E, conBloque(despues), `s-t23${i}`);
+      assert.notStrictEqual(r.status, 0, salida(r));
+      assert.match(salida(r), /se miden todas las tandas/, salida(r));
+    });
+  }
+});
+
+test('T24 PreCommit_DoubtfulBlockUnchanged_Passes — sin una tanda nueva en done, el bloque dudoso no pide nada', () => {
+  const E = entorno();
+  const quieto = conBloque(DUDOSOS[0][2]);
+  fs.writeFileSync(E.story, quieto);
+  E.git('commit', '-qam', 'la historia con nombres con punto');
+  const r = commitear(E, quieto.replace('title: "paraguas"', 'title: "paraguas, otro título"'), 's-t24');
+  assert.strictEqual(r.status, 0, salida(r));
+});
+
 // ── 8.240: la tanda se ata a lo que la corrida toca ──────────────────────────────────────────────────────────────
 
 const B_ARCH = ['  - src/b.js  # tanda B'];

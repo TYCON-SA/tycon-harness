@@ -593,6 +593,98 @@ function parsePipelinesBlock(specContent) {
   return out;
 }
 
+// Una tanda está hecha si su estado es done, con o sin comillas y sin mirar mayúsculas (`"done"`, `Done`).
+function isDoneBatch(batch) {
+  return String((batch && batch.status) || '').toLowerCase() === 'done';
+}
+
+// La clave del bloque de tandas, con o sin comillas y con lo que siga en el renglón (`pipelines: # x`, `pipelines: []`).
+const PIPELINES_KEY = /^["']?pipelines["']?\s*:/;
+// Un renglón de estado done en el frontmatter, con comillas en la clave o en el valor y sin mirar mayúsculas.
+const DONE_LINE = /^\s+["']?status["']?\s*:\s*["']?done\b/gim;
+
+// Las tandas de una versión de la historia, con lo que el lector no pudo leer bien. parsePipelinesBlock recorta el
+// nombre en `[\w-]+` y devuelve [] sin avisar cuando no entiende el bloque: sin estas dudas, una tanda que el lector no
+// ve, o que confunde con otra, pasaría a done sin que nadie la mida.
+//   present  — el frontmatter tiene la clave pipelines (en cualquier forma)
+//   region   — el texto del bloque, para saber si cambió
+//   doneLines — los renglones de estado done de todo el frontmatter
+//   doubts   — por qué la lectura no es confiable (vacío si lo es)
+function readBatches(content) {
+  const texto = String(content || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const fm = (/^---\n([\s\S]*?)\n---/.exec(texto) || [])[1];
+  const batches = parsePipelinesBlock(content || '');
+  const out = { batches, present: false, region: '', doneLines: 0, doubts: [] };
+  if (fm == null) return out;
+  out.doneLines = (fm.match(DONE_LINE) || []).length;
+  const lines = fm.split('\n');
+  const keys = lines.map((l, i) => (PIPELINES_KEY.test(l) ? i : -1)).filter((i) => i >= 0);
+  if (!keys.length) return out;
+  out.present = true;
+  if (keys.length > 1) out.doubts.push('el bloque pipelines aparece más de una vez');
+  // el bloque: desde la clave hasta el primer renglón sin sangría que no sea un ítem de lista; un comentario o un
+  // renglón en blanco no lo corta
+  const body = [];
+  const region = [];
+  for (const k of keys) {
+    region.push(lines[k]);
+    for (let j = k + 1; j < lines.length; j++) {
+      const l = lines[j];
+      if (/^\s*(#.*)?$/.test(l)) { region.push(l); continue; }
+      if (!/^\s/.test(l) && !/^-(\s|$)/.test(l)) break;
+      region.push(l);
+      body.push(l);
+    }
+  }
+  out.region = region.join('\n');
+  if (!batches.length) out.doubts.push('el bloque pipelines está y el lector no lee ninguna tanda');
+  if (batches.some((t) => t.status == null)) out.doubts.push('una tanda sin estado legible');
+  const nombres = batches.map((t) => t.name);
+  const repetidos = [...new Set(nombres.filter((n, i) => nombres.indexOf(n) !== i))];
+  if (repetidos.length) out.doubts.push(`nombres de tanda repetidos (${repetidos.join(', ')})`);
+  // el nombre entero de cada `- name:`, como lo escribió la persona: si el lector se quedó con un pedazo, dos tandas
+  // distintas pueden leerse iguales
+  const recortados = [];
+  for (const l of body) {
+    const m = /^\s*-\s*name\s*:\s*(.*)$/.exec(l);
+    if (!m) continue;
+    const entero = m[1].replace(/\s+#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+    const leido = (/^["']?([\w-]+)/.exec(m[1].trim()) || [])[1];
+    if (entero !== leido) recortados.push(entero);
+  }
+  if (recortados.length) out.doubts.push(`un nombre de tanda que el lector no lee entero (${recortados.join(', ')})`);
+  // cada renglón de la sangría más chica del bloque abre una entrada (`- …` en la lista, `X:` en el mapa)
+  if (body.length) {
+    const sangria = (l) => l.length - l.trimStart().length;
+    const minima = Math.min(...body.map(sangria));
+    const entradas = body.filter((l) => sangria(l) === minima).length;
+    if (entradas !== batches.length) out.doubts.push(`el bloque tiene ${entradas} entradas y el lector lee ${batches.length}`);
+  }
+  return out;
+}
+
+// ¿Una tanda pasa a done entre dos versiones de una historia? Ante la duda, se mide. Hay transición si:
+//   (a) por nombre, una tanda está done en `after` y no lo estaba en `before` (o no existía);
+//   (b) los renglones de estado done del frontmatter suben (aceptando comillas y mayúsculas);
+//   (c) la lectura de alguna de las dos versiones es dudosa, el bloque cambió y el de `after` dice done en algún lado.
+// Contar renglones solo no ve `"done"` ni `Done` en todas sus formas, ni un done que pasa de una tanda a otra o que se va
+// de otro lugar en el mismo cambio; leer por nombre solo no ve lo que el lector no entiende. Con `doubtful`, quien llama
+// no achica la medición a una tanda: mide todas. Lo usan los dos controles del cierre (on-pre-commit y
+// on-frontmatter-write), para que lean la transición igual.
+function batchTransition(before, after) {
+  const antes = readBatches(before);
+  const despues = readBatches(after);
+  const hechasAntes = new Set(antes.batches.filter(isDoneBatch).map((t) => t.name));
+  const turned = despues.batches.filter((t) => isDoneBatch(t) && !hechasAntes.has(t.name)).map((t) => t.name);
+  const countUp = despues.doneLines > antes.doneLines;
+  const conDudas = antes.doubts.length > 0 || despues.doubts.length > 0;
+  const dudosa = conDudas && antes.region !== despues.region && /\bdone\b/i.test(despues.region);
+  const transition = turned.length > 0 || countUp || dudosa;
+  const doubtful = conDudas && transition;
+  return { transition, turned, countUp, doubtful,
+    doubtsBefore: doubtful ? antes.doubts : [], doubtsAfter: doubtful ? despues.doubts : [], before: antes, after: despues };
+}
+
 // ACs legítimamente diferidos = `acs_pending` de cualquier pipeline cuyo status NO es `done`.
 // story-format.md §1.1: un AC en `acs_pending` de un pipeline blocked/pending está declarado como
 // diferido con su razón — no es un gap de cobertura, es deuda documentada.
@@ -1006,6 +1098,9 @@ module.exports = {
   acTextsFromSpec,
   parseTestsTable,
   parsePipelinesBlock,
+  isDoneBatch,
+  readBatches,
+  batchTransition,
   deferredAcs,
   runStoryChecks,
   walkFiles,
