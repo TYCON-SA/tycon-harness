@@ -1116,6 +1116,12 @@
       "requiere": []
     },
     {
+      "__nota": "la guía servida con --serve guarda en su archivo del repo sin preguntar carpeta, sólo con la ficha y sólo una guía.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/qa-guide-serve.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/first-screen-story.test.js",
       "requiere": []

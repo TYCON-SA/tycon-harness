@@ -18,8 +18,10 @@
  *   - Preámbulo opcional (setup del entorno) — <workspace>/<repo>/specs/qa/preamble.md o --preamble.
  *
  * Uso:
- *   node qa-guide.js --story <abs .md> [--out <abs .html>] [--preamble <abs .md>]
+ *   node qa-guide.js --story <abs .md> [--out <abs .html>] [--preamble <abs .md>] [--open | --serve]
  * Salida por defecto: <...>/specs/qa/<basename-sin-ext>-guia-qa.html (docs de trabajo de la story).
+ * --serve: la sirve desde esta máquina hasta Ctrl+C, y «Guardar» escribe en ese mismo archivo sin preguntar dónde.
+ * Abierta como archivo suelto (o con --open), «Guardar» pregunta dónde, porque el navegador no deja elegir la carpeta.
  * Exit: 0 ok · 2 error.
  */
 
@@ -529,12 +531,20 @@ function renderHtml({ sid, title, preambleHtml, cards, stats, generatedAt, embed
     if(e.target.hasAttribute&&e.target.hasAttribute('data-notes')){state['n'+e.target.getAttribute('data-notes')]=e.target.value;saveLocal(state);dirtyMark();}
   });
   window.limpiar=function(n){delete state['v'+n];delete state['n'+n];saveLocal(state);apply();dirtyMark();};
-  // Guardar = escribir el estado DENTRO de este archivo HTML. Con la File System Access API
-  // (Chrome/Edge) se sobrescribe el archivo abierto o se elige dónde; si no, cae a descarga.
+  // Guardar = escribir el estado DENTRO de este archivo HTML. Servida con --serve, se lo manda a quien
+  // la sirve, que escribe en su archivo del repo. Abierta como archivo, con la File System Access API
+  // (Chrome/Edge) se elige dónde; si no, cae a descarga.
+  var TOKEN=new URLSearchParams(location.search).get('t');
   window.guardar=async function(){
     document.getElementById('qa-state').textContent=JSON.stringify(state);
     var full='<!doctype html>\\n'+document.documentElement.outerHTML;
     var fname=FNAME;
+    if(location.protocol==='http:'&&TOKEN){
+      try{
+        var r=await fetch('/guardar',{method:'POST',headers:{'X-QA-Token':TOKEN,'Content-Type':'text/html; charset=utf-8'},body:full});
+        if(r.ok){document.getElementById('saved').textContent='✓ guardado en el repo';return;}
+      }catch(e){}
+    }
     try{
       if(window.showSaveFilePicker){
         var h=await window.showSaveFilePicker({suggestedName:fname,types:[{description:'HTML',accept:{'text/html':['.html']}}]});
@@ -1153,27 +1163,89 @@ function main() {
   const sinRol = cards.filter((c) => c.needsRole).map((c) => c.n);
   if (sinRol.length) console.log(`   ⚠ Sin usuario de prueba declarado: AC ${sinRol.join(', ')} — agregar 'Usuario: <rol>' en ${pasosHint} (o 'Usuario por defecto:' al tope)`);
 
+  if (process.argv.includes('--serve')) {
+    serveGuide(out).then(({ url }) => {
+      console.log(`   🌐 Guía servida en ${url}`);
+      console.log(`   💾 «Guardar» escribe en ${out} · cortá con Ctrl+C cuando termines`);
+      abrirEnNavegador(url);
+    }, (e) => {
+      console.error(`qa-guide.js: no pude servir la guía (${e.message}) — abrila a mano: ${out}`);
+      process.exit(2);
+    });
+    return;
+  }
+
   // --open: abrir la guía en el navegador al generarla —
   // SOLO con el flag explícito, nunca por default: qa-guide corre también desde hooks
   // (on-pre-commit --check no pasa por acá, pero cualquier automatización futura que
   // genere no debe abrir ventanas sin pedirlo). Cross-platform, fail-open (best-effort).
-  if (process.argv.includes('--open')) {
-    try {
-      const { spawn } = require('child_process');
-      const cmd = process.platform === 'darwin' ? 'open'
-        : process.platform === 'win32' ? 'cmd'
-        : 'xdg-open';
-      const args = process.platform === 'win32' ? ['/c', 'start', '', out] : [out];
-      spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
-      console.log('   🌐 Guía abierta en el navegador (--open)');
-    } catch (e) {
-      console.log(`   ⚠ No pude abrir la guía en el navegador (${e.message}) — abrila a mano: ${out}`);
-    }
-  }
+  if (process.argv.includes('--open') && abrirEnNavegador(out)) console.log('   🌐 Guía abierta en el navegador (--open)');
   process.exit(0);
 }
 
-module.exports = { estadoDelArnes, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
+// Abre un archivo o una dirección en el navegador. Si no puede, lo dice y devuelve false.
+function abrirEnNavegador(target) {
+  try {
+    const { spawn } = require('child_process');
+    const cmd = process.platform === 'darwin' ? 'open'
+      : process.platform === 'win32' ? 'cmd'
+      : 'xdg-open';
+    const args = process.platform === 'win32' ? ['/c', 'start', '', target] : [target];
+    spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+    return true;
+  } catch (e) {
+    console.log(`   ⚠ No pude abrir el navegador (${e.message}) — abrí a mano: ${target}`);
+    return false;
+  }
+}
+
+// Sirve la guía desde esta máquina para que «Guardar» escriba siempre en su archivo, sin preguntar dónde.
+// Escucha sólo en 127.0.0.1, y la ficha al azar de la dirección impide que otra página del navegador lea o
+// escriba el archivo. Sólo acepta una guía entera: un cuerpo sin las respuestas del tester no pisa el archivo.
+const MAX_GUARDADO = 20 * 1024 * 1024;
+function serveGuide(out, { port = 0 } = {}) {
+  const http = require('http');
+  const token = require('crypto').randomBytes(16).toString('hex');
+  const server = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const responder = (code, text) => { res.writeHead(code, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end(text); };
+    if (req.method === 'GET' && u.pathname === '/') {
+      if (u.searchParams.get('t') !== token) return responder(403, 'falta la ficha de la dirección');
+      let html;
+      try { html = fs.readFileSync(out, 'utf8'); } catch (e) { return responder(500, `no pude leer la guía: ${e.message}`); }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      return res.end(html);
+    }
+    if (req.method === 'POST' && u.pathname === '/guardar') {
+      if (req.headers['x-qa-token'] !== token) return responder(403, 'falta la ficha');
+      const partes = [];
+      let largo = 0;
+      req.on('data', (c) => {
+        largo += c.length;
+        if (largo > MAX_GUARDADO) { responder(413, 'la guía es demasiado grande'); req.destroy(); } else partes.push(c);
+      });
+      req.on('end', () => {
+        if (res.writableEnded) return;
+        const body = Buffer.concat(partes).toString('utf8');
+        if (!/^<!doctype html>/i.test(body) || !body.includes('id="qa-state"')) return responder(400, 'no es una guía de prueba');
+        try {
+          const tmp = `${out}.guardando`;
+          fs.writeFileSync(tmp, body, 'utf8');
+          fs.renameSync(tmp, out);
+        } catch (e) { return responder(500, `no pude escribir la guía: ${e.message}`); }
+        responder(200, 'guardado');
+      });
+      return;
+    }
+    responder(404, 'no existe');
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => resolve({ server, token, url: `http://127.0.0.1:${server.address().port}/?t=${token}` }));
+  });
+}
+
+module.exports = { estadoDelArnes, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers, serveGuide };
 if (require.main === module) {
   // La opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');

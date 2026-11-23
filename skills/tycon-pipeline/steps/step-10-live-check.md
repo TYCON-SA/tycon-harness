@@ -743,6 +743,10 @@ de trabajo de la story. Tras la matriz:
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js --story <abs spec.md> --open
 ```
 
+Para que el tester guarde sus respuestas siempre en el archivo de la guía, sin elegir carpeta, se abre con `--serve` en
+vez de `--open`: la guía queda servida desde la máquina hasta Ctrl+C. Quien la abre como archivo suelto, sin el arnés,
+elige dónde guardarla.
+
 **Dónde queda** (una sola regla, `lib/qa-dir.js`; la usan la guía, sus pasos y revisiones, el preámbulo, la maqueta y
 el freno del commit): con la historia en una carpeta de historias (`specs/stories/`, `stories/`), `qa/` al lado de esa
 carpeta; con la historia suelta en `specs/`, `specs/qa/`, salvo que el repo ya use `qa/` al lado de `specs/` y no tenga
