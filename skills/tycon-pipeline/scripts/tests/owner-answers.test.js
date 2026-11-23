@@ -143,7 +143,7 @@ test('T22 ReviewAnswer_ByProfile_OnlyWhenAwayAndCellSkips @story-8.256 @ac-21 �
   c.ausente();
   const rc = c.marker(COORD, por);
   assert.strictEqual(rc.status, 2, rc.stderr);
-  assert.match(rc.stderr, /celda de «dueño ausente»/);
+  assert.match(rc.stderr, /celda de ausencia/);
   assert.strictEqual(c.respuestas().length, 0);
   // 🔴 los archivos nuevos sin seguir también cuentan: con ellos el cambio es grande y la celda de ausente dice run
   const e = laboratorio(t, { celda: 'skip' });
@@ -152,7 +152,7 @@ test('T22 ReviewAnswer_ByProfile_OnlyWhenAwayAndCellSkips @story-8.256 @ac-21 �
   e.ausente();
   const re = e.marker(COORD, por);
   assert.strictEqual(re.status, 2, re.stderr);
-  assert.match(re.stderr, /celda de «dueño ausente»/);
+  assert.match(re.stderr, /celda de ausencia/);
   assert.strictEqual(e.respuestas().length, 0);
   // --by-profile con otra respuesta no vale
   const rd = c.marker(COORD, ['review-answer', '--for-session', SID, '--kind', 'code', '--choice', 'review', '--by-profile']);
