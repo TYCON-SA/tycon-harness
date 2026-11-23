@@ -29,6 +29,7 @@
 # Uso:
 #   smoke-run.sh <evidence-dir> <ruta-de-la-story.md | story-id> --acs 8,9 \
 #     --pass-if '<qué tiene que pasar>' [--fail-if '<qué lo da por malo>'] [--capture <archivo.png|.webm>] \
+#     [--exercises <repo>[,<repo>…]] \
 #     -- <comando...>
 #   (con la ruta, la clave del registro la calcula lib/evidence-key.js)
 # Ejemplo:
@@ -74,6 +75,8 @@ fi
 
 ACS=""
 MUTATES=0
+ENTORNO=""
+EJERCITA=""
 # --compare (historia 8.167): además del humo de siempre, el comando se corre con main y con el cambio, aislados y sin
 # red, y el resultado queda en compare-previous.json de la corrida. --covers <archivo>[:<subcomando>],…: los
 # candidatos que cubre un humo que corre un laboratorio con {raiz}; va sólo con --compare.
@@ -100,6 +103,23 @@ while true; do
       fi
       ACS="$2"; shift 2 ;;
     --mutates) MUTATES=1; shift ;;
+    # Contra qué entorno corrió el humo (`staging`): un criterio con una prueba de Nivel `staging` lo pide para pasar a
+    # done. Va al registro y al espejo, como `--mutates`. Sólo minúsculas, números y guiones.
+    --environment)
+      if [ $# -lt 2 ] || ! [[ "$2" =~ ^[a-z][a-z0-9-]*$ ]]; then
+        echo "smoke-run.sh: --environment necesita el nombre del entorno en minúsculas (ej: --environment staging)" >&2
+        exit 2
+      fi
+      ENTORNO="$2"; shift 2 ;;
+    # Qué repos ejercita el humo, por su nombre (el de la carpeta del repo): `--exercises Back` para un curl a la API.
+    # Un cambio en otro repo de la historia no vence esta evidencia. Sin la opción, la vence un cambio en cualquiera.
+    # Va al registro y al espejo, como `--mutates`.
+    --exercises)
+      if [ $# -lt 2 ] || ! [[ "$2" =~ ^[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*$ ]]; then
+        echo "smoke-run.sh: --exercises necesita el nombre de los repos que ejercita, separados por comas (ej: --exercises Back)" >&2
+        exit 2
+      fi
+      EJERCITA="$2"; shift 2 ;;
     --compare) COMPARE=1; shift ;;
     --covers)
       if [ $# -lt 2 ] || [ "$2" = "--" ]; then
@@ -325,6 +345,14 @@ fi
 ACS_JSON="[$(echo "$ACS" | tr ',' '\n' | grep -E '^[0-9]+$' | paste -sd, -)]"
 MUT_FIELD=""
 if [ "$MUTATES" = "1" ]; then MUT_FIELD=',"mutates":true'; fi
+if [ -n "$ENTORNO" ]; then MUT_FIELD="$MUT_FIELD,\"environment\":\"$ENTORNO\""; fi
+if [ -n "$EJERCITA" ]; then
+  # los nombres ya se validaron (letras, números, punto, guion y guion bajo): van entre comillas sin escapar nada
+  EJ_JSON=""
+  IFS=',' read -r -a EJ_LISTA <<< "$EJERCITA"
+  for r in "${EJ_LISTA[@]}"; do EJ_JSON="$EJ_JSON${EJ_JSON:+,}\"$r\""; done
+  MUT_FIELD="$MUT_FIELD,\"exercises\":[$EJ_JSON]"
+fi
 
 # ── El `cmd` se TAPA antes de escribirlo ──
 # El ledger vive en `<repo>/.advisors/dod-runtime/`, que el .gitignore canónico deja VIAJAR por

@@ -1611,7 +1611,7 @@ test('HowItWorks_CloseChecks_MatchCompleteStep @story-8.127 @ac-10 — la tabla 
   const S = STEPS_LIB();
   const porPaso = S.closeControlsByStep();
   const ids = new Set([...S.STEPS.map((s) => s.id), S.CLOSE_STEP.id]);
-  const marker = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+  const marker = require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS);
   assert.match(marker, /const CONTROLES_DEL_PASO = STEPS_LIB\.closeControlsByStep\(\);/, 'marker.js arma su tabla con la de steps.js');
   for (const r of S.STEP_CLOSE_CHECKS) {
     assert.ok(ids.has(r.shownIn) && ids.has(r.checkedIn), `${r.textKey}: pasos que existen`);

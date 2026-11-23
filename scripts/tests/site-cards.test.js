@@ -16,7 +16,7 @@ const HOME_FALSO = fs.mkdtempSync(path.join(os.tmpdir(), 'fichas-home-'));
 test.after(() => fs.rmSync(HOME_FALSO, { recursive: true, force: true }));
 
 /** Un .dashboard sintético al día: las fuentes obligatorias del tablero, con números reconocibles. */
-function montarDashboard(dir, { hoy = HOY } = {}) {
+function montarDashboard(dir, { hoy = HOY, global = {} } = {}) {
   const ts = `${hoy}T05:00:00Z`;
   const escribir = (rel, doc) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), JSON.stringify(doc)); };
   escribir(`sdlc-stage-${hoy}.json`, {
@@ -27,6 +27,7 @@ function montarDashboard(dir, { hoy = HOY } = {}) {
       first_pass_ratio: { num: 3, den: 18 }, rework_ratio: { num: 100, den: 400 }, dod_evidence_ratio: { num: 80, den: 400 },
       tiempo_por_etapa: { 'in-progress': { n: 380, mean: 3.0, median: 2.1, min: 0.2, max: 40.0 }, review: { n: 402, mean: 8.0, median: 6.4, min: 0.1, max: 91.0 } },
       sin_transiciones: 24, estados_desconocidos: { blocked: 5 },
+      ...global,
     },
     repos: [{ repo: 'acme/A', stories_total: 50, done_total: 40, rework_ratio: { num: 10, den: 40 }, dod_evidence_ratio: { num: 0, den: 40 }, not_measured: [] }],
   });
@@ -102,7 +103,7 @@ test('2.36-Lista_ConSuIdentificador: cada ficha tiene identificador fijo, pregun
     assert.ok(f.titulo && f.paraQue && Array.isArray(f.de) && f.de.length === 2, `${f.id}: título, para qué y de dónde`);
     assert.ok(['pct', 'num1', 'entero', 'redondo'].includes(f.formato), `${f.id}: formato`);
   }
-  assert.strictEqual(fichas.FICHAS.length, 27);
+  assert.strictEqual(fichas.FICHAS.length, 28);
 });
 
 test('2.36-Lista_IgualAlTablero: cada ficha del tablero está en la lista o declarada «ya estaba», y al revés', () => {
@@ -187,15 +188,15 @@ test('2.36-UnaSolaCuenta_TableroYSitio: sobre la misma foto, cada ficha da en el
 test('2.36-Oculta_NoSeCalculaNiLlega: una ficha oculta no entra al modelo, y el modelo dice cuántas hay ocultas', () => {
   const paneles = { extra: { backlog: { estado: 'medido', valor: 3, medidos: 3, total: 3 }, estados_sin_diccionario: { estado: 'medido', valor: 1, medidos: 1, total: 1 } }, local: {}, mejora: {}, poda: {} };
   const todas = fichas.modeloDeFichas(paneles, {});
-  assert.strictEqual(todas.lista.length, 27);
+  assert.strictEqual(todas.lista.length, 28);
   assert.strictEqual(todas.ocultas, 0);
   const algunas = fichas.modeloDeFichas(paneles, { ocultas: ['backlog', 'estados_sin_diccionario'] });
-  assert.strictEqual(algunas.lista.length, 25);
+  assert.strictEqual(algunas.lista.length, 26);
   assert.strictEqual(algunas.ocultas, 2);
   assert.ok(!algunas.lista.some((f) => f.id === 'backlog' || f.id === 'estados_sin_diccionario'));
   assert.ok(!/backlog|estados_sin_diccionario/.test(JSON.stringify(algunas)), 'el nombre de una ficha oculta viajó al modelo');
   // sin la clave se muestran todas, también con algo que no es una lista
-  assert.strictEqual(fichas.modeloDeFichas(paneles, { ocultas: 'backlog' }).lista.length, 27);
+  assert.strictEqual(fichas.modeloDeFichas(paneles, { ocultas: 'backlog' }).lista.length, 28);
 });
 
 // ── el sitio: Arnés con sus fichas ───────────────────────────────────────────────────────────────────────────
@@ -359,7 +360,7 @@ test('2.36-Oculta_NoSeCalculaNiLlega (sitio): las ocultas por site.hidden_cards 
   assert.doesNotMatch(views.paginaArnes({ modelo: todas, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: 0 }), /fichas? ocultas?/);
   // el cálculo roto no tira el sitio: cada ficha sale no medida
   const sinClon = fichas.fichasDelClon({ clon: path.join(clon, 'no-existe'), ahora: AHORA, ocultas: [] });
-  assert.strictEqual(sinClon.lista.length, 27);
+  assert.strictEqual(sinClon.lista.length, 28);
   assert.ok(sinClon.lista.every((f) => f.estado === 'no_medido'));
 });
 
@@ -451,7 +452,7 @@ test('2.36-Sello_CompletoComoElAviso: el sello de Arnés dice «completa» con l
 test('2.36-Guia_ListaYComoOcultar: la guía, en los dos idiomas, trae las 26 con su para qué, cómo se oculta una y lo que todavía no se mide', () => {
   const { t } = require(path.join(H.SITE, 'texts.js'));
   const guias = { es: fs.readFileSync(path.join(RAIZ, 'guides', 'organization-site.md'), 'utf8'), en: fs.readFileSync(path.join(RAIZ, 'guides', 'organization-site.en.md'), 'utf8') };
-  assert.strictEqual(fichas.FICHAS.length, 27);
+  assert.strictEqual(fichas.FICHAS.length, 28);
   for (const [idioma, guia] of Object.entries(guias)) {
     for (const f of fichas.FICHAS) {
       assert.ok(guia.includes(t(idioma, `ficha.${f.id}.titulo`)), `${idioma}: falta el título de ${f.id}`);
@@ -612,4 +613,87 @@ test('T69 2.79-Fichas_ConUnidadYDesglose @story-2.79 @ac-62 — días o segundos
   const fuera = texto('rework_por_causa', { ...causas, fuera_de_vocabulario: [['bug-raro', 2], ['otra-cosa', 1]] }, 'es');
   assert.match(fuera, /fuera del vocabulario 3\b/, `las que quedaron fuera del vocabulario se cuentan: ${fuera}`);
   assert.doesNotMatch(fuera, /bug-raro|otra-cosa/, fuera);
+});
+
+// 8.327-Sitio_FichaMesPorMes
+// 🔴 Falla con: la ficha fuera de la lista del sitio; `proyectar` sin su caso (sin `meses`, o con todo lo que trae el
+//    tablero); un número distinto del tablero; una fila con el mes mal formado o una clave rara que viaja; el texto con
+//    la clave interna de la causa en vez de su nombre.
+test('8.327-Sitio_FichaMesPorMes: mismo número y filas que el tablero, título en dos idiomas', () => {
+  const def = fichas.FICHAS.find((x) => x.id === 'rework_por_mes');
+  assert.ok(def, 'la ficha rework_por_mes está en la lista del sitio');
+  assert.strictEqual(fichas.FICHAS.length, 28);
+  assert.strictEqual(def.pregunta, 2);
+  const OPS = require('../lib/operations-config.js');
+  assert.ok(OPS.CARD_IDS.includes('rework_por_mes'), 'se puede esconder con site.hidden_cards');
+  const meses = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'].map((mes, i) => ({
+    mes, en_curso: i === 6, entregadas: 10 + i,
+    rehechas: { conteo: { 'defecto-propio': i, 'cambio-de-requisito': 1, 'deuda-declarada': 2, descubrimiento: 0 }, sin_declarar: 1, fuera_de_vocabulario: {} } }));
+  const global = { rework_por_mes: { meses, sin_fecha: 0, fuera_de_ventana: { entregadas: 0, rehechas: 0 }, causa_aparte: 'deuda-declarada', repos_medidos: 1, repos_total: 1 } };
+  const dir = tmp('fichas-mes-');
+  try {
+    montarDashboard(dir, { global });
+    const env = { ...process.env, HOME: HOME_FALSO, TYCON_TODAY: HOY };
+    const AHORA = Date.parse(`${HOY}T12:00:00Z`);
+    const api = spawnSync(process.execPath, ['-e', `
+      const f = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'site', 'tabs', 'cards.js'))});
+      const d = require(${JSON.stringify(TABLERO)}).colectar({ dir: ${JSON.stringify(dir)}, nocturno: true, ahora: ${AHORA} });
+      process.stdout.write(JSON.stringify({ tablero: d.paneles.extra.rework_por_mes, sitio: f.modeloDeFichas(d.paneles, { cfg: d.cfg }).lista.find((x) => x.id === 'rework_por_mes') }));`], { encoding: 'utf8', env, maxBuffer: 1 << 26 });
+    assert.strictEqual(api.status, 0, api.stderr);
+    const { tablero, sitio } = JSON.parse(api.stdout);
+    assert.strictEqual(tablero.estado, 'medido', JSON.stringify(tablero));
+    assert.strictEqual(sitio.estado, 'medido');
+    assert.strictEqual(sitio.valor, tablero.valor, 'el mismo número que el tablero');
+    assert.strictEqual(sitio.valor, 35);
+    const octT = tablero.filas.find((f) => f.mes === '2026-10');
+    const octS = sitio.meses.find((f) => f.mes === '2026-10');
+    assert.strictEqual(octS.entregadas, octT.entregadas);
+    const dp = (f) => f.causas.find((c) => c.clave === 'defecto-propio').n;
+    assert.strictEqual(dp(octS), dp(octT));
+    assert.strictEqual(sitio.meses.length, 7);
+    assert.deepStrictEqual(Object.keys(octS).sort(), ['causas', 'en_curso', 'entregadas', 'mes', 'sin_declarar']);
+    assert.strictEqual(sitio.meses[6].en_curso, true);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+
+  // lo mal formado no viaja: un mes con otra forma, una clave con mayúsculas, una cuenta que no es número, más de siete
+  const fila = (mes, extra = {}) => ({ mes, en_curso: false, entregadas: 3, causas: [{ clave: 'defecto-propio', n: 2 }, { clave: 'Defecto-Raro', n: 9 }], sin_declarar: 1, ...extra });
+  const medida = { estado: 'medido', valor: 4, medidos: 4, total: 4, unidad: 'conteo',
+    filas: [fila('2026-1x'), fila('2026-10'), fila('2026-09', { entregadas: 'muchas' }), ...['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07'].map((m) => fila(m))] };
+  const p = fichas.proyectar(def, medida, {});
+  assert.ok(!p.meses.some((f) => f.mes === '2026-1x'), 'el mes mal formado no viaja');
+  assert.ok(!p.meses.some((f) => f.mes === '2026-09'), 'una cuenta que no es número no viaja');
+  assert.ok(p.meses.length <= 7, 'a lo sumo siete meses');
+  assert.ok(!JSON.stringify(p).includes('Defecto-Raro'), 'la clave con mayúsculas no viaja');
+  assert.deepStrictEqual(p.meses[0].causas, [{ clave: 'defecto-propio', n: 2 }]);
+
+  // título y para qué en los dos idiomas; el texto muestra el nombre de la causa, nunca la clave
+  for (const idioma of ['es', 'en']) {
+    assert.ok(fichas.tituloDe('rework_por_mes', idioma) && fichas.tituloDe('rework_por_mes', idioma) !== 'rework_por_mes', `${idioma}: título`);
+    assert.ok(fichas.paraQueDe('rework_por_mes', idioma), `${idioma}: para qué`);
+  }
+  assert.notStrictEqual(fichas.tituloDe('rework_por_mes', 'es'), fichas.tituloDe('rework_por_mes', 'en'));
+  const texto = (idioma) => fichas.tile(p, idioma).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  assert.match(texto('es'), /2026-10/);
+  assert.match(texto('es'), /defecto propio 2\b/, texto('es'));
+  assert.match(texto('en'), /own defect 2\b/, texto('en'));
+  assert.doesNotMatch(texto('es'), /defecto-propio/, 'sin la clave interna');
+  // las rehechas de una causa fuera del vocabulario viajan en la línea del mes, como en rework_por_causa
+  const conOtra = fichas.proyectar(def, { ...medida, filas: [fila('2026-10', { fuera_de_vocabulario: 2 })] }, {});
+  assert.deepStrictEqual(conOtra.meses[0].causas, [{ clave: 'defecto-propio', n: 2 }, { clave: 'fuera-del-vocabulario', n: 2 }]);
+  assert.match(fichas.tile(conOtra, 'es').replace(/<[^>]+>/g, ' '), /fuera del vocabulario 2\b/);
+});
+
+// 8.327-Guia_FichaMesPorMes_EnLasDosGuias
+// 🔴 Falla con: la guía sin la ficha nueva en la lista de la pregunta 2, en cualquiera de los dos idiomas.
+test('8.327-Guia_FichaMesPorMes_EnLasDosGuias', () => {
+  const { t } = require('../site/texts.js');
+  for (const [idioma, archivo] of [['es', 'organization-site.md'], ['en', 'organization-site.en.md']]) {
+    const guia = fs.readFileSync(path.join(RAIZ, 'guides', archivo), 'utf8');
+    const linea = guia.split('\n').find((l) => l.includes('(`rework_por_mes`)'));
+    assert.ok(linea, `${idioma}: la guía nombra la ficha mes por mes`);
+    assert.ok(linea.includes(t(idioma, 'ficha.rework_por_mes.titulo')), `${idioma}: con su título`);
+    assert.ok(linea.includes(t(idioma, 'ficha.rework_por_mes.paraQue')), `${idioma}: y qué contesta`);
+    const causa = guia.indexOf('(`rework_por_causa`)');
+    assert.ok(causa >= 0 && guia.indexOf('(`rework_por_mes`)') > causa, `${idioma}: en la lista de la pregunta 2, después de «por qué volvió»`);
+  }
 });

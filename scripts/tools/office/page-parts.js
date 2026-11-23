@@ -78,7 +78,8 @@ function renderPage({ data = null, source = null, token = null, site = null, url
 
 /**
  * Las piezas que el sitio pone dentro de su armazón: los atributos de <html>, los estilos de la oficina (no los de página,
- * que pisarían los del sitio) y el contenido, sin el título, que es el del sitio, y con el mapa y el código al final.
+ * que pisarían los del sitio) y el contenido, sin el título, que es el del sitio, ni la sección de lo que te necesita, que
+ * es sólo de la oficina local, y con el mapa y el código al final.
  * Tira si la plantilla no trae sus marcas.
  */
 function siteParts({ source, urlOf, script }) {
@@ -86,7 +87,7 @@ function siteParts({ source, urlOf, script }) {
   const estilo = /<style id="estiloOficina">([\s\S]*?)<\/style>/.exec(html);
   const contenido = /<!-- contenido -->([\s\S]*?)<!-- fin del contenido -->/.exec(html);
   if (!estilo || !contenido) throw Object.assign(new Error('page.html sin las marcas del sitio'), { code: 'SIN_MARCAS' });
-  const body = `<div class="contenido-oficina">${contenido[1].replace(/<h1>[^<]*<\/h1>/, '')}</div>`
+  const body = `<div class="contenido-oficina">${contenido[1].replace(/<h1>[^<]*<\/h1>/, '').replace(/<section class="necesita"[^\n]*?<\/section>/, '')}</div>`
     + `<script type="importmap">${importMap(urlOf)}</script><script src="${escapeAttr(script)}"></script>`;
   return { attrs: `data-source="${escapeAttr(source)}"`, style: estilo[1], body };
 }

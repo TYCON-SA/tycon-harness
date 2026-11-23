@@ -454,10 +454,12 @@ PY
     #   scripts/hooks/context-size-notice.js — avisa cuando la sesión lleva demasiado contexto
     #   scripts/hooks/session-cap-guard.js — frena abrir sesiones de más
     #   scripts/hooks/coordination-fill-gate.js — la coordinadora no deja la máquina vacía al cerrar su turno
+    #   scripts/hooks/permission-relay.js — el permiso de una sesión de fondo le llega a la persona como cuadro
     #   scripts/hooks/office-link-start.js — el proceso que le manda la oficina de la máquina al sitio de la organización
     #     (al arrancar la sesión y al escribir un pedido: dos veces)
     #   scripts/hooks/cover-secrets.js — tapa los secretos de la máquina en lo que devuelven los comandos y las lecturas
-    #   scripts/hooks/background-question-guard.js — la pregunta de una sesión que abrió la coordinadora va a la coordinadora
+    #   scripts/hooks/background-question-guard.js — la pregunta de una sesión que abrió la coordinadora va a la coordinadora;
+    #     de fondo, niega el borrado y la edición que pedirían permiso
     #   scripts/hooks/finished-open-notice.js — lo terminado sin cerrar de la máquina, dicho al arrancar
     #   scripts/hooks/hook-failures-notice.js — las fallas de los controles de las últimas 24 horas, dichas al arrancar
     #   scripts/hooks/guard-auto-update.js — la actualización del freno de producción sin contraseña, al arrancar
@@ -470,10 +472,10 @@ PY
       scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js=3 scripts/hooks/guard-update-notice.js
       scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2
       scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=9 scripts/hooks/owner-approval-record.js=2
-      scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/coordination-fill-gate.js scripts/hooks/office-link-start.js=2
+      scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/coordination-fill-gate.js scripts/hooks/permission-relay.js scripts/hooks/office-link-start.js=2
       scripts/hooks/cover-secrets.js
       scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2
-      scripts/hooks/background-question-guard.js=2 scripts/hooks/finished-open-notice.js scripts/hooks/guard-auto-update.js
+      scripts/hooks/background-question-guard.js=3 scripts/hooks/finished-open-notice.js scripts/hooks/guard-auto-update.js
       scripts/hooks/hook-failures-notice.js tycon-pipeline/scripts/on-advisor-done.js
       scripts/hooks/temp-sweep.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez

@@ -14,7 +14,13 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  *     carpetas del arnés de la casa de la cuenta (la propia, la de Claude Code, la de Codex y `TYCON_HOME`: `vigiladas`),
  *     y lo anota; un intento anotado hace fallar el humo aunque el comando se haya tragado el error;
  *   - en macOS, además, `sandbox-exec` deja escribir sólo en esa carpeta y en las raíces admitidas; la red queda abierta.
- *     Si el sistema no deja abrir el encierro (una sesión ya encerrada), se dice y sigue con la red de escritura.
+ *     Si el sistema no deja abrir el encierro (una sesión ya encerrada), se dice y sigue con la red de escritura. Un
+ *     hijo que el comando lanza con el ambiente mínimo pierde la red (vive en `NODE_OPTIONS`) y su casa vuelve a ser la
+ *     de la cuenta: si escribe en una carpeta vigilada, el encierro lo mata y el sistema lo anota en su registro con la
+ *     marca de esta corrida; al terminar se lee ese registro, y lo anotado hace fallar el humo como un intento de la
+ *     red. Lo que se niega sin matar, el sistema no lo anota para node. Y anota pocas muertes por minuto: si no anotó
+ *     una, el proceso igual murió sin escribir.
+ *     Sin el encierro, la red es la única defensa, y ese hijo escribe.
  * Las raíces admitidas son la del repo del comando y, para un guion suelto, su carpeta; no se admite una que sea la
  * casa, que contenga una carpeta vigilada o que sea el arnés instalado.
  *
@@ -25,9 +31,11 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  *   isolated-run.js decide [--compare] [--covers a,b] [--root <r>] -- <comando…>
  *       imprime `comun`, o `aislada` y debajo una raíz admitida por renglón; sale 2 con el motivo si no se corre
  *   isolated-run.js exec [--root <r>]… -- <comando…>
- *       corre el comando aislado y sale con su código, o con 3 si hubo intentos sobre la casa real y salió 0
+ *       corre el comando aislado y sale con su código, o con 3 si salió 0 y hubo intentos sobre la casa real (anotados
+ *       por la red o negados por el encierro), o no se pudo leer alguno de los dos registros
  * Casos: scripts/tests/test-run-isolation.test.js
  */
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -308,6 +316,30 @@ function arranqueDeLaRed(lleva) {
   return archivo;
 }
 
+// La hora del registro del sistema, en UTC con su zona: la hora local de node y la del sistema pueden ser distintas (TZ)
+const horaDelRegistro = (ms) => `${new Date(ms).toISOString().slice(0, 19).replace('T', ' ')}+0000`;
+/**
+ * Las rutas de las escrituras que el encierro negó con la marca de esta corrida: las de las carpetas vigiladas, que
+ * matan al proceso. Un registro que no se puede leer no es «ninguna»: `{ error }`.
+ */
+function negadasDelEncierro(marca, desde) {
+  const r = spawnSync('/usr/bin/log', ['show', '--start', horaDelRegistro(desde), '--style', 'ndjson',
+    '--predicate', `eventMessage CONTAINS "${marca}"`],
+  { encoding: 'utf8', windowsHide: true, timeout: 60000, maxBuffer: 64 * 1024 * 1024 });
+  if (r.error || r.status !== 0) return { error: r.error ? (r.error.code || r.error.message) : `salió ${r.status}` };
+  const rutas = [];
+  for (const l of String(r.stdout).split('\n')) {
+    let o;
+    try { o = JSON.parse(l); } catch (_) { continue; }
+    const texto = String((o && o.eventMessage) || '');
+    // `Sandbox: node(123) deny(1) file-write-create /ruta` y debajo la marca; el renglón del propio `log` no es así
+    if (!/Sandbox: .*deny\(\d+\)/.test(texto)) continue;
+    const m = /deny\(\d+\) \S+ ([^\n]+)/.exec(texto);
+    rutas.push(m ? m[1] : texto.split('\n')[0]);
+  }
+  return [...new Set(rutas)];
+}
+
 /** Corre el comando aislado. Devuelve una promesa con el código de salida. */
 function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cwd(), err = (t) => process.stderr.write(t) } = {}) {
   return new Promise((resolve) => {
@@ -348,10 +380,18 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
     const opciones = String(env.NODE_OPTIONS || '').trim();
     nuevo.NODE_OPTIONS = `${red}${opciones ? ` ${opciones}` : ''}`;
     let lanzar = [argv[0], argv.slice(1)];
+    // con el encierro abierto: escribir en una carpeta vigilada mata al proceso y queda en el registro del sistema con la
+    // marca de esta corrida; `desde`, de dónde leerlo
+    let marca = null;
+    let desde = 0;
     if (process.platform === 'darwin') {
       const enc = cp().encierro(env);
-      if (enc.nombre === 'sandbox-exec' && encierroAbre()) lanzar = ['/usr/bin/sandbox-exec', ['-p', cp().perfilSandbox([base, ...admitidas], { red: true }), ...argv]];
-      else err(`[aislada] ⚠️ sin el encierro del sistema (${enc.nombre === 'sandbox-exec' ? 'el sistema no deja abrirlo: esta sesión ya corre encerrada' : enc.corta}): frena sólo la red de escritura de node\n`);
+      if (enc.nombre === 'sandbox-exec' && encierroAbre()) {
+        marca = `tycon-aislada-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+        desde = Date.now() - 2000;
+        const perfil = cp().perfilSandbox([base, ...admitidas], { red: true, fatales: raicesVigiladas, mensaje: marca });
+        lanzar = ['/usr/bin/sandbox-exec', ['-p', perfil, ...argv]];
+      } else err(`[aislada] ⚠️ sin el encierro del sistema (${enc.nombre === 'sandbox-exec' ? 'el sistema no deja abrirlo: esta sesión ya corre encerrada' : enc.corta}): frena sólo la red de escritura de node\n`);
     }
     let hijo;
     try { hijo = spawn(lanzar[0], lanzar[1], { cwd, env: nuevo, stdio: 'inherit', windowsHide: true }); } catch (e) { err(`[aislada] ⛔ no pude correr el comando: ${e.message}\n`); fin(127); return; }
@@ -372,6 +412,17 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
         const rutas = [...new Set(intentos.flatMap((i) => i.targets || []))];
         err(`[aislada] ⛔ el comando intentó escribir en la casa de la cuenta (frenado): ${rutas.join(' · ')}\n`);
         if (codigo === 0) codigo = 3;
+      }
+      if (marca) {
+        // lo que la red no vio: un proceso sin NODE_OPTIONS que quiso escribir en una carpeta vigilada
+        const negadas = negadasDelEncierro(marca, desde);
+        if (negadas.error) {
+          err(`[aislada] ⛔ no pude leer el registro del encierro (${negadas.error}): no sé si el comando intentó escribir en la casa de la cuenta\n`);
+          if (codigo === 0) codigo = 3;
+        } else if (negadas.length) {
+          err(`[aislada] ⛔ un proceso sin la red de escritura quiso escribir en la casa de la cuenta (el encierro lo mató): ${negadas.join(' · ')}\n`);
+          if (codigo === 0) codigo = 3;
+        }
       }
       fin(codigo);
     });

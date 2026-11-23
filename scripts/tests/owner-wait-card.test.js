@@ -376,3 +376,16 @@ test('OWR8 Waits_SeenWithNothingToDo @story-8.293 @ac-13', () => {
   assert.strictEqual(draw({ dueno: [], main: [], sesion: [] }).esperan.hidden, true, 'sin esperas queda oculto');
   assert.strictEqual(draw(undefined).esperan.hidden, true);
 });
+
+// OWR9: lo que espera una sesión puede decir ya «espera …» (espera a main): el renglón no lo repite, ni en la tarjeta
+// ni en los dos renglones de la coordinación que nombran la espera
+test('OWR9 WaitText_NoRepiteEspera', () => {
+  assert.strictEqual(CARD.waitPhrase('espera a main (main-1)'), 'espera a main (main-1)');
+  assert.strictEqual(CARD.waitPhrase('Espera a main'), 'Espera a main');
+  assert.strictEqual(CARD.waitPhrase('a Pedro'), 'espera a Pedro');
+  assert.strictEqual(CARD.waitPhrase('esperanza'), 'espera esperanza', 'sólo la palabra «espera» entera');
+  assert.strictEqual(CARD.waitText({ quien: 'esper', waitingFor: 'espera a main (main-1)' }), 'esper: espera a main (main-1)');
+  assert.strictEqual(CARD.waitText({ quien: 's', waitingFor: 'un permiso' }), 's: espera un permiso');
+  const coord = fs.readFileSync(path.join(ROOT, 'scripts', 'tools', 'coordination.js'), 'utf8');
+  assert.doesNotMatch(coord, /espera \$\{(?:x|w)\.waitingFor\}/, 'la coordinación arma la espera con waitPhrase');
+});

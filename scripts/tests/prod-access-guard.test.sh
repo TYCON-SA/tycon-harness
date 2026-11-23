@@ -173,6 +173,46 @@ frena "T6i · con redirección" "$PUERTA $PROD 'select 1' > /tmp/x"
 frena "T6j · sentencia por sustitución de comando" "$PUERTA $PROD \"\$(cat /tmp/x.sql)\""
 frena "T6k · ruta partida con comillas" "/opt/tycon/bin/tycon-prod-sq\"\"l $PROD 'select 1'"
 
+# T117 · un `for` que nombra la puerta entre sus palabras y sólo lee no la invoca: pasa si todo el comando, también lo de
+# adentro de cada $( … ), son lectores que no ejecutan lo que reciben. Si el cuerpo usa la variable donde se ejecuta, frena.
+NP="${PUERTA##*/}"
+pasa  "T117a For_QueNombraLaPuertaYSoloLee_Pasa (el de la noche)" "for f in prod-access-guard $NP node-shim; do printf '%-22s banco:%s\n' \"\$f\" \"\$(grep -rl \"\$f\" scripts/controls-bench 2>/dev/null | wc -l | tr -d ' ')\"; done"
+pasa  "T117b For_ConGrep_Pasa" "for f in a $NP b; do grep -rn \"\$f\" scripts; done"
+frena "T117c For_LaVariableComoPrograma_Frena" "for f in $PUERTA; do \"\$f\" $PROD 'select 1'; done"
+frena "T117d For_LaVariableAUnShell_Frena" "for f in $NP; do echo \"\$f $PROD 'select 1'\" | sh; done"
+frena "T117e For_LaVariableAXargs_Frena" "for f in $PUERTA; do echo \"\$f\" | xargs -I{} {} $PROD 'select 1'; done"
+frena "T117f For_UnaSustitucionQueLaCorre_Frena" "for f in $PUERTA; do printf '%s' \"\$( \"\$f\" $PROD 'select 1' )\"; done"
+frena "T117g For_ComillasInvertidas_Frena" "for f in $PUERTA; do printf '%s' \"\`\$f $PROD 'select 1'\`\"; done"
+frena "T117h For_BashC_Frena" "for f in $PUERTA; do bash -c \"\$f $PROD 'select 1'\"; done"
+frena "T117i For_FindExec_Frena" "for f in $NP; do find . -name \"\$f\" -exec {} $PROD 'select 1' \\;; done"
+frena "T117j For_YLaPuertaComoProgramaDespues_Frena" "for f in a; do echo \"\$f\"; done; $PUERTA $PROD 'select 1' | head"
+frena "T117k For_RgPre_Frena" "for f in $PUERTA; do rg --pre \"\$f\" x scripts; done"
+frena "T117l For_SortCompressProgram_Frena" "for f in $PUERTA; do sort --compress-program=\"\$f\" x; done"
+frena "T117m For_UnaRedireccionQueEscribeEnLaVariable_Frena" "for f in $PUERTA; do echo x > \"\$f\"; done"
+frena "T117n For_UnaAsignacionDelanteDelLector_Frena" "for f in $NP; do PATH=/opt/tycon/bin cat \"\$f\"; done"
+frena "T117o For_EnvDelante_Frena" "for f in $PUERTA; do env \"\$f\" $NP; done"
+pasa  "T117p For_RedireccionADevNull_Pasa" "for f in $NP b; do grep -c \"\$f\" scripts/x > /dev/null 2>&1; done"
+# zsh y bash corren código sin `$( … )`: con un calificador de glob, con banderas de expansión o con aritmética sobre
+# un valor que trae código escondido entre comillas simples en las palabras del for
+frena "T117q For_CalificadorDeZsh_Frena" "for f in a $NP; do echo *(e:\"\$f $PROD 'select 1'\":); done"
+frena "T117r For_BanderaEDeZshConCodigoEnElFor_Frena" "for f in a $NP '\$($NP $PROD x)'; do echo \${(e)f}; done"
+frena "T117s For_TildeDeZshConCalificadorEnElFor_Frena" "for f in a $NP '*(e:$NP x:)'; do echo \${~f}; done"
+frena "T117t For_TildeSuelta_Frena" "for f in a $NP; do echo \$~f; done"
+frena "T117u For_UniqPisaSuSegundoArgumento_Frena" "for f in a $PUERTA; do uniq /etc/hosts \"\$f\"; done"
+frena "T117v For_ExpansionDePromptDeBash_Frena" "for f in a $NP '\$($NP y)'; do echo \${f@P}; done"
+frena "T117w For_AritmeticaConCorchetes_Frena" "for f in a $NP 'x[\$($NP y)]'; do echo \$[f]; done"
+frena "T117x For_PrintfNumericoEnZsh_Frena" "for f in a $NP 'x[\$($NP y)]'; do printf %d \"\$f\"; done"
+frena "T117y For_ProgramaConRuta_Frena" "for f in a $NP; do ./cat \"\$f\"; done"
+frena "T117z For_PrintfV_Frena" "for f in a $NP; do printf -v x '%s' \"\$f\"; done"
+frena "T117aa For_UnaAsignacionSuelta_Frena" "x=1; for f in a $NP; do echo \"\$f\"; done"
+frena "T117ab For_ComillasAnsiC_Frena" "for f in a $NP; do echo \$'\\x28' \"\$f\"; done"
+# la variable del for y printf con opciones cambian qué programa corre (PATH, o `path` en zsh)
+frena "T117ac For_LaVariableEsPATH_Frena" "for PATH in a $NP /tmp/x; do cat y; done"
+frena "T117ad For_LaVariableEsPathDeZsh_Frena" "for path in a $NP /tmp/x; do cat y; done"
+frena "T117ae For_PrintfVPegado_Frena" "for f in a $NP; do printf -vPATH '%s' /tmp/x; cat y; done"
+frena "T117af For_PrintfXvPegado_Frena" "for f in a $NP; do printf -xvPATH '%s' /tmp/x; cat y; done"
+pasa  "T117ag For_UnaVariableDeCuatroLetras_Pasa" "for item in a $NP; do grep -c \"\$item\" scripts/x; done"
+
 # ── T16 · secuestro de la puerta ──────────────────────────────────────────────────────────────
 # Sin esto, no revisar el shell deja que una función `tycon-prod-sql` en el .zshrc se quede con la
 # sentencia; y marcar cualquier alias que CONTENGA la palabra → falso positivo que apaga el control.
@@ -352,6 +392,125 @@ frena "8.14 T21e Xargs_AnyFeedingSegment_Blocks (FX1)" "find $P -name 'productio
 frena "8.14 T21f Xargs_AnyFeedingSegment_Blocks (FX2)" "ls $P/production-* | xargs rm -f"
 frena "8.14 T21g Xargs_AnyFeedingSegment_Blocks (FX8)" "grep -l . $P/*.json | xargs rm -f"
 pasa  "8.14 T21h Xargs_AnyFeedingSegment_Blocks (cp a /tmp)" "ls | xargs -I{} cp {} /tmp/{}.bak"
+
+# T21i · a un intérprete que xargs alimenta con los estados del pipeline el freno no le lee el programa: un python3 -c
+# «que sólo lee» corre lo que haya en un json.py de la carpeta o en PYTHONPATH. Sigue frenando, y el motivo dice cómo
+# leer sin escribir (jq, la herramienta de lectura).
+rc="$(corre "grep -l x $P/*.json | xargs python3 -c 'import json,sys; [print(json.load(open(f))) for f in sys.argv[1:]]'")"
+if [ "$rc" = 2 ] && grep -q "jq" "$TMP/err"; then ok "T21i Xargs_InterpreteConLosEstados_FrenaYSugiereJq"
+else no "T21i Xargs_InterpreteConLosEstados_FrenaYSugiereJq (rc=$rc) — err: $(head -c 160 "$TMP/err")"; fi
+# T84a · ese comando lee: sigue frenando, pero el motivo no dice que escribe: dice que no puede asegurar que sólo lea
+rc="$(corre "grep -l x $P/*.json | xargs python3 -c 'import json,sys; [print(json.load(open(f))) for f in sys.argv[1:]]'")"
+if [ "$rc" = 2 ] && grep -q "no puedo asegurar que ese comando sólo lea" "$TMP/err" && ! grep -q "ESCRIBE sobre" "$TMP/err"; then ok "T84a Xargs_InterpreteQueLee_ElMotivoNoDiceEscribe"
+else no "T84a Xargs_InterpreteQueLee_ElMotivoNoDiceEscribe (rc=$rc) — err: $(head -c 220 "$TMP/err")"; fi
+# T84b · un escritor de verdad por xargs sigue diciendo que escribe
+rc="$(corre "grep -l . $P/*.json | xargs rm -f")"
+if [ "$rc" = 2 ] && grep -q "ESCRIBE sobre" "$TMP/err" && ! grep -q "no puedo asegurar" "$TMP/err"; then ok "T84b Xargs_EscritorDeVerdad_SigueDiciendoEscribe"
+else no "T84b Xargs_EscritorDeVerdad_SigueDiciendoEscribe (rc=$rc) — err: $(head -c 220 "$TMP/err")"; fi
+# T21j a T21q · lo que xargs le pasa a un intérprete puede ser su programa: con la marca en el lugar del programa
+# (`-c {}`), sin programa (`-c` toma el primer argumento que llega), por un heredoc (directo o por la tubería) o por una
+# variable de valor conocido. Si ese texto nombra un estado de producción, es una escritura, como cuando el programa
+# está escrito en el comando. Si no nombra nada protegido, pasa.
+frena "T21j Xargs_ProgramaQueLlegaPorLaEntrada_Frena (-c con la marca)" "echo 'import os; os.remove(\"$P/$NM\")' | xargs -I{} python3 -c {}"
+frena "T21k Xargs_ProgramaQueLlegaPorLaEntrada_Frena (-c sin programa)" "echo 'import os; os.remove(\"$P/$NM\")' | xargs python3 -c"
+frena "T21l Xargs_ProgramaPorUnHeredoc_Frena" "xargs -I{} python3 -c {} <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21m Xargs_ProgramaPorUnHeredocEnLaTuberia_Frena" "cat <<'EOF' | xargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21n Xargs_ProgramaPorUnaVariable_Frena" "X='import os; os.remove(\"$P/$NM\")'; echo \"\$X\" | xargs -I{} python3 -c {}"
+frena "T21o Xargs_ProgramaQueLlegaConLaMarcaPegada_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -0I{} python3 -c {}"
+pasa  "T21p Xargs_ProgramaQueLlegaPorLaEntrada_Pasa (no nombra nada protegido)" "echo 'print(1)' | xargs -I{} python3 -c {}"
+pasa  "T21q Xargs_ProgramaPorUnHeredocQueNoNombraNada_Pasa" "xargs -I{} python3 -c {} <<'EOF'
+print(1)
+EOF"
+# T21r a T21u · la marca de xargs se reconoce pegada a otras opciones (`-0I{}`), con `--replace` solo (que es `{}` y no
+# se come la palabra que sigue), con una forma abreviada (`--re=%`) y después de un `-e` suelto (que en GNU no lleva
+# argumento aparte): la marca vale lo que llega, y en una carpeta protegida nombra sus estados.
+frena "T21r Xargs_MarcaPegadaAOtrasOpciones_Frena" "echo x | xargs -0I{} rm $P/{}"
+frena "T21s Xargs_ReplaceSolo_Frena" "echo x | xargs --replace rm $P/{}"
+frena "T21t Xargs_ReplaceAbreviado_Frena" "echo x | xargs --re=% rm $P/%"
+frena "T21u Xargs_MarcaDespuesDeUnDashE_Frena" "echo x | xargs -e -I@ rm $P/@"
+# T21v a T21aa · el heredoc que llega a un xargs con un intérprete por otro camino que su renglón: un grupo con llaves o
+# con paréntesis, un renglón continuado con barra, una función o un `bash -c`. Si el comando tiene un xargs o un
+# parallel con un intérprete, el heredoc que nombra un estado de producción se juzga como su programa.
+frena "T21v Xargs_HeredocDesdeUnGrupoConLlaves_Frena" "{ cat <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF
+} | xargs -I{} python3 -c {}"
+frena "T21w Xargs_HeredocDesdeUnSubshell_Frena" "( cat <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF
+) | xargs -I{} python3 -c {}"
+frena "T21x Xargs_HeredocConElRenglonContinuado_Frena" "cat <<'EOF' | \\
+xargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21y Xargs_HeredocAUnaFuncion_Frena" "f() { xargs -I{} python3 -c {}; }; f <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21z Xargs_HeredocAUnBashC_Frena" "bash -c 'xargs -I{} python3 -c {}' <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+# T21ab y T21ac · el xargs con intérprete se busca fuera de los cuerpos: un mensaje de commit o una nota que nombra un
+# estado de producción y habla de xargs y node no corre ningún xargs, y pasa.
+pasa  "T21ab Heredoc_MensajeDeCommitQueHablaDeXargs_Pasa" "git commit -F - <<'EOF'
+fix(freno): xargs con node ya no deja pasar $NM
+EOF"
+pasa  "T21ac Heredoc_NotaQueHablaDeParallel_Pasa" "cat > /tmp/nota.md <<'EOF'
+El freno juzga $NM; las pruebas corren en parallel y usan node
+EOF"
+# T21ae a T21ah · las opciones largas de GNU xargs: las de argumento opcional, como --max-lines, lo llevan sólo pegado
+# (sueltas no se comen la palabra que sigue), una abreviada que lo lleva aparte se reconoce (--max-a 1), y gxargs (GNU
+# de Homebrew) es xargs.
+frena "T21ae Xargs_MaxLinesSuelto_Frena" "echo $P/$NM | xargs --max-lines sed -i s/a/b/"
+frena "T21af Xargs_OpcionLargaAbreviada_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs --max-a 1 python3 -c"
+frena "T21ag Gxargs_EsXargs_Frena" "echo $P/$NM | gxargs sed -i s/a/b/"
+frena "T21ah Gxargs_HeredocAUnInterprete_Frena" "cat <<'EOF' | gxargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+# T21ai a T21ap · también los intérpretes que el resto del freno no conoce (bun, deno, awk, osascript, pwsh) y los que
+# corren uno (npx, uv run): lo que xargs les pasa puede ser su programa (fila 104).
+frena "T21ai Xargs_ProgramaParaBun_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} bun -e {}"
+frena "T21aj Xargs_ProgramaParaDeno_Frena" "echo 'Deno.removeSync(\"$P/$NM\")' | xargs -I{} deno eval {}"
+frena "T21ak Xargs_ProgramaDeAwkPorUnHeredoc_Frena" "cat <<'EOF' | xargs -I{} awk {}
+BEGIN{system(\"rm $P/$NM\")}
+EOF"
+frena "T21al Xargs_ProgramaParaOsascript_Frena" "echo 'do shell script \"rm $P/$NM\"' | xargs -I{} osascript -e {}"
+frena "T21am Xargs_ProgramaParaPwsh_Frena" "echo 'Remove-Item $P/$NM' | xargs -I{} pwsh -c {}"
+frena "T21an Xargs_ProgramaParaNpxTsx_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} npx tsx -e {}"
+frena "T21ao Xargs_ProgramaParaUvRun_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -I{} uv run python -c {}"
+# T21aq a T21at · awk es un lector, pero lo que xargs le pasa en el lugar del programa (la marca, o sin programa escrito)
+# es su programa. Con el programa escrito, lo que llega son archivos que lee, y pasa.
+frena "T21aq Xargs_ProgramaDeAwkPorLaTuberia_Frena" "echo 'BEGIN{system(\"rm $P/$NM\")}' | xargs -I{} awk {}"
+frena "T21ar Xargs_ProgramaDeGawkPorUnHereString_Frena" "xargs -I{} gawk {} <<< 'BEGIN{print \"x\" > \"$P/$NM\"}'"
+frena "T21as Xargs_AwkSinProgramaEscrito_Frena" "echo 'BEGIN{system(\"rm $P/$NM\")}' | xargs awk"
+pasa  "T21at Xargs_AwkConElProgramaEscritoLeeLosEstados_Pasa" "ls $P/$NI | xargs awk '{print}'"
+# T21au a T21aw · los lanzadores y los intérpretes comunes en una Mac de desarrollo (pnpm exec, ipython), y gxargs también
+# en el freno de borrado de Azure.
+frena "T21au Xargs_ProgramaParaPnpmExec_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} pnpm exec node -e {}"
+frena "T21av Xargs_ProgramaParaIpython_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -I{} ipython -c {}"
+frena "T21aw Gxargs_ArmaUnBorradoDeAzure_Frena" "echo delete | gxargs az group"
+# T21ax a T21az · sólo cuenta lo que llega en el lugar del programa: una nota o un mensaje de commit que nombra un estado,
+# junto a un xargs cuyo programa no lo toma de la entrada (grep, npm test, un guion de Python), pasan.
+pasa  "T21ax Heredoc_ConUnXargsGrepAparte_Pasa" "git commit -F - <<'EOF'
+fix $P/$NI
+EOF
+ls | xargs grep -n node"
+pasa  "T21ay Heredoc_ConUnXargsNpmTestAparte_Pasa" "cat > /tmp/nota.md <<'EOF'
+$P/$NI no se toca
+EOF
+ls | xargs npm test"
+pasa  "T21az Heredoc_ConUnXargsAUnGuionDePython_Pasa" "cat > /tmp/nota.md <<'EOF'
+$P/$NI
+EOF
+ls | xargs -I{} python3 script.py {}"
+pasa  "T21ap Xargs_ProgramaParaBunQueNoNombraNada_Pasa" "echo 'console.log(1)' | xargs -I{} bun -e {}"
+pasa  "T21aa Xargs_HeredocDesdeUnGrupoQueNoNombraNada_Pasa" "{ cat <<'EOF'
+print(1)
+EOF
+} | xargs -I{} python3 -c {}"
 
 # T22 · find recursivo desde una carpeta protegida o un ancestro.
 frena "8.14 T22a Find_Recursive_FromProtectedOrAncestor (G7)" "find $P -name 'prod*' -delete"
@@ -1199,6 +1358,69 @@ done
 if [ -f "$GUIA" ] && ! grep -qF -- "--file" "$GUIA" && grep -q "20 renglones" "$GUIA"; then ok "6.6 T13 Guide_NoFileForm · la guía no ofrece --file y dice el tope"
 else no "6.6 T13 Guide_NoFileForm · la guía todavía ofrece --file o no dice el tope de 20 renglones"; fi
 
+# ── T124 · un lector que corre otro programa no es un lector ─────────────────────────
+# Nombrar la puerta con un lector pasa (mirar o documentarla es rutina), salvo que el lector la corra: por una opción
+# (`find -exec`, `rg --pre`, `sort --compress-program`, `git -c core.pager`), porque es un intérprete (`awk`, `sed`), con
+# una variable delante (`GIT_PAGER=…`) o con `env -S`, que se come el comando entero.
+NPL="${PUERTA##*/}"
+frena "T124a Lector_FindExec_Frena" "find . -name x -exec $PUERTA acme-sql 'select 1' \\;"
+frena "T124b Lector_FindExecdirYOk_Frena" "find . -name x -execdir $PUERTA acme-sql 'select 1' \\; -ok $PUERTA \\;"
+frena "T124c Lector_RgPre_Frena" "rg --pre=$PUERTA x scripts"
+frena "T124d Lector_RgHostnameBin_Frena" "rg --hostname-bin=$PUERTA x scripts"
+frena "T124e Lector_AgPagerAbreviado_Frena" "ag --page $PUERTA x scripts"
+frena "T124f Lector_SortCompressProgramAbreviado_Frena" "sort --compress=$PUERTA x"
+frena "T124g Lector_AwkSystem_Frena" "awk 'BEGIN{system(\"$PUERTA acme-sql x\")}'"
+frena "T124h Lector_SedE_Frena" "sed -n '1e $PUERTA acme-sql x' f"
+frena "T124i Lector_GitConfigPager_Frena" "git -c core.pager=$PUERTA log"
+frena "T124j Lector_GitAlias_Frena" "git -c alias.x='!$PUERTA acme-sql y' x"
+frena "T124k Lector_GitDifftool_Frena" "git difftool -x $PUERTA HEAD"
+frena "T124l Lector_GitGrepEnElPager_Frena" "git grep -O$PUERTA x"
+frena "T124m Lector_GitRebaseExec_Frena" "git rebase --exec '$PUERTA acme-sql x' HEAD~1"
+frena "T124n Lector_Open_Frena" "open -a $PUERTA"
+frena "T124o Lector_LessConComando_Frena" "less '+!$PUERTA acme-sql x' f"
+frena "T124p Lector_VariableDelante_Frena" "GIT_PAGER=$PUERTA git log"
+frena "T124q Lector_EnvConVariable_Frena" "env GIT_PAGER=$PUERTA git log"
+frena "T124r Lector_ManConPager_Frena" "man -P $PUERTA ls"
+frena "T124s Lector_BatConPager_Frena" "bat --pager=$PUERTA f"
+frena "T124t EnvS_SeComeElComando_Frena" "env -S '$PUERTA acme-sql x'"
+pasa  "T124u GitLogDeSuArchivo_Pasa" "git log -- scripts/production/$NPL"
+pasa  "T124v GitConOpcionesQueLeen_Pasa" "git --no-pager -C /tmp/r log -1 -- scripts/production/$NPL"
+pasa  "T124w GitGrepSinPager_Pasa" "git grep -n $NPL"
+pasa  "T124x FindSinExec_Pasa" "find . -name $NPL"
+pasa  "T124y RgSinPre_Pasa" "rg -n $NPL scripts"
+pasa  "T124z CatYHead_Pasan" "cat $PUERTA; head -20 scripts/production/$NPL"
+# lo que encontró el pase adversarial: git acepta opciones abreviadas, un lector alimenta un shell por un tubo
+frena "T124aa GitGrepOpenAbreviado_Frena" "git grep --open=$PUERTA x"
+frena "T124ab GitGrepNOPegado_Frena" "git grep -nO$PUERTA x"
+frena "T124ac EchoAUnShell_Frena" "echo '$PUERTA acme-sql q' | sh"
+frena "T124ad HeredocAUnShell_Frena" "cat <<'EOF' | bash
+$PUERTA acme-sql q
+EOF"
+frena "T124ae CodeConPrefijoDeElectron_Frena" "code --renderer-cmd-prefix=$PUERTA f"
+frena "T124af GitAttrSourceSaltaSuValor_Frena" "git --attr-source log rebase --exec '$PUERTA acme-sql x' HEAD~1"
+frena "T124ag SudoS_SeComeElComando_Frena" "sudo -s '$PUERTA acme-sql x'"
+pasa  "T124ah CommandV_Pasa" "command -v $NPL"
+pasa  "T124ai GitCheckoutYSwitch_Pasan" "git checkout HEAD -- scripts/production/$NPL; git switch wt/$NPL"
+pasa  "T124aj VariablesQueNoCorrenNada_Pasan" "TZ=UTC git log -- scripts/production/$NPL; LANG=C grep -rn $NPL scripts; GIT_PAGER=cat git log -- scripts/production/$NPL"
+pasa  "T124ak GitCDeColor_Pasa" "git -c color.ui=always log -- scripts/production/$NPL"
+pasa  "T124al LessYCode_Pasan" "less $PUERTA; code scripts/production/$NPL"
+pasa  "T124am LectorAHead_Pasa" "grep -rn $NPL scripts | head -5"
+# segunda vuelta: lo de adentro de un $( ) corre, un tubo a lo que no es un lector, la puerta como valor de una opción
+frena "T124an SustitucionEnUnLector_Frena" "echo \"\$($PUERTA acme-sql q)\""
+frena "T124ao SustitucionEnUnaVariableDelante_Frena" "TERM=\"\$($PUERTA acme-sql q)\" git log"
+frena "T124ap SustitucionConTuboAUnShell_Frena" "TERM=\"\$(echo '$PUERTA acme-sql q' | sh)\" git log"
+frena "T124aq SustitucionDeProceso_Frena" "echo '$PUERTA acme-sql q' | tee >(sh)"
+frena "T124ar SustitucionDeProcesoDeEntrada_Frena" "sh < <(echo '$PUERTA acme-sql q')"
+frena "T124as LaPuertaComoValorDeUnaOpcion_Frena" "time -p $PUERTA"
+frena "T124at TuboAUnShellConEnvDelante_Frena" "echo '$PUERTA acme-sql q' | env -i sh"
+frena "T124au TuboAXargs_Frena" "echo '$PUERTA acme-sql q' | xargs sh -c"
+frena "T124av GitPushReceivePackAbreviado_Frena" "git push --receive=$PUERTA origin x"
+frena "T124aw GitConfigQueEscribeUnAlias_Frena" "git config alias.x '!$PUERTA acme-sql q'"
+frena "T124ax CodeInstallExtension_Frena" "code --install-extension $PUERTA"
+pasa  "T124ay LsDeWhich_Pasa" "ls -l \"\$(which $NPL)\""
+pasa  "T124az GitPushFetchMergeConfig_Pasan" "git push origin wt/$NPL; git fetch origin $NPL; git merge wt/$NPL; git config --get alias.$NPL"
+pasa  "T124ba TuboAUnShellEnOtroTramo_Pasa" "git add scripts/production/$NPL; echo listo | sh"
+
 # ── T32 · la guía declara la cortesía de la regla de firewall ─────────────────────────
 if [ -f "$GUIA" ] && grep -qi "cortes" "$GUIA" && grep -qi "firewall" "$GUIA"; then
   ok "T32 · la guía dice que la regla de firewall es de cortesía"
@@ -1227,7 +1449,7 @@ fi
 if [ -z "$t33_falta" ]; then ok "8.14 T33 Guide_DeclaresShellFormsAndLimits (las formas, la medición y los cinco límites)"
 else no "8.14 T33 Guide_DeclaresShellFormsAndLimits — falta:$t33_falta"; fi
 
-# ── T-puerta-12 Guia_LosLimitesReales — la guía no promete una barrera que no existe ──────────────────────────────
+# ── T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 — la guía no promete una barrera que no existe ──────────────────────────────
 # La guía decía que a un programa propio lo frena que «no tiene la clave»: cualquier programa de la cuenta la lee con
 # /usr/bin/security sin cuadro. Lo que dice ahora son los cinco límites reales.
 t12_falta=""
@@ -1244,8 +1466,8 @@ if [ -f "$GUIA" ]; then
 else
   t12_falta=" la guía no existe ($GUIA);"
 fi
-if [ -z "$t12_falta" ]; then ok "T-puerta-12 Guia_LosLimitesReales (sin «no tiene la clave», con los cinco límites y el cuadro propio)"
-else no "T-puerta-12 Guia_LosLimitesReales — falta:$t12_falta"; fi
+if [ -z "$t12_falta" ]; then ok "T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 (sin «no tiene la clave», con los cinco límites y el cuadro propio)"
+else no "T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 — falta:$t12_falta"; fi
 
 echo "— prod-guard: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

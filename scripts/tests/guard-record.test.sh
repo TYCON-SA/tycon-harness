@@ -20,6 +20,8 @@
 #  T13 — la constancia no depende del nombre con que el freno encuentra su biblioteca (el actual o el anterior al renombre),
 #        y que no encuentre ninguna no queda callado (en la copia pública sólo está el actual)
 #  T15 — un escape aprobado con un click o un «aprobado» queda con esa vía; una vía fuera de la lista no se anota
+#  T16 — cada freno que corre como gancho anota la sesión del evento, sin el texto del comando
+#  T17 — sin sesión, o con una de otra forma, el renglón se escribe igual sin ella y el freno sale igual
 #
 # 🔴 HOME falso siempre: la constancia vive bajo el home, en la carpeta de estado del arnés.
 # Correr: bash scripts/tests/guard-record.test.sh
@@ -334,7 +336,8 @@ repo72(){ # $1 carpeta
 }
 # Evento Edit que pasa la story a done; lo imprime por stdout.
 ev_done(){ node -e 'process.stdout.write(JSON.stringify({tool_name:"Edit",session_id:"s72",tool_input:{file_path:process.argv[1],old_string:"status: in-progress",new_string:"status: done"}}))' "$1"; }
-# ¿Todas las líneas del registro tienen EXACTAMENTE las cinco claves y ningún valor con ruta/story?
+# ¿Todas las líneas del registro tienen EXACTAMENTE las cinco claves (más la sesión del evento, si vino) y ningún
+# valor con ruta/story?
 lineas_limpias(){ HOME="$CASA" node -e '
   const fs=require("fs"),path=require("path");
   const p=path.join(process.env.HOME,".claude",".tycon-pipeline","frenos.jsonl");
@@ -342,7 +345,7 @@ lineas_limpias(){ HOME="$CASA" node -e '
   const ok=["ts","freno","regla","veredicto","sha256"].join(",");
   const malas=fs.readFileSync(p,"utf8").trim().split("\n").filter(Boolean).map(l=>JSON.parse(l))
     .filter(l=>l.regla!=="estado-a-mano")
-    .filter(l=>Object.keys(l).sort().join(",")!==ok.split(",").sort().join(",")
+    .filter(l=>Object.keys(l).filter(k=>!(k==="sesion"&&/^[\w-]{1,80}$/.test(l.sesion))).sort().join(",")!==ok.split(",").sort().join(",")
       || !/^[0-9a-f]{64}$|^$/.test(l.sha256||"") || /historia-confidencial|\/|specs/.test(l.freno+l.regla+l.veredicto));
   process.stdout.write(String(malas.length));
 '; }
@@ -491,6 +494,104 @@ if ! grep '"via"' "$(REG)" >/dev/null 2>&1 && [ "$(lineas)" = "1" ]; then
 else
   no "T15 bloqueo con vía: reg=[$(cat "$(REG)" 2>/dev/null)]"
 fi
+
+# ── T19 (8.326) — el freno de sesiones anota «revision-llena», de su lista cerrada ─────────────────────
+mundo
+printf '%s' 'claude --bg' | HOME="$CASA" node "$LIB" --guard session-cap-guard --rule tope --verdict bloqueo --reason revision-llena --cmd-stdin
+if [ "$(lineas)" = "1" ] && grep '"motivo":"revision-llena"' "$(REG)" >/dev/null; then
+  ok "T19 GuardRecord_MotivoRevisionLlena @story-8.326 @ac-6: el renglón sale con su motivo"
+else
+  no "T19 GuardRecord_MotivoRevisionLlena: reg=[$(cat "$(REG)" 2>/dev/null)]"
+fi
+
+# ── T16 y T17 — la sesión del evento en la constancia de cada freno que corre como gancho ─────────────────
+# El número de cada freno por modelo sale de la sesión de cada renglón: el modelo se busca en su conversación. Cada
+# freno la toma del `session_id` de su evento; sin él, o con uno de otra forma, el renglón sale igual, sin sesión, y
+# el freno decide lo mismo. Los de publicación corren en el pre-commit de git, sin evento: quedan sin sesión.
+# 🔴 Rojo si un freno anota sin la sesión que trae su evento, si el renglón lleva el texto del comando, o si la
+#    sesión cambia lo que el freno decide o deja de escribirse el renglón sin ella.
+SES_LAB="$TMP/ses"; rm -rf "$SES_LAB"; mkdir -p "$SES_LAB/bin"
+printf '#!/bin/sh\necho "[]"\n' > "$SES_LAB/bin/az"; chmod +x "$SES_LAB/bin/az"
+# un repo con `origin` y un commit sin empujar que nombra un archivo
+SES_PUSH="$SES_LAB/push"; git init -q --bare -b main "$SES_LAB/origen.git"; git init -q -b main "$SES_PUSH"
+echo a > "$SES_PUSH/a.txt"; git -C "$SES_PUSH" add -A; git -C "$SES_PUSH" -c user.email=a@a -c user.name=a commit -q -m a
+git -C "$SES_PUSH" remote add origin "$SES_LAB/origen.git"; git -C "$SES_PUSH" push -q -u origin main 2>/dev/null
+echo 'require("./x.js")' > "$SES_PUSH/b.js"; git -C "$SES_PUSH" add -A; git -C "$SES_PUSH" -c user.email=a@a -c user.name=a commit -q -m b
+# un repo con la memoria prendida y un índice con marcadores de conflicto: el freno avisa que no pudo medir
+SES_ENG="$SES_LAB/eng"; mkdir -p "$SES_ENG/.engram"; git -C "$SES_ENG" init -q -b main; echo proj > "$SES_ENG/.engram-project"
+printf '<<<<<<< a\n{}\n=======\n{}\n>>>>>>> b\n' > "$SES_ENG/.engram/manifest.json"
+# el perfil con tope 1; la sesión que trabaja la escribe cada corrida (este proceso, vivo)
+printf '{"coordination":{"max_working":1}}' > "$SES_LAB/perfil.json"
+# un repo con una historia que cierra sin la lista de revisores: el cierre frena
+SES_PC="$SES_LAB/cierre"; repo72 "$SES_PC"
+node -e 'const fs=require("fs");const p=process.argv[1];fs.writeFileSync(p,fs.readFileSync(p,"utf8").replace("status: in-progress","status: done\ndod_runtime_exempt: true\ndod_runtime_exempt_reason: \"prueba\""))' "$SES_PC/specs/historia-confidencial.md"
+git -C "$SES_PC" add -A
+mkdir -p "$SES_PC/.advisors/pipeline-runs/9.1-20260915-1200" && echo '[]' > "$SES_PC/.advisors/pipeline-runs/9.1-20260915-1200/findings.json"
+
+# los frenos: freno|ruta del gancho|comando|carpeta|variables (separadas por espacio)
+SES_FRENOS=(
+  "safety-guard|$SG|rm -rf /|$AQUI|"
+  "test-scope-guard|$TS|npm test -- scripts/tests/uno.test.ts|$AQUI|"
+  "pr-sin-auto-complete|$P2|az repos pr create --source-branch x --target-branch main --title t|$AQUI|"
+  "pr-uno-por-repo|$P1|az repos pr create --source-branch x --target-branch main --title t|$AQUI|TYCON_PR_ONE_PER_REPO=1"
+  "public-push-guard|$AQUI/scripts/hooks/public-push-guard.js|gh pr create --title t --body b|$AQUI|"
+  "push-referencia-fantasma|$PF|git push origin HEAD|$SES_PUSH|"
+  "engram-manifest|$AQUI/scripts/hooks/engram-pre-commit.sh|git commit -m cambio-secreto|$SES_ENG|TYCON_ENGRAM_HOOK=1 ENGRAM_BIN=/usr/bin/true"
+  "session-cap-guard|$AQUI/scripts/hooks/session-cap-guard.js|claude --bg -n x -- y|$SES_LAB|TYCON_PROFILE=$SES_LAB/perfil.json"
+  "on-pre-commit|$AQUI/skills/tycon-pipeline/scripts/on-pre-commit.js|git commit -m cierre-secreto|$SES_PC|"
+)
+# corre un freno con la sesión dada (vacía: el evento no la trae); imprime «exit|freno|sesión del último renglón|renglones|fuga»
+ses_correr(){ # $1 sesión  $2 ruta  $3 comando  $4 carpeta  $5 variables
+  local ev ec
+  mundo
+  mkdir -p "$CASA/.claude/sessions"
+  node -e 'require("fs").writeFileSync(process.argv[1],JSON.stringify({pid:Number(process.argv[2]),sessionId:"busy-1",name:"S1",nameSource:"user",status:"busy",statusUpdatedAt:Date.now(),cwd:process.argv[3]}))' \
+    "$CASA/.claude/sessions/busy-1.json" "$$" "$SES_LAB"
+  ev="$(node -e 'const e={tool_name:"Bash",cwd:process.argv[3],tool_input:{command:process.argv[2]}};if(process.argv[1])e.session_id=process.argv[1];process.stdout.write(JSON.stringify(e))' "$1" "$3" "$4")"
+  # shellcheck disable=SC2086
+  case "$2" in
+    *.js) printf '%s' "$ev" | (cd "$4" && env HOME="$CASA" TYCON_GUIDES_DIR="$AQUI" PATH="$SES_LAB/bin:$PATH" $5 node "$2" >/dev/null 2>&1) ;;
+    *)    printf '%s' "$ev" | (cd "$4" && env HOME="$CASA" TYCON_GUIDES_DIR="$AQUI" PATH="$SES_LAB/bin:$PATH" $5 bash "$2" >/dev/null 2>&1) ;;
+  esac
+  ec=$?
+  HOME="$CASA" node -e '
+    const fs=require("fs"), path=require("path");
+    const p=path.join(process.env.HOME,".claude",".tycon-pipeline","frenos.jsonl");
+    const ls=fs.existsSync(p)?fs.readFileSync(p,"utf8").trim().split("\n").filter(Boolean):[];
+    const ult=ls.length?JSON.parse(ls[ls.length-1]):{};
+    const fuga=ls.some(l=>l.includes(process.argv[2])||l.includes("secreto"));
+    process.stdout.write(process.argv[1]+"|"+(ult.freno||"-")+"|"+("sesion" in ult?ult.sesion:"SIN")+"|"+ls.length+"|"+(fuga?"fuga":"limpia"));
+  ' "$ec" "$3"
+}
+
+SES_EXIT=()
+i=0
+for f in "${SES_FRENOS[@]}"; do
+  IFS='|' read -r nombre ruta cmd cwd vars <<< "$f"
+  r="$(ses_correr ses-8325 "$ruta" "$cmd" "$cwd" "$vars")"
+  SES_EXIT[$i]="${r%%|*}"; i=$((i+1))
+  IFS='|' read -r _ec freno ses n fuga <<< "$r"
+  if [ "$freno" = "$nombre" ] && [ "$ses" = "ses-8325" ] && [ "$fuga" = "limpia" ]; then
+    ok "T16 $nombre anota la sesión del evento, sin el texto del comando"
+  else
+    no "T16 $nombre: exit=$_ec freno=$freno sesión=$ses renglones=$n $fuga"
+  fi
+done
+
+i=0
+for f in "${SES_FRENOS[@]}"; do
+  IFS='|' read -r nombre ruta cmd cwd vars <<< "$f"
+  for ses_in in "" "mal formada/../x"; do
+    r="$(ses_correr "$ses_in" "$ruta" "$cmd" "$cwd" "$vars")"
+    IFS='|' read -r ec freno ses n fuga <<< "$r"
+    if [ "$freno" = "$nombre" ] && [ "$ses" = "SIN" ] && [ "$ec" = "${SES_EXIT[$i]}" ] && [ "$fuga" = "limpia" ]; then
+      ok "T17 $nombre $([ -n "$ses_in" ] && echo 'con una sesión de otra forma' || echo 'sin sesión'): el renglón sale sin ella y el freno sale igual (exit $ec)"
+    else
+      no "T17 $nombre [${ses_in:-sin sesión}]: exit=$ec (con sesión ${SES_EXIT[$i]}) freno=$freno sesión=$ses renglones=$n $fuga"
+    fi
+  done
+  i=$((i+1))
+done
 
 echo "─────────────────────────────"
 echo "constancia-freno: $pasaron ok · $fallos fallos"

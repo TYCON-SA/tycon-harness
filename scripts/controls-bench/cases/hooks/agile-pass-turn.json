@@ -1,0 +1,75 @@
+{
+  "__doc": "Un pase lanzado sin el pipeline pasa por el turno de tarea pesada (fila 126 a, 2026-11-23): agile-pass-turn.js, en PreToolUse de Agent|Task|Workflow, avisa a una sesión sin corrida que lanza un pase adversarial (todo Workflow, o un Agent que se dice adversarial) sin el «arrancá» ni una reserva para ella. Lo que el banco fija: lo que NO es un pase sale en silencio, antes de buscar la casa (una búsqueda, otra herramienta, apagado, un Agent sin pedido), para que los revisores chicos y las búsquedas nunca se avisen. El caso que avisa necesita una coordinadora designada con su sesión viva, que el banco no arma; vive en scripts/tests/agile-pass-turn.test.js (APT2 a APT4 y APT6, con la máquina de juguete).",
+  "hooks": [
+    {
+      "hook": "agile-pass-turn.js (un pase sin el pipeline pasa por el turno de tarea pesada)",
+      "script": "${TCG}/scripts/hooks/agile-pass-turn.js",
+      "event": "PreToolUse",
+      "matcher": "Agent|Task|Workflow",
+      "tools": ["claude"],
+      "asymmetry": "Codex no tiene las herramientas Agent ni Workflow y no coordina: el gancho no se registra de su lado; la declaración está en adapters/codex/hooks.json.",
+      "cases": [
+        {
+          "id": "una-busqueda-no-es-un-pase",
+          "type": "must-stay-quiet",
+          "__doc": "Un Agent que no se dice adversarial (una búsqueda, un revisor chico) sale en silencio. ROJO PREVIO: contar todo Agent llenaría de avisos a cada sesión que busca algo.",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-apt1",
+            "tool_name": "Agent",
+            "tool_input": { "description": "Buscar dónde se define X", "prompt": "Buscá dónde se define X y devolvé la ruta." }
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "un-pedido-que-nombra-el-pase-no-es-un-pase",
+          "type": "must-stay-quiet",
+          "__doc": "Un Agent cuyo pedido dice «adversarial» pero su descripción y su tipo no, sale en silencio: sólo cuentan la descripción y el tipo de agente. ROJO PREVIO: mirar el pedido avisaba a una búsqueda que pedía «no hagas una revisión adversarial».",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-apt5",
+            "tool_name": "Agent",
+            "tool_input": { "description": "Buscar X", "prompt": "Buscá X; no hagas una revisión adversarial." }
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "otra-herramienta-no-se-mira",
+          "type": "must-stay-quiet",
+          "__doc": "Un comando que dice «adversarial» no es un lanzamiento: sólo Agent, Task y Workflow. ROJO PREVIO: mirar el texto de cualquier herramienta.",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-apt2",
+            "tool_name": "Bash",
+            "tool_input": { "command": "echo pase adversarial" }
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "apagado-no-mira-nada",
+          "type": "must-stay-quiet",
+          "__doc": "Con TYCON_AGILE_PASS_TURN=0, un Workflow sale en silencio y sin anotar. ROJO PREVIO: avisar con el gancho apagado.",
+          "env": { "TYCON_AGILE_PASS_TURN": "0" },
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-apt3",
+            "tool_name": "Workflow",
+            "tool_input": { "script": "export const meta = { name: 'x' }" }
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "un-agent-sin-pedido-no-frena-el-lanzamiento",
+          "type": "must-not-block",
+          "__doc": "Un Agent sin `tool_input` sale 0: el gancho nunca rompe un lanzamiento. ROJO PREVIO: tirar o frenar ante lo que no entiende.",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-apt4",
+            "tool_name": "Agent"
+          },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}

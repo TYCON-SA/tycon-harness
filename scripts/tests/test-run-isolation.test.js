@@ -144,6 +144,43 @@ test('T3 Aislada_EscribirEnLaCasaReal_NoPasa @story-8.314 @ac-2', { skip: !POSIX
   assert.strictEqual(fs.readFileSync(destino, 'utf8'), 'antes\n', 'el archivo no cambió');
 });
 
+// Un hijo que el guion lanza con el ambiente mínimo pierde la red de escritura (vive en
+// NODE_OPTIONS). Si escribe en una carpeta vigilada, el encierro del sistema lo mata y lo anota, y el humo falla con eso
+// aunque el guion se trague el error. Una negación fuera de las carpetas vigiladas no lo hace fallar.
+const ENCIERRO = process.platform === 'darwin'
+  && spawnSync('/usr/bin/sandbox-exec', ['-p', '(version 1)(allow default)', '/usr/bin/true'], { stdio: 'ignore', timeout: 5000 }).status === 0;
+test('Aislada_HijoSinRed_ElEncierroLoAnota @story-8.314 @ac-2', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  const c = cuenta(t);
+  const destino = path.join(c.casa, '.tycon', 'state', 'intentos-del-hijo.txt');
+  fs.writeFileSync(destino, 'antes\n');
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const path = require('path'); const { spawnSync } = require('child_process');",
+      // el hijo va con el ambiente mínimo: sin NODE_OPTIONS no lleva la red de escritura
+      "spawnSync(process.execPath, [path.join(__dirname, 'hijo.js'), process.argv[2]], { stdio: 'inherit', env: { PATH: process.env.PATH } });",
+      "console.log('terminé');",
+    ].join('\n'),
+    '.advisors/dod-runtime/hijo.js': "try { require('fs').appendFileSync(process.argv[2], 'hijo\\n'); } catch (_) { /* se traga el error */ }\n",
+  });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  const correr = (d) => humo(SMOKE, ev, '9.31', ['--', process.execPath, '.advisors/dod-runtime/g.js', d], { cwd: r, env: ambiente(c) });
+  const enLaCasa = correr(destino);
+  assert.match(salida(enLaCasa), /terminé/);
+  assert.notStrictEqual(enLaCasa.status, 0, salida(enLaCasa));
+  assert.ok(salida(enLaCasa).includes(destino), `la salida nombra la ruta: ${salida(enLaCasa)}`);
+  assert.strictEqual(fs.readFileSync(destino, 'utf8'), 'antes\n', 'el archivo no cambió');
+  // control: fuera de las carpetas vigiladas el encierro niega igual, pero no mata ni hace fallar el humo
+  const fuera = correr(path.join(afuera, 'f.txt'));
+  assert.strictEqual(fuera.status, 0, salida(fuera));
+  assert.ok(!fs.existsSync(path.join(afuera, 'f.txt')), 'el encierro lo negó');
+  // control: en su repo, el hijo escribe
+  const adentro = correr(path.join(r, 'f.txt'));
+  assert.strictEqual(adentro.status, 0, salida(adentro));
+  assert.ok(fs.existsSync(path.join(r, 'f.txt')), 'escribió en su repo');
+});
+
 test('T4 Aislada_RepoDentroDeLoVigilado_SeEscribe @story-8.314 @ac-2', { skip: !POSIX }, (t) => {
   const c = cuenta(t);
   const r = repo(path.join(c.casa, '.claude', 'worktrees', 'r'), {
