@@ -1085,6 +1085,12 @@
       "requiere": []
     },
     {
+      "__nota": "una tirada larga de espacios no vuelve lento al freno de consola (on-bash-write-gate.js y shell-parse.js): el cierre, el comentario y el recorte de las líneas a mano, iguales a las expresiones de antes; el gancho entero con 40 KB de espacios, con casa de juguete.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-long-blanks.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la puerta de la consola no deja sacar un worktree (ni borrar la carpeta) con una constancia de control sin commitear: la firma del dueño se perdería.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-unsaved-approval.test.js",
@@ -5026,6 +5032,12 @@
       "__nota": "la medición por paso del freno de seguridad (TYCON_SAFETY_TRACE): anota el total del freno al salir, también cuando lo corta su reloj, y cada node que lanza (y lo que lanzan ellos) con su arranque y lo que tardó, sin los valores del comando; sin la variable no anota y con ella no cambia ninguna decisión. Salteada en Windows: el jq de mentira no se lanza sin .exe.",
       "raiz": "arnes",
       "ruta": "tests/safety-guard-trace.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el chequeo del guion antes de la ventana usa sólo lo que le queda al freno de seguridad (TYCON_SAFETY_DEADLINE_S, menos un margen): un chequeo trabado se corta antes que el reloj del freno, sin tiempo no se corre y la ventana se abre como siempre; el freno le pasa a la ventana el segundo en que lo corta su reloj, descontado lo que ya gastó. Salteadas en Windows las que lanzan el freno o un guion trabado.",
+      "raiz": "arnes",
+      "ruta": "tests/precheck-guard-deadline.test.js",
       "requiere": []
     },
     {
