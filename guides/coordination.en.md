@@ -170,6 +170,22 @@ signatures»).
 
 With Codex, the owner opens the sessions: Codex has no launcher for named background sessions.
 
+### What the coordinator sees of Codex
+
+Measured with Codex 0.162.1. The coordinator runs in Claude Code; from there:
+
+- **It sees Codex sessions by their activity**, from the Codex database. It does not know whether one is waiting for a
+  permission: with the permission prompt open, Codex writes it neither in the database nor in the session's log. So
+  `status` says "no sé si espera un permiso" (I don't know whether it waits for a permission) on every Codex session.
+  `codex agents` is a screen for a person: a command cannot read it.
+- **It can leave them a message** with `codex queue --thread <id> --message <text>`. It stays in the Codex queue.
+  Whether an open session reads it was not measured. A finished session also answers "Queued", without an error.
+- **A Codex session's permission does not reach it**: it is answered in the Codex tab. What Codex brings for that
+  (`exec_permission_approvals`, `request_permissions_tool`) is under development and off. Codex signatures still go
+  through the terminal.
+- **Codex's automatic permission review** (`approvals_reviewer = "auto_review"`) could not be compared with Claude's
+  automatic mode: in the test, Codex did not ask for permission and the sandbox denied the command.
+
 ### The `--slot` option: fixed work slots
 
 Claude Code 2.1.330 asks to approve each copy, even with the main folder approved. To avoid approving a new folder for
