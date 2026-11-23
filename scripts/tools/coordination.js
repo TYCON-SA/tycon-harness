@@ -1731,32 +1731,39 @@ function typedMessages(file, from = 0) {
  * a lo sumo 5 líneas y «(+N más)». Cada línea sale una vez, con el texto de la conversación, no el del archivo. La que
  * todavía no está en la conversación vuelve al archivo hasta 10 minutos; la de otro origen se descarta. Cada descarte que
  * no es el esperado, y lo que no se pudo leer, va a `problems`. Si algo falla a mitad de camino, lo tomado vuelve al
- * archivo: no se pierde.
+ * archivo: no se pierde. Lo que tomó una lectura que se cayó (un tomado cuyo proceso ya no vive) se recupera en la
+ * siguiente, junto con lo nuevo. Para las pruebas: `renameOrphan` toma un huérfano y `onTaken` recibe el nombre tomado.
  */
 function ownerReplyLines(opts, sid, problems) {
   const home = opts.home || require('os').homedir();
   const now = opts.now == null ? Date.now() : Number(opts.now);
   const file = repliesFile(home);
   const what = 'las respuestas de la persona en otras pestañas';
+  // el nombre tomado lleva el pid y una marca de esta lectura: nunca pisa lo que dejó otra con el mismo pid
+  const takenName = () => `${file}.${process.pid}.${require('crypto').randomBytes(6).toString('hex')}.leyendo`;
+  const held = orphanReplies(file, what, takenName, opts.renameOrphan || fs.renameSync, problems);
+  const taken = held.map((h) => h.path);
   try {
     if (fs.statSync(file).size >= REPLIES_MAX_BYTES) problems.push(`${what}: el archivo llegó a ${REPLIES_MAX_BYTES / 1024} KB y las nuevas no se anotan`);
+    const mine = takenName();
+    fs.renameSync(file, mine);
+    try {
+      if (opts.onTaken) opts.onTaken(mine);
+      held.push({ path: mine, text: fs.readFileSync(mine, 'utf8') });
+      taken.push(mine);
+    } catch (e) {
+      // sin leerlo no se borra: vuelve a su lugar si nadie anotó otro mientras tanto, y si no, queda dicho dónde está
+      let kept = mine;
+      try { if (!fs.existsSync(file)) { fs.renameSync(mine, file); kept = file; } } catch { /* queda en el tomado */ }
+      problems.push(`${what} (${e.code || e.message}): quedaron en ${kept}`);
+    }
   } catch (e) {
     if (e.code !== 'ENOENT') problems.push(`${what} (${e.code || e.message})`);
-    return [];
   }
-  const taken = `${file}.${process.pid}.leyendo`;
-  try { fs.renameSync(file, taken); } catch (e) {
-    if (e.code !== 'ENOENT') problems.push(`${what} (${e.code || e.message})`);
-    return [];
-  }
-  let text;
-  try { text = fs.readFileSync(taken, 'utf8'); } catch (e) {
-    // sin leerlo no se borra: vuelve a su lugar si nadie anotó otro mientras tanto, y si no, queda dicho dónde está
-    let kept = taken;
-    try { if (!fs.existsSync(file)) { fs.renameSync(taken, file); kept = file; } } catch { /* queda en el tomado */ }
-    problems.push(`${what} (${e.code || e.message}): quedaron en ${kept}`);
-    return [];
-  }
+  if (!held.length) return [];
+  // un renglón igual en dos tomados es el mismo mensaje (una lectura que se cayó después de devolver los sin confirmar):
+  // sale una vez. Dos mensajes de verdad nunca son iguales: cada uno lleva su hora y dónde se lo busca
+  const text = [...new Set(held.flatMap((h) => h.text.split('\n')).filter((l) => l.trim()))].map((l) => `${l}\n`).join('');
   const out = [];
   const back = [];
   // los mensajes de la persona que se pierden, por sesión: la coordinadora le pregunta a esa sesión qué le pidieron
@@ -1802,19 +1809,65 @@ function ownerReplyLines(opts, sid, problems) {
     back.length = 0;
     lost.clear();
     try { fs.appendFileSync(file, text, { mode: 0o600 }); } catch {
-      problems.push(`${what} (${e.code || e.message}): no las pude devolver; quedaron en ${taken}`);
+      problems.push(`${what} (${e.code || e.message}): no las pude devolver; quedaron en ${taken.join(', ')}`);
       return [];
     }
     problems.push(`${what} (${e.code || e.message}): las devolví para el próximo turno`);
   }
   if (back.length) {
     try { fs.appendFileSync(file, back.map((l) => `${l}\n`).join(''), { mode: 0o600 }); } catch (e) {
-      problems.push(`${back.length} de ${what} no las pude guardar para el próximo turno (${e.code || e.message}): quedaron en ${taken}`);
+      problems.push(`${back.length} de ${what} no las pude guardar para el próximo turno (${e.code || e.message}): quedaron en ${taken.join(', ')}`);
       return lines();
     }
   }
-  try { fs.unlinkSync(taken); } catch { /* ya no está */ }
+  for (const p of taken) { try { fs.unlinkSync(p); } catch { /* ya no está */ } }
   return lines();
+}
+
+/**
+ * Los tomados que dejó una lectura que se cayó (`<respuestas>.<pid>[.<marca>].leyendo` cuyo proceso ya no vive), cada uno
+ * tomado con un nombre propio antes de leerlo: `[{ path, text }]`. Si otro lector lo tomó antes (el renombre da
+ * `ENOENT`), no se lee. El de un proceso vivo no se toca: vivo es lo que dice `process.kill(pid, 0)`, con `EPERM` como
+ * vivo, como en `sessionsBySid`; un pid reciclado espera a la próxima lectura. El de un pid que no es un número, y el que
+ * no se puede leer, quedan donde estaban y van a `problems` con su ruta.
+ */
+const MAX_PID = 2147483647;
+function orphanReplies(file, what, takenName, rename, problems) {
+  const dir = path.dirname(file);
+  const base = `${path.basename(file)}.`;
+  let names;
+  try { names = fs.readdirSync(dir); } catch (e) {
+    if (e.code !== 'ENOENT') problems.push(`${what}: no pude leer ${dir} (${e.code || e.message})`);
+    return [];
+  }
+  const out = [];
+  for (const n of names.sort()) {
+    if (!n.startsWith(base) || !n.endsWith('.leyendo')) continue;
+    const orphan = path.join(dir, n);
+    const parts = n.slice(base.length, -'.leyendo'.length).split('.');
+    // un pid es un entero positivo hasta el más alto que acepta process.kill: el 0 le preguntaría al grupo de procesos y
+    // uno más grande hace tirar a process.kill, que se leería como «no vive»
+    if (parts.length > 2 || !/^[1-9]\d*$/.test(parts[0]) || Number(parts[0]) > MAX_PID) {
+      problems.push(`${what}: ${orphan} quedó tomado y su nombre no dice de qué proceso es: no lo toqué`);
+      continue;
+    }
+    const pid = Number(parts[0]);
+    let alive;
+    try { process.kill(pid, 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
+    if (alive) continue;
+    const mine = takenName();
+    try { rename(orphan, mine); } catch (e) {
+      if (e.code !== 'ENOENT') problems.push(`${what}: no pude tomar ${orphan} (${e.code || e.message})`);
+      continue;
+    }
+    try { out.push({ path: mine, text: fs.readFileSync(mine, 'utf8') }); } catch (e) {
+      // sin leerlo no se borra: vuelve a su nombre, y si no se puede, queda dicho dónde está
+      let kept = mine;
+      try { fs.renameSync(mine, orphan); kept = orphan; } catch { /* queda en el tomado */ }
+      problems.push(`${what}: no pude leer ${kept} (${e.code || e.message})`);
+    }
+  }
+  return out;
 }
 
 // Una línea por sesión con mensajes perdidos, la más reciente primero: cuántos y hace cuánto el último, nunca el texto.
@@ -2659,11 +2712,14 @@ function launchedMatches(row, s) {
   return Number.isFinite(s.startedAt) && s.startedAt >= row.at - LAUNCHED_EARLY_MS && s.startedAt <= row.at + LAUNCHED_LATE_MS;
 }
 
-/** Saca lo que ya no sirve: `drop` (el nombre que se cierra) y lo de más de un día sin una sesión viva que lo use. */
+/**
+ * Saca lo que ya no sirve: `drop` (el nombre que se cierra) y lo de más de un día sin una sesión viva que lo use. `drop`
+ * se compara con el nombre entero que guardó `noteLaunched`: recortados, dos nombres largos que empiezan igual son uno.
+ */
 function pruneLaunched({ home, now, drop = null, sessions = null }) {
   const list = readLaunched(home);
   const live = [...(sessions || sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null)).values()].filter((s) => s.alive);
-  const dropped = (r) => drop !== null && typeof r.name === 'string' && listedName(r.name) === listedName(drop);
+  const dropped = (r) => drop !== null && typeof r.name === 'string' && r.name === drop;
   const keep = list.filter((r) => r && !dropped(r) && (now - r.at < LAUNCHED_KEEP_MS || live.some((s) => launchedMatches(r, s))));
   if (keep.length !== list.length) writeJson(launchedFile(home), keep);
   return keep;
@@ -3218,17 +3274,25 @@ function runGaps(sid, home) {
   return { missing, unknown };
 }
 
-// El nombre completo que anotó la sesión `sid` en su archivo, o `null` si no lo anotó o no se puede leer.
-function fullSessionName(home, sid) {
+/**
+ * El nombre completo que anotó la sesión `sid` en su archivo, `null` si no lo anotó o no está, o `{ problem }` con la ruta
+ * y el motivo si no se pudo leer la carpeta, o si no apareció y algún archivo no se pudo leer: «no pude leer» no es «no
+ * está». Para las pruebas, `opts.readSessionFile` lee cada archivo.
+ */
+function fullSessionName(home, sid, opts = {}) {
   const dir = path.join(claudeDir(home), 'sessions');
+  const read = opts.readSessionFile || ((p) => fs.readFileSync(p, 'utf8'));
   let files = [];
-  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return null; }
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch (e) { return { problem: `${dir} (${e.code || e.message})` }; }
+  let unreadable = null;
   for (const f of files) {
+    const p = path.join(dir, f);
     let s;
-    try { s = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+    // del error de JSON va sólo que no es JSON: su mensaje puede traer un trozo del archivo
+    try { s = JSON.parse(read(p)); } catch (e) { unreadable = unreadable || `${p} (${e.code || (e instanceof SyntaxError ? 'no es JSON' : e.message)})`; continue; }
     if (s && s.sessionId === sid) return typeof s.name === 'string' && s.name.trim() ? oneLine(s.name) : null;
   }
-  return null;
+  return unreadable ? { problem: unreadable } : null;
 }
 
 /**
@@ -3255,7 +3319,14 @@ function namedSession(opts, w) {
   // la lista guarda los nombres largos recortados: uno largo se compara recortado y se confirma con el nombre completo
   // que anotó la sesión, porque dos nombres que empiezan igual quedan iguales en la lista
   const listed = listedName(name);
-  const found = [...sessions.entries()].filter(([sid, s]) => s.name === listed && (listed === name || fullSessionName(home, sid) === name));
+  const found = [];
+  for (const [sid, s] of sessions.entries()) {
+    if (s.name !== listed) continue;
+    if (listed === name) { found.push([sid, s]); continue; }
+    const full = fullSessionName(home, sid, opts);
+    if (full && full.problem) return { error: `No pude leer ${full.problem}: ${nada}` };
+    if (full === name) found.push([sid, s]);
+  }
   const alive = found.filter(([, s]) => s.alive);
   if (!found.length) return { error: `No encuentro la sesión «${name}»: ${nada}` };
   if (alive.length > 1 || (!alive.length && found.length > 1)) return { error: `Hay más de una sesión «${name}»: ${nada}` };
@@ -3555,6 +3626,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines,reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict,
+module.exports = { LAUNCH_TIMEOUT_MS, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict, fullSessionName, ownerReplyLines,
   // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
   stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };
