@@ -210,7 +210,7 @@ test('WaiverShown_AvisoCorto: un renglón por criterio, más el encabezado y dó
 test('WaiverDisplay_MatrizDeLosCriteriosPedidos — la ventana mide sólo los criterios que se firman', () => {
   const lab = laboratorio();
   const leer = (acs) => spawnSync(process.execPath, ['-e', `const wd = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'waiver-display.js'))});
-    const m = wd.matrixForSignature(process.argv[1], { storyId: '9.94', storyPath: process.argv[1], repoPath: process.argv[2] }, JSON.parse(process.argv[3]));
+    const m = wd.matrixForSignature(process.argv[1], { storyId: '9.94', storyPath: process.argv[1], repoPath: process.argv[2] }, { acs: JSON.parse(process.argv[3]) });
     process.stdout.write(JSON.stringify({ parcial: m.parcial === undefined ? 'no' : m.parcial, nv: m.notVerifiable }));`, lab.story, lab.repo, JSON.stringify(acs)],
   { cwd: lab.repo, encoding: 'utf8', env: lab.env });
   const pedidos = leer([1]);

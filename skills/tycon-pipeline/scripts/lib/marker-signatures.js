@@ -75,17 +75,43 @@ function runtimeWaiverConOk(storyPath, argv, m) {
     process.exit(2);
   }
   const wd = require('./waiver-display.js');
-  // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
-  if (!wd.esLaDelMarcador(storyPath, m)) {
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}${m && m.storyPath ? ` (${m.storyPath})` : ''}.`);
+  const tanda = val('--batch');
+  if (argv.includes('--batch') && (!tanda || String(tanda).startsWith('-'))) {
+    console.error('marker.js runtime-waiver: --batch sin el nombre de la tanda.');
     process.exit(2);
   }
-  // la matriz de «Preparar el commit»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma
-  const matrix = wd.matrixForSignature(storyPath, m);
+  if (m) {
+    // con una corrida abierta, la tanda es la que anotó la corrida: otra pedida a mano mediría otra cosa
+    if (tanda) {
+      console.error(`🚫 marker.js runtime-waiver: no se firmó — hay una ejecución abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}, y manda la tanda de la ejecución (${m.batch || 'sin tanda: todas'}): pedila sin --batch.`);
+      process.exit(2);
+    }
+    // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
+    if (!wd.esLaDelMarcador(storyPath, m)) {
+      console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}${m.storyPath ? ` (${m.storyPath})` : ''}.`);
+      process.exit(2);
+    }
+  } else if (!require('../runtime-matrix.js').discoverRepoRoot(storyPath)) {
+    // sin corrida, la constancia queda en el repo de la historia (`.tycon/runtime-waivers.jsonl`), para commitearla: el
+    // mismo repo que la matriz toma como `repoRoot`. Fuera de git no hay dónde, y la firma va a la terminal
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no está en un repo git: sin una corrida abierta, la firma desde la sesión deja su constancia en el repo de la historia, para commitearla.`);
+    console.error(`   La firma una persona en su terminal: node ${MARKER_JS} runtime-waiver ${storyPath} --terminal`);
+    process.exit(2);
+  }
+  // la matriz de «Preparar el commit»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma.
+  // Sin corrida, la tanda pedida con --batch, medida igual (el cuadro calcula la misma: scripts/lib/owner-window.js)
+  const matrix = wd.matrixForSignature(storyPath, m, { batch: m ? null : tanda });
   if (matrix.structuralError) { console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`); process.exit(2); }
+  // una tanda pedida que la matriz no pudo medir sola (sin criterios, o sin la lista de cambios): firmar con ella
+  // dejaría pasar criterios de otras tandas
+  if (tanda && !matrix.batch) {
+    const porQue = (matrix.warnings || []).find((w) => /mido todas las tandas/.test(w));
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — no pude medir sólo la tanda ${tanda}${porQue ? ` (${porQue})` : ''}.`);
+    process.exit(2);
+  }
   const deOtraTanda = matrix.batch ? pedidos.filter((n) => !matrix.acs.includes(n)) : [];
   if (deOtraTanda.length) {
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma en la corrida de su tanda.`);
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma ${m ? 'en la corrida de su tanda' : 'con --batch de su tanda'}.`);
     process.exit(2);
   }
   // los que cubre el rojo esperado vigente de la deuda ya tienen su salida: no frenan la exención de los imposibles
@@ -112,12 +138,15 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const declHashByAc = {};
   for (const n of pedidos) declHashByAc[n] = waiver.declHashFor(matrix.perAc[n].declReason, matrix.perAc[n].coveredBy);
   const repoRoot = matrix.repoRoot || null;
+  // la sesión que pidió la firma: va dentro del ok, que entra en la cadena (cambiarla a mano descarta la firma)
+  const sesion = PROPIA !== '_nosession' ? PROPIA : null;
   const entry = waiver.appendWaiver({
     story: matrix.key || matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, nowIso: nowIso(), declHashByAc,
     logPath: repoRoot ? waiver.repoWaiverLogPath(repoRoot) : undefined,
-    ok: { tipo: e.tipo, quien: e.quien, via: e.via },
+    ok: { tipo: e.tipo, quien: e.quien, via: e.via, ...(sesion ? { sesion } : {}) },
   });
-  appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, via: e.via });
+  appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, via: e.via,
+    ...(sesion ? { sesion } : {}), ...(matrix.batch ? { batch: matrix.batch } : {}) });
   const mk = { ...(m || {}), repoPath: repoRoot || (m && m.repoPath) || null, storyId: (m && m.storyId) || matrix.sid, storyPath };
   for (const n of pedidos) {
     anotarAprobacion(mk, { que: `AC ${n} imposible de verificar en vivo`, via: e.via, tipo: e.tipo, quien: e.quien, ...(e.delegacion ? { delegacion: e.delegacion } : {}) });
