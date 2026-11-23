@@ -564,6 +564,12 @@
       "requiere": []
     },
     {
+      "__nota": "el portón por parte: una parte que no cambió desde su verde en esta story y rama lo conserva; lo que cambia la huella (la parte, lo común, lo ignorado, el entorno, el portón) la vuelve a correr (fila 79, punto 5).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-part-keep.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-size.test.js",
       "requiere": [
