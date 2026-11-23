@@ -682,6 +682,24 @@ test('T32 PorQueSinLista_ApagadaOSinCoordinadora @fila-149', (t) => {
   const toy = maquina(t);
   assert.match(ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes }), /apagada.*approvals\.signature_list/);
   fs.writeFileSync(path.join(toy.arnes, 'team-profile.json'), JSON.stringify({ approvals: { ...PERFIL.approvals, signature_list: 'on' } }));
-  assert.match(ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes }), /coordinadora/);
-  assert.doesNotMatch(ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes }), /apagada/);
+  // un pedido que sí se anotaría: lo que falta es la coordinadora para la lista
+  const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', siSaleMal: 'se rehace', huella: 'abcd1234' });
+  const prendida = ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, sesion: 's', destino: 's', pendientes: ['plan-approval'], cuadro });
+  assert.match(prendida, /coordinadora/);
+  assert.doesNotMatch(prendida, /apagada/);
+});
+
+// 🔴 Falla con (lo encontró el pase): con la lista prendida y la coordinadora viva, un pedido que no se anota por algo
+//    suyo (varias firmas juntas, otra sesión destino, un cuadro que no se armó) le echa la culpa a la coordinadora.
+test('T33 PorQueSinLista_ListaPrendida_DiceLoDelPedido @fila-149', (t) => {
+  const toy = maquina(t);
+  fs.writeFileSync(path.join(toy.arnes, 'team-profile.json'), JSON.stringify({ approvals: { ...PERFIL.approvals, signature_list: 'on' } }));
+  const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', siSaleMal: 'se rehace', huella: 'abcd1234' });
+  const por = (o) => ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, sesion: 's', destino: 's', pendientes: ['plan-approval'], cuadro, ...o });
+  assert.match(por({ pendientes: ['plan-approval', 'save'] }), /varias firmas/);
+  assert.match(por({ destino: 'ses-otra' }), /otra sesión/);
+  assert.match(por({ cuadro: { error: 'no se pudo' } }), /no se pudo armar/);
+  for (const o of [{ pendientes: ['plan-approval', 'save'] }, { destino: 'ses-otra' }, { cuadro: { error: 'x' } }]) {
+    assert.doesNotMatch(por(o), /no da a la coordinadora|no figura/, JSON.stringify(o));
+  }
 });

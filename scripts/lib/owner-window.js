@@ -1164,15 +1164,23 @@ function tituloDeLaFirma(firma, palabras, propia) {
 
 /**
  * Por qué el pedido de una sesión que abrió la coordinadora no le llega a su lista de firmas: la lista apagada en la
- * máquina (y cómo se prende), la llave que no se pudo leer, o la lista prendida sin una coordinadora confirmada y viva.
+ * máquina (y cómo se prende), la llave que no se pudo leer o, con la lista prendida, lo del pedido que no se anota
+ * (`anotarNegativa`: varias firmas juntas, otra sesión destino, un cuadro que no se armó) antes que la coordinadora.
  * `arnes` y `env`, para las pruebas.
  */
-function porQueSinLista({ casa, arnes, env } = {}) {
+function porQueSinLista({ casa, arnes, env, pendientes = null, destino = null, sesion = null, cuadro = null } = {}) {
+  const L = require('./signature-list.js');
   let k;
-  try { k = require('./signature-list.js').llave({ casa, arnes, env }); } catch (e) { return `no pude leer la llave de la lista (${una(e.message, 120)})`; }
+  try { k = L.llave({ casa, arnes, env }); } catch (e) { return `no pude leer la llave de la lista (${una(e.message, 120)})`; }
   if (!k.encendida && k.problema) return `no pude leer approvals.signature_list (${una(k.problema, 120)})`;
   if (!k.encendida) return 'la lista de firmas está apagada en esta máquina; se prende con approvals.signature_list: on, y con ella la coordinadora muestra el cuadro exacto';
-  return 'la lista está prendida, pero la coordinadora no figura confirmada y viva';
+  if (Array.isArray(pendientes) && pendientes.length !== 1) return 'la lista está prendida, pero un comando con varias firmas no se anota: corré cada una sola';
+  if (destino && sesion && destino !== sesion) return 'la lista está prendida, pero el pedido es para otra sesión';
+  if (!cuadro || cuadro.error) return 'la lista está prendida, pero el cuadro de esta firma no se pudo armar';
+  let viva = null;
+  try { viva = L.coordinadoraViva(casa); } catch (_) { viva = null; }
+  if (!viva) return 'la lista está prendida, pero no da a la coordinadora por confirmada y viva';
+  return 'la lista está prendida, pero este pedido no quedó anotado en ella';
 }
 
 function anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras, cuadro, cwd, ahora, deFondo, lista = {} }) {
@@ -1806,7 +1814,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
           }
         }
         // sin la lista, la negativa dice por qué el pedido no le llega a la coordinadora
-        const sinLista = coordinadora && !anotado ? porQueSinLista({ casa }) : null;
+        const sinLista = coordinadora && !anotado ? porQueSinLista({ casa, pendientes, destino, sesion, cuadro }) : null;
         return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}${noSeDesvio ? `. ${noSeDesvio}` : ''}`, pendientes, paraTerminal, cuadro, deFondo, anotado, coordinadora, sinLista);
       }
     }
