@@ -260,7 +260,26 @@ test('BaseSinMedir_LaCompruebaGit: al anotar, git en el repo del pase dice si la
   assert.deepEqual(sinLaBase.lentes_sin_medir, ['x']);
   assert.match(sinLaBase.motivo, /no está en .* \(lo dice git\): ninguna lente pudo comparar/);
   // en una carpeta que no es un repo de git no se puede saber: no se juzga por eso
-  assert.equal(medicionDelResultado({ ...medidas, base_del_pase: { repo: tmp('adv-sin-git-'), base: BASE } }).medido, true);
+  const sinGit = tmp('adv-sin-git-');
+  assert.equal(medicionDelResultado({ ...medidas, base_del_pase: { repo: sinGit, base: BASE } }).medido, true);
+  // …salvo la lente relanzada: cuenta sólo si git confirma la base (la segunda vuelta no vuelve verde una base que falta)
+  const relanzada = { confirmed: [], lentes: [{ lens: 'x', estado: 'medida', count: 1, otra_vez: true }], detalle: [{ lens: 'x' }] };
+  assert.equal(medicionDelResultado({ ...relanzada, base_del_pase: { repo, base: esta } }).medido, true, 'con git que la confirma, cuenta');
+  for (const [caso, obj] of [['carpeta sin git', { ...relanzada, base_del_pase: { repo: sinGit, base: BASE } }], ['sin la base del pase', relanzada]]) {
+    const m = medicionDelResultado(obj);
+    assert.equal(m.medido, false, caso);
+    assert.match(m.motivo, /dijo primero que la base no estaba y git no pudo confirmar/, caso);
+  }
+  // un repo relativo (el guion usa «.» sin repo) se resuelve contra el del registro
+  const relativo = medicionDelResultado({ ...medidas, base_del_pase: { repo: '.', base: BASE } }, { repo });
+  assert.equal(relativo.medido, false);
+  assert.match(relativo.motivo, /\(lo dice git\)/);
+  // GIT_DIR en el entorno no lleva la comprobación a otro repo
+  const antes = process.env.GIT_DIR;
+  process.env.GIT_DIR = path.join(sinGit, 'otro.git');
+  try {
+    assert.equal(medicionDelResultado({ ...relanzada, base_del_pase: { repo, base: esta } }).medido, true, 'con GIT_DIR ajeno');
+  } finally { if (antes === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = antes; }
 });
 
 // 🔴 Falla con: el cazador de una sesión aislada en otra carpeta corría `git … ; echo rc=$?`, la herramienta lo
