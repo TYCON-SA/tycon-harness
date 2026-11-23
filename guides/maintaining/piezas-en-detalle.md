@@ -210,7 +210,15 @@ salió «entra sin constancia», con las dos pasadas en verde. Por eso llevan `s
 bibliotecas de la firma. También lo llevan las piezas del freno de producción que se instalan o en las que confía y que
 ningún banco prueba: el instalador y la puesta al día que corren como root, su regla de sudo, el lanzador y la
 configuración administrada que lo registran, la carga de la clave, las mudanzas del origen y el Node oficial. `pending` dice si la revisión va a exigir la constancia. Sin un archivo que firma siempre, la
-exige sólo si la base da rojo, y eso lo mide `run`. Red: `base-controls.test.sh`, T57 y T115.
+exige sólo si la base da rojo, y eso lo mide `run`. Red: `base-controls.test.sh`, T57, T115, T116 y T120.
+
+**Que la máquina no pise lo que vale sólo el perfil.** La lista de esas claves firma siempre, pero el código que la
+aplica vive en `tycon-config.js`, que no firma. Lo prueba una pasada de la revisión, `scripts/ci/check-profile-only.js`.
+Carga la configuración del árbol con un archivo de máquina, un perfil por variable y las variables de cada clave, todos
+de laboratorio, y frena si alguna clave de la lista toma ese valor. La lista con que mide es la firmada (más la que
+aplica la configuración, si dice más). Un pedido que afloja el filtro da rojo en su pasada. Uno que además afloja el
+control cambia un archivo que firma siempre. Un tipo de clave que no sabe armar es «no medido», nunca verde: se suma
+al control en el mismo pedido. Red: `check-profile-only.test.js` y T120.
 
 **Una constancia nueva lleva la huella de `approve`.** *(skills/tycon-pipeline/scripts/lib/control-change-prints.js)*
 `run-base-controls.sh approve` anota en el registro de la máquina la huella (sha256) de cada constancia que escribe. Antes

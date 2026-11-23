@@ -59,6 +59,8 @@
 #       un banco que lo pruebe; `pending` dice si la revisión va a exigir la constancia o sólo con la base en rojo
 #   T116 BaseControls_ProfileOnlyKeys_SmallFileSignsOnEveryChange — las claves que vale sólo el perfil del equipo viven
 #       en profile-only.js, marcado, y tycon-config.js las lee de ahí sin una copia propia
+#   T120 BaseControls_ProfileOnlyFilter_RunsAsPassAndSignsOnChange — una pasada de la revisión prueba que la máquina no
+#       pisa esas claves, y su control pide la constancia en cada cambio (los casos del control: check-profile-only.test.js)
 #   T9 (8.152) BaseControls_BenchAgainstBase_IsARule — el inventario real tiene el guion del banco de la base como regla
 #       con «sign_on_change», y un pedido que lo cambia sin la constancia es rojo
 #   Las constancias del dueño (por nombre): borrar o reescribir una del ancestro es rojo y pide la firma, con ella pasa;
@@ -1694,6 +1696,17 @@ MISMA="$(HOME="${T}/casa-t116" node -e 'const C=require(process.argv[1]);const P
 is "T116 tycon-config.js lee la lista de profile-only.js" "si" "${MISMA}"
 PROPIA="$(grep -cE '^const PROFILE_ONLY = Object\.freeze\(' "${ROOT}/scripts/lib/tycon-config.js")"
 is "T116 tycon-config.js no declara una lista propia" "0" "${PROPIA}"
+
+# T120 · el código que aplica la lista (tycon-config.js) no firma: lo prueba una pasada de la revisión, cuyo control pide
+# la constancia en cada cambio. Sin la pasada, aflojar el filtro no da rojo en ningún lado; sin la marca, un pedido que
+# afloja el filtro y el control a la vez pasa las dos pasadas en verde.
+PASADA="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const p=(j.passes||[]).find(x=>x.name==="profile-only");console.log(p&&p.mode==="tree"&&p.cmd.join(" ")==="node scripts/ci/check-profile-only.js"?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
+is "T120 el inventario real corre check-profile-only.js como pasada sobre el árbol" "si" "${PASADA}"
+MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path==="scripts/ci/check-profile-only.js"&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
+is "T120 el inventario real marca check-profile-only.js con «sign_on_change»" "si" "${MARKED}"
+mkdir -p "${T}/casa-t120"
+HOME="${T}/casa-t120" USERPROFILE="${T}/casa-t120" node "${ROOT}/scripts/ci/check-profile-only.js" --root "${ROOT}" > "${T}/t120.out" 2>&1 < /dev/null
+is "T120 el control pasa sobre el árbol real" "0" "$?"
 R="${T}/t115a"; t55_base "${R}" 1
 bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t115a.out" 2>&1
 has "T115 pending: con un archivo que firma siempre, dice que la revisión la va a exigir" "${T}/t115a.out" "la revisión va a exigir la constancia: cambia docs/modo.yaml, que firma siempre"
