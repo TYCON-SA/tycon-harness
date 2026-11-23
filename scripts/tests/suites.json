@@ -662,6 +662,12 @@
       "requiere": []
     },
     {
+      "__nota": "la maqueta queda con mode user sólo con la vía de una persona y su cita no es la opción que sigue; --replace-delegated (approve-plan y approve-mockup) vuelve a firmar lo aprobado sin persona sólo con el click o el «aprobado» del dueño a ese pedido: sin él, o con el de otro pedido, no escribe nada. Los guiones de verdad en una casa de juguete; unos veinte segundos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/mockup-approval-person.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",

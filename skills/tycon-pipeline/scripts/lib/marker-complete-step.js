@@ -16,6 +16,7 @@ const {
   homeCommand, huellaDelPlan, markerFilePath, markerScreenRule, markerStoryIsUi,
   mensajeDelPaseAdversarial, motivoDe, nn, nowIso, os, path, planDeLaCorrida,
   planParaLaPersona, planVisto, porDe, quienDeLasOpciones, readMarker,
+  citaDe, conPersona, hechaSinPersona, modoDeLaFirma, quienDeLaMaqueta, reemplazada, soloLaPersona, aprobadaPorPersona, noPisaLaPersona,
   reposParaComparar, resolveStoryPath, signatureCommand, syncSessionState,
   testsNotMeasuredLine, veredictoPaseAdversarial, writeMarker,
 } = require('./marker-shared.js');
@@ -196,9 +197,26 @@ function cmdCompleteStep(nRaw, flags) {
   // (lib/plan-review.js). Sin aprobación de nadie, cerrar el paso sería un comando vacío y el portón de carril (código
   // antes del plan) se abría sin que nadie hubiera aprobado nada.
   if (controles.has('plan')) {
-    const approved = optVal('--approved');
+    const approved = citaDe(optVal('--approved'));
     // el dueño lo aprueba en su terminal: la cita es esa firma
     const enTerminal = opts.includes('--terminal');
+    // ── --replace-delegated: el plan (y su maqueta) que se aprobaron sin persona los vuelve a aprobar el dueño ──
+    // Sólo con su click o su «aprobado» a este pedido, o en su terminal (`soloLaPersona`, el control previo de la firma);
+    // con cualquier otra vía sale sin escribir nada. Guarda la firma que reemplazó y no mueve la hora del paso.
+    const reemplaza = opts.includes('--replace-delegated');
+    const planPrevia = marker.planApproval || null;
+    const maquetaPrevia = marker.mockupApproval || null;
+    if (reemplaza) {
+      const motivo = !STEPS_LIB.isDone(marker, 'approve-plan') || !planPrevia ? 'no hay un plan aprobado que reemplazar'
+        : !hechaSinPersona(planPrevia) ? `el plan ya lo aprobó una persona (${planPrevia.via || planPrevia.mode}): no hay una firma por delegación que reemplazar`
+          : !approved && !enTerminal ? 'falta la aprobación de una persona: --approved "<su cita>", con su click o su «aprobado» a este pedido, o --terminal'
+            : null;
+      if (motivo) {
+        appendLog('gates.log', { name: 'approval-replaced', status: 'blocked', story: marker.storyId, que: 'plan', motivo });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — --replace-delegated: ${motivo}. No se escribió nada.`);
+        process.exit(1);
+      }
+    }
     if (opts.includes('--auto-approved')) {
       appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: 'ya no existe' });
       console.error(`marker.js complete-step ${n} BLOQUEADO — --auto-approved no aprueba: un plan de rutina lo aprueba el «aprobado» de su revisión automática (con o sin coordinadora); uno delicado, una persona.`);
@@ -231,7 +249,7 @@ function cmdCompleteStep(nRaw, flags) {
     // ── En una story con pantalla, la maqueta y su aprobación (también con LOW) ──
     // La detección es la de la revisión de la pantalla (mockup.screenStory, raíz del repo de la STORY), no la de
     // markerStoryIsUi. «No pude leer la story» frena: nunca es «sin pantalla». Nada se escribe hasta el final.
-    const mockupCita = optVal('--mockup-approved') || (enTerminal ? 'firmado en la terminal' : null);
+    const mockupCita = citaDe(optVal('--mockup-approved')) || (enTerminal ? 'firmado en la terminal' : null);
     const mk = require('../mockup.js');
     const bloquear3 = (motivo, extra = []) => {
       appendLog('gates.log', { name: 'mockup-approval', status: 'blocked', story: marker.storyId, motivo });
@@ -349,7 +367,31 @@ function cmdCompleteStep(nRaw, flags) {
         resumen: `plan de ${marker.storyId}: revisión ${autoRevision.id} ${autoRevision.veredicto} (${autoRevision.modelo}), lanzada por la propia sesión` });
       return { via: 'revision', constancia: { via: 'revision' } };
     };
-    const firmaPlan = autoRevision ? porLaPropia() : firmaDelDueno('plan-approval', `plan de ${marker.storyId}${approved ? `: ${approved}` : ''}`, { antes: antesDelPlan });
+    // lo que ya aprobó una persona para la huella de ahora (el plan, su maqueta) no lo reescribe una firma sin persona
+    const loDeLaPersona = [
+      ...(aprobadaPorPersona(planPrevia, huellaDelPlan(marker).sha, 'planSha') ? ['plan'] : []),
+      ...(mockupPlan && aprobadaPorPersona(maquetaPrevia, mockupPlan.sha, 'sha256', planPrevia) ? ['maqueta'] : []),
+    ];
+    const noPisa = (via) => noPisaLaPersona(loDeLaPersona, via);
+    if (autoRevision && noPisa('delegacion')) {
+      appendLog('gates.log', { name: 'plan-approval', status: 'blocked', story: marker.storyId, motivo: 'ya lo aprobó una persona', que: loDeLaPersona });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${noPisa('delegacion').motivo}`);
+      process.exit(2);
+    }
+    const antesDeFirmar = (via, registro) => noPisa(via) || (reemplaza ? soloLaPersona(via, registro) : null) || antesDelPlan(via, registro);
+    const firmaPlan = autoRevision ? porLaPropia() : firmaDelDueno('plan-approval', `plan de ${marker.storyId}${approved ? `: ${approved}` : ''}`, { antes: antesDeFirmar });
+    // lo comprobó el control previo; si igual llegara otra vía sin persona, lo de la persona no se reescribe
+    if (loDeLaPersona.length && !conPersona(firmaPlan.via)) {
+      appendLog('gates.log', { name: 'plan-approval', status: 'blocked', story: marker.storyId, motivo: 'ya lo aprobó una persona', que: loDeLaPersona, via: firmaPlan.via || null });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${noPisa('delegacion').motivo}`);
+      process.exit(2);
+    }
+    // lo comprobó el control previo; si igual llegara otra vía, no se escribe una firma de persona sin ella
+    if (reemplaza && !conPersona(firmaPlan.via)) {
+      appendLog('gates.log', { name: 'approval-replaced', status: 'blocked', story: marker.storyId, que: 'plan', via: firmaPlan.via || null });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — --replace-delegated: la firma llegó por ${firmaPlan.via || 'otra vía'}, no de la persona. No se escribió nada.`);
+      process.exit(2);
+    }
     const at3 = nowIso();
     if (mockupPlan) {
       // El archivo de aprobación viaja con la story (va en el commit); la cita queda sólo en el marcador.
@@ -368,7 +410,8 @@ function cmdCompleteStep(nRaw, flags) {
     marker.planApproval = { mode: porRevision ? 'revision' : 'user', text: textoPlan, at: at3, ...(planSha ? { planSha } : {}),
       ...(porRevision ? { revision: { id: revision.id, veredicto: revision.veredicto, modelo: revision.modelo, lanzo: revision.lanzo } } : {}),
       // un plan delicado que aprobó la coordinadora por delegación (`plan-approval:delicada`): el cierre no lo reabre por delicado
-      ...(porRevision && revision.delicate && revision.delicate.value === true ? { delicada: true } : {}), ...firmaPlan.constancia };
+      ...(porRevision && revision.delicate && revision.delicate.value === true ? { delicada: true } : {}), ...firmaPlan.constancia,
+      ...(reemplaza ? { reemplaza: reemplazada(planPrevia) } : {}) };
     appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...firmaPlan.constancia });
     // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; por la revisión, automática a
     // nombre de la revisión. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
@@ -381,21 +424,32 @@ function cmdCompleteStep(nRaw, flags) {
       : porRevision && firmaPlan.automatica ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: 'arnés (firma de trámite)' }
       : porRevision ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: `coordinadora (sesión ${PROPIA})` }
         : delDueno || quienDeLasOpciones(optVal);
-    const viaPlan = autoRevision ? '· revisión automática de la propia sesión' : porRevision ? '· revisión automática' : '--approved';
+    const viaPlan = autoRevision ? '· revisión automática de la propia sesión' : porRevision ? '· revisión automática' : reemplaza ? '--replace-delegated --approved' : '--approved';
     anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${viaPlan}`, ...quienPlan, ...porDe(firmaPlan) });
     if (mockupPlan) {
-      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...(delDueno || quienDeLasOpciones(optVal)), ...porDe(firmaPlan) });
+      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLaMaqueta(firmaPlan, optVal), ...porDe(firmaPlan) });
     }
     // La decisión se anota SIEMPRE, para que «Preparar el commit» vea una pantalla que apareció después del plan.
     marker.mockupDecision = { screen: sc.screen, signal: sc.signal || null, at: at3 };
     if (mockupPlan) {
-      marker.mockupApproval = { file: mockupPlan.p.mockup, sha256: mockupPlan.sha, mode: 'user', text: mockupCita, at: at3, ...porDe(firmaPlan) };
+      // `user` sólo con la vía de una persona (modoDeLaFirma); con la vía en la constancia
+      marker.mockupApproval = { file: mockupPlan.p.mockup, sha256: mockupPlan.sha, mode: modoDeLaFirma(firmaPlan), text: mockupCita, at: at3, ...(firmaPlan.constancia || porDe(firmaPlan)),
+        ...(reemplaza && maquetaPrevia ? { reemplaza: reemplazada(maquetaPrevia) } : {}) };
       appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: mockupPlan.sha.slice(0, 12), reapproval: false });
     } else {
       if (mockupCita) console.error('ℹ️  la story no tiene pantalla: no hay maqueta que aprobar (--mockup-approved no se usa).');
       // La baja de pantalla por prosa (7.18), con la raíz del repo de la story: la misma detección que decidió acá.
       const linea = require(path.join(SCRIPTS_DIR, 'lib', 'ui-signal.js')).proseDropNotice(sc.detail);
       if (linea) console.error(linea);
+    }
+    // el reemplazo no vuelve a cerrar el paso: la aprobación cambia de firma; el paso y su hora quedan como estaban
+    if (reemplaza) {
+      appendLog('gates.log', { name: 'approval-replaced', status: 'ok', story: marker.storyId, que: mockupPlan ? 'plan y maqueta' : 'plan', via: firmaPlan.via, previous: planPrevia.via || planPrevia.mode || null });
+      marker.lastTouch = nowIso();
+      writeMarker(marker);
+      syncSessionState(estado.SID);
+      process.stdout.write(JSON.stringify(marker, null, 2));
+      return;
     }
   }
 
