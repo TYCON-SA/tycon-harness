@@ -781,6 +781,8 @@ function status(opts = {}) {
     if (ago != null && ago >= 0 && ago < CODEX_WINDOW_MS) working.push({ session, sid: c.id, why: 'Codex, activa en los últimos 5 min; no sé si espera un permiso', since: c.last });
     else if (ago != null && ago >= 0 && ago < CODEX_IDLE_MS) waiting.push({ session, sid: c.id, why: 'Codex, quieta hace 5 min o más; no sé si terminó o espera un permiso' });
     else if (ago == null) waiting.push({ session, sid: c.id, why: 'Codex, sin fecha de actividad; no sé si espera un permiso' });
+    // una fecha futura viene de otro reloj: no prueba que trabaje, pero la sesión no desaparece
+    else if (ago < 0) waiting.push({ session, sid: c.id, why: 'Codex, fecha de actividad en el futuro; no sé si espera un permiso' });
   }
   for (const o of opened) {
     if (!alive.has(o.name)) working.push({ session: o.name, sid: null, why: 'recién abierta, todavía sin archivo de sesión', since: o.at });

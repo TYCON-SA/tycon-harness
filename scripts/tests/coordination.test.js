@@ -611,6 +611,16 @@ test('8.180 T23 Status_Codex_NoSabeNoEsSinTrabajo @story-8.180 @ac-23: de una se
   assert.doesNotMatch(text, /(Activa|Quieta|SinFecha) — sin trabajo/);
 });
 
+test('8.180 T23b Status_Codex_FechaFutura_NoDesaparece @story-8.180 @ac-23: un hilo de Codex con la fecha en el futuro (otro reloj) sale con su «no sé»', () => {
+  const t = toy();
+  codexBase(t, [['cdx-f', 'Futura', -5]]);
+  const s = C.status(t.opts);
+  const w = s.waiting.find((x) => x.sid === 'cdx-f');
+  assert.ok(w, JSON.stringify(s));
+  assert.match(w.why, /fecha de actividad en el futuro; no sé si espera un permiso/);
+  assert.ok(!s.working.some((x) => x.sid === 'cdx-f'), 'una fecha futura no prueba que trabaje');
+});
+
 test('8.180 T24 Coordinate_EnCodex_DiceQueTiene @story-8.180 @ac-24: en Codex dice qué tiene, qué no, y que sus firmas van por terminal', () => {
   const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
   const r = coordinate(t, { CODEX_SESSION_ID: 'cdx-1' });
