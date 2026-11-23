@@ -316,4 +316,7 @@ function soloSeMovieronComentarios(antes, ahora, { archivo } = {}) {
   }
 }
 
-module.exports = { soloSeMovieronComentarios, leer, puedeSerDirectiva, DIRECTIVAS, EXTENSIONES, TOPE_BYTES };
+module.exports = {
+  soloSeMovieronComentarios, leer, puedeSerDirectiva, DIRECTIVAS, EXTENSIONES, TOPE_BYTES,
+  ANTES_DE_REGEX, ANTES_DE_DIVISION, RESERVADAS, CONTROL,
+};

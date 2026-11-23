@@ -211,19 +211,11 @@ function enLaMismaRama(declarado, rama, numero) {
     avisar(`${nombre}: el worktree en main ${real(mismoNombre.ruta)} no está al día con origin/main o tiene cambios: no lo elijo por el nombre de la rama`);
     mismoNombre = null;
   }
-  if (mismoNombre) return elegir(mismoNombre.ruta);
+  if (mismoNombre) return rama === 'main' ? elegir(mismoNombre.ruta) : alDiaOVieja(mismoNombre, worktrees, nombre, elegir, null);
   const candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
-  // por el número no vale una copia vieja: la de una tanda anterior que ya entró entera a main y quedó atrás mide código sin
-  // lo que main arregló después, y da rojos que no son. Una rama con trabajo propio sigue valiendo aunque esté atrás de main,
-  // y la de la misma rama no pasa por acá
-  if (candidatos.length === 1 && yaEntroYQuedoAtras(candidatos[0].ruta)) {
-    avisar(`${nombre}: el worktree ${real(candidatos[0].ruta)} (rama ${candidatos[0].rama}) nombra la story ${numero}, pero ya entró a main y está atrás de origin/main: no lo elijo, uso el declarado ${declarado}. Si es el código de la story, ponelo en la rama ${rama || 'de la story'}`);
-    return declarado;
-  }
   if (candidatos.length === 1) {
-    const wt = elegir(candidatos[0].ruta);
-    avisar(`${nombre} se lee del worktree ${wt} (rama ${candidatos[0].rama}): es el único cuya rama nombra la story ${numero}`);
-    return wt;
+    return alDiaOVieja(candidatos[0], worktrees, nombre, elegir,
+      (wt) => `${nombre} se lee del worktree ${wt} (rama ${candidatos[0].rama}): es el único cuya rama nombra la story ${numero}`);
   }
   if (candidatos.length > 1) {
     avisar(`${nombre}: ${candidatos.length} worktrees nombran la story ${numero} (${candidatos.map((w) => `${real(w.ruta)} en ${w.rama}`).join(' · ')}): no elijo, uso el declarado ${declarado}`);
@@ -237,21 +229,45 @@ function enLaMismaRama(declarado, rama, numero) {
 }
 
 /**
- * ¿Todo lo de la rama de `dir` ya está en su `origin/main` local, y main siguió después? Sin `fetch`. Sin `origin/main`, o
- * con git que no contesta, «no»: se elige como antes.
+ * El worktree elegido por la rama de la story, salvo que esa rama ya haya entrado entera a `main` y quedado atrás: un
+ * portón que mide contra ella da rojos ya arreglados en `main`. Entonces, si hay un worktree en `main` al día
+ * (`mainAlDia`), se usa ése y se dice. Una rama atrás con commits que `main` no tiene es el código de la story sin
+ * mergear: se usa igual, y se dice cuánto está atrás. `porNumero(wt)` es el aviso de la elección por número, o null.
  */
-function yaEntroYQuedoAtras(dir) {
+function alDiaOVieja(w, worktrees, nombre, elegir, porNumero) {
+  const d = atrasDeMain(w.ruta);
+  if (d && d.atras > 0 && d.propios === 0 && d.limpio) {
+    const alDia = worktrees.find((x) => x.rama === 'main' && mainAlDia(x.ruta));
+    if (alDia) {
+      const wt = elegir(alDia.ruta);
+      avisar(`${nombre}: la rama ${w.rama} ya entró a main y está atrás de origin/main (${d.atras} commits): uso ${wt}, al día con main`);
+      return wt;
+    }
+  }
+  const wt = elegir(w.ruta);
+  if (porNumero) avisar(porNumero(wt));
+  if (!d) avisar(`${nombre}: no pude medir si la rama ${w.rama} está atrás de main: la uso igual`);
+  else if (d.atras > 0) avisar(`${nombre} está ${d.atras} commits atrás de main (rama ${w.rama}, en ${wt}): un rojo puede ser algo ya arreglado`);
+  return wt;
+}
+
+/**
+ * Cuánto está `dir` atrás de su `origin/main` local, cuántos commits tiene que `main` no tiene y si está sin cambios:
+ * `{ atras, propios, limpio }`, con lo que trajo el último `fetch` (no sale a la red). Sin `origin/main` no hay contra
+ * qué medir: `atras` y `propios` en 0. Git que no contesta, null.
+ */
+function atrasDeMain(dir) {
   const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre();
   const correr = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
-  const commits = correr(['rev-parse', 'HEAD', 'refs/remotes/origin/main']);
-  if (commits.error || commits.status !== 0) return false;
-  const [head, origen] = String(commits.stdout || '').trim().split('\n');
-  if (!head || !origen || head === origen) return false;
-  const r = correr(['merge-base', '--is-ancestor', 'HEAD', 'refs/remotes/origin/main']);
-  if (r.error || r.status !== 0) return false;
-  // trabajo sin commitear es trabajo propio: la copia no entró entera a main. Sin poder mirarlo, tampoco se descarta
   const estado = correr(['status', '--porcelain']);
-  return !estado.error && estado.status === 0 && !String(estado.stdout || '').trim();
+  if (estado.error || estado.status !== 0) return null;
+  const limpio = !String(estado.stdout || '').trim();
+  const conOrigen = correr(['show-ref', '--verify', '--quiet', 'refs/remotes/origin/main']);
+  if (!conOrigen.error && conOrigen.status === 1) return { atras: 0, propios: 0, limpio };
+  if (conOrigen.error || conOrigen.status !== 0) return null;
+  const r = correr(['rev-list', '--left-right', '--count', 'refs/remotes/origin/main...HEAD']);
+  const m = !r.error && r.status === 0 ? /^(\d+)\s+(\d+)\s*$/.exec(String(r.stdout || '')) : null;
+  return m ? { atras: Number(m[1]), propios: Number(m[2]), limpio } : null;
 }
 
 /**
@@ -273,6 +289,25 @@ function mainAlDia(dir) {
   if (!head || head !== origen) return false;
   const estado = correr(['status', '--porcelain']);
   return !estado.error && estado.status === 0 && !String(estado.stdout || '').trim();
+}
+
+/**
+ * ¿Su `origin/main` local cambió el archivo `abs` en commits que el checkout donde está no tiene? Sin `fetch`.
+ * `{ commit }` con el más nuevo de esos commits, `{ commit: null }` si no (o sin `origin/main`: nada contra qué comparar),
+ * `{ error }` si git no contestó: no se sabe si la copia es vieja.
+ */
+function mainCambioDespues(abs) {
+  const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre();
+  const dir = path.dirname(abs);
+  const correr = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
+  const conOrigen = correr(['show-ref', '--verify', '--quiet', 'refs/remotes/origin/main']);
+  if (!conOrigen.error && conOrigen.status === 1) return { commit: null };
+  const motivo = (r) => (r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`;
+  if (conOrigen.error || conOrigen.status !== 0) return { error: motivo(conOrigen) };
+  // `:(literal)`: un nombre con `[ ] * ?` (una ruta `[id].tsx`) es ese archivo, no un comodín que nombra otros
+  const r = correr(['log', '-1', '--format=%h', 'HEAD..refs/remotes/origin/main', '--', `:(literal)${path.basename(abs)}`]);
+  if (r.error || r.status !== 0) return { error: motivo(r) };
+  return { commit: String(r.stdout || '').trim() || null };
 }
 
 /** La raíz git que contiene un archivo o carpeta (la carpeta con `.git`), o null. */
@@ -564,7 +599,7 @@ function anclasDeLaEvidencia(repo, historia) {
 
 module.exports = {
   anclasDeLaEvidencia, nombreDelRepo,
-  companionRoots, ramaDe, limpiarRamas, enLaMismaRama, mainAlDia, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
+  companionRoots, ramaDe, limpiarRamas, enLaMismaRama, mainAlDia, mainCambioDespues, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, declaredFor, real,
 };
 

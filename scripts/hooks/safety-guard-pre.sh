@@ -403,7 +403,7 @@ if [ -n "$LOGFILE" ]; then mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true;
 # salida ni lo que este freno decide. El comando va por STDIN — por argv lo vería cualquier
 # `ps` — y de él sólo se guarda la huella.
 constancia() { # $1 = regla (id del catálogo)  $2 = veredicto  [$3 = camino del escape  $4 = sesión que lo reenvió
-               #  $5 = sesión del comando  $6 = nombre del escape (set-autonomous, cerrar-la-ejecucion)
+               #  $5 = sesión del comando (vacía: la del evento)  $6 = nombre del escape (set-autonomous, cerrar-la-ejecucion)
                #  $7 = motivo del bloqueo, de la lista de su regla en guard-record.js
                #  $8 = huella de lo que se firma (la lista y la fecha del rojo esperado de la matriz)]
   local lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/guard-record.js"
@@ -412,7 +412,10 @@ constancia() { # $1 = regla (id del catálogo)  $2 = veredicto  [$3 = camino del
   local extra=()
   [[ -n "${3:-}" ]] && extra+=(--via "$3")
   [[ -n "${4:-}" ]] && extra+=(--relay "$4")
-  [[ -n "${5:-}" ]] && extra+=(--session "$5")
+  # la sesión del comando: la que se pasa o, si no, la del evento del gancho; guard-record.js descarta una de otra forma
+  local ses="${5:-}"
+  [[ -n "$ses" ]] || { ses="$(read_field session_id 2>/dev/null)" || ses=""; }
+  [[ -n "$ses" ]] && extra+=(--session "$ses")
   [[ -n "${6:-}" ]] && extra+=(--escape "$6")
   [[ -n "${7:-}" ]] && extra+=(--reason "$7")
   [[ -n "${8:-}" ]] && extra+=(--detail "$8")

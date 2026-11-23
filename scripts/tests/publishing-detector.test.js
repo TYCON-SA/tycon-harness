@@ -114,6 +114,21 @@ test('Email_PersonaSiEjemploYServicioNo', () => {
   assert.deepStrictEqual(r.json.hallazgos.filter((h) => h.categoria === 'email').map((h) => h.texto), ['juana@empresa.com.ar']);
 });
 
+test('Email_ElUsuarioDeServicioDeGitlabYLaClaveDeUnaDireccionNo_UnCorreoDeVerdadSi', () => {
+  // Caso: la prueba del conector de GitLab de un colaborador-externo frenaba su empuje por la dirección SSH de GitLab
+  // (`git` en `gitlab.com:grupo/web.git`), como las de GitHub y Azure, que ya pasaban. El usuario y la clave de una
+  // dirección web de ejemplo, con el dominio en cualquier caja, tampoco son un correo. Uno de verdad sigue frenando.
+  // Las direcciones van partidas: escritas enteras, un freno instalado de antes de este arreglo frenaría este archivo.
+  const real = ['juana', 'empresa.com.ar'].join('@');
+  const gitlab = ['git', 'gitlab.com'].join('@');
+  const { dir, cfgPath } = sandbox({
+    'a.md': [`C.identityFromRemote('${gitlab}:grupo/web.git')`, `git clone ${gitlab}:grupo/otro.git`,
+      "'https://usuario:clave@GitLab.Example.com/Producto/Plataforma/servicio'", `avisar a ${real}`, ''].join('\n'),
+  }, CFG);
+  const r = correrJson(dir, cfgPath);
+  assert.deepStrictEqual(r.json.hallazgos.filter((h) => h.categoria === 'email').map((h) => h.texto), [real]);
+});
+
 test('Email_ElNoreplyDeGithubNoEsElCorreoDeNadie_UnoQueSoloSeLeParece_Si', () => {
   // con el arnés mantenido en su repo público se firma con el `noreply` que GitHub le da a cada cuenta, y todo merge
   // hecho en su web lo firma `noreply@github.com`: si el detector los contara como correos de persona, cada commit
@@ -464,5 +479,40 @@ test('8.10.3 Detector_MixedCaseTermGluedAfterAnotherWord_IsSeen — la grafía p
   // lo que sigue sin ser un hallazgo del detector: otra palabra que empieza igual, y el prefijo (lo mira el exportador)
   for (const line of ['el myZetaRepository de siempre', 'la clase ZetaRepoBackend', 'el control GlobexImage del form']) {
     assert.strictEqual(hits(line), 0, `tomó por el nombre lo que no lo es (o lo contó dos veces): ${line}`);
+  }
+});
+
+// Un freno lento es un agujero: si se cuelga o se corta, deja pasar. Una línea larga de tiradas como `a-a-a-…` o
+// `a.a.a.…` (un separador dibujado, un renglón minificado) hacía que las reglas del correo y de la clave entre comillas
+// volvieran a recorrer la tirada desde cada borde de palabra: el tiempo crecía al cuadrado (32.000 caracteres, más de
+// un segundo). Se compara el crecimiento entre 10.000 y 40.000 caracteres, no un tiempo fijo: lineal da cerca de 4
+// veces, al cuadrado cerca de 16. El tope de 9 deja margen para una máquina cargada.
+test('58 Detector_LongRunsOfSeparators_GrowLinearly — tiradas largas de guiones o puntos no tardan al cuadrado', () => {
+  // eslint-disable-next-line global-require
+  const det = require(DETECTOR);
+  const cfg = det.cargarConfig('lista.json', JSON.stringify(CFG));
+  const medir = (texto) => {
+    let mejor = Infinity;
+    for (let k = 0; k < 3; k++) {
+      const t = process.hrtime.bigint();
+      det.reviewText(cfg, texto, 'a.md');
+      mejor = Math.min(mejor, Number(process.hrtime.bigint() - t) / 1e6);
+    }
+    return mejor;
+  };
+  const tiradas = {
+    guiones: (n) => '-'.repeat(n),
+    puntos: (n) => '.'.repeat(n),
+    'letra y guion': (n) => 'a-'.repeat(n / 2),
+    'letra y punto': (n) => 'a.'.repeat(n / 2),
+    'mayúscula y guion': (n) => 'A-'.repeat(n / 2),
+    'clave a medias': (n) => `${'a-'.repeat(n / 2)}password`,
+    'correo a medias': (n) => `${'a.'.repeat(n / 2)}@`,
+  };
+  for (const [nombre, armar] of Object.entries(tiradas)) {
+    const chico = Math.max(medir(armar(10000)), 2);   // piso de 2 ms: con tiempos de cero el cociente no dice nada
+    const grande = medir(armar(40000));
+    assert.ok(grande / chico < 9 && grande < 1000,
+      `${nombre}: 10.000 caracteres ${chico.toFixed(1)} ms, 40.000 caracteres ${grande.toFixed(1)} ms (lineal ≈ 4 veces, al cuadrado ≈ 16)`);
   }
 });

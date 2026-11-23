@@ -291,6 +291,55 @@ test('T7 PrepareCommit_PaperworkOnly_DoesNotBlock @story-8.161 @ac-6 — el pape
   assert.match(salida(r), /\.advisors\/dod-runtime\/ayuda\.js/);
 });
 
+// El caso de una historia real: después de la última vuelta, el portón de navegador deja sus capturas en una carpeta con
+// la hora (otra en cada corrida), la guía de la prueba a mano se regenera, y la historia suma a sus archivos las pruebas
+// que se escribieron. Nada de eso es código revisado; cada cosa pedía otra vuelta.
+// 🔴 Falla con: una captura del portón que su índice nombra, la guía HTML de qa/ o una prueba sumada a files_to_modify que
+//    frenan; o una captura que su índice no nombra con esa huella, o un archivo de código sumado a la lista, que no frenan.
+test('PrepareCommit_EvidenciaDelPortonGuiaYPruebasDeLaHistoria_NoFrenan', () => {
+  const C = corrida('s-ft-portón');
+  C.vuelta();
+  const capturas = (repo, hora, nombre, contenido, enIndice = contenido) => {
+    const dir = path.join(repo, '.advisors', 'dod-runtime', `9.9-captures-${hora}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, nombre), contenido);
+    const sha = require('crypto').createHash('sha256').update(enIndice).digest('hex');
+    fs.writeFileSync(path.join(dir, 'captures.json'), JSON.stringify([{ file: nombre, title: 'el caso', acs: ['1'], sha256: sha }]));
+  };
+  capturas(C.codigo.repo, '20261122T014109Z', '01-el-caso.png', 'PNG-1');
+  fs.mkdirSync(path.join(C.historias.repo, 'specs', 'qa'), { recursive: true });
+  fs.writeFileSync(path.join(C.historias.repo, 'specs', 'qa', 'story-9.9-sello-guia-qa.html'), '<html>guía</html>\n');
+  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('  - src/a.js\n', '  - src/a.js\n  - tests/a.test.js\n  - "src/__tests__/b.test.tsx"\n'));
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // otra corrida del portón, con otra hora: tampoco
+  capturas(C.codigo.repo, '20261122T020054Z', '01-el-caso.png', 'PNG-2');
+  r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // una captura que su índice no nombra con esa huella: frena
+  capturas(C.codigo.repo, '20261122T030000Z', '01-el-caso.png', 'PNG-3', 'otra cosa');
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /9\.9-captures-20261122T030000Z\/01-el-caso\.png/);
+  // un archivo de código sumado a la lista de la historia: frena
+  const C2 = corrida('s-ft-portón-b');
+  C2.vuelta();
+  fs.writeFileSync(C2.story, fs.readFileSync(C2.story, 'utf8').replace('  - src/a.js\n', '  - src/a.js\n  - src/c.js\n'));
+  r = prepararCommit(C2);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /story-9\.9-sello\.md/);
+  // un guion en la carpeta de capturas, aunque su índice lo nombre, y otra guía que no es la de la historia: frenan
+  const C3 = corrida('s-ft-portón-c');
+  C3.vuelta();
+  capturas(C3.codigo.repo, '20261122T040000Z', 'ayuda.js', 'console.log(1)\n');
+  fs.mkdirSync(path.join(C3.codigo.repo, 'public', 'qa'), { recursive: true });
+  fs.writeFileSync(path.join(C3.codigo.repo, 'public', 'qa', 'story-9.9-sello-guia-qa.html'), '<script>x()</script>\n');
+  r = prepararCommit(C3);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /9\.9-captures-20261122T040000Z\/ayuda\.js/);
+  assert.match(salida(r), /public\/qa\/story-9\.9-sello-guia-qa\.html/);
+});
+
 test('T13 PrepareCommit_OldRunWithoutTree_NotMeasured @story-8.161 @ac-12 — una vuelta sin sello no se compara, y se dice', () => {
   const C = corrida('s-ft13');
   const r = prepararCommit(C);
@@ -371,6 +420,32 @@ test('T15c Cleanup_DotDotSession_StaysInside @story-8.161 @ac-14 — (pase de la
   const p = ft().procedencia(R.repo, { env: {}, proceso: 'prueba' });
   assert.strictEqual(p.run, null);
   assert.match(p.run_error, /sin sesión/);
+});
+
+test('T15d Provenance_MarkerStoryWithoutRunDir_SaysWhy — (diferido de la 8.243) un marcador con historia y sin carpeta: la calcula, o dice por qué no', () => {
+  const R = repoDeJuguete('procedencia', { 'a.js': '1\n' });
+  const home = tmp('ft-home-proc-');
+  const activos = path.join(require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(home), 'active');
+  fs.mkdirSync(activos, { recursive: true });
+  fs.writeFileSync(path.join(activos, 's-proc.json'), JSON.stringify({ storyId: '9.8', repoPath: R.repo }));
+  const leer = () => ft().procedencia(R.repo, { env: { CLAUDE_CODE_SESSION_ID: 's-proc' }, home });
+  // sin carpeta de corrida todavía
+  let p = leer();
+  assert.strictEqual(p.run, null);
+  assert.strictEqual(p.run_error, 'la historia del marcador todavía no tiene carpeta de corrida');
+  // con su carpeta, la que calcula el pipeline para la historia
+  const carpeta = path.join(R.repo, '.advisors', 'pipeline-runs', '9.8-20260101000000');
+  fs.mkdirSync(carpeta, { recursive: true });
+  p = leer();
+  assert.strictEqual(p.run, carpeta);
+  assert.ok(!('run_error' in p));
+  // y si calcularla falla, lo dice con su motivo
+  const RD = require(path.join(SCRIPTS, 'lib', 'run-dir.js'));
+  const original = RD.resolveRunDir;
+  RD.resolveRunDir = () => { throw new Error('sin permiso\nsegunda línea'); };
+  try { p = leer(); } finally { RD.resolveRunDir = original; }
+  assert.strictEqual(p.run, null);
+  assert.strictEqual(p.run_error, 'no pude calcular la carpeta de la corrida (sin permiso)');
 });
 
 function repoConHistoria() {
@@ -976,15 +1051,196 @@ test('T3 ReviewedTree_ComentarioMovido_NoFrenaYLoDice @story-8.217 @ac-2 — «P
   assert.strictEqual(ok && ok.comentarios_movidos, 1, JSON.stringify(ok));
 });
 
-test('T4 ReviewersRound_ContenidoIgualAlSello_NoPideVuelta @story-8.217 @ac-3 — vuelto a lo revisado: un .js no cuenta; un .ts sí', () => {
-  const C = corridaRevisada('s-ft-8217-t4', { extra: { 'src/c.ts': 'export const c = 1;\n' } });
+test('T4 ReviewersRound_ContenidoIgualAlSello_NoPideVuelta @story-8.217 @ac-3 — vuelto a lo revisado: un .js y un .ts no cuentan; un .py sí', () => {
+  // el .ts se lee desde lib/change-kind.js; un lenguaje sin lector sigue contando como código
+  const C = corridaRevisada('s-ft-8217-t4', { extra: { 'src/c.ts': 'export const c = 1;\n', 'src/d.py': 'c = 1\n' } });
   C.editar('src/a.js', A_CODIGO);
   C.editar('src/a.js', A_REVISADO);
   C.editar('src/c.ts', 'export const c = 2;\n');
   C.editar('src/c.ts', 'export const c = 1;\n');
+  C.editar('src/d.py', 'c = 2\n');
+  C.editar('src/d.py', 'c = 1\n');
   const r = C.ronda();
-  assert.ok(r, 'la vuelta se pide por el .ts');
-  assert.deepStrictEqual(r.archivos, ['src/c.ts']);
+  assert.ok(r, 'la vuelta se pide por el .py');
+  assert.deepStrictEqual(r.archivos, ['src/d.py']);
+});
+
+// ── Sólo comentarios no pide vuelta; sólo textos pide la vuelta chica ──
+const B_TEXTO = "'use strict';\nmodule.exports = { n: 2, motivo: 'sin permiso' };\n";
+test('T80b ReviewersRound_ComentarioCambiado_NoPideVuelta: el texto de un comentario cambiado, en un .ts, no reabre a los revisores', () => {
+  const C = corridaRevisada('s-ft-80b', { extra: { 'src/c.ts': '// la constante\nexport const c = 1;\n' } });
+  C.editar('src/c.ts', '// la constante de la prueba, explicada\nexport const c = 1;\n');
+  assert.strictEqual(C.ronda(), null);
+});
+
+test('T80c ReviewersRound_SoloTextos_VueltaChica: un texto cambiado pide la vuelta chica; con la otra decisión, ninguna', () => {
+  const C = corridaRevisada('s-ft-80c', { extra: { 'src/m.js': B_TEXTO } });
+  C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const r = C.ronda();
+  assert.ok(r, 'la vuelta se pide');
+  assert.deepStrictEqual(r.archivos, ['src/m.js']);
+  assert.strictEqual(r.chica, true, JSON.stringify(r));
+  // `next` lo dice al pedir la vuelta
+  assert.match(salida(C.correr('pipeline.js', ['next'])), /Sólo cambiaron textos: es una vuelta chica/);
+  assert.strictEqual(C.ronda({ textosConVueltaChica: false }), null, 'si el dueño elige que los textos no pidan vuelta');
+  // un texto y una línea de código: la vuelta de siempre
+  C.editar('src/b.js', B_CODIGO);
+  const r2 = C.ronda();
+  assert.deepStrictEqual(r2.archivos.sort(), ['src/b.js', 'src/m.js']);
+  assert.strictEqual(r2.chica, undefined, JSON.stringify(r2));
+});
+
+test('T80j ReviewersRound_ArchivoGrande_CuentaComoCodigo: un archivo de más de 256 KiB no se lee en el gancho y cuenta como código', () => {
+  const grande = `${B_TEXTO}${'const x = 1;\n'.repeat(22000)}`;
+  const C = corridaRevisada('s-ft-80j', { extra: { 'src/g.js': grande } });
+  C.editar('src/g.js', grande.replace('sin permiso', 'no autorizado'));
+  const r = C.ronda();
+  assert.deepStrictEqual(r && r.archivos, ['src/g.js']);
+  assert.strictEqual(r.chica, undefined, JSON.stringify(r));
+  // la comparación del sello tampoco lo lee: un comentario cambiado en un archivo grande cuenta como cambio
+  const sello = require(path.join(SCRIPTS, 'lib', 'frozen-tree.js'));
+  const g = (...a) => spawnSync('git', ['-C', C.codigo.repo, ...a], { encoding: 'utf8' }).stdout.trim();
+  const blob = (txt) => { fs.writeFileSync(path.join(C.codigo.repo, 'src', 'g.js'), txt); g('add', 'src/g.js'); return g('write-tree'); };
+  const antes = blob(grande);
+  const despues = blob(grande.replace("'use strict';\n", "'use strict';\n// nota\n"));
+  const c = sello.changed(C.codigo.repo, antes, despues, { comentarios: true });
+  assert.ok(c.files.includes('src/g.js'), JSON.stringify(c));
+  const chico = blob(B_TEXTO);
+  const chicoConNota = blob(B_TEXTO.replace("'use strict';\n", "'use strict';\n// nota\n"));
+  assert.deepStrictEqual(sello.changed(C.codigo.repo, chico, chicoConNota, { comentarios: true }).comentarios, ['src/g.js'], 'uno chico sí se lee');
+});
+
+test('T80d ReviewersRound_PedidaComoCodigo_NoSeAchica: lo ya pedido como código no se vuelve chico con un texto después', () => {
+  const C = corridaRevisada('s-ft-80d', { extra: { 'src/m.js': B_TEXTO } });
+  C.escribir(() => ({ otraVuelta: { round: 2, archivos: ['src/b.js'], desde: new Date(C.cierre + 500).toISOString() } }));
+  C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const r = C.ronda();
+  assert.deepStrictEqual(r.archivos.sort(), ['src/b.js', 'src/m.js']);
+  assert.strictEqual(r.chica, undefined, JSON.stringify(r));
+});
+
+/**
+ * Los lanzamientos de los revisores de la vuelta `iter`, como los anota el gancho de cada lanzamiento: después del sello
+ * de la vuelta, o antes con `antes` (un set pedido otra vez a mitad de la vuelta la vuelve a sellar).
+ */
+function lanzarRevisores(C, iter, { antes = false } = {}) {
+  const reg = path.join(C.estado(), 'advisor-runs', `${C.sid}.jsonl`);
+  const inicio = fs.readFileSync(reg, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((l) => l.event === 'step5-start' && Number(l.iter) === 1).pop();
+  const ts = new Date(antes ? Date.parse(inicio.ts) - 60000 : C.cierre - 200).toISOString();
+  const nuevas = iter === 1 ? [] : [{ ts: new Date(C.cierre - 400).toISOString(), event: 'step5-start', iter, expected: inicio.expected }];
+  for (const a of inicio.expected) nuevas.push({ ts, advisor: a });
+  fs.appendFileSync(reg, `${nuevas.map((l) => JSON.stringify(l)).join('\n')}\n`);
+}
+
+/** La foto de la vuelta 1, de antes del cierre, como la deja el arnés al lanzar el último revisor, y sus lanzamientos. */
+function conFotoDeLaVuelta(C, rels, { antes = false } = {}) {
+  const abs = rels.map((r) => path.join(C.codigo.repo, r));
+  C.escribir(() => ({ iterations: { 1: { ts: new Date(C.cierre - 500).toISOString(), filesSnapshot: abs } }, filesTouched: abs }));
+  lanzarRevisores(C, 1, { antes });
+}
+
+test('T80f SmartReloop_SoloTextos_VueltaChica: con sólo textos cambiados vuelve el revisor de seguridad; con código, el set de siempre', () => {
+  const C = corridaRevisada('s-ft-80f', { extra: { 'src/m.js': B_TEXTO } });
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js', 'src/m.js']);
+  C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const v = C.vuelta(2);
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  assert.strictEqual(v.json.mode, 'small-round', salida(v.r));
+  assert.deepStrictEqual(v.json.rerun, ['tycon-plugin-security-basics']);
+  assert.ok(v.json.skipped.length > 0 && v.json.skipped.every((s) => /textos/.test(s.reason)), JSON.stringify(v.json.skipped));
+  C.editar('src/b.js', B_CODIGO);
+  const v2 = C.vuelta(2);
+  assert.strictEqual(v2.r.status, 0, salida(v2.r));
+  assert.notStrictEqual(v2.json.mode, 'small-round', salida(v2.r));
+});
+
+test('T80i SmartReloop_RevisorLanzadoAntesDelSello_NoAchica: si un revisor no leyó el sello, ni se cierra sola ni es chica', () => {
+  // el set se pidió otra vez a mitad de la vuelta: el sello trae un arreglo que los revisores lanzados antes no vieron
+  for (const [nombre, editar] of [['un texto', (C) => C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'))],
+    ['un comentario', (C) => C.editar('src/m.js', B_TEXTO.replace("'use strict';\n", "'use strict';\n// el motivo\n"))]]) {
+    const C = corridaRevisada(`s-ft-80i-${nombre.length}`, { extra: { 'src/m.js': B_TEXTO } });
+    conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js', 'src/m.js'], { antes: true });
+    editar(C);
+    const v = C.vuelta(2);
+    assert.strictEqual(v.r.status, 0, salida(v.r));
+    assert.notStrictEqual(v.json.mode, 'small-round', `${nombre}: ${salida(v.r)}`);
+    assert.ok(!v.json.no_code_delta, `${nombre}: la vuelta no se cierra sola`);
+    assert.ok(v.json.rerun.length > 1, `${nombre}: ${JSON.stringify(v.json.rerun)}`);
+  }
+});
+
+test('T80g Tope_VueltaChica_PasaSinFirma: pasado el tope, sólo textos se sirve sin firma y queda anotado; código pide la vuelta extra', () => {
+  const tope = { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' };
+  // el tope del repo se lee de lo commiteado
+  const commitearElTope = (X) => {
+    for (const a of [['add', '.tycon/advisors.yaml'], ['commit', '-qm', 'tope']]) {
+      const g = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-C', X.codigo.repo, ...a], { encoding: 'utf8' });
+      assert.strictEqual(g.status, 0, g.stderr);
+    }
+  };
+  const C = corridaRevisada('s-ft-80g', { extra: { 'src/m.js': B_TEXTO, ...tope } });
+  commitearElTope(C);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js', 'src/m.js']);
+  C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const v = C.vuelta(2);
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  assert.strictEqual(v.json.mode, 'small-round', salida(v.r));
+  assert.match(v.r.stderr, /pasa el tope de 1 como vuelta chica/);
+  assert.ok(gatesDe(C).some((g) => g.name === 'small-round' && g.status === 'ok'), 'la vuelta chica queda anotada');
+  const C2 = corridaRevisada('s-ft-80g2', { extra: tope });
+  commitearElTope(C2);
+  conFotoDeLaVuelta(C2, ['src/a.js', 'src/b.js']);
+  C2.editar('src/b.js', B_CODIGO);
+  const v2 = C2.vuelta(2);
+  assert.strictEqual(v2.r.status, 3, salida(v2.r));
+  assert.match(v2.r.stderr, /Llegaste al tope de 1/);
+  assert.ok(!gatesDe(C2).some((g) => g.name === 'small-round'), 'el código no pasa como vuelta chica');
+  // con un crítico de seguridad abierto, la vuelta chica tampoco pasa el tope: lo decide una persona
+  const C3 = corridaRevisada('s-ft-80g3', { extra: { 'src/m.js': B_TEXTO, ...tope } });
+  commitearElTope(C3);
+  conFotoDeLaVuelta(C3, ['src/a.js', 'src/b.js', 'src/m.js']);
+  const corridas = path.join(C3.codigo.repo, '.advisors', 'pipeline-runs');
+  const run = path.join(corridas, fs.readdirSync(corridas)[0]);
+  fs.writeFileSync(path.join(run, 'findings.json'), JSON.stringify([{ rule_id: 'SEC-C1', severity: 'CRITICAL', advisor: 'tycon-plugin-security-basics', file: 'src/m.js', disposition: 'open' }]));
+  C3.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const v3 = C3.vuelta(2);
+  assert.strictEqual(v3.r.status, 3, salida(v3.r));
+  assert.match(v3.r.stderr, /SEC-C1/);
+  assert.ok(!gatesDe(C3).some((g) => g.name === 'small-round'), 'con un crítico abierto no pasa como vuelta chica');
+});
+
+test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide la nota de repensar; con código, sí', () => {
+  const tercera = (C) => {
+    const abs = ['src/a.js', 'src/b.js', 'src/m.js'].map((r) => path.join(C.codigo.repo, r));
+    const foto = { ts: new Date(C.cierre - 500).toISOString(), filesSnapshot: abs };
+    C.escribir(() => ({ iterations: { 1: foto, 2: foto }, filesTouched: abs }));
+    lanzarRevisores(C, 2);
+  };
+  const C = corridaRevisada('s-ft-80h', { extra: { 'src/m.js': B_TEXTO } });
+  tercera(C);
+  C.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'));
+  const v = C.vuelta(3);
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  assert.strictEqual(v.json.mode, 'small-round', salida(v.r));
+  const C2 = corridaRevisada('s-ft-80h2', { extra: { 'src/m.js': B_TEXTO } });
+  tercera(C2);
+  C2.editar('src/b.js', B_CODIGO);
+  const v2 = C2.vuelta(3);
+  assert.strictEqual(v2.r.status, 3, salida(v2.r));
+  assert.match(salida(v2.r), /repens|nota/i);
+});
+
+test('T80e ReviewedTree_ComentarioCambiado_NoFrena_TextoSi: «Preparar el commit» perdona un comentario cambiado y frena un texto', () => {
+  const C = corridaRevisada('s-ft-80e');
+  C.editar('src/a.js', A_REVISADO.replace('la suma de los dos', 'la suma de a y b'), { evento: false });
+  const r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  const C2 = corridaRevisada('s-ft-80e2', { extra: { 'src/m.js': B_TEXTO } });
+  C2.editar('src/m.js', B_TEXTO.replace('sin permiso', 'no autorizado'), { evento: false });
+  const r2 = prepararCommit(C2);
+  assert.strictEqual(r2.status, 2, salida(r2));
+  assert.match(salida(r2), MISMATCH);
+  assert.match(salida(r2), /src\/m\.js/);
 });
 
 test('T7 ReviewedTree_CodigoCambiado_SigueFrenando @story-8.217 @ac-5 — una línea de código cambiada frena como hoy', () => {
@@ -1068,24 +1324,24 @@ test('T24 ReviewedTree_SelloSinCerrar_NoPerdonaComentarios @story-8.217 @ac-16 �
 test('T26 ReviewersRound_LectorFalla_PideVuelta @story-8.217 @ac-18 — si el lector lanza, el archivo cuenta y queda en hook-errors.log', () => {
   const C = corridaRevisada('s-ft-8217-t26');
   C.editar('src/a.js', A_MOVIDO);
-  const ruta = require.resolve(path.join(SCRIPTS, 'lib', 'comment-only.js'));
+  const ruta = require.resolve(path.join(SCRIPTS, 'lib', 'change-kind.js'));
   const original = require.cache[ruta];
   require(ruta);
   const guardado = require.cache[ruta].exports;
-  require.cache[ruta].exports = { ...guardado, soloSeMovieronComentarios: () => { throw new Error('lector roto de prueba'); } };
+  require.cache[ruta].exports = { ...guardado, queCambio: () => { throw new Error('lector roto de prueba'); } };
   try {
     const r = C.ronda();
     assert.ok(r && r.archivos.includes('src/a.js'), JSON.stringify(r));
   } finally { if (original) require.cache[ruta] = original; require.cache[ruta].exports = guardado; }
-  // la falla dentro de difiereSoloEnComentarios la absorbe: cuenta. Una que sale de frozen-tree.js queda en el registro
+  // la falla dentro de tipoContraElSello la absorbe: cuenta. Una que sale de frozen-tree.js queda en el registro
   const ft = path.join(SCRIPTS, 'lib', 'frozen-tree.js');
   const ftMod = require(ft);
-  const guardadoFt = ftMod.comentariosMovidosDesdeLaVuelta;
-  ftMod.comentariosMovidosDesdeLaVuelta = () => { throw new Error('frozen-tree roto de prueba'); };
+  const guardadoFt = ftMod.tiposDesdeLaVuelta;
+  ftMod.tiposDesdeLaVuelta = () => { throw new Error('frozen-tree roto de prueba'); };
   try {
     const r = C.ronda();
     assert.ok(r && r.archivos.includes('src/a.js'), JSON.stringify(r));
-  } finally { ftMod.comentariosMovidosDesdeLaVuelta = guardadoFt; }
+  } finally { ftMod.tiposDesdeLaVuelta = guardadoFt; }
   assert.match(fs.readFileSync(path.join(C.estado(), 'hook-errors.log'), 'utf8'), /frozen-tree roto de prueba/);
 });
 

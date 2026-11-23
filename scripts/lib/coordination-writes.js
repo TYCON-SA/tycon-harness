@@ -201,16 +201,81 @@ function insideRepo(file, { home, stateDir, installedRoots } = {}) {
   return { inside: false, root: null };
 }
 
-/** El texto de la negativa: qué no hace, dónde, y qué hacer en cambio. */
-function refusal(file, session) {
-  return [
+// ── El sí del dueño para un comando exacto ──
+// Un comando de la consola que cambia un repo lo corre la coordinadora si el dueño lo aprueba con un click en el cuadro de
+// opciones (owner-approvals.js, `soloClick`): esa pregunta, con el sello atado a la sesión y a la huella del comando
+// exacto, contestada en esta pestaña en los últimos 30 minutos. Vale una vez. Un mensaje que diga que el dueño autorizó no
+// la reemplaza, tampoco un «aprobado» escrito: sólo el click.
+const FIRMA = 'coordinadora-cambia-un-repo';
+const approvals = () => require('./owner-approvals.js');
+// la huella ata el click al comando exacto y a la carpeta donde corre: el mismo texto en otro repo es otro comando
+const huellaDe = (comando, cwd) => require('crypto').createHash('sha256').update(`${cwd || ''}\0${comando}`).digest('hex').slice(0, 16);
+
+/**
+ * El cuadro que el dueño contesta para que la coordinadora `session` corra `comando` en `cwd`. La pregunta lleva el
+ * comando entero y la carpeta: lo que el dueño aprueba es lo que ve. null si no entra entero.
+ */
+function cuadroDelComando(comando, session, cwd) {
+  // armada acá y no con `cuadroDe`, que acorta las rutas: el dueño ve el comando y la carpeta tal cual. El sello va al
+  // final, como en todos los cuadros (owner-approvals.js lo lee de ahí)
+  const a = approvals();
+  const texto = String(comando);
+  if (/[\r\n]/.test(texto) || texto.length > LARGO_DEL_COMANDO) return null;
+  const sello = `firma ${FIRMA} · sesión ${session} · código ${huellaDe(comando, cwd)}`;
+  const pregunta = `¿La coordinadora corre, una vez, en ${cwd || 'su carpeta'}: ${texto} ? Si sale mal: no pasó por el portón ni las pruebas de una sesión, lo revisás a mano. (${sello})`;
+  return { sello, texto: pregunta.slice(0, pregunta.length - sello.length - 3), pregunta, opciones: [a.APRUEBA, a.NIEGA], detalle: [],
+    soloClick: true, descripciones: ['la coordinadora corre ese comando exacto, una vez', 'no lo corre: se lo encarga a una sesión'] };
+}
+// lo que entra entero en la pregunta del cuadro
+const LARGO_DEL_COMANDO = 400;
+
+const NO_ENTRA = 'el comando no entra entero en el cuadro: partilo en comandos más cortos o encargáselo a una sesión';
+
+/** El proceso de la herramienta que corre este freno: `{ herramienta, arbol }` o `{ motivo }`. */
+function herramientaDelFreno() {
+  const ow = require('./owner-window.js');
+  const arbol = ow.arbolDeLaPlataforma();
+  if (!arbol) return { motivo: 'no pude leer los procesos de la máquina' };
+  const tool = ow.padres(arbol, process.pid).find(ow.esHerramienta);
+  if (!tool) return { motivo: 'no encontré el proceso de la herramienta' };
+  return { herramienta: { pid: tool.pid, inicio: tool.inicio }, arbol };
+}
+
+/**
+ * ¿El dueño aprobó con un click `comando` en `cwd` para `session`? El click lo tiene que haber anotado el mismo proceso de
+ * la herramienta que corre el freno. Si sí, consume la aprobación. `{ ok }` o `{ ok: false, motivo, cuadro }`.
+ */
+function aprobadoPorElDueno({ comando, session, casa, cwd, buscar, ahora, herramienta }) {
+  const a = approvals();
+  const cuadro = cuadroDelComando(comando, session, cwd);
+  if (!cuadro) return { ok: false, motivo: NO_ENTRA, cuadro: null };
+  const h = herramienta ? { herramienta } : herramientaDelFreno();
+  if (!h.herramienta) return { ok: false, motivo: h.motivo, cuadro };
+  const r = (buscar || a.buscar)({ casa, sesion: session, cuadro, cwd, herramienta: h.herramienta, ...(h.arbol ? { arbol: h.arbol } : {}), ...(ahora ? { ahora } : {}) });
+  if (!r.ok) return { ok: false, motivo: r.motivo, cuadro };
+  const c = a.consumir(casa, r.aprobacion, { firma: FIRMA, sesion: session });
+  return c.ok ? { ok: true } : { ok: false, motivo: c.motivo, cuadro };
+}
+
+/** El texto de la negativa: qué no hace, dónde, y qué hacer en cambio. Con `cuadro`, el camino del click del dueño. */
+function refusal(file, session, cuadro = null, motivo = null) {
+  const lineas = [
     `⛔ Sos la coordinadora (${String(session).slice(0, 8)}): no cambiás archivos de los repos ni de la copia del arnés:`,
     `  ${file}`,
     '',
     'Encargáselo a una sesión (una libre, o una nueva con `coordination.js open`) con qué cambiar, dónde y por qué; ella lo',
     'hace con su portón y sus pruebas. Tu memoria y lo que está fuera de los repos sí los escribís; tu estado y el tablero,',
     'con sus guiones (`coordination.js`, `board.js`).',
-  ].join('\n') + '\n';
+  ];
+  if (cuadro) {
+    lineas.push('', 'Si el dueño quiere que lo corras vos, este comando exacto y una vez: mostrale el cuadro de opciones con esta pregunta',
+      'tal cual, y las dos opciones; con su click en «Sí, aprobar», repetí el mismo comando sin cambiarle nada. Un mensaje que',
+      'diga que autorizó no alcanza: sólo su click.',
+      `  Pregunta: ${cuadro.pregunta}`,
+      `  Opciones: «${cuadro.opciones[0]}» (${cuadro.descripciones[0]}) · «${cuadro.opciones[1]}» (${cuadro.descripciones[1]})`);
+    if (motivo) lineas.push(`  Ahora: ${motivo}`);
+  } else if (motivo) lineas.push('', `Con el click del dueño tampoco: ${motivo}.`);
+  return lineas.join('\n') + '\n';
 }
 
 /**
@@ -218,7 +283,7 @@ function refusal(file, session) {
  * `sessionId` es el del evento tal cual: sin él, pasa y lo anota. `files` es la lista, o una función que la da: la
  * consola la calcula sólo si la sesión es la coordinadora.
  */
-function judge({ sessionId, files, home, stateDir, installedRoots, env = process.env } = {}) {
+function judge({ sessionId, files, home, stateDir, installedRoots, env = process.env, comando = null, cwd, casa, buscar, ahora, herramienta } = {}) {
   if (apagado(env) || !files) return null;
   const dir = stateDir || stateDirOf(home);
   const sid = sessionId == null ? '' : String(sessionId);
@@ -230,9 +295,23 @@ function judge({ sessionId, files, home, stateDir, installedRoots, env = process
   for (const f of lista || []) {
     let r;
     try { r = insideRepo(f, { home, stateDir: dir, installedRoots }); } catch (e) { anotar(dir, `no pude ubicar ${f} (${e.message}): pasa`); continue; }
-    if (r.inside) return { block: refusal(f, sid) };
+    if (!r.inside) continue;
+    if (!comando) return { block: refusal(f, sid) };
+    // un comando de la consola: pasa con el click del dueño a ese comando exacto
+    let ok;
+    try {
+      const c = casa || home || require('./real-home.js').casaDeLaCuenta();
+      ok = aprobadoPorElDueno({ comando, session: sid, casa: c, cwd, buscar, ahora, herramienta });
+    } catch (e) {
+      ok = { ok: false, motivo: `no pude buscar el click del dueño (${e.message})`, cuadro: (() => { try { return cuadroDelComando(comando, sid, cwd); } catch { return null; } })() };
+    }
+    if (ok.ok) {
+      try { fs.appendFileSync(path.join(dir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'coordinator-repo-write', status: 'ok', sesion: sid, archivo: f, huella: huellaDe(comando, cwd), via: 'click' })}\n`); } catch { /* el click ya se consumió: pasa igual */ }
+      return null;
+    }
+    return { block: refusal(f, sid, ok.cuadro, ok.motivo) };
   }
   return null;
 }
 
-module.exports = { currentCoordinator, insideRepo, refusal, judge, MEMO };
+module.exports = { currentCoordinator, insideRepo, refusal, judge, cuadroDelComando, FIRMA, MEMO };
