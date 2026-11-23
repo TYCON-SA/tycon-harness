@@ -156,7 +156,8 @@ test('T16 Freeze_AlteredCopy_Blocks @story-8.161 @ac-16 — la copia alterada no
 // ── La corrida de juguete: la historia en un repo, el código en otro, una HOME propia ──────────────────────────────
 const { spawnSync } = require('child_process');
 const RAIZ = path.join(SCRIPTS, '..', '..', '..');
-function corrida(sid, { masHistorias = {} } = {}) {
+// `antesDeArrancar(codigo)`: lo que el repo del código ya trae cuando arranca la corrida
+function corrida(sid, { masHistorias = {}, antesDeArrancar = null } = {}) {
   const base = tmp('ft-corrida-');
   const home = path.join(base, 'home');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
@@ -177,6 +178,7 @@ function corrida(sid, { masHistorias = {} } = {}) {
   const correr = (script, args) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env, input: '', cwd: codigo.repo });
   const estado = () => [path.join(home, '.tycon', 'state'), path.join(home, '.claude', '.tycon-pipeline')].find((d) => fs.existsSync(path.join(d, 'active')));
   const marcador = () => JSON.parse(fs.readFileSync(path.join(estado(), 'active', `${sid}.json`), 'utf8'));
+  if (antesDeArrancar) antesDeArrancar(codigo);
   const r = correr('pipeline.js', ['start', '--story', story, '--repo', codigo.repo, '--brief']);
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   const vuelta = (iter = 1) => {
@@ -1569,4 +1571,55 @@ test('Pase_HermanoConSubmodulo_FrenaSiCambiaAdentro — un archivo sin commitear
   // la prueba propia que el cierre declara adentro del submódulo no cuenta, como afuera; el código sí
   fs.writeFileSync(path.join(sib.repo, 'vend', 'tests', 's.test.js'), '// prueba de regresión del pase\n');
   assert.deepStrictEqual(cambio([path.join(sib.repo, 'vend', 'tests', 's.test.js')]), [{ repo: sib.repo, files: ['anidado/nuevo.js', 'vend/s.js'] }]);
+});
+
+test('PrepareCommit_SubmoduloDelPrincipal_FrenaSiCambiaAdentro — lo sin commitear dentro de un submódulo o de un repo anidado del repo de la corrida frena «Preparar» y nombra la carpeta; si no se puede mirar, también', () => {
+  // 🔴 rojo si: el sello anota sólo el commit de cada submódulo → editar sus archivos después de la vuelta no cambia el
+  // sello, y lo que se guarda pasa por revisado.
+  const sub = repoDeJuguete('Sub', { 's.js': 'module.exports = 1;\n' });
+  const C = corrida('s-ft-sub-principal', { antesDeArrancar: (codigo) => {
+    codigo.git('-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub.repo, 'vend');
+    codigo.git('commit', '-qm', 'con submódulo');
+    // un repo anidado sin registrar: el sello también lo anota sólo por su commit
+    const dir = path.join(codigo.repo, 'anidado');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, 'n.js'), 'module.exports = 1;\n');
+    for (const a of [['init', '-q', '-b', 'main'], ['config', 'user.email', 't@t'], ['config', 'user.name', 't'], ['add', '.'], ['commit', '-qm', 'anidado']]) {
+      execFileSync('git', ['-C', dir, ...a], { stdio: 'ignore' });
+    }
+  } });
+  const anidado = path.join(C.codigo.repo, 'anidado');
+  const v = C.vuelta();
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // editado sin commitear adentro del submódulo: frena con la carpeta adelante y dice cómo salir
+  fs.writeFileSync(path.join(C.codigo.repo, 'vend', 's.js'), 'module.exports = 2;\n');
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), MISMATCH);
+  assert.match(salida(r), /vend\/s\.js/);
+  assert.match(salida(r), /submódulo/);
+  assert.ok(gatesDe(C).some((g) => g.name === 'reviewed-tree-mismatch'));
+  // nuevo adentro del repo anidado: también
+  fs.writeFileSync(path.join(C.codigo.repo, 'vend', 's.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(anidado, 'nuevo.js'), 'module.exports = 3;\n');
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /anidado\/nuevo\.js/);
+  assert.doesNotMatch(salida(r), /vend\/s\.js/, 'lo que volvió a como estaba no cuenta');
+  fs.rmSync(path.join(anidado, 'nuevo.js'));
+  r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // uno cuyo estado no se puede leer no se da por igual: frena con su carpeta (el sello del repo no lee el índice de un
+  // repo anidado sin registrar; el de un submódulo registrado, sí, y sin él ya frenaba)
+  const indice = path.join(anidado, '.git', 'index');
+  fs.chmodSync(indice, 0o000);
+  try {
+    r = prepararCommit(C);
+  } finally {
+    fs.chmodSync(indice, 0o644);
+  }
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /no pude ver el estado del submódulo anidado/, salida(r));
 });
