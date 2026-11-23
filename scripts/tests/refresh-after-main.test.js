@@ -297,3 +297,52 @@ test('RefreshAfterMain_MainAvanzaDespues_MismoResultado (T40)', () => {
   assert.strictEqual(antes.clase, 'refresh-after-main');
   assert.deepStrictEqual(despues, antes);
 });
+
+/**
+ * Corre el clasificador con un `git` envoltorio delante en el PATH, que anota cada llamada. El módulo se carga de nuevo
+ * con ese PATH (toma el ambiente al cargarse) y después se deja como estaba.
+ */
+function contandoGit(fn) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'refresh-after-main-git-'));
+  LABS.push(dir);
+  const log = path.join(dir, 'llamadas.log');
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  fs.writeFileSync(path.join(dir, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const antes = process.env.PATH;
+  const ruta = require.resolve('../lib/refresh-after-main.js');
+  process.env.PATH = `${dir}${path.delimiter}${antes}`;
+  delete require.cache[ruta];
+  try {
+    const r = fn(require(ruta));
+    const llamadas = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
+    return { r, llamadas };
+  } finally {
+    process.env.PATH = antes;
+    delete require.cache[ruta];
+    require(ruta);
+  }
+}
+
+// 🔴 Falla con: con muchos archivos, commits y constancias anteriores, el clasificador lee cada archivo en cada commit una
+// vez por archivo y por constancia (cientos de llamadas a git) y el freno de firmas no termina de mirar en su tope.
+test('RefreshAfterMain_ConstanciaGrande_LeeCadaCommitUnaVez (fila 164)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'refresh-after-main-'));
+  LABS.push(dir);
+  const RUTAS = Array.from({ length: 15 }, (_, i) => `scripts/hooks/control-${i}.sh`);
+  git(dir, 'init', '-q', '-b', 'main');
+  for (const p of RUTAS) escribir(dir, p, texto({}));
+  commit(dir, 'base');
+  git(dir, 'checkout', '-q', '-b', 'pedido');
+  for (let i = 0; i < 20; i++) { escribir(dir, `notas/${i}.md`, `${i}\n`); commit(dir, `nota ${i}`); }
+  for (const p of RUTAS) escribir(dir, p, texto({ 1: 'linea 1 endurecida' }));
+  commit(dir, 'el cambio propio');
+  const entradas = RUTAS.map((p) => ({ path: p, blob: blob(dir, 'HEAD', p) }));
+  // tres constancias anteriores del dueño que firmaron otra versión: ninguna es la anterior de una refirma
+  const viejas = [2, 3, 4].map((n) => constancia(RUTAS.map((p) => ({ path: p, blob: crypto.createHash('sha1').update(`${n}${p}`).digest('hex') }))));
+  const { r, llamadas } = contandoGit((lib) => lib.classify({ root: dir, base: 'main', tip: 'HEAD', entries: entradas, approvals: viejas, baseHashes: new Set() }));
+  assert.strictEqual(r.clase, 'control-change');
+  assert.match(r.motivo, /ningún commit del pedido tiene scripts\/hooks\/control-0\.sh como lo firmó el dueño/);
+  const lecturas = llamadas.filter((l) => / ls-tree /.test(` ${l} `)).length;
+  // 21 commits del pedido más la punta: cada uno se lee una vez, con todas las rutas juntas
+  assert.ok(lecturas <= 25, `leyó el árbol ${lecturas} veces (una por commit alcanza)`);
+});
