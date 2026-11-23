@@ -54,6 +54,9 @@
 #   T57 BaseControls_JudgeFiles_SignOnEveryChange — el inventario real marca con «sign_on_change» lo que decide la
 #       revisión (el juez, el inventario, el clasificador de la refirma, las bibliotecas de la firma y su ventana en
 #       Windows), y un pedido que cambia el juez o la ventana sin poner a prueba lo que afloja es rojo sin la constancia
+#   T115 BaseControls_SignatureCatalogsAndUntestedProductionFiles_SignOnEveryChange — el inventario real marca con
+#       «sign_on_change» los catálogos de quién firma qué y lo que el freno de producción instala o en lo que confía sin
+#       un banco que lo pruebe; `pending` dice si la revisión va a exigir la constancia o sólo con la base en rojo
 #   T9 (8.152) BaseControls_BenchAgainstBase_IsARule — el inventario real tiene el guion del banco de la base como regla
 #       con «sign_on_change», y un pedido que lo cambia sin la constancia es rojo
 #   Las constancias del dueño (por nombre): borrar o reescribir una del ancestro es rojo y pide la firma, con ella pasa;
@@ -1664,6 +1667,37 @@ run "${R}" "${T}/c10.out"
 is "WorkflowsAndDeletions_OtherChecksUnchanged: rojo, como hoy" "1" "${RC}"
 has "WorkflowsAndDeletions_OtherChecksUnchanged: …el borrado de la regla" "${T}/c10.out" "el pedido borra scripts/ci/toy-names.json, que la base tiene"
 has "WorkflowsAndDeletions_OtherChecksUnchanged: …y la marca del workflow" "${T}/c10.out" "ya no trae la base (falta «run-base-controls»)"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T115 · los catálogos de quién firma qué, y lo que el freno de producción instala o en lo que confía sin un banco que
+#        lo pruebe, piden la constancia en cada cambio; y `pending` dice si la revisión la va a exigir
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 mutación: sin la marca, un pedido que saca una firma del catálogo (o cambia qué variable es una firma) entra sin
+# constancia si los controles de la base pasan; sin la línea de `pending`, su hash se lee como «hay que firmar» siempre
+CATALOGOS="scripts/lib/signatures.js scripts/lib/env-switches.json scripts/lib/env-switches.js scripts/lib/automatic-signing.js scripts/lib/owner-away.js skills/tycon-pipeline/scripts/lib/control-change-prints.js skills/tycon-pipeline/scripts/lib/runtime-waiver.js skills/tycon-pipeline/scripts/lib/home-command.js scripts/production/install-guard.sh scripts/production/update-guard.sh scripts/production/node-shim.sh scripts/production/managed-settings.tycon-production.json.template scripts/production/sudoers.tycon-guard.template scripts/production/load-key.command.template scripts/production/origin-moves.json scripts/production/node-official.json"
+for p in ${CATALOGOS}; do
+  MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${p}")"
+  is "T115 el inventario real marca ${p} con «sign_on_change»" "si" "${MARKED}"
+  [ -f "${ROOT}/${p}" ] && ok "T115 …y ${p} existe" || no "T115 ${p} no existe: la marca no protege nada"
+done
+IN_CONTENT="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(j.content.includes("scripts/lib/env-switches.json")?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
+is "T115 env-switches.json es regla, no contenido" "no" "${IN_CONTENT}"
+R="${T}/t115a"; t55_base "${R}" 1
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t115a.out" 2>&1
+has "T115 pending: con un archivo que firma siempre, dice que la revisión la va a exigir" "${T}/t115a.out" "la revisión va a exigir la constancia: cambia docs/modo.yaml, que firma siempre"
+R="${T}/t115b"; t55_base "${R}" 0
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t115b.out" 2>&1
+has "T115 pending: sin un archivo que firma siempre, dice cuándo la exige" "${T}/t115b.out" "la revisión exige la constancia sólo si los controles de la base dan rojo con el pedido"
+has "T115 …y que otro rojo también la frena" "${T}/t115b.out" "salvo otro rojo (el inventario, una delegación sin probar)"
+lacks "T115 …y no dice que la va a exigir" "${T}/t115b.out" "la revisión va a exigir la constancia"
+# con la constancia ya commiteada, pending dice que no hace falta firmar, sin la línea de la exigencia
+R="${T}/t115c"; t55_base "${R}" 1
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t115c-pending.out" 2>&1
+ENTRIES="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t115c-pending.out" | head -n 1)"
+mkdir -p "${R}/.tycon"; firma "${ENTRIES}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "constancia"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t115c.out" 2>&1
+has "T115 pending: con la constancia ya puesta, no hace falta firmar" "${T}/t115c.out" "no hace falta firmar"
+lacks "T115 …y no dice que la va a exigir" "${T}/t115c.out" "la revisión va a exigir la constancia"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
