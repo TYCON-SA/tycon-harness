@@ -6621,6 +6621,13 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     process.stderr.write(`ℹ️  La vuelta ${iter} pasa el tope de ${tope.value} como vuelta chica: desde la última vuelta sólo cambiaron textos, y la revisan ${require('./lib/review-change-policy.js').REVISORES_DE_LA_VUELTA_CHICA.join(', ')}, sin firma.\n`);
     return null;
   }
+  // al tope sin nada abierto no hay nada que decidir: no frena, no devuelve revisores y dice que siga. Sin poder leer los
+  // hallazgos no es «nada abierto»: eso frena como siempre
+  if (!paraOtra && !noMirado && h.existe && !ab.length) {
+    if (args.extraRound) return `🛑 La vuelta ${iter} no necesita la vuelta extra ni la firma: no quedó nada abierto. Pedí el set sin --extra-round.\n`;
+    anotar({ name: 'review-cap-shown', status: 'ok', tope: tope.value, abiertos: [] });
+    return { sinAbiertos: `ℹ️  Llegaste al tope de ${tope.value} vueltas de revisores (${de}) y no quedó nada abierto: no hace falta otra vuelta. Seguí con «Probar en vivo» y «Preparar el pull request».\n` };
+  }
   const avisos = [...tope.problems, ...pre.problems].map((p) => `   ⚠️  ${p}`);
   const tramite = vueltaExtraDeTramite();
   if (args.extraRound && args.delegated) {
@@ -6717,6 +6724,17 @@ function emptyWorkGate(args) {
   return `🛑 La carpeta de la story no tiene ningún cambio contra ${principal}: ni commits propios ni cambios sin commitear (${repo}).\n` +
     '   Los revisores leerían la rama principal y dirían «no está el código»: la vuelta se perdería.\n' +
     '   Causa típica: algo apartó los cambios mientras tanto (un `git stash` de fondo, un checkout). Recuperalos y volvé a pedir la vuelta.\n';
+}
+
+// Lo que devuelve el freno de abajo: el tope sin nada abierto (`{ sinAbiertos }`) no frena: sale 0, sin revisores, con
+// su aviso; un texto frena (sale 3).
+function salidaDelFreno(r) {
+  if (r && r.sinAbiertos) {
+    process.stderr.write(r.sinAbiertos);
+    process.stdout.write(`${JSON.stringify({ mode: 'cap-nothing-open', rerun: [], all: [], note: r.sinAbiertos.trim() }, null, 2)}\n`);
+    process.exit(0);
+  }
+  if (r) { process.stderr.write(r); process.exit(3); }
 }
 
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
@@ -7705,8 +7723,7 @@ function main() {
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
     const emptyWork = emptyWorkGate(args);
     if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
-    const rethinkBlock = rethinkGate(args);
-    if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
+    salidaDelFreno(rethinkGate(args));
     if (process.env[PRECHEQUEO] === '1') process.exit(0);
     const set = computeAdvisorSet(args);
     // Descuento automático de advisors cubiertos por mech-check (coherente
@@ -7849,8 +7866,7 @@ function main() {
     // el set se calcula antes del freno de vueltas: una vuelta chica (sólo textos) pasa el tope sin firma
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeSmartReloop(conModelos);
-    const rethinkBlock = rethinkGate(args, { vueltaChica: result.mode === 'small-round' });
-    if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
+    salidaDelFreno(rethinkGate(args, { vueltaChica: result.mode === 'small-round' }));
     // el chequeo antes de la ventana termina en la firma (owner-window.js): si llegó acá sin pasar por ella, no dice que sí
     if (process.env[PRECHEQUEO] === '1') process.exit(0);
     const avisosModelos = result._avisos || [];

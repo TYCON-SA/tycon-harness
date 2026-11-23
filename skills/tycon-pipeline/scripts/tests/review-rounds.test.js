@@ -223,6 +223,29 @@ test('Cap_Default_Three @story-7.37 @ac-3 @story-8.221 @ac-46', () => {
   assert.match(v.stderr, /tope de 3 vueltas/);
 });
 
+// 🔴 Falla con: al tope, con los hallazgos leídos y nada abierto, el aviso frenaba (sale 3) sin nada que decidir: 77 de
+// 177 avisos de la medición de la 8.325.
+test('Cap_NadaAbierto_NoFrena: al tope sin nada abierto, sale 0 sin set y dice que siga', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'fixed'), hallazgo('TEST-W2', 'WARNING', 'fixed')] });
+  const r = lab.reloop(3);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /no quedó nada abierto/i);
+  assert.match(r.stderr, /Probar en vivo/);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.rerun, [], 'no devuelve revisores');
+  assert.doesNotMatch(r.stderr, /🛑/);
+  const log = fs.readFileSync(path.join(lab.state, 'gates.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const aviso = log.filter((g) => g.name === 'review-cap-shown');
+  assert.equal(aviso.length, 1);
+  assert.equal(aviso[0].status, 'ok', 'se anota como ok, no como freno');
+  // sin poder leer los hallazgos no es «nada abierto»: sigue frenando
+  const sinArchivo = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
+  assert.equal(sinArchivo.reloop(3).status, 3);
+  // con algo abierto, como siempre
+  const conDeuda = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('TEST-W2', 'WARNING', 'open')] });
+  assert.equal(conDeuda.reloop(3).status, 3);
+});
+
 test('Cap_OrgAndRepo_RepoWins_BadValueSaid @story-7.37 @ac-4', () => {
   const rr = (lab) => JSON.parse(lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo, '--json']).stdout);
   const org = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: null });
