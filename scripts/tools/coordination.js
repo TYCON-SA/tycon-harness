@@ -689,6 +689,7 @@ function status(opts = {}) {
   const files = stateFiles(home, problems);
   const stalled = [];
   const asking = [];
+  const withPid = [];
   let runningHeavy = null;
   try { runningHeavy = require('./heavy-turn.js').runningSids({ state: stateDir(home), now, problems }); } catch (e) { problems.push(`quién corre una prueba pesada (${e.message})`); }
   for (const [sid, s] of sessions) {
@@ -696,6 +697,7 @@ function status(opts = {}) {
     aliveSids.add(String(sid));
     // Un agente interno de otra sesión (carpeta temporal, nombre armado) no es una sesión de trabajo, salvo con marcador.
     if (s.internal && !markers.has(sid)) continue;
+    if (Number.isFinite(Number(s.pid))) withPid.push({ sid: String(sid), pid: Number(s.pid), cwd: s.cwd });
     if (s.name) alive.add(s.name);
     const m = markers.get(sid);
     // la corrida que va por el doble de lo estimado lo dice en su renglón: la que cambia el rumbo es la coordinadora
@@ -773,6 +775,13 @@ function status(opts = {}) {
       }
     }
   }
+  // la que espera una tarea de fondo que hace rato no escribe ni hace nada: no espera al dueño ni está quieta
+  let backgroundStalled = [];
+  try {
+    backgroundStalled = require('./background-stall.js').stalled({ sessions: withPid, stateDir: stateDir(home), now,
+      ...(opts.tasksRoot !== undefined ? { tasksRoot: opts.tasksRoot } : {}), ...(opts.readProcesses ? { readProcesses: opts.readProcesses } : {}), problems })
+      .map((b) => ({ session: nameOf(b.sid), sid: b.sid, minutes: b.minutes, tasks: b.tasks }));
+  } catch (e) { problems.push(`las tareas de fondo (${e.message})`); }
   for (const c of codexThreads(opts.codexHome || path.join(home, '.codex'), problems)) {
     const session = c.name || c.id.slice(0, 8);
     const ago = c.last ? now - c.last : null;
@@ -814,7 +823,7 @@ function status(opts = {}) {
   if (vigente && vigente.error) problems.push(vigente.error);
   else if (vigente && vigente.pendiente) pendingDesignation = { sesion: vigente.pendiente.sesion, ts: vigente.pendiente.ts };
   return {
-    now, working, waiting, quiet, agentSilent, busySilent, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
+    now, working, waiting, quiet, agentSilent, busySilent, backgroundStalled, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
     // lo que espera revisión, de la foto del arranque: para mostrar, nunca para decidir
     review: RL.leerFoto(stateDir(home), now), reviewCap: r.max_awaiting_review,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why, idle, swap: swapOf(opts),
@@ -826,6 +835,8 @@ function status(opts = {}) {
 
 const ORIGIN = { perfil: 'del perfil del equipo', maquina: 'de esta máquina', env: 'de una variable', 'sin-valor': 'de fábrica' };
 const hhmm = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '?' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
+const backgroundStalledLine = (b) => `${b.session} espera una tarea de fondo sin actividad hace ${b.minutes} min`;
 
 function statusText(s) {
   const lines = [`Trabajando: ${s.working.length} de ${s.cap.value} (tope ${ORIGIN[s.cap.origin] || s.cap.origin})`];
@@ -861,6 +872,7 @@ function statusText(s) {
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   if (s.agentSilent && s.agentSilent.length) lines.push(`Esperan a un agente callado: ${s.agentSilent.map(agentSilentLine).join(' · ')}`);
   if (s.busySilent && s.busySilent.length) lines.push(`Trabajando sin novedades: ${s.busySilent.map(busySilentLine).join(' · ')}`);
+  for (const b of s.backgroundStalled || []) lines.push(backgroundStalledLine(b));
   const planes = s.plansWaiting || [];
   lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`,
     ...(planes.length ? [`${planes.length} ${planes.length === 1 ? 'plan esperando' : 'planes esperando'} su aprobación`] : [])].join(' · ')}`);
@@ -2069,6 +2081,7 @@ function capNotice(opts = {}) {
   for (const q of s.quiet.filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${q.session} está quieta hace ${q.minutes} min: cerrala o dale trabajo.`);
   for (const a of (s.agentSilent || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${agentSilentLine(a)}. Preguntale qué espera (SendMessage), o que detenga ese agente y lo relance.`);
   for (const b of (s.busySilent || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${busySilentLine(b)} Preguntale si sigue (SendMessage); si no contesta, avisale al dueño.`);
+  for (const b of (s.backgroundStalled || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${backgroundStalledLine(b)}: preguntale si la corta.`);
   // nada la despierta sola: quien tiene que avisarle cuando se libera el lugar es la coordinadora. Con el mismo criterio
   // que el portón: el pase de una sesión cerrada, o de más de una hora, no ocupa el lugar.
   for (const w of s.passWaiting.filter((x) => x.sid !== sid)) {
