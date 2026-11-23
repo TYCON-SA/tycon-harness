@@ -966,6 +966,8 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
   const entries = [];
   let mirror = '';
   try { mirror = fs.readFileSync(gatesLogPath, 'utf8'); } catch { /* sin gates.log → nada verifica */ }
+  // los renglones de humos del espejo, una vez: el espejo tiene decenas de miles de renglones y la historia, decenas de humos
+  const humosDelEspejo = mirror.split('\n').filter((l) => l.includes('"type":"smoke-run"'));
   for (const dir of evidenceDirs) {
     const f = path.join(dir, `${sid}-smoke-ledger.jsonl`);
     if (!isFile(f)) continue;
@@ -983,8 +985,7 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // acs»), y se filtra en vez de tomar la primera coincidencia, para tolerar dos corridas de la
       // misma story en el mismo segundo.
       const acsStr = `"acs":${JSON.stringify(e.acs)}`;
-      const confirmadas = mirror.split('\n').filter((l) =>
-        l.includes('"type":"smoke-run"') && l.includes(`"ts":"${e.ts}"`) &&
+      const confirmadas = humosDelEspejo.filter((l) => l.includes(`"ts":"${e.ts}"`) &&
         l.includes(`"story":"${e.story}"`) && l.includes(acsStr) && l.includes('"exit":0'));
       const mirrored = confirmadas.length > 0;
       // El ancla cuenta sólo si una línea confirmada del espejo trae la misma: el registro viaja con el código y se edita.
@@ -1410,6 +1411,9 @@ function compute(opts) {
   const { content, fm } = readStory(storyPath);
   const sid = storyIdFrom(fm, storyPath);
   const env = opts.env || process.env;
+  // `soloAcs`: la matriz de esos criterios y nada más (la ventana de una firma). Mide sólo los humos que los nombran: el
+  // veredicto de un criterio no depende de los humos de otro. El resultado dice `parcial` y no sirve de matriz entera.
+  const soloAcs = Array.isArray(opts.soloAcs) && opts.soloAcs.length ? new Set(opts.soloAcs.map(Number)) : null;
   const escotillas = escotillasVigentes(env, opts.today || new Date());
   const LEGACY_NO_MUTATION_CHECK = escotillas.vigentes.has('TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK');
   const LEGACY_SMOKE_KINDS = escotillas.vigentes.has('TYCON_RUNTIME_MATRIX_LEGACY');
@@ -1778,7 +1782,7 @@ function compute(opts) {
     numero: sid, clave: evKey, archivo: companionLib.real(opts.keyStoryPath || storyPath), catalogo: () => catalogoDeHistorias(repoRoot, companionLib.real),
     pedidos: () => { pedidosLeidos = pedidosLeidos || require('./lib/story-requests.js').leer({ dirs: evidenceDirs }); return pedidosLeidos; },
   };
-  const juez = evidenceVsCommit.crearJuez({ repoDelIndice: repoRoot, historia: repoRoot ? historiaPropia : null });
+  const juez = evidenceVsCommit.crearJuez({ repoDelIndice: repoRoot, historia: repoRoot ? historiaPropia : null, correrGit: opts.correrGit });
   const vigencias = new Map();
   const dejadasContar = new Set();
 
@@ -2114,7 +2118,8 @@ function compute(opts) {
   }
 
   // --- evidencia runtime 2: smoke ledger (frescura bloqueante por entry)
-  const ledger = readSmokeLedger(evidenceDirs, evKey, gatesLogPath);
+  const registro = readSmokeLedger(evidenceDirs, evKey, gatesLogPath);
+  const ledger = soloAcs ? registro.filter((e) => e.acs.some((n) => soloAcs.has(Number(n)))) : registro;
   // La evidencia VIEJA de un número repetido (`<id>-*`): no cuenta para ninguna story —pertenecer es
   // explícito y esos archivos no dicen a cuál— y no se toca. Se NOMBRA, con su ruta.
   const orphans = evidenceKeyLib.legacyFiles(evidenceDirs, keyInfo);
@@ -2655,8 +2660,10 @@ function compute(opts) {
     // los criterios que se comprueban en staging: sin correr todavía (no frenan) y, para done, sin su humo de staging
     enStaging, stagingFalta,
     exencionesC8: exenciones, sinImagen, avisos, simulados, aceptadoSinCobertura,
-    hash, warnings, green, evidenceDirs, wsRoot, waivedAcs: [...waived], chainOk: chain.ok, waiverDiscarded,
+    // una matriz parcial no es verde ni tiene huella: nada que pida la entera la puede tomar por ella
+    hash: soloAcs ? null : hash, warnings, green: soloAcs ? false : green, evidenceDirs, wsRoot, waivedAcs: [...waived], chainOk: chain.ok, waiverDiscarded,
     repoRoot,
+    ...(soloAcs ? { parcial: [...soloAcs].sort((a, b) => a - b) } : {}),
     // la tanda medida (la de la ejecución, o las que cierra el commit) y los criterios de las otras que quedaron afuera
     batch: midiendoTanda ? pedidas.join(', ') : null, outOfBatchAcs: [...outOfBatchAcs].sort((a, b) => a - b),
     blockedAcs: [...blockedAcs].sort((a, b) => a - b), fueraDeTanda,
