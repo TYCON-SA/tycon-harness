@@ -6582,9 +6582,7 @@ function paraOtraSesion(cmd, args, argv) {
 // (scripts/lib/automatic-signing.js): la da el arnés solo, sin ventana ni cuadro, y el cartel no puede decir que la
 // aprueba una persona. Sin poder leer el perfil, no lo es.
 function vueltaExtraDeTramite() {
-  try {
-    return !!require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'automatic-signing.js')).esDeTramite({ firma: 'extra-round' }).ok;
-  } catch (_) { return false; }
+  return require('./lib/review-rounds.js').vueltaExtraDeTramite();
 }
 
 // El tope de vueltas de revisores (lib/review-rounds.js): null si la vuelta `iter` puede servirse, o el mensaje llano de
@@ -6670,7 +6668,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     if (tramite) {
       renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round. Es una firma de trámite del perfil del equipo');
       renglones.push('       (approvals.delegated_signing): la da el arnés solo, sin ventana ni cuadro; no la firma una persona.');
-      renglones.push('       Para la vuelta, no hace falta el dueño: corré vos el mismo comando con --extra-round, desde esta sesión.');
+      renglones.push('       Para la vuelta no hace falta una persona: corré vos el mismo comando con --extra-round, desde esta sesión.');
     } else {
       renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y la persona lo aprueba en la ventana de permiso');
       renglones.push('       (o lo corre en su terminal con --terminal); si el perfil del equipo la delega, la sesión designada lo corre con');

@@ -842,11 +842,9 @@ function cmdCompleteStep(nRaw, flags) {
         appendLog('gates.log', { name: 'review-cap-blocking', status: 'blocked', story: marker.storyId, step: 8, abiertos: bloquean.map((a) => a.regla) });
         console.error(`marker.js complete-step ${n} BLOQUEADO — ${bloquean.length} crítico(s) de seguridad o de datos abierto(s) o diferido(s):`);
         for (const l of rr.resumen(bloquean)) console.error(`   · ${l}`);
-        // la vuelta extra puede ser de trámite (la da el arnés); sin poder leer el perfil, no lo es
-        let tramite = false;
-        try { tramite = !!require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'automatic-signing.js')).esDeTramite({ firma: 'extra-round' }).ok; } catch (_) { tramite = false; }
+        // la vuelta extra puede ser de trámite (la da el arnés)
         console.error('   Dos salidas:');
-        for (const l of rr.salidasDelCritico({ tramite })) console.error(`   · ${l}`);
+        for (const l of rr.salidasDelCritico({ tramite: rr.vueltaExtraDeTramite() })) console.error(`   · ${l}`);
         process.exit(1);
       }
     }

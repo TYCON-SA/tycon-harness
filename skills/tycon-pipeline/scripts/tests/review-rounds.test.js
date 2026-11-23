@@ -295,7 +295,7 @@ test('T80a Cap_VueltaExtraDeTramite_ElCartelLoDice: el cartel dice quién da la 
     assert.equal(b.status, 3, b.stderr);
     assert.match(b.stderr, /firma de trámite del perfil del equipo/);
     assert.match(b.stderr, /no la firma una persona/);
-    assert.match(b.stderr, /no hace falta el dueño: corré vos el mismo comando/);
+    assert.match(b.stderr, /no hace falta una persona: corré vos el mismo comando/);
     // eximir el crítico sigue siendo de una persona (critical-waiver nunca es trámite): lo que cambia es la vuelta extra
     assert.doesNotMatch(b.stderr, /--extra-round, y la persona lo aprueba/);
     assert.match(b.stderr, /waive-critical[^\n]*la persona lo aprueba/);
@@ -312,7 +312,7 @@ test('CierreConCritico_VueltaExtraDeTramite_LoDice: las salidas del cierre dicen
   const con = RR.salidasDelCritico({ tramite: true }).join('\n');
   assert.match(con, /--extra-round/);
   assert.match(con, /de trámite/);
-  assert.match(con, /no hace falta el dueño/);
+  assert.match(con, /no hace falta una persona/);
   assert.doesNotMatch(con, /--terminal|la persona aprueba/);
   assert.match(con, /waive-critical[^\n]*una persona/, 'eximir sigue siendo de una persona');
   const sin = RR.salidasDelCritico({ tramite: false }).join('\n');
