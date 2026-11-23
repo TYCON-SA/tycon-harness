@@ -1936,6 +1936,8 @@ function compute(opts) {
   const listaSim = (hs) => hs.slice(0, 3).map((h) => `${relSim(h.archivo)}:${h.linea} (${h.via})`).join(', ') + (hs.length > 3 ? ` y ${hs.length - 3} más` : '');
   for (const g of freshPassGates) {
     const hallazgos = [];
+    // lo que simuló cada spec del portón (con lo que importa): una fila se juzga por su spec, no por el portón entero
+    const porArchivo = new Map();
     // Sin filtro, el portón corrió todos los specs: se miran todos.
     for (const filtro of (g.specFilters.length ? g.specFilters : [''])) {
       const { archivos, motivo, problemas } = specsDelFiltro(g.frontendDir, filtro, [repoRoot, wsRoot]);
@@ -1950,6 +1952,7 @@ function compute(opts) {
         const d = simulatedServer.deArchivo(a);
         if (!d.leido) { warnings.push(`Gate E2E ${path.basename(g.path)}: no pude leer ${relSim(a)} (${d.motivo}): no sé si simuló el servidor.`); continue; }
         hallazgos.push(...d.hallazgos);
+        porArchivo.set(a, d.hallazgos);
         for (const o of d.omitidos) warnings.push(`Gate E2E ${path.basename(g.path)}: ${relSim(a)} importa ${o.de} y no pude leerlo (${o.motivo}): no sé si simuló el servidor.`);
       }
     }
@@ -1959,8 +1962,33 @@ function compute(opts) {
       continue;
     }
     g.simulado = hallazgos;
+    g.simuladoPorArchivo = porArchivo;
+    // Los títulos de lo que pasó no dicen de qué spec son. En un portón donde algún spec simula, un título acredita un
+    // criterio sólo si está escrito en un spec que no simula y en ninguno que simula; si no se puede saber, no acredita.
+    const textoDe = (a) => { try { return fs.readFileSync(a, 'utf8'); } catch (_) { return ''; } };
+    const limpios = [...porArchivo].filter(([, h]) => !h.length).map(([a]) => textoDe(a));
+    const sucios = [...porArchivo].filter(([, h]) => h.length).map(([a]) => textoDe(a));
+    // el título sin las marcas que el portón le suma al final (las de su describe), buscado como el comienzo de un texto
+    // entre comillas: una palabra suelta en un comentario no lo ata a un spec
+    const nucleo = (t) => String(t).replace(/(\s+@[\w.:-]+)+\s*$/, '').trim();
+    const escrito = (x, c) => ["'", '"', '`'].some((q) => x.includes(q + c));
+    g.titulosEnVivo = (g.titulos || []).filter((t) => {
+      const c = nucleo(t);
+      return c.length > 0 && limpios.some((x) => escrito(x, c)) && !sucios.some((x) => escrito(x, c));
+    });
   }
   const noSimulado = (g) => !(g.simulado && g.simulado.length);
+  // Lo que simuló el portón en lo que corrió una fila de la tabla. Si la fila nombra su spec y el portón lo corrió, cuenta
+  // sólo ese spec (con lo que importa): otro spec del mismo portón que fabrica una respuesta no le quita la evidencia a
+  // éste. Si la fila no nombra su spec, o el portón no lo corrió, cuenta el portón entero, como siempre. null = nada.
+  const simuladoParaLaFila = (g, specs) => {
+    if (noSimulado(g)) return null;
+    const propios = [...g.simuladoPorArchivo.keys()].filter((a) => specs.includes(path.basename(a)));
+    // por sus specs sólo si el portón los leyó a todos; uno que nombra y el portón no leyó la deja en el portón entero
+    if (!specs.length || specs.some((s) => !propios.some((a) => path.basename(a) === s))) return g.simulado;
+    const h = propios.flatMap((a) => g.simuladoPorArchivo.get(a));
+    return h.length ? h : null;
+  };
   for (const g of allGates.filter((x) => x.verdict === 'PASS' && !vigenciaGate(x).cuenta)) {
     const v = vigenciaGate(g);
     warnings.push(noLeido(v)
@@ -2126,14 +2154,17 @@ function compute(opts) {
       const specToken = (r.name.match(/([\w.-]+\.spec\.[tj]s)/) || [])[1] || null;
       const deLaFila = freshPassGates.filter((g) => g.specFilters.some((sf) =>
         r.name.includes(sf) || r.raw.includes(sf) || (specToken && sf.includes(specToken))));
-      const gate = deLaFila.find(noSimulado);
+      // todos los specs que nombra la fila (con su extensión entera): se juzga por ellos, no sólo por el primero
+      const specsDeLaFila = [...new Set([...r.name.matchAll(/([\w.-]+\.spec\.(?:[tj]sx?|mjs|cjs))(?![\w])/g)].map((m) => m[1]))];
+      const enVivo = deLaFila.filter((g) => !simuladoParaLaFila(g, specsDeLaFila));
+      const gate = enVivo[0];
       // Sólo portones que corrieron con el servidor simulado: la fila es evidencia de código, con lo que simuló.
-      const simulados = gate ? [] : deLaFila.filter((g) => !noSimulado(g));
+      const simulados = gate ? [] : deLaFila.filter((g) => simuladoParaLaFila(g, specsDeLaFila));
       if (simulados.length) {
-        return { row: r, tier: 'code', ref: `${path.basename(simulados[0].path)}, servidor simulado`, simulado: simulados.flatMap((g) => g.simulado) };
+        return { row: r, tier: 'code', ref: `${path.basename(simulados[0].path)}, servidor simulado`, simulado: simulados.flatMap((g) => simuladoParaLaFila(g, specsDeLaFila)) };
       }
       // `gates`: los que valen en vivo para la fila; cada criterio toma el primero que vale para él
-      return { row: r, tier: gate ? 'runtime' : 'none', ref: gate ? path.basename(gate.path) : null, gates: deLaFila.filter(noSimulado) };
+      return { row: r, tier: gate ? 'runtime' : 'none', ref: gate ? path.basename(gate.path) : null, gates: enVivo };
     }
     const kind = kindOf(r.name, fePaths);
     const tr = greenByKind[kind] || (kindsPresent.has(kind) ? null : soloTr);
@@ -2185,7 +2216,9 @@ function compute(opts) {
         const vigentes = re.gates.filter((g) => valePara(g, n));
         const conTitulos = (g) => Array.isArray(g.titulos) && g.titulos.length > 0;
         // sin títulos cuenta sólo si ningún portón vigente los anotó: uno viejo no le gana a uno que dice qué corrió
-        let gate = vigentes.find((g) => conTitulos(g) && g.titulos.some((t) => tituloNombraAc(t, n, sid)))
+        // en un portón donde algún spec simula, sólo cuentan los títulos de los specs que no simulan
+        const titulosQueCuentan = (g) => (g.titulosEnVivo || g.titulos);
+        let gate = vigentes.find((g) => conTitulos(g) && titulosQueCuentan(g).some((t) => tituloNombraAc(t, n, sid)))
           || (vigentes.some(conTitulos) ? undefined : vigentes.find((g) => !conTitulos(g)));
         if (!gate && vigentes.length && historiaVieja) {
           // la regla de antes, con el aviso de lo que le falta para la de ahora
