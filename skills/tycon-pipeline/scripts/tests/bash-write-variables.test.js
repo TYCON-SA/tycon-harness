@@ -120,8 +120,10 @@ test('T19 BashWrite_CasosDelPaseAdversarial_ResuelveComoElShellONoResuelve', () 
   const home = os.homedir();
   conEnv({ ...ENV, SP: '/tmp/out', REPO: undefined, TMPDIR: '/tmp/zz' }, () => {
     const uno = (cmd) => { const r = bash.destinosResueltos(cmd, '/repo'); assert.equal(r.length, 1, cmd); return r[0]; };
-    // sustitución de comando: no se sabe el valor → sin resolver, adentro del repo (lado seguro) y avisado
-    for (const cmd of ['SP=$(mktemp -d); echo hi > "$SP/x.cs"', 'SP=`mktemp -d`; echo hi > $SP/x.cs', 'SP="$(mktemp -d)"/sub; echo hi > $SP/x.cs']) {
+    // un `$(mktemp -d)` solo se sabe dónde queda (en $TMPDIR), aunque no su nombre: lib/command-vars.js `carpetaDeMktemp`
+    assert.deepEqual(uno('SP=$(mktemp -d); echo hi > "$SP/x.cs"'), { raw: '$SP/x.cs', abs: '/tmp/zz/tmp.XXXXXXXXXX/x.cs', sinResolver: [], temporal: true });
+    // otra sustitución de comando: no se sabe el valor → sin resolver, adentro del repo (lado seguro) y avisado
+    for (const cmd of ['SP=`mktemp -d`; echo hi > $SP/x.cs', 'SP="$(mktemp -d)"/sub; echo hi > $SP/x.cs']) {
       const d = uno(cmd);
       assert.deepEqual(d.sinResolver, ['SP'], `sin resolver en: ${cmd} → ${JSON.stringify(d)}`);
       assert.ok(d.abs.startsWith('/repo/'), `del lado seguro: ${d.abs}`);

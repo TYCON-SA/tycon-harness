@@ -234,6 +234,8 @@ test('T35 Carry_BranchWithoutRuns_ExitsZeroEmptyRecord @story-8.312 @ac-18', () 
   assert.strictEqual(r.code, 0, r.out);
   assert.deepStrictEqual(carried(d), { schema: 1, entries: {} });
   assert.deepStrictEqual(changed(d), [RT.CARRIED]);
+  // pero lo dice como advertencia del nocturno: una rama vaciada o reescrita a la fuerza no es lo mismo que «no hay rama»
+  assert.match(r.out, /##vso\[task\.logissue type=warning\][^\n]*sin runs\//, r.out);
 });
 
 test('T32 Carry_NoBranchExitsZero_UnreadableBranchFails @story-8.312 @ac-18', () => {
@@ -242,6 +244,7 @@ test('T32 Carry_NoBranchExitsZero_UnreadableBranchFails @story-8.312 @ac-18', ()
   const r = carry(d);
   assert.strictEqual(r.code, 0, r.out);
   assert.deepStrictEqual(carried(d), { schema: 1, entries: {} }, 'sin la rama deja carried.json vacío');
+  assert.doesNotMatch(r.out, /##vso\[task\.logissue/, 'sin la rama no hay advertencia');
   assert.deepStrictEqual(changed(d), [RT.CARRIED]);
   git(d, ['remote', 'set-url', 'origin', path.join(w.raiz, 'no-existe.git')]);
   const r2 = carry(d);

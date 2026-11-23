@@ -489,3 +489,32 @@ test('Codex_SegundaCorridaFalla_ElPrimerReporteQuedaYSeAnotaElMotivo @story-8.29
   assert.strictEqual(lineas[0].failed_advisor, SEC, JSON.stringify(lineas[0]));
   assert.strictEqual(lineas[0].exit, 1);
 });
+
+// ── Fila 55: el revisor que vuelve recibe su reporte de la vuelta anterior, para confirmar lo arreglado ────────────────
+test('Codex_VueltaAnteriorConCriticos_ElPedidoTraeSuReporte @story-8.296 — y sin críticos, no lo trae', () => {
+  // la vuelta 1 corre y deja su reporte; se le pone lo que habría reportado y se abre la vuelta 2
+  const vuelta2 = (e, reporte) => {
+    assert.strictEqual(runReviewers(e).status, 0);
+    fs.writeFileSync(path.join(reportsDir(e), `${SEC}.md`), reporte);
+    const primera = JSON.parse(fs.readFileSync(e.logPath, 'utf8').split('\n')[0]);
+    fs.appendFileSync(e.logPath, JSON.stringify({ ...primera, ts: new Date().toISOString(), iter: 2 }) + '\n');
+    assert.strictEqual(runReviewers(e).status, 0);
+    const c = corridasDe(e);
+    return c[c.length - 1].argv[c[c.length - 1].argv.length - 1];
+  };
+  const e = mkEnv({ advisors: [SEC] });
+  const prompt = vuelta2(e, '## antes\nVeredicto: hallazgos (SEC-C1) · bloquea: sí\n');
+  const previo = path.join(reportsDir(e), `${SEC}.vuelta-anterior.md`);
+  assert.ok(prompt.includes(previo) && /resueltos \(SEC-C1\)/.test(prompt), prompt);
+  assert.match(fs.readFileSync(previo, 'utf8'), /hallazgos \(SEC-C1\)/, 'la copia es el reporte anterior');
+  // el reporte válido fue el de la segunda corrida (el primero vino sin renglón): se toma ése
+  const conRetry = mkEnv({ advisors: [SEC] });
+  assert.strictEqual(runReviewers(conRetry).status, 0);
+  fs.writeFileSync(path.join(reportsDir(conRetry), `${SEC}.retry.md`), '## retry\nVeredicto: hallazgos (SEC-C4) · bloquea: sí\n');
+  const p3 = vuelta2(conRetry, '## antes\nSEC-C4: algo, sin renglón\n');
+  assert.ok(/vuelta anterior/.test(p3), p3);
+  assert.match(fs.readFileSync(path.join(reportsDir(conRetry), `${SEC}.vuelta-anterior.md`), 'utf8'), /hallazgos \(SEC-C4\)/);
+  const limpio = mkEnv({ advisors: [SEC] });
+  const p2 = vuelta2(limpio, '## antes\nVeredicto: limpio\n');
+  assert.ok(!p2.includes('vuelta anterior'), p2);
+});
