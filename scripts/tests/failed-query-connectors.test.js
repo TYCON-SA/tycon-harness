@@ -43,6 +43,15 @@ test('FailedQuery_ElAvisoDelProyectoYElRefrescoSiguenAndando: con la lista guard
   assert.match(r.stderr, /no existe en la organización/);
   assert.match(r.stderr, /Acme Logistica/);
   assert.strictEqual(correr('az repos pr list --project "Acme Logistica" --output table').status, 0);
+  // el refresco que lanza el instalador: `--refresh` lo corre el conector que sabe hacerlo, con el `az` que encuentra (acá
+  // uno de mentira), y la lista que queda es la que devolvió, no la guardada a mano
+  if (process.platform !== 'win32') {
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'fq-az-'));
+    fs.writeFileSync(path.join(bin, 'az'), '#!/bin/sh\ncase "$*" in *"project list"*) echo \'[{"name":"Recien Creado"}]\' ;; *) exit 1 ;; esac\n', { mode: 0o755 });
+    const ref = spawnSync(process.execPath, [HOOK, '--refresh', '--org', 'https://acme.invalid'], { encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+    assert.strictEqual(ref.status, 0, ref.stderr);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(estado, 'az-projects.json'), 'utf8')).proyectos, ['Recien Creado'], 'el refresco no dejó la lista del az');
+  }
   // sin conectores al lado (el gancho suelto), lo de la plataforma no se juzga y el resto sigue
   const suelto = fs.mkdtempSync(path.join(os.tmpdir(), 'fq-suelto-'));
   fs.mkdirSync(path.join(suelto, 'scripts', 'hooks'), { recursive: true });

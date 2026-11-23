@@ -797,12 +797,52 @@ function anotarPregunta({ estado, sesion, kind, huella, ahora = Date.now() }) {
   return { codigo: 0 };
 }
 
-/** Anota la respuesta: la elección (`review`, `skip`, `wait`) y quién contestó. */
-function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo = null, ahora = Date.now() }) {
+/**
+ * Anota la respuesta: la elección (`review`, `skip`, `wait`) y quién contestó. `via`: la vía de la firma del dueño que
+ * la dio (`skip` del código); `por: 'perfil'`: la contestó la coordinadora por la celda de «dueño ausente».
+ */
+function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo = null, via = null, por = null, ahora = Date.now() }) {
   if (!KINDS.includes(kind)) return no(`--kind es ${KINDS.join(' o ')}`);
   if (!CHOICES.includes(choice)) return no(`--choice es ${CHOICES.join(', ')}`);
-  anotarRenglon(estado, { name: 'review-answer', status: 'ok', sesion, kind, choice, quien, huella: huella || null, motivo }, ahora);
+  anotarRenglon(estado, { name: 'review-answer', status: 'ok', sesion, kind, choice, quien, huella: huella || null, motivo, ...(via ? { via } : {}), ...(por ? { por } : {}) }, ahora);
   return { codigo: 0 };
+}
+
+/**
+ * ¿La celda de «dueño ausente» contesta «skip» por el dueño a la pregunta del código de `sesion` sobre `huella`? El dueño
+ * tiene que contar como ausente (la marca, o la pregunta de ese diff con `plan_review.owner_away_minutes` minutos sin
+ * respuesta) y la matriz del portón del pase (pipeline.js), con el dueño ausente, tiene que decir `skip` para ese diff.
+ * `{ codigo: 0, motivo }` o `{ codigo: 2, motivo }`: lo que no se puede leer no contesta por el dueño.
+ */
+function skipPorElPerfil({ estado, sesion, huella, ahora = Date.now() }) {
+  let marker;
+  try { marker = marcadorDe(estado, sesion); } catch (e) { return no(e.message); }
+  if (!marker) return no(`la sesión ${sesion} no tiene una ejecución abierta`);
+  const cfg = configDeLaOrganizacion().values;
+  const g = require(path.join(RAIZ, 'scripts', 'lib', 'owner-away.js')).get({ estado, ahora });
+  if (g.problem) return no(`no pude leer la marca de ausente (${g.problem})`);
+  const problemas = [];
+  const pregunta = preguntasAbiertas({ estado, problemas }).find((p) => p.sesion === sesion && p.kind === 'code' && p.huella === huella);
+  if (problemas.length) return no(`no pude leer las preguntas de revisar (${problemas[0]})`);
+  const aus = require('./review-policy.js').ownerAway({ mark: g.mark, askedAt: pregunta ? Date.parse(pregunta.ts) : null, now: ahora, minutes: cfg.plan_review.owner_away_minutes });
+  if (!aus.away) return no(`la persona no cuenta como ausente (${aus.reason}): «skip» lo contesta ella, con su firma`);
+  // los archivos del cambio entero, como los ve el portón con --files: lo commiteado desde la base de la ejecución, lo
+  // que falta commitear y los archivos nuevos sin seguir. Uno que falta achicaría el diff y daría «chica» a una grande
+  const repo = marker.repoPath || process.cwd();
+  const env = require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
+  const git = (args) => require('child_process').spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', env });
+  const archivos = new Set();
+  for (const args of [['diff', '--name-only', marker.baseSha || 'HEAD'], ['ls-files', '--others', '--exclude-standard']]) {
+    const d = git(args);
+    if (d.status !== 0) return no(`no pude leer los archivos del cambio (${(d.stderr || '').trim().split('\n')[0] || d.status})`);
+    for (const f of d.stdout.split('\n')) if (f) archivos.add(f);
+  }
+  let r;
+  try {
+    r = pipeline().computeDeepReviewGate({ story: storyDe(marker), repo, files: [...archivos], reviewConfig: cfg, ownerAway: true, codeAnswer: null });
+  } catch (e) { return no(`no pude calcular la celda de ausencia (${(e && e.message) || e})`); }
+  if (!r || r.decision !== 'skip') return no(`la celda de ausencia para este diff dice ${(r && r.decision) || 'otra cosa'} (${(r && r.reason) || 'sin motivo'}): no contesta «skip»`);
+  return { codigo: 0, motivo: `${aus.reason}; ${r.reason}` };
 }
 
 /**
@@ -1255,7 +1295,7 @@ function guardarUso(estado, lanza, destino) {
 
 module.exports = {
   rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
-  ultimaDelDestino, antesDeAprobar, planParaDelegar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
+  ultimaDelDestino, antesDeAprobar, planParaDelegar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, skipPorElPerfil, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, sesionesDeLaCorrida, ultimaDeLaCorrida, mismaCorrida, corridaDe, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };
