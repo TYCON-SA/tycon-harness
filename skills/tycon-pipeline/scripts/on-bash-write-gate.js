@@ -1749,22 +1749,89 @@ function palabrasProfundas(cmd) {
 // `cd <carpeta> && ` al principio exacto del comando, con la carpeta escrita tal cual (sin comillas, sin opción y sin
 // nada que el shell expanda o que corte el comando), seguido de UN `sed` que nombra sus archivos: ni tubería,
 // ni `$(…)`, ni comillas invertidas, ni otro comando, ni redirección, ni salto de línea, ni llaves, `@` o `~` (nombres
-// que el shell expande, `{a,b}.md`, `~+/a.md`). Sólo `sed`: un `perl -e` es un programa entero, que puede armar y
-// escribir sus archivos desde adentro (`BEGIN{@ARGV=glob …}`). Cualquier otra forma no es ésta: un editor que toma sus
-// archivos de una tubería (`ls | xargs sed -i`) o de `$(ls)` escribe en la carpeta del `cd`, y esa carpeta es lo único
-// que la nombra.
+// que el shell expande, `{a,b}.md`, `~+/a.md`). Un `perl -e` es un programa entero, que puede armar y escribir sus
+// archivos desde adentro (`BEGIN{@ARGV=glob …}`): es esta forma sólo como `CD_PERL`. Cualquier otra forma no es ésta: un
+// editor que toma sus archivos de una tubería (`ls | xargs sed -i`) o de `$(ls)` escribe en la carpeta del `cd`, y esa
+// carpeta es lo único que la nombra.
 const CD_INICIAL = /^cd ([^\s'"`$*?[\]{}()<>;&|\\-][^\s'"`$*?[\]{}()<>;&|\\]*) && sed [^\n|;&<>`${}@~]*$/;
+
+// La misma forma con UN `perl` en el lugar: opciones escritas tal cual, un solo programa entre comillas simples sin `$`,
+// `@`, llaves ni comillas invertidas, y la carpeta y los archivos hechos sólo de letras, cifras y `_ . / + , -` (la
+// carpeta puede empezar con `~/`): nada que bash o zsh expandan (`~+`, `~usuario`, `^`, `#`, `=`). Nada antes del `cd` ni
+// después de los archivos: dentro del comando no hay dónde cambiar el ambiente de perl ni qué programa se llama así. Las
+// opciones y el programa los mira `cdInicial`.
+const CD_PERL = /^cd ((?:~\/)?[\w./+,][\w./+,-]*) && perl((?: -[A-Za-z0-9.]+)*) -([pl0-9]*)e '([^'\n$@{}`]*)'((?: [\w./+,][\w./+,-]*)+)$/;
+
+/**
+ * La forma de `CD_INICIAL` o de `CD_PERL`: `{ carpeta, archivos }`, con la carpeta del `cd` y, en la de perl, los archivos
+ * que escribe (en la de sed, null: los dice `sedsLiterales`); o null si el comando no tiene ninguna de las dos. En la de
+ * perl, las opciones tienen que editar en el lugar e imprimir (`-i`, sin sufijo o con uno que empieza con punto y no
+ * termina en `md`; `-p`; `-0` y `-l` también; nada más: ni `-n`, `-M`, `-I`, `-x`, `-d`), y el programa tiene que ser sólo
+ * sustituciones (`programaDePerlSoloSustituye`). Con `CDPATH` puesto, un `cd` relativo puede ir a otra carpeta: no es la
+ * forma de perl.
+ */
+function cdInicial(cmd) {
+  const s = String(cmd || '');
+  const sed = CD_INICIAL.exec(s);
+  if (sed) return { carpeta: sed[1], archivos: null };
+  const p = CD_PERL.exec(s);
+  if (!p || (process.env.CDPATH && !/^(?:\/|~\/)/.test(p[1]))) return null;
+  const opciones = [...p[2].split(' ').filter(Boolean), ...(p[3] ? [`-${p[3]}`] : [])];
+  let enLugar = false;
+  let imprime = false;
+  for (const w of opciones) {
+    const m = /^-([pl0-9]*)(?:(i)(\.[\w.-]*)?)?$/.exec(w);
+    if (!m || w === '-' || (m[3] && /md$/i.test(m[3]))) return null;
+    if (/[0-9]/.test(m[1]) && !/^[pl]*0[0-7]*[pl]*$/.test(m[1])) return null;
+    if (m[1].includes('p')) imprime = true;
+    if (m[2]) enLugar = true;
+  }
+  if (!enLugar || !imprime || !programaDePerlSoloSustituye(p[4])) return null;
+  return { carpeta: p[1], archivos: p[5].split(' ').filter(Boolean) };
+}
+
+/**
+ * ¿El programa de un `perl -pi -e` es sólo sustituciones? Uno o más `s<d>…<d>…<d><indicadores>` separados por `;`, con
+ * un delimitador que no abre ni cierra (`/ # | ! , : ~`) y los indicadores `g i m s x`, sin `$`, `@`, llaves, comillas
+ * invertidas ni salto de renglón, y sin una barra seguida de una cifra en el reemplazo (perl lee `\1` como `$1`, y
+ * `\1[…]` calcula su índice): perl no tiene ahí nada que leer como una variable ni que correr como código. Lo que no se
+ * sabe leer cuenta como que no.
+ */
+function programaDePerlSoloSustituye(programa) {
+  const s = String(programa);
+  if (/[$@{}`\n\r]/.test(s)) return false;
+  // hasta el delimitador sin escapar; -1 si no cierra
+  const hasta = (d, j) => { for (; j < s.length; j++) { if (s[j] === '\\') { j++; continue; } if (s[j] === d) return j; } return -1; };
+  let i = 0;
+  let sustituciones = 0;
+  while (i < s.length) {
+    while (/[\s;]/.test(s[i] || '')) i++;
+    if (i >= s.length) break;
+    if (s[i] !== 's' || !/[/#|!,:~]/.test(s[i + 1] || '')) return false;
+    const d = s[i + 1];
+    const medio = hasta(d, i + 2);
+    if (medio < 0) return false;
+    const fin = hasta(d, medio + 1);
+    if (fin < 0 || /\\\d/.test(s.slice(medio + 1, fin))) return false;
+    i = fin + 1;
+    while (/[gimsx]/.test(s[i] || '')) i++;
+    if (i < s.length && !/[\s;]/.test(s[i])) return false;
+    sustituciones++;
+  }
+  return sustituciones > 0;
+}
 
 /**
  * Las palabras que un editor en el lugar puede escribir: las de `palabrasProfundas`, sin las que tienen espacios. Con
  * la forma de `CD_INICIAL`, la carpeta del `cd` sale de la lista por su posición —la segunda palabra, después de `cd`—:
  * es la base desde la que se resuelven las demás, no algo que el editor escribe. La misma carpeta nombrada otra vez más
- * adelante sigue en la lista.
+ * adelante sigue en la lista. Con la de `CD_PERL`, son sólo sus archivos: las palabras del programa no son destinos.
  */
 function palabrasDelEditor(cmd) {
+  const cd = cdInicial(cmd);
+  if (cd && cd.archivos) return cd.archivos;
   const ws = palabrasProfundas(cmd).filter((w) => !/\s/.test(w));
-  const m = CD_INICIAL.exec(String(cmd || ''));
-  if (m && ws[0] === 'cd' && ws[1] === m[1]) ws.splice(1, 1);
+  if (cd && ws[0] === 'cd' && ws[1] === cd.carpeta) ws.splice(1, 1);
   return ws;
 }
 
@@ -4470,11 +4537,11 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   }
   for (const t of tramos(String(cmd))) for (const d of pelarEnv(t).carpetas) bases.push(resolver(d, cwd));
   // con un editor en el lugar, la carpeta de cada `cd` cuenta por las historias que tiene, salvo en la forma exacta de
-  // un solo `sed` que nombra sus archivos: desde la sesión y desde el `cd` anterior, con su comodín expandido; la que no
-  // se sabe resolver frena
+  // un solo `sed` (o un solo `perl` que sólo sustituye) que nombra sus archivos: desde la sesión y desde el `cd` anterior,
+  // con su comodín expandido; la que no se sabe resolver frena
   const carpetasDeCd = [];
   const cdSinResolver = [];
-  if (enSitio && !CD_INICIAL.test(String(cmd))) {
+  if (enSitio && cdInicial(cmd) == null) {
     // un comodín puede dejar varias carpetas: el `cd` que sigue se resuelve desde todas
     let previas = [sesion];
     const absoluta = (v, b) => resolveTarget(v, b, process.platform, { homeVariable: true });
