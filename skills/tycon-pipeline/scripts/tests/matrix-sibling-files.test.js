@@ -342,11 +342,15 @@ test('T14 TandaQueDejaDeEstarBloqueada_SuArchivoVuelveAContar', () => {
 
 // ---------------------------------------------------------------- la copia de la historia y el clon compartido
 
-/** El laboratorio con el hermano y su copia en la rama de la historia; el repo de historias, en esa rama o suelto. */
-function labConCopia({ declarados = ['src/Feature.cs'], suelto = false, copia = true, historia } = {}) {
+/**
+ * El laboratorio con el hermano y su copia en la rama de la historia; el repo de historias, en esa rama o suelto.
+ * `anotada`: el repo suelto lleva la rama de la corrida (`tycon.runBranch`), como el clon del árbol armado.
+ */
+function labConCopia({ declarados = ['src/Feature.cs'], suelto = false, anotada = false, copia = true, historia } = {}) {
   const f = lab({ declarados, ...(historia ? { historia } : {}) });
   git(f.esp, ['checkout', '-q', '-b', RAMA]);
   if (suelto) git(f.esp, ['checkout', '-q', '--detach']);
+  if (anotada) git(f.esp, ['config', '--local', 'tycon.runBranch', RAMA]);
   const wt = path.join(f.ws, 'Back-wt');
   if (copia) git(f.back, ['worktree', 'add', '-q', '-b', RAMA, wt]);
   f.humo();
@@ -359,14 +363,19 @@ function avanzaElClon(f) {
 }
 
 test('T15 CopiaDeLaHistoria_ClonCompartidoAvanza_NoVence @story-8.235 @ac-15', () => {
-  // por la ruta del hermano, desde la carpeta de arriba y con el repo de historias sin rama (la copia se busca por número)
-  for (const caso of [{}, { declarados: ['Back/src/Feature.cs'] }, { suelto: true }]) {
+  // por la ruta del hermano, desde la carpeta de arriba y con el repo de historias suelto pero con la rama de la corrida
+  // anotada (el clon del árbol armado)
+  for (const caso of [{}, { declarados: ['Back/src/Feature.cs'] }, { suelto: true, anotada: true }]) {
     const f = labConCopia(caso);
     avanzaElClon(f);
     const r = f.calcular();
     assert.equal(r.perAc[1].verdict, 'RUNTIME', `${JSON.stringify(caso)}: ${avisos(r)}`);
     assert.equal(r.green, true, avisos(r));
   }
+  // suelto y sin la rama de la corrida no se adivina por el número (fila 123): se compara contra el declarado, y vence
+  const s = labConCopia({ suelto: true });
+  avanzaElClon(s);
+  assert.equal(s.calcular().perAc[1].verdict, 'NOT-RUN');
 });
 
 test('T16 CopiaDeLaHistoria_CambiaDespues_Vence @story-8.235 @ac-16', () => {

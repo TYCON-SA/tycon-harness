@@ -288,6 +288,10 @@ The same notice carries two more things:
 - **Background sessions sitting idle.** A background session that has gone more than 15 minutes without working shows up
   as "X has been idle for N min: close it or give it work". Not one waiting for its adversarial pass, one that recently
   noted what it is doing (`marker.js doing`), or the one holding the machine's full suite.
+- **The session that says it is working and does not write.** A "working" session that has not taken a step of its own in an
+  hour (a message reaching it does not count), has no background command running and runs no agent (none wrote in 20 minutes) shows up as "X dice que trabaja, pero no escribe hace N min y no
+  corre nada (su último paso: …): ¿trabada?". `owner-wait` says it once per session. Why: a command does not go past 10
+  minutes, so an hour of silence with no agents is a stuck session, and in the office it looked the same as one at work.
 - **Ready requests nobody queued, on GitHub.** An open, clean request (no conflict and no required checks pending) with no
   auto-merge and outside the queue, unchanged for more than 10 minutes, shows up with the command to queue it. Why: nobody is
   going to merge it, and everyone thinks it already went in. It comes from the last saved reading, less than an hour old: the
@@ -368,7 +372,18 @@ The harness controls this, not anyone's memory:
   process that takes the turn. Before launching them, `heavy-turn.js reserve --for "<what>"` takes the turn in that
   name: a gate that asks for it gets the «wait» with the reservation's name. With a large run going it does not reserve
   (it exits 77 and says who holds it). `heavy-turn.js release --reserve` frees it; it expires after 90 minutes (a round of
-  reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10.
+  reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10. With
+  `--to <session>`, the reservation says which session launches what was reserved (its pass without the pipeline, the
+  next point). It is for the pass, not for its suites: that session's gate waits like anyone's until it is released.
+- **The pass without the pipeline also asks for the turn.** A session without a pipeline run (one the coordinator
+  opened for a fix, or a loose one) launches its pass with the Agent or Workflow tool, with no marker to count it. On
+  23/11 at 05:45, with several of those at once, the machine ran out of processes. The `agile-pass-turn.js` hook looks
+  at each launch: every Workflow (the fan-out of agents that fills the machine) and an Agent whose description or type
+  says adversarial (small reviewers and searches do not count; the request text is not read). If the session has neither the «go» (`grant --to`) nor a
+  reservation for it (`reserve --for "<what>" --to <session>`), it warns the session and the person who holds the turn,
+  and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
+  measurement (`MODO` in the hook). It does not look without a coordinator, at the coordinator itself, or at a pipeline
+  session. `TYCON_AGILE_PASS_TURN=0` turns it off.
 
 `coordination.js status` shows a single line, «Turno de tarea pesada», with who holds it and what it is; with one large
 run, whether the second turn is free or closed, with the memory and the floor; with two, both. `heavy-turn.js holders`

@@ -26,7 +26,13 @@ Dos causas, y las dos se arreglan con lo mismo:
 - **Un freno** prohíbe todo otro camino a esa base: `sqlcmd` directo, `az sql`, una cadena de
   conexión, leer la clave del Llavero, escribir el catálogo, o invocar la puerta de cualquier forma
   que no sea la canónica. También mira adentro de los guiones que el comando corre, aunque ya
-  estuvieran en el disco, y de lo que corren `npm run` y `make`.
+  estuvieran en el disco, y de lo que corren `npm run` y `make`. Nombrar la puerta para leerla o buscarla
+  (`cat`, `grep`, `less`, `git log`) no es invocarla; con un programa que puede correrla sí lo es: `find -exec`,
+  `rg --pre`, `sort --compress-program`, `git -c core.pager=…` o un subcomando de git que corre algo (`difftool`,
+  `rebase --exec`, `grep -O`), `less +!…`, `awk`, `sed`, `open`, una variable delante del programa que no sea de
+  idioma, zona o colores (`GIT_PAGER=<programa>`), `env -S` o `time -p` con la puerta, un `$( … )` que la corre
+  (`echo "$(<puerta> …)"`), un `<( … )` o `>( … )`, o un tubo a algo que no es un lector (`| sh`, `| xargs`,
+  `| python3`, `| awk`). Para leerla, `cat`, `head`, `grep` o `git show`; `sed` y `awk` no.
 - **Un catálogo por proyecto** (`<repo>/.tycon/production.json`) dice qué servidores son de
   producción. **Lo que nadie declaró se trata como producción**, así que un servidor nuevo se frena
   hasta que alguien lo declare.
@@ -682,7 +688,10 @@ frene. Por eso el freno arma cada nombre como lo va a armar el shell, y juzga el
   en la carpeta de la sesión; `git -C` y `make -C` la fijan para su comando. Con `cd -` o un destino
   que no se puede leer queda desconocida, y entonces el nombre pelado del catálogo cuenta como protegido.
 - **`xargs`**: si un comando anterior de la misma tubería nombra un archivo protegido o la carpeta
-  protegida, el programa que corre `xargs` cuenta como escritura sobre eso.
+  protegida, el programa que corre `xargs` cuenta como escritura sobre eso. Un lector (`cat`, `jq`) pasa. Un
+  intérprete (`python3`, `node`…) frena aunque su programa sólo lea, porque corre código que el freno no ve
+  (`python3 -c` carga un `json.py` de la carpeta antes que el de verdad); el motivo no dice que escribe: dice
+  que no puede asegurar que sólo lea, y sugiere `jq` o la herramienta de lectura.
 - **`find`** que borra (`-delete`) o corre un programa que escribe: como baja a las subcarpetas, se juzga
   cuando arranca en la carpeta protegida, en una que la contiene (`~`, `~/.claude`, un repo) o en una
   desconocida. Para saber si una carpeta contiene repos con catálogo mira hasta 5.000 subcarpetas; con más, o
