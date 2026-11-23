@@ -466,6 +466,46 @@ test('T10b DependencyAudit_PasoParidad_Corre @story-2.25 @ac-7: clona lo que fal
   assert.match(r.out, /##vso\[task\.logissue type=warning\][^\n]*la paridad no dejó su resultado/);
 });
 
+// 🔴 Falla con: un repo de GitHub (el arnés, con su librería copiada) que el pipeline de Azure intenta clonar de Azure y
+// queda NO MEDIDO, o el token de Azure de la corrida viajando a GitHub.
+test('T10c DependencyAudit_ClonaDeGithubSinCredencial: lo de GitHub se clona de GitHub, sin el token de Azure', () => {
+  const pasoTexto = steps(read('dependency-audit.yml'))[named(read('dependency-audit.yml'), 'Clonar los repos declarados')];
+  const deGithub = pasoTexto.slice(pasoTexto.indexOf('if [ "$PLATAFORMA" = "github" ]'), pasoTexto.indexOf('PROJ="${ADO%%/*}"'));
+  assert.match(deGithub, /https:\/\/github\.com\/\$\{ADO\}\.git/, 'clona de GitHub');
+  assert.doesNotMatch(deGithub, /extraheader|SYSTEM_ACCESSTOKEN|AUTHORIZATION/, 'sin el token de Azure');
+  assert.match(pasoTexto, /clone-list --with-platform\)/, 'pide la lista con la plataforma');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-clones-'));
+  dirs.push(base);
+  const s = path.join(base, 's');
+  const temp = path.join(base, 't');
+  // la lista de clones, como la da nightly-dependencies.js con --with-platform
+  write(s, { 'scripts/nightly/dependencies/nightly-dependencies.js': "if (!process.argv.includes('--with-platform')) process.exit(3);\n"
+    + "console.log('Acme/Dos\\tAcme/Dos\\tado\\narnes\\tduenio/arnes\\tgithub\\notro\\tduenio/otro\\tgithub');\n" });
+  const publicar = (dir) => {
+    const obra = `${dir}-obra`;
+    fs.mkdirSync(obra, { recursive: true });
+    git(obra, ['init', '--quiet', '-b', 'main']);
+    write(obra, { 'LEEME.md': 'x\n' });
+    git(obra, ['add', '-A']); git(obra, ['commit', '--quiet', '-m', 'p']);
+    git(path.dirname(dir), ['clone', '--quiet', '--bare', obra, dir]);
+  };
+  fs.mkdirSync(path.join(base, 'org', 'Acme', '_git'), { recursive: true });
+  publicar(path.join(base, 'org', 'Acme', '_git', 'Dos'));
+  fs.mkdirSync(path.join(base, 'gh', 'duenio'), { recursive: true });
+  publicar(path.join(base, 'gh', 'duenio', 'arnes.git'));
+  const body = stepScript('dependency-audit.yml', 'Clonar los repos declarados', { 'Build.SourcesDirectory': s, 'Agent.TempDirectory': temp, 'System.CollectionUri': `file://${base}/org/`, RAMA_ANALIZADA: 'main' });
+  // GitHub, desde una carpeta local: git cambia la dirección https://github.com/ por la de la prueba
+  const r = spawnSync('bash', ['-c', body], { env: cleanEnv({ SYSTEM_ACCESSTOKEN: 'token-de-prueba', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: `url.file://${base}/gh/.insteadOf`, GIT_CONFIG_VALUE_0: 'https://github.com/' }), encoding: 'utf8' });
+  const out = `${r.stdout}${r.stderr}`;
+  assert.strictEqual(r.status, 0, out);
+  assert.ok(fs.existsSync(path.join(temp, 'repos', 'Acme', 'Dos', 'LEEME.md')), `el de Azure se clonó: ${out}`);
+  assert.ok(fs.existsSync(path.join(temp, 'repos', 'arnes', 'LEEME.md')), `el de GitHub se clonó: ${out}`);
+  assert.doesNotMatch(fs.readFileSync(path.join(temp, 'repos', 'arnes', '.git', 'config'), 'utf8'), /extraheader|token-de-prueba/, 'el clon de GitHub no lleva la credencial');
+  // el que no existe en GitHub: el aviso lo nombra y queda entre los no clonados
+  assert.match(out, /##vso\[task\.logissue type=warning\]No se pudo clonar duenio\/otro de GitHub/);
+  assert.match(out, /Repos NO clonados: duenio\/otro/);
+});
+
 test('T11 DependencyAudit_GuardaLaParidad @story-2.25 @ac-7: guardar lleva .dashboard/paridad', () => {
   const s = steps(read('dependency-audit.yml')).find((x) => /push-nightly-data\.js save/.test(x));
   // detrás, lo que escribe la propuesta del modelo (Casos: scripts/tests/findings-propose.test.js): las fichas de las

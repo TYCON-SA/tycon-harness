@@ -360,6 +360,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 - **Cierres que dejaron prueba de que la cosa anda corriendo** (`dod`). De las stories cerradas, cuántas dejaron evidencia de que se probó en vivo.
 - **Lo que vuelve: stories con un seguimiento posterior** (`rework`). Qué parte de lo entregado hubo que volver a tocar.
 - **Por qué volvió: defecto nuestro contra cambio de requisito** (`rework_por_causa`). Separa lo que volvió por un error nuestro de lo que volvió porque cambió lo que se pedía.
+- **Lo rehecho al lado de lo entregado, mes por mes** (`rework_por_mes`). Muestra, para cada uno de los últimos meses, cuántas historias se entregaron y cuántas se rehicieron por cada causa, para ver si lo rehecho crece o baja.
 - **¿Vuelve menos lo que pasó por el pipeline?** (`rework_por_carril`). Compara, por repo, lo que volvió con constancia del pipeline contra lo que no la tiene.
 - **Puntaje de mutación: proporción de mutantes que las pruebas matan** (`mutacion`). Si las pruebas se rompen cuando se rompe el código a propósito.
 - **Ejecuciones de pruebas que evaluaron el umbral del 75 % sobre las líneas tocadas** (`cobertura_tocada_evaluo`). Cuántas veces la cobertura de lo que se tocó se midió de verdad.
@@ -512,7 +513,8 @@ conexión.
 encargo, lo que está haciendo y su última acción; el tablero, las tablas, los tokens, los mensajes entre sesiones (los
 avioncitos), la conversación de cada sesión, que se abre con «Ver conversación», como en la máquina, y los dos números
 de los racks: el porcentaje de memoria y el de procesador en uso, enteros de 0 a 100 (ni el nombre de la máquina, ni sus
-procesos, ni totales en bytes). Cada texto sale sin
+procesos, ni totales en bytes), y, si corre una ejecución grande de pruebas, el nombre de la sesión que tiene el turno de
+tarea pesada y cuántas suites corre (sin su proceso ni su carpeta). Cada texto sale sin
 la carpeta personal ni las claves que se reconocen. La conversación viaja aparte de la foto, sólo a un sitio que la
 entiende, y el sitio la guarda sólo en memoria: nada de la oficina queda en su disco. Así, quien mantiene ve en vivo qué
 hace cada dev; cada dev lo sabe por la línea de la huella.

@@ -1257,7 +1257,7 @@ test('T27 Mensaje_NoEscribeEnAprobaciones @story-8.183 @ac-14 @ac-15: «aprobado
     const anyway = await r.send({ s: 'Alfa', texto: 'aprobado', igual: true });
     assert.strictEqual(anyway.status, 200);
     const got = om.take(m.sdir, 's1');
-    assert.match(got.envelope, /Parece una aprobación y no lo es\. Dice: aprobado$/);
+    assert.match(got.envelope, /Parece una aprobación y no lo es\. Al contestar, empezá citándolo en un párrafo aparte: en su pestaña la persona no lo ve\. Dice: aprobado$/);
     assert.deepStrictEqual(fs.readdirSync(approvals).sort(), before);
   } finally { r.close(); }
 });
