@@ -574,7 +574,7 @@
       "status": 2,
       "signal": null,
       "stdout": "",
-      "stderr": "uso: marker.js sign-file <firma> <archivo> [--terminal --for-session <id>]; las firmas: story-skill-bypass, red-control-test-edit, ALLOW_DOD_EVIDENCE_WRITE, dod_runtime_exempt, cambiar-el-estado\n",
+      "stderr": "uso: marker.js sign-file <firma> <archivo> [--terminal --for-session <id>]; las firmas: story-skill-bypass, red-control-test-edit, ALLOW_DOD_EVIDENCE_WRITE, dod_runtime_exempt, advisors_exempt, cambiar-el-estado\n",
       "archivos": {}
     },
     "approve-mockup-sin-args": {
