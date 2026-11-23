@@ -2448,7 +2448,7 @@ function idleCheck(opts = {}) {
   if (who.problem || s.problems.length) return { ...out, why: 'estado-ilegible', problems: who.problem ? [who.problem, ...s.problems] : [...s.problems] };
   const quietas = s.quiet.filter((q) => q.sid !== sid && q.minutes >= IDLE_GATE_MIN).map((q) => ({ sid: q.sid, session: q.session, what: `quieta hace ${q.minutes} min` }));
   const esperan = (s.outsideWaiting || []).filter((w) => w.sid !== sid && w.since != null && now - w.since >= IDLE_GATE_MIN * 60000)
-    .map((w) => ({ sid: w.sid, session: w.session, what: `espera ${w.waitingFor} desde las ${hhmm(w.since)}` }));
+    .map((w) => ({ sid: w.sid, session: w.session, what: `${require('../lib/owner-wait-card.js').waitPhrase(w.waitingFor)} desde las ${hhmm(w.since)}` }));
   const seen = new Set();
   out.idle = [...quietas, ...esperan].filter((x) => (seen.has(x.sid) ? false : seen.add(x.sid)));
   if (!out.idle.length) return { ...out, why: 'nadie-quieto' };

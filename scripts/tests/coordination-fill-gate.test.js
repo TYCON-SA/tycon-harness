@@ -639,6 +639,20 @@ test('NadieQuieto_NuncaTraba: tres bloqueos seguidos y al cuarto deja cerrar; si
   assert.match(r.stderr, /nadie quieto: no freno \(conversacion-ilegible\)/);
 });
 
+test('NadieQuieto_EsperaConLaPalabra_NoLaRepite: una espera anotada «espera que entre…» sale una vez, no «espera espera»', () => {
+  // 🔴 mutación: anteponer «espera» a lo anotado → «Wanda (espera espera que entre el pedido …)», la clase de la 8.294 AC 14
+  const t = toy({ nowMs: Date.now() });
+  session(t, 's-w', 'Wanda');
+  const since = new Date(t.nowMs - 15 * 60000).toISOString();
+  fs.mkdirSync(path.join(t.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'doing', 's-w.json'), JSON.stringify({ text: 'vigilar el pedido', at: since, waitingFor: 'espera que entre el pedido 12', waitingSince: since }));
+  const r = idleRun(t, { transcript: transcript(t) });
+  const d = r.stdout ? JSON.parse(r.stdout) : null;
+  assert.strictEqual(d && d.decision, 'block', r.stderr);
+  assert.match(d.reason, /Wanda \(espera que entre el pedido 12 desde las \d\d:\d\d\)/);
+  assert.doesNotMatch(d.reason, /espera espera/);
+});
+
 // 🔴 Falla con: el freno de la coordinadora empuja a abrir lo que nadie va a revisar, o una foto escrita a mano lo afloja.
 test('T12 FillCheck_RevisionLlena_NoFrena @story-8.326 @ac-12', () => {
   const RLIB = require(path.join(ROOT, 'scripts', 'lib', 'review-load.js'));
