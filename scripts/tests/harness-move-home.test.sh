@@ -24,6 +24,9 @@
 #
 # Uso: bash scripts/tests/harness-move-home.test.sh [--only T27|T28|T28r|T29|T32|T13|T14]
 set -uo pipefail
+# partida en dos (scripts/tests/lib/suite-parts.sh): cada parte es harness-move-home.p<k>.test.sh; a mano corre todo
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
+suite_parts 2
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/tests/lib/harness-lab.sh"
 export TYCON_UPDATE_APPLY=auto
@@ -32,8 +35,8 @@ export TYCON_STARTUP_DETACH=0
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 runs() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 FAILURES=0
-ok()  { echo "  ok   — $1"; }
-bad() { echo "  MAL  — $1"; FAILURES=$((FAILURES+1)); }
+ok()  { suite_check; echo "  ok   — $1"; }
+bad() { suite_check; echo "  MAL  — $1"; FAILURES=$((FAILURES+1)); }
 BASE="$(mktemp -d)"
 VIEJO="$(node -p "require('${ROOT}/scripts/setup/harness/place.js').LEGACY_PLACE_NAME")"
 PLACE="$(node -p "require('${ROOT}/scripts/setup/harness/place.js').PLACE_NAME")"
@@ -83,7 +86,7 @@ clone_machine() {
 }
 
 # ───────────────────────────────────────────── T27 ───────────────────────────────────────────�
-if runs T27; then
+if suite_part 1 && runs T27; then
   echo "T27 · las precondiciones: con una falla, 1 y la HOME idéntica; --dry-run lista el plan sin escribir"
   clone_machine "$BASE/lab27"
   [ "$(state "d['sources'][0].get('kind','tree')")" != release ] && ok "la máquina de partida es un clon (kind tree)" || bad "la máquina de partida no es un clon"
@@ -145,7 +148,7 @@ if runs T27; then
 fi
 
 # ───────────────────────────────────────────── T28 ───────────────────────────────────────────�
-if runs T28; then
+if suite_part 1 && runs T28; then
   echo "T28 · la mudanza: diario, todo en ~/.tycon, hooks al árbol nuevo (misma cuenta), enlaces viejos; cortada, el arranque completa o deshace"
   clone_machine "$BASE/lab28"
   CLONE_REAL="$(cd "$LAB_TREE" && pwd -P)"
@@ -248,7 +251,7 @@ fi
 # queda activo después de la mudanza: ~/.claude/skills y ~/.claude/agents pasan a carpetas reales con lo personal adentro y un
 # enlace por entrada del arnés al lado; el plan lo dice («conserva N skills y M agentes tuyos: …»); cortada en la etapa
 # `personal`, el arranque la completa; cortada antes de instalar, deshace y los enlaces viejos vuelven.
-if runs T28x; then
+if suite_part 1 && runs T28x; then
   echo "T28x · lo personal de la carpeta vieja queda activo: carpetas reales + un enlace por entrada del arnés; el plan lo dice; cortada completa o deshace"
   # lo que un dev tiene en su carpeta vieja: el laboratorio ya pone skills/lab-own (sin versionar) y skills/lab-third-party
   # (ignorada por git; como NO está en third-party-skills.json, cuenta personal); se suman una skill, .trash y un agente
@@ -440,7 +443,7 @@ fi
 # (desde el clon) y DESPUÉS (desde ~/.tycon/harness): los mismos valores, con el origen «perfil» convertido en «maquina».
 # El laboratorio pone el perfil por variable (TYCON_PROFILE): acá se vacía después de crear el laboratorio, para que el
 # perfil se lea del árbol que corre, como en una máquina del equipo.
-if runs T28y; then
+if suite_part 2 && runs T28y; then
   echo "T28y · el perfil del equipo del clon pasa a ~/.tycon/config.json: explain igual antes y después; el plan lo dice; el fallo lo repone"
   team_profile() { # team_profile <clon>
     printf '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "clockify": true, "engram": true, "nightly": true, "codex": "detect" }, "update": { "channel": "latest", "apply": "auto", "source": "internal" }, "packs": { "default": "all" }, "install": { "profile": "full" } }\n' > "$1/perfil-equipo.json"
@@ -538,7 +541,7 @@ fi
 # arnés a ~/.tycon, al lado no hay nada y la máquina queda «sin raíz» (el aviso diario de engram deja de chequear). La
 # mudanza anota esa carpeta en paths.repos si la raíz sale de ahí y no está declarada; con una raíz declarada no la
 # pisa; y una carpeta sin otros repos no se anota.
-if runs T28r; then
+if suite_part 2 && runs T28r; then
   echo "T28r · la raíz de los repos: la mudanza anota la carpeta del clon si de ahí salía; no pisa una declarada; no anota una carpeta sin repos"
   unset TYCON_REPOS_ROOT   # la raíz explícita del que corre la suite no entra al laboratorio
   same_dir() { python3 -c 'import os,sys; sys.exit(0 if os.path.realpath(sys.argv[1])==os.path.realpath(sys.argv[2]) else 1)' "$1" "$2"; }
@@ -575,7 +578,7 @@ if runs T28r; then
 fi
 
 # ───────────────────────────────────────────── T29 ───────────────────────────────────────────�
-if runs T29; then
+if suite_part 2 && runs T29; then
   echo "T29 · el clon de la persona no se toca, y declarado como el que se mantiene, doctor lo nombra"
   clone_machine "$BASE/lab29"
   C0="$(clone_hash)"
@@ -602,7 +605,7 @@ if runs T29; then
 fi
 
 # ───────────────────────────────────────────── T32 ───────────────────────────────────────────�
-if runs T32; then
+if suite_part 2 && runs T32; then
   echo "T32 · install.home: tycon en el perfil: el arranque migra una vez; la precondición reintenta; el fallo durante queda failed"
   clone_machine "$BASE/lab32"
   # (0) la llave en `claude` (o sin valor): el arranque no muda nada ni lo intenta; una llave ROTA se dice y tampoco muda
@@ -659,7 +662,7 @@ fi
 # El repo del equipo sale de `--team` o de la clave `team` del public-repos.json del clon; el plan lo dice; sin acceso, la
 # mudanza no arranca (1, HOME idéntica); con la capa apilada, el perfil del clon NO se funde en ~/.tycon/config.json (el
 # profileFold queda `skipped`), explain lee ado.org con origen perfil, y el estado trae team con el commit.
-if runs T13; then
+if suite_part 2 && runs T13; then
   echo "T13 · la mudanza con el repo del equipo: la clave del clon o --team, el plan, sin acceso 1, la capa apilada y el perfil sin fundir"
   team_profile_13() { printf '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "clockify": true, "engram": true, "nightly": true }, "update": { "channel": "latest", "apply": "auto", "source": "internal" }, "packs": { "default": "all" }, "install": { "profile": "full" } }\n' > "$1/perfil-equipo.json"; }
   explain_key() { # explain_key <árbol> <sección> <clave>  → «valor origen»
@@ -749,7 +752,7 @@ fi
 # juzgaran la capa con los lectores DEL CLON, frenarían («la versión que va a quedar no trae su lector … la capa no se apila»). El
 # plan dice que la capa se valida con la versión que baja, y la mudanza la juzga con los lectores de esa versión, después
 # de bajarla y antes de escribir nada: una capa válida se apila; una que esa versión rechaza sigue frenando, con la HOME idéntica.
-if runs T14; then
+if suite_part 2 && runs T14; then
   echo "T14 · el clon sin el lector de team-repos.json: el plan y la mudanza validan la capa con la versión que baja; una capa inválida sigue frenando"
   harness_lab_create "$BASE/lab14"
   export TYCON_PROFILE=
@@ -795,6 +798,8 @@ if runs T14; then
   [ "$(j "$STATE" "d['sources'][0]['kind']")" = release ] && ok "(c) …y la máquina es release" || bad "(c) no es release"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
+
+suite_parts_end
 
 echo
 if [ "$FAILURES" = 0 ]; then echo "harness-move-home: todo verde"; else echo "harness-move-home: $FAILURES fallo(s)"; exit 1; fi

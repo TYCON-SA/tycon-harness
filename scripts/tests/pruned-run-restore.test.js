@@ -461,3 +461,36 @@ test('T42 Restore_PlanCambiado_NoQuedaAprobado: la aprobación de la podada vuel
     }
   }
 });
+
+// T43 AdoptSession_PlanCambiado_NoQuedaAprobado
+// 🔴 Falla con: adoptar copiando el marcador entero, con la aprobación del plan, sin comparar la huella. Un plan cambiado
+// después de aprobarlo pasaría aprobado a la sesión que adopta.
+test('T43 AdoptSession_PlanCambiado_NoQuedaAprobado: la aprobación viaja sólo con el mismo plan, y queda el renglón de la herencia', () => {
+  const sha = (t) => require('crypto').createHash('sha256').update(t).digest('hex');
+  for (const caso of ['igual', 'cambia', 'sin-huella']) {
+    const E = entorno();
+    E.arrancar('s-espera', 0);
+    const m = E.leer('s-espera');
+    const plan = '# Plan\n\n1. Cambiar src/a.js.\n';
+    fs.writeFileSync(path.join(m.runDir, 'step-02-bmad-plan.md'), plan);
+    m.planApproval = { mode: 'user', text: 'ok', at: hace(1), ...(caso === 'sin-huella' ? {} : { planSha: sha(plan) }) };
+    fs.writeFileSync(E.activo('s-espera'), JSON.stringify(m));
+    if (caso === 'cambia') fs.appendFileSync(path.join(m.runDir, 'step-02-bmad-plan.md'), '2. Un paso nuevo, después de aprobado.\n');
+    const r = E.correr('marker.js', ['adopt-session', 's-espera'], 's-nueva');
+    assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+    const n = E.leer('s-nueva');
+    const renglon = fs.readFileSync(path.join(E.estado, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
+      .filter((j) => j.name === 'adopt-session' && j.via === 'adopt-session').pop();
+    assert.ok(renglon, 'deja el renglón de la herencia');
+    assert.strictEqual(renglon.desde, 's-espera');
+    if (caso === 'igual') {
+      assert.strictEqual(n.planApproval && n.planApproval.planSha, sha(plan), 'con el mismo plan, la aprobación viaja');
+      assert.ok(n.stepsCompleted.includes('approve-plan'));
+      assert.strictEqual(renglon.huellaPlan, sha(plan));
+    } else {
+      assert.ok(!n.planApproval, `${caso}: la aprobación no viaja`);
+      assert.ok(!n.stepsCompleted.includes('approve-plan') && n.stepsPending.includes('approve-plan'), `${caso}: «Aprobar el plan» vuelve a pendiente`);
+      assert.strictEqual(renglon.huellaPlan, null);
+    }
+  }
+});

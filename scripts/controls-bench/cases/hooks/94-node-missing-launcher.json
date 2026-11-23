@@ -1,0 +1,57 @@
+{
+  "__doc": "node-missing-launcher.sh: va delante del freno de publicación en la línea del instalador. Sin Node, decide por el terreno del freno; con Node, le pasa el control sin tocar nada. El banco sólo pasa la entrada, no argumentos: cada caso arma en su preparación un guion que lanza al lanzador con su intérprete y el freno, como lo escribe el instalador.",
+  "hooks": [
+    {
+      "hook": "node-missing-launcher.sh (el freno de publicación sin Node)",
+      "script": "${TCG}/scripts/hooks/node-missing-launcher.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "sin-node-frena-un-gh-que-publica",
+          "type": "must-block",
+          "so": ["linux", "darwin"],
+          "__so": "En Windows el instalador no registra el lanzador (límite declarado).",
+          "__doc": "Sin Node el freno no arranca; un comando que puede publicar no sale sin mirar.",
+          "setup": ["printf '#!/bin/bash\\nexec bash \"%s/scripts/hooks/node-missing-launcher.sh\" node-que-no-esta \"%s/scripts/hooks/public-push-guard.js\"\\n' \"$TCG\" \"$TCG\" > lanzar.sh"],
+          "script": "${FIXTURE}/lanzar.sh",
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "gh pr create --title t --body b" } },
+          "expect": { "exit": 2, "stderr_re": ["no pudo arrancar: no encuentro node-que-no-esta"] }
+        },
+        {
+          "id": "sin-node-frena-un-gh-con-banderas-antes-de-la-orden",
+          "type": "must-block",
+          "so": ["linux", "darwin"],
+          "__so": "En Windows el instalador no registra el lanzador (límite declarado).",
+          "__doc": "Las banderas o un tabulador entre gh y su orden no lo sacan del terreno.",
+          "setup": ["printf '#!/bin/bash\\nexec bash \"%s/scripts/hooks/node-missing-launcher.sh\" node-que-no-esta \"%s/scripts/hooks/public-push-guard.js\"\\n' \"$TCG\" \"$TCG\" > lanzar.sh"],
+          "script": "${FIXTURE}/lanzar.sh",
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "gh -Ro/r\tissue comment 1 --body x" } },
+          "expect": { "exit": 2, "stderr_re": ["FRENADO"] }
+        },
+        {
+          "id": "sin-node-deja-pasar-lo-que-no-publica-y-lo-dice",
+          "type": "must-not-block",
+          "so": ["linux", "darwin"],
+          "__so": "En Windows el instalador no registra el lanzador (límite declarado).",
+          "__doc": "Fuera del terreno pasa, avisando que no pudo arrancar.",
+          "setup": ["printf '#!/bin/bash\\nexec bash \"%s/scripts/hooks/node-missing-launcher.sh\" node-que-no-esta \"%s/scripts/hooks/public-push-guard.js\"\\n' \"$TCG\" \"$TCG\" > lanzar.sh"],
+          "script": "${FIXTURE}/lanzar.sh",
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "ls -la" } },
+          "expect": { "exit": 0, "stderr_re": ["no publica, así que pasa"] }
+        },
+        {
+          "id": "con-node-le-pasa-el-control-al-freno",
+          "type": "must-not-block",
+          "so": ["linux", "darwin"],
+          "__so": "En Windows el instalador no registra el lanzador (límite declarado).",
+          "__doc": "Con Node el freno corre como siempre: un comando que no publica pasa sin aviso.",
+          "setup": ["printf '#!/bin/bash\\nexec bash \"%s/scripts/hooks/node-missing-launcher.sh\" node \"%s/scripts/hooks/public-push-guard.js\"\\n' \"$TCG\" \"$TCG\" > lanzar.sh"],
+          "script": "${FIXTURE}/lanzar.sh",
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "ls -la" } },
+          "expect": { "exit": 0, "stderr_not_re": ["no pude arrancar"] }
+        }
+      ]
+    }
+  ]
+}
