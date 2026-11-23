@@ -325,21 +325,31 @@ test('T14 · los frenos de escritura cuidan el permiso igual que los registros d
   const ventana = path.join(estado, 'owner-window', 'x.json');
   const permiso = path.join(sign.carpeta(), 'x.json');
   const pedidoEscrito = path.join(sign.carpeta(), 'pedidos', 'abcd1234.json');
+  // Edit y Write: la regla, sobre las rutas de verdad del permiso
   for (const archivo of [ventana, permiso, pedidoEscrito]) {
-    // Edit y Write
     const r = gate.computeStoryGate({ filePath: archivo, stateDir: estado, homeDir: os.homedir(), repoRoot: null });
     assert.deepStrictEqual([r.action, r.kind], ['block', 'state-dir'], archivo);
-    // la consola: redirección, copia y un intérprete
-    for (const comando of [`echo x > ${archivo}`, `cp /tmp/x ${archivo}`, `node -e "require('fs').writeFileSync('${archivo}','x')"`]) {
-      const ev = JSON.stringify({ session_id: 's-sign', tool_name: 'Bash', tool_input: { command: comando }, cwd: os.tmpdir() });
-      // el freno de escritura cuida la carpeta de estado del HOME con que corre la herramienta, que en una sesión es la
-      // casa de la cuenta (donde vive el permiso); con otro HOME no la ve: límite declarado en guides/safety-guard.md
-      const casa = require('../lib/real-home.js').casaDeLaCuenta();
-      const c = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-bash-write-gate.js')], { input: ev, encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa } });
-      assert.strictEqual(c.status, 2, `${comando}: ${c.stdout}${c.stderr}`);
-      assert.match(c.stdout + c.stderr, /ESCRITURA DIRECTA AL ESTADO/, comando);
-    }
   }
+  // la consola: el freno de escritura cuida la carpeta de estado del HOME con que corre la herramienta, que en una sesión
+  // es la casa de la cuenta (donde vive el permiso); con otro HOME no la ve: límite declarado en guides/safety-guard.md.
+  // Corre con la casa de la cuenta y la casa del arnés (TYCON_HOME) en una carpeta de la prueba: el freno cuida esa carpeta
+  // de estado y anota sus bloqueos ahí, nunca en el registro de quien corre la prueba
+  const casa = require('../lib/real-home.js').casaDeLaCuenta();
+  const arnes = fs.mkdtempSync(path.join(os.tmpdir(), 'sign-t14-'));
+  const estadoDePrueba = path.join(arnes, 'state');
+  fs.mkdirSync(estadoDePrueba, { recursive: true });
+  const emergencia = path.join(estadoDePrueba, path.relative(estado, sign.carpeta()));
+  try {
+    for (const archivo of [path.join(estadoDePrueba, 'owner-window', 'x.json'), path.join(emergencia, 'x.json'), path.join(emergencia, 'pedidos', 'abcd1234.json')]) {
+      for (const comando of [`echo x > ${archivo}`, `cp /tmp/x ${archivo}`, `node -e "require('fs').writeFileSync('${archivo}','x')"`]) {
+        const ev = JSON.stringify({ session_id: 's-sign', tool_name: 'Bash', tool_input: { command: comando }, cwd: os.tmpdir() });
+        const c = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-bash-write-gate.js')], { input: ev, encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa, TYCON_HOME: arnes } });
+        assert.strictEqual(c.status, 2, `${comando}: ${c.stdout}${c.stderr}`);
+        assert.match(c.stdout + c.stderr, /ESCRITURA DIRECTA AL ESTADO/, comando);
+      }
+    }
+    assert.ok(fs.existsSync(path.join(estadoDePrueba, 'gates.log')), 'los bloqueos quedaron en el registro de la prueba');
+  } finally { fs.rmSync(arnes, { recursive: true, force: true }); }
 });
 
 // Con el registro común de verdad (signature-log.js), no uno de mentira: el id `emergency` está en el catálogo y su

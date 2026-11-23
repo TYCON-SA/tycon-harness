@@ -341,6 +341,68 @@ else
   echo "✗ T28 EnCurso_MitadDeCamino_SeVeComoHoy: «${OUT28a}» «${OUT28b}»"; fail=1
 fi
 
+# T29) MismaMedicion_NoCuentaComoVuelta: dos cierres sobre el mismo rojo, sin volver a correr nada en el medio, no son
+# una vuelta sin progreso; el tercero seguido escala. 🔴 rojo: con la medición repetida contada, el segundo cierre
+# detiene la autonomía (lo que pasó dos veces en la misma historia).
+AT='"checksAt":{"e2e":"2026-11-21T20:00:00.000Z"}'
+echo "{\"storyId\":\"X\",\"autonomous\":true,\"iter\":0,\"checks\":{\"e2e\":\"red:exit=1\"},$AT}" > "$MK"
+run_strict; O1="$OUT"
+run_strict; O2="$OUT"
+if printf '%s' "$O1" | grep -q '"decision":"block"' && printf '%s' "$O2" | grep -q 'misma medición' \
+  && grep -q '"autonomous": true' "$MK" && grep -q '"iter": 1' "$MK"; then
+  echo "✓ T29a MismaMedicion_NoCuentaComoVuelta (ni escala ni suma al tope)"
+else
+  echo "✗ T29a MismaMedicion_NoCuentaComoVuelta: «${O1}» «${O2}»"; fail=1
+fi
+run_strict; run_strict; O4="$OUT"
+if printf '%s' "$O4" | grep -q 'AUTONOMÍA DETENIDA' && printf '%s' "$O4" | grep -q 'sin volver a correr nada' && grep -q '"autonomous": false' "$MK"; then
+  echo "✓ T29b MismaMedicion_TresSeguidas_Escala"
+else
+  echo "✗ T29b MismaMedicion_TresSeguidas_Escala: «${O4}»"; fail=1
+fi
+
+# T30) CorridaEnCurso_NoMide: con una corrida de un control de esta sesión en marcha (su candado, con el proceso vivo),
+# el cierre no mide ni cuenta: deja cerrar y dice por qué. 🔴 rojo: medir el rojo anotado mientras la corrida nueva sigue.
+LOCK=~/.claude/.tycon-pipeline/run-check-locks/e2e-prueba
+mkdir -p "$LOCK"
+printf '%s\n%s\n%s\n' "$$" "$(hostname)" "tok" > "$LOCK/pid"
+AHORA=$(node -e 'process.stdout.write(new Date().toISOString())')
+HACE2H=$(node -e 'process.stdout.write(new Date(Date.now()-2*3600e3).toISOString())')
+dueno() { echo "{\"check\":\"e2e\",\"session\":\"$1\",\"startedAt\":\"$2\"}" > "$LOCK/owner.json"; }
+rojo1() { echo "{\"storyId\":\"X\",\"autonomous\":true,\"iter\":1,\"lastFailures\":[\"e2e → red:exit=1\"],\"checks\":{\"e2e\":\"red:exit=1\"},$AT}" > "$MK"; }
+dueno stoptest "$AHORA"; rojo1
+run_strict
+if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -q '"decision"' && printf '%s' "$OUT" | grep -q 'sigue en marcha' \
+  && grep -Eq '"iter": ?1' "$MK" && grep -Eq '"autonomous": ?true' "$MK"; then
+  echo "✓ T30 CorridaEnCurso_NoMide"
+else
+  echo "✗ T30 CorridaEnCurso_NoMide: rc=$RC «${OUT}»"; fail=1
+fi
+# el segundo cierre con la misma corrida en marcha sí mide: un candado no deja cerrar en rojo más de una vez
+run_strict
+printf '%s' "$OUT" | grep -q '"decision":"block"' && echo "✓ T30c MismaCorrida_UnaSolaVez" || { echo "✗ T30c: «${OUT}»"; fail=1; }
+# el candado de otra sesión, el de un proceso muerto y el de hace más de una hora no cuentan: mide como siempre
+for caso in otra muerto vieja; do
+  rojo1
+  case "$caso" in
+    otra) dueno otra "$AHORA" ;;
+    muerto) dueno stoptest "$AHORA"; printf '%s\n%s\n%s\n' "999999" "$(hostname)" "tok" > "$LOCK/pid" ;;
+    vieja) dueno stoptest "$HACE2H"; printf '%s\n%s\n%s\n' "$$" "$(hostname)" "tok" > "$LOCK/pid" ;;
+  esac
+  run_strict
+  printf '%s' "$OUT" | grep -q 'AUTONOMÍA DETENIDA' && echo "✓ T30b CandadoQueNoCuenta_MideComoSiempre ($caso)" || { echo "✗ T30b ($caso): «${OUT}»"; fail=1; }
+done
+rm -rf "$LOCK"
+
+# T31) CorridaNueva_MismoRojo_CuentaComoVuelta: el mismo rojo de una corrida nueva (otra hora en checksAt) sí es una
+# vuelta sin progreso, como antes. 🔴 rojo: comparar sólo el estado dejaría iterar sin fin sobre un rojo que no cede.
+echo "{\"storyId\":\"X\",\"autonomous\":true,\"iter\":0,\"checks\":{\"e2e\":\"red:exit=1\"},$AT}" > "$MK"
+run_strict
+node -e 'const f=process.argv[1]; const m=JSON.parse(require("fs").readFileSync(f,"utf8")); m.checksAt.e2e="2026-11-21T20:10:00.000Z"; require("fs").writeFileSync(f, JSON.stringify(m,null,2))' "$MK"
+run_strict
+printf '%s' "$OUT" | grep -q 'ninguno de los fallos' && grep -q '"autonomous": false' "$MK" \
+  && echo "✓ T31 CorridaNueva_MismoRojo_CuentaComoVuelta" || { echo "✗ T31: «${OUT}»"; fail=1; }
+
 rm -f ~/.claude/.tycon-pipeline/STOP_AUTONOMY
 rm -f "$MK"
 [ "$fail" -eq 0 ] && echo "=== TODOS OK ===" || { echo "=== HUBO FALLOS ==="; exit 1; }

@@ -1227,7 +1227,7 @@ fi
 if [ -z "$t33_falta" ]; then ok "8.14 T33 Guide_DeclaresShellFormsAndLimits (las formas, la medición y los cinco límites)"
 else no "8.14 T33 Guide_DeclaresShellFormsAndLimits — falta:$t33_falta"; fi
 
-# ── T-puerta-12 Guia_LosLimitesReales — la guía no promete una barrera que no existe ──────────────────────────────
+# ── T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 — la guía no promete una barrera que no existe ──────────────────────────────
 # La guía decía que a un programa propio lo frena que «no tiene la clave»: cualquier programa de la cuenta la lee con
 # /usr/bin/security sin cuadro. Lo que dice ahora son los cinco límites reales.
 t12_falta=""
@@ -1244,8 +1244,8 @@ if [ -f "$GUIA" ]; then
 else
   t12_falta=" la guía no existe ($GUIA);"
 fi
-if [ -z "$t12_falta" ]; then ok "T-puerta-12 Guia_LosLimitesReales (sin «no tiene la clave», con los cinco límites y el cuadro propio)"
-else no "T-puerta-12 Guia_LosLimitesReales — falta:$t12_falta"; fi
+if [ -z "$t12_falta" ]; then ok "T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 (sin «no tiene la clave», con los cinco límites y el cuadro propio)"
+else no "T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 — falta:$t12_falta"; fi
 
 echo "— prod-guard: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

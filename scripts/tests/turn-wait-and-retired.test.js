@@ -313,7 +313,7 @@ test('T38 Retiradas_DicenQueEsperaban', () => {
   assert.match(sur.waited, /la 9\.9, Aprobar el plan: ¿Apruebo el plan\?/);
   assert.strictEqual(anon.waited, undefined, 'sin nada anotado, sin el campo');
   const text = C.statusText(s);
-  assert.match(text, /trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, esperando la firma de la coordinadora\. Para levantarla: claude respawn aaaabbbb/);
+  assert.match(text, /trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, esperando la firma de la coordinadora desde las \d\d:\d\d\. Para levantarla: claude respawn aaaabbbb/);
   assert.match(text, /ccccdddd: la cerró Claude Code .*quieta 12 min, sin anotar qué esperaba\. Para levantarla: claude respawn ccccdddd/);
   assert.match(W.renderRetired(s.retired), /trabajo-sur: la cerró Claude Code \(falta de memoria\), quieta 15 min, esperando la 9\.9, Aprobar el plan/);
   const oficina = JSON.stringify(O.buildOffice({ wip: { rows: [], details: [], extra: [], free: [], halfway: [], unreadable: [], retired: s.retired }, nowMs: NOW }).data);

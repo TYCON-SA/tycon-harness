@@ -363,7 +363,9 @@ EOF
       printf '%s\n' '$LegacyNames = Join-Path (Join-Path $PSScriptRoot "lib") "legacy-names.js"' \
         '$lnArgs = @("--migrate-machine", "--guides", (Split-Path -Parent $PSScriptRoot), "--skills", $AgentSkillsRepo)'
       sed -n '/^# ── La tanda de Node ─/,/^# ── fin de la tanda de Node/p' "$PS_I"
-      sed -n '/^# ── Los nombres viejos (espejo/,/^# Load settings.json/p' "$PS_I" | sed '$d'
+      # hasta la sección siguiente, la de los hooks de settings.json: sólo el bloque de la migración (la marca de antes,
+      # «Load settings.json», ya no existe en el instalador, y el recorte llegaba hasta el final del archivo)
+      sed -n '/^# ── Los nombres viejos (espejo/,/^# Los hooks de settings.json/p' "$PS_I" | sed '$d'
     } > "$T/ps/frag.ps1"
     for caso in cae:lab-caida nota:lab-nota; do
       o="$(env PATH="$T/bin-ln:$PATH" LN_LAB="${caso%%:*}" pwsh -NoProfile -File "$T/ps/frag.ps1" 2>&1)"
