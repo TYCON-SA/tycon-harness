@@ -205,6 +205,23 @@ test('WaiverShown_AvisoCorto: un renglón por criterio, más el encabezado y dó
   }
 });
 
+// 🔴 Falla con: la ventana de la firma de un criterio calcula la matriz de todos. Con decenas de humos, el freno no llega a
+// mostrarlo antes de su reloj y la firma no sale.
+test('WaiverDisplay_MatrizDeLosCriteriosPedidos — la ventana mide sólo los criterios que se firman', () => {
+  const lab = laboratorio();
+  const leer = (acs) => spawnSync(process.execPath, ['-e', `const wd = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'waiver-display.js'))});
+    const m = wd.matrixForSignature(process.argv[1], { storyId: '9.94', storyPath: process.argv[1], repoPath: process.argv[2] }, JSON.parse(process.argv[3]));
+    process.stdout.write(JSON.stringify({ parcial: m.parcial === undefined ? 'no' : m.parcial, nv: m.notVerifiable }));`, lab.story, lab.repo, JSON.stringify(acs)],
+  { cwd: lab.repo, encoding: 'utf8', env: lab.env });
+  const pedidos = leer([1]);
+  assert.equal(pedidos.status, 0, pedidos.stderr);
+  assert.deepEqual(JSON.parse(pedidos.stdout), { parcial: [1], nv: [1] });
+  // sin criterios pedidos, la de siempre: la entera
+  const entera = leer(null);
+  assert.equal(entera.status, 0, entera.stderr);
+  assert.deepEqual(JSON.parse(entera.stdout).parcial, 'no');
+});
+
 test('CriteriosDe_ConLaMatrizYaCalculada_NoLaVuelveACalcular', () => {
   // el freno ya calculó la matriz: con ella en la mano, la lista sale sin leer la historia (la ruta ni existe)
   const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
