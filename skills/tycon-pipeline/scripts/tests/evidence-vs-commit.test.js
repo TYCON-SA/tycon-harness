@@ -631,6 +631,75 @@ test('T17 EvidenceVsCommit_SameStoryTest_VoidsOnlyItsCriteria @story-8.263 @ac-1
   assert.deepStrictEqual([r.cuenta, r.regla, r.criterios], [false, 6, [2, 3]], JSON.stringify(r));
 });
 
+// Sumarle o sacarle sólo marcas a una prueba no la cambia: la prueba hace lo mismo que cuando corrió la evidencia.
+const conMarcaDeMas = 'test(\'caso a @story-9.9 @ac-2 @ac-3 @ac-4\', () => {});\ntest(\'caso b @story-9.9 @ac-3\', () => {}); // v1\n';
+
+test('EvidenceVsCommit_SameStoryOnlyChangesTags_StillCounts — la historia que sólo suma o saca marcas en la prueba no vence la evidencia', () => {
+  // un commit de la rama de la historia que sólo suma una marca al nombre de una prueba
+  let l = labDeLaHistoria();
+  escribir(l.repo, PRUEBA_9_9, conMarcaDeMas);
+  commit(l.repo, 'marca el criterio 4', 1700000200);
+  let r = l.juzgar(l.prueba);
+  assert.deepStrictEqual([r.cuenta, r.regla, r.via], [true, 6, 'solo-marcas'], JSON.stringify(r));
+  // sin commitear, un renglón de comentario que sólo trae marcas y otra al final de un comentario que ya estaba
+  l = labDeLaHistoria();
+  escribir(l.repo, PRUEBA_9_9, `// @story-9.9 @ac-5\n${conMarcas(1).replace('// v1', '// v1 @story-9.9 @ac-6')}`);
+  r = l.juzgar(l.prueba);
+  assert.deepStrictEqual([r.cuenta, r.regla, r.via], [true, 6, 'solo-marcas'], JSON.stringify(r));
+  // sacar una marca tampoco cambia la prueba
+  l = labDeLaHistoria();
+  escribir(l.repo, PRUEBA_9_9, conMarcas(1).replace(' @ac-2', ''));
+  commit(l.repo, 'saca la marca del 2', 1700000200);
+  r = l.juzgar(l.prueba);
+  assert.deepStrictEqual([r.cuenta, r.regla, r.via], [true, 6, 'solo-marcas'], JSON.stringify(r));
+});
+
+test('EvidenceVsCommit_SameStoryTagsAndCode_VoidsItsCriteria — marcas y algo más, o un comentario que cambió, vencen como siempre', () => {
+  let l = labDeLaHistoria();
+  escribir(l.repo, PRUEBA_9_9, conMarcaDeMas.replace('() => {});\ntest(\'caso b', '() => { assert.ok(1); });\ntest(\'caso b'));
+  commit(l.repo, 'marca y cambia la prueba', 1700000200);
+  let r = l.juzgar(l.prueba);
+  assert.deepStrictEqual([r.cuenta, r.regla, r.criterios], [false, 6, [2, 3, 4]], JSON.stringify(r));
+  // una marca y un comentario cambiado: el comentario no es una marca
+  l = labDeLaHistoria();
+  escribir(l.repo, PRUEBA_9_9, conMarcaDeMas.replace('// v1', '// v2'));
+  commit(l.repo, 'marca y comenta', 1700000200);
+  r = l.juzgar(l.prueba);
+  assert.deepStrictEqual([r.cuenta, r.regla, r.criterios], [false, 6, [2, 3, 4]], JSON.stringify(r));
+  // una marca pegada a una palabra no es una marca: `x@ac-4` sigue siendo texto de la prueba
+  l = labDeLaHistoria();
+  escribir(l.repo, PRUEBA_9_9, conMarcas(1).replace('caso a', 'caso a x@ac-4'));
+  commit(l.repo, 'cambia el nombre', 1700000200);
+  r = l.juzgar(l.prueba);
+  assert.equal(r.cuenta, false, JSON.stringify(r));
+});
+
+test('EvidenceVsCommit_SameStoryShellTestOnlyTags_StillCounts — en una suite de bash, sumar un renglón de marcas no vence; cambiar un comando sí', () => {
+  const nombre = 'tests/feature.test.sh';
+  const lab = () => {
+    const repo = repoNuevo(carpeta());
+    escribir(repo, 'src/feature.js', '// v1\n');
+    const abs = escribir(repo, nombre, '# @story-9.9 @ac-2\nok "caso a" "$(echo a)"\n');
+    commit(repo, 'base', 1700000000);
+    git(repo, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+    git(repo, ['switch', '-q', '-c', 'feature/9-9-lab']);
+    const ev = escribir(repo, '.advisors/dod-runtime/9.9-e2e-gate-20270101T000000Z.md', 'verdict=PASS\n');
+    commit(repo, 'evidencia', 1700000100);
+    const juzgar = () => evidencia().crearJuez({ historia: HISTORIA_9_9 }).vigencia({ archivo: abs, mtimeMs: Date.now(), evidencia: { ruta: ev, tsMs: 1700000100 * 1000 } });
+    return { repo, juzgar };
+  };
+  let l = lab();
+  escribir(l.repo, nombre, '# @story-9.9 @ac-2 @ac-3\n# @story-9.9 @ac-4\nok "caso a" "$(echo a)"\n');
+  commit(l.repo, 'marca', 1700000200);
+  let r = l.juzgar();
+  assert.deepStrictEqual([r.cuenta, r.regla, r.via], [true, 6, 'solo-marcas'], JSON.stringify(r));
+  l = lab();
+  escribir(l.repo, nombre, '# @story-9.9 @ac-2 @ac-3\nok "caso a" "$(echo b)"\n');
+  commit(l.repo, 'marca y cambia', 1700000200);
+  r = l.juzgar();
+  assert.deepStrictEqual([r.cuenta, r.regla], [false, 6], JSON.stringify(r));
+});
+
 test('T18 EvidenceVsCommit_SameStoryTestWithoutTags_VoidsAll @story-8.263 @ac-15 @ac-16 @ac-17 — sin marcas, ilegible, de código o de autoría desconocida vence todo; la de otra historia cuenta', () => {
   const venceTodo = (r, caso) => {
     assert.equal(r.cuenta, false, `${caso}: ${JSON.stringify(r)}`);

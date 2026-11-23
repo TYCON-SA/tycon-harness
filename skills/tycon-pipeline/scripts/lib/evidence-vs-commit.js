@@ -28,7 +28,8 @@
  *      `{ cuenta: false, regla: 6, criterios }`, y la evidencia de los otros criterios sigue contando: el arreglo de
  *      una prueba no dice nada de lo que esa prueba no mira. Sin marcas o ilegible, `criterios: null`: vence toda. De qué historia es un commit lo dice
  *      lib/commit-story.js, o, para un commit de la rama de la historia que todavía no está en origin/main, la rama; si no
- *      se sabe, vence toda.
+ *      se sabe, vence toda. Si lo único que cambió en la prueba son marcas `@story-…` y `@ac-N`, no vence nada: la prueba
+ *      hace lo mismo que cuando corrió la evidencia, y devuelve `{ cuenta: true, regla: 6, via: 'solo-marcas' }`.
  *
  * La regla de la entrada no es una más de esta lista: `entrada` responde aparte, y la pide la matriz cuando una evidencia no
  * cuenta (runtime-matrix.js). Una historia queda probada si lo que entró a origin/main es, por contenido, lo que se probó;
@@ -50,6 +51,7 @@ const { execFileSync } = require('child_process');
 const path = require('path');
 const { isTestPath } = require('./atdd-order.js');
 const { ramaDelAsunto, historiaDeLaRama, historiaDeLaFusion, nombraLaHistoria } = require('./commit-story.js');
+const changeKind = require('./change-kind.js');
 
 const TIEMPO_MAX_MS = 10000;
 // La historia entera de un registro de humos con sus cambios cabe holgada; si no cabe, git no contesta y la evidencia no cuenta.
@@ -58,6 +60,25 @@ const FORMATO_DE_COMMIT = '%H %ct %h';
 // Abre cada commit en la historia de un registro: un byte que no aparece en un renglón de texto.
 const MARCA_DE_COMMIT = '\x01';
 const MAIN = 'origin/main';
+// Una marca de prueba suelta, con los espacios de antes: `@story-<historia>` o `@ac-N`, sin una letra pegada a ninguno
+// de los dos lados (`x@ac-4` es texto de la prueba).
+const MARCA_DE_PRUEBA = /[ \t]*(?<![\w@])@(?:story-[\w.-]*\w|ac-\d+)(?!\w)/g;
+// Lo que queda de un renglón que sólo tenía marcas: nada, o el comienzo de un comentario.
+const RENGLON_SIN_NADA = /^[ \t]*(?:\/\/+|#+|\*+|\/\*+[ \t]*\*+\/)?[ \t]*$/;
+
+/**
+ * El texto de una prueba sin sus marcas: se sacan de cada renglón, el renglón que sólo tenía marcas se va, y en el que
+ * tenía algo más se va también el comentario que quedó vacío al final. Los renglones sin marcas quedan como están, salvo
+ * los espacios del final. Dos versiones de una prueba que dan lo mismo acá difieren sólo en marcas.
+ */
+function sinMarcas(texto) {
+  return String(texto).split(/\r?\n/).flatMap((renglon) => {
+    const sin = renglon.replace(MARCA_DE_PRUEBA, '');
+    if (sin === renglon) return [renglon.replace(/[ \t]+$/, '')];
+    if (RENGLON_SIN_NADA.test(sin)) return [];
+    return [sin.replace(/[ \t]*\/\*+[ \t]*\*+\//g, '').replace(/[ \t]*(?:\/\/+|#+)[ \t]*$/, '').replace(/[ \t]+$/, '')];
+  }).join('\n');
+}
 
 /** `{ codigo, salida }`; `codigo: null` si git no pudo contestar (no está, no es un repo accesible, venció el tiempo). */
 function correrGitDeVerdad(carpeta, args, env) {
@@ -328,11 +349,29 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return criterios.size ? [...criterios].sort((a, b) => a - b) : null;
   }
 
+  // ¿Lo único que cambió en la prueba, de la versión que juzgó la evidencia (`desde`) a la del disco, son marcas? Sin las
+  // marcas, las dos tienen que dar el mismo texto; o, en un lenguaje que lee lib/change-kind.js, diferir sólo en espacios.
+  // Sin `desde`, sin el archivo en esa versión o con git sin contestar, no.
+  function soloMarcas(archivo, carpeta, nombre, desde) {
+    if (!desde) return false;
+    let ahora;
+    try { ahora = require('fs').readFileSync(archivo, 'utf8'); } catch (_) { return false; }
+    const rel = rutaEnElRepo(carpeta, nombre);
+    if (!rel || preguntar(carpeta, ['cat-file', '-e', `${desde}:${rel}`]).codigo !== 0) return false;
+    const antes = preguntar(carpeta, ['show', `${desde}:${rel}`]);
+    if (antes.codigo !== 0) return false;
+    const [a, b] = [sinMarcas(antes.salida), sinMarcas(ahora)];
+    if (a === b) return true;
+    if (!changeKind.EXTENSIONES.includes(path.extname(rel).toLowerCase())) return false;
+    return changeKind.queCambio(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'), { archivo: rel }).tipo === 'igual';
+  }
+
   // La regla 6 por criterio: la prueba que la propia historia cambió vence sólo la evidencia de los criterios que nombra,
   // porque pudo dar verde por estar mal sólo en lo que mira. `criterios: null` vence toda la evidencia. `desde` es la
-  // versión que juzgó la evidencia.
-  const porCriterio = (archivo, carpeta, nombre, motivo, regla, desde, extra = {}) =>
-    NO_CUENTA(motivo, 6, { ...extra, reglaDeOrigen: regla, criterios: criteriosDeLaPrueba(archivo, carpeta, nombre, desde) });
+  // versión que juzgó la evidencia. Si sólo le cambió marcas, no vence nada.
+  const porCriterio = (archivo, carpeta, nombre, motivo, regla, desde, extra = {}) => (soloMarcas(archivo, carpeta, nombre, desde)
+    ? { cuenta: true, regla: 6, via: 'solo-marcas', reglaDeOrigen: regla }
+    : NO_CUENTA(motivo, 6, { ...extra, reglaDeOrigen: regla, criterios: criteriosDeLaPrueba(archivo, carpeta, nombre, desde) }));
 
   // Con la prueba sin commitear al correr, el commit que guardó justo lo probado no es un cambio posterior: se cuenta desde
   // el primero que dejó el archivo igual a su huella. Si ninguno lo hizo, desde el ancla.

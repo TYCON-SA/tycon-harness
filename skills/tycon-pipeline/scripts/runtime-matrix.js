@@ -138,6 +138,7 @@ function avisoDeLoQueContó({ rel, via, fusion, commit, historia, regla, ajenas,
     const inicio = commit ? `entró igual a lo probado en ${commit}` : 'ya estaba en main como se probó';
     return `${rel}${carga ? ` (lo carga ${carga})` : ''}: ${inicio}${despues ? `; después lo cambiaron: ${despues}` : ''} → la evidencia sigue contando.`;
   }
+  if (via === 'solo-marcas') return `${rel}: esta historia sólo le cambió marcas @story/@ac → la evidencia sigue contando.`;
   return via
     ? `${rel}: lo trajo la fusión ${fusion} de esta historia, igual a como estaba su rama a la hora de la evidencia; se supone que la evidencia corrió sobre esa rama → sigue contando.`
     : `${rel}: lo cambió el commit ${commit} de la historia ${historia}, sólo en una prueba → la evidencia sigue contando.`;
