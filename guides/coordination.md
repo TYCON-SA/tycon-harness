@@ -419,6 +419,8 @@ una, la coordinadora:
   aprueba el plan de rutina sin click: alcanza en los dos casos. Con `person`, el plan de rutina lo firma siempre una
   persona. Rechazado o sin veredicto, el plan espera. Un plan delicado, y su maqueta, los firma sólo el dueño con su
   click o su «aprobado» (también en la pestaña de la coordinadora), aunque el perfil nombre `plan-approval:delicada`.
+  Desde esa pestaña el comando lleva la cita: `marker.js complete-step approve-plan --approved '<la cita de la persona>'
+  --for-session <sesión>`; sin ella no se firma ni se arma el cuadro.
   **El plan que aprueba es el de una parte**: si la ejecución anotó su tanda (`set-batch`) y la parte vale (con su
   `files:` o, sin `files:`, con los archivos que la historia le ata a la tanda más los que no ata a ninguna), la delicada
   se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide el diff

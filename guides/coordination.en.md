@@ -419,7 +419,9 @@ the coordinator:
   launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
   is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan, and its mockup, are signed
   only by the owner with a click or an «approved» (also in the coordinator's tab), even if the profile names
-  `plan-approval:delicada`. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  `plan-approval:delicada`. From that tab the command carries the quote: `marker.js complete-step approve-plan
+  --approved '<the person's quote>' --for-session <session>`; without it nothing is signed and no box is shown.
+  **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
   (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
