@@ -1371,6 +1371,15 @@ test('T343 Kanban_FirmaDeSesionQueNoEsta_SinSesion: una firma del tablero para u
     nowMs: NOW,
   }).data;
   assert.deepStrictEqual(titles(otra, 'firma').sort(), ['De Tero', 'La dueña', 'Vos decidís'].sort());
+  // un nombre de más de 40 letras: la lista de sesiones lo muestra cortado con «…», y la firma escrita con el nombre
+  // entero sigue siendo de esa sesión viva
+  const largo = 'fila-de-prueba-con-un-nombre-que-pasa-de-los-cuarenta';
+  const conLargo = buildOffice({
+    wip: wip([{ session: largo.slice(0, 39) + '…', status: 'busy', work: '9.2 · Otra', extra: { kind: 'pipeline', title: 'Otra', storyId: '9.2', current: 'implement' } }]),
+    board: buildBoard({ pendientes: [{ titulo: 'De la larga', estado: 'firma', quien: largo }] }),
+    nowMs: NOW,
+  }).data;
+  assert.deepStrictEqual(titles(conLargo, 'firma'), ['De la larga'], 'la sesión de nombre largo está viva: su firma se queda');
   const hora = col(otra, 'sinEmpezar').tarjetas.find((t) => t.titulo === 'Con hora');
   assert.ok(col(otra, 'sinEmpezar').tarjetas.some((t) => t.titulo === 'De Tero-2'), 'la de Tero-2 va a «Sin sesión»');
   assert.ok(hora && /^estaba para /.test(hora.hora) && !hora.cls, `sin sesión no hay nadie atrasado: ${JSON.stringify(hora)}`);
