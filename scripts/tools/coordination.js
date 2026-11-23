@@ -2917,8 +2917,33 @@ function mainOf(repo) {
   return realDir(path.basename(common.out) === '.git' ? path.dirname(common.out) : common.out);
 }
 
-// Lo que se muestra de la primera línea de Claude Code cuando contesta que la carpeta no está aprobada.
+// Lo que se muestra, en caracteres, de la línea de Claude Code cuando contesta que la carpeta no está aprobada.
 const UNTRUSTED_SAID_MAX = 200;
+// Las secuencias de terminal enteras: títulos y enlaces (OSC), colores y movimientos (CSI) y las de dos caracteres.
+const TERMINAL_SEQ = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b[@-_]/g;
+
+/**
+ * La línea de Claude Code que se cita cuando contesta que la carpeta no está aprobada: la que lo dice (si ninguna, la
+ * primera con algo), sin secuencias de terminal ni caracteres de control, en una línea y recortada sin partir un
+ * carácter. La próxima versión puede decirlo distinto: la cita deja ver cómo.
+ */
+function untrustedSaid(out) {
+  const lines = String(out == null ? '' : out).split(/\r\n|\r|\n/).map((l) => oneLine(l.replace(TERMINAL_SEQ, ''))).filter(Boolean);
+  const chars = Array.from(lines.find((l) => /not trusted/i.test(l)) || lines[0] || '');
+  return chars.length > UNTRUSTED_SAID_MAX ? `${chars.slice(0, UNTRUSTED_SAID_MAX).join('')}…` : chars.join('');
+}
+
+// Un valor para pegar en la terminal: entre comillas simples, con las de adentro escapadas (PowerShell las dobla).
+const pasteQuote = (s) => (process.platform === 'win32'
+  ? `'${String(s).split("'").join("''")}'`
+  : `'${String(s).split("'").join("'\\''")}'`);
+
+// Cómo soltar el puesto o sacar la copia que quedó, si no se va a usar.
+function leftBehind({ slot, copy }) {
+  return slot
+    ? `El puesto queda tomado, en la rama ${slot.branch}; si no se va a usar, soltalo: node ${pasteQuote(path.join(__dirname, 'work-slots.js'))} release ${pasteQuote(slot.path)}.`
+    : `La copia queda, en la rama ${copy.branch}; si no se va a usar, sacala: git -C ${pasteQuote(copy.main)} worktree remove ${pasteQuote(copy.path)}.`;
+}
 
 /**
  * La carpeta que dejó una apertura que Claude Code no aceptó por no estar aprobada, para reintentar ahí (`--reuse`): la
@@ -2956,11 +2981,9 @@ function reusable({ home, env, arnes, repo, name, branch, slot, live }) {
 // aprobarla, cómo reintentar ahí y cómo soltarla si no se va a usar.
 function untrustedFolder({ name, repo, branch, slot, copy, where, said }) {
   const kind = slot ? `un puesto de ${repo}` : `una copia de ${repo}`;
-  const retry = `node "${__filename}" open --name ${name} --repo "${repo}"${branch ? ` --branch ${branch}` : ''}${slot ? ' --slot' : ''} --reuse -- <el mismo encargo>`;
-  const left = slot
-    ? `El puesto queda tomado, en la rama ${slot.branch}; si no se va a usar, soltalo: node "${path.join(__dirname, 'work-slots.js')}" release "${slot.path}".`
-    : `La copia queda, en la rama ${copy.branch}; si no se va a usar, sacala: git -C "${copy.main}" worktree remove "${copy.path}".`;
-  return `Claude Code no abrió la sesión: la carpeta ${where} (${kind}) no está aprobada en esta versión de Claude Code, que pide aprobar cada copia y cada puesto aparte, aunque la principal lo esté.${said} La aprueba una persona una vez: cd "${where}" y claude, aceptá si pregunta y salí con /exit. Después volvé a abrir la sesión en esa misma carpeta: ${retry}. ${left} No reintenté.`;
+  const q = pasteQuote;
+  const retry = `node ${q(__filename)} open --name ${q(name)} --repo ${q(repo)}${branch ? ` --branch ${q(branch)}` : ''}${slot ? ' --slot' : ''} --reuse -- <el mismo encargo>`;
+  return `Claude Code no abrió la sesión: la carpeta ${where} (${kind}) no está aprobada en esta versión de Claude Code, que pide aprobar cada copia y cada puesto aparte, aunque la principal lo esté.${said} La aprueba una persona una vez: cd ${q(where)} y claude, aceptá si pregunta y salí con /exit. Después volvé a abrir la sesión en esa misma carpeta: ${retry}. ${leftBehind({ slot, copy })} No reintenté.`;
 }
 
 /**
@@ -3080,15 +3103,17 @@ function openNow(opts) {
   });
   if (r.error && r.error.code === 'ENOENT') return fail(`Claude Code no está instalado en esta máquina (no encontré ${launcher.bin}): no abrí la sesión.`);
   // sin respuesta no se sabe si abrió: el puesto queda tomado, mejor que dos sesiones en la misma carpeta
-  if (r.error && r.error.code === 'ETIMEDOUT') return no(`El lanzador no volvió en ${Math.round(timeoutMs / 1000)} s: no sé si abrió la sesión y no reintenté. Mirá con /wip.`);
+  if (r.error && r.error.code === 'ETIMEDOUT') {
+    const left = (slot || copy) && !opts.reuse ? ` Si no abrió: ${leftBehind({ slot, copy })}` : '';
+    return no(`El lanzador no volvió en ${Math.round(timeoutMs / 1000)} s: no sé si abrió la sesión y no reintenté. Mirá con /wip.${left}`);
+  }
   if (r.error) return fail(`El lanzador falló (${r.error.code || r.error.message}): no abrí la sesión.`);
   if (r.status !== 0) {
     const out = `${r.stderr || ''}\n${r.stdout || ''}`;
     const first = out.split('\n').map((l) => l.trim()).find(Boolean);
     if (/not trusted/i.test(out)) {
-      // lo que dijo Claude Code, tal cual y recortado: la próxima versión puede decirlo distinto
-      const line = oneLine(first);
-      const said = line ? ` Claude Code dijo: «${line.length > UNTRUSTED_SAID_MAX ? `${line.slice(0, UNTRUSTED_SAID_MAX)}…` : line}».` : '';
+      const line = untrustedSaid(out);
+      const said = line ? ` Claude Code dijo: «${line}».` : '';
       if (!slot && !copy) return fail(`La carpeta ${where} todavía no está aprobada para Claude Code: la abre el dueño una vez. Mientras tanto, la sesión la abre el dueño y yo le doy el encargo.${said}`);
       return no(untrustedFolder({ name, repo: opts.repo, branch: opts.branch, slot, copy, where, said }));
     }
