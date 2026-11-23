@@ -196,7 +196,7 @@ const PLAN_WAIT_MAX_MS = 24 * 3600000;
 
 /**
  * Las dependencias reales de `plansWaiting`: la última revisión del plan (de esta corrida, también la que se hizo para la
- * sesión que fue adoptada; si no hay, la última de la sesión) y si el perfil delega el plan delicado.
+ * sesión que fue adoptada; si no hay, la última de la sesión).
  */
 function planDepsDefault(home) {
   const PR = require(path.join(SKILL_LIB, 'plan-review.js'));
@@ -204,26 +204,18 @@ function planDepsDefault(home) {
   return {
     revision: (sid, m) => (m && m.storyId ? PR.ultimaDeLaCorrida({ estado, destinos: PR.sesionesDeLaCorrida(sid, m), corrida: PR.corridaDe(m) }) : null)
       || PR.ultimaDelDestino({ estado, destino: sid }),
-    delegada: (sid) => {
-      const coord = PR.designadaDeVerdad(estado);
-      if (!coord || coord === sid) return false;
-      const forma = require(path.join(__dirname, '..', 'lib', 'signatures.js')).PLAN_DELICADO;
-      return !!require(path.join(__dirname, '..', 'lib', 'delegated-signing.js')).delegaSinVentana({ firma: forma, sesion: coord, destino: sid, estado, home }).ok;
-    },
   };
 }
 
 /**
- * Los planes cerrados que esperan su aprobación: `[{ sid, session, storyId, since, minutes, review, porCoordinadora }]`,
- * el que espera hace más primero. `review` es el veredicto de su revisión automática (o null); `porCoordinadora`, si el
- * perfil delega el plan delicado y la revisión lo aprobó: entonces lo puede dar la coordinadora con el sí de la persona.
- * Lo que no se puede leer va a `problems`. `planDeps` (`revision`, `delegada`), para las pruebas.
+ * Los planes cerrados que esperan su aprobación: `[{ sid, session, storyId, since, minutes, review }]`, el que espera
+ * hace más primero. `review` es el veredicto de su revisión automática (o null). Lo que no se puede leer va a
+ * `problems`. `planDeps` (`revision`), para las pruebas.
  */
 function plansWaiting(opts = {}, problems = []) {
   const home = opts.home || require('os').homedir();
   const now = opts.now == null ? Date.now() : Number(opts.now);
   const STEPS = require(path.join(SKILL_LIB, 'steps.js'));
-  const APROBADOS = require(path.join(SKILL_LIB, 'plan-review.js')).APROBADOS;
   const deps = opts.planDeps || planDepsDefault(home);
   const nombres = signatureList.sesiones(home).mapa;
   const out = [];
@@ -235,30 +227,26 @@ function plansWaiting(opts = {}, problems = []) {
     let rev = null;
     try { rev = deps.revision(sid, m); } catch (e) { problems.push(`la revisión del plan de ${sid} (${e.code || e.message})`); }
     // una constancia ilegible de otra revisión no se anuncia acá: la dicen la revisión del plan y su cuadro; acá sólo se
-    // usa la que se leyó, para decir quién puede aprobar
+    // usa la que se leyó, para decir su veredicto
     const review = rev && rev.veredicto ? String(rev.veredicto) : null;
-    let porCoordinadora = false;
-    if (review && APROBADOS.includes(review) && rev.delicate && rev.delicate.value) {
-      try { porCoordinadora = !!deps.delegada(sid); } catch (e) { problems.push(`la delegación del plan de ${sid} (${e.code || e.message})`); }
-    }
     const n = nombres.get(sid);
     out.push({ sid, session: n && n.name ? label(n.name) : null, storyId: m.storyId ? String(m.storyId) : null,
-      since: Number.isFinite(desde) ? desde : null, minutes: Number.isFinite(desde) ? Math.max(0, Math.floor((now - desde) / 60000)) : null, review, porCoordinadora });
+      since: Number.isFinite(desde) ? desde : null, minutes: Number.isFinite(desde) ? Math.max(0, Math.floor((now - desde) / 60000)) : null, review });
   }
   return out.sort((a, b) => (a.since == null ? 1 : b.since == null ? -1 : a.since - b.since));
 }
 
 const quienDelPlan = (p) => (p.session ? `${p.session} (${p.sid})` : p.sid);
 
-/** Un renglón por plan que espera: quién, qué historia, desde cuándo, su revisión y quién lo puede dar. */
+/**
+ * Un renglón por plan que espera: quién, qué historia, desde cuándo, su revisión y quién lo da. Lo da la persona: el plan
+ * de una historia delicada, siempre, aunque el perfil nombre plan-approval:delicada (plan-review.js `antesDeAprobar`).
+ */
 function planWaitLines(rows) {
   return rows.map((p) => {
     const hace = p.minutes == null ? '' : ` hace ${p.minutes} min`;
     const rev = `revisión: ${p.review || 'sin revisión todavía'}`;
-    const quien = p.porCoordinadora
-      ? ` — el perfil delega plan-approval:delicada: lo puede dar la coordinadora con el sí de la persona: marker.js complete-step approve-plan --for-session ${p.sid} --approved "<lo que dijo la persona>"`
-      : ' — lo aprueba la persona';
-    return `${quienDelPlan(p)}: el plan de la ${p.storyId || 'historia sin número'} espera su aprobación${hace} (${rev})${quien}`;
+    return `${quienDelPlan(p)}: el plan de la ${p.storyId || 'historia sin número'} espera su aprobación${hace} (${rev}) — lo aprueba la persona`;
   });
 }
 

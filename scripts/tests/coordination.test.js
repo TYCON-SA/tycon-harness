@@ -3408,9 +3408,10 @@ test('Planes_EsperandoAprobacion_EnStatus: el plan que espera su aprobación sal
   assert.ok(!texto.split('\n').some((l) => /espera su aprobación/.test(l) && /Bea|Ceci/.test(l)), texto);
 });
 
-// Planes_Delegado_LaCoordinadoraLoAprueba
-// 🔴 Falla con: un plan delicado que el perfil delega y la revisión aprobó no dice que lo puede dar la coordinadora.
-test('Planes_Delegado_LaCoordinadoraLoAprueba: con plan-approval:delicada delegada y la revisión aprobada, lo dice', () => {
+// Planes_Delicado_LoApruebaLaPersona
+// 🔴 Falla con: owner-next le dice a la coordinadora que puede dar el plan de una historia delicada porque el perfil nombra
+// plan-approval:delicada (fila 127). El plan de una delicada lo aprueba una persona, diga lo que diga el perfil.
+test('Planes_Delicado_LoApruebaLaPersona: aunque el perfil nombre plan-approval:delicada y la revisión lo aprobó, lo aprueba la persona', () => {
   const t = toy();
   planEsperando(t, 's-ana', 'Ana');
   planEsperando(t, 's-bea', 'Bea', { story: '9.12', hace: 30 });
@@ -3419,16 +3420,10 @@ test('Planes_Delegado_LaCoordinadoraLoAprueba: con plan-approval:delicada delega
     delegada: () => true,
   };
   const rows = C.plansWaiting({ ...t.opts, planDeps: deps });
-  const ana = rows.find((p) => p.sid === 's-ana');
-  const bea = rows.find((p) => p.sid === 's-bea');
-  assert.strictEqual(ana.porCoordinadora, true);
-  assert.strictEqual(bea.porCoordinadora, false, 'con la revisión rechazada, no');
-  const lineas = C.planWaitLines(rows).join('\n');
-  assert.match(lineas, /Ana \(s-ana\).*revisión: aprobado.*lo puede dar la coordinadora con el sí de la persona: .*complete-step approve-plan --for-session s-ana/);
-  assert.match(lineas, /Bea \(s-bea\).*revisión: rechazado/);
-  assert.doesNotMatch(lineas.split('\n').find((l) => /Bea/.test(l)), /coordinadora/);
-  // sin delegación: no lo dice
-  assert.strictEqual(C.plansWaiting({ ...t.opts, planDeps: { ...deps, delegada: () => false } }).find((p) => p.sid === 's-ana').porCoordinadora, false);
+  assert.deepStrictEqual(rows.map((p) => [p.sid, p.review]), [['s-ana', 'aprobado'], ['s-bea', 'rechazado']]);
+  const lineas = C.planWaitLines(rows);
+  assert.match(lineas[0], /Ana \(s-ana\).*revisión: aprobado\) — lo aprueba la persona$/);
+  for (const l of lineas) assert.doesNotMatch(l, /coordinadora|delega|--for-session/, l);
 });
 
 // Planes_OwnerNext_LosNombra
