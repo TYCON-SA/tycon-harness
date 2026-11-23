@@ -12,7 +12,7 @@ const {
   SCRIPTS_DIR, STATE_DIR, STEPS_LIB, anotarArranque, anotarOtraVuelta,
   appendLog, at, avisarOficina, cerrarEjecucion, doingFileOf, estado,
   frenarSiIlegible, frenarSiPerdida, fs, idsDeEspera, markerFilePath, nn,
-  nowIso, opcion, os, path, readMarker, readOwnMarkerRaw, reposParaComparar,
+  nowIso, os, path, readMarker, readOwnMarkerRaw, reposParaComparar,
   resolveStoryPath, sinFirmaNoSeEscribe, syncSessionState, writeMarker,
 } = require('./marker-shared.js');
 
