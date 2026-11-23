@@ -525,6 +525,15 @@ test('Desvio_DespuesDelChequeoDelGuion_YaAprobadoNoDejaRenglon (T20) — @story-
   assert.deepStrictEqual(desviados(L.casa), []);
 });
 
+test('T108o Desvio_ChequeoSinRespuesta_NoSeDesvia_LaVentanaDicePorQue', (t) => {
+  // 🔴 rojo si: sin tiempo para el chequeo del guion, el renglón se desvía a la coordinadora sin comprobarlo
+  const L = laboratorio(t);
+  const r = ow.decidir(pedido(L, 'ses-a', PENDIENTE(L.ajeno), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default', comprobar: () => ({ sinRespuesta: 'el chequeo del guion no terminó en 5 s' }) }));
+  assert.notStrictEqual(r.via, 'desviada', r.texto);
+  assert.match(r.texto, /No se desvió a la coordinadora: el chequeo del guion no terminó en 5 s/);
+  assert.deepStrictEqual(desviados(L.casa), []);
+});
+
 test('AprobacionExplicita_GanaAlDesvio (T23) — @story-8.295 @ac-23', (t) => {
   const L = laboratorio(t);
   const aprobacion = { id: 'ap-1', sesion: 'ses-a', texto: 'aprobado' };
@@ -597,6 +606,25 @@ test('PalabrasRuteadas_ResuelveCadaRutaComoElGuion (T25) — @story-8.295 @ac-1'
   // ya con --for-session, o una firma fuera de la tabla: null
   assert.strictEqual(R('save', [M, 'complete-step', 'save', '--for-session', 'x']), null);
   assert.strictEqual(R('adhoc-lane', [M, 'adhoc', 'open']), null);
+});
+
+// 🔴 Falla con: «cambiar el estado» (sign-file cambiar-el-estado) delegado en el perfil, pero fuera de la lista de
+// desvíos: el freno no la manda a la coordinadora y le llega igual al dueño.
+test('CambiarElEstado_DelegadaEnElPerfil_VaALaCoordinadora — sign-file cambiar-el-estado, con el archivo absoluto', (t) => {
+  const L = laboratorio(t);
+  const perfil = { ...PERFIL, delegated_signing: [...PERFIL.delegated_signing, 'escape:cambiar-el-estado'] };
+  const historia = path.join(L.ajeno, 'specs', 'story-9.99.md');
+  const palabras = [MARKER, 'sign-file', 'cambiar-el-estado', historia];
+  const d = DR.delegable({ firma: 'escape:cambiar-el-estado', destino: 'ses-a', casa: L.casa, palabras, cwd: L.ajeno, delegacion: delegacionReal({ perfil }), plataforma: 'darwin', ...L.lista });
+  assert.strictEqual(d.ok, true, d.motivo);
+  assert.strictEqual(d.coordinadora, 'ses-coord');
+  assert.deepStrictEqual(d.palabras, [MARKER, 'sign-file', 'cambiar-el-estado', historia, '--for-session', 'ses-a']);
+  // con el archivo relativo no se sabe contra qué carpeta lo resuelve la coordinadora: no se desvía
+  const rel = DR.palabrasRuteadas('escape:cambiar-el-estado', [MARKER, 'sign-file', 'cambiar-el-estado', 'specs/story-9.99.md'], 'ses-a', L.ajeno);
+  assert.strictEqual(rel, null, 'un archivo relativo no se desvía');
+  // sin delegarla en el perfil, sigue siendo del dueño (y no se dice)
+  const sin = DR.delegable({ firma: 'escape:cambiar-el-estado', destino: 'ses-a', casa: L.casa, palabras, cwd: L.ajeno, delegacion: delegacionReal(), plataforma: 'darwin', ...L.lista });
+  assert.strictEqual(sin.ok, false);
 });
 
 test('NoRegresion_ListaApagadaSinDesignarCodex_ComoHoy (T26) — @story-8.295 @ac-20', (t) => {
@@ -674,4 +702,105 @@ test('PlazoYRenglon_LoQueNoSeLeeQuedaAnotado (T29) — @story-8.295 @ac-9 @ac-21
   sl.abiertos = () => ({ filas: [], problemas: ['firma-x: la parte desviada no se puede leer'] });
   assert.strictEqual(DR.renglonDesviado({ casa: L.casa, key: 'firma:x', ahora: AHORA, ...L.lista }), null);
   assert.match(errores(), /renglones de la lista que no se entienden \(firma-x: la parte desviada no se puede leer\)/);
+});
+
+// =====================================================================================================================
+// Fila 127: el plan de una historia delicada lo aprueba una persona. El perfil que lista `plan-approval` no lo vuelve
+// de la coordinadora: ni el freno lo desvía ni owner-next se lo ofrece «por delegación». Sin poder saber si es
+// delicada, tampoco. El plan de rutina sigue yendo a ella.
+// =====================================================================================================================
+
+const APROBAR = `node ${MARKER} complete-step approve-plan --approved revisado`;
+const MAQUETA = `node ${MARKER} approve-mockup --approved revisada`;
+/** La historia del marcador de ses-a: delicada (`sensible: plata`) o de rutina. */
+function historiaDeA(L, { delicada }) {
+  fs.mkdirSync(path.join(L.ajeno, 'specs'), { recursive: true });
+  fs.writeFileSync(path.join(L.ajeno, 'specs', 'story-9.99.md'),
+    `---\nstory: 9.99\n${delicada ? 'sensible: plata\n' : ''}files_to_modify:\n  - docs/notas.md\n---\n# Historia 9.99\n`);
+}
+const delegableDelPlan = (L, cmd = APROBAR) => DR.delegable({ firma: 'plan-approval', destino: 'ses-a', casa: L.casa, palabras: ow.canonica(cmd), cwd: L.ajeno, delegacion: delegacionReal(), plataforma: 'darwin', ...L.lista });
+
+// 🔴 Falla con: el freno le desvía a la coordinadora el plan (o la maqueta) de una historia delicada porque el perfil
+// lista plan-approval, y owner-next le dice «no se la muestres a la persona».
+test('PlanDelicado_DelegableNo_ElFrenoNoDesvia — fila 127 (a)', (t) => {
+  const L = laboratorio(t);
+  historiaDeA(L, { delicada: true });
+  for (const cmd of [APROBAR, MAQUETA]) {
+    const d = delegableDelPlan(L, cmd);
+    assert.strictEqual(d.ok, false, `${cmd}: ${JSON.stringify(d)}`);
+    assert.match(d.motivo, /^el plan de una historia delicada lo aprueba una persona \(sensible: /);
+    assert.notStrictEqual(d.callar, true, 'el motivo se dice en la ventana');
+  }
+  // en la pestaña, la ventana dice por qué no fue a la coordinadora; de fondo, tampoco se desvía
+  const r = ow.decidir(pedido(L, 'ses-a', APROBAR, { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default' }));
+  assert.notStrictEqual(r.via, 'desviada', r.texto);
+  assert.match(r.texto, /No se desvió a la coordinadora: el plan de una historia delicada lo aprueba una persona/);
+  const f = ow.decidir(pedido(L, 'ses-a', MAQUETA, { cwd: L.ajeno, id: 'toolu_02' }));
+  assert.notStrictEqual(f.via, 'desviada', f.texto);
+  assert.deepStrictEqual(desviados(L.casa), [], 'ningún renglón para la coordinadora');
+});
+
+// 🔴 Falla con: el arreglo deja de desviar también el plan de rutina, que el perfil le delega a la coordinadora.
+test('PlanDeRutina_SigueDelegable — fila 127 (b)', (t) => {
+  const L = laboratorio(t);
+  historiaDeA(L, { delicada: false });
+  const d = delegableDelPlan(L);
+  assert.strictEqual(d.ok, true, d.motivo);
+  assert.match(d.comando, /complete-step approve-plan --approved revisado --for-session ses-a$/);
+  const r = ow.decidir(pedido(L, 'ses-a', APROBAR, { cwd: L.ajeno }));
+  assert.deepStrictEqual([r.decision, r.via], ['deny', 'desviada'], r.texto);
+  assert.deepStrictEqual(desviados(L.casa).map((g) => g.firma), ['plan-approval']);
+});
+
+// 🔴 Falla con: sin poder saber si la historia es delicada (no está, sin marcador, marcador roto), el plan se desvía igual.
+test('PlanSinSaber_NoDelega — fila 127 (c)', (t) => {
+  const L = laboratorio(t);
+  // la historia del marcador no está en disco
+  let d = delegableDelPlan(L);
+  assert.strictEqual(d.ok, false, JSON.stringify(d));
+  assert.match(d.motivo, /^el plan de una historia delicada lo aprueba una persona \(no pude saber: no pude leer la story/);
+  let r = ow.decidir(pedido(L, 'ses-a', APROBAR, { cwd: L.ajeno }));
+  assert.notStrictEqual(r.via, 'desviada', r.texto);
+  // sin marcador
+  fs.rmSync(path.join(L.estado, 'active', 'ses-a.json'));
+  d = delegableDelPlan(L);
+  assert.strictEqual(d.ok, false, JSON.stringify(d));
+  assert.match(d.motivo, /^el plan de una historia delicada lo aprueba una persona, y no sé si ésta lo es: la sesión ses-a no tiene una ejecución abierta/);
+  // un marcador que no se puede leer
+  fs.writeFileSync(path.join(L.estado, 'active', 'ses-a.json'), '{roto');
+  d = delegableDelPlan(L);
+  assert.strictEqual(d.ok, false, JSON.stringify(d));
+  assert.match(d.motivo, /^el plan de una historia delicada lo aprueba una persona, y no sé si ésta lo es: no pude leer el marcador de la sesión ses-a/);
+  r = ow.decidir(pedido(L, 'ses-a', APROBAR, { cwd: L.ajeno, id: 'toolu_02' }));
+  assert.notStrictEqual(r.via, 'desviada', r.texto);
+  assert.deepStrictEqual(desviados(L.casa), []);
+});
+
+// 🔴 Falla con: owner-next le da a la coordinadora el plan delicado «para vos por delegación» (por la vía del perfil o
+// por un renglón que se desvió cuando la historia era de rutina), con «no se la muestres a la persona».
+test('OwnerNext_PlanDelicado_NoEsPorDelegacion — fila 127 (d)', (t) => {
+  const L = laboratorio(t);
+  historiaDeA(L, { delicada: true });
+  const NO_DELEGADA = /te la delega|no se la muestres a la persona|[Ff]irmala vos por delegación/;
+  // el renglón de la persona, con el perfil que le delega plan-approval a la coordinadora: le llega el cuadro
+  sl.anotarFirma({ casa: L.casa, firma: 'plan-approval', titulo: 'aprobar el plan de una story', sesion: 'ses-a', destino: 'ses-a', comando: APROBAR, palabras: ow.canonica(APROBAR), cwd: L.ajeno, ahora: AHORA });
+  let n = siguiente(L, 'ses-coord');
+  assert.strictEqual(n.tipo, 'firma', JSON.stringify(n));
+  assert.ok(n.pregunta, 'el cuadro de la persona');
+  assert.notStrictEqual(n.delegada, true);
+  assert.doesNotMatch(JSON.stringify(n), NO_DELEGADA);
+  // ni owner-wait le avisa una firma para ella por delegación
+  const C = require('../tools/coordination.js');
+  const vuelta = C.ownerWaitOnce({ home: L.casa, ...L.lista, sessionId: 'ses-coord', now: AHORA + MIN, ownerWaits: () => ({ esperas: [], problemas: [] }), signatureDestinos: () => [] }).lines.join('\n');
+  assert.doesNotMatch(vuelta, /una firma para vos por delegación/);
+  // un renglón desviado cuando era de rutina, y ahora es delicada: pasa a la persona ya, con el motivo
+  const comando = DR.comandoDe(DR.palabrasRuteadas('plan-approval', ow.canonica(APROBAR), 'ses-a', L.ajeno));
+  fs.writeFileSync(sl.archivo(L.casa), JSON.stringify([{ tipo: 'firma', id: 'firma-antes', key: 'firma:antes', firma: 'plan-approval', sesion: 'ses-a', destino: 'ses-a', comando: APROBAR, cwd: L.ajeno, title: 'aprobar el plan de una story', at: AHORA,
+    delegable: { comando, coordinadora: 'ses-coord', cwd: L.propio, tool_use_id: 'toolu_01', plazo_min: 10 } }]));
+  conversacion(L, 'ses-a', [{ id: 'toolu_01', command: APROBAR }]);
+  n = siguiente(L, 'ses-coord');
+  assert.strictEqual(n.tipo, 'firma', JSON.stringify(n));
+  assert.ok(n.pregunta, 'el cuadro de la persona');
+  assert.match(n.nota, /No se la di a la coordinadora para firmar por delegación: el plan de una historia delicada lo aprueba una persona/);
+  assert.doesNotMatch(C.ownerNextText(n, 'ses-coord'), NO_DELEGADA);
 });

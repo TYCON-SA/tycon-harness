@@ -105,6 +105,18 @@ test('todo agente del pase recibe que no borra con rm y que una carpeta vacía s
   assert.doesNotMatch(skeptics[0], /borrá la prueba del repo \(/, 'ya no dice sólo «borrá la prueba» sin cómo');
 });
 
+test('todo agente del pase recibe que cada guion corre con una casa de prueba, no con la de la persona', () => {
+  const { prompts } = correr({ files: ['src/a.js'], runDir: '/repo/.advisors/pipeline-runs/9.9-20261121-1000' });
+  assert.ok(prompts.length >= 7, `las seis lentes y su verificador (${prompts.length} agentes)`);
+  for (const p of prompts) {
+    const quien = /Un hunter \(lente/.test(p) ? 'el verificador' : `la lente «${(p.match(/LENTE: ([^\n.]+)/) || [])[1] || '?'}»`;
+    assert.match(p, /CON UNA CASA DE PRUEBA/, `${quien}: trae la regla`);
+    assert.match(p, /HOME="\$LAB\/casa"/, `${quien}: dice cómo, con HOME dentro del laboratorio`);
+    assert.match(p, /USERPROFILE/, `${quien}: también en Windows`);
+    assert.match(p, /registro de fallas/, `${quien}: dice qué ensucia si no`);
+  }
+});
+
 test('el verificador recibe la orden de guardar la prueba en <runDir>/step-05b-probes/<lente>-<n>', () => {
   const runDir = '/repo/.advisors/pipeline-runs/9.9-20260917-1200';
   const { skeptics } = correr({ files: ['src/a.js'], runDir });

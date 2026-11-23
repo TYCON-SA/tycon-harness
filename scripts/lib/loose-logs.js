@@ -55,14 +55,20 @@ function moveOld(home) {
   return out;
 }
 
-module.exports = { looseLogsDir, looseLogPath, moveOld, STORES };
-
-if (require.main === module && process.argv.includes('--move-old')) {
-  // una línea por registro; nunca frena al aplicador
+/**
+ * El arranque como programa: con `--move-old`, la mudanza, una línea por registro. Devuelve 0 siempre: nunca frena al
+ * aplicador. La corre también la tanda del aplicador de Windows (scripts/setup/applier-batch.js), con la misma respuesta.
+ */
+function cli(argv) {
+  if (!argv.includes('--move-old')) return 0;
   try {
     const r = moveOld();
-    for (const [src, dst] of r.moved) console.log(`✓ tycon: mudé ${src} a ${dst} (el historial de un hook, a la carpeta del estado)`);
-    for (const [src, , why] of r.kept) console.log(`⚠ tycon: ${src} quedó donde está: ${why} — no piso ni borro historial; juntalos a mano si querés`);
-  } catch (e) { console.log(`⚠ tycon: no pude mudar el historial de los hooks (${e.message})`); }
-  process.exit(0);
+    for (const [src, dst] of r.moved) process.stdout.write(`✓ tycon: mudé ${src} a ${dst} (el historial de un hook, a la carpeta del estado)\n`);
+    for (const [src, , why] of r.kept) process.stdout.write(`⚠ tycon: ${src} quedó donde está: ${why} — no piso ni borro historial; juntalos a mano si querés\n`);
+  } catch (e) { process.stdout.write(`⚠ tycon: no pude mudar el historial de los hooks (${e.message})\n`); }
+  return 0;
 }
+
+module.exports = { looseLogsDir, looseLogPath, moveOld, STORES, cli };
+
+if (require.main === module && process.argv.includes('--move-old')) process.exit(cli(process.argv.slice(2)));

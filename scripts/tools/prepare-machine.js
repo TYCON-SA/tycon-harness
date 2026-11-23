@@ -12,7 +12,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *     coordinadora no firma);
  *   · la advertencia del modo sin permisos de Claude Code;
  *   · cada carpeta principal de `--repo` sin aprobar en Claude Code, o con imports externos del CLAUDE.md sin aceptar.
- *     Una copia de un repo aprobado no pregunta: basta la carpeta principal.
+ *     Sus copias y sus puestos no se dan por aprobados: con Claude Code 2.1.330 la sesión de fondo pide aprobar cada
+ *     uno aparte, aunque la principal lo esté, y no lo anota donde se pueda mirar. Lo dice en una nota.
  *
  * SÓLO LEE Y DICE: no escribe en ningún lado, no acepta nada por la persona y no llama a `sudo`. Lo que no pudo mirar
  * lo dice en su línea y nunca dice «lista».
@@ -103,7 +104,11 @@ function hasExternalImports(main, home = os.homedir()) {
       const target = ref.startsWith('~') ? path.join(home, ref.slice(1))
         : (path.isAbsolute(ref) || /^[A-Za-z]:[\\/]/.test(ref)) ? path.resolve(ref)
           : path.resolve(path.dirname(file), ref);
-      if (!fs.existsSync(target)) continue;
+      // un archivo que no existe no se carga; uno que no se puede mirar (sin permiso) no es «no existe»
+      try { fs.statSync(target); } catch (e) {
+        if (e.code === 'ENOENT' || e.code === 'ENOTDIR') continue;
+        return null;
+      }
       const back = path.relative(main, target);
       if (back.startsWith('..') || path.isAbsolute(back)) return true;
       if (nivel + 1 < PROFUNDIDAD_DE_IMPORTS) cola.push({ file: target, nivel: nivel + 1 });
@@ -113,9 +118,16 @@ function hasExternalImports(main, home = os.homedir()) {
 }
 
 // Lo que eligió la organización para actualizar el freno: «auto» o «password», con el aviso si no se pudo leer bien.
-function guardUpdate(cfg) {
+function guardUpdate(cfg, arnes) {
   const rota = (cfg.errores || []).find((e) => e.clave === 'guard.update');
   if (rota) return { value: 'password', note: `guard.update está roto en el perfil del equipo (${rota.motivo}): lo tomo como «con la contraseña»` };
+  // `guard.update` sale sólo del perfil del árbol del arnés: si ese archivo no se lee entero (un error sin clave), no
+  // se sabe qué eligió la organización, y se dice en vez de tomarlo callado como «con la contraseña». Un archivo de la
+  // máquina roto, o un TYCON_PROFILE roto, no cambian esta clave
+  let delArbol = null;
+  try { delArbol = require(path.join(__dirname, '..', 'lib', 'tycon-config.js')).perfilDelArbol(arnes).ruta; } catch (_) { delArbol = null; }
+  const ilegible = (cfg.errores || []).find((e) => !e.clave && (!delArbol || e.archivo === delArbol));
+  if (ilegible) return { value: 'password', note: `no pude leer el perfil del equipo${ilegible.archivo ? ` (${ilegible.archivo})` : ''}: ${ilegible.motivo}; no sé si la organización eligió que el freno se actualice solo, lo tomo como «con la contraseña»` };
   return { value: cfg.valores && cfg.valores.guard && cfg.valores.guard.update === 'auto' ? 'auto' : 'password' };
 }
 
@@ -130,7 +142,7 @@ function guardItems({ judge, cfg, prodRoot, arnes, platform, home }) {
   }
   const installer = path.join(arnes, 'scripts', 'production', 'install-guard.sh');
   const permission = fs.existsSync(path.join(prodRoot, 'opt', 'tycon', 'production', 'auto-update.json'));
-  const gu = guardUpdate(cfg);
+  const gu = guardUpdate(cfg, arnes);
   if (gu.note) items.push({ ok: null, text: gu.note });
   // los avisos del freno tal cual, salvo el de «quedó viejo», que va con el comando de este caso. Un renglón que empieza
   // con espacios sigue al aviso de arriba; uno 🟠 dice que el aviso no pudo mirar algo
@@ -200,6 +212,7 @@ function bypassItems({ home }) {
 
 function repoItems({ repos, home, env, platform }) {
   const items = [];
+  let approvedMain = false;
   const file = env && env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(home, '.claude.json');
   const cfg = readJson(file);
   const projects = cfg.ok ? ((cfg.value || {}).projects || {}) : null;
@@ -213,6 +226,7 @@ function repoItems({ repos, home, env, platform }) {
       items.push({ ok: false, text: `${m.main}: sin aprobar en Claude Code. Abrila una vez y aceptá la carpeta (y los imports del CLAUDE.md, si pregunta):`, command: openIn(m.main, platform) });
       continue;
     }
+    approvedMain = true;
     if (p.hasClaudeMdExternalIncludesApproved) continue;
     const ext = hasExternalImports(m.main, home);
     if (ext === null) {
@@ -223,6 +237,10 @@ function repoItems({ repos, home, env, platform }) {
     } else if (ext) {
       items.push({ ok: false, text: `${m.main}: su CLAUDE.md importa archivos de afuera y los imports no están aceptados. Abrila una vez y aceptalos:`, command: openIn(m.main, platform) });
     }
+  }
+  // la principal aprobada no prueba nada de sus copias ni de sus puestos: no se dan por aprobados
+  if (approvedMain) {
+    items.push({ ok: 'nota', text: 'las copias y los puestos de esos repos: no sé si Claude Code los tiene aprobados (Claude Code 2.1.330 pide aprobar cada uno aparte, aunque la principal lo esté). Si al abrir una sesión ahí dice que la carpeta no está aprobada, abrí claude una vez en esa carpeta (aceptá si pregunta y salí)' });
   }
   return items;
 }

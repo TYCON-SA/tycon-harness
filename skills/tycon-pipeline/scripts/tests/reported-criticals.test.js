@@ -380,6 +380,11 @@ test('Findings_CoreReviewersCloseWithVerdict — los revisores del núcleo y el 
   for (const { agent } of CORE_REVIEWERS) {
     const def = fs.readFileSync(path.join(raiz, 'agents', `${agent}.md`), 'utf8');
     assert.match(def, RE_PIDE_VEREDICTO, `${agent}: no pide cerrar con la regla una vez por hallazgo`);
+    // 🔴 sin la forma «resueltos (…)» en su definición, el revisor de cobertura confirmaba el arreglo en la prosa, el
+    // arnés sólo veía bajar la cuenta, y un hallazgo nuevo con el mismo código pedía la exención del dueño (fila 140)
+    if (agent === 'tycon-ac-coverage-checker') {
+      assert.match(def, /Veredicto: hallazgos \([A-Z][A-Z0-9]*-C\d+\) · bloquea: sí · resueltos \(/, `${agent}: no enseña la parte «resueltos (…)» del veredicto`);
+    }
     // ninguno escribe su detalle a un archivo: ninguno tiene las herramientas de escritura ni de edición (alguno tiene la
     // consola, para leer), y su definición no se lo pide
     const herramientas = (def.match(/^tools:(.*)$/m) || [])[1];
@@ -985,4 +990,149 @@ test('AdvisorRuns_RegistryProtected — el freno de escritura no deja tocar el r
     const r4 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: cmd } }), env: l.env, encoding: 'utf8', cwd: l.repo });
     assert.ok(r4.status === 2 || /"deny"|"block"/.test(out(r4)), `no frenó: ${cmd}`);
   }
+});
+
+// Los resueltos que confirma el revisor (fila 55): una vuelta posterior puede traer un hallazgo nuevo con el mismo código
+// que uno ya arreglado. El revisor dice en su renglón cuáles de su vuelta anterior confirma resueltos, y el arnés lo
+// cuenta como comprobado; lo que diga el agente no alcanza.
+const CON_RESUELTOS = (r, resolved) => ({ ...r, resolved });
+
+test('Resueltos_RenglonConResueltos_NoCuentaComoHallazgo @story-8.296 — «resueltos (…)» se lee aparte de los hallazgos', () => {
+  const rc = rcLib();
+  assert.deepEqual(rc.extractCriticals('x\nVeredicto: hallazgos (SPEC-C3) · bloquea: sí · resueltos (SPEC-C3, SPEC-C7)'), [{ rule: 'SPEC-C3', count: 1 }]);
+  assert.deepEqual(rc.extractResolved('x\nVeredicto: hallazgos (SPEC-C3) · bloquea: sí · resueltos (SPEC-C3, SPEC-C7)'), [{ rule: 'SPEC-C3', count: 1 }, { rule: 'SPEC-C7', count: 1 }]);
+  assert.deepEqual(rc.extractCriticals('Veredicto: limpio · resueltos (SIGNALRC-C1, SIGNALRC-C1)'), []);
+  assert.deepEqual(rc.extractResolved('Veredicto: limpio · resueltos (SIGNALRC-C1, SIGNALRC-C1)'), [{ rule: 'SIGNALRC-C1', count: 2 }]);
+  assert.strictEqual(rc.unreadableReason('Veredicto: limpio · resueltos (SPEC-C3)'), null, 'se sigue leyendo');
+  assert.deepEqual(rc.extractResolved('Veredicto: hallazgos (SPEC-C3) · bloquea: sí'), [], 'sin resueltos, nada');
+  assert.deepEqual(rc.extractResolved('resueltos (SPEC-C3) en otro renglón'), [], 'sólo cuenta en el renglón del veredicto');
+});
+
+test('Resueltos_MismoCodigoEnLaVueltaSiguiente_ElArregloQuedaComprobado @story-8.296 — el caso de la fila 55', () => {
+  const rc = rcLib();
+  const AC = 'tycon-ac-coverage-checker';
+  const findings = [
+    { rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'fixed', file: 'a.js' },
+    { rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'open', file: 'b.js' },
+  ];
+  const base = [LANZADO(at(-200), 1, AC), REPORTE(at(-190), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC }), LANZADO(at(-100), 2, AC)];
+  const antes = rc.cross({ lines: [...base, REPORTE(at(-90), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 2 })], findings });
+  assert.ok(antes.problemas.some((p) => p.tipo === 'arreglado-sin-comprobar'), 'sin «resueltos», como hasta ahora');
+  const con = rc.cross({ lines: [...base, CON_RESUELTOS(REPORTE(at(-90), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }])], findings });
+  assert.deepEqual(con.problemas, [], JSON.stringify(con.problemas));
+});
+
+test('Resueltos_SoloLoQueElMismoRevisorReportoAntes @story-8.296 — no se confirma lo que no reportó, ni más de lo que reportó', () => {
+  const rc = rcLib();
+  const AC = 'tycon-ac-coverage-checker';
+  const OTRO = 'tycon-spec-first-checker';
+  const dos = [{ rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'fixed', file: 'a.js' }, { rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'fixed', file: 'b.js' }];
+  const base = [LANZADO(at(-200), 1, AC), REPORTE(at(-190), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC }), LANZADO(at(-100), 2, AC)];
+  // confirma dos y antes reportó uno: comprueba uno solo
+  const demas = rc.cross({ lines: [...base, CON_RESUELTOS(REPORTE(at(-90), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 2 }])], findings: dos });
+  assert.ok(demas.problemas.some((p) => p.tipo === 'arreglado-sin-comprobar'), JSON.stringify(demas.problemas));
+  // otro revisor que nunca lo reportó no lo confirma
+  const ajeno = rc.cross({ lines: [...base, REPORTE(at(-90), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 2 }),
+    LANZADO(at(-80), 2, OTRO), CON_RESUELTOS(REPORTE(at(-70), [], { advisor: OTRO, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }])],
+  findings: dos.slice(0, 1) });
+  assert.ok(ajeno.problemas.some((p) => p.tipo === 'arreglado-sin-comprobar'), JSON.stringify(ajeno.problemas));
+  // repetir en la vuelta 3 lo que ya confirmó en la 2 no suma más de lo que trajo la 2
+  const repite = rc.cross({ lines: [...base, CON_RESUELTOS(REPORTE(at(-90), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }]),
+    LANZADO(at(-60), 3, AC), CON_RESUELTOS(REPORTE(at(-50), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 3 }), [{ rule: 'SPEC-C3', count: 1 }])],
+  findings: [...dos, { rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'fixed', file: 'c.js' }] });
+  assert.ok(repite.problemas.some((p) => p.tipo === 'arreglado-sin-comprobar'), 'tres arreglados y dos confirmados: falta uno');
+});
+
+test('Resueltos_SeAnotanEnElRegistro @story-8.296 — el renglón del reporte guarda los resueltos', () => {
+  const rc = rcLib();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rc-resueltos-'));
+  const r = rc.recordReport({ stateDir: dir, sessionKey: 's1', advisor: SEC, iter: 2, text: 'ok\nVeredicto: limpio · resueltos (SEC-C1)' });
+  assert.deepEqual(r.resolved, [{ rule: 'SEC-C1', count: 1 }]);
+  assert.deepEqual(r.criticals, []);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Resueltos_NoTapaUnHallazgoAbierto @story-8.296 — lo abierto más lo confirmado resuelto tiene que estar en findings.json', () => {
+  const rc = rcLib();
+  const AC = 'tycon-ac-coverage-checker';
+  const v1 = [LANZADO(at(-200), 1, AC), REPORTE(at(-190), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC })];
+  const v2 = [LANZADO(at(-100), 2, AC), CON_RESUELTOS(REPORTE(at(-90), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }])];
+  const unoSolo = [{ rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'fixed', file: 'a.js' }];
+  // el agente omite el crítico nuevo de la vuelta 2 y marca arreglado el viejo: falta uno
+  const omite = rc.cross({ lines: [...v1, ...v2], findings: unoSolo });
+  assert.ok(omite.problemas.some((p) => p.tipo === 'falta'), JSON.stringify(omite.problemas));
+  // una vuelta 3 que sigue viéndolo, sin resueltos: también hacen falta los dos
+  const v3 = [LANZADO(at(-60), 3, AC), REPORTE(at(-50), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 3 })];
+  const sigue = rc.cross({ lines: [...v1, ...v2, ...v3], findings: unoSolo });
+  assert.ok(sigue.problemas.some((p) => p.tipo === 'falta'), JSON.stringify(sigue.problemas));
+});
+
+test('Resueltos_UnaVezPorVuelta_YSoloComoParteDelRenglon @story-8.296 — dos reportes de la misma vuelta no suman dos veces; «no resueltos» no confirma', () => {
+  const rc = rcLib();
+  const AC = 'tycon-ac-coverage-checker';
+  const dos = [{ rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'fixed', file: 'a.js' }, { rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'fixed', file: 'b.js' }];
+  const lines = [LANZADO(at(-200), 1, AC), REPORTE(at(-190), [{ rule: 'SPEC-C3', count: 2 }], { advisor: AC }), LANZADO(at(-100), 2, AC),
+    CON_RESUELTOS(REPORTE(at(-90), [], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }]),
+    CON_RESUELTOS(REPORTE(at(-80), [], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }])];
+  // la cuenta bajó de 2 a 0: eso sí comprueba los dos; los resueltos repetidos de la vuelta 2 valen uno
+  assert.deepEqual(rc.cross({ lines, findings: dos }).problemas, []);
+  const soloResueltos = [LANZADO(at(-200), 1, AC), REPORTE(at(-190), [{ rule: 'SPEC-C3', count: 2 }], { advisor: AC }), LANZADO(at(-100), 2, AC),
+    CON_RESUELTOS(REPORTE(at(-90), [{ rule: 'SPEC-C3', count: 2 }], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }]),
+    CON_RESUELTOS(REPORTE(at(-80), [{ rule: 'SPEC-C3', count: 2 }], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }])];
+  const cuatro = [...dos, { rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'open', file: 'c.js' }, { rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'open', file: 'd.js' }];
+  assert.ok(rc.cross({ lines: soloResueltos, findings: cuatro }).problemas.some((p) => p.tipo === 'arreglado-sin-comprobar' || p.tipo === 'falta'), 'una confirmación por vuelta, no dos');
+  assert.deepEqual(rc.extractResolved('Veredicto: hallazgos (SEC-C1) · bloquea: sí · no resueltos (SEC-C2)'), []);
+  assert.deepEqual(rc.extractCriticals('Veredicto: hallazgos (SEC-C1) · bloquea: sí · no resueltos (SEC-C2)').map((c) => c.rule).sort(), ['SEC-C1', 'SEC-C2']);
+  assert.deepEqual(rc.extractResolved('Veredicto: limpio · irresueltos (SEC-C2)'), []);
+  // un «limpio» con un paréntesis sin cerrar no se traga los renglones de abajo
+  assert.deepEqual(rc.extractCriticals('Veredicto: limpio (nota\notro [SEC-C9] en prosa'), [{ rule: 'SEC-C9', count: 1 }]);
+});
+
+test('Resueltos_SegundaVuelta_DelPase @story-8.296 — lista sin cerrar, resueltos más bajada, y mención en prosa de lo resuelto', () => {
+  const rc = rcLib();
+  // «resueltos (» sin cerrar no se traga lo que sigue: sus códigos cuentan como hallazgos, y el otro veredicto se lee
+  const roto = 'Veredicto: limpio · resueltos (SEC-C1\n\nDetalle pedido:\n- [SEC-C3] auth.js\nVeredicto: hallazgos (SEC-C3) · bloquea: sí';
+  assert.deepEqual(rc.extractResolved(roto), []);
+  assert.deepEqual(rc.extractCriticals(roto).map((c) => `${c.rule}:${c.count}`).sort(), ['SEC-C1:1', 'SEC-C3:1']);
+  // una lista de hallazgos ya cerrada no une el renglón siguiente por otro paréntesis en la prosa
+  assert.deepEqual(rc.extractCriticals('Veredicto: hallazgos (SEC-C1) · bloquea: sí, ver hallazgos (abajo\nSEC-C7 en la lista vieja'), [{ rule: 'SEC-C1', count: 1 }]);
+  // nombrar entre corchetes lo que confirma resuelto no lo vuelve un hallazgo
+  assert.deepEqual(rc.extractCriticals('El [SEC-C1] quedó arreglado.\nVeredicto: limpio · resueltos (SEC-C1)'), []);
+  // un arreglo confirmado con «resueltos» y otro con la cuenta que baja: los dos comprobados
+  const AC = 'tycon-ac-coverage-checker';
+  const lines = [LANZADO(at(-300), 1, AC), REPORTE(at(-290), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC }),
+    LANZADO(at(-200), 2, AC), CON_RESUELTOS(REPORTE(at(-190), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }]),
+    LANZADO(at(-100), 3, AC), REPORTE(at(-90), [], { advisor: AC, iter: 3 })];
+  const dos = [{ rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'fixed', file: 'a.js' }, { rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'fixed', file: 'b.js' }];
+  assert.deepEqual(rc.cross({ lines, findings: dos }).problemas, []);
+  // la misma vuelta que baja la cuenta y confirma resuelto el mismo hallazgo no lo cuenta dos veces
+  const misma = [LANZADO(at(-300), 1, AC), REPORTE(at(-290), [{ rule: 'SPEC-C3', count: 2 }], { advisor: AC }),
+    LANZADO(at(-200), 2, AC), CON_RESUELTOS(REPORTE(at(-190), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }])];
+  const r = rc.cross({ lines: misma, findings: dos });
+  assert.ok(r.problemas.some((p) => p.tipo === 'arreglado-sin-comprobar'), JSON.stringify(r.problemas));
+});
+
+test('Resueltos_TerceraVuelta_LoQueElUltimoReporteVeNoFiguraArreglado @story-8.296 — pico a mitad y resueltos con bajada', () => {
+  const rc = rcLib();
+  const AC = 'tycon-ac-coverage-checker';
+  const fixed = (n) => Array.from({ length: n }, (_, i) => ({ rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'fixed', file: `f${i}.js` }));
+  // v1 uno; v2 tres nuevos y el viejo resuelto; v3 sigue viendo uno: tres «fixed» no alcanzan
+  const pico = [LANZADO(at(-300), 1, AC), REPORTE(at(-290), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC }),
+    LANZADO(at(-200), 2, AC), CON_RESUELTOS(REPORTE(at(-190), [{ rule: 'SPEC-C3', count: 3 }], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }]),
+    LANZADO(at(-100), 3, AC), REPORTE(at(-90), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 3 })];
+  assert.ok(rc.cross({ lines: pico, findings: fixed(3) }).problemas.length > 0, 'el abierto de v3 no se tapa');
+  // v1 uno; v2 dos con el viejo resuelto; v3 uno: dos «fixed» no alcanzan
+  const baja = [LANZADO(at(-300), 1, AC), REPORTE(at(-290), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC }),
+    LANZADO(at(-200), 2, AC), CON_RESUELTOS(REPORTE(at(-190), [{ rule: 'SPEC-C3', count: 2 }], { advisor: AC, iter: 2 }), [{ rule: 'SPEC-C3', count: 1 }]),
+    LANZADO(at(-100), 3, AC), REPORTE(at(-90), [{ rule: 'SPEC-C3', count: 1 }], { advisor: AC, iter: 3 })];
+  assert.ok(rc.cross({ lines: baja, findings: fixed(2) }).problemas.length > 0, 'el abierto de v3 no se tapa');
+  // con el abierto en findings.json, pasa
+  assert.deepEqual(rc.cross({ lines: baja, findings: [...fixed(2), { rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'open', file: 'z.js' }] }).problemas, []);
+});
+
+test('Resueltos_SoloElUltimoRenglon @story-8.296 — un veredicto citado de la vuelta anterior no confirma nada', () => {
+  const rc = rcLib();
+  const texto = 'Antes dije:\n```\nVeredicto: limpio · resueltos (SEC-C1, SEC-C1)\n```\nAhora:\nVeredicto: hallazgos (SEC-C1) · bloquea: sí';
+  assert.deepEqual(rc.extractResolved(texto), []);
+  assert.deepEqual(rc.extractResolved('Veredicto: hallazgos (SEC-C1) · bloquea: sí\n\nVeredicto: limpio · resueltos (SEC-C1)'), [{ rule: 'SEC-C1', count: 1 }]);
 });

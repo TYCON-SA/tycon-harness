@@ -223,6 +223,26 @@ test('gh: con --head en una variable no toma la punta de la rama actual', () => 
   assert.notStrictEqual(e.sha, remota.slice(0, 12));
 });
 
+// Un pedido abierto con un comando largo (fila 95): el registro guarda el comando cortado, y que es un pedido se decide
+// con el comando entero. Con el corte, la entrada parecía un empuje a main y el cierre pedía el latido de un merge que no
+// existe, con la punta de la rama.
+test('un pedido con un comando largo sigue siendo un pedido aunque el registro corte el comando', () => {
+  const { dir, local } = repoConDev({ soloLocal: true });
+  git(dir, ['checkout', '--quiet', 'main']);
+  const lab = laboratorio();
+  const largo = `cat ${path.join(dir, 'una', 'carpeta', 'con', 'un', 'nombre', 'largo', 'para', 'que', 'el', 'registro', 'corte', 'cuerpo.md')}; ${GH}`;
+  assert.ok(largo.indexOf('gh pr create') > 120, `el pedido queda después del corte: ${largo.indexOf('gh pr create')}`);
+  lab.pedido(largo, dir);
+  const [e] = lab.entradas();
+  assert.ok(e, 'el pedido deja su entrada');
+  assert.strictEqual(e.sha, local.slice(0, 12));
+  assert.doesNotMatch(e.cmd, /pr create/, 'el registro guarda el comando cortado');
+  assert.strictEqual(e.entrega, 'pedido', 'que es un pedido queda anotado aparte');
+  assert.strictEqual(e.tipo, undefined, '`tipo` es de los renglones que no son entradas');
+  const salida = lab.cierre(dir).stdout;
+  assert.strictEqual(salida ? JSON.parse(salida).decision : undefined, undefined, `el cierre no pide el latido de un pedido: ${salida}`);
+});
+
 // El comando de la skill que saca la sha del registro: desde la carpeta principal paga sólo lo que se paga desde ahí.
 function shaDelRegistro(lab, repo) {
   const skill = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-merge-to-main', 'SKILL.md'), 'utf8');
@@ -291,6 +311,50 @@ test('el archivo de otro repo no salda la entrada', () => {
   const lab = laboratorio();
   lab.sembrar({ repoPath: path.join(tmp(), 'ya-no-esta'), principal: repoVivo() });
   fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: tmp(), merge_commit: SHA_ENTERO, project: 'x' }));
+  assert.strictEqual(JSON.parse(lab.cierre(tmp()).stdout).decision, 'block');
+});
+
+// Caso: el latido corrido desde una copia del repo (`<repo>--wt-X`) deja su archivo con la ruta de la copia. El aviso no lo
+// reconocía para el merge anotado desde la carpeta principal: lo seguía pidiendo y mandaba el latido a la principal, que
+// no tenía el commit y pedía un git fetch.
+test('el archivo del latido corrido desde una copia borrada <repo>--wt-X salda la entrada de la carpeta principal', () => {
+  const base = tmp();
+  const principal = path.join(base, 'producto');
+  fs.mkdirSync(principal);
+  git(principal, ['init', '--quiet', '-b', 'main']);
+  git(principal, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: principal });
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: path.join(base, 'producto--wt-X'), merge_commit: SHA_ENTERO, project: 'x' }));
+  assert.strictEqual(lab.cierre(tmp()).stdout, '');
+});
+
+test('el archivo del latido corrido desde una copia viva <repo>--wt-X salda la entrada de la carpeta principal', () => {
+  const base = tmp();
+  const principal = path.join(base, 'producto');
+  fs.mkdirSync(principal);
+  git(principal, ['init', '--quiet', '-b', 'main']);
+  git(principal, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
+  const copia = path.join(base, 'producto--wt-X');
+  git(principal, ['worktree', 'add', '--quiet', '-b', 'tarea', copia, 'main']);
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: principal });
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: copia, merge_commit: SHA_ENTERO, project: 'x' }));
+  assert.strictEqual(lab.cierre(tmp()).stdout, '');
+});
+
+test('un repo aparte que se llama <repo>--wt-X no salda la entrada de <repo>', () => {
+  const base = tmp();
+  const principal = path.join(base, 'producto');
+  const otro = path.join(base, 'producto--wt-X');
+  for (const d of [principal, otro]) {
+    fs.mkdirSync(d);
+    git(d, ['init', '--quiet', '-b', 'main']);
+    git(d, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
+  }
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: principal });
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: otro, merge_commit: SHA_ENTERO, project: 'x' }));
   assert.strictEqual(JSON.parse(lab.cierre(tmp()).stdout).decision, 'block');
 });
 

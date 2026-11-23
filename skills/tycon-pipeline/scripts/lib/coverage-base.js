@@ -27,8 +27,20 @@ const { spawnSync } = require('child_process');
 
 // Devuelve { out } o { error } con el detalle de git: un git que FALLA (binario ausente, carpeta que no
 // existe, permisos) no puede leerse como «ref inválida» o «no es un repo» sin decir por qué.
+// Cada git con su tope: uno que no termina no deja parado a quien busca la base. Lo que se cortó se junta en `cortes`
+// y `resolver` lo devuelve en `cortado`: quien no puede medir sin la base lo dice «no medido», en vez de medir contra otra.
+const TOPE_MS = 120000;
+let tope = TOPE_MS;
+let cortes = [];
+function conTope(args, opts) {
+  const r = spawnSync('git', args, { windowsHide: true, encoding: 'utf8', timeout: tope, killSignal: 'SIGKILL', ...opts });
+  const sub = args[args[0] === '-C' ? 2 : 0];
+  if (r.error && r.error.code === 'ETIMEDOUT') cortes.push(`git ${sub} no terminó en ${String(Math.round(tope / 100) / 10).replace('.', ',')} s y se cortó`);
+  return r;
+}
+
 function git(cwd, args) {
-  const r = spawnSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = conTope(['-C', cwd, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.error) return { error: `git no se pudo ejecutar (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { error: (r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}` };
   return { out: r.stdout.trim() };
@@ -42,7 +54,7 @@ function verificar(top, ref) {
   const r = git(top, ['rev-parse', '--verify', `${ref}^{commit}`]);
   if (r.error) return { motivo: `«${ref}» no es un commit de este repo (${r.error})` };
   const sha = r.out;
-  const anc = spawnSync('git', ['-C', top, 'merge-base', '--is-ancestor', sha, 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
+  const anc = conTope(['-C', top, 'merge-base', '--is-ancestor', sha, 'HEAD'], { stdio: ['ignore', 'ignore', 'pipe'] });
   if (anc.error) return { motivo: `no se pudo verificar si ${sha.slice(0, 12)} es ancestro de HEAD (${anc.error.code || anc.error.message})` };
   if (anc.status === 1) return { motivo: `${sha.slice(0, 12)} no es ancestro de HEAD (otra rama o historia reescrita)` };
   if (anc.status !== 0) return { motivo: `no se pudo verificar si ${sha.slice(0, 12)} es ancestro de HEAD (${(anc.stderr || '').trim().split('\n')[0] || `git salió ${anc.status}`})` };
@@ -62,7 +74,17 @@ function bifurcacion(top) {
   return { motivo: `no encontré la rama principal contra la que buscar la bifurcación (probé ${probadas.join(', ')})` };
 }
 
-function resolver({ repo, env = process.env, marker = null, markerError = null } = {}) {
+/** La base, como `resolverSinCortes`, y `cortado` con los git que vencieron su tope (sólo si alguno venció). */
+function resolver(opts = {}) {
+  cortes = [];
+  tope = opts.topeMs || TOPE_MS;
+  try {
+    const r = resolverSinCortes(opts);
+    return cortes.length ? { ...r, cortado: cortes.join('; ') } : r;
+  } finally { tope = TOPE_MS; }
+}
+
+function resolverSinCortes({ repo, env = process.env, marker = null, markerError = null } = {}) {
   const descartadas = [];
   const t = repo ? git(repo, ['rev-parse', '--show-toplevel']) : { error: 'no se indicó carpeta' };
   if (t.error) {
@@ -103,7 +125,7 @@ function resolver({ repo, env = process.env, marker = null, markerError = null }
     // Un repo sin commits todavía (el que inicia el arranque) se mide contra el árbol vacío: todo es línea tocada.
     // Casos: skills/tycon-pipeline/scripts/tests/start-no-git.test.js
     const sinCommits = git(top, ['symbolic-ref', '-q', 'HEAD']);
-    const vacio = sinCommits.out ? spawnSync('git', ['-C', top, 'hash-object', '-t', 'tree', '--stdin'], { windowsHide: true, input: '', encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }) : null;
+    const vacio = sinCommits.out ? conTope(['-C', top, 'hash-object', '-t', 'tree', '--stdin'], { input: '', stdio: ['pipe', 'pipe', 'pipe'] }) : null;
     if (vacio && vacio.status === 0 && vacio.stdout.trim()) return { ref: vacio.stdout.trim(), source: 'arbol-vacio', descartadas };
     descartadas.push({ source: 'HEAD', motivo: `no hay un HEAD utilizable (${h.error})` });
     return { ref: null, source: null, descartadas };

@@ -32,5 +32,11 @@ before coding: it never approves it itself. You approve it or, if your team uses
 
 If something doesn't work: `/tycon-harness` in Claude Code says what's missing, without touching anything; from any
 terminal, `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` does the same.
-Several sessions at once? [Working with a coordinator](../guides/working-with-a-coordinator.en.md). Everything else is on
-the [cover page](../README.md).
+
+**Several sessions at once?** It is optional: in the session that will organize the others, write "This session is the
+coordinadora". From then on you talk to a single tab, and what the others need from you reaches you there. In normal
+mode, the permission a background session asks for reaches you as a box, with the whole request: you approve it with a
+click or say no. In auto mode permission is rarely asked, and what still is stays in that session's window, with a
+notice to the coordinator. In no-permissions mode nothing is asked. With one or two sessions you don't need it. How it
+works: [Working with a coordinator](../guides/working-with-a-coordinator.en.md). Everything else is on the
+[cover page](../README.md).
