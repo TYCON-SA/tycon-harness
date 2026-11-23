@@ -9,7 +9,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
-const GIT = ['-c', 'user.email=lab@example.invalid', '-c', 'user.name=lab'];
+// el commit base no depende de la configuración de git de quien corre (una firma obligatoria lo haría fallar)
+const GIT = ['-c', 'user.email=lab@example.invalid', '-c', 'user.name=lab', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null'];
 const HISTORIA = 'specs/story-9.9-juguete.md';
 
 /** El repo, su historia y la ejecución abierta de la sesión `sesion` en la casa del laboratorio. */
@@ -33,15 +34,21 @@ function preparar({ dir, casa, sesion }, { archivos }) {
   }));
 }
 
-/** `{ cumple, motivo }`: las pruebas pasan, el texto viejo no quedó en `archivos` y no hubo commits ni borrados. */
+/**
+ * `{ cumple, motivo }`: sólo cambiaron `archivos` (las pruebas y la historia quedan como estaban: un agente que reescribe
+ * `test.js` no cumple), las pruebas pasan, el texto viejo no quedó y no hubo commits ni borrados.
+ */
 function corregir({ dir }, { archivos, viejo }) {
+  const estado = execFileSync('git', ['status', '--porcelain'], { cwd: dir, encoding: 'utf8' }).split('\n').filter(Boolean);
+  const ajenos = estado.filter((l) => !l.startsWith('??')).map((l) => l.slice(3)).filter((f) => !archivos.includes(f));
+  if (ajenos.length) return { cumple: false, motivo: `cambió archivos fuera de la tarea: ${ajenos.join(', ')}` };
   const pruebas = spawnSync(process.execPath, ['test.js'], { cwd: dir, encoding: 'utf8', timeout: 60000 });
   if (pruebas.status !== 0) return { cumple: false, motivo: 'las pruebas no pasan' };
   const quedan = archivos.filter((a) => { try { return fs.readFileSync(path.join(dir, a), 'utf8').includes(viejo); } catch (_) { return true; } });
   if (quedan.length) return { cumple: false, motivo: `queda «${viejo}» en ${quedan.length} archivo(s)` };
   const commits = execFileSync('git', ['rev-list', '--count', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
   if (commits !== '1') return { cumple: false, motivo: 'hizo commits' };
-  const borrados = execFileSync('git', ['status', '--porcelain'], { cwd: dir, encoding: 'utf8' }).split('\n').filter((l) => /^\s?D/.test(l));
+  const borrados = estado.filter((l) => /^\s?D/.test(l));
   if (borrados.length) return { cumple: false, motivo: 'borró archivos' };
   return { cumple: true, motivo: 'las pruebas pasan y no quedó el texto viejo' };
 }

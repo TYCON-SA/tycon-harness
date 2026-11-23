@@ -45,6 +45,8 @@ function arnesDeJuguete() {
     "if (frena) { process.stderr.write('juguete: hecho.txt no se escribe por consola'); process.exit(2); }",
     '',
   ].join('\n'));
+  // el gancho de una exigencia: no se neutraliza
+  escribir(arnes, 'scripts/hooks/hard-guard.js', 'const FRENA = true;\n');
   escribir(arnes, 'scripts/setup/hooks-list.json', JSON.stringify({
     hooks: [{ event: 'PreToolUse', matcher: 'Bash', spec: '@tcg:juguete-guard.js', effect: 'blocks' }],
   }));
@@ -52,8 +54,8 @@ function arnesDeJuguete() {
     entradas: [{ nombre: 'TYCON_TOY_SWITCH', apagan: ['off'] }, { nombre: 'TYCON_OTHER_SWITCH', apagan: ['0'] }],
   }));
   escribir(arnes, 'scripts/metrics/controls-classification.json', JSON.stringify({
-    juguete: { tipo: 'preferencia', ganchos: ['juguete-guard.js'] },
-    duro: { tipo: 'exigencia', ganchos: ['juguete-guard.js'] },
+    'toy-switch': { tipo: 'preferencia', ganchos: ['juguete-guard.js'] },
+    duro: { tipo: 'exigencia', ganchos: ['hard-guard.js'] },
   }));
   return arnes;
 }
@@ -86,7 +88,7 @@ function agenteFalso(raiz) {
 }
 
 /** Un caso de resta en su carpeta: K historias de juguete, el control y cómo se quita. */
-function caso(raiz, { control = 'juguete', quitar = { env: { TYCON_TOY_SWITCH: 'off' } }, historias = 2, k = 2, tareas = [] } = {}) {
+function caso(raiz, { control = 'toy-switch', quitar = { env: { TYCON_TOY_SWITCH: 'off' } }, historias = 2, k = 2, tareas = [], models } = {}) {
   const casos = path.join(raiz, 'casos');
   fs.mkdirSync(casos, { recursive: true });
   fs.writeFileSync(path.join(casos, 'juguete.corrector.js'),
@@ -96,15 +98,15 @@ function caso(raiz, { control = 'juguete', quitar = { env: { TYCON_TOY_SWITCH: '
     nombre: `h${i + 1}`, task: tareas[i] || `Escribí hecho.txt (${i + 1}).`, tree: { 'README.md': `historia ${i + 1}\n` },
     corrector: 'juguete.corrector.js',
   }));
-  fs.writeFileSync(path.join(casos, 'juguete.json'), JSON.stringify({ control, quitar, ganchos: ['@tcg:juguete-guard.js'], k, historias: hs }));
+  fs.writeFileSync(path.join(casos, 'juguete.json'), JSON.stringify(Object.assign({ control, quitar, ganchos: ['@tcg:juguete-guard.js'], k, historias: hs }, models !== undefined ? { models } : {})));
   return casos;
 }
 
 /** Corre el corredor como lo corre una persona, con el agente falso y una HOME «real» de juguete. */
-function correr(args, { agente, home }) {
+function correr(args, { agente, home, env = {} }) {
   return spawnSync(process.execPath, [RUNNER, ...args], {
     encoding: 'utf8',
-    env: Object.assign({}, process.env, { TYCON_SUBTRACTION_AGENT: agente, HOME: home }),
+    env: Object.assign({}, process.env, { TYCON_SUBTRACTION_AGENT: agente, HOME: home }, env),
   });
 }
 
@@ -135,14 +137,14 @@ test('T15 Subtraction_RunsWithAndWithout_InLab @story-8.325 @ac-15: cada histori
   assert.strictEqual(datos.kind, 'prueba-de-resta');
   assert.deepStrictEqual(datos.resultados.map((x) => x.modelo).sort(), ['m-dos', 'm-uno']);
   for (const x of datos.resultados) {
-    assert.strictEqual(x.control, 'juguete');
+    assert.strictEqual(x.control, 'toy-switch');
     // con el control, el gancho de juguete frena hecho.txt en las dos historias; sin él, las dos cumplen
     assert.deepStrictEqual([x.con.corridas, x.con.cumplieron, x.sin.corridas, x.sin.cumplieron], [2, 0, 2, 2], JSON.stringify(x));
     assert.strictEqual(x.cumple_igual, false);
     assert.ok(x.con.costo_usd > x.sin.costo_usd, JSON.stringify(x));
     assert.strictEqual(x.veredicto, null);
   }
-  assert.match(r.stdout, /juguete · m-uno: con el control 0\/2 cumplen · sin él 2\/2/);
+  assert.match(r.stdout, /toy-switch · m-uno: con el control 0\/2 cumplen · sin él 2\/2/);
 
   // quitado en la copia del arnés: el mismo resultado, y el arnés de verdad queda como estaba
   const raiz2 = tmp('resta-t15b-');
@@ -163,6 +165,14 @@ test('T15 Subtraction_RunsWithAndWithout_InLab @story-8.325 @ac-15: cada histori
   // lo que no se prueba: una exigencia, una llave que no existe o que no apaga, un texto que no está una sola vez
   for (const [opts, motivo] of [
     [{ control: 'duro' }, /es una exigencia/],
+    // sin mayúsculas ni espacios de los bordes
+    [{ control: ' Story-Gate ' }, /es una exigencia/],
+    [{ control: 'esc-c1' }, /es una exigencia/],
+    // un nombre de preferencia no tapa la llave de otro control
+    [{ control: 'toy-switch', quitar: { env: { TYCON_OTHER_SWITCH: '0' } } }, /la llave TYCON_OTHER_SWITCH no es la de toy-switch \(sería TYCON_TOY_SWITCH\)/],
+    [{ quitar: { neutralizar: { archivo: 'scripts/hooks/hard-guard.js', buscar: 'const FRENA = true;', poner: 'x' } } }, /corre una exigencia/],
+    [{ quitar: { neutralizar: { archivo: 'scripts/hooks', buscar: 'x', poner: 'y' } } }, /no es un archivo común/],
+    [{ models: 'm-uno' }, /models no es una lista/],
     [{ control: 'ESC-C3' }, /es una exigencia/],
     [{ control: 'story-gate' }, /es una exigencia/],
     [{ quitar: { env: { TYCON_NEW_SWITCH: 'off' } } }, /TYCON_NEW_SWITCH no es una llave del arnés/],
@@ -175,6 +185,61 @@ test('T15 Subtraction_RunsWithAndWithout_InLab @story-8.325 @ac-15: cada histori
     const rn = correr(['--cases', caso(raizN, opts), '--harness', arnes, '--model', 'm-uno'], { agente, home });
     assert.strictEqual(rn.status, 2, `${JSON.stringify(opts)}: ${rn.stderr}`);
     assert.match(rn.stderr, motivo, JSON.stringify(opts));
+  }
+
+  // un enlace del arnés hacia afuera no se neutraliza: la copia escribiría a través de él
+  const afuera = path.join(tmp('resta-afuera-'), 'ajeno.js');
+  fs.writeFileSync(afuera, 'const FRENA = true;\n');
+  const conEnlace = arnesDeJuguete();
+  fs.symlinkSync(afuera, path.join(conEnlace, 'scripts', 'hooks', 'enlace.js'));
+  const raizE = tmp('resta-t15e-');
+  const quitarE = { neutralizar: { archivo: 'scripts/hooks/enlace.js', buscar: 'const FRENA = true;', poner: 'PWNED' } };
+  const re = correr(['--cases', caso(raizE, { quitar: quitarE }), '--harness', conEnlace, '--model', 'm-uno'], { agente, home });
+  assert.strictEqual(re.status, 2, re.stderr);
+  assert.match(re.stderr, /no es un archivo común/);
+  assert.strictEqual(fs.readFileSync(afuera, 'utf8'), 'const FRENA = true;\n', 'el archivo de afuera no cambió');
+
+  // sin la clasificación del arnés no se sabe qué es una exigencia: no se corre
+  const sinClasificacion = arnesDeJuguete();
+  fs.rmSync(path.join(sinClasificacion, 'scripts', 'metrics', 'controls-classification.json'));
+  const raizC = tmp('resta-t15c-');
+  const rc = correr(['--cases', caso(raizC), '--harness', sinClasificacion, '--model', 'm-uno'], { agente, home });
+  assert.strictEqual(rc.status, 2, rc.stderr);
+  assert.match(rc.stderr, /no pude leer la clasificación/);
+});
+
+test('T15b Subtraction_ToyCorrector_TestsUntouched @story-8.325 @ac-15: el corrector de los casos del piloto no da «cumple» si el agente tocó las pruebas', () => {
+  const dirCasos = path.join(TCG, 'scripts', 'controls-bench', 'cases', 'subtraction');
+  const piloto = R.cargarCasos(dirCasos).find((e) => e.caso.control === 'ledger-visible');
+  const historia = piloto.caso.historias.find((h) => h.nombre === 'renombrar');
+  const corrector = require(path.join(dirCasos, historia.corrector));
+  const cambiar = (dir) => {
+    for (const f of fs.readdirSync(path.join(dir, 'src'))) {
+      const p = path.join(dir, 'src', f);
+      fs.writeFileSync(p, fs.readFileSync(p, 'utf8').split('calcularTotal').join('sumarTotal'));
+    }
+  };
+  for (const [que, hacer, cumple] of [
+    ['sin tocar nada', () => {}, false],
+    ['la tarea hecha', cambiar, true],
+    // reescribir las pruebas y borrar el nombre viejo no es hacer la tarea
+    ['las pruebas reescritas', (dir) => {
+      fs.writeFileSync(path.join(dir, 'test.js'), "console.log('ok');\n");
+      for (const f of fs.readdirSync(path.join(dir, 'src'))) {
+        const p = path.join(dir, 'src', f);
+        fs.writeFileSync(p, fs.readFileSync(p, 'utf8').split('calcularTotal').join('x'));
+      }
+    }, false],
+    ['la tarea hecha y la historia tocada', (dir) => { cambiar(dir); fs.appendFileSync(path.join(dir, 'specs', 'story-9.9-juguete.md'), 'listo\n'); }, false],
+  ]) {
+    const dir = R.armarArbol(historia);
+    const casa = tmp('resta-casa-t15b-');
+    try {
+      corrector.preparar({ dir, casa, arnes: TCG, sesion: '11111111-2222-3333-4444-555555555555' });
+      hacer(dir);
+      const nota = corrector.corregir({ dir, casa });
+      assert.strictEqual(nota.cumple, cumple, `${que}: ${nota.motivo}`);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   }
 });
 
@@ -192,6 +257,12 @@ test('T16 Subtraction_NeverTouchesRealMachine @story-8.325 @ac-16: el control se
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   // el gancho corrió (frenó con el control: 0 de 2) y anotó en SU casa, no en la de la persona
   assert.match(r.stdout, /con el control 0\/2 cumplen/);
+
+  // la llave puesta en el ambiente de quien corre no apaga el control del lado «con»: los dos lados darían igual
+  const rl = correr(['--cases', caso(tmp('resta-t16l-')), '--harness', arnes, '--model', 'm-uno'], { agente, home, env: { TYCON_TOY_SWITCH: 'off' } });
+  assert.strictEqual(rl.status, 0, rl.stderr + rl.stdout);
+  assert.match(rl.stdout, /con el control 0\/2 cumplen · sin él 2\/2/);
+  assert.strictEqual(R.ambienteDelAgente(['TYCON_TOY_SWITCH'], { TYCON_TOY_SWITCH: 'off', PATH: '/bin' }).TYCON_TOY_SWITCH, undefined);
   assert.strictEqual(huella(home), antesHome, 'la HOME de la persona no cambió');
   assert.strictEqual(huella(arnes), antesArnes, 'el arnés no cambió');
 

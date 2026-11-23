@@ -61,8 +61,13 @@ const TIMEOUT_POR_DEFECTO_S = 600;
 const TOPE_USD_POR_CORRIDA = '1';
 const HERRAMIENTAS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'];
 // las exigencias que la clasificación no nombra por su clave: las reglas de safety-guard y el freno de las historias
-const REGLA_DE_SAFETY_GUARD = /^ESC-C\d+$/;
+const REGLA_DE_SAFETY_GUARD = /^esc-c\d+$/;
 const EXIGENCIAS_DEL_PIPELINE = new Set(['story-gate']);
+// el código de esas exigencias del pipeline: no se neutraliza en la copia
+const ARCHIVOS_DE_EXIGENCIAS_DEL_PIPELINE = ['skills/tycon-pipeline/scripts/lib/story-gate.js'];
+
+// los nombres de los controles se comparan sin mayúsculas ni espacios de los bordes: «Story-Gate» es story-gate
+const normal = (s) => String(s).trim().toLowerCase();
 
 function leerJson(ruta, porDefecto) {
   try { return JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch (_) { return porDefecto; }
@@ -73,14 +78,35 @@ function adentro(base, ruta) {
   return r.startsWith(path.resolve(base) + path.sep) ? r : null;
 }
 
+/** La clasificación de controles del arnés, o null si no se puede leer: sin ella no se sabe qué es una exigencia. */
+function leerClasificacion(arnes) {
+  const c = leerJson(path.join(arnes, 'scripts', 'metrics', 'controls-classification.json'), null);
+  return c && typeof c === 'object' && !Array.isArray(c) ? c : null;
+}
+
 /** null si el control se puede probar, o el motivo por el que es una exigencia. */
-function esExigencia(control, arnes) {
-  const clasificacion = leerJson(path.join(arnes, 'scripts', 'metrics', 'controls-classification.json'), {});
-  const entrada = clasificacion && clasificacion[control];
-  if (entrada && entrada.tipo === 'exigencia') return `el control ${control} es una exigencia según la clasificación`;
-  if (REGLA_DE_SAFETY_GUARD.test(control)) return `el control ${control} es una exigencia: es una regla de safety-guard`;
-  if (EXIGENCIAS_DEL_PIPELINE.has(control)) return `el control ${control} es una exigencia: protege las historias`;
+function esExigencia(control, clasificacion) {
+  const c = normal(control);
+  const entrada = Object.entries(clasificacion).find(([k]) => normal(k) === c);
+  if (entrada && entrada[1] && entrada[1].tipo === 'exigencia') return `el control ${control} es una exigencia según la clasificación`;
+  if (REGLA_DE_SAFETY_GUARD.test(c)) return `el control ${control} es una exigencia: es una regla de safety-guard`;
+  if (EXIGENCIAS_DEL_PIPELINE.has(c)) return `el control ${control} es una exigencia: protege las historias`;
   return null;
+}
+
+/** La llave de apagado que le corresponde a un control: `ledger-visible` → `TYCON_LEDGER_VISIBLE`. */
+function llaveDelControl(control) {
+  return `TYCON_${normal(control).toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
+}
+
+/** Los archivos que corren una exigencia (sus ganchos, por nombre), que no se neutralizan en la copia. */
+function archivosDeExigencias(clasificacion) {
+  const nombres = new Set();
+  for (const [k, v] of Object.entries(clasificacion)) {
+    if (k === '__doc' || !v || v.tipo !== 'exigencia') continue;
+    for (const g of v.ganchos || []) nombres.add(path.basename(String(g)));
+  }
+  return nombres;
 }
 
 /** Las neutralizaciones de `quitar`, siempre como lista. */
@@ -89,8 +115,11 @@ function neutralizaciones(quitar) {
   return n === undefined ? [] : Array.isArray(n) ? n : [n];
 }
 
-/** null si `quitar` es válido contra el arnés, o el motivo. */
-function validarQuitar(quitar, arnes) {
+/**
+ * null si `quitar` es válido contra el arnés, o el motivo. La llave tiene que ser la del control que el caso nombra: así
+ * el nombre no puede tapar una llave que apaga otra cosa (una exigencia, por ejemplo).
+ */
+function validarQuitar(quitar, arnes, control, clasificacion) {
   const conEnv = quitar && quitar.env !== undefined;
   const ns = neutralizaciones(quitar);
   if (!conEnv && !ns.length) return 'el caso no dice cómo se quita el control (quitar.env o quitar.neutralizar)';
@@ -101,6 +130,7 @@ function validarQuitar(quitar, arnes) {
     for (const [nombre, valor] of Object.entries(quitar.env)) {
       const e = llaves.find((x) => x && x.nombre === nombre);
       if (!e) return `${nombre} no es una llave del arnés: el laboratorio no suma llaves nuevas`;
+      if (nombre !== llaveDelControl(control)) return `la llave ${nombre} no es la de ${control} (sería ${llaveDelControl(control)}): una llave apaga sólo el control que nombra`;
       if (!(e.apagan || []).includes(String(valor))) return `${nombre}=${valor} no la apaga (la apagan: ${(e.apagan || []).join(', ') || 'ningún valor'})`;
     }
   }
@@ -109,6 +139,15 @@ function validarQuitar(quitar, arnes) {
       return 'una neutralización no trae archivo, buscar y poner';
     const ruta = adentro(arnes, n.archivo);
     if (!ruta || !fs.existsSync(ruta)) return `la neutralización nombra ${n.archivo}, que no está en el arnés`;
+    // un enlace escribiría a través de él, fuera del laboratorio; una carpeta no tiene texto que cambiar
+    const st = fs.lstatSync(ruta);
+    if (st.isSymbolicLink() || !st.isFile()) return `la neutralización nombra ${n.archivo}, que no es un archivo común`;
+    if (/(^|[\\/])\.git([\\/]|$)/.test(n.archivo)) return `la neutralización nombra ${n.archivo}, que la copia no lleva`;
+    // una carpeta del camino puede ser un enlace: se compara por la ruta real
+    if (!fs.realpathSync(ruta).startsWith(fs.realpathSync(arnes) + path.sep)) return `la neutralización nombra ${n.archivo}, que sale del arnés`;
+    const rel = path.relative(arnes, ruta).split(path.sep).join('/');
+    if (archivosDeExigencias(clasificacion).has(path.basename(rel)) || ARCHIVOS_DE_EXIGENCIAS_DEL_PIPELINE.includes(rel))
+      return `la neutralización nombra ${n.archivo}, que corre una exigencia`;
     const veces = fs.readFileSync(ruta, 'utf8').split(n.buscar).length - 1;
     if (veces !== 1) return `el texto a neutralizar aparece ${veces} veces en ${n.archivo}: tiene que aparecer una sola`;
   }
@@ -118,10 +157,12 @@ function validarQuitar(quitar, arnes) {
 /** `{ ok, motivo }`: un caso que no se puede correr, o que pide probar una exigencia, no se corre. */
 function validarCaso(caso, dirCaso, arnes = TCG) {
   if (!caso || typeof caso !== 'object') return { ok: false, motivo: 'el caso no es un objeto' };
-  if (typeof caso.control !== 'string' || !caso.control) return { ok: false, motivo: 'el caso no nombra su control' };
-  const exigencia = esExigencia(caso.control, arnes);
+  if (typeof caso.control !== 'string' || !caso.control.trim()) return { ok: false, motivo: 'el caso no nombra su control' };
+  const clasificacion = leerClasificacion(arnes);
+  if (!clasificacion) return { ok: false, motivo: 'no pude leer la clasificación de controles del arnés: sin ella no sé qué es una exigencia' };
+  const exigencia = esExigencia(caso.control, clasificacion);
   if (exigencia) return { ok: false, motivo: `${exigencia}: no va a la prueba de resta` };
-  const q = validarQuitar(caso.quitar, arnes);
+  const q = validarQuitar(caso.quitar, arnes, caso.control, clasificacion);
   if (q) return { ok: false, motivo: q };
   const lista = leerJson(path.join(arnes, 'scripts', 'setup', 'hooks-list.json'), {});
   const ganchos = caso.ganchos === undefined ? [] : caso.ganchos;
@@ -141,6 +182,8 @@ function validarCaso(caso, dirCaso, arnes = TCG) {
     try { mod = require(path.join(dirCaso, h.corrector)); } catch (e) { return { ok: false, motivo: `el corrector ${h.corrector} no carga: ${e.message}` }; }
     if (typeof mod.corregir !== 'function') return { ok: false, motivo: `el corrector ${h.corrector} no exporta corregir()` };
   }
+  if (caso.models !== undefined && !(Array.isArray(caso.models) && caso.models.length && caso.models.every((m) => typeof m === 'string' && m.trim())))
+    return { ok: false, motivo: 'models no es una lista de nombres de modelo' };
   const k = caso.k === undefined ? caso.historias.length : caso.k;
   if (!(Number.isInteger(k) && k >= 1)) return { ok: false, motivo: 'k no es un entero ≥ 1' };
   if (k > caso.historias.length) return { ok: false, motivo: `k (${k}) es mayor que sus historias (${caso.historias.length})` };
@@ -171,6 +214,9 @@ function copiarArnes(arnes, neutralizar = []) {
     fs.cpSync(arnes, copia, { recursive: true, filter: (src) => !/(^|[\\/])\.git$/.test(src) });
     for (const n of neutralizar) {
       const ruta = path.join(copia, n.archivo);
+      // la copia no sigue enlaces: lo que se escribe es un archivo común de la copia, o nada
+      const st = fs.lstatSync(ruta);
+      if (st.isSymbolicLink() || !st.isFile()) throw new Error(`${n.archivo} no es un archivo común en la copia`);
       fs.writeFileSync(ruta, fs.readFileSync(ruta, 'utf8').replace(n.buscar, () => n.poner));
     }
   } catch (e) {
@@ -274,14 +320,18 @@ function sanear(txt) {
 
 const redondear = (x) => Math.round(x * 10000) / 10000;
 
-/** Un lado medido: cuántas corridas, cuántas cumplieron y cuánto costaron (null si ninguna dijo su costo). */
+/**
+ * Un lado medido: cuántas corridas, cuántas cumplieron y cuánto costaron. El costo es null si alguna corrida medida no
+ * lo dijo: una suma parcial se leería como el total.
+ */
 function lado(corridas) {
   const medidas = corridas.filter((r) => r.medida);
-  const costos = medidas.map((r) => r.costo_usd).filter((c) => Number.isFinite(c));
+  const costos = medidas.map((r) => r.costo_usd);
+  const completo = costos.length > 0 && costos.every((c) => Number.isFinite(c));
   return {
     corridas: medidas.length,
     cumplieron: medidas.filter((r) => r.cumple).length,
-    costo_usd: costos.length ? redondear(costos.reduce((a, b) => a + b, 0)) : null,
+    costo_usd: completo ? redondear(costos.reduce((a, b) => a + b, 0)) : null,
   };
 }
 
@@ -297,10 +347,20 @@ function resumir({ control, modelo, k, con, sin }) {
   });
 }
 
-function lanzar(bin, args, { cwd, timeoutS }) {
+/**
+ * El ambiente del agente: el de quien corre, sin las llaves que quitan el control. Si quien corre tiene una puesta, el
+ * lado «con el control» también lo tendría apagado y los dos lados darían igual sin serlo. Del lado «sin», la llave
+ * llega sólo a los ganchos, por su comando.
+ */
+function ambienteDelAgente(sinLlaves = [], base = process.env) {
+  const env = Object.assign({}, base, { TYCON_EVAL_SANDBOX: '1' });
+  for (const k of sinLlaves) delete env[k];
+  return env;
+}
+
+function lanzar(bin, args, { cwd, timeoutS, env }) {
   return new Promise((res) => {
-    const hijo = spawn(bin, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'],
-      env: Object.assign({}, process.env, { TYCON_EVAL_SANDBOX: '1' }) });
+    const hijo = spawn(bin, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env });
     let out = '', err = '';
     const corte = setTimeout(() => { try { hijo.kill('SIGKILL'); } catch (_) { /* ya terminó */ } }, timeoutS * 1000);
     hijo.stdout.on('data', (d) => (out += d));
@@ -344,7 +404,8 @@ async function correrUna({ entrada, historia, modelo, copia, env, lista }) {
     return { medida: false, motivo: `no pude preparar la ejecución: ${e && e.message}` };
   }
   try {
-    const r = await lanzar(bin, args, { cwd: arbol, timeoutS: caso.timeout_s || TIMEOUT_POR_DEFECTO_S });
+    const r = await lanzar(bin, args, { cwd: arbol, timeoutS: caso.timeout_s || TIMEOUT_POR_DEFECTO_S,
+      env: ambienteDelAgente(Object.keys((caso.quitar && caso.quitar.env) || {})) });
     const res = resultadoDe(r.out);
     if (r.code !== 0 || !res || res.is_error || (res.subtype && res.subtype !== 'success')) {
       const ultima = r.err.trim().split('\n').pop();
@@ -420,10 +481,18 @@ async function main(argv) {
     const modelos = modelosArg.length ? modelosArg : (caso.models || MODELOS_POR_DEFECTO);
     const n = runsArg ? Number(runsArg) : (caso.runs || RUNS_POR_DEFECTO);
     const k = caso.k === undefined ? caso.historias.length : caso.k;
-    const copiaCon = copiarArnes(arnes);
     const ns = neutralizaciones(caso.quitar);
-    const copiaSin = ns.length ? copiarArnes(arnes, ns) : copiaCon;
+    let copiaCon = null;
+    let copiaSin = null;
     try {
+      // las dos copias adentro del try: una que falla a mitad no deja la otra en la carpeta temporal
+      try {
+        copiaCon = copiarArnes(arnes);
+        copiaSin = ns.length ? copiarArnes(arnes, ns) : copiaCon;
+      } catch (err) {
+        problemas.push(sanear(`${e.nombre}: no pude copiar el arnés — ${err.message}`));
+        continue;
+      }
       for (const modelo of modelos) {
         const con = [], sin = [];
         for (const historia of caso.historias) {
@@ -446,8 +515,8 @@ async function main(argv) {
           + `${res.veredicto ? ` · ${res.veredicto} (hacen falta ${k} por lado)` : ''}`);
       }
     } finally {
-      fs.rmSync(copiaCon, { recursive: true, force: true });
-      if (copiaSin !== copiaCon) fs.rmSync(copiaSin, { recursive: true, force: true });
+      if (copiaCon) fs.rmSync(copiaCon, { recursive: true, force: true });
+      if (copiaSin && copiaSin !== copiaCon) fs.rmSync(copiaSin, { recursive: true, force: true });
     }
   }
 
@@ -458,7 +527,7 @@ async function main(argv) {
 
 module.exports = {
   validarCaso, cargarCasos, copiarArnes, casaDelLaboratorio, settingsDelLaboratorio, rutaDelGancho, armarArbol, comandoDelAgente,
-  usosDeHerramientas, resumir, main, MODELOS_POR_DEFECTO,
+  usosDeHerramientas, resumir, ambienteDelAgente, llaveDelControl, main, MODELOS_POR_DEFECTO,
 };
 
 if (require.main === module) {
