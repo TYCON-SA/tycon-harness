@@ -6578,14 +6578,8 @@ function paraOtraSesion(cmd, args, argv) {
   return null;
 }
 
-// ¿La vuelta extra es una firma de trámite? Lo es si el perfil del equipo la lista en `approvals.delegated_signing`
-// (scripts/lib/automatic-signing.js): la da el arnés solo, sin ventana ni cuadro, y el cartel no puede decir que la
-// aprueba una persona. Sin poder leer el perfil, no lo es.
-function vueltaExtraDeTramite() {
-  try {
-    return !!require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'automatic-signing.js')).esDeTramite({ firma: 'extra-round' }).ok;
-  } catch (_) { return false; }
-}
+// ¿La vuelta extra es una firma de trámite? La misma respuesta que el cartel del cierre (lib/review-rounds.js).
+const vueltaExtraDeTramite = () => require('./lib/review-rounds.js').vueltaExtraDeTramite();
 
 // El tope de vueltas de revisores (lib/review-rounds.js): null si la vuelta `iter` puede servirse, o el mensaje llano de
 // por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona (una vuelta extra con su

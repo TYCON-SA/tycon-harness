@@ -564,6 +564,12 @@
       "requiere": []
     },
     {
+      "__nota": "el portón por parte: una parte que no cambió desde su verde en esta story y rama lo conserva; lo que cambia la huella (la parte, lo común, lo ignorado, el entorno, el portón) la vuelve a correr (fila 79, punto 5).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-part-keep.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-size.test.js",
       "requiere": [
@@ -2665,6 +2671,12 @@
       "__nota": "el permiso de una sesión de fondo le llega a la persona como cuadro (scripts/hooks/permission-relay.js, story 8.180 tanda B): en proceso, con casa de juguete y reloj propio.",
       "raiz": "arnes",
       "ruta": "tests/permission-relay.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un pase lanzado sin el pipeline pasa por el turno de tarea pesada (scripts/hooks/agile-pass-turn.js, fila 126 a): qué cuenta como pase, el aviso con quién tiene el turno, el «arrancá» y la reserva para la sesión; el gancho entero con casa de juguete.",
+      "raiz": "arnes",
+      "ruta": "tests/agile-pass-turn.test.js",
       "requiere": []
     },
     {
