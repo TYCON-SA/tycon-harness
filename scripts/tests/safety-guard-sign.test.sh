@@ -88,6 +88,12 @@ case "$ERR" in *ESC-C3*) ok "sin la carpeta temporal del sistema, correrla frena
 # y al revés: un $TMPDIR que ya no existe (lo borró la limpieza de temporales) no frena lo que sólo lee
 TMPDIR="$RAIZ/no-existe" correr "$GUARD" "$RAIZ/sin-casa" "grep -n $LIB notas.txt"
 case "$ERR" in *ESC-C3*) no "con un TMPDIR que no existe, frenó lo que sólo lee" ;; *) ok "con un TMPDIR que no existe, lo que sólo lee pasa" ;; esac
+# lo mismo con un `mktemp` como el de Linux, que sin argumentos también usa $TMPDIR: en la Mac el real lo ignora
+mkdir -p "$RAIZ/mktemp-linux"
+printf '#!/bin/sh\nif [ "$#" -eq 0 ] && [ -n "${TMPDIR:-}" ]; then exec "%s" "$TMPDIR/tmp.XXXXXX"; fi\nexec "%s" "$@"\n' "$(command -v mktemp)" "$(command -v mktemp)" > "$RAIZ/mktemp-linux/mktemp"
+chmod +x "$RAIZ/mktemp-linux/mktemp"
+PATH="$RAIZ/mktemp-linux:$PATH" TMPDIR="$RAIZ/no-existe" correr "$GUARD" "$RAIZ/sin-casa" "grep -n $LIB notas.txt"
+case "$ERR" in *ESC-C3*) no "con el mktemp de Linux y un TMPDIR que no existe, frenó lo que sólo lee" ;; *) ok "con el mktemp de Linux y un TMPDIR que no existe, lo que sólo lee pasa" ;; esac
 # sin ninguna de las dos, frena: lo que no se leyó no pasa
 PATH="$RAIZ/sin-temporal-del-sistema:$PATH" TMPDIR="$RAIZ/no-existe" correr "$GUARD" "$RAIZ/sin-casa" "grep -n $LIB notas.txt"
 case "$ERR" in *ESC-C3*) ok "sin ninguna carpeta temporal, frena" ;; *) no "sin ninguna carpeta temporal, no frenó" ;; esac
