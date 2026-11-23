@@ -26,6 +26,8 @@ const SID = 'sesion-falsa-historia';
 const ENV = { TYCON_LEDGER_VISIBLE: undefined, TYCON_STORY_GATE: undefined, TYCON_STORY_SKILL_GATE: undefined, TYCON_NO_RUN_CHANGE: '1' };
 const HISTORIA = 'HISTORIA ESCRITA POR CONSOLA';
 const Q = `'"'"'`;
+// la edición en el lugar sin copia: `-i ''` en el sed de BSD (macOS), `-i` en el de GNU (en GNU `-i ''` es otra cosa)
+const EN_LUGAR = process.platform === 'darwin' ? "-i ''" : '-i';
 
 function conEnv(vars, fn) {
   const antes = {};
@@ -85,14 +87,14 @@ test('SedEnLugar_ComillaSimpleMetida_SobreSh_NoEsHistoria', () => {
   const c = carpeta();
   const cmd = `cd ${c.lab} && sed -e 's|^PROG=.*|PROG="rm $P/$N"|' -e '/^CASOS$/,$d' medir.sh > medir-shell.sh `
     + `&& printf '%s\\n' 'bash|bash -c {}' 'sh|sh -c {}' 'CASOS' >> medir-shell.sh `
-    + `&& sed -i '' 's|^done <<.CASOS.$|done <<${Q}CASOS${Q}|' medir-shell.sh`;
+    + `&& sed ${EN_LUGAR} 's|^done <<.CASOS.$|done <<${Q}CASOS${Q}|' medir-shell.sh`;
   const r = juzgar(c, cmd);
   assert.ok(!frenaComoHistoria(r), `el sed nombra sólo medir-shell.sh: ${r && r.block}`);
 });
 
 test('SedEnLugar_ComillaSimpleMetida_ArchivoEnVariable_NoEsHistoria', () => {
   const c = carpeta();
-  const r = juzgar(c, `cd ${c.lab}; f=scripts/tests/guard.test.sh; sed -i '' 's/    ${Q}case "\${1:-} $\\*" in${Q},/    ${Q}case "$*" in${Q},/' $f; grep -n x $f`);
+  const r = juzgar(c, `cd ${c.lab}; f=scripts/tests/guard.test.sh; sed ${EN_LUGAR} 's/    ${Q}case "${'$'}{1:-} $\\*" in${Q},/    ${Q}case "$*" in${Q},/' $f; grep -n x $f`);
   assert.ok(!frenaComoHistoria(r), `el sed nombra sólo el guion de prueba: ${r && r.block}`);
 });
 
