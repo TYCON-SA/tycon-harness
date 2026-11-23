@@ -1543,3 +1543,30 @@ test('Pase_PropiaConOtrasMayusculas_NoFrena — la prueba propia declarada con o
   const cierre = C.correr('marker.js', ['mark-adversarial-result', '1', '--type', '5b', '--result', f, '--run', 'r1', '--tests', '1', '--own', '1', '--in', '(Front) Tests/X.test.js']);
   assert.doesNotMatch(salida(cierre), /el código de un repo hermano cambió/, salida(cierre));
 });
+
+test('Pase_HermanoConSubmodulo_FrenaSiCambiaAdentro — un archivo sin commitear dentro de un submódulo o de un repo anidado del hermano frena el cierre y nombra la carpeta', () => {
+  // 🔴 rojo si: el sello anota sólo el commit de cada submódulo → editar sus archivos después de lanzar el pase no cambia
+  // el sello y el cierre no lo ve.
+  const sub = repoDeJuguete('Sub', { 's.js': 'module.exports = 1;\n', 'tests/s.test.js': '// prueba\n' });
+  const sib = repoDeJuguete('Sib', { 'a.js': 'module.exports = 1;\n' });
+  sib.git('-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub.repo, 'vend');
+  // un repo anidado sin registrar como submódulo: `add -A` también lo anota sólo por su commit
+  const anidado = path.join(sib.repo, 'anidado');
+  fs.mkdirSync(anidado);
+  fs.writeFileSync(path.join(anidado, 'n.js'), 'module.exports = 1;\n');
+  for (const a of [['init', '-q', '-b', 'main'], ['config', 'user.email', 't@t'], ['config', 'user.name', 't'], ['add', '.'], ['commit', '-qm', 'anidado']]) {
+    execFileSync('git', ['-C', anidado, ...a], { stdio: 'ignore' });
+  }
+  sib.git('add', '-A');
+  sib.git('commit', '-qm', 'con submódulo y repo anidado');
+  const sellos = { [sib.repo]: ft().seal(sib.repo).tree };
+  const cambio = (permitidos) => ft().hermanosCambiados({ sellos, hermanos: [sib.repo], permitidos });
+  assert.deepStrictEqual(cambio(), [], 'limpio no frena');
+  fs.writeFileSync(path.join(sib.repo, 'vend', 's.js'), 'module.exports = 2;\n');
+  assert.deepStrictEqual(cambio(), [{ repo: sib.repo, files: ['vend/s.js'] }]);
+  fs.writeFileSync(path.join(anidado, 'nuevo.js'), 'module.exports = 3;\n');
+  assert.deepStrictEqual(cambio(), [{ repo: sib.repo, files: ['anidado/nuevo.js', 'vend/s.js'] }]);
+  // la prueba propia que el cierre declara adentro del submódulo no cuenta, como afuera; el código sí
+  fs.writeFileSync(path.join(sib.repo, 'vend', 'tests', 's.test.js'), '// prueba de regresión del pase\n');
+  assert.deepStrictEqual(cambio([path.join(sib.repo, 'vend', 'tests', 's.test.js')]), [{ repo: sib.repo, files: ['anidado/nuevo.js', 'vend/s.js'] }]);
+});

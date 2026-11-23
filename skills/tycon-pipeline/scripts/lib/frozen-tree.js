@@ -306,8 +306,42 @@ function mismoArchivo(a, b) {
 }
 
 /**
+ * Lo sin commitear adentro de los submódulos y repos anidados de un repo, que el sello no ve: `add -A` anota de cada uno
+ * sólo su commit, no sus archivos. `{ files }` con cada archivo que su `git status` marca (con la carpeta adelante; un
+ * submódulo de adentro con cambios sale por su carpeta), o `{ error }` si alguno no se pudo mirar. Un submódulo sin bajar
+ * (sin carpeta, o vacía) no tiene archivos que mirar.
+ */
+function anidadosConCambios(repo, tree) {
+  const ls = git(['-C', repo, 'ls-tree', '-r', '-z', tree]);
+  if (!ls.ok) return { error: `no pude listar los submódulos de ${repo}: ${unaLinea(ls.err)}` };
+  const files = [];
+  for (const e of ls.crudo.split('\0')) {
+    const tab = e.indexOf('\t');
+    if (tab < 0 || !e.startsWith('160000 ')) continue;
+    const rel = e.slice(tab + 1);
+    const dir = path.join(repo, rel);
+    let entradas = [];
+    try { entradas = fs.readdirSync(dir); } catch (_) { entradas = []; }
+    if (!entradas.length) continue;
+    const top = git(['-C', dir, 'rev-parse', '--show-toplevel']);
+    if (!top.ok || canonica(top.out) !== canonica(dir)) return { error: `${rel} es un submódulo con archivos que no es un repo de git: no pude ver si cambió` };
+    const st = git(['-C', dir, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none']);
+    if (!st.ok) return { error: `no pude ver el estado del submódulo ${rel}: ${unaLinea(st.err)}` };
+    const partes = st.crudo.split('\0');
+    for (let i = 0; i < partes.length; i++) {
+      if (partes[i].length < 4) continue;
+      files.push(path.posix.join(rel, partes[i].slice(3)));
+      // un renombre trae después el nombre de antes
+      if (partes[i][0] === 'R' || partes[i][0] === 'C') i++;
+    }
+  }
+  return { files };
+}
+
+/**
  * ¿Cambió el código de algún hermano desde que se lanzó el pase? Se vuelve a sellar cada hermano de la carpeta viva y se
- * compara con su sello del lanzamiento. `permitidos`: las pruebas propias que el cierre declara (`--own --in`), escritas
+ * compara con su sello del lanzamiento; lo sin commitear adentro de sus submódulos y repos anidados, que el sello no ve,
+ * cuenta como cambio. `permitidos`: las pruebas propias que el cierre declara (`--own --in`), escritas
  * a propósito después del pase; no cuentan. Se comparan como `verificarPruebasPropias`: una prueba declarada con otras
  * mayúsculas libera el mismo archivo donde el disco no las distingue. Una declarada que es un enlace no libera nada: un
  * enlace de una prueba al código es justo lo que el cierre tiene que ver. Devuelve `[{ repo, files }]` o
@@ -320,13 +354,19 @@ function hermanosCambiados({ sellos, hermanos, permitidos = [] }) {
     if (!tree) { out.push({ repo, error: `el lanzamiento no trae el sello de ${repo}` }); continue; }
     const ahora = seal(repo);
     if (ahora.error) { out.push({ repo, error: ahora.error }); continue; }
-    if (ahora.tree === tree) continue;
-    const c = changed(repo, tree, ahora.tree, {});
-    if (c.error) { out.push({ repo, error: c.error }); continue; }
+    const anidados = anidadosConCambios(repo, ahora.tree);
+    if (anidados.error) { out.push({ repo, error: anidados.error }); continue; }
+    let cambiados = [];
+    if (ahora.tree !== tree) {
+      const c = changed(repo, tree, ahora.tree, {});
+      if (c.error) { out.push({ repo, error: c.error }); continue; }
+      cambiados = [...c.files, ...(c.papeleo || [])];
+    }
+    if (!cambiados.length && !anidados.files.length) continue;
     const libres = permitidos.map((p) => path.resolve(repo, p))
       .filter((p) => { try { return !fs.lstatSync(p).isSymbolicLink(); } catch (_) { return true; } })
       .map(conCarpetaCanonica);
-    const files = [...c.files, ...(c.papeleo || [])]
+    const files = [...new Set([...cambiados, ...anidados.files])]
       .filter((f) => { const k = conCarpetaCanonica(path.join(repo, f)); return !libres.some((l) => mismoArchivo(l, k)); }).sort();
     if (files.length) out.push({ repo, files });
   }
