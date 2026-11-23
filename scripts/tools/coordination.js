@@ -3169,6 +3169,8 @@ function jobVerbs(opts, id, what) {
 }
 // el id va como argumento del lanzador: uno que empieza con guion se leería como una opción
 const JOB_ID_RE = /^\w[\w-]*$/;
+// el id de fondo entero, como lo guarda Claude Code en su carpeta de trabajos
+const RELAUNCH_ID_RE = /^[0-9a-f]{8}$/;
 // el ref que muestra ListAgents entre corchetes: seis caracteres hexadecimales
 const LIST_REF_RE = /^[0-9a-f]{6}$/i;
 
@@ -3278,33 +3280,45 @@ function relaunch(opts = {}) {
   const id = opts.id;
   const nada = 'no relancé nada.';
   const no = (message) => ({ ok: false, message: oneLine(message) });
-  if (!id || !JOB_ID_RE.test(String(id))) return no(`relaunch va con --id <el id de fondo>: ${nada}`);
+  // el id entero: `claude respawn` también toma el comienzo de un id, y así relanzaría (cortándola) una que está viva
+  if (!id || !RELAUNCH_ID_RE.test(String(id))) return no(`relaunch va con --id <el id de fondo, de 8 caracteres>: ${nada}`);
   if (isCodex(env) && !opts.launcher) return no(`Codex no tiene sesiones de fondo que relanzar: ${nada}`);
   // la relanza la coordinadora o una persona en su terminal: una sesión de trabajo no levanta otra
   const caller = sessionOf({ ...opts, env });
   const d = designacionVigente({ home });
   if (d && d.error) return no(`No pude saber cuál es la coordinadora (${d.error}): ${nada}`);
   if (caller && (!d || d.sesion !== caller)) return no(`Una sesión la relanza la coordinadora designada o una persona en su terminal: ${nada}`);
-  const liveWithId = () => [...sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null).entries()]
-    .find(([, x]) => x.alive && /^(bg|background)$/.test(String(x.kind)) && x.jobId === id) || null;
-  const already = liveWithId();
+  const read = () => { const unreadable = []; const m = sessionsBySid(path.join(claudeDir(home), 'sessions'), unreadable, null); return { m, unreadable }; };
+  const liveWithId = (m) => [...m.entries()].find(([, x]) => x.alive && /^(bg|background)$/.test(String(x.kind)) && x.jobId === id) || null;
+  // un archivo que no se lee puede ser el de la viva con ese id
+  const before = read();
+  if (before.unreadable.length) return no(`No pude leer todas las sesiones (${before.unreadable[0]}): ${nada}`);
+  const already = liveWithId(before.m);
   if (already) return no(`«${already[1].name || already[0]}» (${id}) está viva: ${nada}`);
   const job = jobVerbs(opts, id, nada);
   if (job.error) return no(job.error);
   // la hora antes de lanzar, como en `open`: la sesión nueva arranca después, dentro de la ventana de su anotación
   const now = Date.now();
   const failed = job.run('respawn');
-  if (failed) return no(`${id}: no la pude relanzar (${failed}), ${nada}`);
+  // sin respuesta del lanzador no se sabe si la relanzó: se la busca igual
+  const unsure = failed === 'ETIMEDOUT';
+  if (failed && !unsure) return no(`${id}: no la pude relanzar (${failed}), ${nada}`);
   const waitMs = Number.isFinite(opts.waitMs) ? opts.waitMs : LAUNCH_TIMEOUT_MS;
-  let found = liveWithId();
-  for (const until = Date.now() + waitMs; !found && Date.now() < until; found = liveWithId()) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+  let found = liveWithId(read().m);
+  for (const until = Date.now() + waitMs; !found && Date.now() < until; found = liveWithId(read().m)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+  if (!found && unsure) return { ok: false, message: oneLine(`El lanzador no volvió a tiempo y no la vi viva: no sé si la relanzó (${id}). Mirá con /wip; no la anoté como abierta por la coordinadora.`) };
   if (!found) return { ok: true, message: oneLine(`Relancé ${id}, pero no la vi viva en ${Math.round(waitMs / 1000)} s: no la anoté como abierta por la coordinadora. Mirá con /wip; sus firmas de rutina van a la lista del dueño.`) };
   const [sid, x] = found;
-  const name = fullSessionName(home, sid) || x.name;
+  // el nombre como lo lista /wip, que es con lo que se reconoce en el registro
+  const name = x.name;
   const noted = withOpenLock(home, OPEN_LOCK_WAIT_MS, () => {
+    // anotar poda por nombre: con otra sesión viva de ese nombre se le borraría su renglón, como `open` no abre con un nombre en uso
+    const { m, unreadable } = read();
+    if (unreadable.length) return { ok: false, message: `no pude leer todas las sesiones (${unreadable[0]})` };
+    if (!name || [...m.entries()].some(([o, y]) => o !== sid && y.alive && y.name === name)) return { ok: false, message: `otra sesión viva ya se llama «${name}»` };
     try { noteLaunched({ home, now, name, cwd: x.cwd, por: caller }); return null; } catch (e) { return { ok: false, message: e.code || e.message }; }
   });
-  if (noted) return { ok: true, message: oneLine(`Relancé «${name}» (${id}), pero no la pude anotar como abierta por la coordinadora (${noted.message}): sus firmas de rutina van a la lista del dueño.`) };
+  if (noted) return { ok: true, message: oneLine(`Relancé «${name}» (${id}), pero ${noted.message}: no la anoté como abierta por la coordinadora, y sus firmas de rutina van a la lista del dueño.`) };
   return { ok: true, message: `relancé «${name}» (${id}); queda como abierta por la coordinadora` };
 }
 
