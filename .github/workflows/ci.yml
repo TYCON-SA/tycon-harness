@@ -28,11 +28,13 @@
 #     (public-ci.sh, TYCON_PUBLIC_CI_PART); la lista tiene que traer `checks`, `controls-bench` y TODAS las
 #     `suites-<i>-of-<n>`, de 1 a n: una que falta deja pasos sin correr y el veredicto igual verde. Una base que todavía
 #     no conoce la parte `controls-bench` corre el banco dentro de `checks`: esa parte sale verde y lo dice;
-#   · en un pull request corren todas las partes y el ensayo de Windows: el error de un pedido se ve en su pedido, y no
+#   · en un pull request corren `checks`, `controls-bench` y las suites: el error de un pedido se ve en su pedido, y no
 #     recién en la cola. La cola las corre otra vez sobre el pedido combinado con los que entraron antes, que no es el
-#     commit que probó el pedido. Sólo `installer-floor` termina al instante en un pedido, verde, con una línea que lo
-#     dice: corre en la cola y en un push a main que no hizo la cola. Lo que un administrador mergea salteándola la corre
-#     después, en main, sin que nada la corte (ver `concurrency`);
+#     commit que probó el pedido. `installer-floor`, `controls-bench-base` y los cuatro trabajos de `windows` terminan al
+#     instante en un pedido, verdes, con una línea que lo dice: corren enteros en la cola y en un push a main que no hizo
+#     la cola. En 245 corridas ninguno de los cinco frenó un pedido que no frenara también otra parte, y Windows es el más
+#     lento: correrlos en cada pedido llenaba la cola de trabajos de GitHub. Lo que un administrador mergea salteándola
+#     la corre después, en main, sin que nada la corte (ver `concurrency`);
 #   · el ensayo de Windows (`windows`): un trabajo windows-latest por escenario, los cuatro de
 #     scripts/ci/windows-rehearsal.js. Los escenarios y el job los exige la regla `windows` del control;
 #   · el último job se llama `public-ci` y es el ÚNICO chequeo que las reglas de la rama exigen. Tiene nombre estable a
@@ -45,7 +47,10 @@
 name: public-ci
 
 on:
+  # un pedido en borrador no corre los trabajos (ver la condición de cada job); sacarlo del borrador
+  # (`ready_for_review`) lanza la corrida entera
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   merge_group:
@@ -64,7 +69,7 @@ permissions:
 jobs:
   checks:
     name: Node ${{ matrix.node }} · ${{ matrix.part }}
-    if: github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'
+    if: github.event.pull_request.draft != true && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -87,6 +92,11 @@ jobs:
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
+          # en un pedido no corre el banco de la base: corre en la cola y en un push a main que no hizo la cola
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench-base" ]; then
+            echo "en un pedido no corre la parte controls-bench-base: corre en la cola de merge"
+            exit 0
+          fi
           # en un pedido BASE_REF es «main»; en la cola es «refs/heads/main»: se le saca el prefijo
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
             # los controles y su regla salen de la base: en la cola, la base del grupo; en un pedido, la punta de la rama
@@ -127,7 +137,7 @@ jobs:
   # Obligatorio: el chequeo `public-ci` lo espera como a los demás.
   installer-floor:
     name: Node 22 · installer-floor
-    if: github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'
+    if: github.event.pull_request.draft != true && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -145,7 +155,7 @@ jobs:
         run: |
           # en un pedido no corre: el piso lo corre la cola, y en la cola y en el push a main corre siempre, entero
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: installer-floor corre en la cola de merge"
+            echo "en un pedido no corre installer-floor: corre en la cola de merge"
             exit 0
           fi
           bash scripts/ci/public-ci.sh --clean-machine
@@ -166,12 +176,13 @@ jobs:
   # la actualización; `waiver`, las firmas del dueño por terminal; `old-node`, un Node más viejo que el piso; `npx`, el
   # instalador por npx. Sin setup-node a propósito: se ensaya con el Node que trae la máquina, como un dev. Rojo es no
   # haber podido ensayar, o que ningún paso midiera; lo que el ensayo encuentra va en el resumen de la corrida y no pone
-  # rojo el trabajo. Corre en el pedido, en la cola de merge y en el push a main (unos 12 minutos el más largo). El tope
+  # rojo el trabajo. En un pedido cada paso termina al instante, verde, y lo dice; corre entero en la cola de merge y en
+  # el push a main que no hizo la cola (unos 13 minutos el más largo). El tope
   # es el de Azure: si un paso se cuelga, cada uno corta en el suyo y el reporte llega a salir.
   # Obligatorio: el chequeo `public-ci` lo espera como a los demás.
   windows:
     name: Windows · ${{ matrix.scenario }}
-    if: github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'
+    if: github.event.pull_request.draft != true && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
     runs-on: windows-latest
     timeout-minutes: 150
     strategy:
@@ -187,6 +198,7 @@ jobs:
       # sale con el código de la prueba, así que un rojo pone rojo el trabajo y el pedido no entra
       - name: Los comandos de la ejecución perdida en las tres consolas de Windows
         run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') { Write-Output "en un pedido no corre el ensayo de Windows: corre en la cola de merge"; exit 0 }
           node --test --test-name-pattern "T13 " skills/tycon-pipeline/scripts/tests/lost-run-loop.test.js
           exit $LASTEXITCODE
       - name: El ensayo de Windows de este escenario
@@ -194,6 +206,7 @@ jobs:
           SCENARIO: ${{ matrix.scenario }}
           WORK: ${{ runner.workspace }}\tycon-rehearsal
         run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') { Write-Output "en un pedido no corre el ensayo de Windows: corre en la cola de merge"; exit 0 }
           node scripts/ci/windows-rehearsal.js --scenario "$env:SCENARIO" --work "$env:WORK"
           exit $LASTEXITCODE
 
@@ -202,6 +215,8 @@ jobs:
   # de un job con matriz es uno solo para todas sus combinaciones: `success` sólo si TODAS (cada Node, cada parte)
   # terminaron bien; una que falló, se canceló o no corrió lo deja en otra cosa, y acá eso es rojo. La única excepción es
   # el push a main que hace la cola al entrar un pedido: ahí se saltea con los demás (la cola ya probó ese commit).
+  # En un pedido en borrador los demás no corren y éste sale ROJO, nunca salteado: un chequeo salteado cuenta como
+  # aprobado. Sacar el pedido del borrador corre todo de nuevo.
   public-ci:
     if: always() && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
     needs: [checks, installer-floor, windows]
@@ -211,7 +226,9 @@ jobs:
       - name: Todos los jobs terminaron bien
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          DRAFT: ${{ github.event.pull_request.draft == true }}
         run: |
+          if [ "${DRAFT}" = "true" ]; then echo "::error::pedido en borrador: la CI no corrió; corre entera al sacarlo del borrador"; exit 1; fi
           echo "resultados: ${RESULTS}"
           [ -n "${RESULTS}" ] || exit 1
           for r in ${RESULTS}; do

@@ -1147,8 +1147,8 @@ test('AdhocHighRisk_PuestoSinCommits_NoEntraNiRevienta (T28, sin commits) @story
   assert.equal(adhocBase.huellaDelCarril(leerCarril(state, 's28b')), huella, 'lo que la otra sesión escribe en él no mueve la huella');
 });
 
-// 🔴 Falla con: un destino con una variable sin resolver (`$P/probe.js`, con P=$(mktemp -d)) cuenta como un archivo del
-// repo: frena por el tope del carril o entra en su lista.
+// 🔴 Falla con: un destino en una carpeta de `mktemp` (`$P/probe.js`, con P=$(mktemp -d)) cuenta como un archivo del
+// repo: frena por el tope del carril, o entra en su lista con el nombre del molde (sus `X`), que no es un archivo.
 test('T30 DestinoConVariableSinResolver_NoGastaElCupo', () => {
   const raiz = tmp('t30-');
   const home = tmp('home-');

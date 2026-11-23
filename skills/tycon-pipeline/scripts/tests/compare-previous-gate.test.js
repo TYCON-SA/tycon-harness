@@ -588,6 +588,16 @@ test('P13 Candidatos_LoQueNoSePuedeMirar_EsNoMedido @story-8.167 @ac-11 — el a
   const cc = spawnSync(process.execPath, [PIPELINE, 'compare-candidates', '--story', L.storyPath, '--repo', L.repo], { cwd: L.repo, encoding: 'utf8', env: L.env() });
   assert.match(cc.stdout, /cli\.js \(repo\) — no medido: no pude leer el archivo de ahora/, cc.stdout);
   assert.doesNotMatch(cc.stdout, /sin candidatos/);
+  // la exención se niega para un candidato no medido, y para una historia que no es la de la corrida: sin constancia
+  const cw = L.marker(['compare-waiver', '--story', L.storyPath, '--command', 'cli.js', '--reason', 'x']);
+  assert.strictEqual(cw.status, 2, cw.stderr);
+  assert.match(cw.stderr, /«cli\.js» no se pudo mirar .*no pide exención/);
+  const ajena = path.join(L.repo, 'specs', 'story-9.8-otra.md');
+  fs.writeFileSync(ajena, ['---', 'story: "9.8"', 'epic: "9"', 'status: in-progress', 'files_to_modify:', '  - cli.js', '---', ''].join('\n'));
+  const cwa = L.marker(['compare-waiver', '--story', ajena, '--command', 'cli.js', '--reason', 'x']);
+  assert.strictEqual(cwa.status, 2, cwa.stderr);
+  assert.match(cwa.stderr, /no es la de la corrida abierta/);
+  assert.ok(!fs.existsSync(path.join(L.runDir(), require(CW).FILE)), 'ninguna de las dos escribe constancia');
 
   // una ruta relativa que sube fuera del repo no se lee en ningún repo de la corrida
   const base = tmp('cpg-p13-');
@@ -606,6 +616,30 @@ test('P13 Candidatos_LoQueNoSePuedeMirar_EsNoMedido @story-8.167 @ac-11 — el a
   const h = cp().candidatos({ storyPath: historia(r1.repo, { modificar: ['cli.js'] }), repos: [r1.repo] });
   assert.deepStrictEqual(h.candidatos.map((x) => x.archivo), ['cli.js']);
   assert.ok(h.avisos.some((a) => /no encontré el punto en común con main/.test(a)), h.avisos.join('\n'));
+});
+
+test('P13b NoMedidos_ConOtrosCandidatos_VanAlRegistro — los «no medido» junto a otros candidatos quedan en el renglón del freno, verde o bloqueo', () => {
+  // cli.js es candidato; otro.js se borró en el cambio y no se puede mirar
+  const armar = (sid, cuerpo = []) => {
+    const L = laboratorio({ sid, archivos: { 'cli.js': CLI, 'otro.js': CLI }, modificar: ['cli.js', 'otro.js'], cuerpo });
+    fs.rmSync(path.join(L.repo, 'otro.js'));
+    return L;
+  };
+  // sin humo: bloquea, y el renglón dice el no medido
+  const B = armar('s-gate-p13b');
+  const rb = B.cerrar();
+  assert.match(rb.stderr, FRENO, rb.stderr);
+  const lb = lineasDelFreno(B.state).at(-1);
+  assert.strictEqual(lb.action, 'bloqueo');
+  assert.deepStrictEqual((lb.noMedidos || []).map((x) => x.archivo), ['otro.js'], JSON.stringify(lb));
+  // con el humo y la diferencia declarada: verde, y el renglón también lo dice
+  const V = armar('s-gate-p13c', ['## Cambios de comportamiento', '', '- node cli.js get: ahora saluda con signo']);
+  V.humo({ cmd: 'node cli.js get', archivo: 'cli.js', resultado: 'distinto', main: { exit: 0 }, cambio: { exit: 0 }, diff: [{ linea: 1, main: 'hola get', cambio: 'hola get!' }] });
+  const rv = V.cerrar();
+  assert.doesNotMatch(rv.stderr, FRENO, rv.stderr);
+  const lv = lineasDelFreno(V.state).at(-1);
+  assert.strictEqual(lv.action, 'verde');
+  assert.deepStrictEqual((lv.noMedidos || []).map((x) => x.archivo), ['otro.js'], JSON.stringify(lv));
 });
 
 test('P14 HumoSinSellar_DiceElMotivo @story-8.167 @ac-11 — si el repo del humo no se puede sellar, no lo da por «otra versión»', () => {

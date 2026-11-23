@@ -1361,7 +1361,7 @@ test('InternalHistoryGuard_ValidationStep_ShellLogic_OnEachSummaryLine — lo qu
 test('InternalHistoryGuard_PreCommitHook_RunsIt_StderrVisible_MissingScriptRejectsInTeamClone — el pre-commit lo corre, deja ver lo que dice y sin el guion no mira a ciegas', () => {
   const { preCommitHook } = require('./lib/pre-commit-hook.js');
   const hook = fs.readFileSync(preCommitHook('harness', RAIZ), 'utf8');
-  const at = hook.indexOf('INTERNAL_HISTORY="$REPO_ROOT/scripts/publishing/internal-history.js"');
+  const at = hook.indexOf('INTERNAL_HISTORY="${TCG:-$REPO_ROOT}/scripts/publishing/internal-history.js"');
   assert.ok(at > 0, 'el guion del pre-commit nombra al control');
   // el tramo entero del control, hasta su `fi` (no un ancho fijo: la condición del perfil, con sus dos nombres, lo alarga)
   const block = hook.slice(at, hook.indexOf('\nfi\n', at) + 4);
@@ -1380,7 +1380,7 @@ test('InternalHistoryGuard_PreCommitHook_RunsIt_StderrVisible_MissingScriptRejec
 test('InternalHistoryGuard_PreCommitHook_FindingRejectsTheCommit_Live — con una forma nueva el commit no se crea; limpio, entra', () => {
   const { preCommitHook } = require('./lib/pre-commit-hook.js');
   const hook = fs.readFileSync(preCommitHook('harness', RAIZ), 'utf8');
-  const assign = 'INTERNAL_HISTORY="$REPO_ROOT/scripts/publishing/internal-history.js"';
+  const assign = 'INTERNAL_HISTORY="${TCG:-$REPO_ROOT}/scripts/publishing/internal-history.js"';
   const from = hook.indexOf(assign);
   const to = hook.indexOf('\nfi\n', from);
   assert.ok(from > 0 && to > from, 'el tramo del control en el pre-commit');
@@ -1411,7 +1411,7 @@ test('InternalHistoryGuard_PreCommitHook_FindingRejectsTheCommit_Live — con un
 test('InternalHistoryGuard_PreCommitHook_MissingScript_Live — sin el guion, un clon del equipo no commitea y uno de afuera sí', () => {
   const { preCommitHook } = require('./lib/pre-commit-hook.js');
   const hook = fs.readFileSync(preCommitHook('harness', RAIZ), 'utf8');
-  const from = hook.indexOf('INTERNAL_HISTORY="$REPO_ROOT/scripts/publishing/internal-history.js"');
+  const from = hook.indexOf('INTERNAL_HISTORY="${TCG:-$REPO_ROOT}/scripts/publishing/internal-history.js"');
   const to = hook.indexOf('\nfi\n', from);
   assert.ok(from > 0 && to > from, 'el tramo del control en el pre-commit');
   const stretch = hook.slice(from, to + 4);

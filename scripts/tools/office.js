@@ -49,7 +49,7 @@ const { spawn, spawnSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 const { designacionVigente } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
-const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK } = require('./work-in-progress.js');
+const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName } = require('./work-in-progress.js');
 const topics = require(path.join(__dirname, 'office', 'topics.js'));
 const boardTool = require(path.join(__dirname, 'office', 'board.js'));
 const PS = require(path.join(__dirname, 'office', 'project-stories.js'));
@@ -551,6 +551,9 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     // la sesión que tomó el arreglo de main lo dice, como en /wip: es uno solo para todas las que esperan
     const fixIds = (wip.mainFixers || {})[String(d.sid)];
     if (Array.isArray(fixIds) && fixIds.length && !x.mark) a.haciendo = `${a.haciendo ? `${a.haciendo} · ` : ''}arregla main (${fixIds.join(', ')})`;
+    // la corrida que va por el doble de lo estimado (scripts/lib/run-overrun.js), como en /wip y en coordination.js status
+    const over = f ? require('../lib/run-overrun.js').overrunText(f.overrun) : null;
+    if (over && !x.mark) a.haciendo = `${a.haciendo ? `${a.haciendo} · ` : ''}${over}`;
     if (endAt != null && !waiting) {
       // sin historia, la promesa es del trabajo que se declaró, y de esa declaración: otro arreglo u otra nota de la misma
       // sesión no la hereda, ni una nota nueva con el mismo texto
@@ -996,6 +999,10 @@ function workedAfterWait(x, lastWrite, status) {
 }
 const cardHour = (fin) => (fin ? fin.hora + (fin.dif ? ` · ${fin.dif}` : '') : '');
 const firstWord = (t) => String(t || '').trim().split(/\s+/)[0].toLowerCase();
+// el nombre de una sesión: una palabra de letras, números, guion y guion bajo («Tero», «Tero-2», «H-8290»)
+const SESSION_NAME = /^[\p{L}\p{N}_-]+$/u;
+// el dueño dicho en una palabra, que también podría pasar por un nombre de sesión
+const OWNER_WHO = /^(vos|dueñ[oa]|duen[oa])$/iu;
 // Lo que sólo usan las tablas (la clave del trabajo, su hora y el tema de su fila) va en campos que no se enumeran: no llega a
 // la página ni al sitio, y la tarjeta sigue igual.
 // Una tarjeta sin título anotado muestra lo que dice su conversación: eso no es un título y no se clasifica (`sinTitulo`).
@@ -1167,6 +1174,15 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     } else if (pr) card.motivo = 'se cerró sin entrar';
     // llegó hasta acá sin una sesión viva que la haga. Si no se pudo preguntar por su pedido, no se sabe: queda donde dice el archivo
     if (id === 'curso' && (!f.pedido || pr)) id = 'sinEmpezar';
+    // una firma anotada para una sesión que ya no está en la oficina no espera al dueño: no hay quién la use. Va a «Sin
+    // sesión», con el motivo. Sólo si `quien` es un nombre de sesión entero: el dueño o un texto libre se quedan. Se
+    // compara como lo lista /wip, que corta un nombre largo con «…»
+    const quien = String(f.quien || '').normalize('NFC').trim();
+    const listado = (n) => listedName(String(n || '').normalize('NFC').trim()).toLowerCase();
+    if (id === 'firma' && SESSION_NAME.test(quien) && !OWNER_WHO.test(quien) && !agents.some((a) => a.nombre && listado(a.nombre) === listado(quien))) {
+      id = 'sinEmpezar';
+      card.motivo = 'la sesión que la esperaba ya no está';
+    }
     // sin una sesión que la haga no hay nadie atrasado: se dice para cuándo estaba. Lo que espera la cola tampoco está atrasado
     if (late && id === 'sinEmpezar') { card.hora = `estaba para ${f.fin}`; delete card.cls; }
     if (late && id === 'entrando') { card.hora = 'esperando entrar'; delete card.cls; }
@@ -2446,6 +2462,33 @@ async function machineLoad({ platform = process.platform, run, readFile, readCpu
 }
 
 /**
+ * Quién corre una ejecución grande y cuántas suites, para la etiqueta de los racks: `[{ sesion, suites }]`, de la más vieja
+ * a la más nueva (`holders()` de heavy-turn.js), o null sin turno tomado. Lo que no se sabe (una sesión sin nombre, un
+ * `what` sin la cuenta) no va; un lugar del turno que no se puede leer va a `problems`, una sola vez: /wip lee los mismos
+ * lugares y ya pudo haberlo anotado ahí.
+ */
+function heavyTurns(sdir, nowMs, problems) {
+  let turns;
+  const mine = [];
+  try {
+    const HT = require('./heavy-turn.js');
+    turns = HT.holders({ state: sdir, now: nowMs, problems: mine }).map((t) => {
+      const e = {};
+      const name = typeof t.session === 'string' ? t.session.trim() : '';
+      if (name) e.sesion = name;
+      const suites = HT.suitesOf(t);
+      if (Number.isInteger(suites) && suites >= 0) e.suites = suites;
+      return e;
+    });
+  } catch (e) {
+    mine.push(`el turno de tarea pesada no se pudo leer (${e.code || e.message})`);
+    turns = [];
+  }
+  for (const p of mine) if (!problems.includes(p)) problems.push(p);
+  return turns.length ? turns : null;
+}
+
+/**
  * Lee todo lo de esta máquina y arma los datos; guarda las promesas al día. `arbol` y `validarAprobacion` van a la
  * lectura de las firmas ya aprobadas (`aprobadasSinRepetir`); se pasan en las pruebas.
  */
@@ -2599,7 +2642,12 @@ async function collect(opts = {}) {
   const url = site.code === 0 ? String(site.out || '').trim() : '';
   if (/^https?:\/\/\S+$/i.test(url)) data.meta.sitio = url;
   else if (site.code === 2) data.unreadable.push(`la dirección del sitio no se pudo leer: ${String(site.out || '').trim().split('\n')[0] || 'sin motivo'}`);
-  if (load) data.meta.maquina = await load;
+  if (load) {
+    data.meta.maquina = await load;
+    // el turno de tarea pesada va con la carga: quien no mide la máquina (el lector de las firmas) tampoco lo lee
+    const turns = heavyTurns(sdir, nowMs, data.unreadable);
+    if (turns) data.meta.turnoPesado = turns;
+  }
   if (!opts.readOnly) try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     // entero y después renombrado: otro lector (la foto fija y el proceso vivo leen el mismo) nunca lo ve a medias
@@ -2622,18 +2670,10 @@ function openFile(target, { platform = process.platform, spawn: run = spawn } = 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const isAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 
-// El proceso del candado contesta en 1 s, con su pid.
-function answers(lock) {
-  return new Promise((resolve) => {
-    if (!lock || !Number.isInteger(lock.pid) || !Number.isInteger(lock.port) || !isAlive(lock.pid)) { resolve(false); return; }
-    const req = require('http').get({ host: '127.0.0.1', port: lock.port, path: `/health?t=${lock.token}`, headers: { host: `127.0.0.1:${lock.port}` }, timeout: 1000 }, (res) => {
-      let body = '';
-      res.on('data', (d) => { body += d; });
-      res.on('end', () => { try { resolve(res.statusCode === 200 && JSON.parse(body).pid === lock.pid); } catch { resolve(false); } });
-    });
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.on('error', () => resolve(false));
-  });
+// El proceso del candado contesta en 1 s, con su pid. Quién es el dueño del candado lo dice un solo lugar, lockOwner del
+// enlace al sitio: el arranque de la oficina desde el gancho y la apertura con --open preguntan igual.
+async function answers(lock) {
+  return (await require('./office/site-link.js').lockOwner(lock, 1000)) === 'office';
 }
 
 /**
@@ -2780,4 +2820,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES, openStories };
+module.exports = { answers, workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES, openStories };

@@ -52,7 +52,16 @@ function Test-Sqlite {
 
 if (Test-Sqlite $sqliteBin) { exit 0 }
 
+# Sin Claude Code (TYCON_HARNESS_CLAUDE=off) nada va a la carpeta de Claude Code: el sello va a la carpeta del estado, la
+# que da la regla (harness/tycon-home.js). Si no contesta, el temporal: nunca la de Claude Code.
+function Get-OffStateDir {
+    $lib = Join-Path (Join-Path $PSScriptRoot 'harness') 'tycon-home.js'
+    if (-not (Test-Path $lib)) { return $null }
+    try { $d = (& node -e 'process.stdout.write(require(process.argv[1]).stateDir())' $lib 2>$null | Out-String).Trim(); if ($LASTEXITCODE -eq 0 -and $d) { return $d } } catch { }
+    return $null
+}
 $stampDir = Join-Path $env:USERPROFILE '.claude\.tycon-pipeline'
+if ($env:TYCON_HARNESS_CLAUDE -eq 'off') { $stampDir = Get-OffStateDir; if (-not $stampDir) { $stampDir = Join-Path ([IO.Path]::GetTempPath()) 'tycon-sin-estado' } }
 $stamp = Join-Path $stampDir 'sqlite3-install-last-try'
 $ahora = [int][double]::Parse((Get-Date -UFormat %s))
 if (Test-Path $stamp) {
