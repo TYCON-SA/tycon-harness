@@ -1,10 +1,11 @@
 'use strict';
 /**
- * save-ok.test.js — la huella de los repos de una corrida, los controles del commit, la foto y la evidencia del pedido,
- * y el aviso por los canales del arnés (`lib/save-ok.js`).
+ * save-ok.test.js — el ok de guardar una story (commit, push y los pedidos) es una firma con constancia.
  *
- * En proceso, sobre repos de git descartables con su `origin/main`, y con un canal de mentira para el aviso. La firma de
- * guardar ya no existe: sus renglones viejos y un perfil que todavía la nombra se leen sin error.
+ * La biblioteca (`lib/save-ok.js`) en proceso, sobre repos de git descartables con su `origin/main`: la huella de cada
+ * repo, si el ok sigue valiendo, si la corrida terminó limpia, lo sensible y el aviso al dueño con un canal de mentira.
+ * El guion (`marker.js approve-save`) sólo en lo que sale antes de la firma: ninguna prueba abre la ventana ni escribe
+ * en el estado de la cuenta.
  *
  * stable-data: las horas de la corrida son fijas; ninguna se compara con el reloj.
  */
@@ -17,8 +18,9 @@ const { spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..', '..');
 const SO = require('../lib/save-ok.js');
-const CAT = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
-const CONFIG = require(path.join(RAIZ, 'scripts', 'lib', 'tycon-config.js'));
+const MARKER = path.join(__dirname, '..', 'marker.js');
+const { SIGNATURES, GROUPS, expand, SENSITIVE } = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
+const DS = require(path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js'));
 const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
 
 const ANTES = '2026-10-29T10:00:00.000Z';
@@ -63,8 +65,314 @@ function corridaLimpia(repos, extra = {}) {
     ...extra,
   };
 }
-/** ¿El árbol de `repo` sigue siendo el de la huella `antes`? Lo que es papeleo de la huella no lo cambia. */
-const misma = (antes, repo) => { const h = SO.huella(repo); return !h.error && h.rama === antes.rama && h.arbol === antes.arbol; };
+const canalQueEntrega = () => ({ canales: ['telegram'], mail: null, chat: null, origen: 'perfil', problema: null });
+const entrega = (orden) => (o) => { orden.push(['aviso', o.texto]); return { resultados: [{ canal: 'telegram', entregado: true }], entregado: true }; };
+/** La firma por delegación con todo lo de afuera inyectado: el orden de lo que pasó queda en `orden`. */
+function porDelegacion(marker, { repos, findings = [], firmas = [], canales = canalQueEntrega, mandar, orden = [] } = {}) {
+  return SO.antesDeFirmar({
+    via: 'delegacion', marker, repos, findings, firmasDeLaCorrida: firmas, canales, mandar: mandar || entrega(orden),
+  });
+}
+
+test('Catalogo_Save_GuionOtraSesion_FueraDeGrupos (T1) @story-8.143 @ac-1', () => {
+  const s = SIGNATURES.find((x) => x.id === 'save');
+  assert.ok(s, '«save» en el catálogo');
+  assert.strictEqual(s.kind, 'guion');
+  assert.strictEqual(s.otherSession, 'yes');
+  assert.match(s.command, /^marker\.js approve-save/);
+  for (const g of Object.keys(GROUPS)) {
+    assert.ok(!expand(g).includes('save'), `el grupo ${g} no la trae`);
+    assert.ok(!expand(g, { restringe: true }).includes('save'), `el grupo ${g} restringido no la trae`);
+  }
+  assert.ok(Array.isArray(SENSITIVE) && SENSITIVE.length, 'la lista de lo sensible vive en el catálogo');
+});
+
+test('ApproveSave_SinFirma_NoEscribe (T2) @story-8.143 @ac-1 @ac-2', (t) => {
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-casa-'));
+  t.after(() => fs.rmSync(casa, { recursive: true, force: true }));
+  const activos = path.join(casa, '.claude', '.tycon-pipeline', 'active');
+  fs.mkdirSync(activos, { recursive: true });
+  const archivo = path.join(activos, 'ses-a.json');
+  const texto = JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', startedAt: ANTES, lastTouch: new Date().toISOString() });
+  fs.writeFileSync(archivo, texto);
+  const env = { ...process.env, HOME: casa, CLAUDE_CODE_SESSION_ID: 'ses-a' };
+  for (const k of ['TYCON_HOME', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'NODE_TEST_CONTEXT']) delete env[k];
+  const r = spawnSync(process.execPath, [MARKER, 'approve-save'], { encoding: 'utf8', env });
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.strictEqual(fs.readFileSync(archivo, 'utf8'), texto, 'el marcador quedó igual byte a byte');
+  // para otra sesión sin ejecución abierta: sale 2 antes de pedir nada
+  const otra = spawnSync(process.execPath, [MARKER, 'approve-save', '--for-session', 'ses-z'], { encoding: 'utf8', env });
+  assert.strictEqual(otra.status, 2, otra.stderr);
+  assert.match(otra.stderr, /no tiene una ejecución abierta/);
+});
+
+test('ApproveSave_Ventana_EscribeHuellas (T3) @story-8.143 @ac-2', (t) => {
+  const a = repo(t);
+  const b = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  escribir(a, 'nuevo.js', 'module.exports = 1;\n');      // sin seguimiento
+  escribir(b, 'LEEME.md', 'por consola\n');              // ningún fileEvent lo nombra
+  escribir(a, 'specs/story-9.99.md', '---\nstory_id: "9.99"\n---\n');
+  const sinCambios = repo(t);
+  const indiceA = fs.readFileSync(path.join(a, '.git', 'index'));
+  const marker = corridaLimpia([a]);
+  const repos = SO.reposDeLaCorrida({ marker, hermanos: [b, sinCambios] });
+  assert.deepStrictEqual(repos.sort(), [a, b].sort(), 'el de la story y el hermano con cambios; el hermano sin cambios no');
+  const r = SO.antesDeFirmar({ via: 'ventana', marker, repos });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+  assert.deepStrictEqual(fs.readFileSync(path.join(a, '.git', 'index')), indiceA, 'el índice de la persona no se tocó');
+  const ok = SO.constancia({ marker, via: 'ventana', por: 'ses-a', previo: r, ahora: DESPUES });
+  assert.strictEqual(ok.via, 'ventana');
+  assert.strictEqual(ok.por, 'ses-a');
+  assert.strictEqual(ok.storyId, '9.99');
+  assert.strictEqual(ok.startedAt, ANTES);
+  assert.strictEqual(ok.huellas.length, 2, 'una huella por repo');
+  const ha = ok.huellas.find((h) => h.repo === a);
+  assert.strictEqual(ha.rama, 'story/la-prueba');
+  assert.strictEqual(ha.base, sh(a, 'rev-parse', 'origin/main'));
+  // el árbol trae el archivo nuevo: es el árbol del commit que guardaría todo, sin el papeleo (la story)
+  sh(a, 'add', '-A');
+  sh(a, 'rm', '-q', '--cached', 'specs/story-9.99.md');
+  assert.strictEqual(ha.arbol, sh(a, 'write-tree'));
+  // la story o el código fuera de todo repo: no se sabe qué guardar, y no se firma a medias
+  const fuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-fuera-')));
+  t.after(() => fs.rmSync(fuera, { recursive: true, force: true }));
+  assert.throws(() => SO.reposDeLaCorrida({ marker: { ...marker, repoPath: fuera } }), /no está en un repo/);
+});
+
+test('SaveCheck_Vigente_Commiteado_Cambiado (T4) @story-8.143 @ac-3', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
+  assert.strictEqual(SO.vigente({ saveOk }).ok, true, 'sin cambios');
+  sh(a, 'add', '-A');
+  sh(a, 'commit', '-q', '-m', 'lo mismo');
+  assert.strictEqual(SO.vigente({ saveOk }).ok, true, 'commiteado igual');
+  const conPush = SO.vigente({ saveOk, push: { remoto: 'origin', rama: 'story/la-prueba' }, repoActual: a });
+  assert.strictEqual(conPush.ok, true, conPush.motivo);
+  assert.strictEqual(SO.vigente({ saveOk, push: { remoto: 'origin', rama: 'main' }, repoActual: a }).ok, false, 'a main no');
+  assert.strictEqual(SO.vigente({ saveOk, push: { remoto: 'origin', rama: 'otra' }, repoActual: a }).ok, false, 'a otra rama no');
+  const ajeno = repo(t);
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: ajeno }).ok, false, 'desde un repo que el ok no mide, tampoco sin push');
+  const sinRepo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-sin-repo-')));
+  t.after(() => fs.rmSync(sinRepo, { recursive: true, force: true }));
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: sinRepo }).ok, false, 'desde fuera de todo repo, tampoco');
+  escribir(a, 'LEEME.md', 'después del ok\n');
+  const cambiado = SO.vigente({ saveOk });
+  assert.strictEqual(cambiado.ok, false);
+  assert.ok(cambiado.motivo.includes(a), 'nombra el repo');
+  sh(a, 'checkout', '-q', '--', 'LEEME.md');
+  sh(a, 'checkout', '-q', '-b', 'otra');
+  assert.strictEqual(SO.vigente({ saveOk }).ok, false, 'otra rama');
+  assert.strictEqual(SO.vigente({ saveOk: null }).ok, false, 'sin saveOk');
+});
+
+test('Delegada_StoryLimpia_Firma (T5) @story-8.143 @ac-4 @ac-6', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  const orden = [];
+  const marker = corridaLimpia([a]);
+  const r = porDelegacion(marker, { repos: [a], orden });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+  orden.push(['constancia']);
+  const ok = SO.constancia({ marker, via: 'delegacion', por: 'ses-coord', previo: r, ahora: DESPUES });
+  assert.strictEqual(ok.via, 'delegacion');
+  assert.deepStrictEqual(ok.canales, ['telegram'], 'la constancia nombra el canal que entregó');
+  assert.deepStrictEqual(orden.map((x) => x[0]), ['aviso', 'constancia'], 'el aviso sale antes que la constancia');
+  const linea = orden[0][1];
+  assert.ok(!linea.includes('\n'), 'una línea');
+  assert.match(linea, /9\.99/);
+  assert.match(linea, /coordinadora/);
+  assert.match(linea, /0 críticos/);
+  assert.match(linea, /2 confirmados/);
+  assert.ok(linea.includes(path.basename(a)), 'nombra el repo');
+  // un fetch movió la base después de prepare-commit: el código que se guarda es el mismo
+  sh(a, 'stash', '-q');
+  sh(a, 'commit', '-q', '--allow-empty', '-m', 'main avanzó');
+  sh(a, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  sh(a, 'reset', '-q', '--hard', 'HEAD~1');
+  sh(a, 'stash', 'pop', '-q');
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  assert.strictEqual(porDelegacion(marker, { repos: [a] }).codigo, 0, 'con la base movida firma igual');
+  // el pase salteado por la regla del portón (sin firma)
+  const salteo = corridaLimpia([a], { adversarial: undefined, adversarialPasses: [], adversarialSkip: { motivo: 'riesgo bajo', at: DESPUES } });
+  const o2 = [];
+  assert.strictEqual(porDelegacion(salteo, { repos: [a], orden: o2 }).codigo, 0);
+  assert.match(o2[0][1], /salteado por la regla/);
+});
+
+// 🔴 Falla con: el ok de cada commit que pide el perfil (`approvals.local_commit: coordinator`) firmado por la
+// coordinadora con un crítico abierto o con un cambio sensible: tiene los mismos controles que el ok de guardar de hoy.
+test('8.242-Perfil_Coordinadora_DelegacionConSusControles (T25) @story-8.242 @ac-15', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  const m = corridaLimpia([a]);
+  assert.strictEqual(porDelegacion(m, { repos: [a] }).codigo, 0, 'la corrida limpia: la coordinadora firma');
+  const orden = [];
+  const critico = porDelegacion(m, { repos: [a], orden, findings: [{ rule_id: 'X-C1', severity: 'CRITICAL', disposition: 'open' }] });
+  assert.strictEqual(critico.codigo, 2);
+  assert.match(critico.motivo, /CRITICAL[\s\S]*Lo firma una persona/);
+  assert.strictEqual(orden.length, 0, 'sin firma no hay aviso');
+  const s = repo(t, { 'scripts/lib/otro.js': 'y\n' });
+  escribir(s, 'scripts/lib/notify.js', 'a\n');
+  const sensible = porDelegacion(corridaLimpia([s]), { repos: [s] });
+  assert.strictEqual(sensible.codigo, 2);
+  assert.match(sensible.motivo, /scripts\/lib\/notify\.js[\s\S]*Lo firma una persona/);
+});
+
+test('Delegada_NoLimpia_Sale2 (T6) @story-8.143 @ac-4', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  const casos = [
+    ['sin prepare-commit', corridaLimpia([a], { stepsCompleted: ['start'] }), /prepar/i],
+    ['tests anteriores al último cambio', corridaLimpia([a], { checksAt: { tests: ANTES }, fileEvents: [{ path: path.join(a, 'LEEME.md'), ts: DESPUES, code: true }] }), /pruebas/],
+    ['el pase lanzado sin resultado', corridaLimpia([a], { adversarialPasses: [] }), /pase/],
+    ['el pase salteado con firma', corridaLimpia([a], { adversarial: undefined, adversarialPasses: [], adversarialSkip: { motivo: 'x', at: DESPUES, firmado: { via: 'ventana' } } }), /firma/],
+    ['el pase abandonado', corridaLimpia([a], { adversarialSkip: { abandonado: true, runId: 'r1', at: DESPUES } }), /pase/],
+    ['tests manual-forced', corridaLimpia([a], { checksProvenance: { tests: 'manual-forced' } }), /test-gate/],
+  ];
+  // un cambio que ningún fileEvent nombra, hecho después de las pruebas: lo fecha el disco
+  const porConsola = repo(t);
+  fs.writeFileSync(path.join(porConsola, 'LEEME.md'), 'por consola, después\n');
+  casos.push(['un cambio por consola después de las pruebas', corridaLimpia([porConsola], { checksAt: { tests: ANTES } }), /pruebas/]);
+  // y uno ya commiteado, que no deja archivo cambiado: lo fecha su commit (la hora de ahora, después de las pruebas)
+  const commiteado = repo(t);
+  escribir(commiteado, 'LEEME.md', 'commiteado por consola\n');
+  sh(commiteado, 'commit', '-qam', 'por consola');
+  casos.push(['un commit por consola después de las pruebas', corridaLimpia([commiteado]), /pruebas/]);
+  for (const [nombre, m, re] of casos) {
+    const orden = [];
+    const r = porDelegacion(m, { repos: [m.repoPath], orden });
+    assert.strictEqual(r.codigo, 2, nombre);
+    assert.match(r.motivo, re, `${nombre}: ${r.motivo}`);
+    assert.strictEqual(orden.length, 0, `${nombre}: no avisa`);
+  }
+  const m = corridaLimpia([a]);
+  escribir(a, 'LEEME.md', 'después de prepare-commit\n');
+  assert.match(porDelegacion(m, { repos: [a] }).motivo, /cambió/, 'un cambio después de prepare-commit');
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  const critico = porDelegacion(m, { repos: [a], findings: [{ rule_id: 'X-C1', severity: 'CRITICAL', disposition: 'waived' }] });
+  assert.strictEqual(critico.codigo, 2);
+  assert.match(critico.motivo, /CRITICAL/);
+  const exencion = porDelegacion(m, { repos: [a], firmas: [{ name: 'runtime-waiver-signed', destino: 'ses-a', ts: DESPUES }] });
+  assert.strictEqual(exencion.codigo, 2);
+  assert.match(exencion.motivo, /runtime-waiver/);
+  sh(a, 'update-ref', '-d', 'refs/remotes/origin/main');
+  const sinBase = porDelegacion(m, { repos: [a] });
+  assert.strictEqual(sinBase.codigo, 2);
+  assert.ok(sinBase.motivo.includes(a), 'nombra el repo sin base');
+});
+
+test('Delegada_Sensible_Sale2 (T7) @story-8.143 @ac-5', (t) => {
+  const base = { 'scripts/lib/signatures.js': 'x\n', 'scripts/lib/otro.js': 'y\n', 'LEEME.md': 'z\n' };
+  const casos = [
+    ['scripts/lib/owner-window.js', (d) => escribir(d, 'scripts/lib/owner-window.js', 'a\n')],
+    ['scripts/lib/notify.js', (d) => escribir(d, 'scripts/lib/notify.js', 'a\n')],
+    ['scripts/lib/OWNER-WINDOW.js', (d) => escribir(d, 'scripts/lib/OWNER-WINDOW.js', 'a\n')],
+    ['scripts/lib/signatures.js', (d) => sh(d, 'mv', 'scripts/lib/signatures.js', 'scripts/lib/firmas.js')],
+    ['scripts/lib/usa.js', (d) => escribir(d, 'scripts/lib/usa.js', "const s = require('./signatures.js');\n")],
+    ['scripts/lib/usa-sin-ext.js', (d) => escribir(d, 'scripts/lib/usa-sin-ext.js', "const s = require('../lib/notify');\n")],
+    ['scripts/lib/atajo.js', (d) => fs.symlinkSync('signatures.js', path.join(d, 'scripts/lib/atajo.js'))],
+    ['team-profile.json', (d) => escribir(d, 'team-profile.json', '{}\n')],
+    ['.claude/settings.managed.json', (d) => escribir(d, '.claude/settings.managed.json', '{}\n')],
+  ];
+  for (const [archivo, cambiar] of casos) {
+    const d = repo(t, base);
+    cambiar(d);
+    const s = SO.sensibles({ repos: [d] });
+    assert.ok(s.some((x) => x.archivo.toLowerCase() === archivo.toLowerCase()), `${archivo}: ${JSON.stringify(s)}`);
+    const r = porDelegacion(corridaLimpia([d]), { repos: [d] });
+    assert.strictEqual(r.codigo, 2, archivo);
+    assert.ok(r.motivo.includes(archivo), `${archivo}: ${r.motivo}`);
+  }
+  const limpio = repo(t, base);
+  escribir(limpio, 'LEEME.md', 'nada sensible\n');
+  assert.deepStrictEqual(SO.sensibles({ repos: [limpio] }), []);
+});
+
+// 🔴 Falla con: `save:sensible` delegada en el perfil y la coordinadora igual frenada por lo sensible; o lo sensible
+// firmado sin que el perfil nombre la forma.
+test('Delegada_Sensible_ConLaFormaDelegada_Firma', (t) => {
+  const d = repo(t, { 'scripts/lib/signatures.js': 'x\n', 'LEEME.md': 'z\n' });
+  escribir(d, 'scripts/lib/owner-window.js', 'a\n');
+  const m = corridaLimpia([d]);
+  const orden = [];
+  const r = SO.antesDeFirmar({ via: 'delegacion', marker: m, repos: [d], findings: [], firmasDeLaCorrida: [], canales: canalQueEntrega, mandar: entrega(orden), sensibleDelegado: true });
+  assert.strictEqual(r.codigo, 0, JSON.stringify(r));
+  assert.strictEqual(orden.length, 1, 'el dueño se entera igual');
+  assert.strictEqual(porDelegacion(m, { repos: [d] }).codigo, 2, 'sin la forma delegada, lo firma una persona');
+  // la forma se delega con su nombre, con las llaves de siempre, y no la trae `save`
+  const DS = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
+  const delega = (delegated_signing) => DS.delegaSinVentana({ firma: 'save:sensible', sesion: 'coord', destino: 'ses-a', estado: fs.mkdtempSync(path.join(os.tmpdir(), 'so-ds-')),
+    perfil: () => ({ delegated_signing, owner_only: [], delegated_machines: [] }), huella: () => ({ huella: 'h' }) });
+  assert.match(delega(['save']).motivo, /no delega «save:sensible»/);
+  assert.match(delega(['save', 'save:sensible']).motivo, /delegated_machines/);
+});
+
+test('Ventana_NoLimpiaNiSensible_Firma (T8) @story-8.143 @ac-4 @ac-5', (t) => {
+  const a = repo(t);
+  escribir(a, 'scripts/lib/owner-window.js', 'a\n');
+  const m = corridaLimpia([a], { stepsCompleted: ['start'] });
+  const r = SO.antesDeFirmar({ via: 'ventana', marker: m, repos: [a], findings: [{ rule_id: 'X-C1', severity: 'CRITICAL', disposition: 'waived' }] });
+  assert.strictEqual(r.codigo, 0, 'el dueño decide');
+});
+
+test('Delegada_SinCanal_Sale1 (T9) @story-8.143 @ac-6', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  const m = corridaLimpia([a]);
+  // la lista vacía (el perfil eligió «ninguno»): no hay por dónde avisar, y no se manda nada
+  let llamado = false;
+  const vacia = porDelegacion(m, { repos: [a], canales: () => ({ canales: [], origen: 'perfil', problema: null }), mandar: () => { llamado = true; return { resultados: [], entregado: true }; } });
+  assert.strictEqual(vacia.codigo, 1, 'la lista vacía');
+  assert.strictEqual(llamado, false, 'la lista vacía: no manda nada');
+  // sin lista en el perfil: el canal de siempre del arnés (Telegram), como el resto de los avisos; vale sólo si entrega
+  const porDefecto = () => ({ canales: ['telegram'], origen: 'antes', problema: null });
+  const orden = [];
+  const entregado = porDelegacion(m, { repos: [a], canales: porDefecto, orden });
+  assert.strictEqual(entregado.codigo, 0, `sin lista en el perfil, entregado: ${entregado.motivo}`);
+  assert.deepStrictEqual(entregado.canales, ['telegram']);
+  assert.deepStrictEqual(orden.map((x) => x[0]), ['aviso'], 'avisó por el canal de siempre');
+  const sinEntrega = porDelegacion(m, { repos: [a], canales: porDefecto, mandar: () => ({ resultados: [{ canal: 'telegram', entregado: false, motivo: 'sin bot' }], entregado: false }) });
+  assert.strictEqual(sinEntrega.codigo, 1, 'sin lista en el perfil y sin entrega: no hay ok');
+  const falla = porDelegacion(m, { repos: [a], mandar: () => ({ resultados: [{ canal: 'telegram', entregado: false, motivo: 'sin red' }], entregado: false }) });
+  assert.strictEqual(falla.codigo, 1, 'el canal que falla');
+  const ninguno = porDelegacion(m, { repos: [a], mandar: () => ({ resultados: [], entregado: true }) });
+  assert.strictEqual(ninguno.codigo, 1, '«ningún canal» no es una entrega');
+});
+
+const HUELLA = 'a1b2c3d4e5f60718';
+function casaConDesignada(t, { confirmada = true } = {}) {
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-firmas-'));
+  t.after(() => fs.rmSync(casa, { recursive: true, force: true }));
+  const estado = path.join(casa, '.claude', '.tycon-pipeline');
+  fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
+  fs.writeFileSync(path.join(estado, 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', startedAt: ANTES }));
+  const d = { name: 'relay-designation', status: 'ok', ts: '2026-10-29T08:00:00.000Z', sesion: 'ses-coord', rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
+  const lineas = [d];
+  if (confirmada) lineas.push(DS.confirmationRecord(d, '2026-10-29T08:01:00.000Z'));
+  fs.writeFileSync(path.join(estado, 'gates.log'), `${lineas.map((l) => JSON.stringify(l)).join('\n')}\n`);
+  return { casa, estado };
+}
+// la coordinadora firma por el dueño sólo con approvals.relay_session en el perfil
+const PERFIL = { relay_session: 'coordinadora', delegated_signing: ['save'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
+const delega = (casa, estado, o = {}) => DS.delegaSinVentana({
+  firma: 'save', sesion: o.sesion || 'ses-coord', destino: o.destino || 'ses-a', home: casa, estado,
+  perfil: o.perfil || (() => PERFIL), huella: o.huella || (() => ({ huella: HUELLA })),
+});
+
+test('Save_OwnerOnly_O_SinDelegar_PideVentana (T10) @story-8.143 @ac-7', (t) => {
+  const { casa, estado } = casaConDesignada(t);
+  assert.strictEqual(delega(casa, estado).ok, true, 'con todo, se delega');
+  const casos = [
+    ['save en owner_only', () => ({ ...PERFIL, owner_only: ['save'] })],
+    ['save fuera de delegated_signing', () => ({ ...PERFIL, delegated_signing: ['plan-approval'] })],
+    ['un perfil que delega escape-phrases', () => ({ ...PERFIL, delegated_signing: ['escape-phrases'] })],
+    ['un perfil ilegible', () => { throw new Error('roto'); }],
+    ['delegated_signing que no es una lista', () => ({ ...PERFIL, delegated_signing: { save: true } })],
+  ];
+  for (const [nombre, perfil] of casos) assert.strictEqual(delega(casa, estado, { perfil }).ok, false, nombre);
+});
 
 test('ApproveSave_ForSession_OtraCorrida_Sale2 (T11) @story-8.143 @ac-8', () => {
   const vio = { storyId: '9.99', startedAt: ANTES };
@@ -77,23 +385,166 @@ test('ApproveSave_ForSession_OtraCorrida_Sale2 (T11) @story-8.143 @ac-8', () => 
 
 // 🔴 Falla con: el paso de preparar el commit que vuelve a pedir la constancia del ok, o que deja que un mensaje de otra
 // sesión saltee la ventana de permiso.
+test('PrepareCommit_GuardarEnLaVentana (T15) @story-8.143 @ac-9', () => {
+  const texto = fs.readFileSync(path.join(__dirname, '..', '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');
+  assert.doesNotMatch(texto, /save-check|approve-save/, 'sin la constancia del ok');
+  assert.match(texto, /ventana de permiso/i);
+  assert.match(texto, /cada pull request/i);
+  assert.match(texto, /otra sesión no saltean la ventana/i);
+  assert.match(texto, /marker\.js clear[^\n]*después del último push/i);
+});
 
+test('Sensible_NombreConCaracteresEspeciales_SeEscapa (T25) @story-8.143 @ac-5', () => {
+  // cada nombre entra a la expresión escapado entero: la barra invertida, el punto y los demás valen por sí mismos
+  assert.strictEqual(SO.requiereSensible("require('./a\\b.js')", ['a\\b.js']), true, 'con barra invertida');
+  assert.strictEqual(SO.requiereSensible("require('./ab.js')", ['a\\b.js']), false, 'la barra no se come la letra');
+  assert.strictEqual(SO.requiereSensible("require('./notifyxjs')", ['notify.x.js']), false, 'el punto no es cualquier carácter');
+  assert.strictEqual(SO.requiereSensible("require('./a+b')", ['a+b.js']), true, 'el más, literal');
+  assert.strictEqual(SO.requiereSensible("require('./aab')", ['a+b.js']), false, 'el más no repite');
+  assert.strictEqual(SO.requiereSensible("require('../lib/notify')"), true, 'con la lista del catálogo, sin .js');
+});
 
+test('Guiones_SaveCheckYApproveSave_SusSalidas (T24) @story-8.143 @ac-1 @ac-3', (t) => {
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-guion-'));
+  t.after(() => fs.rmSync(casa, { recursive: true, force: true }));
+  const activos = path.join(casa, '.claude', '.tycon-pipeline', 'active');
+  fs.mkdirSync(activos, { recursive: true });
+  const env = { ...process.env, HOME: casa, CLAUDE_CODE_SESSION_ID: 'ses-a' };
+  for (const k of ['TYCON_HOME', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'NODE_TEST_CONTEXT']) delete env[k];
+  const correr = (...args) => spawnSync(process.execPath, [MARKER, ...args], { encoding: 'utf8', env });
+  assert.strictEqual(correr('save-check').status, 1, 'sin ejecución abierta');
+  assert.strictEqual(correr('save-check', '--push', 'origin').status, 2, '--push sin rama');
+  const corrida = { sessionId: 'ses-a', storyId: '9.99', startedAt: ANTES, lastTouch: new Date().toISOString() };
+  fs.writeFileSync(path.join(activos, 'ses-a.json'), JSON.stringify({ ...corrida, saveOk: { storyId: '9.98', startedAt: ANTES, huellas: [] } }));
+  const otra = correr('save-check');
+  assert.strictEqual(otra.status, 1);
+  assert.match(otra.stderr, /otra corrida/);
+  for (const op of ['--quote', '--relayed-by', '--ok']) {
+    const r = correr('approve-save', op, 'ok de guardar');
+    assert.strictEqual(r.status, 1, op);
+    assert.match(r.stderr, /no dan el ok de guardar/, op);
+  }
+});
 
 // ── lo que confirmó el pase adversarial (una prueba por clase; las de dejar pasar algo sensible, primero) ──────────
 
+test('Sensible_RutaConAcentos_SeVe (T16) @story-8.143 @ac-5', (t) => {
+  const a = repo(t, { 'LEEME.md': 'z\n', 'scripts/production/config.json': '{}\n' });
+  escribir(a, 'señales.js', "const s = require('./scripts/lib/signatures.js');\n");
+  escribir(a, 'scripts/production/configuración.json', '{}\n');
+  const ver = () => SO.sensibles({ repos: [a] }).map((x) => x.archivo).sort();
+  assert.deepStrictEqual(ver(), ['scripts/production/configuración.json', 'señales.js'], 'sin seguimiento');
+  sh(a, 'add', '-A');
+  sh(a, 'commit', '-qm', 'con acentos');
+  assert.deepStrictEqual(ver(), ['scripts/production/configuración.json', 'señales.js'], 'commiteados');
+});
 
+test('Repos_LosDeFilesToModify_Entran (T17) @story-8.143 @ac-2', (t) => {
+  const a = repo(t);
+  const b = repo(t, { 'skills/tycon-pipeline/scripts/marker.js': 'x\n' });
+  escribir(b, 'skills/tycon-pipeline/scripts/marker.js', 'cambiado por consola\n');
+  escribir(a, 'specs/story-9.99.md', `---\nstory_id: "9.99"\nfiles_to_modify:\n  - ${b}/skills/tycon-pipeline/scripts/marker.js   # el guion\n  - specs/story-9.99.md\n---\n\n# 9.99\n`);
+  const marker = corridaLimpia([a], { fileEvents: [] });
+  const repos = SO.reposDeLaCorrida({ marker, hermanos: [] });
+  assert.ok(repos.includes(b), `el repo que nombra files_to_modify entra: ${JSON.stringify(repos)}`);
+  assert.ok(SO.sensibles({ repos }).some((x) => x.repo === b), 'y su cambio sensible se ve');
+  // las otras formas de la lista: sin sangría, en línea, entre comillas con espacios; y la story que no está, tira
+  const st = path.join(a, 'specs', 'story-9.99.md');
+  fs.writeFileSync(st, `---\nfiles_to_modify:\n- ${b}/uno.js\nfiles_to_create: [${b}/dos.js, "${b}/con espacio/tres.js"]\n---\n`);
+  assert.deepStrictEqual(SO.rutasDeclaradas(st), [`${b}/uno.js`, `${b}/dos.js`, `${b}/con espacio/tres.js`]);
+  assert.throws(() => SO.rutasDeclaradas(path.join(a, 'specs', 'no-esta.md')), /ENOENT/);
+});
 
+test('Exenciones_SesionAdoptada_SeVen (T18) @story-8.143 @ac-4', () => {
+  const story = '/repos/hm/specs/story-9.99.md';
+  const marker = { sessionId: 'NUEVA', adoptedFrom: 'VIEJA', storyId: '9.99', startedAt: ANTES, storyPath: story };
+  const lineas = [
+    { name: 'runtime-waiver-signed', destino: 'VIEJA', ts: DESPUES },
+    { name: 'escape:force-manual-signed', destino: 'OTRA', storyPath: story, ts: DESPUES },
+    { name: 'critical-waiver-signed', destino: 'OTRA', storyPath: '/repos/hm/specs/story-1.1.md', ts: DESPUES },
+    { name: 'critical-waiver-signed', ts: DESPUES, resumen: 'sin destino' },
+  ];
+  const vistas = SO.exencionesDeLaCorrida(lineas, marker).map((g) => g.resumen || g.name).sort();
+  assert.deepStrictEqual(vistas, ['escape:force-manual-signed', 'runtime-waiver-signed', 'sin destino'], 'la de la sesión vieja, la de la story y la sin destino; la de otra story, no');
+});
 
+test('UltimoCambio_RenombreYSacarDelIndice_NoSeFechanPorElDisco (T19) @story-8.143 @ac-4', (t) => {
+  for (const [nombre, mover] of [
+    ['git mv', (d) => sh(d, 'mv', 'a.js', 'c.js')],
+    ['git rm --cached', (d) => sh(d, 'rm', '-q', '--cached', 'a.js')],
+  ]) {
+    const a = repo(t, { 'a.js': 'module.exports = 1;\n', 'b.js': "require('./a.js');\n" });
+    mover(a);
+    const r = porDelegacion(corridaLimpia([a]), { repos: [a] });
+    assert.strictEqual(r.codigo, 2, nombre);
+    assert.match(r.motivo, /pruebas/, `${nombre}: ${r.motivo}`);
+  }
+});
 
+test('Sensible_LosQueVerificanFirmas_EnLaLista (T20) @story-8.143 @ac-5', (t) => {
+  const archivos = ['skills/tycon-pipeline/scripts/dispatch.js', 'skills/tycon-pipeline/scripts/on-frontmatter-write.js',
+    'skills/tycon-pipeline/scripts/on-dod-evidence-guard.js', 'skills/tycon-pipeline/scripts/lib/story-skill-gate-io.js',
+    'skills/tycon-pipeline/scripts/e2e-setup.js'];
+  for (const f of archivos) {
+    const a = repo(t, { [f]: 'x\n' });
+    escribir(a, f, 'sin el control de la firma\n');
+    assert.ok(SO.sensibles({ repos: [a] }).some((x) => x.archivo === f), f);
+  }
+});
 
+test('Sensible_MainAdelantado_NoCuentaLoDeMain (T21) @story-8.143 @ac-5', (t) => {
+  const a = repo(t, { 'scripts/lib/signatures.js': 'x\n', 'app.js': '1\n' });
+  sh(a, 'checkout', '-q', 'main');
+  escribir(a, 'scripts/lib/signatures.js', 'cambio de main\n');
+  sh(a, 'commit', '-qam', 'main avanza');
+  sh(a, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  sh(a, 'checkout', '-q', 'story/la-prueba');
+  escribir(a, 'app.js', '2\n');
+  assert.deepStrictEqual(SO.sensibles({ repos: [a] }), [], 'la story sólo toca app.js');
+});
 
+test('ApproveSave_SuConstancia_NoInvalidaElOk (T22) @story-8.143 @ac-2 @ac-3', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
+  // lo que approve-save escribe después de la firma: la aprobación y los hallazgos de la corrida en el repo de la story
+  escribir(a, '.advisors/pipeline-runs/9.99-x/approvals.jsonl', '{"que":"el ok de guardar"}\n');
+  escribir(a, '.advisors/pipeline-runs/9.99-x/findings.json', '[]\n');
+  const r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, true, r.motivo);
+  // pero un guion puesto en la carpeta de la evidencia sí cambia la huella, y es sensible
+  escribir(a, '.advisors/pipeline-runs/9.99-x/atajo.js', 'module.exports = 1;\n');
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, 'un .js en .advisors no es evidencia');
+  assert.ok(SO.sensibles({ repos: [a] }).some((x) => x.archivo === '.advisors/pipeline-runs/9.99-x/atajo.js'));
+});
 
+test('Delegada_LoQueEscribeElPipeline_NoEsCambioDeCodigo (T23) @story-8.143 @ac-4', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  // después de las pruebas y del pase: los hallazgos, la story en review (y commiteada), y la evidencia proyectada
+  fs.mkdirSync(path.join(a, '.advisors', 'pipeline-runs', '9.99-x'), { recursive: true });
+  fs.writeFileSync(path.join(a, '.advisors', 'pipeline-runs', '9.99-x', 'findings.json'), '[]\n');
+  fs.mkdirSync(path.join(a, 'specs'), { recursive: true });
+  fs.writeFileSync(path.join(a, 'specs', 'story-9.99.md'), '---\nstatus: review\n---\n');
+  sh(a, 'add', 'specs/story-9.99.md');
+  sh(a, 'commit', '-qm', 'la story en review');
+  const r = porDelegacion(corridaLimpia([a]), { repos: [a] });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+  // un yaml de CI cambiado después de las pruebas sí es cambio de código, también sin repoPath en el marcador
+  const ci = repo(t);
+  fs.mkdirSync(path.join(ci, '.github', 'workflows'), { recursive: true });
+  fs.writeFileSync(path.join(ci, '.github', 'workflows', 'ci.yml'), 'on: push\n');
+  for (const m of [corridaLimpia([ci]), corridaLimpia([ci], { repoPath: undefined })]) {
+    const r2 = porDelegacion(m, { repos: [ci] });
+    assert.strictEqual(r2.codigo, 2, r2.motivo);
+    assert.match(r2.motivo, /pruebas/);
+  }
+});
 
 test('ApproveSave_SpecsYTasks_NoVencenElOk (T26)', (t) => {
   const a = repo(t, { 'LEEME.md': 'hola\n', 'specs/story-9.99.md': '---\nstatus: in-progress\n---\n', 'app.js': '1\n' });
   escribir(a, 'app.js', '2\n');
-  const antes = SO.huella(a);
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
   // el papeleo de la story después del ok: su estado, una tabla de tareas, un dato
   escribir(a, 'specs/story-9.99.md', '---\nstatus: review\n---\n');
   escribir(a, 'tasks/todo.md', '- [x] hecho\n');
@@ -101,19 +552,30 @@ test('ApproveSave_SpecsYTasks_NoVencenElOk (T26)', (t) => {
   escribir(a, 'tasks/medicion.jsonl', '{}\n');
   sh(a, 'add', '-A');
   sh(a, 'commit', '-qm', 'la story y el papeleo');
-  assert.strictEqual(misma(antes, a), true);
+  let r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, true, r.motivo);
   // un guion en specs/ o en tasks/ es código: vence el ok
   escribir(a, 'specs/atajo.js', 'module.exports = 1;\n');
-  assert.strictEqual(misma(antes, a), false, 'un .js en specs/ es código');
+  r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, false, 'un .js en specs/ es código');
   fs.rmSync(path.join(a, 'specs', 'atajo.js'));
   escribir(a, 'tasks/x.sh', 'echo\n');
-  assert.strictEqual(misma(antes, a), false, 'un .sh en tasks/ es código');
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, 'un .sh en tasks/ es código');
   fs.rmSync(path.join(a, 'tasks', 'x.sh'));
   // y el código, como siempre
   escribir(a, 'app.js', '3\n');
-  assert.strictEqual(misma(antes, a), false, 'cambiar el código vence el ok');
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, 'cambiar el código vence el ok');
 });
 
+test('Papeleo_SpecsYTasks_NoEsCambioDeCodigo_NiSensible (T27)', (t) => {
+  const a = repo(t);
+  escribir(a, 'specs/story-9.99.md', 'x\n');
+  escribir(a, 'tasks/todo.md', 'x\n');
+  assert.deepStrictEqual(SO.sensibles({ repos: [a] }), []);
+  // un archivo de la lista sensible sigue pidiendo su propio ok aunque esté al lado del papeleo
+  escribir(a, 'scripts/lib/signatures.js', 'x\n');
+  assert.ok(SO.sensibles({ repos: [a] }).some((x) => x.archivo === 'scripts/lib/signatures.js'));
+});
 
 test('ApproveSave_PapeleoQueCargaAlgo_VenceElOk (T28)', (t) => {
   // lo que una herramienta carga o lo que está en la lista sensible, aunque viva en specs/ o tasks/ y sea .json o .md
@@ -121,27 +583,27 @@ test('ApproveSave_PapeleoQueCargaAlgo_VenceElOk (T28)', (t) => {
     'tasks/tsconfig.build.json', 'specs/.claude/commands/atajo.md', 'specs/X.MD'];
   for (const f of casos) {
     const a = repo(t);
-    const antes = SO.huella(a);
+    const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
     escribir(a, f, '{"x":1}\n');
-    assert.strictEqual(misma(antes, a), false, `${f} vence el ok`);
+    assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, `${f} vence el ok`);
   }
   // un enlace en specs/ que se reapunta después del ok
   const a = repo(t);
   escribir(a, 'specs/dato.md', 'a\n');
   escribir(a, 'specs/otro.md', 'b\n');
   fs.symlinkSync('dato.md', path.join(a, 'specs', 'enlace.md'));
-  const antes = SO.huella(a);
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
   fs.unlinkSync(path.join(a, 'specs', 'enlace.md'));
   fs.symlinkSync('otro.md', path.join(a, 'specs', 'enlace.md'));
-  assert.strictEqual(misma(antes, a), false, 'reapuntar un enlace vence el ok');
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, 'reapuntar un enlace vence el ok');
 });
 
 test('ApproveSave_PapeleoAnidado_NoEsPapeleo (T29)', (t) => {
   // sólo specs/ y tasks/ de la raíz del repo: una carpeta specs/ de otro lado es código
   const a = repo(t);
-  const antes = SO.huella(a);
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
   escribir(a, 'app/specs/datos.json', '{}\n');
-  assert.strictEqual(misma(antes, a), false);
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false);
 });
 
 /** Un `git init` sin ningún commit en una carpeta temporal: el repo de juguete que una corrida usa para medir algo. */
@@ -156,6 +618,15 @@ function juguete(t) {
 // T30 Firma_RepoSinMedir_FrenaEnTodaVia
 // 🔴 Falla con: un ok firmado en la ventana o en la terminal con un repo que no se pudo medir, que después no valida
 // nunca, o un motivo que no nombra el repo.
+test('ApproveSave_RepoSinMedir_FrenaEnTodaVia (T30)', (t) => {
+  const a = repo(t);
+  const roto = juguete(t);
+  for (const via of ['ventana', 'terminal', 'delegacion']) {
+    const r = SO.antesDeFirmar({ via, marker: corridaLimpia([a]), repos: [a, roto], canales: canalQueEntrega, mandar: entrega([]) });
+    assert.strictEqual(r.codigo, 2, `${via}: no firma`);
+    assert.match(r.motivo, new RegExp(`${roto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: no pude medirlo`), `${via}: nombra el repo`);
+  }
+});
 
 // T31 Repos_GitInitEnCarpetaTemporal_NoEntra
 // 🔴 Falla con: el repo de juguete de una carpeta temporal en el ok, sólo porque una edición de la corrida lo tocó; o un
@@ -192,22 +663,41 @@ test('Repos_FallaDeGitEnCarpetaTemporal_Entra', { skip: process.platform === 'wi
 // T32 Ok_NoCubreElRepoTemporal
 // 🔴 Falla con: el repo que quedó afuera de la corrida cubierto por su ok: mover el trabajo a una carpeta temporal
 // saltearía el ok de guardar. Un commit o un push ahí pide su propio ok.
+test('ApproveSave_ElRepoTemporal_PideSuPropioOk (T32)', (t) => {
+  const a = repo(t, { 'LEEME.md': 'hola\n', 'specs/story-9.99.md': '---\nstory_id: "9.99"\n---\n' });
+  const toy = repo(t);
+  escribir(toy, 'trabajo.js', 'module.exports = 2;\n');
+  const marker = corridaLimpia([a], { fileEvents: [{ path: path.join(a, 'LEEME.md'), ts: ANTES, code: true }, { path: path.join(toy, 'trabajo.js'), ts: ANTES, code: true }] });
+  const repos = SO.reposDeLaCorrida({ marker, hermanos: [] });
+  assert.ok(!repos.includes(toy), 'el repo temporal no entra en la corrida');
+  const r = SO.antesDeFirmar({ via: 'ventana', marker, repos });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+  const saveOk = SO.constancia({ marker, via: 'ventana', previo: r, ahora: DESPUES });
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, true, 'el ok vale para el repo de la story');
+  const commit = SO.vigente({ saveOk, repoActual: toy });
+  assert.strictEqual(commit.ok, false, 'un commit en el repo temporal no lo cubre el ok');
+  assert.match(commit.motivo, /no está en el ok de guardar/);
+  const push = SO.vigente({ saveOk, repoActual: toy, push: { remoto: 'origin', rama: 'story/la-prueba' } });
+  assert.strictEqual(push.ok, false, 'un push desde el repo temporal tampoco');
+});
 
 // T11 Huella_TrozosDeMemoria_SonPapeleo
 // 🔴 Falla con: el ok vencido por la memoria que el gancho exporta después del ok (cada commit pediría otro ok), o la
 // configuración de la memoria tratada como papeleo (un cambio que carga algo pasaría sin ok).
 test('Huella_TrozosDeMemoria_SonPapeleo (T11) @story-8.151 @ac-11', (t) => {
   const a = repo(t, { 'LEEME.md': 'hola\n', '.engram/config.json': '{"project":"acme"}\n', '.engram/chunks/a.jsonl.gz': 'uno' });
-  const antes = SO.huella(a);
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
   escribir(a, '.engram/chunks/a.jsonl.gz', 'dos');
   escribir(a, '.engram/chunks/b.jsonl.gz', 'nuevo');
-  assert.strictEqual(misma(antes, a), true, 'un trozo de memoria no cambia la huella');
+  let r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, true, `un trozo de memoria no vence el ok: ${r.motivo}`);
   // sólo los trozos: otro archivo en la carpeta de los trozos es otra cosa
   escribir(a, '.engram/chunks/c.js', 'module.exports = 1;\n');
-  assert.strictEqual(misma(antes, a), false, 'un .js entre los trozos vence el ok');
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, 'un .js entre los trozos vence el ok');
   fs.rmSync(path.join(a, '.engram', 'chunks', 'c.js'));
   escribir(a, '.engram/config.json', '{"project":"otro"}\n');
-  assert.strictEqual(misma(antes, a), false, 'la configuración de la memoria vence el ok');
+  r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, false, 'la configuración de la memoria vence el ok');
   assert.ok(SO.esPapeleoDeLaHuella('.engram/chunks/x.jsonl.gz', '100644'));
   assert.ok(!SO.esPapeleoDeLaHuella('.engram/chunks/x.jsonl.gz', '120000'), 'un enlace no es papeleo');
   assert.ok(!SO.esPapeleoDeLaHuella('.engram/config.json', '100644'));
@@ -219,11 +709,13 @@ test('Huella_TrozosDeMemoria_SonPapeleo (T11) @story-8.151 @ac-11', (t) => {
 // y pide otra vuelta; o la excepción abre otras carpetas ocultas, otro archivo de `.tycon/` o un enlace.
 test('Huella_ExencionDeRuntime_EsPapeleo — la exención anotada tras la última vuelta no pide otra', (t) => {
   const a = repo(t, { 'LEEME.md': 'hola\n', '.tycon/runtime-waivers.jsonl': '' });
-  const antes = SO.huella(a);
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
   escribir(a, '.tycon/runtime-waivers.jsonl', '{"story":"9.99","ac":"AC-3"}\n');
-  assert.ok(misma(antes, a), 'la exención no cambia la huella');
+  let r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, true, `la exención no vence el ok: ${r.motivo}`);
   escribir(a, '.tycon/production.json', '{}\n');
-  assert.ok(!misma(antes, a), 'otro archivo de .tycon/ sí la cambia');
+  r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, false, 'otro archivo de .tycon/ sí vence el ok');
   assert.ok(SO.esPapeleoDeLaHuella('.tycon/runtime-waivers.jsonl', '100644'));
   assert.ok(!SO.esPapeleoDeLaHuella('.tycon/runtime-waivers.jsonl', '120000'), 'un enlace no es papeleo');
   for (const rel of ['.tycon/runtime-waivers.json', '.tycon/otras.jsonl', 'sub/.tycon/runtime-waivers.jsonl', '.github/runtime-waivers.jsonl', '.tycon/x/runtime-waivers.jsonl']) {
@@ -246,12 +738,14 @@ test('ControlesDelCommit_UnControlQueFrena_NoSeFirma', (t) => {
   gancho(t, a, 'if git diff --cached -U0 | grep -q PROHIBIDO; then echo "datos estables: PROHIBIDO en lo que se guarda" >&2; exit 1; fi');
   escribir(a, 'nuevo.js', '// PROHIBIDO\n');            // sin seguimiento: el commit de todo lo lleva
   const indice = fs.readFileSync(path.join(a, '.git', 'index'));
-  const frena = SO.controlesDelCommit({ repos: [a] });
-  assert.strictEqual(frena.codigo, 2, frena.motivo);
-  assert.match(frena.motivo, /los controles del commit[\s\S]*datos estables: PROHIBIDO/);
+  for (const via of ['ventana', 'terminal']) {
+    const r = SO.antesDeFirmar({ via, marker: corridaLimpia([a]), repos: [a] });
+    assert.strictEqual(r.codigo, 2, `${via}: ${r.motivo}`);
+    assert.match(r.motivo, /los controles del commit[\s\S]*datos estables: PROHIBIDO/);
+  }
   assert.deepStrictEqual(fs.readFileSync(path.join(a, '.git', 'index')), indice, 'el índice de la persona no se tocó');
   escribir(a, 'nuevo.js', '// permitido\n');
-  const r = SO.controlesDelCommit({ repos: [a] });
+  const r = SO.antesDeFirmar({ via: 'ventana', marker: corridaLimpia([a]), repos: [a] });
   assert.strictEqual(r.codigo, 0, r.motivo);
 });
 
@@ -262,12 +756,12 @@ test('ControlesDelCommit_SoloLectura_YLoQueEscribeNoSeFirma', (t) => {
   escribir(a, 'LEEME.md', 'cambiado\n');
   gancho(t, a, '[ "${TYCON_PRECOMMIT_READ_ONLY:-}" = 1 ] || { echo regenerado > generado.html; git add generado.html; }');
   const antes = SO.huella(a).arbol;
-  let r = SO.controlesDelCommit({ repos: [a] });
+  let r = SO.antesDeFirmar({ via: 'ventana', marker: corridaLimpia([a]), repos: [a] });
   assert.strictEqual(r.codigo, 0, r.motivo);
   assert.ok(!fs.existsSync(path.join(a, 'generado.html')), 'con el aviso de sólo lectura el gancho no escribe');
   assert.strictEqual(SO.huella(a).arbol, antes);
   gancho(t, a, 'echo regenerado > generado.html');
-  r = SO.controlesDelCommit({ repos: [a] });
+  r = SO.antesDeFirmar({ via: 'ventana', marker: corridaLimpia([a]), repos: [a] });
   assert.strictEqual(r.codigo, 2);
   assert.match(r.motivo, /cambiaron el repo \(generado\.html\)/);
 });
@@ -296,14 +790,12 @@ test('Evidencia_SalidasYCapturasDelRegistro_SonEvidencia', (t) => {
   escribir(a, '.advisors/dod-runtime/9.99-smoke-captures/20261101T120000-abc123.png', png);
   escribir(a, '.advisors/dod-runtime/9.99-smoke-outputs/20261101T120000-def456.txt', txt);
   escribir(a, '.advisors/dod-runtime/9.99-smoke-ledger.jsonl', `${JSON.stringify({ v: 2, acs: [1], output: '9.99-smoke-outputs/20261101T120000-def456.txt', output_sha: sha(txt), capture: '9.99-smoke-captures/20261101T120000-abc123.png', capture_sha: sha(png) })}\n`);
-  for (const f of ['.advisors/dod-runtime/9.99-smoke-captures/20261101T120000-abc123.png', '.advisors/dod-runtime/9.99-smoke-outputs/20261101T120000-def456.txt']) {
-    assert.ok(SO.esEvidenciaEnVivo(a, f), `${f}: la anotada es evidencia`);
-  }
+  assert.deepStrictEqual(SO.sensibles({ repos: [a] }), [], 'las anotadas son evidencia');
   // una captura suelta, o una anotada que cambió después de sellarla, no
   escribir(a, '.advisors/dod-runtime/9.99-smoke-captures/suelta.png', png);
   escribir(a, '.advisors/dod-runtime/9.99-smoke-outputs/20261101T120000-def456.txt', 'otra salida\n');
-  assert.ok(!SO.esEvidenciaEnVivo(a, '.advisors/dod-runtime/9.99-smoke-captures/suelta.png'), 'la suelta no');
-  assert.ok(!SO.esEvidenciaEnVivo(a, '.advisors/dod-runtime/9.99-smoke-outputs/20261101T120000-def456.txt'), 'la cambiada después de sellarla no');
+  const s = SO.sensibles({ repos: [a] }).map((x) => x.archivo).sort();
+  assert.deepStrictEqual(s, ['.advisors/dod-runtime/9.99-smoke-captures/suelta.png', '.advisors/dod-runtime/9.99-smoke-outputs/20261101T120000-def456.txt']);
 });
 
 // El chequeo previo del ok mira lo preparado cuando la persona preparó algo: un cambio que entra en dos commits se firma
@@ -573,64 +1065,4 @@ test('SaveOk_NoCompanionOrMissing_AsToday @story-8.277 @ac-14 @ac-15: sin herman
   assert.strictEqual(r.codigo, 2);
   assert.match(r.motivo, /falta scripts\/x\.js/);
   assert.strictEqual(p.uso().dir, pub);
-});
-
-// 🔴 Falla con: la firma de guardar todavía en el código (sus funciones, su guion o su entrada del catálogo), o el aviso
-// por los canales del arnés roto al sacarla (lo usa el camino corto).
-test('SaveOk_SinFirmaDeGuardar_AvisarSigue (T5) @story-8.283 @ac-9 @ac-10', () => {
-  for (const f of ['vigente', 'limpia', 'antesDeFirmar', 'constancia', 'sensibles', 'lineaDelAviso', 'exencionesDeLaCorrida']) {
-    assert.strictEqual(SO[f], undefined, `${f} salió con la firma de guardar`);
-  }
-  assert.ok(!CAT.SIGNATURES.some((s) => s.id === 'save'), 'la firma de guardar no está en el catálogo');
-  assert.ok(!CAT.LEVELS.some((l) => l.id === 'save' || l.id === 'save:sensible'), 'ni en la tabla de niveles');
-  assert.ok(Array.isArray(CAT.SENSITIVE) && CAT.SENSITIVE.length, 'la lista de lo sensible se queda');
-  assert.strictEqual(typeof SO.esSensible, 'function', 'y su lector también');
-  // la lectura del código que carga firmas se queda: la usa la cobertura de noche (lib/nightly-coverage.js)
-  assert.strictEqual(typeof SO.requiereSensible, 'function', 'requiereSensible se queda');
-  assert.ok(Array.isArray(CAT.REQUIERE_SENSIBLE) && CAT.REQUIERE_SENSIBLE.includes('signatures.js'), 'con su lista');
-  // el aviso, igual que antes: vale sólo con una entrega real
-  const enviados = [];
-  const ok = SO.avisar({ texto: 'hola', canales: () => ({ canales: ['telegram'] }), mandar: (o) => { enviados.push(o); return { resultados: [{ canal: 'telegram', entregado: true }] }; } });
-  assert.deepStrictEqual(ok, { ok: true, canales: ['telegram'] });
-  assert.strictEqual(enviados[0].texto, 'hola');
-  assert.strictEqual(enviados[0].lado, 'sesion');
-  assert.strictEqual(SO.avisar({ texto: 'x', canales: () => ({ canales: [] }), mandar: () => ({}) }).ok, false, 'sin canales no avisa');
-  assert.strictEqual(SO.avisar({ texto: 'x', canales: () => ({ canales: ['telegram'] }), mandar: () => ({ resultados: [{ canal: 'telegram', entregado: false, motivo: 'caído' }] }) }).ok, false, 'sin entrega no vale');
-  // en el arnés sólo quedan las aserciones de que el pipeline NO la pide
-  // (los nombres armados por partes, para que esta prueba no se encuentre a sí misma)
-  const g = spawnSync('git', ['-C', RAIZ, 'grep', '-l', '-e', ['approve', 'save'].join('-'), '-e', ['save', 'check'].join('-')], { encoding: 'utf8' });
-  if (g.status === 0 || g.status === 1) {
-    const quedan = g.stdout.split('\n').filter(Boolean).map((f) => f.replace(/\\/g, '/'));
-    assert.deepStrictEqual(quedan, ['skills/tycon-pipeline/scripts/tests/adhoc-high-risk.test.js', 'skills/tycon-pipeline/scripts/tests/save-brake.test.js'],
-      'sólo la nombran las aserciones de que no se pide');
-  }
-});
-
-// 🔴 Falla con: un renglón viejo de la firma de guardar que rompe al lector, o un perfil que la sigue delegando y deja de
-// valer entero (la delegación del plan se caería con ella).
-test('Registro_RenglonDeFirmaDeGuardar_SeLee (T6) @story-8.283 @ac-11', (t) => {
-  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-retirada-'));
-  t.after(() => fs.rmSync(casa, { recursive: true, force: true }));
-  const estado = path.join(casa, '.claude', '.tycon-pipeline');
-  fs.mkdirSync(estado, { recursive: true });
-  fs.writeFileSync(path.join(estado, 'gates.log'), [
-    { ts: '2026-11-01T10:00:00.000Z', name: 'save-signed', status: 'ok', via: 'delegacion', destino: 'ses-a', story: '9.99' },
-    { ts: '2026-11-01T09:00:00.000Z', name: 'relay-designation', status: 'ok', sesion: 'ses-coord', rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' },
-  ].map((l) => JSON.stringify(l)).join('\n') + '\n');
-  const { designacionVigente } = require('../lib/critical-waivers.js');
-  const d = designacionVigente({ dir: estado });
-  assert.ok(d && !d.error && d.sesion === 'ses-coord', 'el registro con el renglón viejo se lee');
-  // la lista de firmas con un renglón viejo de guardar
-  const SL = require(path.join(RAIZ, 'scripts', 'lib', 'signature-log.js'));
-  const firmas = path.join(estado, 'firmas.jsonl');
-  fs.writeFileSync(firmas, `${JSON.stringify({ ts: '2026-11-01T10:00:00.000Z', signature: 'save', via: 'delegation', target: 'ses-a', ordered_by: 'ses-coord' })}\n`);
-  assert.deepStrictEqual(SL.lastSignatureFor('ses-a', { paths: [firmas], now: Date.parse('2026-11-02T00:00:00.000Z') }), { ts: '2026-11-01T10:00:00.000Z' });
-  // el perfil del equipo de hoy: `save` retirada sigue valiendo en las tres listas, sin delegar nada
-  assert.strictEqual(CONFIG.validarTipo('firmas', ['plan-approval', 'extra-round', 'save', 'adhoc-lane']), null, 'delegated_signing con save vale');
-  assert.strictEqual(CONFIG.validarTipo('firmas-ids', ['critical-waiver', 'save']), null, 'owner_only con save vale');
-  assert.strictEqual(CONFIG.validarTipo('niveles', { 'save:sensible': 3, 'plan-approval': 2 }), null, 'levels con save:sensible vale');
-  assert.ok(CONFIG.delegaFirma({ approvals: { delegated_signing: ['plan-approval', 'save'] } }, 'plan-approval'), 'plan-approval se sigue delegando');
-  assert.ok(!CAT.SIGNATURES.some((s) => s.id === 'save'), 'y ningún freno pide «save»: no delega nada');
-  // un id que nunca existió sigue sin valer
-  assert.notStrictEqual(CONFIG.validarTipo('firmas', ['no-existe']), null);
 });

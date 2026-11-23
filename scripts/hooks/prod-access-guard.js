@@ -401,6 +401,11 @@ function lectorQueNoEjecuta(t, prefijo) {
 // Lo que puede recibir por un tubo lo que escribe otro sin correrlo: los lectores (con sus opciones) y unos pocos que
 // sólo cortan o dan formato. Cualquier otro (un shell, un intérprete, `xargs`, `awk`, `sed`, `env sh`…) puede correrlo.
 const RECIBEN_SIN_CORRER = new Set(['cut', 'tr', 'column', 'nl', 'fold', 'paste', 'jq', 'pbcopy', 'tee']);
+// Los lectores que NO ejecutan lo que reciben, con ninguna opción: son los únicos que dejan pasar un `for` que nombra la
+// puerta (ver «la puerta, sólo en su forma canónica»). Quedan afuera los que pueden correr un programa (`find -exec`,
+// `git`, `less`, `rg --pre`, `sort --compress-program`) y los que escriben en un argumento (`uniq A B`, `file -C`).
+const LEEN_SIN_EJECUTAR = new Set(['echo', 'printf', 'cat', 'head', 'tail', 'grep', 'egrep', 'fgrep', 'wc', 'stat', 'ls',
+  'diff', 'shasum', 'md5', 'basename', 'dirname', 'realpath', 'readlink', 'cut', 'tr', 'which', 'type']);
 const PUERTA = '/opt/tycon/bin/tycon-prod-sql';
 const NOMBRE_PUERTA = 'tycon-prod-sql';
 // Lista BLANCA: ruta absoluta, nada antes ni después, la sentencia en UN argumento entre comillas
@@ -602,7 +607,7 @@ function decidir(entrada) {
     process.exit(0);
   }
 
-  const { segmentos, tokens, PREFIJOS, expandir, variablesDelComando } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
+  const { segmentos, tokens, PREFIJOS, expandir, variablesDelComando, parseSimpleCommand } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
   const partes = segmentos(cmd);
   const vars = variablesDelComando(cmd);
 
@@ -713,6 +718,51 @@ function decidir(entrada) {
   // —la propia suite de la puerta— contiene el nombre adentro, y correrla se frenaba como «invocación no
   // canónica» (2026-09-15, en vivo, el tercer falso positivo de esta familia en un día).
   const NOMBRA_PUERTA = new RegExp(`(?<![\\w-])${NOMBRE_PUERTA}(?![\\w.-])`);
+  // `for x in … <puerta> …` no corre la puerta: le da su nombre a la variable, y corre sólo si el cuerpo la usa donde
+  // se ejecuta (`"$x" …`, `| sh`, `xargs`, `$( "$x" … )`). Pasa sólo si todo el comando, también lo de adentro de cada
+  // `$( … )`, son lectores que no ejecutan lo que reciben; una comilla invertida o un `<( … )` no se siguen y frenan.
+  // Además, porque zsh y bash corren código sin `$( … )`:
+  // - las palabras de cada `for` son simples (sin `$`, paréntesis, corchetes ni llaves, ni entre comillas): así no traen
+  //   código escondido que el cuerpo active después (`${(e)f}`, `${f@P}`, `$[f]`, `printf %d` en zsh);
+  // - lo que el shell todavía expande (fuera de comillas simples y de las sustituciones, que se juzgan aparte) no lleva
+  //   paréntesis, corchetes ni llaves, ni `$~` ni `$'`: el calificador de zsh `*(e:…:)` corre su texto;
+  // - ninguna asignación, ni `printf -v`, ni una redirección que escribe (salvo a /dev/null: `> "$x"` pisaría la puerta);
+  // - el programa es la palabra tal como está escrita, sin ruta (`./cat` es otro programa), sin quitarle `sudo` ni `env`.
+  const cabezaDeFor = (t) => (t[0] === 'for' || t[0] === 'select') && /^[A-Za-z_]\w*$/.test(t[1] || '') && t[2] === 'in';
+  const loQueSeExpande = (s) => {
+    if (s.includes("$'")) return null;
+    let t = s;
+    for (const sub of substitutions(s)) t = t.split(`$(${sub})`).join('_');
+    let out = ''; let dobles = false;
+    for (let i = 0; i < t.length; i++) {
+      const c = t[i];
+      if (c === '\\') { out += t.slice(i, i + 2); i++; } else if (c === '"') { dobles = !dobles; out += c; } else if (c === "'" && !dobles) {
+        const j = t.indexOf("'", i + 1);
+        if (j < 0) return null;
+        i = j;
+      } else out += c;
+    }
+    return out;
+  };
+  const soloLeenSinEjecutar = (texto, prof = 0) => {
+    if (prof > 4 || /`|[<>]\(/.test(texto)) return false;
+    return segmentos(texto).every(({ texto: s }) => {
+      const { assignments, words, redirections } = parseSimpleCommand(s);
+      if (assignments.length || redirections.some((r) => r.write && r.target !== '/dev/null')) return false;
+      const activo = loQueSeExpande(s);
+      if (activo === null || /[()[\]{}]|\$~/.test(activo)) return false;
+      if (!words.length || (words.length === 1 && words[0] === 'done')) return true;
+      // la variable del for: corta y en minúsculas, y no `path` ni `argv` (en zsh `path` es el PATH: `for PATH in …` o
+      // `for path in …` cambian qué programa corre)
+      if (cabezaDeFor(words)) {
+        if (!/^[a-z][a-z0-9]{0,3}$/.test(words[1]) || ['path', 'argv'].includes(words[1])) return false;
+        if (!words.slice(3).every((w) => /^[\w.\/:@+,=\-'" ]*$/.test(w))) return false;
+      } else if (!LEEN_SIN_EJECUTAR.has(words[0].replace(/^\\/, ''))) return false;
+      // `printf -v x`, `-vPATH`, `-xvPATH`: printf asigna una variable con sus opciones; sin opciones, sólo imprime
+      if (words[0] === 'printf' && words.slice(1).some((w) => /^-/.test(w.replace(/["']/g, '')))) return false;
+      return substitutions(s).every((sub) => soloLeenSinEjecutar(sub, prof + 1));
+    });
+  };
   // Un lector que corre otro programa por una opción (`find -exec`, `rg --pre`, `git -c core.pager=…`) o con una variable
   // delante (`GIT_PAGER=… git log`) no es un lector: ver `lectorQueNoEjecuta`. Además:
   // - lo de adentro de cada `$( … )` corre, así que se juzga como un comando: `echo "$(<puerta> …)"` la invoca;
@@ -740,6 +790,8 @@ function decidir(entrada) {
     if (!t.length) return false;
     const prog = basename(t[0]);
     if (prog === NOMBRE_PUERTA || t[0] === PUERTA) return true;
+    // un `for` que sólo le da el nombre a su variable, en un comando que sólo lee (arriba)
+    if (cabezaDeFor(t) && soloLeenSinEjecutar(todo)) return false;
     return !lectorQueNoEjecuta(t, (texto.trimStart().match(PREFIJOS) || [''])[0]);
   };
   const comandoInvoca = (todo, prof = 0) => {

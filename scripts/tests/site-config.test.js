@@ -3555,7 +3555,7 @@ test('T4 Repos_QueHace_HojaConTema @story-2.59.2 @ac-4', () => {
 test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja el agente»', () => {
   const s = ORG.seccionPorId('aprobaciones');
   assert.ok(s, 'la sección existe');
-  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels']]);
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels', 'approvals.local_commit']]);
   const rev = (borrador) => ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
   const ok = rev({ approvals: { relay_session: 'coordinadora' } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
@@ -3615,6 +3615,42 @@ test('Seccion_ReenvioDelOk_ElNombreDelRol — con «Sí», el nombre del rol se 
   const en = await abrir({ approvals: { relay_session: 'lead' } }, 'en');
   assert.ok(en.todos().some((n) => n.tag === 'input' && n.attrs['aria-label'] === 'What do you call it?'));
   assert.match(en.texto(), /names the role \(lead\)/);
+});
+
+// 🔴 Falla con: la clave sin lugar en la sección, sin sus dos valores en la pantalla, o propuesta a una capa que pide una
+// versión cuyo lector no la conoce (esa máquina leería la clave como rota y se quedaría sin firmas delegadas).
+test('8.242-Sitio_ClaveCommitLocal (T24) @story-8.242 @ac-17', async () => {
+  assert.ok(ORG.seccionPorId('aprobaciones').rutas.includes('approvals.local_commit'));
+  const rev = (borrador) => ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  for (const v of ['agent', 'coordinator']) assert.strictEqual(rev({ approvals: { local_commit: v } }).ok, true, v);
+  const malo = rev({ approvals: { local_commit: 'si' } });
+  assert.ok(malo.problems.some((p) => p.path === 'approvals.local_commit'), JSON.stringify(malo.problems));
+  // la versión mínima: con la de antes no se propone y se dice por qué; con la que la trae, sí
+  const doc = { ...PERFIL_TYCON, approvals: { local_commit: 'coordinator' } };
+  assert.ok(ORG.clavesQuePidenVersion({ actual: PERFIL_TYCON, doc }).some(([k, v]) => k === 'approvals.local_commit' && v === ORG.LOCAL_COMMIT_SINCE));
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SIGNATURE_LIST_SINCE)), versionImagen: '2026.10.15.48', doc: { approvals: { local_commit: 'coordinator' } } });
+  assert.strictEqual(bajo, textos.t('es', 'org.capaSinCommitLocal', { req: `>= ${ORG.SIGNATURE_LIST_SINCE}`, version: ORG.LOCAL_COMMIT_SINCE }));
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.LOCAL_COMMIT_SINCE)), versionImagen: '2026.10.15.48', doc: { approvals: { local_commit: 'coordinator' } } }), null);
+  for (const k of ['pantalla.commitLocal', 'pantalla.commitLocalAgente', 'pantalla.commitLocalCoordinadora', 'pantalla.commitLocalAyuda', 'org.capaSinCommitLocal']) {
+    assert.notStrictEqual(textos.t('es', k, { req: 'x', version: 'y' }), textos.t('en', k, { req: 'x', version: 'y' }), `${k} en las dos lenguas`);
+  }
+  // la pantalla: el selector con sus dos valores y qué hace cada uno; el agente es lo de fábrica
+  const abrir = async (borrador) => {
+    const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('aprobaciones', { repo: 'perfil', borrador })], idioma: 'es', hash: '#seccion-aprobaciones' });
+    const todos = () => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(r.creados.filter((n) => n.attrs.id === 'seccion-aprobaciones').pop()); return out; };
+    return { r, todos, texto: () => todos().map((n) => n.textContent || '').join(' | ') };
+  };
+  const p = await abrir({});
+  const sel = p.todos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.local_commit');
+  assert.ok(sel, 'el selector de quién firma el commit');
+  assert.deepStrictEqual(sel.hijos.map((o) => o.attrs.value), ['agent', 'coordinator']);
+  assert.strictEqual(sel.value, 'agent', 'sin la clave, el agente');
+  assert.match(p.texto(), /Nadie: el agente commitea solo \(de fábrica\)/);
+  assert.match(p.texto(), /La coordinadora, antes de cada commit/);
+  assert.match(p.texto(), /el agente no puede commitear sin su ok de guardar/);
+  const c = await abrir({ approvals: { local_commit: 'coordinator' } });
+  assert.strictEqual(c.todos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.local_commit').value, 'coordinator');
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ───────────────────────────────

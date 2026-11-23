@@ -13,7 +13,6 @@
  *   T7 · la rutina pasa, también en un valor solo y con `off`.
  *   T8 · el comando: sin perfil lo dice y sale 0; con uno que delega de más sale 1; ilegible sale 2.
  *   T9 · el perfil real, si la capa del equipo está encima, pasa.
- *   8.283 T6 · una firma retirada (`save`, `save:sensible`) en el perfil no se rechaza ni delega nada.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -46,7 +45,7 @@ test('niveles Perfil_ExcepcionesDeTramite_PasanSoloPorSuNombre', () => {
   assert.deepStrictEqual(deTramite.slice().sort(), ['adhoc-lane:guardado-ajeno', 'critical-waiver', 'escape:ALLOW_DOD_EVIDENCE_WRITE',
     'escape:TYCON_STATUS_GATE', 'escape:cambiar-el-estado', 'escape:cerrar-como-deuda', 'escape:cerrar-la-ejecucion', 'escape:force-manual',
     'escape:red-control-test-edit', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous', 'escape:trust-ran', 'lost-run', 'manual-test',
-    'plan-approval:delicada', 'runtime-waiver']);
+    'plan-approval:delicada', 'runtime-waiver', 'save:sensible']);
   assert.deepStrictEqual(check(perfil(deTramite)).rejected, []);
   // el grupo de antes no las trae: las que son de trámite también salen si vienen por el grupo
   const porGrupo = check(perfil(['escape-phrases'])).rejected;
@@ -54,6 +53,7 @@ test('niveles Perfil_ExcepcionesDeTramite_PasanSoloPorSuNombre', () => {
   // lo que el perfil sube a 3 deja de ser delegable, y una rutina subida a 2 también
   assert.strictEqual(cat.delegable('runtime-waiver', { 'runtime-waiver': 3 }), false);
   assert.strictEqual(cat.delegable('extra-round', { 'extra-round': 2 }), false);
+  assert.strictEqual(cat.delegable('save:sensible', { 'save:sensible': 3 }), false);
   assert.strictEqual(cat.delegable('plan-approval:delicada', { 'plan-approval': 2 }), false);
   assert.strictEqual(cat.delegable('no-existe'), false);
 });
@@ -80,24 +80,12 @@ test('niveles T10 Perfil_ConEspacios_Rechaza', () => {
 // niveles T7 Perfil_Rutina_Pasa
 // 🔴 Falla con: la rutina rechazada, o `off` y un valor solo leídos como una firma.
 test('niveles T7 Perfil_Rutina_Pasa', () => {
-  for (const v of [['plan-approval', 'extra-round', 'refresh-after-main', 'pending-approval', 'adhoc-lane'],
+  for (const v of [['plan-approval', 'extra-round', 'refresh-after-main', 'pending-approval', 'save', 'adhoc-lane'],
     'plan-approval', 'off', ['off'], []]) {
     assert.deepStrictEqual(check(perfil(v)).rejected, [], JSON.stringify(v));
   }
   assert.deepStrictEqual(check({}).rejected, [], 'sin approvals no delega nada');
   assert.deepStrictEqual(check({ approvals: {} }).rejected, []);
-});
-
-// niveles T6 Registro_RenglonDeFirmaDeGuardar_SeLee (el control del perfil) @story-8.283 @ac-11
-// 🔴 Falla con: el perfil de hoy, que todavía delega la firma de guardar retirada, rechazado por el control.
-test('niveles Registro_RenglonDeFirmaDeGuardar_SeLee — el control del perfil no rechaza una firma retirada @story-8.283 @ac-11', () => {
-  const cat = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
-  assert.deepStrictEqual([...cat.RETIRED].sort(), ['save', 'save:sensible']);
-  assert.deepStrictEqual(check(perfil(['plan-approval', 'save', 'save:sensible', 'plan-approval:delicada'])).rejected, []);
-  assert.deepStrictEqual(check(perfil(' save ')).rejected, [], 'valor solo, con espacios');
-  // lo retirado no tapa lo demás: una excepción que no es de trámite se sigue rechazando
-  assert.deepStrictEqual(check(perfil(['save', 'adversarial-skip'])).rejected.map((x) => x.id), ['adversarial-skip']);
-  assert.strictEqual(cat.delegable('save'), false, 'una firma retirada no delega nada');
 });
 
 function correr(args, raiz) {

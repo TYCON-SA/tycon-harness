@@ -174,11 +174,20 @@ try { ({ nativePath } = require('./lib/path-shape.js')); } catch (e) { logHookEr
 const Q = `(?:'([^']*)'|"([^"]*)"|([^\\s'"|;&<>]+))`; // token: 'x' | "x" | bare
 function tok(m, i) { return m[i] ?? m[i + 1] ?? m[i + 2] ?? null; }
 
+const SEPARADOR_DE_SEGMENTOS = /&&|\|\||\|&|;|\||\n|(?<![<>&|\\])&(?![&>])/;
 function splitSegments(cmd) {
   // Separadores de comandos (no dentro de comillas — aproximación: split simple alcanza para lo
   // que buscamos; las comillas raras caen del lado conservador = no se extrae nada).
   // también un `&` solo (segundo plano): `echo hi & cp a b` corre el cp. No `&&`, ni los de una redirección (`2>&1`, `&>`)
-  return String(cmd).split(/\s*(?:&&|\|\||\|&|;|\||\n|(?<![<>&|\\])&(?![&>]))\s*/).filter(Boolean);
+  // Los blancos de al lado de cada separador se sacan después, a mano, y no con `\s*` en la expresión, que con una
+  // tirada larga de espacios la hace cuadrática.
+  const partes = String(cmd).split(SEPARADOR_DE_SEGMENTOS);
+  return partes.map((p, i) => {
+    let s = p;
+    if (i > 0) s = s.trimStart();
+    if (i < partes.length - 1) s = s.trimEnd();
+    return s;
+  }).filter(Boolean);
 }
 
 /**
@@ -1570,6 +1579,22 @@ const PREFIJO = new RegExp(String.raw`^(?:\(\s*|[A-Za-z_]\w*=${VALOR_DE_ASIGNACI
 // los parámetros de Remove-Item que llevan un valor que no es la ruta
 const PS_CON_VALOR = /^-(?:filter|include|exclude|erroraction|ea|credential|stream|warningaction|wa|informationaction|ia)$/i;
 
+// Cada redirección del tramo (`> x`, `2>> "y"`, `&>|z`), con los espacios y tabs que la preceden, cambiada por un
+// blanco. Esos blancos se sacan a mano y no con un `[ \t]*` al principio de la expresión, que con una tirada larga de
+// espacios la hace cuadrática.
+const REDIRECCION_DE_SALIDA = /(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g;
+function blancoPorRedireccion(t) {
+  let out = '';
+  let desde = 0;
+  for (const m of t.matchAll(REDIRECCION_DE_SALIDA)) {
+    let hasta = m.index;
+    while (hasta > desde && (t[hasta - 1] === ' ' || t[hasta - 1] === '\t')) hasta--;
+    out += `${t.slice(desde, hasta)} `;
+    desde = m.index + m[0].length;
+  }
+  return out + t.slice(desde);
+}
+
 /**
  * Lo que el comando borra (`rm`, `del`, `Remove-Item` y sus alias, `git rm`) o deshace (`git checkout [<ref>] [--]
  * <ruta>`, `git restore <ruta>`): `[{ raw, kind: 'delete'|'restore', base?, quizas?, git? }]`. `base` es la carpeta de un
@@ -1581,7 +1606,7 @@ const PS_CON_VALOR = /^-(?:filter|include|exclude|erroraction|ea|credential|stre
 function destinosBorrados(cmd) {
   const out = [];
   for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
-    const sinComentario = tramo.replace(/(^|\s)#.*$/, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    const sinComentario = blancoPorRedireccion(tramo.replace(/(^|\s)#.*$/, ''));
     const words = palabras(sinPalabrasDelShell(sinComentario)).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
     if (!words.length) continue;
     const c = path.basename(words[0].replace(/^\\/, '')).toLowerCase().replace(/\.exe$/, '');
@@ -1640,7 +1665,9 @@ const LECTORES_DE_FIND = String.raw`(?:wc|cat|head|tail|grep|egrep|fgrep|rg|ls|s
 const BORRA_O_MUEVE = new RegExp([
   // el comando con su ruta (`/bin/rm`) o con la barra que saltea un alias (`\rm`) es el mismo comando
   String.raw`(?:^|[\s;&|(` + '`' + String.raw`'"])(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:rm|rmdir|unlink|mv|move|remove-item|move-item|rename-item|rni|shred|trash|truncate)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
-  String.raw`(?:^|[;&|(` + '`' + String.raw`'"\n]|\bcmd(?:\.exe)?\s+/[ck])\s*(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:del|erase|rd|ren|mi|ri)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
+  // los blancos después del separador no cruzan un salto de línea, que ya es otro separador: un `\s*` ahí hace cuadrática
+  // la expresión con una tirada larga de renglones vacíos (sólo se pregunta si hay una coincidencia: es la misma)
+  String.raw`(?:^|[;&|(` + '`' + String.raw`'"\n]|\bcmd(?:\.exe)?\s+/[ck])[^\S\n]*(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:del|erase|rd|ren|mi|ri)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
   String.raw`(?:^|\s)--?delete\b`,
   String.raw`(?:^|\s)-exec(?:dir)?\s+(?!` + LECTORES_DE_FIND + ')',
   // `git worktree move` ya casa por `move` suelto, en la primera forma (@story-8.318)
@@ -1746,14 +1773,14 @@ function palabrasProfundas(cmd) {
   return out;
 }
 
-// `cd <carpeta> && ` al principio exacto del comando, con la carpeta escrita tal cual (sin comillas, sin opción y sin
-// nada que el shell expanda o que corte el comando), seguido de UN `sed` que nombra sus archivos: ni tubería,
+// `cd <carpeta> && ` al principio exacto del comando, con la carpeta hecha sólo de letras, cifras y `_ . / + , -` (puede
+// empezar con `~/`; nada que bash o zsh expandan, como `~+`, `~-` o `~usuario`), seguido de UN `sed` que nombra sus archivos: ni tubería,
 // ni `$(…)`, ni comillas invertidas, ni otro comando, ni redirección, ni salto de línea, ni llaves, `@` o `~` (nombres
 // que el shell expande, `{a,b}.md`, `~+/a.md`). Un `perl -e` es un programa entero, que puede armar y escribir sus
 // archivos desde adentro (`BEGIN{@ARGV=glob …}`): es esta forma sólo como `CD_PERL`. Cualquier otra forma no es ésta: un
 // editor que toma sus archivos de una tubería (`ls | xargs sed -i`) o de `$(ls)` escribe en la carpeta del `cd`, y esa
 // carpeta es lo único que la nombra.
-const CD_INICIAL = /^cd ([^\s'"`$*?[\]{}()<>;&|\\-][^\s'"`$*?[\]{}()<>;&|\\]*) && sed [^\n|;&<>`${}@~]*$/;
+const CD_INICIAL = /^cd ((?:~\/)?[\w./+,][\w./+,-]*) && sed [^\n|;&<>`${}@~]*$/;
 
 // La misma forma con UN `perl` en el lugar: opciones escritas tal cual, un solo programa entre comillas simples sin `$`,
 // `@`, llaves ni comillas invertidas, y la carpeta y los archivos hechos sólo de letras, cifras y `_ . / + , -` (la
@@ -1767,15 +1794,16 @@ const CD_PERL = /^cd ((?:~\/)?[\w./+,][\w./+,-]*) && perl((?: -[A-Za-z0-9.]+)*) 
  * que escribe (en la de sed, null: los dice `sedsLiterales`); o null si el comando no tiene ninguna de las dos. En la de
  * perl, las opciones tienen que editar en el lugar e imprimir (`-i`, sin sufijo o con uno que empieza con punto y no
  * termina en `md`; `-p`; `-0` y `-l` también; nada más: ni `-n`, `-M`, `-I`, `-x`, `-d`), y el programa tiene que ser sólo
- * sustituciones (`programaDePerlSoloSustituye`). Con `CDPATH` puesto, un `cd` relativo puede ir a otra carpeta: no es la
- * forma de perl.
+ * sustituciones (`programaDePerlSoloSustituye`). Con `CDPATH` puesto, un `cd` relativo puede ir a otra carpeta: no es
+ * ninguna de las dos formas.
  */
 function cdInicial(cmd) {
   const s = String(cmd || '');
+  const relativoConCdpath = (carpeta) => Boolean(process.env.CDPATH) && !/^(?:\/|~\/)/.test(carpeta);
   const sed = CD_INICIAL.exec(s);
-  if (sed) return { carpeta: sed[1], archivos: null };
+  if (sed) return relativoConCdpath(sed[1]) ? null : { carpeta: sed[1], archivos: null };
   const p = CD_PERL.exec(s);
-  if (!p || (process.env.CDPATH && !/^(?:\/|~\/)/.test(p[1]))) return null;
+  if (!p || relativoConCdpath(p[1])) return null;
   const opciones = [...p[2].split(' ').filter(Boolean), ...(p[3] ? [`-${p[3]}`] : [])];
   let enLugar = false;
   let imprime = false;
@@ -2005,6 +2033,11 @@ function carpetasDeLosCd(cmd, nivel = 0) {
   return out;
 }
 
+// Un shell con `-c` y su guion entre comillas (sólo importa dónde termina cada coincidencia). La carpeta de delante del
+// shell no cruza un separador: un `\S*` ahí hace cuadrática la expresión con una tirada larga de `;`, y donde termina
+// cada coincidencia es el mismo.
+const SHELL_CON_C = /(?:^|[\s;&|(`])(?:[^\s;&|(`]*\/)?(?:ba|z|k|da|fi|c|tc)?sh\b(?:\s+(?:--?[A-Za-z][\w-]*|[+-][oO]\s+(?:[^\s+-]|\+(?![oO](?:\s|$))|-(?![-A-Za-z])|--(?![A-Za-z]))\S*|\+[oO](?=\s)))*?\s+-[A-Za-z]*c\s+(?=['"])/g;
+
 /**
  * Lo que corre adentro de un comando, un nivel: el cuerpo de cada `$(…)` (con sus paréntesis balanceados) y de cada
  * par de comillas invertidas, fuera de las comillas simples; el guion de un shell con `-c` (con cualquier opción
@@ -2033,8 +2066,7 @@ function guionesInternos(cmd) {
       i = fin < 0 ? s.length : fin;
     }
   }
-  const conC = /(?:^|[\s;&|(`])(?:\S*\/)?(?:ba|z|k|da|fi|c|tc)?sh\b(?:\s+(?:--?[A-Za-z][\w-]*|[+-][oO]\s+(?:[^\s+-]|\+(?![oO](?:\s|$))|-(?![-A-Za-z])|--(?![A-Za-z]))\S*|\+[oO](?=\s)))*?\s+-[A-Za-z]*c\s+(?=['"])/g;
-  for (const m of s.matchAll(conC)) {
+  for (const m of s.matchAll(SHELL_CON_C)) {
     const i = m.index + m[0].length;
     const fin = s[i] === '"' ? cierreDoble(s, i) : s.indexOf("'", i + 1);
     const cuerpo = s.slice(i + 1, fin < 0 ? s.length : fin);
@@ -2409,6 +2441,7 @@ function editaEnSitio(cmd) {
         const c = path.basename(words[k]).toLowerCase().replace(/\.exe$/, '');
         const resto = words.slice(k + 1);
         if (['sed', 'gsed', 'perl', 'ruby'].includes(c) && resto.some(opcionI)) return true;
+        if (['sed', 'gsed'].includes(c) && sedConEfectos(resto)) return true;
         if (['awk', 'gawk'].includes(c) && resto.some((w, j) => w === '-iinplace' || (w === '-i' && resto[j + 1] === 'inplace'))) return true;
         if (k === 0 && (c === 'ed' || c === 'ex')) return true;
       }
@@ -2418,6 +2451,99 @@ function editaEnSitio(cmd) {
     return false;
   };
   return [String(cmd || ''), ...anidadosHasta(cmd).leidos].some((t) => ver(t, 0));
+}
+
+/**
+ * ¿Un `sed` sin `-i` escribe o corre algo con su guion? Las palabras que siguen a `sed`: un guion de `-e` o
+ * `--expression`, o el primer argumento si no hay ninguno, que no sea sólo cambiar el texto que lee
+ * (`guionDeSedSinEfectos`): `w`, `W`, `s///w` escriben el archivo que nombran y `e` corre un comando. Un guion de
+ * archivo (`-f`) no se ve: cuenta como que sí.
+ */
+function sedConEfectos(args) {
+  const guiones = [];
+  let posicional = null;
+  for (let j = 0; j < args.length; j++) {
+    const w = args[j];
+    if (w === '--') { if (posicional == null) posicional = args[j + 1] ?? null; break; }
+    if (w === '-e' || w === '--expression') { if (j + 1 < args.length) guiones.push(args[++j]); continue; }
+    // `--expression='w h.md'`: el valor citado puede llegar pegado o como la palabra que sigue
+    if (/^--expression=/.test(w)) { const v = sinComillasDeLosBordes(w.slice('--expression='.length)); guiones.push(v !== '' ? v : (args[++j] ?? '')); continue; }
+    if (/^-[A-Za-z]*f/.test(w) || /^--file\b/.test(w)) return true;
+    if (/^-[A-Za-z]*e./.test(w)) { guiones.push(w.replace(/^-[A-Za-z]*?e/, '')); continue; }
+    if (w.startsWith('-') && w !== '-') continue;
+    if (posicional == null) posicional = w;
+  }
+  if (!guiones.length && posicional != null) guiones.push(posicional);
+  return guiones.some((g) => !guionDeSedSinEfectos(g));
+}
+
+/** La palabra sin las comillas que la rodean, si las tiene (`'w h.md'` → `w h.md`). */
+function sinComillasDeLosBordes(w) {
+  const m = /^(['"])([\s\S]*)\1$/.exec(String(w));
+  return m ? m[2] : String(w);
+}
+
+// el archivo de un `w` o `W` de un guion de `sed`, también con una dirección delante (`1w`, `/a/w`) o como indicador de
+// una sustitución (`s/a/b/w`): hasta el fin del renglón en un guion, y hasta un espacio o una comilla en el texto de un
+// comando, donde el guion puede venir citado o escapado (`printf 'w h.md\n' > x.sed`, `printf 'w\th.md'`)
+const SED_W_EN_GUION = /(?:^|[;{}\s\d$/!])[wW][ \t]+([^\n]+)/g;
+const SED_W_EN_COMANDO = /(?:^|[;{}\s\d$/!'"]|\\[nt])[wW](?:[ \t]|\\t)+([^\s'"\\;&|<>`]+)/g;
+
+/**
+ * Lo que escriben los guiones de un `sed`: los de la línea (`-e`, `--expression`, `--expression=…` o el primer
+ * argumento) y los de archivo (`-f x.sed`, `--file=x.sed`), leídos desde cada carpeta donde puede correr el comando. Un
+ * guion de archivo que no se puede leer (llega por la entrada con `-f -` o `/dev/stdin`, o lo escribe el mismo comando)
+ * se busca en el texto del comando, donde va su heredoc o lo que lo escribe. Leer de más no frena nada: sólo cuenta lo
+ * que resulta ser una historia.
+ */
+function destinosDeGuionDeSed(cmd, bases) {
+  const out = [];
+  let buscarEnElComando = false;
+  for (const tramo of tramos(cmd)) {
+    const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
+    const k = words.findIndex((w) => ['sed', 'gsed'].includes(path.basename(w).toLowerCase()));
+    if (k < 0) continue;
+    const deArchivo = [];
+    const enLinea = [];
+    let posicional = null;
+    for (let j = k + 1; j < words.length; j++) {
+      const w = words[j];
+      if (w === '-f' || w === '--file') { if (words[j + 1] != null) deArchivo.push(words[++j]); continue; }
+      if (w === '-e' || w === '--expression') { if (words[j + 1] != null) enLinea.push(words[++j]); continue; }
+      // el valor citado de `--file=` y `--expression=` puede llegar pegado o como la palabra que sigue
+      const conValor = /^--(file|expression)=(.*)$/s.exec(w);
+      if (conValor) {
+        const v = sinComillasDeLosBordes(conValor[2]);
+        const valor = v !== '' ? v : words[++j];
+        if (valor != null) (conValor[1] === 'file' ? deArchivo : enLinea).push(valor);
+        continue;
+      }
+      const corta = /^-([A-Za-z]*?)([fe])(.*)$/s.exec(w);
+      if (corta && !w.startsWith('--')) {
+        const valor = corta[3] !== '' ? corta[3] : words[++j];
+        if (valor != null) (corta[2] === 'f' ? deArchivo : enLinea).push(valor);
+        continue;
+      }
+      if (w.startsWith('-') && w !== '-') continue;
+      if (posicional == null) posicional = w;
+    }
+    if (!deArchivo.length && !enLinea.length && posicional != null) enLinea.push(posicional);
+    for (const g of enLinea) for (const m of String(g).matchAll(SED_W_EN_GUION)) out.push(m[1].trim());
+    for (const g of deArchivo) {
+      let leido = false;
+      if (g !== '-' && !/^\/dev\/(?:stdin|fd\/0)$/.test(g)) {
+        for (const base of bases) {
+          let texto;
+          try { texto = fs.readFileSync(resolveTarget(g, base, process.platform, { homeVariable: true }), 'utf8'); } catch { continue; }
+          leido = true;
+          for (const m of texto.matchAll(SED_W_EN_GUION)) out.push(m[1].trim());
+        }
+      }
+      if (!leido) buscarEnElComando = true;
+    }
+  }
+  if (buscarEnElComando) for (const m of String(cmd).matchAll(SED_W_EN_COMANDO)) out.push(m[1]);
+  return out;
 }
 
 // Un programa de `node -e` que no puede correr otro proceso: cada `require` es de un módulo propio de node que no corre
@@ -4319,6 +4445,25 @@ function entradaPorCadena(cadena, crudas, asignados) {
   return [...new Set([...(sep ? palabra.split(sep) : []), ...palabra.split(/\s+/)].map((x) => x.trim()).filter(Boolean))];
 }
 
+// El tramo sin su comentario del final (desde los blancos antes del primer `#` que va después de la última comilla) y sin
+// su cierre (`; )`, ` }`). Lo mismo que `/\s+#[^'"]*$/` y `/\s*;?\s*[)}]\s*$/` sobre el texto recortado, pero a mano:
+// con esas expresiones una tirada larga de espacios hace al freno cuadrático y cúbico, y pasa de su tope de tiempo.
+function sinComentarioAlFinal(t) {
+  const ultimaComilla = Math.max(t.lastIndexOf("'"), t.lastIndexOf('"'));
+  for (let q = t.indexOf('#', ultimaComilla + 1); q !== -1; q = t.indexOf('#', q + 1)) {
+    if (q === 0 || !/\s/.test(t[q - 1])) continue;
+    let p = q - 1;
+    while (p > 0 && /\s/.test(t[p - 1])) p--;
+    return t.slice(0, p);
+  }
+  return t;
+}
+function sinCierre(t) {
+  if (!/[)}]$/.test(t)) return t;
+  const s = t.slice(0, -1).trimEnd();
+  return s.endsWith(';') ? s.slice(0, -1).trimEnd() : s;
+}
+
 /**
  * Lo que corre otro programa, como texto de un comando: la orden de un `find -exec`, la de un `xargs` y lo que un heredoc o
  * un `<<<` le da a un shell. El cuerpo de un heredoc que va a otro programa no se lee como comando.
@@ -4370,7 +4515,7 @@ function comandosPorOtroPrograma(cmd, cwd) {
     // lo que un `echo`/`printf` escribe por una tubería a un shell que lee sus órdenes de la entrada (`| sh`, `| bash -s`)
     // corre como un comando
     // (con filtros en el medio, `| cat | sh`; con llaves o un subshell alrededor; y con los `cd` de antes en el renglón)
-    const sinEnvoltura = (t) => String(t).replace(/\s+#[^'"]*$/, '').trim().replace(/^[({]\s*/, '').replace(/\s*;?\s*[)}]\s*$/, '').replace(/^(?:builtin|busybox)\s+/, '');
+    const sinEnvoltura = (t) => sinCierre(sinComentarioAlFinal(String(t)).trim().replace(/^[({]\s*/, '')).replace(/^(?:builtin|busybox)\s+/, '');
     const escritoPor = (tramo) => {
       const w = palabras(sinPalabrasDelShell(sinEnvoltura(tramo))).filter((x) => x !== '');
       const escritor = nombreDeComando(w[0]) || '';
@@ -4584,6 +4729,7 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
     ...movidosFueraDeMd(cmd),
     ...destinosDeCopia(cmd),
     ...textosDeGuion,
+    ...destinosDeGuionDeSed(cmd, bases),
     // con un `for`, cuentan todas las palabras salvo que lo de afuera del bucle sólo lea
     ...(enSitio ? nombradas : (FOR_IN.test(cmd) ? (palabrasDelBucleSiFueraSoloSeLee(cmd, [...new Set([cwd, sesion])], instalados) || nombradas) : [])),
   ];
@@ -6338,7 +6484,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
+module.exports = { handle, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
 
 if (require.main === module) {
   const cruda = leerEntrada();

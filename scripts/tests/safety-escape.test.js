@@ -1822,6 +1822,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['lost-run:particion', ['node', M, 'clear-session', 'ses-b', '--lost', '--partition']],
     ['adversarial-skip', ['node', M, 'sign-adversarial-skip', '--story', '9.99', '--reason', 'la cubre otra corrida']],
     ['atdd-skip', ['node', M, 'sign-atdd-skip', '--story', '9.99', '--reason', 'refactor sobre pruebas que ya existían']],
+    ['save', ['node', M, 'approve-save', '--for-session', 'ses-b']],
     ['pending-approval', ['node', M, 'approve-pending', '--id', 'DEF-9.99-algo', '--repo', '/r']],
     ['compare-waiver', ['node', M, 'compare-waiver', '--story', '/r/specs/story-9.99.md', '--command', 'cli.js', '--reason', 'usa la red']],
     ['escape:force-manual', ['node', M, 'set-check', 'tests', 'green', '--force-manual']],

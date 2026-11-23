@@ -390,6 +390,13 @@
       "stderr": "🔒 marker.js sign-adversarial-skip: no se firmó el salteo — faltan --story <S> y --reason \"<motivo>\"\n",
       "archivos": {}
     },
+    "approve-pending-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "uso: marker.js approve-pending --id <código del pendiente> [--repo <carpeta>] [--terminal]\n",
+      "archivos": {}
+    },
     "sign-atdd-skip-sin-args": {
       "status": 2,
       "signal": null,
@@ -397,12 +404,14 @@
       "stderr": "🔒 marker.js sign-atdd-skip: no se firmó el salteo — faltan --story <S> y --reason \"<motivo>\"\n",
       "archivos": {}
     },
-    "approve-pending-sin-args": {
-      "status": 2,
+    "approve-save-sin-args": {
+      "status": 1,
       "signal": null,
       "stdout": "",
-      "stderr": "uso: marker.js approve-pending --id <código del pendiente> [--repo <carpeta>] [--terminal]\n",
-      "archivos": {}
+      "stderr": "ℹ️  approve-save: la vuelta no tiene sello: no se pudo comparar lo que se guarda con lo revisado (no medido, no «igual»).\n🔒 marker.js: esta firma no pasó por la ventana: el guion no lo lanzó la consola de la herramienta. Pedila de nuevo: el comando solo, en su forma exacta; en una pestaña sin permisos se aprueba con un click en el cuadro de opciones o con un «aprobado» escrito. O en tu terminal: marker.js approve-save --terminal --for-session <D>\n",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"reviewed-tree\",\"status\":\"no-medido\",\"story\":\"9.1\",\"quien\":\"approve-save\",\"motivo\":\"la vuelta no tiene sello\"}\n"
+      }
     },
     "plan-review-sin-plan": {
       "status": 2,
@@ -430,6 +439,13 @@
       "signal": null,
       "stdout": "",
       "stderr": "uso: marker.js owner-away set --phrase \"<lo que dijo la persona>\" | clear [--reason \"<por qué>\"] | get\n",
+      "archivos": {}
+    },
+    "save-check-sin-args": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 save-check: la corrida no tiene un ok de guardar (saveOk): hay que pedirlo\n",
       "archivos": {}
     },
     "designate-relay-frase-sin-rol": {

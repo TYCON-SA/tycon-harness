@@ -65,7 +65,9 @@ function compacto(ms) {
  * El repo de historias (con su evidencia) y, si se pide, el hermano `Back`. Las horas, una hora antes de ahora: la fecha
  * de los archivos en disco es la de ahora, así que el juez siempre le pregunta a git.
  */
-function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-progress', propios = {}, delHermano = { 'src/Feature.cs': '// v1\n' }, historia = { id: '5.28', archivo: '5-28-carga' } } = {}) {
+// `criterios`: cuántos criterios tiene la historia. `filas`: la tabla de pruebas con la columna Archivos
+// (`[{ id, ac, archivos }]`, con `archivos` tal cual va en la celda); sin ella, la tabla de una prueba del criterio 1.
+function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-progress', propios = {}, delHermano = { 'src/Feature.cs': '// v1\n' }, historia = { id: '5.28', archivo: '5-28-carga' }, criterios = 1, filas = null } = {}) {
   const ws = carpeta();
   const esp = repoNuevo(ws, 'Historias');
   const ahora = Math.floor(Date.now() / 1000) - 3600;
@@ -80,9 +82,12 @@ function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-pr
   if (fePaths.length) yaml.push('  fe_paths:', ...fePaths.map((p) => `    - ${p}`));
   if (yaml.length > 1) escribir(esp, '.tycon/advisors.yaml', yaml.join('\n') + '\n');
   for (const [rel, texto] of Object.entries(propios)) escribir(esp, rel, texto);
+  const tabla = filas
+    ? ['| ID | Test | AC | Nivel | Escenario | Esperado | Archivos |', '|---|---|---|---|---|---|---|', ...filas.map((t) => `| ${t.id} | \`curl ${t.id}\` | ${t.ac} | e2e | x | y | ${t.archivos} |`)]
+    : ['| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| E1 | `curl la pantalla` | 1 | e2e | x | y |'];
   const cuerpo = ['---', `story: ${historia.id}`, `status: ${estado}`, 'files_to_modify:', ...declarados.map((d) => `  - ${d}`), '---', '',
-    '## Acceptance Criteria', '', '1. **Given** algo, **When** pasa, **Then** resultado.', '', '### Tests', '',
-    '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| E1 | `curl la pantalla` | 1 | e2e | x | y |', ''].join('\n');
+    '## Acceptance Criteria', '', ...Array.from({ length: criterios }, (_, i) => `${i + 1}. **Given** algo ${i + 1}, **When** pasa, **Then** resultado ${i + 1}.`), '', '### Tests', '',
+    ...tabla, ''].join('\n');
   const storyPath = escribir(esp, `specs/stories/${historia.archivo}.md`, cuerpo);
   commit(esp, 'historias', ahora - 900);
   const dod = path.join(esp, '.advisors', 'dod-runtime');
@@ -613,4 +618,144 @@ test('T79f Ejercita_SoloEnElRegistro_NoCuenta', () => {
   cambiarElSitio(f);
   const r = f.calcular();
   assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+});
+
+// ---------------------------------------------------------------- qué archivos ejercita cada criterio (columna Archivos)
+
+/** Dos archivos del sitio, en el repo de las historias, y dos criterios; `filas`: la tabla de pruebas. */
+function labDeDosArchivos(filas) {
+  return lab({ declarados: ['web/mapa.ts', 'web/lista.ts'], hermanos: [], criterios: 2, filas,
+    propios: { 'web/mapa.ts': 'export const mapa = 1;\n', 'web/lista.ts': 'export const lista = 1;\n' } });
+}
+function cambiarLaLista(f) {
+  escribir(f.esp, 'web/lista.ts', 'export const lista = 2;\n');
+  commit(f.esp, 'la lista', f.ahora + 100);
+}
+
+test('T79j Archivos_CambiaUnArchivo_VenceSoloElCriterioQueLoEjercita', () => {
+  // 🔴 mutación: sin la columna Archivos, un cambio en la lista vence también el criterio del mapa
+  const f = labDeDosArchivos([{ id: 'E1', ac: 1, archivos: '`web/mapa.ts`' }, { id: 'E2', ac: 2, archivos: '`web/lista.ts`' }]);
+  f.humo(undefined, { acs: [1, 2] });
+  cambiarLaLista(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.perAc[2].verdict, 'NOT-RUN', avisos(r));
+  assert.match(JSON.stringify(r.perAc[2]), /venció por web\/lista\.ts, que según la tabla de pruebas ejercitan las pruebas de el criterio 2/);
+});
+
+test('T79k Archivos_SinLaColumna_VenceTodo_ComoHoy', () => {
+  const f = lab({ declarados: ['web/mapa.ts', 'web/lista.ts'], hermanos: [], criterios: 2,
+    propios: { 'web/mapa.ts': 'export const mapa = 1;\n', 'web/lista.ts': 'export const lista = 1;\n' } });
+  f.humo(undefined, { acs: [1, 2] });
+  cambiarLaLista(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+});
+
+test('T79l Archivos_UnaPruebaSinArchivos_SuCriterioVenceComoSiempre', () => {
+  // la celda vacía no dice qué ejercita: el criterio 2 vence; el 1, que ejercita sólo el mapa, sigue
+  const f = labDeDosArchivos([{ id: 'E1', ac: 1, archivos: 'web/mapa.ts' }, { id: 'E2', ac: 2, archivos: '' }]);
+  f.humo(undefined, { acs: [1, 2] });
+  cambiarLaLista(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.perAc[2].verdict, 'NOT-RUN', avisos(r));
+});
+
+test('T79m Archivos_NingunaPruebaLoEjercita_SigueContando_YSeAvisa', () => {
+  // 🔴 mutación: sin el aviso, lo que el control afloja no se ve
+  const f = labDeDosArchivos([{ id: 'E1', ac: 1, archivos: 'web/mapa.ts' }, { id: 'E2', ac: 2, archivos: 'web/mapa.ts' }]);
+  f.humo(undefined, { acs: [1, 2] });
+  cambiarLaLista(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.perAc[2].verdict, 'RUNTIME', avisos(r));
+  assert.match(avisos(r), /web\/lista\.ts: cambió, y según la columna Archivos de la tabla de pruebas no lo ejercita ninguna prueba de los criterios de esta evidencia → sigue contando/);
+});
+
+test('T79n Archivos_NombreQueLaHistoriaNoDeclara_VenceComoSiempre_YSeAvisa', () => {
+  // 🔴 mutación: sin comprobar los nombres, un error de tipeo dejaría el criterio 2 sin vencer nunca
+  const f = labDeDosArchivos([{ id: 'E1', ac: 1, archivos: 'web/mapa.ts' }, { id: 'E2', ac: 2, archivos: 'web/lista.tz' }]);
+  f.humo(undefined, { acs: [1, 2] });
+  cambiarLaLista(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.perAc[2].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /La columna Archivos de la tabla de pruebas nombra archivos que la historia no declara \(web\/lista\.tz\)/);
+});
+
+test('T79o Archivos_LaTablaLeeLaColumna', () => {
+  const sc = require(path.join(SCRIPTS, 'lib', 'story-checks.js'));
+  const t = (cabeza, fila) => sc.parseTestsTable(['---', 'story: 1.1', '---', '', '### Tests', '', cabeza, '|---|---|---|---|', fila, ''].join('\n')).rows[0];
+  assert.deepEqual(t('| ID | Test | AC | Archivos |', '| T1 | `x` | 1 | `a/b.ts`, c/d.cs |').archivos, ['a/b.ts', 'c/d.cs']);
+  assert.equal(t('| ID | Test | AC | Archivos |', '| T1 | `x` | 1 | — |').archivos, null, 'una raya no nombra ninguno');
+  assert.equal(t('| ID | Test | AC | Nivel |', '| T1 | `x` | 1 | unit |').archivos, null, 'sin la columna, null');
+});
+
+test('T79p Archivos_ElValidadorDiceElNombreQueLaHistoriaNoDeclara', () => {
+  // 🔴 mutación: sin VAL-W20, el error de tipeo se ve recién al cerrar, cuando su criterio venció con cualquier cambio
+  const sc = require(path.join(SCRIPTS, 'lib', 'story-checks.js'));
+  const malo = labDeDosArchivos([{ id: 'E1', ac: 1, archivos: 'web/mapa.ts' }, { id: 'E2', ac: 2, archivos: 'web/lista.tz' }]);
+  const r = sc.runStoryChecks({ repo: malo.esp, storyPath: malo.storyPath, files: [] });
+  const w20 = r.findings.filter((x) => x.rule === 'VAL-W20');
+  assert.equal(w20.length, 1, JSON.stringify(r.findings));
+  assert.match(w20[0].detail, /no es código declarado en files_to_modify \/ files_to_create: web\/lista\.tz\./);
+  const bien = labDeDosArchivos([{ id: 'E1', ac: 1, archivos: 'web/mapa.ts' }, { id: 'E2', ac: 2, archivos: './web/lista.ts' }]);
+  assert.deepEqual(sc.runStoryChecks({ repo: bien.esp, storyPath: bien.storyPath, files: [] }).findings.filter((x) => x.rule === 'VAL-W20'), [], 'con los nombres declarados, nada');
+});
+
+test('T79q Archivos_LoQueCargaLaPrueba_GanaALaTabla', () => {
+  // 🔴 mutación: si la tabla gana, la prueba del criterio 2 carga la lista y un cambio en la lista no vence su humo
+  const f = lab({ declarados: ['web/mapa.ts', 'web/lista.ts', 'tests/lista.test.js'], hermanos: [], criterios: 2,
+    filas: [{ id: 'E1', ac: 1, archivos: 'web/mapa.ts' }, { id: 'E2', ac: 2, archivos: 'web/mapa.ts' }],
+    propios: { 'web/mapa.ts': 'export const mapa = 1;\n', 'web/lista.ts': 'export const lista = 1;\n',
+      'tests/lista.test.js': "// @story-5.28 @ac-2\nrequire('../web/lista');\n" } });
+  f.humo(undefined, { acs: [1, 2] });
+  cambiarLaLista(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.perAc[2].verdict, 'NOT-RUN', avisos(r));
+});
+
+test('T79r Archivos_UnaCeldaSoloConPruebas_VenceComoSiempre_YSeAvisa', () => {
+  // 🔴 mutación: si una prueba cuenta como lo que se ejercita, el criterio 2 no vencería con ningún cambio de código
+  const f = lab({ declarados: ['web/mapa.ts', 'web/lista.ts', 'tests/lista.test.js'], hermanos: [], criterios: 2,
+    filas: [{ id: 'E1', ac: 1, archivos: 'web/mapa.ts' }, { id: 'E2', ac: 2, archivos: 'tests/lista.test.js' }],
+    propios: { 'web/mapa.ts': 'export const mapa = 1;\n', 'web/lista.ts': 'export const lista = 1;\n', 'tests/lista.test.js': '// sin carga\n' } });
+  f.humo(undefined, { acs: [1, 2] });
+  cambiarLaLista(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.perAc[2].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /nombra sólo pruebas para el criterio 2/);
+});
+
+test('T79s Archivos_UnCriterioEnDosFilas_UnaSinCelda_VenceComoSiempre', () => {
+  const f = labDeDosArchivos([{ id: 'E1', ac: 1, archivos: 'web/mapa.ts' }, { id: 'E3', ac: 1, archivos: '' }, { id: 'E2', ac: 2, archivos: 'web/mapa.ts' }]);
+  f.humo(undefined, { acs: [1, 2] });
+  cambiarLaLista(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.equal(r.perAc[2].verdict, 'RUNTIME', avisos(r));
+});
+
+test('T79t Archivos_UnaFilaDeTodos_EjercitaParaTodos', () => {
+  // la fila «todos» suma la lista a cada criterio: un cambio en la lista los vence a los dos
+  const f = labDeDosArchivos([{ id: 'E1', ac: 1, archivos: 'web/mapa.ts' }, { id: 'E2', ac: 2, archivos: 'web/mapa.ts' }, { id: 'E3', ac: 'todos', archivos: 'web/lista.ts' }]);
+  f.humo(undefined, { acs: [1, 2] });
+  cambiarLaLista(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.equal(r.perAc[2].verdict, 'NOT-RUN', avisos(r));
+});
+
+test('T79u Archivos_ElValidadorDiceLaPruebaYLoQueNoEsCodigo', () => {
+  const sc = require(path.join(SCRIPTS, 'lib', 'story-checks.js'));
+  const f = lab({ declarados: ['web/mapa.ts', 'web/lista.ts', 'tests/lista.test.js', 'docs/nota.md'], hermanos: [], criterios: 2,
+    filas: [{ id: 'E1', ac: 1, archivos: 'web/mapa.ts, docs/nota.md' }, { id: 'E2', ac: 2, archivos: 'tests/lista.test.js' }],
+    propios: { 'web/mapa.ts': '1\n', 'web/lista.ts': '1\n', 'tests/lista.test.js': '1\n', 'docs/nota.md': '1\n' } });
+  const w20 = sc.runStoryChecks({ repo: f.esp, storyPath: f.storyPath, files: [] }).findings.filter((x) => x.rule === 'VAL-W20');
+  assert.equal(w20.length, 1);
+  assert.match(w20[0].detail, /no es código declarado en files_to_modify \/ files_to_create: docs\/nota\.md\./);
+  assert.match(w20[0].detail, /Nombra pruebas, que no son lo que la prueba ejercita: tests\/lista\.test\.js\./);
 });

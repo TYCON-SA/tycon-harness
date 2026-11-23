@@ -171,7 +171,9 @@ test('T5 OwnerNext_OtraSesionNo_DaLaPestana @story-8.319 @ac-4', (t) => {
 
 test('T6 OwnerNext_DelegadaSigueDelegada @story-8.319 @ac-4', (t) => {
   const toy = casaNueva(t);
-  const v = sl.viaQueAnda({ id: 'f-d', firma: 'plan-approval', destino: 'ses-a', comando: `node ${MARKER} complete-step approve-plan --approved x` }, { casa: toy.casa, sesion: 'ses-coord', nombre: 'ses-a', coord: 'ses-coord', delegacion: () => ({ ok: true }) });
+  // no con el plan: el de una historia delicada, o sin marcador que diga cuál, lo da una persona aunque el perfil lo
+  // delegue (fila 127, delegation-routing.test.js)
+  const v = sl.viaQueAnda({ id: 'f-d', firma: 'compare-waiver', destino: 'ses-a', comando: `node ${MARKER} compare-waiver --reason x` }, { casa: toy.casa, sesion: 'ses-coord', nombre: 'ses-a', coord: 'ses-coord', delegacion: () => ({ ok: true }) });
   assert.strictEqual(v.delegada, true, 'lo que el perfil delega sigue delegado');
 });
 

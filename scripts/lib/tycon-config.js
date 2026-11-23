@@ -240,6 +240,11 @@ const VOCABULARIO = Object.freeze({
     // (delegation-routing.js): pasado el plazo, el renglón vuelve al dueño. Sin valor, 10. Sólo del perfil: si la máquina
     // pudiera decirlo, el agente se estiraría el plazo.
     delegation_wait_minutes: 'entero:1-60',
+    // Quién firma el commit local de una corrida: `agent` (o sin valor), el agente commitea solo y la persona aprueba el
+    // pull request; `coordinator`, la coordinadora lo firma antes con `marker.js approve-save` (la firma `save`), y sin
+    // ese ok vigente el freno de guardar no deja commitear. Sólo del perfil: si la máquina pudiera decirlo, el agente se
+    // sacaría la firma.
+    local_commit: 'opcion:agent|coordinator',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
@@ -346,7 +351,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors', 'approvals.local_commit']);
 // Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
 // mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
 // de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en
@@ -1053,7 +1058,7 @@ function soloRutinaDelegada(plano, datos, archivo, ignoradas, seccion) {
   const quedan = [];
   for (const valor of lista) {
     for (const id of cat.expand(valor)) {
-      // una forma (plan-approval:delicada) no es una firma: su nivel es el de la tabla, o 2; una retirada no se expande
+      // una forma (plan-approval:delicada, save:sensible) no es una firma: su nivel es el de la tabla, o 2
       const n = cat.delegatedLevel(id, subidos) || cat.effectiveLevel(id, subidos) || 2;
       // una excepción se delega sólo por su nombre: un grupo de antes no la trae
       if (!cat.delegable(id, subidos) || (n >= 2 && valor !== id)) { if (!salen.some((x) => x.id === id)) salen.push({ id, n }); } else if (!quedan.includes(id)) quedan.push(id);
@@ -1127,14 +1132,12 @@ function validarTipo(tipo, valor) {
     }
     case 'firmas':
     case 'firmas-ids': {
-      // las firmas del catálogo (signatures.js): `firmas` acepta además los nombres de grupo y `off`; `firmas-ids`, sólo ids.
-      // Una firma retirada (RETIRED) se acepta y no hace nada: el perfil que todavía la nombra sigue valiendo
+      // las firmas del catálogo (signatures.js): `firmas` acepta además los nombres de grupo y `off`; `firmas-ids`, sólo ids
       const cat = catalogoDeFirmas();
       if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
-      const retiradas = cat.RETIRED || [];
-      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids(), ...cat.formNames(), ...retiradas], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
+      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids(), ...cat.formNames()], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
       if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de ids de firma (guides/firmas-del-arnes.md), no ${JSON.stringify(valor)}`;
-      const malo = valor.find((v) => typeof v !== 'string' || !(cat.isId(v.trim()) || retiradas.includes(v.trim())));
+      const malo = valor.find((v) => typeof v !== 'string' || !cat.isId(v.trim()));
       if (malo !== undefined) return `${JSON.stringify(malo)} no es un id de firma (guides/firmas-del-arnes.md; un grupo no vale acá)`;
       return new Set(valor.map((v) => v.trim())).size === valor.length ? null : `la lista repite una firma: ${JSON.stringify(valor)}`;
     }
@@ -1144,8 +1147,6 @@ function validarTipo(tipo, valor) {
       if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
       if (!esObjeto(valor) || !Object.keys(valor).length) return `tiene que ser un objeto no vacío { "<id de firma>": <nivel> } (guides/firmas-del-arnes.md, «Los niveles»), no ${JSON.stringify(valor)}`;
       for (const [id, n] of Object.entries(valor)) {
-        // una firma retirada se acepta y no sube nada
-        if ((cat.RETIRED || []).includes(id)) continue;
         const base = cat.effectiveLevel(id);
         if (base === null) return `«${id}» no está en la tabla de niveles (guides/firmas-del-arnes.md, «Los niveles»)`;
         if (!Number.isInteger(n) || n < 1 || n > 3) return `el nivel de «${id}» tiene que ser un entero de 1 a 3, no ${JSON.stringify(n)}`;

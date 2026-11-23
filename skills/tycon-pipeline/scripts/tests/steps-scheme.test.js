@@ -224,6 +224,25 @@ test('T9 CompleteStep_OldMarkerUntilRetireDate @story-7.23 @ac-7 — el marcador
   assert.deepStrictEqual(T.resolveStepArg(mv, 'findings', { today: hoy }).ids, ['6', '7']);
 });
 
+// 🔴 Falla con: el freno de complete-step para «Probar en vivo» y el pase sólo decía que se cierran con su bandera; el
+// agente volvía a probar complete-step (245 de 253 frenos, medición de la 8.325). Ahora nombra el comando que los cierra.
+test('StepArg_PasoConBandera_NombraSuComando — complete-step de «Probar en vivo» o del pase dice con qué se cierra', () => {
+  const T = S();
+  const hoy = '2027-03-10';
+  const base = { storyId: '9.9', storyPath: '/x/story.md', repoPath: '/x', sessionId: 's' };
+  const casos = [
+    [nuevo(base, 'start'), 'live-check', /mark-dod-runtime-checked '\{"evidencePath"/],
+    [nuevo(base, 'start'), 'adversarial-pass', /mark-adversarial-result <N confirmados> --type 5b --result /],
+    [viejo(base, [0, 1, 2, 3, 4]), '7c', /mark-dod-runtime-checked '\{"evidencePath"/],
+    [viejo(base, [0, 1, 2, 3, 4]), '5b', /mark-adversarial-result <N confirmados> --type 5b --result /],
+  ];
+  for (const [m, paso, re] of casos) {
+    const r = T.resolveStepArg(m, paso, { today: hoy });
+    assert.strictEqual(r.ok, false, `${paso}: sigue sin cerrarse con complete-step`);
+    assert.match(r.message, re, `${paso}: nombra su comando`);
+  }
+});
+
 test('T10 Start_OptionalPartsHiddenOrWarned @story-7.23 @ac-10 — las partes opcionales del Arranque: o no aparecen, o avisan', () => {
   // (a) sin herramienta de horas ni pedido de ADO: ninguna parte en ningún lado
   const E = entorno();

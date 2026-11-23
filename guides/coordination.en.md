@@ -124,15 +124,19 @@ toward the cap.
 
 **With `--repo <repo>` instead of `--cwd`, `open` sets up the folder itself.** It creates a sibling copy of the repo,
 `<repo>--wt-<name>`, from the tip of `origin/main`, on the branch `wt/<name>` (or the one in `--branch`), and opens the
-session there. Claude Code accepts it without asking if the repo's main folder is already approved: the owner approves
-each repo once, not each folder. It goes beside the repo, not inside, because of a **measured limit**: approving a
-folder does not cover the folders inside it, so each new worktree asks for its own approval. If the copy or the branch already exist, `open` refuses in one line and does not
-overwrite what is there. If it cannot fetch `main` or create the copy, it says the first line of the error and does not
-open: it never starts from an old tip without saying so. If the launcher answers that the folder is not approved, `open`
-removes the copy and the branch it just created, names the main folder to open once and adds that, if it is already
-approved, the session can be opened with `--slot`. The task tells the session to leave everything committed, pushed and
-with its request open when it is done. The copy is not removed when the session closes: the copy sweep takes it out,
-like any other, once its branch got into `main`.
+session there. Claude Code 2.1.312 accepted it without asking if the main folder was approved; since Claude Code 2.1.330
+the background session asks to approve each copy separately, even with the main folder approved. It goes beside the
+repo, not inside, because of a **measured limit**: approving a folder does not cover the folders inside it, so
+each new worktree asks for its own approval. If the copy or the branch already exist, `open` refuses in one line and
+does not overwrite what is there. If it cannot fetch `main` or create the copy, it says the first line of the error and
+does not open: it never starts from an old tip without saying so. If the launcher answers that the folder is not
+approved, `open` keeps the copy and its branch, and says in one line that this copy (not the main folder) is not
+approved, with what Claude Code answered: a person approves it once (`cd` to the copy and `claude`) and the session is
+opened again there with the same name and `--reuse`. With `--reuse`, `open` creates nothing: it reuses the copy with
+that name on the job's branch, and does not open if a live session is inside it. Any other launcher failure removes the
+copy and the branch it just created. The task tells the session to leave everything committed, pushed and with its
+request open when it is done. The copy is not removed when the session closes: the copy sweep takes it out, like any
+other, once its branch got into `main`.
 
 To get a machine ready before the first opening, `node scripts/tools/prepare-machine.js --repo <repo>` says one at a
 time what is missing (the main folder not approved, an old guard, the coordinator's confirmation) and with which
@@ -153,9 +157,10 @@ mode or if the coordinator is in plan mode (the new session would wait for someo
 from the coordinator's conversation, which records it with each of the person's messages. **Known limit:** if someone
 changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode. A session opened by
 hand, or before this change, that got stuck like that, the coordinator stops and relaunches:
-`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>`. To stop a
+`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>` (relaunched that
+way it is not recorded as opened by the coordinator). To stop a
 background session, use `coordination.js stop --name <name>`: it looks up the background id that the session recorded
-and runs `claude stop` with it. It removes nothing, and the session is resumed with `claude respawn <id>`. By hand,
+and runs `claude stop` with it. It removes nothing, and the session is resumed with `coordination.js relaunch --id <id>`. By hand,
 `claude stop <id>` and `claude rm <id>` need the id that `claude agents` shows: neither the name nor the ref that
 ListAgents shows (the six characters in brackets) works, and they answer that they cannot find it (measured on
 2026-11-01 and 2026-11-15).
@@ -167,14 +172,16 @@ With Codex, the owner opens the sessions: Codex has no launcher for named backgr
 
 ### The `--slot` option: fixed work slots
 
-A Claude Code version that asks to approve each copy, even with the main folder approved, leaves `open --repo` unable to
-open. For that case there is `open --repo <repo> --slot`: instead of creating a copy, it takes a free fixed slot of the
-repo and opens the session there, on the job's branch. There are as many slots as the cap and they are always the same
-folders, so the owner approves them only once: `node scripts/tools/work-slots.js pending-trust` lists the missing ones,
-each with its `cd`, and leaves out those of a repo whose main folder is already approved. With no free slot,
-`open --slot` says so and does not open. The task tells the session how to release the slot when it is done; if the
-launcher fails, the slot is free again. On closing, a slot is released, not deleted. Nothing creates slots unless asked.
-What they are: `guides/git-worktrees.md` §8.
+Claude Code 2.1.330 asks to approve each copy, even with the main folder approved. To avoid approving a new folder for
+each job there is `open --repo <repo> --slot`: instead of creating a copy, it takes a free fixed slot of the repo and
+opens the session there, on the job's branch. There are as many slots as the cap and they are always the same folders,
+so the owner approves them only once: `node scripts/tools/work-slots.js pending-trust` lists, each with its `cd`, those
+without their own recorded approval; the main folder's does not count, and since Claude Code 2.1.330 does not record the
+slots' approval, it says it does not know instead of taking them as approved. With no free slot, `open --slot` says so
+and does not open. The task tells the session how to release the slot when it is done. If the launcher answers that the
+slot is not approved, the slot stays taken with its branch and is retried with `--slot --reuse`, or released with
+`release`; on any other failure it is free again. On closing, a slot is released, not deleted. Nothing creates slots
+unless asked. What they are: `guides/git-worktrees.md` §8.
 
 ## Closing a session
 
@@ -194,7 +201,9 @@ with the session's id.
 **An interactive session is not closed.** It is checked all the same and it says so: a person closes that tab.
 
 **Stopping is not closing.** `coordination.js stop --name <name>` stops a background session without checking whether
-it is clean and without removing it; the same rule on who can. It is resumed with `claude respawn <id>`.
+it is clean and without removing it; the same rule on who can. It is resumed with `coordination.js relaunch --id <id>`: it
+runs `claude respawn`, waits to see it alive and records it as opened by the coordinator, like `open`. Relaunched by hand
+with `claude respawn <id>`, it is not recorded, and its routine signatures fall into the owner's list.
 
 **Limits.** It looks at the folder the session is in now: it does not see another worktree the session left behind, nor
 what was kept with `git stash`. A branch deleted without merging is no longer seen. A branch squashed into one commit
@@ -354,8 +363,10 @@ The harness controls this, not anyone's memory:
   (session, suites and time of each gate), and the line saying who holds the place. Beside a single gate of up to 40
   suites, with free memory, the pass launches. The pass of a closed session does not count.
 - **How each one frees up.** The large run releases its turn when it ends; the turn of a dead process, or one older than
-  three hours, frees itself. The pass has no turn file: it holds the machine from its launch until its session notes the
-  result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
+  three hours, frees itself. That is why `heavy-turn.js take` asks for `--process <pid>`, the process that runs the heavy
+  work (in a script, `$$`): without it, the turn would be tied to the command's shell, which ends right away, and it
+  would free itself with nobody noticing. `release` asks for the same one. The pass has no turn file: it holds the
+  machine from its launch until its session notes the result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
   (`marker.js mark-adversarial-skipped`). Relaunched, it holds it again. A session that closed frees it, and after an hour
   it no longer stops anything, because it may be finished or stuck, and that is said.
 - **A free turn is not taken on its own: the «arrancá».** With a coordinator designated and alive, a gate that got a
@@ -373,15 +384,17 @@ The harness controls this, not anyone's memory:
   name: a gate that asks for it gets the «wait» with the reservation's name. With a large run going it does not reserve
   (it exits 77 and says who holds it). `heavy-turn.js release --reserve` frees it; it expires after 90 minutes (a round of
   reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10. With
-  `--to <session>`, the reservation says which session launches what was reserved (its pass without the pipeline, the
-  next point). It is for the pass, not for its suites: that session's gate waits like anyone's until it is released.
+  `--to <session>`, the reservation belongs to that session: it launches what was reserved (its pass without the
+  pipeline, the next point) and its gate takes the turn with no separate «go», even if it was in the queue. It is for
+  one thing at a time: if its gate is already running, the pass hook warns; with the pass in flight nothing stops its
+  gate, so the session does not run it until the pass ends. Other sessions wait until it is released.
 - **The pass without the pipeline also asks for the turn.** A session without a pipeline run (one the coordinator
   opened for a fix, or a loose one) launches its pass with the Agent or Workflow tool, with no marker to count it. On
   23/11 at 05:45, with several of those at once, the machine ran out of processes. The `agile-pass-turn.js` hook looks
   at each launch: every Workflow (the fan-out of agents that fills the machine) and an Agent whose description or type
   says adversarial (small reviewers and searches do not count; the request text is not read). If the session has neither the «go» (`grant --to`) nor a
-  reservation for it (`reserve --for "<what>" --to <session>`), it warns the session and the person who holds the turn,
-  and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
+  reservation for it (`reserve --for "<what>" --to <session>`), or if its gate already runs with that reservation, it
+  warns the session and the person who holds the turn, and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
   measurement (`MODO` in the hook). It does not look without a coordinator, at the coordinator itself, or at a pipeline
   session. `TYCON_AGILE_PASS_TURN=0` turns it off.
 
@@ -400,7 +413,17 @@ are not working, those waiting for something first, since those are the ones tha
 launching anything heavy, close the idle ones that wait for nothing. If it cannot be read (another platform, a command
 that fails) it says «no medida» and assumes nothing. Only the `status` command reads it: the per-turn notice and the
 closing brake do not measure it. A session Claude Code already closed shows in «Cerradas por Claude Code» with what it was
-waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `claude respawn`.
+waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `coordination.js relaunch --id`.
+
+### The user's processes
+
+Each user has a process cap (on macOS, `kern.maxprocperuid`; on the Mac mini, 2666). At the cap no command starts: not
+the hooks, not the brakes. It happened on 23/11 at 05:45, with several adversarial passes at
+once and a hung test, and the Telegram MCP went down. `coordination.js status` counts the user's processes (`ps -U`): from 70 % of the cap it says how
+many there are and what the cap is. What to do: before launching anything heavy (a pass, mutants, a suite), ask for the
+passes and background scripts that are not needed to stop. If they cannot be counted (another platform, a command that
+fails) it says «no medidos» and assumes nothing; if `ps` cannot start for lack of processes, it says it is at the
+cap. Like swap memory, only the `status` command counts them.
 
 ## The automatic reviews: what the coordinator does
 
@@ -419,7 +442,9 @@ the coordinator:
   launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
   is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan, and its mockup, are signed
   only by the owner with a click or an «approved» (also in the coordinator's tab), even if the profile names
-  `plan-approval:delicada`. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  `plan-approval:delicada`. From that tab the command carries the quote: `marker.js complete-step approve-plan
+  --approved '<the person's quote>' --for-session <session>`; without it nothing is signed and no box is shown.
+  **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
   (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
@@ -516,6 +541,10 @@ turned on in the profile, or on the machine to try it out.
 - **How they go through, with a coordinator.** If the coordinator is confirmed and alive, it passes them all. The background
   session does not show the box or send messages: the brake tells it to wait for the notice. When the person writes, the
   coordinator gets a notice: answer what the person wrote and run `coordination.js owner-next`.
+- **Without the list, with a coordinator.** The background session does not send the coordinator the question to copy:
+  copied by hand it does not stay the same, and the click does not count. The brake says why the request does not reach
+  her list (the list is off, or there is no confirmed, live coordinator) and gives the terminal command. The session tells
+  her what is being decided and that command, and does not repeat its command until she says the owner signed.
 - **How they go through, without a coordinator.** The target session gets the same notice, once per row, and runs `owner-next`.
   If the person already answered «aprobado» to that box, it does not ask again.
 - **What `owner-next` gives.** One row, the oldest: a box to show without changing a letter, with a label («Firma 2/5»), and the
@@ -705,7 +734,7 @@ is the only background console with which the owner can still sign with a click.
   permission, in the session's tab or with `claude attach`.
 - "<session> siguió: el permiso ya no está abierto" or "<session> se cerró con un permiso abierto": the owner is told if
   they had been asked.
-- "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: claude respawn <id>":
+- "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>":
   Claude Code closes quiet background sessions on its own when the machine runs out of memory, and the harness cannot
   prevent it. The coordinator decides whether to bring it back: that uses memory again and counts for the cap.
 
@@ -1055,7 +1084,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 - **With a long suite queue, no session is opened to program.** If more than two sessions are waiting for the suite or
   gate turn, a new session is opened only for work that does not need the suite: writing a story, reviewing or
   researching. Those that only wait for their turn can be closed and resumed with the same conversation when their turn
-  comes (`claude respawn <id>`), with the order written down. Why: the suite runs one at a time; one more session does not
+  comes (`coordination.js relaunch --id <id>`), with the order written down. Why: the suite runs one at a time; one more session does not
   speed anything up, it lengthens the queue and takes memory.
 - **A red is not left behind, even if it is not from your own change.** Report it and fix it before going on. Why: tolerated
   reds hide the new ones.

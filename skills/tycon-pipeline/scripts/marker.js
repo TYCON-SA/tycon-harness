@@ -193,6 +193,7 @@ const cmdPark = (...a) => parte(() => require('./lib/marker-sessions.js'), 'mark
 const cmdSalidaPerdida = (...a) => parte(() => require('./lib/marker-sessions.js'), 'marker-sessions.js').cmdSalidaPerdida(...a);
 const cmdUnpark = (...a) => parte(() => require('./lib/marker-sessions.js'), 'marker-sessions.js').cmdUnpark(...a);
 const cmdApprovePending = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdApprovePending(...a);
+const cmdApproveSave = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdApproveSave(...a);
 const cmdCompareWaiver = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdCompareWaiver(...a);
 const cmdDeclarePending = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdDeclarePending(...a);
 const cmdDesignateRelay = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdDesignateRelay(...a);
@@ -202,8 +203,9 @@ const cmdPlanReview = (...a) => parte(() => require('./lib/marker-signatures.js'
 const cmdReviewAnswer = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdReviewAnswer(...a);
 const cmdReviewAsk = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdReviewAsk(...a);
 const cmdRuntimeWaiver = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdRuntimeWaiver(...a);
-const cmdSignAdversarialSkip = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignAdversarialSkip(...a);
+const cmdSaveCheck = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSaveCheck(...a);
 const cmdSignAtddSkip = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignAtddSkip(...a);
+const cmdSignAdversarialSkip = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignAdversarialSkip(...a);
 const cmdSignFile = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignFile(...a);
 const cmdWaiveCritical = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdWaiveCritical(...a);
 const cmdWithdrawRelay = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdWithdrawRelay(...a);
@@ -345,11 +347,14 @@ switch (cmd) {
   case 'declare-pending':
     cmdDeclarePending(process.argv.slice(3));
     break;
+  case 'approve-pending':
+    cmdApprovePending(process.argv.slice(3));
+    break;
   case 'sign-atdd-skip':
     cmdSignAtddSkip(process.argv.slice(3));
     break;
-  case 'approve-pending':
-    cmdApprovePending(process.argv.slice(3));
+  case 'approve-save':
+    cmdApproveSave(process.argv.slice(3));
     break;
   case 'plan-review':
     cmdPlanReview(process.argv.slice(3));
@@ -362,6 +367,9 @@ switch (cmd) {
     break;
   case 'owner-away':
     cmdOwnerAway(process.argv.slice(3));
+    break;
+  case 'save-check':
+    cmdSaveCheck(process.argv.slice(3));
     break;
   case 'designate-relay':
     cmdDesignateRelay(process.argv.slice(3));

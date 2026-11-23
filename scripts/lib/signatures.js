@@ -63,10 +63,12 @@ const LEVELS_EN = Object.freeze({
   'plan-approval': 'approve the plan (level 2 if the story is sensitive: risk-class works it out, and then the plan and its mockup are approved only by the owner, with a click or an «approved», even if the profile names plan-approval:delicada; level 1 is also approved by the approved verdict of the automatic review, with or without a coordinator, unless plan_review.routine_approval is person)',
   'extra-round': 'one more round of reviewers',
   'pending-approval': 'open a new item in the pending list',
+  'save': 'save: commit, push and pull requests, if no commit touches anything sensitive',
   'browser-test:prepare': 'prepare the browser test',
   'adhoc-lane': 'open a quick fix without a story, within the quota',
   'compare-waiver': 'exempt a command the story modifies from the comparison with main',
   'refresh-after-main': 're-sign the controls after pulling main, with no change of your own',
+  'save:sensible': 'save when a commit touches something sensitive',
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended (only implementation files count, not tests or guides)',
   'adhoc-lane:datos': 'let a quick fix that changes where a piece of data comes from, or who can see it, go through without a story (only the owner\'s click)',
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view (a person\'s click or terminal, or the coordinator if the profile delegates it)',
@@ -106,11 +108,13 @@ const LEVELS = Object.freeze([
   ['plan-approval', 1, AMBOS, 'aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y entonces el plan y su maqueta los aprueba sólo el dueño, con su click o su «aprobado», aunque el perfil nombre plan-approval:delicada; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person)'],
   ['extra-round', 1, AMBOS, 'una vuelta más de revisores'],
   ['pending-approval', 1, AMBOS, 'abrir un pendiente nuevo en la lista'],
+  ['save', 1, AMBOS, 'guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible'],
   ['browser-test:prepare', 1, AMBOS, 'preparar la prueba con navegador'],
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
   ['compare-waiver', 1, AMBOS, 'eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['lost-run:particion', 1, AMBOS, 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
+  ['save:sensible', 2, AMBOS, 'guardar cuando un commit toca algo de lo sensible'],
   ['adhoc-lane:datos', 2, AMBOS, 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño)'],
   ['adhoc-lane:guardado-ajeno', 2, AMBOS, 'dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (el click o la terminal de una persona, o la coordinadora si el perfil se lo delega)'],
   ['autonomy-resume', 2, AMBOS, 'volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero (sólo el click o la terminal del dueño)'],
@@ -148,6 +152,7 @@ const LEVELS = Object.freeze([
 // los ocho escapes que hacen lo mismo que otra firma
 const COVERS = Object.freeze({
   'escape:no-mutation': ['escape:TYCON_MUTATION_CHECK'],
+  'save': ['save', 'save:sensible'],
   'browser-test': ['browser-test:prepare', 'browser-test:no'],
   'escape:dod_runtime_exempt': ['runtime-waiver'],
   'escape:ALLOW_DOD_EVIDENCE_WRITE': ['manual-test'],
@@ -158,11 +163,9 @@ const COVERS = Object.freeze({
   'escape:rojo-esperado-de-la-matriz': ['lost-run'],
   'escape:cambiar-el-estado': ['escape:TYCON_STATUS_GATE'],
 });
-// lo que una firma cubre pero no se firma por delegación (hoy, nada: era la parte sensible de la firma de guardar)
-const NOT_DELEGATED = Object.freeze([]);
-// las firmas que ya no se piden: un perfil, un registro o una lista de firmas que todavía las nombra se lee sin error, y
-// no delegan ni suben nada
-const RETIRED = Object.freeze(['save', 'save:sensible']);
+// lo que una firma cubre pero no se firma por delegación: el ok de guardar delegado no firma un cambio que toca algo de
+// SENSITIVE (skills/tycon-pipeline/scripts/lib/save-ok.js)
+const NOT_DELEGATED = Object.freeze(['save:sensible']);
 // las excepciones (nivel 2) de trámite: la coordinadora las firma por delegación si el perfil del equipo las nombra en
 // `approvals.delegated_signing`. Las demás de nivel 2 y todo el nivel 3 los firma una persona, aunque el perfil los nombre
 const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:trust-ran',
@@ -174,13 +177,14 @@ const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'es
 // las pasa por la delegación (owner-window.js)
 const PARA_OTRA_SESION_SIN_DELEGAR = Object.freeze(['escape:dod_runtime_exempt', 'escape:story-skill-bypass', 'autonomy-resume', 'adhoc-lane:datos']);
 const otraSinDelegar = (id) => (PARA_OTRA_SESION_SIN_DELEGAR.includes(id) ? 'yes' : 'no');
-// la forma de nivel 2 de una firma de rutina, que el perfil nombra con su propio nombre (no es una firma de SIGNATURES:
-// se pide con la firma de la derecha, y su guion mira si el perfil nombra la forma): el plan de una historia delicada,
-// que el perfil puede nombrar sin que eso delegue nada: ese plan y su maqueta los aprueba sólo el dueño, con su click o
-// su «aprobado» (lib/plan-review.js antesDeAprobar). La forma sigue en la lista para que un perfil que la nombra siga
-// siendo válido
+// las dos formas de nivel 2 de una firma de rutina, que el perfil nombra con su propio nombre (no son firmas de
+// SIGNATURES: se piden con la firma de la derecha, y su guion mira si el perfil nombra la forma): el guardado que toca
+// algo sensible, que la coordinadora firma si el perfil lo delega, y el plan de una historia delicada, que el perfil
+// puede nombrar sin que eso delegue nada: ese plan y su maqueta los aprueba sólo el dueño, con su click o su «aprobado»
+// (lib/plan-review.js antesDeAprobar). La forma sigue en la lista para que un perfil que la nombra siga siendo válido
 const PLAN_DELICADO = 'plan-approval:delicada';
-const DELEGABLE_FORMS = Object.freeze({ [PLAN_DELICADO]: 'plan-approval' });
+const SAVE_SENSIBLE = 'save:sensible';
+const DELEGABLE_FORMS = Object.freeze({ [PLAN_DELICADO]: 'plan-approval', [SAVE_SENSIBLE]: 'save' });
 
 const levelOf = (id) => LEVELS.find((l) => l.id === id);
 const coversOf = (id) => COVERS[id] || [id];
@@ -269,6 +273,7 @@ const SI_SALE_MAL = Object.freeze({
   'adhoc-lane:datos': 'un cambio de permisos o de la fuente de un dato llega a producción sin que nadie revise quién lo ve, y una persona sin permiso puede quedar trabada',
   'adhoc-lane:guardado-ajeno': 'se guarda una vez algo que no es del camino corto mientras el carril espera sus revisores; si en verdad era del carril, entra sin ellos y se revierte con otro commit',
   'autonomy-resume': 'la sesión vuelve a iterar sola sobre un rojo que quizá necesitaba otra mirada',
+  save: 'se guarda en el repo y se abre el pedido; se revierte con otro commit',
   'designation-confirm': 'esa sesión firma en tu nombre lo que el perfil delega, hasta que se designe otra',
   'designation-set': 'una sesión que no querías firma en tu nombre lo que el perfil delega, hasta que la retires o nombres otra',
   'designation-withdraw': 'las firmas que delegabas vuelven a vos hasta que nombres otra coordinadora',
@@ -298,6 +303,7 @@ const APPROVES_EN = {
   'adhoc-lane:datos': 'let a quick fix that changes where a piece of data comes from, or who can see it, go through without a story',
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view',
   'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset',
+  save: 'save the story: commit, push and the pull requests',
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command (retired: it no longer turns anything off)',
   'escape:TYCON_PROD_LINT': 'turn off the production query control for one command (retired: it no longer turns anything off)',
   'escape:TYCON_NEW_NAMES': 'turn off the new names control on what is published',
@@ -374,6 +380,7 @@ const SIGNATURES = Object.freeze([
   { id: 'autonomy-resume', approves: 'volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero', command: 'marker.js resume-autonomy', otherSession: otraSinDelegar('autonomy-resume'),
     terminal: 'marker.js resume-autonomy --terminal --for-session <id>',
     clickDelDueno: true, descripciones: Object.freeze(['La sesión vuelve a correr los controles y sigue arreglando sola, con vueltas nuevas', 'La sesión queda detenida hasta que entres a ella']) },
+  { id: 'save', approves: 'guardar la story: commit, push y los pull requests', command: 'marker.js approve-save [--for-session <D>]', otherSession: 'yes', terminal: 'marker.js approve-save --terminal --for-session <D>' },
   { id: 'designation-confirm', approves: 'confirmar qué sesión es la coordinadora de esta máquina', command: 'delegated-signing.js confirm-designation', otherSession: 'no', terminal: 'delegated-signing.js confirm-designation --terminal' },
   // nombrar y retirar a la coordinadora: el click del dueño en la pestaña de esa sesión, nunca por delegación
   { id: 'designation-set', approves: 'nombrar a esta sesión coordinadora de la máquina', command: 'marker.js designate-relay', otherSession: 'no', terminal: 'marker.js designate-relay --terminal',
@@ -413,9 +420,9 @@ const GROUPS = Object.freeze(Object.fromEntries(['refresh-after-main', 'adversar
   .map((g) => [g, Object.freeze(g === 'escape-phrases' ? ESCAPES_DEL_GRUPO : [g])])));
 
 /**
- * Lo sensible: las firmas, los frenos y lo que decide si una historia está limpia. Lo leen el cálculo de riesgo
- * (`lib/risk-paths.js`) y el portón de carril (`save-ok.js esSensible`). Rutas relativas a la raíz de cada repo, en
- * minúsculas; `*` es un tramo sin `/` y `**` cualquier cosa.
+ * Lo que el ok de guardar por delegación (`save`) no cubre: un cambio que toca algo de esta lista lo firma el dueño.
+ * Rutas relativas a la raíz de cada repo, en minúsculas; `*` es un tramo sin `/` y `**` cualquier cosa. Además cuenta
+ * todo archivo que hace `require` de uno de REQUIERE_SENSIBLE (save-ok.js lo mira en el texto, un nivel).
  */
 const SENSITIVE = Object.freeze([
   // los que definen o verifican firmas
@@ -458,7 +465,6 @@ const SENSITIVE = Object.freeze([
   '**/settings*.json', 'settings*.json',
   '**/team-profile.json', 'team-profile.json',
 ]);
-// los archivos que definen firmas o avisos: un código que los carga toca firmas (save-ok.js requiereSensible)
 const REQUIERE_SENSIBLE = Object.freeze(['signatures.js', 'owner-window.js', 'delegated-signing.js', 'approvals.js', 'notify.js']);
 
 /**
@@ -555,4 +561,4 @@ function delegable(id, raised) {
 // Lo que no tiene vuelta atrás: sólo se firma en la terminal de la persona, nunca con un click ni con un «aprobado»
 const ONLY_IN_TERMINAL = Object.freeze(['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency']);
 
-module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, RETIRED, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, DELEGABLE_FORMS, PLAN_DELICADO, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };
+module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, DELEGABLE_FORMS, PLAN_DELICADO, SAVE_SENSIBLE, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };

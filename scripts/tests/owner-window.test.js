@@ -1853,13 +1853,26 @@ test('EscapePhrases_SinLasDosFirmas (T17) @story-8.142 @ac-9', (t) => {
   assert.match(s.motivo, /sólo del dueño/);
 });
 
-// ── una firma de rutina, delegable y con chequeo previo: abrir un pendiente para otra sesión ──────────────────────────
-const PENDIENTE = `node ${MARKER} approve-pending --id DEF-nuevo --repo /r --for-session ses-a`;
-const PENDIENTE_ARGV = [MARKER, 'approve-pending', '--id', 'DEF-nuevo', '--repo', '/r', '--for-session', 'ses-a'];
+// ── el ok de guardar: «save» (@story-8.143) ───────────────────────────────────────────────────────────────────────
+const SAVE = `node ${MARKER} approve-save --for-session ses-a`;
+const SAVE_ARGV = [MARKER, 'approve-save', '--for-session', 'ses-a'];
+
+test('Freno_ApproveSave_FormaCanonica (T12) @story-8.143 @ac-1', (t) => {
+  const casa = casaNueva(t);
+  assert.deepStrictEqual(ow.firmasDelComando(SAVE), ['save']);
+  const r = pedir(casa, SAVE, { evento: DE_LA_COORD });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /sesión ses-a/, 'el destino en el texto');
+  for (const cmd of [`CLAUDE_CODE_SESSION_ID=ses-a node ${MARKER} approve-save`, `cd /tmp && node ${MARKER} approve-save --for-session ses-a`]) {
+    const otra = casaNueva(t);
+    assert.strictEqual(pedir(otra, cmd, { evento: DE_LA_COORD }).decision, 'deny', cmd);
+    assert.strictEqual(registros(otra).length, 0, `${cmd}: sin registro`);
+  }
+});
 
 // Una pestaña que no pide permisos (bypass y parecidos) aprueba sola lo que el freno manda a la ventana. Lo que afloja
-// un control se niega ahí con el comando de la terminal; lo de rutina (un pendiente, el plan, un arreglo rápido dentro
-// de su tope) se hace y queda en el registro como «hecho y avisado». En una pestaña que pregunta,
+// un control se niega ahí con el comando de la terminal; lo de rutina (un pendiente, el ok de guardar, el plan, un
+// arreglo rápido dentro de su tope) se hace y queda en el registro como «hecho y avisado». En una pestaña que pregunta,
 // la ventana de siempre; la delegación no usa ventana y sigue valiendo.
 // 🔴 mutación: sin mirar el modo de permisos → en bypass sale 'ask' y la ventana se aprueba sola.
 test('Freno_PestanaSinPermisos_NiegaLoQueAfloja_ConElComandoDeLaTerminal', (t) => {
@@ -1874,11 +1887,11 @@ test('Freno_PestanaSinPermisos_NiegaLoQueAfloja_ConElComandoDeLaTerminal', (t) =
   }
   for (const modo of ['default', 'acceptEdits', 'plan']) {
     const casa = casaNueva(t);
-    assert.strictEqual(pedir(casa, PENDIENTE, { evento: { ...DE_LA_COORD, permission_mode: modo } }).decision, 'ask', modo);
+    assert.strictEqual(pedir(casa, SAVE, { evento: { ...DE_LA_COORD, permission_mode: modo } }).decision, 'ask', modo);
   }
   // la delegación no pasa por la ventana: en una pestaña sin permisos sigue firmando
-  const conPlan = { ...PERFIL, delegated_signing: ['plan-approval'] };
-  const r = pedir(casaConDesignada(t), PLAN, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }, delegacion: delegacionReal({ perfil: conPlan }) });
+  const conSave = { ...PERFIL, delegated_signing: ['save'] };
+  const r = pedir(casaConDesignada(t), SAVE, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }, delegacion: delegacionReal({ perfil: conSave }) });
   assert.strictEqual(r.decision, 'allow', r.texto);
   assert.strictEqual(r.via, 'delegacion');
 });
@@ -1910,11 +1923,12 @@ test('T18 Decidir_LevelTwoInBypassTab_StillDenied @story-8.255 @ac-18', (t) => {
 });
 
 // Lo de rutina en una pestaña sin permisos: se hace y queda «hecho y avisado». El guion pasa por los mismos controles
-// que la delegación (el plan sin revisión aprobada y el cupo delegado siguen afuera).
-// 🔴 rojo con el código de antes: en bypass las tres se negaban y había que firmarlas en la terminal.
+// que la delegación (el guardado sensible, el plan sin revisión aprobada y el cupo delegado siguen afuera).
+// 🔴 rojo con el código de antes: en bypass las cuatro se negaban y había que firmarlas en la terminal.
 test('Freno_PestanaSinPermisos_RutinaHechaYAvisada', (t) => {
   const RUTINA = [
-    ['pending-approval', PENDIENTE, PENDIENTE_ARGV],
+    ['save', SAVE, SAVE_ARGV],
+    ['pending-approval', `node ${MARKER} approve-pending --id DEF-nuevo --repo /r --for-session ses-a`, [MARKER, 'approve-pending', '--id', 'DEF-nuevo', '--repo', '/r', '--for-session', 'ses-a']],
     ['plan-approval', `node ${MARKER} complete-step approve-plan --approved "dale" --for-session ses-a`, [MARKER, 'complete-step', 'approve-plan', '--approved', 'dale', '--for-session', 'ses-a']],
     ['adhoc-lane', `node ${MARKER} adhoc set '{"reason":"arreglo del sp","allowedFiles":["src/sp.js"],"maxFiles":3}' --for-session ses-a`, [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","allowedFiles":["src/sp.js"],"maxFiles":3}', '--for-session', 'ses-a']],
   ];
@@ -1933,8 +1947,8 @@ test('Freno_PestanaSinPermisos_RutinaHechaYAvisada', (t) => {
     assert.strictEqual(e.codigo, 0, `${firma}: ${e.motivo}`);
     assert.strictEqual(e.via, 'avisado', firma);
     assert.strictEqual(viaDeAntes, 'delegacion', `${firma}: los controles de la delegación`);
-    // el arreglo rápido avisa desde su propio guion (los controles de la delegación); el resto, acá
-    assert.strictEqual(avisos.length, firma === 'adhoc-lane' ? 0 : 1, `${firma}: avisa una vez`);
+    // el ok de guardar y el arreglo rápido avisan desde su propio guion (los controles de la delegación); el resto, acá
+    assert.strictEqual(avisos.length, ['save', 'adhoc-lane'].includes(firma) ? 0 : 1, `${firma}: avisa una vez`);
     const firmada = gates(casa).find((g) => g.name === `${firma}-signed`);
     assert.strictEqual(firmada && firmada.via, 'avisado', firma);
     const q = ow.quienFirmo(e, 'el-dev');
@@ -1943,7 +1957,7 @@ test('Freno_PestanaSinPermisos_RutinaHechaYAvisada', (t) => {
     const casa2 = casaNueva(t);
     pedir(casa2, cmd, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' } });
     const n = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa2, cmd), casa: casa2, ahora: AHORA + 60000, propia: 'ses-coord',
-      antes: () => ({ codigo: 2, motivo: 'el control de la delegación lo niega' }), notificar: () => {} });
+      antes: () => ({ codigo: 2, motivo: 'toca algo sensible' }), notificar: () => {} });
     assert.strictEqual(n.codigo, 2, firma);
     assert.strictEqual(vigentes(casa2).length, 1, `${firma}: el pedido sigue sin gastar`);
   }
@@ -1958,8 +1972,36 @@ test('Freno_PestanaSinPermisos_RutinaHechaYAvisada', (t) => {
   const igual = pedir(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","allowedFiles":["src/sp.js"],"maxFiles":3}' --for-session ses-a`, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' } });
   assert.strictEqual(igual.decision, 'allow', igual.texto);
   // y un escape que viaja con la firma de rutina no se hace sin firma
-  const conEscape = pedir(casaNueva(t), PENDIENTE, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }, escapes: ['escape:TYCON_STATUS_GATE'] });
+  const conEscape = pedir(casaNueva(t), SAVE, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }, escapes: ['escape:TYCON_STATUS_GATE'] });
   assert.notStrictEqual(conEscape.decision, 'allow', conEscape.texto);
+});
+
+test('ApproveSave_SeisLlaves (T13) @story-8.143 @ac-8', (t) => {
+  const conSave = { ...PERFIL, delegated_signing: ['save'] };
+  const casa = casaConDesignada(t);
+  const r = pedir(casa, SAVE, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: conSave }) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'delegacion');
+  const e = ow.exigir({ firma: 'save', argv: SAVE_ARGV, pid: 301, arbol: arbolDelGuion(casa, SAVE), casa, ahora: AHORA + 60000, propia: 'ses-coord', antes: CONTROL_DEL_GUION });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.via, 'delegacion');
+  // sin cada llave, por vez: la ventana (o la negación), nunca la delegación
+  const sinLlave = [
+    ['la firma no está delegada', () => [casaConDesignada(t), PERFIL, DE_LA_COORD, HUELLA]],
+    ['la máquina no está', () => [casaConDesignada(t), conSave, DE_LA_COORD, 'otra-huella']],
+    ['la designación sin confirmar', () => [casaConDesignada(t, { confirmada: false }), conSave, DE_LA_COORD, HUELLA]],
+    ['la sesión no es la designada', () => [casaConDesignada(t), conSave, { session_id: 'ses-otra' }, HUELLA]],
+    ['la designada es la destino', () => [casaConDesignada(t, { designada: 'ses-a' }), conSave, { session_id: 'ses-a' }, HUELLA]],
+  ];
+  for (const [nombre, armar] of sinLlave) {
+    const [c, perfil, ev, huella] = armar();
+    const x = pedir(c, SAVE, { evento: ev, delegacion: delegacionReal({ perfil, huella }) });
+    assert.notStrictEqual(x.via, 'delegacion', nombre);
+  }
+  // la misma story en la ejecución abierta de la coordinadora
+  const misma = casaConDesignada(t);
+  fs.writeFileSync(path.join(misma, '.claude', '.tycon-pipeline', 'active', 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '9.99' }));
+  assert.notStrictEqual(pedir(misma, SAVE, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: conSave }) }).via, 'delegacion', 'la misma story');
 });
 
 // --- el arreglo rápido: la firma adhoc-lane -------------------------------------------------------------------------
@@ -2488,24 +2530,23 @@ test('Precheck_ElGuionDeVerdad_NiegaSinCorridaYNoEscribe', (t) => {
   const estado = path.join(casa, '.claude', '.tycon-pipeline');
   const foto = () => fs.readdirSync(estado, { recursive: true }).sort();
   const antes = foto();
-  for (const cmd of [`node ${MARKER} approve-pending --id DEF-nuevo --repo ${rd}`, `node ${MARKER} complete-step approve-plan --approved "dale"`]) {
+  for (const cmd of [`node ${MARKER} approve-save`, `node ${MARKER} complete-step approve-plan --approved "dale"`]) {
     const c = ow.comprobarConElGuion({ palabras: ow.canonica(cmd), cwd: rd, sesion: 'ses-sin-corrida', casa });
     assert.ok(c && c.niega, `${cmd}: ${JSON.stringify(c)}`);
     assert.match(c.niega, /ses-sin-corrida|ejecución|marker/i, cmd);
   }
   assert.deepStrictEqual(foto(), antes, 'las negativas no escribieron nada en la casa');
-  // con el pendiente abierto en la lista del repo, la aprobación llega a la firma: el chequeo dice que sí, sin firmar ni
-  // escribir
-  const PA = require('../lib/pending-approvals.js');
+  // con la corrida abierta, el ok de guardar llega a la firma: el chequeo dice que sí, sin firmar ni escribir
   const git = (...a) => spawnSync('git', ['-C', rd, '-c', 'user.email=t@example.com', '-c', 'user.name=t', ...a], { encoding: 'utf8' });
-  fs.mkdirSync(path.join(rd, path.dirname(PA.TODO)), { recursive: true });
-  fs.writeFileSync(path.join(rd, PA.TODO), '# Pendientes\n\n- [ ] [DEF-nuevo] un pendiente nuevo\n');
+  fs.writeFileSync(path.join(rd, 'story.md'), '---\nstory: 9.99\n---\n');
   git('init', '-q'); git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(estado, 'active', 'ses-ok.json'), JSON.stringify({ sessionId: 'ses-ok', storyId: '9.99', storyPath: path.join(rd, 'story.md'), repoPath: rd,
+    startedAt: new Date(AHORA).toISOString() }));
   const antesDelOk = foto();
-  const ok = ow.comprobarConElGuion({ palabras: ow.canonica(`node ${MARKER} approve-pending --id DEF-nuevo --repo ${rd}`), cwd: rd, sesion: 'ses-ok', casa });
+  const ok = ow.comprobarConElGuion({ palabras: ow.canonica(`node ${MARKER} approve-save`), cwd: rd, sesion: 'ses-ok', casa });
   assert.deepStrictEqual(ok, { ok: true });
   assert.deepStrictEqual(foto(), antesDelOk, 'el chequeo no escribió nada en la casa');
-  assert.ok(!fs.existsSync(path.join(rd, PA.RECORD)) && !fs.existsSync(path.join(rd, PA.RECORD_DIR)), 'ni la aprobación en el repo');
+  assert.ok(!fs.readFileSync(path.join(estado, 'active', 'ses-ok.json'), 'utf8').includes('saveOk'), 'ni el ok en el marcador');
 });
 
 // 🔴 Falla con: aprobar el plan fuera de orden con la ventana abierta, o el chequeo que deja su renglón cuando pasa.
@@ -2542,7 +2583,7 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 
 // Las otras firmas de guion con requisitos propios pasan por el mismo chequeo. Quedan sin chequeo el carril, que no
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
-const CON_REQUISITOS = ['plan-approval', 'extra-round', 'atdd-skip', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
+const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'atdd-skip', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
   'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion', 'escape:no-mutation'];
 
@@ -2588,8 +2629,8 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; } });
   assert.strictEqual(r.decision, 'deny', r.texto);
   vistas.add(visto.firma);
-  // pasar el tope tiene su prueba: su chequeo corre después del click
-  assert.deepStrictEqual(CON_REQUISITOS.filter((f) => !vistas.has(f)), ['adhoc-lane:sobre-cupo'], 'cada firma con su comando');
+  // el ok de guardar tiene sus pruebas arriba; pasar el tope, la suya: su chequeo corre después del click
+  assert.deepStrictEqual(CON_REQUISITOS.filter((f) => !vistas.has(f)), ['save', 'adhoc-lane:sobre-cupo'], 'cada firma con su comando');
 });
 
 /** Una foto de lo que hay en las carpetas: cada archivo con su contenido. */
@@ -3158,18 +3199,18 @@ test('Aprobacion_SesionDeFondo_SinAprobacionSeNiega_ConAprobacionFirma', (t) => 
     { pid: 201, ppid: 200, inicio: INICIO, comando: 'node /h/scripts/lib/owner-window.js gate' }];
   const casa = casaNueva(t);
   // aun en un modo que pregunta: la ventana de una sesión de fondo no le llega a nadie seguro
-  const sin = pedirSinVentana(casa, PENDIENTE, { arbol: fondo, evento: { permission_mode: 'default' } });
+  const sin = pedirSinVentana(casa, SAVE, { arbol: fondo, evento: { permission_mode: 'default' } });
   assert.strictEqual(sin.decision, 'deny', sin.texto);
   assert.match(sin.texto, /corre de fondo/);
   anotarAprobacion(casa, 'ses-coord');
-  const con = pedirSinVentana(casa, PENDIENTE, { arbol: fondo, evento: { permission_mode: 'default' } });
+  const con = pedirSinVentana(casa, SAVE, { arbol: fondo, evento: { permission_mode: 'default' } });
   assert.strictEqual(con.decision, 'allow', con.texto);
   assert.strictEqual(con.via, 'mensaje');
   // el guion de la firma, lanzado por la consola de la sesión de fondo, la reconoce como la herramienta y firma
   const guion = [...fondo.slice(0, 4),
-    { pid: 300, ppid: 100, inicio: INICIO, comando: envolver(casa, PENDIENTE) },
-    { pid: 301, ppid: 300, inicio: INICIO, comando: PENDIENTE }];
-  const e = ow.exigir({ firma: 'pending-approval', argv: PENDIENTE_ARGV, pid: 301, arbol: guion, casa, ahora: AHORA + 60000, propia: 'ses-coord', antes: () => null, notificar: () => {} });
+    { pid: 300, ppid: 100, inicio: INICIO, comando: envolver(casa, SAVE) },
+    { pid: 301, ppid: 300, inicio: INICIO, comando: SAVE }];
+  const e = ow.exigir({ firma: 'save', argv: SAVE_ARGV, pid: 301, arbol: guion, casa, ahora: AHORA + 60000, propia: 'ses-coord', antes: () => null, notificar: () => {} });
   assert.strictEqual(e.codigo, 0, e.motivo);
   assert.strictEqual(e.via, 'mensaje');
   // otra herramienta de verdad por arriba sigue negando
@@ -3178,23 +3219,23 @@ test('Aprobacion_SesionDeFondo_SinAprobacionSeNiega_ConAprobacionFirma', (t) => 
     { pid: 201, ppid: 200, inicio: INICIO, comando: 'node /h/scripts/lib/owner-window.js gate' }];
   const casa2 = casaNueva(t);
   anotarAprobacion(casa2, 'ses-coord');
-  assert.match(pedirSinVentana(casa2, PENDIENTE, { arbol: anidada }).texto, /la lanzó otra herramienta/);
+  assert.match(pedirSinVentana(casa2, SAVE, { arbol: anidada }).texto, /la lanzó otra herramienta/);
 });
 
 test('Aprobacion_RutinaSinAprobacion_SigueHechaYAvisada_ConAprobacionEsDeLaPersona', (t) => {
   const casa = casaNueva(t);
-  assert.strictEqual(pedirSinVentana(casa, PENDIENTE).via, 'avisado');
+  assert.strictEqual(pedirSinVentana(casa, SAVE).via, 'avisado');
   const casa2 = casaNueva(t);
   anotarAprobacion(casa2, 'ses-coord', { tipo: 'click', tool_use_id: 'toolu_9' });
-  const r = pedirSinVentana(casa2, PENDIENTE);
+  const r = pedirSinVentana(casa2, SAVE);
   assert.strictEqual(r.via, 'click');
   assert.match(r.texto, /tu click en el cuadro de opciones/);
 });
 
 test('Aprobacion_GanaALaDelegacion_LaFirmaEsDeLaPersonaYSeUsaUnaVez', (t) => {
-  const delegaTodo = delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['plan-approval', 'runtime-waiver'] } });
+  const delegaTodo = delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['plan-approval', 'save', 'runtime-waiver'] } });
   const RUNTIME = `node ${MARKER} runtime-waiver ${HISTORIA.story} --acs 1 --for-session ses-a`;
-  const casos = [['plan-approval', PLAN, PLAN_ARGV],
+  const casos = [['plan-approval', PLAN, PLAN_ARGV], ['save', SAVE, SAVE_ARGV],
     ['runtime-waiver', RUNTIME, [MARKER, 'runtime-waiver', HISTORIA.story, '--acs', '1', '--for-session', 'ses-a']]];
   for (const [firma, cmd, argv] of casos) {
     const casa = casaConDesignada(t);
@@ -3721,7 +3762,7 @@ test('Freno_LoQueNoEntra (T2) — @story-8.153 @ac-2', (t) => {
   assert.strictEqual(delegada.decision, 'allow');
   nada(casa, delegada);
   casa = casaDeLista(t);
-  const avisada = pedirConLista(casa, LA_RUTINA_PENDIENTE(), { arbol: arbolDelFreno(), evento: { permission_mode: 'bypassPermissions' } });
+  const avisada = pedirConLista(casa, `node ${MARKER} approve-save`, { arbol: arbolDelFreno(), evento: { permission_mode: 'bypassPermissions' } });
   assert.strictEqual(avisada.via, 'avisado');
   nada(casa, avisada);
   // la ventana abierta se contesta en su pestaña
@@ -3823,11 +3864,11 @@ test('T14 OwnerWindow_ExtraRoundPrecheckTimeout_RowAsToday + OwnerWindow_OtherSi
   assert.strictEqual(renglones(casa)[0].firma, 'extra-round');
   // la lista sólo suma la vuelta extra
   assert.ok(ow.CHEQUEO_ANTES_DEL_CUADRO.has('extra-round'));
-  for (const otra of ['pending-approval', 'plan-approval', 'critical-waiver', 'runtime-waiver', 'control-change']) assert.ok(!ow.CHEQUEO_ANTES_DEL_CUADRO.has(otra), otra);
+  for (const otra of ['save', 'plan-approval', 'critical-waiver', 'runtime-waiver', 'control-change']) assert.ok(!ow.CHEQUEO_ANTES_DEL_CUADRO.has(otra), otra);
   // y una firma que no está en la lista no consulta al guion antes del cuadro, aunque el guion la negaría
   casa = casaDeLista(t);
   let consultado = false;
-  const otra = ow.decidir({ evento: evento(LA_RUTINA_PENDIENTE()), arbol: [...RETOMADA, ...FRENO(200)], pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => { consultado = true; return { niega: 'x' }; }, aprobador: DEL_ARNES, aprobaciones: aprobacionesDePrueba(), lista: SIN_PERFIL(casa) });
+  const otra = ow.decidir({ evento: evento(`node ${MARKER} approve-save`), arbol: [...RETOMADA, ...FRENO(200)], pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => { consultado = true; return { niega: 'x' }; }, aprobador: DEL_ARNES, aprobaciones: aprobacionesDePrueba(), lista: SIN_PERFIL(casa) });
   assert.strictEqual(otra.decision, 'deny');
   assert.strictEqual(consultado, false, otra.texto);
 });
@@ -3846,7 +3887,7 @@ test('T1 OwnerWindow_AdhocSetWouldBeDenied_NoBoxNoRow @story-8.276 @ac-1 @ac-18'
   assert.strictEqual(renglones(casa).length, 0, 'sin renglón en la lista del dueño');
   // la lista suma el camino corto; las firmas de hoy que no son de camino corto siguen afuera
   assert.ok(ow.CHEQUEO_ANTES_DEL_CUADRO.has('adhoc-lane'));
-  for (const otra of ['pending-approval', 'plan-approval', 'critical-waiver', 'runtime-waiver', 'control-change', 'lost-run']) assert.ok(!ow.CHEQUEO_ANTES_DEL_CUADRO.has(otra), otra);
+  for (const otra of ['save', 'plan-approval', 'critical-waiver', 'runtime-waiver', 'control-change', 'lost-run']) assert.ok(!ow.CHEQUEO_ANTES_DEL_CUADRO.has(otra), otra);
 });
 
 test('T2 OwnerWindow_AdhocSetAccepted_SameFingerprint + OwnerWindow_AdhocPrecheckTimeout_BoxAsToday @story-8.276 @ac-2 @ac-3', (t) => {
@@ -4161,12 +4202,12 @@ test('OwnerWindow_Prechequeo_PlazoPropioMenorQueElDelFreno', (t) => {
   cp.spawnSync = (cmd, args, o) => { plazos[args[1]] = o.timeout; return { status: 2, stdout: '', stderr: 'no' }; };
   t.after(() => { cp.spawnSync = original; });
   ow.comprobarConElGuion({ firma: 'runtime-waiver', palabras: [MARKER, 'runtime-waiver', '/r/specs/story-9.99.md'], cwd: os.tmpdir(), sesion: 'ses-a' });
-  ow.comprobarConElGuion({ firma: 'pending-approval', palabras: [MARKER, 'approve-pending', '--id', 'DEF-x', '--repo', '/r'], cwd: os.tmpdir(), sesion: 'ses-a' });
+  ow.comprobarConElGuion({ firma: 'save', palabras: [MARKER, 'approve-save'], cwd: os.tmpdir(), sesion: 'ses-a' });
   cp.spawnSync = original;
-  // el freno tiene 20 s para todo: el chequeo de cada guion espera menos, el mismo plazo para todos
+  // el freno tiene 20 s para todo: el chequeo del guion espera menos, y el ok de guardar conserva el suyo
   assert.strictEqual(plazos['runtime-waiver'], ow.PLAZO_DEL_PRECHEQUEO_MS);
-  assert.strictEqual(plazos['approve-pending'], ow.PLAZO_DEL_PRECHEQUEO_MS);
   assert.ok(ow.PLAZO_DEL_PRECHEQUEO_MS <= 12000, `el chequeo del guion espera ${ow.PLAZO_DEL_PRECHEQUEO_MS} ms`);
+  assert.strictEqual(plazos['approve-save'], 240000);
 });
 
 // --- dejar pasar el freno de los datos: sólo el click del dueño -------------------------------------------------------

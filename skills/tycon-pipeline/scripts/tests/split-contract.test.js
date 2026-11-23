@@ -133,6 +133,8 @@ const CASOS = [
   { id: 'compare-waiver-sin-args', marcador: true, argv: ['compare-waiver'] },
   { id: 'sign-adversarial-skip-sin-args', marcador: true, argv: ['sign-adversarial-skip'] },
   { id: 'sign-atdd-skip-sin-args', marcador: true, argv: ['sign-atdd-skip'] },
+  { id: 'approve-save-sin-args', marcador: true, argv: ['approve-save'] },
+  { id: 'save-check-sin-args', marcador: true, argv: ['save-check'] },
   { id: 'approve-pending-sin-args', marcador: true, argv: ['approve-pending'] },
   { id: 'plan-review-sin-plan', marcador: true, argv: ['plan-review'] },
   { id: 'review-ask-sin-args', marcador: true, argv: ['review-ask'] },
@@ -399,7 +401,7 @@ if (GRABAR) {
     const texto = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
     const despacho = texto.slice(texto.lastIndexOf('switch (cmd)'));
     const subcomandos = [...despacho.matchAll(/case '([\w-]+)':/g)].map((x) => x[1]);
-    assert.ok(subcomandos.length >= 64, `esperaba los 64 subcomandos del despacho, encontré ${subcomandos.length}`);
+    assert.ok(subcomandos.length >= 66, `esperaba los 66 subcomandos del despacho, encontré ${subcomandos.length}`);
     const conCaso = new Set(CASOS.map((c) => c.argv[0]));
     const sin = subcomandos.filter((s) => !conCaso.has(s));
     assert.deepStrictEqual(sin, [], `subcomandos sin caso: ${sin.join(', ')}`);

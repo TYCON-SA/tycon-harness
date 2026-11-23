@@ -9,10 +9,10 @@
  */
 const {
   MARKER_JS, PEDIDA, PREVIO, PROPIA, SCRIPTS_DIR, STATE_DIR, anotarAprobacion,
-  anotarFirma, appendLog, at, cmd,
+  anotarFirma, appendLog, at, carpetaDeLaCorrida, cmd, comprobarLoRevisado,
   delegatedSigning, esFecha, estado, fechaLocal, firmaDelDueno, fs,
-  nn, nowIso, os, ownerWindow, path, porDe, readMarker,
-  reposParaComparar, resolveStoryPath, trabajarSobreElDestino,
+  hermanosDeLaCorrida, nn, nowIso, os, ownerWindow, path, porDe, readMarker,
+  reposParaComparar, resolveStoryPath, trabajarSobreElDestino, writeMarker,
 } = require('./marker-shared.js');
 
 // La carpeta de la corrida, creada si falta. En el chequeo antes de la ventana no se crea: alcanza con que la story dé
@@ -631,6 +631,106 @@ function cmdApprovePending(argv) {
   process.exit(0);
 }
 
+// Las firmas `-signed` del gates.log de la corrida `m` (save-ok.js exencionesDeLaCorrida: su sesión, la que adoptó o
+// su story): el ok por delegación mira si hubo una exención. El log no se lee a medias: si no se puede leer entero,
+// tira, y el ok por delegación no se da.
+function firmasDeLaCorrida(m) {
+  const p = path.join(STATE_DIR, 'gates.log');
+  // sin el registro no se sabe si hubo exenciones: tira, como un registro grande o un renglón de firma que no se lee
+  // se lee entero: el registro de una máquina ya ronda los 6 MB y nada lo rota; el tope sólo frena uno desmedido
+  const tam = fs.statSync(p).size;
+  if (tam > 128 * 1024 * 1024) throw new Error(`${p} pasa de 128 MB: no lo leo entero, y una exención vieja quedaría afuera`);
+  const texto = fs.readFileSync(p, 'utf8');
+  const firmadas = [];
+  for (const l of texto.split('\n')) {
+    if (!l.includes('-signed')) continue;
+    let j;
+    try { j = JSON.parse(l); } catch (_) { throw new Error(`${p} tiene un renglón de firma que no se lee: podría ser una exención`); }
+    if (j && /-signed$/.test(String(j.name))) firmadas.push(j);
+  }
+  return require('./save-ok.js').exencionesDeLaCorrida(firmadas, m);
+}
+
+// `approve-save [--for-session <D>] [--terminal]`: el ok de guardar la story (commit, push y los pedidos) es la firma
+// `save` (lib/save-ok.js). La da el dueño en la ventana o en su terminal, o la coordinadora por la delegación del
+// perfil: por delegación, antes de gastar el pedido, la corrida tiene que estar limpia, el cambio no tocar nada sensible
+// y el aviso tiene que haberle llegado al dueño. La constancia `saveOk` (las huellas de cada repo) queda en el marcador
+// de la corrida y en el renglón `save-signed`; `save-check` dice si sigue valiendo.
+function cmdApproveSave(argv) {
+  const { tiene } = opcionesDe(argv);
+  if (tiene('--quote') || tiene('--relayed-by') || tiene('--ok')) {
+    console.error('🚫 marker.js approve-save: la cita, el reenvío y --ok no dan el ok de guardar: es una firma (la delegación, la ventana o --terminal).');
+    process.exit(1);
+  }
+  const m = readMarker();
+  if (!m) { console.error(`marker.js approve-save: la sesión ${estado.SID} no tiene una ejecución abierta: el ok de guardar es de una corrida.`); process.exit(2); }
+  const so = require('./save-ok.js');
+  let repos;
+  try { repos = so.reposDeLaCorrida({ marker: m, hermanos: hermanosDeLaCorrida(m) }); } catch (e) {
+    console.error(`🔒 marker.js approve-save: no pude saber qué repos guarda la corrida (${e.message}): sin eso no hay ok de guardar.`);
+    process.exit(2);
+  }
+  // lo que se firma, ¿es lo revisado? (historia 8.161): se dice, y si cambió después de la última vuelta, no se firma
+  comprobarLoRevisado(m, 'approve-save');
+  let previo = null;
+  let ok = null;
+  const antes = (via) => {
+    let datos = {};
+    if (via === 'delegacion') {
+      const rd = carpetaDeLaCorrida(m);
+      let findings;
+      try { findings = rd ? JSON.parse(fs.readFileSync(path.join(rd, 'findings.json'), 'utf8')) : null; } catch (e) { findings = null; }
+      if (!Array.isArray(findings)) return { codigo: 2, motivo: 'la coordinadora no puede dar el ok: no pude leer el findings.json de la corrida. Lo firma una persona: ni el agente ni la coordinadora' };
+      let firmas;
+      try { firmas = firmasDeLaCorrida(m); } catch (e) { return { codigo: 2, motivo: `la coordinadora no puede dar el ok: no pude leer el registro de firmas (${e.code || e.message}). Lo firma una persona: ni el agente ni la coordinadora` }; }
+      const notify = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
+      // lo sensible: sólo si el perfil le delega a la coordinadora la forma `save:sensible`, con las mismas llaves
+      let sensibleDelegado = false;
+      try {
+        const cat = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
+        sensibleDelegado = !!require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js')).delegaSinVentana({ firma: cat.SAVE_SENSIBLE, sesion: PROPIA, destino: estado.SID, estado: STATE_DIR, home: os.homedir() }).ok;
+      } catch (e) { sensibleDelegado = false; }
+      datos = { findings, firmasDeLaCorrida: firmas, canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o), sensibleDelegado };
+    }
+    const r = so.antesDeFirmar({ via, marker: m, repos, ...datos });
+    if (r.codigo) return r;
+    previo = r;
+    return null;
+  };
+  const extra = ({ via, sesion, destino }) => {
+    ok = so.constancia({ marker: m, via, por: sesion && sesion !== destino ? sesion : null, previo, ahora: nowIso() });
+    return { storyId: ok.storyId, startedAt: ok.startedAt, huellas: ok.huellas, ...(ok.canales ? { canales: ok.canales } : {}) };
+  };
+  const firma = firmaDelDueno('save', `guardar la story ${m.storyId} (${repos.map((r) => path.basename(r)).join(', ')})`, { antes, extra });
+  // con la firma, el destino quedó fijo y la corrida comparada: se relee para no pisar lo que cambió en el medio
+  const fresco = readMarker() || m;
+  fresco.saveOk = ok;
+  fresco.lastTouch = nowIso();
+  writeMarker(fresco);
+  const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
+  const q = quienFirmo(firma, persona);
+  anotarAprobacion(fresco, { que: 'el ok de guardar la story (commit, push y los pedidos)', via: q.via, tipo: q.tipo, quien: q.quien, ...porDe(firma), ...(q.delegacion ? { delegacion: q.delegacion } : {}) });
+  console.error(`✅ ok de guardar la story ${fresco.storyId} (${q.via}${ok.canales ? `, avisado por ${ok.canales.join(', ')}` : ''}). Antes de cada commit, push y pedido: marker.js save-check.`);
+  process.exit(0);
+}
+
+// `save-check [--push <remoto> <rama>]` (sólo lee): sale 0 si el ok de guardar de la corrida abierta sigue valiendo para
+// el código de ahora; 1 con qué repo y qué cambió. Con --push, además, la rama de destino es la del ok y no es main.
+function cmdSaveCheck(argv) {
+  const i = argv.indexOf('--push');
+  const push = i >= 0 ? { remoto: argv[i + 1], rama: argv[i + 2] } : null;
+  if (push && (!push.remoto || !push.rama)) { console.error('uso: marker.js save-check [--push <remoto> <rama>]'); process.exit(2); }
+  const m = readMarker();
+  const so = require('./save-ok.js');
+  const no = (motivo) => { console.error(`🔒 save-check: ${motivo}`); process.exit(1); };
+  if (!m) no('no hay una ejecución abierta: el ok de guardar es de una corrida');
+  if (m.saveOk && (m.saveOk.storyId !== m.storyId || m.saveOk.startedAt !== (m.startedAt || null))) no('el ok de guardar es de otra corrida: hay que pedir otro');
+  const r = so.vigente({ saveOk: m.saveOk, push, repoActual: process.cwd() });
+  if (!r.ok) no(r.motivo);
+  console.error(`✅ save-check: el ok de guardar de ${m.storyId} sigue valiendo${push ? ` para empujar ${push.rama}` : ''}.`);
+  process.exit(0);
+}
+
 // Los dos respaldos cuando el click no se pudo comprobar (o no se puede pedir): la terminal del dueño, o la frase.
 function respaldosDeDesignar(sesion) {
   const ds = path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js');
@@ -1108,7 +1208,7 @@ function cmdSignFile(firma, archivo) {
 module.exports = {
   carpetaParaLaFirma, quienFirmo, firmadoEnLaTerminal, sinCorrerFueraDeLaDeuda, runtimeWaiverConOk, opcionesDe,
   cmdPlanReview, cmdReviewAsk, cmdReviewAnswer, cmdOwnerAway, cmdWaiveCritical, cmdCompareWaiver,
-  cmdSignAdversarialSkip, cmdSignAtddSkip, cmdDeclarePending, cmdApprovePending,
+  cmdSignAdversarialSkip, cmdSignAtddSkip, cmdDeclarePending, cmdApprovePending, firmasDeLaCorrida, cmdApproveSave, cmdSaveCheck,
   respaldosDeDesignar, firmaDeLaDesignacion, cmdDesignateRelay, negarSiEsPruebaSobreLoReal, designarPorClick,
   vidaDeLaSesion, cmdWithdrawRelay, cmdMarkTested, cmdRuntimeWaiver, cmdSignFile,
 };
