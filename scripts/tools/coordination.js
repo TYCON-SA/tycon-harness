@@ -3582,6 +3582,8 @@ const PR_WAIT_INTERVAL_S = 120;
 // el intervalo más largo: un día. Más que eso desborda el reloj de node (2^31 ms) y la espera leería sin pausa
 const PR_WAIT_INTERVAL_MAX_S = 86400;
 const PR_WAIT_MAX_FAILS = 3;
+// el título de un pedido encontrado por `--story`, recortado a esto en su renglón
+const PR_WAIT_TITLE_MAX = 80;
 const ENTERO = /^[1-9]\d*$/;
 const ORG_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 // un repo de Azure DevOps escrito entero: la organización, el proyecto (puede llevar espacios) y el repo
@@ -3592,21 +3594,26 @@ const HISTORIA = /^\d+(?:\.\d+)*$/;
 
 // las ramas de los bots de dependencias: sus títulos citan versiones («Bump foo from 2.3 to 2.4»), no historias
 const RAMA_DE_BOT = /^(dependabot|renovate)\//;
+// un revert deshace el pedido de la historia: su título lo copia entero, y no es el que la historia abre
+const RAMA_DE_REVERT = /^revert[-/]/;
+const TITULO_DE_REVERT = /^revert/i;
 
 /**
  * ¿El pedido abierto es de la historia? Por la rama (`story/<id>`, `story/<id>-…` o `story/<id>/…`) o, si el número
  * lleva punto, por el título con la forma de los títulos del arnés: el número al principio, con su tanda opcional, y
- * después «:», « —» o « -» («8.207 B: …», «8.32: …»), o al principio de un paréntesis («(8.32 A)», «(8.32)»,
- * «feat(8.256): …», «(8.294, AC 14)»). El número va entero: `8.3` no es `8.32`, `18.3` ni `8.3.1`. Un título que sólo
- * lo cita («Node 8.32 support», «fix tras 8.2») no cuenta, ni el de la rama de otra historia o de un bot. Un número
+ * después «:», « —» o « -» («8.207 B: …», «8.32: …»), o al principio de un paréntesis en cualquier lugar del título
+ * («(8.32 A)», «(8.32)», «feat(8.256): …», «(8.294, AC 14)»). El número va entero: `8.3` no es `8.32`, `18.3` ni
+ * `8.3.1`. Un título que sólo lo cita («Node 8.32 support», «fix tras 8.2») no cuenta, ni el de la rama de otra
+ * historia o de un bot, ni un revert (el título empieza con «Revert» o la rama con `revert-` o `revert/`). Un número
  * suelto sólo por la rama: «25» en un título no dice de qué historia es.
  */
 function esDeLaHistoria(pedido, historia) {
   const rama = String((pedido && pedido.sourceBranch) || '').replace(/^refs\/heads\//, '');
   if (rama === `story/${historia}` || rama.startsWith(`story/${historia}-`) || rama.startsWith(`story/${historia}/`)) return true;
   // un pedido de la rama de otra historia que la cita en el título («sigue a 8.32») no es de ésta
-  if (!historia.includes('.') || /^story\//.test(rama) || RAMA_DE_BOT.test(rama)) return false;
-  const titulo = String((pedido && pedido.title) || '');
+  if (!historia.includes('.') || /^story\//.test(rama) || RAMA_DE_BOT.test(rama) || RAMA_DE_REVERT.test(rama)) return false;
+  const titulo = String((pedido && pedido.title) || '').trim();
+  if (TITULO_DE_REVERT.test(titulo)) return false;
   const exacto = historia.replace(/\./g, '\\.');
   const tanda = '(?:\\s+[A-Z]\\d*)?';
   return new RegExp(`^${exacto}${tanda}(?::|\\s+[—-])`).test(titulo) || new RegExp(`\\(${exacto}${tanda}\\s*[),]`).test(titulo);
@@ -3615,7 +3622,8 @@ function esDeLaHistoria(pedido, historia) {
 /**
  * La espera de que una historia abra su pedido: lee sólo la lista de abiertos por la capa de plataforma
  * (`change-request.list`, sin leer los controles de cada uno) y termina con `open <número…>` cuando aparece alguno de
- * la historia (`esDeLaHistoria`). Tres lecturas fallidas seguidas cortan con el motivo.
+ * la historia (`esDeLaHistoria`), y debajo un renglón por pedido con su número y su título. Tres lecturas fallidas
+ * seguidas cortan con el motivo.
  */
 async function prWaitStory(f, { listar, opciones, repo, sinIdentidad, intervalo, sleep }) {
   const platform = require('../lib/platform/platform.js');
@@ -3626,8 +3634,9 @@ async function prWaitStory(f, { listar, opciones, repo, sinIdentidad, intervalo,
     try { r = await lectura({ checks: false }, repo); } catch (e) { r = { ok: false, detail: (e && e.message) || String(e) }; }
     if (r && r.ok && Array.isArray(r.value)) {
       fallas = 0;
-      const suyos = r.value.filter((x) => esDeLaHistoria(x, f.story)).map((x) => Number(x.number)).filter((n) => Number.isInteger(n) && n > 0);
-      if (suyos.length) return { code: 0, text: `open ${suyos.join(' ')}` };
+      const suyos = r.value.filter((x) => esDeLaHistoria(x, f.story) && Number.isInteger(Number(x.number)) && Number(x.number) > 0);
+      // debajo de `open <número…>`, un renglón por pedido con su título: un pedido equivocado se ve enseguida
+      if (suyos.length) return { code: 0, text: [`open ${suyos.map((x) => Number(x.number)).join(' ')}`, ...suyos.map((x) => `  ${Number(x.number)} «${label(x.title || 'sin título', PR_WAIT_TITLE_MAX)}»`)].join('\n') };
     } else {
       fallas += 1;
       if (fallas >= PR_WAIT_MAX_FAILS) {
@@ -3641,8 +3650,9 @@ async function prWaitStory(f, { listar, opciones, repo, sinIdentidad, intervalo,
 
 /**
  * `{ code, text?, error? }`. Con `--number`: 0 con el estado nuevo (`merged` o `closed`). Con `--story`: 0 con
- * `open <número…>` cuando la historia abre su pedido (`prWaitStory`). 2 con el motivo (argumentos con otra forma, o la
- * lectura que falla tres veces seguidas). `leer`, `listar` y `sleep` se pasan en las pruebas.
+ * `open <número…>` y el título de cada uno cuando la historia abre su pedido (`prWaitStory`). 2 con el motivo
+ * (argumentos con otra forma, o la lectura que falla tres veces seguidas). `leer`, `listar` y `sleep` se pasan en las
+ * pruebas.
  */
 async function prWait(f, { leer, listar, tree, sleep = (ms) => new Promise((ok) => setTimeout(ok, ms)) } = {}) {
   const intervalo = f.interval === undefined ? String(PR_WAIT_INTERVAL_S) : f.interval;

@@ -2470,23 +2470,23 @@ test('PrWaitStory_EndsWhenTheStoryOpensItsPullRequest: termina con el número cu
   const vistos = [];
   const listar = async (args, repo) => { vistos.push([args, repo]); return respuestas[vistos.length - 1]; };
   const r = await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32', interval: '1' }, { listar, sleep: async () => {} });
-  assert.deepStrictEqual(r, { code: 0, text: 'open 43' });
+  assert.deepStrictEqual(r, { code: 0, text: 'open 43\n  43 «x»' });
   assert.strictEqual(vistos.length, 3);
   assert.deepStrictEqual(vistos[0][0], { checks: false });
   // el título que nombra la historia también cuenta, con el número entero (8.32 no es 8.325 ni 8.32.1)
   const porTitulo = async () => ({ ok: true, value: [pedidoDe(50, 'wt/x', 'feat: algo (8.325)'), pedidoDe(51, 'wt/y', 'fix: 8.32.1'), pedidoDe(52, 'wt/z', 'feat(freno): el tope (8.32 A)')] });
-  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: porTitulo, sleep: async () => {} }), { code: 0, text: 'open 52' });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: porTitulo, sleep: async () => {} }), { code: 0, text: 'open 52\n  52 «feat(freno): el tope (8.32 A)»' });
   // (el pase) el pedido de otra historia que cita ésta en el título, o el número pegado a una letra, no terminan la espera
   const citas = [{ ok: true, value: [pedidoDe(80, 'story/8.33', 'feat 8.33 (sigue a 8.32)'), pedidoDe(81, 'wt/x', 'v8.32 algo')] }, { ok: true, value: [pedidoDe(82, 'wt/y', 'fix (8.32 B)')] }];
   let k = 0;
-  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: async () => citas[k++], sleep: async () => {} }), { code: 0, text: 'open 82' });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: async () => citas[k++], sleep: async () => {} }), { code: 0, text: 'open 82\n  82 «fix (8.32 B)»' });
   // dos de la misma historia: los dos números
   const dos = async () => ({ ok: true, value: [pedidoDe(60, 'story/8.32'), pedidoDe(61, 'story/8.32/b')] });
-  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: dos, sleep: async () => {} }), { code: 0, text: 'open 60 61' });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: dos, sleep: async () => {} }), { code: 0, text: 'open 60 61\n  60 «x»\n  61 «x»' });
   // una historia sin punto sólo se busca por la rama: «25» en un título no dice nada
   const suelta = [{ ok: true, value: [pedidoDe(70, 'wt/x', 'arregla el #25')] }, { ok: true, value: [pedidoDe(71, 'story/25-demo')] }];
   let n = 0;
-  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '25' }, { listar: async () => suelta[n++], sleep: async () => {} }), { code: 0, text: 'open 71' });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '25' }, { listar: async () => suelta[n++], sleep: async () => {} }), { code: 0, text: 'open 71\n  71 «x»' });
 });
 
 test('PrWaitStory_TitleOnlyInTheHarnessForms: por el título cuenta sólo la forma de los títulos del arnés, y nunca un bot', async () => {
@@ -2495,7 +2495,7 @@ test('PrWaitStory_TitleOnlyInTheHarnessForms: por el título cuenta sólo la for
   const juzgar = async (story, pedido) => {
     const lecturas = [{ ok: true, value: [pedido] }, { ok: true, value: [pedidoDe(999, `story/${story}`)] }];
     let k = 0;
-    return (await C.prWait({ rest: [], repo: 'acme/portal', story }, { listar: async () => lecturas[k++], sleep: async () => {} })).text;
+    return (await C.prWait({ rest: [], repo: 'acme/portal', story }, { listar: async () => lecturas[k++], sleep: async () => {} })).text.split('\n')[0];
   };
   // (el pase) un título que sólo cita el número no es de la historia
   assert.strictEqual(await juzgar('2.3', pedidoDe(7, 'dependabot/npm/x', 'Bump foo from 2.3 to 2.4')), 'open 999');
@@ -2518,6 +2518,43 @@ test('PrWaitStory_TitleOnlyInTheHarnessForms: por el título cuenta sólo la for
   assert.strictEqual(await juzgar('8.3', pedidoDe(41, 'wt/x', '18.3: otra')), 'open 999');
   assert.strictEqual(await juzgar('8.3', pedidoDe(42, 'wt/x', 'fix: algo (18.3 A)')), 'open 999');
   assert.strictEqual(await juzgar('8.3', pedidoDe(43, 'wt/x', 'fix: algo (8.3.1)')), 'open 999');
+  // el paréntesis vale en cualquier lugar del título
+  assert.strictEqual(await juzgar('8.32', pedidoDe(44, 'wt/x', 'fix(foo): handle (8.32) edge')), 'open 44');
+});
+
+test('PrWaitStory_RevertsDoNotCount: un revert no es el pedido de la historia, aunque el título coincida', async () => {
+  const juzgar = async (story, pedido) => {
+    const lecturas = [{ ok: true, value: [pedido] }, { ok: true, value: [pedidoDe(999, `story/${story}`)] }];
+    let k = 0;
+    return (await C.prWait({ rest: [], repo: 'acme/portal', story }, { listar: async () => lecturas[k++], sleep: async () => {} })).text.split('\n')[0];
+  };
+  // por el título: empieza con «Revert», sin importar mayúsculas
+  assert.strictEqual(await juzgar('8.32', pedidoDe(1, 'wt/x', 'Revert (8.32)')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(2, 'wt/x', 'REVERT 8.32: el tope')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(3, 'wt/x', 'revert "feat(freno): el tope (8.32 A)"')), 'open 999');
+  // por la rama: `revert-…` o `revert/…`
+  assert.strictEqual(await juzgar('8.32', pedidoDe(4, 'revert-x', '8.32: el tope')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(5, 'revert/x', 'feat: (8.32 A)')), 'open 999');
+});
+
+test('PrWaitStory_SaysTheTitleOfWhatItFound: la salida trae el título de cada pedido encontrado, en un renglón y recortado', async () => {
+  // el primer renglón sigue siendo `open <número…>`; debajo, un renglón por pedido con su número y su título
+  const uno = async () => ({ ok: true, value: [pedidoDe(52, 'wt/z', 'feat(freno): el tope (8.32 A)')] });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: uno, sleep: async () => {} }),
+    { code: 0, text: 'open 52\n  52 «feat(freno): el tope (8.32 A)»' });
+  // un título con saltos de renglón y caracteres de control sale en un renglón, sin ellos, y recortado a 80
+  const largo = `feat: algo\u001b[31m\nrojo\u0007 (8.32) ${'a'.repeat(200)}`;
+  const raro = async () => ({ ok: true, value: [pedidoDe(53, 'wt/x', largo)] });
+  const r = await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: raro, sleep: async () => {} });
+  const renglones = r.text.split('\n');
+  assert.strictEqual(renglones.length, 2, JSON.stringify(r.text));
+  assert.strictEqual(renglones[0], 'open 53');
+  assert.strictEqual(renglones[1], `  53 «${Array.from(`feat: algo[31m rojo (8.32) ${'a'.repeat(200)}`).slice(0, 80).join('')}»`);
+  assert.doesNotMatch(r.text, /[\u0000-\u0009\u000b-\u001f\u007f]/);
+  // un pedido sin título lo dice
+  const sin = async () => ({ ok: true, value: [{ number: 54, sourceBranch: 'story/8.32' }] });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: sin, sleep: async () => {} }),
+    { code: 0, text: 'open 54\n  54 «sin título»' });
 });
 
 test('PrWaitStory_FailuresAndShapes: tres lecturas fallidas seguidas cortan con el motivo; otra forma no lee nada', async () => {
@@ -2532,7 +2569,7 @@ test('PrWaitStory_FailuresAndShapes: tres lecturas fallidas seguidas cortan con 
   // una falla entre lecturas buenas no suma
   const mezcla = [falla, async () => ({ ok: true, value: [] }), falla, falla, async () => ({ ok: true, value: [pedidoDe(9, 'story/8.32')] })];
   let i = 0;
-  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: (...a) => mezcla[i++](...a), sleep: async () => {} }), { code: 0, text: 'open 9' });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: (...a) => mezcla[i++](...a), sleep: async () => {} }), { code: 0, text: 'open 9\n  9 «x»' });
   let leyo = false;
   const nunca = async () => { leyo = true; return { ok: true, value: [] }; };
   // (el pase) un intervalo de más de un día desborda el reloj de node y la espera leería sin pausa
@@ -2569,7 +2606,7 @@ module.exports = { run: (operacion, args) => {
   for (const k of Object.keys(env)) if (/^TYCON_(ADO_ORG|ADO_CMD|PLATFORM|PROFILE)$|^FAKE_PLATFORM_/.test(k)) delete env[k];
   const r = spawnSync(process.execPath, [COORD, 'pr-wait', '--repo', 'acme/portal', '--story', '8.32', '--interval', '1'], { encoding: 'utf8', input: '', timeout: 60000, env });
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
-  assert.strictEqual(r.stdout.trim(), 'open 88');
+  assert.strictEqual(r.stdout.trim(), 'open 88\n  88 «x»');
   const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.deepStrictEqual(calls.map((c) => c.operacion), ['change-request.list', 'change-request.list']);
 });
@@ -2589,7 +2626,7 @@ test('PrWait_OrgProjectRepo_ReadsWithoutTheProfile: --repo <org>/<proyecto>/<rep
   // también con --story
   const listados = [];
   const listar = async (args, repo) => { listados.push(repo); return { ok: true, value: [{ number: 3, sourceBranch: 'story/2.1', title: 'x' }] }; };
-  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/Seguimiento/seguimiento-backend', story: '2.1' }, { listar, tree, sleep: async () => {} }), { code: 0, text: 'open 3' });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/Seguimiento/seguimiento-backend', story: '2.1' }, { listar, tree, sleep: async () => {} }), { code: 0, text: 'open 3\n  3 «x»' });
   assert.strictEqual(listados[0].project, 'Seguimiento');
   // otra forma no lee, y el error dice las dos formas
   for (const malo of ['a/b/c/d', 'a//c', '/b/c', 'a/b/']) {
