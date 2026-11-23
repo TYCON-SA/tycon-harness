@@ -2502,6 +2502,19 @@ test('T352 SiteLink_LoQueTeNecesita_NoViajaAlSitio @story-8.234 @ac-40: lo que t
   assert.match(code, /function pintarNecesita\(\)\{[^\n]*\n\s*if\(CON_OFICINAS\)\{sec\.remove\(\);return\}/);
 });
 
+// SiteLink_LoQueTeNecesita_ElSitioNoLaTrae: el sitio arma su página con siteParts y no corre la parte de arriba de la página
+// local, así que la sección tiene que salir de lo que sirve: ni la sección, ni su título, ni su lista
+test('T357 SiteLink_LoQueTeNecesita_ElSitioNoLaTrae @story-8.234 @ac-40: el HTML de la pestaña «Oficinas» no trae la sección', () => {
+  const PARTS = require(path.join(ROOT, 'scripts', 'tools', 'office', 'page-parts.js'));
+  for (const source of ['site', 'demo']) {
+    const { body } = PARTS.siteParts({ source, urlOf: (m) => `/offices/${m}`, script: '/offices/page.js' });
+    assert.ok(!/id="necesita"|necesitaLista|Lo que te necesita/.test(body), `${source}: la sección sigue en lo que sirve el sitio`);
+    assert.match(body, /id="office"/, `${source}: lo demás de la página sigue`);
+  }
+  // la página local la sigue trayendo
+  assert.match(PARTS.renderPage({ data: {} }), /id="necesita"/);
+});
+
 test('T342 Foto_TurnoPesadoViajaAlSitio_Filtrado @story-8.234 @ac-19 — el turno de tarea pesada viaja con el nombre y las suites enteras, y el sitio lo vuelve a filtrar', () => {
   const { pick, FIELDS } = fields();
   const { limpiarFoto } = require(path.join(ROOT, 'scripts', 'site', 'live-hub.js'));
