@@ -787,7 +787,7 @@ function soloLaPersona(via, registro) {
   if (!registro && via !== 'delegacion') return null;
   const v = registro ? (registro.via || 'ventana') : via;
   if (conPersona(v)) return null;
-  return { codigo: 2, motivo: 'reemplazar una firma hecha por delegación pide el click, el «aprobado» o el «sí» en la ventana del dueño a este pedido, o su terminal: por la delegación o como trámite no se reemplaza' };
+  return { codigo: 2, motivo: 'reemplazar una firma hecha por delegación pide el click, el «aprobado» o el «sí» en la ventana de una persona a este pedido, o su terminal: por la delegación o como trámite no se reemplaza' };
 }
 
 // ¿La aprobación `ap` es de una persona y sigue valiendo para la huella de ahora (`shaAhora`)? `campo` es dónde guarda

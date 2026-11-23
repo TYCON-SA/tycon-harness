@@ -209,7 +209,7 @@ function cmdCompleteStep(nRaw, flags) {
     if (reemplaza) {
       const motivo = !STEPS_LIB.isDone(marker, 'approve-plan') || !planPrevia ? 'no hay un plan aprobado que reemplazar'
         : !hechaSinPersona(planPrevia) ? `el plan ya lo aprobó una persona (${planPrevia.via || planPrevia.mode}): no hay una firma por delegación que reemplazar`
-          : !approved && !enTerminal ? 'falta la aprobación del dueño: --approved "<su cita>", con su click o su «aprobado» a este pedido, o --terminal'
+          : !approved && !enTerminal ? 'falta la aprobación de una persona: --approved "<su cita>", con su click o su «aprobado» a este pedido, o --terminal'
             : null;
       if (motivo) {
         appendLog('gates.log', { name: 'approval-replaced', status: 'blocked', story: marker.storyId, que: 'plan', motivo });
