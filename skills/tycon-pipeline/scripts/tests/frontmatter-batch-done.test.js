@@ -163,3 +163,23 @@ test('T9 FrontmatterWrite_DoneWordsBeyondReadBatches_Blocks — si el bloque dic
     });
   }
 });
+
+// Estados que YAML lee como done sin que el texto diga «done»: un escape, comillas partidas, un bloque `>-` o un alias a
+// un ancla de afuera del bloque. `fuera` va en el frontmatter, antes de `pipelines:`.
+const ILEGIBLES = [
+  ['el escape \\x6f', '"d\\x6fne"'],
+  ['el escape unicode', '"\\u0064one"'],
+  ['las comillas partidas en dos renglones', '"do\\\n      ne"'],
+  ['el bloque >- con do y ne', '>-\n      do\n      ne'],
+  ['el alias a un ancla de afuera', '*s', 'd: &s done\n'],
+];
+const conEstado = (estado, fuera = '') => conBloque(`${fuera}pipelines:\n  - name: A\n    status: ${estado}\n    acs: [1]\n${tanda('B', 'pending', 2)}`);
+
+test('T10 FrontmatterWrite_IllegibleStatus_Blocks — un estado que no es una palabra simple vuelve dudosa la lectura y frena, aunque el bloque no diga done', async (t) => {
+  for (const [caso, estado, fuera] of ILEGIBLES) {
+    await t.test(caso, () => {
+      const r = escribir(conEstado('pending', fuera), conEstado(estado, fuera));
+      assert.strictEqual(r.status, 2, salida(r));
+    });
+  }
+});

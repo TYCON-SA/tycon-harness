@@ -631,7 +631,7 @@ function readBatches(content) {
   const texto = String(content || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
   const fm = (/^---\n([\s\S]*?)\n---/.exec(texto) || [])[1];
   const batches = parsePipelinesBlock(content || '');
-  const out = { batches, present: false, region: '', doneLines: 0, doubts: [] };
+  const out = { batches, present: false, region: '', doneLines: 0, doubts: [], strictDoubts: [] };
   if (fm == null) return out;
   out.doneLines = (fm.match(DONE_LINE) || []).length;
   const lines = fm.split('\n');
@@ -655,7 +655,29 @@ function readBatches(content) {
   }
   out.region = region.join('\n');
   if (!batches.length) out.doubts.push('el bloque pipelines está y el lector no lee ninguna tanda');
-  if (batches.some((t) => t.status == null)) out.doubts.push('una tanda sin estado legible');
+  // Dudas estrictas: YAML puede leer done donde el texto no dice «done» (un escape entre comillas dobles, comillas
+  // partidas en dos renglones, un bloque `>-`, un alias a un ancla de afuera). Un estado es legible sólo si es una
+  // palabra simple, sin comillas o entre comillas simples o dobles sin barra invertida, en un solo renglón. Con el
+  // bloque cambiado, estas dudas miden aunque el bloque no diga done.
+  const estricta = (d) => { out.doubts.push(d); out.strictDoubts.push(d); };
+  if (batches.some((t) => t.status == null)) estricta('una tanda sin estado legible');
+  const sinComentario = (l) => (/^\s*#/.test(l) ? '' : l);
+  const ilegibles = [];
+  for (const l of region.map(sinComentario)) {
+    // cada clave status del renglón, en bloque (`status: x`) o entre llaves (`{status: x}`)
+    for (const m of l.matchAll(/(?:^|[\s{,])["']?status["']?\s*:/g)) {
+      const valor = l.slice(m.index + m[0].length).trimStart();
+      if (!/^(?:[\w-]+|"[\w-]+"|'[\w-]+')(?=\s*(?:$|#|,|\}|\]))/.test(valor)) ilegibles.push(valor.split(/\s+#/)[0].trim() || '(vacío)');
+    }
+  }
+  if (ilegibles.length) estricta(`un estado de tanda que no es una palabra simple (${ilegibles.join(' | ')})`);
+  // un ancla, un alias o una etiqueta fuera de las comillas: el valor puede venir de otro lado
+  const sinComillas = (l) => l.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""').replace(/\s#.*$/, '');
+  const yamlRaro = region.map(sinComentario).map(sinComillas).filter((l) => /(?:^|[\s{[,:-])[&*!][^\s,\]}]/.test(l));
+  if (yamlRaro.length) estricta(`un ancla, alias o etiqueta en el bloque (${yamlRaro.map((l) => l.trim()).join(' | ')})`);
+  // un escape entre comillas dobles: `"d\x6fne"` o una clave escrita con escapes
+  const conEscape = region.map(sinComentario).filter((l) => /"(?:[^"\\]|\\.)*\\/.test(l) || /"[^"]*\\$/.test(l));
+  if (conEscape.length) estricta(`una barra invertida entre comillas dobles (${conEscape.map((l) => l.trim()).join(' | ')})`);
   if (batches.some((t) => t.statusRepeated)) out.doubts.push('una tanda con más de un estado propio');
   const nombres = batches.map((t) => t.name);
   const repetidos = [...new Set(nombres.filter((n, i) => nombres.indexOf(n) !== i))];
@@ -695,7 +717,9 @@ function readBatches(content) {
 // ¿Una tanda pasa a done entre dos versiones de una historia? Ante la duda, se mide. Hay transición si:
 //   (a) por nombre, una tanda está done en `after` y no lo estaba en `before` (o no existía);
 //   (b) los renglones de estado done del frontmatter suben (aceptando comillas y mayúsculas);
-//   (c) la lectura de alguna de las dos versiones es dudosa, el bloque cambió y el de `after` dice done en algún lado.
+//   (c) la lectura de alguna de las dos versiones es dudosa y el bloque cambió: una duda estricta (un estado que no es
+//       una palabra simple, un ancla, un alias, una etiqueta, un escape) basta; una de forma pide además que el bloque
+//       de `after` diga done.
 // Contar renglones solo no ve `"done"` ni `Done` en todas sus formas, ni un done que pasa de una tanda a otra o que se va
 // de otro lugar en el mismo cambio; leer por nombre solo no ve lo que el lector no entiende. Con `doubtful`, quien llama
 // no achica la medición a una tanda: mide todas. Lo usan los dos controles del cierre (on-pre-commit y
@@ -707,7 +731,11 @@ function batchTransition(before, after) {
   const turned = despues.batches.filter((t) => isDoneBatch(t) && !hechasAntes.has(t.name)).map((t) => t.name);
   const countUp = despues.doneLines > antes.doneLines;
   const conDudas = antes.doubts.length > 0 || despues.doubts.length > 0;
-  const dudosa = conDudas && antes.region !== despues.region && /\bdone\b/i.test(despues.region);
+  const estrictas = antes.strictDoubts.length > 0 || despues.strictDoubts.length > 0;
+  const cambio = antes.region !== despues.region;
+  // las dudas estrictas miden con el bloque cambiado; las de forma (nombres recortados, cuentas que no coinciden),
+  // sólo si además el bloque dice done, para no medir de más a las historias con nombres con punto
+  const dudosa = cambio && (estrictas || (conDudas && /\bdone\b/i.test(despues.region)));
   const transition = turned.length > 0 || countUp || dudosa;
   const doubtful = conDudas && transition;
   return { transition, turned, countUp, doubtful,
