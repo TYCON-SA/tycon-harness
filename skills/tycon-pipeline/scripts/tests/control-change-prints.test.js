@@ -180,6 +180,135 @@ test('T13 Empuje_RedireccionesOpcionesYBorrados_NoFrenanDeMas', () => {
   }
 });
 
+// T14 a T17 · fila 81 (pase del pedido único #1502), la parte de las constancias: el empuje desde otra carpeta escrito de
+// formas que no se leían. Desde la carpeta de arriba del repo, con una constancia sin huella ya commiteada en la rama.
+function conConstanciaCommiteada() {
+  const c = corral();
+  c.constancia('escondida');
+  git(c.repo, 'add', '-A'); git(c.repo, 'commit', '-q', '-m', 'escondida');
+  return c;
+}
+const frenaDesdeArriba = (c, cmd) => {
+  const r = c.correr(cmd, c.raiz);
+  assert.ok(r && r.block, `frena: ${cmd}`);
+  assert.match(r.block, /escondida\.json/, cmd);
+};
+
+test('T14 Empuje_AdentroDeUnParentesisODeUnGrupo_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['(cd repo && git push)', '{ cd repo && git push; }', '( cd repo; git push )']) frenaDesdeArriba(c, cmd);
+});
+
+test('T15 Empuje_ConDosCdEnCadena_Frena', () => {
+  const c = conConstanciaCommiteada();
+  fs.mkdirSync(path.join(c.raiz, 'otra'), { recursive: true });
+  for (const cmd of ['cd otra && cd ../repo && git push', 'cd repo && cd . && git push', 'cd otra; cd ../repo; git commit -m x; git push']) frenaDesdeArriba(c, cmd);
+});
+
+test('T16 Empuje_DestinoConVariableOSustitucion_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['B=trabajo; cd repo && git push origin "$B"', 'cd repo && git push origin "$(git branch --show-current)"',
+    'cd repo && git push origin $B']) frenaDesdeArriba(c, cmd);
+});
+
+test('T17 Empuje_WorkTreeAparteHeredocYRenglonPartido_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of [`git --work-tree ${c.repo} --git-dir ${c.repo}/.git push`, `git --git-dir=${c.repo}/.git push`,
+    `bash <<'EOF'\ncd repo && git push\nEOF`, 'cd repo && git \\\n  push']) frenaDesdeArriba(c, cmd);
+});
+
+// T18 a T21 · lo que encontró el pase de la fila 81: cd con opciones, env -C con la carpeta aparte, las variables de git,
+// --git-dir sin --work-tree (que sigue mirando la carpeta de trabajo), carpetas sin resolver y el tope de carpetas.
+test('T18 Empuje_CdConOpcionesEnvCYVariablesDeGit_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd -P repo && git commit -m x && git push', 'cd -- repo && git push', 'cd -L repo; git push',
+    'env -C repo git push', 'GIT_DIR=repo/.git GIT_WORK_TREE=repo git push', 'export GIT_DIR=repo/.git; git push']) frenaDesdeArriba(c, cmd);
+});
+
+test('T19 Commit_GitDirSinWorkTree_MiraTambienLaCarpetaDeTrabajo', () => {
+  // desde el repo con la constancia sin huella, el `.git` de otro: `git add` toma los archivos de acá
+  const c = corral();
+  c.constancia('aca');
+  const otro = path.join(c.raiz, 'otro');
+  fs.mkdirSync(otro);
+  git(otro, 'init', '-q', '-b', 'main');
+  const r = c.correr(`git --git-dir=${otro}/.git add -A && git --git-dir=${otro}/.git commit -m x`);
+  assert.ok(r && r.block, 'frena');
+  assert.match(r.block, /aca\.json/);
+});
+
+test('T20 Empuje_CarpetaSinResolver_FrenaComoGitC', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd "$(echo repo)" && git push', 'for d in repo; do cd $d; git push; done', 'git --git-dir="$X/.git" push',
+    'git --work-tree $Y push']) {
+    const r = c.correr(cmd, c.raiz);
+    assert.ok(r && r.block, `frena: ${cmd}`);
+    assert.match(r.block, /CONSTANCIA SIN MIRAR|escondida\.json/, cmd);
+  }
+  // sin commit ni empuje, un cd sin resolver no importa
+  assert.strictEqual(c.correr('cd "$(echo repo)" && git status', c.raiz), null);
+});
+
+test('T21 Empuje_MuchosCd_FrenaSinTardar', () => {
+  const c = conConstanciaCommiteada();
+  const cds = Array.from({ length: 200 }, (_, k) => `cd /tmp/no-existe-${k}`).join(' && ');
+  // stable-data: el reloj mide cuánto tarda el freno, no da una fecha que se compare
+  const desde = Date.now();
+  const r = c.correr(`${cds} && git push`, c.raiz);
+  assert.ok(Date.now() - desde < 4000, `tardó ${Date.now() - desde} ms`);
+  assert.ok(r && r.block, 'con más carpetas que el tope no se sabe dónde corre: frena');
+  assert.match(r.block, /CONSTANCIA SIN MIRAR/);
+});
+
+// T22 a T25 · lo que encontró la vuelta de regresiones: el empuje adentro de una sustitución después de un cd, el `-c`
+// con comillas pegadas y el `-C ""`; y lo que frenaba de más: un cd después del git o en un comentario, y el texto de un
+// mensaje de commit que nombra cd o GIT_DIR.
+test('T22 Empuje_AdentroDeUnaSustitucionDespuesDeUnCd_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd repo && echo $(git push)', 'cd repo && echo `git push`', 'cd repo; x=$(git push)',
+    'cd repo && find . -maxdepth 0 -exec git push \\;']) frenaDesdeArriba(c, cmd);
+});
+
+test('T23 Empuje_ConUnaOpcionConComillasPegadasOConCVacio_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd repo && git -c user.name="AB" push', "cd repo && git -c user.name='AB' -c user.email=\"a@b.c\" push",
+    'cd repo && git -C "" push']) frenaDesdeArriba(c, cmd);
+});
+
+test('T24 CommitLimpio_CdConVariableDespuesOEnUnComentario_Pasa', () => {
+  const c = corral();
+  for (const cmd of ['git commit --allow-empty -m a; cd $X', 'git push\ncd $X', '# cd $X\ngit push', 'git push && cd "$(pwd)"']) {
+    assert.strictEqual(c.correr(cmd), null, cmd);
+  }
+  // antes del empuje sigue frenando: no se sabe dónde corre
+  assert.match(c.correr('cd $X && git push').block, /CONSTANCIA SIN MIRAR/);
+});
+
+test('T25 CommitLimpio_ElMensajeNombraCdOGitDir_Pasa', () => {
+  const c = corral();
+  for (const cmd of ["git commit --allow-empty -m 'cd $X and GIT_DIR=$Y'", "git commit --allow-empty -m \"$(cat <<'EOF'\nfix: cd $X\nGIT_DIR=$Y\nEOF\n)\"",
+    'git commit --allow-empty -F - <<EOF\ncd $X\nexport GIT_DIR=$Y\nEOF']) {
+    assert.strictEqual(c.correr(cmd), null, cmd);
+  }
+});
+
+// T26 y T27 · lo que dejó la tercera vuelta (ya pasaba en main): un comentario al final del empuje se tomaba como el
+// remoto y su refspec; y un cd con una sustitución sin comillas o con un comodín no se leía como carpeta sin resolver.
+test('T26 Empuje_ConUnComentarioAlFinal_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd repo && git push # x', 'git -C repo push # cd otra', 'cd repo && git push --dry-run # nota']) frenaDesdeArriba(c, cmd);
+});
+
+test('T27 Empuje_DespuesDeUnCdConSustitucionSinComillasOComodin_FrenaSinMirar', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd $(echo repo) && git push', 'cd `echo repo` && git push', 'cd $(pwd)/repo && git push', 'cd rep* && git push',
+    'cd $(git rev-parse --show-toplevel) && git commit -m x']) {
+    const r = c.correr(cmd, c.raiz);
+    assert.ok(r && r.block, `frena: ${cmd}`);
+    assert.match(r.block, /CONSTANCIA SIN MIRAR/, cmd);
+  }
+});
+
 test('T7 SinConstanciasNuevas_OComandosQueNoSonCommitNiPush_ComoAntes', () => {
   const c = corral();
   assert.strictEqual(c.correr('git commit -m x'), null);
