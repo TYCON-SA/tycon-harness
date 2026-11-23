@@ -6,7 +6,7 @@
     { "copy": "lib/tycon-config.js", "source": "scripts/lib/tycon-config.js", "reviewed": "d608ea55bec7ca80ce844678d11140d6b5e7f0ec" },
     { "copy": "lib/skills-dir.js", "source": "scripts/lib/skills-dir.js", "reviewed": "78fba972b0cfae3f95f71f5335e6642dd2bd25bf" },
     { "copy": "lib/guard-record.js", "source": "scripts/lib/guard-record.js", "reviewed": "3f8761296d2dcaf0a05ab667ef59300dc37bc6a2" },
-    { "copy": "lib/legacy-names.js", "source": "scripts/lib/legacy-names.js", "reviewed": "913e0584d294cdcb08d28ef1b4c825eec320fe84" },
+    { "copy": "lib/legacy-names.js", "source": "scripts/lib/legacy-names.js", "reviewed": "4980b859299fd8e4b2d0ccf248c13cd6997be089" },
     { "copy": "setup/harness/tycon-home.js", "source": "scripts/setup/harness/tycon-home.js", "reviewed": "ff2f1218d8e4f7b04e8884c4ec7a2f613ea8cd6c" }
   ]
 }

@@ -617,7 +617,8 @@ function swapLine(s) {
   if (sw.pct == null) return sw.none ? null : `Memoria de intercambio: no medida (${oneLine(sw.why || 'sin motivo').slice(0, 120)})`;
   if (sw.pct >= SWAP_LOW_PCT) return null;
   const idle = [...(s.idle || [])].sort((a, b) => Number(Boolean(b.waitingFor)) - Number(Boolean(a.waitingFor)));
-  const names = idle.map((x) => (x.waitingFor ? `${x.session} (espera ${x.waitingFor})` : x.session));
+  const { waitPhrase } = require('../lib/owner-wait-card.js');
+  const names = idle.map((x) => (x.waitingFor ? `${x.session} (${waitPhrase(x.waitingFor)})` : x.session));
   return `Memoria de intercambio casi llena: ${sw.pct} % libre. Claude Code puede cerrar sesiones quietas${names.length ? `: ${names.join(' · ')}` : ' (no hay quietas)'}. Antes de lanzar algo pesado, cerrá las quietas que no esperan nada (guides/coordination.md, «La memoria de intercambio»).`;
 }
 
@@ -1963,7 +1964,7 @@ function outsideWaitLines(opts, sid, s, working, cap, getBoard, problems) {
   if (b.problem) problems.push(b.problem);
   const light = b.light.slice(0, 3);
   const lines = waiting.map((w) => {
-    const head = `Coordinación: ${w.session} espera ${w.waitingFor}${w.since == null ? '' : ` desde las ${hhmm(w.since)}`}`;
+    const head = `Coordinación: ${w.session} ${require('../lib/owner-wait-card.js').waitPhrase(w.waitingFor)}${w.since == null ? '' : ` desde las ${hhmm(w.since)}`}`;
     if (b.problem) return `${head}.`;
     return light.length ? `${head}: dale algo liviano de la fila — ${light.map(rowText).join(', ')}.` : `${head}: la fila no tiene nada liviano: que siga vigilando su pedido.`;
   });
