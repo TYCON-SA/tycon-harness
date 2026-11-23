@@ -3,7 +3,7 @@
  * subtraction-test.test.js — la prueba de resta: cada historia de juguete corre dos veces en un laboratorio, con el
  * control y sin él, y el informe dice por modelo si el resultado cumple igual.
  *
- * Ningún caso gasta una llamada al modelo: el agente se inyecta con `TYCON_SUBTRACTION_AGENT`, un guion falso que lee la
+ * Ningún caso gasta una llamada al modelo: el agente se inyecta con `--agent`, un guion falso que lee la
  * configuración que le arma el corredor y corre DE VERDAD los ganchos de `PreToolUse` que trae, como lo haría Claude
  * Code. El control es un gancho de juguete de un arnés de juguete: frena escribir `hecho.txt` y anota en
  * `$HOME/.tycon/state/juguete.jsonl` de la casa que ve. Así se prueba el cableado entero: la copia del arnés, la casa
@@ -104,9 +104,9 @@ function caso(raiz, { control = 'toy-switch', quitar = { env: { TYCON_TOY_SWITCH
 
 /** Corre el corredor como lo corre una persona, con el agente falso y una HOME «real» de juguete. */
 function correr(args, { agente, home, env = {} }) {
-  return spawnSync(process.execPath, [RUNNER, ...args], {
+  return spawnSync(process.execPath, [RUNNER, ...args, '--agent', agente], {
     encoding: 'utf8',
-    env: Object.assign({}, process.env, { TYCON_SUBTRACTION_AGENT: agente, HOME: home }, env),
+    env: Object.assign({}, process.env, { HOME: home }, env),
   });
 }
 

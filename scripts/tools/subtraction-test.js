@@ -7,7 +7,7 @@
  * persona, con este número a la vista.
  *
  *   node subtraction-test.js [--cases <carpeta>] [--case <nombre>] [--model <modelo>]... [--runs N] [--json <informe>]
- *                            [--harness <arnés>]
+ *                            [--harness <arnés>] [--agent <programa>]
  *
  * EL CASO. `cases/subtraction/<nombre>.json` (en scripts/controls-bench) declara:
  *   · `control`: el nombre del control, como lo nombra la tabla de controles. Una exigencia no se prueba, porque no se
@@ -33,8 +33,8 @@
  * ven la misma casa (`env` de la configuración); el agente mismo arranca con la HOME de quien corre, porque con otra no
  * encuentra su sesión iniciada, y no guarda la sesión (`--no-session-persistence`). El agente corre con
  * `claude -p --output-format stream-json`, sin la configuración del usuario (`isolation.js`), sin guardar la sesión y
- * con tope de gasto. `TYCON_SUBTRACTION_AGENT` reemplaza al agente por otro programa (las pruebas corren así, sin
- * modelo).
+ * con tope de gasto. `--agent <programa>` reemplaza al agente por otro programa (las pruebas corren así, sin modelo).
+ * Es una opción y no una variable de entorno: el corredor no lee ninguna variable propia.
  *
  * EL RESULTADO. Por control y por modelo: cuántas corridas se midieron de cada lado, cuántas cumplieron y su costo
  * (`total_cost_usd` del agente), y `cumple_igual`. Con menos de `k` corridas medidas de un lado sale «no alcanza para
@@ -360,7 +360,7 @@ function ambienteDelAgente(sinLlaves = [], base = process.env) {
 
 function lanzar(bin, args, { cwd, timeoutS, env }) {
   return new Promise((res) => {
-    const hijo = spawn(bin, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env });
+    const hijo = spawn(bin, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env, windowsHide: true });
     let out = '', err = '';
     const corte = setTimeout(() => { try { hijo.kill('SIGKILL'); } catch (_) { /* ya terminó */ } }, timeoutS * 1000);
     hijo.stdout.on('data', (d) => (out += d));
@@ -370,9 +370,8 @@ function lanzar(bin, args, { cwd, timeoutS, env }) {
   });
 }
 
-/** Cómo se lanza el agente: el inyectado (`TYCON_SUBTRACTION_AGENT`) o `claude`. */
-function comandoDelAgente({ task, modelo, settings, sesion }) {
-  const inyectado = process.env.TYCON_SUBTRACTION_AGENT;
+/** Cómo se lanza el agente: el de `--agent` o `claude`. */
+function comandoDelAgente({ task, modelo, settings, sesion, agente: inyectado = null }) {
   // la sesión la elige el corredor: la ejecución del pipeline que prepara un caso se anota con ella
   const args = ['-p', task, '--model', modelo, '--output-format', 'stream-json', '--verbose', '--settings', settings, '--session-id', sesion];
   if (inyectado) return inyectado.endsWith('.js') ? { bin: process.execPath, args: [inyectado, ...args] } : { bin: inyectado, args };
@@ -386,7 +385,7 @@ function comandoDelAgente({ task, modelo, settings, sesion }) {
 }
 
 /** Una corrida: arma el árbol y la casa, lanza al agente y corrige. `{ medida, cumple, costo_usd, motivo }`. */
-async function correrUna({ entrada, historia, modelo, copia, env, lista }) {
+async function correrUna({ entrada, historia, modelo, copia, env, lista, agente }) {
   const { caso, dir: dirCaso } = entrada;
   let corrector, arbol, casa, bin, args;
   const sesion = crypto.randomUUID();
@@ -398,7 +397,7 @@ async function correrUna({ entrada, historia, modelo, copia, env, lista }) {
     if (typeof corrector.preparar === 'function') corrector.preparar({ dir: arbol, casa, arnes: copia, sesion });
     const settings = path.join(casa, 'resta-settings.json');
     fs.writeFileSync(settings, JSON.stringify(settingsDelLaboratorio({ ganchos: caso.ganchos || [], lista, copia, casa, env })));
-    ({ bin, args } = comandoDelAgente({ task: historia.task, modelo, settings, sesion }));
+    ({ bin, args } = comandoDelAgente({ task: historia.task, modelo, settings, sesion, agente }));
   } catch (e) {
     limpiar();
     return { medida: false, motivo: `no pude preparar la ejecución: ${e && e.message}` };
@@ -450,10 +449,10 @@ const usd = (x) => (x === null ? 'sin costo' : `${x} USD`);
 
 async function main(argv) {
   if (argv.includes('--help') || argv.includes('-h')) {
-    console.log('subtraction-test.js [--cases <carpeta>] [--case <nombre>] [--model <m>]... [--runs N] [--json <informe>] [--harness <arnés>] — ver la cabecera');
+    console.log('subtraction-test.js [--cases <carpeta>] [--case <nombre>] [--model <m>]... [--runs N] [--json <informe>] [--harness <arnés>] [--agent <programa>] — ver la cabecera');
     return 0;
   }
-  const sinValor = ['--cases', '--case', '--model', '--runs', '--json', '--harness'].find((f) => argVals(argv, f).includes(null));
+  const sinValor = ['--cases', '--case', '--model', '--runs', '--json', '--harness', '--agent'].find((f) => argVals(argv, f).includes(null));
   if (sinValor) { console.error(`resta: ${sinValor} sin valor`); return 2; }
   const arnes = path.resolve(argVal(argv, '--harness') || TCG);
   const dir = argVal(argv, '--cases') || CASOS_POR_DEFECTO;
@@ -462,6 +461,7 @@ async function main(argv) {
   if (runsArg !== undefined && !(/^\d+$/.test(runsArg) && Number(runsArg) >= 1)) { console.error(`resta: --runs no es un entero ≥ 1 («${runsArg}»)`); return 2; }
   const modelosArg = argVals(argv, '--model');
   const informe = argVal(argv, '--json');
+  const agente = argVal(argv, '--agent') || null;
 
   const entradas = cargarCasos(dir, arnes).filter((e) => !soloCaso || e.nombre === soloCaso);
   const problemas = [];
@@ -497,8 +497,8 @@ async function main(argv) {
         const con = [], sin = [];
         for (const historia of caso.historias) {
           for (let i = 0; i < n; i++) {
-            con.push(await correrUna({ entrada: e, historia, modelo, copia: copiaCon, env: {}, lista }));
-            sin.push(await correrUna({ entrada: e, historia, modelo, copia: copiaSin, env: caso.quitar.env || {}, lista }));
+            con.push(await correrUna({ entrada: e, historia, modelo, copia: copiaCon, env: {}, lista, agente }));
+            sin.push(await correrUna({ entrada: e, historia, modelo, copia: copiaSin, env: caso.quitar.env || {}, lista, agente }));
           }
         }
         const ladoSinMedir = [['con el control', con], ['sin el control', sin]].find(([, rs]) => !rs.some((r) => r.medida));
