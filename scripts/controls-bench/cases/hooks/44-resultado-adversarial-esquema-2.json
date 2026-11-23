@@ -99,12 +99,13 @@
         {
           "id": "pase-adversarial-salteo-low-lo-anota-el-porton-esquema-2",
           "type": "must-run",
-          "__nota": "Un diff de 1 archivo chico: el portón (pipeline.js deep-review-gate, como proceso) dice LOW → run:false, y el comando anota el salteo y cierra el 5b en una sola escritura. De fábrica la chica de día pregunta: el salteo vale con la respuesta «skip» anotada para ese diff (marker.js review-answer).",
+          "__nota": "Un diff de 1 archivo chico: el portón (pipeline.js deep-review-gate, como proceso) dice LOW → run:false, y el comando anota el salteo y cierra el 5b en una sola escritura. De fábrica la chica de día pregunta: el salteo vale con la respuesta «skip» del dueño para ese diff: sin su click marker.js review-answer no la anota, y el caso la anota como la deja el click.",
           "files": {
             "correr.sh": "#!/bin/sh\nexit 0\n",
             "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
             "scripts/x.js": "module.exports = 1;\n",
-            "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-b3\",\n  \"lastTouch\": \"2026-09-18T04:00:00.000Z\",\n  \"stepScheme\": 2,\"stepsCompleted\": [\"start\",\"validate-story\",\"plan\",\"approve-plan\",\"implement\",\"run-tests\"],\n  \"stepsPending\": [\"reviewers\",\"findings\",\"prepare-commit\"],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {}\n}\n"
+            "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-b3\",\n  \"lastTouch\": \"2026-09-18T04:00:00.000Z\",\n  \"stepScheme\": 2,\"stepsCompleted\": [\"start\",\"validate-story\",\"plan\",\"approve-plan\",\"implement\",\"run-tests\"],\n  \"stepsPending\": [\"reviewers\",\"findings\",\"prepare-commit\"],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {}\n}\n",
+            "skip-del-dueno.js": "// «skip» a la pregunta del código: sin el click del dueño o su terminal no se anota (la firma code-review-answer);\n// el caso lo anota como lo deja ese click, para seguir con lo que mira\nconst [pr, estado, sesion] = process.argv.slice(2);\nconst PR = require(pr);\nconst h = PR.huellaDe({ estado, sesion, kind: \"code\" });\nif (h.codigo) { console.error(h.motivo); process.exit(1); }\nconst r = PR.anotarRespuesta({ estado, sesion, kind: \"code\", choice: \"skip\", quien: \"dueño\", huella: h.huella, motivo: \"la persona eligió no revisarlo\", via: \"click\" });\nif (r.codigo) { console.error(r.motivo); process.exit(1); }\n"
           },
           "env": {
             "CLAUDE_CODE_SESSION_ID": "adv-b3"
@@ -113,7 +114,8 @@
             "git init -q .",
             "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
             "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b3.json",
-            "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js review-answer --kind code --choice skip --reason 'la persona eligió no revisarlo' > ra.out 2> ra.err",
+            "! node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js review-answer --kind code --choice skip --reason 'la persona eligió no revisarlo' > ra.out 2> ra.err",
+            "node skip-del-dueno.js ${SKILLS}/skills/tycon-pipeline/scripts/lib/plan-review.js ${SANDBOX_HOME}/.claude/.tycon-pipeline adv-b3",
             "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files scripts/x.js > sk.out 2> sk.err; echo \"rc=$?\" > rc.txt"
           ],
           "stdin": {
@@ -153,7 +155,7 @@
             "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
             "scripts/x.js": "module.exports = 1;\n",
             "resultado.json": "{\"confirmed\": [], \"lentes\": [{\"lens\": \"a\", \"estado\": \"medida\", \"count\": 0, \"probe_dir\": \"${FIXTURE}/step-05b-probes/caza-a\"}], \"lentes_sin_medir\": [], \"detalle\": [], \"medido\": true}\n",
-          "step-05b-probes/caza-a/COMO-SE-CORRIO.txt": "node probe.js\n→ ok\n",
+            "step-05b-probes/caza-a/COMO-SE-CORRIO.txt": "node probe.js\n→ ok\n",
             "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-b4\",\n  \"lastTouch\": \"2026-09-18T04:00:00.000Z\",\n  \"stepScheme\": 2,\"stepsCompleted\": [\"start\",\"validate-story\",\"plan\",\"approve-plan\",\"implement\",\"run-tests\",\"reviewers\",\"findings\"],\n  \"stepsPending\": [\"prepare-commit\"],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {},\n  \"dodRuntimeChecked\": true,\n  \"adversarial\": { \"launchedAtStep\": 4, \"runId\": \"wf_B4\", \"sessionId\": \"adv-b4\", \"launchedAt\": \"2026-09-18T00:51:35.760Z\" }\n}\n"
           },
           "env": {
