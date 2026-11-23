@@ -77,8 +77,10 @@ const isChecked = (c) => (typeof c.checked === 'boolean' ? c.checked : c.value =
 
 // Los textos que se comparan con la pantalla, de un elemento del modelo. El rótulo de un `box` describe una imagen o un
 // gráfico para quien aprueba y no está en la pantalla: se compara sólo con `compare: true`. `value`, `rows`, `notes`,
-// `checked` y `disabled` son datos de ejemplo y no se comparan.
+// `checked` y `disabled` son datos de ejemplo y no se comparan. Un elemento marcado `example: true` es todo dato de ejemplo
+// (una versión, una fecha, un usuario de prueba): la pantalla dice lo mismo con datos de verdad, y no se compara.
 function comparedOf(el) {
+  if (el.example === true) return [];
   if (['heading', 'text', 'button', 'link', 'message'].includes(el.kind)) return [el.text];
   if (el.kind === 'box') return el.compare === true ? [el.text] : [];
   if (el.kind === 'checkbox') return [el.label, ...(isStr(el.title) ? [el.title] : [])];
@@ -137,6 +139,7 @@ function elementProblems(el, e) {
   if (el.kind === 'message' && el.tone !== undefined && !TONES.includes(el.tone)) out.push(`${k}: \`tone\` «${el.tone}» no está en la lista (${TONES.join(' | ')})`);
   if (el.zone !== undefined && !ZONES.includes(el.zone)) out.push(`${k}: \`zone\` «${el.zone}» no está en la lista (${ZONES.join(' | ')})`);
   if (el.existing !== undefined && typeof el.existing !== 'boolean') out.push(`${k}: \`existing\` tiene que ser true o false`);
+  if (el.example !== undefined && typeof el.example !== 'boolean') out.push(`${k}: \`example\` tiene que ser true o false`);
   if (el.kind === 'checkbox') out.push(...checkboxProblems(el, k));
   if (el.kind === 'chat') {
     if (!Array.isArray(el.messages) || !el.messages.length) out.push(`${k}: falta \`messages\` (una lista de mensajes de ejemplo, no vacía)`);
@@ -326,6 +329,8 @@ const LAYER_STYLE = `
   .layer-how { margin: 0 0 10px; font-size: 14px; color: #3b4456; }
   .layer-stack { display: grid; border-radius: 12px; overflow: hidden; }
   .layer-stack > div { grid-area: 1 / 1; }
+  .example { outline: 1px dashed #b08a2e; outline-offset: 3px; border-radius: 4px; }
+  .example-note { display: inline-block; margin-left: 6px; font-size: 11px; color: #8a6d1f; }
   .layer-under { filter: blur(2px) saturate(0.4); }
   .layer-under .frame { height: 100%; box-shadow: none; }
   .layer-backdrop { position: relative; z-index: 1; background: rgba(29, 36, 51, 0.55); display: flex; align-items: flex-start; justify-content: center; padding: 56px 40px 40px; }
@@ -388,6 +393,8 @@ function renderMockup(model) {
   // lo de hoy atenuado; lo nuevo en violeta, sólo cuando la pantalla mezcla las dos cosas (si es toda nueva, la marca va
   // una vez, en su cabecera)
   const el = (x, i, ctx) => {
+    // un dato de ejemplo va marcado y sin la marca que lo compara con la pantalla
+    if (x.example === true) return `<div class="example">${dibujo(x, i, { ...ctx, T: plano })}<span class="example-note">dato de ejemplo</span></div>`;
     if (ctx.marcas && x.existing === true) return `<div class="existing">${dibujo(x, i, ctx)}</div>`;
     // lo nuevo va con fondo y borde de zona, explicado en la leyenda: una etiqueta encima tapaba el contenido
     if (ctx.marcas && ctx.mezcla) return `<div class="new">${dibujo(x, i, ctx)}</div>`;
@@ -415,7 +422,7 @@ function renderMockup(model) {
     const cards = sc.variants.map((v) => {
       const zona = ZONES.includes(v.zone) ? v.zone : '';
       const donde = zona ? ` <span class="variant-zone">· cambia sólo la parte ${ZONE_NAMES[zona]}</span>` : '';
-      let els = Array.isArray(v.elements) ? v.elements.map((x) => dibujo(x, i, { T: marcado })).join('') : '';
+      let els = Array.isArray(v.elements) ? v.elements.map((x) => el(x, i, { T: marcado })).join('') : '';
       if (zona && els) {
         const conChat = sc.elements.some((x) => (x.zone || 'center') === zona && x.kind === 'chat');
         els = `<div class="variant-zone-preview preview-${zona}${conChat ? ' preview-chat' : ''}">${els}</div>`;
@@ -782,6 +789,8 @@ ${JSON.stringify(DEMO, null, 2)}
   comparando. Con algún "existing" en la maqueta, lo demás sale con fondo violeta claro y borde, explicado en la
   leyenda de arriba; nada se dibuja encima del contenido (una pantalla toda nueva lleva la marca "Todo nuevo" una sola
   vez, en su título). Sin ninguno no se marca nada: marcá lo que ya existe.
+- "example": true, en cualquier elemento, lo marca como dato de ejemplo (una versión, una fecha, un usuario de prueba)
+  y no lo compara: la pantalla dice lo mismo con datos de verdad.
 - "zone" (opcional), en cualquier elemento: dónde va, a grandes rasgos: ${ZONES.join(' | ')}. Se dibuja en una grilla
   aproximada (arriba, al medio izquierda-centro-derecha, abajo); sin zona va al centro.
 - "variants" (opcional), en una pantalla: los otros casos (cargando, vacío, error, sin permiso). Cada una lleva "when"

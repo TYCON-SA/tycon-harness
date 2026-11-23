@@ -1081,3 +1081,49 @@ test('T56 Revision_FrenoDeLaAprobacion: sin informe, de otra versión o con hall
   SHOTS.escribirInforme({ report, file: path.basename(f), sha256: sha, shots, findings: [] });
   assert.strictEqual(p(), null);
 });
+
+// ── Datos de ejemplo y lo que queda bajo una capa (filas 103 y 107 de la cola de la coordinadora) ──────────────────────
+
+// Mockup_DatoDeEjemplo_NoSeCompara: un texto con datos de ejemplo («v13, de un usuario, a las 15:42») no se puede
+// reproducir en la pantalla sin falsear la base o el reloj. Con `example: true` la maqueta lo dibuja marcado como ejemplo
+// y no lo compara; lo demás se compara como siempre
+test('T58 Mockup_DatoDeEjemplo_NoSeCompara: con example: true se dibuja como dato de ejemplo y no se compara con la pantalla', () => {
+  const MK = require(MOCKUP);
+  const m = CON_FILTRO();
+  m.screens[0].elements.push({ kind: 'text', text: 'Versión 13, de un usuario de prueba, ayer', example: true });
+  assert.deepStrictEqual(MK.validateModel(m), []);
+  const html = armar(m);
+  assert.match(html, /<div class="example"><p class="text">Versión 13, de un usuario de prueba, ayer<\/p><span class="example-note">dato de ejemplo<\/span><\/div>/);
+  const textos = MK.mockupTexts(html).map((t) => t.text);
+  assert.ok(!textos.includes('Versión 13, de un usuario de prueba, ayer'), 'el dato de ejemplo no se compara');
+  assert.ok(textos.includes('Facturas'), 'lo demás se compara');
+  // un dato de ejemplo no es relleno: no se rechaza por «texto de ejemplo»
+  const relleno = CON_FILTRO();
+  relleno.screens[0].elements.push({ kind: 'text', text: 'Texto de ejemplo', example: true });
+  assert.deepStrictEqual(MK.validateModel(relleno), []);
+  // example es true o false
+  const malo = CON_FILTRO();
+  malo.screens[0].elements.push({ kind: 'text', text: 'Otra cosa', example: 'sí' });
+  assert.ok(MK.validateModel(malo).some((p) => /`example` tiene que ser true o false/.test(p)), JSON.stringify(MK.validateModel(malo)));
+  // el esquema lo explica
+  const esquema = spawnSync(process.execPath, [MOCKUP, 'schema'], { encoding: 'utf8' }).stdout;
+  assert.match(esquema, /- "example": true, en cualquier elemento, lo marca como dato de ejemplo/);
+});
+
+// Shots_BajoUnaCapa_NoCuenta: lo que queda debajo de una capa (una ventana, un diálogo) no se lee y no es un hallazgo,
+// aunque no esté marcado aria-hidden; sin la capa, lo mismo sí cuenta
+test('T59 Shots_BajoUnaCapa_NoCuenta: lo tapado por una capa que no lo contiene no cuenta; sin la capa, sí', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const fondo = '<div style="position:relative;width:380px"><p style="margin:0">Fondo uno</p><span style="position:absolute;top:0;left:0">Fondo dos</span>'
+    + '<div style="overflow:hidden;width:120px"><div style="width:600px;white-space:nowrap">un renglón de fondo que no entra</div></div></div>';
+  const capa = '<div role="dialog" style="position:absolute;inset:0;background:rgba(29,36,51,.55)"><p style="margin:40px 0 0">La ventana</p></div>';
+  const con = path.join(TMP, 'capa-mockup.html');
+  fs.writeFileSync(con, `<!doctype html><html><body style="margin:0"><div style="position:relative">${fondo}${capa}</div></body></html>`);
+  const r = await SHOTS.revisar({ mockupPath: con, pw: PW });
+  assert.ok(!r.error, r.error);
+  assert.deepStrictEqual(r.findings, [], JSON.stringify(r.findings, null, 1));
+  const sin = path.join(TMP, 'sin-capa-mockup.html');
+  fs.writeFileSync(sin, `<!doctype html><html><body style="margin:0"><div style="position:relative">${fondo}</div></body></html>`);
+  const s = await SHOTS.revisar({ mockupPath: sin, pw: PW });
+  const tipos = new Set(s.findings.map((x) => x.kind));
+  assert.ok(tipos.has('se pisan') && tipos.has('recortado'), JSON.stringify(s.findings));
+});
