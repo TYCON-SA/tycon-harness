@@ -403,3 +403,15 @@ test('T19 SignaturesGuide_NotifiedSection_NamesMockupAndPending @story-8.255 @ac
   for (const comando of ['approve-mockup', 'approve-pending']) assert.ok(seccion.includes(comando), `la sección no nombra ${comando}`);
   assert.match(seccion, /control\s+previo/, 'la sección dice la regla');
 });
+
+// 🔴 Falla con: la guía sin decir que el cambio de un control se aprueba con un click, que la CI sigue pidiendo la
+// constancia, o qué muestra el agente antes del cuadro.
+test('8.176-Guia_ControlChange_ConUnClickYLaCi @story-8.176 @ac-8', () => {
+  const guia = fs.readFileSync(GUIA, 'utf8');
+  const i = guia.indexOf('**El cambio de controles se aprueba con un click**');
+  assert.ok(i >= 0, 'la guía tiene el párrafo del click para control-change');
+  const parrafo = guia.slice(i, guia.indexOf('\n\n', i) < 0 ? undefined : guia.indexOf('\n\n', i)).replace(/\s+/g, ' ');
+  for (const re of [/`control-change`/, /constancia/, /sale en rojo/, /run-base-controls\.sh pending/, /diff/, /cuántos archivos/, /terminal/]) {
+    assert.match(parrafo, re, `el párrafo dice ${re}`);
+  }
+});

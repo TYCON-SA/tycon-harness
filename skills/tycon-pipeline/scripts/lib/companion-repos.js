@@ -31,6 +31,21 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseEvidenceConfig, discoverRepoRoot } = require('./evidence-config.js');
 
+// El entorno de cada git que pregunta por un hermano: sin el GIT_DIR, el GIT_WORK_TREE y compañía que llegan adentro de
+// un gancho de git o de un guion de otro repo (con ellos, `git -C <hermano>` contesta por ese otro repo), y con el idioma
+// fijo, porque los errores se leen por su texto.
+// Con las skills instaladas aparte del arnés no está scripts/lib: se sacan igual las variables que apuntan a otro repo
+// (lo que se le pregunta a git acá, rutas y nombres de rama, no depende del idioma).
+const entornoDeGit = () => {
+  let cge;
+  try { cge = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')); } catch (_) { cge = null; }
+  if (cge) return cge.idiomaFijo(cge.sinGitDelPadre());
+  const env = { ...process.env };
+  for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES']) delete env[k];
+  return env;
+};
+
 /**
  * La ruta real (enlaces resueltos; en macOS /tmp ↔ /private/tmp). Si no existe (un archivo borrado en el diff, o uno
  * que la story todavía va a crear), la real del ancestro que sí existe más el resto tal cual — la misma regla que
@@ -100,7 +115,7 @@ const RAMAS = new Map();
 function ramaDe(dir) {
   if (!dir) return null;
   return require('./git-stamp.js').memo(RAMAS, dir, 'rama', () => {
-    const r = spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--short', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+    const r = spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--short', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: entornoDeGit() });
     // salida 1 con -q = cabeza suelta; cualquier otra cosa es git que no contestó, y se dice
     if (r.error || (r.status !== 0 && r.status !== 1)) {
       avisar(`no pude leer la rama de ${dir} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): los repos hermanos se leen como están declarados`);
@@ -176,18 +191,19 @@ function enLaMismaRama(declarado, rama, numero) {
   const deLaStory = rama ? `la rama ${rama}` : `la story ${numero}`;
   // Un declarado que no es un repo git no tiene ramas ni worktrees: se usa tal cual y se dice una vez, con el motivo
   // exacto (suele ser una ruta mal declarada). Cualquier otra falla de git (un .git roto) sigue al aviso de abajo.
-  const repo = spawnSync('git', ['-C', declarado, 'rev-parse', '--git-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo() });
+  const env = entornoDeGit();
+  const repo = spawnSync('git', ['-C', declarado, 'rev-parse', '--git-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
   if (!repo.error && repo.status !== 0 && /not a git repository/i.test(String(repo.stderr || ''))) {
     avisar(`no pude listar los worktrees de ${declarado}: no es un repo git, uso la carpeta tal cual (¿la ruta de companion_repos está bien declarada?)`);
     return declarado;
   }
-  const r = spawnSync('git', ['-C', declarado, 'worktree', 'list', '--porcelain'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  const r = spawnSync('git', ['-C', declarado, 'worktree', 'list', '--porcelain'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
   if (r.error || r.status !== 0) {
     avisar(`no pude listar los worktrees de ${declarado} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): uso el declarado, que puede no ser el código de ${deLaStory}`);
     return declarado;
   }
   // Un hermano declarado como subcarpeta de su repo es esa subcarpeta también en el worktree.
-  const top = spawnSync('git', ['-C', declarado, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  const top = spawnSync('git', ['-C', declarado, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
   if (top.error || top.status !== 0) {
     avisar(`no pude leer la raíz git de ${declarado} (${(top.error && (top.error.code || top.error.message)) || String(top.stderr || '').trim().split('\n')[0] || `git salió ${top.status}`}): uso el declarado, que puede no ser el código de ${deLaStory}`);
     return declarado;
@@ -491,7 +507,7 @@ function declaredFor(storyRepo, storyPath, targetRepo) {
   const propio = real(storyRepo);
   const objetivo = real(targetRepo);
   const comunDe = (dir) => {
-    const r = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+    const r = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: entornoDeGit() });
     return r.status === 0 ? real(r.stdout.trim()) : null;
   };
   const comunObjetivo = objetivo === propio ? null : comunDe(objetivo);
@@ -547,7 +563,7 @@ const TOPE_DE_HUELLAS = 50;
  * porque el ancla viaja con la evidencia.
  */
 function nombreDelRepo(dir) {
-  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000, env: entornoDeGit() });
   if (r.error || r.status !== 0) return null;
   const comun = path.resolve(dir, String(r.stdout).trim());
   return path.basename(path.basename(comun) === '.git' ? path.dirname(comun) : comun);
@@ -556,10 +572,10 @@ function nombreDelRepo(dir) {
 // Lo que el hermano tiene sin commitear, con la huella que tendría en git; `null` si el archivo se borró. Las rutas van desde la
 // raíz del repo, como las da git: un hermano declarado como subcarpeta mira sólo lo suyo.
 function huellasSinCommitear(raiz) {
-  const top = spawnSync('git', ['-C', raiz, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const top = spawnSync('git', ['-C', raiz, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000, env: entornoDeGit() });
   if (top.error || top.status !== 0) return { motivo: 'no pude leer su raíz' };
   const repo = String(top.stdout).trim();
-  const git = (...a) => spawnSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const git = (...a) => spawnSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000, env: entornoDeGit() });
   const estado = git('status', '--porcelain', '-z', '--no-renames', '--untracked-files=all', '--', path.relative(repo, raiz) || '.');
   if (estado.error || estado.status !== 0) return { motivo: 'no pude leer sus cambios' };
   const lineas = String(estado.stdout).split('\0').filter(Boolean);
@@ -588,7 +604,7 @@ function anclasDeLaEvidencia(repo, historia) {
   return parseEvidenceConfig(repo).roots.map((declarado) => {
     const raiz = enLaMismaRama(real(declarado), rama, /\d/.test(numero || '') ? numero : null);
     const nombre = nombreDelRepo(raiz) || path.basename(raiz);
-    const head = spawnSync('git', ['-C', raiz, 'rev-parse', '--verify', '-q', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+    const head = spawnSync('git', ['-C', raiz, 'rev-parse', '--verify', '-q', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000, env: entornoDeGit() });
     const commit = head.status === 0 ? String(head.stdout).trim() : '';
     if (!commit) return { repo: nombre, sinAncla: 'no pude leer su commit' };
     const { huellas, motivo } = huellasSinCommitear(raiz);

@@ -552,6 +552,12 @@
       "requiere": []
     },
     {
+      "__nota": "el entorno de pruebas que declara la organización (stack.test_environments): se valida, el portón lo prepara antes de la suite y lo desarma al terminar, y si no queda listo sale 8, «entorno sin preparar», sin correr la suite (herramienta falsa en el PATH).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-environment.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la puerta de pruebas con el back en pytest en una subcarpeta y el front con Playwright (herramientas falsas en el PATH); lo que no sabe correr deja constancia y el check queda «sin medir» (story 7.45).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-gate-project-folder.test.js",
@@ -677,6 +683,12 @@
       "__nota": "marker.js review-answer: «skip» y «wait» a la pregunta del plan o del código sólo con el click del dueño (o su terminal), de punta a punta con el freno y el guion; sin él, con la ventana, la delegación o el click de otro pedido no se anota; «review» sí, sin firma.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/review-answer-owner-click.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la maqueta queda con mode user sólo con la vía de una persona y su cita no es la opción que sigue; --replace-delegated (approve-plan y approve-mockup) vuelve a firmar lo aprobado sin persona sólo con el click o el «aprobado» del dueño a ese pedido: sin él, o con el de otro pedido, no escribe nada. Los guiones de verdad en una casa de juguete; unos veinte segundos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/mockup-approval-person.test.js",
       "requiere": []
     },
     {
@@ -1145,6 +1157,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 106: un `node -e` con «sed -i» en un texto y un `sed -i ''` con la comilla simple metida no son historias escritas por consola; lo que escribe una historia sigue frenando.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-false-story.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.278: el lector de comandos. marker.js y pipeline.js cuentan sólo donde se corren, no donde otro programa los nombra.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/marker-command.test.js",
@@ -1304,6 +1322,12 @@
       "__nota": "story 8.109: el estado de la historia y el marcador no se tocan a mano (consola, Edit, apply_patch).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/status-by-hand.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 110 (22/11): el control de la escritura de una historia lee la tanda que pasa a done por su nombre y, ante una lectura dudosa del bloque, mide. Gancho de verdad con HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/frontmatter-batch-done.test.js",
       "requiere": []
     },
     {
@@ -4996,6 +5020,12 @@
       "__nota": "el reloj propio del freno de seguridad: con un jq que se queda esperando (y un nieto que deja la salida abierta), el freno frena a su tope en vez de dejar que venza el de la herramienta, que correría el comando sin mirar; un comando común no espera y un tope fuera de rango usa el de fábrica. Salteada en Windows: el jq de mentira no se lanza sin .exe.",
       "raiz": "arnes",
       "ruta": "tests/safety-guard-clock.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la medición por paso del freno de seguridad (TYCON_SAFETY_TRACE): anota el total del freno al salir, también cuando lo corta su reloj, y cada node que lanza (y lo que lanzan ellos) con su arranque y lo que tardó, sin los valores del comando; sin la variable no anota y con ella no cambia ninguna decisión. Salteada en Windows: el jq de mentira no se lanza sin .exe.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-guard-trace.test.js",
       "requiere": []
     },
     {
