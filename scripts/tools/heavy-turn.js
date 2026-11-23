@@ -23,8 +23,17 @@
  *
  *   take --what <qué corre> [--process <pid>]   0 = turno tomado (o no hay coordinadora) · 77 = no hay lugar, y dice por qué
  *   release [--process <pid>]                   suelta el lugar de ese proceso; el de otro no lo toca
+ *   release --reserve                           suelta la reserva (la coordinadora, o la sesión que la puso)
+ *   grant --to <sesión>                         el «arrancá» de la coordinadora para una sesión de la fila (2 = no se puede)
+ *   reserve --for "<qué>"                       la coordinadora reserva el turno para revisores o un pase (77 = ya corre una)
  *   holder [--json]                         la ejecución grande más vieja que corre, o nadie
  *   holders [--json]                        las que corren, de la más vieja a la más nueva
+ *
+ * Con una coordinadora designada y viva, el turno libre no se toma solo: quien recibió un 77 queda en la fila
+ * (`suite-waits/`) y lo toma sólo con el «arrancá» a su nombre (`suite-grant.json`, vence a los 10 min o con su sesión
+ * cerrada); mientras un «arrancá» está vigente, nadie más lo toma. La reserva (`suite-reserve.json`) lo toma a nombre de
+ * lo que la coordinadora lanzó y no tiene proceso: vence a los 90 min, o a los 10 con su sesión cerrada. Quien no es un
+ * portón (la suite rápida, `queue: false`) no entra a la fila ni gasta el «arrancá» de su sesión.
  *
  * Un portón que no toma el turno (acotado, de menos suites que el corte) igual borra la espera anotada de su sesión al
  * arrancar (`gateStarted`) y, con coordinadora, se anota en `<estado>/coordination/gates/<pid>.json` mientras corre: la
@@ -121,10 +130,10 @@ const byAge = (a, b) => (Number(a.at) - Number(b.at)) || (Number(a.pid) - Number
 
 /**
  * Las ejecuciones grandes que corren: `[{ pid, sid, session, what, at }]`, de la más vieja a la más nueva. Con `problems`,
- * el lugar que no se puede leer se anota ahí.
+ * el lugar que no se puede leer se anota ahí. Con `state`, se leen de esa carpeta de estado en vez de la de `home`.
  */
-function holders({ home = require('os').homedir(), now = Date.now(), problems = null } = {}) {
-  return slotFiles(home).map((f) => readSlot(f, problems).turn).filter((t) => inForce(t, now)).sort(byAge);
+function holders({ home = require('os').homedir(), now = Date.now(), problems = null, state = null } = {}) {
+  return (state ? slotFilesIn(state) : slotFiles(home)).map((f) => readSlot(f, problems).turn).filter((t) => inForce(t, now)).sort(byAge);
 }
 
 /** La ejecución grande más vieja que corre, `{ pid, sid, session, what, at }`, o null; `problems` como en `holders`. */
@@ -240,20 +249,44 @@ function passHolder({ home, env, now, sid }) {
  * memoria debajo del piso o sin medir, o un pase en vuelo), y el mensaje dice por qué y quién corre; `note` es lo que hay
  * que decir aunque se haya tomado (también va a la salida de errores). `readMemory` mide la memoria libre (`freeMemory`).
  */
-function take({ home = require('os').homedir(), env = process.env, arnes, pid = process.pid, what, now = Date.now(), readMemory = freeMemory } = {}) {
+function take({ home = require('os').homedir(), env = process.env, arnes, pid = process.pid, what, now = Date.now(), readMemory = freeMemory, queue = true } = {}) {
   const role = coordinator({ home, env, arnes });
   if (!role) return { ok: true, taken: false, message: null };
   const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
+  // La fila del «arrancá» vale sólo con una coordinadora designada y viva, que es quien lo da: con el turno prendido a
+  // mano (TYCON_SUITE_TURN=1) y nadie designado, un portón anotado quedaría frenado sin nadie que lo destrabe.
+  const lined = queue && Boolean(sid) && designatedAlive(home);
+  // todo «no» a un portón lo anota en la fila: desde ahí, el turno libre lo toma con el «arrancá» de la coordinadora
+  const refuse = (r) => { if (lined) noteWait(home, sid, what, now); return r; };
   const { pass, note } = passHolder({ home, env, now, sid });
   if (note) process.stderr.write(`heavy-turn: ${note}\n`);
   if (pass) {
-    return { ok: false, taken: false, note, holder: { kind: 'pass', storyId: pass.storyId, session: pass.session, since: pass.since },
-      message: `Hay un pase adversarial en vuelo en esta máquina: pase adversarial de la ${oneLine(pass.storyId) || 'sin story'} (${oneLine(pass.session)}, desde las ${hhmmIso(pass.since)}). Va una tarea pesada por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que su sesión anote el resultado, o pedile turno a la ${role}.` };
+    return refuse({ ok: false, taken: false, note, holder: { kind: 'pass', storyId: pass.storyId, session: pass.session, since: pass.since },
+      message: `Hay un pase adversarial en vuelo en esta máquina: pase adversarial de la ${oneLine(pass.storyId) || 'sin story'} (${oneLine(pass.session)}, desde las ${hhmmIso(pass.since)}). Va una tarea pesada por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que su sesión anote el resultado, o pedile turno a la ${role}.` });
   }
+  const reserved = reserveInForce({ home, now });
+  if (reserved && reserved.sid !== sid) {
+    return refuse({ ok: false, taken: false, note, holder: { kind: 'reserve', ...reserved },
+      message: `El turno de tarea pesada está reservado por la ${role} para «${oneLine(reserved.what)}» (${oneLine(reserved.session) || 'su sesión'}, desde las ${hhmm(reserved.at)}): esperá que lo suelte, o pedile turno a la ${role} (guides/coordination.md, «Lo pesado, con turno»).` });
+  }
+  // el «arrancá»: quien ya está en la fila toma el turno sólo con el suyo; quien no, no toma el que se le dio a otra
+  const grant = grantInForce({ home, now });
+  const mineGrant = Boolean(grant && sid && grant.to === sid);
+  const waited = lined ? readWait(home, sid, now) : null;
+  const notYours = waited && !mineGrant
+    ? `Esperá el «arrancá» de la ${role}: anotaste que esperabas turno a las ${hhmm(waited.at)}, y con coordinadora el turno libre no se toma solo. Avisale que estás lista; ella lo da con heavy-turn.js grant --to ${sid}.`
+    : !waited && grant && !mineGrant
+      ? `La ${role} le dio el «arrancá» a ${sessionName(home, grant.to)} a las ${hhmm(grant.at)}: el turno es suyo hasta que lo tome o venza (${GRANT_MS / 60000} min). Esperá, o pedile turno a la ${role}.`
+      : null;
   const files = slotFiles(home);
   fs.mkdirSync(path.dirname(files[0]), { recursive: true });
   const mine = { pid, sid, session: sessionName(home, sid), what: oneLine(what) || 'ejecución grande', at: now };
-  const taken = () => { clearWait(home, sid); return { ok: true, taken: true, message: null, note }; };
+  // quien no es un portón (la suite rápida) no toca la espera de su sesión: es la del portón que todavía espera
+  const taken = () => {
+    if (queue) clearWait(home, sid);
+    if (lined) { dropWait(home, sid); if (mineGrant) dropGrant(home, sid); }
+    return { ok: true, taken: true, message: null, note };
+  };
   const wait = `esperá que termine, o pedile turno a la ${role} (guides/coordination.md, «Lo pesado, con turno»)`;
   const unstick = (ts) => `Si quedó colgada, se destraba con ${ts.map((t) => `heavy-turn.js release --process ${Number(t.pid)}`).join(' o con ')}.`;
   let floor = null;
@@ -266,16 +299,16 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
     // quien ya tiene un lugar no es otra ejecución: no mide ni ocupa el otro
     if (running.some((t) => Number(t.pid) === pid)) return taken();
     if (running.length >= 2) {
-      return { ok: false, taken: false, note, holder: running[0], holders: running,
-        message: `Ya corren dos ejecuciones grandes de pruebas en esta máquina: ${running.map(describe).join(' y ')}. Van dos como mucho: ${wait.replace('que termine', 'que termine una')}. ${unstick(running)}` };
+      return refuse({ ok: false, taken: false, note, holder: running[0], holders: running,
+        message: `Ya corren dos ejecuciones grandes de pruebas en esta máquina: ${running.map(describe).join(' y ')}. Van dos como mucho: ${wait.replace('que termine', 'que termine una')}. ${unstick(running)}` });
     }
     if (running.length === 1) {
       const [t] = running;
       const head = `Ya corre una ejecución grande de pruebas en esta máquina: ${describe(t)}.`;
-      const refuse = (why) => ({ ok: false, taken: false, note, holder: t, holders: running, message: `${head} ${why}: ${wait}. ${unstick([t])}` });
+      const second = (why) => refuse({ ok: false, taken: false, note, holder: t, holders: running, message: `${head} ${why}: ${wait}. ${unstick([t])}` });
       const other = slots.find((s) => !(s.turn && Number(s.turn.pid) === Number(t.pid) && inForce(s.turn, now)));
       // un lugar que no se lee puede ser de alguien que corre: el segundo no se da a ciegas
-      if (other.unreadable) return refuse(`El otro lugar del turno (${oneLine(path.basename(other.file))}) no se puede leer, así que no doy el segundo turno`);
+      if (other.unreadable) return second(`El otro lugar del turno (${oneLine(path.basename(other.file))}) no se puede leer, así que no doy el segundo turno`);
       if (!floor) {
         floor = secondTurnFloor({ home, env, arnes });
         if (floor.problem) process.stderr.write(`heavy-turn: ${floor.problem}: uso el piso de fábrica, ${floor.value} %\n`);
@@ -283,8 +316,9 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
       if (!mem) {
         try { mem = readMemory() || { pct: null, why: 'sin motivo' }; } catch (e) { mem = { pct: null, why: oneLine(e.message) }; }
       }
-      if (mem.pct == null) return refuse(`La segunda no arranca: no pude medir la memoria libre: ${oneLine(mem.why) || 'sin motivo'}; sin medirla no se da el segundo turno`);
-      if (mem.pct < floor.value) return refuse(`La segunda corre con la memoria libre en el piso o arriba, y está en ${mem.pct} % (${floorText(floor)})`);
+      if (mem.pct == null) return second(`La segunda no arranca: no pude medir la memoria libre: ${oneLine(mem.why) || 'sin motivo'}; sin medirla no se da el segundo turno`);
+      if (mem.pct < floor.value) return second(`La segunda corre con la memoria libre en el piso o arriba, y está en ${mem.pct} % (${floorText(floor)})`);
+      if (notYours) return refuse({ ok: false, taken: false, note, holder: t, holders: running, message: `${head} Hay lugar para una segunda, pero: ${notYours}` });
       evict(other.file, now);
       if (publish(other.file, mine)) {
         process.stderr.write(`heavy-turn: segunda ejecución grande: memoria libre ${mem.pct} %, ${floorText(floor)}\n`);
@@ -294,10 +328,137 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
     }
     // ninguna corre: los lugares vencidos se sacan y se publica el primero, sólo ése. Quien pierde la publicación vuelve a
     // contar: si probara el otro lugar, quedaría segundo sin medir la memoria.
+    if (notYours) return refuse({ ok: false, taken: false, note, message: `El turno de las ejecuciones grandes está libre. ${notYours}` });
     for (const s of slots) evict(s.file, now);
     if (publish(files[0], mine)) return taken();
   }
-  return { ok: false, taken: false, message: `No pude tomar el turno de las ejecuciones grandes (${files[0]} vuelve a aparecer): no la corrí.` };
+  return refuse({ ok: false, taken: false, message: `No pude tomar el turno de las ejecuciones grandes (${files[0]} vuelve a aparecer): no la corrí.` });
+}
+
+// ── El «arrancá» de la coordinadora, la fila de los portones que esperan y la reserva (guides/coordination.md) ──────
+// Con coordinadora, un portón que recibió 77 queda anotado en `suite-waits/<sesión>.json` y toma el turno libre sólo con
+// el «arrancá» (`suite-grant.json`) a su nombre: si no, el primero que reintenta se lo lleva encima de lo que la
+// coordinadora ya lanzó. La reserva (`suite-reserve.json`) es el turno tomado a nombre de unos revisores o un pase, que no
+// tienen proceso propio: su dueña es la sesión de la coordinadora y sus topes se cuentan desde `at`.
+const GRANT_MS = 10 * 60000;
+const RESERVE_MS = 90 * 60000;
+const coordDir = (home) => path.join(stateDir(home), 'coordination');
+const waitsDir = (home) => path.join(coordDir(home), 'suite-waits');
+const grantFile = (home) => path.join(coordDir(home), 'suite-grant.json');
+const reserveFile = (home) => path.join(coordDir(home), 'suite-reserve.json');
+const safeSid = (sid) => String(sid).replace(/[/\\]/g, '_');
+const sessionAlive = (home, sid) => { const s = sid && sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null).get(String(sid)); return Boolean(s && s.alive); };
+
+// Entero y de una, como el turno: escrito directo, se vería vacío mientras se escribe.
+function writeWhole(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try { fs.writeFileSync(tmp, JSON.stringify(value)); fs.renameSync(tmp, file); } finally { try { fs.unlinkSync(tmp); } catch { /* ya renombrado */ } }
+}
+
+/**
+ * La espera anotada de `sid` (`{ sid, what, at }`), o null. Una de más de TURN_MAX_MS ya no cuenta, y se borra; con
+ * `keep` (quien sólo lee, como la fila de la coordinadora) no se borra.
+ */
+function readWait(home, sid, now = Date.now(), { keep = false } = {}) {
+  const file = path.join(waitsDir(home), `${safeSid(sid)}.json`);
+  const w = readTurn(file);
+  if (!w) return null;
+  if (!Number.isFinite(w.at) || now - w.at >= TURN_MAX_MS) {
+    if (!keep) { try { fs.unlinkSync(file); } catch { /* otro la borró */ } }
+    return null;
+  }
+  return w;
+}
+// Anotar no frena el 77: una espera que no se puede escribir se dice y el portón espera igual.
+function noteWait(home, sid, what, now) {
+  if (readWait(home, sid, now)) return;
+  try { writeWhole(path.join(waitsDir(home), `${safeSid(sid)}.json`), { sid, what: oneLine(what) || 'ejecución grande', at: now }); } catch (e) {
+    process.stderr.write(`heavy-turn: no pude anotar la espera de esta sesión en la fila (${e.code || oneLine(e.message)})\n`);
+  }
+}
+function dropWait(home, sid) { try { fs.unlinkSync(path.join(waitsDir(home), `${safeSid(sid)}.json`)); } catch { /* no estaba */ } }
+
+/** El «arrancá» vigente (`{ to, by, at }`): su sesión vive y no pasaron GRANT_MS. Uno vencido queda escrito y es null. */
+function grantInForce({ home = require('os').homedir(), now = Date.now() } = {}) {
+  const g = readTurn(grantFile(home));
+  return g && g.to && Number.isFinite(g.at) && now - g.at < GRANT_MS && sessionAlive(home, g.to) ? g : null;
+}
+/** El último «arrancá» escrito, vigente o no, para la fila: `{ to, by, at, inForce }` o null. */
+function lastGrant({ home = require('os').homedir(), now = Date.now() } = {}) {
+  const g = readTurn(grantFile(home));
+  return g && g.to ? { ...g, inForce: Boolean(grantInForce({ home, now })) } : null;
+}
+function dropGrant(home, sid) {
+  const g = readTurn(grantFile(home));
+  if (g && g.to === sid) { try { fs.unlinkSync(grantFile(home)); } catch { /* otro lo borró */ } }
+}
+
+/** La reserva vigente (`{ sid, session, what, at }`): menos de RESERVE_MS, y menos de GRANT_MS si su sesión ya no vive. */
+function reserveInForce({ home = require('os').homedir(), now = Date.now() } = {}) {
+  const r = readTurn(reserveFile(home));
+  if (!r || !Number.isFinite(r.at) || now - r.at >= RESERVE_MS) return null;
+  return now - r.at < GRANT_MS || sessionAlive(home, r.sid) ? r : null;
+}
+
+// ¿Hay una coordinadora designada y viva? Sin ella no hay quien dé el «arrancá».
+function designatedAlive(home) {
+  const d = designacionVigente({ home });
+  return Boolean(d && !d.error && d.sesion && sessionAlive(home, d.sesion));
+}
+
+// ¿`sid` es la coordinadora designada y viva? Sólo ella da el «arrancá» y reserva el turno.
+function coordinatorSession({ home, env, arnes, sid }) {
+  const role = coordinator({ home, env, arnes });
+  if (!role) return { role: null, why: 'no hay coordinadora designada y viva en esta máquina' };
+  const d = designacionVigente({ home });
+  if (!d || d.error || d.sesion !== sid) return { role, why: `sólo la ${role} da el «arrancá» o reserva el turno` };
+  return { role, why: null };
+}
+
+/** La sesión viva que nombra `to`: su id entero, el comienzo de su id (8 o más) o su nombre. `{ sid }` o `{ error }`. */
+function resolveSession(home, to) {
+  const all = [...sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null)].filter(([, s]) => s.alive);
+  const key = String(to || '').trim();
+  if (!key) return { error: 'falta --to <sesión>' };
+  const exact = all.find(([sid]) => sid === key);
+  if (exact) return { sid: exact[0] };
+  const hits = all.filter(([sid, s]) => (key.length >= 8 && sid.startsWith(key)) || (s.name && s.name === key));
+  if (hits.length === 1) return { sid: hits[0][0] };
+  if (hits.length > 1) return { error: `«${oneLine(key)}» nombra a ${hits.length} sesiones vivas: pasá su id` };
+  return { error: `ninguna sesión viva se llama «${oneLine(key)}»` };
+}
+
+/** El «arrancá» de la coordinadora para `to`: `{ ok, code, message }` (code 2 = no se puede dar). */
+function grant({ home = require('os').homedir(), env = process.env, arnes, to, now = Date.now() } = {}) {
+  const by = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
+  const c = coordinatorSession({ home, env, arnes, sid: by });
+  if (c.why) return { ok: false, code: 2, message: c.why };
+  const r = resolveSession(home, to);
+  if (r.error) return { ok: false, code: 2, message: r.error };
+  writeWhole(grantFile(home), { to: r.sid, by, at: now });
+  return { ok: true, code: 0, message: `«arrancá» para ${sessionName(home, r.sid)}: el turno libre es suyo por ${GRANT_MS / 60000} min` };
+}
+
+/** La reserva del turno para «what» (revisores, un pase): `{ ok, code, message }`; 77 si corre una ejecución grande. */
+function reserve({ home = require('os').homedir(), env = process.env, arnes, what, now = Date.now() } = {}) {
+  const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
+  const c = coordinatorSession({ home, env, arnes, sid });
+  if (c.why) return { ok: false, code: 2, message: c.why };
+  if (!oneLine(what)) return { ok: false, code: 2, message: 'falta --for "<qué>"' };
+  const running = holders({ home, now });
+  if (running.length) return { ok: false, code: BUSY_EXIT, message: `No reservo: ya corre ${running.map(describe).join(' y ')}. La reserva no la pisa: esperá que termine.` };
+  writeWhole(reserveFile(home), { sid, session: sessionName(home, sid), what: oneLine(what), at: now });
+  return { ok: true, code: 0, message: `turno reservado para «${oneLine(what)}» hasta release --reserve, o ${RESERVE_MS / 60000} min` };
+}
+
+/** Suelta la reserva; la suelta la coordinadora o la sesión que la puso. */
+function releaseReserve({ home = require('os').homedir(), env = process.env, arnes } = {}) {
+  const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
+  const r = readTurn(reserveFile(home));
+  if (!r) return false;
+  if (r.sid !== sid && coordinatorSession({ home, env, arnes, sid }).why) return false;
+  try { fs.unlinkSync(reserveFile(home)); return true; } catch { return false; }
 }
 
 const gatesDirIn = (state) => path.join(state, 'coordination', 'gates');
@@ -423,6 +584,26 @@ function freeMemory({ platform = process.platform, run, readFile } = {}) {
 }
 
 /**
+ * La memoria de intercambio libre, en porcentaje: `{ pct, why, none }`. Es lo que se acaba antes de que Claude Code cierre
+ * sesiones quietas, aunque la memoria libre del sistema parezca de sobra. En macOS, `sysctl vm.swapusage`; sin
+ * intercambio en uso (total 0), `none: true` y `pct` null. En otro sistema no se mide: `pct` null con el motivo.
+ */
+function swapFree({ platform = process.platform, run } = {}) {
+  if (platform !== 'darwin') return { pct: null, why: `no sé medirla en ${platform}`, none: false };
+  try {
+    // con el idioma fijo: en castellano, sysctl escribe el decimal con coma («7168,00M»); igual se aceptan las dos formas
+    const text = String((run || (() => require('child_process').execFileSync('sysctl', ['vm.swapusage'], { encoding: 'utf8', timeout: 5000, windowsHide: true, env: require('../lib/clean-git-env.js').idiomaFijo(process.env) })))());
+    const mb = (k) => { const m = new RegExp(`${k}\\s*=\\s*(\\d+(?:[.,]\\d+)?)([KMGT])`, 'i').exec(text); return m ? Number(m[1].replace(',', '.')) * ({ K: 1 / 1024, M: 1, G: 1024, T: 1048576 }[m[2].toUpperCase()]) : null; };
+    const total = mb('total');
+    const free = mb('free');
+    if (total == null || free == null) return { pct: null, why: 'sysctl vm.swapusage no dio el total y lo libre', none: false };
+    if (total === 0) return { pct: null, why: 'sin memoria de intercambio en uso', none: true };
+    // hacia abajo: un 14,6 % libre es menos del 15 %, y redondeado diría 15 y no avisaría
+    return { pct: Math.floor((free / total) * 100), why: null, none: false };
+  } catch (e) { return { pct: null, why: oneLine(e.message), none: false }; }
+}
+
+/**
  * Si un portón acotado de `suites` suites puede correr ahora: `{ ok, message, pass, note }`. Sin coordinadora, o sin un
  * pase en vuelo, sí, y la memoria no se mira. Con un pase en vuelo, sólo si son `BESIDE_PASS_MAX_SUITES` o menos, no
  * hay otro portón al lado y la memoria libre llega al piso. `pass` es el pase al lado, para la relectura.
@@ -486,7 +667,17 @@ function main(argv) {
     if (!r.ok) process.stderr.write(`${r.message}\n`);
     return r.ok ? 0 : BUSY_EXIT;
   }
+  if (cmd === 'release' && rest.includes('--reserve')) {
+    const done = releaseReserve();
+    process.stdout.write(done ? 'reserva suelta\n' : 'no había reserva tuya que soltar\n');
+    return 0;
+  }
   if (cmd === 'release') { release({ pid }); return 0; }
+  if (cmd === 'grant' || cmd === 'reserve') {
+    const r = cmd === 'grant' ? grant({ to: val('--to') }) : reserve({ what: val('--for') });
+    (r.ok ? process.stdout : process.stderr).write(`${r.message}\n`);
+    return r.code;
+  }
   if (cmd === 'holder') {
     const t = holder();
     process.stdout.write(rest.includes('--json') ? `${JSON.stringify(t)}\n` : `${t ? describe(t) : 'nadie'}\n`);
@@ -497,10 +688,10 @@ function main(argv) {
     process.stdout.write(rest.includes('--json') ? `${JSON.stringify(all)}\n` : `${all.length ? all.map(describe).join('\n') : 'nadie'}\n`);
     return 0;
   }
-  process.stderr.write('uso: heavy-turn.js take --what <qué> [--process <pid>] | release [--process <pid>] | holder [--json] | holders [--json]\n');
+  process.stderr.write('uso: heavy-turn.js take --what <qué> [--process <pid>] | release [--process <pid>] | release --reserve | grant --to <sesión> | reserve --for "<qué>" | holder [--json] | holders [--json]\n');
   return 2;
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { take, release, holder, holders, coordinator, secondTurnFloor, describe, turnFile, slotFiles, SECOND_HEAVY_MIN_FREE_PCT, clearWait, gateStarted, gateEnded, gatesRunning, runningSids, isTurnWait, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };
+module.exports = { take, release, holder, holders, coordinator, secondTurnFloor, grant, reserve, releaseReserve, grantInForce, lastGrant, reserveInForce, readWait, swapFree, GRANT_MS, RESERVE_MS, describe, turnFile, slotFiles, SECOND_HEAVY_MIN_FREE_PCT, clearWait, gateStarted, gateEnded, gatesRunning, runningSids, isTurnWait, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };

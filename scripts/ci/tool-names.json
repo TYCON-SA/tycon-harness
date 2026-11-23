@@ -19,7 +19,11 @@
       "reason": "compara el perfil de antes de la mudanza con el nuevo: nombra las rutas viejas a propósito"
     },
     {
-      "path": "skills/tycon-pipeline/scripts/marker.js",
+      "path": "skills/tycon-pipeline/scripts/lib/marker-lifecycle.js",
+      "reason": "lee la bandera vieja del aviso de trabajo de los marcadores de sesiones en curso"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/lib/marker-shared.js",
       "reason": "lee la bandera vieja del aviso de trabajo de los marcadores de sesiones en curso"
     },
     {

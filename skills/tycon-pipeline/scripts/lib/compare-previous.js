@@ -149,11 +149,19 @@ function encierro(env = process.env) {
   return { nombre: 'ninguno', corta: 'nada: corren con las otras capas' };
 }
 const sbplString = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+const subpaths = (rutas) => [...new Set(rutas.flatMap((p) => [p, real(p)]))].map((p) => `(subpath ${sbplString(p)})`).join(' ');
 // `red`: deja la red abierta (la corrida aislada de un humo, historia 8.314: sus guiones hablan con localhost); la
-// comparación la corta
-function perfilSandbox(escribibles, { red = false } = {}) {
-  const permitidas = [...new Set(escribibles.flatMap((p) => [p, real(p)]))].map((p) => `(subpath ${sbplString(p)})`).join(' ');
-  return `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} (subpath "/dev"))))`;
+// comparación la corta.
+// `fatales` y `mensaje`: una escritura negada adentro de esas carpetas mata al proceso, y el sistema la anota en su
+// registro con `mensaje`. Una negación común sólo queda anotada para los programas del sistema (bash, touch), nunca para
+// node; la que mata, para todos
+function perfilSandbox(escribibles, { red = false, fatales = [], mensaje = null } = {}) {
+  const permitidas = subpaths(escribibles);
+  const base = `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} (subpath "/dev"))))`;
+  if (!fatales.length) return base;
+  // la regla que mata va última: entre las que coinciden manda la última
+  return `${base}(deny file-write* (require-all (require-any ${subpaths(fatales)}) (require-not (require-any ${permitidas} (subpath "/dev"))))`
+    + ` (with send-signal SIGKILL)${mensaje ? ` (with message ${sbplString(mensaje)})` : ''})`;
 }
 
 /** El git de verdad, para los reemplazos: el primero del PATH que no es el de compare-shims. */
@@ -886,9 +894,9 @@ function rutaMudada(ruta, renombres) {
 function archivosDeLaTanda(marker, storyPath) {
   const tanda = marker && marker.batch ? String(marker.batch) : null;
   if (!tanda) return { files: null, tanda: null, motivo: 'la corrida no tiene tanda' };
-  const suya = marker.storyPath
-    ? (path.isAbsolute(marker.storyPath) ? marker.storyPath : path.resolve(marker.repoPath || process.cwd(), marker.storyPath))
-    : null;
+  // las rutas del marcador, absolutas contra su repo (lib/run-dir.js); nunca contra la carpeta del proceso
+  const r = marker.storyPath ? require('./run-dir.js').rutasDeLaCorrida(marker) : null;
+  const suya = r && typeof r.storyPath === 'string' && path.isAbsolute(r.storyPath) ? r.storyPath : null;
   if (!suya || !storyPath || real(suya) !== real(storyPath)) return { files: null, tanda, motivo: `el marcador es de otra historia (${marker.storyPath || 'sin historia'})` };
   let texto;
   try { texto = fs.readFileSync(storyPath, 'utf8'); } catch (e) { return { files: null, tanda, motivo: `no pude leer la historia (${e.code || e.message})` }; }
@@ -1167,7 +1175,7 @@ function freno({ storyPath, repos, runDir, stateDir, story, marker = null }) {
   } else if (runDir) {
     try { fs.rmSync(path.join(runDir, AVISOS), { force: true }); } catch (_) { /* no estaba */ }
   }
-  return { medido: true, candidatos: c.candidatos, sinRepo: c.sinRepo, bloquea: !!(j.faltan.length || j.noDeclaradas.length), lineas, avisos, juicio: j };
+  return { medido: true, candidatos: c.candidatos, sinRepo: c.sinRepo, noMedidos: c.noMedidos || [], bloquea: !!(j.faltan.length || j.noDeclaradas.length), lineas, avisos, juicio: j };
 }
 
 module.exports = { compararHumo, normalizar, comparar, tocaLoReal, encierro, perfilSandbox, barrer, limpiar, leerInforme, anotarEntrada, informeVerificado, raizDelHumo, reposDeLaSesion, archivoQueCorre, topes,
@@ -1197,9 +1205,11 @@ if (require.main === module) {
     if (!runDir) {
       try {
         const m = JSON.parse(fs.readFileSync(path.join(stateDir, 'active', `${seguro(sid)}.json`), 'utf8'));
-        const repo = m.repoPath || process.cwd();
-        const story = m.storyPath ? (path.isAbsolute(m.storyPath) ? m.storyPath : path.resolve(repo, m.storyPath)) : undefined;
-        runDir = m.runDir || (m.storyId ? require('../pipeline.js').resolveRunDir(repo, String(m.storyId), true, story, { marker: m }) : null);
+        // las rutas del marcador, absolutas contra su repo (lib/run-dir.js); nunca contra la carpeta del proceso
+        const r = require('./run-dir.js').rutasDeLaCorrida(m);
+        const abs = (p) => (typeof p === 'string' && path.isAbsolute(p) ? p : null);
+        const repo = abs(r.repoPath);
+        runDir = abs(r.runDir) || (m.storyId && repo ? require('../pipeline.js').resolveRunDir(repo, String(m.storyId), true, abs(r.storyPath) || undefined, { marker: m }) : null);
       } catch (_) { runDir = null; }
     }
     if (!runDir) {

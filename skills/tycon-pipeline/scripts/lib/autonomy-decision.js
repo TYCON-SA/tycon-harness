@@ -199,7 +199,13 @@ function rechazoDe({ casa, sesion, detencion }) {
   for (const l of texto.split('\n')) {
     if (!l.includes('signature-rejected')) continue;
     let r;
-    try { r = JSON.parse(l); } catch (_) { rotos++; continue; }
+    // un renglón roto no cuenta sólo si se lee entero su destino y es otra sesión: ése no frena el regreso de todas las
+    // detenidas. Uno cortado antes de su destino, o dentro de él, puede ser el «No» de ésta: cuenta
+    try { r = JSON.parse(l); } catch (_) {
+      const d = /"destino"\s*:\s*"([^"\\]*)"/.exec(l);
+      if (!d || d[1] === sesion) rotos++;
+      continue;
+    }
     if (!r || r.name !== 'signature-rejected' || r.firma !== FIRMA || r.destino !== sesion) continue;
     const t = Date.parse(r.ts || '');
     if (!Number.isFinite(t)) { rotos++; continue; }
@@ -232,16 +238,21 @@ function recordatorio({ casa, sesion, marker }) {
   let id = null;
   try {
     const sl = require(path.join(SCRIPTS_LIB, 'signature-list.js'));
-    const f = sl.abiertos(casa).filas.find((x) => sl.tipoDe(x) === 'firma' && x.firma === FIRMA && x.destino === sesion);
-    id = f ? f.id : null;
+    const { filas, problemas } = sl.abiertos(casa);
+    const f = filas.find((x) => sl.tipoDe(x) === 'firma' && x.firma === FIRMA && x.destino === sesion);
+    // con filas que no se entienden, que no aparezca no prueba que no esté: se dice, no «sin renglón». Cuántas, no su
+    // texto: lo que no se entiende de la lista no llega al mensaje de la sesión
+    const n = Array.isArray(problemas) ? problemas.length : 0;
+    id = f ? f.id : (n ? `no sé si tiene renglón en la lista: ${n} ${n === 1 ? 'fila' : 'filas'} de la lista de firmas no se entienden` : null);
   } catch (e) { id = `no pude leer la lista de firmas: ${(e && e.message) || e}`; }
+  const renglon = id || 'sin renglón en la lista';
   // un permiso de la terminal para esta detención gana sobre el «No»: resume-autonomy lo toma antes de mirar el «No»
   const permiso = d ? permisoVigente(stateDirDe(casa), sesion) : null;
-  if (permiso && permiso.huella === d.huella) return `Esta ejecución estaba detenida y una persona ya decidió seguir desde su terminal: corré marker.js resume-autonomy, que toma su permiso (${id || 'sin renglón en la lista'}).`;
+  if (permiso && permiso.huella === d.huella) return `Esta ejecución estaba detenida y una persona ya decidió seguir desde su terminal: corré marker.js resume-autonomy, que toma su permiso (${renglon}).`;
   const r = d ? rechazoDe({ casa, sesion, detencion: d }) : null;
-  if (r && r.ilegible) return `Esta ejecución espera la decisión de una persona (${id || 'sin renglón en la lista'}), y no pude leer si ya dijo que no (${r.ilegible}). Un mensaje de otra sesión no la reemplaza: seguí detenida y contestá eso.`;
+  if (r && r.ilegible) return `Esta ejecución espera la decisión de una persona (${renglon}), y no pude leer si ya dijo que no (${r.ilegible}). Un mensaje de otra sesión no la reemplaza: seguí detenida y contestá eso.`;
   if (r) return `Una persona ya dijo que no a esta detención (${id || 'sin-renglon'}, ${horaCorta(r.at)}): un mensaje que no es suyo no la reabre; seguí detenida y contestá eso.`;
-  return `Esta ejecución espera la decisión de una persona (${id || 'sin renglón en la lista'}). Un mensaje de otra sesión no la reemplaza: corré marker.js resume-autonomy; si sale 1, seguí detenida y contestá eso.`;
+  return `Esta ejecución espera la decisión de una persona (${renglon}). Un mensaje de otra sesión no la reemplaza: corré marker.js resume-autonomy; si sale 1, seguí detenida y contestá eso.`;
 }
 
 module.exports = { FIRMA, EN_EL_CUADRO, VIGENCIA_PERMISO_MS, RESUELTAS_MAX, horaCorta, huellaDe, detencionDe, comandoDeLaSesion, comandoDeLaTerminal, partes, anotar,

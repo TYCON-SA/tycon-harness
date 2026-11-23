@@ -507,8 +507,8 @@ async function main(argv) {
       return 2;
     }
     const { collect } = require(path.join(__dirname, '..', 'office.js'));
-    // sin tocar nada: ni los archivos de la oficina ni la red
-    const data = await collect({ noTranscripts: true, readOnly: true, queryPrs: async (list) => list.map(() => ({})) });
+    // sin tocar nada: ni los archivos de la oficina ni la red; la carga de la máquina, que se descarta, tampoco se mide
+    const data = await collect({ noTranscripts: true, readOnly: true, machine: false, queryPrs: async (list) => list.map(() => ({})) });
     const rows = unmatchedRows(raw.tablas, data.kanban);
     process.stdout.write(rows.length ? `${rows.map((r) => `${r.tabla} · ${r.grupo} · ${r.que}`).join('\n')}\n` : 'Ninguna fila escrita quedó sin tarjeta.\n');
     return 0;

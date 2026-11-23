@@ -400,8 +400,13 @@ fi
 if [ -n "$THIN_SIN_MARKER" ]; then
   echo "ℹ️ cierre-recortado: T12 run-check no aplica en el repo adelgazado (marker.js es del público; lo cuida su validación)"
 elif git -C "$AS_RAIZ" rev-parse --verify -q origin/main >/dev/null 2>&1; then
-  RC_MAIN="$(git -C "$AS_RAIZ" show origin/main:skills/tycon-pipeline/scripts/marker.js | funciones_run_check)"
-  RC_AHORA="$(funciones_run_check < "$AS_RAIZ/skills/tycon-pipeline/scripts/marker.js")"
+  # marker.js está partido: el despachador y sus partes de lib/ (`marker-*.js`), de los dos lados, en el mismo orden
+  RC_MAIN="$( { git -C "$AS_RAIZ" show origin/main:skills/tycon-pipeline/scripts/marker.js
+    for f in $(git -C "$AS_RAIZ" ls-tree --name-only origin/main skills/tycon-pipeline/scripts/lib/ | grep '/marker-[^/]*\.js$' | sort); do
+      git -C "$AS_RAIZ" show "origin/main:$f"
+    done; } | funciones_run_check)"
+  RC_AHORA="$( { cat "$AS_RAIZ/skills/tycon-pipeline/scripts/marker.js"
+    for f in $(cd "$AS_RAIZ" && ls skills/tycon-pipeline/scripts/lib/marker-*.js 2>/dev/null | sort); do cat "$AS_RAIZ/$f"; done; } | funciones_run_check)"
   { [ -n "$RC_MAIN" ] && [ "$RC_MAIN" = "$RC_AHORA" ] && ! printf '%s' "$RC_AHORA" | grep '^SIN:' >/dev/null; } \
     || t12="$t12 agent-skills:run-check-cambiado"
   # 🔴 La matriz NO se compara contra origin/main: la comparación sólo pondría en rojo —hasta el merge, y

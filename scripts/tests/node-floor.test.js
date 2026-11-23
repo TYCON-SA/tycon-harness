@@ -175,8 +175,8 @@ test('T9 Reescritura_SinSintaxisNueva_MismaSemantica @story-8.93 @ac-4', () => {
     for (const keep of [0, '', false, NaN]) assert.ok(Object.is(nn(keep, 'def'), keep), `${rel}: nn(${String(keep)}) se queda`);
     for (const nil of [null, undefined]) assert.strictEqual(nn(nil, 'def'), 'def', `${rel}: nn(${String(nil)}) toma el defecto`);
   }
-  // marker.js y pipeline.js: isNil, nn y at (el reemplazo de `?.`) con la misma semántica
-  for (const rel of ['skills/tycon-pipeline/scripts/marker.js', 'skills/tycon-pipeline/scripts/pipeline.js']) {
+  // marker.js (su parte compartida) y pipeline.js: isNil, nn y at (el reemplazo de `?.`) con la misma semántica
+  for (const rel of ['skills/tycon-pipeline/scripts/lib/marker-shared.js', 'skills/tycon-pipeline/scripts/pipeline.js']) {
     const text = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     const m = text.match(/const isNil = [^\n]*\nconst nn = [^\n]*\nconst at = [^\n]*/);
     assert.ok(m, `${rel}: trae isNil, nn y at`);

@@ -1,0 +1,65 @@
+{
+  "__doc": "El permiso de una sesión de fondo le llega a la persona como cuadro (story 8.180, tanda B, 2026-11-22): permission-relay.js, en el evento PermissionRequest, lleva el pedido a la pestaña de la coordinadora y espera el click de la persona. Lo que el banco fija: lo que NO se lleva y sale sin decidir, en silencio, para que vuelva la ventana de siempre (el plan, el cuadro de preguntas, otro modo de permisos, apagado). Ninguno de estos casos lee la máquina: el gancho sale antes de buscar la casa. El caso que espera y decide necesita una coordinadora confirmada con su proceso vivo, su owner-wait y la casa de la cuenta (el gancho no mira HOME, como el que anota el click), que el banco no arma; vive en scripts/tests/permission-relay.test.js (T9 a T20, T27 y T28, en proceso, con casa de juguete y reloj propio).",
+  "hooks": [
+    {
+      "hook": "permission-relay.js (el permiso de una sesión de fondo, como cuadro)",
+      "script": "${TCG}/scripts/hooks/permission-relay.js",
+      "event": "PermissionRequest",
+      "matcher": "Bash|PowerShell|Edit|Write|NotebookEdit|WebFetch",
+      "tools": ["claude"],
+      "asymmetry": "Codex no avisa cuando pide un permiso (no tiene el evento PermissionRequest), no abre sesiones de fondo y no coordina: el gancho no se registra de su lado; la declaración está en adapters/codex/hooks.json.",
+      "cases": [
+        {
+          "id": "la-salida-del-plan-no-se-lleva",
+          "type": "must-stay-quiet",
+          "__doc": "ExitPlanMode pide permiso por su camino de siempre: el gancho no lo lleva ni imprime nada. ROJO PREVIO: llevar el plan al cuadro dejaría a la sesión encerrada en el modo plan.",
+          "stdin": {
+            "hook_event_name": "PermissionRequest",
+            "session_id": "bench-pr1",
+            "tool_name": "ExitPlanMode",
+            "tool_input": { "plan": "el plan" }
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "el-cuadro-de-preguntas-no-se-lleva",
+          "type": "must-stay-quiet",
+          "__doc": "AskUserQuestion nunca pasa por este gancho: si lo escuchara, contaría como ajeno y anularía todos los clicks de firma de la máquina. ROJO PREVIO: tomar el cuadro.",
+          "stdin": {
+            "hook_event_name": "PermissionRequest",
+            "session_id": "bench-pr2",
+            "tool_name": "AskUserQuestion",
+            "tool_input": { "questions": [{ "question": "¿Seguimos?", "header": "Seguir", "multiSelect": false, "options": [{ "label": "Sí", "description": "a" }, { "label": "No", "description": "b" }] }] }
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "en-modo-automatico-no-se-lleva",
+          "type": "must-stay-quiet",
+          "__doc": "Una sesión en modo automático que igual pide permiso sigue con su ventana: sólo se lleva el modo normal. ROJO PREVIO: llevar el pedido de otro modo.",
+          "stdin": {
+            "hook_event_name": "PermissionRequest",
+            "session_id": "bench-pr3",
+            "permission_mode": "auto",
+            "tool_name": "Bash",
+            "tool_input": { "command": "touch v1-auto.txt" }
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "apagado-no-lleva-nada",
+          "type": "must-stay-quiet",
+          "__doc": "Con TYCON_PERMISSION_RELAY=0, un pedido en modo normal sale sin decidir y en silencio. ROJO PREVIO: llevarlo o decidir con el gancho apagado.",
+          "env": { "TYCON_PERMISSION_RELAY": "0" },
+          "stdin": {
+            "hook_event_name": "PermissionRequest",
+            "session_id": "bench-pr4",
+            "tool_name": "Bash",
+            "tool_input": { "command": "touch v1-si.txt" }
+          },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}
