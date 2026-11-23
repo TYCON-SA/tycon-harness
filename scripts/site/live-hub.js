@@ -132,6 +132,7 @@ function valorSegun(spec, value, donde, desconocidos) {
     case 'folder': return typeof value === 'string' && value.length <= TEXT_MAX && !/[\\/]/.test(value) ? value : MALA;
     case 'number': return Number.isFinite(value) ? value : MALA;
     case 'percent': return Number.isInteger(value) && value >= 0 && value <= 100 ? value : MALA;
+    case 'count': return Number.isInteger(value) && value >= 0 ? value : MALA;
     case 'flag': return typeof value === 'boolean' ? value : MALA;
     case 'hour': return typeof value === 'string' && validHour(value) ? value : MALA;
     case 'state':
@@ -339,6 +340,17 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
       paso('las claves', () => {
         llaves.vencer(reglasAhora());
         llaves.emparejar({ huellas: fuentes.huellas ? fuentes.huellas() : null, reglas: reglasAhora(), conBuzon: conBuzon() });
+      });
+      // una máquina que espera su huella no espera la pasada entera del buzón: se piden sólo las huellas, sin esperar la
+      // respuesta (la revisión también corta las conexiones vencidas y no puede quedar colgada de la red)
+      paso('las huellas', () => {
+        if (typeof fuentes.leerHuellasAPedido !== 'function' || !conBuzon()) return;
+        const ctx = { huellas: fuentes.huellas ? fuentes.huellas() : null, reglas: reglasAhora(), conBuzon: true };
+        if (!llaves.vista(ctx).pedidos.some((p) => p.situacion === 'esperando_huella')) return;
+        Promise.resolve(fuentes.leerHuellasAPedido()).then((r) => {
+          // lo leído se empareja ya, sin esperar la próxima revisión
+          if (r && r.leido) paso('las claves', () => llaves.emparejar({ huellas: fuentes.huellas(), reglas: reglasAhora(), conBuzon: conBuzon() }));
+        }, (e) => log(`oficinas: la lectura de huellas a pedido falló (${e && e.message ? e.message : e})`));
       });
     }
     paso('los navegadores', () => revisarNavegadores(disponible));

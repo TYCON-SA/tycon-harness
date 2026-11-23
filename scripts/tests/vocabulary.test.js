@@ -65,8 +65,9 @@ const words = (text, rules = RULES) => VOC.mentionsIn(text, rules).map((m) => m.
 /** El tramo del control en el pre-commit, desde su variable hasta su `fi` de primer nivel. */
 function hookBlock() {
   const hook = fs.readFileSync(path.join(ROOT, '.githooks', 'pre-commit-checks'), 'utf8');
-  // el repo de mantenimiento adelgazado trae su copia del pre-commit, que busca los guiones en TCG
-  const start = hook.search(/VOCABULARY="\$(REPO_ROOT|TCG)\/scripts\/ci\/vocabulary\.js"/);
+  // el repo de mantenimiento adelgazado trae su copia del pre-commit, que busca los guiones en TCG; el del arnés, en
+  // ${TCG:-$REPO_ROOT}
+  const start = hook.search(/VOCABULARY="(?:\$(?:REPO_ROOT|TCG)|\$\{TCG:-\$REPO_ROOT\})\/scripts\/ci\/vocabulary\.js"/);
   assert.ok(start >= 0, 'el pre-commit tiene el bloque del control');
   const end = hook.indexOf('\nfi\n', start);
   assert.ok(end > start, 'el bloque cierra con su fi');

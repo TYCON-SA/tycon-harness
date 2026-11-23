@@ -6,9 +6,9 @@
 #
 # POR QUÉ EXISTE. Cada máquina del equipo graba lo que hace el agente y sube un día por vez al buzón de la organización.
 # Esta noche baja esos días, cuenta sin modelo lo que se repite en el equipo y le pide al modelo de la noche que escriba
-# cada propuesta (como mucho 20 por noche; las demás salen sólo con los números). Deja un archivo por propuesta en
-# `inbox/instincts/propuestas/` y el informe de la noche en `.dashboard/instincts/`: las propuestas se deciden en la
-# pestaña Aprendizajes del sitio, y el resumen de la mañana (dependency-audit.yml) cuenta las nuevas.
+# cada propuesta (como mucho 20 por noche; las demás esperan a la noche siguiente, sin archivo). Deja un archivo por
+# propuesta en `inbox/instincts/propuestas/` y el informe de la noche en `.dashboard/instincts/`: las propuestas se
+# deciden en la pestaña Aprendizajes del sitio, y el resumen de la mañana (dependency-audit.yml) cuenta las nuevas.
 #
 # QUÉ NECESITA:
 #   · La integración `instincts` prendida en el perfil del equipo (`integrations.instincts: true`). Apagada, la noche lo
@@ -21,7 +21,7 @@
 #     `modelVariableGroup`: `OLLAMA_API_KEY` con Ollama, `ANTHROPIC_API_KEY` con Anthropic, secretas. Cómo crearlo y
 #     autorizarlo, una vez: README.md, «La llave del modelo de la noche: un grupo compartido». Nunca en este YAML ni en un
 #     archivo. Una variable que no existe llega como el
-#     literal `$(NOMBRE)`, y se toma como ausente: sin llave o sin modelo, las propuestas salen sólo con los números y el
+#     literal `$(NOMBRE)`, y se toma como ausente: sin llave o sin modelo, lo nuevo espera a otra noche, sin archivo, y el
 #     resumen lo dice. Con Anthropic, el agente necesita la CLI `claude` (el paso la instala sólo en ese caso).
 #
 # A las 02:00 UTC: antes del resumen de las 04:00, sin pisar los otros nocturnos. Si pasa de 60 minutos, choca con el de
@@ -121,7 +121,7 @@ jobs:
           set -u
           PROV=$(node -e 'const r = require("./scripts/lib/nightly-model.js").resolveNightly({ orgConfig: process.argv[1], env: {} }); process.stdout.write(String(r.provider || ""))' "$(Build.SourcesDirectory)/team-repos.json" 2>/dev/null || true)
           if [ "$PROV" = anthropic ]; then
-            npm install -g @anthropic-ai/claude-code > /dev/null 2>&1 || echo "##vso[task.logissue type=warning]No pude instalar la CLI de claude: las propuestas salen sólo con los números"
+            npm install -g @anthropic-ai/claude-code > /dev/null 2>&1 || echo "##vso[task.logissue type=warning]No pude instalar la CLI de claude: lo nuevo espera a otra noche, sin archivo"
           fi
           exit 0
         displayName: 'La CLI del modelo, si el proveedor es Anthropic'

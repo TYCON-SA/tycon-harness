@@ -50,9 +50,45 @@ solo_lectura() {
   return 1
 }
 
+# Los controles que pide otra copia: la copia propia del gancho de otro repo (la del privado adelgazado) le pide a éste,
+# el del arnés, que corra los controles de su inventario que ella no nombra, con TYCON_CHECKS_ONLY (sus guiones, separados
+# por espacios). Cada control saltea su tramo si no está en la lista: su primer renglón lo mira, y `_checks_only` existe
+# sólo en ese caso, así un tramo que corre suelto corre como siempre. Vale sólo cuando este archivo corre sobre otro
+# repo; como gancho del propio repo la variable no vale, porque heredada del ambiente apagaría los demás controles. Ahí
+# los guiones salen del arnés que dice TYCON_CHECKS_CODE_ROOT, y lo que miran, del repo del commit.
+# Casos: scripts/tests/hook-delegation.test.js
+_checks_only=""
+if [ -n "${TYCON_CHECKS_ONLY+x}" ]; then
+  _checks_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)/${BASH_SOURCE[0]##*/}"
+  _checks_own=""
+  [ -n "${_checks_root:-}" ] && _checks_own="$(cd "$_checks_root/.githooks" 2>/dev/null && pwd -P)/pre-commit-checks"
+  if [ "$_checks_self" = "$_checks_own" ]; then
+    echo "▸ pre-commit: TYCON_CHECKS_ONLY no vale en el gancho del propio repo: corren todos los controles." >&2
+  else
+    _checks_only=" $(printf '%s' "$TYCON_CHECKS_ONLY" | tr ',\n\r\t' '    ') "
+    echo "▸ pre-commit: corren sólo los controles que pidió la copia del gancho de este repo:${_checks_only% }" >&2
+    # un guion pedido que ningún filtro de este archivo nombra no correría en ningún tramo: no poder correrlo no es verde
+    # (el patrón va partido en dos para que este renglón no se encuentre a sí mismo)
+    _checks_known=" $(grep -o '_checks_want''ed [^;]*' "${BASH_SOURCE[0]}" 2>/dev/null | sed 's/^[^ ]* //' | tr '\n' ' ') "
+    for _c in $_checks_only; do
+      case "$_checks_known" in
+        *" $_c "*) ;;
+        *) echo "⛔ COMMIT RECHAZADO — la copia del gancho pidió ${_c} y este gancho no tiene un control con ese guion: no corrió." >&2; exit 1 ;;
+      esac
+    done
+  fi
+fi
+# ¿Pidió la copia alguno de estos guiones?
+_checks_wanted() { local _c; for _c in "$@"; do case "$_checks_only" in *" $_c "*) return 0 ;; esac; done; return 1; }
+
 checks_harness() (
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$REPO_ROOT" || exit 0
+# Los guiones de los controles salen de TCG, el arnés; lo que miran (el commit, el perfil), del repo. Son el mismo salvo
+# cuando corren los controles que pidió otra copia (arriba). Cada tramo lo lee como `${TCG:-$REPO_ROOT}`: suelto, el de
+# siempre.
+TCG="$REPO_ROOT"
+[ -n "$_checks_only" ] && [ -n "${TYCON_CHECKS_CODE_ROOT:-}" ] && TCG="$TYCON_CHECKS_CODE_ROOT"
 
 # Lo que trae el commit, leído una vez y mirando el código de salida de git: `git diff | grep -q` con pipefail sale 141
 # cuando grep se va antes de que git termine, y el control se saltea sin decirlo. Se busca sobre la variable (`<<<`).
@@ -73,7 +109,7 @@ fi
 # paridad (más abajo), que no mira specs/. Se le pasan todos los `.md` del commit: quién es una story lo decide el lint.
 # Se busca por `$REPO_ROOT`: el repo del hook es el arnés. Sin el lint avisa y sigue.
 # Casos: scripts/tests/pre-commit-stories.test.sh
-FM_LINT="$REPO_ROOT/scripts/lib/lint-story-frontmatter.js"
+FM_LINT="${TCG:-$REPO_ROOT}/scripts/lib/lint-story-frontmatter.js"
 # Una ruta por renglón (core.quotePath=false: las tildes salen como son), a un arreglo y pasada entera entre comillas: sin
 # eso una story con espacios en el nombre se parte en pedazos que no existen y el lint la aprueba sin leerla (lo mismo
 # que hace el hook del repo de stories). Caso: scripts/tests/pre-commit-stories.test.sh C-01b.
@@ -81,7 +117,8 @@ CHANGED_MD=()
 while IFS= read -r f; do
   case "$f" in *.md) CHANGED_MD+=("$f") ;; esac
 done <<<"$STAGED_ACMR"
-if [ "${#CHANGED_MD[@]}" -gt 0 ]; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/lib/lint-story-frontmatter.js; then :
+elif [ "${#CHANGED_MD[@]}" -gt 0 ]; then
   if [ ! -f "$FM_LINT" ]; then
     echo "⚠️  tycon: no encontré $FM_LINT — se saltea el lint de frontmatter de stories." >&2
   else
@@ -101,9 +138,10 @@ fi
 # El mismo control que corre en el pedido (guides/ci-gate.md), en la máquina: una story que pasa a review/done trae su
 # evidencia de cierre y su registro de revisores en este repo. `--staged` mira sólo lo que el commit agrega.
 # Casos: scripts/tests/pre-commit-stories.test.sh C-06/C-07.
-GATE="$REPO_ROOT/scripts/ci/tycon-ci-gate.js"
+GATE="${TCG:-$REPO_ROOT}/scripts/ci/tycon-ci-gate.js"
 # el portón usa el detector del lint: sin el lint tampoco corre, y eso ya se avisó arriba
-if [ "${#CHANGED_MD[@]}" -gt 0 ] && [ -f "$FM_LINT" ]; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/tycon-ci-gate.js; then :
+elif [ "${#CHANGED_MD[@]}" -gt 0 ] && [ -f "$FM_LINT" ]; then
   if [ ! -f "$GATE" ]; then
     echo "⚠️  tycon: no encontré $GATE — se saltea el portón del arnés (el del pull request igual lo mira)." >&2
   elif ! node "$GATE" --repo "$REPO_ROOT" --staged; then
@@ -120,8 +158,9 @@ fi
 # de la copia publicada lo mira con la lista privada de la máquina (`paths.maintainers`). Apagado, con aviso en cada
 # commit: TYCON_NEW_NAMES=0.
 # Casos: scripts/tests/new-names.test.js y C-13..C-15 de githook-livefire.test.sh
-NEW_NAMES="$REPO_ROOT/scripts/publishing/new-names.js"
-if [ -f "$NEW_NAMES" ]; then
+NEW_NAMES="${TCG:-$REPO_ROOT}/scripts/publishing/new-names.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/publishing/new-names.js; then :
+elif [ -f "$NEW_NAMES" ]; then
   if ! node "$NEW_NAMES" --repo "$REPO_ROOT"; then
     echo "⛔ COMMIT RECHAZADO — nombres reales en lo que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
     exit 1
@@ -136,8 +175,9 @@ fi
 # historia que reescribir. Sin poder mirar, avisa y sigue, a diferencia de los demás: el commit se deshace y el empuje vuelve
 # a mirar; el chequeo previo de un ok de guardar, con TYCON_PRECOMMIT_READ_ONLY, sí frena.
 # Casos: scripts/tests/public-push-guard-commit.test.js
-PUBLISH_GUARD="$REPO_ROOT/scripts/hooks/public-push-guard.js"
-if [ -f "$PUBLISH_GUARD" ] && ! node "$PUBLISH_GUARD" pre-commit; then
+PUBLISH_GUARD="${TCG:-$REPO_ROOT}/scripts/hooks/public-push-guard.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/hooks/public-push-guard.js; then :
+elif [ -f "$PUBLISH_GUARD" ] && ! node "$PUBLISH_GUARD" pre-commit; then
   echo "⛔ COMMIT RECHAZADO — el freno de publicación no deja salir lo que lleva este commit, o no pudo mirarlo (arriba dice dónde y cómo salir)." >&2
   exit 1
 fi
@@ -148,8 +188,9 @@ fi
 # partes tampoco. Sin el guion (un repo que no es el arnés) no dice nada. La CI del público mira el árbol entero (T3 de
 # tycon-config.test.js).
 # Casos: C-35 de githook-livefire.test.sh
-PROVIDER_SHAPES="$REPO_ROOT/scripts/lib/provider-secret-shapes.js"
-if [ -f "$PROVIDER_SHAPES" ] && ! node "$PROVIDER_SHAPES" --staged --repo "$REPO_ROOT"; then
+PROVIDER_SHAPES="${TCG:-$REPO_ROOT}/scripts/lib/provider-secret-shapes.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/lib/provider-secret-shapes.js; then :
+elif [ -f "$PROVIDER_SHAPES" ] && ! node "$PROVIDER_SHAPES" --staged --repo "$REPO_ROOT"; then
   echo "⛔ COMMIT RECHAZADO — una clave entera en lo que agrega el commit, o no se pudo mirar (arriba dice dónde y cómo seguir)." >&2
   exit 1
 fi
@@ -159,8 +200,9 @@ fi
 # existía no entra; uno que ya existe pasa mientras no se renombre. Apagado, con aviso en cada commit:
 # TYCON_SPANISH_NAMES=0. Guía: guides/maintaining/nombres-en-ingles.md.
 # Casos: scripts/tests/spanish-names.test.js y C-16..C-24 de githook-livefire.test.sh
-SPANISH_NAMES="$REPO_ROOT/scripts/publishing/spanish-names.js"
-if [ -f "$SPANISH_NAMES" ]; then
+SPANISH_NAMES="${TCG:-$REPO_ROOT}/scripts/publishing/spanish-names.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/publishing/spanish-names.js; then :
+elif [ -f "$SPANISH_NAMES" ]; then
   if ! node "$SPANISH_NAMES" --repo "$REPO_ROOT"; then
     echo "⛔ COMMIT RECHAZADO — nombres nuevos en castellano en lo que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
     exit 1
@@ -175,8 +217,9 @@ fi
 # guides/integrations/ y las pruebas, sobre el techo de su archivo o con una excepción sin motivo, no se crea. Los nombres
 # salen de los manifiestos; las reglas, de scripts/ci/tool-names.json.
 # Casos: scripts/tests/tool-names.test.js
-TOOL_NAMES="$REPO_ROOT/scripts/ci/tool-names.js"
-if [ -f "$TOOL_NAMES" ] && ! node "$TOOL_NAMES" --repo "$REPO_ROOT"; then
+TOOL_NAMES="${TCG:-$REPO_ROOT}/scripts/ci/tool-names.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/tool-names.js; then :
+elif [ -f "$TOOL_NAMES" ] && ! node "$TOOL_NAMES" --repo "$REPO_ROOT"; then
   echo "⛔ COMMIT RECHAZADO — el nombre de una herramienta de horas fuera de su integración, o no se pudo mirar (arriba dice dónde)." >&2
   exit 1
 fi
@@ -186,8 +229,9 @@ fi
 # plataforma fuera de integrations/ y las pruebas, sobre el techo de su archivo o con una entrada mal escrita, no se crea.
 # Las señales salen de los manifiestos de plataforma (hardSignals); la lista, de scripts/ci/neutrality-allowlist.json.
 # Casos: scripts/tests/platform-neutrality.test.js
-CORE_NEUTRALITY="$REPO_ROOT/scripts/ci/check-core-neutrality.js"
-if [ -f "$CORE_NEUTRALITY" ] && ! node "$CORE_NEUTRALITY" --repo "$REPO_ROOT"; then
+CORE_NEUTRALITY="${TCG:-$REPO_ROOT}/scripts/ci/check-core-neutrality.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/check-core-neutrality.js; then :
+elif [ -f "$CORE_NEUTRALITY" ] && ! node "$CORE_NEUTRALITY" --repo "$REPO_ROOT"; then
   echo "⛔ COMMIT RECHAZADO — un comando o una dirección de una plataforma fuera de su conector, o no se pudo mirar (arriba dice dónde)." >&2
   exit 1
 fi
@@ -197,8 +241,9 @@ fi
 # no se escriben en la prosa de una guía y pasan el techo de su archivo. Informa y no frena el commit. Las reglas:
 # scripts/ci/vocabulary.json.
 # Casos: scripts/tests/vocabulary.test.js
-VOCABULARY="$REPO_ROOT/scripts/ci/vocabulary.js"
-if [ -f "$VOCABULARY" ]; then
+VOCABULARY="${TCG:-$REPO_ROOT}/scripts/ci/vocabulary.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/vocabulary.js; then :
+elif [ -f "$VOCABULARY" ]; then
   node "$VOCABULARY" --repo "$REPO_ROOT" || true
 fi
 
@@ -208,8 +253,9 @@ fi
 # suyos). Frena según scripts/publishing/internal-history.json → mode. Bajado a aviso: TYCON_INTERNAL_HISTORY=warn;
 # apagado, con aviso en cada commit: TYCON_INTERNAL_HISTORY=0.
 # Casos: scripts/tests/internal-history-guard.test.js y scripts/controls-bench/cases/hooks/52-internal-history.json
-INTERNAL_HISTORY="$REPO_ROOT/scripts/publishing/internal-history.js"
-if [ -f "$INTERNAL_HISTORY" ]; then
+INTERNAL_HISTORY="${TCG:-$REPO_ROOT}/scripts/publishing/internal-history.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/publishing/internal-history.js scripts/lib/guard-record.js; then :
+elif [ -f "$INTERNAL_HISTORY" ]; then
   if ! node "$INTERNAL_HISTORY" --repo "$REPO_ROOT" >/dev/null; then
     echo "⛔ COMMIT RECHAZADO — historia interna en la prosa que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
     exit 1
@@ -217,8 +263,8 @@ if [ -f "$INTERNAL_HISTORY" ]; then
 elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
   echo "⛔ COMMIT RECHAZADO — historia interna: no pude mirar (falta ${INTERNAL_HISTORY}). El arnés del equipo tiene el control; sin él no se mira." >&2
   # el rechazo también queda en el registro de frenos (el guion que lo anotaría es justo el que falta); nunca cambia la salida
-  if [ -f "$REPO_ROOT/scripts/lib/guard-record.js" ]; then
-    node "$REPO_ROOT/scripts/lib/guard-record.js" --guard internal-history --rule could-not-look --verdict bloqueo >/dev/null 2>&1 || true
+  if [ -f "${TCG:-$REPO_ROOT}/scripts/lib/guard-record.js" ]; then
+    node "${TCG:-$REPO_ROOT}/scripts/lib/guard-record.js" --guard internal-history --rule could-not-look --verdict bloqueo >/dev/null 2>&1 || true
   fi
   exit 1
 fi
@@ -229,8 +275,9 @@ fi
 # árbol que se publica: en el repo del equipo dice que no aplica, y en un repo sin el guion no corre. El modo de cada forma
 # está en scripts/publishing/internal-history.json → zones.comment; la misma variable TYCON_INTERNAL_HISTORY lo baja.
 # Casos: scripts/tests/code-comments.test.js
-INTERNAL_HISTORY="$REPO_ROOT/scripts/publishing/internal-history.js"
-if [ -f "$INTERNAL_HISTORY" ]; then
+INTERNAL_HISTORY="${TCG:-$REPO_ROOT}/scripts/publishing/internal-history.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/publishing/internal-history.js; then :
+elif [ -f "$INTERNAL_HISTORY" ]; then
   if ! node "$INTERNAL_HISTORY" --repo "$REPO_ROOT" --zone comment >/dev/null; then
     echo "⛔ COMMIT RECHAZADO — historia interna en un comentario nuevo, o no se pudo mirar (arriba dice dónde y qué hacer)." >&2
     exit 1
@@ -240,7 +287,8 @@ fi
 # ── El mapa de renombres ──
 # Si el commit lo toca, se valida el del índice (no el del disco): repetidos, un nombre nuevo en castellano, uno que
 # choca, un valor sin su script o un archivo que llaman de afuera sin su reemplazo frenan.
-if git -C "$REPO_ROOT" diff --cached --name-only -- scripts/lib/renames.json | grep -q . && [ -f "$SPANISH_NAMES" ]; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/publishing/spanish-names.js; then :
+elif git -C "$REPO_ROOT" diff --cached --name-only -- scripts/lib/renames.json | grep -q . && [ -f "$SPANISH_NAMES" ]; then
   # un borrado del mapa no tiene nada que validar; cualquier otra falla de git al leerlo es «no pude mirar», y frena
   if ! git -C "$REPO_ROOT" diff --cached --name-status -- scripts/lib/renames.json | grep -q '^D'; then
     _MAPA_IDX="$(mktemp)" || { echo "⛔ COMMIT RECHAZADO — no pude validar el mapa de renombres (sin carpeta temporal)." >&2; exit 1; }
@@ -262,8 +310,9 @@ fi
 # En el bash 3.2 de macOS eso parte la variable, y en Linux con bash 5 no se reproduce. Mira lo stageado; un guion que
 # no se puede leer del índice frena.
 # Casos: scripts/tests/bash32-quoting.test.sh
-if grep -qE '\.sh$' <<<"$STAGED_ACMR"; then
-  B32="$REPO_ROOT/scripts/ci/check-bash32-quoting.sh"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/check-bash32-quoting.sh; then :
+elif grep -qE '\.sh$' <<<"$STAGED_ACMR"; then
+  B32="${TCG:-$REPO_ROOT}/scripts/ci/check-bash32-quoting.sh"
   if [ ! -f "$B32" ]; then
     echo "⛔ COMMIT RECHAZADO — no encontré $B32, así que NO pude mirar el quoting de bash 3.2 en los .sh stageados. No medido no es verde."
     exit 1
@@ -282,8 +331,9 @@ fi
 # lista blanca (scripts/publishing/allowlist.json) no publica nada y el control se saltea diciéndolo. Con la lista y
 # sin el guion, o con el guion que no puede mirar (rc 2), frena.
 # Casos: scripts/tests/check-publishable-tree.test.js (T20) · scripts/tests/githook-renames.test.sh
-PUBTREE="$REPO_ROOT/scripts/ci/check-publishable-tree.js"
-if [ ! -f "$REPO_ROOT/scripts/publishing/allowlist.json" ]; then
+PUBTREE="${TCG:-$REPO_ROOT}/scripts/ci/check-publishable-tree.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/check-publishable-tree.js; then :
+elif [ ! -f "$REPO_ROOT/scripts/publishing/allowlist.json" ]; then
   echo "▸ pre-commit: sin lista blanca de publicación en este repo: no hay versión bajada que cuidar; se saltea" >&2
 elif [ ! -f "$PUBTREE" ]; then
   echo "⛔ COMMIT RECHAZADO — no encontré $PUBTREE, así que NO pude mirar si este commit rompe la verificación de lo publicado. No medido no es verde. Si el checkout está incompleto: git checkout scripts/ci/check-publishable-tree.js" >&2
@@ -304,9 +354,10 @@ fi
 # Un renglón `- [ ]` nuevo en tasks/todo.md entra sólo con su aprobación firmada en el registro: tasks/pending-approvals.jsonl
 # y un archivo por aprobación en tasks/pending-approvals/ (scripts/lib/pending-approvals.js). Corre si el commit toca la
 # lista o el registro: en el arnés no hay lista, y el repo privado corre el mismo bloque. Casos: scripts/tests/pending-approvals.test.js
-if grep -qE '^tasks/(todo\.md|pending-approvals\.jsonl|pending-approvals/)' <<<"$STAGED_ALL"; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/check-pending-approvals.js; then :
+elif grep -qE '^tasks/(todo\.md|pending-approvals\.jsonl|pending-approvals/)' <<<"$STAGED_ALL"; then
   echo "▸ pre-commit: pendientes nuevos de la lista…"
-  if ! node "$REPO_ROOT/scripts/ci/check-pending-approvals.js" --staged --repo "$REPO_ROOT"; then
+  if ! node "${TCG:-$REPO_ROOT}/scripts/ci/check-pending-approvals.js" --staged --repo "$REPO_ROOT"; then
     echo "⛔ COMMIT RECHAZADO — la lista de pendientes trae un pendiente sin la aprobación de la coordinadora (motivo arriba)." >&2
     exit 1
   fi
@@ -318,9 +369,10 @@ fi
 # contra el pre-commit del privado; con la misma lógica que sus pruebas (los módulos de scripts/lib/). Sin nada de eso sale en milisegundos. Sin el guion: en el arnés (trae la lista blanca de publicación)
 # frena; en un repo de juguete de las suites del hook, lo dice y sigue.
 # Casos: scripts/tests/check-staged-ci-rules.test.js
-CI_RULES="$REPO_ROOT/scripts/ci/check-staged-ci-rules.js"
+CI_RULES="${TCG:-$REPO_ROOT}/scripts/ci/check-staged-ci-rules.js"
 CI_RULES_RC=0
-if [ ! -f "$CI_RULES" ]; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/check-staged-ci-rules.js; then :
+elif [ ! -f "$CI_RULES" ]; then
   if [ -f "$REPO_ROOT/scripts/publishing/allowlist.json" ]; then
     echo "⛔ COMMIT RECHAZADO — no encontré $CI_RULES, así que NO pude mirar las reglas que frena la CI pública. No medido no es verde. Si el checkout está incompleto: git checkout scripts/ci/check-staged-ci-rules.js" >&2
     exit 1
@@ -343,8 +395,9 @@ fi
 # que el commit agrega con forma de historia avisa). Dispara también con la guía del detalle, para mirar el par
 # índice↔guía. Sin el guion frena.
 # Casos: scripts/tests/claude-md-blocks.test.sh · C-11, C-11b y C-11c de githook-livefire.test.sh
-if grep -qE '^(claude-md-blocks/|README\.md$|guides/piezas-del-arnes\.md$)' <<<"$STAGED_ALL"; then
-  CMB="$REPO_ROOT/scripts/ci/check-claude-md-blocks.js"
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/check-claude-md-blocks.js; then :
+elif grep -qE '^(claude-md-blocks/|README\.md$|guides/piezas-del-arnes\.md$)' <<<"$STAGED_ALL"; then
+  CMB="${TCG:-$REPO_ROOT}/scripts/ci/check-claude-md-blocks.js"
   if [ ! -f "$CMB" ]; then
     echo "⛔ COMMIT RECHAZADO — no encontré $CMB, así que NO pude medir los bloques del CLAUDE.md ni el techo del README. No medido no es verde. Si el checkout está incompleto: git checkout scripts/ci/check-claude-md-blocks.js" >&2
     exit 1
@@ -370,13 +423,15 @@ fi
 # Casos: scripts/tests/harness-map-public.test.sh · harness-map-census.test.sh (C-08 a C-12) ·
 # githook-livefire.test.sh (C-26/C-27)
 MAPA_TOCADO="$(grep -E '^(artifacts/mapa-arnes\.html$|scripts/tools/harness-map/|onboarding/mini-class/mapa-del-arnes\.html$)' <<<"$STAGED_ALL" || true)"
-if [ -n "$MAPA_TOCADO" ] && ! git cat-file -e :artifacts/mapa-arnes.html 2>/dev/null \
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/tools/harness-map/public-version.js scripts/tools/harness-map/census.js; then
+  MAPA_TOCADO=""
+elif [ -n "$MAPA_TOCADO" ] && ! git cat-file -e :artifacts/mapa-arnes.html 2>/dev/null \
    && ! git cat-file -e HEAD:artifacts/mapa-arnes.html 2>/dev/null; then
   echo "▸ pre-commit: este repo no trae el mapa interno del arnés (artifacts/mapa-arnes.html): no hay versión pública que regenerar."
   MAPA_TOCADO=""
 fi
 if [ -n "$MAPA_TOCADO" ]; then
-  MAPA_GEN="$REPO_ROOT/scripts/tools/harness-map/public-version.js"
+  MAPA_GEN="${TCG:-$REPO_ROOT}/scripts/tools/harness-map/public-version.js"
   if [ ! -f "$MAPA_GEN" ]; then
     echo "⚠️  tycon: no encontré $MAPA_GEN — no se regeneró la versión pública del mapa del arnés." >&2
   else
@@ -390,7 +445,7 @@ if [ -n "$MAPA_TOCADO" ]; then
     fi
     # la privada del índice, en la forma de un arnés (<raíz>/artifacts/mapa-arnes.html) para `--tcg`
     mkdir -p "$MAPA_TMP/tcg/artifacts" && cp "$MAPA_TMP/privada.html" "$MAPA_TMP/tcg/artifacts/mapa-arnes.html"
-    if ! node "$REPO_ROOT/scripts/tools/harness-map/census.js" --check --tcg "$MAPA_TMP/tcg"; then
+    if ! node "${TCG:-$REPO_ROOT}/scripts/tools/harness-map/census.js" --check --tcg "$MAPA_TMP/tcg"; then
       rm -rf "$MAPA_TMP"
       echo "⛔ COMMIT RECHAZADO — el tipo de alguna pieza del mapa no es el que le da su ruta (el detalle está arriba)." >&2
       exit 1
@@ -429,22 +484,24 @@ fi
 # divergencia declarada), y una pieza nueva entra con sus casos en el banco. Corre sólo si el commit toca lo que puede
 # romperla, incluida esta lista de disparo (este archivo está en `.githooks/`).
 RELEVANTES='^(adapters/|build/|scripts/controls-bench/|scripts/hooks/|scripts/install-tycon-hooks\.sh|\.githooks/|agents/)'
-if ! grep -qE "$RELEVANTES" <<<"$STAGED_ALL"; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted build/check.js; then
+  exit 0
+elif ! grep -qE "$RELEVANTES" <<<"$STAGED_ALL"; then
   exit 0
 fi
 
 # en un repo que no es el arnés (sin build/check.js ni lista blanca de publicación: los de juguete de las suites del hook)
 # no hay paridad que mirar; en el arnés, que falte el guion es «no pude mirar» y frena
-if [ ! -f "$REPO_ROOT/build/check.js" ]; then
+if [ ! -f "${TCG:-$REPO_ROOT}/build/check.js" ]; then
   if [ -f "$REPO_ROOT/scripts/publishing/allowlist.json" ]; then
-    echo "⛔ COMMIT RECHAZADO — no encontré $REPO_ROOT/build/check.js, así que NO pude mirar la paridad Claude↔Codex. No medido no es verde." >&2
+    echo "⛔ COMMIT RECHAZADO — no encontré ${TCG:-$REPO_ROOT}/build/check.js, así que NO pude mirar la paridad Claude↔Codex. No medido no es verde." >&2
     exit 1
   fi
   echo "▸ pre-commit: sin build/check.js ni lista blanca de publicación: no es el arnés; la paridad se saltea" >&2
   exit 0
 fi
 echo "▸ pre-commit: verificando la paridad Claude↔Codex (build/check.js)…"
-if ! node "$REPO_ROOT/build/check.js" > /tmp/tycon-check-$$.log 2>&1; then
+if ! node "${TCG:-$REPO_ROOT}/build/check.js" > /tmp/tycon-check-$$.log 2>&1; then
   echo "" >&2
   echo "⛔ COMMIT RECHAZADO — la paridad quedó desalineada:" >&2
   grep -E '^(❌|   ·|⚠)' /tmp/tycon-check-$$.log >&2 || tail -20 /tmp/tycon-check-$$.log >&2
@@ -480,7 +537,8 @@ harness_here() { [ -n "${_checks_named_harness:-}" ] || [ -d "${TCG}/scripts/pub
 # lo que el commit AGREGA (neto). Con un arnés que no trae el guion, avisa fuerte y deja pasar, como la paridad de
 # abajo; con el guion y una lista que no se lee, frena.
 NEW_NAMES="$(harness_publishing new-names.js)"
-if [ ! -f "$NEW_NAMES" ] || ! command -v node >/dev/null 2>&1; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/publishing/new-names.js; then :
+elif [ ! -f "$NEW_NAMES" ] || ! command -v node >/dev/null 2>&1; then
   harness_here || NEW_NAMES=""
   [ -z "$NEW_NAMES" ] || echo "⚠⚠ pre-commit AgentSkills: no encontré el freno de nombres nuevos (${NEW_NAMES})." >&2
   [ -z "$NEW_NAMES" ] || echo "   NO se miró si este commit mete nombres reales en lo que se publica: actualizá el arnés (git -C ${TCG} pull) o seteá TYCON_GUIDES_DIR." >&2
@@ -492,7 +550,8 @@ fi
 # ── El freno de nombres nuevos en castellano, con la fuente de las skills ──
 # Con un arnés que no trae el guion, avisa fuerte y deja pasar, como el de arriba.
 SPANISH_NAMES="$(harness_publishing spanish-names.js)"
-if [ ! -f "$SPANISH_NAMES" ] || ! command -v node >/dev/null 2>&1; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/publishing/spanish-names.js; then :
+elif [ ! -f "$SPANISH_NAMES" ] || ! command -v node >/dev/null 2>&1; then
   harness_here || SPANISH_NAMES=""
   [ -z "$SPANISH_NAMES" ] || echo "⚠⚠ pre-commit AgentSkills: no encontré el freno de nombres en castellano (${SPANISH_NAMES})." >&2
   [ -z "$SPANISH_NAMES" ] || echo "   NO se miró si este commit mete nombres nuevos en castellano en lo que se publica: actualizá el arnés (git -C ${TCG} pull) o seteá TYCON_GUIDES_DIR." >&2
@@ -509,7 +568,8 @@ fi
 TERCEROS_TOCA="$(git diff --cached --name-only -- skills agents .agents .claude)" || TERCEROS_TOCA="?"
 TERCEROS_RAW="$(git diff --cached --raw --no-renames)" || TERCEROS_RAW=":? 120000 (git diff falló)"
 TERCEROS_ENLACE="$(printf '%s\n' "$TERCEROS_RAW" | awk '$2 == "120000" { print; exit }')"
-if [ -n "$TERCEROS_TOCA" ] || [ -n "$TERCEROS_ENLACE" ]; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/publishing/third-party-coverage.js; then :
+elif [ -n "$TERCEROS_TOCA" ] || [ -n "$TERCEROS_ENLACE" ]; then
   COVERAGE="$(harness_publishing third-party-coverage.js)"
   if [ ! -f "$COVERAGE" ] || ! command -v node >/dev/null 2>&1; then
     harness_here || COVERAGE=""
@@ -539,7 +599,8 @@ cambiados="$(git diff --cached --name-only -- 'agents/*.md' 'packs/*/agents/*.md
 # revisores de la raíz (`agents/*.md`) del repo que trae el control, porque el examen vive en ese repo. No consulta al
 # modelo: compara el resultado guardado con la línea de base. Casos: scripts/tests/reviewer-change-check.test.js.
 EXAMEN="$(pwd)/scripts/controls-bench/reviewer-change-check.js"
-if [ -f "$EXAMEN" ] && grep -q '^agents/' <<<"$cambiados"; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/controls-bench/reviewer-change-check.js; then :
+elif [ -f "$EXAMEN" ] && grep -q '^agents/' <<<"$cambiados"; then
   if ! command -v node >/dev/null 2>&1; then
     echo "⛔ COMMIT RECHAZADO — el examen del revisor tocado: sin node no pude mirarlo, y no poder mirar no es verde." >&2
     exit 1
@@ -551,7 +612,9 @@ if [ -f "$EXAMEN" ] && grep -q '^agents/' <<<"$cambiados"; then
 fi
 
 CHECK="$TCG/build/check.js"
-if [ ! -f "$CHECK" ] || ! command -v node >/dev/null 2>&1; then
+if [ -n "${_checks_only:-}" ] && ! _checks_wanted build/check.js scripts/hooks/advisor-liveness-on-change.js; then
+  exit 0
+elif [ ! -f "$CHECK" ] || ! command -v node >/dev/null 2>&1; then
   # sin el arnés no se puede verificar: se avisa fuerte, no se bloquea
   echo "⚠⚠ pre-commit AgentSkills: no pude correr el check de paridad Codex ($CHECK)." >&2
   echo "   El commit toca advisors y su traducción puede quedar VIEJA." >&2
