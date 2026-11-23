@@ -28,7 +28,8 @@ function constanciaInvalida(l) {
   if (!String(l.reason || '').trim()) return 'no dice el motivo';
   if (!['manual', 'automatica'].includes(l.tipo)) return `tipo ${JSON.stringify(l.tipo)}`;
   if (!String(l.quien || '').trim()) return 'no dice quién firmó';
-  if (!/terminal|ventana|delegada|click en el cuadro|«aprobado» escrito/.test(String(l.via || ''))) return 'no dice por qué vía se firmó';
+  // la firma de trámite la da el arnés porque el dueño la listó en el perfil del equipo
+  if (!/terminal|ventana|delegada|firma de trámite|click en el cuadro|«aprobado» escrito/.test(String(l.via || ''))) return 'no dice por qué vía se firmó';
   if (!String(l.ts || '').trim()) return 'no dice cuándo se anotó';
   return null;
 }

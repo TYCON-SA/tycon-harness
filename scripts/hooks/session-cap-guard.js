@@ -391,7 +391,7 @@ function decidir(evento, opts = {}) {
     const cwd = typeof evento.cwd === 'string' && evento.cwd ? evento.cwd : null;
     const C = require(COORD);
     const now = opts.now == null ? Date.now() : Number(opts.now);
-    const base = { home: opts.home || require('os').homedir(), env: opts.env || process.env, now };
+    const base = { home: opts.home || require('os').homedir(), env: opts.env || process.env, now, ...(opts.reviewLoad ? { reviewLoad: opts.reviewLoad } : {}) };
     let c;
     try { c = C.capCheck(base); } catch (e) { c = { problems: [`el estado de la máquina (${String((e && e.message) || e).split('\n')[0]})`] }; }
     const salida = `La persona puede abrirla desde su terminal. Para el agente, el camino es: ${comandoOpen(lectura.nombre, cwd)}`;
@@ -402,6 +402,9 @@ function decidir(evento, opts = {}) {
       const nombres = c.working.map((w) => w.session).join(', ');
       return niega('en-el-tope', `No abro otra sesión de fondo: la máquina está en el tope (${c.working.length} de ${c.cap.value} trabajando: ${nombres}). El tope es ${c.cap.value} (${C.ORIGIN[c.cap.origin] || c.cap.origin}). Cuando haya lugar, abrila con el camino que espera su turno:\n  ${comandoOpen(lectura.nombre, cwd)}\n(o --repo <repo> en vez de --cwd, para un puesto fijo del repo).`);
     }
+    // Lo que espera la revisión de la persona, con el mismo veredicto que `open`: en freno niega; en aviso pasa y anota
+    const rev = C.reviewVerdict(c, { home: base.home, donde: 'session-cap-guard' });
+    if (rev.niega) return niega('revision-llena', `No abro otra sesión de fondo: ${rev.niega}. ${salida}.`);
     // Debajo del tope pasa, y cuenta desde ya: dos aperturas seguidas no pasan el tope.
     const nombreSesion = lectura.nombre && NOMBRE_OK.test(lectura.nombre) ? lectura.nombre : `sin-nombre-${hhmmss(now)}${String(now % 1000).padStart(3, '0')}`;
     try { C.noteOpened({ home: base.home, now, name: nombreSesion, cwd: cwd || '' }); } catch (e) {

@@ -67,6 +67,15 @@ a lo sumo una vez por minuto por sesión y sólo a un sitio que la entiende, y e
 su disco. Lo ven las personas con rol en el sitio: con la regla de fábrica, quien mantiene ve todas las máquinas y cada
 dev, las suyas. Una máquina sin aprobar no manda nada.
 
+«Lo que te necesita», debajo de lo que te toca, junta lo que espera al dueño: las firmas de «Tu firma», los cuadros
+abiertos de las sesiones, las sesiones que anotaron que te esperan (`marker.js doing --waiting-for` que te nombra) y lo
+que te toca según el tablero. Cada cosa dice qué hace falta, dónde se contesta, por qué sólo vos (el riesgo de su ficha,
+si la tiene) y la opción recomendada, si alguien la anotó con «recomiendo: …» en su texto; si no, lo dice. Sólo una
+espera en texto se contesta ahí: la respuesta le llega a esa sesión como un mensaje de la oficina. Una firma o un cuadro
+se contestan en el chat de su sesión, con el click, y lo del tablero, con la coordinadora. Si la sesión dejó de esperar,
+la respuesta queda en el registro sin entregarse («ya estaba resuelto»); si cerró, no se manda a nadie. Esta parte es
+sólo de la oficina local: no viaja al sitio.
+
 Las tablas «Hoy» y «Pendientes» se arman solas de las mismas tarjetas que el kanban: nadie las escribe. Tienen una fila por
 tema, con una línea de estado contada de las tarjetas, y al tocarla se abren sus trabajos. El tema de cada trabajo lo elige
 una vez el modelo de la noche de la organización, de fondo y sólo con la página abierta: armar la foto no lo espera, y se le
@@ -110,7 +119,10 @@ vos»: lo que le escribiste en su pestaña o desde acá, con sus respuestas.
 
 Le llega por un vigilante de fondo que cada sesión arma al arrancar y al cerrar cada turno (`office-inbox-watch.js`): la
 despierta si está quieta, o lo lee al terminar el paso si está trabajando. La herramienta lo anota como aviso del sistema,
-nunca como la persona, y la sesión lo comprueba con `office-message.js verify` antes de actuar. Por eso **un mensaje de la
+nunca como la persona, y la sesión lo comprueba con `office-message.js verify` antes de actuar. Al contestar, la sesión
+empieza citando lo que le escribiste («Me escribiste desde la oficina: …»), en un párrafo aparte: en su pestaña, sobre
+todo en la extensión de VS Code, el aviso no se ve. Desde esa cita, nada de ese mensaje cuenta como lo que hace la
+sesión: tu texto no aparece en su tarjeta ni viaja al sitio. Por eso **un mensaje de la
 oficina nunca firma, aprueba ni contesta un cuadro**, ni siquiera un «aprobado»: la ventana avisa antes de mandarlo, y un
 cuadro abierto sigue esperando tu click. Reciben las sesiones de terminal, las de fondo y las de la extensión de VS Code;
 `claude -p` y el SDK no, porque esperan al vigilante para salir, y otro editor tampoco mientras no esté medido. Lo que no
