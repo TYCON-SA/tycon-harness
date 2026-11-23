@@ -29,7 +29,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   close --name <n>         cierra una sesión de fondo si quedó limpia; si falta algo, o no pudo mirarlo, no cierra y dice
  *                            qué. A una interactiva la verifica y avisa
  *   stop --name <n>          para una sesión de fondo con el id que anotó (claude stop no la encuentra por el nombre ni
- *                            por el ref de ListAgents); no borra nada y se retoma con claude respawn <id>
+ *                            por el ref de ListAgents); no borra nada y se retoma con relaunch --id <id>
+ *   relaunch --id <id>       relanza una sesión de fondo parada con claude respawn <id> y la anota como abierta por la
+ *                            coordinadora, como open: relanzada a mano no cuenta como suya
  *   owner-wait               lo lanza la coordinadora confirmada, de fondo: mira cada 2 s y termina, con una línea por
  *                            novedad, cuando otra sesión queda frenada en un permiso, cuando una frenada sigue o se
  *                            cierra, cuando Claude Code cierra una sesión de fondo, o cuando el permiso de una sesión de
@@ -644,7 +646,7 @@ function relayNoteOf(home, sid, since) {
 const retiredWaited = (x) => (x.waited ? `, esperando ${oneLine(x.waited).slice(0, 160)}${x.waitingSince == null ? '' : ` desde las ${hhmm(x.waitingSince)}`}` : ', sin anotar qué esperaba');
 // una sesión que espera a su agente de fondo, que no escribe hace rato (lib/agent-silence.js)
 const agentSilentLine = (a) => `${a.session} espera a su agente ${String(a.agente).slice(0, 17)}, que no escribe hace ${a.minutos} min${a.herramienta ? ` (su último paso: ${quoted(a.herramienta, 40)})` : ''}`;
-const retiredLine = (x) => `${x.session}: la cerró Claude Code a las ${hhmm(x.at)} por ${x.reason}, quieta ${x.idleMin} min${retiredWaited(x)}. Para levantarla: claude respawn ${x.short}`;
+const retiredLine = (x) => `${x.session}: la cerró Claude Code a las ${hhmm(x.at)} por ${x.reason}, quieta ${x.idleMin} min${retiredWaited(x)}. Para levantarla: coordination.js relaunch --id ${x.short}`;
 
 /** El estado de la máquina, como datos. `noTranscripts`: sin abrir las conversaciones (el aviso de cada turno). */
 function status(opts = {}) {
@@ -3243,7 +3245,7 @@ function close(opts = {}) {
 /**
  * Para una sesión de fondo por su nombre, con el id de fondo que anotó la sesión: `claude stop` no la encuentra ni por
  * el nombre ni por el ref que muestra ListAgents. No mira si quedó limpia, porque parar no borra nada (borrar es de
- * `close`), y se retoma con `claude respawn`. Quién puede y cuál es la sesión, como en `close`. `{ ok, message }`.
+ * `close`), y se retoma con `relaunch`. Quién puede y cuál es la sesión, como en `close`. `{ ok, message }`.
  */
 function stop(opts = {}) {
   const name = opts.name;
@@ -3260,7 +3262,50 @@ function stop(opts = {}) {
   if (job.error) return no(job.error);
   const failed = job.run('stop');
   if (failed) return no(`«${name}»: no la pude parar (${failed}), no paré nada.`);
-  return { ok: true, message: `paré ${name} (${s.jobId}); se retoma con claude respawn ${s.jobId}` };
+  return { ok: true, message: `paré ${name} (${s.jobId}); se retoma con coordination.js relaunch --id ${s.jobId}` };
+}
+
+/**
+ * Relanza una sesión de fondo parada (por `stop`, o la que cerró Claude Code) con `claude respawn <id>` y la anota como
+ * abierta por la coordinadora, como `open`: una sesión que ella relanza es tan suya como una que abrió, y relanzada a mano
+ * no está en el registro, así que sus firmas de rutina caen en la lista del dueño. Quién puede, como en `stop`. Una sesión
+ * parada no deja su archivo: se relanza por su id de fondo (el que dio `stop` o el aviso de Claude Code) y se anota cuando
+ * aparece viva con ese id. `{ ok, message }`.
+ */
+function relaunch(opts = {}) {
+  const home = opts.home || require('os').homedir();
+  const env = opts.env || process.env;
+  const id = opts.id;
+  const nada = 'no relancé nada.';
+  const no = (message) => ({ ok: false, message: oneLine(message) });
+  if (!id || !JOB_ID_RE.test(String(id))) return no(`relaunch va con --id <el id de fondo>: ${nada}`);
+  if (isCodex(env) && !opts.launcher) return no(`Codex no tiene sesiones de fondo que relanzar: ${nada}`);
+  // la relanza la coordinadora o una persona en su terminal: una sesión de trabajo no levanta otra
+  const caller = sessionOf({ ...opts, env });
+  const d = designacionVigente({ home });
+  if (d && d.error) return no(`No pude saber cuál es la coordinadora (${d.error}): ${nada}`);
+  if (caller && (!d || d.sesion !== caller)) return no(`Una sesión la relanza la coordinadora designada o una persona en su terminal: ${nada}`);
+  const liveWithId = () => [...sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null).entries()]
+    .find(([, x]) => x.alive && /^(bg|background)$/.test(String(x.kind)) && x.jobId === id) || null;
+  const already = liveWithId();
+  if (already) return no(`«${already[1].name || already[0]}» (${id}) está viva: ${nada}`);
+  const job = jobVerbs(opts, id, nada);
+  if (job.error) return no(job.error);
+  // la hora antes de lanzar, como en `open`: la sesión nueva arranca después, dentro de la ventana de su anotación
+  const now = Date.now();
+  const failed = job.run('respawn');
+  if (failed) return no(`${id}: no la pude relanzar (${failed}), ${nada}`);
+  const waitMs = Number.isFinite(opts.waitMs) ? opts.waitMs : LAUNCH_TIMEOUT_MS;
+  let found = liveWithId();
+  for (const until = Date.now() + waitMs; !found && Date.now() < until; found = liveWithId()) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+  if (!found) return { ok: true, message: oneLine(`Relancé ${id}, pero no la vi viva en ${Math.round(waitMs / 1000)} s: no la anoté como abierta por la coordinadora. Mirá con /wip; sus firmas de rutina van a la lista del dueño.`) };
+  const [sid, x] = found;
+  const name = fullSessionName(home, sid) || x.name;
+  const noted = withOpenLock(home, OPEN_LOCK_WAIT_MS, () => {
+    try { noteLaunched({ home, now, name, cwd: x.cwd, por: caller }); return null; } catch (e) { return { ok: false, message: e.code || e.message }; }
+  });
+  if (noted) return { ok: true, message: oneLine(`Relancé «${name}» (${id}), pero no la pude anotar como abierta por la coordinadora (${noted.message}): sus firmas de rutina van a la lista del dueño.`) };
+  return { ok: true, message: `relancé «${name}» (${id}); queda como abierta por la coordinadora` };
 }
 
 // ── La línea de comandos ──
@@ -3413,6 +3458,11 @@ function main(argv) {
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
+  if (cmd === 'relaunch') {
+    const r = relaunch({ ...base, id: f.id });
+    process.stdout.write(`${r.message}\n`);
+    return r.ok ? 0 : 1;
+  }
   if (cmd === 'owner-wait') {
     const r = ownerWait(base);
     if (r.text) process.stdout.write(`${r.text}\n`);
@@ -3441,6 +3491,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines,reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN,
+module.exports = { LAUNCH_TIMEOUT_MS, relaunch, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines,reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN,
   // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
   stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };

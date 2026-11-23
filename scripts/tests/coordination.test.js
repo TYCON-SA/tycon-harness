@@ -1409,7 +1409,7 @@ test('T7 Stop_PorNombre_ParaConElId @story-8.284 @ac-14: para con el id que anot
   fs.writeFileSync(path.join(t.repo, 'suelto.txt'), 'z\n');
   const r = stopIt(t, 'parable');
   assert.strictEqual(r.ok, true, r.message);
-  assert.strictEqual(r.message, 'paré parable (job-parable); se retoma con claude respawn job-parable');
+  assert.strictEqual(r.message, 'paré parable (job-parable); se retoma con coordination.js relaunch --id job-parable');
   assert.deepStrictEqual(closed(t), ['stop job-parable'], 'una sola llamada, y nunca rm');
   // una muerta con el mismo nombre no la vuelve ambigua: la misma regla que close
   const u = closeLab();
@@ -3146,4 +3146,53 @@ test('Planes_DuenoAusente_SeJuntanParaLaVuelta: con la marca de ausente, el avis
   assert.doesNotMatch(aviso(), /para cuando vuelva la persona/);
   require(path.join(ROOT, 'scripts', 'lib', 'owner-away.js')).set({ estado: t.state, quien: 'coordinadora', frase: 'me voy', ahora: mins(100) });
   assert.match(aviso(), /Coordinación: para cuando vuelva la persona: 1 plan espera su aprobación: Ana \(9\.11, hace 180 min\)/);
+});
+
+// ── Fila 86: relanzar una sesión de fondo la deja como abierta por la coordinadora ──────────────────────────────────────
+
+// Un lanzador de juguete que, con `respawn <id>`, deja viva la sesión de fondo con ese id: su archivo de sesión, con el pid de
+// esta prueba (vivo) y la hora de ahora, como la levanta Claude Code.
+function relauncher(t, { name = 'Relanzada', cwd = null, fail = null, appear = true } = {}) {
+  const script = path.join(t.root, 'relauncher.js');
+  fs.writeFileSync(script, `
+const fs = require('fs');
+const [verb, id] = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(path.join(t.root, 'closed.log'))}, verb + ' ' + id + '\\n');
+if (${JSON.stringify(fail)}) { process.stderr.write(${JSON.stringify(String(fail))} + '\\n'); process.exit(1); }
+if (${JSON.stringify(appear)}) fs.writeFileSync(${JSON.stringify(path.join(t.home, '.claude', 'sessions', 'sid-relanzada.json'))}, JSON.stringify({ pid: ${process.pid}, sessionId: 'sid-relanzada', name: ${JSON.stringify(name)}, nameSource: 'user', kind: 'bg', jobId: id, status: 'idle', statusUpdatedAt: Date.now(), startedAt: Date.now(), cwd: ${JSON.stringify(cwd || t.root)} }));
+`);
+  return { bin: process.execPath, prefix: [script] };
+}
+
+test('T86a Relaunch_QuedaComoAbiertaPorLaCoordinadora: la que relanza coordination.js relaunch cuenta como abierta por ella', () => {
+  // 🔴 mutación: relanzar sin anotarla (una sesión relanzada a mano no está en el registro: sus firmas de rutina van al dueño)
+  const t = closeLab();
+  const r = C.relaunch({ ...t.closeOpts, id: 'job-rel', launcher: relauncher(t, { cwd: t.repo }) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.match(r.message, /relancé «Relanzada» \(job-rel\)/);
+  assert.deepStrictEqual(closed(t), ['respawn job-rel']);
+  assert.deepStrictEqual(C.launchedBy({ home: t.home, sid: 'sid-relanzada' }), { launched: true });
+  // la misma sesión relanzada a mano, sin pasar por coordination.js, no está en el registro
+  const t2 = closeLab();
+  spawnSync(process.execPath, [relauncher(t2).prefix[0], 'respawn', 'job-rel']);
+  assert.deepStrictEqual(C.launchedBy({ home: t2.home, sid: 'sid-relanzada' }), { launched: false });
+});
+
+test('T86b Relaunch_LoQueNoRelanza: otra sesión, un id raro, una viva o un lanzador que falla no relanzan ni anotan', () => {
+  const t = closeLab();
+  const otra = C.relaunch({ ...t.opts, env: { CLAUDE_CODE_SESSION_ID: 'sid-otra' }, id: 'job-rel', launcher: relauncher(t) });
+  assert.match(otra.message, /la coordinadora designada o una persona en su terminal/);
+  assert.match(C.relaunch({ ...t.closeOpts, id: '-rm', launcher: relauncher(t) }).message, /relaunch va con --id <el id de fondo>/);
+  bg(t, 'viva', t.repo, { jobId: 'job-viva' });
+  assert.match(C.relaunch({ ...t.closeOpts, id: 'job-viva', launcher: relauncher(t) }).message, /«viva» \(job-viva\) está viva: no relancé nada/);
+  const falla = C.relaunch({ ...t.closeOpts, id: 'job-rel', launcher: relauncher(t, { fail: 'no existe ese id' }) });
+  assert.strictEqual(falla.ok, false);
+  assert.match(falla.message, /no la pude relanzar \(no existe ese id\)/);
+  assert.deepStrictEqual(closed(t), ['respawn job-rel'], 'sólo el que falló llegó al lanzador');
+  assert.deepStrictEqual(C.launchedBy({ home: t.home, sid: 'sid-relanzada' }), { launched: false });
+  // el lanzador volvió bien pero la sesión no apareció: lo dice y no anota nada
+  const t2 = closeLab();
+  const muda = C.relaunch({ ...t2.closeOpts, id: 'job-rel', waitMs: 300, launcher: relauncher(t2, { appear: false }) });
+  assert.strictEqual(muda.ok, true);
+  assert.match(muda.message, /no la vi viva/);
 });
