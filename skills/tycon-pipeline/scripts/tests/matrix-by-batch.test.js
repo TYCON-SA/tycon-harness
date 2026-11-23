@@ -462,7 +462,7 @@ const conAnidado = (propio, anidado, anidadoPrimero = false) => {
   return conBloque(`pipelines:\n  - name: ${A}\n${anidadoPrimero ? gate + st : st + gate}    acs: [1]\n${tanda(B, 'pending', 2)}${tanda(C, 'pending', 3)}`);
 };
 
-test('T26 PreCommit_NestedStatus_DoesNotOverride — el estado de una tanda es el suyo: uno anidado no lo pisa', async (t) => {
+test('T26 PreCommit_NestedStatus_DoesNotOverride — el estado de una tanda es el suyo: uno anidado no lo pisa, y un done anidado vuelve dudosa la lectura', async (t) => {
   const conHead = (contenido) => {
     const E = entorno();
     fs.writeFileSync(E.story, contenido);
@@ -474,13 +474,13 @@ test('T26 PreCommit_NestedStatus_DoesNotOverride — el estado de una tanda es e
     await t.test(`la tanda pasa a done y el anidado vuelve a in-progress (${caso}): se mide y frena`, () => {
       const r = commitear(conHead(conAnidado('in-progress', 'done', anidadoPrimero)), conAnidado('done', 'in-progress', anidadoPrimero), 's-t26a');
       assert.notStrictEqual(r.status, 0, salida(r));
-      assert.match(salida(r), new RegExp(`cierra la tanda ${A}`), salida(r));
       assert.match(faltan(r), /#1\b/, salida(r));
     });
   }
-  await t.test('la tanda vuelve a in-progress y el anidado pasa a done: no se cierra nada', () => {
+  await t.test('la tanda vuelve a in-progress y el anidado pasa a done: el done no es de ninguna tanda, se miden todas', () => {
     const r = commitear(conHead(conAnidado('done', 'in-progress')), conAnidado('in-progress', 'done'), 's-t26c');
-    assert.strictEqual(r.status, 0, salida(r));
+    assert.notStrictEqual(r.status, 0, salida(r));
+    assert.match(salida(r), /la palabra done aparece[^\n]*se miden todas las tandas/, salida(r));
   });
   await t.test('dos estados propios en la misma tanda: la lectura es dudosa y se miden todas', () => {
     const doble = conBloque(`pipelines:\n  - name: ${A}\n    status: done\n    status: pending\n    acs: [1]\n${tanda(B, 'pending', 2)}`);
@@ -488,6 +488,28 @@ test('T26 PreCommit_NestedStatus_DoesNotOverride — el estado de una tanda es e
     assert.notStrictEqual(r.status, 0, salida(r));
     assert.match(salida(r), /más de un estado propio[^\n]*se miden todas las tandas/, salida(r));
   });
+});
+
+// Bloques donde una tanda pasa a done sin que el lector la lea: en una sola línea (con un `- name:` anidado que
+// compensaría la cuenta de entradas) o con un done en un comentario.
+const SIN_LEER = [
+  ['el mapa con la tanda en una línea', (b) => `pipelines:\n  ${A}:\n    status: pending\n    acs: [1]\n    checks:\n      - name: lint\n        status: pending\n  ${B}: {status: ${b}, acs: [2]}\n`],
+  ['la lista con la tanda en una línea', (b) => `pipelines:\n  - name: ${A}\n    status: pending\n    acs: [1]\n    checks:\n      - name: lint\n        status: pending\n  - {name: ${B}, status: ${b}, acs: [2]}\n`],
+  ['un done en un comentario del bloque', (b) => `pipelines:\n  - name: ${A}\n${b === 'done' ? '    # done en staging\n' : ''}    status: pending\n    acs: [1]\n${tanda(B, 'pending', 2)}`],
+];
+
+test('T27 PreCommit_DoneWordsBeyondReadBatches_MeasuresAll — si el bloque dice done más veces que las tandas leídas en done, se miden todas', async (t) => {
+  for (const [i, [caso, bloque]] of SIN_LEER.entries()) {
+    await t.test(caso, () => {
+      const E = entorno();
+      fs.writeFileSync(E.story, conBloque(bloque('pending')));
+      E.git('commit', '-qam', `la historia con ${caso}`);
+      E.humo([1]);
+      const r = commitear(E, conBloque(bloque('done')), `s-t27${i}`);
+      assert.notStrictEqual(r.status, 0, salida(r));
+      assert.match(salida(r), /se miden todas las tandas/, salida(r));
+    });
+  }
 });
 
 test('T24 PreCommit_DoubtfulBlockUnchanged_Passes — sin una tanda nueva en done, el bloque dudoso no pide nada', () => {

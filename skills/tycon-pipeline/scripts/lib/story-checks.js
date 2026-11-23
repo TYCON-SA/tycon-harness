@@ -529,6 +529,9 @@ function parsePipelinesBlock(specContent) {
   // la sangría de las claves directas de cada tanda: un `status` anidado más adentro (`gate:` y debajo `status:`) no es
   // el de la tanda y no lo pisa
   const sangriaDeClaves = new Map();
+  // la sangría del primer ítem del bloque: sólo las entradas a esa sangría son tandas; un `- name:` más adentro (una
+  // lista dentro de una tanda, como `checks:`) no lo es
+  let nivel = null;
   const limpio = (s) => String(s).replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
   const enLinea = (v) => v.replace(/^\[|\]$/g, '').split(',').map(limpio).filter(Boolean);
   for (let i = start + 1; i < lines.length; i++) {
@@ -540,10 +543,11 @@ function parsePipelinesBlock(specContent) {
     // (`- texto`) para no tragarse el `- name:` como un ítem pendiente.
     const listNameM = line.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
     const nueva = (name) => ({ name, status: null, blockedBy: null, acs: [], acsPending: [], tasks: [], tasksPending: [], tests: [], testsPending: [], pendingItems: [] });
-    if (listNameM) { current = nueva(listNameM[1]); sangriaDeClaves.set(current, line.indexOf('name')); out.push(current); lista = null; continue; }
+    if (listNameM && nivel !== null && indent !== nivel) continue;
+    if (listNameM) { nivel = indent; current = nueva(listNameM[1]); sangriaDeClaves.set(current, line.indexOf('name')); out.push(current); lista = null; continue; }
     // (b) MAPA: `  X:` (indent 2, valor vacío) abre una entrada.
     const mapNameM = line.match(/^\s{2}([\w-]+)\s*:\s*$/);
-    if (mapNameM && indent === 2) { current = nueva(mapNameM[1]); out.push(current); lista = null; continue; }
+    if (mapNameM && indent === 2 && (nivel === null || nivel === 2)) { nivel = 2; current = nueva(mapNameM[1]); out.push(current); lista = null; continue; }
     if (!current) continue;
     // en el mapa, la primera clave de la tanda (no un comentario) fija la sangría de sus claves directas
     if (!sangriaDeClaves.has(current) && !/^\s*#/.test(line)) sangriaDeClaves.set(current, indent);
@@ -667,13 +671,24 @@ function readBatches(content) {
     if (entero !== leido) recortados.push(entero);
   }
   if (recortados.length) out.doubts.push(`un nombre de tanda que el lector no lee entero (${recortados.join(', ')})`);
-  // cada renglón de la sangría más chica del bloque abre una entrada (`- …` en la lista, `X:` en el mapa)
+  // cada renglón a la sangría del primer ítem abre una entrada, y en bloque: `- name: X` en la lista o `X:` sin valor en
+  // el mapa. Una entrada de una sola línea (`- {name: X, status: done}`, `X: {status: done}`) el lector no la lee, y un
+  // renglón a menos sangría que las tandas queda fuera de las dos cuentas
   if (body.length) {
     const sangria = (l) => l.length - l.trimStart().length;
-    const minima = Math.min(...body.map(sangria));
-    const entradas = body.filter((l) => sangria(l) === minima).length;
-    if (entradas !== batches.length) out.doubts.push(`el bloque tiene ${entradas} entradas y el lector lee ${batches.length}`);
+    const nivelDeTandas = sangria(body[0]);
+    if (body.some((l) => sangria(l) < nivelDeTandas)) out.doubts.push('un renglón del bloque a menos sangría que sus tandas');
+    const entradas = body.filter((l) => sangria(l) === nivelDeTandas);
+    if (entradas.length !== batches.length) out.doubts.push(`el bloque tiene ${entradas.length} entradas y el lector lee ${batches.length}`);
+    const enBloque = (l) => /^\s*-\s*name\s*:\s*\S/.test(l) || /^\s*[^\s#-][^:]*:\s*(#.*)?$/.test(l);
+    const enUnaLinea = entradas.filter((l) => !enBloque(l));
+    if (enUnaLinea.length) out.doubts.push(`una entrada que no se abre en bloque (${enUnaLinea.map((l) => l.trim()).join(' | ')})`);
   }
+  // la regla de fondo: cada tanda hecha pone una palabra done en el bloque. Si aparece más veces (entre comillas, en
+  // mayúsculas, entre llaves, anidada o en un comentario), hay un done que el lector no atribuye a ninguna tanda
+  const palabrasDone = (out.region.match(/\bdone\b/gi) || []).length;
+  const leidasDone = batches.filter(isDoneBatch).length;
+  if (palabrasDone > leidasDone) out.doubts.push(`la palabra done aparece ${palabrasDone} veces en el bloque y el lector lee ${leidasDone} tandas hechas`);
   return out;
 }
 

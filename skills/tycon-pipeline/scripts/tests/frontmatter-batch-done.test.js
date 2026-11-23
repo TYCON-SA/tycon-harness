@@ -130,18 +130,36 @@ const conAnidado = (propio, anidado, anidadoPrimero = false) => {
   return conBloque(`pipelines:\n  - name: A\n${anidadoPrimero ? gate + st : st + gate}    acs: [1]\n${tanda('B', 'pending', 2)}`);
 };
 
-test('T8 FrontmatterWrite_NestedStatus_DoesNotOverride — el estado de una tanda es el suyo: uno anidado no lo pisa', async (t) => {
+test('T8 FrontmatterWrite_NestedStatus_DoesNotOverride — el estado de una tanda es el suyo: uno anidado no lo pisa, y un done anidado vuelve dudosa la lectura', async (t) => {
   for (const [caso, anidadoPrimero] of [['el anidado va después del propio', false], ['el anidado va antes del propio', true]]) {
     await t.test(`la tanda pasa a done y el anidado vuelve a in-progress (${caso}): frena`, () => {
       const r = escribir(conAnidado('in-progress', 'done', anidadoPrimero), conAnidado('done', 'in-progress', anidadoPrimero));
       assert.strictEqual(r.status, 2, salida(r));
     });
   }
-  await t.test('la tanda vuelve a in-progress y el anidado pasa a done: pasa', () => {
-    pasa(escribir(conAnidado('done', 'in-progress'), conAnidado('in-progress', 'done')));
+  await t.test('la tanda vuelve a in-progress y el anidado pasa a done: el done no es de ninguna tanda, frena', () => {
+    const r = escribir(conAnidado('done', 'in-progress'), conAnidado('in-progress', 'done'));
+    assert.strictEqual(r.status, 2, salida(r));
   });
   await t.test('dos estados propios en la misma tanda: frena', () => {
     const r = escribir(conBloque(`pipelines:\n${tanda('A', 'pending', 1)}`), conBloque('pipelines:\n  - name: A\n    status: done\n    status: pending\n    acs: [1]\n'));
     assert.strictEqual(r.status, 2, salida(r));
   });
+});
+
+// Bloques donde una tanda pasa a done sin que el lector la lea: en una sola línea (con un `- name:` anidado que
+// compensaría la cuenta de entradas) o con un done en un comentario.
+const SIN_LEER = [
+  ['el mapa con la tanda en una línea', (b) => `pipelines:\n  A:\n    status: pending\n    acs: [1]\n    checks:\n      - name: lint\n        status: pending\n  B: {status: ${b}, acs: [2]}\n`],
+  ['la lista con la tanda en una línea', (b) => `pipelines:\n  - name: A\n    status: pending\n    acs: [1]\n    checks:\n      - name: lint\n        status: pending\n  - {name: B, status: ${b}, acs: [2]}\n`],
+  ['un done en un comentario del bloque', (b) => `pipelines:\n  - name: A\n${b === 'done' ? '    # done en staging\n' : ''}    status: pending\n    acs: [1]\n${tanda('B', 'pending', 2)}`],
+];
+
+test('T9 FrontmatterWrite_DoneWordsBeyondReadBatches_Blocks — si el bloque dice done más veces que las tandas leídas en done, frena', async (t) => {
+  for (const [caso, bloque] of SIN_LEER) {
+    await t.test(caso, () => {
+      const r = escribir(conBloque(bloque('pending')), conBloque(bloque('done')));
+      assert.strictEqual(r.status, 2, salida(r));
+    });
+  }
 });
