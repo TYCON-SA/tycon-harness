@@ -1935,6 +1935,12 @@
       "requiere": []
     },
     {
+      "__nota": "Lo que contesta el dueño lo contesta el dueño: «skip» del código pide la firma review-skip, las otras respuestas no, y la coordinadora lo contesta por el perfil sólo con el dueño ausente y la celda en skip. Casa de juguete con git.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/owner-answers.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/undeclared-changes.test.js",
       "requiere": []
