@@ -824,7 +824,8 @@ be, to copy it and open the request by hand.
   agent: if the coordinator decides to approve it on its own, the harness cannot tell it apart from the owner's ok, so
   delegate only low-risk things. "Owner only" (`approvals.owner_only`) locks it: the site does not offer to delegate it,
   and it does not offer it for what cannot be signed from another session's tab either. The fixed notice says so:
-  "Loosening a control is always signed by a person, at their terminal; this does not change that." Without a
+  "Loosening a control is always approved by a person, with a click or at their terminal, and the emergency only at
+  their terminal: it is not delegated." Without a
   designated session, delegation does nothing, and the section warns about it. Delegation applies only on the machines
   in the list below (`approvals.delegated_machines`), named by their fingerprint: the ones the runs mailbox saw are
   added with a button, and another one by typing its fingerprint. By default, on none. All of it counts only from
