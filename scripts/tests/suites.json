@@ -3793,6 +3793,12 @@
       "requiere": []
     },
     {
+      "__nota": "El aviso de consultas fallidas es neutro: qué comando de una plataforma es una consulta, el aviso del proyecto que no existe y el refresco de su lista los trae el conector en scripts/query-notice.js. Sin red: una casa de juguete con la lista guardada.",
+      "raiz": "arnes",
+      "ruta": "tests/failed-query-connectors.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "El pedido de trabajo de la historia por la capa de plataforma: crear, activar y cerrar con Azure DevOps (las mismas llamadas a az de los pasos) y con GitHub (issue, etiquetas, horas en un comentario), el campo work_item con su alias, la configuración con su nombre viejo y lo que GitHub no tiene. Sin red: el az y el gh de mentira.",
       "raiz": "arnes",
       "ruta": "tests/platform-work-item.test.js",
