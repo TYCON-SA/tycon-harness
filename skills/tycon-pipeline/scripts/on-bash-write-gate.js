@@ -2212,10 +2212,13 @@ function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = nul
  * ¿Algún tramo edita en el lugar los archivos que nombra? `sed`/`perl`/`ruby` con una opción que lleva `i` (`-i`,
  * `-ibak`, `-0pi`, `--in-place`), `awk -i inplace`, `ed` o `ex`. Se lee por palabras con sus comillas (un `;` o un `|`
  * dentro del guion de `sed` no corta) y también detrás de `xargs`, `find -exec`, las palabras del shell (`{`, `if`…) y
- * adentro de `bash -c '…'`, `$(…)` y las comillas invertidas.
+ * adentro de `bash -c '…'`, `$(…)` y las comillas invertidas. El programa de un `node -e '…'` que no puede correr
+ * otro proceso, en un comando donde nada corre lo que imprime o escribe, no se lee como comandos: un `sed -i` adentro
+ * de uno de sus textos es texto (`programasSinProcesos`).
  */
 function editaEnSitio(cmd) {
   const opcionI = (w) => /^-[A-Za-z0-9]*i/.test(w) || /^--in-place\b/.test(w);
+  const programas = programasSinProcesos(cmd);
   const ver = (texto, nivel) => {
     for (const tramo of tramos(texto)) {
       const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
@@ -2227,11 +2230,58 @@ function editaEnSitio(cmd) {
         if (k === 0 && (c === 'ed' || c === 'ex')) return true;
       }
       const citados = textosCitados(tramo, cmd);
-      if (nivel < 2) for (const w of words) if (/\s/.test(w) && !citados.has(w) && ver(w, nivel + 1)) return true;
+      if (nivel < 2) for (const w of words) if (/\s/.test(w) && !citados.has(w) && !programas.has(w) && ver(w, nivel + 1)) return true;
     }
     return false;
   };
   return [String(cmd || ''), ...anidadosHasta(cmd).leidos].some((t) => ver(t, 0));
+}
+
+// Un programa de `node -e` que no puede correr otro proceso: cada `require` es de un módulo propio de node que no corre
+// nada, y no hay otra forma de llegar a uno (`import`, `process.binding`, `module`, `Function`, `eval`, `constructor`…).
+// Un módulo propio no se puede reemplazar con un archivo de la carpeta, como sí un `json.py` en python
+const MODULOS_QUE_NO_CORREN = String.raw`(?:node:)?(?:fs|fs\/promises|path|os|util|assert|url|crypto|zlib|readline|events|buffer|string_decoder|querystring)`;
+const REQUIRE_QUE_NO_CORRE = new RegExp(String.raw`\brequire\s*\(\s*(['"])${MODULOS_QUE_NO_CORREN}\1\s*\)`, 'g');
+const PROGRAMA_LLEGA_A_PROCESOS = /\bimport\b|\bprocess\s*(?:\.\s*(?:binding|_linkedBinding|dlopen|mainModule|execve|getBuiltinModule|kill|send|channel)|\[)|\bmodule\b|\bexports\b|\bFunction\b|\beval\b|\bvm\b|\bglobalThis\b|\bglobal\b|\bReflect\b|\bWorker\b|\bWebAssembly\b|child_process|\bconstructor\b|__proto__|\bprototype\b|\bset(?:Timeout|Interval|Immediate)\s*\(\s*['"`]/;
+// lo que, fuera del programa, puede estar en el comando sin correr nada que el programa haya dejado escrito o impreso
+const COMANDOS_QUE_NO_CORREN = new Set(['cd', 'pushd', 'popd', 'echo', 'printf', 'true', 'false', 'test', '[', 'cat', 'head',
+  'tail', 'wc', 'ls', 'grep', 'egrep', 'fgrep', 'rg', 'diff', 'cmp', 'sort', 'uniq', 'cut', 'tr', 'jq', 'stat', 'pwd', 'date',
+  'mkdir', 'touch']);
+
+/**
+ * Los programas de `node -e '…'` del comando cuyo texto no puede correr como comandos del shell: el programa no llega a
+ * otro proceso (`REQUIRE_QUE_NO_CORRE`, `PROGRAMA_LLEGA_A_PROCESOS`), su salida no va a ningún lado (sin tubería ni
+ * redirección), node no lleva otras opciones, y el resto del comando sólo lee o muestra (`COMANDOS_QUE_NO_CORREN`, o un
+ * `bash -n`/`sh -n` que sólo revisa la sintaxis): nada corre lo que el programa imprime o deja escrito. Con cualquier
+ * otra cosa (otro intérprete, un `$(…)`, un heredoc, una variable antes de node, un shell que corre) el conjunto queda
+ * vacío y el texto se lee como siempre. Cada programa tal cual lo deja el shell y con los escapes de las comillas
+ * dobles, como lo puede dejar `palabras`.
+ */
+function programasSinProcesos(cmd) {
+  const out = new Set();
+  let r;
+  try { r = require('./lib/marker-command.js').tramos(String(cmd || ''), 'bash'); } catch (e) { logHookError(e); return out; }
+  if (!r || r.abierta || r.conParentesis || r.subs.length) return out;
+  const programas = [];
+  for (const t of r.tramos) {
+    if (t.heredocs.length || t.tras === '|') return new Set();
+    const w = t.palabras.map((p) => p.texto);
+    if (['node', 'nodejs'].includes(w[0]) && ['-e', '--eval', '-p', '--print'].includes(w[1]) && w.length >= 3) {
+      const programa = w[2];
+      const requires = (programa.match(/\brequire\b/g) || []).length;
+      if (requires !== (programa.match(REQUIRE_QUE_NO_CORRE) || []).length || PROGRAMA_LLEGA_A_PROCESOS.test(programa)) return new Set();
+      if (w.slice(3).some((x) => x.startsWith('-') || /[<>]/.test(x))) return new Set();
+      programas.push(programa);
+      continue;
+    }
+    if (w.some((x) => /[<>]/.test(x))) return new Set();
+    if (w.every((x) => /^[A-Za-z_]\w*=/.test(x))) continue;
+    if (COMANDOS_QUE_NO_CORREN.has(w[0])) continue;
+    if (['bash', 'sh', 'zsh', 'dash'].includes(w[0]) && w.length === 3 && w[1] === '-n') continue;
+    return new Set();
+  }
+  for (const p of programas) { out.add(p); out.add(p.replace(/(["\\$`])/g, '\\$1')); }
+  return out;
 }
 
 /**
@@ -2299,6 +2349,30 @@ function comodinSimple(w) {
 }
 
 /**
+ * Las palabras de un tramo como las arma el shell, con los pedazos citados pegados en una sola (`'a'"'"'b'` es `a'b`,
+ * como lo escribe quien cierra la comilla simple para meter una): `{ words, conVariable }`, con los índices de las
+ * palabras que llevan una variable. Lo lee el lector de comandos de `marker-command.js`. Una palabra con una variable
+ * vale sólo si `palabras` la lee igual (`"$f"`, `$f/a.sh`): pegada a otro pedazo (`"$s"x.md`) el nombre de la variable
+ * no se sabe dónde termina, y entonces null. null también si el lector no lo deja en un solo tramo sin heredocs.
+ */
+function palabrasDelSed(texto) {
+  let r;
+  try { r = require('./lib/marker-command.js').tramos(String(texto), 'bash'); } catch (e) { logHookError(e); return null; }
+  if (!r || r.abierta || r.subs.length || r.tramos.length !== 1 || r.tramos[0].heredocs.length) return null;
+  const viejas = new Set(palabras(texto));
+  const words = [];
+  const conVariable = new Set();
+  for (const p of r.tramos[0].palabras) {
+    if (!p.literal) {
+      if (!viejas.has(p.texto)) return null;
+      conVariable.add(words.length);
+    }
+    words.push(p.texto);
+  }
+  return { words, conVariable };
+}
+
+/**
  * Los `sed` en el lugar de un comando cuando todos nombran sus archivos: `[{ sed, opciones, guiones, archivo }]`, con el
  * archivo como palabra (una variable del comando ya resuelta) o como un comodín simple (`comodinSimple`), que se expande
  * desde cada carpeta donde puede correr. null si algún editor en el lugar no es así: un `perl`/`ruby`/`awk`/`ed`, un
@@ -2317,7 +2391,10 @@ function sedsLiterales(cmd) {
     const sinComillas = tramo.replace(/'[^']*'|"(?:\\.|[^"\\])*"/g, '');
     if (/\$\(|`|[()]/.test(sinComillas)) { if (editaEnSitio(tramo)) return null; continue; }
     const sinRedir = tramo.trim().replace(PREFIJO, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
-    const words = palabras(sinRedir);
+    // `-i''` pegado se lee como `-i ''`, el sufijo vacío aparte (como lo lee `palabras` y lo juzga el resto del freno)
+    const lectura = palabrasDelSed(sinRedir.replace(/(^|\s)(-[A-Za-z0-9]*i)(''|"")(?=\s|$)/g, '$1$2 $3'));
+    if (!lectura) { if (editaEnSitio(tramo)) return null; continue; }
+    const { words, conVariable } = lectura;
     const k = words.findIndex((w, j) => {
       const c = path.basename(w).toLowerCase().replace(/\.exe$/, '');
       const resto = words.slice(j + 1);
@@ -2325,7 +2402,8 @@ function sedsLiterales(cmd) {
         || (['awk', 'gawk'].includes(c) && resto.some((x, n) => x === '-iinplace' || (x === '-i' && resto[n + 1] === 'inplace')))
         || (j === 0 && (c === 'ed' || c === 'ex'));
     });
-    if (k < 0) { if (words.some((w) => /\s/.test(w) && editaEnSitio(w))) return null; continue; }
+    // sin un editor a la vista, el tramo no edita en el lugar por otro lado (`git grep -O"sed -i …"` corre su texto)
+    if (k < 0) { if (editaEnSitio(tramo) || words.some((w) => /\s/.test(w) && editaEnSitio(w))) return null; continue; }
     if (k !== 0 || !['sed', 'gsed'].includes(path.basename(words[0]))) return null;
     const opciones = [];
     const guiones = [];
@@ -2336,7 +2414,7 @@ function sedsLiterales(cmd) {
       const w = words[n];
       if (finOpciones || !w.startsWith('-') || w === '-') { archivos.push(w); continue; }
       if (w === '--') { finOpciones = true; continue; }
-      if (w === '-e') { if (n + 1 >= words.length) return null; guiones.push(words[++n]); continue; }
+      if (w === '-e') { if (n + 1 >= words.length || conVariable.has(n + 1)) return null; guiones.push(words[++n]); continue; }
       const m = /^-([Enrsuz]*)(i(.*))?$/.exec(w);
       if (m && (m[1] || m[2] !== undefined)) {
         if (m[1]) opciones.push(`-${m[1]}`);
@@ -2353,7 +2431,8 @@ function sedsLiterales(cmd) {
       return null;
     }
     if (!enLugar) return null;
-    if (!guiones.length) { if (!archivos.length) return null; guiones.push(archivos.shift()); }
+    // el guion se lee tal cual: con una variable adentro (`"s/a/$X/"`) no se sabe qué hace
+    if (!guiones.length) { if (!archivos.length || conVariable.has(words.indexOf(archivos[0], 1))) return null; guiones.push(archivos.shift()); }
     if (!archivos.length || !guiones.every(guionDeSedSinEfectos)) return null;
     for (const a of archivos) {
       if (!a || /[{}]/.test(a) || /^~[+-]/.test(a) || a.includes('@') || !comodinSimple(a)) return null;

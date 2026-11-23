@@ -1127,6 +1127,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 106: un `node -e` con «sed -i» en un texto y un `sed -i ''` con la comilla simple metida no son historias escritas por consola; lo que escribe una historia sigue frenando.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-false-story.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.278: el lector de comandos. marker.js y pipeline.js cuentan sólo donde se corren, no donde otro programa los nombra.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/marker-command.test.js",
