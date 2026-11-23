@@ -354,8 +354,10 @@ The harness controls this, not anyone's memory:
   (session, suites and time of each gate), and the line saying who holds the place. Beside a single gate of up to 40
   suites, with free memory, the pass launches. The pass of a closed session does not count.
 - **How each one frees up.** The large run releases its turn when it ends; the turn of a dead process, or one older than
-  three hours, frees itself. The pass has no turn file: it holds the machine from its launch until its session notes the
-  result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
+  three hours, frees itself. That is why `heavy-turn.js take` asks for `--process <pid>`, the process that runs the heavy
+  work (in a script, `$$`): without it, the turn would be tied to the command's shell, which ends right away, and it
+  would free itself with nobody noticing. `release` asks for the same one. The pass has no turn file: it holds the
+  machine from its launch until its session notes the result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
   (`marker.js mark-adversarial-skipped`). Relaunched, it holds it again. A session that closed frees it, and after an hour
   it no longer stops anything, because it may be finished or stuck, and that is said.
 - **A free turn is not taken on its own: the «arrancá».** With a coordinator designated and alive, a gate that got a
@@ -373,15 +375,17 @@ The harness controls this, not anyone's memory:
   name: a gate that asks for it gets the «wait» with the reservation's name. With a large run going it does not reserve
   (it exits 77 and says who holds it). `heavy-turn.js release --reserve` frees it; it expires after 90 minutes (a round of
   reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10. With
-  `--to <session>`, the reservation says which session launches what was reserved (its pass without the pipeline, the
-  next point). It is for the pass, not for its suites: that session's gate waits like anyone's until it is released.
+  `--to <session>`, the reservation belongs to that session: it launches what was reserved (its pass without the
+  pipeline, the next point) and its gate takes the turn with no separate «go», even if it was in the queue. It is for
+  one thing at a time: if its gate is already running, the pass hook warns; with the pass in flight nothing stops its
+  gate, so the session does not run it until the pass ends. Other sessions wait until it is released.
 - **The pass without the pipeline also asks for the turn.** A session without a pipeline run (one the coordinator
   opened for a fix, or a loose one) launches its pass with the Agent or Workflow tool, with no marker to count it. On
   23/11 at 05:45, with several of those at once, the machine ran out of processes. The `agile-pass-turn.js` hook looks
   at each launch: every Workflow (the fan-out of agents that fills the machine) and an Agent whose description or type
   says adversarial (small reviewers and searches do not count; the request text is not read). If the session has neither the «go» (`grant --to`) nor a
-  reservation for it (`reserve --for "<what>" --to <session>`), it warns the session and the person who holds the turn,
-  and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
+  reservation for it (`reserve --for "<what>" --to <session>`), or if its gate already runs with that reservation, it
+  warns the session and the person who holds the turn, and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
   measurement (`MODO` in the hook). It does not look without a coordinator, at the coordinator itself, or at a pipeline
   session. `TYCON_AGILE_PASS_TURN=0` turns it off.
 

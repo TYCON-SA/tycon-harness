@@ -354,7 +354,9 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   `gates_running` (sesión, suites y hora de cada portón), y la línea que dice quién tiene el lugar. Al lado de un solo
   portón de hasta 40 suites, con memoria libre, el pase se lanza. El pase de una sesión cerrada no cuenta.
 - **Cómo se libera cada uno.** La ejecución grande suelta su turno al terminar; el de un proceso muerto, o de más de tres
-  horas, se libera solo. El pase no tiene archivo de turno: ocupa la máquina desde que se lanza hasta que su sesión anota
+  horas, se libera solo. Por eso `heavy-turn.js take` pide `--process <pid>`, el proceso que corre lo pesado (en un
+  guion, `$$`): sin él, el turno quedaría atado a la consola del comando, que termina enseguida, y se soltaría solo sin
+  que nadie se entere. `release` pide el mismo. El pase no tiene archivo de turno: ocupa la máquina desde que se lanza hasta que su sesión anota
   el resultado (`marker.js mark-adversarial-result`, con cualquier veredicto, también `no-medido`) o el salteo
   (`marker.js mark-adversarial-skipped`). Si se relanza, vuelve a ocuparla. Una sesión que se cerró lo libera, y pasada una
   hora ya no frena, porque puede estar terminado o colgado, y se dice.
@@ -373,15 +375,17 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   que lo pide recibe el «esperá» con el nombre de la reserva. Con una ejecución grande corriendo no reserva (sale 77 y dice
   quién la tiene). Se suelta con `heavy-turn.js release --reserve`, vence a los 90 minutos (una tanda de revisores o un
   pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10. Con
-  `--to <sesión>`, la reserva dice qué sesión lanza lo reservado (su pase sin el pipeline, el punto que sigue). Es
-  para el pase, no para sus suites: el portón de esa sesión espera como el de cualquiera hasta que se suelte.
+  `--to <sesión>`, la reserva es de esa sesión: lanza lo reservado (su pase sin el pipeline, el punto que sigue) y su
+  portón toma el turno sin otro «arrancá», aunque estuviera en la fila. Es para una cosa por vez: si su portón ya corre,
+  el gancho del pase lo avisa; con el pase en vuelo, nada frena a su portón, así que la sesión no lo corre hasta que el
+  pase termine. Las demás sesiones esperan hasta que se suelte.
 - **El pase sin el pipeline también pide turno.** Una sesión sin una ejecución del pipeline (la que abrió la coordinadora para
   un arreglo, o una suelta) lanza su pase con la herramienta Agent o Workflow, sin marcador que lo cuente. El 23/11 a las
   05:45, con varios de esos a la vez, la máquina se quedó sin procesos. El gancho `agile-pass-turn.js` mira cada
   lanzamiento: todo Workflow (el abanico de agentes que llena la máquina) y un Agent cuya descripción o tipo dice
   adversarial (los revisores chicos y las búsquedas no; el pedido no se mira). Si la sesión no tiene el «arrancá» (`grant --to`) ni una reserva para ella
-  (`reserve --for "<qué>" --to <sesión>`), avisa a la sesión y a la persona con quién tiene el turno, y lo anota en
-  `gates.log` (`agile-pass-turn`). Hoy sólo avisa: si pasa a frenar lo decide el dueño con esa medición (`MODO` en el
+  (`reserve --for "<qué>" --to <sesión>`), o si con esa reserva ya corre su portón, avisa a la sesión y a la persona con
+  quién tiene el turno, y lo anota en `gates.log` (`agile-pass-turn`). Hoy sólo avisa: si pasa a frenar lo decide el dueño con esa medición (`MODO` en el
   gancho). No mira sin coordinadora, en la coordinadora misma ni en una sesión del pipeline. `TYCON_AGILE_PASS_TURN=0` lo
   apaga.
 
