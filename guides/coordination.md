@@ -1026,7 +1026,8 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 
 ## Cómo trabaja la coordinadora con el dueño
 
-Salen de un día entero en que la coordinadora trabajó con el dueño ausente. Cada una, con su porqué.
+Salen de un día entero en que la coordinadora trabajó con el dueño ausente. Valen para cualquier coordinadora, también
+la de un producto. Cada una, con su porqué.
 
 - **El cuadro de una pregunta lleva el contexto adentro.** Qué pasa hoy, cuál es el problema, qué cambia y qué implica.
   Por qué: el dueño ve sólo el cuadro, no la conversación que lo explica.
@@ -1037,11 +1038,10 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
   en vivo va por su exención: la firma la coordinadora con `marker.js runtime-waiver <historia> --acs <n> --for-session
   <D>` si el perfil del equipo se la delega, y si no, el dueño. Eximir la historia entera es firma sólo del dueño. Por
   qué: una historia terminada que espera días su cierre ocupa la fila sin aportar nada.
-- **Foco en el arnés.** Lo que toca un producto no se mide ni se propone sin pedido. Por qué: un producto tiene su
-  propio equipo y sus tiempos, y una propuesta que nadie pidió le cae encima.
-- **Primero lo que rompe o demora.** Cuando no queda nada de eso libre, se reparte en el mismo pulso el resto
-  (menores, mantenimiento, mediciones, mejoras aprobadas), sin esperar a que el dueño lo pida. Por qué: una sesión
-  libre es tiempo de máquina perdido, y el dueño no tiene que repartir lo ya aprobado.
+- **Primero lo que traba a todos.** La CI en rojo o un freno que no deja trabajar. Después, el orden del plan del
+  producto: las historias del sprint y lo que decida su dueño. Lo ya aprobado se reparte en el mismo pulso, sin esperar
+  a que el dueño lo pida. Por qué: una sesión libre es tiempo de máquina perdido, y el dueño no tiene que repartir lo ya
+  aprobado.
 - **Cada pendiente lleva anotado quién lo tiene y en qué pedido, antes de asignarlo.** Por qué: sin esa anotación el
   mismo arreglo se hace dos veces; en un solo día hubo cuatro duplicados.
 - **Un solo empuje por pedido, con todo junto.** Después, sólo el arreglo de un rojo o de lo que pidió una revisión.
@@ -1119,8 +1119,7 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
 | El cuadro de una pregunta lleva el contexto adentro | nadie | Es la forma del mensaje: ningún dato de la máquina la ve. |
 | La constancia de un cambio de control, al final | nadie | Cuándo la pide lo decide la sesión; la constancia vencida la frena su control, no el momento en que se pidió. |
 | Las historias se cierran en horas | nadie | Es criterio: cuál humo tiene guion lo ve la sesión. |
-| Foco en el arnés | nadie | Es criterio de la coordinadora. |
-| Primero lo que rompe o demora, y después el resto en el mismo pulso | nadie | Qué rompe o demora es criterio; las sesiones quietas las cuenta el aviso de cada turno. |
+| Primero lo que traba a todos, después el plan del producto | nadie | Qué traba a todos es criterio; las sesiones quietas las cuenta el aviso de cada turno. |
 | Cada pendiente con quién lo tiene y en qué pedido | nadie | La anotación va en la lista de la coordinadora, que no pasa por un control. |
 | Un solo empuje por pedido | nadie | Un empuje de más no lo frena nada: lo ve la cola de la CI. |
 | Nunca cerrar un turno con «¿seguimos?» | nadie | Es la forma del mensaje; la coordinadora con lugar y trabajo listo ya la frena el gancho del cierre del turno. |

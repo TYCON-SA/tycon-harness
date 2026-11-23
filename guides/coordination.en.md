@@ -1046,7 +1046,8 @@ They come from a whole day of coordinating several sessions. Each says what to d
 
 ## How the coordinator works with the owner
 
-They come from a whole day in which the coordinator worked with the owner away. Each one, with its why.
+They come from a whole day in which the coordinator worked with the owner away. They apply to any coordinator, also a
+product's. Each one, with its why.
 
 - **A question's box carries its context inside.** What happens today, what the problem is, what changes and what it
   implies. Why: the owner sees only the box, not the conversation that explains it.
@@ -1057,11 +1058,10 @@ They come from a whole day in which the coordinator worked with the owner away. 
   live goes by its waiver: the coordinator signs it with `marker.js runtime-waiver <story> --acs <n> --for-session <D>`
   if the team profile delegates it, and otherwise the owner does. Waiving the whole story is a signature only the owner
   gives. Why: a finished story that waits days for its closing takes up the queue without adding anything.
-- **Focus on the harness.** What touches a product is not measured or proposed without a request. Why: a product has
-  its own team and its own times, and a proposal nobody asked for lands on them.
-- **First what breaks or delays.** When nothing of that is left free, the rest is handed out in the same pulse
-  (minor items, maintenance, measurements, approved improvements), without waiting for the owner to ask. Why: a free
-  session is lost machine time, and the owner does not have to hand out what is already approved.
+- **First what blocks everyone.** A red CI or a brake that does not let anyone work. After that, the order of the
+  product's plan: the sprint's stories and what its owner decides. What is already approved is handed out in the same
+  pulse, without waiting for the owner to ask. Why: a free session is lost machine time, and the owner does not have to
+  hand out what is already approved.
 - **Each pending item has written down who has it and in which pull request, before it is assigned.** Why: without
   that note the same fix is done twice; in a single day there were four duplicates.
 - **One push per pull request, with everything together.** After that, only the fix of a red or of what a review asked
@@ -1140,8 +1140,7 @@ They come from a whole day in which the coordinator worked with the owner away. 
 | A question's box carries its context inside | nadie | It is the shape of the message: no data on the machine sees it. |
 | The record of a control change, at the end | nadie | The session decides when to ask for it; an expired record is stopped by its control, not by when it was asked for. |
 | Stories are closed in hours | nadie | It is a judgment call: the session sees which smoke check has a script. |
-| Focus on the harness | nadie | It is the coordinator's judgment call. |
-| First what breaks or delays, then the rest in the same pulse | nadie | What breaks or delays is a judgment call; idle sessions are counted by the notice of each turn. |
+| First what blocks everyone, then the product's plan | nadie | What blocks everyone is judgment; the quiet sessions are counted by the notice of each turn. |
 | Each pending item with who has it and in which pull request | nadie | The note goes in the coordinator's list, which does not go through a control. |
 | One push per pull request | nadie | Nothing stops an extra push: the CI queue shows it. |
 | Never close a turn with «shall we go on?» | nadie | It is the shape of the message; the coordinator with room and ready work is already stopped by the end-of-turn hook. |
