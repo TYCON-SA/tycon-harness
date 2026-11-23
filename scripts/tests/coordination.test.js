@@ -160,6 +160,10 @@ const MEASURES = {
   'Cada pendiente con quién lo tiene y en qué pedido': 'nadie',
   'Un solo empuje por pedido': 'nadie',
   'Nunca cerrar un turno con «¿seguimos?»': 'nadie',
+  'Con el dueño ausente no se abre un cuadro': 'nadie',
+  'Preguntarle al dueño antes de correr la firma de otra sesión': 'nadie',
+  'La constancia, con la carpeta quieta': 'nadie',
+  'La constancia, con el guion de la copia instalada': 'nadie',
 };
 const COMMAND = path.join(ROOT, 'commands', 'coordinate.md');
 const headings = (file) => fs.readFileSync(file, 'utf8').split('\n').filter((l) => /^## /.test(l));

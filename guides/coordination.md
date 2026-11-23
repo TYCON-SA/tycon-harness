@@ -395,9 +395,9 @@ una, la coordinadora:
   `files:` o, sin `files:`, con los archivos que la historia le ata a la tanda más los que no ata a ninguna), la delicada
   se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide el diff
   entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
-- **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta la pregunta en su
-  nombre según la celda (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la propia
-  sesión con su turno, como siempre.
+- **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta en su nombre la pregunta
+  cuya celda dice `review` (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la
+  propia sesión con su turno, como siempre. Que `skip` y `wait` pidan el click del dueño es la fila 113.
 - **Pone la marca de ausente** cuando el dueño dice que se va («seguí en autónomo», «me voy», «hasta mañana» o algo
   parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases. La marca se borra
   sola cuando el dueño vuelve: un mensaje suyo, un mensaje de la oficina verificado, una firma suya o a las 24 horas. La
@@ -1050,6 +1050,16 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
   espera no es un pedido roto.
 - **Nunca se cierra un turno con «¿seguimos?».** Una sesión que espera recibe trabajo. Por qué: con el dueño ausente,
   esa pregunta no la contesta nadie y la sesión queda parada.
+- **Con el dueño ausente no se abre un cuadro.** Se le avisa por el canal de avisos del equipo y se espera a que
+  escriba. Por qué: un cuadro abierto de madrugada dejó a la coordinadora seis horas parada, y a las sesiones sin
+  trabajo.
+- **Antes de correr el comando de firma de otra sesión que pidió el sí del dueño, se le pregunta al dueño.** Por qué: una
+  firma que el perfil le delega a la coordinadora sale sola al correr el comando, sin que el dueño la vea.
+- **La constancia se pide con la carpeta quieta.** Antes del comando, la sesión confirma que no toca nada hasta que
+  el dueño firme. Por qué: si la carpeta cambia durante el cuadro, la constancia ya no corresponde y el click se pierde.
+- **La constancia se firma con el guion de la copia instalada del arnés** (`scripts/ci/run-base-controls.sh`), no con
+  el de la carpeta del pedido. Por qué: una copia vieja del guion no anota la huella, y el dueño tiene que clickear dos
+  veces.
 
 ## Qué mide cada regla
 
@@ -1114,3 +1124,7 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
 | Cada pendiente con quién lo tiene y en qué pedido | nadie | La anotación va en la lista de la coordinadora, que no pasa por un control. |
 | Un solo empuje por pedido | nadie | Un empuje de más no lo frena nada: lo ve la cola de la CI. |
 | Nunca cerrar un turno con «¿seguimos?» | nadie | Es la forma del mensaje; la coordinadora con lugar y trabajo listo ya la frena el gancho del cierre del turno. |
+| Con el dueño ausente no se abre un cuadro | nadie | Que el dueño está ausente lo juzga la coordinadora; nada frena un cuadro por eso. |
+| Preguntarle al dueño antes de correr la firma de otra sesión | nadie | Ningún control separa una firma delegada que el dueño quería ver de una de rutina. |
+| La constancia, con la carpeta quieta | nadie | Lo confirma la sesión en un mensaje; una constancia que ya no corresponde la frena su control. |
+| La constancia, con el guion de la copia instalada | nadie | Qué copia del guion corre lo elige quien escribe el comando. |
