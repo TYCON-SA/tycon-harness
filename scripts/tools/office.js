@@ -49,7 +49,7 @@ const { spawn, spawnSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 const { designacionVigente } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
-const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK } = require('./work-in-progress.js');
+const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName } = require('./work-in-progress.js');
 const topics = require(path.join(__dirname, 'office', 'topics.js'));
 const boardTool = require(path.join(__dirname, 'office', 'board.js'));
 const PS = require(path.join(__dirname, 'office', 'project-stories.js'));
@@ -999,6 +999,10 @@ function workedAfterWait(x, lastWrite, status) {
 }
 const cardHour = (fin) => (fin ? fin.hora + (fin.dif ? ` · ${fin.dif}` : '') : '');
 const firstWord = (t) => String(t || '').trim().split(/\s+/)[0].toLowerCase();
+// el nombre de una sesión: una palabra de letras, números, guion y guion bajo («Tero», «Tero-2», «H-8290»)
+const SESSION_NAME = /^[\p{L}\p{N}_-]+$/u;
+// el dueño dicho en una palabra, que también podría pasar por un nombre de sesión
+const OWNER_WHO = /^(vos|dueñ[oa]|duen[oa])$/iu;
 // Lo que sólo usan las tablas (la clave del trabajo, su hora y el tema de su fila) va en campos que no se enumeran: no llega a
 // la página ni al sitio, y la tarjeta sigue igual.
 // Una tarjeta sin título anotado muestra lo que dice su conversación: eso no es un título y no se clasifica (`sinTitulo`).
@@ -1170,6 +1174,15 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     } else if (pr) card.motivo = 'se cerró sin entrar';
     // llegó hasta acá sin una sesión viva que la haga. Si no se pudo preguntar por su pedido, no se sabe: queda donde dice el archivo
     if (id === 'curso' && (!f.pedido || pr)) id = 'sinEmpezar';
+    // una firma anotada para una sesión que ya no está en la oficina no espera al dueño: no hay quién la use. Va a «Sin
+    // sesión», con el motivo. Sólo si `quien` es un nombre de sesión entero: el dueño o un texto libre se quedan. Se
+    // compara como lo lista /wip, que corta un nombre largo con «…»
+    const quien = String(f.quien || '').normalize('NFC').trim();
+    const listado = (n) => listedName(String(n || '').normalize('NFC').trim()).toLowerCase();
+    if (id === 'firma' && SESSION_NAME.test(quien) && !OWNER_WHO.test(quien) && !agents.some((a) => a.nombre && listado(a.nombre) === listado(quien))) {
+      id = 'sinEmpezar';
+      card.motivo = 'la sesión que la esperaba ya no está';
+    }
     // sin una sesión que la haga no hay nadie atrasado: se dice para cuándo estaba. Lo que espera la cola tampoco está atrasado
     if (late && id === 'sinEmpezar') { card.hora = `estaba para ${f.fin}`; delete card.cls; }
     if (late && id === 'entrando') { card.hora = 'esperando entrar'; delete card.cls; }
