@@ -18,6 +18,11 @@
  * trabajando, ese reloj no corre. Cada cambio sale a la página por el WebSocket (`{type: 'mensaje', id, s, estado, motivo}`),
  * que sigue siendo de ida. Nada de esto entra en la foto ni sale al sitio.
  *
+ * La respuesta a una espera desde la página de lo que te necesita (`responde: 'espera'`) llega sólo a una sesión que sigue
+ * esperando al dueño en texto. Si ya no espera, la respuesta queda en el registro y no se entrega («ya estaba resuelto»); si
+ * la sesión cerró, no se manda a nadie. Otro valor de `responde` se rechaza: una firma, un cuadro o lo del tablero no se
+ * contestan desde la página.
+ *
  * Todo intento que pasó los controles de acceso queda en el registro, también los rechazados.
  */
 const fs = require('fs');
@@ -36,6 +41,11 @@ const SAYS = {
   'sin-vigilante': 'Esta sesión no puede recibir mensajes de la oficina. Escribile una vez en su pestaña y vuelve a poder.',
   aprobacion: 'Esto no aprueba nada: para aprobar, contestá el cuadro.',
   'espera-cierre': 'Lo va a recibir cuando termine lo que está haciendo.',
+  // la respuesta a una espera desde la página de lo que te necesita
+  'no-se-contesta': 'Desde acá sólo se contesta una espera en texto: lo demás se contesta donde dice.',
+  cerro: 'La sesión cerró: tu respuesta no se mandó a nadie.',
+  'con-cuadro': 'Tiene un cuadro abierto: se contesta en su chat, con el click.',
+  resuelto: 'Ya estaba resuelto: tu respuesta quedó en el registro y no se entregó.',
 };
 
 // ¿el mensaje entró en la conversación? Se busca del final hacia atrás, de a 2 MB y con la memoria de un trozo: el trabajo
@@ -148,7 +158,14 @@ function officeMessages({ sdir, envelopes, okOrigin, notify, clock = Date.now, l
       const name = body.s;
       const text = body.texto;
       if (off()) { reject(res, 409, { recibe: 'apagado', motivo: SAYS.apagado }, { name, text, why: 'apagado' }); return; }
+      // la respuesta a una espera de la página de lo que te necesita va sólo a una sesión que sigue esperando al dueño en
+      // texto: una firma, un cuadro o lo del tablero no se contestan desde la página
+      if (body.responde !== undefined && body.responde !== 'espera') { reject(res, 400, { motivo: SAYS['no-se-contesta'] }, { name, text, why: 'respuesta a algo que no es una espera en texto' }); return; }
+      const answering = body.responde === 'espera';
       const r = recipient(name);
+      if (answering && !r) { reject(res, 410, { cerrada: true, motivo: SAYS.cerro }, { name, text, why: 'respuesta a la espera de una sesión que ya no está' }); return; }
+      if (answering && r.cuadro) { reject(res, 409, { motivo: SAYS['con-cuadro'] }, { name, sid: r.sid, text, why: 'respuesta a una espera con un cuadro abierto' }); return; }
+      if (answering && !r.esperaDueno) { reject(res, 409, { resuelto: true, motivo: SAYS.resuelto }, { name, sid: r.sid, text, why: 'la espera ya estaba resuelta: guardada sin entregar' }); return; }
       if (!r) { reject(res, 404, { motivo: 'Esa sesión no está en la oficina.' }, { name, text, why: 'sesión que no está en la oficina' }); return; }
       if (r.recibe === 'codex') { reject(res, 409, { recibe: 'codex', motivo: SAYS.codex }, { name, text, why: 'sesión de Codex' }); return; }
       const bad = om.checkText(text);

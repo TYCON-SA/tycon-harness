@@ -15,7 +15,7 @@ const {
   IDS, runMarkerFile, BEFORE_PLAN, CLOSED, sessionWith, atIso, KANBAN_BOARD, collectAt, localIsoAt, mixedOffice,
   WALL_ORDER, toyKanban, firmaCard, firmaData, wip, toyHome, toyMachine, storyFile, collectWith, drawKanban, toyRepo,
   parkMachine, openWallPanel, wallTexts, firmaOffice, filesOf, buildOffice, page, collect, buildBoard,
-  createEnvelopes, ownerWaitsOf, tinyDom
+  createEnvelopes, ownerWaitsOf, tinyDom, markRecipients
 } = require('./lib/office-fixtures.js');
 
 test('T6 PanelYTeToca: el panel cuenta el trabajo, las firmas y lo que quedó a medio camino; «te toca» sólo pide firmar', () => {
@@ -1339,4 +1339,71 @@ test('T20 Regresion_TarjetasYColumnasIguales @story-8.313 @ac-20 — la misma fo
   const tb = buildTables({ kanban: b.kanban, nowMs: NOW, sinModelo: true });
   assert.deepStrictEqual(ta.pendientes.filas, tb.pendientes.filas);
   assert.strictEqual(ta.pendientes.cruce, tb.pendientes.cruce);
+});
+
+test('T346 Office_LoQueTeNecesita_CadaItemCompleto @story-8.234 @ac-35: las cuatro clases, cada una con qué, dónde, por qué y la recomendación anotada', () => {
+  const note = (waitingFor) => ({ kind: 'note', text: 'algo', waitingFor, waitingSince: NOW - 60000 });
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Firmante', sid: 's-f', status: 'waiting_for_permission', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement' } },
+      { session: 'Preg', sid: 's-preg', status: 'busy', extra: { kind: 'pipeline', title: 'Dos', storyId: '9.2', current: 'implement' } },
+      { session: 'Enzo', extra: note('que el dueño elija la A o la B (recomiendo: la A)') },
+      { session: 'Sin', extra: note('la prueba del dueño') },
+      { session: 'Casco', extra: note('que Enzo termine') },
+    ]),
+    sessionFiles: [sessionFile('s-preg', { name: 'Preg', waitingForOwner: true, waitingFor: 'una respuesta' })],
+    signatures: [{ id: 'f1', title: 'saltar el pase de 5.2', at: NOW }],
+    board: buildBoard({ pendientes: [], meta: { teToca: ['Decidir el nombre del producto — recomiendo: Cobre'] } }),
+    // la ficha de lo que espera al dueño: su riesgo es el porqué
+    ownerCard: ({ row }) => ({ riesgo: `delicado (${row.origen})`, accion: 'x', linea: 'x' }),
+    nowMs: NOW,
+  });
+  const n = data.meta.teNecesita;
+  const de = (clase) => n.filter((i) => i.clase === clase);
+  assert.deepStrictEqual(n.map((i) => i.clase).sort(), ['cuadro', 'espera', 'espera', 'firma', 'firma', 'tablero'].sort(), JSON.stringify(n, null, 1));
+  // la firma de una sesión se contesta en su chat; la de la lista, con la coordinadora
+  assert.deepStrictEqual(de('firma').map((i) => [i.quien || null, i.donde]).sort(), [
+    ['Firmante', 'en el chat de Firmante, con el click'],
+    [null, 'en el chat de la coordinadora, que te trae el cuadro'],
+  ].sort());
+  assert.deepStrictEqual(de('cuadro').map((i) => [i.quien, i.donde]), [['Preg', 'en el chat de Preg, con el click']]);
+  // por qué sólo vos: el riesgo de su ficha, si la tiene
+  assert.ok([...de('firma'), ...de('cuadro')].every((i) => /^delicado \(/.test(i.porque)), JSON.stringify(n));
+  assert.ok(de('tablero').every((i) => !('porque' in i)));
+  // la espera al dueño, con lo que espera y su recomendación; la que espera a otra sesión no es del dueño
+  assert.deepStrictEqual(de('espera').map((i) => [i.quien, i.que, i.recomendada || null]).sort(), [
+    ['Enzo', 'que el dueño elija la A o la B (recomiendo: la A)', 'la A'],
+    ['Sin', 'la prueba del dueño', null],
+  ].sort());
+  assert.ok(de('espera').every((i) => /^acá: /.test(i.donde)));
+  assert.deepStrictEqual(de('tablero').map((i) => [i.que, i.donde, i.recomendada]), [['Decidir el nombre del producto — recomiendo: Cobre', 'con la coordinadora', 'Cobre']]);
+  // cada cosa dice qué hace falta y dónde se contesta; sin recomendación anotada no se inventa una
+  assert.ok(n.every((i) => i.que && i.donde));
+  assert.ok(n.filter((i) => i.clase !== 'tablero' && i.quien !== 'Enzo').every((i) => !('recomendada' in i)));
+});
+
+test('T347 Office_LoQueTeNecesita_Vacio @story-8.234 @ac-39: sin nada que espere al dueño, la lista viene vacía y la página dice «Nada te espera»', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Uno', status: 'busy', extra: { kind: 'pipeline', current: 'implement' } }]), nowMs: NOW });
+  assert.deepStrictEqual(data.meta.teNecesita, []);
+  const html = page(data);
+  assert.match(html, /id="necesita"/);
+  assert.match(PAGE_CODE(), /"Nada te espera\."/);
+});
+
+test('T351 Office_LoQueTeNecesita_ItemResueltoSale @story-8.234 @ac-36 @ac-38: cuando la sesión deja de esperar, su ítem sale de la lista y el proceso ya no le entrega una respuesta', () => {
+  const sdir = fs.mkdtempSync(path.join(os.tmpdir(), 'necesita-'));
+  const foto = (extra) => {
+    const { data } = buildOffice({ wip: wip([{ session: 'Enzo', sid: 's-enzo', extra }]), nowMs: NOW });
+    const env = createEnvelopes();
+    env.files.set('Enzo', { file: '/x', sid: 's-enzo' });
+    markRecipients(data, env, [], sdir);
+    return { data, env };
+  };
+  const antes = foto({ kind: 'note', text: 'algo', waitingFor: 'la decisión del dueño', waitingSince: NOW - 60000 });
+  assert.deepStrictEqual(antes.data.meta.teNecesita.map((i) => [i.clase, i.quien]), [['espera', 'Enzo']]);
+  assert.strictEqual(antes.env.recipients.get('Enzo').esperaDueno, true);
+  // resuelta por otro camino: al recargar ya no está, y una respuesta tardía se guarda sin entregarse (T350)
+  const despues = foto({ kind: 'note', text: 'sigue con lo suyo' });
+  assert.deepStrictEqual(despues.data.meta.teNecesita, []);
+  assert.strictEqual(despues.env.recipients.get('Enzo').esperaDueno, false);
 });
