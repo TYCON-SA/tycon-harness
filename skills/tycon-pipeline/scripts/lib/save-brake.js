@@ -1772,13 +1772,13 @@ function textoCreaUnaRama({ rama = 'main', repo = '' } = {}) {
   ].join('\n');
 }
 
-/** El freno de la lista al guardar, en los dos perfiles: en un producto habla de vos y no nombra la delegación. */
+/** El freno de la lista al guardar, en los dos perfiles: en un producto aprueba el dev, y no nombra la delegación. */
 function textoFueraDeLaLista({ harness = true, archivos = [] } = {}) {
   const tope = require('./story-gate.js').TOPE_DE_NOMBRES;
   const nombres = archivos.slice(0, tope).map((f) => `   · ${f}`).join('\n');
   const salida = harness
     ? '  Sacalos del cambio, o ampliá la lista con «marker.js adhoc set»: vuelve a pedir el sí de una persona, y por delegación la lista nueva contiene entera la firmada.'
-    : '  Sacalos del cambio, o ampliá la lista con «marker.js adhoc set»: la aprobás vos con tu sí, como al abrir.';
+    : '  Sacalos del cambio, o pedile al dev que amplíe la lista: con su sí, corré «marker.js adhoc set» con la lista nueva, solo; lo aprueba él en la ventana o el cuadro, como al abrir.';
   return `🔒 GUARDAR: no guarda. Estos archivos cambiaron y no están en la lista del camino corto:\n${nombres}\n${salida}`;
 }
 
@@ -1824,7 +1824,7 @@ function textoDeLaMaqueta(r) {
       ...r.faltan.map((f) => `  · ${f}`),
       '  Se completa de una de estas tres formas:',
       '   1. Corregí la pantalla, para que diga ese texto.',
-      `   2. Volvé a aprobar la maqueta, si lo que cambió es ella: ${aprobar}`,
+      `   2. Si lo que cambió es la maqueta: mostrásela a la persona y, con su aprobación, corré esto solo (la ventana o el cuadro le piden el sí), con quién la aprobó y por qué vía: ${aprobar}`,
       `   3. Declará la diferencia en ${r.textosQueFaltan.diferencias}, con un renglón \`- «<texto>» — differs: <por qué>\`. Si no se puede comparar: \`mockup-compare: no — <motivo>\`.`,
       '  Se comparan los textos, no el dibujo: un texto que ya existe en otra pantalla del repo pasa.',
     ].join('\n');

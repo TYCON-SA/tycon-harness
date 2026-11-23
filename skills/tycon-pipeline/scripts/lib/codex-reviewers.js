@@ -152,13 +152,18 @@ function validReport(report) {
   try { return fs.statSync(report).size > 0; } catch { return false; }
 }
 
-function promptFor({ advisor, contextFile, storyPath, repo, preamble }) {
+function promptFor({ advisor, contextFile, storyPath, repo, preamble, previous }) {
   return (preamble || '') +
     `context_file: ${contextFile}\n` +
     `story_path: ${storyPath}\nrepo_path: ${repo}\nphase: post-implementation\n\n` +
     `Revisá según tu procedimiento (${advisor}) lo que dice el context_file: la story y los archivos tocados. ` +
     'Devolvé el reporte con tu formato, cada hallazgo con su regla entre corchetes, y cerrá con el renglón de veredicto, ' +
-    'solo, con la regla de cada hallazgo una vez por hallazgo: «Veredicto: limpio» o «Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí».';
+    'solo, con la regla de cada hallazgo una vez por hallazgo: «Veredicto: limpio» o «Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí».' +
+    (previous
+      ? `\n\nTu reporte de la vuelta anterior está en ${previous}. Sumá al renglón los críticos de esa vuelta que confirmás `
+        + 'arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código: «Veredicto: hallazgos (SEC-C1) · bloquea: sí · '
+        + 'resueltos (SEC-C1)» o «Veredicto: limpio · resueltos (SEC-C1)».'
+      : '');
 }
 
 /**
@@ -298,11 +303,28 @@ async function run(o) {
   const launchOne = async (advisor) => {
     const report = path.join(reportsDir, `${advisor}.md`);
     const retryReport = path.join(reportsDir, `${advisor}.retry.md`);
+    // el reporte de la vuelta anterior, si traía críticos: se guarda aparte para que el revisor confirme cuáles quedaron
+    // arreglados («resueltos (…)» en su renglón de veredicto)
+    const previousReport = path.join(reportsDir, `${advisor}.vuelta-anterior.md`);
+    // el reporte válido de esa vuelta: el de la segunda corrida que pidió el renglón, si lo trae, o el primero
+    const fuente = [retryReport, report].find((x) => !rc.unreadableReason(leer(x)));
+    let conCriticos = Boolean(fuente) && rc.extractCriticals(leer(fuente)).length > 0;
+    const marca = `${previousReport}.vuelta`;
+    // la marca única de esta vuelta (la hora de su arranque): el número de vuelta lo declara el agente y se puede repetir
+    const vuelta = String(start.ts ?? '');
+    // relanzado en la misma vuelta después de una falla: la copia que se hizo al arrancar esta vuelta sigue valiendo, y el
+    // reporte de esta vuelta no la pisa
+    let mismaVuelta = false;
+    try { mismaVuelta = Boolean(vuelta) && fs.readFileSync(marca, 'utf8') === vuelta && fs.existsSync(previousReport); } catch { /* no hay copia */ }
+    if (mismaVuelta) conCriticos = true;
+    else if (conCriticos) {
+      try { fs.copyFileSync(fuente, previousReport); fs.writeFileSync(marca, vuelta); } catch { conCriticos = false; }
+    }
     for (const f of [report, retryReport]) { try { fs.rmSync(f, { force: true }); } catch { /* no estaba */ } }
     const contextFile = overrides[advisor] || start.context_file || '(sin context_file: leé la story y el diff)';
     const preamble = helpers.codexInvokePreamble ? (() => { try { return helpers.codexInvokePreamble(advisor); } catch { return ''; } })() : '';
     const sandbox = helpers.codexSandbox ? helpers.codexSandbox(advisor) : 'read-only';
-    const prompt = promptFor({ advisor, contextFile, storyPath, repo, preamble });
+    const prompt = promptFor({ advisor, contextFile, storyPath, repo, preamble, previous: conCriticos && fs.existsSync(previousReport) ? previousReport : null });
     const argsDe = (out, p) => ['exec', '-p', advisor, '--sandbox', sandbox, '--skip-git-repo-check', ...sessionArgs(session), '-o', out, p];
     const errLog = path.join(reportsDir, `${advisor}.stderr.log`);
     const salida = anotar(() => rc.recordLaunched({ stateDir, sessionKey: sessionId, advisor, story: storyId, run: runName, launcher: 'pipeline' }),

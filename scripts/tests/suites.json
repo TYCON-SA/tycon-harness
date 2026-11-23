@@ -763,6 +763,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 72 (DemoTracking #44): un cambio técnico de la historia después de un plan rechazado lo revalida la vuelta siguiente de la revisión del plan — el portón de la adversarial y validators no relanzan, lo que sigue venciendo, y la vuelta que escribe las constancias sólo al aprobar.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-revalidation.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una historia que no cambió desde su última validación verde no se vuelve a validar: la constancia, su huella y validators.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/validation-record.test.js",
@@ -1134,6 +1140,12 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-gate-clock.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "marker.js partido por responsabilidad (8.163 B): lo nuevo que cargue el despachador es sensible y el recorrido de módulos del freno de guiones no corta callado (topes con nombre, lectura única y con tope de bytes). Repos de juguete en el temporal; sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/split-contract.test.js",
       "requiere": []
     },
     {
@@ -1750,6 +1762,12 @@
       "requiere": []
     },
     {
+      "__nota": "ninguna guía ofrece un escape que ya no apaga nada: la lista sale de los retirados del catálogo de firmas, y cada párrafo que nombra uno dice que está retirado o figura en las excepciones con su motivo.",
+      "raiz": "arnes",
+      "ruta": "tests/retired-escape-docs.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/e2e-gate-key.test.sh",
       "requiere": []
@@ -1910,6 +1928,12 @@
       "__nota": "story 8.217: un .js que sólo movió comentarios no pide otra vuelta de revisores; el lector de tokens ante la duda no decide. Textos de juguete y los .js de lib/ leídos, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/comment-only.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "2026-11-22, filas 79 y 80: qué cambió adentro de un archivo de código (espacios, comentarios, textos o código) en .js, .ts, .tsx y .cs; ante la duda, código. Textos de juguete y los .js de lib/ leídos, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/change-kind.test.js",
       "requiere": []
     },
     {
@@ -2594,6 +2618,12 @@
     {
       "raiz": "arnes",
       "ruta": "tests/coordination-fill-gate.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el permiso de una sesión de fondo le llega a la persona como cuadro (scripts/hooks/permission-relay.js, story 8.180 tanda B): en proceso, con casa de juguete y reloj propio.",
+      "raiz": "arnes",
+      "ruta": "tests/permission-relay.test.js",
       "requiere": []
     },
     {
@@ -3354,6 +3384,12 @@
       "requiere": []
     },
     {
+      "__nota": "la copia propia del pre-commit del privado le pide al gancho público los controles que no nombra: el gancho corre sólo esos (y como gancho propio no filtra), `unnamed` los lista y frena si falta uno, y el control de la base acepta la delegación sólo de la copia declarada.",
+      "raiz": "arnes",
+      "ruta": "tests/hook-delegation.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
@@ -3964,6 +4000,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 87: una prueba que arma un repo pelado de juguete no deja pelado al repo de verdad aunque corra dentro de un gancho de una copia enlazada (con su GIT_DIR) — team-config y third-party-origin dejan el repo de juguete con su árbol, y toda prueba con un init --bare sin carpeta saca GIT_DIR antes",
+      "raiz": "arnes",
+      "ruta": "tests/hook-env-bare-init.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.29: la pestaña Configuración del sitio de la organización, sólo para los que mantienen — un dev recibe 403 en cada ruta y sin sesión contesta como la 2.23; cada escritura exige el Origin del sitio (o Sec-Fetch-Site), el X-Site-Token de la sesión, JSON y un cuerpo de hasta 256 KB, y ninguna falta crea nada; las ocho secciones editables más Productos y Versiones de sólo lectura; «Revisar» valida con el parse del mismo lector del arnés y conserva byte por byte lo que no se editó; la propuesta de stages sólo lee; Personas guarda la huella del correo, nunca el correo; Umbrales edita sólo claves conocidas y queda en sólo lectura sin la marca del nocturno; la paridad por producto con renovar y cerrar; sin identidad de escritura, sólo lectura y descarga; el código no nombra la configuración de ninguna máquina ni un valor de una organización. Levanta el servidor del sitio con una sesión inyectada, repos git locales por HTTP y una API falsa de Azure DevOps y de GitHub en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-config.test.js",
@@ -4042,7 +4084,7 @@
       "requiere": []
     },
     {
-      "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
+      "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 28 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",
       "requiere": []
@@ -4948,6 +4990,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 74 (22/11): las expresiones del freno de producción que crecían con el cuadrado del largo dicen lo mismo que antes y no se cuelgan.",
+      "raiz": "arnes",
+      "ruta": "tests/guard-regex-speed.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.115 (T7): ningún salteo de Windows sin su motivo escrito en las siete suites que corre el ensayo de Windows (apply-hooks, safety-escape, story-gate, ledger-visible, run-close, pipeline-unit; harness-node mide su propia lista fija). Sólo lee archivos.",
       "raiz": "arnes",
       "ruta": "tests/windows-skips.test.js",
@@ -4957,6 +5005,11 @@
       "__nota": "story 8.66: las reglas de lectura de las carpetas del arnés en permissions.allow de ~/.claude/settings.json — cuáles (el árbol, sus dos enlaces y cada skill enlazada), su forma, sumar sin pisar al dev, sin repetir, después del aplicador, sacar al actualizar lo que ya no es del arnés (leyendo el registro de disco) y desinstalar sólo lo anotado. Con HOME y settings.json de prueba.",
       "raiz": "arnes",
       "ruta": "tests/read-permissions.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/deny-permissions.test.js",
       "requiere": []
     },
     {

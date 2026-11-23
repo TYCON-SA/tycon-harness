@@ -558,6 +558,29 @@ test('GreenIdle_CoordinatorReadsThePhoto — la coordinadora lo ve de la foto, s
   assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora }).problem, /la última lectura no pudo leer harness/);
 });
 
+// 🔴 Falla con: el aviso del repo sin leer no dice por qué ni cómo se destraba, y sale igual en cada turno.
+test('Coordinadora_RepoSinLeer_DiceElMotivoLaOrdenYNoSeRepiteCadaTurno', () => {
+  const w = mundo([]);
+  const dir = stateDir(w.home);
+  fs.mkdirSync(dir, { recursive: true });
+  const ahora = Date.now();
+  const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
+  const resto = Object.fromEntries(repos.slice(1).map((k) => [k, { ok: true, value: [] }]));
+  // la foto se rehace con cada lectura: la de este turno tiene un minuto
+  const foto = (reason, detail, cuando) => fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(cuando - 60000).toISOString(), repos, lecturas: { 'acme/harness': { ok: false, reason, detail }, ...resto } }));
+  foto('rechazado', 'gh: HTTP 502 <html><head><title>502 Bad Gateway</title></head></html>', ahora);
+  const p1 = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora }).problem;
+  assert.match(p1, /no pudo leer harness \(gh: HTTP 502 502 Bad Gateway\)/, 'el motivo, sin el HTML');
+  assert.match(p1, /--refresh/, 'la orden para leerlo ahora');
+  assert.match(p1, /cada 10 min/);
+  foto('rechazado', 'gh: HTTP 502 <html><head><title>502 Bad Gateway</title></head></html>', ahora + 60000);
+  assert.strictEqual(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora + 60000 }).problem, null, 'la misma falla no sale en el turno siguiente');
+  foto('rechazado', 'gh: HTTP 502 <html><head><title>502 Bad Gateway</title></head></html>', ahora + 61 * 60000);
+  assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora + 61 * 60000 }).problem || '', /no pudo leer harness/, 'después de una hora sale otra vez');
+  foto('no_medido', 'tope de 20 páginas', ahora + 62 * 60000);
+  assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora + 62 * 60000 }).problem || '', /tope de 20 páginas/, 'una falla distinta sale enseguida');
+});
+
 // una foto de la coordinadora de `minutos` atrás, con una lectura en curso (el candado): no se lanza otra
 function fotoDeLaCoordinadora(w, lecturas, minutos, ahora) {
   const dir = stateDir(w.home);

@@ -160,6 +160,55 @@ function delPlan(palabras, m, { estado, destino } = {}) {
   return { queHace: s.queHace, archivos: s.archivos, completo: ruta, completoEnPalabras: EL_PLAN, fuente, cita, revision };
 }
 
+// volver a aprobar la maqueta (`approve-mockup`): firma como el plan, pero el cuadro es de la maqueta. Nombra la huella
+// aprobada y la de ahora, y si cambian los textos que se comparan con la pantalla. La versión aprobada se lee del último
+// commit, y sólo si su huella es la aprobada: sin ella, el cuadro dice que no sabe.
+const LA_MAQUETA = 'la maqueta, en la carpeta de la guía del tester';
+const SI_SALE_MAL_MAQUETA = 'se construye contra una maqueta que no querías, y la pantalla se compara con esos textos; se vuelve a aprobar la maqueta y se corrige la pantalla';
+function deLaMaqueta(palabras, m) {
+  const que = 'volver a aprobar la maqueta de una story';
+  const cita = valor(palabras, '--approved');
+  const mk = require(path.join(PIPELINE, '..', 'mockup.js'));
+  const historia = rutaDeLaHistoria(m);
+  let p = null;
+  try { p = historia ? mk.mockupPaths(historia) : null; } catch (_) { p = null; }
+  const html = p ? leer(p.mockup) : null;
+  if (html == null) {
+    const linea = p ? `no encuentro la maqueta en ${p.mockup}${porQueNo(p.mockup)}` : 'no sé dónde está la maqueta: la sesión no tiene una historia que la ubique';
+    return { que, queHace: [linea], fuente: linea, cita, siSaleMal: SI_SALE_MAL_MAQUETA };
+  }
+  const nueva = mk.mockupHash(html);
+  // la aprobada es la que anotó la ejecución (como la mira approve-mockup); el archivo de aprobación del repo no la prueba
+  const vieja = m && m.mockupApproval && m.mockupApproval.sha256 ? String(m.mockupApproval.sha256) : null;
+  const corta = (h) => h.slice(0, 12);
+  const lineas = [];
+  let textos = 'sin comparar';
+  if (!vieja) lineas.push(`Primera aprobación de la maqueta en esta ejecución: huella ${corta(nueva)}`);
+  else if (vieja === nueva) lineas.push(`La maqueta no cambió desde su aprobación: huella ${corta(nueva)}`);
+  else {
+    lineas.push(`Huella: ${corta(vieja)} → ${corta(nueva)}`);
+    const r = git(path.dirname(p.mockup), ['show', `HEAD:./${path.basename(p.mockup)}`]);
+    const antes = r.status === 0 && mk.mockupHash(r.stdout) === vieja ? mk.mockupTexts(r.stdout) : null;
+    const ahora = mk.mockupTexts(html);
+    if (!antes || !ahora) {
+      textos = 'no sé';
+      lineas.push('No sé si los textos que se comparan con la pantalla son los mismos: la versión aprobada no está en el último commit');
+    } else {
+      // como los compara la capa 10: por su texto, en cualquier pantalla; el motivo de una casilla es otra cosa
+      const de = (ts) => [...new Set(ts.map((x) => `${x.kind === 'title' ? 'title' : ''}\u0000${String(x.text).replace(/\s+/g, ' ').trim()}`))];
+      const a = de(antes); const b = de(ahora);
+      const sale = a.filter((x) => !b.includes(x)); const entra = b.filter((x) => !a.includes(x));
+      const nombres = (xs) => xs.slice(0, 3).map((x) => `«${x.split('\u0000')[1]}»`).join(', ') + (xs.length > 3 ? ` y ${xs.length - 3} más` : '');
+      if (!sale.length && !entra.length) { textos = 'iguales'; lineas.push('Los textos que se comparan con la pantalla son los mismos: cambió el dibujo'); }
+      else {
+        textos = 'distintos';
+        lineas.push(`Cambian los textos que se comparan con la pantalla: ${[sale.length ? `sale ${nombres(sale)}` : '', entra.length ? `entra ${nombres(entra)}` : ''].filter(Boolean).join('; ')}`);
+      }
+    }
+  }
+  return { que, queHace: lineas, completo: p.mockup, completoEnPalabras: LA_MAQUETA, fuente: [vieja || '', nueva, textos, ...lineas].join('\n'), cita, siSaleMal: SI_SALE_MAL_MAQUETA };
+}
+
 // sin programas externos: el cuadro se arma antes de la firma, y el repo lo nombra el comando. Las rutas van literales: un
 // comodín o un «:(glob)» de la sesión no le hace mostrar a la pregunta archivos que el guion no firma
 const git = (dir, args) => spawnSync('git', ['-c', 'core.fsmonitor=false', '--literal-pathspecs', '-C', dir, ...args], { windowsHide: true, encoding: 'utf8', timeout: 20000, maxBuffer: 32 * 1024 * 1024 });
@@ -725,7 +774,7 @@ function partesDe({ firma, palabras, comando, cwd, marcador, estado, destino, to
   if (firma === 'autonomy-resume') return require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'autonomy-decision.js')).partes(marcador, { casa, sesion: destino });
   if (firma === 'escape:external-pr') return delPedidoDeAfuera(palabras, cwd, casa);
   if (!palabras) return null;
-  if (firma === 'plan-approval') return delPlan(palabras, marcador, { estado, destino });
+  if (firma === 'plan-approval') return palabras[1] === 'approve-mockup' ? deLaMaqueta(palabras, marcador) : delPlan(palabras, marcador, { estado, destino });
   if (firma === 'control-change' || firma === 'refresh-after-main') return deControles(palabras, cwd, estado);
   if (firma === 'manual-test') return deLaPruebaAMano(palabras, marcador);
   if (firma === 'critical-waiver') return delCritico(palabras, marcador);

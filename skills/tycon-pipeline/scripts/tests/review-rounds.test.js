@@ -274,6 +274,35 @@ test('Cap_ExtraRoundDelegated_YaNoAutoriza', () => {
   assert.ok(!gates(lab).some((g) => g.name === 'extra-round'), 'no se anota una vuelta que no se sirvió');
 });
 
+// 🔴 Falla con: el cartel del tope que dice que la vuelta extra la aprueba una persona cuando el perfil del equipo la
+// lista como firma de trámite (la da el arnés solo), o que dice «trámite» sin el perfil.
+test('T80a Cap_VueltaExtraDeTramite_ElCartelLoDice: el cartel dice quién da la vuelta extra, según el perfil del equipo', () => {
+  // el perfil del equipo se lee del árbol del arnés que corre: una copia propia, con el perfil y sin él
+  const copia = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js')).harnessCopy();
+  const perfil = path.join(copia, 'team-profile.json');
+  const tope = (lab, extra = []) => spawnSync(process.execPath, [path.join(copia, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'),
+    'smart-reloop', '--iter', '3', '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js', ...extra], { encoding: 'utf8', env: lab.env });
+  const findings = [hallazgo('SEC-C1', 'CRITICAL', 'open')];
+  fs.rmSync(perfil, { force: true });
+  const a = tope(laboratorio({ fotos: [1, 2], servidas: [1, 2], findings }));
+  assert.equal(a.status, 3, a.stderr);
+  assert.match(a.stderr, /la persona lo aprueba en la ventana de permiso/);
+  assert.doesNotMatch(a.stderr, /trámite/);
+  fs.writeFileSync(perfil, JSON.stringify({ approvals: { delegated_signing: ['extra-round'] } }));
+  try {
+    const con = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings });
+    const b = tope(con);
+    assert.equal(b.status, 3, b.stderr);
+    assert.match(b.stderr, /firma de trámite del perfil del equipo/);
+    assert.match(b.stderr, /no la firma una persona/);
+    // eximir el crítico sigue siendo de una persona (critical-waiver nunca es trámite): lo que cambia es la vuelta extra
+    assert.doesNotMatch(b.stderr, /--extra-round, y la persona lo aprueba/);
+    assert.match(b.stderr, /waive-critical[^\n]*la persona lo aprueba/);
+    assert.match(tope(con, ['--extra-round', '--quote', 'dale, una vuelta más']).stderr, /la cita ya no la autoriza\. Es una firma de trámite/);
+    assert.match(tope(con, ['--extra-round', '--delegated']).stderr, /Va el mismo comando sin --delegated: es una firma de trámite/);
+  } finally { fs.rmSync(perfil, { force: true }); }
+});
+
 test('Cap_OtherOpen_BecomesDebt @story-7.37 @ac-6', () => {
   const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('TEST-C1', 'CRITICAL', 'open'), hallazgo('REACT-W3', 'WARNING', 'deferred')] });
   const r = lab.reloop(3);

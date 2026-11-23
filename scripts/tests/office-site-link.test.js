@@ -2448,3 +2448,41 @@ test('T22 Sitio_NoRecibeLasAbiertas @story-8.313 @ac-19: kanban.abiertas no viaj
   assert.ok(!('abiertas' in sent.kanban), 'no viaja');
   assert.ok(typeof LOCAL_ONLY['kanban.abiertas'] === 'string' && LOCAL_ONLY['kanban.abiertas'].length > 20, 'dice por qué no viaja');
 });
+
+test('Candado_UnSoloDueno — office.js pregunta por el proceso del candado con lockOwner de site-link.js, sin copia propia', async () => {
+  // la consulta al proceso del candado vive en un solo lugar
+  const fuente = fs.readFileSync(OFFICE, 'utf8');
+  assert.doesNotMatch(fuente, /\/health\?t=/, 'office.js no arma su propia consulta al proceso del candado');
+  const { answers } = require(OFFICE);
+  assert.strictEqual(typeof answers, 'function');
+  // sin candado, o con un pid que ya no vive: no contesta
+  assert.strictEqual(await answers(null), false);
+  assert.strictEqual(await answers({ pid: 2147483646, port: 1, token: 'x' }), false);
+  // un proceso que contesta con el pid del candado, sí; con otro pid, no
+  const toy = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ pid: Number(new URL(req.url, 'http://x').searchParams.get('pid')) || process.pid })); });
+  await new Promise((r) => toy.listen(0, '127.0.0.1', r));
+  const { port } = toy.address();
+  try {
+    assert.strictEqual(await answers({ pid: process.pid, port, token: 'x' }), true);
+    const otro = http.createServer((req, res) => { res.writeHead(200); res.end(JSON.stringify({ pid: process.pid + 1 })); });
+    await new Promise((r) => otro.listen(0, '127.0.0.1', r));
+    try { assert.strictEqual(await answers({ pid: process.pid, port: otro.address().port, token: 'x' }), false); } finally { otro.close(); }
+  } finally { toy.close(); }
+});
+
+test('Candado_RespuestaCortada_NoQuedaColgada — el puerto del candado manda las cabeceras y corta a mitad del cuerpo: cuenta como otra cosa', async () => {
+  const net = require('net');
+  const { lockOwner } = require(path.join(ROOT, 'scripts', 'tools', 'office', 'site-link.js'));
+  const { answers } = require(OFFICE);
+  const cortador = net.createServer((s) => {
+    s.once('data', () => { s.write('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{"pid":'); setTimeout(() => s.destroy(), 30); });
+  });
+  await new Promise((r) => cortador.listen(0, '127.0.0.1', r));
+  const lock = { pid: process.pid, port: cortador.address().port, token: 'x' };
+  // un vigilante: sin el arreglo, la pregunta no termina nunca
+  const conPlazo = (p) => Promise.race([p, new Promise((r) => setTimeout(() => r('colgada'), 3000))]);
+  try {
+    assert.strictEqual(await conPlazo(lockOwner(lock, 1000)), 'foreign');
+    assert.strictEqual(await conPlazo(answers(lock)), false);
+  } finally { cortador.close(); }
+});

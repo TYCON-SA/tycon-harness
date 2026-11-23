@@ -1166,7 +1166,7 @@ test('T42 SaveBrake_TextoQueFalta_DiceComoSeCompleta @story-8.181 @ac-16', (t) =
   assert.ok(r && r.texto, JSON.stringify(r));
   assert.match(r.texto, /le faltan? \d+ texto/);
   assert.match(r.texto, /Corregí la pantalla/);
-  assert.match(r.texto, /Volvé a aprobar la maqueta/);
+  assert.match(r.texto, /Si lo que cambió es la maqueta: mostrásela a la persona/);
   assert.match(r.texto, /maqueta-diferencias\.md/);
   assert.match(r.texto, /differs:/);
 });

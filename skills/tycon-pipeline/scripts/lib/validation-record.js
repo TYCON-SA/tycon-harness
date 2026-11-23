@@ -11,7 +11,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { stateDir } = require('./state-dir.js');
-const { huella } = require('./story-review-record.js');
+const { huella, textoDeHuella } = require('./story-review-record.js');
 
 const RECORD_DIR = 'story-validations';
 const RESULTS = ['verde', 'rojo'];
@@ -80,7 +80,10 @@ function writeRecord(home, storyPath, datos) {
     resultado: datos.resultado,
     validadores: Array.isArray(datos.validadores) ? [...new Set(datos.validadores)] : datos.validadores,
     huella: huella(texto),
+    // lo que la huella mide: con él se ve qué cambió de la historia después de validarla (story-revalidation.js)
+    texto: textoDeHuella(texto),
     hora: new Date().toISOString(),
+    ...(datos.origen ? { origen: datos.origen } : {}),
   };
   const p = problemas(rec);
   if (p.length) { const e = new Error(p.join('\n')); e.problemas = p; throw e; }
@@ -108,7 +111,8 @@ function readRecord(home, storyPath) {
  * que no está en la constancia (uno de un paquete que se activó después, por ejemplo) se lanza igual.
  */
 function omitirVigentes(salida, leida) {
-  const ok = leida && leida.estado === 'current' && leida.record && leida.record.resultado === 'verde';
+  // `por-revalidar`: la historia cambió sólo en lo técnico después de un plan rechazado; la revalida la vuelta del plan
+  const ok = leida && (leida.estado === 'current' || leida.estado === 'por-revalidar') && leida.record && leida.record.resultado === 'verde';
   const ya = new Set(ok ? leida.record.validadores : []);
   const omitidos = salida.validadores.filter((v) => ya.has(v));
   return {
@@ -121,6 +125,9 @@ function omitirVigentes(salida, leida) {
 /** El renglón para el log del paso, o null si no se omite nada. */
 function linea(leida, omitidos) {
   if (!omitidos.length) return null;
+  if (leida.estado === 'por-revalidar') {
+    return `validación previa a revalidar por la vuelta del plan: verde, ${leida.record.hora}; la historia cambió sólo en lo técnico después del plan rechazado, no se vuelve a lanzar ${omitidos.join(', ')}`;
+  }
   return `validación previa vigente: verde, ${leida.record.hora}, no se vuelve a lanzar ${omitidos.join(', ')}`;
 }
 

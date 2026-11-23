@@ -360,6 +360,7 @@ their tabs as before.
 - **Closed stories that left proof it works at runtime** (`dod`). Of the closed stories, how many left evidence that they were tested live.
 - **What comes back: stories with a later follow-up** (`rework`). How much of what was delivered had to be touched again.
 - **Why it came back: our defect vs. a requirement change** (`rework_por_causa`). Separates what came back because of our mistake from what came back because what was asked changed.
+- **Reworked next to delivered, month by month** (`rework_por_mes`). Shows, for each of the last months, how many stories were delivered and how many were reworked for each cause, to see whether rework grows or shrinks.
 - **Does what went through the pipeline come back less?** (`rework_por_carril`). Compares, per repo, rework with a pipeline record against rework without one.
 - **Mutation score: share of mutants the tests kill** (`mutacion`). Whether the tests break when the code is broken on purpose.
 - **Test runs that evaluated the 75% threshold on the changed lines** (`cobertura_tocada_evaluo`). How many times the coverage of what was touched was actually measured.
