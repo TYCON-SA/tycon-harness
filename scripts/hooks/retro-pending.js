@@ -41,8 +41,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
 //     directorio (tampoco `popd`).
 //   · `cd $HOME/X && …` — `HOME` se trata como una variable que el comando no define (`~` sí se
 //     expande), así que sale "no pude resolver": no anota nada y lo dice. Ruidoso, no falso.
-// Y lo que NO se ve: un push dentro de un `sh -c "…"` o de un heredoc que no alimenta a un shell (`python3 - <<EOF` que
-// lanza el push por dentro). Ese cuerpo se quita ANTES de analizar —es texto, no comandos: un `node - <<EOF` con un
+// Y lo que NO se ve: un push dentro de un heredoc que no alimenta a un shell (`python3 - <<EOF` que lanza el push por
+// dentro). Un `bash -c "…"` (o `sh`, `zsh`) sí se lee: lo citado ahí es un comando. Ese cuerpo se quita ANTES de analizar —es texto, no comandos: un `node - <<EOF` con un
 // string con forma de push dispararía el aviso de "no pude resolver" sin que hubiera ningún push—; el
 // de un `bash <<EOF` se conserva y su push se anota. Lo demás lo cubre retro-staleness-notice.js, por días.
 // "Cubierto" es MECÁNICO: el capturer escribe en ~/.claude/tycon-harness/.dashboard/metrics-*.json
@@ -869,9 +869,8 @@ function record(event) {
   // texto, no un push. Sin esto, cualquier `grep -rn "git push origin main" …` o `node -e` con
   // strings caería en el aviso de "no pude resolver" + exit 2, y un control ruidoso termina en
   // TYCON_RETRO_PENDING=0.
-  // El precio declarado: un `sh -c "git push origin main"` queda del lado de "mencionado" y no se
-  // ve. Es el mismo precio que se paga por los heredocs, y va al lado barato: ningún push del ledger
-  // real tiene esa forma.
+  // La excepción es una consola que corre lo citado (`bash -c "git push origin main"`): ahí el push es de verdad, y
+  // git-target.js lee cada uno con su carpeta.
   // `cmdShell`: el comando sin los cuerpos de heredoc que son texto (ver el require de sinHeredocs).
   // Sólo el camino del push lo usa; el del PR ya corta sus segmentos sin heredocs (az-pr.js).
   const cmdShell = sinHeredocs(cmd, { salvoShell: true });
@@ -879,7 +878,9 @@ function record(event) {
   // Los pedidos de GitHub (`gh pr create` hacia la rama principal) y los que abre la capa de plataforma: la entrega de
   // un repo que vive ahí.
   const pedidosGh = [...pedidosDeGh(cmd, cwd, /powershell|pwsh/i.test(String(event.tool_name || ''))), ...pedidosDeCapa(cmd, cwd)];
-  const hayPush = /\bgit\b[^|;&\n]*\bpush\b/.test(sinLoCitado(cmdShell));
+  // un `bash -c '…git push…'` corre lo que está entre comillas: ahí lo citado es un comando, y git-target.js lo lee
+  const consolaC = /(^|[\s;&|(])(?:bash|sh|zsh)\s+-[a-z]*c\b/.test(sinLoCitado(cmdShell)) && /\bgit\b[^|;&\n]*\bpush\b/.test(cmdShell);
+  const hayPush = consolaC || /\bgit\b[^|;&\n]*\bpush\b/.test(sinLoCitado(cmdShell));
   if (!isPrCreate && !hayPush && !pedidosGh.length) return;
 
   // ¿Dónde corre cada entrega de este comando? Con el `cd`/`-C` seguidos, no con el cwd de la
@@ -1077,6 +1078,27 @@ function hijoConOrigen(dir, ruta) {
   }
   return hallados.length === 1 ? hallados[0] : null;
 }
+/**
+ * La copia de trabajo del repo `ruta` (`dueño/repo`) que tiene la rama `rama`, buscada desde la carpeta `desde`: el clon
+ * que se llama como el repo, al lado de `desde` o adentro, con ese `origin`, y entre sus copias (`git worktree list`) la
+ * única con esa rama. Sin rama, sin clon o con más de una copia, null: no se adivina.
+ */
+function copiaConLaRama(desde, ruta, rama) {
+  if (!rama || !ruta) return null;
+  const nombre = ruta.split('/').pop();
+  for (const base of [path.dirname(desde), desde]) {
+    const cand = path.join(base, nombre);
+    const r = raizGit(cand);
+    if (!r || real(r) !== real(cand)) continue;
+    const origen = identidadRemoto(git(r, ['remote', 'get-url', 'origin']));
+    if (!origen || origen.ruta !== ruta) continue;
+    const copias = String(git(r, ['worktree', 'list', '--porcelain']) || '').split(/\n\s*\n/)
+      .map((b) => ({ dir: (/^worktree (.+)$/m.exec(b) || [])[1], rama: (/^branch refs\/heads\/(.+)$/m.exec(b) || [])[1] }))
+      .filter((x) => x.dir && x.rama === rama);
+    return copias.length === 1 ? copias[0].dir : null;
+  }
+  return null;
+}
 function pedidosDeAz(cmd, base) {
   const out = [];
   let statements = [];
@@ -1207,16 +1229,18 @@ function pedidosDeGh(cmd, cwd, powershell) {
     // los `cd` literales de la línea, en orden; `~` es la carpeta de la persona (la terminal la expande, `path` no)
     const dir = (c.cds || []).reduce((d, paso) => path.resolve(d, String(paso).replace(/^~(?=$|[\\/])/, os.homedir())), cwd);
     // desde la carpeta que agrupa los repos, `--repo` elige al hijo cuyo origin es ese repo
-    const root = git(dir, ['rev-parse', '--show-toplevel']) || (c.repo ? hijoConOrigen(dir, c.repo) : null);
-    if (!root) { out.push({ resuelto: false }); continue; }
+    let root = git(dir, ['rev-parse', '--show-toplevel']) || (c.repo ? hijoConOrigen(dir, c.repo) : null);
+    const propia = c.head && !c.head.includes(':') ? c.head : null;
     if (c.repo) {
-      // `--repo`/`GH_REPO` nombran un repo: si no es el `origin` de esta carpeta, el pedido es de OTRO repo
-      const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
-      if (!origen || origen.ruta !== c.repo) { out.push({ resuelto: false }); continue; }
+      // `--repo`/`GH_REPO` nombran un repo: si no es el `origin` de esta carpeta, el pedido es de OTRO repo. Se busca su
+      // copia por la rama de `--head` (el clon de ese repo al lado de esta carpeta, y la copia de trabajo con esa rama);
+      // sin una sola que la tenga, no se sabe dónde corre
+      const origen = root ? identidadRemoto(git(root, ['remote', 'get-url', 'origin'])) : null;
+      if (!origen || origen.ruta !== c.repo) root = copiaConLaRama(root || dir, c.repo, propia);
     }
+    if (!root) { out.push({ resuelto: false }); continue; }
     // la punta: la de la rama de `--head` o, sin `--head`, la de la rama en la que está la carpeta; con `dueño:rama` es
     // la de otro repo, y si no está en ningún lado, la de HEAD
-    const propia = c.head && !c.head.includes(':') ? c.head : null;
     const puntaPropia = propia && puntaDeLaRama(root, propia);
     const rama = puntaPropia ? ramaCorta(propia) : git(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
     let target = c.base;

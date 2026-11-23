@@ -347,3 +347,27 @@ test('T17 Decidir_NoCambia @story-8.319 @ac-15', () => {
   assert.strictEqual(r.decision, 'deny');
   assert.match(r.texto, /la línea de la consola PowerShell no dice qué comando corre/);
 });
+
+test('T1c Freno_SignFile_ClickComoEnMac_TerminalDeEmergencia @story-8.319 @ac-1 @ac-2', () => {
+  // La firma por archivo en Windows va por click, como en Mac, y la terminal queda de emergencia. El freno la ve así: el
+  // escape lo lee el guion del comando (`firmas`), no le llega como escape (`escapes` vacío).
+  // 🔴 mutación: tratarla como un escape (sólo la terminal) → la consola Bash deja de ofrecer el click y PowerShell deja
+  //    de mandar a la consola Bash.
+  const firmas = ['escape:ALLOW_DOD_EVIDENCE_WRITE'];
+  // desde la consola Bash de Git: el camino de siempre, con la ventana o el click (ofrecerEnWindows no agrega nada)
+  assert.strictEqual(ofrece(ESCAPE, { firmas }), '', 'consola Bash: el texto de siempre, con el cuadro');
+  // desde PowerShell con Git Bash: a la consola Bash, que firma en la pestaña; la terminal, de emergencia
+  const ps = ofrece(ESCAPE, { evento: { tool_name: 'PowerShell' }, firmas });
+  assert.match(ps, /consola Bash de Git/, ps);
+  assert.match(ps, /--terminal/, ps);
+  assert.doesNotMatch(ps, /un escape no se aprueba en la pestaña/, ps);
+  // sin Git Bash no hay pestaña que compare el comando: queda sólo la terminal
+  assert.match(ofrece(ESCAPE, { evento: { tool_name: 'PowerShell' }, firmas, gitBash: SIN_GIT }), /Va sólo en la terminal/);
+  // y decidir desde PowerShell manda a la consola Bash, no sólo a la terminal
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-casa-'));
+  try {
+    const r = ow.decidir({ plataforma: 'win32', evento: evento(ESCAPE, { tool_name: 'PowerShell' }), casa, ahora: AHORA, gitBash: CON_GIT });
+    assert.strictEqual(r.decision, 'deny');
+    assert.match(r.texto, /corré la firma por la consola Bash de la herramienta, o con --terminal/, r.texto);
+  } finally { fs.rmSync(casa, { recursive: true, force: true }); }
+});
