@@ -2123,27 +2123,23 @@ test('8.187 T2 Open_ConSlot_TomaUnPuesto @story-8.187 @ac-2: con --slot toma un 
   assert.strictEqual(C.flags(['--repo', '/r', '--slot']).slot, true);
 });
 
-test('8.187 T3 Open_NotTrusted_BorraLoQueCreo @story-8.187 @ac-3: «not trusted» borra la copia y la rama nueva; una rama que ya existía queda', () => {
+test('8.187 T3 Open_FallaDelLanzador_BorraLoQueCreo @story-8.187 @ac-3: una falla del lanzador que no es «not trusted» borra la copia y la rama nueva; una rama que ya existía queda', () => {
+  // «not trusted» ya no borra: deja la carpeta para que una persona la apruebe (fila 159, F159 T1)
   const t = toy({ profile: { coordination: { max_working: 3 } } });
   const repo = toyRepo(t);
-  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'untrusted') });
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'error') });
   assert.strictEqual(r.ok, false);
   assert.strictEqual(launched(t).cwd, copyOf(repo, 'n1'), 'probó en la copia hermana');
   assert.ok(!fs.existsSync(copyOf(repo, 'n1')), 'la copia no queda');
   assert.strictEqual(branchExists(repo, 'wt/n1'), false, 'la rama nueva no queda');
   gitToy(repo, 'branch', 'feat/existe', 'origin/main');
-  const r2 = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', branch: 'feat/existe', task: 'algo', launcher: launcher(t, 'untrusted') });
+  const r2 = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', branch: 'feat/existe', task: 'algo', launcher: launcher(t, 'error') });
   assert.strictEqual(r2.ok, false);
   assert.ok(!fs.existsSync(copyOf(repo, 'n2')), 'la copia no queda');
   assert.strictEqual(branchExists(repo, 'feat/existe'), true, 'la rama que ya existía queda');
-  // otra falla del lanzador también limpia
-  const r3 = C.open({ ...t.opts, ...caller(t), now: NOW + 2000, repo, name: 'n3', task: 'algo', launcher: launcher(t, 'error') });
-  assert.strictEqual(r3.ok, false);
-  assert.ok(!fs.existsSync(copyOf(repo, 'n3')));
-  assert.strictEqual(branchExists(repo, 'wt/n3'), false);
 });
 
-test('8.187 T4 Open_NotTrusted_NombraPrincipalYSlot @story-8.187 @ac-4: una línea con la carpeta principal y --slot; una sola llamada; ~/.claude.json igual', () => {
+test('8.187 T4 Open_NotTrusted_NombraLaCopia @story-8.187 @ac-4: una línea que nombra la copia (no culpa a la principal) y cómo reintentar reusándola; una sola llamada; ~/.claude.json igual', () => {
   const t = toy({ profile: { coordination: { max_working: 3 } } });
   const repo = toyRepo(t);
   const cfg = path.join(t.home, '.claude.json');
@@ -2152,9 +2148,10 @@ test('8.187 T4 Open_NotTrusted_NombraPrincipalYSlot @story-8.187 @ac-4: una lín
   const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: countingLauncher(t, 'untrusted') });
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.message.trim().split('\n').length, 1, r.message);
-  assert.match(r.message, new RegExp(`${repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!-)`), `nombra la carpeta principal: ${r.message}`);
+  assert.ok(r.message.includes(`cd '${copyOf(repo, 'n1')}'`), `nombra la copia: ${r.message}`);
+  assert.doesNotMatch(r.message, /falta aprobar la carpeta principal/, r.message);
   assert.doesNotMatch(r.message, /--slot-\d/, 'no habla de un puesto');
-  assert.match(r.message, /--slot\b(?!-)/, 'ofrece la opción --slot');
+  assert.match(r.message, /--reuse\b/, 'dice cómo reintentar reusándola');
   assert.strictEqual(calls(t).length, 1, 'no reintenta');
   assert.strictEqual(calls(t)[0].cwd, copyOf(repo, 'n1'), 'lo intentó en la copia hermana');
   assert.deepStrictEqual(fs.readFileSync(cfg), antes, 'no toca ~/.claude.json');
@@ -2286,20 +2283,228 @@ test('8.187 T19 Guias_NoDescribenElCaminoViejo @story-8.187 @ac-18: pending-trus
   }
 });
 
-test('8.187 T3b Open_NotTrusted_SinPoderBorrar_LoDice @story-8.187 @ac-3: si la copia no se puede borrar, el mensaje no dice «borré»: dice que queda para el barrido', () => {
+test('8.187 T3b Open_FallaDelLanzador_SinPoderBorrar_LoDice @story-8.187 @ac-3: si la copia no se puede borrar, el mensaje no dice «borré»: dice que queda para el barrido', () => {
   const t = toy({ profile: { coordination: { max_working: 3 } } });
   const repo = toyRepo(t);
-  // el lanzador bloquea la copia antes de contestar «not trusted»: `worktree remove --force` no saca una bloqueada
+  // el lanzador bloquea la copia antes de fallar: `worktree remove --force` no saca una bloqueada
   const script = path.join(t.root, 'locking-launcher.js');
   fs.writeFileSync(script, `
 require('child_process').spawnSync('git', ['worktree', 'lock', process.cwd()], { cwd: process.cwd() });
-process.stderr.write('Error: Workspace not trusted.\\n'); process.exit(1);
+process.stderr.write('boom: algo salió mal\\n'); process.exit(4);
 `);
   const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: { bin: process.execPath, prefix: [script] } });
   assert.strictEqual(r.ok, false);
   assert.doesNotMatch(r.message, /Borré la copia/, r.message);
   assert.match(r.message, /No pude borrar la copia .*barrido/, r.message);
   spawnSync('git', ['-C', repo, 'worktree', 'unlock', copyOf(repo, 'n1')]);
+});
+
+// ── Fila 159: Claude Code 2.1.330 asks to approve each copy and slot, even with the main folder approved ─────────────
+
+const UNTRUSTED_LINE = 'Error: Workspace not trusted. Open it once to trust it.';
+
+test('F159 T1 Open_CopiaSinAprobar_LaDejaYDiceCómoAprobarla: «not trusted» deja la copia y su rama, nombra la copia (no la principal), dice cómo aprobarla y cómo reintentar, y trae lo que dijo Claude Code', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const copy = copyOf(repo, 'n1');
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: countingLauncher(t, 'untrusted') });
+  assert.strictEqual(r.ok, false);
+  assert.ok(fs.existsSync(copy), 'la copia queda para que la aprueben');
+  assert.strictEqual(branchIn(copy), 'wt/n1', 'con su rama');
+  assert.strictEqual(r.message.trim().split('\n').length, 1, r.message);
+  assert.ok(r.message.includes(`cd '${copy}'`), r.message);
+  assert.match(r.message, /no está aprobada en esta versión de Claude Code/);
+  assert.match(r.message, /una persona/);
+  assert.doesNotMatch(r.message, /falta aprobar la carpeta principal|Borré/, r.message);
+  assert.ok(r.message.includes(UNTRUSTED_LINE), `trae lo que dijo Claude Code: ${r.message}`);
+  // el comando para reintentar es uno que la línea de comandos entiende
+  const cmd = r.message.match(/open (--name .*?) -- /);
+  assert.ok(cmd, r.message);
+  const f = C.flags(cmd[1].match(/'[^']*'|\S+/g).map((x) => x.replace(/^'|'$/g, '')));
+  assert.strictEqual(f.name, 'n1');
+  assert.strictEqual(f.repo, repo);
+  assert.strictEqual(f.reuse, true);
+  assert.notStrictEqual(f.slot, true);
+  assert.match(r.message, new RegExp(`worktree remove '${escapar(copy)}'`), 'dice cómo sacarla si no se usa');
+  assert.strictEqual(calls(t).length, 1, 'no reintenta');
+});
+
+test('F159 T2 Open_PuestoSinAprobar_QuedaTomado: «not trusted» deja el puesto tomado y con su rama; el mensaje dice cómo aprobarlo, reintentar o soltarlo', () => {
+  const t = toy({ profile: { coordination: { max_working: 2 } } });
+  const repo = toyRepo(t);
+  const r = C.open({ ...t.opts, ...caller(t), repo, slot: true, name: 'n1', task: 'algo', launcher: launcher(t, 'untrusted') });
+  assert.strictEqual(r.ok, false);
+  const s1 = WS.list({ ...t.opts, repo }).slots[0];
+  assert.strictEqual(s1.free, false, 'el puesto sigue tomado');
+  assert.strictEqual(s1.branch, 'wt/n1', 'con su rama');
+  assert.strictEqual(branchExists(repo, 'wt/n1'), true);
+  assert.strictEqual(r.message.trim().split('\n').length, 1, r.message);
+  assert.ok(r.message.includes(`cd '${slotOf(repo, 1)}'`), r.message);
+  assert.match(r.message, /no está aprobada en esta versión de Claude Code/);
+  assert.match(r.message, /--slot --reuse/);
+  assert.ok(r.message.includes(`release '${slotOf(repo, 1)}'`), r.message);
+  assert.ok(r.message.includes(UNTRUSTED_LINE), r.message);
+  assert.doesNotMatch(r.message, /carpeta principal/);
+});
+
+test('F159 T3 Open_Reuse_AbreEnLaMismaCarpeta: después de aprobarla, --reuse abre en la misma copia o el mismo puesto, sin crear otra carpeta', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const copy = copyOf(repo, 'n1');
+  assert.strictEqual(C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'untrusted') }).ok, false);
+  // lo que deja quien la aprueba (sin commitear) sigue ahí: es la misma carpeta, no una nueva con el mismo nombre
+  fs.writeFileSync(path.join(copy, 'de-la-aprobacion.txt'), 'x\n');
+  const r = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n1', reuse: true, task: 'implementá la 9.9', launcher: launcher(t) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), copy);
+  assert.ok(fs.existsSync(path.join(copy, 'de-la-aprobacion.txt')), 'la misma copia');
+  const job = launched(t).argv[launched(t).argv.length - 1];
+  assert.ok(job.includes(copy) && job.includes('wt/n1'), job);
+  assert.match(job, /commiteado, empujado y con su pedido abierto/);
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(repo)).filter((d) => d.includes('--wt-')), ['proyecto--wt-n1'], 'no crea otra copia');
+  // con un puesto: el mismo puesto, y el otro sigue libre
+  const t2 = toy({ profile: { coordination: { max_working: 2 } } });
+  const repo2 = toyRepo(t2);
+  assert.strictEqual(C.open({ ...t2.opts, ...caller(t2), repo: repo2, slot: true, name: 'n1', task: 'algo', launcher: launcher(t2, 'untrusted') }).ok, false);
+  assert.strictEqual(branchIn(slotOf(repo2, 1)), 'wt/n1', 'el puesto quedó tomado para reintentar');
+  const r2 = C.open({ ...t2.opts, ...caller(t2), now: NOW + 1000, repo: repo2, slot: true, reuse: true, name: 'n1', task: 'algo', launcher: launcher(t2) });
+  assert.strictEqual(r2.ok, true, r2.message);
+  assert.strictEqual(fs.realpathSync(launched(t2).cwd), slotOf(repo2, 1));
+  assert.match(launched(t2).argv[launched(t2).argv.length - 1], /release/);
+  assert.strictEqual(WS.list({ ...t2.opts, repo: repo2 }).slots[1].free, true, 'no toma otro puesto');
+});
+
+test('F159 T4 Open_Reuse_SeNiegaSinCarpetaOConOtraSesion: --reuse sin repo, sin nombre, sin carpeta que reusar, en otra rama o con una sesión viva ahí no abre; si el lanzador falla, no borra lo reusado', () => {
+  const t = toy({ profile: { coordination: { max_working: 3, session_names: ['Norte'] } } });
+  const repo = toyRepo(t);
+  const copy = copyOf(repo, 'n1');
+  const sinRepo = C.open({ ...t.opts, ...caller(t), cwd: t.root, reuse: true, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.match(sinRepo.message, /--reuse va con --repo/);
+  const sinNombre = C.open({ ...t.opts, ...caller(t), repo, reuse: true, task: 'algo', launcher: countingLauncher(t) });
+  assert.match(sinNombre.message, /--reuse va con --name/);
+  const nada = C.open({ ...t.opts, ...caller(t), repo, reuse: true, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.strictEqual(nada.ok, false);
+  assert.match(nada.message, /no hay qué reusar/);
+  const nadaSlot = C.open({ ...t.opts, ...caller(t), repo, slot: true, reuse: true, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.match(nadaSlot.message, /no hay qué reusar/);
+  assert.strictEqual(calls(t).length, 0);
+  // la copia en otra rama no es la de este trabajo
+  gitToy(repo, 'worktree', 'add', '-q', '-b', 'otra', copy, 'origin/main');
+  const otraRama = C.open({ ...t.opts, ...caller(t), repo, reuse: true, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.strictEqual(otraRama.ok, false);
+  assert.match(otraRama.message, /rama otra/);
+  gitToy(copy, 'switch', '-q', '-c', 'wt/n1');
+  // la persona la aprobó y dejó claude abierto ahí: dos sesiones en la misma carpeta no
+  session(t, 'aprobando', 'aprueba', { cwd: copy });
+  const viva = C.open({ ...t.opts, ...caller(t), repo, reuse: true, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.strictEqual(viva.ok, false);
+  assert.match(viva.message, /sesión viva/);
+  assert.strictEqual(calls(t).length, 0);
+  fs.rmSync(path.join(t.home, '.claude', 'sessions', 'aprobando.json'));
+  const falla = C.open({ ...t.opts, ...caller(t), repo, reuse: true, name: 'n1', task: 'algo', launcher: launcher(t, 'error') });
+  assert.strictEqual(falla.ok, false);
+  assert.ok(fs.existsSync(copy), 'no borra una copia que no creó');
+  assert.strictEqual(branchExists(repo, 'wt/n1'), true);
+  // la línea de comandos lee --reuse sin valor
+  const f = C.flags(['--name', 'n1', '--repo', '/r', '--reuse', '--', 'el encargo']);
+  assert.strictEqual(f.reuse, true);
+  assert.deepStrictEqual(f.rest, ['el encargo']);
+});
+
+test('F159 T5 Open_CarpetaSinAprobar_TraeLoQueDijoClaudeCode: con --cwd, el mensaje de siempre más la primera línea cruda de Claude Code, recortada', () => {
+  const t = toy();
+  const r = open(t, { name: 'n1', task: 'algo', launcher: launcher(t, 'untrusted') });
+  assert.strictEqual(r.ok, false);
+  assert.ok(r.message.includes(UNTRUSTED_LINE), r.message);
+  assert.strictEqual(r.message.trim().split('\n').length, 1);
+  const largo = path.join(t.root, 'largo.js');
+  fs.writeFileSync(largo, `process.stderr.write('\\n  Workspace not trusted: ' + 'x'.repeat(500) + '\\notra línea\\n'); process.exit(1);`);
+  const r2 = open(t, { name: 'n2', task: 'algo', launcher: { bin: process.execPath, prefix: [largo] } });
+  assert.ok(r2.message.includes('Workspace not trusted: xxx'), r2.message);
+  assert.doesNotMatch(r2.message, /x{300}/, 'recortada');
+  assert.doesNotMatch(r2.message, /otra línea/);
+});
+
+// What the shell reads from a pasted command: each word on its own line, with nothing run.
+function shellWords(t, args) {
+  const r = spawnSync('sh', ['-c', `printf '%s\\n' ${args}`], { cwd: t.root, encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return r.stdout.replace(/\n$/, '').split('\n');
+}
+
+test('F159 T6 Open_CitaLaLineaQueDiceNotTrusted: la cita es la línea que dice «not trusted», no un aviso que salió antes', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const script = path.join(t.root, 'aviso-antes.js');
+  fs.writeFileSync(script, `process.stderr.write('Update available\\n(node) DeprecationWarning: algo viejo\\nError: Workspace not trusted.\\n'); process.exit(1);`);
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: { bin: process.execPath, prefix: [script] } });
+  assert.strictEqual(r.ok, false);
+  assert.ok(r.message.includes('Claude Code dijo: «Error: Workspace not trusted.»'), r.message);
+  assert.doesNotMatch(r.message, /Update available|DeprecationWarning/);
+  // con --cwd, lo mismo
+  const r2 = open(t, { name: 'n2', task: 'algo', launcher: { bin: process.execPath, prefix: [script] } });
+  assert.ok(r2.message.includes('Claude Code dijo: «Error: Workspace not trusted.»'), r2.message);
+});
+
+test('F159 T7 Open_CitaLimpia: la cita sale sin secuencias de terminal enteras ni caracteres de control, y el recorte no parte un carácter', () => {
+  const t = toy();
+  const color = path.join(t.root, 'color.js');
+  fs.writeFileSync(color, `process.stderr.write('\\x1b[31mError:\\x1b[0m Workspace \\x1b]0;titulo\\x07not trusted\\u202e\\x07 fin\\r\\n'); process.exit(1);`);
+  const r = open(t, { name: 'n1', task: 'algo', launcher: { bin: process.execPath, prefix: [color] } });
+  assert.ok(r.message.includes('«Error: Workspace not trusted fin»'), JSON.stringify(r.message));
+  assert.doesNotMatch(r.message, /\[31m|\[0m|titulo|[\u0000-\u001f\u007f-\u009f\u202e]/, JSON.stringify(r.message));
+  // 199 letras y un emoji: el recorte de 200 caracteres deja el emoji entero
+  const emoji = path.join(t.root, 'emoji.js');
+  fs.writeFileSync(emoji, `process.stderr.write('a'.repeat(199) + '\\u{1F600}' + 'resto Workspace not trusted\\n'); process.exit(1);`);
+  const r2 = open(t, { name: 'n2', task: 'algo', launcher: { bin: process.execPath, prefix: [emoji] } });
+  assert.ok(r2.message.includes(`${'a'.repeat(199)}\u{1F600}…`), r2.message);
+  assert.doesNotMatch(r2.message, /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/, 'medio emoji');
+});
+
+test('F159 T8 Open_ComandosCitadosParaElShell: el reintento, el cd y el soltar llevan cada valor entre comillas simples; pegados, no corren nada', { skip: process.platform === 'win32' ? 'sh' : false }, () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const branch = "a'b;touch${IFS}pwn";
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', branch, task: 'algo', launcher: launcher(t, 'untrusted') });
+  assert.strictEqual(r.ok, false);
+  const retry = r.message.match(/ open (.*?) -- <el mismo encargo>/);
+  assert.ok(retry, r.message);
+  assert.deepStrictEqual(shellWords(t, retry[1]), ['--name', 'n1', '--repo', repo, '--branch', branch, '--reuse']);
+  const cd = r.message.match(/ cd ('(?:[^']|'\\'')*')/);
+  assert.ok(cd, r.message);
+  assert.deepStrictEqual(shellWords(t, cd[1]), [copyOf(repo, 'n1')]);
+  const remove = r.message.match(/git -C (.*?) worktree remove ('(?:[^']|'\\'')*')/);
+  assert.ok(remove, r.message);
+  assert.deepStrictEqual(shellWords(t, `${remove[1]} ${remove[2]}`), [repo, copyOf(repo, 'n1')]);
+  assert.ok(!fs.existsSync(path.join(t.root, 'pwn')), 'pegarlo no corrió nada');
+  // el puesto: soltarlo también va citado
+  const t2 = toy({ profile: { coordination: { max_working: 1 } } });
+  const repo2 = toyRepo(t2);
+  const r2 = C.open({ ...t2.opts, ...caller(t2), repo: repo2, slot: true, name: 'n1', task: 'algo', launcher: launcher(t2, 'untrusted') });
+  const rel = r2.message.match(/node ('(?:[^']|'\\'')*') release ('(?:[^']|'\\'')*')/);
+  assert.ok(rel, r2.message);
+  assert.deepStrictEqual(shellWords(t2, `${rel[1]} ${rel[2]}`), [path.join(ROOT, 'scripts', 'tools', 'work-slots.js'), slotOf(repo2, 1)]);
+});
+
+test('F159 T9 Open_SinRespuesta_DiceCómoSacarLoQueCreó: si el lanzador no vuelve, no borra nada y dice cómo sacar la copia o soltar el puesto si no abrió', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const copy = copyOf(repo, 'n1');
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'hang'), timeoutMs: 400 });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /no sé si abrió/);
+  assert.ok(fs.existsSync(copy), 'no borra: no se sabe si abrió');
+  assert.ok(r.message.includes(`worktree remove '${copy}'`), r.message);
+  assert.strictEqual(r.message.trim().split('\n').length, 1);
+  const t2 = toy({ profile: { coordination: { max_working: 1 } } });
+  const repo2 = toyRepo(t2);
+  const r2 = C.open({ ...t2.opts, ...caller(t2), repo: repo2, slot: true, name: 'n1', task: 'algo', launcher: launcher(t2, 'hang'), timeoutMs: 400 });
+  assert.strictEqual(r2.ok, false);
+  assert.strictEqual(WS.list({ ...t2.opts, repo: repo2 }).slots[0].free, false, 'el puesto sigue tomado');
+  assert.ok(r2.message.includes(`release '${slotOf(repo2, 1)}'`), r2.message);
+  // con --cwd no creó nada: el mensaje de siempre
+  const r3 = open(t, { name: 'n3', task: 'algo', launcher: launcher(t, 'hang'), timeoutMs: 400 });
+  assert.doesNotMatch(r3.message, /worktree remove|release/);
 });
 
 test('8.187 T5b Open_NombreAuto_SaltaLasCopiasQueQuedaron @story-8.187 @ac-5: sin --name no elige un nombre cuya copia todavía existe, aunque su rama sea otra', () => {

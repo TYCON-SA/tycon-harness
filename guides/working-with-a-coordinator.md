@@ -54,8 +54,9 @@ node scripts/tools/prepare-machine.js --repo <repo> [--repo <otro repo>]
 Dice de a una qué falta, con el comando para cada cosa: abrir una vez la carpeta principal de cada repo (`cd '<repo>'
 && claude` y aceptar), poner al día el freno de producción si la máquina lo tiene, y confirmar a la coordinadora si tu
 organización la usa para firmar. Lo que falta lo hacés vos: el guion sólo lee, no aprueba nada ni pide tu contraseña.
-Cuando lo volvés a correr y no falta nada, dice «lista». Con la carpeta principal aprobada, las sesiones que abre la
-coordinadora en copias del repo arrancan sin pedirte nada.
+Cuando lo volvés a correr y no falta nada, dice «lista». Desde Claude Code 2.1.330, cada copia del repo donde la
+coordinadora abre una sesión se aprueba aparte, aunque la principal esté aprobada: si no lo está, ella te dice qué
+carpeta abrir una vez y vuelve a abrir la sesión ahí.
 
 ## Un día de trabajo
 
