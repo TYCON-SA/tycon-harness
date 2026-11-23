@@ -33,7 +33,10 @@
 //
 // FUERA DE LA COLA DESPUÉS DE UN EMPUJE, en GitHub: uno que ya había pedido entrar (caído de la cola o con auto-merge) y
 // recibió una punta nueva lo re-encola la lectura de fondo, una vez por punta, si está aprobado, limpio y en verde
-// (`requeued-prs.json`); si no, sale por qué no. Lo mismo, y las caídas de la cola, le llegan a la coordinadora en cada turno.
+// (`requeued-prs.json`); si no, sale por qué no. Uno caído por choque o porque la cola venció, también con la misma punta.
+// Uno caído por pruebas en rojo, o por un motivo que no se conoce, con la misma punta no: volvería a caer; y si no se sabe
+// con qué punta cayó, tampoco: no se adivina por fechas. Las dos cosas se dicen. Lo mismo, y las caídas de la cola, le
+// llegan a la coordinadora en cada turno.
 //
 // LISTO Y SIN ENTRAR, en GitHub: un pedido limpio, no borrador, sin auto-merge, fuera de la cola y sin caída registrada,
 // igual más de 10 minutos, sale con el comando para encolarlo: nadie lo va a mergear. Lo mismo le llega a la coordinadora en
@@ -233,7 +236,7 @@ async function refrescar(tree) {
 
 /** «hace 5 min» o «hace 2 h». */
 const haceDe = (ms) => (ms < HORA_MS ? `${Math.max(0, Math.floor(ms / 60000))} min` : `${Math.floor(ms / HORA_MS)} h`);
-const CAUSAS = { ci: 'la CI combinada salió en rojo', conflict: 'choca con main' };
+const CAUSAS = { ci: 'la CI combinada salió en rojo', conflict: 'choca con main', timeout: 'la cola venció esperando sus controles' };
 
 const estadoDe = (p) => `${p.mergeState}${p.draft ? '+borrador' : ''}`;
 
@@ -346,22 +349,52 @@ const ID_PEDIDO = /^[A-Za-z0-9_=+/][A-Za-z0-9_=+/-]*$/;
 const reencoladosDe = (dir) => path.join(dir, 'requeued-prs.json');
 const MUTACION_ENCOLAR = 'mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{state}}}';
 
+// Las caídas que pueden volver a la cola con la misma punta: el choque (la destino pudo cambiar) y la cola vencida (sus
+// controles no llegaron a terminar). Por pruebas en rojo, o por un motivo que no se conoce, la misma punta vuelve a caer.
+const CAIDAS_QUE_VUELVEN = new Set(['conflict', 'timeout']);
+
 /**
- * Cuándo había pedido entrar antes de la punta de ahora, o null: la caída de la cola o el auto-merge puesto. Con el commit
- * que tenía al caerse (`lastQueueDrop.commit`), la punta nueva es otro commit, sea cual sea su fecha; sin él, la punta
- * cuenta desde lo último entre la fecha del commit y la del último empuje forzado (un commit viejo empujado después).
+ * Qué hacer con un pedido que se cayó de la cola, o null si no se cayó: `{ vuelve: true, como }` si se puede re-encolar
+ * (`como` dice por qué quedó afuera), `{ vuelve: false, porQueNo }` si no. Decide la punta con que cayó
+ * (`lastQueueDrop.commit`): otra punta vuelve, caiga por lo que caiga; la misma, o una que no se sabe, sólo si cayó por
+ * choque o porque la cola venció. Sin la punta de la caída no se adivina por las fechas del commit o del empuje.
+ */
+function decisionDeCaida(p) {
+  const d = p.lastQueueDrop;
+  if (!d) return null;
+  if (d.commit && p.sourceCommit && p.sourceCommit !== d.commit) return { vuelve: true, como: 'después del empuje' };
+  if (CAIDAS_QUE_VUELVEN.has(d.cause)) return { vuelve: true, como: `porque ${CAUSAS[d.cause]}` };
+  if (d.commit) return { vuelve: false, porQueNo: 'tiene la misma punta con la que cayó; con una punta nueva, sí' };
+  return { vuelve: false, porQueNo: 'GitHub no dice con qué punta cayó, y no lo adivino por fechas; si ya tiene el arreglo, encolalo a mano', aMano: true };
+}
+
+/**
+ * Cuándo había pedido entrar antes de la punta de ahora, o null. Con una caída de la cola decide `decisionDeCaida`; sin
+ * ella, el auto-merge puesto antes de la punta, que cuenta desde lo último entre la fecha del commit y la del último
+ * empuje forzado (un commit viejo empujado después).
  */
 function pidioEntrarAntes(p) {
-  const d = p.lastQueueDrop;
-  if (d && d.commit) return p.sourceCommit && p.sourceCommit !== d.commit ? (d.at || 'la caída') : null;
+  const caida = decisionDeCaida(p);
+  if (caida) return caida.vuelve ? (p.lastQueueDrop.at || 'la caída') : null;
+  if (!p.autoComplete) return null;
   const fechas = [Date.parse(p.headCommittedAt), Date.parse(p.headPushedAt)].filter(Number.isFinite);
-  if (!fechas.length) return null;
-  const punta = Math.max(...fechas);
-  for (const desde of [d && d.at, p.autoComplete ? p.autoMergeSince : null]) {
-    const t = Date.parse(desde);
-    if (Number.isFinite(t) && t < punta) return desde;
-  }
-  return null;
+  const t = Date.parse(p.autoMergeSince);
+  return fechas.length && Number.isFinite(t) && t < Math.max(...fechas) ? p.autoMergeSince : null;
+}
+
+/** Cómo quedó fuera de la cola uno que se puede re-encolar: por qué cayó, o el empuje (también el del auto-merge). */
+const comoQuedoAfuera = (p) => { const c = decisionDeCaida(p); return c && c.vuelve ? c.como : 'después del empuje'; };
+
+/** La línea de una caída de la cola que no vuelve sola: cuándo, por qué cayó y por qué no se re-encola. */
+function lineaDeCaida(repo, p, ahora) {
+  const d = p.lastQueueDrop;
+  const at = Date.parse(d.at);
+  const ms = Number.isFinite(at) ? ahora - at : 0;
+  const por = CAUSAS[d.cause] || `la plataforma dice «${limpio(d.reason, 40)}»`;
+  const caida = decisionDeCaida(p);
+  const porQueNo = caida && !caida.vuelve && repo.platform === 'github'
+    ? `. No lo re-encolo: ${caida.porQueNo}${caida.aMano ? ` con ${comandoParaEncolar(repo, p.number, p.nodeId)}` : ''}` : '';
+  return { ms, linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) se cayó de la cola hace ${haceDe(ms)}: ${por}${porQueNo} · ${limpio(p.sourceBranch, 120)}` };
 }
 
 /** Los pedidos de una lectura por número: el orden de la respuesta de la plataforma no decide el del aviso. */
@@ -397,7 +430,7 @@ function paraReencolar(repos, leidas, intentos = {}) {
       const clave = `${claveDe(repo)}#${p.number}`;
       const motivo = motivoParaNo(p);
       if (motivo) {
-        esperan.push({ clave, linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) quedó fuera de la cola después del empuje: no lo re-encolo porque ${motivo} · ${limpio(p.sourceBranch, 120)}` });
+        esperan.push({ clave, linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) quedó fuera de la cola ${comoQuedoAfuera(p)}: no lo re-encolo porque ${motivo} · ${limpio(p.sourceBranch, 120)}` });
         continue;
       }
       const antes = intentos[clave];
@@ -464,9 +497,15 @@ function lineasDeReencolado(repos, leidas, intentos, ahora) {
     for (const p of porNumero(r.value)) {
       const i = intentos[`${claveDe(repo)}#${p.number}`];
       if (!i || i.punta !== p.sourceCommit || p.inQueue === true || p.draft) continue;
-      const que = i.ok ? `lo re-encolé hace ${haceDe(ahora - Date.parse(i.at))}`
-        : `no pude re-encolarlo (${limpio(i.detalle, 120)}); encolalo a mano${ID_PEDIDO.test(String(i.nodeId || '')) ? ` con ${comandoDeLaCola(i.nodeId)}` : ''}`;
-      lineas.push(`⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) quedó fuera de la cola después del empuje: ${que} · ${limpio(p.sourceBranch, 120)}`);
+      // se cayó otra vez después del intento: con la misma punta no se intenta de nuevo. Si esa caída no vuelve, ya la
+      // dice su propia línea
+      const despues = p.lastQueueDrop && Date.parse(p.lastQueueDrop.at) > Date.parse(i.at);
+      if (despues && !pidioEntrarAntes(p)) continue;
+      const volvio = despues && i.ok;
+      const que = volvio ? `lo re-encolé hace ${haceDe(ahora - Date.parse(i.at))} y volvió a caerse; con esta punta no lo intento otra vez`
+        : i.ok ? `lo re-encolé hace ${haceDe(ahora - Date.parse(i.at))}`
+          : `no pude re-encolarlo (${limpio(i.detalle, 120)}); encolalo a mano${ID_PEDIDO.test(String(i.nodeId || '')) ? ` con ${comandoDeLaCola(i.nodeId)}` : ''}`;
+      lineas.push(`⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) quedó fuera de la cola ${comoQuedoAfuera(p)}: ${que} · ${limpio(p.sourceBranch, 120)}`);
     }
   }
   return lineas;
@@ -479,12 +518,31 @@ function caidasDeLaCola(repos, leidas, ahora) {
     const r = leidas[claveDe(repo)];
     if (!r || !r.ok || !Array.isArray(r.value)) continue;
     for (const p of porNumero(r.value).filter((x) => x.lastQueueDrop && !x.draft && !x.autoComplete && x.inQueue !== true && !pidioEntrarAntes(x))) {
-      const at = Date.parse(p.lastQueueDrop.at);
-      const por = CAUSAS[p.lastQueueDrop.cause] || `la plataforma dice «${limpio(p.lastQueueDrop.reason, 40)}»`;
-      lineas.push(`⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) se cayó de la cola hace ${haceDe(Number.isFinite(at) ? ahora - at : 0)}: ${por} · ${limpio(p.sourceBranch, 120)}`);
+      lineas.push(lineaDeCaida(repo, p, ahora).linea);
     }
   }
   return lineas;
+}
+
+/** El motivo de una lectura fallida, en una línea: lo que contestó la plataforma sin su HTML. */
+function motivoBreve(x) {
+  const crudo = x ? String(x.detail || x.reason || '') : '';
+  return limpio(crudo.replace(/<[^>]*>/g, ' '), 120) || 'sin motivo';
+}
+
+/**
+ * El aviso de los repos que la última lectura no pudo leer: el motivo de cada uno, cuándo se vuelve a leer y la orden
+ * para leerlo ahora. La misma falla sale una vez por hora, no en cada turno (`unread-prs-notice.json` guarda cuál salió y
+ * cuándo); una falla distinta, o la misma después de una hora, sale de nuevo. null mientras no le toca.
+ */
+function avisoSinLeer(dir, sinLeer, tree, now) {
+  const archivo = path.join(dir, 'unread-prs-notice.json');
+  const firma = sinLeer.join(' · ');
+  const previo = leerJson(archivo);
+  if (previo && previo.firma === firma && now - Number(previo.at) < HORA_MS) return null;
+  try { escribirJson(archivo, { firma, at: now }); } catch { /* sin poder guardarlo, sale en cada turno: mejor que callar */ }
+  return `los pedidos listos sin encolar: la última lectura no pudo leer ${firma}. Se vuelve a leer sola cada `
+    + `${Math.round(FOTO_MS / 60000)} min; para leer ahora: node "${__filename}" --refresh "${tree}" (no se repite hasta dentro de una hora si sigue igual)`;
 }
 
 /**
@@ -510,13 +568,14 @@ function coordinatorLines({ home = os.homedir(), tree = path.resolve(process.env
   // lo mismo con un repo que la última lectura no pudo leer
   // (una plataforma sin la operación no es una lectura fallida: se calla, como en el arranque)
   const leida = (r) => { const x = foto.lecturas[claveDe(r)]; return Boolean(x && (x.ok || x.reason === 'no_soportado')); };
-  const sinLeer = declarados.repos.filter((r) => (r.platform === 'github' || r.platform === 'azure') && !leida(r)).map((r) => limpio(r.repo, 60));
+  const sinLeer = declarados.repos.filter((r) => (r.platform === 'github' || r.platform === 'azure') && !leida(r))
+    .map((r) => `${limpio(r.repo, 60)} (${motivoBreve(foto.lecturas[claveDe(r)])})`);
   const relojArchivo = path.join(dir, 'green-prs.json');
   const previo = leerJson(relojArchivo) || {};
   // con la foto de más de FOTO_MS, ninguno se da por fuera de la cola (la lectura nueva ya se lanzó)
   const lecturaDeHace = edad >= FOTO_MS ? Object.fromEntries(declarados.repos.map((r) => [claveDe(r), edad])) : {};
   const { trabados, estado } = verdesSinEntrar(declarados.repos, foto.lecturas, previo, now, verdeMin(), { lecturaDeHace });
-  let problem = sinLeer.length ? `los pedidos listos sin encolar: la última lectura no pudo leer ${sinLeer.join(', ')}` : null;
+  let problem = sinLeer.length ? avisoSinLeer(dir, sinLeer, tree, now) : null;
   try { escribirJson(relojArchivo, estado); } catch (e) { problem = `no pude guardar desde cuándo está verde cada pedido (${e.code || e.message})`; }
   trabados.sort((a, b) => b.ms - a.ms || a.creado - b.creado || a.number - b.number);
   // las caídas de la cola y lo que pasó con los que quedaron afuera después de un empuje, también en cada turno
@@ -582,12 +641,8 @@ async function main() {
     for (const k of Object.keys(estado)) if (k.startsWith(`${base}#`)) delete estado[k];
     // se cayó de la cola: un hecho, sale enseguida y sin reloj. Ni borrador, ni de vuelta con auto-completar o en la cola
     for (const p of r.value.filter((x) => x.lastQueueDrop && !x.draft && !x.autoComplete && x.inQueue !== true && !pidioEntrarAntes(x))) {
-      const d = p.lastQueueDrop;
-      const at = Date.parse(d.at);
-      const ms = Number.isFinite(at) ? ahora - at : 0;
-      const por = CAUSAS[d.cause] || `la plataforma dice «${limpio(d.reason, 40)}»`;
-      trabados.push({ ms, creado: Infinity, number: p.number,
-        linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) se cayó de la cola hace ${haceDe(ms)}: ${por} · ${limpio(p.sourceBranch, 120)}` });
+      const { ms, linea } = lineaDeCaida(repo, p, ahora);
+      trabados.push({ ms, creado: Infinity, number: p.number, linea });
     }
     for (const p of r.value.filter((x) => x.autoComplete)) {
       const k = `${base}#${p.number}`;

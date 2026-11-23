@@ -30,7 +30,9 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
   esa vuelta. Cualquier archivo distinto frena, también una prueba o un texto, salvo el papeleo: el que no cuenta para
   el ok de guardar, `tasks/todo.md`, y de la historia de la corrida su estado, sus tildes, su Change Log, su Dev Agent
   Record y sus «Cambios de comportamiento». Sale 2, nombra cada archivo y el `smart-reloop` de la vuelta siguiente (con `--files` del diff completo, como
-  siempre). Igual sin cambios: «lo que se guarda es lo revisado (<sellos>)». Antes comprueba que la copia de la vuelta
+  siempre). Lo sin commitear adentro de un submódulo o de un repo anidado, que el sello no ve (anota de cada uno sólo su
+  commit), también frena, con su carpeta adelante: otra vuelta no lo arregla, se commitea en su repo o se descarta. Uno
+  que no se puede mirar frena igual. Igual sin cambios: «lo que se guarda es lo revisado (<sellos>)». Antes comprueba que la copia de la vuelta
   siga siendo la de su sello. Una vuelta sin sello (de una corrida anterior) no se compara: lo dice y queda en
   `gates.log` como no medido. El ok de guardar hace la misma comparación antes de la firma.
 - **Cambios sin declarar** (`undeclared-changes`, va primero y no se abre con `DOD_BYPASS`): lo que cambió en el repo
@@ -204,6 +206,10 @@ Antes de preguntar, el freno mira que el pull request sea lo preparado:
 
 El cierre de este paso, antes de la foto, corre los controles del commit de cada repo en sólo lectura: si uno frenaría
 el commit o regeneraría un archivo, el paso no cierra y dice cuál; se commitea lo regenerado y se vuelve a cerrar.
+Corre también los **controles de la CI que se pueden correr en local** (los declara el paquete del stack en
+`ciLocalChecks` de su `pack.json`, y el repo en `.tycon/ci-local-checks.json`, commiteado): uno en rojo frena el paso
+con lo que dijo, porque la compilación del pull request daría el mismo rojo después de la cola. Uno que no corre o no
+termina frena con «no medido».
 
 En una pestaña que no pide permisos (la ventana se aprobaría sola), el gancho abre el pull request sin preguntar y lo dice
 en pantalla, con la misma evidencia.
@@ -226,11 +232,19 @@ firma de control del dueño, que no cambia.
    `marker.js pr <número> --repo <carpeta del repo de la historia>`: ése queda sólo en la corrida, y su renglón lo escribe el
    cierre. Sin `--repo` el número también queda sólo en la corrida, sin saber de qué repo es. Así se sabe de qué historia es cada fusión aunque su rama
    sea `wt/<sesión>`.
-6. Al final, **`marker.js clear`**, después del último push y del último pull request. Imprime los renglones y el
-   renglón final («pedido #12 abierto, espera la cola — 52 min de trabajo, …») y manda un aviso por los canales de la
-   sesión; repetí el renglón final al cerrar tu mensaje. Cerrá la ejecución antes de borrar o mover su carpeta de
-   trabajo (`git worktree remove`, `rm -rf`, `mv`): la copia de la apertura vive ahí, y sin ella la ejecución queda
-   perdida. La consola frena ese borrado con «cerrá la ejecución antes» (`guides/safety-guard.md`, «La ejecución perdida»).
+6. Al final, **`marker.js clear`**, después del último push y del último pull request. Si un repo con commits de la
+   corrida no tiene su pedido anotado, frena y lo nombra: abrilo, anotalo y volvé a correrlo. Un repo que a propósito no
+   lleva pedido se nombra con `clear --no-pr <repo> --reason "<por qué>"`: queda en `gates.log` y no cuenta como listo. Imprime los renglones y el
+   renglón final («pedido #12 abierto, compilación sin ver: no está listo todavía — 52 min de trabajo, …») y manda un
+   aviso por los canales de la sesión; repetí el renglón final al cerrar tu mensaje.
+   Cerrá la ejecución antes de borrar o mover su carpeta de trabajo (`git worktree remove`, `rm -rf`, `mv`): la copia de
+   la apertura vive ahí, y sin ella la ejecución queda perdida. La consola frena ese borrado con «cerrá la ejecución antes» (`guides/safety-guard.md`, «La
+   ejecución perdida»).
+7. **Un pedido no está listo hasta ver su compilación en verde.** El cierre lanza de fondo la espera de la compilación
+   de cada pedido de la corrida (`lib/pr-build-wait.js`) y termina en un aviso por los canales de la sesión: «listos
+   para aprobar», «en rojo» con la etapa que falló, o «no medido» con el motivo. No le digas a la persona que el pedido
+   está listo, ni pidas su aprobación, antes del aviso de «listos». Con un rojo, se arregla y se vuelve a empujar.
+   El resultado también queda en `pr-build-wait/<sesión>-resultado.json` de la carpeta del estado.
 
 ## Decisiones
 

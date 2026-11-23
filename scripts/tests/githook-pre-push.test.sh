@@ -131,6 +131,29 @@ if [ "$RC" != "0" ] && ! en_remoto "$T/publico/remoto.git" refs/heads/otra && gr
 else mal "P-06 el rechazo del pre-push propio no mandó (exit $RC)"; sed -n '1,6p' "$T/out.txt"; fi
 rm -rf "$T"
 
+# ── P-06b · el pre-push propio que sincroniza engram no corre cuando sólo viajan marcas ──────────────────────────
+# 🔴 Falla con: correr `engram sync` al empujar sólo una marca: frena pidiendo commitear un chunk nuevo y deja el
+# manifiesto modificado y chunks sin seguimiento en el clon, cuando una marca no lleva ningún commit nuevo
+T=$(mktemp -d); montar "$T"
+printf '#!/bin/sh\n# engram sync on push\ncat >/dev/null\nOUTPUT=$(engram sync --project x 2>&1 || true)\ntouch "%s/corrio.txt"\nexit 1\n' "$T" > "$T/hooks/pre-push.local"; chmod +x "$T/hooks/pre-push.local"
+rama "$T" limpia guides/b.md "limpio"
+g -C "$T/repo" tag v9.9.9 refs/heads/limpia
+RC=$(empujar "$T" origin refs/tags/v9.9.9)
+if [ "$RC" = "0" ] && [ ! -e "$T/corrio.txt" ] && en_remoto "$T/publico/remoto.git" refs/tags/v9.9.9 && grep -q 'sólo marcas' "$T/out.txt"; then
+  ok "P-06b con sólo marcas, el pre-push propio de engram no corre, el empuje sale y se dice"
+else mal "P-06b con sólo marcas, el pre-push propio de engram corrió o frenó (exit $RC)"; sed -n '1,6p' "$T/out.txt"; fi
+RC=$(empujar "$T" origin limpia)
+if [ "$RC" != "0" ] && [ -e "$T/corrio.txt" ]; then ok "P-06b con una rama, el pre-push propio de engram corre como siempre"
+else mal "P-06b con una rama, el pre-push propio de engram no corrió (exit $RC)"; fi
+rm -f "$T/corrio.txt"
+# otro pre-push propio, que no es el de engram, corre igual con sólo marcas: el salto es sólo para la sincronización
+printf '#!/bin/sh\ncat >/dev/null\ntouch "%s/corrio.txt"\nexit 0\n' "$T" > "$T/hooks/pre-push.local"
+g -C "$T/repo" tag v9.9.8 refs/heads/limpia
+RC=$(empujar "$T" origin refs/tags/v9.9.8)
+if [ "$RC" = "0" ] && [ -e "$T/corrio.txt" ]; then ok "P-06b otro pre-push propio corre aunque sólo viajen marcas"
+else mal "P-06b otro pre-push propio no corrió con sólo marcas (exit $RC)"; fi
+rm -rf "$T"
+
 # ── P-07 · lo que NO es asunto del freno: misma salida y mismo código que sin hook ───────────────────────────────
 T=$(mktemp -d); montar "$T"
 # (a) un repo que no es del arnés (un producto), con un término, a un remoto público

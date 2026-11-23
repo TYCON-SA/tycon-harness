@@ -27,6 +27,8 @@
  *   T44-T50 la maqueta legible: frase arriba, zonas, lo nuevo marcado, variantes, la ventana sobre su pantalla, los
  *           archivos al pie, y un modelo viejo que da los mismos textos que antes
  *   T51 el chat de ejemplo: globos dibujados, marcados como ilustrativos, que no se comparan
+ *   T52-T56 la maqueta mirada con un navegador a 1440 y 390 px: se lee bien, el detector encuentra lo que se pisa,
+ *           desborda o parte una palabra, sin navegador no dice «limpio», y el freno de la aprobación
  *
  * El ejemplo es inventado a propósito (facturas): lo que se publica no lleva el rubro de un cliente.
  * Correr: node --test skills/tycon-pipeline/scripts/tests/mockup.test.js < /dev/null
@@ -316,7 +318,7 @@ test('T24 QaGuideArgs_ConAprobacion_PasaLaHuella', () => {
   assert.ok(!sin.includes('--mockup-sha'));
   assert.strictEqual(typeof mockupStep8, 'function');
   // en marker.js, la llamada del paso 8 usa esa función y su condición incluye la maqueta aprobada
-  const src = fs.readFileSync(MARKER, 'utf8');
+  const src = require('./lib/marker-source.js')(SK);
   assert.match(src, /qaGuideCheckArgs\(/);
   assert.match(src, /mockupApproval/);
 
@@ -468,9 +470,10 @@ test('T40 Mockup_SinCapa_HtmlIgualAlDeHoy @story-7.48 @ac-3 @story-8.129 @ac-11'
   // la huella del HTML del modelo de muestra sin capas. Cambia a propósito cuando cambia el dibujo: con la cabecera
   // «esquema, no aspecto» y la marca de la casilla, y otra vez con la maqueta legible (frase arriba, zonas, lo nuevo
   // marcado, los archivos al pie y los casos repetidos como variantes), y otra con el aspecto de pantalla real (sin barra
-  // de ventana, lo de hoy atenuado pero legible, lo nuevo en violeta, la línea para el programador al pie). Una maqueta aprobada no se invalida, porque su
-  // huella sale del archivo guardado y nadie la vuelve a dibujar
-  const HOY = 'd31d699575c30fc0043dcb07ebc57c54f96b04a7a4e282422ddb412400456cee';
+  // de ventana, lo de hoy atenuado pero legible, lo nuevo en violeta, la línea para el programador al pie), y otra cuando
+  // lo nuevo pasó a fondo y borde, las palabras se cortan sólo si no entran y las zonas pasan abajo. Una maqueta aprobada
+  // no se invalida, porque su huella sale del archivo guardado y nadie la vuelve a dibujar
+  const HOY = 'bfd929fed5ddb0773d5edd6b320d389b8728f77caf363c964666aabdb0c3bc06';
   const { renderMockup } = require(MOCKUP);
   const huella = (m) => require('crypto').createHash('sha256').update(renderMockup(m)).digest('hex');
   assert.strictEqual(huella(MODELO()), HOY);
@@ -826,7 +829,10 @@ test('T44 Mockup_Zonas_CadaElementoEnSuLugar', () => {
 test('T45 Mockup_LoNuevo_SeMarcaSoloSiHayExistente', () => {
   const html = armar(CUENTAS_NUEVO());
   const chat = seccion(html, 0);
-  assert.match(chat, /<div class="new"><span class="new-tag">Nuevo<\/span><span class="opens"><span class="button trigger">/, 'el botón nuevo, marcado');
+  // lo nuevo va con fondo y borde de zona, sin una etiqueta dibujada encima del contenido
+  assert.match(chat, /<div class="new"><span class="opens"><span class="button trigger">/, 'el botón nuevo, marcado');
+  assert.doesNotMatch(html, /class="new-tag"/, 'ninguna etiqueta encima');
+  assert.match(regla(html, '.new') || '', /background/);
   assert.match(chat, /<div class="existing">/, 'el chat de hoy, en gris');
   assert.match(seccion(html, 1), /<span class="screen-new">Todo nuevo<\/span>/, 'la ventana entera es nueva: una sola marca');
   assert.doesNotMatch(seccion(html, 1), /class="new-tag"/, 'sin una marca por elemento');
@@ -963,4 +969,216 @@ test('T52 Mockup_PareceLaPantalla_ElegidoIconoYMiniaturaDeLaZona', () => {
   assert.strictEqual(r.rc, 2, r.all);
   assert.match(r.err, /selected/);
   assert.ok(!fs.existsSync(out));
+});
+
+// ── La maqueta mirada con un navegador (mockup.js shots, lib/mockup-shots.js) ──
+// Con el Playwright fijado del arnés (scripts/lib/pinned-playwright.js); sin él se saltea con constancia, salvo con la
+// llave exigente (E2E_REQUIRED=1), que lo hace fallar.
+const SHOTS = require(path.join(SK, 'lib', 'mockup-shots.js'));
+const PINNED_PW = require(path.join(SK, '..', '..', '..', 'scripts', 'lib', 'pinned-playwright.js'));
+const PW = PINNED_PW.load();
+const SIN_NAVEGADOR = process.env.E2E_REQUIRED === '1' ? false : (!PW && PINNED_PW.locate().why);
+const maquetaDe = (nombre, model) => {
+  const f = path.join(TMP, `${nombre}-mockup.html`);
+  fs.writeFileSync(f, require(MOCKUP).renderMockup(model));
+  return f;
+};
+
+// Shots_DemoSeLeeBien
+// 🔴 Falla con: la marca «Nuevo» dibujada encima del contenido y la tabla metida debajo de la zona de la derecha.
+test('T52 Shots_DemoSeLeeBien: la maqueta de ejemplo se lee bien a 1440 y a 390 px, con sus dos capturas e informe', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const f = maquetaDe('demo', JSON.parse(JSON.stringify(require(MOCKUP).DEMO)));
+  const r = await SHOTS.revisar({ mockupPath: f, pw: PW });
+  assert.ok(!r.error, r.error);
+  assert.deepStrictEqual(r.findings, [], JSON.stringify(r.findings, null, 1));
+  for (const w of SHOTS.WIDTHS) assert.ok(fs.statSync(r.shots[w]).size > 1000, `la captura de ${w}`);
+  const informe = JSON.parse(fs.readFileSync(r.report, 'utf8'));
+  assert.strictEqual(informe.sha256, require(MOCKUP).mockupHash(fs.readFileSync(f, 'utf8')));
+});
+
+// Shots_PalabrasLargasYZonasAnchas_SeLeenBien
+// 🔴 Falla con: el texto partido letra por letra en una zona angosta y las zonas lado a lado que no entran en 390 px.
+test('T53 Shots_PalabrasLargasYZonasAnchas: palabras largas, una tabla ancha y tres zonas lado a lado se leen bien en los dos anchos', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const f = maquetaDe('anchas', {
+    storyId: '1.2', title: 'Seguimiento de envíos', summary: 'La pantalla de seguimiento suma el detalle del envío.',
+    screens: [{
+      name: 'Seguimiento', elements: [
+        { kind: 'heading', text: 'Envíos internacionales', zone: 'top', existing: true },
+        { kind: 'button', text: 'Exportar planilla', zone: 'top-end' },
+        { kind: 'list', items: ['Despachante', 'Transportista internacional', 'Responsabilidades'], zone: 'left', existing: true },
+        { kind: 'table', columns: ['Número de seguimiento', 'Transportista', 'Fecha estimada', 'Estado'], rows: [['AB123456789CD', 'Transportes Internacionales', '12/11/2026', 'En tránsito']] },
+        { kind: 'text', text: 'Comprobante: Internacionalización-de-procedimientos-administrativos' },
+        { kind: 'box', text: 'Mapa del recorrido', zone: 'right' },
+      ],
+    }],
+  });
+  const r = await SHOTS.revisar({ mockupPath: f, pw: PW });
+  assert.ok(!r.error, r.error);
+  assert.deepStrictEqual(r.findings, [], JSON.stringify(r.findings, null, 1));
+});
+
+// Shots_LoQueSeLeeMal_LoEncuentra: el detector mismo, sobre un HTML hecho a mano con los tres problemas
+test('T54 Shots_LoQueSeLeeMal_LoEncuentra: desborde, textos que se pisan y palabra partida', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const f = path.join(TMP, 'mal-mockup.html');
+  fs.writeFileSync(f, '<!doctype html><html><body style="margin:0">'
+    + '<div style="width:2000px">ancho</div>'
+    + '<div style="position:relative"><p style="margin:0">Texto de abajo</p><span style="position:absolute;top:0;left:0">Encima</span></div>'
+    + '<p style="width:30px;overflow-wrap:anywhere">Desafortunadamente</p>'
+    + '<div aria-hidden="true" style="position:relative"><p style="margin:0">Detrás</p><span style="position:absolute;top:0;left:0">También</span></div>'
+    + '</body></html>');
+  const r = await SHOTS.revisar({ mockupPath: f, pw: PW });
+  assert.ok(!r.error, r.error);
+  const tipos = new Set(r.findings.map((x) => x.kind));
+  for (const k of ['desborde', 'se pisan', 'palabra partida']) assert.ok(tipos.has(k), `${k}: ${JSON.stringify(r.findings)}`);
+  assert.ok(!r.findings.some((x) => /Detrás|También/.test(x.what)), 'lo marcado aria-hidden no cuenta');
+  assert.strictEqual(r.ok, false);
+});
+
+// Shots_LoQueSeLeeBien_NoLoMarca (pase adversarial): los cortes legítimos del navegador, el texto invisible y dos textos
+// seguidos en el mismo renglón no son hallazgos; lo recortado dentro de un recuadro sí; y una carpeta con «#» se abre
+test('T57 Shots_LoQueSeLeeBien_NoLoMarca: renglones partidos, invisibles, guion blando y URL no frenan; lo recortado sí', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const carpeta = path.join(TMP, 'con#raro%41');
+  fs.mkdirSync(carpeta, { recursive: true });
+  const bien = path.join(carpeta, 'bien-mockup.html');
+  fs.writeFileSync(bien, '<!doctype html><html><body style="margin:0">'
+    + '<p style="width:200px"><span>uno dos tres cuatro cinco seis siete ocho nueve diez once doce</span><b>fin</b></p>'
+    + '<p style="width:45px">pala&shy;bra</p>'
+    + '<p style="width:80px">https://acme.example/x?q=uno&amp;r=dos</p>'
+    + '<div style="position:relative"><p style="margin:0">Visible</p><p style="margin:0;position:absolute;top:0;visibility:hidden">Oculto</p></div>'
+    + '</body></html>');
+  const r = await SHOTS.revisar({ mockupPath: bien, pw: PW });
+  assert.ok(!r.error, r.error);
+  assert.deepStrictEqual(r.findings, [], JSON.stringify(r.findings, null, 1));
+  const recortado = path.join(TMP, 'recortado-mockup.html');
+  fs.writeFileSync(recortado, '<!doctype html><html><body style="margin:0"><div style="overflow:hidden;width:300px"><div style="width:900px;white-space:nowrap">un renglón que no entra y queda cortado</div></div></body></html>');
+  const c = await SHOTS.revisar({ mockupPath: recortado, pw: PW });
+  assert.ok(c.findings.some((x) => x.kind === 'recortado'), JSON.stringify(c.findings));
+});
+
+// Shots_SinNavegador_NoDiceLimpio: sin Playwright no hay informe ni «sin hallazgos»
+test('T55 Shots_SinNavegador_NoDiceLimpio: sin el Playwright fijado sale 2 y no escribe informe', () => {
+  const f = maquetaDe('sinpw', JSON.parse(JSON.stringify(require(MOCKUP).DEMO)));
+  const r = run(['shots', f], { env: { TYCON_PLAYWRIGHT: path.join(TMP, 'no-existe') } });
+  assert.strictEqual(r.rc, 2, r.all);
+  assert.match(r.err, /no la pude mirar/);
+  assert.ok(!fs.existsSync(SHOTS.shotsPaths(f).report), 'no hay informe');
+});
+
+// Revision_FrenoDeLaAprobacion: lo que mira «Aprobar el plan» antes de pedir la aprobación de la maqueta
+test('T56 Revision_FrenoDeLaAprobacion: sin informe, de otra versión o con hallazgos frena; limpio y de esta versión, no', () => {
+  const f = maquetaDe('freno', JSON.parse(JSON.stringify(require(MOCKUP).DEMO)));
+  const html = fs.readFileSync(f, 'utf8');
+  const sha = require(MOCKUP).mockupHash(html);
+  const { report, shots } = SHOTS.shotsPaths(f);
+  const p = () => SHOTS.problemaDeLaRevision({ mockupPath: f, html, mockupJs: MOCKUP });
+  assert.match(p().motivo, /nadie la miró con un navegador/);
+  assert.match(p().extra.join('\n'), /mockup\.js shots /);
+  SHOTS.escribirInforme({ report, file: path.basename(f), sha256: 'b'.repeat(64), shots, findings: [] });
+  assert.match(p().motivo, /cambió después de su revisión/);
+  SHOTS.escribirInforme({ report, file: path.basename(f), sha256: sha, shots, findings: [{ width: 390, kind: 'se pisan', what: '«a» y «b»' }] });
+  assert.match(p().motivo, /no se lee bien en el navegador \(1 hallazgo/);
+  assert.match(p().extra.join('\n'), /a 390 px, se pisan/);
+  SHOTS.escribirInforme({ report, file: path.basename(f), sha256: sha, shots, findings: [] });
+  assert.strictEqual(p(), null);
+});
+
+// ── Datos de ejemplo y lo que queda bajo una capa (filas 103 y 107 de la cola de la coordinadora) ──────────────────────
+
+// Mockup_DatoDeEjemplo_NoSeCompara: un texto con datos de ejemplo («v13, de un usuario, a las 15:42») no se puede
+// reproducir en la pantalla sin falsear la base o el reloj. Con `example: true` la maqueta lo dibuja marcado como ejemplo
+// y no lo compara; lo demás se compara como siempre
+test('T58 Mockup_DatoDeEjemplo_NoSeCompara: con example: true se dibuja como dato de ejemplo y no se compara con la pantalla', () => {
+  const MK = require(MOCKUP);
+  const m = CON_FILTRO();
+  m.screens[0].elements.push({ kind: 'text', text: 'Versión 13, de un usuario de prueba, ayer', example: true });
+  assert.deepStrictEqual(MK.validateModel(m), []);
+  const html = armar(m);
+  assert.match(html, /<div class="example"><p class="text">Versión 13, de un usuario de prueba, ayer<\/p><span class="example-note">dato de ejemplo<\/span><\/div>/);
+  const textos = MK.mockupTexts(html).map((t) => t.text);
+  assert.ok(!textos.includes('Versión 13, de un usuario de prueba, ayer'), 'el dato de ejemplo no se compara');
+  assert.ok(textos.includes('Facturas'), 'lo demás se compara');
+  // un dato de ejemplo no es relleno: no se rechaza por «texto de ejemplo»
+  const relleno = CON_FILTRO();
+  relleno.screens[0].elements.push({ kind: 'text', text: 'Texto de ejemplo', example: true });
+  assert.deepStrictEqual(MK.validateModel(relleno), []);
+  // example es true o false
+  const malo = CON_FILTRO();
+  malo.screens[0].elements.push({ kind: 'text', text: 'Otra cosa', example: 'sí' });
+  assert.ok(MK.validateModel(malo).some((p) => /`example` tiene que ser true o false/.test(p)), JSON.stringify(MK.validateModel(malo)));
+  // el esquema lo explica
+  const esquema = spawnSync(process.execPath, [MOCKUP, 'schema'], { encoding: 'utf8' }).stdout;
+  assert.match(esquema, /- "example": true, en un text o un message, lo marca como dato de ejemplo/);
+  // su estilo va también en una maqueta sin capas
+  assert.match(html, /\.example \{ outline: 1px dashed/);
+  assert.match(html, /\.example-note \{/);
+});
+
+// Mockup_DatoDeEjemplo_SinSacarTextosReales (pase adversarial): la marca va sólo donde todo lo que se compara es el dato
+// (text y message); en una tabla, un campo, un grupo, una casilla o un botón sacaría columnas y rótulos reales. Una
+// pantalla toda de ejemplo no se compararía con nada. Sin ningún example, la maqueta sale igual que antes (su huella no
+// cambia), y la marca de ejemplo convive con la de lo existente y la de lo nuevo
+test('T60 Mockup_DatoDeEjemplo_SinSacarTextosReales: sólo en text y message, nunca toda una pantalla, sin cambiar la huella de las otras', () => {
+  const MK = require(MOCKUP);
+  for (const el of [
+    { kind: 'table', columns: ['Número', 'Fecha de emisión'], example: true },
+    { kind: 'field', label: 'CUIT del cliente', value: '20-12345678-9', example: true },
+    { kind: 'group', legend: 'Estado de la factura', items: [{ label: 'Pendiente' }], example: true },
+    { kind: 'checkbox', label: 'Mostrar anuladas', example: true },
+    { kind: 'button', text: 'Pagar seleccionadas', example: true },
+    { kind: 'heading', text: 'Detalle', example: true },
+  ]) {
+    const m = CON_FILTRO();
+    m.screens[0].elements.push(el);
+    assert.ok(MK.validateModel(m).some((p) => /\`example\` va sólo en un text o un message/.test(p)), `${el.kind}: ${JSON.stringify(MK.validateModel(m))}`);
+  }
+  const toda = { storyId: '1.3', title: 'x', screens: [{ name: 'Versiones', elements: [{ kind: 'text', text: 'Versión 13, ayer', example: true }, { kind: 'message', text: 'Guardado por un usuario de prueba', example: true }] }] };
+  assert.ok(MK.validateModel(toda).some((p) => /todos sus elementos son datos de ejemplo/.test(p)), JSON.stringify(MK.validateModel(toda)));
+  // sin ningún example, ni el estilo del ejemplo: una maqueta (con capa o sin ella) sale como antes
+  const demo = MK.renderMockup(JSON.parse(JSON.stringify(MK.DEMO)));
+  assert.doesNotMatch(demo, /\.example/);
+  assert.doesNotMatch(armar(CON_FILTRO()), /\.example/);
+  // con lo existente: el dato de ejemplo nuevo va con la marca de lo nuevo, y el existente, atenuado
+  const mezcla = CON_FILTRO();
+  mezcla.screens[0].elements.push({ kind: 'text', text: 'Versión 13, ayer', example: true }, { kind: 'text', text: 'Versión 12, antes de ayer', example: true, existing: true });
+  const h = armar(mezcla);
+  assert.match(h, /<div class="new"><div class="example"><p class="text">Versión 13, ayer<\/p>/);
+  assert.match(h, /<div class="existing"><div class="example"><p class="text">Versión 12, antes de ayer<\/p>/);
+});
+
+// Shots_BajoUnaCapa_NoCuenta: lo que queda debajo de una capa (una ventana, un diálogo) no se lee y no es un hallazgo,
+// aunque no esté marcado aria-hidden; sin la capa, lo mismo sí cuenta
+test('T59 Shots_BajoUnaCapa_NoCuenta: lo tapado por una capa que no lo contiene no cuenta; sin la capa, sí', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const fondo = '<div style="position:relative;width:380px"><p style="margin:0">Fondo uno</p><span style="position:absolute;top:0;left:0">Fondo dos</span>'
+    + '<div style="overflow:hidden;width:120px"><div style="width:600px;white-space:nowrap">un renglón de fondo que no entra</div></div></div>';
+  const capa = '<div role="dialog" style="position:absolute;inset:0;background:rgba(29,36,51,.55)"><p style="margin:40px 0 0">La ventana</p></div>';
+  const con = path.join(TMP, 'capa-mockup.html');
+  fs.writeFileSync(con, `<!doctype html><html><body style="margin:0"><div style="position:relative">${fondo}${capa}</div></body></html>`);
+  const r = await SHOTS.revisar({ mockupPath: con, pw: PW });
+  assert.ok(!r.error, r.error);
+  assert.deepStrictEqual(r.findings, [], JSON.stringify(r.findings, null, 1));
+  const sin = path.join(TMP, 'sin-capa-mockup.html');
+  fs.writeFileSync(sin, `<!doctype html><html><body style="margin:0"><div style="position:relative">${fondo}</div></body></html>`);
+  const s = await SHOTS.revisar({ mockupPath: sin, pw: PW });
+  const tipos = new Set(s.findings.map((x) => x.kind));
+  assert.ok(tipos.has('se pisan') && tipos.has('recortado'), JSON.stringify(s.findings));
+});
+
+// Shots_LoQueSeVeEncimaDeUnaCapa_Cuenta (pase adversarial): tapa lo que se dibuja encima, no la caja de cualquier capa.
+// Una capa invisible no tapa nada; con dos capas encimadas, lo de la de arriba se ve y cuenta; y lo que se dibuja por
+// encima de una capa también
+test('T61 Shots_LoQueSeVeEncimaDeUnaCapa_Cuenta: capa invisible, dos capas encimadas y lo dibujado encima siguen contando', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const pisados = (txt) => `<div style="position:relative;width:300px"><p style="margin:0">${txt} uno</p><span style="position:absolute;top:0;left:0">${txt} dos</span></div>`;
+  const casos = {
+    invisible: `${pisados('Fondo')}<div role="dialog" style="position:fixed;inset:0;opacity:0"><p>Cerrada</p></div>`,
+    oculta: `${pisados('Fondo')}<div role="dialog" style="position:fixed;inset:0;visibility:hidden"><p>Cerrada</p></div>`,
+    encimadas: `<div role="dialog" style="position:fixed;inset:0;background:#fff"><p>La ventana de abajo</p></div><div role="dialog" style="position:fixed;top:20px;left:20px;width:400px;height:200px;background:#fff">${pisados('Arriba')}</div>`,
+    encima: `<div style="position:relative"><div class="layer-backdrop" style="position:absolute;inset:0;z-index:1;background:rgba(0,0,0,.3)"></div><div style="position:relative;z-index:2">${pisados('Encima')}</div></div>`,
+  };
+  for (const [nombre, cuerpo] of Object.entries(casos)) {
+    const f = path.join(TMP, `capa-${nombre}-mockup.html`);
+    fs.writeFileSync(f, `<!doctype html><html><body style="margin:0;min-height:300px">${cuerpo}</body></html>`);
+    const r = await SHOTS.revisar({ mockupPath: f, pw: PW });
+    assert.ok(!r.error, r.error);
+    assert.ok(r.findings.some((x) => x.kind === 'se pisan'), `${nombre}: ${JSON.stringify(r.findings)}`);
+  }
 });

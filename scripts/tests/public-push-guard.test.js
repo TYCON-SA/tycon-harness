@@ -163,10 +163,12 @@ function assertBlocked(fx, r, { category, place, secret = TERM } = {}) {
   }
   assert.ok(!/--no-verify/.test(r.all), 'el mensaje del freno nunca sugiere --no-verify');
 }
-function assertPassed(r) {
-  assert.strictEqual(r.status, 0, `tenía que pasar, salió ${r.status}\n${r.all}`);
-  assert.strictEqual(r.json && r.json.verdict, 'pass', r.all);
-  assert.deepStrictEqual(r.json.findings, []);
+/** El empuje pasó; `etiqueta` dice cuál caso, en el mensaje de la falla. */
+function assertPassed(r, etiqueta = '') {
+  const de = etiqueta ? `${etiqueta}: ` : '';
+  assert.strictEqual(r.status, 0, `${de}tenía que pasar, salió ${r.status}\n${r.all}`);
+  assert.strictEqual(r.json && r.json.verdict, 'pass', `${de}${r.all}`);
+  assert.deepStrictEqual(r.json.findings, [], etiqueta);
 }
 
 // ── qué se mira en cada commit nuevo ─────────────────────────────────────────────────────────────────────
