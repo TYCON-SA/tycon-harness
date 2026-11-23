@@ -222,6 +222,22 @@ test('WaiverDisplay_MatrizDeLosCriteriosPedidos — la ventana mide sólo los cr
   assert.deepEqual(JSON.parse(entera.stdout).parcial, 'no');
 });
 
+// 🔴 Falla con: la ventana de permiso de safety-guard arma los criterios con la matriz de toda la historia, dentro del
+// reloj de su freno; con decenas de humos, el freno corta y la firma no sale.
+test('CriteriosDe_SinMatriz_MideSoloLosPedidos — sin matriz calculada, la de los criterios pedidos; sin pedidos, la entera', () => {
+  const lab = laboratorio();
+  const leer = (acs) => spawnSync(process.execPath, ['-e', `const wd = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'waiver-display.js'))});
+    const c = wd.criteriosDe(process.argv[1], JSON.parse(process.argv[2]));
+    process.stdout.write(JSON.stringify({ parcial: c.matrix.parcial === undefined ? 'no' : c.matrix.parcial, acs: c.lista.map((x) => x.ac) }));`, lab.story, JSON.stringify(acs)],
+  { cwd: lab.repo, encoding: 'utf8', env: lab.env });
+  const pedidos = leer([1]);
+  assert.equal(pedidos.status, 0, pedidos.stderr);
+  assert.deepEqual(JSON.parse(pedidos.stdout), { parcial: [1], acs: [1] });
+  const ninguno = leer([]);
+  assert.equal(ninguno.status, 0, ninguno.stderr);
+  assert.deepEqual(JSON.parse(ninguno.stdout), { parcial: 'no', acs: [] });
+});
+
 test('CriteriosDe_ConLaMatrizYaCalculada_NoLaVuelveACalcular', () => {
   // el freno ya calculó la matriz: con ella en la mano, la lista sale sin leer la historia (la ruta ni existe)
   const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));

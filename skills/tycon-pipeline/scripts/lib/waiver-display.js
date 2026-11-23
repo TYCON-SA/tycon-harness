@@ -116,9 +116,13 @@ function pistaDeSesion({ stateDir, storyPath }) {
   return `Si la corrida es de una tanda, la firma por terminal mide esa tanda con --for-session ${quien}.`;
 }
 
-/** Los datos de cada criterio pedido que está pendiente de firma (declarado imposible), con la huella de su declaración. */
+/**
+ * Los datos de cada criterio pedido que está pendiente de firma (declarado imposible), con la huella de su declaración.
+ * Sin matriz calculada, la de los criterios pedidos: la ventana de safety-guard la arma dentro del reloj de su freno.
+ * Sin criterios pedidos, la entera.
+ */
 function criteriosDe(storyPath, acs, calculada = null) {
-  const matrix = calculada || require('../runtime-matrix.js').compute({ storyPath });
+  const matrix = calculada || require('../runtime-matrix.js').compute({ storyPath, ...(acs.length ? { soloAcs: acs } : {}) });
   if (matrix.structuralError) return { error: matrix.structuralError };
   const pend = new Set(matrix.notVerifiable || []);
   const lista = [];
