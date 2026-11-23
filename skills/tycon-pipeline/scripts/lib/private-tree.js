@@ -151,6 +151,11 @@ function cloneWithDisk(src, dest, { at = null } = {}) {
   const head = at || git(src, ['rev-parse', 'HEAD']).trim();
   git(path.dirname(dest), ['clone', '-q', '--shared', '--no-checkout', src, dest]);
   git(dest, ['checkout', '-q', '--detach', head]);
+  // El clon queda en un commit suelto: sin `at` es el código de la corrida, y lleva su rama anotada para que
+  // lib/companion-repos.js elija los hermanos por ella. Uno en una versión fija (la del servidor, main) no la lleva.
+  const { ramaDe, RAMA_DE_LA_CORRIDA } = require('./companion-repos.js');
+  const rama = at ? null : ramaDe(src);
+  if (rama) git(dest, ['config', '--local', RAMA_DE_LA_CORRIDA, rama]);
   // El origin/main del clon sería la rama main local del repo de origen, que puede estar atrás del servidor: las suites
   // que cortan «lo propio de la rama» en `merge-base origin/main HEAD` verían como propio lo que ya entró a main. Con
   // --prune salen antes las ramas locales copiadas: una `story` local chocaría con una `story/x` del servidor.

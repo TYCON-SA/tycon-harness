@@ -1,5 +1,5 @@
 {
-  "__doc": "coordination-fill-gate.js: con lugar, memoria libre (40 % o más) y una historia lista sin sesión, la coordinadora designada no cierra su turno hasta abrir una sesión o anotar un motivo (coordination.js keep-free). El caso real: cuatro veces en dos días paró sesiones y no abrió nada, con seis historias firmadas esperando. La memoria se inyecta con --memory-pct (el registro corre el gancho sin argumentos). El tope sale de un perfil de juguete; las sesiones ocupadas usan el pid 1, que siempre está vivo; la carpeta del caso es un repo con remoto, como la de la coordinadora. Lo demás (el motivo, el tope de tres bloqueos, la lectura vencida) lo cubre scripts/tests/coordination-fill-gate.test.js.",
+  "__doc": "coordination-fill-gate.js: con lugar, memoria libre (40 % o más) y una historia lista sin sesión, la coordinadora designada no cierra su turno hasta abrir una sesión o anotar un motivo (coordination.js keep-free). El caso real: cuatro veces en dos días paró sesiones y no abrió nada, con seis historias firmadas esperando. La memoria se inyecta con --memory-pct (el registro corre el gancho sin argumentos). El tope sale de un perfil de juguete; las sesiones ocupadas usan el pid 1, que siempre está vivo; la carpeta del caso es un repo con remoto, como la de la coordinadora. Lo demás (el motivo, el tope de tres bloqueos, la lectura vencida) lo cubre scripts/tests/coordination-fill-gate.test.js. La raíz de repos apunta a una carpeta sin repos: sin ella, la cuenta de lo que espera revisión recorre los repos reales vecinos del arnés y, si llega a su tope, el freno no frena.",
   "hooks": [
     {
       "hook": "coordination-fill-gate.js (freno: la coordinadora no deja la máquina vacía)",
@@ -14,7 +14,7 @@
           "id": "el-caso-real-lugar-memoria-e-historia-lista-frena",
           "type": "must-block",
           "__doc": "Coordinadora designada, 2 de 6 trabajando, memoria en 48 % y una historia lista del proyecto: el cierre del turno frena, nombra la historia y el comando del motivo, y no da comandos para abrir. ROJO PREVIO: sin el freno, el turno cierra y la máquina queda con lugar sin usar.",
-          "env": { "TYCON_PROFILE": "${FIXTURE}/perfil.json" },
+          "env": { "TYCON_PROFILE": "${FIXTURE}/perfil.json", "TYCON_REPOS_ROOT": "${FIXTURE}/sin-repos" },
           "files": { "perfil.json": "{\"approvals\":{\"relay_session\":\"coordinadora\"},\"coordination\":{\"max_working\":6}}" },
           "setup": [
             "git init -q . && git remote add origin https://github.com/acme/repo.git",
@@ -36,7 +36,7 @@
           "id": "una-sesion-de-trabajo-cierra-sin-ruido",
           "type": "must-not-block",
           "__doc": "Sin coordinadora designada, una sesión de trabajo cierra su turno y el freno calla: no escribe nada ni mide nada. Un freno que frena a quien no coordina se apaga el primer día.",
-          "env": { "TYCON_PROFILE": "${FIXTURE}/perfil.json" },
+          "env": { "TYCON_PROFILE": "${FIXTURE}/perfil.json", "TYCON_REPOS_ROOT": "${FIXTURE}/sin-repos" },
           "files": { "perfil.json": "{\"approvals\":{\"relay_session\":\"coordinadora\"},\"coordination\":{\"max_working\":6}}" },
           "setup": [
             "mkdir -p \"$SANDBOX_HOME/.claude/sessions\" && printf \"{\\\"pid\\\":1,\\\"sessionId\\\":\\\"s-1\\\",\\\"name\\\":\\\"Sesion1\\\",\\\"nameSource\\\":\\\"user\\\",\\\"status\\\":\\\"busy\\\",\\\"statusUpdatedAt\\\":1,\\\"cwd\\\":\\\"/x\\\",\\\"kind\\\":\\\"bg\\\"}\" > \"$SANDBOX_HOME/.claude/sessions/s-1.json\""

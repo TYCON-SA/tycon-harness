@@ -19,7 +19,7 @@
 // destino: la lista no trae `mergeable`. Sin él, las llamadas de siempre.
 // Con `queue: true` (y sin rama), una sola consulta GraphQL por cada 100: si choca, si está en la cola (`inQueue`), si
 // GitHub todavía no calculó el choque (`mergeStateComputing`) y la última caída de la cola (`lastQueueDrop`: `{ cause:
-// ci | conflict | other, reason, at }`, o null), sin leer los controles de cada uno (`ciRunning: null`).
+// ci | conflict | timeout | other, reason, at, commit? }`, o null), sin leer los controles de cada uno (`ciRunning: null`).
 
 const fs = require('fs');
 const os = require('os');
@@ -228,14 +228,29 @@ const CONSULTA_ABIERTOS = 'query($owner:String!,$name:String!,$after:String,$fir
   + 'nodes{__typename ... on CheckRun{name status conclusion checkSuite{app{slug}}}}}}}}} '
   + 'mergeStateStatus headRefName headRefOid createdAt title author{login} autoMergeRequest{enabledAt} mergeQueueEntry{state} '
   + 'timelineItems(last:1,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT,AUTO_MERGE_DISABLED_EVENT]){nodes{__typename '
-  + '... on RemovedFromMergeQueueEvent{reason createdAt beforeCommit{oid}} ... on AutoMergeDisabledEvent{reason reasonCode createdAt}}} '
+  + '... on RemovedFromMergeQueueEvent{reason createdAt beforeCommit{oid parents(first:3){nodes{oid}}}} ... on AutoMergeDisabledEvent{reason reasonCode createdAt}}} '
   + 'empujes:timelineItems(last:1,itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT]){nodes{... on HeadRefForcePushedEvent{createdAt}}}}}}}';
 
-/** La causa de una caída: `ci` (controles en rojo), `conflict` (choca con su destino) u `other`. */
+/**
+ * La causa de una caída: `ci` (controles en rojo), `conflict` (choca con su destino), `timeout` (la cola venció esperando
+ * sus controles) u `other`. GitHub dice `failed_checks`, `merge_conflict`, `checks_timed_out`, `manual`,
+ * `invalid_merge_commit`; un auto-merge apagado, su `reasonCode`.
+ */
 function causaDeCaida(motivo) {
   if (/conflict/i.test(motivo)) return 'conflict';
+  if (/timed?_?out/i.test(motivo)) return 'timeout';
   if (/check|fail/i.test(motivo)) return 'ci';
   return 'other';
+}
+
+/**
+ * La punta del pedido cuando la cola lo sacó, o null. `beforeCommit` NO es esa punta: es el merge que armó la cola (la
+ * destino con el pedido), y la punta es su segundo padre. Sin un merge de exactamente dos padres (un choque o una salida a
+ * mano no lo traen, y una cola que aplasta los commits arma uno de un padre) no se sabe.
+ */
+function puntaAlCaer(ev) {
+  const padres = ev && ev.beforeCommit && ev.beforeCommit.parents && Array.isArray(ev.beforeCommit.parents.nodes) ? ev.beforeCommit.parents.nodes : [];
+  return padres.length === 2 && padres[1] && padres[1].oid ? String(padres[1].oid) : null;
 }
 
 function deGraphql(p) {
@@ -257,9 +272,9 @@ function deGraphql(p) {
     title: String(p.title || ''),
     author: p.author && p.author.login ? String(p.author.login).toLowerCase() : null,
     ciRunning: null,
-    // `commit`: la punta que tenía cuando la cola lo sacó (sólo la caída de la cola lo trae)
+    // `commit`: la punta que tenía cuando la cola lo sacó, sólo cuando se sabe (`puntaAlCaer`)
     lastQueueDrop: ev ? { cause: causaDeCaida(motivo), reason: motivo, at: String(ev.createdAt || ''),
-      ...(ev.beforeCommit && ev.beforeCommit.oid ? { commit: String(ev.beforeCommit.oid) } : {}) } : null,
+      ...(puntaAlCaer(ev) ? { commit: puntaAlCaer(ev) } : {}) } : null,
     // para re-encolar el que quedó afuera después de un empuje: su identificador, la aprobación, el estado tal cual
     // (`unstable` ya cuenta como limpio arriba), las comprobaciones de la punta, cuándo se hizo la punta y desde cuándo
     // tiene el auto-merge

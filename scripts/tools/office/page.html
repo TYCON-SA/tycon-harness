@@ -38,6 +38,7 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .resumen-listas{display:flex;flex-direction:column;gap:14px;padding:0 16px 14px}.resumen-listas[hidden]{display:none}
 .toca-aviso{margin:0;padding:0 16px 10px;color:#b08a2e;font-weight:600}
 .esperan{padding:0 16px 14px}.esperan[hidden]{display:none}.esperan h3{margin:6px 0 2px;font:600 .95rem var(--body)}.esperan ul{margin:0;padding-left:18px}
+.necesita[hidden]{display:none}.necesita h2{color:#a8640b}.necesita-lista{margin:4px 0 0;padding-left:0;list-style:none}.necesita-item{margin:8px 0;padding:8px 10px;border:1px solid var(--line,#ddd);border-radius:8px}.necesita-item p{margin:2px 0}.necesita-que{font-weight:600}.necesita-lista .nada{color:var(--muted)}
 .ausente{margin:6px 0;color:#b08a2e;font-weight:600}.ausente[hidden]{display:none}.trabado[hidden]{display:none}.trabado h2{color:#b08a2e}.trabado h3{margin:8px 0 2px;font:600 .95rem var(--body)}.trabado ul{margin:0;padding-left:18px}
 .una-linea{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .empty{color:var(--muted);padding:18px;background:var(--surface);border:1px dashed var(--line);border-radius:6px;margin:0}
@@ -280,6 +281,7 @@ tr:last-child td{border-bottom:0}
     </div>
     <div class="esperan" id="esperan" hidden></div>
   </div>
+  <section class="necesita" id="necesita" hidden aria-labelledby="necesitaTitulo"><h2 id="necesitaTitulo">Lo que te necesita</h2><p class="nota">Las firmas y los cuadros se contestan donde dice cada uno. Desde acá sólo se contesta una espera en texto, y nada de lo que escribas acá firma, aprueba ni contesta un cuadro.</p><ul class="necesita-lista" id="necesitaLista"></ul></section>
   <div class="interruptor"><span id="etiquetasTitulo">Etiquetas</span><div class="seg" role="radiogroup" aria-labelledby="etiquetasTitulo"><label><input type="radio" name="etiquetas" value="siempre" checked><span>Siempre</span></label><label><input type="radio" name="etiquetas" value="mouse"><span>Al pasar el mouse</span></label></div></div>
   <section class="office" id="office">
     <div class="stage" id="stage" role="img" aria-label="Las sesiones trabajando en la oficina"><div class="labels" id="labels"></div><p class="ovl" id="ovl" hidden></p><div class="hint">Arrastrá para girar · ⌘ o Ctrl más rueda, o pellizco, para acercar · tocá a alguien o el panel de la pared para ver el detalle</div><div class="zoom" id="zoom" hidden><button type="button" id="zoomMas" aria-label="Acercar">+</button><button type="button" id="zoomMenos" aria-label="Alejar">−</button></div><p class="avisoZoom" id="avisoZoom" role="status" hidden></p><aside class="panel3" id="panel" hidden></aside></div>
