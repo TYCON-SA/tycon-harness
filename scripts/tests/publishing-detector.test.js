@@ -516,3 +516,43 @@ test('58 Detector_LongRunsOfSeparators_GrowLinearly — tiradas largas de guione
       `${nombre}: 10.000 caracteres ${chico.toFixed(1)} ms, 40.000 caracteres ${grande.toFixed(1)} ms (lineal ≈ 4 veces, al cuadrado ≈ 16)`);
   }
 });
+
+// Una regla que arranca con una tirada se recorre saltando tiradas enteras (saltandoTiradas). Lo que encuentra tiene que
+// ser lo mismo y en el mismo orden que `re.exec` en un bucle, también la coincidencia vacía del final del texto. Los
+// textos salen de una semilla fija.
+test('59 Detector_SkippingRuns_SameMatchesAsExecLoop — saltar tiradas da lo mismo que re.exec, también la vacía del final', () => {
+  // eslint-disable-next-line global-require
+  const det = require(DETECTOR);
+  const conExec = (re, texto) => {
+    const out = [];
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(texto)) !== null) {
+      out.push([m.index, m[0]]);
+      if (m[0].length === 0) re.lastIndex++;
+    }
+    return out;
+  };
+  const saltando = (v, texto) => {
+    const out = [];
+    const siguiente = det.saltandoTiradas(v, texto);
+    let m;
+    while ((m = siguiente()) !== null) out.push([m.index, m[0]]);
+    return out;
+  };
+  const reglas = [
+    { re: /\b[a-z0-9.]+@[a-z]+\.[a-z]{2,}/g, tirada: /[a-z0-9.]/, pista: /@/ },
+    { re: /\b[a-z]*/g, tirada: /[a-z]/, pista: /[\s\S]?/ },
+  ];
+  // stable-data: textos de una semilla fija (congruencial lineal), iguales en cada corrida
+  let semilla = 7;
+  const azar = (n) => { semilla = (semilla * 1103515245 + 12345) % 2147483648; return semilla % n; };
+  const letras = 'ab.@-x 9';
+  // la forma de un correo se arma al correr: escrita entera, el freno de publicación la frena en este archivo
+  const textos = ['', 'a', 'ab', 'a b', ['a.b', 'cd.ef'].join('@'), '@', 'ab.@x'];
+  for (let k = 0; k < 400; k++) textos.push(Array.from({ length: azar(24) }, () => letras[azar(letras.length)]).join(''));
+  for (const v of reglas) {
+    for (const t of textos) assert.deepStrictEqual(saltando(v, t), conExec(v.re, t), `${v.re} sobre ${JSON.stringify(t)}`);
+  }
+  assert.deepStrictEqual(saltando(reglas[1], 'ab'), [[0, 'ab'], [2, '']], 'la vacía del final del texto también sale');
+});

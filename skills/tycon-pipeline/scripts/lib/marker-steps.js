@@ -10,10 +10,10 @@
 const {
   MARKER_JS, PASO_ARRANCABLE, PREVIO, PROPIA, SCRIPTS_DIR, STATE_DIR, STEPS_LIB,
   VALID_PIPELINE_STATUSES, VALID_STATUSES, anotarAprobacion, anotarArranque,
-  anotarSalteoEnElRegistro, antesDeLaRevision, appendLog, at,
+  anotarSalteoEnElRegistro, antesDeLaRevision, appendLog,
   carpetaDeLaCorrida, conHoraDelPaso, dondeViveLaHistoria, estado,
   firmaDelDueno, formasDeFirmarArchivo, fs, huellaDelPlan, nn, nowIso, os,
-  ownerWindow, path, porDe, quienDeLasOpciones, quitarSalteoDelRegistro,
+  ownerWindow, path, porDe, quitarSalteoDelRegistro,
   readMarker, readOwnMarkerRaw, resolveStoryPath, sellosDe, syncSessionState,
   trabajarSobreElDestino, vueltaCongeladaComprobada, writeMarker,
   citaDe, conPersona, hechaSinPersona, modoDeLaFirma, quienDeLaMaqueta, reemplazada, soloLaPersona, aprobadaPorPersona, noPisaLaPersona,
