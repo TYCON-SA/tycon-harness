@@ -495,6 +495,15 @@ else
   no "T15 bloqueo con vía: reg=[$(cat "$(REG)" 2>/dev/null)]"
 fi
 
+# ── T19 (8.326) — el freno de sesiones anota «revision-llena», de su lista cerrada ─────────────────────
+mundo
+printf '%s' 'claude --bg' | HOME="$CASA" node "$LIB" --guard session-cap-guard --rule tope --verdict bloqueo --reason revision-llena --cmd-stdin
+if [ "$(lineas)" = "1" ] && grep '"motivo":"revision-llena"' "$(REG)" >/dev/null; then
+  ok "T19 GuardRecord_MotivoRevisionLlena @story-8.326 @ac-6: el renglón sale con su motivo"
+else
+  no "T19 GuardRecord_MotivoRevisionLlena: reg=[$(cat "$(REG)" 2>/dev/null)]"
+fi
+
 # ── T16 y T17 — la sesión del evento en la constancia de cada freno que corre como gancho ─────────────────
 # El número de cada freno por modelo sale de la sesión de cada renglón: el modelo se busca en su conversación. Cada
 # freno la toma del `session_id` de su evento; sin él, o con uno de otra forma, el renglón sale igual, sin sesión, y
