@@ -183,3 +183,8 @@ test('T10 FrontmatterWrite_IllegibleStatus_Blocks — un estado que no es una pa
     });
   }
 });
+
+test('T11 FrontmatterWrite_AnchorChangedOutsideBlock_Blocks — con un alias en el bloque, cambiar el ancla de afuera cuenta como cambio y frena', () => {
+  const r = escribir(conEstado('*d', 'x: &d pending\n'), conEstado('*d', 'x: &d done\n'));
+  assert.strictEqual(r.status, 2, salida(r));
+});

@@ -631,7 +631,7 @@ function readBatches(content) {
   const texto = String(content || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
   const fm = (/^---\n([\s\S]*?)\n---/.exec(texto) || [])[1];
   const batches = parsePipelinesBlock(content || '');
-  const out = { batches, present: false, region: '', doneLines: 0, doubts: [], strictDoubts: [] };
+  const out = { batches, present: false, region: '', frontmatter: fm == null ? '' : fm, yamlRefs: false, doneLines: 0, doubts: [], strictDoubts: [] };
   if (fm == null) return out;
   out.doneLines = (fm.match(DONE_LINE) || []).length;
   const lines = fm.split('\n');
@@ -674,7 +674,10 @@ function readBatches(content) {
   // un ancla, un alias o una etiqueta fuera de las comillas: el valor puede venir de otro lado
   const sinComillas = (l) => l.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""').replace(/\s#.*$/, '');
   const yamlRaro = region.map(sinComentario).map(sinComillas).filter((l) => /(?:^|[\s{[,:-])[&*!][^\s,\]}]/.test(l));
-  if (yamlRaro.length) estricta(`un ancla, alias o etiqueta en el bloque (${yamlRaro.map((l) => l.trim()).join(' | ')})`);
+  if (yamlRaro.length) {
+    out.yamlRefs = true;
+    estricta(`un ancla, alias o etiqueta en el bloque (${yamlRaro.map((l) => l.trim()).join(' | ')})`);
+  }
   // un escape entre comillas dobles: `"d\x6fne"` o una clave escrita con escapes
   const conEscape = region.map(sinComentario).filter((l) => /"(?:[^"\\]|\\.)*\\/.test(l) || /"[^"]*\\$/.test(l));
   if (conEscape.length) estricta(`una barra invertida entre comillas dobles (${conEscape.map((l) => l.trim()).join(' | ')})`);
@@ -732,7 +735,9 @@ function batchTransition(before, after) {
   const countUp = despues.doneLines > antes.doneLines;
   const conDudas = antes.doubts.length > 0 || despues.doubts.length > 0;
   const estrictas = antes.strictDoubts.length > 0 || despues.strictDoubts.length > 0;
-  const cambio = antes.region !== despues.region;
+  // con un ancla, alias o etiqueta en el bloque, el valor puede cambiar fuera de él (`x: &d pending` → `x: &d done` con
+  // `status: *d` adentro): el cambio se mide sobre el frontmatter entero
+  const cambio = antes.yamlRefs || despues.yamlRefs ? antes.frontmatter !== despues.frontmatter : antes.region !== despues.region;
   // las dudas estrictas miden con el bloque cambiado; las de forma (nombres recortados, cuentas que no coinciden),
   // sólo si además el bloque dice done, para no medir de más a las historias con nombres con punto
   const dudosa = cambio && (estrictas || (conDudas && /\bdone\b/i.test(despues.region)));

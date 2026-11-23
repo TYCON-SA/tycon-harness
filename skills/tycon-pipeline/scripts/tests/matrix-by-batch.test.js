@@ -536,6 +536,15 @@ test('T28 PreCommit_IllegibleStatus_MeasuresAll — un estado que no es una pala
   }
 });
 
+test('T29 PreCommit_AnchorChangedOutsideBlock_MeasuresAll — con un alias en el bloque, cambiar el ancla de afuera cuenta como cambio y se miden todas', () => {
+  const E = entorno();
+  fs.writeFileSync(E.story, conEstado('*d', 'x: &d pending\n'));
+  E.git('commit', '-qam', 'la primera tanda con su estado en un ancla de afuera');
+  const r = commitear(E, conEstado('*d', 'x: &d done\n'), 's-t29');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /se miden todas las tandas/, salida(r));
+});
+
 test('T24 PreCommit_DoubtfulBlockUnchanged_Passes — sin una tanda nueva en done, el bloque dudoso no pide nada', () => {
   const E = entorno();
   const quieto = conBloque(DUDOSOS[0][2]);
