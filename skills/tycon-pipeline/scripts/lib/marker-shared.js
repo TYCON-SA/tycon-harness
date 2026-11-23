@@ -790,6 +790,25 @@ function soloLaPersona(via, registro) {
   return { codigo: 2, motivo: 'reemplazar una firma hecha por delegación pide el click, el «aprobado» o el «sí» en la ventana del dueño a este pedido, o su terminal: por la delegación o como trámite no se reemplaza' };
 }
 
+// ¿La aprobación `ap` es de una persona y sigue valiendo para la huella de ahora (`shaAhora`)? `campo` es dónde guarda
+// la suya (`planSha` el plan, `sha256` la maqueta). Si las dos huellas están y difieren, lo aprobado cambió y la
+// aprobación vieja ya no vale; sin alguna de las dos no se sabe si cambió, y cuenta como vigente.
+function aprobadaPorPersona(ap, shaAhora, campo, plan) {
+  if (!ap || ap.mode !== 'user' || hechaSinPersona(ap, plan)) return false;
+  return !(ap[campo] && shaAhora && ap[campo] !== shaAhora);
+}
+
+// El control previo de una firma que reescribiría lo que ya aprobó una persona (`protegidos`: 'plan', 'maqueta'): sin
+// persona (la delegación, la revisión, la firma de trámite o «hecho y avisado», que owner-window.js pasa como
+// `delegacion`) no se escribe y sale 2; la persona sí puede volver a aprobar. `{ codigo, motivo }` o null.
+function noPisaLaPersona(protegidos, via) {
+  if (!protegidos.length || via !== 'delegacion') return null;
+  const que = protegidos.includes('plan')
+    ? `el plan${protegidos.includes('maqueta') ? ' (y su maqueta)' : ''} ya lo aprobó una persona; un trámite no lo pisa`
+    : 'la maqueta ya la aprobó una persona; un trámite no la pisa';
+  return { codigo: 2, motivo: `${que}. Para aprobarlo de nuevo, que lo apruebe la persona (su click o su «aprobado» a este pedido, o su terminal). No se escribió nada.` };
+}
+
 // Quién aprobó la maqueta, para approvals.jsonl (lo lee el portón de la CI): la persona con su click, su «aprobado» o su
 // terminal, a nombre del usuario de la máquina; sin persona (la firma de trámite, la delegación, la revisión, «hecho y
 // avisado»), quien firmó de verdad, como el plan. Un nombre escrito en el comando (--approved-by) cuenta sólo con la
@@ -1326,7 +1345,7 @@ module.exports = {
   mensajeDelPaseAdversarial, PLAN_FILE, planDeLaCorrida, huellaDelPlan, planEnLaConversacion, planParaLaPersona,
   planVisto, anotarAprobacion, quienDeLasOpciones, CONTROLES_DEL_PASO, ORDER_REQUIRES_OLD, firmaDelDueno,
   antesDeLaRevision, trabajarSobreElDestino, porDe, conPersona, modoDeLaFirma, citaDe, hechaSinPersona, reemplazada,
-  soloLaPersona, quienDeLaMaqueta, anotarFirma, idsDeEspera, doingFileOf, anotarOtraVuelta,
+  soloLaPersona, aprobadaPorPersona, noPisaLaPersona, quienDeLaMaqueta, anotarFirma, idsDeEspera, doingFileOf, anotarOtraVuelta,
   PASO_ARRANCABLE, arrancable, anotarArranque, VALID_CHECKS, resolveStoryPath, markerStoryIsUi, markerScreenRule,
   screenRule, TANDAS_MEDIDAS, tandasMedidasDe, avisarBajaDePantalla, TESTS_FAILED_PENDING, testsNotMeasuredLine,
   COLA_BYTES_RETENIDOS, RUN_CHECK_BUSY, SENALES_RUN_CHECK, VALID_FLAGS, EXTERNAL_FLAGS, HARNESS_COMMAND, OLD_FLAGS,

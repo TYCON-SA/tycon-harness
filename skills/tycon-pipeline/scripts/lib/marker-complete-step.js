@@ -16,7 +16,7 @@ const {
   homeCommand, huellaDelPlan, markerFilePath, markerScreenRule, markerStoryIsUi,
   mensajeDelPaseAdversarial, motivoDe, nn, nowIso, os, path, planDeLaCorrida,
   planParaLaPersona, planVisto, porDe, quienDeLasOpciones, readMarker,
-  citaDe, conPersona, hechaSinPersona, modoDeLaFirma, quienDeLaMaqueta, reemplazada, soloLaPersona,
+  citaDe, conPersona, hechaSinPersona, modoDeLaFirma, quienDeLaMaqueta, reemplazada, soloLaPersona, aprobadaPorPersona, noPisaLaPersona,
   reposParaComparar, resolveStoryPath, signatureCommand, syncSessionState,
   testsNotMeasuredLine, veredictoPaseAdversarial, writeMarker,
 } = require('./marker-shared.js');
@@ -367,8 +367,25 @@ function cmdCompleteStep(nRaw, flags) {
         resumen: `plan de ${marker.storyId}: revisión ${autoRevision.id} ${autoRevision.veredicto} (${autoRevision.modelo}), lanzada por la propia sesión` });
       return { via: 'revision', constancia: { via: 'revision' } };
     };
-    const antesDeFirmar = reemplaza ? (via, registro) => soloLaPersona(via, registro) || antesDelPlan(via, registro) : antesDelPlan;
+    // lo que ya aprobó una persona para la huella de ahora (el plan, su maqueta) no lo reescribe una firma sin persona
+    const loDeLaPersona = [
+      ...(aprobadaPorPersona(planPrevia, huellaDelPlan(marker).sha, 'planSha') ? ['plan'] : []),
+      ...(mockupPlan && aprobadaPorPersona(maquetaPrevia, mockupPlan.sha, 'sha256', planPrevia) ? ['maqueta'] : []),
+    ];
+    const noPisa = (via) => noPisaLaPersona(loDeLaPersona, via);
+    if (autoRevision && noPisa('delegacion')) {
+      appendLog('gates.log', { name: 'plan-approval', status: 'blocked', story: marker.storyId, motivo: 'ya lo aprobó una persona', que: loDeLaPersona });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${noPisa('delegacion').motivo}`);
+      process.exit(2);
+    }
+    const antesDeFirmar = (via, registro) => noPisa(via) || (reemplaza ? soloLaPersona(via, registro) : null) || antesDelPlan(via, registro);
     const firmaPlan = autoRevision ? porLaPropia() : firmaDelDueno('plan-approval', `plan de ${marker.storyId}${approved ? `: ${approved}` : ''}`, { antes: antesDeFirmar });
+    // lo comprobó el control previo; si igual llegara otra vía sin persona, lo de la persona no se reescribe
+    if (loDeLaPersona.length && !conPersona(firmaPlan.via)) {
+      appendLog('gates.log', { name: 'plan-approval', status: 'blocked', story: marker.storyId, motivo: 'ya lo aprobó una persona', que: loDeLaPersona, via: firmaPlan.via || null });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${noPisa('delegacion').motivo}`);
+      process.exit(2);
+    }
     // lo comprobó el control previo; si igual llegara otra vía, no se escribe una firma de persona sin ella
     if (reemplaza && !conPersona(firmaPlan.via)) {
       appendLog('gates.log', { name: 'approval-replaced', status: 'blocked', story: marker.storyId, que: 'plan', via: firmaPlan.via || null });

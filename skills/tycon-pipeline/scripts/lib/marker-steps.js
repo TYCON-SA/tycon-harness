@@ -16,7 +16,7 @@ const {
   ownerWindow, path, porDe, quienDeLasOpciones, quitarSalteoDelRegistro,
   readMarker, readOwnMarkerRaw, resolveStoryPath, sellosDe, syncSessionState,
   trabajarSobreElDestino, vueltaCongeladaComprobada, writeMarker,
-  citaDe, conPersona, hechaSinPersona, modoDeLaFirma, quienDeLaMaqueta, reemplazada, soloLaPersona,
+  citaDe, conPersona, hechaSinPersona, modoDeLaFirma, quienDeLaMaqueta, reemplazada, soloLaPersona, aprobadaPorPersona, noPisaLaPersona,
 } = require('./marker-shared.js');
 const frenarEstadoSiEsperaMain = (...a) => require('./marker-lifecycle.js').frenarEstadoSiEsperaMain(...a);
 
@@ -371,7 +371,11 @@ function cmdApproveMockup(flags) {
   // sin persona, la maqueta la reaprueba sólo la coordinadora con la revisión que ella lanzó; la de la propia sesión no
   // cuenta para una pantalla (como la aprobación del plan sin --approved: una historia con pantalla no se aprueba sola)
   const porLaRevision = antesDeLaRevision({ marker });
+  // la maqueta que ya aprobó una persona con esta misma huella no la reescribe una firma sin persona
+  const deLaPersona = aprobadaPorPersona(maquetaPrevia, sha, 'sha256', marker.planApproval) ? ['maqueta'] : [];
   const antesDeLaMaqueta = (via, registro) => {
+    const pisa = noPisaLaPersona(deLaPersona, via);
+    if (pisa) return pisa;
     if (reemplaza) { const n = soloLaPersona(via, registro); if (n) return n; }
     if (via !== 'delegacion') return null;
     if (PROPIA === estado.SID) return { codigo: 1, motivo: 'la maqueta de una pantalla la reaprueba una persona o la coordinadora: la revisión que lanzó la propia sesión no cuenta para una pantalla' };
@@ -380,6 +384,11 @@ function cmdApproveMockup(flags) {
   const firma = firmaDelDueno('plan-approval', `maqueta de ${marker.storyId}: ${cita}`, { antes: antesDeLaMaqueta });
   // lo comprobó el control previo; si igual llegara otra vía, no se escribe una firma de persona sin ella
   if (reemplaza && !conPersona(firma.via)) no(`--replace-delegated: la firma llegó por ${firma.via || 'otra vía'}, no de la persona. No se escribió nada.`);
+  if (deLaPersona.length && !conPersona(firma.via)) {
+    appendLog('gates.log', { name: 'mockup-approval', status: 'blocked', story: marker.storyId, motivo: 'ya la aprobó una persona', via: firma.via || null });
+    console.error(`marker.js approve-mockup BLOQUEADO — ${noPisaLaPersona(deLaPersona, 'delegacion').motivo}`);
+    process.exit(2);
+  }
   const at = nowIso();
   try { mk.writeApproval({ approvalPath: p.approval, mockupPath: p.mockup, story: marker.storyId, sha256: sha, approvedAt: at }); } catch (e) {
     no(`no pude escribir la aprobación de la maqueta (${p.approval}): ${e.code || e.message}`);

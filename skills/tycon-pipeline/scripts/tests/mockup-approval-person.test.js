@@ -7,7 +7,9 @@
  * es la opción que sigue (`--mockup-approved --for-session <s>` no deja «--for-session»); y `--replace-delegated`, en
  * `complete-step approve-plan` y en `approve-mockup`, vuelve a firmar a nombre de la persona lo que se aprobó sin ella,
  * guarda lo que reemplazó y no mueve la hora del paso. Sin la persona, o con la aprobación de otro pedido, no escribe
- * nada. El laboratorio, con un perfil que lista plan-approval:delicada: lib/approval-lab.js.
+ * nada. Lo que ya aprobó una persona (el plan o la maqueta, con la misma huella) no lo reescribe un trámite: sale 2 sin
+ * escribir; la persona sí vuelve a aprobar, y con la huella cambiada el trámite sigue como antes.
+ * El laboratorio, con un perfil que lista plan-approval:delicada: lib/approval-lab.js.
  */
 const { laboratorio, aprobadoPorTramite, salida, pasoDelPlan, DEL_CASO, POR_LA_REVISION, PLAN, DESTINO } = require('./lib/approval-lab.js');
 const test = require('node:test');
@@ -212,4 +214,86 @@ test('ReemplazaDelegada_SinAprobacionPrevia_ConElClickDeEsePedido', (t) => {
   const m = lab.leer();
   assert.deepStrictEqual([m.mockupApproval.mode, m.mockupApproval.via], ['user', 'click'], JSON.stringify(m.mockupApproval));
   assert.strictEqual(m.mockupApproval.reemplaza.via, 'delegacion', JSON.stringify(m.mockupApproval));
+});
+
+// ── lo que ya aprobó una persona no lo pisa un trámite ──────────────────────────────────────────────────────────────
+
+const PERSONA = ['complete-step', 'approve-plan', '--approved', 'aprobado por el dueño', '--mockup-approved', 'el dueño vio la maqueta', '--for-session', DESTINO];
+const MAQUETA_POR_TRAMITE = ['approve-mockup', '--approved', 'trámite sobre la maqueta', '--for-session', DESTINO];
+
+/** El plan y la maqueta aprobados por el «aprobado» del dueño a ese pedido. */
+function aprobadoPorLaPersona(lab) {
+  lab.aprobado(`${lab.pregunta(PERSONA)}\n\n${PLAN}`);
+  const x = lab.pedir(PERSONA);
+  assert.strictEqual(x.r && x.r.status, 0, salida(x));
+  const m = lab.leer();
+  assert.deepStrictEqual([m.planApproval.mode, m.mockupApproval.mode], ['user', 'user'], JSON.stringify(m));
+}
+
+/** Un trámite (la coordinadora, por la revisión o como firma de trámite) que no tiene que escribir nada. */
+function noPisa(lab, args, que) {
+  const antes = lab.foto();
+  const x = lab.pedir(args);
+  // el freno puede negarlo antes (una delicada); si el guion corre, sale 2 y lo dice en llano
+  if (x.r) {
+    assert.strictEqual(x.r.status, 2, `${que}: ${salida(x)}`);
+    assert.match(x.r.stderr, /ya (lo|la) aprobó una persona; un trámite no (lo|la) pisa/, `${que}: ${salida(x)}`);
+  } else assert.notStrictEqual(x.freno.decision, 'allow', `${que}: ${salida(x)}`);
+  assert.strictEqual(lab.foto(), antes, `${que}: no se escribió nada`);
+}
+
+// 🔴 Falla con: un trámite sin --replace-delegated que reescribe la aprobación de la persona (plan o maqueta) y la pierde.
+test('PersonaAprobo_UnTramiteNoPisaElPlanNiLaMaqueta_Rutina', (t) => {
+  const lab = laboratorio(t);
+  aprobadoPorLaPersona(lab);
+  noPisa(lab, MAQUETA_POR_TRAMITE, 'la maqueta');
+  noPisa(lab, POR_LA_REVISION, 'el plan');
+  const m = lab.leer();
+  assert.deepStrictEqual([m.planApproval.mode, m.planApproval.via, m.mockupApproval.mode, m.mockupApproval.via], ['user', 'mensaje', 'user', 'mensaje']);
+});
+
+test('PersonaAprobo_UnTramiteNoPisaElPlanNiLaMaqueta_Delicada', (t) => {
+  const lab = laboratorio(t, { delicada: true });
+  aprobadoPorLaPersona(lab);
+  noPisa(lab, MAQUETA_POR_TRAMITE, 'la maqueta');
+  noPisa(lab, POR_LA_REVISION, 'el plan');
+  const m = lab.leer();
+  assert.deepStrictEqual([m.planApproval.mode, m.mockupApproval.mode], ['user', 'user']);
+});
+
+// 🔴 Falla con: lo que la persona volvió a firmar con --replace-delegated lo pisa el trámite siguiente.
+test('PersonaReemplazo_UnTramiteDespuesNoLaPisa', (t) => {
+  const lab = laboratorio(t);
+  aprobadoPorTramite(lab);
+  const plan = ['complete-step', 'approve-plan', '--replace-delegated', '--approved', 'aprobado por el dueño', '--mockup-approved', 'el dueño vio la maqueta', '--for-session', DESTINO];
+  lab.aprobado(`${lab.pregunta(plan)}\n\n${PLAN}`);
+  const x = lab.pedir(plan);
+  assert.strictEqual(x.r && x.r.status, 0, salida(x));
+  noPisa(lab, POR_LA_REVISION, 'el plan');
+  noPisa(lab, MAQUETA_POR_TRAMITE, 'la maqueta');
+  const m = lab.leer();
+  assert.deepStrictEqual([m.planApproval.mode, m.planApproval.via, m.mockupApproval.mode], ['user', 'mensaje', 'user']);
+});
+
+// una persona sí puede volver a aprobar lo que ya aprobó
+test('PersonaAprobo_LaPersonaPuedeVolverAAprobar', (t) => {
+  const lab = laboratorio(t);
+  aprobadoPorLaPersona(lab);
+  const otra = ['approve-mockup', '--approved', 'el dueño la vio de nuevo', '--for-session', DESTINO];
+  lab.aprobado(lab.pregunta(otra));
+  const x = lab.pedir(otra);
+  assert.strictEqual(x.r && x.r.status, 0, salida(x));
+  assert.deepStrictEqual([lab.leer().mockupApproval.mode, lab.leer().mockupApproval.text], ['user', 'el dueño la vio de nuevo']);
+});
+
+// con la huella cambiada, lo que aprobó la persona ya no vale: el trámite sigue como antes
+test('PersonaAprobo_HuellaCambiada_ElTramiteSigue', (t) => {
+  const lab = laboratorio(t);
+  aprobadoPorLaPersona(lab);
+  const archivo = path.join(lab.estado, 'active', `${DESTINO}.json`);
+  const m = lab.leer();
+  fs.writeFileSync(archivo, JSON.stringify({ ...m, mockupApproval: { ...m.mockupApproval, sha256: 'de-otra-maqueta' } }));
+  const x = lab.pedir(MAQUETA_POR_TRAMITE);
+  assert.strictEqual(x.r && x.r.status, 0, salida(x));
+  assert.deepStrictEqual([lab.leer().mockupApproval.mode, lab.leer().planApproval.mode], ['automatica', 'user']);
 });
