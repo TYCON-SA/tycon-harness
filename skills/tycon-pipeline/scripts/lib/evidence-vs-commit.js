@@ -628,7 +628,15 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return criteriosDeLaPrueba(archivo, path.dirname(archivo), path.basename(archivo), desde);
   }
 
-  return { vigencia, commitDeLaEvidencia, entrada, criteriosDe };
+  // El nombre del repo de un archivo (el de su checkout principal, como el ancla), o null si git no contesta.
+  const repos = new Map();
+  function repoDe(archivo) {
+    const carpeta = path.dirname(archivo);
+    if (!repos.has(carpeta)) repos.set(carpeta, nombreDelRepo(carpeta));
+    return repos.get(carpeta);
+  }
+
+  return { vigencia, commitDeLaEvidencia, entrada, criteriosDe, repoDe };
 }
 
 /** Por qué no cuenta, en una frase para el aviso de la matriz. Sin rutas ni texto de git: la matriz viaja por git. */

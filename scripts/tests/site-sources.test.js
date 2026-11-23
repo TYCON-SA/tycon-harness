@@ -1001,3 +1001,82 @@ test('Regresion_ResultadosIlegibles_SeRegistran @story-8.234 @ac-27 — la carpe
     assert.ok(!sinCarpeta.some((l) => /actualización del sitio/.test(l)), 'sin la carpeta no hay nada que decir');
   } finally { try { fs.chmodSync(dir, 0o755); } catch { /* ya no está */ } fs.rmSync(raiz, { recursive: true, force: true }); }
 });
+
+// «esperando la huella» dice a qué hora vuelve a mirar el buzón (T52 de site-config.test.js mira el texto); acá, el número
+// con las fuentes de verdad: antes de leer no hay hora, y al arrancar es el reloj del sitio más `site.refresh_minutes`
+test('ProximaLectura_ConLasFuentesReales_EsElRelojMasLosMinutos @story-8.171 @ac-29', { skip: SIN_BACKEND }, async () => {
+  const config = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], refresh_minutes: 20, mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } };
+  const m = await montar({ config });
+  try {
+    assert.strictEqual(m.fuentes.proximaLectura(), null, 'antes de la primera lectura no hay hora');
+    m.fuentes.arrancar();
+    const desde = Date.now();
+    while (m.fuentes.proximaLectura() === null && Date.now() - desde < 20000) await new Promise((r) => setTimeout(r, 50));
+    assert.strictEqual(m.fuentes.estado().cargado, true);
+    assert.strictEqual(m.fuentes.proximaLectura(), T0 + 20 * 60000);
+  } finally { await m.cerrar(); }
+});
+
+// ── La huella de una oficina, a pedido: sólo las huellas, sin esperar la pasada entera del buzón ──────────────────────
+/** Una huella de oficina válida, como la sube una máquina: el nombre, el campo y la clave coinciden. */
+function huellaDeOficina() {
+  const SL = require(path.join(H.SITE, '..', 'tools', 'office', 'site-link.js'));
+  const dir = tmp('clave-');
+  const k = SL.ensureKey(dir);
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { k, nombre: `maquina-a/office-keys/${k.fingerprint}.json`, cuerpo: JSON.stringify({ fingerprint: k.fingerprint, publicKey: k.publicKey }) };
+}
+const listados = (m) => m.buzon.pedidos.filter((p) => /comp=list/.test(p.query)).length;
+
+// 🔴 Falla con: la huella que subió una oficina después del último refresco espera al refresco siguiente (15 minutos),
+//    o la lectura a pedido se repite sin tope.
+test('T9 Sources_HuellaAPedido_ConUnaEsperando_LaLeeEnLaRevision @story-8.328 @ac-8', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    await m.fuentes.refrescar();
+    const h = huellaDeOficina();
+    m.buzon.st.blobs[h.nombre] = h.cuerpo;
+    assert.ok(!(m.fuentes.huellas().carpetas['maquina-a']), 'antes de leer no está');
+    const r = await m.fuentes.leerHuellasAPedido();
+    assert.strictEqual(r.leido, true, JSON.stringify(r));
+    assert.deepStrictEqual(m.fuentes.huellas().carpetas['maquina-a'].huellas, [h.k.fingerprint]);
+    const antes = listados(m);
+    const otra = await m.fuentes.leerHuellasAPedido();
+    assert.deepStrictEqual([otra.leido, otra.motivo], [false, 'tope'], 'una por minuto');
+    assert.strictEqual(listados(m), antes, 'la segunda no pregunta al buzón');
+  } finally { await m.cerrar(); }
+});
+
+// 🔴 Falla con: una bajada a pedido que falla deja `huellas` a medias (soltaría una clave cuya huella sigue ahí) o calla.
+test('T11 Sources_HuellaAPedido_BajadaFalla_NoCambiaNada @story-8.328 @ac-10', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    await m.fuentes.refrescar();
+    const previas = JSON.stringify(m.fuentes.huellas());
+    const h = huellaDeOficina();
+    m.buzon.st.blobs[h.nombre] = h.cuerpo;
+    m.buzon.st.fallar.add(h.nombre);
+    const r = await m.fuentes.leerHuellasAPedido();
+    assert.strictEqual(r.leido, false);
+    assert.strictEqual(JSON.stringify(m.fuentes.huellas()), previas, 'las huellas no cambian');
+    assert.ok(m.registro.some((l) => /huellas a pedido/.test(l)), m.registro.join(' | '));
+  } finally { await m.cerrar(); }
+});
+
+// 🔴 Falla con: con la lectura a pedido, la huella igual espera el refresco de `site.refresh_minutes`; o el refresco
+//    cambia de período.
+test('T14 Sources_HuellaAPedido_TiempoConRelojSimulado @story-8.328 @ac-11', { skip: SIN_BACKEND }, async () => {
+  const reloj = { t: T0 };
+  const m = await montar({ ahora: () => reloj.t });
+  try {
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.proximoRefrescoMs(), 15 * 60000, 'el refresco sigue cada 15 minutos');
+    // la oficina sube su huella justo después del refresco: la próxima revisión (≤ 60 s) la lee
+    const h = huellaDeOficina();
+    m.buzon.st.blobs[h.nombre] = h.cuerpo;
+    reloj.t += 60000;
+    const r = await m.fuentes.leerHuellasAPedido();
+    assert.strictEqual(r.leido, true, JSON.stringify(r));
+    assert.ok(m.fuentes.huellas().carpetas['maquina-a'].huellas.includes(h.k.fingerprint), 'leída en ≤ 60 s, no a los 15 minutos');
+  } finally { await m.cerrar(); }
+});

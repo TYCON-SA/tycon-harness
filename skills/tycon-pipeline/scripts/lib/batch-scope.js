@@ -27,6 +27,33 @@ function renglonesDeLista(fm) {
 const esRegistroDeCorrida = (ruta) => String(ruta).split(/[\\/]/).includes('.advisors');
 
 /**
+ * Si un texto de la historia nombra el archivo `rel`: el nombre del archivo, entero, ni pegado a otra palabra ni
+ * seguido de otra extensión (un punto final sí lo cierra). Si otro archivo declarado se llama igual, el nombre solo no
+ * dice cuál es: hace falta la ruta entera.
+ */
+function nombrador(fm, rel) {
+  const items = renglonesDeLista(fm);
+  const gemelos = items.filter((it) => path.basename(it.ruta) === path.basename(rel) && it.ruta !== sinPunto(rel)).length;
+  const buscado = (gemelos ? sinPunto(rel) : path.basename(rel)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // con la ruta entera, tampoco vale como cola de otra ruta más larga (`lib/src/a/x.js` no nombra a `src/a/x.js`)
+  const antes = gemelos ? '[^\\w./-]' : '[^\\w.-]';
+  return (texto) => new RegExp(`(^|${antes})${buscado}($|[^\\w.-]|\\.(?![\\w-]))`).test(texto);
+}
+
+/** Los ID de las filas de la tabla de pruebas que nombran el archivo `rel`, con la misma regla que ata un archivo. */
+function filasQueNombran(content, rel) {
+  if (esRegistroDeCorrida(rel)) return [];
+  const fm = (String(content).match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+  const nombra = nombrador(fm, rel);
+  const ids = [];
+  for (const l of String(content).slice(fm.length).split(/\r?\n/)) {
+    const fila = l.match(/^\|\s*([A-Za-z]+\d+\w*)\s*\|/);
+    if (fila && nombra(l)) ids.push(fila[1]);
+  }
+  return ids;
+}
+
+/**
  * Las tandas a las que la historia ata un archivo, cualquiera sea su estado: el comentario de su renglón en la lista
  * (`# tanda` y su nombre o su letra), una fila de la tabla de pruebas de esa tanda (`tests` / `tests_pending`) o una
  * tarea de esa tanda (`tasks` / `tasks_pending`) que lo nombra. Las tandas salen de `parsePipelinesBlock`, que lee
@@ -41,13 +68,7 @@ function tandasQueNombran(content, rel) {
     .map((t) => ({ name: t.name, status: t.status, tests: [...t.tests, ...t.testsPending], tasks: [...t.tasks, ...t.tasksPending] }));
   if (!tandas.length) return [];
   const items = renglonesDeLista(fm);
-  // el nombre del archivo, entero: ni pegado a otra palabra ni seguido de otra extensión (un punto final sí lo cierra).
-  // Si otro archivo declarado se llama igual, el nombre solo no dice cuál es: hace falta la ruta entera.
-  const gemelos = items.filter((it) => path.basename(it.ruta) === path.basename(rel) && it.ruta !== sinPunto(rel)).length;
-  const buscado = (gemelos ? sinPunto(rel) : path.basename(rel)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // con la ruta entera, tampoco vale como cola de otra ruta más larga (`lib/src/a/x.js` no nombra a `src/a/x.js`)
-  const antes = gemelos ? '[^\\w./-]' : '[^\\w.-]';
-  const nombra = (texto) => new RegExp(`(^|${antes})${buscado}($|[^\\w.-]|\\.(?![\\w-]))`).test(texto);
+  const nombra = nombrador(fm, rel);
   const atadas = new Set();
   // el comentario de su renglón en la lista que nombra la tanda, con la ruta como la lee la lista (entre comillas o no)
   for (const it of items) {
@@ -146,7 +167,11 @@ function validarParte(texto, nombre) {
 function parteMedible(story, batch, { deLaCorrida = false } = {}) {
   if (!batch || !story) return null;
   let texto;
-  try { texto = fs.readFileSync(story, 'utf8'); } catch (_) { return null; }
+  try { texto = fs.readFileSync(story, 'utf8'); } catch (e) {
+    // una historia que no está no tiene parte; una que está y no se lee se dice: se mide la historia entera sin saberlo
+    if (e.code !== 'ENOENT') process.stderr.write(`⚠️  no pude leer la historia ${story} (${e.code || e.message}): no sé su parte ${batch}, se mide la historia entera.\n`);
+    return null;
+  }
   const p = validarParte(texto, batch);
   return p.valid && (!p.done || deLaCorrida) ? p : null;
 }
@@ -386,4 +411,4 @@ function gitDe(repo, args) {
   return require('child_process').execFileSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 }).trim();
 }
 
-module.exports = { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran, normRuta, validarParte, parteMedible, huellaDeLaLista, sensibleDeclarado, esCodigoDeParte, volverAlPlan, planEsperaPersona, cierreDelPlanDelegado, frenoDelCierre, senales, rutasDeConcurrencia };
+module.exports = { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran, filasQueNombran, normRuta, validarParte, parteMedible, huellaDeLaLista, sensibleDeclarado, esCodigoDeParte, volverAlPlan, planEsperaPersona, cierreDelPlanDelegado, frenoDelCierre, senales, rutasDeConcurrencia };

@@ -11,7 +11,7 @@
  * la de después sale de la CI del pedido y se anota antes de cerrar la historia.
  *
  *   T18 Lentas_TablaCompletaEnElRegistro — las dos mediciones, las bajadas con su meta, las partes de GitHub
- *   T19 Lentas_MismosCasos               — cada suite bajada tiene los mismos casos que en el commit de antes
+ *   T19 Lentas_MismosCasos               — cada suite bajada tiene todos los casos del commit de antes (puede sumar)
  *   T20 Lentas_RomperDaRojo              — cada bajada dice qué se rompió y qué caso suyo dio rojo
  *   T21 Guia_TrabajadoresLentasYBase     — las dos guías: cuántas a la vez y por qué, las lentas, la base del portón
  *   T22 Lentas_NadaSeEscondio            — ni a la noche, ni salteado, ni tope menor, ni fuera de suites.json
@@ -114,7 +114,7 @@ test('T18 Lentas_TablaCompletaEnElRegistro — las dos mediciones, las bajadas c
   }
 });
 
-test('T19 Lentas_MismosCasos — cada suite bajada tiene los mismos casos que en el commit de antes', (t) => {
+test('T19 Lentas_MismosCasos — cada suite bajada tiene todos los casos del commit de antes (puede sumar)', (t) => {
   const r = registro();
   assert.ok(r.antes && r.bajadas.length > 0, 'el registro no está medido');
   if (!commitDisponible(t, r.antes.commit)) return;
@@ -129,8 +129,9 @@ test('T19 Lentas_MismosCasos — cada suite bajada tiene los mismos casos que en
       assert.ok(r.antes && r.ahora && r.historia && String(r.motivo || '').trim(), `${b.archivo}: un renombrado sin su historia o su motivo`);
       return [r.antes, r.ahora];
     }));
-    const esperados = casos(b.archivo, antes).map((c) => renombrados.get(c) || c).sort();
-    assert.deepEqual(casos(b.archivo, ahora), esperados, `${b.archivo}: los casos cambiaron`);
+    // un caso de menos o renombrado sin declararlo frena; uno nuevo no: la suite puede crecer después de bajada
+    const hoy = new Set(casos(b.archivo, ahora));
+    assert.deepEqual(casos(b.archivo, antes).map((c) => renombrados.get(c) || c).filter((c) => !hoy.has(c)), [], `${b.archivo}: le faltan casos que tenía, o cambiaron de nombre`);
   }
 });
 

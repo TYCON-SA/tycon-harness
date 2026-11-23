@@ -348,16 +348,19 @@ if (method === 'POST' && base === 'graphql') {
     out({ data: { enqueuePullRequest: { mergeQueueEntry: { state: 'QUEUED' } } } });
   }
   // los abiertos de un repo de una sola vez (`pullRequests(states:OPEN`), con su lugar en la cola y su última caída:
-  // `queue_drop` (`{ kind: 'removed' | 'auto_merge_disabled', reason, at }`) es el último evento de GitHub que lo sacó
-  // de la cola o le apagó el auto-merge. `mergeable` sin decir sale UNKNOWN, como GitHub antes de calcularlo
+  // `queue_drop` (`{ kind: 'removed' | 'auto_merge_disabled', reason, at, before_sha, before_parents }`) es el último
+  // evento de GitHub que lo sacó de la cola o le apagó el auto-merge. Como en GitHub, `before_sha` es el commit que armó
+  // la cola (el merge de la destino con el pedido) y `before_parents` sus padres: la destino y la punta del pedido.
+  // `mergeable` sin decir sale UNKNOWN, como GitHub antes de calcularlo
   if (/pullRequests\(states:OPEN/.test(qy)) {
     if (st.queue_error) gqlErr('FORBIDDEN', 'Resource not accessible by integration');
     const repo = `${vars.owner}/${vars.name}`;
     const nodes = (st.pulls && st.pulls[repo] || []).filter((p) => (p.state || 'open') === 'open').map((p) => {
       const d = p.queue_drop;
+      const antes = d && d.before_sha ? { oid: d.before_sha, parents: { nodes: (d.before_parents || []).map((oid) => ({ oid })) } } : null;
       const evento = !d ? [] : [d.kind === 'auto_merge_disabled'
         ? { __typename: 'AutoMergeDisabledEvent', reason: d.reason, reasonCode: d.reason, createdAt: d.at }
-        : { __typename: 'RemovedFromMergeQueueEvent', reason: d.reason, createdAt: d.at, beforeCommit: d.before_sha ? { oid: d.before_sha } : null }];
+        : { __typename: 'RemovedFromMergeQueueEvent', reason: d.reason, createdAt: d.at, beforeCommit: antes }];
       return {
         number: p.number, isDraft: p.draft === true,
         mergeable: p.mergeable === false ? 'CONFLICTING' : p.mergeable === true ? 'MERGEABLE' : 'UNKNOWN',

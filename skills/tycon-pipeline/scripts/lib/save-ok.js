@@ -50,6 +50,24 @@ function esEvidenciaEnVivo(repo, rel) {
   return lineas.some((l) => { try { const o = JSON.parse(l); return o[campo] === sub && o[huellaCampo] === sha; } catch (_) { return false; } });
 }
 /**
+ * ¿`rel` es una captura del portón de navegador (`<carpeta de .advisors>/<clave>-captures-<hora>/<nombre>`) que el índice
+ * de esa carpeta (`captures.json`, lo escribe e2e-evidence.js) nombra con su sha256 de ahora? El portón corre después de
+ * los revisores y cada corrida deja su carpeta con otra hora: no es código, y sin esto vencía el sello en cada vuelta.
+ */
+function esCapturaDelPorton(repo, rel) {
+  const m = /^(.*\/[^/]+-captures-[^/]+)\/([^/]+)$/.exec(String(rel));
+  // sólo una imagen o una grabación (lo que copia e2e-evidence.js), y un archivo común: un guion, otra extensión o un
+  // enlace simbólico no son una captura aunque un índice los nombre
+  if (!m || !m[1].startsWith(`${EVIDENCIA}/`) || !/\.(png|jpe?g|webp|gif|webm|mp4)$/i.test(m[2])) return false;
+  try { if (!fs.lstatSync(path.join(repo, rel)).isFile()) return false; } catch (_) { return false; }
+  let indice;
+  try { indice = JSON.parse(fs.readFileSync(path.join(repo, m[1], 'captures.json'), 'utf8')); } catch (_) { return false; }
+  if (!Array.isArray(indice)) return false;
+  let sha;
+  try { sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(repo, rel))).digest('hex'); } catch (_) { return false; }
+  return indice.some((c) => c && c.file === m[2] && c.sha256 === sha);
+}
+/**
  * ¿`rel` es el guion de la prueba en vivo de una historia (`<carpeta de .advisors>/<clave>-*.js`) que el registro de
  * humos de esa carpeta (`<clave>-smoke-ledger.jsonl`) nombra con su sha256 de ahora? Lo deja smoke-run.sh en `script` y
  * `script_sha` cuando el comando nombra el guion. Un guion que ningún renglón nombra, o que cambió después de correrlo,
@@ -381,6 +399,14 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS, para = 'firma', s
     } finally {
       try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
     }
+    // los controles de la CI que corren en local (lib/ci-local-checks.js): un rojo que la compilación del pull request
+    // daría después de la cola se ve antes de pedir la aprobación. Sólo en el cierre del paso: la firma de guardar no
+    // abre un pull request
+    if (pedido) {
+      const ci = require('./ci-local-checks.js').correr(repo, { limite });
+      if (ci.codigo !== 0) return { codigo: 2, motivo: `${ci.motivo}. Arreglalo y volvé a cerrar «Preparar el pull request»` };
+      for (const a of ci.avisos) process.stderr.write(`save-ok: ${a}\n`);
+    }
     const despues = huella(repo);
     if (despues.error || despues.arbol !== antes.arbol) {
       const cambios = despues.error ? despues.error : git(repo, ['diff-tree', '-r', '--name-only', antes.arbol, despues.arbol]).out.split('\n').filter(Boolean).join(', ');
@@ -494,4 +520,4 @@ function evidenciaDelPedido({ marker = {}, findings = null } = {}) {
   return `Pruebas: ${pruebas} · Revisores: ${revisores} · Pase: ${pase} · Hallazgos: ${hallazgos}`;
 }
 
-module.exports = { raizDe, requiereSensible, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, huella, huellas, arbolDelCommit, controlesDelCommit, esSensible, avisar, fotoDelPedido, evidenciaDelPedido };
+module.exports = { raizDe, requiereSensible, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esCapturaDelPorton, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, huella, huellas, arbolDelCommit, controlesDelCommit, esSensible, avisar, fotoDelPedido, evidenciaDelPedido };

@@ -228,6 +228,59 @@ function findLaunches(text) {
   return out;
 }
 
+/**
+ * Los lugares donde el código llega a `child_process` de un modo que el escáner no sigue, en vez de enseñarle cada uno:
+ *   · el nombre del módulo como texto en el código (con cualquier comilla) que NO es exactamente una carga que
+ *     `findLaunches` sigue: `process.getBuiltinModule('child_process')`, `createRequire(…)('child_process')`,
+ *     `require ('child_process')` con un espacio, `export … from 'child_process'`, una lista de módulos;
+ *   · el módulo guardado en una variable (con `=` o con `import`) y usado con corchetes (`cp[fn](…)`);
+ *   · un `require` o un `import(…)` con el nombre armado (no un texto) en un archivo que, en su código, parte el
+ *     nombre del módulo (`'child_' + 'process'`, una plantilla).
+ * El criterio es el del peor caso: lo que no es una de las cargas que se siguen se nombra, aunque sea inofensivo.
+ * Lo que aparece acá es «no lo pude leer», no «oculta la ventana»: `[{ line, forma }]`.
+ */
+function formasQueNoSigue(text) {
+  if (!/child_/.test(text)) return [];
+  const mask = nonCodeMask(text);
+  const out = [];
+  const linea = (i) => text.slice(0, i).split('\n').length;
+  // un texto que empieza en el código: su comilla de apertura está marcada y lo anterior no
+  const enCodigo = (i) => mask[i] && (i === 0 || !mask[i - 1]);
+  // las cargas que `findLaunches` sigue, con las mismas expresiones: el texto del módulo adentro de cada una
+  const seguidas = new Set();
+  const marcar = (re, cond = () => true) => {
+    for (const m of text.matchAll(new RegExp(re, 'g'))) {
+      if (mask[m.index] || !cond(m)) continue;
+      const k = m[0].search(/['"]/);
+      if (k >= 0) seguidas.add(m.index + k);
+    }
+  };
+  marcar(MODULE);
+  // `from '…'` sólo en un `import`: `export … from` no deja el módulo en ningún nombre que el escáner mire
+  marcar(ESM_SOURCE, (m) => /\bimport\b[^;]*$/.test(text.slice(Math.max(0, m.index - 400), m.index)));
+  for (const m of text.matchAll(/(['"`])(?:node:)?child_process\1/g)) {
+    if (!enCodigo(m.index) || seguidas.has(m.index)) continue;
+    out.push({ line: linea(m.index), forma: 'el nombre del módulo como texto, fuera de un require o un import que se siguen' });
+  }
+  const modulos = [
+    ...[...text.matchAll(new RegExp(`(?<![.\\w$])(${NAME})\\s*=\\s*${MODULE}(?!\\s*\\.)`, 'g'))].filter((m) => !mask[m.index]).map((m) => m[1]),
+    ...[...text.matchAll(new RegExp(`\\bimport\\s+(?:\\*\\s*as\\s+)?(${NAME})\\s+${ESM_SOURCE}`, 'g'))].filter((m) => !mask[m.index]).map((m) => m[1]),
+  ];
+  // el nombre del módulo partido, en el código (no en un comentario ni adentro de otro texto)
+  const partido = [...text.matchAll(/(['"`])child_?\1\s*\+|`child_\$\{|(['"`])child_['"`]\s*\+\s*['"`]process/g)].some((m) => enCodigo(m.index));
+  for (const nombre of new Set(modulos)) {
+    for (const m of text.matchAll(new RegExp(`(?<![.\\w$])${nombre.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}\\s*\\??\\.?\\s*\\[`, 'g'))) {
+      if (!mask[m.index]) out.push({ line: linea(m.index), forma: `el módulo en ${nombre} usado con corchetes` });
+    }
+  }
+  // `require(m)` con una variable, en un archivo que arma el nombre del módulo partido (`'child_' + 'process'`, una
+  // plantilla): una ruta armada con `path.join` no es el módulo de procesos
+  for (const m of text.matchAll(new RegExp(`\\b(?:require|import)\\s*\\(\\s*(${NAME})\\s*\\)`, 'g'))) {
+    if (!mask[m.index] && partido) out.push({ line: linea(m.index), forma: `un require o un import con el nombre armado en ${m[1]}` });
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+
 /** ¿El código (no un texto ni un comentario) carga el módulo `child_process`, con `require`, `import(…)` o `from`? */
 function usesChildProcess(text) {
   if (!/child_process/.test(text)) return false;
@@ -272,4 +325,4 @@ function scanTree(root, dirs, skip = []) {
   return out;
 }
 
-module.exports = { FUNCTIONS, findLaunches, windowState, scanTree, scriptFiles, isLegacyShim, usesChildProcess };
+module.exports = { FUNCTIONS, findLaunches, windowState, scanTree, scriptFiles, isLegacyShim, usesChildProcess, formasQueNoSigue };

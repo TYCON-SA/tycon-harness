@@ -129,7 +129,14 @@ harness_dir() {
 # absoluta) o ~/.tycon/harness. Se mira DESPUÉS de los dos nombres de siempre, a propósito: donde están, siguen mandando.
 # Va aparte de `harness_dir`, que es la misma función, letra por letra, que la de .githooks/pre-commit-checks.
 harness_own_home() {
-  _ho="$(printf '%s' "${TYCON_HOME:-}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  # sin los blancos de los bordes, como trim() en JS (también un salto de línea, y la BOM y el NBSP de los bordes)
+  _ho="${TYCON_HOME:-}"
+  while :; do
+    _ho_antes="$_ho"
+    _ho="${_ho#"${_ho%%[![:space:]]*}"}"; _ho="${_ho%"${_ho##*[![:space:]]}"}"
+    _ho="${_ho#$'\xef\xbb\xbf'}"; _ho="${_ho#$'\xc2\xa0'}"; _ho="${_ho%$'\xc2\xa0'}"
+    [ "$_ho" = "$_ho_antes" ] && break
+  done
   case "$_ho" in /*) ;; *) _ho="${HOME:-}/.tycon" ;; esac
   if [ -d "$_ho/harness/scripts" ]; then printf '%s' "$_ho/harness"; fi
 }

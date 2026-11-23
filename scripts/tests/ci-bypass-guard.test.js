@@ -181,10 +181,9 @@ const AZ = [
   'az repos policy build update --id 1 --enabled false',
   'az repos policy delete --id 1',
   'az repos policy approver-count update --id 1 --minimum-approver-count 0',
-  // crear las que pueden permitir lo que otra no, o cuyo contenido no se lee
-  'az repos policy merge-strategy create --repository-id x --branch main --allow-squash true --blocking true --enabled true',
-  'az repos policy file-size create --repository-id x --branch main --maximum-git-blob-size 100 --blocking true --enabled true',
+  // crear una cuyo contenido no se lee, o de un tipo que el lector no conoce
   'az repos policy create --config politica.json',
+  'az repos policy file-path create --repository-id x --branch main --blocking true --enabled true',
   "az rest --method patch --uri https://dev.azure.com/o/p/_apis/git/repositories/r/pullrequests/1?api-version=7.1 --body '{\"status\":\"completed\"}'",
   'az devops invoke --area security --resource accessControlEntries --route-parameters securityNamespaceId=x --http-method POST',
   // la ruta completa de Windows (con espacios), el mismo programa por Python y una duración con decimales
@@ -473,4 +472,95 @@ test('T15 CrearUnaReglaQueEndurece_NoPideLaFirma', (t) => {
   // y cambiar la misma regla, o crear la de otro conjunto, sigue pidiendo la firma
   unaForma('az repos policy approver-count update --id 1 --minimum-approver-count 0', 'az-bypass');
   unaForma('gh api -X PUT repos/o/r/rulesets/1 --input regla.json', 'api-rules');
+});
+
+// Azure DevOps exige todas las políticas que aplican a la rama: una nueva, del tipo que sea, sólo suma un requisito
+// (defecto 23: crear las de un repo nuevo pedía la firma de aflojarlas). La genérica con --config no se lee: sigue.
+const NUEVAS_DE_AZURE = [
+  'az repos policy merge-strategy create --repository-id x --branch main --allow-squash true --blocking true --enabled true',
+  'az repos policy file-size create --repository-id x --branch main --maximum-git-blob-size 100 --blocking true --enabled true',
+  'az repos policy case-enforcement create --repository-id x --blocking true --enabled true',
+];
+
+test('T16 PoliticaNuevaDeAzure_DeCualquierTipo_NoPideLaFirma', (t) => {
+  for (const cmd of NUEVAS_DE_AZURE) assert.deepStrictEqual(formas(cmd), [], cmd);
+  const home = casaNueva(t);
+  const r = freno(NUEVAS_DE_AZURE[0], { home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(!pideVentana(r), 'pidió la ventana para crear una política');
+  // lo que sí puede aflojar sigue pidiendo la firma
+  for (const cmd of ['az repos policy create --config politica.json', 'az repos policy merge-strategy update --id 1 --allow-squash true',
+    'az repos policy delete --id 1', 'az repos pr update --id 1 --bypass-policy true']) unaForma(cmd, 'az-bypass');
+});
+
+/** El texto que la ventana le muestra a la persona para ese comando, desde la carpeta `cwd`. */
+function cuadroDe(casa, cmd, cwd = casa) {
+  const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+  const evento = { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, cwd, permission_mode: 'default' };
+  const r = ow.decidir({ evento, escapes: [FIRMA], arbol: ARBOL, pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => null });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  return r.texto;
+}
+
+// Cambiar un conjunto de reglas de GitHub sigue con la firma: un PUT reemplaza todas sus reglas, y el freno no sale a la
+// red a leer las de hoy. Pero el cuadro dice eso, no «lo que la CI frenaba llega a main» (defecto 23).
+test('T17 ConjuntoDeReglas_ElCuadroDiceQueLoReemplazaOLoBorra', (t) => {
+  const casa = casaNueva(t);
+  const reemplaza = 'gh api -X PUT repos/o/r/rulesets/7 -f name=main -F "rules[][type]=merge_queue"';
+  unaForma(reemplaza, 'api-rules');
+  assert.match(leer(reemplaza)[0].motivo, /reemplaza el conjunto de reglas 7/);
+  const c1 = cuadroDe(casa, reemplaza);
+  assert.match(c1, /reemplaza el conjunto de reglas 7 de la rama con lo que manda este comando: una regla que no esté en lo que se manda queda borrada/);
+  assert.match(c1, /el conjunto de reglas queda como lo escribe el comando; si le falta una regla que estaba/);
+  assert.match(c1, /name, rules\[merge_queue\]/, 'no nombra lo que manda');
+  assert.doesNotMatch(c1, /lo que la CI frenaba/);
+  // lo que manda, leído del archivo de --input; sin cuerpo a la vista, lo dice
+  fs.writeFileSync(path.join(casa, 'regla.json'), JSON.stringify({ name: 'main', rules: [{ type: 'merge_queue', parameters: {} }, { type: 'pull_request' }] }));
+  assert.match(cuadroDe(casa, 'gh api -X PUT repos/o/r/rulesets/7 --input regla.json'), /name, rules\[merge_queue\], rules\[pull_request\]/);
+  assert.match(cuadroDe(casa, 'gh api -X PATCH repos/o/r/rulesets/7'), /no se ve qué manda/);
+  assert.match(cuadroDe(casa, 'gh api -X PUT repos/o/r/rulesets/7 --input no-esta.json'), /no se ve qué manda \(no-esta.json no está\)/);
+  // borrar el conjunto
+  const borra = cuadroDe(casa, 'gh api -X DELETE orgs/o/rulesets/9');
+  assert.match(borra, /borra el conjunto de reglas 9: lo que exigía deja de aplicarse/);
+  assert.doesNotMatch(borra, /lo que la CI frenaba/);
+  // saltear la cola sigue con su cuadro de siempre
+  assert.match(cuadroDe(casa, 'gh pr merge 5 --admin'), /lo que la CI frenaba llega a main/);
+});
+
+// El cuadro lee el archivo de --input sin colgarse ni mentir (pase adversarial del defecto 23): una tubería o un
+// dispositivo no se leen, la tilde es la casa, y con dos conjuntos reemplazados dice lo que manda cada uno.
+test('T18 CuadroDelConjunto_LeeElCuerpoSinColgarseNiMentir', (t) => {
+  const FUENTES = path.join(RAIZ, 'scripts', 'lib', 'signature-sources.js');
+  const casa = casaNueva(t);
+  const partes = (comando) => require(FUENTES).partesDe({ firma: FIRMA, comando, cwd: casa });
+  if (process.platform !== 'win32') {
+    const tubo = path.join(casa, 'tubo');
+    assert.strictEqual(spawnSync('mkfifo', [tubo]).status, 0);
+    // en otro proceso y con tope: si la lectura se cuelga, la prueba falla en vez de colgarse
+    const guion = `const f = require(${JSON.stringify(FUENTES)});
+      process.stdout.write(f.partesDe({ firma: ${JSON.stringify(FIRMA)}, comando: ${JSON.stringify(`gh api -X PUT repos/o/r/rulesets/5 --input ${tubo}`)}, cwd: '/' }).queHace.join('|'));`;
+    const r = spawnSync(process.execPath, ['-e', guion], { encoding: 'utf8', timeout: 5000 });
+    assert.strictEqual(r.status, 0, `se colgó o se cayó con una tubería: ${r.signal || r.stderr}`);
+    assert.match(r.stdout, /no se ve qué manda \(tubo no es un archivo común\)/);
+  }
+  // la tilde: el archivo en la casa de quien corre la prueba
+  const enLaCasa = path.join(os.homedir(), `.ci-bypass-prueba-${process.pid}.json`);
+  fs.writeFileSync(enLaCasa, JSON.stringify({ rules: [{ type: 'deletion' }] }));
+  t.after(() => fs.rmSync(enLaCasa, { force: true }));
+  assert.match(partes(`gh api -X PUT repos/o/r/rulesets/5 --input ~/${path.basename(enLaCasa)}`).queHace.join('|'), /lo que manda: rules\[deletion\]/);
+  // dos conjuntos reemplazados: lo que manda cada uno, con su número
+  fs.writeFileSync(path.join(casa, 'b.json'), JSON.stringify({ rules: [{ type: 'deletion' }] }));
+  const dos = partes('gh api -X PUT repos/o/r/rulesets/12 -f name=a; gh api -X PUT repos/o/r/rulesets/13 --input b.json').queHace.join('|');
+  assert.match(dos, /lo que manda: al 12: name; al 13: rules\[deletion\]/);
+});
+
+// Un comando con un conjunto de reglas a la vista y otra parte que el lector no lee entera (puede ser un merge con
+// --admin): el cuadro de siempre, con la alarma, no el texto suave del conjunto de reglas.
+test('T19 ConjuntoDeReglasConUnaParteEscondida_ElCuadroDeSiempre', () => {
+  const fuentes = require(path.join(RAIZ, 'scripts', 'lib', 'signature-sources.js'));
+  for (const comando of ['gh api -X PUT repos/o/r/rulesets/1 -f a=b && gh pr merge 5 $FLAG',
+    'gh api -X PUT repos/o/r/rulesets/1 -f a=b && az repos pr update --id 5 --bypass-policy $X']) {
+    assert.ok(leer(comando).some((h) => !h.legible), `${comando}: el lector no vio la parte escondida`);
+    assert.strictEqual(fuentes.partesDe({ firma: FIRMA, comando, cwd: os.tmpdir() }), null, comando);
+  }
 });

@@ -138,11 +138,15 @@ function saveRed({ dir, summaryFile, lcovFile, measuredFile, base, recorte, stor
 }
 const saveGreen = (opts) => saveRed({ ...opts, origen: 'verde' });
 
-/** Suma una repetición verde: su entrada del resumen de la suite sola, la foto de la carpeta en que corrió y su lcov. */
-function addRepeat(dir, ruta, { tree, entry, lcovFile = null }) {
+/**
+ * Suma una repetición: su entrada del resumen de la suite sola, la foto de la carpeta en que corrió y su lcov. Una
+ * repetición roja que el juez de heredados perdonó (`falla`: la de la suite sola, con sus casos) también cuenta como
+ * repetida, y guarda su falla: al cerrar, `merge` la deja en el resumen y el juez la vuelve a mirar.
+ */
+function addRepeat(dir, ruta, { tree, entry, lcovFile = null, falla = null }) {
   const f = path.join(dir, 'repetidas.json');
   const rep = JSON.parse(fs.readFileSync(f, 'utf8'));
-  rep[ruta] = { tree, entry, at: new Date().toISOString() };
+  rep[ruta] = { tree, entry, at: new Date().toISOString(), ...(falla ? { inherited: true, falla } : {}) };
   fs.writeFileSync(f, `${JSON.stringify(rep)}\n`);
   if (lcovFile && fs.existsSync(lcovFile)) {
     const txt = fs.readFileSync(lcovFile, 'utf8');
@@ -472,7 +476,10 @@ function merge({ dir, newSummary = null, covDir = null, changed = [] }) {
   const rep = leerJson(path.join(dir, 'repetidas.json'));
   const meta = leerJson(path.join(dir, 'meta.json'));
   const porRuta = new Map((resumen.suites || []).map((s) => [claveDeSuite(s), s]));
+  // una repetición verde saca su falla; una heredada la reemplaza por la suya, la más nueva, para que el juez la vuelva
+  // a juzgar al cerrar
   let fallas = (resumen.fallas || []).filter((f) => !rep[rutaDeFalla(f)]);
+  for (const x of Object.values(rep)) if (x.inherited && x.falla) fallas.push(x.falla);
   for (const x of Object.values(rep)) if (x.entry && x.entry.ruta) porRuta.set(claveDeSuite(x.entry), x.entry);
   let nuevas = 0;
   const extra = {};

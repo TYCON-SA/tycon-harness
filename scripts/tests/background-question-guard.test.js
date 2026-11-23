@@ -113,6 +113,34 @@ test('T3 Lanzada_PreguntaDeFirma_TalCual @story-8.211 @ac-3', (t) => {
   assert.match(cupo.reason, /tal cual/);
 });
 
+// Nombrar o retirar a la coordinadora sólo lo aprueba un click en la pestaña que trabaja. Una coordinadora nueva que
+// abrió la vieja con `open` (15/11) no podía mostrar ese cuadro y quedaba sólo la terminal: ahora lo muestra en su
+// pestaña, donde lo contesta el dueño (o por control remoto). La terminal sigue como salida de emergencia.
+test('T27 BgGuard_SoloClickDeLaPropiaSesion_Pasa — el cuadro de nombrar la coordinadora se muestra en su pestaña', (t) => {
+  const toy = maquina(t);
+  const propia = decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Nombrás coordinadora a esta sesión? (firma designation-set · sesión ${LANZADA} · código 1a2b3c4d)`)));
+  assert.strictEqual(propia, null, JSON.stringify(propia));
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿La retirás? (firma designation-withdraw · sesión ${LANZADA} · código 1a2b3c4e)`))), null);
+  // el sello de otra sesión, una firma que no es de sólo click o una pregunta libre siguen yendo a la coordinadora
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Nombrás coordinadora? (firma designation-set · sesión ses-otra · código 1a2b3c4d)`))).decision, 'deny');
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Aprobás el plan? (firma plan-approval · sesión ${LANZADA} · código fabb4d5f)`))).decision, 'deny');
+  assert.strictEqual(decidir(toy, evento(LANZADA)).decision, 'deny');
+  // con otra pregunta en el mismo cuadro, o dos sellos en una, va a la coordinadora (lo encontró el pase adversarial)
+  const dos = { questions: [pregunta(`¿Nombrás coordinadora? (firma designation-set · sesión ${LANZADA} · código 1a2b3c4d)`).questions[0],
+    pregunta(`¿Aprobás el plan? (firma plan-approval · sesión ${LANZADA} · código fabb4d5f)`).questions[0]] };
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', dos)).decision, 'deny');
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Nombrás? (firma designation-set · sesión ${LANZADA} · código 1a2b3c4d) ¿Y el plan? (firma plan-approval · sesión ${LANZADA} · código fabb4d5f)`))).decision, 'deny');
+  // la negativa del freno de firmas lo dice: el cuadro va en esta pestaña, se avisa a la coordinadora y queda la terminal
+  const cuadro = oa.cuadroDe({ firma: 'designation-set', destino: LANZADA, que: 'nombrar coordinadora', siSaleMal: 'x', huella: '1a2b3c4d',
+    soloClick: true, descripciones: ['Esa sesión firma en tu nombre.', 'No cambia nada.'] });
+  const r = ow.negarSinVentana('esta sesión corre de fondo', ['designation-set'], LANZADA, cuadro, true, false, { name: 'Coordinadora', sid: COORD });
+  assert.match(r.texto, /mostrale AskUserQuestion/);
+  assert.match(r.texto, /SendMessage/);
+  assert.match(r.texto, /Coordinadora/);
+  assert.match(r.texto, /control remoto/);
+  assert.match(r.texto, /--terminal/);
+});
+
 test('T4 NoLanzada_Pasa @story-8.211 @ac-4', (t) => {
   const toy = maquina(t);
   sesion(toy, 'ses-interactiva', { nombre: 'Acme1', kind: 'interactive', startedAt: AT + 7000 });
@@ -267,10 +295,11 @@ test('T10 FirmaEnLanzada_TextoALaCoordinadora @story-8.211 @ac-12', (t) => {
   const deHoy = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, false, null);
   assert.match(deHoy.texto, /mostrale AskUserQuestion/);
   const cupo = { ...cuadro, soloClick: true, descripciones: ['sigue', 'no sigue'] };
+  // una de sólo click se muestra en la pestaña que trabaja, y la coordinadora se entera (T27)
   const soloClick = ow.negarSinVentana('pasar el tope', ['adhoc-lane:sobre-cupo'], 's', cupo, true, false, coord);
   assert.match(soloClick.texto, /terminal/);
   assert.match(soloClick.texto, /Coordinadora/);
-  assert.doesNotMatch(soloClick.texto, /mostrale AskUserQuestion/);
+  assert.match(soloClick.texto, /mostrale AskUserQuestion/);
 });
 
 test('T11 ClickEnLaCoordinadora_SigueValiendo @story-8.211 @ac-13', (t) => {
@@ -333,6 +362,49 @@ test('T15 Fondo_SinArchivoDeSesion_LaVariableDeClaude — CLAUDE_JOB_DIR', (t) =
   assert.strictEqual(decidir(toy, evento('ses-sin-archivo', 'Bash', { command: CASO_A })), null, 'sin archivo ni variable');
   const r = decidir(toy, evento('ses-sin-archivo', 'Bash', { command: CASO_A }), { CLAUDE_JOB_DIR: '/x/jobs/abc' });
   assert.ok(r && r.decision === 'deny', JSON.stringify(r));
+});
+
+/** Una configuración administrada de juguete: su archivo y los de `managed-settings.d/`, con estas reglas «ask». */
+function administrada(toy, { ask = [], enCarpeta = [], copia = [] } = {}) {
+  const dir = path.join(toy.raiz, 'administrada');
+  fs.mkdirSync(path.join(dir, 'managed-settings.d'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'managed-settings.json'), JSON.stringify({ permissions: { ask } }));
+  fs.writeFileSync(path.join(dir, 'managed-settings.d', 'tycon-production.json'), JSON.stringify({ permissions: { ask: enCarpeta } }));
+  fs.writeFileSync(path.join(dir, 'managed-settings.d', 'tycon-production.json.bak-1'), JSON.stringify({ permissions: { ask: copia } }));
+  return dir;
+}
+const REGLAS_DEL_FRENO = ['Bash(az sql server firewall-rule *)', 'Edit(//**/.tycon/production.json)', 'Write(//**/.tycon/state/production-firewall.json)'];
+
+test('T28 Fondo_EdicionQuePidePermiso_SeNiegaConMotivo — fila 91', (t) => {
+  const toy = maquina(t);
+  const dir = administrada(toy, { enCarpeta: REGLAS_DEL_FRENO });
+  const catalogo = path.join(toy.raiz, 'probe', 'repos', 'b', '.tycon', 'production.json');
+  for (const [tool, tool_input] of [['Write', { file_path: catalogo, content: '{}' }], ['Edit', { file_path: catalogo, old_string: 'a', new_string: 'b' }],
+    ['MultiEdit', { file_path: catalogo, edits: [] }], ['NotebookEdit', { notebook_path: path.join(toy.casa, '.tycon', 'state', 'production-firewall.json') }]]) {
+    const r = G.decidir(evento(LANZADA, tool, tool_input), { home: toy.casa, env: {}, arnes: toy.arnes, administrada: dir });
+    assert.ok(r && r.decision === 'deny', `${tool}: ${JSON.stringify(r)}`);
+    assert.match(r.reason, /pide permiso/, tool);
+    assert.match(r.reason, /corre de fondo/, tool);
+    assert.match(r.reason, /coordinadora/, tool);
+  }
+  // en una sesión que no es de fondo, la regla pregunta como siempre
+  assert.strictEqual(G.decidir(evento(COORD, 'Write', { file_path: catalogo, content: '{}' }), { home: toy.casa, env: {}, arnes: toy.arnes, administrada: dir }), null);
+});
+
+test('T29 Fondo_EdicionSinReglaQuePregunte_Pasa — fila 91', (t) => {
+  const toy = maquina(t);
+  const catalogo = path.join(toy.raiz, 'probe', 'repos', 'b', '.tycon', 'production.json');
+  const otro = path.join(toy.raiz, 'probe', 'notas.md');
+  const conReglas = administrada(toy, { ask: ['Edit(//**/.tycon/production.json)'], copia: ['Edit(//**/notas.md)'] });
+  const d = (ruta, dir) => G.decidir(evento(LANZADA, 'Write', { file_path: ruta, content: 'x' }), { home: toy.casa, env: {}, arnes: toy.arnes, administrada: dir });
+  // la regla del archivo de la configuración administrada también cuenta
+  assert.ok(d(catalogo, conReglas), 'la regla de managed-settings.json');
+  // una ruta que ninguna regla nombra; una copia con otro final no se carga, como en Claude Code
+  assert.strictEqual(d(otro, conReglas), null);
+  // sin configuración administrada no hay nada que pregunte
+  assert.strictEqual(d(catalogo, path.join(toy.raiz, 'no-existe')), null);
+  // el interruptor
+  assert.strictEqual(G.decidir(evento(LANZADA, 'Write', { file_path: catalogo, content: 'x' }), { home: toy.casa, env: { TYCON_BG_QUESTION_GUARD: '0' }, arnes: toy.arnes, administrada: conReglas }), null);
 });
 
 test('T16 Formas_LoQueEncontroElPase — sin comillas, guiones literales, heredocs y textos largos', (t) => {

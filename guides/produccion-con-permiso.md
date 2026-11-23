@@ -26,7 +26,13 @@ Dos causas, y las dos se arreglan con lo mismo:
 - **Un freno** prohíbe todo otro camino a esa base: `sqlcmd` directo, `az sql`, una cadena de
   conexión, leer la clave del Llavero, escribir el catálogo, o invocar la puerta de cualquier forma
   que no sea la canónica. También mira adentro de los guiones que el comando corre, aunque ya
-  estuvieran en el disco, y de lo que corren `npm run` y `make`.
+  estuvieran en el disco, y de lo que corren `npm run` y `make`. Nombrar la puerta para leerla o buscarla
+  (`cat`, `grep`, `less`, `git log`) no es invocarla; con un programa que puede correrla sí lo es: `find -exec`,
+  `rg --pre`, `sort --compress-program`, `git -c core.pager=…` o un subcomando de git que corre algo (`difftool`,
+  `rebase --exec`, `grep -O`), `less +!…`, `awk`, `sed`, `open`, una variable delante del programa que no sea de
+  idioma, zona o colores (`GIT_PAGER=<programa>`), `env -S` o `time -p` con la puerta, un `$( … )` que la corre
+  (`echo "$(<puerta> …)"`), un `<( … )` o `>( … )`, o un tubo a algo que no es un lector (`| sh`, `| xargs`,
+  `| python3`, `| awk`). Para leerla, `cat`, `head`, `grep` o `git show`; `sed` y `awk` no.
 - **Un catálogo por proyecto** (`<repo>/.tycon/production.json`) dice qué servidores son de
   producción. **Lo que nadie declaró se trata como producción**, así que un servidor nuevo se frena
   hasta que alguien lo declare.
@@ -468,8 +474,10 @@ cierre seguro deja de funcionar. Cómo combinar los dos lo decide el dueño.
   el programa con `-e` o `-c` y lo arma por dentro (`node -e`, `python3 -c` con una lista de
   argumentos), o un archivo cuyo nombre llega recién al correr (`find … -exec bash {} \;`,
   `echo x | xargs bash`) no se ven. Tampoco las recetas de `make -n` que se ejecutan igual (las que
-  empiezan con `+` o llaman a `$(MAKE)`): con `-n` el freno no mira las recetas. Por eso la aprobación ya no depende del freno: la pide la puerta, aunque la
-  llame un guion o un hook propio.
+  empiezan con `+` o llaman a `$(MAKE)`): con `-n` el freno no mira las recetas. Y hay dos lecturas de `make` que el
+  freno no hace, a propósito, para no seguir agrandándolo: una regla por patrón que fabrica un `include` que falta (`make`
+  la corre aunque sea con `-n`), y un `${call shell,…}` con llaves adentro de las llaves, que no se lee ni se avisa. Por
+  eso la aprobación ya no depende del freno: la pide la puerta, aunque la llame un guion o un hook propio.
 - **El cuadro de la puerta lo puede apretar una aplicación con permiso de Accesibilidad** (la terminal o
   el editor donde corre el asistente, si se lo diste). El freno frena los comandos que ve que lo intentan
   (`osascript` con System Events y un clic o una tecla, `cliclick`), pero eso es otra vez texto. Touch ID,
@@ -522,8 +530,14 @@ Y cinco más, propios de leer los nombres como el shell:
 - 🔴 **Si el lanzador no contesta en 30 s, lo matan o no arranca, el comando no corre.** Vale desde
   Claude Code 2.1.295: el gancho de consola lleva `"onFailure": "block"` en la configuración administrada.
   Con una versión anterior la opción no hace nada: Claude Code corta al lanzador y el comando corre igual.
-  Codex no la tiene. Cada corte queda contado: la revisión nocturna de las ejecuciones cuenta cada hook
-  que se pasó de tiempo.
+  Cada corte queda contado: la revisión nocturna de las ejecuciones cuenta cada hook que se pasó de tiempo.
+- 🔴 **En Codex el freno corre sin el lanzador y sin `onFailure`.** Codex llama al freno directo
+  (`node …/prod-access-guard.js`), sin el reloj de 7 s del lanzador, y no tiene la opción de frenar cuando el gancho
+  falla. Si el freno se cae o se cuelga, el comando corre. En Claude Code ese mismo fallo frena.
+- **Un freno colgado no se corta desde adentro.** El reloj propio del freno no interrumpe una expresión regular ni un
+  análisis que ya empezó. En Claude Code lo ataja el tope del gancho con `onFailure: block`; en Codex, nada. Las
+  expresiones del freno que crecían con el cuadrado del largo del comando ya no lo hacen: con el freno entero, una
+  palabra hostil de 200 KB tarda 63 ms. Si una expresión nueva se vuelve lenta, la ataja sólo ese tope.
 - **Si falta el lanzador, ningún comando de consola del agente corre, y el agente no lo puede arreglar.**
   Sale una persona, desde su terminal y con `sudo`: reinstala el freno
   (`sudo bash ~/.tycon/harness/scripts/production/install-guard.sh`) o saca el archivo administrado
@@ -666,7 +680,10 @@ frene. Por eso el freno arma cada nombre como lo va a armar el shell, y juzga el
   en la carpeta de la sesión; `git -C` y `make -C` la fijan para su comando. Con `cd -` o un destino
   que no se puede leer queda desconocida, y entonces el nombre pelado del catálogo cuenta como protegido.
 - **`xargs`**: si un comando anterior de la misma tubería nombra un archivo protegido o la carpeta
-  protegida, el programa que corre `xargs` cuenta como escritura sobre eso.
+  protegida, el programa que corre `xargs` cuenta como escritura sobre eso. Un lector (`cat`, `jq`) pasa. Un
+  intérprete (`python3`, `node`…) frena aunque su programa sólo lea, porque corre código que el freno no ve
+  (`python3 -c` carga un `json.py` de la carpeta antes que el de verdad); el motivo no dice que escribe: dice
+  que no puede asegurar que sólo lea, y sugiere `jq` o la herramienta de lectura.
 - **`find`** que borra (`-delete`) o corre un programa que escribe: como baja a las subcarpetas, se juzga
   cuando arranca en la carpeta protegida, en una que la contiene (`~`, `~/.claude`, un repo) o en una
   desconocida. Para saber si una carpeta contiene repos con catálogo mira hasta 5.000 subcarpetas; con más, o

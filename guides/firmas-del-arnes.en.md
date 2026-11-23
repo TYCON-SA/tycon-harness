@@ -18,7 +18,9 @@ does not wait for the coordinator. The harness gives it on its own, in the sessi
 harness sessions and product sessions, on any machine, with no list of machines.
 
 - **The same content check as before.** Each script checks its own thing before signing without a person: the plan, with
-  the automatic review approved on that same plan; the comparison with main, that the story is not delicate; the short path, within its allowance and with no high-risk paths; the pending item, on a repo where
+  the automatic review approved on that same plan, and never the plan of a delicate story (that plan and its mockup, only
+  with the owner's click or «approved», even if the profile names `plan-approval:delicada`); the comparison with main, that the story is not delicate; the
+  short path, within its allowance and with no high-risk paths; the pending item, on a repo where
   the session works. If that check says no, the signature goes to a person as always, and the window says why it did not
   go out on its own.
 - **The harness writes the record, not the agent.** It stays in the common signature log with via `automatic`, signer
@@ -28,10 +30,11 @@ harness sessions and product sessions, on any machine, with no list of machines.
   signature back to the person removes it from `approvals.delegated_signing` or adds it to `approvals.owner_only`.
 - **What stays with a person**: changing the controls (`control-change`), what cannot be undone and production (all of
   level 3, with the emergency), turning off a guard or skipping the tests or the adversarial pass (all of
-  `approvals.owner_only`: `TYCON_SAFETY_OFF`, `TYCON_TEST_GATE`, `DOD_BYPASS`, `adversarial-skip`, `no-deep-review` and
-  the rest), skipping «tests first» in a run (`atdd-skip`), and naming or removing the coordinator.
+  `approvals.owner_only`: `TYCON_NEW_NAMES`, `TYCON_TEST_GATE`, `DOD_BYPASS`, `adversarial-skip`, `no-deep-review` and
+  the rest), skipping «tests first» in a run (`atdd-skip`), and naming or removing the coordinator. None of those goes
+  out on its own even if a profile lists it.
 - **A signature that is no longer asked for** (today `save` and `save:sensible`, the old ok to save) is still accepted in
-  the profile and in old records, with no effect: it delegates nothing and the profile check does not reject it. None of those goes out on its own even if a profile lists it.
+  the profile and in old records, with no effect: it delegates nothing and the profile check does not reject it.
 - **The routine escapes** (the `escape:…` entries in the list, which go through the safety guard) also go out on their
   own, each in its usual form and with no other signature in the same command. The safety guard writes their record with
   via `automatica`, and it counts for what asks for it later (closing as debt, the expected red of the matrix).

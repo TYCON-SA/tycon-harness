@@ -249,7 +249,8 @@ portón de arriba. Actualiza `Agent Model Used`, `Debug Log References`, `Comple
 **Con una maqueta aprobada** (story con pantalla, «Aprobar el plan»): la maqueta fija el contenido y los estados, no la
 forma de presentarlos. La forma sale de la story y de la guía del stack del producto. Donde la maqueta marca una capa
 (`presentation: "layer"`, «Se abre encima de … con …»), se construye una capa, que se abre con ese botón o enlace y
-tiene `role="dialog"` o `aria-modal="true"`. Sólo la contradice una story que diga literalmente
+tiene `role="dialog"` o `aria-modal="true"`; un menú o una lista desplegable llevan `role="menu"` o `role="listbox"`, o son
+un popover. Sólo la contradice una story que diga literalmente
 «en la página» o «no modal», y entonces la maqueta se corrige y se aprueba de nuevo antes de construir. Palabras como
 «panel» o «sección» no la contradicen. Donde no marca nada, la story y la guía dicen si va en la página o encima.
 

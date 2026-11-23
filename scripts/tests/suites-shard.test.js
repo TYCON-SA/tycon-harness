@@ -479,9 +479,10 @@ test('SuitesWeights_PrSetHasTheConfirmedSuiteCap', () => {
   const { per_suite: own, measured, ...rule } = pr.suite_cap;
   assert.deepStrictEqual(rule, { factor: 2, floor: 180 }, 'la regla que confirmó el dueño: el doble del peso, con piso de 3 min');
   // Los topes medidos: la mediana de las 5 primeras pasadas más nuevas de cada suite en Azure, de hasta 10 corridas que
-  // publicaron tiempos entre las 30 últimas; con menos de 3 mediciones, el peso. El techo, 1110 s: lo más que deja
-  // reintentar con el doble dentro de un trabajo de 40 min ((2400 − 180) / 2).
-  assert.deepStrictEqual(measured, { runs: 10, scan: 30, last: 5, min: 3, max: 1110 });
+  // publicaron tiempos entre las 60 últimas (con 30, una validación completa casi nunca juntaba sus 3 pasadas y
+  // repartía por peso: fila 111); con menos de 3 mediciones, el peso. El techo, 1110 s: lo más que deja reintentar con
+  // el doble dentro de un trabajo de 40 min ((2400 − 180) / 2).
+  assert.deepStrictEqual(measured, { runs: 10, scan: 60, last: 5, min: 3, max: 1110 });
   // Los únicos topes propios de la validación: dos suites que corren solas y ahí tardan 1 y 3 s. Con el piso de 180 s
   // cada una, el trabajo del banco no entra en sus 40 min (pr-suites-shards, T48). Un tope propio más es una decisión
   // aparte, no un atajo para que una suite lenta deje de cortarse.

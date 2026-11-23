@@ -60,6 +60,8 @@ const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipelin
 const DEBOUNCE_MS = 250;
 const QUERY_TTL_MS = 60 * 1000;
 const PR_PHOTO_MS = 3 * 60 * 1000;
+// la carga de la máquina se pone al día sola en los racks: a lo sumo una foto cada medio minuto por ella
+const MACHINE_PHOTO_MS = 30 * 1000;
 const TOPICS_MS = 60 * 1000;
 const HALFWAY_MS = 15 * 60 * 1000;
 // las historias de los proyectos de la persona se leen de fondo, a lo sumo una vez cada media hora
@@ -116,6 +118,21 @@ function watchedDirs(home, sdir) {
 // novedad: cada foto lo toca, y si disparara otra foto la oficina no pararía nunca
 const BOARD_OWN = /^(tablero\.lock|tablero-(numeros|hechos|huella)\.json(\.bak)?)$|\.tmp$/;
 const ignoredChange = (name) => name != null && BOARD_OWN.test(String(name));
+
+// Lo que decide si una foto es nueva sin mirar la carga de la máquina (`meta.maquina`), que cambia en cada lectura.
+const photoKey = (d) => JSON.stringify(d && d.meta && d.meta.maquina ? { ...d, meta: { ...d.meta, maquina: undefined } } : d);
+const loadOf = (d) => JSON.stringify((d && d.meta && d.meta.maquina) || null);
+/**
+ * ¿Sale esta foto? Sale si cambió algo de la oficina. Si sólo cambió la carga de la máquina, sale cuando pasaron
+ * `everyMs` desde la última foto mandada: los racks se ponen al día solos sin mandar una foto por cada lectura. Una
+ * foto igual, carga incluida, no sale nunca. Las dos horas son las del comienzo de cada lectura, y hay un margen de un
+ * décimo del intervalo (un segundo como mucho): una lectura que tarda menos que la anterior no pierde su turno y deja
+ * los racks un intervalo más sin moverse.
+ */
+function photoDue({ json, lastJson, data, last, now, lastSentAt, everyMs }) {
+  if (json !== lastJson) return true;
+  return loadOf(data) !== loadOf(last) && now - lastSentAt >= everyMs - Math.min(1000, everyMs / 10);
+}
 
 /**
  * Vigila cada carpeta; la que todavía no existe se espera desde la de arriba, y la que no se puede vigilar se anota en
@@ -361,25 +378,34 @@ async function serve() {
   let idle = null;
   let cap = null;
   let done = false;
-  const broadcast = () => {
+  // cuándo empezó a leerse la última foto mandada (la primera también cuenta): la mide `photoDue`
+  let lastSentAt = 0;
+  const broadcast = (readAt = Date.now()) => {
     const msg = JSON.stringify({ type: 'foto', data: last });
     for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(msg);
     if (link) link.update(last);
     counters.sends += 1;
+    lastSentAt = readAt;
+  };
+  // en las pruebas, una carga que cambia en cada lectura: la de verdad, en números enteros, puede quedar igual
+  let testLoad = 0;
+  const withTestLoad = (d) => {
+    if (!testing || process.env.TYCON_OFFICE_TEST_LOAD !== 'changes' || !d || !d.meta) return d;
+    testLoad += 1;
+    return { ...d, meta: { ...d.meta, maquina: { memoria: testLoad % 100, procesador: 50 } } };
   };
   let pending = null;
   let running = false;
   let again = false;
-  // Lo que decide si una foto es nueva. La carga de la máquina (`meta.maquina`) no cuenta: cambia en cada lectura, y una
-  // foto que sólo cambia en ella no sale; los racks se ponen al día con la próxima novedad de la oficina.
-  const photoKey = (d) => JSON.stringify(d && d.meta && d.meta.maquina ? { ...d, meta: { ...d.meta, maquina: undefined } } : d);
+  const machineEveryMs = numEnv('TYCON_OFFICE_MACHINE_PHOTO_MS', MACHINE_PHOTO_MS);
   const recompute = async () => {
     if (running) { again = true; return; }
     running = true;
     try {
-      const data = await snapshot();
+      const readAt = Date.now();
+      const data = withTestLoad(await snapshot());
       const json = photoKey(data);
-      if (json !== lastJson) { last = data; lastJson = json; broadcast(); }
+      if (photoDue({ json, lastJson, data, last, now: readAt, lastSentAt, everyMs: machineEveryMs })) { last = data; lastJson = json; broadcast(readAt); }
       deliverCharlas();
     } catch (e) {
       // la página se entera con la foto que tiene, más el aviso (uno solo); la próxima foto buena lo saca
@@ -416,6 +442,16 @@ async function serve() {
     child.on('exit', () => { prRunning = false; schedule(); });
     child.unref();
   };
+  // la carga de la máquina, al día aunque la oficina no tenga novedades: una foto nueva cada `machineEveryMs` mientras
+  // alguien mira (una página, o el sitio con sesiones vivas). Sale sólo si la carga cambió (photoDue)
+  let machineTimer = null;
+  const machineTick = () => {
+    if (done || !(clients.size || (link && liveSessions().length))) { machineTimer = null; return; }
+    schedule();
+    machineTimer = setTimeout(machineTick, machineEveryMs);
+    machineTimer.unref();
+  };
+  const startMachineTicks = () => { if (!machineTimer && !done) { machineTimer = setTimeout(machineTick, machineEveryMs); machineTimer.unref(); } };
   const prTick = () => {
     if (!clients.size) { prTimer = null; return; }
     const age = prPhotoAge();
@@ -642,6 +678,7 @@ async function serve() {
       clients.add(ws);
       reviewLife();
       if (!prTimer) prTick();
+      startMachineTicks();
       if (!projectsTimer) projectsTick();
       // el primer control, a su intervalo: al abrir ya corre la lectura de cada media hora si hace falta
       if (!projectsCheckTimer) { projectsCheckTimer = setTimeout(projectsCheckTick, projectsCheckMs); projectsCheckTimer.unref(); }
@@ -683,7 +720,7 @@ async function serve() {
   function shutdown() {
     if (done) return;
     done = true;
-    clearTimeout(idle); clearTimeout(cap); clearTimeout(pending); clearTimeout(settle); clearTimeout(prTimer); clearTimeout(topicsTimer); clearTimeout(halfwayTimer); clearInterval(sessionCheck);
+    clearTimeout(idle); clearTimeout(cap); clearTimeout(pending); clearTimeout(settle); clearTimeout(prTimer); clearTimeout(machineTimer); clearTimeout(topicsTimer); clearTimeout(halfwayTimer); clearInterval(sessionCheck);
     unwatch();
     messages.stop();
     if (link) link.stop();
@@ -721,6 +758,8 @@ async function serve() {
       const now = liveSessions().join('\n');
       if (now !== seen) { seen = now; schedule(); }
       reviewLife();
+      // el reloj de la carga se paró si se fueron todas las sesiones: vuelve con la primera que aparece
+      if (now) startMachineTicks();
     }, numEnv('TYCON_OFFICE_SESSION_CHECK_MS', SESSION_CHECK_MS));
   }
   // el tope cuenta desde que arrancó el proceso, con los límites del enlace de ahora
@@ -752,7 +791,7 @@ async function serve() {
     // no recibe la vieja, que nombra al otro. Antes de la primera foto, el enlace lo arranca el arranque
     rereadNext = true;
     lastJson = null;
-    if (link && last) link.start();
+    if (link && last) { link.start(); startMachineTicks(); }
   }
   reviewLife();
   armCap();
@@ -762,7 +801,8 @@ async function serve() {
   // mientras se arma la primera foto, un cambio deja pedida otra (`again`): se calcula apenas termina
   running = true;
   try {
-    last = await snapshot();
+    lastSentAt = Date.now();
+    last = withTestLoad(await snapshot());
     lastJson = photoKey(last);
   } catch (e) {
     unwatch();
@@ -774,7 +814,7 @@ async function serve() {
   }
   markReady();
   if (lockLost()) { shutdown(); return; }
-  if (link) { link.update(last); link.start(); }
+  if (link) { link.update(last); link.start(); startMachineTicks(); }
   if (again) { again = false; schedule(); }
 }
 
@@ -793,4 +833,4 @@ else if (require.main === module) {
   });
 }
 
-module.exports = { ignoredChange, cachedQuery, watchedDirs, watchAll, lockPathOf, officeDirOf, lifeLimits, forSite, changedTalks };
+module.exports = { photoDue, MACHINE_PHOTO_MS, ignoredChange, cachedQuery, watchedDirs, watchAll, lockPathOf, officeDirOf, lifeLimits, forSite, changedTalks };

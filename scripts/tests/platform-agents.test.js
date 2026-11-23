@@ -127,6 +127,10 @@ test('T35 Reviewers_NoPlatformCommands @story-8.85 @ac-20: con la configuración
   const rota = run(harness((dir) => fs.writeFileSync(path.join(dir, 'platform.js'), "throw new Error('capa rota');\n")));
   assert.strictEqual(rota.fired, false);
   assert.match(rota.err, /pedido de trabajo[^\n]*capa rota/, 'la capa rota se dice');
+  // la capa carga, pero su choose() tira: tampoco lanza el aviso, y dice por qué
+  const tira = run(harness((dir) => fs.writeFileSync(path.join(dir, 'platform.js'), "module.exports = { choose() { throw new Error('choose roto'); } };\n")));
+  assert.strictEqual(tira.fired, false);
+  assert.match(tira.err, /pedido de trabajo[^\n]*capa elige[^\n]*choose roto/, 'el choose() que tira se dice');
   const config = run(harness((dir) => fs.writeFileSync(path.join(dir, 'work-items-config.js'), "throw new Error('config rota');\n")));
   assert.strictEqual(config.fired, false);
   assert.match(config.err, /pedido de trabajo[^\n]*config rota/, 'la configuración rota se dice');

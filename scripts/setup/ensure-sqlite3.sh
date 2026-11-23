@@ -34,7 +34,11 @@ if "$SQLITE_BIN" -version >/dev/null 2>&1; then
   exit 0
 fi
 
-STAMP="$HOME/.claude/.tycon-pipeline/sqlite3-install-last-try"
+# el sello, en la carpeta del estado (scripts/lib/state-dir.sh): en una máquina sin Claude Code, ~/.tycon/state; sin la
+# biblioteca (una copia suelta de este archivo), la de siempre
+_SD_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/state-dir.sh"
+if [[ -f "$_SD_LIB" ]] && . "$_SD_LIB" 2>/dev/null; then STAMP="$(tycon_state_dir)/sqlite3-install-last-try"
+else STAMP="$HOME/.claude/.tycon-pipeline/sqlite3-install-last-try"; fi
 CADA=$((7 * 24 * 60 * 60))
 ahora=$(date +%s)
 if [[ -f "$STAMP" ]]; then

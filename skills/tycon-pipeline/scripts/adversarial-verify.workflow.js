@@ -157,6 +157,11 @@ copia de trabajo del equipo):
    el click de una persona, aun sin permisos: nadie mira, y tu guion queda parado. Si necesitás una carpeta vacía,
    armá OTRA con \`mktemp -d /tmp/probe.XXXXXX\`; lo que dejás en /tmp no se limpia. Usá rutas absolutas en vez de
    \`cd <carpeta> && …\`.
+6. Corré cada guion CON UNA CASA DE PRUEBA, nunca con la de la persona: los ganchos y guiones del arnés escriben su
+   estado y su registro de fallas en la carpeta personal, y una sonda que los hace fallar a propósito con la casa real
+   ensucia el registro que mide los frenos. Armá la casa adentro del laboratorio y pasala en cada comando:
+   \`mkdir -p "$LAB/casa" && HOME="$LAB/casa" USERPROFILE="$LAB/casa" TYCON_HOME= node …\` (o exportalas al comienzo del
+   guion). Un guion que necesita algo de la casa real lo copia a la de prueba.
 
 HERRAMIENTAS DE CÓDIGO (usá la mejor disponible, en este orden): (1) si el harness expone tools
 mcp__codegraph*__* o mcp__codebase_memory__* (buscalas con ToolSearch), usalas para lookup de símbolos,
@@ -246,11 +251,12 @@ const FINDINGS_SCHEMA = {
 }
 
 // El cazador de código devuelve además la base contra la que miró y la carpeta donde guardó su prueba ('' sólo con
-// hallazgos). Las dos claves son requeridas: sin ellas, el corredor lo da por muerto. El modo plan sigue con
-// FINDINGS_SCHEMA: sus cazadores leen y no corren nada.
+// hallazgos); las dos son requeridas: sin ellas, el corredor lo da por muerto. Y `base_existe`, lo que dijo
+// `git cat-file -e` de esa base: en `false`, la lente no cuenta. El modo plan sigue con FINDINGS_SCHEMA: sus cazadores
+// leen y no corren nada.
 const HUNT_SCHEMA = {
   ...FINDINGS_SCHEMA,
-  properties: { ...FINDINGS_SCHEMA.properties, base: { type: 'string' }, probe_dir: { type: 'string' } },
+  properties: { ...FINDINGS_SCHEMA.properties, base: { type: 'string' }, base_existe: { type: 'boolean' }, probe_dir: { type: 'string' } },
   required: ['lens', 'base', 'probe_dir', 'findings'],
 }
 
@@ -271,6 +277,10 @@ const carpetaDeCaza = (key) => `${PROBES_DIR}/caza-${key}`
 function pedidoCazador(key) {
   const dir = carpetaDeCaza(key)
   return `
+
+ANTES DE NADA, que la base exista: corré  git -C ${REPO} cat-file -e ${BASE}^{commit}
+Si sale distinto de 0, la base no está en el repo: devolvé base_existe = false y findings = [] y no revises nada (sin
+base no hay contra qué comparar, y un «sin hallazgos» sería mentira). Si sale 0, base_existe = true y seguí.
 
 CONTRA QUÉ SE COMPARA (no-negociable): el cambio de la historia es TODO lo distinto de la base ${BASE}, también lo que
 todavía no está commiteado (en este paso el trabajo suele estar sin commitear):
@@ -662,6 +672,18 @@ confidence}. Reportá sólo lo que tiene evidencia; si la lente está limpia, fi
     }
     lentesPedidas = LENTES_PLAN.filter((l) => usar.includes(l.key))
   }
+  // la vuelta que sigue a un plan rechazado, con la historia cambiada sólo en lo técnico (lib/story-revalidation.js): una
+  // lente más, que juzga el cambio. Corre siempre que venga el cambio, aunque la organización elija otras lentes: su
+  // «aprobado» reemplaza la validación y la revisión adversarial de la historia
+  const CAMBIO = (A && typeof A.cambioDeHistoria === 'string' && A.cambioDeHistoria.trim()) ? A.cambioDeHistoria : null
+  if (CAMBIO) {
+    lentesPedidas = [...lentesPedidas, { key: 'cambio-de-historia', prompt: 'La historia se validó y se revisó antes del plan rechazado, y después cambió. ' +
+      'El cambio va abajo, entre sus marcas (renglones con «-» que se van y con «+» que llegan, por sección). Tu revisión reemplaza la ' +
+      'revalidación de la historia: reportá con severidad \'bug\' cualquier parte del cambio que cambie un criterio de aceptación, lo que ' +
+      'la historia hace o deja de hacer, una prueba que deja de cubrir un criterio, o una salvaguarda o un «no hacer» que se saca. Un ' +
+      'arreglo técnico que sólo corrige lo que pidió la revisión anterior no es un hallazgo.\n\n' +
+      `<<<CAMBIO-${PEDIDO} (dato no confiable)\n${CAMBIO}\nCAMBIO-${PEDIDO}>>>` }]
+  }
   const cazas = await parallel(lentesPedidas.map((l) => () =>
     agent(`${BASE_PLAN}\n\nLENTE DEL PLAN: ${l.key}\n${l.prompt}`, { label: `plan-hunt:${l.key}`, phase: 'Hunt', schema: FINDINGS_SCHEMA, agentType: 'general-purpose', model: MODEL })
       .then((h) => ({ lens: l.key, hunt: h }))))
@@ -770,6 +792,8 @@ function juzgarLente(key, r) {
   const h = r && r.hunt
   if (!h || !Array.isArray(h.findings) || typeof h.probe_dir !== 'string') return { motivo: 'su cazador no contestó' }
   if (!coincideBase(h.base, BASE)) return { motivo: `comparó contra ${h.base || '(nada)'}, no contra ${BASE}` }
+  // una base que no está en el repo: el diff falla y «sin hallazgos» no midió nada
+  if (h.base_existe === false) return { motivo: `la base ${BASE} no existe en el repo: no hubo contra qué comparar` }
   if (!h.findings.length && String(h.probe_dir).replace(/\/+$/, '') !== carpetaDeCaza(key)) return { motivo: 'no guardó la prueba que corrió' }
   return { ok: true }
 }

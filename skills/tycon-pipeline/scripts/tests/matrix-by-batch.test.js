@@ -2,7 +2,8 @@
 'use strict';
 // matrix-by-batch.test.js — en una historia paraguas, la ejecución de una tanda anota su tanda (`marker.js set-batch`)
 // y «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. El control del commit mide todas al
-// pasar la historia a review, y al cerrar una tanda mide la que se cierra (la matriz y la Capa 5).
+// pasar la historia a review, y al cerrar una tanda mide la que se cierra (la matriz y la Capa 5). El commit que estrena
+// el bloque de tandas con una ya hecha mide ésa sola, con su evidencia.
 //
 // Corre los comandos reales con un HOME temporal y el id de sesión fijado en el proceso hijo.
 //
@@ -87,12 +88,12 @@ function entorno() {
     assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   };
   // la humo de los criterios pedidos, con su espejo en el gates.log de la HOME temporal
-  const humo = (acs) => {
+  const humo = (acs, extra = {}) => {
     const gatesLog = path.join(dir() || path.join(home, '.claude', '.tycon-pipeline'), 'gates.log');
     fs.mkdirSync(path.dirname(gatesLog), { recursive: true });
     const dodDir = path.join(repo, '.advisors', 'dod-runtime');
     fs.mkdirSync(dodDir, { recursive: true });
-    LEDGER.append({ dodDir, gatesLog, story: '9.9', acs });
+    LEDGER.append({ dodDir, gatesLog, story: '9.9', acs, ...extra });
   };
   return { home, repo, story, git, correr, leer, escribir, activo, arrancar, humo, dir };
 }
@@ -273,6 +274,284 @@ test('T12 PreCommit_BatchToDone_MeasuresThatBatch @story-8.239 @ac-9 — cerrar 
   r = commitear(E, historia({ estados: { [A]: 'done' } }), 's-t12h');
   assert.notStrictEqual(r.status, 0, salida(r));
   assert.match(salida(r), /no pude leer las tandas de la historia en HEAD/, salida(r));
+});
+
+// ── El commit que estrena el bloque de tandas ───────────────────────────────────────────────────────────────────
+
+// La misma historia sin el bloque pipelines: así está en HEAD una historia que todavía no se partió en tandas.
+const sinTandas = (texto) => texto.replace(/\npipelines:\n[\s\S]*?\n---\n# Story/, '\n---\n# Story');
+function sinTandasEnHead(E) {
+  fs.writeFileSync(E.story, sinTandas(historia({ status: 'draft' })));
+  E.git('commit', '-qam', 'la historia todavía sin tandas');
+}
+// el commit que estrena las tres tandas: la primera ya hecha, las otras dos bloqueadas a propósito, con sus criterios
+// en `acs_pending` como pide el formato de la historia
+const estreno = (o = {}) => historia({ status: 'draft', estados: { [A]: 'done', [B]: 'blocked', [C]: 'blocked' }, ...o })
+  .replace('    status: blocked\n    acs: [2]', '    status: blocked\n    acs_pending: [2]')
+  .replace('    status: blocked\n    acs: [3]', '    status: blocked\n    acs_pending: [3]');
+
+test('T20 PreCommit_DebutBatches_DoneOne_MeasuresOnlyIt — el commit que estrena las tandas con una hecha mide sólo ésa', () => {
+  const E = entorno();
+  sinTandasEnHead(E);
+  E.humo([1]);
+  const r = commitear(E, estreno(), 's-t20');
+  assert.doesNotMatch(salida(r), CAPA5, salida(r));
+  assert.doesNotMatch(salida(r), /DODRT-C6/, salida(r));
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), new RegExp(`estrena las tandas con ${A} ya done: se mide esa tanda`), salida(r));
+});
+
+test('T21 PreCommit_DebutBatches_Negatives — sin evidencia en verde frena; con tandas en HEAD o pasando la historia a done se miden todas', () => {
+  // la tanda que estrena hecha sin su evidencia (hay de otra tanda): frena por su criterio, y sólo por el suyo
+  let E = entorno();
+  sinTandasEnHead(E);
+  E.humo([3]);
+  let r = commitear(E, estreno(), 's-t21a');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#1\b/, salida(r));
+  assert.doesNotMatch(faltan(r), /#2\b/, salida(r));
+  // con su humo en rojo, tampoco pasa
+  E = entorno();
+  sinTandasEnHead(E);
+  E.humo([1], { exit: 1 });
+  r = commitear(E, estreno(), 's-t21b');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  // la historia ya tenía tandas en HEAD y el commit agrega una ya hecha: no se cerró en este commit, se miden todas
+  E = entorno();
+  fs.writeFileSync(E.story, historia({ status: 'draft' }).replace(`  - name: ${A}\n    status: pending\n    acs: [1]\n`, ''));
+  E.git('commit', '-qam', 'la historia con dos tandas');
+  E.humo([1]);
+  r = commitear(E, estreno(), 's-t21c');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), new RegExp(`agrega la tanda ${A} ya done`), salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
+  // en HEAD el bloque está pero no se lee: no es un estreno, se miden todas
+  E = entorno();
+  fs.writeFileSync(E.story, sinTandas(historia({ status: 'draft' })).replace('\n---\n# Story', '\npipelines: []\n---\n# Story'));
+  E.git('commit', '-qam', 'la historia con un bloque de tandas que no se lee');
+  E.humo([1]);
+  r = commitear(E, estreno(), 's-t21d');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /no pude leer las tandas de la historia en HEAD/, salida(r));
+  // la historia sin tandas pasa a done: se mide entera
+  E = entorno();
+  sinTandasEnHead(E);
+  E.humo([1]);
+  r = commitear(E, sinTandas(historia({ status: 'done' })), 's-t21e');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
+  // estrena las tandas con una hecha y pasa la historia a done en el mismo commit: manda done, se miden todas
+  E = entorno();
+  sinTandasEnHead(E);
+  E.humo([1]);
+  r = commitear(E, estreno({ status: 'done' }), 's-t21f');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
+});
+
+test('T22 PreCommit_BatchToDone_ReadByName — la tanda que pasa a done se lee por su nombre: comillas, mayúsculas, otro done que se va o un intercambio', () => {
+  const bloqueadas = { [B]: 'blocked', [C]: 'blocked' };
+  // el estreno con `status: "done"` y su evidencia: se mide ésa sola, igual que sin comillas
+  let E = entorno();
+  sinTandasEnHead(E);
+  E.humo([1]);
+  let r = commitear(E, estreno({ estados: { [A]: '"done"', ...bloqueadas } }), 's-t22a');
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), new RegExp(`estrena las tandas con ${A} ya done`), salida(r));
+  // el estreno con `status: "done"` sin su evidencia: frena por su criterio
+  E = entorno();
+  sinTandasEnHead(E);
+  E.humo([3]);
+  r = commitear(E, estreno({ estados: { [A]: '"done"', ...bloqueadas } }), 's-t22b');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#1\b/, salida(r));
+  // un cierre común con `status: "done"` o `status: Done` sin su evidencia: frena por su criterio
+  for (const [estado, sid] of [['"done"', 's-t22c'], ['Done', 's-t22d']]) {
+    E = entorno();
+    E.humo([3]);
+    r = commitear(E, historia({ estados: { [A]: estado } }), sid);
+    assert.notStrictEqual(r.status, 0, `${estado}: ${salida(r)}`);
+    assert.match(faltan(r), /#1\b/, `${estado}: ${salida(r)}`);
+  }
+  // el commit que estrena la tanda hecha y quita otro `status: done` del frontmatter: la cuenta no sube, pero se mide
+  E = entorno();
+  fs.writeFileSync(E.story, sinTandas(historia({ status: 'draft' })).replace('\n---\n# Story', '\nreview:\n  status: done\n---\n# Story'));
+  E.git('commit', '-qam', 'la historia sin tandas y con otro done');
+  E.humo([3]);
+  r = commitear(E, estreno(), 's-t22e');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#1\b/, salida(r));
+  // el done pasa de una tanda a otra: la que queda hecha no lo estaba en HEAD, se mide
+  E = entorno();
+  fs.writeFileSync(E.story, historia({ estados: { [A]: 'done' } }));
+  E.git('commit', '-qam', 'la primera tanda hecha');
+  E.humo([1]);
+  r = commitear(E, historia({ estados: { [B]: 'done' } }), 's-t22f');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
+});
+
+test('T25 PreCommit_DebutBlockedCriteria_NotLost — los criterios de la tanda bloqueada que no se midieron en el estreno se miden después', async (t) => {
+  // el estreno, commiteado: la primera tanda hecha con su evidencia; la segunda y la tercera bloqueadas
+  const estrenada = () => {
+    const E = entorno();
+    sinTandasEnHead(E);
+    E.humo([1]);
+    const r = commitear(E, estreno(), 's-t25');
+    assert.strictEqual(r.status, 0, salida(r));
+    E.git('commit', '-qm', 'el estreno de las tandas');
+    return E;
+  };
+  // la segunda tanda, ya desbloqueada y hecha: su criterio pasa de acs_pending a acs
+  const conBHecha = (o = {}) => estreno(o).replace('    status: blocked\n    acs_pending: [2]', '    status: done\n    acs: [2]');
+  await t.test('la segunda tanda pasa a done más adelante: se mide su criterio y frena sin evidencia', () => {
+    const r = commitear(estrenada(), conBHecha(), 's-t25a');
+    assert.notStrictEqual(r.status, 0, salida(r));
+    assert.match(salida(r), new RegExp(`cierra la tanda ${B}`), salida(r));
+    assert.match(faltan(r), /#2\b/, salida(r));
+  });
+  await t.test('la historia no pasa a done con la segunda tanda bloqueada', () => {
+    const r = commitear(estrenada(), estreno({ status: 'done' }), 's-t25b');
+    assert.notStrictEqual(r.status, 0, salida(r));
+    assert.match(faltan(r), /#2\b/, salida(r));
+  });
+  await t.test('la historia no pasa a done con la segunda tanda hecha sin evidencia', () => {
+    const r = commitear(estrenada(), conBHecha({ status: 'done' }), 's-t25c');
+    assert.notStrictEqual(r.status, 0, salida(r));
+    assert.match(faltan(r), /#2\b/, salida(r));
+  });
+});
+
+// La historia con otro bloque de tandas en lugar del suyo (el texto del bloque, tal cual).
+const conBloque = (bloque) => historia().replace(/\npipelines:\n[\s\S]*?\n---\n# Story/, `\n${bloque}---\n# Story`);
+const tanda = (nombre, estado, ac) => `  - name: ${nombre}\n    status: ${estado}\n    acs: [${ac}]\n`;
+// Bloques que el lector de tandas no lee bien, antes y después de que una tanda pase a done.
+const DUDOSOS = [
+  ['nombres con punto', `pipelines:\n${tanda('9.1-back', 'done', 1)}${tanda('9.2-front', 'pending', 2)}`,
+    `pipelines:\n${tanda('9.1-back', 'done', 1)}${tanda('9.2-front', 'done', 2)}`],
+  ['nombres con espacio', `pipelines:\n${tanda('"A b"', 'done', 1)}${tanda('"A c"', 'pending', 2)}`,
+    `pipelines:\n${tanda('"A b"', 'done', 1)}${tanda('"A c"', 'done', 2)}`],
+  ['nombres repetidos', `pipelines:\n${tanda('A', 'done', 1)}${tanda('A', 'pending', 2)}`,
+    `pipelines:\n${tanda('A', 'done', 1)}${tanda('A', 'done', 2)}`],
+  ['pipelines: # comentario', `pipelines: # tandas\n${tanda('A', 'pending', 1)}${tanda('B', 'pending', 2)}`,
+    `pipelines: # tandas\n${tanda('A', 'done', 1)}${tanda('B', 'pending', 2)}`],
+  ['la forma de una línea', 'pipelines:\n  - {name: A, status: pending, acs: [1]}\n  - {name: B, status: pending, acs: [2]}\n',
+    'pipelines:\n  - {name: A, status: done, acs: [1]}\n  - {name: B, status: pending, acs: [2]}\n'],
+  ['- title: primero', 'pipelines:\n  - title: x\n    name: A\n    status: pending\n    acs: [1]\n',
+    'pipelines:\n  - title: x\n    name: A\n    status: done\n    acs: [1]\n'],
+  ['status: >- con done abajo', `pipelines:\n${tanda('A', 'pending', 1)}`, 'pipelines:\n  - name: A\n    status: >-\n      done\n    acs: [1]\n'],
+];
+
+test('T23 PreCommit_DoubtfulBatchesBlock_MeasuresAll — ante la duda se mide: un bloque que el lector no lee bien mide todas las tandas', async (t) => {
+  for (const [i, [caso, antes, despues]] of DUDOSOS.entries()) {
+    await t.test(caso, () => {
+      const E = entorno();
+      fs.writeFileSync(E.story, conBloque(antes));
+      E.git('commit', '-qam', `la historia con ${caso}`);
+      const r = commitear(E, conBloque(despues), `s-t23${i}`);
+      assert.notStrictEqual(r.status, 0, salida(r));
+      assert.match(salida(r), /se miden todas las tandas/, salida(r));
+    });
+  }
+});
+
+// La primera tanda con un `status` anidado (`gate:` y debajo su `status:`), antes o después del suyo.
+const conAnidado = (propio, anidado, anidadoPrimero = false) => {
+  const gate = `    gate:\n      status: ${anidado}\n`;
+  const st = `    status: ${propio}\n`;
+  return conBloque(`pipelines:\n  - name: ${A}\n${anidadoPrimero ? gate + st : st + gate}    acs: [1]\n${tanda(B, 'pending', 2)}${tanda(C, 'pending', 3)}`);
+};
+
+test('T26 PreCommit_NestedStatus_DoesNotOverride — el estado de una tanda es el suyo: uno anidado no lo pisa, y un done anidado vuelve dudosa la lectura', async (t) => {
+  const conHead = (contenido) => {
+    const E = entorno();
+    fs.writeFileSync(E.story, contenido);
+    E.git('commit', '-qam', 'la historia con un estado anidado');
+    E.humo([3]);
+    return E;
+  };
+  for (const [caso, anidadoPrimero] of [['el anidado va después del propio', false], ['el anidado va antes del propio', true]]) {
+    await t.test(`la tanda pasa a done y el anidado vuelve a in-progress (${caso}): se mide y frena`, () => {
+      const r = commitear(conHead(conAnidado('in-progress', 'done', anidadoPrimero)), conAnidado('done', 'in-progress', anidadoPrimero), 's-t26a');
+      assert.notStrictEqual(r.status, 0, salida(r));
+      assert.match(faltan(r), /#1\b/, salida(r));
+    });
+  }
+  await t.test('la tanda vuelve a in-progress y el anidado pasa a done: el done no es de ninguna tanda, se miden todas', () => {
+    const r = commitear(conHead(conAnidado('done', 'in-progress')), conAnidado('in-progress', 'done'), 's-t26c');
+    assert.notStrictEqual(r.status, 0, salida(r));
+    assert.match(salida(r), /la palabra done aparece[^\n]*se miden todas las tandas/, salida(r));
+  });
+  await t.test('dos estados propios en la misma tanda: la lectura es dudosa y se miden todas', () => {
+    const doble = conBloque(`pipelines:\n  - name: ${A}\n    status: done\n    status: pending\n    acs: [1]\n${tanda(B, 'pending', 2)}`);
+    const r = commitear(conHead(conBloque(`pipelines:\n${tanda(A, 'pending', 1)}${tanda(B, 'pending', 2)}`)), doble, 's-t26d');
+    assert.notStrictEqual(r.status, 0, salida(r));
+    assert.match(salida(r), /más de un estado propio[^\n]*se miden todas las tandas/, salida(r));
+  });
+});
+
+// Bloques donde una tanda pasa a done sin que el lector la lea: en una sola línea (con un `- name:` anidado que
+// compensaría la cuenta de entradas) o con un done en un comentario.
+const SIN_LEER = [
+  ['el mapa con la tanda en una línea', (b) => `pipelines:\n  ${A}:\n    status: pending\n    acs: [1]\n    checks:\n      - name: lint\n        status: pending\n  ${B}: {status: ${b}, acs: [2]}\n`],
+  ['la lista con la tanda en una línea', (b) => `pipelines:\n  - name: ${A}\n    status: pending\n    acs: [1]\n    checks:\n      - name: lint\n        status: pending\n  - {name: ${B}, status: ${b}, acs: [2]}\n`],
+  ['un done en un comentario del bloque', (b) => `pipelines:\n  - name: ${A}\n${b === 'done' ? '    # done en staging\n' : ''}    status: pending\n    acs: [1]\n${tanda(B, 'pending', 2)}`],
+];
+
+test('T27 PreCommit_DoneWordsBeyondReadBatches_MeasuresAll — si el bloque dice done más veces que las tandas leídas en done, se miden todas', async (t) => {
+  for (const [i, [caso, bloque]] of SIN_LEER.entries()) {
+    await t.test(caso, () => {
+      const E = entorno();
+      fs.writeFileSync(E.story, conBloque(bloque('pending')));
+      E.git('commit', '-qam', `la historia con ${caso}`);
+      E.humo([1]);
+      const r = commitear(E, conBloque(bloque('done')), `s-t27${i}`);
+      assert.notStrictEqual(r.status, 0, salida(r));
+      assert.match(salida(r), /se miden todas las tandas/, salida(r));
+    });
+  }
+});
+
+// Estados que YAML lee como done sin que el texto diga «done»: un escape, comillas partidas, un bloque `>-` o un alias a
+// un ancla de afuera del bloque. `fuera` va en el frontmatter, antes de `pipelines:`.
+const ILEGIBLES = [
+  ['el escape \\x6f', '"d\\x6fne"'],
+  ['el escape unicode', '"\\u0064one"'],
+  ['las comillas partidas en dos renglones', '"do\\\n      ne"'],
+  ['el bloque >- con do y ne', '>-\n      do\n      ne'],
+  ['el alias a un ancla de afuera', '*s', 'd: &s done\n'],
+];
+const conEstado = (estado, fuera = '') => conBloque(`${fuera}pipelines:\n  - name: ${A}\n    status: ${estado}\n    acs: [1]\n${tanda(B, 'pending', 2)}`);
+
+test('T28 PreCommit_IllegibleStatus_MeasuresAll — un estado que no es una palabra simple vuelve dudosa la lectura y se miden todas, aunque el bloque no diga done', async (t) => {
+  for (const [i, [caso, estado, fuera]] of ILEGIBLES.entries()) {
+    await t.test(caso, () => {
+      const E = entorno();
+      fs.writeFileSync(E.story, conEstado('pending', fuera));
+      E.git('commit', '-qam', 'la historia con la primera tanda pendiente');
+      const r = commitear(E, conEstado(estado, fuera), `s-t28${i}`);
+      assert.notStrictEqual(r.status, 0, salida(r));
+      assert.match(salida(r), /se miden todas las tandas/, salida(r));
+    });
+  }
+});
+
+test('T29 PreCommit_AnchorChangedOutsideBlock_MeasuresAll — con un alias en el bloque, cambiar el ancla de afuera cuenta como cambio y se miden todas', () => {
+  const E = entorno();
+  fs.writeFileSync(E.story, conEstado('*d', 'x: &d pending\n'));
+  E.git('commit', '-qam', 'la primera tanda con su estado en un ancla de afuera');
+  const r = commitear(E, conEstado('*d', 'x: &d done\n'), 's-t29');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /se miden todas las tandas/, salida(r));
+});
+
+test('T24 PreCommit_DoubtfulBlockUnchanged_Passes — sin una tanda nueva en done, el bloque dudoso no pide nada', () => {
+  const E = entorno();
+  const quieto = conBloque(DUDOSOS[0][2]);
+  fs.writeFileSync(E.story, quieto);
+  E.git('commit', '-qam', 'la historia con nombres con punto');
+  const r = commitear(E, quieto.replace('title: "paraguas"', 'title: "paraguas, otro título"'), 's-t24');
+  assert.strictEqual(r.status, 0, salida(r));
 });
 
 // ── 8.240: la tanda se ata a lo que la corrida toca ──────────────────────────────────────────────────────────────
@@ -568,6 +847,34 @@ test('T19 RuntimeWaiver_Terminal_ForSession_ReadsBatch @story-8.240 @ac-12 — l
   const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a19');
   assert.match(salida(r), MATRIZ_ROJA, salida(r));
   assert.match(salida(r), /runtime-waiver \S+ --for-session s-a19/, salida(r));
+});
+
+// ── una tanda futura no anula la evidencia de la medida ──────────────────────────────────────────────────────────────
+
+// Renglón 7 de la fila del 21/11 (casos del 11 y el 12/11): midiendo la primera tanda, un archivo de la segunda, todavía
+// pendiente y sin crear, contaba como «código declarado que no pude leer» y anulaba los humos de la medida. Un archivo
+// atado sólo a tandas que no se miden no se lee como del cambio: se dice aparte y no anula nada.
+test('T1 TandaFutura_ArchivoSinCrear_NoAnulaLosHumos — midiendo A, un archivo sin crear de B pendiente no descarta la evidencia', () => {
+  const E = entorno();
+  fs.writeFileSync(E.story, historia({ archivos: ['  - src/futuro.js  # tanda B'] }));
+  E.git('add', '.');
+  E.git('commit', '-qm', 'la historia nombra el archivo de la tanda B');
+  E.humo([1]);
+  const r = E.correr('runtime-matrix.js', ['--story', E.story, '--no-write', '--batch', A, '--code-repo', E.repo, '--json'], 's-t7f');
+  const m = JSON.parse(r.stdout);
+  assert.strictEqual(m.batch, A);
+  assert.ok(!(m.warnings || []).some((w) => /No pude leer src\/futuro\.js/.test(w)), JSON.stringify(m.warnings));
+  assert.strictEqual(m.perAc[1].verdict, 'RUNTIME', JSON.stringify(m.perAc[1]));
+  assert.ok((m.warnings || []).some((w) => /src\/futuro\.js/.test(w) && /tanda/.test(w)), 'se dice aparte');
+  // si la corrida tocó código de B, B vuelve a la matriz y se mide: su archivo sin crear anula como siempre (pase adversarial)
+  fs.writeFileSync(E.story, historia({ archivos: ['  - src/futuro.js  # tanda B', '  - src/b.js  # tanda B'] }));
+  fs.writeFileSync(path.join(E.repo, 'src', 'b.js'), 'module.exports = 2;\n');
+  const vuelve = JSON.parse(E.correr('runtime-matrix.js', ['--story', E.story, '--no-write', '--batch', A, '--code-repo', E.repo, '--json'], 's-t7f').stdout);
+  assert.ok((vuelve.measuredBatches || []).includes(B), JSON.stringify(vuelve.measuredBatches));
+  assert.ok(vuelve.warnings.some((w) => /No pude leer src\/futuro\.js/.test(w)), JSON.stringify(vuelve.warnings));
+  // sin tanda pedida, el archivo de B se mide como siempre: no se pudo leer
+  const todas = E.correr('runtime-matrix.js', ['--story', E.story, '--no-write', '--json'], 's-t7f');
+  assert.ok(JSON.parse(todas.stdout).warnings.some((w) => /No pude leer src\/futuro\.js/.test(w)), todas.stdout);
 });
 
 // ── 8.245: una tanda bloqueada no vuelve por un archivo que comparte ─────────────────────────────────────────────────
