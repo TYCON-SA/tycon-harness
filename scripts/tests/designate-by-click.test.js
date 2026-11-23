@@ -34,11 +34,20 @@ const AHORA = Date.parse('2026-11-04T13:00:00Z');
 
 // Se carga antes del guion: la firma la devuelve la prueba, y deja dicho con qué la pidió. El rol de la coordinadora
 // sale sólo del perfil del árbol del arnés (una variable no lo cambia, a propósito): lo da la prueba.
+// El rol de ordenar (`rolDeCoordinar`) corre de verdad, sobre el árbol del arnés de la prueba.
 const PRECARGA = `
 const fs = require('fs');
-require(process.env.TEST_CW_LIB).sesionQueReenvia = () => (process.env.TEST_RELAY ? { valor: process.env.TEST_RELAY } : { valor: null, aviso: 'sin perfil en la prueba' });
+const cw = require(process.env.TEST_CW_LIB);
+cw.sesionQueReenvia = () => (process.env.TEST_RELAY ? { valor: process.env.TEST_RELAY } : { valor: null, aviso: 'sin perfil en la prueba' });
+const rolDeVerdad = cw.rolDeCoordinar;
+cw.rolDeCoordinar = (o = {}) => rolDeVerdad({ ...o, arnes: process.env.TEST_HARNESS });
 require(process.env.TEST_WINDOW_LIB).exigir = (o) => {
   fs.writeFileSync(process.env.TEST_CALL_FILE, JSON.stringify({ firma: o.firma, propia: o.propia, argv: o.argv }));
+  // el perfil del árbol que cambia mientras el cuadro espera el click ('' = se borra)
+  if (process.env.TEST_PROFILE_DURING_WAIT !== undefined) {
+    const f = require('path').join(process.env.TEST_HARNESS, 'team-profile.json');
+    if (process.env.TEST_PROFILE_DURING_WAIT) fs.writeFileSync(f, process.env.TEST_PROFILE_DURING_WAIT); else fs.rmSync(f, { force: true });
+  }
   if (o.antes) { const n = o.antes('click', null); if (n && n.codigo) return { codigo: n.codigo, motivo: n.motivo }; }
   // lo que pasa en la máquina mientras la firma espera (otra sesión que queda nombrada)
   if (process.env.TEST_DURING_WAIT) fs.appendFileSync(process.env.TEST_GATES, process.env.TEST_DURING_WAIT);
@@ -57,16 +66,20 @@ function laboratorio(t, { perfil = { approvals: { relay_session: 'coordinadora' 
   const precarga = path.join(base, 'precarga.js');
   fs.writeFileSync(precarga, PRECARGA);
   const llamada = path.join(base, 'llamada.json');
+  // el árbol del arnés de la prueba: el perfil, si lo hay, vive ahí (de ahí sale approvals.relay_session)
+  const arnes = path.join(base, 'arnes');
+  fs.mkdirSync(arnes);
   let perfilRuta = null;
-  if (perfil) { perfilRuta = path.join(base, 'team-profile.json'); fs.writeFileSync(perfilRuta, JSON.stringify(perfil)); }
+  if (perfil) { perfilRuta = path.join(arnes, 'team-profile.json'); fs.writeFileSync(perfilRuta, JSON.stringify(perfil)); }
   const rol = perfil && perfil.approvals ? perfil.approvals.relay_session || '' : '';
   const lab = { base, casa, carpeta, estado, llamada };
-  lab.correr = (args, { firma = { codigo: 0, via: 'click' }, sesion = SES, durante = [] } = {}) => {
+  lab.correr = (args, { firma = { codigo: 0, via: 'click' }, sesion = SES, durante = [], perfilDurante } = {}) => {
     try { fs.rmSync(llamada); } catch (_) { /* no había */ }
     const env = { PATH: process.env.PATH, HOME: casa, USERPROFILE: casa, TYCON_LANE_LLM: '0', TYCON_PROFILE: perfilRuta || '0',
+      ...(perfilDurante !== undefined ? { TEST_PROFILE_DURING_WAIT: perfilDurante } : {}),
       ...(durante.length ? { TEST_DURING_WAIT: durante.map((l) => `${JSON.stringify(l)}\n`).join(''), TEST_GATES: path.join(estado, 'gates.log') } : {}),
       TEST_CALL_FILE: llamada, TEST_SIGNATURE: JSON.stringify(firma), TEST_WINDOW_LIB: path.join(LIB, 'owner-window.js'),
-      TEST_CW_LIB: path.join(PIPELINE_LIB, 'critical-waivers.js'), TEST_RELAY: rol, ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) };
+      TEST_CW_LIB: path.join(PIPELINE_LIB, 'critical-waivers.js'), TEST_RELAY: rol, TEST_HARNESS: arnes, ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) };
     return spawnSync(process.execPath, ['-r', precarga, MARKER, ...args], { cwd: carpeta, env, encoding: 'utf8' });
   };
   lab.pidio = () => { try { return JSON.parse(fs.readFileSync(llamada, 'utf8')); } catch (_) { return null; } };
@@ -331,6 +344,42 @@ test('DesignationFirmas_ForOtherSession_Denied (T26)', (t) => {
     assert.strictEqual(lab.pidio(), null, `${sub}: no pidió la firma`);
   }
   assert.deepStrictEqual(designaciones(lab), []);
+});
+
+// 🔴 Falla con: sin approvals.relay_session, un click que no nombra, que anota la confirmación (la firma por delegación),
+// que nombra sin el click de la persona, o un comando que no dice en una línea que la sesión ordena y que las firmas
+// siguen yendo a la persona. Y con otra coordinadora confirmada en pie, una designación que no la puede reemplazar.
+test('DesignateRelay_NoProfile_DesignatesWithoutConfirmation (T27)', (t) => {
+  const lab = laboratorio(t, { perfil: null });
+  const r = lab.correr(['designate-relay']);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.strictEqual(lab.pidio().firma, 'designation-set', 'nombrar sigue pidiendo el click de la persona');
+  const filas = designaciones(lab);
+  assert.deepStrictEqual(filas.map((g) => g.name), ['relay-designation'], 'designación sí, confirmación no');
+  const [d] = filas;
+  assert.deepStrictEqual({ sesion: d.sesion, rol: d.rol, via: d.via, cita: d.cita }, { sesion: SES, rol: cw.ROL_DE_FABRICA, via: 'click', cita: undefined });
+  assert.strictEqual(lab.vigente().sesion, SES, 'ordena la máquina');
+  assert.strictEqual(cw.designacionConfirmada({ dir: lab.estado }), null, 'sin confirmación no firma por nadie');
+  const linea = r.stderr.split('\n').filter((l) => l.includes(SES) && /ordena/.test(l));
+  assert.strictEqual(linea.length, 1, r.stderr);
+  assert.match(linea[0], /firmas siguen yendo a la (ventana de la )?persona/);
+  assert.doesNotMatch(r.stderr, /dueño/);
+  // con otra confirmada en pie, la designación sin perfil no se podría confirmar: se niega antes del cuadro, sin anotar
+  const enPie = laboratorio(t, { perfil: null });
+  otraConfirmada(enPie);
+  const antes = designaciones(enPie).length;
+  const n = enPie.correr(['designate-relay']);
+  assert.strictEqual(n.status, 1, `${n.stdout}${n.stderr}`);
+  assert.strictEqual(enPie.pidio(), null, 'no pidió la firma');
+  assert.match(n.stderr, /withdraw-relay/);
+  assert.strictEqual(designaciones(enPie).length, antes, 'no escribió');
+  assert.strictEqual(enPie.vigente().sesion, OTRA);
+  // el perfil se va mientras el cuadro espera: no se confirma con el rol que ya no está, ni se nombra
+  const sale = laboratorio(t);
+  const s = sale.correr(['designate-relay'], { perfilDurante: '' });
+  assert.strictEqual(s.status, 1, `${s.stdout}${s.stderr}`);
+  assert.match(s.stderr, /el perfil del equipo cambió mientras se esperaba la firma/);
+  assert.deepStrictEqual(designaciones(sale), []);
 });
 
 // La retirada atada por la misma función que la confirmación (también en delegated-signing-confirm.test.js, T6 y T8).
