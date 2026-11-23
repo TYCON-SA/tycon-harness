@@ -25,7 +25,7 @@ set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HOOK="$AQUI/scripts/hooks/prod-access-guard.js"
 INDICE="$AQUI/scripts/production/production-index.js"
-GUIA="$AQUI/guides/produccion-con-permiso.md"
+GUIA="$AQUI/guides/production-with-permission.md"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fallos=0; pasaron=0
 ok(){ echo "✅ prod-guard: $1"; pasaron=$((pasaron+1)); }
@@ -916,7 +916,7 @@ pasa  "6.1.1 T9 HeredocAArchivo_Llavero_Pasa" "cat > notas.md <<'EOF'
 La contraseña vive en el Llavero: security find-generic-password -s tycon-prod-acme -w
 EOF"
 t10_falta=""
-grep -q "Lo que el comando \*\*sólo escribe\*\* a un archivo y no corre" "$AQUI/guides/produccion-con-permiso.md" 2>/dev/null || t10_falta="$t10_falta la guía;"
+grep -q "Lo que el comando \*\*sólo escribe\*\* a un archivo y no corre" "$AQUI/guides/production-with-permission.md" 2>/dev/null || t10_falta="$t10_falta la guía;"
 grep -q "El contenido de un archivo que el comando escribe y no corre no se juzga" "$AQUI/guides/maintaining/piezas-en-detalle.md" 2>/dev/null || t10_falta="$t10_falta el detalle de la pieza;"
 if [ -z "$t10_falta" ]; then ok "6.1.1 T10 Guide_DeclaresFileContentIsNotJudged"
 else no "6.1.1 T10 Guide_DeclaresFileContentIsNotJudged — no lo dice:$t10_falta"; fi
