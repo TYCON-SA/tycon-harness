@@ -3465,9 +3465,11 @@ function namedSession(opts, w) {
   // que anotó la sesión, porque dos nombres que empiezan igual quedan iguales en la lista
   const listed = listedName(name);
   const found = [];
-  // por su id: la sesión de ese id, sin mirar nombres
-  if (sessions.has(name)) found.push([name, sessions.get(name)]);
-  else for (const [sid, s] of sessions.entries()) {
+  // por su id: la sesión de ese id; si otra sesión se llama así, es ambiguo y no se toca ninguna
+  if (sessions.has(name)) {
+    if ([...sessions.entries()].some(([sid, s]) => sid !== name && s.name === listed)) return { error: `Hay más de una sesión «${name}» (un id y un nombre): ${nada}` };
+    found.push([name, sessions.get(name)]);
+  } else for (const [sid, s] of sessions.entries()) {
     if (s.name !== listed) continue;
     if (listed === name) { found.push([sid, s]); continue; }
     const full = fullSessionName(home, sid, opts);

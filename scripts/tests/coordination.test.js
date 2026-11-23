@@ -1478,6 +1478,12 @@ test('Fila158_CloseStop_NombreConEspaciosOElId: el nombre exacto de la sesión, 
   for (const malo of ['dos\nlineas', '', '   ']) assert.match(stopIt(u, malo).message, /va con --name/);
   // un nombre que no es de ninguna sesión sigue sin tocar nada
   assert.match(closeIt(u, 'Nadie se llama así').message, /No encuentro la sesión «Nadie se llama así»/);
+  // el id de una sesión que es el nombre de otra: ambiguo, no se toca ninguna
+  const v = closeLab();
+  session(v, 'sid-victima', 'Victima', { cwd: v.repo, kind: 'bg', jobId: 'job-victima', startedAt: 1000 });
+  session(v, 'sid-otra', 'sid-victima', { cwd: v.repo, kind: 'bg', jobId: 'job-otra', startedAt: 1000 });
+  assert.match(closeIt(v, 'sid-victima').message, /Hay más de una sesión «sid-victima»/);
+  assert.deepStrictEqual(closed(v), [], 'no cerró ninguna');
 });
 
 test('T7 Stop_PorNombre_ParaConElId @story-8.284 @ac-14: para con el id que anotó la sesión, sin mirar si quedó limpia y sin borrar', () => {
