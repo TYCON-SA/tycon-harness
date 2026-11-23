@@ -234,6 +234,19 @@ Configuration tab, "The sessions on each machine"), and each machine can change 
 can take depends on the machine. With no value anywhere, the cap is 3. `coordination.js status` shows who is working,
 who is waiting and why, and the cap with where it comes from.
 
+**The second cap: what is waiting for the person's review.** The first cap measures what the machine can take; this one,
+what a person can review. It counts four things, only reading: the signatures waiting for the person (not the delegated
+ones), the runs and shortcut paths finished without closing, the folders with uncommitted changes and no session (except
+the test copies of a background job, under `~/.claude/jobs/`) and the pull requests stuck for an hour or more (not a
+draft, unless it has conflicts). A live session waiting for the person does not add on its own: it is already in one of
+those. The cap is `coordination.max_awaiting_review`, from 1 to 50, in the same order as the others; with no value
+anywhere, 8. It comes in **warning mode**: with the review load at the cap, `open` and the background-session brake still
+open, say so and leave a `review-cap` line in `gates.log`, so moving to a brake is decided with numbers; moving to a brake
+is a commit that changes a constant, no variable changes it. What could not be read (because of the 4 s time limit, or a
+broken source) does not add up and does not stop anything. The brake that does not leave the machine empty does not push
+to open with the review full. The snapshot each session start leaves is shown by `status`, `/wip` and the coordinator's
+notice, with its age; deciding counts again, never from the snapshot.
+
 ### How many stories at once, who launches the heavy work and when the owner is written to
 
 Four rules for the coordinator, for any organization:
@@ -1082,6 +1095,7 @@ They come from a whole day in which the coordinator worked with the owner away. 
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
 | No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, on reaching the cap or a change in the count, so does the coordinator's notice. |
+| Do not open more when what waits for the person's review reaches its cap | aviso | `open` and the background-session brake still open, say so and log the `review-cap` line; what was not measured does not stop anything. It becomes a brake with a commit, when the lines justify it. |
 | With a long suite queue, no sessions are opened to program | nadie | Which work needs the suite is a judgment call; `status` shows who is waiting for the turn. |
 | One full suite at a time | freno | The suite runner and the whole portable run do not start with the turn held by another live process, and they say who holds it. A suite someone runs another way is not seen. |
 | Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. Nothing stops launching the pass without asking the gate, and a quick fix's pass is not noted as in flight. After an hour, it only warns. |
