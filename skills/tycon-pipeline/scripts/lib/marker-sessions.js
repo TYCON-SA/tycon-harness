@@ -293,7 +293,11 @@ function cmdSalidaPerdida(modo, sesion) {
     writeMarker({ ...m, ...(p.pasos.length ? { restorePendiente: p } : {}) });
   };
   if (aMedias) {
-    terminar(require('./restore-steps.js').correrRestore({ pendiente: readMarker().restorePendiente, pasos: pasosDelRestore, escribirMarcador: guardarPendiente(null) }), apertura.story);
+    // la herencia del plan se calculó en la primera vuelta y viaja con lo pendiente: el renglón va cuando termina
+    const pend = readMarker().restorePendiente;
+    const hecho = require('./restore-steps.js').correrRestore({ pendiente: pend, pasos: pasosDelRestore, escribirMarcador: guardarPendiente(null) });
+    if (hecho.ok && pend && pend.herencia) anotarHerencia({ story: pend.story, desde: sesion, ...pend.herencia, via: 'restore' });
+    terminar(hecho, apertura.story);
     return;
   }
   // restore: el marcador vuelve con lo que dice la copia de la apertura, en la sesión que la pide
@@ -318,10 +322,10 @@ function cmdSalidaPerdida(modo, sesion) {
     ...(sigue || guardada ? {} : { startedAt: nowIso(), stepScheme: STEPS_LIB.SCHEME, stepsCompleted: [], stepsPending: STEPS_LIB.STEPS.filter((s) => !s.flag).map((s) => s.id) }),
   };
   // lo que vuelve de la podada es de otra sesión: su aprobación del plan vale sólo con el mismo plan, como al adoptar. El
-  // renglón va cuando el restore terminó: si se corta a mitad, repetirlo lo deja
+  // renglón va cuando el restore terminó: si se corta a mitad, la herencia queda con lo pendiente y repetirlo lo deja
   const herencia = guardada ? heredarElPlan(nuevo) : null;
   // el previo se guarda con sus datos: el marcador nuevo pisa el archivo del que se leyó
-  const pendiente = { sesion, story: String(base.story), ts: apertura.ts, antes: !!apertura.antes, pasos: [
+  const pendiente = { sesion, story: String(base.story), ts: apertura.ts, antes: !!apertura.antes, ...(herencia ? { herencia } : {}), pasos: [
     { que: 'apertura', sesion, runDir: base.runDir, story: String(base.story) },
     ...(reemplaza ? [{ que: 'reemplazada', story: String(base.story), previo: { storyId: previo.storyId, storyPath: previo.storyPath || null, repoPath: previo.repoPath || null, runDir: previo.runDir || null, sessionId: previo.sessionId || estado.SID } }] : []),
     { que: 'abrir', story: String(base.story), storyPath: base.storyPath, repo: base.repo, runDir: base.runDir },
@@ -335,12 +339,14 @@ function cmdSalidaPerdida(modo, sesion) {
 /**
  * Una corrida que pasa a esta sesión (`adopt-session`, o `restore` de un marcador podado) trae la aprobación del plan
  * sólo si el plan es el mismo que se aprobó. Con el plan cambiado, o sin poder compararlo, la aprobación se borra y
- * «Aprobar el plan» vuelve a pendiente, en los dos esquemas de pasos. Muta `m` y devuelve `{ hereda, huella, herencia }`.
+ * «Aprobar el plan» vuelve a pendiente, en los dos esquemas de pasos. Muta `m` y devuelve `{ hereda, huellaPlan, herencia }`:
+ * `huellaPlan` es la huella del plan sólo si trajo su aprobación.
  */
 function heredarElPlan(m) {
   const huella = huellaDelPlan(m);
   const ap = m.planApproval;
-  if (ap && (!ap.planSha || !huella.sha || ap.planSha !== huella.sha)) {
+  if (!ap) return { hereda: false, huellaPlan: null, herencia: 'sin plan aprobado' };
+  if (!ap.planSha || !huella.sha || ap.planSha !== huella.sha) {
     require('./batch-scope.js').volverAlPlan(m);
     // en el esquema viejo de pasos `volverAlPlan` no toca nada: el paso del plan es el 3
     if (STEPS_LIB.schemeOf(m) === 1) {
@@ -351,15 +357,15 @@ function heredarElPlan(m) {
     const herencia = !huella.sha ? `no pude leer el plan (${huella.motivo}): «Aprobar el plan» vuelve a pendiente`
       : !ap.planSha ? 'la aprobación no guardó la huella del plan: «Aprobar el plan» vuelve a pendiente'
         : 'el plan cambió desde que se aprobó: «Aprobar el plan» vuelve a pendiente';
-    return { hereda: false, huella, herencia };
+    return { hereda: false, huellaPlan: null, herencia };
   }
-  return { hereda: !!huella.sha, huella, herencia: ap ? 'el plan es el que se aprobó: la aprobación sigue' : 'sin plan aprobado' };
+  return { hereda: true, huellaPlan: huella.sha, herencia: 'el plan es el que se aprobó: la aprobación sigue' };
 }
 
 // El renglón de la corrida que cambió de sesión, en gates.log: de cuál vino, por qué camino (`via`) y si trajo la
 // aprobación del plan, con su huella sólo si la trajo.
-function anotarHerencia({ story, desde, hereda, huella, herencia, via }) {
-  appendLog('gates.log', { name: 'adopt-session', status: 'ok', via, story: story || null, desde, a: estado.SID, huellaPlan: hereda ? huella.sha : null, herencia });
+function anotarHerencia({ story, desde, hereda, huellaPlan, herencia, via }) {
+  appendLog('gates.log', { name: 'adopt-session', status: 'ok', via, story: story || null, desde, a: estado.SID, huellaPlan: hereda ? huellaPlan : null, herencia });
   process.stderr.write(`[marker] ${via}: ${herencia}.\n`);
 }
 

@@ -462,18 +462,53 @@ test('T42 Restore_PlanCambiado_NoQuedaAprobado: la aprobación de la podada vuel
   }
 });
 
+// T42b Restore_CortadoYRepetido_DejaElRenglon
+// 🔴 Falla con: anotar la herencia sólo en el restore que termina de una vez. Uno que se corta y se repite entra por la
+// rama de lo pendiente: con la herencia perdida, la aprobación vuelve sin dejar su renglón.
+test('T42b Restore_CortadoYRepetido_DejaElRenglon: la herencia viaja con lo pendiente y el renglón queda al terminar', () => {
+  const sha = (t) => require('crypto').createHash('sha256').update(t).digest('hex');
+  for (const caso of ['igual', 'cambia']) {
+    const E = entorno();
+    E.arrancar('s-podada', 30);
+    const m = E.leer('s-podada');
+    const plan = '# Plan\n\n1. Cambiar src/a.js.\n';
+    fs.writeFileSync(path.join(m.runDir, 'step-02-bmad-plan.md'), plan);
+    m.planApproval = { mode: 'user', text: 'ok', at: hace(30), planSha: sha(plan) };
+    fs.writeFileSync(E.activo('s-podada'), JSON.stringify(m));
+    assert.strictEqual(E.correr('marker.js', ['list-all'], 's-otra').status, 0);
+    if (caso === 'cambia') fs.appendFileSync(path.join(m.runDir, 'step-02-bmad-plan.md'), '2. Un paso nuevo.\n');
+    const renglones = () => (fs.existsSync(path.join(E.estado, 'gates.log')) ? fs.readFileSync(path.join(E.estado, 'gates.log'), 'utf8') : '')
+      .split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((j) => j.name === 'adopt-session' && j.via === 'restore');
+    assert.notStrictEqual(E.correr('marker.js', ['restore', 's-podada'], 's-nueva', conFalla('apertura')).status, 0, 'se corta');
+    assert.strictEqual(renglones().length, 0, 'cortado, todavía no deja el renglón');
+    const r = E.correr('marker.js', ['restore', 's-podada'], 's-nueva', conVentana({}));
+    assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+    const hechos = renglones();
+    assert.strictEqual(hechos.length, 1, `${caso}: repetido, deja un renglón`);
+    assert.strictEqual(hechos[0].desde, 's-podada');
+    assert.strictEqual(hechos[0].huellaPlan, caso === 'igual' ? sha(plan) : null);
+    assert.strictEqual(!!E.leer('s-nueva').planApproval, caso === 'igual');
+  }
+});
+
 // T43 AdoptSession_PlanCambiado_NoQuedaAprobado
 // 🔴 Falla con: adoptar copiando el marcador entero, con la aprobación del plan, sin comparar la huella. Un plan cambiado
 // después de aprobarlo pasaría aprobado a la sesión que adopta.
 test('T43 AdoptSession_PlanCambiado_NoQuedaAprobado: la aprobación viaja sólo con el mismo plan, y queda el renglón de la herencia', () => {
   const sha = (t) => require('crypto').createHash('sha256').update(t).digest('hex');
-  for (const caso of ['igual', 'cambia', 'sin-huella']) {
+  for (const caso of ['igual', 'cambia', 'sin-huella', 'sin-aprobacion']) {
     const E = entorno();
     E.arrancar('s-espera', 0);
     const m = E.leer('s-espera');
     const plan = '# Plan\n\n1. Cambiar src/a.js.\n';
     fs.writeFileSync(path.join(m.runDir, 'step-02-bmad-plan.md'), plan);
     m.planApproval = { mode: 'user', text: 'ok', at: hace(1), ...(caso === 'sin-huella' ? {} : { planSha: sha(plan) }) };
+    // sin aprobación no viaja nada, y el renglón no anota una huella como si la hubiera traído
+    if (caso === 'sin-aprobacion') {
+      delete m.planApproval;
+      m.stepsCompleted = m.stepsCompleted.filter((s) => s !== 'approve-plan');
+      m.stepsPending = ['approve-plan', ...m.stepsPending];
+    }
     fs.writeFileSync(E.activo('s-espera'), JSON.stringify(m));
     if (caso === 'cambia') fs.appendFileSync(path.join(m.runDir, 'step-02-bmad-plan.md'), '2. Un paso nuevo, después de aprobado.\n');
     const r = E.correr('marker.js', ['adopt-session', 's-espera'], 's-nueva');
