@@ -76,5 +76,27 @@ TARDO=$((SECONDS - INICIO))
 case "$ERR" in *ESC-C3*) ok "con el lector lento, frena" ;; *) no "T15 SignGate_ReaderTable @story-8.308 @ac-15 · con el lector lento no frenó" ;; esac
 if [ "$TARDO" -lt 15 ]; then ok "el lector lento se corta en ${TARDO} s"; else no "T15 SignGate_ReaderTable @story-8.308 @ac-15 · el lector lento tardó ${TARDO} s"; fi
 
+# un `mktemp` que sin plantilla no puede crear, como en la corrida aislada de macOS: ahí la carpeta temporal del sistema
+# no se escribe y $TMPDIR sí. Lo que sólo lee sigue pasando, porque el freno deja la respuesta del lector en $TMPDIR
+mkdir -p "$RAIZ/sin-temporal-del-sistema" "$RAIZ/tmp"
+printf '#!/bin/sh\n[ "$#" -eq 0 ] && exit 1\nexec "%s" "$@"\n' "$(command -v mktemp)" > "$RAIZ/sin-temporal-del-sistema/mktemp"
+chmod +x "$RAIZ/sin-temporal-del-sistema/mktemp"
+PATH="$RAIZ/sin-temporal-del-sistema:$PATH" TMPDIR="$RAIZ/tmp" correr "$GUARD" "$RAIZ/sin-casa" "grep -n $LIB notas.txt"
+case "$ERR" in *ESC-C3*) no "sin la carpeta temporal del sistema, frenó lo que sólo lee" ;; *) ok "sin la carpeta temporal del sistema, lo que sólo lee pasa" ;; esac
+PATH="$RAIZ/sin-temporal-del-sistema:$PATH" TMPDIR="$RAIZ/tmp" correr "$GUARD" "$RAIZ/sin-casa" "node $LIB.js"
+case "$ERR" in *ESC-C3*) ok "sin la carpeta temporal del sistema, correrla frena" ;; *) no "sin la carpeta temporal del sistema, correrla no frenó" ;; esac
+# y al revés: un $TMPDIR que ya no existe (lo borró la limpieza de temporales) no frena lo que sólo lee
+TMPDIR="$RAIZ/no-existe" correr "$GUARD" "$RAIZ/sin-casa" "grep -n $LIB notas.txt"
+case "$ERR" in *ESC-C3*) no "con un TMPDIR que no existe, frenó lo que sólo lee" ;; *) ok "con un TMPDIR que no existe, lo que sólo lee pasa" ;; esac
+# lo mismo con un `mktemp` como el de Linux, que sin argumentos también usa $TMPDIR: en la Mac el real lo ignora
+mkdir -p "$RAIZ/mktemp-linux"
+printf '#!/bin/sh\nif [ "$#" -eq 0 ] && [ -n "${TMPDIR:-}" ]; then exec "%s" "$TMPDIR/tmp.XXXXXX"; fi\nexec "%s" "$@"\n' "$(command -v mktemp)" "$(command -v mktemp)" > "$RAIZ/mktemp-linux/mktemp"
+chmod +x "$RAIZ/mktemp-linux/mktemp"
+PATH="$RAIZ/mktemp-linux:$PATH" TMPDIR="$RAIZ/no-existe" correr "$GUARD" "$RAIZ/sin-casa" "grep -n $LIB notas.txt"
+case "$ERR" in *ESC-C3*) no "con el mktemp de Linux y un TMPDIR que no existe, frenó lo que sólo lee" ;; *) ok "con el mktemp de Linux y un TMPDIR que no existe, lo que sólo lee pasa" ;; esac
+# sin ninguna de las dos, frena: lo que no se leyó no pasa
+PATH="$RAIZ/sin-temporal-del-sistema:$PATH" TMPDIR="$RAIZ/no-existe" correr "$GUARD" "$RAIZ/sin-casa" "grep -n $LIB notas.txt"
+case "$ERR" in *ESC-C3*) ok "sin ninguna carpeta temporal, frena" ;; *) no "sin ninguna carpeta temporal, no frenó" ;; esac
+
 [ "$FALLAS" -eq 0 ] || { echo "❌ safety-guard-sign: $FALLAS falla(s)"; exit 1; }
 echo "✅ safety-guard-sign: todo verde"
