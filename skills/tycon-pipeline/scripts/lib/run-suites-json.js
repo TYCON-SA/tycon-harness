@@ -1025,10 +1025,11 @@ function main(argv, env = process.env) {
     };
     c.stdout.on('data', take);
     c.stderr.on('data', take);
-    // Pasado su tope, la suite se corta: SIGTERM a su grupo y, si no se cerró en TOPE_GRACIA_MS, SIGKILL. Si después de
-    // otra gracia la salida sigue abierta (un nieto que se fue del grupo la tiene), se suelta y la suite se da por
-    // terminada: el nieto queda, pero la corrida sigue.
+    // Pasado su tope, la suite se corta: SIGTERM a su grupo y, si no se cerró en la gracia, SIGKILL. Si después de otra
+    // gracia la salida sigue abierta (un nieto que se fue del grupo la tiene), se suelta y la suite se da por terminada:
+    // el nieto queda, pero la corrida sigue. La gracia es TOPE_GRACIA_MS, o la mitad del tope si es más corto.
     const tope = topeDeSuite(p.entrada.ruta, historial, env);
+    const gracia = tope.ms == null ? TOPE_GRACIA_MS : Math.min(TOPE_GRACIA_MS, Math.max(500, Math.floor(tope.ms / 2)));
     let vencida = false;
     let rematar = null;
     let soltar = null;
@@ -1043,8 +1044,8 @@ function main(argv, env = process.env) {
         soltar = setTimeout(() => {
           for (const s of [c.stdout, c.stderr]) { try { s.destroy(); } catch { /* ya cerrada */ } }
           done(null, null);
-        }, TOPE_GRACIA_MS);
-      }, TOPE_GRACIA_MS);
+        }, gracia);
+      }, gracia);
     }, tope.ms);
     let settled = false;
     const done = (status, spawnError) => {

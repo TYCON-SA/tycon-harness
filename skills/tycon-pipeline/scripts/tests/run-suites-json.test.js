@@ -1826,14 +1826,18 @@ test('TopeDeSuite_LaQuePasaSuTopeSeCortaConSuGrupoYCuentaRoja (fila 126 c)', () 
   ].join('\n'));
   f.escribir('arnes', 'tests/rapida.test.js', 'process.exit(0)');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-json-casa-'));
-  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), TYCON_SUITE_MAX_SECONDS: '2', TYCON_SUITE_RUNNER: 'test-gate' };
+  // el registro de tiempos, en un archivo propio: el de la carpeta de estado depende del entorno de quien corre la prueba
+  const tiempos = path.join(home, 'tiempos.jsonl');
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), TYCON_SUITE_MAX_SECONDS: '2', TYCON_SUITE_TIMES: tiempos };
   delete env.NODE_TEST_CONTEXT;
   const out = path.join(f.root, 'out.json');
+  // stable-data: el reloj mide cuánto tarda la corrida, que es lo que se prueba; ninguna fecha entra en el resultado
   const t0 = Date.now();
   const r = spawnSync(process.execPath, [RUNNER, f.repo, out, '--skills', f.skills], { encoding: 'utf8', env, timeout: 60000 });
   const ms = Date.now() - t0;
   assert.equal(r.status, 1, r.stdout + r.stderr);
-  assert.ok(ms < 40000, `no espera a las colgadas (${ms} ms)`);
+  // tope de 2 s, y la gracia con un tope tan corto es de 1 s: la fugada se suelta a los ~4 s
+  assert.ok(ms < 20000, `no espera a las colgadas (${ms} ms)`);
   const res = JSON.parse(fs.readFileSync(out, 'utf8'));
   assert.equal(res.verdes, 1, 'la rápida sigue verde');
   const fallas = new Map(res.fallas.map((x) => [path.basename(x.ruta), x]));
@@ -1854,9 +1858,8 @@ test('TopeDeSuite_LaQuePasaSuTopeSeCortaConSuGrupoYCuentaRoja (fila 126 c)', () 
   }
   assert.ok(!vivo, `el nieto ${pid} sigue vivo`);
   // el registro de tiempos anota la rápida y no las cortadas
-  const regs = fs.readdirSync(home, { recursive: true }).map(String).filter((x) => path.basename(x) === 'suite-times.jsonl');
-  assert.equal(regs.length, 1, 'el portón anota sus tiempos');
-  const anotadas = fs.readFileSync(path.join(home, regs[0]), 'utf8').trim().split('\n').flatMap((l) => JSON.parse(l).suites.map((s) => s.s));
+  assert.ok(fs.existsSync(tiempos), 'el corredor anota sus tiempos');
+  const anotadas = fs.readFileSync(tiempos, 'utf8').trim().split('\n').flatMap((l) => JSON.parse(l).suites.map((s) => s.s));
   assert.deepStrictEqual(anotadas, ['tests/rapida.test.js']);
   fs.rmSync(home, { recursive: true, force: true });
 });
