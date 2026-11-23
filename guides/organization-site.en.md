@@ -815,6 +815,12 @@ be, to copy it and open the request by hand.
   `marker.js withdraw-relay`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.
+  Then comes **who signs each commit in a run** (`approvals.local_commit`). "No one: the agent commits on its own" is
+  the default: the person approves the pull request, and the commit, which is local and can be undone, asks for nothing.
+  "The coordinator, before each commit" adds a second look: the agent does not commit without its ok to save
+  (`marker.js approve-save`), and a change after the ok needs another one. If the profile does not delegate the `save`
+  signature, the person gives it in the window. The site does not propose it to a layer that requires a harness version
+  that cannot read it yet.
   Below it is **who signs each thing**: one row for each signature in the catalog
   (`guides/firmas-del-arnes.md`), with three choices. "In the owner's window" is the default: the owner answers in the
   permission window; where the window does not reach, approves with a click in the options box or a written "aprobado";

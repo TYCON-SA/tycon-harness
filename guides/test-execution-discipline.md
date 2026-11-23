@@ -58,6 +58,14 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    para la CI del pedido. En el árbol armado del privado vale lo mismo, comparando cada repo: el privado y el público. Si
    además cambió el perfil del equipo, o el público salió de otro lado, corre lo de siempre.
 
+   *Una parte que no cambió conserva su verde*: una story que toca dos proyectos del mismo repo (el backend y el sitio)
+   corre cada uno por separado. Si una parte ya dio verde en esta story y rama, y no cambió nada de lo que la puede
+   afectar, no vuelve a correr. Lo que la puede afectar es la carpeta de la parte, lo común del repo, lo ignorado por git
+   (un `.env`, algo generado), el portón, las versiones de sus herramientas y las variables que cambian una prueba
+   (`lib/part-keep.js`). Nunca se conserva una parte de navegador, una que nombra una ruta de la otra parte o de fuera
+   del repo, ni un repo con workspaces. Para correrlas todas: `TYCON_TEST_GATE_ALL_PARTS=1`. El merge a main y la CI
+   corren todo.
+
    *La completa no corre en la máquina*: en un repo que acota el portón corren sólo las suites que leen lo tocado, y
    como mucho 60 (el tope de la máquina; el repo lo cambia con `test_gate.max_local_suites`). Si son más (se tocó un
    archivo de control o una pieza central que nombran cientos), corren las más cercanas al cambio: la suite tocada, la

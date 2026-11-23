@@ -650,6 +650,14 @@ juzga como siempre.
 Lo que **no** se frena, a propósito, porque es trabajo de todos los días: buscar texto (`grep`,
 `cat`, `echo`), preguntar si un cliente está instalado (`command -v sqlcmd`), listar servidores en
 Azure sin nombrar ninguno, un `git merge` de rutina, o correr un guion del arnés que toca `.tycon/`.
+Tampoco un `for` que nombra la puerta entre sus palabras y sólo lee:
+`for f in prod-access-guard tycon-prod-sql; do grep -rl "$f" scripts; done` pasa. Para pasar, todo el comando,
+también lo de adentro de cada `$( … )`, tiene que ser de lectores que no ejecutan lo que reciben (`grep`, `cat`,
+`printf`, `wc`, `head`…), escritos sin ruta. Las palabras del `for` tienen que ser simples, y fuera de comillas
+simples no puede haber paréntesis, corchetes ni llaves (fuera de los `$( … )`): zsh corre código con `*(e:…:)` y
+`${(e)…}`. La variable del `for` es corta y en minúsculas (hasta cuatro caracteres, y no `path` ni `argv`). Tampoco
+puede haber comillas invertidas, asignaciones, opciones de `printf` ni redirecciones que escriben (salvo a
+`/dev/null`). Con `"$f"`, `| sh`, `xargs`, `find`, `rg` o `sort` adentro, frena como antes.
 Medido sobre 4.000 comandos reales del dev: **0 frenados que no nombran bases**. El medidor
 (`node scripts/production/measure-guard.js`) cuenta aparte lo que **no pudo** medir —tiempo agotado o
 freno caído— y sale ≠ 0 si hay falsos positivos o algo sin medir: «no lo pude medir» no es «pasó

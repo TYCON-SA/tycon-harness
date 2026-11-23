@@ -21,11 +21,11 @@
  * (es un extra), y una que ya corre no se corta si la memoria baja después. Con dos corriendo, la tercera espera. Lo que
  * decide es cuántas corren, no qué archivo queda libre, y quien pierde la publicación de un lugar vuelve a contar.
  *
- *   take --what <qué corre> [--process <pid>]   0 = turno tomado (o no hay coordinadora) · 77 = no hay lugar, y dice por qué
- *   release [--process <pid>]                   suelta el lugar de ese proceso; el de otro no lo toca
+ *   take --what <qué corre> --process <pid>     0 = turno tomado (o no hay coordinadora) · 77 = no hay lugar, y dice por qué
+ *   release --process <pid>                     suelta el lugar de ese proceso; el de otro no lo toca
  *   release --reserve                           suelta la reserva (la coordinadora, o la sesión que la puso)
  *   grant --to <sesión>                         el «arrancá» de la coordinadora para una sesión de la fila (2 = no se puede)
- *   reserve --for "<qué>"                       la coordinadora reserva el turno para revisores o un pase (77 = ya corre una)
+ *   reserve --for "<qué>" [--to <sesión>]       la coordinadora reserva el turno para revisores o un pase, de una sesión (77 = ya corre una)
  *   holder [--json]                         la ejecución grande más vieja que corre, o nadie
  *   holders [--json]                        las que corren, de la más vieja a la más nueva
  *
@@ -265,7 +265,9 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
       message: `Hay un pase adversarial en vuelo en esta máquina: pase adversarial de la ${oneLine(pass.storyId) || 'sin story'} (${oneLine(pass.session)}, desde las ${hhmmIso(pass.since)}). Va una tarea pesada por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que su sesión anote el resultado, o pedile turno a la ${role}.` });
   }
   const reserved = reserveInForce({ home, now });
-  if (reserved && reserved.sid !== sid) {
+  // la reserva con `--to` es de esa sesión: la toma ella como la toma la coordinadora, sin «arrancá» aparte
+  const mineReserve = Boolean(reserved && sid && reserved.to === sid);
+  if (reserved && reserved.sid !== sid && !mineReserve) {
     return refuse({ ok: false, taken: false, note, holder: { kind: 'reserve', ...reserved },
       message: `El turno de tarea pesada está reservado por la ${role} para «${oneLine(reserved.what)}» (${oneLine(reserved.session) || 'su sesión'}, desde las ${hhmm(reserved.at)}): esperá que lo suelte, o pedile turno a la ${role} (guides/coordination.md, «Lo pesado, con turno»).` });
   }
@@ -273,9 +275,9 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
   const grant = grantInForce({ home, now });
   const mineGrant = Boolean(grant && sid && grant.to === sid);
   const waited = lined ? readWait(home, sid, now) : null;
-  const notYours = waited && !mineGrant
+  const notYours = waited && !mineGrant && !mineReserve
     ? `Esperá el «arrancá» de la ${role}: anotaste que esperabas turno a las ${hhmm(waited.at)}, y con coordinadora el turno libre no se toma solo. Avisale que estás lista; ella lo da con heavy-turn.js grant --to ${sid}.`
-    : !waited && grant && !mineGrant
+    : !waited && grant && !mineGrant && !mineReserve
       ? `La ${role} le dio el «arrancá» a ${sessionName(home, grant.to)} a las ${hhmm(grant.at)}: el turno es suyo hasta que lo tome o venza (${GRANT_MS / 60000} min). Esperá, o pedile turno a la ${role}.`
       : null;
   const files = slotFiles(home);
@@ -441,15 +443,18 @@ function grant({ home = require('os').homedir(), env = process.env, arnes, to, n
 }
 
 /** La reserva del turno para «what» (revisores, un pase): `{ ok, code, message }`; 77 si corre una ejecución grande. */
-function reserve({ home = require('os').homedir(), env = process.env, arnes, what, now = Date.now() } = {}) {
+function reserve({ home = require('os').homedir(), env = process.env, arnes, what, to, now = Date.now() } = {}) {
   const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
   const c = coordinatorSession({ home, env, arnes, sid });
   if (c.why) return { ok: false, code: 2, message: c.why };
   if (!oneLine(what)) return { ok: false, code: 2, message: 'falta --for "<qué>"' };
+  // `--to <sesión>`: la sesión que lanza lo reservado (su pase en modo ágil; agile-pass-turn.js la reconoce por esto)
+  const para = to == null ? null : resolveSession(home, to);
+  if (para && para.error) return { ok: false, code: 2, message: para.error };
   const running = holders({ home, now });
   if (running.length) return { ok: false, code: BUSY_EXIT, message: `No reservo: ya corre ${running.map(describe).join(' y ')}. La reserva no la pisa: esperá que termine.` };
-  writeWhole(reserveFile(home), { sid, session: sessionName(home, sid), what: oneLine(what), at: now });
-  return { ok: true, code: 0, message: `turno reservado para «${oneLine(what)}» hasta release --reserve, o ${RESERVE_MS / 60000} min` };
+  writeWhole(reserveFile(home), { sid, session: sessionName(home, sid), what: oneLine(what), at: now, ...(para ? { to: para.sid, toSession: sessionName(home, para.sid) } : {}) });
+  return { ok: true, code: 0, message: `turno reservado para «${oneLine(what)}»${para ? ` de ${sessionName(home, para.sid)}` : ''} hasta release --reserve, o ${RESERVE_MS / 60000} min` };
 }
 
 /** Suelta la reserva; la suelta la coordinadora o la sesión que la puso. */
@@ -660,6 +665,16 @@ function release({ home = require('os').homedir(), pid = process.pid } = {}) {
 function main(argv) {
   const [cmd, ...rest] = argv;
   const val = (k) => { const i = rest.indexOf(k); return i >= 0 ? rest[i + 1] : undefined; };
+  // `take` y `release` piden el proceso que corre lo pesado: sin él, el lugar quedaría atado a la consola de este comando,
+  // que termina enseguida, y el turno se soltaría solo sin que nadie se entere (o `release` no soltaría nada)
+  if (cmd === 'take' && val('--process') === undefined) {
+    process.stderr.write('heavy-turn.js take: falta --process <pid>, el proceso que corre lo pesado (en un guion, --process $$). Sin él, el turno quedaría atado a la consola de este comando, que termina enseguida, y se soltaría solo.\n');
+    return 2;
+  }
+  if (cmd === 'release' && !rest.includes('--reserve') && val('--process') === undefined) {
+    process.stderr.write('heavy-turn.js release: falta --process <pid>, el proceso que tomó el turno (el mismo de su take). Sin él no se suelta nada.\n');
+    return 2;
+  }
   const pid = val('--process') !== undefined ? Number(val('--process')) : process.ppid;
   if ((cmd === 'take' || cmd === 'release') && !(Number.isInteger(pid) && pid > 0)) { process.stderr.write('heavy-turn.js: --process va con un número de proceso\n'); return 2; }
   if (cmd === 'take') {
@@ -674,7 +689,9 @@ function main(argv) {
   }
   if (cmd === 'release') { release({ pid }); return 0; }
   if (cmd === 'grant' || cmd === 'reserve') {
-    const r = cmd === 'grant' ? grant({ to: val('--to') }) : reserve({ what: val('--for') });
+    // `--to` sin su sesión (al final, o seguido de otra opción) no es «sin --to»: falla en vez de reservar sin sesión
+    const toOf = () => (rest.includes('--to') ? (/^--/.test(val('--to') || '--') ? '' : val('--to')) : undefined);
+    const r = cmd === 'grant' ? grant({ to: val('--to') }) : reserve({ what: val('--for'), to: toOf() });
     (r.ok ? process.stdout : process.stderr).write(`${r.message}\n`);
     return r.code;
   }
@@ -688,7 +705,7 @@ function main(argv) {
     process.stdout.write(rest.includes('--json') ? `${JSON.stringify(all)}\n` : `${all.length ? all.map(describe).join('\n') : 'nadie'}\n`);
     return 0;
   }
-  process.stderr.write('uso: heavy-turn.js take --what <qué> [--process <pid>] | release [--process <pid>] | release --reserve | grant --to <sesión> | reserve --for "<qué>" | holder [--json] | holders [--json]\n');
+  process.stderr.write('uso: heavy-turn.js take --what <qué> --process <pid> | release --process <pid> | release --reserve | grant --to <sesión> | reserve --for "<qué>" | holder [--json] | holders [--json]\n');
   return 2;
 }
 

@@ -150,9 +150,10 @@ está en modo plan (la sesión nueva quedaría esperando que alguien apruebe su 
 la coordinadora, que lo anota con cada mensaje de la persona. **Límite conocido:** si alguien le cambia el modo con
 Shift+Tab y no le manda un mensaje después, `open` copia el modo anterior. Una sesión abierta a mano, o antes de este
 cambio, que se trabó así, la coordinadora la para y la relanza:
-`claude --bg --resume <id> -n <nombre> --permission-mode <su modo> --remote-control <nombre> -- <encargo>`. Para
+`claude --bg --resume <id> -n <nombre> --permission-mode <su modo> --remote-control <nombre> -- <encargo>` (relanzada así no
+queda anotada como abierta por la coordinadora). Para
 parar una sesión de fondo va `coordination.js stop --name <nombre>`: busca el id de fondo que anotó la sesión y corre
-`claude stop` con él. No borra nada, y la sesión se retoma con `claude respawn <id>`. A mano, `claude stop <id>` y
+`claude stop` con él. No borra nada, y la sesión se retoma con `coordination.js relaunch --id <id>`. A mano, `claude stop <id>` y
 `claude rm <id>` piden el id que muestra `claude agents`: ni el nombre ni el ref que muestra ListAgents (los seis
 caracteres entre corchetes) sirven, y contestan que no la encuentran (medido el 2026-11-01 y el 2026-11-15).
 
@@ -189,7 +190,9 @@ Lo que no puede mirar (una carpeta que no anotó o que ya no está, git que no c
 **Una sesión interactiva no se cierra.** La verifica igual y avisa: esa pestaña la cierra la persona.
 
 **Parar no es cerrar.** `coordination.js stop --name <nombre>` para una sesión de fondo sin mirar si quedó limpia y sin
-borrarla; la misma regla de quién puede. Se retoma con `claude respawn <id>`.
+borrarla; la misma regla de quién puede. Se retoma con `coordination.js relaunch --id <id>`: corre `claude respawn`, espera a
+verla viva y la anota como abierta por la coordinadora, como `open`. Relanzada a mano con `claude respawn <id>` no queda
+anotada, y sus firmas de rutina caen en la lista del dueño.
 
 **Límites.** Mira la carpeta donde está la sesión ahora: otro worktree que haya dejado no lo ve, ni lo guardado con `git
 stash`. Una rama borrada sin entrar ya no se ve. Una rama que entró aplastada en un solo commit sale como que no entró. Un
@@ -354,7 +357,9 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   `gates_running` (sesión, suites y hora de cada portón), y la línea que dice quién tiene el lugar. Al lado de un solo
   portón de hasta 40 suites, con memoria libre, el pase se lanza. El pase de una sesión cerrada no cuenta.
 - **Cómo se libera cada uno.** La ejecución grande suelta su turno al terminar; el de un proceso muerto, o de más de tres
-  horas, se libera solo. El pase no tiene archivo de turno: ocupa la máquina desde que se lanza hasta que su sesión anota
+  horas, se libera solo. Por eso `heavy-turn.js take` pide `--process <pid>`, el proceso que corre lo pesado (en un
+  guion, `$$`): sin él, el turno quedaría atado a la consola del comando, que termina enseguida, y se soltaría solo sin
+  que nadie se entere. `release` pide el mismo. El pase no tiene archivo de turno: ocupa la máquina desde que se lanza hasta que su sesión anota
   el resultado (`marker.js mark-adversarial-result`, con cualquier veredicto, también `no-medido`) o el salteo
   (`marker.js mark-adversarial-skipped`). Si se relanza, vuelve a ocuparla. Una sesión que se cerró lo libera, y pasada una
   hora ya no frena, porque puede estar terminado o colgado, y se dice.
@@ -372,7 +377,20 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   que tome el turno. Antes de lanzarlos, `heavy-turn.js reserve --for "<qué>"` toma el turno a nombre de eso: un portón
   que lo pide recibe el «esperá» con el nombre de la reserva. Con una ejecución grande corriendo no reserva (sale 77 y dice
   quién la tiene). Se suelta con `heavy-turn.js release --reserve`, vence a los 90 minutos (una tanda de revisores o un
-  pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10.
+  pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10. Con
+  `--to <sesión>`, la reserva es de esa sesión: lanza lo reservado (su pase sin el pipeline, el punto que sigue) y su
+  portón toma el turno sin otro «arrancá», aunque estuviera en la fila. Es para una cosa por vez: si su portón ya corre,
+  el gancho del pase lo avisa; con el pase en vuelo, nada frena a su portón, así que la sesión no lo corre hasta que el
+  pase termine. Las demás sesiones esperan hasta que se suelte.
+- **El pase sin el pipeline también pide turno.** Una sesión sin una ejecución del pipeline (la que abrió la coordinadora para
+  un arreglo, o una suelta) lanza su pase con la herramienta Agent o Workflow, sin marcador que lo cuente. El 23/11 a las
+  05:45, con varios de esos a la vez, la máquina se quedó sin procesos. El gancho `agile-pass-turn.js` mira cada
+  lanzamiento: todo Workflow (el abanico de agentes que llena la máquina) y un Agent cuya descripción o tipo dice
+  adversarial (los revisores chicos y las búsquedas no; el pedido no se mira). Si la sesión no tiene el «arrancá» (`grant --to`) ni una reserva para ella
+  (`reserve --for "<qué>" --to <sesión>`), o si con esa reserva ya corre su portón, avisa a la sesión y a la persona con
+  quién tiene el turno, y lo anota en `gates.log` (`agile-pass-turn`). Hoy sólo avisa: si pasa a frenar lo decide el dueño con esa medición (`MODO` en el
+  gancho). No mira sin coordinadora, en la coordinadora misma ni en una sesión del pipeline. `TYCON_AGILE_PASS_TURN=0` lo
+  apaga.
 
 `coordination.js status` muestra un solo renglón, «Turno de tarea pesada», con quién lo tiene y qué es; con una ejecución
 grande, si el segundo turno está libre o cerrado, con la memoria y el piso; con dos, las dos. `heavy-turn.js holders` las
@@ -389,7 +407,7 @@ que no están trabajando, primero las que esperan algo, que son las que se pierd
 cerrá las quietas que no esperan nada. Si no se puede leer (otra plataforma, un comando que falla) dice «no medida» y
 no supone nada. Sólo la lee el comando `status`: el aviso de cada turno y el freno del cierre no la miden. Una sesión
 que Claude Code ya cerró sale en «Cerradas por Claude Code» con lo que esperaba (su nota de `marker.js doing
---waiting-for`) y desde cuándo, arriba de las demás, con su `claude respawn`.
+--waiting-for`) y desde cuándo, arriba de las demás, con su `coordination.js relaunch --id`.
 
 ## Las revisiones automáticas: qué hace la coordinadora
 
@@ -686,7 +704,7 @@ click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la 
   sesión o con `claude attach`.
 - «<sesión> siguió: el permiso ya no está abierto» o «<sesión> se cerró con un permiso abierto»: se le avisa al dueño si
   se lo había pedido.
-- «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: claude respawn <id>»:
+- «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>»:
   Claude Code cierra solo las sesiones de fondo quietas cuando la máquina se queda sin memoria, y no se puede evitar
   desde el arnés. La coordinadora decide si la levanta: levantarla vuelve a ocupar memoria y cuenta para el tope.
 
@@ -1023,7 +1041,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
   libre arriba del piso; el aviso lo dijo y se ignoró. Esta regla la mide un freno (arriba, «El tope»).
 - **Con la fila de la suite larga no se abre una sesión para programar.** Si más de dos sesiones esperan turno de suite o
   portón, una sesión nueva se abre sólo para trabajo que no pide suite: escribir una historia, revisar o investigar. Las
-  que sólo esperan su turno se pueden cerrar y retomar con su misma conversación cuando les toca (`claude respawn <id>`),
+  que sólo esperan su turno se pueden cerrar y retomar con su misma conversación cuando les toca (`coordination.js relaunch --id <id>`),
   con el orden anotado. Por qué: la suite corre de a una; una sesión más no adelanta nada, alarga la fila y ocupa memoria.
 - **Un rojo no se deja, aunque no sea del cambio propio.** Se avisa y se arregla antes de seguir. Por qué: los rojos
   tolerados tapan a los nuevos.

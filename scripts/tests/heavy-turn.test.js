@@ -1116,3 +1116,93 @@ test('Turno_ReservaDeLaCoordinadora_FrenaAlPorton (T11) @story-8.274 @ac-13 @ac-
   assert.strictEqual(cli(COORD, 'grant', '--to', 's-uma').status, 0);
   assert.strictEqual(cli('s-uma', 'grant', '--to', 's-uma').status, 2);
 });
+
+// 🔴 mutación: guardar la reserva sin la sesión que lanza lo reservado (agile-pass-turn.js no la reconoce), o aceptar una
+// sesión que no está viva.
+test('Turno_ReservaConSesion_DiceDeQuienEs (fila 126 a)', () => {
+  const m = toy();
+  const r = HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'el pase de Uma', to: 's-uma' });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.match(r.message, /turno reservado para «el pase de Uma» de Uma/);
+  const guardada = JSON.parse(fs.readFileSync(coordFile(m, 'suite-reserve.json'), 'utf8'));
+  assert.deepStrictEqual([guardada.sid, guardada.to, guardada.toSession], [COORD, 's-uma', 'Uma']);
+  assert.strictEqual(HT.reserveInForce({ home: m.home }).to, 's-uma');
+  assert.strictEqual(HT.releaseReserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD } }), true);
+  // una sesión que no está viva no recibe la reserva, y no queda nada reservado
+  const nadie = HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'x', to: 'nadie-vivo' });
+  assert.deepStrictEqual([nadie.ok, nadie.code], [false, 2]);
+  assert.ok(!fs.existsSync(coordFile(m, 'suite-reserve.json')));
+  // sin --to, como siempre: sin sesión
+  assert.strictEqual(HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'revisores' }).ok, true);
+  assert.strictEqual(HT.reserveInForce({ home: m.home }).to, undefined);
+  // por la línea de comandos
+  HT.releaseReserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD } });
+  installed(m);
+  const cli = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'reserve', '--for', 'pase', '--to', 's-uma'],
+    { env: { ...machineEnv(m), CLAUDE_CODE_SESSION_ID: COORD }, encoding: 'utf8' });
+  assert.strictEqual(cli.status, 0, cli.stderr);
+  assert.strictEqual(JSON.parse(fs.readFileSync(coordFile(m, 'suite-reserve.json'), 'utf8')).to, 's-uma');
+  HT.releaseReserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD } });
+  // `--to` sin su sesión, al final o seguido de otra opción, falla y no reserva: no es una reserva sin sesión
+  for (const args of [['--for', 'pase', '--to'], ['--to', '--for', 'pase']]) {
+    const sin = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'reserve', ...args],
+      { env: { ...machineEnv(m), CLAUDE_CODE_SESSION_ID: COORD }, encoding: 'utf8' });
+    assert.strictEqual(sin.status, 2, `${args.join(' ')}: ${sin.stdout}${sin.stderr}`);
+    assert.match(sin.stderr, /falta --to <sesión>/);
+    assert.ok(!fs.existsSync(coordFile(m, 'suite-reserve.json')), args.join(' '));
+  }
+});
+
+// 🔴 mutación: la reserva con --to que frena a la sesión que nombra (le contestaba «esperá que lo suelte» y había que
+// soltarla y dar el «arrancá»), que deja pasar a otra, o que a la nombrada que ya esperaba le pide además el «arrancá».
+test('Turno_ReservaConSesion_LaTomaLaNombrada (fila 130)', () => {
+  const m = toy();
+  // Uma quedó anotada en la fila por un «esperá» anterior
+  fs.mkdirSync(path.dirname(waitFile(m, 's-uma')), { recursive: true });
+  fs.writeFileSync(waitFile(m, 's-uma'), JSON.stringify({ sid: 's-uma', what: 'su portón', at: Date.now() - 60000 }));
+  assert.strictEqual(HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'el pase de Uma', to: 's-uma' }).ok, true);
+  const bea = asSid(m, 's-bea');
+  assert.strictEqual(bea.ok, false, 'otra sesión espera');
+  assert.match(bea.message, /reservado .*«el pase de Uma»/);
+  sinFila(m, 's-bea');
+  const uma = asSid(m, 's-uma');
+  assert.strictEqual(uma.taken, true, uma.message);
+  assert.ok(!fs.existsSync(waitFile(m, 's-uma')), 'sale de la fila');
+  HT.release({ home: m.home, pid: process.pid });
+  // un «arrancá» vigente para otra sesión no le quita a Uma lo que le reservaron
+  addSession(m, 's-bea', 'Bea');
+  assert.strictEqual(grantAs(m, COORD, 's-bea').ok, true);
+  const conArranca = asSid(m, 's-uma');
+  assert.strictEqual(conArranca.taken, true, conArranca.message);
+  HT.release({ home: m.home, pid: process.pid });
+  // una reserva sin --to no es de nadie: la sesión espera
+  assert.strictEqual(HT.releaseReserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD } }), true);
+  assert.strictEqual(HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'revisores' }).ok, true);
+  const sinTo = asSid(m, 's-uma');
+  assert.strictEqual(sinTo.ok, false);
+  assert.match(sinTo.message, /reservado .*«revisores»/);
+});
+
+// 🔴 mutación: `take` sin --process que ata el turno a la consola del comando (el proceso padre, que termina enseguida):
+// salía 0, el lugar se soltaba solo y holder decía «nadie». Lo mismo con `release` sin --process.
+test('Turno_TakeSinProcess_FallaYLoDice (fila 131)', () => {
+  const m = toy();
+  installed(m);
+  const cli = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'take', '--what', 'una suite grande'],
+    { env: { ...machineEnv(m), CLAUDE_CODE_SESSION_ID: 's-uma' }, encoding: 'utf8' });
+  assert.strictEqual(cli.status, 2, cli.stderr);
+  assert.match(cli.stderr, /falta --process <pid>, el proceso que corre lo pesado \(en un guion, --process \$\$\)/);
+  assert.strictEqual(HT.holder({ home: m.home }), null, 'no tomó nada');
+  // con --process, como siempre
+  const con = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'take', '--what', 'una suite grande', '--process', String(process.pid)],
+    { env: { ...machineEnv(m), CLAUDE_CODE_SESSION_ID: 's-uma' }, encoding: 'utf8' });
+  assert.strictEqual(con.status, 0, con.stderr);
+  assert.strictEqual(Number(HT.holder({ home: m.home }).pid), process.pid);
+  // `release` sin --process tampoco: soltaba el lugar de la consola (ninguno), salía 0 y el turno seguía tomado
+  const suelta = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'release'],
+    { env: { ...machineEnv(m), CLAUDE_CODE_SESSION_ID: 's-uma' }, encoding: 'utf8' });
+  assert.strictEqual(suelta.status, 2, suelta.stderr);
+  assert.match(suelta.stderr, /release: falta --process <pid>, el proceso que tomó el turno/);
+  assert.strictEqual(Number(HT.holder({ home: m.home }).pid), process.pid, 'el turno sigue de quien lo tomó');
+  HT.release({ home: m.home, pid: process.pid });
+});

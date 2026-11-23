@@ -842,8 +842,15 @@ function cmdCompleteStep(nRaw, flags) {
         appendLog('gates.log', { name: 'review-cap-blocking', status: 'blocked', story: marker.storyId, step: 8, abiertos: bloquean.map((a) => a.regla) });
         console.error(`marker.js complete-step ${n} BLOQUEADO — ${bloquean.length} crítico(s) de seguridad o de datos abierto(s) o diferido(s):`);
         for (const l of rr.resumen(bloquean)) console.error(`   · ${l}`);
-        console.error('   Lo decide una persona: arreglarlo (si se llegó al tope, una vuelta más con pipeline.js smart-reloop --extra-round,');
-        console.error('   que le pide el permiso en la ventana de permiso), o eximirlo (marker.js waive-critical, con su permiso a ese crítico).');
+        if (rr.vueltaExtraDeTramite()) {
+          // la vuelta extra la da el arnés: el cartel no puede decir que la aprueba una persona (fila 80)
+          console.error('   Arreglarlo: si se llegó al tope, una vuelta más con pipeline.js smart-reloop --extra-round. Es una firma de');
+          console.error('   trámite del perfil del equipo (approvals.delegated_signing): la da el arnés solo, sin ventana ni cuadro; no la');
+          console.error('   firma una persona. O eximirlo: eso lo decide una persona (marker.js waive-critical, con su permiso a ese crítico).');
+        } else {
+          console.error('   Lo decide una persona: arreglarlo (si se llegó al tope, una vuelta más con pipeline.js smart-reloop --extra-round,');
+          console.error('   que le pide el permiso en la ventana de permiso), o eximirlo (marker.js waive-critical, con su permiso a ese crítico).');
+        }
         process.exit(1);
       }
     }

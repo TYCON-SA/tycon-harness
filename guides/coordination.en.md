@@ -153,9 +153,10 @@ mode or if the coordinator is in plan mode (the new session would wait for someo
 from the coordinator's conversation, which records it with each of the person's messages. **Known limit:** if someone
 changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode. A session opened by
 hand, or before this change, that got stuck like that, the coordinator stops and relaunches:
-`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>`. To stop a
+`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>` (relaunched that
+way it is not recorded as opened by the coordinator). To stop a
 background session, use `coordination.js stop --name <name>`: it looks up the background id that the session recorded
-and runs `claude stop` with it. It removes nothing, and the session is resumed with `claude respawn <id>`. By hand,
+and runs `claude stop` with it. It removes nothing, and the session is resumed with `coordination.js relaunch --id <id>`. By hand,
 `claude stop <id>` and `claude rm <id>` need the id that `claude agents` shows: neither the name nor the ref that
 ListAgents shows (the six characters in brackets) works, and they answer that they cannot find it (measured on
 2026-11-01 and 2026-11-15).
@@ -194,7 +195,9 @@ with the session's id.
 **An interactive session is not closed.** It is checked all the same and it says so: a person closes that tab.
 
 **Stopping is not closing.** `coordination.js stop --name <name>` stops a background session without checking whether
-it is clean and without removing it; the same rule on who can. It is resumed with `claude respawn <id>`.
+it is clean and without removing it; the same rule on who can. It is resumed with `coordination.js relaunch --id <id>`: it
+runs `claude respawn`, waits to see it alive and records it as opened by the coordinator, like `open`. Relaunched by hand
+with `claude respawn <id>`, it is not recorded, and its routine signatures fall into the owner's list.
 
 **Limits.** It looks at the folder the session is in now: it does not see another worktree the session left behind, nor
 what was kept with `git stash`. A branch deleted without merging is no longer seen. A branch squashed into one commit
@@ -354,8 +357,10 @@ The harness controls this, not anyone's memory:
   (session, suites and time of each gate), and the line saying who holds the place. Beside a single gate of up to 40
   suites, with free memory, the pass launches. The pass of a closed session does not count.
 - **How each one frees up.** The large run releases its turn when it ends; the turn of a dead process, or one older than
-  three hours, frees itself. The pass has no turn file: it holds the machine from its launch until its session notes the
-  result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
+  three hours, frees itself. That is why `heavy-turn.js take` asks for `--process <pid>`, the process that runs the heavy
+  work (in a script, `$$`): without it, the turn would be tied to the command's shell, which ends right away, and it
+  would free itself with nobody noticing. `release` asks for the same one. The pass has no turn file: it holds the
+  machine from its launch until its session notes the result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
   (`marker.js mark-adversarial-skipped`). Relaunched, it holds it again. A session that closed frees it, and after an hour
   it no longer stops anything, because it may be finished or stuck, and that is said.
 - **A free turn is not taken on its own: the «arrancá».** With a coordinator designated and alive, a gate that got a
@@ -372,7 +377,20 @@ The harness controls this, not anyone's memory:
   process that takes the turn. Before launching them, `heavy-turn.js reserve --for "<what>"` takes the turn in that
   name: a gate that asks for it gets the «wait» with the reservation's name. With a large run going it does not reserve
   (it exits 77 and says who holds it). `heavy-turn.js release --reserve` frees it; it expires after 90 minutes (a round of
-  reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10.
+  reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10. With
+  `--to <session>`, the reservation belongs to that session: it launches what was reserved (its pass without the
+  pipeline, the next point) and its gate takes the turn with no separate «go», even if it was in the queue. It is for
+  one thing at a time: if its gate is already running, the pass hook warns; with the pass in flight nothing stops its
+  gate, so the session does not run it until the pass ends. Other sessions wait until it is released.
+- **The pass without the pipeline also asks for the turn.** A session without a pipeline run (one the coordinator
+  opened for a fix, or a loose one) launches its pass with the Agent or Workflow tool, with no marker to count it. On
+  23/11 at 05:45, with several of those at once, the machine ran out of processes. The `agile-pass-turn.js` hook looks
+  at each launch: every Workflow (the fan-out of agents that fills the machine) and an Agent whose description or type
+  says adversarial (small reviewers and searches do not count; the request text is not read). If the session has neither the «go» (`grant --to`) nor a
+  reservation for it (`reserve --for "<what>" --to <session>`), or if its gate already runs with that reservation, it
+  warns the session and the person who holds the turn, and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
+  measurement (`MODO` in the hook). It does not look without a coordinator, at the coordinator itself, or at a pipeline
+  session. `TYCON_AGILE_PASS_TURN=0` turns it off.
 
 `coordination.js status` shows a single line, «Turno de tarea pesada», with who holds it and what it is; with one large
 run, whether the second turn is free or closed, with the memory and the floor; with two, both. `heavy-turn.js holders`
@@ -389,7 +407,7 @@ are not working, those waiting for something first, since those are the ones tha
 launching anything heavy, close the idle ones that wait for nothing. If it cannot be read (another platform, a command
 that fails) it says «no medida» and assumes nothing. Only the `status` command reads it: the per-turn notice and the
 closing brake do not measure it. A session Claude Code already closed shows in «Cerradas por Claude Code» with what it was
-waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `claude respawn`.
+waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `coordination.js relaunch --id`.
 
 ## The automatic reviews: what the coordinator does
 
@@ -694,7 +712,7 @@ is the only background console with which the owner can still sign with a click.
   permission, in the session's tab or with `claude attach`.
 - "<session> siguió: el permiso ya no está abierto" or "<session> se cerró con un permiso abierto": the owner is told if
   they had been asked.
-- "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: claude respawn <id>":
+- "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>":
   Claude Code closes quiet background sessions on its own when the machine runs out of memory, and the harness cannot
   prevent it. The coordinator decides whether to bring it back: that uses memory again and counts for the cap.
 
@@ -1044,7 +1062,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 - **With a long suite queue, no session is opened to program.** If more than two sessions are waiting for the suite or
   gate turn, a new session is opened only for work that does not need the suite: writing a story, reviewing or
   researching. Those that only wait for their turn can be closed and resumed with the same conversation when their turn
-  comes (`claude respawn <id>`), with the order written down. Why: the suite runs one at a time; one more session does not
+  comes (`coordination.js relaunch --id <id>`), with the order written down. Why: the suite runs one at a time; one more session does not
   speed anything up, it lengthens the queue and takes memory.
 - **A red is not left behind, even if it is not from your own change.** Report it and fix it before going on. Why: tolerated
   reds hide the new ones.

@@ -1074,6 +1074,52 @@ const textoCambio = (repo) => `🔒 el código cambió después de preparar el p
 const textoNoComprobado = (motivo) => `🔒 no pude comprobar que el código es el que se preparó (${motivo}): repetí «Preparar el pull request».`;
 const textoFueraDeLaFoto = (repo) => `🔒 ${repo} cambió después de preparar y no está en la foto: repetí «Preparar el pull request».`;
 const TEXTO_MARCADOR = '🔒 no pude leer el marcador de la corrida: no sé si el pull request está preparado.';
+
+// `approvals.local_commit` del perfil del equipo: con `coordinator`, el commit de una corrida lleva antes el ok de guardar
+// de la coordinadora (`marker.js approve-save`, la firma `save`); con `agent` o sin valor, lo hace el agente solo.
+const COMMIT_POR_LA_COORDINADORA = 'coordinator';
+const TEXTO_COMMIT_COORDINADORA = '🔒 tu organización pide que la coordinadora firme cada commit: `marker.js approve-save`';
+/**
+ * Quién firma el commit de una corrida según el perfil del equipo del árbol: `{ valor }` (`agent` o `coordinator`), o
+ * `{ noSe }` con el motivo si el perfil o la clave no se leen. Cuenta sólo el perfil del árbol: ni la variable que
+ * señala otro perfil ni el archivo de la máquina, que el agente puede escribir y con eso se sacaría la firma. `arnes`:
+ * otra raíz del árbol, para las pruebas. Nunca tira.
+ */
+function commitLocalDelPerfil({ home, arnes } = {}) {
+  let TC;
+  try { TC = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'tycon-config.js')); } catch (e) {
+    return { noSe: `no cargué el lector de configuración (${e.message})` };
+  }
+  try {
+    const raiz = arnes || TC.RAIZ_ARNES;
+    const delArbol = TC.perfilDelArbol(raiz).ruta;
+    const c = TC.cargar({ env: {}, ...(home ? { home } : {}), arnes: raiz });
+    const delPerfil = c.errores.filter((e) => e.archivo === delArbol);
+    const roto = delPerfil.find((e) => e.clave === null);
+    if (roto) return { noSe: `el perfil del equipo no se puede leer (${roto.motivo})` };
+    const mala = delPerfil.find((e) => e.clave === 'approvals' || e.clave === 'approvals.local_commit');
+    if (mala) return { noSe: `${mala.clave} del perfil del equipo no se entiende (${mala.motivo})` };
+    const v = c.valores && c.valores.approvals ? c.valores.approvals.local_commit : undefined;
+    return { valor: v === COMMIT_POR_LA_COORDINADORA ? v : 'agent' };
+  } catch (e) {
+    return { noSe: `no pude leer el perfil del equipo (${e.message})` };
+  }
+}
+/** La ventana del commit cuando el perfil no dice con certeza quién lo firma: ni pasa callado ni frena. */
+function preguntaCommitNoSe(forma, storyId, motivo) {
+  return `¿GUARDO? «${forma}»${storyId ? `, de la corrida de ${storyId}` : ''}: ${motivo}, y no sé si tu organización pide que la coordinadora firme cada commit. ${COMO_SE_AUTORIZA}`;
+}
+/** Por qué el ok de guardar de la corrida no cubre un commit en `dirs`, o null si lo cubre. */
+function okDeGuardarQueNoCubre(m, dirs) {
+  const ok = m.saveOk;
+  if (ok && (ok.storyId !== m.storyId || ok.startedAt !== (m.startedAt || null))) return 'el ok de guardar es de otra corrida: hay que pedir otro';
+  for (const dir of dirs.length ? dirs : [null]) {
+    let r;
+    try { r = SO().vigente({ saveOk: ok, repoActual: dir }); } catch (e) { return `no pude comprobar el ok de guardar (${e.message})`; }
+    if (!r.ok) return r.motivo;
+  }
+  return null;
+}
 const PISTA_DESTINO = ' Si el empuje va a tu rama de trabajo, escribí el destino: `git push -u origin <rama>`.';
 const textoEscribe = (que) => `🔒 este comando cambia el código antes de que salga (${que}): corré el cambio aparte y, si cambió el código, volvé a preparar el pull request.`;
 // el paso cerrado, por su nombre (también en un marcador sin el número de esquema) o, en el esquema viejo, por su
@@ -1131,13 +1177,30 @@ function preparado(m, salientes = []) {
 function escribeCodigo(c) {
   const so = SO();
   for (const p of (c && c.escritos) || []) {
-    let raiz = null;
-    try { raiz = so.raizDe(fs.existsSync(p) && fs.statSync(p).isDirectory() ? p : path.dirname(p)); } catch (_) { raiz = null; }
-    const rel = raiz ? path.relative(raiz, p).split(path.sep).join('/') : '';
+    let raiz;
+    // si git no contesta no se sabe de qué repo es: cuenta como código
+    try { raiz = so.raizDe(fs.existsSync(p) && fs.statSync(p).isDirectory() ? p : path.dirname(p)); } catch (_) { return path.basename(p); }
+    // fuera de todo repo (el mensaje del commit en una carpeta temporal, el registro de una compilación) no es código
+    if (!raiz) continue;
+    // la raíz es la ruta real: la del archivo también, para que una carpeta que llega por un enlace se compare igual
+    const rel = path.relative(raiz, rutaReal(p)).split(path.sep).join('/');
     if (rel && !rel.startsWith('..') && so.esPapeleoDeLaHuella(rel, '100644')) continue;
     return rel || path.basename(p);
   }
   return null;
+}
+
+/** La ruta real de `p` aunque todavía no exista: la de su carpeta existente más cercana, con lo que falta debajo. */
+function rutaReal(p) {
+  let base = path.resolve(String(p));
+  const resto = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync(base), ...resto); } catch (_) { /* subo */ }
+    const arriba = path.dirname(base);
+    if (arriba === base) return path.resolve(String(p));
+    resto.unshift(path.basename(base));
+    base = arriba;
+  }
 }
 
 // Los hallazgos de la corrida (`findings.json` de su carpeta), o null si no se ubica o no se lee: la evidencia dice
@@ -1172,8 +1235,11 @@ function preguntaDelPedido({ forma, m, repos, noLeo = false }) {
  * se lee con certeza pregunta como siempre antes de «Preparar el pull request», y después se juzga como un pedido. Un marcador que existe
  * y no se lee deja pasar el commit con un aviso y frena lo que sale hacia el equipo. Sin corrida, decide el camino
  * rápido abierto (`decidirCarril`); sin ninguno de los dos, nada pregunta. Lo delicado lo cubre la firma de control.
+ * Si el perfil del equipo pide que la coordinadora firme cada commit (`approvals.local_commit: coordinator`), el commit
+ * de la corrida no guarda sin su ok de guardar vigente; si el perfil no dice con certeza quién lo firma, pregunta.
+ * `arnes`: otra raíz del árbol, para las pruebas.
  */
-function decidir({ command, cwd, sid, home }) {
+function decidir({ command, cwd, sid, home, arnes }) {
   const markerPath = require('./open-runs.js').markerPath(sid, home);
   let crudo = null;
   try { crudo = fs.readFileSync(markerPath, 'utf8'); } catch (e) {
@@ -1187,6 +1253,12 @@ function decidir({ command, cwd, sid, home }) {
   if (!m || typeof m !== 'object' || Array.isArray(m) || !m.storyId) {
     const haciaElEquipo = dudas.length || cs.some((c) => c.opaco || c.tipo === 'pr' || (c.tipo === 'push' && destinoDelEmpuje(c).compartida));
     if (haciaElEquipo) return { texto: TEXTO_MARCADOR };
+    // el ok de la coordinadora vive en el marcador: sin leerlo no se sabe si lo hay
+    const quien = cs.some((c) => c.tipo === 'commit') ? commitLocalDelPerfil({ home, arnes }) : null;
+    if (quien && quien.valor === COMMIT_POR_LA_COORDINADORA) {
+      return { texto: `${TEXTO_COMMIT_COORDINADORA} (no pude leer el marcador de la corrida, que es donde queda su ok)` };
+    }
+    if (quien && quien.noSe) return { pregunta: preguntaCommitNoSe(cs.find((c) => c.tipo === 'commit').forma, null, quien.noSe) };
     return { aviso: `el marcador de la corrida no se puede leer o no dice de qué historia es: «${c0.forma}» guarda sin preguntar; un pull request no sale hasta arreglarlo.` };
   }
   const pasoCerrado = pasoPreparado(m);
@@ -1219,7 +1291,7 @@ function decidir({ command, cwd, sid, home }) {
   };
   let haciaElEquipo = null;
   let pista = false;
-  let commits = 0;
+  const commits = [];
   // con el paso cerrado, la foto se compara con el árbol de antes del comando: un comando que cambia el código y en la
   // misma línea empuja o abre el pull request mandaría lo que nadie preparó
   if (pasoCerrado) {
@@ -1234,12 +1306,24 @@ function decidir({ command, cwd, sid, home }) {
     // que no se puede ubicar)
     if (c.tipo === 'pr') { if (deLaCorrida(c) || !esEstacionada()) haciaElEquipo = haciaElEquipo || c; continue; }
     if (!deLaCorrida(c)) continue;
-    if (c.tipo === 'commit') { commits += 1; continue; }
+    if (c.tipo === 'commit') { commits.push(c); continue; }
     if (c.tipo !== 'push') continue;
     const d = destinoDelEmpuje(c);
     if (d.compartida) { haciaElEquipo = haciaElEquipo || c; pista = pista || d.pista; continue; }
     // la rama de trabajo: antes de «Preparar el pull request» pasa; después, sólo con el código de la foto
     if (pasoCerrado) { const p = prepDe(); if (p.texto) return { texto: p.texto }; }
+  }
+  // con el perfil que pide a la coordinadora, el commit sin su ok vigente no guarda, aunque el mismo comando abra un pull
+  // request
+  const quien = commits.length ? commitLocalDelPerfil({ home, arnes }) : null;
+  if (quien && quien.valor === COMMIT_POR_LA_COORDINADORA) {
+    // el ok se mide con el árbol de antes del comando: lo que el mismo comando escribe antes de commitear no lo cubre
+    for (const c of commits) {
+      const escrito = escribeCodigo(c);
+      if (escrito) return { texto: `${TEXTO_COMMIT_COORDINADORA} (este comando cambia el código antes de commitearlo: ${escrito}; corré el cambio aparte y pedí otro ok)` };
+    }
+    const motivo = okDeGuardarQueNoCubre(m, commits.map((c) => c.dir).filter(Boolean));
+    if (motivo) return { texto: `${TEXTO_COMMIT_COORDINADORA} (${motivo})` };
   }
   if (haciaElEquipo) {
     const p = prepDe();
@@ -1247,9 +1331,12 @@ function decidir({ command, cwd, sid, home }) {
     if (p.texto) return { texto: `${p.texto}${pista ? PISTA_DESTINO : ''}${salida}` };
     return { pregunta: preguntaDelPedido({ forma: haciaElEquipo.forma, m, repos: p.repos }) };
   }
-  if (commits) {
+  if (quien) {
+    // un perfil que no se lee no dice si la organización quiere la segunda mirada: ni pasa callado ni frena
+    if (quien.noSe) return { pregunta: preguntaCommitNoSe(commits[0].forma, m.storyId, quien.noSe) };
     const dir = path.dirname(path.dirname(markerPath));
-    require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason: `commit local, sin pregunta (historia ${m.storyId})` });
+    const reason = quien.valor === COMMIT_POR_LA_COORDINADORA ? `commit local con el ok de guardar de la coordinadora (historia ${m.storyId})` : `commit local, sin pregunta (historia ${m.storyId})`;
+    require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason });
   }
   return null;
 }
