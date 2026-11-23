@@ -522,16 +522,48 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
 
   // 5) scripts inline: open('f','w'|'a'), writeFileSync('f'), fs.writeFile('f', Set-Content/Out-File —
   //    sobre el comando CRUDO (viven dentro de strings que stripNonCommandText vacía a propósito)
-  const rePyOpen = /\bopen\(\s*(['"])([^'"]+)\1\s*,\s*(['"])[wa]/g;
-  while ((m = rePyOpen.exec(raw))) out.add(m[2]);
-  const reNodeWrite = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile)\(\s*(['"`])([^'"`]+)\1/g;
-  while ((m = reNodeWrite.exec(raw))) out.add(m[2]);
-  // python: Path('f').write_text(…) / pathlib.Path('f').write_bytes(…)
-  const rePathWrite = /\bPath\(\s*(['"])([^'"]+)\1\s*\)\s*\.(?:write_text|write_bytes)\s*\(/g;
-  while ((m = rePathWrite.exec(raw))) out.add(m[2]);
-  // ruby: File.write('f', …) / IO.write / File.binwrite (`File.open('f', 'w')` ya lo ve el `open(` de arriba)
-  const reRubyWrite = /\b(?:File|IO)\.(?:write|binwrite)\(\s*(['"])([^'"]+)\1/g;
-  while ((m = reRubyWrite.exec(raw))) out.add(m[2]);
+  //    también con las comillas escapadas del shell leídas como comillas (`python3 -c "open(\"f\", \"w\")"`)
+  // open(<ruta literal>, <modo que escribe>), con el modo leído por abreParaEscribir (`'w'`, `'r+'`, `mode='x'`, uno en
+  // una variable) sobre el texto con las comillas escapadas leídas como comillas: en el crudo, un `\"r\"` no se lee como
+  // lectura. La ruta va primera o como `file=`/`path=`, con o sin prefijo de texto (`r'…'`, `b'…'`); también como método
+  // con la ruta primero (`File.open('f', 'w')`, `io.open`, `codecs.open`) y con la ruta en `Path('f').open('w')`
+  const sinEscapes = sinEscapesDeComillas(raw);
+  const LITERAL = /^[rRbBuUfF]{0,2}(['"])([^'"]+)\1$/;
+  for (const o of sinEscapes.matchAll(/(?<![\w$])open\s*\(/g)) {
+    const desde = o.index + o[0].length;
+    if (!abreParaEscribir(sinEscapes, desde, false)) continue;
+    const primero = primerArgumento(sinEscapes, desde).arg;
+    const conNombre = /^(?:file|path)\s*=\s*([\s\S]+)$/.exec(primero);
+    let lit = LITERAL.exec((conNombre ? conNombre[1] : primero).trim());
+    if (!lit) {
+      // la ruta con nombre puede no ir primera: `open(mode='w', file='f')`
+      for (let pos = desde, k = 0; k < 16; k++) {
+        const a = primerArgumento(sinEscapes, pos);
+        const n = /^(?:file|path)\s*=\s*([\s\S]+)$/.exec(a.arg);
+        if (n) { lit = LITERAL.exec(n[1].trim()); break; }
+        if (sinEscapes[a.fin] !== ',') break;
+        pos = a.fin + 1;
+      }
+    }
+    if (lit) out.add(lit[2]);
+  }
+  for (const o of sinEscapes.matchAll(/\bPath\s*\(\s*[rRbBuUfF]{0,2}(['"])([^'"]+)\1\s*\)\s*\.\s*open\s*\(/g)) {
+    if (abreParaEscribir(sinEscapes, o.index + o[0].length, true)) out.add(o[2]);
+  }
+  // perl, con el manejador primero: `open(FH, '>f')` (el modo pegado a la ruta) y `open(my $fh, '>', 'f')`; escribe con
+  // `>`, `>>`, `+<` o `+>`
+  for (const o of sinEscapes.matchAll(/\bopen\s*\(?\s*(?:my\s+)?\$?\w+\s*,\s*(['"])\s*(?:\+<|\+?>{1,2})\s*([^'"\s]+)\1/g)) out.add(o[2]);
+  for (const o of sinEscapes.matchAll(/\bopen\s*\(?\s*(?:my\s+)?\$?\w+\s*,\s*(['"])\s*(?:\+<|\+?>{1,2})[^'"]*\1\s*,\s*(['"])([^'"]+)\2/g)) out.add(o[3]);
+  for (const texto of new Set([raw, sinEscapes])) {
+    const reNodeWrite = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile)\(\s*(['"`])([^'"`]+)\1/g;
+    while ((m = reNodeWrite.exec(texto))) out.add(m[2]);
+    // python: Path('f').write_text(…) / pathlib.Path('f').write_bytes(…)
+    const rePathWrite = /\bPath\(\s*(['"])([^'"]+)\1\s*\)\s*\.(?:write_text|write_bytes)\s*\(/g;
+    while ((m = rePathWrite.exec(texto))) out.add(m[2]);
+    // ruby: File.write('f', …) / IO.write / File.binwrite (`File.open('f', 'w')` ya lo ve el `open(` de arriba)
+    const reRubyWrite = /\b(?:File|IO)\.(?:write|binwrite)\(\s*(['"])([^'"]+)\1/g;
+    while ((m = reRubyWrite.exec(texto))) out.add(m[2]);
+  }
   const rePs = /\b(?:Set-Content|Out-File|Add-Content)\b(?:\s+-(?:Path|LiteralPath|FilePath))?\s+(['"]?)([^\s'"]+)\1/gi;
   while ((m = rePs.exec(raw))) out.add(m[2]);
   // [IO.File]::WriteAllText / AppendAllText / WriteAllLines('f', …): escriben como Set-Content
@@ -1151,6 +1183,79 @@ function primerArgumento(texto, desde) {
   return { arg: texto.slice(desde, hasta).trim(), fin: hasta };
 }
 
+// Un modo de abrir que sólo lee: `'r'`, `'rb'`, `"rt"` en python y ruby, con la codificación de ruby (`'r:utf-8'`,
+// `'rb:BOM|utf-8'`), `'<'` y `'<:encoding(UTF-8)'` en perl, y `os.O_RDONLY` sola en os.open
+const MODO_SOLO_LEE = /^(?:(['"])(?:[rbtU<]*|r[bt]?:[\w|-]+(?::[\w|-]+)?|<:[\w()|:-]+)\1|os\.O_RDONLY)$/;
+const ARGUMENTO_CON_NOMBRE = /^[A-Za-z_]\w*\s*=(?!=)/;
+// los argumentos con nombre de un `open(` que no cambian cómo abre: el archivo y su lectura
+const ARGUMENTOS_DE_LECTURA = new Set(['file', 'path', 'encoding', 'errors', 'newline', 'buffering', 'closefd']);
+/** Los argumentos de la llamada que abre en `desde`, hasta 16; null si no se terminan de leer. */
+function argumentosDeLlamada(texto, desde) {
+  const args = [];
+  let pos = desde;
+  for (let k = 0; k < 16; k++) {
+    const a = primerArgumento(texto, pos);
+    if (a.arg) args.push(a.arg);
+    if (texto[a.fin] === ')') return args;
+    if (texto[a.fin] !== ',') return null;
+    pos = a.fin + 1;
+  }
+  return null;
+}
+/**
+ * El archivo que abre un `open(` que empieza en `desde`: el de `file=` o `path=` en cualquier lugar
+ * (`open(mode='w', file=p)`), o el primer argumento posicional. null si no se terminan de leer.
+ */
+function archivoQueAbre(texto, desde) {
+  const args = argumentosDeLlamada(texto, desde);
+  if (!args) return null;
+  const conNombre = args.map((a) => /^(file|path)\s*=(?!=)\s*([\s\S]*)$/i.exec(a)).find(Boolean);
+  if (conNombre) return conNombre[2].trim();
+  return args.find((a) => !ARGUMENTO_CON_NOMBRE.test(a)) || null;
+}
+/**
+ * Si el `open(` que empieza en `desde` (justo después del paréntesis) puede escribir. Lee como abre: el segundo argumento
+ * o `mode=` en cualquier lugar (`open(p, encoding='utf-8', mode='w')`). Escribe con un modo que no es un literal de sólo
+ * lectura —`'w'`, `'a'`, `'x'`, `'+'`, o uno guardado en una variable (`open(p, m)`)—, con argumentos desplegados
+ * (`*a`, `**kw`) y cuando no se terminan de leer. Como método (`Path(p).open('w')`, `os.open(p, flags)`) cuenta también
+ * el primer argumento: un modo de escritura, o uno que no es un literal.
+ */
+function abreParaEscribir(texto, desde, metodo) {
+  const args = argumentosDeLlamada(texto, desde);
+  if (!args || args.some((a) => a.startsWith('*'))) return true;
+  const conNombre = args.filter((a) => ARGUMENTO_CON_NOMBRE.test(a));
+  const posicionales = args.filter((a) => !ARGUMENTO_CON_NOMBRE.test(a));
+  for (const a of conNombre) {
+    const m = /^(\w+)\s*=\s*([\s\S]*)$/.exec(a);
+    const nombre = m[1].toLowerCase();
+    // el modo con nombre escribe salvo un literal de lectura; los argumentos que no dicen cómo abre no cuentan; cualquier
+    // otro (`flags=` de os.open, `opener=`) puede abrir para escribir
+    if (nombre === 'mode') { if (!MODO_SOLO_LEE.test(m[2].trim())) return true; } else if (!ARGUMENTOS_DE_LECTURA.has(nombre)) return true;
+  }
+  if (posicionales.length > 1 && !MODO_SOLO_LEE.test(posicionales[1])) return true;
+  if (metodo && posicionales.length) {
+    const lit = /^(['"])([^'"]*)\1$/.exec(posicionales[0]);
+    // un primer argumento que no es literal puede ser el modo (`p.open(m)`); uno literal escribe si es un modo de escritura
+    if (!lit) return true;
+    if (/^[rwaxbtU+]+$/.test(lit[2]) && /[wax+]/.test(lit[2])) return true;
+  }
+  return false;
+}
+/**
+ * Si algún `open(` del texto puede escribir (ver abreParaEscribir). El texto puede venir con las comillas escapadas del
+ * shell (`open(\"$F\")`): se leen como comillas.
+ */
+function algunOpenEscribe(texto) {
+  const s = sinEscapesDeComillas(texto);
+  for (const m of s.matchAll(OPEN_LLAMADA)) if (abreParaEscribir(s, m.index + m[0].length, Boolean(m[1]))) return true;
+  return false;
+}
+// una llamada a `open(`: como método también con blancos o una continuación de línea antes (`Path(p) . open(`,
+// `.\⏎open(`) y con `::` (`[IO.File]::Open(`); sin distinguir mayúsculas, como las formas de escribir
+const OPEN_LLAMADA = /(\.[\s\\]*|::\s*)?\bopen\s*\(/gi;
+/** El texto con las comillas escapadas del shell (`\"`, `\'`) leídas como comillas. */
+const sinEscapesDeComillas = (texto) => String(texto || '').replace(/\\(["'])/g, '$1');
+
 /**
  * Las rutas que una expresión nombra si sale sólo de literales: `'a.ts'`, `['a', 'b']`, `os.path.expanduser('~/x')`,
  * `path.join('a', 'b')`, `Path('a')`. null si algo no es literal.
@@ -1314,7 +1419,17 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
       if (script[a.fin] === ',') add(primerArgumento(script, a.fin + 1).arg);
     }
     // python: open(<destino>, 'w'|'a'|'x'|'+'); sin modo es lectura
-    llamadas(/\bopen\s*\(/g, (a) => script[a.fin] === ',' && /^\s*(?:mode\s*=\s*)?[rbt]*['"][^'"]*[wax+]/.test(script.slice(a.fin + 1)));
+    const sinEscapes = sinEscapesDeComillas(script);
+    for (const m of sinEscapes.matchAll(/\bopen\s*\(/g)) {
+      const a = primerArgumento(sinEscapes, m.index + m[0].length);
+      // en perl el primer argumento es el manejador (`my $fh`, o `FH` seguido de un modo de perl): su destino lo leen la
+      // regla de perl de abajo y los destinos literales. Un nombre en mayúsculas sin modo de perl es una variable
+      // (`open(P, 'w')` en python): sigue contando
+      const segundo = sinEscapes[a.fin] === ',' ? primerArgumento(sinEscapes, a.fin + 1).arg : '';
+      if (/^(?:my\s+)?\$\w+$/.test(a.arg) || (/^[A-Z][A-Z0-9_]*$/.test(a.arg) && /^(['"])\s*(?:\+?[<>]|\|)/.test(segundo))) continue;
+      // el archivo puede ir con nombre y en cualquier lugar: `open(mode='w', file=sys.argv[1])`
+      if (abreParaEscribir(sinEscapes, m.index + m[0].length, false) && sinEscapes[a.fin] === ',') add(archivoQueAbre(sinEscapes, m.index + m[0].length) || a.arg);
+    }
     // python: Path(<destino>).write_text / write_bytes
     llamadas(/\bPath\s*\(/g, (a) => /^\)\s*\.(?:write_text|write_bytes)\s*\(/.test(script.slice(a.fin)));
     // perl: open(my $fh, '>', <destino>)
@@ -2466,8 +2581,10 @@ function estadosDelEncabezado(texto) {
   const fm = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(String(texto));
   return fm ? [...fm[1].matchAll(/^["']?status["']?\s*:\s*["']?([\w-]+)/gm)].map((m) => m[1].toLowerCase()) : [];
 }
-// sin ninguna forma de escribir (ni un editor en el lugar), el comando no toca una historia
-const ESCRIBE = new RegExp([...FORMAS_DE_ESCRIBIR, String.raw`\bopen\s*\(`].join('|'), 'i');
+// sin ninguna forma de escribir (ni un editor en el lugar), el comando no toca una historia. Un `open(` cuenta sólo si
+// puede escribir: uno que lee (`open(p)`, `open(p, 'rb')`) no hace de un `for` que lee una escritura
+const FORMAS_DE_ESCRIBIR_RE = new RegExp(FORMAS_DE_ESCRIBIR.join('|'), 'i');
+const ESCRIBE = { test: (t) => FORMAS_DE_ESCRIBIR_RE.test(t) || algunOpenEscribe(t) };
 // una palabra suelta del comando cuenta como destino con un editor en el lugar (`editaEnSitio`), o con un
 // `for … in <comodín>` que escribe. En un `ls specs/*.md > lista.txt` el comodín sólo se lee
 const FOR_IN = /(?:^|[\s;&|(])for\s+\w+\s+in\s/i;
@@ -4382,8 +4499,10 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
     if (i >= 0) for (const w of words.slice(i + 1)) { if (w.startsWith('-') || w === '!' || w === '(') break; bases.push(resolver(w, cwd)); }
   }
   // un guion que escribe, copia, mueve o borra: cuenta cada texto que nombra (`glob.glob('specs/*.md')`, `'h.md'`)
-  const textosDeGuion = scriptsInline(cmd).filter(({ script }) => GUION_ESCRIBE.test(script))
-    .flatMap(({ script }) => [...script.matchAll(/(['"`])((?:\\.|(?!\1)[^\\])*)\1/g)].map((m) => m[2]).filter((t) => !/\s/.test(t)));
+  // las comillas escapadas del shell (`open(\"specs/h.md\", \"w\")`) cuentan como comillas
+  const textosDeGuion = scriptsInline(cmd).filter(({ script }) => GUION_ESCRIBE.test(script) || algunOpenEscribe(script))
+    .flatMap(({ script }) => [script, sinEscapesDeComillas(script)])
+    .flatMap((script) => [...script.matchAll(/(['"`])((?:\\.|(?!\1)[^\\])*)\1/g)].map((m) => m[2]).filter((t) => !/\s/.test(t)));
   const borrados = destinosB.map((d) => d.raw);
   // lo que sólo se repone (`git checkout -- x`, `git restore x`): cuenta si la historia tiene cambios que perdería
   // (desde otra rama o commit, `git checkout <ref> -- x` o `git restore --source`, la cambia aunque no tenga cambios)
@@ -4418,7 +4537,10 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   const valoresDe = (raw) => {
     // la comilla invertida que cierra (`echo \`sed -i … h.md\``) tampoco
     const limpio = String(raw).replace(/[)`]+$/, '');
-    return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor]
+    // con comillas escapadas del shell (`python3 -c "open(\"$F\", \"w\")"`) el lector de variables no sabe leer el
+    // comando y deja la variable sin expandir: cuenta también lo que valdría leído con esas comillas como comillas
+    return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor,
+      expandirRuta(sinEscapesDeComillas(cmd), limpio, { posibles: true }).valor]
       .flatMap((v) => (v ? expandirLlaves(v) : [v])))];
   };
   for (const raw of crudos) for (const valor of valoresDe(raw)) {
@@ -5709,7 +5831,7 @@ function handleCarrilEHistoria(event, opts = {}) {
       // vive sin historias, la palabra suelta no cuenta: sí la ruta de una historia y la constancia
       if (g.grande) {
         const nombra = () => (repoConHistorias(cwd) || repoConHistorias(path.dirname(g.archivo)) ? MENCIONA_HISTORIA : NOMBRA_RUTA_DE_HISTORIA).test(g.texto);
-        if (!g.texto || (GUION_ESCRIBE.test(g.texto) && nombra())) {
+        if (!g.texto || ((GUION_ESCRIBE.test(g.texto) || algunOpenEscribe(g.texto)) && nombra())) {
           return { block: `⛔ tycon-pipeline — GUION QUE NO SE PUEDE LEER ENTERO\n\n  ${g.archivo}\n  (detectado en ${via})\n  Es demasiado grande para ver qué escribe, y nombra una historia o una constancia. Una historia se edita con\n  la herramienta de edición (Edit/Write); una constancia la firma una persona.\n` };
         }
         continue;
