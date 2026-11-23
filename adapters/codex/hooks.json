@@ -495,6 +495,13 @@
       ]
     },
     {
+      "log": "PreToolUse · Agent|Task|Workflow — SOLO Claude Code (un pase lanzado sin el pipeline pasa por el turno de tarea pesada)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-23, fila 126 a): agile-pass-turn.js avisa a una sesión de Claude Code sin el pipeline que lanza un pase adversarial (todo Workflow, o un Agent que se dice adversarial) sin el turno de tarea pesada que da la coordinadora. Codex no tiene las herramientas Agent ni Workflow (sus subagentes no pasan por un evento que el arnés vea) y no coordina, así que de su lado no hay lanzamiento que mirar y el gancho no se registra.",
+      "scripts": [
+        "agile-pass-turn.js"
+      ]
+    },
+    {
       "log": "PreToolUse · Bash — el lanzador del freno de publicación, SOLO Claude Code",
       "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-22): node-missing-launcher.sh va delante del freno de publicación en la línea que el instalador escribe en settings.json de Claude Code, y decide por el terreno del freno cuando falta Node. En Codex el freno se registra como siempre, sin el lanzador: sin Node no arranca, igual que antes de este cambio (límite declarado en scripts/setup/hook-failure-policy.json).",
       "scripts": [
