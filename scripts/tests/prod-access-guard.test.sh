@@ -359,6 +359,14 @@ pasa  "8.14 T21h Xargs_AnyFeedingSegment_Blocks (cp a /tmp)" "ls | xargs -I{} cp
 rc="$(corre "grep -l x $P/*.json | xargs python3 -c 'import json,sys; [print(json.load(open(f))) for f in sys.argv[1:]]'")"
 if [ "$rc" = 2 ] && grep -q "jq" "$TMP/err"; then ok "T21i Xargs_InterpreteConLosEstados_FrenaYSugiereJq"
 else no "T21i Xargs_InterpreteConLosEstados_FrenaYSugiereJq (rc=$rc) — err: $(head -c 160 "$TMP/err")"; fi
+# T84a · ese comando lee: sigue frenando, pero el motivo no dice que escribe: dice que no puede asegurar que sólo lea
+rc="$(corre "grep -l x $P/*.json | xargs python3 -c 'import json,sys; [print(json.load(open(f))) for f in sys.argv[1:]]'")"
+if [ "$rc" = 2 ] && grep -q "no puedo asegurar que ese comando sólo lea" "$TMP/err" && ! grep -q "ESCRIBE sobre" "$TMP/err"; then ok "T84a Xargs_InterpreteQueLee_ElMotivoNoDiceEscribe"
+else no "T84a Xargs_InterpreteQueLee_ElMotivoNoDiceEscribe (rc=$rc) — err: $(head -c 220 "$TMP/err")"; fi
+# T84b · un escritor de verdad por xargs sigue diciendo que escribe
+rc="$(corre "grep -l . $P/*.json | xargs rm -f")"
+if [ "$rc" = 2 ] && grep -q "ESCRIBE sobre" "$TMP/err" && ! grep -q "no puedo asegurar" "$TMP/err"; then ok "T84b Xargs_EscritorDeVerdad_SigueDiciendoEscribe"
+else no "T84b Xargs_EscritorDeVerdad_SigueDiciendoEscribe (rc=$rc) — err: $(head -c 220 "$TMP/err")"; fi
 # T21j a T21q · lo que xargs le pasa a un intérprete puede ser su programa: con la marca en el lugar del programa
 # (`-c {}`), sin programa (`-c` toma el primer argumento que llega), por un heredoc (directo o por la tubería) o por una
 # variable de valor conocido. Si ese texto nombra un estado de producción, es una escritura, como cuando el programa
