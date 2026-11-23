@@ -19,7 +19,7 @@ test('T247 Envelopes_OnlyInTheLiveOffice: la página sabe volar un sobre y pedir
   const html = page({ agents: [], items: [], kanban: null, meta: null });
   assert.match(html, /lanzarSobres/);
   assert.match(html, /conversacion\?t=/);
-  assert.match(html, /Tus últimos 20 mensajes con sus respuestas/);
+  assert.match(html, /Todos los turnos que se leen de su conversación/);
   const { home } = toyHome();
   const data = JSON.parse(run(home, ['--json', '--now', new Date(NOW).toISOString()]));
   assert.strictEqual('sobres' in data, false, '--json no crea los sobres: viven en el proceso de la oficina');
@@ -38,6 +38,36 @@ test('T249 MessageFormat_NodesOnly: negritas, código y listas se arman con nodo
   assert.deepStrictEqual(fmt('<img src=x onerror=alert(1)> **<b>hola</b>**'), [['p', '<img src=x onerror=alert(1)> ', ['strong', '<b>hola</b>']]]);
   assert.deepStrictEqual(fmt('```\n<script>alert(1)</script>'), [['pre', ['code', '<script>alert(1)</script>']]], 'un bloque sin cerrar queda como código');
   assert.deepStrictEqual(fmt('5 * 3 y 2 ** 4 sin formato'), [['p', '5 * 3 y 2 ** 4 sin formato']]);
+});
+
+// 🔴 Falla con: dejar la tabla como renglones de texto con barras, o armarla con HTML
+test('ChatTable_AsAGrid: una tabla de markdown sale como grilla con encabezado, con nodos, y lo de las celdas queda como texto', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  const src = html.slice(html.indexOf('function enLinea('), html.indexOf('function msg('));
+  const formatear = new Function('document', `${src}; return formatear;`)(fakeDom());
+  const fmt = (t) => formatear(t).map(shape);
+  assert.deepStrictEqual(fmt('Estado:\n| Qué | Estado |\n|---|---|\n| **8.304** | Done |\n| <b>x</b> | `npm` |\nfin'), [
+    ['p', 'Estado:'],
+    ['div', ['table', ['thead', ['tr', ['th', 'Qué'], ['th', 'Estado']]], ['tbody', ['tr', ['td', ['strong', '8.304']], ['td', 'Done']], ['tr', ['td', '<b>x</b>'], ['td', ['code', 'npm']]]]]],
+    ['p', 'fin'],
+  ]);
+  // una sola barra suelta no es una tabla
+  assert.deepStrictEqual(fmt('a | b'), [['p', 'a | b']]);
+});
+
+// 🔴 Falla con: que Enter no mande, que Mayúscula+Enter mande, que la ventana no se vuelva a leer sola, o que el turno
+// que no arrancó la persona se vea igual que los demás
+test('ChatWindow_EnterRefreshAndOtherTurns: Enter manda y Mayúscula+Enter es otro renglón; la ventana se lee sola; los turnos sin la persona llevan otra marca', () => {
+  const code = PAGE_CODE();
+  assert.match(code, /campo\.onkeydown=e=>\{if\(e\.key==="Enter"&&!e\.shiftKey&&!e\.isComposing&&!boton\.disabled\)\{e\.preventDefault\(\);mandar\(false\)\}\}/);
+  assert.match(code, /function refrescarCharla\(nombre,pedido,yo\)\{setTimeout\(/);
+  assert.match(code, /if\(c\.datos&&box\.querySelector\("\.conVos"\)\)refrescarCharla\(nombre,pedido,yo\)/, 'arranca al pintar una conversación leída');
+  assert.match(code, /yo===ultimoPedido&&charlaDe===nombre/, 'y termina al cerrar o abrir otra');
+  assert.match(code, /if\(m\.sinPersona\)\{const b=msg\(nombre\+" · "\+\(m\.origen/);
+  assert.match(code, /b\.classList\.add\("sola"\)/);
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /\.panel3 \.msg\.sola\{/);
+  assert.match(html, /\.panel3 \.msg table\{/);
 });
 
 test('T285 PaperPlane: el mensaje vuela como avioncito, apuntando adonde va, y su rótulo lleva un dibujo sin internet', () => {
@@ -157,7 +187,7 @@ test('T306 PerSession_Empty_AndTheHour: sin mensajes lo dice; la hora lleva el d
 test('T307 PerSession_Page: la ventana usa la conversación por sesión y la nota habla de cada sesión', () => {
   const html = page({ agents: [], items: [], kanban: null, meta: null });
   assert.match(html, /\["Con las sesiones",charlaPorSesion\(nombre,d\.conSesiones\|\|\[\],/);
-  assert.match(html, /los últimos 10 con cada sesión, en orden; primero la que habló último\./);
+  assert.match(html, /los últimos 10 mensajes con cada sesión, en orden; primero la que habló último\./);
   assert.match(html, /@media \(max-width:600px\)\{\.ventana \.quienes\{flex-wrap:nowrap;overflow-x:auto/, 'en un teléfono, una sola fila');
 });
 

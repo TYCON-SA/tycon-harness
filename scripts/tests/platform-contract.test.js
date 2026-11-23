@@ -734,3 +734,22 @@ test('T30 Contrato_EstimateEnCreateYUpdate @story-2.75 @ac-27', async () => {
   const texto = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'platform', 'contract.js'), 'utf8');
   assert.doesNotMatch(texto, /Microsoft\.VSTS|OriginalEstimate|StoryPoints|ProjectV2/);
 });
+
+// 🔴 Falla con: un conector que no devuelve la rama de origen del pedido (el freno de pedidos la necesita para juzgar
+// `--delete-source-branch` en un `update`).
+test('T123 PrRead_GivesTheSourceBranch — leer un pedido devuelve su rama de origen, en las dos plataformas', async () => {
+  const m = mundo({ platform: { default: 'github' } });
+  const env = { ...m.env, TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: estadoGh({ pulls: { 'acme/portal': [
+    { number: 51, state: 'open', title: 'a', head: { ref: 'story/8.1-algo', sha: 'a1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+    { number: 52, state: 'open', title: 'b', head: { sha: 'b1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+  ] } }) };
+  const gh = async (number) => (await P().run('change-request.read', { number }, { env, repo: GH })).value.sourceBranch;
+  assert.strictEqual(await gh(51), 'story/8.1-algo');
+  assert.strictEqual(await gh(52), null, 'sin rama, null');
+  const w = mundoAzure([[]]);
+  fs.writeFileSync(path.join(w.fix, 'repos-pr.json'), JSON.stringify([prAzure(61), prAzure(62, { sourceRefName: 'refs/heads/dev' }), prAzure(63, { sourceRefName: 'refs/pull/63/merge' })]));
+  const az = async (number) => (await P().run('change-request.read', { number }, { env: w.env, repo: AZ })).value.sourceBranch;
+  assert.strictEqual(await az(61), 'story/61');
+  assert.strictEqual(await az(62), 'dev');
+  assert.strictEqual(await az(63), null, 'algo que no es una rama, null');
+});

@@ -555,6 +555,13 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
     if (sub === 'runtime-waiver') return 'runtime-waiver';
     if (sub === 'compare-waiver') return 'compare-waiver';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
+    // contestar «skip» a la pregunta del pase del código lo contesta la persona; la coordinadora, con el dueño ausente y
+    // la celda en skip, lo anota con --by-profile, que el guion comprueba. Una palabra opaca cuenta como el pedido
+    if (sub === 'review-answer') {
+      if (opaca) return 'review-skip';
+      const valor = (b) => { const i = a.indexOf(b); if (i >= 0) return a[i + 1]; const w = a.find((x) => x.startsWith(`${b}=`)); return w ? w.slice(b.length + 1) : undefined; };
+      return valor('--kind') === 'code' && valor('--choice') === 'skip' && !pide('--by-profile') ? 'review-skip' : null;
+    }
     if (sub === 'approve-pending') return 'pending-approval';
     if (sub === 'approve-save') return 'save';
     // nombrar a la coordinadora: sin frase, con el click del dueño; con `--quote` (aun vacío), la frase de respaldo, que
@@ -830,6 +837,19 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
     try { m = marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`)); } catch (e) { return { error: e.message }; }
     if (!m) return { error: `la sesión ${destino} no tiene una ejecución abierta` };
   }
+  // `--batch <tanda>` vale sólo sin corrida abierta en la sesión de la firma: con una, el guion mide la tanda de la corrida
+  const k = palabras.indexOf('--batch');
+  const tanda = k >= 0 ? String(palabras[k + 1] || '') : null;
+  if (tanda !== null && (!tanda || tanda.startsWith('-'))) return { error: '--batch no dice qué tanda: sin ella no sé qué criterios se firman' };
+  if (tanda !== null) {
+    // la corrida de la sesión de la firma, como la lee el guion (un marcador con su historia)
+    const quien = destino || sesion;
+    let abierta = m;
+    if (!abierta && quien && SESION.test(quien)) {
+      try { abierta = marcadorEn(path.join(stateDir(casa), 'active', `${quien}.json`)); } catch (e) { return { error: e.message }; }
+    }
+    if (abierta && abierta.storyId) return { error: `hay una ejecución abierta en la sesión ${quien}, y manda la tanda de la ejecución: pedila sin --batch` };
+  }
   const abs = path.isAbsolute(story) ? story : path.resolve((m && m.repoPath) || cwd || process.cwd(), story);
   if (!fs.existsSync(abs)) return { error: `no encuentro la historia ${una(abs, 200)}: sin sus criterios a la vista no se firma` };
   if (m && !wd.esLaDelMarcador(abs, m)) return { error: `${path.basename(abs)} no es la historia de la ejecución de la sesión ${destino}` };
@@ -839,14 +859,23 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   if (pedidos && !pedidos.length) return { error: '--acs no dice qué criterios: sin ellos a la vista no se firma' };
   let c;
   try {
-    c = wd.criteriosDe(abs, pedidos || []);
+    // con --batch, la matriz de esa tanda, la misma que mide el guion (waiver-display.js matrixForSignature); con --acs,
+    // sólo los humos de esos criterios, para decidir dentro del reloj del freno: el criterio sale igual que en el guion
+    const medida = tanda ? wd.matrixForSignature(abs, null, { batch: tanda, acs: pedidos }) : null;
+    if (medida && !medida.structuralError && !medida.batch) {
+      const porQue = (medida.warnings || []).find((w) => /mido todas las tandas/.test(w));
+      return { error: `no pude medir sólo la tanda ${tanda}${porQue ? ` (${una(porQue, 200)})` : ''}` };
+    }
+    const deOtra = medida && !medida.structuralError ? (pedidos || []).filter((n) => !(medida.acs || []).includes(n)) : [];
+    if (deOtra.length) return { error: `el AC ${deOtra.join(', ')} no es de la tanda ${tanda}: se firma con la suya` };
+    c = medida && medida.structuralError ? { error: medida.structuralError } : wd.criteriosDe(abs, pedidos || [], medida);
     if (!c.error && !pedidos) c = wd.criteriosDe(abs, c.matrix.notVerifiable || [], c.matrix);
   } catch (e) { return { error: `no pude armar los criterios (${una((e && e.message) || String(e), 200)})` }; }
   if (c.error) return { error: `no pude armar los criterios: la matriz no computa (${una(c.error, 200)})` };
   const faltan = (pedidos || []).filter((n) => !c.lista.some((x) => x.ac === n));
   if (faltan.length) return { error: `el AC ${faltan.join(', ')} no es un criterio pendiente de firma en ${path.basename(abs)}` };
-  if (!c.lista.length) return { error: `${path.basename(abs)} no tiene criterios pendientes de firma` };
-  return { lista: c.lista, historia: abs, texto: textoDeLosCriterios(c.lista) };
+  if (!c.lista.length) return { error: `${path.basename(abs)} no tiene criterios pendientes de firma${tanda ? ` en la tanda ${tanda}` : ''}` };
+  return { lista: c.lista, historia: abs, texto: textoDeLosCriterios(c.lista), ...(tanda ? { tanda: c.matrix.batch } : {}) };
 }
 
 // lo medido y la cota de un criterio con cota (`medida`, de waiver-display.js); nada en uno sin marca
@@ -876,11 +905,12 @@ const LARGO_DE_LO_QUE_SE_APRUEBA = 200;
 /**
  * Lo que se aprueba en el cuadro de `runtime-waiver`, con la razón que declararon sus criterios: la que comparten todos,
  * o que cada uno tiene la suya. La razón se recorta antes que el cuadro, así el corte no se come la comilla que la cierra.
+ * Con `tanda` (la firma sin corrida con `--batch`), la nombra: sus criterios son los que se miden.
  */
-function queDeLaExcepcion(lista) {
+function queDeLaExcepcion(lista, tanda = null) {
   const nums = [...new Set(lista.map((x) => x.ac))].sort((a, b) => a - b);
   const acs = nums.length > 1 ? `los AC ${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}` : `el AC ${nums[0]}`;
-  const inicio = `aceptar sin prueba en vivo ${acs.length > 80 ? `${nums.length} criterios` : acs}`;
+  const inicio = `aceptar sin prueba en vivo ${acs.length > 80 ? `${nums.length} criterios` : acs}${tanda ? ` de la tanda ${una(tanda, 60)}` : ''}`;
   const razones = [...new Set(lista.map(razonDeclarada))];
   if (razones.length > 1) return `${inicio}, cada uno por la razón que declaró`;
   if (razones[0] === null) return `${inicio}, sin razón declarada`;
@@ -996,9 +1026,11 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     const c = criteriosDelPedido(palabras, cwd, { casa, destino, sesion, memo });
     if (c.error) return { error: c.error };
     const lineas = c.lista.map(renglonDeLaExcepcion);
-    // la fuente, con el renglón de siempre; lo que se ve, sin cortes por campo (el cuadro corta el renglón entero)
+    // la fuente, con el renglón de siempre; lo que se ve, sin cortes por campo (el cuadro corta el renglón entero). Con
+    // tanda, la fuente la suma: el click dado a una tanda no vale para otra
     partes = { criterios: c.lista.map((x) => x.ac), queHace: lineas, queHaceALaVista: c.lista.map(renglonALaVista), completo: c.historia,
-      completoEnPalabras: m && m.storyId ? fuentes.laHistoria(m) : `la historia ${path.basename(c.historia)}`, fuente: lineas.join('\n'), que: queDeLaExcepcion(c.lista) };
+      completoEnPalabras: m && m.storyId ? fuentes.laHistoria(m) : `la historia ${path.basename(c.historia)}`,
+      fuente: [...(c.tanda ? [`la tanda: ${c.tanda}`] : []), ...lineas].join('\n'), que: queDeLaExcepcion(c.lista, c.tanda) };
   }
   let delComando = [];
   if (!partes) {
@@ -1308,7 +1340,7 @@ const PRECHEQUEO_VIA = 'TYCON_SIGN_PRECHECK_VIA';
 // las firmas de guion con requisitos propios; el carril y las firmas sobre un archivo no comprueban nada antes de firmar
 // (`adhoc-lane`: el largo del motivo y un tope menor que lo ya tocado se niegan antes de la ventana)
 const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
-  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'review-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
   // saltear los mutantes sin motivo, o en un paso que no corre las pruebas
   'escape:no-mutation',
   // nombrar sin id de sesión, o retirar desde una sesión que no es la coordinadora, se niega sin gastar el click
@@ -2557,8 +2589,9 @@ if (require.main === module) {
     const escapes = [];
     for (let k = 1; k < argv.length; k++) if (argv[k] === '--escape' && argv[k + 1]) escapes.push(argv[++k]);
     let r;
+    let evento = null;
     try {
-      const evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
+      evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
       // antes de decidir, los pedidos anteriores de la sesión vencen: un pedido vive sólo hasta el próximo comando
       vencerPedidos(casaDeLaCuenta(), evento.session_id);
       r = decidir({ evento, escapes });
@@ -2567,7 +2600,8 @@ if (require.main === module) {
     } catch (e) { r = negarCon(`no pude decidir la firma (${e.message})`, escapes.filter((id) => firmaDe(id))); }
     // el aviso del período antes del corte le llega a la persona en el mensaje del gancho; al agente se lo dice el lector
     const aviso = r.aviso ? { systemMessage: `⚠️ ${r.aviso}` } : {};
-    const json = r.decision === 'ask' ? JSON.stringify({ ...aviso, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: r.texto } })
+    // la pregunta sale por la salida común de los ganchos: en Codex, como negativa (`decidir` ya la niega allí)
+    const json = r.decision === 'ask' ? require('./hook-ask.js').salidaDePregunta({ evento, texto: r.texto, extra: aviso })
       : r.decision === 'allow' && r.aviso ? JSON.stringify(aviso) : undefined;
     lineas({ decision: r.decision, firma: (r.firmas || [])[0], via: r.via, relevo: r.relevo, avisos: (r.avisos || []).join(' ') || undefined, texto: r.texto, ofrece: r.ofrece || undefined, json });
     salirTrasElAviso();

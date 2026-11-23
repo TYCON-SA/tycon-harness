@@ -271,6 +271,8 @@ function leerPedido(args, ctx) {
       mergedAt: entro && p.closedDate ? String(p.closedDate) : null,
       mergeCommit: entro && /^[0-9a-f]{40}$/i.test(fusion) ? fusion.toLowerCase() : null,
       title: String(p.title || ''),
+      // la rama de origen sin `refs/heads/`; null si Azure no la dio (quien la lee no la toma por ninguna)
+      sourceBranch: /^refs\/heads\/./.test(String(p.sourceRefName || '')) ? String(p.sourceRefName).slice('refs/heads/'.length) : null,
     },
   };
 }
