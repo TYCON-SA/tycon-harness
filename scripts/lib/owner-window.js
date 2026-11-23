@@ -835,7 +835,7 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
     if (!abierta && quien && SESION.test(quien)) {
       try { abierta = marcadorEn(path.join(stateDir(casa), 'active', `${quien}.json`)); } catch (e) { return { error: e.message }; }
     }
-    if (abierta && abierta.storyId) return { error: `hay una corrida abierta en la sesión ${quien}, y manda la tanda de la corrida: pedila sin --batch` };
+    if (abierta && abierta.storyId) return { error: `hay una ejecución abierta en la sesión ${quien}, y manda la tanda de la ejecución: pedila sin --batch` };
   }
   const abs = path.isAbsolute(story) ? story : path.resolve((m && m.repoPath) || cwd || process.cwd(), story);
   if (!fs.existsSync(abs)) return { error: `no encuentro la historia ${una(abs, 200)}: sin sus criterios a la vista no se firma` };

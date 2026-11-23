@@ -83,7 +83,7 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   if (m) {
     // con una corrida abierta, la tanda es la que anotó la corrida: otra pedida a mano mediría otra cosa
     if (tanda) {
-      console.error(`🚫 marker.js runtime-waiver: no se firmó — hay una corrida abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}, y manda la tanda de la corrida (${m.batch || 'sin tanda: todas'}): pedila sin --batch.`);
+      console.error(`🚫 marker.js runtime-waiver: no se firmó — hay una ejecución abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}, y manda la tanda de la ejecución (${m.batch || 'sin tanda: todas'}): pedila sin --batch.`);
       process.exit(2);
     }
     // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma

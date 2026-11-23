@@ -1108,9 +1108,9 @@ test('F154-7 RuntimeWaiver_ConCorrida_Batch_Niega — con corrida abierta manda 
   E.arrancar('s-f7');
   const r = firmar(E, ['--batch', A, '--acs', '1'], 's-f7');
   assert.strictEqual(r.status, 2, salida(r));
-  assert.match(salida(r), /manda la tanda de la corrida/, salida(r));
+  assert.match(salida(r), /manda la tanda de la ejecución/, salida(r));
   const q = cuadro(E, ['--batch', A, '--acs', '1'], 's-f7');
-  assert.match(String(q.error), /manda la tanda de la corrida/, JSON.stringify(q));
+  assert.match(String(q.error), /manda la tanda de la ejecución/, JSON.stringify(q));
   assert.deepStrictEqual(firmas(E), []);
 });
 
