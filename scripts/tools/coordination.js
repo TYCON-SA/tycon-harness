@@ -720,11 +720,11 @@ function status(opts = {}) {
     if (q) asking.push(Object.defineProperty({ session: nameOf(sid), sid, since: q.since }, 'key', { value: q.key }));
     if (s.busy) {
       working.push({ session: nameOf(sid), sid, why: story || 'trabajando sin pipeline', since: s.statusAt });
-      // dice que trabaja, pero no escribe hace una hora y no corre ningún agente: trabada sin que nadie se entere
+      // dice que trabaja, pero no da un paso suyo hace una hora y no corre ningún agente: trabada sin que nadie se entere. Con
+      // «shell» terminó su turno y tiene un comando de fondo corriendo: no está trabada
       let b = null;
-      try { b = require('../lib/agent-silence.js').busySilence({ projectsDir: path.join(claudeDir(home), 'projects'), cwd: s.cwd, sid, now, silentMs: BUSY_SILENT_MS, agentMs: AGENT_SILENT_MS }); } catch (e) { b = { problem: `la conversación de ${nameOf(sid)} (${e.message})` }; }
-      if (b && b.problem) problems.push(b.problem);
-      else if (b) busySilent.push({ session: nameOf(sid), sid, ...b });
+      if (s.status !== 'shell') try { b = require('../lib/agent-silence.js').busySilence({ projectsDir: path.join(claudeDir(home), 'projects'), cwd: s.cwd, sid, now, silentMs: BUSY_SILENT_MS, agentMs: AGENT_SILENT_MS, readSteps: !opts.noTranscripts || opts.ownSteps === true }); } catch { b = null; }
+      if (b && Number.isFinite(b.minutos)) busySilent.push({ session: nameOf(sid), sid, ...b });
     }
     else if (justOpened.has(s.name)) working.push({ session: nameOf(sid), sid, why: 'recién abierta, todavía arrancando', since: (opened.find((o) => o.name === s.name) || {}).at || null });
     else {
@@ -1286,7 +1286,9 @@ function ownerWaitOnce(opts = {}) {
   if (!me) return { lines: [], stop: true, why: 'no sé de qué sesión es este comando: dejo de esperar' };
   const coord = confirmedCoordinator(home);
   if (coord !== me) return { lines: [], stop: true, why: `esta sesión ya no es la coordinadora confirmada (${coord ? `ahora es ${coord}` : 'no hay ninguna confirmada viva'}): dejo de esperar` };
-  const s = status({ ...opts, noTranscripts: true });
+  // sin abrir las conversaciones, salvo la hora del último paso de una ocupada: un mensaje que le llega (el «¿seguís?» que
+  // pide este mismo aviso) toca el archivo y la escondería otra hora
+  const s = status({ ...opts, noTranscripts: true, ownSteps: true });
   const unread = [...s.problems];
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unread, null);
   const a = readAnnounced(home);

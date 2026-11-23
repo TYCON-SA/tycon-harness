@@ -276,8 +276,8 @@ El mismo aviso trae dos cosas más:
   y cuyo archivo (`<conversación>/subagents/agent-<id>.jsonl`) no cambió en 20 minutos, sale como «X espera a su agente Y,
   que no escribe hace N min (su último paso: …)». `owner-wait` lo dice una vez por agente. Por qué: un comando del agente
   que nunca vuelve, o un permiso que no le sale a nadie, deja a la sesión esperando para siempre.
-- **La sesión que dice que trabaja y no escribe.** Una sesión «trabajando» cuya conversación no cambió en una hora y que no
-  corre ningún agente (ninguno escribió en 20 minutos) sale como «X dice que trabaja, pero no escribe hace N min y no corre
+- **La sesión que dice que trabaja y no escribe.** Una sesión «trabajando» que no dio un paso suyo en una hora (un mensaje que le
+  llega no cuenta), que no tiene un comando de fondo corriendo y que no corre ningún agente (ninguno escribió en 20 minutos) sale como «X dice que trabaja, pero no escribe hace N min y no corre
   nada (su último paso: …): ¿trabada?». `owner-wait` lo dice una vez por sesión. Por qué: un comando no pasa de 10 minutos,
   así que una hora callada sin agentes es una sesión trabada, y en la oficina se veía igual que una que trabaja.
 - **Los pedidos listos que nadie encoló, en GitHub.** Un pedido abierto y limpio (sin choque ni controles obligatorios

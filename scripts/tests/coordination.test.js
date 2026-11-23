@@ -3152,11 +3152,11 @@ test('Planes_DuenoAusente_SeJuntanParaLaVuelta: con la marca de ausente, el avis
 
 // La conversación de una sesión con su último paso, escrita hace `minutos`; con `agente`, un archivo de agente escrito hace
 // `agenteMin` (en un lote de flujo si `lote`).
-function conversacionQuieta(t, sid, { minutos, agenteMin = null, lote = false } = {}) {
-  const dir = path.join(t.home, '.claude', 'projects', t.root.replace(/[^A-Za-z0-9-]/g, '-'));
+function conversacionQuieta(t, sid, { minutos, agenteMin = null, lote = false, dir: carpeta = null } = {}) {
+  const dir = carpeta || path.join(t.home, '.claude', 'projects', t.root.replace(/[^A-Za-z0-9-]/g, '-'));
   fs.mkdirSync(dir, { recursive: true });
   const archivo = path.join(dir, `${sid}.jsonl`);
-  fs.writeFileSync(archivo, `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash', input: { command: 'npm test' } }] } })}\n`);
+  fs.writeFileSync(archivo, `${JSON.stringify({ type: 'assistant', timestamp: new Date(mins(minutos)).toISOString(), message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash', input: { command: 'npm test' } }] } })}\n`);
   fs.utimesSync(archivo, new Date(mins(minutos)), new Date(mins(minutos)));
   if (agenteMin != null) {
     const sub = lote ? path.join(dir, sid, 'subagents', 'workflows', 'wf_1') : path.join(dir, sid, 'subagents');
@@ -3207,7 +3207,50 @@ test('T98b OwnerWait_OcupadaCallada_UnaVez: owner-wait le dice a la coordinadora
     const vuelta = (seg) => C.ownerWaitOnce({ ...t.opts, sessionId: COORD_SID, now: NOW + seg * 1000, ownerWaits: () => ({ esperas: [], problemas: [] }), signatureDestinos: () => [] }).lines;
     assert.deepStrictEqual(vuelta(0).filter((l) => /trabada/.test(l)), ['Trabada dice que trabaja, pero no escribe hace 70 min y no corre nada (su último paso: «Bash»): ¿trabada?']);
     assert.deepStrictEqual(vuelta(2).filter((l) => /trabada/.test(l)), [], 'una vez');
+    // el «¿seguís?» que le manda la coordinadora toca el archivo: no es que volvió a escribir, y no se la olvida
+    const archivo = path.join(t.home, '.claude', 'projects', t.root.replace(/[^A-Za-z0-9-]/g, '-'), 's-trabada.jsonl');
+    fs.appendFileSync(archivo, `${JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: new Date(NOW + 2500).toISOString(), content: '¿seguís?' })}\n`);
+    assert.deepStrictEqual(vuelta(3).filter((l) => /trabada/.test(l)), []);
+    fs.utimesSync(archivo, new Date(mins(70)), new Date(mins(70)));
+    assert.deepStrictEqual(vuelta(4).filter((l) => /trabada/.test(l)), [], 'no se la olvidó: no la repite');
   } finally {
     OA.coordinadoraConfirmada = confirmada;
   }
+});
+
+test('T98c Status_OcupadaCallada_LoQueLlegaNoEsSuPaso: un mensaje que le llega, el estado «shell» y un error de lectura no cambian lo que se dice', () => {
+  // 🔴 un mensaje que le llega (el «¿seguís?» de la coordinadora) toca el archivo: no es la sesión trabajando
+  const t = toy();
+  session(t, 's-trabada', 'Trabada', { status: 'busy', statusUpdatedAt: mins(90) });
+  conversacionQuieta(t, 's-trabada', { minutos: 70 });
+  const archivo = path.join(t.home, '.claude', 'projects', t.root.replace(/[^A-Za-z0-9-]/g, '-'), 's-trabada.jsonl');
+  fs.appendFileSync(archivo, `${JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: new Date(mins(1)).toISOString(), content: '<cross-session-message>¿seguís?</cross-session-message>' })}\n`);
+  fs.utimesSync(archivo, new Date(mins(1)), new Date(mins(1)));
+  assert.deepStrictEqual(C.status(t.opts).busySilent.map((b) => [b.session, b.minutos]), [['Trabada', 70]]);
+  // un paso suyo hace 2 min sí es la sesión trabajando
+  fs.appendFileSync(archivo, `${JSON.stringify({ type: 'user', timestamp: new Date(mins(2)).toISOString(), toolUseResult: {}, message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } })}\n`);
+  assert.deepStrictEqual(C.status(t.opts).busySilent, []);
+  // «shell»: terminó su turno con un comando de fondo corriendo; no está trabada
+  const t2 = toy();
+  session(t2, 's-shell', 'ConComando', { status: 'shell', statusUpdatedAt: mins(90) });
+  conversacionQuieta(t2, 's-shell', { minutos: 70 });
+  assert.deepStrictEqual(C.status(t2.opts).busySilent, []);
+  // una conversación que no se puede leer no es un problema que frene los avisos de las demás
+  const t3 = toy();
+  session(t3, 's-rota', 'Rota', { status: 'busy', statusUpdatedAt: mins(90) });
+  fs.mkdirSync(path.join(t3.home, '.claude', 'projects', t3.root.replace(/[^A-Za-z0-9-]/g, '-'), 's-rota.jsonl'), { recursive: true });
+  const s3 = C.status(t3.opts);
+  assert.deepStrictEqual([s3.busySilent, s3.problems.filter((p) => /s-rota/.test(p))], [[], []]);
+});
+
+test('T98d Status_OcupadaCallada_CarpetaLarga: con un cwd largo, Claude Code corta el nombre de su carpeta y la conversación igual se encuentra', () => {
+  const t = toy();
+  const largo = path.join(t.root, ...Array.from({ length: 20 }, (_, i) => `carpeta-xxxxxxxx-${i}`));
+  fs.mkdirSync(largo, { recursive: true });
+  session(t, 's-larga', 'Larga', { status: 'busy', statusUpdatedAt: mins(90), cwd: largo });
+  const codificado = largo.replace(/[^A-Za-z0-9-]/g, '-');
+  assert.ok(codificado.length > 200);
+  // la carpeta como la arma Claude Code para un nombre de más de 200 caracteres: su principio y una marca
+  conversacionQuieta(t, 's-larga', { minutos: 70, dir: path.join(t.home, '.claude', 'projects', `${codificado.slice(0, 200)}-1a2b3c`) });
+  assert.deepStrictEqual(C.status(t.opts).busySilent.map((b) => b.session), ['Larga']);
 });
