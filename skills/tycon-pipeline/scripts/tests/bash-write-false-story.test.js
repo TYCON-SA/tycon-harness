@@ -160,6 +160,44 @@ test('SedEnLugar_CarpetaQueElShellExpande_Frena — ~+, ~-, ~usuario y CDPATH, c
   assert.ok(!frenaComoHistoria(juzgar(c, `cd ${c.lab} && sed ${EN_LUGAR} 's/x/y/' medir.sh`)), 'la carpeta escrita tal cual pasa');
 });
 
+// SedSinEnLugar_EscribeConW_Frena: un sed sin `-i` también escribe archivos, con el comando `w`, el `W` de GNU o el
+// modificador `w` de una sustitución, y corre comandos con `e`. El archivo que nombran es un destino aunque el sed no
+// edite en el lugar, también desde un guion de archivo (`-f`).
+test('SedSinEnLugar_EscribeConW_Frena — w, W, s///w y e, con y sin cd, con -n, -e y -f', () => {
+  const c = carpeta();
+  fs.writeFileSync(path.join(c.lab, 'guion.sed'), 'p\n1w s9001.md\n');
+  for (const cmd of [
+    `cd ${c.lab} && sed -n 'w s9001.md' medir.sh`,
+    `sed -n 'w s9001.md' medir.sh`,
+    `sed 'w s9001.md' medir.sh`,
+    `sed -n 'W s9001.md' medir.sh`,
+    `sed -n 's/x/y/w s9001.md' medir.sh`,
+    `sed -n '1w s9001.md' medir.sh`,
+    `sed -n '/x/w s9001.md' medir.sh`,
+    `sed -n -e 'p' -e 'w s9001.md' medir.sh`,
+    `sed -n '1{w s9001.md\n}' medir.sh`,
+    `sed -n "w s9001.md" medir.sh`,
+    `sed -n 'w plantillas/template.md' medir.sh`,
+    // el guion leído de un archivo, y `e`, que corre un comando
+    `sed -n -f guion.sed medir.sh`,
+    `cd ${c.lab} && sed -n --file=guion.sed medir.sh`,
+    `sed -n '1e touch s9001.md' medir.sh`,
+    // lo que confirmó el pase: la expresión pegada a su opción, el guion por la entrada y el guion que escribe el
+    // mismo comando (el freno no lo encuentra en el disco)
+    `gsed -n --expression='w s9001.md' medir.sh`,
+    `sed -n --expression='1w s9001.md' medir.sh`,
+    `sed -n -f - medir.sh <<'EOF'\nw s9001.md\nEOF`,
+    `sed -n -f /dev/stdin medir.sh <<'EOF'\n1w s9001.md\nEOF`,
+    `printf 'w s9001.md\\n' > nuevo.sed && sed -n -f nuevo.sed medir.sh`,
+    `printf "w\\ts9001.md\\n" > nuevo.sed; sed -n -f nuevo.sed medir.sh`,
+    `printf 'p\\nw s9001.md\\n' > nuevo.sed; sed -n -f nuevo.sed medir.sh`,
+  ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `frena: ${cmd}`);
+  // leer o imprimir no escribe: un sed sin -i y sin w sigue pasando, aunque lea una historia
+  for (const cmd of [`sed -n 'p' s9001.md`, `sed -n '1,5p' s9001.md medir.sh`, `sed 's/x/y/' medir.sh`]) {
+    assert.ok(!frenaComoHistoria(juzgar(c, cmd)), `no frena: ${cmd}`);
+  }
+});
+
 test('Programa_QuePuedeCorrerElTexto_Frena — el pase adversarial: otro intérprete, módulos armados, salida a un shell', () => {
   const c = carpeta();
   const sed = 'sed -i \\"\\" s/ready-for-dev/done/ s9001.md';
