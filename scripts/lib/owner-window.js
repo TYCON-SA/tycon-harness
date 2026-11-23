@@ -1307,19 +1307,42 @@ const PLAZO_DEL_CHEQUEO = { save: 240000 };
 // el de las demás: menos que los 20 s del freno entero, que antes calcula los criterios y después valida el click. Si el
 // guion no contesta a tiempo, la ventana se abre como siempre y el guion vuelve a comprobar todo al firmar
 const PLAZO_DEL_PRECHEQUEO_MS = 12000;
+// Con la máquina cargada, lo que corre antes del chequeo puede comerse buena parte de los 20 s, y un chequeo con su plazo
+// entero haría que el reloj del freno corte el comando sin abrir la ventana. Por eso, cuando lo consulta el freno de
+// seguridad (que pone en TYCON_SAFETY_DEADLINE_S el segundo en que lo corta su reloj), el chequeo usa sólo lo que le
+// queda, menos un margen para lo que viene después (armar la ventana, el registro, contestar). Si no queda ni el mínimo,
+// no se corre: la ventana se abre como siempre, la firma la sigue dando el dueño y el guion comprueba todo al firmar.
+const MARGEN_DEL_FRENO_MS = 3000;
+const MINIMO_DEL_CHEQUEO_MS = 1000;
+
+/** El plazo del chequeo de `firma`, en ms: el suyo, acotado por lo que le queda al freno; 0 = no hay tiempo. */
+function plazoDelChequeo(firma, env, ahora = Date.now()) {
+  const propio = PLAZO_DEL_CHEQUEO[firma] || PLAZO_DEL_PRECHEQUEO_MS;
+  env = env || process.env;
+  const tope = String(env.TYCON_SAFETY_DEADLINE_S || '');
+  if (!/^[1-9][0-9]{8,11}$/.test(tope)) return propio;
+  const queda = Number(tope) * 1000 - ahora - MARGEN_DEL_FRENO_MS;
+  return queda < MINIMO_DEL_CHEQUEO_MS ? 0 : Math.min(propio, queda);
+}
 
 /**
  * Corre en modo de chequeo el guion de este mismo árbol que nombran las `palabras` (las de la forma canónica), en la
  * carpeta del evento, con la sesión del evento y la casa de la cuenta: `{ ok: true }` si el guion llegó a la firma con todo en regla,
  * `{ niega: <lo que dijo> }` si se negó antes, null si no contestó (y la ventana se abre como siempre).
+ * `{ sinRespuesta: <por qué> }` si no quedó tiempo para correrlo o no terminó en su plazo: para la ventana es lo mismo
+ * que null, pero la firma automática y el desvío a la coordinadora, que no tienen a una persona mirando, no siguen sin
+ * él: la firma va a la ventana y la da el dueño.
  */
 function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env, via = null }) {
   // el de los controles de la base vive en scripts/ci y es de la consola; los demás, al lado del pipeline y de node
   const nombre = base(palabras[0]);
   const sh = nombre.endsWith('.sh');
   const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
-  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_CHEQUEO[firma] || PLAZO_DEL_PRECHEQUEO_MS,
+  const plazo = plazoDelChequeo(firma, env);
+  if (!plazo) return { sinRespuesta: 'no quedó tiempo para el chequeo del guion antes de que corte el freno' };
+  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: plazo,
     env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', [PRECHEQUEO_VIA]: via || '', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
+  if (r.error && r.error.code === 'ETIMEDOUT') return { sinRespuesta: `el chequeo del guion no terminó en ${Math.round(plazo / 1000)} s` };
   if (r.error || r.status === null) return null;
   if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;
   // lo que dijo, sin los renglones informativos («ℹ️ …»): el cuadro tiene lugar para el motivo del rechazo, no para avisos
@@ -1622,7 +1645,8 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     else if (CON_PRECHEQUEO.has(firmaGuion)) {
       let c = null;
       try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: 'automatica' }); } catch (e) { c = { niega: `no pude correr el chequeo del guion (${e.message})` }; }
-      if (c && c.niega) automatica = { ok: false, motivo: una(c.niega, 300) };
+      // sin el chequeo no se firma sola: va a la ventana y la da el dueño
+      if (c && (c.niega || c.sinRespuesta)) automatica = { ok: false, motivo: una(c.niega || c.sinRespuesta, 300) };
     }
     // la máquina donde se firmó, como en la delegación: la constancia de la refirma la exige (run-base-controls.sh)
     let maquina = null;
@@ -1705,6 +1729,8 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
           let c = null;
           try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: null }); } catch (e) { chequeo = `no pude correr el chequeo del guion (${e.message})`; }
           if (c && c.niega) return { decision: 'deny', firmas: pendientes, texto: `No te la desvié a la coordinadora: el comando se iba a negar antes de usar la firma. Lo que dijo: ${una(c.niega, 800)}. Arreglá eso y volvé a pedirla` };
+          // sin el chequeo no se desvía: la firma va a la ventana y la da el dueño
+          if (c && c.sinRespuesta) chequeo = c.sinRespuesta;
         }
         let anotada = null;
         if (chequeo) sinDesvio = chequeo;
@@ -2489,7 +2515,7 @@ function quienFirmo({ via, sesion, automatica } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, padres, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { plazoDelChequeo, detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, padres, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, ofreceTrasDecidir, markerEstable,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 

@@ -525,6 +525,15 @@ test('Desvio_DespuesDelChequeoDelGuion_YaAprobadoNoDejaRenglon (T20) — @story-
   assert.deepStrictEqual(desviados(L.casa), []);
 });
 
+test('T108o Desvio_ChequeoSinRespuesta_NoSeDesvia_LaVentanaDicePorQue', (t) => {
+  // 🔴 rojo si: sin tiempo para el chequeo del guion, el renglón se desvía a la coordinadora sin comprobarlo
+  const L = laboratorio(t);
+  const r = ow.decidir(pedido(L, 'ses-a', PENDIENTE(L.ajeno), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default', comprobar: () => ({ sinRespuesta: 'el chequeo del guion no terminó en 5 s' }) }));
+  assert.notStrictEqual(r.via, 'desviada', r.texto);
+  assert.match(r.texto, /No se desvió a la coordinadora: el chequeo del guion no terminó en 5 s/);
+  assert.deepStrictEqual(desviados(L.casa), []);
+});
+
 test('AprobacionExplicita_GanaAlDesvio (T23) — @story-8.295 @ac-23', (t) => {
   const L = laboratorio(t);
   const aprobacion = { id: 'ap-1', sesion: 'ses-a', texto: 'aprobado' };

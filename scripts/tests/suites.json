@@ -5023,6 +5023,12 @@
       "requiere": []
     },
     {
+      "__nota": "el chequeo del guion antes de la ventana usa sólo lo que le queda al freno de seguridad (TYCON_SAFETY_DEADLINE_S, menos un margen): un chequeo trabado se corta antes que el reloj del freno, sin tiempo no se corre y la ventana se abre como siempre; el freno le pasa a la ventana el segundo en que lo corta su reloj, descontado lo que ya gastó. Salteadas en Windows las que lanzan el freno o un guion trabado.",
+      "raiz": "arnes",
+      "ruta": "tests/precheck-guard-deadline.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la trampa de errores del freno de comandos deja su línea en hook-errors.log (renglón y texto del guion, con sello y renglón en blanco; nunca el comando) cuando lo hace dejar pasar; la salida normal no escribe. Corre una copia del freno con un renglón que falla.",
       "raiz": "arnes",
       "ruta": "tests/safety-guard-err-trap.test.js",
