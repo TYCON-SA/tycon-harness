@@ -468,9 +468,9 @@ function preparar({ lanza, destino, estado, designada, config, home = require('o
   const parte = parteDe(marker, storyTexto);
   const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto, batch: batchDe(parte) });
   const cfg = configUsada(config);
-  // la revisión de la propia sesión firma una rutina con `review`, y un plan delicado si el perfil lo lista como trámite
-  // (automatic-signing.js); si no puede firmar, informa
-  const informativa = propia && ((delicate.value && !delicadaDeTramite()) || cfg.plan_review.routine_approval !== 'review');
+  // la revisión de la propia sesión firma una rutina con `review`; un plan delicado nunca (lo aprueba una persona): ahí
+  // informa
+  const informativa = propia && (delicate.value || cfg.plan_review.routine_approval !== 'review');
   // el número al azar que ata el resultado del pase a esta revisión: un resultado sin él, o con el de otra, no se anota
   const numero = crypto.randomBytes(16).toString('hex');
   const corte = cfg.review.blocking_severity;
@@ -541,10 +541,18 @@ function revisionesDe(estado, destino, corrida, problemas) {
 /**
  * Las sesiones de la corrida de `marker`: la de ahora y, si adoptó la corrida de otra (`adopt-session`), la anterior.
  * La revisión que se hizo para la anterior es de esta misma corrida: se hereda, y sigue atada a la huella del plan.
+ * Un solo salto: el marcador guarda sólo la última adopción, así que después de A→B→C lo hecho para A no se ve y se
+ * pide de nuevo (falla cerrado).
  */
 function sesionesDeLaCorrida(destino, marker) {
   const previa = marker && typeof marker.adoptedFrom === 'string' && marker.adoptedFrom && marker.adoptedFrom !== destino ? marker.adoptedFrom : null;
   return previa ? [destino, previa] : [destino];
+}
+
+/** La constancia más nueva de esta corrida sobre alguna de `destinos` (las sesiones de la corrida), o null. */
+function ultimaDeLaCorrida({ estado, destinos, corrida }) {
+  return destinos.map((d) => ultimaDelDestino({ estado, destino: d })).filter((c) => c && c.corrida && mismaCorrida(c.corrida, corrida))
+    .sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora))[0] || null;
 }
 
 // las vueltas de la revisión del plan de una historia que se lanzan sin preguntar: la siguiente la decide una persona
@@ -921,23 +929,24 @@ function lineaDelCuadroSola({ estado, destino, marker, config }) {
 }
 
 /**
- * Las condiciones de la aprobación del plan por delegación: `{ codigo: 2, motivo }` para no firmar (el pedido no se
- * gasta), o `{ codigo: 0, via: 'revision', constancia }`. Primero si la story es delicada y si el perfil deja que la
- * coordinadora apruebe; después la constancia. Todo se vuelve a calcular ahora: el plan, la story y si es delicada.
- * `delegacion(o)` (opcional) mira la delegación del perfil; sin ella, la miró antes el freno de la firma.
+ * Las condiciones de la aprobación del plan sin persona (la delegación, la firma de trámite, «hecho y avisado», la
+ * revisión de la propia sesión): `{ codigo: 2, motivo }` para no firmar (el pedido no se gasta), o
+ * `{ codigo: 0, via: 'revision', constancia }`. Primero si la story es delicada: entonces no, nunca, diga lo que diga el
+ * perfil; después si el perfil deja que la coordinadora apruebe, y la constancia. Todo se vuelve a calcular ahora: el
+ * plan, la story y si es delicada. `delegacion(o)` (opcional) mira la delegación del perfil; sin ella, la miró antes el
+ * freno de la firma.
  */
-function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion, home, delegaDelicada = delicadaDelegada, deTramite = delicadaDeTramite }) {
+function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion, home }) {
   const plan = planDe(marker);
   const storyFile = storyDe(marker);
   let storyTexto = null;
   try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
   const parte = parteDe(marker, storyTexto);
   const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parte) });
-  // un plan delicado: sólo la coordinadora para otra sesión, con `plan-approval:delicada` delegada en el perfil; la
-  // revisión que lanzó la propia sesión no lo aprueba nunca. Lo demás (su revisión, aprobada, sobre este plan) sigue igual
-  // un plan delicado: con la revisión aprobada, lo firma el arnés si el perfil lo lista como trámite; si no, sólo la
-  // coordinadora para otra sesión, con `plan-approval:delicada` delegada
-  if (delicate.value && !deTramite({ home }) && (firmante === destino || !delegaDelicada({ sesion: firmante, destino, estado, home }))) return no(`plan delicado (nivel 2): lo aprueba el dev, no la revisión (${delicate.reason})`);
+  // un plan delicado lo aprueba una persona, con su click o su «aprobado» (o en su terminal): ni la revisión de la propia
+  // sesión, ni la coordinadora por delegación, ni el arnés como trámite. El perfil no lo cambia: `plan-approval:delicada`
+  // en approvals.delegated_signing no lo vuelve trámite ni lo delega
+  if (delicate.value) return no(`plan delicado (nivel 2): lo aprueba el dev con su click o su «aprobado», no la revisión ni la delegación (${delicate.reason})`);
   const cfg = configUsada(config);
   if (cfg.plan_review.routine_approval !== 'review') return no(`${PIDE_EL_CLICK(cfg)}: ${ESPERA}`);
   const malEscrita = problemaDelAprobador(config);
@@ -1022,24 +1031,6 @@ function revisionEnContra({ estado, destino, marker }) {
   revision: { ts: u.ts || null, veredicto: u.veredicto, sesion: u.sesion || null } };
 }
 
-/** ¿El perfil lista el plan de una historia delicada como trámite, que firma el arnés solo? (automatic-signing.js) */
-function delicadaDeTramite({ home } = {}) {
-  try {
-    const raiz = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib');
-    const forma = require(path.join(raiz, 'signatures.js')).PLAN_DELICADO;
-    return !!require(path.join(raiz, 'automatic-signing.js')).esDeTramite({ firma: forma, ...(home ? { home } : {}) }).ok;
-  } catch (_) { return false; }
-}
-
-/** ¿El perfil le delega a la coordinadora `sesion` el plan de una historia delicada de `destino`? Con todas las llaves. */
-function delicadaDelegada({ sesion, destino, estado, home }) {
-  try {
-    const raiz = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib');
-    const forma = require(path.join(raiz, 'signatures.js')).PLAN_DELICADO;
-    return !!require(path.join(raiz, 'delegated-signing.js')).delegaSinVentana({ firma: forma, sesion, destino, estado, ...(home ? { home } : {}) }).ok;
-  } catch (_) { return false; }
-}
-
 /**
  * El control previo mínimo de una firma de rutina que el perfil puede delegar y no tiene uno propio (eximir de la
  * comparación con main, preparar la prueba con navegador, cerrar una ejecución que la partición dejó sin objeto): la
@@ -1113,8 +1104,11 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   // sin el registro no se sabe si se eligió seguir ni se cuentan los rechazos o los cambios del plan, que son los topes
   // que llevan el caso al dueño: llega al dueño ahora, sin relanzar
   if (sinRegistro.length) return { ...out, alDueno: { llega: true, motivo: `${sinRegistro[0]}: lo decide una persona` } };
-  if (eligioSeguir({ estado, destino: sesion, huellaPlan })) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
-  const c = ultimaDelDestino({ estado, destino: sesion });
+  // en una corrida adoptada cuentan también la revisión, los rechazos y la elección de seguir de la sesión anterior
+  const destinos = sesionesDeLaCorrida(sesion, marker);
+  // las dos sesiones juntas: manda la última respuesta, no cualquier «seguir» de una de ellas
+  if (eligioSeguir({ estado, destino: destinos, huellaPlan })) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
+  const c = ultimaDeLaCorrida({ estado, destinos, corrida: corridaDe(marker) }) || ultimaDelDestino({ estado, destino: sesion });
   // con coordinadora, una informativa no tapa la revisión que ella tiene que lanzar; la de la propia sesión que puede
   // firmar (rutina con `review`) sí cuenta: aprueba en los dos casos
   const informativa = !!c && c.informativa === true;
@@ -1122,7 +1116,7 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     && !(hayCoordinadora && informativa && r.approves === 'coordinator');
   if (revisado && c.veredicto === 'rechazado') {
     // rechazado: la sesión corrige y vuelve a cerrar el plan; llega al dueño con O5 en sí o al tope de rechazos seguidos
-    const n = rechazosSeguidos({ estado, destino: sesion, corrida: corridaDe(marker) });
+    const n = rechazosSeguidos({ estado, destino: destinos, corrida: corridaDe(marker) });
     // el mismo tope que las vueltas de revisores del código: el repo manda sobre la organización
     const tope = topeDeRechazos(cfg, marker.repoPath);
     const llega = cfg.plan_review.rejected_reaches_owner || n >= tope;
@@ -1140,7 +1134,7 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   const deOtraVersion = !!(c && c.huellas && c.huellas.plan !== huellaPlan && mismaCorrida(c.corrida, corridaDe(marker)) && c.veredicto);
   if (r.decision === 'run' || ((deOtraVersion || deUnCambio) && r.decision === 'ask')) {
     // el plan cambió mientras corría: se reintenta una sola vez sobre el plan cerrado; la segunda llega al dueño
-    const deCambio = revisionesDe(estado, sesion, corridaDe(marker)).filter((j) => esCambio(j.motivo));
+    const deCambio = revisionesDe(estado, destinos, corridaDe(marker)).filter((j) => esCambio(j.motivo));
     const cambios = deCambio.length;
     if (cambios >= 2) return { ...out, alDueno: { llega: true, motivo: `no se pudo revisar: ${deCambio[deCambio.length - 1].motivo}, dos veces` } };
     out.comando = hayCoordinadora ? `marker.js plan-review --for-session ${sesion}` : 'marker.js plan-review';
@@ -1233,7 +1227,7 @@ module.exports = {
   rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
-  tieneRenglon, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
+  tieneRenglon, sesionesDeLaCorrida, ultimaDeLaCorrida, mismaCorrida, corridaDe, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };
 
 // el tope de rechazos, para sus pruebas (start-silences.test.js)

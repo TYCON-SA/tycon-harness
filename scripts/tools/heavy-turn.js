@@ -25,7 +25,7 @@
  *   release [--process <pid>]                   suelta el lugar de ese proceso; el de otro no lo toca
  *   release --reserve                           suelta la reserva (la coordinadora, o la sesión que la puso)
  *   grant --to <sesión>                         el «arrancá» de la coordinadora para una sesión de la fila (2 = no se puede)
- *   reserve --for "<qué>"                       la coordinadora reserva el turno para revisores o un pase (77 = ya corre una)
+ *   reserve --for "<qué>" [--to <sesión>]       la coordinadora reserva el turno para revisores o un pase, de una sesión (77 = ya corre una)
  *   holder [--json]                         la ejecución grande más vieja que corre, o nadie
  *   holders [--json]                        las que corren, de la más vieja a la más nueva
  *
@@ -130,10 +130,10 @@ const byAge = (a, b) => (Number(a.at) - Number(b.at)) || (Number(a.pid) - Number
 
 /**
  * Las ejecuciones grandes que corren: `[{ pid, sid, session, what, at }]`, de la más vieja a la más nueva. Con `problems`,
- * el lugar que no se puede leer se anota ahí.
+ * el lugar que no se puede leer se anota ahí. Con `state`, se leen de esa carpeta de estado en vez de la de `home`.
  */
-function holders({ home = require('os').homedir(), now = Date.now(), problems = null } = {}) {
-  return slotFiles(home).map((f) => readSlot(f, problems).turn).filter((t) => inForce(t, now)).sort(byAge);
+function holders({ home = require('os').homedir(), now = Date.now(), problems = null, state = null } = {}) {
+  return (state ? slotFilesIn(state) : slotFiles(home)).map((f) => readSlot(f, problems).turn).filter((t) => inForce(t, now)).sort(byAge);
 }
 
 /** La ejecución grande más vieja que corre, `{ pid, sid, session, what, at }`, o null; `problems` como en `holders`. */
@@ -441,15 +441,18 @@ function grant({ home = require('os').homedir(), env = process.env, arnes, to, n
 }
 
 /** La reserva del turno para «what» (revisores, un pase): `{ ok, code, message }`; 77 si corre una ejecución grande. */
-function reserve({ home = require('os').homedir(), env = process.env, arnes, what, now = Date.now() } = {}) {
+function reserve({ home = require('os').homedir(), env = process.env, arnes, what, to, now = Date.now() } = {}) {
   const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
   const c = coordinatorSession({ home, env, arnes, sid });
   if (c.why) return { ok: false, code: 2, message: c.why };
   if (!oneLine(what)) return { ok: false, code: 2, message: 'falta --for "<qué>"' };
+  // `--to <sesión>`: la sesión que lanza lo reservado (su pase en modo ágil; agile-pass-turn.js la reconoce por esto)
+  const para = to == null ? null : resolveSession(home, to);
+  if (para && para.error) return { ok: false, code: 2, message: para.error };
   const running = holders({ home, now });
   if (running.length) return { ok: false, code: BUSY_EXIT, message: `No reservo: ya corre ${running.map(describe).join(' y ')}. La reserva no la pisa: esperá que termine.` };
-  writeWhole(reserveFile(home), { sid, session: sessionName(home, sid), what: oneLine(what), at: now });
-  return { ok: true, code: 0, message: `turno reservado para «${oneLine(what)}» hasta release --reserve, o ${RESERVE_MS / 60000} min` };
+  writeWhole(reserveFile(home), { sid, session: sessionName(home, sid), what: oneLine(what), at: now, ...(para ? { to: para.sid, toSession: sessionName(home, para.sid) } : {}) });
+  return { ok: true, code: 0, message: `turno reservado para «${oneLine(what)}»${para ? ` de ${sessionName(home, para.sid)}` : ''} hasta release --reserve, o ${RESERVE_MS / 60000} min` };
 }
 
 /** Suelta la reserva; la suelta la coordinadora o la sesión que la puso. */
@@ -674,7 +677,9 @@ function main(argv) {
   }
   if (cmd === 'release') { release({ pid }); return 0; }
   if (cmd === 'grant' || cmd === 'reserve') {
-    const r = cmd === 'grant' ? grant({ to: val('--to') }) : reserve({ what: val('--for') });
+    // `--to` sin su sesión (al final, o seguido de otra opción) no es «sin --to»: falla en vez de reservar sin sesión
+    const toOf = () => (rest.includes('--to') ? (/^--/.test(val('--to') || '--') ? '' : val('--to')) : undefined);
+    const r = cmd === 'grant' ? grant({ to: val('--to') }) : reserve({ what: val('--for'), to: toOf() });
     (r.ok ? process.stdout : process.stderr).write(`${r.message}\n`);
     return r.code;
   }

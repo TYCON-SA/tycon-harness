@@ -231,6 +231,9 @@ test('T32 Lista_FueraFrena_DentroPasa — @story-8.174 @ac-30', () => {
 
 // El arnés se reconoce por su origen (scripts/lib/harness-repo.js): un repo con el origen de este clon es el arnés, y
 // ahí el rechazo fuera de la lista conserva la delegación; en un producto habla de vos (P2v52)
+// El portón busca ese criterio en el arnés que dice TYCON_GUIDES_DIR o el enlace de la casa, y lo guarda la primera vez
+// que lo busca: se evalúa en un proceso aparte con la variable puesta en este clon. Sin ella, con una casa sin el arnés
+// (la CI, una HOME vacía), decide el nombre de la carpeta y la prueba mide la máquina, no el portón.
 test('T32b FueraDeLaLista_EnElArnes_ConservaLaDelegacion — @story-8.174 @ac-52', (t) => {
   let origen = null;
   try { origen = git(RAIZ, 'remote', 'get-url', 'origin'); } catch (_) { origen = null; }
@@ -240,7 +243,13 @@ test('T32b FueraDeLaLista_EnElArnes_ConservaLaDelegacion — @story-8.174 @ac-52
   git(dir, 'remote', 'set-url', 'origin', origen);
   const h = tmp('home-');
   const state = conCarril(h, 's32b', { allowedFiles: [path.join(dir, 'src/a.js')] });
-  const r = ev(state, 's32b', path.join(dir, 'docs/x.md'), dir);
+  const pedidoEv = { filePath: path.join(dir, 'docs/x.md'), sessionId: 's32b', cwd: dir, via: 'Edit', stateDir: state, installedRoots: [] };
+  const hijo = spawnSync(process.execPath, ['-e', [
+    `const r = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'story-gate-io.js'))}).evaluate(${JSON.stringify(pedidoEv)});`,
+    'process.stdout.write(JSON.stringify({ verdict: { kind: r.verdict.kind }, message: r.message }));',
+  ].join('\n')], { encoding: 'utf8', env: { ...process.env, TYCON_GUIDES_DIR: path.resolve(RAIZ), HOME: h } });
+  assert.equal(hijo.status, 0, hijo.stderr);
+  const r = JSON.parse(hijo.stdout);
   assert.strictEqual(r.verdict.kind, 'adhoc-out-of-list');
   assert.match(r.message, /por delegación, la lista nueva contiene entera la firmada/, r.message);
   assert.doesNotMatch(r.message, /lo aprueba el dev, como al abrir/);

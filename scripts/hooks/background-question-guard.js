@@ -16,6 +16,12 @@
  *           espera la sesión no lee mensajes: la negación llega como respuesta y la sesión reintenta sola. Lo que hoy
  *           pasa sin pedir, pasa; en una sesión que no es de fondo, nada cambia.
  *
+ * Claude: PreToolUse de Edit, Write, MultiEdit y NotebookEdit. En una sesión de fondo, niega la edición que una regla
+ *           «ask» de la configuración administrada haría pedirle a una persona (la del freno de producción cubre el
+ *           catálogo y sus estados, también en una carpeta temporal) y dice cómo seguir. Las reglas se leen de esa
+ *           configuración, así que vale también para las que sume la organización. En una sesión que no es de fondo, la
+ *           regla pregunta como siempre.
+ *
  * Claude: PreToolUse de SendMessage: a una sesión de fondo que abrió `open` sólo le escribe la coordinadora. Un
  *           mensaje de otra sesión le llega retenido (otro modo de permisos) y la deja esperando un click en una pestaña
  *           que nadie mira; se niega y se manda a la coordinadora, que se lo pasa. Acá se mira el DESTINO (`tool_input.to`), no la
@@ -38,6 +44,7 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
 const QUESTION_TOOLS = new Set(['AskUserQuestion', 'mcp__spokenly__ask_user_dictation']);
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const MESSAGE_TOOL = 'SendMessage';
 // un destino que no es otra sesión: la conversación principal o un ayudante de la propia sesión (su id)
 const NOT_A_SESSION = /^(main|a[0-9a-f]{16})$/;
@@ -266,14 +273,82 @@ function decidirBash(d, { home, env }) {
   return { decision: 'deny', forma: forma.forma, reason: require('../lib/bg-permission-shapes.js').textoDeLaNegativa(forma) };
 }
 
+/** La carpeta de la configuración administrada de Claude Code (la misma que usa owner-approvals.js). */
+function carpetaAdministrada(plataforma = process.platform) {
+  if (plataforma === 'darwin') return '/Library/Application Support/ClaudeCode';
+  return plataforma === 'win32' ? 'C:\\Program Files\\ClaudeCode' : '/etc/claude-code';
+}
+
 /**
- * Lo que decide el freno: null (pasa) o `{ decision: 'deny', reason }`. `home`, `env` y `arnes` (el árbol con el perfil del equipo) se pasan en las pruebas.
+ * Los patrones de las reglas «ask» de edición (`Edit(…)`, `Write(…)`) de la configuración administrada: su archivo y los
+ * `.json` de su carpeta `managed-settings.d/` (las copias con otro final no se cargan). Un archivo que no se lee no suma.
  */
-function decidir(evento, { home = os.homedir(), env = process.env, arnes, ahora = Date.now() } = {}) {
+function reglasQuePreguntan(administrada) {
+  const d = path.join(administrada, 'managed-settings.d');
+  const archivos = [path.join(administrada, 'managed-settings.json')];
+  try { archivos.push(...fs.readdirSync(d).filter((f) => f.endsWith('.json')).sort().map((f) => path.join(d, f))); } catch (_) { /* sin carpeta */ }
+  const out = [];
+  for (const a of archivos) {
+    let j = null;
+    try { j = JSON.parse(fs.readFileSync(a, 'utf8')); } catch (_) { continue; }
+    const ask = j && j.permissions && Array.isArray(j.permissions.ask) ? j.permissions.ask : [];
+    for (const r of ask) { const m = /^(?:Edit|Write)\((.+)\)$/.exec(String(r)); if (m) out.push(m[1]); }
+  }
+  return out;
+}
+
+/**
+ * ¿La ruta absoluta `abs` cae en el patrón de la regla? Sólo los patrones absolutos (`//ruta`) y los de la casa (`~/ruta`),
+ * con `**` (cualquier tramo) y `*`; uno relativo al proyecto o a la configuración no se juzga acá.
+ */
+function caeEnLaRegla(abs, patron, home) {
+  let p;
+  if (patron.startsWith('//')) p = patron.slice(1);
+  else if (patron.startsWith('~/')) p = `${home.replace(/\\/g, '/').replace(/\/$/, '')}/${patron.slice(2)}`;
+  else return false;
+  let re = '';
+  for (let i = 0; i < p.length; i++) {
+    if (p.startsWith('**/', i)) { re += '(?:.*/)?'; i += 2; continue; }
+    if (p.startsWith('**', i)) { re += '.*'; i += 1; continue; }
+    if (p[i] === '*') { re += '[^/]*'; continue; }
+    re += p[i].replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${re}$`).test(abs);
+}
+
+/**
+ * Una edición de fondo que pediría permiso por una regla «ask» de la configuración administrada (la del freno de
+ * producción cubre el catálogo y sus estados): `{ decision: 'deny', reason }` o null. Nadie contesta ese cuadro de fondo,
+ * y la sesión quedaba trabada sin leer mensajes; se niega con el motivo y cómo seguir.
+ */
+function decidirEdicion(d, { home, env, administrada }) {
+  const ti = d.tool_input || {};
+  const ruta = typeof ti.file_path === 'string' ? ti.file_path : (typeof ti.notebook_path === 'string' ? ti.notebook_path : '');
+  if (!ruta) return null;
+  const abs = path.resolve(typeof d.cwd === 'string' ? d.cwd : process.cwd(), ruta).replace(/\\/g, '/');
+  const regla = reglasQuePreguntan(administrada).find((p) => caeEnLaRegla(abs, p, home));
+  if (!regla) return null;
+  const sid = d.session_id;
+  if (!sid || !/^[\w-]+$/.test(String(sid)) || !esDeFondo({ home, sid, env })) return null;
+  return {
+    decision: 'deny',
+    reason: `Esa escritura pide permiso a una persona: la configuración administrada de la máquina tiene una regla «preguntar» para ${abs} (${regla}). `
+      + 'Esta sesión corre de fondo: nadie contesta ese cuadro, y la sesión quedaría trabada sin leer mensajes. '
+      + 'Si es un laboratorio del freno de producción, no hace falta escribir ese archivo: el freno juzga los nombres y no lee el catálogo. Correlo con HOME y TYCON_REPOS_ROOT temporales. '
+      + 'Si de verdad hay que cambiarlo, es de una persona: dejalo escrito para la coordinadora.',
+  };
+}
+
+/**
+ * Lo que decide el freno: null (pasa) o `{ decision: 'deny', reason }`. `home`, `env`, `arnes` (el árbol con el perfil del
+ * equipo) y `administrada` (la carpeta de la configuración administrada) se pasan en las pruebas.
+ */
+function decidir(evento, { home = os.homedir(), env = process.env, arnes, ahora = Date.now(), administrada = carpetaAdministrada() } = {}) {
   const d = evento && typeof evento === 'object' ? evento : {};
   if (env.TYCON_BG_QUESTION_GUARD === '0') return null;
   if (d.hook_event_name && d.hook_event_name !== 'PreToolUse') return null;
   if (d.tool_name === 'Bash') return decidirBash(d, { home, env });
+  if (EDIT_TOOLS.has(d.tool_name)) return decidirEdicion(d, { home, env, administrada });
   if (d.tool_name === MESSAGE_TOOL) {
     const sid = d.session_id;
     const to = String((d.tool_input && d.tool_input.to) || '').trim();

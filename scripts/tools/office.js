@@ -49,7 +49,7 @@ const { spawn, spawnSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 const { designacionVigente } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
-const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK } = require('./work-in-progress.js');
+const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName } = require('./work-in-progress.js');
 const topics = require(path.join(__dirname, 'office', 'topics.js'));
 const boardTool = require(path.join(__dirname, 'office', 'board.js'));
 const PS = require(path.join(__dirname, 'office', 'project-stories.js'));
@@ -364,13 +364,20 @@ function raiseHands(agents, signatures, sidOf, coordinatorName) {
 // Lo trabado, por a quién espera: la primera sesión abierta que nombra su espera, o el dueño; si no nombra a nadie, «otra
 // cosa». La tanda más grande primero, y «otra cosa» al final.
 const OWNER_WAIT = Symbol('el dueño');
+// A quién espera una sesión «esperando»: la primera sesión que nombra su espera, o el dueño si no nombra ninguna y lo
+// nombra a él; null si no nombra a nadie
+function waitedBy(a, names) {
+  const said = String(a.termina || '').replace(/^espera /, '');
+  return names.find((n) => n !== a.nombre && new RegExp(`(?<![\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(said)) || (/(?<![\p{L}\p{N}])dueñ[oa](?![\p{L}\p{N}])/iu.test(said) ? OWNER_WAIT : null);
+}
+const waitsForOwner = (a, names) => waitedBy(a, names) === OWNER_WAIT;
 function stuckGroups(agents, coordinatorName) {
   const groups = new Map();
   const names = agents.map((a) => a.nombre).filter(Boolean);
   for (const a of agents) {
     if (a.estado !== 'esperando') continue;
     const said = String(a.termina || '').replace(/^espera /, '');
-    const who = names.find((n) => n !== a.nombre && new RegExp(`(?<![\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(said)) || (/(?<![\p{L}\p{N}])dueñ[oa](?![\p{L}\p{N}])/iu.test(said) ? OWNER_WAIT : null);
+    const who = waitedBy(a, names);
     if (!groups.has(who)) groups.set(who, []);
     groups.get(who).push(`${a.nombre}: ${said}`);
   }
@@ -875,6 +882,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   kanban.linea = boardLine(kanban, { trabado: meta.trabado });
   const esperan = placeWaits({ agents, kanban, sidOf, waitOf, ownerCard });
   if (esperan) meta.esperan = esperan;
+  meta.teNecesita = ownerNeeds({ agents, kanban, board });
   const facts = boardFacts({ agents, storyOfAgent, sidOf, board, prAnswers, halfwayCards, nowMs });
   // la tabla dice lo mismo que las tarjetas, en llano
   const rows = agents.filter((a) => a.tipo).map((a) => ({ work: a.titulo || '', state: a.mientras ? `${a.haciendo} Mientras tanto: ${a.mientras}.` : a.haciendo, end: a.fin ? a.fin.hora + (a.fin.dif ? ` · ${a.fin.dif}` : '') : '', session: a.nombre, folder: a.carpeta || '' }));
@@ -929,6 +937,60 @@ function placeWaits({ agents, kanban, sidOf, waitOf, ownerCard }) {
   const groups = waitCard.waitGroups(rows);
   if (!groups.dueno.length && !groups.main.length && !groups.sesion.length) return null;
   return Object.fromEntries(Object.entries(groups).map(([k, list]) => [k, list.map(waitCard.waitText)]));
+}
+
+// La opción que alguien anotó como recomendada en el texto de una espera, una firma o una línea del tablero: «recomiendo: A»,
+// con los dos puntos y sin un «no» delante, hasta el fin del texto o, si la marca abre un paréntesis, hasta el que lo
+// cierra. Sin esa marca no hay recomendación: la página lo dice y no la inventa.
+function recommendedIn(text) {
+  const s = String(text || '');
+  const m = /(?<![\p{L}\p{N}])recomiendo:\s*/iu.exec(s);
+  if (!m) return null;
+  const before = s.slice(0, m.index);
+  if (/(?<![\p{L}\p{N}])no\s+(?:lo\s+|la\s+)?$/iu.test(before)) return null;
+  let rest = s.slice(m.index + m[0].length);
+  if (/\(\s*$/.test(before)) {
+    let depth = 1;
+    for (let j = 0; j < rest.length; j += 1) {
+      if (rest[j] === '(') depth += 1;
+      else if (rest[j] === ')' && --depth === 0) { rest = rest.slice(0, j); break; }
+    }
+  }
+  return rest.trim() || null;
+}
+
+/**
+ * Lo que te necesita, para la página de la oficina local: `[{ clase, que, quien?, donde, porque?, recomendada? }]`, en
+ * cuatro clases: `firma` (las tarjetas de «Tu firma»), `cuadro` (la sesión con una pregunta en su pantalla), `espera` (la
+ * sesión que anotó que espera al dueño, como en «lo trabado») y `tablero` (lo que te toca según el tablero). `porque` es el
+ * riesgo de su ficha, si la tiene. Sólo la espera se contesta desde la página: lo demás dice dónde se contesta.
+ */
+function ownerNeeds({ agents, kanban, board }) {
+  const out = [];
+  const add = (it, text) => { const r = recommendedIn(text); out.push({ ...it, ...(r ? { recomendada: r } : {}) }); };
+  const porque = (ficha) => (ficha && ficha.riesgo ? { porque: ficha.riesgo } : {});
+  const enSuChat = (n) => `en el chat de ${n}, con el click`;
+  const COORD = 'con la coordinadora';
+  for (const t of kanban.columnas.find((c) => c.id === 'firma').tarjetas) {
+    const quien = String(t.quien || '').trim();
+    // «vos» en una firma de la lista es el dueño, no una sesión
+    const nombrada = Boolean(quien) && quien !== '—' && !/^vos$/iu.test(quien);
+    const donde = t.origen === 'tablero' ? COORD
+      : t.origen === 'lista' ? 'en el chat de la coordinadora, que te trae el cuadro'
+        : t.origen === 'medio' ? `la sesión${nombrada ? ` ${quien}` : ''} está cerrada: retomala o decidilo ${COORD}`
+          : nombrada ? enSuChat(quien) : 'en el chat de la sesión que la pidió, con el click';
+    add({ clase: 'firma', que: String(t.titulo || 'Una firma'), ...(nombrada ? { quien } : {}), donde, ...porque(t.ficha) }, t.titulo);
+  }
+  const names = agents.map((a) => a.nombre).filter(Boolean);
+  for (const a of agents) {
+    if (a.estado === 'pregunta') add({ clase: 'cuadro', que: a.haciendo || 'Te hizo una pregunta en su pantalla.', quien: a.nombre, donde: enSuChat(a.nombre), ...porque(a.ficha) }, a.haciendo);
+    else if (a.estado === 'esperando' && waitsForOwner(a, names)) {
+      const said = String(a.termina || '').replace(/^espera /, '');
+      add({ clase: 'espera', que: said, quien: a.nombre, donde: 'acá: tu respuesta le llega como un mensaje de la oficina' }, said);
+    }
+  }
+  for (const line of (board && board.teToca) || []) add({ clase: 'tablero', que: String(line), donde: COORD }, line);
+  return out;
 }
 
 /**
@@ -999,6 +1061,10 @@ function workedAfterWait(x, lastWrite, status) {
 }
 const cardHour = (fin) => (fin ? fin.hora + (fin.dif ? ` · ${fin.dif}` : '') : '');
 const firstWord = (t) => String(t || '').trim().split(/\s+/)[0].toLowerCase();
+// el nombre de una sesión: una palabra de letras, números, guion y guion bajo («Tero», «Tero-2», «H-8290»)
+const SESSION_NAME = /^[\p{L}\p{N}_-]+$/u;
+// el dueño dicho en una palabra, que también podría pasar por un nombre de sesión
+const OWNER_WHO = /^(vos|dueñ[oa]|duen[oa])$/iu;
 // Lo que sólo usan las tablas (la clave del trabajo, su hora y el tema de su fila) va en campos que no se enumeran: no llega a
 // la página ni al sitio, y la tarjeta sigue igual.
 // Una tarjeta sin título anotado muestra lo que dice su conversación: eso no es un título y no se clasifica (`sinTitulo`).
@@ -1170,6 +1236,15 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     } else if (pr) card.motivo = 'se cerró sin entrar';
     // llegó hasta acá sin una sesión viva que la haga. Si no se pudo preguntar por su pedido, no se sabe: queda donde dice el archivo
     if (id === 'curso' && (!f.pedido || pr)) id = 'sinEmpezar';
+    // una firma anotada para una sesión que ya no está en la oficina no espera al dueño: no hay quién la use. Va a «Sin
+    // sesión», con el motivo. Sólo si `quien` es un nombre de sesión entero: el dueño o un texto libre se quedan. Se
+    // compara como lo lista /wip, que corta un nombre largo con «…»
+    const quien = String(f.quien || '').normalize('NFC').trim();
+    const listado = (n) => listedName(String(n || '').normalize('NFC').trim()).toLowerCase();
+    if (id === 'firma' && SESSION_NAME.test(quien) && !OWNER_WHO.test(quien) && !agents.some((a) => a.nombre && listado(a.nombre) === listado(quien))) {
+      id = 'sinEmpezar';
+      card.motivo = 'la sesión que la esperaba ya no está';
+    }
     // sin una sesión que la haga no hay nadie atrasado: se dice para cuándo estaba. Lo que espera la cola tampoco está atrasado
     if (late && id === 'sinEmpezar') { card.hora = `estaba para ${f.fin}`; delete card.cls; }
     if (late && id === 'entrando') { card.hora = 'esperando entrar'; delete card.cls; }
@@ -2266,6 +2341,11 @@ function markRecipients(data, env, states, sdir, { isAlive, startOf, cxNames = n
   // con el mismo nombre que le pone la oficina a una sesión de Codex sin nombre en su archivo
   const codex = new Set(states.filter((s) => s.tool === 'codex' && (s.name || s.session)).map((s) => s.name || cxNames.get(s.session) || String(s.session).slice(0, 8)));
   env.recipients = new Map();
+  // quien espera al dueño en texto: sólo a ésa le llega una respuesta de la página de lo que te necesita
+  const waitsOwner = new Set((((data.meta || {}).teNecesita) || []).filter((i) => i.clase === 'espera').map((i) => i.quien));
+  // dos sesiones con el mismo nombre comparten la entrada: a ninguna le llega una respuesta de esa página
+  const names = (data.agents || []).map((a) => a && a.nombre).filter(Boolean);
+  const repeated = new Set(names.filter((n, i) => names.indexOf(n) !== i));
   for (const a of data.agents || []) {
     if (!a || !a.nombre) continue;
     const e = env.files.get(a.nombre);
@@ -2278,7 +2358,7 @@ function markRecipients(data, env, states, sdir, { isAlive, startOf, cxNames = n
       recibe = w.alive ? 'si' : (Number.isFinite(w.deliveredAt) ? 'espera-cierre' : 'sin-vigilante');
     }
     a.recibe = recibe;
-    env.recipients.set(a.nombre, { sid: e ? e.sid : null, recibe, estado: a.estado, ocupada: WORKING.includes(a.estado), cuadro: ASKS_OWNER.has(a.estado) });
+    env.recipients.set(a.nombre, { sid: e ? e.sid : null, recibe, estado: a.estado, ocupada: WORKING.includes(a.estado), cuadro: ASKS_OWNER.has(a.estado), esperaDueno: waitsOwner.has(a.nombre) && !repeated.has(a.nombre), ...(repeated.has(a.nombre) ? { repetido: true } : {}) });
   }
 }
 
@@ -2446,6 +2526,33 @@ async function machineLoad({ platform = process.platform, run, readFile, readCpu
 }
 
 /**
+ * Quién corre una ejecución grande y cuántas suites, para la etiqueta de los racks: `[{ sesion, suites }]`, de la más vieja
+ * a la más nueva (`holders()` de heavy-turn.js), o null sin turno tomado. Lo que no se sabe (una sesión sin nombre, un
+ * `what` sin la cuenta) no va; un lugar del turno que no se puede leer va a `problems`, una sola vez: /wip lee los mismos
+ * lugares y ya pudo haberlo anotado ahí.
+ */
+function heavyTurns(sdir, nowMs, problems) {
+  let turns;
+  const mine = [];
+  try {
+    const HT = require('./heavy-turn.js');
+    turns = HT.holders({ state: sdir, now: nowMs, problems: mine }).map((t) => {
+      const e = {};
+      const name = typeof t.session === 'string' ? t.session.trim() : '';
+      if (name) e.sesion = name;
+      const suites = HT.suitesOf(t);
+      if (Number.isInteger(suites) && suites >= 0) e.suites = suites;
+      return e;
+    });
+  } catch (e) {
+    mine.push(`el turno de tarea pesada no se pudo leer (${e.code || e.message})`);
+    turns = [];
+  }
+  for (const p of mine) if (!problems.includes(p)) problems.push(p);
+  return turns.length ? turns : null;
+}
+
+/**
  * Lee todo lo de esta máquina y arma los datos; guarda las promesas al día. `arbol` y `validarAprobacion` van a la
  * lectura de las firmas ya aprobadas (`aprobadasSinRepetir`); se pasan en las pruebas.
  */
@@ -2599,7 +2706,12 @@ async function collect(opts = {}) {
   const url = site.code === 0 ? String(site.out || '').trim() : '';
   if (/^https?:\/\/\S+$/i.test(url)) data.meta.sitio = url;
   else if (site.code === 2) data.unreadable.push(`la dirección del sitio no se pudo leer: ${String(site.out || '').trim().split('\n')[0] || 'sin motivo'}`);
-  if (load) data.meta.maquina = await load;
+  if (load) {
+    data.meta.maquina = await load;
+    // el turno de tarea pesada va con la carga: quien no mide la máquina (el lector de las firmas) tampoco lo lee
+    const turns = heavyTurns(sdir, nowMs, data.unreadable);
+    if (turns) data.meta.turnoPesado = turns;
+  }
   if (!opts.readOnly) try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     // entero y después renombrado: otro lector (la foto fija y el proceso vivo leen el mismo) nunca lo ve a medias

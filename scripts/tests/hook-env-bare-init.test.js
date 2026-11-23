@@ -81,10 +81,10 @@ test('HookEnv_SuitesWithBareInit_LeaveRepoWithTree — corridas dentro de un gan
 });
 
 // ── el inventario: `init --bare` sin carpeta, con las variables de git del proceso limpias ─────────────────────────────
-// Limpia las variables si usa clean-git-env.js, una lista que filtra las `GIT_` del entorno, una lista de las únicas que
-// pasan (`env[k] = process.env[k]`), el ayudante del laboratorio (que corre `env -u GIT_DIR`), o saca `GIT_DIR` en su
-// propio texto.
-const LIMPIA = /clean-git-env|sinGitDelPadre|\^\(GIT_|\w+\[k\]\s*=\s*process\.env\[k\]|harness_lab_git|env -u GIT_DIR|unset[^\n]*\bGIT_DIR\b|delete [\w.]*\[?['"]?GIT_DIR/;
+// Limpia las variables si usa clean-git-env.js, un filtro de las `GIT_` del entorno (por expresión, `/^(GIT_…/`, o por
+// su comienzo, `startsWith('GIT_')`), una lista de las únicas que pasan (`env[k] = process.env[k]`), el ayudante del
+// laboratorio (que corre `env -u GIT_DIR`), o saca `GIT_DIR` en su propio texto.
+const LIMPIA = /clean-git-env|sinGitDelPadre|\^\(GIT_|startsWith\(\s*['"]GIT_['"]\s*\)|\w+\[k\]\s*=\s*process\.env\[k\]|harness_lab_git|env -u GIT_DIR|unset[^\n]*\bGIT_DIR\b|delete [\w.]*\[?['"]?GIT_DIR/;
 
 /**
  * ¿El renglón de consola tiene un `init … --bare` sin carpeta? Se recorre palabra por palabra (sin una expresión regular
@@ -158,4 +158,8 @@ test('HookEnv_BareInitWithoutFolder_CleansGitEnv — toda prueba con un init --b
   // y el detector distingue la forma con carpeta de la forma sin carpeta
   assert.deepStrictEqual(initsSinCarpeta("git(d, ['init', '-q', '--bare']);\ngit(d, ['init', '-q', '--bare', '-b', 'main', origen]);", false), [1]);
   assert.deepStrictEqual(initsSinCarpeta('git -C "$B" init -q --bare\ngit init -q --bare "$T/o.git"\ng init -q --bare -b main >/dev/null', true), [1, 3]);
+  // un filtro de las `GIT_` por su comienzo limpia (la forma de overlay-harness.test.js del privado); copiar el entorno
+  // entero, no
+  assert.ok(LIMPIA.test("for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('GIT_')) e[k] = v;"));
+  assert.ok(!LIMPIA.test("const env = { ...process.env, GIT_AUTHOR_NAME: 'lab' };"));
 });

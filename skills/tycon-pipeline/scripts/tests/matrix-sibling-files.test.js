@@ -88,8 +88,8 @@ function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-pr
   const dod = path.join(esp, '.advisors', 'dod-runtime');
   fs.mkdirSync(dod, { recursive: true });
   const gatesLog = path.join(ws, 'gates.log');
-  const humo = (ts = ahora - 50) => {
-    ledgerLine.append({ dodDir: dod, gatesLog, story: historia.id, acs: [1], ts: new Date(ts * 1000).toISOString().replace(/\.\d+Z$/, 'Z'), cmd: 'curl -s http://localhost:5000/pantalla', mirror: true });
+  const humo = (ts = ahora - 50, extra = {}) => {
+    ledgerLine.append({ dodDir: dod, gatesLog, story: historia.id, acs: [1], ts: new Date(ts * 1000).toISOString().replace(/\.\d+Z$/, 'Z'), cmd: 'curl -s http://localhost:5000/pantalla', mirror: true, ...extra });
     commit(esp, 'evidencia', ts + 5);
   };
   const gate = (ts = ahora - 40) => {
@@ -342,11 +342,15 @@ test('T14 TandaQueDejaDeEstarBloqueada_SuArchivoVuelveAContar', () => {
 
 // ---------------------------------------------------------------- la copia de la historia y el clon compartido
 
-/** El laboratorio con el hermano y su copia en la rama de la historia; el repo de historias, en esa rama o suelto. */
-function labConCopia({ declarados = ['src/Feature.cs'], suelto = false, copia = true, historia } = {}) {
+/**
+ * El laboratorio con el hermano y su copia en la rama de la historia; el repo de historias, en esa rama o suelto.
+ * `anotada`: el repo suelto lleva la rama de la corrida (`tycon.runBranch`), como el clon del árbol armado.
+ */
+function labConCopia({ declarados = ['src/Feature.cs'], suelto = false, anotada = false, copia = true, historia } = {}) {
   const f = lab({ declarados, ...(historia ? { historia } : {}) });
   git(f.esp, ['checkout', '-q', '-b', RAMA]);
   if (suelto) git(f.esp, ['checkout', '-q', '--detach']);
+  if (anotada) git(f.esp, ['config', '--local', 'tycon.runBranch', RAMA]);
   const wt = path.join(f.ws, 'Back-wt');
   if (copia) git(f.back, ['worktree', 'add', '-q', '-b', RAMA, wt]);
   f.humo();
@@ -359,14 +363,19 @@ function avanzaElClon(f) {
 }
 
 test('T15 CopiaDeLaHistoria_ClonCompartidoAvanza_NoVence @story-8.235 @ac-15', () => {
-  // por la ruta del hermano, desde la carpeta de arriba y con el repo de historias sin rama (la copia se busca por número)
-  for (const caso of [{}, { declarados: ['Back/src/Feature.cs'] }, { suelto: true }]) {
+  // por la ruta del hermano, desde la carpeta de arriba y con el repo de historias suelto pero con la rama de la corrida
+  // anotada (el clon del árbol armado)
+  for (const caso of [{}, { declarados: ['Back/src/Feature.cs'] }, { suelto: true, anotada: true }]) {
     const f = labConCopia(caso);
     avanzaElClon(f);
     const r = f.calcular();
     assert.equal(r.perAc[1].verdict, 'RUNTIME', `${JSON.stringify(caso)}: ${avisos(r)}`);
     assert.equal(r.green, true, avisos(r));
   }
+  // suelto y sin la rama de la corrida no se adivina por el número (fila 123): se compara contra el declarado, y vence
+  const s = labConCopia({ suelto: true });
+  avanzaElClon(s);
+  assert.equal(s.calcular().perAc[1].verdict, 'NOT-RUN');
 });
 
 test('T16 CopiaDeLaHistoria_CambiaDespues_Vence @story-8.235 @ac-16', () => {
@@ -525,4 +534,83 @@ test('T18c HermanoConCopiaDeLaHistoria_ClonAtrasado_NoImporta', () => {
   const r = f.calcular();
   assert.deepEqual(r.noLeidos, [], avisos(r));
   assert.equal(r.green, true, avisos(r));
+});
+
+// ---------------------------------------------------------------- qué repos ejercita el humo
+
+/** El código en dos repos: el backend en el hermano y el sitio en el repo de las historias. */
+function labDeDosRepos() {
+  return lab({ declarados: ['src/Feature.cs', 'web/rutas.ts'], propios: { 'web/rutas.ts': 'export const rutas = [];\n' } });
+}
+function cambiarElSitio(f) {
+  escribir(f.esp, 'web/rutas.ts', 'export const rutas = ["hola"];\n');
+  commit(f.esp, 'textos del sitio', f.ahora + 100);
+}
+
+test('T79b Ejercita_Back_CambioEnOtroRepo_SigueContando_YSeAvisa', () => {
+  // 🔴 mutación: sin el corte, el cambio del sitio vence el humo del backend
+  const f = labDeDosRepos();
+  f.humo(undefined, { exercises: ['Back'] });
+  cambiarElSitio(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.green, true, avisos(r));
+  assert.match(avisos(r), /web\/rutas\.ts: cambió en Historias, y el humo dice que ejercita sólo Back → la evidencia sigue contando/);
+});
+
+test('T79c SinLaOpcion_CambioEnOtroRepo_Vence_ComoHoy', () => {
+  const f = labDeDosRepos();
+  f.humo();
+  cambiarElSitio(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /web\/rutas\.ts/);
+});
+
+test('T79d Ejercita_Back_CambioEnBack_Vence', () => {
+  const f = labDeDosRepos();
+  f.humo(undefined, { exercises: ['Back'] });
+  escribir(f.back, 'src/Feature.cs', '// v2\n');
+  commit(f.back, 'cambio del backend', f.ahora + 100);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /src\/Feature\.cs/);
+});
+
+test('T79e Ejercita_RepoQueNoEsDeLaHistoria_ValeParaTodos', () => {
+  // un nombre mal escrito no deja la evidencia sin vencer nunca
+  const f = labDeDosRepos();
+  f.humo(undefined, { exercises: ['Bakc'] });
+  cambiarElSitio(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+});
+
+test('T79h Ejercita_Back_PruebaDeOtroRepoCambiada_Vence', () => {
+  // una prueba corregida vence como siempre (regla 6): el corte es para el código que no es prueba
+  const f = lab({ declarados: ['src/Feature.cs', 'web/rutas.test.ts'], propios: { 'web/rutas.test.ts': 'test("x", () => {});\n' } });
+  f.humo(undefined, { exercises: ['Back'] });
+  escribir(f.esp, 'web/rutas.test.ts', 'test("x", () => { expect(1).toBe(1); });\n');
+  commit(f.esp, 'arreglo de la prueba', f.ahora + 100);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+});
+
+test('T79i Ejercita_Back_ArchivoDeOtroRepoQueNoSePuedeComparar_Vence', () => {
+  // fuera de git: el juez no dice que cambió, dice que no puede comparar; sin saber, vence como siempre
+  const f = lab({ declarados: ['src/Feature.cs', 'web/nuevo.ts'] });
+  f.humo(undefined, { exercises: ['Back'] });
+  escribir(f.esp, 'web/nuevo.ts', 'export const nuevo = 1;\n');
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.doesNotMatch(avisos(r), /cambió en Historias/);
+});
+
+test('T79f Ejercita_SoloEnElRegistro_NoCuenta', () => {
+  // el registro viaja con el código y se edita: lo que ejercita vale sólo si el espejo lo trae
+  const f = labDeDosRepos();
+  f.humo(undefined, { enRegistro: { exercises: ['Back'] } });
+  cambiarElSitio(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
 });

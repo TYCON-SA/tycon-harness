@@ -318,7 +318,7 @@ test('T24 QaGuideArgs_ConAprobacion_PasaLaHuella', () => {
   assert.ok(!sin.includes('--mockup-sha'));
   assert.strictEqual(typeof mockupStep8, 'function');
   // en marker.js, la llamada del paso 8 usa esa función y su condición incluye la maqueta aprobada
-  const src = fs.readFileSync(MARKER, 'utf8');
+  const src = require('./lib/marker-source.js')(SK);
   assert.match(src, /qaGuideCheckArgs\(/);
   assert.match(src, /mockupApproval/);
 
@@ -1080,4 +1080,105 @@ test('T56 Revision_FrenoDeLaAprobacion: sin informe, de otra versión o con hall
   assert.match(p().extra.join('\n'), /a 390 px, se pisan/);
   SHOTS.escribirInforme({ report, file: path.basename(f), sha256: sha, shots, findings: [] });
   assert.strictEqual(p(), null);
+});
+
+// ── Datos de ejemplo y lo que queda bajo una capa (filas 103 y 107 de la cola de la coordinadora) ──────────────────────
+
+// Mockup_DatoDeEjemplo_NoSeCompara: un texto con datos de ejemplo («v13, de un usuario, a las 15:42») no se puede
+// reproducir en la pantalla sin falsear la base o el reloj. Con `example: true` la maqueta lo dibuja marcado como ejemplo
+// y no lo compara; lo demás se compara como siempre
+test('T58 Mockup_DatoDeEjemplo_NoSeCompara: con example: true se dibuja como dato de ejemplo y no se compara con la pantalla', () => {
+  const MK = require(MOCKUP);
+  const m = CON_FILTRO();
+  m.screens[0].elements.push({ kind: 'text', text: 'Versión 13, de un usuario de prueba, ayer', example: true });
+  assert.deepStrictEqual(MK.validateModel(m), []);
+  const html = armar(m);
+  assert.match(html, /<div class="example"><p class="text">Versión 13, de un usuario de prueba, ayer<\/p><span class="example-note">dato de ejemplo<\/span><\/div>/);
+  const textos = MK.mockupTexts(html).map((t) => t.text);
+  assert.ok(!textos.includes('Versión 13, de un usuario de prueba, ayer'), 'el dato de ejemplo no se compara');
+  assert.ok(textos.includes('Facturas'), 'lo demás se compara');
+  // un dato de ejemplo no es relleno: no se rechaza por «texto de ejemplo»
+  const relleno = CON_FILTRO();
+  relleno.screens[0].elements.push({ kind: 'text', text: 'Texto de ejemplo', example: true });
+  assert.deepStrictEqual(MK.validateModel(relleno), []);
+  // example es true o false
+  const malo = CON_FILTRO();
+  malo.screens[0].elements.push({ kind: 'text', text: 'Otra cosa', example: 'sí' });
+  assert.ok(MK.validateModel(malo).some((p) => /`example` tiene que ser true o false/.test(p)), JSON.stringify(MK.validateModel(malo)));
+  // el esquema lo explica
+  const esquema = spawnSync(process.execPath, [MOCKUP, 'schema'], { encoding: 'utf8' }).stdout;
+  assert.match(esquema, /- "example": true, en un text o un message, lo marca como dato de ejemplo/);
+  // su estilo va también en una maqueta sin capas
+  assert.match(html, /\.example \{ outline: 1px dashed/);
+  assert.match(html, /\.example-note \{/);
+});
+
+// Mockup_DatoDeEjemplo_SinSacarTextosReales (pase adversarial): la marca va sólo donde todo lo que se compara es el dato
+// (text y message); en una tabla, un campo, un grupo, una casilla o un botón sacaría columnas y rótulos reales. Una
+// pantalla toda de ejemplo no se compararía con nada. Sin ningún example, la maqueta sale igual que antes (su huella no
+// cambia), y la marca de ejemplo convive con la de lo existente y la de lo nuevo
+test('T60 Mockup_DatoDeEjemplo_SinSacarTextosReales: sólo en text y message, nunca toda una pantalla, sin cambiar la huella de las otras', () => {
+  const MK = require(MOCKUP);
+  for (const el of [
+    { kind: 'table', columns: ['Número', 'Fecha de emisión'], example: true },
+    { kind: 'field', label: 'CUIT del cliente', value: '20-12345678-9', example: true },
+    { kind: 'group', legend: 'Estado de la factura', items: [{ label: 'Pendiente' }], example: true },
+    { kind: 'checkbox', label: 'Mostrar anuladas', example: true },
+    { kind: 'button', text: 'Pagar seleccionadas', example: true },
+    { kind: 'heading', text: 'Detalle', example: true },
+  ]) {
+    const m = CON_FILTRO();
+    m.screens[0].elements.push(el);
+    assert.ok(MK.validateModel(m).some((p) => /\`example\` va sólo en un text o un message/.test(p)), `${el.kind}: ${JSON.stringify(MK.validateModel(m))}`);
+  }
+  const toda = { storyId: '1.3', title: 'x', screens: [{ name: 'Versiones', elements: [{ kind: 'text', text: 'Versión 13, ayer', example: true }, { kind: 'message', text: 'Guardado por un usuario de prueba', example: true }] }] };
+  assert.ok(MK.validateModel(toda).some((p) => /todos sus elementos son datos de ejemplo/.test(p)), JSON.stringify(MK.validateModel(toda)));
+  // sin ningún example, ni el estilo del ejemplo: una maqueta (con capa o sin ella) sale como antes
+  const demo = MK.renderMockup(JSON.parse(JSON.stringify(MK.DEMO)));
+  assert.doesNotMatch(demo, /\.example/);
+  assert.doesNotMatch(armar(CON_FILTRO()), /\.example/);
+  // con lo existente: el dato de ejemplo nuevo va con la marca de lo nuevo, y el existente, atenuado
+  const mezcla = CON_FILTRO();
+  mezcla.screens[0].elements.push({ kind: 'text', text: 'Versión 13, ayer', example: true }, { kind: 'text', text: 'Versión 12, antes de ayer', example: true, existing: true });
+  const h = armar(mezcla);
+  assert.match(h, /<div class="new"><div class="example"><p class="text">Versión 13, ayer<\/p>/);
+  assert.match(h, /<div class="existing"><div class="example"><p class="text">Versión 12, antes de ayer<\/p>/);
+});
+
+// Shots_BajoUnaCapa_NoCuenta: lo que queda debajo de una capa (una ventana, un diálogo) no se lee y no es un hallazgo,
+// aunque no esté marcado aria-hidden; sin la capa, lo mismo sí cuenta
+test('T59 Shots_BajoUnaCapa_NoCuenta: lo tapado por una capa que no lo contiene no cuenta; sin la capa, sí', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const fondo = '<div style="position:relative;width:380px"><p style="margin:0">Fondo uno</p><span style="position:absolute;top:0;left:0">Fondo dos</span>'
+    + '<div style="overflow:hidden;width:120px"><div style="width:600px;white-space:nowrap">un renglón de fondo que no entra</div></div></div>';
+  const capa = '<div role="dialog" style="position:absolute;inset:0;background:rgba(29,36,51,.55)"><p style="margin:40px 0 0">La ventana</p></div>';
+  const con = path.join(TMP, 'capa-mockup.html');
+  fs.writeFileSync(con, `<!doctype html><html><body style="margin:0"><div style="position:relative">${fondo}${capa}</div></body></html>`);
+  const r = await SHOTS.revisar({ mockupPath: con, pw: PW });
+  assert.ok(!r.error, r.error);
+  assert.deepStrictEqual(r.findings, [], JSON.stringify(r.findings, null, 1));
+  const sin = path.join(TMP, 'sin-capa-mockup.html');
+  fs.writeFileSync(sin, `<!doctype html><html><body style="margin:0"><div style="position:relative">${fondo}</div></body></html>`);
+  const s = await SHOTS.revisar({ mockupPath: sin, pw: PW });
+  const tipos = new Set(s.findings.map((x) => x.kind));
+  assert.ok(tipos.has('se pisan') && tipos.has('recortado'), JSON.stringify(s.findings));
+});
+
+// Shots_LoQueSeVeEncimaDeUnaCapa_Cuenta (pase adversarial): tapa lo que se dibuja encima, no la caja de cualquier capa.
+// Una capa invisible no tapa nada; con dos capas encimadas, lo de la de arriba se ve y cuenta; y lo que se dibuja por
+// encima de una capa también
+test('T61 Shots_LoQueSeVeEncimaDeUnaCapa_Cuenta: capa invisible, dos capas encimadas y lo dibujado encima siguen contando', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const pisados = (txt) => `<div style="position:relative;width:300px"><p style="margin:0">${txt} uno</p><span style="position:absolute;top:0;left:0">${txt} dos</span></div>`;
+  const casos = {
+    invisible: `${pisados('Fondo')}<div role="dialog" style="position:fixed;inset:0;opacity:0"><p>Cerrada</p></div>`,
+    oculta: `${pisados('Fondo')}<div role="dialog" style="position:fixed;inset:0;visibility:hidden"><p>Cerrada</p></div>`,
+    encimadas: `<div role="dialog" style="position:fixed;inset:0;background:#fff"><p>La ventana de abajo</p></div><div role="dialog" style="position:fixed;top:20px;left:20px;width:400px;height:200px;background:#fff">${pisados('Arriba')}</div>`,
+    encima: `<div style="position:relative"><div class="layer-backdrop" style="position:absolute;inset:0;z-index:1;background:rgba(0,0,0,.3)"></div><div style="position:relative;z-index:2">${pisados('Encima')}</div></div>`,
+  };
+  for (const [nombre, cuerpo] of Object.entries(casos)) {
+    const f = path.join(TMP, `capa-${nombre}-mockup.html`);
+    fs.writeFileSync(f, `<!doctype html><html><body style="margin:0;min-height:300px">${cuerpo}</body></html>`);
+    const r = await SHOTS.revisar({ mockupPath: f, pw: PW });
+    assert.ok(!r.error, r.error);
+    assert.ok(r.findings.some((x) => x.kind === 'se pisan'), `${nombre}: ${JSON.stringify(r.findings)}`);
+  }
 });

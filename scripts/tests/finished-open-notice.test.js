@@ -206,7 +206,8 @@ test('FinishedOpen_MachineThrows_RestStillRuns — si lo de las corridas falla, 
   const lib = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'finished-open.js');
   fs.writeFileSync(antes, `const lib = require(${JSON.stringify(lib)});
 lib.machine = () => { throw new Error('marcador roto'); };
-lib.unsavedFolders = async () => ['/carpeta/suelta (rama x)'];
+const suelta = { dir: '/carpeta/suelta', rama: 'x', archivos: 1, sinTocarDesde: null, cuando: -1, texto: '/carpeta/suelta (rama x)' };
+lib.unsavedFolderItems = async () => ({ carpetas: [suelta], problemas: [], renglones: [suelta], sinMirar: 0, topeMs: 5000, vivasDesconocidas: null, ilegibles: 0, sinRaiz: null });
 `);
   const r = spawnSync(process.execPath, ['-r', antes, HOOK], {
     encoding: 'utf8', input: '{}',
@@ -215,4 +216,9 @@ lib.unsavedFolders = async () => ['/carpeta/suelta (rama x)'];
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /terminado sin cerrar: no pude mirar \(marcador roto\)/, r.stdout);
   assert.match(r.stdout, /carpetas de trabajo con cambios sin commitear/, `los avisos que siguen tienen que salir igual: ${r.stdout}`);
+  // (8.326) la foto de lo que espera revisión queda igual, con los terminados sin poder mirar y la carpeta contada
+  const foto = JSON.parse(fs.readFileSync(path.join(require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(C.home), 'review-load.json'), 'utf8'));
+  assert.strictEqual(foto.partes.terminados, null);
+  assert.strictEqual(foto.partes.carpetas, 1);
+  assert.ok(foto.problems.some((p) => /terminados/.test(p)), JSON.stringify(foto.problems));
 });

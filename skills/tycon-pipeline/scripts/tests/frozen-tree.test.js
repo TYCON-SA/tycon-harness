@@ -156,7 +156,8 @@ test('T16 Freeze_AlteredCopy_Blocks @story-8.161 @ac-16 — la copia alterada no
 // ── La corrida de juguete: la historia en un repo, el código en otro, una HOME propia ──────────────────────────────
 const { spawnSync } = require('child_process');
 const RAIZ = path.join(SCRIPTS, '..', '..', '..');
-function corrida(sid, { masHistorias = {} } = {}) {
+// `antesDeArrancar(codigo)`: lo que el repo del código ya trae cuando arranca la corrida
+function corrida(sid, { masHistorias = {}, antesDeArrancar = null } = {}) {
   const base = tmp('ft-corrida-');
   const home = path.join(base, 'home');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
@@ -177,6 +178,7 @@ function corrida(sid, { masHistorias = {} } = {}) {
   const correr = (script, args) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env, input: '', cwd: codigo.repo });
   const estado = () => [path.join(home, '.tycon', 'state'), path.join(home, '.claude', '.tycon-pipeline')].find((d) => fs.existsSync(path.join(d, 'active')));
   const marcador = () => JSON.parse(fs.readFileSync(path.join(estado(), 'active', `${sid}.json`), 'utf8'));
+  if (antesDeArrancar) antesDeArrancar(codigo);
   const r = correr('pipeline.js', ['start', '--story', story, '--repo', codigo.repo, '--brief']);
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   const vuelta = (iter = 1) => {
@@ -1386,4 +1388,238 @@ test('T31 ReviewedTree_MezclaConCambioReal_FrenaPorElReal @story-8.217 @ac-21 �
   assert.strictEqual(r.status, 2, salida(r));
   assert.match(salida(r), /· src\/b\.js/, salida(r));
   assert.doesNotMatch(salida(r), /· src\/a\.js/, salida(r));
+});
+
+// ── El pase congela también los repos hermanos ───────────────────────────────────────────────────────────────────────
+// Caso: el pase sellaba sólo el repo de la historia; el código de los repos hermanos (backend y formularios) podía cambiar
+// mientras corría, y el pase daba por bueno algo que ya no era lo que miró.
+function conHermano() {
+  const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
+  const priv = repoDeJuguete('Priv', { 'specs/s.md': '# historia\n' });
+  fs.mkdirSync(path.join(priv.repo, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(priv.repo, '.tycon', 'advisors.yaml'),
+    `evidence:\n  companion_repos:\n    - ${path.relative(priv.repo, front.repo)}\n`);
+  priv.git('add', '.');
+  priv.git('commit', '-qm', 'declara el hermano');
+  return { front, priv, story: path.join(priv.repo, 'specs', 's.md') };
+}
+
+test('Pase_ReposDelPase_SumaLosHermanos — el congelado del pase incluye cada repo hermano declarado', () => {
+  // 🔴 rojo si: el pase congela sólo la historia y el repo de la corrida → el código del hermano no tiene sello.
+  const { front, priv, story } = conHermano();
+  const r = ft().reposDelPase({ story, repo: priv.repo });
+  assert.ok(!r.error, JSON.stringify(r));
+  assert.deepStrictEqual(r.repos, [priv.repo, front.repo]);
+  assert.deepStrictEqual(r.hermanos, [front.repo]);
+  // una configuración que no se deja leer no es «sin hermanos»: el congelado frena con el motivo
+  fs.writeFileSync(path.join(priv.repo, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos: [\n');
+  const roto = ft().reposDelPase({ story, repo: priv.repo });
+  assert.ok(roto.error, `una configuración rota no da «sin hermanos»: ${JSON.stringify(roto)}`);
+});
+
+test('Pase_HermanoCambiado_FrenaElCierre — si el código de un hermano cambió desde el lanzamiento, el cierre lo nombra; las pruebas propias declaradas no cuentan', () => {
+  // 🔴 rojo si: el cierre compara sólo las copias → un cambio en el hermano durante el pase pasa sin que nadie lo vea.
+  const { front } = conHermano();
+  const sello = ft().seal(front.repo).tree;
+  const sellos = { [front.repo]: sello };
+  assert.deepStrictEqual(ft().hermanosCambiados({ sellos, hermanos: [front.repo] }), [], 'sin cambios no frena');
+  fs.writeFileSync(path.join(front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  fs.writeFileSync(path.join(front.repo, 'tests', 'x.test.js'), '// prueba de regresión del pase\n');
+  const cambio = ft().hermanosCambiados({ sellos, hermanos: [front.repo] });
+  assert.deepStrictEqual(cambio, [{ repo: front.repo, files: ['src/x.js', 'tests/x.test.js'] }]);
+  // la prueba propia que el cierre declara (--own --in) no cuenta; el código sí
+  const conPropia = ft().hermanosCambiados({ sellos, hermanos: [front.repo], permitidos: [path.join(front.repo, 'tests', 'x.test.js')] });
+  assert.deepStrictEqual(conPropia, [{ repo: front.repo, files: ['src/x.js'] }]);
+  // sin el sello del lanzamiento no se sabe: cuenta como cambio, con el motivo
+  const sinSello = ft().hermanosCambiados({ sellos: {}, hermanos: [front.repo] });
+  assert.strictEqual(sinSello.length, 1);
+  assert.match(sinSello[0].error, /sello/);
+});
+
+test('Pase_PropiaDelHermanoConRepo_NoFrenaElCierre — la prueba propia declarada como `(<repo>) <ruta>` no cuenta como cambio del hermano; el código sí', () => {
+  // 🔴 rojo si: el cierre toma el `--in` crudo y lo resuelve contra la raíz del hermano → la forma `(Front) tests/x.test.js`,
+  // la que pide el paso del pase, frena el cierre como si el hermano hubiera cambiado.
+  const C = corrida('s-ft-hermano');
+  const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
+  fs.mkdirSync(path.join(C.codigo.repo, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, '.tycon', 'advisors.yaml'),
+    `evidence:\n  companion_repos:\n    - ${path.relative(C.codigo.repo, front.repo)}\n`);
+  C.codigo.git('add', '.');
+  C.codigo.git('commit', '-qm', 'declara el hermano');
+  const l = C.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']);
+  assert.strictEqual(l.status, 0, salida(l));
+  const sellos = C.marcador().adversarial.sellos;
+  assert.ok(sellos[front.repo], `el lanzamiento sella el hermano: ${JSON.stringify(sellos)}`);
+  const cerrar = () => {
+    const f = path.join(tmp('ft-res-'), 'step-05b-adversarial.json');
+    fs.writeFileSync(f, JSON.stringify({ confirmed: [{ lens: 'x', summary: 'y' }], sellos }));
+    return C.correr('marker.js', ['mark-adversarial-result', '1', '--type', '5b', '--result', f, '--run', 'r1', '--tests', '1', '--own', '1', '--in', '(Front) tests/x.test.js']);
+  };
+  const HERMANO = /el código de un repo hermano cambió/;
+  fs.writeFileSync(path.join(front.repo, 'tests', 'x.test.js'), '// prueba de regresión del pase\n');
+  const propia = cerrar();
+  assert.doesNotMatch(salida(propia), HERMANO, salida(propia));
+  fs.writeFileSync(path.join(front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  const codigo = cerrar();
+  assert.strictEqual(codigo.status, 2, salida(codigo));
+  assert.match(salida(codigo), HERMANO);
+  assert.match(salida(codigo), /Front: src\/x\.js$/m);
+});
+
+// ¿El disco de las pruebas distingue mayúsculas? APFS y NTFS no; ext4 sí.
+const sinDistinguirMayusculas = (() => {
+  const d = tmp('ft-mayus-');
+  fs.writeFileSync(path.join(d, 'a'), '');
+  return fs.existsSync(path.join(d, 'A'));
+})();
+
+test('Pase_HermanoSinGit_FallaCerrado — un hermano declarado que está en disco pero no es un repo git frena el congelado y nombra la carpeta', () => {
+  // 🔴 rojo si: la carpeta sin git se descarta con un aviso → su código queda sin sello y el cierre no lo mira.
+  const { front, priv, story } = conHermano();
+  const sinGit = path.join(tmp('ft-sin-git-'), 'SinGit');
+  fs.mkdirSync(path.join(sinGit, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(sinGit, 'src', 'y.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(priv.repo, '.tycon', 'advisors.yaml'),
+    `evidence:\n  companion_repos:\n    - ${path.relative(priv.repo, front.repo)}\n    - ${path.relative(priv.repo, sinGit)}\n`);
+  const r = ft().reposDelPase({ story, repo: priv.repo });
+  assert.ok(r.error, `un hermano sin git no se deja afuera callado: ${JSON.stringify(r)}`);
+  assert.match(r.error, /SinGit/);
+});
+
+test('Pase_ListaVaciaExplicita_SinHermanosSinError — `companion_repos: []`, la llave sin valor o el bloque vacío dicen «sin hermanos»; lo que no se entiende sigue frenando', () => {
+  // 🔴 rojo si: el congelado toma una lista vacía declarada a propósito por un bloque que no se pudo leer → el pase no se lanza.
+  const { priv, story } = conHermano();
+  const conYaml = (txt) => {
+    fs.writeFileSync(path.join(priv.repo, '.tycon', 'advisors.yaml'), txt);
+    return ft().reposDelPase({ story, repo: priv.repo });
+  };
+  for (const txt of ['evidence:\n  companion_repos: []\n', 'evidence:\n  companion_repos: [] # ninguno\n  fe_paths: []\n', 'evidence:\n  companion_repos:\n', 'evidence:\n']) {
+    const r = conYaml(txt);
+    assert.ok(!r.error, `${JSON.stringify(txt)} es «sin hermanos»: ${JSON.stringify(r)}`);
+    assert.deepStrictEqual(r.repos, [priv.repo]);
+    assert.deepStrictEqual(r.hermanos, []);
+  }
+  for (const txt of ['evidence:\n  companion_repos: [\n', 'evidence:\n  companion_repos: ../Front\n', 'evidence: {companion_repos: [../Front]}\n']) {
+    const r = conYaml(txt);
+    assert.ok(r.error, `${JSON.stringify(txt)} no se pudo leer, no es «sin hermanos»: ${JSON.stringify(r)}`);
+  }
+});
+
+test('Pase_PropiaConOtrasMayusculas_NoFrena — la prueba propia declarada con otras mayúsculas libera el mismo archivo donde el disco no las distingue', () => {
+  // 🔴 rojo si: el cierre compara las rutas de --in distinguiendo mayúsculas → en APFS o NTFS `(Front) Tests/X.test.js`
+  // frena el cierre aunque verificarPruebasPropias lo acepta como la misma prueba.
+  const { front } = conHermano();
+  const sellos = { [front.repo]: ft().seal(front.repo).tree };
+  fs.writeFileSync(path.join(front.repo, 'tests', 'x.test.js'), '// prueba de regresión del pase\n');
+  fs.mkdirSync(path.join(front.repo, 'Specs'), { recursive: true });
+  fs.writeFileSync(path.join(front.repo, 'Specs', 'Foo.test.js'), '// prueba nueva\n');
+  // una prueba declarada que es un enlace al código no libera nada: ni el enlace ni el código al que apunta
+  const enlace = repoDeJuguete('Enlace', { 'src/x.js': 'module.exports = 1;\n' });
+  const selloDelEnlace = { [enlace.repo]: ft().seal(enlace.repo).tree };
+  fs.writeFileSync(path.join(enlace.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  fs.mkdirSync(path.join(enlace.repo, 'tests'), { recursive: true });
+  let hayEnlaces = true;
+  try { fs.symlinkSync(path.join('..', 'src', 'x.js'), path.join(enlace.repo, 'tests', 'x.test.js')); } catch (_) { hayEnlaces = false; }
+  if (hayEnlaces) {
+    const conEnlace = ft().hermanosCambiados({ sellos: selloDelEnlace, hermanos: [enlace.repo], permitidos: [path.join(enlace.repo, 'tests', 'x.test.js')] });
+    assert.deepStrictEqual(conEnlace, [{ repo: enlace.repo, files: ['src/x.js', 'tests/x.test.js'] }]);
+  }
+  const permitidos = [path.join(front.repo, 'Tests', 'X.test.js'), path.join(front.repo, 'specs', 'foo.test.js')];
+  const r = ft().hermanosCambiados({ sellos, hermanos: [front.repo], permitidos });
+  // donde el disco sí las distingue, son otros archivos: no liberan nada
+  if (!sinDistinguirMayusculas) { assert.deepStrictEqual(r, [{ repo: front.repo, files: ['Specs/Foo.test.js', 'tests/x.test.js'] }]); return; }
+  assert.deepStrictEqual(r, [], JSON.stringify(r));
+  // el cierre entero, con la forma `(<repo>) <ruta>` y otras mayúsculas
+  const C = corrida('s-ft-mayus');
+  const fr = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
+  fs.mkdirSync(path.join(C.codigo.repo, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, '.tycon', 'advisors.yaml'), `evidence:\n  companion_repos:\n    - ${path.relative(C.codigo.repo, fr.repo)}\n`);
+  C.codigo.git('add', '.');
+  C.codigo.git('commit', '-qm', 'declara el hermano');
+  const l = C.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']);
+  assert.strictEqual(l.status, 0, salida(l));
+  const lanzados = C.marcador().adversarial.sellos;
+  fs.writeFileSync(path.join(fr.repo, 'tests', 'x.test.js'), '// prueba de regresión del pase\n');
+  const f = path.join(tmp('ft-res-'), 'step-05b-adversarial.json');
+  fs.writeFileSync(f, JSON.stringify({ confirmed: [{ lens: 'x', summary: 'y' }], sellos: lanzados }));
+  const cierre = C.correr('marker.js', ['mark-adversarial-result', '1', '--type', '5b', '--result', f, '--run', 'r1', '--tests', '1', '--own', '1', '--in', '(Front) Tests/X.test.js']);
+  assert.doesNotMatch(salida(cierre), /el código de un repo hermano cambió/, salida(cierre));
+});
+
+test('Pase_HermanoConSubmodulo_FrenaSiCambiaAdentro — un archivo sin commitear dentro de un submódulo o de un repo anidado del hermano frena el cierre y nombra la carpeta', () => {
+  // 🔴 rojo si: el sello anota sólo el commit de cada submódulo → editar sus archivos después de lanzar el pase no cambia
+  // el sello y el cierre no lo ve.
+  const sub = repoDeJuguete('Sub', { 's.js': 'module.exports = 1;\n', 'tests/s.test.js': '// prueba\n' });
+  const sib = repoDeJuguete('Sib', { 'a.js': 'module.exports = 1;\n' });
+  sib.git('-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub.repo, 'vend');
+  // un repo anidado sin registrar como submódulo: `add -A` también lo anota sólo por su commit
+  const anidado = path.join(sib.repo, 'anidado');
+  fs.mkdirSync(anidado);
+  fs.writeFileSync(path.join(anidado, 'n.js'), 'module.exports = 1;\n');
+  for (const a of [['init', '-q', '-b', 'main'], ['config', 'user.email', 't@t'], ['config', 'user.name', 't'], ['add', '.'], ['commit', '-qm', 'anidado']]) {
+    execFileSync('git', ['-C', anidado, ...a], { stdio: 'ignore' });
+  }
+  sib.git('add', '-A');
+  sib.git('commit', '-qm', 'con submódulo y repo anidado');
+  const sellos = { [sib.repo]: ft().seal(sib.repo).tree };
+  const cambio = (permitidos) => ft().hermanosCambiados({ sellos, hermanos: [sib.repo], permitidos });
+  assert.deepStrictEqual(cambio(), [], 'limpio no frena');
+  fs.writeFileSync(path.join(sib.repo, 'vend', 's.js'), 'module.exports = 2;\n');
+  assert.deepStrictEqual(cambio(), [{ repo: sib.repo, files: ['vend/s.js'] }]);
+  fs.writeFileSync(path.join(anidado, 'nuevo.js'), 'module.exports = 3;\n');
+  assert.deepStrictEqual(cambio(), [{ repo: sib.repo, files: ['anidado/nuevo.js', 'vend/s.js'] }]);
+  // la prueba propia que el cierre declara adentro del submódulo no cuenta, como afuera; el código sí
+  fs.writeFileSync(path.join(sib.repo, 'vend', 'tests', 's.test.js'), '// prueba de regresión del pase\n');
+  assert.deepStrictEqual(cambio([path.join(sib.repo, 'vend', 'tests', 's.test.js')]), [{ repo: sib.repo, files: ['anidado/nuevo.js', 'vend/s.js'] }]);
+});
+
+test('PrepareCommit_SubmoduloDelPrincipal_FrenaSiCambiaAdentro — lo sin commitear dentro de un submódulo o de un repo anidado del repo de la corrida frena «Preparar» y nombra la carpeta; si no se puede mirar, también', () => {
+  // 🔴 rojo si: el sello anota sólo el commit de cada submódulo → editar sus archivos después de la vuelta no cambia el
+  // sello, y lo que se guarda pasa por revisado.
+  const sub = repoDeJuguete('Sub', { 's.js': 'module.exports = 1;\n' });
+  const C = corrida('s-ft-sub-principal', { antesDeArrancar: (codigo) => {
+    codigo.git('-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub.repo, 'vend');
+    codigo.git('commit', '-qm', 'con submódulo');
+    // un repo anidado sin registrar: el sello también lo anota sólo por su commit
+    const dir = path.join(codigo.repo, 'anidado');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, 'n.js'), 'module.exports = 1;\n');
+    for (const a of [['init', '-q', '-b', 'main'], ['config', 'user.email', 't@t'], ['config', 'user.name', 't'], ['add', '.'], ['commit', '-qm', 'anidado']]) {
+      execFileSync('git', ['-C', dir, ...a], { stdio: 'ignore' });
+    }
+  } });
+  const anidado = path.join(C.codigo.repo, 'anidado');
+  const v = C.vuelta();
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // editado sin commitear adentro del submódulo: frena con la carpeta adelante y dice cómo salir
+  fs.writeFileSync(path.join(C.codigo.repo, 'vend', 's.js'), 'module.exports = 2;\n');
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), MISMATCH);
+  assert.match(salida(r), /vend\/s\.js/);
+  assert.match(salida(r), /submódulo/);
+  assert.ok(gatesDe(C).some((g) => g.name === 'reviewed-tree-mismatch'));
+  // nuevo adentro del repo anidado: también
+  fs.writeFileSync(path.join(C.codigo.repo, 'vend', 's.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(anidado, 'nuevo.js'), 'module.exports = 3;\n');
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /anidado\/nuevo\.js/);
+  assert.doesNotMatch(salida(r), /vend\/s\.js/, 'lo que volvió a como estaba no cuenta');
+  fs.rmSync(path.join(anidado, 'nuevo.js'));
+  r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // uno cuyo estado no se puede leer no se da por igual: frena con su carpeta (el sello del repo no lee el índice de un
+  // repo anidado sin registrar; el de un submódulo registrado, sí, y sin él ya frenaba)
+  const indice = path.join(anidado, '.git', 'index');
+  fs.chmodSync(indice, 0o000);
+  try {
+    r = prepararCommit(C);
+  } finally {
+    fs.chmodSync(indice, 0o644);
+  }
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /no pude ver el estado del submódulo anidado/, salida(r));
 });
