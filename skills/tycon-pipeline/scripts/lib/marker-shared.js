@@ -457,7 +457,9 @@ function vueltaCongeladaComprobada(tipo, quien) {
 /**
  * Lo que se guarda, ¿es lo revisado? (historia 8.161, decisión 3). Sella cada repo de la última vuelta de revisores
  * (nunca la del pase) y compara con su sello: los archivos distintos, sin el papeleo, frenan con el comando de la
- * vuelta (`reviewed-tree-mismatch`). Una vuelta sin sello (de antes) no se compara: se dice y queda en gates.log.
+ * vuelta (`reviewed-tree-mismatch`). Lo sin commitear adentro de un submódulo o de un repo anidado, que el sello no ve
+ * (anota de cada uno sólo su commit), también frena; uno que no se puede mirar, también. Una vuelta sin sello (de antes)
+ * no se compara: se dice y queda en gates.log.
  */
 function comprobarLoRevisado(marker, quien) {
   const ft = require('./frozen-tree.js');
@@ -471,6 +473,8 @@ function comprobarLoRevisado(marker, quien) {
   const storyAbs = resolveStoryPath(marker.storyPath, marker);
   const realDe = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
   const distintos = [];
+  // lo de adentro de un submódulo o repo anidado: otra vuelta no lo arregla, hay que commitearlo en su repo o descartarlo
+  const adentro = [];
   const papeleo = [];
   const deMain = [];
   const sinSepararMain = [];
@@ -490,6 +494,9 @@ function comprobarLoRevisado(marker, quien) {
   for (const r of v.repos) {
     const ahora = ft.seal(r.repo);
     if (ahora.error) frenar(`no pude sellar lo que se guarda para compararlo con lo revisado (${ahora.error}).`);
+    const anidados = ft.anidadosConCambios(r.repo, ahora.tree);
+    if (anidados.error) frenar(`no pude comparar lo que se guarda con lo revisado en ${path.basename(r.repo)}: ${anidados.error}.`);
+    for (const f of anidados.files) { distintos.push({ repo: r.repo, f }); adentro.push(f); }
     const rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
     // lo que trajo main en archivos que la corrida no tocó no es «no revisado»: se separa con el punto en común con main
     // del sello y el de ahora, del mismo repo
@@ -517,6 +524,7 @@ function comprobarLoRevisado(marker, quien) {
     console.error(`marker.js ${quien} BLOQUEADO — lo que se guarda no es lo revisado: cambió después de la última vuelta de revisores (${v.etiqueta}):`);
     for (const d of distintos) console.error(`   · ${d.f} (${path.basename(d.repo)})`);
     for (const s of sinSepararMain) console.error(`  No pude separar lo que trajo main (${s}): cuenta como cambio.`);
+    if (adentro.length) console.error('  Lo de adentro de un submódulo o repo anidado no lo ve la vuelta: commitealo en su repo, o descartalo, y después corré otra vuelta.');
     console.error(`  Corré otra vuelta: pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'} --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo, como hoy>".`);
     console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
     process.exit(2);
