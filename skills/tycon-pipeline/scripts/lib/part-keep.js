@@ -9,9 +9,10 @@
  * huella, no la lista de archivos de la story:
  *   - la carpeta de la parte tal como está en el disco (lo commiteado y lo que no, sin lo ignorado), como árbol de git;
  *   - lo común: todo lo del repo que no cae en ninguna parte (la configuración de la raíz, una carpeta compartida), salvo
- *     el texto en Markdown y las carpetas del arnés (.advisors, .tycon, .claude, .engram);
- *   - el portón mismo (este archivo, test-gate.sh y las bibliotecas que deciden qué corre) y las herramientas de la parte
- *     (la versión de node, y la de dotnet, python o go si la parte las usa).
+ *     la story que corre y los artefactos y la memoria del arnés (.advisors, .engram);
+ *   - lo ignorado por git de la parte y de lo común (un .env, algo generado o instalado), por tamaño y fecha;
+ *   - el portón mismo (test-gate.sh y todas sus bibliotecas), las herramientas de la parte (la versión de node, y la de
+ *     dotnet, python o go si la parte las usa) y las variables del entorno que cambian una prueba.
  * Nunca conserva: una parte de navegador (Playwright, Karma, Cypress: prueba el producto entero), una corrida sin story,
  * otra story u otra rama, un verde sin huella, una parte cuyos archivos nombran una ruta en otra parte o fuera del repo, ni
  * un repo cuyas partes comparten paquetes (workspaces). Ante la duda, corre.
@@ -31,8 +32,8 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const NAVEGADOR = /^(playwright|karma|cypress)$/i;
-// lo que escribe el arnés (los artefactos, la sesión, la memoria): no es lo que prueba una parte
-const DEL_ARNES = ['.advisors', '.claude', '.engram'];
+// lo que escribe el arnés en el repo (los artefactos y la memoria): no es lo que prueba una parte
+const DEL_ARNES = ['.advisors', '.engram'];
 const WORKSPACES = ['pnpm-workspace.yaml', 'lerna.json', 'nx.json', 'turbo.json', 'rush.json'];
 // las variables que cambian el resultado de una prueba sin cambiar un archivo
 const DEL_ENTORNO = /^(NODE_ENV|NODE_OPTIONS|TZ|LANG|LC_ALL|CI|DATABASE_URL)$|^(ASPNETCORE_|DOTNET_|NUGET_|PYTHON|PIP_|VITE_|NEXT_PUBLIC_|ConnectionStrings__|TYCON_COVERAGE_)/;
@@ -40,7 +41,7 @@ const DEL_ENTORNO = /^(NODE_ENV|NODE_OPTIONS|TZ|LANG|LC_ALL|CI|DATABASE_URL)$|^(
 const CARPETA_IGNORADA = /\/$/;
 
 function git(repo, args, env) {
-  const r = spawnSync('git', ['-C', repo, '-c', 'core.quotePath=false', ...args], { encoding: 'utf8', env: { ...process.env, ...(env || {}) }, maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync('git', ['-C', repo, '-c', 'core.quotePath=false', ...args], { encoding: 'utf8', windowsHide: true, env: { ...process.env, ...(env || {}) }, maxBuffer: 256 * 1024 * 1024 });
   if (r.error || r.status !== 0) throw new Error(`git ${args[0]}: ${((r.stderr || '') + (r.error ? r.error.message : '')).trim().split('\n')[0]}`);
   return r.stdout;
 }
@@ -116,7 +117,7 @@ function compartenPaquetes(repo) {
 
 /** La versión de una herramienta, o «no está». */
 function version(cmd, args) {
-  const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: 20000 });
+  const r = spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, timeout: 20000 });
   return r.error || r.status !== 0 ? 'no está' : `${r.stdout || ''}${r.stderr || ''}`.trim().split('\n')[0];
 }
 
