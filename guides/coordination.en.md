@@ -409,6 +409,16 @@ that fails) it says «no medida» and assumes nothing. Only the `status` command
 closing brake do not measure it. A session Claude Code already closed shows in «Cerradas por Claude Code» with what it was
 waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `coordination.js relaunch --id`.
 
+### The user's processes
+
+Each user has a process cap (on macOS, `kern.maxprocperuid`; on the Mac mini, 2666). At the cap no command starts: not
+the hooks, not the brakes. It happened on 23/11 at 05:45, with several adversarial passes at
+once and a hung test, and the Telegram MCP went down. `coordination.js status` counts the user's processes (`ps -U`): from 70 % of the cap it says how
+many there are and what the cap is. What to do: before launching anything heavy (a pass, mutants, a suite), ask for the
+passes and background scripts that are not needed to stop. If they cannot be counted (another platform, a command that
+fails) it says «no medidos» and assumes nothing; if `ps` cannot start for lack of processes, it says it is at the
+cap. Like swap memory, only the `status` command counts them.
+
 ## The automatic reviews: what the coordinator does
 
 When each review runs is set by the organization's configuration (`guides/automatic-reviews.en.md`). In each one,

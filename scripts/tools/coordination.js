@@ -635,6 +635,29 @@ function swapLine(s) {
   return `Memoria de intercambio casi llena: ${sw.pct} % libre. Claude Code puede cerrar sesiones quietas${names.length ? `: ${names.join(' · ')}` : ' (no hay quietas)'}. Antes de lanzar algo pesado, cerrá las quietas que no esperan nada (guides/coordination.md, «La memoria de intercambio»).`;
 }
 
+// Los procesos del usuario cerca del tope (desde este porcentaje): con el tope no arranca ningún comando, ni los ganchos ni
+// los frenos. Pasó con varios pases adversariales a la vez y una prueba colgada.
+const PROCS_HIGH_PCT = 70;
+// Lo que lee de más el comando `status`: la memoria de intercambio y los procesos. El aviso de cada turno y el freno del
+// cierre no corren `sysctl` ni `ps`.
+const STATUS_READS = Object.freeze({ swap: true, procs: true });
+// La lectura de los procesos del usuario para `status`: `{ used, max, pct, why }`. Como la memoria de intercambio, sólo la
+// pide el comando `status` (`opts.procs`).
+function procsOf(opts) {
+  if (!opts.procs && !opts.readProcs) return null;
+  try { return (opts.readProcs || require('./heavy-turn.js').userProcs)() || { used: null, max: null, pct: null, why: 'sin respuesta' }; } catch (e) { return { used: null, max: null, pct: null, why: oneLine(e.message) }; }
+}
+// La línea de los procesos, o null: medidos y lejos del tope no dice nada.
+function procsLine(s) {
+  const p = s.procs;
+  if (!p) return null;
+  // `ps` no pudo arrancar por falta de procesos: ése es el tope, no una medición que falló
+  if (p.pct == null && /EAGAIN|temporarily unavailable/i.test(String(p.why))) return 'Procesos del usuario en el tope: no pude arrancar ni `ps` para contarlos (EAGAIN). Ningún comando arranca, ni los ganchos ni los frenos: pedí que frenen los pases y los guiones de fondo (guides/coordination.md, «Los procesos del usuario»).';
+  if (p.pct == null) return `Procesos del usuario: no medidos (${oneLine(p.why || 'sin motivo').slice(0, 120)})`;
+  if (p.pct < PROCS_HIGH_PCT) return null;
+  return `Procesos del usuario cerca del tope: ${p.used} de ${p.max} (${p.pct} %). Con el tope no arranca ningún comando, ni los ganchos ni los frenos. Antes de lanzar algo pesado (un pase, mutantes, una suite), pedí que frenen los pases y los guiones de fondo que no hacen falta (guides/coordination.md, «Los procesos del usuario»).`;
+}
+
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
@@ -830,7 +853,7 @@ function status(opts = {}) {
     now, working, waiting, quiet, agentSilent, busySilent, backgroundStalled, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
     // lo que espera revisión, de la foto del arranque: para mostrar, nunca para decidir
     review: RL.leerFoto(stateDir(home), now), reviewCap: r.max_awaiting_review,
-    retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why, idle, swap: swapOf(opts),
+    retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why, idle, swap: swapOf(opts), procs: procsOf(opts),
     suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
     signatures, plansWaiting: planWaits, pendingDesignation,
     unnamed, problems,
@@ -857,6 +880,8 @@ function statusText(s) {
   else if (s.retired && s.retired.length) lines.push(`Cerradas por Claude Code: ${s.retired.map(retiredLine).join(' · ')}`);
   const swap = swapLine(s);
   if (swap) lines.push(swap);
+  const procs = procsLine(s);
+  if (procs) lines.push(procs);
   const passText = (a) => `pase adversarial de ${a.storyId ? `la ${a.storyId}` : 'una sesión sin story'} (${a.session}, desde las ${hhmm(a.since)})`;
   const h = s.heavyTurn;
   // con una ejecución grande, si entra la segunda; con dos, las dos
@@ -3597,8 +3622,7 @@ function main(argv) {
   try { f = flags(more); } catch (e) { process.stderr.write(`coordination.js: ${e.message}\n`); return 2; }
   const base = { env: process.env };
   if (cmd === 'status') {
-    // sólo acá se lee la memoria de intercambio: el aviso de cada turno y el freno del cierre no corren `sysctl`
-    const s = status({ ...base, swap: true });
+    const s = status({ ...base, ...STATUS_READS });
     process.stdout.write(f.json ? `${JSON.stringify(s, null, 2)}\n` : `${statusText(s)}\n`);
     return 0;
   }
@@ -3705,6 +3729,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, relaunch, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict, fullSessionName, ownerReplyLines,
+module.exports = { LAUNCH_TIMEOUT_MS, relaunch, STATUS_READS, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict, fullSessionName, ownerReplyLines,
   // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
   stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };

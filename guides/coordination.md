@@ -409,6 +409,17 @@ no supone nada. Sólo la lee el comando `status`: el aviso de cada turno y el fr
 que Claude Code ya cerró sale en «Cerradas por Claude Code» con lo que esperaba (su nota de `marker.js doing
 --waiting-for`) y desde cuándo, arriba de las demás, con su `coordination.js relaunch --id`.
 
+### Los procesos del usuario
+
+Cada usuario tiene un tope de procesos (en macOS, `kern.maxprocperuid`; en la Mac mini, 2666). Con el tope no arranca
+ningún comando: ni los ganchos ni los frenos. Pasó el 23/11 a las 05:45, con varios pases
+adversariales a la vez y una prueba colgada, y se cayó el MCP de Telegram. `coordination.js status` cuenta los procesos del usuario (`ps -U`): desde el
+70 % del tope dice cuántos hay y de cuánto es el tope. Qué hacer: antes de lanzar algo pesado (un pase, mutantes, una
+suite), pedí que frenen los pases y los guiones de fondo que no hacen falta. Si no se pueden contar (otra plataforma, un
+comando que falla) dice «no medidos» y no supone nada; si `ps` no arranca por falta de procesos, dice que está en el
+tope. Como la memoria de intercambio, sólo los cuenta el comando
+`status`.
+
 ## Las revisiones automáticas: qué hace la coordinadora
 
 Cuándo corre cada revisión lo dice la configuración de la organización (`guides/automatic-reviews.md`). En cada
