@@ -62,7 +62,9 @@ function fichas(cmd, opts = {}) {
   const ps = Boolean(opts && opts.powershell);
   // la barra al final del renglón se QUITA junto con el salto, como hace la terminal: `cre\<salto>ate` es `create` y
   // `g\<salto>h` es `gh` (con un espacio en su lugar eran dos palabras, y el comando partido así no se reconocía)
-  const s = String(cmd || '').replace(ps ? /`\r?\n/g : /\\\r?\n/g, '');
+  // (sólo la barra que no está escapada: `\\` antes del salto es una barra escrita, y el salto queda; si se la comiera,
+  // adentro de `$'…'` quedaría un `\'` que no cierra la cadena)
+  const s = ps ? String(cmd || '').replace(/`\r?\n/g, '') : String(cmd || '').replace(/(?<!\\)((?:\\\\)*)\\\r?\n/g, '$1');
   const out = [];
   let texto = '';
   let abierta = false;      // hay ficha en curso
@@ -115,6 +117,16 @@ function fichas(cmd, opts = {}) {
     if (!q && enHeredoc(i)) { cerrar(); continue; }
     if (!q && candidatos.has(i)) cuerpos.push(candidatos.get(i));
 
+    if (q === "$'") {
+      // El citado ANSI-C (`$'…'`): la barra escapa lo que sigue, y `\'` es una comilla del texto, no el cierre. Leído
+      // como una comilla simple común, el lector se desincroniza: invierte qué está entre comillas y puede abrir un
+      // bloque `<<PALABRA` que está adentro de una cadena. La comilla y la barra escapadas quedan como el carácter; las
+      // demás secuencias (`\n`, `\x62`) quedan escritas: el texto ya cuenta como armado por la terminal (`expande`).
+      if (c === '\\' && n !== undefined) { texto += n === "'" || n === '\\' ? n : c + n; i++; continue; }
+      if (c === "'") { q = null; continue; }
+      texto += c;
+      continue;
+    }
     if (q) {
       // Entre comillas dobles la terminal sólo se come la barra delante de `$`, de una comilla invertida, de `"` y de
       // otra barra; delante de cualquier otra cosa la barra QUEDA (`"C:\Users\x"` se publica con sus barras). Sacarlas
@@ -150,6 +162,10 @@ function fichas(cmd, opts = {}) {
     if (c === '\\' && n !== undefined && !ps) { if (!abierta) { abierta = true; empezoLibre = true; } escapada = true; texto += n; i++; continue; }
 
     if (!abierta) { abierta = true; empezoLibre = true; }
+    // `$'…'` abre el citado ANSI-C, con sus escapes (arriba). En PowerShell `$'` no es eso: sigue siendo `$` y una comilla
+    // `$$` es el número del proceso: el `$` de atrás no abre nada, y una comilla que lo siga es una comilla simple común
+    if (c === '$' && n === '$') { expande = true; partida = true; texto += '$$'; i++; continue; }
+    if (c === '$' && n === "'" && !ps) { expande = true; texto += c; q = "$'"; i++; continue; }
     // fuera de comillas también `$'…'` y `$"…"`: el citado ANSI-C arma el texto (`$'\x62'` es una letra)
     if (abreExpansion(c, n)) { expande = true; partida = true; } else if (c === '$' && (n === "'" || n === '"')) expande = true;
     // `{a,b}` y `{a..c}` sin comillas: la terminal los abre en varias palabras (`-s{x,dev}` es `-sx -sdev`), también

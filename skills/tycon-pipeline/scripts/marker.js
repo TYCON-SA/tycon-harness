@@ -212,6 +212,8 @@ const PARA_OTRA_SESION = {
   'adhoc': { firma: 'adhoc-lane', si: (a) => a[3] === 'set' },
   // el pendiente que abrió otra sesión: la firma se escribe en su repo, que el freno comprueba que es de esa sesión
   'approve-pending': { firma: 'pending-approval' },
+  // seguir en autónomo: la coordinadora lo pide para la sesión detenida y lo decide el click del dueño en su cuadro
+  'resume-autonomy': { firma: 'autonomy-resume', marcador: true },
 };
 
 // cerrar la ejecución que la partición de su historia dejó sin objeto: la forma de rutina de la salida perdida
@@ -222,6 +224,8 @@ const PARTICION = { firma: 'lost-run:particion', nombra: 3, si: (a) => a.include
 const reglaParaOtra = (argv) => {
   if (argv[2] === 'clear-session' && PARTICION.si(argv)) return PARTICION;
   if (argv[2] === 'adhoc' && argv[3] === 'allow-foreign-save') return { firma: 'adhoc-lane:guardado-ajeno' };
+  // el freno de los datos, sólo para dejarlo pasar: descartar o pasar a historia tocan el carril de la sesión sin firma
+  if (argv[2] === 'adhoc' && argv[3] === 'allow-data-change') return { firma: 'adhoc-lane:datos', si: (a) => a[a.indexOf('--recommends') + 1] === 'pasar' };
   if (argv[2] === 'sign-file') return { firma: `escape:${argv[3]}` };
   return PARA_OTRA_SESION[argv[2]];
 };
@@ -1963,9 +1967,15 @@ function cmdCompleteStep(nRaw, flags) {
       }
       const v = mk.validateMockupHtml(html);
       if (!v.ok) bloquear3(`la maqueta no pasa mockup.js check (${p.mockup}):`, v.findings.map((x) => `- ${x.line ? `línea ${x.line}: ` : ''}${x.what}`));
+      // la maqueta se mira con un navegador antes de pedir su aprobación: lo que se pisa, desborda o parte una palabra frena
+      const shots = require('./lib/mockup-shots.js');
+      const mirada = shots.problemaDeLaRevision({ mockupPath: p.mockup, html, mockupJs: path.join(__dirname, 'mockup.js') });
+      if (mirada) bloquear3(mirada.motivo, mirada.extra);
       if (!mockupCita) {
+        const capturas = Object.values(shots.shotsPaths(p.mockup).shots);
         bloquear3(`story con pantalla: mostrale la maqueta (${p.mockup}) y pasá su aprobación con --mockup-approved`, [
-          `Mostrale la maqueta (${p.mockup}) a la persona que aprueba —o a quien tenga su delegación— y cerrá con --mockup-approved "<cita: quién aprobó y por qué vía>".`,
+          `Mandale a la persona que aprueba —o a quien tenga su delegación— las dos capturas a la conversación, no sólo la ruta: ${capturas.join(' · ')}`,
+          `La maqueta entera: ${p.mockup}. Cerrá con --mockup-approved "<cita: quién aprobó y por qué vía>".`,
         ]);
       }
       mockupPlan = { p, sha: mk.mockupHash(html) };
@@ -2351,7 +2361,7 @@ function cmdCompleteStep(nRaw, flags) {
       console.error(`marker.js complete-step ${n} BLOQUEADO — ${v.faltan.length} crítico(s) marcado(s) como eximido(s) sin el ok de una persona:`);
       for (const l of cw.renglonesDeFaltantes(v)) console.error(l);
       console.error('   Un crítico lo decide una persona: arreglalo, o que el dev lo exima. Los caminos:');
-      for (const f of v.faltan) for (const l of cw.caminos({ marker: __filename, ruleId: f.rule_id, file: f.file || '<archivo>' })) console.error(l);
+      for (const f of cw.agrupar(v.faltan)) for (const l of cw.caminos({ marker: __filename, ruleId: f.rule_id, file: f.file || '<archivo>' })) console.error(l);
       process.exit(1);
     }
     // Los críticos que reportó cada revisor, anotados por el arnés (lib/reported-criticals.js): findings.json se pudo
@@ -2455,15 +2465,17 @@ function cmdCompleteStep(nRaw, flags) {
         appendLog('gates.log', { name: 'compare-previous-gate', action: 'no-medido', story: marker.storyId || null, motivo: noMedido });
       } else if (f && (f.candidatos.length || (f.sinRepo || []).length)) {
         for (const a of f.avisos) console.error(`⚠️  complete-step ${n}: ${a}`);
+        // lo que no se pudo mirar junto a los demás candidatos también queda en el renglón, no sólo en pantalla
+        const noMedidos = (f.noMedidos || []).map((x) => ({ archivo: x.archivo, motivo: x.motivo }));
         if (f.bloquea) {
           appendLog('gates.log', { name: 'compare-previous-gate', action: 'bloqueo', story: marker.storyId || null,
-            faltan: f.juicio.faltan.map((x) => x.archivo), noDeclaradas: f.juicio.noDeclaradas.map((x) => x.cmd) });
+            faltan: f.juicio.faltan.map((x) => x.archivo), noDeclaradas: f.juicio.noDeclaradas.map((x) => x.cmd), ...(noMedidos.length ? { noMedidos } : {}) });
           console.error(`marker.js complete-step ${n} BLOQUEADO — ${f.lineas[0]}`);
           for (const l of f.lineas.slice(1)) console.error(l.startsWith('comparación con main') ? `   ${l}` : l);
           process.exit(1);
         }
         for (const l of f.lineas) console.error(`   ${l.trim()}`);
-        appendLog('gates.log', { name: 'compare-previous-gate', action: 'verde', story: marker.storyId || null, candidatos: f.candidatos.map((x) => x.archivo), avisos: f.juicio.avisos.length });
+        appendLog('gates.log', { name: 'compare-previous-gate', action: 'verde', story: marker.storyId || null, candidatos: f.candidatos.map((x) => x.archivo), avisos: f.juicio.avisos.length, ...(noMedidos.length ? { noMedidos } : {}) });
       }
     }
     // Un crítico de seguridad o de datos abierto o diferido no cierra callado: lo arregla una vuelta (extra, si se llegó al
@@ -2696,10 +2708,15 @@ function cmdCompleteStep(nRaw, flags) {
             appendLog('gates.log', { name: 'acmatrix-debt', story: nn(marker.storyId, null), storyPath, ...dondeViveLaHistoria(storyPath), deuda: marker.cierre.deuda, acs: deudaEnVivo.acs, tests: deudaEnVivo.tests, until: deudaEnVivo.until }, { estricto: true });
             console.error(`⚠️  matriz (DODRT-C6): AC ${acs} sin evidencia en vivo — aceptados por la deuda ${marker.cierre.deuda}, vence ${deudaEnVivo.until}`);
             console.error(`📌 El mensaje de commit lleva esta línea: Sin evidencia en vivo: AC ${acs} — deuda ${marker.cierre.deuda}, vence ${deudaEnVivo.until}`);
+            // lo aceptado por la deuda cuenta como la matriz verde para pasar a done, con la deuda nombrada
+            appendLog('gates.log', { name: 'acmatrix-green', story: nn(marker.storyId, null), storyPath: path.resolve(storyPath), ...dondeViveLaHistoria(storyPath), deuda: marker.cierre.deuda, ...(matrix.batch ? { batch: matrix.batch } : {}) });
           } catch (e) {
             blocked = 'acmatrix-debt-log';
             console.error(`marker.js complete-step ${n} BLOQUEADO — no pude anotar la deuda de evidencia en vivo en gates.log (${e.code || e.message}): sin ese renglón nadie avisa cuando venza. Revisá la carpeta de estado y reintentá.`);
           }
+        } else if (matrix && matrix.green) {
+          // la constancia de la matriz verde: con ella, la historia puede pasar a done fuera de la corrida en esta máquina
+          appendLog('gates.log', { name: 'acmatrix-green', story: nn(marker.storyId, null), storyPath: path.resolve(storyPath), ...dondeViveLaHistoria(storyPath), ...(matrix.batch ? { batch: matrix.batch } : {}) });
         } else if (matrix && !matrix.green) {
           blocked = 'acmatrix';
           console.error(`marker.js complete-step ${n} BLOQUEADO — matriz de verificación runtime (DODRT-C6) ROJA.`);
@@ -2873,6 +2890,17 @@ function cmdCompleteStep(nRaw, flags) {
   syncSessionState(SID);
   process.stdout.write(JSON.stringify(marker, null, 2));
   if (nuevo) decirRenglonDelPaso(marker, paso);
+  avisarContextoAlCerrar(ids);
+}
+
+// Al cerrar un paso pesado con la sesión sobre el umbral de contexto, que es el momento de compactar o de abrir una
+// sesión nueva (scripts/hooks/context-size-notice.js). Avisa, nunca frena.
+function avisarContextoAlCerrar(ids) {
+  try {
+    const aviso = require(path.join(__dirname, '..', '..', '..', 'scripts', 'hooks', 'context-size-notice.js'))
+      .avisoAlCerrarPaso({ pasos: ids, sessionId: SID, home: os.homedir() });
+    if (aviso) process.stderr.write(`${aviso}\n`);
+  } catch (e) { process.stderr.write(`🧠 contexto: no pude medir la sesión al cerrar el paso (${e.message})\n`); }
 }
 
 /**
@@ -3223,6 +3251,8 @@ function cmdApproveMockup(flags) {
   }
   const v = mk.validateMockupHtml(html);
   if (!v.ok) no(`la maqueta no pasa mockup.js check (${p.mockup}):`, v.findings.map((x) => `- ${x.line ? `línea ${x.line}: ` : ''}${x.what}`));
+  const mirada = require('./lib/mockup-shots.js').problemaDeLaRevision({ mockupPath: p.mockup, html, mockupJs: path.join(__dirname, 'mockup.js') });
+  if (mirada) no(mirada.motivo, mirada.extra);
   const sha = mk.mockupHash(html);
   const prev = marker.mockupApproval && marker.mockupApproval.sha256;
   // sin persona, la maqueta la reaprueba sólo la coordinadora con la revisión que ella lanzó; la de la propia sesión no
@@ -3563,12 +3593,18 @@ function cmdTestsFailed(argv) {
     const porRepeticiones = constanciaVerde && !!opt('--full-suite-by') && !roja && otrasRojas.length === 0 && quedan.length === 0 && ajenas.length === 0
       && /^red\b/.test(String((marker.checks || {}).tests)) && (marker.checksProvenance || {}).tests === 'test-gate'
       && Date.parse((marker.checksAt || {}).tests) <= Date.parse(propia.at);
-    // con lo guardado de la completa roja, la repetición verde se suma con la foto de la carpeta en que corrió
+    // con lo guardado de la completa roja, la repetición se suma con la foto de la carpeta en que corrió: la verde, y la
+    // roja que el juez perdonó, con su falla (el juez la pasó a `inherited.suites` del resumen de la suite sola)
     if (roja && opt('--summary') && opt('--tree')) {
       try {
         const sola = JSON.parse(fs.readFileSync(opt('--summary'), 'utf8'));
         const entry = (sola.suites || [])[0] || null;
-        if (entry && entry.exit === 0) roja.hash = ff.addRepeat(roja.dir, ruta, { tree: opt('--tree'), entry, lcovFile: opt('--coverage-file') });
+        const heredada = argv.includes('--inherited') && entry && entry.exit !== 0
+          ? ((sola.inherited && sola.inherited.suites) || []).find((x) => x && x.entrada && x.entrada.ruta === ruta) || null : null;
+        if (heredada) {
+          const { measured_on: _medida, ...falla } = heredada;
+          roja.hash = ff.addRepeat(roja.dir, ruta, { tree: opt('--tree'), entry, lcovFile: opt('--coverage-file'), falla });
+        } else if (entry && entry.exit === 0) roja.hash = ff.addRepeat(roja.dir, ruta, { tree: opt('--tree'), entry, lcovFile: opt('--coverage-file') });
       } catch (e) { process.stderr.write(`[test-gate] ⚠️  no pude sumar la repetición a lo guardado (${e.message}): la completa va a correr entera\n`); }
     }
     marker.testsFailed = [...ajenas, ...quedan];
@@ -4421,6 +4457,22 @@ function dondeViveLaHistoria(storyPath) {
  * lista, antes de su fecha, y nada más pendiente (imposibles sin firma, acción no ejercida, pantalla sin imagen, código
  * sin leer). `motivos`: lo que no acepta, dicho.
  */
+/**
+ * Los criterios sin correr que quedan fuera del rojo esperado vigente de la deuda: los que cubre la lista, antes de su
+ * fecha, ya tienen su salida (la deuda), así que no frenan la exención de los imposibles-declarados. Sin deuda, sin rojo
+ * esperado de la matriz o vencido, todos los sin correr, como siempre.
+ */
+function sinCorrerFueraDeLaDeuda(marker, matrix) {
+  const notRun = matrix.notRun || [];
+  const er = marker && (marker.expectedRed || {}).acmatrix;
+  if (!notRun.length || !er || !marker.cierre || marker.cierre.estado !== 'deuda') return notRun;
+  if (!/^rojo-esperado/.test(String(at(marker.checks, 'acmatrix') || ''))) return notRun;
+  if (!esFecha(er.until) || fechaLocal(new Date()) > er.until) return notRun;
+  const tests = Array.isArray(er.tests) ? er.tests.map(String) : [];
+  const cubiertos = new Set(require('./runtime-matrix.js').debtCoverage(matrix, tests).covered);
+  return notRun.filter((n) => !cubiertos.has(n));
+}
+
 function deudaDeLaMatriz(marker, matrix) {
   const er = (marker.expectedRed || {}).acmatrix;
   if (!marker.cierre || marker.cierre.estado !== 'deuda' || !er || !/^rojo-esperado/.test(String(at(marker.checks, 'acmatrix') || ''))) return null;
@@ -5641,6 +5693,10 @@ function cmdPr(numRaw, rest = []) {
       else if (storyPathArg || repoNombre !== delaHistoria) anotarEnElRegistro({ storyFile, id: vivo.storyId, repo: repoNombre, numero, estricto: Boolean(storyPathArg) });
     }
     vivo.pr = { number: numero, merged, ...(repoNombre ? { repo: repoNombre } : {}) };
+    // y por repo: el pedido de otro repo anotado después no pisa el de la historia (la espera de la compilación los
+    // necesita todos). Sin --repo, el número es del repo de la corrida
+    const delRepo = repoNombre || SR.nombreDelRepo(vivo.repoPath);
+    if (delRepo) vivo.prs = { ...(vivo.prs || {}), [delRepo]: numero };
     vivo.lastTouch = nowIso();
     writeMarker(vivo);
     process.stderr.write(`[marker] pedido #${numero}${merged ? ' (mergeado)' : ''} anotado en la corrida de la ${vivo.storyId}\n`);
@@ -5687,28 +5743,114 @@ function cmdPr(numRaw, rest = []) {
   } catch (e) { process.stderr.write(`[marker] no pude armar el renglón final (${e.message})\n`); }
 }
 
-// Avisa, sin frenar, los repos de la corrida con commits propios cuyo pedido no quedó anotado: sin él, la regla de la entrada
-// no va a reconocer esa fusión como de esta historia. Nunca rompe el cierre.
-function avisarPedidosSinAnotar(marker) {
+/**
+ * Los pedidos de la corrida, por repo: `{ pedidos: [{ repo, nombre, numero, rama }], faltan: [nombre], problemas: [texto] }`.
+ * `faltan`: los repos con commits propios (adelante de `origin/main`) cuyo pedido no quedó anotado; sin él, la regla de la
+ * entrada no reconoce esa fusión como de esta historia, y el cierre no puede esperar su compilación. Nunca tira.
+ */
+function pedidosDeLaCorrida(marker) {
+  const out = { pedidos: [], faltan: [], problemas: [] };
   try {
     const SR = require('./lib/story-requests.js');
     const storyFile = resolveStoryPath(marker.storyPath, marker);
     const { key } = require('./lib/evidence-key.js').keyInfoOr(storyFile, String(marker.storyId));
     const { dir } = require('./lib/evidence-config.js').evidenceDirForStory(storyFile, marker.repoPath);
     // sólo cuenta un renglón de esta corrida: uno de un pedido anterior no cubre los commits de ahora
-    const anotados = new Set();
+    const anotados = new Map();
     const deEstaCorrida = (f) => f.clave === key && (!marker.startedAt || (f.ts && f.ts >= marker.startedAt));
-    for (const [k, filas] of SR.leer({ dirs: dir ? [dir] : [] }).porPedido) if (filas.some(deEstaCorrida)) anotados.add(k.split('#')[0]);
+    for (const [k, filas] of SR.leer({ dirs: dir ? [dir] : [] }).porPedido) {
+      if (!filas.some(deEstaCorrida)) continue;
+      const i = k.lastIndexOf('#');
+      anotados.set(k.slice(0, i), Number(k.slice(i + 1)));
+    }
+    for (const [nombre, n] of Object.entries(marker.prs || {})) if (Number.isInteger(n) && n > 0) anotados.set(nombre, n);
     const pr = marker.pr;
-    if (pr) anotados.add(pr.repo || SR.nombreDelRepo(marker.repoPath));
+    if (pr && Number.isInteger(pr.number)) anotados.set(pr.repo || SR.nombreDelRepo(marker.repoPath), pr.number);
+    const git = (repo, args) => require('child_process').spawnSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true });
     for (const repo of reposParaComparar(marker)) {
       const nombre = SR.nombreDelRepo(repo);
-      if (!nombre || anotados.has(nombre)) continue;
-      const r = require('child_process').spawnSync('git', ['rev-list', '--count', 'origin/main..HEAD'], { cwd: repo, encoding: 'utf8', windowsHide: true });
-      if (r.status !== 0) process.stderr.write(`[marker] ${nombre}: no pude ver si tiene commits sin pedido anotado (git no contestó)\n`);
-      else if (Number(r.stdout.trim()) > 0) process.stderr.write(`[marker] ${nombre}: tiene commits de la corrida y sin pedido anotado (marker.js pr <número> --repo <carpeta>)\n`);
+      if (!nombre) continue;
+      if (anotados.has(nombre)) {
+        const rama = git(repo, ['symbolic-ref', '-q', '--short', 'HEAD']);
+        const punta = git(repo, ['rev-parse', 'HEAD']);
+        out.pedidos.push({ repo, nombre, numero: anotados.get(nombre), rama: rama.status === 0 ? rama.stdout.trim() : null, commit: punta.status === 0 ? punta.stdout.trim() : null });
+        continue;
+      }
+      if ((marker.noPr || {})[nombre]) continue;
+      // sólo los commits de esta corrida: los de la historia escrita antes, o los de `dev` en un hermano, no piden pedido
+      const r = git(repo, ['rev-list', '--count', ...(marker.startedAt ? [`--since=${marker.startedAt}`] : []), 'origin/main..HEAD']);
+      if (r.status !== 0) out.problemas.push(`${nombre}: no pude ver si tiene commits sin pedido anotado (git no contestó)`);
+      else if (Number(r.stdout.trim()) > 0) out.faltan.push(nombre);
     }
-  } catch (e) { process.stderr.write(`[marker] no pude revisar los pedidos anotados (${e.message})\n`); }
+  } catch (e) { out.problemas.push(`no pude revisar los pedidos anotados (${e.message})`); }
+  return out;
+}
+
+// Avisa, sin frenar, los repos de la corrida con commits propios cuyo pedido no quedó anotado. Nunca rompe el cierre.
+function avisarPedidosSinAnotar(marker) {
+  const p = pedidosDeLaCorrida(marker);
+  for (const x of p.problemas) process.stderr.write(`[marker] ${x}\n`);
+  for (const n of p.faltan) process.stderr.write(`[marker] ${n}: tiene commits de la corrida y sin pedido anotado (marker.js pr <número> --repo <carpeta>)\n`);
+}
+
+/**
+ * Con «Preparar el pull request» cerrado, el cierre no da la corrida por terminada si un repo con commits no tiene su
+ * pedido anotado: sin él no se espera su compilación, y el pedido se presentaría como listo con la CI sin ver (el
+ * pedido del backend que nadie anotó). Sale 2 nombrando cada repo. Antes de ese paso, como siempre: sólo avisa.
+ */
+function frenarSiFaltanPedidos(marker) {
+  if (!marker || !marker.storyId || !STEPS_LIB.isDone(marker, 'prepare-commit')) return;
+  const p = pedidosDeLaCorrida(marker);
+  if (!p.faltan.length) return;
+  console.error(`marker.js clear: ${p.faltan.join(', ')} ${p.faltan.length === 1 ? 'tiene' : 'tienen'} commits de la corrida y sin pedido anotado. `
+    + 'Sin el pedido de cada repo no se espera su compilación y la corrida no se puede dar por lista: abrí el pedido y anotalo con '
+    + '`marker.js pr <número> --repo <carpeta>`; después, volvé a correr `marker.js clear`. Si ese repo no lleva pedido a '
+    + 'propósito: `marker.js clear --no-pr <nombre del repo> --reason "<por qué>"` (queda en gates.log, y ese repo no cuenta como listo).');
+  process.exit(2);
+}
+
+/**
+ * `clear --no-pr <repo> --reason "<por qué>"` (repetible): los repos que a propósito no llevan pedido. Quedan en el
+ * marcador (`noPr`) y en `gates.log`; la espera de la compilación no los cuenta. Sale 2 si falta el motivo.
+ */
+function reposSinPr(marker, rest) {
+  const nombres = [];
+  for (let i = 0; i < rest.length; i++) if (rest[i] === '--no-pr' && rest[i + 1]) nombres.push(rest[++i]);
+  if (!nombres.length || !marker) return marker;
+  const k = rest.indexOf('--reason');
+  const motivo = k >= 0 ? String(rest[k + 1] || '').trim() : '';
+  if (motivo.length < 8) { console.error('marker.js clear --no-pr: va con --reason "<por qué ese repo no lleva pedido>" (8 letras o más).'); process.exit(2); }
+  marker.noPr = { ...(marker.noPr || {}) };
+  for (const n of nombres) marker.noPr[n] = motivo;
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'clear-no-pr', story: marker.storyId, repos: nombres, motivo });
+  process.stderr.write(`[marker] sin pedido a propósito: ${nombres.join(', ')} («${motivo}»)\n`);
+  return marker;
+}
+
+/**
+ * Lanza de fondo la espera de la compilación de cada pedido de la corrida (lib/pr-build-wait.js). La lista va en un
+ * archivo del estado: la espera lo lee y lo borra. Devuelve los pedidos que espera, o null si no lanzó nada.
+ */
+function lanzarEsperaDeCompilacion(marker) {
+  if (!marker || !marker.storyId || !STEPS_LIB.isDone(marker, 'prepare-commit')) return null;
+  const p = pedidosDeLaCorrida(marker);
+  for (const x of p.problemas) process.stderr.write(`[marker] ${x}\n`);
+  if (!p.pedidos.length) return null;
+  try {
+    const dir = path.join(STATE_DIR, 'pr-build-wait');
+    fs.mkdirSync(dir, { recursive: true });
+    const archivo = path.join(dir, `${SID}-${Date.now()}.json`);
+    fs.writeFileSync(archivo, JSON.stringify({ session: SID, storyId: String(marker.storyId), pedidos: p.pedidos }), 'utf8');
+    const hijo = require('child_process').spawn(process.execPath, [path.join(__dirname, 'lib', 'pr-build-wait.js'), '--file', archivo], {
+      detached: true, stdio: 'ignore', windowsHide: true, env: process.env,
+    });
+    hijo.unref();
+    return p.pedidos;
+  } catch (e) {
+    process.stderr.write(`[marker] no pude lanzar la espera de la compilación (${e.message}): los pedidos NO están listos hasta ver su compilación en verde\n`);
+    return null;
+  }
 }
 
 function cmdClear(rest = []) {
@@ -5723,6 +5865,8 @@ function cmdClear(rest = []) {
   frenarSiIlegible(markerFilePath(SID), SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
   frenarSiPerdida(SID, 'clear', marcadorAntes && marcadorAntes.repoPath);
+  marcadorAntes = reposSinPr(marcadorAntes, rest);
+  frenarSiFaltanPedidos(marcadorAntes);
   // una ejecución detenida la cierra el dueño: el perfil puede delegar «cerrar la ejecución», pero esa firma por
   // delegación (o la automática) no alcanza para salir de una detención que espera su decisión
   let crudo = null;
@@ -5879,6 +6023,12 @@ function cmdClear(rest = []) {
       }
       // Cómo terminó cada paso y con qué resultado cerró la corrida, después de la línea de costo; y un aviso
       if (STEPS_LIB.schemeOf(marker) === STEPS_LIB.SCHEME) decirRenglonesDelCierre(marker, dumpFinal, marker.runDir || carpetaDelVolcado);
+      // la compilación de cada pedido se espera de fondo: el pedido no está listo para aprobar hasta verla en verde
+      const esperados = lanzarEsperaDeCompilacion(marker);
+      if (esperados) {
+        process.stderr.write(`[corrida] pedidos abiertos, compilación corriendo: no están listos todavía (${esperados.map((x) => `#${x.numero} de ${x.nombre}`).join(', ')}). `
+          + 'El aviso de «listos para aprobar» llega cuando todas den verde; no pidas la aprobación antes.\n');
+      }
       // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
       // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
       // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.
@@ -6570,6 +6720,11 @@ function cmdUpdateStoryStatus(storyPath, newStatus) {
   // con la corrida esperando a main, la historia no pasa a review ni a done (el mismo freno que el rojo)
   if (newStatus === 'review' || newStatus === 'done') frenarEstadoSiEsperaMain('update-story-status', storyPath);
   const content = fs.readFileSync(storyPath, 'utf8');
+  // done pide la matriz de evidencia en vivo (DODRT-C6), también fuera de una corrida: verde en esta carpeta, o la
+  // constancia que dejó la corrida de esta historia al pasarla en verde. Repetir done sobre una historia en done no frena
+  // el `status:` de la historia es el de la raíz del encabezado, no el de una tanda de `pipelines:`
+  const estadoActual = ((content.match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '').match(/^status\s*:\s*["']?([\w-]+)/m);
+  if (newStatus === 'done' && !(estadoActual && estadoActual[1] === 'done')) frenarDoneSinMatriz(storyPath);
   // Frontmatter YAML entre los dos '---' del inicio del archivo.
   const fmRegex = /^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n)/;
   const m = content.match(fmRegex);
@@ -6594,7 +6749,71 @@ function cmdUpdateStoryStatus(storyPath, newStatus) {
   const tmp = `${storyPath}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, newContent, 'utf8');
   fs.renameSync(tmp, storyPath);
+  // cada cambio de estado queda anotado: una vuelta a in-progress invalida la constancia de la matriz anterior
+  appendLog('gates.log', { name: 'story-status', status: newStatus, storyPath: path.resolve(storyPath), ...dondeViveLaHistoria(storyPath) });
   process.stdout.write(`status: ${newStatus}\n`);
+}
+
+/**
+ * Con la matriz de evidencia en vivo roja en esta carpeta y sin constancia de la matriz verde de esta historia (de su
+ * repo y su ruta en el repo, posterior a su última vuelta a in-progress) en el registro de esta máquina, la historia no
+ * pasa a done: frena y dice cómo se sale.
+ */
+function frenarDoneSinMatriz(storyPath) {
+  let matrix = null;
+  try { matrix = require('./runtime-matrix.js').compute({ storyPath, paraDone: true }); } catch (_e) { matrix = null; }
+  if (matrix && !matrix.structuralError && matrix.green) return;
+  const donde = dondeViveLaHistoria(storyPath);
+  // un criterio que se comprueba en staging sin su humo de staging frena aunque haya constancia: la constancia de la
+  // corrida es de antes del merge, cuando staging todavía no tenía el código
+  const faltaStaging = matrix && !matrix.structuralError ? matrix.stagingFalta || [] : [];
+  if (faltaStaging.length) {
+    appendLog('gates.log', { name: 'story-done', status: 'blocked', storyPath: path.resolve(storyPath), ...donde, motivo: 'sin-humo-de-staging' });
+    console.error(`marker.js update-story-status BLOQUEADO — ${faltaStaging.map((n) => `AC#${n}`).join(', ')} se comprueba(n) en staging y no tiene(n) un humo corrido contra staging.`);
+    console.error('  Cómo se sale: desplegá el código a staging y corré el humo de cada uno contra staging, con --environment staging:');
+    for (const n of faltaStaging) {
+      console.error(`   · bash ${path.join(__dirname, 'smoke-run.sh')} ${(matrix.evidenceDirs || [])[0] || '<carpeta de evidencia>'} ${storyPath} --acs ${n} --environment staging -- <el comando contra staging>`);
+    }
+    console.error('  Con el humo verde, este mismo comando la pasa a done. Si staging falla, la historia queda en review: arreglalo y volvé a desplegar.');
+    process.exit(1);
+  }
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(String(p)); } };
+  const misma = (l) => (donde.storyRel && donde.repoCommon && l.storyRel && l.repoCommon
+    ? l.storyRel === donde.storyRel && real(l.repoCommon) === real(donde.repoCommon)
+    : Boolean(l.storyPath) && real(l.storyPath) === real(storyPath));
+  let lineas = [];
+  try { lineas = fs.readFileSync(path.join(STATE_DIR, 'gates.log'), 'utf8').split('\n'); } catch (_e) { lineas = []; }
+  let verde = null;
+  let reabierta = null;
+  // la constancia de una tanda (historia paraguas) mide sólo sus criterios: vale si cada tanda de la historia tiene la suya
+  const porTanda = new Map();
+  for (const t of lineas) {
+    let l;
+    try { l = JSON.parse(t); } catch (_e) { continue; }
+    if (!l || typeof l.ts !== 'string' || !misma(l)) continue;
+    if (l.name === 'acmatrix-green' && l.batch) { if (!porTanda.has(l.batch) || l.ts > porTanda.get(l.batch)) porTanda.set(l.batch, l.ts); continue; }
+    if (l.name === 'acmatrix-green' && (!verde || l.ts > verde)) verde = l.ts;
+    if (l.name === 'story-status' && l.status === 'in-progress' && (!reabierta || l.ts > reabierta)) reabierta = l.ts;
+  }
+  if (verde && (!reabierta || verde > reabierta)) return;
+  const tandas = [...String(((fs.readFileSync(storyPath, 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '').split(/^pipelines\s*:/m)[1] || '')
+    .split(/^\S/m)[0].matchAll(/^\s*-\s+name\s*:\s*["']?([^"'#\s]+)/gm)].map((m) => m[1]);
+  const deCadaTanda = tandas.length && tandas.every((b) => porTanda.has(b) && (!reabierta || porTanda.get(b) > reabierta));
+  if (deCadaTanda) return;
+  if (!verde && porTanda.size) verde = [...porTanda.values()].sort().pop();
+  appendLog('gates.log', { name: 'story-done', status: 'blocked', storyPath: path.resolve(storyPath), ...donde, motivo: verde ? 'constancia-anterior-a-reabrir' : 'sin-matriz' });
+  console.error('marker.js update-story-status BLOQUEADO — la historia no pasa a done sin la matriz de evidencia en vivo (DODRT-C6).');
+  if (matrix && matrix.structuralError) console.error(`  La matriz no se pudo calcular acá: ${matrix.structuralError}`);
+  else if (matrix) console.error(`  En esta carpeta la matriz está roja: ${matrix.stats.runtime}/${matrix.stats.total} corridos${(matrix.notRun || []).length ? ` · sin correr: ${matrix.notRun.map((n) => `#${n}`).join(', ')}` : ''}.`);
+  console.error(verde
+    ? `  La constancia de la matriz verde de esta historia (${verde}) es anterior a su última vuelta a in-progress (${reabierta}): no vale.`
+    : '  Tampoco hay en esta máquina una constancia de la matriz verde de esta historia (la deja la corrida al pasarla).');
+  console.error('  Cómo se sale:');
+  console.error(`   · Si la evidencia está en esta carpeta, mirá qué falta: node ${path.join(__dirname, 'runtime-matrix.js')} --story ${storyPath}`);
+  console.error('     Con la matriz verde acá, este mismo comando la pasa a done.');
+  console.error('   · Si la corrida fue en otra carpeta o en otra máquina, cerrala allá con la corrida: /tycon-pipeline close <id>.');
+  console.error('   · Un criterio imposible de probar en vivo lo firma la persona: marker.js runtime-waiver <historia>.');
+  process.exit(1);
 }
 
 // El estado de una tanda del bloque `pipelines:` de la story (lista de `- name: X` con su `status:`). Lo usa el cierre
@@ -6690,7 +6909,8 @@ function runtimeWaiverConOk(storyPath, argv, m) {
     console.error(`🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma en la corrida de su tanda.`);
     process.exit(2);
   }
-  const notRun = matrix.notRun || [];
+  // los que cubre el rojo esperado vigente de la deuda ya tienen su salida: no frenan la exención de los imposibles
+  const notRun = sinCorrerFueraDeLaDeuda(m, matrix);
   if (notRun.length) {
     console.error(`🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC ${notRun.map((n) => '#' + n).join(', ')}. Los corre el agente.`);
     process.exit(2);
@@ -6928,12 +7148,27 @@ function cmdWaiveCritical(argv) {
     const firma = firmaDelDueno('critical-waiver', `${rule}${file ? ` en ${file}` : ''}: ${reason}`);
     firmaDada = firma;
     const quien = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
-    const q = quienFirmo(firma, quien);
-    entrada = { ...q, via: `waive-critical (${q.via})` };
+    if (firma.automatica) {
+      // la de trámite la da el arnés porque el perfil del equipo delega critical-waiver: la constancia nombra a quien la
+      // pidió (la coordinadora, si la pidió para otra sesión) y a la persona en cuyo nombre se firma, para que los
+      // lectores de la exención la reconozcan como la delegación
+      const pidio = firma.sesion && firma.sesion !== firma.destino ? `coordinadora (sesión ${firma.sesion})` : `sesión ${firma.sesion || PROPIA}`;
+      const persona = (val('--approved-by') || '').trim() || quien;
+      const noEs = cw.noEsPersona(persona);
+      if (noEs) { console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — ${noEs}. Va el nombre de la persona en cuyo nombre se firma: --approved-by "<nombre>".`); process.exit(2); }
+      entrada = { tipo: 'automatica', quien: `${pidio}, firma de trámite del arnés`,
+        delegacion: `${persona}${cw.POR_EL_PERFIL} (approvals.delegated_signing)`, via: 'waive-critical (firma de trámite · arnés)' };
+    } else {
+      const q = quienFirmo(firma, quien);
+      entrada = { ...q, via: `waive-critical (${q.via})` };
+    }
   }
   // Primero el renglón del registro del arnés (que el agente no puede escribir): es lo que hace valer la constancia al
   // cerrar. Si no quedó escrito, no se anota nada ni se anuncia un éxito que después el cierre contradiría.
   const constancia = { ts: nowIso(), rule_id: rule, file, reason, ...entrada };
+  // la constancia que los cierres van a rechazar no se anota ni se anuncia como eximida
+  const mala = cw.constanciaInvalida(constancia);
+  if (mala) { console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — la constancia no valdría (${mala}).`); process.exit(2); }
   appendLog('gates.log', { name: 'critical-waiver', status: 'ok', story: m.storyId, rule, file, ts: constancia.ts, tipo: constancia.tipo, quien: constancia.quien, via: constancia.via, huella: cw.huella(constancia) });
   const enRegistro = cw.fueraDelRegistro(constancia, { story: m.storyId });
   if (enRegistro) {
@@ -7133,7 +7368,7 @@ function cmdDeclarePending(argv) {
   try { appendLog('gates.log', { name: DS.DECLARADO, status: 'ok', sesion: PROPIA, id, repo: r.clave, ruta: r.ruta }, { estricto: true }); } catch (e) {
     console.error(`marker.js declare-pending: no pude anotarlo en el registro de firmas (${e.code || e.message}).`); process.exit(2);
   }
-  console.error(`✅ ${id} declarado por esta sesión en ${r.ruta}. La coordinadora lo aprueba con \`marker.js approve-pending --id ${id} --repo ${r.ruta} --for-session ${PROPIA}\`.`);
+  console.error(`✅ ${id} declarado por esta sesión en ${r.ruta}. No lo apruebes desde acá: mandale a la coordinadora el código y la carpeta, y ella corre desde su pestaña \`marker.js approve-pending --id ${id} --repo ${r.ruta} --for-session ${PROPIA}\`. Sin coordinadora, lo aprueba la persona: corré \`marker.js approve-pending --id ${id} --repo ${r.ruta}\` solo y mostrale el cuadro que da el freno.`);
   process.exit(0);
 }
 
@@ -7175,7 +7410,7 @@ function cmdApprovePending(argv) {
   if (r.codigo !== 0) { console.error(`🔒 marker.js approve-pending: no se aprobó ${id} — ${r.motivo}`); process.exit(r.codigo); }
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
   const q = r.via === 'terminal' ? { tipo: 'manual', quien: persona } : quienFirmo(r, persona);
-  const escrita = { ...linea, via: r.via, quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
+  const escrita = { ...linea, via: PA.viaDeLaFirma(r), quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
   // cada aprobación en su archivo: dos ramas que aprueban a la vez no chocan en el merge
   const archivo = PA.archivoDe(escrita);
   try {
@@ -7622,8 +7857,9 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 
   // 🔴 REGLA: el waiver SÓLO aplica a los ACs declarados imposibles de
   // verificar corriendo (runtime_not_verifiable). Si hay ACs SIN CORRER (no declarados), se
-  // REHÚSA — esos el agente los tiene que correr, no se pueden saltear.
-  const notRun = matrix.notRun || [];
+  // REHÚSA — esos el agente los tiene que correr, no se pueden saltear. Los que cubre el rojo esperado vigente de la
+  // deuda ya tienen su salida.
+  const notRun = sinCorrerFueraDeLaDeuda(m, matrix);
   if (notRun.length > 0) {
     console.error('🚫 marker.js runtime-waiver RECHAZADO — hay ACs SIN CORRER que NO se pueden waivear:');
     console.error(`   AC ${notRun.map((n) => '#' + n).join(', ')}`);
@@ -8030,10 +8266,13 @@ function cmdResumeAutonomy(argv) {
     writeMarker(fresco);
     syncSessionState(SID);
     appendLog('gates.log', { name: 'autonomy-resume', status: 'ok', via, by, huella: d.huella, reason: ahora.reason, detenidaEn: ahora.at });
-    process.stdout.write(`Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): corré los controles de nuevo antes de cerrar el turno.\n`);
+    process.stdout.write(SID === PROPIA ? `Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): corré los controles de nuevo antes de cerrar el turno.\n`
+      : `Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): la sesión ${SID} volvió al modo autónomo. Avisale que siga: corre los controles de nuevo antes de cerrar el turno.\n`);
     process.exit(0);
   };
-  if (!terminal) {
+  // pedida por la coordinadora para la sesión detenida: el permiso de la terminal es de esa sesión, que lo consume ella
+  const paraOtra = SID !== PROPIA && !terminal;
+  if (!terminal && !paraOtra) {
     const p = ad.tomarPermiso(STATE_DIR, SID, d.huella, { seco: PREVIO });
     if (p.permiso) {
       if (PREVIO) { process.stdout.write(`${ow.PRECHEQUEO_OK}\n`); process.exit(0); }
@@ -8064,6 +8303,8 @@ function cmdResumeAutonomy(argv) {
     process.stdout.write(`Una persona decidió seguir desde su terminal: el permiso quedó para la sesión ${SID}. Cuando esa sesión corra marker.js resume-autonomy, vuelve al modo autónomo.\n`);
     process.exit(0);
   }
+  // para otra sesión, con la firma se escribe su marcador: el que vio el dueño en el cuadro
+  if (paraOtra) trabajarSobreElDestino(ow, r);
   return aplicar({ via: r.via, by: (r.registro && r.registro.aprobada_en) || r.sesion || SID, at: nowIso() });
 }
 

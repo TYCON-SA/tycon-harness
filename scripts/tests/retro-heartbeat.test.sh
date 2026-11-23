@@ -600,6 +600,13 @@ fi
   callado && ok "T20 mirar pedidos no anota nada" || bad "T20 lectura" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
   pedir Bash 'git commit -m "después: gh pr create --base main --title t --body b"'
   callado && ok "T20 un pedido MENCIONADO en un texto no es un pedido" || bad "T20 mención" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
+  # un push dentro de un `bash -c` corre: se anota; nombrado en un texto (también un «bash -c» citado), no
+  pedir Bash 'bash -c "git push origin dev && git push origin main"'
+  anotado main && ok "T20 el push a main dentro de un bash -c se anota" || bad "T20 bash -c" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 200 "${T20}/stderr")"
+  pedir Bash 'echo "bash -c git push origin main"'
+  callado && ok "T20 un bash -c con push nombrado en un texto no se anota" || bad "T20 bash -c citado" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
+  pedir Bash 'git commit -m "probé con bash -c \"git push origin main\""'
+  callado && ok "T20 un bash -c dentro del mensaje de un commit no se anota" || bad "T20 bash -c en un mensaje" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
   # la rama por defecto del remoto no es la principal: sin --base el pedido va a ella, y eso no es una entrega
   G20 update-ref refs/remotes/origin/dev "${TIP20}"; G20 symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/dev
   pedir Bash 'gh pr create --title t --body b'
@@ -611,6 +618,23 @@ fi
   dicho && ok "T20 con un cd a una variable no anota y lo dice" || bad "T20 cd a una variable" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 200 "${T20}/stderr")"
   pedir Bash 'gh pr create --repo acme/otro-repo --base main --title t --body b'
   dicho && ok "T20 con --repo de OTRO repo que el de la carpeta no anota y lo dice" || bad "T20 --repo ajeno" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 200 "${T20}/stderr")"
+  # con --repo de otro repo y --head literal, desde una carpeta de otro repo: el clon de ese repo al lado de la carpeta
+  # y su copia de trabajo con esa rama. Sin esa copia, sigue diciéndolo
+  O20="${T20}/otro"; git init -q -b main "${O20}"; git -C "${O20}" remote add origin https://github.com/acme/otro.git
+  G20 worktree add -q -b wt-x "${T20}/producto--wt-x" dev
+  mkdir -p "${T20}/producto--wt-x/.tycon"
+  WT20_REAL="$(cd "${T20}/producto--wt-x" && pwd -P)"
+  rm -f "${LED20}"
+  node -e 'process.stdout.write(JSON.stringify({ session_id: "s-t20", tool_name: "Bash", cwd: process.argv[1], tool_input: { command: "gh pr create -R acme/producto --base main --head wt-x --title t --body b" } }))' "${O20}" \
+    | node "${H20}/scripts/hooks/retro-pending.js" > "${T20}/stdout" 2> "${T20}/stderr"; echo $? > "${T20}/rc"
+  [ -f "${LED20}" ] && grep -q "\"repoPath\":\"${WT20_REAL}\"" "${LED20}" && ! grep -q "no pude resolver a qué repo" "${T20}/stderr" \
+    && ok "T20 con --repo de otro repo y --head, desde otra carpeta: se anota en la copia de esa rama" \
+    || bad "T20 --repo ajeno con --head" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
+  rm -f "${LED20}"
+  node -e 'process.stdout.write(JSON.stringify({ session_id: "s-t20", tool_name: "Bash", cwd: process.argv[1], tool_input: { command: "gh pr create -R acme/producto --base main --head sin-copia --title t --body b" } }))' "${O20}" \
+    | node "${H20}/scripts/hooks/retro-pending.js" > "${T20}/stdout" 2> "${T20}/stderr"; echo $? > "${T20}/rc"
+  dicho && ok "T20 con --repo de otro repo y una rama sin copia: no anota y lo dice" || bad "T20 --repo ajeno sin copia" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
+  G20 worktree remove --force "${T20}/producto--wt-x"
   pedir Bash 'gh pr create --repo "$REPO" --base main --title t --body b'
   dicho && ok "T20 con un --repo que arma la terminal no anota y lo dice" || bad "T20 --repo armado" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
 

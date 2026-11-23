@@ -128,46 +128,47 @@ function plannedRules({ home, tree, platform = process.platform }) {
  * Suma a `settings` (el objeto ya leído) las reglas que faltan y saca las que el arnés anotó antes y ya no son suyas
  * (`previous`: las piezas del registro). Cambia el objeto en memoria. Devuelve `{ ok, reason, added, dropped, ours }`:
  * `ours` son las reglas que quedan y son del arnés (las que sumó ahora y las que ya había anotado); con `ok: false`
- * (`permissions` o `permissions.allow` con otra forma) no tocó nada.
+ * (`permissions` o la lista con otra forma) no tocó nada. `list` es la lista de `permissions` (`allow` de fábrica;
+ * `deny` para las reglas de deny-permissions.js) y `ruleOfPiece`, cómo se lee la regla del id de una pieza anotada.
  */
-function apply(settings, rules, { previous = [] } = {}) {
+function apply(settings, rules, { previous = [], list = 'allow', ruleOfPiece = ruleOf } = {}) {
   const out = { ok: true, reason: null, added: [], dropped: [], ours: [] };
   if ('permissions' in settings && !isObject(settings.permissions)) return Object.assign(out, { ok: false, reason: '«permissions» no es un objeto' });
   const perms = isObject(settings.permissions) ? settings.permissions : null;
-  if (perms && 'allow' in perms && !Array.isArray(perms.allow)) return Object.assign(out, { ok: false, reason: '«permissions.allow» no es una lista' });
-  const before = perms && Array.isArray(perms.allow) ? perms.allow.slice() : [];
-  const noted = new Set((Array.isArray(previous) ? previous : []).filter((p) => isObject(p) && p.kind === 'setting').map((p) => ruleOf(p.id)).filter(Boolean));
+  if (perms && list in perms && !Array.isArray(perms[list])) return Object.assign(out, { ok: false, reason: `«permissions.${list}» no es una lista` });
+  const before = perms && Array.isArray(perms[list]) ? perms[list].slice() : [];
+  const noted = new Set((Array.isArray(previous) ? previous : []).filter((p) => isObject(p) && p.kind === 'setting').map((p) => ruleOfPiece(p.id)).filter(Boolean));
   // las anotadas que ya no son del arnés (una skill que dejó de estar enlazada): se sacan
   out.dropped = [...noted].filter((r) => !rules.includes(r) && before.includes(r));
   const kept = before.filter((r) => !out.dropped.includes(r));
   out.added = rules.filter((r) => !kept.includes(r));
   out.ours = rules.filter((r) => out.added.includes(r) || noted.has(r));
   if (out.added.length || out.dropped.length) {
-    const allow = [...kept, ...out.added];
+    const lista = [...kept, ...out.added];
     if (!perms) settings.permissions = {};
-    if (allow.length) settings.permissions.allow = allow;
+    if (lista.length) settings.permissions[list] = lista;
     else {
-      delete settings.permissions.allow;
+      delete settings.permissions[list];
       if (!Object.keys(settings.permissions).length) delete settings.permissions;
     }
   }
   return out;
 }
 
-/** ¿`settings` tiene la regla en `permissions.allow`? */
-function hasRule(settings, rule) {
-  return isObject(settings) && isObject(settings.permissions) && Array.isArray(settings.permissions.allow) && settings.permissions.allow.includes(rule);
+/** ¿`settings` tiene la regla en `permissions.<list>` (de fábrica, `allow`)? */
+function hasRule(settings, rule, list = 'allow') {
+  return isObject(settings) && isObject(settings.permissions) && Array.isArray(settings.permissions[list]) && settings.permissions[list].includes(rule);
 }
 
 /**
- * Saca la regla de `settings` (en memoria). Sin nada más en `allow`, se saca la clave; sin nada en `permissions`, también.
+ * Saca la regla de `settings` (en memoria). Sin nada más en la lista (`allow` de fábrica), se saca la clave; sin nada en `permissions`, también.
  * Devuelve `true` si estaba.
  */
-function removeRule(settings, rule) {
-  if (!hasRule(settings, rule)) return false;
+function removeRule(settings, rule, list = 'allow') {
+  if (!hasRule(settings, rule, list)) return false;
   const perms = settings.permissions;
-  perms.allow = perms.allow.filter((r) => r !== rule);
-  if (!perms.allow.length) delete perms.allow;
+  perms[list] = perms[list].filter((r) => r !== rule);
+  if (!perms[list].length) delete perms[list];
   if (!Object.keys(perms).length) delete settings.permissions;
   return true;
 }

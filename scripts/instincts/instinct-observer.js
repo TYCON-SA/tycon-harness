@@ -609,6 +609,10 @@ function topeDecididos(executor) {
  * `propuestas`, la carpeta de las propuestas del sitio: la aprobada cuenta como aprobada y la rechazada con su motivo.
  */
 function instintosYaDecididos(candidatos, tope = topeDecididos(), { lugares, propuestas } = {}) {
+  // el saneado vive con la grabadora; una copia del observador sin esa carpeta deja el texto como está, como antes de sanear acá
+  let sanitize = null;
+  try { ({ sanitize } = require(path.join(__dirname, '..', '..', 'integrations', 'instincts', 'scripts', 'instinct-observe.js'))); } catch (_) { sanitize = null; }
+  const limpio = (t) => (t == null || !sanitize ? t : sanitize(String(t), null));
   const proyectosConCandidato = new Set((candidatos || [])
     .map((c) => String((c && c.key) || '').split('|')[0].trim().toLowerCase())
     .filter(Boolean));
@@ -678,9 +682,10 @@ function instintosYaDecididos(candidatos, tope = topeDecididos(), { lugares, pro
   const proyectosPorHash = new Map();
   let usados = 0;
   for (const x of todos) {
-    const renglon = `- ${x.hash ? `[${x.hash}] ` : ''}(${corto(x.proyecto, 60)}) ${corto(x.trigger, 150)}`
-      + (x.aprobado && x.accion ? ` → ${corto(x.accion, 100)}` : '')
-      + (!x.aprobado && x.motivo ? ` — rejected because: ${corto(x.motivo, 110)}` : '');
+    // lo decidido se escribió con el saneado de su noche: se vuelve a sanear antes de ir al modelo, y antes de cortar
+    const renglon = `- ${x.hash ? `[${x.hash}] ` : ''}(${corto(limpio(x.proyecto), 60)}) ${corto(limpio(x.trigger), 150)}`
+      + (x.aprobado && x.accion ? ` → ${corto(limpio(x.accion), 100)}` : '')
+      + (!x.aprobado && x.motivo ? ` — rejected because: ${corto(limpio(x.motivo), 110)}` : '');
     if (usados + renglon.length + 1 > tope) break;
     (x.aprobado ? aprobados : rechazados).push(renglon);
     if (x.hash) {

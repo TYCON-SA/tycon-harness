@@ -19,6 +19,8 @@ instalador, producción, una migración, o declara `sensible:`. En duda, delicad
   autónomo», «me voy», «hasta mañana» o algo parecido): la coordinadora, o la propia sesión si no hay coordinadora, con
   `marker.js owner-away set --phrase "<lo que dijo>"`. Se borra sola cuando el dueño vuelve: un mensaje tipeado por él,
   un mensaje de la oficina verificado, una firma suya, o a las 24 horas. La oficina la muestra mientras está puesta.
+  Con la marca puesta, `owner-next` no arma el cuadro de una firma: dice que se le avise al dueño por los canales de los
+  avisos y que se espere a que escriba, y la firma queda en la lista sin cambios.
 - O la pregunta de una revisión lleva `plan_review.owner_away_minutes` minutos sin respuesta (de fábrica 20). Los
   minutos se cuentan desde que se anotó la pregunta (`marker.js review-ask`).
 
@@ -128,8 +130,9 @@ Un revisor ilegible nunca cuenta como «sin críticos». Si cerró sin el rengl�
 vez, al mismo revisor y sin que cambie su revisión: en Claude Code, el gancho del fin del subagente lo hace seguir con ese
 pedido; en Codex, el lanzador lo corre una vez más sobre el mismo contexto, con su propio reporte. Lo que conteste
 después cuenta en la misma vuelta, y el pedido no suma una vuelta ni una salida. Si tampoco lo da, el cierre lo dice
-(«ya se le pidió el renglón una vez») y queda la exención de una persona: `marker.js waive-critical --rule SIN-REPORTE
---file <revisor> --reason '<por qué>'`. Si nunca se le pidió (por ejemplo, el gancho no corrió), el cierre dice primero
+(«ya se le pidió el renglón una vez») y queda la exención de una persona: el agente corre `marker.js waive-critical
+--rule SIN-REPORTE --file <revisor> --reason '<por qué>'` y ella la aprueba en la ventana o en el cuadro (o lo corre en
+su terminal, con `--terminal`). Si nunca se le pidió (por ejemplo, el gancho no corrió), el cierre dice primero
 cómo pedírselo al mismo agente. Una exención por delegación no alcanza para dar algo por arreglado: eso lo cierra una
 vuelta nueva del revisor o el dueño. Una ejecución sin nada anotado (por ejemplo, de antes de este control) lo dice en
 una línea y sigue.

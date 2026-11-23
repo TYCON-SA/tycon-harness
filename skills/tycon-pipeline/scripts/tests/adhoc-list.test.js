@@ -230,6 +230,23 @@ test('T32 Lista_FueraFrena_DentroPasa — @story-8.174 @ac-30', () => {
   }
 });
 
+// El arnés se reconoce por su origen (scripts/lib/harness-repo.js): un repo con el origen de este clon es el arnés, y
+// ahí el rechazo fuera de la lista conserva la delegación; en un producto habla de vos (P2v52)
+test('T32b FueraDeLaLista_EnElArnes_ConservaLaDelegacion — @story-8.174 @ac-52', (t) => {
+  let origen = null;
+  try { origen = git(RAIZ, 'remote', 'get-url', 'origin'); } catch (_) { origen = null; }
+  if (!origen) { t.skip('este clon no tiene origen: no hay con qué reconocer el arnés'); return; }
+  const raiz = tmp('t32b-');
+  const dir = repo(raiz, 'copia-del-arnes');
+  git(dir, 'remote', 'set-url', 'origin', origen);
+  const h = tmp('home-');
+  const state = conCarril(h, 's32b', { allowedFiles: [path.join(dir, 'src/a.js')] });
+  const r = ev(state, 's32b', path.join(dir, 'docs/x.md'), dir);
+  assert.strictEqual(r.verdict.kind, 'adhoc-out-of-list');
+  assert.match(r.message, /por delegación, la lista nueva contiene entera la firmada/, r.message);
+  assert.doesNotMatch(r.message, /lo aprueba el dev, como al abrir/);
+});
+
 test('T33 Lista_PorLaRutaReal — @story-8.174 @ac-31', () => {
   const raiz = tmp('t33-');
   const dir = repo(raiz, 'producto');
@@ -342,15 +359,16 @@ test('P10 Delegado_UnoPorRepo_TambienConAvisado — @story-8.174 @ac-35', () => 
 
 // 🔴 Falla con: el mensaje de «fuera de la lista» en un repo de producto, que nombraba la delegación (la prueba en vivo
 // del AC 52, 9/11): el portón le pasaba siempre el perfil del arnés.
-test('P2v52 FueraDeLaLista_EnUnProducto_HablaDeVos — @story-8.174 @ac-52', () => {
+// El texto lo lee el agente: dice que aprueba el dev y qué hace el agente con su sí (no «lo aprobás vos»).
+test('P2v52 FueraDeLaLista_EnUnProducto_ApruebaElDev — @story-8.174 @ac-52', () => {
   const raiz = tmp('p2v52-');
   const dir = repo(raiz, 'producto');
   const h = tmp('home-');
   const state = conCarril(h, 's52', { allowedFiles: [path.join(dir, 'src/a.js')] });
   const r = ev(state, 's52', path.join(dir, 'src/otro.js'), dir);
   assert.strictEqual(r.verdict.kind, 'adhoc-out-of-list');
-  assert.match(r.message, /lo aprobás vos con tu sí/);
-  assert.doesNotMatch(r.message, /delegación|coordinadora|dueño/);
+  assert.match(r.message, /lo aprueba el dev, como al abrir\. Preguntale; con su sí, corré este comando solo/);
+  assert.doesNotMatch(r.message, /delegación|coordinadora|dueño|lo aprobás vos/);
 });
 
 // 🔴 Falla con: una carpeta de carriles que no se lee, que salteaba el «uno por repo» como si no hubiera otros
@@ -561,20 +579,40 @@ test('T52 CarrilViejoSinLista_ComoHoyHastaElSet — @story-8.174 @ac-49', () => 
   assert.notEqual(ev(state, 'per', path.join(dir, 'docs/x.md'), dir).verdict.kind, 'adhoc-out-of-list');
 });
 
-// el mismo criterio por la consola: el carril viejo sin lista y sin delegación no frena por la lista; uno con lista sí
+// El mismo borde por la consola (on-bash-write-gate.js), que T52 cubre sólo por la herramienta de edición: el carril
+// viejo sin lista no frena por la lista; uno con lista sí, con sed -i, tee y una redirección.
+// 🔴 Falla con: la consola que deja de mandarle al portón lo que no es código de un carril con lista o delegado (con el
+// portón apagado, la lista del delegado deja de frenar por la consola), o que deja de contar el tope del carril viejo.
+// Que un carril sin lista no frene «fuera de la lista» lo decide el portón compartido: lo cubre también T52.
 test('T52b CarrilViejoSinLista_PorLaConsola_ComoHoy — @story-8.174 @ac-49', () => {
   const raiz = tmp('t52b-');
   const dir = repo(raiz, 'producto');
   const h = tmp('home-');
-  const state = conCarril(h, 'viejo');
-  conCarril(h, 'conLista', { allowedFiles: [path.join(dir, 'src/a.js')] });
-  for (const command of ["sed -i '' 's/a/b/' docs/x.md", 'echo x | tee docs/x.md', 'echo x > docs/x.md']) {
+  const a = escribir(dir, 'src/a.js');
+  const state = conCarril(h, 'viejo', { maxFiles: 1, files: [a] });
+  conCarril(h, 'conLista', { allowedFiles: [a] });
+  // sin lista: escribir por la consola no frena por la lista; con lista, sí
+  for (const command of ["sed -i '' 's/a/b/' docs/x.md", 'echo x | tee docs/x.md', 'echo x > docs/x.md', 'echo x | tee src/a.js']) {
     escribir(dir, 'docs/x.md');
-    const viejo = porConsola(state, 'viejo', dir, command);
-    assert.ok(!/FUERA DE LA LISTA/.test((viejo && viejo.block) || ''), `${command}: ${JSON.stringify(viejo)}`);
+    const r = porConsola(state, 'viejo', dir, command);
+    assert.ok(!r || !/FUERA DE LA LISTA/.test(r.block || ''), `${command}: ${JSON.stringify(r)}`);
+    if (command.includes('src/a.js')) continue;
     const conLista = porConsola(state, 'conLista', dir, command);
     assert.ok(conLista && /FUERA DE LA LISTA/.test(conLista.block || ''), `${command}: ${JSON.stringify(conLista)}`);
   }
+  // el tope de siempre sigue: con el cupo lleno, un archivo de implementación nuevo frena por el tope
+  const tope = porConsola(state, 'viejo', dir, "cat > src/b.js <<'EOF'\nx\nEOF");
+  assert.ok(tope && /PASÓ EL TOPE DE ARCHIVOS/.test(tope.block || '') && !/FUERA DE LA LISTA/.test(tope.block), JSON.stringify(tope));
+  // con el portón apagado por la configuración del repo: el delegado frena igual por la lista; el de una persona no
+  escribir(dir, '.tycon/advisors.yaml', 'pipeline:\n  story_gate: false\n');
+  git(dir, 'add', '.');
+  commitear(dir, 'portón apagado');
+  conCarril(h, 'del', { via: 'delegacion', allowedFiles: [a] });
+  conCarril(h, 'per', { allowedFiles: [a] });
+  const del = porConsola(state, 'del', dir, 'echo x > docs/x.md');
+  assert.ok(del && /FUERA DE LA LISTA/.test(del.block || ''), `delegado: ${JSON.stringify(del)}`);
+  const per = porConsola(state, 'per', dir, 'echo x > docs/x.md');
+  assert.ok(!per || !/FUERA DE LA LISTA/.test(per.block || ''), `de una persona: ${JSON.stringify(per)}`);
 });
 
 // ── el carril trae la base al abrir ─────────────────────────────────────────────────────────────

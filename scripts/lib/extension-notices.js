@@ -191,14 +191,26 @@ function applicable({ cwd, when }) {
   return { notices: out, errors };
 }
 
-// lo que puede ir delante del comando en su tramo sin ser el comando: palabras de la terminal y envoltorios
-const DELANTE = new Set(['do', 'then', 'else', 'if', 'elif', 'while', 'until', '!', 'time', 'nohup', 'exec', 'command', 'env']);
+// lo que puede ir delante del comando en su tramo sin ser el comando: palabras de la terminal (`{` abre un grupo) y
+// envoltorios sin opciones que lleven valor
+const DELANTE = new Set(['do', 'then', 'else', 'if', 'elif', 'while', 'until', '!', '{', 'time', 'nohup', 'exec', 'command', 'env']);
+// los envoltorios que corren el comando que sigue después de sus opciones: las que llevan su valor aparte, y cuántas
+// palabras sueltas van antes del comando (la duración de `timeout`)
+const ENVOLTORIOS = {
+  timeout: { conValor: ['-k', '-s', '--kill-after', '--signal'], sueltas: 1 },
+  sudo: { conValor: ['-u', '-g', '-C', '-D', '-h', '-p', '-r', '-t', '-T', '-U', '-R', '--user', '--group', '--close-from', '--chdir', '--host', '--prompt', '--role', '--type', '--command-timeout', '--other-user'], sueltas: 0 },
+  xargs: { conValor: ['-a', '-d', '-E', '-I', '-J', '-L', '-n', '-P', '-R', '-S', '-s', '--arg-file', '--delimiter', '--max-lines', '--max-args', '--max-procs', '--max-chars'], sueltas: 0 },
+};
+// en PowerShell, una asignación delante (`$x = az …`, `$x=az …`): el comando es lo que sigue al `=`
+const PS_ASIGNACION = /^\$[A-Za-z_][\w:]*$/;
+const PS_ASIGNACION_PEGADA = /^\$[A-Za-z_][\w:]*=(.+)$/;
 
 /**
  * Si el comando de la sesión dispara el comando declarado (`<cli> [palabra]`): algún tramo (los parte el segmentador de
  * la capa, scripts/lib/az-pr.js: lo que está entre comillas o en un heredoc es texto, y `$(…)` es su propio tramo),
- * salteadas las asignaciones y las palabras de la terminal del principio (`timeout` con su duración), empieza fuera de
- * comillas con ese CLI (o una ruta que termina en él) y trae la palabra entre las dos primeras que no son opciones.
+ * salteadas las asignaciones y las palabras de la terminal del principio (`timeout`, `sudo` y `xargs` con sus opciones;
+ * en PowerShell, `$x =`), empieza fuera de comillas con ese CLI (o una ruta que termina en él) y trae la palabra entre
+ * las dos primeras que no son opciones.
  * `gh -R o/r pr checks` dispara `gh pr`; `gh repo view pr` no, ni el CLI escrito en el mensaje de un commit.
  */
 function matchesCommand(command, declared, { powershell = false } = {}) {
@@ -206,15 +218,30 @@ function matchesCommand(command, declared, { powershell = false } = {}) {
   if (!cli) return false;
   for (const seg of require(path.join(__dirname, 'az-pr.js')).segmentos(String(command || ''), { powershell })) {
     let i = 0;
+    // el comando, cuando viene pegado a una asignación de PowerShell (`$x=az`)
+    let pegado = null;
     for (;;) {
       const f = seg[i];
       if (!f || !f.esBandera) break;
+      if (powershell) {
+        if (PS_ASIGNACION.test(f.texto) && seg[i + 1] && seg[i + 1].texto === '=') { i += 2; continue; }
+        const m = PS_ASIGNACION_PEGADA.exec(f.texto);
+        if (m) { pegado = m[1]; break; }
+      }
       if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(f.texto) || DELANTE.has(f.texto)) { i++; continue; }
-      if (f.texto === 'timeout') { i++; while (seg[i] && seg[i].texto.startsWith('-')) i++; i++; continue; }
+      const env = ENVOLTORIOS[f.texto];
+      if (env) {
+        i++;
+        // `-k 5` o `-u bot` llevan su valor aparte; `--kill-after=5` y `--foreground`, no
+        while (seg[i] && seg[i].texto.startsWith('-')) i += env.conValor.includes(seg[i].texto) ? 2 : 1;
+        i += env.sueltas;
+        continue;
+      }
       break;
     }
     const f = seg[i];
-    if (!f || !f.esBandera || path.basename(f.texto.replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '') !== cli) continue;
+    const texto = pegado !== null ? pegado : (f && f.esBandera ? f.texto : null);
+    if (!texto || path.basename(texto.replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '') !== cli) continue;
     if (!word || seg.slice(i + 1).map((x) => x.texto).filter((x) => !x.startsWith('-')).slice(0, 2).includes(word)) return true;
   }
   return false;
@@ -253,9 +280,13 @@ function chosenPlatforms() {
 /**
  * Los avisos `after-command` que dispara `command` en `cwd`. Primero se miran sólo los comandos declarados (barato: corre
  * después de cada comando de la sesión); la configuración y los paquetes activos se preguntan recién si alguno dispara.
- * `yaDichos`: las claves (`<tipo>:<nombre>/<id>`, las del gancho) de lo ya dicho en la sesión, que no se vuelve a mirar.
+ * `yaDichos`: las claves del gancho de lo ya dicho en la sesión (`<tipo>:<nombre>/<id>` de un aviso,
+ * `aviso-roto:<texto>` de un problema), que no se vuelve a mirar.
  * La raíz del repo (un git) se pide sólo si un candidato la necesita: uno de paquete (para saber si está activo en el
- * repo) o uno con `repo_files`; uno de plataforma o un conector roto no la usan.
+ * repo) o uno con `repo_files`; uno de plataforma o un conector roto no la usan. Si git no contesta, salen igual los de
+ * plataforma que no miran el repo, y se dice que los otros no se evaluaron.
+ * El `notices.json` que no se lee se dice sólo si su extensión aplica (un conector elegido, un paquete activo en el
+ * repo) o si eso no se pudo saber: el de una que no aplica no es ruido de cada comando.
  * @returns {{notices: Array<{extension, id, file}>, errors: string[]}}
  */
 function afterCommand({ cwd, command, powershell = false, yaDichos = [] }) {
@@ -273,22 +304,32 @@ function afterCommand({ cwd, command, powershell = false, yaDichos = [] }) {
     const why = e && Array.isArray(e.errores) ? e.errores.map((x) => x.motivo).join('; ') : (e && e.message) || String(e);
     errors.push(`no se pudo saber qué paquetes hay (${why})`);
   }
+  // los problemas de un notices.json, con su extensión: se dicen recién al saber si la extensión aplica
+  const ilegibles = [];
   for (const ext of [...conectores.extensions, ...paquetes]) {
     const r = readNotices(ext.dir);
-    for (const e of r.errors) errors.push(`${ext.kind === 'pack' ? 'paquete' : 'integración'} ${ext.name}: ${e}`);
+    for (const e of r.errors) {
+      const msg = `${ext.kind === 'pack' ? 'paquete' : 'integración'} ${ext.name}: ${e}`;
+      if (!dicho.has(`aviso-roto:${msg}`)) ilegibles.push({ ext, msg });
+    }
     for (const n of r.notices) if (dispara(n) && !dicho.has(`${ext.kind}:${ext.name}/${n.id}`)) candidatos.push({ ext, n });
   }
   // un conector con el manifiesto roto cuyo aviso dispara este comando: sus reglas no salen, y eso se dice si es elegido
   const rotos = conectores.broken.filter((b) => readNotices(b.dir).notices.some(dispara));
-  if (!candidatos.length && !rotos.length) return { notices: [], errors };
+  if (!candidatos.length && !rotos.length && !ilegibles.length) return { notices: [], errors };
+  const deTipo = (lista, kind) => lista.some((c) => c.ext.kind === kind);
   let root = null;
-  if (candidatos.some((c) => c.ext.kind === 'pack' || c.n.repoFiles)) {
+  // git no contestó: no se sabe qué paquetes están activos ni qué archivos sigue el repo
+  let sinRaiz = false;
+  if (deTipo(candidatos, 'pack') || deTipo(ilegibles, 'pack') || candidatos.some((c) => c.n.repoFiles)) {
     const where = repoRoot(cwd);
-    if (where.error) return { notices: [], errors: errors.concat(`${where.error}: los avisos de las extensiones no se evaluaron`) };
-    root = where.root;
+    if (where.error) {
+      sinRaiz = true;
+      errors.push(`${where.error}: los avisos de los paquetes y los que miran el repo no se evaluaron`);
+    } else root = where.root;
   }
   let elegidas = null;
-  if (rotos.length || candidatos.some((c) => c.ext.kind === 'integration')) {
+  if (rotos.length || deTipo(candidatos, 'integration') || deTipo(ilegibles, 'integration')) {
     const ch = chosenPlatforms();
     if (ch.problem) errors.push(ch.problem); else elegidas = ch.names;
   }
@@ -296,11 +337,17 @@ function afterCommand({ cwd, command, powershell = false, yaDichos = [] }) {
     if (!elegidas || elegidas.includes(b.name)) errors.push(`integración ${b.name}: su integration.json no es válido (${b.reasons.join('; ')}): sus reglas no se muestran`);
   }
   let activos = null;
-  if (candidatos.some((c) => c.ext.kind === 'pack')) {
+  if (!sinRaiz && (deTipo(candidatos, 'pack') || deTipo(ilegibles, 'pack'))) {
     const act = activeExtensions({ root });
     errors.push(...act.errors);
     activos = act.extensions.map((x) => x.name);
   }
+  // sin saber si aplica (la elección o los paquetes activos no se leyeron), el problema se dice
+  const aplica = (ext) => {
+    const lista = ext.kind === 'integration' ? elegidas : activos;
+    return !lista || lista.includes(ext.name);
+  };
+  for (const { ext, msg } of ilegibles) if (aplica(ext)) errors.push(msg);
   let files;
   const out = [];
   for (const { ext, n } of candidatos) {

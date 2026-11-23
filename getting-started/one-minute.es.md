@@ -32,5 +32,11 @@ programar: nunca se aprueba solo. Lo aprobás vos o, si tu equipo la usa, la ses
 
 Si algo no anda: `/tycon-harness` en Claude Code dice qué falta, sin tocar nada; desde cualquier terminal,
 `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` hace lo mismo.
-¿Varias sesiones a la vez? [Trabajar con una coordinadora](../guides/working-with-a-coordinator.md). Todo lo demás está
-en la [portada](../README.es.md).
+
+**¿Varias sesiones a la vez?** Es optativo: en la sesión que va a ordenar a las demás escribí «Esta sesión es la
+coordinadora». Desde ahí le hablás a una sola pestaña, y lo que las otras necesitan de vos te llega ahí. En modo
+normal, el permiso que pide una sesión de fondo te llega como cuadro, con el pedido entero: lo aprobás con un click o
+decís que no. En modo automático casi no se pide permiso, y lo que igual se pide queda en la ventana de esa sesión,
+con aviso a la coordinadora. Sin permisos, no se pide nada. Con una o dos sesiones no hace falta. Cómo funciona:
+[Trabajar con una coordinadora](../guides/working-with-a-coordinator.md). Todo lo demás está en la
+[portada](../README.es.md).

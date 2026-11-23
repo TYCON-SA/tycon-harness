@@ -19,6 +19,8 @@ installer, production, a migration, or declares `sensible:`. In doubt, delicate.
   «see you tomorrow» or similar) sets it: the coordinator, or the session itself if there is no coordinator, with
   `marker.js owner-away set --phrase "<what they said>"`. It clears itself when the owner comes back: a message typed
   by them, a verified office message, a signature of theirs, or after 24 hours. The office shows it while it is set.
+  With the mark set, `owner-next` does not build a signature's question box: it says to tell the owner through the
+  notification channels and to wait until they write, and the signature stays on the list unchanged.
 - Or a review's question has been waiting `plan_review.owner_away_minutes` minutes without an answer (built-in 20). The
   minutes count from when the question was recorded (`marker.js review-ask`).
 

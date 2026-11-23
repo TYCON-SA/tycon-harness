@@ -153,10 +153,9 @@ test('T4 OwnerNext_RenglonSoloTerminal_DaLaTerminal @story-8.319 @ac-3', (t) => 
   }
 });
 
-// El AC 4 (sin cuadro para `otherSession: 'no'` de otra sesión) contradice lo que fija signature-list.test.js T12 y
-// owner-window.test.js T11 (8.153: el cuadro se da y la sesión destino repite), que el AC 15 pide no cambiar. Queda como
-// hoy: esta prueba fija eso hasta que se decida.
-test('T5 OwnerNext_OtraSesionNo_SigueComoHoy @story-8.319 @ac-4 @ac-15', (t) => {
+// `otherSession: 'no'` de otra sesión, sin delegar: sin cuadro, la pestaña destino y la terminal. La delegada sigue con
+// su cuadro (owner-window.test.js T20)
+test('T5 OwnerNext_OtraSesionNo_DaLaPestana @story-8.319 @ac-4', (t) => {
   const toy = casaNueva(t);
   designar(toy.casa);
   sesion(toy.casa, 'ses-coord');
@@ -164,7 +163,10 @@ test('T5 OwnerNext_OtraSesionNo_SigueComoHoy @story-8.319 @ac-4 @ac-15', (t) => 
   const cmd = `node ${MARKER} sign-adversarial-skip --story s --reason porque`;
   renglon(toy, { firmaId: 'adversarial-skip', comando: cmd, titulo: 'saltear el pase adversarial con constancia' });
   const r = pasar(toy);
-  assert.strictEqual(r.tipo, 'firma', JSON.stringify(r));
+  assert.strictEqual(r.tipo, 'via', JSON.stringify(r));
+  assert.strictEqual(r.pregunta, undefined, 'sin cuadro');
+  assert.match(r.texto, /pestaña de ses-a/);
+  assert.ok(r.texto.includes('--terminal --for-session ses-a'), r.texto);
 });
 
 test('T6 OwnerNext_DelegadaSigueDelegada @story-8.319 @ac-4', (t) => {
@@ -344,4 +346,28 @@ test('T17 Decidir_NoCambia @story-8.319 @ac-15', () => {
   const r = ow.decidir({ plataforma: 'win32', evento: evento(`node ${MARKER} mark-tested --acs 3`, { tool_name: 'PowerShell' }), casa: fs.mkdtempSync(path.join(os.tmpdir(), 'ow-casa-')), ahora: AHORA, gitBash: CON_GIT });
   assert.strictEqual(r.decision, 'deny');
   assert.match(r.texto, /la línea de la consola PowerShell no dice qué comando corre/);
+});
+
+test('T1c Freno_SignFile_ClickComoEnMac_TerminalDeEmergencia @story-8.319 @ac-1 @ac-2', () => {
+  // La firma por archivo en Windows va por click, como en Mac, y la terminal queda de emergencia. El freno la ve así: el
+  // escape lo lee el guion del comando (`firmas`), no le llega como escape (`escapes` vacío).
+  // 🔴 mutación: tratarla como un escape (sólo la terminal) → la consola Bash deja de ofrecer el click y PowerShell deja
+  //    de mandar a la consola Bash.
+  const firmas = ['escape:ALLOW_DOD_EVIDENCE_WRITE'];
+  // desde la consola Bash de Git: el camino de siempre, con la ventana o el click (ofrecerEnWindows no agrega nada)
+  assert.strictEqual(ofrece(ESCAPE, { firmas }), '', 'consola Bash: el texto de siempre, con el cuadro');
+  // desde PowerShell con Git Bash: a la consola Bash, que firma en la pestaña; la terminal, de emergencia
+  const ps = ofrece(ESCAPE, { evento: { tool_name: 'PowerShell' }, firmas });
+  assert.match(ps, /consola Bash de Git/, ps);
+  assert.match(ps, /--terminal/, ps);
+  assert.doesNotMatch(ps, /un escape no se aprueba en la pestaña/, ps);
+  // sin Git Bash no hay pestaña que compare el comando: queda sólo la terminal
+  assert.match(ofrece(ESCAPE, { evento: { tool_name: 'PowerShell' }, firmas, gitBash: SIN_GIT }), /Va sólo en la terminal/);
+  // y decidir desde PowerShell manda a la consola Bash, no sólo a la terminal
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-casa-'));
+  try {
+    const r = ow.decidir({ plataforma: 'win32', evento: evento(ESCAPE, { tool_name: 'PowerShell' }), casa, ahora: AHORA, gitBash: CON_GIT });
+    assert.strictEqual(r.decision, 'deny');
+    assert.match(r.texto, /corré la firma por la consola Bash de la herramienta, o con --terminal/, r.texto);
+  } finally { fs.rmSync(casa, { recursive: true, force: true }); }
 });

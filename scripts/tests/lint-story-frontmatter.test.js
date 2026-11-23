@@ -338,6 +338,23 @@ test('T47 FilesToModify_SoloEnElRemoto_NoFrena: un clon atrasado no hace inventa
   assert.match(r.out, /al día/);
 });
 
+// 🔴 Falla con: la consulta a la rama principal del remoto con la ruta tal como la escribe la historia, con el nombre
+// del repo adelante («Backend/src/…»): dentro del repo hermano esa ruta no existe, y un clon atrasado frena el commit de
+// una historia cuyo archivo ya está en su rama principal.
+test('T50 FilesToModify_ConElRepoAdelante_SoloEnElRemoto_NoFrena: la ruta con el nombre del repo se busca dentro de ese repo', () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['Backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /al día/);
+  // la misma ruta con el nombre del repo, sin el archivo en ningún lado: sigue siendo inventada
+  const g = story(proj, 'specs/story-6.6-otra.md', HISTORIA_65(['Backend/src/AcmeBackend/Features/Nuevo/Inventado.cs']).map((l) => l.replace('"6.5"', '"6.6"')));
+  const s = run([g], proj);
+  assert.notStrictEqual(s.code, 0, s.out);
+  assert.match(s.out, /Inventado\.cs/);
+});
+
 // 🔴 Falla con: la consulta a un repo hermano hereda el GIT_DIR que git le pone al gancho de un commit. Esa variable le
 // gana a `-C`: se le pregunta al repo del commit, y un archivo que está en la rama principal del hermano se da por
 // inventado; o al revés, el repo del commit contesta por un hermano que no tiene el archivo.
@@ -532,6 +549,40 @@ test('NaceAhora_UnreadableMergeHead_CountsAsExisting @story-8.269 @ac-9 @ac-10',
   fs.mkdirSync(mergeHead);
   assert.strictEqual(naceAhoraContando(nueva, '9.4').nace, false, 'MERGE_HEAD ilegible: existente');
   fs.rmSync(mergeHead, { recursive: true, force: true });
+});
+
+/**
+ * `naceAhora` en un proceso aparte con un `git` que falla a propósito: `grep2` hace que `git grep` salga 2 (un error, no
+ * «no encontré»), y `log` hace fallar el `git log --follow`. Lo demás va al git de verdad.
+ */
+function naceAhoraConGitRoto(abs, storyId, falla) {
+  const programa = `
+    const cp = require('child_process');
+    const original = cp.execFileSync;
+    cp.execFileSync = (cmd, args, opts) => {
+      if (cmd === 'git' && ${JSON.stringify(falla)} === 'grep2' && args[0] === 'grep') {
+        const e = new Error('git grep salió 2'); e.status = 2; throw e;
+      }
+      if (cmd === 'git' && ${JSON.stringify(falla)} === 'log' && args[0] === 'log') {
+        const e = new Error('git log falló'); e.status = 128; throw e;
+      }
+      return original(cmd, args, opts);
+    };
+    const { naceAhora } = require(${JSON.stringify(FOLLOWUP_OF)});
+    process.stdout.write(JSON.stringify({ nace: naceAhora(${JSON.stringify(abs)}, ${JSON.stringify(storyId)}) }));`;
+  return JSON.parse(execFileSync(process.execPath, ['-e', programa], { encoding: 'utf8' })).nace;
+}
+
+// 🔴 Falla con: tomar cualquier salida de `git grep` que no sea 0 como «no la encontré» (la 1 lo es; la 2 es un error), o
+// seguir de largo cuando `git log` falla: la historia nueva saldría «nace ahora» sin que nadie lo pudiera saber, y el lint
+// frenaría. Un git que no contesta es «no sé»: existente (avisa, no frena).
+test('NaceAhora_GitThatFails_CountsAsExisting @story-8.269 — git grep que sale 2 y git log que falla', () => {
+  const { proj } = ramaAtrasada();
+  const nueva = story(proj, 'specs/story-9.6-nueva.md', ['story: "9.6"', 'epic: 9', 'status: ready-for-dev']);
+  // con el git de verdad, la historia nueva nace: así la prueba mira el error y no otra cosa
+  assert.strictEqual(naceAhoraConGitRoto(nueva, '9.6', 'ninguna'), true, 'sin fallas, nace');
+  assert.strictEqual(naceAhoraConGitRoto(nueva, '9.6', 'grep2'), false, 'git grep que sale 2: no se sabe, existente');
+  assert.strictEqual(naceAhoraConGitRoto(nueva, '9.6', 'log'), false, 'git log que falla: no se sabe, existente');
 });
 
 // 🔴 Falla con: la búsqueda por `story:` sin comillas como texto fijo — `story: 9.2` aparece dentro de `story: 9.26`, y

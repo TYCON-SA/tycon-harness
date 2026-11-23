@@ -559,8 +559,19 @@ test('Freno_PedidosDeLosConectores (T13)', (t) => {
 test('CambioAUnControl_SiguePidiendoLaFirmaDeControl (T14)', (t) => {
   const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');
   const copia = path.join(tmp(t, 'freno-control-'), 'arnes');
-  const clon = spawnSync('git', ['clone', '-q', '--depth', '1', `file://${RAIZ}`, copia], { encoding: 'utf8' });
-  assert.strictEqual(clon.status, 0, clon.stderr);
+  // la copia sale de un clon; si el arnés corre desde una carpeta sin git (un laboratorio armado con git archive), de
+  // sus archivos en un repo nuevo
+  const tope = spawnSync('git', ['-C', RAIZ, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  const esRepo = tope.status === 0 && fs.realpathSync(tope.stdout.trim()) === fs.realpathSync(RAIZ);
+  if (esRepo) {
+    const clon = spawnSync('git', ['clone', '-q', '--depth', '1', `file://${RAIZ}`, copia], { encoding: 'utf8' });
+    assert.strictEqual(clon.status, 0, clon.stderr);
+  } else {
+    fs.cpSync(RAIZ, copia, { recursive: true, filter: (f) => !['.git', 'node_modules'].includes(path.basename(f)) });
+    sh(copia, 'init', '-q');
+    sh(copia, 'add', '-A');
+    sh(copia, 'commit', '-q', '-m', 'el arnés');
+  }
   sh(copia, 'branch', 'base');
   sh(copia, 'checkout', '-q', '-b', 'pedido');
   const freno = 'skills/tycon-pipeline/scripts/lib/save-brake.js';
@@ -1155,7 +1166,7 @@ test('T42 SaveBrake_TextoQueFalta_DiceComoSeCompleta @story-8.181 @ac-16', (t) =
   assert.ok(r && r.texto, JSON.stringify(r));
   assert.match(r.texto, /le faltan? \d+ texto/);
   assert.match(r.texto, /Corregí la pantalla/);
-  assert.match(r.texto, /Volvé a aprobar la maqueta/);
+  assert.match(r.texto, /Si lo que cambió es la maqueta: mostrásela a la persona/);
   assert.match(r.texto, /maqueta-diferencias\.md/);
   assert.match(r.texto, /differs:/);
 });
