@@ -7,6 +7,7 @@
  * él, `next` pediría relanzar siempre un pase de otra sesión —también uno ya cerrado, y relanzar un pase cerrado bloquea «Preparar el commit».
  */
 
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -171,6 +172,22 @@ function motivoDeLente(l, { detalle, resultado, repo, desde }) {
 }
 
 /**
+ * El motivo de una lente que quedó sin medir porque su cazador dijo que la base no está en el repo, con lo que dice git
+ * en ese repo: la palabra del cazador no decide. Que esté quiere decir que el cazador miró en otra carpeta; que no esté,
+ * que la base del pase está mal. Si git no se puede correr, el motivo queda como vino.
+ */
+function motivoSinBase(l) {
+  const motivo = l.motivo || 'su cazador no contestó';
+  const s = l.sin_base;
+  if (!s || typeof s.repo !== 'string' || !path.isAbsolute(s.repo) || !/^[0-9a-f]{7,40}$/i.test(String(s.base || ''))) return motivo;
+  const r = spawnSync('git', ['-C', s.repo, 'cat-file', '-e', `${s.base}^{commit}`], { stdio: 'ignore', timeout: 10000, windowsHide: true });
+  if (r.error || r.status === null) return motivo;
+  return r.status === 0
+    ? `${motivo} — git sí la encuentra en ${s.repo}: el cazador miró en otra carpeta; relanzá el pase`
+    : `${motivo} — git tampoco la encuentra en ${s.repo}: relanzá con la base de git merge-base HEAD origin/main`;
+}
+
+/**
  * ¿El resultado del pase revisó todo? Recibe el objeto que devolvió el guion y devuelve
  * `{ medido, confirmados, lentes_sin_medir, hallazgos_sin_veredicto, motivo }`. Medido = todas las lentes con su
  * cazador contestado y ningún hallazgo sin veredicto. Un resultado sin el campo `lentes` o con la lista vacía
@@ -198,7 +215,7 @@ function medicionDelResultado(obj, opts = {}) {
   const detalle = Array.isArray(obj.detalle) ? obj.detalle : [];
   const motivos = {};
   for (const l of obj.lentes) {
-    if (!l || l.estado !== 'medida') { motivos[(l && l.lens) || '?'] = (l && l.motivo) || 'su cazador no contestó'; continue; }
+    if (!l || l.estado !== 'medida') { motivos[(l && l.lens) || '?'] = l ? motivoSinBase(l) : 'su cazador no contestó'; continue; }
     const m = motivoDeLente(l, { detalle, resultado: opts.resultado, repo: opts.repo, desde: opts.desde });
     if (m) motivos[l.lens || '?'] = m;
   }
