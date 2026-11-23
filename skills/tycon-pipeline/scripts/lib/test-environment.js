@@ -144,19 +144,20 @@ function resolveHere(dir, { story: storyArg } = {}) {
   return { environment: r.environment, problems: [...problems, ...r.problems] };
 }
 
-// El volcado del entorno al terminar bien. Node y el archivo llegan como argumentos de bash ($1 y $2) y se guardan en
-// variables sin exportar: ninguna ruta va dentro del texto del comando, y el volcado no las ve
+// El volcado del entorno al terminar bien. Node y el archivo llegan en el ambiente de bash (`__tycon_node` y
+// `__tycon_out`), que las deja como variables sin exportar: ninguna ruta va en el comando, ni en el texto ni como
+// argumento, y ni el comando ni el volcado las ven en el ambiente
 const DUMP_TRAP = '__tycon_dump() { trap - EXIT; if [ "$1" -eq 0 ]; then "$__tycon_node" -e \'process.stdout.write(JSON.stringify(process.env))\' > "$__tycon_out" || exit 97; fi; exit "$1"; }';
 
 /**
- * El texto de bash del paso y sus argumentos (`$0` y lo que sigue). Sin `dump`, el comando tal cual. Con `dump`, el
- * comando entre la trampa del volcado; `shift 2` lo deja sin argumentos, como sin volcado.
+ * El texto de bash del paso y lo que se suma a su ambiente. Sin `dump`, el comando tal cual. Con `dump`, el comando
+ * entre la trampa del volcado.
  */
 function stepScript(cmd, dump) {
-  if (!dump) return { script: cmd, args: [] };
+  if (!dump) return { script: cmd, env: {} };
   return {
-    script: `__tycon_node=$1; __tycon_out=$2; shift 2\n${DUMP_TRAP}\ntrap '__tycon_dump $?' EXIT\n${cmd}\n__tycon_dump $?\n`,
-    args: ['bash', process.execPath, dump],
+    script: `export -n __tycon_node __tycon_out\n${DUMP_TRAP}\ntrap '__tycon_dump $?' EXIT\n${cmd}\n__tycon_dump $?\n`,
+    env: { __tycon_node: process.execPath, __tycon_out: dump },
   };
 }
 
@@ -169,11 +170,12 @@ function stepScript(cmd, dump) {
  */
 function step(cmd, { cwd, env, timeoutS, dump, logFile, onSpawn }) {
   return new Promise((done) => {
-    const { script, args } = stepScript(cmd, dump);
+    const { script, env: delVolcado } = stepScript(cmd, dump);
+    const ambiente = dump ? { ...(env || process.env), ...delVolcado } : env;
     const fd = fs.openSync(logFile, 'w', 0o600);
     let child;
     try {
-      child = spawn('bash', ['-c', script, ...args], { cwd, env, detached: true, stdio: ['ignore', fd, fd], windowsHide: true });
+      child = spawn('bash', ['-c', script], { cwd, env: ambiente, detached: true, stdio: ['ignore', fd, fd], windowsHide: true });
     } finally { fs.closeSync(fd); }
     if (onSpawn && child.pid) onSpawn(child.pid);
     let timedOut = false;

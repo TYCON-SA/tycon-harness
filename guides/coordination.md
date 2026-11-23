@@ -465,9 +465,14 @@ una, la coordinadora:
   entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
 - **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta en su nombre la pregunta
   cuya celda dice `review` (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la
-  propia sesión con su turno, como siempre. Que `skip` y `wait` pidan el click del dueño es la fila 113.
+  propia sesión con su turno, como siempre. Si la celda dice `skip`, lo anota con `--by-profile`: el guion comprueba
+  que el dueño cuenta como ausente y que la celda dice eso, y anota `por: perfil`. Fuera de ese caso, «skip» del código
+  lo contesta el dueño: pide la firma `review-skip`, su click o su «aprobado» en tu pestaña, nunca la delegación.
 - **Pone la marca de ausente** cuando el dueño dice que se va («seguí en autónomo», «me voy», «hasta mañana» o algo
-  parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases. La marca se borra
+  parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases, pero la frase
+  tiene que estar en un mensaje que el dueño tipeó en su pestaña en los últimos 30 minutos: uno de otra sesión, de un
+  canal o de un programa no cuenta, y sin poder leer sus mensajes sale 2. Sin la marca, el dueño cuenta como ausente igual
+  por los minutos sin respuesta. La marca se borra
   sola cuando el dueño vuelve: un mensaje suyo, un mensaje de la oficina verificado, una firma suya o a las 24 horas. La
   oficina la muestra mientras está puesta.
 

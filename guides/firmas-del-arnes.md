@@ -93,6 +93,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `manual-test` | 2 · excepción | dev y mantenimiento | marcar un criterio como probado a mano | `manual-test`, `escape:ALLOW_DOD_EVIDENCE_WRITE` |
 | `browser-test:no` | 2 · excepción | dev y mantenimiento | decir que no a la prueba con navegador | `browser-test` |
 | `adversarial-skip` | 2 · excepción | dev y mantenimiento | saltear el pase adversarial | `adversarial-skip`, `escape:TYCON_NO_DEEP_REVIEW`, `escape:no-deep-review` |
+| `review-skip` | 2 · excepción | dev y mantenimiento | contestar «skip» a la pregunta de si correr el pase adversarial sobre el código (sólo el dueño: su ventana, su click o su «aprobado») | `review-skip` |
 | `lost-run` | 2 · excepción | dev y mantenimiento | dar por perdida una ejecución y cerrarla | `lost-run`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz` |
 | `escape:force-manual` | 2 · excepción | dev y mantenimiento | marcar a mano el estado de un control | `escape:force-manual` |
 | `escape:trust-ran` | 2 · excepción | dev y mantenimiento | contar revisores sin constancia de que corrieron | `escape:trust-ran` |
@@ -469,6 +470,7 @@ vuelve a pedir la firma del dueño.
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
 | `lost-run:particion` | cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto | `marker.js clear-session <S> --lost --partition` | sí | `marker.js clear-session <S> --lost --partition --terminal` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
+| `review-skip` | contestar «skip» a la pregunta del pase del código | `marker.js review-answer --kind code --choice skip` | sí | `marker.js review-answer --kind code --choice skip --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --file <ruta> --terminal --for-session <id>` |
 | `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'` | sí | `marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --file <ruta> --terminal --for-session <id>` |
