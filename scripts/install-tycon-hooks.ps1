@@ -33,6 +33,16 @@
 #   pwsh ./install-tycon-hooks.ps1 -Link <ruta>          # re-apunta el lugar del arnés (~/.claude/tycon-harness) a otro clon
 #   pwsh ./install-tycon-hooks.ps1 -ReportJson <archivo> # además, la lista de piezas que deja;
 #                                                        # con `pwsh -File` también anda la forma del .sh: --report-json
+#
+# Sin Claude Code (`TYCON_HARNESS_CLAUDE=off`, lo pone harness.js en una máquina sólo con Codex): la misma lista cerrada
+# que el .sh (ver «Sin Claude Code» en su cabecera), en lo que este archivo tiene: el candado, el reporte y el plan; la
+# lectura de la configuración y del perfil; los chequeos de engram y de sqlite3; el AGENTS.md puntero; el refresco de la
+# lista de proyectos de Azure; la subida al buzón; los hooks globales de git y la mirada al core.hooksPath local de los
+# clones; y la mudanza del historial viejo de los hooks. Lo de Claude Code —el lugar del arnés y sus enlaces, las skills de
+# este archivo, settings.json, los nombres viejos, los bloques de CLAUDE.md, el despliegue de Codex en este archivo— no
+# corre, y nada se escribe en la carpeta de Claude Code: lo que va al estado va a la carpeta del estado de la casa propia.
+# Las skills de esa máquina llegan por la versión bajada y harness.js las enlaza en la carpeta de Codex. Cada parte
+# saltada lleva la guarda `CLAUDE_OFF`. (Este archivo no corre las suites rápidas del .sh, con o sin Claude Code.)
 
 # -Enlace es el nombre viejo de -Link (en castellano): sigue andando por el alias de PowerShell hasta el
 # retiro, y su uso se anota (más abajo, con la biblioteca ya cargada).
@@ -60,6 +70,8 @@ try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $Outp
 if ($env:TYCON_NO_AUTOINSTALL -eq '1') {
     exit 0
 }
+# sin Claude Code: sólo la lista cerrada de la cabecera
+$ClaudeOff = ($env:TYCON_HARNESS_CLAUDE -eq 'off')
 # el plan es una mirada: sin -Check escribiría la máquina mientras dice que sólo la describe (espejo
 # del .sh)
 if ($PlanJson -and -not $Check) {
@@ -562,12 +574,12 @@ $RepoLinksHere = (Test-Path (Join-Path (Join-Path (Split-Path -Parent $PSScriptR
 $ReadBatch = $null
 if (-not $Link) {
     $readSteps = @()
-    if (Test-Path $rutaCanonica) {
+    if (-not $ClaudeOff -and (Test-Path $rutaCanonica)) {
         $readSteps += @{ id = 'place'; script = 'canonical-path'; args = @(@('--ensure-link', '--clone', (Split-Path -Parent $PSScriptRoot)) + @(if ($Check) { '--check' })) }
         if ($RepoLinksHere) { $readSteps += @{ id = 'links'; script = 'canonical-path'; args = @(@('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', 'agent-skills') + @(if ($Check) { '--check' })) } }
         $readSteps += @{ id = 'notice'; script = 'canonical-path'; args = @() }
     }
-    if (Test-Path $SkillsDirJs) {
+    if (-not $ClaudeOff -and (Test-Path $SkillsDirJs)) {
         $readSteps += @{ id = 'skills'; script = 'skills-dir'; args = @('--skills', '--installed'); env = @{ TYCON_SKILLS_DIR = $null } }
         $readSteps += @{ id = 'source'; script = 'skills-dir'; args = @('--source', '--installed'); env = @{ TYCON_SKILLS_DIR = $null } }
     }
@@ -577,13 +589,13 @@ if (-not $Link) {
         # cómo contesta el asistente: lo usan el plan y el sync de bloques, en la misma tanda
         $readSteps += @{ id = 'response'; script = 'tycon-config'; args = @('response', '--json') }
     }
-    if ($script:PiecesTmp -and (Test-Path $rutaCanonica)) {
+    if (-not $ClaudeOff -and $script:PiecesTmp -and (Test-Path $rutaCanonica)) {
         $readSteps += @{ id = 'pieces'; script = 'canonical-path'; args = @('--place-pieces', '--home', (Get-TyconHome)) }
     }
     $ReadBatch = Invoke-NodeBatch $readSteps
 }
 
-if ((Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+if (-not $ClaudeOff -and (Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContinue)) {
     $clon = Split-Path -Parent $PSScriptRoot
     $enlaceArgs = @('--ensure-link', '--clone', $clon)
     if ($Check) { $enlaceArgs += '--check' }
@@ -601,7 +613,7 @@ if ((Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContin
         finally { $ErrorActionPreference = $eapE }
     }
     if ($enlaceRc -eq 2) { Exit-Installer 2 }   # sólo un -Link que no se puede cumplir sale 2; un enlace que no se pudo escribir avisa y el instalador sigue
-} elseif ($Link) {
+} elseif ($Link -and -not $ClaudeOff) {
     # una línea limpia por la salida de error: Write-Error, con $ErrorActionPreference='Stop', imprime el formato de
     # error de PowerShell (el archivo, «Line |», la línea subrayada) en vez del mensaje
     [Console]::Error.WriteLine('install-tycon-hooks.ps1: -Link necesita node y scripts/lib/canonical-path.js')
@@ -622,6 +634,7 @@ if ((Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContin
 # (`separateSkillsClone`), igual para este archivo y para el .sh. Una carpeta real en ese lugar que NO es un clon de
 # agent-skills sigue avisando.
 function Invoke-RepoLinks([string]$Only) {
+    if ($ClaudeOff) { return }   # sin Claude Code no hay enlaces del repo único en la carpeta de Claude Code
     # sólo si el clon trae skills/ y agents/: en un clon sin ellas ni se lanza node (este archivo corre en cada arranque)
     $root = Split-Path -Parent $PSScriptRoot
     if (-not ((Test-Path (Join-Path (Join-Path $root 'skills') 'tycon-pipeline')) -and (Test-Path (Join-Path $root 'agents')))) { return }
@@ -652,7 +665,7 @@ if (Test-Path $legacyNamesPs1) {
     } catch { Write-Host "⚠ tycon: no pude cargar scripts/lib/legacy-names.ps1 ($(Get-ErrText $_)) — sigo leyendo sólo los nombres nuevos de las variables" }
 }
 if (-not $legacyLoaded -or -not (Get-Command Get-LegacyEnv -ErrorAction SilentlyContinue)) { function Get-LegacyEnv([string]$Name, [string]$Where) { return [Environment]::GetEnvironmentVariable($Name) } }
-if ((Get-LegacyEnv 'TYCON_NO_CANONICAL_PATH' -Where 'scripts/install-tycon-hooks.ps1') -ne '1') {
+if (-not $ClaudeOff -and (Get-LegacyEnv 'TYCON_NO_CANONICAL_PATH' -Where 'scripts/install-tycon-hooks.ps1') -ne '1') {
     if (Test-Path $rutaCanonica) {
         # lo corrió la tanda de lectura: su salida estándar acá, como la llamada suelta con `2>$null`
         if ($ReadBatch -and $ReadBatch['notice']) { Write-NodeChunks @($ReadBatch['notice'].Chunks | Where-Object { $_ -and $_.Substring(0, 1) -eq 'o' }) }
@@ -665,6 +678,23 @@ if ((Get-LegacyEnv 'TYCON_NO_CANONICAL_PATH' -Where 'scripts/install-tycon-hooks
 # ============================================================
 $ClaudeDir   = Join-Path (Get-TyconHome) '.claude'   # la carpeta de os.homedir(): la misma que usan los guiones de Node
 $Settings    = Join-Path $ClaudeDir 'settings.json'
+# Donde van el estado y los registros de este archivo. Con Claude Code, la de siempre. Sin él, la que da la regla
+# (scripts/setup/harness/tycon-home.js: la casa propia); si no contesta, $null, y lo que escribiría ahí no corre: nunca
+# cae en la carpeta de Claude Code.
+$StateDir = Join-Path $ClaudeDir '.tycon-pipeline'
+if ($ClaudeOff) {
+    $StateDir = $null
+    $tyconHomeJs = Join-Path (Join-Path (Join-Path $PSScriptRoot 'setup') 'harness') 'tycon-home.js'
+    if ((Test-Path $tyconHomeJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+        $eapS = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try { $sd = (& node -e 'process.stdout.write(require(process.argv[1]).stateDir())' $tyconHomeJs 2>$null | Out-String).Trim(); if ($LASTEXITCODE -eq 0 -and $sd) { $StateDir = $sd } }
+        catch { } finally { $ErrorActionPreference = $eapS }
+    }
+    if (-not $StateDir) { Write-Host "⚠ tycon: no supe cuál es la carpeta del estado (scripts/setup/harness/tycon-home.js no contestó): no corre lo que escribe ahí" }
+}
+
+# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (dónde están las skills, settings.json y la verificación de agent-skills) no corre sin Claude Code
+if (-not $ClaudeOff) {
 
 # ── Dónde están las skills: lo contesta la regla, no una ruta escrita (espejo del .sh) ───────────
 # La regla vive en scripts/lib/skills-dir.js (contrato C3) y acá se le pregunta con la variante de quien ESCRIBE en la
@@ -765,6 +795,8 @@ if ($SkillsFrom -ne 'installed') {
     $CheckInClone = $AgentSkillsRepo   # el paso de terceros de más abajo también mira ahí
     Write-Host "(--check) tycon: ~/.claude/agent-skills todavía no está: esta revisión mira las skills en $AgentSkills (el instalador crea el enlace)"
 }
+}
+# ▲ CLAUDE_OFF
 
 # ── El mecanismo de instalación ─────────────────────────────────────
 # En una máquina que todavía no tiene estado (`~/.claude/.tycon-pipeline/harness-state.json`), este aplicador crea el
@@ -790,6 +822,8 @@ function Invoke-HarnessFromExisting {
     }
 }
 
+# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (la tanda de aplicación, las skills de terceros y los enlaces de agents y skills) no corre sin Claude Code
+if (-not $ClaudeOff) {
 # ── La aplicación, en una tanda ──────────────────────────────────────────────────────────────────────
 # En el orden de siempre: las skills de terceros, los enlaces de agents y skills, los nombres viejos y los hooks de
 # settings.json (más abajo). Entre esos pasos este archivo sólo imprime y anota (el estado de las integraciones y del
@@ -827,7 +861,12 @@ if (Test-Path $ThirdPartyJs) { $applySteps += @{ id = 'third'; script = 'install
 if ($RepoLinksHere -and (Test-Path $rutaCanonica)) { $applySteps += @{ id = 'entries'; script = 'canonical-path'; args = @(@('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', 'entries') + @(if ($Check) { '--check' })) } }
 if (Test-Path $LegacyNames) { $applySteps += @{ id = 'legacy'; script = 'legacy-names'; args = $lnArgs } }
 if ($ApplyOut -and (Test-Path $ApplyJs)) { $applySteps += @{ id = 'apply'; script = 'apply-hooks'; args = (New-ApplyArgs $ApplyOut); env = $applyEnv } }
+# la mudanza del historial viejo de los hooks (su salida, más abajo, donde estaría su llamada suelta)
+$looseLogsJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'loose-logs.js'
+if (-not $Check -and (Test-Path $looseLogsJs)) { $applySteps += @{ id = 'loose'; script = 'loose-logs'; args = @('--move-old') } }
 $ApplyBatch = Invoke-NodeBatch $applySteps
+# la mudanza ya corrió en la tanda: se dice acá, porque más abajo el instalador puede cortar (un settings.json roto)
+if ($ApplyBatch -and $ApplyBatch['loose']) { Write-NodeChunks $ApplyBatch['loose'].Chunks }
 
 # ── Las skills de terceros vuelven a su lugar (espejo del .sh, mismos argumentos) ──────────────────
 # Restituye lo ajeno desde la historia del clon (sin red) o desde su origen (con el retiro hecho, tope 20 s), sin
@@ -880,6 +919,8 @@ if ($PiecesTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
         }
     } catch { }
 }
+}
+# ▲ CLAUDE_OFF
 
 # ============================================================
 # Integraciones — espejo del bloque bash. Cada integración tiene su llave en la configuración
@@ -971,6 +1012,8 @@ elseif ($ProfileState -ne 'ok') { Write-Host "! tycon: sin scripts/lib/tycon-con
 $ProfileFull = ($ProfileState -eq 'ok') -and -not $ProfileIsMinimal
 $ProfileOff = @()   # lo que se saca por el perfil (su línea lo dice)
 
+# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (los nombres viejos, los hooks de settings.json, los bloques de CLAUDE.md y la línea del índice) no corre sin Claude Code
+if (-not $ClaudeOff) {
 # ── Los nombres viejos (espejo del .sh, la misma lista y el mismo guion) ────────────────────────────────────────
 # Las rutas de archivos renombrados a inglés, a su nombre nuevo, en settings.json (hooks y permisos),
 # settings.local.json, ~/.codex/hooks.json y ~/.git-hooks/*, comparando la ruta COMPLETA. Va antes de cargar
@@ -1147,6 +1190,8 @@ if ((Test-Path $importLineJs) -and (Get-Command node -ErrorAction SilentlyContin
     $ilArgs = @('--fix', '--quiet'); if ($Check) { $ilArgs += '--check' }
     try { & node $importLineJs @ilArgs 2>$null } catch { }
 }
+}
+# ▲ CLAUDE_OFF
 
 # ============================================================
 # Versión de engram vs el pin del equipo. AVISA, nunca actualiza.
@@ -1155,7 +1200,12 @@ if ((Test-Path $importLineJs) -and (Get-Command node -ErrorAction SilentlyContin
 $engramVerCheck = Join-Path (Join-Path $PSScriptRoot 'setup') 'check-engram-version.ps1'
 # los chequeos de engram sólo con la integración prendida
 if ((Integ-Prendida 'engram') -and (Test-Path $engramVerCheck)) {
-    try { & $engramVerCheck } catch { }
+    if ($Check) {
+        # -Check no escribe: el -Check del guion no anota el sello, y con la variable no se actualiza nada (espejo del .sh)
+        $prevAuto = $env:TYCON_ENGRAM_AUTO_UPGRADE; $env:TYCON_ENGRAM_AUTO_UPGRADE = '0'
+        try { & $engramVerCheck -Check } catch { }
+        finally { if ($null -eq $prevAuto) { Remove-Item Env:TYCON_ENGRAM_AUTO_UPGRADE -ErrorAction SilentlyContinue } else { $env:TYCON_ENGRAM_AUTO_UPGRADE = $prevAuto } }
+    } else { try { & $engramVerCheck } catch { } }
 
 # ============================================================
 # Dependencia de los chequeos de salud de la memoria: el COMANDO `sqlite3`.
@@ -1227,7 +1277,7 @@ if ($codexOn) {
     # las reglas en AGENTS.md, desde los bloques
     $agentsMd = Join-Path $PSScriptRoot 'setup/agents-md-blocks.js'
     # el despliegue escribe en CODEX_HOME: con -Check no corre
-    if ($codexByHarness) { }
+    if ($codexByHarness -or $ClaudeOff) { }
     elseif ($Check) {
         Write-Host "(-Check) tycon/codex: no despliego el lado Codex (sólo reviso)"
         if (Test-Path $agentsMd) { try { & node $agentsMd --check } catch { } }
@@ -1239,7 +1289,7 @@ if ($codexOn) {
     # Lo que el despliegue deja en CODEX_HOME y es del arnés (espejo del .sh): un perfil y un subagente
     # nativo por revisor de adapters/codex/, hooks.json y config.toml, y los enlaces de skills que apuntan a agent-skills.
     # Con el despliegue hecho por harness.js, las piezas las anota él (no se anotan dos veces).
-    if ($PiecesTmp -and -not $codexByHarness) {
+    if ($PiecesTmp -and -not $codexByHarness -and -not $ClaudeOff) {
         try {
             $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path (Get-TyconHome) '.codex' }
             $adapters = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'adapters') 'codex'
@@ -1331,8 +1381,8 @@ dos copias que mantener. (Convencion: INSTALL.md del arnés, seccion Lado Codex.
 # Sin lista cacheada la segunda mirada del hook (--project inexistente) calla. Cada 7 dias, en segundo
 # plano, si hay `az`. Off: TYCON_NO_AZ_PROJECTS_REFRESH=1. ESCRITO SIN PODER PROBARLO EN WINDOWS.
 # Sólo corre con Azure DevOps prendida (ado.org configurada), y usa la organización del lector
-if ((Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH -ne '1' -and -not $Check -and (Get-Command az -ErrorAction SilentlyContinue)) {
-  $azCache = Join-Path $ClaudeDir '.tycon-pipeline\az-projects.json'
+if ($StateDir -and (Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH -ne '1' -and -not $Check -and (Get-Command az -ErrorAction SilentlyContinue)) {
+  $azCache = Join-Path $StateDir 'az-projects.json'
   $vieja = (-not (Test-Path $azCache)) -or ((Get-Item $azCache).LastWriteTime -lt (Get-Date).AddDays(-7))
   if ($vieja) {
     $hookAz = Join-Path $PSScriptRoot 'hooks\failed-query-notice.js'
@@ -1360,8 +1410,8 @@ if ((Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH -ne '1' -and -
 # TYCON_NO_UPLOAD_RUNS=1. Un proceso de fondo de PowerShell no puede AGREGAR a un archivo: la subida agrega ella misma a su
 # registro (`--log`, con la rotación del .sh pasado ~512 KB). Registro: upload-runs.log en la carpeta de estado.
 $upJs = Join-Path (Join-Path $PSScriptRoot 'metrics') 'upload-runs.js'
-if ((Integ-Prendida 'mailbox') -and (Get-LegacyEnv 'TYCON_NO_UPLOAD_RUNS' -Where 'scripts/install-tycon-hooks.ps1') -ne '1' -and -not $Check -and "$env:TF_BUILD" -notmatch '^(?i)true$' -and (Test-Path $upJs)) {
-    $upDir = Join-Path $ClaudeDir '.tycon-pipeline'
+if ($StateDir -and (Integ-Prendida 'mailbox') -and (Get-LegacyEnv 'TYCON_NO_UPLOAD_RUNS' -Where 'scripts/install-tycon-hooks.ps1') -ne '1' -and -not $Check -and "$env:TF_BUILD" -notmatch '^(?i)true$' -and (Test-Path $upJs)) {
+    $upDir = $StateDir
     $upLog = Join-Path $upDir 'upload-runs.log'
     try {
         New-Item -ItemType Directory -Force -Path $upDir -ErrorAction Stop | Out-Null
@@ -1580,7 +1630,8 @@ if ($env:TYCON_NO_GIT_HOOKS -ne '1' -and $ProfileFull) {
 # Solo lo que no esta en el disco NI en el repo, o esta con puros *.sample, es vestigial. La misma regla en el .sh.
 # Medido con pwsh: scripts/tests/installer-ps1.test.sh (k). En Windows: no medido.
 # Sólo en full (como el .sh): fuera de full no se toca el core.hooksPath de ningún repo.
-foreach ($repo in @(if ($ProfileFull) { @($AgentSkillsRepo, (Split-Path -Parent $PSScriptRoot)) })) {
+# (sin Claude Code no hay clon de agent-skills que mirar: la ruta vacía se saltea, como en el .sh)
+foreach ($repo in @(if ($ProfileFull) { @($AgentSkillsRepo, (Split-Path -Parent $PSScriptRoot)) | Where-Object { $_ } })) {
     if (-not (Test-Path (Join-Path $repo '.git'))) { continue }
     $lhp = ''
     try { $lhp = [string](& git -C $repo config --local core.hooksPath 2>$null) } catch {}
@@ -1625,6 +1676,19 @@ foreach ($repo in @(if ($ProfileFull) { @($AgentSkillsRepo, (Split-Path -Parent 
         }
     } else {
         Write-Host "! $repo tiene core.hooksPath LOCAL con $reales hook(s) reales ($lhp) - los hooks del arnes NO corren ahi. Revisalo vos: no lo toco."
+    }
+}
+
+# ── El historial viejo de los hooks, a la carpeta del estado (espejo del .sh) ──────────────────────────────────────
+# En una máquina que vive en la casa propia, los registros que los hooks dejaron en la carpeta de Claude Code antes de pedir
+# su casa se mudan una vez a la carpeta del estado. Nunca pisa ni borra; en otra máquina no hace nada. Corre en la tanda de
+# aplicación (sin un Node más por arranque) y se dice apenas termina la tanda; sin la tanda, suelta, acá. Sin Claude Code no corre: esa máquina nació en su casa y
+# no tiene historial en la carpeta de Claude Code. Con -Check no se llama. Detalle: scripts/lib/loose-logs.js (`moveOld`).
+if (-not $ClaudeOff -and -not $Check -and (Test-Path $looseLogsJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+    # con la tanda ya se dijo, arriba; sin ella, suelta
+    if (-not ($ApplyBatch -and $ApplyBatch['loose'])) {
+        $eapM = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try { & node $looseLogsJs --move-old } catch { } finally { $ErrorActionPreference = $eapM }
     }
 }
 

@@ -1067,6 +1067,9 @@ function destinoDelEmpuje(c) {
 const PASO_PREPARAR = 'prepare-commit';
 const cerrarPaso11 = () => `node ${require('./story-gate.js').MARKER_JS} complete-step prepare-commit`;
 const textoSinPreparar = () => `🔒 el pull request sale después de preparar: cerrá «Preparar el pull request» (${cerrarPaso11()}).`;
+// la salida del pedido que no es de la historia (el arreglo que destraba su cierre): el freno no se afloja, la coordinadora
+// cierra la ejecución y se reabre después (decisión 4 de la 8.151: un pedido durante la corrida es de la corrida)
+const textoSalidaDelPedido = (story, sid) => `   Si este pedido no es de la historia ${story}, la coordinadora cierra la ejecución con node ${require('./story-gate.js').MARKER_JS} clear-session ${sid} y se reabre cuando entre.`;
 const textoCambio = (repo) => `🔒 el código cambió después de preparar el pull request (${repo}): volvé a correr los revisores de lo que cambió y ${cerrarPaso11()}.`;
 const textoNoComprobado = (motivo) => `🔒 no pude comprobar que el código es el que se preparó (${motivo}): repetí «Preparar el pull request».`;
 const textoFueraDeLaFoto = (repo) => `🔒 ${repo} cambió después de preparar y no está en la foto: repetí «Preparar el pull request».`;
@@ -1204,6 +1207,16 @@ function decidir({ command, cwd, sid, home }) {
     if (!repos) return true;
     try { const r = SO().raizDe(c.dir); return !!r && repos.includes(r); } catch (_) { return true; }
   };
+  // una corrida estacionada (su marca en parked/ o `paused_until:` en la historia) no ata a la sesión: un pedido de un
+  // repo que no es de la corrida no se juzga contra ella. Una marca ilegible no afloja nada
+  let estacionada;
+  const esEstacionada = () => {
+    if (estacionada === undefined) {
+      const k = require('./open-runs.js').marcaDeEstacionada(sid, m, { home });
+      estacionada = !!k && k.kind !== 'ilegible';
+    }
+    return estacionada;
+  };
   let haciaElEquipo = null;
   let pista = false;
   let commits = 0;
@@ -1217,8 +1230,9 @@ function decidir({ command, cwd, sid, home }) {
     }
   }
   for (const c of cs) {
-    // un pedido se juzga contra toda la corrida
-    if (c.tipo === 'pr') { haciaElEquipo = haciaElEquipo || c; continue; }
+    // un pedido se juzga contra toda la corrida; con la corrida estacionada, sólo el de uno de sus repos (o el de un repo
+    // que no se puede ubicar)
+    if (c.tipo === 'pr') { if (deLaCorrida(c) || !esEstacionada()) haciaElEquipo = haciaElEquipo || c; continue; }
     if (!deLaCorrida(c)) continue;
     if (c.tipo === 'commit') { commits += 1; continue; }
     if (c.tipo !== 'push') continue;
@@ -1229,7 +1243,8 @@ function decidir({ command, cwd, sid, home }) {
   }
   if (haciaElEquipo) {
     const p = prepDe();
-    if (p.texto) return { texto: `${p.texto}${pista ? PISTA_DESTINO : ''}` };
+    const salida = cs.some((c) => c.tipo === 'pr') && !pasoCerrado ? `\n${textoSalidaDelPedido(m.storyId, sid)}` : '';
+    if (p.texto) return { texto: `${p.texto}${pista ? PISTA_DESTINO : ''}${salida}` };
     return { pregunta: preguntaDelPedido({ forma: haciaElEquipo.forma, m, repos: p.repos }) };
   }
   if (commits) {
@@ -1681,13 +1696,13 @@ function textoCreaUnaRama({ rama = 'main', repo = '' } = {}) {
   ].join('\n');
 }
 
-/** El freno de la lista al guardar, en los dos perfiles: en un producto habla de vos y no nombra la delegación. */
+/** El freno de la lista al guardar, en los dos perfiles: en un producto aprueba el dev, y no nombra la delegación. */
 function textoFueraDeLaLista({ harness = true, archivos = [] } = {}) {
   const tope = require('./story-gate.js').TOPE_DE_NOMBRES;
   const nombres = archivos.slice(0, tope).map((f) => `   · ${f}`).join('\n');
   const salida = harness
     ? '  Sacalos del cambio, o ampliá la lista con «marker.js adhoc set»: vuelve a pedir el sí de una persona, y por delegación la lista nueva contiene entera la firmada.'
-    : '  Sacalos del cambio, o ampliá la lista con «marker.js adhoc set»: la aprobás vos con tu sí, como al abrir.';
+    : '  Sacalos del cambio, o pedile al dev que amplíe la lista: con su sí, corré «marker.js adhoc set» con la lista nueva, solo; lo aprueba él en la ventana o el cuadro, como al abrir.';
   return `🔒 GUARDAR: no guarda. Estos archivos cambiaron y no están en la lista del camino corto:\n${nombres}\n${salida}`;
 }
 
@@ -1733,7 +1748,7 @@ function textoDeLaMaqueta(r) {
       ...r.faltan.map((f) => `  · ${f}`),
       '  Se completa de una de estas tres formas:',
       '   1. Corregí la pantalla, para que diga ese texto.',
-      `   2. Volvé a aprobar la maqueta, si lo que cambió es ella: ${aprobar}`,
+      `   2. Si lo que cambió es la maqueta: mostrásela a la persona y, con su aprobación, corré esto solo (la ventana o el cuadro le piden el sí), con quién la aprobó y por qué vía: ${aprobar}`,
       `   3. Declará la diferencia en ${r.textosQueFaltan.diferencias}, con un renglón \`- «<texto>» — differs: <por qué>\`. Si no se puede comparar: \`mockup-compare: no — <motivo>\`.`,
       '  Se comparan los textos, no el dibujo: un texto que ya existe en otra pantalla del repo pasa.',
     ].join('\n');

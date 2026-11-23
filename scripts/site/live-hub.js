@@ -132,6 +132,7 @@ function valorSegun(spec, value, donde, desconocidos) {
     case 'folder': return typeof value === 'string' && value.length <= TEXT_MAX && !/[\\/]/.test(value) ? value : MALA;
     case 'number': return Number.isFinite(value) ? value : MALA;
     case 'percent': return Number.isInteger(value) && value >= 0 && value <= 100 ? value : MALA;
+    case 'count': return Number.isInteger(value) && value >= 0 ? value : MALA;
     case 'flag': return typeof value === 'boolean' ? value : MALA;
     case 'hour': return typeof value === 'string' && validHour(value) ? value : MALA;
     case 'state':

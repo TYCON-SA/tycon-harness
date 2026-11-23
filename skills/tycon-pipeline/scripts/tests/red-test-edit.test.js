@@ -125,7 +125,7 @@ test('RedOldTest_WithNote_Passes_AndTravels (T2) @story-8.166 @ac-2', (t) => {
   assert.ok(renglones[0].includes(prueba) && renglones[0].includes('dependía de la hora del día'), 'un renglón por prueba en el mensaje del commit');
   // y los guiones las usan: el contexto de los revisores y el cierre del commit
   assert.match(fs.readFileSync(path.join(SCRIPTS, 'pipeline.js'), 'utf8'), /bloqueParaRevisores\(/, 'buildAdvisorContext lleva la nota');
-  assert.match(fs.readFileSync(MARKER, 'utf8'), /renglonesParaElCommit\(/, 'prepare-commit imprime los renglones');
+  assert.match(require('./lib/marker-source.js')(SCRIPTS), /renglonesParaElCommit\(/, 'prepare-commit imprime los renglones');
 });
 
 test('ControlTest_AsksOwnerOnlySignature (T3) @story-8.166 @ac-3', (t) => {

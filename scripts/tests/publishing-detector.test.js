@@ -481,3 +481,38 @@ test('8.10.3 Detector_MixedCaseTermGluedAfterAnotherWord_IsSeen — la grafía p
     assert.strictEqual(hits(line), 0, `tomó por el nombre lo que no lo es (o lo contó dos veces): ${line}`);
   }
 });
+
+// Un freno lento es un agujero: si se cuelga o se corta, deja pasar. Una línea larga de tiradas como `a-a-a-…` o
+// `a.a.a.…` (un separador dibujado, un renglón minificado) hacía que las reglas del correo y de la clave entre comillas
+// volvieran a recorrer la tirada desde cada borde de palabra: el tiempo crecía al cuadrado (32.000 caracteres, más de
+// un segundo). Se compara el crecimiento entre 10.000 y 40.000 caracteres, no un tiempo fijo: lineal da cerca de 4
+// veces, al cuadrado cerca de 16. El tope de 9 deja margen para una máquina cargada.
+test('58 Detector_LongRunsOfSeparators_GrowLinearly — tiradas largas de guiones o puntos no tardan al cuadrado', () => {
+  // eslint-disable-next-line global-require
+  const det = require(DETECTOR);
+  const cfg = det.cargarConfig('lista.json', JSON.stringify(CFG));
+  const medir = (texto) => {
+    let mejor = Infinity;
+    for (let k = 0; k < 3; k++) {
+      const t = process.hrtime.bigint();
+      det.reviewText(cfg, texto, 'a.md');
+      mejor = Math.min(mejor, Number(process.hrtime.bigint() - t) / 1e6);
+    }
+    return mejor;
+  };
+  const tiradas = {
+    guiones: (n) => '-'.repeat(n),
+    puntos: (n) => '.'.repeat(n),
+    'letra y guion': (n) => 'a-'.repeat(n / 2),
+    'letra y punto': (n) => 'a.'.repeat(n / 2),
+    'mayúscula y guion': (n) => 'A-'.repeat(n / 2),
+    'clave a medias': (n) => `${'a-'.repeat(n / 2)}password`,
+    'correo a medias': (n) => `${'a.'.repeat(n / 2)}@`,
+  };
+  for (const [nombre, armar] of Object.entries(tiradas)) {
+    const chico = Math.max(medir(armar(10000)), 2);   // piso de 2 ms: con tiempos de cero el cociente no dice nada
+    const grande = medir(armar(40000));
+    assert.ok(grande / chico < 9 && grande < 1000,
+      `${nombre}: 10.000 caracteres ${chico.toFixed(1)} ms, 40.000 caracteres ${grande.toFixed(1)} ms (lineal ≈ 4 veces, al cuadrado ≈ 16)`);
+  }
+});
